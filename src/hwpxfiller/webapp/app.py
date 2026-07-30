@@ -1373,6 +1373,32 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 짝(리뷰). overwrite_count/new_count 스왑·이름 목록 누락이 여기서 잡힌다.
     out.ow_body = window.JobScreen.overwriteBody(
       {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
+    // 퇴장 한 줄(§2.18)의 네 태 산출 — 결과 구획이 초기화된 뒤 **유일하게 남는 흔적**이라
+    // 거짓 진술이 여기서 조용히 배포되면 되돌아볼 자리가 없다(#363 리뷰 P2: 취소 배치를
+    // 「N건 생성」으로 말하던 자리). 제목은 Python 이 태별로 조립한 그 문장을 그대로 쓴다.
+    // 수치 몸통은 Python 이 낸 `exit_summary` 다(#363 2차 리뷰) — 제목은 구획 머리라
+    // 일부러 짧아(취소의 실패 수·failed 태의 전 수치 생략) 초기화 뒤 남는 유일한 흔적이
+    // 되기엔 손실 함수다. 여기 태별 산출은 그 문장의 조립 결과를 되읽는다.
+    out.exit_cancelled_untouched = window.JobScreen.resultExitLine(
+      {exit_summary:'중단 · 0개 성공 · 미착수 12건', out_dir:'D:\\out'}, '발주요청서');
+    out.exit_cancelled_mixed = window.JobScreen.resultExitLine(
+      {exit_summary:'중단 · 5개 성공 · 1개 실패 · 미착수 6건', out_dir:'D:\\out'}, '발주요청서');
+    out.exit_prebatch_failed = window.JobScreen.resultExitLine(
+      {exit_summary:'생성 시작 전 실패 · 대상 12건', out_dir:'D:\\out'}, '발주요청서');
+    out.exit_completed = window.JobScreen.resultExitLine(
+      {exit_summary:'12개 성공', out_dir:'D:\\out'}, '발주요청서');
+    out.exit_partial_failure = window.JobScreen.resultExitLine(
+      {exit_summary:'10개 성공 · 2개 실패', out_dir:'D:\\out'}, '발주요청서');
+    // 생성이 아닌 태는 적을 것이 없다 — 거절·진행에 퇴장 한 줄을 지어내지 않는다.
+    out.exit_rejected = window.JobScreen.resultExitLine(
+      {rejected:true, title:'생성하지 않았습니다', summary:'빈 값'}, '발주요청서');
+    out.exit_running = window.JobScreen.resultExitLine(
+      {running:true, title:'생성 중… 1/3'}, '발주요청서');
+    // 요약 없는 **실행 결과**는 조용히 넘기지 않는다 — 이 줄이 유일한 흔적이라 침묵하면
+    // 소멸이 흔적 없이 사라진다. 수치를 지어내지 않고 모른다고 적는지 되읽는다.
+    out.exit_missing_summary = window.JobScreen.resultExitLine(
+      {ok:true, status:'completed', title:'문서 생성 완료 · 3개', out_dir:'D:\\out'},
+      '발주요청서');
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
     out.guard_body = window.JobScreen.guardBody(
       {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
@@ -1652,6 +1678,8 @@ _JOB_RESULT_PROBE_JS = r"""
     // 이 프로브의 세션 = 작업 '공고서' — 결과의 주체와 같은 값에서 출발한다(2R P2 비교군).
     window.__jobResultSnap = {
       job_name:'공고서', last_run_job:'공고서', has_job:true, out_dir:'D:\\out', data_label:'d.csv',
+      // 데이터 성분은 마운트 세대다(#363 리뷰 P2) — 표시 라벨은 정체가 아니다.
+      data_mount:1,
       data_source_label:'파일: d.csv', data_notice:null,
       template_name:'t.hwpx', template_path:'D:\\t.hwpx', filename_pattern:'doc-{{seq:001}}',
       template_missing:false, has_data:true, record_count:1, selected_count:1,
@@ -1667,6 +1695,9 @@ _JOB_RESULT_PROBE_JS = r"""
     window.__push('job', window.__jobResultSnap);
     var partial = {
       ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
+      // 퇴장 요약은 **Python 이 낸다**(#363 2차) — 제목은 구획 머리라 짧고, 이 문장은
+      // 초기화 뒤 남는 유일한 흔적이라 수치를 하나도 흘리지 않는다. 실 payload 와 같은 모양.
+      exit_summary:'2개 성공 · 1개 실패',
       summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
       out_dir:'D:\\out', succeeded:2, failed:1, failed_selectable:1, total:3,
       failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',
@@ -1709,27 +1740,50 @@ _JOB_RESULT_PROBE_JS = r"""
     window.JobScreen.markResultStale();
     out.stale_shown = !document.getElementById('jobResultStale').hidden;
     out.alive_after_stale = !document.getElementById('jobResult').hidden;
-    // 세션이 **다른 작업**으로 옮겨가면 결과는 남되 행동만 걷힌다(2R P2) — 편집 진입이
-    // 남의 작업을 겨누고 실패분 선택은 확실한 무동작이 되기 때문. 증거(제목·요약·실패 행)는
-    // 그대로 남고, 강등 문구가 어느 작업의 결과인지 밝힌다.
+    // 처분은 지문 성분별 2분기다(U2 §2.18) — 작업 전환·데이터 교체 = 초기화(+ 퇴장 한 줄),
+    // 선택·규칙·저장 폴더 = 강등 유지. 이름 변경은 전환이 아니다(주체가 이름을 추종한다).
     // ① 이름 변경(3R P2) — 같은 작업인데 정체 표기만 바뀐 경우. 주체가 그 전이를 따라오므로
-    //    행동이 그대로 남아야 한다(여기서 걷히면 사용자는 제 결과를 이어서 못 손댄다).
+    //    결과가 살고 행동이 그대로 남아야 한다(여기서 걷히면 사용자는 제 결과를 이어서 못 손댄다).
     var snapR = JSON.parse(JSON.stringify(window.__jobResultSnap));
     snapR.job_name = '공고서(수정)'; snapR.last_run_job = '공고서(수정)';
     window.__push('job', snapR);
     window.JobScreen.markResultStale();
     out.renamed_rename_shown = !document.getElementById('jobResultRename').hidden;
     out.renamed_failedsel_shown = !document.getElementById('jobResultFailedSel').hidden;
-    // ② 다른 작업으로 전환 — 주체가 다르므로 행동만 걷힌다.
-    var snapB = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    out.renamed_keeps_result = !document.getElementById('jobResult').hidden;
+    // ② 다른 작업으로 전환(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫히고, 실행 기록에
+    //    퇴장 한 줄(주체·건수·경로)이 남는다. 이름 변경 직후라 주체 표기는 '공고서(수정)'.
+    var snapB = JSON.parse(JSON.stringify(snapR));
     snapB.job_name = '둘째';
     window.__push('job', snapB);
+    out.switch_resets_result = document.getElementById('jobResult').hidden;
+    out.switch_exit_line = document.getElementById('jobRunLogLast').textContent;
+    // 강등 렌더러의 주체 방어(3R P2)는 남는다 — 푸시를 거치지 않고 결과가 재수립되는 경로
+    // (직접 renderResult)에서 남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다.
+    window.JobScreen.renderResult(partial);
     window.JobScreen.markResultStale();
     out.foreign_rename_hidden = document.getElementById('jobResultRename').hidden;
     out.foreign_failedsel_hidden = document.getElementById('jobResultFailedSel').hidden;
     out.foreign_evidence_alive = !!document.getElementById('jobResultFail-7');
     out.foreign_stale_names_owner =
       document.getElementById('jobResultStale').textContent.indexOf('공고서') >= 0;
+    // ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
+    window.__push('job', window.__jobResultSnap);   // 비교군 복귀(원 작업 문맥)
+    window.JobScreen.renderResult(partial);
+    var snapSel = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    snapSel.selection_key = '0,1';
+    window.__push('job', snapSel);
+    out.selection_change_keeps_result = !document.getElementById('jobResult').hidden;
+    out.selection_change_demotes = !document.getElementById('jobResultStale').hidden;
+    // ④ 데이터 교체 = 초기화 + 퇴장 한 줄(경로 포함). 교체의 표지는 **마운트 세대**이지
+    //    표시 라벨이 아니다(#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올려, 같은 이름의
+    //    다른 파일·같은 경로 재읽기가 실제로 교체로 읽히는지 실렌더로 잰다.
+    var snapData = JSON.parse(JSON.stringify(snapSel));
+    snapData.data_mount = 2;
+    window.__push('job', snapData);
+    out.data_swap_resets_result = document.getElementById('jobResult').hidden;
+    out.data_swap_exit_line = document.getElementById('jobRunLogLast').textContent;
+    out.data_swap_label_unchanged = snapData.data_source_label === '파일: d.csv';
     window.__push('job', window.__jobResultSnap);   // 비교군 복귀(다음 단계는 같은 작업 문맥)
     window.JobScreen.renderResult(partial);
     // 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 disabled 를 받는가.
@@ -1749,6 +1803,9 @@ _JOB_RESULT_PROBE_JS = r"""
     document.getElementById('jobResultClose').click();
     out.closed = document.getElementById('jobResult').hidden;
     out.close_focus = document.activeElement && document.activeElement.id;
+    // 명시 파기는 퇴장 한 줄을 남기지 않는다(U2 §2.18 파기 대칭) — 실행 기록이 기본 문안으로
+    // 돌아왔는지 되읽는다(자동 초기화 경로만 흔적을 남긴다).
+    out.close_runlog_last = document.getElementById('jobRunLogLast').textContent;
     // 실행 기록은 기본 접힘이되(노이즈 억제) 마지막 한 줄은 접힌 채로 보인다 — 접힘이
     // 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
     out.runlog_collapsed = !document.getElementById('jobRunLog').open;
@@ -1756,8 +1813,31 @@ _JOB_RESULT_PROBE_JS = r"""
       getComputedStyle(document.getElementById('jobRunLogLast')).display !== 'none';
     // 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
     var real = window.Bridge.generate;
+    window.__rejectGenCalls = 0;
     window.Bridge.generate = function () {
+      window.__rejectGenCalls += 1;
       return Promise.resolve({ok:false, error:'빈 값 필드를 먼저 확인하세요: 추정가격', level:'warn'});
+    };
+    // 거절 창 격리(관측자 오염 리트머스) — 이 프로브 첫머리의 Nav.go('job') 이 쏜 실
+    // refresh 의 push(세션 없는 실 스냅샷)는 Python 스레드에서 늦게 착지해 정확히 이
+    // 비동기 창에 들어온다. **이 PR 의 §2.18 처분이 그것을 「작업 없음 전환 = 초기화」로
+    // 정확히 읽어** 방금 세운 rejected 를 지운다 — 실앱에선 옳은 처분이고(세션 없는
+    // push 는 작업 해제다) 여기서는 합성 세션 위에 실 컨트롤러의 빈 스냅샷이 끼어드는
+    // 프로브 산물이다. 종전(무조건 강등)에는 같은 지연 push 가 무해해 프로브가 그 위에
+    // 서 있었으므로, **격리를 필요로 만든 것이 이 PR 이고 격리도 여기 산다.**
+    // 창이 열린 동안 job push 는 기록만 하고 흘려보내지 않는다 — 무엇을 삼켰는지는
+    // reject_pushes 가 증언한다(조용한 격리 금지). 이 단계가 재는 것은 거절 렌더
+    // 채널이지 push 교차가 아니다.
+    var realPush = window.__push;
+    window.__rejectPushes = [];
+    window.__push = function (screen, snap) {
+      if (screen === 'job') {
+        window.__rejectPushes.push({
+          job: snap && snap.job_name, has_job: !!(snap && snap.has_job),
+          data: snap && snap.data_source_label, progress: !!(snap && snap.progress)});
+        return;
+      }
+      return realPush(screen, snap);
     };
     document.getElementById('jobGenBtn').disabled = false;
     document.getElementById('jobGenBtn').click();
@@ -1766,8 +1846,14 @@ _JOB_RESULT_PROBE_JS = r"""
       var b = document.getElementById('jobResult');
       window.__rejectState = b.dataset.state;
       window.__rejectText = document.getElementById('jobResultSummary').textContent;
+      // 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
+      // 렌더 후 소거」 세 갈래를 가른다.
+      window.__rejectGen = window.__rejectGenCalls;
+      window.__rejectLog = document.getElementById('jobGenLog').textContent;
+      window.__rejectHidden = b.hidden;
       // 거절 사유는 log() 도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
       window.__runlogLast = document.getElementById('jobRunLogLast').textContent;
+      window.__push = realPush;
       window.Bridge.generate = real;
       window.__resultProbeDone = true;
     }, 60);
@@ -3618,6 +3704,10 @@ def _selftest_drive(window: "object") -> None:
             window, "__resultProbeDone",
             "JSON.stringify({reject_state: String(window.__rejectState),"
             " reject_text: String(window.__rejectText),"
+            " reject_gen: Number(window.__rejectGen),"
+            " reject_log: String(window.__rejectLog),"
+            " reject_hidden: !!window.__rejectHidden,"
+            " reject_pushes: window.__rejectPushes || [],"
             " runlog_last: String(window.__runlogLast)})",
         ))
         # 협폭 적층 분기는 **창폭이 아니라 세션 패널 폭**(container query 900px)이 판정한다.

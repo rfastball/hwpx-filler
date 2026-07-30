@@ -140,6 +140,112 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+def test_data_mount_identity_changes_on_every_remount(tmp_path):
+    """결과 처분(§2.18)의 데이터 성분은 **정체**이지 표시 라벨이 아니다(#363 리뷰 P2).
+
+    `data_source_label` 은 「파일: <basename>」이라 세 경우가 전부 같은 문자열이 된다 —
+    ①같은 basename 의 다른 파일 ②같은 통합문서의 다른 시트 ③같은 경로의 바뀐 내용.
+    그 값으로 교체를 판정하면 결과가 **남의 데이터에 붙은 채** 초기화도 강등도 아닌
+    상태로 남는다. 스냅샷은 마운트 세대(`data_mount`)를 실어 세 경우 모두 갈리게 한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    a = tmp_path / "a" / "d.csv"
+    a.parent.mkdir()
+    a.write_text("bidNtceNm,presmptPrce\n전산장비,1\n", encoding="utf-8")
+    b = tmp_path / "b" / "d.csv"          # ① 같은 basename, 다른 경로
+    b.parent.mkdir()
+    b.write_text("bidNtceNm,presmptPrce\n사무비품,2\n", encoding="utf-8")
+
+    ctrl.load_data_path(str(a))
+    first = ctrl.snapshot()
+    ctrl.load_data_path(str(b))
+    second = ctrl.snapshot()
+    assert first["data_source_label"] == second["data_source_label"], (
+        "픽스처가 라벨 충돌을 재현하지 못했습니다 — 이 테스트가 재는 것이 사라집니다."
+    )
+    assert first["data_mount"] != second["data_mount"], (
+        "같은 이름의 다른 파일이 같은 마운트 정체입니다 — 교체가 전환으로 안 읽힙니다."
+    )
+
+    # ③ 같은 경로의 바뀐 내용 — 경로·시트 정체는 그대로지만 레코드가 새것이다.
+    b.write_text("bidNtceNm,presmptPrce\n전산장비,3\n계약건,4\n", encoding="utf-8")
+    ctrl.load_data_path(str(b))
+    third = ctrl.snapshot()
+    assert third["data_mount"] != second["data_mount"], (
+        "같은 경로 재읽기가 같은 마운트 정체입니다 — 새 레코드에 옛 결과가 붙습니다."
+    )
+
+    # ② 같은 통합문서의 다른 시트(다중 시트 픽스처) — 경로가 같아도 다른 데이터다.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    s1 = ctrl.snapshot()
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    s2 = ctrl.snapshot()
+    assert s1["data_source_label"] == s2["data_source_label"], (
+        "픽스처가 시트 축의 라벨 충돌을 재현하지 못했습니다."
+    )
+    assert s1["data_mount"] != s2["data_mount"], (
+        "같은 통합문서의 다른 시트가 같은 마운트 정체입니다."
+    )
+
+    # 반대 방향(과경고 금지): 마운트하지 않는 전이는 정체를 흔들지 않는다 — 흔들면
+    # 선택·규칙 축의 강등 계약(판정 G)이 초기화로 덮인다.
+    stable = ctrl.snapshot()["data_mount"]
+    ctrl.dispatch("set_all", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["data_mount"] == stable, (
+        "선택·축·작업 전환이 데이터 정체를 바꿉니다 — 강등이어야 할 축이 초기화됩니다."
+    )
+
+
+def test_exit_summary_leaks_no_count_and_invents_none(tmp_path):
+    """퇴장 요약(§2.18)은 성공·실패·미착수를 **하나도 흘리지 않는다**(#363 리뷰 P2).
+
+    이 문장은 결과 구획이 초기화된 뒤 남는 **유일한 흔적**이라 손실이 곧 은폐다. 구획
+    제목(`_run_title`)은 반대로 일부러 짧다 — 취소 갈래가 실패 수를 접고 `failed` 태가
+    수치를 통째로 생략하는데, 화면에서는 옆의 요약·실패 행이 그것을 말하기 때문이다.
+    그래서 두 문장은 목적이 다른 **별개 합성기**이고 둘 다 Python 이 소유한다(층을 넘는
+    재조립만 금지이지 같은 층의 두 문장은 `summary` 선례가 이미 있다).
+    """
+    from hwpxfiller.webapp.screen_job import _run_exit_summary, _run_title
+
+    # ① 취소 + 실패 혼재 — 제목이 접는 실패 수가 여기서는 남는다(리뷰가 지목한 자리).
+    mixed = _run_exit_summary("partiallyCompleted", True, 5, 1, 6, 6, 12)
+    assert mixed == "중단 · 5개 성공 · 1개 실패 · 미착수 6건"
+    assert "1개 실패" not in _run_title("partiallyCompleted", True, 5, 1), (
+        "제목이 실패 수를 이미 말하면 이 합성기의 존재 이유가 사라집니다(전제 확인)."
+    )
+    # ② 레코드 처리 전 failed — 시도가 0 이라 성공/실패로 가르지 않는다. 그 페이로드는
+    #    같은 레코드를 failed·unstarted 에 동시에 세므로 이어 붙이면 같은 건을 두 번 말한다.
+    assert _run_exit_summary("failed", False, 0, 12, 12, 0, 12) == "생성 시작 전 실패 · 대상 12건"
+    # ③ 첫 건 전 취소 — 완료 0 은 지어낸 성분이 아니라 「어디까지 됐나」의 답이다.
+    assert _run_exit_summary("partiallyCompleted", True, 0, 0, 12, 0, 12) == "중단 · 0개 성공 · 미착수 12건"
+    # ④ 정상 완주 · ⑤ 일부 실패 — 0 인 성분(실패·미착수)은 붙지 않는다.
+    assert _run_exit_summary("completed", False, 12, 0, 0, 12, 12) == "12개 성공"
+    assert _run_exit_summary("partiallyCompleted", False, 10, 2, 0, 12, 12) == "10개 성공 · 2개 실패"
+    # 전건 실패(레코드는 시도됨) — 시작 전 실패와 다른 사실이라 다르게 말한다.
+    assert _run_exit_summary("failed", False, 0, 3, 0, 3, 3) == "0개 성공 · 3개 실패"
+
+
+def test_generate_result_carries_the_exit_summary(tmp_path):
+    """생성 결과 payload 가 퇴장 요약을 싣는다 — 표면이 수치를 재조립하지 않는 전제.
+
+    빈 값 없는 데이터를 쓴다 — 빈 값 게이트(확인이든 승인이든)는 이 테스트의 축이
+    아니고, 그것을 태우면 무엇을 재는 테스트인지 흐려진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    res = ctrl.generate()
+    assert res["ok"] is True
+    assert res["exit_summary"] == "2개 성공", res["exit_summary"]
+
+
 def test_prework_gate_counts_only_available_candidates(tmp_path):
     """후보가 전부 needs_action 이면 "선택하세요"는 이행 불가능한 지시다(#302 리뷰 P2)
     — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다."""

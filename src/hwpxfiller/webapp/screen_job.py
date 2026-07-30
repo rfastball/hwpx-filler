@@ -217,6 +217,45 @@ def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str
     return "문서 생성 실패"
 
 
+def _run_exit_summary(
+    status: str, cancelled: bool, succeeded: int, failed: int,
+    unstarted: int, attempted: int, total: int,
+) -> str:
+    """**퇴장 요약** — 결과가 세션에서 물러날 때 실행 기록에 남는 한 줄의 수치 몸통(§2.18).
+
+    제목(:func:`_run_title`)과 **다른 함수인 이유**(#363 리뷰 P2): 요구가 반대다.
+    제목은 구획 **머리**라 일부러 짧다 — 나머지 수치는 같은 구획의 요약·실패 행·증거가
+    바로 옆에서 말하므로 취소 갈래가 ``failed`` 를 접고 ``failed`` 태가 수치를 통째로
+    생략해도 화면에서는 아무것도 잃지 않는다. 퇴장 줄은 그 구획이 **초기화된 뒤 남는
+    유일한 흔적**이라 정반대로 **하나도 흘리면 안 된다**. 제목을 손실 없게 바꾸면
+    머리가 길어지고 같은 수치를 구획이 두 번 말한다 — 그래서 표면을 늘리지 않고
+    **같은 층(Python)에 목적이 다른 합성기**를 하나 더 둔다. 금지된 것은 층을 넘는
+    재조립(웹이 수치를 다시 세는 것)이지 같은 층의 두 문장이 아니다(``summary`` 가
+    제목과 나란히 사는 것과 같은 형태).
+
+    **0 인 성분은 지어내지 않는다**: 실패·미착수는 있을 때만 붙는다. 취소의 완료 수는
+    0 이라도 남긴다 — 「어디까지 됐나」가 그 보고의 머리이고, 0 은 지어낸 성분이 아니라
+    그 질문의 답이다.
+
+    ``attempted == 0`` 인 실패(배치 진입 전)는 **성공/실패로 가르지 않는다**: 그 페이로드는
+    같은 레코드를 ``failed`` 와 ``unstarted`` 에 동시에 세므로(둘 다 대상 전량) 그대로
+    이어 붙이면 같은 건을 두 번 말한다. 시도가 없었다는 사실과 대상 수가 그 태의 진실이다.
+    """
+    if cancelled:
+        parts = [f"중단 · {succeeded}개 성공"]
+        if failed:
+            parts.append(f"{failed}개 실패")
+        if unstarted:
+            parts.append(f"미착수 {unstarted}건")
+        return " · ".join(parts)
+    if status == "failed" and attempted == 0:
+        return f"생성 시작 전 실패 · 대상 {total}건"
+    parts = [f"{succeeded}개 성공"]
+    if failed:
+        parts.append(f"{failed}개 실패")
+    return " · ".join(parts)
+
+
 def _revisions_of(vm) -> "dict[str, int]":
     """이 런이 쓰는 Template·Binding 판본(§13-7, 재작성 F7 판정 I).
 
@@ -1244,6 +1283,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
             # 다른 실행 입력이다(§2 충돌 B). 승인 결속(F5 판정 I)이 같은 값을 쓴다.
             "selection_key": self._selection_key(),
+            # **이 마운트의 정체**(#363 리뷰 P2) — 결과 처분(§2.18)의 데이터 성분이 소비한다.
+            # 표시 라벨(`data_source_label`)로는 못 가른다: 같은 basename 의 다른 파일·같은
+            # 통합문서의 다른 시트·같은 경로의 바뀐 내용이 전부 같은 문자열이라, 데이터를
+            # 갈아 끼워도 「교체」로 안 읽히고 결과가 남의 데이터에 붙은 채 남는다.
+            # 값은 **마운트 세대**다(`_reset_range_for_snapshot` 단조 증가 — 호출자는
+            # `load_data_path`·`_after_pool_load` 둘뿐이라 마운트 ⟺ 세대 변화). 경로·시트
+            # 정체를 여기서 다시 조립하지 않는 이유가 둘: ①어느 파일인가와 무관하게
+            # **다시 읽었다**는 사실 자체가 교체이므로 세대가 더 정확하다(같은 경로 재읽기도
+            # 새 레코드다) ②경로 정체성 축은 §5.3/#347 이 재편 중이라 두 정의가 생긴다.
+            # 승인 범위 키(`_review_scope_key`)가 같은 세대를 쓰는 것도 같은 근거다.
+            "data_mount": self._snapshot_gen,
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -2373,6 +2423,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "ok": True,
             "status": status,
             "title": _run_title(status, cancelled, batch.succeeded, failed_n),
+            # 퇴장 요약(§2.18) — 결과가 물러난 뒤 남는 유일한 흔적이라 **수치를 하나도
+            # 흘리지 않는다**. 제목과 목적이 달라 합성기가 따로다(둘 다 Python 소유).
+            "exit_summary": _run_exit_summary(
+                status, cancelled, batch.succeeded, failed_n,
+                batch.total - attempted, attempted, batch.total,
+            ),
             # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
             # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
             "stage": "",
@@ -2450,6 +2506,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "ok": True,
             "status": "failed",
             "title": _run_title("failed", False, 0, n),
+            # 시도가 0 이라 성공/실패로 가르지 않는다 — 이 페이로드는 같은 레코드를
+            # `failed` 와 `unstarted` 에 동시에 세므로 이어 붙이면 같은 건을 두 번 말한다.
+            "exit_summary": _run_exit_summary("failed", False, 0, n, n, 0, n),
             "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
             "level": "danger",
             "stage": "생성 시작 전",

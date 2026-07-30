@@ -133,6 +133,17 @@ MODAL_LABELLEDBY = {
 }
 
 
+def _strip_js_comments(src: str) -> str:
+    """JS 소스에서 주석을 걷는다 — **금지 이름 검사의 전처리**.
+
+    이 저장소의 주석은 죽은 이름·함정을 일부러 적어 둔다(`.job-item` 산출자 0곳,
+    구 표시 라벨 파생의 위험 등). 그것을 규칙으로 세면 설명이 계약을 깨는 거짓 실패가
+    난다 — CSS 쪽 `_web_css.strip_comments` 와 같은 규율의 JS 판이다.
+    """
+    no_block = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return re.sub(r"//[^\n]*", "", no_block)
+
+
 class _IdCollector(HTMLParser):
     """모든 요소의 ``id`` 속성값을 등장 순서대로 수집(중복 포함)."""
 
@@ -700,15 +711,88 @@ def test_job_overwrite_keeps_busy_lock_through_modal():
 
 
 def test_job_completion_zone_reset_gated_by_session_change():
-    """리뷰 #3 회귀 가드: 완료 존 리셋이 매 push 가 아니라 세션 변경에 결속된다(결정 7).
+    """결과 처분은 지문 **성분별 2분기**다(U2 §2.18 · #340) — 매 push 무조건 리셋 금지(결정 7).
 
     작업 화면은 REFRESH_ON_NAV 에 있어 레일 복귀마다 full re-push 가 돈다 — 리셋이 무조건이면
-    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 세션 지문
-    (``sessionKey``)이 바뀔 때만 리셋해야 한다.
+    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 지문이 갈린
+    경우의 처분은 성분별로 갈린다: 작업 전환·데이터 교체 = **초기화**(+ 퇴장 한 줄), 선택·
+    규칙·저장 폴더 = **강등 유지**(판정 G 의 자기모순 논거가 사는 축 — 「실패한 N건만 선택」이
+    자기 결과를 없애면 안 된다). 이름 변경은 전환이 아니다(주체 `own` 이 이름을 추종한다).
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "function sessionKey(" in src, "완료 존 세션 지문(sessionKey)이 없습니다(#3)."
-    assert "key !== lastSessionKey" in src, "리셋이 세션 변경에 결속되지 않았습니다(#3)."
+    # 지문은 단일 문자열이 아니라 성분 구조다(§2.18) — 문자열 하나로는 무엇이 갈렸는지 모른다.
+    key_fn = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
+    assert '.join("|")' not in key_fn, "세션 지문이 단일 문자열로 접혔습니다 — 성분 판독 불가(§2.18)."
+    for comp in ("job:", "data:", "out:", "sel:", "rules:", "own:"):
+        assert comp in key_fn, f"세션 지문 성분 누락: {comp}"
+    # 데이터 성분은 **정체**(Python 이 낸 마운트 세대)이지 표시 라벨이 아니다(#363 리뷰 P2):
+    # `data_source_label` 은 「파일: <basename>」이라 같은 이름의 다른 파일·같은 통합문서의
+    # 다른 시트·같은 경로 재읽기가 전부 같은 문자열이고, 그러면 「데이터 교체 = 초기화」가
+    # 그 경우들에서 서지 않는다. 표면이 경로·시트로 정체를 다시 조립해도 안 된다(두 층 판정).
+    assert "data: s.data_mount" in key_fn, "데이터 성분이 마운트 정체가 아닙니다(§2.18 · #363)."
+    # 금지 이름은 **코드에서만** 센다 — 주석은 죽은 이름을 일부러 남겨 함정을 설명하므로
+    # (`.job-item`·`.mir-row.miss` 선례와 같은 규율) 그것을 규칙으로 세면 거짓 실패가 난다.
+    key_code = _strip_js_comments(key_fn)
+    for banned in ("data_source_label", "data_target", "data_label"):
+        assert banned not in key_code, (
+            f"세션 지문이 {banned} 에서 파생됩니다 — 표시 라벨·자체 조립은 정체가 아닙니다"
+            "(같은 basename 의 다른 파일이 교체로 안 읽힙니다)."
+        )
+    assert "disposeResultBySession(lastSessionKey, key)" in src, (
+        "처분이 성분별 판정 단일 지점을 지나지 않습니다(§2.18)."
+    )
+    dispose = src.split("function disposeResultBySession", 1)[1].split("\n  }", 1)[0]
+    # 초기화 축(작업 전환·데이터 교체)과 강등 축(선택·규칙·저장 폴더)이 각각 실재해야 한다.
+    assert "prev.data !== next.data" in dispose and "resetGenResult()" in dispose, (
+        "데이터 교체가 결과를 초기화하지 않습니다(§2.18 — 링1 은 이미 증거를 죽였다)."
+    )
+    assert "next.own !== next.job" in dispose, (
+        "작업 축 판정이 개명(주체 추종)과 전환을 가르지 않습니다 — 이름만 바꿔도 결과가 죽습니다."
+    )
+    assert "markResultStale()" in dispose, "선택·규칙·저장 폴더 축의 강등 유지가 사라졌습니다(판정 G)."
+    for comp in ("prev.out !== next.out", "prev.sel !== next.sel", "prev.rules !== next.rules"):
+        assert comp in dispose, f"강등 축 성분 비교 누락: {comp}"
+    # 초기화의 퇴장 한 줄(경로 포함)은 리셋 **뒤에** 적는다 — 리셋이 실행 기록을 비우므로
+    # 순서가 뒤집히면 한 줄이 함께 지워져 소멸이 조용해진다.
+    assert "resultExitLine(RESULT," in dispose, (
+        "퇴장 한 줄이 그 결과를 인자로 받지 않습니다 — 순수 합성기 계약(네 태 되읽기)."
+    )
+    assert dispose.index("resetGenResult()") < dispose.index("if (exit) log(exit)"), (
+        "퇴장 한 줄이 리셋 전에 적혀 함께 지워집니다."
+    )
+    exit_fn = src.split("function resultExitLine", 1)[1].split("\n  }", 1)[0]
+    exit_code = _strip_js_comments(exit_fn)
+    assert "r.out_dir" in exit_code, (
+        "퇴장 한 줄이 경로를 재진술하지 않습니다(§2.18 — 손으로 고른 저장 폴더의 마지막 보관처)."
+    )
+    # 수치 몸통은 **Python 이 낸 퇴장 요약**을 그대로 쓴다(#363 리뷰 P2 2차): 구획
+    # 제목은 머리라 일부러 짧아(취소 갈래가 실패 수를 접고 `failed` 태가 수치를 통째로
+    # 생략) 초기화 뒤 남는 유일한 흔적이 되기엔 손실 함수다. 표면에서 되메우면 수치를
+    # 두 층이 조립하게 되므로, 목적이 다른 합성기를 Python 에 두고 여기서는 고르기만 한다.
+    assert "r.exit_summary" in exit_code, "퇴장 한 줄이 Python 퇴장 요약을 쓰지 않습니다."
+    # 요약이 없는 실행 결과를 **조용히 건너뛰지 않는다**: 이 줄이 유일한 흔적이라 침묵은
+    # 소멸을 흔적 없이 지우는 것이다(confirm-or-alarm). 수치는 지어내지 않고 모른다고 적는다.
+    assert "수치 요약 없음" in exit_fn, (
+        "요약 없는 결과에서 퇴장 한 줄이 조용히 사라집니다 — 소멸의 유일한 흔적입니다."
+    )
+    for banned in ("r.total", "r.title", "r.succeeded", "r.failed", "r.unstarted"):
+        assert banned not in exit_code, (
+            f"퇴장 한 줄이 수치를 표면에서 재조립합니다({banned}) — 합성기가 두 층에 생깁니다."
+        )
+    # 순수 합성기 — 실앱 게이트가 네 태의 산출을 되읽는다(overwriteBody·guardBody 와 같은 자리).
+    assert "function resultExitLine(r, owner)" in src, (
+        "퇴장 한 줄이 모듈 상태를 읽습니다 — 네 태를 되읽을 seam 이 사라집니다."
+    )
+    assert "resultExitLine," in src.split("window.JobScreen = {", 1)[1], (
+        "퇴장 한 줄 합성기가 실앱 게이트에 노출되지 않았습니다."
+    )
+    # 「결과 닫기」(명시 파기)는 로그 한 줄을 남기지 않는다(§2.18 파기 대칭) — 닫기 핸들러가
+    # 퇴장 한 줄 경로를 타면 치우라는 행동이 흔적을 남긴다.
+    close_wire = src.split('$("jobResultClose").addEventListener', 1)[1].split("});", 1)[0]
+    assert "resultExitLine" not in close_wire and "log(" not in close_wire, (
+        "「결과 닫기」가 로그 흔적을 남깁니다(§2.18 파기 대칭 위반)."
+    )
     # 옛 무조건 리셋(if (!generating) resetGenResult();)이 남아 있으면 안 된다.
     assert "if (!generating) resetGenResult()" not in src, (
         "무조건 완료 존 리셋이 남아 있습니다 — nav 복귀마다 생성 리포트 소멸(리뷰 #3, 결정 7)."

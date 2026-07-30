@@ -15,7 +15,7 @@
   const $ = (id) => document.getElementById(id);
   let LAST = null;
   let generating = false;
-  let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 세션 변경 시에만 리셋
+  let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 성분별 지문(U2 §2.18)
   let restateExpanded = false;  // 재진술 블록 이름 목록 펼침(대량 표본+「외 N건」, 결정 36)
   let lastRestateKey = null;    // 펼침 리셋 판정 — 작업/데이터 전환 시 펼침을 끈다(세션 누수 방지)
   let mirrorRowCount = 0;       // 420px 실측 캡의 현재 필드 수(#272)
@@ -99,18 +99,20 @@
       // 실제로 바뀔 때만 무효화한다. 탭 이탈 후 복귀(REFRESH_ON_NAV 재push)는 세션 불변이라
       // 결과가 살아남고(리뷰 #3: 결정 7 위배 봉합), 작업·데이터·선택 변경(#28 UD-10)에서만
       // 이전 결과를 지운다. nav 는 CSS 토글이라 DOM 은 어차피 살아있다.
+      // 처분은 성분별 2분기다(U2 §2.18) — 판정 G(강등)는 선택 축의 자기모순을 막는
+      // 논거였는데 5성분 전부를 덮은 과적용이었다. 작업 전환·데이터 교체는 링1 이 이미
+      // 증거를 죽였으므로(§19.10 — 남는 것은 웹 RESULT 강등 사본뿐) **초기화**하고,
+      // 선택·규칙·저장 폴더는 판정 G 의 논거가 사는 축이라 **강등 유지**한다.
       const key = sessionKey(s);
-      // 지문이 갈리면 결과를 **강등**한다(지도 §10.10 판정 G) — 지우지 않는다. 지우면
-      // 「실패한 N건만 선택」이 자기 결과를 없애 무엇을 다시 만드는지 볼 수 없고(선택 변경이
-      // 곧 지문 변경), 그대로 두면 지금 상태의 결과인 척한다(#28 이 막으려던 것). 강등
-      // 표기가 둘 다 만족한다. 명시 파기는 「결과 닫기」 하나뿐이다.
-      if (!generating && key !== lastSessionKey) markResultStale();
+      if (!generating) disposeResultBySession(lastSessionKey, key);
       lastSessionKey = key;
       setBusy(generating);
     });
   }
 
-  /* 결과 명시 파기(「결과 닫기」) — 진행바·구획·실행 기록을 기본 상태로 되돌린다. */
+  /* 결과 파기 — 진행바·구획·실행 기록을 기본 상태로 되돌린다. 호출자는 둘이다:
+     「결과 닫기」(명시 파기 — 로그 무흔적) · 작업 전환/데이터 교체의 자동 초기화
+     (U2 §2.18 — 호출측이 퇴장 한 줄을 이어 적는다). */
   function resetGenResult() {
     $("jobGenBar").style.width = "0%";
     RESULT = null;
@@ -124,20 +126,21 @@
     logStarted = false;
   }
 
-  /* 강등 = 결과는 남고 "직전 실행"이라고 말한다(판정 G). 이미 강등돼 있어도 **다시 그린다**
-     (2R P2): 두 번째 변화가 작업 전환일 수 있고, 그때 결과의 행동 가용성이 달라진다 —
-     한 번 강등했다고 건너뛰면 남의 작업을 겨누는 버튼이 그대로 남는다. */
+  /* 강등 = 결과는 남고 "직전 실행"이라고 말한다(판정 G — §2.18 뒤로는 선택·규칙·저장
+     폴더 축의 처분). 이미 강등돼 있어도 **다시 그린다**(2R P2): 두 번째 변화가 행동
+     가용성을 바꿀 수 있다 — 한 번 강등했다고 건너뛰면 옛 판정의 버튼이 그대로 남는다. */
   function markResultStale() {
     if (!RESULT) return;
     RESULT.stale = true;
     renderResultPanel();
   }
 
-  /* 세션 지문 — 완료 존 보존 판정(결정 7). 작업·데이터·저장 폴더·선택 집합이 그대로면 같은
-     세션이라 이전 생성 결과가 유효하다. 선택은 정확한 인덱스 집합으로(개수만으론 행 교체를
-     놓친다). 작업 미선택이면 빈 문자열 = 세션 없음. */
+  /* 세션 지문 — 완료 존 처분 판정(결정 7 · U2 §2.18). 성분 5개와 값은 종전 그대로이고
+     **모양만 구조**다: `join("|")` 단일 문자열로는 무엇이 갈렸는지 몰라 성분별 처분(작업
+     전환·데이터 교체=초기화 / 선택·규칙·저장 폴더=강등)을 지을 수 없다. 선택은 정확한
+     인덱스 집합으로(개수만으론 행 교체를 놓친다). 작업 미선택이면 null = 세션 없음. */
   function sessionKey(s) {
-    if (!s.has_job) return "";
+    if (!s.has_job) return null;
     // 선택 성분은 **Python 이 낸 커밋 지문**(`selection_key`)이다 — 표에서 세지 않는다.
     // 표의 `selected` 는 범위 편집기가 열려 있으면 **초안** 표지라(F3 판정 D), 그걸로 지문을
     // 만들면 적용도 안 한 편집이 직전 실행 결과를 「직전 실행」으로 강등시키고 취소해도
@@ -145,8 +148,84 @@
     // 규칙 지문도 성분이다(6R P2) — 결과가 「지금 결과」로 남으려면 그것을 만든 규칙이 아직
     // 그 규칙이어야 한다. 편집기에서 고치고 돌아오면 재적재가 규칙을 갈아 끼우는데, 이
     // 성분이 없으면 다른 규칙으로 만든 결과가 후속 행동까지 열어 둔 채 「지금」으로 남는다.
-    return [s.job_name, s.data_source_label, s.out_dir,
-            s.selection_key || "", s.rules_key || ""].join("|");
+    // `own`(직전 런의 주체)은 지문 성분이 아니라 **작업 축의 판독 보조**다: 이름 변경은
+    // 주체가 추종하므로(3R P2) 전환과 갈라 읽을 수 있다 — 개명은 파기가 아니다.
+    return {
+      job: s.job_name,
+      // 데이터 성분은 **정체**이지 표시 라벨이 아니다(#363 리뷰 P2): `data_source_label`
+      // 은 「파일: <basename>」이라 같은 이름의 다른 파일·같은 통합문서의 다른 시트·같은
+      // 경로의 바뀐 내용이 전부 같은 문자열이고, 그러면 §2.18 의 「데이터 교체 = 초기화」가
+      // 그 경우들에서 서지 않아 결과가 **남의 데이터에 붙은 채** 강등도 아닌 상태로 남는다.
+      // 값은 Python 이 낸 마운트 세대(`data_mount`) 하나 — 표면이 경로·시트로 정체를 다시
+      // 조립하지 않는다(같은 상태를 두 층이 판정하지 않게, 그리고 경로 정체성 축은 §5.3 이
+      // 재편 중이다).
+      data: s.data_mount,
+      out: s.out_dir,
+      sel: s.selection_key || "",
+      rules: s.rules_key || "",
+      own: s.last_run_job || "",
+    };
+  }
+
+  /* 결과 처분 — 지문 성분별 2분기(U2 §2.18).
+     작업 전환·데이터 교체 = **초기화**: 링1 은 이미 지웠고(`_last_generated`·`_last_failed`
+     — §19.10 "잃는 것은 실행 증거뿐") 웹 RESULT 만 강등 사본으로 남는 형상이었다.
+     선택·규칙·저장 폴더 = **강등 유지**: 「실패한 N건만 선택」이 자기 결과를 없애면
+     무엇을 다시 만드는지 볼 수 없다(선택 변경이 곧 지문 변경 — 판정 G 의 논거가 사는 축).
+     이름 변경은 전환이 아니다 — 주체(`own`)가 이름을 추종하므로 job 성분이 갈려도
+     주체=열린 작업이면 강등 축으로 내린다. */
+  function disposeResultBySession(prev, next) {
+    if (!RESULT || prev === null) return;   // 결과 없음 · 직전 비교군 없음(첫 렌더)
+    const jobSwitched = next === null ||
+      (prev.job !== next.job && next.own !== next.job);
+    if (jobSwitched || (next !== null && prev.data !== next.data)) {
+      // 초기화 시 퇴장 한 줄(§2.18) — 사용자가 요청하지 않은 소멸이라 흔적을 남긴다.
+      // 받는 것은 결과의 사본이 아니라 「결과가 세션에서 물러났다」는 사건과 그때의
+      // 경로다(저장 폴더를 손으로 골랐던 런은 그 경로의 유일한 보관처가 결과 존이었다).
+      // 리셋 전에 조립한다(RESULT 를 읽는다). 리셋이 실행 기록도 비우므로 로그는 리셋
+      // **뒤에** 적는다 — 이 한 줄도 세션 스코프다(영구 증거는 fill-ledger sidecar 몫).
+      const exit = resultExitLine(RESULT, (LAST && LAST.last_run_job) || "");
+      resetGenResult();
+      if (exit) log(exit);
+      return;
+    }
+    if (prev.job !== next.job || prev.out !== next.out ||
+        prev.sel !== next.sel || prev.rules !== next.rules) {
+      markResultStale();
+    }
+  }
+
+  /* 퇴장 한 줄 합성 — 「'발주요청서' 10개 성공 · 2개 실패 — C:\…\Results」.
+
+     **수치를 여기서 다시 조립하지 않는다**(#363 리뷰 P2). 종전엔 `total` 을 「N건 생성」
+     으로 적었는데 그 값은 **대상 수**이지 만들어진 수가 아니다: 12건 배치를 첫 건 전에
+     취소하면 실제 생성 0건인데 「12건 생성」이라고 말했다. 결과 구획은 그 직후 초기화되므로
+     **그 거짓 진술이 유일하게 남는 흔적**이 된다(confirm-or-alarm 정면).
+
+     그래서 수치 몸통은 Python 이 낸 **퇴장 요약**(`exit_summary`)을 그대로 쓴다.
+     구획 제목(`title`)이 아닌 이유(#363 2차 리뷰): 제목은 구획 **머리**라 일부러 짧아
+     취소 갈래가 실패 수를 접고 `failed` 태가 수치를 통째로 생략한다 — 화면에서는 옆의
+     요약·실패 행이 그것을 말하므로 손실이 아니지만, 결과가 초기화된 **뒤**에는 그 옆이
+     없다. 손실 함수를 표면에서 되메우면 수치를 두 층이 조립하게 되므로, 목적이 다른
+     합성기를 Python 에 하나 더 두고 여기서는 고르기만 한다.
+
+     거절(rejected)·진행(running) 태는 생성 자체가 없어 적을 것이 없다(빈 문자열 —
+     그 결과들은 `exit_summary` 를 애초에 싣지 않는다).
+     「결과 닫기」(명시 파기)는 이 경로를 타지 않는다 — 치우라는 행동이 흔적을 남기면
+     반만 듣는 것이 된다(§2.18 파기 대칭).
+
+     **순수 합성기**다(인자만 읽는다): 실앱 게이트가 태별 산출을 되읽어 문안 드리프트를
+     막는다(overwriteBody·guardBody 와 같은 자리). */
+  function resultExitLine(r, owner) {
+    // 생성이 아닌 태(진행·거절)만 조용하다 — 적을 실행이 애초에 없다.
+    if (!r || r.running || r.rejected) return "";
+    const who = owner ? `'${owner}' ` : "";
+    const dir = r.out_dir ? ` — ${r.out_dir}` : "";
+    // 요약 없는 **실행 결과**는 조용히 넘기지 않는다: 이 줄이 유일한 흔적이라 침묵하면
+    // 소멸 자체가 흔적 없이 사라진다(§2.18 이 이 줄을 세운 이유가 그것이다). 수치를
+    // 지어내지 않고 **모른다고 적는다** — 「원인 진단 미연결」과 같은 정직 강등이다.
+    const body = r.exit_summary || "생성 결과가 세션에서 물러났습니다(수치 요약 없음)";
+    return `${who}${body}${dir}`;
   }
 
   /* ---- 세션 표면 동기화 ---- */
@@ -1722,7 +1801,9 @@
 
     // ---- 결과 3태 구획의 행동 3종(F4) ----
     $("jobResultClose").addEventListener("click", () => {
-      resetGenResult();                 // 명시 파기 = 유일한 파기 경로(판정 G)
+      // 명시 파기 — 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭): 치우라는 행동이
+      // 흔적을 남기면 반만 듣는 것이 된다. 자동 초기화(작업 전환·데이터 교체)만 적는다.
+      resetGenResult();
       // 닫은 뒤 포커스는 **실 DOM 에 착지**한다(계약면 3). 다음 행동은 생성이지만 게이트가
       // 닫혀 있으면 그 버튼은 disabled 라 focus() 가 조용히 실패하고 body 로 떨어진다 —
       // 그때는 구획 자신(존 컨테이너)이 받는다: 사용자를 방금 있던 문맥에 남긴다.
@@ -1798,7 +1879,7 @@
   // renderResult 는 결과 3태 구획의 유일한 입구다(F4) — 실앱 게이트가 Python 이 내는
   // 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실 WebView2 에서 서는지 되읽는다.
   window.JobScreen = {
-    init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
+    init, overwriteBody, guardBody, resultExitLine, confirmDataSwapIfArmed, openJob,
     refreshList,
     openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
     // 미리보기 복귀 seam(1R P2) — 편집기가 「미리보기로 돌아가기」라고 적은 이상 실제로
