@@ -786,6 +786,9 @@
   // 사용자가 취소한 전환이 뒤늦게 일어나고, 표식까지 남아 다음 닫기의 착지를 오염시킨다.
   // 열림·닫힘마다 올려서, 큐가 자기 세대가 아니면 조용히 접는다(전이 없음 = 파괴 없음).
   let browseOpenGen = 0;
+  // 닫힘 **완료 뒤** 이어 갈 전이 1슬롯(리뷰 4R) — 면을 떠나며 다른 모달을 여는 흐름은
+  // 여기 실려 닫힘과 겹치지 않는다. 소비는 onClose 한 지점(착지 결정과 같은 자리).
+  let browseAfterClose = null;
 
   function focusAfterPick(name) {
     // 이름이 비면(단순 닫기) 카드 후보를 건너뛰고 출구 → 생성 버튼 순으로 내려간다.
@@ -803,6 +806,7 @@
 
   function openBrowseSheet(e) {
     browseOpenGen += 1;
+    browseAfterClose = null;   // 새 개폐는 지난 개폐의 미소비 의도를 물려받지 않는다
     window.Modal.open("jobBrowseSheet", {
       initialFocus: $("jobBrowseQuery"),
       // 노드를 붙잡아 두지 않는다(리뷰 6R P2): 면 안에서 탭·검색을 한 번이라도 하면 그 사이
@@ -817,6 +821,16 @@
         const n = browsePickedName;
         browsePickedName = "";
         focusAfterPick(n);
+        // **다음 전이는 닫힘이 끝난 뒤에 시작한다**(리뷰 4R): 이 콜백은 닫힘 경로 전부에서
+        // **무조건** 배경으로 초점을 옮긴다. 그 사이 다른 모달(폐기 확인)이 이미 열려
+        // 있으면 키보드 초점이 그 모달 **뒤**로 새 나간다 — 트랩 탈출이다. Modal 은 자기
+        // `returnFocus` 를 `wasTop` 으로 지키지만 앱 콜백까지는 못 지킨다(못 지키는 게
+        // 맞다 — 무엇을 겨눌지는 이 화면만 안다). 그래서 겹치는 창을 **순서로** 없앤다:
+        // 착지가 끝난 이 자리가 다음 흐름의 출발선이고, 그 흐름이 기억할 복귀점도
+        // 방금 세운 실재하는 초점이다.
+        const next = browseAfterClose;
+        browseAfterClose = null;
+        if (next) next();
       },
     });
   }
@@ -1704,15 +1718,20 @@
     $("jobBrowseRows").addEventListener("click", (e) => {
       // 확인 필요 행(판정 E) — 선택이 아니라 **새 작업 마법사**로 간다. 선택 경로의 규율
       // (성사 뒤 닫기)을 따르지 않고 **먼저 닫는** 이유는 잃는 것이 다르기 때문이다: 이
-      // 면의 상태(탭·검색어)는 Python 세션 소유라 다시 열면 그대로 서고, 반대로 성사 뒤에
-      // 닫으면 이미 편집기로 전환된 뒤에 닫힘 포커스 착지가 **숨은 화면의 버튼**을 겨눈다.
-      // 취소해도 사용자는 같은 자리(후보 줄 출구)에 포커스를 든 채 남는다.
+      // 면의 상태(탭·검색어)는 Python 세션 소유라 다시 열면 그대로 선다. 반대로 성사 뒤에
+      // 닫으면 이미 편집기로 전환된 뒤에 닫힘 착지가 **숨은 화면의 버튼**을 겨눈다.
+      //
+      // 다만 「먼저」가 「겹쳐서」는 아니다(리뷰 4R): 닫는 **중에** 폐기 확인을 열면 뒤이어
+      // 도착한 닫힘 착지가 그 모달 **뒤 배경**으로 초점을 옮겨 트랩을 탈출시킨다. 그래서
+      // 흐름을 닫힘 완료 슬롯에 실어 **닫힌 다음에** 시작한다 — 두 근거(숨은 화면 겨눔 ·
+      // 모달 뒤 배경 겨눔)는 같은 원인의 양면이고, 순서 하나로 둘 다 닫힌다.
       const mk = e.target.closest("[data-browse-new]");
       if (mk) {
         const nm = mk.getAttribute("data-browse-new");
         const cols = mk.getAttribute("data-missing-cols") || "";
+        const ev = { "확인 필요였던 작업": nm, "현재 데이터에 없는 열": cols };
+        browseAfterClose = () => newWorkFromData(ev);
         window.Modal.close("jobBrowseSheet");
-        newWorkFromData({ "확인 필요였던 작업": nm, "현재 데이터에 없는 열": cols });
         return;
       }
       const pick = e.target.closest("[data-browse-pick]");

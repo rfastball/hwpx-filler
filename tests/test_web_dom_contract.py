@@ -1181,6 +1181,46 @@ def test_every_new_work_entrance_passes_the_same_handoff_gate():
     )
 
 
+def test_browse_sheet_starts_the_next_flow_only_after_it_finished_closing():
+    """#349 리뷰 4R — 닫히는 면 위에 확인 모달을 겹치지 않는다(초점 트랩 탈출 금지).
+
+    탐색 면의 `onClose` 는 닫힘 경로 **전부**에서 무조건 배경으로 초점을 옮긴다(착지 결정은
+    닫힘 1지점이라는 이 화면의 규율). 그래서 닫는 **중에** 폐기 확인을 열면, 뒤이어 도착한
+    그 착지가 모달 **뒤 배경**(`#jobBrowseOpen`)으로 초점을 옮겨 키보드 사용자가 트랩을
+    벗어난다. `Modal` 은 자기 `returnFocus` 를 `wasTop` 으로 지키지만 앱 콜백까지는 지킬 수
+    없다 — 무엇을 겨눌지는 이 화면만 안다. 그래서 겹치는 창을 **순서로** 없앤다.
+
+    이 단언이 세는 것은 「지금 초점이 어디 있나」(실렌더 층의 질문)가 아니라 **「겹칠 수 있는
+    배선인가」**다: 확인을 여는 흐름이 닫힘 완료 슬롯을 거치지 않고 직접 불리면 실패한다.
+    """
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+
+    # ① 확인 필요 행은 흐름을 **예약**한다 — 같은 줄에서 닫으며 곧바로 부르지 않는다.
+    rows_at = job_js.index('$("jobBrowseRows").addEventListener')
+    branch = job_js[rows_at:job_js.index("data-browse-pick]", rows_at)]
+    for m in re.finditer(r"newWorkFromData\(", branch):
+        line = branch[branch.rfind("\n", 0, m.start()): branch.find("\n", m.start())]
+        assert "browseAfterClose" in line, (
+            "확인 필요 행이 닫힘과 겹쳐 흐름을 시작합니다 — 닫힘 착지가 모달 뒤로 샙니다:"
+            f" {line.strip()!r}"
+        )
+    assert branch.index("browseAfterClose =") < branch.index('Modal.close("jobBrowseSheet")'), (
+        "예약보다 닫기가 먼저 서면 예약이 이번 닫힘에 실리지 않습니다."
+    )
+    # ② 소비는 닫힘 1지점, 그리고 **착지 뒤**다 — 흐름이 기억할 복귀점이 실재해야 한다.
+    close_cb = job_js[job_js.index("onClose: () => {", job_js.index("function openBrowseSheet")):]
+    close_cb = close_cb[:close_cb.index("\n      },")]
+    assert "focusAfterPick(" in close_cb and "if (next) next();" in close_cb
+    assert close_cb.index("focusAfterPick(") < close_cb.index("if (next) next();"), (
+        "닫힘 착지보다 다음 흐름이 먼저 섭니다 — 그 흐름이 기억하는 복귀점이 사라진 노드입니다."
+    )
+    # ③ 슬롯은 새 개폐로 넘어가지 않는다 — 미소비 의도가 다음 닫힘에 뒤늦게 실행되면
+    #    사용자가 하지 않은 전이가 일어난다(개폐 세대 규율과 같은 근거).
+    open_fn = job_js[job_js.index("function openBrowseSheet"):]
+    open_fn = open_fn[:open_fn.index("\n  }")]
+    assert "browseAfterClose = null" in open_fn, "새 개폐가 지난 의도를 물려받습니다."
+
+
 def test_job_data_first_prework_surface_contract():
     """데이터-우선(§18.2) 정적 계약 — 후보 구획 실재·빈 패널 은퇴·무작업 렌더 배선.
 
