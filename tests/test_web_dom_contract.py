@@ -700,15 +700,51 @@ def test_job_overwrite_keeps_busy_lock_through_modal():
 
 
 def test_job_completion_zone_reset_gated_by_session_change():
-    """리뷰 #3 회귀 가드: 완료 존 리셋이 매 push 가 아니라 세션 변경에 결속된다(결정 7).
+    """결과 처분은 지문 **성분별 2분기**다(U2 §2.18 · #340) — 매 push 무조건 리셋 금지(결정 7).
 
     작업 화면은 REFRESH_ON_NAV 에 있어 레일 복귀마다 full re-push 가 돈다 — 리셋이 무조건이면
-    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 세션 지문
-    (``sessionKey``)이 바뀔 때만 리셋해야 한다.
+    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 지문이 갈린
+    경우의 처분은 성분별로 갈린다: 작업 전환·데이터 교체 = **초기화**(+ 퇴장 한 줄), 선택·
+    규칙·저장 폴더 = **강등 유지**(판정 G 의 자기모순 논거가 사는 축 — 「실패한 N건만 선택」이
+    자기 결과를 없애면 안 된다). 이름 변경은 전환이 아니다(주체 `own` 이 이름을 추종한다).
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "function sessionKey(" in src, "완료 존 세션 지문(sessionKey)이 없습니다(#3)."
-    assert "key !== lastSessionKey" in src, "리셋이 세션 변경에 결속되지 않았습니다(#3)."
+    # 지문은 단일 문자열이 아니라 성분 구조다(§2.18) — 문자열 하나로는 무엇이 갈렸는지 모른다.
+    key_fn = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
+    assert '.join("|")' not in key_fn, "세션 지문이 단일 문자열로 접혔습니다 — 성분 판독 불가(§2.18)."
+    for comp in ("job:", "data:", "out:", "sel:", "rules:", "own:"):
+        assert comp in key_fn, f"세션 지문 성분 누락: {comp}"
+    assert "disposeResultBySession(lastSessionKey, key)" in src, (
+        "처분이 성분별 판정 단일 지점을 지나지 않습니다(§2.18)."
+    )
+    dispose = src.split("function disposeResultBySession", 1)[1].split("\n  }", 1)[0]
+    # 초기화 축(작업 전환·데이터 교체)과 강등 축(선택·규칙·저장 폴더)이 각각 실재해야 한다.
+    assert "prev.data !== next.data" in dispose and "resetGenResult()" in dispose, (
+        "데이터 교체가 결과를 초기화하지 않습니다(§2.18 — 링1 은 이미 증거를 죽였다)."
+    )
+    assert "next.own !== next.job" in dispose, (
+        "작업 축 판정이 개명(주체 추종)과 전환을 가르지 않습니다 — 이름만 바꿔도 결과가 죽습니다."
+    )
+    assert "markResultStale()" in dispose, "선택·규칙·저장 폴더 축의 강등 유지가 사라졌습니다(판정 G)."
+    for comp in ("prev.out !== next.out", "prev.sel !== next.sel", "prev.rules !== next.rules"):
+        assert comp in dispose, f"강등 축 성분 비교 누락: {comp}"
+    # 초기화의 퇴장 한 줄(경로 포함)은 리셋 **뒤에** 적는다 — 리셋이 실행 기록을 비우므로
+    # 순서가 뒤집히면 한 줄이 함께 지워져 소멸이 조용해진다.
+    assert "resultExitLine()" in dispose
+    assert dispose.index("resetGenResult()") < dispose.index("if (exit) log(exit)"), (
+        "퇴장 한 줄이 리셋 전에 적혀 함께 지워집니다."
+    )
+    exit_fn = src.split("function resultExitLine", 1)[1].split("\n  }", 1)[0]
+    assert "r.out_dir" in exit_fn and "건 생성" in exit_fn, (
+        "퇴장 한 줄이 경로·건수를 재진술하지 않습니다(§2.18 — 손으로 고른 저장 폴더의 마지막 보관처)."
+    )
+    # 「결과 닫기」(명시 파기)는 로그 한 줄을 남기지 않는다(§2.18 파기 대칭) — 닫기 핸들러가
+    # 퇴장 한 줄 경로를 타면 치우라는 행동이 흔적을 남긴다.
+    close_wire = src.split('$("jobResultClose").addEventListener', 1)[1].split("});", 1)[0]
+    assert "resultExitLine" not in close_wire and "log(" not in close_wire, (
+        "「결과 닫기」가 로그 흔적을 남깁니다(§2.18 파기 대칭 위반)."
+    )
     # 옛 무조건 리셋(if (!generating) resetGenResult();)이 남아 있으면 안 된다.
     assert "if (!generating) resetGenResult()" not in src, (
         "무조건 완료 존 리셋이 남아 있습니다 — nav 복귀마다 생성 리포트 소멸(리뷰 #3, 결정 7)."

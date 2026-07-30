@@ -1709,27 +1709,47 @@ _JOB_RESULT_PROBE_JS = r"""
     window.JobScreen.markResultStale();
     out.stale_shown = !document.getElementById('jobResultStale').hidden;
     out.alive_after_stale = !document.getElementById('jobResult').hidden;
-    // 세션이 **다른 작업**으로 옮겨가면 결과는 남되 행동만 걷힌다(2R P2) — 편집 진입이
-    // 남의 작업을 겨누고 실패분 선택은 확실한 무동작이 되기 때문. 증거(제목·요약·실패 행)는
-    // 그대로 남고, 강등 문구가 어느 작업의 결과인지 밝힌다.
+    // 처분은 지문 성분별 2분기다(U2 §2.18) — 작업 전환·데이터 교체 = 초기화(+ 퇴장 한 줄),
+    // 선택·규칙·저장 폴더 = 강등 유지. 이름 변경은 전환이 아니다(주체가 이름을 추종한다).
     // ① 이름 변경(3R P2) — 같은 작업인데 정체 표기만 바뀐 경우. 주체가 그 전이를 따라오므로
-    //    행동이 그대로 남아야 한다(여기서 걷히면 사용자는 제 결과를 이어서 못 손댄다).
+    //    결과가 살고 행동이 그대로 남아야 한다(여기서 걷히면 사용자는 제 결과를 이어서 못 손댄다).
     var snapR = JSON.parse(JSON.stringify(window.__jobResultSnap));
     snapR.job_name = '공고서(수정)'; snapR.last_run_job = '공고서(수정)';
     window.__push('job', snapR);
     window.JobScreen.markResultStale();
     out.renamed_rename_shown = !document.getElementById('jobResultRename').hidden;
     out.renamed_failedsel_shown = !document.getElementById('jobResultFailedSel').hidden;
-    // ② 다른 작업으로 전환 — 주체가 다르므로 행동만 걷힌다.
-    var snapB = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    out.renamed_keeps_result = !document.getElementById('jobResult').hidden;
+    // ② 다른 작업으로 전환(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫히고, 실행 기록에
+    //    퇴장 한 줄(주체·건수·경로)이 남는다. 이름 변경 직후라 주체 표기는 '공고서(수정)'.
+    var snapB = JSON.parse(JSON.stringify(snapR));
     snapB.job_name = '둘째';
     window.__push('job', snapB);
+    out.switch_resets_result = document.getElementById('jobResult').hidden;
+    out.switch_exit_line = document.getElementById('jobRunLogLast').textContent;
+    // 강등 렌더러의 주체 방어(3R P2)는 남는다 — 푸시를 거치지 않고 결과가 재수립되는 경로
+    // (직접 renderResult)에서 남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다.
+    window.JobScreen.renderResult(partial);
     window.JobScreen.markResultStale();
     out.foreign_rename_hidden = document.getElementById('jobResultRename').hidden;
     out.foreign_failedsel_hidden = document.getElementById('jobResultFailedSel').hidden;
     out.foreign_evidence_alive = !!document.getElementById('jobResultFail-7');
     out.foreign_stale_names_owner =
       document.getElementById('jobResultStale').textContent.indexOf('공고서') >= 0;
+    // ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
+    window.__push('job', window.__jobResultSnap);   // 비교군 복귀(원 작업 문맥)
+    window.JobScreen.renderResult(partial);
+    var snapSel = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    snapSel.selection_key = '0,1';
+    window.__push('job', snapSel);
+    out.selection_change_keeps_result = !document.getElementById('jobResult').hidden;
+    out.selection_change_demotes = !document.getElementById('jobResultStale').hidden;
+    // ④ 데이터 교체 = 초기화 + 퇴장 한 줄(경로 포함).
+    var snapData = JSON.parse(JSON.stringify(snapSel));
+    snapData.data_label = 'e.csv'; snapData.data_source_label = '파일: e.csv';
+    window.__push('job', snapData);
+    out.data_swap_resets_result = document.getElementById('jobResult').hidden;
+    out.data_swap_exit_line = document.getElementById('jobRunLogLast').textContent;
     window.__push('job', window.__jobResultSnap);   // 비교군 복귀(다음 단계는 같은 작업 문맥)
     window.JobScreen.renderResult(partial);
     // 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 disabled 를 받는가.
@@ -1749,6 +1769,9 @@ _JOB_RESULT_PROBE_JS = r"""
     document.getElementById('jobResultClose').click();
     out.closed = document.getElementById('jobResult').hidden;
     out.close_focus = document.activeElement && document.activeElement.id;
+    // 명시 파기는 퇴장 한 줄을 남기지 않는다(U2 §2.18 파기 대칭) — 실행 기록이 기본 문안으로
+    // 돌아왔는지 되읽는다(자동 초기화 경로만 흔적을 남긴다).
+    out.close_runlog_last = document.getElementById('jobRunLogLast').textContent;
     // 실행 기록은 기본 접힘이되(노이즈 억제) 마지막 한 줄은 접힌 채로 보인다 — 접힘이
     // 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
     out.runlog_collapsed = !document.getElementById('jobRunLog').open;

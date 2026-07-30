@@ -476,14 +476,24 @@ class TestWebSelftestGate:
         assert j["rowless_no_fake_rows"], j
         # ③ 증거는 접혀 서고, 연 뒤에는 재렌더를 건너 열린 채 남는다(계약면 1).
         assert j["evidence_shown"] and j["evidence_open_survives_rerender"], j
-        # ④ 지문 변화 = 강등(파기 아님) — 실패분을 고르는 순간 결과가 사라지면 안 된다.
+        # ④ 지문 변화의 처분은 성분별 2분기다(U2 §2.18) — 강등 표기 자체의 생존 판.
         assert j["stale_shown"] and j["alive_after_stale"], j
         # ⑤ 구획 행동은 생성 중 잠긴다(계약면 2) · ⑥ 닫기 뒤 포커스가 다음 행동에 착지.
-        # 이름만 바뀐 경우는 **같은 작업**이라 행동이 그대로 남는다(3R P2) — 주체 추적이
-        # 정체 변화를 따라오는지 실 렌더로 본다.
+        # 이름만 바뀐 경우는 **같은 작업**이라 결과가 살고 행동이 그대로 남는다(3R P2 ·
+        # §2.18 — 주체가 이름을 추종하므로 개명은 전환이 아니다).
+        assert j["renamed_keeps_result"], j
         assert j["renamed_rename_shown"] and j["renamed_failedsel_shown"], j
-        # 작업 전환 뒤에는 결과가 남되 **행동만 걷힌다**(2R P2) — 편집 진입이 남의 작업을
-        # 겨누거나 실패분 선택이 확실한 무동작이 되는 것을 표면에서 끊는다. 증거는 남는다.
+        # 작업 전환 = **초기화**(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫히고, 실행 기록에
+        # 퇴장 한 줄(주체·건수·경로)이 남는다(사용자가 요청하지 않은 소멸의 흔적).
+        assert j["switch_resets_result"], j
+        assert "3건 생성" in j["switch_exit_line"] and "1건 실패" in j["switch_exit_line"], j
+        assert "공고서(수정)" in j["switch_exit_line"] and "D:\\out" in j["switch_exit_line"], j
+        # 선택 변경 = **강등 유지**(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
+        assert j["selection_change_keeps_result"] and j["selection_change_demotes"], j
+        # 데이터 교체 = **초기화** + 퇴장 한 줄(경로 포함).
+        assert j["data_swap_resets_result"] and "D:\\out" in j["data_swap_exit_line"], j
+        # 강등 렌더러의 주체 방어(3R P2)는 남는다 — 푸시 없이 결과가 재수립되는 방어 경로에서
+        # 남의 작업을 겨누는 버튼이 서지 않는다. 증거는 남는다.
         assert j["foreign_rename_hidden"] and j["foreign_failedsel_hidden"], j
         assert j["foreign_evidence_alive"] and j["foreign_stale_names_owner"], j
         assert j["busy_lock_declared"], j
@@ -493,6 +503,9 @@ class TestWebSelftestGate:
         # 닫기 뒤 포커스는 **실 DOM 에 착지**한다 — body 낙하가 결함이다. 게이트가 닫혀
         # 있으면 생성 버튼이 disabled 라 구획 자신이 받는다(방금 있던 문맥 유지).
         assert j["closed"] and j["close_focus"] in {"jobGenBtn", "jobResultZone"}, j
+        # 「결과 닫기」(명시 파기)는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 치우라는
+        # 행동이 흔적을 남기면 반만 듣는 것이 된다.
+        assert j["close_runlog_last"] == "아직 기록이 없습니다.", j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
         assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], j
         # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
