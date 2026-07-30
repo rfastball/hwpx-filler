@@ -1327,6 +1327,25 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
         "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
     )
+    # **확인 왕복도 정산 뒤에 연다**(§2.17 2R P2): 버리기가 blur 전에 눌릴 수 있게 된 뒤로
+    # (1R), 정산 없이 모달을 열면 큐에 든 `set_*` 이 모달 뒤에 도착해 `#editor-foot` 을 갈아
+    # 끼우고 저장해 둔 트리거가 분리된다 — 취소가 화면 루트로 떨어진다. 정산은 새 기제를
+    # 만들지 않고 goto·leave 와 **같은** `flushPendingEdits` 를 쓴다.
+    discard = editor_js[editor_js.index('case "discard-patch"'):]
+    discard = discard[:discard.index('sendEdit("discard_patch"')]
+    assert "await flushPendingEdits()" in discard, (
+        "버리기가 대기 편집을 정산하지 않고 확인을 엽니다 — 큐의 발신이 모달 뒤에 도착해"
+        " 트리거가 분리되고 취소 착지가 어긋납니다(2R P2)."
+    )
+    assert discard.index("await flushPendingEdits()") < discard.index("Modal.confirm"), (
+        "정산이 확인보다 **뒤에** 섭니다 — 순서가 뒤집히면 정산의 존재가 무의미합니다."
+    )
+    assert 'querySelector(\'#editor-foot [data-act="discard-patch"]\')' in discard, (
+        "정산 뒤 트리거를 다시 잡지 않습니다 — 정산이 부른 재구성으로 옛 참조는 분리됩니다."
+    )
+    assert "returnFocus: trigger" in discard, (
+        "확인이 재획득한 트리거가 아니라 옛 참조로 돌아갑니다."
+    )
     # 복귀는 **규칙을 다시 읽은 뒤** 목적 화면을 노출한다(8R P1 근본 조치). 5R 은 이 순서를
     # 미리보기 복귀에만 세웠고, 그래서 데이터·결과 복귀는 옛 규칙을 든 화면을 내보인 채
     # 「만들기」를 열어 뒀다 — 순서는 **모든** 복귀가 지나는 착지 절차 한 자리에 산다.

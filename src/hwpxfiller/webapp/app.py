@@ -1752,6 +1752,117 @@ _EDITOR_GUARD_PROBE_SETUP_JS = r"""
 """
 
 
+_EDITOR_DISCARD_CANCEL_PROBE_JS = r"""
+(() => {
+  /* 「변경 버리기」의 **취소 뒤 정합**(U2 §2.17 2R P2) — 1R 이 버튼을 blur 전에 눌리게
+     연 자리다. 시나리오: 클린 세션의 이름을 고치고(대기 편집 발생) 곧바로 버리기를 눌러
+     확인을 연 뒤 **취소**한다. 정산 없이 열면 blur 가 큐에 넣은 `set_name` 이 모달이 떠
+     있는 사이 도착해 push→render 가 `#editor-foot` 을 갈아 끼우고, 저장해 둔 트리거가
+     분리돼 취소가 화면 루트로 떨어진다(모달의 대안 착지). 정적 계약은 이 결함을 못 본다:
+     배선·문안·판정이 전부 제자리이고 **비동기 도착 순서**만 어긋난다.
+
+     자기 액션만 스텁하고 복원은 "내 스텁일 때만"(프로브 교차 오염 금지 —
+     [[gate-env-gotchas]]). 모달은 비동기라 완료 표지를 남기고 폴링한다. */
+  const out = { pending: true, calls: [] };
+  window.__editorDiscardCancel = out;
+  const real = window.Bridge.call;
+  const clean = {
+    section: 'filename', sections: ['template', 'binding', 'filename'],
+    reachable: { template: true, binding: true, filename: true },
+    dirty_sections: [], dirty: false, is_draft: false, changes: {},
+    context: { entry_reason: 'voluntary', evidence: {}, return_context: {} },
+    revisions: { template: 1, binding: 2 }, template_path: 'C:/t/공고서.hwpx',
+    template_name: '공고서.hwpx', field_count: 0, fields: [], raw_block: '',
+    gate: null, gate_error: false, notice: null, editing_origin: '공고서',
+    name: '공고서', pattern: '공고서-{{ID}}', pattern_preview: '공고서-1.hwpx',
+    rows: [], source_fields: [], active_source_fields: [], ignored_source_fields: [],
+    sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
+    default_dataset: null, has_unsaved_work: false, dataset_name: '', schema_only: true,
+    counts: { filled: 0, empty: 0, unmapped: 0 }, preview_empties: [],
+    preview_index: 0, preview_count: 0, is_complete: true,
+  };
+  const dirty = Object.assign({}, clean, {
+    dirty: true, dirty_sections: ['template'], has_unsaved_work: true, name: '공고서 수정',
+  });
+  const discardOf = () => document.querySelector('#editor-foot [data-act="discard-patch"]');
+  const mine = function (screen, action, payload) {
+    if (screen !== 'editor') return real(screen, action, payload);
+    out.calls.push(action);
+    if (action === 'set_name') {
+      // 큐에 든 blur 발신이 **늦게** 도착하는 실제 조건을 그대로 만든다: 응답 전 지연 +
+      // 도착 시 dirty 스냅샷 push(= `#editor-foot` 재구성 → 옛 트리거 분리).
+      return new Promise((resolve) => setTimeout(() => {
+        window.__push('editor', dirty);
+        resolve({});
+      }, 120));
+    }
+    return Promise.resolve({});
+  };
+  const finish = (why) => {
+    if (window.Bridge.call === mine) window.Bridge.call = real;
+    try {
+      window.Nav.go('job', { force: true });
+      const home = document.querySelector('.navbtn[data-scr="job"]');
+      if (home) home.focus();
+    } catch (e) { out.teardown_error = String(e && e.message); }
+    out.why = why;
+    out.pending = false;
+  };
+  try {
+    window.Nav.go('editor', { force: true });
+    window.__push('editor', clean);
+    window.Bridge.call = mine;
+    const nameEl = document.getElementById('editorName');
+    if (!nameEl || !discardOf()) { finish('편집 표면 미구성'); return; }
+    // ① 클린 세션에 타이핑 — 대기 편집이 서고 버리기가 열린다(1R 계약).
+    nameEl.focus();
+    nameEl.value = '공고서 수정';
+    nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+    out.discard_enabled_on_typing = !discardOf().disabled;
+    // ② 곧바로 버리기 클릭. 실제 순서 그대로 blur→change(=큐 적재) 뒤 click 이 온다.
+    nameEl.dispatchEvent(new Event('change', { bubbles: true }));
+    nameEl.blur();
+    discardOf().click();
+    let ticks = 0;
+    const step = () => {
+      ticks += 1;
+      const cancel = document.getElementById('confirmModalCancel');
+      const open = !document.getElementById('confirmModal').classList.contains('hidden');
+      if (open && cancel) {
+        // 확인이 열린 시점 = 정산이 끝난 뒤여야 한다: 큐의 set_name 이 이미 도착했으므로
+        // 그 push 의 재구성도 끝났고, 모달이 든 트리거는 **지금 살아 있는** 버튼이다.
+        out.flushed_before_open = out.calls.indexOf('set_name') === 0;
+        out.trigger_connected_at_open = !!(discardOf() && discardOf().isConnected);
+        cancel.click();                                   // ③ 취소
+        setTimeout(() => {
+          // ④ 취소 뒤 정합: 초점이 화면 루트가 아니라 버리기 버튼으로 돌아오고, 친 값과
+          //    dirty 술어(두 버튼 활성)가 그대로다. 취소는 아무것도 버리지 않는다.
+          const active = document.activeElement;
+          out.focus_back_on_discard = !!(active && active.dataset &&
+            active.dataset.act === 'discard-patch');
+          out.focus_fell_to_screen_root = !!(active && active.id === 'scr-editor');
+          const nm = document.getElementById('editorName');
+          out.name_value_after_cancel = nm ? nm.value : null;
+          const save = document.querySelector('#editor-foot [data-act="save"]');
+          out.discard_enabled_after_cancel = !!(discardOf() && !discardOf().disabled);
+          out.save_enabled_after_cancel = !!(save && !save.disabled);
+          out.discarded = out.calls.indexOf('discard_patch') !== -1;
+          finish('완료');
+        }, 300);
+        return;
+      }
+      if (ticks > 60) { finish('모달 미개방'); return; }
+      setTimeout(step, 50);
+    };
+    setTimeout(step, 50);
+  } catch (e) {
+    out.error = 'throw:' + (e && e.message);
+    finish('예외');
+  }
+})()
+"""
+
+
 _EDITOR_CHIP_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -3158,6 +3269,14 @@ def _selftest_drive(window: "object") -> None:
         result["editor_guard"] = _probe_late(
             window, "__editorGuard && !window.__editorGuard.pending",
             "JSON.stringify(window.__editorGuard)",
+        )
+        # 「변경 버리기」 취소 뒤 정합(§2.17 2R P2) — 대기 편집을 정산하고 확인을 여는가.
+        # 비동기 도착 순서의 결함이라 정적 계약이 못 본다: 배선·문안·판정은 다 제자리이고
+        # 큐에 든 blur 발신이 모달 뒤에 도착해 트리거를 분리시키는 것만 어긋난다.
+        window.evaluate_js(_EDITOR_DISCARD_CANCEL_PROBE_JS)  # type: ignore[attr-defined]
+        result["editor_discard_cancel"] = _probe_late(
+            window, "__editorDiscardCancel && !window.__editorDiscardCancel.pending",
+            "JSON.stringify(window.__editorDiscardCancel)",
         )
         # 편집기 「템플릿」 탭 매체 2밴드(F6 PR-B) — TXT 밴드 렌더 + TXT 세션 탭 2개.
         window.evaluate_js(_EDITOR_TXT_BAND_PROBE_SETUP_JS)  # type: ignore[attr-defined]

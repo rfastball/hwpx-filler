@@ -1101,9 +1101,19 @@
           await leaveTo(returnScreen());
           break;
         case "discard-patch": {
+          // 확인을 열기 **전에** 대기 중 편집을 정산한다(2R P2 — 1R 픽스가 연 자리):
+          // 버리기가 blur 전에도 눌리게 되면서, 큐에 든 `set_*` 이 모달이 떠 있는 사이
+          // 도착해 push→render 가 `#editor-foot` 을 갈아 끼운다 — 저장해 둔 트리거가
+          // 분리돼 취소가 화면 루트로 떨어지고(모달의 대안 착지), 판정도 아직 도착하지
+          // 않은 편집 위에서 난다. 정산 기제는 **이미 있는 것을 쓴다**(goto·leave 와 같은
+          // `flushPendingEdits` — 두 벌 만들지 않는다, [[bridge-call-ordering-contract]]).
+          await flushPendingEdits();
+          // 정산이 부른 재구성 **뒤의** 살아 있는 트리거를 다시 잡는다 — 옛 참조는 분리돼
+          // focus() 가 조용한 no-op 이 된다(모달은 결과를 읽어 대안으로 가므로 조용히 어긋난다).
+          const trigger = document.querySelector('#editor-foot [data-act="discard-patch"]') || el;
           if (!(await Modal.confirm({
             body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
-            returnFocus: el, confirmLabel: "변경 버리기", cancelLabel: "취소",
+            returnFocus: trigger, confirmLabel: "변경 버리기", cancelLabel: "취소",
           }))) break;
           await sendEdit("discard_patch", {});
           break;

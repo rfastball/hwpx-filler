@@ -771,6 +771,41 @@ class TestWebSelftestGate:
             f"(발신 기록: {g['calls']!r})."
         )
 
+    def test_discard_confirm_settles_pending_edit_and_cancel_lands_coherently(
+        self, selftest_result: dict
+    ) -> None:
+        # §2.17 2R P2 — 1R 이 버리기를 blur 전에 눌리게 열면서 생긴 자리. 정산 없이 확인을
+        # 열면 큐에 든 `set_name` 이 모달이 떠 있는 사이 도착해 `#editor-foot` 을 갈아
+        # 끼우고, 저장해 둔 트리거가 분리돼 **취소가 화면 루트로 떨어진다**(모달의 대안
+        # 착지 — 키보드 사용자는 화면 처음에서 다시 걸어온다). 정적 계약은 못 본다:
+        # 배선·문안·판정이 전부 제자리이고 **비동기 도착 순서**만 어긋나기 때문이다.
+        d = selftest_result["editor_discard_cancel"]
+        assert d.get("error") is None, f"버리기 취소 프로브 예외: {d.get('error')!r}"
+        assert d.get("why") == "완료", f"버리기 확인이 열리지 않았습니다: {d!r}"
+        assert d["discard_enabled_on_typing"] is True, (
+            "타이핑 직후 버리기가 잠긴 채입니다 — 1R 계약(저장과 같은 술어)이 죽었습니다."
+        )
+        assert d["flushed_before_open"] is True, (
+            "확인이 대기 편집 정산 **전에** 열렸습니다 — 큐의 발신이 모달 뒤에 도착해"
+            f" 판정과 화면이 어긋납니다(발신 기록: {d.get('calls')!r})."
+        )
+        assert d["trigger_connected_at_open"] is True, (
+            "확인이 열린 시점의 버리기 버튼이 문서에 붙어 있지 않습니다 — 되돌릴 자리가"
+            " 이미 분리됐습니다."
+        )
+        assert d["focus_back_on_discard"] is True and d["focus_fell_to_screen_root"] is False, (
+            "취소 뒤 초점이 버리기 버튼으로 돌아오지 않고 화면 루트로 떨어졌습니다"
+            f" (활성 요소 판정: {d!r})."
+        )
+        # 취소는 **아무것도 버리지 않는다** — 친 값과 dirty 술어(두 버튼 활성)가 그대로다.
+        assert d["name_value_after_cancel"] == "공고서 수정", (
+            f"취소했는데 친 값이 사라졌습니다: {d['name_value_after_cancel']!r}"
+        )
+        assert d["discard_enabled_after_cancel"] is True and d["save_enabled_after_cancel"] is True, (
+            f"취소 뒤 두 행동이 잠겼습니다 — 손댄 세션인데 버릴 길도 저장할 길도 없습니다: {d!r}"
+        )
+        assert d["discarded"] is False, "취소했는데 discard_patch 가 발신됐습니다."
+
     def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
         self, selftest_result: dict
     ) -> None:
