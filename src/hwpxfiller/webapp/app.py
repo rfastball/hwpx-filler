@@ -1652,6 +1652,8 @@ _JOB_RESULT_PROBE_JS = r"""
     // 이 프로브의 세션 = 작업 '공고서' — 결과의 주체와 같은 값에서 출발한다(2R P2 비교군).
     window.__jobResultSnap = {
       job_name:'공고서', last_run_job:'공고서', has_job:true, out_dir:'D:\\out', data_label:'d.csv',
+      // 데이터 성분은 마운트 세대다(#363 리뷰 P2) — 표시 라벨은 정체가 아니다.
+      data_mount:1,
       data_source_label:'파일: d.csv', data_notice:null,
       template_name:'t.hwpx', template_path:'D:\\t.hwpx', filename_pattern:'doc-{{seq:001}}',
       template_missing:false, has_data:true, record_count:1, selected_count:1,
@@ -1744,12 +1746,15 @@ _JOB_RESULT_PROBE_JS = r"""
     window.__push('job', snapSel);
     out.selection_change_keeps_result = !document.getElementById('jobResult').hidden;
     out.selection_change_demotes = !document.getElementById('jobResultStale').hidden;
-    // ④ 데이터 교체 = 초기화 + 퇴장 한 줄(경로 포함).
+    // ④ 데이터 교체 = 초기화 + 퇴장 한 줄(경로 포함). 교체의 표지는 **마운트 세대**이지
+    //    표시 라벨이 아니다(#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올려, 같은 이름의
+    //    다른 파일·같은 경로 재읽기가 실제로 교체로 읽히는지 실렌더로 잰다.
     var snapData = JSON.parse(JSON.stringify(snapSel));
-    snapData.data_label = 'e.csv'; snapData.data_source_label = '파일: e.csv';
+    snapData.data_mount = 2;
     window.__push('job', snapData);
     out.data_swap_resets_result = document.getElementById('jobResult').hidden;
     out.data_swap_exit_line = document.getElementById('jobRunLogLast').textContent;
+    out.data_swap_label_unchanged = snapData.data_source_label === '파일: d.csv';
     window.__push('job', window.__jobResultSnap);   // 비교군 복귀(다음 단계는 같은 작업 문맥)
     window.JobScreen.renderResult(partial);
     // 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 disabled 를 받는가.

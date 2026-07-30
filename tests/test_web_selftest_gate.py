@@ -490,7 +490,10 @@ class TestWebSelftestGate:
         assert "공고서(수정)" in j["switch_exit_line"] and "D:\\out" in j["switch_exit_line"], j
         # 선택 변경 = **강등 유지**(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
         assert j["selection_change_keeps_result"] and j["selection_change_demotes"], j
-        # 데이터 교체 = **초기화** + 퇴장 한 줄(경로 포함).
+        # 데이터 교체 = **초기화** + 퇴장 한 줄(경로 포함). 교체 판정은 **마운트 세대**가
+        # 지고 표시 라벨은 그대로다(#363 리뷰 P2) — 같은 basename 의 다른 파일·같은
+        # 통합문서의 다른 시트·같은 경로 재읽기가 라벨로는 구별되지 않기 때문이다.
+        assert j["data_swap_label_unchanged"], "프로브가 라벨을 바꿔 정체 축을 안 재고 있습니다."
         assert j["data_swap_resets_result"] and "D:\\out" in j["data_swap_exit_line"], j
         # 강등 렌더러의 주체 방어(3R P2)는 남는다 — 푸시 없이 결과가 재수립되는 방어 경로에서
         # 남의 작업을 겨누는 버튼이 서지 않는다. 증거는 남는다.

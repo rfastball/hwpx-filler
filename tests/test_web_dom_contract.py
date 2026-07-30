@@ -133,6 +133,17 @@ MODAL_LABELLEDBY = {
 }
 
 
+def _strip_js_comments(src: str) -> str:
+    """JS 소스에서 주석을 걷는다 — **금지 이름 검사의 전처리**.
+
+    이 저장소의 주석은 죽은 이름·함정을 일부러 적어 둔다(`.job-item` 산출자 0곳,
+    구 표시 라벨 파생의 위험 등). 그것을 규칙으로 세면 설명이 계약을 깨는 거짓 실패가
+    난다 — CSS 쪽 `_web_css.strip_comments` 와 같은 규율의 JS 판이다.
+    """
+    no_block = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return re.sub(r"//[^\n]*", "", no_block)
+
+
 class _IdCollector(HTMLParser):
     """모든 요소의 ``id`` 속성값을 등장 순서대로 수집(중복 포함)."""
 
@@ -715,6 +726,19 @@ def test_job_completion_zone_reset_gated_by_session_change():
     assert '.join("|")' not in key_fn, "세션 지문이 단일 문자열로 접혔습니다 — 성분 판독 불가(§2.18)."
     for comp in ("job:", "data:", "out:", "sel:", "rules:", "own:"):
         assert comp in key_fn, f"세션 지문 성분 누락: {comp}"
+    # 데이터 성분은 **정체**(Python 이 낸 마운트 세대)이지 표시 라벨이 아니다(#363 리뷰 P2):
+    # `data_source_label` 은 「파일: <basename>」이라 같은 이름의 다른 파일·같은 통합문서의
+    # 다른 시트·같은 경로 재읽기가 전부 같은 문자열이고, 그러면 「데이터 교체 = 초기화」가
+    # 그 경우들에서 서지 않는다. 표면이 경로·시트로 정체를 다시 조립해도 안 된다(두 층 판정).
+    assert "data: s.data_mount" in key_fn, "데이터 성분이 마운트 정체가 아닙니다(§2.18 · #363)."
+    # 금지 이름은 **코드에서만** 센다 — 주석은 죽은 이름을 일부러 남겨 함정을 설명하므로
+    # (`.job-item`·`.mir-row.miss` 선례와 같은 규율) 그것을 규칙으로 세면 거짓 실패가 난다.
+    key_code = _strip_js_comments(key_fn)
+    for banned in ("data_source_label", "data_target", "data_label"):
+        assert banned not in key_code, (
+            f"세션 지문이 {banned} 에서 파생됩니다 — 표시 라벨·자체 조립은 정체가 아닙니다"
+            "(같은 basename 의 다른 파일이 교체로 안 읽힙니다)."
+        )
     assert "disposeResultBySession(lastSessionKey, key)" in src, (
         "처분이 성분별 판정 단일 지점을 지나지 않습니다(§2.18)."
     )

@@ -1244,6 +1244,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
             # 다른 실행 입력이다(§2 충돌 B). 승인 결속(F5 판정 I)이 같은 값을 쓴다.
             "selection_key": self._selection_key(),
+            # **이 마운트의 정체**(#363 리뷰 P2) — 결과 처분(§2.18)의 데이터 성분이 소비한다.
+            # 표시 라벨(`data_source_label`)로는 못 가른다: 같은 basename 의 다른 파일·같은
+            # 통합문서의 다른 시트·같은 경로의 바뀐 내용이 전부 같은 문자열이라, 데이터를
+            # 갈아 끼워도 「교체」로 안 읽히고 결과가 남의 데이터에 붙은 채 남는다.
+            # 값은 **마운트 세대**다(`_reset_range_for_snapshot` 단조 증가 — 호출자는
+            # `load_data_path`·`_after_pool_load` 둘뿐이라 마운트 ⟺ 세대 변화). 경로·시트
+            # 정체를 여기서 다시 조립하지 않는 이유가 둘: ①어느 파일인가와 무관하게
+            # **다시 읽었다**는 사실 자체가 교체이므로 세대가 더 정확하다(같은 경로 재읽기도
+            # 새 레코드다) ②경로 정체성 축은 §5.3/#347 이 재편 중이라 두 정의가 생긴다.
+            # 승인 범위 키(`_review_scope_key`)가 같은 세대를 쓰는 것도 같은 근거다.
+            "data_mount": self._snapshot_gen,
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),

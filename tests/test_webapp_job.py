@@ -140,6 +140,66 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+def test_data_mount_identity_changes_on_every_remount(tmp_path):
+    """결과 처분(§2.18)의 데이터 성분은 **정체**이지 표시 라벨이 아니다(#363 리뷰 P2).
+
+    `data_source_label` 은 「파일: <basename>」이라 세 경우가 전부 같은 문자열이 된다 —
+    ①같은 basename 의 다른 파일 ②같은 통합문서의 다른 시트 ③같은 경로의 바뀐 내용.
+    그 값으로 교체를 판정하면 결과가 **남의 데이터에 붙은 채** 초기화도 강등도 아닌
+    상태로 남는다. 스냅샷은 마운트 세대(`data_mount`)를 실어 세 경우 모두 갈리게 한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    a = tmp_path / "a" / "d.csv"
+    a.parent.mkdir()
+    a.write_text("bidNtceNm,presmptPrce\n전산장비,1\n", encoding="utf-8")
+    b = tmp_path / "b" / "d.csv"          # ① 같은 basename, 다른 경로
+    b.parent.mkdir()
+    b.write_text("bidNtceNm,presmptPrce\n사무비품,2\n", encoding="utf-8")
+
+    ctrl.load_data_path(str(a))
+    first = ctrl.snapshot()
+    ctrl.load_data_path(str(b))
+    second = ctrl.snapshot()
+    assert first["data_source_label"] == second["data_source_label"], (
+        "픽스처가 라벨 충돌을 재현하지 못했습니다 — 이 테스트가 재는 것이 사라집니다."
+    )
+    assert first["data_mount"] != second["data_mount"], (
+        "같은 이름의 다른 파일이 같은 마운트 정체입니다 — 교체가 전환으로 안 읽힙니다."
+    )
+
+    # ③ 같은 경로의 바뀐 내용 — 경로·시트 정체는 그대로지만 레코드가 새것이다.
+    b.write_text("bidNtceNm,presmptPrce\n전산장비,3\n계약건,4\n", encoding="utf-8")
+    ctrl.load_data_path(str(b))
+    third = ctrl.snapshot()
+    assert third["data_mount"] != second["data_mount"], (
+        "같은 경로 재읽기가 같은 마운트 정체입니다 — 새 레코드에 옛 결과가 붙습니다."
+    )
+
+    # ② 같은 통합문서의 다른 시트(다중 시트 픽스처) — 경로가 같아도 다른 데이터다.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    s1 = ctrl.snapshot()
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    s2 = ctrl.snapshot()
+    assert s1["data_source_label"] == s2["data_source_label"], (
+        "픽스처가 시트 축의 라벨 충돌을 재현하지 못했습니다."
+    )
+    assert s1["data_mount"] != s2["data_mount"], (
+        "같은 통합문서의 다른 시트가 같은 마운트 정체입니다."
+    )
+
+    # 반대 방향(과경고 금지): 마운트하지 않는 전이는 정체를 흔들지 않는다 — 흔들면
+    # 선택·규칙 축의 강등 계약(판정 G)이 초기화로 덮인다.
+    stable = ctrl.snapshot()["data_mount"]
+    ctrl.dispatch("set_all", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["data_mount"] == stable, (
+        "선택·축·작업 전환이 데이터 정체를 바꿉니다 — 강등이어야 할 축이 초기화됩니다."
+    )
+
+
 def test_prework_gate_counts_only_available_candidates(tmp_path):
     """후보가 전부 needs_action 이면 "선택하세요"는 이행 불가능한 지시다(#302 리뷰 P2)
     — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다."""
