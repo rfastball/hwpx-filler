@@ -1813,8 +1813,31 @@ _JOB_RESULT_PROBE_JS = r"""
       getComputedStyle(document.getElementById('jobRunLogLast')).display !== 'none';
     // 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
     var real = window.Bridge.generate;
+    window.__rejectGenCalls = 0;
     window.Bridge.generate = function () {
+      window.__rejectGenCalls += 1;
       return Promise.resolve({ok:false, error:'빈 값 필드를 먼저 확인하세요: 추정가격', level:'warn'});
+    };
+    // 거절 창 격리(관측자 오염 리트머스) — 이 프로브 첫머리의 Nav.go('job') 이 쏜 실
+    // refresh 의 push(세션 없는 실 스냅샷)는 Python 스레드에서 늦게 착지해 정확히 이
+    // 비동기 창에 들어온다. **이 PR 의 §2.18 처분이 그것을 「작업 없음 전환 = 초기화」로
+    // 정확히 읽어** 방금 세운 rejected 를 지운다 — 실앱에선 옳은 처분이고(세션 없는
+    // push 는 작업 해제다) 여기서는 합성 세션 위에 실 컨트롤러의 빈 스냅샷이 끼어드는
+    // 프로브 산물이다. 종전(무조건 강등)에는 같은 지연 push 가 무해해 프로브가 그 위에
+    // 서 있었으므로, **격리를 필요로 만든 것이 이 PR 이고 격리도 여기 산다.**
+    // 창이 열린 동안 job push 는 기록만 하고 흘려보내지 않는다 — 무엇을 삼켰는지는
+    // reject_pushes 가 증언한다(조용한 격리 금지). 이 단계가 재는 것은 거절 렌더
+    // 채널이지 push 교차가 아니다.
+    var realPush = window.__push;
+    window.__rejectPushes = [];
+    window.__push = function (screen, snap) {
+      if (screen === 'job') {
+        window.__rejectPushes.push({
+          job: snap && snap.job_name, has_job: !!(snap && snap.has_job),
+          data: snap && snap.data_source_label, progress: !!(snap && snap.progress)});
+        return;
+      }
+      return realPush(screen, snap);
     };
     document.getElementById('jobGenBtn').disabled = false;
     document.getElementById('jobGenBtn').click();
@@ -1823,8 +1846,14 @@ _JOB_RESULT_PROBE_JS = r"""
       var b = document.getElementById('jobResult');
       window.__rejectState = b.dataset.state;
       window.__rejectText = document.getElementById('jobResultSummary').textContent;
+      // 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
+      // 렌더 후 소거」 세 갈래를 가른다.
+      window.__rejectGen = window.__rejectGenCalls;
+      window.__rejectLog = document.getElementById('jobGenLog').textContent;
+      window.__rejectHidden = b.hidden;
       // 거절 사유는 log() 도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
       window.__runlogLast = document.getElementById('jobRunLogLast').textContent;
+      window.__push = realPush;
       window.Bridge.generate = real;
       window.__resultProbeDone = true;
     }, 60);
@@ -3675,6 +3704,10 @@ def _selftest_drive(window: "object") -> None:
             window, "__resultProbeDone",
             "JSON.stringify({reject_state: String(window.__rejectState),"
             " reject_text: String(window.__rejectText),"
+            " reject_gen: Number(window.__rejectGen),"
+            " reject_log: String(window.__rejectLog),"
+            " reject_hidden: !!window.__rejectHidden,"
+            " reject_pushes: window.__rejectPushes || [],"
             " runlog_last: String(window.__runlogLast)})",
         ))
         # 협폭 적층 분기는 **창폭이 아니라 세션 패널 폭**(container query 900px)이 판정한다.

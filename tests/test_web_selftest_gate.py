@@ -513,7 +513,15 @@ class TestWebSelftestGate:
         # 행동이 흔적을 남기면 반만 듣는 것이 된다.
         assert j["close_runlog_last"] == "아직 기록이 없습니다.", j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
-        assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], j
+        # 실패 시 판별 증거만 좁혀 보인다(전체 dict 는 pytest 가 자른다 — 판독 불능 덤프 금지).
+        if not (j["reject_state"] == "rejected" and "빈 값" in j["reject_text"]):
+            print("REJECT_EVIDENCE_BEGIN")
+            for k in ("reject_state", "reject_text", "reject_gen", "reject_log",
+                      "reject_hidden", "reject_pushes", "runlog_last"):
+                print(f"  {k} = {j.get(k)!r}")
+            print("REJECT_EVIDENCE_END")
+        assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], (
+            j["reject_state"], j["reject_text"])
         # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
         # 접힘이 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
         assert j["runlog_collapsed"] and j["runlog_last_visible"], j
