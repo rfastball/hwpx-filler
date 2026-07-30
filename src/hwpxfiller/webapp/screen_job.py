@@ -91,6 +91,7 @@ from ..gui.work_mode import (
     work_mode_label,
 )
 from ..gui.work_candidates import (
+    GATE_REASON_TEMPLATE_MISSING,
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     TAB_AVAILABLE,
@@ -1341,6 +1342,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     False, "danger",
                     "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
                     "템플릿을 다시 연결한 뒤 진행하세요.",
+                    # 막는 축은 템플릿이다 — 구획 지목이 아니라 곁의 재연결이 답이다.
+                    reason=GATE_REASON_TEMPLATE_MISSING,
                 )
             # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
             # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.

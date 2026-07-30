@@ -872,9 +872,18 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
     assert "function gateStep(s, g)" in src
     assert not re.search(r'return "[①②③]', src), "죽은 4존 서수가 남아 있습니다."
-    # 「선택한 작업 · 」 지목은 존과 함께 죽었다(U2 §4, #342) — 템플릿 부재는 후보 구획
-    # (연결 상태 카드)을, 드리프트·토큰 danger 는 거울 배너(본문 확인)를 지목한다.
+    # 「선택한 작업 · 」 지목은 존과 함께 죽었다(U2 §4, #342).
     assert '"선택한 작업 · "' not in src, "죽은 존을 가리키는 지목이 남아 있습니다."
+    # 지목은 **링1 이 낸 축 이름**(gate.reason)에서 나온다(#342 리뷰 P2). 표면이 상태를
+    # 다시 읽어 지목을 만들면 게이트 서열이 두 곳에 살고, 실제로 그렇게 샜다 — 템플릿
+    # 부재를 직접 보고 접두를 붙여 **행 선택이 먼저인** 상태의 지목을 덮었다.
+    step = src[src.index("const GATE_ZONE"):src.index("function renderGateAndFolder")]
+    assert "GATE_ZONE[g.reason" in step, "게이트 지목이 축 이름을 읽지 않습니다."
+    assert "s.template_missing" not in step, (
+        "표면이 템플릿 상태로 지목을 재유도합니다 — 게이트 서열을 덮는 자리입니다."
+    )
+    # 템플릿 축은 가리킬 구획이 없다(존 사망) — 곁의 액션바 재연결이 답이라 빈 문자열이다.
+    assert 'template_missing: ""' in step and 'template_unreadable: ""' in step
     for caption in ("현재 데이터", "이 데이터에 사용할 문서", "본문 확인"):
         assert f'"{caption} · "' in src or f'= "{caption} · "' in src, (
             f"게이트 구획 지목 누락: {caption}"
@@ -977,9 +986,12 @@ def test_job_data_first_prework_surface_contract():
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "function renderCandidates(s)" in src
     assert "jobEmptyPanel" not in src
-    assert "if (!s.has_job) return noRows ? DATA : DOC;" in src, (
-        "무작업 prework 게이트의 구획 지목 배선이 없습니다."
-    )
+    # prework 게이트의 구획 지목 — 이제 **링1 이 낸 축 이름**을 읽는다(#342 리뷰 P2).
+    # 서열(데이터 → 행 → 문서)은 `prework_gate` 가 이름으로 내고 표면은 자리로 옮기기만
+    # 한다. 이름 없는 갈래(hwpx warn)만 자리로 유추하는 폴백이 남는다.
+    assert "GATE_ZONE[g.reason" in src, "무작업 prework 게이트의 구획 지목 배선이 없습니다."
+    assert "no_data:" in src and "no_job:" in src, "prework 축 이름의 자리 배선이 없습니다."
+    assert "if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;" in src
     assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
     # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
     # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).

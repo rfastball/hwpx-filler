@@ -1024,25 +1024,42 @@
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
+  /* 게이트 지목의 **어휘 지도**(#342 리뷰 P2) — 링1 이 낸 사유 축 이름 → 그 축을 소유한
+     구획 캡션. 판정(무엇이 막는가·무엇이 먼저인가)은 게이트가 하고 여기는 이름을 자리로
+     옮기기만 한다. 표면이 상태를 다시 읽어 지목을 만들면 서열이 두 곳에 살고, 실제로 그렇게
+     샜다: `template_missing` 을 직접 보고 접두를 붙이는 바람에 **행 선택이 먼저인** TXT
+     상태(`workbench_entry_gate` 서열 = 데이터 → 행 → 템플릿)에서도 문서 선택기를 가리켰다.
+
+     템플릿 축(`template_missing`·`template_unreadable`)은 **빈 문자열**이다 — 그 축을
+     소유하던 「선택한 작업」 존은 죽었고(U2 §4), 복구는 같은 액션바 줄의 연결 상태·재연결이
+     곁에서 진다(3R). 없는 구획을 가리키느니 아무 데도 가리키지 않는다. */
+  const GATE_ZONE = {
+    no_data: "현재 데이터 · ",
+    no_rows: "현재 데이터 · ",
+    no_candidates: "이 데이터에 사용할 문서 · ",
+    no_job: "이 데이터에 사용할 문서 · ",
+    drift: "본문 확인 · ",
+    name_tokens: "본문 확인 · ",
+    template_missing: "",
+    template_unreadable: "",
+  };
+
   function gateStep(s, g) {
     // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 **구획의
     // 이름**만 표시층에서 결합한다(H-03 승계). R1 재작성으로 4존 znum 이 사라져 구 서수
     // ①②③ 은 가리킬 대상을 잃었다 — 정보(어디로 가야 하는가)는 살리고 표기를 실재하는
     // 구획 캡션으로 바꾼다(죽은 번호를 남기면 지목이 거짓말이 된다).
     if (!g || g.enabled || !g.text) return "";
-    const DATA = "현재 데이터 · ", DOC = "이 데이터에 사용할 문서 · ";
+    // 링1 이 축 이름을 냈으면 그 이름만 읽는다 — 상태 재유도 금지(서열은 게이트의 것).
+    const named = GATE_ZONE[g.reason || ""];
+    if (named !== undefined) return named;
+    // 이름 없는 게이트(빈 값 확인·저장 폴더·이어채우기 등 hwpx warn 갈래)만 자리로 유추한다.
+    // 이 갈래들은 선택된 작업의 본문 축이라 지목이 하나뿐이고, 데이터·행이 안 갖춰졌으면
+    // 그게 먼저다(prework_gate 서열과 같은 걸음).
     const noRows = !s.has_data || !(s.selected_count > 0);
-    // 작업 미선택(데이터-우선 prework)은 데이터가 먼저다 — 데이터·행이 갖춰진 뒤에야
-    // 막힌 곳이 문서 선택기다(prework_gate 의 순서와 같은 걸음).
-    if (!s.has_job) return noRows ? DATA : DOC;
-    // 「선택한 작업」 존 사망(U2 §4, #342) 뒤 템플릿 부재의 거처는 후보 구획의 카드
-    // 「연결 상태」다 — 단 데이터 미준비면 그 구획 자체가 서지 않으므로 없는 구획을
-    // 가리키지 않는다(지목은 실재하는 캡션만, 죽은 지목은 거짓말이다).
-    if (s.template_missing) return s.has_data ? DOC : "";
-    // 드리프트·파일명 토큰 danger 는 거울 자리의 차단 배너가 발화한다(#128) — 그 존을 지목.
-    if (g.level === "danger") return "본문 확인 · ";
-    if (noRows) return DATA;
-    return "본문 확인 · ";
+    if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;
+    if (noRows) return GATE_ZONE.no_data;
+    return GATE_ZONE.drift;
   }
 
   function renderGateAndFolder(s) {

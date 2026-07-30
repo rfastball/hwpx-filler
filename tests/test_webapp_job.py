@@ -449,6 +449,45 @@ def test_relink_reach_is_quiet_when_nothing_is_wrong(tmp_path):
     assert snap["conn_label"] == ""
 
 
+def test_blocked_axis_name_follows_the_gate_order_not_template_state(tmp_path):
+    """막는 축의 이름은 **게이트 서열**이 낸다(#342 리뷰 P2 — 데이터 존 라벨 보존).
+
+    `workbench_entry_gate` 의 서열은 데이터 → 행 → 템플릿이다. 템플릿이 부재여도 **선택
+    0건이면 행 선택이 먼저**이므로 축 이름도 `no_rows` 여야 한다 — 표면은 이 이름 하나를
+    읽어 「현재 데이터」를 지목한다. 종전엔 표면이 `template_missing` 을 직접 보고 무조건
+    문서 선택기를 가리켜, 게이트가 낸 서열을 덮었다(같은 상태를 두 곳이 판정).
+    """
+    ctrl, _ = _controller(tmp_path)
+    txt = tmp_path / "기안.txt"
+    txt.write_text("{{공고명}}", encoding="utf-8")
+    ctrl.registry.save(Job(name="기안작업", template_path=str(txt)))
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "기안작업"})
+    txt.unlink()                                        # 템플릿 부재 + 선택 0건
+
+    blocked = ctrl.snapshot()
+    assert blocked["template_missing"] is True          # 부재는 부재대로 참이고
+    assert blocked["gate"]["reason"] == "no_rows", (     # 그래도 먼저 할 일은 행 선택이다
+        "템플릿 부재가 행 선택 안내의 축 이름을 덮었습니다(게이트 서열 무시)."
+    )
+    assert "처리할 항목을 선택하세요" in blocked["gate"]["text"]
+
+    ctrl.dispatch("set_all", {})                        # 행을 고르면 그제야 템플릿 축
+    after = ctrl.snapshot()
+    assert after["gate"]["reason"] == "template_missing", after["gate"]
+    assert "템플릿 파일을 찾을 수 없습니다" in after["gate"]["text"]
+
+
+def test_prework_gate_names_the_axis_it_blocks_on(tmp_path):
+    """작업 미선택 게이트도 축 이름을 낸다 — 표면 지목의 단일 출처(#342 리뷰 P2)."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.initial()["gate"]["reason"] == "no_data"
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["gate"]["reason"] == "no_rows"
+    ctrl.dispatch("set_all", {})
+    assert ctrl.snapshot()["gate"]["reason"] == "no_job"
+
+
 def test_active_job_out_of_slice_is_not_smuggled_into_the_candidate_list(tmp_path):
     """후보 구획은 **순위 그대로**다 — 도달 보장이 세션 축으로 갔으므로 덧붙이지 않는다.
 
