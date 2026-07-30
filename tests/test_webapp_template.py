@@ -507,6 +507,69 @@ def test_import_folder_is_bound_to_confirmed_manifest_not_a_rescan(tmp_path, mon
         ctrl.import_folder(str(ext), [])
 
 
+def test_batch_txt_copy_joins_the_registry_writer_lock(tmp_path, monkeypatch):
+    """PR #355 P1 — 배치 TXT 복사는 **공유 TXT writer 잠금 축**에 선다.
+
+    배치가 도는 동안 편집기는 살아 있고 pywebview 는 다른 네이티브 호출을 동시에 돌린다.
+    가져오기 잠금만 잡으면 「새 TXT」·편집·복원이 서로를 모른 채 같은 이름을 겨눠, 배치가
+    「비었다」고 고른 목적지를 그 사이 사용자가 채우고 ``copy2`` 가 그 내용을 덮는다(충돌
+    접미가 지켜야 할 사용자 내용의 조용한 소실).
+
+    복사 한복판에서 **다른 스레드**가 같은 basename 으로 ``txt_new`` 를 시도하게 해 잰다:
+    ①그 writer 는 복사가 끝날 때까지 **실제로 대기한다**(잠금 축 참여의 실증 — 대기 없이
+    지나가면 이 단언이 죽는다) ②대기 뒤에는 파일이 이미 있으므로 loud 거절(조용한 덮어쓰기
+    금지) ③배치 사본의 내용이 온전하다.
+
+    획득 순서 규약(_folder_import_lock → _import_lock → write_lock)이 지켜지는 증거이기도
+    하다: 역순 획득이 있으면 이 테스트가 join 시간초과로 멈춘다."""
+    import threading
+
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = tp / "ext"
+    ext.mkdir()
+    (ext / "온나라_기안.txt").write_text("가져온 내용", encoding="utf-8")  # 기존과 동명 → (2)
+
+    real = st.shutil.copy2
+    rival_started = threading.Event()
+    rival_error: list = []
+    state: dict = {}
+
+    def rival() -> None:
+        rival_started.set()
+        try:
+            # 배치가 방금 「비었다」고 고른 그 이름을 정확히 겨눈다.
+            ctrl.dispatch("txt_new", {"name": "온나라_기안 (2)", "content": "사용자가 쓴 내용"})
+        except Exception as exc:  # noqa: BLE001 — loud 거절을 값으로 회수
+            rival_error.append(str(exc))
+
+    def copy_with_rival(src, dst):
+        if Path(src).name == "온나라_기안.txt" and "thread" not in state:
+            t = threading.Thread(target=rival)
+            state["thread"] = t
+            t.start()
+            rival_started.wait(2)
+            t.join(0.3)                       # 잠금이 있으면 여기서 못 끝난다
+            state["rival_blocked"] = t.is_alive()
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", copy_with_rival)
+    res = ctrl.import_folder(str(ext), ["온나라_기안.txt"])
+    state["thread"].join(5)
+    assert not state["thread"].is_alive(), "경쟁 writer 가 풀려나지 못했습니다(교착 의심)."
+
+    assert state["rival_blocked"] is True, (
+        "복사 중인데 다른 TXT writer 가 그대로 통과했습니다 — 두 쓰기가 서로를 모릅니다"
+        "(가져오기 잠금만 잡고 공유 writer 축에 서지 않은 상태)."
+    )
+    assert res["imported"] == 1
+    dest = tp / "txt" / "온나라_기안 (2).txt"
+    assert dest.read_text(encoding="utf-8") == "가져온 내용"   # 사본이 덮이지 않았다
+    assert rival_error and "이미 같은 이름" in rival_error[0]  # 뒤늦은 writer 는 loud 거절
+    assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
+
+
 def test_import_folder_rejects_concurrent_batch_loudly(tmp_path, monkeypatch):
     """PR #355 2R — 배치 진행 중 재실행의 판정 정본은 tpl 권위 **한 곳**(비차단 잠금).
 

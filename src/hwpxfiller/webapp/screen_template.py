@@ -32,6 +32,7 @@ import shutil
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
@@ -276,7 +277,21 @@ class TemplateController:
         **직렬화**(F9): 후보 선택~복사를 인스턴스 잠금으로 묶어 동시 동명 가져오기가 같은
         목적지를 골라 내용 하나만 남는 경합을 막는다. **무잔재**(F6): 복사 중 실패하면(디스크
         풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
-        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형)."""
+        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형).
+
+        **TXT 는 공유 writer 축에 함께 선다**(PR #355 P1): ``_import_lock`` 은 가져오기끼리만
+        아는 잠금이라, 배치가 도는 동안 사용자가 「새 TXT」·내용 편집·복원을 하면 두 writer 가
+        서로를 모른 채 같은 이름을 겨눈다 — 목적지가 「비었다」고 고른 뒤 그 사이 채워지면
+        ``copy2`` 가 방금 쓴 내용을 덮고(반대 방향도 같다), 충돌 접미가 지켜야 할 사용자
+        내용이 조용히 사라진다. 그래서 TXT 항목은 목적지 선택~복사를 다른 TXT writer 와
+        **같은 잠금**(:meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`)
+        안에서 한다. 획득은 **항목 단위**라 배치가 도는 내내 TXT 조작이 통째로 막히지 않는다.
+
+        **잠금 획득 순서 규약**: ``_folder_import_lock``(배치) → ``_import_lock``(가져오기)
+        → ``text_registry.write_lock()``(TXT writer). 항상 안쪽으로만 잡는다. 역순 획득
+        경로는 없다 — TXT writer 를 먼저 잡는 쪽(``_do_txt_new``·``_do_txt_edit``·
+        ``_do_undo_delete``)은 어느 것도 가져오기 잠금을 잡지 않으므로 순환 대기가 성립하지
+        않는다. 새 writer 를 더할 때도 이 순서를 지킨다."""
         suffix = src.suffix.lower()
         if suffix == ".hwpx":
             root = self.vm.library_dir
@@ -287,7 +302,12 @@ class TemplateController:
         if root is None:
             raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
         root.mkdir(parents=True, exist_ok=True)
-        with self._import_lock:
+        # HWPX 는 공유 writer 가 없는 단일 표면이라 가져오기 잠금 하나면 족하다(_do_undo_delete
+        # 의 매체 분기와 같은 비대칭 — 없는 축을 흉내내지 않는다).
+        txt_writer = (
+            self.text_registry.write_lock() if suffix == ".txt" else nullcontext()
+        )
+        with self._import_lock, txt_writer:
             dest = root / src.name
             n = 2
             while dest.exists():
