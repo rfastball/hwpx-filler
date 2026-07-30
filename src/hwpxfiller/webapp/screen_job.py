@@ -410,6 +410,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return self.range_draft.range.selection.selected_indices()
         return view.visible_indices()
 
+    def _zone_hidden(self) -> "set[str]":
+        """사용자 열 선별의 적용 범위(U2 §2.19, #341) — **인라인 표 한정**.
+
+        ⤢ 시트(범위 초안)는 전 열·원본 순서다(#271 "시트 = 전체 진실" 유지): 초안이 열려
+        있으면 숨김을 적용하지 않는다. 세션 숨김 집합 자체는 살아 있어 시트를 닫으면
+        인라인이 다시 선별을 따른다 — 적용 여부의 판정이 Python 한 곳이라 인라인·시트·칩이
+        각자 답을 갖지 않는다.
+        """
+        return set() if self.range_draft is not None else set(self.hidden_columns)
+
+    def _hide_allowed(self) -> bool:
+        """「이 열 숨기기」 제공 여부 — 시트로 이사한 패널에는 항목이 서지 않는다(#341)."""
+        return self.range_draft is None
+
     @staticmethod
     def _ordered(view_order: str, indices: "list[int]") -> "list[int]":
         """표시 순서 투영의 몸통 — 축 값 하나에 대한 순수 함수(커밋·초안이 같이 쓴다)."""
@@ -437,6 +451,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         self.selection = SelectionModel(count, all_selected=False)
         self.view_order = VIEW_ORDER_DESC
+        # 사용자 열 선별도 데이터 교체에 소멸한다(U2 §2.19, #341 — 필터와 같은 계층: 열
+        # 지형이 바뀐다). 작업 선택의 조건부 필터 재생성(`_init_filter` 유형 재조정)은 이
+        # seam 을 타지 않으므로 선별이 생존한다 — 숨김은 데이터의 축이지 작업의 축이 아니다.
+        self.hidden_columns = set()
         # 세대를 올리고 초안을 버린다(판정 J): 초안의 index 는 죽은 스냅샷의 좌표다. 세대는
         # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
         self._snapshot_gen += 1

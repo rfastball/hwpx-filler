@@ -45,6 +45,10 @@ _ZONE_MUTATIONS = {
     "filter_clear": _schema(optional="epoch"),
     "filter_clear_col": _schema("column", "epoch"),
     "filter_reapply": _schema(optional="epoch"),
+    # 사용자 열 선별(U2 §2.19, #341) — 표시 축뿐(숨긴 열도 필터·검색·생성에 그대로 참여).
+    # 세션 소유·데이터 교체 시 소멸이라 존 변이와 같은 세대 검사를 받는다.
+    "hide_column": _schema("column", "epoch"),
+    "unhide_columns": _schema(optional="epoch"),
 }
 #: 세대 검사 대상 = 존 **변이** 액션 이름(컨트롤러가 dispatch 관문에서 소비).
 #: 표시순서(`set_view_order`)도 같은 범위 상태를 바꾸므로 여기 든다 — 화면별 액션이지만
