@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.core.job import library_rel_key
 from hwpxfiller.webapp import settings
-from hwpxfiller.webapp.template_groups import TemplateGroupModel
+from hwpxfiller.webapp.template_groups import TemplateGroupModel, rel_key
 
 
 @pytest.fixture()
@@ -182,3 +183,25 @@ def test_sections_orphan_assignment_falls_to_ungrouped(home):
     sections, flat = m.build_sections(rows, key_of=lambda r: r["key"])
     assert flat is True  # 명명 그룹의 live 멤버 0 → 평면
     assert sections[0]["group"] == "" and sections[0]["items"][0]["name"] == "현재"
+
+
+# --------------------------------------------------------- 키 관례 단일 출처(#348)
+def test_rel_key_is_the_core_convention_plus_a_group_only_fallback(home):
+    """키 **계산**은 링0 하나(:func:`library_rel_key`)이고 여기 남는 건 폴백 정책뿐이다.
+
+    같은 관례를 두 벌 쓰면 같은 파일이 두 키로 갈라진다(그룹이 어긋난다) — 그래서 몸통은
+    하나다. 갈리는 것은 실패 처리다: 그룹 지정은 루트 밖 파일도 묶여야 하고 오연결의 대가가
+    없어 **파일명으로 폴백**하지만, 작업의 템플릿 링크(#348)에서 그 폴백은 다른 폴더 동명
+    파일에 조용히 붙으므로 **승격에 실패**한다. 같은 입력에서 두 정책이 실제로 갈라지는 것을
+    한 자리에서 못박는다(한쪽만 고쳐지는 드리프트가 곧 조용한 오연결).
+    """
+    root = home / "templates"
+    inside, outside = root / "조달" / "공고서.hwpx", home / "바탕화면" / "공고서.hwpx"
+
+    # 루트 안: 두 정책이 같은 값 — 관례가 하나라는 증거.
+    assert rel_key(inside, root) == library_rel_key(inside, root) == "조달/공고서.hwpx"
+
+    # 루트 밖: 그룹 키는 파일명으로 폴백하고, 링크용 엄격 키는 없다고 말한다.
+    assert rel_key(outside, root) == "공고서.hwpx"
+    assert library_rel_key(outside, root) is None
+    assert rel_key(outside, None) == "공고서.hwpx" and library_rel_key(outside, None) is None

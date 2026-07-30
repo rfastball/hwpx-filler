@@ -29,11 +29,13 @@ import uuid
 import weakref
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
 from .paths import home_dir
+from .template_status import default_templates_dir
+from .text_registry import default_text_templates_dir
 from hwpxcore.atomic import write_text_atomic
 from hwpxcore.validate import ValidationReport, validate
 
@@ -280,6 +282,92 @@ def require_hwpx(job: "Job") -> "Job":
     return job
 
 
+# ------------------------------------------------------------------ 라이브러리 상대키(#348)
+# U2 §5.3 판정 B: 레지스트리는 위치-불가지인데(생성자가 디렉터리를 받는다) **내용물이 절대경로로
+# 위치에 묶여 있었다** — 홈을 옮기면 모든 작업의 ``template_path`` 가 한꺼번에 끊기고, 라이브러리는
+# 그 사실을 「템플릿이 연결되지 않은 **작업 N건**」이라고 작업 수로 셌다(간접층이 있었다면
+# 데이터 축처럼 「참조 1건」이었다). 웹 표준의 처방과 같다: 경로를 **버리는** 것이 아니라 경로에서
+# **기계 고유 부분만 이름으로 치환**한다(named root + root-relative).
+#
+# **새 관례를 만들지 않는다** — 라이브러리 루트 상대 POSIX 키는 템플릿 그룹 지정(결정 8)이 이미
+# 쓰는 값이고 에디터 피커도 이미 그 키로 말한다. 저장만 경로였다. 그래서 키 계산의 몸통은 여기
+# 링0 에 두고 :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이것을 감싼다.
+#
+# **폴백 정책만 다르다**(이 이슈의 유일한 새 규칙): 그룹 키는 루트 밖이면 파일명으로 폴백하지만,
+# 작업 링크에서 그 폴백은 **다른 폴더의 동명 파일에 조용히 붙는다** — 끊긴 참조를 파일명으로
+# 자동 매칭하는 것은 영상 편집 도구들이 대가를 치른 결함류다. 여기서는 폴백 없이 승격에
+# **실패**하고 기존 절대경로를 유지한다("이 작업은 이식 대상이 아니다"를 정직하게 남긴다).
+#
+# **루트 선택도 확장자로** 한다 — 매체 파생이 이미 계약(:func:`template_media`)이라 매체를
+# 선언하는 새 필드가 필요 없다. 신규 durable 필드는 상대키 하나뿐이다.
+
+
+def library_root_for(template_path: str) -> "Path | None":
+    """매체별 라이브러리 루트(hwpx=``templates``/txt=``text_templates``) — 확장자에서만 고른다.
+
+    I/O 없음. 미상 확장자·빈 경로는 ``None``(승격도 해석도 하지 않는다 — 모르는 것을 추측하지
+    않는다는 :func:`work_mode` 와 같은 fail-closed). 두 루트 모두 ``HWPXFILLER_HOME`` 을 존중하는
+    기본 해석기라 **홈을 옮기면 같은 키가 새 홈의 파일로 해석된다** — 이 함수가 이식성의 경첩이다.
+    """
+    media = template_media(template_path)
+    if media == "hwpx":
+        return default_templates_dir()
+    if media == "txt":
+        return default_text_templates_dir()
+    return None
+
+
+def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
+    """루트 상대 POSIX 키 — **폴백 없이** 루트 밖·루트 미지정이면 ``None``(위 절 참조).
+
+    :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이 위에 파일명 폴백을 얹는다(그룹
+    지정은 오연결의 대가가 없다). 순수 경로 계산이라 파일 존재 여부를 보지 않는다.
+    """
+    if root is None:
+        return None
+    try:
+        return Path(path).relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def library_key_for(template_path: str) -> str:
+    """템플릿 경로 → 라이브러리 루트 상대키. 루트 밖·미상 매체는 ``""``(승격 실패 = 절대경로 유지)."""
+    return library_rel_key(template_path, library_root_for(template_path)) or ""
+
+
+def _reject_unsafe_key(key: str) -> None:
+    """durable 키의 탈출 방어 — 드라이브·루트·``..`` 는 loud raise.
+
+    상대키는 루트에 이어 붙여 해석되므로 ``C:/x.hwpx``·``../../x.hwpx`` 같은 값이 들어오면
+    **루트 밖으로 조용히 새어나간다**(``root / 절대경로`` 는 절대경로를 그대로 돌려준다).
+    다른 durable 필드와 같은 규율으로 경계에서 막는다 — 격리는 :meth:`JobRegistry.list_jobs`
+    의 파일 단위 격리가 '손상됨' 행으로 표면화한다. ``PureWindowsPath`` 로 판정하는 이유는
+    두 구분자(``/``·``\\``)와 드라이브를 **모두** 인식하는 가장 엄격한 해석이기 때문이다.
+    """
+    p = PureWindowsPath(key)
+    if p.drive or p.root or ".." in p.parts:
+        raise ValueError(
+            f"작업 필드 'template_key' 는 라이브러리 루트 상대경로여야 하는데 {key!r} 입니다"
+        )
+
+
+def resolve_library_key(key: str) -> str:
+    """상대키 → **지금** 홈 기준 절대경로 문자열. 빈 키·미상 매체는 ``""``(호출측이 옛 경로 폴백).
+
+    해석은 순수 경로 계산이다 — 파일이 실제로 있는지는 보지 않는다(부재는 라이브러리의
+    「연결 안 됨」 표면이 이미 말한다). 디스크를 읽지도 쓰지도 않으므로 **읽기가 조용히
+    저장을 승격시키는 일이 없다**: 승격은 :meth:`Job.to_dict` 를 지나는 저장에서만 일어난다.
+    """
+    if not key:
+        return ""
+    _reject_unsafe_key(key)
+    root = library_root_for(key)
+    if root is None:
+        return ""
+    return str(root / key)
+
+
 # ------------------------------------------------------------------ 모델
 @dataclass
 class Job:
@@ -359,6 +447,19 @@ class Job:
         """
         return work_mode(self.template_path)
 
+    @property
+    def template_key(self) -> str:
+        """라이브러리 루트 상대키(``조달/공고서.hwpx``) — ``template_path`` 에서 **읽어낸다**(#348).
+
+        :attr:`media`·:attr:`work_mode` 와 같은 줄의 파생 속성이다. 인메모리 선언 필드를 두지
+        않는 이유는 이 파일이 매체에 대해 이미 말한 것과 같다: 선언 필드를 두면 선언과 실제가
+        갈라질 자리를 새로 만든다. 키는 durable **표현**이지 별도 상태가 아니라서, 저장
+        (:meth:`to_dict`)이 매번 현재 경로에서 다시 뜬다.
+
+        루트 밖 템플릿은 ``""`` — 폴백 없는 승격 실패이고, 그 작업의 링크는 절대경로로 남는다.
+        """
+        return library_key_for(self.template_path)
+
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
         return self.mapping.template_fields()
@@ -381,6 +482,10 @@ class Job:
             "version": self.version,
             "name": self.name,
             "template_path": self.template_path,
+            # 라이브러리 루트 상대키(#348) — **가산** 필드다: 절대경로도 그대로 함께 쓴다.
+            # 구 코드는 새 키를 무시하고 경로로 계속 열리고, 신 코드는 키를 우선해 홈이
+            # 옮겨져도 해석된다. 루트 밖 템플릿에선 ``""`` 라 경로만이 링크다(폴백 없음).
+            "template_key": self.template_key,
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
@@ -445,9 +550,13 @@ class Job:
             if not isinstance(k, str) or not isinstance(v, str):
                 raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
             tags[k] = v
+        # 템플릿 링크 해석(#348): 상대키가 있으면 **지금** 홈 기준으로 풀고, 없으면(구 JSON·
+        # 루트 밖 템플릿) 옛 절대경로를 그대로 쓴다. 마이그레이션은 없다 — 읽는 김에 디스크를
+        # 고치지 않고(조용한 변이 금지), 승격은 저장이 지나갈 때만 일어난다.
+        template_path = resolve_library_key(_str("template_key")) or _str("template_path")
         return cls(
             name=_str("name"),
-            template_path=_str("template_path"),
+            template_path=template_path,
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
             filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
             version=d.get("version", 1),
