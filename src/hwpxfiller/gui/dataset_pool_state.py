@@ -22,6 +22,7 @@ from ..core.dataset_pool import (
     DatasetPoolItem,
     DatasetPoolRegistry,
     default_dataset_pool_dir,
+    item_identity,
 )
 from .nara_state import NaraAcquireViewModel  # 기간 검증 단일 출처(링1→링1)
 
@@ -113,8 +114,13 @@ def kind_transition_clause(item: DatasetPoolItem) -> str:
 
 @dataclass
 class DatasetPoolRow:
-    """풀 1항목이 렌더할 성형 데이터 — 표현 계층은 이 필드만 읽는다."""
+    """풀 1항목이 렌더할 성형 데이터 — 표현 계층은 이 필드만 읽는다.
 
+    ``key`` 는 레지스트리 슬롯 키(U2 §5.3 — 이름은 중복 허용 라벨이라 행동의 겨눔 대상이
+    될 수 없다). 표면의 사용·보관·활성화·삭제·다시 연결은 전부 이 키를 실어 보낸다.
+    """
+
+    key: str
     name: str
     kind: str
     kind_label: str
@@ -132,12 +138,13 @@ class DatasetPoolRow:
         return available_actions(self.status)
 
     @classmethod
-    def from_item(cls, item: DatasetPoolItem) -> "DatasetPoolRow":
+    def from_item(cls, key: str, item: DatasetPoolItem) -> "DatasetPoolRow":
         raw = item.opts.get("path") if isinstance(item.opts, dict) else None
         locate_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
         raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
         sheet = raw_sheet if (item.kind == "excel" and isinstance(raw_sheet, str)) else ""
         return cls(
+            key=key,
             name=item.name,
             kind=item.kind,
             kind_label=_KIND_LABELS.get(item.kind, item.kind),
@@ -165,6 +172,8 @@ class DatasetPoolViewModel:
         self._rows: "list[DatasetPoolRow]" = []
         # 손상 파일 격리 목록(RC-05) — refresh 가 채우고 표현 계층이 시끄럽게 표면화한다.
         self._corrupted: "list[tuple[Path, str]]" = []
+        # 같은 정체성 슬롯 그룹(§5.3 병합 대상) — refresh 가 채운다.
+        self._duplicates: "list[list[DatasetPoolRow]]" = []
         self._subs: list = []
         self.refresh()
 
@@ -179,9 +188,17 @@ class DatasetPoolViewModel:
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
         corrupted: "list[tuple[Path, str]]" = []
-        items = self.registry.list_items(corrupted=corrupted)
-        self._rows = [DatasetPoolRow.from_item(it) for it in items]
+        entries = self.registry.list_entries(corrupted=corrupted)
+        self._rows = [DatasetPoolRow.from_item(key, it) for key, it in entries]
         self._corrupted = corrupted
+        # 같은 정체성 슬롯 2+개(구판 마이그레이션의 병합 대상, §5.3) — 목록과 같은 스캔에서
+        # 파생한다(별도 재스캔 금지). 표면이 loud 재진술하고 사용자 확정으로만 정리한다.
+        by_ident: "dict[str, list[DatasetPoolRow]]" = {}
+        for (_key, it), row in zip(entries, self._rows, strict=True):
+            ident = item_identity(it)
+            if ident is not None:
+                by_ident.setdefault(ident, []).append(row)
+        self._duplicates = [g for g in by_ident.values() if len(g) > 1]
         self._notify()
 
     def rows(self) -> "list[DatasetPoolRow]":
@@ -191,6 +208,15 @@ class DatasetPoolViewModel:
         """격리된 손상 파일 목록 ``(경로, 오류)`` — 표현 계층이 '손상됨' 항목으로 재진술한다."""
         return list(self._corrupted)
 
+    def duplicates(self) -> "list[list[DatasetPoolRow]]":
+        """같은 데이터(경로+시트)를 가리키는 등록 2+건의 그룹 — 병합 확정 대상(§5.3).
+
+        구판(이름=키)이 남긴 상태라 새 등록으로는 만들어지지 않는다(등록 게이트가 정체성
+        중복을 갱신으로 접는다). 표면은 이 그룹을 숨기지 말고 loud 재진술한 뒤, 남길
+        1건을 사용자가 고르게 한다 — 무손실 병합이 아니므로 조용한 자동 정리는 금지다.
+        """
+        return [list(g) for g in self._duplicates]
+
     def is_empty(self) -> bool:
         return not self._rows
 
@@ -198,10 +224,25 @@ class DatasetPoolViewModel:
         return f"{len(self._rows)}건" if self._rows else ""
 
     # ---------------------------------------------------------- 등록(참조만)
+    def find_same_data(
+        self, path: str, sheet: "str | None" = None
+    ) -> "tuple[str, DatasetPoolItem] | None":
+        """이 경로+시트가 이미 고정돼 있는가 — 등록 게이트의 **정체성** 중복 판정(§5.3 C).
+
+        이름은 라벨이라 판정에 들지 않는다: 같은 데이터의 재등록은 새 항목이 아니라
+        기존 슬롯의 라벨·메모 갱신(:meth:`relabel`)이고, 그 확정은 호출측(컨트롤러)이
+        기존 이름을 재진술한 뒤 받는다.
+        """
+        return self.registry.find_identity(path, sheet or "")
+
     def register_excel(
         self, name: str, path: str, *, sheet: "str | None" = None, note: str = ""
     ) -> DatasetPoolItem:
-        """엑셀/CSV 참조 등록 — **경로만** 저장(스냅샷 아님, 실행 때 재읽기)."""
+        """엑셀/CSV 참조 등록 — **경로만** 저장(스냅샷 아님, 실행 때 재읽기).
+
+        같은 정체성(경로+시트)이 이미 있으면 레지스트리가 loud 거절한다 — 중복 확인·
+        갱신 분기는 호출측이 :meth:`find_same_data` 로 먼저 가른다(백스톱 이중선).
+        """
         name = (name or "").strip()
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
@@ -211,46 +252,86 @@ class DatasetPoolViewModel:
         if sheet:
             opts["sheet"] = sheet
         item = DatasetPoolItem(name=name, kind="excel", opts=opts, note=note)
-        self.registry.save(item)
+        self.registry.add(item)
+        self.refresh()
+        return item
+
+    def relabel(self, key: str, name: str, *, note: str = "") -> DatasetPoolItem:
+        """같은 데이터 재고정의 확정 착지 — **라벨·메모만** 갱신(수명·참조 보존).
+
+        이름은 정체성이 아니므로(§5.3 C) 이 갱신은 다른 소비자를 흔들 수 없다 — 참조를
+        드는 외래 소비자 자체가 없다(`default_dataset_ref` 폐기, 판정 D). 메모는 입력이
+        있을 때만 교체한다(빈 입력 = 진술 없음, 조용한 소거 금지).
+        """
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("데이터셋 이름을 입력하세요.")
+
+        def update(current: DatasetPoolItem) -> None:
+            current.name = name
+            if note:
+                current.note = note
+
+        item = self.registry.mutate(key, update)
         self.refresh()
         return item
 
     def update_excel_reference(
         self,
-        item: DatasetPoolItem,
+        key: str,
         path: str,
         *,
         sheet: "str | None" = None,
         note: str = "",
+        name: str = "",
     ) -> DatasetPoolItem:
-        """동명 재등록 확정 — 기존 항목의 **참조(kind+opts)만** 갱신한다(수명 보존, C3).
+        """다시 연결 확정 — 기존 슬롯의 **참조(kind+opts)만** 갱신한다(수명 보존, C3).
 
         새 항목으로 통째 교체하면 보관 상태가 조용히 active 로 복귀해 실행 후보에
         재등장하고 note·created_at 이 소실된다 — 확인 문구는 '참조가 새 파일로 바뀐다'만
-        재진술하므로 상태·생성시각은 건드리지 않는 것이 문구와 일치한다(에디터
-        ``_do_save`` 의 보존 갱신 미러). 메모는 입력이 있을 때만 교체한다 — 빈 입력은
-        '진술 없음'으로 보고 기존 메모를 보존한다(조용한 소거 금지).
+        재진술하므로 상태·생성시각은 건드리지 않는 것이 문구와 일치한다. 내용물 교체가
+        이 개체의 **정상 수명 사건**이라(월별 파일 갈아끼우기) 정체성이 바뀌어도 슬롯은
+        산다 — §5.3 이 id 축을 기각한 바로 그 근거다. 단 새 참조가 **다른 슬롯의
+        정체성**과 겹치면 같은 데이터가 2건이 되므로 loud 거절한다. 메모는 입력이 있을
+        때만 교체한다(빈 입력 = 진술 없음, 조용한 소거 금지).
 
-        **kind 정규화(r4)**: opts 만 갈아끼우고 kind 를 방치하면 동명 nara/pipeline
-        항목이 ``kind="nara" + opts={"path": …}`` 하이브리드로 손상된다 — 겨눔 시
-        나라 동결 문구로 거절되고(방금 엑셀을 등록했는데!), reference_summary 는
-        "기간 ?~?" 를 찍는다. 엑셀 참조 확정은 kind 도 excel 로 착지해야 한다(cross-kind
-        전이는 확인 문구가 :func:`kind_transition_clause` 로 함께 재진술).
+        **kind 정규화(r4)**: opts 만 갈아끼우고 kind 를 방치하면 nara/pipeline 항목이
+        ``kind="nara" + opts={"path": …}`` 하이브리드로 손상된다 — 겨눔 시 나라 동결
+        문구로 거절되고, reference_summary 는 "기간 ?~?" 를 찍는다. 엑셀 참조 확정은
+        kind 도 excel 로 착지한다(cross-kind 전이는 :func:`kind_transition_clause` 재진술).
+
+        **정체성 검사는 변이와 한 잠금 안이다**(코덱스 1R P2): pywebview 는 호출마다 다른
+        스레드로 들어오므로, 잠금 밖 선검사는 서로 다른 슬롯 둘을 같은 경로+시트로 동시
+        재연결할 때 둘 다 통과시키고 mutate 만 직렬화돼 **같은 정체성의 슬롯 2개**가 남는다
+        — 레지스트리 불변식(같은 데이터 = 슬롯 1개)이 조용히 깨진다. 공유 쓰기 잠금
+        (:meth:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry.write_lock`, 재진입 RLock)
+        안에서 검사하고 그대로 mutate 까지 간다 — ``add`` 가 자기 잠금 안에서 검사하는 것과
+        같은 규율이다.
         """
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
         opts: "dict[str, object]" = {"path": path}
         if sheet:
             opts["sheet"] = sheet
+
         def update(current: DatasetPoolItem) -> None:
-            # 호출자가 건넨 item 은 확인 모달 전 스냅샷일 수 있다. 현재 디스크 항목을 잠금 안에서
+            # 호출자가 본 행은 확인 모달 전 스냅샷일 수 있다. 현재 디스크 항목을 잠금 안에서
             # 다시 읽어 참조 필드만 바꿔야 동시 보관 상태·메모를 되돌리거나 삭제를 부활시키지 않는다.
             current.kind = "excel"  # kind/opts 정합 — 하이브리드 손상 항목 금지(r4)
             current.opts = opts
             if note:
                 current.note = note
+            if name:  # 라벨은 정체성이 아니라(§5.3 C) 같은 확정에 함께 갱신해도 안전하다
+                current.name = name
 
-        item = self.registry.mutate(item.name, update)
+        with self.registry.write_lock():
+            taken = self.registry.find_identity(path, sheet or "")
+            if taken is not None and taken[0] != key:
+                raise ValueError(
+                    f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다. "
+                    "그 항목을 쓰거나 먼저 정리하세요."
+                )
+            item = self.registry.mutate(key, update)
         self.refresh()
         return item
 
@@ -283,21 +364,21 @@ class DatasetPoolViewModel:
         if page_no:
             opts["page_no"] = page_no
         item = DatasetPoolItem(name=name, kind="nara", opts=opts, note=note)
-        self.registry.save(item)
+        self.registry.add(item)
         self.refresh()
         return item
 
-    # ---------------------------------------------------------- 상태/삭제
-    def _transition(self, name: str, action: str) -> None:
-        self.registry.mutate(name, lambda item: getattr(item, action)())
+    # ---------------------------------------------------------- 상태/삭제(슬롯 키)
+    def _transition(self, key: str, action: str) -> None:
+        self.registry.mutate(key, lambda item: getattr(item, action)())
         self.refresh()
 
-    def archive(self, name: str) -> None:
-        self._transition(name, "archive")
+    def archive(self, key: str) -> None:
+        self._transition(key, "archive")
 
-    def activate(self, name: str) -> None:
-        self._transition(name, "activate")
+    def activate(self, key: str) -> None:
+        self._transition(key, "activate")
 
-    def delete(self, name: str) -> None:
-        self.registry.delete(name)
+    def delete(self, key: str) -> None:
+        self.registry.delete(key)
         self.refresh()

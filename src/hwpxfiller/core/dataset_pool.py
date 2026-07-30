@@ -6,13 +6,24 @@ ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일
 "데이터·행 미저장" 불변식(포인터만 직렬화)을 유지한다 — 풀 항목은 **소스를 어떻게 다시
 여는가**(kind + opts)만 담고 레코드는 담지 않는다.
 
+**정체성 = 경로+시트, 이름 = 순수 라벨**(U2 §5.3 판정 C, #347): 엑셀/CSV 참조의 정체성은
+``normcase(abspath(path)) + sheet`` 다(:func:`excel_identity`) — 같은 워크북의 다른 시트는
+다른 데이터(#33)이고, 같은 경로·시트는 이름이 달라도 같은 데이터다. ``name`` 은 중복 허용·
+개명 자유·정체성 무관의 표시 라벨로 강등됐다. 그래서 파일명도 이름 slug 가 아니라 **불투명
+슬롯 키**(파일 stem)이고, 그 키는 **내용에서 파생되지 않는다**(내용물 교체가 정상 수명
+사건이라 — 4R 판정, 클래스 주석 참조). 구판(slug 파일명) 파일은 그 stem 그대로 유효한
+슬롯이라 디스크 마이그레이션이 없다(읽는 김에 디스크를 고치지 않는다). 같은 정체성을
+가리키는 슬롯 2개(구판의 다른 이름·같은 경로 등록)는 조용히 하나 버리지 않고
+:meth:`DatasetPoolRegistry.duplicate_identity_groups` 로 표면화해 사용자 확정 후
+병합한다(confirm-or-alarm). ``guard_slug_collision``/``_slug`` 의 데이터셋 소비자는 이
+재편으로 소멸했다(작업 축은 그대로).
+
 **보안 불변식**([[confirm-or-alarm-principle]]): 나라장터 항목은 **ServiceKey 를 담지
 않는다**. opts 는 쿼리(기간·건수·페이지)뿐이고, 키는 실행 복원 시점에만 OS 자격증명 저장소
 (N1 SecretStore)에서 주입한다(복원 로직은 :func:`~hwpxfiller.data.factory.source_from_pool_item`).
 
 직렬화는 :class:`~hwpxfiller.core.job.Job` 의 JSON 관례(UTF-8·``ensure_ascii=False``·``indent=2``·
-``to_dict``/``from_dict``·가산 필드 하위호환)를 그대로 미러한다. 레지스트리도 :class:`~hwpxfiller.
-core.job.JobRegistry` 를 미러(위치-불가지 생성자 + slug 파일명). Qt·엔진 비의존.
+``to_dict``/``from_dict``·가산 필드 하위호환)를 그대로 미러한다. Qt·엔진 비의존.
 """
 
 from __future__ import annotations
@@ -20,10 +31,11 @@ from __future__ import annotations
 import json
 import os
 import threading
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .job import _slug, guard_slug_collision, load_isolated
+from .job import load_isolated
 from .paths import home_dir
 from hwpxcore.atomic import write_text_atomic
 
@@ -56,6 +68,32 @@ def _shared_write_lock(directory: Path) -> "threading.RLock":
     key = os.path.normcase(os.path.abspath(os.fspath(directory)))
     with _WRITE_LOCKS_GUARD:
         return _WRITE_LOCKS.setdefault(key, threading.RLock())
+
+
+def excel_identity(path: "str | Path", sheet: "str | None" = "") -> str:
+    """엑셀/CSV 데이터 축 정체성 — ``normcase(abspath(path))`` + 시트(U2 §5.3 판정 C).
+
+    시트가 축에 드는 것은 새 발명이 아니다(#33) — 같은 워크북의 다른 시트는 다른
+    데이터다. 대소문자·표기 변형(Windows)은 같은 실파일이므로 정규화로 흡수한다.
+    구분자는 경로에 못 들어가는 제어문자(``\\x1f``)라 합성 충돌이 없다.
+    """
+    return os.path.normcase(os.path.abspath(os.fspath(path))) + "\x1f" + (sheet or "")
+
+
+def item_identity(item: "DatasetPoolItem") -> "str | None":
+    """풀 항목의 데이터 축 정체성 — 경로 있는 엑셀 참조만, 나머지는 ``None``.
+
+    나라·파이프라인 참조는 파일이 아니라 이 축의 대상이 아니다(§5.3 의 판정은 데이터
+    **파일** 축이다). 경로가 없거나 형이 깨진 opts 는 정체 불명 = ``None``(추측 금지).
+    """
+    if item.kind != "excel" or not isinstance(item.opts, dict):
+        return None
+    raw = item.opts.get("path")
+    if not isinstance(raw, str) or not raw:
+        return None
+    raw_sheet = item.opts.get("sheet")
+    sheet = raw_sheet if isinstance(raw_sheet, str) else ""
+    return excel_identity(raw, sheet)
 
 
 def default_dataset_pool_dir() -> Path:
@@ -144,14 +182,30 @@ class DatasetPoolItem:
 
 # ------------------------------------------------------------------ 레지스트리
 class DatasetPoolRegistry:
-    """데이터셋 풀 레지스트리 — 디렉터리에 항목당 JSON 1개(:class:`~hwpxfiller.core.job.
-    JobRegistry` 미러). 홈 대시보드 데이터 풀 표면의 데이터 원천.
+    """데이터셋 풀 레지스트리 — 디렉터리에 항목당 JSON 1개. 데이터 선택 다이얼로그의 원천.
 
     위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는
-    :func:`default_dataset_pool_dir`). 파일명은 이름 slug + ``.dataset.json``. slug 이
-    비단사라 서로 다른 이름이 같은 파일로 매핑될 수 있어(예: ``a/b`` 와 ``a_b``)
-    :meth:`save` 는 :class:`~hwpxfiller.core.job.SlugCollisionError` 로 loud raise 하며
-    명시적 ``allow_overwrite=True`` 로만 통과시킨다(JobRegistry 미러, #34).
+    :func:`default_dataset_pool_dir`).
+
+    **키 = 파일 stem(불투명 슬롯 키), 이름 = 라벨**(U2 §5.3 판정 C): 이름이 중복 허용
+    라벨로 강등돼 파일명·조회 키가 될 수 없다. 항목 조작(:meth:`load`·:meth:`mutate`·
+    :meth:`delete`)은 슬롯 키로 하고, 데이터 축의 **중복 판정**은 정체성
+    (:func:`excel_identity` — :meth:`find_identity`)으로 한다.
+
+    **키는 내용에서 파생되지 않는다**(코덱스 4R 근본 조치). 한때 새 슬롯 키가 정체성
+    다이제스트였는데, 그것은 #347 이 ``dataset_id`` 를 기각한 근거(*"내용물 교체가 정상
+    수명 사건"*)를 **파일명에 다시 심는** 구조였다: 파일 A 로 만든 슬롯을 B 로 재연결하면
+    슬롯은 ``hash(identity(A))`` 를 계속 점유하고, 나중에 A 를 다시 고정하려는 사람은
+    정체성 조회는 통과하는데(A 를 참조하는 항목이 없다) 키 충돌로 막혀 「없는 것과
+    충돌한다」는 말을 듣는다. 수명 보존(슬롯은 산다)과 정체성 추적(내용은 갈린다)이 한
+    값에 얹혀 있던 것이 원인이므로, 키는 **내용 무관 불투명 토큰**(:meth:`new_slot_key`)
+    으로 발급하고 정체성은 내용에서 **읽을 때** 파생한다(:meth:`find_identity` — 인덱스가
+    아니라 질의). 같은 데이터 2건 봉쇄는 키가 아니라 그 질의가 진다.
+
+    구판(이름 slug) 파일은 그 stem 그대로 유효한 슬롯이다 — 키가 불투명해졌으므로
+    디스크 마이그레이션은 여전히 없다. 구판이 남긴 다른 이름·같은 정체성 슬롯 2개는
+    :meth:`duplicate_identity_groups` 가 표면화한다(조용한 병합·드롭 금지 — 사용자
+    확정 후 삭제).
     """
 
     SUFFIX = ".dataset.json"
@@ -160,24 +214,59 @@ class DatasetPoolRegistry:
         self.directory = Path(directory)
         self._write_lock = _shared_write_lock(self.directory)
 
-    def path_for(self, name: str) -> Path:
-        return self.directory / (_slug(name) + self.SUFFIX)
+    # ------------------------------------------------------------- 슬롯 키
+    def slot_path(self, key: str) -> Path:
+        """슬롯 키 → 파일 경로. 웹 페이로드가 흘러드는 자리라 경로 탈출을 loud 거절한다."""
+        if (
+            not key
+            or key != Path(key).name  # 구분자·상위 참조가 들어간 키 = 경로 탈출 시도
+            or key in (".", "..")
+        ):
+            raise ValueError(f"올바른 등록 데이터 키가 아닙니다: {key!r}")
+        return self.directory / (key + self.SUFFIX)
 
-    def save(self, item: DatasetPoolItem, *, allow_overwrite: bool = False) -> None:
-        """항목을 저장한다. slug 충돌(다른 이름·같은 파일)은 loud 거부.
+    def new_slot_key(self) -> str:
+        """빈 슬롯 키 발급 — **내용 무관 불투명 토큰**(위 클래스 주석의 4R 판정).
 
-        대상 파일이 이미 **다른 항목 이름**으로 존재하거나 손상돼 소유를 확인할 수 없으면
-        ``allow_overwrite`` 없이는 :class:`~hwpxfiller.core.job.SlugCollisionError` 를 던진다
-        (조용한 durable 참조 소실 방지). 같은 이름 재저장(상태 전이 등)은 충돌이 아니라 통과.
+        내용에서 파생하지 않으므로 슬롯은 참조가 갈려도(다시 연결) 자기 자리를 지키고,
+        놓아준 데이터는 다른 슬롯이 자유롭게 다시 고정할 수 있다 — 수명 보존과 정체성
+        추적이 서로를 막지 않는다. 파일 존재로 재발급해 같은 디렉터리 안 충돌을 없앤다
+        (쓰기 잠금 안에서 부른다 — 발급과 생성 사이의 경합 봉쇄).
+        """
+        for _ in range(8):
+            key = uuid.uuid4().hex[:16]
+            if not self.slot_path(key).exists():
+                return key
+        raise RuntimeError("빈 등록 데이터 슬롯 키를 발급하지 못했습니다.")  # 사실상 불가
+
+    # ------------------------------------------------------------- 쓰기
+    def add(self, item: DatasetPoolItem) -> str:
+        """새 항목 추가 → 슬롯 키 반환. 같은 정체성이 이미 있으면 loud 거절.
+
+        중복 확인·병합은 호출측(등록 게이트)이 :meth:`find_identity` 로 먼저 판정해
+        사용자에게 재진술한다 — 여기 거절은 그 판정을 우회한 호출을 잡는 백스톱이다.
+        **거절 근거는 키가 아니라 정체성 질의**다(4R): 키가 내용에서 파생되던 시절엔
+        「지금 아무도 안 쓰는 데이터」가 옛 슬롯 키와 부딪혀 거절됐다.
         """
         with self._write_lock:
+            ident = item_identity(item)
+            if ident is not None:
+                found = self.find_identity_raw(ident)
+                if found is not None:
+                    raise ValueError(
+                        f"같은 데이터(경로·시트)가 이미 '{found[1].name}' 으로 고정돼 "
+                        "있습니다."
+                    )
             self.directory.mkdir(parents=True, exist_ok=True)
-            path = self.path_for(item.name)
-            if not allow_overwrite:
-                guard_slug_collision(
-                    path, item.name, lambda p: DatasetPoolItem.load(p).name, kind="데이터셋"
-                )
-            item.save(path)
+            key = self.new_slot_key()
+            item.save(self.slot_path(key))
+            return key
+
+    def save_at(self, key: str, item: DatasetPoolItem) -> None:
+        """슬롯에 항목을 원자 저장 — 갱신은 :meth:`mutate` 를 쓰고 이건 그 몸통이다."""
+        with self._write_lock:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            item.save(self.slot_path(key))
 
     def write_lock(self) -> "threading.RLock":
         """이 디렉터리의 모든 레지스트리 인스턴스가 공유하는 쓰기 잠금.
@@ -188,27 +277,28 @@ class DatasetPoolRegistry:
         """
         return self._write_lock
 
-    def mutate(self, name: str, change) -> DatasetPoolItem:
+    def mutate(self, key: str, change) -> DatasetPoolItem:
         """기존 항목을 잠금 안에서 다시 읽고 ``change(item)`` 적용 후 원자 저장한다.
 
         항목이 잠금 획득 전에 삭제됐으면 :meth:`load` 가 ``FileNotFoundError`` 를 내고 저장은
         수행되지 않는다. 오래된 화면 스냅샷이 삭제된 항목을 되살리는 것을 막는 핵심 경계다.
         """
         with self._write_lock:
-            item = self.load(name)
+            item = self.load(key)
             change(item)
-            self.save(item, allow_overwrite=True)
+            self.save_at(key, item)
             return item
 
-    def exists(self, name: str) -> bool:
-        return self.path_for(name).exists()
+    # ------------------------------------------------------------- 읽기
+    def exists(self, key: str) -> bool:
+        return self.slot_path(key).exists()
 
-    def load(self, name: str) -> DatasetPoolItem:
-        return DatasetPoolItem.load(self.path_for(name))
+    def load(self, key: str) -> DatasetPoolItem:
+        return DatasetPoolItem.load(self.slot_path(key))
 
-    def delete(self, name: str) -> None:
+    def delete(self, key: str) -> None:
         with self._write_lock:
-            p = self.path_for(name)
+            p = self.slot_path(key)
             if p.exists():
                 p.unlink()
 
@@ -216,6 +306,23 @@ class DatasetPoolRegistry:
         if not self.directory.exists():
             return []
         return sorted(self.directory.glob("*" + self.SUFFIX), key=lambda p: p.name)
+
+    def list_entries(
+        self,
+        status: "str | None" = None,
+        *,
+        corrupted: "list[tuple[Path, str]] | None" = None,
+    ) -> "list[tuple[str, DatasetPoolItem]]":
+        """(슬롯 키, 항목) 목록 — 이름순(동명은 키순). 격리 계약은 :meth:`list_items` 와 같다."""
+        entries: "list[tuple[str, DatasetPoolItem]]" = load_isolated(
+            self._files(),
+            lambda p: (Path(p).name[: -len(self.SUFFIX)], DatasetPoolItem.load(p)),
+            corrupted,
+        )
+        entries.sort(key=lambda e: (e[1].name, e[0]))
+        if status is not None:
+            entries = [e for e in entries if e[1].status == status]
+        return entries
 
     def list_items(
         self,
@@ -236,13 +343,52 @@ class DatasetPoolRegistry:
         조용히 증발하는 정합 결함이었다. 격리를 원하는 표면은 명시적으로 수집 리스트를
         넘기고 손상 건수를 병기하라(풀 화면·피커·홈 KPI 가 그렇게 한다).
         """
-        items: "list[DatasetPoolItem]" = load_isolated(
-            self._files(), DatasetPoolItem.load, corrupted
-        )
-        items.sort(key=lambda it: it.name)
-        if status is not None:
-            items = [it for it in items if it.status == status]
-        return items
+        return [item for _key, item in self.list_entries(status, corrupted=corrupted)]
+
+    # ------------------------------------------------------------- 정체성 조회
+    def find_identity_raw(
+        self, ident: str
+    ) -> "tuple[str, DatasetPoolItem] | None":
+        """정체성 문자열로 슬롯 조회 — 손상 파일은 건너뛴다(손상 표면화는 목록 계약 소관)."""
+        for key, item in self.list_entries(corrupted=[]):
+            if item_identity(item) == ident:
+                return (key, item)
+        return None
+
+    def find_identity(
+        self, path: "str | Path", sheet: "str | None" = ""
+    ) -> "tuple[str, DatasetPoolItem] | None":
+        """경로+시트로 슬롯 조회 — 등록 게이트의 중복 판정 입구(같은 데이터인가?)."""
+        return self.find_identity_raw(excel_identity(path, sheet))
+
+    def find_by_name(self, name: str) -> "tuple[str, DatasetPoolItem] | None":
+        """라벨로 첫 슬롯 조회 — 이름이 정체성이 아니게 된 뒤의 **편의 조회**다.
+
+        동명이 허용되므로 유일성을 전제하는 판정에 쓰면 안 된다(첫 항목 반환) — 파킹된
+        파이프라인 빌더처럼 이름이 실질 핸들인 비파일 참조 표면만 쓴다.
+        """
+        for key, item in self.list_entries(corrupted=[]):
+            if item.name == name:
+                return (key, item)
+        return None
+
+    def duplicate_identity_groups(
+        self, *, corrupted: "list[tuple[Path, str]] | None" = None
+    ) -> "list[list[tuple[str, DatasetPoolItem]]]":
+        """같은 정체성을 가리키는 슬롯 2+개의 그룹 — 구판 마이그레이션의 병합 대상.
+
+        구판(이름=키)은 다른 이름·같은 경로를 2건으로 허용했다. 재편 뒤 그 2건은 같은
+        데이터라 **병합 판정이 필요**한데, 무손실이 아니므로(둘 중 하나의 이름·메모·상태가
+        남는다) 조용히 하나 버리지 않고 이 그룹을 앱 표면이 loud 재진술한 뒤 사용자가
+        남길 슬롯을 확정한다(U2 §5.3 — confirm-or-alarm).
+        """
+        by_ident: "dict[str, list[tuple[str, DatasetPoolItem]]]" = {}
+        for key, item in self.list_entries(corrupted=corrupted):
+            ident = item_identity(item)
+            if ident is None:
+                continue
+            by_ident.setdefault(ident, []).append((key, item))
+        return [group for group in by_ident.values() if len(group) > 1]
 
     def names(self) -> "list[str]":
         return [it.name for it in self.list_items()]

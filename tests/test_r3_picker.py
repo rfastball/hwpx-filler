@@ -140,6 +140,8 @@ def test_picker_skeleton_is_static_in_index_html():
         #  dataPickerRegister 는 U2 §2.7 4행에서 사망 — 부재 단언은 아래
         #  test_direct_register_is_dead.)
         "dataPickerCorrupt", "dataPickerBrowse",
+        # 같은 데이터 등록 2+건의 병합 표면(#347 — §5.3 구판 마이그레이션 loud 경로).
+        "dataPickerDupes",
         "dataPickerClose",
     ):
         assert f'id="{inner}"' in index, (

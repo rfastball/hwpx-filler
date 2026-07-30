@@ -72,7 +72,8 @@
      사용자는 사라진 값을 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지). 그래서 무엇을·
      어디에·무슨 값을 쳤는지 함께 들고 재구성 **뒤에** 되돌려 놓는다. 되돌릴 자리가 사라졌으면
      (단계 이동 등) 대기도 버린다 — 그때는 남은 편집이 정말 없으므로 열린 버튼이 거짓이다. */
-  const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern", "dataset-name": "dataset_name" };
+  // (dataset-name 편집 키는 #347 에서 사망 — 자동등록 폐기, U2 §5.3 판정 D.)
+  const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern" };
   const ROW_EDIT_KEYS = {
     "row-source": "source", "row-type": "type", "row-fmt": "fmt", "row-const": "const",
   };
@@ -736,8 +737,6 @@
     return `<div class="wtitle">${esc(stageTitle(s, "binding"))}</div>
       <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
       ${dataGateway(s)}
-      ${datasetBlock(s)}
-      ${defaultDatasetBlock(s)}
       ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
@@ -818,8 +817,9 @@
   }
 
   /* ---- 탭: 파일 이름 — 대조표 20행의 승격(저장 단계 인라인 → 전용 탭).
-     이름·자동등록·기본 데이터·작성 출처는 각자의 거처로 흩어졌다(§10.13.3 승계 정산):
-     이름=머리, 자동등록·기본 데이터=연결 탭의 데이터 관문, 작성 출처=템플릿 탭. ---- */
+     이름·작성 출처는 각자의 거처로 흩어졌다(§10.13.3 승계 정산): 이름=머리, 작성 출처=
+     템플릿 탭. (자동등록·기본 데이터 블록은 #347 에서 사망 — U2 §5.3 판정 D: 저장은
+     데이터를 등록하지도 결속하지도 않는다. 풀 등록은 데이터 선택 면의 「이 데이터 고정」.) ---- */
   function saveStage(s) {
     return `<div class="wtitle">${esc(stageTitle(s, "filename"))}</div>
       <p class="wsub">이 작업이 만드는 파일의 이름 규칙입니다. HWPX 작업의 영구 규칙이고,
@@ -858,47 +858,9 @@
     </div>`;
   }
 
-  /* 선언 데이터 자동등록(#26/#18 31A5A484-C) — 검토용으로 고른 데이터를 등록 데이터로
-     자동등록한다. 참조(경로·시트)만 저장 — 행·내용은 저장하지 않는다. */
-  function datasetBlock(s) {
-    if (!s.data_path) return "";
-    return `<div class="grp">
-      <span class="cap">데이터 함께 등록</span>
-      <p class="hint" style="margin-top:0">저장하면 데이터(${esc(s.data_name)})를 등록 데이터에
-        올리고 <b>이 작업의 기본 데이터로 연결</b>합니다. 파일 위치만 기억하고, 실행할 때
-        원본을 읽습니다.</p>
-      <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
-        <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
-    </div>`;
-  }
-
-  /* 기본 데이터 연결 상태(#67) — 편집 모드에서 복원한 참조의 현재 상태 재진술 + 로케이트.
-     이 세션이 데이터를 새로 골랐으면 서버가 null 을 줘 자동등록 블록이 서사를 맡는다. */
-  function defaultDatasetBlock(s) {
-    const d = s.default_dataset;
-    if (!d) return "";
-    let line;
-    if (d.status === "linked") {
-      line = `<p class="hint" style="margin-top:0">기본 데이터: <b>${esc(d.name)}</b> (연결됨)
-        ${PathTrack.affordances(d.path)}</p>`;
-    // 조치 안내는 **실재하는 거처**를 가리켜야 한다(F1: 「데이터 관리」 화면 사망) — 등록
-    // 데이터의 수명 관리는 이제 「작업」의 [데이터 선택…] 안 「고정한 데이터」 구획이다.
-    } else if (d.status === "dead") {
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
-        참조 파일이 없습니다(${esc(d.path)}). 「문서 만들기」의 [데이터 선택…] → 「고정한 데이터」에서
-        [다시 연결…]하세요.</p>`;
-    } else if (d.status === "corrupt") {  // 항목 JSON 손상 — 삭제와 다른 조치(손상 격리 표시와 정합)
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
-        등록 데이터를 읽을 수 없습니다(손상). 「문서 만들기」의 [데이터 선택…]에서 확인하세요.</p>`;
-    } else {  // missing — 풀 항목 자체가 사라짐
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
-        등록 데이터에 없습니다(삭제됨). 「문서 만들기」의 [데이터 선택…]에서 같은 이름으로 고정하거나,
-        데이터를 다시 선택하세요.</p>`;
-    }
-    return `<div class="grp">
-      <span class="cap">기본 데이터 연결</span>${line}
-    </div>`;
-  }
+  /* (datasetBlock·defaultDatasetBlock 은 #347 에서 사망 — 저장 시 데이터 자동등록(#18·#26)
+     과 기본 데이터 연결(#53-A)이 U2 §5.3 판정 D 로 폐기됐다. 데이터↔작업 결속은 어느
+     방향으로도 다시 들이지 않는다.) */
 
   /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
      s.rows 는 스텝2 매핑 확정 시점에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
@@ -1283,7 +1245,6 @@
       case "row-const": sendEdit("set_const", { index: idx, const: el.value }); break;
       case "name": sendEdit("set_name", { name: el.value }); break;
       case "pattern": sendEdit("set_pattern", { pattern: el.value }); break;
-      case "dataset-name": sendEdit("set_dataset_name", { name: el.value }); break;
       default: break;
     }
   }
@@ -1301,10 +1262,10 @@
     if (ok) await sendEdit("confirm_blanks", { fields: blanks });
   }
 
-  /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).
-     flags 는 확인 라운드트립을 누적한다({confirm_overwrite, confirm_dataset}).
-     브리지 예외도 잡아 표시한다 — 백엔드가 반저장(작업 저장 후 실패) 상태로 던지면
-     화면이 무반응이 되는 함정 봉쇄(실패는 언제나 시끄럽게). */
+  /* 저장 — 차단 사유·덮어쓰기 확인 재진술(조용한 덮어쓰기 금지).
+     flags 는 확인 라운드트립을 누적한다({confirm_overwrite}). (자동등록 확인·반저장
+     재진술은 #347 에서 게이트째 사망 — 저장은 데이터를 등록하지 않는다.)
+     브리지 예외도 잡아 표시한다 — 실패는 언제나 시끄럽게. */
   async function doSave(flags) {
     let res;
     try {
@@ -1324,11 +1285,6 @@
       if (window.JobScreen && window.JobScreen.refreshList) window.JobScreen.refreshList();
       // 성공 재진술은 Python notice(ok) 채널 — 저장 착지가 저장본 편집 세션 재로드 push 라
       // #save-msg 는 그 재렌더에 증발한다(PR-2 리뷰 F2: push/반환 경합에 안 걸리는 채널만).
-      // 반저장(작업 저장 성공 + 데이터 등록 실패)만 여기서 loud — 성공으로 뭉개지 않는다.
-      if (res.dataset_register_error) {
-        window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
-          + res.dataset_register_error);
-      }
       // **성공을 값으로 돌려준다**(1R P1): 「저장하고 이동」·「저장하고 나가기」는 이 값으로
       // 계속할지를 정한다 — undefined 를 돌려주면 성공한 저장이 이동을 막아, 사용자가 고른
       // 처분이 절반만 일어난다(저장은 됐는데 가려던 곳에 못 간다).
@@ -1349,15 +1305,7 @@
       }
       return false;
     }
-    if (res.needs_dataset_confirm) {
-      if (await Modal.confirm({
-        body: res.dataset_text, confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
-      })) {
-        return doSave(Object.assign({}, flags, { confirm_dataset: true }));
-      }
-      return false;
-    }
-    alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
+    alertMsg(res.block_reason || "저장할 수 없습니다.");
     aimAtBlockedField(res.blocked_field);
     return false;
   }
@@ -1486,7 +1434,7 @@
   async function leaveTo(target) {
     await flushPendingEdits();
     const s = LAST || {};
-    // **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도
+    // **section 밖의 편집도 잃을 것이다**(2R P1): 작업 이름은 어느 section 에도
     // 속하지 않아 탭 표지엔 안 뜬다 — 그것만 보면 머리에서 이름을 고치고 나가는 사람에게
     // 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없으므로
     // (구 「편집 계속」은 사망) 조용한 파기가 된다. 판정은 Python 의 `dirty` 하나다.

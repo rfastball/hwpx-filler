@@ -131,21 +131,20 @@ def test_tags_roundtrip_and_backward_compat():
     assert loaded2.tags == {"목적물": "용역"}
 
 
-def test_default_dataset_ref_roundtrip_and_backward_compat():
-    """가산 필드 default_dataset_ref(#53-A) — 왕복 보존 + 구 JSON(키 부재)은 기본값 ""
-    (version 1 유지). 없으면 실행 화면이 현행처럼 수동 데이터 선택."""
-    job = _job()
-    job.default_dataset_ref = "월별_낙찰현황"
-    loaded = Job.from_dict(job.to_dict())
-    assert loaded.default_dataset_ref == "월별_낙찰현황"
-    assert loaded.version == 1
+def test_default_dataset_ref_is_dead_and_legacy_key_is_ignored():
+    """작업↔데이터 결속(default_dataset_ref, #53-A)은 #347(U2 §5.3 판정 D)로 폐기됐다.
 
-    old_dict = _job().to_dict()
-    del old_dict["default_dataset_ref"]  # 필드 도입 전 저장된 JSON
-    from_old = Job.from_dict(old_dict)
-    assert from_old.default_dataset_ref == ""  # 기본 데이터 없음으로 동작
+    구 JSON 의 결속 키는 마이그레이션이 아니라 **폐기** — 미지 키로 무시되고(loud raise
+    없음, 타입이 깨져 있어도 읽지 않는 키는 검증 대상이 아니다) 재저장 시 소멸한다.
+    """
+    assert not hasattr(Job(), "default_dataset_ref")
+    assert "default_dataset_ref" not in _job().to_dict()
+
+    old_dict = {**_job().to_dict(), "default_dataset_ref": "월별_낙찰현황"}
+    from_old = Job.from_dict(old_dict)          # 구버전이 남긴 결속 키 — 조용히 무시
     assert from_old.version == 1
-    assert Job().default_dataset_ref == ""     # 미연결이 기본(선택적)
+    assert "default_dataset_ref" not in from_old.to_dict()
+    assert Job.from_dict({**_job().to_dict(), "default_dataset_ref": 7}).name == _job().name
 
 
 def test_from_dict_rejects_type_corrupt_durable_values():
@@ -161,7 +160,7 @@ def test_from_dict_rejects_type_corrupt_durable_values():
         {**base, "tags": ["금액구간"]},         # tags 가 리스트
         {**base, "last_run_at": 1720000000},   # 비문자열 시각 → refresh 의 _fmt_iso 지뢰
         {**base, "name": 5},                   # 비문자열 이름
-        {**base, "default_dataset_ref": 7},    # 비문자열 참조 → 겨눔 이름 조회 지뢰
+        {**base, "group": 5},                  # 비문자열 그룹 → 좌 목록 구획 지뢰
     ]
     for d in corrupt_variants:
         with pytest.raises(ValueError):

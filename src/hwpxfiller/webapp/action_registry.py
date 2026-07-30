@@ -61,8 +61,9 @@ _DATA_ZONE = {
     "filter_panel": _schema("column"),
 }
 
+# 겨눔 대상은 슬롯 `key` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 겨눔의 정체가 못 된다).
 _POOL_TARGETING = {
-    "load_pool": _schema("name"),
+    "load_pool": _schema("key"),
 }
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
@@ -121,8 +122,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "step_preview": _schema("delta"),
         "set_name": _schema("name"),
         "set_pattern": _schema("pattern"),
-        "set_dataset_name": _schema("name"),
-        "save": _schema(optional="confirm_dataset confirm_overwrite confirmed_overwrite_text"),
+        # (set_dataset_name·confirm_dataset 은 #347 에서 사망 — 저장 시 데이터 자동등록
+        #  (#18·#26)이 U2 §5.3 판정 D 로 폐기됐다. 등록은 데이터 선택 면의 「이 데이터
+        #  고정」 명시 행동 하나다.)
+        "save": _schema(optional="confirm_overwrite confirmed_overwrite_text"),
     },
     # 「문서 만들기」(v6 nav 1) — 화면 키는 `job` 그대로다(Job 은 도메인 개체 이름이라 화면이
     # 개명돼도 어휘가 갈리지 않는다 — 지도 §10.9 판정 A). 좌 목록 사망(F2 PR-B)으로 접힘·
@@ -206,12 +209,21 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "leave_guard": _schema(),
         "close": _schema(),
     },
+    # 항목 조작은 슬롯 `key`, 등록은 라벨 `name` + 참조(U2 §5.3 — 정체성=경로+시트).
+    # **파괴·덮어쓰기 확정 왕복 넷**(delete·register_excel 라벨 갱신·relink·
+    # resolve_duplicate)의 `basis` = 1차가 **보여준 상태의 지문** 왕복이다
+    # (screen_pool.confirm_basis) — 확정은 그 지문과 지금 상태를 대조해야 하고, 미동봉이면
+    # fail-closed 거절이다(고지 없는 삭제·덮어쓰기 봉쇄). 넷이 기제 하나를 공유한다.
     "pool": {
         "refresh": _schema(),
-        "archive": _schema("name"),
-        "activate": _schema("name"),
-        "delete": _schema("name", "confirm"),
-        "register_excel": _schema("name path", "sheet note confirm"),
+        "archive": _schema("key"),
+        "activate": _schema("key"),
+        "delete": _schema("key", "confirm basis"),
+        "register_excel": _schema("name path", "sheet note confirm basis"),
+        # 다시 연결(#67) — 같은 슬롯의 참조 교체(수명 보존). 확인 라운드트립.
+        "relink": _schema("key path", "sheet note name confirm basis"),
+        # 구판(이름=키) 마이그레이션의 병합 확정 — 남길 슬롯 1건, 확인 라운드트립.
+        "resolve_duplicate": _schema("keep", "confirm basis"),
     },
     "tpl": {
         "refresh": _schema(),

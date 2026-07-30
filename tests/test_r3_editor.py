@@ -20,17 +20,13 @@ TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
 
-def _controller(tmp_path: Path, *, pool_registry=None) -> EditorController:
-    """레지스트리를 tmp 로 격리한 컨트롤러(풀은 주입 가능 — 실패/계수 더블용)."""
+def _controller(tmp_path: Path) -> EditorController:
+    """레지스트리를 tmp 로 격리한 컨트롤러(#347: 풀 주입은 자동등록과 함께 사망)."""
     from hwpxfiller.core.text_registry import TextTemplateRegistry
 
     return EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: None,
-        pool_registry=(
-            pool_registry if pool_registry is not None
-            else DatasetPoolRegistry(tmp_path / "pool")
-        ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
 
@@ -100,31 +96,23 @@ def test_c1_apply_profile_confirm_false_carries_values_only():
 
 
 # ================================================================ C4 (HIGH)
-# 저장 후 pool 등록 실패 = 무반응 반저장 금지 — 결과 dict 로 정직 재진술.
-class _FailingPool(DatasetPoolRegistry):
-    def save(self, item, *, allow_overwrite: bool = False) -> None:  # noqa: ARG002
-        raise OSError("디스크 쓰기 실패(시뮬레이션)")
-
-
-def test_c4_pool_register_failure_is_restated_not_swallowed(tmp_path):
-    ctrl = _controller(tmp_path, pool_registry=_FailingPool(tmp_path / "pool"))
-    _complete_with_data(ctrl, "반저장작업")
-    res = ctrl.dispatch("save", {})                  # 예외가 dispatch 밖으로 새지 않는다
-    assert res["ok"] is True                         # 작업 저장 자체는 성공
-    assert res["saved_name"] == "반저장작업"
-    assert res["dataset_registered"] == ""           # 등록은 실패 — 성공으로 뭉개지 않음
-    assert "등록에 실패" in res["dataset_register_error"]
-    assert "multi_sheet" in res["dataset_register_error"]
-    assert JobRegistry(tmp_path / "jobs").exists("반저장작업")  # 반저장 상태의 정직 재진술
-
-
-def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
-    """정적 계약: doSave 는 try/catch 로 감싸고 dataset_register_error 를 표면화한다."""
+# (구 C4 반저장(작업 저장 성공+풀 등록 실패) 재진술 계약은 #347 에서 자동등록과 함께
+#  소멸 — 저장이 풀에 쓰지 않으므로 반저장 상태 자체가 없다. 브리지 예외 무반응 금지
+#  계약(doSave try/catch)은 아래 정적 가드가 계속 진다.)
+def test_c4_editor_js_dosave_guards_bridge_exception(tmp_path):
+    """정적 계약: doSave 는 try/catch 로 감싸 브리지 예외 무반응을 막는다."""
     src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
     start = src.index("async function doSave")
     body = src[start:start + 2000]
     assert "try {" in body and "catch" in body       # 브리지 예외 무반응 금지
-    assert "dataset_register_error" in body          # 반저장 경고 표면화
+    # 자동등록 반저장 표면(dataset_register_error)은 게이트째 사망(#347) — 부활 금지.
+    assert "dataset_register_error" not in src
+    assert "needs_dataset_confirm" not in src
+    ctrl = _controller(tmp_path)
+    _complete_with_data(ctrl, "무풀저장작업")
+    res = ctrl.dispatch("save", {})
+    assert res == {"ok": True, "saved_name": "무풀저장작업"}  # 등록 관련 키 없음
+    assert DatasetPoolRegistry(tmp_path / "pool").list_items() == []
 
 
 def test_editor_js_gateway_guards_confirmed_mapping_reset():
@@ -241,66 +229,10 @@ def test_c10_self_update_after_external_delete_recreates_without_confirm(tmp_pat
     assert reg.exists("삭제작업")
 
 
-# ================================================================ K9
-# 게이트 판정 뒤 저장은 같은 .dataset.json을 mutate 잠금 안에서 다시 읽는다(#182).
-class _CountingPool(DatasetPoolRegistry):
-    def __init__(self, directory):
-        super().__init__(directory)
-        self.load_calls = 0
-
-    def load(self, name: str) -> DatasetPoolItem:
-        self.load_calls += 1
-        return super().load(name)
-
-
-def test_k9_save_rereads_existing_dataset_under_lock_and_preserves_lifecycle(tmp_path):
-    pool = _CountingPool(tmp_path / "pool")
-    prior = DatasetPoolItem(
-        name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="보존메모")
-    prior.archive()
-    pool.save(prior)
-
-    ctrl = _controller(tmp_path, pool_registry=pool)
-    _complete_with_data(ctrl, "계수작업")
-    pool.load_calls = 0
-    res = ctrl.dispatch("save", {"confirm_dataset": True})
-    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
-    # 게이트 판정 1회 + mutate 잠금 안 최신값 재확인 1회가 내구성 계약이다 — 확인 전
-    # stash를 그대로 저장하면 동시 보관/삭제를 되돌린다(#182). **하한**으로 세는 이유:
-    # 저장 착지 스냅샷의 기본 데이터 재진술(재작성 F7 — 「저장」 분류 사망 뒤 데이터 관문이
-    # 승계)이 표시용으로 한 번 더 읽는다. 표시 읽기는 내구성 결함이 아니다.
-    assert pool.load_calls >= 2
-    item = pool.load("multi_sheet")
-    assert item.status == "archived" and item.note == "보존메모"  # 수명·메모 보존 유지
-    assert item.opts["path"] == str(MULTI_SHEET) and item.opts["sheet"] == "낙찰현황"
-
-
-# ================================================================ r4 (cross-kind)
-def test_r4_cross_kind_dataset_confirm_restates_and_normalizes_kind(tmp_path):
-    """동명 비-excel 항목 자동등록 확정 = 확인 문구에 종류 전이 재진술 + kind 정규화.
-
-    _do_save 의 보존 갱신이 opts 만 갈아끼우면 kind=nara + opts={path}
-    하이브리드 손상 항목이 생긴다 — 풀 피커 겨눔 시 나라 동결 문구로 거절되고 요약이
-    "기간 ?~?" 가 된다(pool 화면 update_excel_reference 미러, confirm-or-alarm).
-    """
-    pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(
-        name="multi_sheet", kind="nara",
-        opts={"bgn_dt": "202601010000", "end_dt": "202601310000"}))
-    ctrl = _controller(tmp_path, pool_registry=pool)
-    _complete_with_data(ctrl, "전이작업")  # 데이터=multi_sheet.xlsx → 데이터셋명 동명 충돌
-
-    # 1차: 게이트 확인 문구가 종류 전이(나라장터→엑셀/CSV)를 재진술한다.
-    res1 = ctrl.dispatch("save", {})
-    assert res1.get("needs_dataset_confirm") is True
-    assert "나라장터 → 엑셀/CSV" in res1["dataset_text"]
-
-    # 2차(confirm): kind/opts 정합 착지 — 수명 보존 갱신이어도 하이브리드 손상 금지.
-    res2 = ctrl.dispatch("save", {"confirm_dataset": True})
-    assert res2["ok"] is True and res2["dataset_registered"] == "multi_sheet"
-    item = pool.load("multi_sheet")
-    assert item.kind == "excel"
-    assert item.opts == {"path": str(MULTI_SHEET), "sheet": "낙찰현황"}
+# ================================================================ K9·r4 (역사)
+# (K9 — 자동등록의 mutate 잠금 재읽기(#182)·r4 — cross-kind 자동등록 정규화는 #347 에서
+#  자동등록째 사망. 같은 내구성·정규화 계약은 pool `relink`/`register_excel` 경로가 지고
+#  test_webapp_pool·test_dataset_pool_state 가 가드한다.)
 
 
 # ================================================================ K10

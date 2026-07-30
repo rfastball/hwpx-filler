@@ -129,6 +129,18 @@ class TestWebSelftestGate:
         assert probe["browse_restated"] is True, probe
         assert probe["browse_pin_visible"] is True, probe
 
+    def test_data_picker_identity_rekey(self, selftest_result: dict) -> None:
+        """데이터 축 정체성 재편(#347, U2 §5.3) — 행동은 슬롯 키를 겨누고 병합은 loud 다.
+
+        이름이 중복 허용 라벨로 강등돼 행 버튼이 키 없이 서면 동명 2건에서 남의 항목을
+        겨눈다. 같은 데이터(경로+시트)를 가리키는 구판 등록 2건은 숨기거나 자동 정리하지
+        않고 병합 확정 카드로 표면화한다(confirm-or-alarm).
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        assert probe["use_targets_key"] is True, probe
+        assert probe["dupes_shown"] is True, probe
+
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self, selftest_result: dict,
     ) -> None:

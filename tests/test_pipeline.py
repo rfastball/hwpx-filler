@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
-from hwpxfiller.core.job import SlugCollisionError
 from hwpxfiller.data import DataSource, make_source
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -245,11 +244,11 @@ def test_pipeline_pool_item_roundtrip_references_only(tmp_path):
     )
     # 직렬화 라운드트립 동일성 + 데이터(행) 미저장(참조·레시피만).
     reg = DatasetPoolRegistry(tmp_path)
-    reg.save(item)
-    saved = reg.path_for("6월 조립").read_text(encoding="utf-8")
+    key = reg.add(item)
+    saved = reg.slot_path(key).read_text(encoding="utf-8")
     assert "서울" not in saved and "부산" not in saved  # 데이터 스냅샷 없음
     assert "a.csv" in saved and "merge" in saved  # 참조·레시피는 있음(JSON 은 \\ 이스케이프)
-    assert reg.load("6월 조립").to_dict() == item.to_dict()
+    assert reg.load(key).to_dict() == item.to_dict()
 
     # 복원 = 실행 시점 재읽기(싱크) → 실제 조립 관통.
     src = source_from_pool_item(item)
@@ -260,18 +259,18 @@ def test_pipeline_pool_item_roundtrip_references_only(tmp_path):
     ]
 
 
-def test_pipeline_pool_item_slug_collision_is_loud(tmp_path):
-    """파이프라인 항목도 다른 이름·같은 slug 저장 시 loud 거부 — 참조·레시피 소실 방지(#34)."""
+def test_pipeline_pool_items_coexist_under_label_names(tmp_path):
+    """§5.3 재편 — 슬롯 키가 파일명이라 구 slug 충돌(다른 이름·같은 파일)이 성립하지 않는다.
+
+    구 계약(#34, 이름 slug 파일명 시절)은 '6월/조립' 과 '6월_조립' 이 같은 파일로 매핑돼
+    loud 거부가 필요했다. 지금은 서로 다른 슬롯이라 둘 다 무손실 공존한다 — 참조·레시피
+    소실 경로 자체가 없다.
+    """
     reg = DatasetPoolRegistry(tmp_path)
-    reg.save(DatasetPoolItem(name="6월/조립", kind="pipeline", opts={"sources": [], "steps": []}))
-    with pytest.raises(SlugCollisionError):
-        reg.save(DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}))
-    # 확정 덮어쓰기는 opt-in 으로만.
-    reg.save(
-        DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}),
-        allow_overwrite=True,
-    )
-    assert reg.names() == ["6월_조립"]
+    k1 = reg.add(DatasetPoolItem(name="6월/조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    k2 = reg.add(DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    assert k1 != k2
+    assert sorted(reg.names()) == sorted(["6월/조립", "6월_조립"])
 
 
 # ------------------------------------------------------------ 나라 sub-source 키 주입 재귀

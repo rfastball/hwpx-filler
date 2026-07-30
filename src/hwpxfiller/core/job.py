@@ -93,8 +93,8 @@ class SlugCollisionError(Exception):
     slug 이 비단사라 ``예산/2026`` 과 ``예산_2026`` 이 같은 파일이 된다. 확인 없는 덮어쓰기는
     durable 데이터(템플릿·매핑·태그·참조)를 조용히 소실시키므로(confirm-or-alarm 위반),
     각 레지스트리의 ``save`` 가 명시적 ``allow_overwrite`` 없이는 여기서 막는다.
-    JobRegistry·DatasetPoolRegistry 가 :func:`guard_slug_collision` 로
-    공유하는 단일 계약(#1 JobRegistry 에서 확립, #34 레지스트리 일반화).
+    (#1 JobRegistry 에서 확립, #34 레지스트리 일반화. 데이터셋 풀 소비자는 U2 §5.3
+    재편(#347 — 파일명이 이름 slug 가 아니게 됨)으로 소멸 — 남은 소비자는 작업·TXT 축.)
     """
 
 
@@ -104,7 +104,7 @@ JobSlugCollisionError = SlugCollisionError
 
 
 def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None:
-    """slug 충돌 loud 가드 — 저장 경계 공용(세 레지스트리 공유, #34).
+    """slug 충돌 loud 가드 — 저장 경계 공용(작업·TXT 레지스트리 공유, #34).
 
     ``path`` 가 이미 존재하면 저장된 이름을 ``load_name(path)`` 로 읽어 ``name`` 과
     비교한다. 다르면(다른 이름·같은 파일) 또는 읽을 수 없으면(손상) :class:`SlugCollisionError`
@@ -155,37 +155,10 @@ def load_isolated(paths, loader, corrupted):
     return items
 
 
-def classify_existing(registry, name: str):
-    """이름 자리(slug 파일)의 선점 상태 분류 — 동명 확인 승격·충돌 차단 게이트의 공용 판정.
-
-    저장 전에 ``exists → load → 손상? → 이름 불일치? → 동명`` 사다리를 타는 화면 게이트
-    (pool 수동 등록·에디터 데이터셋 자동등록)가 이 분류를 공유한다 —
-    사본마다 확인 문구·비교 누락이 표류한 전력(e4ba3bd)을 봉인한다.
-
-    ``registry`` 는 ``exists(name)``/``load(name)`` 을 가진 레지스트리
-    (:class:`JobRegistry`·:class:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry`
-    공통 표면).
-
-    반환 ``(kind, item)``:
-
-    - ``("absent", None)`` — 자리 비어 있음. 게이트 불필요, 바로 저장.
-    - ``("same", item)`` — **같은 이름** 항목 존재. slug 가드는 자기-갱신으로 통과시켜
-      조용한 덮어쓰기가 되므로, 호출측이 기존 내용을 재진술하고 **확인을 승격**해야 한다.
-    - ``("collision", item)`` — **다른 이름·같은 slug 파일**. 덮어쓰기 경로를 열지 말고
-      이름 변경만 안내한다(:func:`guard_slug_collision` 과 동일 판정 — ``item.name`` 이
-      기존 소유자 이름).
-    - ``("corrupt", None)`` — 자리 파일이 손상돼 소유 불명. 조용히 덮지 않는다
-      (이름 변경 안내 또는 slug 가드의 loud 거절에 위임).
-    """
-    if not registry.exists(name):
-        return ("absent", None)
-    try:
-        item = registry.load(name)
-    except Exception:  # noqa: BLE001 — 손상: 소유 불명(추측 금지)
-        return ("corrupt", None)
-    if getattr(item, "name", "") != name:
-        return ("collision", item)
-    return ("same", item)
+# (classify_existing 은 #347 에서 제거 — 소비자가 데이터셋 게이트 둘(pool 수동 등록·에디터
+#  자동등록)뿐이었고, U2 §5.3 재편으로 데이터 축 중복 판정이 이름이 아니라 **정체성**
+#  (:func:`~hwpxfiller.core.dataset_pool.excel_identity`)으로 바뀌며 둘 다 죽었다.
+#  작업 축 slug 가드(:func:`guard_slug_collision`)는 그대로다.)
 
 
 def default_jobs_dir() -> Path:
@@ -339,11 +312,10 @@ class Job:
     # tags(브라우저 렌즈용 차원-불가지 축)와 별개다 — 그룹은 목록의 구조 자체라 전용 필드.
     # 소속이 곧 생성이고 해산은 ""(빈 그룹은 존재하지 않는다 — 퇴화 불변식).
     group: str = ""
-    # 선택적 기본 데이터셋 참조(#53-A) = 데이터셋 풀 항목 이름(""=없음, 하위호환). 실행 화면이
-    # 작업 선택 시 이 참조를 실행 시점에 다시 읽어 자동 조준하는 **조준 힌트**다 — 매핑의
-    # 소스 키 계약(source_keys)이 실행의 진짜 게이트이지 이 참조가 아니다(파일이 월별로
-    # 바뀌어도 헤더가 같으면 재사용). 참조가 유일 실행 의존이 되지 않게 한다.
-    default_dataset_ref: str = ""
+    # (default_dataset_ref(#53-A 작업→데이터 결속)는 U2 §5.3 판정 D 로 **폐기** — v6
+    #  데이터-우선 재작성을 살아남은 작업-앵커 잔재였고, 데이터↔작업 결속은 어느 방향으로도
+    #  다시 들이지 않는다(#347). 구 JSON 의 해당 키는 미지 키로 무시된다 — 마이그레이션이
+    #  아니라 폐기다: 「이 작업이 지난번 쓰던 데이터」 정보는 사용자 확인 하에 사라졌다.)
     # 마지막 **완주** 런이 쓴 규칙의 대상별 지문(재작성 F5, 지도 §10.12 판정 B).
     # ``{}`` = 아직 완주한 적 없음 = 새 작업이라 검토 요구가 선다(§13-3).
     # 왜 영속인가: §13-2("정상 반복 실행에서 미리보기는 선택")가 **앱 재시작을 넘어**
@@ -415,7 +387,6 @@ class Job:
             "favorited_at": self.favorited_at,
             "tags": dict(self.tags),
             "group": self.group,
-            "default_dataset_ref": self.default_dataset_ref,
             "reviewed_rules": dict(self.reviewed_rules),
             "template_revision": self.template_revision,
             "binding_revision": self.binding_revision,
@@ -480,13 +451,13 @@ class Job:
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
             filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
             version=d.get("version", 1),
-            # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로 개념째 제거 — 구 JSON 의
+            # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로, default_dataset_ref
+            # (#53-A 작업→데이터 결속)는 U2 §5.3 판정 D 로 개념째 제거 — 구 JSON 의
             # 해당 키는 미지 키로 무시된다(가산 스키마 규율의 역방향, 하위호환 무해).
             last_run_at=_str("last_run_at"),
             favorited_at=_str("favorited_at"),
             tags=tags,
             group=_str("group"),
-            default_dataset_ref=_str("default_dataset_ref"),
             reviewed_rules=reviewed,
             template_revision=_revision("template_revision"),
             binding_revision=_revision("binding_revision"),
@@ -511,8 +482,8 @@ def content_fingerprint(job: "Job") -> str:
     편집 중 그룹 이동이 "외부 변경을 덮어씁니다"라는 **거짓 파괴 확인**을 띄운다 — 실제로는
     저장이 그 새 그룹을 그대로 되싣는다(과경고도 문안 부정직의 한 형태). 즐겨찾기는
     정렬 메타만 바꾼다는 계약(§18.5)의 코드측 귀결이기도 하다 — 별을 눌렀다는 이유로 열어 둔
-    편집 세션이 '외부 변경' 확인을 요구하면 과경고다. 나머지(템플릿·매핑·파일명 패턴·계보·기본
-    데이터셋 참조)는 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
+    편집 세션이 '외부 변경' 확인을 요구하면 과경고다. 나머지(템플릿·매핑·파일명 패턴·계보)는
+    세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
     변경'으로 확인을 요구해야 한다(무확인 파괴 금지). 에디터·「기안」 저장 두 표면이 같은
     지문을 쓰도록 코어에 둔다(복붙하면 한쪽만 고쳐지는 드리프트가 곧 조용한 파괴다)."""
     d = job.to_dict()

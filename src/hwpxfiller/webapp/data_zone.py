@@ -11,7 +11,8 @@ SelectionModel`)이 소유하고, 여기는 디스패치 위임과 스냅샷 성
 - ``self.selection``(:class:`SelectionModel`) · ``self.filter``(:class:`FilterModel` | None —
   데이터 미겨눔이면 None) · ``self._last_filter``/``self._data_key``(결정 28 직전 필터 슬롯·
   소스 일치 키 — 데이터 겨눔 경로가 :meth:`_stash_filter` 후 :meth:`_file_key`/:meth:`_pool_key`
-  로 갱신) · ``self.pool_registry``/``self.data_label``(풀 키 정체 해소).
+  로 갱신) · ``self.pool_registry``/``self.data_pool_key``(풀 키 정체 해소 — §5.3 재편으로
+  라벨이 아니라 슬롯 키가 정체다).
 - :meth:`_records` — 현 데이터소스의 원본 레코드(미겨눔이면 빈 리스트).
 
 ## 스냅샷 계약(웹 datazone.js 와 쌍)
@@ -71,6 +72,7 @@ class DataZoneMixin:
     pool_registry: DatasetPoolRegistry
     data_label: str
     data_source: str              # ''(미겨눔) | 'file' | 'pool'
+    data_pool_key: str            # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
     #: 현 마운트 대상의 참조 정체(겨눔 시점 캐시) — 데이터 선택 다이얼로그 「현재 데이터」와
     #: 「이 데이터 고정」 프리필의 소재(재작성 F1). 라벨(파일명)만으론 고정할 참조를 지을 수
     #: 없어서 경로·확정 시트를 함께 남긴다(에디터 ``data_path``/``data_sheet`` 선례).
@@ -366,21 +368,22 @@ class DataZoneMixin:
         return f"file:{norm}" + (f"::{sheet}" if sheet else "")
 
     def _pool_key(self) -> str:
-        """풀 소스 키 — 이름이 아니라 **참조 정체**(kind+opts)까지 병기(리뷰 #6).
+        """풀 소스 키 — 슬롯 키 + **참조 정체**(kind+opts) 병기(리뷰 #6 · §5.3 재편).
 
-        라벨은 가변이다: 같은 이름으로 다른 파일을 재등록하면 이름만으론 게이트가 뚫려
-        이전 데이터의 정의가 "같은 소스"로 제공된다. 참조 해소 실패 시(경합 삭제 등)는
-        빈 정체로 강등 — 게이트가 닫히는 안전 방향.
+        라벨은 개명 자유라 키에 들지 않는다(들면 이름만 바꿔도 결정 28 게이트가 조용히
+        닫힌다). 참조 정체를 병기하는 이유는 다시 연결이다: 같은 슬롯이 다른 파일을
+        가리키게 되면 다른 소스다. 참조 해소 실패 시(경합 삭제 등)는 빈 정체로 강등 —
+        게이트가 닫히는 안전 방향.
         """
         # 지연 임포트 — screens.py 가 이 믹스인을 소비하므로 모듈 상단 상호 임포트는 순환.
         from .screens import load_pool_item_checked
 
         try:
-            item = load_pool_item_checked(self.pool_registry, self.data_label)
+            item = load_pool_item_checked(self.pool_registry, self.data_pool_key)
             ident = f"{item.kind}:{json.dumps(item.opts, sort_keys=True, ensure_ascii=False)}"
         except Exception:  # noqa: BLE001 — 정체 불명 = 게이트 닫힘(안전 강등)
             ident = ""
-        return f"pool:{self.data_label}:{ident}"
+        return f"pool:{self.data_pool_key}:{ident}"
 
     # ------------------------------------------------------------- 필터 설치·스냅샷
     def _install_filter(self, records: list, hints: "dict[str, str]") -> None:

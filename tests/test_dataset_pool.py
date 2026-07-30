@@ -17,8 +17,9 @@ from hwpxfiller.core.dataset_pool import (
     DatasetPoolItem,
     DatasetPoolRegistry,
     default_dataset_pool_dir,
+    excel_identity,
+    item_identity,
 )
-from hwpxfiller.core.job import SlugCollisionError
 from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -81,83 +82,164 @@ def test_from_dict_backward_compatible_defaults():
     assert it.opts == {} and it.status == STATUS_ACTIVE and it.note == ""
 
 
-# ------------------------------------------------------------------ 레지스트리
-def test_registry_save_load_list_delete(tmp_path):
+# ------------------------------------------------------------------ 정체성(§5.3 C)
+def test_excel_identity_normalizes_path_and_carries_sheet(tmp_path):
+    """정체성 = normcase(abspath(path)) + sheet — 표기 변형은 같고, 시트가 다르면 다르다."""
+    a = tmp_path / "대장.xlsx"
+    assert excel_identity(a) == excel_identity(str(a).upper())  # Windows normcase 흡수
+    assert excel_identity(a, "1월") != excel_identity(a, "2월")  # 같은 워크북·다른 시트(#33)
+    assert excel_identity(a, "") != excel_identity(a, "1월")
+
+
+def test_item_identity_only_for_pathful_excel():
+    """정체성은 경로 있는 엑셀 참조만 — 나라·파이프라인·경로 없는 opts 는 None(추측 금지)."""
+    assert item_identity(
+        DatasetPoolItem(name="a", kind="excel", opts={"path": "/d.xlsx"})
+    ) == excel_identity("/d.xlsx")
+    assert item_identity(DatasetPoolItem(name="b", kind="nara", opts={})) is None
+    assert item_identity(DatasetPoolItem(name="c", kind="excel", opts={})) is None
+    assert item_identity(
+        DatasetPoolItem(name="d", kind="excel", opts={"path": 3})  # 훼손 opts
+    ) is None
+
+
+# ------------------------------------------------------------------ 레지스트리(슬롯 키)
+def test_registry_add_load_list_delete(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
     assert reg.list_items() == []
-    reg.save(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
-    reg.save(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+    kb = reg.add(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
+    ka = reg.add(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
     assert reg.names() == ["A", "B"]  # 이름순
-    assert reg.exists("A")
-    assert reg.load("A").opts["path"] == "/a.xlsx"
-    reg.delete("A")
-    assert not reg.exists("A")
+    assert [k for k, _ in reg.list_entries()] == [ka, kb]
+    assert reg.exists(ka)
+    assert reg.load(ka).opts["path"] == "/a.xlsx"
+    reg.delete(ka)
+    assert not reg.exists(ka)
     assert reg.names() == ["B"]
 
 
 def test_registry_filters_by_status(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
-    active = DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "/x.xlsx"})
     archived = DatasetPoolItem(name="보관됨", kind="excel", opts={"path": "/y.xlsx"})
     archived.archive()
-    reg.save(active)
-    reg.save(archived)
+    reg.add(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "/x.xlsx"}))
+    reg.add(archived)
     assert [it.name for it in reg.list_items(status=STATUS_ACTIVE)] == ["살아있음"]
     assert len(reg.list_items()) == 2
 
 
-def test_registry_save_rejects_slug_collision_different_name(tmp_path):
-    """다른 이름이 같은 slug(=같은 파일)로 매핑되면 loud raise — 첫 항목 소실 방지(#34)."""
+def test_names_are_labels_duplicates_allowed(tmp_path):
+    """이름은 순수 라벨(§5.3 C) — 같은 이름·다른 데이터가 서로 다른 슬롯으로 공존한다."""
     reg = DatasetPoolRegistry(tmp_path)
-    reg.save(DatasetPoolItem(name="예산/2026", kind="excel", opts={"path": "/a.xlsx"}))
-    with pytest.raises(SlugCollisionError):
-        reg.save(DatasetPoolItem(name="예산_2026", kind="excel", opts={"path": "/b.xlsx"}))
-    # 첫 항목이 온전 보존된다(덮이지 않음).
-    assert reg.load("예산/2026").opts["path"] == "/a.xlsx"
-    assert [it.opts["path"] for it in reg.list_items()] == ["/a.xlsx"]
+    k1 = reg.add(DatasetPoolItem(name="매출", kind="excel", opts={"path": "/1월.xlsx"}))
+    k2 = reg.add(DatasetPoolItem(name="매출", kind="excel", opts={"path": "/2월.xlsx"}))
+    assert k1 != k2
+    assert reg.names() == ["매출", "매출"]
+    assert {reg.load(k1).opts["path"], reg.load(k2).opts["path"]} == {"/1월.xlsx", "/2월.xlsx"}
 
 
-def test_registry_save_same_name_update_is_not_collision(tmp_path):
-    """같은 이름 재저장(상태 전이 등)은 충돌이 아니라 그대로 통과 — 자기 갱신."""
+def test_registry_add_rejects_same_identity_loudly(tmp_path):
+    """같은 데이터(경로+시트)의 재추가는 이름이 달라도 loud 거절 — 조용한 2건 등록 봉쇄."""
     reg = DatasetPoolRegistry(tmp_path)
-    it = DatasetPoolItem(name="6월 공고", kind="excel", opts={"path": "/a.xlsx"})
-    reg.save(it)
-    it.archive()
-    reg.save(it)  # allow_overwrite 없이도 통과(동명)
-    assert reg.load("6월 공고").status == STATUS_ARCHIVED
+    reg.add(DatasetPoolItem(name="7월", kind="excel", opts={"path": "/a.xlsx"}))
+    with pytest.raises(ValueError, match="이미"):
+        reg.add(DatasetPoolItem(name="다른이름", kind="excel", opts={"path": "/a.xlsx"}))
+    # 다른 시트는 다른 데이터라 통과한다(#33 — 시트가 축에 든다).
+    reg.add(DatasetPoolItem(name="다른시트", kind="excel", opts={"path": "/a.xlsx", "sheet": "2월"}))
+    assert len(reg.list_items()) == 2
 
 
-def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
-    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
+def test_slot_key_is_not_derived_from_content(tmp_path):
+    """슬롯 키는 내용에서 파생되지 않는다 — 같은 데이터를 다른 슬롯에 넣어도 키가 다르다.
+
+    키가 정체성 다이제스트면 「내용물 교체가 정상 수명 사건」인 개체의 파일명이 내용에
+    묶인다(#347 이 dataset_id 를 기각한 근거를 파일명에 다시 심는 구조) — 4R P2 의 뿌리다.
+    """
+    reg_a = DatasetPoolRegistry(tmp_path / "a")
+    reg_b = DatasetPoolRegistry(tmp_path / "b")
+    same = {"path": "/same.xlsx", "sheet": "물품"}
+    key_a = reg_a.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
+    key_b = reg_b.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
+    assert key_a != key_b, "슬롯 키가 내용(정체성)에서 파생됩니다."
+
+
+def test_relinked_slot_releases_its_old_identity_key(tmp_path):
+    """A 로 만든 슬롯을 B 로 재연결하면 A 는 **다시 고정할 수 있다**(코덱스 4R P2).
+
+    키가 정체성에서 파생되던 시절엔 슬롯이 hash(identity(A)) 를 계속 점유해, 정체성
+    조회는 통과하는데(A 를 참조하는 항목이 0건) 키 충돌로 막혔다 — 사용자에게는
+    「없는 것과 충돌」로 보이는 자리였다.
+    """
     reg = DatasetPoolRegistry(tmp_path)
-    reg.save(DatasetPoolItem(name="예산/2026", kind="excel", opts={"path": "/a.xlsx"}))
-    reg.save(
-        DatasetPoolItem(name="예산_2026", kind="excel", opts={"path": "/b.xlsx"}),
-        allow_overwrite=True,
+    key = reg.add(DatasetPoolItem(name="보고", kind="excel", opts={"path": "/A.xlsx"}))
+    reg.mutate(key, lambda it: it.opts.update({"path": "/B.xlsx"}))  # 다시 연결
+    assert reg.find_identity("/A.xlsx") is None          # A 를 참조하는 항목은 0건
+
+    again = reg.add(DatasetPoolItem(name="A 재고정", kind="excel", opts={"path": "/A.xlsx"}))
+    assert again != key
+    assert reg.load(again).opts["path"] == "/A.xlsx"
+    assert reg.load(key).opts["path"] == "/B.xlsx"        # 재연결한 슬롯은 그대로 산다
+    assert reg.duplicate_identity_groups(corrupted=[]) == []
+    # 대조군 — **실제** 중복(현재 B 를 가리키는 항목이 있는데 또 B)은 여전히 loud 거절.
+    with pytest.raises(ValueError, match="이미"):
+        reg.add(DatasetPoolItem(name="B 재고정", kind="excel", opts={"path": "/B.xlsx"}))
+
+
+def test_find_identity_matches_normalized_path(tmp_path):
+    reg = DatasetPoolRegistry(tmp_path)
+    key = reg.add(DatasetPoolItem(name="7월", kind="excel", opts={"path": "C:/d/a.xlsx"}))
+    found = reg.find_identity("C:\\d\\A.XLSX")  # 구분자·대소문자 변형 = 같은 실파일
+    assert found is not None and found[0] == key
+    assert reg.find_identity("C:/d/a.xlsx", "물품") is None  # 시트가 다르면 다른 데이터
+
+
+def test_slot_path_rejects_traversal_keys(tmp_path):
+    """슬롯 키는 웹 페이로드가 흘러드는 자리 — 경로 탈출 키를 loud 거절한다."""
+    reg = DatasetPoolRegistry(tmp_path)
+    for bad in ("", "..", "a/b", "a\\b", "../x"):
+        with pytest.raises(ValueError):
+            reg.slot_path(bad)
+
+
+def test_legacy_slug_filename_is_a_valid_slot(tmp_path):
+    """구판(이름 slug 파일명) 파일은 그 stem 그대로 유효한 슬롯 — 디스크 마이그레이션 없음."""
+    reg = DatasetPoolRegistry(tmp_path)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    legacy = DatasetPoolItem(name="7월 공고", kind="excel", opts={"path": "/a.xlsx"})
+    (tmp_path / "7월 공고.dataset.json").write_text(
+        __import__("json").dumps(legacy.to_dict(), ensure_ascii=False), encoding="utf-8"
     )
-    assert len(reg.list_items()) == 1
-    assert reg.load("예산_2026").opts["path"] == "/b.xlsx"
+    entries = reg.list_entries()
+    assert [(k, it.name) for k, it in entries] == [("7월 공고", "7월 공고")]
+    key = entries[0][0]
+    assert reg.find_identity("/a.xlsx") == (key, reg.load(key))
+    reg.mutate(key, lambda it: it.archive())  # 키 기반 조작이 구판 슬롯에도 그대로 선다
+    assert reg.load(key).status == STATUS_ARCHIVED
 
 
-def test_registry_save_corrupt_target_is_loud(tmp_path):
-    """대상 파일이 손상돼 소유 항목을 확인할 수 없으면 allow_overwrite 없이는 raise."""
+def test_duplicate_identity_groups_surface_legacy_merge_targets(tmp_path):
+    """구판이 남긴 다른 이름·같은 경로 2건은 조용히 접히지 않고 병합 그룹으로 표면화된다(§5.3)."""
+    import json as _json
+
     reg = DatasetPoolRegistry(tmp_path)
-    reg.directory.mkdir(parents=True, exist_ok=True)
-    reg.path_for("공고").write_text('{"name": "절단', encoding="utf-8")
-    with pytest.raises(SlugCollisionError):
-        reg.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}))
-    reg.save(
-        DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}),
-        allow_overwrite=True,
-    )
-    assert reg.load("공고").opts["path"] == "/a.xlsx"
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    for name in ("7월 공고", "공고 최신"):
+        item = DatasetPoolItem(name=name, kind="excel", opts={"path": "/same.xlsx"})
+        (tmp_path / f"{name}.dataset.json").write_text(
+            _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
+        )
+    groups = reg.duplicate_identity_groups(corrupted=[])
+    assert len(groups) == 1
+    assert {it.name for _k, it in groups[0]} == {"7월 공고", "공고 최신"}
+    # 두 항목 모두 목록에 그대로 산다(숨김 금지 — 병합 전에도 쓸 수 있다).
+    assert len(reg.list_items()) == 2
 
 
-def test_registry_save_failure_preserves_json_and_cleans_temp(tmp_path, monkeypatch):
+def test_mutate_failure_preserves_json_and_cleans_temp(tmp_path, monkeypatch):
     """원자 교체 실패는 기존 JSON과 디렉터리 청결을 함께 보존한다(#182)."""
     reg = DatasetPoolRegistry(tmp_path)
-    reg.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
-    path = reg.path_for("공고")
+    key = reg.add(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+    path = reg.slot_path(key)
     before = path.read_bytes()
 
     def fail_replace(src, dst):
@@ -165,10 +247,7 @@ def test_registry_save_failure_preserves_json_and_cleans_temp(tmp_path, monkeypa
 
     monkeypatch.setattr("hwpxcore.atomic.os.replace", fail_replace)
     with pytest.raises(OSError, match="replace failed"):
-        reg.save(
-            DatasetPoolItem(name="공고", kind="excel", opts={"path": "/new.xlsx"}),
-            allow_overwrite=True,
-        )
+        reg.mutate(key, lambda it: it.archive())
 
     assert path.read_bytes() == before
     assert list(tmp_path.glob(path.name + ".*.tmp")) == []
@@ -179,7 +258,7 @@ def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
     directory = tmp_path / "datasets"
     updater = DatasetPoolRegistry(directory)
     transitioner = DatasetPoolRegistry(directory)
-    updater.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+    key = updater.add(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
 
     update_entered = threading.Event()
     release_update = threading.Event()
@@ -192,12 +271,12 @@ def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
             assert release_update.wait(2)
             item.opts = {"path": "/new.xlsx"}
 
-        updater.mutate("공고", change)
+        updater.mutate(key, change)
 
     def archive() -> None:
         assert update_entered.wait(2)
         transition_started.set()
-        transitioner.mutate("공고", lambda item: item.archive())
+        transitioner.mutate(key, lambda item: item.archive())
         transition_finished.set()
 
     first = threading.Thread(target=update_reference)
@@ -212,7 +291,7 @@ def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
     second.join(2)
 
     assert not first.is_alive() and not second.is_alive()
-    saved = updater.load("공고")
+    saved = updater.load(key)
     assert saved.opts["path"] == "/new.xlsx"
     assert saved.status == STATUS_ARCHIVED
 
@@ -222,7 +301,9 @@ def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
     directory = tmp_path / "datasets"
     transitioner = DatasetPoolRegistry(directory)
     deleter = DatasetPoolRegistry(directory)
-    transitioner.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}))
+    key = transitioner.add(
+        DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"})
+    )
 
     transition_entered = threading.Event()
     release_transition = threading.Event()
@@ -235,12 +316,12 @@ def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
             assert release_transition.wait(2)
             item.archive()
 
-        transitioner.mutate("공고", change)
+        transitioner.mutate(key, change)
 
     def delete() -> None:
         assert transition_entered.wait(2)
         delete_started.set()
-        deleter.delete("공고")
+        deleter.delete(key)
         delete_finished.set()
 
     first = threading.Thread(target=archive)
@@ -255,15 +336,15 @@ def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
     second.join(2)
 
     assert not first.is_alive() and not second.is_alive()
-    assert not transitioner.exists("공고")
+    assert not transitioner.exists(key)
 
 
 def test_every_registry_writer_uses_shared_path_lock(tmp_path, monkeypatch):
-    """save/mutate/delete의 실제 파일 I/O가 모두 동일한 path-scoped lock 안에서 일어난다."""
+    """add/mutate/delete의 실제 파일 I/O가 모두 동일한 path-scoped lock 안에서 일어난다."""
     directory = tmp_path / "datasets"
     reg = DatasetPoolRegistry(directory)
     peer = DatasetPoolRegistry(directory)
-    reg.save(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+    key_a = reg.add(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
     probes: "list[bool]" = []
 
     def probe_lock() -> None:
@@ -295,9 +376,9 @@ def test_every_registry_writer_uses_shared_path_lock(tmp_path, monkeypatch):
 
     monkeypatch.setattr(DatasetPoolItem, "save", spy_save)
     monkeypatch.setattr(Path, "unlink", spy_unlink)
-    reg.save(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
-    reg.mutate("A", lambda item: item.archive())
-    reg.delete("B")
+    key_b = reg.add(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
+    reg.mutate(key_a, lambda item: item.archive())
+    reg.delete(key_b)
 
     assert probes and all(probes)
 
@@ -315,8 +396,8 @@ def test_nara_item_never_serializes_service_key(tmp_path):
         name="공고쿼리", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
-    reg.save(it)
-    saved = reg.path_for("공고쿼리").read_text(encoding="utf-8")
+    key = reg.add(it)
+    saved = reg.slot_path(key).read_text(encoding="utf-8")
     assert _LIVE_KEY not in saved
     assert "service_key" not in saved and "ServiceKey" not in saved
 

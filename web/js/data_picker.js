@@ -73,13 +73,10 @@
     const sheet = cur.sheet ? ` <span class="muted">시트: ${esc(cur.sheet)}</span>` : "";
     // 「이 데이터 고정」은 **파일 출처에서만** 뜬다 — 등록 데이터 출처는 이미 고정된 참조다
     // (v6 pinCurrentData hidden 동형). 없는 대상에 버튼을 띄우면 문안이 거짓이 된다.
-    // 이 회차에 이미 고정했으면 버튼 자리에 그 사실을 남긴다(U2 §2.7 6행 — 풀 중복 판정이
-    // 이름 기준이라, 면이 열린 채 두 번 누르면 같은 파일이 2건이 된다. 자기가 방금 한
-    // 행동의 결과 보고이지 링2 재판정이 아니다).
+    // (§2.7 6행의 「고정됨」 회차 기억은 §5.3 재편으로 되깎았다 — 중복 판정이 경로 기준이
+    //  돼 같은 파일 재고정은 2건이 아니라 기존 등록의 갱신·「이미 고정됨」 재진술로 접힌다.)
     const pin = cur.origin === "file" && cur.path
-      ? (session && session.pinned
-          ? `<span class="pill ok">고정됨: ${esc(session.pinned)}</span>`
-          : `<button class="btn sm" id="dataPickerPin" data-busy-lock>이 데이터 고정…</button>`)
+      ? `<button class="btn sm" id="dataPickerPin" data-busy-lock>이 데이터 고정…</button>`
       : "";
     host.innerHTML =
       `<div class="tplcard"><div class="tplcard-top">` +
@@ -111,16 +108,19 @@
         `「이 데이터 고정」으로 여기 남겨 두면 다음부터 한 번에 고를 수 있습니다.</p>`;
       return;
     }
+    // 행동의 겨눔은 **슬롯 키**다(§5.3 — 이름은 중복 허용 라벨이라 동명 2건을 못 가른다).
+    // 이름은 상태줄 문구용으로만 함께 싣는다.
     host.innerHTML = rows.map((r) => {
       const reason = usableReason(r);
-      const use = `<button class="btn sm primary" data-act="use" data-name="${esc(r.name)}"` +
+      const idattrs = `data-key="${esc(r.key)}" data-name="${esc(r.name)}"`;
+      const use = `<button class="btn sm primary" data-act="use" ${idattrs}` +
         `${reason ? ` disabled title="${esc(reason)}"` : ""} data-busy-lock>이 데이터 사용</button>`;
       let acts = (r.actions || []).map((a) =>
-        `<button class="btn sm" data-act="${esc(a.key)}" data-name="${esc(r.name)}" data-busy-lock>` +
+        `<button class="btn sm" data-act="${esc(a.key)}" ${idattrs} data-busy-lock>` +
         `${esc(a.label)}</button>`).join("");
-      // 다시 연결(#67) — 엑셀 참조만. 확정은 기존 동명 등록 confirm 경로가 그대로 담당한다.
+      // 다시 연결(#67) — 엑셀 참조만. 확정은 pool `relink` 액션의 confirm 왕복이 담당한다.
       if (r.kind === "excel") {
-        acts += `<button class="btn sm" data-act="relink" data-name="${esc(r.name)}"` +
+        acts += `<button class="btn sm" data-act="relink" ${idattrs}` +
           ` data-busy-lock>다시 연결…</button>`;
       }
       const broken = r.missing ? `<span class="pill danger">참조 끊김</span>` : "";
@@ -129,7 +129,7 @@
       const track = r.locate_path ? PathTrack.affordances(r.locate_path) : "";
       // 행은 **정보 열 + 행동 열** 2열이다(세로 밀도 — 마일스톤 L). 참조·메모·사유·로케이트를
       // 각자 한 줄씩 쌓으면 3항목만으로 다이얼로그가 넘친다.
-      return `<div class="tplcard pk-row" data-row="${esc(r.name)}">
+      return `<div class="tplcard pk-row" data-row="${esc(r.key)}">
         <div class="pk-info">
           <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.reference)}">${esc(r.name)}</span>
             <span class="pill muted">${esc(r.kind_label)}</span>
@@ -139,6 +139,22 @@
         </div>
         <div class="tplcard-acts">${use}${acts}</div></div>`;
     }).join("");
+  }
+
+  /* 같은 데이터(경로+시트)를 가리키는 등록 2+건 — 구판(이름=키) 마이그레이션의 병합 대상
+     (§5.3). 조용히 하나 버리지 않는다: loud 재진술하고 남길 1건을 사용자가 확정한다. */
+  function renderDuplicates() {
+    const box = $("dataPickerDupes");
+    const groups = (LAST && LAST.duplicates) || [];
+    if (!groups.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    box.innerHTML = groups.map((g) =>
+      `<div class="note warnbox">⚠ 같은 데이터(${esc(g.reference)})를 가리키는 등록이 ` +
+      `${g.entries.length}건입니다. 남길 등록을 골라 정리하세요:<br>` +
+      g.entries.map((e) =>
+        `<button class="btn sm" data-dup-keep="${esc(e.key)}" data-busy-lock>` +
+        `'${esc(e.name)}' 남기기</button>`).join(" ") +
+      `</div>`).join("");
   }
 
   /* 손상 격리(RC-05) — 숨기지 않고 목록 아래 상주 위험 카드로. 상태줄과 따로 두어야
@@ -156,6 +172,7 @@
   function renderAll() {
     renderCurrent();
     renderPinned();
+    renderDuplicates();
     renderCorrupt();
   }
 
@@ -187,13 +204,13 @@
     }
   }
 
-  async function mountPinned(name) {
+  async function mountPinned(key, name) {
     if (loading) return;
     if (!(await session.confirmSwap())) return;   // 손실 가드 — 읽기 직전(§10.7.2 D)
     loading = true;
     setStatus(`${name} 읽는 중…`, "");
     try {
-      const r = await Bridge.call(session.screen, "load_pool", { name });
+      const r = await Bridge.call(session.screen, "load_pool", { key });
       if (r && r.ok) { finish(r.label || name); return; }
       // 나라 동결·죽은 참조·모호 시트·행 0건 — 면을 닫지 않고 재진술(계약면 4).
       setStatus("⚠ " + ((r && r.error) || "등록 데이터를 불러올 수 없습니다."), "danger");
@@ -232,7 +249,6 @@
         path: r.path, sheet: r.sheet || "", origin: "file",
       };
       session.mounted = r.label;  // 이후 닫힘의 해소값 — 닫아도 마운트는 성사됐다
-      session.pinned = "";  // 새 파일 = 새 고정 결정(직전 회차 기억 소거)
       renderCurrent();
       if (session.onLoaded) session.onLoaded(r.label);
       setStatus(
@@ -245,18 +261,19 @@
     }
   }
 
-  /* ---- 고정 목록 수명 관리(pool 액션 그대로 — 판정 A) ---- */
+  /* ---- 고정 목록 수명 관리(pool 액션 그대로 — 판정 A). 겨눔은 슬롯 키(§5.3). ---- */
   async function onPinnedClick(e) {
     const btn = e.target.closest("button[data-act]");
     if (!btn || btn.disabled) return;
     const act = btn.dataset.act;
+    const key = btn.dataset.key;
     const name = btn.dataset.name;
-    if (act === "use") { await mountPinned(name); return; }
+    if (act === "use") { await mountPinned(key, name); return; }
     if (act === "relink") {
-      const row = ((LAST && LAST.rows) || []).find((r) => r.name === name);
-      // 다시 연결 = 경로 교체 — 기존 동명 등록 confirm 경로로 합류(#67).
+      const row = ((LAST && LAST.rows) || []).find((r) => r.key === key);
+      // 다시 연결 = 같은 슬롯의 참조 교체(수명 보존) — pool `relink` confirm 왕복으로 확정.
       if (row) openRegDialog({
-        title: "데이터 다시 연결", okLabel: "다시 연결",
+        title: "데이터 다시 연결", okLabel: "다시 연결", relinkKey: key,
         name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,
         focus: "path",
       });
@@ -266,16 +283,42 @@
     try {
       if (act === "delete") {
         // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
-        const res = await Bridge.call("pool", "delete", { name });
+        // 확정은 1차가 보여준 **그 등록 상태의 지문**(basis)에 결속된다 — 모달을 읽는
+        // 사이 그 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다(네 확정 공용).
+        const res = await Bridge.call("pool", "delete", { key });
         if (res && res.needs_confirm && (await Modal.confirm({
           body: res.confirm_text + "\n\n삭제할까요?",
           confirmLabel: "삭제", cancelLabel: "취소", danger: true,
         }))) {
-          await Bridge.call("pool", "delete", { name, confirm: true });
+          await Bridge.call("pool", "delete", { key, confirm: true, basis: res.basis });
         }
         return;
       }
-      await Bridge.call("pool", act, { name });   // archive/activate — 비파괴 즉시
+      await Bridge.call("pool", act, { key });   // archive/activate — 비파괴 즉시
+    } catch (err) {
+      setStatus("⚠ " + errText(err), "danger");
+    }
+  }
+
+  /* 중복 등록 병합(§5.3 마이그레이션) — 남길 1건 클릭 → 재진술 확인 → 확정 삭제.
+     확정에는 1차가 재진술한 **그 상태의 지문**(basis)을 그대로 되실어 보낸다 — 모달을
+     읽는 사이 멤버가 늘거나 멤버의 이름·비고가 바뀌었으면 백엔드가 지문 불일치로 거절하고
+     다시 묻는다(고지 없는 삭제 금지 — 덮어쓰기 confirmed_overwrite_text 동형). */
+  async function onDupesClick(e) {
+    const btn = e.target.closest("button[data-dup-keep]");
+    if (!btn) return;
+    if (loading) { noteLoadingBlock(); return; }
+    const keep = btn.dataset.dupKeep;
+    try {
+      const res = await Bridge.call("pool", "resolve_duplicate", { keep });
+      if (res && res.needs_confirm && (await Modal.confirm({
+        body: res.confirm_text + "\n\n정리할까요?",
+        confirmLabel: "정리", cancelLabel: "취소", danger: true,
+      }))) {
+        await Bridge.call("pool", "resolve_duplicate", {
+          keep, confirm: true, basis: res.basis,
+        });
+      }
     } catch (err) {
       setStatus("⚠ " + errText(err), "danger");
     }
@@ -300,7 +343,9 @@
     $("poolRegPath").readOnly = !!p.pin;
     $("poolRegSheet").readOnly = !!p.pin;
     $("poolRegBrowse").style.display = p.pin ? "none" : "";
-    if (session) session.regPin = !!p.pin;  // 성사 시 회차 기억(§2.7 6행)의 근거
+    // relink 대상 슬롯(§5.3) — 확정이 register(신규/갱신)가 아니라 relink(같은 슬롯의
+    // 참조 교체)로 가야 하는 회차. pin/직접 등록은 "".
+    if (session) session.regTarget = p.relinkKey || "";
     window.Modal.open("poolRegModal", {
       initialFocus: p.focus === "path" ? $("poolRegPath") : $("poolRegName"),
     });
@@ -317,33 +362,34 @@
   }
 
   async function submitRegDialog() {
+    // relink 회차는 같은 슬롯의 참조 교체(pool `relink`), 아니면 등록(pool `register_excel`
+    // — 같은 데이터면 백엔드가 라벨 갱신·「이미 고정됨」으로 접는다, §5.3 정체성 판정).
+    const relinkKey = (session && session.regTarget) || "";
+    const action = relinkKey ? "relink" : "register_excel";
     const payload = {
       name: $("poolRegName").value,
       path: $("poolRegPath").value,
       sheet: $("poolRegSheet").value,
       note: $("poolRegNote").value,
     };
+    if (relinkKey) payload.key = relinkKey;
     // 브리지 rejection 이 unhandled 로 삼켜지면 버튼이 무반응이 된다 — loud 재진술하고
     // 모달은 열어 둔다(입력 보존, 고쳐 재시도 가능).
     try {
-      let res = await Bridge.call("pool", "register_excel", payload);
+      let res = await Bridge.call("pool", action, payload);
       if (res && res.needs_confirm) {
-        // 동명 재등록 = 기존 참조 재지정 — 조용히 덮지 않고 확인 승격.
+        // 참조 교체·같은 데이터 라벨 갱신 — 조용히 덮지 않고 확인 승격.
         if (!(await Modal.confirm({
           body: res.confirm_text + "\n\n계속할까요?",
           confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
         }))) return;
-        res = await Bridge.call("pool", "register_excel", { ...payload, confirm: true });
+        // 확정은 1차가 보여준 **그 슬롯 상태의 지문**에 결속된다(relink) — 모달을 읽는
+        // 사이 같은 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다.
+        const confirmed = { ...payload, confirm: true };
+        if (res.basis) confirmed.basis = res.basis;
+        res = await Bridge.call("pool", action, confirmed);
       }
       if (res && res.ok === false) { window.alert(res.error); return; }
-      // pin 성사 = 회차 기억(§2.7 6행): 고정 버튼 자리에 「고정됨: 이름」이 서서, 면이
-      // 열린 채 두 번 눌러 같은 파일이 2건 등록되는 것을 막는다. (§5.3 재편이 중복 판정을
-      // 경로 기준으로 바꾸면 이 기억은 잉여가 된다 — 그때 되깎는다.)
-      if (session && session.regPin) {
-        session.pinned = (res && res.name) || payload.name;
-        session.regPin = false;
-        renderCurrent();  // 포커스는 등록 모달 안 — 재렌더 호스트 밖이라 보존 불요
-      }
       window.Modal.close("poolRegModal");
     } catch (err) {
       window.alert(errText(err));
@@ -374,9 +420,8 @@
         current: o.current || {},
         confirmSwap: o.confirmSwap || (() => Promise.resolve(true)),
         onLoaded: o.onLoaded || null,
-        mounted: "",   // 이 회차에 성사된 마운트 라벨(찾아보기 — 면 유지 경로)
-        pinned: "",    // 이 회차에 성사된 고정 이름(§2.7 6행 회차 기억)
-        regPin: false, // 열린 등록 모달이 pin 모드인가(성사 시 회차 기억의 근거)
+        mounted: "",    // 이 회차에 성사된 마운트 라벨(찾아보기 — 면 유지 경로)
+        regTarget: "",  // 열린 등록 모달의 relink 대상 슬롯 키(""=pin/등록 — §5.3)
         resolve,
       };
       loading = false;
@@ -414,6 +459,7 @@
     //  고정」(pin)과 「다시 연결」(relink) 두 진입만 남는다. 대체 경로 신설 없음.)
     // 재렌더에도 살아남게 안정 컨테이너에 위임(행은 푸시마다 다시 그려진다).
     $("dataPickerPinned").addEventListener("click", onPinnedClick);
+    $("dataPickerDupes").addEventListener("click", onDupesClick);
     $("dataPickerCurrent").addEventListener("click", (e) => {
       if (e.target.closest("#dataPickerPin")) openPinDialog();
     });

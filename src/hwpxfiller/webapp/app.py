@@ -178,7 +178,7 @@ class WebFrontend:
             2,
             EditorController(
                 job_registry, self._push,
-                pool_registry=pool_registry,
+                # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 재진술 사망.)
                 template_library=tpl_ctrl.vm,
                 # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**:
                 # 별도 인스턴스면 접힘·지정 인메모리 캐시가 갈라져 두 표면이 다른 조직을 보인다.
@@ -1786,7 +1786,7 @@ _EDITOR_GUARD_PROBE_SETUP_JS = r"""
       gate: null, gate_error: false, notice: null, editing_origin: '공고서',
       name: '공고서', pattern: 'x', rows: [], source_fields: [],
       active_source_fields: [], ignored_source_fields: [], sample_rows: [],
-      type_options: [], fmt_options: {}, provenance: null, default_dataset: null,
+      type_options: [], fmt_options: {}, provenance: null,
     });
     window.Bridge.call = mine;
     const tab = document.querySelector('#editor-steps button[data-section="filename"]');
@@ -1950,8 +1950,8 @@ _EDITOR_CHIP_PROBE_JS = r"""
       sample_rows:[["A","a","3","-"],["B","b","6","x"],["C","c","1","-"]],
       type_options:["text","date","amount","const"],
       fmt_options:{text:[],date:[],amount:[],const:[]},
-      name:"", pattern:"x", has_unsaved_work:true, editing_origin:"", dataset_name:"대장",
-      provenance:null, default_dataset:null,
+      name:"", pattern:"x", has_unsaved_work:true, editing_origin:"",
+      provenance:null,
       rows:[row(0,"품명","품명",true,true,true),     // 확정
             row(1,"수량","수량",false,true,true),     // 수동(touched 미확정)
             row(2,"규격","비고",false,false,true),    // 제안(시스템 소유)
@@ -2015,16 +2015,19 @@ _DATA_PICKER_PROBE_SETUP_JS = r"""
     out.pin_offered = !!document.getElementById('dataPickerPin');
     // 「＋ 직접 등록…」 사망(U2 §2.7 4행) — DOM 자체가 없어야 한다.
     out.register_gone = !document.getElementById('dataPickerRegister');
-    function row(name, status, badge, level, actions) {
-      return {name:name, kind:'excel', kind_label:'엑셀/CSV', status:status,
+    function row(key, name, status, badge, level, actions) {
+      return {key:key, name:name, kind:'excel', kind_label:'엑셀/CSV', status:status,
         badge_label:badge, badge_level:level, reference:'C:/d/' + name + '.xlsx (물품)',
         locate_path:'C:/d/' + name + '.xlsx', sheet:'물품', missing:false, note:'',
         actions:actions};
     }
     window.__push('pool', {
-      rows:[row('7월 공고목록','active','활성','ok',[{key:'archive',label:'보관'},{key:'delete',label:'삭제'}]),
-            row('6월 보관분','archived','보관','muted',[{key:'activate',label:'활성화'},{key:'delete',label:'삭제'}])],
+      rows:[row('k1','7월 공고목록','active','활성','ok',[{key:'archive',label:'보관'},{key:'delete',label:'삭제'}]),
+            row('k2','6월 보관분','archived','보관','muted',[{key:'activate',label:'활성화'},{key:'delete',label:'삭제'}])],
       corrupted:[{file:'broken.dataset.json', error:'JSON 을 읽을 수 없습니다'}],
+      // 같은 데이터 등록 2건(§5.3 구판 병합 대상) — loud 재진술 카드가 실제로 서는지 되읽는다.
+      duplicates:[{reference:'파일: 대장.xlsx · 시트 물품',
+                   entries:[{key:'k1', name:'7월 공고목록'}, {key:'k2', name:'6월 보관분'}]}],
       count:'2건', empty:false, result:{text:'', level:'muted'}});
     var host = document.getElementById('dataPickerPinned');
     out.rows = host.querySelectorAll('.tplcard').length;
@@ -2033,8 +2036,14 @@ _DATA_PICKER_PROBE_SETUP_JS = r"""
     out.use_archived_disabled = uses.length > 1 && !!uses[1].disabled;
     out.activate_reachable = !!host.querySelector('[data-act="activate"]');
     out.relink_reachable = !!host.querySelector('[data-act="relink"]');
+    // 행동 버튼이 슬롯 키를 겨눈다(§5.3 — 이름은 라벨). 키 없는 버튼은 남의 항목을 겨눈다.
+    out.use_targets_key = uses.length > 0 && uses[0].dataset.key === 'k1';
     out.corrupt_shown =
       document.getElementById('dataPickerCorrupt').textContent.indexOf('손상') >= 0;
+    // 병합 대상(같은 데이터 등록 2건) — 숨김·자동 정리 금지: 카드와 확정 버튼이 실제로 선다.
+    var dupes = document.getElementById('dataPickerDupes');
+    out.dupes_shown = dupes.textContent.indexOf('같은 데이터') >= 0
+      && dupes.querySelectorAll('[data-dup-keep]').length === 2;
     // 「이 데이터 고정」 = 등록 모달 재사용(현재 대상 프리필) — 제목·프리필까지 되읽는다.
     document.getElementById('dataPickerPin').click();
     out.pin_title = document.getElementById('poolRegTitle').textContent;
@@ -2101,8 +2110,8 @@ _EDITOR_SAVE_GATE_PROBE_JS = r"""
       active_count:0, ignored_count:0, ignored_expanded:false, sample_rows:[],
       type_options:["text"], fmt_options:{text:[]},
       name:"공고서", pattern:"공고서-{{공고번호}}", pattern_preview:"공고서-1.hwpx",
-      has_unsaved_work:false, editing_origin:"공고서", dataset_name:"",
-      provenance:null, default_dataset:null, rows:[],
+      has_unsaved_work:false, editing_origin:"공고서",
+      provenance:null, rows:[],
       counts:{filled:0,empty:0,unmapped:0}, preview_empties:[], preview_index:0, preview_count:0,
       is_complete:true, schema_only:true
     };
@@ -3022,7 +3031,6 @@ _EDITOR_TXT_BAND_PROBE_SETUP_JS = r"""
       notice: null, editing_origin: '', name: '', pattern: '', rows: [],
       source_fields: [], active_source_fields: [], ignored_source_fields: [],
       sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
-      default_dataset: null,
       library: {
         hwpx: { sections: [], flat: true },
         txt: {

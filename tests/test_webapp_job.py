@@ -1095,12 +1095,17 @@ def _pool_controller(tmp_path):
     return ctrl, pool
 
 
+def _pool_add(pool, name, opts, kind="excel"):
+    """풀 항목 추가 → 슬롯 키 반환(§5.3 — 겨눔의 정체)."""
+    return pool.add(DatasetPoolItem(name=name, kind=kind, opts=opts))
+
+
 def test_load_pool_targets_excel_reference(tmp_path):
     """등록 데이터 겨눔 성공 — 실행 시점 재읽기(싱크) + 소스 병기 라벨 + 선택 초기화."""
     ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
     ctrl.dispatch("select_job", {"name": "공고서"})
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    res = ctrl.dispatch("load_pool", {"key": key})
     assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 7월공고"
@@ -1111,8 +1116,8 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
     """데이터-우선(§18.2): 작업 미선택에도 풀 겨눔이 세션에 마운트된다 — 구 「작업 먼저」
     전제의 개정. 마운트 직후 선택 0건 + 후보(§18.4) + prework 게이트가 다음 할 일을 말한다."""
     ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    res = ctrl.dispatch("load_pool", {"key": key})
     assert res["ok"] is True
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["has_data"] is True
@@ -1124,91 +1129,43 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
     assert "문서 작업" in ctrl.snapshot()["gate"]["text"]  # 다음 할 일 = 작업 선택
 
 
-# --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11)
-# 성공은 ok로 재진술하고 실패는 warn과 미겨눔으로 남기는 조용한 폴백 금지 계약을 가드한다.
-def _job_with_default(ctrl, pool, tmp_path, ref, *, register=True):
-    """'공고서' 작업에 기본 데이터셋 참조를 붙여 재저장. register=True 면 동명 CSV 풀 항목 등록."""
-    job = ctrl.registry.load("공고서")
-    job.default_dataset_ref = ref
-    ctrl.registry.save(job, allow_overwrite=True)
-    if register:
-        pool.save(DatasetPoolItem(name=ref, kind="excel", opts={"path": _data_csv(tmp_path)}))
+# ------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 판정 D)
+def test_select_job_does_not_mount_any_data(tmp_path):
+    """작업 선택은 데이터를 세우지 않는다 — 구 기본 데이터셋 자동 조준(#53-A)은 폐기됐다.
 
+    구 JSON 이 default_dataset_ref 를 들고 있고 동명 풀 항목이 실재해도, 선택은 결속을
+    읽지 않는다(마이그레이션이 아니라 폐기 — 데이터↔작업 결속은 어느 방향으로도 다시
+    들이지 않는다).
+    """
+    import json as _json
 
-def test_select_job_auto_aims_default_dataset(tmp_path):
-    """기본 데이터셋 참조가 있으면 작업 선택 시 실행 시점에 다시 읽어 자동 조준(#53-A)."""
     ctrl, pool = _pool_controller(tmp_path)
-    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    path = ctrl.registry.path_for("공고서")
+    payload = _json.loads(path.read_text(encoding="utf-8"))
+    payload["default_dataset_ref"] = "7월공고"          # 구버전이 남긴 결속 키
+    path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
-    assert snap["has_data"] is True and snap["record_count"] == 2      # 자동 재읽기(싱크)
-    assert snap["data_source_label"] == "등록 데이터: 7월공고"
-    assert snap["selected_count"] == 0                                  # 겨눔 = 선택 0건(§18.2)
-    assert snap["data_notice"]["level"] == "ok" and "자동" in snap["data_notice"]["text"]
+    assert snap["has_job"] is True
+    assert snap["has_data"] is False                    # 자동 마운트 없음
+    assert snap["data_source_label"] == ""
+    assert snap["data_notice"] is None                  # 조준 재진술도 없다 — 판정 자체가 없다
 
 
-def test_auto_aim_does_not_clobber_mounted_session_data(tmp_path):
-    """세션에 이미 마운트된 데이터가 있으면 기본 참조 자동 조준을 건너뛴다 — 참조가
-    사용자의 현재 데이터를 조용히 덮으면 §18.2(성공 전 현재 runtime 미파기) 위반이다."""
-    ctrl, pool = _pool_controller(tmp_path)
-    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+def test_mounted_session_data_survives_job_selection(tmp_path):
+    """세션 소유 마운트 데이터는 작업 선택에서 생존한다(§18.2) — §5.3 완화 ⑴의 근거."""
+    ctrl, _pool = _pool_controller(tmp_path)
     other = tmp_path / "직접.csv"
     other.write_text("bidNtceNm,presmptPrce\n수동데이터,900\n", encoding="utf-8")
     ctrl.load_data_path(str(other))                      # 작업 미선택 상태의 수동 마운트
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
-    assert snap["data_label"] == "직접.csv"              # 마운트 데이터 생존(자동 조준 생략)
+    assert snap["data_label"] == "직접.csv"              # 마운트 데이터 생존
     assert snap["record_count"] == 1 and snap["selected_count"] == 1
-    assert snap["data_notice"] is None                   # 조준 재진술 없음 = 실제로 안 했다
-
-
-def test_select_job_dead_default_ref_is_loud_no_silent_fallback(tmp_path):
-    """죽은 기본 참조는 조용한 폴백 금지 — 미겨눔 + 원인·복구 동선(다시 연결)을 재진술(#53-A)."""
-    ctrl, pool = _pool_controller(tmp_path)
-    _job_with_default(ctrl, pool, tmp_path, "없는참조", register=False)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    snap = ctrl.snapshot()
-    assert snap["has_data"] is False                       # 자동 겨눔 실패 = 미겨눔(폴백 없음)
-    assert snap["data_source_label"] == ""
-    assert snap["data_notice"]["level"] == "warn"
-    assert "없는참조" in snap["data_notice"]["text"] and "다시 연결" in snap["data_notice"]["text"]
-
-
-def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
-    """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
-    ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(
-        name="나라기본", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
-    _job_with_default(ctrl, pool, tmp_path, "나라기본", register=False)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    snap = ctrl.snapshot()
-    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
-    assert "지원되지 않습니다" in snap["data_notice"]["text"]
-
-
-def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
-    """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
-    ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(MULTI_SHEET)}))
-    _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    snap = ctrl.snapshot()
-    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
-    assert "시트" in snap["data_notice"]["text"]
-
-
-def test_manual_data_clears_auto_aim_notice(tmp_path):
-    """자동 조준 후 사용자가 직접 데이터를 겨누면 자동 조준 재진술이 소거된다(임시 데이터=기본 불변)."""
-    ctrl, pool = _pool_controller(tmp_path)
-    _job_with_default(ctrl, pool, tmp_path, "7월공고")
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    assert ctrl.snapshot()["data_notice"] is not None
-    _mount_all(ctrl, _data_csv(tmp_path))               # 수동 파일 겨눔
-    snap = ctrl.snapshot()
     assert snap["data_notice"] is None
-    assert snap["data_source_label"].startswith("파일:")
-    assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"  # 임시 override, 기본 불변
 
 
 # --------------------------------------------- 템플릿 다시 연결(#67, A-1-2 계열)
@@ -2082,16 +2039,16 @@ def test_reapply_source_key_normalizes_path_spelling(tmp_path):
 
 
 def test_reapply_pool_key_includes_reference_identity(tmp_path):
-    """풀 소스 키 = 이름+참조 정체(리뷰 #6) — 같은 이름 재등록(다른 파일)은 다른 소스."""
+    """풀 소스 키 = 슬롯 키+참조 정체(리뷰 #6 · §5.3) — 다시 연결(다른 파일)은 다른 소스."""
     ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    key = pool.add(DatasetPoolItem(
+        name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.dispatch("load_pool", {"name": "7월공고"})
+    ctrl.dispatch("load_pool", {"key": key})
     ctrl.dispatch("filter_search", {"text": "전산"})
-    # 같은 이름으로 다른 파일 재등록(참조 교체) 후 재겨눔 — 이름만 같은 다른 소스.
-    pool.save(DatasetPoolItem(name="7월공고", kind="excel",
-                              opts={"path": _data_csv3(tmp_path)}), allow_overwrite=True)
-    ctrl.dispatch("load_pool", {"name": "7월공고"})          # 죽음 → 슬롯(옛 참조 키)
+    # 같은 슬롯을 다른 파일로 다시 연결(참조 교체) 후 재겨눔 — 키만 같은 다른 소스.
+    pool.mutate(key, lambda it: it.opts.update({"path": _data_csv3(tmp_path)}))
+    ctrl.dispatch("load_pool", {"key": key})          # 죽음 → 슬롯(옛 참조 키)
     assert ctrl.snapshot()["filter"]["reapply_available"] is False
 
 
@@ -2447,24 +2404,29 @@ def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
     assert "공고서" in snap["data_notice"]["text"] and snap["data_notice"]["level"] == "ok"
 
 
-def test_prefer_work_opens_a_work_that_carries_its_own_default_data(tmp_path):
-    """판정 I(F2 PR-B) — 기본 데이터 참조를 가진 작업은 무데이터 상태에서도 **열린다**.
+def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
+    """무데이터 「문서 만들기에서 사용」은 언제나 「보관 후 안내」 하나다(§5.3 판정 D).
 
-    좌 목록이 살아 있을 땐 목록 클릭이 `select_job` 을 태워 #53-A 자동 조준이 발화했다.
-    목록이 죽은 뒤 무데이터 상태에서 작업을 겨눌 표면은 「문서 작업」의 이 동사뿐이므로,
-    여기서 보관만 하면 기본 데이터 자동 연결이 **도달 불가능**해진다(기능 소실). 자동
-    교체가 아니라 빈 자리의 첫 마운트라 §19.8 의 금지에도 걸리지 않고, 결과는 재진술된다.
+    구 default_data 분기(작업의 기본 데이터 참조 자동 마운트 — F2 PR-B 판정 I)는 결속
+    폐기와 함께 죽었다: 구 JSON 이 결속 키를 들고 있고 동명 풀 항목이 실재해도 데이터
+    선택을 반드시 지난다. 마운트 시 _apply_preferred_work 가 보관분을 판정한다.
     """
+    import json as _json
+
     ctrl, pool = _pool_controller(tmp_path)
-    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    path = ctrl.registry.path_for("공고서")
+    payload = _json.loads(path.read_text(encoding="utf-8"))
+    payload["default_dataset_ref"] = "7월공고"          # 구버전이 남긴 결속 키
+    path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
-    assert res == {"promoted": True, "name": "공고서", "reason": "default_data"}
-    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""   # 보관하지 않고 소비
-    snap = ctrl.snapshot()
-    assert snap["has_data"] is True, "기본 데이터 참조가 자동 조준되지 않았습니다(#53-A 소실)."
-    assert snap["data_source_label"] == "등록 데이터: 7월공고"
-    assert "자동으로 연결" in snap["data_notice"]["text"], "자동 연결이 조용히 일어났습니다."
+    assert res == {"stored": True, "reason": "no_data", "name": "공고서"}
+    assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"  # 보관 — 자동 마운트 없음
+    assert ctrl.snapshot()["has_data"] is False
+    # 데이터를 명시로 고르면 보관분이 §18.3 1행으로 승격된다(요구는 세션당 1회 — 완화 ⑴).
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""
 
 
 def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):

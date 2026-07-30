@@ -97,8 +97,16 @@ class PipelineBuilderViewModel:
 
     # ------------------------------------------------------------- 소스 편집
     def add_source(self, pool_name: str) -> SourceSlot:
-        """풀 항목 이름으로 서브소스 추가 — 참조(kind+opts)만 사본으로 담는다."""
-        item = self.registry.load(pool_name)
+        """풀 항목 이름으로 서브소스 추가 — 참조(kind+opts)만 사본으로 담는다.
+
+        이름은 §5.3 재편 뒤 중복 허용 라벨이지만, 이 파킹 표면의 후보 콤보는 이름을
+        보이므로 첫 일치로 해소한다(:meth:`~hwpxfiller.core.dataset_pool.
+        DatasetPoolRegistry.find_by_name` — 재착지 시 키 콤보로 승격할 자리).
+        """
+        found = self.registry.find_by_name(pool_name)
+        if found is None:
+            raise FileNotFoundError(f"등록 데이터를 찾을 수 없습니다: {pool_name}")
+        item = found[1]
         if item.kind == "pipeline":
             raise ValueError(
                 "파이프라인을 파이프라인의 소스로 넣을 수 없습니다(v1 중첩 미지원)."
@@ -245,7 +253,8 @@ class PipelineBuilderViewModel:
             raise ValueError("파이프라인 이름을 입력하세요.")
         if not self.sources:
             raise ValueError("소스가 없습니다 — 서브소스를 하나 이상 추가하세요.")
-        if not overwrite and self.registry.exists(name):
+        taken = self.registry.find_by_name(name)
+        if not overwrite and taken is not None:
             raise ValueError(
                 f"같은 이름의 데이터셋이 이미 있습니다: {name!r} — 다른 이름을 쓰거나 "
                 "덮어쓰기를 확정하세요."
@@ -260,7 +269,10 @@ class PipelineBuilderViewModel:
         item = DatasetPoolItem(
             name=name, kind="pipeline", opts=self.draft_opts(), note=note
         )
-        # 위 exists 게이트가 이미 동명/slug 충돌을 걸러 확정(overwrite=True) 아니면 여기 못 온다.
-        # 확정 경로는 core slug 가드에 allow_overwrite 로 opt-in 한다(#34; 이중 차단 회피).
-        self.registry.save(item, allow_overwrite=overwrite)
+        # 동명 확정 덮어쓰기는 그 슬롯 자리에 저장(수명·키 유지), 아니면 새 슬롯 추가(§5.3
+        # 키 재편 — 위 동명 게이트가 확정 없는 덮어쓰기를 이미 걸렀다).
+        if taken is not None:
+            self.registry.save_at(taken[0], item)
+        else:
+            self.registry.add(item)
         return item
