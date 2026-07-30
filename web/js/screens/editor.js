@@ -375,13 +375,15 @@
       <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("HWPX 서식", hw)}</div>
       <p class="note quiet" style="margin-top:0">누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다.</p>
       ${libraryBand(lib.hwpx, "hwpx", libRow,
-        "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요.")}
+        // 빈 상태는 라이브러리를 채우는 경로를 **둘 다** 말한다(U2 §2.16 — PR #355 3R):
+        // 단건과 폴더 일괄이 같은 자리에서 시작하는 부트스트래핑 시나리오다.
+        "라이브러리에 템플릿이 없습니다. '가져오기…'로 하나씩, '폴더에서 가져오기…'로 한꺼번에 추가하세요.")}
     </div>
     <div class="grp">
       <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("TXT 기안", tx)}</div>
       <p class="note quiet" style="margin-top:0">채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다.</p>
       ${libraryBand(lib.txt, "txt", txtLibRow,
-        "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…'로 추가하세요.")}
+        "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.")}
     </div>${resultLine}`;
   }
 

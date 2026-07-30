@@ -1529,6 +1529,16 @@ def test_editor_folder_import_is_wired_without_session_confirm():
         "배치 중복 실행의 정본 거절(tpl 비차단 잠금)이 없습니다 — JS 플래그만 남으면"
         " 어포던스가 뚫릴 때 두 배치가 교차합니다(거동은 test_webapp_template 이 잰다)."
     )
+    # 빈 상태(이 기능의 주 부트스트래핑 시나리오)는 라이브러리를 채우는 경로를 **둘 다**
+    # 광고한다(U2 §2.16 :946-949 — 3R P2): 두 밴드의 빈 힌트 모두 폴더 경로를 말해야 한다.
+    empty_hints = [
+        line for line in editor.splitlines()
+        if "없습니다. '" in line and "추가하세요" in line
+    ]
+    assert len(empty_hints) == 2 and all("'폴더에서 가져오기…'" in h for h in empty_hints), (
+        "빈 상태 힌트가 폴더 일괄 경로를 광고하지 않습니다 — 행동 줄 버튼만 있고 빈"
+        f" 라이브러리의 첫 안내가 단건 경로만 말합니다: {empty_hints!r}"
+    )
 
 
 def test_edit_entries_carry_their_context():
