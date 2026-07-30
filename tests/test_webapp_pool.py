@@ -298,6 +298,31 @@ def test_relink_two_phase_keeps_slot_and_lifecycle(tmp_path):
     assert updated.note == "7월분"        # 빈 메모 입력 = 진술 없음(보존)
 
 
+def test_data_released_by_a_relink_can_be_pinned_again(tmp_path):
+    """A 고정 → B 로 재연결 → **A 다시 고정**이 성사된다(코덱스 4R P2, 표면 왕복).
+
+    「지금 아무도 안 쓰는 데이터」가 옛 슬롯 키 점유 때문에 거절되던 자리 — 사용자에게는
+    존재하지 않는 항목과 충돌한다는 말로 보였다. 실제 중복은 여전히 갱신 확정으로 접힌다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "보고", "path": "C:/A.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    first = ctrl.dispatch("relink", {"key": key, "path": "C:/B.xlsx", "sheet": ""})
+    assert ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/B.xlsx", "sheet": "",
+                   "confirm": True, "basis": first["basis"]})["ok"] is True
+
+    res = ctrl.dispatch("register_excel", {"name": "A 재고정", "path": "C:/A.xlsx"})
+    assert res["ok"] is True and "needs_confirm" not in res, res
+    names = sorted(r["name"] for r in ctrl.snapshot()["rows"])
+    assert names == ["A 재고정", "보고"]
+    assert ctrl.snapshot()["duplicates"] == []
+    # 대조군 — 실제 중복(현재 B 를 쓰는 항목이 있는데 또 B)은 라벨 갱신 확정으로 접힌다.
+    dup = ctrl.dispatch("register_excel", {"name": "B 재고정", "path": "C:/B.xlsx"})
+    assert dup.get("needs_confirm") is True and "'보고'" in dup["confirm_text"]
+    assert len(ctrl.snapshot()["rows"]) == 2             # 3건이 되지 않는다
+
+
 def test_relink_rejects_identity_of_another_slot(tmp_path):
     """다른 슬롯이 이미 가리키는 데이터로는 재연결 못 한다 — 같은 데이터 2건 봉쇄(loud)."""
     ctrl, _, _ = _controller(tmp_path)

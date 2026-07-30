@@ -10,11 +10,12 @@ ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일
 ``normcase(abspath(path)) + sheet`` 다(:func:`excel_identity`) — 같은 워크북의 다른 시트는
 다른 데이터(#33)이고, 같은 경로·시트는 이름이 달라도 같은 데이터다. ``name`` 은 중복 허용·
 개명 자유·정체성 무관의 표시 라벨로 강등됐다. 그래서 파일명도 이름 slug 가 아니라 **불투명
-슬롯 키**(파일 stem)다 — 새 항목은 정체성 다이제스트로 이름 짓고, 구판(slug 파일명) 파일은
-그 stem 그대로 유효한 슬롯이라 디스크 마이그레이션이 없다(읽는 김에 디스크를 고치지
-않는다). 같은 정체성을 가리키는 슬롯 2개(구판의 다른 이름·같은 경로 등록)는 조용히 하나
-버리지 않고 :meth:`DatasetPoolRegistry.duplicate_identity_groups` 로 표면화해 사용자 확정
-후 병합한다(confirm-or-alarm). ``guard_slug_collision``/``_slug`` 의 데이터셋 소비자는 이
+슬롯 키**(파일 stem)이고, 그 키는 **내용에서 파생되지 않는다**(내용물 교체가 정상 수명
+사건이라 — 4R 판정, 클래스 주석 참조). 구판(slug 파일명) 파일은 그 stem 그대로 유효한
+슬롯이라 디스크 마이그레이션이 없다(읽는 김에 디스크를 고치지 않는다). 같은 정체성을
+가리키는 슬롯 2개(구판의 다른 이름·같은 경로 등록)는 조용히 하나 버리지 않고
+:meth:`DatasetPoolRegistry.duplicate_identity_groups` 로 표면화해 사용자 확정 후
+병합한다(confirm-or-alarm). ``guard_slug_collision``/``_slug`` 의 데이터셋 소비자는 이
 재편으로 소멸했다(작업 축은 그대로).
 
 **보안 불변식**([[confirm-or-alarm-principle]]): 나라장터 항목은 **ServiceKey 를 담지
@@ -27,10 +28,10 @@ ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import threading
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -189,11 +190,22 @@ class DatasetPoolRegistry:
     **키 = 파일 stem(불투명 슬롯 키), 이름 = 라벨**(U2 §5.3 판정 C): 이름이 중복 허용
     라벨로 강등돼 파일명·조회 키가 될 수 없다. 항목 조작(:meth:`load`·:meth:`mutate`·
     :meth:`delete`)은 슬롯 키로 하고, 데이터 축의 **중복 판정**은 정체성
-    (:func:`excel_identity` — :meth:`find_identity`)으로 한다. 새 슬롯 이름은 정체성
-    다이제스트(:meth:`add`)라 같은 데이터를 두 슬롯으로 만들 수 없고, 구판(이름 slug)
-    파일은 그 stem 그대로 유효한 슬롯이다 — 디스크 마이그레이션 없음. 구판이 남긴
-    다른 이름·같은 정체성 슬롯 2개는 :meth:`duplicate_identity_groups` 가 표면화한다
-    (조용한 병합·드롭 금지 — 사용자 확정 후 삭제).
+    (:func:`excel_identity` — :meth:`find_identity`)으로 한다.
+
+    **키는 내용에서 파생되지 않는다**(코덱스 4R 근본 조치). 한때 새 슬롯 키가 정체성
+    다이제스트였는데, 그것은 #347 이 ``dataset_id`` 를 기각한 근거(*"내용물 교체가 정상
+    수명 사건"*)를 **파일명에 다시 심는** 구조였다: 파일 A 로 만든 슬롯을 B 로 재연결하면
+    슬롯은 ``hash(identity(A))`` 를 계속 점유하고, 나중에 A 를 다시 고정하려는 사람은
+    정체성 조회는 통과하는데(A 를 참조하는 항목이 없다) 키 충돌로 막혀 「없는 것과
+    충돌한다」는 말을 듣는다. 수명 보존(슬롯은 산다)과 정체성 추적(내용은 갈린다)이 한
+    값에 얹혀 있던 것이 원인이므로, 키는 **내용 무관 불투명 토큰**(:meth:`new_slot_key`)
+    으로 발급하고 정체성은 내용에서 **읽을 때** 파생한다(:meth:`find_identity` — 인덱스가
+    아니라 질의). 같은 데이터 2건 봉쇄는 키가 아니라 그 질의가 진다.
+
+    구판(이름 slug) 파일은 그 stem 그대로 유효한 슬롯이다 — 키가 불투명해졌으므로
+    디스크 마이그레이션은 여전히 없다. 구판이 남긴 다른 이름·같은 정체성 슬롯 2개는
+    :meth:`duplicate_identity_groups` 가 표면화한다(조용한 병합·드롭 금지 — 사용자
+    확정 후 삭제).
     """
 
     SUFFIX = ".dataset.json"
@@ -213,18 +225,19 @@ class DatasetPoolRegistry:
             raise ValueError(f"올바른 등록 데이터 키가 아닙니다: {key!r}")
         return self.directory / (key + self.SUFFIX)
 
-    @staticmethod
-    def _digest_key(seed: str) -> str:
-        return hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    def new_slot_key(self) -> str:
+        """빈 슬롯 키 발급 — **내용 무관 불투명 토큰**(위 클래스 주석의 4R 판정).
 
-    def key_for(self, item: DatasetPoolItem) -> str:
-        """새 슬롯 키 — 정체성 다이제스트(엑셀) 또는 kind+이름 다이제스트(비파일 참조).
-
-        정체성에서 파생하므로 같은 데이터를 :meth:`add` 로 두 번 넣으면 같은 슬롯을
-        겨눠 loud 충돌한다(중복 판정을 우회하는 조용한 2건 등록 봉쇄).
+        내용에서 파생하지 않으므로 슬롯은 참조가 갈려도(다시 연결) 자기 자리를 지키고,
+        놓아준 데이터는 다른 슬롯이 자유롭게 다시 고정할 수 있다 — 수명 보존과 정체성
+        추적이 서로를 막지 않는다. 파일 존재로 재발급해 같은 디렉터리 안 충돌을 없앤다
+        (쓰기 잠금 안에서 부른다 — 발급과 생성 사이의 경합 봉쇄).
         """
-        ident = item_identity(item)
-        return self._digest_key(ident if ident is not None else f"{item.kind}\x1f{item.name}")
+        for _ in range(8):
+            key = uuid.uuid4().hex[:16]
+            if not self.slot_path(key).exists():
+                return key
+        raise RuntimeError("빈 등록 데이터 슬롯 키를 발급하지 못했습니다.")  # 사실상 불가
 
     # ------------------------------------------------------------- 쓰기
     def add(self, item: DatasetPoolItem) -> str:
@@ -232,6 +245,8 @@ class DatasetPoolRegistry:
 
         중복 확인·병합은 호출측(등록 게이트)이 :meth:`find_identity` 로 먼저 판정해
         사용자에게 재진술한다 — 여기 거절은 그 판정을 우회한 호출을 잡는 백스톱이다.
+        **거절 근거는 키가 아니라 정체성 질의**다(4R): 키가 내용에서 파생되던 시절엔
+        「지금 아무도 안 쓰는 데이터」가 옛 슬롯 키와 부딪혀 거절됐다.
         """
         with self._write_lock:
             ident = item_identity(item)
@@ -242,14 +257,9 @@ class DatasetPoolRegistry:
                         f"같은 데이터(경로·시트)가 이미 '{found[1].name}' 으로 고정돼 "
                         "있습니다."
                     )
-            key = self.key_for(item)
-            path = self.slot_path(key)
-            if path.exists():  # 다이제스트 슬롯 선점(비파일 참조 동명 재등록 등) — loud
-                raise ValueError(
-                    f"같은 참조의 등록 데이터 슬롯이 이미 있습니다: {key}"
-                )
             self.directory.mkdir(parents=True, exist_ok=True)
-            item.save(path)
+            key = self.new_slot_key()
+            item.save(self.slot_path(key))
             return key
 
     def save_at(self, key: str, item: DatasetPoolItem) -> None:

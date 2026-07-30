@@ -149,6 +149,42 @@ def test_registry_add_rejects_same_identity_loudly(tmp_path):
     assert len(reg.list_items()) == 2
 
 
+def test_slot_key_is_not_derived_from_content(tmp_path):
+    """슬롯 키는 내용에서 파생되지 않는다 — 같은 데이터를 다른 슬롯에 넣어도 키가 다르다.
+
+    키가 정체성 다이제스트면 「내용물 교체가 정상 수명 사건」인 개체의 파일명이 내용에
+    묶인다(#347 이 dataset_id 를 기각한 근거를 파일명에 다시 심는 구조) — 4R P2 의 뿌리다.
+    """
+    reg_a = DatasetPoolRegistry(tmp_path / "a")
+    reg_b = DatasetPoolRegistry(tmp_path / "b")
+    same = {"path": "/same.xlsx", "sheet": "물품"}
+    key_a = reg_a.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
+    key_b = reg_b.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
+    assert key_a != key_b, "슬롯 키가 내용(정체성)에서 파생됩니다."
+
+
+def test_relinked_slot_releases_its_old_identity_key(tmp_path):
+    """A 로 만든 슬롯을 B 로 재연결하면 A 는 **다시 고정할 수 있다**(코덱스 4R P2).
+
+    키가 정체성에서 파생되던 시절엔 슬롯이 hash(identity(A)) 를 계속 점유해, 정체성
+    조회는 통과하는데(A 를 참조하는 항목이 0건) 키 충돌로 막혔다 — 사용자에게는
+    「없는 것과 충돌」로 보이는 자리였다.
+    """
+    reg = DatasetPoolRegistry(tmp_path)
+    key = reg.add(DatasetPoolItem(name="보고", kind="excel", opts={"path": "/A.xlsx"}))
+    reg.mutate(key, lambda it: it.opts.update({"path": "/B.xlsx"}))  # 다시 연결
+    assert reg.find_identity("/A.xlsx") is None          # A 를 참조하는 항목은 0건
+
+    again = reg.add(DatasetPoolItem(name="A 재고정", kind="excel", opts={"path": "/A.xlsx"}))
+    assert again != key
+    assert reg.load(again).opts["path"] == "/A.xlsx"
+    assert reg.load(key).opts["path"] == "/B.xlsx"        # 재연결한 슬롯은 그대로 산다
+    assert reg.duplicate_identity_groups(corrupted=[]) == []
+    # 대조군 — **실제** 중복(현재 B 를 가리키는 항목이 있는데 또 B)은 여전히 loud 거절.
+    with pytest.raises(ValueError, match="이미"):
+        reg.add(DatasetPoolItem(name="B 재고정", kind="excel", opts={"path": "/B.xlsx"}))
+
+
 def test_find_identity_matches_normalized_path(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
     key = reg.add(DatasetPoolItem(name="7월", kind="excel", opts={"path": "C:/d/a.xlsx"}))
