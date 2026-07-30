@@ -1930,9 +1930,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_run_job = new_clean
         return {"ok": True}
 
-    def close_guard_reason(self) -> str:
-        """창 종료 가드 참여(F6 1R) — 재현하기 어려운 선택이 열려 있으면 사유."""
-        return "작업 화면의 완료하지 않은 선택" if self._guard_state()["armed"] else ""
+    # (close_guard_reason 은 U2 §2.9(#344)에서 사망 — 창 닫기는 명시적 종료 선언이고 진행
+    #  중 선택은 계약상 보존하지 않는다. 이 화면은 창 종료 가드에 참여하지 않으며, 그 배제는
+    #  tests/test_webapp_bridge.py 의 `silent_loss_by_contract` 표에 **선언**돼 있다. 가드
+    #  술어 `_guard_state` 의 나머지 두 소비자 — `session_guard_for`(홈 삭제 가드, #268)와
+    #  `_do_guard_state`(데이터 재겨눔·재연결 사전 확인) — 는 그대로 산다.)
 
     def session_guard_for(self, name: str) -> "dict | None":
         """타 화면(홈) 삭제 가드 조회(#268 리뷰) — 이 화면이 ``name`` 에 무장 세션을 열어

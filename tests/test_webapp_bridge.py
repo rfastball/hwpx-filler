@@ -341,16 +341,35 @@ def test_close_guard_is_a_protocol_every_session_surface_joins(tmp_path, monkeyp
         "tpl": "템플릿 관리 — 각 동사가 즉시 영속한다",
         "pool": "등록 데이터 참조 — 등록·전이가 즉시 영속한다",
     }
+    # 세션을 **들고 잃지만, 계약으로 조용히 잃는** 컨트롤러(U2 §2.9 · #344). 「잃을 것이
+    # 없다」(위 표)와는 다른 선언이라 같은 표에 넣으면 이 테스트가 거짓말을 한다. job 의
+    # 무장 선택은 실제로 사라진다 — 사용자 계약이 "창 닫기 = 명시적 종료 선언, 진행 중 작업
+    # 정보는 보존하지 않는다"로 그 소실을 수용했다. confirm-or-alarm 의 예외는 숨는 대신
+    # 이 표에 적히는 방식으로 존재한다. (홈 삭제 가드 `session_guard_for` 와 데이터 재겨눔
+    # 사전 확인 `_do_guard_state` 는 창 종료가 아니라서 이 계약 밖 — 그대로 산다.)
+    silent_loss_by_contract = {
+        "job": "창 닫기 = 명시적 종료 선언 — 진행 중 선택은 계약상 보존하지 않는다",
+    }
+    declared = set(not_session) | set(silent_loss_by_contract)
     missing = [
         name for name, ctrl in frontend.controllers.items()
-        if name not in not_session and not hasattr(ctrl, "close_guard_reason")
+        if name not in declared and not hasattr(ctrl, "close_guard_reason")
     ]
     assert not missing, (
         "세션을 든 컨트롤러가 창 종료 가드에 참여하지 않습니다 — "
         f"close_guard_reason() 를 구현하거나 배제 사유를 적으세요: {missing}"
     )
     # 배제 표가 stale 해지지 않게: 적어 둔 이름이 실제로 존재해야 한다.
-    assert set(not_session) <= set(frontend.controllers)
+    assert declared <= set(frontend.controllers)
+    # 두 표는 배타다 — 한 이름이 양쪽에 적히면 어느 선언이 참인지 알 수 없다.
+    assert not (set(not_session) & set(silent_loss_by_contract))
+    # 계약상 침묵 표의 컨트롤러가 close_guard_reason 을 되살리면 이 표가 거짓이 된다
+    # (참여하면서 배제 선언이 남는 이중 상태 금지 — 재유입 시 표에서 지우고 들어와야 한다).
+    for name in silent_loss_by_contract:
+        assert not hasattr(frontend.controllers[name], "close_guard_reason"), (
+            f"{name} 이(가) 창 종료 가드에 다시 참여합니다 — "
+            "silent_loss_by_contract 선언과 모순됩니다(#344)."
+        )
 
 
 def test_workbench_session_blocks_the_window_close(tmp_path, monkeypatch):
@@ -379,3 +398,29 @@ def test_workbench_session_blocks_the_window_close(tmp_path, monkeypatch):
     state = frontend.close_guard_state()
     assert state["armed"] is True
     assert any("작업대" in reason for reason in state["reasons"]), state["reasons"]
+
+
+def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, monkeypatch):
+    """U2 §2.9(#344) — job 의 무장 선택은 창 종료 가드를 세우지 **않는다**(계약상 침묵).
+
+    창 닫기는 명시적 종료 선언이고 진행 중 작업 정보는 보존하지 않는다는 사용자 계약의
+    착지다. 끊긴 것은 `_guard_state` 의 소비자 셋 중 **창 종료 하나뿐**이다: 같은 무장
+    상태에서 데이터 재겨눔·재연결 사전 확인(`_do_guard_state`)은 그대로 무장을 답하고
+    (홈 삭제 가드 `session_guard_for` 는 ``test_session_guard_for_cross_screen_query`` 가
+    따로 못박는다), 미저장 산출물을 든 작업대·편집기는 여전히 창 종료에 참여한다 —
+    국경은 화면이 아니라 소실의 종류(재현 가능한 선택 vs 미저장 산출물)다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    csv = tmp_path / "d.csv"
+    csv.write_text("부서,사업명\n총무과,책상\n회계과,복사기\n감사과,의자\n", encoding="utf-8")
+    job.load_data_path(str(csv))
+    job.dispatch("toggle_record", {"index": 0, "value": True})  # 부분 수작업 선택 = 무장
+    assert job._do_guard_state({})["armed"] is True   # 재겨눔 사전 확인 소비자는 불변
+    assert frontend.close_guard_state()["armed"] is False       # 창 종료만 계약상 침묵
+    # 같은 프런트에서 미저장 산출물 표면들은 여전히 창 종료를 막는다.
+    assert hasattr(frontend.controllers["editor"], "close_guard_reason")
+    _armed_workbench(frontend, tmp_path)
+    state = frontend.close_guard_state()
+    assert state["armed"] is True
+    assert state["reasons"] and all("작업대" in r for r in state["reasons"]), state["reasons"]
