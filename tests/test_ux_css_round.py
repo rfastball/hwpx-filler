@@ -133,19 +133,20 @@ def test_pathtrack_keeps_text_primary_folder_picker():
 
 # ------------------------------------------------------------------ F30: 복구 동선 조건부
 
-def test_job_relink_button_gated_by_template_missing():
-    """「작업」 패널 「템플릿 다시 연결」은 template_missing 일 때만 렌더(F30) — 상시 노출은
-    정상 상태 노이즈이자 홈 카드(조건부)와의 비대칭. (run.js 사망 후 job.js renderHeader 이 소관.)"""
+def test_job_relink_entrance_gated_by_template_missing():
+    """템플릿 재연결 동선은 template_missing 일 때만 선다(F30) — 상시 노출은 정상 상태
+    노이즈. 구 「선택한 작업」 존의 조건부 버튼은 존 사망(U2 §4, #342)으로 **경고 카드 기본
+    클릭**이 승계했다: 카드의 재연결 표식(data-missing)이 template_missing 판정에 묶인다."""
     src = JOB_JS.read_text(encoding="utf-8")
-    body = _fn_body(src, "renderHeader", "renderData")
-    assert "relink-template" in body, "「작업」 패널 템플릿 재연결 동선이 사라졌습니다(#67)."
-    assert "s.template_missing" in body, (
-        "재연결 버튼이 template_missing 조건 없이 상시 렌더됩니다(F30)."
+    body = _fn_body(src, "candCard", "candMenuOpen")
+    assert "c.template_missing" in body, (
+        "카드 경고 판정이 template_missing 을 읽지 않습니다(F30 승계)."
     )
-    gate = body.index("s.template_missing")
-    assert gate < body.index("relink-template"), (
-        "template_missing 분기가 재연결 버튼보다 뒤에 있습니다 — 조건부 렌더가 아닙니다(F30)."
+    gate = body.index("c.template_missing")
+    assert 'data-missing="1"' in body and gate < body.index('data-missing="1"'), (
+        "재연결 표식이 template_missing 조건 없이 상시 렌더됩니다(F30 승계)."
     )
+    assert "relinkFromCard" in src, "경고 카드의 재연결 리다이렉트가 사라졌습니다(#67 승계)."
 
 
 # ------------------------------------------------------------------ F32: 정상은 조용히

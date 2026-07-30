@@ -167,7 +167,8 @@
            찾기 = 아래 #jobNoDataExit 이 가리키는 라이브러리. -->
       <div class="job-layout">
         <!-- 세션 패널 — v6 `screen-data` 2열(재작성 R1). 좌=현재 데이터(카드·표·거울·결과),
-             우=side-card(이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 4존 znum 문법
+             우=side-card(이 데이터에 사용할 문서·생성 준비 — 구 「선택한 작업」 존은 U2 §4
+             판정 A 로 사망, 정체는 활성 카드·액션바 이름이 승계). 구 4존 znum 문법
              (H-03)과 표|거울 duo(#272)는 이 형상으로 대체된다 — 데이터와 문서 선택이 가로로
              마주 보는 것이 v6 의 성격이고, 표↔거울 같은 시야 요구는 세로 인접 + 펼침 면(⤢)이
              승계한다. 정본: docs/archive/DATA_FIRST_INTEGRATION_MAP.md §10.5 R1. -->
@@ -334,13 +335,12 @@
                 <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>
               </div>
 
-              <!-- 선택한 작업의 정체(이름·템플릿·재연결 경보) — 구 헤더 존 승계. -->
-              <div class="zone job-active-zone">
-                <div class="zone-cap">선택한 작업</div>
-                <div class="job-head-title" id="jobHeadTitle"></div>
-                <div class="job-head-tpl muted" id="jobHeadTpl"></div>
-                <div class="note" id="jobRelink" style="display:none"></div>
-              </div>
+              <!-- 구 「선택한 작업」 존은 사망했다(U2 §4 판정 A, #342) — 실측상 이 존의
+                   어포던스는 이관 대상이 아니라 **세 번째 사본**이었다. 승계처: 작업명 =
+                   활성 카드 하이라이트 + 액션바 이름(#jobActionName) · 템플릿 파일명 = 활성
+                   카드 확장 부제 · 열기/폴더에서 보기 = 활성 카드 ⋮(+라이브러리 상세 신설) ·
+                   「템플릿 다시 연결…」 = 경고 카드 기본 클릭 대체 · template_missing 경보 =
+                   카드 「연결 상태」 축 · 빈 상태 문안 = 후보 구획 빈 상태가 이미 소유. -->
 
               <!-- 생성 준비 — 저장 폴더 + 게이트 재진술 블록(상시, 결정 36 D1-B). -->
               <div class="zone">
@@ -366,6 +366,12 @@
                  템플릿을 쓰고 이 줄이 **1열 안에서** 우정렬해야 버튼이 자기 입력(좌 열)과
                  같은 열의 오른쪽 끝에 선다. 감싸지 않으면 자식들이 열마다 흩어진다. -->
             <div class="actionbar-row">
+              <!-- 활성 작업 이름(U2 §4-A 상속 의무, #342) — 「지금 어느 작업으로 생성하는가」를
+                   말하던 「선택한 작업」 존이 죽은 뒤, 활성 카드 하이라이트는 표를 훑으면
+                   스크롤 위로 사라진다. sticky 사이드바는 기각됐으므로(§5.2) 상수 높이 층인
+                   이 액션바가 작업 이름을 겸한다 — 「이 작업으로 문서 생성」의 「이 작업」이
+                   무엇인지 같은 줄이 말한다. 값은 스냅샷 job_name 그대로(판정·문안 재조립 없음). -->
+              <span class="actionbar-job" id="jobActionName"></span>
               <!-- 미리보기(재작성 F5) — §13-2 대로 **요구가 없어도** 열린다(정상 반복 실행에서
                    미리보기는 선택). 확인이 필요한 변경이 있을 때만 곁에 표지가 붙는다. -->
               <!-- 라벨은 모달 제목(「생성 값 미리보기」)과 **같은 말**이다(U2 §2.3). 그냥
@@ -518,6 +524,9 @@
     <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
     <div id="libraryGroupMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <!-- 활성 후보 카드 ⋮(U2 §4 판정 B, #342) — 열기·폴더에서 보기. 내용은 job.js 가 만들고
+         위치·표시는 GroupList.createMenu(=Popover.place)가 소유한다(그룹 ⋮ 동형). -->
+    <div id="jobCandMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div class="colpanel" id="jobColPanel" hidden></div>
 
     <!-- 데이터 고정·등록 모달(#26 #4 → 재작성 F1 승계) — 참조만(경로 포인터). 동명 재등록은

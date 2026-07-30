@@ -4,12 +4,15 @@
    화면별 콜백(notify)으로 주입한다 — PathTrack/Modal 공용 헬퍼 선례. */
 (function () {
   /* notify(msg, kind) — kind: "ok"(커밋 재진술) | "cancel"(사용자 취소) | "error"(실패).
-     실패는 공통 window.alert 로도 loud(콜백은 화면 채널 병기용). 미지정이면 no-op. */
+     실패는 공통 window.alert 로도 loud(콜백은 화면 채널 병기용). 미지정이면 no-op.
+     반환 = **커밋 성사 여부**(#342): 경고 카드의 「재연결 성공 뒤 이어서 선택」이 이 값을
+     기다린다 — 커밋이 성사된 뒤에야 선택이 나가는 발신 순서 규약의 관측점이다. 취소·거절·
+     예외는 전부 false(선택하지 않는다). */
   async function relinkTemplate(screen, name, notify) {
     const say = notify || function () {};
     try {
       const path = await Bridge.pickTemplatePath();
-      if (!path) return;                            // 피커 취소 — 아무것도 안 바뀜
+      if (!path) return false;                      // 피커 취소 — 아무것도 안 바뀜
       let res = await Bridge.call(screen, "relink_template", { name, path });
       if (res && res.needs_confirm) {
         if (!(await Modal.confirm({
@@ -17,18 +20,20 @@
           confirmLabel: "다시 연결", cancelLabel: "취소",
         }))) {
           say("다시 연결을 취소했습니다.", "cancel");
-          return;
+          return false;
         }
         res = await Bridge.call(screen, "relink_template", { name, path, confirm: true });
       }
       if (res && res.ok === false) {
         window.alert(res.error);
         say("다시 연결 실패: " + res.error, "error");
-        return;
+        return false;
       }
       if (res && res.restated) say(res.restated, "ok");
+      return true;
     } catch (err) {
       window.alert(String((err && err.message) || err));
+      return false;
     }
   }
 

@@ -287,7 +287,11 @@
           `<ul class="lib-causes">${causes}</ul>${relink}</div>`
         : "") +
       `<dl class="lib-detail-facts">` +
-      `<dt>템플릿</dt><dd>${esc(d.template_name)}</dd>` +
+      // 템플릿 행 = 이름 + 열기·폴더에서 보기(U2 §2.20 신설, #342) — 경보(템플릿 미연결
+      // N건)는 이 화면이 내는데 그 파일을 열거나 폴더로 갈 길이 여기 없었다(계기판의 짝).
+      // 아이콘·라벨은 PathTrack 기존 어휘 그대로이고 <dt>템플릿</dt> 행 안에 서므로 자리가
+      // 대상을 말한다. 경로 검증은 백엔드 화이트리스트, 클릭은 문서 레벨 위임 — 새 배선 없음.
+      `<dt>템플릿</dt><dd>${esc(d.template_name)} ${PathTrack.affordances(d.template_path)}</dd>` +
       (d.filename_pattern ? `<dt>파일 이름 규칙</dt><dd>${esc(d.filename_pattern)}</dd>` : "") +
       (d.run_note ? `<dt>실행 방식</dt><dd>${esc(d.run_note)}</dd>` : "") +
       `</dl>` +

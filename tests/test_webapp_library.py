@@ -452,6 +452,9 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     assert d["filename_pattern"] == "공고-{{ID}}"      # HWPX 는 파일 이름 규칙
     assert d["run_note"] == ""                          # TXT 만 실행 방식 문구
     assert "revision" not in d                          # 판본은 F7 — 빈 자리도 두지 않는다
+    # 템플릿 전체 경로(U2 §2.20, #342) — 상세 「열기」·「폴더에서 보기」가 겨눌 값. 경보
+    # (템플릿 미연결)는 이 화면이 내는데 조작이 여기 없었다 — payload 한 칸이 그 선행이다.
+    assert d["template_path"] == "/none/t.hwpx"
 
 
 def test_detail_is_none_when_nothing_is_selected(tmp_path):

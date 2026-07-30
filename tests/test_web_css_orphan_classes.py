@@ -102,7 +102,6 @@ STYLELESS_BY_DESIGN: dict[str, str] = {
     "job-mirror-zone": "세션 좌열 「본문 확인」 존의 자리 표지(스타일은 .zone)",
     "job-result-zone": "세션 좌열 「생성 결과」 존의 자리 표지(스타일은 .zone)",
     "job-cands-row": "세션 우열 후보 구획의 자리 표지(스타일은 .zone)",
-    "job-active-zone": "세션 우열 「선택한 작업」 존의 자리 표지(스타일은 .zone)",
 }
 
 #: 템플릿 보간 자리 표식 — `class="col-${i}"` 의 `col-` 같은 **조각**은 class 이름이 아니다.

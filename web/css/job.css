@@ -94,6 +94,12 @@
 /* 빈 게이트 문안은 **자리도 비운다**(리뷰 R5) — 폭 0 이라도 flex 항목으로 남으면 그 앞의
    gap(12px)이 살아 마지막 버튼이 기준면에서 그만큼 물러선다. 실측으로 잡힌 자리다. */
 .actionbar-row>.capnote:empty{display:none}
+/* 활성 작업 이름(U2 §4-A 상속 의무, #342) — 죽은 「선택한 작업」 존의 상시성 승계. 좌측에
+   서고(margin-right:auto — 행동 묶음은 계속 우정렬) 좁으면 말줄임으로 물러난다(버튼 잠식
+   금지). 빈 값(작업 미선택)은 capnote 와 같은 이유로 자리도 비운다. */
+.actionbar-job{margin-right:auto;font-weight:600;min-width:0;max-width:40%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actionbar-job:empty{display:none}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
@@ -264,7 +270,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .zone-cap:not(.zone-cap-actions){display:block}
 .zone-cap{margin-bottom:var(--sp-10);color:var(--n-header-ink)}
 /* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
-   (이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 `.job-duo`(표|거울 병치, #272)를
+   (이 데이터에 사용할 문서·생성 준비 — 구 「선택한 작업」 존은 U2 §4 로 사망).
+   구 `.job-duo`(표|거울 병치, #272)를
    대체한다: v6 의 성격은 데이터와 문서 선택이 가로로 마주 보는 것이고, 표↔거울 같은 시야는
    세로 인접 + 펼침 면(⤢)이 승계한다. 두 열은 존 구분선을 공유하는 한 카드 안의 구획이다. */
 /* 컬럼 템플릿은 **한 곳에서만** 선언한다 — 세션 카드(.data-grid)와 그 아래 액션바가 같은
@@ -288,8 +295,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
   .job-zones,.session-actionbar{--data-grid-cols:1fr}
   .data-grid>.dg-side{border-left:0;border-top:1px solid var(--a-border)}
 }
-.job-head-title{font-size:var(--fs-body);font-weight:600}
-.job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
+/* (구 .job-head-title/.job-head-tpl — 「선택한 작업」 존 — 은 U2 §4 판정 A(#342)로 존과
+   함께 사망. 정체 표시는 활성 후보 카드(.job-cand-card.active)와 액션바(.actionbar-job)가
+   승계한다.) */
 /* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */
 @media (max-width:820px){.job-layout{flex-direction:column}.job-master{width:auto;flex-direction:row;flex-wrap:wrap}
   .master-splitter{display:none}}

@@ -352,6 +352,29 @@ def test_two_candidates_get_no_suggestion(tmp_path):
     assert ctrl.snapshot()["candidates"]["suggested"] == ""
 
 
+def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
+    """후보 카드의 템플릿 정체 + 「연결 상태」(U2 §4 판정 B·C·F, #342).
+
+    죽은 「선택한 작업」 존의 승계 payload: 활성 카드 확장 부제(파일명)·⋮(전체 경로)가
+    카드 자신의 값을 읽고, `template_missing` 경보는 카드 「연결 상태」 축으로 옮겨간다 —
+    문안(`conn_label`)은 Python 이 정본으로 낸다(텍스트가 정본, 색은 강조). §18.4 는
+    available 판정에 Template 읽기를 섞지 않지만(판정 F) 부재는 파일 존재 검사 하나라
+    후보 축에서 이미 말한다 — 눌러본 뒤에 차단하는 것은 뒤늦은 경보다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    card = ctrl.snapshot()["candidates"]["top"][0]
+    assert card["template_name"] == "t.hwpx"
+    assert card["template_path"].endswith("t.hwpx")           # ⋮ 가 겨눌 전체 경로
+    assert card["template_missing"] is False
+    assert card["conn_label"] == ""                            # 정상은 조용히(F30 동형)
+
+    Path(card["template_path"]).unlink()                       # 템플릿 파일 소실 재현
+    after = ctrl.snapshot()["candidates"]["top"][0]
+    assert after["template_missing"] is True                   # available 은 유지(§18.4)
+    assert after["conn_label"] == "템플릿 없음"                # 경고 문안도 Python 정본
+
+
 def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):
     """즐겨찾기는 정렬 메타만 바꾼다(§18.5) — 활성 작업·데이터·선택·게이트 불변."""
     ctrl, _ = _controller(tmp_path)

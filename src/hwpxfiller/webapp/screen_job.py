@@ -839,6 +839,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         top = []
         for r in ranked[:MAIN_TOP_N]:
             job = by_name[r.name]
+            # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 죽은 「선택한 작업」 존의
+            # `template_missing` 경보 승계처가 카드다. §18.4 는 Template 읽기를 후보 축
+            # 밖에 뒀지만(available=Binding 호환성만), 부재 판정은 파일 존재 검사 하나라
+            # 이미 싸다(판정 F — 눌러본 뒤에 차단하는 것은 뒤늦은 경보). 텍스트가 정본이고
+            # 색은 강조(판정 C)이며 문안은 여기서 낸다 — 표면이 조립하면 같은 상태를 두
+            # 곳이 부른다.
+            tpath = job.template_path
+            missing = not tpath or not Path(tpath).exists()
             top.append({
                 "name": r.name,
                 "tier": r.tier,
@@ -855,6 +863,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
                 # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
                 "last_run_label": last_use_label(r.mode, job.last_run_at),
+                # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
+                # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
+                "template_name": Path(tpath).name if tpath else "",
+                "template_path": tpath,
+                "template_missing": missing,
+                "conn_label": "템플릿 없음" if missing else "",
             })
         needs = sorted(
             (

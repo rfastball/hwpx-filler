@@ -430,9 +430,10 @@ def test_milestone_l_job_density_and_expansion_sheets():
     )
     grid = html.split('id="jobDataGrid"', 1)[1].split("job-edit-host", 1)[0]
     main, side = grid.split('class="dg-side"', 1)
-    # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 선택한 작업 → 생성 준비.
+    # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 생성 준비
+    # (구 「선택한 작업」 존은 U2 §4 판정 A(#342)로 사망 — 아래 승계 계약 테스트가 잇는다).
     assert main.index('id="jobTableHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
-    assert side.index('id="jobCandidates"') < side.index('id="jobHeadTitle"') < side.index('id="jobOutDir"')
+    assert side.index('id="jobCandidates"') < side.index('id="jobOutDir"')
     assert 'id="jobMirrorCapstrip" role="status" hidden' in main
     assert "#jobMirror{max-height:420px;overflow:auto}" in css
     # 컬럼 템플릿은 한 곳에서만 선언한다(U2 §2.2) — 세션 카드와 그 아래 액션바가 같은
@@ -809,9 +810,11 @@ def test_job_session_surface_uses_v6_two_column_captions():
     """
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
     job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
+    # 「선택한 작업」 캡션은 존 사망(U2 §4 판정 A, #342)으로 이 목록에서 빠졌다 — 정체는
+    # 활성 후보 카드·액션바 이름이 승계한다(승계 계약은 전용 테스트가 진다).
     for caption in (
         "현재 데이터", "본문 확인", "생성 결과",
-        "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
+        "이 데이터에 사용할 문서", "생성 준비",
     ):
         # 캡션 자리에 id 가 붙을 수 있다(「생성 준비」는 매체에 따라 「복사 준비」로 바뀐다) —
         # 계약이 세는 것은 **zone-cap 캡션의 존재**이지 속성 목록이 아니다.
@@ -869,7 +872,10 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
     assert "function gateStep(s, g)" in src
     assert not re.search(r'return "[①②③]', src), "죽은 4존 서수가 남아 있습니다."
-    for caption in ("현재 데이터", "이 데이터에 사용할 문서", "선택한 작업", "본문 확인"):
+    # 「선택한 작업 · 」 지목은 존과 함께 죽었다(U2 §4, #342) — 템플릿 부재는 후보 구획
+    # (연결 상태 카드)을, 드리프트·토큰 danger 는 거울 배너(본문 확인)를 지목한다.
+    assert '"선택한 작업 · "' not in src, "죽은 존을 가리키는 지목이 남아 있습니다."
+    for caption in ("현재 데이터", "이 데이터에 사용할 문서", "본문 확인"):
         assert f'"{caption} · "' in src or f'= "{caption} · "' in src, (
             f"게이트 구획 지목 누락: {caption}"
         )
@@ -878,6 +884,59 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     assert not re.search(r"\bg\.level\s*=(?!=)", src), (
         "표시층이 gate.level 판정을 변조하면 안 됩니다."
     )
+
+
+def test_job_active_zone_death_and_candidate_card_succession():
+    """U2 §4(#342): 「선택한 작업」 존 사망 + 후보 카드·액션바·라이브러리 상세 승계.
+
+    존은 실측상 어포던스의 **세 번째 사본**이라 이관 없이 죽지만, 사망 조건 점검표의 전
+    행이 새 거처에서 도달 가능해야 한다: 작업명=활성 카드 하이라이트+액션바 이름 · 템플릿
+    파일명=활성 카드 확장 부제 · 열기/폴더에서 보기=활성 카드 ⋮ + **라이브러리 상세 신설**
+    (§2.20 — 경보는 라이브러리가 내는데 조작이 거기 없었다) · 재연결=경고 카드 기본 클릭
+    (판정 D — 선택이 아니다) · `template_missing` 경보=카드 「연결 상태」(판정 C — 텍스트가
+    정본, 색은 강조). 편집기 「템플릿」 탭의 같은 어포던스는 그대로 산다(사본 셋→둘, §2.20 ⑷).
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    lib_js = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    relink_js = (WEB_JS_DIR / "relink.js").read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.split())
+
+    # ① 존은 죽었다 — 조각(id·class)이 셸·화면 JS 어디에도 남지 않는다.
+    for dead in ("jobHeadTitle", "jobHeadTpl", "jobRelink", "job-active-zone"):
+        assert dead not in html and dead not in job_js, f"죽은 존 조각이 남았습니다: {dead}"
+    # ② 작업명의 상시성(§4-A 상속 의무) — 활성 카드는 스크롤 위로 사라지므로 상수 높이
+    #    층인 액션바가 이름을 겸한다. 빈 값은 자리도 비운다(capnote 와 같은 규칙).
+    assert 'id="jobActionName"' in html
+    assert '$("jobActionName").textContent' in job_js
+    assert ".actionbar-job:empty{display:none}" in css
+    # ③ 활성 카드 확장 부제 + ⋮ — 부유 메뉴 호스트(그룹 ⋮ 동형)와 PathTrack 위임 재사용.
+    assert "cand-tpl" in job_js and "data-cand-menu" in job_js
+    assert 'id="jobCandMenu" class="ctx-menu"' in html
+    assert 'data-track-act="open"' in job_js and 'data-track-act="reveal"' in job_js
+    # ④ 「연결 상태」 — 문안은 Python(conn_label)이 내고 카드가 그린다. 색은 강조일 뿐이다.
+    assert "c.conn_label" in job_js
+    assert ".cand-conn{color:var(--a-warn);font-weight:700}" in css
+    # 활성+경고 겹침은 경고가 이긴다 — 경고 규칙이 활성 규칙 **뒤에** 서야 한다.
+    assert css.index(".job-cand-card.active{") < css.index(".job-cand-card.warn{")
+    # 활성 카드 재클릭 무동작(pointer-events:none)은 경고 카드에서 걷는다 — 안 걷으면
+    # 활성+경고의 기본 클릭(재연결 입구)이 마우스에서 죽는다.
+    assert '.job-cand-card.warn.cand-pick[aria-pressed="true"]{pointer-events:auto}' in css
+    # ⑤ 경고 카드 기본 클릭 = 재연결 리다이렉트(선택이 아님), 커밋 성사 뒤에만 이어서 선택.
+    assert 'data-missing="1"' in job_js and "relinkFromCard" in job_js
+    assert "await Relink.relinkTemplate" in job_js
+    assert "return false" in relink_js and "return true" in relink_js, (
+        "relink 공용 흐름이 커밋 성사 여부를 반환하지 않으면 「이어서 선택」이 실패 뒤에도 나갑니다."
+    )
+    # ⑥ 라이브러리 상세 신설(§2.20) — payload 한 칸(template_path)이 선행이고 그 칸을 겨눈다.
+    assert "PathTrack.affordances(d.template_path)" in lib_js
+    lib_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "screen_library.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"template_path": job.template_path' in lib_py
+    # ⑦ 편집기 「템플릿」 탭의 같은 어포던스는 그대로 산다(§2.20 ⑷ — 옮기는 것이 아니다).
+    assert "PathTrack.affordances(s.template_path)" in editor_js
 
 
 def test_job_data_first_prework_surface_contract():

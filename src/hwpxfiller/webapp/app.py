@@ -922,11 +922,15 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
         top:[{name:'공고서', tier:'favorite', favorited:true,
               last_run_at:'2026-07-20T09:00:00', suggested:false,
               mode:'hwpx_generate', mode_label:'HWPX 생성',
-              last_run_label:'마지막 성공 실행 2026-07-20'},
+              last_run_label:'마지막 성공 실행 2026-07-20',
+              template_name:'공고서.hwpx', template_path:'C:\\t\\공고서.hwpx',
+              template_missing:false, conn_label:''},
              {name:'계약서', tier:'unused', favorited:false,
               last_run_at:'', suggested:true,
               mode:'text_review_copy', mode_label:'온나라 기안',
-              last_run_label:'복사한 적 없음'}],
+              last_run_label:'복사한 적 없음',
+              template_name:'계약서.txt', template_path:'C:\\t\\계약서.txt',
+              template_missing:false, conn_label:''}],
         sections:[{mode:'hwpx_generate', mode_label:'HWPX 문서 생성', names:['공고서']},
                   {mode:'text_review_copy', mode_label:'온나라 기안 검토·복사',
                    names:['계약서']}],
@@ -1219,7 +1223,8 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     })();
     out.gate_text = document.getElementById('jobGate').textContent;
     out.gen_disabled = document.getElementById('jobGenBtn').disabled;
-    out.head_hint = document.getElementById('jobHeadTpl').textContent;
+    // 「선택한 작업」 존 사망(U2 §4, #342) — 작업 미선택이면 액션바 이름도 비고 자리를 접는다.
+    out.action_name_empty = document.getElementById('jobActionName').textContent === '';
     out.tbl_rows_order = Array.prototype.map.call(
       document.querySelectorAll('#jobTableBody tr[data-i]'),
       function (r) { return r.getAttribute('data-i'); });
@@ -1507,6 +1512,100 @@ _JOB_INHERITED_AFFORDANCE_PROBE_JS = r"""
     out.no_data_exit_shown =
       getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none';
     out.no_data_exit_target = !!document.getElementById('jobPickInLibrary');
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
+# 활성 카드 승계 + 경고 카드 클릭 대체(U2 §4, #342) — 죽은 「선택한 작업」 존의 승계처가
+# 실 WebView2 에서 실제로 서는지 되읽는다. 정적 계약(test_web_dom_contract)은 조각의 존재만
+# 보고, 여기는 ①액션바가 활성 작업 이름을 말하는가 ②활성 카드의 확장 부제(템플릿 파일명)와
+# ⋮ — 부유 메뉴의 두 항목이 실제로 그 템플릿 경로를 겨누는가 ③경고 카드의 「연결 상태」
+# 텍스트 ④경고 카드 클릭이 **선택이 아니라** 안내 다이얼로그인가(취소하면 select_job 0건 —
+# 발신열을 스텁으로 관측)를 실 클릭으로 본다. 확인 다이얼로그의 취소는 160ms 정착 뒤에
+# 끝나므로 발신열 회수는 _probe_late(__candProbeDone) 로 미룬다.
+_JOB_ACTIVE_CARD_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    var snap = {
+      job_name:'공고서', has_job:true, out_dir:'C:\\Results', data_label:'d.csv',
+      data_source_label:'파일: d.csv', data_notice:null,
+      template_name:'공고서.hwpx', template_path:'C:\\t\\공고서.hwpx',
+      template_missing:false, filename_pattern:'doc-{{seq:001}}',
+      has_data:true, record_count:1, selected_count:1,
+      records:[{index:0, selected:true, name:'doc-001.hwpx', summary:'사무비품'}],
+      candidates:{
+        top:[{name:'공고서', tier:'recent', favorited:false,
+              last_run_at:'2026-07-20T09:00:00', suggested:false,
+              mode:'hwpx_generate', mode_label:'HWPX 생성',
+              last_run_label:'마지막 성공 실행 2026-07-20',
+              template_name:'공고서.hwpx', template_path:'C:\\t\\공고서.hwpx',
+              template_missing:false, conn_label:''},
+             {name:'계약서', tier:'unused', favorited:false,
+              last_run_at:'', suggested:false,
+              mode:'hwpx_generate', mode_label:'HWPX 생성',
+              last_run_label:'실행한 적 없음',
+              template_name:'계약서.hwpx', template_path:'C:\\t\\계약서.hwpx',
+              template_missing:true, conn_label:'템플릿 없음'}],
+        sections:[], more:0, needs_count:0, suggested:'', txt_note:''},
+      browse:{tab:'available', query:'', rows:[], available_count:2, needs_count:0,
+              filtered_out:0},
+      filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
+              definition:'', branches:[], columns:[{name:'공고명', kind:'text', active:false}]},
+      table:{columns:[{name:'공고명', kind:'text'}],
+             rows:[{index:0, selected:true, name:'doc-001.hwpx', summary:'사무비품',
+                    cells:[[['사무비품',false]]]}],
+             visible_count:1, hidden_selected:[]},
+      restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[0]},
+      preflight:{level:'ok', text:'ok'}, mirror:[], drift:[], name_tokens:[],
+      gate:{enabled:true, level:'', text:'생성 준비'}
+    };
+    window.__push('job', snap);
+    // ① 액션바가 활성 작업 이름을 말한다(§4-A 상속 의무 — 상수 높이 층의 정체 표시).
+    out.action_name = document.getElementById('jobActionName').textContent;
+    // ② 활성 카드 — 확장 부제(템플릿 파일명)와 ⋮ 는 활성 카드에만 선다(판정 B).
+    var activeCard = document.querySelector('#jobCandidates .job-cand-card.active');
+    out.active_tpl = (function () {
+      var t = activeCard && activeCard.querySelector('.cand-tpl');
+      return t ? t.textContent : ''; })();
+    out.menu_btn_in_active = !!(activeCard && activeCard.querySelector('[data-cand-menu]'));
+    out.menu_btn_count = document.querySelectorAll('#jobCandidates [data-cand-menu]').length;
+    // ⋮ 클릭 → 부유 메뉴(.ctx-menu)의 두 항목이 그 템플릿 경로를 겨눈다(PathTrack 위임).
+    document.getElementById('jobCandMenuBtn').click();
+    var menu = document.getElementById('jobCandMenu');
+    out.menu_open = menu.style.display !== 'none';
+    out.menu_items = Array.prototype.map.call(
+      menu.querySelectorAll('[data-track-act]'),
+      function (b) { return b.getAttribute('data-track-act') + ':' +
+        b.getAttribute('data-path') + ':' + b.textContent; });
+    window.Popover.closeAll();          // 바깥닫기 기제 경유(뒤 프로브 오염 방지)
+    out.menu_closed = menu.style.display === 'none';
+    // ③ 경고 카드 — 「연결 상태」 는 텍스트가 정본이다(판정 C — 색만으로 말하지 않는다).
+    var warnCard = document.querySelector('#jobCandidates .job-cand-card.warn');
+    out.warn_conn = (function () {
+      var c = warnCard && warnCard.querySelector('.cand-conn');
+      return c ? c.textContent : ''; })();
+    // ④ 경고 카드 클릭 = 선택이 아니다(판정 D) — 안내 다이얼로그가 서고, 취소하면 아무
+    //    발신도 없다. 발신열은 취소 정착(160ms) 뒤 _probe_late 가 회수한다.
+    var sent = [], real = window.Bridge.call;
+    window.Bridge.call = function (screen, action, payload) {
+      sent.push(action);
+      return Promise.resolve({});
+    };
+    window.__candProbeDone = false;
+    document.getElementById('jobCand-' + encodeURIComponent('계약서')).click();
+    var cm = document.getElementById('confirmModal');
+    out.warn_redirect_modal = !!cm && !cm.classList.contains('hidden');
+    out.warn_modal_body = document.getElementById('confirmModalBody').textContent;
+    document.getElementById('confirmModalCancel').click();
+    setTimeout(function () {
+      window.Bridge.call = real;
+      window.__candSent = JSON.stringify(sent);
+      window.__candProbeDone = true;
+    }, 400);
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -3478,6 +3577,13 @@ def _selftest_drive(window: "object") -> None:
         # 승계 어포던스 2건(F2 PR-B) — 탐색 착지가 끝난 **뒤에** 돈다(위 프로브 머리말).
         result["job_inherited"] = window.evaluate_js(  # type: ignore[attr-defined]
             _JOB_INHERITED_AFFORDANCE_PROBE_JS)
+        # 활성 카드 승계·경고 카드 클릭 대체(U2 §4, #342) — 자기 합성 스냅샷을 밀므로 앞
+        # 프로브의 비동기 사슬(즐겨찾기·탐색 착지)이 끝난 뒤에 돈다(교차오염 차단).
+        result["job_active_card"] = window.evaluate_js(_JOB_ACTIVE_CARD_PROBE_JS)  # type: ignore[attr-defined]
+        result["job_active_card"].update(_probe_late(
+            window, "__candProbeDone",
+            "JSON.stringify({warn_click_sends: String(window.__candSent)})",
+        ))
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         # 존 변이는 한 체인이라 둘째 토글 발신은 마이크로태스크 뒤다 — 같은 스크립트 안에서
         # 읽으면 아직 없다. 별도 evaluate(=새 JS 턴)로 되읽어 의도열 전체를 확인한다.
