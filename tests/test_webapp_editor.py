@@ -240,6 +240,49 @@ def test_new_draft_with_data_validates_before_it_destroys(tmp_path):
     assert ctrl.data_path == ""                            # 새 데이터도 서지 않았다
 
 
+def test_anchored_draft_survives_the_real_template_pick(tmp_path):
+    """#349 리뷰 3R P1 — 1단계에서 템플릿을 고르는 **실 dispatch** 를 타도 앵커가 산다.
+
+    앞 라운드의 테스트는 `load_template_path` 를 직접 불러 이 결함을 통과시켰다: 실 UX 의
+    다음 행동은 피커의 `use_library_template` 이고 그 경로는 `new_job_session` → `_reset()`
+    이라, 「이 템플릿으로」를 누른 **모든 사용자**가 데이터 앵커와 진입 문맥을 잃었다.
+    그래서 여기서는 링2 액션을 그대로 태운다 — 계약을 지키는 코드가 아니라 사용자가 밟는
+    경로를 센다.
+
+    끊기는 것은 종전 그대로임도 함께 못박는다(혼합 세션 금지는 살아 있다): 이름은 남지 않는다.
+    """
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        entry_reason="document_browser_new_work",
+        evidence={"데이터": "multi_sheet.xlsx"},
+        return_context={"surface": "data"},
+    )
+    ctrl.dispatch("set_name", {"name": "쓰던 이름"})
+
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == TPL_COMPILED.name
+    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["record_count"] == 3
+    assert snap["context"]["entry_reason"] == "document_browser_new_work"
+    assert snap["context"]["evidence"] == {"데이터": "multi_sheet.xlsx"}
+    assert snap["name"] == ""            # 이름·매핑은 종전대로 끊긴다(혼합 세션 금지)
+
+    # 마음을 바꿔 다른 템플릿을 골라도 앵커는 산다 — 문맥까지 되살아나야 성립하는 성질이다.
+    ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    snap = ctrl.snapshot()
+    assert snap["data_name"] == "multi_sheet.xlsx"
+    assert snap["context"]["entry_reason"] == "document_browser_new_work"
+
+    # 대조군: 앵커 없이 시작한 보통 초안은 종전대로 데이터가 끊긴다(계약 무변경).
+    plain, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    plain.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    plain.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    assert plain.snapshot()["data_name"] == ""
+
+
 def test_new_draft_carries_the_whole_reference_not_just_the_path(tmp_path):
     """#349 리뷰 P1 — 참조를 경로로 줄이면 **다른 헤더**의 데이터로 마법사가 선다.
 

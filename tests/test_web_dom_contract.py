@@ -1113,27 +1113,71 @@ def test_needs_and_missing_template_redirect_to_different_places():
     assert "document_browser_new_work:" in editor_js, (
         "편집기가 새 진입 사유의 배너 문안을 모릅니다 — 사유만 실리고 아무 말도 하지 않습니다."
     )
-    # ⑤ **가부 판정도 Python 하나**(#349 리뷰 P1) — 파일로 다시 열 수 없는 마운트에서
-    #    표면이 스스로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가 거절한다. 막힐 땐
-    #    숨기지 않고 비활성 + 사유 병기이고, 그때 `data-busy-lock` 은 달지 않는다
-    #    (setBusy 의 일괄 복원이 되살린다 — #342 가 재연결 버튼에서 겪은 자리).
-    assert "s.new_work" in job_js and "nw.can" in job_js, (
-        "「이 데이터로 새 작업」의 가부를 표면이 스스로 판정합니다 — 판정은 Python 하나입니다."
-    )
-    assert "cand-newwork-why" in job_js, "막힌 사유가 표면에 서지 않습니다(조용한 비활성 금지)."
-    nw_at = job_js.index("const newWorkBtn")
-    nw_html = job_js[nw_at:nw_at + 700]
-    assert "disabled" in nw_html and "data-busy-lock data-new-work" in nw_html
-    assert "disabled data-busy-lock" not in nw_html and "data-busy-lock disabled" not in nw_html, (
-        "비활성 버튼에 busy-lock 이 달렸습니다 — 생성 종료의 일괄 복원이 되살립니다."
-    )
-    # ⑥ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
+    # ⑤ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
     assert "Bridge.newJobFromData(context" in entry_js, (
         "진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다 — 모든 진입이 자발적 진입으로 떨어집니다."
     )
     assert "newJobFromData(context)" in bridge_js and "new_job_from_data(context" in bridge_js
     assert "data_path" not in job_js, (
         "표면이 데이터 경로를 직접 들고 실어 보냅니다 — 마운트 정체의 단일 출처는 컨트롤러입니다."
+    )
+
+
+def test_every_new_work_entrance_passes_the_same_handoff_gate():
+    """#349 리뷰 3R 근본 조치 — **마법사로 가는 입구는 전부 같은 게이트를 지난다**.
+
+    세 라운드가 같은 뿌리였다: 승계 가부 판정은 Python 한 곳(`new_work_handoff` →
+    스냅샷 `new_work`)에 있는데 **그 판정을 거치지 않는 입구**가 남아 있었다(1R 참조를
+    잃는 입구 · 2R 슬롯을 재해석하는 입구 · 3R 막혔는데 열려 있는 입구). 그래서 이
+    테스트가 세는 것은 「지금 두 입구가 옳게 그려지는가」가 아니라 **「게이트를 안 지나는
+    입구를 지을 수 있는가」**다 — 훅 발행처를 한 표로 묶고, 그 표 밖의 발행을 금지한다.
+    새 입구가 생겨도 헬퍼를 쓰지 않으면 여기서 먼저 걸린다(선언이 아니라 결과를 센다).
+    """
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+
+    # ① 판정을 읽는 자리는 하나 — 입구마다 스냅샷을 다시 해석하면 답이 갈린다.
+    assert job_js.count("function newWorkGate(") == 1
+    assert job_js.count(".new_work") == 1, (
+        "승계 가부 스냅샷을 두 곳 이상이 읽습니다 — 읽는 자리가 곧 판정하는 자리가 됩니다."
+    )
+    # ② 훅 발행처는 한 표(NEW_WORK_HOOKS) + 그 표를 게이트가 감싼다(newWorkAttrs).
+    assert job_js.count("const NEW_WORK_HOOKS") == 1
+    assert job_js.count("function newWorkAttrs(") == 1
+    hooks_at = job_js.index("const NEW_WORK_HOOKS")
+    hooks_end = job_js.index("};", hooks_at)
+    # ③ **훅은 그 표 밖에서 발행되지 않는다.** 소비(위임 조회)는 예외 — 발행이 아니다.
+    for m in re.finditer(r"data-(?:new-work|browse-new)", job_js):
+        if hooks_at <= m.start() <= hooks_end:
+            continue
+        line = job_js[job_js.rfind("\n", 0, m.start()): job_js.find("\n", m.start())]
+        assert "closest(" in line or "getAttribute(" in line, (
+            "행동 훅이 게이트 밖에서 발행됐습니다 — 그 입구는 승계 가부를 묻지 않습니다:"
+            f" {line.strip()!r}"
+        )
+    # ④ 두 입구가 실제로 그 헬퍼를 통과한다(요소 안에 게이트가 있다).
+    for eid in ('id="jobCandNewWork"', 'id="jobBrowseNeeds-'):
+        at = job_js.index(eid)
+        element = job_js[at:job_js.index("</button>", at)]
+        assert "newWorkAttrs(" in element, f"{eid} 입구가 게이트를 지나지 않습니다."
+    # ⑤ 막힘은 **숨기지 않는다** — 두 입구 모두 사유를 제자리에서 말한다.
+    assert "cand-newwork-why" in job_js, "후보 줄 입구가 막힌 사유를 말하지 않습니다."
+    needs_at = job_js.index('id="jobBrowseNeeds-')
+    needs_el = job_js[needs_at:job_js.index("</button>", needs_at)]
+    assert "g.reason" in needs_el, (
+        "확인 필요 행이 막혀도 「새 작업 만들기」라고 약속합니다 — 못 가는 목적지 문안입니다."
+    )
+    # ⑥ 비활성엔 busy-lock 을 달지 않는다 — setBusy 의 일괄 복원이 되살린다(#342 교훈).
+    attrs = job_js[job_js.index("function newWorkAttrs("):]
+    attrs = attrs[:attrs.index("\n  }")]
+    assert "data-busy-lock" in attrs and "disabled" in attrs
+    assert attrs.index("data-busy-lock") < attrs.index("disabled"), (
+        "비활성 갈래에 busy-lock 이 달렸습니다 — 생성 종료의 일괄 복원이 입구를 되살립니다."
+    )
+    # ⑦ 흐름 몸통도 같은 게이트를 지난다 — 렌더와 클릭 사이의 창에서도 제자리에서 막는다.
+    body_at = job_js.index("function newWorkFromData(")
+    body = job_js[body_at:job_js.index("EditorEntry.newDraftFromData(", body_at)]
+    assert "newWorkGate(LAST)" in body and "return Promise.resolve(false)" in body, (
+        "흐름 몸통이 게이트를 지나지 않습니다 — 렌더 뒤 바뀐 마운트에서 백엔드까지 갑니다."
     )
 
 

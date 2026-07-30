@@ -771,9 +771,54 @@ class EditorController:
         ``load_template_path`` 만 부르면 이름·데이터·매핑·단계가 이전 세션 값으로 남아
         새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
         먼저 끊는다. 미저장 확인은 호출측(브리지/웹)이 ``has_unsaved_work`` 로 선판단한다.
+
+        **예외 하나 — 데이터를 들고 시작한 초안**(U2 §2.4 · #349 리뷰 3R): 그 세션의 데이터는
+        「이전 세션의 잔재」가 아니라 **이 세션이 존재하는 이유**다. 1단계에서 템플릿을 고르는
+        것은 마법사의 정상 진행인데, 그때 이 seam 이 앵커를 지우면 「이 데이터로 새 작업」이
+        **모든 사용자에게** 보통의 빈 초안으로 퇴화한다(선언은 살고 결과가 죽는 자리).
+        진입 문맥도 함께 산다 — 문맥이 죽으면 다음 템플릿 교체에서 앵커도 함께 죽고, 배너가
+        말한 복귀처도 사라진다. 되싣는 것은 **데이터 문맥과 진입 문맥뿐**이고 이름·매핑·
+        단계는 종전대로 끊긴다(혼합 세션 금지는 그대로다).
         """
+        anchor = self._anchor_stash()
         self._reset()
+        self._restore_anchor(anchor)
         self.load_template_path(path)
+
+    #: 앵커를 승계시키는 진입 사유 — 「데이터를 이미 고른 채 시작한 초안」의 표지.
+    #: 사유로 판정하는 이유: 데이터가 있는 초안이라고 다 앵커가 아니다(관문에서 데이터를
+    #: 골랐다가 1단계로 되돌아온 세션은 종전대로 끊긴다 — 그쪽은 계약이 바뀐 적이 없다).
+    _ANCHOR_ENTRY_REASON = "document_browser_new_work"
+
+    def _anchor_stash(self) -> "dict":
+        """템플릿 교체를 건너 살아야 할 것 — 없으면 빈 사전(호출측 분기 없음)."""
+        context = self.session.context
+        if (
+            self.session.base is not None
+            or context.entry_reason != self._ANCHOR_ENTRY_REASON
+            or not self.data_path
+        ):
+            return {}
+        return {"context": context, "data": self._data_stash()}
+
+    def _restore_anchor(self, anchor: "dict") -> None:
+        """초기화 뒤 앵커 복원 — 데이터는 :meth:`_data_stash` 한 벌 그대로.
+
+        ``_apply_data_stash`` 가 아니라 값 대입인 이유: 저쪽은 ``_ensure_model`` 을 태우는데
+        여기선 템플릿(스키마)이 **아직 로드되기 전**이다. 모델은 종전 경로 그대로 2단계
+        진입이 세운다(``goto_section`` → ``_ensure_model``) — 관문의 불변식을 우회하지 않는다.
+        """
+        if not anchor:
+            return
+        data = anchor["data"]
+        self.data_path = data["data_path"]
+        self.data_sheet = data["data_sheet"]
+        self.data_header_row = data["data_header_row"]
+        self.source_fields = list(data["source_fields"])
+        self.records = data["records"]
+        self.session = EditSession(
+            context=anchor["context"], base=None, section=self.section
+        )
 
     def new_draft_with_data(
         self,
@@ -1156,6 +1201,9 @@ class EditorController:
         return {
             "data_path": self.data_path,
             "data_sheet": self.data_sheet,
+            # 참조 성분은 **한 벌로** 다닌다(#349 리뷰 2R·3R): 경로·시트만 되싣고 헤더 행을
+            # 흘리면 되돌린 뒤의 세션이 같은 파일의 다른 판을 들게 된다.
+            "data_header_row": self.data_header_row,
             "source_fields": list(self.source_fields),
             "records": self.records,
             "ignored": set(self._ignored_sources),
@@ -1174,6 +1222,7 @@ class EditorController:
             return
         self.data_path = stash["data_path"]
         self.data_sheet = stash["data_sheet"]
+        self.data_header_row = stash.get("data_header_row", 0)
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
         self._ignored_sources = stash["ignored"]

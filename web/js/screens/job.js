@@ -468,11 +468,46 @@
      확인은 여기서 만들지 않는다: 폐기 확인은 편집기 진입 seam 하나가 소유하고(미저장
      세션이 있을 때만), 이 동선을 막고 있던 저장 시 자동등록 확인은 #347 이 없앴다.
      증거는 **이 화면이 본 것**을 그대로 싣는다(편집기가 되계산하지 않는다). */
+  /* 마법사로 가는 **모든 입구**가 지나는 한 게이트(리뷰 3R 근본 조치). 세 라운드가 같은
+     뿌리였다 — 승계 가부 판정은 Python 한 곳(`new_work_handoff` → `new_work`)에 있는데
+     그 판정을 **거치지 않는 입구**가 남아 있었다(1R=참조를 잃는 입구, 2R=슬롯을 재해석하는
+     입구, 3R=막혔는데 열려 있는 입구). 그래서 여기서는 둘을 강제한다:
+
+     ①**판정을 읽는 자리는 이 함수 하나**(스냅샷 키를 다른 데서 읽지 않는다)
+     ②**입구의 행동 훅은 `newWorkAttrs` 만 발행한다** — 막혔으면 훅 대신 `disabled` + 사유가
+       나가므로, 입구가 새로 생겨도 이 헬퍼를 쓰는 한 게이트를 건너뛸 수가 없다.
+     막힘을 **숨기지 않는** 것도 계약이다: 사라진 어포던스는 왜 못 하는지를 말하지 않는다. */
+  function newWorkGate(s) {
+    const nw = (s && s.new_work) || { can: true, reason: "" };
+    return { can: nw.can !== false, reason: nw.reason || "" };
+  }
+
+  /* 입구별 행동 훅 — **이름까지 여기가 소유한다**. 훅 문자열이 이 표 밖에서 발행되면 그
+     입구는 게이트를 안 탄 것이고, 정적 계약이 그 발행을 잡는다. */
+  const NEW_WORK_HOOKS = {
+    cand: () => `data-new-work`,
+    needs: (name, cols) =>
+      `data-browse-new="${esc(name)}" data-missing-cols="${cols}"`,
+  };
+
+  function newWorkAttrs(g, kind, ...args) {
+    return g.can
+      ? ` data-busy-lock ${NEW_WORK_HOOKS[kind](...args)}`
+      // 비활성엔 `data-busy-lock` 을 달지 않는다: setBusy 의 일괄 복원(`el.disabled = busy`)이
+      // 생성 종료와 함께 되살린다(#342 가 재연결 버튼에서 겪은 자리).
+      : ` disabled title="${esc(g.reason)}"`;
+  }
+
   function newWorkFromData(extraEvidence) {
     if (!window.EditorEntry) {
       window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
       return Promise.resolve(false);
     }
+    // 흐름 몸통도 같은 게이트를 지난다 — 어트리뷰트는 렌더 시점의 사실이라, 렌더와 클릭
+    // 사이에 데이터가 바뀌면 열린 훅이 잠깐 남는다. 여기서 막으면 그 창에서도 사유가
+    // **제자리에서** 말해진다(백엔드까지 가서 받는 거절은 문맥을 잃은 사후 통보다).
+    const gate = newWorkGate(LAST);
+    if (!gate.can) { log(gate.reason); return Promise.resolve(false); }
     const ev = { "데이터": (LAST && LAST.data_source_label) || "" };
     Object.keys(extraEvidence || {}).forEach((k) => { ev[k] = extraEvidence[k]; });
     // 복귀는 **문서 만들기**다. 「문서 탐색으로 돌아가기」라 말해 놓고 탐색 면 없이 착지하면
@@ -539,13 +574,17 @@
         // 열거)은 그대로 남는다: 목적지가 생겼다고 왜 막혔는지를 지우지 않는다.
         // 클릭 의도와 동작이 다르지 않으므로(행이 목적지를 말한다) 여기서 다이얼로그로
         // 되묻지 않는다 — 재진술이 필요한 쪽은 목적지가 어긋나는 경고 카드(재연결)다.
+        // **가부는 후보 줄 버튼과 같은 게이트**가 정한다(리뷰 3R): 이 행도 같은 목적지로
+        // 가는 입구이므로, 승계가 막혔으면 여기서도 막고 그 사유를 제자리에서 말한다.
+        // 행이 약속하는 목적지 문구도 사유로 갈린다 — 못 가는데 「만들기」라 적으면 거짓이다.
         const cols = esc((r.missing || []).join(", "));
+        const g = newWorkGate(s);
         return `<button class="browse-row needs" type="button"` +
-          ` id="jobBrowseNeeds-${encodeURIComponent(r.name)}" data-busy-lock` +
-          ` data-browse-new="${esc(r.name)}" data-missing-cols="${cols}">` +
+          ` id="jobBrowseNeeds-${encodeURIComponent(r.name)}"` +
+          newWorkAttrs(g, "needs", r.name, cols) + `>` +
           `<span class="browse-nm">${esc(r.name)}</span>` +
-          `<span class="browse-why muted">현재 데이터에 없는 열: ${cols}` +
-          ` — 이 데이터로 새 작업 만들기</span></button>`;
+          `<span class="browse-why muted">현재 데이터에 없는 열: ${cols} — ` +
+          `${g.can ? "이 데이터로 새 작업 만들기" : esc(g.reason)}</span></button>`;
       }
       const active = r.name === s.job_name;
       return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
@@ -597,20 +636,17 @@
     // 때만 세우면 "쓸 것은 있는데 이 데이터에 맞는 새 작업을 만들고 싶다"가 갈 데를 잃고,
     // 그 상태가 바로 이 요청이 나온 자리다. 자리는 후보 줄 꼬리 — 「무엇으로 만들까」를
     // 묻는 구획의 마지막 선택지다.
-    // **가부 판정은 Python 하나**(#349 리뷰 P1): 이 데이터가 파일 참조가 아니면(조립 등록
+    // **가부 판정은 Python 하나**(리뷰 1R·3R): 이 데이터가 파일 참조가 아니면(조립 등록
     // 데이터) 마법사가 열 수 없는데, 그 판정을 여기서 `data_target.path` 유무로 유추하면
     // 화면과 백엔드가 갈린다. 막힐 땐 **숨기지 않고** 비활성 + 사유 병기 — 사라진 버튼은
-    // 사용자에게 아무 것도 말하지 않는다.
-    // 비활성일 때 `data-busy-lock` 을 **달지 않는다**: setBusy 의 일괄 복원(`el.disabled =
-    // busy`)이 생성 종료와 함께 이 버튼을 되살린다(#342 가 재연결 버튼에서 겪은 그 자리).
-    // 잠금은 DOM 이 아니라 상태가 지고, 상태는 매 푸시 다시 그려진다.
-    const nw = s.new_work || { can: true, reason: "" };
-    const newWorkBtn = nw.can
-      ? `<button class="btn sm" type="button" id="jobCandNewWork" data-busy-lock data-new-work>` +
-        `＋ 이 데이터로 새 작업</button>`
-      : `<button class="btn sm" type="button" id="jobCandNewWork" disabled` +
-        ` title="${esc(nw.reason || "")}">＋ 이 데이터로 새 작업</button>` +
-        `<span class="cand-newwork-why muted">${esc(nw.reason || "")}</span>`;
+    // 사용자에게 아무 것도 말하지 않는다. 어트리뷰트는 `newWorkAttrs` 가 발행한다(입구
+    // 둘이 같은 게이트를 지나는 자리).
+    const nwGate = newWorkGate(s);
+    const newWorkBtn =
+      `<button class="btn sm" type="button" id="jobCandNewWork"` +
+      newWorkAttrs(nwGate, "cand") + `>＋ 이 데이터로 새 작업</button>` +
+      (nwGate.can ? ""
+        : `<span class="cand-newwork-why muted">${esc(nwGate.reason)}</span>`);
     if (!top.length && !needs.length) {
       // 막다른 자리를 만들지 않는다(U2 §2.4). 흡수처 출구(`#jobNoDataExit`)는 데이터·작업이
       // **둘 다** 없을 때만 서는데, 정작 출구가 필요한 상태는 여기다 — 데이터는 골랐고 그
