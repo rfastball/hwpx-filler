@@ -78,6 +78,11 @@ class DataZoneMixin:
     #: 없어서 경로·확정 시트를 함께 남긴다(에디터 ``data_path``/``data_sheet`` 선례).
     data_path: str = ""
     data_sheet: str = ""
+    #: 헤더 행(엑셀 참조 옵션) — 0 = 미지정(어댑터 기본 1행). ``data_path``/``data_sheet`` 와
+    #: **같은 시점에 같은 이유로** 포획한다(#349 리뷰 2R): 참조는 슬롯에 살고 슬롯은 변한다
+    #: (「다시 연결」은 정상 수명 사건, #347). 마운트가 성사된 그 순간의 참조가 곧 지금 화면에
+    #: 보이는 레코드를 만든 참조이므로, 승계는 슬롯을 다시 읽지 않고 이 포획분만 읽는다.
+    data_header_row: int = 0
 
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
@@ -126,42 +131,38 @@ class DataZoneMixin:
         반환은 ``({"path", "sheet", "header_row"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
         가부(스냅샷)와 진입의 fail-closed(브리지)가 **같은 한 판정**을 읽는다 — 표면이
         `data_path` 유무로 스스로 유추하면 화면은 「누를 수 있다」고 말하고 백엔드는 거절하는
-        어긋남이 난다(#349 리뷰 P1 이 지목한 자리).
+        어긋남이 난다(#349 리뷰 1R 이 지목한 자리).
 
-        **참조를 경로 하나로 줄이지 않는다.** 등록 데이터(풀)의 엑셀 참조는 ``header_row``
-        같은 옵션을 함께 들 수 있는데, 그것을 떨어뜨리고 다시 열면 마법사가 사용자가 고른
-        것과 **다른 헤더**에 앵커를 건다 — 조용히 다른 데이터를 여는 경로다. 그래서 참조는
-        풀 항목의 ``opts`` 에서 통째로 복원한다(:meth:`_do_load_pool` 이 ``data_path`` 를
-        엑셀에만 채우는 규율은 그대로 둔다 — 그 값은 로케이트·고정 프리필의 것이다).
+        **슬롯을 다시 읽지 않는다**(#349 리뷰 2R). 등록 데이터의 참조는 가변이다 — 「다시
+        연결」은 참조만 갈아 끼우고 수명을 보존하는 **정상 수명 사건**이고(#347), 그것이
+        일어나도 이 화면은 재마운트 전까지 **옛 참조로 읽은 레코드**를 그대로 보여 준다.
+        그때 승계가 슬롯을 다시 해석하면 「표시는 A · 시작은 B」가 된다. 그래서 참조는
+        마운트가 성사되는 자리에서 통째로 포획해 두고(``data_path``·``data_sheet``·
+        ``data_header_row`` — 세 값이 같은 시점의 한 벌이다) 여기서는 그 포획분만 읽는다.
+        같은 계열의 규율이 마운트 descriptor 반환(U2 §2.7)과 소스 일치 키(``_data_key``)다:
+        **나중에 다시 읽어 판정하지 않는다.**
+
+        참조를 경로 하나로 줄이지도 않는다: 엑셀 참조가 든 ``header_row`` 를 떨어뜨리면
+        마법사가 사용자가 고른 것과 **다른 헤더**에 앵커를 건다.
 
         파일로 다시 열 수 없는 마운트(조립 파이프라인 등)는 **시끄럽게 막는다**: 마법사의
         데이터 관문은 파일 참조를 여는 표면이고, 여기서 조용히 빈 초안으로 보내면
-        「이 데이터로」라는 문안 자체가 거짓이 된다.
+        「이 데이터로」라는 문안 자체가 거짓이 된다. 술어는 포획된 ``data_path`` 하나다 —
+        그 필드의 뜻이 이미 「이 마운트를 파일로 가리킬 수 있는가」이기 때문이다
+        (:meth:`~hwpxfiller.webapp.screens.PoolTargetingMixin._do_load_pool` 이 엑셀 참조에만
+        채운다).
         """
         if not self.data_source:
             return {}, "데이터를 먼저 고르세요."
-        if self.data_source == "file":
-            return {"path": self.data_path, "sheet": self.data_sheet, "header_row": 0}, ""
-        try:
-            item = self.pool_registry.load(self.data_pool_key)
-        except Exception:  # noqa: BLE001  (삭제·손상 — 사용자 문구로 재진술)
-            return {}, "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목)."
-        opts = item.opts if isinstance(item.opts, dict) else {}
-        path = opts.get("path")
-        if item.kind != "excel" or not isinstance(path, str) or not path:
+        if not self.data_path:
             return {}, (
                 f"'{self.data_label}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 "
                 "없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
             )
-        sheet = opts.get("sheet")
-        header_row = opts.get("header_row")
         return {
-            "path": path,
-            "sheet": sheet if isinstance(sheet, str) else "",
-            # 0 = 미지정(어댑터 기본) — 형이 깨진 값을 추측해 고치지 않고 기본으로 두되,
-            # 그 사실은 실제 로드가 헤더로 말한다.
-            "header_row": header_row if isinstance(header_row, int)
-            and not isinstance(header_row, bool) and header_row > 0 else 0,
+            "path": self.data_path,
+            "sheet": self.data_sheet,
+            "header_row": self.data_header_row,
         }, ""
 
     def _display_indices(self, indices: "list[int]") -> "list[int]":

@@ -1409,6 +1409,44 @@ def test_new_work_handoff_carries_the_reference_or_refuses_out_loud(tmp_path):
     assert snap["new_work"] == {"can": False, "reason": blocked}
 
 
+def test_new_work_handoff_is_captured_at_mount_not_reread_from_the_slot(tmp_path):
+    """#349 리뷰 2R — 「이 데이터」는 **화면이 보여 주는 그 데이터**여야 한다.
+
+    풀 슬롯은 가변이다: 「다시 연결」은 참조만 갈아 끼우고 수명을 보존하는 정상 수명
+    사건이고(#347), 그것이 일어나도 이 화면은 재마운트 전까지 **옛 참조로 읽은 레코드**를
+    그대로 보여 준다. 승계가 그때 슬롯을 다시 읽으면 「표시는 A · 시작은 B」가 된다.
+
+    단언은 경로 문자열 대조가 아니라 **불변식**으로 건다: 승계 참조로 소스를 열면 그 열이
+    지금 마운트된 레코드의 열과 같아야 한다. 그래야 성분이 하나 더 늘어도(옵션 추가) 이
+    테스트가 계속 진짜 질문을 묻는다.
+    """
+    from hwpxfiller.data import source_for_path
+
+    ctrl, pool = _pool_controller(tmp_path)
+    a, b = tmp_path / "a.csv", tmp_path / "b.csv"
+    a.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    b.write_text("담당자,품목\n김주무관,의자\n", encoding="utf-8")
+    key = _pool_add(pool, "7월공고", {"path": str(a)})
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    mounted = list(ctrl.records[0].keys())
+
+    # 같은 슬롯을 B 로 다시 연결 — **재마운트는 하지 않는다**(화면은 여전히 A 를 보여 준다).
+    pool.mutate(key, lambda it: it.opts.update({"path": str(b)}))
+    assert list(ctrl.records[0].keys()) == mounted        # 표시는 그대로 A
+
+    ref, blocked = ctrl.new_work_handoff()
+    assert blocked == ""
+    ref_fields = source_for_path(ref["path"], sheet=ref["sheet"] or None).fields()
+    assert ref_fields == mounted, (
+        "승계가 슬롯을 다시 읽었습니다 — 표시는 A 인데 새 작업은 B 로 시작합니다."
+    )
+    # 재마운트하면 그때는 B 로 간다(재연결을 막는 조치가 아니다 — 정상 수명 사건).
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    ref2, _ = ctrl.new_work_handoff()
+    assert source_for_path(ref2["path"]).fields() == list(ctrl.records[0].keys())
+    assert ref2["path"] != ref["path"]
+
+
 def test_load_pool_without_job_mounts_session_data(tmp_path):
     """데이터-우선(§18.2): 작업 미선택에도 풀 겨눔이 세션에 마운트된다 — 구 「작업 먼저」
     전제의 개정. 마운트 직후 선택 0건 + 후보(§18.4) + prework 게이트가 다음 할 일을 말한다."""
