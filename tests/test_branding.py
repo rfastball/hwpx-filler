@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _web_css import app_css
-
 ROOT = Path(__file__).resolve().parents[1]
 
 PRODUCT = "문서나르미"
@@ -25,8 +23,11 @@ def test_web_shell_shows_product_name_only() -> None:
     html = _read("web", "index.html")
     assert f"<title>{PRODUCT}</title>" in html
     assert 'class="brand-mark"' in html, "레일 락업에 심벌 SVG 가 없다"
-    assert 'class="brand-mark-layer"' in html
-    assert 'class="brand-mark-arrow"' in html
+    # 세 면은 class 가 아니라 **자기 색**으로 센다. path 에 class 를 달면 규칙이 한 줄도
+    # 없는 고아가 되고(test_web_css_orphan_classes), 원본 SVG 와 마크업도 갈린다.
+    mark = html.split('class="brand-mark"', 1)[1].split("</svg>", 1)[0]
+    assert mark.count("<path ") == 3, "락업 심벌이 세 면이 아니다"
+    assert "class=" not in mark, "심벌 path 에 규칙 없는 class 가 붙었다"
     assert f'<span class="brand-name">{PRODUCT}</span>' in html
     assert "HWPX Filler" not in html
 
@@ -71,11 +72,13 @@ def test_spec_wires_icon() -> None:
     assert "icon=icon_res" in spec
 
 
-def test_brand_token_defined_in_both_themes_and_consumed() -> None:
-    """--a-brand 가 라이트+다크(미디어·명시 2블록)에 선언되고 락업이 소비한다."""
+def test_brand_token_defined_and_fixed_logo_palette_shipped() -> None:
+    """기존 브랜드 토큰은 세 테마에 남고, 새 다색 락업은 고정 제품색을 직접 싣는다."""
     tokens = _read("web", "css", "tokens.css")
     assert tokens.count("--a-brand:") == 3
-    assert "var(--a-brand)" in app_css()
+    html = _read("web", "index.html")
+    for color in ("#0E3FAE", "#1857D8", "#43C9A8"):
+        assert f'stroke="{color}"' in html
 
 
 def test_root_readme_is_product_entry() -> None:
@@ -98,9 +101,10 @@ def test_root_readme_is_product_entry() -> None:
 
 
 def test_favicon_asset_bundled() -> None:
-    """web/img 심벌 SVG(파비콘)가 브랜드 파랑의 세 문서 이동 단계를 담는다."""
+    """web/img 심벌 SVG(파비콘)가 세 색의 열린 문서 면을 담는다."""
     svg = _read("web", "img", "narmi-mark.svg")
-    assert 'fill="#2874A6"' in svg
+    for color in ("#0E3FAE", "#1857D8", "#43C9A8"):
+        assert f'stroke="{color}"' in svg
     assert svg.count("<path ") == 3
     assert "<rect " not in svg
 
@@ -114,7 +118,7 @@ def _generator_geometry() -> dict[str, object]:
     import ast
 
     src = _read("scripts", "render_document_narmi_branding.py")
-    wanted = {"LAYERS", "ARROW_BAR", "ARROW_HEAD", "MARK_RADIUS", "MARK_BBOX"}
+    wanted = {"STROKES", "MARK_STROKE_WIDTH", "MARK_BBOX"}
     found: dict[str, object] = {}
     for node in ast.parse(src).body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
@@ -125,25 +129,22 @@ def _generator_geometry() -> dict[str, object]:
     return found
 
 
-def _layer_path(box, radius: int) -> str:
-    """문서 겹 — 오른쪽 아래만 각진 둥근 사각형의 SVG d 값."""
-    (x0, y0), (x1, y1) = box
-    r = radius
+def _stroke_markup(stroke, color: str, width: int) -> str:
+    """열린 문서 면 — 생성기 좌표로 SVG path 일부를 다시 만든다."""
+    (x0, y0), *rest = stroke
+    chunks = [f"M{x0} {y0}"]
+    px, py = x0, y0
+    for x, y in rest:
+        if x == px:
+            chunks.append(f"V{y}")
+        elif y == py:
+            chunks.append(f"H{x}")
+        else:
+            chunks.append(f"L{x} {y}")
+        px, py = x, y
     return (
-        f"M{x0 + r} {y0}h{x1 - x0 - 2 * r}a{r} {r} 0 0 1 {r} {r}v{y1 - y0 - r}"
-        f"H{x0 + r}a{r} {r} 0 0 1-{r}-{r}v-{y1 - y0 - 2 * r}a{r} {r} 0 0 1 {r}-{r}Z"
-    )
-
-
-def _arrow_path(bar, head, radius: int) -> str:
-    """전달 화살표 — 왼쪽만 둥근 몸통 + 삼각 머리."""
-    (x0, y0), (x1, y1) = bar
-    (hx0, hy0), (hx1, hy1), (_, hy2) = head
-    r = radius
-    return (
-        f"M{x0 + r} {y0}h{x1 - x0 - r}v-{y0 - hy0}l{hx1 - hx0} {hy1 - hy0}"
-        f"-{hx1 - hx0} {hy2 - hy1}v-{hy2 - y1}H{x0 + r}a{r} {r} 0 0 1-{r}-{r}"
-        f"v-{y1 - y0 - 2 * r}a{r} {r} 0 0 1 {r}-{r}Z"
+        f'd="{"".join(chunks)}" fill="none" stroke="{color}" '
+        f'stroke-width="{width}"'
     )
 
 
@@ -151,13 +152,13 @@ def test_branding_generator_geometry_matches_shipped_symbol() -> None:
     """생성기 좌표 == SVG 정본 == 셸 마크업(#258).
 
     .png/.ico 는 커밋된 정적 자산이라 생성기가 옛 형상을 그대로 그려도 아무도 울지
-    않는다 — 심벌 v2 때 실제로 갈렸다(스크립트는 두 평면, 자산·화면은 문서 3겹).
-    세 자리의 같은 숫자를 여기서 묶는다: 생성기 상수에서 d 값을 다시 지어 대조한다.
+    않는다 — 심벌 v2 때 실제로 갈렸다. 생성기·SVG·화면의 같은 면 좌표와 색을 묶어
+    어느 한쪽만 낡은 로고를 쓰는 드리프트를 막는다.
     """
     geometry = _generator_geometry()
-    radius = geometry["MARK_RADIUS"]
-    paths = [_layer_path(box, radius) for box in geometry["LAYERS"]]
-    paths.append(_arrow_path(geometry["ARROW_BAR"], geometry["ARROW_HEAD"], radius))
+    colors = ("#0E3FAE", "#1857D8", "#43C9A8")
+    strokes = list(zip(geometry["STROKES"], colors, strict=True))
+    width = geometry["MARK_STROKE_WIDTH"]
 
     for parts in (("docs", "branding", "document-narmi-mark-final.svg"),
                   ("docs", "branding", "document-narmi-lockup-final.svg"),
@@ -166,15 +167,17 @@ def test_branding_generator_geometry_matches_shipped_symbol() -> None:
                   ("web", "index.html"),
                   ("docs", "UI_GALLERY.html")):
         text = _read(*parts)
-        for path in paths:
-            assert path in text, f"{'/'.join(parts)} 가 생성기와 다른 심벌을 쓴다: {path}"
+        for stroke, color in strokes:
+            markup = _stroke_markup(stroke, color, width)
+            assert markup in text, f"{'/'.join(parts)} 가 생성기와 다른 심벌을 쓴다: {markup}"
 
     x0, y0, x1, y1 = geometry["MARK_BBOX"]
-    corners = [c for box in geometry["LAYERS"] for c in box]
-    corners += [geometry["ARROW_BAR"][0], geometry["ARROW_BAR"][1]]
-    corners += list(geometry["ARROW_HEAD"])
-    assert x0 == min(c[0] for c in corners) and x1 == max(c[0] for c in corners)
-    assert y0 == min(c[1] for c in corners) and y1 == max(c[1] for c in corners)
+    radius = width / 2
+    points = [point for stroke, _ in strokes for point in stroke]
+    assert x0 == min(point[0] for point in points) - radius
+    assert y0 == min(point[1] for point in points) - radius
+    assert x1 == max(point[0] for point in points) + radius
+    assert y1 == max(point[1] for point in points) + radius
 
 
 def test_generated_bitmaps_match_generator_geometry() -> None:

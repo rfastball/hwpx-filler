@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" role="img" aria-labelledby="title desc">
   <title id="title">문서나르미 가로형 로고</title>
-  <desc id="desc">문서나르미 스택 시프트 심벌과 제품명 조합</desc>
-  <g transform="translate(4 4)" fill="#2874A6">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <desc id="desc">문서나르미 플로 시트 심벌과 제품명 조합</desc>
+  <g transform="translate(4 4)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="84" y="47" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="31" font-weight="700" letter-spacing="-1.1">문서나르미</text>
 </svg>

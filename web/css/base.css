@@ -45,11 +45,10 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
   gap:var(--sp-16);padding:0 var(--sp-16);min-width:0}
 .topbar .brand{font-weight:700;font-size:var(--fs-strong);letter-spacing:-.02em;min-width:0}
-/* #258 문서나르미 락업 — 세 겹의 문서가 한 단계씩 이동해 전달 화살표로 완성된다.
-   타일 없이도 16px에서 외곽이 남으며, 브랜드 파랑은 액센트와 분리한다. */
+/* #258 문서나르미 락업 — 세 열린 문서 면이 원본·처리·결과 순으로 오른쪽 위로 흐른다.
+   타일 없이도 16px에서 색과 사선 외곽이 남으며, 제품 고유색은 UI 액센트와 분리한다. */
 .brand-lockup{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
 .brand-mark{width:24px;height:24px;flex:none}
-.brand-mark-layer,.brand-mark-arrow{fill:var(--a-brand)}
 .brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 세그먼트 내비 — 가운데 정렬 한 묶음, 계약 2탭 최종 형상(F8 §10.17.2 판정 E — 과도기
    임시 탭·구분선(.nav-sep) 기제는 제도째 은퇴). */
@@ -228,4 +227,3 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .tok.fill{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)} .tok.fill .st{color:var(--a-ok)}
 .tok.blank{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)} .tok.blank .st{color:var(--a-warn)}
 .tok.missing{background:var(--fb-missing-bg);border-color:var(--fb-missing-bd)} .tok.missing .st{color:var(--a-danger)}
-

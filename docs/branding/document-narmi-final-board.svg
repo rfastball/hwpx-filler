@@ -1,53 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
   <title id="title">문서나르미 최종 브랜드 시안</title>
-  <desc id="desc">심벌, 워드마크, 소형 크기와 색상 규칙을 보여주는 최종 시안</desc>
+  <desc id="desc">플로 시트 심벌, 워드마크, 소형 크기와 색상 규칙을 보여주는 최종 시안</desc>
   <rect width="1440" height="980" fill="#F4F6F9"/>
-  <text x="96" y="102" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="24" font-weight="700">문서나르미 · FINAL DIRECTION</text>
-  <text x="96" y="142" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="17">세 겹의 문서가 한 단계씩 나아가며 전달 동작으로 완성됩니다.</text>
+  <text x="96" y="102" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="24" font-weight="700">문서나르미 · FLOW SHEETS</text>
+  <text x="96" y="142" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="17">세 열린 문서 면이 오른쪽 위로 흐르며 원본에서 결과물까지 이어집니다.</text>
 
   <rect x="96" y="194" width="1248" height="326" rx="28" fill="#FFFFFF"/>
-  <g transform="translate(177 287) scale(2.05)" fill="#2874A6">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <g transform="translate(177 287) scale(2.05)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="342" y="388" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="72" font-weight="700" letter-spacing="-2.6">문서나르미</text>
   <text x="345" y="432" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="18" letter-spacing="-.2">HWPX 문서 자동화</text>
 
   <rect x="96" y="552" width="608" height="330" rx="28" fill="#FFFFFF"/>
   <text x="144" y="615" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">SMALL SIZE</text>
-  <text x="144" y="648" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">굵은 세 단계와 화살표의 외곽은 16 px에서도 선명합니다.</text>
-  <g transform="translate(148 708) scale(.5)" fill="#2874A6">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <text x="144" y="648" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">세 면의 색과 사선 외곽은 16 px에서도 구분됩니다.</text>
+  <g transform="translate(148 708) scale(.5)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="146" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">32 px</text>
-  <g transform="translate(275 712) scale(.375)" fill="#2874A6">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <g transform="translate(275 712) scale(.375)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="270" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">24 px</text>
-  <g transform="translate(394 716) scale(.25)" fill="#2874A6">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <g transform="translate(394 716) scale(.25)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="385" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">16 px</text>
 
-  <rect x="736" y="552" width="608" height="330" rx="28" fill="#2874A6"/>
-  <text x="784" y="615" fill="#FFFFFF" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">REVERSED</text>
-  <text x="784" y="648" fill="#DCEBFA" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">브랜드 면에서는 형태를 바꾸지 않고 흰색으로만 반전합니다.</text>
-  <g transform="translate(797 700) scale(1.35)" fill="#FFFFFF">
-    <path d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
-    <path d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+  <rect x="736" y="552" width="608" height="330" rx="28" fill="#0E3FAE"/>
+  <text x="784" y="615" fill="#FFFFFF" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">TONAL REVERSED</text>
+  <text x="784" y="648" fill="#DCEBFA" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">어두운 면에서는 겹침을 살리는 밝은 세 톤으로 반전합니다.</text>
+  <g transform="translate(797 700) scale(1.35)">
+    <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#A9C1FF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#D4E0FF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="905" y="776" fill="#FFFFFF" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="42" font-weight="700" letter-spacing="-1.5">문서나르미</text>
 
-  <circle cx="113" cy="929" r="11" fill="#2874A6"/>
-  <text x="137" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Primary Blue  #2874A6</text>
-  <circle cx="365" cy="929" r="11" fill="#111827"/>
-  <text x="389" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Wordmark  #111827</text>
+  <circle cx="113" cy="929" r="11" fill="#0E3FAE"/>
+  <text x="137" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Deep Blue  #0E3FAE</text>
+  <circle cx="347" cy="929" r="11" fill="#1857D8"/>
+  <text x="371" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Flow Blue  #1857D8</text>
+  <circle cx="593" cy="929" r="11" fill="#43C9A8"/>
+  <text x="617" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Result Mint  #43C9A8</text>
 </svg>
