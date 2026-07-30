@@ -408,6 +408,39 @@ def test_active_job_below_top5_keeps_its_card_and_relink_reach(tmp_path):
     assert len(cands["top"]) == 5 and cands["more"] == 2
 
 
+def test_incompatible_active_job_still_gets_a_card_with_honest_connection_state(tmp_path):
+    """ranked 밖(needs_action) 활성도 카드는 선다(#342 리뷰 2R P2 — 호환성 무관 승계).
+
+    구 「선택한 작업」 존은 활성 작업의 호환성과 무관하게 재연결을 제공했다 — 사망
+    점검표의 「재연결 → 경고 카드 기본 클릭 대체」가 전 상태에서 참이려면 승계도
+    호환성과 무관해야 한다. needs 브라우저 행은 비상호작용 div 라 대체가 못 된다.
+    「연결 상태」는 부재가 있으면 부재(재연결 표식 = `template_missing`)가 우선하고,
+    아니면 비적격 사유(없는 열)를 정직하게 말한다 — 클릭 리다이렉트는 템플릿 부재
+    축만이다(구조 불일치 → 마법사는 판정 E, #349).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})            # 호환 데이터에서 선택
+    other = tmp_path / "other.csv"
+    other.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
+    ctrl.load_data_path(str(other))                            # 재겨눔 → 활성이 needs 로
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["job_name"] == "공고서"
+    cands = snap["candidates"]
+    assert cands["needs_count"] == 1                           # 사실 수치는 그대로
+    card = next((c for c in cands["top"] if c["name"] == "공고서"), None)
+    assert card is not None, "비적격 활성 작업의 카드가 렌더되지 않습니다(재연결 승계 소멸)."
+    assert card["template_missing"] is False
+    assert card["conn_label"] == "현재 데이터에 없는 열: bidNtceNm, presmptPrce"
+    assert cands["more"] == 0                                  # ranked 밖 덧붙임은 more 무관
+
+    # 템플릿까지 소실 — 부재가 사유보다 우선한다(재연결 리다이렉트의 payload 표식).
+    Path(snap["template_path"]).unlink()
+    card = next(c for c in ctrl.snapshot()["candidates"]["top"] if c["name"] == "공고서")
+    assert card["template_missing"] is True                    # 경고 카드(data-missing) 근거
+    assert card["conn_label"] == "템플릿 없음"
+
+
 def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):
     """즐겨찾기는 정렬 메타만 바꾼다(§18.5) — 활성 작업·데이터·선택·게이트 불변."""
     ctrl, _ = _controller(tmp_path)
