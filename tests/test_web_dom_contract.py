@@ -755,13 +755,34 @@ def test_job_completion_zone_reset_gated_by_session_change():
         assert comp in dispose, f"강등 축 성분 비교 누락: {comp}"
     # 초기화의 퇴장 한 줄(경로 포함)은 리셋 **뒤에** 적는다 — 리셋이 실행 기록을 비우므로
     # 순서가 뒤집히면 한 줄이 함께 지워져 소멸이 조용해진다.
-    assert "resultExitLine()" in dispose
+    assert "resultExitLine(RESULT," in dispose, (
+        "퇴장 한 줄이 그 결과를 인자로 받지 않습니다 — 순수 합성기 계약(네 태 되읽기)."
+    )
     assert dispose.index("resetGenResult()") < dispose.index("if (exit) log(exit)"), (
         "퇴장 한 줄이 리셋 전에 적혀 함께 지워집니다."
     )
     exit_fn = src.split("function resultExitLine", 1)[1].split("\n  }", 1)[0]
-    assert "r.out_dir" in exit_fn and "건 생성" in exit_fn, (
-        "퇴장 한 줄이 경로·건수를 재진술하지 않습니다(§2.18 — 손으로 고른 저장 폴더의 마지막 보관처)."
+    exit_code = _strip_js_comments(exit_fn)
+    assert "r.out_dir" in exit_code, (
+        "퇴장 한 줄이 경로를 재진술하지 않습니다(§2.18 — 손으로 고른 저장 폴더의 마지막 보관처)."
+    )
+    # 수치는 **Python 이 낸 제목**을 그대로 쓴다(#363 리뷰 P2): `total` 은 대상 수이지
+    # 만들어진 수가 아니라, 첫 건 전에 취소한 배치가 「N건 생성」이라고 주장했다. 결과
+    # 구획이 곧 초기화되므로 그 거짓 진술이 유일하게 남는 흔적이 된다.
+    assert "r.title" in exit_code, "퇴장 한 줄이 태별 정직 문안(제목)을 쓰지 않습니다."
+    assert "r.total" not in exit_code, (
+        "퇴장 한 줄이 대상 수를 생성 수로 재조립합니다 — 취소 런을 완주로 말합니다."
+    )
+    # 미착수는 **취소의 사실**이다 — 완주·실패 런에 붙이면 없는 상태를 지어낸다.
+    assert "r.cancelled && r.unstarted" in exit_code, (
+        "취소의 미착수분이 어디에도 남지 않습니다(취소의 나머지 절반)."
+    )
+    # 순수 합성기 — 실앱 게이트가 네 태의 산출을 되읽는다(overwriteBody·guardBody 와 같은 자리).
+    assert "function resultExitLine(r, owner)" in src, (
+        "퇴장 한 줄이 모듈 상태를 읽습니다 — 네 태를 되읽을 seam 이 사라집니다."
+    )
+    assert "resultExitLine," in src.split("window.JobScreen = {", 1)[1], (
+        "퇴장 한 줄 합성기가 실앱 게이트에 노출되지 않았습니다."
     )
     # 「결과 닫기」(명시 파기)는 로그 한 줄을 남기지 않는다(§2.18 파기 대칭) — 닫기 핸들러가
     # 퇴장 한 줄 경로를 타면 치우라는 행동이 흔적을 남긴다.

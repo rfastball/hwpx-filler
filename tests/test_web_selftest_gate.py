@@ -486,7 +486,10 @@ class TestWebSelftestGate:
         # 작업 전환 = **초기화**(§2.18) — 링1 이 증거를 죽인 축이라 존이 닫히고, 실행 기록에
         # 퇴장 한 줄(주체·건수·경로)이 남는다(사용자가 요청하지 않은 소멸의 흔적).
         assert j["switch_resets_result"], j
-        assert "3건 생성" in j["switch_exit_line"] and "1건 실패" in j["switch_exit_line"], j
+        # 문안은 Python 이 낸 태별 제목 그대로다(#363 리뷰 P2) — 이 런은 부분 실패라
+        # 「2개 성공 · 1개 실패」이지 「3건 생성」이 아니다(대상 수는 만들어진 수가 아니다).
+        assert "2개 성공" in j["switch_exit_line"] and "1개 실패" in j["switch_exit_line"], j
+        assert "3건 생성" not in j["switch_exit_line"], j
         assert "공고서(수정)" in j["switch_exit_line"] and "D:\\out" in j["switch_exit_line"], j
         # 선택 변경 = **강등 유지**(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다.
         assert j["selection_change_keeps_result"] and j["selection_change_demotes"], j
@@ -1236,6 +1239,34 @@ class TestWebSelftestGate:
         assert j["restate_hidden_on_drift"] is True, (
             "danger 차단인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
         )
+
+    def test_job_exit_line_tells_the_truth_about_each_run(self, selftest_result: dict) -> None:
+        """퇴장 한 줄(§2.18)은 **실제 성분**을 말한다(#363 리뷰 P2 회귀).
+
+        이 줄은 결과 구획이 초기화된 뒤 남는 유일한 흔적이라, 여기서 거짓을 말하면
+        되돌아볼 자리가 없다. 종전엔 대상 수(`total`)를 「N건 생성」으로 적어, 첫 건 전에
+        취소한 12건 배치가 **실제 생성 0건인데 「12건 생성」**이라고 주장했다.
+        """
+        j = selftest_result["job_mirror"]
+        # ① 첫 건 전 취소 — 「생성」 완주 문형이 0건을 주장하지 않고 미착수가 남는다.
+        untouched = j["exit_cancelled_untouched"]
+        assert "중단했습니다" in untouched and "0개 완료" in untouched, untouched
+        assert "미착수 12건" in untouched, untouched
+        assert "12건 생성" not in untouched, f"취소를 완주로 말합니다: {untouched!r}"
+        # ② 중간 취소 — 완료분과 미착수분이 각각 제 수치로 선다.
+        partial = j["exit_cancelled_partial"]
+        assert "5개 완료" in partial and "미착수 6건" in partial, partial
+        # ③ 정상 완주 · ④ 일부 실패 — 태별 문형 그대로, 미착수는 붙지 않는다(없는 상태).
+        assert j["exit_completed"].startswith("'발주요청서' 문서 생성 완료 · 12개")
+        assert "미착수" not in j["exit_completed"], j["exit_completed"]
+        assert "10개 성공 · 2개 실패" in j["exit_partial_failure"], j["exit_partial_failure"]
+        assert "미착수" not in j["exit_partial_failure"], j["exit_partial_failure"]
+        # 네 태 모두 착지 폴더를 남긴다 — 손으로 고른 저장 폴더의 마지막 보관처다(§2.18 ⑷).
+        for key in ("exit_cancelled_untouched", "exit_cancelled_partial",
+                    "exit_completed", "exit_partial_failure"):
+            assert j[key].endswith("D:\\out"), (key, j[key])
+        # 생성이 아닌 태에는 퇴장 한 줄이 없다(없는 실행을 지어내지 않는다).
+        assert j["exit_rejected"] == "" and j["exit_running"] == ""
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.

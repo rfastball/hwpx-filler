@@ -184,7 +184,7 @@
       // 경로다(저장 폴더를 손으로 골랐던 런은 그 경로의 유일한 보관처가 결과 존이었다).
       // 리셋 전에 조립한다(RESULT 를 읽는다). 리셋이 실행 기록도 비우므로 로그는 리셋
       // **뒤에** 적는다 — 이 한 줄도 세션 스코프다(영구 증거는 fill-ledger sidecar 몫).
-      const exit = resultExitLine();
+      const exit = resultExitLine(RESULT, (LAST && LAST.last_run_job) || "");
       resetGenResult();
       if (exit) log(exit);
       return;
@@ -195,17 +195,33 @@
     }
   }
 
-  /* 퇴장 한 줄 합성 — 「'발주요청서' 12건 생성(2건 실패) — C:\…\Results」.
-     거절(rejected)·진행(running) 태는 생성물이 없어 적을 것이 없다(빈 문자열).
+  /* 퇴장 한 줄 합성 — 「'발주요청서' 10개 성공 · 2개 실패 — C:\…\Results」.
+
+     **수치를 여기서 다시 조립하지 않는다**(#363 리뷰 P2). 종전엔 `total` 을 「N건 생성」
+     으로 적었는데 그 값은 **대상 수**이지 만들어진 수가 아니다: 12건 배치를 첫 건 전에
+     취소하면 실제 생성 0건인데 「12건 생성」이라고 말했다. 결과 구획은 그 직후 초기화되므로
+     **그 거짓 진술이 유일하게 남는 흔적**이 된다(confirm-or-alarm 정면).
+
+     그래서 제목(`r.title`)을 그대로 쓴다 — Python `_run_title` 이 태별로 이미 정직하게
+     조립한 그 문장이다(완주 「문서 생성 완료 · N개」/부분 「N개 성공 · M개 실패」/취소
+     「생성을 중단했습니다 · N개 완료」/실패 「문서 생성 실패」). 같은 수치를 두 층이 따로
+     조립하면 갈라진다는 것이 그 함수가 Python 에 있는 이유이고, 이 줄이 그 규율의 예외일
+     이유가 없다. 미착수분만 제목에 없어 병기한다 — 취소의 나머지 절반이라 여기서 빠지면
+     「12건 중 몇 건이 남았나」가 어디에도 안 남는다.
+
+     거절(rejected)·진행(running) 태는 생성 자체가 없어 적을 것이 없다(빈 문자열).
      「결과 닫기」(명시 파기)는 이 경로를 타지 않는다 — 치우라는 행동이 흔적을 남기면
-     반만 듣는 것이 된다(§2.18 파기 대칭). */
-  function resultExitLine() {
-    const r = RESULT;
-    if (!r || r.running || r.rejected || typeof r.total !== "number") return "";
-    const owner = (LAST && LAST.last_run_job) ? `'${LAST.last_run_job}' ` : "";
-    const fail = r.failed ? `(${r.failed}건 실패)` : "";
+     반만 듣는 것이 된다(§2.18 파기 대칭).
+
+     **순수 합성기**다(인자만 읽는다): 실앱 게이트가 네 태의 산출을 되읽어 문안 드리프트를
+     막는다(overwriteBody·guardBody 와 같은 자리). */
+  function resultExitLine(r, owner) {
+    if (!r || r.running || r.rejected || !r.title) return "";
+    const who = owner ? `'${owner}' ` : "";
+    // 미착수는 **취소의 사실**이다 — 완주·실패 런에 붙이면 없는 상태를 지어낸다.
+    const rest = r.cancelled && r.unstarted ? ` · 미착수 ${r.unstarted}건` : "";
     const dir = r.out_dir ? ` — ${r.out_dir}` : "";
-    return `${owner}${r.total}건 생성${fail}${dir}`;
+    return `${who}${r.title}${rest}${dir}`;
   }
 
   /* ---- 세션 표면 동기화 ---- */
@@ -1859,7 +1875,7 @@
   // renderResult 는 결과 3태 구획의 유일한 입구다(F4) — 실앱 게이트가 Python 이 내는
   // 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실 WebView2 에서 서는지 되읽는다.
   window.JobScreen = {
-    init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
+    init, overwriteBody, guardBody, resultExitLine, confirmDataSwapIfArmed, openJob,
     refreshList,
     openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
     // 미리보기 복귀 seam(1R P2) — 편집기가 「미리보기로 돌아가기」라고 적은 이상 실제로

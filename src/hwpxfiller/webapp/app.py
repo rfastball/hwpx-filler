@@ -1373,6 +1373,26 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 짝(리뷰). overwrite_count/new_count 스왑·이름 목록 누락이 여기서 잡힌다.
     out.ow_body = window.JobScreen.overwriteBody(
       {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
+    // 퇴장 한 줄(§2.18)의 네 태 산출 — 결과 구획이 초기화된 뒤 **유일하게 남는 흔적**이라
+    // 거짓 진술이 여기서 조용히 배포되면 되돌아볼 자리가 없다(#363 리뷰 P2: 취소 배치를
+    // 「N건 생성」으로 말하던 자리). 제목은 Python 이 태별로 조립한 그 문장을 그대로 쓴다.
+    out.exit_cancelled_untouched = window.JobScreen.resultExitLine(
+      {title:'생성을 중단했습니다 · 0개 완료', cancelled:true, unstarted:12,
+       succeeded:0, failed:0, attempted:0, total:12, out_dir:'D:\\out'}, '발주요청서');
+    out.exit_cancelled_partial = window.JobScreen.resultExitLine(
+      {title:'생성을 중단했습니다 · 5개 완료', cancelled:true, unstarted:6,
+       succeeded:5, failed:0, attempted:6, total:11, out_dir:'D:\\out'}, '발주요청서');
+    out.exit_completed = window.JobScreen.resultExitLine(
+      {title:'문서 생성 완료 · 12개', cancelled:false, unstarted:0,
+       succeeded:12, failed:0, attempted:12, total:12, out_dir:'D:\\out'}, '발주요청서');
+    out.exit_partial_failure = window.JobScreen.resultExitLine(
+      {title:'10개 성공 · 2개 실패', cancelled:false, unstarted:0,
+       succeeded:10, failed:2, attempted:12, total:12, out_dir:'D:\\out'}, '발주요청서');
+    // 생성이 아닌 태는 적을 것이 없다 — 거절·진행에 퇴장 한 줄을 지어내지 않는다.
+    out.exit_rejected = window.JobScreen.resultExitLine(
+      {rejected:true, title:'생성하지 않았습니다', summary:'빈 값'}, '발주요청서');
+    out.exit_running = window.JobScreen.resultExitLine(
+      {running:true, title:'생성 중… 1/3'}, '발주요청서');
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
     out.guard_body = window.JobScreen.guardBody(
       {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
