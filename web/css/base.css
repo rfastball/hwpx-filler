@@ -116,9 +116,9 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 /* 갈래 ② 컨테이너를 채우는 표면 — 지속시간만 여기서 소유하고 **눌림 색은 각 표면의 소유자
    파일**이 hover 규칙 옆에서 낸다(job.css·jobdata.css). 색을 여기로 끌어오면 §2.1 사고와
    같은 모양이 된다 — 공용 층이 곁의 규칙을 덮는다. 되읽을 자리를 소유자 옆에 둔다.
-   `.mir-row.miss` 는 배경이 `td` 에 칠해지므로 전이 대상도 `td` 다.
-   (`.job-item` 은 산출자가 0곳이라 목록에서 내렸다 — F2 PR-B 로 좌 master 목록이 죽었다.) */
-.job-grp-head,.jobtb tbody tr,.mir-row.miss td,.ctx-menu button{
+   (`.job-item` 은 산출자가 0곳이라 목록에서 내렸다 — F2 PR-B 로 좌 master 목록이 죽었다.
+    `.mir-row.miss td` 는 클릭형 거울 행의 사망 — U2 §2.13 필드축 ack 폐기 — 과 함께 내렸다.) */
+.job-grp-head,.jobtb tbody tr,.ctx-menu button{
   transition:background-color var(--dur-press) var(--ease-out)}
 
 /* 부유 메뉴·열 필터 = 트리거 쪽(좌상단 origin) opacity+scale(.98) 팝(scale(0) 금지). */
@@ -150,7 +150,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   /* 갈래 ② 는 **전이만** 끈다 — 색 변화는 이동이 아니라 상태 표지다. 종전엔 이 표면들의
      눌림이 통째로 사라져 모션을 끈 사람에게 눌림 피드백이 0 이었다(그 강등이 U2 §2.11 의
      로컬 미재현 원인이기도 하다 — 개발 기기가 여기 살고 있었다). 이제 즉시 색으로 남는다. */
-  .job-grp-head,.jobtb tbody tr,.mir-row.miss td,.ctx-menu button{transition:none}
+  .job-grp-head,.jobtb tbody tr,.ctx-menu button{transition:none}
   /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
   .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
   .modal{transition-property:background-color}

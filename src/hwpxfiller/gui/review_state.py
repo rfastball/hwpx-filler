@@ -31,7 +31,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 
-from ..core.job import Job, rules_fingerprints
+from ..core.job import MISSING_MARKER, Job, rules_fingerprints
 from ..core.mapping import FieldMapping
 from ..naming import pattern_field_tokens
 
@@ -44,13 +44,19 @@ from ..naming import pattern_field_tokens
 #: 중요하다 — 서열 1위로 두고 면제하면 템플릿과 source 가 같이 바뀐 경우 의미 변경이
 #: 검토를 통과해 버린다(구멍). 구조 변경은 :attr:`ReviewRequirement.structure_changed`
 #: 병기로 문안이 말하고, 검토 표면 자체는 F8 소관이다.
-RISK_ORDER = ("filename_set", "semantic_binding", "presentation")
+#:
+#: ``blank_set``(U2 §2.13 — 필드축 ack 폐기의 보정)은 규칙축이 아니라 **데이터축**이다:
+#: 규칙이 기준선과 같아도 이번 실행 입력에 빈 값이 있으면 선다 — 표식(`MISSING_MARKER`)이
+#: 문서에 박히는 실행이라, 승인 없이는 조용히 생성되지 않는다(규칙 위험이 있으면 그쪽이
+#: 이긴다 — 빈 값 집합은 어차피 승인 결속 범위(`selection_bound`)가 함께 나른다).
+RISK_ORDER = ("filename_set", "semantic_binding", "presentation", "blank_set")
 
 #: 위험별 증거 정책 — 드로어가 무엇을 실을지의 단일 출처(표면이 분기를 재발명하지 않게).
 EVIDENCE_POLICY = {
     "filename_set": "name_set_summary",
     "semantic_binding": "value_scope_summary",
     "presentation": "formatted_value",
+    "blank_set": "blank_scope_summary",
 }
 
 #: 소스 열을 **읽어** 값을 내는 유형 — `const`(리터럴)·`blank`(언제나 빈 값)는 여기 없다.
@@ -134,7 +140,9 @@ def _target_label(key: str) -> str:
     return f"{name}({_AXIS_LABEL.get(axis, axis)})"
 
 
-def review_requirement(job: Job) -> ReviewRequirement:
+def review_requirement(
+    job: Job, *, blank_fields: "tuple[str, ...]" = ()
+) -> ReviewRequirement:
     """이 작업의 현재 규칙이 기준선과 어긋나는가 — 어긋나면 무엇이·어느 위험으로.
 
     기준선이 비어 있으면(``{}``) 규칙이 마지막 실행과 같다고 말할 근거가 없다: §13-3
@@ -144,6 +152,12 @@ def review_requirement(job: Job) -> ReviewRequirement:
     아니면 실행 이력은 있는데 기준선이 없는가(``unknown_baseline`` — 이 기능 이전에 만들어진
     작업). 처분은 같고 말이 다르다: 실행한 적 있는 작업에 "아직 한 번도 만들지 않았습니다"
     라고 말하면 그건 거짓말이고, 거짓 문안은 경보를 싸구려로 만든다.
+
+    ``blank_fields`` 는 **이번 실행 입력**에서 값이 빈 필드(U2 §2.13 — 필드축 ack 폐기의
+    보정). 규칙이 기준선과 같아 규칙축 요구가 없어도 이것이 비어 있지 않으면 ``blank_set``
+    요구가 선다 — 승인은 규칙 지문 기반이라 한 번 완주하면 영구히 조용해지는데(판정 N),
+    그대로 두면 다음 데이터에서 새로 생긴 빈 값이 **표식으로 박힌 문서를 조용히 생성**한다.
+    빈 값 집합 자체는 선택·데이터에 딸린 사실이라 승인 결속 키(호출측 scope key)가 나른다.
     """
     now = rules_fingerprints(job)
     key = rules_key(now)
@@ -157,6 +171,18 @@ def review_requirement(job: Job) -> ReviewRequirement:
         # 키의 등장·소멸도 변경이다 — 필드 추가·삭제가 여기서 잡힌다(F-06 「의도적 미사용」).
         changed = {k for k in set(now) | set(base) if now.get(k) != base.get(k)}
     if not changed:
+        if blank_fields:
+            # 빈 값이 문서에 표식으로 박히는 실행 — 규칙이 그대로여도 승인 없이는
+            # 생성이 열리지 않는다(침묵 금지, §2.13). 선택 결속 필수: 빈 값 집합은
+            # 선택에 따라 달라지므로 승인이 그 집합을 본 사건이어야 한다.
+            return ReviewRequirement(
+                risk_class="blank_set",
+                changed_targets=tuple(blank_fields),
+                changed_fields=tuple(blank_fields),
+                evidence_policy=EVIDENCE_POLICY["blank_set"],
+                rules_key=key,
+                selection_bound=True,
+            )
         return ReviewRequirement(rules_key=key)
 
     structure = "template" in changed
@@ -179,6 +205,18 @@ def review_requirement(job: Job) -> ReviewRequirement:
         risk = "presentation"
     if not risk:
         # 템플릿만 바뀐 경우 — 승인 축이 아니다(판정 E). 드리프트 게이트가 진다.
+        # 단 빈 값이 있으면 blank_set 은 그와 무관하게 선다(§2.13 침묵 금지) —
+        # 구조 변경 병기는 그대로 나른다.
+        if blank_fields:
+            return ReviewRequirement(
+                risk_class="blank_set",
+                changed_targets=tuple(blank_fields),
+                changed_fields=tuple(blank_fields),
+                evidence_policy=EVIDENCE_POLICY["blank_set"],
+                structure_changed=True,
+                rules_key=key,
+                selection_bound=True,
+            )
         return ReviewRequirement(rules_key=key, structure_changed=True)
 
     # 문서순 = 매핑 순서. 정렬하면 사용자가 편집기에서 본 순서와 어긋난다.
@@ -198,7 +236,10 @@ def review_requirement(job: Job) -> ReviewRequirement:
         unknown_baseline=unknown,
         structure_changed=structure,
         rules_key=key,
-        selection_bound=risk != "presentation",
+        # 표시형은 규칙 지문에만 결속(판정 I)이되, **빈 값이 있으면 선택 결속으로
+        # 승격**한다(§2.13): 빈 값 집합은 선택·데이터에 딸린 사실이라, 규칙 승인이
+        # 살아남은 채 새 빈 값이 생기면 표식이 박힌 문서가 조용히 생성된다.
+        selection_bound=risk != "presentation" or bool(blank_fields),
     )
 
 
@@ -283,12 +324,26 @@ def build_evidence(
         for name in req.changed_fields:
             value = str(record.get(name, ""))
             if req.risk_class == "semantic_binding":
+                # `mapped` 는 생성 입력 그대로라 빈 값 자리에 표식이 서 있다(§2.13 —
+                # 표식 조건이 「빈 값이 있으면」으로 단순해지며 승인 전 미리보기에도 선다).
+                # 「비는 문서」 수는 표식도 빈 값으로 센다 — 표식은 빈 값의 문서 표기다.
+                marker = MISSING_MARKER.format(field=name)
                 vals = [str(r.get(name, "")) for r in mapped]
                 distinct = len(set(vals))
-                empty = sum(1 for v in vals if not v.strip())
+                empty = sum(1 for v in vals if v == marker or not v.strip())
                 row_note = f"선택 {n}건에서 서로 다른 값 {distinct}개"
                 if empty:
                     row_note += f" · 값이 비는 문서 {empty}건"
+            elif req.risk_class == "blank_set":
+                # 동의의 **결과**를 그 자리에서 말한다(§2.13) — 무엇에 동의하는지 모르고
+                # 누르던 종전 「클릭=확인」과 갈리는 지점. `mapped` 는 생성 입력 그대로라
+                # 빈 값 자리엔 이미 표식이 서 있다 — 그 표식으로 빈 건을 센다.
+                marker = MISSING_MARKER.format(field=name)
+                vals = [str(r.get(name, "")) for r in mapped]
+                k = sum(1 for v in vals if v == marker or not v.strip())
+                row_note = (
+                    f"선택 {n}건 중 {k}건이 빈 값 — 문서에는 {marker} 로 박힙니다"
+                )
             else:
                 row_note = "표시형이 적용된 값입니다."
             row = {"name": name, "value": value, "note": row_note}
@@ -317,6 +372,11 @@ def review_reason_text(req: ReviewRequirement) -> str:
         return "아직 한 번도 문서를 만들지 않은 작업입니다."
     if req.unknown_baseline:
         return "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
+    if req.risk_class == "blank_set":
+        # 규칙축이 아니라 데이터축이다(§2.13) — "규칙이 바뀌었습니다"는 여기서 거짓말이다.
+        return (
+            f"빈 값 필드가 표식으로 문서에 박힙니다: {', '.join(req.changed_targets)}."
+        )
     return f"규칙이 바뀌었습니다: {', '.join(req.changed_targets)}."
 
 

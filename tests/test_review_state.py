@@ -491,3 +491,52 @@ def test_before_keeps_fields_that_were_genuinely_unconnected():
     job.previous_rules = rules_values(job)
     job.mapping.mappings[1].source = "추정가격"     # 새 판본: 연결
     assert previous_values(job, ("금액",), {"추정가격": "1000"}) == {"금액": ""}
+
+
+# ------------------------------------------ blank_set 위험종(U2 §2.13 — ack 폐기의 보정)
+def test_blank_fields_raise_a_requirement_even_when_rules_match_the_baseline():
+    """침묵 금지(§2.13) — 규칙이 기준선과 같아도 빈 값이 있으면 요구가 선다.
+
+    승인은 규칙 지문 기반이라 한 번 완주하면 영구히 조용해진다(판정 N). 이 위험종이
+    없으면 다음 데이터의 새 빈 값이 표식이 박힌 문서를 조용히 생성한다.
+    """
+    req = review_requirement(_reviewed(_job()), blank_fields=("담당자", "개찰장소"))
+    assert req.required and req.risk_class == "blank_set"
+    assert req.changed_targets == ("담당자", "개찰장소")
+    assert req.evidence_policy == "blank_scope_summary"
+    assert req.selection_bound is True, (
+        "빈 값 집합은 선택에 딸린 사실이다 — 선택 결속이 아니면 승인이 남의 선택에 산다."
+    )
+    text = review_gate_text(req)
+    assert "빈 값" in text and "담당자" in text and "승인" in text
+    assert "규칙이 바뀌었습니다" not in text  # 데이터축이다 — 규칙축 문안은 거짓말
+
+
+def test_no_blanks_and_matching_rules_stay_quiet():
+    """빈 값 0 + 규칙 일치 = 요구 없음 — §13-2(반복 실행에서 미리보기는 선택) 그대로."""
+    req = review_requirement(_reviewed(_job()), blank_fields=())
+    assert req.required is False and req.risk_class == ""
+
+
+def test_rule_risk_outranks_blank_set_but_becomes_selection_bound():
+    """규칙 위험이 있으면 그쪽이 이긴다(무거운 증거) — 단 빈 값이 있으면 표시형 승인도
+    **선택 결속으로 승격**된다: 빈 값 집합은 선택·데이터에 딸린 사실이라, 규칙에만 결속된
+    승인이 살아남으면 새 빈 값이 조용히 통과한다."""
+    job = _reviewed(_job())
+    job.mapping.mappings[1].fmt = "천단위"          # 표시형 변경(presentation)
+    quiet = review_requirement(job)
+    assert quiet.risk_class == "presentation" and quiet.selection_bound is False
+    risky = review_requirement(job, blank_fields=("금액",))
+    assert risky.risk_class == "presentation" and risky.selection_bound is True
+
+
+def test_template_only_change_with_blanks_still_raises_blank_set():
+    """템플릿만 바뀐 경우(승인 축 아님 — 판정 E)에도 빈 값이 있으면 blank_set 이 선다.
+
+    드리프트 게이트가 늘 함께 서는 것은 아니다(호환 재연결은 지문만 갈린다) — 그 창에서
+    빈 값이 조용히 통과하면 안 된다. 구조 변경 병기는 그대로 나른다.
+    """
+    job = _reviewed(_job())
+    job.template_path = "T2.hwpx"
+    req = review_requirement(job, blank_fields=("금액",))
+    assert req.risk_class == "blank_set" and req.structure_changed is True

@@ -55,7 +55,8 @@ _GATE_REASON = (
 #: 실폭이다 — 파손 크기가 폭에 비례하므로 근거로 남긴다. 이 표면들은 `scale` 을 쓰지 않는다.
 ROW_SURFACES: dict[str, int] = {
     ".job-grp-head": 1170,     # 라이브러리 그룹 머리 — 전수조사 최악(Δ좌변 +17.56px)
-    ".mir-row.miss": 920,      # 거울 빈 값 행 = ack 게이트를 푸는 유일 표면(§10.6 결정 3)
+    # (.mir-row.miss — 거울 빈 값 행 — 은 필드축 ack 폐기(U2 §2.13)로 산출자가 0곳이 되어
+    #  내려갔다. 죽은 선택자를 계약이 부양하면 다음 사람이 그 표면이 산다고 읽는다.)
     ".jobtb tbody tr": 910,    # 데이터 표 행 — U2 §2.11 원 제보
     ".ctx-menu button": 140,   # 메뉴 항목은 메뉴 폭을 채운다(채움비 0.93)
 }
@@ -66,9 +67,10 @@ BOX_SURFACES: tuple[str, ...] = (
     ".fico", ".fchip button", ".wstep-tab.as-tab", ".shell-tool",
 )
 
-#: `.job-item` 은 산출자가 0곳이다(F2 PR-B 로 좌 master 목록 사망). `base.css` 밖에서 이 이름을
-#: 내는 곳이 웹 자산 전체에 없으므로 눌림 목록에 있을 수 없다 — 죽은 선택자가 계약을 늘린다.
-DEAD_SELECTORS: tuple[str, ...] = (".job-item",)
+#: `.job-item` 은 산출자가 0곳이다(F2 PR-B 로 좌 master 목록 사망). `.mir-row.miss` 는
+#: 필드축 ack 폐기(U2 §2.13)로 클릭형 거울 행이 죽어 같은 자격이 됐다. `base.css` 밖에서
+#: 이 이름들을 내는 곳이 웹 자산 전체에 없으므로 눌림 목록에 있을 수 없다.
+DEAD_SELECTORS: tuple[str, ...] = (".job-item", ".mir-row.miss")
 
 # 선택자별 최소 골격 — `<tr>` 은 표 조상이 있어야 행이 되고, 메뉴 항목은 `.ctx-menu` 안에
 # 있어야 한다. 실 산출자의 구조만 남기고 내용은 지운 형태다(값이 아니라 상자를 재는 검사다).
@@ -77,13 +79,6 @@ SCAFFOLDS: dict[str, str] = {
         '<div class="tbwrap jobtbwrap"><table class="tb jobtb"><tbody>'
         '<tr id="probe"><td class="doccol">문서</td><td class="col-text">값</td></tr>'
         '<tr><td class="doccol">문서</td><td class="col-text">값</td></tr>'
-        "</tbody></table></div>"
-    ),
-    ".mir-row.miss": (
-        '<div class="tbwrap"><table class="tb mir"><tbody>'
-        '<tr class="mir-row miss" id="probe" role="button" tabindex="0">'
-        '<td class="mir-f">담당자</td><td class="mir-v"></td>'
-        '<td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td></tr>'
         "</tbody></table></div>"
     ),
     ".job-grp-head": (

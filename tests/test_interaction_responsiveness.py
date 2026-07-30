@@ -26,6 +26,8 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
 
     `.job-item` 은 목록에서 내려갔다 — 산출자가 웹 자산 전체에 0곳이다(F2 PR-B 로 좌 master
     목록 사망). 죽은 선택자를 계약이 부양하면 다음 사람이 그 표면이 산다고 읽는다.
+    `.mir-row.miss`(클릭형 거울 행)도 같은 이유로 내려갔다 — 필드축 ack 폐기(U2 §2.13)로
+    산출자가 0곳이다.
     """
     # 이 검사는 **원문 순서와 주석 텍스트**로 자른다(`/* 부유 메뉴`·`/* ---- 공통 컨트롤`).
     # 순서 보존 컷이라 그 구간(모션층)은 통째로 base.css 안에 그대로 있다.
@@ -35,7 +37,7 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
         ".fico", ".fchip button", ".wstep-tab.as-tab", ".shell-tool",
         ".btn", ".navbtn", ".job-more", ".grp-more", ".tpl-assign", "button.pill",
     )
-    fill_surfaces = (".job-grp-head", ".jobtb tbody tr", ".mir-row.miss", ".ctx-menu button")
+    fill_surfaces = (".job-grp-head", ".jobtb tbody tr", ".ctx-menu button")
     # 컷은 주석 텍스트로 하고(순서 보존 컷의 계약) **자른 뒤에** 산문을 걷는다 — 주석이
     # 일부러 남긴 죽은 선택자 이름을 규칙으로 세지 않기 위해서다(`_web_css.strip_comments`).
     active = strip_comments(css[css.index(".btn:active:not(:disabled)"):css.index("/* 부유 메뉴")])
@@ -53,6 +55,9 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
         assert selector in active, f"{selector} 눌림 전이 대상이 빠졌습니다(U2 §2.11)."
         assert selector in reduced, f"{selector} reduced-motion 강등이 없습니다(#217 R5)."
     assert ".job-item" not in active, "산출자 0곳인 .job-item 이 눌림 계약에 되살아났습니다."
+    assert ".mir-row.miss" not in active, (
+        "산출자 0곳인 .mir-row.miss(구 클릭형 거울 행 — U2 §2.13 사망)가 눌림 계약에 되살아났습니다."
+    )
 
 
 def test_data_rows_flip_locally_before_dispatch_and_use_live_dom_state() -> None:

@@ -129,7 +129,9 @@ MODAL_LABELLEDBY = {
     "chooseModal": "chooseModalTitle",
     # draftMapSheet 은 「기안」과 함께 사망(F6 PR-B) — 맞추기 표는 작업대 #wbMapPanel 승계.
     "dataSheet": "dataSheetTitle",  # 작업 데이터 펼침 면(#271/#272 — 기안 몫은 F6 PR-B 사망)
-    "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)
+    # jobConfirmSheet(작업 거울·재진술 펼침 면 #272)은 U2 §2.13 에서 사망 — 확인 면은
+    # 시트로 승격한 생성 값 미리보기(#previewSheet) 하나다.
+    "previewSheet": "previewTitle",
 }
 
 
@@ -433,7 +435,6 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert "m.parent.insertBefore(m.el, m.next)" in sheets
     assert ".data-sheet-body.jobtbth:first-child" in css
     assert "position:sticky;left:0" in css
-    assert ".capstrip[hidden]{display:none}" in css
 
     assert 'class="data-grid" id="jobDataGrid"' in html
     assert 'class="duo job-duo"' not in html and ".job-duo{" not in css, (
@@ -445,8 +446,8 @@ def test_milestone_l_job_density_and_expansion_sheets():
     # (구 「선택한 작업」 존은 U2 §4 판정 A(#342)로 사망 — 아래 승계 계약 테스트가 잇는다).
     assert main.index('id="jobTableHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
     assert side.index('id="jobCandidates"') < side.index('id="jobOutDir"')
-    assert 'id="jobMirrorCapstrip" role="status" hidden' in main
-    assert "#jobMirror{max-height:420px;overflow:auto}" in css
+    # 본문 존 = 표 없는 한 줄(U2 §2.13) — 420px 캡·캡스트립은 표와 함께 사망했다.
+    assert "jobMirrorCapstrip" not in html and "max-height:420px" not in css
     # 컬럼 템플릿은 한 곳에서만 선언한다(U2 §2.2) — 세션 카드와 그 아래 액션바가 같은
     # 기준면을 써야 「미리보기·생성」이 자기 입력(좌 열)과 같은 열의 오른쪽 끝에 선다.
     # 리터럴이 두 번 적히면 한쪽만 고쳐져 두 표면이 조용히 어긋난다.
@@ -471,16 +472,18 @@ def test_milestone_l_job_density_and_expansion_sheets():
     # 잘려 "어디에 저장되는지"를 못 읽는다 — 감싸기 규칙이 그 되읽기를 지킨다.
     assert ".dg-side.run-row{flex-wrap:wrap;row-gap:var(--sp-4)}" in css
     assert ".dg-side.run-row>.field{flex:11100%}" in css
-    assert '<div id="jobConfirmSheet" class="modal sheet hidden"' in html
-    assert "펼쳐서 행 고르기 ⤢" in html and "펼쳐서 확인 ⤢" in html
-    assert 'modalId: "jobConfirmSheet"' in job_js
-    assert '{ id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" }' in job_js
-    assert '{ id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" }' in job_js
+    # 거울 펼침 면(jobConfirmSheet — 2 pane)은 사망했다(U2 §2.13): 확인 면은 시트로
+    # 승격한 생성 값 미리보기(#previewSheet) 하나이고, 본문 존 한 줄의 ⤢ 가 그 면을 연다.
+    assert "jobConfirmSheet" not in html and "jobConfirmSheet" not in job_js
+    assert ".sheet-duo" not in css and ".sheet-pane" not in css, (
+        "확인 2 pane 골격이 재유입됐습니다(§2.13 — 1 pane 확정)."
+    )
+    assert "펼쳐서 행 고르기 ⤢" in html and "생성 값 미리보기 ⤢" in job_js
+    assert 'id="jobMirrorPreviewOpen"' in job_js, "본문 존 한 줄의 확인 면 출구가 없습니다."
     for node_id in (
         "jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip", "jobColPanel",
     ):
         assert f'{{ id: "{node_id}", slotId: "dataSheetSlot" }}' in job_js
-    assert 'closeAndRestore("jobConfirmSheet")' in job_js
     # 화면을 떠날 때의 일괄 회수(재작성 F7) — 펼침 면은 실 DOM 을 오버레이로 옮겨 띄우므로
     # 열린 채 화면이 바뀌면 남의 화면 위에 이 화면의 DOM 이 뜬다. 소유가 화면 전환으로
     # 올라가 어느 화면이 늘어도 같은 회수가 걸린다(종전엔 편집 모드 진입이 그 자리에서 닫았다).
@@ -490,16 +493,11 @@ def test_milestone_l_job_density_and_expansion_sheets():
     )
     assert "function closeAllAndRestore" in sheets
     assert "window.Modal.close(id);\n    restore(id);" in sheets
-    # 펼침 트리거 포커스 복귀(#279 리뷰) — 캡스트립 위임 클릭의 currentTarget 은 포커스
-    # 불가능한 컨테이너 div: 실클릭 버튼→상시 ⤢ 순으로 해석하는 SurfaceSheet.trigger 만 쓴다.
-    # (기안 소비자 draftsession.js 는 화면과 함께 사망 — F6 PR-B. 소비자는 job 하나다.)
+    # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
+    # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
     assert "trigger: trigger" in sheets
     assert "window.SurfaceSheet.trigger(e," in job_js
     assert "returnFocus: e && e.currentTarget" not in job_js
-    # 캡스트립 생성 버튼은 복귀 표적 제외(#280 리뷰) — afterRestore 의 measure* 가
-    # innerHTML 을 갈아 방금 포커스한 버튼이 분리된다(안정 헤더 ⤢ 폴백 고정).
-    assert 'btn.closest(".capstrip")' in sheets
-    assert html.count('class="capstrip"') >= 1
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
     # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
     assert ".data-sheet-body.jobtbtbodytr.ontd:first-child{background:var(--a-sel)}" in css
@@ -973,6 +971,14 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
             f"게이트 구획 지목 누락: {caption}"
         )
         assert caption in job, f"지목이 실재하지 않는 구획을 가리킵니다: {caption}"
+    # 「본문 확인」 지목은 **이름 있는 축**(drift·name_tokens)에만 남는다: 그 danger
+    # 배너는 재편 뒤에도 그 존에 살기 때문이다. 반대로 **이름 없는 warn 의 폴백**은
+    # 필드축 ack 폐기(U2 §2.13)로 마지막 소비자를 잃었다 — 남는 것(저장 폴더·이어채우기)
+    # 은 본문 축이 아니라 그 자리를 가리키면 거짓 지목이 된다.
+    assert 'drift: "본문 확인 · "' in step, "danger 배너의 축 지목이 사라졌습니다."
+    assert "return GATE_ZONE.drift" not in step, (
+        "이름 없는 warn 이 여전히 「본문 확인」을 가리킵니다 — 폐기된 필드축 지목입니다(§2.13)."
+    )
     assert 'gateStep(s, g) + g.text' in src
     assert not re.search(r"\bg\.level\s*=(?!=)", src), (
         "표시층이 gate.level 판정을 변조하면 안 됩니다."
@@ -1139,9 +1145,8 @@ def test_job_range_draft_surface_contract():
     assert 'closeAndRestore("dataSheet")' not in mode_fn, (
         "데이터 면을 렌더마다 닫습니다 — 작업 미선택 세션에서 범위 편집기가 못 쓰게 됩니다."
     )
-    assert '!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet")' in mode_fn, (
-        "거울 면은 작업이 없으면 닫혀야 합니다(작업의 것이라 설 자리가 없다)."
-    )
+    # (구 거울 펼침 면 강제 닫기는 면 사망 — U2 §2.13 — 과 함께 걷혔다. 확인 면의 개폐는
+    #  Python 소유 `preview.open` 이 지고, 작업 전환은 백엔드가 preview_close 로 닫는다.)
     assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
     # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
     # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
@@ -1270,7 +1275,7 @@ def test_job_document_browser_surface_contract():
     # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다. ⤢ 펼침 면 2종도
     # 같은 자격이다(F3): 실 DOM 이동이라 잠글 요소가 면 안으로 **옮겨가** 화면 질의에서 빠진다.
     busy_roots = src.split("function setBusy", 1)[1].split("forEach", 1)[0]
-    for root in ("jobBrowseSheet", "dataPickerModal", "dataSheet", "jobConfirmSheet"):
+    for root in ("jobBrowseSheet", "dataPickerModal", "dataSheet", "previewSheet"):
         assert f'$("{root}")' in busy_roots, f"setBusy 가 {root} 을(를) 잠그지 않습니다."
     assert src.count("data-busy-lock data-browse") == 3, (
         "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
@@ -1809,8 +1814,8 @@ def test_preview_row_fix_deep_link_is_wired_end_to_end():
     # `at` 은 Modal.close(→ preview_close 가 pos 를 리셋) **전에** 읽어야 한다 — 순서가
     # 뒤집히면 복귀가 늘 첫 행으로 선다(발신 순서 규약의 이 표면 표본).
     fix_body = job[job.index("async function previewFix"):job.index("function openEditForRepair")]
-    assert fix_body.index(".pos") < fix_body.index('Modal.close("previewModal")'), (
-        "previewFix 가 드로어를 닫은 뒤 pos 를 읽습니다 — 리셋된 0 이 실려 갑니다."
+    assert fix_body.index(".pos") < fix_body.index('Modal.close("previewSheet")'), (
+        "previewFix 가 확인 면을 닫은 뒤 pos 를 읽습니다 — 리셋된 0 이 실려 갑니다."
     )
     # 수신 쪽 — 편집기 조준(행 data-field·aimAt)과 복귀 소비(preview_index·focusTarget).
     assert "aimAt" in editor and 'tr[data-field="' in editor.replace("${CSS.escape(field)}", '"'), (
@@ -1882,32 +1887,39 @@ def test_editor_overwrite_confirm_echoes_the_text_it_showed():
 
 
 def test_job_preview_drawer_surface_contract():
-    """재작성 F5 정적 계약(지도 §10.12) — 드로어의 소유·개폐 순서·판정 단일 출처.
+    """확인 면(생성 값 미리보기 **시트** — F5 드로어의 U2 §2.13 승격) 정적 계약.
 
     ①골격은 index.html 정적 DOM 이다(동적 생성은 role/aria 계약의 사각을 만든다 — 구
-    `pool_picker.js` K12 교훈) ②열림·자리는 **Python 소유**라 웹은 방향만 보낸다(판정 M)
-    ③성사 뒤에만 연다 ④승인은 명시 사건 하나이고 생성과 다른 사건이다(§13-4).
+    `pool_picker.js` K12 교훈) ②열림·자리·「빈 값 있는 건만 보기」는 **Python 소유**라 웹은
+    방향·의도 값만 보낸다(판정 M) ③성사 뒤에만 연다 ④승인은 명시 사건 하나이고 생성과
+    다른 사건이다(§13-4) ⑤값·이름을 말하는 표면은 이 면 하나다(§2.13 C3 폐색).
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
     for element in (
-        "previewModal", "previewTitle", "previewPos", "previewPrev", "previewNext",
+        "previewSheet", "previewTitle", "previewPos", "previewPrev", "previewNext",
+        "previewBlankOnly", "previewNamePlan",
         "previewRows", "previewEvidence", "previewEvidenceRows", "previewEvidenceNote",
         "previewEvidenceReason",
         "previewFilename", "previewApprove", "previewClose",
         "previewEdit", "previewEmpty", "jobPreviewOpen", "jobReviewFlag",
     ):
-        assert f'id="{element}"' in html, f"미리보기 드로어 노드가 없습니다: {element}"
+        assert f'id="{element}"' in html, f"확인 면 노드가 없습니다: {element}"
+    # 시트 승격(§2.13) — 680px 모달이 아니라 전면 시트 골격을 쓴다(렌더러가 올 자리).
+    assert '<div id="previewSheet" class="modal sheet hidden"' in html
+    assert "previewModal" not in html, "구 미리보기 모달 id 가 남아 있습니다(§2.13 시트 승격)."
     # 「적용 범위」 축은 없다(U2 §2.3) — runOverrides 기각·사망으로 값이 하나뿐인 축이 됐고,
     # 고를 수 없는 선택지를 암시하는 자리만 남았다. 페이로드 쪽 부재는 test_webapp_job 소관.
     assert 'id="previewScope"' not in html, "적용 범위 축이 재유입됐습니다."
     # 경계는 다음 모달(libraryMoveModal) — 구 경계(붙여넣기 모달)는 「기안」과 함께 사망(F6 PR-B).
-    drawer = html.split('id="previewModal"', 1)[1].split('id="libraryMoveModal"', 1)[0]
+    drawer = html.split('id="previewSheet"', 1)[1].split('id="libraryMoveModal"', 1)[0]
     assert 'role="dialog"' in drawer and 'aria-modal="true"' in drawer, (
-        "드로어에 dialog 역할·모달 표기가 없습니다(정적 DOM 이 소유하는 계약)."
+        "확인 면에 dialog 역할·모달 표기가 없습니다(정적 DOM 이 소유하는 계약)."
     )
     assert 'aria-label="이전 문서"' in drawer and 'aria-label="다음 문서"' in drawer, (
         "레코드 이동 버튼에 접근 가능한 이름이 없습니다(‹ › 만으로는 무엇의 이동인지 모른다)."
     )
+    # 「빈 값 있는 건만 보기」(§2.13) — 상태 표기는 aria-pressed, 이름 계획 한 줄과 동거.
+    assert 'id="previewBlankOnly" type="button" data-busy-lock' in " ".join(drawer.split())
 
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     # 자리는 서수이고 Python 이 소유한다 — 웹이 index 를 되돌려주면 그 사이의 데이터 교체·
@@ -1918,9 +1930,18 @@ def test_job_preview_drawer_surface_contract():
     assert "preview_pos" not in src and "previewIndex" not in src, (
         "웹이 미리보기 자리를 들고 있습니다 — 상태의 주체는 Python 입니다."
     )
+    # 「빈 값 있는 건만 보기」도 상태는 Python 소유 — 의도 값만 보내고 표시는 스냅샷 되읽기
+    # (낙관 토글 없음, #215 동류). ‹ › 경계도 Python 이 낸 can_prev/can_next 를 그대로 쓴다.
+    assert '"preview_blank_only", { value: !on }' in src, "빈 값 한정 토글 발신이 없습니다."
+    assert 'p.blank_only ? "true" : "false"' in src, "토글 표시가 스냅샷을 되읽지 않습니다."
+    assert "!pv.can_prev" in src and "!pv.can_next" in src, (
+        "‹ › 가용성이 pos/total 재유도로 남아 있습니다 — 한정 경계와 갈립니다(§2.13)."
+    )
+    # 이름 계획 한 줄(§2.13) — 인라인 재진술의 이름 목록이 이주한 자리.
+    assert 'previewNamePlan' in src, "이름 계획 한 줄 렌더가 없습니다."
     # 성사 뒤에만 연다(§9.3 4행 상속).
     open_fn = src.split("async function openPreview", 1)[1].split("\n  }", 1)[0]
-    assert open_fn.index('"preview_open"') < open_fn.index('Modal.open("previewModal"'), (
+    assert open_fn.index('"preview_open"') < open_fn.index('Modal.open("previewSheet"'), (
         "면을 먼저 열고 나서 성사를 묻습니다 — 거절되면 무엇을 미리보는 중인지 거짓이 됩니다."
     )
     assert "flushPendingEdits" in open_fn, (
@@ -1933,7 +1954,34 @@ def test_job_preview_drawer_surface_contract():
     )
     # 잠금 범위(§9.3 2행) — 오버레이 루트는 화면 루트 질의 밖이라 setBusy 가 따로 훑는다.
     busy_fn = src.split("function setBusy", 1)[1].split("\n  }", 1)[0]
-    assert '$("previewModal")' in busy_fn, "생성 중 드로어가 잠기지 않습니다(오버레이 사각)."
+    assert '$("previewSheet")' in busy_fn, "생성 중 확인 면이 잠기지 않습니다(오버레이 사각)."
+
+
+def test_job_mirror_zone_is_one_line_without_a_value_table():
+    """U2 §2.13 — 본문 존은 표 없는 한 줄이고, 값을 말하는 표면은 확인 면 하나다.
+
+    구 거울 테이블(필드 채움 표 + 클릭형 ack 행 + 420px 캡)과 인라인 재진술의 파일 이름
+    목록이 함께 죽었는지 정적으로 못박는다 — 어느 하나가 부활하면 C3(같은 값을 말하는
+    두 표면)이 되돌아온다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.split())
+    # 죽은 표면 3종 — 거울 테이블·클릭형 ack 행·캡스트립.
+    assert 'table class="tb mir"' not in src and "mirrorRow" not in src
+    assert "ack_field" not in src and "unack_field" not in src, (
+        "죽은 필드축 ack 액션을 표면이 발신합니다(§2.13)."
+    )
+    assert "jobMirrorCapstrip" not in html and "capstrip" not in html
+    # 한 줄의 세 성분 — 빈 값 표지(이름 지목) · 이름 건수 · 확인 면 출구.
+    mirror_fn = src.split("function renderMirror", 1)[1].split("\n  }", 1)[0]
+    assert "blank_fields" in mirror_fn and "mir-blank-flag" in mirror_fn
+    assert "jobMirrorPreviewOpen" in mirror_fn and "생성 값 미리보기 ⤢" in mirror_fn
+    # 인라인 재진술은 수치·경로만 말한다 — 이름 목록(.namelist)은 확인 면으로 이주했다.
+    restate_fn = src.split("function renderRestate", 1)[1].split("\n  }", 1)[0]
+    assert "namelist" not in restate_fn and ".namelist" not in css
+    # 안내 문안도 죽은 상호작용을 약속하지 않는다(§2.10 어휘 상속 — 「승인」만 남는다).
+    assert "눌러서 확인" not in html and "클릭=확인" not in src
 
 
 def test_preview_button_states_are_decided_after_the_busy_restore():

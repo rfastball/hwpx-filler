@@ -102,6 +102,11 @@ STYLELESS_BY_DESIGN: dict[str, str] = {
     "job-mirror-zone": "세션 좌열 「본문 확인」 존의 자리 표지(스타일은 .zone)",
     "job-result-zone": "세션 좌열 「생성 결과」 존의 자리 표지(스타일은 .zone)",
     "job-cands-row": "세션 우열 후보 구획의 자리 표지(스타일은 .zone)",
+    # (job-active-zone 은 「선택한 작업」 존 사망 — U2 §4 · #342 — 과 함께 걷혔다.
+    #  등재가 실물을 앞지르면 아래 대조 테스트가 잡는다.)
+    "tb": "표 골격 판별자 — 스타일은 결합 이름(.jobtb·.lib-bindings)이 진다"
+          "(구 .tb.mir 사망 — U2 §2.13)",
+    "preview-sheet-body": "확인 면 본문 자리 표지(스타일은 .sheet-body 가 진다 — U2 §2.13)",
 }
 
 #: 템플릿 보간 자리 표식 — `class="col-${i}"` 의 `col-` 같은 **조각**은 class 이름이 아니다.

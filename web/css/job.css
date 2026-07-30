@@ -20,51 +20,29 @@
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
-/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 채움 표지 토큰
-   (--fb-*)을 그대로 써 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
+/* ── 본문 존 = 표 없는 한 줄(U2 §2.13) — 구 거울 테이블·클릭형 ack 행은 필드축 ack
+   폐기와 함께 걷혔다. 값을 말하는 표면은 확인 면(#previewSheet) 하나다. ── */
 .tbwrap{overflow-x:auto}
-.tb.mir{width:100%;border-collapse:collapse;margin-top:var(--sp-10);font-size:var(--fs-dense)}
-.tb.mir td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
-.tb.mir tr:first-child td{border-top:0}
-.mir-f{font-weight:600;white-space:nowrap;width:120px;color:var(--n-header-ink)}
-.mir-v{min-width:0;word-break:break-word}
-.mir-s{white-space:nowrap;text-align:right;width:1%}
-.mir-row.miss td{background:var(--fb-missing-bg)}
-.mir-row.miss{cursor:pointer}
-.mir-row.ackd td{background:var(--fb-ack-bg)}
-.mir-row.blankd td{background:var(--n-surface-alt);color:var(--a-muted)}
-.mir-row.miss:focus-visible{outline:2px solid var(--a-danger);outline-offset:-2px}
-/* 클릭형 행의 눌림 — 배경 축이다(U2 §2.11: 920px 행에 scale(.97) 은 좌변을 13.8px 옮겨
-   표 머리·이웃 행과 기준면을 잃게 했다). 전이는 base.css 모션 층이, 색은 여기가 소유한다.
-   `--fb-missing-press` 는 팔레트에 손으로 지정돼 있었는데 gen 매핑이 빠져 방출조차 안 되던
-   토큰이다 — 눌림=배경이라는 원 설계가 여기서 완성된다.
-   확인됨(ackd) 쪽은 대칭 토큰이 없어 **파생**한다(신설이 아니라 파생임을 남긴다). 특정도가
-   `.miss:active td` 보다 높아야 위 규칙을 이긴다 — 순서와 특정도 둘 다 필요하다. */
-.mir-row.miss:active td{background:var(--fb-missing-press)}
-.mir-row.miss.ackd:active td{background:color-mix(in srgb,var(--fb-ack-bg) 88%,var(--a-ink))}
-.mir .st{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
-  white-space:nowrap;font-weight:600;display:inline-block}
-.mir .st.filled{background:var(--fb-fill-bg);color:var(--a-ok)}
-.mir .st.miss{background:var(--fb-missing-bg);color:var(--a-danger)}
-.mir .st.ackd{background:var(--fb-ack-bg);color:var(--fb-ack-fg)}
-.mir .st.blankd{background:var(--n-surface-alt);color:var(--a-muted)}
+.mirline{margin:var(--sp-10) 0 0;font-size:var(--fs-body);display:flex;align-items:center;
+  gap:var(--sp-8);flex-wrap:wrap}
+/* 빈 값 표지 — 정보이지 클릭 표적이 아니다(§2.13: 클릭 표적만 사라졌다). 색은 채움 표지
+   토큰(--fb-*)을 그대로 써 표지 언어가 통일된다. */
+.mir-blank-flag{background:var(--fb-missing-bg);color:var(--a-danger);
+  border-radius:var(--rad-pill);padding:1px var(--sp-8);font-weight:600}
+.mir-blank-flag b{color:inherit}
 .mirempty{padding:var(--sp-8) 0}
-/* danger(구조 드리프트·미해소 토큰)는 ack 로 안 풀림 — 거울 표와 섞지 않고 차단 배너 +
+/* danger(구조 드리프트·미해소 토큰)는 편집에 가야 풀림 — 한 줄과 섞지 않고 차단 배너 +
    상시 행동 링크로 분리(결정 36·S9, 막다른 경보 금지). */
 .mir-drift{background:var(--fb-missing-bg);border:1px solid var(--a-danger);border-radius:var(--rad-surface);
   padding:var(--sp-10) var(--sp-12);margin-top:var(--sp-10);display:flex;flex-direction:column;
   gap:var(--sp-8);align-items:flex-start}
 .mir-drift p{margin:0;color:var(--a-danger)}
-/* 재진술 블록(결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록(소량 전부·대량 표본+펼침). */
+/* 재진술 블록(결정 36 D1-B) — 선택 유래 + 산출 요약. 파일 이름 목록은 확인 면의
+   「이름 계획」 한 줄로 이주했다(U2 §2.13). */
 .defblk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-2) var(--sp-10);
   margin-top:var(--sp-16);padding:var(--sp-10) var(--sp-12);background:var(--a-card);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);font-size:var(--fs-body)}
 .defblk .dl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;padding-top:2px}
-.namelist{display:flex;flex-direction:column;gap:2px;margin-top:var(--sp-4)}
-.namelist .nm{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.namelist .nm b{color:var(--a-ink);font-weight:600}
-.namelist .btn{align-self:flex-start;margin-top:2px}
 
 /* 액션 · 진행 · 결과 · 로그 */
 .run-actions{display:flex;align-items:center;gap:var(--sp-12);margin-top:var(--sp-16);flex-wrap:wrap}
@@ -296,8 +274,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .dg-side .run-row{flex-wrap:wrap;row-gap:var(--sp-4)}
 .dg-side .run-row>.lbl{flex:1 0 100%}
 .dg-side .run-row>.field{flex:1 1 100%}
-#jobMirror{max-height:420px;overflow:auto}
-.job-confirm-sheet-body #jobMirror{max-height:none;height:100%}
+/* (구 #jobMirror 420px 캡·확인 펼침 면 높이 해제 규칙은 표 없는 한 줄 재편 — U2 §2.13 —
+   과 함께 걷혔다: 한 줄은 캡이 필요 없고 펼침 면 자체가 사망했다.) */
 /* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
    종전 세로 적층으로 복귀한다(1440 기본창=duo, 1180급 협폭=stack). */
 @container session-panel (max-width:900px){

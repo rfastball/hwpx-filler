@@ -154,30 +154,20 @@ def test_missing_template_is_danger(tmp_path):
     assert errs and errs[0].level == "danger"
 
 
-def test_field_states_unmet_and_acknowledge(tmp_path):
+def test_field_states_report_missing_without_an_ack_axis(tmp_path):
+    """U2 §2.13 — 필드축 ack 는 폐기됐다: 빈 값은 상태(missing)로 보고되고, 그 자체로
+    게이트를 닫지 않는다(닫는 것은 blank_set 검토 요구 — screen_job 소관)."""
     vm = _vm(tmp_path)
     states = {s.name: s for s in vm.field_states([0, 1])}
     assert states["공고명"].state == "filled"
-    assert states["추정가격"].state == "missing" and not states["추정가격"].acknowledged
-    assert vm.unmet_blanks([0, 1]) == ["추정가격"]      # 미확인 미입력 = 게이트 닫힘
-
-    vm.acknowledge("추정가격")
-    acked = {s.name: s.acknowledged for s in vm.field_states([0, 1])}
-    assert acked["추정가격"] is True
-    assert vm.unmet_blanks([0, 1]) == []               # 확인 → 게이트 열림
-
-    vm.reset_acks()
-    assert vm.unmet_blanks([0, 1]) == ["추정가격"]      # 초기화 → 다시 닫힘
-
-
-def test_unacknowledge_reopens_gate_toggle(tmp_path):
-    """UD-19: ack 재클릭 철회(unacknowledge)가 제자리에서 게이트를 다시 닫는다."""
-    vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
+    assert states["추정가격"].state == "missing"
+    assert vm.blank_fields([0, 1]) == ["추정가격"]      # 빈 값 판정의 단일 원천
+    # ack 상태기계는 사망했다 — 부활하면 승인(blank_set)과 판정이 두 벌이 된다.
+    for dead in ("acknowledge", "unacknowledge", "reset_acks", "acked_count", "unmet_blanks"):
+        assert not hasattr(vm, dead), f"폐기된 ack 표면이 부활했습니다: {dead}"
+    assert not hasattr(states["추정가격"], "acknowledged")
+    # 빈 값이 있어도 링1 게이트는 전제조건만 본다(§2.13 — 승인 단이 blank_set 을 진다).
     assert vm.gate_state([0, 1], "out").enabled is True
-    vm.unacknowledge("추정가격")                         # 철회 → 미입력 재계상
-    gate = vm.gate_state([0, 1], "out")
-    assert gate.enabled is False and gate.level == "warn" and "추정가격" in gate.text
 
 
 def test_gate_absorbs_preconditions_inline(tmp_path):
@@ -191,7 +181,6 @@ def test_gate_absorbs_preconditions_inline(tmp_path):
     assert gate.enabled is False and gate.level == "warn" and "데이터" in gate.text
 
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")                            # 미입력 게이트 해소
     # 저장 폴더 미지정 → 인라인 warn(모달 아님).
     gate = vm.gate_state([0, 1])
     assert gate.enabled is False and gate.level == "warn" and "저장 폴더" in gate.text
@@ -207,7 +196,7 @@ def test_gate_absorbs_preconditions_inline(tmp_path):
 def test_field_states_empty_without_data(tmp_path):
     vm = RunViewModel(_job(tmp_path))                    # 데이터 미겨눔
     assert vm.field_states([0]) == []
-    assert vm.unmet_blanks([0]) == []
+    assert vm.blank_fields([0]) == []
 
 
 def test_declared_blank_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
@@ -405,21 +394,19 @@ def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
 
 
 # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
-def test_gate_state_single_decision_drift_unmet_open(tmp_path):
-    """게이트 표시 결정(활성/level/text)이 vm 단일 산출 — 위젯 재조립 없음(RC-23)."""
+def test_gate_state_single_decision_drift_open(tmp_path):
+    """게이트 표시 결정(활성/level/text)이 vm 단일 산출 — 위젯 재조립 없음(RC-23).
+
+    구 「미확인 미입력(warn)」 단은 필드축 ack 폐기(U2 §2.13)로 죽었다 — 빈 값이 있어도
+    링1 게이트는 전제조건 축만 보고, 표식 승인은 blank_set 검토 요구(호출측)가 진다.
+    """
     vm = _vm(tmp_path)
 
-    # 미확인 미입력 → warn 차단.
-    gate = vm.gate_state([0, 1])
-    assert gate.enabled is False and gate.level == "warn"
-    assert "빈 값" in gate.text and "추정가격" in gate.text
-
-    # 확인(ack) + 전제조건 충족(저장 폴더) → 열림(문구 없음).
-    vm.acknowledge("추정가격")
+    # 빈 값(추정가격)이 있어도 전제조건이 충족되면 링1 게이트는 열린다(§2.13).
     gate = vm.gate_state([0, 1], "out")
     assert gate.enabled is True and gate.level == "" and gate.text == ""
 
-    # 드리프트 → danger 차단(미입력보다 우선).
+    # 드리프트 → danger 차단.
     _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
     gate = vm.gate_state([0, 1])
     assert gate.enabled is False and gate.level == "danger"
@@ -428,7 +415,6 @@ def test_gate_state_single_decision_drift_unmet_open(tmp_path):
 
 def test_gate_state_read_error_fails_closed(tmp_path):
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
     vm.job.template_path = str(tmp_path / "broken.hwpx")
     gate = vm.gate_state([0])
@@ -470,14 +456,17 @@ def test_refresh_is_single_snapshot_and_parses_template_once(tmp_path, monkeypat
     assert snap.gate.enabled is False and snap.gate.level == "warn"
 
 
-def test_set_acquired_resets_acks_atomically(tmp_path):
-    """RC-22 — 직접 겨눔(set_acquired)이 reset_acks 를 내장: stale ack 게이트 통과 차단."""
-    vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
-    assert vm.unmet_blanks([0, 1]) == []          # 확인됨(게이트 열림)
+def test_set_acquired_swaps_data_atomically(tmp_path):
+    """RC-22 — 직접 겨눔(set_acquired)이 datasource·records 를 원자 교체한다.
 
-    vm.set_acquired(_Src(), _Src().records())     # 새 데이터 직접 겨눔
-    assert vm.unmet_blanks([0, 1]) == ["추정가격"]  # ack 이월 없음 — 다시 닫힘
+    구 「reset_acks 내장」 계약은 필드축 ack 폐기(U2 §2.13)로 대상이 사라졌다 — 빈 값
+    집합은 이제 승인 지문 성분이라 데이터가 갈리면 승인이 키 결속으로 자동 무효가 된다.
+    """
+    vm = _vm(tmp_path)
+    fresh = _Src()
+    vm.set_acquired(fresh, fresh.records())       # 새 데이터 직접 겨눔
+    assert vm.datasource is fresh
+    assert vm.blank_fields([0, 1]) == ["추정가격"]  # 빈 값 판정은 새 데이터 기준
 
 
 # ------------------------------------------------ 소스 포인터 선언 프로토콜(RC-25)
@@ -596,14 +585,13 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
 
 # ------------------------------------------------ 검토 요구의 게이트 자리(재작성 F5)
 def test_review_requirement_sits_after_preconditions_and_before_open(tmp_path):
-    """지도 §10.12 판정 F — 서열은 드리프트·토큰(danger) > 미입력 > 전제조건 > 검토 > 열림.
+    """지도 §10.12 판정 F — 서열은 드리프트·토큰(danger) > 전제조건 > 검토 > 열림(미입력 단은 U2 §2.13 로 사망).
 
     검토가 **전제조건보다 뒤**인 것이 하중이다: 선택 0건에서는 미리보기에 진입하지 않는
     것이 불변식(§18.11-6)이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가
     된다(빈 화면을 앞에 두고 확인을 요구하는 자리).
     """
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     req = review_requirement(vm.job)  # 완주 이력 없음 = 새 작업(§13-3)
     assert req.required
 
@@ -624,7 +612,6 @@ def test_review_requirement_sits_after_preconditions_and_before_open(tmp_path):
 def test_drift_outranks_review_requirement(tmp_path):
     """구조 불일치(danger)가 먼저다 — 고칠 수 없는 작업에 미리보기부터 열게 하지 않는다."""
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
     gate = vm.refresh([0, 1], "out", review_unmet=review_requirement(vm.job)).gate
     assert gate.reason == "drift" and gate.level == "danger"
@@ -633,7 +620,6 @@ def test_drift_outranks_review_requirement(tmp_path):
 def test_no_review_requirement_leaves_the_gate_open(tmp_path):
     """§13-2 — 규칙이 그대로면 미리보기는 선택이고 게이트는 열려 있다."""
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     assert vm.refresh([0, 1], "out", review_unmet=None).gate.enabled is True
 
 
@@ -645,7 +631,6 @@ def test_path_length_warns_without_blocking_generation(tmp_path):
     아니라 사전검증 경고이고, 문안도 단정하지 않는다("실패한다"가 아니라 "할 수 있다").
     """
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     vm.job.filename_pattern = "{{공고명}}" + "가" * 250
     status = vm.refresh([0, 1], "C:/out")
     assert status.gate.enabled is True, "휴리스틱이 생성을 막고 있습니다."
@@ -658,7 +643,6 @@ def test_path_length_is_silent_where_the_limit_does_not_exist(tmp_path, monkeypa
     """휴리스틱은 그것이 참인 환경에서만 말한다 — POSIX 에 260 은 없다."""
     monkeypatch.setattr("hwpxfiller.naming.os.name", "posix")
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     vm.job.filename_pattern = "{{공고명}}" + "가" * 250
     status = vm.refresh([0, 1], "/out")
     # 이 픽스처는 빈 값이 있어 preflight 자체는 warn 이다 — 재는 것은 **경로 길이 절이
@@ -669,7 +653,6 @@ def test_path_length_is_silent_where_the_limit_does_not_exist(tmp_path, monkeypa
 
 def test_short_paths_do_not_warn(tmp_path):
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     status = vm.gate_state([0, 1], "C:/out")
     assert status.enabled is True
 
@@ -680,7 +663,6 @@ def test_audit_and_table_share_one_captured_timestamp(tmp_path):
     from datetime import datetime as _dt
 
     vm = _vm(tmp_path)
-    vm.acknowledge("추정가격")
     vm.job.filename_pattern = "doc-{{date:HHmmSS}}"
     fixed = _dt(2026, 1, 2, 3, 4, 5)
     audit = vm.refresh([0, 1], "C:/out", now=fixed).audit
