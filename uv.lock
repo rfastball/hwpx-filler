@@ -119,7 +119,7 @@ wheels = [
 
 [[package]]
 name = "hwpx-filler"
-version = "0.3.0rc1"
+version = "0.3.0rc2"
 source = { editable = "." }
 dependencies = [
     { name = "lxml" },
