@@ -19,6 +19,7 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp.screen_job import JobController
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
@@ -350,6 +351,159 @@ def test_two_candidates_get_no_suggestion(tmp_path):
     _extra_job(ctrl, "다른작업", favorited_at="2026-07-20T09:00:00")
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.snapshot()["candidates"]["suggested"] == ""
+
+
+def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
+    """후보 카드의 템플릿 정체 + 「연결 상태」(U2 §4 판정 B·C·F, #342).
+
+    죽은 「선택한 작업」 존의 승계 payload: 활성 카드 확장 부제(파일명)·⋮(전체 경로)가
+    카드 자신의 값을 읽고, `template_missing` 경보는 카드 「연결 상태」 축으로 옮겨간다 —
+    문안(`conn_label`)은 Python 이 정본으로 낸다(텍스트가 정본, 색은 강조). §18.4 는
+    available 판정에 Template 읽기를 섞지 않지만(판정 F) 부재는 파일 존재 검사 하나라
+    후보 축에서 이미 말한다 — 눌러본 뒤에 차단하는 것은 뒤늦은 경보다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    card = ctrl.snapshot()["candidates"]["top"][0]
+    assert card["template_name"] == "t.hwpx"
+    assert card["template_path"].endswith("t.hwpx")           # ⋮ 가 겨눌 전체 경로
+    assert card["template_missing"] is False
+    assert card["conn_label"] == ""                            # 정상은 조용히(F30 동형)
+
+    Path(card["template_path"]).unlink()                       # 템플릿 파일 소실 재현
+    after = ctrl.snapshot()["candidates"]["top"][0]
+    assert after["template_missing"] is True                   # available 은 유지(§18.4)
+    assert after["conn_label"] == "템플릿 없음"                # 경고 문안도 Python 정본
+
+
+# 재연결 도달 불변식의 **조건 조합 순회**(#342 리뷰 3라운드 근본 조치).
+#
+# 세 라운드가 같은 결함류를 세 조건에서 각각 냈다(순위 슬라이스 밖 / ranked 밖 / 데이터
+# 미마운트). 뿌리는 도달 보장을 **후보 구획**(데이터·호환성·슬라이스 셋에 걸린 투영)에
+# 얹은 것이고, 조건을 하나씩 때우면 다음 조건에서 또 샌다. 그래서 시나리오를 쌓는 대신
+# 불변식 하나를 세우고 그 조건 공간을 순회한다:
+#
+#   **활성 작업이 있고 템플릿이 부재면, 세션 스냅샷이 그 사실과 문안을 싣는다.**
+#
+# 그것이 곧 화면의 도달 보장이다 — 액션바(상수 높이 층)가 이 두 값만 읽어 「연결 상태」와
+# 「템플릿 다시 연결…」을 세우고, 그 층엔 조건이 없다(정적 배선은 test_web_dom_contract
+# 의 승계 계약이 못박는다).
+_REACH_CASES = [
+    # (이름, 데이터, 다른 available 작업 수 — 활성의 순위 슬라이스 소속을 가른다)
+    ("데이터 없음", None, 0),
+    ("데이터 있음·슬라이스 안", "compatible", 0),
+    ("데이터 있음·슬라이스 밖", "compatible", 6),
+    ("데이터 있음·비적격(needs)", "incompatible", 0),
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "data_kind", "others"),
+    [(c[0], c[1], c[2]) for c in _REACH_CASES],
+    ids=[c[0] for c in _REACH_CASES],
+)
+def test_relink_stays_reachable_for_the_active_job_in_every_state(
+    tmp_path, label, data_kind, others
+):
+    """불변식: 활성 작업 + 템플릿 부재 → 세션 축이 재연결 도달의 근거를 싣는다.
+
+    데이터 유/무 × 호환성(적격·비적격) × 순위 슬라이스(안·밖) 어느 조합에서도 참이어야
+    한다. 후보 구획(`candidates.top`)은 이 단언의 대상이 **아니다** — 그 구획은 조건에
+    걸리는 투영이고, 도달 보장을 거기 얹은 것이 세 라운드 결함의 뿌리였다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    for i in range(others):                       # 최근 실행 계층 — 미사용 활성을 밀어낸다
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+    if data_kind == "compatible":
+        ctrl.load_data_path(_data_csv(tmp_path))
+    elif data_kind == "incompatible":
+        other = tmp_path / "other.csv"
+        other.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
+        ctrl.load_data_path(str(other))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    Path(ctrl.snapshot()["template_path"]).unlink()            # 템플릿 소실 재현
+
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["job_name"] == "공고서"
+    assert snap["template_missing"] is True, (
+        f"[{label}] 세션 축이 템플릿 부재를 말하지 않습니다 — 재연결 도달 보장 소멸."
+    )
+    assert snap["conn_label"] == "템플릿 없음", (
+        f"[{label}] 연결 상태 문안이 비었습니다(텍스트가 정본, 판정 C)."
+    )
+
+
+def test_relink_reach_is_quiet_when_nothing_is_wrong(tmp_path):
+    """불변식의 음성 대조 — 정상·미선택에서 그 축은 조용하다(거짓 경보 금지).
+
+    부재만 말하는 축이라야 경보가 값을 갖는다. 작업 미선택 상태에서 빈 경로를 「템플릿
+    없음」으로 부르면 화면이 **없는 작업의 부재**를 경보한다(#342 3R 에서 함께 고친
+    술어 분기: 구 vm-None 가지는 빈 경로를 정상으로 봐 카드 판정과도 어긋났다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.initial()["template_missing"] is False         # 미선택 = 물을 대상 없음
+    assert ctrl.initial()["conn_label"] == ""
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["template_missing"] is False                   # 정상은 조용히(F30)
+    assert snap["conn_label"] == ""
+
+
+def test_blocked_axis_name_follows_the_gate_order_not_template_state(tmp_path):
+    """막는 축의 이름은 **게이트 서열**이 낸다(#342 리뷰 P2 — 데이터 존 라벨 보존).
+
+    `workbench_entry_gate` 의 서열은 데이터 → 행 → 템플릿이다. 템플릿이 부재여도 **선택
+    0건이면 행 선택이 먼저**이므로 축 이름도 `no_rows` 여야 한다 — 표면은 이 이름 하나를
+    읽어 「현재 데이터」를 지목한다. 종전엔 표면이 `template_missing` 을 직접 보고 무조건
+    문서 선택기를 가리켜, 게이트가 낸 서열을 덮었다(같은 상태를 두 곳이 판정).
+    """
+    ctrl, _ = _controller(tmp_path)
+    txt = tmp_path / "기안.txt"
+    txt.write_text("{{공고명}}", encoding="utf-8")
+    ctrl.registry.save(Job(name="기안작업", template_path=str(txt)))
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "기안작업"})
+    txt.unlink()                                        # 템플릿 부재 + 선택 0건
+
+    blocked = ctrl.snapshot()
+    assert blocked["template_missing"] is True          # 부재는 부재대로 참이고
+    assert blocked["gate"]["reason"] == "no_rows", (     # 그래도 먼저 할 일은 행 선택이다
+        "템플릿 부재가 행 선택 안내의 축 이름을 덮었습니다(게이트 서열 무시)."
+    )
+    assert "처리할 항목을 선택하세요" in blocked["gate"]["text"]
+
+    ctrl.dispatch("set_all", {})                        # 행을 고르면 그제야 템플릿 축
+    after = ctrl.snapshot()
+    assert after["gate"]["reason"] == "template_missing", after["gate"]
+    assert "템플릿 파일을 찾을 수 없습니다" in after["gate"]["text"]
+
+
+def test_prework_gate_names_the_axis_it_blocks_on(tmp_path):
+    """작업 미선택 게이트도 축 이름을 낸다 — 표면 지목의 단일 출처(#342 리뷰 P2)."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.initial()["gate"]["reason"] == "no_data"
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["gate"]["reason"] == "no_rows"
+    ctrl.dispatch("set_all", {})
+    assert ctrl.snapshot()["gate"]["reason"] == "no_job"
+
+
+def test_active_job_out_of_slice_is_not_smuggled_into_the_candidate_list(tmp_path):
+    """후보 구획은 **순위 그대로**다 — 도달 보장이 세션 축으로 갔으므로 덧붙이지 않는다.
+
+    1R·2R 의 조건부 덧붙임(순위 밖 활성·ranked 밖 활성을 `top` 말미에 끼우기)은 근본
+    조치로 잉여가 됐다. 되깎지 않으면 같은 사실을 두 곳이 보장하고, 「외 N건」 수치 보정
+    같은 화해 코드가 그 위에 쌓인다(#338 잣대: 화해 코드를 남기지 않는다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    for i in range(6):
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})            # 활성 = 순위 7위(미사용)
+    cands = ctrl.snapshot()["candidates"]
+    assert len(cands["top"]) == MAIN_TOP_N                     # 슬라이스는 슬라이스다
+    assert "공고서" not in [c["name"] for c in cands["top"]]
+    assert cands["more"] == 2                                  # 잘린 수 = 보정 없는 산술
 
 
 def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):

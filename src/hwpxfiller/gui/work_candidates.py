@@ -199,6 +199,22 @@ def preferred_promotion(
 TAB_AVAILABLE = "available"
 TAB_NEEDS_ACTION = "needs_action"
 
+# 게이트 사유 축 — :class:`~hwpxfiller.gui.run_state.GateState` 의 ``reason`` 어휘를 이 층의
+# 게이트까지 넓힌 것이다(그쪽 값: drift·template_unreadable·name_tokens·review_required).
+#
+# **왜 이름이 필요한가**: 표면은 막힌 게이트 옆에 「어느 구획으로 가야 하는가」를 붙이는데,
+# 그 지목을 표면이 상태에서 재유도하면 판정이 두 곳에 산다 — 실제로 그렇게 새 있었다(#342
+# 리뷰: 표면이 `template_missing` 을 직접 보고 접두를 붙여, 행 선택이 먼저인 상태에서도
+# 문서 선택기를 가리켰다). 사유 이름은 **막는 축**이고, 그 축을 어느 구획이 소유하는지는
+# 표면의 지도(gateStep)가 안다 — 판정은 여기, 어휘는 저기.
+GATE_REASON_NO_DATA = "no_data"
+GATE_REASON_NO_ROWS = "no_rows"
+GATE_REASON_NO_CANDIDATES = "no_candidates"
+GATE_REASON_NO_JOB = "no_job"
+#: 템플릿 축(부재·미상 매체) — 이 축은 **구획이 없다**(구 「선택한 작업」 존이 소유했고
+#: 사망했다, U2 §4). 복구는 액션바의 연결 상태·재연결이 곁에서 진다(#342 3R).
+GATE_REASON_TEMPLATE_MISSING = "template_missing"
+
 
 @dataclass(frozen=True)
 class BrowseResult:
@@ -276,16 +292,26 @@ def prework_gate(
 
     ``has_candidates`` 는 **선택 가능한(available) 후보의 존재**다 — needs_action 뿐인
     목록으로 True 를 주면 "선택하세요"가 이행 불가능한 지시가 된다(#302 리뷰 P2).
+
+    각 갈래는 **막는 축의 이름**(``reason``)을 함께 낸다 — 표면의 구획 지목이 그 이름
+    하나만 읽게 하려는 것이다(상태 재유도 금지, #342 리뷰 P2).
     """
     if not has_data:
-        return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")
+        return GateState(
+            False, "warn", "데이터 파일을 먼저 선택하세요.", reason=GATE_REASON_NO_DATA,
+        )
     if selected_count == 0:
-        return GateState(False, "warn", "처리할 항목을 선택하세요.")
+        return GateState(
+            False, "warn", "처리할 항목을 선택하세요.", reason=GATE_REASON_NO_ROWS,
+        )
     if not has_candidates:
         return GateState(
-            False, "warn", "현재 데이터에 사용할 수 있는 문서 작업이 없습니다."
+            False, "warn", "현재 데이터에 사용할 수 있는 문서 작업이 없습니다.",
+            reason=GATE_REASON_NO_CANDIDATES,
         )
-    return GateState(False, "warn", "문서 작업을 선택하세요.")
+    return GateState(
+        False, "warn", "문서 작업을 선택하세요.", reason=GATE_REASON_NO_JOB,
+    )
 
 
 def workbench_entry_gate(
@@ -298,16 +324,26 @@ def workbench_entry_gate(
     하면 같은 판정이 두 곳에 산다(작업대 복사 게이트가 그 권위다). 그래서 이 게이트는
     **진입 자격**만 본다 — 데이터가 있고 처리할 항목이 하나 이상인가(§18.10 수용 6:
     선택 0건에서는 TXT 세션에 진입하지 않고 첫 레코드를 대신 쓰지 않는다).
+
+    서열은 **데이터 → 행 → 템플릿**이다(이 순서가 곧 사용자가 할 일의 순서다). 표면이
+    이 순서를 다시 세지 않게 각 갈래가 축 이름(``reason``)을 함께 낸다 — 종전엔 표면이
+    `template_missing` 을 직접 보고 접두를 붙여, **행 선택이 먼저인 상태에서도** 문서
+    선택기를 가리켰다(#342 리뷰 P2: 같은 상태를 두 곳이 판정한 자리).
     """
     if not has_data:
-        return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")
+        return GateState(
+            False, "warn", "데이터 파일을 먼저 선택하세요.", reason=GATE_REASON_NO_DATA,
+        )
     if selected_count == 0:
-        return GateState(False, "warn", "처리할 항목을 선택하세요.")
+        return GateState(
+            False, "warn", "처리할 항목을 선택하세요.", reason=GATE_REASON_NO_ROWS,
+        )
     if not template_ready:
         # 템플릿이 사라졌으면 **버튼이 먼저 정직해야** 한다(5R P2): 열리는 척하다 진입
         # 시점에 파일 읽기로 터지면, 사용자는 누를 수 있는 버튼을 누르고 아무 설명도 못 듣는다.
         return GateState(
             False, "danger",
             "템플릿 파일을 찾을 수 없습니다. 템플릿을 다시 연결한 뒤 진행하세요.",
+            reason=GATE_REASON_TEMPLATE_MISSING,
         )
     return GateState(True, "ok", "선택한 항목을 작업대에서 검토하고 복사합니다.")

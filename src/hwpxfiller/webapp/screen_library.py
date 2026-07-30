@@ -225,6 +225,11 @@ class LibraryController:
             "tags": dict(row.tags),
             "primary": primary_action(row),
             "template_name": row.template_name,
+            # 템플릿 전체 경로(U2 §2.20, #342) — 상세의 「열기」·「폴더에서 보기」가 겨눈다.
+            # 경보(템플릿 미연결 N건)는 이 화면이 내는데 파일을 열거나 폴더로 갈 길이 이
+            # 화면에 없었다(계기판의 짝). 경로 검증은 백엔드 화이트리스트(app.py
+            # ``_validate_owned``)가 이미 소유한다 — 신설은 이 한 칸뿐이다.
+            "template_path": job.template_path,
             # §19.6: HWPX 는 파일 이름 규칙을, 온나라 기안은 실행 방식을 보여준다.
             "filename_pattern": row.filename_pattern if mode == "hwpx" else "",
             "run_note": (

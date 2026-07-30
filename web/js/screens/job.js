@@ -1,6 +1,7 @@
 /* 「문서 만들기」 화면 — 세션 패널 하나(R-flow #90 · 재작성 R1·F7).
    세션 패널 = v6 `screen-data` 2열(좌 `.dg-main` 현재 데이터·거울·결과 / 우 `.dg-side`
-   문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
+   문서 선택기·생성 준비 — 구 「선택한 작업」 존은 U2 §4 판정 A 로 사망, 활성 카드와
+   액션바 이름이 승계. 구 4존 znum 은 이 형상으로 대체),
    정의 편집은 자기 화면(#scr-editor, 재작성 F7)으로 나갔다 — 이 화면은 실행 세션 하나다.
    좌 master 작업 목록은 F2 PR-B 에서 사망했다(지도 §10.9): 작업 선택은 데이터가 준비된 뒤
    후보 side-card·문서 탐색 면이 지고, 목록 관리 6동사와 데이터 없는 상태의 작업 찾기는
@@ -82,7 +83,7 @@
       syncModeDisplay(hasJob);
       // 데이터-우선(§18.2): 세션 4존은 작업 미선택에도 산다 — 스냅샷이 vm-None 상태를
       // 전 키 유효값으로 방출하므로(prework 게이트·빈 거울·후보) 렌더러는 무조건 돈다.
-      renderHeader(s);
+      renderActiveIdentity(s);
       renderData(s);
       renderPreflight(s);
       renderMirror(s);
@@ -171,34 +172,29 @@
     });
   }
 
-  /* ---- 헤더 존 — 작업 정체(이름·템플릿·재연결 동선) ---- */
-  function renderHeader(s) {
-    const tpl = $("jobHeadTpl");
-    if (!s.has_job) {
-      // 작업 미선택(데이터-우선 진입) — "템플릿 경로가 비었다"는 작업 있는 상태의 문안이라
-      // 여기 쓰면 거짓말이다. 선택하면 채워질 자리임을 담백하게 말한다.
-      $("jobHeadTitle").textContent = "";
-      tpl.textContent = "문서 작업을 선택하면 템플릿 정보가 표시됩니다.";
-      $("jobRelink").style.display = "none";
-      $("jobRelink").innerHTML = "";
-      return;
-    }
-    $("jobHeadTitle").textContent = s.job_name || "";
-    tpl.innerHTML = s.template_name
-      ? `템플릿 <span class="mono">${esc(s.template_name)}</span> ${PathTrack.affordances(s.template_path)}`
-      : `템플릿 경로가 비어 있습니다. 편집 모드의 템플릿 탭에서 지정하세요.`;
-    // 템플릿 다시 연결(#67)은 복구 동선 — 파일이 실제로 없을 때만 노출(F30, "정상은 조용히").
-    const relink = $("jobRelink");
-    if (s.template_missing) {
-      relink.style.display = "block";
-      relink.className = "note warnbox";
-      relink.innerHTML =
-        `템플릿 파일을 찾을 수 없습니다. ` +
-        `<button class="btn sm" data-act="relink-template" data-busy-lock>템플릿 다시 연결…</button>`;
-    } else {
-      relink.style.display = "none";
-      relink.innerHTML = "";
-    }
+  /* ---- 활성 작업의 정체·연결 상태(액션바) — 죽은 「선택한 작업」 존의 승계(U2 §4-A) ----
+     존이 죽은 뒤 「지금 어느 작업으로 생성하는가」를 말하는 것이 활성 카드 하이라이트
+     하나인데, 그 카드는 표를 훑으면 스크롤 위로 사라진다. sticky 사이드바는 기각됐으므로
+     (§5.2) 상수 높이 층인 액션바가 작업 이름을 겸한다 — 「이 작업으로 문서 생성」의
+     「이 작업」을 같은 줄이 말한다.
+
+     **재연결 도달 보장도 여기가 진다**(#342 리뷰 3라운드 근본 조치). 종전엔 그 의무를 경고
+     후보 카드가 졌는데, 후보 구획은 데이터 마운트·호환성·순위 슬라이스 셋에 걸린 **투영**
+     이라 조건마다 구멍이 하나씩 났다(같은 결함류 3건: 슬라이스 밖 → ranked 밖 → 데이터
+     미마운트). 조건을 하나씩 때우는 대신 **조건이 없는 축**으로 옮긴다: 이 층은 작업이
+     선택돼 있으면 언제나 서고, 판정(`template_missing`)·문안(`conn_label`)은 세션 스냅샷이
+     그대로 흐른다(표면 재조립 없음). 카드의 「연결 상태」·경고 클릭은 그대로 살지만 그건
+     *렌더된 카드에 대한* 계약이지 도달 보장이 아니다. */
+  function renderActiveIdentity(s) {
+    const on = !!s.has_job;
+    $("jobActionName").textContent = on ? (s.job_name || "") : "";
+    const missing = on && !!s.template_missing;
+    const conn = $("jobActionConn");
+    conn.hidden = !missing;
+    conn.textContent = missing ? (s.conn_label || "") : "";
+    // 버튼 가용성은 setBusy 가 렌더 말미에 [data-busy-lock] 을 일괄 복원하므로 여기서는
+    // **존재 여부**(hidden)만 정한다 — disabled 로 숨기면 그 복원이 되살린다.
+    $("jobActionRelink").hidden = !missing;
   }
 
   /* ---- 데이터 존 — 겨눔 라벨·자동 조준 재진술 ---- */
@@ -280,27 +276,110 @@
   function candCard(c, s) {
     const active = c.name === s.job_name;
     const fav = c.favorited === true;
+    const warn = c.template_missing === true;
     const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
     // 카드 부제의 **작업 방식 텍스트는 늘 유지된다**(§19.3 마지막 문장) — 한 방식만 있어
     // 머리글이 퇴화해도 여기는 남는다. 색만으로 방식을 구별하지 않는다는 계약의 이행이기도
     // 하다(텍스트가 늘 함께 선다).
+    // 「연결 상태」(U2 §4 판정 C, #342)도 같은 계약이다: 텍스트가 정본이고 색은 강조 —
+    // 문안은 Python(conn_label)이 내고 여기는 그린다. 정상은 조용히(빈 문자열 = 무표시).
     const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
       `<span class="cand-mode">${esc(c.mode_label || "")}</span>` +
-      `<span class="cand-run">${esc(c.last_run_label || "")}</span>`;
+      `<span class="cand-run">${esc(c.last_run_label || "")}</span>` +
+      (c.conn_label ? `<span class="cand-conn">${esc(c.conn_label)}</span>` : "");
+    // 활성 카드 확장 부제(판정 B) — 죽은 「선택한 작업」 존의 템플릿 파일명 승계. 전 카드에
+    // 주면 side-card 가 같은 파일명 다섯 줄로 늘어나므로 **선택된 하나의 정체**만 확장한다.
+    const tpl = active && c.template_name
+      ? `<span class="cand-tpl mono">${esc(c.template_name)}</span>` : "";
     // 안정 id는 **이름 유래**다(#138 F13 관례의 변형): 별을 누르면 카드가 1순위로 이동하므로
     // 인덱스는 안정 식별자가 아니고, 그러면 preserve.js 가 방금 누른 별로 포커스를 못 돌려
     // 키보드 사용자가 재렌더마다 문서 처음으로 떨어진다. encodeURIComponent 로 특수문자를
     // 회피한다(따옴표·공백이 속성 경계를 깨지 않게).
     const key = encodeURIComponent(c.name);
-    return `<div class="job-cand-card${active ? " active" : ""}${c.suggested ? " suggested" : ""}">` +
+    // 활성 카드 ⋮(판정 B) — 열기·폴더에서 보기. 전 카드에 주면 ⋮ 다섯이 서고 hover 노출이라
+    // 발견성이 더 나쁘다 — 활성 카드에만, 상시 가시로 선다. 내용은 toggleCandMenu 가 만든다.
+    const menu = active && c.template_path
+      ? `<button class="cand-menu" type="button" id="jobCandMenuBtn" data-cand-menu` +
+        ` data-path="${esc(c.template_path)}" data-busy-lock aria-haspopup="menu"` +
+        ` aria-label="'${esc(c.name)}' 템플릿 열기·폴더에서 보기" title="템플릿 열기·폴더에서 보기">⋮</button>`
+      : "";
+    // 경고 카드(판정 D) — 기본 클릭이 선택 대신 재연결 리다이렉트다. 활성+경고면 경고가
+    // 이기므로(차단 사유는 여기서만 말한다) 표식은 활성 여부와 무관하게 싣는다.
+    return `<div class="job-cand-card${active ? " active" : ""}${c.suggested ? " suggested" : ""}` +
+      `${warn ? " warn" : ""}">` +
       `<button class="cand-fav" type="button" id="jobFav-${key}" data-fav="${esc(c.name)}"` +
       ` aria-pressed="${fav}" aria-label="${esc(c.name)} ${verb}" title="${verb}">` +
       `${fav ? "★" : "☆"}</button>` +
       // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
       `<button class="cand-pick" type="button" id="jobCand-${key}" data-busy-lock` +
-      ` data-cand="${esc(c.name)}"` +
+      ` data-cand="${esc(c.name)}"${warn ? ` data-missing="1"` : ""}` +
       ` aria-pressed="${active}"><span class="cand-nm">${esc(c.name)}</span>` +
-      `<span class="cand-meta">${meta}</span></button></div>`;
+      `<span class="cand-meta">${meta}</span>${tpl}</button>${menu}</div>`;
+  }
+
+  /* ---- 활성 카드 ⋮ 메뉴 — 부유 .ctx-menu(그룹 ⋮ 동형: GroupList.createMenu 소유) ----
+     행동 자체는 PathTrack 의 문서 레벨 위임이 받는다(data-track-act·data-path) — 경로 검증
+     화이트리스트·오류 재진술을 그대로 상속하고, 여기는 열고 닫기만 진다. 열림 판정은 모듈
+     상태가 아니라 메뉴 DOM 에서 파생한다(가변 상태 예산 — 메뉴는 하나뿐이고 내용이 고정이라
+     정체를 따로 들 것이 없다; 그룹 ⋮ 의 menuFor 는 「어느 그룹인가」가 있어 상태가 필요했다). */
+  const candMenu = window.GroupList.createMenu({ menuId: "jobCandMenu" });
+
+  function candMenuOpen() {
+    const m = document.getElementById("jobCandMenu");
+    return !!m && m.style.display !== "none";
+  }
+
+  function closeCandMenu() {
+    candMenu.hide();
+  }
+
+  function toggleCandMenu(btn) {
+    if (candMenuOpen()) { closeCandMenu(); return; }
+    const p = btn.getAttribute("data-path") || "";
+    // 라벨은 PathTrack 기존 어휘 그대로다(U2 §2.20 ⑸ — 어휘는 바꾸지 않는다).
+    candMenu.show(
+      `<button type="button" data-track-act="open" data-path="${esc(p)}">열기</button>` +
+      `<button type="button" data-track-act="reveal" data-path="${esc(p)}">폴더에서 보기</button>`,
+      btn);
+  }
+
+  /* 재연결 흐름의 **단일 몸통** — 입구는 둘이다(U2 §4 판정 D, #342): ①경고 후보 카드의
+     기본 클릭(선택의 대체) ②액션바 「템플릿 다시 연결…」(도달 보장 축, 3R). 두 입구가
+     각자 흐름을 들면 확인 문안·가드·발신 순서가 갈린다.
+     클릭 의도(선택)와 실제 동작(재연결)이 다르므로 **왜 다른지 먼저 재진술**하고(다이얼로그가
+     겸한다), 활성 작업이면 세션 재구성(T1 동류)이라 무장 시 손실 확인을 이어 받는다.
+     재연결 커밋이 **성사된 뒤에야** 선택이 나간다(브리지 발신 순서 규약) — 실패·취소면
+     선택하지 않고 카드는 경고로 남는다. */
+  async function relinkTemplateFor(name) {
+    const active = !!(LAST && LAST.job_name === name);
+    const ok = await window.Modal.confirm({
+      title: "템플릿 다시 연결",
+      body: active
+        ? `'${name}' 작업의 템플릿 파일을 찾을 수 없어 문서를 만들 수 없습니다.\n` +
+          `템플릿을 다시 연결하면 작업을 다시 불러옵니다.`
+        : `'${name}' 작업은 템플릿 파일을 찾을 수 없어 바로 선택할 수 없습니다.\n` +
+          `템플릿을 다시 연결하면 이어서 이 작업을 선택합니다. 실패하면 선택하지 않습니다.`,
+      confirmLabel: "템플릿 다시 연결…", cancelLabel: "취소",
+    });
+    if (!ok) return;
+    if (active) {
+      // 재연결 확정은 기선택 작업을 재적재해 세션(선택·필터·겨눔)을 재구성한다 — T1 동류
+      // 파괴 전이이므로 무장 시 먼저 확인한다(구 존 재연결 버튼의 가드 승계, 리뷰 #0).
+      const armed = await confirmDestructiveIfArmed(
+        "템플릿 다시 연결 확인", "템플릿을 다시 연결하면", "다시 연결하고 버리기");
+      if (!armed) return;
+    }
+    const committed = await Relink.relinkTemplate(SCREEN, name, (msg) => log(msg));
+    // 활성 작업은 백엔드가 커밋과 함께 재적재까지 끝낸다(_do_relink_template) — 여기서
+    // select 를 겹쳐 보내면 같은 재구성이 두 번 돈다.
+    if (!committed || active) return;
+    // 성공 뒤 이어서 선택(판정 D) — 카드는 push 재렌더로 교체됐으므로 id 로 다시 찾는다.
+    const card = document.getElementById("jobCand-" + encodeURIComponent(name));
+    try {
+      await selectJobWithMarker(card, name);
+    } catch (err) {
+      log("작업 열기 실패: " + String((err && err.message) || err));
+    }
   }
 
   /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 라이브러리 행의 별이 같은 경로를 쓴다(두 표면이
@@ -388,7 +467,7 @@
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
     // 데이터·작업이 **둘 다** 없을 때만 흡수처 출구를 세운다(지도 §10.9 판정 C). 작업이
-    // 이미 열려 있으면 화면은 할 말이 있으므로(선택한 작업 구획) 출구는 소음이다.
+    // 이미 열려 있으면 화면은 할 말이 있으므로(액션바의 활성 작업 이름) 출구는 소음이다.
     $("jobNoDataExit").style.display = (!s.has_data && !s.has_job) ? "" : "none";
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
@@ -945,20 +1024,42 @@
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
+  /* 게이트 지목의 **어휘 지도**(#342 리뷰 P2) — 링1 이 낸 사유 축 이름 → 그 축을 소유한
+     구획 캡션. 판정(무엇이 막는가·무엇이 먼저인가)은 게이트가 하고 여기는 이름을 자리로
+     옮기기만 한다. 표면이 상태를 다시 읽어 지목을 만들면 서열이 두 곳에 살고, 실제로 그렇게
+     샜다: `template_missing` 을 직접 보고 접두를 붙이는 바람에 **행 선택이 먼저인** TXT
+     상태(`workbench_entry_gate` 서열 = 데이터 → 행 → 템플릿)에서도 문서 선택기를 가리켰다.
+
+     템플릿 축(`template_missing`·`template_unreadable`)은 **빈 문자열**이다 — 그 축을
+     소유하던 「선택한 작업」 존은 죽었고(U2 §4), 복구는 같은 액션바 줄의 연결 상태·재연결이
+     곁에서 진다(3R). 없는 구획을 가리키느니 아무 데도 가리키지 않는다. */
+  const GATE_ZONE = {
+    no_data: "현재 데이터 · ",
+    no_rows: "현재 데이터 · ",
+    no_candidates: "이 데이터에 사용할 문서 · ",
+    no_job: "이 데이터에 사용할 문서 · ",
+    drift: "본문 확인 · ",
+    name_tokens: "본문 확인 · ",
+    template_missing: "",
+    template_unreadable: "",
+  };
+
   function gateStep(s, g) {
     // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 **구획의
     // 이름**만 표시층에서 결합한다(H-03 승계). R1 재작성으로 4존 znum 이 사라져 구 서수
     // ①②③ 은 가리킬 대상을 잃었다 — 정보(어디로 가야 하는가)는 살리고 표기를 실재하는
     // 구획 캡션으로 바꾼다(죽은 번호를 남기면 지목이 거짓말이 된다).
     if (!g || g.enabled || !g.text) return "";
-    const DATA = "현재 데이터 · ", DOC = "이 데이터에 사용할 문서 · ";
+    // 링1 이 축 이름을 냈으면 그 이름만 읽는다 — 상태 재유도 금지(서열은 게이트의 것).
+    const named = GATE_ZONE[g.reason || ""];
+    if (named !== undefined) return named;
+    // 이름 없는 게이트(빈 값 확인·저장 폴더·이어채우기 등 hwpx warn 갈래)만 자리로 유추한다.
+    // 이 갈래들은 선택된 작업의 본문 축이라 지목이 하나뿐이고, 데이터·행이 안 갖춰졌으면
+    // 그게 먼저다(prework_gate 서열과 같은 걸음).
     const noRows = !s.has_data || !(s.selected_count > 0);
-    // 작업 미선택(데이터-우선 prework)은 데이터가 먼저다 — 데이터·행이 갖춰진 뒤에야
-    // 막힌 곳이 문서 선택기다(prework_gate 의 순서와 같은 걸음).
-    if (!s.has_job) return noRows ? DATA : DOC;
-    if (s.template_missing || g.level === "danger") return "선택한 작업 · ";
-    if (noRows) return DATA;
-    return "본문 확인 · ";
+    if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;
+    if (noRows) return GATE_ZONE.no_data;
+    return GATE_ZONE.drift;
   }
 
   function renderGateAndFolder(s) {
@@ -1404,17 +1505,10 @@
     return Promise.resolve(false);
   }
 
-  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입.
-     재연결 확정은 기선택 작업을 재적재해 세션(선택·필터·겨눔)을 재구성한다 — T1 동류
-     파괴 전이이므로 무장 시 먼저 확인한다(리뷰 #0: 재연결 확인문은 템플릿 경로만
-     재진술해 선택 소실이 조용히 지나갔다). */
-  async function doRelinkTemplate() {
-    if (!(LAST && LAST.job_name)) return;
-    const ok = await confirmDestructiveIfArmed(
-      "템플릿 다시 연결 확인", "템플릿을 다시 연결하면", "다시 연결하고 버리기");
-    if (!ok) return;
-    Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
-  }
+  /* (구 doRelinkTemplate — 「선택한 작업」 존의 「템플릿 다시 연결…」 버튼 — 은 존과 함께
+     사망했다(U2 §4 판정 A, #342). 흐름 자체는 relinkTemplateFor 가 승계한다: 같은 공용
+     Relink.relinkTemplate + 같은 T1 무장 가드에, 입구만 경고 카드 클릭과 액션바 버튼으로
+     바뀌었다.) */
 
   function wire() {
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
@@ -1436,13 +1530,33 @@
         return;
       }
       if (e.target.closest("[data-browse-open]")) { openBrowseSheet(e); return; }
+      // 활성 카드 ⋮(판정 B) — 카드 안 중첩 버튼이라 선택 판정보다 먼저 가른다(별과 동형).
+      const mbtn = e.target.closest("[data-cand-menu]");
+      if (mbtn) { toggleCandMenu(mbtn); return; }
       const btn = e.target.closest("[data-cand]");
-      if (btn && btn.getAttribute("aria-pressed") !== "true") {
+      if (!btn) return;
+      // 경고 카드(판정 D) — 기본 클릭이 선택의 **대체**다. 활성+경고면 경고가 이기므로
+      // 재클릭 무동작 가드(aria-pressed)보다 먼저 판정한다.
+      if (btn.dataset.missing === "1") {
+        relinkTemplateFor(btn.getAttribute("data-cand"));
+        return;
+      }
+      if (btn.getAttribute("aria-pressed") !== "true") {
         // 지연 표지 승계(판정 E) — 큰 레지스트리에서 왕복이 길면 클릭이 아무 일도 안 한
         // 것처럼 보인다. 실패는 완료 존 log 로 재진술(조용한 무반응 금지).
         selectJobWithMarker(btn, btn.getAttribute("data-cand")).catch((err) =>
           log("작업 열기 실패: " + String((err && err.message) || err)));
       }
+    });
+    // 활성 카드 ⋮ 메뉴 — 행동은 PathTrack 문서 위임이 받으므로 여기는 닫기만 진다.
+    $("jobCandMenu").addEventListener("click", (e) => {
+      if (e.target.closest("[data-track-act]")) closeCandMenu();
+    });
+    // ⋮ 바깥 닫기(그룹 ⋮ 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
+    window.Popover.wireDismiss({
+      isOpen: candMenuOpen,
+      contains: (t) => !!(t.closest && (t.closest("#jobCandMenu") || t.closest("[data-cand-menu]"))),
+      close: closeCandMenu,
     });
     // 문서 탐색 면(§18.6) — 탭·검색은 Python 판정 왕복, 행 클릭은 명시 작업 선택.
     $("jobBrowseClose").addEventListener("click", () => window.Modal.close("jobBrowseSheet"));
@@ -1567,10 +1681,6 @@
     $("jobCandidates").addEventListener("click", (e) => {
       if (e.target.closest("[data-cands-exit]")) window.Nav.go("library");
     });
-    // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
-    $("jobRelink").addEventListener("click", (e) => {
-      if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();
-    });
     // 거울(재렌더에도 살아남게 안정 컨테이너에 위임) — 미입력 행 ack + 드리프트 수리 링크.
     $("jobMirror").addEventListener("click", onMirrorClick);
     $("jobMirror").addEventListener("keydown", onMirrorKey);
@@ -1582,6 +1692,11 @@
         // 가로질러 포커스를 유지하게(거울-행 ack 경로와 같은 규율, 리뷰). 밖에서 부르면 body 낙하.
         if (LAST) Preserve.around(() => renderRestate(LAST));
       }
+    });
+    // 액션바 재연결(#342 3R) — 도달 보장 축의 입구. 흐름은 경고 카드와 **한 몸통**이다.
+    $("jobActionRelink").addEventListener("click", () => {
+      if (!(LAST && LAST.job_name)) return;
+      relinkTemplateFor(LAST.job_name);
     });
     $("jobGenBtn").addEventListener("click", async () => {
       // 두 실행 행동 다 **커밋**이다 — 무엇을 대상으로 도는지가 방금 누른 존 변이에 달렸다.

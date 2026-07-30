@@ -91,6 +91,7 @@ from ..gui.work_mode import (
     work_mode_label,
 )
 from ..gui.work_candidates import (
+    GATE_REASON_TEMPLATE_MISSING,
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     TAB_AVAILABLE,
@@ -123,6 +124,26 @@ from .screens import (
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
+
+#: 「연결 상태」 문안(U2 §4 판정 C, #342) — 텍스트가 정본이고 색은 강조다. 세션 축과 후보
+#: 카드가 **같은 문자열**을 써야 같은 상태를 두 이름으로 부르지 않는다.
+_CONN_MISSING_LABEL = "템플릿 없음"
+
+
+def _template_conn(path: str) -> "tuple[bool, str]":
+    """템플릿 연결 상태 ``(부재인가, 「연결 상태」 문안)`` — **단일 술어·단일 문안**.
+
+    #342 리뷰 3라운드의 근본 조치다. 종전엔 같은 질문을 세 자리가 각자 답했고 술어까지
+    갈렸다 — 스냅샷 vm-None 가지는 ``bool(path) and not exists`` 라 **빈 경로를 정상**으로
+    보고했는데, 후보 카드는 ``not path or not exists`` 라 같은 작업을 「템플릿 없음」으로
+    그렸다. 사망 점검표는 「찾을 수 없음」과 「경로가 비어 있음」을 **한 축**(연결 상태)에
+    승계시켰으므로 술어도 하나여야 한다: 둘 다 "이 작업으로는 문서를 만들 수 없다"이고
+    복구 동선도 같은 재연결이다.
+
+    호출측이 ``has_job`` 을 이미 알고 있다(작업이 없으면 물을 대상 자체가 없다).
+    """
+    missing = not path or not Path(path).exists()
+    return missing, (_CONN_MISSING_LABEL if missing else "")
 
 
 def _seat_kinds(job: Job) -> "tuple[bool, bool]":
@@ -817,6 +838,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
           순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
+          이 구획은 **투영**이다 — 데이터 마운트·호환성·순위 슬라이스 셋에 걸린다. 그래서
+          재연결 도달 보장을 여기 얹지 않는다(#342 리뷰 3라운드 근본 조치): 조건마다 구멍이
+          하나씩 나므로 그 의무는 조건이 없는 **세션 축**(``template_missing``·``conn_label``
+          → 액션바)이 진다. 카드의 「연결 상태」·경고 클릭은 *렌더된 카드에 대한* 계약이다.
         - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
           전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
         - ``needs``·``needs_more`` = 확인 필요(needs_action) 이름순 상위 N + 잘린 수.
@@ -836,9 +861,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         by_name = {j.name: j for j in jobs}
         ranked = rank_available(jobs, fields)
         suggested = suggested_work(ranked, active=self.job_name)
+
         top = []
         for r in ranked[:MAIN_TOP_N]:
             job = by_name[r.name]
+            # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 렌더된 카드는 자기 작업의 연결
+            # 상태를 말한다(§18.4 는 Template 읽기를 available 판정 밖에 뒀지만, 부재
+            # 판정은 파일 존재 검사 하나라 이미 싸다 — 판정 F). 술어·문안은 `_template_conn`
+            # 단일 출처다: 세션 축과 문자열이 갈리면 같은 상태를 두 이름으로 부른다.
+            missing, conn_label = _template_conn(job.template_path)
             top.append({
                 "name": r.name,
                 "tier": r.tier,
@@ -855,6 +886,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
                 # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
                 "last_run_label": last_use_label(r.mode, job.last_run_at),
+                # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
+                # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
+                "template_name": Path(job.template_path).name if job.template_path else "",
+                "template_path": job.template_path,
+                "template_missing": missing,
+                "conn_label": conn_label,
             })
         needs = sorted(
             (
@@ -1240,15 +1277,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
             txt_job = next((j for j in jobs if j.name == self.job_name), None)
             tpath = txt_job.template_path if txt_job is not None else ""
+            # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
+            # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
+            tmissing, tconn = _template_conn(tpath)
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
-                template_ready=bool(tpath) and Path(tpath).exists(),
+                template_ready=not tmissing,
             )
             base.update({
                 "template_name": Path(tpath).name if tpath else "",
                 "template_path": tpath,
-                "template_missing": not tpath or not Path(tpath).exists(),
+                "template_missing": tmissing,
+                "conn_label": tconn,
                 # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
                 # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
                 "filename_pattern": "",
@@ -1301,12 +1342,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     False, "danger",
                     "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
                     "템플릿을 다시 연결한 뒤 진행하세요.",
+                    # 막는 축은 템플릿이다 — 구획 지목이 아니라 곁의 재연결이 답이다.
+                    reason=GATE_REASON_TEMPLATE_MISSING,
                 )
+            # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
+            # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
+            umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
             base.update({
                 "template_name": Path(utpath).name if utpath else "",
                 "template_path": utpath,
                 "filename_pattern": "",
-                "template_missing": bool(utpath) and not Path(utpath).exists(),
+                "template_missing": umissing,
+                "conn_label": uconn,
                 "has_data": self.datasource is not None,
                 "record_count": len(self.records),
                 "selected_count": self.selection.selected_count(),
@@ -1386,13 +1433,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
             zone_indices, record_rows
         )
+        # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭. 술어·
+        # 문안은 `_template_conn` 단일 출처이고, 이 축이 **재연결 도달 보장**을 진다
+        # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
+        tmissing, tconn = _template_conn(job.template_path)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
-            # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭.
-            "template_missing": (
-                not job.template_path or not Path(job.template_path).exists()
-            ),
+            "template_missing": tmissing,
+            "conn_label": tconn,
             "filename_pattern": job.filename_pattern,
             "has_data": self.datasource is not None,
             "record_count": len(self.records),

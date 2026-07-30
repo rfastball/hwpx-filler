@@ -547,7 +547,9 @@ class TestWebSelftestGate:
         assert "2건" in j["cand_more_text"] and "1건" in j["cand_more_text"], j["cand_more_text"]
         assert "문서 작업을 선택하세요" in j["gate_text"], j["gate_text"]
         assert j["gen_disabled"] is True, "prework 상태에서 생성 버튼이 열려 있습니다."
-        assert "문서 작업을 선택하면" in j["head_hint"], j["head_hint"]
+        # 「선택한 작업」 존 사망(U2 §4, #342) — 작업 미선택이면 액션바 이름이 비고 자리를
+        # 접는다(게이트 문안이 다음 할 일을 말한다). 정체 표시 실렌더는 job_active_card 소관.
+        assert j["action_name_empty"] is True, "작업 미선택인데 액션바가 이름을 말합니다."
         assert j["tbl_rows_order"] == ["1", "0"], f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
         # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않고(파일명·폴더 정의 불가 = 과진술),
         # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
@@ -621,6 +623,41 @@ class TestWebSelftestGate:
         assert j["browse_close_focus"] == "jobBrowseOpen", j["browse_close_focus"]
         assert j["browse_pick_focus"] == "jobCand-" + quote("공고서"), j["browse_pick_focus"]
         # 취소(그냥 닫기)는 고른 작업 카드가 아니라 **다시 열 출구**로 돌려보낸다.
+
+    def test_job_active_card_succeeds_the_dead_active_zone(self, selftest_result: dict) -> None:
+        # U2 §4(#342) — 「선택한 작업」 존 사망의 승계처 실렌더 되읽기: ①액션바가 활성 작업
+        # 이름을 말하고 ②활성 카드에만 확장 부제(템플릿 파일명)·⋮ 가 서며 ③⋮ 부유 메뉴의
+        # 두 항목(열기·폴더에서 보기)이 실제로 그 템플릿 경로를 겨누고 ④경고 카드는 「연결
+        # 상태」 텍스트가 정본이고 ⑤경고 카드 클릭은 **선택이 아니다**(안내 다이얼로그 —
+        # 취소하면 발신 0건).
+        j = selftest_result["job_active_card"]
+        assert j.get("error") is None, f"활성 카드 프로브 예외: {j.get('error')!r}"
+        assert j["action_name"] == "공고서", j["action_name"]
+        assert j["active_tpl"] == "공고서.hwpx", j["active_tpl"]
+        assert j["menu_btn_in_active"] is True, "활성 카드에 ⋮ 가 없습니다."
+        assert j["menu_btn_count"] == 1, f"⋮ 는 활성 카드에만 선다(판정 B): {j['menu_btn_count']!r}"
+        assert j["menu_open"] is True and j["menu_closed"] is True, j
+        assert j["menu_items"] == [
+            "open:C:\\t\\공고서.hwpx:열기",
+            "reveal:C:\\t\\공고서.hwpx:폴더에서 보기",
+        ], j["menu_items"]
+        assert j["warn_conn"] == "템플릿 없음", j["warn_conn"]
+        # 도달 보장 축(#342 3R) — 정상 상태에선 조용하고, 데이터 미마운트로 후보 구획이
+        # 통째로 숨어도(카드 0장) 액션바가 연결 상태·재연결을 **실제로 보이게** 세운다.
+        # 세 라운드의 결함이 전부 "구획이 없으면 도달도 없다"였다.
+        assert j["conn_quiet_when_ok"] is True, "정상 상태에서 연결 상태 경보가 떠 있습니다."
+        assert j["cands_hidden_when_no_data"] is True and j["cand_cards_when_no_data"] == 0, j
+        assert j["conn_text_no_data"] == "템플릿 없음", j["conn_text_no_data"]
+        assert j["relink_visible_no_data"] is True, (
+            "후보 구획이 숨은 상태에서 재연결 어포던스가 화면에 없습니다 — 도달 보장 소멸."
+        )
+        assert j["warn_redirect_modal"] is True, "경고 카드 클릭이 안내 다이얼로그를 열지 않았습니다."
+        assert "선택" in j["warn_modal_body"] and "다시 연결" in j["warn_modal_body"], (
+            j["warn_modal_body"]
+        )
+        assert json.loads(j["warn_click_sends"]) == [], (
+            f"경고 카드 클릭이 발신을 만들었습니다(선택이 아니어야 합니다): {j['warn_click_sends']!r}"
+        )
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
@@ -1062,7 +1099,8 @@ class TestWebSelftestGate:
             "현재 데이터", "본문 확인", "생성 결과", "실행 기록",
             # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
             # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
-            "시작하기", "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
+            # 「선택한 작업」 존은 사망(U2 §4 판정 A, #342) — 활성 카드·액션바 이름이 승계.
+            "시작하기", "이 데이터에 사용할 문서", "생성 준비",
         ]
 
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:
