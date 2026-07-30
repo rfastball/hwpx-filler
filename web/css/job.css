@@ -97,9 +97,18 @@
 /* 활성 작업 이름(U2 §4-A 상속 의무, #342) — 죽은 「선택한 작업」 존의 상시성 승계. 좌측에
    서고(margin-right:auto — 행동 묶음은 계속 우정렬) 좁으면 말줄임으로 물러난다(버튼 잠식
    금지). 빈 값(작업 미선택)은 capnote 와 같은 이유로 자리도 비운다. */
-.actionbar-job{margin-right:auto;font-weight:600;min-width:0;max-width:40%;
+/* 정체 묶음(이름 · 연결 상태 · 재연결)이 좌측을 잡고 행동 묶음은 계속 우정렬한다. 여백을
+   묶음 하나가 지므로 안에서 무엇이 보이는지와 무관하다 — 「마지막 보이는 것」에 거는 규칙은
+   상태 열거가 되고, 이 라운드가 고치는 결함류가 정확히 그 형태다. */
+.actionbar-identity{display:flex;align-items:center;gap:var(--sp-8);min-width:0;
+  margin-right:auto}
+.actionbar-job{font-weight:600;min-width:0;max-width:40ch;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .actionbar-job:empty{display:none}
+/* 연결 상태 + 재연결(#342 3R 근본 조치) — 재연결 도달 보장이 후보 카드(투영)가 아니라 이
+   상수 층에 산다. 텍스트가 정본이고 색은 강조(판정 C 는 카드 밖에서도 같다). */
+.actionbar-conn{color:var(--a-warn);font-weight:700;font-size:var(--fs-caption)}
+.actionbar-conn[hidden],#jobActionRelink[hidden]{display:none}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}

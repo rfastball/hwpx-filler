@@ -1588,6 +1588,29 @@ _JOB_ACTIVE_CARD_PROBE_JS = r"""
     out.warn_conn = (function () {
       var c = warnCard && warnCard.querySelector('.cand-conn');
       return c ? c.textContent : ''; })();
+    // ③-b **도달 보장 축**(3R 근본 조치) — 활성 작업의 템플릿이 부재면 후보 구획이 어떤
+    //    상태든(여기선 아예 데이터 미마운트라 구획이 통째로 숨는다) 액션바가 연결 상태와
+    //    재연결을 세운다. 정상 상태에선 조용하다(거짓 경보 금지).
+    out.conn_quiet_when_ok = document.getElementById('jobActionConn').hidden === true &&
+      document.getElementById('jobActionRelink').hidden === true;
+    (function () {
+      var gone = JSON.parse(JSON.stringify(snap));
+      gone.has_data = false; gone.record_count = 0; gone.records = [];
+      gone.table = {columns:[], rows:[], visible_count:0, hidden_selected:[]};
+      gone.candidates = {top:[], sections:[], more:0, needs_count:0, suggested:'', txt_note:''};
+      gone.template_missing = true; gone.conn_label = '템플릿 없음';
+      window.__push('job', gone);
+      out.cands_hidden_when_no_data =
+        getComputedStyle(document.getElementById('jobCandsRow')).display === 'none';
+      out.cand_cards_when_no_data = document.querySelectorAll('#jobCandidates [data-cand]').length;
+      var conn = document.getElementById('jobActionConn');
+      var relink = document.getElementById('jobActionRelink');
+      out.conn_text_no_data = conn.hidden ? '' : conn.textContent;
+      // 실제로 **눈에 보이는가** — hidden 을 지운 것과 렌더된 것은 다른 사실이다(프로브
+      // click 이 hidden 을 통과한다는 교훈의 같은 계열).
+      out.relink_visible_no_data = !relink.hidden && relink.offsetParent !== null;
+      window.__push('job', snap);                 // 원판 복구(뒤 단계 오염 금지)
+    })();
     // ④ 경고 카드 클릭 = 선택이 아니다(판정 D) — 안내 다이얼로그가 서고, 취소하면 아무
     //    발신도 없다. 발신열은 취소 정착(160ms) 뒤 _probe_late 가 회수한다.
     var sent = [], real = window.Bridge.call;

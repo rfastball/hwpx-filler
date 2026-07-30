@@ -911,6 +911,22 @@ def test_job_active_zone_death_and_candidate_card_succession():
     assert 'id="jobActionName"' in html
     assert '$("jobActionName").textContent' in job_js
     assert ".actionbar-job:empty{display:none}" in css
+    # ②-b **재연결 도달 보장은 액션바(상수 층)가 진다**(#342 리뷰 3라운드 근본 조치).
+    #    후보 구획은 데이터 마운트·호환성·순위 슬라이스 셋에 걸린 투영이라 그 위에 보장을
+    #    얹으면 조건마다 구멍이 하나씩 난다(같은 결함류 3건). 이 층은 조건이 없다 —
+    #    세션 스냅샷 두 값(template_missing·conn_label)만 읽는다. 상태 순회 단언은
+    #    tests/test_webapp_job.py 의 불변식 테스트가 진다.
+    for pid in ("jobActionConn", "jobActionRelink"):
+        assert f'id="{pid}"' in html, f"액션바 연결 상태·재연결 조각 누락: {pid}"
+    assert "s.template_missing" in job_js and "s.conn_label" in job_js, (
+        "액션바가 세션 축의 연결 상태를 읽지 않습니다 — 도달 보장이 다시 카드에 기생합니다."
+    )
+    assert '$("jobActionRelink").hidden' in job_js, (
+        "재연결 버튼을 disabled 로 가리면 setBusy 의 busy-lock 일괄 복원이 되살립니다."
+    )
+    # 정렬 여백은 **묶음 하나**가 진다 — 「마지막 보이는 것」에 거는 규칙은 상태 열거가 되고,
+    # 이 라운드가 고치는 결함류가 정확히 그 형태다.
+    assert ".actionbar-identity{display:flex;align-items:center;gap:var(--sp-8);min-width:0;margin-right:auto}" in css
     # ③ 활성 카드 확장 부제 + ⋮ — 부유 메뉴 호스트(그룹 ⋮ 동형)와 PathTrack 위임 재사용.
     assert "cand-tpl" in job_js and "data-cand-menu" in job_js
     assert 'id="jobCandMenu" class="ctx-menu"' in html
@@ -924,7 +940,12 @@ def test_job_active_zone_death_and_candidate_card_succession():
     # 활성+경고의 기본 클릭(재연결 입구)이 마우스에서 죽는다.
     assert '.job-cand-card.warn.cand-pick[aria-pressed="true"]{pointer-events:auto}' in css
     # ⑤ 경고 카드 기본 클릭 = 재연결 리다이렉트(선택이 아님), 커밋 성사 뒤에만 이어서 선택.
-    assert 'data-missing="1"' in job_js and "relinkFromCard" in job_js
+    #    두 입구(경고 카드·액션바)는 **한 몸통**을 쓴다 — 각자 흐름을 들면 확인 문안·T1
+    #    가드·발신 순서가 갈린다.
+    assert 'data-missing="1"' in job_js and "relinkTemplateFor" in job_js
+    assert job_js.count("Relink.relinkTemplate(") == 1, (
+        "재연결 흐름의 입구가 둘인데 몸통도 둘이면 가드·문안이 갈립니다."
+    )
     assert "await Relink.relinkTemplate" in job_js
     assert "return false" in relink_js and "return true" in relink_js, (
         "relink 공용 흐름이 커밋 성사 여부를 반환하지 않으면 「이어서 선택」이 실패 뒤에도 나갑니다."

@@ -91,17 +91,12 @@ from ..gui.work_mode import (
     work_mode_label,
 )
 from ..gui.work_candidates import (
-    KIND_EXCLUDED,
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     TAB_AVAILABLE,
     TAB_NEEDS_ACTION,
-    TIER_FAVORITE,
-    TIER_RECENT,
-    TIER_UNUSED,
     browse_candidates,
     candidate_rows,
-    compatibility_for,
     prework_gate,
     workbench_entry_gate,
     preferred_promotion,
@@ -128,6 +123,26 @@ from .screens import (
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
+
+#: 「연결 상태」 문안(U2 §4 판정 C, #342) — 텍스트가 정본이고 색은 강조다. 세션 축과 후보
+#: 카드가 **같은 문자열**을 써야 같은 상태를 두 이름으로 부르지 않는다.
+_CONN_MISSING_LABEL = "템플릿 없음"
+
+
+def _template_conn(path: str) -> "tuple[bool, str]":
+    """템플릿 연결 상태 ``(부재인가, 「연결 상태」 문안)`` — **단일 술어·단일 문안**.
+
+    #342 리뷰 3라운드의 근본 조치다. 종전엔 같은 질문을 세 자리가 각자 답했고 술어까지
+    갈렸다 — 스냅샷 vm-None 가지는 ``bool(path) and not exists`` 라 **빈 경로를 정상**으로
+    보고했는데, 후보 카드는 ``not path or not exists`` 라 같은 작업을 「템플릿 없음」으로
+    그렸다. 사망 점검표는 「찾을 수 없음」과 「경로가 비어 있음」을 **한 축**(연결 상태)에
+    승계시켰으므로 술어도 하나여야 한다: 둘 다 "이 작업으로는 문서를 만들 수 없다"이고
+    복구 동선도 같은 재연결이다.
+
+    호출측이 ``has_job`` 을 이미 알고 있다(작업이 없으면 물을 대상 자체가 없다).
+    """
+    missing = not path or not Path(path).exists()
+    return missing, (_CONN_MISSING_LABEL if missing else "")
 
 
 def _seat_kinds(job: Job) -> "tuple[bool, bool]":
@@ -822,15 +837,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
           순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
-          **활성 작업 카드는 호환성과 무관하게 상시 보장된다**(U2 §4 사망 점검표의 승계
-          조건, #342 리뷰 P2 2건): 존이 죽은 뒤 정체·연결 상태·재연결(경고 카드 기본
-          클릭)의 유일한 화면 내 거처가 활성 카드다. 활성이 순위 밖 available 이면 순위를
-          왜곡하지 않고 말미에 덧붙이고, ranked 밖(needs_action·unsupported)이어도 사유를
-          「연결 상태」에 정직하게 싣고 덧붙인다 — 구 존이 호환성과 무관하게 재연결을
-          제공했으므로 승계도 그래야 한다(부재가 있으면 부재가 사유보다 우선한다).
+          이 구획은 **투영**이다 — 데이터 마운트·호환성·순위 슬라이스 셋에 걸린다. 그래서
+          재연결 도달 보장을 여기 얹지 않는다(#342 리뷰 3라운드 근본 조치): 조건마다 구멍이
+          하나씩 나므로 그 의무는 조건이 없는 **세션 축**(``template_missing``·``conn_label``
+          → 액션바)이 진다. 카드의 「연결 상태」·경고 클릭은 *렌더된 카드에 대한* 계약이다.
         - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
           전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
-          덧붙여 렌더되는 활성 작업은 더 이상 "잘린" 것이 아니므로 세지 않는다.
         - ``needs``·``needs_more`` = 확인 필요(needs_action) 이름순 상위 N + 잘린 수.
           메인 순위엔 못 들어가지만(§18.5) 전용 표면(확인 필요 탭)이 생기기 전까지 막힌
           이유를 여기서 계속 말한다(삭제는 의무를 상속한다). available 과 같은 상한을
@@ -849,82 +861,37 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ranked = rank_available(jobs, fields)
         suggested = suggested_work(ranked, active=self.job_name)
 
-        def card(name: str, tier: str, mode: str, conn: str = "") -> dict:
-            """카드 1장 성형 — 순위 슬라이스·덧붙인 활성이 같은 몸통을 쓴다."""
-            job = by_name[name]
-            # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 죽은 「선택한 작업」 존의
-            # `template_missing` 경보 승계처가 카드다. §18.4 는 Template 읽기를 후보 축
-            # 밖에 뒀지만(available=Binding 호환성만), 부재 판정은 파일 존재 검사 하나라
-            # 이미 싸다(판정 F — 눌러본 뒤에 차단하는 것은 뒤늦은 경보). 텍스트가 정본이고
-            # 색은 강조(판정 C)이며 문안은 여기서 낸다 — 표면이 조립하면 같은 상태를 두
-            # 곳이 부른다. 부재는 다른 사유(conn)보다 우선한다 — 재연결(경고 카드 기본
-            # 클릭)의 표식이자 유일한 복구 동선이기 때문이다.
-            tpath = job.template_path
-            missing = not tpath or not Path(tpath).exists()
-            return {
-                "name": name,
-                "tier": tier,
+        top = []
+        for r in ranked[:MAIN_TOP_N]:
+            job = by_name[r.name]
+            # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 렌더된 카드는 자기 작업의 연결
+            # 상태를 말한다(§18.4 는 Template 읽기를 available 판정 밖에 뒀지만, 부재
+            # 판정은 파일 존재 검사 하나라 이미 싸다 — 판정 F). 술어·문안은 `_template_conn`
+            # 단일 출처다: 세션 축과 문자열이 갈리면 같은 상태를 두 이름으로 부른다.
+            missing, conn_label = _template_conn(job.template_path)
+            top.append({
+                "name": r.name,
+                "tier": r.tier,
                 "favorited": bool(job.favorited_at),
                 # 원시 ISO — 표시 문안(자릿수·구분자)은 표면이 만든다(판정만 Python).
                 # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
                 "last_run_at": job.last_run_at,
-                "suggested": name == suggested,
+                "suggested": r.name == suggested,
                 # 작업 방식(§19.1) + 그 표시 문구 — 카드 부제와 구획 판단이 소비한다(§19.3).
                 # 라벨을 표면이 짓지 않는 이유는 같은 축을 그리는 표면이 셋이기 때문이다
                 # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
-                "mode": mode,
-                "mode_label": work_mode_label(mode, short=True),
+                "mode": r.mode,
+                "mode_label": work_mode_label(r.mode, short=True),
                 # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
                 # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
-                "last_run_label": last_use_label(mode, job.last_run_at),
+                "last_run_label": last_use_label(r.mode, job.last_run_at),
                 # 템플릿 정체(판정 B) — 활성 카드의 확장 부제(파일명)와 ⋮(열기·폴더에서
                 # 보기)가 소비한다. 경로는 추적성 로케이트(#53-B)와 같은 전체 경로.
-                "template_name": Path(tpath).name if tpath else "",
-                "template_path": tpath,
+                "template_name": Path(job.template_path).name if job.template_path else "",
+                "template_path": job.template_path,
                 "template_missing": missing,
-                "conn_label": "템플릿 없음" if missing else conn,
-            }
-
-        sliced = list(ranked[:MAIN_TOP_N])
-        # 활성 작업 카드 상시 보장 ①(#342 리뷰 P2) — 활성이 available 인데 top-5 밖이면
-        # **말미에 덧붙인다**(순위 무왜곡: 상위 5 는 그대로, 활성은 순위 밖임이 자리로
-        # 보인다). 판정은 여기(payload 층)가 낸다 — 표면이 자기 판단으로 카드를 만들면
-        # 같은 상태를 두 곳이 판정한다.
-        active_appended = False
-        if self.job_name and all(r.name != self.job_name for r in sliced):
-            extra = next(
-                (r for r in ranked[MAIN_TOP_N:] if r.name == self.job_name), None
-            )
-            if extra is not None:
-                sliced.append(extra)
-                active_appended = True
-        top = [card(r.name, r.tier, r.mode) for r in sliced]
-        # 활성 작업 카드 상시 보장 ②(#342 리뷰 2R P2) — 활성이 ranked 밖(needs_action·
-        # unsupported)이어도 카드는 선다. 구 「선택한 작업」 존은 호환성과 무관하게
-        # 재연결을 제공했으므로 승계(경고 카드 기본 클릭)도 호환성과 무관해야 한다 —
-        # 사망 점검표의 「재연결 → 경고 카드 기본 클릭 대체」는 전 상태에서 참이어야
-        # 지울 수 있던 행이다. 「연결 상태」는 부재가 있으면 부재(재연결 표식)를, 아니면
-        # 비적격 사유를 정직하게 말한다. 클릭 리다이렉트는 템플릿 부재 축만이다 —
-        # 구조 불일치 → 마법사 리다이렉트는 판정 E(#349) 소관이고, 활성 카드 재클릭은
-        # 어차피 무동작이라 그 카드는 사실 진술로만 선다.
-        if self.job_name and self.job_name in by_name and all(
-            t["name"] != self.job_name for t in top
-        ):
-            ajob = by_name[self.job_name]
-            compat = compatibility_for(ajob, fields)
-            conn = (
-                "현재 데이터에 없는 열: " + ", ".join(compat.missing)
-                if compat.kind == KIND_NEEDS_ACTION
-                # 미상 매체(§19.1) — 라이브러리 primary hint 와 같은 어휘(재발명 금지).
-                else "지원하지 않는 작업 방식입니다."
-                if compat.kind == KIND_EXCLUDED
-                else ""
-            )
-            tier = (
-                TIER_FAVORITE if ajob.favorited_at
-                else (TIER_RECENT if ajob.last_run_at else TIER_UNUSED)
-            )
-            top.append(card(self.job_name, tier, compat.mode, conn=conn))
+                "conn_label": conn_label,
+            })
         needs = sorted(
             (
                 {"name": j.name, "missing": list(c.missing)}
@@ -939,9 +906,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 순서는 첫 등장 순 = 각 구획 최고 순위의 위치이고, 한 방식뿐이면 구획이 1개라
             # 표면이 평면으로 퇴화한다(카드 부제의 방식 텍스트는 그때도 남는다).
             "sections": mode_sections(top),
-            # 덧붙인 활성은 렌더되므로 "잘린 수"에서 뺀다 — 「외 N건」이 화면에 이미 있는
-            # 카드를 다시 세면 수치 고지가 거짓이 된다(조용한 절단 금지의 반대 방향).
-            "more": max(0, len(ranked) - MAIN_TOP_N - (1 if active_appended else 0)),
+            "more": max(0, len(ranked) - MAIN_TOP_N),
             # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
             # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
             "needs_count": len(needs),
@@ -1311,15 +1276,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
             txt_job = next((j for j in jobs if j.name == self.job_name), None)
             tpath = txt_job.template_path if txt_job is not None else ""
+            # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
+            # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
+            tmissing, tconn = _template_conn(tpath)
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
-                template_ready=bool(tpath) and Path(tpath).exists(),
+                template_ready=not tmissing,
             )
             base.update({
                 "template_name": Path(tpath).name if tpath else "",
                 "template_path": tpath,
-                "template_missing": not tpath or not Path(tpath).exists(),
+                "template_missing": tmissing,
+                "conn_label": tconn,
                 # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
                 # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
                 "filename_pattern": "",
@@ -1373,11 +1342,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
                     "템플릿을 다시 연결한 뒤 진행하세요.",
                 )
+            # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
+            # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
+            umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
             base.update({
                 "template_name": Path(utpath).name if utpath else "",
                 "template_path": utpath,
                 "filename_pattern": "",
-                "template_missing": bool(utpath) and not Path(utpath).exists(),
+                "template_missing": umissing,
+                "conn_label": uconn,
                 "has_data": self.datasource is not None,
                 "record_count": len(self.records),
                 "selected_count": self.selection.selected_count(),
@@ -1457,13 +1430,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
             zone_indices, record_rows
         )
+        # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭. 술어·
+        # 문안은 `_template_conn` 단일 출처이고, 이 축이 **재연결 도달 보장**을 진다
+        # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
+        tmissing, tconn = _template_conn(job.template_path)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
-            # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭.
-            "template_missing": (
-                not job.template_path or not Path(job.template_path).exists()
-            ),
+            "template_missing": tmissing,
+            "conn_label": tconn,
             "filename_pattern": job.filename_pattern,
             "has_data": self.datasource is not None,
             "record_count": len(self.records),

@@ -642,6 +642,15 @@ class TestWebSelftestGate:
             "reveal:C:\\t\\공고서.hwpx:폴더에서 보기",
         ], j["menu_items"]
         assert j["warn_conn"] == "템플릿 없음", j["warn_conn"]
+        # 도달 보장 축(#342 3R) — 정상 상태에선 조용하고, 데이터 미마운트로 후보 구획이
+        # 통째로 숨어도(카드 0장) 액션바가 연결 상태·재연결을 **실제로 보이게** 세운다.
+        # 세 라운드의 결함이 전부 "구획이 없으면 도달도 없다"였다.
+        assert j["conn_quiet_when_ok"] is True, "정상 상태에서 연결 상태 경보가 떠 있습니다."
+        assert j["cands_hidden_when_no_data"] is True and j["cand_cards_when_no_data"] == 0, j
+        assert j["conn_text_no_data"] == "템플릿 없음", j["conn_text_no_data"]
+        assert j["relink_visible_no_data"] is True, (
+            "후보 구획이 숨은 상태에서 재연결 어포던스가 화면에 없습니다 — 도달 보장 소멸."
+        )
         assert j["warn_redirect_modal"] is True, "경고 카드 클릭이 안내 다이얼로그를 열지 않았습니다."
         assert "선택" in j["warn_modal_body"] and "다시 연결" in j["warn_modal_body"], (
             j["warn_modal_body"]

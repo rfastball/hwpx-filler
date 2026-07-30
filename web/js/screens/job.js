@@ -83,7 +83,7 @@
       syncModeDisplay(hasJob);
       // 데이터-우선(§18.2): 세션 4존은 작업 미선택에도 산다 — 스냅샷이 vm-None 상태를
       // 전 키 유효값으로 방출하므로(prework 게이트·빈 거울·후보) 렌더러는 무조건 돈다.
-      renderActionName(s);
+      renderActiveIdentity(s);
       renderData(s);
       renderPreflight(s);
       renderMirror(s);
@@ -172,13 +172,29 @@
     });
   }
 
-  /* ---- 활성 작업 이름(액션바) — 죽은 「선택한 작업」 존의 상시성 승계(U2 §4-A, #342) ----
+  /* ---- 활성 작업의 정체·연결 상태(액션바) — 죽은 「선택한 작업」 존의 승계(U2 §4-A) ----
      존이 죽은 뒤 「지금 어느 작업으로 생성하는가」를 말하는 것이 활성 카드 하이라이트
      하나인데, 그 카드는 표를 훑으면 스크롤 위로 사라진다. sticky 사이드바는 기각됐으므로
      (§5.2) 상수 높이 층인 액션바가 작업 이름을 겸한다 — 「이 작업으로 문서 생성」의
-     「이 작업」을 같은 줄이 말한다. 값은 스냅샷 그대로(빈 값=미선택, 게이트 문안이 말한다). */
-  function renderActionName(s) {
-    $("jobActionName").textContent = s.has_job ? (s.job_name || "") : "";
+     「이 작업」을 같은 줄이 말한다.
+
+     **재연결 도달 보장도 여기가 진다**(#342 리뷰 3라운드 근본 조치). 종전엔 그 의무를 경고
+     후보 카드가 졌는데, 후보 구획은 데이터 마운트·호환성·순위 슬라이스 셋에 걸린 **투영**
+     이라 조건마다 구멍이 하나씩 났다(같은 결함류 3건: 슬라이스 밖 → ranked 밖 → 데이터
+     미마운트). 조건을 하나씩 때우는 대신 **조건이 없는 축**으로 옮긴다: 이 층은 작업이
+     선택돼 있으면 언제나 서고, 판정(`template_missing`)·문안(`conn_label`)은 세션 스냅샷이
+     그대로 흐른다(표면 재조립 없음). 카드의 「연결 상태」·경고 클릭은 그대로 살지만 그건
+     *렌더된 카드에 대한* 계약이지 도달 보장이 아니다. */
+  function renderActiveIdentity(s) {
+    const on = !!s.has_job;
+    $("jobActionName").textContent = on ? (s.job_name || "") : "";
+    const missing = on && !!s.template_missing;
+    const conn = $("jobActionConn");
+    conn.hidden = !missing;
+    conn.textContent = missing ? (s.conn_label || "") : "";
+    // 버튼 가용성은 setBusy 가 렌더 말미에 [data-busy-lock] 을 일괄 복원하므로 여기서는
+    // **존재 여부**(hidden)만 정한다 — disabled 로 숨기면 그 복원이 되살린다.
+    $("jobActionRelink").hidden = !missing;
   }
 
   /* ---- 데이터 존 — 겨눔 라벨·자동 조준 재진술 ---- */
@@ -327,12 +343,14 @@
       btn);
   }
 
-  /* 경고 카드 기본 클릭 = 선택이 아니라 재연결 리다이렉트(U2 §4 판정 D, #342).
+  /* 재연결 흐름의 **단일 몸통** — 입구는 둘이다(U2 §4 판정 D, #342): ①경고 후보 카드의
+     기본 클릭(선택의 대체) ②액션바 「템플릿 다시 연결…」(도달 보장 축, 3R). 두 입구가
+     각자 흐름을 들면 확인 문안·가드·발신 순서가 갈린다.
      클릭 의도(선택)와 실제 동작(재연결)이 다르므로 **왜 다른지 먼저 재진술**하고(다이얼로그가
      겸한다), 활성 작업이면 세션 재구성(T1 동류)이라 무장 시 손실 확인을 이어 받는다.
      재연결 커밋이 **성사된 뒤에야** 선택이 나간다(브리지 발신 순서 규약) — 실패·취소면
      선택하지 않고 카드는 경고로 남는다. */
-  async function relinkFromCard(name) {
+  async function relinkTemplateFor(name) {
     const active = !!(LAST && LAST.job_name === name);
     const ok = await window.Modal.confirm({
       title: "템플릿 다시 연결",
@@ -1471,8 +1489,9 @@
   }
 
   /* (구 doRelinkTemplate — 「선택한 작업」 존의 「템플릿 다시 연결…」 버튼 — 은 존과 함께
-     사망했다(U2 §4 판정 A, #342). 흐름 자체는 relinkFromCard 가 승계한다: 같은 공용
-     Relink.relinkTemplate + 같은 T1 무장 가드에, 경고 카드 기본 클릭이 입구가 됐다.) */
+     사망했다(U2 §4 판정 A, #342). 흐름 자체는 relinkTemplateFor 가 승계한다: 같은 공용
+     Relink.relinkTemplate + 같은 T1 무장 가드에, 입구만 경고 카드 클릭과 액션바 버튼으로
+     바뀌었다.) */
 
   function wire() {
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
@@ -1502,7 +1521,7 @@
       // 경고 카드(판정 D) — 기본 클릭이 선택의 **대체**다. 활성+경고면 경고가 이기므로
       // 재클릭 무동작 가드(aria-pressed)보다 먼저 판정한다.
       if (btn.dataset.missing === "1") {
-        relinkFromCard(btn.getAttribute("data-cand"));
+        relinkTemplateFor(btn.getAttribute("data-cand"));
         return;
       }
       if (btn.getAttribute("aria-pressed") !== "true") {
@@ -1656,6 +1675,11 @@
         // 가로질러 포커스를 유지하게(거울-행 ack 경로와 같은 규율, 리뷰). 밖에서 부르면 body 낙하.
         if (LAST) Preserve.around(() => renderRestate(LAST));
       }
+    });
+    // 액션바 재연결(#342 3R) — 도달 보장 축의 입구. 흐름은 경고 카드와 **한 몸통**이다.
+    $("jobActionRelink").addEventListener("click", () => {
+      if (!(LAST && LAST.job_name)) return;
+      relinkTemplateFor(LAST.job_name);
     });
     $("jobGenBtn").addEventListener("click", async () => {
       // 두 실행 행동 다 **커밋**이다 — 무엇을 대상으로 도는지가 방금 누른 존 변이에 달렸다.

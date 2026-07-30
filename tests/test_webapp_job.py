@@ -19,6 +19,7 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp.screen_job import JobController
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
@@ -375,70 +376,95 @@ def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
     assert after["conn_label"] == "템플릿 없음"                # 경고 문안도 Python 정본
 
 
-def test_active_job_below_top5_keeps_its_card_and_relink_reach(tmp_path):
-    """활성 작업이 순위 밖이어도 카드는 선다(#342 리뷰 P2 — 재연결 도달 경로 보존).
+# 재연결 도달 불변식의 **조건 조합 순회**(#342 리뷰 3라운드 근본 조치).
+#
+# 세 라운드가 같은 결함류를 세 조건에서 각각 냈다(순위 슬라이스 밖 / ranked 밖 / 데이터
+# 미마운트). 뿌리는 도달 보장을 **후보 구획**(데이터·호환성·슬라이스 셋에 걸린 투영)에
+# 얹은 것이고, 조건을 하나씩 때우면 다음 조건에서 또 샌다. 그래서 시나리오를 쌓는 대신
+# 불변식 하나를 세우고 그 조건 공간을 순회한다:
+#
+#   **활성 작업이 있고 템플릿이 부재면, 세션 스냅샷이 그 사실과 문안을 싣는다.**
+#
+# 그것이 곧 화면의 도달 보장이다 — 액션바(상수 높이 층)가 이 두 값만 읽어 「연결 상태」와
+# 「템플릿 다시 연결…」을 세우고, 그 층엔 조건이 없다(정적 배선은 test_web_dom_contract
+# 의 승계 계약이 못박는다).
+_REACH_CASES = [
+    # (이름, 데이터, 다른 available 작업 수 — 활성의 순위 슬라이스 소속을 가른다)
+    ("데이터 없음", None, 0),
+    ("데이터 있음·슬라이스 안", "compatible", 0),
+    ("데이터 있음·슬라이스 밖", "compatible", 6),
+    ("데이터 있음·비적격(needs)", "incompatible", 0),
+]
 
-    존 사망 뒤 재연결(경고 카드 기본 클릭)·연결 상태·정체의 화면 내 거처는 활성 카드
-    하나다 — 호환 작업 6건 이상에서 활성이 top-5 슬라이스에 못 들면 template_missing
-    차단의 복구 동선이 화면에서 소멸한다. 그래서 payload 층이 활성을 **말미에 덧붙여**
-    상시 보장한다: 상위 5 순위는 왜곡하지 않고, 렌더된 활성은 「외 N건」에서 뺀다.
+
+@pytest.mark.parametrize(
+    ("label", "data_kind", "others"),
+    [(c[0], c[1], c[2]) for c in _REACH_CASES],
+    ids=[c[0] for c in _REACH_CASES],
+)
+def test_relink_stays_reachable_for_the_active_job_in_every_state(
+    tmp_path, label, data_kind, others
+):
+    """불변식: 활성 작업 + 템플릿 부재 → 세션 축이 재연결 도달의 근거를 싣는다.
+
+    데이터 유/무 × 호환성(적격·비적격) × 순위 슬라이스(안·밖) 어느 조합에서도 참이어야
+    한다. 후보 구획(`candidates.top`)은 이 단언의 대상이 **아니다** — 그 구획은 조건에
+    걸리는 투영이고, 도달 보장을 거기 얹은 것이 세 라운드 결함의 뿌리였다.
     """
     ctrl, _ = _controller(tmp_path)
-    for i in range(6):                                          # 최근 실행 계층 6건 > 미사용 활성
+    for i in range(others):                       # 최근 실행 계층 — 미사용 활성을 밀어낸다
         _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
-    ctrl.load_data_path(_data_csv(tmp_path))
-    ctrl.dispatch("select_job", {"name": "공고서"})             # 활성 = 순위 7위(미사용)
-    cands = ctrl.snapshot()["candidates"]
-    names = [c["name"] for c in cands["top"]]
-    assert "공고서" in names, "활성 작업 카드가 top-5 슬라이스에 잘려 나갔습니다."
-    assert len(names) == 6 and names[-1] == "공고서"            # 상위 5 무왜곡 + 말미 부록
-    assert cands["more"] == 1                                   # 잘린 수에서 렌더된 활성 제외
+    if data_kind == "compatible":
+        ctrl.load_data_path(_data_csv(tmp_path))
+    elif data_kind == "incompatible":
+        other = tmp_path / "other.csv"
+        other.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
+        ctrl.load_data_path(str(other))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    Path(ctrl.snapshot()["template_path"]).unlink()            # 템플릿 소실 재현
 
-    # 템플릿 소실 → 그 카드가 연결 상태·재연결 표식의 근거(template_missing)를 싣는다 —
-    # 경고 카드 기본 클릭(relinkFromCard)의 도달 경로가 이 payload 하나에 달려 있다.
-    Path(ctrl.snapshot()["template_path"]).unlink()
-    card = next(c for c in ctrl.snapshot()["candidates"]["top"] if c["name"] == "공고서")
-    assert card["template_missing"] is True
-    assert card["conn_label"] == "템플릿 없음"
-
-    # 활성이 top-5 안이면 덧붙일 것이 없다 — 카드 중복도, more 보정도 없다.
-    ctrl.dispatch("select_job", {"name": "작업5"})
-    cands = ctrl.snapshot()["candidates"]
-    assert [c["name"] for c in cands["top"]].count("작업5") == 1
-    assert len(cands["top"]) == 5 and cands["more"] == 2
-
-
-def test_incompatible_active_job_still_gets_a_card_with_honest_connection_state(tmp_path):
-    """ranked 밖(needs_action) 활성도 카드는 선다(#342 리뷰 2R P2 — 호환성 무관 승계).
-
-    구 「선택한 작업」 존은 활성 작업의 호환성과 무관하게 재연결을 제공했다 — 사망
-    점검표의 「재연결 → 경고 카드 기본 클릭 대체」가 전 상태에서 참이려면 승계도
-    호환성과 무관해야 한다. needs 브라우저 행은 비상호작용 div 라 대체가 못 된다.
-    「연결 상태」는 부재가 있으면 부재(재연결 표식 = `template_missing`)가 우선하고,
-    아니면 비적격 사유(없는 열)를 정직하게 말한다 — 클릭 리다이렉트는 템플릿 부재
-    축만이다(구조 불일치 → 마법사는 판정 E, #349).
-    """
-    ctrl, _ = _controller(tmp_path)
-    ctrl.load_data_path(_data_csv(tmp_path))
-    ctrl.dispatch("select_job", {"name": "공고서"})            # 호환 데이터에서 선택
-    other = tmp_path / "other.csv"
-    other.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
-    ctrl.load_data_path(str(other))                            # 재겨눔 → 활성이 needs 로
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
-    cands = snap["candidates"]
-    assert cands["needs_count"] == 1                           # 사실 수치는 그대로
-    card = next((c for c in cands["top"] if c["name"] == "공고서"), None)
-    assert card is not None, "비적격 활성 작업의 카드가 렌더되지 않습니다(재연결 승계 소멸)."
-    assert card["template_missing"] is False
-    assert card["conn_label"] == "현재 데이터에 없는 열: bidNtceNm, presmptPrce"
-    assert cands["more"] == 0                                  # ranked 밖 덧붙임은 more 무관
+    assert snap["template_missing"] is True, (
+        f"[{label}] 세션 축이 템플릿 부재를 말하지 않습니다 — 재연결 도달 보장 소멸."
+    )
+    assert snap["conn_label"] == "템플릿 없음", (
+        f"[{label}] 연결 상태 문안이 비었습니다(텍스트가 정본, 판정 C)."
+    )
 
-    # 템플릿까지 소실 — 부재가 사유보다 우선한다(재연결 리다이렉트의 payload 표식).
-    Path(snap["template_path"]).unlink()
-    card = next(c for c in ctrl.snapshot()["candidates"]["top"] if c["name"] == "공고서")
-    assert card["template_missing"] is True                    # 경고 카드(data-missing) 근거
-    assert card["conn_label"] == "템플릿 없음"
+
+def test_relink_reach_is_quiet_when_nothing_is_wrong(tmp_path):
+    """불변식의 음성 대조 — 정상·미선택에서 그 축은 조용하다(거짓 경보 금지).
+
+    부재만 말하는 축이라야 경보가 값을 갖는다. 작업 미선택 상태에서 빈 경로를 「템플릿
+    없음」으로 부르면 화면이 **없는 작업의 부재**를 경보한다(#342 3R 에서 함께 고친
+    술어 분기: 구 vm-None 가지는 빈 경로를 정상으로 봐 카드 판정과도 어긋났다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.initial()["template_missing"] is False         # 미선택 = 물을 대상 없음
+    assert ctrl.initial()["conn_label"] == ""
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["template_missing"] is False                   # 정상은 조용히(F30)
+    assert snap["conn_label"] == ""
+
+
+def test_active_job_out_of_slice_is_not_smuggled_into_the_candidate_list(tmp_path):
+    """후보 구획은 **순위 그대로**다 — 도달 보장이 세션 축으로 갔으므로 덧붙이지 않는다.
+
+    1R·2R 의 조건부 덧붙임(순위 밖 활성·ranked 밖 활성을 `top` 말미에 끼우기)은 근본
+    조치로 잉여가 됐다. 되깎지 않으면 같은 사실을 두 곳이 보장하고, 「외 N건」 수치 보정
+    같은 화해 코드가 그 위에 쌓인다(#338 잣대: 화해 코드를 남기지 않는다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    for i in range(6):
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})            # 활성 = 순위 7위(미사용)
+    cands = ctrl.snapshot()["candidates"]
+    assert len(cands["top"]) == MAIN_TOP_N                     # 슬라이스는 슬라이스다
+    assert "공고서" not in [c["name"] for c in cands["top"]]
+    assert cands["more"] == 2                                  # 잘린 수 = 보정 없는 산술
 
 
 def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):
