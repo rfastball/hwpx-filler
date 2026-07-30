@@ -930,16 +930,16 @@
     if (isEditing(s)) {
       // 편집의 주 행동은 **하나**다(§10.13 판정 E): 「변경 저장」. 「이번 생성에 적용」은
       // runOverrides 가 서는 PR-B 자리라 여기 라디오를 미리 늘어놓지 않는다(§6: 같은
-      // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
-      const discard = s.dirty
-        ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
-      // 저장은 **바꾼 것이 있을 때만** 선다(U2 §2.4). 원문의 요지는 두 모드를 이름이
-      // 아니라 **상태로** 구별하자는 것이고, 판정은 이미 `s.dirty` 로 와 있었는데 표면이
-      // 안 썼다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
+      // 선택지를 모든 문맥에 나열하지 않는다).
+      // 저장·버리기는 **같은 합성 술어**로 상시 표시 + 상태 비활성이다(U2 §2.4·§2.17):
+      // 두 모드를 이름이 아니라 상태로 구별하고, 존재가 깜빡이는 대신 가능성이 꺼진다 —
+      // 조건부 렌더는 「버릴 길이 있는가」라는 어휘 자체를 clean 상태에서 숨겨 두 규칙을
+      // 만들었다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
       // 단계의 「작업 저장」은 완료 행동이지 변경 저장이 아니다.
-      return `${discard}<span class="spacer"></span>` +
-        `<button class="btn primary" data-act="save"` +
-        `${(s.dirty || pendingFieldEdit) ? "" : " disabled"}>변경 저장</button>`;
+      const armed = !!(s.dirty || pendingFieldEdit);
+      return `<button class="btn" data-act="discard-patch"${armed ? "" : " disabled"}>변경 버리기</button>` +
+        `<span class="spacer"></span>` +
+        `<button class="btn primary" data-act="save"${armed ? "" : " disabled"}>변경 저장</button>`;
     }
     const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
@@ -1101,9 +1101,19 @@
           await leaveTo(returnScreen());
           break;
         case "discard-patch": {
+          // 확인을 열기 **전에** 대기 중 편집을 정산한다(2R P2 — 1R 픽스가 연 자리):
+          // 버리기가 blur 전에도 눌리게 되면서, 큐에 든 `set_*` 이 모달이 떠 있는 사이
+          // 도착해 push→render 가 `#editor-foot` 을 갈아 끼운다 — 저장해 둔 트리거가
+          // 분리돼 취소가 화면 루트로 떨어지고(모달의 대안 착지), 판정도 아직 도착하지
+          // 않은 편집 위에서 난다. 정산 기제는 **이미 있는 것을 쓴다**(goto·leave 와 같은
+          // `flushPendingEdits` — 두 벌 만들지 않는다, [[bridge-call-ordering-contract]]).
+          await flushPendingEdits();
+          // 정산이 부른 재구성 **뒤의** 살아 있는 트리거를 다시 잡는다 — 옛 참조는 분리돼
+          // focus() 가 조용한 no-op 이 된다(모달은 결과를 읽어 대안으로 가므로 조용히 어긋난다).
+          const trigger = document.querySelector('#editor-foot [data-act="discard-patch"]') || el;
           if (!(await Modal.confirm({
             body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
-            returnFocus: el, confirmLabel: "변경 버리기", cancelLabel: "취소",
+            returnFocus: trigger, confirmLabel: "변경 버리기", cancelLabel: "취소",
           }))) break;
           await sendEdit("discard_patch", {});
           break;
@@ -1194,8 +1204,16 @@
     pendingFieldEdit = el.value === known ? null : {
       act: el.dataset.act, index: el.dataset.index, value: el.value,
     };
-    const save = document.querySelector('#editor-foot [data-act="save"]');
-    if (save && LAST && isEditing(LAST)) save.disabled = !(LAST.dirty || pendingFieldEdit);
+    // 저장·버리기는 **같은 합성 술어**다(§2.17) — 저장만 열면 clean 세션에서 타이핑 직후
+    // 「변경 버리기」가 재렌더까지 비활성으로 남아 첫 클릭이 삼켜진다(PR #354 리뷰:
+    // 비활성 버튼은 click 을 내지 않는다 — 저장 게이트와 같은 결함류).
+    if (LAST && isEditing(LAST)) {
+      const disabled = !(LAST.dirty || pendingFieldEdit);
+      for (const act of ["save", "discard-patch"]) {
+        const btn = document.querySelector(`#editor-foot [data-act="${act}"]`);
+        if (btn) btn.disabled = disabled;
+      }
+    }
   }
 
   /* 재구성이 지운 타이핑을 제자리에 되돌린다 — 없으면 대기도 버린다(위 주석 R4 P1).

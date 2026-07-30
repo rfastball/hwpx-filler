@@ -771,6 +771,41 @@ class TestWebSelftestGate:
             f"(발신 기록: {g['calls']!r})."
         )
 
+    def test_discard_confirm_settles_pending_edit_and_cancel_lands_coherently(
+        self, selftest_result: dict
+    ) -> None:
+        # §2.17 2R P2 — 1R 이 버리기를 blur 전에 눌리게 열면서 생긴 자리. 정산 없이 확인을
+        # 열면 큐에 든 `set_name` 이 모달이 떠 있는 사이 도착해 `#editor-foot` 을 갈아
+        # 끼우고, 저장해 둔 트리거가 분리돼 **취소가 화면 루트로 떨어진다**(모달의 대안
+        # 착지 — 키보드 사용자는 화면 처음에서 다시 걸어온다). 정적 계약은 못 본다:
+        # 배선·문안·판정이 전부 제자리이고 **비동기 도착 순서**만 어긋나기 때문이다.
+        d = selftest_result["editor_discard_cancel"]
+        assert d.get("error") is None, f"버리기 취소 프로브 예외: {d.get('error')!r}"
+        assert d.get("why") == "완료", f"버리기 확인이 열리지 않았습니다: {d!r}"
+        assert d["discard_enabled_on_typing"] is True, (
+            "타이핑 직후 버리기가 잠긴 채입니다 — 1R 계약(저장과 같은 술어)이 죽었습니다."
+        )
+        assert d["flushed_before_open"] is True, (
+            "확인이 대기 편집 정산 **전에** 열렸습니다 — 큐의 발신이 모달 뒤에 도착해"
+            f" 판정과 화면이 어긋납니다(발신 기록: {d.get('calls')!r})."
+        )
+        assert d["trigger_connected_at_open"] is True, (
+            "확인이 열린 시점의 버리기 버튼이 문서에 붙어 있지 않습니다 — 되돌릴 자리가"
+            " 이미 분리됐습니다."
+        )
+        assert d["focus_back_on_discard"] is True and d["focus_fell_to_screen_root"] is False, (
+            "취소 뒤 초점이 버리기 버튼으로 돌아오지 않고 화면 루트로 떨어졌습니다"
+            f" (활성 요소 판정: {d!r})."
+        )
+        # 취소는 **아무것도 버리지 않는다** — 친 값과 dirty 술어(두 버튼 활성)가 그대로다.
+        assert d["name_value_after_cancel"] == "공고서 수정", (
+            f"취소했는데 친 값이 사라졌습니다: {d['name_value_after_cancel']!r}"
+        )
+        assert d["discard_enabled_after_cancel"] is True and d["save_enabled_after_cancel"] is True, (
+            f"취소 뒤 두 행동이 잠겼습니다 — 손댄 세션인데 버릴 길도 저장할 길도 없습니다: {d!r}"
+        )
+        assert d["discarded"] is False, "취소했는데 discard_patch 가 발신됐습니다."
+
     def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
         self, selftest_result: dict
     ) -> None:
@@ -819,8 +854,22 @@ class TestWebSelftestGate:
         assert "저장하지 않은 변경" in j["dirty_head"], (
             f"손댄 세션의 머리가 저장됐다고 말합니다: {j['dirty_head']!r}"
         )
-        assert j["dirty_discard_shown"] is True, (
-            "손댄 세션에 「변경 버리기」가 없습니다 — 나가지 않고는 되돌릴 길이 없습니다."
+        # U2 §2.17 — 버리기는 상시 표시 + 상태 비활성. 존재 단언(dirty_discard_shown)은 상시
+        # 표시 승격의 순간 무엇을 밀어 넣어도 참이 되므로, clean/dirty 두 값으로 비활성을
+        # 각각 재고 저장이 같은 술어를 쓰는지도 본다(양성·음성 대조 — declaration-lives 류 차단).
+        assert j["discard_shown_clean"] is True and j["discard_disabled_clean"] is True, (
+            "클린 세션에서 「변경 버리기」가 숨거나 활성입니다 — 상시 표시 + 비활성이어야"
+            f" 합니다(§2.17): {j!r}"
+        )
+        assert j["save_disabled_clean"] is True, (
+            "클린 세션에서 「변경 저장」이 활성입니다 — 버리기와 같은 술어여야 합니다."
+        )
+        assert j["discard_shown_dirty"] is True and j["discard_enabled_dirty"] is True, (
+            "손댄 세션에 「변경 버리기」가 없거나 비활성입니다 — 나가지 않고는 되돌릴 길이"
+            " 없습니다."
+        )
+        assert j["save_enabled_dirty"] is True, (
+            "손댄 세션에서 「변경 저장」이 비활성입니다 — 버리기와 같은 술어여야 합니다."
         )
         # 머리 — 이름은 안정 입력이고 저장 상태가 **판본을 말한다**(§10.13 판정 O 표시 자리 ①).
         assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"
@@ -885,12 +934,20 @@ class TestWebSelftestGate:
         assert g["typing_enabled"] is True, (
             "이름을 고쳤는데 저장이 잠긴 채입니다 — 첫 클릭이 삼켜지는 그 상태입니다."
         )
+        # §2.17 + PR #354 리뷰 — 버리기도 같은 술어로 **타이핑 시점에** 열리고, 되돌려 치면
+        # 함께 잠긴다(저장만 열면 clean 세션 타이핑 직후 버리기 첫 클릭이 삼켜진다).
+        assert g["typing_discard_enabled"] is True, (
+            "이름을 고쳤는데 「변경 버리기」가 잠긴 채입니다 — 저장과 같은 술어여야 합니다."
+        )
         assert g["rerender_keeps_enabled"] is True, (
             "타이핑 중 push 한 번에 저장이 도로 잠깁니다 — 버튼만 직접 켜고 렌더 경로는 "
             "옛 판정을 그대로 씁니다(두 자리가 다른 말을 합니다)."
         )
         assert g["reverted_disabled"] is True, (
             "되돌려 쳐서 원래 값이 됐는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
+        )
+        assert g["reverted_discard_disabled"] is True, (
+            "되돌려 쳤는데 「변경 버리기」가 열린 채입니다 — 버릴 것 없는 버리기를 권합니다."
         )
         assert g["pattern_present"] is True, "파일명 패턴 입력이 없습니다 — 프로브가 겨눌 자리 소실."
         assert g["pattern_typing_enabled"] is True, (
