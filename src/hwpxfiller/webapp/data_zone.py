@@ -120,6 +120,50 @@ class DataZoneMixin:
             "origin": self.data_source,
         }
 
+    def new_work_handoff(self) -> "tuple[dict, str]":
+        """「이 데이터로 새 작업」이 들고 갈 **데이터 참조**와 거절 사유 — 단일 판정.
+
+        반환은 ``({"path", "sheet", "header_row"}, "")`` 또는 ``({}, 사유)`` 다. 버튼의
+        가부(스냅샷)와 진입의 fail-closed(브리지)가 **같은 한 판정**을 읽는다 — 표면이
+        `data_path` 유무로 스스로 유추하면 화면은 「누를 수 있다」고 말하고 백엔드는 거절하는
+        어긋남이 난다(#349 리뷰 P1 이 지목한 자리).
+
+        **참조를 경로 하나로 줄이지 않는다.** 등록 데이터(풀)의 엑셀 참조는 ``header_row``
+        같은 옵션을 함께 들 수 있는데, 그것을 떨어뜨리고 다시 열면 마법사가 사용자가 고른
+        것과 **다른 헤더**에 앵커를 건다 — 조용히 다른 데이터를 여는 경로다. 그래서 참조는
+        풀 항목의 ``opts`` 에서 통째로 복원한다(:meth:`_do_load_pool` 이 ``data_path`` 를
+        엑셀에만 채우는 규율은 그대로 둔다 — 그 값은 로케이트·고정 프리필의 것이다).
+
+        파일로 다시 열 수 없는 마운트(조립 파이프라인 등)는 **시끄럽게 막는다**: 마법사의
+        데이터 관문은 파일 참조를 여는 표면이고, 여기서 조용히 빈 초안으로 보내면
+        「이 데이터로」라는 문안 자체가 거짓이 된다.
+        """
+        if not self.data_source:
+            return {}, "데이터를 먼저 고르세요."
+        if self.data_source == "file":
+            return {"path": self.data_path, "sheet": self.data_sheet, "header_row": 0}, ""
+        try:
+            item = self.pool_registry.load(self.data_pool_key)
+        except Exception:  # noqa: BLE001  (삭제·손상 — 사용자 문구로 재진술)
+            return {}, "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목)."
+        opts = item.opts if isinstance(item.opts, dict) else {}
+        path = opts.get("path")
+        if item.kind != "excel" or not isinstance(path, str) or not path:
+            return {}, (
+                f"'{self.data_label}' 은 파일 참조가 아니어서 새 작업의 데이터로 열 수 "
+                "없습니다. 엑셀·CSV 데이터를 고른 뒤 시작하세요."
+            )
+        sheet = opts.get("sheet")
+        header_row = opts.get("header_row")
+        return {
+            "path": path,
+            "sheet": sheet if isinstance(sheet, str) else "",
+            # 0 = 미지정(어댑터 기본) — 형이 깨진 값을 추측해 고치지 않고 기본으로 두되,
+            # 그 사실은 실제 로드가 헤더로 말한다.
+            "header_row": header_row if isinstance(header_row, int)
+            and not isinstance(header_row, bool) and header_row > 0 else 0,
+        }, ""
+
     def _display_indices(self, indices: "list[int]") -> "list[int]":
         """표시 순서 투영 훅 — 기본 항등(원본 오름차순). 데이터-우선 「작업」 화면이
         sourceDesc(§18.10)로 재정의한다. 표·실행 입력이 같은 훅을 소비해 보이는 순서와

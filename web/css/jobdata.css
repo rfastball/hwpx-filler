@@ -148,8 +148,10 @@
 /* 고지·확인 필요는 각자 줄을 갖는다 — 카드 줄에 이어 붙으면 "쓸 수 있는 작업"과
    "막힌 작업"이 한 문장으로 읽힌다(눈검증 교정). */
 .cand-more{flex-basis:100%}
-/* 「＋ 이 데이터로 새 작업」(U2 §2.4)도 자기 줄을 갖는다 — 고지 줄과 같은 근거다. */
-.cand-newwork{flex-basis:100%}
+/* 「＋ 이 데이터로 새 작업」(U2 §2.4)도 자기 줄을 갖는다 — 고지 줄과 같은 근거다.
+   막힌 경우의 사유는 버튼 옆에 **텍스트로** 선다(비활성만 두면 왜 막혔는지 침묵한다). */
+.cand-newwork{flex-basis:100%;display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
+.cand-newwork-why{font-size:var(--fs-caption)}
 .cand-needs{flex-basis:100%;display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
 .cand-needs .cand-more{flex-basis:auto}
 

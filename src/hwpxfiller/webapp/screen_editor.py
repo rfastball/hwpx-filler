@@ -184,6 +184,10 @@ class EditorController:
         self.raw_block = ""
         self.data_path = ""
         self.data_sheet = ""  # 다중 시트 확정값(#33) — 자동등록 참조에 함께 저장(#26)
+        # 헤더 행(엑셀 참조 옵션) — 0 = 미지정(어댑터 기본 1행). 등록 데이터를 든 진입
+        # (#349 리뷰 P1)이 채운다: 참조를 경로로만 줄이면 사용자가 고른 것과 **다른 헤더**로
+        # 마법사가 서고, 그 어긋남은 화면 어디에도 표시가 없다.
+        self.data_header_row = 0
         self.source_fields: "list[str]" = []
         # '미사용' 헤더(#49) — 세션 국소 상태. durable 저장 없음: 매핑이 곧 사용 헤더의
         # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
@@ -385,6 +389,24 @@ class EditorController:
         return [f for f in self.source_fields if f not in self._ignored_sources]
 
     # ------------------------------------------------------------- 스냅샷
+    def _model_key_now(self) -> tuple:
+        """매핑 모델의 **정체 키** — 짓는 자리를 하나로 모은다(성분 누락 = 조용한 우회).
+
+        성분: 템플릿 · 데이터 경로 · 확정 시트 · **헤더 행** · 전체 소스 헤더. 세 자리가
+        각자 짓던 것을 여기로 모은 이유가 곧 새 성분이 필요해진 이유다 — 한 곳만 빠뜨리면
+        복원 세션의 키가 진입 세션과 달라 매핑이 조용히 재생성되거나(확정 전멸) 반대로
+        바뀐 데이터에서 재생성이 안 일어난다.
+
+        ``header_row`` 가 든 근거는 ``data_sheet`` 가 든 근거와 같다(#349 리뷰 P1): 같은
+        파일·같은 시트라도 헤더 행이 다르면 다른 데이터인데, 두 판의 헤더 **이름**이 우연히
+        겹치면 ``source_fields`` 가 안 바뀌어 키가 불변 → 조기 반환 → 이전 기준의 확정 행이
+        그대로 저장·실행된다.
+        """
+        return (
+            self.template_path, self.data_path, self.data_sheet,
+            self.data_header_row, tuple(self.source_fields),
+        )
+
     def _current_record(self) -> "dict":
         if not self.records:
             return {}
@@ -755,9 +777,8 @@ class EditorController:
 
     def new_draft_with_data(
         self,
-        data_path: str,
+        source_ref: dict,
         *,
-        sheet: str = "",
         entry_reason: str = "voluntary",
         evidence: "dict | None" = None,
         return_context: "dict | None" = None,
@@ -773,11 +794,17 @@ class EditorController:
         fail-closed 로 보는데, 그 거절이 ``_reset()`` **뒤에** 나면 배선 실수 한 번이
         사용자의 편집 세션을 조용히 지운다. 그래서 문맥을 먼저 세우고 통과한 뒤에 끊는다.
 
-        데이터는 경로로 **다시 읽는다**(:meth:`load_data_path`) — 「문서 만들기」의 적재
-        결과를 그대로 넘겨받지 않는 것은 풀 규약(경로만 보관하고 쓸 때 다시 읽음)과 같은
+        데이터는 참조로 **다시 읽는다**(:meth:`load_data_path`) — 「문서 만들기」의 적재
+        결과를 그대로 넘겨받지 않는 것은 풀 규약(참조만 보관하고 쓸 때 다시 읽음)과 같은
         이유다: 두 화면이 같은 파일의 서로 다른 판을 들고 있게 만들지 않는다. 그 재적재가
         실패하면(파일이 사라짐·잠김·빈 시트) loud 로 올라간다 — 호출측(브리지)이 사유를
         재진술하고, 세션은 이미 확인을 마친 폐기 상태로 남는다.
+
+        ``source_ref`` 는 **참조 전체**다(``{path, sheet, header_row}``, 판정·조립은
+        :meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.new_work_handoff` 단일 출처).
+        경로 하나로 줄여 받지 않는 이유가 #349 리뷰 P1 이다: 등록 데이터의 엑셀 참조가 든
+        ``header_row`` 를 떨어뜨리면 마법사가 사용자가 고른 것과 **다른 헤더**에 앵커를
+        걸고, 그 어긋남은 화면 어디에도 표시가 없다.
         """
         context = make_context(
             "",
@@ -787,9 +814,18 @@ class EditorController:
         )
         self._reset()
         self.session = EditSession(context=context, base=None, section=self.section)
+        path = str(source_ref.get("path") or "")
+        if not path:
+            raise ValueError("데이터 참조에 경로가 없습니다.")
+        sheet = str(source_ref.get("sheet") or "")
+        header = source_ref.get("header_row")
         # 템플릿은 아직 없다 — 1단계에서 고른다. 데이터만 먼저 서고 매핑 모델은 2단계 진입
         # (`_do_goto_section` → `_ensure_model`)이 세운다(모델 전 선로드의 기존 경로).
-        self.load_data_path(data_path, sheet=sheet or None)
+        self.load_data_path(
+            path,
+            sheet=sheet or None,
+            header_row=header if isinstance(header, int) and not isinstance(header, bool) else 0,
+        )
 
     # ---------------------------------- 템플릿 라이브러리 피커(R-info 2부 접합 최소분)
     def _do_use_library_template(self, p: dict) -> None:
@@ -929,16 +965,27 @@ class EditorController:
             for n in names
         ])
 
-    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+    def load_data_path(
+        self, path: str, *, sheet: "str | None" = None, header_row: int = 0
+    ) -> None:
         """선택된 데이터 파일 로드. ``sheet`` = 웹에서 확정한 시트명(다중 시트 게이트 #33,
-        None = CSV·단일 시트라 물을 것이 없는 경우)."""
-        source = source_for_path(path, sheet=sheet)
+        None = CSV·단일 시트라 물을 것이 없는 경우).
+
+        ``header_row`` 는 **등록 데이터 참조가 들고 있던 옵션의 승계 자리**다(#349 리뷰 P1)
+        — 0 이면 어댑터 기본(1행). 관문에서 사람이 파일을 직접 고르는 경로는 이 옵션을
+        만들지 않으므로 늘 0이고, 그 경로의 거동은 종전과 같다.
+        """
+        opts: "dict[str, object]" = {"sheet": sheet}
+        if header_row:
+            opts["header_row"] = header_row
+        source = source_for_path(path, **opts)
         records = source.records()
         if not records:
             raise ValueError(NO_ROWS_TEXT)
         self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
+        self.data_header_row = header_row
         self.source_fields = source.fields()
         # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
         self._ignored_sources = set()
@@ -1063,7 +1110,7 @@ class EditorController:
         self.source_fields = profile_source_vocabulary(job.mapping)
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         applied = self.model.apply_profile(job.mapping)
-        self._model_key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
+        self._model_key = self._model_key_now()
         # 거래 상태 — base = **이 스냅샷**(§5.2 baseSnapshot). patch 는 여기서부터의 차이다.
         # 문맥의 대상은 늘 **지금 열려 있는 작업**이다: 초안이 저장으로 작업이 되는 전이에서
         # 진입 시점의 빈 이름이 남으면 배너가 남의(없는) 작업을 가리킨다.
@@ -1291,9 +1338,7 @@ class EditorController:
             vocabulary = self.source_fields
         self.model = MappingModel.from_suggestions(self.schema, vocabulary)
         self.model.apply_profile(base.mapping)
-        self._model_key = (
-            self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields)
-        )
+        self._model_key = self._model_key_now()
 
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
@@ -1438,7 +1483,7 @@ class EditorController:
         """
         if self.schema is None:
             raise ValueError("템플릿이 로드되지 않았습니다.")
-        key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
+        key = self._model_key_now()
         if self.model is not None and self._model_key == key:
             return
         prior = None

@@ -1333,6 +1333,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if self.data_notice_text else None
             ),
         }
+        # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
+        # 표면이 `data_target.path` 유무로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가
+        # 거절하는 어긋남이 난다. 막힐 땐 숨기지 않고 비활성 + 사유 병기(조용한 무동작 금지).
+        _handoff, _blocked = self.new_work_handoff()
+        base["new_work"] = {"can": not _blocked, "reason": _blocked}
         # 후보(§18.4) — 데이터 준비 시에만 계산(§18.1: 미준비면 계산 자체를 하지 않는다).
         # 판정 fields 는 필터 열 파생과 같은 원천(records[0].keys — 표시=판정 정합).
         base["candidates"] = self._candidate_payload(jobs)

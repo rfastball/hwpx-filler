@@ -451,6 +451,40 @@ def test_new_job_from_data_starts_the_wizard_on_the_mounted_data(tmp_path, monke
     assert job.data_path == str(csv)
 
 
+def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path, monkeypatch):
+    """#349 리뷰 P1 — 파일로 다시 열 수 없는 마운트는 **버튼과 브리지가 같은 말**을 한다.
+
+    조립 파이프라인 등록분은 `_do_load_pool` 이 `data_path` 를 의도적으로 비워 두는데
+    (그 값은 로케이트·고정 프리필의 것이라 파일 참조에만 의미가 있다) 버튼은 `has_data` 로
+    서 있었다 — 화면은 「누를 수 있다」, 백엔드는 「데이터가 없다」로 갈리던 자리다. 이제
+    판정이 하나이므로 스냅샷의 사유와 진입 거절 문구가 **같은 문자열**이어야 한다.
+    """
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    a, b = tmp_path / "a.csv", tmp_path / "b.csv"
+    a.write_text("id,부서\n1,총무과\n", encoding="utf-8")
+    b.write_text("id,사업명\n1,책상\n", encoding="utf-8")
+    key = job.pool_registry.add(DatasetPoolItem(name="6월 조립", kind="pipeline", opts={
+        "sources": [
+            {"kind": "excel", "opts": {"path": str(a)}},
+            {"kind": "excel", "opts": {"path": str(b)}},
+        ],
+        "steps": [{"op": "merge", "source": 1, "on": "id", "how": "inner"}],
+    }))
+    assert job.dispatch("load_pool", {"key": key})["ok"] is True
+
+    snap = job.snapshot()
+    assert snap["has_data"] is True                      # 데이터는 있다 —
+    assert snap["new_work"]["can"] is False              # 이 동선만 못 간다
+    out = frontend.new_job_from_data({"entry_reason": "document_browser_new_work"})
+    assert isinstance(out, str) and out.startswith("ERROR:")
+    assert snap["new_work"]["reason"] in out, "버튼의 사유와 진입 거절 문구가 갈립니다."
+    assert editor.data_path == ""                        # 조용한 빈 초안으로 가지 않는다
+
+
 def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, monkeypatch):
     """U2 §2.9(#344) — job 의 무장 선택은 창 종료 가드를 세우지 **않는다**(계약상 침묵).
 

@@ -199,7 +199,7 @@ def test_new_draft_with_data_anchors_the_mounted_data_in_the_same_wizard(tmp_pat
     """
     ctrl, pushes = _controller(tmp_path)
     ctrl.new_draft_with_data(
-        str(MULTI_SHEET), sheet="낙찰현황",
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황", "header_row": 0},
         entry_reason="document_browser_new_work",
         evidence={"데이터": "multi_sheet.xlsx"},
         return_context={"surface": "data"},
@@ -234,10 +234,40 @@ def test_new_draft_with_data_validates_before_it_destroys(tmp_path):
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("set_name", {"name": "쓰던 작업"})
     with pytest.raises(ValueError, match="배선되지 않았습니다"):
-        ctrl.new_draft_with_data(str(MULTI_SHEET), entry_reason="workbench_result")
+        ctrl.new_draft_with_data({"path": str(MULTI_SHEET)}, entry_reason="workbench_result")
     assert ctrl.job_name == "쓰던 작업"                    # 세션 생존
     assert ctrl.template_path == str(TPL_COMPILED)
     assert ctrl.data_path == ""                            # 새 데이터도 서지 않았다
+
+
+def test_new_draft_carries_the_whole_reference_not_just_the_path(tmp_path):
+    """#349 리뷰 P1 — 참조를 경로로 줄이면 **다른 헤더**의 데이터로 마법사가 선다.
+
+    등록 데이터의 엑셀 참조는 `header_row` 를 들 수 있다. 그것을 떨어뜨리고 다시 열면
+    사용자가 「문서 만들기」에서 본 열과 마법사가 앵커한 열이 갈리는데, 그 어긋남은 화면
+    어디에도 표시가 없다(조용히 다른 데이터). 모델 정체 키도 같은 성분을 든다 — 두 판의
+    헤더 이름이 우연히 겹치면 키가 불변이라 이전 기준의 확정 행이 그대로 산다.
+    """
+    xlsx = tmp_path / "머리2행.xlsx"
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["2026년 발주 목록", "작성 2026-07", "비고"])   # 1행 = 표제 줄(헤더 아님)
+    ws.append(["부서", "사업명", "금액"])        # 2행 = 진짜 헤더
+    ws.append(["총무과", "책상", "100"])
+    wb.save(xlsx)
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.new_draft_with_data({"path": str(xlsx), "sheet": "", "header_row": 2})
+    assert ctrl.source_fields == ["부서", "사업명", "금액"]
+    assert ctrl.data_header_row == 2
+    assert ctrl._model_key_now()[3] == 2      # 정체 키 성분 — 누락은 조용한 게이트 우회다
+    # 대조군: 같은 파일을 경로만으로 열면 제목 줄이 헤더가 된다 = **다른 데이터**.
+    other, _ = _controller(tmp_path)
+    other.new_draft_with_data({"path": str(xlsx)})
+    assert other.source_fields != ctrl.source_fields
+    assert other.data_header_row == 0
 
 
 def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):

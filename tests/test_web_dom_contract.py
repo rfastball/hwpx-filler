@@ -1113,7 +1113,21 @@ def test_needs_and_missing_template_redirect_to_different_places():
     assert "document_browser_new_work:" in editor_js, (
         "편집기가 새 진입 사유의 배너 문안을 모릅니다 — 사유만 실리고 아무 말도 하지 않습니다."
     )
-    # ⑤ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
+    # ⑤ **가부 판정도 Python 하나**(#349 리뷰 P1) — 파일로 다시 열 수 없는 마운트에서
+    #    표면이 스스로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가 거절한다. 막힐 땐
+    #    숨기지 않고 비활성 + 사유 병기이고, 그때 `data-busy-lock` 은 달지 않는다
+    #    (setBusy 의 일괄 복원이 되살린다 — #342 가 재연결 버튼에서 겪은 자리).
+    assert "s.new_work" in job_js and "nw.can" in job_js, (
+        "「이 데이터로 새 작업」의 가부를 표면이 스스로 판정합니다 — 판정은 Python 하나입니다."
+    )
+    assert "cand-newwork-why" in job_js, "막힌 사유가 표면에 서지 않습니다(조용한 비활성 금지)."
+    nw_at = job_js.index("const newWorkBtn")
+    nw_html = job_js[nw_at:nw_at + 700]
+    assert "disabled" in nw_html and "data-busy-lock data-new-work" in nw_html
+    assert "disabled data-busy-lock" not in nw_html and "data-busy-lock disabled" not in nw_html, (
+        "비활성 버튼에 busy-lock 이 달렸습니다 — 생성 종료의 일괄 복원이 되살립니다."
+    )
+    # ⑥ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
     assert "Bridge.newJobFromData(context" in entry_js, (
         "진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다 — 모든 진입이 자발적 진입으로 떨어집니다."
     )

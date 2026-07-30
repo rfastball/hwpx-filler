@@ -582,9 +582,11 @@ class WebFrontend:
         데이터의 정체를 웹이 실어 보내지 않고 여기서 「문서 만들기」 컨트롤러에 **되묻는**
         이유: 그 화면이 지금 무엇을 마운트하고 있는지의 단일 출처는 그 컨트롤러이고, 웹이
         기억한 값을 실으면 스냅샷 도착 순서에 따라 **다른 파일로 작업을 시작**할 수 있다
-        ([[bridge-call-ordering-contract]] 결함류). 데이터가 없으면 조용히 빈 마법사를
-        열지 않고 시끄럽게 거절한다 — 「이 데이터로」라고 말한 진입이 데이터 없이 열리면
-        문안이 거짓이 된다.
+        ([[bridge-call-ordering-contract]] 결함류). 되묻는 창구는 ``new_work_handoff``
+        하나이고 **버튼의 가부와 같은 판정**이다(#349 리뷰 P1) — 여기서 `data_path` 만 보고
+        따로 판정하면, 파일이 아닌 마운트(조립 파이프라인 등록분)에서 화면은 「누를 수 있다」고
+        그려 놓고 백엔드는 「데이터가 없다」고 거절하는 어긋남이 난다. 열 수 없으면 조용히 빈
+        마법사를 열지 않고 그 사유를 그대로 되돌린다.
 
         ``context`` = ``{entry_reason, evidence, return_context}``(계약 §5.1) — 보낸 표면이
         자기가 본 것을 싣는다. 미배선 사유·미지 복귀 표면은 링1 이 fail-closed 로 거절하고
@@ -595,21 +597,18 @@ class WebFrontend:
         try:
             # 진행 중 런과 겹치는 진입 거절은 `open_job_in_editor` 와 같은 술어다.
             job.raise_if_generating("새 작업을 시작하세요")
-            path = str(getattr(job, "data_path", "") or "")
-            if not path:
-                raise ValueError(
-                    "지금 「문서 만들기」에 올려 둔 데이터가 없습니다 — 데이터를 먼저 고르세요."
-                )
+            source_ref, blocked = job.new_work_handoff()
+            if blocked:
+                raise ValueError(blocked)
             self._controller("editor").new_draft_with_data(
-                path,
-                sheet=str(getattr(job, "data_sheet", "") or ""),
+                source_ref,
                 entry_reason=str(ctx.get("entry_reason") or "voluntary"),
                 evidence=ctx.get("evidence"),
                 return_context=ctx.get("return_context"),
             )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return path
+        return str(source_ref.get("path") or "")
 
     # (load_template_into_editor 브리지는 tpl 화면과 함께 사망(F8) — 크로스스크린 「이
     #  서식으로 새 작업」의 발신 표면이 죽어 소비자 0. 편집기 안 선택은 dispatch

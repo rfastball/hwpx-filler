@@ -597,9 +597,20 @@
     // 때만 세우면 "쓸 것은 있는데 이 데이터에 맞는 새 작업을 만들고 싶다"가 갈 데를 잃고,
     // 그 상태가 바로 이 요청이 나온 자리다. 자리는 후보 줄 꼬리 — 「무엇으로 만들까」를
     // 묻는 구획의 마지막 선택지다.
-    const newWorkBtn =
-      `<button class="btn sm" type="button" id="jobCandNewWork" data-busy-lock data-new-work>` +
-      `＋ 이 데이터로 새 작업</button>`;
+    // **가부 판정은 Python 하나**(#349 리뷰 P1): 이 데이터가 파일 참조가 아니면(조립 등록
+    // 데이터) 마법사가 열 수 없는데, 그 판정을 여기서 `data_target.path` 유무로 유추하면
+    // 화면과 백엔드가 갈린다. 막힐 땐 **숨기지 않고** 비활성 + 사유 병기 — 사라진 버튼은
+    // 사용자에게 아무 것도 말하지 않는다.
+    // 비활성일 때 `data-busy-lock` 을 **달지 않는다**: setBusy 의 일괄 복원(`el.disabled =
+    // busy`)이 생성 종료와 함께 이 버튼을 되살린다(#342 가 재연결 버튼에서 겪은 그 자리).
+    // 잠금은 DOM 이 아니라 상태가 지고, 상태는 매 푸시 다시 그려진다.
+    const nw = s.new_work || { can: true, reason: "" };
+    const newWorkBtn = nw.can
+      ? `<button class="btn sm" type="button" id="jobCandNewWork" data-busy-lock data-new-work>` +
+        `＋ 이 데이터로 새 작업</button>`
+      : `<button class="btn sm" type="button" id="jobCandNewWork" disabled` +
+        ` title="${esc(nw.reason || "")}">＋ 이 데이터로 새 작업</button>` +
+        `<span class="cand-newwork-why muted">${esc(nw.reason || "")}</span>`;
     if (!top.length && !needs.length) {
       // 막다른 자리를 만들지 않는다(U2 §2.4). 흡수처 출구(`#jobNoDataExit`)는 데이터·작업이
       // **둘 다** 없을 때만 서는데, 정작 출구가 필요한 상태는 여기다 — 데이터는 골랐고 그

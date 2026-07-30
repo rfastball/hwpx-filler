@@ -1354,6 +1354,61 @@ def test_load_pool_targets_excel_reference(tmp_path):
     assert snap["record_count"] == 2
 
 
+def test_new_work_handoff_carries_the_reference_or_refuses_out_loud(tmp_path):
+    """U2 §2.4·#349 리뷰 P1 — 「이 데이터로 새 작업」의 가부·참조는 **한 판정**이 낸다.
+
+    세 마운트를 대조한다:
+
+    - 파일 마운트 → 경로·시트 그대로 승계(종전 거동 무회귀).
+    - 등록 데이터(엑셀 참조) → ``header_row`` 까지 **참조 전체** 승계. `_do_load_pool` 이
+      `data_path` 에 남기는 것은 로케이트용 경로 하나뿐이라, 그것만 보면 사용자가 고른 것과
+      다른 헤더로 마법사가 선다.
+    - 등록 데이터(조립 파이프라인) → 파일로 다시 열 수 없으므로 **시끄럽게 거절**. 이 경우
+      `data_path` 는 의도적으로 비어 있는데(kind != excel), 버튼은 `has_data` 로 서 있었다 —
+      화면은 「누를 수 있다」, 백엔드는 「데이터가 없다」로 갈리던 자리다. 스냅샷이 가부와
+      사유를 함께 실어 표면이 유추하지 않는다.
+    """
+    ctrl, pool = _pool_controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ref, blocked = ctrl.new_work_handoff()
+    assert blocked == "" and ref["path"] == _data_csv(tmp_path)
+    assert ref["sheet"] == "" and ref["header_row"] == 0
+    assert ctrl.snapshot()["new_work"] == {"can": True, "reason": ""}
+
+    xlsx = tmp_path / "머리2행.xlsx"
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "발주"
+    ws.append(["2026년 발주 목록", "작성", "비고"])
+    ws.append(["bidNtceNm", "presmptPrce", "부서"])
+    ws.append(["전산장비", "1000", "총무과"])
+    wb.save(xlsx)
+    key = _pool_add(pool, "머리2행", {"path": str(xlsx), "sheet": "발주", "header_row": 2})
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    ref, blocked = ctrl.new_work_handoff()
+    assert blocked == ""
+    assert ref == {"path": str(xlsx), "sheet": "발주", "header_row": 2}
+
+    a, b = tmp_path / "a.csv", tmp_path / "b.csv"
+    a.write_text("id,bidNtceNm\n1,전산장비\n", encoding="utf-8")
+    b.write_text("id,presmptPrce\n1,1000\n", encoding="utf-8")
+    pkey = _pool_add(pool, "6월 조립", {
+        "sources": [
+            {"kind": "excel", "opts": {"path": str(a)}},
+            {"kind": "excel", "opts": {"path": str(b)}},
+        ],
+        "steps": [{"op": "merge", "source": 1, "on": "id", "how": "inner"}],
+    }, kind="pipeline")
+    assert ctrl.dispatch("load_pool", {"key": pkey})["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True and snap["data_target"]["path"] == ""
+    ref, blocked = ctrl.new_work_handoff()
+    assert ref == {} and "파일 참조가 아니어서" in blocked
+    assert snap["new_work"] == {"can": False, "reason": blocked}
+
+
 def test_load_pool_without_job_mounts_session_data(tmp_path):
     """데이터-우선(§18.2): 작업 미선택에도 풀 겨눔이 세션에 마운트된다 — 구 「작업 먼저」
     전제의 개정. 마운트 직후 선택 0건 + 후보(§18.4) + prework 게이트가 다음 할 일을 말한다."""
