@@ -71,7 +71,12 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # ②Python 승격 = 키스트로크마다 발신인데, 그건 `docs/WEB_RENDER_PRESERVATION.md` 가
     # 명시적으로 기각한 설계다(타이핑 중 재구성 없음이 Preserve 의 전제).
     # 없으면 저장 게이트가 blur 전까지 잠긴 채라 방금 고친 사람의 **첫 클릭이 삼켜진다**.
-    "screens/editor.js": 7,
+    # +1(PR #355 2R): folderImportInFlight — 폴더 일괄 가져오기 흐름(스캔→확정→실행)의
+    # 진행 중 표지. 파생 불가: ①스냅샷은 「지금 이 표면이 연 왕복이 미정착인가」를 모른다
+    # (배치 push 는 끝에 1회 — 진행 중은 스냅샷 밖 사건) ②DOM(버튼 disabled) 파생은 진행
+    # 중 도착하는 무관 push 재렌더가 도로 풀어 버린다. 판정 정본은 Python 비차단 잠금이고
+    # 이 플래그는 재클릭을 삼키는 어포던스 잠금이다.
+    "screens/editor.js": 8,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "datazone.js": 0,
@@ -1471,6 +1476,69 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     )
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert '$("scr-editor")' in editor_js, "editor.js 위임 루트가 몰입 표면으로 이사하지 않았습니다."
+
+
+def test_editor_folder_import_is_wired_without_session_confirm():
+    """「폴더에서 가져오기…」(#339 · U2 §2.16 narrow) 배선 — 4자리가 한 계약으로 산다.
+
+    ①행동 줄 버튼(data-act="import-folder") ②직접 브리지 메서드(importTemplatesFolder →
+    import_templates_folder — action registry 밖이라 payload 검증은 메서드 본문 소유)
+    ③핸들러는 재진술 확인(Modal.confirm) 뒤에만 확정 실행을 부른다 ④**채택하지 않으므로**
+    새-세션 확인(confirmNewSessionIfUnsaved)이 이 경로에 서면 안 된다 — 세션 무변경 동사에
+    세션 파괴 확인이 붙으면 확인이 거짓말이 된다.
+    """
+    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'data-act="import-folder"' in editor, "폴더 가져오기 버튼이 행동 줄에 없습니다."
+    start = editor.index('case "import-folder"')
+    block = editor[start:editor.index('case "', start + 10)]
+    assert "importTemplatesFolder" in block, "핸들러가 직접 브리지 메서드를 부르지 않습니다."
+    # 호출 형태로 잰다 — 주석의 언급(왜 안 거는지의 선언)은 결함이 아니다.
+    assert "confirmNewSessionIfUnsaved()" not in block, (
+        "채택 없는 일괄 등록에 새-세션 확인이 붙었습니다 — 세션 무변경 동사입니다(#339)."
+    )
+    assert block.index("Modal.confirm") < block.index("importTemplatesFolder(r.folder, true, r.files)"), (
+        "확정 실행이 재진술 확인보다 앞에 있거나 재진술된 후보 목록(r.files)을 나르지"
+        " 않습니다 — 확정 전에는 홈에 아무것도 쓰지 않고, 실행은 확인한 목록에 결속된다."
+    )
+    assert "importTemplatesFolder(folder, confirm, files)" in bridge, (
+        "브리지에 importTemplatesFolder(확정 목록 나름)가 없습니다."
+    )
+    assert "def import_templates_folder(" in app_py, (
+        "백엔드 직접 메서드 import_templates_folder 가 없습니다."
+    )
+    # 재진입 가드(PR #355 2R) — in-flight 플래그가 흐름 **전체**(스캔→확정→실행)를 덮고,
+    # 취소·실패 출구 포함 어디로 나가든 풀린다(finally). 잠긴 채 남으면 버튼이 영구 사망.
+    # 판정 정본은 Python(tpl import_folder 비차단 잠금)이고 이 플래그는 어포던스 잠금이다.
+    assert "if (folderImportInFlight) break;" in block, (
+        "폴더 가져오기에 in-flight 가드가 없습니다 — 느린 드라이브에서 재클릭이 두 번째"
+        " 스캔/확정 모달/배치를 시작합니다(PR #355 2R)."
+    )
+    assert block.index("folderImportInFlight = true") < block.index("importTemplatesFolder()"), (
+        "가드가 첫 브리지 발신보다 늦게 섭니다 — 스캔·확정 모달이 가드 밖입니다."
+    )
+    assert "finally" in block and "folderImportInFlight = false" in block, (
+        "in-flight 해제가 finally 에 없습니다 — 취소·실패 출구에서 버튼이 영구히 잠깁니다."
+    )
+    tpl_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp"
+              / "screen_template.py").read_text(encoding="utf-8")
+    assert "_folder_import_lock.acquire(blocking=False)" in tpl_py, (
+        "배치 중복 실행의 정본 거절(tpl 비차단 잠금)이 없습니다 — JS 플래그만 남으면"
+        " 어포던스가 뚫릴 때 두 배치가 교차합니다(거동은 test_webapp_template 이 잰다)."
+    )
+    # 빈 상태(이 기능의 주 부트스트래핑 시나리오)는 라이브러리를 채우는 경로를 **둘 다**
+    # 광고한다(U2 §2.16 :946-949 — 3R P2): 두 밴드의 빈 힌트 모두 폴더 경로를 말해야 한다.
+    empty_hints = [
+        line for line in editor.splitlines()
+        if "없습니다. '" in line and "추가하세요" in line
+    ]
+    assert len(empty_hints) == 2 and all("'폴더에서 가져오기…'" in h for h in empty_hints), (
+        "빈 상태 힌트가 폴더 일괄 경로를 광고하지 않습니다 — 행동 줄 버튼만 있고 빈"
+        f" 라이브러리의 첫 안내가 단건 경로만 말합니다: {empty_hints!r}"
+    )
 
 
 def test_edit_entries_carry_their_context():

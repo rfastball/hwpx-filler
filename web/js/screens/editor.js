@@ -97,6 +97,9 @@
      파생 불가: 스냅샷은 「어느 메뉴가 열려 있는가」를 모른다(뷰 상태 — template.js menuFor
      의 이주분, 한 객체로 묶어 1변수). {media, kind:"row"|"group", key?|group?, item?, trigger} */
   let libMenuFor = null;
+  // 폴더 일괄 가져오기 흐름(스캔→확정→실행→완료 푸시) 진행 중 표지(PR #355 2R) —
+  // DOM 파생 불가: 버튼 disabled 는 진행 중 도착하는 push 재렌더가 도로 풀어 버린다.
+  let folderImportInFlight = false;
 
   /* TXT 저작 모달의 열림 거래(F8 — template.js editMode·editPath·editBaseline·editAllowClose
      4변수의 이주분을 1객체로). 파생 불가: 모달의 대상·기준선·닫기 허가는 스냅샷이 모른다
@@ -363,6 +366,7 @@
     // 매체 라우팅 — §10.17.2 판정 C)이라 밴드 밖 공용 줄에 둔다. 새로고침 = 외부 FS 재스캔.
     return `<div class="row" style="margin-bottom:var(--sp-4)">
       <button class="btn sm" data-act="import-template">가져오기…</button>
+      <button class="btn sm" data-act="import-folder">폴더에서 가져오기…</button>
       <button class="btn sm" data-act="lib-new-txt">새 TXT 템플릿…</button>
       <span class="spacer"></span>
       <button class="btn sm" data-act="lib-refresh" title="라이브러리 폴더를 다시 읽습니다">새로고침</button>
@@ -371,13 +375,15 @@
       <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("HWPX 서식", hw)}</div>
       <p class="note quiet" style="margin-top:0">누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다.</p>
       ${libraryBand(lib.hwpx, "hwpx", libRow,
-        "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요.")}
+        // 빈 상태는 라이브러리를 채우는 경로를 **둘 다** 말한다(U2 §2.16 — PR #355 3R):
+        // 단건과 폴더 일괄이 같은 자리에서 시작하는 부트스트래핑 시나리오다.
+        "라이브러리에 템플릿이 없습니다. '가져오기…'로 하나씩, '폴더에서 가져오기…'로 한꺼번에 추가하세요.")}
     </div>
     <div class="grp">
       <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("TXT 기안", tx)}</div>
       <p class="note quiet" style="margin-top:0">채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다.</p>
       ${libraryBand(lib.txt, "txt", txtLibRow,
-        "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…'로 추가하세요.")}
+        "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.")}
     </div>${resultLine}`;
   }
 
@@ -1076,6 +1082,37 @@
           if (!(await confirmNewSessionIfUnsaved())) break;
           const r = await Bridge.importTemplateFile(SCREEN);
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
+          break;
+        }
+        case "import-folder": {
+          // 재진입 가드(PR #355 2R P2): 느린 드라이브에서 await 진행 중에도 버튼이 활성이라
+          // 재클릭이 두 번째 스캔/확정 모달/배치를 시작한다 — _import_lock 은 개별 복사만
+          // 직렬화하므로 같은 목록이 번호 접미로 재반입되고 완료 푸시가 2회 온다. 여기는
+          // **어포던스 잠금**(흐름 전체를 한 플래그로), 배치 중복 실행의 **정본 거절은
+          // tpl 권위 하나**(Python import_folder 비차단 잠금 — 같은 상태를 두 곳이 판정하지
+          // 않는다: JS 플래그는 판정이 아니라 클릭을 삼키는 문이다).
+          if (folderImportInFlight) break;
+          folderImportInFlight = true;
+          try {
+            // 폴더 일괄 등록(#339 U2 §2.16) — 채택하지 않으므로 세션 무변경: 단건과 달리
+            // 새-세션 확인(confirmNewSessionIfUnsaved)을 걸지 않는다. 순서는 고른 뒤
+            // **먼저 재진술하고 확정**(수치·문안은 Python, 확인 UI 는 여기) — 확정 전에는
+            // 홈에 아무것도 쓰지 않는다. 결과 재진술은 tpl 결과 줄이 소유(배치 요약).
+            const r = await Bridge.importTemplatesFolder();
+            if (!r) break;                                  // 피커 취소
+            if (r.error) { alertMsg(r.error); break; }
+            if (!r.needs_confirm) break;
+            if (!(await Modal.confirm({
+              body: r.confirm_text + "\n\n지금 가져올까요?",
+              confirmLabel: "가져오기", cancelLabel: "취소", returnFocus: el,
+            }))) break;
+            // 확정 실행은 **재진술된 후보 목록**(r.files)을 그대로 나른다 — 재스캔이면
+            // 확인 안 된 파일이 따라 들어온다(PR #355 리뷰).
+            const done = await Bridge.importTemplatesFolder(r.folder, true, r.files);
+            if (done && done.error) alertMsg(done.error);
+          } finally {
+            folderImportInFlight = false;                   // 취소·실패 포함 어느 출구든 해제
+          }
           break;
         }
         case "ack-gate": await sendEdit("ack_gate", {}); break;

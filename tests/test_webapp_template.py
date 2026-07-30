@@ -373,6 +373,347 @@ def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
     assert not (tp / "txt" / "협조전.txt").exists()  # 반가져오기 잔재 없음
 
 
+# ==================================== 폴더 일괄 가져오기(#339 · U2 §2.16 narrow)
+def _import_folder_fixture(tp: Path) -> Path:
+    """혼합 폴더: 후보 3(.hwpx 1 + .txt 2, 그중 온나라_기안.txt 는 기존과 충돌) ·
+    제외 파일 1(.pdf) · 하위 폴더 1(그 안 .txt 는 1단계 밖)."""
+    ext = tp / "ext"
+    (ext / "sub").mkdir(parents=True)
+    (ext / "협조전.txt").write_text("{{건명}}", encoding="utf-8")
+    _write_compiled(ext / "용역.hwpx")
+    (ext / "명세.pdf").write_text("x", encoding="utf-8")
+    (ext / "온나라_기안.txt").write_text("다른내용", encoding="utf-8")   # 충돌 후보
+    (ext / "sub" / "하위.txt").write_text("{{x}}", encoding="utf-8")     # 1단계 밖
+    return ext
+
+
+def test_scan_import_folder_restates_and_writes_nothing(tmp_path, monkeypatch):
+    """스캔 = 읽기 전용 재진술 — 매체별 건수·제외 수·충돌 수 + 완성 문안. **확정 전에는
+    홈에 아무것도 쓰지 않는다**(#339). 하위 폴더는 세지도 가져오지도 않는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    before_lib = set((tp / "lib").iterdir())
+    before_txt = set((tp / "txt").iterdir())
+    res = ctrl.scan_import_folder(str(ext))
+    assert res["needs_confirm"] is True and res["folder"] == str(ext)
+    assert res["hwpx"] == 1 and res["txt"] == 2
+    assert res["skipped"] == 1 and res["collisions"] == 1
+    # 실행이 결속될 확정 후보 목록(이름순) — PR #355 리뷰: 실행은 이 목록을 받는다.
+    assert res["files"] == ["온나라_기안.txt", "용역.hwpx", "협조전.txt"]
+    text = res["confirm_text"]
+    assert "HWPX 서식 1건" in text and "TXT 기안 2건" in text
+    assert "나머지 파일 1개는 가져오지 않습니다" in text
+    assert "하위 폴더는 살펴보지 않습니다" in text
+    # 「(2)」 단정 금지(PR #355 리뷰) — (2)가 이미 있으면 (3)이 붙는다: 정책만 재진술.
+    assert "이름 충돌 1건" in text and "번호 접미" in text and "(2)" not in text
+    # 무변이 — 라이브러리·TXT 루트에 아무것도 쓰지 않았다.
+    assert set((tp / "lib").iterdir()) == before_lib
+    assert set((tp / "txt").iterdir()) == before_txt
+
+
+def test_scan_import_folder_empty_and_missing_are_loud(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    empty = tp / "empty"
+    (empty / "sub").mkdir(parents=True)
+    (empty / "명세.pdf").write_text("x", encoding="utf-8")
+    res = ctrl.scan_import_folder(str(empty))
+    assert res["ok"] is False and ".hwpx/.txt 파일이 없습니다" in res["error"]
+    assert "하위 폴더는 살펴보지 않습니다" in res["error"]   # sub 가 있으니 사유 병기
+    with pytest.raises(ValueError, match="폴더를 찾을 수 없습니다"):
+        ctrl.scan_import_folder(str(tp / "없는폴더"))
+
+
+def test_import_folder_routes_media_suffixes_collision_and_skips_subfolders(
+    tmp_path, monkeypatch
+):
+    """실행 = 확정 목록을 복사 몸통으로 반복(복사 권위 단일) — 확장자 매체 라우팅 · 충돌
+    번호 접미 · 하위 폴더 미반입 · 「그룹 없음」 시작 · 배치 요약 결과 줄 · **push 1회**
+    (PR #355 리뷰: 항목별 전체 리프레시·재렌더 유예, 완료 후 한 번)."""
+    ctrl, tp, pushes = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+    before_pushes = len(pushes)
+    res = ctrl.import_folder(str(ext), manifest)
+    assert res == {"ok": True, "imported": 3, "total": 3, "failed": []}
+    assert len(pushes) == before_pushes + 1              # 배치 완료 후 1회만 민다
+    assert (tp / "lib" / "용역.hwpx").exists()                       # hwpx → 라이브러리
+    assert (tp / "txt" / "협조전.txt").exists()                      # txt → 텍스트 레지스트리
+    assert (tp / "txt" / "온나라_기안 (2).txt").read_text(encoding="utf-8") == "다른내용"
+    assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
+    assert not (tp / "txt" / "하위.txt").exists()                    # 1단계 밖 미반입
+    snap = ctrl.snapshot()
+    assert _item(snap["hwpx"], "용역.hwpx")["group"] == ""           # 「그룹 없음」 시작
+    assert _item(snap["txt"], "협조전")["group"] == ""
+    assert "3건을 가져왔습니다" in snap["result"]["text"]
+    assert snap["result"]["level"] == "ok"
+
+
+def test_import_folder_partial_failure_keeps_successes_and_restates_reasons(
+    tmp_path, monkeypatch
+):
+    """중간 1건 실패 주입 — 앞선 성공분은 남고 실패분 부분 파일은 사라지며(단건 무잔재
+    상속), 결과 줄이 건수·사유를 말한다(#339: 걷어내고 계속 + 사유 병기)."""
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    real = st.shutil.copy2
+
+    def flaky(src, dst):
+        if Path(src).name == "용역.hwpx":  # 이름순(온나라<용역<협조전) **가운데** 건을 떨군다
+            Path(dst).write_text("부분", encoding="utf-8")  # 부분 파일 청소(무잔재)도 함께 검증
+            raise OSError("디스크 오류")
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", flaky)
+    res = ctrl.import_folder(str(ext), ["온나라_기안.txt", "용역.hwpx", "협조전.txt"])
+    assert res["ok"] is False and res["imported"] == 2 and res["total"] == 3
+    assert res["failed"] == [{"name": "용역.hwpx", "error": "디스크 오류"}]
+    assert (tp / "txt" / "협조전.txt").exists()                      # 성공분 잔존
+    assert (tp / "txt" / "온나라_기안 (2).txt").exists()
+    assert not (tp / "lib" / "용역.hwpx").exists()                   # 실패분 부분 파일 무잔재
+    result = ctrl.snapshot()["result"]
+    assert "3건 중 2건 등록" in result["text"] and "1건 실패" in result["text"]
+    assert "용역.hwpx" in result["text"] and "디스크 오류" in result["text"]
+    assert result["level"] == "warn"
+
+
+def test_import_folder_is_bound_to_confirmed_manifest_not_a_rescan(tmp_path, monkeypatch):
+    """PR #355 리뷰 — 실행은 **확정 시점 후보 목록**에 결속된다(재스캔 금지).
+
+    스캔~확정 사이 폴더가 바뀌는 두 방향을 다 잰다: ①새로 온 파일은 재진술에 없었으므로
+    들어오지 않는다(확인 안 된 반입 금지) ②확정된 파일이 사라졌으면 그 건만 부분 실패로
+    사유를 병기하고 나머지는 계속한다. ③목록 형태 검증 — basename 밖(상위 탈출)·비허용
+    확장자는 loud 거절(임의 경로 반입 승격 차단)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+
+    (ext / "확정뒤추가.txt").write_text("{{몰래}}", encoding="utf-8")   # ① 스캔 뒤 등장
+    (ext / "협조전.txt").unlink()                                       # ② 스캔 뒤 소실
+
+    res = ctrl.import_folder(str(ext), manifest)
+    assert res["imported"] == 2 and res["total"] == 3
+    assert res["failed"] == [{"name": "협조전.txt", "error": "확정 뒤 폴더에서 사라졌습니다"}]
+    assert not (tp / "txt" / "확정뒤추가.txt").exists()   # 확인 안 된 파일은 들어오지 않는다
+    result = ctrl.snapshot()["result"]
+    assert "협조전.txt" in result["text"] and "사라졌습니다" in result["text"]
+
+    with pytest.raises(ValueError, match="목록에 올 수 없는 항목"):
+        ctrl.import_folder(str(ext), ["../탈출.txt"])
+    with pytest.raises(ValueError, match="목록에 올 수 없는 항목"):
+        ctrl.import_folder(str(ext), ["명세.pdf"])
+    with pytest.raises(ValueError, match="목록이 비어"):
+        ctrl.import_folder(str(ext), [])
+
+
+def test_batch_txt_copy_joins_the_registry_writer_lock(tmp_path, monkeypatch):
+    """PR #355 P1 — 배치 TXT 복사는 **공유 TXT writer 잠금 축**에 선다.
+
+    배치가 도는 동안 편집기는 살아 있고 pywebview 는 다른 네이티브 호출을 동시에 돌린다.
+    가져오기 잠금만 잡으면 「새 TXT」·편집·복원이 서로를 모른 채 같은 이름을 겨눠, 배치가
+    「비었다」고 고른 목적지를 그 사이 사용자가 채우고 ``copy2`` 가 그 내용을 덮는다(충돌
+    접미가 지켜야 할 사용자 내용의 조용한 소실).
+
+    복사 한복판에서 **다른 스레드**가 같은 basename 으로 ``txt_new`` 를 시도하게 해 잰다:
+    ①그 writer 는 복사가 끝날 때까지 **실제로 대기한다**(잠금 축 참여의 실증 — 대기 없이
+    지나가면 이 단언이 죽는다) ②대기 뒤에는 파일이 이미 있으므로 loud 거절(조용한 덮어쓰기
+    금지) ③배치 사본의 내용이 온전하다.
+
+    획득 순서 규약(_folder_import_lock → _import_lock → write_lock)이 지켜지는 증거이기도
+    하다: 역순 획득이 있으면 이 테스트가 join 시간초과로 멈춘다."""
+    import threading
+
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = tp / "ext"
+    ext.mkdir()
+    (ext / "온나라_기안.txt").write_text("가져온 내용", encoding="utf-8")  # 기존과 동명 → (2)
+
+    real = st.shutil.copy2
+    rival_started = threading.Event()
+    rival_error: list = []
+    state: dict = {}
+
+    def rival() -> None:
+        rival_started.set()
+        try:
+            # 배치가 방금 「비었다」고 고른 그 이름을 정확히 겨눈다.
+            ctrl.dispatch("txt_new", {"name": "온나라_기안 (2)", "content": "사용자가 쓴 내용"})
+        except Exception as exc:  # noqa: BLE001 — loud 거절을 값으로 회수
+            rival_error.append(str(exc))
+
+    def copy_with_rival(src, dst):
+        if Path(src).name == "온나라_기안.txt" and "thread" not in state:
+            t = threading.Thread(target=rival)
+            state["thread"] = t
+            t.start()
+            rival_started.wait(2)
+            t.join(0.3)                       # 잠금이 있으면 여기서 못 끝난다
+            state["rival_blocked"] = t.is_alive()
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", copy_with_rival)
+    res = ctrl.import_folder(str(ext), ["온나라_기안.txt"])
+    state["thread"].join(5)
+    assert not state["thread"].is_alive(), "경쟁 writer 가 풀려나지 못했습니다(교착 의심)."
+
+    assert state["rival_blocked"] is True, (
+        "복사 중인데 다른 TXT writer 가 그대로 통과했습니다 — 두 쓰기가 서로를 모릅니다"
+        "(가져오기 잠금만 잡고 공유 writer 축에 서지 않은 상태)."
+    )
+    assert res["imported"] == 1
+    dest = tp / "txt" / "온나라_기안 (2).txt"
+    assert dest.read_text(encoding="utf-8") == "가져온 내용"   # 사본이 덮이지 않았다
+    assert rival_error and "이미 같은 이름" in rival_error[0]  # 뒤늦은 writer 는 loud 거절
+    assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
+
+
+def test_batch_hwpx_copy_is_serialized_with_undo_restore(tmp_path, monkeypatch):
+    """PR #355 P1 후속 — HWPX 배치 복사도 **삭제 복원과 같은 writer 축**에 선다.
+
+    「HWPX 는 공유 writer 가 없는 단일 표면」이라는 전제가 틀렸다: ``_do_undo_delete`` 의
+    hwpx 갈래가 바로 그 공유 writer 다. 지운 basename 이 배치에 들어 있고 사용자가 확정
+    뒤에도 살아 있는 「되돌리기」를 누르면, 잠금을 공유하지 않는 두 쪽이 그 이름을 함께
+    「비었다」고 읽는다 — 복원이 원본을 되돌린 직후 ``copy2`` 가 그 위를 덮어 **복원은
+    성공을 보고하는데 지운 문서는 사라진다**.
+
+    TXT 판과 **같은 형태**로 잰다(복사 한복판에 경쟁 writer 주입): ①실제로 대기하고
+    ②조용한 덮어쓰기 없이 loud 거절되며 ③양쪽 결과가 온전하고(가져온 사본 + 휴지통에
+    남은 원본 = 복원 재시도 재료) ④교착이면 join 시간초과로 시끄럽게 멈춘다."""
+    import threading
+
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    original_bytes = (tp / "lib" / "raw.hwpx").read_bytes()
+    ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
+    assert not (tp / "lib" / "raw.hwpx").exists()          # 이름이 비었다(양쪽이 노리는 자리)
+
+    ext = tp / "ext"
+    ext.mkdir()
+    _write_compiled(ext / "raw.hwpx")                      # 같은 basename, 다른 내용
+    imported_bytes = (ext / "raw.hwpx").read_bytes()
+    assert imported_bytes != original_bytes
+
+    real = st.shutil.copy2
+    rival_started = threading.Event()
+    rival_result: list = []
+    state: dict = {}
+
+    def rival() -> None:
+        rival_started.set()
+        rival_result.append(ctrl.dispatch("undo_delete", {}))
+
+    def copy_with_rival(src, dst):
+        if Path(src).name == "raw.hwpx" and "thread" not in state:
+            t = threading.Thread(target=rival)
+            state["thread"] = t
+            t.start()
+            rival_started.wait(2)
+            t.join(0.3)                       # 같은 축이면 여기서 못 끝난다
+            state["rival_blocked"] = t.is_alive()
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", copy_with_rival)
+    res = ctrl.import_folder(str(ext), ["raw.hwpx"])
+    state["thread"].join(5)
+    assert not state["thread"].is_alive(), "복원 스레드가 풀려나지 못했습니다(교착 의심)."
+
+    assert state["rival_blocked"] is True, (
+        "복사 중인데 삭제 복원이 그대로 통과했습니다 — 두 writer 가 서로를 모릅니다"
+        "(HWPX 가 공유 writer 축에 서지 않은 상태)."
+    )
+    assert res["imported"] == 1
+    # 조용한 덮어쓰기 없음: 뒤늦은 복원은 loud 거절되고, 가져온 사본이 그 자리에 온전하다.
+    assert rival_result and rival_result[0]["ok"] is False
+    assert "이미 있어 복원할 수 없습니다" in rival_result[0]["error"]
+    assert (tp / "lib" / "raw.hwpx").read_bytes() == imported_bytes
+    # 지운 문서도 사라지지 않았다 — 휴지통 원본이 그대로라 복원 재시도 재료가 남는다.
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
+    assert trashed.exists() and trashed.read_bytes() == original_bytes
+
+
+def test_import_folder_rejects_concurrent_batch_loudly(tmp_path, monkeypatch):
+    """PR #355 2R — 배치 진행 중 재실행의 판정 정본은 tpl 권위 **한 곳**(비차단 잠금).
+
+    JS in-flight 플래그(어포던스 잠금)가 뚫려도 — 재클릭·확정 모달 이중 열림 — 두 번째
+    배치는 같은 목록을 번호 접미로 재반입하지 못하고 loud 거절된다. 복사 도중(첫 건의
+    copy2 안에서) 같은 배치를 다시 부르는 재진입으로 결정적으로 잰다. 끝난 뒤에는 잠금이
+    풀려 다음 배치가 정상 실행된다(거절이 영구 잠금이 되지 않는다)."""
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+    real = st.shutil.copy2
+    raced: list = []
+
+    def racing(src, dst):
+        if not raced:  # 첫 건 복사 도중 = 배치 in-flight 한복판
+            raced.append(True)
+            with pytest.raises(ValueError, match="이미 진행 중"):
+                ctrl.import_folder(str(ext), manifest)
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", racing)
+    res = ctrl.import_folder(str(ext), manifest)
+    assert res["ok"] is True and res["imported"] == 3    # 본 배치는 끝까지 간다
+    assert raced == [True]                               # 재진입이 실제로 시도·거절됐다
+    # 이중 반입 없음 — 거절된 두 번째 배치가 접미 사본을 남기지 않았다.
+    assert not (tp / "txt" / "협조전 (2).txt").exists()
+    assert not (tp / "lib" / "용역 (2).hwpx").exists()
+    # 배치 종료 후 잠금 해제 — 다음 배치는 정상 거동(사라진 원본은 부분 실패 사유 병기).
+    monkeypatch.setattr(st.shutil, "copy2", real)
+    res2 = ctrl.import_folder(str(ext), manifest)
+    assert res2["imported"] == 3                         # 재실행 자체는 가능(접미로 들어간다)
+
+
+def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
+    tmp_path, monkeypatch
+):
+    """브리지 import_templates_folder(#339) — ①스캔 왕복(무변이) ②확정 목록 결속 실행
+    ③payload 검증(확정·목록 없는 실행 loud) ④피커 취소 None ⑤**채택 없음**: 편집 세션·
+    dirty 불변."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    fe = app_mod.WebFrontend(tmp_path / "reg_txt")
+    ext = tmp_path / "ext"
+    ext.mkdir()
+    (ext / "협조전.txt").write_text("{{건명}}", encoding="utf-8")
+    monkeypatch.setattr(app_mod, "open_folder_dialog", lambda *a, **k: str(ext))
+
+    # 편집 세션을 열어 둔다 — 폴더 가져오기는 채택하지 않는다(세션 확인도 없다).
+    session_tpl = _write_compiled(tmp_path / "세션.hwpx")
+    editor = fe.controllers["editor"]
+    editor.load_template_path(str(session_tpl))
+    editor.dispatch("skip_data", {})
+    assert editor.has_unsaved_work() is True
+
+    txt_root = fe.controllers["tpl"].text_registry.directory
+    r1 = fe.import_templates_folder()
+    assert r1["needs_confirm"] is True and r1["txt"] == 1
+    assert r1["files"] == ["협조전.txt"]                 # 실행이 결속될 확정 목록
+    assert not (txt_root / "협조전.txt").exists()        # 확정 전 무변이
+    r2 = fe.import_templates_folder(r1["folder"], True, r1["files"])
+    assert r2["ok"] is True and r2["imported"] == 1
+    assert (txt_root / "협조전.txt").exists()
+    # 세션 불변 — 템플릿·미저장 판정이 그대로다(채택 없음).
+    assert editor.template_path == str(session_tpl)
+    assert editor.has_unsaved_work() is True
+
+    with pytest.raises(ValueError, match="confirm 필수"):
+        fe.import_templates_folder(str(ext))             # 재진술 없는 실행 차단
+    with pytest.raises(ValueError, match="폴더 경로가 비어"):
+        fe.import_templates_folder("  ", True, ["협조전.txt"])
+    with pytest.raises(ValueError, match="확정된 가져오기 목록이 없습니다"):
+        fe.import_templates_folder(str(ext), True)       # 목록 없는 실행 차단(재스캔 금지)
+    monkeypatch.setattr(app_mod, "open_folder_dialog", lambda *a, **k: None)
+    assert fe.import_templates_folder() is None          # 피커 취소
+
+
 # (test_empty_hint... 삭제 — empty_hint 는 tpl 화면과 함께 사망(F8 §10.17):
 #  빈 밴드 안내는 편집기 「템플릿」 탭이 자기 문안으로 소유한다.)
 

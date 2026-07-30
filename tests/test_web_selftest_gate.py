@@ -980,8 +980,9 @@ class TestWebSelftestGate:
         # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
         t = selftest_result["editor_lib_manage"]
         assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
-        assert t["toolbar"] == [True, True, True], (
-            f"상단 행동 줄(가져오기·새 TXT·새로고침 — .tpl-libbar 승계) 소실: {t['toolbar']!r}"
+        assert t["toolbar"] == [True, True, True, True], (
+            "상단 행동 줄(가져오기·폴더에서 가져오기(#339)·새 TXT·새로고침 — .tpl-libbar"
+            f" 승계) 소실: {t['toolbar']!r}"
         )
         assert t["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {t!r}"
         assert t["rows_visible"] == 4, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {t!r}"

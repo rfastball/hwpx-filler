@@ -261,6 +261,48 @@ class WebFrontend:
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
 
+    def import_templates_folder(
+        self,
+        folder: "str | None" = None,
+        confirm: bool = False,
+        files: "list[str] | None" = None,
+    ) -> "dict | None":
+        """「폴더에서 가져오기…」(#339 · U2 §2.16 narrow) — 직속 .hwpx/.txt 일괄 등록.
+
+        2왕복 계약: ①무인자 = 폴더 피커 → **읽기 전용 스캔** → 재진술 dict(``needs_confirm``
+        + 후보 ``files``) — 확정 전에는 홈에 아무것도 쓰지 않는다. ②``folder``+``files``+
+        ``confirm`` = 실행 — 재스캔이 아니라 **확정 시점 후보 목록에 결속**된다(PR #355
+        리뷰: 스캔~확정 사이 폴더가 바뀌어도 확인 안 된 파일이 따라 들어오지 않고, 사라진
+        확정 건은 부분 실패로 사유 병기). 복사 권위는 단건(:meth:`import_template_file`)과
+        같은 tpl 복사 몸통의 반복(잠금·매체 라우팅·충돌 번호 접미·무잔재)이고 **채택은
+        없다**(편집 세션 무변경 — 웹도 새-세션 확인을 걸지 않는다).
+
+        직접 브리지 메서드(action registry 밖)라 payload 검증은 본문 소유: 실행 호출은
+        ``confirm`` 명시 + 비어 있지 않은 문자열 ``folder`` + 문자열 목록 ``files`` 필수
+        (재진술 없이 임의 폴더·임의 목록을 바로 실행하는 경로 차단) — 폴더 실재와 항목
+        형태(basename·허용 확장자)는 tpl 권위가 loud 검증한다. 반환은 처음부터 dict 계약
+        (실패 = ``{"ok": False, "error": …}``), ``None`` = 피커 취소.
+        """
+        tpl = self._controller("tpl")
+        if folder is None:
+            path = open_folder_dialog("가져올 템플릿 폴더 선택", owner_title=WINDOW_TITLE)
+            if not path:
+                return None
+            try:
+                return tpl.scan_import_folder(path)
+            except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+                return {"ok": False, "error": str(exc)}
+        if not confirm:  # confirm-or-alarm: 재진술을 지나지 않은 실행은 시끄럽게 거절.
+            raise ValueError("재진술 확정 없이 폴더 실행을 부를 수 없습니다(confirm 필수).")
+        if not isinstance(folder, str) or not folder.strip():
+            raise ValueError("폴더 경로가 비어 있습니다.")
+        if not isinstance(files, list) or not files:
+            raise ValueError("확정된 가져오기 목록이 없습니다 — 스캔 재진술을 먼저 받으세요.")
+        try:
+            return tpl.import_folder(folder, files)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return {"ok": False, "error": str(exc)}
+
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
 
@@ -2135,8 +2177,8 @@ _EDITOR_LIBRARY_MANAGE_PROBE_JS = r"""
       }};
     window.__push('editor', draft);
     var host = document.getElementById('scr-editor');
-    // 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·새 TXT·새로고침.
-    out.toolbar = ['import-template', 'lib-new-txt', 'lib-refresh'].map(function (a) {
+    // 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침.
+    out.toolbar = ['import-template', 'import-folder', 'lib-new-txt', 'lib-refresh'].map(function (a) {
       return !!host.querySelector('button[data-act="' + a + '"]');
     });
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;          // 입찰·계약·그룹없음

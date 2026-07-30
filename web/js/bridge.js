@@ -33,6 +33,14 @@
         파일명·"ERROR:…"·null. */
     importTemplateFile(screen) { return window.pywebview.api.import_template_file(screen); },
 
+    /** 「폴더에서 가져오기…」(#339 U2 §2.16) — ①무인자: 폴더 피커 → 읽기 전용 스캔 →
+        재진술 dict(needs_confirm + 후보 files). ②(folder, true, files): 확정 실행 —
+        재스캔이 아니라 **확정 시점 후보 목록**을 그대로 실행한다(재진술이 참이 되게,
+        채택 없음 = 세션 무변경). null = 피커 취소, 실패 = {ok:false, error}. */
+    importTemplatesFolder(folder, confirm, files) {
+      return window.pywebview.api.import_templates_folder(folder || null, !!confirm, files || null);
+    },
+
     /** 작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트(missing/empty) 반환.
         건별 파일 저장(saveFile)은 사망(결정 18) — 기록 원본이 내부 시스템, 산출물 무소유. */
     /** 클립보드 쓰기 — `token` 은 사전확인이 돌려준 **그 카드의 정체**다(F6 3R): 백엔드가
