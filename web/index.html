@@ -255,7 +255,17 @@
                  뒤에도 영영 서 있는 이행 불가능한 지시가 된다(F6 PR-A 리뷰 6R). -->
             <div class="zone job-mirror-zone" id="jobMirrorZone">
               <div class="zone-cap">본문 확인</div>
+              <!-- danger 차단 배너(드리프트·미해소 토큰) 전용 자리 — 여기만 innerHTML 로
+                   교체된다(행동 링크가 배너와 함께 나고 죽는다). -->
               <div id="jobMirror"></div>
+              <!-- 한 줄은 **안정 DOM + 값만 채우기**다(셸 관례): 확인 면 트리거가 재렌더로
+                   교체되면 시트를 닫은 키보드 사용자의 초점이 그 버튼으로 못 돌아간다
+                   (Modal 은 분리된 복귀점을 건너뛰고 화면 루트로 내린다 — #280 캡스트립이
+                   같은 결함이었다). 그래서 요약 문안만 휘발이고 버튼은 고정이다. -->
+              <p class="mirline" id="jobMirrorLine" hidden>
+                <span id="jobMirrorSummary"></span>
+                <button class="btn sm" id="jobMirrorPreviewOpen" type="button">생성 값 미리보기 ⤢</button>
+              </p>
             </div>
 
             <!-- 결과 존 — 세션 스코프(진행·3태 결과·실행 기록). 자리는 v6 상단 result-panel 과

@@ -619,6 +619,19 @@
      값을 말하는 표면은 확인 면(#previewSheet) 하나다. 여기 남는 것은 빈 값 표지·이름
      건수·확인 면 출구 한 줄과, danger 차단 배너(드리프트·미해소 토큰 — 같은 자리, 같은
      형상, 결정 36·S9)뿐이다. */
+  /* 한 줄과 배너는 **다른 자리**다: 배너만 innerHTML 로 교체되고 한 줄은 안정 DOM 에 값만
+     채운다(확인 면 트리거가 재렌더로 교체되면 복귀 초점이 끊긴다 — #364 리뷰 P2). */
+  function showMirrorBanner(host, html) {
+    host.innerHTML = html;
+    $("jobMirrorLine").hidden = true;
+  }
+
+  function showMirrorLine(host, html) {
+    host.innerHTML = "";
+    $("jobMirrorSummary").innerHTML = html;
+    $("jobMirrorLine").hidden = false;
+  }
+
   function renderMirror(s) {
     const host = $("jobMirror");
     // TXT 는 이 존이 **없는 축**이다 — 존을 통째로 걷는다. 남겨 두면 빈 상태 문안이 행을
@@ -628,12 +641,12 @@
     const drift = s.drift || [];
     if (drift.length) {
       // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
-      host.innerHTML =
+      showMirrorBanner(host,
         `<div class="mir-drift" role="alert">` +
         `<p>템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. ` +
         `어긋난 필드: <b>${esc(drift.join(", "))}</b>.</p>` +
         `<button class="btn sm" data-act="fix-mapping" data-busy-lock>편집에서 매핑 확정…</button>` +
-        `</div>`;
+        `</div>`);
       return;
     }
     // 미해소 파일명 토큰(#128) — **드리프트와 같은 danger 자격**이라 같은 자리에서 같은
@@ -641,17 +654,19 @@
     const nameTokens = s.name_tokens || [];
     if (nameTokens.length) {
       const toks = nameTokens.map((t) => `{{${t}}}`).join(", ");
-      host.innerHTML =
+      showMirrorBanner(host,
         `<div class="mir-drift" role="alert">` +
         `<p>파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. ` +
         `남는 토큰: <b>${esc(toks)}</b>.</p>` +
         `<button class="btn sm" data-act="fix-filename" data-busy-lock>편집에서 파일명 패턴 고치기…</button>` +
-        `</div>`;
+        `</div>`);
       return;
     }
     const n = s.selected_count || 0;
     if (!s.has_job || !s.has_data || !n) {  // 선택 0(또는 미겨눔) = 생성될 문서 없음
-      host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 생성 내용을 확인할 수 있습니다.</p>`;
+      // 트리거는 그대로 두고 문안만 바꾼다 — 가용성은 `setBusy` 단일 지점이 정한다
+      // (`can_open` 이 false 라 비활성). 자리를 없애면 안정 복귀점도 함께 사라진다.
+      showMirrorLine(host, `<span class="mirempty muted capnote">행을 선택하면 생성 내용을 확인할 수 있습니다.</span>`);
       return;
     }
     // 한 줄: 빈 값 표지(정보 — 클릭 표적 아님) + 이름 건수 + 확인 면 출구(⤢).
@@ -660,10 +675,7 @@
     const blankBit = blanks.length
       ? `<span class="mir-blank-flag">빈 값 <b>${blanks.length}필드</b>(${blanks.map(esc).join("·")})</span>`
       : `빈 값 없음`;
-    host.innerHTML =
-      `<p class="mirline">${blankBit} · 이름 <b>${n}건</b> ` +
-      `<button class="btn sm" type="button" id="jobMirrorPreviewOpen" data-busy-lock>` +
-      `생성 값 미리보기 ⤢</button></p>`;
+    showMirrorLine(host, `${blankBit} · 이름 <b>${n}건</b>`);
   }
 
   /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
@@ -821,7 +833,12 @@
 
   async function openPreview(e, opts) {
     const o = opts || {};
-    const trigger = (e && e.currentTarget) || $("jobPreviewOpen");
+    // 복귀 트리거는 **실제 클릭된 버튼**으로 푼다(#364 리뷰 P2): 본문 존 한 줄의
+    // 「생성 값 미리보기 ⤢」는 위임 핸들러(`#jobMirror` 컨테이너)를 타므로 `currentTarget`
+    // 이 포커스 불가능한 div 다 — 그대로 넘기면 시트를 닫은 키보드 사용자의 초점이
+    // 그 버튼으로 못 돌아가고 body 로 떨어진다. 해석은 공용 SurfaceSheet.trigger 단일
+    // 정의를 쓴다(위임 클릭 → 버튼, 없으면 안정 폴백). 폴백은 액션바의 상시 버튼이다.
+    const trigger = window.SurfaceSheet.trigger(e, $("jobPreviewOpen"));
     // 성사 뒤에만 연다(§9.3 4행 상속): 거절되면(생성 중·초안 열림·선택 0건) 면을 띄우지
     // 않는다 — 열어 놓고 실패를 말하면 무엇을 미리보는 중인지가 거짓이 된다.
     // `at` = deep-link 복귀의 같은 자리(§10.15.15 판정 C) — 값은 Python 이 push 한
@@ -1169,7 +1186,10 @@
     // 경계는 Python 이 낸다(can_prev·can_next — §2.13): 「빈 값 있는 건만 보기」가 켜지면
     // 경계가 그 건들의 처음·끝으로 바뀌는데, 표면이 pos/total 로 재유도하면 판정이 갈린다.
     const pv = (LAST && LAST.preview) || {};
+    // 확인 면 출구는 둘(액션바·본문 존 한 줄)이고 **가용성 판정은 하나**다 — 두 자리가
+    // 각자 정하면 한쪽만 열린 채 남는다. 한 줄의 버튼은 안정 DOM 이라 여기서 잠근다.
     $("jobPreviewOpen").disabled = busy || !pv.can_open;
+    $("jobMirrorPreviewOpen").disabled = busy || !pv.can_open;
     $("previewPrev").disabled = busy || !pv.total || !pv.can_prev;
     $("previewNext").disabled = busy || !pv.total || !pv.can_next;
     // 「빈 값 있는 건만 보기」 — 빈 값 건이 0이면 한정할 대상이 없어 비활성(무동작 토글 금지).
@@ -1492,9 +1512,6 @@
       });
       return;
     }
-    // 한 줄의 확인 면 출구(U2 §2.13) — 열기 절차는 openPreview 하나가 소유한다(액션바
-    // 버튼과 같은 경로 — 표면이 둘이어도 절차는 하나).
-    if (e.target.closest("#jobMirrorPreviewOpen")) openPreview(e);
   }
 
   /* danger(구조 드리프트) 수리 동선 — 이 작업을 **패널 편집 모드**에 열어 매핑을 재확정한다
@@ -1684,9 +1701,13 @@
     $("jobCandidates").addEventListener("click", (e) => {
       if (e.target.closest("[data-cands-exit]")) window.Nav.go("library");
     });
-    // 본문 존(재렌더에도 살아남게 안정 컨테이너에 위임) — danger 수리 링크.
+    // 본문 존 배너(재렌더에도 살아남게 안정 컨테이너에 위임) — danger 수리 링크.
     // 구 거울의 ack 클릭·키보드 경로와 재진술 이름 목록 펼침은 함께 죽었다(U2 §2.13).
     $("jobMirror").addEventListener("click", onMirrorClick);
+    // 한 줄의 확인 면 출구(U2 §2.13)는 **안정 DOM** 이라 직접 배선한다 — 열기 절차는
+    // openPreview 하나가 소유한다(액션바 버튼과 같은 경로: 표면이 둘이어도 절차는 하나).
+    // 직접 배선이라 이벤트가 그 버튼을 그대로 가리켜 복귀 초점도 그리로 돌아온다(#364).
+    $("jobMirrorPreviewOpen").addEventListener("click", openPreview);
     // 액션바 재연결(#342 3R) — 도달 보장 축의 입구. 흐름은 경고 카드와 **한 몸통**이다.
     $("jobActionRelink").addEventListener("click", () => {
       if (!(LAST && LAST.job_name)) return;

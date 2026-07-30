@@ -1443,7 +1443,9 @@ _JOB_MIRROR_PROBE_JS = r"""
       dispatched.push({screen:screen, action:action});
       return Promise.resolve({});
     };
-    document.getElementById('jobMirrorPreviewOpen').click();
+    var mirrorTrigger = document.getElementById('jobMirrorPreviewOpen');
+    mirrorTrigger.focus();
+    mirrorTrigger.click();
     setTimeout(function () {
       // 정리는 **스텁이 산 채로** 한다(관측자 오염 리트머스): 닫힘 onClose 가 발화하는
       // preview_close 가 실 백엔드에 닿으면 세션 없는(has_job:false) 실 스냅샷 push 가
@@ -1454,6 +1456,9 @@ _JOB_MIRROR_PROBE_JS = r"""
       var card = document.querySelector('#previewSheet .modal-card');
       if (card) { var ev2 = new Event('transitionend', {bubbles:true});
         Object.defineProperty(ev2, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev2); }
+      // 닫은 뒤 초점이 **그 트리거**로 돌아오는가(#364 리뷰 P2) — 위임 currentTarget 을
+      // 복귀점으로 쓰거나 트리거가 재렌더로 교체되면 여기서 화면 루트(scr-job)가 잡힌다.
+      window.__mirrorPreviewFocus = document.activeElement && document.activeElement.id;
       window.Bridge.call = sheetRealCall;
     }, 30);
 
@@ -3701,6 +3706,8 @@ def _selftest_drive(window: "object") -> None:
         time.sleep(0.2)
         result["job_mirror"]["mirror_preview_dispatch"] = window.evaluate_js(  # type: ignore[attr-defined]
             "window.__mirrorPreviewDispatch")
+        result["job_mirror"]["mirror_preview_focus"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__mirrorPreviewFocus)")
         # 결과 3태 구획(F4) — 거울 프로브 뒤(같은 화면·같은 스냅샷 문맥)에서 돈다.
         result["job_result"] = window.evaluate_js(_JOB_RESULT_PROBE_JS)  # type: ignore[attr-defined]
         result["job_result"].update(_probe_late(

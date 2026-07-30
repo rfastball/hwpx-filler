@@ -478,8 +478,15 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert ".sheet-duo" not in css and ".sheet-pane" not in css, (
         "확인 2 pane 골격이 재유입됐습니다(§2.13 — 1 pane 확정)."
     )
-    assert "펼쳐서 행 고르기 ⤢" in html and "생성 값 미리보기 ⤢" in job_js
-    assert 'id="jobMirrorPreviewOpen"' in job_js, "본문 존 한 줄의 확인 면 출구가 없습니다."
+    assert "펼쳐서 행 고르기 ⤢" in html and "생성 값 미리보기 ⤢" in html
+    # 확인 면 출구는 **안정 DOM** 이다(#364 리뷰 P2): 재렌더로 교체되는 트리거는 Modal 의
+    # 복귀점에서 분리돼(`isConnected` 실패) 키보드 초점이 화면 루트로 떨어진다 — #280 이
+    # 캡스트립에서 배운 결함이라 한 줄은 「버튼 고정 + 문안만 휘발」로 짓는다.
+    assert 'id="jobMirrorPreviewOpen"' in html, "확인 면 출구가 안정 DOM 이 아닙니다(#364)."
+    assert 'id="jobMirrorSummary"' in html and 'id="jobMirrorLine"' in html
+    assert 'id="jobMirrorPreviewOpen"' not in job_js, (
+        "한 줄 렌더가 트리거를 다시 짓습니다 — 복귀 초점이 분리된 노드를 겨눕니다."
+    )
     for node_id in (
         "jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip", "jobColPanel",
     ):
@@ -1973,10 +1980,22 @@ def test_job_mirror_zone_is_one_line_without_a_value_table():
         "죽은 필드축 ack 액션을 표면이 발신합니다(§2.13)."
     )
     assert "jobMirrorCapstrip" not in html and "capstrip" not in html
-    # 한 줄의 세 성분 — 빈 값 표지(이름 지목) · 이름 건수 · 확인 면 출구.
+    # 한 줄의 성분 — 빈 값 표지(이름 지목)·이름 건수는 값이라 렌더가 채우고, 확인 면
+    # 출구는 안정 DOM 이라 index.html 이 소유한다(위 계약).
     mirror_fn = src.split("function renderMirror", 1)[1].split("\n  }", 1)[0]
     assert "blank_fields" in mirror_fn and "mir-blank-flag" in mirror_fn
-    assert "jobMirrorPreviewOpen" in mirror_fn and "생성 값 미리보기 ⤢" in mirror_fn
+    assert "showMirrorLine" in mirror_fn and "showMirrorBanner" in mirror_fn, (
+        "한 줄과 danger 배너가 같은 자리를 innerHTML 로 다투면 트리거가 함께 죽습니다."
+    )
+    # 복귀 트리거 해석은 공용 단일 정의를 쓴다 — 위임/직접 클릭을 각자 풀면 한쪽이 빠진다.
+    open_fn = src.split("async function openPreview", 1)[1].split("\n  }", 1)[0]
+    assert "SurfaceSheet.trigger(e" in open_fn, (
+        "확인 면 복귀 트리거가 currentTarget 파생입니다 — 위임 클릭이면 포커스 불가능한 "
+        "컨테이너가 복귀점이 됩니다(#364)."
+    )
+    # 두 출구의 가용성은 **한 지점**에서 정한다(둘이 갈리면 한쪽만 열린 채 남는다).
+    busy_fn2 = src.split("function setBusy", 1)[1].split("\n  }", 1)[0]
+    assert '$("jobMirrorPreviewOpen").disabled' in busy_fn2
     # 인라인 재진술은 수치·경로만 말한다 — 이름 목록(.namelist)은 확인 면으로 이주했다.
     restate_fn = src.split("function renderRestate", 1)[1].split("\n  }", 1)[0]
     assert "namelist" not in restate_fn and ".namelist" not in css

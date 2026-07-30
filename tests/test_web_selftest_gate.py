@@ -698,6 +698,12 @@ class TestWebSelftestGate:
         sent = [d["action"] for d in (j.get("mirror_preview_dispatch") or [])]
         assert "preview_open" in sent, f"확인 면 출구가 preview_open 을 발신하지 않습니다: {sent!r}"
         assert not ({"ack_field", "unack_field"} & set(sent)), f"죽은 액션 발신: {sent!r}"
+        # 닫은 뒤 초점은 **그 트리거**로 돌아온다(#364 리뷰 P2) — 위임 currentTarget 을
+        # 복귀점으로 쓰거나(포커스 불가능한 컨테이너) 트리거가 재렌더로 교체되면 여기서
+        # 화면 루트가 잡힌다. 키보드 사용자가 문서 처음에서 다시 걸어오는 그 결함이다.
+        assert j["mirror_preview_focus"] == "jobMirrorPreviewOpen", (
+            f"확인 면을 닫은 뒤 초점이 트리거로 돌아오지 않았습니다: {j['mirror_preview_focus']!r}"
+        )
         assert j["edit_closes_sheets"], j
         # ⤢ 데이터 면은 별도 비동기 프로브(열기가 Python 왕복 뒤 — F3): 이동·헤더 고정·복귀
         # (포커스 포함)에 더해 범위 편집기 footer 가 **면 안에서만** 서는 것까지 본다.
