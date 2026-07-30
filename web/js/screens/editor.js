@@ -363,6 +363,7 @@
     // 매체 라우팅 — §10.17.2 판정 C)이라 밴드 밖 공용 줄에 둔다. 새로고침 = 외부 FS 재스캔.
     return `<div class="row" style="margin-bottom:var(--sp-4)">
       <button class="btn sm" data-act="import-template">가져오기…</button>
+      <button class="btn sm" data-act="import-folder">폴더에서 가져오기…</button>
       <button class="btn sm" data-act="lib-new-txt">새 TXT 템플릿…</button>
       <span class="spacer"></span>
       <button class="btn sm" data-act="lib-refresh" title="라이브러리 폴더를 다시 읽습니다">새로고침</button>
@@ -1076,6 +1077,23 @@
           if (!(await confirmNewSessionIfUnsaved())) break;
           const r = await Bridge.importTemplateFile(SCREEN);
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
+          break;
+        }
+        case "import-folder": {
+          // 폴더 일괄 등록(#339 U2 §2.16) — 채택하지 않으므로 세션 무변경: 단건과 달리
+          // 새-세션 확인(confirmNewSessionIfUnsaved)을 걸지 않는다. 순서는 고른 뒤
+          // **먼저 재진술하고 확정**(수치·문안은 Python, 확인 UI 는 여기) — 확정 전에는
+          // 홈에 아무것도 쓰지 않는다. 결과 재진술은 tpl 결과 줄이 소유(배치 요약).
+          const r = await Bridge.importTemplatesFolder();
+          if (!r) break;                                    // 피커 취소
+          if (r.error) { alertMsg(r.error); break; }
+          if (!r.needs_confirm) break;
+          if (!(await Modal.confirm({
+            body: r.confirm_text + "\n\n지금 가져올까요?",
+            confirmLabel: "가져오기", cancelLabel: "취소", returnFocus: el,
+          }))) break;
+          const done = await Bridge.importTemplatesFolder(r.folder, true);
+          if (done && done.error) alertMsg(done.error);
           break;
         }
         case "ack-gate": await sendEdit("ack_gate", {}); break;

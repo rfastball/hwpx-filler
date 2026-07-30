@@ -222,6 +222,101 @@ class TemplateController:
         # "ERROR:" 접두 검사뿐이라 이름→경로 확장은 무해.
         return str(dest)
 
+    # ---------------------------- 폴더 일괄 가져오기(#339 · U2 §2.16 narrow) — 스캔/실행 2박자
+    def _folder_candidates(self, folder: Path) -> "tuple[list[Path], int]":
+        """폴더 **직속**(1단계) 파일에서 가져올 후보(.hwpx/.txt)와 제외 파일 수.
+
+        하위 폴더는 훑지 않는다(§2.16 narrow) — 재귀는 트리→그룹 유도·중복 병합 정책을
+        먼저 정해야 하는 별건이다. 이름순 정렬 = 재진술과 실행이 같은 결정적 순서."""
+        files = sorted(
+            (p for p in folder.iterdir() if p.is_file()),
+            key=lambda p: p.name.casefold(),
+        )
+        candidates = [p for p in files if p.suffix.lower() in (".hwpx", ".txt")]
+        return candidates, len(files) - len(candidates)
+
+    def scan_import_folder(self, folder: str) -> dict:
+        """가져오기 재진술 스캔(읽기 전용) — **확정 전에는 홈에 아무것도 쓰지 않는다**.
+
+        수치(매체별 건수·제외 수·이름 충돌 수)와 완성 재진술 문안을 함께 돌려준다 — 표면이
+        수치로 문안을 재조립하면 두 답이 생긴다(판정·문안은 Python, 확인 UI 는 웹). 후보 0
+        은 확인이 아니라 loud 거절이다(가져올 것 없는 확정을 시키지 않는다). 브리지가 부른다."""
+        root = Path(folder)
+        if not root.is_dir():
+            raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
+        candidates, skipped = self._folder_candidates(root)
+        if not candidates:
+            note = (
+                " 하위 폴더는 살펴보지 않습니다."
+                if any(p.is_dir() for p in root.iterdir()) else ""
+            )
+            return {
+                "ok": False,
+                "error": f"'{root.name}' 폴더 바로 아래에 가져올 .hwpx/.txt 파일이 없습니다.{note}",
+            }
+        hwpx = sum(1 for p in candidates if p.suffix.lower() == ".hwpx")
+        txt = len(candidates) - hwpx
+        collisions = sum(1 for p in candidates if self._import_dest_taken(p))
+        lines = [f"'{root.name}' 폴더에서 라이브러리로 가져옵니다:"]
+        counts = [f"HWPX 서식 {hwpx}건"] if hwpx else []
+        if txt:
+            counts.append(f"TXT 기안 {txt}건")
+        lines.append("- " + " · ".join(counts))
+        if skipped:
+            lines.append(f"- 나머지 파일 {skipped}개는 가져오지 않습니다(.hwpx/.txt 아님)")
+        lines.append("- 하위 폴더는 살펴보지 않습니다")
+        if collisions:
+            lines.append(f"- 이름 충돌 {collisions}건은 '이름 (2)' 접미로 가져옵니다")
+        return {
+            "needs_confirm": True, "folder": str(root),
+            "hwpx": hwpx, "txt": txt, "skipped": skipped, "collisions": collisions,
+            "confirm_text": "\n".join(lines),
+        }
+
+    def _import_dest_taken(self, src: Path) -> bool:
+        """가져오기 목적지(매체 루트/원래 이름)가 이미 있는가 — 충돌 수 재진술용(무변이)."""
+        root = self.vm.library_dir if src.suffix.lower() == ".hwpx" else self.text_registry.directory
+        return root is not None and (Path(root) / src.name).exists()
+
+    def import_folder(self, folder: str) -> dict:
+        """확정 후 실행 — 후보를 :meth:`import_into_library` 로 **반복**한다(복사 권위 단일).
+
+        각 건이 단건과 같은 잠금·매체 라우팅·충돌 ``(2)`` 접미·무잔재를 상속하고, 부분
+        실패는 걷어내고 계속한다(실패 건의 부분 파일은 단건의 무잔재 규율이 이미 걷는다 —
+        F6 동형). 결과 줄은 배치 요약으로 재진술: 「N건 중 M건 등록 · K건 실패(사유)」.
+        채택은 없다 — 편집 세션은 이 메서드가 모르는 남의 상태다(세션 무변경)."""
+        root = Path(folder)
+        if not root.is_dir():
+            raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
+        candidates, _skipped = self._folder_candidates(root)
+        if not candidates:
+            raise ValueError(f"'{root.name}' 폴더 바로 아래에 가져올 .hwpx/.txt 파일이 없습니다.")
+        imported = 0
+        failed: "list[tuple[str, str]]" = []
+        for src in candidates:
+            try:
+                self.import_into_library(str(src))
+                imported += 1
+            except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지를 막지 않는다(사유 병기)
+                failed.append((src.name, str(exc)))
+        total = len(candidates)
+        if failed:
+            from ..gui.template_manager_state import ResultLine  # _ok 동형(경량 성형)
+
+            reasons = " · ".join(f"{name}: {err}" for name, err in failed)
+            self._set_result(ResultLine(
+                f"{total}건 중 {imported}건 등록 · {len(failed)}건 실패({reasons})", "warn",
+            ))
+        else:
+            self._set_result(_ok(
+                f"'{root.name}' 폴더에서 {total}건을 가져왔습니다. '그룹 없음'에서 시작합니다."
+            ))
+        self._push()
+        return {
+            "ok": not failed, "imported": imported, "total": total,
+            "failed": [{"name": name, "error": err} for name, err in failed],
+        }
+
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
         handler = getattr(self, f"_do_{action}", None)

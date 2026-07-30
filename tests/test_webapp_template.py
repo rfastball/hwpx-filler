@@ -373,6 +373,144 @@ def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
     assert not (tp / "txt" / "협조전.txt").exists()  # 반가져오기 잔재 없음
 
 
+# ==================================== 폴더 일괄 가져오기(#339 · U2 §2.16 narrow)
+def _import_folder_fixture(tp: Path) -> Path:
+    """혼합 폴더: 후보 3(.hwpx 1 + .txt 2, 그중 온나라_기안.txt 는 기존과 충돌) ·
+    제외 파일 1(.pdf) · 하위 폴더 1(그 안 .txt 는 1단계 밖)."""
+    ext = tp / "ext"
+    (ext / "sub").mkdir(parents=True)
+    (ext / "협조전.txt").write_text("{{건명}}", encoding="utf-8")
+    _write_compiled(ext / "용역.hwpx")
+    (ext / "명세.pdf").write_text("x", encoding="utf-8")
+    (ext / "온나라_기안.txt").write_text("다른내용", encoding="utf-8")   # 충돌 후보
+    (ext / "sub" / "하위.txt").write_text("{{x}}", encoding="utf-8")     # 1단계 밖
+    return ext
+
+
+def test_scan_import_folder_restates_and_writes_nothing(tmp_path, monkeypatch):
+    """스캔 = 읽기 전용 재진술 — 매체별 건수·제외 수·충돌 수 + 완성 문안. **확정 전에는
+    홈에 아무것도 쓰지 않는다**(#339). 하위 폴더는 세지도 가져오지도 않는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    before_lib = set((tp / "lib").iterdir())
+    before_txt = set((tp / "txt").iterdir())
+    res = ctrl.scan_import_folder(str(ext))
+    assert res["needs_confirm"] is True and res["folder"] == str(ext)
+    assert res["hwpx"] == 1 and res["txt"] == 2
+    assert res["skipped"] == 1 and res["collisions"] == 1
+    text = res["confirm_text"]
+    assert "HWPX 서식 1건" in text and "TXT 기안 2건" in text
+    assert "나머지 파일 1개는 가져오지 않습니다" in text
+    assert "하위 폴더는 살펴보지 않습니다" in text
+    assert "이름 충돌 1건" in text and "(2)" in text
+    # 무변이 — 라이브러리·TXT 루트에 아무것도 쓰지 않았다.
+    assert set((tp / "lib").iterdir()) == before_lib
+    assert set((tp / "txt").iterdir()) == before_txt
+
+
+def test_scan_import_folder_empty_and_missing_are_loud(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    empty = tp / "empty"
+    (empty / "sub").mkdir(parents=True)
+    (empty / "명세.pdf").write_text("x", encoding="utf-8")
+    res = ctrl.scan_import_folder(str(empty))
+    assert res["ok"] is False and ".hwpx/.txt 파일이 없습니다" in res["error"]
+    assert "하위 폴더는 살펴보지 않습니다" in res["error"]   # sub 가 있으니 사유 병기
+    with pytest.raises(ValueError, match="폴더를 찾을 수 없습니다"):
+        ctrl.scan_import_folder(str(tp / "없는폴더"))
+
+
+def test_import_folder_routes_media_suffixes_collision_and_skips_subfolders(
+    tmp_path, monkeypatch
+):
+    """실행 = import_into_library 반복(복사 권위 단일) — 확장자 매체 라우팅 · 충돌 (2)
+    접미 · 하위 폴더 미반입 · 「그룹 없음」 시작 · 배치 요약 결과 줄."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    res = ctrl.import_folder(str(ext))
+    assert res == {"ok": True, "imported": 3, "total": 3, "failed": []}
+    assert (tp / "lib" / "용역.hwpx").exists()                       # hwpx → 라이브러리
+    assert (tp / "txt" / "협조전.txt").exists()                      # txt → 텍스트 레지스트리
+    assert (tp / "txt" / "온나라_기안 (2).txt").read_text(encoding="utf-8") == "다른내용"
+    assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
+    assert not (tp / "txt" / "하위.txt").exists()                    # 1단계 밖 미반입
+    snap = ctrl.snapshot()
+    assert _item(snap["hwpx"], "용역.hwpx")["group"] == ""           # 「그룹 없음」 시작
+    assert _item(snap["txt"], "협조전")["group"] == ""
+    assert "3건을 가져왔습니다" in snap["result"]["text"]
+    assert snap["result"]["level"] == "ok"
+
+
+def test_import_folder_partial_failure_keeps_successes_and_restates_reasons(
+    tmp_path, monkeypatch
+):
+    """중간 1건 실패 주입 — 앞선 성공분은 남고 실패분 부분 파일은 사라지며(단건 무잔재
+    상속), 결과 줄이 건수·사유를 말한다(#339: 걷어내고 계속 + 사유 병기)."""
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    real = st.shutil.copy2
+
+    def flaky(src, dst):
+        if Path(src).name == "용역.hwpx":  # 이름순(온나라<용역<협조전) **가운데** 건을 떨군다
+            Path(dst).write_text("부분", encoding="utf-8")  # 부분 파일 청소(무잔재)도 함께 검증
+            raise OSError("디스크 오류")
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", flaky)
+    res = ctrl.import_folder(str(ext))
+    assert res["ok"] is False and res["imported"] == 2 and res["total"] == 3
+    assert res["failed"] == [{"name": "용역.hwpx", "error": "디스크 오류"}]
+    assert (tp / "txt" / "협조전.txt").exists()                      # 성공분 잔존
+    assert (tp / "txt" / "온나라_기안 (2).txt").exists()
+    assert not (tp / "lib" / "용역.hwpx").exists()                   # 실패분 부분 파일 무잔재
+    result = ctrl.snapshot()["result"]
+    assert "3건 중 2건 등록" in result["text"] and "1건 실패" in result["text"]
+    assert "용역.hwpx" in result["text"] and "디스크 오류" in result["text"]
+    assert result["level"] == "warn"
+
+
+def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
+    tmp_path, monkeypatch
+):
+    """브리지 import_templates_folder(#339) — ①스캔 왕복(무변이) ②확정 실행 ③payload
+    검증(확정 없는 실행 loud) ④피커 취소 None ⑤**채택 없음**: 편집 세션·dirty 불변."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    fe = app_mod.WebFrontend(tmp_path / "reg_txt")
+    ext = tmp_path / "ext"
+    ext.mkdir()
+    (ext / "협조전.txt").write_text("{{건명}}", encoding="utf-8")
+    monkeypatch.setattr(app_mod, "open_folder_dialog", lambda *a, **k: str(ext))
+
+    # 편집 세션을 열어 둔다 — 폴더 가져오기는 채택하지 않는다(세션 확인도 없다).
+    session_tpl = _write_compiled(tmp_path / "세션.hwpx")
+    editor = fe.controllers["editor"]
+    editor.load_template_path(str(session_tpl))
+    editor.dispatch("skip_data", {})
+    assert editor.has_unsaved_work() is True
+
+    txt_root = fe.controllers["tpl"].text_registry.directory
+    r1 = fe.import_templates_folder()
+    assert r1["needs_confirm"] is True and r1["txt"] == 1
+    assert not (txt_root / "협조전.txt").exists()        # 확정 전 무변이
+    r2 = fe.import_templates_folder(r1["folder"], True)
+    assert r2["ok"] is True and r2["imported"] == 1
+    assert (txt_root / "협조전.txt").exists()
+    # 세션 불변 — 템플릿·미저장 판정이 그대로다(채택 없음).
+    assert editor.template_path == str(session_tpl)
+    assert editor.has_unsaved_work() is True
+
+    with pytest.raises(ValueError, match="confirm 필수"):
+        fe.import_templates_folder(str(ext))             # 재진술 없는 실행 차단
+    with pytest.raises(ValueError, match="폴더 경로가 비어"):
+        fe.import_templates_folder("  ", True)
+    monkeypatch.setattr(app_mod, "open_folder_dialog", lambda *a, **k: None)
+    assert fe.import_templates_folder() is None          # 피커 취소
+
+
 # (test_empty_hint... 삭제 — empty_hint 는 tpl 화면과 함께 사망(F8 §10.17):
 #  빈 밴드 안내는 편집기 「템플릿」 탭이 자기 문안으로 소유한다.)
 

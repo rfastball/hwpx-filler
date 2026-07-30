@@ -261,6 +261,41 @@ class WebFrontend:
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
 
+    def import_templates_folder(
+        self, folder: "str | None" = None, confirm: bool = False
+    ) -> "dict | None":
+        """「폴더에서 가져오기…」(#339 · U2 §2.16 narrow) — 직속 .hwpx/.txt 일괄 등록.
+
+        2왕복 계약: ①무인자 = 폴더 피커 → **읽기 전용 스캔** → 재진술 dict(``needs_confirm``)
+        — 확정 전에는 홈에 아무것도 쓰지 않는다. ②``folder``+``confirm`` = 실행 — 복사
+        권위는 단건(:meth:`import_template_file`)과 같은 tpl ``import_into_library`` 의
+        반복(잠금·매체 라우팅·충돌 접미·무잔재)이고 **채택은 없다**(편집 세션 무변경 —
+        웹도 새-세션 확인을 걸지 않는다). 부분 실패는 걷어내고 계속하되 결과 줄이 건수·
+        사유를 재진술한다.
+
+        직접 브리지 메서드(action registry 밖)라 payload 검증은 본문 소유: 실행 호출은
+        ``confirm`` 명시 + 비어 있지 않은 문자열 ``folder`` 필수(재진술 없이 임의 폴더를
+        바로 실행하는 경로 차단) — 폴더 실재는 tpl 스캔이 loud 검증한다. 반환은 처음부터
+        dict 계약(실패 = ``{"ok": False, "error": …}``), ``None`` = 피커 취소.
+        """
+        tpl = self._controller("tpl")
+        if folder is None:
+            path = open_folder_dialog("가져올 템플릿 폴더 선택", owner_title=WINDOW_TITLE)
+            if not path:
+                return None
+            try:
+                return tpl.scan_import_folder(path)
+            except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+                return {"ok": False, "error": str(exc)}
+        if not confirm:  # confirm-or-alarm: 재진술을 지나지 않은 실행은 시끄럽게 거절.
+            raise ValueError("재진술 확정 없이 폴더 실행을 부를 수 없습니다(confirm 필수).")
+        if not isinstance(folder, str) or not folder.strip():
+            raise ValueError("폴더 경로가 비어 있습니다.")
+        try:
+            return tpl.import_folder(folder)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return {"ok": False, "error": str(exc)}
+
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
 
@@ -2135,8 +2170,8 @@ _EDITOR_LIBRARY_MANAGE_PROBE_JS = r"""
       }};
     window.__push('editor', draft);
     var host = document.getElementById('scr-editor');
-    // 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·새 TXT·새로고침.
-    out.toolbar = ['import-template', 'lib-new-txt', 'lib-refresh'].map(function (a) {
+    // 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침.
+    out.toolbar = ['import-template', 'import-folder', 'lib-new-txt', 'lib-refresh'].map(function (a) {
       return !!host.querySelector('button[data-act="' + a + '"]');
     });
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;          // 입찰·계약·그룹없음

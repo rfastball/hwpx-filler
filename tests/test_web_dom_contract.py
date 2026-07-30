@@ -1473,6 +1473,39 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert '$("scr-editor")' in editor_js, "editor.js 위임 루트가 몰입 표면으로 이사하지 않았습니다."
 
 
+def test_editor_folder_import_is_wired_without_session_confirm():
+    """「폴더에서 가져오기…」(#339 · U2 §2.16 narrow) 배선 — 4자리가 한 계약으로 산다.
+
+    ①행동 줄 버튼(data-act="import-folder") ②직접 브리지 메서드(importTemplatesFolder →
+    import_templates_folder — action registry 밖이라 payload 검증은 메서드 본문 소유)
+    ③핸들러는 재진술 확인(Modal.confirm) 뒤에만 확정 실행을 부른다 ④**채택하지 않으므로**
+    새-세션 확인(confirmNewSessionIfUnsaved)이 이 경로에 서면 안 된다 — 세션 무변경 동사에
+    세션 파괴 확인이 붙으면 확인이 거짓말이 된다.
+    """
+    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    assert 'data-act="import-folder"' in editor, "폴더 가져오기 버튼이 행동 줄에 없습니다."
+    start = editor.index('case "import-folder"')
+    block = editor[start:editor.index('case "', start + 10)]
+    assert "importTemplatesFolder" in block, "핸들러가 직접 브리지 메서드를 부르지 않습니다."
+    # 호출 형태로 잰다 — 주석의 언급(왜 안 거는지의 선언)은 결함이 아니다.
+    assert "confirmNewSessionIfUnsaved()" not in block, (
+        "채택 없는 일괄 등록에 새-세션 확인이 붙었습니다 — 세션 무변경 동사입니다(#339)."
+    )
+    assert block.index("Modal.confirm") < block.index("importTemplatesFolder(r.folder, true)"), (
+        "확정 실행이 재진술 확인보다 앞에 있습니다 — 확정 전에는 홈에 아무것도 쓰지 않는다."
+    )
+    assert "importTemplatesFolder(folder, confirm)" in bridge, (
+        "브리지에 importTemplatesFolder 가 없습니다."
+    )
+    assert "def import_templates_folder(" in app_py, (
+        "백엔드 직접 메서드 import_templates_folder 가 없습니다."
+    )
+
+
 def test_edit_entries_carry_their_context():
     """편집 진입은 **문맥과 함께** 일어난다(계약 §5.1 · 지도 §10.13 판정 K).
 
