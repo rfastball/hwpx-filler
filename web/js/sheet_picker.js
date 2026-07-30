@@ -4,8 +4,9 @@
    돌려주면 여기서 사용자에게 시트를 확정받아 load_data_sheet 로 로드한다. 취소·Escape 는
    겨눔 전체 중단(첫 시트 기본값으로 강등하지 않는다) — 로드가 아예 일어나지 않는다.
 
-   반환(Promise): 로드된 파일명(성공) · "ERROR:…"(로드 실패) · null(취소=중단). 호출측은
-   pickDataFile 의 일반 반환과 동일하게 처리하면 된다. */
+   반환(Promise): 마운트 descriptor {label,path,sheet,rows}(성공 — U2 §2.7 3행) ·
+   "ERROR:…"(로드 실패) · null(취소=중단). 호출측은 pickDataFile 의 일반 반환과 동일하게
+   처리하면 된다(loadDataSheet 가 pick 과 같은 descriptor 를 되돌린다). */
 (function () {
   const $ = (id) => document.getElementById(id);
 
@@ -41,7 +42,7 @@
         if (!btn) return;
         cleanup(); // 확정 즉시 추가 클릭 차단(이중 로드 방지)
         const r = await Bridge.loadDataSheet(screen, payload.path, btn.dataset.sheet);
-        finish(r); // 파일명 또는 "ERROR:…"
+        finish(r); // descriptor 또는 "ERROR:…"
       }
       function onCancel() { finish(null); } // 취소·Escape = 중단(첫 시트 강등 없음)
 

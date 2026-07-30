@@ -23,8 +23,11 @@
    2. **잠금 범위**: 생성 중 잠금은 호스트 `setBusy` 가 이 루트도 훑는다(오버레이 루트는 화면
       루트 질의 밖 — 슬3 2R P2 선례). 마운트 진행 중에는 닫기·Escape·추가 클릭을 막고 **그
       사실을 표기**한다(`pool_picker.js` C8 승계 — '취소했다'면서 데이터가 바뀌는 거짓말 금지).
-   3. **전이·왕복 순서**: 성사(마운트 성공) 뒤에만 닫는다. 닫힘 뒤 포커스는 여는 트리거로
-      복귀(modal.js 소유). 고정·확인·시트 선택은 이 면 **위에** 스택으로 뜬다.
+   3. **전이·왕복 순서**: 실패·취소는 절대 면을 닫지 않는다(허가지 의무가 아니다 — U2
+      §2.7 1행). 고정 목록 선택은 남은 결정이 없어 성사 즉시 닫히고, 파일 찾아보기는
+      성사해도 「이 데이터 고정」 결정이 남아 면을 유지한다 — 「끝난 선택은 닫히고, 결정이
+      남은 선택은 남는다」. 닫힘 뒤 포커스는 여는 트리거로 복귀(modal.js 소유). 고정·확인·
+      시트 선택은 이 면 **위에** 스택으로 뜬다.
    4. **실패 경로 문맥**: 나라 동결·죽은 참조·모호 시트·행 0건·읽기 실패는 면을 닫지 않고
       상태줄에 재진술한다 — 다른 항목 재선택도 취소도 여기서 계속 가능하다.
 
@@ -70,8 +73,14 @@
     const sheet = cur.sheet ? ` <span class="muted">시트: ${esc(cur.sheet)}</span>` : "";
     // 「이 데이터 고정」은 **파일 출처에서만** 뜬다 — 등록 데이터 출처는 이미 고정된 참조다
     // (v6 pinCurrentData hidden 동형). 없는 대상에 버튼을 띄우면 문안이 거짓이 된다.
+    // 이 회차에 이미 고정했으면 버튼 자리에 그 사실을 남긴다(U2 §2.7 6행 — 풀 중복 판정이
+    // 이름 기준이라, 면이 열린 채 두 번 누르면 같은 파일이 2건이 된다. 자기가 방금 한
+    // 행동의 결과 보고이지 링2 재판정이 아니다).
     const pin = cur.origin === "file" && cur.path
-      ? `<button class="btn sm" id="dataPickerPin" data-busy-lock>이 데이터 고정…</button>` : "";
+      ? (session && session.pinned
+          ? `<span class="pill ok">고정됨: ${esc(session.pinned)}</span>`
+          : `<button class="btn sm" id="dataPickerPin" data-busy-lock>이 데이터 고정…</button>`)
+      : "";
     host.innerHTML =
       `<div class="tplcard"><div class="tplcard-top">` +
       `<span class="tplcard-name">${esc(cur.label)}</span>${sheet}` +
@@ -195,6 +204,12 @@
     }
   }
 
+  /* 찾아보기 = 성사해도 **면을 닫지 않는다**(U2 §2.7 1행). 안내문("고른 뒤 「이 데이터
+     고정」으로 남길 수 있습니다")이 약속한 그 기능이 서려면, 마운트 직후 「현재 데이터」가
+     방금 고른 파일로 재진술되고 그 자리에 고정 버튼이 서야 한다. 반면 고정 목록 선택
+     (mountPinned)은 남은 결정이 없어 지금처럼 닫는다 — 「끝난 선택은 닫히고, 결정이 남은
+     선택은 남는다」. 성사 판정은 브리지 descriptor(label·path·sheet·rows — §2.7 3행)로
+     한다: 다음 푸시 도착을 기다리면 발신 순서에 기대는 것이다. */
   async function browseFile() {
     if (loading) return;
     if (!(await session.confirmSwap())) return;   // 손실 가드 — 피커 열기 직전
@@ -211,7 +226,18 @@
         setStatus("⚠ 파일을 읽을 수 없습니다: " + r.slice(6).trim(), "danger");
         return;
       }
-      finish(r);
+      // 성사 — 회차의 「현재 데이터」를 descriptor 로 재진술하고 면을 유지한다.
+      session.current = {
+        label: r.label, detail: `${r.rows}건`,
+        path: r.path, sheet: r.sheet || "", origin: "file",
+      };
+      session.mounted = r.label;  // 이후 닫힘의 해소값 — 닫아도 마운트는 성사됐다
+      session.pinned = "";  // 새 파일 = 새 고정 결정(직전 회차 기억 소거)
+      renderCurrent();
+      if (session.onLoaded) session.onLoaded(r.label);
+      setStatus(
+        `${r.label} — ${r.rows}건을 불러왔습니다. 이대로 쓰려면 [닫기], ` +
+        "자주 쓰는 파일이면 「이 데이터 고정…」으로 남겨 두세요.", "ok");
     } catch (err) {
       setStatus("⚠ 파일을 읽을 수 없습니다:\n" + errText(err), "danger");
     } finally {
@@ -255,7 +281,11 @@
     }
   }
 
-  /* ---- 고정 다이얼로그(= v6 pinDataDialog) — 등록 모달을 이 면 위에 스택으로 띄운다 ---- */
+  /* ---- 고정 다이얼로그(= v6 pinDataDialog) — 등록 모달을 이 면 위에 스택으로 띄운다 ----
+     「＋ 직접 등록」은 죽었다(U2 §2.7 4행) — 유일한 고유 기능(마운트하지 않고 등록)이
+     가능한 이유가 곧 결함(경로만 반환하고 읽지 않음)이었다. 남은 진입은 둘뿐이다:
+     pin(방금 읽은 현재 데이터 고정 — path·sheet 읽기전용, 찾아보기 감춤: §2.7 5행)과
+     relink(고정 목록의 끊긴 참조를 새 경로로 — path 편집·찾아보기 유지, 의무 상속분). */
   function openRegDialog(opts) {
     const p = opts || {};
     // 제목과 확정 버튼은 **같은 동사**를 쓴다 — 「이 데이터 고정」을 열고 「등록」을 누르게
@@ -266,6 +296,11 @@
     $("poolRegPath").value = p.path || "";
     $("poolRegSheet").value = p.sheet || "";
     $("poolRegNote").value = p.note || "";
+    // pin 모드 = 「이 데이터」가 방금 확인한 그 데이터라는 말이 참이 되게 참조를 잠근다.
+    $("poolRegPath").readOnly = !!p.pin;
+    $("poolRegSheet").readOnly = !!p.pin;
+    $("poolRegBrowse").style.display = p.pin ? "none" : "";
+    if (session) session.regPin = !!p.pin;  // 성사 시 회차 기억(§2.7 6행)의 근거
     window.Modal.open("poolRegModal", {
       initialFocus: p.focus === "path" ? $("poolRegPath") : $("poolRegName"),
     });
@@ -275,7 +310,7 @@
   function openPinDialog() {
     const cur = (session && session.current) || {};
     openRegDialog({
-      title: "이 데이터 고정", okLabel: "고정",
+      title: "이 데이터 고정", okLabel: "고정", pin: true,
       name: "", path: cur.path || "", sheet: cur.sheet || "", note: "",
       focus: "name",
     });
@@ -301,6 +336,14 @@
         res = await Bridge.call("pool", "register_excel", { ...payload, confirm: true });
       }
       if (res && res.ok === false) { window.alert(res.error); return; }
+      // pin 성사 = 회차 기억(§2.7 6행): 고정 버튼 자리에 「고정됨: 이름」이 서서, 면이
+      // 열린 채 두 번 눌러 같은 파일이 2건 등록되는 것을 막는다. (§5.3 재편이 중복 판정을
+      // 경로 기준으로 바꾸면 이 기억은 잉여가 된다 — 그때 되깎는다.)
+      if (session && session.regPin) {
+        session.pinned = (res && res.name) || payload.name;
+        session.regPin = false;
+        renderCurrent();  // 포커스는 등록 모달 안 — 재렌더 호스트 밖이라 보존 불요
+      }
       window.Modal.close("poolRegModal");
     } catch (err) {
       window.alert(errText(err));
@@ -318,7 +361,9 @@
     }
   }
 
-  /** 데이터 선택 면을 열고 마운트 결과를 해소한다(라벨=성사 · null=취소·중단).
+  /** 데이터 선택 면을 열고 마운트 결과를 해소한다(라벨=성사 · null=마운트 없이 닫힘).
+   *  찾아보기 성사는 면을 닫지 않으므로(U2 §2.7 1행) 해소는 닫힘 시점이다 — 그 회차에
+   *  마운트가 성사됐으면 닫힘도 그 라벨로 해소된다(닫기 = 중단이 아니라 「이대로 쓰기」).
    *  opts: {screen, current:{label,detail,path,sheet,origin}, confirmSwap, onLoaded, trigger} */
   function open(opts) {
     build();
@@ -329,6 +374,9 @@
         current: o.current || {},
         confirmSwap: o.confirmSwap || (() => Promise.resolve(true)),
         onLoaded: o.onLoaded || null,
+        mounted: "",   // 이 회차에 성사된 마운트 라벨(찾아보기 — 면 유지 경로)
+        pinned: "",    // 이 회차에 성사된 고정 이름(§2.7 6행 회차 기억)
+        regPin: false, // 열린 등록 모달이 pin 모드인가(성사 시 회차 기억의 근거)
         resolve,
       };
       loading = false;
@@ -336,11 +384,11 @@
       renderAll();
       document.addEventListener("keydown", onEscCapture, true);  // Modal.open 보다 먼저
       Modal.open("dataPickerModal", {
-        onClose: () => {                 // 취소·Escape·닫기 = 중단(조용한 강등 없음)
+        onClose: () => {                 // 마운트 없는 닫힘 = 중단(조용한 강등 없음)
           const s = session;
           session = null;
           document.removeEventListener("keydown", onEscCapture, true);
-          if (s) s.resolve(null);
+          if (s) s.resolve(s.mounted || null);
         },
         initialFocus: $("dataPickerClose"),
       });
@@ -362,7 +410,8 @@
       Modal.close("dataPickerModal");
     });
     $("dataPickerBrowse").addEventListener("click", browseFile);
-    $("dataPickerRegister").addEventListener("click", () => openRegDialog({ title: "데이터 등록" }));
+    // (「＋ 직접 등록…」 배선은 U2 §2.7 4행에서 버튼과 함께 죽었다 — 등록은 「이 데이터
+    //  고정」(pin)과 「다시 연결」(relink) 두 진입만 남는다. 대체 경로 신설 없음.)
     // 재렌더에도 살아남게 안정 컨테이너에 위임(행은 푸시마다 다시 그려진다).
     $("dataPickerPinned").addEventListener("click", onPinnedClick);
     $("dataPickerCurrent").addEventListener("click", (e) => {

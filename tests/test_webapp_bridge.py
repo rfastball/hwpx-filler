@@ -177,7 +177,13 @@ def test_load_data_sheet_threads_confirmed_sheet_into_job_controller(tmp_path, m
     """
     frontend = _frontend(tmp_path, monkeypatch)
     result = frontend.load_data_sheet("job", str(MULTI_SHEET), "낙찰현황")
-    assert result == "multi_sheet.xlsx"
+    # 성사 반환 = descriptor(U2 §2.7 3행) — 면 유지 재진술·고정 버튼이 이 호출만으로 선다.
+    assert result == {
+        "label": "파일: multi_sheet.xlsx",
+        "path": str(MULTI_SHEET),
+        "sheet": "낙찰현황",
+        "rows": 3,
+    }
     job = frontend.controllers["job"]
     assert job.data_label == "multi_sheet.xlsx"
     # 첫 시트(공고목록, 2건)가 아니라 확정 시트(낙찰현황, 3건)가 실렸는가 — 조용한 강등 아님.
@@ -215,7 +221,7 @@ def test_load_data_sheet_vanished_file_returns_error_not_raise(tmp_path, monkeyp
 
 
 def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
-    """단일 시트/CSV = 물을 것이 없음 → 확정 게이트 없이 곧장 로드(파일명 반환)."""
+    """단일 시트/CSV = 물을 것이 없음 → 확정 게이트 없이 곧장 로드(descriptor 반환)."""
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
@@ -224,15 +230,18 @@ def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(csv))
 
     result = frontend.pick_data_file("editor")
-    assert result == "d.csv"
+    # 성사 반환 = descriptor(U2 §2.7 3행): label 은 링1 합성(source_label) 그대로,
+    # path 는 「이 데이터 고정」이 서는 근거다(푸시 도착에 기대지 않는다).
+    assert result == {"label": "파일: d.csv", "path": str(csv), "sheet": "", "rows": 1}
     assert frontend.controllers["editor"].data_path == str(csv)
 
 
 def test_load_data_sheet_loads_confirmed_sheet(tmp_path, monkeypatch):
-    """확정한 시트로 로드 → 그 시트의 필드가 컨트롤러에 반영(파일명 반환)."""
+    """확정한 시트로 로드 → 그 시트의 필드가 컨트롤러에 반영(descriptor 반환)."""
     frontend = _frontend(tmp_path, monkeypatch)
     result = frontend.load_data_sheet("editor", str(MULTI_SHEET), "낙찰현황")
-    assert result == "multi_sheet.xlsx"
+    assert isinstance(result, dict) and result["label"] == "파일: multi_sheet.xlsx"
+    assert result["sheet"] == "낙찰현황"
     assert frontend.controllers["editor"].source_fields == ["업체명", "낙찰금액", "계약일"]
 
 

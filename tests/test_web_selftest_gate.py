@@ -110,6 +110,25 @@ class TestWebSelftestGate:
         assert probe["pin_path"] == "C:/d/대장.xlsx", probe
         assert probe["pin_sheet"] == "물품", probe
 
+    def test_data_picker_single_path(self, selftest_result: dict) -> None:
+        """데이터 선택 면 단일 경로화(U2 §2.7) — 문안이 약속한 고정 기회가 실제로 선다.
+
+        찾아보기 성사 뒤에도 면이 열려 있고 「이 데이터 고정」이 **가시**여야 한다(1행) —
+        프로브 click 은 hidden 요소도 통과하므로 존재가 아니라 가시성을 단언한다.
+        「＋ 직접 등록…」은 소멸(4행), pin 모드의 path·sheet 는 읽기전용 + 폼 안
+        찾아보기 감춤(5행)이다.
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        assert probe["register_gone"] is True, probe
+        assert probe["pin_path_readonly"] is True, probe
+        assert probe["pin_sheet_readonly"] is True, probe
+        assert probe["pin_browse_hidden"] is True, probe
+        # 찾아보기 마운트 성사 = 면 유지 + 재진술 + 고정 버튼 가시(허가지 의무가 아니다).
+        assert probe["browse_kept_open"] is True, probe
+        assert probe["browse_restated"] is True, probe
+        assert probe["browse_pin_visible"] is True, probe
+
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self, selftest_result: dict,
     ) -> None:
