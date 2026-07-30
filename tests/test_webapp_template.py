@@ -507,6 +507,41 @@ def test_import_folder_is_bound_to_confirmed_manifest_not_a_rescan(tmp_path, mon
         ctrl.import_folder(str(ext), [])
 
 
+def test_import_folder_rejects_concurrent_batch_loudly(tmp_path, monkeypatch):
+    """PR #355 2R — 배치 진행 중 재실행의 판정 정본은 tpl 권위 **한 곳**(비차단 잠금).
+
+    JS in-flight 플래그(어포던스 잠금)가 뚫려도 — 재클릭·확정 모달 이중 열림 — 두 번째
+    배치는 같은 목록을 번호 접미로 재반입하지 못하고 loud 거절된다. 복사 도중(첫 건의
+    copy2 안에서) 같은 배치를 다시 부르는 재진입으로 결정적으로 잰다. 끝난 뒤에는 잠금이
+    풀려 다음 배치가 정상 실행된다(거절이 영구 잠금이 되지 않는다)."""
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+    real = st.shutil.copy2
+    raced: list = []
+
+    def racing(src, dst):
+        if not raced:  # 첫 건 복사 도중 = 배치 in-flight 한복판
+            raced.append(True)
+            with pytest.raises(ValueError, match="이미 진행 중"):
+                ctrl.import_folder(str(ext), manifest)
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", racing)
+    res = ctrl.import_folder(str(ext), manifest)
+    assert res["ok"] is True and res["imported"] == 3    # 본 배치는 끝까지 간다
+    assert raced == [True]                               # 재진입이 실제로 시도·거절됐다
+    # 이중 반입 없음 — 거절된 두 번째 배치가 접미 사본을 남기지 않았다.
+    assert not (tp / "txt" / "협조전 (2).txt").exists()
+    assert not (tp / "lib" / "용역 (2).hwpx").exists()
+    # 배치 종료 후 잠금 해제 — 다음 배치는 정상 거동(사라진 원본은 부분 실패 사유 병기).
+    monkeypatch.setattr(st.shutil, "copy2", real)
+    res2 = ctrl.import_folder(str(ext), manifest)
+    assert res2["imported"] == 3                         # 재실행 자체는 가능(접미로 들어간다)
+
+
 def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
     tmp_path, monkeypatch
 ):

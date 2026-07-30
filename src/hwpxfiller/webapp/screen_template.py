@@ -73,6 +73,10 @@ class TemplateController:
         # basename 동시 가져오기가 이름 선점~복사 사이 무경계로 겹쳐 두 호출이 같은 목적지를
         # 골라 내용 하나만 남는다. 후보 선택~복사를 이 잠금으로 직렬화한다(JobRegistry.clone 동형).
         self._import_lock = threading.Lock()
+        # 폴더 배치 가져오기의 동시 실행 거절 잠금(PR #355 2R) — _import_lock 은 개별 복사만
+        # 직렬화해 두 배치가 교차하면 같은 목록이 번호 접미로 재반입된다. 배치 중복의 판정은
+        # 여기 **한 곳**(비차단 획득 실패 = loud 거절)이고, JS 는 어포던스만 잠근다.
+        self._folder_import_lock = threading.Lock()
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
@@ -307,54 +311,64 @@ class TemplateController:
         남의 상태다(세션 무변경).
 
         ``files`` 검증은 여기(권위 소유자)가 진다: 비어 있지 않은 문자열 **basename** 목록
-        (경로 구분자·상위 탈출 불가)에 허용 확장자만 — 임의 경로 반입 승격을 막는다."""
-        root = Path(folder)
-        if not root.is_dir():
-            raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
-        if not files or not isinstance(files, list):
-            raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
-        for name in files:
-            if (
-                not isinstance(name, str)
-                or not name.strip()
-                or Path(name).name != name          # 구분자·'..' 등 basename 밖 형태 차단
-                or Path(name).suffix.lower() not in (".hwpx", ".txt")
-            ):
-                raise ValueError(f"가져오기 목록에 올 수 없는 항목입니다: {name!r}")
-        imported = 0
-        imported_hwpx = 0
-        failed: "list[tuple[str, str]]" = []
-        for name in sorted(files, key=str.casefold):     # 재진술과 같은 결정적 순서
-            src = root / name
-            if not src.is_file():
-                failed.append((name, "확정 뒤 폴더에서 사라졌습니다"))
-                continue
-            try:
-                self._copy_into_library(src)
-                imported += 1
-                if src.suffix.lower() == ".hwpx":
-                    imported_hwpx += 1
-            except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지를 막지 않는다(사유 병기)
-                failed.append((name, str(exc)))
-        if imported_hwpx:
-            self.vm.refresh()  # 배치 완료 후 1회 — TXT 는 snapshot 이 매번 재스캔
-        total = len(files)
-        if failed:
-            from ..gui.template_manager_state import ResultLine  # _ok 동형(경량 성형)
+        (경로 구분자·상위 탈출 불가)에 허용 확장자만 — 임의 경로 반입 승격을 막는다.
 
-            reasons = " · ".join(f"{name}: {err}" for name, err in failed)
-            self._set_result(ResultLine(
-                f"{total}건 중 {imported}건 등록 · {len(failed)}건 실패({reasons})", "warn",
-            ))
-        else:
-            self._set_result(_ok(
-                f"'{root.name}' 폴더에서 {total}건을 가져왔습니다. '그룹 없음'에서 시작합니다."
-            ))
-        self._push()
-        return {
-            "ok": not failed, "imported": imported, "total": total,
-            "failed": [{"name": name, "error": err} for name, err in failed],
-        }
+        **동시 배치 거절**(PR #355 2R): 배치 진행 중 재실행은 비차단 잠금 실패 = loud
+        거절 — 두 배치가 교차하면 같은 목록이 번호 접미로 재반입되고 완료 푸시 2회가
+        오해를 낳는다. JS 의 in-flight 플래그는 어포던스 잠금이고 판정 정본은 이 잠금
+        하나다(같은 상태를 두 곳이 판정하지 않는다)."""
+        if not self._folder_import_lock.acquire(blocking=False):
+            raise ValueError("폴더 가져오기가 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
+        try:
+            root = Path(folder)
+            if not root.is_dir():
+                raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
+            if not files or not isinstance(files, list):
+                raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
+            for name in files:
+                if (
+                    not isinstance(name, str)
+                    or not name.strip()
+                    or Path(name).name != name      # 구분자·'..' 등 basename 밖 형태 차단
+                    or Path(name).suffix.lower() not in (".hwpx", ".txt")
+                ):
+                    raise ValueError(f"가져오기 목록에 올 수 없는 항목입니다: {name!r}")
+            imported = 0
+            imported_hwpx = 0
+            failed: "list[tuple[str, str]]" = []
+            for name in sorted(files, key=str.casefold):     # 재진술과 같은 결정적 순서
+                src = root / name
+                if not src.is_file():
+                    failed.append((name, "확정 뒤 폴더에서 사라졌습니다"))
+                    continue
+                try:
+                    self._copy_into_library(src)
+                    imported += 1
+                    if src.suffix.lower() == ".hwpx":
+                        imported_hwpx += 1
+                except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지를 막지 않는다(사유 병기)
+                    failed.append((name, str(exc)))
+            if imported_hwpx:
+                self.vm.refresh()  # 배치 완료 후 1회 — TXT 는 snapshot 이 매번 재스캔
+            total = len(files)
+            if failed:
+                from ..gui.template_manager_state import ResultLine  # _ok 동형(경량 성형)
+
+                reasons = " · ".join(f"{name}: {err}" for name, err in failed)
+                self._set_result(ResultLine(
+                    f"{total}건 중 {imported}건 등록 · {len(failed)}건 실패({reasons})", "warn",
+                ))
+            else:
+                self._set_result(_ok(
+                    f"'{root.name}' 폴더에서 {total}건을 가져왔습니다. '그룹 없음'에서 시작합니다."
+                ))
+            self._push()
+            return {
+                "ok": not failed, "imported": imported, "total": total,
+                "failed": [{"name": name, "error": err} for name, err in failed],
+            }
+        finally:
+            self._folder_import_lock.release()
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
