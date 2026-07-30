@@ -354,6 +354,14 @@ class PoolTargetingMixin:
         self.data_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
         raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
         self.data_sheet = raw_sheet if isinstance(raw_sheet, str) else ""
+        # 헤더 행도 **같은 시점에** 포획한다(#349 리뷰 2R) — 참조 성분을 나중에 슬롯에서
+        # 다시 읽으면, 그사이 「다시 연결」된 슬롯이 지금 화면에 없는 데이터를 답한다.
+        # 형이 깨진 값은 추측해 고치지 않고 어댑터 기본(0)으로 둔다.
+        raw_hdr = item.opts.get("header_row") if isinstance(item.opts, dict) else None
+        self.data_header_row = (
+            raw_hdr if self.data_path and isinstance(raw_hdr, int)
+            and not isinstance(raw_hdr, bool) and raw_hdr > 0 else 0
+        )
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", item.name)}
 

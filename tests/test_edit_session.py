@@ -197,3 +197,36 @@ def test_workbench_result_stays_excluded_by_design():
     assert "workbench_result" in DEFERRED_ENTRY_REASONS
     with pytest.raises(ValueError, match="배선되지 않았습니다"):
         make_context("작업", entry_reason="workbench_result")
+
+
+def test_new_work_entry_is_wired_and_the_rest_stay_fail_closed():
+    """U2 §2.4·§4 판정 E(#349) — 신규 작업 진입만 열리고 나머지 배제는 그대로다.
+
+    한 줄을 지우는 조치라 **무엇이 함께 풀렸는지**를 여기서 센다: 이 사유는 이제 통과하고
+    (마법사 두 입구가 실제로 보낸다), 표면이 아직 없는 사유와 영구 배제(판정 E)는 계속
+    시끄럽게 거절돼야 한다. 배제 표가 통째로 비면 「선언된 배제」가 「조용한 허용」이 된다.
+    """
+    import pytest
+
+    from hwpxfiller.gui.edit_session import (
+        DEFERRED_ENTRY_REASONS,
+        LIVE_ENTRY_REASONS,
+        entry_reason_or_raise,
+    )
+
+    assert "document_browser_new_work" not in DEFERRED_ENTRY_REASONS
+    assert "document_browser_new_work" in LIVE_ENTRY_REASONS
+    assert entry_reason_or_raise("document_browser_new_work") == "document_browser_new_work"
+    ctx = make_context("", entry_reason="document_browser_new_work",
+                       evidence={"데이터": "발주목록.xlsx"},
+                       return_context={"surface": "data"})
+    assert ctx.entry_reason == "document_browser_new_work"
+    assert ctx.to_dict()["evidence"] == {"데이터": "발주목록.xlsx"}
+    # 남은 배제는 여전히 fail-closed — 해제는 한 줄씩, 그 표면을 짓는 슬라이스가 한다.
+    for still in ("schema_new_field", "schema_missing_field", "workbench_result"):
+        assert still in DEFERRED_ENTRY_REASONS
+        with pytest.raises(ValueError, match="배선되지 않았습니다"):
+            make_context("작업", entry_reason=still)
+    # 미지 사유는 조용한 `voluntary` 강등이 아니라 loud 로 남는다(폴백 금지).
+    with pytest.raises(ValueError, match="알 수 없는 편집 진입 사유"):
+        make_context("작업", entry_reason="document_browser_whatever")

@@ -58,9 +58,14 @@ ENTRY_REASONS = (
 )
 
 #: 이 슬라이스가 **실제로 세우는** 사유 — 보내는 표면이 존재하는 것들.
+#:
+#: ``document_browser_new_work`` 는 U2 §2.4·§4 판정 E(#349)에서 배제 표를 떠나 여기 왔다:
+#: 「이 데이터로 신규 작업」(후보 줄)과 확인 필요 행 클릭이 **같은 한 흐름**의 두 입구로
+#: 섰다. 유보 근거였던 F8 은 종결됐고, 선행이던 저장 시 데이터 자동등록은 #347 이 없앴다
+#: (그 자동등록이 새 진입점을 전원 파괴 확인으로 끝내던 원인이다).
 LIVE_ENTRY_REASONS = frozenset({
     "voluntary", "library", "preview_result", "run_failure", "output_result",
-    "document_browser_repair",
+    "document_browser_repair", "document_browser_new_work",
 })
 
 #: 배제 **선언**(§10.13 판정 K): 조용한 무시와 선언된 배제는 다르다. 여기 사유로 진입하면
@@ -72,7 +77,9 @@ DEFERRED_ENTRY_REASONS = {
     # 연결 편집을 승계했으므로 편집기로 나가는 deep-link 를 갖지 않는다. 자기 화면 안에서
     # 겨눈다(wbMapPanel 착지). 이 줄을 지우려는 슬라이스는 그 판정을 먼저 뒤집어야 한다.
     "workbench_result": "작업대는 편집기로 나가지 않는다(판정 E — 인라인 편집 승계)",
-    "document_browser_new_work": "신규 작업 분기(identityDecision)는 F8 소관",
+    # (`document_browser_new_work` 줄은 #349 가 지웠다 — 이 표의 규율대로 "그 표면을 짓는
+    #  슬라이스가 자기 줄을 지운다". 발신자는 후보 줄의 「이 데이터로 새 작업」과 문서 탐색
+    #  확인 필요 행 둘이고, 착지는 `EditorController.new_draft_with_data` 하나다.)
 }
 
 #: 복귀 표면(계약 §5.1 `returnContext.surface`) — 진입 사유와 같은 규율로 전부 열거한다.

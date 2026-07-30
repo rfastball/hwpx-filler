@@ -190,6 +190,129 @@ def test_unconfirm_undo_slot_dies_with_model_rebuild(tmp_path):
     assert all(row["confirmed"] is False for row in ctrl.snapshot()["rows"])
 
 
+def test_new_draft_with_data_anchors_the_mounted_data_in_the_same_wizard(tmp_path):
+    """U2 §2.4(#349) — 「이 데이터로 새 작업」은 **기존 마법사**에 데이터만 미리 세운다.
+
+    확인할 것 셋: ①새 마법사를 짓지 않았다(단계·초안 성질 그대로, 1단계=템플릿에서 시작)
+    ②2단계 관문이 그리는 앵커(`data_name`·`data_sheet`·헤더)가 이미 서 있다 ③진입 문맥이
+    배너의 원천으로 살아 있다(사유·증거·복귀처).
+    """
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황", "header_row": 0},
+        entry_reason="document_browser_new_work",
+        evidence={"데이터": "multi_sheet.xlsx"},
+        return_context={"surface": "data"},
+    )
+    snap = pushes[-1][1]
+    assert snap["is_draft"] is True and snap["editing_origin"] == ""
+    assert snap["section"] == "template"          # 마법사는 1단계부터 — 순서 의존은 그대로
+    assert snap["template_path"] == "" and snap["name"] == ""
+    # 2단계 관문 앵커(dataGateway 가 그리는 값) — 「이 데이터로」가 실제로 그 데이터다.
+    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["record_count"] == 3
+    ctx = snap["context"]
+    assert ctx["entry_reason"] == "document_browser_new_work"
+    assert ctx["evidence"] == {"데이터": "multi_sheet.xlsx"} and ctx["work"] == ""
+    assert ctx["return_context"] == {"surface": "data"}
+    # 템플릿을 고르고 2단계로 가면 매핑 모델이 **그 데이터의 헤더**로 선다(관문 재선택 불요).
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    snap = ctrl.snapshot()
+    assert snap["schema_only"] is False
+    assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]
+
+
+def test_new_draft_with_data_validates_before_it_destroys(tmp_path):
+    """배선 실수가 남의 세션을 조용히 지우지 않는다 — 문맥 검증이 `_reset` 보다 먼저다.
+
+    미배선·미지 사유는 fail-closed 인데(링1), 그 거절이 초기화 **뒤에** 나면 사용자는
+    아무 것도 못 얻고 편집 중이던 것만 잃는다. 거절 시 세션은 손대지 않은 채 남아야 한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("set_name", {"name": "쓰던 작업"})
+    with pytest.raises(ValueError, match="배선되지 않았습니다"):
+        ctrl.new_draft_with_data({"path": str(MULTI_SHEET)}, entry_reason="workbench_result")
+    assert ctrl.job_name == "쓰던 작업"                    # 세션 생존
+    assert ctrl.template_path == str(TPL_COMPILED)
+    assert ctrl.data_path == ""                            # 새 데이터도 서지 않았다
+
+
+def test_anchored_draft_survives_the_real_template_pick(tmp_path):
+    """#349 리뷰 3R P1 — 1단계에서 템플릿을 고르는 **실 dispatch** 를 타도 앵커가 산다.
+
+    앞 라운드의 테스트는 `load_template_path` 를 직접 불러 이 결함을 통과시켰다: 실 UX 의
+    다음 행동은 피커의 `use_library_template` 이고 그 경로는 `new_job_session` → `_reset()`
+    이라, 「이 템플릿으로」를 누른 **모든 사용자**가 데이터 앵커와 진입 문맥을 잃었다.
+    그래서 여기서는 링2 액션을 그대로 태운다 — 계약을 지키는 코드가 아니라 사용자가 밟는
+    경로를 센다.
+
+    끊기는 것은 종전 그대로임도 함께 못박는다(혼합 세션 금지는 살아 있다): 이름은 남지 않는다.
+    """
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl.new_draft_with_data(
+        {"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        entry_reason="document_browser_new_work",
+        evidence={"데이터": "multi_sheet.xlsx"},
+        return_context={"surface": "data"},
+    )
+    ctrl.dispatch("set_name", {"name": "쓰던 이름"})
+
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})   # 실 UX 경로
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == TPL_COMPILED.name
+    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["record_count"] == 3
+    assert snap["context"]["entry_reason"] == "document_browser_new_work"
+    assert snap["context"]["evidence"] == {"데이터": "multi_sheet.xlsx"}
+    assert snap["name"] == ""            # 이름·매핑은 종전대로 끊긴다(혼합 세션 금지)
+
+    # 마음을 바꿔 다른 템플릿을 골라도 앵커는 산다 — 문맥까지 되살아나야 성립하는 성질이다.
+    ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    snap = ctrl.snapshot()
+    assert snap["data_name"] == "multi_sheet.xlsx"
+    assert snap["context"]["entry_reason"] == "document_browser_new_work"
+
+    # 대조군: 앵커 없이 시작한 보통 초안은 종전대로 데이터가 끊긴다(계약 무변경).
+    plain, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    plain.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    plain.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    assert plain.snapshot()["data_name"] == ""
+
+
+def test_new_draft_carries_the_whole_reference_not_just_the_path(tmp_path):
+    """#349 리뷰 P1 — 참조를 경로로 줄이면 **다른 헤더**의 데이터로 마법사가 선다.
+
+    등록 데이터의 엑셀 참조는 `header_row` 를 들 수 있다. 그것을 떨어뜨리고 다시 열면
+    사용자가 「문서 만들기」에서 본 열과 마법사가 앵커한 열이 갈리는데, 그 어긋남은 화면
+    어디에도 표시가 없다(조용히 다른 데이터). 모델 정체 키도 같은 성분을 든다 — 두 판의
+    헤더 이름이 우연히 겹치면 키가 불변이라 이전 기준의 확정 행이 그대로 산다.
+    """
+    xlsx = tmp_path / "머리2행.xlsx"
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["2026년 발주 목록", "작성 2026-07", "비고"])   # 1행 = 표제 줄(헤더 아님)
+    ws.append(["부서", "사업명", "금액"])        # 2행 = 진짜 헤더
+    ws.append(["총무과", "책상", "100"])
+    wb.save(xlsx)
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.new_draft_with_data({"path": str(xlsx), "sheet": "", "header_row": 2})
+    assert ctrl.source_fields == ["부서", "사업명", "금액"]
+    assert ctrl.data_header_row == 2
+    assert ctrl._model_key_now()[3] == 2      # 정체 키 성분 — 누락은 조용한 게이트 우회다
+    # 대조군: 같은 파일을 경로만으로 열면 제목 줄이 헤더가 된다 = **다른 데이터**.
+    other, _ = _controller(tmp_path)
+    other.new_draft_with_data({"path": str(xlsx)})
+    assert other.source_fields != ctrl.source_fields
+    assert other.data_header_row == 0
+
+
 def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
     """3단계 접기(블록 2 결정 11·12): 매핑 진입 후 관문에서 데이터를 고르면 매핑표가 그
     자리에서 다시 선다 — 컬럼·자동 제안 반영, 스키마온리 탈출, 전환 없음(라이브 순서 가드).

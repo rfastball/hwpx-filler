@@ -87,11 +87,16 @@ def test_new_job_entry_is_single_sourced_in_the_library() -> None:
     좌 목록의 구획 ＋ 와 빈 상태 CTA 는 목록과 함께 죽었다 — 진입이 둘이면 폐기 확인과 착지가
     갈린다(EditorEntry.newDraft 단일 출처 규율). 라이브러리가 빈 목록일 때도 이 버튼은 화면
     머리에 **상주**하므로 첫 작업 진입이 끊기지 않는다.
+
+    **단수는 「맨손 새 작업」에 대한 것이다**(U2 §2.4·#349 로 좁혀졌다): 「문서 만들기」의
+    「이 데이터로 새 작업」은 마운트된 데이터를 들고 시작하는 다른 동사이고, 데이터가 없는
+    라이브러리에서는 성립하지 않아 중복이 아니다. 그쪽은 `newDraftFromData` 로 갈라져
+    있으므로 여기서 세는 것은 여전히 `newDraft()` 하나다.
     """
     assert 'id="libraryNewWork"' in INDEX
     assert 'id="jobNewBtn"' not in INDEX and 'id="jobEmptyNewBtn"' not in INDEX
     assert "EditorEntry.newDraft()" in LIB
-    assert "EditorEntry.newDraft" not in JOB
+    assert "EditorEntry.newDraft(" not in JOB
 
 
 def test_management_verbs_read_identity_from_the_unfiltered_detail() -> None:

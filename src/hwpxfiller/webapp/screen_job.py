@@ -1333,6 +1333,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if self.data_notice_text else None
             ),
         }
+        # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
+        # 표면이 `data_target.path` 유무로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가
+        # 거절하는 어긋남이 난다. 막힐 땐 숨기지 않고 비활성 + 사유 병기(조용한 무동작 금지).
+        _handoff, _blocked = self.new_work_handoff()
+        base["new_work"] = {"can": not _blocked, "reason": _blocked}
         # 후보(§18.4) — 데이터 준비 시에만 계산(§18.1: 미준비면 계산 자체를 하지 않는다).
         # 판정 fields 는 필터 열 파생과 같은 원천(records[0].keys — 표시=판정 정합).
         base["candidates"] = self._candidate_payload(jobs)
@@ -1611,6 +1616,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
         self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
+        # 파일 겨눔은 헤더 행 옵션을 만들지 않는다(어댑터 기본) — 풀 겨눔이 포획해 둔 값이
+        # 남지 않게 같은 자리에서 비운다(마운트 성분은 **한 벌**로 갈린다, 리뷰 2R).
+        self.data_header_row = 0
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
