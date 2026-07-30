@@ -134,6 +134,12 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   `relink`(`key`+새 참조)는 같은 슬롯의 참조 교체(수명 보존)이고 확인 왕복을 거친다.
   구판(이름=키)이 남긴 **같은 정체성 등록 2+건**은 스냅샷 `duplicates` 로 loud 표면화되고
   `resolve_duplicate`(남길 `keep` 확정, 확인 왕복)로만 정리된다 — 조용한 자동 병합 금지.
+- **파괴적 확정은 「보여준 상태의 지문」에 결속된다**(`relink`·`resolve_duplicate` 공용):
+  1차 응답이 `basis`(`screen_pool.confirm_basis` — 슬롯 키·이름·종류·참조 요약·비고·수명
+  전부)를 발행하고 확정이 그대로 되싣는다. 백엔드는 쓰기 잠금 안에서 지금 상태의 지문을
+  다시 지어 대조하고, 다르거나 미동봉이면 **삭제·덮어쓰기 0건 + loud 재진술 후 재확인**
+  (fail-closed). 재진술 문안의 값도 같은 사전(`shown_facts`)에서 꺼낸다 — 보여준 것과
+  대조하는 것이 갈리면 그 틈이 곧 고지 없는 파괴다(에디터 `confirmed_overwrite_text` 동형).
 
 ### `job` 세션 표면의 형상 (v6 `screen-data` 2열 — 재작성 R1)
 

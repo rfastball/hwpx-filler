@@ -299,9 +299,9 @@
   }
 
   /* 중복 등록 병합(§5.3 마이그레이션) — 남길 1건 클릭 → 재진술 확인 → 확정 삭제.
-     확정에는 1차가 재진술한 **그 멤버 키 집합**(group_keys)을 그대로 되실어 보낸다 —
-     모달을 읽는 사이 다른 writer 가 같은 정체성의 등록을 더했으면 백엔드가 집합 불일치로
-     거절하고 다시 묻는다(고지 없는 삭제 금지 — 덮어쓰기 confirmed_overwrite_text 동형). */
+     확정에는 1차가 재진술한 **그 상태의 지문**(basis)을 그대로 되실어 보낸다 — 모달을
+     읽는 사이 멤버가 늘거나 멤버의 이름·비고가 바뀌었으면 백엔드가 지문 불일치로 거절하고
+     다시 묻는다(고지 없는 삭제 금지 — 덮어쓰기 confirmed_overwrite_text 동형). */
   async function onDupesClick(e) {
     const btn = e.target.closest("button[data-dup-keep]");
     if (!btn) return;
@@ -314,7 +314,7 @@
         confirmLabel: "정리", cancelLabel: "취소", danger: true,
       }))) {
         await Bridge.call("pool", "resolve_duplicate", {
-          keep, confirm: true, group_keys: res.group_keys,
+          keep, confirm: true, basis: res.basis,
         });
       }
     } catch (err) {
@@ -381,7 +381,11 @@
           body: res.confirm_text + "\n\n계속할까요?",
           confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
         }))) return;
-        res = await Bridge.call("pool", action, { ...payload, confirm: true });
+        // 확정은 1차가 보여준 **그 슬롯 상태의 지문**에 결속된다(relink) — 모달을 읽는
+        // 사이 같은 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다.
+        const confirmed = { ...payload, confirm: true };
+        if (res.basis) confirmed.basis = res.basis;
+        res = await Bridge.call("pool", action, confirmed);
       }
       if (res && res.ok === false) { window.alert(res.error); return; }
       window.Modal.close("poolRegModal");

@@ -18,22 +18,70 @@
   하나 버리지 않고 스냅샷 ``duplicates`` 로 표면화, 남길 1건을 사용자가 확정한 뒤에만
   나머지를 삭제한다(``resolve_duplicate`` — 무손실이 아니므로 자동 병합 금지).
 
+**확정 결속(코덱스 2R 근본 조치)**: 파괴적 확인 왕복(병합·다시 연결)은 **1차가 사용자에게
+보여준 상태의 지문**(:func:`confirm_basis`)에 결속된다. 1차 응답이 ``basis`` 를 발행하고
+확정이 그대로 되실어 보내면, 백엔드가 쓰기 잠금 안에서 지금 상태의 지문을 다시 지어
+대조한다 — 다르면 **삭제·덮어쓰기 0건 + loud 재진술 후 재확인**이다. 결속 단위가 키
+집합이 아니라 :func:`shown_facts` 의 **값 전체**인 이유는 1R·2R 이 같은 구멍의 세 조각을
+차례로 드러냈기 때문이다: 멤버가 늘어도(1R), 멤버의 이름·비고가 바뀌어도(2R P1), 다시
+연결 대상의 참조가 갈려도(2R P2) 사용자가 승인한 것은 **그때 읽은 값**이지 키가 아니다.
+두 경로가 같은 기제 하나를 쓰는 것도 계약이다 — 두 벌이면 세 번째 구멍이 난다.
+
 **스코프 경계(조용히 빠뜨리지 않고 명시)**: 나라장터 참조 **등록**은 웹에 노출하지 않는다
 (동결 결정 2026-07-16 — 내부망 API 미확인, ServiceKey 웹 표면 부재). 단 풀에 이미 있는
 nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register_nara`` 는 보존, 배선만 유보).
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
-from ..core.dataset_pool import DatasetPoolRegistry
+from ..core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..gui.dataset_pool_state import (
+    DatasetPoolRow,
     DatasetPoolViewModel,
     kind_transition_clause,
     reference_summary,
 )
 from .screens import PushSink, default_pool_registry
+
+#: 확정 왕복이 결속하는 항목 상태의 성분 — **재진술 문안의 소재**와 같은 집합이다.
+#: 여기 없는 값으로 문안을 지으면 「보여준 것」과 「대조하는 것」이 갈리므로, 문안은
+#: 반드시 :func:`shown_facts` 가 낸 사전에서만 값을 꺼낸다(test_webapp_pool 이 강제).
+SHOWN_FIELDS = ("key", "name", "kind", "reference", "note", "status")
+
+
+def shown_facts(row_or_key, item: "DatasetPoolItem | None" = None) -> "dict[str, str]":
+    """확정이 결속할 **사용자가 읽은/잃을 값** 한 벌 — 행(스냅샷)·항목(디스크) 공용.
+
+    두 입력을 받는 이유는 두 확정 경로의 소재가 다르기 때문이다(병합은 VM 행, 다시
+    연결은 디스크 항목). 성형은 한 함수뿐이라 성분이 갈리지 않는다 — ``reference`` 는
+    양쪽 다 :func:`~hwpxfiller.gui.dataset_pool_state.reference_summary` 산출이다.
+    """
+    if item is None:
+        row: DatasetPoolRow = row_or_key
+        values = (row.key, row.name, row.kind, row.reference, row.note, row.status)
+    else:
+        values = (
+            str(row_or_key), item.name, item.kind, reference_summary(item),
+            item.note, item.status,
+        )
+    return dict(zip(SHOWN_FIELDS, values, strict=True))
+
+
+def confirm_basis(facts: "list[dict[str, str]]") -> str:
+    """1차가 보여준 상태의 지문 — 확정이 되실어 대조하는 **단일 결속 기제**.
+
+    키 순 정렬 + 정렬된 JSON 이라 같은 상태면 같은 값이 나온다(발신 순서·사전 순서
+    무관). 값 하나라도 갈리면 지문이 갈리므로, 「무엇이 바뀌었는지」를 열거로 관리하지
+    않는다 — 열거로 푼 문제는 다음 라운드에서 다시 샌다(1R→2R 이 그 증거다).
+    """
+    payload = json.dumps(
+        sorted(facts, key=lambda f: f["key"]), ensure_ascii=False, sort_keys=True
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
 
 class PoolController:
@@ -261,6 +309,25 @@ class PoolController:
         self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} ({reference_summary(item)})")
         return {"ok": True, "name": item.name}
 
+    # ---- 확정 결속 대조(병합·다시 연결 공용 — 코덱스 2R 근본 조치)
+    def _basis_mismatch(self, p: dict, facts: "list[dict[str, str]]") -> "dict | None":
+        """확정이 실은 지문과 **지금 상태**의 지문을 대조 — 어긋나면 거절 dict, 같으면 None.
+
+        승인의 대상은 「그때 읽은 값」이다. 근거 미동봉(구식 호출)도 같은 거절이다 —
+        무엇을 승인했는지 모르는 확정으로는 지우거나 덮을 수 없다(fail-closed).
+        호출자는 **쓰기 잠금 안**에서 부른다: 대조와 파괴 사이에 다른 writer 가 끼면
+        대조가 다시 낡는다.
+        """
+        sent = p.get("basis")
+        if isinstance(sent, str) and sent == confirm_basis(facts):
+            return None
+        msg = (
+            "확인하는 사이 이 데이터의 등록 상태가 바뀌어 실행하지 않았습니다. "
+            "목록을 새로 읽었으니 다시 확인해 주세요."
+        )
+        self._set_result(msg, "danger")
+        return {"ok": False, "error": msg}
+
     # ---- 다시 연결(#67 → §5.3 키 재편) — 같은 슬롯의 참조 교체(수명 보존)
     def _do_relink(self, p: dict) -> dict:
         """끊긴(또는 갈아탈) 참조를 새 파일로 — **슬롯을 유지**한 채 kind+opts 만 바꾼다.
@@ -270,6 +337,11 @@ class PoolController:
         겸했지만, 중복 판정이 정체성 기준이 되며 갈라졌다: 재등록은 「같은 데이터인가」를,
         여기는 「이 슬롯이 무엇을 가리키게 할 것인가」를 판정한다. 확정 전 1차 호출은
         기존→새 참조(+이름 변경·kind 전이)를 재진술한다(durable 뮤테이션 확인 1회).
+
+        확정은 **1차가 보여준 슬롯 상태의 지문**(``basis``)에 결속된다(코덱스 2R P2):
+        모달이 열린 사이 다른 호출이 같은 슬롯을 재연결·개명하면 정체성 검사는 통과하므로,
+        결속이 없으면 사용자가 본 적 없는 더 새로운 참조를 덮어쓴다. 대조부터 변이까지가
+        한 쓰기 잠금 안이라 그 사이에 다른 writer 가 끼지 못한다.
         """
         key = p["key"]
         path = p.get("path") or ""
@@ -285,36 +357,48 @@ class PoolController:
             if msg:
                 self._set_result(msg, "danger")
                 return {"ok": False, "error": msg}
-        try:
-            item = self.vm.registry.load(key)
-        except (FileNotFoundError, ValueError):
-            return self._stale_item_result(name or key)
-        if not p.get("confirm"):
-            rename_clause = (
-                f"\n이름도 '{item.name}' → '{name}' 으로 바뀝니다."
-                if name and name != item.name else ""
-            )
-            return {
-                "ok": True, "needs_confirm": True, "key": key,
-                "confirm_text": (
-                    f"'{item.name}' 의 참조를 새 파일로 바꿉니다.\n"
-                    f"기존: {reference_summary(item)}\n새 파일: {path}"
-                    f"{kind_transition_clause(item)}{rename_clause}"
-                ),
-            }
-        try:
-            updated = self.vm.update_excel_reference(
-                key, path, sheet=sheet, note=note, name=name
-            )
-        except FileNotFoundError:
-            return self._stale_item_result(name or key)
-        except ValueError as exc:  # 새 참조가 다른 슬롯의 정체성과 겹침 등 — loud
-            self._set_result(str(exc), "danger")
-            return {"ok": False, "error": str(exc)}
-        except OSError as exc:
-            msg = f"등록 데이터 저장에 실패했습니다: {exc}"
-            self._set_result(msg, "danger")
-            return {"ok": False, "error": msg}
+        # 대조·변이 한 경계(재진입 RLock — 안의 update_excel_reference 가 그대로 통과).
+        with self.vm.registry.write_lock():
+            try:
+                item = self.vm.registry.load(key)
+            except (FileNotFoundError, ValueError):
+                return self._stale_item_result(name or key)
+            facts = [shown_facts(key, item)]
+            shown = facts[0]
+            if not p.get("confirm"):
+                rename_clause = (
+                    f"\n이름도 '{shown['name']}' → '{name}' 으로 바뀝니다."
+                    if name and name != shown["name"] else ""
+                )
+                return {
+                    "ok": True, "needs_confirm": True, "key": key,
+                    # 승인 대상 = 이 슬롯의 지금 상태(이름·참조·비고·수명 전부).
+                    "basis": confirm_basis(facts),
+                    # 문안의 값은 지문과 **같은 사전**에서 꺼낸다 — 보여준 것과 대조하는
+                    # 것이 갈리지 않게(test_webapp_pool 의 성분 계약).
+                    "confirm_text": (
+                        f"'{shown['name']}' 의 참조를 새 파일로 바꿉니다.\n"
+                        f"기존: {shown['reference']}\n새 파일: {path}"
+                        f"{kind_transition_clause(item)}{rename_clause}"
+                    ),
+                }
+            stale = self._basis_mismatch(p, facts)
+            if stale is not None:
+                self.vm.refresh()   # 화면을 실상에 — 재확인의 근거는 새 상태다
+                return stale
+            try:
+                updated = self.vm.update_excel_reference(
+                    key, path, sheet=sheet, note=note, name=name
+                )
+            except FileNotFoundError:
+                return self._stale_item_result(name or key)
+            except ValueError as exc:  # 새 참조가 다른 슬롯의 정체성과 겹침 등 — loud
+                self._set_result(str(exc), "danger")
+                return {"ok": False, "error": str(exc)}
+            except OSError as exc:
+                msg = f"등록 데이터 저장에 실패했습니다: {exc}"
+                self._set_result(msg, "danger")
+                return {"ok": False, "error": msg}
         self._set_result(
             f"참조를 다시 연결했습니다: {updated.name} ({reference_summary(updated)})"
         )
@@ -325,15 +409,16 @@ class PoolController:
         """같은 데이터 등록 그룹에서 남길 1건 확정 → 나머지 삭제(확인 라운드트립).
 
         1차 호출은 **무엇이 남고 무엇이 지워지는지**를 재진술만 하고, 그 재진술이 겨눈
-        멤버 키 집합(``group_keys``)을 함께 돌려준다 — 이름·메모가 다른 등록들을 지우는
-        파괴라 조용한 자동 병합은 금지다(confirm-or-alarm).
+        상태의 지문(``basis``)을 함께 돌려준다 — 이름·메모가 다른 등록들을 지우는 파괴라
+        조용한 자동 병합은 금지다(confirm-or-alarm).
 
-        확정(2차)은 **사용자가 읽고 승인한 그 집합**과 지금 디스크의 그룹을 대조한다
-        (코덱스 1R P1 — TOCTOU): 확인 모달을 읽는 사이 다른 writer 가 같은 정체성의
-        등록을 더했으면, 재조회 결과를 그대로 채택할 때 **고지된 적 없는 등록이 drop 에
-        조용히 포함**된다. 집합이 다르면(추가든 소멸이든) 아무것도 지우지 않고 차이를
-        loud 재진술한다 — 승인한 문안과 실제로 일어나는 일이 갈리는 것이 이 저장소의
-        지배 결함류다(에디터 덮어쓰기 게이트의 confirmed_overwrite_text 대조와 동형).
+        확정(2차)은 **사용자가 읽고 승인한 그 상태**와 지금 디스크를 대조한다. 결속 단위가
+        멤버 **키 집합**이면 부족하다는 것이 두 라운드의 교훈이다: 멤버가 늘면 고지 없는
+        등록이 drop 에 섞이고(1R P1), 키는 그대로인 채 멤버의 **이름·비고**만 바뀌면
+        사용자가 본 적 없는 내용의 등록이 지워진다(2R P1). 그래서 지문은
+        :func:`shown_facts` 의 값 전체를 덮고, 어긋나면 아무것도 지우지 않고 loud
+        재진술한다 — 승인한 문안과 실제로 일어나는 일이 갈리는 것이 이 저장소의 지배
+        결함류다(에디터 덮어쓰기 게이트의 ``confirmed_overwrite_text`` 대조와 동형).
         """
         keep = p["keep"]
         # 판정·대조·삭제를 **레지스트리 공유 쓰기 잠금 한 경계 안**에서 밟는다 — 대조와
@@ -350,31 +435,27 @@ class PoolController:
                 return {"ok": False, "error": msg}
             keep_row = next(r for r in group if r.key == keep)
             drop = [r for r in group if r.key != keep]
-            current_keys = sorted(r.key for r in group)
+            facts = [shown_facts(r) for r in group]
+            shown = {f["key"]: f for f in facts}
             if not p.get("confirm"):
-                dropped = ", ".join(f"'{r.name}'" for r in drop)
+                # 문안의 값은 지문과 **같은 사전**에서 꺼낸다(성분 계약) — 보여준 값이
+                # 결속에서 빠지는 자리가 두 라운드의 결함이었다.
+                dropped = ", ".join(f"'{shown[r.key]['name']}'" for r in drop)
                 return {
                     "ok": True, "needs_confirm": True, "keep": keep,
-                    # 확정이 되돌려 보낼 판정 근거 — 이 집합에 대한 승인이지 그룹 일반에
+                    # 확정이 되돌려 보낼 판정 근거 — 이 상태에 대한 승인이지 그룹 일반에
                     # 대한 승인이 아니다.
-                    "group_keys": current_keys,
+                    "basis": confirm_basis(facts),
                     "confirm_text": (
-                        f"같은 데이터({keep_row.reference})를 가리키는 등록 {len(group)}건을 "
-                        f"'{keep_row.name}' 하나로 합칩니다.\n"
+                        f"같은 데이터({shown[keep]['reference']})를 가리키는 등록 "
+                        f"{len(group)}건을 '{shown[keep]['name']}' 하나로 합칩니다.\n"
                         f"삭제되는 등록: {dropped} — 그 이름·메모는 사라집니다"
                         "(원본 파일은 지우지 않습니다)."
                     ),
                 }
-            confirmed = p.get("group_keys")
-            if not isinstance(confirmed, list) or sorted(map(str, confirmed)) != current_keys:
-                # 근거 미동봉(구식 호출)도 같은 거절이다 — 무엇을 승인했는지 모르는 확정으로
-                # 지울 수는 없다(fail-closed).
-                msg = (
-                    "확인하는 사이 이 데이터의 등록 구성이 바뀌어 정리를 실행하지 않았습니다. "
-                    "목록을 새로 읽었으니 다시 확인해 주세요."
-                )
-                self._set_result(msg, "danger")
-                return {"ok": False, "error": msg}
+            stale = self._basis_mismatch(p, facts)
+            if stale is not None:
+                return stale
             for r in drop:
                 self.vm.delete(r.key)
         self._set_result(

@@ -54,9 +54,11 @@ def test_confirmed_relink_preserves_status_note_created_at(tmp_path):
     assert res1["needs_confirm"] is True
     assert "a.xlsx" in res1["confirm_text"] and "b.xlsx" in res1["confirm_text"]
 
-    # 2차(confirm): 참조만 바뀌고 상태·메모·생성시각은 그대로.
+    # 2차(confirm): 1차가 보여준 상태의 지문에 결속해 확정 — 참조만 바뀌고 상태·메모·
+    # 생성시각은 그대로(코덱스 2R P2: basis 미동봉은 fail-closed 거절).
     res2 = ctrl.dispatch(
-        "relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": "", "confirm": True})
+        "relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": "",
+                   "confirm": True, "basis": res1["basis"]})
     assert res2["ok"] is True
     after = reg.load(key)
     assert after.opts["path"] == "C:/d/b.xlsx"
@@ -71,9 +73,11 @@ def test_confirmed_relink_with_note_replaces_note_only(tmp_path):
     ctrl.dispatch("register_excel",
                   {"name": "발주", "path": "C:/d/a.xlsx", "note": "6월분"})
     key = ctrl.snapshot()["rows"][0]["key"]
+    first = ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": "", "note": "7월분"})
     ctrl.dispatch("relink",
                   {"key": key, "path": "C:/d/b.xlsx", "sheet": "", "note": "7월분",
-                   "confirm": True})
+                   "confirm": True, "basis": first["basis"]})
     after = reg.load(key)
     assert after.note == "7월분" and after.opts["path"] == "C:/d/b.xlsx"
 
@@ -86,7 +90,9 @@ def test_confirmed_relink_updates_sheet_pointer(tmp_path):
     key = ctrl.snapshot()["rows"][0]["key"]
     csv = tmp_path / "b.csv"
     csv.write_text("a\n1\n", encoding="utf-8")           # CSV = 시트 축 없음(#33 게이트 통과)
-    ctrl.dispatch("relink", {"key": key, "path": str(csv), "sheet": "", "confirm": True})
+    first = ctrl.dispatch("relink", {"key": key, "path": str(csv), "sheet": ""})
+    ctrl.dispatch("relink", {"key": key, "path": str(csv), "sheet": "",
+                             "confirm": True, "basis": first["basis"]})
     after = reg.load(key)
     assert after.opts == {"path": str(csv)}  # 시트 없는 새 참조 — 옛 시트 미잔존
 
@@ -111,7 +117,8 @@ def test_cross_kind_relink_normalizes_kind_and_restates_transition(tmp_path):
     assert "사라집니다" in res1["confirm_text"]
 
     # 2차(confirm): kind/opts 정합 착지 — 하이브리드 손상 금지.
-    ctrl.dispatch("relink", {"key": key, "path": "C:/d/a.xlsx", "sheet": "", "confirm": True})
+    ctrl.dispatch("relink", {"key": key, "path": "C:/d/a.xlsx", "sheet": "",
+                             "confirm": True, "basis": res1["basis"]})
     after = reg.load(key)
     assert after.kind == "excel"
     assert after.opts == {"path": "C:/d/a.xlsx"}

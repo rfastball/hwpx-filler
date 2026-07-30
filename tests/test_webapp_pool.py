@@ -282,10 +282,12 @@ def test_relink_two_phase_keeps_slot_and_lifecycle(tmp_path):
     res1 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/이동된.xlsx", "sheet": ""})
     assert res1["needs_confirm"] is True
     assert "a.xlsx" in res1["confirm_text"] and "이동된.xlsx" in res1["confirm_text"]
+    assert res1["basis"]                               # 승인 대상 = 이 슬롯의 지금 상태
     assert reg.load(key).opts["path"] == "C:/d/a.xlsx"  # 1차는 무변형
 
     res2 = ctrl.dispatch(
-        "relink", {"key": key, "path": "C:/d/이동된.xlsx", "sheet": "", "confirm": True})
+        "relink", {"key": key, "path": "C:/d/이동된.xlsx", "sheet": "",
+                   "confirm": True, "basis": res1["basis"]})
     assert res2["ok"] is True
     updated = reg.load(key)
     assert updated.opts["path"] == "C:/d/이동된.xlsx"
@@ -299,10 +301,64 @@ def test_relink_rejects_identity_of_another_slot(tmp_path):
     ctrl.dispatch("register_excel", {"name": "A", "path": "C:/d/a.xlsx"})
     ctrl.dispatch("register_excel", {"name": "B", "path": "C:/d/b.xlsx"})
     rows = {r["name"]: r for r in ctrl.snapshot()["rows"]}
+    key_b = rows["B"]["key"]
+    first = ctrl.dispatch("relink", {"key": key_b, "path": "C:/d/a.xlsx", "sheet": ""})
     res = ctrl.dispatch(
-        "relink", {"key": rows["B"]["key"], "path": "C:/d/a.xlsx", "sheet": "", "confirm": True})
+        "relink", {"key": key_b, "path": "C:/d/a.xlsx", "sheet": "",
+                   "confirm": True, "basis": first["basis"]})
     assert res["ok"] is False and "이미" in res["error"]
     assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+@pytest.mark.parametrize(
+    ("field", "mutate"),
+    [
+        ("reference", lambda it: it.opts.update({"path": "C:/d/남이바꾼.xlsx"})),
+        ("name", lambda it: setattr(it, "name", "남이 개명")),
+        ("note", lambda it: setattr(it, "note", "남이 단 메모")),
+        ("status", lambda it: it.archive()),
+    ],
+)
+def test_relink_refuses_when_the_slot_changed_under_the_modal(tmp_path, field, mutate):
+    """확인 사이 같은 슬롯이 재연결·개명됐으면 덮어쓰기 0건 + loud 재진술(코덱스 2R P2).
+
+    정체성 검사는 「새 참조가 남의 것인가」만 보므로 이 자리를 못 잡는다 — 사용자가 승인한
+    것은 **1차가 보여준 그 슬롯 상태**이지 슬롯 키가 아니다. 병합과 **같은 결속 기제**
+    (basis)를 쓰므로 두 경로가 함께 닫힌다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx", "note": "6월분"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    res1 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/새것.xlsx", "sheet": ""})
+    assert res1["needs_confirm"] is True
+
+    DatasetPoolRegistry(reg.directory).mutate(key, mutate)  # 다른 호출이 먼저 손댔다
+    before = reg.load(key).to_dict()
+
+    res2 = ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/d/새것.xlsx", "sheet": "",
+                   "confirm": True, "basis": res1["basis"]})
+    assert res2["ok"] is False and "바뀌어" in res2["error"], field
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert reg.load(key).to_dict() == before, f"{field} 변경 뒤에도 고지 없이 덮었습니다."
+    # 재확인은 새 상태 기준으로 성사된다(거절 = 재확인 요구이지 막다른길이 아니다).
+    res3 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/새것.xlsx", "sheet": ""})
+    res4 = ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/d/새것.xlsx", "sheet": "",
+                   "confirm": True, "basis": res3["basis"]})
+    assert res4["ok"] is True
+    assert reg.load(key).opts["path"] == "C:/d/새것.xlsx"
+
+
+def test_relink_confirm_without_basis_is_refused(tmp_path):
+    """근거(basis) 미동봉 relink 확정도 fail-closed — 병합과 같은 계약 하나."""
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    res = ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/d/새것.xlsx", "sheet": "", "confirm": True})
+    assert res["ok"] is False and "다시 확인" in res["error"]
+    assert reg.load(key).opts["path"] == "C:/d/a.xlsx"   # 덮어쓰기 0건
 
 
 # ------------------------------------------------- 구판 병합(§5.3 마이그레이션 loud 경로)
@@ -334,8 +390,8 @@ def test_legacy_duplicates_surface_loudly_in_snapshot(tmp_path):
 def test_resolve_duplicate_two_phase_confirm(tmp_path):
     """병합은 1차=무엇이 남고 지워지는지 재진술(무변형), confirm 시에만 나머지 삭제.
 
-    확정은 1차가 재진술한 멤버 키 집합(``group_keys``)을 되실어 보낸다 — 승인의 대상이
-    「그 집합」임을 백엔드가 대조한다(코덱스 1R P1).
+    확정은 1차가 재진술한 **상태의 지문**(``basis``)을 되실어 보낸다 — 승인의 대상이
+    「그때 읽은 값」임을 백엔드가 대조한다(코덱스 1R·2R 근본 조치).
     """
     ctrl, reg, _ = _controller(tmp_path)
     _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
@@ -350,14 +406,11 @@ def test_resolve_duplicate_two_phase_confirm(tmp_path):
     assert res1["needs_confirm"] is True
     assert "'공고 최신'" in res1["confirm_text"]        # 남는 것
     assert "'7월 공고'" in res1["confirm_text"]          # 지워지는 것 — 둘 다 재진술
-    assert sorted(res1["group_keys"]) == sorted(
-        e["key"] for e in ctrl.snapshot()["duplicates"][0]["entries"]
-    )                                                    # 승인 대상 = 멤버 키 집합
+    assert res1["basis"]                                 # 승인 대상 = 보여준 상태의 지문
     assert len(ctrl.snapshot()["rows"]) == 2             # 1차는 무변형
 
     res2 = ctrl.dispatch(
-        "resolve_duplicate",
-        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]},
     )
     assert res2["ok"] is True and res2["kept"] == "공고 최신" and res2["removed"] == 1
     snap = ctrl.snapshot()
@@ -377,8 +430,7 @@ def test_resolve_duplicate_stale_group_is_restated(tmp_path):
     DatasetPoolRegistry(reg.directory).delete(entries[1]["key"])  # 다른 표면이 먼저 정리
 
     res = ctrl.dispatch(
-        "resolve_duplicate",
-        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]},
     )
     assert res["ok"] is False and "중복" in res["error"]
     assert len(ctrl.snapshot()["rows"]) == 1  # 남은 항목은 건드리지 않았다
@@ -388,7 +440,7 @@ def test_resolve_duplicate_refuses_when_group_grew_after_confirm(tmp_path):
     """확인 사이 같은 정체성의 등록이 **늘었으면** 삭제 0건 + loud 재진술(코덱스 1R P1).
 
     재조회 결과를 그대로 채택하면 사용자가 삭제된다고 들은 적 없는 셋째 등록이 drop 에
-    조용히 포함된다 — 승인한 집합과 지금 집합이 다르면 아무것도 지우지 않는다.
+    조용히 포함된다 — 승인한 상태와 지금 상태가 다르면 아무것도 지우지 않는다.
     """
     ctrl, reg, _ = _controller(tmp_path)
     _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
@@ -404,24 +456,94 @@ def test_resolve_duplicate_refuses_when_group_grew_after_confirm(tmp_path):
     _legacy_write(reg, "셋째 등록", "C:/d/same.xlsx")     # 확인 사이 다른 writer 의 추가
 
     res2 = ctrl.dispatch(
-        "resolve_duplicate",
-        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]},
     )
     assert res2["ok"] is False and "바뀌어" in res2["error"]
     assert ctrl.snapshot()["result"]["level"] == "danger"
     assert len(ctrl.snapshot()["rows"]) == 3              # 삭제 0건 — 셋째 등록 무사
-    # 새 집합으로 다시 확인하면 성사된다(거절은 재확인 요구이지 막다른길이 아니다).
+    # 새 상태로 다시 확인하면 성사된다(거절은 재확인 요구이지 막다른길이 아니다).
     res3 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
-    assert res3["needs_confirm"] is True and len(res3["group_keys"]) == 3
+    assert res3["needs_confirm"] is True and res3["basis"] != res1["basis"]
     res4 = ctrl.dispatch(
-        "resolve_duplicate",
-        {"keep": keep, "confirm": True, "group_keys": res3["group_keys"]},
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res3["basis"]},
     )
     assert res4["ok"] is True and res4["removed"] == 2
 
 
+@pytest.mark.parametrize(
+    ("field", "mutate"),
+    [
+        ("name", lambda it: setattr(it, "name", "밖에서 개명")),
+        ("note", lambda it: setattr(it, "note", "밖에서 단 메모")),
+        ("reference", lambda it: it.opts.update({"sheet": "밖에서 지정"})),
+        ("status", lambda it: it.archive()),
+        ("kind", lambda it: setattr(it, "kind", "pipeline")),
+    ],
+)
+def test_resolve_duplicate_refuses_when_any_shown_field_changed(tmp_path, field, mutate):
+    """확인 사이 멤버의 **어떤 성분이라도** 바뀌면 삭제 0건 + loud 재진술(코덱스 2R P1).
+
+    키와 정체성은 그대로인 채 이름·비고만 바뀌어도, 지워지는 것은 사용자가 본 적 없는
+    내용의 등록이다 — 결속 단위가 키 집합이면 이 자리가 조용히 통과한다. 성분을 열거로
+    관리하지 않도록 :data:`SHOWN_FIELDS` 전체를 순회한다(참조·종류처럼 정체성 축을 함께
+    건드리는 변경은 그룹 해소 분기로, 나머지는 지문 불일치로 — 둘 다 파괴 0건이 계약이다).
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    entries = ctrl.snapshot()["duplicates"][0]["entries"]
+    keep = entries[0]["key"]
+    victim = entries[1]["key"]
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    assert res1["needs_confirm"] is True
+
+    DatasetPoolRegistry(reg.directory).mutate(victim, mutate)  # 다른 writer 의 내용 변경
+
+    res2 = ctrl.dispatch(
+        "resolve_duplicate", {"keep": keep, "confirm": True, "basis": res1["basis"]},
+    )
+    assert res2["ok"] is False and res2["error"], field
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert reg.exists(victim), f"{field} 변경 뒤에도 고지 없이 삭제됐습니다."
+    assert reg.exists(keep)
+
+
+def test_confirm_texts_are_composed_from_the_bound_facts(tmp_path):
+    """재진술 문안의 값은 **지문 성분과 같은 사전**에서 나온다 — 선언과 결과의 분리 금지.
+
+    문안이 결속 밖 값으로 지어지면 「보여준 것」과 「대조하는 것」이 갈리고, 그 틈이 두
+    라운드의 결함이었다. 두 확정 경로 모두 :func:`shown_facts` 사전의 값을 쓴다.
+    """
+    from hwpxfiller.webapp.screen_pool import SHOWN_FIELDS, confirm_basis, shown_facts
+
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    entries = ctrl.snapshot()["duplicates"][0]["entries"]
+    keep = entries[0]["key"]
+
+    merge = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    rows = {r.key: r for r in ctrl.vm.rows()}
+    facts = [shown_facts(rows[e["key"]]) for e in entries]
+    # 문안에 등장하는 값(이름·참조)이 지문 성분에 실재한다.
+    for f in facts:
+        assert f["name"] in merge["confirm_text"]
+    assert next(f for f in facts if f["key"] == keep)["reference"] in merge["confirm_text"]
+    assert merge["basis"] == confirm_basis(facts)   # 문안과 지문이 같은 사전 소산
+
+    relink = ctrl.dispatch("relink", {"key": keep, "path": "C:/d/new.xlsx", "sheet": ""})
+    item_facts = shown_facts(keep, reg.load(keep))
+    assert item_facts["name"] in relink["confirm_text"]
+    assert item_facts["reference"] in relink["confirm_text"]
+    assert relink["basis"] == confirm_basis([item_facts])
+    # 성분 목록이 두 성형 경로에서 같은 열쇠 집합을 낸다(행·항목 소재 차이가 갈리지 않게).
+    assert tuple(item_facts) == SHOWN_FIELDS == tuple(facts[0])
+
+
 def test_resolve_duplicate_confirm_without_basis_is_refused(tmp_path):
-    """근거(group_keys) 미동봉 확정은 fail-closed — 무엇을 승인했는지 모르는 삭제 금지."""
+    """근거(basis) 미동봉 확정은 fail-closed — 무엇을 승인했는지 모르는 삭제 금지."""
     ctrl, reg, _ = _controller(tmp_path)
     _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
     _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
