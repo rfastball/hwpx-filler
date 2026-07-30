@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 
 import pytest
@@ -19,6 +20,7 @@ from hwpxfiller.core.job import (
     JobSlugCollisionError,
     RunRequest,
     SlugCollisionError,
+    _reject_unsafe_key,
     content_fingerprint,
     default_jobs_dir,
 )
@@ -1326,6 +1328,65 @@ def test_corrupt_template_key_is_loud(library_home):
             Job.from_dict({**base, "template_key": bad})
     with pytest.raises(ValueError):
         Job.from_dict({**base, "template_key": 7})         # 비문자열도 loud(문자열 계약)
+
+
+def test_lexical_path_components_are_normalized_before_promotion(library_home):
+    """쓰기가 **읽기 방어에 걸릴 키를 스스로 만들지 않는다**(#368 2R).
+
+    ``relative_to`` 는 ``.``·``..`` 를 **보존**하므로 정규화 전에는 ``sub/../공고서.hwpx`` 같은
+    키가 나왔고, 그 키는 로드에서 loud 거절돼 **앱이 자기가 저장한 작업을 스스로 손상됨으로
+    읽었다**. 저장~로드 한 바퀴를 실제로 돌려 그 자기모순이 없음을 못박는다.
+    """
+    tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    noisy = library_home / "templates" / "조달" / "sub" / ".." / "공고서.hwpx"
+
+    job = Job(name="a", template_path=str(noisy))
+    assert job.template_key == "조달/공고서.hwpx"          # `..` 가 걷힌 키
+    _reject_unsafe_key(job.template_key)                    # 읽기 방어를 통과하는 값이다
+
+    reg = JobRegistry(library_home / "jobs")
+    reg.save(job)
+    assert reg.load("a").template_path == str(tpl)          # 해석은 같은 파일을 가리킨다
+    assert reg.list_jobs()[0].name == "a"                   # '손상됨' 으로 떨어지지 않는다
+
+
+def test_normalization_does_not_loosen_the_outside_the_root_judgment(library_home):
+    """정규화가 「루트 밖은 폴백 없이 실패」를 흔들지 않는다 — 오히려 **조인다**.
+
+    정규화 전에는 루트로 시작하기만 하면 ``relative_to`` 가 통과해서
+    ``templates/../바깥/공고서.hwpx`` 가 ``../바깥/공고서.hwpx`` 라는 **루트를 벗어나는 키**가
+    됐다. 어휘 정규화 뒤 그 경로는 정직하게 루트 밖으로 판정돼 승격되지 않는다.
+    """
+    escaping = library_home / "templates" / ".." / "바깥" / "공고서.hwpx"
+    assert Job(name="a", template_path=str(escaping)).template_key == ""
+    # 루트 밖 판정은 그대로 절대경로 유지로 이어진다(폴백 없음).
+    assert Job(name="a", template_path=str(escaping)).to_dict()["template_path"] == str(escaping)
+
+
+def test_promotion_is_abandoned_when_normalization_would_name_another_file(
+    library_home, monkeypatch
+):
+    """어휘 정규화가 **다른 파일**을 이름하면 승격을 포기한다 — 심볼릭 링크 경유 ``..`` 의 자리.
+
+    ``resolve()`` 를 쓰지 않는 대신(관례 갈라짐·디스크 상태 의존, :func:`_lexically_normal` 선언)
+    정규화가 성분을 실제로 걷은 경우에만 왕복을 실측한다. 실 심볼릭 링크 생성은 윈도우 권한에
+    좌우되므로 그 실측 지점(``realpath``)을 대신 못박는다 — 조용한 재결속이 없다는 것이 계약이다.
+    """
+    noisy = library_home / "templates" / "조달" / "link" / ".." / "공고서.hwpx"
+    assert Job(name="a", template_path=str(noisy)).template_key == "조달/공고서.hwpx"
+
+    real = os.path.realpath
+
+    def _as_if_link_were_a_symlink(p):
+        # 걷힌 성분이 링크였던 세상: 원본은 링크 대상 밑을 이름한다.
+        if "link" in os.fspath(p):
+            return real(library_home / "다른곳" / "공고서.hwpx")
+        return real(p)
+
+    monkeypatch.setattr(os.path, "realpath", _as_if_link_were_a_symlink)
+    assert Job(name="a", template_path=str(noisy)).template_key == "", (
+        "정규화가 다른 파일을 이름하는데 승격했습니다 — 조용한 재결속입니다."
+    )
 
 
 def test_template_key_wins_over_a_stale_absolute_path(library_home):

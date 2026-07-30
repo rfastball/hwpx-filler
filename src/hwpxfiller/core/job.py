@@ -322,18 +322,75 @@ def library_root_for(template_path: str) -> "Path | None":
     return None
 
 
+def _lexically_normal(path: "str | Path") -> Path:
+    """``.``·``..`` 성분을 걷은 경로 — **어휘** 정규화이고 I/O 도 심볼릭 링크 해석도 없다.
+
+    ``resolve()`` 를 쓰지 않는 근거가 셋이다(#368 2R):
+
+    1. **관례가 갈라진다.** 라이브러리 표면은 ``rglob`` 로 훑고 그 결과를 그대로 키로 쓴다
+       (:func:`~hwpxfiller.webapp.template_groups.rel_key`) — 링크를 해석하지 않는다. 작업 쪽만
+       해석하면 **같은 파일이 두 키로 갈라져** 그룹 지정과 작업 링크가 어긋난다. 이 함수를 공유하는
+       이유 자체가 그 갈라짐을 구조적으로 없애려는 것이라 여기서 되살릴 수 없다.
+    2. **durable 정체성이 디스크 상태에 좌우된다.** 키는 :meth:`Job.to_dict` 가 저장할 때마다 다시
+       뜬다. ``resolve()`` 는 파일이 있을 때와 없을 때(네트워크 드라이브 오프라인·일시 삭제) 다른
+       값을 내므로, **템플릿이 잠깐 안 보이는 사이의 저장이 키를 조용히 바꿔** 링크를 끊는다.
+    3. **대소문자·UNC 를 건드리지 않는다.** ``normcase`` 는 하지 않는다 — 그룹 키가 사용자 표기를
+       보존하는데 여기서만 접으면 다시 두 키가 된다(윈도우 ``relative_to`` 는 이미 대소문자
+       무시라 표기가 달라도 승격은 성립한다). UNC 루트(``\\\\srv\\share``)는 ``normpath`` 가
+       보존한다(실측) — 별도 처리가 필요 없고, 루트와 경로가 서로 다른 볼륨이면 ``relative_to``
+       가 실패해 정직하게 승격되지 않는다.
+
+    링크의 대가는 하나 남는다: 심볼릭 링크 디렉터리를 ``..`` 로 거슬러 오르는 경로는 어휘 정규화가
+    **다른 파일**을 이름한다. 그 경우는 :func:`library_rel_key` 가 왕복을 실측해 승격을 포기한다.
+    """
+    return Path(os.path.normpath(os.fspath(path)))
+
+
+def _key_names_the_same_file(resolved: Path, original: "str | Path") -> bool:
+    """정규화가 **같은 파일**을 이름하는지 실측 — 심볼릭 링크 경유 ``..`` 만 이 검사를 탄다.
+
+    ``realpath`` 는 존재하지 않는 경로에 대해선 순수 어휘 계산이라(실측) 미설치 템플릿에서도
+    결정적이다. 실패(OSError)는 ``False`` = 승격 포기 — 증명 못 하면 이식하지 않는다(fail-closed).
+    """
+    try:
+        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
+            os.path.realpath(original)
+        )
+    except OSError:
+        return False
+
+
 def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
     """루트 상대 POSIX 키 — **폴백 없이** 루트 밖·루트 미지정이면 ``None``(위 절 참조).
 
     :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이 위에 파일명 폴백을 얹는다(그룹
-    지정은 오연결의 대가가 없다). 순수 경로 계산이라 파일 존재 여부를 보지 않는다.
+    지정은 오연결의 대가가 없다).
+
+    **쓰기는 읽기 방어에 걸릴 키를 만들지 않는다**(#368 2R): ``relative_to`` 는 ``.``·``..`` 를
+    **보존**하므로 ``…/templates/sub/../x.hwpx`` 가 ``sub/../x.hwpx`` 라는 키가 됐고, 그 키는
+    :func:`_reject_unsafe_key` 가 로드에서 loud 거절한다 — 앱이 **자기가 저장한 작업을 스스로
+    손상됨으로 읽는** 구조였다. 양쪽을 같은 함수로 정규화해 그 키가 애초에 생기지 않게 하고,
+    그래도 방어에 걸리는 값이 나오면(상대 루트 등 잔여 경로) 승격을 포기한다. 읽기 방어는
+    **그대로 둔다** — 외부에서 손댄 JSON 은 여전히 loud 여야 하고, 쓰기 정규화가 그 의무를
+    대신하지 않는다(두 방어는 서로 다른 위협을 본다).
     """
     if root is None:
         return None
+    root_n, path_n = _lexically_normal(root), _lexically_normal(path)
     try:
-        return Path(path).relative_to(root).as_posix()
+        key = path_n.relative_to(root_n).as_posix()
     except ValueError:
         return None
+    try:
+        _reject_unsafe_key(key)
+    except ValueError:
+        return None  # 자기가 만든 키가 자기 방어에 걸리면 승격하지 않는다(절대경로 유지)
+    if path_n != Path(path) or root_n != Path(root):
+        # 정규화가 실제로 성분을 걷었다 — 걷힌 것이 심볼릭 링크 디렉터리였다면 키는 다른 파일을
+        # 이름한다. **해석이 지나갈 그 길 그대로**(root/key) 왕복을 실측해 아니면 포기한다.
+        if not _key_names_the_same_file(root_n / key, path):
+            return None
+    return key
 
 
 def library_key_for(template_path: str) -> str:
