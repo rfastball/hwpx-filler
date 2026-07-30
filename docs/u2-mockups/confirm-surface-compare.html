@@ -1,0 +1,661 @@
+<!doctype html>
+<!--
+  U2 §5.4 「확인 2면의 형상」 결정 시안 — 개발 전용 · 배포 exe 미포함.
+
+  목적: 지금 형상과 후보들을 **같은 데이터로** 나란히 놓아 눈으로 고르게 한다.
+  판정 원장은 docs/UX_FEEDBACK_U2.md **§2.13**(2026-07-30 확정 — §5.4 에서 승계)이고 이 파일은
+  그 결정의 시연물이다. **확정은 C안**이고 A·B 는 기각 근거를 보이려고 남긴다.
+
+  실 web/css 를 셸(web/index.html)과 **같은 순서로** <link> 해서 색·간격·규칙이 실앱과
+  같다. 단 **마크업은 손으로 짠 표본**이라 실앱과 자동 동기되지 않는다 —
+  docs/UI_GALLERY.html 과 달리 이 파일에는 링크 전수·순서 게이트를 걸지 않는다.
+  결정이 나면 그 시점 형상으로 동결되는 시안이므로, 게이트를 걸면 동결된 파일이 CSS
+  변경마다 갱신을 요구한다. **조용한 축소가 아니라 선언된 축소다.**
+
+  여는 법: 저장소 루트에서 브라우저로 이 파일을 직접 열거나
+  `python -m http.server` 후 http://localhost:8000/docs/u2-mockups/confirm-surface-compare.html
+
+  데이터 표본의 근거(실코드 대조):
+  - 거울 값 = screen_job.py:1007 `_field_value_display`
+      · filled + distinct<=1  → 값 그대로
+      · filled + distinct>1   → `vals[0] (표본 · 외 K개 값)`   ← vals[0] = **첫 레코드**
+      · missing               → `(빈 값) 선택 N행 중 K행에서 값이 비어 있습니다.`
+      · blank                 → `(비움 확정)`
+  - 드로어 값 = job.js:644 `previewRows` — **그 레코드**의 값. 열면 pos 0 = 첫 레코드.
+  → 그래서 「지금」 장면의 두 면은 첫 행에서 **문자 그대로 같은 문자열**을 보인다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>U2 §5.4 · 확인 면 형상 비교</title>
+<link rel="stylesheet" href="../../web/css/tokens.css">
+<!-- 앱 스타일시트 9조각 — 순서는 web/index.html 과 같다. -->
+<link rel="stylesheet" href="../../web/css/base.css">
+<link rel="stylesheet" href="../../web/css/draftcard.css">
+<link rel="stylesheet" href="../../web/css/editor.css">
+<link rel="stylesheet" href="../../web/css/job.css">
+<link rel="stylesheet" href="../../web/css/overlay.css">
+<link rel="stylesheet" href="../../web/css/library.css">
+<link rel="stylesheet" href="../../web/css/forced-colors.css">
+<link rel="stylesheet" href="../../web/css/jobdata.css">
+<link rel="stylesheet" href="../../web/css/tail.css">
+<style>
+/* 시안 전용 스캐폴드 — 색은 앱 토큰 참조만, 하드코딩 금지. 앱 클래스와 이름 충돌 없음. */
+html,body{height:auto}
+body{padding:0}
+.u2-mast{padding:22px 24px 16px;border-bottom:1px solid var(--a-border);background:var(--a-card)}
+.u2-mast h1{margin:0;font-size:19px;letter-spacing:-.01em}
+.u2-mast p{margin:8px 0 0;color:var(--a-muted);font-size:12.5px;line-height:1.65;max-width:96ch}
+.u2-mast code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:11px;
+  background:var(--n-track);padding:1px 5px;border-radius:4px;color:var(--n-ink-soft)}
+.u2-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}
+.u2-bar .lbl{font-size:12px;color:var(--a-muted);margin-right:2px}
+.u2-main{padding:20px 24px 60px;display:flex;flex-direction:column;gap:28px}
+.u2-scene{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);
+  overflow:hidden}
+.u2-scene>header{padding:13px 16px;border-bottom:1px solid var(--a-border);background:var(--n-surface-alt)}
+.u2-scene>header h2{margin:0;font-size:14.5px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.u2-tag{font-size:11px;font-weight:700;border-radius:var(--rad-pill);padding:2px 9px}
+.u2-tag.now{background:var(--fb-missing-bg);color:var(--a-danger)}
+.u2-tag.rec{background:var(--fb-fill-bg);color:var(--a-ok)}
+.u2-tag.alt{background:var(--n-track);color:var(--n-ink-soft)}
+.u2-scene>header p{margin:7px 0 0;font-size:12px;line-height:1.6;color:var(--a-muted);max-width:100ch}
+.u2-stage{padding:18px 16px;background:var(--a-bg);display:flex;flex-direction:column;gap:16px}
+.u2-stage.duo{flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+.u2-stage.duo>*{flex:1 1 380px;min-width:0}
+/* 시트를 페이지 안에 앉힌다 — 실 `.sheet .sheet-card` 는 100vw/100vh 오버레이라 못 쓴다.
+   `.sheet-head`·`.sheet-body`·`.sheet-duo`·`.sheet-pane` 은 스코프가 없어 실 규칙이 그대로 온다. */
+.u2-sheetcard{background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-overlay);display:flex;flex-direction:column;overflow:hidden}
+.u2-sheetcard .sheet-body{max-height:none;overflow:visible}
+.u2-sheetcard .sheet-pane{overflow:visible}
+/* A안 추가 열 — 실 거울 표(.tb.mir)의 규칙을 그대로 쓰고 폭만 준다. */
+.u2-mir-agg{width:172px;color:var(--a-muted);font-size:var(--fs-caption);white-space:normal}
+.u2-mir-this{min-width:0;word-break:break-word;font-weight:600}
+.u2-colhead td{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;
+  background:var(--n-surface-alt)}
+.u2-namerow{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;
+  margin-top:12px;padding-top:10px;border-top:1px solid var(--a-border)}
+.u2-namerow .k{font-size:var(--fs-caption);color:var(--a-muted);flex:0 0 78px}
+.u2-dupe{outline:2px dashed var(--a-danger);outline-offset:1px;border-radius:3px}
+/* C안 레코드 pane — 드로어 관용구를 **전폭**으로 옮길 때 필요한 손질 둘. 실앱 착수 시에도
+   같은 손질이 필요하므로 시안 전용 꾸밈이 아니라 **계약 항목**으로 적어 둔다.
+   ⑴ `.preview-drawer .mir-name{flex:0 0 34%}` 는 680px 모달용 비율이라 전폭에서 646px 간격이
+      된다 — 고정폭으로 바꾼다. ⑵ 빈 값 표지 배경은 실 거울이 `td` 에 칠하므로(`.mir-row.miss td`)
+      div 행에는 안 온다 — 행에 직접 칠한다. */
+.u2-recpane .mir-name{flex:0 0 132px}
+.u2-recpane .mir-row.miss{background:var(--fb-missing-bg);border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-8);margin:0 calc(-1 * var(--sp-8))}
+.u2-legend{font-size:11.5px;color:var(--a-muted);margin:0;line-height:1.6}
+.u2-legend b{color:var(--a-danger)}
+.u2-foot{display:flex;justify-content:flex-end;gap:8px;padding-top:4px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<header class="u2-mast">
+  <h1>U2 §5.4 — 확인 면의 형상 비교</h1>
+  <p>
+    같은 세션 하나(<b>선택 12건</b> · 첫 실행 작업 = 승인 요구 있음)를 다섯 형상으로 그렸다.
+    값은 실코드가 만드는 문자열을 그대로 옮겼다 — 거울은 <code>_field_value_display</code>,
+    레코드는 <code>previewRows</code>. 드로어는 열면 <b>1/12</b>(첫 레코드)이고 거울의 대표값도
+    <code>vals[0]</code> = 첫 레코드라, 사용자가 처음 보는 두 면은 값이 겹친다.
+    빨간 점선은 <b>같은 문자열이 두 번 서는 자리</b>다.
+  </p>
+  <p>
+    <b>확정은 마지막 C안이다</b>(원장 §2.13). 위 세 장면은 기각됐고, 무엇을 기각했는지 보이기
+    위해 남긴다 — A·B 는 <b>렌더러가 올 자리</b>와 <b>집합축이 pane 을 받을 자격</b>에서 갈렸다.
+  </p>
+  <div class="u2-bar">
+    <span class="lbl">이 건</span>
+    <button class="btn sm" type="button" data-rec="0" aria-pressed="true">1 / 12</button>
+    <button class="btn sm" type="button" data-rec="1" aria-pressed="false">3 / 12</button>
+    <button class="btn sm" type="button" data-rec="2" aria-pressed="false">7 / 12</button>
+    <span class="lbl" style="margin-left:14px">표시</span>
+    <button class="btn sm" type="button" id="u2Dupe" aria-pressed="true">중복 표시: 켬</button>
+    <button class="btn sm" type="button" id="u2Theme">테마: 시스템</button>
+  </div>
+</header>
+
+<main class="u2-main">
+
+  <!-- ============================ 지금 ============================ -->
+  <section class="u2-scene">
+    <header>
+      <h2>지금 <span class="u2-tag now">baseline</span></h2>
+      <p>
+        인라인 거울 존(필드축 ack)과 별도 드로어(승인)가 <b>다른 두 면</b>이다. 행은 양쪽 모두
+        필드이고 값의 출처도 같은 <code>mapped</code> 하나다. 「계약방법」은 12건이 전부 같은 값이라
+        두 면에 <b>완전히 같은 문자열</b>이 서고, 나머지 필드도 첫 레코드에서 값이 겹친다.
+        승인 버튼은 드로어에만 있어, ack 를 다 푼 <b>그 순간</b> 검토 요구가 처음 나타난다(C2).
+      </p>
+    </header>
+    <div class="u2-stage duo">
+
+      <div class="zone job-mirror-zone" style="background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface)">
+        <div class="zone-cap zone-cap-actions"><span>본문 확인</span>
+          <button class="btn sm" type="button">펼쳐서 확인 ⤢</button></div>
+        <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
+          행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
+        <div class="tbwrap"><table class="tb mir"><tbody>
+          <tr class="mir-row"><td class="mir-f">수요기관</td>
+            <td class="mir-v"><span data-dupe="0">서울특별시청</span> (표본 · 외 2개 값)</td>
+            <td class="mir-s"><span class="st filled">채움</span></td></tr>
+          <tr class="mir-row"><td class="mir-f">공고명</td>
+            <td class="mir-v"><span data-dupe="1">사무용 복합기 임차</span> (표본 · 외 11개 값)</td>
+            <td class="mir-s"><span class="st filled">채움</span></td></tr>
+          <tr class="mir-row"><td class="mir-f">계약방법</td>
+            <td class="mir-v"><span data-dupe="2">제한경쟁입찰</span></td>
+            <td class="mir-s"><span class="st filled">채움</span></td></tr>
+          <tr class="mir-row"><td class="mir-f">추정가격</td>
+            <td class="mir-v"><span data-dupe="3">12,400,000</span> (표본 · 외 11개 값)</td>
+            <td class="mir-s"><span class="st filled">채움 · 표시형</span></td></tr>
+          <tr class="mir-row miss" role="button" tabindex="0" aria-pressed="false"><td class="mir-f">담당자</td>
+            <td class="mir-v">(빈 값) 선택 12행 중 2행에서 값이 비어 있습니다.</td>
+            <td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td></tr>
+          <tr class="mir-row blankd"><td class="mir-f">개찰일시</td>
+            <td class="mir-v">(비움 확정)</td>
+            <td class="mir-s"><span class="st blankd">비움 확정</span></td></tr>
+        </tbody></table></div>
+      </div>
+
+      <div class="modal-card preview-drawer" style="width:auto;max-width:100%">
+        <h3>생성 값 미리보기</h3>
+        <p class="modal-sub">이 이름으로 이 값이 나갑니다. 미리보기를 여는 것과 승인은 다른 일입니다.</p>
+        <div class="preview-nav">
+          <button class="btn sm" aria-label="이전 문서">‹</button>
+          <strong data-pos>1 / 12</strong>
+          <button class="btn sm" aria-label="다음 문서">›</button>
+        </div>
+        <section class="picker-sec">
+          <div class="cap">채울 값</div>
+          <div style="display:flex;flex-direction:column;gap:var(--sp-2)">
+            <div class="mir-row"><span class="mir-name">수요기관</span>
+              <span class="mir-val"><span data-rv="0" data-dupe="0">서울특별시청</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">공고명</span>
+              <span class="mir-val"><span data-rv="1" data-dupe="1">사무용 복합기 임차</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">계약방법</span>
+              <span class="mir-val"><span data-rv="2" data-dupe="2">제한경쟁입찰</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">추정가격</span>
+              <span class="mir-val"><span data-rv="3" data-dupe="3">12,400,000</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">담당자</span>
+              <span class="mir-val"><em class="muted" data-rv="4">(빈 값)</em></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">개찰일시</span>
+              <span class="mir-val"><em class="muted">(비움 확정)</em></span>
+              <button class="btn sm">수정</button></div>
+          </div>
+        </section>
+        <div class="preview-foot">
+          <div><span class="muted capnote">파일 이름</span>
+            <strong data-rn>서울특별시청_사무용_복합기_임차.hwpx</strong>
+            <button class="btn sm">수정</button></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn">이 작업 편집</button>
+          <button class="btn primary">이 이름과 값으로 승인</button>
+          <button class="btn">닫기</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================ A-순진 ============================ -->
+  <section class="u2-scene">
+    <header>
+      <h2>A안 · 순진판 — 한 표 + 열 추가 <span class="u2-tag alt">대조용</span></h2>
+      <p>
+        두 표를 한 표로 합치고 「이 건」 열을 붙였다. 필드명이 1벌로 줄고 ack 와 승인이 한 면에 선다.
+        그러나 집합 열이 지금처럼 <b>대표값</b>을 말하면 같은 문자열이 이제 <b>한 행 안에서</b>
+        나란히 두 번 선다 — C3 의 원인이 절반 남는다. 이 장면은 <b>왜 §8 의 열 역할 분리가
+        필요한가</b>를 보이기 위한 대조용이다.
+      </p>
+    </header>
+    <div class="u2-stage">
+      <div class="u2-sheetcard">
+        <div class="sheet-head">
+          <h3>생성 값 미리보기</h3>
+          <div style="display:flex;align-items:center;gap:var(--sp-8)">
+            <button class="btn sm" aria-label="이전 문서">‹</button>
+            <strong data-pos style="font-variant-numeric:tabular-nums">1 / 12</strong>
+            <button class="btn sm" aria-label="다음 문서">›</button>
+            <button class="btn" type="button">닫기</button>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <div class="tbwrap"><table class="tb mir"><tbody>
+            <tr class="u2-colhead"><td class="mir-f">필드</td><td class="u2-mir-agg">선택 12건</td>
+              <td class="mir-s">상태</td><td class="u2-mir-this">이 건 (<span data-pos>1 / 12</span>)</td>
+              <td class="mir-s"></td></tr>
+            <tr class="mir-row"><td class="mir-f">수요기관</td>
+              <td class="u2-mir-agg"><span data-dupe="0">서울특별시청</span> (표본 · 외 2개 값)</td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="0" data-dupe="0">서울특별시청</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">공고명</td>
+              <td class="u2-mir-agg"><span data-dupe="1">사무용 복합기 임차</span> (표본 · 외 11개 값)</td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="1" data-dupe="1">사무용 복합기 임차</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">계약방법</td>
+              <td class="u2-mir-agg"><span data-dupe="2">제한경쟁입찰</span></td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="2" data-dupe="2">제한경쟁입찰</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">추정가격</td>
+              <td class="u2-mir-agg"><span data-dupe="3">12,400,000</span> (표본 · 외 11개 값)</td>
+              <td class="mir-s"><span class="st filled">채움 · 표시형</span></td>
+              <td class="u2-mir-this"><span data-rv="3" data-dupe="3">12,400,000</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row miss" role="button" tabindex="0" aria-pressed="false"><td class="mir-f">담당자</td>
+              <td class="u2-mir-agg">선택 12행 중 2행에서 값이 비어 있습니다.</td>
+              <td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td>
+              <td class="u2-mir-this"><em class="muted" data-rv="4">(빈 값)</em></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row blankd"><td class="mir-f">개찰일시</td>
+              <td class="u2-mir-agg">전 건 비움 확정</td>
+              <td class="mir-s"><span class="st blankd">비움 확정</span></td>
+              <td class="u2-mir-this"><em class="muted">(비움 확정)</em></td>
+              <td class="mir-s"></td></tr>
+          </tbody></table></div>
+          <div class="u2-namerow">
+            <span class="k">이름 계획</span>
+            <span class="nm">서울특별시청_사무용_복합기_임차.hwpx · 외 11건
+              <button class="btn sm">⋯ 외 11건 펼치기</button></span>
+          </div>
+          <div class="u2-namerow" style="border-top:0;padding-top:2px">
+            <span class="k">이 건 이름</span>
+            <strong data-rn>서울특별시청_사무용_복합기_임차.hwpx</strong>
+            <button class="btn sm">수정</button>
+          </div>
+          <div class="u2-foot">
+            <button class="btn">이 작업 편집</button>
+            <button class="btn primary">이 이름과 값으로 승인</button>
+          </div>
+        </div>
+      </div>
+      <p class="u2-legend">
+        <b>남는 문제</b> — 「계약방법」 행은 두 열이 글자까지 같고, 나머지도 1/12 에서 겹친다.
+        열을 늘렸는데 중복은 그대로다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ A-분산축 ============================ -->
+  <section class="u2-scene">
+    <header>
+      <h2>A안 · 분산축판 — 두 열의 역할을 가른다 <span class="u2-tag alt">기각 · 렌더러 착지</span></h2>
+      <p>
+        집합 열이 <b>값을 말하지 않고 분산만</b> 말한다 — 전 건 같으면 「전 건 동일」, 갈리면
+        「외 K개 값」. 같은 문자열이 두 번 서는 경우가 구조적으로 없어지고 승인이 같은 면 하단에
+        서므로 골대가 처음부터 보인다(C2). <b>기각 근거는 렌더러다</b> — 렌더러가 오면 「이 건」은
+        문서 그림이 되는데 <b>표의 한 칸에는 그림을 넣을 수 없다.</b> 그리고 집합 열이 말하는
+        「건마다 다른가」는 <b>사용자가 그것으로 할 행동이 없는 정보</b>라(아래 C안) 열 하나를
+        받을 자격이 없다.
+      </p>
+    </header>
+    <div class="u2-stage">
+      <div class="u2-sheetcard">
+        <div class="sheet-head">
+          <h3>생성 값 미리보기</h3>
+          <div style="display:flex;align-items:center;gap:var(--sp-8)">
+            <button class="btn sm" aria-label="이전 문서">‹</button>
+            <strong data-pos style="font-variant-numeric:tabular-nums">1 / 12</strong>
+            <button class="btn sm" aria-label="다음 문서">›</button>
+            <button class="btn" type="button">닫기</button>
+          </div>
+        </div>
+        <div class="sheet-body">
+          <div class="tbwrap"><table class="tb mir"><tbody>
+            <tr class="u2-colhead"><td class="mir-f">필드</td><td class="u2-mir-agg">선택 12건에서</td>
+              <td class="mir-s">상태</td><td class="u2-mir-this">이 건 (<span data-pos>1 / 12</span>)</td>
+              <td class="mir-s"></td></tr>
+            <tr class="mir-row"><td class="mir-f">수요기관</td>
+              <td class="u2-mir-agg">3개 값</td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="0">서울특별시청</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">공고명</td>
+              <td class="u2-mir-agg">12개 값 (건마다 다름)</td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="1">사무용 복합기 임차</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">계약방법</td>
+              <td class="u2-mir-agg">전 건 동일</td>
+              <td class="mir-s"><span class="st filled">채움</span></td>
+              <td class="u2-mir-this"><span data-rv="2">제한경쟁입찰</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row"><td class="mir-f">추정가격</td>
+              <td class="u2-mir-agg">12개 값 (건마다 다름)</td>
+              <td class="mir-s"><span class="st filled">채움 · 표시형</span></td>
+              <td class="u2-mir-this"><span data-rv="3">12,400,000</span></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row miss" role="button" tabindex="0" aria-pressed="false"><td class="mir-f">담당자</td>
+              <td class="u2-mir-agg">2행에서 빈 값</td>
+              <td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td>
+              <td class="u2-mir-this"><em class="muted" data-rv="4">(빈 값)</em></td>
+              <td class="mir-s"><button class="btn sm">수정</button></td></tr>
+            <tr class="mir-row blankd"><td class="mir-f">개찰일시</td>
+              <td class="u2-mir-agg">전 건 비움 확정</td>
+              <td class="mir-s"><span class="st blankd">비움 확정</span></td>
+              <td class="u2-mir-this"><em class="muted">(비움 확정)</em></td>
+              <td class="mir-s"></td></tr>
+          </tbody></table></div>
+          <div class="u2-namerow">
+            <span class="k">이름 계획</span>
+            <span class="nm">12건 · 「수요기관」+「공고명」 조합
+              <button class="btn sm">⋯ 12건 이름 보기</button></span>
+          </div>
+          <div class="u2-namerow" style="border-top:0;padding-top:2px">
+            <span class="k">이 건 이름</span>
+            <strong data-rn>서울특별시청_사무용_복합기_임차.hwpx</strong>
+            <button class="btn sm">수정</button>
+          </div>
+          <div class="u2-foot">
+            <button class="btn">이 작업 편집</button>
+            <button class="btn primary">이 이름과 값으로 승인</button>
+          </div>
+        </div>
+      </div>
+      <p class="u2-legend">
+        <b>중복 0</b> — 어느 레코드로 넘겨도 두 열이 같은 문자열을 말하지 않는다.
+        <code>‹ ›</code> 를 눌러 확인해 보라: 바뀌는 것은 「이 건」 열과 이름 한 줄뿐이고
+        집합 열·상태 열은 <b>움직이지 않는다</b>(집합축은 레코드에 무관하다).
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ B ============================ -->
+  <section class="u2-scene">
+    <header>
+      <h2>B안 — 2 pane 병치 <span class="u2-tag alt">기각 · 원장에 적혀 있던 판정</span></h2>
+      <p>
+        원장 §5.4 가 적어 둔 형상(거울 pane | 레코드 pane). 두 면이 하나로 합쳐지고 승인이
+        같은 면에 오는 소득은 A안과 같다. 다른 점은 <b>필드명이 양쪽에 2벌로 재등장</b>하고
+        <b>첫 레코드에서 같은 값이 좌우로 나란히</b> 선다는 것 — C3 의 원인이 면 안으로
+        옮겨왔을 뿐 없어지지 않았다. 이름 계획은 좌 pane 발밑(지금 <code>#jobRestate</code> 자리).
+      </p>
+    </header>
+    <div class="u2-stage">
+      <div class="u2-sheetcard">
+        <div class="sheet-head">
+          <h3>생성 값 미리보기</h3>
+          <button class="btn" type="button">닫기</button>
+        </div>
+        <div class="sheet-body sheet-duo">
+          <section class="sheet-pane" aria-label="필드 채움 거울">
+            <div class="zone-cap zone-cap-sub"><span>선택 12건 (집합)</span></div>
+            <div class="tbwrap"><table class="tb mir"><tbody>
+              <tr class="mir-row"><td class="mir-f">수요기관</td>
+                <td class="mir-v"><span data-dupe="0">서울특별시청</span> (표본 · 외 2개 값)</td>
+                <td class="mir-s"><span class="st filled">채움</span></td></tr>
+              <tr class="mir-row"><td class="mir-f">공고명</td>
+                <td class="mir-v"><span data-dupe="1">사무용 복합기 임차</span> (표본 · 외 11개 값)</td>
+                <td class="mir-s"><span class="st filled">채움</span></td></tr>
+              <tr class="mir-row"><td class="mir-f">계약방법</td>
+                <td class="mir-v"><span data-dupe="2">제한경쟁입찰</span></td>
+                <td class="mir-s"><span class="st filled">채움</span></td></tr>
+              <tr class="mir-row"><td class="mir-f">추정가격</td>
+                <td class="mir-v"><span data-dupe="3">12,400,000</span> (표본 · 외 11개 값)</td>
+                <td class="mir-s"><span class="st filled">채움 · 표시형</span></td></tr>
+              <tr class="mir-row miss" role="button" tabindex="0" aria-pressed="false"><td class="mir-f">담당자</td>
+                <td class="mir-v">(빈 값) 선택 12행 중 2행에서 값이 비어 있습니다.</td>
+                <td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td></tr>
+              <tr class="mir-row blankd"><td class="mir-f">개찰일시</td>
+                <td class="mir-v">(비움 확정)</td>
+                <td class="mir-s"><span class="st blankd">비움 확정</span></td></tr>
+            </tbody></table></div>
+            <div class="u2-namerow">
+              <span class="k">이름 계획</span>
+              <span class="nm">서울특별시청_사무용_복합기_임차.hwpx · 외 11건
+                <button class="btn sm">⋯ 외 11건 펼치기</button></span>
+            </div>
+          </section>
+          <!-- `.preview-drawer` 는 행 배치 규칙(`.mir-name{flex:0 0 34%}` 등)을 얻기 위해 붙인다.
+               같은 클래스에 `width:min(680px,94vw)` 가 딸려 있어 그리드 트랙을 밀어내므로
+               폭만 되깎는다 — 실앱에서 이 관용구를 pane 에 옮길 때도 같은 손질이 필요하다. -->
+          <section class="sheet-pane preview-drawer" aria-label="레코드" style="width:auto">
+            <div class="zone-cap zone-cap-sub" style="display:flex;align-items:center;gap:var(--sp-8)">
+              <span>이 건</span>
+              <button class="btn sm" aria-label="이전 문서">‹</button>
+              <strong data-pos style="font-variant-numeric:tabular-nums">1 / 12</strong>
+              <button class="btn sm" aria-label="다음 문서">›</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-10)">
+              <div class="mir-row"><span class="mir-name">수요기관</span>
+                <span class="mir-val"><span data-rv="0" data-dupe="0">서울특별시청</span></span>
+                <button class="btn sm">수정</button></div>
+              <div class="mir-row"><span class="mir-name">공고명</span>
+                <span class="mir-val"><span data-rv="1" data-dupe="1">사무용 복합기 임차</span></span>
+                <button class="btn sm">수정</button></div>
+              <div class="mir-row"><span class="mir-name">계약방법</span>
+                <span class="mir-val"><span data-rv="2" data-dupe="2">제한경쟁입찰</span></span>
+                <button class="btn sm">수정</button></div>
+              <div class="mir-row"><span class="mir-name">추정가격</span>
+                <span class="mir-val"><span data-rv="3" data-dupe="3">12,400,000</span></span>
+                <button class="btn sm">수정</button></div>
+              <div class="mir-row"><span class="mir-name">담당자</span>
+                <span class="mir-val"><em class="muted" data-rv="4">(빈 값)</em></span>
+                <button class="btn sm">수정</button></div>
+              <div class="mir-row"><span class="mir-name">개찰일시</span>
+                <span class="mir-val"><em class="muted">(비움 확정)</em></span>
+                <button class="btn sm">수정</button></div>
+            </div>
+            <div class="preview-foot">
+              <div><span class="muted capnote">파일 이름</span>
+                <strong data-rn>서울특별시청_사무용_복합기_임차.hwpx</strong>
+                <button class="btn sm">수정</button></div>
+            </div>
+          </section>
+        </div>
+        <div class="sheet-head" style="border-bottom:0;border-top:1px solid var(--a-border);justify-content:flex-end">
+          <button class="btn">이 작업 편집</button>
+          <button class="btn primary">이 이름과 값으로 승인</button>
+        </div>
+      </div>
+      <p class="u2-legend">
+        <b>남는 문제</b> — 필드명 6개가 좌우에 각각 서고(2벌), 1/12 에서는 값도 좌우로 겹친다.
+        시선이 같은 목록을 두 번 스캔한다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ C (확정) ============================ -->
+  <section class="u2-scene">
+    <header>
+      <h2>C안 — 1 pane · 필드축 ack 폐기 <span class="u2-tag rec">확정</span></h2>
+      <p>
+        집합축을 pane 으로 짓지 않는다. 그것이 말하는 「건마다 다른가」는 <b>사용자가 그것으로 할
+        행동이 없는 정보</b>이고, 실질은 둘뿐이다 — <b>「N건에서 빈 값」</b>(행동 = 승인 전에 본다)과
+        <b>「이름 계획」</b>(행동 = 겹치면 규칙을 고친다). 표지 하나와 줄 하나에는 pane 이 필요 없다.
+        그리고 필드별 <b>「클릭=확인」이 사라진다</b> — 렌더러 위에서 그것을 구현하면 문서 그림에
+        필드 히트박스 좌표 계약이 생기고, 근사 구간에서 어긋나면 <b>엉뚱한 필드를 확인</b>한다.
+        확인 게이트를 그 게이트가 막으려던 것으로 오염시키는 길이다.
+      </p>
+    </header>
+    <div class="u2-stage">
+
+      <p class="u2-legend" style="margin:0">
+        <b>① 인라인(좌 본문) — 표를 잃고 한 줄이 된다.</b> §10.6 결정 3 이 거울을 지킨 근거는
+        「ack 게이트를 푸는 유일 표면」이었고, ack 가 죽으면 그 근거도 죽는다. 남은 값 훑기는
+        대표값이라 <b>부정확한 훑기</b>였다.
+      </p>
+      <div class="u2-stage duo" style="padding:0;gap:14px">
+        <div class="zone" style="background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface)">
+          <div class="zone-cap zone-cap-sub"><span>지금 — 표 + 클릭형 행</span></div>
+          <div class="tbwrap"><table class="tb mir"><tbody>
+            <tr class="mir-row"><td class="mir-f">수요기관</td>
+              <td class="mir-v">서울특별시청 (표본 · 외 2개 값)</td>
+              <td class="mir-s"><span class="st filled">채움</span></td></tr>
+            <tr class="mir-row miss" role="button" tabindex="0" aria-pressed="false"><td class="mir-f">담당자</td>
+              <td class="mir-v">(빈 값) 선택 12행 중 2행에서 값이 비어 있습니다.</td>
+              <td class="mir-s"><span class="st miss">빈 값 · 클릭=확인</span></td></tr>
+            <tr class="mir-row blankd"><td class="mir-f">개찰일시</td>
+              <td class="mir-v">(비움 확정)</td>
+              <td class="mir-s"><span class="st blankd">비움 확정</span></td></tr>
+          </tbody></table></div>
+          <p class="u2-legend" style="margin-top:10px">값을 말하지만 <b>대표값</b>이라 실제로 나가는
+            문자열이 아니다. 확인 면과 겹치는 원인이 여기다.</p>
+        </div>
+        <div class="zone" style="background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface)">
+          <div class="zone-cap zone-cap-sub"><span>C안 — 한 줄</span></div>
+          <p class="muted hint" style="margin-top:10px">본문 확인 —
+            <b class="danger">빈 값 2필드</b>(담당자 · 개찰장소) · 이름 12건
+            <button class="btn sm" type="button">생성 값 미리보기 ⤢</button></p>
+          <p class="u2-legend" style="margin-top:10px"><b>값을 말하지 않는다.</b> 확인 면이 값을
+            말하는 유일한 표면이 되어 <b>C3 이 완전히 닫힌다</b> — 2 pane 안도 열 추가 안도
+            인라인 존을 값 표면으로 남기므로 여기까지 못 갔다.</p>
+        </div>
+      </div>
+
+      <p class="u2-legend" style="margin:8px 0 0">
+        <b>② 확인 면 — 1 pane.</b> 렌더러 전에는 필드 표가, 후에는 문서 그림이 <b>같은 자리</b>를
+        쓴다. 클릭 표적이 없으므로 매체가 바뀌어도 계약이 그대로다.
+      </p>
+      <div class="u2-sheetcard">
+        <div class="sheet-head">
+          <h3>생성 값 미리보기</h3>
+          <div style="display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);color:var(--a-muted)">
+              <input type="checkbox"> 빈 값 있는 건만 보기</label>
+            <button class="btn sm" aria-label="이전 문서">‹</button>
+            <strong data-pos style="font-variant-numeric:tabular-nums">1 / 12</strong>
+            <button class="btn sm" aria-label="다음 문서">›</button>
+            <button class="btn" type="button">닫기</button>
+          </div>
+        </div>
+        <div class="sheet-body preview-drawer u2-recpane" style="width:auto">
+          <!-- 행 묶음에 `mir` 를 준다 — 상태칩 스타일이 `.mir .st` 후손 규칙이라(job.css:45)
+               조상이 없으면 칩이 맨 텍스트로 떨어진다. 표 규칙(`.tb.mir td`)은 안 걸린다. -->
+          <div class="mir" style="display:flex;flex-direction:column;gap:var(--sp-2)">
+            <div class="mir-row"><span class="mir-name">수요기관</span>
+              <span class="mir-val"><span data-rv="0">서울특별시청</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">공고명</span>
+              <span class="mir-val"><span data-rv="1">사무용 복합기 임차</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">계약방법</span>
+              <span class="mir-val"><span data-rv="2">제한경쟁입찰</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">추정가격</span>
+              <span class="mir-val"><span data-rv="3">12,400,000</span></span>
+              <button class="btn sm">수정</button></div>
+            <!-- 빈 값 행 — 클릭 표적이 아니라 **표지**다. 동의의 결과(문서에 무엇이 박히는가)와
+                 집합축의 유일한 실질(몇 건인가)을 그 자리에서 말한다. -->
+            <div class="mir-row miss"><span class="mir-name">담당자</span>
+              <span class="mir-val"><em class="muted" data-rv="4">(빈 값)</em>
+                → <b>〘미입력·담당자〙</b> 로 박힙니다
+                <span class="st miss" style="margin-left:6px">12건 중 2건</span></span>
+              <button class="btn sm">수정</button></div>
+            <div class="mir-row"><span class="mir-name">개찰일시</span>
+              <span class="mir-val"><em class="muted">(비움 확정)</em></span>
+              <button class="btn sm">수정</button></div>
+          </div>
+          <div class="u2-namerow">
+            <span class="k">이름 계획</span>
+            <span class="nm">12건 · 「수요기관」+「공고명」 조합
+              <button class="btn sm">⋯ 12건 이름 보기</button></span>
+          </div>
+          <div class="u2-namerow" style="border-top:0;padding-top:2px">
+            <span class="k">이 건 이름</span>
+            <strong data-rn>서울특별시청_사무용_복합기_임차.hwpx</strong>
+            <button class="btn sm">수정</button>
+          </div>
+          <div class="u2-foot">
+            <button class="btn">이 작업 편집</button>
+            <button class="btn primary">이 이름과 값으로 승인</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="u2-legend">
+        <b>침묵을 막는 조건</b> — 승인은 규칙 지문에 결속돼 <b>한 번 완주하면 영구히 조용해진다</b>
+        (§10.12 판정 N). 그대로 ack 를 대체하면 다음 달 새 데이터에서 빈 값이 생겨도 게이트가 서지
+        않고 표식이 박힌 문서가 조용히 나간다. 그래서 <b>승인 지문에 빈 값 필드 집합을 넣는다</b> —
+        <code>_review_scope_key</code> 가 이미 「표식 상태도 승인의 일부다」로 그 성분을 갖고 있고,
+        이진값을 <b>집합 해시로 승격</b>시키는 것이다. 이 보정은 <b>폐기와 같은 슬라이스</b>다.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* 레코드 전환 — 「이 건」 축이 정말 열 하나인지 눈으로 확인하는 장치.
+   집합 열·상태 열은 건드리지 않는다(집합축은 레코드에 무관하다는 주장의 시연). */
+(function () {
+  var RECORDS = [
+    { pos: "1 / 12",
+      v: ["서울특별시청", "사무용 복합기 임차", "제한경쟁입찰", "12,400,000", "(빈 값)"],
+      name: "서울특별시청_사무용_복합기_임차.hwpx" },
+    { pos: "3 / 12",
+      v: ["대전광역시청", "노트북 컴퓨터 구매", "제한경쟁입찰", "8,750,000", "김O민"],
+      name: "대전광역시청_노트북_컴퓨터_구매.hwpx" },
+    { pos: "7 / 12",
+      v: ["부산광역시청", "회의실 음향설비 설치", "제한경쟁입찰", "31,200,000", "(빈 값)"],
+      name: "부산광역시청_회의실_음향설비_설치.hwpx" }
+  ];
+  var recIdx = 0, dupeOn = true;
+
+  /* 중복 표지는 「이 건」 값이 집합 대표값과 **문자열로 같을 때만** 켠다 —
+     장면마다 손으로 칠하면 레코드를 넘겼을 때 거짓 표지가 남는다. */
+  var AGG = ["서울특별시청", "사무용 복합기 임차", "제한경쟁입찰", "12,400,000"];
+
+  function paint() {
+    var r = RECORDS[recIdx];
+    Array.prototype.forEach.call(document.querySelectorAll("[data-pos]"), function (el) {
+      el.textContent = r.pos;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-rv]"), function (el) {
+      var i = Number(el.getAttribute("data-rv"));
+      el.textContent = r.v[i];
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-rn]"), function (el) {
+      el.textContent = r.name;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-dupe]"), function (el) {
+      var i = Number(el.getAttribute("data-dupe"));
+      var same = dupeOn && i < AGG.length && r.v[i] === AGG[i];
+      el.classList.toggle("u2-dupe", same);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-rec]"), function (b) {
+      b.setAttribute("aria-pressed", Number(b.getAttribute("data-rec")) === recIdx ? "true" : "false");
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-rec]"), function (b) {
+    b.addEventListener("click", function () {
+      recIdx = Number(b.getAttribute("data-rec"));
+      paint();
+    });
+  });
+
+  document.getElementById("u2Dupe").addEventListener("click", function () {
+    dupeOn = !dupeOn;
+    this.setAttribute("aria-pressed", dupeOn ? "true" : "false");
+    this.textContent = "중복 표시: " + (dupeOn ? "켬" : "끔");
+    paint();
+  });
+
+  var ORDER = ["system", "light", "dark"], TEXT = { system: "시스템", light: "라이트", dark: "다크" };
+  var tbtn = document.getElementById("u2Theme");
+  tbtn.addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    cur = (cur === "light" || cur === "dark") ? cur : "system";
+    var next = ORDER[(ORDER.indexOf(cur) + 1) % ORDER.length];
+    if (next === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", next);
+    tbtn.textContent = "테마: " + TEXT[next];
+  });
+
+  paint();
+})();
+</script>
+</body>
+</html>
