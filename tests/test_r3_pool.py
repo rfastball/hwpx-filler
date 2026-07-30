@@ -1,8 +1,9 @@
 """코드리뷰 3차(pool 클러스터) 회귀 가드 — C3·C7·N1·C6.
 
-C3: 동명 확정 재등록이 항목을 통째 교체해 보관이 조용히 active 로 복귀(실행 후보
-    재등장)하고 note·created_at 이 소실됐다. 참조(opts)만 갱신하고 수명을 보존한다
-    (에디터 ``_do_save`` 미러) + 비활성 상태면 확인 문구가 보존 계약을 재진술한다.
+C3: 확정 참조 교체가 항목을 통째 교체해 보관이 조용히 active 로 복귀(실행 후보
+    재등장)하고 note·created_at 이 소실됐다. 참조(opts)만 갱신하고 수명을 보존한다.
+    (#347 §5.3 재편 뒤 이 경로의 거처는 동명 재등록이 아니라 `relink` 액션이다 —
+    같은 슬롯의 참조 교체. 수명 보존 계약은 그대로 승계된다.)
 C7: pool.js 액션이 try/catch 없는 await/fire-and-forget 이라 stale 카드(다른 표면에서
     삭제된 항목)의 FileNotFoundError 가 unhandled rejection 으로 삼켜져 버튼 무반응.
     JS 는 loud 재진술(library.js 미러), 백엔드는 stale 을 danger 문구+재스캔으로,
@@ -35,97 +36,93 @@ def _controller(tmp_path: Path) -> "tuple[PoolController, DatasetPoolRegistry]":
     return PoolController(reg, lambda s, snap: None), reg
 
 
-# ================================================================== C3
-def test_confirmed_reregister_preserves_status_note_created_at(tmp_path):
-    """동명 확정 재등록 = 참조 교체만 — 보관 상태·메모·생성시각은 보존(조용한 재활성화 금지)."""
+# ================================================================== C3(→ relink 승계)
+def test_confirmed_relink_preserves_status_note_created_at(tmp_path):
+    """확정 다시 연결 = 참조 교체만 — 보관 상태·메모·생성시각은 보존(조용한 재활성화 금지)."""
     ctrl, reg = _controller(tmp_path)
     ctrl.dispatch("register_excel",
                   {"name": "발주", "path": "C:/d/a.xlsx", "note": "6월분"})
+    key = ctrl.snapshot()["rows"][0]["key"]
     # created_at 을 심어 보존을 관측 가능하게(등록 경로는 현재 created_at 을 채우지 않음).
-    item = reg.load("발주")
-    item.created_at = "2026-07-01T00:00:00"
-    reg.save(item, allow_overwrite=True)
-    ctrl.dispatch("archive", {"name": "발주"})
+    def stamp(item):
+        item.created_at = "2026-07-01T00:00:00"
+    reg.mutate(key, stamp)
+    ctrl.dispatch("archive", {"key": key})
 
-    # 1차: 비활성 상태 재등록 확인 문구가 수명 보존 계약을 재진술한다.
-    res1 = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/b.xlsx"})
+    # 1차: 기존→새 참조 재진술 확인(무변형).
+    res1 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": ""})
     assert res1["needs_confirm"] is True
-    assert "보관 상태는 유지됩니다" in res1["confirm_text"]
-    assert "활성화" in res1["confirm_text"]  # 되돌리는 명시 경로 안내
+    assert "a.xlsx" in res1["confirm_text"] and "b.xlsx" in res1["confirm_text"]
 
     # 2차(confirm): 참조만 바뀌고 상태·메모·생성시각은 그대로.
     res2 = ctrl.dispatch(
-        "register_excel", {"name": "발주", "path": "C:/d/b.xlsx", "confirm": True})
+        "relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": "", "confirm": True})
     assert res2["ok"] is True
-    after = reg.load("발주")
+    after = reg.load(key)
     assert after.opts["path"] == "C:/d/b.xlsx"
     assert after.status == "archived"                    # 실행 후보 조용한 재등장 금지
     assert after.note == "6월분"                          # 빈 입력 = 진술 없음 → 보존
     assert after.created_at == "2026-07-01T00:00:00"
 
 
-def test_active_reregister_confirm_text_omits_state_clause(tmp_path):
-    """활성 항목 재등록 확인 문구에는 보관 보존 문구가 붙지 않는다(불필요한 소음 금지)."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
-    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/b.xlsx"})
-    assert res["needs_confirm"] is True
-    assert "보관 상태는 유지됩니다" not in res["confirm_text"]
-
-
-def test_confirmed_reregister_with_note_replaces_note_only(tmp_path):
-    """재등록에서 메모를 입력하면 명시 갱신 — 입력이 비면 보존(조용한 소거·조용한 드롭 둘 다 금지)."""
+def test_confirmed_relink_with_note_replaces_note_only(tmp_path):
+    """다시 연결에서 메모를 입력하면 명시 갱신 — 입력이 비면 보존(조용한 소거·드롭 둘 다 금지)."""
     ctrl, reg = _controller(tmp_path)
     ctrl.dispatch("register_excel",
                   {"name": "발주", "path": "C:/d/a.xlsx", "note": "6월분"})
-    ctrl.dispatch("register_excel",
-                  {"name": "발주", "path": "C:/d/b.xlsx", "note": "7월분", "confirm": True})
-    after = reg.load("발주")
+    key = ctrl.snapshot()["rows"][0]["key"]
+    ctrl.dispatch("relink",
+                  {"key": key, "path": "C:/d/b.xlsx", "sheet": "", "note": "7월분",
+                   "confirm": True})
+    after = reg.load(key)
     assert after.note == "7월분" and after.opts["path"] == "C:/d/b.xlsx"
 
 
-def test_confirmed_reregister_updates_sheet_pointer(tmp_path):
-    """재등록 opts 갱신에 확정 시트가 동봉된다 — 낡은 시트 포인터 잔존 금지(참조 통째 교체)."""
+def test_confirmed_relink_updates_sheet_pointer(tmp_path):
+    """다시 연결 opts 갱신에 확정 시트가 동봉된다 — 낡은 시트 포인터 잔존 금지(참조 통째 교체)."""
     ctrl, reg = _controller(tmp_path)
     ctrl.dispatch("register_excel",
                   {"name": "낙찰", "path": "C:/d/a.xlsx", "sheet": "1월"})
-    ctrl.dispatch("register_excel",
-                  {"name": "낙찰", "path": "C:/d/b.csv", "confirm": True})
-    after = reg.load("낙찰")
-    assert after.opts == {"path": "C:/d/b.csv"}  # 시트 없는 새 참조 — 옛 시트 미잔존
+    key = ctrl.snapshot()["rows"][0]["key"]
+    csv = tmp_path / "b.csv"
+    csv.write_text("a\n1\n", encoding="utf-8")           # CSV = 시트 축 없음(#33 게이트 통과)
+    ctrl.dispatch("relink", {"key": key, "path": str(csv), "sheet": "", "confirm": True})
+    after = reg.load(key)
+    assert after.opts == {"path": str(csv)}  # 시트 없는 새 참조 — 옛 시트 미잔존
 
 
-def test_cross_kind_reregister_normalizes_kind_and_restates_transition(tmp_path):
-    """r4: 동명 비-excel 항목에 엑셀 재등록 확정 = kind 도 excel 로 정규화 + 전이 재진술.
+def test_cross_kind_relink_normalizes_kind_and_restates_transition(tmp_path):
+    """r4: 비-excel 슬롯의 엑셀 다시 연결 확정 = kind 도 excel 로 정규화 + 전이 재진술.
 
     opts 만 갈아끼우면 kind=nara + opts={path} 하이브리드 손상 항목이 생겨 겨눔 시
-    나라 동결 문구로 거절되고(방금 엑셀을 등록했는데!) 요약이 "기간 ?~?" 가 된다.
+    나라 동결 문구로 거절되고(방금 엑셀을 연결했는데!) 요약이 "기간 ?~?" 가 된다.
     확인 문구도 종류 전이를 재진술해야 승인 내용=착지 상태(confirm-or-alarm).
     """
     ctrl, reg = _controller(tmp_path)
-    reg.save(DatasetPoolItem(
+    key = reg.add(DatasetPoolItem(
         name="계약", kind="nara",
         opts={"bgn_dt": "202601010000", "end_dt": "202601310000"}))
+    ctrl.dispatch("refresh", {})
 
     # 1차: 확인 문구가 종류 전이(나라장터→엑셀/CSV)와 기존 참조 소실을 재진술한다.
-    res1 = ctrl.dispatch("register_excel", {"name": "계약", "path": "C:/d/a.xlsx"})
+    res1 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/a.xlsx", "sheet": ""})
     assert res1["needs_confirm"] is True
     assert "나라장터 → 엑셀/CSV" in res1["confirm_text"]
     assert "사라집니다" in res1["confirm_text"]
 
     # 2차(confirm): kind/opts 정합 착지 — 하이브리드 손상 금지.
-    ctrl.dispatch("register_excel",
-                  {"name": "계약", "path": "C:/d/a.xlsx", "confirm": True})
-    after = reg.load("계약")
+    ctrl.dispatch("relink", {"key": key, "path": "C:/d/a.xlsx", "sheet": "", "confirm": True})
+    after = reg.load(key)
     assert after.kind == "excel"
     assert after.opts == {"path": "C:/d/a.xlsx"}
 
 
-def test_same_kind_reregister_confirm_text_omits_transition_clause(tmp_path):
-    """excel→excel 재등록에는 종류 전이 문구가 붙지 않는다(불필요한 소음 금지)."""
+def test_same_kind_relink_confirm_text_omits_transition_clause(tmp_path):
+    """excel→excel 다시 연결에는 종류 전이 문구가 붙지 않는다(불필요한 소음 금지)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
-    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/b.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    res = ctrl.dispatch("relink", {"key": key, "path": "C:/d/b.xlsx", "sheet": ""})
     assert res["needs_confirm"] is True
     assert "종류도" not in res["confirm_text"]
 
@@ -135,10 +132,11 @@ def test_stale_transition_is_loud_and_resyncs(tmp_path):
     """stale 카드 전이 — FileNotFoundError 전파(웹에서 무반응) 대신 danger 재진술+재스캔."""
     ctrl, reg = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
-    reg.path_for("발주").unlink()  # 다른 표면(CLI 등)에서 삭제 — 화면 카드는 stale
+    key = ctrl.snapshot()["rows"][0]["key"]
+    reg.slot_path(key).unlink()  # 다른 표면(CLI 등)에서 삭제 — 화면 카드는 stale
 
     for act in ("archive", "activate"):
-        res = ctrl.dispatch(act, {"name": "발주"})
+        res = ctrl.dispatch(act, {"key": key})
         assert res["ok"] is False and "찾을 수 없습니다" in res["error"]
     snap = ctrl.snapshot()
     assert snap["result"]["level"] == "danger"
@@ -149,9 +147,10 @@ def test_stale_delete_first_phase_is_loud_not_raised(tmp_path):
     """삭제 1차(재진술 로드)도 stale 이면 예외 전파 대신 danger 문구+재스캔."""
     ctrl, reg = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
-    reg.path_for("발주").unlink()
+    key = ctrl.snapshot()["rows"][0]["key"]
+    reg.slot_path(key).unlink()
 
-    res = ctrl.dispatch("delete", {"name": "발주"})
+    res = ctrl.dispatch("delete", {"key": key})
     assert res["ok"] is False and "찾을 수 없습니다" in res["error"]
     assert ctrl.snapshot()["rows"] == []
 

@@ -22,11 +22,11 @@
 **그 자리에서** 다시 선다(단계 왕복이 만들던 유령 상태 소멸, 결정 11·12). 데이터 선택성은
 단계 경계가 아니라 관문 옵트아웃(``skip_data``)으로 표현된다(ADR-J 승계).
 
-**#26 패리티 회수(이 라운드 포함)**: 편집 모드(:meth:`EditorController.load_job`) ·
-선언 데이터 자동등록(#18 31A5A484-C, ``_do_save`` 선차단 게이트). 자동등록은 **참조만**
-저장한다(행·ServiceKey 없음 — [[nara-freeze-decision]]과 무관한 excel 참조).
+**#26 패리티 회수(이 라운드 포함)**: 편집 모드(:meth:`EditorController.load_job`).
 매핑 베이스 프로파일(``_do_profile_*``, ADR J 축2)은 F22 로 제거 — 작업이 매핑을 자족
-저장·복원하므로 재사용은 「작업 복제」로 수렴한다.
+저장·복원하므로 재사용은 「작업 복제」로 수렴한다. 선언 데이터 자동등록(#18·#26)과
+작업↔데이터 결속(#53-A)은 #347(U2 §5.3 판정 D)로 폐기 — 이 세션의 데이터는 검토용
+문맥일 뿐 작업에 저장되지 않고, 풀 등록은 데이터 선택 면의 「이 데이터 고정」 하나다.
 
 **남은 스코프 경계(조용히 빠뜨리지 않고 명시)** — 태그 분류 편집(D14, #26 홈 조치 단위)·
 인라인 누름틀 변환(fieldize, tpl 화면 경유로 충족 — 위저드 인라인은 별도 제안)은 여기 없다.
@@ -42,13 +42,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from ..core.format_engine import presets as format_presets
 from ..core.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
     JobRegistry,
-    classify_existing,
     content_fingerprint,
     template_media,
 )
@@ -58,7 +56,6 @@ from ..core.template_status import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..core.text_render import SEG_MISSING, render_segments, template_fields
 from ..data import source_for_path
-from ..gui.dataset_pool_state import kind_transition_clause, reference_summary
 from ..gui.edit_session import (
     SECTION_BINDING,
     SECTION_FILENAME,
@@ -82,7 +79,7 @@ from ..gui.mapping_state import (
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
-from .screens import NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink, default_pool_registry
+from .screens import NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink
 from .template_groups import TemplateGroupModel, rel_key
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
@@ -142,7 +139,6 @@ class EditorController:
         registry: JobRegistry,
         push: PushSink,
         *,
-        pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
         template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
@@ -151,10 +147,8 @@ class EditorController:
     ) -> None:
         self.registry = registry
         self._push_sink = push
-        # 데이터풀 레지스트리 — 주입 가능(테스트), 기본은 홈 레지스트리(ADR J).
-        self.pool_registry = (
-            pool_registry if pool_registry is not None else default_pool_registry()
-        )
+        # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 연결 재진술이 죽어
+        #  이 화면은 풀을 읽지도 쓰지도 않는다. 소비자 0 인 seam 은 남기지 않는다.)
         # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
         # 주입**한다. 별도 인스턴스면 두 표면의 접힘·지정 인메모리 캐시가 갈라져(한쪽 토글이
         # 다른쪽에 반영 안 됨) 1단계 피커가 관리 화면과 다른 구획을 조용히 보인다(단일 실체).
@@ -205,10 +199,9 @@ class EditorController:
         self.preview_index = 0
         self.job_name = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
-        self.dataset_name = ""  # 자동등록 이름(기본=데이터 파일 스템, 사용자 수정 가능)
-        # 편집 모드에서 복원한 기본 데이터셋 참조(#53-A) — 데이터를 새로 안 고르고 저장하면
-        # 이 값을 보존한다(편집 저장이 조용히 기본 데이터 연결을 소실시키지 않게).
-        self.default_dataset_ref = ""
+        # (dataset_name·default_dataset_ref·_dataset_existing 은 #347 에서 사망 — 저장 시
+        #  데이터 자동등록(#18·#26)과 작업↔데이터 결속(#53-A)이 U2 §5.3 판정 D 로 폐기됐다.
+        #  등록은 데이터 선택 면의 「이 데이터 고정」 명시 행동 하나다.)
         # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(:func:`_preserved_meta`) —
         # 편집 저장이 브라우저 태그·이력·구획·순위를 조용히 소실시키지 않는다.
         self._editing_origin = ""
@@ -216,9 +209,6 @@ class EditorController:
         # 로드 시점 작업 내용 지문(태그·마지막 실행 제외) — 자기-갱신 저장이 편집 중
         # 외부 변경을 무확인으로 덮지 않게 하는 근거(_do_save 확인 게이트).
         self._editing_fingerprint = ""
-        # _dataset_gate 가 로드한 동명 기존 풀 항목 stash — 확인 분기와 이름의 근거만 보존한다.
-        # 실제 갱신은 mutate가 잠금 안에서 최신 .dataset.json을 다시 읽는다(#182).
-        self._dataset_existing: "DatasetPoolItem | None" = None
         # 편집 모드에서 복원한 작성 출처 메타(#53-C) — 표시용 + 재저장 시 최초 작성시각 보존.
         self._loaded_provenance: "dict[str, str]" = {}
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
@@ -364,9 +354,9 @@ class EditorController:
     # 사람은 여기 한 줄만 고치면 네 판정이 함께 따라온다.
     #
     # ``data_sheet`` 가 함께 있는 이유(열거를 세우자 드러난 자리): 같은 엑셀의 **다른 시트**로
-    # 갈아타면 경로·자동등록 이름은 그대로다 — 시트는 자동등록 참조에 함께 저장되는 durable
-    # 값이라(#33) 빠지면 그 갈아타기만 「저장됨」으로 위장한다.
-    SESSION_EXTRAS = ("job_name", "data_path", "data_sheet", "dataset_name")
+    # 갈아타면 경로는 그대로다 — 시트가 빠지면 그 갈아타기만 「저장됨」으로 위장한다(#33).
+    # (dataset_name 은 자동등록(#18·#26)과 함께 사망 — #347, U2 §5.3 판정 D.)
+    SESSION_EXTRAS = ("job_name", "data_path", "data_sheet")
 
     def _extras_now(self) -> "dict[str, str]":
         return {k: getattr(self, k) for k in self.SESSION_EXTRAS}
@@ -375,10 +365,11 @@ class EditorController:
         """저장본이 함의하는 extras — 이름은 저장본의 것이고 **데이터 선택은 없음**이다.
 
         :meth:`load_job` 은 데이터를 싣지 않는다(``keep_data`` 없는 ``_restore_from``): 편집
-        세션의 데이터 선택은 언제나 사람이 이 세션에서 고른 것이고, 저장이 그것을 등록해
-        기본 데이터셋으로 만든다 — 그래서 「저장본과 다르다」의 올바른 기준값이 빈 문자열이다.
+        세션의 데이터 선택은 언제나 사람이 이 세션에서 고른 검토용 문맥이고 작업에 저장되지
+        않는다(§5.3 — 작업↔데이터 결속 없음). 그래서 「저장본과 다르다」의 기준값이 빈
+        문자열이다.
         """
-        return {"job_name": base.name, "data_path": "", "data_sheet": "", "dataset_name": ""}
+        return {"job_name": base.name, "data_path": "", "data_sheet": ""}
 
     def dirty_extras(self) -> "tuple[str, ...]":
         """저장본 대비 달라진 extras 이름들 — 초안은 비교 대상이 없어 빈 튜플이다."""
@@ -500,22 +491,14 @@ class EditorController:
             "pattern": self.pattern,
             "has_unsaved_work": self.has_unsaved_work(),
             "unconfirm_undo_count": len(self._unconfirm_undo),
-            # #26 편집 모드·프로파일·자동등록 표면.
+            # #26 편집 모드·프로파일 표면. (dataset_name·default_dataset 스냅샷 키는 #347
+            # 에서 사망 — 자동등록·기본 데이터 연결이 U2 §5.3 판정 D 로 폐기됐다.)
             "editing_origin": self._editing_origin,
-            "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
-            # 기본 데이터 연결 상태(#67) — 거처가 「저장」 분류에서 **데이터 관문**으로
-            # 옮겨졌다(§10.13.3 승계 정산): 참조를 실제로 쓰는 자리가 여기다. 잦은 push 의
-            # 비용은 함수 자체가 막는다 — 데이터를 이미 골랐으면 첫 줄에서 None 으로
-            # 빠지므로 레지스트리 읽기는 「참조는 있고 데이터는 아직 없는」 상태에서만 난다.
-            "default_dataset": (
-                self._default_dataset_snapshot()
-                if self.section == SECTION_BINDING else None
-            ),
             # 템플릿 라이브러리(신규 1단계=라이브러리에서 그룹 구획으로 고르기, #108 슬라이스 3)
             # — 템플릿 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불
-            # 금지; default_dataset 선례). 그 외 단계는 빈 구획. F6 PR-B: 매체 2밴드({hwpx, txt}).
+            # 금지). 그 외 단계는 빈 구획. F6 PR-B: 매체 2밴드({hwpx, txt}).
             "library": (
                 self._library_snapshot() if self.section == SECTION_TEMPLATE
                 else {
@@ -675,32 +658,8 @@ class EditorController:
         except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
             return ""
 
-    def _default_dataset_snapshot(self) -> "dict | None":
-        """복원한 기본 데이터 참조(#53-A)의 연결 상태 재진술(#67) — 저장 단계(2) 전용.
-
-        이 세션이 데이터를 새로 골랐으면(저장 시 참조가 그 이름으로 바뀜) 자동등록
-        블록이 이미 그 연결을 말하므로 None(이중 서사 금지). 참조가 없어도 None.
-        상태: ``linked``(풀 항목·파일 실존) / ``dead``(항목은 있으나 파일 이동·삭제)
-        / ``missing``(풀 항목 삭제) / ``corrupt``(항목 JSON 손상). 삭제와 손상을 한
-        문구로 합치면 손상 격리 표시(데이터 선택 다이얼로그)와 다른 조치를 안내하게 된다
-        (재진술 정직성 — PR #70 리뷰). 비파일 참조(nara 등)는 경로 없이 linked 로
-        본다 — 파일 실존 판정 대상이 아니다(조준 시점 관문이 거절 담당).
-        """
-        ref = self.default_dataset_ref
-        if self.data_path or not ref:
-            return None
-        try:
-            item = self.pool_registry.load(ref)
-        except FileNotFoundError:
-            return {"name": ref, "status": "missing", "path": ""}
-        except Exception:  # noqa: BLE001 — 손상 JSON 등: '삭제됨'으로 오진술 금지
-            return {"name": ref, "status": "corrupt", "path": ""}
-        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
-        path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
-        if not path:
-            return {"name": ref, "status": "linked", "path": ""}
-        status = "linked" if Path(path).exists() else "dead"
-        return {"name": ref, "status": status, "path": path}
+    # (_default_dataset_snapshot(#53-A 기본 데이터 연결 상태 재진술)은 #347 에서 삭제 —
+    #  작업↔데이터 결속이 폐기돼 재진술할 참조 자체가 없다. U2 §5.3 판정 D.)
 
     def _schema_summary(self) -> str:
         if self.schema is None:
@@ -725,8 +684,11 @@ class EditorController:
         src = profile_source_vocabulary(profile)
         if src:
             prov["source_keys"] = " · ".join(src)
-        # 데이터 표시명: 이번에 데이터를 골랐으면 그 이름, 아니면(편집 저장) 복원한 출처 보존.
-        dataset = self.dataset_name if self.data_path else self._loaded_provenance.get("dataset", "")
+        # 데이터 표시명: 이번에 데이터를 골랐으면 그 파일 스템, 아니면(편집 저장) 복원 출처 보존.
+        dataset = (
+            Path(self.data_path).stem if self.data_path
+            else self._loaded_provenance.get("dataset", "")
+        )
         if dataset:
             prov["dataset"] = dataset
         return prov
@@ -945,9 +907,6 @@ class EditorController:
         self._ignored_expanded = False  # 새 데이터 = 펼침 힌트 초기화(결정 13)
         self.records = records
         self.preview_index = 0
-        # 자동등록 기본 이름 = 파일 스템(사용자가 저장 단계에서 수정 가능). 데이터를 바꾸면
-        # 이전 파일 이름이 조용히 남지 않게 매번 재유도한다.
-        self.dataset_name = Path(path).stem
         # 3단계 접기(블록 2 결정 11·12): 매핑 단계 관문에서 데이터를 고르면(모델이 이미
         # 있으면) 매핑표를 **그 자리에서** 다시 세운다 — 새 컬럼·자동 제안 반영, 안 맞게 된
         # 확정 행은 미확정 강등(_ensure_model 이 값 이월+재확정 재진술). 모델 전(step 0
@@ -1060,7 +1019,6 @@ class EditorController:
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = content_fingerprint(job)
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
-        self.default_dataset_ref = job.default_dataset_ref  # 편집 저장 시 보존(#53-A)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
         # (비움)으로 오표시되지 않는다.
@@ -1115,7 +1073,6 @@ class EditorController:
             "data_sheet": self.data_sheet,
             "source_fields": list(self.source_fields),
             "records": self.records,
-            "dataset_name": self.dataset_name,
             "ignored": set(self._ignored_sources),
             "ignored_expanded": self._ignored_expanded,
         }
@@ -1134,7 +1091,6 @@ class EditorController:
         self.data_sheet = stash["data_sheet"]
         self.source_fields = stash["source_fields"]
         self.records = stash["records"]
-        self.dataset_name = stash["dataset_name"]
         self._ignored_sources = stash["ignored"]
         self._ignored_expanded = stash["ignored_expanded"]
         self._ensure_model()
@@ -1266,13 +1222,12 @@ class EditorController:
         elif section == SECTION_BINDING:
             self._revert_binding(base)
         else:  # 템플릿 — 스키마·매핑이 함께 서야 하므로 규칙 전체를 다시 세운다(이름은 유지)
-            name, stash = self.job_name, self._data_stash()
+            name = self.job_name
             self._restore_from(
                 base, landing_section=self.section, context=self.session.context,
                 emit_push=False, keep_data=True,
             )
             self.job_name = name
-            self.dataset_name = stash["dataset_name"]
         self._set_notice(
             f"「{self.SECTION_LABELS.get(section, section)}」 에서 바꾼 것만 되돌렸습니다.", "ok"
         )
@@ -1334,7 +1289,6 @@ class EditorController:
         had_data = bool(self.data_path)
         self.data_path = ""
         self.data_sheet = ""
-        self.dataset_name = ""
         self.records = []
         self.preview_index = 0
         if had_data:
@@ -1616,69 +1570,9 @@ class EditorController:
     def _do_set_pattern(self, p: dict) -> None:
         self.pattern = p["pattern"]
 
-    def _do_set_dataset_name(self, p: dict) -> None:
-        """자동등록 데이터셋 이름 수정(저장 단계) — 기본은 데이터 파일 스템."""
-        self.dataset_name = p["name"]
-
-    def _dataset_gate(self, p: dict) -> "dict | None":
-        """선언 데이터 자동등록 선차단 게이트(#18 31A5A484-C·ST-09 사각 봉합).
-
-        저장 **전에** 판정해 반저장 상태(작업은 저장·등록은 실패)를 만들지 않는다.
-        분류(부재/동명/충돌/손상)는 :func:`~hwpxfiller.core.job.classify_existing` 단일
-        출처(pool 수동 등록·프로파일 저장과 공유):
-        - 같은 이름 기존 항목: guard 는 자기-갱신으로 통과시켜 **조용한 opts 덮어쓰기**가
-          되므로 여기서 확인을 승격한다(기존 참조 요약 재진술 → ``confirm_dataset``).
-        - 다른 이름·같은 slug(또는 손상): 덮어쓰기 경로를 열지 않고 이름 변경만 안내.
-        통과(None 반환) 후의 실제 등록은 ``_do_save`` 말미가 수행한다. 게이트가 로드한
-        동명 기존 항목은 ``self._dataset_existing`` 에 이름·분기 근거로 stash 하되, 실제 갱신은
-        registry ``mutate`` 가 잠금 안에서 최신 항목을 다시 읽는다(#182). 확인 뒤 삭제된 항목을
-        되살리거나, 동시 상태 전이를 오래된 객체로 되돌리지 않는다.
-        """
-        ds_name = (self.dataset_name or "").strip() or Path(self.data_path).stem
-        self.dataset_name = ds_name
-        kind, existing = classify_existing(self.pool_registry, ds_name)
-        self._dataset_existing = existing if kind == "same" else None
-        if kind == "absent":
-            if p.get("confirm_dataset"):
-                return {
-                    "ok": False,
-                    "dataset_error": (
-                        f"등록 데이터 '{ds_name}' 이 확인하는 동안 삭제됐습니다. "
-                        "현재 상태를 다시 확인한 뒤 저장하세요."
-                    ),
-                }
-            return None
-        if kind == "corrupt":
-            return {
-                "ok": False,
-                "dataset_error": (
-                    f"등록 데이터 '{ds_name}' 자리의 기존 파일이 손상돼 확인할 수 "
-                    "없습니다. 다른 이름을 지정하세요."
-                ),
-            }
-        if kind == "collision":  # slug 충돌(다른 이름·같은 파일) — 이름 변경만
-            return {
-                "ok": False,
-                "dataset_error": (
-                    f"'{ds_name}' 은 기존 등록 데이터 '{existing.name}' 과 같은 파일로 "
-                    f"저장됩니다. 다른 이름을 지정하세요."
-                ),
-            }
-        if not p.get("confirm_dataset"):  # kind == "same" — 확인 승격
-            return {
-                "ok": False,
-                "needs_dataset_confirm": True,
-                "dataset_name": ds_name,
-                # cross-kind(나라/파이프라인→엑셀) 전이는 _do_save 확정 경로가 kind 를
-                # excel 로 정규화하므로 여기서 함께 재진술한다(r4 — pool 화면 미러).
-                "dataset_text": (
-                    f"등록 데이터 '{ds_name}' 이 이미 있습니다"
-                    f"({reference_summary(existing)}).\n"
-                    "이 작업의 데이터 참조로 덮어씁니다"
-                    f"{kind_transition_clause(existing)}. 계속할까요?"
-                ),
-            }
-        return None
+    # (_do_set_dataset_name·_dataset_gate 는 #347 에서 삭제 — 저장 시 데이터 자동등록
+    #  (#18·#26)이 U2 §5.3 판정 D 로 폐기됐다. §2.8 이 기록한 danger 경보 인플레이션의
+    #  발화 지점 자체가 없어졌고, 등록은 데이터 선택 면의 「이 데이터 고정」 하나다.)
 
     def _editing_drift_text(self) -> str:
         """자기-갱신 저장 전 외부 변경 판정 — 확인이 필요하면 재진술 문구, 아니면 "".
@@ -1797,11 +1691,12 @@ class EditorController:
                 "group": origin["group"]}
 
     def _do_save(self, p: dict) -> dict:
-        """저장 게이트 → 덮어쓰기 확인 → 자동등록 게이트 → 저장·등록. 결과 dict 로 재진술.
+        """저장 게이트 → 덮어쓰기 확인 → 저장. 결과 dict 로 재진술.
 
-        웹은 ``needs_overwrite`` / ``needs_dataset_confirm`` 이면 재진술 확인 후 해당
-        플래그(``confirm_overwrite``/``confirm_dataset``)를 실어 재호출한다. 덮어쓰기 확인은
-        **본 문안을 그대로 되돌려 준다**(``confirmed_overwrite_text``) — 아래 참조.
+        웹은 ``needs_overwrite`` 이면 재진술 확인 후 ``confirm_overwrite`` 를 실어
+        재호출한다. 덮어쓰기 확인은 **본 문안을 그대로 되돌려 준다**
+        (``confirmed_overwrite_text``) — 아래 참조. (자동등록 확인 왕복
+        ``needs_dataset_confirm``/``confirm_dataset`` 은 #347 에서 게이트째 사망.)
 
         편집 모드(#26): 원점 이름 그대로의 재저장은 자기-갱신이라 **디스크가 로드 시점
         그대로일 때만** 덮어쓰기 확인을 묻지 않는다(레지스트리 가드의 '같은 이름 재저장
@@ -1856,17 +1751,13 @@ class EditorController:
             or p.get("confirmed_overwrite_text", "") != gate_text
         ):
             return {"ok": False, "needs_overwrite": True, "overwrite_text": gate_text}
-        if self.data_path:  # 선언 데이터 자동등록 게이트 — 저장 전 선차단(#26)
-            blocked = self._dataset_gate(p)
-            if blocked is not None:
-                return blocked
+        # (선언 데이터 자동등록(#18·#26)과 그 게이트는 #347 에서 폐기 — U2 §5.3 판정 D.
+        #  이 세션이 고른 데이터는 검토용 문맥일 뿐 작업에 저장되지 않고, 풀 등록은 데이터
+        #  선택 면의 「이 데이터 고정」 명시 행동 하나다. §2.8 의 danger 경보 인플레이션이
+        #  이 게이트의 발화였고, 발화 지점째 사라졌다.)
         preserved = self._preserved_for_target()
         # 작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향). 저장 매핑에 새긴다.
         verdict.profile.provenance = self._build_provenance(verdict.profile)
-        # 기본 데이터셋 참조(#53-A): 이 세션이 데이터를 골랐으면 곧 자동등록될 이름과 연결,
-        # 아니면(편집 저장 등 데이터 미변경) 복원한 참조를 보존. 등록 실패해도 참조 이름은
-        # 안정적이라 사용자가 그 이름으로 수동 등록하면 링크가 완성된다.
-        default_dataset_ref = self.dataset_name if self.data_path else self.default_dataset_ref
         job = Job(
             name=self.job_name,
             template_path=self.template_path,
@@ -1879,50 +1770,10 @@ class EditorController:
             group=str(preserved["group"]),
             favorited_at=str(preserved["favorited_at"]),
             reviewed_rules=dict(preserved["reviewed_rules"]),  # type: ignore[arg-type]
-            default_dataset_ref=default_dataset_ref,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
         # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.
         self.registry.save(job, allow_overwrite=True)
-        registered = ""
-        register_error = ""
-        if self.data_path:
-            # 참조만 저장(행·비밀 없음) — 확정 시트 동봉(모호 참조 방지). 게이트를 통과한
-            # 뒤라(동명=확인됨·충돌=차단됨) opt-in 저장.
-            opts: "dict[str, object]" = {"path": self.data_path}
-            if self.data_sheet:
-                opts["sheet"] = self.data_sheet
-            # 기존 동명 항목(_dataset_gate 가 이번 호출에서 분류·stash — 이름·분기 근거)
-            # 이 있으면 상태(보관)·메모·생성시각을 보존하고 참조(opts)만 갱신한다 —
-            # 새 항목으로 통째 갈아치우면 보관해 둔 데이터셋이 조용히 재활성화되고 메모가
-            # 지워진다(durable 수명 상태 소실). 확인 문구가 참조 덮어쓰기만 재진술하므로
-            # 상태/메모는 건드리지 않는 것이 문구와도 일치한다(#26 confirm-or-alarm).
-            # 등록 실패는 여기서 잡아 '작업 저장 성공 + 등록 실패' 반저장 상태를 결과에
-            # 정직하게 재진술한다 — 예외가 dispatch 밖으로 새면 웹이 무반응 반저장이 된다.
-            try:
-                existing = self._dataset_existing
-                if existing is not None:
-                    # kind 도 excel 로 정규화(r4) — opts 만 갈아끼우면 동명 nara/pipeline
-                    # 항목이 kind=nara + opts={path} 하이브리드로 손상돼 겨눔 시 동결
-                    # 거절·요약 "기간 ?~?" 가 된다(update_excel_reference 미러).
-                    def update(current: DatasetPoolItem) -> None:
-                        current.kind = "excel"
-                        current.opts = opts
-
-                    self.pool_registry.mutate(existing.name, update)
-                else:
-                    self.pool_registry.save(
-                        DatasetPoolItem(name=self.dataset_name, kind="excel", opts=opts),
-                        allow_overwrite=True,
-                    )
-                registered = self.dataset_name
-            except Exception as exc:  # noqa: BLE001 — 반저장을 조용히 삼키지 않는다
-                register_error = (
-                    f"작업 '{self.job_name}' 은 저장됐지만 등록 데이터 "
-                    f"'{self.dataset_name}' 등록에 실패했습니다: {exc}\n"
-                    f"'{self.dataset_name}' 은 기본 데이터로 연결돼 있으니, "
-                    "「작업」의 [데이터 선택…]에서 같은 이름으로 고정하면 연결이 완성됩니다."
-                )
         saved = self.job_name
         # 저장 착지 = **제자리**(U2 §2.14) — 신규·편집 불문 현재 탭 그대로. 구판은 신규 세션을
         # binding 으로 내렸는데, hwpx 신규 저장은 filename(3단계)에서 일어나므로 3→2 로 **뒤로
@@ -1948,7 +1799,4 @@ class EditorController:
             emit_push=False,
         )
         self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
-        result = {"ok": True, "saved_name": saved, "dataset_registered": registered}
-        if register_error:
-            result["dataset_register_error"] = register_error
-        return result
+        return {"ok": True, "saved_name": saved}

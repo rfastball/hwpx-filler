@@ -459,12 +459,11 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 
 
 def _controller26(tmp_path: Path):
-    """레지스트리(작업·풀)를 tmp 로 격리 주입한 컨트롤러."""
+    """작업 레지스트리를 tmp 로 격리 주입한 컨트롤러(#347: 풀 주입은 자동등록과 함께 사망)."""
     pushes: list = []
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         template_library=TemplateManagerViewModel(paths=[]),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -635,7 +634,7 @@ def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_p
     assert "다시 확정" in snap["notice"]["text"]         # 재확정 필요를 loud 재진술
 
 
-# ------------------------------------------------------- 선언 데이터 자동등록(#3)
+# --------------------------------------- 선언 데이터 자동등록의 사망(#347, U2 §5.3 D)
 def _complete_with_data(ctrl, name: str) -> None:
     """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
     ctrl.load_template_path(str(TPL_COMPILED))
@@ -649,72 +648,31 @@ def _complete_with_data(ctrl, name: str) -> None:
     ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
 
 
-def test_save_autoregisters_declared_dataset_with_sheet(tmp_path):
-    """저장 시 선언 데이터가 참조(경로+확정 시트)로 자동등록된다 — 행·내용 없음."""
+def test_save_with_data_registers_nothing_anywhere(tmp_path, monkeypatch):
+    """저장은 데이터를 풀에 등록하지 않는다 — 자동등록(#18·#26)은 U2 §5.3 판정 D 로 폐기.
+
+    편집 세션의 데이터는 검토용 문맥일 뿐이고, 풀 등록은 데이터 선택 면의 「이 데이터
+    고정」 명시 행동 하나다. 홈 풀 디렉터리까지 확인해 어떤 경로로도 등록이 새지 않음을
+    본다(조용한 durable 쓰기 금지).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     ctrl, _ = _controller26(tmp_path)
     _complete_with_data(ctrl, "데이터작업")
-    assert ctrl.snapshot()["dataset_name"] == "multi_sheet"   # 기본 이름 = 파일 스템
+    snap = ctrl.snapshot()
+    assert "dataset_name" not in snap                 # 자동등록 표면째 소멸
+    assert "default_dataset" not in snap
     res = ctrl.dispatch("save", {})
-    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
-    item = DatasetPoolRegistry(tmp_path / "pool").load("multi_sheet")
-    assert item.kind == "excel" and item.is_active
-    assert item.opts["path"] == str(MULTI_SHEET)
-    assert item.opts["sheet"] == "낙찰현황"                   # 확정 시트 동봉(모호 참조 방지)
-    assert "records" not in item.opts                         # 행 미저장 불변식
-
-
-def test_save_without_data_registers_nothing(tmp_path):
-    ctrl, _ = _controller26(tmp_path)
-    res = _save_named(ctrl, "무데이터")
-    assert res["ok"] is True and res["dataset_registered"] == ""
+    assert res["ok"] is True
+    assert "dataset_registered" not in res and "dataset_register_error" not in res
     assert DatasetPoolRegistry(tmp_path / "pool").list_items() == []
+    assert DatasetPoolRegistry(tmp_path / "home" / "datasets").list_items() == []
 
 
-def test_save_dataset_same_name_requires_confirm(tmp_path):
-    """동명 기존 등록 데이터는 조용한 opts 덮어쓰기가 아니라 확인 승격(기존 참조 재진술)."""
-    pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}))
+def test_dataset_actions_are_gone_loudly(tmp_path):
+    """구 자동등록 표면(set_dataset_name)은 미지 액션으로 시끄럽게 거절된다(#347)."""
     ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "충돌작업")
-    res = ctrl.dispatch("save", {})
-    assert res["ok"] is False and res.get("needs_dataset_confirm") is True
-    assert "old.xlsx" in res["dataset_text"]                  # 기존 참조 재진술(거짓 확인 방지)
-    assert not JobRegistry(tmp_path / "jobs").exists("충돌작업")  # 반저장 없음(선차단)
-    res2 = ctrl.dispatch("save", {"confirm_dataset": True})
-    assert res2["ok"] is True
-    assert pool.load("multi_sheet").opts["path"] == str(MULTI_SHEET)
-
-
-def test_save_dataset_confirm_does_not_resurrect_concurrently_deleted_item(tmp_path):
-    """자동등록 확인 중 삭제된 참조는 작업 저장이나 데이터셋 재생성 없이 다시 판정한다."""
-    pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}))
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "삭제경합작업")
-    first = ctrl.dispatch("save", {})
-    assert first.get("needs_dataset_confirm") is True
-
-    DatasetPoolRegistry(pool.directory).delete("multi_sheet")
-    second = ctrl.dispatch("save", {"confirm_dataset": True})
-
-    assert second["ok"] is False and "삭제" in second["dataset_error"]
-    assert not pool.exists("multi_sheet")
-    assert not JobRegistry(tmp_path / "jobs").exists("삭제경합작업")
-
-
-def test_save_dataset_slug_collision_demands_rename(tmp_path):
-    """다른 이름·같은 slug 는 덮어쓰기 경로 없이 이름 변경만 안내(소유 항목 보호)."""
-    pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="multi/sheet", kind="excel", opts={"path": "x.xlsx"}))
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "슬러그작업")
-    res = ctrl.dispatch("save", {})
-    assert res["ok"] is False and "같은 파일" in res["dataset_error"]
-    assert not JobRegistry(tmp_path / "jobs").exists("슬러그작업")
-    # 이름을 바꾸면 통과.
-    ctrl.dispatch("set_dataset_name", {"name": "낙찰데이터"})
-    res2 = ctrl.dispatch("save", {})
-    assert res2["ok"] is True and res2["dataset_registered"] == "낙찰데이터"
+    with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
+        ctrl.dispatch("set_dataset_name", {"name": "x"})
 
 
 # ------------------------------------------------------- 매핑 프로파일 제거(F22)
@@ -763,27 +721,26 @@ def test_edit_save_preserves_concurrent_home_tag_edit(tmp_path):
     assert reg.load("태그작업").tags == {"물품": "의약품"}   # 조용한 소실 없음
 
 
-def test_autoregister_preserves_archived_status_and_note(tmp_path):
-    """자동등록이 기존 보관 데이터셋을 조용히 재활성화하거나 메모를 지우지 않는다(#26 #6).
+def test_save_does_not_touch_existing_pool_entries(tmp_path):
+    """저장은 기존 풀 항목(보관·메모 포함)을 어떤 방식으로도 건드리지 않는다(#347).
 
-    확인 문구는 참조 덮어쓰기만 재진술하므로, 상태·메모는 건드리지 않는 것이 문구와 일치한다.
+    구 자동등록은 동명 항목의 참조를 갱신했다 — 그 게이트가 §2.8 의 danger 경보
+    인플레이션이었고, 폐기 뒤에는 저장이 풀을 읽지도 쓰지도 않는다.
     """
     pool = DatasetPoolRegistry(tmp_path / "pool")
     prior = DatasetPoolItem(
         name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="계약 종료분")
     prior.archive()
-    pool.save(prior)
+    key = pool.add(prior)
 
     ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "재사용작업")           # dataset_name 기본 = multi_sheet(스템)
-    res = ctrl.dispatch("save", {"confirm_dataset": True})   # 동명 → 확인 승격 확정
-    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+    _complete_with_data(ctrl, "재사용작업")
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True and "needs_dataset_confirm" not in res  # 확인 게이트 소멸(§2.8)
 
-    item = pool.load("multi_sheet")
-    assert item.status == "archived"                  # 재활성화 없음(수명 상태 보존)
-    assert item.note == "계약 종료분"                  # 메모 보존
-    assert item.opts["path"] == str(MULTI_SHEET)      # 참조(opts)만 갱신
-    assert item.opts["sheet"] == "낙찰현황"
+    item = pool.load(key)
+    assert item.status == "archived" and item.note == "계약 종료분"
+    assert item.opts == {"path": "old.xlsx"}          # 참조 불변 — 저장은 풀에 무접촉
 
 
 # ------------------------------------------------- 작성 출처 provenance(#53-C)
@@ -824,58 +781,38 @@ def test_new_session_has_no_provenance(tmp_path):
     assert ctrl.snapshot()["provenance"] is None
 
 
-# ------------------------------------------- 기본 데이터셋 연결(#53-A)
-def test_save_with_data_links_default_dataset_ref(tmp_path):
-    """데이터를 골라 저장하면 자동등록 이름이 작업의 기본 데이터셋 참조로 연결된다(#53-A)."""
+# ------------------------------- 작업↔데이터 결속의 사망(#53-A → #347, U2 §5.3 D)
+def test_saved_job_carries_no_dataset_binding(tmp_path):
+    """저장된 작업 JSON 에 데이터 결속 키가 없다 — `default_dataset_ref` 는 개념째 폐기.
+
+    작업이 기억하는 것은 스키마(source_keys)뿐이고, 데이터↔작업 결속은 어느 방향으로도
+    다시 들이지 않는다(§5.3 뒷문 금지).
+    """
     ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "연결작업")             # dataset_name 기본 = multi_sheet(스템)
-    res = ctrl.dispatch("save", {})
-    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+    _complete_with_data(ctrl, "연결작업")
+    assert ctrl.dispatch("save", {})["ok"] is True
     job = JobRegistry(tmp_path / "jobs").load("연결작업")
-    assert job.default_dataset_ref == "multi_sheet"   # 자동등록 이름과 연결
+    assert not hasattr(job, "default_dataset_ref")
+    assert "default_dataset_ref" not in job.to_dict()
 
 
-def test_save_without_data_leaves_default_ref_empty(tmp_path):
-    """데이터 없이 저장한 작업은 기본 데이터셋 참조가 비어 있다(현행 수동 선택 유지)."""
+def test_legacy_default_dataset_ref_key_is_discarded_not_migrated(tmp_path):
+    """구 JSON 의 default_dataset_ref 는 미지 키로 무시된다 — 마이그레이션이 아니라 폐기.
+
+    「이 작업이 지난번 쓰던 데이터」 정보는 사용자 확인 하에 사라졌다(U2 §5.3 명시
+    확인분). 로드는 loud raise 없이 통과하고 재저장 시 키가 소멸한다.
+    """
     ctrl, _ = _controller26(tmp_path)
-    _save_named(ctrl, "무데이터작업")
-    assert JobRegistry(tmp_path / "jobs").load("무데이터작업").default_dataset_ref == ""
-
-
-def test_edit_save_without_new_data_preserves_default_ref(tmp_path):
-    """편집 저장 시 데이터를 새로 안 고르면 기존 기본 데이터셋 참조가 보존된다(#53-A).
-
-    데이터를 다시 로드하지 않으므로 data_path 는 비어 있다 — 그때 참조를 "" 로 덮으면
-    편집 한 번에 기본 데이터 연결이 조용히 소실된다(태그·이력 보존 선례와 동형)."""
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "편집대상")
-    ctrl.dispatch("save", {})
-    assert JobRegistry(tmp_path / "jobs").load("편집대상").default_dataset_ref == "multi_sheet"
-
-    ctrl.load_job("편집대상")                          # 데이터 없이 편집 세션 복원
-    ctrl.dispatch("set_pattern", {"pattern": "새패턴-{{ID}}"})
-    res = ctrl.dispatch("save", {"confirm_overwrite": True})
-    assert res["ok"] is True
-    job = JobRegistry(tmp_path / "jobs").load("편집대상")
-    assert job.default_dataset_ref == "multi_sheet"   # 편집 저장에도 보존
-    assert job.filename_pattern == "새패턴-{{ID}}"
-
-
-def test_save_links_ref_even_when_dataset_register_fails(tmp_path):
-    """등록 실패(반저장)해도 작업의 기본 데이터 참조는 저장되고, 실패 문구가 연결 완성
-    경로를 안내한다(#53-A 리뷰) — 참조 이름이 안정적이라 그 이름으로 수동 등록하면 링크 완성."""
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "등록실패작업")
-
-    def _boom(*a, **k):
-        raise OSError("디스크 꽉 참")
-    ctrl.pool_registry.save = _boom                    # 데이터셋 등록만 실패시킴
-
-    res = ctrl.dispatch("save", {})
-    assert res["ok"] is True                           # 작업 저장 자체는 성공(반저장)
-    assert "기본 데이터로 연결" in res["dataset_register_error"]
-    # 참조는 저장됨 — 사용자가 같은 이름으로 등록하면 연결이 완성된다.
-    assert JobRegistry(tmp_path / "jobs").load("등록실패작업").default_dataset_ref == "multi_sheet"
+    assert _save_named(ctrl, "구식결속")["ok"] is True
+    reg = JobRegistry(tmp_path / "jobs")
+    path = reg.path_for("구식결속")
+    import json as _json
+    payload = _json.loads(path.read_text(encoding="utf-8"))
+    payload["default_dataset_ref"] = "지난달데이터"     # 구버전이 남긴 결속 키
+    path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    job = reg.load("구식결속")                          # loud raise 없이 로드
+    assert job.name == "구식결속"
+    assert "default_dataset_ref" not in job.to_dict()   # 재저장 시 키 소멸(폐기)
 
 
 # ------------------------------------------------- 사용할 헤더 선택(#49)
@@ -1012,67 +949,9 @@ def test_load_job_reedit_starts_all_active(tmp_path):
     assert snap["active_source_fields"] == snap["source_fields"]
 
 
-# ------------------------------------------- 기본 데이터 연결 상태(#67)
-def test_default_dataset_linked_shown_at_data_gateway(tmp_path):
-    """복원 참조가 살아 있으면 (연결됨) + 로케이트 경로 노출(#67).
-
-    거처는 「저장」 분류에서 **데이터 관문**(연결 탭)으로 옮겨졌다(재작성 F7 §10.13.3) —
-    참조를 실제로 쓰는 자리가 거기다. 파일 이름 탭은 규칙만 다루므로 재진술하지 않는다.
-    """
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "연결표시")
-    ctrl.dispatch("save", {})
-    ctrl.load_job("연결표시")                              # 데이터 없이 편집 세션 복원
-    ctrl.dispatch("goto_section", {"section": "filename"})
-    assert ctrl.snapshot()["default_dataset"] is None      # 파일 이름 탭 — 재진술 대상 아님
-    ctrl.dispatch("goto_section", {"section": "binding"})
-    d = ctrl.snapshot()["default_dataset"]
-    assert d == {"name": "multi_sheet", "status": "linked", "path": str(MULTI_SHEET)}
-
-
-def test_default_dataset_dead_corrupt_missing_are_restated(tmp_path):
-    """파일 이동(dead)·항목 JSON 손상(corrupt)·항목 삭제(missing)를 각각 정직하게
-    재진술한다(#67) — 손상을 '삭제됨'으로 합치면 데이터 관리 화면(손상 격리 표시)과
-    다른 조치를 안내하게 된다(PR #70 리뷰)."""
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "끊김표시")
-    ctrl.dispatch("save", {})
-
-    pool = ctrl.pool_registry
-    item = pool.load("multi_sheet")
-    item.opts = {"path": str(tmp_path / "이동됨.xlsx"), "sheet": "낙찰현황"}
-    pool.save(item, allow_overwrite=True)                  # 파일만 죽음(dead)
-    ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_section", {"section": "binding"})
-    d = ctrl.snapshot()["default_dataset"]
-    assert d["status"] == "dead" and d["path"].endswith("이동됨.xlsx")
-
-    corrupted = next((tmp_path / "pool").glob("*.dataset.json"))
-    corrupted.write_text("{깨진 JSON", encoding="utf-8")   # 항목 손상(corrupt)
-    ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_section", {"section": "binding"})
-    d = ctrl.snapshot()["default_dataset"]
-    assert d == {"name": "multi_sheet", "status": "corrupt", "path": ""}
-
-    corrupted.unlink()                                     # 항목 자체 소멸(missing)
-    ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_section", {"section": "binding"})
-    d = ctrl.snapshot()["default_dataset"]
-    assert d == {"name": "multi_sheet", "status": "missing", "path": ""}
-
-
-def test_default_dataset_none_when_fresh_data_or_no_ref(tmp_path):
-    """이번 세션이 데이터를 골랐거나 참조가 없으면 None — 자동등록 블록과 이중 서사 금지(#67)."""
-    ctrl, _ = _controller26(tmp_path)
-    _complete_with_data(ctrl, "이중서사금지")
-    ctrl.dispatch("goto_section", {"section": "filename"})
-    assert ctrl.snapshot()["default_dataset"] is None      # data_path 有 → 자동등록 블록 몫
-
-    ctrl2, _ = _controller26(tmp_path)
-    _save_named(ctrl2, "무참조작업")                        # 데이터 없이 저장 = ref ""
-    ctrl2.load_job("무참조작업")
-    ctrl2.dispatch("goto_section", {"section": "filename"})
-    assert ctrl2.snapshot()["default_dataset"] is None
+# --------------------- (기본 데이터 연결 상태 재진술(#67)은 #347 에서 참조와 함께 사망 —
+#  linked/dead/corrupt/missing 4태 스냅샷은 재진술할 default_dataset_ref 가 없어졌다.
+#  스냅샷 키 소멸은 test_save_with_data_registers_nothing_anywhere 가 단언한다.)
 
 
 # ------------------------------------------------ 에디터 흡수(블록 2 개정, 결정 39~41)
@@ -1243,7 +1122,7 @@ def test_a_whole_session_discard_drops_the_data_it_said_it_dropped(tmp_path):
     ctrl.dispatch("discard_patch", {})                       # section 없음 = 세션 전체
     assert ctrl.dirty_sections() == () and ctrl.dirty_extras() == ()
     assert ctrl.job_name == "전체버리기"                      # 이름도 저장본으로
-    assert not ctrl.data_path and not ctrl.dataset_name and not ctrl.records
+    assert not ctrl.data_path and not ctrl.records
     # 버린 뒤에는 잃을 것이 없다 — 다음 전환·새 작업이 같은 파기를 두 번 묻지 않는다.
     assert ctrl.has_unsaved_work() is False
     assert "함께 내려놨습니다" in ctrl.notice_text            # 무엇이 사라졌는지 재진술
@@ -1280,21 +1159,21 @@ def test_every_session_extra_counts_as_unsaved_work(tmp_path):
 def test_switching_only_the_sheet_is_unsaved_work(tmp_path):
     """같은 엑셀의 **다른 시트**로 갈아타는 것도 미저장이다 — 열거를 세우자 드러난 자리.
 
-    경로도 자동등록 이름도 그대로이므로 「데이터를 골랐는가」만 보는 판정에는 안 걸린다.
-    그런데 시트는 자동등록 참조에 함께 저장되는 durable 값이라(#33), 그 갈아타기를 놓치면
-    사람이 시트를 바꾸고 나갈 때 아무것도 묻지 않고 버린다 — 2R~5R 이 이름·자동등록
-    이름·데이터로 세 번 겪은 것과 **같은 결함의 네 번째 인스턴스**다.
+    경로는 그대로이므로 「데이터를 골랐는가」만 보는 판정에는 안 걸린다. 그런데 같은
+    워크북의 다른 시트는 다른 데이터라(#33 — §5.3 정체성 축에도 시트가 든다), 그
+    갈아타기를 놓치면 사람이 시트를 바꾸고 나갈 때 아무것도 묻지 않고 버린다 — 2R~5R 이
+    이름·데이터로 겪은 것과 **같은 결함의 다른 인스턴스**다.
     """
     ctrl, _ = _controller26(tmp_path)
     _complete_with_data(ctrl, "시트갈아타기")
     ctrl.dispatch("save", {})
     ctrl.load_job("시트갈아타기")
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    path_then, name_then = ctrl.data_path, ctrl.dataset_name
+    path_then = ctrl.data_path
     ctrl.dispatch("discard_patch", {})                        # 데이터까지 내려놓고 다시 시작
     ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
-    assert ctrl.data_path == path_then and ctrl.dataset_name == name_then  # 둘은 그대로인데
-    assert "data_sheet" in ctrl.dirty_extras()                            # 시트는 갈렸다
+    assert ctrl.data_path == path_then                        # 경로는 그대로인데
+    assert "data_sheet" in ctrl.dirty_extras()                # 시트는 갈렸다
     assert ctrl.has_unsaved_work() is True
 
 

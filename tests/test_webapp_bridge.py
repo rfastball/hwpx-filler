@@ -291,17 +291,17 @@ def test_job_load_pool_and_nara_frozen(tmp_path):
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,담당자\n전산장비,김주무\n", encoding="utf-8")
     pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="기안데이터", kind="excel", opts={"path": str(csv)}))
-    pool.save(DatasetPoolItem(name="나라쿼리", kind="nara",
-                              opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    excel_key = pool.add(DatasetPoolItem(name="기안데이터", kind="excel", opts={"path": str(csv)}))
+    nara_key = pool.add(DatasetPoolItem(name="나라쿼리", kind="nara",
+                                        opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
                          pool_registry=pool)
-    res = ctrl.dispatch("load_pool", {"name": "기안데이터"})
+    res = ctrl.dispatch("load_pool", {"key": excel_key})
     assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 기안데이터"
     assert snap["record_count"] == 1   # 참조 재읽기로 실 레코드 도착
-    res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
+    res2 = ctrl.dispatch("load_pool", {"key": nara_key})
     assert res2["ok"] is False and "지원되지 않습니다" in res2["error"]
 
 

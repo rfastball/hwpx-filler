@@ -31,8 +31,8 @@ def _pool_with_csvs(tmp_path) -> DatasetPoolRegistry:
     a.write_text("id,name\n1,A\n2,B\n", encoding="utf-8-sig")
     b.write_text("id,city\n1,서울\n2,부산\n", encoding="utf-8-sig")
     reg = DatasetPoolRegistry(tmp_path / "pool")
-    reg.save(DatasetPoolItem(name="기준", kind="excel", opts={"path": str(a)}))
-    reg.save(DatasetPoolItem(name="참조표", kind="excel", opts={"path": str(b)}))
+    reg.add(DatasetPoolItem(name="기준", kind="excel", opts={"path": str(a)}))
+    reg.add(DatasetPoolItem(name="참조표", kind="excel", opts={"path": str(b)}))
     return reg
 
 
@@ -40,10 +40,10 @@ def _pool_with_csvs(tmp_path) -> DatasetPoolRegistry:
 def test_available_sources_exclude_pipelines_and_inactive(tmp_path):
     reg = _pool_with_csvs(tmp_path)
     pl = DatasetPoolItem(name="기존조립", kind="pipeline", opts={"sources": [], "steps": []})
-    reg.save(pl)
+    reg.add(pl)
     archived = DatasetPoolItem(name="보관됨", kind="excel", opts={"path": "/x.csv"})
     archived.archive()
-    reg.save(archived)
+    reg.add(archived)
     vm = PipelineBuilderViewModel(reg)
     names = vm.available_source_names()
     assert "기준" in names and "참조표" in names
@@ -53,7 +53,7 @@ def test_available_sources_exclude_pipelines_and_inactive(tmp_path):
 
 def test_add_source_rejects_pipeline_kind(tmp_path):
     reg = _pool_with_csvs(tmp_path)
-    reg.save(DatasetPoolItem(name="조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    reg.add(DatasetPoolItem(name="조립", kind="pipeline", opts={"sources": [], "steps": []}))
     vm = PipelineBuilderViewModel(reg)
     with pytest.raises(ValueError, match="중첩"):
         vm.add_source("조립")
@@ -94,7 +94,7 @@ def test_remove_source_reindexes_higher_step_refs(tmp_path):
     tmp = tmp_path / "c.csv"
     tmp.write_text("id,x\n1,q\n", encoding="utf-8-sig")
     reg = _pool_with_csvs(tmp_path)
-    reg.save(DatasetPoolItem(name="셋째", kind="excel", opts={"path": str(tmp)}))
+    reg.add(DatasetPoolItem(name="셋째", kind="excel", opts={"path": str(tmp)}))
     vm = PipelineBuilderViewModel(reg)
     vm.add_source("기준")     # 0
     vm.add_source("참조표")   # 1 — 스텝 없음
@@ -132,7 +132,7 @@ def test_suggest_merge_keys_no_shared_columns_returns_empty(tmp_path):
     c = tmp_path / "other.csv"
     c.write_text("코드,값\nX,1\n", encoding="utf-8-sig")
     reg = _pool_with_csvs(tmp_path)
-    reg.save(DatasetPoolItem(name="무관", kind="excel", opts={"path": str(c)}))
+    reg.add(DatasetPoolItem(name="무관", kind="excel", opts={"path": str(c)}))
     vm = PipelineBuilderViewModel(reg)
     vm.add_source("기준")
     vm.add_source("무관")
@@ -148,7 +148,7 @@ def test_suggest_merge_keys_zero_rows_fails_loudly_not_false_negative(tmp_path):
     empty = tmp_path / "empty.csv"
     empty.write_text("id,name\n", encoding="utf-8-sig")  # 헤더만, 0행
     reg = _pool_with_csvs(tmp_path)
-    reg.save(DatasetPoolItem(name="빈것", kind="excel", opts={"path": str(empty)}))
+    reg.add(DatasetPoolItem(name="빈것", kind="excel", opts={"path": str(empty)}))
     vm = PipelineBuilderViewModel(reg)
     vm.add_source("빈것")    # 씨앗 0행
     vm.add_source("참조표")  # id 공유(스키마상 실재)
@@ -180,10 +180,11 @@ def test_saved_item_stores_references_only(tmp_path):
     vm.add_step("merge", 1, on="id", how="left")
     vm.save("조립저장")
     reg = vm.registry
-    saved = reg.path_for("조립저장").read_text(encoding="utf-8")
+    key, item = reg.find_by_name("조립저장")
+    saved = reg.slot_path(key).read_text(encoding="utf-8")
     assert "서울" not in saved and "부산" not in saved  # 레코드 스냅샷 없음
     assert "base.csv" in saved and "merge" in saved     # 참조·레시피만
-    assert reg.load("조립저장").kind == "pipeline"
+    assert item.kind == "pipeline"
 
 
 def test_preview_surfaces_assembly_failure_loudly(tmp_path):
@@ -200,7 +201,7 @@ def test_preview_limits_rows_but_reports_total(tmp_path):
     big = tmp_path / "big.csv"
     big.write_text("id\n" + "\n".join(str(i) for i in range(50)), encoding="utf-8-sig")
     reg = DatasetPoolRegistry(tmp_path / "pool")
-    reg.save(DatasetPoolItem(name="큰것", kind="excel", opts={"path": str(big)}))
+    reg.add(DatasetPoolItem(name="큰것", kind="excel", opts={"path": str(big)}))
     vm = PipelineBuilderViewModel(reg)
     vm.add_source("큰것")
     pv = vm.preview(limit=20)
@@ -227,7 +228,7 @@ def test_save_refuses_invalid_assembly_loudly(tmp_path):
     vm.steps.append({"op": "merge", "source": 1, "on": "없는키", "how": "inner"})  # 부재 키
     with pytest.raises(ValueError, match="유효하지 않아"):
         vm.save("깨진조립")
-    assert not vm.registry.exists("깨진조립")  # 깨진 조립은 커밋되지 않는다
+    assert vm.registry.find_by_name("깨진조립") is None  # 깨진 조립은 커밋되지 않는다
 
 
 def test_save_valid_assembly_still_commits(tmp_path):
@@ -237,7 +238,7 @@ def test_save_valid_assembly_still_commits(tmp_path):
     vm.add_source("참조표")
     vm.add_step("merge", 1, on="id", how="inner")
     item = vm.save("정상조립")
-    assert item.kind == "pipeline" and vm.registry.exists("정상조립")
+    assert item.kind == "pipeline" and vm.registry.find_by_name("정상조립") is not None
 
 
 def test_save_name_collision_refused_without_explicit_overwrite(tmp_path):
@@ -250,16 +251,18 @@ def test_save_name_collision_refused_without_explicit_overwrite(tmp_path):
     vm.add_source("기준")
     with pytest.raises(ValueError, match="이미 있습니다"):
         vm.save("기준")  # 기존 excel 항목과 동명 — 거부
-    assert vm.registry.load("기준").kind == "excel"  # 원본 무손실
+    assert vm.registry.find_by_name("기준")[1].kind == "excel"  # 원본 무손실
     item = vm.save("기준", overwrite=True)  # 사람 확정 경유(대화상자)만 이 플래그를 쓴다
     assert item.kind == "pipeline"
-    assert vm.registry.load("기준").kind == "pipeline"
+    # 확정 덮어쓰기는 같은 슬롯 자리에 착지한다(§5.3 — 키·수명 유지).
+    assert vm.registry.find_by_name("기준")[1].kind == "pipeline"
+    assert len(vm.registry.list_items()) == 2  # 기준(조립)·참조표 — 2건 유지
 
 
 # ------------------------------------------------------------------ 나라 서브소스 키 주입
 def test_builder_with_nara_subsource_inherits_key_injection(tmp_path):
     reg = _pool_with_csvs(tmp_path)
-    reg.save(
+    reg.add(
         DatasetPoolItem(
             name="나라쿼리", kind="nara",
             opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
@@ -274,13 +277,14 @@ def test_builder_with_nara_subsource_inherits_key_injection(tmp_path):
     assert pv.ok and pv.total == 2  # 키 주입·주입 fetcher 로 실취득 관통
     # 저장물에도 키 흔적 0(KA 불변식 계승).
     vm.save("나라조립")
-    saved = reg.path_for("나라조립").read_text(encoding="utf-8")
+    key, _item = reg.find_by_name("나라조립")
+    saved = reg.slot_path(key).read_text(encoding="utf-8")
     assert _LIVE_KEY not in saved and "service_key" not in saved
 
 
 def test_builder_nara_without_key_previews_loud_error(tmp_path):
     reg = _pool_with_csvs(tmp_path)
-    reg.save(
+    reg.add(
         DatasetPoolItem(
             name="나라쿼리", kind="nara",
             opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},

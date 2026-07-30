@@ -139,9 +139,9 @@ def test_overwrite_confirm_text_restates_actual_victim():
 
 # --------- 근본 조치(리뷰 3R): durable Job 필드의 **분류 완전성** 구조 가드 ---------
 #: 에디터 저장이 세션 값으로 **다시 짓는** 필드 — 곧 편집기가 소유하는 규칙·정체다.
+#: (default_dataset_ref 는 #347(U2 §5.3 판정 D)에서 필드째 폐기 — 분류 대상 자체가 없다.)
 _EDITOR_REBUILDS = {
     "version", "name", "template_path", "mapping", "filename_pattern",
-    "default_dataset_ref",
 }
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {"tags", "last_run_at", "group", "favorited_at", "reviewed_rules"}

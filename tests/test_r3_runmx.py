@@ -65,10 +65,10 @@ def _data_csv(tmp_path: Path) -> str:
     return str(csv)
 
 
-def _pool(tmp_path: Path) -> DatasetPoolRegistry:
+def _pool(tmp_path: Path) -> "tuple[DatasetPoolRegistry, str]":
     pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
-    return pool
+    key = pool.add(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    return pool, key
 
 
 def _sink() -> "tuple[list, callable]":
@@ -99,8 +99,9 @@ def test_job_pool_mount_without_job_is_session_owned(tmp_path):
     """job 훅 개정(데이터-우선 §18.2): 작업 미선택 겨눔을 거절하지 않는다 — 세션이
     데이터를 소유하고, 구 「작업 먼저」 전제(K4 job 가드)는 방향 반전으로 죽었다."""
     pushes, sink = _sink()
-    ctrl = JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    pool, key = _pool(tmp_path)
+    ctrl = JobController(_registry(tmp_path), sink, pool_registry=pool)
+    res = ctrl.dispatch("load_pool", {"key": key})
     assert res["ok"] is True
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["has_data"] is True
@@ -110,9 +111,10 @@ def test_job_pool_mount_without_job_is_session_owned(tmp_path):
 def test_job_pool_load_resets_selection_via_hook(tmp_path):
     """job 훅: 풀 겨눔 성공 = 파일과 동일하게 **선택 0건** 초기화(§18.2, K4 훅 경유)."""
     pushes, sink = _sink()
-    ctrl = JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
+    pool, key = _pool(tmp_path)
+    ctrl = JobController(_registry(tmp_path), sink, pool_registry=pool)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    res = ctrl.dispatch("load_pool", {"key": key})
     assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
     snap = ctrl.snapshot()
     assert snap["record_count"] == 2 and snap["selected_count"] == 0  # 새 데이터 = 선택 0건
@@ -136,7 +138,7 @@ def test_no_stored_data_source_label_attribute(tmp_path):
     """data_source_label 은 저장 상태가 아니어야 한다 — 전파생 중복 상태 재유입 가드(K8)."""
     pushes, sink = _sink()
     controllers = [
-        JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)),
+        JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)[0]),
     ]
     for ctrl in controllers:
         assert not hasattr(ctrl, "data_source_label"), (
@@ -154,11 +156,12 @@ def test_snapshot_label_follows_source_flag_transitions(tmp_path):
     합성에선 리셋할 두 번째 상태 자체가 없다.
     """
     pushes, sink = _sink()
-    ctrl = JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
+    pool, key = _pool(tmp_path)
+    ctrl = JobController(_registry(tmp_path), sink, pool_registry=pool)
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.snapshot()["data_source_label"] == "파일: d.csv"
-    ctrl.dispatch("load_pool", {"name": "7월공고"})
+    ctrl.dispatch("load_pool", {"key": key})
     assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"
     ctrl.dispatch("select_job", {"name": "공고서"})          # 작업 재선택 = 데이터 보존(§18.2)
     assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"

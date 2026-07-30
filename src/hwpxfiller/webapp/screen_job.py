@@ -117,7 +117,6 @@ from .screens import (
     PoolTargetingMixin,
     PushSink,
     default_pool_registry,
-    load_pool_into,
     relink_job_template,
     source_label,
 )
@@ -328,12 +327,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.preferred_work = ""
         self.data_label = ""
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
+        self.data_pool_key = ""  # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
         self.out_dir = ""
         self._marked_fields: "list[str]" = []
         # 레코드 미리보기의 날짜 토큰 기준 시각(F33) — 스냅샷마다 갱신되고 generate 가 재사용
         # (미리보기=실파일명, RC-02 확장). None=미리보기 전(헤드리스 직행).
         self._names_now: "datetime | None" = None
-        # 기본 데이터셋 자동 조준(#53-A) 결과 재진술 — 성공(ok)/실패(warn)를 스냅샷에 노출.
+        # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 성공(ok)/실패(warn)를 스냅샷에 노출.
         self.data_notice_text = ""
         self.data_notice_level = ""
         self._cancel_generation = threading.Event()
@@ -1212,7 +1212,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "data_source_label": source_label(self.data_source, self.data_label),
             # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 「현재 데이터」·고정 프리필.
             "data_target": self._data_target(),
-            # 기본 데이터셋 자동 조준 재진술(#53-A) — 없으면 None.
+            # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 없으면 None.
             "data_notice": (
                 {"level": self.data_notice_level, "text": self.data_notice_text}
                 if self.data_notice_text else None
@@ -1474,6 +1474,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.vm.set_acquired(source, records)  # ack 재평가 포함(RC-22)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
         self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
@@ -1690,8 +1691,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
         ``confirm`` 페이로드 키는 왕복 동형 유지를 위해 수용하되 더는 판정에 쓰지 않는다.
 
-        작업에 기본 데이터셋 참조(#53-A)가 있으면 **세션에 데이터가 없을 때만** 자동
-        조준한다 — 사용자가 이미 마운트한 데이터를 참조가 조용히 덮으면 §18.2 위반이다.
+        (구 기본 데이터셋 자동 조준(#53-A)은 U2 §5.3 판정 D 로 폐기 — 작업 선택은 데이터를
+        세우지 않는다. 데이터는 세션 소유라 이미 마운트돼 있으면 전환에서 생존하고, 없으면
+        사용자가 데이터 선택 면에서 명시로 고른다 — 요구는 세션당 1회다.)
         """
         name = p["name"]
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
@@ -1736,8 +1738,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
             if job.template_path else ""
         )
-        if job.default_dataset_ref and self.datasource is None:
-            self._auto_aim_default(job.default_dataset_ref)
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
@@ -1748,7 +1748,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return rank_available(list(self.registry.list_jobs()), fields)
 
     def _do_prefer_work(self, p: dict) -> dict:
-        """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 3분기를 **Python 이 가른다**.
+        """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 분기를 **Python 이 가른다**.
 
         분기 판정(데이터 준비·호환)은 링1 술어가 이미 소유하므로 표면이 다시 계산하면 같은
         상태를 두 곳이 판정하게 된다(판정 단일 출처). 웹은 반환된 ``reason`` 으로 라우팅만
@@ -1757,8 +1757,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ```text
         데이터 ready + 호환   → 명시 선택(select_job) — RecordRangeState 는 세션 소유라 생존
         데이터 ready + 비호환 → 활성 불변 + 보관. 표면이 「확인 필요」 탭에서 사유를 보인다
-        데이터 없음           → 보관만. 마운트 시 _apply_preferred_work 가 판정한다
+        데이터 없음           → 보관 후 안내 하나 — 데이터 선택을 반드시 지난다(§5.3 판정 D).
+                               마운트 시 _apply_preferred_work 가 판정한다
         ```
+
+        (구 ``default_data`` 분기 — 작업의 기본 데이터 참조(#53-A)를 무데이터에서 자동
+        마운트 — 는 U2 §5.3 판정 D 로 결속 자체가 폐기되며 죽었다. F2 PR-B 판정 I 가
+        걱정한 「#53-A 도달 불가능」은 #53-A 자체가 죽어 소멸. 데이터↔작업 결속은 어느
+        방향으로도 다시 들이지 않는다.)
 
         **비호환에서 활성으로 세우지 않는 이유**: 게이트가 닫힌 채 화면이 "이걸 만들 참"이라고
         말하게 된다. 계약도 그 경우 선택이 아니라 **사유 표면**으로 보내라고 적는다(§19.8).
@@ -1770,16 +1776,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
         self.preferred_work = name
         if self.datasource is None or not self.records:
-            # 데이터가 없고 그 작업이 **기본 데이터 참조**(#53-A)를 가졌으면 보관에서 그치지
-            # 않고 연다(F2 PR-B 판정 I). 좌 목록이 죽기 전에는 목록 클릭이 이 경로의 진입이라
-            # `_do_select_job` 의 자동 조준이 발화했는데, 목록이 죽으면 무데이터 상태에서
-            # 작업을 겨눌 표면이 여기뿐이라 **보관만 하면 #53-A 가 도달 불가능해진다**
-            # (기능 소실). §19.8 의 "확인 없이 데이터를 자동 교체하지 않는다"는 여전히 참이다
-            # — 교체가 아니라 **빈 자리에 첫 마운트**이고, 결과는 `data_notice` 가 재진술한다.
-            if self.registry.load(name).default_dataset_ref:
-                self.preferred_work = ""       # 소비 — 지금 이뤄졌다
-                self._do_select_job({"name": name})
-                return {"promoted": True, "name": name, "reason": "default_data"}
             return {"stored": True, "reason": "no_data", "name": name}
         if any(r.name == name for r in self._ranked_now()):
             self.preferred_work = ""  # 소비 — 지금 이뤄졌다
@@ -1871,26 +1867,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_notice_text = ""
         self.data_notice_level = ""
 
-    def _auto_aim_default(self, ref: str) -> None:
-        """저장된 기본 데이터셋을 실행 시점에 다시 읽어 자동 조준(#53-A).
-
-        실패(참조 부재·죽은 파일·모호 시트·나라 동결·레코드 0건)는 **조용한 폴백 금지** —
-        데이터 미겨눔으로 남기고 원인·복구 동선을 시끄럽게 재진술한다(confirm-or-alarm).
-        A-1-11 승계: 동기 I/O 지연·표시 부재 우려는 이슈 #65 가 소비 시점에 재평가.
-        """
-        res = load_pool_into(self.pool_registry, ref, self._load_pool_records)
-        if res["ok"]:
-            self.data_label = ref
-            self.data_source = "pool"
-            self._after_pool_load(res["records"])
-            self.data_notice_text = f"기본 데이터 '{ref}' 를 자동으로 연결했습니다."
-            self.data_notice_level = "ok"
-        else:
-            self.data_notice_text = (
-                f"기본 데이터 '{ref}' 를 자동으로 열 수 없습니다: {res['error']}\n"
-                "「데이터 선택」에서 다른 데이터를 고르거나 그 참조를 다시 연결하세요."
-            )
-            self.data_notice_level = "warn"
+    # (_auto_aim_default(#53-A 기본 데이터셋 자동 조준)는 U2 §5.3 판정 D 로 삭제 —
+    #  작업↔데이터 결속이 폐기돼 작업 선택이 데이터를 세우지 않는다. #347.)
 
     def _do_relink_template(self, p: dict) -> dict:
         """작업 템플릿 다시 연결(#67) — 공유 확정 게이트 위임 + 기선택 작업 재적재.

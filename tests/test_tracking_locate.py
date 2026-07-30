@@ -28,8 +28,8 @@ def _setup(tmp_path: Path):
     jobs = JobRegistry(tmp_path / "jobs")
     jobs.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile()))
     pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(DatasetPoolItem(name="데이터", kind="excel", opts={"path": str(data)}))
-    pool.save(DatasetPoolItem(name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
+    pool.add(DatasetPoolItem(name="데이터", kind="excel", opts={"path": str(data)}))
+    pool.add(DatasetPoolItem(name="나라", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
     return jobs, pool, tpl, data
 
 
@@ -84,8 +84,8 @@ def test_reveal_and_open_missing_path_is_loud(tmp_path):
 def test_pool_row_locate_path_excel_only():
     """엑셀 참조만 locate_path 를 갖는다 — nara/파이프라인은 파일이 아니라 ""."""
     excel = DatasetPoolRow.from_item(
-        DatasetPoolItem(name="e", kind="excel", opts={"path": "C:/d.xlsx"}))
+        "k1", DatasetPoolItem(name="e", kind="excel", opts={"path": "C:/d.xlsx"}))
     assert excel.locate_path == "C:/d.xlsx"
     nara = DatasetPoolRow.from_item(
-        DatasetPoolItem(name="n", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
+        "k2", DatasetPoolItem(name="n", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
     assert nara.locate_path == ""

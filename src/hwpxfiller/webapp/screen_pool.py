@@ -3,15 +3,20 @@
 웹 패리티 회수(#26 단위 A, #4). 링1 VM 을 **그대로 임포트**해 구동한다: 풀 항목 목록·상태
 배지·상태별 게이트 액션(보관/활성화/삭제)·참조 등록은
 :class:`~hwpxfiller.gui.dataset_pool_state.DatasetPoolViewModel`(Qt-free)가 소유한다.
-표현 계층(카드 렌더·확인 라운드트립)만 웹(js/screens/pool.js)으로 이식한다 — VM 로직
+표현 계층(카드 렌더·확인 라운드트립)만 웹(js/data_picker.js)으로 이식한다 — VM 로직
 재구현이 아니다.
 
-**confirm-or-alarm 경계 2곳** — 조용한 durable 소실을 막는 이 화면의 존재 이유:
+**정체성 = 경로+시트, 이름 = 라벨**(U2 §5.3 판정 C, #347): 항목 조작은 슬롯 ``key`` 로,
+중복 판정은 정체성으로 한다. 종전의 「동명 재등록 = 참조 재지정」 확인 게이트는 **정체성
+재편으로 소멸**했다 — 같은 데이터의 재등록은 참조가 바뀔 수 없고(정체성이 곧 참조) 라벨·
+메모 갱신일 뿐이다. 조용한 durable 소실을 막는 confirm-or-alarm 경계는 이렇게 바뀐다:
+
 - 삭제는 파괴이므로 확인 라운드트립(1차=재진술, 2차=삭제) — tpl ``_do_txt_delete`` 미러.
-- **동명 재등록은 조용한 opts 덮어쓰기 함정**: 같은 이름은 slug 가드를 통과하므로(자기 갱신
-  으로 간주) 기존 항목의 포인터가 무경고로 재지정될 수 있다. 여기서 ``exists()`` 로 선판정해
-  기존 참조 요약과 함께 확인을 요구한다. 다른 이름·같은 slug 는
-  :class:`~hwpxfiller.core.job.SlugCollisionError` 가 막는다 — 날것 전파 대신 문구로 재진술.
+- **같은 데이터 재등록은 라벨 갱신 확정**: 기존 이름을 재진술하고 확인 후 갱신한다.
+  아무것도 안 바뀌는 재등록(같은 이름·빈 메모)은 「이미 고정돼 있습니다」로 조용히 성사.
+- **구판 마이그레이션의 병합**: 다른 이름·같은 경로 2건(이름=키 시절의 잔재)은 조용히
+  하나 버리지 않고 스냅샷 ``duplicates`` 로 표면화, 남길 1건을 사용자가 확정한 뒤에만
+  나머지를 삭제한다(``resolve_duplicate`` — 무손실이 아니므로 자동 병합 금지).
 
 **스코프 경계(조용히 빠뜨리지 않고 명시)**: 나라장터 참조 **등록**은 웹에 노출하지 않는다
 (동결 결정 2026-07-16 — 내부망 API 미확인, ServiceKey 웹 표면 부재). 단 풀에 이미 있는
@@ -21,8 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.dataset_pool import STATUS_ACTIVE, DatasetPoolRegistry
-from ..core.job import SlugCollisionError, classify_existing
+from ..core.dataset_pool import DatasetPoolRegistry
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..gui.dataset_pool_state import (
     DatasetPoolViewModel,
@@ -67,6 +71,7 @@ class PoolController:
     def _rows(self) -> "list[dict]":
         return [
             {
+                "key": r.key,  # 슬롯 키(§5.3) — 행동(사용·보관·활성화·삭제·다시 연결)의 겨눔 대상
                 "name": r.name,
                 "kind": r.kind,
                 "kind_label": r.kind_label,
@@ -92,12 +97,27 @@ class PoolController:
             for path, err in self.vm.corrupted()
         ]
 
+    def _duplicate_groups(self) -> "list[dict]":
+        """같은 데이터(경로+시트) 등록 2+건 — 구판(이름=키) 마이그레이션의 병합 대상(§5.3).
+
+        조용히 하나 버리지 않는다: 그룹째 표면화하고 남길 1건의 확정(``resolve_duplicate``)
+        을 기다린다. 각 항목은 여전히 목록 행으로도 산다(숨김 금지 — 병합 전에도 쓸 수 있다).
+        """
+        return [
+            {
+                "reference": group[0].reference,
+                "entries": [{"key": r.key, "name": r.name} for r in group],
+            }
+            for group in self.vm.duplicates()
+        ]
+
     def snapshot(self) -> dict:
         return {
             "rows": self._rows(),
             "count": self.vm.count_label(),
             "empty": self.vm.is_empty(),
             "corrupted": self._corrupted_rows(),
+            "duplicates": self._duplicate_groups(),
             "result": {"text": self.result_text, "level": self.result_level},
         }
 
@@ -118,115 +138,113 @@ class PoolController:
         self.vm.refresh()
 
     # ---- 상태 전이(비파괴 — 확인 없이 즉시, 되돌림 가능)
-    def _stale_item_result(self, name: str) -> dict:
+    def _stale_item_result(self, label: str) -> dict:
         """stale 카드 공통 처리(C7) — 다른 표면(CLI·에디터 등)에서 삭제된 항목의 카드를
         누르면 FileNotFoundError 가 웹으로 새어 버튼이 무반응이 된다. 조용한 무반응 대신
         loud 재진술 + 재스캔으로 화면을 실상에 맞춘다(confirm-or-alarm)."""
         self.vm.refresh()
-        msg = f"등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다."
+        msg = f"등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {label}. 목록을 새로 읽었습니다."
         self._set_result(msg, "danger")
         return {"ok": False, "error": msg}
 
+    def _row_name(self, key: str) -> str:
+        """키 → 표시 라벨(결과 문구용). 못 찾으면 키 자체(추측 금지 — 키도 사실이다)."""
+        row = next((r for r in self.vm.rows() if r.key == key), None)
+        return row.name if row is not None else key
+
     def _do_archive(self, p: dict) -> dict:
+        name = self._row_name(p["key"])
         try:
-            self.vm.archive(p["name"])
+            self.vm.archive(p["key"])
         except FileNotFoundError:
-            return self._stale_item_result(p["name"])
-        self._set_result(f"데이터셋을 보관했습니다: {p['name']}")
+            return self._stale_item_result(name)
+        self._set_result(f"데이터셋을 보관했습니다: {name}")
         return {"ok": True}
 
     def _do_activate(self, p: dict) -> dict:
+        name = self._row_name(p["key"])
         try:
-            self.vm.activate(p["name"])
+            self.vm.activate(p["key"])
         except FileNotFoundError:
-            return self._stale_item_result(p["name"])
-        self._set_result(f"데이터셋을 활성화했습니다: {p['name']}")
+            return self._stale_item_result(name)
+        self._set_result(f"데이터셋을 활성화했습니다: {name}")
         return {"ok": True}
 
     # ---- 삭제(파괴 — 확인 라운드트립, tpl _do_txt_delete 미러)
     def _do_delete(self, p: dict) -> dict:
-        name = p["name"]
+        key = p["key"]
         if not p.get("confirm"):
             try:
-                item = self.vm.registry.load(name)
+                item = self.vm.registry.load(key)
             except FileNotFoundError:
-                return self._stale_item_result(name)
+                return self._stale_item_result(self._row_name(key))
             return {
-                "ok": True, "needs_confirm": True, "name": name,
+                "ok": True, "needs_confirm": True, "key": key,
                 "confirm_text": (
                     f"등록 데이터 참조를 삭제합니다(원본 파일은 지우지 않습니다):\n"
-                    f"{name} ({reference_summary(item)})"
+                    f"{item.name} ({reference_summary(item)})"
                 ),
             }
-        self.vm.delete(name)
+        name = self._row_name(key)
+        self.vm.delete(key)
+        self.vm.refresh()
         self._set_result(f"데이터셋 참조를 삭제했습니다: {name}")
         return {"ok": True}
 
     # ---- 등록(참조만 — 경로 포인터, 스냅샷·데이터 없음)
     def _do_register_excel(self, p: dict) -> dict:
-        """엑셀/CSV 참조 등록 — 동명 덮어쓰기는 확인 승격, slug 충돌은 문구로 loud.
+        """엑셀/CSV 참조 등록 — 중복 판정은 **정체성**(경로+시트, §5.3 C)이다.
 
-        검증 실패(빈 이름 등 ValueError)와 slug 충돌(SlugCollisionError)은 날것 예외로
-        웹에 새지 않게 잡아 사용자 문구로 재진술한다 — 실패가 조용하지도, 기술적이지도 않게.
+        - 같은 데이터 미등록 → 새 항목 추가.
+        - 같은 데이터가 이미 있고 **바뀌는 게 없으면**(같은 이름·빈 메모) → 「이미
+          고정돼 있습니다」 성사(확인 소음 금지 — 결정이 없다).
+        - 같은 데이터가 이미 있고 이름·메모가 바뀌면 → 기존 이름을 재진술하고 확인 후
+          **라벨 갱신**(참조·수명 불변 — 종전 「참조 재지정」 위험은 정체성 재편으로 소멸).
+
+        검증 실패(빈 이름 등 ValueError)는 날것 예외로 웹에 새지 않게 잡아 사용자 문구로
+        재진술한다 — 실패가 조용하지도, 기술적이지도 않게.
         """
         name = (p.get("name") or "").strip()
         path = p.get("path") or ""
         sheet = p.get("sheet") or None
         note = p.get("note") or ""
         # 다중 시트 확정 게이트(#33) — 시트 미지정 참조는 실행 복원 때 첫 시트를 조용히 읽는다.
-        # 워크북에 시트가 여럿이면 등록을 막고 시트 지정을 요구한다(에디터 자동등록은 확정
-        # 시트를 동봉하는데 수동 등록만 뚫려 있던 구멍). 판정+문구·읽기 실패(파일 미개봉 참조
-        # 의미) 통과 정책은 ambiguous_sheet_error 단일 출처 — 겨눔 시점 단일 관문과 공유.
+        # 워크북에 시트가 여럿이면 등록을 막고 시트 지정을 요구한다. 판정+문구·읽기 실패(파일
+        # 미개봉 참조 의미) 통과 정책은 ambiguous_sheet_error 단일 출처 — 겨눔 시점 단일 관문과 공유.
         if path and sheet is None:
             msg = ambiguous_sheet_error(path)
             if msg:
                 self._set_result(msg, "danger")
                 return {"ok": False, "error": msg}
-        # 동명 기존 항목 = 같은 slug 라 가드를 통과해 opts 가 조용히 재지정된다(ST-09 의 사각).
-        # 1차 호출에선 기존 참조 요약을 재진술하고 확인을 요구한다. 분류(동명/충돌/손상)는
-        # classify_existing 단일 출처 — 진짜 동명("same")만 확인 분기로 보내고, 충돌·손상은
-        # 아래 slug 가드가 SlugCollisionError 로 loud 판정하게 통과시킨다.
-        kind, existing = (
-            classify_existing(self.vm.registry, name) if name else ("absent", None)
-        )
-        if name and not p.get("confirm"):
-            if kind == "same":
-                # 재등록은 참조 교체만 한다 — 보관 상태·메모·생성시각은 보존되므로
-                # (아래 확정 경로) 문구도 그 계약을 재진술한다(C3). 재활성화를 여기서 함께
-                # 묻지 않는 이유: 확인 1회에 두 결정(참조 교체+활성화)을 겹치면 사용자가
-                # 어느 쪽을 승인했는지 모호해진다 — 활성화는 카드의 [활성화] 버튼이 이미
-                # 명시적 단독 경로다(confirm-or-alarm: 결정 1확인 1).
-                keep = (
-                    "\n(보관 상태는 유지됩니다. 실행 후보로 되돌리려면 [활성화])"
-                    if existing.status != STATUS_ACTIVE else ""
-                )
-                return {
-                    "ok": True, "needs_confirm": True, "name": name,
-                    "confirm_text": (
-                        f"같은 이름의 등록 데이터가 이미 있습니다:\n"
-                        f"{name} ({reference_summary(existing)})\n\n"
-                        # cross-kind(나라/파이프라인→엑셀) 전이는 확정 경로가 kind 를
-                        # excel 로 정규화하므로 여기서 함께 재진술한다(r4 — 확인 문구와
-                        # 실제 전이 불일치 금지). 같은 kind 면 빈 문자열(소음 금지).
-                        f"등록하면 이 참조가 새 파일로 바뀝니다."
-                        f"{kind_transition_clause(existing)}{keep}"
-                    ),
-                }
         try:
-            # 확인 모달은 "기존 항목 교체"에 대한 승인이다. 모달을 읽는 사이 다른 화면이
-            # 항목을 삭제했다면 이를 신규 등록 승인으로 바꾸지 않는다(삭제 부활 방지).
-            if p.get("confirm") and kind == "absent":
-                return self._stale_item_result(name)
-            # 동명 확정 재등록은 항목 통째 교체가 아니라 참조(opts)만 갱신한다(C3) —
-            # 통째 교체는 보관이 조용히 active 로 복귀(실행 후보 재등장)하고
-            # note·created_at 이 소실되는 durable 수명 파괴였다(에디터 _do_save 미러).
-            if kind == "same":
-                item = self.vm.update_excel_reference(existing, path, sheet=sheet, note=note)
+            same = self.vm.find_same_data(path, sheet) if path else None
+            if same is not None:
+                key, existing = same
+                changes_name = bool(name) and name != existing.name
+                changes_note = bool(note) and note != existing.note
+                if not changes_name and not changes_note:
+                    # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접는다.
+                    self._set_result(
+                        f"이미 고정돼 있습니다: {existing.name} "
+                        f"({reference_summary(existing)})"
+                    )
+                    return {"ok": True, "key": key, "name": existing.name}
+                if not p.get("confirm"):
+                    return {
+                        "ok": True, "needs_confirm": True, "key": key, "name": name,
+                        "confirm_text": (
+                            f"이 데이터는 이미 '{existing.name}' 으로 고정돼 있습니다"
+                            f"({reference_summary(existing)}).\n"
+                            f"같은 등록을 유지하고 이름·메모를 갱신합니다: '{name}'."
+                        ),
+                    }
+                item = self.vm.relabel(key, name, note=note)
             else:
+                if p.get("confirm"):
+                    # 확인 모달은 "기존 등록 갱신"에 대한 승인이다. 모달을 읽는 사이 다른
+                    # 화면이 항목을 삭제했다면 이를 신규 등록 승인으로 바꾸지 않는다.
+                    return self._stale_item_result(name)
                 item = self.vm.register_excel(name, path, sheet=sheet, note=note)
-        except SlugCollisionError as exc:
-            self._set_result(str(exc), "danger")
-            return {"ok": False, "error": str(exc)}
         except FileNotFoundError:
             # 분류 직후~mutate 잠금 획득 사이 삭제된 경우도 신규 등록으로 부활시키지 않는다.
             return self._stale_item_result(name)
@@ -239,7 +257,105 @@ class PoolController:
             msg = f"등록 데이터 저장에 실패했습니다: {exc}"
             self._set_result(msg, "danger")
             return {"ok": False, "error": msg}
-        # 동명 갱신은 참조(opts) 교체지 새 항목 추가가 아니다 — 실제 일어난 일을 재진술(#45).
-        verb = "갱신" if kind == "same" else "추가"
+        verb = "갱신" if same is not None else "추가"
         self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} ({reference_summary(item)})")
         return {"ok": True, "name": item.name}
+
+    # ---- 다시 연결(#67 → §5.3 키 재편) — 같은 슬롯의 참조 교체(수명 보존)
+    def _do_relink(self, p: dict) -> dict:
+        """끊긴(또는 갈아탈) 참조를 새 파일로 — **슬롯을 유지**한 채 kind+opts 만 바꾼다.
+
+        내용물 교체가 이 개체의 정상 수명 사건이라(§5.3 — 월별 파일 갈아끼우기) 정체성이
+        바뀌어도 슬롯·상태·생성시각은 산다. 종전엔 동명 재등록 confirm 경로가 이 일을
+        겸했지만, 중복 판정이 정체성 기준이 되며 갈라졌다: 재등록은 「같은 데이터인가」를,
+        여기는 「이 슬롯이 무엇을 가리키게 할 것인가」를 판정한다. 확정 전 1차 호출은
+        기존→새 참조(+이름 변경·kind 전이)를 재진술한다(durable 뮤테이션 확인 1회).
+        """
+        key = p["key"]
+        path = p.get("path") or ""
+        sheet = p.get("sheet") or None
+        note = p.get("note") or ""
+        name = (p.get("name") or "").strip()
+        if not path:
+            msg = "새 파일 경로가 비어 있습니다."
+            self._set_result(msg, "danger")
+            return {"ok": False, "error": msg}
+        if sheet is None:  # 다중 시트 확정 게이트(#33) — 등록 경로와 같은 단일 출처
+            msg = ambiguous_sheet_error(path)
+            if msg:
+                self._set_result(msg, "danger")
+                return {"ok": False, "error": msg}
+        try:
+            item = self.vm.registry.load(key)
+        except (FileNotFoundError, ValueError):
+            return self._stale_item_result(name or key)
+        if not p.get("confirm"):
+            rename_clause = (
+                f"\n이름도 '{item.name}' → '{name}' 으로 바뀝니다."
+                if name and name != item.name else ""
+            )
+            return {
+                "ok": True, "needs_confirm": True, "key": key,
+                "confirm_text": (
+                    f"'{item.name}' 의 참조를 새 파일로 바꿉니다.\n"
+                    f"기존: {reference_summary(item)}\n새 파일: {path}"
+                    f"{kind_transition_clause(item)}{rename_clause}"
+                ),
+            }
+        try:
+            updated = self.vm.update_excel_reference(
+                key, path, sheet=sheet, note=note, name=name
+            )
+        except FileNotFoundError:
+            return self._stale_item_result(name or key)
+        except ValueError as exc:  # 새 참조가 다른 슬롯의 정체성과 겹침 등 — loud
+            self._set_result(str(exc), "danger")
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            msg = f"등록 데이터 저장에 실패했습니다: {exc}"
+            self._set_result(msg, "danger")
+            return {"ok": False, "error": msg}
+        self._set_result(
+            f"참조를 다시 연결했습니다: {updated.name} ({reference_summary(updated)})"
+        )
+        return {"ok": True, "name": updated.name}
+
+    # ---- 구판 병합(§5.3 마이그레이션 — 무손실 아님, 사용자 확정으로만)
+    def _do_resolve_duplicate(self, p: dict) -> dict:
+        """같은 데이터 등록 그룹에서 남길 1건 확정 → 나머지 삭제(확인 라운드트립).
+
+        1차 호출은 **무엇이 남고 무엇이 지워지는지**를 재진술만 한다 — 이름·메모가 다른
+        등록들을 지우는 파괴라 조용한 자동 병합은 금지다(confirm-or-alarm). 확인 사이에
+        그룹이 바뀌었으면(항목 삭제·재연결) 낡은 확정을 실행하지 않고 다시 재진술한다.
+        """
+        keep = p["keep"]
+        # 판정은 **지금 디스크**로 다시 내린다 — 확인 모달을 읽는 사이 다른 표면(CLI·다른
+        # 창)이 그룹을 정리했으면 낡은 스냅샷의 확정이 남은 항목을 지우는 파괴가 된다.
+        self.vm.refresh()
+        group = next(
+            (g for g in self.vm.duplicates() if any(r.key == keep for r in g)), None
+        )
+        if group is None:
+            self.vm.refresh()
+            msg = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다."
+            self._set_result(msg, "danger")
+            return {"ok": False, "error": msg}
+        keep_row = next(r for r in group if r.key == keep)
+        drop = [r for r in group if r.key != keep]
+        if not p.get("confirm"):
+            dropped = ", ".join(f"'{r.name}'" for r in drop)
+            return {
+                "ok": True, "needs_confirm": True, "keep": keep,
+                "confirm_text": (
+                    f"같은 데이터({keep_row.reference})를 가리키는 등록 {len(group)}건을 "
+                    f"'{keep_row.name}' 하나로 합칩니다.\n"
+                    f"삭제되는 등록: {dropped} — 그 이름·메모는 사라집니다"
+                    "(원본 파일은 지우지 않습니다)."
+                ),
+            }
+        for r in drop:
+            self.vm.delete(r.key)
+        self._set_result(
+            f"중복 등록 {len(drop)}건을 정리하고 '{keep_row.name}' 을(를) 남겼습니다."
+        )
+        return {"ok": True, "kept": keep_row.name, "removed": len(drop)}

@@ -95,9 +95,12 @@ def default_pool_registry() -> DatasetPoolRegistry:
 
 
 def load_pool_item_checked(
-    pool_registry: DatasetPoolRegistry, name: str
+    pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetPoolItem:
-    """이름으로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
+    """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
+
+    겨눔의 정체는 슬롯 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨). 거절 문구는 사람이
+    아는 어휘(항목 이름)로 재진술한다.
 
     **다중 시트 확정 게이트(#33) 재확립:** 시트를 지정하지 않은 엑셀 참조는 실행 복원 때
     ``ExcelDataSource(sheet=None)`` 이 **조용히 첫 시트**를 읽는다 — 파일 선택 경로가 #33 에서
@@ -108,15 +111,15 @@ def load_pool_item_checked(
     공유 — 두 사이트의 문구 표류 봉인), 죽은 참조는 이어지는 실제 로드가 재진술.
     """
     try:
-        item = pool_registry.load(name)
-    except FileNotFoundError:
-        raise ValueError(f"등록 데이터를 찾을 수 없습니다: {name}") from None
+        item = pool_registry.load(key)
+    except (FileNotFoundError, ValueError):
+        raise ValueError("등록 데이터를 찾을 수 없습니다(이미 삭제된 항목).") from None
     if item.kind == "nara":
         raise ValueError(NARA_FROZEN_TEXT)
     if item.kind == "excel" and not item.opts.get("sheet"):
         err = ambiguous_sheet_error(
             str(item.opts.get("path", "")),
-            prefix=f"등록 데이터 '{name}' 에 시트가 지정되지 않았습니다. ",
+            prefix=f"등록 데이터 '{item.name}' 에 시트가 지정되지 않았습니다. ",
         )
         if err:
             raise ValueError(err)
@@ -129,7 +132,7 @@ NO_ROWS_TEXT = "데이터에 행이 없습니다."
 
 
 def load_pool_into(
-    pool_registry: DatasetPoolRegistry, name: str, loader: "Callable[[DatasetPoolItem], list]"
+    pool_registry: DatasetPoolRegistry, key: str, loader: "Callable[[DatasetPoolItem], list]"
 ) -> dict:
     """등록 데이터 겨눔의 공유 실행부 — 나라 동결·모호 시트·죽은 참조·레코드 0건을 단일
     문구 체계로 재진술한다(run/txt 화면 동형).
@@ -141,7 +144,7 @@ def load_pool_into(
     '데이터') — 여기로 수렴해 락스텝 편집 부담과 재표류를 없앤다.
     """
     try:
-        item = load_pool_item_checked(pool_registry, name)
+        item = load_pool_item_checked(pool_registry, key)
         records = loader(item)
     except ValueError as exc:  # 동결 거절·항목 부재·모호 시트 — 문구 그대로 재진술
         return {"ok": False, "error": str(exc)}
@@ -309,6 +312,8 @@ class PoolTargetingMixin:
     pool_registry: DatasetPoolRegistry
     data_label: str
     data_source: str  # ''(미겨눔) | 'file' | 'pool' — 라벨은 source_label 이 합성(K8)
+    # 겨눈 풀 슬롯 키(U2 §5.3) — 라벨은 개명 자유라 세션이 참조 정체를 따로 든다.
+    data_pool_key: str = ""
 
     def _pool_guard(self) -> "str | None":
         """겨눔 전제조건 검사 — 미충족이면 사용자 문구, 충족이면 None."""
@@ -323,31 +328,34 @@ class PoolTargetingMixin:
         return self.vm.load_pool_item
 
     def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 이름으로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
+        """등록 데이터 항목을 슬롯 키로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
 
-        실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 계열과
-        같은 문법. 성공 시 라벨은 스냅샷이 소스 플래그로 합성해 반영한다(K8).
+        겨눔의 정체는 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨이라 같은 이름 2건을
+        구별하지 못한다). 실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로
+        표시) — generate 계열과 같은 문법. 성공 시 라벨은 스냅샷이 소스 플래그로 합성해
+        반영한다(K8).
         """
         blocked = self._pool_guard()
         if blocked:
             return {"ok": False, "error": blocked}
-        name = p["name"]
-        res = load_pool_into(self.pool_registry, name, self._pool_loader())
+        key = p["key"]
+        res = load_pool_into(self.pool_registry, key, self._pool_loader())
         if not res["ok"]:
             return res
-        self.data_label = name
+        item = res["item"]
+        self.data_label = item.name
         self.data_source = "pool"
+        self.data_pool_key = key
         # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은 뜨지 않지만(이미 고정된
         # 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야 한다. kind 판정은
         # DatasetPoolRow.locate_path 와 동형(excel 만 파일 경로 — opts["path"]만 보면 두 사이트의
         # 판정이 표류한다, PR #70 리뷰).
-        item = res["item"]
         raw = item.opts.get("path") if isinstance(item.opts, dict) else None
         self.data_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
         raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
         self.data_sheet = raw_sheet if isinstance(raw_sheet, str) else ""
         self._after_pool_load(res["records"])
-        return {"ok": True, "label": source_label("pool", name)}
+        return {"ok": True, "label": source_label("pool", item.name)}
 
 
 class ScreenController(Protocol):

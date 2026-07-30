@@ -1,11 +1,17 @@
 """데이터 관리(pool) 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
 웹 패리티 회수(#26 단위 A, #4)의 회귀 심. 풀 목록·상태 배지·상태별 게이트 액션(보관/
-활성화/삭제 확인 라운드트립)·참조 등록(동명 확인 승격·slug 충돌 문구 재진술) end-to-end 를
-창 없이 확인한다. 레지스트리는 tmp 주입(위치-불가지) — 파일 피커만 브리지 담당.
+활성화/삭제 확인 라운드트립)·참조 등록 end-to-end 를 창 없이 확인한다. 레지스트리는 tmp
+주입(위치-불가지) — 파일 피커만 브리지 담당.
+
+**정체성 재편(#347, U2 §5.3)**: 항목 조작은 슬롯 ``key``, 등록 중복 판정은 정체성
+(경로+시트)이다. 이름은 순수 라벨(중복 허용) — 구 동명 확인·slug 충돌 게이트는 소멸했고,
+같은 데이터 재등록은 라벨 갱신 확정 또는 「이미 고정됨」 재진술로 접힌다. 구판(이름=키)이
+남긴 같은 정체성 2건은 duplicates 로 loud 표면화되고 사용자 확정(``resolve_duplicate``)
+으로만 병합된다.
 
 결정 회귀: 나라장터 등록 미노출(동결 2026-07-16 — ``register_nara`` 액션 없음), 단 기존
-nara 항목은 숨기지 않고 표시. 동명 재등록의 조용한 opts 재지정 금지(적대적 검토 지적).
+nara 항목은 숨기지 않고 표시.
 """
 from __future__ import annotations
 
@@ -54,38 +60,60 @@ def test_register_excel_with_sheet_keeps_sheet_pointer(tmp_path):
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel",
                   {"name": "낙찰", "path": "C:/d/멀티.xlsx", "sheet": "낙찰현황"})
-    assert reg.load("낙찰").opts["sheet"] == "낙찰현황"
-    assert "시트 낙찰현황" in ctrl.snapshot()["rows"][0]["reference"]
+    row = ctrl.snapshot()["rows"][0]
+    assert reg.load(row["key"]).opts["sheet"] == "낙찰현황"
+    assert "시트 낙찰현황" in row["reference"]
 
 
-def test_same_name_reregister_needs_confirm_then_overwrites(tmp_path):
-    """동명 재등록 = 조용한 참조 재지정 함정 — 1차는 기존 참조 재진술, confirm 시에만 덮는다."""
+def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
+    """같은 데이터(경로+시트) 재등록은 2건이 아니라 기존 등록의 라벨 갱신이다(§5.3 C).
+
+    1차는 기존 이름을 재진술하는 확인 승격, confirm 시에만 라벨·메모가 갱신된다 —
+    참조는 바뀔 수 없다(정체성이 곧 참조).
+    """
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
     assert "추가했습니다" in ctrl.snapshot()["result"]["text"]  # 신규 = 추가
 
-    res1 = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/b.xlsx"})
+    res1 = ctrl.dispatch("register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx"})
     assert res1["needs_confirm"] is True
-    assert "a.xlsx" in res1["confirm_text"]  # 기존 참조 요약 재진술
-    assert reg.load("발주").opts["path"] == "C:/data/a.xlsx"  # 1차는 무변형
+    assert "'발주'" in res1["confirm_text"]      # 기존 이름 재진술
+    assert "a.xlsx" in res1["confirm_text"]      # 기존 참조 요약 재진술
+    assert [r.name for r in ctrl.vm.rows()] == ["발주"]  # 1차는 무변형
 
     res2 = ctrl.dispatch(
-        "register_excel", {"name": "발주", "path": "C:/data/b.xlsx", "confirm": True})
+        "register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx", "confirm": True})
     assert res2["ok"] is True
-    assert reg.load("발주").opts["path"] == "C:/data/b.xlsx"
-    # 동명 갱신은 항목 추가가 아니라 참조 교체 — 결과줄이 실제 일어난 일을 말한다(#45).
+    rows = ctrl.snapshot()["rows"]
+    assert len(rows) == 1                        # 2건이 되지 않는다
+    assert rows[0]["name"] == "발주 최신"
+    assert reg.load(rows[0]["key"]).opts["path"] == "C:/data/a.xlsx"  # 참조 불변
     assert "갱신했습니다" in ctrl.snapshot()["result"]["text"]
 
 
-def test_slug_collision_is_worded_not_raised(tmp_path):
-    """다른 이름·같은 slug 는 날것 예외로 새지 않고 문구로 loud 재진술(danger 결과줄)."""
-    ctrl, reg, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel", {"name": "예산/2026", "path": "C:/d/a.xlsx"})
+def test_same_data_same_name_reregister_is_noop_restated(tmp_path):
+    """바뀌는 게 없는 재등록(같은 이름·빈 메모)은 확인 소음 없이 「이미 고정됨」으로 접힌다."""
+    ctrl, _, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    assert res["ok"] is True and "needs_confirm" not in res
+    assert "이미 고정돼 있습니다" in ctrl.snapshot()["result"]["text"]
+    assert len(ctrl.snapshot()["rows"]) == 1
 
-    res = ctrl.dispatch("register_excel", {"name": "예산_2026", "path": "C:/d/b.xlsx"})
-    assert res["ok"] is False and "소실됩니다" in res["error"]
-    assert ctrl.snapshot()["result"]["level"] == "danger"
-    assert reg.load("예산/2026").opts["path"] == "C:/d/a.xlsx"  # 기존 항목 무변형
+
+def test_same_name_different_data_are_two_entries(tmp_path):
+    """이름은 순수 라벨(§5.3 C) — 같은 이름·다른 파일은 확인 없이 2건으로 공존한다.
+
+    구 이름=키 시절의 동명 확인 게이트(참조 재지정 함정)·slug 충돌 거절은 정체성 재편으로
+    소멸했다 — 이름이 참조를 드는 소비자 자체가 없다(`default_dataset_ref` 폐기).
+    """
+    ctrl, _, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "매출", "path": "C:/d/1월.xlsx"})
+    res = ctrl.dispatch("register_excel", {"name": "매출", "path": "C:/d/2월.xlsx"})
+    assert res["ok"] is True and "needs_confirm" not in res
+    rows = ctrl.snapshot()["rows"]
+    assert [r["name"] for r in rows] == ["매출", "매출"]
+    assert len({r["key"] for r in rows}) == 2  # 슬롯 키가 둘을 가른다
 
 
 def test_empty_name_is_worded_not_raised(tmp_path):
@@ -99,14 +127,15 @@ def test_state_transitions_gate_actions(tmp_path):
     """활성→[보관][삭제], 보관→[활성화][삭제], 활성화 복귀 — 2상태 게이트 단일 출처(#5)."""
     ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
 
-    ctrl.dispatch("archive", {"name": "발주"})
+    ctrl.dispatch("archive", {"key": key})
     row = ctrl.snapshot()["rows"][0]
     assert row["status"] == "archived" and row["badge_label"] == "보관"
     assert row["badge_level"] == "muted"
     assert [a["key"] for a in row["actions"]] == ["activate", "delete"]
 
-    ctrl.dispatch("activate", {"name": "발주"})
+    ctrl.dispatch("activate", {"key": key})
     assert ctrl.snapshot()["rows"][0]["status"] == "active"
 
 
@@ -115,38 +144,42 @@ def test_retire_action_is_rejected_loudly(tmp_path):
     ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
     with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
-        ctrl.dispatch("retire", {"name": "발주"})
+        ctrl.dispatch("retire", {"key": ctrl.snapshot()["rows"][0]["key"]})
 
 
 def test_delete_two_phase_confirm_roundtrip(tmp_path):
     """1차=needs_confirm(무변형·원본 미삭제 재진술), 2차 confirm=삭제. 조용한 파괴 금지."""
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
 
-    res1 = ctrl.dispatch("delete", {"name": "발주"})
+    res1 = ctrl.dispatch("delete", {"key": key})
     assert res1["needs_confirm"] is True
     assert "원본 파일은 지우지 않습니다" in res1["confirm_text"]
-    assert reg.exists("발주")  # 1차는 무변형
+    assert "발주" in res1["confirm_text"]  # 사람 어휘(라벨) 재진술
+    assert reg.exists(key)  # 1차는 무변형
 
-    ctrl.dispatch("delete", {"name": "발주", "confirm": True})
-    assert not reg.exists("발주")
+    ctrl.dispatch("delete", {"key": key, "confirm": True})
+    assert not reg.exists(key)
     assert ctrl.snapshot()["empty"] is True
 
 
-def test_confirmed_reregister_does_not_resurrect_concurrently_deleted_item(tmp_path):
-    """기존 참조 교체 확인은, 확인 중 삭제된 항목의 신규 생성 승인으로 변하지 않는다."""
+def test_confirmed_relabel_does_not_resurrect_concurrently_deleted_item(tmp_path):
+    """라벨 갱신 확인은, 확인 중 삭제된 항목의 신규 생성 승인으로 변하지 않는다."""
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
-    first = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/b.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    first = ctrl.dispatch("register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx"})
     assert first["needs_confirm"] is True
 
-    DatasetPoolRegistry(reg.directory).delete("발주")
+    DatasetPoolRegistry(reg.directory).delete(key)
     second = ctrl.dispatch(
-        "register_excel", {"name": "발주", "path": "C:/data/b.xlsx", "confirm": True}
+        "register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx", "confirm": True}
     )
 
     assert second["ok"] is False and "삭제" in second["error"]
-    assert not reg.exists("발주")
+    assert not reg.exists(key)
+    assert ctrl.snapshot()["rows"] == []  # 신규 생성으로 부활하지 않았다
 
 
 def test_unknown_action_is_loud(tmp_path):
@@ -165,7 +198,7 @@ def test_corrupt_pool_file_is_quarantined_not_boot_crash(tmp_path):
     경로, 7화면 전부)이 손상 파일 하나로 무너졌다. 지금은 정상 항목이 살고 손상은 재진술된다.
     """
     reg = DatasetPoolRegistry(tmp_path / "datasets")
-    reg.save(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
+    reg.add(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
     # 손상 파일 투입(잘린 JSON) — 손편집·크래시 잔여 시뮬레이션.
     (reg.directory / ("깨진" + reg.SUFFIX)).write_text("{ not json", encoding="utf-8")
 
@@ -185,17 +218,19 @@ def test_register_excel_multi_sheet_without_sheet_is_blocked(tmp_path):
     ctrl, reg, _ = _controller(tmp_path)
     res = ctrl.dispatch("register_excel", {"name": "모호", "path": str(MULTI_SHEET)})
     assert res["ok"] is False and "시트" in res["error"]
-    assert not reg.exists("모호")                     # 등록되지 않음(모호 참조 방지)
+    assert ctrl.snapshot()["rows"] == []              # 등록되지 않음(모호 참조 방지)
     # 시트를 지정하면 통과 — 확정 시트가 참조에 남는다.
     res2 = ctrl.dispatch(
         "register_excel", {"name": "확정", "path": str(MULTI_SHEET), "sheet": "낙찰현황"})
-    assert res2["ok"] is True and reg.load("확정").opts["sheet"] == "낙찰현황"
+    assert res2["ok"] is True
+    key = ctrl.snapshot()["rows"][0]["key"]
+    assert reg.load(key).opts["sheet"] == "낙찰현황"
 
 
 def test_existing_nara_item_is_shown_not_hidden(tmp_path):
     """나라 등록은 동결로 미노출이지만, 기존 nara 항목은 숨기지 않고 표시한다(조용한 은닉 금지)."""
     ctrl, reg, _ = _controller(tmp_path)
-    reg.save(DatasetPoolItem(
+    reg.add(DatasetPoolItem(
         name="나라 7월", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607310000"}))
     ctrl.dispatch("refresh", {})
 
@@ -228,9 +263,108 @@ def test_nara_row_has_no_missing_badge(tmp_path):
     from hwpxfiller.core.dataset_pool import DatasetPoolItem
 
     ctrl, reg, _ = _controller(tmp_path)
-    reg.save(DatasetPoolItem(
+    reg.add(DatasetPoolItem(
         name="나라7월", kind="nara",
         opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     ctrl.dispatch("refresh", {})
     row = ctrl.snapshot()["rows"][0]
     assert row["missing"] is False and row["locate_path"] == ""
+
+
+# ------------------------------------------------- 다시 연결 액션(#67 → §5.3 키 재편)
+def test_relink_two_phase_keeps_slot_and_lifecycle(tmp_path):
+    """relink 1차=기존→새 참조 재진술(무변형), confirm=같은 슬롯의 참조 교체(수명 보존)."""
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx", "note": "7월분"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    ctrl.dispatch("archive", {"key": key})  # 보관 수명이 재연결에도 보존되는지 본다
+
+    res1 = ctrl.dispatch("relink", {"key": key, "path": "C:/d/이동된.xlsx", "sheet": ""})
+    assert res1["needs_confirm"] is True
+    assert "a.xlsx" in res1["confirm_text"] and "이동된.xlsx" in res1["confirm_text"]
+    assert reg.load(key).opts["path"] == "C:/d/a.xlsx"  # 1차는 무변형
+
+    res2 = ctrl.dispatch(
+        "relink", {"key": key, "path": "C:/d/이동된.xlsx", "sheet": "", "confirm": True})
+    assert res2["ok"] is True
+    updated = reg.load(key)
+    assert updated.opts["path"] == "C:/d/이동된.xlsx"
+    assert updated.status == "archived"   # 수명 보존 — 조용한 재활성화 금지
+    assert updated.note == "7월분"        # 빈 메모 입력 = 진술 없음(보존)
+
+
+def test_relink_rejects_identity_of_another_slot(tmp_path):
+    """다른 슬롯이 이미 가리키는 데이터로는 재연결 못 한다 — 같은 데이터 2건 봉쇄(loud)."""
+    ctrl, _, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "A", "path": "C:/d/a.xlsx"})
+    ctrl.dispatch("register_excel", {"name": "B", "path": "C:/d/b.xlsx"})
+    rows = {r["name"]: r for r in ctrl.snapshot()["rows"]}
+    res = ctrl.dispatch(
+        "relink", {"key": rows["B"]["key"], "path": "C:/d/a.xlsx", "sheet": "", "confirm": True})
+    assert res["ok"] is False and "이미" in res["error"]
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+
+
+# ------------------------------------------------- 구판 병합(§5.3 마이그레이션 loud 경로)
+def _legacy_write(reg: DatasetPoolRegistry, name: str, path: str) -> None:
+    """구판(이름 slug 파일명) .dataset.json 을 그대로 흉내낸다 — 마이그레이션 입력."""
+    import json as _json
+
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    item = DatasetPoolItem(name=name, kind="excel", opts={"path": path})
+    (reg.directory / f"{name}{reg.SUFFIX}").write_text(
+        _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_legacy_duplicates_surface_loudly_in_snapshot(tmp_path):
+    """다른 이름·같은 경로 2건(구판 잔재)은 숨기지 않고 duplicates 로 재진술된다."""
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    snap = ctrl.snapshot()
+    assert len(snap["rows"]) == 2                       # 병합 전에도 둘 다 목록에 산다
+    assert len(snap["duplicates"]) == 1
+    group = snap["duplicates"][0]
+    assert {e["name"] for e in group["entries"]} == {"7월 공고", "공고 최신"}
+    assert "same.xlsx" in group["reference"]
+
+
+def test_resolve_duplicate_two_phase_confirm(tmp_path):
+    """병합은 1차=무엇이 남고 지워지는지 재진술(무변형), confirm 시에만 나머지 삭제."""
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    keep = next(
+        e["key"] for e in ctrl.snapshot()["duplicates"][0]["entries"]
+        if e["name"] == "공고 최신"
+    )
+
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    assert res1["needs_confirm"] is True
+    assert "'공고 최신'" in res1["confirm_text"]        # 남는 것
+    assert "'7월 공고'" in res1["confirm_text"]          # 지워지는 것 — 둘 다 재진술
+    assert len(ctrl.snapshot()["rows"]) == 2             # 1차는 무변형
+
+    res2 = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
+    assert res2["ok"] is True and res2["kept"] == "공고 최신" and res2["removed"] == 1
+    snap = ctrl.snapshot()
+    assert [r["name"] for r in snap["rows"]] == ["공고 최신"]
+    assert snap["duplicates"] == []
+
+
+def test_resolve_duplicate_stale_group_is_restated(tmp_path):
+    """확인 사이 그룹이 사라졌으면(다른 표면의 삭제) 낡은 확정을 실행하지 않고 재진술한다."""
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    entries = ctrl.snapshot()["duplicates"][0]["entries"]
+    keep = entries[0]["key"]
+    DatasetPoolRegistry(reg.directory).delete(entries[1]["key"])  # 다른 표면이 먼저 정리
+
+    res = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
+    assert res["ok"] is False and "중복" in res["error"]
+    assert len(ctrl.snapshot()["rows"]) == 1  # 남은 항목은 건드리지 않았다

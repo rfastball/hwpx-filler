@@ -77,16 +77,18 @@ def test_durable_destructive_confirms_are_danger() -> None:
     inventory = (
         ("app.js", 'confirmLabel: "종료"'),
         ("screens/editor.js", "res.overwrite_text"),
-        ("screens/editor.js", "res.dataset_text"),
+        # (editor 의 자동등록 확인(res.dataset_text)은 #347 에서 게이트째 사망 — U2 §5.3 D.)
         # (screens/draft.js 두 행 삭제 — 「기안」 화면 사망, F6 PR-B. 덮어쓰기 확인의
         #  생존 표면은 editor·job 행이 계속 진다.)
         ("screens/job.js", "body: overwriteBody(res)"),
         ("screens/library.js", "body: res.confirm_text"),
         # 누름틀 제자리 변환 확인 — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8, tpl 화면 사망).
         ("screens/editor.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
-        # 등록 데이터 삭제·동명 재등록 — 화면 사망 뒤 거처는 데이터 선택 다이얼로그(F1).
+        # 등록 데이터 삭제·같은 데이터 라벨 갱신·다시 연결 — 거처는 데이터 선택 다이얼로그(F1).
         ("data_picker.js", 'res.confirm_text + "\\n\\n삭제할까요?"'),
         ("data_picker.js", 'res.confirm_text + "\\n\\n계속할까요?"'),
+        # 구판 중복 등록 병합(#347 §5.3) — 이름·메모가 다른 등록을 지우는 파괴 확정.
+        ("data_picker.js", 'res.confirm_text + "\\n\\n정리할까요?"'),
     )
     for relative, needle in inventory:
         call = _call_containing(relative, needle)
