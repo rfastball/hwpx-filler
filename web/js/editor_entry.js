@@ -48,6 +48,28 @@
     return true;
   }
 
+  /* newDraftFromData(context) — 「이 데이터로 새 작업」의 단일 정의(U2 §2.4·§4 판정 E, #349).
+     `newDraft` 와 갈라 두는 이유는 이 파일 머리가 적은 그대로다: **진입 후 동작이 다르면**
+     별개 흐름이다(여기는 마운트 데이터 앵커 + 진입 문맥을 든다). 같은 것 — 폐기 확인 문안과
+     착지 — 은 계속 공용을 부른다.
+
+     확인은 **하나뿐이고 조건부**다: 편집기에 미저장 세션이 있을 때만 뜬다(`confirmDiscard`).
+     이 동선이 예전에 열리지 않았던 이유였던 「저장 시 데이터 자동등록 확인」은 #347 이
+     없앴으므로, 여기서 새로 물을 것을 만들지 않는다. */
+  async function newDraftFromData(context) {
+    rememberEntryFocus();
+    if (!(await confirmDiscard(
+      "이 데이터로 새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
+      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
+    const r = await Bridge.newJobFromData(context || {});
+    if (typeof r === "string" && r.startsWith("ERROR:")) {
+      window.alert(r.slice(6).trim());   // 데이터 부재·재적재 실패 → loud(조용한 무이동 금지)
+      return false;
+    }
+    land();
+    return true;
+  }
+
   /* 미저장 정의 세션 폐기 확인의 **단일 출처**(PR-4 리뷰 F9 — 3중 복붙 수렴): 판정은 브리지
      즉시 질의(stale LAST 금지), 문구만 호출측이 준다. 미저장 없으면 조용히 통과. */
   async function confirmDiscard(body, returnFocus) {
@@ -81,6 +103,6 @@
   }
 
   window.EditorEntry = {
-    openGuarded, land, confirmDiscard, newDraft, restoreEntryFocus,
+    openGuarded, land, confirmDiscard, newDraft, newDraftFromData, restoreEntryFocus,
   };
 })();

@@ -1066,6 +1066,63 @@ def test_job_active_zone_death_and_candidate_card_succession():
     assert "PathTrack.affordances(s.template_path)" in editor_js
 
 
+def test_needs_and_missing_template_redirect_to_different_places():
+    """U2 §4 판정 E(#349) — 리다이렉트는 **2분기**이고 두 목적지가 서로 다르다.
+
+    §18.7 의 6분기 중 넷은 짓지 않았다(1은 실행 게이트가·2·3은 데이터 축이 이미 풀고,
+    5는 후보 목록의 정체를 바꾸는 별개 결정, 6은 계약이 리다이렉트를 금지). 남은 둘은
+    같은 「연결 상태」 어휘 아래 **사유가 목적지를 가른다**:
+
+    - 데이터 구조 불일치(`needs_action` 의 유일 원인) → 없는 열 열거 + **새 작업 마법사**
+    - 템플릿 부재 → 「템플릿 없음」 + **재연결**(#342 의 자리 그대로)
+
+    두 값을 한 테스트가 **대조**하는 이유는 이 판정의 내용이 「둘이 다르다」이기 때문이다 —
+    각자 따로 단언하면 나중에 한쪽이 다른 쪽으로 접혀도 둘 다 초록이다.
+    """
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    bridge_js = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+
+    # ① 확인 필요 행은 죽은 줄이 아니라 마법사 입구다 — 사유 문안은 그대로 남는다.
+    assert 'class="browse-row off"' not in job_js, (
+        "확인 필요 행이 여전히 비활성 div 입니다 — 판정 E 의 목적지가 서지 않았습니다."
+    )
+    assert "data-browse-new" in job_js and "현재 데이터에 없는 열" in job_js, (
+        "확인 필요 행이 사유(없는 열)와 목적지를 함께 말하지 않습니다."
+    )
+    # ② 목적지가 갈린다 — needs 는 새 작업 흐름, 템플릿 부재는 재연결 흐름.
+    needs_at = job_js.index('closest("[data-browse-new]")')
+    assert "newWorkFromData" in job_js and "relinkTemplateFor" in job_js
+    needs_branch = job_js[needs_at:needs_at + 600]
+    assert "newWorkFromData" in needs_branch and "relinkTemplateFor" not in needs_branch, (
+        "확인 필요 행이 재연결로 갑니다 — 두 사유의 목적지가 접혔습니다."
+    )
+    miss_at = job_js.index('btn.dataset.missing === "1"')
+    miss_branch = job_js[miss_at:miss_at + 400]
+    assert "relinkTemplateFor" in miss_branch and "newWorkFromData" not in miss_branch, (
+        "템플릿 부재 카드가 마법사로 갑니다 — 재연결 자리(#342)가 소실됐습니다."
+    )
+    # ③ 두 입구(§2.4 후보 줄 버튼 · 판정 E 확인 필요 행)는 **한 몸통**을 쓴다.
+    assert "data-new-work" in job_js and 'id="jobCandNewWork"' in job_js
+    assert job_js.count("EditorEntry.newDraftFromData(") == 1, (
+        "「이 데이터로 새 작업」의 입구가 둘인데 몸통도 둘이면 확인 문안·문맥이 갈립니다."
+    )
+    # ④ 진입 문맥은 보낸 표면이 싣고 편집기가 그 사유로 배너를 세운다(문맥 없는 진입 금지).
+    assert 'entry_reason: "document_browser_new_work"' in job_js
+    assert "document_browser_new_work:" in editor_js, (
+        "편집기가 새 진입 사유의 배너 문안을 모릅니다 — 사유만 실리고 아무 말도 하지 않습니다."
+    )
+    # ⑤ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
+    assert "Bridge.newJobFromData(context" in entry_js, (
+        "진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다 — 모든 진입이 자발적 진입으로 떨어집니다."
+    )
+    assert "newJobFromData(context)" in bridge_js and "new_job_from_data(context" in bridge_js
+    assert "data_path" not in job_js, (
+        "표면이 데이터 경로를 직접 들고 실어 보냅니다 — 마운트 정체의 단일 출처는 컨트롤러입니다."
+    )
+
+
 def test_job_data_first_prework_surface_contract():
     """데이터-우선(§18.2) 정적 계약 — 후보 구획 실재·빈 패널 은퇴·무작업 렌더 배선.
 
@@ -1589,8 +1646,9 @@ def test_native_close_and_editor_escape_affordances_are_wired():
         "이탈이 초점을 되돌리지 않습니다 — 숨은 요소에 초점이 남습니다(9R P2)."
     )
     entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
-    assert entry_js.count("rememberEntryFocus()") == 3, (
-        "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 두 진입(newDraft·openGuarded)."
+    assert entry_js.count("rememberEntryFocus()") == 4, (
+        "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 세 진입"
+        "(newDraft·newDraftFromData·openGuarded). 진입이 늘 때 이 수도 함께 는다."
     )
     assert "window.Modal.restoreFocus(" in entry_js, (
         "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
@@ -1682,8 +1740,13 @@ def test_editor_is_an_immersive_screen_with_one_exit():
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
         assert needle in src, f"{fname} 가 진입 단일 출처({needle})를 쓰지 않습니다."
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "EditorEntry.newDraft" not in job_js, (
-        "「문서 만들기」에 새 작업 진입이 되살아났습니다 — 승계처는 라이브러리 `＋ 새 작업`입니다."
+    # **맨손 새 작업**은 여전히 라이브러리 소관이다(F8 승계). 금지의 근거는 "진입점이 둘이면
+    # 중복"이었는데, U2 §2.4(#349)의 「이 데이터로 새 작업」은 그 중복이 아니다: 마운트된
+    # 데이터를 들고 시작하는 진입이라 데이터가 없는 라이브러리에서는 **성립하지 않는다**.
+    # 그래서 금지는 사라지지 않고 **좁아진다** — 데이터 없는 `newDraft(` 만 계속 막는다.
+    assert "EditorEntry.newDraft(" not in job_js, (
+        "「문서 만들기」에 맨손 새 작업 진입이 되살아났습니다 — 그 승계처는 라이브러리 "
+        "`＋ 새 작업`이고, 여기서 여는 것은 데이터를 든 `newDraftFromData` 뿐입니다."
     )
     assert "showEditMode" not in job_js and "exitEditToRun" not in job_js, (
         "job.js 두 모드 배선이 되살아났습니다 — 편집은 자기 화면으로 나갔습니다(F7)."

@@ -753,6 +753,44 @@ class EditorController:
         self._reset()
         self.load_template_path(path)
 
+    def new_draft_with_data(
+        self,
+        data_path: str,
+        *,
+        sheet: str = "",
+        entry_reason: str = "voluntary",
+        evidence: "dict | None" = None,
+        return_context: "dict | None" = None,
+    ) -> None:
+        """**데이터를 이미 고른 채** 시작하는 신규 초안(U2 §2.4·§4 판정 E, #349).
+
+        마법사는 **새로 짓지 않는다** — 기존 3단계 그대로이고, 달라지는 것은 2단계(필드
+        연결) 관문에 「문서 만들기」의 메인 데이터가 **앵커로 이미 서 있다**는 것뿐이다
+        (멘탈모델 일관성, 사용자 확정). 그래서 이 seam 은 :meth:`new_job_session` 의
+        데이터 판이다: 저쪽은 템플릿을 들고 오고 이쪽은 데이터를 들고 온다.
+
+        **검증이 파기보다 먼저다**: 진입 사유·복귀 표면은 :func:`make_context` 가
+        fail-closed 로 보는데, 그 거절이 ``_reset()`` **뒤에** 나면 배선 실수 한 번이
+        사용자의 편집 세션을 조용히 지운다. 그래서 문맥을 먼저 세우고 통과한 뒤에 끊는다.
+
+        데이터는 경로로 **다시 읽는다**(:meth:`load_data_path`) — 「문서 만들기」의 적재
+        결과를 그대로 넘겨받지 않는 것은 풀 규약(경로만 보관하고 쓸 때 다시 읽음)과 같은
+        이유다: 두 화면이 같은 파일의 서로 다른 판을 들고 있게 만들지 않는다. 그 재적재가
+        실패하면(파일이 사라짐·잠김·빈 시트) loud 로 올라간다 — 호출측(브리지)이 사유를
+        재진술하고, 세션은 이미 확인을 마친 폐기 상태로 남는다.
+        """
+        context = make_context(
+            "",
+            entry_reason=entry_reason,
+            evidence=evidence,
+            return_context=return_context,
+        )
+        self._reset()
+        self.session = EditSession(context=context, base=None, section=self.section)
+        # 템플릿은 아직 없다 — 1단계에서 고른다. 데이터만 먼저 서고 매핑 모델은 2단계 진입
+        # (`_do_goto_section` → `_ensure_model`)이 세운다(모델 전 선로드의 기존 경로).
+        self.load_data_path(data_path, sheet=sheet or None)
+
     # ---------------------------------- 템플릿 라이브러리 피커(R-info 2부 접합 최소분)
     def _do_use_library_template(self, p: dict) -> None:
         """라이브러리 목록에서 고른 템플릿으로 새 작업 세션(신규 1단계 정본 경로).

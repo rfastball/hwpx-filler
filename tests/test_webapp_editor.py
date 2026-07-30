@@ -190,6 +190,56 @@ def test_unconfirm_undo_slot_dies_with_model_rebuild(tmp_path):
     assert all(row["confirmed"] is False for row in ctrl.snapshot()["rows"])
 
 
+def test_new_draft_with_data_anchors_the_mounted_data_in_the_same_wizard(tmp_path):
+    """U2 §2.4(#349) — 「이 데이터로 새 작업」은 **기존 마법사**에 데이터만 미리 세운다.
+
+    확인할 것 셋: ①새 마법사를 짓지 않았다(단계·초안 성질 그대로, 1단계=템플릿에서 시작)
+    ②2단계 관문이 그리는 앵커(`data_name`·`data_sheet`·헤더)가 이미 서 있다 ③진입 문맥이
+    배너의 원천으로 살아 있다(사유·증거·복귀처).
+    """
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.new_draft_with_data(
+        str(MULTI_SHEET), sheet="낙찰현황",
+        entry_reason="document_browser_new_work",
+        evidence={"데이터": "multi_sheet.xlsx"},
+        return_context={"surface": "data"},
+    )
+    snap = pushes[-1][1]
+    assert snap["is_draft"] is True and snap["editing_origin"] == ""
+    assert snap["section"] == "template"          # 마법사는 1단계부터 — 순서 의존은 그대로
+    assert snap["template_path"] == "" and snap["name"] == ""
+    # 2단계 관문 앵커(dataGateway 가 그리는 값) — 「이 데이터로」가 실제로 그 데이터다.
+    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["record_count"] == 3
+    ctx = snap["context"]
+    assert ctx["entry_reason"] == "document_browser_new_work"
+    assert ctx["evidence"] == {"데이터": "multi_sheet.xlsx"} and ctx["work"] == ""
+    assert ctx["return_context"] == {"surface": "data"}
+    # 템플릿을 고르고 2단계로 가면 매핑 모델이 **그 데이터의 헤더**로 선다(관문 재선택 불요).
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    snap = ctrl.snapshot()
+    assert snap["schema_only"] is False
+    assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]
+
+
+def test_new_draft_with_data_validates_before_it_destroys(tmp_path):
+    """배선 실수가 남의 세션을 조용히 지우지 않는다 — 문맥 검증이 `_reset` 보다 먼저다.
+
+    미배선·미지 사유는 fail-closed 인데(링1), 그 거절이 초기화 **뒤에** 나면 사용자는
+    아무 것도 못 얻고 편집 중이던 것만 잃는다. 거절 시 세션은 손대지 않은 채 남아야 한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("set_name", {"name": "쓰던 작업"})
+    with pytest.raises(ValueError, match="배선되지 않았습니다"):
+        ctrl.new_draft_with_data(str(MULTI_SHEET), entry_reason="workbench_result")
+    assert ctrl.job_name == "쓰던 작업"                    # 세션 생존
+    assert ctrl.template_path == str(TPL_COMPILED)
+    assert ctrl.data_path == ""                            # 새 데이터도 서지 않았다
+
+
 def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
     """3단계 접기(블록 2 결정 11·12): 매핑 진입 후 관문에서 데이터를 고르면 매핑표가 그
     자리에서 다시 선다 — 컬럼·자동 제안 반영, 스키마온리 탈출, 전환 없음(라이브 순서 가드).

@@ -458,6 +458,33 @@
     }
   }
 
+  /* 「이 데이터로 새 작업」 흐름의 **단일 몸통**(U2 §2.4·§4 판정 E, #349) — 재연결과 같은
+     형상이다: 입구는 둘, 몸통은 하나. ①후보 줄의 「＋ 이 데이터로 새 작업」(§2.4 진입점)
+     ②문서 탐색 「확인 필요」 행의 클릭(판정 E 2분기 중 데이터 구조 불일치 쪽).
+
+     **§18.7 6분기 중 이 둘만 짓는다**(판정 E). 같은 구획의 다른 사유인 템플릿 부재는
+     여전히 `relinkTemplateFor` 로 간다 — 목적지가 갈리는 것이 이 판정의 내용이다.
+
+     확인은 여기서 만들지 않는다: 폐기 확인은 편집기 진입 seam 하나가 소유하고(미저장
+     세션이 있을 때만), 이 동선을 막고 있던 저장 시 자동등록 확인은 #347 이 없앴다.
+     증거는 **이 화면이 본 것**을 그대로 싣는다(편집기가 되계산하지 않는다). */
+  function newWorkFromData(extraEvidence) {
+    if (!window.EditorEntry) {
+      window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
+      return Promise.resolve(false);
+    }
+    const ev = { "데이터": (LAST && LAST.data_source_label) || "" };
+    Object.keys(extraEvidence || {}).forEach((k) => { ev[k] = extraEvidence[k]; });
+    // 복귀는 **문서 만들기**다. 「문서 탐색으로 돌아가기」라 말해 놓고 탐색 면 없이 착지하면
+    // 라벨이 약속한 자리와 실제 착지가 다르다(문안 부정직) — 탐색 면 복원은 이 조치의 축이
+    // 아니므로 말하지 않는 쪽을 고른다.
+    return window.EditorEntry.newDraftFromData({
+      entry_reason: "document_browser_new_work",
+      evidence: ev,
+      return_context: { surface: "data" },
+    });
+  }
+
   /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 라이브러리 행의 별이 같은 경로를 쓴다(두 표면이
      서로 다른 왕복을 갖지 않게). 기제(미결 의도 계산·전역 쓰기 직렬화·꼬리 식별 정리)는
      리뷰 3R·4R·5R·6R 가 세운 그대로이되 **공용 몸통**(js/intent.js)으로 걷었다 — 재작성 F2 의
@@ -506,9 +533,19 @@
     const needsTab = b.tab === "needs_action";
     const browseRow = (r) => {
       if (needsTab) {
-        return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
-          `<span class="browse-why muted">현재 데이터에 없는 열: ` +
-          `${esc((r.missing || []).join(", "))}</span></div>`;
+        // 확인 필요 = **데이터 구조 불일치**(master `needs_action` 의 유일 원인)이고, 판정 E 의
+        // 목적지는 새 작업 마법사다 — 「이 데이터로는 못 쓴다」로 끝나던 정직한 비활성이
+        // 「그럼 이 데이터로 하나 만든다」로 이어진다(막다른 자리 금지). 사유 문안(없는 열
+        // 열거)은 그대로 남는다: 목적지가 생겼다고 왜 막혔는지를 지우지 않는다.
+        // 클릭 의도와 동작이 다르지 않으므로(행이 목적지를 말한다) 여기서 다이얼로그로
+        // 되묻지 않는다 — 재진술이 필요한 쪽은 목적지가 어긋나는 경고 카드(재연결)다.
+        const cols = esc((r.missing || []).join(", "));
+        return `<button class="browse-row needs" type="button"` +
+          ` id="jobBrowseNeeds-${encodeURIComponent(r.name)}" data-busy-lock` +
+          ` data-browse-new="${esc(r.name)}" data-missing-cols="${cols}">` +
+          `<span class="browse-nm">${esc(r.name)}</span>` +
+          `<span class="browse-why muted">현재 데이터에 없는 열: ${cols}` +
+          ` — 이 데이터로 새 작업 만들기</span></button>`;
       }
       const active = r.name === s.job_name;
       return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
@@ -556,6 +593,13 @@
         `<h3 class="cand-sec-cap">온나라 기안</h3>` +
         `<span class="muted">${esc(c.txt_note)}</span></div>`
       : "";
+    // 「이 데이터로 새 작업」(U2 §2.4) — 데이터가 올라와 있으면 **항상** 선다. 후보가 없을
+    // 때만 세우면 "쓸 것은 있는데 이 데이터에 맞는 새 작업을 만들고 싶다"가 갈 데를 잃고,
+    // 그 상태가 바로 이 요청이 나온 자리다. 자리는 후보 줄 꼬리 — 「무엇으로 만들까」를
+    // 묻는 구획의 마지막 선택지다.
+    const newWorkBtn =
+      `<button class="btn sm" type="button" id="jobCandNewWork" data-busy-lock data-new-work>` +
+      `＋ 이 데이터로 새 작업</button>`;
     if (!top.length && !needs.length) {
       // 막다른 자리를 만들지 않는다(U2 §2.4). 흡수처 출구(`#jobNoDataExit`)는 데이터·작업이
       // **둘 다** 없을 때만 서는데, 정작 출구가 필요한 상태는 여기다 — 데이터는 골랐고 그
@@ -564,7 +608,7 @@
       host.innerHTML =
         `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>` +
         `<button class="btn sm" type="button" data-cands-exit>「문서 작업」에서 고르기</button>` +
-        txtNote;
+        newWorkBtn + txtNote;
       return;
     }
     // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
@@ -593,6 +637,9 @@
         `<button class="btn sm" type="button" id="jobBrowseOpen" data-busy-lock data-browse-open>` +
         `문서 작업 찾기…</button></span>`;
     }
+    // 자기 줄을 갖는다(고지 줄과 같은 규칙) — 카드 줄에 이어 붙으면 「고를 것」과 「만들 것」이
+    // 한 문장으로 읽힌다.
+    html += `<span class="cand-newwork">${newWorkBtn}</span>`;
     host.innerHTML = html + txtNote;
   }
 
@@ -1549,6 +1596,9 @@
         return;
       }
       if (e.target.closest("[data-browse-open]")) { openBrowseSheet(e); return; }
+      // 「＋ 이 데이터로 새 작업」(U2 §2.4) — 카드 선택 판정 앞에 가른다(별·⋮ 와 동형으로
+      // 후보 줄 안의 비-선택 버튼이다). 실패는 진입 seam 이 loud 로 재진술한다.
+      if (e.target.closest("[data-new-work]")) { newWorkFromData(); return; }
       // 활성 카드 ⋮(판정 B) — 카드 안 중첩 버튼이라 선택 판정보다 먼저 가른다(별과 동형).
       const mbtn = e.target.closest("[data-cand-menu]");
       if (mbtn) { toggleCandMenu(mbtn); return; }
@@ -1605,6 +1655,19 @@
       }, 180);
     });
     $("jobBrowseRows").addEventListener("click", (e) => {
+      // 확인 필요 행(판정 E) — 선택이 아니라 **새 작업 마법사**로 간다. 선택 경로의 규율
+      // (성사 뒤 닫기)을 따르지 않고 **먼저 닫는** 이유는 잃는 것이 다르기 때문이다: 이
+      // 면의 상태(탭·검색어)는 Python 세션 소유라 다시 열면 그대로 서고, 반대로 성사 뒤에
+      // 닫으면 이미 편집기로 전환된 뒤에 닫힘 포커스 착지가 **숨은 화면의 버튼**을 겨눈다.
+      // 취소해도 사용자는 같은 자리(후보 줄 출구)에 포커스를 든 채 남는다.
+      const mk = e.target.closest("[data-browse-new]");
+      if (mk) {
+        const nm = mk.getAttribute("data-browse-new");
+        const cols = mk.getAttribute("data-missing-cols") || "";
+        window.Modal.close("jobBrowseSheet");
+        newWorkFromData({ "확인 필요였던 작업": nm, "현재 데이터에 없는 열": cols });
+        return;
+      }
       const pick = e.target.closest("[data-browse-pick]");
       if (!pick || pick.getAttribute("aria-pressed") === "true") return;
       // 선택은 명시 사건이다(§18.6) — 면을 닫고 세션 패널로 돌려보낸다(데이터는 생존).

@@ -69,6 +69,14 @@
       return window.pywebview.api.open_job_in_editor(name, context || {});
     },
 
+    /** 「이 데이터로 새 작업」(U2 §2.4·§4 판정 E) — 「문서 만들기」의 마운트 데이터를 든
+     *  신규 초안. 데이터의 정체는 **보내지 않는다**: 지금 무엇이 올라와 있는지의 단일
+     *  출처는 그 화면의 컨트롤러이고, 웹이 기억한 값을 실으면 도착 순서에 따라 다른
+     *  파일로 시작할 수 있다. 반환은 시작한 데이터 경로·"ERROR:…". */
+    newJobFromData(context) {
+      return window.pywebview.api.new_job_from_data(context || {});
+    },
+
     /** 「문서 작업」 손상 카드 '폴더 열기' → 탐색기에서 파일 표시(#26 #8). null·"ERROR:…". */
     revealCorruptJob(path) { return window.pywebview.api.reveal_corrupt_job(path); },
 
