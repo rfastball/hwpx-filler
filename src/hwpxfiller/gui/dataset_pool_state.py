@@ -299,15 +299,17 @@ class DatasetPoolViewModel:
         ``kind="nara" + opts={"path": …}`` 하이브리드로 손상된다 — 겨눔 시 나라 동결
         문구로 거절되고, reference_summary 는 "기간 ?~?" 를 찍는다. 엑셀 참조 확정은
         kind 도 excel 로 착지한다(cross-kind 전이는 :func:`kind_transition_clause` 재진술).
+
+        **정체성 검사는 변이와 한 잠금 안이다**(코덱스 1R P2): pywebview 는 호출마다 다른
+        스레드로 들어오므로, 잠금 밖 선검사는 서로 다른 슬롯 둘을 같은 경로+시트로 동시
+        재연결할 때 둘 다 통과시키고 mutate 만 직렬화돼 **같은 정체성의 슬롯 2개**가 남는다
+        — 레지스트리 불변식(같은 데이터 = 슬롯 1개)이 조용히 깨진다. 공유 쓰기 잠금
+        (:meth:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry.write_lock`, 재진입 RLock)
+        안에서 검사하고 그대로 mutate 까지 간다 — ``add`` 가 자기 잠금 안에서 검사하는 것과
+        같은 규율이다.
         """
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
-        taken = self.registry.find_identity(path, sheet or "")
-        if taken is not None and taken[0] != key:
-            raise ValueError(
-                f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다. "
-                "그 항목을 쓰거나 먼저 정리하세요."
-            )
         opts: "dict[str, object]" = {"path": path}
         if sheet:
             opts["sheet"] = sheet
@@ -322,7 +324,14 @@ class DatasetPoolViewModel:
             if name:  # 라벨은 정체성이 아니라(§5.3 C) 같은 확정에 함께 갱신해도 안전하다
                 current.name = name
 
-        item = self.registry.mutate(key, update)
+        with self.registry.write_lock():
+            taken = self.registry.find_identity(path, sheet or "")
+            if taken is not None and taken[0] != key:
+                raise ValueError(
+                    f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다. "
+                    "그 항목을 쓰거나 먼저 정리하세요."
+                )
+            item = self.registry.mutate(key, update)
         self.refresh()
         return item
 

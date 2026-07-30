@@ -139,6 +139,65 @@ def test_update_excel_reference_keeps_slot_but_rejects_identity_theft(tmp_path):
         vm.update_excel_reference(rows["B"].key, "/a2.xlsx")  # A 슬롯의 정체성과 충돌
 
 
+def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
+    """서로 다른 슬롯 둘을 같은 경로+시트로 동시 재연결하면 하나만 이기고 하나는 loud 거절.
+
+    코덱스 1R P2 — 정체성 검사가 잠금 밖이면 둘 다 선검사를 통과하고 mutate 만 직렬화돼
+    같은 정체성의 슬롯 2개가 남는다(레지스트리 불변식 붕괴). 검사·변이가 공유 쓰기 잠금
+    한 경계 안이어야 한다: A 가 잠금 안(원자 쓰기 중)에 있는 동안 B 는 검사에 못 들어가고,
+    A 커밋 뒤 B 의 잠금 안 재검사가 충돌을 잡는다.
+    """
+    import threading
+
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+
+    directory = tmp_path / "datasets"
+    vm_a = DatasetPoolViewModel(DatasetPoolRegistry(directory))
+    vm_b = DatasetPoolViewModel(DatasetPoolRegistry(directory))
+    vm_a.register_excel("A", "/a.xlsx")
+    vm_a.register_excel("B", "/b.xlsx")
+    rows = {r.name: r for r in vm_a.rows()}
+
+    entered = threading.Event()
+    release = threading.Event()
+    real_save = DatasetPoolItem.save
+
+    def slow_save(item, path):
+        entered.set()
+        assert release.wait(2)
+        return real_save(item, path)
+
+    monkeypatch.setattr(DatasetPoolItem, "save", slow_save)
+    errors: "list[Exception]" = []
+
+    def relink(vm, key):
+        try:
+            vm.update_excel_reference(key, "/target.xlsx")
+        except ValueError as exc:
+            errors.append(exc)
+
+    first = threading.Thread(target=relink, args=(vm_a, rows["A"].key))
+    first.start()
+    assert entered.wait(2)                       # A: 검사 통과, 잠금 안에서 쓰기 중
+    second = threading.Thread(target=relink, args=(vm_b, rows["B"].key))
+    second.start()
+    second.join(0.05)
+    assert second.is_alive()                     # B: 검사가 잠금 안이라 진입 자체가 대기
+    release.set()
+    first.join(2)
+    second.join(2)
+    assert not first.is_alive() and not second.is_alive()
+
+    assert len(errors) == 1 and "이미" in str(errors[0])   # 한쪽만 loud 패배
+    reg = DatasetPoolRegistry(directory)
+    winners = [
+        (key, it) for key, it in reg.list_entries()
+        if it.opts.get("path") == "/target.xlsx"
+    ]
+    assert [k for k, _ in winners] == [rows["A"].key]       # 같은 정체성 슬롯은 1개뿐
+    assert reg.duplicate_identity_groups(corrupted=[]) == []  # 불변식 유지
+
+
 def test_duplicates_surface_from_legacy_files(tmp_path):
     """구판(이름=키)이 남긴 같은 경로 2건이 VM duplicates 로 표면화된다(§5.3 병합 loud)."""
     import json as _json

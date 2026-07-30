@@ -332,7 +332,11 @@ def test_legacy_duplicates_surface_loudly_in_snapshot(tmp_path):
 
 
 def test_resolve_duplicate_two_phase_confirm(tmp_path):
-    """병합은 1차=무엇이 남고 지워지는지 재진술(무변형), confirm 시에만 나머지 삭제."""
+    """병합은 1차=무엇이 남고 지워지는지 재진술(무변형), confirm 시에만 나머지 삭제.
+
+    확정은 1차가 재진술한 멤버 키 집합(``group_keys``)을 되실어 보낸다 — 승인의 대상이
+    「그 집합」임을 백엔드가 대조한다(코덱스 1R P1).
+    """
     ctrl, reg, _ = _controller(tmp_path)
     _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
     _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
@@ -346,9 +350,15 @@ def test_resolve_duplicate_two_phase_confirm(tmp_path):
     assert res1["needs_confirm"] is True
     assert "'공고 최신'" in res1["confirm_text"]        # 남는 것
     assert "'7월 공고'" in res1["confirm_text"]          # 지워지는 것 — 둘 다 재진술
+    assert sorted(res1["group_keys"]) == sorted(
+        e["key"] for e in ctrl.snapshot()["duplicates"][0]["entries"]
+    )                                                    # 승인 대상 = 멤버 키 집합
     assert len(ctrl.snapshot()["rows"]) == 2             # 1차는 무변형
 
-    res2 = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
+    res2 = ctrl.dispatch(
+        "resolve_duplicate",
+        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+    )
     assert res2["ok"] is True and res2["kept"] == "공고 최신" and res2["removed"] == 1
     snap = ctrl.snapshot()
     assert [r["name"] for r in snap["rows"]] == ["공고 최신"]
@@ -363,8 +373,60 @@ def test_resolve_duplicate_stale_group_is_restated(tmp_path):
     ctrl.dispatch("refresh", {})
     entries = ctrl.snapshot()["duplicates"][0]["entries"]
     keep = entries[0]["key"]
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
     DatasetPoolRegistry(reg.directory).delete(entries[1]["key"])  # 다른 표면이 먼저 정리
 
-    res = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
+    res = ctrl.dispatch(
+        "resolve_duplicate",
+        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+    )
     assert res["ok"] is False and "중복" in res["error"]
     assert len(ctrl.snapshot()["rows"]) == 1  # 남은 항목은 건드리지 않았다
+
+
+def test_resolve_duplicate_refuses_when_group_grew_after_confirm(tmp_path):
+    """확인 사이 같은 정체성의 등록이 **늘었으면** 삭제 0건 + loud 재진술(코덱스 1R P1).
+
+    재조회 결과를 그대로 채택하면 사용자가 삭제된다고 들은 적 없는 셋째 등록이 drop 에
+    조용히 포함된다 — 승인한 집합과 지금 집합이 다르면 아무것도 지우지 않는다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    keep = next(
+        e["key"] for e in ctrl.snapshot()["duplicates"][0]["entries"]
+        if e["name"] == "공고 최신"
+    )
+    res1 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    assert res1["needs_confirm"] is True
+
+    _legacy_write(reg, "셋째 등록", "C:/d/same.xlsx")     # 확인 사이 다른 writer 의 추가
+
+    res2 = ctrl.dispatch(
+        "resolve_duplicate",
+        {"keep": keep, "confirm": True, "group_keys": res1["group_keys"]},
+    )
+    assert res2["ok"] is False and "바뀌어" in res2["error"]
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert len(ctrl.snapshot()["rows"]) == 3              # 삭제 0건 — 셋째 등록 무사
+    # 새 집합으로 다시 확인하면 성사된다(거절은 재확인 요구이지 막다른길이 아니다).
+    res3 = ctrl.dispatch("resolve_duplicate", {"keep": keep})
+    assert res3["needs_confirm"] is True and len(res3["group_keys"]) == 3
+    res4 = ctrl.dispatch(
+        "resolve_duplicate",
+        {"keep": keep, "confirm": True, "group_keys": res3["group_keys"]},
+    )
+    assert res4["ok"] is True and res4["removed"] == 2
+
+
+def test_resolve_duplicate_confirm_without_basis_is_refused(tmp_path):
+    """근거(group_keys) 미동봉 확정은 fail-closed — 무엇을 승인했는지 모르는 삭제 금지."""
+    ctrl, reg, _ = _controller(tmp_path)
+    _legacy_write(reg, "7월 공고", "C:/d/same.xlsx")
+    _legacy_write(reg, "공고 최신", "C:/d/same.xlsx")
+    ctrl.dispatch("refresh", {})
+    keep = ctrl.snapshot()["duplicates"][0]["entries"][0]["key"]
+    res = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
+    assert res["ok"] is False and "다시 확인" in res["error"]
+    assert len(ctrl.snapshot()["rows"]) == 2              # 삭제 0건

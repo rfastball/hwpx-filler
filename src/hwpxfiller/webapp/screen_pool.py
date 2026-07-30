@@ -324,37 +324,59 @@ class PoolController:
     def _do_resolve_duplicate(self, p: dict) -> dict:
         """같은 데이터 등록 그룹에서 남길 1건 확정 → 나머지 삭제(확인 라운드트립).
 
-        1차 호출은 **무엇이 남고 무엇이 지워지는지**를 재진술만 한다 — 이름·메모가 다른
-        등록들을 지우는 파괴라 조용한 자동 병합은 금지다(confirm-or-alarm). 확인 사이에
-        그룹이 바뀌었으면(항목 삭제·재연결) 낡은 확정을 실행하지 않고 다시 재진술한다.
+        1차 호출은 **무엇이 남고 무엇이 지워지는지**를 재진술만 하고, 그 재진술이 겨눈
+        멤버 키 집합(``group_keys``)을 함께 돌려준다 — 이름·메모가 다른 등록들을 지우는
+        파괴라 조용한 자동 병합은 금지다(confirm-or-alarm).
+
+        확정(2차)은 **사용자가 읽고 승인한 그 집합**과 지금 디스크의 그룹을 대조한다
+        (코덱스 1R P1 — TOCTOU): 확인 모달을 읽는 사이 다른 writer 가 같은 정체성의
+        등록을 더했으면, 재조회 결과를 그대로 채택할 때 **고지된 적 없는 등록이 drop 에
+        조용히 포함**된다. 집합이 다르면(추가든 소멸이든) 아무것도 지우지 않고 차이를
+        loud 재진술한다 — 승인한 문안과 실제로 일어나는 일이 갈리는 것이 이 저장소의
+        지배 결함류다(에디터 덮어쓰기 게이트의 confirmed_overwrite_text 대조와 동형).
         """
         keep = p["keep"]
-        # 판정은 **지금 디스크**로 다시 내린다 — 확인 모달을 읽는 사이 다른 표면(CLI·다른
-        # 창)이 그룹을 정리했으면 낡은 스냅샷의 확정이 남은 항목을 지우는 파괴가 된다.
-        self.vm.refresh()
-        group = next(
-            (g for g in self.vm.duplicates() if any(r.key == keep for r in g)), None
-        )
-        if group is None:
+        # 판정·대조·삭제를 **레지스트리 공유 쓰기 잠금 한 경계 안**에서 밟는다 — 대조와
+        # 삭제 사이에 다른 writer 가 끼면 대조가 다시 낡는다(잠금은 재진입 RLock 이라
+        # 안의 vm.delete 가 그대로 통과한다). 판정은 지금 디스크로 다시 내린다.
+        with self.vm.registry.write_lock():
             self.vm.refresh()
-            msg = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다."
-            self._set_result(msg, "danger")
-            return {"ok": False, "error": msg}
-        keep_row = next(r for r in group if r.key == keep)
-        drop = [r for r in group if r.key != keep]
-        if not p.get("confirm"):
-            dropped = ", ".join(f"'{r.name}'" for r in drop)
-            return {
-                "ok": True, "needs_confirm": True, "keep": keep,
-                "confirm_text": (
-                    f"같은 데이터({keep_row.reference})를 가리키는 등록 {len(group)}건을 "
-                    f"'{keep_row.name}' 하나로 합칩니다.\n"
-                    f"삭제되는 등록: {dropped} — 그 이름·메모는 사라집니다"
-                    "(원본 파일은 지우지 않습니다)."
-                ),
-            }
-        for r in drop:
-            self.vm.delete(r.key)
+            group = next(
+                (g for g in self.vm.duplicates() if any(r.key == keep for r in g)), None
+            )
+            if group is None:
+                msg = "병합할 중복 등록이 더는 없습니다. 목록을 새로 읽었습니다."
+                self._set_result(msg, "danger")
+                return {"ok": False, "error": msg}
+            keep_row = next(r for r in group if r.key == keep)
+            drop = [r for r in group if r.key != keep]
+            current_keys = sorted(r.key for r in group)
+            if not p.get("confirm"):
+                dropped = ", ".join(f"'{r.name}'" for r in drop)
+                return {
+                    "ok": True, "needs_confirm": True, "keep": keep,
+                    # 확정이 되돌려 보낼 판정 근거 — 이 집합에 대한 승인이지 그룹 일반에
+                    # 대한 승인이 아니다.
+                    "group_keys": current_keys,
+                    "confirm_text": (
+                        f"같은 데이터({keep_row.reference})를 가리키는 등록 {len(group)}건을 "
+                        f"'{keep_row.name}' 하나로 합칩니다.\n"
+                        f"삭제되는 등록: {dropped} — 그 이름·메모는 사라집니다"
+                        "(원본 파일은 지우지 않습니다)."
+                    ),
+                }
+            confirmed = p.get("group_keys")
+            if not isinstance(confirmed, list) or sorted(map(str, confirmed)) != current_keys:
+                # 근거 미동봉(구식 호출)도 같은 거절이다 — 무엇을 승인했는지 모르는 확정으로
+                # 지울 수는 없다(fail-closed).
+                msg = (
+                    "확인하는 사이 이 데이터의 등록 구성이 바뀌어 정리를 실행하지 않았습니다. "
+                    "목록을 새로 읽었으니 다시 확인해 주세요."
+                )
+                self._set_result(msg, "danger")
+                return {"ok": False, "error": msg}
+            for r in drop:
+                self.vm.delete(r.key)
         self._set_result(
             f"중복 등록 {len(drop)}건을 정리하고 '{keep_row.name}' 을(를) 남겼습니다."
         )
