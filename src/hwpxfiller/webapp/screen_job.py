@@ -817,8 +817,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
           순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
+          **활성 작업이 순위 밖 available 이면 순위를 왜곡하지 않고 말미에 덧붙인다**
+          (U2 §4 사망 점검표의 승계 조건, #342 리뷰 P2): 존이 죽은 뒤 정체·연결 상태·
+          재연결(경고 카드 기본 클릭)의 유일한 화면 내 거처가 활성 카드라, 활성이 top-5
+          슬라이스 밖이면 template_missing 차단의 복구 동선이 화면에서 소멸한다.
         - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
           전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
+          덧붙여 렌더되는 활성 작업은 더 이상 "잘린" 것이 아니므로 세지 않는다.
         - ``needs``·``needs_more`` = 확인 필요(needs_action) 이름순 상위 N + 잘린 수.
           메인 순위엔 못 들어가지만(§18.5) 전용 표면(확인 필요 탭)이 생기기 전까지 막힌
           이유를 여기서 계속 말한다(삭제는 의무를 상속한다). available 과 같은 상한을
@@ -836,8 +841,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         by_name = {j.name: j for j in jobs}
         ranked = rank_available(jobs, fields)
         suggested = suggested_work(ranked, active=self.job_name)
+        sliced = list(ranked[:MAIN_TOP_N])
+        # 활성 작업 카드 상시 보장(#342 리뷰 P2) — 활성이 available 인데 top-5 밖이면
+        # **말미에 덧붙인다**(순위 무왜곡: 상위 5 는 그대로, 활성은 순위 밖임이 자리로
+        # 보인다). 판정은 여기(payload 층)가 낸다 — 표면이 자기 판단으로 카드를 만들면
+        # 같은 상태를 두 곳이 판정한다. 활성이 needs_action·unsupported 라 ranked 에
+        # 없으면 덧붙일 것도 없다: needs 축의 재연결 리다이렉트는 판정 E(#349) 소관이고,
+        # 그 전까지 화면 밖 경로(라이브러리 상세 경보+재연결)가 산다.
+        active_appended = False
+        if self.job_name and all(r.name != self.job_name for r in sliced):
+            extra = next(
+                (r for r in ranked[MAIN_TOP_N:] if r.name == self.job_name), None
+            )
+            if extra is not None:
+                sliced.append(extra)
+                active_appended = True
         top = []
-        for r in ranked[:MAIN_TOP_N]:
+        for r in sliced:
             job = by_name[r.name]
             # 「연결 상태」 축(U2 §4 판정 C·F, #342) — 죽은 「선택한 작업」 존의
             # `template_missing` 경보 승계처가 카드다. §18.4 는 Template 읽기를 후보 축
@@ -884,7 +904,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 순서는 첫 등장 순 = 각 구획 최고 순위의 위치이고, 한 방식뿐이면 구획이 1개라
             # 표면이 평면으로 퇴화한다(카드 부제의 방식 텍스트는 그때도 남는다).
             "sections": mode_sections(top),
-            "more": max(0, len(ranked) - MAIN_TOP_N),
+            # 덧붙인 활성은 렌더되므로 "잘린 수"에서 뺀다 — 「외 N건」이 화면에 이미 있는
+            # 카드를 다시 세면 수치 고지가 거짓이 된다(조용한 절단 금지의 반대 방향).
+            "more": max(0, len(ranked) - MAIN_TOP_N - (1 if active_appended else 0)),
             # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
             # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
             "needs_count": len(needs),

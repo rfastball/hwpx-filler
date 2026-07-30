@@ -375,6 +375,39 @@ def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
     assert after["conn_label"] == "템플릿 없음"                # 경고 문안도 Python 정본
 
 
+def test_active_job_below_top5_keeps_its_card_and_relink_reach(tmp_path):
+    """활성 작업이 순위 밖이어도 카드는 선다(#342 리뷰 P2 — 재연결 도달 경로 보존).
+
+    존 사망 뒤 재연결(경고 카드 기본 클릭)·연결 상태·정체의 화면 내 거처는 활성 카드
+    하나다 — 호환 작업 6건 이상에서 활성이 top-5 슬라이스에 못 들면 template_missing
+    차단의 복구 동선이 화면에서 소멸한다. 그래서 payload 층이 활성을 **말미에 덧붙여**
+    상시 보장한다: 상위 5 순위는 왜곡하지 않고, 렌더된 활성은 「외 N건」에서 뺀다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    for i in range(6):                                          # 최근 실행 계층 6건 > 미사용 활성
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})             # 활성 = 순위 7위(미사용)
+    cands = ctrl.snapshot()["candidates"]
+    names = [c["name"] for c in cands["top"]]
+    assert "공고서" in names, "활성 작업 카드가 top-5 슬라이스에 잘려 나갔습니다."
+    assert len(names) == 6 and names[-1] == "공고서"            # 상위 5 무왜곡 + 말미 부록
+    assert cands["more"] == 1                                   # 잘린 수에서 렌더된 활성 제외
+
+    # 템플릿 소실 → 그 카드가 연결 상태·재연결 표식의 근거(template_missing)를 싣는다 —
+    # 경고 카드 기본 클릭(relinkFromCard)의 도달 경로가 이 payload 하나에 달려 있다.
+    Path(ctrl.snapshot()["template_path"]).unlink()
+    card = next(c for c in ctrl.snapshot()["candidates"]["top"] if c["name"] == "공고서")
+    assert card["template_missing"] is True
+    assert card["conn_label"] == "템플릿 없음"
+
+    # 활성이 top-5 안이면 덧붙일 것이 없다 — 카드 중복도, more 보정도 없다.
+    ctrl.dispatch("select_job", {"name": "작업5"})
+    cands = ctrl.snapshot()["candidates"]
+    assert [c["name"] for c in cands["top"]].count("작업5") == 1
+    assert len(cands["top"]) == 5 and cands["more"] == 2
+
+
 def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):
     """즐겨찾기는 정렬 메타만 바꾼다(§18.5) — 활성 작업·데이터·선택·게이트 불변."""
     ctrl, _ = _controller(tmp_path)
