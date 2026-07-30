@@ -1270,6 +1270,11 @@ class TestWebSelftestGate:
             assert j[key].endswith("D:\\out"), (key, j[key])
         # 생성이 아닌 태에는 퇴장 한 줄이 없다(없는 실행을 지어내지 않는다).
         assert j["exit_rejected"] == "" and j["exit_running"] == ""
+        # 요약 없는 실행 결과는 **조용히 넘기지 않는다** — 이 줄이 유일한 흔적이라 침묵하면
+        # 소멸 자체가 흔적 없이 사라진다. 수치를 지어내지 않고 모른다고 적고, 경로는 남긴다.
+        missing = j["exit_missing_summary"]
+        assert "수치 요약 없음" in missing and missing.endswith("D:\\out"), missing
+        assert "개 성공" not in missing, f"없는 수치를 지어냅니다: {missing!r}"
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.

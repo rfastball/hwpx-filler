@@ -1394,6 +1394,11 @@ _JOB_MIRROR_PROBE_JS = r"""
       {rejected:true, title:'생성하지 않았습니다', summary:'빈 값'}, '발주요청서');
     out.exit_running = window.JobScreen.resultExitLine(
       {running:true, title:'생성 중… 1/3'}, '발주요청서');
+    // 요약 없는 **실행 결과**는 조용히 넘기지 않는다 — 이 줄이 유일한 흔적이라 침묵하면
+    // 소멸이 흔적 없이 사라진다. 수치를 지어내지 않고 모른다고 적는지 되읽는다.
+    out.exit_missing_summary = window.JobScreen.resultExitLine(
+      {ok:true, status:'completed', title:'문서 생성 완료 · 3개', out_dir:'D:\\out'},
+      '발주요청서');
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
     out.guard_body = window.JobScreen.guardBody(
       {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
@@ -1690,6 +1695,9 @@ _JOB_RESULT_PROBE_JS = r"""
     window.__push('job', window.__jobResultSnap);
     var partial = {
       ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
+      // 퇴장 요약은 **Python 이 낸다**(#363 2차) — 제목은 구획 머리라 짧고, 이 문장은
+      // 초기화 뒤 남는 유일한 흔적이라 수치를 하나도 흘리지 않는다. 실 payload 와 같은 모양.
+      exit_summary:'2개 성공 · 1개 실패',
       summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
       out_dir:'D:\\out', succeeded:2, failed:1, failed_selectable:1, total:3,
       failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',

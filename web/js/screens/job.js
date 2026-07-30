@@ -217,10 +217,15 @@
      **순수 합성기**다(인자만 읽는다): 실앱 게이트가 태별 산출을 되읽어 문안 드리프트를
      막는다(overwriteBody·guardBody 와 같은 자리). */
   function resultExitLine(r, owner) {
-    if (!r || r.running || r.rejected || !r.exit_summary) return "";
+    // 생성이 아닌 태(진행·거절)만 조용하다 — 적을 실행이 애초에 없다.
+    if (!r || r.running || r.rejected) return "";
     const who = owner ? `'${owner}' ` : "";
     const dir = r.out_dir ? ` — ${r.out_dir}` : "";
-    return `${who}${r.exit_summary}${dir}`;
+    // 요약 없는 **실행 결과**는 조용히 넘기지 않는다: 이 줄이 유일한 흔적이라 침묵하면
+    // 소멸 자체가 흔적 없이 사라진다(§2.18 이 이 줄을 세운 이유가 그것이다). 수치를
+    // 지어내지 않고 **모른다고 적는다** — 「원인 진단 미연결」과 같은 정직 강등이다.
+    const body = r.exit_summary || "생성 결과가 세션에서 물러났습니다(수치 요약 없음)";
+    return `${who}${body}${dir}`;
   }
 
   /* ---- 세션 표면 동기화 ---- */

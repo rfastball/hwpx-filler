@@ -771,6 +771,11 @@ def test_job_completion_zone_reset_gated_by_session_change():
     # 생략) 초기화 뒤 남는 유일한 흔적이 되기엔 손실 함수다. 표면에서 되메우면 수치를
     # 두 층이 조립하게 되므로, 목적이 다른 합성기를 Python 에 두고 여기서는 고르기만 한다.
     assert "r.exit_summary" in exit_code, "퇴장 한 줄이 Python 퇴장 요약을 쓰지 않습니다."
+    # 요약이 없는 실행 결과를 **조용히 건너뛰지 않는다**: 이 줄이 유일한 흔적이라 침묵은
+    # 소멸을 흔적 없이 지우는 것이다(confirm-or-alarm). 수치는 지어내지 않고 모른다고 적는다.
+    assert "수치 요약 없음" in exit_fn, (
+        "요약 없는 결과에서 퇴장 한 줄이 조용히 사라집니다 — 소멸의 유일한 흔적입니다."
+    )
     for banned in ("r.total", "r.title", "r.succeeded", "r.failed", "r.unstarted"):
         assert banned not in exit_code, (
             f"퇴장 한 줄이 수치를 표면에서 재조립합니다({banned}) — 합성기가 두 층에 생깁니다."
