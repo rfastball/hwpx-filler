@@ -1094,6 +1094,10 @@ class JobRegistry:
         삭제와 복원은 기존 writer 경계 안에서 수행한다. 휴지통은 레지스트리 루트의
         ``.trash``라 일반 목록 glob에 섞이지 않는다. 슬롯은 프로세스 메모리에만 노출되고,
         실제 파일은 비정상 종료 뒤에도 보존 기간 동안 남는다.
+
+        사용자 문안은 이 보존을 「휴지통」이라 부르지 않는다(U2 §2.12, #345) — 도달 표면
+        (목록·선별 복원·비우기)이 아직 없다(별건 #350). 어휘가 내려가도 30일 보존과
+        ``_purge_trash`` 컷오프는 삭제가 상속하는 의무라 지우지 않는다.
         """
         with self._write_lock:
             src = self.path_for(name)
@@ -1111,7 +1115,9 @@ class JobRegistry:
         src, trashed = slot
         with self._write_lock:
             if not trashed.exists():
-                raise ValueError("복원할 작업이 휴지통에 없습니다.")
+                # 「휴지통」 없이 말한다(U2 §2.12, #345) — 도달 표면이 없는 장소를 사용자
+                # 문안에 세우지 않는다. 실패 사실(파일 부재)만 재진술한다.
+                raise ValueError("되돌릴 작업 파일을 찾을 수 없습니다.")
             if src.exists():
                 raise ValueError("같은 이름의 작업이 이미 있어 복원할 수 없습니다.")
             self.directory.mkdir(parents=True, exist_ok=True)

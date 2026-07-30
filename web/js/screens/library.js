@@ -521,9 +521,12 @@
     });
   }
 
-  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다.
-     단 「문서 만들기」에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다(#268
-     리뷰) — 세션의 선택·진행은 파일 복원으로도 못 돌아오는 소실이라 확인 왕복만 남긴다. */
+  /* 작업 삭제 — 백엔드 30일 보존(.trash) + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을
+     없앤다. 단 「문서 만들기」에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다
+     (#268 리뷰) — 세션의 선택·진행은 파일 복원으로도 못 돌아오는 소실이라 확인 왕복만 남긴다.
+     사용자 문안은 「휴지통」이라 말하지 않는다(U2 §2.12, #345): 보존은 참이지만 열어본다·
+     골라 복원한다·비운다 중 도달 경로가 하나도 없다 — 도달 표면이 서기 전(별건 #350)까지
+     이 어휘는 지키지 못할 약속이다. 지금 경험은 「삭제 + 10초 되돌리기」다. */
   async function deleteJob(name, returnFocus) {
     let r = await Bridge.call(SCREEN, "delete_job", { name });
     if (r && r.needs_confirm) {
@@ -531,13 +534,13 @@
         title: "작업 삭제 확인",
         body: `작업 '${name}' 이(가) 문서 만들기 화면에 진행 중인 세션으로 열려 있습니다.\n` +
           `삭제하면 그 세션의 선택·데이터·진행이 함께 사라지며, 파일을 복원해도 세션은 돌아오지 않습니다.`,
-        confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
+        confirmLabel: "삭제", cancelLabel: "취소",
         returnFocus,
       });
       if (!ok) return;
       r = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
     }
-    if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+    if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 삭제했습니다.`, async () => {
       const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
       if (restored && restored.ok === false) throw new Error(restored.error);
     });

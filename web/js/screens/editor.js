@@ -576,7 +576,9 @@
   async function deleteLibTemplate(media, item) {
     if (!item) return;
     const r = await Bridge.call("tpl", "delete", { media, path: item.path });
-    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+    // 「휴지통」이라 말하지 않는다(U2 §2.12, #345) — 보존은 백엔드에 실재하나 도달 표면이
+    // 아직 없다(별건 #350). 지금 경험 그대로 「삭제 + 되돌리기」로 말한다(library.js 동형).
+    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 삭제했습니다.`, async () => {
       const restored = await Bridge.call("tpl", "undo_delete", {});
       if (restored && restored.ok === false) throw new Error(restored.error);
     });

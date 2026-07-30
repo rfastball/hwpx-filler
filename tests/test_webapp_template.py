@@ -284,6 +284,37 @@ def test_delete_hwpx_soft_delete_and_undo(tmp_path, monkeypatch):
     assert (tp / "lib" / "raw.hwpx").exists()
 
 
+def test_delete_copy_says_deleted_while_trash_retention_survives_without_surface(
+    tmp_path, monkeypatch
+):
+    """U2 §2.12(#345) — 문안은 「삭제」, 기제는 30일 보존 그대로: 어휘와 의무의 분리.
+
+    「휴지통」은 도달 표면(열어본다·골라 복원한다·비운다)이 하나도 없어 사용자 문안에서
+    내렸다(표면은 별건 #350). 그 조치가 백엔드 보존을 함께 지우지 않았는지 세 값으로
+    묶어 잰다: ①결과 줄이 「삭제했습니다」를 말하고 「휴지통」을 말하지 않는다 ②파일은
+    ``.trash`` 에 실재한다(복원 재료) ③30일 컷오프 정리가 여전히 돈다."""
+    import os
+    import time as time_mod
+
+    from hwpxfiller.core.template_status import TRASH_DIR_NAME
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    trash = tp / "txt" / TRASH_DIR_NAME
+    trash.mkdir(parents=True)
+    stale = trash / "0-stale-옛기안.txt"
+    stale.write_text("옛것", encoding="utf-8")
+    old = time_mod.time() - 31 * 24 * 60 * 60
+    os.utime(stale, (old, old))
+
+    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+    result = ctrl.snapshot()["result"]
+    assert "삭제했습니다" in result["text"] and "온나라_기안" in result["text"]
+    assert "휴지통" not in result["text"]                 # 도달 불가 장소를 약속하지 않는다
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
+    assert trashed.exists() and trashed.parent == trash   # 보존은 실재(의무 상속)
+    assert not stale.exists()                             # 30일 컷오프 정리 생존
+
+
 def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     assert ctrl.dispatch("undo_delete", {}) == {
@@ -294,8 +325,9 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
     ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
     _media, _path, trashed, _group = ctrl._deleted_template_slot
     trashed.unlink()
+    # 「휴지통」 없이 실패 사실만 말한다(U2 §2.12, #345 — 도달 표면 없는 장소 어휘 금지).
     assert ctrl.dispatch("undo_delete", {}) == {
-        "ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."
+        "ok": False, "error": "되돌릴 템플릿 파일을 찾을 수 없습니다."
     }
 
     ctrl.dispatch("txt_new", {"name": "충돌", "content": "원본"})

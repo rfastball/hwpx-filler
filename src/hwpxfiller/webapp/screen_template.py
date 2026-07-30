@@ -362,7 +362,10 @@ class TemplateController:
         self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
-        self._set_result(_ok(f"템플릿을 휴지통으로 옮겼습니다: {path.stem}"))
+        # 문안은 「삭제」다(U2 §2.12, #345) — .trash 30일 보존은 실재하지만 도달 표면(열어본다·
+        # 골라 복원한다·비운다)이 아직 없다(별건 #350). 보존 기제 자체는 지우지 않는다: 위
+        # 컷오프 정리·이동이 삭제가 상속하는 의무다(편집기 토스트와 같은 말 — 두 벌 금지).
+        self._set_result(_ok(f"템플릿 '{path.stem}' 을(를) 삭제했습니다."))
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:
@@ -388,7 +391,9 @@ class TemplateController:
             쓸어 넣는다(재시도 Undo = 엉뚱한 내용 복원 + 동시 편집 소실).
             """
             if not trashed.exists():
-                return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
+                # 「휴지통」 없이 말한다(#345) — 사용자에게 그 장소는 도달 불가라 이름만 있는
+                # 공간이다. 실패 사실(파일 부재)만 재진술한다.
+                return {"ok": False, "error": "되돌릴 템플릿 파일을 찾을 수 없습니다."}
             if path.exists():
                 return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
             path.parent.mkdir(parents=True, exist_ok=True)
