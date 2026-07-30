@@ -1445,11 +1445,16 @@ _JOB_MIRROR_PROBE_JS = r"""
     };
     document.getElementById('jobMirrorPreviewOpen').click();
     setTimeout(function () {
-      window.Bridge.call = sheetRealCall;
+      // 정리는 **스텁이 산 채로** 한다(관측자 오염 리트머스): 닫힘 onClose 가 발화하는
+      // preview_close 가 실 백엔드에 닿으면 세션 없는(has_job:false) 실 스냅샷 push 가
+      // 뒤 프로브(결과 3태)의 비동기 창에 착지하고, §2.18 처분이 그 push 를 「작업 없음
+      // 전환」으로 읽어 방금 세운 rejected 결과를 초기화한다 — 프로브가 프로브를 오염시키는
+      // 자리다. 복원은 닫힘(전이 정착)까지 끝난 **뒤에** 한다.
       window.Modal.close('previewSheet');
       var card = document.querySelector('#previewSheet .modal-card');
       if (card) { var ev2 = new Event('transitionend', {bubbles:true});
         Object.defineProperty(ev2, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev2); }
+      window.Bridge.call = sheetRealCall;
     }, 30);
 
     // ⤢ 데이터 펼침 면은 **비동기 프로브**(_DATA_SHEET_PROBE_SETUP_JS)로 떼어 냈다: 열기가
@@ -1800,7 +1805,9 @@ _JOB_RESULT_PROBE_JS = r"""
     window.__rejectGenCalls = 0;
     window.Bridge.generate = function () {
       window.__rejectGenCalls += 1;
-      return Promise.resolve({ok:false, error:'빈 값 필드를 먼저 확인하세요: 추정가격', level:'warn'});
+      // 문안은 살아 있는 blank_set 게이트 문형(U2 §2.13) — 죽은 ack 문형을 프로브가
+      // 정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다.
+      return Promise.resolve({ok:false, error:'빈 값 필드가 표식으로 문서에 박힙니다: 추정가격.', level:'warn'});
     };
     // 거절 창 격리(관측자 오염 리트머스) — 이 프로브 첫머리의 Nav.go('job') 이 쏜 실
     // refresh 의 push(세션 없는 실 스냅샷)는 Python 스레드에서 늦게 착지해 정확히 이
