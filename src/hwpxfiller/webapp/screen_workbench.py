@@ -214,11 +214,12 @@ class WorkbenchController(MappingVerbsMixin):
         self.notice_text, self.notice_level = text, level
 
     # ------------------------------------------------------------- 파생
-    def _queue_pos(self) -> int:
-        """작업점의 **큐 순서** 자리(없으면 -1) — 순회 경계 판정 전용.
+    def _display_pos(self) -> int:
+        """작업점의 표시 서수(0-기반, 없으면 -1) — 자리·순회 경계가 **같은 값**을 쓴다.
 
-        표시 서수와 갈리는 이유: 큐는 복사한 카드를 후미로 보내므로(결정 16) 같은 카드의
-        고정 자리는 그대로여도 순회상의 앞뒤는 바뀐다. 두 축을 한 값으로 뭉치지 않는다.
+        표시 순서는 고정 사본 순서다(U2 §2.15, #338 — ``TxtQueueModel.display_order`` 가
+        복사에 재배열되지 않는다). 그래서 사람이 읽는 자리(`position`)와 이동 경계
+        (`can_prev`/`can_next`)의 갈림 자체가 소멸했다 — 순서가 하나면 답도 하나다.
         """
         cur = self.queue.current
         order = self.queue.display_order()
@@ -363,23 +364,18 @@ class WorkbenchController(MappingVerbsMixin):
             "index": cur,
             "has_current": cur is not None,
             "queue_degenerate": total <= 1,
-            # 작업점 자리 = **고정 사본의 서수**(0-기반)다. `TxtQueueModel.position_of` 는
-            # *미처리 큐* 안의 1-기반 순번이라 여기 쓸 수 없다: ①1-기반이라 표면이 +1 하면
-            # 진입부터 어긋나고 ②복사할 때마다 번호가 **다시 매겨지며** 복사한 카드는 아예
-            # None 이 된다. 이 화면의 부제는 「선택 당시 표시순서로 고정된 항목」이라고
-            # 말하므로, 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다(§13-13).
-            "position": cur,
-            # 이동 가능 여부는 **큐 순서**의 질문이다(2R P1). 표시 서수(`position`)는 고정
-            # 사본의 자리라 순회 경계를 답할 수 없다: 복사하면 그 카드가 후미로 가므로 자리는
-            # 그대로인데 다음/이전은 달라진다. 하나의 값으로 두 질문에 답하면 그중 하나는
-            # 반드시 틀린다 — 실제로 복사 직후 「다음」이 눌리지만 아무 일도 안 하고 「이전」은
-            # 비활성이라 그 카드에 갇혔다. 그래서 경계도 Python 이 낸다.
-            "can_prev": self._queue_pos() > 0,
-            "can_next": 0 <= self._queue_pos() < len(self.queue.display_order()) - 1,
+            # 자리도 경계도 **같은 표시 서수**에서 나온다(U2 §2.15, #338): 표시 순서가 고정
+            # 사본 순서 하나뿐이라(복사는 색만 바꾼다) 「자리는 고정인데 순회는 큐 순서」라는
+            # 두-순서 화해가 필요 없어졌다. 부제 「선택 당시 표시순서로 고정된 항목」이
+            # 숫자·점 띠·이동 경계 모두에서 참이다(§13-13).
+            "position": self._display_pos(),
+            "can_prev": self._display_pos() > 0,
+            "can_next": 0 <= self._display_pos() < len(self.queue.display_order()) - 1,
             "source_row": self.source_rows[cur] if cur is not None else None,
             "review_state": self._review_state(cur),
-            # 큐 색인(직접 이동) — 「기안」 점 표시와 같은 형상. 순서는 큐 표시순이고 자리
-            # 라벨은 **원본 행 번호**다(고정 사본의 정체를 사람이 아는 이름으로 말한다).
+            # 큐 색인(직접 이동) — 「기안」 점 표시와 같은 형상. 순서는 **고정 사본 순서**
+            # (#338: 복사해도 점의 자리는 그대로, 상태 색만 바뀐다)이고 자리 라벨은
+            # **원본 행 번호**다(고정 사본의 정체를 사람이 아는 이름으로 말한다).
             "index_map": [
                 {
                     "index": i,

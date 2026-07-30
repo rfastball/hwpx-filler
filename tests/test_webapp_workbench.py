@@ -390,10 +390,10 @@ def test_the_two_media_share_the_field_but_not_the_predicate(tmp_path):
 def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
     """작업점 「N / M」은 **고정 사본의 자리**다(§13-13) — 복사해도 다시 매겨지지 않는다.
 
-    실앱 한 바퀴가 잡은 결함의 회귀다: `TxtQueueModel.position_of` 는 *미처리 큐* 안의
-    1-기반 순번이라 ①표면이 +1 하면 진입부터 「2 / 3」으로 어긋나고 ②복사할 때마다 번호가
-    다시 매겨지며 복사한 카드는 None 이 된다. 화면 부제가 「선택 당시 표시순서로 고정된
-    항목」이라고 말하므로 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다.
+    실앱 한 바퀴가 잡은 결함의 회귀다: 미처리 큐 안의 1-기반 순번(구 ``position_of`` —
+    #338 에서 사망)은 ①표면이 +1 하면 진입부터 「2 / 3」으로 어긋나고 ②복사할 때마다
+    번호가 다시 매겨지며 복사한 카드는 아예 순번을 잃는다. 화면 부제가 「선택 당시
+    표시순서로 고정된 항목」이라고 말하므로 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다.
     """
     ctrl, reg, _ = _ctrl(tmp_path)
     job = _job(tmp_path)
@@ -415,13 +415,15 @@ def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
     assert ctrl.snapshot()["card"]["position"] == 0
 
 
-# ------------------------------------------------ 2R — 파생 vs 래치 (P1·P2 가족)
-def test_navigation_bounds_follow_the_queue_not_the_frozen_ordinal(tmp_path):
-    """이동 경계는 **큐 순서**의 질문이다(2R P1) — 표시 서수로 답하면 갇힌다.
+# ------------------------------------------------ U2 §2.15(#338) — 순서는 하나다
+def test_navigation_bounds_follow_the_frozen_ordinal(tmp_path):
+    """자리도 이동 경계도 **같은 표시 서수**다(U2 §2.15, #338).
 
-    복사하면 그 카드가 큐 후미로 간다(결정 16). 고정 자리는 그대로인데 순회상의 앞뒤는
-    달라지므로, 한 값으로 두 질문에 답하면 그중 하나는 반드시 틀린다: 실제로 복사 직후
-    「다음」은 눌리지만 아무 일도 안 했고 「이전」은 비활성이라 그 카드에 갇혔다.
+    종전에는 한 화면에 순서가 둘이었다: 사람이 읽는 `position` 은 고정 사본, 점 띠와
+    `can_prev`/`can_next` 는 큐 순서(미처리→처리 후미). 부제는 「선택 당시 표시순서로
+    고정된 항목」이라 고정을 약속하는데 띠는 고정이 아니었고, 2R P1 은 그 이중성을 값
+    둘로 화해시켰다. #338 은 큐의 후미 이동 자체를 죽여 순서를 하나로 만들었다 —
+    복사 뒤에도 자리·경계·점 띠가 전부 같은 고정 서수를 말한다.
     """
     ctrl, reg, _ = _ctrl(tmp_path)
     job = _job(tmp_path)
@@ -432,14 +434,56 @@ def test_navigation_bounds_follow_the_queue_not_the_frozen_ordinal(tmp_path):
         (2, {"부서": "다", "사업명": "ㄷ"}),
     ])
     card = ctrl.snapshot()["card"]
-    assert (card["can_prev"], card["can_next"]) == (False, True)   # 큐 머리
-    ctrl.note_copied(ctrl.render()[1])                             # 복사 = 후미로 이동
+    assert (card["can_prev"], card["can_next"]) == (False, True)   # 고정 순서 머리
+    ctrl.note_copied(ctrl.render()[1])                             # 복사 = 색만 바뀐다
     card = ctrl.snapshot()["card"]
-    assert card["position"] == 0                                   # 표시 자리는 고정
-    # 순회상으로는 **후미**다 — 다음은 없고 이전은 있다. 종전 판정과 정확히 반대였다.
-    assert (card["can_prev"], card["can_next"]) == (True, False)
-    ctrl.dispatch("step", {"delta": -1})
-    assert ctrl.queue.current is not None and ctrl.queue.current != 0  # 실제로 빠져나온다
+    assert card["position"] == 0                                   # 표시 자리 고정
+    # 순회 경계도 같은 자리다 — 첫 카드를 복사해도 「이전」이 생기지 않는다(#338).
+    assert (card["can_prev"], card["can_next"]) == (False, True)
+    ctrl.dispatch("step", {"delta": 1})
+    assert ctrl.queue.current == 1                                 # 다음 = 고정 순서의 1
+
+
+def test_copy_recolors_the_dots_without_moving_them(tmp_path):
+    """점 띠의 자리는 복사 전후 동일하고 **상태 색만** 바뀐다(#338 — 부제의 약속이 띠에서도 참)."""
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), [
+        (2, {"부서": "가", "사업명": "ㄱ"}),
+        (1, {"부서": "나", "사업명": "ㄴ"}),
+        (0, {"부서": "다", "사업명": "ㄷ"}),
+    ])
+    before = ctrl.snapshot()["card"]["index_map"]
+    assert [d["row"] for d in before] == [3, 2, 1]                 # 표시순 그대로
+    ctrl.note_copied(ctrl.render()[1])                             # 첫 카드 복사
+    after = ctrl.snapshot()["card"]["index_map"]
+    assert [d["index"] for d in after] == [d["index"] for d in before]  # 자리 불변
+    assert after[0]["state"] == "current"                          # 작업점은 머문다
+    assert ctrl.queue.is_copied(after[0]["index"]) is True         # 바뀐 것은 상태뿐
+    assert [d["state"] for d in after[1:]] == ["uncopied", "uncopied"]
+
+
+def test_advance_after_copy_goes_to_earliest_uncopied_or_stays(tmp_path):
+    """`#wbAdvance` 켠 채 마지막 카드를 복사해도 전진은 **가장 이른 미처리**로 간다(현행 유지).
+
+    미처리가 없으면 머문다 — 끝난 큐에서 작업점을 조용히 옮길 이유가 없다.
+    """
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), [
+        (i, {"부서": f"부서{i}", "사업명": f"사업{i}"}) for i in range(5)
+    ])
+    _send(ctrl, "toggle_advance", {"value": True})
+    for idx in (0, 2, 3):                     # 1 을 건너뛰고 처리해 둔다
+        ctrl.queue.set_current(idx)
+        ctrl.note_copied(ctrl.render()[1])    # advance 가 매번 1 로 되돌리므로 재지정
+    ctrl.queue.set_current(4)
+    ctrl.note_copied(ctrl.render()[1])        # 5번째 카드 복사 — 미처리는 2번(index 1)뿐
+    assert ctrl.queue.current == 1            # 표시순 가장 이른 미처리로 전진
+    ctrl.note_copied(ctrl.render()[1])        # 미처리 0 — 전진할 곳이 없으면 머문다
+    assert ctrl.queue.current == 1
 
 
 def test_editing_a_mapping_marks_copied_records_for_recheck_at_once(tmp_path):
