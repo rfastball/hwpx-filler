@@ -458,6 +458,15 @@ class TestWebSelftestGate:
         assert "빈 값" in line and "1필드" in line and "낙찰율" in line, f"빈 값 지목 누락: {line!r}"
         assert "이름" in line and "2건" in line, f"이름 건수 누락: {line!r}"
         assert j["mirror_preview_exit"] is True, "확인 면 출구(생성 값 미리보기 ⤢)가 없습니다."
+        # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 두 자리가 배타로 서는지(#364).
+        assert j["mirror_banner_empty"] is True, "한 줄과 배너가 같은 자리를 다툽니다."
+        # 출구 가용성은 액션바 버튼과 **같은 판정**(`can_open`)에 결속된다(#364) — 두 값
+        # 대조로 재는 이유: 한 값만 보면 「늘 열려 있는 버튼」도 초록이고, 비활성 요소의
+        # `click()` 은 이벤트를 만들지 않아 발신 부재가 배선 부재와 구별되지 않는다.
+        assert j["mirror_trigger_disabled"] is False, "미리볼 문서가 있는데 출구가 잠겼습니다."
+        assert j["mirror_trigger_locked"] is True, (
+            "can_open=false 인데 출구가 열려 있습니다 — 잠금이 판정에 결속되지 않았습니다."
+        )
 
     def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
         """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
@@ -695,12 +704,24 @@ class TestWebSelftestGate:
         assert j.get("error") is None, j
         # 확인 면 출구(U2 §2.13) — 실클릭이 preview_open 을 발신하고, 죽은 필드축 ack
         # 액션(ack_field·unack_field)은 발신되지 않는다(구 jobConfirmSheet 프로브의 승계).
+        # 발신 0 을 「배선 부재」로 읽기 전에 **클릭이 이벤트까지 갔는지** 먼저 가른다
+        # (부재판별력): 비활성 요소의 `click()` 은 이벤트를 만들지 않는다.
+        assert j["mirror_trigger_disabled_at_click"] is False, (
+            "클릭 시점에 출구가 잠겨 있습니다 — 이 상태의 발신 0 은 배선 부재가 아닙니다."
+        )
+        assert j["mirror_click_seen"] is True, "클릭이 이벤트를 만들지 못했습니다."
         sent = [d["action"] for d in (j.get("mirror_preview_dispatch") or [])]
         assert "preview_open" in sent, f"확인 면 출구가 preview_open 을 발신하지 않습니다: {sent!r}"
         assert not ({"ack_field", "unack_field"} & set(sent)), f"죽은 액션 발신: {sent!r}"
         # 닫은 뒤 초점은 **그 트리거**로 돌아온다(#364 리뷰 P2) — 위임 currentTarget 을
         # 복귀점으로 쓰거나(포커스 불가능한 컨테이너) 트리거가 재렌더로 교체되면 여기서
         # 화면 루트가 잡힌다. 키보드 사용자가 문서 처음에서 다시 걸어오는 그 결함이다.
+        # 복귀점이 틀린 것과 트리거가 그사이 잠긴 것(모달의 정상 경로)을 가르는 계기를
+        # 함께 읽는다 — 「초점이 안 왔다」만으로는 그 둘을 구별할 수 없다.
+        assert j["mirror_focus_target_state"] == "ready", (
+            f"측정 시점 트리거 상태가 복귀 가능하지 않습니다: {j['mirror_focus_target_state']!r} "
+            f"(창에 끼어든 push: {j.get('mirror_pushes')!r})"
+        )
         assert j["mirror_preview_focus"] == "jobMirrorPreviewOpen", (
             f"확인 면을 닫은 뒤 초점이 트리거로 돌아오지 않았습니다: {j['mirror_preview_focus']!r}"
         )

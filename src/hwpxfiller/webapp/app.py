@@ -1266,16 +1266,36 @@ _JOB_MIRROR_PROBE_JS = r"""
       restate:{origin:'manual', filter_active:true, in_def:1, extra:1, sample:[0]},
       preflight:{level:'ok', text:'ok'},
       blank_fields:['낙찰율'],
+      // 확인 면 가용성은 **Python 이 낸다**(can_open) — 한 줄의 출구도 액션바 버튼과 같은
+      // 판정을 쓰므로(#364), 이 키가 없으면 트리거가 비활성이라 클릭이 조용한 무동작이 된다.
+      // 선택 2건 = 미리볼 문서가 있는 상태를 그대로 싣는다.
+      preview:{open:false, pos:0, total:2, can_open:true,
+               blank_only:false, blank_count:1, can_prev:false, can_next:true},
       drift:[], gate:{enabled:true, level:'', text:'생성 준비'}
     };
     window.__push('job', snap);
     // 본문 존 = 표 없는 한 줄(U2 §2.13) — 값을 말하는 표가 서지 않고, 빈 값 표지(이름
     // 지목·값 없음)와 이름 건수·확인 면 출구가 한 줄로 선다.
-    out.mirror_no_table = !document.querySelector('#jobMirror table');
-    out.mirror_line = (function(){ var l = document.querySelector('#jobMirror .mirline');
-      return l ? l.textContent : ''; })();
-    out.mirror_line_has_blank_flag = !!document.querySelector('#jobMirror .mir-blank-flag');
+    // 한 줄은 **안정 DOM**(#jobMirrorLine)이고 `#jobMirror` 는 danger 배너 전용이다(#364)
+    // — 자리를 가르는 것이 트리거를 재렌더에서 지키는 기제라, 프로브도 그 자리를 읽는다.
+    out.mirror_no_table = !document.querySelector('#jobMirrorZone table');
+    out.mirror_banner_empty = document.getElementById('jobMirror').children.length === 0;
+    out.mirror_line = (function(){ var l = document.getElementById('jobMirrorLine');
+      return l && !l.hidden ? l.textContent : ''; })();
+    out.mirror_line_has_blank_flag =
+      !!document.querySelector('#jobMirrorLine .mir-blank-flag');
     out.mirror_preview_exit = !!document.getElementById('jobMirrorPreviewOpen');
+    // 판별 계기(#364 재게이트) — 「트리거가 있는가 / 잠겨 있지 않은가」를 클릭 **전에**
+    // 따로 센다: `click()` 은 비활성 요소에서 이벤트를 만들지 않아 조용한 무동작이 되고,
+    // 그러면 발신열만 보고는 「배선이 없다」와 구별할 수 없다(계측의 부재판별력).
+    out.mirror_trigger_disabled = document.getElementById('jobMirrorPreviewOpen').disabled;
+    // 음성 대조(두 값) — 가용성이 실제로 `can_open` 에 결속돼 있는가. 한 값만 재면
+    // 「늘 열려 있는 버튼」도 초록이라 잠금 계약이 검사되지 않는다.
+    snap.preview.can_open = false;
+    window.__push('job', snap);
+    out.mirror_trigger_locked = document.getElementById('jobMirrorPreviewOpen').disabled;
+    snap.preview.can_open = true;
+    window.__push('job', snap);
     out.restate_shown = getComputedStyle(document.getElementById('jobRestate')).display !== 'none';
     // 파일 이름 목록은 확인 면으로 이주했다(§2.13) — 인라인 재진술에 이름 목록이 없다.
     out.restate_no_namelist = !document.querySelector('#jobRestate .namelist');
@@ -1443,7 +1463,29 @@ _JOB_MIRROR_PROBE_JS = r"""
       dispatched.push({screen:screen, action:action});
       return Promise.resolve({});
     };
+    // 이 창도 실 push 에서 격리한다(결과 프로브와 같은 근거·같은 기제): 프로브 첫머리
+    // `Nav.go('job')` 이 쏜 실 refresh 의 push(세션 없는 실 스냅샷)가 Python 스레드에서
+    // 늦게 착지해 정확히 이 비동기 창에 들어온다. 그러면 `setBusy` 가 `can_open:false` 로
+    // 트리거를 잠그고, 닫힘 시점의 `restoreFocus` 는 **비활성 트리거를 건너뛰는 것이
+    // 계약**이라(모달의 정상 경로) 초점이 화면 루트로 내려간다 — 실앱에선 옳은 처분이고
+    // 여기서는 합성 세션 위에 실 빈 스냅샷이 끼어드는 프로브 산물이다.
+    // 삼킨 것은 기록해 증언한다(조용한 격리 금지).
+    var mirrorRealPush = window.__push;
+    window.__mirrorPushes = [];
+    window.__push = function (screen, snap2) {
+      if (screen === 'job') {
+        window.__mirrorPushes.push({job: snap2 && snap2.job_name,
+                                    has_job: !!(snap2 && snap2.has_job)});
+        return;
+      }
+      return mirrorRealPush(screen, snap2);
+    };
     var mirrorTrigger = document.getElementById('jobMirrorPreviewOpen');
+    // 클릭이 **이벤트까지 갔는가**를 따로 센다(부재판별력): 비활성 요소의 `click()` 은
+    // 이벤트를 만들지 않으므로, 이것 없이는 「발신 0」이 배선 부재인지 잠금인지 모른다.
+    window.__mirrorClickSeen = false;
+    mirrorTrigger.addEventListener('click', function () { window.__mirrorClickSeen = true; });
+    out.mirror_trigger_disabled_at_click = mirrorTrigger.disabled;
     mirrorTrigger.focus();
     mirrorTrigger.click();
     setTimeout(function () {
@@ -1459,6 +1501,13 @@ _JOB_MIRROR_PROBE_JS = r"""
       // 닫은 뒤 초점이 **그 트리거**로 돌아오는가(#364 리뷰 P2) — 위임 currentTarget 을
       // 복귀점으로 쓰거나 트리거가 재렌더로 교체되면 여기서 화면 루트(scr-job)가 잡힌다.
       window.__mirrorPreviewFocus = document.activeElement && document.activeElement.id;
+      // 측정 시점의 트리거 상태 — 초점이 안 돌아왔을 때 「복귀점이 틀렸다」와 「트리거가
+      // 그사이 잠겼다(정상 경로)」를 가른다.
+      window.__mirrorFocusTargetState = (function () {
+        var b = document.getElementById('jobMirrorPreviewOpen');
+        return b ? (b.disabled ? 'disabled' : (b.isConnected ? 'ready' : 'detached')) : 'missing';
+      })();
+      window.__push = mirrorRealPush;
       window.Bridge.call = sheetRealCall;
     }, 30);
 
@@ -3708,6 +3757,12 @@ def _selftest_drive(window: "object") -> None:
             "window.__mirrorPreviewDispatch")
         result["job_mirror"]["mirror_preview_focus"] = window.evaluate_js(  # type: ignore[attr-defined]
             "String(window.__mirrorPreviewFocus)")
+        result["job_mirror"]["mirror_click_seen"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "!!window.__mirrorClickSeen")
+        result["job_mirror"]["mirror_focus_target_state"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__mirrorFocusTargetState)")
+        result["job_mirror"]["mirror_pushes"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__mirrorPushes || []")
         # 결과 3태 구획(F4) — 거울 프로브 뒤(같은 화면·같은 스냅샷 문맥)에서 돈다.
         result["job_result"] = window.evaluate_js(_JOB_RESULT_PROBE_JS)  # type: ignore[attr-defined]
         result["job_result"].update(_probe_late(
