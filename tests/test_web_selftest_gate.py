@@ -1250,20 +1250,23 @@ class TestWebSelftestGate:
         j = selftest_result["job_mirror"]
         # ① 첫 건 전 취소 — 「생성」 완주 문형이 0건을 주장하지 않고 미착수가 남는다.
         untouched = j["exit_cancelled_untouched"]
-        assert "중단했습니다" in untouched and "0개 완료" in untouched, untouched
+        assert "중단" in untouched and "0개 성공" in untouched, untouched
         assert "미착수 12건" in untouched, untouched
         assert "12건 생성" not in untouched, f"취소를 완주로 말합니다: {untouched!r}"
-        # ② 중간 취소 — 완료분과 미착수분이 각각 제 수치로 선다.
-        partial = j["exit_cancelled_partial"]
-        assert "5개 완료" in partial and "미착수 6건" in partial, partial
-        # ③ 정상 완주 · ④ 일부 실패 — 태별 문형 그대로, 미착수는 붙지 않는다(없는 상태).
-        assert j["exit_completed"].startswith("'발주요청서' 문서 생성 완료 · 12개")
-        assert "미착수" not in j["exit_completed"], j["exit_completed"]
+        # ② 취소 + 실패 혼재 — 성공·실패·미착수가 **하나도 안 빠진다**(구 제목이 접던 자리).
+        mixed = j["exit_cancelled_mixed"]
+        for needle in ("5개 성공", "1개 실패", "미착수 6건"):
+            assert needle in mixed, f"퇴장 요약이 수치를 흘립니다({needle}): {mixed!r}"
+        # ③ 레코드 처리 전 실패 — 수치를 통째로 생략하던 태가 사실을 말한다.
+        assert "생성 시작 전 실패 · 대상 12건" in j["exit_prebatch_failed"], j["exit_prebatch_failed"]
+        # ④ 정상 완주 · ⑤ 일부 실패 — 0 인 성분(실패·미착수)은 붙지 않는다(지어내지 않는다).
+        assert j["exit_completed"].startswith("'발주요청서' 12개 성공")
+        assert "미착수" not in j["exit_completed"] and "실패" not in j["exit_completed"]
         assert "10개 성공 · 2개 실패" in j["exit_partial_failure"], j["exit_partial_failure"]
         assert "미착수" not in j["exit_partial_failure"], j["exit_partial_failure"]
-        # 네 태 모두 착지 폴더를 남긴다 — 손으로 고른 저장 폴더의 마지막 보관처다(§2.18 ⑷).
-        for key in ("exit_cancelled_untouched", "exit_cancelled_partial",
-                    "exit_completed", "exit_partial_failure"):
+        # 다섯 태 모두 착지 폴더를 남긴다 — 손으로 고른 저장 폴더의 마지막 보관처다(§2.18 ⑷).
+        for key in ("exit_cancelled_untouched", "exit_cancelled_mixed",
+                    "exit_prebatch_failed", "exit_completed", "exit_partial_failure"):
             assert j[key].endswith("D:\\out"), (key, j[key])
         # 생성이 아닌 태에는 퇴장 한 줄이 없다(없는 실행을 지어내지 않는다).
         assert j["exit_rejected"] == "" and j["exit_running"] == ""

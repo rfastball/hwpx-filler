@@ -200,6 +200,52 @@ def test_data_mount_identity_changes_on_every_remount(tmp_path):
     )
 
 
+def test_exit_summary_leaks_no_count_and_invents_none(tmp_path):
+    """퇴장 요약(§2.18)은 성공·실패·미착수를 **하나도 흘리지 않는다**(#363 리뷰 P2).
+
+    이 문장은 결과 구획이 초기화된 뒤 남는 **유일한 흔적**이라 손실이 곧 은폐다. 구획
+    제목(`_run_title`)은 반대로 일부러 짧다 — 취소 갈래가 실패 수를 접고 `failed` 태가
+    수치를 통째로 생략하는데, 화면에서는 옆의 요약·실패 행이 그것을 말하기 때문이다.
+    그래서 두 문장은 목적이 다른 **별개 합성기**이고 둘 다 Python 이 소유한다(층을 넘는
+    재조립만 금지이지 같은 층의 두 문장은 `summary` 선례가 이미 있다).
+    """
+    from hwpxfiller.webapp.screen_job import _run_exit_summary, _run_title
+
+    # ① 취소 + 실패 혼재 — 제목이 접는 실패 수가 여기서는 남는다(리뷰가 지목한 자리).
+    mixed = _run_exit_summary("partiallyCompleted", True, 5, 1, 6, 6, 12)
+    assert mixed == "중단 · 5개 성공 · 1개 실패 · 미착수 6건"
+    assert "1개 실패" not in _run_title("partiallyCompleted", True, 5, 1), (
+        "제목이 실패 수를 이미 말하면 이 합성기의 존재 이유가 사라집니다(전제 확인)."
+    )
+    # ② 레코드 처리 전 failed — 시도가 0 이라 성공/실패로 가르지 않는다. 그 페이로드는
+    #    같은 레코드를 failed·unstarted 에 동시에 세므로 이어 붙이면 같은 건을 두 번 말한다.
+    assert _run_exit_summary("failed", False, 0, 12, 12, 0, 12) == "생성 시작 전 실패 · 대상 12건"
+    # ③ 첫 건 전 취소 — 완료 0 은 지어낸 성분이 아니라 「어디까지 됐나」의 답이다.
+    assert _run_exit_summary("partiallyCompleted", True, 0, 0, 12, 0, 12) == "중단 · 0개 성공 · 미착수 12건"
+    # ④ 정상 완주 · ⑤ 일부 실패 — 0 인 성분(실패·미착수)은 붙지 않는다.
+    assert _run_exit_summary("completed", False, 12, 0, 0, 12, 12) == "12개 성공"
+    assert _run_exit_summary("partiallyCompleted", False, 10, 2, 0, 12, 12) == "10개 성공 · 2개 실패"
+    # 전건 실패(레코드는 시도됨) — 시작 전 실패와 다른 사실이라 다르게 말한다.
+    assert _run_exit_summary("failed", False, 0, 3, 0, 3, 3) == "0개 성공 · 3개 실패"
+
+
+def test_generate_result_carries_the_exit_summary(tmp_path):
+    """생성 결과 payload 가 퇴장 요약을 싣는다 — 표면이 수치를 재조립하지 않는 전제.
+
+    빈 값 없는 데이터를 쓴다 — 빈 값 게이트(확인이든 승인이든)는 이 테스트의 축이
+    아니고, 그것을 태우면 무엇을 재는 테스트인지 흐려진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    res = ctrl.generate()
+    assert res["ok"] is True
+    assert res["exit_summary"] == "2개 성공", res["exit_summary"]
+
+
 def test_prework_gate_counts_only_available_candidates(tmp_path):
     """후보가 전부 needs_action 이면 "선택하세요"는 이행 불가능한 지시다(#302 리뷰 P2)
     — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다."""

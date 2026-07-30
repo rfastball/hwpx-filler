@@ -766,17 +766,15 @@ def test_job_completion_zone_reset_gated_by_session_change():
     assert "r.out_dir" in exit_code, (
         "퇴장 한 줄이 경로를 재진술하지 않습니다(§2.18 — 손으로 고른 저장 폴더의 마지막 보관처)."
     )
-    # 수치는 **Python 이 낸 제목**을 그대로 쓴다(#363 리뷰 P2): `total` 은 대상 수이지
-    # 만들어진 수가 아니라, 첫 건 전에 취소한 배치가 「N건 생성」이라고 주장했다. 결과
-    # 구획이 곧 초기화되므로 그 거짓 진술이 유일하게 남는 흔적이 된다.
-    assert "r.title" in exit_code, "퇴장 한 줄이 태별 정직 문안(제목)을 쓰지 않습니다."
-    assert "r.total" not in exit_code, (
-        "퇴장 한 줄이 대상 수를 생성 수로 재조립합니다 — 취소 런을 완주로 말합니다."
-    )
-    # 미착수는 **취소의 사실**이다 — 완주·실패 런에 붙이면 없는 상태를 지어낸다.
-    assert "r.cancelled && r.unstarted" in exit_code, (
-        "취소의 미착수분이 어디에도 남지 않습니다(취소의 나머지 절반)."
-    )
+    # 수치 몸통은 **Python 이 낸 퇴장 요약**을 그대로 쓴다(#363 리뷰 P2 2차): 구획
+    # 제목은 머리라 일부러 짧아(취소 갈래가 실패 수를 접고 `failed` 태가 수치를 통째로
+    # 생략) 초기화 뒤 남는 유일한 흔적이 되기엔 손실 함수다. 표면에서 되메우면 수치를
+    # 두 층이 조립하게 되므로, 목적이 다른 합성기를 Python 에 두고 여기서는 고르기만 한다.
+    assert "r.exit_summary" in exit_code, "퇴장 한 줄이 Python 퇴장 요약을 쓰지 않습니다."
+    for banned in ("r.total", "r.title", "r.succeeded", "r.failed", "r.unstarted"):
+        assert banned not in exit_code, (
+            f"퇴장 한 줄이 수치를 표면에서 재조립합니다({banned}) — 합성기가 두 층에 생깁니다."
+        )
     # 순수 합성기 — 실앱 게이트가 네 태의 산출을 되읽는다(overwriteBody·guardBody 와 같은 자리).
     assert "function resultExitLine(r, owner)" in src, (
         "퇴장 한 줄이 모듈 상태를 읽습니다 — 네 태를 되읽을 seam 이 사라집니다."
