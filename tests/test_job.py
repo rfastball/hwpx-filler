@@ -911,6 +911,32 @@ def test_stamp_last_run_is_a_single_field_mutation(tmp_path):
     assert after.mapping.cover_fields() == _profile().cover_fields()
 
 
+def test_soft_delete_retains_trash_30_days_and_undo_error_names_no_trash(tmp_path):
+    """U2 §2.12(#345) — 「휴지통」 어휘는 사용자 문안에서 내렸지만(도달 표면 없음 · 표면은
+    별건 #350) 보존 의무는 삭제가 상속한다: ①soft_delete 는 ``.trash`` 로 이동(파일 실재 =
+    복원 재료) ②보존 기간 지난 항목은 다음 삭제의 ``_purge_trash`` 컷오프가 걷는다 ③복원
+    실패 문안은 「휴지통」 없이 실패 사실(파일 부재)만 말한다."""
+    import os
+    import time
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx"))
+    trash = tmp_path / "jobs" / ".trash"
+    trash.mkdir(parents=True)
+    stale = trash / f"0-stale-옛작업{JobRegistry.SUFFIX}"
+    stale.write_text("{}", encoding="utf-8")
+    old = time.time() - (JobRegistry.TRASH_RETENTION_DAYS + 1) * 24 * 60 * 60
+    os.utime(stale, (old, old))
+
+    src, dst = reg.soft_delete("공고서")
+    assert dst.exists() and dst.parent == trash          # 30일 보존 실재(의무 상속)
+    assert not stale.exists()                            # 컷오프 정리 생존
+    dst.unlink()                                         # 보존 기간 밖 소실 시나리오
+    with pytest.raises(ValueError) as exc:
+        reg.restore_soft_deleted((src, dst))
+    assert str(exc.value) == "되돌릴 작업 파일을 찾을 수 없습니다."
+
+
 # ---- 쓰기 표면 전수 분류 가드(#129 리뷰 3R P1 — 4차 재발 차단) ----
 #
 # 같은 결함류가 세 라운드 연속 재발했다: ①스탬프가 남의 작업에 ②스탬프가 잠금 밖 ③delete·

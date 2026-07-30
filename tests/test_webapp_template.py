@@ -284,6 +284,51 @@ def test_delete_hwpx_soft_delete_and_undo(tmp_path, monkeypatch):
     assert (tp / "lib" / "raw.hwpx").exists()
 
 
+def test_delete_speaks_once_via_toast_while_trash_retention_survives_without_surface(
+    tmp_path, monkeypatch
+):
+    """U2 §2.12(#345) — 확인은 UndoToast **하나**, 기제는 30일 보존 그대로.
+
+    자리 3(결과줄)은 문안 교체가 아니라 **제거**다(PR #353 1R — 토스트와 같은 말을 두 번
+    하고, 되돌리기 어포던스를 든 토스트가 이긴다). 「휴지통」은 도달 표면(열어본다·골라
+    복원한다·비운다)이 하나도 없어 사용자 문안에서 내렸다(표면은 별건 #350).
+
+    **선행 상태를 실제로 만들어서 잰다**(2R): 빈 컨트롤러에서 재면 이 단언은 삭제가 결과줄을
+    어떻게 다루든 늘 초록이라(초기값이 이미 "") 결함을 통과시킨다 — 실제로 1R 은 그렇게
+    초록인 채 「지웠는데 직전 행동의 문장이 삭제의 결과인 것처럼 서 있는」 상태를 남겼다.
+    그래서 직전 행동(TXT 생성)이 결과줄을 채운 뒤에 삭제한다.
+
+    네 값을 묶어 잰다: ①삭제는 결과줄로 말하지 않는다(토스트 단독) ②남의 말도 남기지
+    않는다(직전 행동 문장이 지워진다) ③파일은 ``.trash`` 에 실재한다(복원 재료) ④30일
+    컷오프 정리가 여전히 돈다."""
+    import os
+    import time as time_mod
+
+    from hwpxfiller.core.template_status import TRASH_DIR_NAME
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    trash = tp / "txt" / TRASH_DIR_NAME
+    trash.mkdir(parents=True)
+    stale = trash / "0-stale-옛기안.txt"
+    stale.write_text("옛것", encoding="utf-8")
+    old = time_mod.time() - 31 * 24 * 60 * 60
+    os.utime(stale, (old, old))
+
+    # 선행 행동 — 결과줄을 실제로 채운다(이 문장이 삭제 뒤까지 살아남으면 안 된다).
+    ctrl.dispatch("txt_new", {"name": "직전행동", "content": "{{건명}}"})
+    before = ctrl.snapshot()["result"]
+    assert before["text"] and before["level"] == "ok"      # 선행 상태 성립(측정 전제)
+
+    res = ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+    assert res["undo"] is True                             # 확인·복구 경로 = 토스트 하나
+    after = ctrl.snapshot()["result"]
+    assert after["text"] == "" and after["level"] == "muted"
+    assert "직전행동" not in after["text"]                 # 남의 말이 삭제의 결과로 읽히지 않는다
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
+    assert trashed.exists() and trashed.parent == trash    # 보존은 실재(의무 상속)
+    assert not stale.exists()                              # 30일 컷오프 정리 생존
+
+
 def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     assert ctrl.dispatch("undo_delete", {}) == {
@@ -294,8 +339,9 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
     ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
     _media, _path, trashed, _group = ctrl._deleted_template_slot
     trashed.unlink()
+    # 「휴지통」 없이 실패 사실만 말한다(U2 §2.12, #345 — 도달 표면 없는 장소 어휘 금지).
     assert ctrl.dispatch("undo_delete", {}) == {
-        "ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."
+        "ok": False, "error": "되돌릴 템플릿 파일을 찾을 수 없습니다."
     }
 
     ctrl.dispatch("txt_new", {"name": "충돌", "content": "원본"})
