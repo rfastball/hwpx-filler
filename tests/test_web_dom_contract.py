@@ -1495,11 +1495,12 @@ def test_editor_folder_import_is_wired_without_session_confirm():
     assert "confirmNewSessionIfUnsaved()" not in block, (
         "채택 없는 일괄 등록에 새-세션 확인이 붙었습니다 — 세션 무변경 동사입니다(#339)."
     )
-    assert block.index("Modal.confirm") < block.index("importTemplatesFolder(r.folder, true)"), (
-        "확정 실행이 재진술 확인보다 앞에 있습니다 — 확정 전에는 홈에 아무것도 쓰지 않는다."
+    assert block.index("Modal.confirm") < block.index("importTemplatesFolder(r.folder, true, r.files)"), (
+        "확정 실행이 재진술 확인보다 앞에 있거나 재진술된 후보 목록(r.files)을 나르지"
+        " 않습니다 — 확정 전에는 홈에 아무것도 쓰지 않고, 실행은 확인한 목록에 결속된다."
     )
-    assert "importTemplatesFolder(folder, confirm)" in bridge, (
-        "브리지에 importTemplatesFolder 가 없습니다."
+    assert "importTemplatesFolder(folder, confirm, files)" in bridge, (
+        "브리지에 importTemplatesFolder(확정 목록 나름)가 없습니다."
     )
     assert "def import_templates_folder(" in app_py, (
         "백엔드 직접 메서드 import_templates_folder 가 없습니다."

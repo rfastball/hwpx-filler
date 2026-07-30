@@ -1092,7 +1092,9 @@
             body: r.confirm_text + "\n\n지금 가져올까요?",
             confirmLabel: "가져오기", cancelLabel: "취소", returnFocus: el,
           }))) break;
-          const done = await Bridge.importTemplatesFolder(r.folder, true);
+          // 확정 실행은 **재진술된 후보 목록**(r.files)을 그대로 나른다 — 재스캔이면
+          // 확인 안 된 파일이 따라 들어온다(PR #355 리뷰).
+          const done = await Bridge.importTemplatesFolder(r.folder, true, r.files);
           if (done && done.error) alertMsg(done.error);
           break;
         }

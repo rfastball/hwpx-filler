@@ -398,11 +398,14 @@ def test_scan_import_folder_restates_and_writes_nothing(tmp_path, monkeypatch):
     assert res["needs_confirm"] is True and res["folder"] == str(ext)
     assert res["hwpx"] == 1 and res["txt"] == 2
     assert res["skipped"] == 1 and res["collisions"] == 1
+    # 실행이 결속될 확정 후보 목록(이름순) — PR #355 리뷰: 실행은 이 목록을 받는다.
+    assert res["files"] == ["온나라_기안.txt", "용역.hwpx", "협조전.txt"]
     text = res["confirm_text"]
     assert "HWPX 서식 1건" in text and "TXT 기안 2건" in text
     assert "나머지 파일 1개는 가져오지 않습니다" in text
     assert "하위 폴더는 살펴보지 않습니다" in text
-    assert "이름 충돌 1건" in text and "(2)" in text
+    # 「(2)」 단정 금지(PR #355 리뷰) — (2)가 이미 있으면 (3)이 붙는다: 정책만 재진술.
+    assert "이름 충돌 1건" in text and "번호 접미" in text and "(2)" not in text
     # 무변이 — 라이브러리·TXT 루트에 아무것도 쓰지 않았다.
     assert set((tp / "lib").iterdir()) == before_lib
     assert set((tp / "txt").iterdir()) == before_txt
@@ -423,12 +426,16 @@ def test_scan_import_folder_empty_and_missing_are_loud(tmp_path, monkeypatch):
 def test_import_folder_routes_media_suffixes_collision_and_skips_subfolders(
     tmp_path, monkeypatch
 ):
-    """실행 = import_into_library 반복(복사 권위 단일) — 확장자 매체 라우팅 · 충돌 (2)
-    접미 · 하위 폴더 미반입 · 「그룹 없음」 시작 · 배치 요약 결과 줄."""
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    """실행 = 확정 목록을 복사 몸통으로 반복(복사 권위 단일) — 확장자 매체 라우팅 · 충돌
+    번호 접미 · 하위 폴더 미반입 · 「그룹 없음」 시작 · 배치 요약 결과 줄 · **push 1회**
+    (PR #355 리뷰: 항목별 전체 리프레시·재렌더 유예, 완료 후 한 번)."""
+    ctrl, tp, pushes = _controller(tmp_path, monkeypatch)
     ext = _import_folder_fixture(tp)
-    res = ctrl.import_folder(str(ext))
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+    before_pushes = len(pushes)
+    res = ctrl.import_folder(str(ext), manifest)
     assert res == {"ok": True, "imported": 3, "total": 3, "failed": []}
+    assert len(pushes) == before_pushes + 1              # 배치 완료 후 1회만 민다
     assert (tp / "lib" / "용역.hwpx").exists()                       # hwpx → 라이브러리
     assert (tp / "txt" / "협조전.txt").exists()                      # txt → 텍스트 레지스트리
     assert (tp / "txt" / "온나라_기안 (2).txt").read_text(encoding="utf-8") == "다른내용"
@@ -459,7 +466,7 @@ def test_import_folder_partial_failure_keeps_successes_and_restates_reasons(
         return real(src, dst)
 
     monkeypatch.setattr(st.shutil, "copy2", flaky)
-    res = ctrl.import_folder(str(ext))
+    res = ctrl.import_folder(str(ext), ["온나라_기안.txt", "용역.hwpx", "협조전.txt"])
     assert res["ok"] is False and res["imported"] == 2 and res["total"] == 3
     assert res["failed"] == [{"name": "용역.hwpx", "error": "디스크 오류"}]
     assert (tp / "txt" / "협조전.txt").exists()                      # 성공분 잔존
@@ -471,11 +478,41 @@ def test_import_folder_partial_failure_keeps_successes_and_restates_reasons(
     assert result["level"] == "warn"
 
 
+def test_import_folder_is_bound_to_confirmed_manifest_not_a_rescan(tmp_path, monkeypatch):
+    """PR #355 리뷰 — 실행은 **확정 시점 후보 목록**에 결속된다(재스캔 금지).
+
+    스캔~확정 사이 폴더가 바뀌는 두 방향을 다 잰다: ①새로 온 파일은 재진술에 없었으므로
+    들어오지 않는다(확인 안 된 반입 금지) ②확정된 파일이 사라졌으면 그 건만 부분 실패로
+    사유를 병기하고 나머지는 계속한다. ③목록 형태 검증 — basename 밖(상위 탈출)·비허용
+    확장자는 loud 거절(임의 경로 반입 승격 차단)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = _import_folder_fixture(tp)
+    manifest = ctrl.scan_import_folder(str(ext))["files"]
+
+    (ext / "확정뒤추가.txt").write_text("{{몰래}}", encoding="utf-8")   # ① 스캔 뒤 등장
+    (ext / "협조전.txt").unlink()                                       # ② 스캔 뒤 소실
+
+    res = ctrl.import_folder(str(ext), manifest)
+    assert res["imported"] == 2 and res["total"] == 3
+    assert res["failed"] == [{"name": "협조전.txt", "error": "확정 뒤 폴더에서 사라졌습니다"}]
+    assert not (tp / "txt" / "확정뒤추가.txt").exists()   # 확인 안 된 파일은 들어오지 않는다
+    result = ctrl.snapshot()["result"]
+    assert "협조전.txt" in result["text"] and "사라졌습니다" in result["text"]
+
+    with pytest.raises(ValueError, match="목록에 올 수 없는 항목"):
+        ctrl.import_folder(str(ext), ["../탈출.txt"])
+    with pytest.raises(ValueError, match="목록에 올 수 없는 항목"):
+        ctrl.import_folder(str(ext), ["명세.pdf"])
+    with pytest.raises(ValueError, match="목록이 비어"):
+        ctrl.import_folder(str(ext), [])
+
+
 def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
     tmp_path, monkeypatch
 ):
-    """브리지 import_templates_folder(#339) — ①스캔 왕복(무변이) ②확정 실행 ③payload
-    검증(확정 없는 실행 loud) ④피커 취소 None ⑤**채택 없음**: 편집 세션·dirty 불변."""
+    """브리지 import_templates_folder(#339) — ①스캔 왕복(무변이) ②확정 목록 결속 실행
+    ③payload 검증(확정·목록 없는 실행 loud) ④피커 취소 None ⑤**채택 없음**: 편집 세션·
+    dirty 불변."""
     from hwpxfiller.webapp import app as app_mod
 
     monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
@@ -495,8 +532,9 @@ def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
     txt_root = fe.controllers["tpl"].text_registry.directory
     r1 = fe.import_templates_folder()
     assert r1["needs_confirm"] is True and r1["txt"] == 1
+    assert r1["files"] == ["협조전.txt"]                 # 실행이 결속될 확정 목록
     assert not (txt_root / "협조전.txt").exists()        # 확정 전 무변이
-    r2 = fe.import_templates_folder(r1["folder"], True)
+    r2 = fe.import_templates_folder(r1["folder"], True, r1["files"])
     assert r2["ok"] is True and r2["imported"] == 1
     assert (txt_root / "협조전.txt").exists()
     # 세션 불변 — 템플릿·미저장 판정이 그대로다(채택 없음).
@@ -506,7 +544,9 @@ def test_bridge_folder_import_two_step_validates_and_leaves_session_alone(
     with pytest.raises(ValueError, match="confirm 필수"):
         fe.import_templates_folder(str(ext))             # 재진술 없는 실행 차단
     with pytest.raises(ValueError, match="폴더 경로가 비어"):
-        fe.import_templates_folder("  ", True)
+        fe.import_templates_folder("  ", True, ["협조전.txt"])
+    with pytest.raises(ValueError, match="확정된 가져오기 목록이 없습니다"):
+        fe.import_templates_folder(str(ext), True)       # 목록 없는 실행 차단(재스캔 금지)
     monkeypatch.setattr(app_mod, "open_folder_dialog", lambda *a, **k: None)
     assert fe.import_templates_folder() is None          # 피커 취소
 

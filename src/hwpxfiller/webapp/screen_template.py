@@ -184,33 +184,10 @@ class TemplateController:
         ``이름 (2).ext`` 접미로 회피 + 결과 재진술. 관리 화면은 RAW(누름틀 0)도 받는다(그
         자리에서 변환하는 게 요점 — 에디터 가져오기의 RAW 거부와 다르다). 브리지가 부른다.
 
-        **직렬화**(F9): 후보 선택~복사를 인스턴스 잠금으로 묶어 동시 동명 가져오기가 같은
-        목적지를 골라 내용 하나만 남는 경합을 막는다. **무잔재**(F6): 복사 중 실패하면(디스크
-        풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
-        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형)."""
+        복사 몸통(잠금·라우팅·접미·무잔재)은 :meth:`_copy_into_library` — 배치와 공유."""
         src = Path(path)
-        suffix = src.suffix.lower()
-        if suffix == ".hwpx":
-            root = self.vm.library_dir
-        elif suffix == ".txt":
-            root = self.text_registry.directory
-        else:
-            raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
-        if root is None:
-            raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
-        root.mkdir(parents=True, exist_ok=True)
-        with self._import_lock:
-            dest = root / src.name
-            n = 2
-            while dest.exists():
-                dest = root / f"{src.stem} ({n}){src.suffix}"
-                n += 1
-            try:
-                shutil.copy2(src, dest)
-            except Exception:
-                dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거
-                raise
-        if suffix == ".hwpx":
+        dest = self._copy_into_library(src)
+        if src.suffix.lower() == ".hwpx":
             self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
         renamed = f" (이름 충돌로 '{dest.name}')" if dest.name != src.name else ""
         self._set_result(
@@ -240,7 +217,11 @@ class TemplateController:
 
         수치(매체별 건수·제외 수·이름 충돌 수)와 완성 재진술 문안을 함께 돌려준다 — 표면이
         수치로 문안을 재조립하면 두 답이 생긴다(판정·문안은 Python, 확인 UI 는 웹). 후보 0
-        은 확인이 아니라 loud 거절이다(가져올 것 없는 확정을 시키지 않는다). 브리지가 부른다."""
+        은 확인이 아니라 loud 거절이다(가져올 것 없는 확정을 시키지 않는다). 브리지가 부른다.
+
+        ``files`` = 확정 대상 후보 목록(이름) — 실행(:meth:`import_folder`)은 재스캔이 아니라
+        **이 목록에 결속**된다(PR #355 리뷰): 스캔~확정 사이 폴더가 바뀌어도 확인 안 된
+        파일이 따라 들어오지 않는다(재진술이 참이 되게)."""
         root = Path(folder)
         if not root.is_dir():
             raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
@@ -266,10 +247,13 @@ class TemplateController:
             lines.append(f"- 나머지 파일 {skipped}개는 가져오지 않습니다(.hwpx/.txt 아님)")
         lines.append("- 하위 폴더는 살펴보지 않습니다")
         if collisions:
-            lines.append(f"- 이름 충돌 {collisions}건은 '이름 (2)' 접미로 가져옵니다")
+            # 「(2)」라 단정하지 않는다(PR #355 리뷰) — 이미 (2)까지 있으면 (3)이 붙는다.
+            # 정확한 접미는 복사 시점 잠금 안에서 정해지므로 정책(번호 접미)만 재진술한다.
+            lines.append(f"- 이름 충돌 {collisions}건은 이름 뒤 번호 접미로 가져옵니다")
         return {
             "needs_confirm": True, "folder": str(root),
             "hwpx": hwpx, "txt": txt, "skipped": skipped, "collisions": collisions,
+            "files": [p.name for p in candidates],
             "confirm_text": "\n".join(lines),
         }
 
@@ -278,28 +262,83 @@ class TemplateController:
         root = self.vm.library_dir if src.suffix.lower() == ".hwpx" else self.text_registry.directory
         return root is not None and (Path(root) / src.name).exists()
 
-    def import_folder(self, folder: str) -> dict:
-        """확정 후 실행 — 후보를 :meth:`import_into_library` 로 **반복**한다(복사 권위 단일).
+    def _copy_into_library(self, src: Path) -> Path:
+        """복사 권위 **몸통** — 매체 라우팅·잠금·충돌 번호 접미·무잔재. refresh/결과/push 없음.
 
-        각 건이 단건과 같은 잠금·매체 라우팅·충돌 ``(2)`` 접미·무잔재를 상속하고, 부분
-        실패는 걷어내고 계속한다(실패 건의 부분 파일은 단건의 무잔재 규율이 이미 걷는다 —
-        F6 동형). 결과 줄은 배치 요약으로 재진술: 「N건 중 M건 등록 · K건 실패(사유)」.
-        채택은 없다 — 편집 세션은 이 메서드가 모르는 남의 상태다(세션 무변경)."""
+        단건(:meth:`import_into_library`)과 배치(:meth:`import_folder`)가 같은 몸통을 쓴다 —
+        배치는 항목별 전체 리프레시·push 를 유예하고 완료 후 1회만 민다(PR #355 리뷰: N건
+        가져오기가 N번의 라이브러리 재스캔+전체 재렌더가 되는 준-제곱 정지 방지).
+
+        **직렬화**(F9): 후보 선택~복사를 인스턴스 잠금으로 묶어 동시 동명 가져오기가 같은
+        목적지를 골라 내용 하나만 남는 경합을 막는다. **무잔재**(F6): 복사 중 실패하면(디스크
+        풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
+        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형)."""
+        suffix = src.suffix.lower()
+        if suffix == ".hwpx":
+            root = self.vm.library_dir
+        elif suffix == ".txt":
+            root = self.text_registry.directory
+        else:
+            raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
+        if root is None:
+            raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
+        root.mkdir(parents=True, exist_ok=True)
+        with self._import_lock:
+            dest = root / src.name
+            n = 2
+            while dest.exists():
+                dest = root / f"{src.stem} ({n}){src.suffix}"
+                n += 1
+            try:
+                shutil.copy2(src, dest)
+            except Exception:
+                dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거
+                raise
+        return dest
+
+    def import_folder(self, folder: str, files: "list[str]") -> dict:
+        """확정 후 실행 — **확정 시점 후보 목록**(``files``)을 복사 몸통으로 반복한다.
+
+        재스캔하지 않는다(PR #355 리뷰): 스캔~확정 사이 폴더에 새 파일이 와도 재진술에
+        없던 것은 들어오지 않고, 확정된 파일이 사라졌으면 그 건만 부분 실패로 사유 병기.
+        각 건이 단건과 같은 잠금·매체 라우팅·충돌 번호 접미·무잔재를 상속하고, 항목별
+        전체 리프레시·push 는 유예해 완료 후 1회만 민다. 결과 줄은 배치 요약으로 재진술:
+        「N건 중 M건 등록 · K건 실패(사유)」. 채택은 없다 — 편집 세션은 이 메서드가 모르는
+        남의 상태다(세션 무변경).
+
+        ``files`` 검증은 여기(권위 소유자)가 진다: 비어 있지 않은 문자열 **basename** 목록
+        (경로 구분자·상위 탈출 불가)에 허용 확장자만 — 임의 경로 반입 승격을 막는다."""
         root = Path(folder)
         if not root.is_dir():
             raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
-        candidates, _skipped = self._folder_candidates(root)
-        if not candidates:
-            raise ValueError(f"'{root.name}' 폴더 바로 아래에 가져올 .hwpx/.txt 파일이 없습니다.")
+        if not files or not isinstance(files, list):
+            raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
+        for name in files:
+            if (
+                not isinstance(name, str)
+                or not name.strip()
+                or Path(name).name != name          # 구분자·'..' 등 basename 밖 형태 차단
+                or Path(name).suffix.lower() not in (".hwpx", ".txt")
+            ):
+                raise ValueError(f"가져오기 목록에 올 수 없는 항목입니다: {name!r}")
         imported = 0
+        imported_hwpx = 0
         failed: "list[tuple[str, str]]" = []
-        for src in candidates:
+        for name in sorted(files, key=str.casefold):     # 재진술과 같은 결정적 순서
+            src = root / name
+            if not src.is_file():
+                failed.append((name, "확정 뒤 폴더에서 사라졌습니다"))
+                continue
             try:
-                self.import_into_library(str(src))
+                self._copy_into_library(src)
                 imported += 1
+                if src.suffix.lower() == ".hwpx":
+                    imported_hwpx += 1
             except Exception as exc:  # noqa: BLE001 — 한 건의 실패가 나머지를 막지 않는다(사유 병기)
-                failed.append((src.name, str(exc)))
-        total = len(candidates)
+                failed.append((name, str(exc)))
+        if imported_hwpx:
+            self.vm.refresh()  # 배치 완료 후 1회 — TXT 는 snapshot 이 매번 재스캔
+        total = len(files)
         if failed:
             from ..gui.template_manager_state import ResultLine  # _ok 동형(경량 성형)
 
