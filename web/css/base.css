@@ -92,20 +92,34 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .scr.on{display:flex}
 
 /* ---- 조작 피드백 · 오버레이 모션(#179 슬라이스 4, emil-design-eng) ----
-   pressable 에 짧은 transform 눌림 — 정확한 속성만 지정(transition:all 금지), :disabled 제외.
+   pressable 에 짧은 눌림 — 정확한 속성만 지정(transition:all 금지), :disabled 제외.
    메뉴·모달은 등장 시 opacity+scale(@starting-style — 미지원 엔진은 즉시 표시로 무해 강등).
    화면 전환·hover 배경은 무애니메이션 유지(hover 는 transform 을 안 걸어 touch 지터 무관).
-   이동(scale)은 prefers-reduced-motion 에서 제거하고 페이드(opacity)만 남긴다. 전부 <300ms. */
-.btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{
+   이동(scale)은 prefers-reduced-motion 에서 제거하고 페이드(opacity)만 남긴다. 전부 <300ms.
+
+   **눌림 관용구는 상자 크기가 가른다(U2 §2.11).** 32px 버튼에서 scale(.97) 은 좌변 1px 다 —
+   정확한 눌림이다. 990px 표 행에서는 15px, 1170px 그룹 머리에서는 18px 이고 폭은 그 두 배로
+   줄어든다. 컨테이너를 채우는 표면은 이웃 행·sticky 표 머리와 **기준면을 공유**하므로 그
+   드리프트가 곧 정렬 파손이다(실사용자 제보: "누르고 있으면 레코드가 중앙으로 모인다").
+   그래서 두 갈래다 — 작은 상자는 scale, 전폭 표면은 폭을 안 바꾸는 **배경 축**.
+   갈림의 계약과 실렌더 기하는 `tests/test_web_press_geometry.py` 가 진다. */
+
+/* 갈래 ① 작은 조작 상자 — 자기 폭만 갖는다(공유 기준면 없음). */
+.btn,.navbtn,.job-more,.grp-more,.tpl-assign,button.pill,
+.fico,.fchip button,.wstep-tab.as-tab,.shell-tool{
   transition:transform var(--dur-press) var(--ease-out)}
-.job-item,.job-grp-head,.jobtb tbody tr,.mir-row.miss,.fico,.fchip button,
-.wstep-tab.as-tab,.shell-tool{
-  transition:transform var(--dur-press) var(--ease-out)}
-.btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
-.grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:scale(.97)}
-.job-item:active,.job-grp-head:active,.jobtb tbody tr:active,.mir-row.miss:active,
+.btn:active:not(:disabled),.navbtn:active,.job-more:active,.grp-more:active,
+.tpl-assign:active,button.pill:active:not(:disabled),
 .fico:active,.fchip button:active,.wstep-tab.as-tab:active,
 .shell-tool:active{transform:scale(.97)}
+
+/* 갈래 ② 컨테이너를 채우는 표면 — 지속시간만 여기서 소유하고 **눌림 색은 각 표면의 소유자
+   파일**이 hover 규칙 옆에서 낸다(job.css·jobdata.css). 색을 여기로 끌어오면 §2.1 사고와
+   같은 모양이 된다 — 공용 층이 곁의 규칙을 덮는다. 되읽을 자리를 소유자 옆에 둔다.
+   `.mir-row.miss` 는 배경이 `td` 에 칠해지므로 전이 대상도 `td` 다.
+   (`.job-item` 은 산출자가 0곳이라 목록에서 내렸다 — F2 PR-B 로 좌 master 목록이 죽었다.) */
+.job-grp-head,.jobtb tbody tr,.mir-row.miss td,.ctx-menu button{
+  transition:background-color var(--dur-press) var(--ease-out)}
 
 /* 부유 메뉴·열 필터 = 트리거 쪽(좌상단 origin) opacity+scale(.98) 팝(scale(0) 금지). */
 .ctx-menu,.colpanel{transform-origin:top left;
@@ -127,14 +141,16 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .modal.is-closing .modal-card{opacity:0;transform:scale(.95);pointer-events:none}
 
 @media (prefers-reduced-motion:reduce){
-  .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{transition:none}
-  .job-item,.job-grp-head,.jobtb tbody tr,.mir-row.miss,.fico,.fchip button,
-  .wstep-tab.as-tab,.shell-tool{transition:none}
-  .btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
-  .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:none}
-  .job-item:active,.job-grp-head:active,.jobtb tbody tr:active,.mir-row.miss:active,
+  .btn,.navbtn,.job-more,.grp-more,.tpl-assign,button.pill,
+  .fico,.fchip button,.wstep-tab.as-tab,.shell-tool{transition:none}
+  .btn:active:not(:disabled),.navbtn:active,.job-more:active,.grp-more:active,
+  .tpl-assign:active,button.pill:active:not(:disabled),
   .fico:active,.fchip button:active,.wstep-tab.as-tab:active,
   .shell-tool:active{transform:none}
+  /* 갈래 ② 는 **전이만** 끈다 — 색 변화는 이동이 아니라 상태 표지다. 종전엔 이 표면들의
+     눌림이 통째로 사라져 모션을 끈 사람에게 눌림 피드백이 0 이었다(그 강등이 U2 §2.11 의
+     로컬 미재현 원인이기도 하다 — 개발 기기가 여기 살고 있었다). 이제 즉시 색으로 남는다. */
+  .job-grp-head,.jobtb tbody tr,.mir-row.miss td,.ctx-menu button{transition:none}
   /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
   .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
   .modal{transition-property:background-color}

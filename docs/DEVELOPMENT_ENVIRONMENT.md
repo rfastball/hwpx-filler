@@ -214,6 +214,21 @@ Windows 데스크톱 세션과 WebView2 Runtime 설치 여부를 확인한다. �
 quality CI의 전체 pytest는 subprocess 실창 게이트를 실행한다. 화면 없는 환경에서
 의도적으로 건너뛸 때만 해당 테스트가 문서화한 `HWPX_SKIP_GUI_TESTS=1`을 명시한다.
 
+### 눌림 기하 테스트가 브라우저 때문에 실패
+
+`tests/test_web_press_geometry.py`(U2 §2.11)는 Playwright 로 **설치된 Chrome** 을
+`channel="chrome"` 으로 몰고, `prefers-reduced-motion` 을 두 값(`no-preference`/`reduce`)으로
+**명시 강제**해서 눌림 중 기준면 이탈을 잰다. 브라우저 바이너리를 내려받지 않으므로
+`playwright install` 은 필요 없고, Chrome 이 없으면 `HWPX_SKIP_MOTION_TESTS=1` 로 명시
+옵트아웃한다(자동 감지 스킵은 없다). CI 는 `Press-geometry browser precondition` 단계에서
+전제를 먼저 시끄럽게 확인한다.
+
+**강제가 계약인 이유**: 이 층은 `@media (prefers-reduced-motion:reduce)` 에서 통째로 꺼진다.
+Windows 「설정 → 접근성 → 시각 효과 → 애니메이션 효과」를 끈 기기에서는 Chromium·WebView2 가
+`reduce` 를 보고하므로, 강제 없이 잰 초록은 「안전하다」가 아니라 「이 기기에서 모션이 돌지
+않는다」의 증거다. 실앱(WebView2)은 OS 설정을 따르고 테스트는 사용자 OS 설정을 변이하지
+않으므로 강제의 매체가 Playwright 다.
+
 ### 빌드는 성공했지만 설치파일을 만들지 못함
 
 Inno Setup 6의 `ISCC.exe`가 PATH 또는 기본 설치 경로에 있는지 확인한다. EXE가 아직

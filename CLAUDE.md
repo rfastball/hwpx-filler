@@ -115,20 +115,29 @@ Python, 문안·확인 UI 는 웹**.
 |---|---|---|
 | 정적 DOM 계약 | `tests/test_web_dom_contract.py` | 실제 배포 `web/` 자산의 id 유일성·화면 루트·script 배선·seam |
 | 실앱 게이트 | `tests/test_web_selftest_gate.py`, `python -m hwpxfiller.webapp --selftest` | 실 WebView2 부팅·렌더·클릭·브리지 왕복 되읽기 |
+| 실렌더 기하 | `tests/test_web_press_geometry.py`(+`_press_probe.py`) | 실 CSS 를 링크한 최소 문서에서 `:active` 유지 중 기준면 이탈. `prefers-reduced-motion` 을 **명시 강제**(Playwright + 설치 Chrome) |
 | 헤드리스 컨트롤러 | `tests/test_webapp_*.py` | 링2 컨트롤러 dispatch·스냅샷 |
 | 링1 | `tests/test_*_state.py` | ViewModel 판정 |
 | 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI 형상, coverage 하한 |
 
-두 게이트는 대체 관계가 아니다 — 구조적 누락은 정적 계약이, 브라우저 런타임에서만 드러나는
+이 게이트들은 대체 관계가 아니다 — 구조적 누락은 정적 계약이, 브라우저 런타임에서만 드러나는
 결함은 selftest 가 잡는다. selftest 프로브의 `click` 은 hidden 요소도 통과하므로 가시성 단언을
 따로 걸지 않으면 눈으로 본 것과 다른 결론이 나온다.
+
+**정적 계약은 규칙의 존재를 보고 결과를 못 본다**(U2 §2.11 표본): `.jobtb tbody tr:active` 의
+`transform:scale(.97)` 이 910px 행의 좌변을 13.65px 옮겨 표 머리와 정렬을 잃는 동안 눌림 계약은
+초록이었다. 그래서 기하가 결과인 계약은 실렌더 층이 진다. **모션 층은 `prefers-reduced-motion`
+을 강제하지 않으면 검사되지 않는다** — Windows 「애니메이션 표시」를 끈 기기에서 Chromium 은
+`reduce` 를 보고하고 모션 층 전체가 강등돼 프로브가 영영 초록이다. 양성·음성 대조를 두 값으로
+각각 세운다.
 
 커버리지는 `docs/package_coverage_floors.toml` 의 **패키지별** line/branch 하한이 차단 조건이다.
 비재귀 경로라 새 서브패키지는 하한을 등록하지 않으면 게이트가 실패한다(조용한 스킵 금지).
 `hwpxcore.native` 는 하한 대신 `tests/test_native_positive.py` 를 별도 CI 단계로 강제한다.
 
-옵트아웃 환경변수: `HWPX_SKIP_GUI_TESTS=1`(WebView2 실창), `HWPX_SKIP_NATIVE_TESTS=1`.
-화면 없는 환경에서만 명시로 쓴다.
+옵트아웃 환경변수: `HWPX_SKIP_GUI_TESTS=1`(WebView2 실창), `HWPX_SKIP_NATIVE_TESTS=1`,
+`HWPX_SKIP_MOTION_TESTS=1`(눌림 기하 — 설치 Chrome 부재). 화면·브라우저 없는 환경에서만 명시로
+쓴다. CI 는 셋 다 **걷고** 돌린다.
 
 ## 단일 출처 목록
 

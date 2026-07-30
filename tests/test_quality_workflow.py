@@ -36,6 +36,19 @@ def test_pytest_job_keeps_native_and_package_floor_visible_separately() -> None:
     assert "package-coverage.md" in text
 
 
+def test_press_geometry_browser_precondition_is_its_own_visible_step() -> None:
+    """눌림 기하 게이트(U2 §2.11)의 전제인 **설치 Chrome** 을 별 단계로 확인한다.
+
+    부재가 테스트 안쪽 오류로 번역돼 나오면 원인 판독이 늦고, 조용한 스킵으로 새면 이
+    결함류(규칙은 있는데 결과가 틀림)가 또 세 슬라이스를 통과한다. 옵트아웃 변수도 CI 에서
+    명시로 걷어 「러너에서만 조용히 꺼져 있는」 상태를 만들지 않는다.
+    """
+    text, _ = _workflow()
+    assert "Press-geometry browser precondition" in text
+    assert "HWPX_SKIP_MOTION_TESTS" in text
+    assert "channel='chrome'" in text
+
+
 def test_distribution_gate_builds_all_portable_targets() -> None:
     text, _ = _workflow()
     assert ".\\packaging\\build.ps1 -Target all" in text

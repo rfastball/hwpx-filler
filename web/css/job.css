@@ -34,6 +34,14 @@
 .mir-row.ackd td{background:var(--fb-ack-bg)}
 .mir-row.blankd td{background:var(--n-surface-alt);color:var(--a-muted)}
 .mir-row.miss:focus-visible{outline:2px solid var(--a-danger);outline-offset:-2px}
+/* 클릭형 행의 눌림 — 배경 축이다(U2 §2.11: 920px 행에 scale(.97) 은 좌변을 13.8px 옮겨
+   표 머리·이웃 행과 기준면을 잃게 했다). 전이는 base.css 모션 층이, 색은 여기가 소유한다.
+   `--fb-missing-press` 는 팔레트에 손으로 지정돼 있었는데 gen 매핑이 빠져 방출조차 안 되던
+   토큰이다 — 눌림=배경이라는 원 설계가 여기서 완성된다.
+   확인됨(ackd) 쪽은 대칭 토큰이 없어 **파생**한다(신설이 아니라 파생임을 남긴다). 특정도가
+   `.miss:active td` 보다 높아야 위 규칙을 이긴다 — 순서와 특정도 둘 다 필요하다. */
+.mir-row.miss:active td{background:var(--fb-missing-press)}
+.mir-row.miss.ackd:active td{background:color-mix(in srgb,var(--fb-ack-bg) 88%,var(--a-ink))}
 .mir .st{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
   white-space:nowrap;font-weight:600;display:inline-block}
 .mir .st.filled{background:var(--fb-fill-bg);color:var(--a-ok)}
@@ -203,6 +211,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
   font:inherit;font-size:var(--fs-body);font-weight:600;cursor:pointer;text-align:left;color:var(--a-ink);
   padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control)}
 .job-grp-head:hover{background:var(--n-hover)}
+/* `flex:1` 이라 그룹 줄을 채운다 — 전수조사에서 실폭 1170px, scale(.97) 이면 좌변 17.6px 로
+   모션 층 최악이었다(U2 §2.11). 눌림은 hover 램프의 다음 단으로 말한다. */
+.job-grp-head:active{background:var(--n-pressed)}
 .grp-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .grp-count{color:var(--a-muted);font-size:var(--fs-caption);font-variant-numeric:tabular-nums}
 /* 접힘 화살표: 이름 오른쪽·호버 노출, 접힌 그룹은 상시 노출(결정 5). */
@@ -219,6 +230,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
   font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);
   border-radius:var(--rad-control);cursor:pointer}
 .ctx-menu button:hover,.ctx-menu button:focus-visible{background:var(--n-hover)}
+/* `width:100%` 라 메뉴 폭을 채운다(전수조사 채움비 0.93) — 항목이 축소되면 위아래 항목과
+   좌변이 갈려 목록이 흔들린다. 작아서 무해한 상자가 아니라 **채우는** 상자다(U2 §2.11). */
+.ctx-menu button:active{background:var(--n-pressed)}
 .ctx-menu button.danger{color:var(--a-danger)}
 .ctx-menu .sep{height:1px;background:var(--a-border);margin:var(--sp-4) var(--sp-2)}
 .grp-opt{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-2);

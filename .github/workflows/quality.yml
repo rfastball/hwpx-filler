@@ -48,6 +48,15 @@ jobs:
         run: |
           Remove-Item Env:HWPX_SKIP_NATIVE_TESTS -ErrorAction SilentlyContinue
           uv run --no-sync pytest -q tests/test_native_positive.py --basetemp="$env:RUNNER_TEMP/native"
+      - name: Press-geometry browser precondition
+        shell: pwsh
+        run: |
+          # 눌림 기하 게이트(tests/test_web_press_geometry.py, U2 §2.11)는 **설치 Chrome** 을
+          # channel="chrome" 으로 몬다 — 브라우저 다운로드 없음. 런타임 부재를 조용히 스킵하지
+          # 않는 규율이라 전제를 여기서 시끄럽게 확인한다. 여기서 죽으면 원인이 한 줄로 보이고,
+          # 확인 없이 두면 같은 부재가 테스트 안쪽의 알아보기 힘든 오류로 나온다.
+          Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(channel='chrome'); print('chrome', b.version); b.close(); p.stop()"
       - name: Full pytest with Python coverage
         shell: pwsh
         run: >-

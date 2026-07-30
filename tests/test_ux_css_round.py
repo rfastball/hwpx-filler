@@ -192,8 +192,15 @@ def test_motion_discipline_press_feedback_and_no_transition_all():
         "앱 CSS 에 `transition: all` 이 있습니다 — 정확한 속성만 지정하세요(#179 완료 조건)."
     )
     # 눌림 피드백 — :active 에 transform:scale 이 있고 :disabled 는 제외한다.
-    assert ":active:not(:disabled){transform:scale(" in css, (
-        "pressable :active 눌림(transform:scale, :disabled 제외)이 사라졌습니다(#179)."
+    # **인접 검사를 두 사실로 갈랐다(U2 §2.11).** 종전엔 `:active:not(:disabled){transform:scale(`
+    # 한 덩어리를 찾았는데, 그러면 선택자 목록의 **마지막 항목이 무엇인가**에 검사가 묶인다.
+    # 눌림이 두 갈래(작은 상자=scale / 전폭 표면=배경)로 갈리며 목록 꼬리가 `.shell-tool:active`
+    # 로 바뀌자 규칙이 그대로 있는데도 빨간불이 났다. 두 사실은 서로 독립이므로 따로 센다.
+    assert "{transform:scale(" in css, (
+        "pressable :active 눌림(transform:scale)이 사라졌습니다(#179)."
+    )
+    assert ":active:not(:disabled)" in css, (
+        "눌림에서 :disabled 제외가 사라졌습니다 — 비활성 버튼이 눌린 척합니다(#179)."
     )
     # 이동은 reduced-motion 에서 제거(멀미 유발 위치·크기 애니메이션 차단).
     assert "@media(prefers-reduced-motion:reduce)" in css, (

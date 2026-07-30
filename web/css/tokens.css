@@ -30,6 +30,7 @@
   --fb-ack-bg:#ecebf4;
   --fb-ack-fg:#4a3f8a;
   --fb-ack-bd:#c8c3e6;
+  --fb-missing-press:#f9d9d4;
   --n-surface-alt:#f3f4f6;
   --n-hover:#f0f2f5;
   --n-pressed:#e6e9ee;
@@ -104,6 +105,7 @@ html[data-font-scale="larger"]{font-size:150%;}
     --fb-ack-bg:#262340;
     --fb-ack-fg:#b7aef0;
     --fb-ack-bd:#453f6b;
+    --fb-missing-press:#472925;
     --n-surface-alt:#23272d;
     --n-hover:#262b31;
     --n-pressed:#2d333a;
@@ -148,6 +150,7 @@ html[data-font-scale="larger"]{font-size:150%;}
   --fb-ack-bg:#262340;
   --fb-ack-fg:#b7aef0;
   --fb-ack-bd:#453f6b;
+  --fb-missing-press:#472925;
   --n-surface-alt:#23272d;
   --n-hover:#262b31;
   --n-pressed:#2d333a;

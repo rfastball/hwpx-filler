@@ -24,6 +24,15 @@
 .jobtb tbody tr{cursor:pointer}
 .jobtb tbody tr:hover{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
 .jobtb tbody tr.on{background:var(--a-sel)}
+/* 행 눌림은 배경 축이다(U2 §2.11) — 910px 행에 scale(.97) 은 좌변을 13.65px 옮겨 sticky 표
+   머리와 정렬을 잃었다(실사용자: "누르고 있으면 레코드가 중앙으로 모인다"). 전이는 base.css
+   모션 층이 소유하고 색만 여기서 낸다.
+   선택 축엔 press 대칭 토큰이 없어 **파생**한다(신설 아님): 미선택은 hover 40% ↔ 선택 100%
+   **사이**인 70% 라 hover 와도 선택과도 구별되고, 선택 행은 이미 100% 라 더 짙게 할 수 없어
+   잉크를 12% 얹는다. 두 분기가 필요한 이유가 그 산수다 — 한 규칙이면 선택 행을 누를 때
+   오히려 옅어진다. */
+.jobtb tbody tr:active{background:color-mix(in srgb,var(--a-sel) 70%,transparent)}
+.jobtb tbody tr.on:active{background:color-mix(in srgb,var(--a-sel) 88%,var(--a-ink))}
 .jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
 .jobtb .doccol{min-width:180px}
 .jobtb .doccell{display:flex;gap:var(--sp-6);align-items:flex-start}

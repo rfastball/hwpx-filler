@@ -63,6 +63,10 @@ _WEB_MAP = [
     ("--fb-missing-bg", "badge.missing_bg"), ("--fb-missing-bd", "badge.missing_border"),
     ("--fb-ack-bg", "badge.ack_bg"), ("--fb-ack-fg", "badge.ack_fg"),
     ("--fb-ack-bd", "badge.ack_border"),
+    # `badge.missing_press` 는 두 테마에 손으로 지정돼 있었는데 **여기 매핑이 없어 방출조차
+    # 안 됐다**(U2 §2.11 전수조사). 눌림을 배경 축으로 하는 설계가 이미 있었고, 그 자리를
+    # `transform:scale` 이 대신 채우며 전폭 행을 부쉈다. 매핑을 붙여 원 설계로 되돌린다.
+    ("--fb-missing-press", "badge.missing_press"),
     ("--n-surface-alt", "neutral.surface_alt"), ("--n-hover", "neutral.hover"),
     ("--n-pressed", "neutral.pressed"), ("--n-track", "neutral.track"),
     ("--n-header-bg", "neutral.header_bg"), ("--n-border-strong", "neutral.border_strong"),
