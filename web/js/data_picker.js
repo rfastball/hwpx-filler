@@ -283,12 +283,14 @@
     try {
       if (act === "delete") {
         // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
+        // 확정은 1차가 보여준 **그 등록 상태의 지문**(basis)에 결속된다 — 모달을 읽는
+        // 사이 그 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다(네 확정 공용).
         const res = await Bridge.call("pool", "delete", { key });
         if (res && res.needs_confirm && (await Modal.confirm({
           body: res.confirm_text + "\n\n삭제할까요?",
           confirmLabel: "삭제", cancelLabel: "취소", danger: true,
         }))) {
-          await Bridge.call("pool", "delete", { key, confirm: true });
+          await Bridge.call("pool", "delete", { key, confirm: true, basis: res.basis });
         }
         return;
       }

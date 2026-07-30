@@ -134,12 +134,17 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   `relink`(`key`+새 참조)는 같은 슬롯의 참조 교체(수명 보존)이고 확인 왕복을 거친다.
   구판(이름=키)이 남긴 **같은 정체성 등록 2+건**은 스냅샷 `duplicates` 로 loud 표면화되고
   `resolve_duplicate`(남길 `keep` 확정, 확인 왕복)로만 정리된다 — 조용한 자동 병합 금지.
-- **파괴적 확정은 「보여준 상태의 지문」에 결속된다**(`relink`·`resolve_duplicate` 공용):
-  1차 응답이 `basis`(`screen_pool.confirm_basis` — 슬롯 키·이름·종류·참조 요약·비고·수명
-  전부)를 발행하고 확정이 그대로 되싣는다. 백엔드는 쓰기 잠금 안에서 지금 상태의 지문을
-  다시 지어 대조하고, 다르거나 미동봉이면 **삭제·덮어쓰기 0건 + loud 재진술 후 재확인**
-  (fail-closed). 재진술 문안의 값도 같은 사전(`shown_facts`)에서 꺼낸다 — 보여준 것과
-  대조하는 것이 갈리면 그 틈이 곧 고지 없는 파괴다(에디터 `confirmed_overwrite_text` 동형).
+- **파괴·덮어쓰기 확정은 「보여준 상태의 지문」에 결속된다** — 이 화면의 확정 왕복
+  **넷 전부**(`delete` · `register_excel` 의 라벨 갱신 · `relink` · `resolve_duplicate`)가
+  기제 하나를 공유한다. 1차 응답이 `basis`(`screen_pool.confirm_basis`)를 발행하고 확정이
+  그대로 되싣는다. 백엔드는 쓰기 잠금 안에서 지금 상태의 지문을 다시 지어 대조하고,
+  다르거나 미동봉이면 **삭제·덮어쓰기 0건 + loud 재진술 후 재확인**(fail-closed).
+- 지문 재료는 **표시 요약이 아니라 정체를 정하는 전체 값**이다(`screen_pool.bound_state` —
+  슬롯 키·이름·종류·정규화 정체성·`opts` 원본·비고·수명). `reference_summary` 는 사람이
+  읽으라고 경로를 basename 으로 줄이는 함수라 결속에 쓰면 `/a/x.xlsx`→`/b/x.xlsx` 교체가
+  지문을 통과한다. 문안은 요약(`display_reference`)을, 결속은 전체 값을 쓰되 **소재는 그
+  시점의 디스크 항목 하나** — 보여준 것과 대조하는 것이 갈리면 그 틈이 곧 고지 없는
+  파괴다(에디터 `confirmed_overwrite_text` 동형).
 
 ### `job` 세션 표면의 형상 (v6 `screen-data` 2열 — 재작성 R1)
 

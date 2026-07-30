@@ -134,8 +134,10 @@ def test_pool_register_gate_judges_by_identity_not_name(tmp_path):
     ctrl.dispatch("register_excel", {"name": "6월", "path": "C:/same.csv"})
     res = ctrl.dispatch("register_excel", {"name": "6월 최신", "path": "C:/same.csv"})
     assert res.get("needs_confirm") is True and "'6월'" in res["confirm_text"]
+    # 확정은 1차가 보여준 상태의 지문에 결속된다(코덱스 3R P2-2 — 미동봉은 fail-closed).
     res2 = ctrl.dispatch(
-        "register_excel", {"name": "6월 최신", "path": "C:/same.csv", "confirm": True})
+        "register_excel", {"name": "6월 최신", "path": "C:/same.csv", "confirm": True,
+                           "basis": res["basis"]})
     assert res2["ok"] is True
     rows = ctrl.snapshot()["rows"]
     assert [r["name"] for r in rows] == ["6월 최신"]     # 2건이 아니라 갱신

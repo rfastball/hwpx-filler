@@ -210,15 +210,16 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "close": _schema(),
     },
     # 항목 조작은 슬롯 `key`, 등록은 라벨 `name` + 참조(U2 §5.3 — 정체성=경로+시트).
-    # 파괴적 확인 왕복(relink·resolve_duplicate)의 `basis` = 1차가 **보여준 상태의 지문**
-    # 왕복이다(screen_pool.confirm_basis) — 확정은 그 지문과 지금 상태를 대조해야 하고,
-    # 미동봉이면 fail-closed 거절이다(고지 없는 삭제·덮어쓰기 봉쇄).
+    # **파괴·덮어쓰기 확정 왕복 넷**(delete·register_excel 라벨 갱신·relink·
+    # resolve_duplicate)의 `basis` = 1차가 **보여준 상태의 지문** 왕복이다
+    # (screen_pool.confirm_basis) — 확정은 그 지문과 지금 상태를 대조해야 하고, 미동봉이면
+    # fail-closed 거절이다(고지 없는 삭제·덮어쓰기 봉쇄). 넷이 기제 하나를 공유한다.
     "pool": {
         "refresh": _schema(),
         "archive": _schema("key"),
         "activate": _schema("key"),
-        "delete": _schema("key", "confirm"),
-        "register_excel": _schema("name path", "sheet note confirm"),
+        "delete": _schema("key", "confirm basis"),
+        "register_excel": _schema("name path", "sheet note confirm basis"),
         # 다시 연결(#67) — 같은 슬롯의 참조 교체(수명 보존). 확인 라운드트립.
         "relink": _schema("key path", "sheet note name confirm basis"),
         # 구판(이름=키) 마이그레이션의 병합 확정 — 남길 슬롯 1건, 확인 라운드트립.
