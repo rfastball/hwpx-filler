@@ -38,9 +38,14 @@
    가드 순서(§10.7.2 D): 전환 손실 확인은 **대상이 정해진 직후·읽기 직전**에 호스트 콜백
    (`confirmSwap`)으로 묻는다. 파기는 오직 성공한 읽기 뒤에만 일어난다(§18.2 원자 계약은
    `load_data_path` 가 이미 만족). */
-(function () {
+
+import { escHtml } from "./esc.js";
+import { Modal } from "./modal.js";
+import { Preserve } from "./preserve.js";
+
+export function createDataPicker({ bridge, sheetPicker, pathTrack }) {
   const $ = (id) => document.getElementById(id);
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const esc = escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;      // 마지막 pool 스냅샷 — 열려 있지 않아도 푸시를 받아 둔다.
   let session = null;   // 열린 회차 {screen, current, confirmSwap, onLoaded, resolve}
@@ -126,7 +131,7 @@
       const broken = r.missing ? `<span class="pill danger">참조 끊김</span>` : "";
       const note = r.note ? `<span class="pk-note">${esc(r.note)}</span>` : "";
       const why = reason ? `<span class="pk-note">${esc(reason)}</span>` : "";
-      const track = r.locate_path ? PathTrack.affordances(r.locate_path) : "";
+      const track = r.locate_path ? pathTrack.affordances(r.locate_path) : "";
       // 행은 **정보 열 + 행동 열** 2열이다(세로 밀도 — 마일스톤 L). 참조·메모·사유·로케이트를
       // 각자 한 줄씩 쌓으면 3항목만으로 다이얼로그가 넘친다.
       return `<div class="tplcard pk-row" data-row="${esc(r.key)}">
@@ -210,7 +215,7 @@
     loading = true;
     setStatus(`${name} 읽는 중…`, "");
     try {
-      const r = await Bridge.call(session.screen, "load_pool", { key });
+      const r = await bridge.call(session.screen, "load_pool", { key });
       if (r && r.ok) { finish(r.label || name); return; }
       // 나라 동결·죽은 참조·모호 시트·행 0건 — 면을 닫지 않고 재진술(계약면 4).
       setStatus("⚠ " + ((r && r.error) || "등록 데이터를 불러올 수 없습니다."), "danger");
@@ -233,9 +238,9 @@
     loading = true;
     setStatus("파일 선택 창에서 파일을 고르세요…", "");
     try {
-      let r = await Bridge.pickDataFile(session.screen);
+      let r = await bridge.pickDataFile(session.screen);
       if (r && typeof r === "object" && r.needs_sheet) {  // 다중 시트 확정 게이트(#33)
-        r = await SheetPicker.choose(session.screen, r);
+        r = await sheetPicker.choose(session.screen, r);
         if (r === null) { setStatus("시트 선택을 취소했습니다 — 데이터는 그대로입니다.", ""); return; }
       }
       if (r === null) { setStatus("", ""); return; }      // 취소 = 중단(면 유지)
@@ -285,16 +290,16 @@
         // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
         // 확정은 1차가 보여준 **그 등록 상태의 지문**(basis)에 결속된다 — 모달을 읽는
         // 사이 그 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다(네 확정 공용).
-        const res = await Bridge.call("pool", "delete", { key });
+        const res = await bridge.call("pool", "delete", { key });
         if (res && res.needs_confirm && (await Modal.confirm({
           body: res.confirm_text + "\n\n삭제할까요?",
           confirmLabel: "삭제", cancelLabel: "취소", danger: true,
         }))) {
-          await Bridge.call("pool", "delete", { key, confirm: true, basis: res.basis });
+          await bridge.call("pool", "delete", { key, confirm: true, basis: res.basis });
         }
         return;
       }
-      await Bridge.call("pool", act, { key });   // archive/activate — 비파괴 즉시
+      await bridge.call("pool", act, { key });   // archive/activate — 비파괴 즉시
     } catch (err) {
       setStatus("⚠ " + errText(err), "danger");
     }
@@ -310,12 +315,12 @@
     if (loading) { noteLoadingBlock(); return; }
     const keep = btn.dataset.dupKeep;
     try {
-      const res = await Bridge.call("pool", "resolve_duplicate", { keep });
+      const res = await bridge.call("pool", "resolve_duplicate", { keep });
       if (res && res.needs_confirm && (await Modal.confirm({
         body: res.confirm_text + "\n\n정리할까요?",
         confirmLabel: "정리", cancelLabel: "취소", danger: true,
       }))) {
-        await Bridge.call("pool", "resolve_duplicate", {
+        await bridge.call("pool", "resolve_duplicate", {
           keep, confirm: true, basis: res.basis,
         });
       }
@@ -346,7 +351,7 @@
     // relink 대상 슬롯(§5.3) — 확정이 register(신규/갱신)가 아니라 relink(같은 슬롯의
     // 참조 교체)로 가야 하는 회차. pin/직접 등록은 "".
     if (session) session.regTarget = p.relinkKey || "";
-    window.Modal.open("poolRegModal", {
+    Modal.open("poolRegModal", {
       initialFocus: p.focus === "path" ? $("poolRegPath") : $("poolRegName"),
     });
   }
@@ -376,7 +381,7 @@
     // 브리지 rejection 이 unhandled 로 삼켜지면 버튼이 무반응이 된다 — loud 재진술하고
     // 모달은 열어 둔다(입력 보존, 고쳐 재시도 가능).
     try {
-      let res = await Bridge.call("pool", action, payload);
+      let res = await bridge.call("pool", action, payload);
       if (res && res.needs_confirm) {
         // 참조 교체·같은 데이터 라벨 갱신 — 조용히 덮지 않고 확인 승격.
         if (!(await Modal.confirm({
@@ -387,10 +392,10 @@
         // 사이 같은 슬롯이 재연결·개명됐으면 백엔드가 거절하고 다시 묻는다.
         const confirmed = { ...payload, confirm: true };
         if (res.basis) confirmed.basis = res.basis;
-        res = await Bridge.call("pool", action, confirmed);
+        res = await bridge.call("pool", action, confirmed);
       }
       if (res && res.ok === false) { window.alert(res.error); return; }
-      window.Modal.close("poolRegModal");
+      Modal.close("poolRegModal");
     } catch (err) {
       window.alert(errText(err));
     }
@@ -441,7 +446,7 @@
       // **이것이 유일한 재스캔 지점이다**(U2 §2.3 에서 수동 「새로고침」 제거). 손상 격리
       // 판정(`corrupted`)도 이 호출로만 다시 계산되므로, 열 때마다 부르는 이 자리가 조용히
       // 사라지면 면이 낡은 손상 목록을 보이게 된다.
-      Bridge.call("pool", "refresh", {}).catch((err) => {
+      bridge.call("pool", "refresh", {}).catch((err) => {
         setStatus("⚠ 고정한 데이터를 읽을 수 없습니다: " + errText(err), "danger");
       });
     });
@@ -464,10 +469,10 @@
       if (e.target.closest("#dataPickerPin")) openPinDialog();
     });
     // 고정 다이얼로그(스택 상위) — 이 모듈이 유일 소유자다(pool 화면 사망분 승계).
-    $("poolRegCancel").addEventListener("click", () => window.Modal.close("poolRegModal"));
+    $("poolRegCancel").addEventListener("click", () => Modal.close("poolRegModal"));
     $("poolRegOk").addEventListener("click", submitRegDialog);
     $("poolRegBrowse").addEventListener("click", async () => {
-      const p = await Bridge.pickPoolDataFile();   // 경로만 — 로드 없음
+      const p = await bridge.pickPoolDataFile();   // 경로만 — 로드 없음
       if (p) $("poolRegPath").value = p;
     });
   }
@@ -475,9 +480,14 @@
   /* 부팅 — 라우터(app.js)가 pywebviewready 후 호출. 여기서는 푸시 구독과 배선만 하고
      목록은 **열 때** 당긴다(부팅 예산: 안 여는 세션에서 풀 I/O 를 지불하지 않는다). */
   function init() {
-    Bridge.onPush("pool", render);
+    // 배선 1회 가드(`wired`)를 푸시 구독까지 넓힌다 — `bridge.onPush` 는 채널당 **배열
+    // 누적**이라(bridge.js 의 복수 구독) 재호출이 덮어쓰기가 아니라 2벌 등록이 되고,
+    // 푸시 1회에 render 가 두 번 돌아 목록이 두 번 재구성된다(재렌더 정체 계약면 1 손상).
+    // build() 는 자기 가드를 그대로 들고 있어 `open()` 선행 경로에서도 리스너가 겹치지 않는다.
+    if (wired) return;
+    bridge.onPush("pool", render);
     build();
   }
 
-  window.DataPicker = { init, open };
-})();
+  return { init, open };
+}
