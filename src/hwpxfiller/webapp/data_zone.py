@@ -1,6 +1,6 @@
 """데이터 존 공용 믹스인 — 필터 선언·행 선택 표면의 컨트롤러 몫(블록 3·4, 슬라이스 6 PR-2b).
 
-웹 쪽 ``web/js/datazone.js`` 팩토리(PR-2a)의 Python 짝이다: 「작업」 화면(블록 4)이 착지한
+웹 쪽 ``frontend/js/datazone.js`` 팩토리(PR-2a)의 Python 짝이다: 「작업」 화면(블록 4)이 착지한
 필터·선택 디스패치와 스냅샷 합성을 txt 일괄 큐(블록 3)가 재사용한다 — 컨트롤러마다 복붙하면
 JS 에서 막은 #94(링2 400줄 중복)와 동형의 드리프트가 Python 에서 재발한다. 판정은 전부 링1
 (:class:`~hwpxfiller.gui.filter_state.FilterModel`·:class:`~hwpxfiller.gui.selection_state.

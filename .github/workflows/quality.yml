@@ -26,11 +26,13 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact npm
+      - name: Verify exact Node and npm
         shell: pwsh
         run: |
-          $actual = (npm.cmd --version).Trim()
-          if ($actual -ne '11.16.0') { throw "npm version mismatch: $actual" }
+          $actualNode = (node.exe --version).Trim()
+          $actualNpm = (npm.cmd --version).Trim()
+          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
+          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
       - name: Install locked frontend toolchain
         run: npm.cmd ci
       - name: Build and verify sealed frontend
@@ -62,11 +64,13 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact npm
+      - name: Verify exact Node and npm
         shell: pwsh
         run: |
-          $actual = (npm.cmd --version).Trim()
-          if ($actual -ne '11.16.0') { throw "npm version mismatch: $actual" }
+          $actualNode = (node.exe --version).Trim()
+          $actualNpm = (npm.cmd --version).Trim()
+          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
+          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
       - name: Install locked frontend toolchain
         run: npm.cmd ci
       - name: Build and verify sealed frontend
@@ -135,11 +139,13 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact npm
+      - name: Verify exact Node and npm
         shell: pwsh
         run: |
-          $actual = (npm.cmd --version).Trim()
-          if ($actual -ne '11.16.0') { throw "npm version mismatch: $actual" }
+          $actualNode = (node.exe --version).Trim()
+          $actualNpm = (npm.cmd --version).Trim()
+          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
+          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
       - name: Install locked frontend toolchain
         run: npm.cmd ci
       - name: Build and verify sealed frontend

@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import pytest
 
@@ -66,6 +67,24 @@ class TestWebSelftestGate:
     def test_no_probe_error(self, selftest_result: dict) -> None:
         # evaluate_js 프로브가 예외 없이 전부 돌았는가(브리지/렌더 파이프 무결).
         assert "error" not in selftest_result, selftest_result.get("error")
+
+    def test_sealed_artifact_runs_on_one_loopback_origin(
+        self, selftest_result: dict
+    ) -> None:
+        """제품/selftest가 같은 seal을 쓰며 file/dev/external resource를 하나도 싣지 않는다."""
+        runtime = selftest_result["runtime"]
+        url = selftest_result["url"]
+        assert re.fullmatch(r"http://127\.0\.0\.1:\d+/index\.html", url), url
+        assert runtime["page_url"] == url
+        assert runtime["origin"] == (
+            f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
+        )
+        assert re.fullmatch(r"[0-9a-f]{64}", runtime["artifact_id"])
+        assert re.fullmatch(r"[0-9a-f]{64}", runtime["tree_sha256"])
+        assert runtime["resource_urls"], "제품 CSS/JS resource가 하나도 기록되지 않았습니다."
+        assert runtime["resources_same_origin"] is True
+        assert runtime["forbidden_resources"] == []
+        assert runtime["external_fetch_blocked"] is None
 
     def test_document_title_rendered(self, selftest_result: dict) -> None:
         # 실 DOM 의 document.title 이 비어있지 않음 = 문서 부팅·셸 로드 확인.

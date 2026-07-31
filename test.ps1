@@ -26,7 +26,7 @@ $env:PYTHONIOENCODING = 'utf-8'
 & (Join-Path $PSScriptRoot 'build-web.ps1')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& uv run --no-sync --all-extras --group dev ruff check src tests conftest.py
+& uv run --no-sync --all-extras --group dev ruff check src tests scripts conftest.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & uv run --no-sync --all-extras --group dev pyright
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

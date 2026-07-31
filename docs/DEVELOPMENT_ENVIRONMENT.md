@@ -127,7 +127,9 @@ PyInstaller를 실행한다.
 
 산출물은 `dist\hwpx-filler-web\hwpx-filler-web.exe`,
 `dist\hwpx-cli\hwpx-cli.exe`(onedir 폴더)이며 canonical
-`packaging/build.ps1 -Target all`이 두 번들과 각각의 selfcheck를 검증한다.
+`packaging/build.ps1 -Target all`이 exact frontend build/seal, 두 번들, source/bundled
+artifact identity, Node-free GUI selfcheck, 실제 WebView2 loopback/offline selftest와 CLI
+selfcheck를 검증한다.
 루트 `build.ps1`은 GUI 제품을 canonical 스크립트로 위임하는 호환 러너다.
 
 ### 설치파일

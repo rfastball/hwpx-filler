@@ -22,6 +22,11 @@ from pathlib import Path
 
 from . import boot_budget, settings
 from .action_registry import validate_dispatch
+from ..web_artifact import (
+    VerifiedWebArtifact,
+    WebArtifactViolation,
+    resolve_web_artifact,
+)
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
@@ -69,18 +74,18 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def web_dir() -> Path:
-    """정적 자산 루트 — 동결 시 ``sys._MEIPASS/web``, 개발 시 ``<repo>/web``.
+def web_artifact() -> VerifiedWebArtifact:
+    """현재 제품이 사용할 유일한 검증 완료 웹 산출물을 반환한다.
 
-    ``HWPXFILLER_WEB_DIR`` 는 테스트 seam(홈 seam ``HWPXFILLER_HOME`` 과 동일 관용구) —
-    스테일 캐시 회귀 게이트(#71)가 부팅 사이에 자산을 수정하려면 사본 루트를 서빙해야 한다.
+    Source checkout은 fresh ``build/web/``과 현재 ``frontend/``·lock·config 입력까지
+    검증한다. Frozen 제품은 ``sys._MEIPASS/web``의 seal과 전체 파일 트리만 검증하며
+    repository source, Node 또는 dev server를 찾지 않는다.
     """
-    override = os.environ.get("HWPXFILLER_WEB_DIR")
-    if override:
-        return Path(override)
     if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "web"  # type: ignore[attr-defined]
-    return _repo_root() / "web"
+        return resolve_web_artifact(
+            frozen_root=Path(sys._MEIPASS),  # type: ignore[attr-defined]
+        )
+    return resolve_web_artifact(repo_root=_repo_root())
 
 
 def _virtual_screen_bounds() -> "tuple[int, int, int, int] | None":
@@ -3498,7 +3503,90 @@ def _probe_late(window: "object", flag: str, expr: str) -> dict:
     return json.loads(window.evaluate_js(expr))  # type: ignore[attr-defined]
 
 
-def _selftest_drive(window: "object") -> None:
+def _runtime_selftest_evidence(
+    window: "object",
+    launched_artifact: VerifiedWebArtifact,
+) -> dict:
+    """현재 페이지와 모든 로드 자원이 같은 loopback artifact인지 되읽는다."""
+    import time
+
+    current_artifact = web_artifact()
+    if (
+        current_artifact.artifact_id != launched_artifact.artifact_id
+        or current_artifact.tree_sha256 != launched_artifact.tree_sha256
+    ):
+        raise WebArtifactViolation(
+            "web artifact changed after the product window was created"
+        )
+    evidence = window.evaluate_js(  # type: ignore[attr-defined]
+        """
+        (function () {
+          const pageUrl = new URL(window.location.href);
+          const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+          const forbidden = resources.filter((value) => {
+            let resource;
+            try { resource = new URL(value, pageUrl); }
+            catch (_) { return true; }
+            return resource.origin !== pageUrl.origin
+              || resource.protocol === 'file:'
+              || value.includes('/@vite/client')
+              || value.includes('@vite/client');
+          });
+          return {
+            page_url: pageUrl.href,
+            origin: pageUrl.origin,
+            resource_urls: resources,
+            resources_same_origin: forbidden.length === 0,
+            forbidden_resources: forbidden
+          };
+        })()
+        """
+    )
+    if not isinstance(evidence, dict):
+        raise RuntimeError("runtime resource evidence is not an object")
+    evidence.update(
+        artifact_id=launched_artifact.artifact_id,
+        tree_sha256=launched_artifact.tree_sha256,
+        external_fetch_blocked=None,
+    )
+
+    if os.environ.get("HWPX_SELFTEST_OFFLINE_PROBE"):
+        window.evaluate_js(  # type: ignore[attr-defined]
+            """
+            (function () {
+              const state = { pending: true, blocked: false, error: '' };
+              window.__n03OfflineProbe = state;
+              const scheme = String.fromCharCode(104, 116, 116, 112, 115);
+              const target = scheme + '://' + ['example', 'com'].join('.') + '/';
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 5000);
+              fetch(target, { cache: 'no-store', mode: 'no-cors', signal: controller.signal })
+                .then(() => { state.blocked = false; state.error = 'external fetch succeeded'; })
+                .catch((error) => { state.blocked = true; state.error = String(error); })
+                .finally(() => { clearTimeout(timer); state.pending = false; });
+            })()
+            """
+        )
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            probe = window.evaluate_js(  # type: ignore[attr-defined]
+                "window.__n03OfflineProbe || {pending:true,blocked:false,error:'missing'}"
+            )
+            if isinstance(probe, dict) and not probe.get("pending", True):
+                evidence["external_fetch_blocked"] = probe.get("blocked") is True
+                evidence["external_fetch_error"] = str(probe.get("error", ""))
+                break
+            time.sleep(0.1)
+        else:
+            evidence["external_fetch_blocked"] = False
+            evidence["external_fetch_error"] = "offline probe timed out"
+    return evidence
+
+
+def _selftest_drive(
+    window: "object",
+    launched_artifact: VerifiedWebArtifact | None = None,
+) -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
     ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 Python 설정
@@ -3591,7 +3679,10 @@ def _selftest_drive(window: "object") -> None:
     time.sleep(4.5)
     result: dict = {}
     try:
+        if launched_artifact is None:
+            launched_artifact = web_artifact()
         result["url"] = window.get_current_url()  # type: ignore[attr-defined]
+        result["runtime"] = _runtime_selftest_evidence(window, launched_artifact)
         result["title_dom"] = window.evaluate_js("document.title")  # type: ignore[attr-defined]
         result["nav_count"] = window.evaluate_js("document.querySelectorAll('.navbtn').length")  # type: ignore[attr-defined]
         result["tpl_options"] = window.evaluate_js(  # type: ignore[attr-defined]
@@ -3931,7 +4022,18 @@ def _prepare_webview_profile(webview_root: Path) -> Path:
 
 
 def main() -> int:
+    try:
+        artifact = web_artifact()
+    except (OSError, WebArtifactViolation) as exc:
+        _alarm(f"웹 제품 산출물 검증 실패 — 창을 열지 않습니다: {exc}")
+        return 2
+
     import webview
+
+    log(
+        "verified web artifact: "
+        f"id={artifact.artifact_id} tree={artifact.tree_sha256} root={artifact.root}"
+    )
 
     # 단일 인스턴스(이 홈 기준): 두 번째 실행은 기존 창을 앞으로 내고 조용히 종료한다. private_mode
     # 의 clear_user_data 가 동시 인스턴스 프로필을 밑에서 지우던 경합과, 그를 막으려던 per-pid
@@ -3951,7 +4053,7 @@ def main() -> int:
         saved_geometry = None
     window = webview.create_window(
         WINDOW_TITLE,
-        str(web_dir() / "index.html"),
+        str(artifact.index_path),
         js_api=frontend,
         width=int(saved_geometry["width"]) if saved_geometry else DEFAULT_WINDOW_WIDTH,
         height=int(saved_geometry["height"]) if saved_geometry else DEFAULT_WINDOW_HEIGHT,
@@ -4133,7 +4235,12 @@ def main() -> int:
     storage_dir = _prepare_webview_profile(webview_root)
     try:
         if "--selftest" in sys.argv:
-            webview.start(_selftest_drive, window, gui=gui, storage_path=str(storage_dir))
+            webview.start(
+                _selftest_drive,
+                (window, artifact),
+                gui=gui,
+                storage_path=str(storage_dir),
+            )
         else:
             webview.start(gui=gui, storage_path=str(storage_dir))
     finally:

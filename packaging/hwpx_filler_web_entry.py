@@ -2,7 +2,7 @@
 """hwpx-filler-web.exe 엔트리 — 패키징 전용 래퍼(앱 코드 무변경).
 
 기본은 pywebview GUI(main). ``--selfcheck`` 만 예외로, 프리즈 번들에서 브리지·화면 컨트롤러·
-링1 VM·번들 web/ 가 실제로 도는지 **헤드리스로**(창 없이) 검증한다 — 빌드 산출물 스모크
+링1 VM·sealed web artifact가 실제로 도는지 **헤드리스로**(창 없이) 검증한다 — 빌드 산출물 스모크
 테스트용(CI·수동 공용). WebView2 창을 띄우는 부팅 자가검증은 ``app.py --selftest`` 가 담당한다.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ def _selfcheck() -> int:
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.text_registry import TextTemplateRegistry
     from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
-    from hwpxfiller.webapp.app import web_dir
+    from hwpxfiller.webapp.app import web_artifact
     from hwpxfiller.webapp.screen_editor import EditorController
 
     tmp = Path(tempfile.mkdtemp())
@@ -43,11 +43,13 @@ def _selfcheck() -> int:
         and any(f["name"] == "공고명" for f in snap["fields"])
     )
 
-    web_ok = (web_dir() / "index.html").exists()  # 번들 web/ 확인(동결 시 _MEIPASS/web)
+    artifact = web_artifact()
+    web_ok = True
 
     print(
         f"selfcheck: txt_templates={txt_names} fields={len(snap['fields'])} "
-        f"web_ok={web_ok} -> {'OK' if vm_ok and web_ok else 'FAIL'}"
+        f"web_ok={web_ok} artifact_id={artifact.artifact_id} "
+        f"tree_sha256={artifact.tree_sha256} -> {'OK' if vm_ok and web_ok else 'FAIL'}"
     )
     return 0 if (vm_ok and web_ok) else 1
 

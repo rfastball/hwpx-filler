@@ -53,7 +53,8 @@ CI(`.github/workflows/quality.yml`)는 서로 의존하지 않는 세 잡이다:
    소스. UI 런타임을 모른다.
 2. **링1 ViewModel** `src/hwpxfiller/gui/*_state.py` — Qt-free·DOM-free 상태 모델. 판정·게이트·
    문안을 소유하고 직렬화 가능한 값을 낸다. 이름이 `gui` 지만 위젯이 아니다.
-3. **링2 프레젠테이션** `src/hwpxfiller/webapp/`(컨트롤러·브리지) + `web/`(HTML/CSS/JS).
+3. **링2 프레젠테이션** `src/hwpxfiller/webapp/`(컨트롤러·브리지) +
+   `frontend/`(유일한 HTML/CSS/JS source). 제품 런타임은 sealed `build/web/`만 소비한다.
    링1 을 불러 JSON-safe 스냅샷으로 바꿔 DOM 에 그린다.
 
 컨트롤러(`webapp/screen_*.py`)는 pywebview 를 import 하지 않아 **헤드리스로 구동·테스트된다**.
@@ -65,19 +66,20 @@ CI(`.github/workflows/quality.yml`)는 서로 의존하지 않는 세 잡이다:
   허용 화면·액션·payload 키는 `webapp/action_registry.py` 의 `validate_dispatch` 가 검증한다 —
   오타난 키가 `dict.get` 으로 조용히 무시되지 않게 하는 것이 이 파일의 존재 이유다.
 - **직접 브리지 경로**: 네이티브 자원이 관여하는 호출(파일 피커, `generate`,
-  `import_template_file`, 경로 열기/추적, 클립보드·테마·설정, `load_data_sheet`)은 `web/js/bridge.js`
+  `import_template_file`, 경로 열기/추적, 클립보드·테마·설정, `load_data_sheet`)은
+  `frontend/js/bridge.js`
   가 `WebFrontend` 공개 메서드를 직접 부른다. **action registry 밖**이므로 새 직접 메서드를
   추가하면 payload 검증을 메서드 본문에 직접 쓰고 `docs/UI_CONTRACT.md` 의 목록도 갱신한다.
 
 Python→웹은 `window.__push(screen, snapshot)`. 파괴 전이의 확인 왕복(`needs_confirm`)은
-네이티브 다이얼로그가 아니라 JS `Modal.confirm`(`web/js/modal.js`)이 구현한다 — **판정·수치는
+네이티브 다이얼로그가 아니라 JS `Modal.confirm`(`frontend/js/modal.js`)이 구현한다 — **판정·수치는
 Python, 문안·확인 UI 는 웹**.
 
 ### 화면과 소유권
 
 상단 탭은 `job`(문서 만들기)·`library`(문서 작업) 2탭이고 `tpl` 은 과도기 잔존이다.
 `editor`·`workbench` 는 탭 없는 **몰입 표면**으로, 이탈 가드 위임은 화면별 특례가 아니라
-`web/js/app.js` 의 `IMMERSIVE` 목록이 진다. 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS 의
+`frontend/js/app.js` 의 `IMMERSIVE` 목록이 진다. 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS 의
 `SCREEN`, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry, `docs/UI_CONTRACT.md`
 를 **한 계약 변경으로** 갱신한다.
 
@@ -105,7 +107,8 @@ Python, 문안·확인 UI 는 웹**.
 (`core/dataset_pool.py`, 경로만 저장하고 실행 때 다시 읽음), 생성 원장(`core/fill_ledger.py`),
 설정(`webapp/settings.py`)이 산다.
 
-테스트 seam 은 `HWPXFILLER_HOME`(홈 격리)·`HWPXFILLER_WEB_DIR`(자산 루트 교체)이다. 루트
+테스트 seam 은 `HWPXFILLER_HOME`(홈 격리)이다. 웹 자산 경로 override는 없다. source 제품은
+현재 commit의 sealed `build/web/`, frozen 제품은 번들된 sealed `web/`만 검증해 사용한다. 루트
 `conftest.py` 와 `tests/conftest.py` 가 autouse 로 홈을 임시 폴더에 못박는다 — **개발자 실설정
 오염과 템플릿 그룹 유령 삭제를 막는 안전망**이라 우회하지 않는다.
 
@@ -113,9 +116,9 @@ Python, 문안·확인 UI 는 웹**.
 
 | 계층 | 파일 | 맡는 것 |
 |---|---|---|
-| 정적 DOM 계약 | `tests/test_web_dom_contract.py` | 실제 배포 `web/` 자산의 id 유일성·화면 루트·script 배선·seam |
+| 정적 DOM 계약 | `tests/test_web_dom_contract.py` | canonical `frontend/`의 id 유일성·화면 루트·제품 module graph |
 | 실앱 게이트 | `tests/test_web_selftest_gate.py`, `python -m hwpxfiller.webapp --selftest` | 실 WebView2 부팅·렌더·클릭·브리지 왕복 되읽기 |
-| 실렌더 기하 | `tests/test_web_press_geometry.py`(+`_press_probe.py`) | 실 CSS 를 링크한 최소 문서에서 `:active` 유지 중 기준면 이탈. `prefers-reduced-motion` 을 **명시 강제**(Playwright + 설치 Chrome) |
+| 실렌더 기하 | `tests/test_web_press_geometry.py`(+`_press_probe.py`) | sealed `build/web/` CSS를 loopback으로 제공한 최소 문서에서 `:active` 유지 중 기준면 이탈. `prefers-reduced-motion` 을 **명시 강제**(Playwright + 설치 Chrome) |
 | 헤드리스 컨트롤러 | `tests/test_webapp_*.py` | 링2 컨트롤러 dispatch·스냅샷 |
 | 링1 | `tests/test_*_state.py` | ViewModel 판정 |
 | 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI 형상, coverage 하한 |
@@ -144,11 +147,12 @@ Python, 문안·확인 UI 는 웹**.
 바꿀 때 원천을 고치고 생성물을 커밋한다 — 생성물을 직접 고치면 드리프트 게이트가 잡는다.
 
 - 디자인 토큰: `src/hwpxfiller/gui/design_tokens.json` → `scripts/gen_design_tokens.py` →
-  `web/css/tokens.css`(+ 동결 목업 구간), 게이트 `tests/test_design_tokens.py`.
-- 레이아웃·컴포넌트 CSS: `web/css/app.css`. 동결 목업의 인라인 CSS 로 현재 앱을 판단하지 않는다.
+  `frontend/css/tokens.css`(+ 동결 목업 구간), 게이트 `tests/test_design_tokens.py`.
+- 레이아웃·컴포넌트 CSS: `frontend/css/`의 ordered product graph. 동결 목업의 인라인 CSS 로
+  현재 앱을 판단하지 않는다.
 - 제품 버전: `pyproject.toml` `project.version` 만. PyInstaller·Inno 버전은 빌드 시 생성.
-- 사용자 문구: 한 곳에서만 쓰는 정적 문구는 `web/index.html` 또는 그 산출자가 소유하고,
-  둘 이상이 공유하는 것만 `web/js/copy.js` 같은 공용 상수로 올린다. 문형·금지어는
+- 사용자 문구: 한 곳에서만 쓰는 정적 문구는 `frontend/index.html` 또는 그 산출자가 소유하고,
+  둘 이상이 공유하는 것만 `frontend/js/copy.js` 같은 공용 상수로 올린다. 문형·금지어는
   `docs/COPY_STYLE_GUIDE.md`, 용어는 `docs/UI_VOCABULARY.md`.
 - 확장자 필터(`gui/file_filters.py`), 작업 방식 라벨(`gui/work_mode.py`), 식별 요약
   (`core/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.

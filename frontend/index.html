@@ -8,22 +8,7 @@
 <!-- 테마 영속은 오리진 비의존 Python 설정으로 이관(#74) — 부팅 시 app.py 가 창을 숨긴 채 loaded
      에서 저장 테마를 data-theme 로 주입한 뒤 show 한다(FOUC 은닉). pywebview 엔 첫 페인트 전
      주입 훅이 없어 head 동기 인라인(구 localStorage 판독)은 불가·불필요해 제거했다. -->
-<link rel="stylesheet" href="css/tokens.css">
-<!-- 앱 스타일시트는 구 app.css 를 **순서 보존 컷**으로 자른 9조각이다: 이어붙이면 옛 파일과
-     바이트 동일하므로 캐스케이드가 원본과 완전히 같다. 따라서 이 순서는 장식이 아니라 계약이고
-     — 같은-명시도 hover→상태 쌍(.navbtn:hover → [aria-current] 류)과 마지막에 와야 하는
-     forced-colors 가 여기에 걸려 있다 — tests/_web_css.py 의 APP_CSS_FILES 와 일치해야 한다
-     (게이트 2개가 링크 순서·파일 전수를 대조한다). 이름이 소유권과 어긋나 보이는 둘은 의도다:
-     draftcard 는 「기안」 사망 후 작업대가 실소비자고, job 은 job/jobdata/tail 로 갈려 있다. -->
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/draftcard.css">
-<link rel="stylesheet" href="css/editor.css">
-<link rel="stylesheet" href="css/job.css">
-<link rel="stylesheet" href="css/overlay.css">
-<link rel="stylesheet" href="css/library.css">
-<link rel="stylesheet" href="css/forced-colors.css">
-<link rel="stylesheet" href="css/jobdata.css">
-<link rel="stylesheet" href="css/tail.css">
+<!-- 제품 CSS와 기존 IIFE는 src/main.js의 순서 고정 side-effect import graph가 싣는다. -->
 </head>
 <body>
 <!-- 웹 프론트엔드 셸 — v6 계약의 최상위 구조는 `문서 만들기 | 문서 작업` 2탭이다(§19 서문:
@@ -832,30 +817,6 @@
     </div>
 </div>
 
-<script src="js/bridge.js"></script>
-<script src="js/copy.js"></script>
-<script src="js/theme.js"></script>
-<script src="js/personalization.js"></script>
-<script src="js/esc.js"></script>
-<script src="js/segview.js"></script>
-<script src="js/preserve.js"></script>
-<script src="js/modal.js"></script>
-<script src="js/surface_sheet.js"></script>
-<script src="js/undo_toast.js"></script>
-<script src="js/sheet_picker.js"></script>
-<script src="js/data_picker.js"></script>
-<script src="js/pathtrack.js"></script>
-<script src="js/relink.js"></script>
-<script src="js/popover.js"></script>
-<script src="js/guard.js"></script>
-<script src="js/datazone.js"></script>
-<script src="js/intent.js"></script>
-<script src="js/grouplist.js"></script>
-<script src="js/editor_entry.js"></script>
-<script src="js/screens/library.js"></script>
-<script src="js/screens/editor.js"></script>
-<script src="js/screens/job.js"></script>
-<script src="js/screens/workbench.js"></script>
-<script src="js/app.js"></script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
