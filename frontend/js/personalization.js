@@ -25,8 +25,10 @@ export function createPersonalization({ bridge }) {
     return FONT_ORDER.includes(value) ? value : "normal";
   }
 
+  /* 호스트 준비 판정은 브리지가 진다(N-07) — `window.pywebview.api` 직접 조회는 private
+     backend 한 곳만 한다. `bridge` 자체의 존재는 factory 주입이 보장하므로 다시 세지 않는다. */
   function persist(method, value) {
-    if (window.pywebview && window.pywebview.api && bridge) {
+    if (bridge.hostReady()) {
       try { bridge[method](value); }
       catch (err) { window.alert(String((err && err.message) || err)); }
     }

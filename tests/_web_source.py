@@ -93,18 +93,31 @@ SCREEN_ESM_FILES = (
 )
 
 #: compat을 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
-ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES, *SCREEN_ESM_FILES)
+#: N-07에서 마지막 IIFE를 벗고 named factory(true ESM)가 된 브리지. 자리는 특별하다: compat이
+#: 이것을 **정확히 한 번** 구성해 산물을 화면·서비스에 객체째 넘기고, 구 IIFE가 스스로 만들던
+#: ``Bridge``·``__push`` 두 전역도 이제 compat이 만든다.
+BRIDGE_ESM_FILES = ("bridge.js",)
+
+ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES, *SCREEN_ESM_FILES, *BRIDGE_ESM_FILES)
 
 #: ESM 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
 COMPAT_MODULE = "compat.js"
 
-#: 아직 ESM이 아니라 entry가 side-effect import하는 IIFE — ``bridge.js`` 하나(N-07 소유).
-LEGACY_JS_FILES = ("bridge.js",)
+#: 제품 파사드 모듈 — compat과 같은 ``frontend/src/``에 산다(``../js/``가 아니다).
+PRODUCT_API_MODULE = "product_api.js"
 
-#: compat이 들어가는 자리 — ``bridge.js`` 바로 뒤. compat은 평가 시점에 ``window.Bridge``를
-#: 객체째 캡처하므로 bridge가 반드시 먼저 평가돼야 한다. 화면·서비스는 compat의 import
-#: 그래프로만 들어오고, 별칭 25개는 compat 본문 말미(모든 구성 뒤)에 선다.
-COMPAT_ENTRY_POSITION = 1
+#: 제품 최종 공개 API 이름. 임시 별칭과 **다른 계정**이다(D-06) — N-10에서 별칭이 전부
+#: 사라져도 이 이름은 남는다.
+PRODUCT_API_GLOBAL = "__hwpx"
+
+#: entry가 side-effect import하는 IIFE — N-07에서 **0개**가 됐다. ``bridge.js``가 ESM factory로
+#: 바뀌며 compat의 static import로 그래프에 들어왔고, 그와 함께 "먼저 평가돼야 한다"는 순서
+#: 계약을 entry에 걸던 마지막 자리도 사라졌다.
+LEGACY_JS_FILES: tuple[str, ...] = ()
+
+#: compat이 들어가는 자리 — 이제 entry의 JS는 compat 하나뿐이라 맨 앞이다. 평가 순서 계약은
+#: entry가 아니라 compat의 import 그래프와 본문 순서(구성 → 별칭)가 진다.
+COMPAT_ENTRY_POSITION = 0
 
 
 def source_path(*parts: str) -> Path:

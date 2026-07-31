@@ -25,8 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_TEST_DIR = Path(__file__).resolve().parent / "js"
 
-#: 잎 넷 + 중앙 compat + N-05 서비스 다섯 묶음 + N-06 화면·셸 다섯 묶음. 파일이 사라지면
-#: 러너는 여전히 초록이므로 여기서 전수를 센다.
+#: 잎 넷 + 중앙 compat + N-05 서비스 다섯 묶음 + N-06 화면·셸 다섯 묶음 + N-07 브리지·파사드
+#: 둘. 파일이 사라지면 러너는 여전히 초록이므로 여기서 전수를 센다.
 EXPECTED_TEST_FILES = {
     "compat.test.js",
     "copy.test.js",
@@ -43,6 +43,9 @@ EXPECTED_TEST_FILES = {
     "n06_editor.test.js",
     "n06_job.test.js",
     "n06_app_shell.test.js",
+    # N-07 — 브리지 ESM factory 와 제품 파사드.
+    "n07_bridge.test.js",
+    "n07_product_api.test.js",
     # N-08 — 제품 그래프에 **닿지 않는** inert 프로브 모듈의 단위 게이트.
     "n08_schema.test.js",
     "n08_runner.test.js",

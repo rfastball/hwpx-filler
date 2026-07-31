@@ -60,11 +60,30 @@ const FACTORY_ALIASES = {
   WorkbenchScreen: ["init", "render", "leaveTo"],
   Nav: ["go", "refresh"],
   AppCloseGuard: ["prompt"],
+  /* N-07 — 구 `bridge.js` IIFE 가 스스로 만들던 전역. 이제 compat 이 factory 를 정확히 한 번
+     구성해 그 산물을 건다. 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`.
+     Python selftest 가 `window.Bridge.call = stub` 으로 프로퍼티를 교체하므로 **객체째**여야
+     한다 — 메서드를 값으로 뽑아 넘기면 스텁이 우회된다. */
+  Bridge: [
+    "onPush", "hostReady", "initial", "call", "pickDataFile", "loadDataSheet",
+    "importTemplateFile", "importTemplatesFolder", "copyClipboard", "pickOutputFolder",
+    "generate", "editorHasUnsavedWork", "openJobInEditor", "newJobFromData",
+    "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "openPath", "revealPath",
+    "copyPath", "setTheme", "setFontScale", "setMasterWidth",
+    "confirmWindowClose", "cancelWindowClose",
+  ],
+  /* N-07 제품 공개 API — 임시 별칭과 **다른 계정**이다(D-06). 위 별칭들은 N-10 에서
+     사라지지만 이 이름은 남는다. 표면을 넓히면 경계가 다시 흐려지므로 정확히 둘이다. */
+  __hwpx: ["describe", "deliver"],
 };
+
+/* 객체가 아니라 **함수**로 걸리는 별칭 — 구성 산물이라 모듈 export 와 동일성 비교가 안 된다. */
+const FUNCTION_ALIASES = ["__push"];
 
 const ALIASES = [
   ...Object.keys(PLAIN_ALIASES),
   ...Object.keys(FACTORY_ALIASES),
+  ...FUNCTION_ALIASES,
 ].sort();
 
 /* 앱 셸 구성이 실제로 지나가는 DOM 표면의 최소 대역. 거동 판정은 하지 않는다. */
@@ -132,8 +151,10 @@ function useHostStub(t) {
     addEventListener: (type, fn, opts) => listeners.push({ type, fn, opts }),
     removeEventListener: () => {},
     alert: () => {},
-    /* compat 이 평가 시점에 붙드는 유일한 제품 전역. 객체째 넘어가는지 여기서 본다. */
-    Bridge: { call() {}, onPush() {}, initial() {} },
+    /* N-07 — 대역은 이제 제품 전역을 **하나도** 심지 않는다. 종전엔 `window.Bridge` 를 미리
+       깔았다(구 `bridge.js` IIFE 가 만든 것을 compat 이 되읽는 구조였다). 이제 compat 이
+       브리지를 직접 구성하므로, 여기에 미리 깔면 "compat 이 생산자다"라는 사실이 before 집합
+       뒤에 숨어 설치 목록에서 사라진다 — 그 침묵이 정확히 이 게이트가 막아야 할 회귀다. */
   };
   globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
 
@@ -176,7 +197,7 @@ test("잎 모듈은 import 만으로 전역을 만들지 않는다", async (t) =
   assert.deepEqual(Object.keys(host.window).sort(), before);
 });
 
-test("compat 이 스물다섯 별칭을 만들고 올바른 객체에 건다", async (t) => {
+test("compat 이 스물여덟 별칭을 만들고 올바른 객체에 건다", async (t) => {
   const host = useHostStub(t);
   const before = new Set(Object.keys(host.window));
 
@@ -188,7 +209,8 @@ test("compat 이 스물다섯 별칭을 만들고 올바른 객체에 건다", a
     .sort();
 
   assert.deepEqual(installed, ALIASES);
-  assert.equal(installed.length, 25);
+  // 25 임시 별칭 + N-07 이 compat 으로 옮겨온 `Bridge`·`__push` + 제품 공개 API `__hwpx`.
+  assert.equal(installed.length, 28);
 
   for (const [alias, [file, exported]] of Object.entries(PLAIN_ALIASES)) {
     const source = await import(`../../frontend/js/${file}`);
@@ -201,6 +223,11 @@ test("compat 이 스물다섯 별칭을 만들고 올바른 객체에 건다", a
       `${alias} 가 구성된 서비스 객체가 아닙니다`);
     assert.deepEqual(Object.keys(host.window[alias]).sort(), [...keys].sort(),
       `${alias} 의 표면이 계약과 다릅니다`);
+  }
+
+  for (const alias of FUNCTION_ALIASES) {
+    assert.equal(typeof host.window[alias], "function",
+      `${alias} 별칭이 함수가 아닙니다`);
   }
 });
 
@@ -229,4 +256,39 @@ test("compat 은 자체 상태나 새 표면을 갖지 않는다", async (t) => 
   const module = await import(COMPAT);
 
   assert.deepEqual(Object.keys(module), [], "compat 은 아무것도 export 하지 않는다");
+});
+
+/* ══════════ N-07 제품 파사드 — 프로브의 전역 교체가 관측된다 ══════════ */
+
+test("__hwpx snapshot 은 window.__push 를 **호출 시점에** 읽는다(프로브 교체 관측)", async (t) => {
+  const host = useHostStub(t);
+
+  // compat 은 프로세스당 한 번만 평가되므로(ESM 캐시) 캐시 히트로는 이 대역에 아무것도
+  // 설치되지 않는다 — 잎 프로브와 같은 캐시 우회 질의로 **이 대역 위에서** 다시 조립한다.
+  await import(`${COMPAT}?n07-latebind-probe=1`);
+
+  const api = host.window.__hwpx;
+  assert.equal(typeof api.deliver, "function");
+
+  // Python selftest 프로브가 열세 곳에서 하는 일 그대로 — 전역을 래퍼로 갈아끼운다.
+  const real = host.window.__push;
+  const seen = [];
+  host.window.__push = function (screen, snapshot) {
+    seen.push([screen, snapshot]);
+    return real(screen, snapshot);
+  };
+
+  const result = api.deliver({
+    version: 1,
+    event: "snapshot",
+    payload: { screen: "job", snapshot: { rows: 1 } },
+  });
+
+  host.window.__push = real;
+
+  assert.equal(result.ok, true, `deliver 가 실패했습니다: ${JSON.stringify(result)}`);
+  // 구성 산물 `push` 를 값으로 붙들면 여기가 0 이 된다 — 제품 푸시가 래퍼를 우회하고,
+  // 프로브는 "푸시 0" 을 보고 그 침묵을 배선 부재로 읽는다(job_mirror·job_result 회귀).
+  assert.deepEqual(seen, [["job", { rows: 1 }]],
+    "제품 푸시가 갈아끼운 window.__push 를 우회했습니다 — 프로브 관측이 무력화됩니다.");
 });

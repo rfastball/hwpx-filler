@@ -35,7 +35,9 @@ export function createTheme({ bridge }) {
   function set(mode) {
     apply(mode);
     // 브리지 부재(브라우저 단독 프리뷰)면 영속 생략 — 셸 상태만 갱신, 무해 통과(위 파일 주석 참조).
-    if (window.pywebview && window.pywebview.api) {
+    // 호스트 준비 판정은 브리지가 진다(N-07): `window.pywebview.api` 를 직접 뒤지는 자리가
+    // 파일마다 흩어지면 그 백엔드를 바꿀 때 조용히 빠뜨리는 곳이 생긴다.
+    if (bridge.hostReady()) {
       // 동기 throw(Bridge 부재 등)도 삼키지 않는다(confirm-or-alarm) — 비동기 rejection 은
       // app.js 의 unhandledrejection 백스톱이 받는다.
       try { bridge.setTheme(current()); }

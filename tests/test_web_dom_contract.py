@@ -1701,7 +1701,17 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
 
     assert "window.events.closing += frontend._handle_window_closing" in app_py
-    assert "AppCloseGuard" in app_js and "confirm_window_close" in app_js
+    # N-07 — 셸은 `window.pywebview.api` 를 직접 뒤지지 않고 브리지 표면을 쓴다. 배선의
+    # 존재를 세는 계약은 그대로고, 바뀐 것은 그 배선이 지나는 자리다. 호스트 메서드 이름을
+    # 아는 파일이 하나뿐이라는 사실도 여기서 함께 센다 — 안 세면 셸이 다시 직접 알게 된다.
+    assert "AppCloseGuard" in app_js and "confirmWindowClose" in app_js
+    bridge_js = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    assert "confirm_window_close" in bridge_js and "cancel_window_close" in bridge_js, (
+        "닫기 처분 통보가 브리지 표면에서 사라졌습니다."
+    )
+    assert "window.pywebview.api" not in app_js, (
+        "앱 셸이 다시 호스트 API 를 직접 조회합니다 — private backend 는 bridge.js 하나입니다."
+    )
     assert 'id="editorBack"' in html and 'editorBack' in editor_js
     assert 'data-act="cancel-new"' in editor_js
     assert 'sendEdit("discard_session", {})' in editor_js   # 체인 경유(5R P2)
