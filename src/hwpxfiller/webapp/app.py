@@ -3547,6 +3547,8 @@ def _runtime_selftest_evidence(
     evidence.update(
         artifact_id=launched_artifact.artifact_id,
         tree_sha256=launched_artifact.tree_sha256,
+        external_fetch_completed=None,
+        external_fetch_succeeded=None,
         external_fetch_blocked=None,
     )
 
@@ -3554,31 +3556,56 @@ def _runtime_selftest_evidence(
         window.evaluate_js(  # type: ignore[attr-defined]
             """
             (function () {
-              const state = { pending: true, blocked: false, error: '' };
+              const state = {
+                pending: true, completed: false, succeeded: false, blocked: false, error: ''
+              };
               window.__n03OfflineProbe = state;
               const scheme = String.fromCharCode(104, 116, 116, 112);
-              const target = scheme + '://' + ['example', 'com'].join('.') + '/';
+              const path = ['__n03', 'network', 'control__'].join('_');
+              const target = scheme + '://' + ['example', 'com'].join('.') + '/' + path;
               const controller = new AbortController();
               const timer = setTimeout(() => controller.abort(), 5000);
               fetch(target, { cache: 'no-store', mode: 'no-cors', signal: controller.signal })
-                .then(() => { state.blocked = false; state.error = 'external fetch succeeded'; })
-                .catch((error) => { state.blocked = true; state.error = String(error); })
-                .finally(() => { clearTimeout(timer); state.pending = false; });
+                .then(() => {
+                  state.succeeded = true;
+                  state.blocked = false;
+                  state.error = 'external fetch succeeded';
+                })
+                .catch((error) => {
+                  state.succeeded = false;
+                  state.blocked = true;
+                  state.error = String(error);
+                })
+                .finally(() => {
+                  clearTimeout(timer);
+                  state.completed = true;
+                  state.pending = false;
+                });
             })()
             """
         )
         deadline = time.monotonic() + 8.0
         while time.monotonic() < deadline:
             probe = window.evaluate_js(  # type: ignore[attr-defined]
-                "window.__n03OfflineProbe || {pending:true,blocked:false,error:'missing'}"
+                (
+                    "window.__n03OfflineProbe || "
+                    "{pending:true,completed:false,succeeded:false,blocked:false,error:'missing'}"
+                )
             )
             if isinstance(probe, dict) and not probe.get("pending", True):
-                evidence["external_fetch_blocked"] = probe.get("blocked") is True
+                completed = probe.get("completed") is True
+                succeeded = completed and probe.get("succeeded") is True
+                blocked = completed and not succeeded and probe.get("blocked") is True
+                evidence["external_fetch_completed"] = completed
+                evidence["external_fetch_succeeded"] = succeeded
+                evidence["external_fetch_blocked"] = blocked
                 evidence["external_fetch_error"] = str(probe.get("error", ""))
                 break
             time.sleep(0.1)
         else:
-            evidence["external_fetch_blocked"] = False
+            evidence["external_fetch_completed"] = False
+            evidence["external_fetch_succeeded"] = False
+            evidence["external_fetch_blocked"] = None
             evidence["external_fetch_error"] = "offline probe timed out"
     return evidence
 

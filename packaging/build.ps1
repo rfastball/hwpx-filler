@@ -156,6 +156,9 @@ foreach ($key in $plan) {
             if ($selfcheck.ExitCode -ne 0) {
                 throw "Node-free packaged selfcheck 실패(exit $($selfcheck.ExitCode))"
             }
+            $artifactParity = Get-Content -LiteralPath (
+                Join-Path $evidenceDir 'artifact-parity.json'
+            ) -Raw -Encoding UTF8 | ConvertFrom-Json
 
             # 유효한 외부 HTTP target을 deterministic loopback control proxy로 먼저 성공시킨다.
             # proxy가 요청을 실제로 관측해야 뒤의 같은-target dead-proxy 실패가 DNS/CI egress
@@ -178,12 +181,25 @@ foreach ($key in $plan) {
                 ConvertFrom-Json
             if (
                 $networkEvidence.PSObject.Properties.Name -contains 'error' -or
-                $networkEvidence.runtime.external_fetch_blocked -ne $false
+                $networkEvidence.runtime.external_fetch_completed -ne $true -or
+                $networkEvidence.runtime.external_fetch_succeeded -ne $true -or
+                $networkEvidence.runtime.external_fetch_blocked -ne $false -or
+                $networkEvidence.runtime.external_fetch_error -ne 'external fetch succeeded'
             ) {
                 throw (
                     'control proxy를 통한 packaged WebView2 외부 HTTP probe가 성공하지 않아 ' +
                     '오프라인 격리의 양성 대조를 확보할 수 없습니다.'
                 )
+            }
+            if (
+                $networkEvidence.url -notmatch '^http://127\.0\.0\.1:\d+/index\.html$' -or
+                $networkEvidence.runtime.page_url -ne $networkEvidence.url -or
+                -not $networkEvidence.runtime.resources_same_origin -or
+                @($networkEvidence.runtime.forbidden_resources).Count -ne 0 -or
+                $networkEvidence.runtime.artifact_id -ne $artifactParity.artifact_id -or
+                $networkEvidence.runtime.tree_sha256 -ne $artifactParity.tree_sha256
+            ) {
+                throw 'network control WebView2의 loopback origin 또는 artifact identity가 다릅니다.'
             }
             if (-not (Test-Path -LiteralPath $proxyHitOut -PathType Leaf)) {
                 throw 'network control proxy가 WebView2 외부 HTTP 요청을 관측하지 못했습니다.'
@@ -193,15 +209,32 @@ foreach ($key in $plan) {
             if (
                 $proxyHit.method -ne 'GET' -or
                 $proxyHit.host -ne 'example.com' -or
-                $proxyHit.target -ne 'http://example.com/'
+                $proxyHit.target -ne 'http://example.com/__n03_network_control__'
             ) {
                 throw "network control proxy 관측값이 잘못됐습니다: $($proxyHit | ConvertTo-Json -Compress)"
+            }
+            Stop-Process -Id $proxyProcess.Id -Force
+            $proxyProcess.WaitForExit()
+            $proxyProcess = $null
+            $deadProxyConfirmed = $false
+            $deadProxyCheck = [System.Net.Sockets.TcpClient]::new()
+            try {
+                $deadProxyCheck.Connect('127.0.0.1', $proxyPort)
+            }
+            catch {
+                $deadProxyConfirmed = $true
+            }
+            finally {
+                $deadProxyCheck.Dispose()
+            }
+            if (-not $deadProxyConfirmed) {
+                throw "종료한 network control proxy port가 여전히 열려 있습니다: $proxyPort"
             }
 
             $env:HWPXFILLER_HOME = Join-Path $evidenceDir 'home-offline'
             $env:HWPX_SELFTEST_OUT = $selftestOut
             $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = (
-                '--proxy-server=127.0.0.1:9 --disable-background-networking'
+                "--proxy-server=127.0.0.1:$proxyPort --disable-background-networking"
             )
             $selftest = Start-Process -FilePath $exe -Wait -PassThru `
                 -ArgumentList @('--selftest')
@@ -237,9 +270,6 @@ foreach ($key in $plan) {
             if ($evidence.url -notmatch '^http://127\.0\.0\.1:\d+/index\.html$') {
                 throw "packaged WebView2 origin 불일치: $($evidence.url)"
             }
-            $artifactParity = Get-Content -LiteralPath (
-                Join-Path $evidenceDir 'artifact-parity.json'
-            ) -Raw -Encoding UTF8 | ConvertFrom-Json
             if (
                 $evidence.runtime.artifact_id -ne $artifactParity.artifact_id -or
                 $evidence.runtime.tree_sha256 -ne $artifactParity.tree_sha256
@@ -253,7 +283,13 @@ foreach ($key in $plan) {
             ) {
                 throw 'packaged WebView2에 loopback 외 resource가 로드됐습니다.'
             }
-            if ($evidence.runtime.external_fetch_blocked -ne $true) {
+            if (
+                $evidence.runtime.external_fetch_completed -ne $true -or
+                $evidence.runtime.external_fetch_succeeded -ne $false -or
+                $evidence.runtime.external_fetch_blocked -ne $true -or
+                $evidence.runtime.external_fetch_error -eq 'external fetch succeeded' -or
+                $evidence.runtime.external_fetch_error -eq 'offline probe timed out'
+            ) {
                 throw 'packaged WebView2 외부 네트워크 격리 증거가 없습니다.'
             }
             [ordered]@{
@@ -267,10 +303,15 @@ foreach ($key in $plan) {
                 origin = $evidence.runtime.origin
                 resource_count = @($evidence.runtime.resource_urls).Count
                 resources_same_origin = $evidence.runtime.resources_same_origin
+                network_control_external_fetch_completed = (
+                    $networkEvidence.runtime.external_fetch_completed
+                )
                 network_control_external_fetch_succeeded = (
-                    $networkEvidence.runtime.external_fetch_blocked -eq $false
+                    $networkEvidence.runtime.external_fetch_succeeded
                 )
                 network_control_proxy_observed = $true
+                network_control_target = $proxyHit.target
+                dead_proxy_port = $proxyPort
                 offline_external_fetch_blocked = $evidence.runtime.external_fetch_blocked
             } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (
                 Join-Path $evidenceDir 'validation-summary.json'

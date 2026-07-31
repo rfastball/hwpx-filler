@@ -11,40 +11,61 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+_EXPECTED_HOST = "example.com"
+_EXPECTED_TARGET = "http://example.com/__n03_network_control__"
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        temporary = Path(handle.name)
+    temporary.replace(path)
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
     server: "_ProxyServer"
 
-    def _record_and_respond(self) -> None:
+    def _empty_response(self, status: int) -> None:
+        self.send_response(status)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:  # noqa: N802 - stdlib handler protocol
+        if self.path != _EXPECTED_TARGET or self.headers.get("Host") != _EXPECTED_HOST:
+            self._empty_response(502)
+            return
         evidence = {
             "method": self.command,
             "target": self.path,
             "host": self.headers.get("Host", ""),
         }
-        self.server.hit_file.write_text(
-            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _write_json_atomic(self.server.hit_file, evidence)
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler protocol
-        self._record_and_respond()
-
     def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler protocol
-        self._record_and_respond()
+        self._empty_response(502)
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib handler protocol
-        self._record_and_respond()
+        self._empty_response(502)
 
     def do_CONNECT(self) -> None:  # noqa: N802 - plain HTTP is the required probe
-        self.send_error(502, "CONNECT is not part of the HTTP control contract")
+        self._empty_response(502)
 
     def log_message(self, _format: str, *args: object) -> None:
         return
@@ -68,10 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     args.hit_file.parent.mkdir(parents=True, exist_ok=True)
     server = _ProxyServer(args.hit_file)
     host, port = server.server_address
-    args.ready_file.write_text(
-        json.dumps({"host": host, "port": port}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _write_json_atomic(args.ready_file, {"host": host, "port": port})
     try:
         server.serve_forever()
     except KeyboardInterrupt:

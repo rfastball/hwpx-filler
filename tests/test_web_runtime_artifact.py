@@ -91,6 +91,120 @@ def test_selftest_rejects_artifact_swap_after_window_creation(
         app_mod._runtime_selftest_evidence(Window(), launched)
 
 
+def _runtime_probe_window(probe: dict) -> object:
+    class Window:
+        def evaluate_js(self, script):
+            if "const pageUrl = new URL" in script:
+                return {
+                    "page_url": "http://127.0.0.1:12345/index.html",
+                    "origin": "http://127.0.0.1:12345",
+                    "resource_urls": ["http://127.0.0.1:12345/assets/app.js"],
+                    "resources_same_origin": True,
+                    "forbidden_resources": [],
+                }
+            if "window.__n03OfflineProbe = state" in script:
+                return None
+            if "window.__n03OfflineProbe ||" in script:
+                return probe
+            raise AssertionError(f"unexpected selftest script: {script[:80]!r}")
+
+    return Window()
+
+
+@pytest.mark.parametrize(
+    ("probe", "completed", "succeeded", "blocked", "error"),
+    [
+        (
+            {
+                "pending": False,
+                "completed": True,
+                "succeeded": True,
+                "blocked": False,
+                "error": "external fetch succeeded",
+            },
+            True,
+            True,
+            False,
+            "external fetch succeeded",
+        ),
+        (
+            {
+                "pending": False,
+                "completed": True,
+                "succeeded": False,
+                "blocked": True,
+                "error": "TypeError: Failed to fetch",
+            },
+            True,
+            False,
+            True,
+            "TypeError: Failed to fetch",
+        ),
+    ],
+)
+def test_runtime_external_probe_distinguishes_success_and_block(
+    tmp_path: Path,
+    monkeypatch,
+    probe: dict,
+    completed: bool,
+    succeeded: bool,
+    blocked: bool,
+    error: str,
+) -> None:
+    artifact = VerifiedWebArtifact(
+        root=tmp_path,
+        index_path=tmp_path / "index.html",
+        artifact_id="a" * 64,
+        tree_sha256="b" * 64,
+    )
+    monkeypatch.setattr(app_mod, "web_artifact", lambda: artifact)
+    monkeypatch.setenv("HWPX_SELFTEST_OFFLINE_PROBE", "1")
+
+    evidence = app_mod._runtime_selftest_evidence(
+        _runtime_probe_window(probe),
+        artifact,
+    )
+
+    assert evidence["external_fetch_completed"] is completed
+    assert evidence["external_fetch_succeeded"] is succeeded
+    assert evidence["external_fetch_blocked"] is blocked
+    assert evidence["external_fetch_error"] == error
+
+
+def test_runtime_external_probe_timeout_is_never_success_or_block_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    artifact = VerifiedWebArtifact(
+        root=tmp_path,
+        index_path=tmp_path / "index.html",
+        artifact_id="a" * 64,
+        tree_sha256="b" * 64,
+    )
+    monkeypatch.setattr(app_mod, "web_artifact", lambda: artifact)
+    monkeypatch.setenv("HWPX_SELFTEST_OFFLINE_PROBE", "1")
+    ticks = iter((0.0, 9.0))
+    monkeypatch.setattr("time.monotonic", lambda: next(ticks))
+
+    evidence = app_mod._runtime_selftest_evidence(
+        _runtime_probe_window(
+            {
+                "pending": True,
+                "completed": False,
+                "succeeded": False,
+                "blocked": False,
+                "error": "",
+            }
+        ),
+        artifact,
+    )
+
+    assert evidence["external_fetch_completed"] is False
+    assert evidence["external_fetch_succeeded"] is False
+    assert evidence["external_fetch_blocked"] is None
+    assert evidence["external_fetch_error"] == "offline probe timed out"
+
+
 def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -> None:
     build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
     app = Path(app_mod.__file__).read_text(encoding="utf-8")
@@ -108,12 +222,14 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert build.index("scripts\\verify_packaged_web.py") < build.index("--selfcheck")
     assert "Node-free packaged gate PATH" in build
     assert "HWPX_SELFTEST_OFFLINE_PROBE" in build
-    assert "--proxy-server=127.0.0.1:9 --disable-background-networking" in build
+    assert "--proxy-server=127.0.0.1:$proxyPort --disable-background-networking" in build
+    assert "--proxy-server=127.0.0.1:9" not in build
     assert "scripts\\selftest_http_proxy.py" in build
     assert "network-control-proxy-hit.json" in build
-    assert "proxyHit.target -ne 'http://example.com/'" in build
+    assert "proxyHit.target -ne 'http://example.com/__n03_network_control__'" in build
     assert "packaged-network-control.json" in build
     assert "network_control_external_fetch_succeeded" in build
+    assert "network_control_external_fetch_completed" in build
     assert "network_control_proxy_observed" in build
     assert "responsibilities.Count -ne 42" in build
     assert "falseResponsibilities.Count -ne 0" in build

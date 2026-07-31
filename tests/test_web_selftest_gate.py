@@ -84,6 +84,8 @@ class TestWebSelftestGate:
         assert runtime["resource_urls"], "제품 CSS/JS resource가 하나도 기록되지 않았습니다."
         assert runtime["resources_same_origin"] is True
         assert runtime["forbidden_resources"] == []
+        assert runtime["external_fetch_completed"] is None
+        assert runtime["external_fetch_succeeded"] is None
         assert runtime["external_fetch_blocked"] is None
 
     def test_document_title_rendered(self, selftest_result: dict) -> None:
