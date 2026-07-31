@@ -4,9 +4,17 @@
    탭은 계약 §5.1 의 section 문자열(템플릿·필드 연결·표시·파일 이름 — 「시험」은 기각, §10.17.1)이고
    **집합은 Python 이 매체에서 파생**해 내려준다. 신규 초안은 전진 게이트(순서 의존이 실재),
    저장된 작업 편집은 자유 이동 + 처분 가드.
-   렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
+   렌더는 Python 이 __push('editor', snapshot) 로 밀어 넣는다.
    표현 계층(탭 UI·매핑표·행 색·표시형 라벨·문맥 배너)만 여기서 만든다 — VM 로직 아님. */
-(function () {
+import { escHtml } from "../esc.js";
+import { GroupList } from "../grouplist.js";
+import { Intent } from "../intent.js";
+import { Modal } from "../modal.js";
+import { Popover } from "../popover.js";
+import { Preserve } from "../preserve.js";
+import { UndoToast } from "../undo_toast.js";
+
+export function createEditorScreen({ Bridge, Nav, JobScreen, EditorEntry, PathTrack, SheetPicker }) {
   const SCREEN = "editor";
   const $ = (id) => document.getElementById(id);
   // 표시형/타입 라벨은 표현 계층 → 여기(뷰)에 둔다(Qt mapping_table 의 웹 짝).
@@ -20,7 +28,7 @@
   };
   let LAST = null;
 
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const esc = escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* 편집기의 브리지 왕복은 **한 줄에 선다**(4R P2 → 5R P2 확장, 공용 `intent.js` 체인).
      blur 로 발화하는 `change` 는 아무도 기다리지 않는 발신이고, 클릭 변이는 **자기 핸들러
@@ -33,10 +41,10 @@
      (정산 **뒤** 컨트롤러에게 직접 묻는 질의 — 체인에 넣으면 자기가 기다리는 줄에 선다). */
   const EDIT_CHAIN = "editor:mutate";
   function sendEdit(action, payload) {
-    return window.Intent.chained(EDIT_CHAIN, () => Bridge.call(SCREEN, action, payload));
+    return Intent.chained(EDIT_CHAIN, () => Bridge.call(SCREEN, action, payload));
   }
   function flushPendingEdits() {
-    return window.Intent.chained(EDIT_CHAIN, () => Promise.resolve());
+    return Intent.chained(EDIT_CHAIN, () => Promise.resolve());
   }
 
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
@@ -110,8 +118,8 @@
   /* 관리 기제 = 공용 팩토리·기존 DOM(#tplRowMenu·#tplMoveModal) **재사용, 이식 아님**(F2
      교훈 ④). 관리 동사는 tpl 채널을 그대로 부른다(F1 data_picker→pool 동형 — 컨트롤러·
      잠금·경로 검증 규율 생존, §10.17.2 판정 B). 목록의 정본은 editor 스냅샷 하나다. */
-  const libRowMenu = window.GroupList.createMenu({ menuId: "tplRowMenu" });
-  const libMoveDialog = window.GroupList.createMoveDialog({
+  const libRowMenu = GroupList.createMenu({ menuId: "tplRowMenu" });
+  const libMoveDialog = GroupList.createMoveDialog({
     modalId: "tplMoveModal", listId: "tplMoveList", errId: "tplMoveErr",
     nameId: "tplMoveName", radioName: "tplMove",
     newRadioId: "tplMoveNewRadio", newNameId: "tplMoveNewName",
@@ -589,7 +597,7 @@
     const r = await Bridge.call("tpl", "delete", { media, path: item.path });
     // 「휴지통」이라 말하지 않는다(U2 §2.12, #345) — 보존은 백엔드에 실재하나 도달 표면이
     // 아직 없다(별건 #350). 지금 경험 그대로 「삭제 + 되돌리기」로 말한다(library.js 동형).
-    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 삭제했습니다.`, async () => {
+    if (r && r.undo) UndoToast.show(`템플릿 '${item.name}' 을(를) 삭제했습니다.`, async () => {
       const restored = await Bridge.call("tpl", "undo_delete", {});
       if (restored && restored.ok === false) throw new Error(restored.error);
     });
@@ -1286,7 +1294,7 @@
       // 저장은 제자리(결정 40 — 포커스 튕김 없음). 후보·문서 탐색 스냅샷만 갱신해 새/개명
       // 작업이 바로 보이게 한다 — REFRESH_ON_NAV 를 기다릴 이유가 없다(좌 목록 사망 뒤
       // 갱신 대상이 목록에서 이 두 표면으로 옮겨졌다, F2 PR-B).
-      if (window.JobScreen && window.JobScreen.refreshList) window.JobScreen.refreshList();
+      if (JobScreen && JobScreen.refreshList) JobScreen.refreshList();
       // 성공 재진술은 Python notice(ok) 채널 — 저장 착지가 저장본 편집 세션 재로드 push 라
       // #save-msg 는 그 재렌더에 증발한다(PR-2 리뷰 F2: push/반환 경합에 안 걸리는 채널만).
       // **성공을 값으로 돌려준다**(1R P1): 「저장하고 이동」·「저장하고 나가기」는 이 값으로
@@ -1346,35 +1354,46 @@
     }
   }
 
+  // init 멱등·재시도(N-06 §7): 배선은 `wired` 로 1회만, initial 당김은 `seated` 로 공유하되
+  // 실패하면 비워 다음 명시적 init() 이 initial 만 다시 당긴다 — rejection 은 호출자에게 전파.
+  let wired = false;
+  let seated = null;
   function init() {
-    Bridge.onPush(SCREEN, render);
-    // tpl 채널 구독(F8 — F1 의 data_picker→pool 동형): 관리 동사(그룹·삭제·가져오기)의
-    // 결과·목록 변화를 editor 스냅샷 **재당김**으로 되그린다 — 목록·결과 렌더의 정본은
-    // editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다). 병존
-    // 기간 template.js 의 자기 구독과 공존한다(bridge.js 복수 구독).
-    Bridge.onPush("tpl", () => { Bridge.initial(SCREEN).then(render); });
-    // 몰입 표면(재작성 F7) — 위임 루트가 화면 전체다. back 은 재렌더가 만지지 않는 안정
-    // 요소라 여기서 직접 문다(문맥 배너의 복귀 버튼은 재구성되므로 위임으로 받는다).
-    const root = $("scr-editor");
-    root.addEventListener("click", onClick);
-    root.addEventListener("change", onChange);
-    root.addEventListener("input", onInput);
-    $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
-    // 라이브러리 ⋮ 메뉴·이동 다이얼로그 배선(F8) — DOM(#tplRowMenu·#tplMoveModal)은 셸
-    // 레벨 공용이라 병존 기간 template.js 와 이중 배선되지만, 각 인스턴스가 자기 열림
-    // 상태(libMenuFor / onConfirm)로만 반응해 서로 간섭하지 않는다.
-    $("tplRowMenu").addEventListener("click", onLibMenuClick);
-    libMoveDialog.wire("tplMoveOk", "tplMoveCancel");
-    // TXT 저작 모달(F8 승계) — 병존 기간 template.js 와 이중 배선: 핸들러가 자기 열림
-    // 거래(txtEdit)로만 반응한다(submitTxtEdit·confirmDiscardTxtEdit 선두 가드).
-    $("txtEditCancel").addEventListener("click", confirmDiscardTxtEdit);
-    $("txtEditOk").addEventListener("click", submitTxtEdit);
-    window.Popover.wireDismiss({
-      isOpen: () => libMenuFor !== null,
-      contains: (t) => !!(t.closest("#tplRowMenu") || t.closest("#scr-editor .job-more")),
-      close: closeLibMenu,
-    });
-    Bridge.initial(SCREEN).then(render);
+    if (!wired) {
+      Bridge.onPush(SCREEN, render);
+      // tpl 채널 구독(F8 — F1 의 data_picker→pool 동형): 관리 동사(그룹·삭제·가져오기)의
+      // 결과·목록 변화를 editor 스냅샷 **재당김**으로 되그린다 — 목록·결과 렌더의 정본은
+      // editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다). 병존
+      // 기간 template.js 의 자기 구독과 공존한다(bridge.js 복수 구독).
+      Bridge.onPush("tpl", () => { Bridge.initial(SCREEN).then(render); });
+      // 몰입 표면(재작성 F7) — 위임 루트가 화면 전체다. back 은 재렌더가 만지지 않는 안정
+      // 요소라 여기서 직접 문다(문맥 배너의 복귀 버튼은 재구성되므로 위임으로 받는다).
+      const root = $("scr-editor");
+      root.addEventListener("click", onClick);
+      root.addEventListener("change", onChange);
+      root.addEventListener("input", onInput);
+      $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
+      // 라이브러리 ⋮ 메뉴·이동 다이얼로그 배선(F8) — DOM(#tplRowMenu·#tplMoveModal)은 셸
+      // 레벨 공용이라 병존 기간 template.js 와 이중 배선되지만, 각 인스턴스가 자기 열림
+      // 상태(libMenuFor / onConfirm)로만 반응해 서로 간섭하지 않는다.
+      $("tplRowMenu").addEventListener("click", onLibMenuClick);
+      libMoveDialog.wire("tplMoveOk", "tplMoveCancel");
+      // TXT 저작 모달(F8 승계) — 병존 기간 template.js 와 이중 배선: 핸들러가 자기 열림
+      // 거래(txtEdit)로만 반응한다(submitTxtEdit·confirmDiscardTxtEdit 선두 가드).
+      $("txtEditCancel").addEventListener("click", confirmDiscardTxtEdit);
+      $("txtEditOk").addEventListener("click", submitTxtEdit);
+      Popover.wireDismiss({
+        isOpen: () => libMenuFor !== null,
+        contains: (t) => !!(t.closest("#tplRowMenu") || t.closest("#scr-editor .job-more")),
+        close: closeLibMenu,
+      });
+      wired = true;
+    }
+    if (!seated) {
+      seated = Bridge.initial(SCREEN).then(render)
+        .catch((err) => { seated = null; throw err; });
+    }
+    return seated;
   }
 
   /* 복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다: 편집기는 늘 업무
@@ -1395,13 +1414,13 @@
     const ctx = (LAST && LAST.context) || {};
     const ret = ctx.return_context || {};
     if (ret.surface === "preview" && ret.reopen_drawer
-        && window.JobScreen && window.JobScreen.openPreview) {
+        && JobScreen && JobScreen.openPreview) {
       // 규칙 재적재는 `landOn` 이 **전환 전에** 이미 끝냈다(8R 근본 조치) — 여기서 다시
       // 기다리면 순서 규율이 미리보기 복귀에만 사는 두 벌째가 되고, 그것이 5R→8R 사이에
       // 데이터·결과 복귀를 무방비로 남긴 자리다.
       // 같은 previewIndex·같은 행(§10.14.3): 자리는 진입 때 실은 값의 왕복이고, 행
       // 정체성은 `context.target` 에서 파생한다 — 둘째 축을 만들지 않는다(판정 B).
-      await window.JobScreen.openPreview(null, {
+      await JobScreen.openPreview(null, {
         at: ret.preview_index || 0,
         focusTarget: ctx.target || "",
       });
@@ -1417,17 +1436,17 @@
      조용한 거짓이고, 편집기에 머무르는 쪽은 시끄럽고 되돌릴 수 있다. */
   async function landOn(target) {
     try {
-      await window.Nav.refresh(target);
+      await Nav.refresh(target);
     } catch (err) {
       window.alert("돌아갈 화면을 다시 읽지 못해 편집기에 머무릅니다: "
         + String((err && err.message) || err));
       return false;
     }
-    window.Nav.go(target, { force: true, refreshed: true });
+    Nav.go(target, { force: true, refreshed: true });
     // **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점은 방금 숨겨진 편집기의 back 버튼에
     // 남는다. 키보드 사용자는 보이는 초점 없이 착지해 남의(숨은) 요소부터 tab 을 시작한다.
     // 되돌릴 자리는 편집기를 **띄운 자리**이고, 그것을 아는 곳은 진입 seam 하나다.
-    window.EditorEntry.restoreEntryFocus();
+    EditorEntry.restoreEntryFocus();
     return true;
   }
 
@@ -1486,8 +1505,9 @@
      관리 화면에서 바뀐 공유 그룹 접힘을 반영하게 한다(returning-to-job 이 job 만 refresh 해
      피커가 stale 접힘으로 남던 문제). 순수 재렌더라 세션 상태 불변(Preserve 가 포커스 보존). */
   function rerender() {
-    if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
+    if (window.pywebview && Bridge) Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init, rerender, leaveTo, aimAt };
-})();
+  const EditorScreen = { init, rerender, leaveTo, aimAt };
+  return EditorScreen;
+}
