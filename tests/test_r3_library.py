@@ -138,6 +138,8 @@ def test_nav_refresh_covers_library_and_surfaces_rejection():
     assert re.search(r"refresh\(id\)\.catch\([\s\S]*?window\.alert", src), (
         "전환의 자동 새로고침이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
     )
-    assert re.search(r"window\.Nav = \{[^}]*\brefresh\b", src), (
+    # N-06 후계: Nav 는 앱 셸 factory 산물(`const Nav = { go, refresh }`)이고 전역 별칭은
+    # 중앙 compat 이 건다 — 여기서는 표면에 refresh 가 실려 반환되는가를 본다.
+    assert re.search(r"const Nav = \{[^}]*\brefresh\b", src), (
         "Nav.refresh 가 노출되지 않았습니다 — 이탈 착지가 전환 전에 기다릴 수 없습니다(8R P1)."
     )

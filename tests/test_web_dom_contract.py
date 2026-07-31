@@ -61,13 +61,19 @@ PRESERVE_WRAPPED_FILES = ("screens/editor.js", "screens/job.js", "screens/workbe
 # 절차**(데이터 선택 → 게이트 → 생성 → 결과 → 강등)를 담기 때문이다. 숙주는 파일 크기가 아니라
 # 절차의 길이 — 절차를 늘리는 슬라이스(F7 재시도)가 이 천장을 먼저 만나야 한다.
 MUTABLE_MODULE_STATE_BUDGET = {
-    "screens/job.js": 17,
+    # +2(N-06): wired·seated — init 멱등·재시도 가드. 파생 불가: ①스냅샷은 「이 화면이
+    # 리스너를 이미 세웠는가」「initial 이 착석했는가」를 모른다(부팅 배선은 스냅샷 밖 사건)
+    # ②Python 승격 = 웹 리스너 등록 상태를 백엔드가 소유하는 역전. bridge.onPush 가 채널당
+    # 배열 누적이라 무가드 재-init 은 렌더 2벌이 된다(data_picker.js wired 의 화면판).
+    # (구 상한 17 은 실측 13 위의 여유였다 — N-06 실측 13+2=15 로 상한을 실측에 도로 붙인다.)
+    "screens/job.js": 15,
     # (screens/template.js 는 화면 사망으로 파일째 삭제 — F8 §10.17. 관리·저작 상태는
     #  editor.js 의 libMenuFor·txtEdit 2객체로 이주했다.)
     # screens/draft.js·draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B).
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
-    "screens/workbench.js": 1,
+    # +1(N-06): wired — init 멱등 가드(initial 없는 화면이라 seated 는 없다).
+    "screens/workbench.js": 2,
     # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
     # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
     # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
@@ -85,8 +91,10 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # (배치 push 는 끝에 1회 — 진행 중은 스냅샷 밖 사건) ②DOM(버튼 disabled) 파생은 진행
     # 중 도착하는 무관 push 재렌더가 도로 풀어 버린다. 판정 정본은 Python 비차단 잠금이고
     # 이 플래그는 재클릭을 삼키는 어포던스 잠금이다.
-    "screens/editor.js": 8,
-    "screens/library.js": 3,
+    # +2(N-06): wired·seated — job.js 와 같은 init 멱등·재시도 가드(파생 불가 사유 동일).
+    "screens/editor.js": 10,
+    # +2(N-06): wired·seated — 동일.
+    "screens/library.js": 5,
     "data_picker.js": 4,
     "datazone.js": 0,
 }
@@ -512,7 +520,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
     # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
     assert "trigger: trigger" in sheets
-    assert "window.SurfaceSheet.trigger(e," in job_js
+    assert "SurfaceSheet.trigger(e," in job_js
     assert "returnFocus: e && e.currentTarget" not in job_js
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
     # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
@@ -649,11 +657,14 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
 
 
 def _mutable_module_state(src: str) -> list[str]:
-    """IIFE 본문(2칸 들여쓰기)의 `let`·`var` 선언 이름 — 렌더 층 가변 모듈 상태의 실측치.
+    """본문(2칸 들여쓰기)의 `let`·`var` 선언 이름 — 렌더 층 가변 모듈 상태의 실측치.
 
-    블록 주석을 먼저 지운다(주석 속 예시 코드가 예산을 먹지 않게). 이 앱의 `frontend/js/*` 는 전부
-    `(function () {` 즉시실행 래퍼라 **2칸 = 모듈 스코프**이고 함수 본문은 4칸 이상이다 —
-    파서 없이 성립하는 관례 기반 계측이며, 예산(천장)에는 이 정밀도로 충분하다.
+    블록 주석을 먼저 지운다(주석 속 예시 코드가 예산을 먹지 않게). 이 앱의 렌더 층은 전부
+    한 겹 래퍼 — 구 IIFE 든 N-06 의 `export function create…() {` factory 든 — 안에 살아
+    **2칸 = 그 인스턴스의 상태 스코프**이고 함수 본문은 4칸 이상이다. 파서 없이 성립하는
+    관례 기반 계측이며, 예산(천장)에는 이 정밀도로 충분하다. factory 파일의 모듈 최상위
+    (0칸)에 `let`·`var` 를 두는 것은 이 계측 밖이지만, 그 자리는 build-graph 게이트의
+    "구성 1회" 계약과 겹쳐 인스턴스 상태를 둘 곳이 아니다.
     """
     body = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     return re.findall(r"^  (?:let|var)\s+([A-Za-z_$][\w$]*)", body, flags=re.M)
@@ -719,7 +730,7 @@ def test_job_overwrite_keeps_busy_lock_through_modal():
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     # doGenerate 안에서 busy 해제가 모달 await 보다 앞서면(옛 구조) 이 순서가 뒤집힌다.
-    i_confirm = src.index("await window.Modal.confirm({")
+    i_confirm = src.index("await Modal.confirm({")
     i_release = src.index("generating = false; setBusy(false);")
     assert i_confirm < i_release, (
         "busy-lock 해제가 덮어쓰기 모달 await 전에 온다 — 모달 열림 동안 생성 버튼 재활성으로 "
@@ -801,7 +812,7 @@ def test_job_completion_zone_reset_gated_by_session_change():
     assert "function resultExitLine(r, owner)" in src, (
         "퇴장 한 줄이 모듈 상태를 읽습니다 — 네 태를 되읽을 seam 이 사라집니다."
     )
-    assert "resultExitLine," in src.split("window.JobScreen = {", 1)[1], (
+    assert "resultExitLine," in src.split("const JobScreen = {", 1)[1], (
         "퇴장 한 줄 합성기가 실앱 게이트에 노출되지 않았습니다."
     )
     # 「결과 닫기」(명시 파기)는 로그 한 줄을 남기지 않는다(§2.18 파기 대칭) — 닫기 핸들러가
@@ -1325,7 +1336,7 @@ def test_job_range_draft_surface_contract():
     # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
     # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
     discard = src.split("async function discardAndClose", 1)[1].split("\n  }", 1)[0]
-    assert discard.index("await window.Intent.chained") < discard.index("SurfaceSheet.close"), (
+    assert discard.index("await Intent.chained") < discard.index("SurfaceSheet.close"), (
         "취소가 폐기 성사 전에 면을 닫습니다."
     )
     # 디바운스 안에서 누른 취소는 대기 중 편집을 **보내지 않는다**(리뷰 2R P1) — 초안이
@@ -1712,7 +1723,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert editor_js.count("Bridge.call(SCREEN") == 1, (
         "편집기 왕복이 체인을 우회합니다 — `sendEdit` 하나만 Bridge.call(SCREEN 을 씁니다."
     )
-    assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
+    assert "Intent.chained(EDIT_CHAIN" in editor_js, (
         "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
     )
     # **확인 왕복도 정산 뒤에 연다**(§2.17 2R P2): 버리기가 blur 전에 눌릴 수 있게 된 뒤로
@@ -1739,7 +1750,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     # 「만들기」를 열어 뒀다 — 순서는 **모든** 복귀가 지나는 착지 절차 한 자리에 산다.
     land = editor_js[editor_js.index("async function landOn("):]
     land = land[:land.index("\n  }") + 4]
-    assert land.index("await window.Nav.refresh(") < land.index("window.Nav.go("), (
+    assert land.index("await Nav.refresh(") < land.index("Nav.go("), (
         "착지가 재적재를 기다리지 않고 화면을 노출합니다 — 편집 전 규칙으로 실행됩니다(8R P1)."
     )
     assert "refreshed: true" in land, (
@@ -1747,14 +1758,14 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     )
     # 편집기를 나가는 길은 **모두** 그 절차를 지난다 — Nav.go 직행이 하나라도 남으면
     # 그 경로만 재적재를 건너뛰는 비대칭이 다시 생긴다(F7 이 네 라운드에 걸쳐 겪은 자리).
-    assert editor_js.count("window.Nav.go(") == 1, (
+    assert editor_js.count("Nav.go(") == 1, (
         "편집기에 Nav.go 직행 경로가 남았습니다 — 착지 절차(landOn) 하나만 전환해야 합니다."
     )
     # **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점이 방금 숨겨진 편집기 back 버튼에 남아
     # 키보드 사용자가 보이는 초점 없이 착지한다. 되돌릴 자리를 아는 곳은 진입 seam 하나이고
     # (복귀처 넷에 focus_target 을 심으면 새 진입처가 조용히 빠진다), 되돌림 **규칙**은
     # 모달이 이미 가진 것을 쓴다(분리·비활성 요소 판정을 두 번 쓰지 않는다).
-    assert "window.EditorEntry.restoreEntryFocus()" in land, (
+    assert "EditorEntry.restoreEntryFocus()" in land, (
         "이탈이 초점을 되돌리지 않습니다 — 숨은 요소에 초점이 남습니다(9R P2)."
     )
     entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
@@ -2024,8 +2035,8 @@ def test_use_in_job_goes_straight_to_the_run_surface():
     lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):]
-    use = use[:use.index("window.Nav.go(JOB);") + len("window.Nav.go(JOB);")]
-    assert "window.Nav.go(JOB);" in use, "「문서 만들기에서 사용」이 실행 화면으로 가지 않습니다."
+    use = use[:use.index("Nav.go(JOB);") + len("Nav.go(JOB);")]
+    assert "Nav.go(JOB);" in use, "「문서 만들기에서 사용」이 실행 화면으로 가지 않습니다."
     assert "landRunMode" not in lib and "landRunMode" not in job, (
         "구 실행 모드 착지 seam 이 남아 있습니다 — 두 모드가 사라졌으므로 되돌릴 모드도 없습니다."
     )

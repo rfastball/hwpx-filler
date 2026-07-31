@@ -68,18 +68,18 @@ def test_factory_exists_and_exposes_create():
 
 
 def test_load_order_esc_then_shared_then_screens():
-    """평가 순서 — 이스케이퍼·popover·datazone < 소비 화면(job) (미정의 시점 참조 방지).
+    """공급이 소비 화면(job)보다 먼저 서는가 — N-06 후계.
 
     (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.)
 
-    N-05 뒤 셋의 평가 지점은 세 파일이 아니라 그들을 끌어오는 중앙 compat 한 곳이다. 그래서
-    "esc < popover < datazone" 처럼 셋의 **상대** 순서를 entry 에서 묻는 형태는 더 이상 성립
-    하지 않는다 — 그 순서는 이제 compat 의 import 그래프가 지고, 세 모듈 사이의 실제 의존은
-    ``test_frontend_build_graph`` 의 간선 대조가 단언한다. 여기 남는 질문은 원래의 결함을
-    막던 것 하나다: **공급이 소비 화면보다 먼저 평가되는가.**
+    소비 화면이 ESM factory 가 되면서(N-06) 이 순서 질문은 전부 **언어 규칙**으로 넘어갔다:
+    esc·popover 는 job.js 자신의 static import 간선이라 평가가 항상 먼저고(간선 전수는
+    ``test_frontend_build_graph`` 의 대조가 단언), datazone 은 compat 이 구성한 산물을 factory
+    인자로 주입하므로 미구성 값은 조용한 undefined 가 아니라 구성 시점의 ReferenceError 로
+    시끄럽게 죽는다. 여기 남는 질문은 원래의 결함을 막던 배선 자체다 — ①세 공급자가 여전히
+    제품 그래프(compat)에 닿고 ②job 이 그 공급을 같은 이름으로 실제 소비하는가.
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    consumers = ("screens/job.js",)
     providers = {name: evaluation_site(name)
                  for name in ("esc.js", "popover.js", "datazone.js")}
 
@@ -88,11 +88,16 @@ def test_load_order_esc_then_shared_then_screens():
         assert name not in modules, (
             f"{name} 이 entry 에 직접 남아 있습니다 — 두 경로로 들어오면 순서 추론이 무의미해집니다."
         )
-    first_consumer = min(modules.index(module) for module in consumers)
-    for name, site in providers.items():
-        assert modules.index(site) < first_consumer, (
-            f"평가 순서가 {site}({name}) → 소비 화면(job)이 아닙니다."
-        )
+    job_src = JOB_JS.read_text(encoding="utf-8")
+    assert re.search(r'(?m)^import \{ escHtml \} from "\.\./esc\.js";', job_src), (
+        "job.js 가 escHtml 을 ESM import 하지 않습니다 — 공급 배선이 끊겼습니다."
+    )
+    assert re.search(r'(?m)^import \{ Popover \} from "\.\./popover\.js";', job_src), (
+        "job.js 가 Popover 를 ESM import 하지 않습니다 — 공급 배선이 끊겼습니다."
+    )
+    assert re.search(
+        r"export function createJobScreen\(\{[^}]*\bDataZone\b", job_src
+    ), "job.js factory 가 DataZone 을 주입받지 않습니다 — 공급 배선이 끊겼습니다."
 
 
 def test_job_consumes_factory_with_job_identity():

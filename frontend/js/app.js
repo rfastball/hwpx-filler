@@ -1,11 +1,19 @@
 /* 라우터 + 부팅 — 상단 토바 탭으로 화면 전환, pywebview 준비 시 실화면 초기화.
    화면별 로직은 js/screens/*.js 가 소유(JobScreen.init 등). 여기선 배선만.
-   셸은 좌 레일 5화면 라우팅에서 상단 2탭(+과도기 임시 2)으로 교체됐다(F2 PR-B, 지도 §10.9). */
-(function () {
+   셸은 좌 레일 5화면 라우팅에서 상단 2탭(+과도기 임시 2)으로 교체됐다(F2 PR-B, 지도 §10.9).
+
+   `screens` 는 compat 이 먼저 구성해 넘기는 화면 객체 넷(`{ library, editor, job, workbench }`)
+   — 셸은 마지막에 구성되므로 late-binding 이 필요 없다. `Theme`·`Personalization`·`DataPicker`
+   는 factory 산물 주입, `Modal`·`SurfaceSheet` 는 평범한 named export 라 직접 import 다. */
+
+import { Modal } from "./modal.js";
+import { SurfaceSheet } from "./surface_sheet.js";
+
+export function createAppShell({ Bridge, Theme, Personalization, DataPicker, screens }) {
   /* 네이티브 X 닫기 확인 착지(#218 G1). Python closing 이벤트가 현재 세션 술어를 판정해
      호출하며, 취소/Escape는 창을 유지하고 다음 X에서 새 상태를 다시 판정한다. */
   let closePromptPending = false;
-  window.AppCloseGuard = {
+  const AppCloseGuard = {
     async prompt(state) {
       if (closePromptPending) return;
       closePromptPending = true;
@@ -57,10 +65,11 @@
   const REFRESH_ON_NAV = ["library", "job"];
 
   /* 몰입 표면 — 상단 2탭을 덮고(셸 표지를 body 클래스로 내려 CSS 가 감춘다) 나가는 이동이
-     자기 이탈 가드를 먼저 지나는 화면들. 탭이 없으므로 `navs` 에도 없다. */
+     자기 이탈 가드를 먼저 지나는 화면들(EditorScreen·WorkbenchScreen — compat 이 구성해
+     넘긴 screens.editor/.workbench 가 그 실물이다). 탭이 없으므로 `navs` 에도 없다. */
   const IMMERSIVE = [
-    { id: "editor", owner: "EditorScreen", cls: "editor-open" },
-    { id: "workbench", owner: "WorkbenchScreen", cls: "workbench-open" },
+    { id: "editor", owner: screens.editor, cls: "editor-open" },
+    { id: "workbench", owner: screens.workbench, cls: "workbench-open" },
   ];
 
   /* 화면 스냅샷 재당김의 **단일 정의**(8R 근본 조치) — 전환이 자동으로 쏘는 발신과, 그
@@ -70,7 +79,7 @@
      새로고칠 백엔드가 없으면(브라우저 단독 미리보기·부팅 직전) 무동작 이행 약속을 준다. */
   function refresh(id) {
     if (!routingReady || !REFRESH_ON_NAV.includes(id)
-        || !window.pywebview || !window.Bridge) {
+        || !window.pywebview || !Bridge) {
       return Promise.resolve(null);
     }
     // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 열린 세션이 다른
@@ -96,15 +105,15 @@
     for (const im of IMMERSIVE) {
       const el = document.getElementById("scr-" + im.id);
       if (id !== im.id && el && el.classList.contains("on") && !(opts && opts.force)) {
-        const owner = window[im.owner];
+        const owner = im.owner;
         if (owner && owner.leaveTo) { owner.leaveTo(id); return; }
       }
     }
     // 펼침 면 회수(F7) — 실 DOM 을 오버레이로 옮겨 띄우는 면이라, 열린 채 화면이 바뀌면
     // 남의 화면 위에 이 화면의 DOM 이 떠 있는다. 전환 자체가 소유하므로 화면이 늘어도
     // 같은 회수가 걸린다(종전엔 「편집 모드 진입」이 그 자리에서 닫아 줬다).
-    if (window.SurfaceSheet && window.SurfaceSheet.closeAllAndRestore) {
-      window.SurfaceSheet.closeAllAndRestore();
+    if (SurfaceSheet && SurfaceSheet.closeAllAndRestore) {
+      SurfaceSheet.closeAllAndRestore();
     }
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
@@ -119,8 +128,8 @@
     // 「문서 만들기」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는
     // 세션 스냅샷만 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹
     // 접힘이 stale 로 남는다.
-    if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
-      window.EditorScreen.rerender();
+    if (id === "job" && screens.editor && screens.editor.rerender) {
+      screens.editor.rerender();
     }
     // 「기안」 표면은 진입 시 재동기가 필요하다 — 이 화면 DOM 은 자기 화면에 푸시가 올 때만
     // 갱신되는데, 그 사이 저쪽에서 바뀔 수 있는 것이 둘 있다: ①템플릿 드롭다운은 스냅샷이
@@ -133,7 +142,7 @@
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
-  window.Nav = { go, refresh };
+  const Nav = { go, refresh };
   go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·탭 기본 상태만 확정한다.
 
   // 글자 크기 라벨 — 셸 전역 개인화 표지. 레일 접기(#18/9B2AB35D-A)는 상단 토바 교체와 함께
@@ -142,13 +151,13 @@
   function syncPersonalizationLabels() {
     const fontLabel = document.getElementById("fontScaleLabel");
     const fontText = { normal: "기본", large: "크게 (125%)", larger: "더 크게 (150%)" };
-    if (fontLabel && window.Personalization) {
-      fontLabel.textContent = fontText[window.Personalization.currentFontScale()];
+    if (fontLabel && Personalization) {
+      fontLabel.textContent = fontText[Personalization.currentFontScale()];
     }
   }
   const fontScaleToggle = document.getElementById("fontScaleToggle");
   if (fontScaleToggle) fontScaleToggle.addEventListener("click", () =>
-    window.Personalization.toggleFontScale());
+    Personalization.toggleFontScale());
   window.addEventListener("hwpx:personalizationchange", syncPersonalizationLabels);
   syncPersonalizationLabels();
 
@@ -162,14 +171,14 @@
       const startWidth = parseFloat(getComputedStyle(app).getPropertyValue("--master-width")) || 240;
       splitter.setPointerCapture(event.pointerId);
       document.body.classList.add("resizing-master");
-      const move = (e) => window.Personalization.setMasterWidth(startWidth + e.clientX - startX);
+      const move = (e) => Personalization.setMasterWidth(startWidth + e.clientX - startX);
       const finish = (e) => {
         splitter.removeEventListener("pointermove", move);
         splitter.removeEventListener("pointerup", finish);
         splitter.removeEventListener("pointercancel", finish);
         document.body.classList.remove("resizing-master");
         if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
-        window.Personalization.saveMasterWidth(
+        Personalization.saveMasterWidth(
           parseFloat(getComputedStyle(app).getPropertyValue("--master-width")));
       };
       splitter.addEventListener("pointermove", move);
@@ -182,11 +191,11 @@
       let next = now;
       if (event.key === "ArrowLeft") next -= 10;
       else if (event.key === "ArrowRight") next += 10;
-      else if (event.key === "Home") next = window.Personalization.masterMin;
-      else if (event.key === "End") next = window.Personalization.masterMax;
+      else if (event.key === "Home") next = Personalization.masterMin;
+      else if (event.key === "End") next = Personalization.masterMax;
       else return;
       event.preventDefault();
-      window.Personalization.saveMasterWidth(next);
+      Personalization.saveMasterWidth(next);
     });
   });
 
@@ -196,10 +205,10 @@
   const themeLabel = document.getElementById("themeLabel");
   const THEME_TEXT = { system: "시스템", light: "라이트", dark: "다크" };
   function syncThemeLabel() {
-    if (themeLabel && window.Theme) themeLabel.textContent = THEME_TEXT[window.Theme.current()];
+    if (themeLabel && Theme) themeLabel.textContent = THEME_TEXT[Theme.current()];
   }
-  if (themeToggle && window.Theme) {
-    themeToggle.addEventListener("click", () => { window.Theme.toggle(); });
+  if (themeToggle && Theme) {
+    themeToggle.addEventListener("click", () => { Theme.toggle(); });
     // 라벨 동기는 themechange 단일 경로 — 토글이든 부팅 주입(app.py loaded→Theme.apply)이든
     // 같은 신호로 반영된다. 이 스크립트는 주입 **전**(body 말미)에 돌므로 직접 호출은 기본
     // system 라벨만 세우고, 저장 테마는 주입 시 이벤트로 재동기된다(#74 라벨 어긋남 방지).
@@ -210,13 +219,15 @@
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     routingReady = true;
-    if (window.LibraryScreen) window.LibraryScreen.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
-    if (window.EditorScreen) window.EditorScreen.init();
-    if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
-    if (window.WorkbenchScreen) window.WorkbenchScreen.init();  // TXT 검토·복사 작업대(F6)
+    if (screens.library) screens.library.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
+    if (screens.editor) screens.editor.init();
+    if (screens.job) screens.job.init();  // 「문서 만들기」(#90) — 유일 생성 표면
+    if (screens.workbench) screens.workbench.init();  // TXT 검토·복사 작업대(F6)
     // (「템플릿 관리」 화면은 사망(F8 §10.17) — tpl 채널 소비는 editor.js 구독이 잇는다.)
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만
     // pool 관측 푸시의 구독자라 여기서 배선한다(구 PoolScreen.init 승계).
-    if (window.DataPicker) window.DataPicker.init();
+    if (DataPicker) DataPicker.init();
   });
-})();
+
+  return { Nav, AppCloseGuard };
+}

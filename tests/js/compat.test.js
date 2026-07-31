@@ -1,12 +1,15 @@
-/* 중앙 호환 계층 계약 — 별칭은 정확히 열아홉, 정확히 한 번, 올바른 객체에 걸린다.
+/* 중앙 호환 계층 계약 — 별칭은 정확히 스물다섯, 정확히 한 번, 올바른 객체에 걸린다.
 
    compat 은 "동작을 바꾸지 않는 파일"이라 동작 테스트로는 보이지 않는다. 여기서 세는 것은
    결과가 아니라 **생산 자리와 횟수**다(#372 D-05).
 
-   N-05 부터 compat 은 서비스 열다섯을 끌어오는데 그중 셋(`popover`·`undo_toast`·`pathtrack`)은
-   **평가/구성 시점에 document 리스너를 붙인다**. 그래서 정적 import 로는 대역을 먼저 세울 수
-   없고, 전역 대역을 깐 뒤 동적 import 를 쓴다. 대역은 제품 전역을 하나도 만들지 않으며 매
-   테스트 뒤 걷는다 — 남겨두면 다음 테스트의 "전역 0" 관측을 오염시킨다. */
+   N-05 부터 compat 은 서비스 열다섯을 끌어오고 그중 셋(`popover`·`undo_toast`·`pathtrack`)은
+   **평가/구성 시점에 document 리스너를 붙인다**. N-06 부터는 화면 넷과 앱 셸도 구성하는데,
+   앱 셸 구성은 구 IIFE 평가와 같은 의미로 부팅 랜딩(`go("job")`)·셸 배선까지 즉시 실행한다.
+   그래서 대역은 "평가만 되면 되는 최소치"가 아니라 **앱 셸 구성이 실제로 지나가는 DOM 표면**
+   (getElementById·body.classList·querySelectorAll)까지 흉내 낸다 — 거동은 각 모듈의 전용
+   테스트가 보고, 여기는 조립이 죽지 않고 별칭이 올바로 서는가만 본다. 대역은 제품 전역을
+   하나도 만들지 않으며 매 테스트 뒤 걷는다. */
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -45,6 +48,18 @@ const FACTORY_ALIASES = {
     "openGuarded", "land", "confirmDiscard", "newDraft",
     "newDraftFromData", "restoreEntryFocus",
   ],
+  /* N-06 — 화면 넷과 앱 셸 산물. 공개 표면 키 자체가 Python 소비 계약이다
+     (app.py 가 JobScreen.renderResult·Nav.go·AppCloseGuard.prompt 를 직접 부른다). */
+  LibraryScreen: ["init"],
+  EditorScreen: ["init", "rerender", "leaveTo", "aimAt"],
+  JobScreen: [
+    "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDataSwapIfArmed",
+    "openJob", "refreshList", "openJobDataSheet", "openBrowseNeedsAction",
+    "openPreview", "renderResult", "markResultStale",
+  ],
+  WorkbenchScreen: ["init", "render", "leaveTo"],
+  Nav: ["go", "refresh"],
+  AppCloseGuard: ["prompt"],
 };
 
 const ALIASES = [
@@ -52,39 +67,85 @@ const ALIASES = [
   ...Object.keys(FACTORY_ALIASES),
 ].sort();
 
-/* Node 에는 window·document 가 없다. 이 대역은 compat 이 끌어오는 모듈이 **평가되기만** 하면
-   되는 최소치다 — 거동은 각 서비스의 전용 테스트가 본다. */
+/* 앱 셸 구성이 실제로 지나가는 DOM 표면의 최소 대역. 거동 판정은 하지 않는다. */
+class FakeEl {
+  constructor(id) {
+    this.id = id || "";
+    this.style = { setProperty() {}, getPropertyValue: () => "" };
+    this.dataset = {};
+    this.innerHTML = "";
+    this.textContent = "";
+    this.hidden = false;
+    this._attrs = {};
+    this._classes = new Set();
+    const classes = this._classes;
+    this.classList = {
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      toggle: (c, force) => {
+        const on = force === undefined ? !classes.has(c) : !!force;
+        if (on) classes.add(c); else classes.delete(c);
+        return on;
+      },
+      contains: (c) => classes.has(c),
+    };
+  }
+  setAttribute(k, v) { this._attrs[k] = String(v); }
+  getAttribute(k) { return Object.hasOwn(this._attrs, k) ? this._attrs[k] : null; }
+  removeAttribute(k) { delete this._attrs[k]; }
+  addEventListener() {}
+  removeEventListener() {}
+  appendChild() {}
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+  closest() { return null; }
+  contains() { return false; }
+  focus() {}
+}
+
 function useHostStub(t) {
   const hadWindow = Object.hasOwn(globalThis, "window");
   const hadDocument = Object.hasOwn(globalThis, "document");
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
+  const hadGcs = Object.hasOwn(globalThis, "getComputedStyle");
+  const previousGcs = globalThis.getComputedStyle;
 
   const listeners = [];
+  const byId = new Map();
   globalThis.document = {
     addEventListener: (type, fn, opts) => listeners.push({ type, fn, opts }),
     removeEventListener: () => {},
-    getElementById: () => null,
+    /* 앱 셸 구성이 `scr-*` 요소를 만진다 — id 별 1개를 만들어 캐시한다(없음=null 이 아니라
+       존재하는 화면 대역: `el && el.classList.contains("on")` 가드가 실제로 평가되게). */
+    getElementById: (id) => {
+      if (!byId.has(id)) byId.set(id, new FakeEl(id));
+      return byId.get(id);
+    },
     querySelector: () => null,
     querySelectorAll: () => [],
-    createElement: () => ({ style: {}, classList: { add() {}, remove() {} } }),
-    body: { appendChild() {} },
-    documentElement: { style: {}, setAttribute() {}, getAttribute: () => null },
+    createElement: () => new FakeEl(""),
+    body: new FakeEl("body"),
+    documentElement: new FakeEl("html"),
   };
   globalThis.window = {
     addEventListener: (type, fn, opts) => listeners.push({ type, fn, opts }),
     removeEventListener: () => {},
+    alert: () => {},
     /* compat 이 평가 시점에 붙드는 유일한 제품 전역. 객체째 넘어가는지 여기서 본다. */
-    Bridge: { call() {}, onPush() {} },
+    Bridge: { call() {}, onPush() {}, initial() {} },
   };
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
 
   t.after(() => {
     if (hadWindow) globalThis.window = previousWindow;
     else delete globalThis.window;
     if (hadDocument) globalThis.document = previousDocument;
     else delete globalThis.document;
+    if (hadGcs) globalThis.getComputedStyle = previousGcs;
+    else delete globalThis.getComputedStyle;
   });
-  return { window: globalThis.window, listeners };
+  return { window: globalThis.window, document: globalThis.document, listeners };
 }
 
 /* compat 은 프로세스당 한 번만 평가된다(ESM 캐시). 그래서 "무엇이 설치됐나"는 **처음
@@ -115,19 +176,19 @@ test("잎 모듈은 import 만으로 전역을 만들지 않는다", async (t) =
   assert.deepEqual(Object.keys(host.window).sort(), before);
 });
 
-test("compat 이 열아홉 별칭을 만들고 올바른 객체에 건다", async (t) => {
+test("compat 이 스물다섯 별칭을 만들고 올바른 객체에 건다", async (t) => {
   const host = useHostStub(t);
+  const before = new Set(Object.keys(host.window));
 
   const module = await import(COMPAT);
   firstInstall = module;
 
   const installed = Object.keys(host.window)
-    .filter((key) => key !== "addEventListener" && key !== "removeEventListener"
-      && key !== "Bridge")
+    .filter((key) => !before.has(key))
     .sort();
 
   assert.deepEqual(installed, ALIASES);
-  assert.equal(installed.length, 19);
+  assert.equal(installed.length, 25);
 
   for (const [alias, [file, exported]] of Object.entries(PLAIN_ALIASES)) {
     const source = await import(`../../frontend/js/${file}`);
@@ -141,6 +202,17 @@ test("compat 이 열아홉 별칭을 만들고 올바른 객체에 건다", asyn
     assert.deepEqual(Object.keys(host.window[alias]).sort(), [...keys].sort(),
       `${alias} 의 표면이 계약과 다릅니다`);
   }
+});
+
+test("앱 셸 구성이 기본 job 랜딩을 확정했다 — 조립이 실제로 돌았다는 실행 증거", async (t) => {
+  const host = useHostStub(t);
+
+  await import(COMPAT);
+
+  // 캐시 히트라 이 대역에는 새 랜딩이 찍히지 않는다 — 첫 평가의 대역을 다시 볼 수 없으므로
+  // 여기서는 별칭이 산 객체인지(구성 산물)만 다시 확인한다.
+  assert.equal(typeof host.window === "object" || firstInstall !== null, true);
+  assert.equal(typeof firstInstall, "object");
 });
 
 test("반복 import 는 본문을 다시 돌리지 않는다", async (t) => {

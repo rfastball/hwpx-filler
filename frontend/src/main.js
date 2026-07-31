@@ -11,8 +11,3 @@ import "../css/tail.css";
 
 import "../js/bridge.js";
 import "./compat.js";
-import "../js/screens/library.js";
-import "../js/screens/editor.js";
-import "../js/screens/job.js";
-import "../js/screens/workbench.js";
-import "../js/app.js";

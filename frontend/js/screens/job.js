@@ -6,11 +6,26 @@
    좌 master 작업 목록은 F2 PR-B 에서 사망했다(지도 §10.9): 작업 선택은 데이터가 준비된 뒤
    후보 side-card·문서 탐색 면이 지고, 목록 관리 6동사와 데이터 없는 상태의 작업 찾기는
    「문서 작업」 라이브러리가 승계했다.
-   안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
+   안정 DOM(index.html) + Python 이 __push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
    덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
    재유입 가드에 처음부터 부합한다. 존 배치(헤더·데이터·본문·완료)는 여기서 안정 DOM 에 값을 채운다. */
-(function () {
+import { escHtml } from "../esc.js";
+import { Modal } from "../modal.js";
+import { Popover } from "../popover.js";
+import { Preserve } from "../preserve.js";
+import { Intent } from "../intent.js";
+import { SurfaceSheet } from "../surface_sheet.js";
+import { GroupList } from "../grouplist.js";
+import { Guard } from "../guard.js";
+
+/* 주입 deps(N-06): Bridge·Nav 는 앱 셸의 포트(객체째 — 메서드 추출 금지: selftest 가
+   `Bridge.call = stub` 으로 프로퍼티를 교체한다), EditorScreen 은 교차 화면 콜백 테이블
+   ({ aimAt } 만 — late-bound: 호출 시점에 읽는다), DataZone·PathTrack·Relink·EditorEntry·
+   DataPicker 는 compat 이 구성하는 factory 산물이다. */
+export function createJobScreen({
+  Bridge, Nav, EditorScreen, DataZone, PathTrack, Relink, EditorEntry, DataPicker,
+}) {
   const SCREEN = "job";
   const $ = (id) => document.getElementById(id);
   let LAST = null;
@@ -21,7 +36,7 @@
      정의 편집은 자기 화면(#scr-editor)에 살고, 이 화면은 실행 세션 하나만 그린다.
      「이 화면이 안 보인다」는 판정은 이제 `.scr.on` 하나로 충분하다. */
 
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const esc = escHtml;  // 공유 이스케이퍼(esc.js)
   const ZONE_CHAIN = "job:zone";  // 데이터 존 + 범위 초안 출구의 공통 발신 체인
   let pendingZoneMutations = 0;   // 발신했지만 아직 결과가 안 온 존 변이 수(이탈 가드 소재)
 
@@ -30,7 +45,7 @@
      id 묶음 · 선두 「문서」 열(F33 승계: 실파일명 + 식별 요약) · 빈 상태/스트립 문안 ·
      세션 지문(renderTable 리셋 판정 — 완료 존 sessionKey 와 다른 축: 선택 제외) · log 채널.
      log 는 함수 선언이라 호이스팅으로 이 시점 참조가 안전하다. */
-  const dz = window.DataZone.create({
+  const dz = DataZone.create({
     screen: SCREEN,
     ids: {
       selCount: "jobSelCount", search: "jobFilterSearch", reapply: "jobFilterReapply",
@@ -306,7 +321,7 @@
       // 를 바꾸는 발신은 전부 한 줄에 선다.
       pendingZoneMutations += 1;
       try {
-        await window.Intent.chained(ZONE_CHAIN, () =>
+        await Intent.chained(ZONE_CHAIN, () =>
           Bridge.call(SCREEN, "set_view_order", { value, epoch: LAST && LAST.zone_epoch }));
       } finally {
         pendingZoneMutations -= 1;
@@ -398,7 +413,7 @@
      화이트리스트·오류 재진술을 그대로 상속하고, 여기는 열고 닫기만 진다. 열림 판정은 모듈
      상태가 아니라 메뉴 DOM 에서 파생한다(가변 상태 예산 — 메뉴는 하나뿐이고 내용이 고정이라
      정체를 따로 들 것이 없다; 그룹 ⋮ 의 menuFor 는 「어느 그룹인가」가 있어 상태가 필요했다). */
-  const candMenu = window.GroupList.createMenu({ menuId: "jobCandMenu" });
+  const candMenu = GroupList.createMenu({ menuId: "jobCandMenu" });
 
   function candMenuOpen() {
     const m = document.getElementById("jobCandMenu");
@@ -428,7 +443,7 @@
      선택하지 않고 카드는 경고로 남는다. */
   async function relinkTemplateFor(name) {
     const active = !!(LAST && LAST.job_name === name);
-    const ok = await window.Modal.confirm({
+    const ok = await Modal.confirm({
       title: "템플릿 다시 연결",
       body: active
         ? `'${name}' 작업의 템플릿 파일을 찾을 수 없어 문서를 만들 수 없습니다.\n` +
@@ -499,7 +514,7 @@
   }
 
   function newWorkFromData(extraEvidence) {
-    if (!window.EditorEntry) {
+    if (!EditorEntry) {
       window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
       return Promise.resolve(false);
     }
@@ -513,7 +528,7 @@
     // 복귀는 **문서 만들기**다. 「문서 탐색으로 돌아가기」라 말해 놓고 탐색 면 없이 착지하면
     // 라벨이 약속한 자리와 실제 착지가 다르다(문안 부정직) — 탐색 면 복원은 이 조치의 축이
     // 아니므로 말하지 않는 쪽을 고른다.
-    return window.EditorEntry.newDraftFromData({
+    return EditorEntry.newDraftFromData({
       entry_reason: "document_browser_new_work",
       evidence: ev,
       return_context: { surface: "data" },
@@ -528,7 +543,7 @@
 
      낙관 표지는 없다: Python 왕복 결과(push)로만 표시가 바뀐다 — 별이 먼저 켜졌다가 저장
      실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류). */
-  const favorite = window.Intent.createFavorite({
+  const favorite = Intent.createFavorite({
     send: (name, value) => Bridge.call(SCREEN, "toggle_favorite", { name, value })
       .then((res) => { if (res && res.ok === false) log(res.error); }),
     onError: (msg) => log(msg),
@@ -807,7 +822,7 @@
   function openBrowseSheet(e) {
     browseOpenGen += 1;
     browseAfterClose = null;   // 새 개폐는 지난 개폐의 미소비 의도를 물려받지 않는다
-    window.Modal.open("jobBrowseSheet", {
+    Modal.open("jobBrowseSheet", {
       initialFocus: $("jobBrowseQuery"),
       // 노드를 붙잡아 두지 않는다(리뷰 6R P2): 면 안에서 탭·검색을 한 번이라도 하면 그 사이
       // 재렌더가 후보 줄을 통째로 갈아 끼워 붙잡아 둔 출구 노드가 끊긴다 — Modal 은 끊긴
@@ -936,7 +951,7 @@
      열려 있지 않은 대상의 `Modal.close` 는 스택에 없어 아무 일도 하지 않는다 — 그래서
      열림 여부를 DOM 에 되묻지 않는다(상태의 진실은 스냅샷이지 클래스가 아니다). */
   function closePreviewIfOpen() {
-    window.Modal.close("previewSheet");
+    Modal.close("previewSheet");
   }
 
   async function openPreview(e, opts) {
@@ -946,7 +961,7 @@
     // 이 포커스 불가능한 div 다 — 그대로 넘기면 시트를 닫은 키보드 사용자의 초점이
     // 그 버튼으로 못 돌아가고 body 로 떨어진다. 해석은 공용 SurfaceSheet.trigger 단일
     // 정의를 쓴다(위임 클릭 → 버튼, 없으면 안정 폴백). 폴백은 액션바의 상시 버튼이다.
-    const trigger = window.SurfaceSheet.trigger(e, $("jobPreviewOpen"));
+    const trigger = SurfaceSheet.trigger(e, $("jobPreviewOpen"));
     // 성사 뒤에만 연다(§9.3 4행 상속): 거절되면(생성 중·초안 열림·선택 0건) 면을 띄우지
     // 않는다 — 열어 놓고 실패를 말하면 무엇을 미리보는 중인지가 거짓이 된다.
     // `at` = deep-link 복귀의 같은 자리(§10.15.15 판정 C) — 값은 Python 이 push 한
@@ -964,7 +979,7 @@
       Bridge.call(SCREEN, "preview_close", {});
       return;
     }
-    window.Modal.open("previewSheet", {
+    Modal.open("previewSheet", {
       returnFocus: trigger,
       initialFocus: $("previewClose"),
       onClose: () => { Bridge.call(SCREEN, "preview_close", {}); },
@@ -994,7 +1009,7 @@
      닫힘에 0 으로 리셋되므로, 순서를 바꾸면 복귀가 늘 첫 행으로 선다(발신 순서 규약). */
   async function previewFix(target, evidence) {
     const at = ((LAST && LAST.preview) || {}).pos || 0;
-    window.Modal.close("previewSheet");   // 편집 호스트 위에 남의 모달 금지(F2 PR-B 교훈)
+    Modal.close("previewSheet");   // 편집 호스트 위에 남의 모달 금지(F2 PR-B 교훈)
     const opened = await openEditForRepair({
       entry_reason: "preview_result",
       target,
@@ -1002,8 +1017,8 @@
       return_context: { surface: "preview", reopen_drawer: true, preview_index: at },
     });
     // 착지 조준은 편집기 소유(스크롤·포커스) — 진입 성사 뒤에만 겨눈다.
-    if (opened && window.EditorScreen && window.EditorScreen.aimAt) {
-      window.EditorScreen.aimAt(target);
+    if (opened && EditorScreen && EditorScreen.aimAt) {
+      EditorScreen.aimAt(target);
     }
   }
 
@@ -1017,7 +1032,7 @@
     // `dirty` 는 **푸시가 온 사실**이다(리뷰 4R): 방금 친 편집이 아직 왕복 중이면 false 라,
     // 그것만 보면 약속한 확인 없이 조용히 버린다. 내가 보낸 편집의 수를 함께 센다.
     if (!d.dirty && pendingZoneMutations === 0) { discardAndClose(); return false; }
-    window.Modal.confirm({
+    Modal.confirm({
       title: "편집한 범위를 버릴까요?",
       body: "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다.",
       confirmLabel: "버리고 닫기",
@@ -1038,21 +1053,21 @@
       // 대기 중 편집은 **보내지 않는다**(리뷰 2R P1) — 초안이 사라진 뒤 도착하면 사용자가
       // 버린 검색어가 커밋된 필터에 착지한다. 이미 나간 발신은 같은 체인이 순서를 지킨다.
       dz.dropPendingEdits();
-      await window.Intent.chained(ZONE_CHAIN, () =>
+      await Intent.chained(ZONE_CHAIN, () =>
         Bridge.call(SCREEN, "range_draft_cancel", {}));
     } catch (err) {
       log("범위 편집을 취소하지 못했습니다: " + String((err && err.message) || err));
       return;
     }
     rangeForceClose = true;
-    window.SurfaceSheet.close("dataSheet");
+    SurfaceSheet.close("dataSheet");
   }
 
   async function applyRangeDraft() {
     try {
       // 디바운스 창 안에서 눌러도 방금 친 조건이 사라지지 않게 먼저 정산한다.
       await dz.flushPendingEdits();
-      await window.Intent.chained(ZONE_CHAIN, () =>
+      await Intent.chained(ZONE_CHAIN, () =>
         Bridge.call(SCREEN, "range_draft_apply", {}));
     } catch (err) {
       // 실패(세대 불일치 등)에서는 **닫지 않는다**(§10.11.2 실패 경로 면) — 문맥을 남긴다.
@@ -1061,11 +1076,11 @@
     }
     rangeApplied = true;
     rangeForceClose = true;
-    window.SurfaceSheet.close("dataSheet");
+    SurfaceSheet.close("dataSheet");
   }
 
   function openJobDataSheet(e) {
-    const trigger = window.SurfaceSheet.trigger(e, $("jobDataExpand"));
+    const trigger = SurfaceSheet.trigger(e, $("jobDataExpand"));
     // 성사 뒤에만 연다(§9.3 4행): 초안 생성이 거절되면(생성 중·데이터 없음) 면을 띄우지
     // 않는다 — 열어 놓고 나서 실패를 말하면 편집기가 무엇을 편집 중인지 거짓이 된다.
     //
@@ -1076,7 +1091,7 @@
     (async () => {
       try {
         await dz.flushPendingEdits();
-        await window.Intent.chained(ZONE_CHAIN, () =>
+        await Intent.chained(ZONE_CHAIN, () =>
           Bridge.call(SCREEN, "range_draft_open", {}));
       } catch (err) {
         log("범위 편집기를 열지 못했습니다: " + String((err && err.message) || err));
@@ -1092,7 +1107,7 @@
       rangeApplied = false;
       rangeForceClose = false;
       $("dataSheetTitle").textContent = "처리할 행 범위";
-      window.SurfaceSheet.open({
+      SurfaceSheet.open({
         modalId: "dataSheet",
         returnFocus: trigger,
         initialFocus: $("dataSheetClose"),
@@ -1324,7 +1339,7 @@
   async function doGenerate(confirmOverwriteFlag) {
     // 커밋은 대기 중인 존 변이 뒤에 선다(8R P1). 덮어쓰기 확인 뒤의 재귀 호출도 같은 관문을
     // 지나되, 그 시점엔 체인이 이미 비어 있어 즉시 통과한다.
-    await window.Intent.settle(ZONE_CHAIN);
+    await Intent.settle(ZONE_CHAIN);
     generating = true; setBusy(true);
     if (!confirmOverwriteFlag) { $("jobGenBar").style.width = "0%"; log("생성 요청"); }
     // busy-lock 은 덮어쓰기 모달 종료까지 유지한다 — finally 를 needs_overwrite 흐름 뒤에 두어,
@@ -1336,7 +1351,7 @@
       if (res.ok) { renderResult(res); return; }
       if (res.needs_overwrite) {
         // 조용한 덮어쓰기 금지 — 수치 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
-        const ok = await window.Modal.confirm({
+        const ok = await Modal.confirm({
           title: "덮어쓰기 확인", body: overwriteBody(res),
           confirmLabel: "덮어쓰고 생성", cancelLabel: "취소", danger: true,
         });
@@ -1487,7 +1502,7 @@
      합성기**(리뷰 #9): 같은 수치를 두 곳이 따로 조립하면 문안이 갈라져 모달이 화면
      재진술과 모순되는 드리프트 클래스가 생긴다. 이제 그 공유 범위가 화면 밖으로도
      넓어졌다 — txt T3 가드와 같은 조각을 쓴다(guard.js, PR-4 리뷰 F6). */
-  const selectionLine = window.Guard.selectionLine;
+  const selectionLine = Guard.selectionLine;
 
   /* 손실 열거는 **실제로 파기되는 집합**과 일치해야 한다(지도 §10.7.3 감사) — 과경고도
      누락도 거짓말이다. 데이터 전환이 파기하는 것: ①선택(0건 재생성) ②필터 정의(재생성).
@@ -1514,7 +1529,7 @@
   async function confirmDestructiveIfArmed(title, verbPhrase, confirmLabel) {
     const g = await Bridge.call(SCREEN, "guard_state", {});
     if (!g || !g.armed) return true;
-    return window.Modal.confirm({
+    return Modal.confirm({
       title, body: guardBody(g, verbPhrase),
       confirmLabel, cancelLabel: "취소",
     });
@@ -1602,7 +1617,7 @@
       // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
       dz.flushPendingSearch().then(() => selectJobGuarded(name));
     }
-    window.Nav.go(SCREEN);
+    Nav.go(SCREEN);
   }
 
   function onMirrorClick(e) {
@@ -1628,7 +1643,7 @@
   function openEditForRepair(context) {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
     // 성사 여부를 되돌려 준다(F6 PR-B) — deep-link 조준은 진입이 실제로 열렸을 때만 건다.
-    if (!window.EditorEntry) {
+    if (!EditorEntry) {
       window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
       return Promise.resolve(false);
     }
@@ -1683,13 +1698,13 @@
       if (e.target.closest("[data-track-act]")) closeCandMenu();
     });
     // ⋮ 바깥 닫기(그룹 ⋮ 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
-    window.Popover.wireDismiss({
+    Popover.wireDismiss({
       isOpen: candMenuOpen,
       contains: (t) => !!(t.closest && (t.closest("#jobCandMenu") || t.closest("[data-cand-menu]"))),
       close: closeCandMenu,
     });
     // 문서 탐색 면(§18.6) — 탭·검색은 Python 판정 왕복, 행 클릭은 명시 작업 선택.
-    $("jobBrowseClose").addEventListener("click", () => window.Modal.close("jobBrowseSheet"));
+    $("jobBrowseClose").addEventListener("click", () => Modal.close("jobBrowseSheet"));
     $("jobBrowseTabs").addEventListener("click", (e) => {
       const t = e.target.closest("[data-browse-tab]");
       if (!t || t.getAttribute("aria-selected") === "true") return;
@@ -1731,7 +1746,7 @@
         const cols = mk.getAttribute("data-missing-cols") || "";
         const ev = { "확인 필요였던 작업": nm, "현재 데이터에 없는 열": cols };
         browseAfterClose = () => newWorkFromData(ev);
-        window.Modal.close("jobBrowseSheet");
+        Modal.close("jobBrowseSheet");
         return;
       }
       const pick = e.target.closest("[data-browse-pick]");
@@ -1755,7 +1770,7 @@
         selectJobWithMarker(pick, name).then((ok) => {
           if (!ok) return;                      // 가드 취소·거절 = 면 유지(문맥 보존)
           browsePickedName = name;              // 착지 사유 표식 — 결정은 onClose 단일 지점
-          window.Modal.close("jobBrowseSheet");
+          Modal.close("jobBrowseSheet");
         }).catch((err) => {
           log("작업 열기 실패: " + String((err && err.message) || err));
         }));
@@ -1765,7 +1780,7 @@
     $("jobRangeApply").addEventListener("click", applyRangeDraft);
     // 취소도 닫기와 같은 관문을 지난다(가드 → onClose 가 초안을 버린다) — 출구마다 다른
     // 경로를 만들면 그중 하나는 가드를 안 탄다.
-    $("jobRangeCancel").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
+    $("jobRangeCancel").addEventListener("click", () => SurfaceSheet.close("dataSheet"));
     $("jobRangeSelectedOnly").addEventListener("click", () => {
       const d = draftState();
       Bridge.call(SCREEN, "set_selected_only", { value: !(d && d.selected_only) });
@@ -1773,7 +1788,7 @@
     // 미리보기 드로어(F5) — 열기·이동·승인·편집 진입. 자리는 Python 이 서수로 소유하므로
     // 웹은 **방향만** 보낸다(레코드 index 를 되돌려주지 않는다, 판정 M).
     $("jobPreviewOpen").addEventListener("click", openPreview);
-    $("previewClose").addEventListener("click", () => window.Modal.close("previewSheet"));
+    $("previewClose").addEventListener("click", () => Modal.close("previewSheet"));
     $("previewPrev").addEventListener("click", () =>
       Bridge.call(SCREEN, "preview_move", { delta: -1 }));
     $("previewNext").addEventListener("click", () =>
@@ -1786,7 +1801,7 @@
     // deep-link(§10.14.3)를 더한다. 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지
     // 않게 한다(F2 PR-B 교훈).
     $("previewEdit").addEventListener("click", () => {
-      window.Modal.close("previewSheet");
+      Modal.close("previewSheet");
       openEditForRepair({
         entry_reason: "preview_result",
         evidence: { "보고 있던 행": ($("previewPos").textContent || "").trim() },
@@ -1820,15 +1835,15 @@
       Bridge.call(SCREEN, "preview_blank_only", { value: !on }).catch((err) =>
         log("빈 값 건만 보기를 바꾸지 못했습니다: " + String((err && err.message) || err)));
     });
-    $("dataSheetClose").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
+    $("dataSheetClose").addEventListener("click", () => SurfaceSheet.close("dataSheet"));
     // 데이터·작업이 둘 다 없는 상태의 유일 출구(지도 §10.9 판정 C) — 데이터 없이 작업을
     // 보는 경로는 「문서 작업」이 흡수했고, 여기서는 그 흡수처를 가리키기만 한다(겨눔 없음:
     // 명시 선택은 저쪽 「문서 만들기에서 사용」이 `prefer_work` 로 낸다).
-    $("jobPickInLibrary").addEventListener("click", () => window.Nav.go("library"));
+    $("jobPickInLibrary").addEventListener("click", () => Nav.go("library"));
     // 같은 출구가 「데이터는 있는데 쓸 작업이 0건」에도 선다(U2 §2.4). 후보 구획은 매 푸시
     // 다시 그려지므로 안정 컨테이너에 위임한다 — 버튼에 직접 걸면 첫 렌더에만 붙는다.
     $("jobCandidates").addEventListener("click", (e) => {
-      if (e.target.closest("[data-cands-exit]")) window.Nav.go("library");
+      if (e.target.closest("[data-cands-exit]")) Nav.go("library");
     });
     // 본문 존 배너(재렌더에도 살아남게 안정 컨테이너에 위임) — danger 수리 링크.
     // 구 거울의 ack 클릭·키보드 경로와 재진술 이름 목록 펼침은 함께 죽었다(U2 §2.13).
@@ -1846,13 +1861,13 @@
       // 두 실행 행동 다 **커밋**이다 — 무엇을 대상으로 도는지가 방금 누른 존 변이에 달렸다.
       // 존 발신은 ZONE_CHAIN 으로 서로의 순서를 지키지만 커밋은 그 체인 밖이라, 정산하지
       // 않으면 행 토글이 착지하기 전에 생성이 **옛 선택**으로 돌 수 있다(F6 8R P1).
-      await window.Intent.settle(ZONE_CHAIN);
+      await Intent.settle(ZONE_CHAIN);
       // TXT 는 생성이 아니라 작업대 진입이다. 진입 자격 판정도 Python 이 하고(선택 0건·
       // 초안 열림·생성 중) 여기는 거절 사유를 재진술만 한다 — 조용한 무동작 금지.
       const key = (LAST && LAST.run_action && LAST.run_action.key) || "generate";
       if (key !== "workbench") { doGenerate(false); return; }
       Bridge.call(SCREEN, "open_workbench", {}).then((res) => {
-        if (res && res.ok) { window.Nav.go("workbench"); return; }
+        if (res && res.ok) { Nav.go("workbench"); return; }
         log((res && res.error) || "작업대를 열지 못했습니다.");
       });
     });
@@ -1896,7 +1911,7 @@
         log(`이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`);
         return;
       }
-      if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
+      if (!EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
       const r = RESULT || {};   // 결과는 웹 소유 세션 상태다(Python 푸시가 덮지 않는다)
       EditorEntry.openGuarded(owner, {
         entry_reason: r.status === "failed" ? "run_failure" : "output_result",
@@ -1928,11 +1943,23 @@
     });
   }
 
-  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. */
+  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출.
+     멱등·재시도 계약(N-06 §7): 성공 후 재호출은 추가 등록 0, 동시 호출은 같은 초기화를
+     공유하고, 첫 initial 이 거절되면 다음 명시적 init 이 initial 만 다시 당긴다(이미 선
+     listener·onPush 는 중복 설치하지 않는다). rejection 은 종전대로 호출자에게 전파. */
+  let wired = false;
+  let seated = null;
   async function init() {
-    Bridge.onPush(SCREEN, render);
-    wire();
-    render(await Bridge.initial(SCREEN));
+    if (!wired) {
+      Bridge.onPush(SCREEN, render);
+      wire();
+      wired = true;
+    }
+    if (!seated) {
+      seated = (async () => { render(await Bridge.initial(SCREEN)); })()
+        .catch((err) => { seated = null; throw err; });
+    }
+    return seated;
   }
 
   // overwriteBody·guardBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를
@@ -1943,7 +1970,7 @@
   // 편집기가 자기 화면으로 나가며 사망했다(F7 판정 N) — 되돌릴 모드가 없다.
   // renderResult 는 결과 3태 구획의 유일한 입구다(F4) — 실앱 게이트가 Python 이 내는
   // 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실 WebView2 에서 서는지 되읽는다.
-  window.JobScreen = {
+  const JobScreen = {
     init, overwriteBody, guardBody, resultExitLine, confirmDataSwapIfArmed, openJob,
     refreshList,
     openJobDataSheet, openBrowseNeedsAction,
@@ -1952,4 +1979,5 @@
     openPreview,
     renderResult, markResultStale,
   };
-})();
+  return JobScreen;
+}

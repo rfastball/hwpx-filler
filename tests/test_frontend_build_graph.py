@@ -11,7 +11,6 @@ from typing import Any
 
 from _web_source import (
     ALL_CSS_FILES,
-    COMPAT_ENTRY_POSITION,
     COMPAT_MODULE,
     ESM_FILES,
     LEGACY_JS_FILES,
@@ -72,11 +71,20 @@ EXPECTED_ESM_EXPORTS = {
     "datazone.js": "createDataZone",
     "data_picker.js": "createDataPicker",
     "editor_entry.js": "createEditorEntry",
+    # N-06 화면 넷 + 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아
+    # 중앙에서 한 번 구성되는 다섯
+    "screens/library.js": "createLibraryScreen",
+    "screens/editor.js": "createEditorScreen",
+    "screens/job.js": "createJobScreen",
+    "screens/workbench.js": "createWorkbenchScreen",
+    "app.js": "createAppShell",
 }
 
-#: 중앙 compat 한 곳이 만드는 임시 전역 별칭 19개 — ESM 모듈 19개와 1:1이다.
-#: factory 모듈의 별칭 이름은 export 이름(``createTheme``)이 아니라 **구성된 서비스의 이름**
-#: (``Theme``)이다. 소비자(화면·앱 셸·Python 프로브)가 그 이름으로 읽기 때문이다.
+#: 중앙 compat 한 곳이 만드는 임시 전역 별칭 25개. factory 모듈의 별칭 이름은 export 이름
+#: (``createTheme``)이 아니라 **구성된 산물의 이름**(``Theme``·``JobScreen``·``Nav``)이다.
+#: 소비자(Python 직접 호출·selftest 프로브)가 그 이름으로 읽기 때문이다. N-06에서 화면 넷과
+#: ``Nav``·``AppCloseGuard``가 자기 생산을 잃고 여기로 들어왔다 — 생산 자리는 하나여야
+#: D-05의 "수량 단조 감소" 계측점이 산다.
 EXPECTED_CENTRAL_COMPAT_GLOBALS = {
     "Copy",
     "Guard",
@@ -97,18 +105,17 @@ EXPECTED_CENTRAL_COMPAT_GLOBALS = {
     "SurfaceSheet",
     "Theme",
     "UndoToast",
-}
-
-#: 아직 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 8개.
-#: ``Bridge``·``__push``는 N-07, 화면 넷과 ``Nav``·``AppCloseGuard``는 N-06이 가져간다.
-EXPECTED_LEGACY_GLOBALS = {
-    "AppCloseGuard",
-    "Bridge",
+    "LibraryScreen",
     "EditorScreen",
     "JobScreen",
-    "LibraryScreen",
-    "Nav",
     "WorkbenchScreen",
+    "Nav",
+    "AppCloseGuard",
+}
+
+#: 아직 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 — ``bridge.js`` 하나(N-07 소유).
+EXPECTED_LEGACY_GLOBALS = {
+    "Bridge",
     "__push",
 }
 
@@ -254,7 +261,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     가져오므로, 새 제품 전역이 생기면 이 음성 검사도 저절로 넓어진다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 19
+    assert len(ESM_FILES) == 24
 
     product_globals = re.compile(
         r"\b(?:window|globalThis)\.(?:"
@@ -310,13 +317,42 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         "data_picker.js": {"./esc.js", "./modal.js", "./preserve.js"},
         "editor_entry.js": {"./modal.js"},
         "segview.js": {"./esc.js"},
+        # N-06 화면 넷 — named export 서비스·잎만 import 간선으로 적는다. factory 산물
+        # (EditorEntry·PathTrack 등)과 교차 화면·Nav 는 주입이라 여기 없어야 한다.
+        "screens/library.js": {
+            "../esc.js", "../grouplist.js", "../intent.js", "../modal.js",
+            "../popover.js", "../preserve.js", "../undo_toast.js",
+        },
+        "screens/editor.js": {
+            "../esc.js", "../grouplist.js", "../intent.js", "../modal.js",
+            "../popover.js", "../preserve.js", "../undo_toast.js",
+        },
+        "screens/job.js": {
+            "../esc.js", "../modal.js", "../popover.js", "../preserve.js",
+            "../intent.js", "../surface_sheet.js", "../grouplist.js", "../guard.js",
+        },
+        "screens/workbench.js": {
+            "../esc.js", "../intent.js", "../modal.js", "../preserve.js", "../segview.js",
+        },
+        "app.js": {"./modal.js", "./surface_sheet.js"},
     }
 
     for name, expected in expected_edges.items():
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
-        actual = {path for path in module_imports(source) if path.startswith("./")}
+        actual = {path for path in module_imports(source) if path.startswith(".")}
         assert actual == expected, (
             f"{name} 의 모듈 간선이 {sorted(actual)} 입니다 — {sorted(expected)} 여야 합니다."
+        )
+
+    #: 화면 간 직접 import 0 — 교차 간선은 compat 의 late-bound 콜백 테이블만 진다.
+    for name in ("screens/library.js", "screens/editor.js", "screens/job.js",
+                 "screens/workbench.js", "app.js"):
+        source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
+        crossing = [p for p in module_imports(source)
+                    if "screens/" in p or p.endswith("/app.js") or p == "./app.js"]
+        assert not crossing, (
+            f"{name} 이 다른 화면·셸을 직접 import 합니다: {crossing} — "
+            "교차 간선은 중앙 콜백 테이블이 집니다."
         )
 
     #: 간선이 없어야 하는 모듈은 정말 없어야 한다(잎다움의 음성 대조).
@@ -331,15 +367,18 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
 def test_esm_module_graph_has_no_cycles() -> None:
     """제품 모듈 그래프에 순환이 0이다.
 
-    ``editor_entry`` 가 ``window.Nav.go`` 를 읽고 ``app.js`` 가 서비스들을 읽는 역간선이
-    N-05의 유일한 순환 후보였다. compat이 지연 호출 콜백으로 그 간선을 그래프 밖에 두므로
-    여기서 0이 나온다 — 값으로 캡처하는 구현으로 되돌아가면 이 게이트가 잡는다.
+    N-05 의 순환 후보는 ``editor_entry ↔ app`` 하나였고, N-06 에서 화면 넷이 그래프에
+    들어오며 ``editor ↔ job``·``library → job``·화면→Nav 가 새 후보로 늘었다. 그 간선들은
+    전부 compat 의 late-bound 콜백 테이블이 그래프 밖에서 지므로 여기서 0이 나온다 —
+    화면이 서로를(또는 앱 셸을) import 하는 구현으로 되돌아가면 이 게이트가 잡는다.
     """
+    from posixpath import dirname, join, normpath
+
     graph = {
         name: [
-            path.removeprefix("./")
+            normpath(join(dirname(name), path))
             for path in module_imports((SOURCE_JS_DIR / name).read_text(encoding="utf-8"))
-            if path.startswith("./")
+            if path.startswith(".")
         ]
         for name in ESM_FILES
     }
@@ -383,7 +422,7 @@ def test_temporary_aliases_have_exactly_one_central_producer() -> None:
 
     assert SOURCE_COMPAT.name == COMPAT_MODULE
     assert sorted(producers) == sorted(EXPECTED_CENTRAL_COMPAT_GLOBALS)
-    assert len(producers) == len(set(producers)) == 19
+    assert len(producers) == len(set(producers)) == len(EXPECTED_CENTRAL_COMPAT_GLOBALS) == 25
     assert set(compat_imports()) == set(ESM_FILES), (
         "compat 의 import 집합이 ESM 모듈 전수와 어긋납니다 — 별칭이 export 와 갈라집니다."
     )
@@ -404,13 +443,13 @@ def test_temporary_aliases_have_exactly_one_central_producer() -> None:
 
 
 def test_each_service_is_constructed_exactly_once_in_compat() -> None:
-    """포트를 받는 factory 여덟은 compat 에서 **정확히 한 번** 불린다.
+    """포트를 받는 factory 열셋(서비스 8 + 화면 4 + 앱 셸)은 compat 에서 **정확히 한 번** 불린다.
 
     두 번 부르면 ``pathtrack`` 의 위임 리스너가 겹치고 ``data_picker`` 의 ``onPush`` 가
-    누적된다. 서비스 안에 재호출 가드를 두는 대신 호출 자리를 하나로 묶었으므로, 그 단일성은
-    여기서 세야 한다.
+    누적되며, 화면·앱 셸은 DOM 리스너와 부팅 랜딩이 두 벌이 된다. 모듈 안에 재호출 가드를
+    두는 대신 호출 자리를 하나로 묶었으므로, 그 단일성은 여기서 세야 한다.
     """
-    #: 이 파일의 헤더 주석은 ``window.Nav`` 를 값으로 붙들면 안 되는 **이유**를 적는다.
+    #: 이 파일의 헤더 주석은 ``Nav`` 를 값으로 붙들면 안 되는 **이유**를 적는다.
     #: 그 산문을 코드로 세면 "판독이 한 곳뿐인가"라는 질문이 주석 길이에 좌우된다.
     compat_source = strip_comments(SOURCE_COMPAT.read_text(encoding="utf-8"))
     factories = sorted(
@@ -418,24 +457,62 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
         if export.startswith("create")
     )
 
-    assert len(factories) == 8
+    assert len(factories) == 13
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
             f"compat 이 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
         )
 
-    #: `Nav` 판독은 지연 호출 콜백 한 줄에만 산다(순환 차단의 실제 자리).
-    assert re.search(r"const navigate = \(\.\.\.args\) => window\.Nav\.go\(\.\.\.args\);",
+    #: `navigate` 는 지연 호출 콜백이다 — N-05 의 `window.Nav` 판독은 Nav 생산이 compat 으로
+    #: 들어오며(N-06) 지역 late-bound 참조로 좁혀졌다. 값으로 캡처하면 앱 셸 구성 전의
+    #: `undefined` 를 붙든다.
+    assert re.search(r"const navigate = \(\.\.\.args\) => Nav\.go\(\.\.\.args\);",
                      compat_source), "navigate 가 지연 호출 콜백이 아닙니다."
+    #: `window.Nav` 는 이제 **별칭 대입 한 줄**뿐이다 — 판독이 되살아나면 순환이 전역 경유로
+    #: 숨는다.
+    assert re.findall(r"window\.Nav\b(?!\s*=)", compat_source) == []
     assert compat_source.count("window.Nav") == 1
     #: `bridge` 는 객체째 넘긴다 — 메서드를 뽑으면 Python 프로브의 스텁 교체가 우회된다.
     assert re.search(r"const bridge = window\.Bridge;", compat_source)
     assert compat_source.count("window.Bridge") == 1
 
+    #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 값 캡처(`JobScreen.refreshList` 를
+    #: 프로퍼티로 뽑아 저장)로 되돌아가면 구성 순서에 따라 undefined 를 붙든다.
+    for member in ("refreshList", "openPreview", "openBrowseNeedsAction"):
+        assert re.search(
+            rf"{member}: \(\.\.\.args\) => JobScreen\.{member}\(\.\.\.args\),",
+            compat_source,
+        ), f"jobCallbacks.{member} 가 지연 호출 콜백이 아닙니다."
+    assert re.search(
+        r"aimAt: \(\.\.\.args\) => EditorScreen\.aimAt\(\.\.\.args\),", compat_source
+    ), "editorCallbacks.aimAt 가 지연 호출 콜백이 아닙니다."
+    for member in ("go", "refresh"):
+        assert re.search(
+            rf"{member}: \(\.\.\.args\) => Nav\.{member}\(\.\.\.args\),", compat_source
+        ), f"navigation.{member} 가 지연 호출 콜백이 아닙니다."
 
-def test_remaining_legacy_iifes_and_total_global_surface_are_unchanged() -> None:
-    """남은 IIFE 6개는 그대로 IIFE 이고, 제품 전역 표면 전체는 여전히 27개다."""
+    #: 별칭 25개는 전부 **모든 구성 뒤**에 선다 — 구성 전의 별칭 대입은 undefined 를 걸어
+    #: Python 소비자가 조용히 빈 통로를 읽는다(선언-사용 순서 계약, entry 순서 계약의 후계).
+    last_construction = max(
+        compat_source.rindex(f"{factory}(") for factory in factories
+    )
+    first_alias = min(
+        compat_source.index(f"window.{alias} =")
+        for alias in EXPECTED_CENTRAL_COMPAT_GLOBALS
+    )
+    assert last_construction < first_alias, (
+        "compat 의 별칭 대입이 factory 구성보다 먼저 섭니다 — 미구성 값이 전역에 걸립니다."
+    )
+
+
+def test_remaining_legacy_iife_and_total_global_surface_are_unchanged() -> None:
+    """남은 IIFE 는 ``bridge.js`` 하나뿐이고, 제품 전역 표면 전체는 여전히 27개다.
+
+    M1 의 "25 IIFE / 27 globals" 계약의 마지막 후계다: 25 파일 중 24 가 ESM 이 됐고
+    수량은 자리만 옮겼다(compat 25 + legacy 2 = 27). 새 전역이 생기거나 화면이 자기
+    전역 생산을 되살리면 여기서 잡힌다.
+    """
     legacy_scripts = tuple(sorted(SOURCE_JS_DIR.rglob("*.js")))
     legacy_only = tuple(
         path
@@ -444,7 +521,7 @@ def test_remaining_legacy_iifes_and_total_global_surface_are_unchanged() -> None
     )
 
     assert len(legacy_scripts) == 25
-    assert len(legacy_only) == 6
+    assert len(legacy_only) == 1
     assert {
         path.relative_to(SOURCE_JS_DIR).as_posix() for path in legacy_only
     } == set(LEGACY_JS_FILES)
@@ -467,27 +544,23 @@ def test_remaining_legacy_iifes_and_total_global_surface_are_unchanged() -> None
     }
 
     assert legacy_globals == EXPECTED_LEGACY_GLOBALS
-    assert len(legacy_globals) == 8
+    assert len(legacy_globals) == 2
     assert legacy_globals.isdisjoint(EXPECTED_CENTRAL_COMPAT_GLOBALS)
     assert len(EXPECTED_RUNTIME_GLOBALS) == 27
 
 
-def test_compat_is_evaluated_before_every_legacy_consumer() -> None:
-    """compat 은 소비 IIFE 보다 먼저 평가되고, 나머지 6개의 상대 순서는 보존된다.
+def test_entry_evaluates_bridge_then_compat_only() -> None:
+    """제품 entry 의 JS 는 정확히 ``bridge.js → compat.js`` 둘이고 그 순서다.
 
-    static import 는 entry 본문보다 먼저 평가되므로 compat 이 앞자리에 있는 한 별칭이 서기
-    전에 읽히는 창은 없다. ESM 모듈이 entry 에 직접 남아 있지 않은지도 같이 본다 — 남아
-    있으면 모듈이 두 경로로 그래프에 들어와 평가 순서 추론이 무의미해진다.
+    "compat 이 모든 소비 IIFE 보다 먼저 평가된다"던 계약의 후계다 — 소비 IIFE 가 전부
+    ESM 이 되어 entry 에서 사라졌으므로, 남은 순서 질문은 하나다: compat 은 평가 시점에
+    ``window.Bridge`` 를 객체째 캡처하므로 **bridge 가 먼저**여야 한다. 화면·서비스가
+    entry 에 직접 남아 있으면 모듈이 두 경로로 그래프에 들어와 compat 의 구성-후-별칭
+    순서 추론이 무의미해지므로 그 부재도 같이 본다. compat 내부의 구성→별칭 순서는
+    :func:`test_each_service_is_constructed_exactly_once_in_compat` 이, 그래프 순환 부재는
+    :func:`test_esm_module_graph_has_no_cycles` 가 진다.
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
 
-    assert COMPAT_MODULE in modules
-    compat_index = modules.index(COMPAT_MODULE)
-    assert modules.count(COMPAT_MODULE) == 1
-    assert compat_index < min(
-        modules.index(name)
-        for name in LEGACY_JS_FILES[COMPAT_ENTRY_POSITION:]
-    )
-    assert set(modules) - {COMPAT_MODULE} == set(LEGACY_JS_FILES)
-    assert tuple(name for name in modules if name != COMPAT_MODULE) == LEGACY_JS_FILES
+    assert modules == (*LEGACY_JS_FILES, COMPAT_MODULE) == ("bridge.js", COMPAT_MODULE)
     assert not set(modules) & set(ESM_FILES)

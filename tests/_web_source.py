@@ -80,16 +80,11 @@ SERVICE_ESM_FILES = (
     "editor_entry.js",
 )
 
-#: compat을 통해 제품 그래프에 닿는 ESM 모듈 전체(N-04 잎 4 + N-05 서비스 15).
-ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES)
-
-#: ESM 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
-COMPAT_MODULE = "compat.js"
-
-#: 아직 ESM이 아니라 entry가 실행 순서대로 side-effect import하는 IIFE 6개.
-#: ``bridge.js``는 N-07, 화면 넷과 ``app.js``는 N-06이 각각 가져간다.
-LEGACY_JS_FILES = (
-    "bridge.js",
+#: N-06에서 named factory(true ESM)로 바뀐 화면 넷과 앱 셸. entry가 직접 싣지 않고 중앙
+#: compat이 import해 **정확히 한 번** 구성하며, 구성 순서는 구 entry의 IIFE 평가 순서
+#: 그대로다(화면 넷 → 앱 셸). 화면 간 간선과 화면→Nav 간선은 import가 아니라 compat의
+#: late-bound 콜백 테이블이 진다 — 그래서 import 그래프에 editor↔job 순환이 없다.
+SCREEN_ESM_FILES = (
     "screens/library.js",
     "screens/editor.js",
     "screens/job.js",
@@ -97,8 +92,18 @@ LEGACY_JS_FILES = (
     "app.js",
 )
 
-#: compat이 들어가는 자리 — legacy 실행 순서에서 ``bridge.js`` 바로 뒤. 잎 넷을 끌어오는
-#: 이 한 줄이 모든 소비 IIFE보다 먼저 평가돼야 별칭이 서기 전에 읽히는 창이 생기지 않는다.
+#: compat을 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
+ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES, *SCREEN_ESM_FILES)
+
+#: ESM 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
+COMPAT_MODULE = "compat.js"
+
+#: 아직 ESM이 아니라 entry가 side-effect import하는 IIFE — ``bridge.js`` 하나(N-07 소유).
+LEGACY_JS_FILES = ("bridge.js",)
+
+#: compat이 들어가는 자리 — ``bridge.js`` 바로 뒤. compat은 평가 시점에 ``window.Bridge``를
+#: 객체째 캡처하므로 bridge가 반드시 먼저 평가돼야 한다. 화면·서비스는 compat의 import
+#: 그래프로만 들어오고, 별칭 25개는 compat 본문 말미(모든 구성 뒤)에 선다.
 COMPAT_ENTRY_POSITION = 1
 
 

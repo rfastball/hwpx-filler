@@ -25,8 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_TEST_DIR = Path(__file__).resolve().parent / "js"
 
-#: 잎 넷 + 중앙 compat + N-05 서비스 다섯 묶음. 파일이 사라지면 러너는 여전히 초록이므로
-#: 여기서 전수를 센다.
+#: 잎 넷 + 중앙 compat + N-05 서비스 다섯 묶음 + N-06 화면·셸 다섯 묶음. 파일이 사라지면
+#: 러너는 여전히 초록이므로 여기서 전수를 센다.
 EXPECTED_TEST_FILES = {
     "compat.test.js",
     "copy.test.js",
@@ -38,6 +38,11 @@ EXPECTED_TEST_FILES = {
     "n05_services.test.js",
     "n05_data_picker.test.js",
     "n05_editor_entry.test.js",
+    "n06_library.test.js",
+    "n06_workbench.test.js",
+    "n06_editor.test.js",
+    "n06_job.test.js",
+    "n06_app_shell.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.
@@ -93,7 +98,7 @@ def test_frontend_module_units_pass() -> None:
     assert counts.get("skipped") == 0, f"조용히 스킵된 모듈 단위 테스트가 있습니다.\n{report}"
     assert counts.get("todo") == 0, f"todo로 유예된 모듈 단위 테스트가 있습니다.\n{report}"
     assert counts.get("cancelled") == 0, f"취소된 모듈 단위 테스트가 있습니다.\n{report}"
-    assert counts.get("pass", 0) >= 120, (
+    assert counts.get("pass", 0) >= 220, (
         "통과 수가 기대보다 적습니다 — 파일은 있는데 테스트가 수집되지 않았을 수 있습니다.\n"
         f"{report}"
     )
