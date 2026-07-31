@@ -43,8 +43,14 @@ def _built_css_path() -> tuple[str, str]:
         if isinstance(value, dict) and value.get("isEntry") is True
     ]
     assert len(entries) == 1, f"Vite product entry가 하나가 아닙니다: {entries!r}"
-    css_paths = entries[0].get("css")
-    assert isinstance(css_paths, list) and len(css_paths) == 1, (
+    css_paths = [
+        value.get("file")
+        for value in manifest.values()
+        if isinstance(value, dict)
+        and isinstance(value.get("file"), str)
+        and value["file"].endswith(".css")
+    ]
+    assert len(css_paths) == 1, (
         f"Vite product CSS chunk가 하나가 아닙니다: {css_paths!r}"
     )
     css_path = css_paths[0]
