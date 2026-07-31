@@ -8,39 +8,22 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
-from _web_source import ALL_CSS_FILES, REPO_ROOT, SOURCE_INDEX, SOURCE_ROOT
+from _web_source import (
+    ALL_CSS_FILES,
+    COMPAT_MODULE,
+    LEAF_ESM_FILES,
+    REPO_ROOT,
+    SOURCE_INDEX,
+    SOURCE_ROOT,
+    entry_js_manifest,
+)
 
 PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 VISIBLE_DOM_SHA256 = "e037e81337ea8258de2a48438cdb6a7bab42bea838d661ab9c42498fe793b34c"
 
-# M1은 파일을 ESM으로 바꾸지 않고 이 25개 IIFE를 기존 실행 순서 그대로 import한다.
-LEGACY_IIFE_ORDER = (
-    "bridge.js",
-    "copy.js",
-    "theme.js",
-    "personalization.js",
-    "esc.js",
-    "segview.js",
-    "preserve.js",
-    "modal.js",
-    "surface_sheet.js",
-    "undo_toast.js",
-    "sheet_picker.js",
-    "data_picker.js",
-    "pathtrack.js",
-    "relink.js",
-    "popover.js",
-    "guard.js",
-    "datazone.js",
-    "intent.js",
-    "grouplist.js",
-    "editor_entry.js",
-    "screens/library.js",
-    "screens/editor.js",
-    "screens/job.js",
-    "screens/workbench.js",
-    "app.js",
-)
+# M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04가 그중 잎 넷을 ESM으로 빼내
+# 중앙 compat 뒤로 옮겼다. 남은 21개의 **상대 순서**는 그대로다 — 옮긴 것은 잎뿐이다.
+LEGACY_IIFE_ORDER = entry_js_manifest()
 
 # test_web_source_role의 source-root gate를 우회하지 않도록 물리 이름을 경로식으로
 # 재조립하지 않는다. 이 집합은 product/runtime AST의 direct fallback만 분류한다.
@@ -158,16 +141,30 @@ def test_product_entry_preserves_exact_css_and_legacy_iife_order() -> None:
     imports = _side_effect_imports(PRODUCT_ENTRY.read_text(encoding="utf-8"))
     expected = (
         *(f"../css/{name}" for name in ALL_CSS_FILES),
-        *(f"../js/{name}" for name in LEGACY_IIFE_ORDER),
+        *LEGACY_IIFE_ORDER,
     )
 
     assert imports == expected
     assert imports[: len(ALL_CSS_FILES)] == tuple(
         f"../css/{name}" for name in ALL_CSS_FILES
     )
-    assert imports[len(ALL_CSS_FILES) :] == tuple(
-        f"../js/{name}" for name in LEGACY_IIFE_ORDER
-    )
+    assert imports[len(ALL_CSS_FILES) :] == LEGACY_IIFE_ORDER
+
+
+def test_converted_leaves_left_the_entry_only_through_central_compat() -> None:
+    """잎 넷은 entry에서 사라지고 그 자리를 중앙 compat 한 줄이 정확히 메운다.
+
+    "직접 import를 지웠다"만 보면 compat을 잊은 채로도 초록이고, 그때 제품은 부팅 직후
+    ``window.escHtml`` 이 undefined 인 화면을 그린다 — 두 방향을 같이 단언한다.
+    """
+    imports = _side_effect_imports(PRODUCT_ENTRY.read_text(encoding="utf-8"))
+
+    assert imports.count(f"./{COMPAT_MODULE}") == 1
+    for name in LEAF_ESM_FILES:
+        assert f"../js/{name}" not in imports, (
+            f"{name} 이 아직 제품 entry에 직접 import돼 있습니다 — 잎은 compat만 거칩니다."
+        )
+    assert (SOURCE_ROOT / "src" / COMPAT_MODULE).is_file()
 
 
 def test_product_cutover_preserves_normalized_visible_dom() -> None:
