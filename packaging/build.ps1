@@ -26,8 +26,12 @@ $corpus = Join-Path $root 'tests\corpus\real'
 $evidenceDir = Join-Path $root (
     'build\n03-package-evidence-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-$PID"
 )
-$env:UV_CACHE_DIR = Join-Path $root '.uv-cache'
-$env:UV_PYTHON_INSTALL_DIR = Join-Path $root '.uv-python'
+if (-not $env:UV_CACHE_DIR) {
+    $env:UV_CACHE_DIR = Join-Path $root '.uv-cache'
+}
+if (-not $env:UV_PYTHON_INSTALL_DIR) {
+    $env:UV_PYTHON_INSTALL_DIR = Join-Path $root '.uv-python'
+}
 
 if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)) {
     throw 'uv 없음. 먼저 uv sync --locked --all-extras --group dev --group build'
