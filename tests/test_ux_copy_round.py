@@ -11,7 +11,15 @@ import ast
 import re
 from pathlib import Path
 
-from _web_source import REPO_ROOT, SOURCE_ENTRY, SOURCE_INDEX, SOURCE_JS_DIR, imported_js
+from _web_source import (
+    REPO_ROOT,
+    SOURCE_COMPAT,
+    SOURCE_ENTRY,
+    SOURCE_INDEX,
+    SOURCE_JS_DIR,
+    evaluated_modules,
+    evaluation_site,
+)
 
 ROOT = REPO_ROOT
 WEB_INDEX = SOURCE_INDEX
@@ -95,10 +103,34 @@ def test_web_surfaces_free_of_issue_numbers():
 # (test_txt_note_single_source_in_copy_js 삭제 — 대상(#draftNote·draftsession.js)이
 #  「기안」 화면과 함께 사망, F6 PR-B. copy.js 자체는 다른 공용 문안으로 생존 —
 #  단일 출처 계약은 살아 있는 소비자가 생기면 그 표면의 테스트가 다시 진다.)
-def test_copy_js_still_loaded():
-    """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다."""
-    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    assert "copy.js" in imports, "copy.js 가 제품 entry 에 import되지 않았습니다."
+def test_copy_module_still_reaches_the_product_graph():
+    """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다.
+
+    N-04 뒤 copy.js 는 entry 가 직접 싣지 않고 중앙 compat 이 끌어온다. 제품 JS 소비자가
+    0인 모듈이라 "그래프에서 빠졌다"가 아무 화면도 깨지 않고 통과할 수 있는 자리다 —
+    그래서 도달 경로를 명시적으로 센다.
+    """
+    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    provider = evaluation_site("copy.js")
+    assert provider in modules, f"{provider} 가 제품 entry 에 import되지 않았습니다."
+    assert 'from "../js/copy.js"' in SOURCE_COMPAT.read_text(encoding="utf-8"), (
+        "중앙 compat 이 copy.js 를 끌어오지 않습니다 — 공용 문안 모듈이 그래프에서 빠집니다."
+    )
+
+
+def test_copy_module_exports_the_shared_note_verbatim():
+    """공용 문안의 단일 출처 책임은 로드 배선이 아니라 named export 가 진다.
+
+    구 계약은 "copy.js 가 entry 에 실린다"만 봤다. 실려 있어도 문안이 바뀌면 조용히
+    통과하는 자리라, 전이하면서 문자열 자체를 계약에 넣는다.
+    """
+    src = (SOURCE_JS_DIR / "copy.js").read_text(encoding="utf-8")
+    assert re.search(r"(?m)^export const Copy = \{", src), (
+        "copy.js 가 Copy 를 named export 로 내지 않습니다."
+    )
+    assert (
+        'TXT_NOTE: "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다.",' in src
+    ), "Copy.TXT_NOTE 문안이 바뀌었습니다 — 공용 문안은 이 자리가 단일 출처입니다."
 
 
 def test_status_pill_calls_the_rule_axis_approval():

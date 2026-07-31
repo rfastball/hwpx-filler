@@ -26,7 +26,13 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_ENTRY, SOURCE_JS_DIR, app_css, imported_js
+from _web_source import (
+    SOURCE_ENTRY,
+    SOURCE_JS_DIR,
+    app_css,
+    evaluated_modules,
+    evaluation_site,
+)
 
 DZ_JS = SOURCE_JS_DIR / "datazone.js"
 POPOVER_JS = SOURCE_JS_DIR / "popover.js"
@@ -60,19 +66,21 @@ def test_factory_exists_and_exposes_create():
 
 
 def test_load_order_esc_then_shared_then_screens():
-    """로드 순서 — esc.js < popover.js·datazone.js < 소비 화면(job) (미정의 시점 참조 방지).
+    """평가 순서 — 이스케이퍼 < popover.js·datazone.js < 소비 화면(job) (미정의 시점 참조 방지).
 
-    (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.)
+    (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.
+     N-04 뒤 이스케이퍼 공급 지점은 esc.js 자신이 아니라 그것을 끌어오는 중앙 compat 이다.)
     """
-    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
     consumers = ("screens/job.js",)
-    for module in ("esc.js", "popover.js", "datazone.js", *consumers):
-        assert module in imports, f"{module} 가 제품 entry 에 없습니다."
-    esc_pos = imports.index("esc.js")
-    first_consumer = min(imports.index(module) for module in consumers)
+    esc_provider = evaluation_site("esc.js")
+    for module in (esc_provider, "popover.js", "datazone.js", *consumers):
+        assert module in modules, f"{module} 가 제품 entry 에 없습니다."
+    esc_pos = modules.index(esc_provider)
+    first_consumer = min(modules.index(module) for module in consumers)
     for shared in ("popover.js", "datazone.js"):
-        assert esc_pos < imports.index(shared) < first_consumer, (
-            f"로드 순서가 esc.js → {shared} → 소비 화면(job)이 아닙니다."
+        assert esc_pos < modules.index(shared) < first_consumer, (
+            f"평가 순서가 {esc_provider} → {shared} → 소비 화면(job)이 아닙니다."
         )
 
 

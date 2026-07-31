@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "frontend"
 SOURCE_INDEX = SOURCE_ROOT / "index.html"
 SOURCE_ENTRY = SOURCE_ROOT / "src" / "main.js"
+SOURCE_COMPAT = SOURCE_ROOT / "src" / "compat.js"
 SOURCE_CSS_DIR = SOURCE_ROOT / "css"
 SOURCE_JS_DIR = SOURCE_ROOT / "js"
 
@@ -46,14 +47,25 @@ APP_CSS_FILES = (
 #: 정적 소스 셸이 싣는 전체 CSS 순서(토큰 포함).
 ALL_CSS_FILES = ("tokens.css", *APP_CSS_FILES)
 
-#: M1에서 내부 변환 없이 side-effect import하는 기존 IIFE 25개의 제품 실행 순서.
+#: N-04에서 true ESM named export로 바뀐 잎 모듈 — 제품 entry가 **직접 import하지 않는다**.
+#: 넷은 중앙 :data:`COMPAT_MODULE` 하나를 통해서만 제품 그래프에 닿고, 기존 전역 별칭
+#: (``Copy``·``escHtml``·``Guard``·``SegView``)도 거기서만 만들어진다. 파일마다 별칭을
+#: 되살리면 생산자가 다시 흩어져 D-05의 "수량 단조 감소" 계측점이 사라진다.
+LEAF_ESM_FILES = (
+    "copy.js",
+    "esc.js",
+    "guard.js",
+    "segview.js",
+)
+
+#: 잎 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
+COMPAT_MODULE = "compat.js"
+
+#: 아직 ESM이 아니라 entry가 실행 순서대로 side-effect import하는 IIFE 21개.
 LEGACY_JS_FILES = (
     "bridge.js",
-    "copy.js",
     "theme.js",
     "personalization.js",
-    "esc.js",
-    "segview.js",
     "preserve.js",
     "modal.js",
     "surface_sheet.js",
@@ -63,7 +75,6 @@ LEGACY_JS_FILES = (
     "pathtrack.js",
     "relink.js",
     "popover.js",
-    "guard.js",
     "datazone.js",
     "intent.js",
     "grouplist.js",
@@ -74,6 +85,10 @@ LEGACY_JS_FILES = (
     "screens/workbench.js",
     "app.js",
 )
+
+#: compat이 들어가는 자리 — legacy 실행 순서에서 ``bridge.js`` 바로 뒤. 잎 넷을 끌어오는
+#: 이 한 줄이 모든 소비 IIFE보다 먼저 평가돼야 별칭이 서기 전에 읽히는 창이 생기지 않는다.
+COMPAT_ENTRY_POSITION = 1
 
 
 def source_path(*parts: str) -> Path:
@@ -143,3 +158,38 @@ def imported_js(entry: str) -> tuple[str, ...]:
         for path in side_effect_imports(entry)
         if path.startswith(prefix)
     )
+
+
+def entry_js_manifest() -> tuple[str, ...]:
+    """제품 entry가 실을 JS side-effect import 경로를 실행 순서대로 조립한다."""
+    legacy = [f"../js/{name}" for name in LEGACY_JS_FILES]
+    return (
+        *legacy[:COMPAT_ENTRY_POSITION],
+        f"./{COMPAT_MODULE}",
+        *legacy[COMPAT_ENTRY_POSITION:],
+    )
+
+
+def evaluated_modules(entry: str) -> tuple[str, ...]:
+    """제품 entry의 JS import를 **평가 순서의 모듈 이름**으로 정규화한다.
+
+    ``../js/X``는 ``X``로, 중앙 호환 계층은 ``compat.js``로 읽는다. CSS import는 뺀다.
+    """
+    names: list[str] = []
+    for path in side_effect_imports(entry):
+        if path.startswith("../js/"):
+            names.append(path.removeprefix("../js/"))
+        elif path == f"./{COMPAT_MODULE}":
+            names.append(COMPAT_MODULE)
+    return tuple(names)
+
+
+def evaluation_site(name: str) -> str:
+    """모듈 이름을 **제품 entry에서 실제로 평가되는 지점**의 이름으로 옮긴다.
+
+    "공유 헬퍼가 소비 화면보다 먼저 실행되는가"를 묻던 계약들은 잎 모듈 파일 이름을 entry
+    순서에서 찾았다. N-04 뒤 잎 넷은 entry가 직접 싣지 않고 중앙 compat이 끌어오므로, 같은
+    질문의 답은 잎 파일이 아니라 compat의 자리에 있다. 이 함수가 그 옮김을 한 곳에 둔다 —
+    각 테스트가 따로 ``compat.js``를 하드코딩하면 다음 잎이 옮겨갈 때 조용히 낡는다.
+    """
+    return COMPAT_MODULE if name in LEAF_ESM_FILES else name

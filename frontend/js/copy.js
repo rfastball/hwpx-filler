@@ -2,10 +2,8 @@
    정적 HTML 에 한 번만 나오는 문구는 HTML 자체가 단일 출처라 여기로 끌어오지 않는다
    (전면 카피 레이어는 기각 — 마크업 간접화 비용 > 드리프트 위험). 어휘 드리프트 자체는
    금지어 가드(tests/test_ux_copy_round.py)가 CI 에서 잡는다. */
-(function () {
-  window.Copy = {
-    // txt 기안문 채우기 — 기본 안내문. index.html #txtNote(부팅)와 txt.js resetNote 가
-    // 함께 쓴다(종전엔 두 벌 중복 → 드리프트 위험이 실물이었다).
-    TXT_NOTE: "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다.",
-  };
-})();
+export const Copy = {
+  // txt 기안문 채우기 — 기본 안내문. index.html #txtNote(부팅)와 txt.js resetNote 가
+  // 함께 쓴다(종전엔 두 벌 중복 → 드리프트 위험이 실물이었다).
+  TXT_NOTE: "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다.",
+};
