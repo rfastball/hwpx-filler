@@ -30,8 +30,10 @@ if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)
     throw 'uv 없음. 먼저 uv sync --locked --all-extras --group dev --group build'
 }
 
-& (Join-Path $root 'build-web.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($Target -ne 'cli') {
+    & (Join-Path $root 'build-web.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 & uv run --no-sync python (Join-Path $PSScriptRoot 'verify_specs.py')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -51,6 +53,13 @@ function Test-BundleBoundary([string]$BundleDir) {
     $unexpected = $files | Where-Object Name -Match '^(PySide|Qt6)'
     if ($unexpected) {
         throw "미사용 Qt 런타임이 번들에 남음: $($unexpected.Name -join ', ')"
+    }
+    $nodeRuntime = $files | Where-Object {
+        $_.Name -match '^(node(\.exe)?|npm(\.cmd|\.exe)?|npx(\.cmd|\.exe)?)$' -or
+        $_.FullName -match '[\\/](node_modules|frontend)([\\/]|$)'
+    }
+    if ($nodeRuntime) {
+        throw "build-time frontend 도구/source가 번들에 남음: $($nodeRuntime.FullName -join ', ')"
     }
 }
 
