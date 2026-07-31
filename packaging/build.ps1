@@ -378,54 +378,67 @@ foreach ($key in $plan) {
             ) -Encoding UTF8
         }
         finally {
-            if ($null -ne $proxyProcess -and -not $proxyProcess.HasExited) {
-                Stop-Process -Id $proxyProcess.Id -Force
-                $proxyProcess.WaitForExit()
-            }
-            if ($webViewPolicyValueCreated) {
-                Remove-ItemProperty -LiteralPath $webViewPolicyPath `
-                    -Name $webViewPolicyName -ErrorAction Stop
-                $policyKey = Get-Item -LiteralPath $webViewPolicyPath
-                if ($policyKey.GetValueNames() -contains $webViewPolicyName) {
-                    throw (
-                        '임시 WebView2 machine policy value cleanup을 확인하지 못했습니다: ' +
-                        $webViewPolicyName
-                    )
+            try {
+                if ($null -ne $proxyProcess -and -not $proxyProcess.HasExited) {
+                    Stop-Process -Id $proxyProcess.Id -Force
+                    $proxyProcess.WaitForExit()
                 }
             }
-            if (
-                $webViewPolicyKeyCreated -and
-                (Test-Path -LiteralPath $webViewPolicyPath -PathType Container)
-            ) {
-                $policyKey = Get-Item -LiteralPath $webViewPolicyPath
-                if (
-                    $policyKey.GetValueNames().Count -eq 0 -and
-                    $policyKey.SubKeyCount -eq 0
-                ) {
-                    Remove-Item -LiteralPath $webViewPolicyPath -Force -ErrorAction Stop
-                    if (Test-Path -LiteralPath $webViewPolicyPath) {
-                        throw '임시 WebView2 machine policy key cleanup을 확인하지 못했습니다.'
+            finally {
+                try {
+                    if ($webViewPolicyValueCreated) {
+                        Remove-ItemProperty -LiteralPath $webViewPolicyPath `
+                            -Name $webViewPolicyName -ErrorAction Stop
+                        $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+                        if ($policyKey.GetValueNames() -contains $webViewPolicyName) {
+                            throw (
+                                '임시 WebView2 machine policy value cleanup을 확인하지 못했습니다: ' +
+                                $webViewPolicyName
+                            )
+                        }
                     }
-                } else {
-                    throw (
-                        '임시 WebView2 machine policy key에 예상 밖 값 또는 subkey가 생겨 ' +
-                        '안전하게 제거할 수 없습니다.'
+                    if (
+                        $webViewPolicyKeyCreated -and
+                        (Test-Path -LiteralPath $webViewPolicyPath -PathType Container)
+                    ) {
+                        $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+                        if (
+                            $policyKey.GetValueNames().Count -eq 0 -and
+                            $policyKey.SubKeyCount -eq 0
+                        ) {
+                            Remove-Item -LiteralPath $webViewPolicyPath `
+                                -Force -ErrorAction Stop
+                            if (Test-Path -LiteralPath $webViewPolicyPath) {
+                                throw '임시 WebView2 machine policy key cleanup을 확인하지 못했습니다.'
+                            }
+                        } else {
+                            throw (
+                                '임시 WebView2 machine policy key에 예상 밖 값 또는 ' +
+                                'subkey가 생겨 안전하게 제거할 수 없습니다.'
+                            )
+                        }
+                    }
+                }
+                finally {
+                    [Environment]::SetEnvironmentVariable(
+                        'Path', $savedProcessPath, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
+                        'HWPXFILLER_HOME', $savedProductHome, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
+                        'HWPX_SELFTEST_OUT', $savedSelftestOut, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
+                        'HWPX_SELFTEST_OFFLINE_PROBE', $savedOfflineProbe, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
+                        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',
+                        $savedBrowserArgs,
+                        'Process'
                     )
                 }
             }
-            [Environment]::SetEnvironmentVariable('Path', $savedProcessPath, 'Process')
-            [Environment]::SetEnvironmentVariable(
-                'HWPXFILLER_HOME', $savedProductHome, 'Process'
-            )
-            [Environment]::SetEnvironmentVariable(
-                'HWPX_SELFTEST_OUT', $savedSelftestOut, 'Process'
-            )
-            [Environment]::SetEnvironmentVariable(
-                'HWPX_SELFTEST_OFFLINE_PROBE', $savedOfflineProbe, 'Process'
-            )
-            [Environment]::SetEnvironmentVariable(
-                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', $savedBrowserArgs, 'Process'
-            )
         }
     } else {
         $template = Join-Path $corpus 'form_purchase_v1.hwpx'
