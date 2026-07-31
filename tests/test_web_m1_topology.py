@@ -21,8 +21,9 @@ from _web_source import (
 PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 VISIBLE_DOM_SHA256 = "e037e81337ea8258de2a48438cdb6a7bab42bea838d661ab9c42498fe793b34c"
 
-# M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04가 그중 잎 넷을 ESM으로 빼내
-# 중앙 compat 뒤로 옮겼다. 남은 21개의 **상대 순서**는 그대로다 — 옮긴 것은 잎뿐이다.
+# M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04·N-05·N-06이 잎·서비스·화면을
+# 차례로 ESM으로 빼내 중앙 compat 뒤로 옮겼다. 남은 것은 bridge(N-07 소유)와 compat 둘이고
+# 그 순서가 계약이다 — compat이 평가 시점에 window.Bridge를 캡처한다.
 LEGACY_IIFE_ORDER = entry_js_manifest()
 
 # test_web_source_role의 source-root gate를 우회하지 않도록 물리 이름을 경로식으로
