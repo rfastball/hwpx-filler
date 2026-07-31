@@ -1,14 +1,14 @@
 """분할된 앱 스타일시트의 **매니페스트 게이트** — 순서와 전수를 사람이 아니라 게이트가 지킨다.
 
 `app.css` 를 9조각으로 자르면서 생긴 새 실패 방식은 "조용한 누락"이다. 새 CSS 파일을 만들고
-`<link>` 만 걸면, 그 파일은 `_web_source.app_css()` 밖이라 16개 계약 테스트(색 리터럴·모션 상한·
+entry에 import만 걸면, 그 파일은 `_web_source.app_css()` 밖이라 16개 계약 테스트(색 리터럴·모션 상한·
 스크롤포트·모달·sticky …) 전부가 **그 파일을 못 보면서 초록**이 된다. 게이트가 빨간불이 아니라
-침묵으로 죽는 이 결함류는 이 저장소가 index.html 분할을 기각한 바로 그 이유이므로, 분할을
-하려면 같은 자리에서 막아야 한다(`confirm-or-alarm`).
+침묵으로 죽는 결함류라 product entry와 helper manifest를 같은 자리에서 대조해야 한다
+(`confirm-or-alarm`).
 
 그래서 두 방향을 다 막는다:
-- 링크에는 있는데 매니페스트에 없다 → 순서 대조가 잡는다.
-- 디스크에는 있는데 링크에도 매니페스트에도 없다 → glob 전수가 잡는다.
+- import에는 있는데 매니페스트에 없다 → 순서 대조가 잡는다.
+- 디스크에는 있는데 import에도 매니페스트에도 없다 → glob 전수가 잡는다.
 
 형태는 `test_web_dom_contract.test_render_layer_state_budget_covers_every_screen` 과 같다 —
 다음 누락은 사람이 아니라 게이트가 잡는다.
@@ -20,34 +20,34 @@ from _web_source import (
     ALL_CSS_FILES,
     APP_CSS_FILES,
     SOURCE_CSS_DIR,
-    SOURCE_INDEX,
-    linked_css,
+    SOURCE_ENTRY,
+    imported_css,
 )
 
 
-def test_app_css_manifest_matches_index_link_order() -> None:
-    """셸의 `<link>` 순서 == `ALL_CSS_FILES`. 순서는 장식이 아니라 캐스케이드 계약이다.
+def test_app_css_manifest_matches_product_entry_import_order() -> None:
+    """제품 entry의 CSS import 순서 == `ALL_CSS_FILES`.
 
     조각들은 규칙을 옮기지 않고 경계에서만 자른 것이라, 이어붙이면 옛 `app.css` 와 바이트
     동일하다 — 그 등가는 **이 순서일 때만** 참이다. 같은-명시도 hover→상태 쌍(`.navbtn:hover`
     → `.navbtn[aria-current]` 류)과 앞선 전 구역을 덮어야 하는 `forced-colors` 가 순서에
     걸려 있어, 한 줄만 뒤바뀌어도 화면이 조용히 달라진다.
     """
-    linked = linked_css(SOURCE_INDEX.read_text(encoding="utf-8"), "css/")
-    assert linked == ALL_CSS_FILES, (
-        "정적 소스 index.html 의 스타일시트 <link> 순서가 매니페스트와 다릅니다.\n"
-        f"  링크:       {linked}\n"
+    imported = imported_css(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert imported == ALL_CSS_FILES, (
+        "제품 module entry의 CSS side-effect import 순서가 매니페스트와 다릅니다.\n"
+        f"  import:     {imported}\n"
         f"  매니페스트: {ALL_CSS_FILES}\n"
         "순서를 맞추거나, 새 파일이면 tests/_web_source.py 의 APP_CSS_FILES 에 "
-        "제 위치로 등재하세요(등재 없이는 계약 테스트가 그 파일을 못 봅니다)."
+        "제 위치로 등재하세요(등재 없이는 CSS 계약 테스트가 그 파일을 못 봅니다)."
     )
 
 
 def test_every_css_file_on_disk_is_manifested() -> None:
-    """`web/css/*.css` 전수가 매니페스트에 있다 — 등재 없는 파일이 검사 밖으로 새지 못하게.
+    """`frontend/css/*.css` 전수가 매니페스트에 있다.
 
-    링크 대조만 있으면 "링크도 매니페스트도 없는" 파일이 통과한다. 그런 파일은 실앱에
-    안 실리므로 죽은 코드거나, 누군가 곧 링크할 예정인 미등재 파일이다 — 둘 다 시끄러워야 한다.
+    import 대조만 있으면 "import도 매니페스트도 없는" 파일이 통과한다. 그런 파일은 실앱에
+    안 실리므로 죽은 코드거나, 누군가 곧 import할 미등재 파일이다 — 둘 다 시끄러워야 한다.
     """
     on_disk = {p.name for p in SOURCE_CSS_DIR.glob("*.css")}
     manifested = set(ALL_CSS_FILES)
@@ -55,7 +55,7 @@ def test_every_css_file_on_disk_is_manifested() -> None:
     missing = sorted(manifested - on_disk)
     assert not unmanifested, (
         f"정적 소스 css/에 매니페스트 밖 파일이 있습니다: {', '.join(unmanifested)}. "
-        "tests/_web_source.py 의 APP_CSS_FILES 에 등재하고 source index에 링크하세요 — "
+        "tests/_web_source.py 의 APP_CSS_FILES 에 등재하고 product entry에서 import하세요 — "
         "미등재 파일은 색 리터럴·모션 상한·스크롤포트 계약 검사를 전부 우회합니다."
     )
     assert not missing, (

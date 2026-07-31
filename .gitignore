@@ -7,6 +7,11 @@ __pycache__/
 build/
 dist/
 
+# Vite 빌드 전용 의존성·산출물 (N-03)
+node_modules/
+build/web/
+npm-debug.log*
+
 # venv
 .venv/
 venv/
