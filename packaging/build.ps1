@@ -98,12 +98,48 @@ foreach ($key in $plan) {
         New-Item -ItemType Directory -Force $evidenceDir | Out-Null
         $networkControlOut = Join-Path $evidenceDir 'packaged-network-control.json'
         $selftestOut = Join-Path $evidenceDir 'packaged-selftest.json'
+        $proxyReadyOut = Join-Path $evidenceDir 'network-control-proxy-ready.json'
+        $proxyHitOut = Join-Path $evidenceDir 'network-control-proxy-hit.json'
+        $proxyProcess = $null
         $savedProcessPath = $env:Path
         $savedProductHome = $env:HWPXFILLER_HOME
         $savedSelftestOut = $env:HWPX_SELFTEST_OUT
         $savedOfflineProbe = $env:HWPX_SELFTEST_OFFLINE_PROBE
         $savedBrowserArgs = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
         try {
+            $pythonExe = Join-Path $root '.venv\Scripts\python.exe'
+            $proxyScript = Join-Path $root 'scripts\selftest_http_proxy.py'
+            if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+                throw "network control Python 누락: $pythonExe"
+            }
+            $proxyProcess = Start-Process -FilePath $pythonExe -WindowStyle Hidden -PassThru `
+                -ArgumentList @(
+                    "`"$proxyScript`"",
+                    '--ready-file', "`"$proxyReadyOut`"",
+                    '--hit-file', "`"$proxyHitOut`""
+                )
+            $proxyDeadline = (Get-Date).AddSeconds(10)
+            while (-not (Test-Path -LiteralPath $proxyReadyOut -PathType Leaf)) {
+                if ($proxyProcess.HasExited) {
+                    throw "network control proxy가 준비 전에 종료했습니다(exit $($proxyProcess.ExitCode))"
+                }
+                if ((Get-Date) -ge $proxyDeadline) {
+                    throw 'network control proxy 준비 시간이 초과됐습니다.'
+                }
+                Start-Sleep -Milliseconds 50
+            }
+            $proxyInfo = Get-Content -LiteralPath $proxyReadyOut -Raw -Encoding UTF8 |
+                ConvertFrom-Json
+            $proxyPort = 0
+            $proxyPortValid = [int]::TryParse([string]$proxyInfo.port, [ref]$proxyPort)
+            if (
+                $proxyInfo.host -ne '127.0.0.1' -or
+                -not $proxyPortValid -or
+                $proxyPort -le 0
+            ) {
+                throw "network control proxy endpoint가 잘못됐습니다: $($proxyInfo | ConvertTo-Json -Compress)"
+            }
+
             $windowsRoot = $env:SystemRoot
             $env:Path = @(
                 (Join-Path $windowsRoot 'System32'),
@@ -121,14 +157,14 @@ foreach ($key in $plan) {
                 throw "Node-free packaged selfcheck 실패(exit $($selfcheck.ExitCode))"
             }
 
-            # 유효한 외부 HTTPS target이 이 환경에서 실제로 도달 가능한지 먼저 양성 대조한다.
-            # 같은 packaged WebView2가 proxy 없이 성공해야 뒤의 dead-proxy 실패가 DNS 우연이
-            # 아니라 외부망 격리의 결과라고 말할 수 있다.
+            # 유효한 외부 HTTP target을 deterministic loopback control proxy로 먼저 성공시킨다.
+            # proxy가 요청을 실제로 관측해야 뒤의 같은-target dead-proxy 실패가 DNS/CI egress
+            # 우연이 아니라 외부망 격리의 결과라고 말할 수 있다.
             $env:HWPXFILLER_HOME = Join-Path $evidenceDir 'home-network-control'
             $env:HWPX_SELFTEST_OUT = $networkControlOut
             $env:HWPX_SELFTEST_OFFLINE_PROBE = '1'
-            [Environment]::SetEnvironmentVariable(
-                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', $null, 'Process'
+            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = (
+                "--proxy-server=http://127.0.0.1:$proxyPort"
             )
             $networkControl = Start-Process -FilePath $exe -Wait -PassThru `
                 -ArgumentList @('--selftest')
@@ -145,9 +181,21 @@ foreach ($key in $plan) {
                 $networkEvidence.runtime.external_fetch_blocked -ne $false
             ) {
                 throw (
-                    'proxy 없는 packaged WebView2가 유효 외부 HTTPS target에 도달하지 못해 ' +
+                    'control proxy를 통한 packaged WebView2 외부 HTTP probe가 성공하지 않아 ' +
                     '오프라인 격리의 양성 대조를 확보할 수 없습니다.'
                 )
+            }
+            if (-not (Test-Path -LiteralPath $proxyHitOut -PathType Leaf)) {
+                throw 'network control proxy가 WebView2 외부 HTTP 요청을 관측하지 못했습니다.'
+            }
+            $proxyHit = Get-Content -LiteralPath $proxyHitOut -Raw -Encoding UTF8 |
+                ConvertFrom-Json
+            if (
+                $proxyHit.method -ne 'GET' -or
+                $proxyHit.host -ne 'example.com' -or
+                $proxyHit.target -ne 'http://example.com/'
+            ) {
+                throw "network control proxy 관측값이 잘못됐습니다: $($proxyHit | ConvertTo-Json -Compress)"
             }
 
             $env:HWPXFILLER_HOME = Join-Path $evidenceDir 'home-offline'
@@ -222,12 +270,17 @@ foreach ($key in $plan) {
                 network_control_external_fetch_succeeded = (
                     $networkEvidence.runtime.external_fetch_blocked -eq $false
                 )
+                network_control_proxy_observed = $true
                 offline_external_fetch_blocked = $evidence.runtime.external_fetch_blocked
             } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (
                 Join-Path $evidenceDir 'validation-summary.json'
             ) -Encoding UTF8
         }
         finally {
+            if ($null -ne $proxyProcess -and -not $proxyProcess.HasExited) {
+                Stop-Process -Id $proxyProcess.Id -Force
+                $proxyProcess.WaitForExit()
+            }
             [Environment]::SetEnvironmentVariable('Path', $savedProcessPath, 'Process')
             [Environment]::SetEnvironmentVariable(
                 'HWPXFILLER_HOME', $savedProductHome, 'Process'

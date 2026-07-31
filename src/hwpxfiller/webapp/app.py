@@ -3556,7 +3556,7 @@ def _runtime_selftest_evidence(
             (function () {
               const state = { pending: true, blocked: false, error: '' };
               window.__n03OfflineProbe = state;
-              const scheme = String.fromCharCode(104, 116, 116, 112, 115);
+              const scheme = String.fromCharCode(104, 116, 116, 112);
               const target = scheme + '://' + ['example', 'com'].join('.') + '/';
               const controller = new AbortController();
               const timer = setTimeout(() => controller.abort(), 5000);

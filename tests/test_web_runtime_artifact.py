@@ -93,7 +93,11 @@ def test_selftest_rejects_artifact_swap_after_window_creation(
 
 def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -> None:
     build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+    app = Path(app_mod.__file__).read_text(encoding="utf-8")
     entry = (ROOT / "packaging" / "hwpx_filler_web_entry.py").read_text(
+        encoding="utf-8"
+    )
+    proxy = (ROOT / "scripts" / "selftest_http_proxy.py").read_text(
         encoding="utf-8"
     )
     verifier = (ROOT / "scripts" / "verify_packaged_web.py").read_text(
@@ -105,12 +109,19 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "Node-free packaged gate PATH" in build
     assert "HWPX_SELFTEST_OFFLINE_PROBE" in build
     assert "--proxy-server=127.0.0.1:9 --disable-background-networking" in build
+    assert "scripts\\selftest_http_proxy.py" in build
+    assert "network-control-proxy-hit.json" in build
+    assert "proxyHit.target -ne 'http://example.com/'" in build
     assert "packaged-network-control.json" in build
     assert "network_control_external_fetch_succeeded" in build
+    assert "network_control_proxy_observed" in build
     assert "responsibilities.Count -ne 42" in build
     assert "falseResponsibilities.Count -ne 0" in build
     assert "resources_same_origin" in build
     assert "external_fetch_blocked" in build
+    assert "String.fromCharCode(104, 116, 116, 112)" in app
+    assert "['example', 'com'].join('.')" in app
+    assert "ThreadingHTTPServer" in proxy and "self.send_response(204)" in proxy
     assert "artifact = web_artifact()" in entry
     assert "artifact.artifact_id" in entry and "artifact.tree_sha256" in entry
     assert "resolve_web_artifact(repo_root=args.repo_root)" in verifier
