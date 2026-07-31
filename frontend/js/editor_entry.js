@@ -6,7 +6,14 @@
    그대로이고 마지막 착지만 Nav("editor") 다. 진입 문맥(사유·증거·복귀처)은 여기서 백엔드로
    함께 넘어간다: 편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다)
    문맥 없는 진입은 왜 왔는지도 어디로 돌아갈지도 없는 표면이 된다(계약 §5.1). */
-(function () {
+
+import { Modal } from "./modal.js";
+
+/* `navigate` 는 **지연 호출 콜백**이다(N-05 계약 §2-B). 착지처 `Nav` 는 앱 셸(app.js)이
+   만드는데 그 셸은 이 모듈보다 **나중에** 평가되고, 셸 자신이 여기(진입 seam)를 소비하므로
+   값으로 캡처하면 모듈 순환 + 평가 순서 함정이 된다. 호출 시점에 잡는 좁은 콜백 하나가
+   그 유일한 역간선을 끊는다 — 인자는 종전 `Nav.go(...)` 그대로 흘려보낸다. */
+export function createEditorEntry({ bridge, navigate }) {
   /* land() — 편집기 착지의 단일 정의(PR-2 리뷰: 축자 복붙은 착지 변경 시 드리프트 표면 —
      한 곳이 밀리면 엉뚱한 화면에 조용히 오착지한다). 소비처 = 신규 초안(newDraft — 「문서
      작업」 ＋·template.makeJob 후속 착지)·기존 작업 열기(openGuarded).
@@ -29,11 +36,11 @@
   function restoreEntryFocus() {
     const target = entryFocus;
     entryFocus = null;      // 1슬롯 — 다음 진입이 다시 채운다(옛 자리로 두 번 되돌리지 않는다)
-    window.Modal.restoreFocus(target);
+    Modal.restoreFocus(target);
   }
 
   function land() {
-    window.Nav.go("editor", { force: true });
+    navigate("editor", { force: true });
   }
 
   /* newDraft() — 「＋ 새 작업」의 단일 정의(PR-5 리뷰 F2: 「문서 작업」·작업 구획 ＋ 가 같은 흐름을
@@ -43,7 +50,7 @@
     if (!(await confirmDiscard(
       "새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
-    await Bridge.call("editor", "new_session", {});
+    await bridge.call("editor", "new_session", {});
     land();
     return true;
   }
@@ -61,7 +68,7 @@
     if (!(await confirmDiscard(
       "이 데이터로 새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
-    const r = await Bridge.newJobFromData(context || {});
+    const r = await bridge.newJobFromData(context || {});
     if (typeof r === "string" && r.startsWith("ERROR:")) {
       window.alert(r.slice(6).trim());   // 데이터 부재·재적재 실패 → loud(조용한 무이동 금지)
       return false;
@@ -73,8 +80,8 @@
   /* 미저장 정의 세션 폐기 확인의 **단일 출처**(PR-4 리뷰 F9 — 3중 복붙 수렴): 판정은 브리지
      즉시 질의(stale LAST 금지), 문구만 호출측이 준다. 미저장 없으면 조용히 통과. */
   async function confirmDiscard(body, returnFocus) {
-    if (!(await Bridge.editorHasUnsavedWork())) return true;
-    return window.Modal.confirm({
+    if (!(await bridge.editorHasUnsavedWork())) return true;
+    return Modal.confirm({
       body, returnFocus, confirmLabel: "버리고 계속", cancelLabel: "취소",
     });
   }
@@ -93,7 +100,7 @@
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
       return false;
     }
-    const r = await Bridge.openJobInEditor(name, context || {});
+    const r = await bridge.openJobInEditor(name, context || {});
     if (typeof r === "string" && r.startsWith("ERROR:")) {
       window.alert(r.slice(6).trim());   // 손상·템플릿 부재 → loud(조용한 무시 금지)
       return false;
@@ -102,7 +109,7 @@
     return true;
   }
 
-  window.EditorEntry = {
+  return {
     openGuarded, land, confirmDiscard, newDraft, newDraftFromData, restoreEntryFocus,
   };
-})();
+}
