@@ -1,24 +1,32 @@
 /* 「문서 작업」 전역 라이브러리(§19.6·§19.7) — browser + detail. 재작성 F2 PR-A.
    홈(카드 나열 + group-by 렌즈)의 승계자다. 안정 DOM(index.html) + Python 이
-   window.__push('library', snapshot) 로 값만 채운다. 표현 계층(탭·칩·행·상세)만 여기서
+   __push('library', snapshot) 로 값만 채운다. 표현 계층(탭·칩·행·상세)만 여기서
    만든다 — 보기·필터·검색·건강 판정은 전부 링1 소유(링2 대체 금지).
 
    §9.3 4계약면(지도 §10.8.2)의 이행분이 이 파일에 있다:
    - 정체: 행 id = 작업 이름(안정 키), 탭·칩·헤더·상세 버튼 id 고정, 재렌더는 Preserve.around.
    - 잠금: 축 컨트롤·행 버튼에 data-busy-lock(생성 중 전역 잠금 대상).
    - 의도: 즐겨찾기 직렬화는 공용 몸통 js/intent.js(「작업」 화면과 한 기제, 리뷰 3R).
-   - 순서: 이동은 대상 화면 dispatch 로 **먼저 겨눈 뒤** window.Nav — 실패하면 화면 불변.
+   - 순서: 이동은 대상 화면 dispatch 로 **먼저 겨눈 뒤** Nav — 실패하면 화면 불변.
    - 실패: 실패는 이 화면 안에서 재진술하고 보기·필터·선택을 유지한다.
 
    좌 목록 관리 동사 중 열린 세션의 정체와 결속된 것(이름 변경·그룹 지정/이름 변경/해산)은
    「작업」 컨트롤러가 계속 소유한다 — 여기서는 교차 화면 dispatch 로 부르고 뒤이어
    library/refresh 로 이 화면 스냅샷을 맞춘다(지도 §10.8 판정 F). */
-(function () {
+import { escHtml } from "../esc.js";
+import { GroupList } from "../grouplist.js";
+import { Intent } from "../intent.js";
+import { Modal } from "../modal.js";
+import { Popover } from "../popover.js";
+import { Preserve } from "../preserve.js";
+import { UndoToast } from "../undo_toast.js";
+
+export function createLibraryScreen({ Bridge, Nav, JobScreen, EditorEntry, PathTrack, Relink }) {
   const SCREEN = "library";
   const JOB = "job";  // 세션 결속 관리 동사의 소유 화면(교차 화면 dispatch 대상)
   const $ = (id) => document.getElementById(id);
 
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const esc = escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;      // 마지막 스냅샷 — 태그 프리필·그룹 목록 등 핸들러가 참조
   let menuFor = null;   // 열린 그룹 ⋮ 메뉴의 {group, trigger} — null=닫힘
@@ -26,8 +34,8 @@
 
   /* 그룹 헤더 ⋮ 메뉴·그룹 이동 다이얼로그 = 공용 팩토리(grouplist.js, job/tpl 과 단일 출처).
      새 생명주기를 들이지 않는다(F1 판정 E 와 같은 규율) — 위치잡기·조립만 팩토리 소유. */
-  const groupMenu = window.GroupList.createMenu({ menuId: "libraryGroupMenu" });
-  const moveDialog = window.GroupList.createMoveDialog({
+  const groupMenu = GroupList.createMenu({ menuId: "libraryGroupMenu" });
+  const moveDialog = GroupList.createMoveDialog({
     modalId: "libraryMoveModal", listId: "libraryMoveList", errId: "libraryMoveErr",
     nameId: "libraryMoveName", radioName: "libMove",
     newRadioId: "libMoveNewRadio", newNameId: "libMoveNewName",
@@ -349,16 +357,16 @@
     const r = await Bridge.call(JOB, "prefer_work", { name });
     // 편집기는 자기 화면으로 나갔으므로(재작성 F7) 「문서 만들기」로 가는 길에 모드 되돌림이
     // 필요 없다 — 이 화면이 보이는 동안 편집기는 열려 있지 않다(몰입 표면은 셸을 덮는다).
-    window.Nav.go(JOB);
-    if (r && r.reason === "incompatible" && window.JobScreen) {
-      await window.JobScreen.openBrowseNeedsAction(name);
+    Nav.go(JOB);
+    if (r && r.reason === "incompatible" && JobScreen) {
+      await JobScreen.openBrowseNeedsAction(name);
     }
   }
 
   /* 편집 진입 — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
      공용 흐름 EditorEntry.openGuarded 에 위임(job.openEditForRepair 와 단일 출처). */
   function editJob(name, evidence) {
-    if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
+    if (!EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
     // 진입 문맥(계약 §5.1) — 돌아갈 자리는 이 화면이고, 보기·필터·선택은 이 화면이 자기
     // 상태로 들고 있으므로(§19.8) 복귀는 화면 키 하나면 족하다.
     EditorEntry.openGuarded(name, {
@@ -370,7 +378,7 @@
 
   /* '＋ 새 작업' — 라벨-행동 일치: 이전 에디터 세션을 초기화한 뒤 이동한다(EditorEntry 단일 출처). */
   async function newWork() {
-    if (window.EditorEntry) { await EditorEntry.newDraft(); return; }
+    if (EditorEntry) { await EditorEntry.newDraft(); return; }
     window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
   }
 
@@ -445,7 +453,7 @@
      클릭이 낡은 값을 읽어 같은 의도를 두 번 보내면 `set_favorite` 이 멱등이라 껐다 켠 것이
      아니라 **켜진 채로 남고**, 동시 왕복은 마지막 클릭과 반대 상태를 영속시킬 수 있다.
      이제 「작업」 화면과 **같은 몸통**을 쓴다(두 표면이 한 기제). */
-  const favorite = window.Intent.createFavorite({
+  const favorite = Intent.createFavorite({
     send: (name, value) => Bridge.call(SCREEN, "toggle_favorite", { name, value })
       .then((res) => {
         if (res && res.ok === false) window.alert(res.error || "즐겨찾기를 바꾸지 못했습니다.");
@@ -534,7 +542,7 @@
   async function deleteJob(name, returnFocus) {
     let r = await Bridge.call(SCREEN, "delete_job", { name });
     if (r && r.needs_confirm) {
-      const ok = await window.Modal.confirm({
+      const ok = await Modal.confirm({
         title: "작업 삭제 확인",
         body: `작업 '${name}' 이(가) 문서 만들기 화면에 진행 중인 세션으로 열려 있습니다.\n` +
           `삭제하면 그 세션의 선택·데이터·진행이 함께 사라지며, 파일을 복원해도 세션은 돌아오지 않습니다.`,
@@ -544,7 +552,7 @@
       if (!ok) return;
       r = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
     }
-    if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 삭제했습니다.`, async () => {
+    if (r && r.undo) UndoToast.show(`작업 '${name}' 을(를) 삭제했습니다.`, async () => {
       const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
       if (restored && restored.ok === false) throw new Error(restored.error);
     });
@@ -612,7 +620,7 @@
   async function disbandGroup(group, returnFocus) {
     const r = await jobDispatch("disband_group", { name: group });
     if (!r || !r.needs_confirm) return;
-    const ok = await window.Modal.confirm({
+    const ok = await Modal.confirm({
       title: "그룹 해산 확인",
       // 이동 집합은 '해산 시점의 소속 전부'라는 **규칙**으로 적고 수치는 지금 기준 관측으로
       // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다. 좌 목록이
@@ -703,7 +711,7 @@
     $("libraryFacets").addEventListener("click", onToolbarClick);
     $("libraryGroupMenu").addEventListener("click", onGroupMenuClick);
     // ⋮ 메뉴 바깥 닫기(job/tpl 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
-    window.Popover.wireDismiss({
+    Popover.wireDismiss({
       isOpen: () => menuFor !== null,
       contains: (t) => !!(t.closest("#libraryGroupMenu") || t.closest(".job-more")),
       close: closeGroupMenu,
@@ -720,12 +728,25 @@
     });
   }
 
-  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. */
+  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. 재호출 멱등(N-06 §7):
+     배선(onPush·wire)은 한 번만 서고, initial 당김은 성공 결과(seated)를 공유한다.
+     첫 당김이 실패하면 고착하지 않는다 — 스스로 재시도하지 않되 다음 명시적 init() 이
+     initial 만 다시 당기고, rejection 은 종전과 같이 호출자에게 전파된다. */
+  let wired = false;
+  let seated = null;
   async function init() {
-    Bridge.onPush(SCREEN, render);
-    wire();
-    render(await Bridge.initial(SCREEN));
+    if (!wired) {
+      Bridge.onPush(SCREEN, render);
+      wire();
+      wired = true;
+    }
+    if (!seated) {
+      seated = (async () => { render(await Bridge.initial(SCREEN)); })()
+        .catch((err) => { seated = null; throw err; });
+    }
+    return seated;
   }
 
-  window.LibraryScreen = { init };
-})();
+  const LibraryScreen = { init };
+  return LibraryScreen;
+}

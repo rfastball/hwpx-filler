@@ -6,10 +6,16 @@
    판정은 전부 Python(workbench 스냅샷)이고 여기는 그리기와 발신만 한다 — 작업점·복사 이력·
    미저장 변경·린트 술어를 웹이 다시 계산하지 않는다. 카드 세그먼트는 공용 SegView 로 그려
    「기안」 카드와 같은 채움 표지 계약(fill 음영·〈빈 값〉·{{토큰}} 빨강)을 쓴다. */
-(function () {
+import { escHtml } from "../esc.js";
+import { Intent } from "../intent.js";
+import { Modal } from "../modal.js";
+import { Preserve } from "../preserve.js";
+import { SegView } from "../segview.js";
+
+export function createWorkbenchScreen({ Bridge, Nav }) {
   const SCREEN = "workbench";
   const $ = (id) => document.getElementById(id);
-  const esc = window.escHtml;
+  const esc = escHtml;
   let LAST = null;
 
   const OWN_LABEL = { auto: "데이터 열에서", man: "직접 입력한 값" };
@@ -95,7 +101,7 @@
     // 「선언≠실제」가 된다(이 저장소 지배 결함류).
     $("wbCard").className =
       "wb-preview wc-render f-" + (s.target_font || "gulimche");
-    $("wbCard").innerHTML = window.SegView.paint(c.segments || []);
+    $("wbCard").innerHTML = SegView.paint(c.segments || []);
     const rv = REVIEW_TEXT[c.review_state] || REVIEW_TEXT.todo;
     $("wbReview").textContent = rv[0];
     $("wbReview").setAttribute("data-level", rv[1]);
@@ -191,7 +197,7 @@
     }
     // Preserve 는 **id 로** 포커스·캐럿을 되찾는다 — 그래서 아래 행 컨트롤에 안정 id 가
     // 붙어 있다. id 없이 재구성하면 push 한 번에 타이핑하던 자리가 body 로 떨어진다.
-    window.Preserve.around(() => renderMap(s));
+    Preserve.around(() => renderMap(s));
     renderCard(s);
     renderDots(s);
     renderFoot(s);
@@ -209,14 +215,14 @@
   const WB_CHAIN = "workbench:session";
 
   function sendWb(call) {
-    return window.Intent.chained(WB_CHAIN, call);
+    return Intent.chained(WB_CHAIN, call);
   }
 
   async function copyCard() {
     // 방금 친 값이 아직 날아가는 중일 수 있다 — 그것이 착지한 **뒤에** 무엇을 복사할지 묻는다.
     // (blur 로 발화한 `set_map_value` 와 이 클릭은 서로 다른 스레드로 도착한다.)
-    await window.Intent.settle(WB_CHAIN);
-    const pre = await window.Bridge.call(SCREEN, "copy_precheck", {});
+    await Intent.settle(WB_CHAIN);
+    const pre = await Bridge.call(SCREEN, "copy_precheck", {});
     const blockers = [];
     if (pre.missing_fields && pre.missing_fields.length) {
       blockers.push(`채우지 못한 항목: ${pre.missing_fields.join(", ")}`);
@@ -225,7 +231,7 @@
       blockers.push(`값이 빈 항목: ${pre.empty_fields.join(", ")}`);
     }
     if (blockers.length) {
-      const ok = await window.Modal.confirm({
+      const ok = await Modal.confirm({
         title: "이대로 복사할까요?",
         body: blockers.join("\n") + "\n\n확정-비움으로 선언한 항목은 여기 세지 않습니다.",
         confirmLabel: "그래도 복사",
@@ -237,7 +243,7 @@
     // **사전확인이 본 그 카드**의 토큰을 실어 보낸다(3R P1): 그사이 작업점이 옮겨졌거나
     // 규칙이 바뀌었으면 백엔드가 쓰지 않고 stale 로 돌려주므로, 확인하지 않은 카드가
     // 클립보드로 나가지 않는다. 조용한 무동작이 아니라 다시 확인하라고 말한다.
-    const res = await window.Bridge.copyClipboard(SCREEN, pre.token);
+    const res = await Bridge.copyClipboard(SCREEN, pre.token);
     if (res && res.stale) {
       window.alert("작업점이 그사이 바뀌어 복사하지 않았습니다. 카드를 확인하고 다시 복사하세요.");
     } else if (res && res.error) {
@@ -248,8 +254,8 @@
   async function saveRules() {
     // 저장이 세는 dirty 집합도 대기 중인 편집을 포함해야 한다 — 안 그러면 확인 문안이
     // 나열하지 않은 필드가 같이 저장되거나(과소 재진술) 방금 친 값만 빠진다.
-    await window.Intent.settle(WB_CHAIN);
-    let r = await window.Bridge.call(SCREEN, "save_rules", {});
+    await Intent.settle(WB_CHAIN);
+    let r = await Bridge.call(SCREEN, "save_rules", {});
     // 확인 문안을 **되돌려 보낸다**(confirmed_text) — 백엔드가 잠금 안에서 지금 문안을 다시
     // 지어 대조하므로, 모달이 열린 사이 대상이 바뀌었으면(TOCTOU) 새 문안으로 다시 묻는다.
     // 「기안으로 저장」·에디터 덮어쓰기와 **같은 관용구**다: 불리언 플래그로는 「이 상황을
@@ -257,14 +263,14 @@
     // 미리 승인해 버렸다(1R P2). 문안 자체가 확인의 정체라 while 로 재확인을 받는다.
     while (r && r.needs_confirm) {
       const confirmedText = r.confirm_text;
-      const ok = await window.Modal.confirm({
+      const ok = await Modal.confirm({
         title: "기본 규칙으로 저장할까요?",
         body: confirmedText,
         confirmLabel: "기본 규칙으로 저장",
         cancelLabel: "취소",
       });
       if (!ok) return;
-      r = await window.Bridge.call(SCREEN, "save_rules",
+      r = await Bridge.call(SCREEN, "save_rules",
         { confirm: true, confirmed_text: confirmedText });
     }
     if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
@@ -297,12 +303,12 @@
   async function leaveTo(target) {
     // 가드가 「잃을 것 없음」이라고 답하려면 **대기 중인 편집까지** 세고 답해야 한다.
     // 정산 전에 물으면 방금 친 값이 가드에 안 잡히고 세션과 함께 조용히 사라진다.
-    await window.Intent.settle(WB_CHAIN);
-    const g = await window.Bridge.call(SCREEN, "leave_guard", {});
+    await Intent.settle(WB_CHAIN);
+    const g = await Bridge.call(SCREEN, "leave_guard", {});
     if (g && g.armed) {
       const hasChanges = !!(LAST && LAST.dirty && LAST.dirty.count);
       if (hasChanges) {
-        const choice = await window.Modal.choose({
+        const choice = await Modal.choose({
           title: "작업대를 나갈까요?",
           body: g.lines.join("\n"),
           choices: [
@@ -315,11 +321,11 @@
         if (choice === "save") {
           await saveRules();
           // 저장이 확인 창에서 취소됐으면 여전히 dirty 다 — 그때는 나가지 않는다.
-          const after = await window.Bridge.call(SCREEN, "leave_guard", {});
+          const after = await Bridge.call(SCREEN, "leave_guard", {});
           if (after && after.armed && LAST && LAST.dirty && LAST.dirty.count) return;
         }
       } else {
-        const ok = await window.Modal.confirm({
+        const ok = await Modal.confirm({
           title: "작업대를 나갈까요?",
           body: g.lines.join("\n"),
           confirmLabel: "나가기",
@@ -328,30 +334,30 @@
         if (!ok) return;
       }
     }
-    await window.Bridge.call(SCREEN, "close", {});
-    window.Nav.go(target, { force: true });
+    await Bridge.call(SCREEN, "close", {});
+    Nav.go(target, { force: true });
   }
 
   function wire() {
     $("wbBack").addEventListener("click", () => leaveTo("job"));
     $("wbPrev").addEventListener("click", () =>
-      sendWb(() => window.Bridge.call(SCREEN, "step", { delta: -1 })));
+      sendWb(() => Bridge.call(SCREEN, "step", { delta: -1 })));
     $("wbNext").addEventListener("click", () =>
-      sendWb(() => window.Bridge.call(SCREEN, "step", { delta: 1 })));
+      sendWb(() => Bridge.call(SCREEN, "step", { delta: 1 })));
     $("wbCopy").addEventListener("click", copyCard);
     $("wbSaveRules").addEventListener("click", saveRules);
     $("wbTargetFont").addEventListener("change", (e) =>
-      sendWb(() => window.Bridge.call(SCREEN, "set_target_font", { font: e.target.value })));
+      sendWb(() => Bridge.call(SCREEN, "set_target_font", { font: e.target.value })));
     // 큐 색인 직접 이동 — 아는 행으로 바로 간다(순차 이동만으로는 도달할 수 없던 자리).
     $("wbDots").addEventListener("click", (e) => {
       const dot = e.target.closest(".wc-dot");
-      if (dot) sendWb(() => window.Bridge.call(SCREEN, "set_current", { index: Number(dot.dataset.i) }));
+      if (dot) sendWb(() => Bridge.call(SCREEN, "set_current", { index: Number(dot.dataset.i) }));
     });
     $("wbAdvance").addEventListener("change", (e) =>
-      sendWb(() => window.Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked })));
+      sendWb(() => Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked })));
     document.querySelectorAll("[data-wb-view]").forEach((b) => {
       b.addEventListener("click", () =>
-        sendWb(() => window.Bridge.call(SCREEN, "set_view", { view: b.dataset.wbView })));
+        sendWb(() => Bridge.call(SCREEN, "set_view", { view: b.dataset.wbView })));
     });
     // 결과 → 규칙: 카드도 매 렌더마다 다시 그려지므로 위임으로 받는다(조각엔 id 가 없다 —
     // 같은 토큰이 여러 번 나올 수 있어 신원은 id 가 아니라 `data-token` 이다).
@@ -362,21 +368,21 @@
     // 린트 행동은 매 렌더마다 다시 그려지므로 위임으로 받는다(안정 id 는 포커스 보존용).
     $("wbLint").addEventListener("click", (e) => {
       const b = e.target.closest("[data-fullwidth]");
-      if (b) sendWb(() => window.Bridge.call(SCREEN, "set_fullwidth", { value: b.dataset.fullwidth === "on" }));
+      if (b) sendWb(() => Bridge.call(SCREEN, "set_fullwidth", { value: b.dataset.fullwidth === "on" }));
     });
     const panel = $("wbMapPanel");
     // 행은 **토큰 이름**으로 겨눈다(F6 3R — 「기안」과 같은 규약). 결속은 직접 입력한 값을
     // 지울 수 있어 확인 왕복을 가진다: 백엔드가 `{confirm: 문안}` 을 돌려주면 물어보고
     // `confirm:true` 로 다시 보낸다(무확인 파괴 금지).
     async function bindColumn(name, col) {
-      const r = await sendWb(() => window.Bridge.call(SCREEN, "set_source", { name, col }));
+      const r = await sendWb(() => Bridge.call(SCREEN, "set_source", { name, col }));
       if (r && r.confirm) {
-        const ok = await window.Modal.confirm({
+        const ok = await Modal.confirm({
           title: "직접 입력한 값을 덮어쓸까요?", body: r.confirm,
           confirmLabel: "열 값으로 바꾸기", cancelLabel: "취소", danger: true,
         });
         if (!ok) { render(LAST); return; }   // 드롭다운을 스냅샷 상태로 되돌린다
-        await sendWb(() => window.Bridge.call(SCREEN, "set_source", { name, col, confirm: true }));
+        await sendWb(() => Bridge.call(SCREEN, "set_source", { name, col, confirm: true }));
       }
     }
     panel.addEventListener("change", (e) => {
@@ -384,15 +390,15 @@
       if (!name) return;
       if (el.classList.contains("mapsrc-sel")) bindColumn(name, el.value);
       else if (el.classList.contains("maptype"))
-        sendWb(() => window.Bridge.call(SCREEN, "set_map_type", { name, type: el.value }));
+        sendWb(() => Bridge.call(SCREEN, "set_map_type", { name, type: el.value }));
       else if (el.classList.contains("mapfmt"))
-        sendWb(() => window.Bridge.call(SCREEN, "set_map_fmt", { name, code: el.value }));
+        sendWb(() => Bridge.call(SCREEN, "set_map_fmt", { name, code: el.value }));
       else if (el.classList.contains("mapck"))
-        sendWb(() => window.Bridge.call(SCREEN, "set_confirmed", { name, value: el.checked }));
+        sendWb(() => Bridge.call(SCREEN, "set_confirmed", { name, value: el.checked }));
       else if (el.classList.contains("mapval-in")) {
         // 값 입력은 no-push 다(포커스된 입력을 서버 푸시가 재구성하지 않게) — 반환 스냅샷으로
         // 그린다. 재구성을 가로지르는 캐럿은 Preserve 가 안정 id 로 되찾는다.
-        sendWb(() => window.Bridge.call(SCREEN, "set_map_value", { name, text: el.value }).then(render));
+        sendWb(() => Bridge.call(SCREEN, "set_map_value", { name, text: el.value }).then(render));
       }
     });
     panel.addEventListener("click", (e) => {
@@ -401,15 +407,20 @@
         const hit = ((LAST && LAST.rows) || []).find((r) => r.name === sug.dataset.name);
         if (hit) bindColumn(hit.name, hit.suggest);
       } else if (rev) {
-        sendWb(() => window.Bridge.call(SCREEN, "revert_map", { name: rev.dataset.name }));
+        sendWb(() => Bridge.call(SCREEN, "revert_map", { name: rev.dataset.name }));
       }
     });
   }
 
+  /* 재호출 멱등(N-06 §7) — initial 당김이 없는 화면이라 wired 가드만 진다. */
+  let wired = false;
   function init() {
+    if (wired) return;
     wire();
-    window.Bridge.onPush(SCREEN, render);
+    Bridge.onPush(SCREEN, render);
+    wired = true;
   }
 
-  window.WorkbenchScreen = { init, render, leaveTo };
-})();
+  const WorkbenchScreen = { init, render, leaveTo };
+  return WorkbenchScreen;
+}
