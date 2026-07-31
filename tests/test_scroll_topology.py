@@ -6,16 +6,14 @@ sticky/gutter/체이닝 CSS가 DOM에서 이탈하지 않도록 가드한다.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from _web_css import app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
 CSS = app_css()
-INDEX = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-EDITOR = (ROOT / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
-DATAZONE = (ROOT / "web" / "js" / "datazone.js").read_text(encoding="utf-8")
+INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
+EDITOR = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+DATAZONE = (SOURCE_JS_DIR / "datazone.js").read_text(encoding="utf-8")
 
 
 def _declarations(selector: str) -> str:

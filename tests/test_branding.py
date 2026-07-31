@@ -7,9 +7,9 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
+from _web_source import REPO_ROOT, source_path, source_text
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 
 PRODUCT = "문서나르미"
 
@@ -20,7 +20,7 @@ def _read(*parts: str) -> str:
 
 def test_web_shell_shows_product_name_only() -> None:
     """셸 타이틀·레일 락업이 문서나르미이고 옛 표기(HWPX Filler)가 남지 않는다."""
-    html = _read("web", "index.html")
+    html = source_text("index.html")
     assert f"<title>{PRODUCT}</title>" in html
     assert 'class="brand-mark"' in html, "레일 락업에 심벌 SVG 가 없다"
     # 세 면은 class 가 아니라 **자기 색**으로 센다. path 에 class 를 달면 규칙이 한 줄도
@@ -74,9 +74,9 @@ def test_spec_wires_icon() -> None:
 
 def test_brand_token_defined_and_fixed_logo_palette_shipped() -> None:
     """기존 브랜드 토큰은 세 테마에 남고, 새 다색 락업은 고정 제품색을 직접 싣는다."""
-    tokens = _read("web", "css", "tokens.css")
+    tokens = source_text("css", "tokens.css")
     assert tokens.count("--a-brand:") == 3
-    html = _read("web", "index.html")
+    html = source_text("index.html")
     for color in ("#0E3FAE", "#1857D8", "#43C9A8"):
         assert f'stroke="{color}"' in html
 
@@ -102,7 +102,7 @@ def test_root_readme_is_product_entry() -> None:
 
 def test_favicon_asset_bundled() -> None:
     """web/img 심벌 SVG(파비콘)가 세 색의 열린 문서 면을 담는다."""
-    svg = _read("web", "img", "narmi-mark.svg")
+    svg = source_text("img", "narmi-mark.svg")
     for color in ("#0E3FAE", "#1857D8", "#43C9A8"):
         assert f'stroke="{color}"' in svg
     assert svg.count("<path ") == 3
@@ -160,16 +160,18 @@ def test_branding_generator_geometry_matches_shipped_symbol() -> None:
     strokes = list(zip(geometry["STROKES"], colors, strict=True))
     width = geometry["MARK_STROKE_WIDTH"]
 
-    for parts in (("docs", "branding", "document-narmi-mark-final.svg"),
-                  ("docs", "branding", "document-narmi-lockup-final.svg"),
-                  ("docs", "branding", "document-narmi-final-board.svg"),
-                  ("web", "img", "narmi-mark.svg"),
-                  ("web", "index.html"),
-                  ("docs", "UI_GALLERY.html")):
-        text = _read(*parts)
+    for path in (
+        ROOT / "docs" / "branding" / "document-narmi-mark-final.svg",
+        ROOT / "docs" / "branding" / "document-narmi-lockup-final.svg",
+        ROOT / "docs" / "branding" / "document-narmi-final-board.svg",
+        source_path("img", "narmi-mark.svg"),
+        source_path("index.html"),
+        ROOT / "docs" / "UI_GALLERY.html",
+    ):
+        text = path.read_text(encoding="utf-8")
         for stroke, color in strokes:
             markup = _stroke_markup(stroke, color, width)
-            assert markup in text, f"{'/'.join(parts)} 가 생성기와 다른 심벌을 쓴다: {markup}"
+            assert markup in text, f"{path.relative_to(ROOT)} 가 생성기와 다른 심벌을 쓴다: {markup}"
 
     x0, y0, x1, y1 = geometry["MARK_BBOX"]
     radius = width / 2

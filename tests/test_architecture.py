@@ -4,7 +4,9 @@ import ast
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from _web_source import REPO_ROOT, SOURCE_JS_DIR
+
+ROOT = REPO_ROOT
 
 
 def _import_roots(package: str) -> set[str]:
@@ -377,9 +379,8 @@ def test_ui_contract_documents_every_direct_bridge_method() -> None:
     호출이 validate_dispatch 밖 경로를 조용히 놓친다(문서가 거짓말하는 드리프트)."""
     import re
 
-    root = Path(__file__).resolve().parents[1]
-    bridge = (root / "web" / "js" / "bridge.js").read_text(encoding="utf-8")
-    contract = (root / "docs" / "UI_CONTRACT.md").read_text(encoding="utf-8")
+    bridge = (SOURCE_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    contract = (REPO_ROOT / "docs" / "UI_CONTRACT.md").read_text(encoding="utf-8")
     methods = set(re.findall(r"\bapi\.(\w+)", bridge)) - {"initial", "dispatch"}
     assert methods, "bridge.js 에서 직접 브리지 메서드를 찾지 못했습니다(추출 회귀)."
     undocumented = sorted(m for m in methods if f"`{m}`" not in contract)

@@ -1,7 +1,7 @@
 """눌림 기하 측정 창구 — 실 배포 CSS 를 링크한 최소 문서에서 `:active` 를 유지하고 잰다.
 
 이 모듈이 존재하는 이유는 **사본을 재지 않기** 위해서다. CSS 는 `web/css/` 실파일을
-`web/index.html` 의 `<link>` 순서로 그대로 링크한다(`_web_css.APP_CSS_FILES` 가 그 순서의 단일
+`web/index.html` 의 `<link>` 순서로 그대로 링크한다(`_web_source.APP_CSS_FILES` 가 그 순서의 단일
 출처이고 `test_web_css_manifest` 가 index 와의 일치를 게이트한다). 골격 HTML 만 호출자가 준다 —
 재는 것은 값이 아니라 **상자**이므로 내용은 필요 없다.
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pathlib
 import tempfile
 
-from _web_css import APP_CSS_FILES, WEB_CSS_DIR
+from _web_source import APP_CSS_FILES, SOURCE_CSS_DIR
 
 _TOKENS = "tokens.css"
 
@@ -31,7 +31,7 @@ _DOC = """<!doctype html>
 
 def _document(scaffold: str, width: int) -> str:
     links = "\n".join(
-        f'<link rel="stylesheet" href="{(WEB_CSS_DIR / name).as_uri()}">'
+        f'<link rel="stylesheet" href="{(SOURCE_CSS_DIR / name).as_uri()}">'
         for name in (_TOKENS, *APP_CSS_FILES)
     )
     return _DOC.format(links=links, width=width, scaffold=scaffold)

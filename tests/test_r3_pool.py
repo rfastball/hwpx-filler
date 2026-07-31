@@ -21,14 +21,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB_JS = ROOT / "web" / "js"
+WEB_JS = SOURCE_JS_DIR
 
 
 def _controller(tmp_path: Path) -> "tuple[PoolController, DatasetPoolRegistry]":
@@ -291,7 +291,7 @@ def test_pool_rescan_rides_on_opening_the_dialog():
     assert "dataPickerRefresh" not in src, (
         "수동 새로고침 버튼이 재유입됐습니다 — open() 이 이미 재스캔합니다."
     )
-    index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    index = SOURCE_INDEX.read_text(encoding="utf-8")
     assert 'id="dataPickerRefresh"' not in index, "셸에 새로고침 버튼 DOM 이 남아 있습니다."
     seg = _segment(src, "function open(", "function build()")
     assert 'Bridge.call("pool", "refresh"' in seg, (

@@ -17,14 +17,14 @@ LibraryController 로 실행 검증한다.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
 from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_library import LibraryController
 
-LIB_JS = Path(__file__).resolve().parents[1] / "web" / "js" / "screens" / "library.js"
+LIB_JS = SOURCE_JS_DIR / "screens" / "library.js"
 
 
 def _edit_tags_body(src: str) -> str:
@@ -97,8 +97,8 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
 
 # --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)
 
-APP_JS = Path(__file__).resolve().parents[1] / "web" / "js" / "app.js"
-WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+APP_JS = SOURCE_JS_DIR / "app.js"
+WEB_INDEX = SOURCE_INDEX
 
 
 def test_manual_home_refresh_button_removed():

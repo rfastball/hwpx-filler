@@ -1,14 +1,9 @@
 """마일스톤 I 설정 존중·개인화 정적/순수 계약(#221)."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from _web_css import app_css
+from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, app_css
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp.app import _geometry_is_visible
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_saved_window_geometry_rejects_offscreen_titlebar() -> None:
@@ -222,15 +217,17 @@ def test_theme_selftest_waits_for_bridge_and_persistence(monkeypatch) -> None:
 
 
 def test_pywebview_selection_and_zoom_decision_are_explicit() -> None:
-    source = (ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
     create = source[source.index("window = webview.create_window("):source.index("frontend._window = window")]
     assert "text_select=True" in create
     assert "zoomable=False" in create
 
 
 def test_personalization_shell_and_splitters_are_wired() -> None:
-    index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    app_js = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
+    index = SOURCE_INDEX.read_text(encoding="utf-8")
+    app_js = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
     css = app_css()
     assert 'src="js/personalization.js"' in index
     # 좌 목록 폭 스플리터의 마지막 DOM 소비처(「기안」)가 화면과 함께 사망(F6 PR-B) —

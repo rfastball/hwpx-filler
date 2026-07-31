@@ -9,13 +9,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.mapping_state import MappingModel, profile_source_vocabulary
 from hwpxfiller.webapp.screen_editor import EditorController
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = REPO_ROOT
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
@@ -101,7 +102,7 @@ def test_c1_apply_profile_confirm_false_carries_values_only():
 #  계약(doSave try/catch)은 아래 정적 가드가 계속 진다.)
 def test_c4_editor_js_dosave_guards_bridge_exception(tmp_path):
     """정적 계약: doSave 는 try/catch 로 감싸 브리지 예외 무반응을 막는다."""
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     start = src.index("async function doSave")
     body = src[start:start + 2000]
     assert "try {" in body and "catch" in body       # 브리지 예외 무반응 금지
@@ -120,7 +121,7 @@ def test_editor_js_gateway_guards_confirmed_mapping_reset():
     있으면 파괴 전 확인한다(confirmMappingResetIfConfirmed — 수치는 Python stakes 질의).
     편집 복원 확정이 매핑 표 바로 위 관문의 1클릭으로 조용히 미확정 재초안되던 것을 막는다."""
     from test_r3_pool import _segment
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert "async function confirmMappingResetIfConfirmed" in src, "확정 보호 가드 헬퍼 부재(F1)."
     assert "mapping_reset_stakes" in src, "가드 수치의 Python 즉시 질의 배선 부재(리뷰 F7)."
     body = _segment(src, "async function onClick", "function onChange")
@@ -140,7 +141,7 @@ def test_editor_js_click_dispatch_guards_bridge_rejection():
     import re
 
     from test_r3_pool import _segment
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     body = _segment(src, "async function onClick", "function onChange")
     assert "try {" in body and "catch" in body and "window.alert" in body, (
         "onClick 디스패처가 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
@@ -260,7 +261,7 @@ def test_editor_js_template_stage_is_library_first():
     """정적 계약(R-info 2부) — 신규 1단계는 라이브러리 피커가 정본: 생 파일 직접 로드
     (pick-template)는 소멸하고, 라이브러리 선택(use-library)과 가져오기=복사
     (import-template)만 남는다. 토큰 참조는 접힘(F27)."""
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert 'data-act="pick-template"' not in src, "생 파일 직접 로드 버튼이 부활했습니다(2부 위반)."
     assert 'data-act="use-library"' in src, "라이브러리 선택 배선이 없습니다."
     assert 'data-act="import-template"' in src, "가져오기=복사 배선이 없습니다."
@@ -278,7 +279,7 @@ def test_editor_shares_tpl_library_vm_wiring():
 def test_discard_confirm_has_single_source():
     """정적 계약(PR-4 리뷰 F9) — 미저장 정의 폐기 확인은 EditorEntry.confirmDiscard 단일
     출처(3중 복붙은 문구·판정 드리프트 표면). 소비처 셋 전부가 그 헬퍼를 부른다."""
-    entry = (REPO / "web" / "js" / "editor_entry.js").read_text(encoding="utf-8")
+    entry = (SOURCE_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
     for rel, needle in (
@@ -287,10 +288,10 @@ def test_discard_confirm_has_single_source():
         #  폐기 확인은 편집기 안 use-library 의 confirmNewSessionIfUnsaved 가 잇는다.)
         ("screens/editor.js", "EditorEntry.confirmDiscard"),
     ):
-        src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")
+        src = (SOURCE_JS_DIR / rel).read_text(encoding="utf-8")
         assert needle in src, f"{rel} 가 폐기 확인 단일 출처({needle})를 쓰지 않습니다."
     # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
-    editor = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."
 
 
@@ -302,7 +303,7 @@ def test_editor_library_management_wiring_is_static():
     부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③기제는 공용
     팩토리·기존 DOM 재사용(F2 교훈 ④ — 옮기지 말고 공유).
     """
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert 'Bridge.onPush("tpl"' in src, "tpl push 구독 소실 — 관리 결과가 편집기에 비가시."
     for action in ("set_group", "rename_group", "disband_group", "delete", "undo_delete"):
         assert f'Bridge.call("tpl", "{action}"' in src, (
@@ -317,7 +318,7 @@ def test_bridge_push_supports_multiple_subscribers_per_screen():
     """정적 계약(F8) — 한 채널 복수 구독: 병존 기간 editor 가 tpl push 를 함께 듣는다.
     단일 슬롯(덮어쓰기)으로 되돌리면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가
     렌더를 잃는다(template.js ↔ editor.js 어느 쪽이든 init 순서 복권)."""
-    bridge = (REPO / "web" / "js" / "bridge.js").read_text(encoding="utf-8")
+    bridge = (SOURCE_JS_DIR / "bridge.js").read_text(encoding="utf-8")
     assert "renderers[screen] = renderers[screen] || []" in bridge, (
         "onPush 가 복수 구독을 지원하지 않습니다 — 덮어쓰기 단일 슬롯은 조용한 렌더 소실."
     )
@@ -337,7 +338,7 @@ def test_every_editing_control_counts_toward_the_save_gate():
     그래서 열거를 늘리는 대신 **두 목록이 같은지**를 계약으로 건다: 새 편집 컨트롤을
     `onChange` 에 더하면서 판정 목록에 안 넣으면 여기서 시끄럽다.
     """
-    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     body = re.search(r"function onChange\(e\) \{.*?\n  \}", src, re.S)
     assert body, "onChange 를 찾지 못했습니다 — 계약이 겨눌 자리가 사라졌습니다."
     dispatching = set(re.findall(r'case "([\w-]+)":\s*sendEdit\(', body.group(0)))

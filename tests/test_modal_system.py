@@ -5,17 +5,15 @@
 """
 
 from html.parser import HTMLParser
-from pathlib import Path
 
-from _web_css import app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX = ROOT / "web" / "index.html"
+INDEX = SOURCE_INDEX
 # 분할된 앱 스타일시트를 링크 순서대로 이어붙인 **문자열**(구 app.css 등가) — 이 파일의
 # 단언은 119-128·838·894-900·932-933 이 한 문자열 안에 함께 있어야 성립한다.
 CSS = app_css()
-MODAL_JS = ROOT / "web" / "js" / "modal.js"
+MODAL_JS = SOURCE_JS_DIR / "modal.js"
 
 
 class _OverlayTree(HTMLParser):
@@ -109,11 +107,11 @@ def test_modal_surface_reaches_actions_in_short_viewports_and_has_accessible_scr
 
 
 def test_menu_spawned_modals_carry_original_trigger_through_close_all() -> None:
-    group = (ROOT / "web" / "js" / "grouplist.js").read_text(encoding="utf-8")
+    group = (SOURCE_JS_DIR / "grouplist.js").read_text(encoding="utf-8")
     assert "returnFocus: opts.returnFocus" in group
     assert "if (confirmed && cb) cb(confirmedGroup)" in group and "cb(group)" not in group
     # (screens/draft.js 는 「기안」 화면 사망(F6 PR-B), screens/template.js 는 「템플릿
     #  관리」 사망(F8)으로 제외 — 메뉴발 모달의 새 소비자는 편집기 「템플릿」 탭이다.)
     for rel in ("screens/library.js", "screens/job.js", "screens/editor.js"):
-        src = (ROOT / "web" / "js" / rel).read_text(encoding="utf-8")
+        src = (SOURCE_JS_DIR / rel).read_text(encoding="utf-8")
         assert "trigger" in src and "returnFocus" in src, rel

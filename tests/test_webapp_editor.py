@@ -10,13 +10,14 @@ from pathlib import Path
 
 import pytest
 
+from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.core.job import JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.template_groups import TemplateGroupModel
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = REPO_ROOT
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
 TPL_PARTIAL = REPO / "tests" / "fixtures" / "template_v1.hwpx"
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
@@ -547,7 +548,7 @@ def test_discard_session_cancels_new_wizard_but_rejects_saved_edit(tmp_path):
 
 
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
-_EDITOR_JS = REPO / "web" / "js" / "screens" / "editor.js"
+_EDITOR_JS = SOURCE_JS_DIR / "screens" / "editor.js"
 
 
 def test_editor_renders_structured_field_and_data_tables():

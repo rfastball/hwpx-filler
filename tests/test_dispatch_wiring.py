@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 
+from _web_source import source_text
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY, validate_dispatch
 from hwpxfiller.webapp.app import WebFrontend
 from hwpxfiller.webapp.screen_editor import EditorController
@@ -15,8 +15,6 @@ from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
 
-
-ROOT = Path(__file__).resolve().parents[1]
 
 CONTROLLERS = {
     "library": LibraryController,
@@ -30,16 +28,16 @@ CONTROLLERS = {
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신
 # 해당 액션의 백엔드 MRO↔registry 동등성으로 검증한다.
 SCREEN_JS = {
-    "library": "web/js/screens/library.js",
-    "editor": "web/js/screens/editor.js",
-    "job": "web/js/screens/job.js",
+    "library": "js/screens/library.js",
+    "editor": "js/screens/editor.js",
+    "job": "js/screens/job.js",
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
-    "pool": "web/js/data_picker.js",
+    "pool": "js/data_picker.js",
     # `tpl` 화면도 사망(F8 §10.17) — 12액션의 프런트 소비자는 편집기 「템플릿」 탭이고 호출은
     # 전부 명시 리터럴("tpl")이라 editor.js 스캔(owner="editor")에서 그대로 검증된다.
     # 별도 행을 두면 editor.js 의 SCREEN 상수 호출이 tpl 로 오해석돼 거짓 실패가 난다.
-    "workbench": "web/js/screens/workbench.js",
+    "workbench": "js/screens/workbench.js",
 }
 
 _LITERAL_CALL = re.compile(
@@ -76,7 +74,7 @@ def test_literal_frontend_calls_are_allowed_on_their_own_screen() -> None:
 
     offenders: list[str] = []
     for owner, relative in SCREEN_JS.items():
-        text = (ROOT / relative).read_text(encoding="utf-8")
+        text = source_text(relative)
         for match in _LITERAL_CALL.finditer(text):
             screen = match.group("screen") or owner
             action = match.group("action")

@@ -40,10 +40,7 @@ import re
 
 import pytest
 
-from _web_css import WEB_CSS_DIR, app_css, strip_comments
-
-WEB = WEB_CSS_DIR.parent
-INDEX = WEB / "index.html"
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css, strip_comments
 
 _MOTION_GATE = bool(os.environ.get("HWPX_SKIP_MOTION_TESTS"))
 _GATE_REASON = (
@@ -96,7 +93,7 @@ _PRESS_BLOCK_END = "/* 부유 메뉴"
 
 
 def _press_block() -> str:
-    """`base.css` 의 눌림 선언 구간(원문 순서 컷 — `_web_css` 독스트링의 계약)."""
+    """`base.css` 의 눌림 선언 구간(원문 순서 컷 — `_web_source` 독스트링의 계약)."""
     css = app_css()
     # 컷은 주석 텍스트로 하고 **자른 뒤에** 산문을 걷는다 — 주석은 죽은 선택자 이름을
     # 일부러 남기므로(아래 DEAD_SELECTORS 근거) 그것을 규칙으로 세면 거짓 실패가 난다.
@@ -139,8 +136,8 @@ def test_press_scale_selectors_are_exactly_the_declared_box_surfaces() -> None:
 def test_dead_selectors_carry_no_press_marker() -> None:
     """산출자가 없는 선택자는 눌림 계약을 늘리지 않는다 — 죽은 규칙은 다음 사람을 속인다."""
     block = _press_block()
-    assets = [p.read_text(encoding="utf-8") for p in (WEB / "js").rglob("*.js")]
-    assets.append(INDEX.read_text(encoding="utf-8"))
+    assets = [p.read_text(encoding="utf-8") for p in SOURCE_JS_DIR.rglob("*.js")]
+    assets.append(SOURCE_INDEX.read_text(encoding="utf-8"))
     for selector in DEAD_SELECTORS:
         name = selector.lstrip(".")
         producers = [t for t in assets if name in t]

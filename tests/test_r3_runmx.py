@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from _web_source import SOURCE_JS_DIR
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
@@ -24,7 +25,7 @@ from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screens import PoolTargetingMixin, source_label
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
-WEB_JS = Path(__file__).resolve().parents[1] / "web" / "js"
+WEB_JS = SOURCE_JS_DIR
 
 
 # ------------------------------------------------------------------ 공용 픽스처 헬퍼

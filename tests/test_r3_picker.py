@@ -20,11 +20,11 @@ K12: 모달 골격은 index.html 정적 소유여야 정적 파싱 가드(test_w
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-WEB = Path(__file__).resolve().parents[1] / "web"
-WEB_INDEX = WEB / "index.html"
-PICKER_JS = WEB / "js" / "data_picker.js"
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
+
+WEB_INDEX = SOURCE_INDEX
+PICKER_JS = SOURCE_JS_DIR / "data_picker.js"
 
 
 def _picker_src() -> str:

@@ -1,13 +1,10 @@
 """마일스톤 I #217 — 즉답 표지와 로컬 보기 토글의 정적 계약."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from _web_css import app_css, strip_comments
+from _web_source import SOURCE_ROOT, app_css, strip_comments
 
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
+WEB = SOURCE_ROOT
 
 
 def _read(rel: str) -> str:
@@ -39,7 +36,7 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
     )
     fill_surfaces = (".job-grp-head", ".jobtb tbody tr", ".ctx-menu button")
     # 컷은 주석 텍스트로 하고(순서 보존 컷의 계약) **자른 뒤에** 산문을 걷는다 — 주석이
-    # 일부러 남긴 죽은 선택자 이름을 규칙으로 세지 않기 위해서다(`_web_css.strip_comments`).
+    # 일부러 남긴 죽은 선택자 이름을 규칙으로 세지 않기 위해서다(`_web_source.strip_comments`).
     active = strip_comments(css[css.index(".btn:active:not(:disabled)"):css.index("/* 부유 메뉴")])
     reduced = strip_comments(
         css[css.index("@media (prefers-reduced-motion:reduce)"):css.index("/* ---- 공통 컨트롤")]

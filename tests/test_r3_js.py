@@ -12,11 +12,11 @@ K11: pool.js 헤더 주석이 '기대 DOM…브리지 메서드 추가 예정'�
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-WEB = Path(__file__).resolve().parents[1] / "web"
-WEB_INDEX = WEB / "index.html"
-WEB_JS = WEB / "js"
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
+
+WEB_INDEX = SOURCE_INDEX
+WEB_JS = SOURCE_JS_DIR
 
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
 # (draftsession.js·screens/draft.js 는 「기안」 화면과 함께 사망 — F6 PR-B.

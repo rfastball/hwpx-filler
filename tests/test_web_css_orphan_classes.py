@@ -75,10 +75,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
+from _web_source import REPO_ROOT, SOURCE_CSS_DIR, SOURCE_INDEX, SOURCE_JS_DIR
+
+ROOT = REPO_ROOT
 #: 검사 대상 — 배포되는 셸과 화면 JS 전수(이름 회수·미해독 판정이 같은 목록을 본다).
-_SOURCES = [WEB / "index.html", *sorted(WEB.glob("js/**/*.js"))]
+_SOURCES = [SOURCE_INDEX, *sorted(SOURCE_JS_DIR.glob("**/*.js"))]
 
 #: 규칙이 없어도 정당한 class — **사유 없이는 등재하지 않는다**.
 #:
@@ -370,7 +371,7 @@ def _emitted_classes() -> dict[str, set[str]]:
 def _styled_classes() -> set[str]:
     """`web/css/*.css` 전수의 선택자에 등장하는 class 이름."""
     names: set[str] = set()
-    for path in sorted((WEB / "css").glob("*.css")):
+    for path in sorted(SOURCE_CSS_DIR.glob("*.css")):
         text = re.sub(r"/\*.*?\*/", " ", path.read_text(encoding="utf-8"), flags=re.S)
         selectors = re.sub(r"\{[^{}]*\}", " ", text)  # 선언 블록을 걷어 선택자만 남긴다
         names.update(re.findall(r"\.(-?[A-Za-z_][\w-]*)", selectors))
