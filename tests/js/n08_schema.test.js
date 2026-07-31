@@ -249,26 +249,41 @@ test("키 서술표 — 값 종류·소유·모드가 전부 알려진 어휘 �
   assert.deepEqual(SELFTEST_KEYS.runtime.hostFields, ["artifact_id", "tree_sha256"]);
 });
 
-test("클러스터 — E 는 확정, B·C·D 는 미할당이 **소리 내어** 남는다", () => {
+test("클러스터 — 네 묶음이 47키를 **겹침 0·고아 0** 으로 나눈다", () => {
   assert.deepEqual(Object.keys(CLUSTERS).sort(), ["B", "C", "D", "E"]);
-  assert.equal(CLUSTERS.E.assigned, true);
-  assert.match(CLUSTERS.E.module, /probes\/persistence_geometry\.js$/);
-  for (const id of ["B", "C", "D"]) {
-    assert.equal(CLUSTERS[id].assigned, false, `${id} 가 이미 할당됐다고 적혀 있습니다.`);
+  for (const id of ["B", "C", "D", "E"]) {
+    assert.equal(CLUSTERS[id].assigned, true, `${id} 가 아직 미할당입니다.`);
+    assert.match(CLUSTERS[id].module, /^frontend\/src\/selftest\/probes\/[a-z_]+\.js$/);
   }
+  assert.match(CLUSTERS.E.module, /probes\/persistence_geometry\.js$/);
+
+  /* 모듈 경로는 묶음마다 **다르다** — 둘이 같으면 한 파일이 두 묶음을 진다. */
+  const modules = ["B", "C", "D", "E"].map((id) => CLUSTERS[id].module);
+  assert.equal(new Set(modules).size, 4);
 
   assert.deepEqual(keysForCluster("E"), [
     "chain_recovery", "font_scale_write", "grid_narrow", "grid_wide",
     "personalization_persist", "runtime", "set_result", "theme_persist", "theme_write",
     "url", "window_geometry",
   ]);
-  assert.equal(keysForCluster("E").length, 11);
 
-  /* 미할당은 숨기지 않는다 — 47 - 11 = 36 이 아직 주인이 없다. */
-  const unassigned = unassignedClusterKeys();
-  assert.equal(unassigned.length, successUnion().length - 11);
-  assert.equal(unassigned.includes("tpl_options"), true);
-  assert.equal(unassigned.includes("chain_recovery"), false);
+  /* 분할의 산술을 **구조로** 센다 — 손으로 적은 수를 다시 적으면 둘 다 같이 낡는다. */
+  const perCluster = ["B", "C", "D", "E"].map((id) => keysForCluster(id));
+  assert.deepEqual(perCluster.map((keys) => keys.length), [15, 6, 15, 11]);
+
+  const union = successUnion();
+  const flat = perCluster.flat();
+  assert.equal(flat.length, union.length, "묶음 합계가 47 과 다릅니다(겹침 또는 고아).");
+  assert.equal(new Set(flat).size, flat.length, "한 키가 두 묶음에 들어 있습니다.");
+  assert.deepEqual([...flat].sort(), [...union].sort(), "묶음 합집합이 47키와 다릅니다.");
+
+  /* 고아 0 — 미할당이 남으면 그 키는 아무도 이관하지 않은 채 조용히 사라진다. */
+  assert.deepEqual(unassignedClusterKeys(), []);
+
+  /* 소비자 없는 키는 사라지지 않는다: 주인은 생겼고 **감도 공백은 그대로 보인다**. */
+  assert.equal(keysForCluster("B").includes("tpl_options"), true);
+  assert.equal(typeof SELFTEST_KEYS.tpl_options.unconsumedReason, "string");
+  assert.deepEqual(SELFTEST_KEYS.tpl_options.consumedBy, []);
 });
 
 test("음성 — 전역 쓰기·__hwpxTest·상대 import 부재", () => {

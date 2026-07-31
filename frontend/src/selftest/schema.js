@@ -117,9 +117,21 @@ export const MODE_MODIFIERS = Object.freeze(["offline_probe"]);
  *  `SELFTEST_KEYS[key].cluster` 에 적어 채운다. 미할당은 **숨기지 않는다** —
  *  `unassignedClusterKeys()` 가 소리 내어 남은 것을 센다(confirm-or-alarm). */
 export const CLUSTERS = Object.freeze({
-  B: Object.freeze({ id: "B", assigned: false, module: null }),
-  C: Object.freeze({ id: "C", assigned: false, module: null }),
-  D: Object.freeze({ id: "D", assigned: false, module: null }),
+  B: Object.freeze({
+    id: "B",
+    assigned: true,
+    module: "frontend/src/selftest/probes/boot_routing_overlay.js",
+  }),
+  C: Object.freeze({
+    id: "C",
+    assigned: true,
+    module: "frontend/src/selftest/probes/job.js",
+  }),
+  D: Object.freeze({
+    id: "D",
+    assigned: true,
+    module: "frontend/src/selftest/probes/editor_workbench_data.js",
+  }),
   E: Object.freeze({
     id: "E",
     assigned: true,
@@ -228,42 +240,52 @@ export const SELFTEST_KEYS = Object.freeze({
   action_roundtrip: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   data_picker: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   data_picker_buttons: key({
     kind: "boolean", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   data_sheet: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_chip: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_discard_cancel: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_guard: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_lib: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_lib_manage: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_save_gate: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   editor_txt_band: key({
     kind: "object", modes: ["full"], owner: "frontend",
@@ -271,96 +293,119 @@ export const SELFTEST_KEYS = Object.freeze({
     note:
       "teardown 실패가 out.teardown_error 로만 남고 **아무도 읽지 않는다**"
       + " — runner 의 teardown 계약이 겨누는 표본.",
+    cluster: "D",
   }),
   home_screen_gone: key({
     kind: "boolean", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   job_active_card: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "C",
   }),
   job_data_first: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
     note: "job_mirror 보다 **먼저** 돌아야 한다(빈 경로 스냅샷을 남긴다, app.py:3872~3876).",
+    cluster: "C",
   }),
   job_density_narrow: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "C",
   }),
   job_editmode: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   job_inherited: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "C",
   }),
   job_mirror: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "C",
   }),
   job_on: key({
     kind: "boolean", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   job_result: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "C",
   }),
   library_surface: key({
     kind: "boolean", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   library_view_tabs: key({
     kind: "array", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   milestone_h_overlay: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
     note: "앞뒤로 호스트 resize(720,500)·(1440,900) 가 붙는다(app.py:3974·3982).",
+    cluster: "B",
   }),
   milestone_h_wave1: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   modal_a11y: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   modal_confirm_serial: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   nav_count: key({
     kind: "integer", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   preserve: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   preserve_real: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   preview_drawer: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   range_draft: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   sheet_gate: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   title_dom: key({
     kind: "string", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "B",
   }),
   tpl_options: key({
     kind: "array", modes: ["full"], owner: "frontend",
@@ -369,14 +414,17 @@ export const SELFTEST_KEYS = Object.freeze({
       + " 옮겨 사망했고, 기준 실행의 값은 `[]` 다. **감도 공백을 아는 채로** 남긴다 —"
       + " 조용히 지우지도, 없던 단언을 지어내지도 않는다(그 판정은 N-09 이후의 별건).",
     note: "감도 공백: 이 키가 어떤 값이 되든 지금은 아무 게이트도 붉어지지 않는다.",
+    cluster: "B",
   }),
   view_order: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
   workbench: key({
     kind: "object", modes: ["full"], owner: "frontend",
     consumedBy: ["tests/test_web_selftest_gate.py"],
+    cluster: "D",
   }),
 });
 
