@@ -4,11 +4,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from _web_css import app_css
+from _web_source import SOURCE_ROOT, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
+WEB = SOURCE_ROOT
 POPOVER = WEB / "js" / "popover.js"
 GROUPLIST = WEB / "js" / "grouplist.js"
 DATAZONE = WEB / "js" / "datazone.js"

@@ -1,8 +1,8 @@
-"""현재 배포 웹 프론트엔드의 정적 DOM 계약 — ``web/index.html`` 자체를 검사한다.
+"""canonical 프런트엔드 **정적 소스**의 DOM 계약.
 
 ``test_ui_contract.py`` 는 목업(``docs/UI_PROTOTYPE_APPB.html``)의 ``data-vm`` 주석이
 생존 ViewModel 표면과 정합한지만 보는 역사 가드다. 이 모듈이 현재 정본인 실제
-``web/index.html``과 JavaScript/CSS 배선을 읽어 **전역 id 유일성**, 화면 구조와 정적 seam을
+소스 역할의 index와 JavaScript/CSS 배선을 읽어 **전역 id 유일성**, 화면 구조와 정적 seam을
 단언한다. 실제 렌더·클릭·브리지 왕복은 ``test_web_selftest_gate.py``의 WebView2 게이트가 맡는다.
 
 배경(#27): ``id="dataLabel"`` 이 실행(run)·즉시기안(txt) 두 화면에 중복돼, 전역
@@ -14,11 +14,18 @@ from __future__ import annotations
 import re
 from collections import Counter
 from html.parser import HTMLParser
-from pathlib import Path
 
-from _web_css import ALL_CSS_FILES, app_css, linked_css
+from _web_source import (
+    ALL_CSS_FILES,
+    REPO_ROOT,
+    SOURCE_CSS_DIR,
+    SOURCE_INDEX,
+    SOURCE_JS_DIR,
+    app_css,
+    linked_css,
+)
 
-WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+WEB_INDEX = SOURCE_INDEX
 # web/ 앱 스타일시트는 분할됐다 — 여기서만 **문자열**(조각을 링크 순서대로 이어붙인 구
 # app.css 등가)이다.
 WEB_CSS = app_css()
@@ -30,7 +37,7 @@ RESPONSIVE_BREAKPOINT_PX = 820
 
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
-WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
+WEB_JS_DIR = SOURCE_JS_DIR
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
 # 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
 # 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
@@ -83,7 +90,7 @@ MUTABLE_MODULE_STATE_BUDGET = {
 }
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
-GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
+GALLERY = REPO_ROOT / "docs" / "UI_GALLERY.html"
 
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
@@ -140,7 +147,7 @@ def _strip_js_comments(src: str) -> str:
 
     이 저장소의 주석은 죽은 이름·함정을 일부러 적어 둔다(`.job-item` 산출자 0곳,
     구 표시 라벨 파생의 위험 등). 그것을 규칙으로 세면 설명이 계약을 깨는 거짓 실패가
-    난다 — CSS 쪽 `_web_css.strip_comments` 와 같은 규율의 JS 판이다.
+    난다 — CSS 쪽 `_web_source.strip_comments` 와 같은 규율의 JS 판이다.
     """
     no_block = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
     return re.sub(r"//[^\n]*", "", no_block)
@@ -208,7 +215,7 @@ def _collect_nav_buttons() -> "dict[str, dict[str, str]]":
 
 
 def test_web_index_exists():
-    assert WEB_INDEX.exists(), f"배포 웹 프론트엔드가 없습니다: {WEB_INDEX}"
+    assert WEB_INDEX.exists(), f"정적 프런트엔드 소스가 없습니다: {WEB_INDEX}"
 
 
 def test_all_element_ids_are_globally_unique():
@@ -421,7 +428,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
     css = "".join(WEB_CSS.split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
-    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+    app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
     )
 
@@ -532,7 +539,7 @@ def test_job_generation_result_renders_partial_cancellation_honestly():
 
 def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
     """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다."""
-    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+    app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
     )
     # draftPanel 프로브는 화면 사망(F6 PR-B)과 함께 걷혔다 — 남은 wide 분기는 job 하나.
@@ -1058,7 +1065,7 @@ def test_job_active_zone_death_and_candidate_card_succession():
     )
     # ⑥ 라이브러리 상세 신설(§2.20) — payload 한 칸(template_path)이 선행이고 그 칸을 겨눈다.
     assert "PathTrack.affordances(d.template_path)" in lib_js
-    lib_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "screen_library.py").read_text(
+    lib_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "screen_library.py").read_text(
         encoding="utf-8"
     )
     assert '"template_path": job.template_path' in lib_py
@@ -1388,7 +1395,7 @@ def test_job_user_column_hiding_surface_contract():
     # 칩 줄은 필터가 없어도 숨김이 있으면 선다(상시 표지 — 0개가 아니면 칩이 선다).
     chips_fn = zone.split("function renderChips", 1)[1].split("\n    }", 1)[0]
     assert "hiddenCols.length" in chips_fn, "숨김 표지가 필터 활성에 묶여 있습니다."
-    css = (WEB_JS_DIR.parent / "css" / "jobdata.css").read_text(encoding="utf-8")
+    css = (SOURCE_CSS_DIR / "jobdata.css").read_text(encoding="utf-8")
     assert ".fchip.hidecols" in css, "숨김 표지 칩 변형 스타일이 없습니다."
 
 
@@ -1644,7 +1651,7 @@ def test_boot_hides_window_until_theme_applied():
     라이트 첫 페인트가 화면 밖에서 소진된다. 런타임 게이트(theme_persist)는 부팅 한참 뒤
     스냅샷이라 '주입이 show 앞이었나'를 구분 못 한다 — 순서는 여기서 정적으로 가드한다.
     """
-    app_py = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py"
+    app_py = REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py"
     src = app_py.read_text(encoding="utf-8")
     # create_window 호출부 슬라이스 — 다음 문장(frontend._window 배선)까지가 호출 인자 범위.
     create = src[src.index("webview.create_window("): src.index("frontend._window")]
@@ -1670,7 +1677,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     그 자리를 back·이탈 가드가 대신 지킨다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
+    app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
     app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
@@ -1864,7 +1871,7 @@ def test_editor_folder_import_is_wired_without_session_confirm():
     """
     editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
-    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+    app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
     )
     assert 'data-act="import-folder"' in editor, "폴더 가져오기 버튼이 행동 줄에 없습니다."
@@ -1898,7 +1905,7 @@ def test_editor_folder_import_is_wired_without_session_confirm():
     assert "finally" in block and "folderImportInFlight = false" in block, (
         "in-flight 해제가 finally 에 없습니다 — 취소·실패 출구에서 버튼이 영구히 잠깁니다."
     )
-    tpl_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp"
+    tpl_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp"
               / "screen_template.py").read_text(encoding="utf-8")
     assert "_folder_import_lock.acquire(blocking=False)" in tpl_py, (
         "배치 중복 실행의 정본 거절(tpl 비차단 잠금)이 없습니다 — JS 플래그만 남으면"
@@ -2298,7 +2305,7 @@ def test_volatile_draft_retirement_notices_have_producer_and_consumer() -> None:
     없는」 결함류 — F6 4R 표본). 문안 술어는 헤드리스(test_webapp_job·test_webapp_template)
     가 보고, 여기는 정적 배선만 센다.
     """
-    src = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp"
+    src = REPO_ROOT / "src" / "hwpxfiller" / "webapp"
     job_py = (src / "screen_job.py").read_text(encoding="utf-8")
     tpl_py = (src / "screen_template.py").read_text(encoding="utf-8")
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")

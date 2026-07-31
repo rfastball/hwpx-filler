@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from _web_css import app_css
+from _web_source import SOURCE_CSS_DIR, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
 CSS = app_css()
-TOKENS = (ROOT / "web" / "css" / "tokens.css").read_text(encoding="utf-8")
+TOKENS = (SOURCE_CSS_DIR / "tokens.css").read_text(encoding="utf-8")
 
 
 def _declarations(selector: str) -> str:
@@ -44,4 +42,3 @@ def test_thumb_uses_rounded_theme_tokens_with_stronger_hover():
     # 두 토큰 모두 생성된 light root와 dark override에 존재해야 테마 전환 시 UA 색으로 새지 않는다.
     assert TOKENS.count("--n-border-strong:") >= 3
     assert TOKENS.count("--n-ink-soft:") >= 3
-

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from _web_css import app_css
+from _web_source import app_css
 
 
 ROOT = Path(__file__).resolve().parents[1]

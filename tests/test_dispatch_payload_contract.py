@@ -16,12 +16,11 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
+from _web_source import SOURCE_JS_DIR
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB_JS = ROOT / "web" / "js"
+WEB_JS = SOURCE_JS_DIR
 
 #: `Bridge.call(SCREEN|'screen', "action", {…})` — 화면 상수 또는 리터럴 화면 이름.
 _CALL = re.compile(

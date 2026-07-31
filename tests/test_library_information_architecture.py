@@ -6,16 +6,13 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-from _web_css import app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-APP = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
-LIB = (ROOT / "web" / "js" / "screens" / "library.js").read_text(encoding="utf-8")
-JOB = (ROOT / "web" / "js" / "screens" / "job.js").read_text(encoding="utf-8")
+INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
+APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
+LIB = (SOURCE_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+JOB = (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
 CSS = app_css()
 
 
@@ -43,7 +40,7 @@ def test_dead_home_surface_leaves_no_dom_or_css_behind() -> None:
         assert dead not in INDEX + LIB + APP, f"죽은 홈 표면이 남아 있습니다: {dead}"
     for dead_rule in (".tracks{", ".jobbrowser{", ".tlist ", ".groupsec{"):
         assert dead_rule not in CSS, f"죽은 홈 CSS 가 남아 있습니다: {dead_rule}"
-    assert not (ROOT / "web" / "js" / "screens" / "home.js").exists()
+    assert not (SOURCE_JS_DIR / "screens" / "home.js").exists()
 
 
 def test_library_keeps_conditional_alert_information() -> None:
@@ -192,7 +189,7 @@ def test_group_merge_confirm_runs_after_the_prompt_settles() -> None:
         "병합 확인이 prompt 가 풀리기 전에 열립니다 — pendingDialog 가 거절합니다(3R)."
     )
     # modal.js 의 그 직렬화가 실재한다는 전제 고정(바뀌면 이 가드의 근거가 사라진다).
-    modal = (ROOT / "web" / "js" / "modal.js").read_text(encoding="utf-8")
+    modal = (SOURCE_JS_DIR / "modal.js").read_text(encoding="utf-8")
     assert "pendingDialog" in modal and "if (pendingDialog)" in modal
 
 
@@ -247,7 +244,7 @@ def test_pending_favorite_intent_is_shared_across_screens() -> None:
     눌렀을 때 두 인스턴스가 똑같이 `true` 를 계산해 같은 쓰기가 두 번 나가고 두 번째 토글이
     사라진다(멱등 재지정이 "껐다"를 삼키는 그 창).
     """
-    intent = (ROOT / "web" / "js" / "intent.js").read_text(encoding="utf-8")
+    intent = (SOURCE_JS_DIR / "intent.js").read_text(encoding="utf-8")
     factory = intent[intent.index("function createFavorite"):intent.index("window.Intent =")]
     assert "new Map()" not in factory, "팩토리가 호출마다 사본을 만듭니다(4R)."
     module = intent[:intent.index("function createFavorite")]

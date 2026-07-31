@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[1]
-WEB = REPO / "web"
+from _web_source import APP_CSS_FILES, REPO_ROOT, SOURCE_CSS_DIR, SOURCE_INDEX, SOURCE_ROOT
+
+REPO = REPO_ROOT
+WEB = SOURCE_ROOT
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
 
@@ -255,16 +257,15 @@ def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
 
 
 def test_web_assets_present_and_wired():
-    """web/ 골격이 서 있고 index.html 이 생성 토큰 CSS 와 화면 스크립트를 물었는가."""
+    """정적 소스 골격이 서 있고 index.html이 생성 토큰 CSS와 화면 스크립트를 물었는가."""
     for rel in ("index.html", "css/tokens.css",
                 "js/bridge.js", "js/app.js", "js/screens/workbench.js"):
         assert (WEB / rel).exists(), f"web/{rel} 없음"
     # 앱 스타일시트는 분할됐다 — 목록 단일 출처는 매니페스트이고, 링크 순서·전수 등재는
     # test_web_css_manifest 가 진다. 여기서는 골격 존재만 본다.
-    from _web_css import APP_CSS_FILES
     for name in APP_CSS_FILES:
-        assert (WEB / "css" / name).exists(), f"web/css/{name} 없음"
-    html = (WEB / "index.html").read_text(encoding="utf-8")
+        assert (SOURCE_CSS_DIR / name).exists(), f"source css/{name} 없음"
+    html = SOURCE_INDEX.read_text(encoding="utf-8")
     assert "css/tokens.css" in html and "js/bridge.js" in html
     # 레일 계약은 NAV_SCREENS 단일 출처(PR-5 리뷰 F7 — 3곳 하드코딩은 후속 레일 변경마다
     # 어긋난 채 초록이 된다). 「기안」 실화면 심은 사망(F6 PR-B) — 승계 표면은 작업대.

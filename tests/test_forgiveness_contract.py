@@ -1,21 +1,16 @@
-from pathlib import Path
-
-from _web_css import app_css
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from _web_source import SOURCE_JS_DIR, app_css, source_text
 
 
 def _read(relative: str) -> str:
-    return (ROOT / relative).read_text(encoding="utf-8")
+    return source_text(relative)
 
 
 def test_forgiveness_surface_contracts_are_wired() -> None:
-    index = _read("web/index.html")
-    modal = _read("web/js/modal.js")
-    editor = _read("web/js/screens/editor.js")
-    job = _read("web/js/screens/job.js")
-    home = _read("web/js/screens/library.js")
+    index = _read("index.html")
+    modal = _read("js/modal.js")
+    editor = _read("js/screens/editor.js")
+    job = _read("js/screens/job.js")
+    home = _read("js/screens/library.js")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
     assert 'id="undoToast"' in index and 'src="js/undo_toast.js"' in index
@@ -28,8 +23,8 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
 
 
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
-    library = _read("web/js/screens/library.js")
-    editor = _read("web/js/screens/editor.js")
+    library = _read("js/screens/library.js")
+    editor = _read("js/screens/editor.js")
     # 복구 가능한 삭제 자체는 사전 확인 없음 — 라이브러리의 confirm 은 백엔드 needs_confirm
     # (타 화면 무장 세션 소실 = 파일 복원으로 못 돌아오는 파괴, #268 리뷰)이 돌려줄
     # 때만 발화한다. 무조건 confirm 재유입은 이 순서 검사가 잡는다.
@@ -73,6 +68,6 @@ def test_confirm_inventory_is_net_lower_than_audit_ledger() -> None:
     # 의 같은 확인이 걷혀 **원장은 다시 내려간다**(순증이 아니라 이사다).
     count = sum(
         path.read_text(encoding="utf-8").count("Modal.confirm({")
-        for path in (ROOT / "web" / "js").rglob("*.js")
+        for path in SOURCE_JS_DIR.rglob("*.js")
     )
     assert count < 42

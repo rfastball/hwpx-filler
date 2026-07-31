@@ -13,10 +13,11 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-JS_FILES = sorted((ROOT / "web" / "js").rglob("*.js"))
+from _web_source import REPO_ROOT, SOURCE_JS_DIR
+
+ROOT = REPO_ROOT
+JS_FILES = sorted(SOURCE_JS_DIR.rglob("*.js"))
 
 # window.alert 은 통지 성격이라 의도적으로 제외한다(별도 후속 검토).
 BANNED = ("window.confirm", "window.prompt")

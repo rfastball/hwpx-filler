@@ -11,12 +11,13 @@ import ast
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
-WEB_INDEX = WEB / "index.html"
-JS_FILES = sorted((WEB / "js").rglob("*.js"))
-WEBAPP = ROOT / "src" / "hwpxfiller" / "webapp"
-GUI = ROOT / "src" / "hwpxfiller" / "gui"
+from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR
+
+ROOT = REPO_ROOT
+WEB_INDEX = SOURCE_INDEX
+JS_FILES = sorted(SOURCE_JS_DIR.rglob("*.js"))
+WEBAPP = REPO_ROOT / "src" / "hwpxfiller" / "webapp"
+GUI = REPO_ROOT / "src" / "hwpxfiller" / "gui"
 
 # 웹 화면이 소비하는 Python 사용자 메시지 공급원(PR #85 리뷰) — webapp 컨트롤러 + 링1 VM.
 # 제외: nara_state(동결·웹 미노출)·pipeline_builder_state(파킹, F40) — 동결 표면의 문구
@@ -112,7 +113,9 @@ def test_status_pill_calls_the_rule_axis_approval():
     판정은 링1 이 낸 `gate.reason` 하나로 한다(서열 재유도 금지) — 그래서 이 가드는 표지
     문안과 그 근거가 **같은 자리**에 있는지를 본다.
     """
-    body = _strip_js_comments((WEB / "js" / "screens" / "job.js").read_text(encoding="utf-8"))
+    body = _strip_js_comments(
+        (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    )
     status = re.search(r"function renderStatus\(s\) \{.*?\n  \}", body, re.S)
     assert status, "renderStatus 를 찾지 못했습니다 — 가드가 겨눌 자리가 사라졌습니다."
     src = status.group(0)

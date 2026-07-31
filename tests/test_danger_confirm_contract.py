@@ -1,13 +1,10 @@
 """#219 — 파괴 확인의 danger 시각 언어·구체 동사 영구 가드."""
 from __future__ import annotations
 
-from pathlib import Path
-
-from _web_css import app_css
+from _web_source import REPO_ROOT, SOURCE_CSS_DIR, SOURCE_JS_DIR, app_css
 
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB_JS = ROOT / "web" / "js"
+WEB_JS = SOURCE_JS_DIR
 
 
 def _confirm_calls(text: str) -> list[str]:
@@ -68,7 +65,7 @@ def test_every_confirm_has_a_concrete_action_label() -> None:
     for path in WEB_JS.rglob("*.js"):
         for call in _confirm_calls(path.read_text(encoding="utf-8")):
             if "confirmLabel" not in call:
-                offenders.append(str(path.relative_to(ROOT)))
+                offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, "기본 '확인'으로 남은 Modal.confirm 호출:\n" + "\n".join(offenders)
 
 
@@ -117,7 +114,7 @@ def test_danger_button_has_light_dark_and_forced_color_contract() -> None:
     # `.btn.danger{`(base.css)와 forced-colors 의 `Mark` 강등(forced-colors.css)이 서로 다른
     # 조각에 살지만, 이어붙인 문자열에서는 한 단언이 둘 다 본다.
     css = app_css()
-    tokens = (ROOT / "web" / "css" / "tokens.css").read_text(encoding="utf-8")
+    tokens = (SOURCE_CSS_DIR / "tokens.css").read_text(encoding="utf-8")
     assert 'classList.toggle("danger", !!opts.danger)' in modal
     assert 'classList.toggle("primary", !opts.danger)' in modal
     assert ".btn.danger{" in css and "background:var(--a-danger)" in css

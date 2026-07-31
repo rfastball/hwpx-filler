@@ -8,16 +8,14 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from _web_css import app_css
+from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
+ROOT = REPO_ROOT
 APP_CSS = app_css()  # 분할 조각을 링크 순서대로 이어붙인 문자열(구 app.css 등가)
-JOB_JS = WEB / "js" / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
-EDITOR_JS = WEB / "js" / "screens" / "editor.js"
-PATHTRACK_JS = WEB / "js" / "pathtrack.js"
+JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
+EDITOR_JS = SOURCE_JS_DIR / "screens" / "editor.js"
+PATHTRACK_JS = SOURCE_JS_DIR / "pathtrack.js"
 
 
 def _css() -> str:
@@ -127,7 +125,7 @@ def test_pathtrack_icon_style_is_visually_secondary_and_focusable():
 
 def test_pathtrack_keeps_text_primary_folder_picker():
     """보조 아이콘화가 찾아보기/지정 주동사를 삼키지 않는다."""
-    index = (WEB / "index.html").read_text(encoding="utf-8")
+    index = SOURCE_INDEX.read_text(encoding="utf-8")
     assert re.search(r'id="jobBtnPickFolder"[^>]*>찾아보기…</button>', index)
 
 
@@ -230,7 +228,7 @@ def test_web_markup_free_of_inline_font_size_literals():
     이 라운드가 걷어낸 인라인 12px(5역할 타입 스케일 밖 값)가 index.html·JS 템플릿 문자열로
     되돌아오는 회귀를 막는다. 크기는 var(--fs-*) 또는 클래스(capnote 등)로만.
     """
-    targets = [WEB / "index.html", *sorted((WEB / "js").rglob("*.js"))]
+    targets = [SOURCE_INDEX, *sorted(SOURCE_JS_DIR.rglob("*.js"))]
     offenders = []
     for path in targets:
         for m in re.finditer(r"font-size:\s*[\d.]+px", path.read_text(encoding="utf-8")):

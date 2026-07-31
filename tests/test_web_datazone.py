@@ -25,17 +25,14 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from _web_css import app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
-ROOT = Path(__file__).resolve().parents[1]
-WEB = ROOT / "web"
-WEB_INDEX = WEB / "index.html"
-DZ_JS = WEB / "js" / "datazone.js"
-POPOVER_JS = WEB / "js" / "popover.js"
-JOB_JS = WEB / "js" / "screens" / "job.js"
-LIB_JS = WEB / "js" / "screens" / "library.js"
+WEB_INDEX = SOURCE_INDEX
+DZ_JS = SOURCE_JS_DIR / "datazone.js"
+POPOVER_JS = SOURCE_JS_DIR / "popover.js"
+JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"
+LIB_JS = SOURCE_JS_DIR / "screens" / "library.js"
 # (draftsession.js·screens/draft.js 상수 삭제 — 「기안」 화면 사망, F6 PR-B.)
 
 # 데이터 존이 소유하는 디스패치 액션 — 전부 팩토리 단일 출처여야 한다(가드 3).
@@ -242,6 +239,6 @@ def test_session_change_drops_pending_column_text() -> None:
     타이머만 끄고 소재를 남기면 나중 정산(`flushPendingEdits`)이 죽은 세션의 조건을 새
     세션에 보낸다 — 열이 남아 있으면 조용히 걸리고, 없으면 적용이 거절된다.
     """
-    src = (WEB / "js" / "datazone.js").read_text(encoding="utf-8")
+    src = (SOURCE_JS_DIR / "datazone.js").read_text(encoding="utf-8")
     reset = src.split("clearTimeout(searchTimer); clearTimeout(colTextTimer);", 1)[1][:400]
     assert "colTextPending = null" in reset, "세션 전환이 대기 중 열 조건을 남깁니다."
