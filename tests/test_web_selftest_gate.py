@@ -1268,8 +1268,8 @@ class TestWebSelftestGate:
         assert h["exit_blocks_pointer"] is True and h["menu_trigger_restored"] is True
         assert h["escape_one_layer"] is True
         short = h["short_viewport"]
-        # pywebview의 OS 최소 창 높이가 요청한 500px를 564px로 clamp할 수 있으므로 실제
-        # innerHeight에서 2×16px inset을 뺀 계약으로 판정한다(720×500 캡처는 별도 시각 QA).
+        # pywebview의 OS 최소 창 높이가 요청한 500px를 약 564px로 clamp할 수 있으므로
+        # CSS 100dvh와 같은 fractional viewport에서 2×16px inset을 뺀 계약으로 판정한다.
         assert short["viewport"] <= 600 and short["height"] <= short["viewport"] - 32
         assert short["scrollable"] is True and short["actions_reachable"] is True
 

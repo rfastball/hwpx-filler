@@ -3238,8 +3238,11 @@ _MILESTONE_H_OVERLAY_PROBE_SETUP_JS = r"""
     var longCard = longModal.querySelector('.modal-card');
     longCard.scrollTop = longCard.scrollHeight;
     var actions = longModal.querySelector('.modal-actions').getBoundingClientRect();
+    // CSS 100dvh와 같은 fractional CSS-pixel 좌표계를 써야 고 DPI에서 innerHeight의
+    // 정수 절삭(예: 563.2 -> 563)을 modal-card overflow로 오판하지 않는다.
     out.short_viewport = { height: longCard.getBoundingClientRect().height,
-      viewport: innerHeight, scrollable: longCard.scrollHeight > longCard.clientHeight,
+      viewport: (window.visualViewport ? window.visualViewport.height : innerHeight),
+      scrollable: longCard.scrollHeight > longCard.clientHeight,
       actions_reachable: actions.bottom <= innerHeight + 1 && actions.top >= -1 };
     window.Modal.close('confirmModal'); finishModal('confirmModal');
     longBody.innerHTML = savedBody;
