@@ -13,7 +13,7 @@
    없앤 오리진 결합 경로다(앱에선 무해한 no-op이라도 test_theme_persistence_is_origin_independent
    가 index.html 의 그 판독을 금한다). 프리뷰는 개발 전용이므로 새로고침 간 테마 기억을 포기하고
    오리진 비의존 불변식을 지킨다. 이 파일은 토글·라벨 동기와 앱 영속 왕복만 담당한다. */
-(function () {
+export function createTheme({ bridge }) {
   var ORDER = ["system", "light", "dark"];
 
   function current() {
@@ -38,7 +38,7 @@
     if (window.pywebview && window.pywebview.api) {
       // 동기 throw(Bridge 부재 등)도 삼키지 않는다(confirm-or-alarm) — 비동기 rejection 은
       // app.js 의 unhandledrejection 백스톱이 받는다.
-      try { window.Bridge.setTheme(current()); }
+      try { bridge.setTheme(current()); }
       catch (e) { window.alert(String((e && e.message) || e)); }
     }
     return current();
@@ -49,5 +49,5 @@
   }
 
   // apply 는 부팅 주입 경로(app.py _apply_theme_then_show)가 영속 없이 쓴다 — set 은 영속 포함.
-  window.Theme = { set: set, toggle: toggle, current: current, apply: apply };
-})();
+  return { set: set, toggle: toggle, current: current, apply: apply };
+}

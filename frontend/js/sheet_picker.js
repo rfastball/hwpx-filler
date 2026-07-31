@@ -7,10 +7,12 @@
    반환(Promise): 마운트 descriptor {label,path,sheet,rows}(성공 — U2 §2.7 3행) ·
    "ERROR:…"(로드 실패) · null(취소=중단). 호출측은 pickDataFile 의 일반 반환과 동일하게
    처리하면 된다(loadDataSheet 가 pick 과 같은 descriptor 를 되돌린다). */
-(function () {
-  const $ = (id) => document.getElementById(id);
 
-  const escHtml = window.escHtml;  // 공유 이스케이퍼(esc.js)
+import { escHtml } from "./esc.js";
+import { Modal } from "./modal.js";
+
+export function createSheetPicker({ bridge }) {
+  const $ = (id) => document.getElementById(id);
 
   /** needs_sheet 페이로드로 모달을 띄워 시트를 확정받고 그 시트로 로드한다. */
   function choose(screen, payload) {
@@ -41,7 +43,7 @@
         const btn = e.target.closest(".sheet-opt");
         if (!btn) return;
         cleanup(); // 확정 즉시 추가 클릭 차단(이중 로드 방지)
-        const r = await Bridge.loadDataSheet(screen, payload.path, btn.dataset.sheet);
+        const r = await bridge.loadDataSheet(screen, payload.path, btn.dataset.sheet);
         finish(r); // descriptor 또는 "ERROR:…"
       }
       function onCancel() { finish(null); } // 취소·Escape = 중단(첫 시트 강등 없음)
@@ -59,5 +61,5 @@
   const cancelBtn = document.getElementById("sheetCancel");
   if (cancelBtn) cancelBtn.addEventListener("click", () => Modal.close("sheetModal"));
 
-  window.SheetPicker = { choose };
-})();
+  return { choose };
+}

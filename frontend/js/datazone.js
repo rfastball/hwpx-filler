@@ -33,9 +33,14 @@
    패널 바깥닫기(pointerdown·Escape·닫기 클릭 1회 소비)는 공용 Popover.wireDismiss 가
    기제를 소유하고, 인스턴스는 자기 술어(isOpen·contains·close)만 주입한다 — 화면의 다른
    popover(작업 행 ⋮ 메뉴 등)와 suppress 상태를 공유하지 않는다(표면별 인스턴스). */
-(function () {
+
+import { escHtml } from "./esc.js";
+import { Popover } from "./popover.js";
+import { Intent } from "./intent.js";
+
+export function createDataZone({ bridge }) {
   const $ = (id) => document.getElementById(id);
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const esc = escHtml;  // 공유 이스케이퍼(esc.js)
 
   function create(cfg) {
     const SCREEN = cfg.screen;
@@ -114,7 +119,7 @@
       const p = $(ids.colPanel);
       // 패널은 renderColPanel 뒤라 실측 가능하다. 공용 배치기가 실제 폭·높이로 viewport를
       // clamp하고 위/아래를 flip한다. H-16 overlayRoot 직속 fixed 표면이라 viewport 좌표를 쓴다.
-      window.Popover.place(p, anchor);
+      Popover.place(p, anchor);
     }
 
     function rangeRow(slot, clause) {
@@ -274,7 +279,7 @@
     function call(action, payload) {
       // 통로는 **요청 시점**에 붙든다: 큐에서 풀릴 때 다시 찾으면 그 사이 바뀐 통로로 나간다
       // (프로브 스텁이 대표 사례 — 요청은 스텁에 걸렸는데 발신은 실물로 새는 자리).
-      const dispatch = window.Bridge.call;   // **함수**를 붙든다 — 객체만 붙들면 큐에서 풀릴 때
+      const dispatch = bridge.call;   // **함수**를 붙든다 — 객체만 붙들면 큐에서 풀릴 때
       const query = ZONE_QUERIES.indexOf(action) >= 0;
       // 변이는 **발신 시점에 보고 있던 세계의 세대**를 업고 간다(리뷰 4R). 판정은 Python 이
       // 한다 — 웹은 자기가 무엇을 보고 있었는지만 정직하게 말한다. 세대를 안 주는 화면
@@ -282,7 +287,7 @@
       const epoch = !query && cfg.epoch ? cfg.epoch() : undefined;
       const body = (epoch === undefined || epoch === null)
         ? payload : Object.assign({}, payload, { epoch: epoch });
-      const send = () => dispatch.call(window.Bridge, SCREEN, action, body);
+      const send = () => dispatch.call(bridge, SCREEN, action, body);
       // 질의는 체인 밖이다. 넣으면 응답이 늦는 질의 하나가 **이후 모든 변이**를 막는다 —
       // 순서 보장은 같은 상태를 바꾸는 발신들 사이에서만 뜻이 있다.
       if (!cfg.chainKey || query) return send();
@@ -291,7 +296,7 @@
       // 유령 문안을 만든다. 사라진 세계의 요청에 대한 정직한 응답은 **무동작**이다.
       // 대기 중 변이 통지(리뷰 4R) — 이탈 가드가 "아직 푸시가 안 온 편집"을 셀 수 있게 한다.
       if (cfg.onMutation) cfg.onMutation(1);
-      const done = window.Intent.chained(cfg.chainKey, send);
+      const done = Intent.chained(cfg.chainKey, send);
       if (cfg.onMutation) {
         done.then(() => cfg.onMutation(-1), () => cfg.onMutation(-1));
       }
@@ -600,5 +605,5 @@
     return { wire, render, sync, flushPendingSearch, flushPendingEdits, dropPendingEdits };
   }
 
-  window.DataZone = { create };
-})();
+  return { create };
+}
