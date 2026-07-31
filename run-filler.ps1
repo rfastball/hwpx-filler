@@ -36,6 +36,11 @@ if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)
     exit 1
 }
 
+if (-not $Cli) {
+    & (Join-Path $root 'build-web.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 Write-Host "실행: $module  (uv/Python 3.13)" -ForegroundColor Cyan
 & uv run --no-sync --extra gui python -m $module @Rest
 exit $LASTEXITCODE

@@ -23,6 +23,9 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
+& (Join-Path $PSScriptRoot 'build-web.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & uv run --no-sync --all-extras --group dev ruff check src tests conftest.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & uv run --no-sync --all-extras --group dev pyright

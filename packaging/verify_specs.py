@@ -30,10 +30,18 @@ def main() -> int:
     assert not missing_hidden, f"CLI hidden import 누락: {missing_hidden}"
     assert '"PySide6"' in cli, "CLI에서 PySide6 제외 누락"
 
-    # filler 웹 프론트엔드 spec(#20·#23) — onedir·Qt 전량 제외·web/ 번들·브리지 hidden import.
+    # filler 웹 프론트엔드 spec(#20·#23) — onedir·Qt 전량 제외·sealed build/web 번들.
     web = specs["hwpx_filler_web.spec"]
     assert '"PySide6"' in web, "web spec: PySide6 전량 제외 누락(Qt 미탑재)"
-    assert '(str(REPO / "web"), "web")' in web, "web spec: 정적 자산 web/ 번들 누락"
+    assert '(str(REPO / "build" / "web"), "web")' in web, (
+        "web spec: sealed build/web 산출물 번들 누락"
+    )
+    assert '(str(REPO / "web"), "web")' not in web, (
+        "web spec: legacy source web/ 번들 경로 재유입"
+    )
+    assert '(str(REPO / "frontend"), "web")' not in web, (
+        "web spec: frontend source를 runtime data로 번들하면 안 됩니다"
+    )
     assert '"hwpxfiller.webapp.app"' in web, "web spec: 브리지 hidden import 누락"
     assert "hwpx-filler.ico" in web, "web spec: 문서나르미 아이콘(#258) 배선 누락"
     assert (HERE / "hwpx-filler.ico").exists(), "hwpx-filler.ico 없음(#258 브랜딩 아이콘)"

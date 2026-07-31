@@ -30,6 +30,9 @@ if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)
     throw 'uv 없음. 먼저 uv sync --locked --all-extras --group dev --group build'
 }
 
+& (Join-Path $root 'build-web.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & uv run --no-sync python (Join-Path $PSScriptRoot 'verify_specs.py')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & uv run --no-sync python (Join-Path $root 'scripts\generate_build_metadata.py')
