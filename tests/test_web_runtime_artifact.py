@@ -231,6 +231,18 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "network_control_external_fetch_succeeded" in build
     assert "network_control_external_fetch_completed" in build
     assert "network_control_proxy_observed" in build
+    assert "network_isolation_mechanism" in build
+    assert "AdditionalBrowserArguments" in build
+    assert "HKEY_LOCAL_MACHINE" not in build
+    assert "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\" in build
+    assert "$webViewPolicyName = [System.IO.Path]::GetFileName($exe)" in build
+    assert "기존 WebView2 AdditionalBrowserArguments machine policy" in build
+    assert "Remove-ItemProperty -LiteralPath $webViewPolicyPath" in build
+    assert "machine policy value cleanup을 확인하지 못했습니다" in build
+    assert "machine policy key cleanup을 확인하지 못했습니다" in build
+    assert "$policyKey.GetValueNames().Count -eq 0" in build
+    assert "'hklm-app-policy'" in build
+    assert "'process-environment'" in build
     assert "responsibilities.Count -ne 42" in build
     assert "falseResponsibilities.Count -ne 0" in build
     assert "resources_same_origin" in build

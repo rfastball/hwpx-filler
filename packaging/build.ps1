@@ -106,7 +106,66 @@ foreach ($key in $plan) {
         $savedSelftestOut = $env:HWPX_SELFTEST_OUT
         $savedOfflineProbe = $env:HWPX_SELFTEST_OFFLINE_PROBE
         $savedBrowserArgs = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+        $webViewPolicyPath = (
+            'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\' +
+            'AdditionalBrowserArguments'
+        )
+        $webViewPolicyName = [System.IO.Path]::GetFileName($exe)
+        $webViewPolicyKeyCreated = $false
+        $webViewPolicyValueCreated = $false
+        $principal = [Security.Principal.WindowsPrincipal]::new(
+            [Security.Principal.WindowsIdentity]::GetCurrent()
+        )
+        $isElevated = $principal.IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator
+        )
+        $networkIsolationMechanism = if ($isElevated) {
+            'hklm-app-policy'
+        } else {
+            'process-environment'
+        }
         try {
+            if ($isElevated) {
+                # WebView2 intentionally ignores WEBVIEW2_* environment overrides for a
+                # high-integrity host. Its documented HKLM policy lookup accepts the compiled
+                # executable name as AppId, so scope the temporary override to this packaged
+                # selftest executable. Never replace a machine policy owned by the host.
+                $webViewPolicyKeyCreated = -not (
+                    Test-Path -LiteralPath $webViewPolicyPath -PathType Container
+                )
+                if ($webViewPolicyKeyCreated) {
+                    New-Item -Path $webViewPolicyPath -Force | Out-Null
+                }
+                $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+                if ($policyKey.GetValueNames() -contains $webViewPolicyName) {
+                    throw (
+                        '기존 WebView2 AdditionalBrowserArguments machine policy와 ' +
+                        "충돌합니다: $webViewPolicyName"
+                    )
+                }
+                New-ItemProperty -LiteralPath $webViewPolicyPath `
+                    -Name $webViewPolicyName -PropertyType String -Value '' |
+                    Out-Null
+                $webViewPolicyValueCreated = $true
+            }
+            $setWebViewNetworkArguments = {
+                param([string]$Arguments)
+
+                $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $Arguments
+                if ($isElevated) {
+                    Set-ItemProperty -LiteralPath $webViewPolicyPath `
+                        -Name $webViewPolicyName -Value $Arguments
+                    $policyValue = (
+                        Get-Item -LiteralPath $webViewPolicyPath
+                    ).GetValue($webViewPolicyName)
+                    if ($policyValue -ne $Arguments) {
+                        throw (
+                            'WebView2 machine policy readback이 요청한 browser arguments와 ' +
+                            '일치하지 않습니다.'
+                        )
+                    }
+                }
+            }
             $pythonExe = Join-Path $root '.venv\Scripts\python.exe'
             $proxyScript = Join-Path $root 'scripts\selftest_http_proxy.py'
             if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
@@ -166,7 +225,7 @@ foreach ($key in $plan) {
             $env:HWPXFILLER_HOME = Join-Path $evidenceDir 'home-network-control'
             $env:HWPX_SELFTEST_OUT = $networkControlOut
             $env:HWPX_SELFTEST_OFFLINE_PROBE = '1'
-            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = (
+            & $setWebViewNetworkArguments (
                 "--proxy-server=http://127.0.0.1:$proxyPort"
             )
             $networkControl = Start-Process -FilePath $exe -Wait -PassThru `
@@ -233,7 +292,7 @@ foreach ($key in $plan) {
 
             $env:HWPXFILLER_HOME = Join-Path $evidenceDir 'home-offline'
             $env:HWPX_SELFTEST_OUT = $selftestOut
-            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = (
+            & $setWebViewNetworkArguments (
                 "--proxy-server=127.0.0.1:$proxyPort --disable-background-networking"
             )
             $selftest = Start-Process -FilePath $exe -Wait -PassThru `
@@ -311,6 +370,7 @@ foreach ($key in $plan) {
                 )
                 network_control_proxy_observed = $true
                 network_control_target = $proxyHit.target
+                network_isolation_mechanism = $networkIsolationMechanism
                 dead_proxy_port = $proxyPort
                 offline_external_fetch_blocked = $evidence.runtime.external_fetch_blocked
             } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (
@@ -321,6 +381,37 @@ foreach ($key in $plan) {
             if ($null -ne $proxyProcess -and -not $proxyProcess.HasExited) {
                 Stop-Process -Id $proxyProcess.Id -Force
                 $proxyProcess.WaitForExit()
+            }
+            if ($webViewPolicyValueCreated) {
+                Remove-ItemProperty -LiteralPath $webViewPolicyPath `
+                    -Name $webViewPolicyName -ErrorAction Stop
+                $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+                if ($policyKey.GetValueNames() -contains $webViewPolicyName) {
+                    throw (
+                        '임시 WebView2 machine policy value cleanup을 확인하지 못했습니다: ' +
+                        $webViewPolicyName
+                    )
+                }
+            }
+            if (
+                $webViewPolicyKeyCreated -and
+                (Test-Path -LiteralPath $webViewPolicyPath -PathType Container)
+            ) {
+                $policyKey = Get-Item -LiteralPath $webViewPolicyPath
+                if (
+                    $policyKey.GetValueNames().Count -eq 0 -and
+                    $policyKey.SubKeyCount -eq 0
+                ) {
+                    Remove-Item -LiteralPath $webViewPolicyPath -Force -ErrorAction Stop
+                    if (Test-Path -LiteralPath $webViewPolicyPath) {
+                        throw '임시 WebView2 machine policy key cleanup을 확인하지 못했습니다.'
+                    }
+                } else {
+                    throw (
+                        '임시 WebView2 machine policy key에 예상 밖 값 또는 subkey가 생겨 ' +
+                        '안전하게 제거할 수 없습니다.'
+                    )
+                }
             }
             [Environment]::SetEnvironmentVariable('Path', $savedProcessPath, 'Process')
             [Environment]::SetEnvironmentVariable(
