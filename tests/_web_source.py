@@ -58,12 +58,11 @@ LEAF_ESM_FILES = (
     "segview.js",
 )
 
-#: 잎 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
-COMPAT_MODULE = "compat.js"
-
-#: 아직 ESM이 아니라 entry가 실행 순서대로 side-effect import하는 IIFE 21개.
-LEGACY_JS_FILES = (
-    "bridge.js",
+#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 15개. 잎과 같은 규칙을 따른다 — entry가 직접
+#: 싣지 않고 중앙 compat이 끌어오며, 임시 전역 별칭도 거기서만 만들어진다. 순서는 N-04까지
+#: entry가 싣던 실행 순서 그대로다(계약이 아니라 **기록**이다: 이제 평가 순서는 compat의
+#: import 그래프가 정한다).
+SERVICE_ESM_FILES = (
     "theme.js",
     "personalization.js",
     "preserve.js",
@@ -79,6 +78,18 @@ LEGACY_JS_FILES = (
     "intent.js",
     "grouplist.js",
     "editor_entry.js",
+)
+
+#: compat을 통해 제품 그래프에 닿는 ESM 모듈 전체(N-04 잎 4 + N-05 서비스 15).
+ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES)
+
+#: ESM 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
+COMPAT_MODULE = "compat.js"
+
+#: 아직 ESM이 아니라 entry가 실행 순서대로 side-effect import하는 IIFE 6개.
+#: ``bridge.js``는 N-07, 화면 넷과 ``app.js``는 N-06이 각각 가져간다.
+LEGACY_JS_FILES = (
+    "bridge.js",
     "screens/library.js",
     "screens/editor.js",
     "screens/job.js",
@@ -184,12 +195,53 @@ def evaluated_modules(entry: str) -> tuple[str, ...]:
     return tuple(names)
 
 
+def module_imports(source: str) -> tuple[str, ...]:
+    """모듈이 정적으로 끌어오는 **모든** import 경로를 문서 순서대로 읽는다.
+
+    :func:`side_effect_imports`는 ``import "x";`` 형태만 센다. ESM 전환이 진행되면서 모듈은
+    ``import { X } from "x";``로 옮겨가는데, 그 둘을 같은 눈으로 보지 않으면 "entry 목록에서
+    사라졌다"는 사실을 아무도 말하지 않는 창이 생긴다 — ``in`` 단언만 깨지고 ``not in``
+    단언은 애초에 없기 때문이다. 도달성을 묻는 계약은 이 함수로 물어야 한다.
+    """
+    return tuple(
+        re.findall(
+            r'(?m)^\s*import\s+(?:[^"\';]*?\s+from\s+)?["\']([^"\']+)["\'];',
+            source,
+        )
+    )
+
+
+def compat_imports() -> tuple[str, ...]:
+    """중앙 compat이 끌어오는 ``../js/`` 모듈 이름을 import 순서대로 읽는다."""
+    prefix = "../js/"
+    return tuple(
+        path.removeprefix(prefix)
+        for path in module_imports(SOURCE_COMPAT.read_text(encoding="utf-8"))
+        if path.startswith(prefix)
+    )
+
+
+def reaches_product_graph(name: str) -> bool:
+    """모듈이 제품 그래프에 **실제로 닿는지** 묻는다 — entry 직접이든 compat 경유든.
+
+    "이 파일이 앱에 실리는가"를 ``imported_js(entry)`` 로 묻던 계약들의 후계다. 그 질문은
+    파일이 entry의 bare import 목록에 있는지를 봤는데, ESM으로 옮겨간 모듈은 그 목록에서
+    사라지므로 같은 문자열 검사로는 "안 실린다"와 "이름이 옮겨졌다"를 구별하지 못한다.
+    """
+    if name in ESM_FILES:
+        return name in compat_imports() and COMPAT_MODULE in evaluated_modules(
+            SOURCE_ENTRY.read_text(encoding="utf-8")
+        )
+    return name in imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+
+
 def evaluation_site(name: str) -> str:
     """모듈 이름을 **제품 entry에서 실제로 평가되는 지점**의 이름으로 옮긴다.
 
-    "공유 헬퍼가 소비 화면보다 먼저 실행되는가"를 묻던 계약들은 잎 모듈 파일 이름을 entry
-    순서에서 찾았다. N-04 뒤 잎 넷은 entry가 직접 싣지 않고 중앙 compat이 끌어오므로, 같은
-    질문의 답은 잎 파일이 아니라 compat의 자리에 있다. 이 함수가 그 옮김을 한 곳에 둔다 —
-    각 테스트가 따로 ``compat.js``를 하드코딩하면 다음 잎이 옮겨갈 때 조용히 낡는다.
+    "공유 헬퍼가 소비 화면보다 먼저 실행되는가"를 묻던 계약들은 모듈 파일 이름을 entry
+    순서에서 찾았다. N-04의 잎 넷과 N-05의 서비스 열다섯은 entry가 직접 싣지 않고 중앙
+    compat이 끌어오므로, 같은 질문의 답은 그 파일이 아니라 compat의 자리에 있다. 이 함수가
+    그 옮김을 한 곳에 둔다 — 각 테스트가 따로 ``compat.js``를 하드코딩하면 다음 모듈이
+    옮겨갈 때 조용히 낡는다.
     """
-    return COMPAT_MODULE if name in LEAF_ESM_FILES else name
+    return COMPAT_MODULE if name in ESM_FILES else name

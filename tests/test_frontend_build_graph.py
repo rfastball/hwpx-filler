@@ -13,15 +13,17 @@ from _web_source import (
     ALL_CSS_FILES,
     COMPAT_ENTRY_POSITION,
     COMPAT_MODULE,
-    LEAF_ESM_FILES,
+    ESM_FILES,
     LEGACY_JS_FILES,
     SOURCE_COMPAT,
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     SOURCE_ROOT,
+    compat_imports,
     entry_js_manifest,
     evaluated_modules,
+    module_imports,
     side_effect_imports,
 )
 
@@ -43,28 +45,48 @@ EXPECTED_CSS_FILES = {
     "tail.css",
     "tokens.css",
 }
-#: N-04에서 중앙 compat 한 곳이 만드는 임시 전역 별칭 — 잎 넷의 named export와 1:1이다.
+#: ESM 모듈이 내는 공개 이름 — 파일당 정확히 하나. 평범한 named export와 factory가 섞여
+#: 있고, 그 갈림은 자의가 아니다: 의존이 다른 ESM 모듈뿐이면 named export, 아직 전역인
+#: ``Bridge``/``Nav``를 쓰거나 factory 산물을 주입받아야 하면 ``create*`` factory다.
+EXPECTED_ESM_EXPORTS = {
+    # N-04 잎 넷
+    "copy.js": "Copy",
+    "esc.js": "escHtml",
+    "guard.js": "Guard",
+    "segview.js": "SegView",
+    # N-05 서비스 — 포트가 필요 없어 모듈 평가가 곧 싱글턴인 일곱
+    "popover.js": "Popover",
+    "preserve.js": "Preserve",
+    "intent.js": "Intent",
+    "undo_toast.js": "UndoToast",
+    "modal.js": "Modal",
+    "surface_sheet.js": "SurfaceSheet",
+    "grouplist.js": "GroupList",
+    # N-05 서비스 — 포트를 받아 중앙에서 한 번 구성되는 여덟
+    "theme.js": "createTheme",
+    "personalization.js": "createPersonalization",
+    "sheet_picker.js": "createSheetPicker",
+    "pathtrack.js": "createPathTrack",
+    "relink.js": "createRelink",
+    "datazone.js": "createDataZone",
+    "data_picker.js": "createDataPicker",
+    "editor_entry.js": "createEditorEntry",
+}
+
+#: 중앙 compat 한 곳이 만드는 임시 전역 별칭 19개 — ESM 모듈 19개와 1:1이다.
+#: factory 모듈의 별칭 이름은 export 이름(``createTheme``)이 아니라 **구성된 서비스의 이름**
+#: (``Theme``)이다. 소비자(화면·앱 셸·Python 프로브)가 그 이름으로 읽기 때문이다.
 EXPECTED_CENTRAL_COMPAT_GLOBALS = {
     "Copy",
     "Guard",
     "SegView",
     "escHtml",
-}
-
-#: 아직 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 23개.
-EXPECTED_LEGACY_GLOBALS = {
-    "AppCloseGuard",
-    "Bridge",
     "DataPicker",
     "DataZone",
     "EditorEntry",
-    "EditorScreen",
     "GroupList",
     "Intent",
-    "JobScreen",
-    "LibraryScreen",
     "Modal",
-    "Nav",
     "PathTrack",
     "Personalization",
     "Popover",
@@ -74,11 +96,22 @@ EXPECTED_LEGACY_GLOBALS = {
     "SurfaceSheet",
     "Theme",
     "UndoToast",
+}
+
+#: 아직 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 8개.
+#: ``Bridge``·``__push``는 N-07, 화면 넷과 ``Nav``·``AppCloseGuard``는 N-06이 가져간다.
+EXPECTED_LEGACY_GLOBALS = {
+    "AppCloseGuard",
+    "Bridge",
+    "EditorScreen",
+    "JobScreen",
+    "LibraryScreen",
+    "Nav",
     "WorkbenchScreen",
     "__push",
 }
 
-#: 런타임 전역 표면 전체 — N-04는 생산 **자리**만 옮기고 수량은 27 그대로다.
+#: 런타임 전역 표면 전체 — N-04·N-05는 생산 **자리**만 옮기고 수량은 27 그대로다.
 EXPECTED_RUNTIME_GLOBALS = (
     EXPECTED_LEGACY_GLOBALS | EXPECTED_CENTRAL_COMPAT_GLOBALS
 )
@@ -207,29 +240,42 @@ def test_product_entry_is_one_module_with_ordered_side_effect_graph() -> None:
     )
 
 
-def test_converted_leaves_are_esm_and_own_no_globals() -> None:
-    """N-04 잎 넷은 IIFE도 전역 생산자도 아니고 자기 named export 하나만 낸다.
+def test_converted_modules_are_esm_and_own_no_globals() -> None:
+    """ESM 19개는 IIFE도 전역 생산자도 아니고 자기 공개 이름 하나만 낸다.
 
-    M1의 "25 IIFE 전수"를 이 후계가 잇는다. 여기서 수량만 세면 잎이 export를 내면서
+    M1의 "25 IIFE 전수"를 이 후계가 잇는다. 여기서 수량만 세면 모듈이 export를 내면서
     ``window.SegView`` 도 같이 남기는 이중 유지가 통과한다 — 그래서 파일별로 IIFE 0,
-    ``window``/``globalThis`` 접촉 0, 정확한 export 이름을 함께 단언한다.
-    """
-    expected_exports = {
-        "copy.js": "Copy",
-        "esc.js": "escHtml",
-        "guard.js": "Guard",
-        "segview.js": "SegView",
-    }
-    assert set(expected_exports) == set(LEAF_ESM_FILES)
+    자기 전역 write 0, 정확한 export 이름을 함께 단언한다.
 
-    for name in LEAF_ESM_FILES:
-        path = SOURCE_JS_DIR / name
-        source = path.read_text(encoding="utf-8")
+    잎 넷과 달리 서비스 열다섯은 표준 Web API(``window.addEventListener``·``window.alert``·
+    ``window.pywebview`` 등)를 정당하게 쓴다. 그래서 "``window.`` 문자열 0"으로는 셀 수 없고,
+    금지 대상은 **제품 전역 이름**이다. 그 목록을 :data:`EXPECTED_RUNTIME_GLOBALS` 에서
+    가져오므로, 새 제품 전역이 생기면 이 음성 검사도 저절로 넓어진다.
+    """
+    assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
+    assert len(ESM_FILES) == 19
+
+    product_globals = re.compile(
+        r"\b(?:window|globalThis)\.(?:"
+        + "|".join(sorted(map(re.escape, EXPECTED_RUNTIME_GLOBALS)))
+        + r")\b"
+    )
+
+    for name in ESM_FILES:
+        source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         assert not re.search(r"(?m)^\(function \(\) \{", source), (
-            f"{name} 이 아직 IIFE 로 감싸져 있습니다 — N-04 는 true ESM 입니다."
+            f"{name} 이 아직 IIFE 로 감싸져 있습니다 — N-04·N-05 는 true ESM 입니다."
         )
-        assert "window." not in source and "globalThis" not in source, (
-            f"{name} 이 전역을 직접 읽거나 씁니다 — 잎 모듈은 window 를 모릅니다."
+        assert not re.search(
+            r"(?m)^\s*(?:window|globalThis)\.[A-Za-z_$][A-Za-z0-9_$]*\s*=", source
+        ), f"{name} 이 자기 전역을 만듭니다 — 별칭은 중앙 compat 하나가 만듭니다."
+        leaked = product_globals.findall(source)
+        assert not leaked, (
+            f"{name} 이 제품 전역을 직접 조회합니다: {sorted(set(leaked))} — "
+            "의존은 import 나 명시적 주입으로 드러나야 합니다."
+        )
+        assert "Object.assign(window" not in source.replace(" ", ""), (
+            f"{name} 이 window 에 일괄 대입합니다."
         )
         exported = set(
             re.findall(
@@ -238,11 +284,80 @@ def test_converted_leaves_are_esm_and_own_no_globals() -> None:
                 source,
             )
         )
-        assert exported == {expected_exports[name]}, (
+        assert exported == {EXPECTED_ESM_EXPORTS[name]}, (
             f"{name} 의 공개 표면이 {sorted(exported)} 입니다 — "
-            f"{expected_exports[name]} 하나여야 합니다."
+            f"{EXPECTED_ESM_EXPORTS[name]} 하나여야 합니다."
         )
         assert "export default" not in source, f"{name} 이 default export 를 냅니다."
+
+
+def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
+    """서비스 간·잎 의존이 **그래프에 적힌 단방향 간선**이다(암묵 로드 순서의 후계).
+
+    N-05 전에는 ``modal.js`` 가 ``window.Popover`` 를, 다섯 파일이 ``window.escHtml`` 을
+    모듈 로드 시점에 붙들었다. 그 계약들은 "누가 먼저 실리는가"를 entry 순서에서 물었는데,
+    그 질문은 이제 import 문 자체가 답한다.
+    """
+    expected_edges = {
+        "modal.js": {"./popover.js"},
+        "surface_sheet.js": {"./modal.js"},
+        "grouplist.js": {"./esc.js", "./popover.js", "./modal.js"},
+        "datazone.js": {"./esc.js", "./popover.js", "./intent.js"},
+        "pathtrack.js": {"./esc.js"},
+        "relink.js": {"./modal.js"},
+        "sheet_picker.js": {"./esc.js", "./modal.js"},
+        "data_picker.js": {"./esc.js", "./modal.js", "./preserve.js"},
+        "editor_entry.js": {"./modal.js"},
+        "segview.js": {"./esc.js"},
+    }
+
+    for name, expected in expected_edges.items():
+        source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
+        actual = {path for path in module_imports(source) if path.startswith("./")}
+        assert actual == expected, (
+            f"{name} 의 모듈 간선이 {sorted(actual)} 입니다 — {sorted(expected)} 여야 합니다."
+        )
+
+    #: 간선이 없어야 하는 모듈은 정말 없어야 한다(잎다움의 음성 대조).
+    for name in ("copy.js", "esc.js", "guard.js", "popover.js", "preserve.js",
+                 "intent.js", "undo_toast.js", "theme.js", "personalization.js"):
+        source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
+        assert not [p for p in module_imports(source) if p.startswith("./")], (
+            f"{name} 이 다른 제품 모듈을 import 합니다 — 잎이 아니게 됐습니다."
+        )
+
+
+def test_esm_module_graph_has_no_cycles() -> None:
+    """제품 모듈 그래프에 순환이 0이다.
+
+    ``editor_entry`` 가 ``window.Nav.go`` 를 읽고 ``app.js`` 가 서비스들을 읽는 역간선이
+    N-05의 유일한 순환 후보였다. compat이 지연 호출 콜백으로 그 간선을 그래프 밖에 두므로
+    여기서 0이 나온다 — 값으로 캡처하는 구현으로 되돌아가면 이 게이트가 잡는다.
+    """
+    graph = {
+        name: [
+            path.removeprefix("./")
+            for path in module_imports((SOURCE_JS_DIR / name).read_text(encoding="utf-8"))
+            if path.startswith("./")
+        ]
+        for name in ESM_FILES
+    }
+    graph[COMPAT_MODULE] = list(compat_imports())
+
+    seen: dict[str, int] = {}
+
+    def visit(node: str, trail: tuple[str, ...]) -> None:
+        if seen.get(node) == 1:
+            raise AssertionError(f"import 순환: {' -> '.join((*trail, node))}")
+        if seen.get(node) == 2:
+            return
+        seen[node] = 1
+        for nxt in graph.get(node, ()):
+            visit(nxt, (*trail, node))
+        seen[node] = 2
+
+    for name in graph:
+        visit(name, ())
 
 
 def test_segview_imports_the_escaper_instead_of_reading_a_global() -> None:
@@ -254,8 +369,8 @@ def test_segview_imports_the_escaper_instead_of_reading_a_global() -> None:
     ), "segview.js 가 escHtml 을 ESM import 하지 않습니다."
 
 
-def test_temporary_leaf_aliases_have_exactly_one_central_producer() -> None:
-    """네 별칭은 중앙 compat 한 파일에서만 만들어진다(D-05 단일 생산자).
+def test_temporary_aliases_have_exactly_one_central_producer() -> None:
+    """열아홉 별칭은 중앙 compat 한 파일에서만 만들어진다(D-05 단일 생산자).
 
     파일마다 되살리면 소비자는 그대로 동작하므로 **동작 테스트로는 안 보인다**. 생산 자리를
     세는 이 게이트만 그 회귀를 잡는다.
@@ -267,11 +382,10 @@ def test_temporary_leaf_aliases_have_exactly_one_central_producer() -> None:
 
     assert SOURCE_COMPAT.name == COMPAT_MODULE
     assert sorted(producers) == sorted(EXPECTED_CENTRAL_COMPAT_GLOBALS)
-    assert len(producers) == len(set(producers)) == 4
-    for name in LEAF_ESM_FILES:
-        assert f'from "../js/{name}"' in compat_source, (
-            f"compat 이 {name} 을 import 하지 않습니다 — 별칭이 export 와 어긋납니다."
-        )
+    assert len(producers) == len(set(producers)) == 19
+    assert set(compat_imports()) == set(ESM_FILES), (
+        "compat 의 import 집합이 ESM 모듈 전수와 어긋납니다 — 별칭이 export 와 갈라집니다."
+    )
 
     elsewhere = {
         f"{path.relative_to(SOURCE_ROOT).as_posix()}:{alias}"
@@ -284,21 +398,50 @@ def test_temporary_leaf_aliases_have_exactly_one_central_producer() -> None:
         if alias in EXPECTED_CENTRAL_COMPAT_GLOBALS
     }
     assert not elsewhere, (
-        "잎 전역 별칭이 중앙 compat 밖에서 다시 만들어집니다: " + ", ".join(sorted(elsewhere))
+        "전역 별칭이 중앙 compat 밖에서 다시 만들어집니다: " + ", ".join(sorted(elsewhere))
     )
 
 
+def test_each_service_is_constructed_exactly_once_in_compat() -> None:
+    """포트를 받는 factory 여덟은 compat 에서 **정확히 한 번** 불린다.
+
+    두 번 부르면 ``pathtrack`` 의 위임 리스너가 겹치고 ``data_picker`` 의 ``onPush`` 가
+    누적된다. 서비스 안에 재호출 가드를 두는 대신 호출 자리를 하나로 묶었으므로, 그 단일성은
+    여기서 세야 한다.
+    """
+    compat_source = SOURCE_COMPAT.read_text(encoding="utf-8")
+    factories = sorted(
+        export for name, export in EXPECTED_ESM_EXPORTS.items()
+        if export.startswith("create")
+    )
+
+    assert len(factories) == 8
+    for factory in factories:
+        calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
+        assert len(calls) == 1, (
+            f"compat 이 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
+        )
+
+    #: `Nav` 판독은 지연 호출 콜백 한 줄에만 산다(순환 차단의 실제 자리).
+    assert re.search(r"const navigate = \(\.\.\.args\) => window\.Nav\.go\(\.\.\.args\);",
+                     compat_source), "navigate 가 지연 호출 콜백이 아닙니다."
+    assert compat_source.count("window.Nav") == 1
+    #: `bridge` 는 객체째 넘긴다 — 메서드를 뽑으면 Python 프로브의 스텁 교체가 우회된다.
+    assert re.search(r"const bridge = window\.Bridge;", compat_source)
+    assert compat_source.count("window.Bridge") == 1
+
+
 def test_remaining_legacy_iifes_and_total_global_surface_are_unchanged() -> None:
-    """남은 IIFE 21개는 그대로 IIFE 이고, 제품 전역 표면 전체는 여전히 27개다."""
+    """남은 IIFE 6개는 그대로 IIFE 이고, 제품 전역 표면 전체는 여전히 27개다."""
     legacy_scripts = tuple(sorted(SOURCE_JS_DIR.rglob("*.js")))
     legacy_only = tuple(
         path
         for path in legacy_scripts
-        if path.relative_to(SOURCE_JS_DIR).as_posix() not in LEAF_ESM_FILES
+        if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
     assert len(legacy_scripts) == 25
-    assert len(legacy_only) == 21
+    assert len(legacy_only) == 6
     assert {
         path.relative_to(SOURCE_JS_DIR).as_posix() for path in legacy_only
     } == set(LEGACY_JS_FILES)
@@ -321,17 +464,17 @@ def test_remaining_legacy_iifes_and_total_global_surface_are_unchanged() -> None
     }
 
     assert legacy_globals == EXPECTED_LEGACY_GLOBALS
-    assert len(legacy_globals) == 23
+    assert len(legacy_globals) == 8
     assert legacy_globals.isdisjoint(EXPECTED_CENTRAL_COMPAT_GLOBALS)
     assert len(EXPECTED_RUNTIME_GLOBALS) == 27
 
 
 def test_compat_is_evaluated_before_every_legacy_consumer() -> None:
-    """compat 은 소비 IIFE 보다 먼저 평가되고, 나머지 21개의 상대 순서는 보존된다.
+    """compat 은 소비 IIFE 보다 먼저 평가되고, 나머지 6개의 상대 순서는 보존된다.
 
     static import 는 entry 본문보다 먼저 평가되므로 compat 이 앞자리에 있는 한 별칭이 서기
-    전에 읽히는 창은 없다. 잎이 직접 import 되지 않는지도 같이 본다 — 남아 있으면 모듈이
-    두 경로로 그래프에 들어와 평가 순서 추론이 무의미해진다.
+    전에 읽히는 창은 없다. ESM 모듈이 entry 에 직접 남아 있지 않은지도 같이 본다 — 남아
+    있으면 모듈이 두 경로로 그래프에 들어와 평가 순서 추론이 무의미해진다.
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
 
@@ -344,4 +487,4 @@ def test_compat_is_evaluated_before_every_legacy_consumer() -> None:
     )
     assert set(modules) - {COMPAT_MODULE} == set(LEGACY_JS_FILES)
     assert tuple(name for name in modules if name != COMPAT_MODULE) == LEGACY_JS_FILES
-    assert not set(modules) & set(LEAF_ESM_FILES)
+    assert not set(modules) & set(ESM_FILES)
