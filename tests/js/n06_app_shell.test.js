@@ -177,6 +177,10 @@ function makeDeps() {
         bridgeLog.push([id, action, payload]);
         return Promise.resolve({});
       },
+      /* N-07 — 닫기 두 호출은 셸이 `window.pywebview.api` 를 직접 뒤지는 대신 브리지 표면을
+         쓴다. 대역도 실물과 같은 자리로 위임해야 "셸이 브리지를 거친다"는 사실이 검사된다. */
+      confirmWindowClose() { return window.pywebview.api.confirm_window_close(); },
+      cancelWindowClose() { return window.pywebview.api.cancel_window_close(); },
     },
     Theme: {
       mode: "system",

@@ -45,14 +45,62 @@
   경로 추적
   (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`), 클립보드·설정
   (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_master_width`),
-  시트 적재(`load_data_sheet`). 이 경로는 action registry **밖**이므로, 새 직접 메서드를
+  시트 적재(`load_data_sheet`),
+  네이티브 X 닫기 확인의 처분 통보(`confirm_window_close`, `cancel_window_close` — N-07에서
+  앱 셸이 `window.pywebview.api`를 직접 부르던 자리를 브리지 표면
+  `Bridge.confirmWindowClose()`/`cancelWindowClose()`로 옮겼다. 프런트에서
+  `window.pywebview.api`를 직접 조회하는 파일은 이제 `frontend/js/bridge.js` 하나다).
+  이 경로는 action registry **밖**이므로, 새 직접 메서드를
   추가하면 이 목록과 payload 검증 책임(메서드 본문)을 함께 갱신한다.
   `pick_data_file`/`load_data_sheet` 의 성사 반환은 **마운트 descriptor**
   (`{label, path, sheet, rows}` — U2 §2.7 3행)다: 데이터 선택 면이 닫히지 않고 「현재
   데이터」를 재진술하고 「이 데이터 고정」을 세우는 근거가 이 호출의 결과여야 한다(다음
   푸시 도착에 기대면 발신 순서 의존 — [[bridge-call-ordering-contract]] 결함류).
 
-Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다. 사용자 확인(파괴 전이의
+### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
+
+Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름
+(`window.__push`·`window.AppCloseGuard.prompt`·`window.Personalization.apply`·
+`window.Theme.apply`·`window.alert`)을 Python이 직접 알고 불렀고, 그 결합은 두 방향으로
+조용히 썩었다: 웹이 이름을 바꾸면 Python의 문자열이 아무 말 없이 빗나가고
+(`… && ….prompt(payload)`는 부재를 **falsy 무동작**으로 삼켰다), Python이 웹 내부 배치를
+알아야 하므로 링 경계가 문자열 안에 숨었다.
+
+```js
+window.__hwpx.describe()
+// → { protocol: "hwpx-product", version: 1,
+//     capabilities: ["snapshot", "close-request", "preferences", "notice"] }
+window.__hwpx.deliver({ version: 1, event, payload })   // → 동기 · JSON 직렬화 가능한 결과
+```
+
+| 사건 | payload | 종전 내부 호출 | 의미 |
+|---|---|---|---|
+| `snapshot` | `{screen, snapshot}` | `window.__push` | 관측 푸시. `screen`은 **불투명한 라우팅 값** |
+| `close-request` | `{state}` | `AppCloseGuard.prompt` | 비동기 확인 모달을 **시작**만 한다 |
+| `preferences` | `{personalization, theme?}` | `Personalization.apply` + `Theme.apply` | 창이 숨은 동안 주입. `theme`는 저장값이 light/dark일 때만 실린다 |
+| `notice` | `{message}` | `window.alert` | 발사 후 망각. 내구성 기록은 Python이 이미 마쳤다 |
+
+능력 목록과 핸들러 표는 **같은 레지스트리**에서 나온다 — 광고했는데 처리기가 없는 상태를
+구조적으로 불가능하게 만든다. 미지 버전·미지 사건·형태 위반·처리기 부재는 전부 안정 코드로
+**시끄럽게** 실패하고, v1으로 강등되는 조용한 경로는 없다. 서술자와 실패 객체는 화면 id·
+모듈 이름·DOM id를 담지 않는다(담는 순간 이름만 바뀐 결합이 된다).
+
+`preferences`가 두 호출을 하나로 접었지만 **귀속은 잃지 않는다**: 처리기가 실제로 적용한
+조각 이름 배열(`applied`)을 돌려주고 파사드가 빠진 조각을 `missing`으로 지목하므로,
+"개인화가 죽었다"와 "테마가 죽었다"는 여전히 다른 경보 문장으로 나온다.
+
+`deliver`는 **절대 await 대상이 아니다**. 호출자는 `evaluate_js` 뒤에 앉은 Python 스레드라
+Promise를 돌려주면 해소를 기다리지 못한 채 형태를 모르는 값을 받는다. 비동기가 본질인
+사건은 "시작했다"는 사실만 돌려준다.
+
+Python 쪽 어댑터는 `webapp/product_api.py`이고, 표현식 조립·서술자 검증·결과 판정을 그
+파일 하나가 소유한다 — `app.py`는 JS 문자열을 만들지 않는다.
+
+`window.Bridge`·`window.__push`를 비롯한 임시 전역 27개는 **selftest 프로브 71곳**이 아직
+쓰므로 남아 있다(N-08·N-09 소유, 제거 책임 N-10). 제품 코드가 그것들을 fallback으로 쓰는
+경로는 없다.
+
+사용자 확인(파괴 전이의
 `needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**
 (`web/js/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
 창 수명 같은 나머지 네이티브 동작도 링2 브리지가 소유한다. 링0·링1이 WebView2 또는 DOM을

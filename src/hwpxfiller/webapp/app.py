@@ -20,7 +20,7 @@ import sys
 import threading
 from pathlib import Path
 
-from . import boot_budget, settings
+from . import boot_budget, product_api, settings
 from .action_registry import validate_dispatch
 from ..web_artifact import (
     VerifiedWebArtifact,
@@ -218,10 +218,14 @@ class WebFrontend:
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> None:
+        """제품 공개 경계 하나로만 나간다(N-07 · D-06) — 내부 이름 `window.__push` 는 모른다.
+
+        종전과 같이 **발사 후 망각**이다: 반환을 검사하지 않는다. 느린 렌더러에서 ack 를
+        기다리기 시작하면 이 스레드가 화면 갱신마다 매달린다.
+        """
         if self._window is None:
             return
-        payload = json.dumps(snapshot, ensure_ascii=False)
-        self._window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
+        product_api.ProductApiClient.for_window(self._window).push(screen, snapshot)
 
     # -------------------------------------------------- 웹→Python (js_api)
     def initial(self, screen: str) -> dict:
@@ -442,15 +446,19 @@ class WebFrontend:
         return {"armed": bool(reasons), "reasons": reasons}
 
     def _show_close_prompt(self, state: dict) -> None:
-        """closing 콜백 바깥 스레드에서 웹 확인창을 연다(WinForms UI 재진입 회피)."""
+        """closing 콜백 바깥 스레드에서 웹 확인창을 연다(WinForms UI 재진입 회피).
+
+        종전 표현(``window.AppCloseGuard && window.AppCloseGuard.prompt(…)``)은 가드 **부재를
+        falsy 무동작으로 삼켰다** — 확인창이 안 뜬 채 창만 남고 아무도 그 사실을 몰랐다.
+        제품 경계는 부재를 구조화된 실패로 돌려주므로 여기서 시끄럽게 만든다. 실패 시
+        처분은 종전 그대로 **안전측**이다: 창 유지 + 대기 해제 + 내구성 경보(fail-open 금지).
+        """
         if self._window is None:
             self._close_prompt_open = False
             return
         try:
-            payload = json.dumps(state, ensure_ascii=False)
-            self._window.evaluate_js(  # type: ignore[attr-defined]
-                f"window.AppCloseGuard && window.AppCloseGuard.prompt({payload})"
-            )
+            outcome = product_api.ProductApiClient.for_window(self._window).close_request(state)
+            outcome.raise_for_failure()
         except Exception as exc:  # noqa: BLE001 — 실패 시 안전측(창 유지)+loud
             self._close_prompt_open = False
             _alarm(f"종료 확인창 표시 실패: {exc!r}", self._window)
@@ -4015,15 +4023,16 @@ def _alarm(msg: str, window: "object | None" = None) -> None:
 
     내구성 채널은 settings.alert 가 소유한다(홈 경로·경보 로그가 거기 있고, settings 층 코드도
     같은 채널로 알려야 한다 — 순환 import 회피). 이 함수는 그 위에 창(JS alert) 계층만 얹는다.
-    JS alert 는 fire-and-forget(setTimeout) — evaluate_js 가 alert 해소를 기다리다
-    호출 스레드(loaded 핸들러·폴백 타이머)를 매달지 않게 한다."""
-    settings.alert(msg)
-    if window is not None:
-        try:
-            window.evaluate_js(  # type: ignore[attr-defined]
-                f"setTimeout(function(){{window.alert({json.dumps('[hwpx] ' + msg)})}},0)")
-        except Exception:  # noqa: BLE001  창이 그 정도로 죽었으면 alert 채널도 없다
-            pass
+    JS alert 는 fire-and-forget — 미루기는 이제 파사드가 진다(``notice`` 처리기를 다음 태스크로
+    넘긴다). evaluate_js 가 alert 해소를 기다리다 호출 스레드(loaded 핸들러·폴백 타이머)를
+    매달지 않는다는 성질은 그대로다.
+
+    창 계층의 실패로 **다시 경보하지 않는다** — 경보를 알리려다 경보를 내면 재귀한다.
+    그래서 판정은 버린다(내구성 채널이 이미 권위 있게 기록했다)."""
+    if window is None:
+        settings.alert(msg)
+        return
+    product_api.ProductApiClient.for_window(window).notice(msg)
 
 
 def _prepare_webview_profile(webview_root: Path) -> Path:
@@ -4193,26 +4202,25 @@ def main() -> int:
             settings.alert(f"부팅 완료 기록 저장 실패 — 다음 부팅도 넓은 예산: {exc!r}")
         err: "object | None" = None
         try:
-            personalization = {
-                "font_scale": settings.load_font_scale(),
-                "master_width": settings.load_master_width(),
-            }
-            personalized = window.evaluate_js(  # type: ignore[attr-defined]
-                "window.Personalization ? (window.Personalization.apply("
-                + json.dumps(personalization)
-                + "), true) : false"
+            # 종전 두 왕복(개인화·테마)이 제품 경계의 `preferences` 하나로 접혔다(N-07).
+            # 접었다고 **귀속을 잃지는 않는다**: 파사드가 실제로 적용한 조각 이름을 돌려주고
+            # 판정이 빠진 이름을 지목하므로, "개인화가 죽었다"와 "테마가 죽었다"는 여전히
+            # 다른 문장으로 나온다. 그 둘은 원인도 조치도 다르다.
+            client = product_api.ProductApiClient.for_window(window)
+            # 버전·능력을 **먼저 묻는다** — 미지 버전을 v1 로 강등해 조용히 절반만 적용하는
+            # 경로를 만들지 않는다(D-06). 실패는 예외로 올라와 아래 except 가 받는다.
+            client.describe((product_api.EVENT_PREFERENCES,))
+            outcome = client.preferences(
+                {
+                    "font_scale": settings.load_font_scale(),
+                    "master_width": settings.load_master_width(),
+                },
+                settings.load_theme(),
             )
-            if personalized is not True:
-                err = f"window.Personalization 부재(evaluate_js 반환={personalized!r})"
-            theme = settings.load_theme()
-            if theme in ("light", "dark"):
-                # Theme.apply(theme.js) 경유 — data-theme 설정 + themechange 발신으로 레일
-                # 라벨까지 재동기된다(직접 setAttribute 는 라벨을 어긋난 채 남겼다). loaded 는
-                # body 스크립트 실행 후라 window.Theme 실재가 계약 — 부재는 곧 주입 실패.
-                ok = window.evaluate_js(  # type: ignore[attr-defined]
-                    f"window.Theme ? (window.Theme.apply({json.dumps(theme)}), true) : false")
-                if ok is not True and err is None:
-                    err = f"window.Theme 부재(evaluate_js 반환={ok!r})"
+            # 테마는 저장값이 light/dark 일 때만 실린다 — 그 판정은 payload 조립이 진다.
+            # Theme.apply 경유라 data-theme 설정 + themechange 발신으로 레일 라벨까지 재동기된다.
+            if not outcome.ok:
+                err = outcome.failure_text
         except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — show 진행 후 경보
             err = exc
         try:

@@ -27,10 +27,10 @@ export function createAppShell({ Bridge, Theme, Personalization, DataPicker, scr
           cancelLabel: "계속 작업",
           danger: true,
         });
-        if (ok) await window.pywebview.api.confirm_window_close();
-        else await window.pywebview.api.cancel_window_close();
+        if (ok) await Bridge.confirmWindowClose();
+        else await Bridge.cancelWindowClose();
       } catch (err) {
-        await window.pywebview.api.cancel_window_close();
+        await Bridge.cancelWindowClose();
         window.alert("종료 확인을 처리하지 못해 창을 유지합니다: " +
           String((err && err.message) || err));
       } finally {

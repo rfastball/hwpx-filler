@@ -74,8 +74,16 @@ def test_native_close_guard_allows_clean_and_blocks_armed_session(tmp_path, monk
     calls: list[str] = []
 
     class FakeWindow:
+        """N-07 파사드가 선 창 — `deliver` 는 구조화된 성공을 돌려준다.
+
+        파사드가 **없는** 창(반환 ``None``)은 이제 조용한 무동작이 아니라 loud 실패이고,
+        그 갈래는 :func:`test_native_close_prompt_without_facade_is_loud_and_fails_closed`
+        가 따로 진다 — 여기서 그 상태를 쓰면 확인창 발신 자체가 검사되지 않는다.
+        """
+
         def evaluate_js(self, script):
             calls.append(script)
+            return {"ok": True, "event": "close-request", "started": True}
 
         def destroy(self):
             calls.append("destroy")
@@ -92,7 +100,10 @@ def test_native_close_guard_allows_clean_and_blocks_armed_session(tmp_path, monk
     frontend._window = FakeWindow()
     monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
     assert frontend._handle_window_closing() is False
-    assert calls and "AppCloseGuard.prompt" in calls[-1]
+    # N-07 — 발신 자리는 제품 경계 하나다. 내부 이름(`AppCloseGuard.prompt`)은 나오지 않는다.
+    assert calls and '"event": "close-request"' in calls[-1]
+    assert calls[-1].startswith("window.__hwpx")
+    assert "AppCloseGuard" not in calls[-1]
     # closing 이벤트가 확인 모달이 열린 동안 다시 와도 모달을 중복 생성하지 않는다.
     prompt_calls = len(calls)
     assert frontend._handle_window_closing() is False
@@ -102,6 +113,51 @@ def test_native_close_guard_allows_clean_and_blocks_armed_session(tmp_path, monk
     assert frontend.confirm_window_close() is True
     assert calls[-1] == "destroy"
     assert frontend._handle_window_closing() is None
+
+
+def test_native_close_prompt_without_facade_is_loud_and_fails_closed(tmp_path, monkeypatch):
+    """파사드 부재는 **조용한 무동작이 아니다**(N-07) — 창은 살고 경보가 남는다.
+
+    종전 표현 ``window.AppCloseGuard && window.AppCloseGuard.prompt(…)`` 은 가드가 없으면
+    falsy 로 아무 일도 하지 않았다: 확인창은 안 뜨고 창만 남았으며 아무도 그 사실을 몰랐다.
+    사용자가 X 를 눌렀는데 아무 반응이 없는 그 상태가 이 게이트가 막는 회귀다.
+
+    실패 처분은 여전히 **안전측**이다 — 닫기는 취소되고(fail-open 금지), 대기 표식은 걷혀
+    다음 X 가 새 판정을 받으며, 사유는 내구성 채널로 재진술된다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    _armed_workbench(frontend, tmp_path)
+
+    scripts: list[str] = []
+    alerts: list[str] = []
+
+    class FacadeLessWindow:
+        def evaluate_js(self, script):
+            scripts.append(script)
+            return None  # 파사드 부재 — evaluate_js 는 미정의 전역에 None 을 준다
+
+        def destroy(self):  # pragma: no cover — 여기 오면 fail-open 이다
+            raise AssertionError("파사드 부재인데 창이 닫혔습니다 — fail-open 회귀입니다.")
+
+    monkeypatch.setattr("hwpxfiller.webapp.settings.alert", alerts.append)
+
+    class ImmediateTimer:
+        daemon = False
+
+        def __init__(self, _delay, fn, args=()):
+            self.fn, self.args = fn, args
+
+        def start(self):
+            self.fn(*self.args)
+
+    frontend._window = FacadeLessWindow()
+    monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
+
+    assert frontend._handle_window_closing() is False  # 닫기 취소 = 창 유지
+    assert frontend._close_prompt_open is False, "대기 표식이 걸린 채 남으면 다음 X 가 죽는다"
+    assert alerts, "부재가 조용히 지나갔습니다 — 내구성 경보가 없습니다."
+    assert any("종료 확인창 표시 실패" in message for message in alerts)
+    assert any('"event": "close-request"' in script for script in scripts)
 
 
 def test_importing_webapp_screens_loads_no_qt():

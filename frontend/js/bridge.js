@@ -1,15 +1,35 @@
 /* 브리지 클라이언트 — pywebview.api(=Python WebFrontend)와 왕복. 화면-불가지.
-   웹→Python 은 dispatch/네이티브 메서드, Python→웹은 window.__push(screen, snapshot) 관측 푸시.
-   화면 모듈은 Bridge.onPush(screen, fn) 로 렌더러를 등록한다 — 브리지는 화면 로직을 모른다. */
-(function () {
+   웹→Python 은 dispatch/네이티브 호스트 메서드 **23개**(데이터·네이티브 21 + 창 닫기 확인 2),
+   Python→웹은 factory 가 돌려주는 `push(screen, snapshot)` 관측 푸시다.
+   화면 모듈은 `bridge.onPush(screen, fn)` 로 렌더러를 등록한다 — 브리지는 화면 로직을 모른다.
+
+   ## 이 파일이 유일한 백엔드 통로다(N-07)
+
+   `pywebview.api` 판독은 여기 말고 어디에도 없다. 종전엔 앱 셸이 창 닫기 확인 두 호출을,
+   테마·개인화가 준비 여부 판정을 각자 직접 만졌다 — 같은 호스트를 세 파일이 따로 아는 모양은
+   ①프로브가 브리지만 갈아끼워도 그 경로들이 실물로 새고 ②백엔드 계약 변경이 세 자리에서
+   따로 낡는다. 그래서 두 닫기 호출은 `confirmWindowClose`·`cancelWindowClose` 로, 준비 판정은
+   `hostReady()` 로 이 표면에 올라왔다.
+
+   ## factory 는 객체를 **살아 있는 채로** 돌려준다
+
+   Python selftest 가 프로퍼티를 교체해(`…​.call = stub`) 통로를 갈아끼우므로 소비자는 객체
+   참조를 들고 호출 시점에 메서드를 찾아야 한다. 여기서도, 소비자 쪽에서도 메서드를 값으로
+   뽑지 않는다 — 뽑는 순간 요청은 프로브에 걸렸는데 발신은 실물로 새는 자리가 생긴다. */
+export function createBridge() {
   // screen id → [fn, ...] — 한 채널 복수 구독(F8): 병존 기간 편집기가 tpl push 를 함께
   // 듣는다. 교체 의미의 재등록 소비자는 없다(전 화면이 자기 채널 1회 등록) — 덮어쓰기
   // 단일 슬롯이면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가 렌더를 잃는다.
   const renderers = {};
 
-  const Bridge = {
+  const bridge = {
     /** 화면 렌더러 등록 — Python 이 그 화면을 푸시하면 등록 순서대로 fn(snapshot) 이 불린다. */
     onPush(screen, fn) { (renderers[screen] = renderers[screen] || []).push(fn); },
+
+    /** 호스트(백엔드) 준비 여부 — 브라우저 단독 프리뷰면 거짓. 재시도·캐시 없는 순간 판정이다:
+     *  준비를 기다리는 일은 `pywebviewready` 이벤트가 지고, 여기선 "지금 호스트가 있는가"만
+     *  답한다. 이 술어가 없으면 소비자가 호스트 내부 형태를 직접 알아야 한다. */
+    hostReady() { return !!(window.pywebview && window.pywebview.api); },
 
     /** 화면 초기 상태 당김(부팅 1회). */
     initial(screen) { return window.pywebview.api.initial(screen); },
@@ -98,13 +118,19 @@
     /** 앱 글자 배율·셸 레이아웃 영속 — 모두 오리진 비의존 settings.json. */
     setFontScale(scale) { return window.pywebview.api.set_font_scale(scale); },
     setMasterWidth(width) { return window.pywebview.api.set_master_width(Math.round(width)); },
+
+    /** 네이티브 X 닫기 확인의 처분 통보(#218 G1) — 확인 모달의 3택 결과를 호스트에 되돌린다.
+     *  종전엔 앱 셸이 `pywebview.api` 를 직접 만졌다. 반환은 **그대로** 넘긴다(호출자가 await):
+     *  여기서 삼키면 닫기 실패가 조용해지고, 그것이 곧 "닫힌 줄 알았는데 안 닫힘"이다. */
+    confirmWindowClose() { return window.pywebview.api.confirm_window_close(); },
+    cancelWindowClose() { return window.pywebview.api.cancel_window_close(); },
   };
 
-  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출. 미구독 화면은 조용히
-  // 무시(등록 전 push 는 버려진다 — 부팅은 initial 당김이 정본).
-  window.__push = function (screen, snapshot) {
+  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 부르는 전역이 여기로 걸린다). 미구독 화면은
+  // 조용히 무시(등록 전 push 는 버려진다 — 부팅은 initial 당김이 정본).
+  function push(screen, snapshot) {
     for (const fn of renderers[screen] || []) fn(snapshot);
-  };
+  }
 
-  window.Bridge = Bridge;
-})();
+  return { bridge, push };
+}

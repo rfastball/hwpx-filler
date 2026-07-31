@@ -14,6 +14,7 @@ from _web_source import (
     COMPAT_MODULE,
     ESM_FILES,
     LEGACY_JS_FILES,
+    PRODUCT_API_GLOBAL,
     SOURCE_COMPAT,
     SOURCE_ENTRY,
     SOURCE_INDEX,
@@ -78,6 +79,8 @@ EXPECTED_ESM_EXPORTS = {
     "screens/job.js": "createJobScreen",
     "screens/workbench.js": "createWorkbenchScreen",
     "app.js": "createAppShell",
+    # N-07 브리지 — 마지막 IIFE. 산물 ``{bridge, push}`` 를 중앙이 한 번 구성해 나눠 준다.
+    "bridge.js": "createBridge",
 }
 
 #: 중앙 compat 한 곳이 만드는 임시 전역 별칭 25개. factory 모듈의 별칭 이름은 export 이름
@@ -113,15 +116,23 @@ EXPECTED_CENTRAL_COMPAT_GLOBALS = {
     "AppCloseGuard",
 }
 
-#: 아직 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 — ``bridge.js`` 하나(N-07 소유).
-EXPECTED_LEGACY_GLOBALS = {
+#: 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 — N-07에서 **0개**가 됐다.
+#: ``bridge.js``가 ESM factory가 되면서 ``Bridge``·``__push``의 생산 자리도 중앙 compat으로
+#: 옮겨갔다(아래 :data:`EXPECTED_BRIDGE_COMPAT_GLOBALS`).
+EXPECTED_LEGACY_GLOBALS: set[str] = set()
+
+#: N-07에서 compat이 생산을 이어받은 둘. 임시 전역이라는 지위는 그대로고(제거 책임 N-10),
+#: 바뀐 것은 **생산 자리**뿐이다 — 그래서 아래 총량 27은 변하지 않는다.
+EXPECTED_BRIDGE_COMPAT_GLOBALS = {
     "Bridge",
     "__push",
 }
 
-#: 런타임 전역 표면 전체 — N-04·N-05는 생산 **자리**만 옮기고 수량은 27 그대로다.
+#: 임시 런타임 전역 표면 전체 — N-04·N-05·N-06·N-07은 생산 **자리**만 옮기고 수량은 27 그대로다.
+#: 제품 공개 API :data:`PRODUCT_API_GLOBAL`은 여기 들지 않는다: 그것은 임시 별칭이 아니라
+#: N-10 이후에도 남는 **최종** 경계라 계정이 다르다(D-06).
 EXPECTED_RUNTIME_GLOBALS = (
-    EXPECTED_LEGACY_GLOBALS | EXPECTED_CENTRAL_COMPAT_GLOBALS
+    EXPECTED_BRIDGE_COMPAT_GLOBALS | EXPECTED_CENTRAL_COMPAT_GLOBALS
 )
 
 
@@ -261,7 +272,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     가져오므로, 새 제품 전역이 생기면 이 음성 검사도 저절로 넓어진다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 24
+    assert len(ESM_FILES) == 25
 
     product_globals = re.compile(
         r"\b(?:window|globalThis)\.(?:"
@@ -421,8 +432,13 @@ def test_temporary_aliases_have_exactly_one_central_producer() -> None:
     )
 
     assert SOURCE_COMPAT.name == COMPAT_MODULE
-    assert sorted(producers) == sorted(EXPECTED_CENTRAL_COMPAT_GLOBALS)
-    assert len(producers) == len(set(producers)) == len(EXPECTED_CENTRAL_COMPAT_GLOBALS) == 25
+    expected_producers = (
+        EXPECTED_CENTRAL_COMPAT_GLOBALS
+        | EXPECTED_BRIDGE_COMPAT_GLOBALS
+        | {PRODUCT_API_GLOBAL}
+    )
+    assert sorted(producers) == sorted(expected_producers)
+    assert len(producers) == len(set(producers)) == len(expected_producers) == 28
     assert set(compat_imports()) == set(ESM_FILES), (
         "compat 의 import 집합이 ESM 모듈 전수와 어긋납니다 — 별칭이 export 와 갈라집니다."
     )
@@ -457,7 +473,7 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
         if export.startswith("create")
     )
 
-    assert len(factories) == 13
+    assert len(factories) == 14
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
@@ -473,8 +489,12 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     #: 숨는다.
     assert re.findall(r"window\.Nav\b(?!\s*=)", compat_source) == []
     assert compat_source.count("window.Nav") == 1
-    #: `bridge` 는 객체째 넘긴다 — 메서드를 뽑으면 Python 프로브의 스텁 교체가 우회된다.
-    assert re.search(r"const bridge = window\.Bridge;", compat_source)
+    #: `bridge` 는 이제 compat 이 **구성**한다(N-07) — 구 IIFE 를 되읽던 자리의 후계다.
+    #: 객체째 넘기는 성질은 그대로여야 한다: 메서드를 뽑으면 Python 프로브의 스텁 교체가
+    #: 우회된다. 그래서 산물을 그대로 받는 구조분해 한 줄인지 본다.
+    assert re.search(r"const \{ bridge, push \} = createBridge\(\);", compat_source)
+    #: `window.Bridge` 는 이제 **별칭 대입 한 줄**뿐이다 — 판독이 되살아나면 생산자가 둘이 된다.
+    assert re.findall(r"window\.Bridge(?!\s*=)", compat_source) == []
     assert compat_source.count("window.Bridge") == 1
 
     #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 값 캡처(`JobScreen.refreshList` 를
@@ -506,61 +526,55 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     )
 
 
-def test_remaining_legacy_iife_and_total_global_surface_are_unchanged() -> None:
-    """남은 IIFE 는 ``bridge.js`` 하나뿐이고, 제품 전역 표면 전체는 여전히 27개다.
+def test_no_legacy_iife_remains_and_total_global_surface_is_unchanged() -> None:
+    """IIFE 는 **0개**가 됐고, 임시 제품 전역 표면 전체는 여전히 27개다.
 
-    M1 의 "25 IIFE / 27 globals" 계약의 마지막 후계다: 25 파일 중 24 가 ESM 이 됐고
-    수량은 자리만 옮겼다(compat 25 + legacy 2 = 27). 새 전역이 생기거나 화면이 자기
-    전역 생산을 되살리면 여기서 잡힌다.
+    M1 의 "25 IIFE / 27 globals" 계약의 종착점이다: 25 파일이 전부 ESM 이 됐고 수량은
+    자리만 옮겼다(N-07 전 compat 25 + legacy 2 → 후 compat 27 + legacy 0 = 27). 새 전역이
+    생기거나 어떤 파일이 자기 전역 생산을 되살리면 여기서 잡힌다.
+
+    제품 공개 API ``__hwpx`` 는 이 27 에 **들지 않는다** — 임시 별칭은 N-10 에서 사라지지만
+    그것은 남는 최종 경계라 계정이 다르다(D-06). 같은 자루에 넣으면 "임시 전역 수량이 단조
+    감소한다"는 D-05 의 계측점이 최종 API 하나 때문에 영영 0 에 닿지 못한다.
     """
-    legacy_scripts = tuple(sorted(SOURCE_JS_DIR.rglob("*.js")))
-    legacy_only = tuple(
+    scripts = tuple(sorted(SOURCE_JS_DIR.rglob("*.js")))
+    non_esm = tuple(
         path
-        for path in legacy_scripts
+        for path in scripts
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(legacy_scripts) == 25
-    assert len(legacy_only) == 1
-    assert {
-        path.relative_to(SOURCE_JS_DIR).as_posix() for path in legacy_only
-    } == set(LEGACY_JS_FILES)
+    assert len(scripts) == 25
+    assert non_esm == ()
+    assert LEGACY_JS_FILES == ()
+    assert EXPECTED_LEGACY_GLOBALS == set()
 
-    sources = {
-        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text(encoding="utf-8")
-        for path in legacy_only
+    #: IIFE 래퍼는 프런트 소스 어디에도 없다 — 파일 전수로 센다(잔존 하나가 숨지 못하게).
+    iife_owners = {
+        path.relative_to(SOURCE_ROOT).as_posix()
+        for path in scripts
+        if re.search(r"(?m)^\(function \(\) \{", path.read_text(encoding="utf-8"))
     }
-    assert all(
-        len(re.findall(r"(?m)^\(function \(\) \{", source)) == 1
-        for source in sources.values()
-    )
-    legacy_globals = {
-        match
-        for source in sources.values()
-        for match in re.findall(
-            r"(?m)^\s*window\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=",
-            source,
-        )
-    }
+    assert iife_owners == set(), f"IIFE 가 남아 있습니다: {sorted(iife_owners)}"
 
-    assert legacy_globals == EXPECTED_LEGACY_GLOBALS
-    assert len(legacy_globals) == 2
-    assert legacy_globals.isdisjoint(EXPECTED_CENTRAL_COMPAT_GLOBALS)
     assert len(EXPECTED_RUNTIME_GLOBALS) == 27
+    assert PRODUCT_API_GLOBAL not in EXPECTED_RUNTIME_GLOBALS
 
 
-def test_entry_evaluates_bridge_then_compat_only() -> None:
-    """제품 entry 의 JS 는 정확히 ``bridge.js → compat.js`` 둘이고 그 순서다.
+def test_entry_evaluates_central_compat_only() -> None:
+    """제품 entry 의 JS 는 이제 ``compat.js`` **하나**다.
 
-    "compat 이 모든 소비 IIFE 보다 먼저 평가된다"던 계약의 후계다 — 소비 IIFE 가 전부
-    ESM 이 되어 entry 에서 사라졌으므로, 남은 순서 질문은 하나다: compat 은 평가 시점에
-    ``window.Bridge`` 를 객체째 캡처하므로 **bridge 가 먼저**여야 한다. 화면·서비스가
-    entry 에 직접 남아 있으면 모듈이 두 경로로 그래프에 들어와 compat 의 구성-후-별칭
-    순서 추론이 무의미해지므로 그 부재도 같이 본다. compat 내부의 구성→별칭 순서는
+    "compat 이 모든 소비 IIFE 보다 먼저 평가된다"던 계약의 종착점이다. 소비 IIFE 가 전부
+    ESM 이 되어 entry 에서 사라졌고, N-07 에서 마지막 하나(``bridge.js``)마저 compat 의
+    static import 로 들어오면서 **entry 에 걸린 평가 순서 계약 자체가 없어졌다**. 남은
+    순서 질문은 전부 compat 안에 있다: 구성→별칭 순서는
     :func:`test_each_service_is_constructed_exactly_once_in_compat` 이, 그래프 순환 부재는
     :func:`test_esm_module_graph_has_no_cycles` 가 진다.
+
+    화면·서비스가 entry 에 직접 남아 있으면 모듈이 두 경로로 그래프에 들어오므로 그 부재도
+    같이 본다.
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
 
-    assert modules == (*LEGACY_JS_FILES, COMPAT_MODULE) == ("bridge.js", COMPAT_MODULE)
+    assert modules == (COMPAT_MODULE,)
     assert not set(modules) & set(ESM_FILES)

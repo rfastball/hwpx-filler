@@ -273,7 +273,7 @@ test("datazone 의 요청 시점 캡처는 형태 그대로 포트로만 바뀌�
 test("포트 교체 — Theme 은 갈아끼운 bridge.setTheme 를 본다", (t) => {
   freshDom(t);
   const seen = [];
-  const bridge = { setTheme: (v) => seen.push(["A", v]) };
+  const bridge = { hostReady: () => true, setTheme: (v) => seen.push(["A", v]) };
   const theme = createTheme({ bridge });
   theme.set("dark");
   bridge.setTheme = (v) => seen.push(["B", v]);   // 프로브가 하는 일
@@ -284,7 +284,11 @@ test("포트 교체 — Theme 은 갈아끼운 bridge.setTheme 를 본다", (t) 
 test("포트 교체 — Personalization 은 갈아끼운 bridge.setFontScale 를 본다", (t) => {
   freshDom(t);
   const seen = [];
-  const bridge = { setFontScale: (v) => seen.push(["A", v]), setMasterWidth: () => {} };
+  const bridge = {
+    hostReady: () => true,
+    setFontScale: (v) => seen.push(["A", v]),
+    setMasterWidth: () => {},
+  };
   const pers = createPersonalization({ bridge });
   pers.setFontScale("large");
   bridge.setFontScale = (v) => seen.push(["B", v]);
@@ -397,7 +401,9 @@ test("DataZone — 붙든 dispatch 의 this 는 bridge 객체다", async (t) => 
 test("Theme — 영속은 bridge.setTheme 로, 정규화된 현재 값으로 나간다", (t) => {
   const dom = freshDom(t);
   const calls = [];
-  const theme = createTheme({ bridge: { setTheme: (v) => calls.push(v) } });
+  const theme = createTheme({
+    bridge: { hostReady: () => true, setTheme: (v) => calls.push(v) },
+  });
   assert.equal(theme.set("dark"), "dark");
   assert.equal(theme.set("light"), "light");
   assert.equal(theme.set("bogus"), "system");      // 미상은 system 으로 강등
@@ -414,7 +420,11 @@ test("Theme — 브리지 부재 프리뷰는 의도적 미영속(조용한 실�
   const dom = freshDom(t);
   dom.window.pywebview = undefined;
   const calls = [];
-  const theme = createTheme({ bridge: { setTheme: (v) => calls.push(v) } });
+  // N-07 — 호스트 준비 판정은 브리지가 진다. 프리뷰(호스트 부재)는 `hostReady()` 가 거짓인
+  // 상태이고, 그 판정이 `window.pywebview` 직접 조회를 대신한다.
+  const theme = createTheme({
+    bridge: { hostReady: () => false, setTheme: (v) => calls.push(v) },
+  });
   assert.equal(theme.set("dark"), "dark");
   assert.deepEqual(calls, []);
   assert.deepEqual(dom.alerts, []);
@@ -422,7 +432,12 @@ test("Theme — 브리지 부재 프리뷰는 의도적 미영속(조용한 실�
 
 test("Theme — 영속 throw 는 삼키지 않고 loud(window.alert)", (t) => {
   const dom = freshDom(t);
-  const theme = createTheme({ bridge: { setTheme: () => { throw new Error("브리지 사망"); } } });
+  const theme = createTheme({
+    bridge: {
+      hostReady: () => true,
+      setTheme: () => { throw new Error("브리지 사망"); },
+    },
+  });
   theme.set("dark");
   assert.deepEqual(dom.alerts, ["브리지 사망"]);
 });
@@ -432,6 +447,7 @@ test("Personalization — 영속 호출 인자 전수(클램프된 값이 나간
   const calls = [];
   const pers = createPersonalization({
     bridge: {
+      hostReady: () => true,
       setFontScale: (v) => calls.push(["setFontScale", v]),
       setMasterWidth: (v) => calls.push(["setMasterWidth", v]),
     },
@@ -588,8 +604,12 @@ test("GroupList — toggleGroup 은 낙관 반영 뒤 실패에 되돌리고 lou
 test("팩토리를 두 번 부르면 독립 인스턴스가 나온다(중앙은 1회만 부른다)", async (t) => {
   const dom = freshDom(t);
   const seenA = [], seenB = [];
-  const themeA = createTheme({ bridge: { setTheme: (v) => seenA.push(v) } });
-  const themeB = createTheme({ bridge: { setTheme: (v) => seenB.push(v) } });
+  const themeA = createTheme({
+    bridge: { hostReady: () => true, setTheme: (v) => seenA.push(v) },
+  });
+  const themeB = createTheme({
+    bridge: { hostReady: () => true, setTheme: (v) => seenB.push(v) },
+  });
   assert.notEqual(themeA, themeB);
   themeA.set("dark");
   themeB.set("light");

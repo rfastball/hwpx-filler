@@ -67,9 +67,16 @@ import { createEditorScreen } from "../js/screens/editor.js";
 import { createJobScreen } from "../js/screens/job.js";
 import { createWorkbenchScreen } from "../js/screens/workbench.js";
 import { createAppShell } from "../js/app.js";
+import { createBridge } from "../js/bridge.js";
+import { createProductApi } from "./product_api.js";
 
-/* 아직 전역인 유일한 소비 대상(N-07 소유). 객체째 — 위 주석. */
-const bridge = window.Bridge;
+/* 브리지는 이제 여기서 **정확히 한 번** 구성된다(N-07). 종전에는 `bridge.js` 가 IIFE 로
+   `window.Bridge`·`window.__push` 를 스스로 만들고 이 파일이 그걸 되읽었다 — 생산자가 둘로
+   갈린 마지막 자리였다. 구성 산물을 아래에서 별칭으로 되걸므로 소비자 표면은 그대로다.
+
+   `bridge` 는 **객체째** 아래로 넘어간다. Python selftest 가 `window.Bridge.call = stub` 처럼
+   프로퍼티를 교체해 통로를 갈아끼우므로(app.py 열 곳), 메서드를 값으로 뽑으면 스텁이 우회된다. */
+const { bridge, push } = createBridge();
 
 /* late-bound 좌표 — 아래에서 구성되면 채워진다. 콜백이 지연 호출이라 선언만 먼저 선다. */
 let LibraryScreen;
@@ -136,6 +143,54 @@ const appShell = createAppShell({
 Nav = appShell.Nav;
 const AppCloseGuard = appShell.AppCloseGuard;
 
+/* 제품 공개 경계(N-07 · D-06) — Python 이 부르는 유일한 이름이다. 종전에는 Python 이
+   `window.__push`·`window.AppCloseGuard.prompt`·`window.Personalization.apply`·`window.Theme.apply`·
+   `window.alert` 다섯 내부 이름을 직접 알고 불렀다. 그 이름들은 아래에서 임시 별칭으로 계속
+   살지만(selftest 가 아직 71곳에서 쓴다 — N-08·N-09 소유), **제품 호출은 여기로만 온다**.
+
+   처리기 표의 키는 파사드가 광고하는 능력 이름과 같은 레지스트리에서 나온다 — 광고했는데
+   처리기가 없는 상태를 구조적으로 막는 것이 그 파일의 요지다. */
+const productApi = createProductApi({
+  handlers: {
+    /* 관측 푸시 — 화면은 불투명한 라우팅 값이라 여기서도 해석하지 않는다.
+
+       **`window.__push` 를 호출 시점에 읽는다**(구성 산물 `push` 를 값으로 붙들지 않는다).
+       Python selftest 프로브가 열세 곳에서 원본을 지역에 담아 두고 그 전역 자리에 기록용
+       래퍼를 **대입해** 도착한 푸시를 관측한다(`_JOB_MIRROR_PROBE_JS`·
+       `_JOB_RESULT_PROBE_JS` 등). 여기서 지역 `push` 를 캡처하면 제품 푸시가 그 래퍼를
+       **우회해** 프로브가 "푸시 0" 을 보고, 그 침묵이 배선 부재처럼 읽힌다 — `bridge` 를
+       객체째 넘기는 이유와 정확히 같은 결함류이고, 실제로 이 자리에서 한 번 재발했다
+       (job_mirror·job_result 두 게이트가 잡았다). 별칭 제거는 N-10 이 지고, 그때 이 지연
+       판독도 함께 사라진다. */
+    snapshot: (payload) => window.__push(payload.screen, payload.snapshot),
+
+    /* 네이티브 X 닫기 확인 — **시작만** 한다. 처분은 모달이 브리지로 되돌린다. */
+    "close-request": (payload) => AppCloseGuard.prompt(payload.state),
+
+    /* 부팅 설정 주입 — 돌려주는 것은 **실제로 적용한 조각 이름**이다.
+       조각별로 따로 감싸는 이유: 테마가 죽어도 개인화가 살았다는 사실을 잃지 않기 위해서다.
+       여기서 예외를 삼키는 것은 침묵이 아니다 — 빠진 이름이 곧 실패 신고이고, Python 이
+       그 이름을 받아 내구성 경보로 지목한다(조용한 성공 접기의 반대). */
+    preferences: (payload) => {
+      const applied = [];
+      try {
+        Personalization.apply(payload.personalization);
+        applied.push("personalization");
+      } catch { /* 보고에서 빠지는 것이 실패 신고다 */ }
+      if (payload.theme === "light" || payload.theme === "dark") {
+        try {
+          Theme.apply(payload.theme);
+          applied.push("theme");
+        } catch { /* 위와 같다 */ }
+      }
+      return applied;
+    },
+
+    /* 사후 고지 — 내구성 기록은 Python 이 이미 마쳤다. 이쪽은 창 계층 best effort. */
+    notice: (payload) => window.alert(payload.message),
+  },
+});
+
 window.Copy = Copy;
 window.escHtml = escHtml;
 window.Guard = Guard;
@@ -161,3 +216,11 @@ window.JobScreen = JobScreen;
 window.WorkbenchScreen = WorkbenchScreen;
 window.Nav = Nav;
 window.AppCloseGuard = AppCloseGuard;
+/* 구 `bridge.js` IIFE 가 스스로 만들던 둘 — 이제 생산자는 이 파일 하나다(D-05).
+   제거 책임은 N-10, 소비자는 Python selftest 71곳(N-08·N-09). */
+window.Bridge = bridge;
+window.__push = push;
+
+/* 임시 별칭 스물일곱과 **다른 계정**이다 — 이건 제품 최종 공개 API 다(N-07, D-06).
+   위 별칭들은 N-10 에서 사라지지만 이 줄은 남는다. */
+window.__hwpx = productApi;
