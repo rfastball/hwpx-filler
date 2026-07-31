@@ -17,8 +17,10 @@ $expectedNode = 'v24.18.1'
 $expectedNpm = '11.16.0'
 $expectedVite = '8.1.5'
 
-$node = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue
-$npm = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue
+$node = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+$npm = Get-Command npm.cmd -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
 if (-not $node -or -not $npm) {
     throw 'Node/npm 없음. .node-version의 Node 24.18.1(번들 npm 11.16.0)을 설치하세요.'
 }
