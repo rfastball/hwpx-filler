@@ -1,7 +1,7 @@
 """데이터 존 공용 팩토리(슬라이스 6 PR-2a) 정적 가드 — job.js 추출의 단일 출처·분리 계약.
 
 「작업」 화면의 데이터 존 ~450줄(열 필터 패널·필터 테이블/Shift 선택·칩 줄·필터 밖 선택
-스트립·자모 하이라이트 세그먼트)을 ``web/js/datazone.js`` 의 ``DataZone.create(config)``
+스트립·자모 하이라이트 세그먼트)을 ``frontend/js/datazone.js`` 의 ``DataZone.create(config)``
 팩토리로 추출했다(#90 착지 6). 둘째 소비자였던 「기안」 큐는 화면과 함께 사망(F6 PR-B) —
 현재 소비자는 job 하나지만 팩토리·화면 불가지 계약은 다음 소비자를 위해 그대로 산다.
 이 모듈은 추출이 조용히 되감기는 회귀를 정적으로 차단한다:
@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
+from _web_source import SOURCE_ENTRY, SOURCE_JS_DIR, app_css, imported_js
 
-WEB_INDEX = SOURCE_INDEX
 DZ_JS = SOURCE_JS_DIR / "datazone.js"
 POPOVER_JS = SOURCE_JS_DIR / "popover.js"
 JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"
@@ -65,15 +64,14 @@ def test_load_order_esc_then_shared_then_screens():
 
     (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.)
     """
-    index = WEB_INDEX.read_text(encoding="utf-8")
-    consumers = ('src="js/screens/job.js"',)
-    for needle in ('src="js/esc.js"', 'src="js/popover.js"', 'src="js/datazone.js"',
-                   *consumers):
-        assert needle in index, f"{needle} 가 index.html 에 없습니다."
-    esc_pos = index.index('src="js/esc.js"')
-    first_consumer = min(index.index(c) for c in consumers)
-    for shared in ('src="js/popover.js"', 'src="js/datazone.js"'):
-        assert esc_pos < index.index(shared) < first_consumer, (
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    consumers = ("screens/job.js",)
+    for module in ("esc.js", "popover.js", "datazone.js", *consumers):
+        assert module in imports, f"{module} 가 제품 entry 에 없습니다."
+    esc_pos = imports.index("esc.js")
+    first_consumer = min(imports.index(module) for module in consumers)
+    for shared in ("popover.js", "datazone.js"):
+        assert esc_pos < imports.index(shared) < first_consumer, (
             f"로드 순서가 esc.js → {shared} → 소비 화면(job)이 아닙니다."
         )
 

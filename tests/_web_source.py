@@ -133,3 +133,13 @@ def imported_css(entry: str) -> tuple[str, ...]:
         for path in side_effect_imports(entry)
         if path.startswith(prefix)
     )
+
+
+def imported_js(entry: str) -> tuple[str, ...]:
+    """제품 entry가 싣는 legacy IIFE 파일명을 import 순서대로 읽는다."""
+    prefix = "../js/"
+    return tuple(
+        path.removeprefix(prefix)
+        for path in side_effect_imports(entry)
+        if path.startswith(prefix)
+    )

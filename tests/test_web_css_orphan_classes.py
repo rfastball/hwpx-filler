@@ -369,7 +369,7 @@ def _emitted_classes() -> dict[str, set[str]]:
 
 
 def _styled_classes() -> set[str]:
-    """`web/css/*.css` 전수의 선택자에 등장하는 class 이름."""
+    """`frontend/css/*.css` 전수의 선택자에 등장하는 class 이름."""
     names: set[str] = set()
     for path in sorted(SOURCE_CSS_DIR.glob("*.css")):
         text = re.sub(r"/\*.*?\*/", " ", path.read_text(encoding="utf-8"), flags=re.S)
@@ -390,7 +390,7 @@ def test_every_class_the_shell_emits_has_a_rule() -> None:
     assert not orphans, (
         "규칙이 한 줄도 없는 class 를 DOM 이 내고 있습니다:\n"
         + "\n".join(f"  .{n} — {' · '.join(sorted(s))}" for n, s in sorted(orphans.items()))
-        + "\n스타일을 잃은 것이면 web/css 에 규칙을 되살리고, 스타일이 원래 없는 것이면 "
+        + "\n스타일을 잃은 것이면 frontend/css 에 규칙을 되살리고, 스타일이 원래 없는 것이면 "
         "STYLELESS_BY_DESIGN 에 **사유와 함께** 등재하세요."
     )
 
@@ -474,16 +474,16 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
     """
     emitted = _emitted_classes()
     for name, site in (
-        ("job-cand-card", "web/js/screens/job.js"),   # 보간 앞의 온전한 이름
-        ("active", "web/js/screens/job.js"),          # 보간이 더하는 상태 class
-        ("suggested", "web/js/screens/job.js"),
-        ("f-gulimche", "web/js/screens/workbench.js"),  # 조각 합성
+        ("job-cand-card", "frontend/js/screens/job.js"),   # 보간 앞의 온전한 이름
+        ("active", "frontend/js/screens/job.js"),          # 보간이 더하는 상태 class
+        ("suggested", "frontend/js/screens/job.js"),
+        ("f-gulimche", "frontend/js/screens/workbench.js"),  # 조각 합성
         # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
         # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
-        ("muted", "web/js/screens/job.js"),
+        ("muted", "frontend/js/screens/job.js"),
         # 속성 **전체**가 변수인 자리(리뷰 R4): `const cls = ... "seg-fill"` → `class="${cls}"`.
         # 붙어 있는 이웃이 없으므로 갈래 자체가 온전한 이름이다(앞 공백을 요구하면 못 본다).
-        ("seg-fill", "web/js/segview.js"),
+        ("seg-fill", "frontend/js/segview.js"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 보간·합성 회수가 깨졌습니다."
@@ -514,9 +514,9 @@ def test_variable_backed_class_names_are_seen() -> None:
     """
     emitted = _emitted_classes()
     for name, site in (
-        ("openingMark", "web/js/screens/job.js"),
-        ("editor-open", "web/js/app.js"),
-        ("workbench-open", "web/js/app.js"),
+        ("openingMark", "frontend/js/screens/job.js"),
+        ("editor-open", "frontend/js/app.js"),
+        ("workbench-open", "frontend/js/app.js"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 변수·속성 결속 회수가 깨졌습니다."
