@@ -10,52 +10,50 @@
    건드리지 않기 위함(무차별 보존 금지). 복원 대상은 재구성을 가로질러 같은 id 를 유지해야
    하며, 없으면 no-op(조용한 실패가 아니라 '보존할 것이 사라짐'이라는 정상 귀결). 결과 수명주기
    무효화는 컨트롤러(Python) 소유로 이 헬퍼 범위 밖 — 여기선 포커스·캐럿·스크롤 연속성만. */
-(function () {
-  function isTextField(el) {
-    if (!el) return false;
-    if (el.tagName === "TEXTAREA") return true;
-    if (el.tagName !== "INPUT") return false;
-    // setSelectionRange 가 유효한 타입만(number·email 등은 예외를 던짐).
-    return /^(text|search|url|tel|password)$/i.test(el.type || "text");
+function isTextField(el) {
+  if (!el) return false;
+  if (el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  // setSelectionRange 가 유효한 타입만(number·email 등은 예외를 던짐).
+  return /^(text|search|url|tel|password)$/i.test(el.type || "text");
+}
+
+/* renderFn 을 실행하되, 그 직전 포커스·캐럿·옵트인 스크롤을 캡처하고 직후 복원한다. */
+function around(renderFn) {
+  // ---- 캡처 ----
+  var act = document.activeElement;
+  var focusId = act && act.id ? act.id : null;
+  var selStart = null, selEnd = null, selDir = null;
+  if (focusId && isTextField(act)) {
+    try {
+      selStart = act.selectionStart;
+      selEnd = act.selectionEnd;
+      selDir = act.selectionDirection;
+    } catch (e) { /* 일부 상태에서 접근 불가 — 무시 */ }
+  }
+  var scrolls = [];
+  var marked = document.querySelectorAll("[data-preserve-scroll][id]");
+  for (var i = 0; i < marked.length; i++) {
+    scrolls.push({ id: marked[i].id, top: marked[i].scrollTop, left: marked[i].scrollLeft });
   }
 
-  /* renderFn 을 실행하되, 그 직전 포커스·캐럿·옵트인 스크롤을 캡처하고 직후 복원한다. */
-  function around(renderFn) {
-    // ---- 캡처 ----
-    var act = document.activeElement;
-    var focusId = act && act.id ? act.id : null;
-    var selStart = null, selEnd = null, selDir = null;
-    if (focusId && isTextField(act)) {
-      try {
-        selStart = act.selectionStart;
-        selEnd = act.selectionEnd;
-        selDir = act.selectionDirection;
-      } catch (e) { /* 일부 상태에서 접근 불가 — 무시 */ }
-    }
-    var scrolls = [];
-    var marked = document.querySelectorAll("[data-preserve-scroll][id]");
-    for (var i = 0; i < marked.length; i++) {
-      scrolls.push({ id: marked[i].id, top: marked[i].scrollTop, left: marked[i].scrollLeft });
-    }
+  // ---- 렌더 ----
+  renderFn();
 
-    // ---- 렌더 ----
-    renderFn();
-
-    // ---- 복원 ---- 포커스 먼저(preventScroll 로 컨테이너 스크롤 안 건드림), 스크롤은 그 뒤 확정.
-    if (focusId) {
-      var el = document.getElementById(focusId);
-      if (el && el.focus) {
-        try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
-        if (selStart !== null && isTextField(el)) {
-          try { el.setSelectionRange(selStart, selEnd, selDir || "none"); } catch (e2) { /* 무시 */ }
-        }
+  // ---- 복원 ---- 포커스 먼저(preventScroll 로 컨테이너 스크롤 안 건드림), 스크롤은 그 뒤 확정.
+  if (focusId) {
+    var el = document.getElementById(focusId);
+    if (el && el.focus) {
+      try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+      if (selStart !== null && isTextField(el)) {
+        try { el.setSelectionRange(selStart, selEnd, selDir || "none"); } catch (e2) { /* 무시 */ }
       }
     }
-    for (var j = 0; j < scrolls.length; j++) {
-      var box = document.getElementById(scrolls[j].id);
-      if (box) { box.scrollTop = scrolls[j].top; box.scrollLeft = scrolls[j].left; }
-    }
   }
+  for (var j = 0; j < scrolls.length; j++) {
+    var box = document.getElementById(scrolls[j].id);
+    if (box) { box.scrollTop = scrolls[j].top; box.scrollLeft = scrolls[j].left; }
+  }
+}
 
-  window.Preserve = { around: around };
-})();
+export const Preserve = { around: around };

@@ -2,7 +2,7 @@
    apply()는 app.py loaded 핸들러가 숨은 창에 먼저 호출하고, set*()은 사용자 조작을 즉시
    반영한 뒤 Python 설정에 영속한다. 브라우저 단독 프리뷰는 의도적으로 미영속이다.
    레일 접힘(rail_collapsed)은 상단 토바 교체로 표면과 함께 사망했다(F2 PR-B, 지도 §10.9). */
-(function () {
+export function createPersonalization({ bridge }) {
   const FONT_ORDER = ["normal", "large", "larger"];
   const MASTER_MIN = 180;
   const MASTER_MAX = 420;
@@ -26,8 +26,8 @@
   }
 
   function persist(method, value) {
-    if (window.pywebview && window.pywebview.api && window.Bridge) {
-      try { window.Bridge[method](value); }
+    if (window.pywebview && window.pywebview.api && bridge) {
+      try { bridge[method](value); }
       catch (err) { window.alert(String((err && err.message) || err)); }
     }
   }
@@ -59,9 +59,9 @@
     return value;
   }
 
-  window.Personalization = {
+  return {
     apply, currentFontScale, toggleFontScale, setFontScale,
     setMasterWidth, saveMasterWidth,
     masterMin: MASTER_MIN, masterMax: MASTER_MAX,
   };
-})();
+}

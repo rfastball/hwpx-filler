@@ -2,7 +2,10 @@
    Python 단일 출처(screens.relink_job_template)의 JS 짝. run/home 에 흐름이 복붙돼
    오류 표면이 갈렸던 것(구 홈이 restated 를 버림)을 여기로 수렴하고, 결과 통지만
    화면별 콜백(notify)으로 주입한다 — PathTrack/Modal 공용 헬퍼 선례. */
-(function () {
+
+import { Modal } from "./modal.js";
+
+export function createRelink({ bridge }) {
   /* notify(msg, kind) — kind: "ok"(커밋 재진술) | "cancel"(사용자 취소) | "error"(실패).
      실패는 공통 window.alert 로도 loud(콜백은 화면 채널 병기용). 미지정이면 no-op.
      반환 = **커밋 성사 여부**(#342): 경고 카드의 「재연결 성공 뒤 이어서 선택」이 이 값을
@@ -11,9 +14,9 @@
   async function relinkTemplate(screen, name, notify) {
     const say = notify || function () {};
     try {
-      const path = await Bridge.pickTemplatePath();
+      const path = await bridge.pickTemplatePath();
       if (!path) return false;                      // 피커 취소 — 아무것도 안 바뀜
-      let res = await Bridge.call(screen, "relink_template", { name, path });
+      let res = await bridge.call(screen, "relink_template", { name, path });
       if (res && res.needs_confirm) {
         if (!(await Modal.confirm({
           body: res.confirm_text + "\n\n계속할까요?",
@@ -22,7 +25,7 @@
           say("다시 연결을 취소했습니다.", "cancel");
           return false;
         }
-        res = await Bridge.call(screen, "relink_template", { name, path, confirm: true });
+        res = await bridge.call(screen, "relink_template", { name, path, confirm: true });
       }
       if (res && res.ok === false) {
         window.alert(res.error);
@@ -37,5 +40,5 @@
     }
   }
 
-  window.Relink = { relinkTemplate };
-})();
+  return { relinkTemplate };
+}

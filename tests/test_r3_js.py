@@ -34,14 +34,19 @@ WEB_JS = SOURCE_JS_DIR
 #  screens/template.js 는 「템플릿 관리」 화면과 함께 사망 — F8 §10.17.
 #  작업대(screens/workbench.js)가 새 소비자로 합류했다.)
 ESC_CONSUMERS = (
-    "sheet_picker.js", "data_picker.js", "datazone.js",
     "screens/library.js", "screens/editor.js", "screens/job.js",
     "screens/workbench.js",
 )
 
-# 이미 ESM 으로 옮겨가 전역 대신 직접 import 하는 소비자(N-04). 순서 계약은 import 그래프가
-# 대신 지므로 entry 위치를 묻지 않는다 — 대신 배선 자체를 여기서 단언한다.
-ESC_ESM_CONSUMERS = ("segview.js",)
+# 이미 ESM 으로 옮겨가 전역 대신 직접 import 하는 소비자(N-04 잎 + N-05 서비스). 순서 계약은
+# import 그래프가 대신 지므로 entry 위치를 묻지 않는다 — 대신 배선 자체를 여기서 단언한다.
+# 다섯이 한꺼번에 옮겨왔지만 질문은 그대로다: **공유 헬퍼를 실제로 태우는가**. 이 목록을
+# 지우면 그 질문 자체가 사라지므로, 옮길 때 소비자를 여기 옮겨 적는 것이 계약이다.
+ESC_ESM_CONSUMERS = (
+    "segview.js",
+    "sheet_picker.js", "data_picker.js", "datazone.js",
+    "grouplist.js", "pathtrack.js",
+)
 
 
 def test_esc_helper_exists_and_escapes_superset():
@@ -114,12 +119,11 @@ def test_data_picker_header_describes_delivered_state():
     있어야 한다(주석-코드 정합).
     """
     src = (WEB_JS / "data_picker.js").read_text(encoding="utf-8")
-    header = src.split("(function", 1)[0]  # IIFE 이전 = 파일 헤더 주석
+    header, body = src.split("import ", 1)  # 첫 import 이전 = 파일 헤더 주석
     for stale in ("추가 예정", "그때까지", "임시로"):
         assert stale not in header, (
             f"data_picker.js 헤더에 낡은 미래형 기술('{stale}')이 남아 있습니다(K11)."
         )
-    body = src.split("(function", 1)[1]
     assert "PoolController" in header and "load_pool" in header, (
         "data_picker.js 헤더가 소유 경계(pool 컨트롤러 소비·호스트 마운트)를 기술하지 않습니다(K11)."
     )

@@ -33,7 +33,7 @@ def test_public_registry_and_close_all_contract():
     assert "entries.add(cfg)" in src and "entries.delete(cfg)" in src
     assert "function closeAll()" in src and "Array.from(entries).forEach(close)" in src
     assert re.search(
-        r"window\.Popover\s*=\s*\{[^}]*register[^}]*wireDismiss[^}]*closeAll[^}]*place[^}]*\}",
+        r"export const Popover\s*=\s*\{[^}]*register[^}]*wireDismiss[^}]*closeAll[^}]*place[^}]*\}",
         src,
     ), "H-16이 사용할 closeAll을 포함한 공개 Popover API가 끊겼습니다."
 
@@ -66,8 +66,8 @@ def test_rendered_size_drives_clamp_flip_and_origin():
     assert "window.innerWidth - margin - width" in pop
     assert "window.innerHeight - margin - height" in pop
     assert "el.style.transformOrigin" in pop
-    assert "window.Popover.place(m, btn)" in group
-    assert "window.Popover.place(p, anchor)" in data
+    assert "Popover.place(m, btn)" in group
+    assert "Popover.place(p, anchor)" in data
     assert "offsetParent: $(ids.tableHost)" not in data
     assert "host.width - 260" not in data
 

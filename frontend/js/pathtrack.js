@@ -2,8 +2,11 @@
    화면-불가지: PathTrack.affordances(path) 로 버튼 HTML 을 만들고, 문서 레벨 위임
    핸들러가 data-track-act 를 Bridge 로 라우팅한다(각 화면이 재렌더해도 위임이라 안전).
    경로 검증은 백엔드 화이트리스트(app.py _validate_owned)가 소유 — 프론트는 표현만. */
-(function () {
-  const esc = window.escHtml;
+
+import { escHtml } from "./esc.js";
+
+export function createPathTrack({ bridge }) {
+  const esc = escHtml;
   const ICONS = {
     open: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11 3h6v6M17 3l-8 8"/><path d="M15 11v5H4V5h5"/></svg>',
     reveal: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.5 6.5h6l1.5 2h7.5v7.5h-15z"/><path d="M2.5 6.5v-2h5l1.5 2"/></svg>',
@@ -11,9 +14,9 @@
     done: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 10l4 4 8-9"/></svg>',
   };
   const ACTS = {
-    open:   { label: "열기", icon: ICONS.open, fn: (p) => Bridge.openPath(p) },
-    reveal: { label: "폴더에서 보기", icon: ICONS.reveal, fn: (p) => Bridge.revealPath(p) },
-    copy:   { label: "경로 복사", icon: ICONS.copy, fn: (p) => Bridge.copyPath(p) },
+    open:   { label: "열기", icon: ICONS.open, fn: (p) => bridge.openPath(p) },
+    reveal: { label: "폴더에서 보기", icon: ICONS.reveal, fn: (p) => bridge.revealPath(p) },
+    copy:   { label: "경로 복사", icon: ICONS.copy, fn: (p) => bridge.copyPath(p) },
   };
 
   /* path 를 로케이트 버튼 묶음 HTML 로. 전체경로는 title 툴팁. path 없으면 "".
@@ -64,5 +67,5 @@
   }
 
   document.addEventListener("click", onClick);  // 위임 1회 부착(화면 재렌더 무관)
-  window.PathTrack = { affordances };
-})();
+  return { affordances };
+}
