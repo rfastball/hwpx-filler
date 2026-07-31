@@ -105,7 +105,7 @@ def confirm_basis(states: "list[dict[str, str]]") -> str:
 class PoolController:
     """등록 데이터 수명 — 데이터셋 풀 VM 위임(webview 비의존).
 
-    **소비 표면은 데이터 선택 다이얼로그**(`web/js/data_picker.js`)다 — 「데이터 관리」
+    **소비 표면은 데이터 선택 다이얼로그**(`frontend/js/data_picker.js`)다 — 「데이터 관리」
     화면은 F1 에서 죽었고 이 컨트롤러만 살아남아 그 다이얼로그가 스냅샷·액션을 소비한다.
     """
 

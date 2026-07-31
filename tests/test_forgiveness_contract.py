@@ -1,4 +1,4 @@
-from _web_source import SOURCE_JS_DIR, app_css, source_text
+from _web_source import SOURCE_JS_DIR, app_css, imported_js, source_text
 
 
 def _read(relative: str) -> str:
@@ -7,13 +7,14 @@ def _read(relative: str) -> str:
 
 def test_forgiveness_surface_contracts_are_wired() -> None:
     index = _read("index.html")
+    entry = _read("src/main.js")
     modal = _read("js/modal.js")
     editor = _read("js/screens/editor.js")
     job = _read("js/screens/job.js")
     home = _read("js/screens/library.js")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
-    assert 'id="undoToast"' in index and 'src="js/undo_toast.js"' in index
+    assert 'id="undoToast"' in index and "undo_toast.js" in imported_js(entry)
     assert 'id="jobGenCancel"' in index and '"cancel_generation"' in job
     assert 'data-act="restore-confirmed"' in editor and '"restore_confirmed"' in editor
     # TXT 저작 모달 dirty 가드 — 소유가 editor.js 로 이주(F8, tpl 화면 사망).

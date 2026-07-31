@@ -12,6 +12,7 @@
 네이티브 표면(파일 다이얼로그·클립보드)은 :mod:`hwpxcore.native` 공용 계층에서 온다 —
 diff 웹과 공유(제품 간 250줄 STA/OLE ctypes 복제 회피).
 
-정적 자산은 저장소 루트 ``web/`` (index.html·css·js). 개발 시 루트에서, 동결(PyInstaller)
-시 ``sys._MEIPASS/web`` 에서 해석한다.
+정적 source는 저장소 루트 ``frontend/`` 하나다. source 제품은 fresh sealed
+``build/web/``, 동결(PyInstaller) 제품은 ``sys._MEIPASS/web``의 같은 seal/tree만 검증해
+사용한다. source 또는 dev server fallback은 없다.
 """

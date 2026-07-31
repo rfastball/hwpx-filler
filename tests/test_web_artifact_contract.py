@@ -49,7 +49,7 @@ def valid_artifact(tmp_path: Path) -> ArtifactFixture:
     assets.mkdir(parents=True)
     built_index = artifact_root / "index.html"
     built_index.write_bytes(
-        b'<!doctype html><script type="module" src="/assets/main.js"></script>\n'
+        b'<!doctype html><script type="module" src="./assets/main.js"></script>\n'
     )
     built_entry = assets / "main.js"
     built_entry.write_bytes(b"const boot=()=>\"ready\";boot();\n")
@@ -186,18 +186,56 @@ class ResponsibilityTrace:
     legacy: str
     successor: str
     legacy_callsites: tuple[LegacyCallsiteEvidence, ...]
+    package_successor: PackageSealConsumerEvidence
+    successor_test_path: Path
     successor_tests: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PackageSealConsumerEvidence:
+    path: Path
+    function: str
+    artifact_variable: str
+    resolver: str
+    consumed_attributes: tuple[str, ...]
 
 
 _LEGACY_RESPONSIBILITY = "index-exists/assets-present/package-selfcheck"
 _SUCCESSOR_RESPONSIBILITY = "sorted-full-artifact-file-set-and-seal"
-_SUCCESSOR_TESTS = (
+_N02_FIXTURE_TESTS = (
     "test_valid_fixture_web_artifact_is_accepted",
     "test_listed_artifact_entry_missing_is_loud",
     "test_listed_artifact_file_missing_is_loud",
     "test_extra_stale_artifact_file_is_loud",
     "test_one_byte_artifact_mutation_is_loud",
 )
+_SUCCESSOR_TESTS = (
+    "test_producer_writes_complete_stable_self_excluding_seal",
+    "test_source_and_frozen_resolvers_return_same_artifact_identity",
+    "test_frozen_resolver_never_uses_git_or_build_toolchain",
+    "test_resolver_requires_exactly_one_runtime_mode",
+    "test_artifact_directory_missing_is_loud",
+    "test_artifact_seal_missing_is_loud",
+    "test_multiple_artifact_seals_are_loud",
+    "test_vite_manifest_missing_is_loud",
+    "test_listed_output_missing_is_loud",
+    "test_extra_stale_output_is_loud",
+    "test_one_byte_output_mutation_is_loud",
+    "test_frontend_source_stale_is_loud",
+    "test_vite_config_stale_is_loud",
+    "test_package_lock_stale_is_loud",
+    "test_wrong_source_commit_is_loud",
+    "test_wrong_declared_source_input_digest_is_loud",
+    "test_wrong_artifact_id_is_loud",
+    "test_source_resolver_rejects_sealed_toolchain_different_from_current_pins",
+    "test_producer_rejects_forbidden_runtime_reference",
+    "test_empty_vite_manifest_is_loud",
+    "test_producer_records_versions_measured_from_actual_commands",
+    "test_producer_rejects_actual_toolchain_different_from_pins",
+    "test_producer_rejects_non_exact_vite_declaration",
+    "test_producer_refuses_dirty_source_inputs",
+)
+_SUCCESSOR_TEST_PATH = ROOT / "tests" / "test_web_artifact_seal.py"
 
 _RESPONSIBILITY_TRACE = (
     ResponsibilityTrace(
@@ -214,13 +252,15 @@ _RESPONSIBILITY_TRACE = (
                 "test_web_assets_present_and_wired",
                 asserted_exists_variables=("rel", "name"),
             ),
-            LegacyCallsiteEvidence(
-                ROOT / "packaging" / "hwpx_filler_web_entry.py",
-                "_selfcheck",
-                assigned_exists_names=("web_ok",),
-                return_gate_names=("web_ok",),
-            ),
         ),
+        package_successor=PackageSealConsumerEvidence(
+            ROOT / "packaging" / "hwpx_filler_web_entry.py",
+            "_selfcheck",
+            artifact_variable="artifact",
+            resolver="web_artifact",
+            consumed_attributes=("artifact_id", "tree_sha256"),
+        ),
+        successor_test_path=_SUCCESSOR_TEST_PATH,
         successor_tests=_SUCCESSOR_TESTS,
     ),
 )
@@ -293,6 +333,83 @@ def _return_mentions(
     )
 
 
+def _assigns_call_to(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    variable: str,
+    callable_name: str,
+) -> bool:
+    for node in ast.walk(function):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else (node.target,)
+        value = node.value
+        assigns_variable = any(
+            isinstance(target, ast.Name) and target.id == variable
+            for target in targets
+        )
+        calls_resolver = (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id == callable_name
+        )
+        if assigns_variable and calls_resolver:
+            return True
+    return False
+
+
+def _uses_attribute(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    variable: str,
+    attribute: str,
+) -> bool:
+    return any(
+        isinstance(node, ast.Attribute)
+        and node.attr == attribute
+        and isinstance(node.value, ast.Name)
+        and node.value.id == variable
+        for node in ast.walk(function)
+    )
+
+
+def _assert_package_seal_successor(evidence: PackageSealConsumerEvidence) -> None:
+    source = evidence.path.read_text(encoding="utf-8")
+    function = _function_node(source, evidence.function)
+
+    assert not _assigns_exists_to(function, "web_ok"), (
+        "패키지 selfcheck가 index 존재 검사로 되돌아갔습니다 — full seal resolver를 "
+        f"통과해야 합니다: {evidence.path}"
+    )
+    assert _assigns_call_to(
+        function,
+        variable=evidence.artifact_variable,
+        callable_name=evidence.resolver,
+    ), (
+        "패키지 selfcheck가 중앙 web artifact resolver 결과를 받지 않습니다: "
+        f"{evidence.path}:{evidence.function}"
+    )
+    for attribute in evidence.consumed_attributes:
+        assert _uses_attribute(
+            function,
+            variable=evidence.artifact_variable,
+            attribute=attribute,
+        ), (
+            "패키지 selfcheck가 seal identity를 소비하지 않습니다: "
+            f"{evidence.artifact_variable}.{attribute}"
+        )
+
+
+def _test_function_names(path: Path) -> set[str]:
+    assert path.exists(), f"N-03 full-seal successor test module이 없습니다: {path}"
+    return {
+        node.name
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    }
+
+
 def _assert_legacy_callsite(
     callsite: LegacyCallsiteEvidence,
     *,
@@ -326,9 +443,16 @@ def test_old_to_new_responsibility_trace_has_unit_cardinality() -> None:
     (edge,) = _RESPONSIBILITY_TRACE
     assert edge.successor_tests == _SUCCESSOR_TESTS
     assert len(edge.successor_tests) == len(set(edge.successor_tests))
+    for predecessor_test in _N02_FIXTURE_TESTS:
+        assert callable(globals().get(predecessor_test)), (
+            f"N-02 fixture contract gate가 사라졌습니다: {predecessor_test}"
+        )
+
+    successor_functions = _test_function_names(edge.successor_test_path)
     for successor_test in edge.successor_tests:
-        assert callable(globals().get(successor_test)), (
-            f"후계 게이트가 없습니다: {successor_test}"
+        assert successor_test in successor_functions, (
+            f"N-03 full-seal 후계 게이트가 없습니다: {successor_test}"
         )
     for callsite in edge.legacy_callsites:
         _assert_legacy_callsite(callsite)
+    _assert_package_seal_successor(edge.package_successor)

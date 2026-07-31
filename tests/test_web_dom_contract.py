@@ -19,9 +19,11 @@ from _web_source import (
     ALL_CSS_FILES,
     REPO_ROOT,
     SOURCE_CSS_DIR,
+    SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     app_css,
+    imported_js,
     linked_css,
 )
 
@@ -223,7 +225,7 @@ def test_all_element_ids_are_globally_unique():
     counts = Counter(_collect_ids())
     dupes = {i: n for i, n in counts.items() if n > 1}
     assert not dupes, (
-        "web/index.html 에 중복 id 가 있습니다(전역 getElementById 오염 위험): "
+        "frontend/index.html 에 중복 id 가 있습니다(전역 getElementById 오염 위험): "
         + ", ".join(f"{i}×{n}" for i, n in sorted(dupes.items()))
     )
 
@@ -617,7 +619,8 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'src="js/sheet_picker.js"' in index, "sheet_picker.js 가 index.html 에 로드되지 않았습니다(#33)."
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "sheet_picker.js" in imports, "sheet_picker.js 가 제품 entry 에 import되지 않았습니다(#33)."
     assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
     for rel in DATA_PICK_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
@@ -634,8 +637,8 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
     여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해
     어느 화면이 래핑을 조용히 떨구는 회귀를 막는다.
     """
-    index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'src="js/preserve.js"' in index, "preserve.js 가 index.html 에 로드되지 않았습니다(#28)."
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "preserve.js" in imports, "preserve.js 가 제품 entry 에 import되지 않았습니다(#28)."
     for rel in PRESERVE_WRAPPED_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
         assert "Preserve.around" in src, (
@@ -646,7 +649,7 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
 def _mutable_module_state(src: str) -> list[str]:
     """IIFE 본문(2칸 들여쓰기)의 `let`·`var` 선언 이름 — 렌더 층 가변 모듈 상태의 실측치.
 
-    블록 주석을 먼저 지운다(주석 속 예시 코드가 예산을 먹지 않게). 이 앱의 `web/js/*` 는 전부
+    블록 주석을 먼저 지운다(주석 속 예시 코드가 예산을 먹지 않게). 이 앱의 `frontend/js/*` 는 전부
     `(function () {` 즉시실행 래퍼라 **2칸 = 모듈 스코프**이고 함수 본문은 4칸 이상이다 —
     파서 없이 성립하는 관례 기반 계측이며, 예산(천장)에는 이 정밀도로 충분하다.
     """
@@ -852,7 +855,7 @@ def test_component_gallery_links_real_stylesheets_drift_free():
     assert GALLERY.exists(), f"컴포넌트 갤러리가 없습니다: {GALLERY}"
     html = GALLERY.read_text(encoding="utf-8")
     _IdCollector().feed(html)  # 구문 파싱 OK(기존 관례 HTMLParser).
-    linked = linked_css(html, "../web/css/")
+    linked = linked_css(html, "../frontend/css/")
     assert linked == ALL_CSS_FILES, (
         "갤러리의 스타일시트 <link> 가 셸과 다릅니다 — 드리프트-0 불변식 위반.\n"
         f"  갤러리:     {linked}\n"
@@ -1606,7 +1609,8 @@ def test_theme_helper_loaded_and_toggle_present():
     이면 클릭이 화면을 지운다) — id 존재 + a11y 속성만 정적으로 단언한다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'src="js/theme.js"' in index, "theme.js 가 index.html 에 로드되지 않았습니다(다크모드 토글)."
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "theme.js" in imports, "theme.js 가 제품 entry 에 import되지 않았습니다(다크모드 토글)."
     m = re.search(r'<button\b[^>]*\bid="themeToggle"[^>]*>', index)
     assert m, "테마 토글 버튼(id=themeToggle)이 없습니다."
     tag = m.group(0)

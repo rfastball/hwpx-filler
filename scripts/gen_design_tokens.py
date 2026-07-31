@@ -2,7 +2,7 @@
 """디자인 토큰 단일 출처 → 웹 CSS + 목업 CSS 재생성/검증.
 
 색·상태색은 ``src/hwpxfiller/gui/design_tokens.json`` 한 곳에만 손으로 둔다. 이 스크립트가
-그 값을 웹 프론트엔드 CSS(``web/css/tokens.css``)와 목업 HTML
+그 값을 웹 프론트엔드 CSS(``frontend/css/tokens.css``)와 목업 HTML
 (``docs/UI_PROTOTYPE_APPB.html``)의 ``<gen:tokens>`` 영역(앱윈도 ``--a-*`` CSS 변수)에 찍는다.
 디자인 색 변경 = JSON 1곳 편집 + regen. 백엔드(core/data)는 손대지 않는다.
 
@@ -29,7 +29,7 @@ TOKENS = ROOT / "src" / "hwpxfiller" / "gui" / "design_tokens.json"
 MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
 # 웹 프론트엔드(pywebview) CSS 변수 단일 출처(에픽 #20). 실앱은 스튜디오 셸 없이 앱윈도 자체라
 # --a-* 팔레트를 주 테마로 쓰고, 배지/중성 틴트까지 토큰에서 받는다(스파이크 임시색 교체).
-WEBCSS = ROOT / "web" / "css" / "tokens.css"
+WEBCSS = ROOT / "frontend" / "css" / "tokens.css"
 
 # 목업 앱윈도 CSS 변수 이름 ← 토큰 경로(고정 팔레트; 스튜디오 셸 테마변수는 수작성 유지).
 _MOCKUP_MAP = [
@@ -43,7 +43,7 @@ _MOCKUP_MAP = [
 ]
 
 # 웹 CSS 변수 이름 ← 토큰 경로. --a-* 핵심 팔레트(목업과 동일)에 배지/상태/중성 틴트를 더한다.
-# 실앱 CSS(web/css/ 의 스타일시트들)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
+# 실앱 CSS(frontend/css/ 의 스타일시트들)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
 _WEB_MAP = [
     ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
     # brand = 문서나르미 심벌 단색(#258). 액센트(--a-primary, 로열블루)와 별개의 브랜드 파랑 —
@@ -163,7 +163,7 @@ def _layer_vars(tokens: dict, indent: str) -> "list[str]":
 
 
 def render_web_region(tokens: dict) -> str:
-    """웹 ``web/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
+    """웹 ``frontend/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
 
     표준 견고 패턴을 방출한다 — OS 기본은 미디어쿼리, 앱 토글([data-theme])이 양방향으로 이긴다:
       :root{ 라이트; color-scheme:light }
@@ -243,10 +243,10 @@ def main(argv=None) -> int:
         if problems:
             print("토큰 드리프트:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
-        print("토큰 동기화 OK (목업 · web/tokens.css)")
+        print("토큰 동기화 OK (목업 · frontend/css/tokens.css)")
         return 0
     rewrite()
-    print("재생성 완료: docs/UI_PROTOTYPE_APPB.html · web/css/tokens.css")
+    print("재생성 완료: docs/UI_PROTOTYPE_APPB.html · frontend/css/tokens.css")
     return 0
 
 

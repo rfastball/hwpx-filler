@@ -9,7 +9,8 @@
 위해 onedir(COLLECT)로 확정한다. Qt 앱(hwpx_filler.spec)과 동일 형태라 배포 파이프라인도 대칭.
 
 웹 스택은 Qt 런타임을 싣지 않는다 — PySide6 전량 excludes. 링1(gui.txt_state)만 임포트되며
-그건 Qt-free(스파이크 Q1). 정적 자산 web/ 을 datas 로 번들(동결 시 _MEIPASS/web 에서 해석).
+그건 Qt-free(스파이크 Q1). 검증된 build/web/ 산출물을 datas 로 번들
+(동결 시 _MEIPASS/web 에서 seal과 전체 트리를 다시 검증).
 WebView2 런타임은 Win11 기본 탑재라 별도 동봉 불필요.
 """
 
@@ -32,7 +33,7 @@ a = Analysis(
     pathex=[SRC],
     binaries=[],
     datas=[
-        (str(REPO / "web"), "web"),   # index.html·css·js
+        (str(REPO / "build" / "web"), "web"),  # sealed Vite output only
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[

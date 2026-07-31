@@ -1,0 +1,513 @@
+"""N-03 M1: 제품 Vite 산출물 seal producer와 source/frozen resolver 계약."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+import hwpxfiller.web_artifact as web_artifact
+from hwpxfiller.web_artifact import (
+    SEAL_FILENAME,
+    VITE_MANIFEST_PATH,
+    ToolchainVersions,
+    WebArtifactViolation,
+    resolve_web_artifact,
+    seal_repository_web_artifact,
+)
+
+COMMIT = "a" * 40
+OTHER_COMMIT = "b" * 40
+TOOLCHAIN = ToolchainVersions(node="24.18.1", npm="11.16.0", vite="8.1.5")
+_ORIGINAL_DETECT_TOOLCHAIN = web_artifact._detect_toolchain
+
+
+@dataclass(frozen=True)
+class ArtifactRepo:
+    root: Path
+
+    @property
+    def frontend_entry(self) -> Path:
+        return self.root / "frontend" / "src" / "main.js"
+
+    @property
+    def lock_path(self) -> Path:
+        return self.root / "package-lock.json"
+
+    @property
+    def config_path(self) -> Path:
+        return self.root / "vite.config.mjs"
+
+    @property
+    def artifact_root(self) -> Path:
+        return self.root / "build" / "web"
+
+    @property
+    def seal_path(self) -> Path:
+        return self.artifact_root / SEAL_FILENAME
+
+    @property
+    def index_path(self) -> Path:
+        return self.artifact_root / "index.html"
+
+    @property
+    def entry_path(self) -> Path:
+        return self.artifact_root / "assets" / "main.js"
+
+    @property
+    def manifest_path(self) -> Path:
+        return self.artifact_root / Path(VITE_MANIFEST_PATH)
+
+
+def _write_repo(root: Path) -> ArtifactRepo:
+    frontend_src = root / "frontend" / "src"
+    frontend_src.mkdir(parents=True)
+    (frontend_src / "main.js").write_text(
+        "import '../styles.css';\nwindow.boot = () => 'ready';\n",
+        encoding="utf-8",
+    )
+    (root / "frontend" / "styles.css").write_text(
+        ":root { color-scheme: light dark; }\n",
+        encoding="utf-8",
+    )
+    (root / ".node-version").write_text("24.18.1\n", encoding="utf-8")
+    (root / ".npmrc").write_text("engine-strict=true\n", encoding="utf-8")
+    (root / "package.json").write_text(
+        json.dumps(
+            {
+                "private": True,
+                "packageManager": "npm@11.16.0",
+                "devDependencies": {"vite": "8.1.5"},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "name": "web-fixture",
+                "lockfileVersion": 3,
+                "packages": {"": {"devDependencies": {"vite": "8.1.5"}}},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "vite.config.mjs").write_text(
+        "export default { base: './', build: { manifest: true } };\n",
+        encoding="utf-8",
+    )
+
+    artifact_root = root / "build" / "web"
+    (artifact_root / "assets").mkdir(parents=True)
+    (artifact_root / ".vite").mkdir()
+    (artifact_root / "index.html").write_text(
+        '<!doctype html><script type="module" src="./assets/main.js"></script>\n',
+        encoding="utf-8",
+    )
+    (artifact_root / "assets" / "main.js").write_text(
+        'const boot=()=> "ready";boot();\n',
+        encoding="utf-8",
+    )
+    (artifact_root / "assets" / "app.css").write_text(
+        ":root{color-scheme:light dark}\n",
+        encoding="utf-8",
+    )
+    (artifact_root / ".vite" / "manifest.json").write_text(
+        json.dumps(
+            {
+                "index.html": {
+                    "file": "assets/main.js",
+                    "isEntry": True,
+                    "src": "index.html",
+                }
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return ArtifactRepo(root)
+
+
+@pytest.fixture
+def unsealed_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> ArtifactRepo:
+    fixture = _write_repo(tmp_path / "repo")
+    monkeypatch.setattr(web_artifact, "_assert_source_inputs_clean", lambda _root: None)
+    monkeypatch.setattr(web_artifact, "_current_git_commit", lambda _root: COMMIT)
+    monkeypatch.setattr(
+        web_artifact,
+        "_detect_toolchain",
+        lambda _root, **_kwargs: TOOLCHAIN,
+    )
+    return fixture
+
+
+@pytest.fixture
+def sealed_repo(unsealed_repo: ArtifactRepo) -> ArtifactRepo:
+    seal_repository_web_artifact(unsealed_repo.root)
+    return unsealed_repo
+
+
+def _seal_document(fixture: ArtifactRepo) -> dict:
+    document = json.loads(fixture.seal_path.read_text(encoding="utf-8"))
+    assert isinstance(document, dict)
+    return document
+
+
+def _write_seal_document(fixture: ArtifactRepo, document: dict) -> None:
+    fixture.seal_path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _frozen_root(fixture: ArtifactRepo, tmp_path: Path) -> Path:
+    frozen_root = tmp_path / "frozen"
+    shutil.copytree(fixture.artifact_root, frozen_root / "web")
+    return frozen_root
+
+
+def test_producer_writes_complete_stable_self_excluding_seal(
+    sealed_repo: ArtifactRepo,
+) -> None:
+    first = resolve_web_artifact(repo_root=sealed_repo.root)
+    document = _seal_document(sealed_repo)
+
+    assert document["schema"] == 1
+    assert document["artifact_id"] == first.artifact_id
+    assert document["source"]["commit"] == COMMIT
+    assert len(document["source"]["input_sha256"]) == 64
+    assert document["package_lock"]["path"] == "package-lock.json"
+    assert document["toolchain"] == {
+        "node": "24.18.1",
+        "npm": "11.16.0",
+        "vite": "8.1.5",
+    }
+    assert document["vite_manifest"]["path"] == VITE_MANIFEST_PATH
+    output_paths = [record["path"] for record in document["output"]["files"]]
+    assert output_paths == [
+        ".vite/manifest.json",
+        "assets/app.css",
+        "assets/main.js",
+        "index.html",
+    ]
+    assert SEAL_FILENAME not in output_paths
+    assert all(record["size"] >= 0 and len(record["sha256"]) == 64
+               for record in document["output"]["files"])
+
+    second = seal_repository_web_artifact(sealed_repo.root)
+    assert second == first
+    assert _seal_document(sealed_repo) == document
+
+
+def test_source_and_frozen_resolvers_return_same_artifact_identity(
+    sealed_repo: ArtifactRepo,
+    tmp_path: Path,
+) -> None:
+    source = resolve_web_artifact(repo_root=sealed_repo.root)
+    frozen = resolve_web_artifact(frozen_root=_frozen_root(sealed_repo, tmp_path))
+
+    assert source.artifact_id == frozen.artifact_id
+    assert source.tree_sha256 == frozen.tree_sha256
+    assert source.index_path == sealed_repo.index_path.resolve()
+    assert frozen.index_path.name == "index.html"
+
+
+def test_frozen_resolver_never_uses_git_or_build_toolchain(
+    sealed_repo: ArtifactRepo,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("frozen resolver attempted source/tool lookup")
+
+    monkeypatch.setattr(web_artifact, "_current_git_commit", unexpected)
+    monkeypatch.setattr(web_artifact, "_detect_toolchain", unexpected)
+
+    verified = resolve_web_artifact(frozen_root=_frozen_root(sealed_repo, tmp_path))
+
+    assert verified.artifact_id == _seal_document(sealed_repo)["artifact_id"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({}, "exactly one"),
+        (
+            {"repo_root": Path("repo"), "frozen_root": Path("frozen")},
+            "exactly one",
+        ),
+    ],
+)
+def test_resolver_requires_exactly_one_runtime_mode(
+    kwargs: dict[str, Path],
+    message: str,
+) -> None:
+    with pytest.raises(WebArtifactViolation, match=message):
+        resolve_web_artifact(**kwargs)
+
+
+def test_artifact_directory_missing_is_loud(sealed_repo: ArtifactRepo) -> None:
+    shutil.rmtree(sealed_repo.artifact_root)
+
+    with pytest.raises(WebArtifactViolation, match="web artifact directory missing"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_artifact_seal_missing_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.seal_path.unlink()
+
+    with pytest.raises(WebArtifactViolation, match="web artifact seal missing"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_multiple_artifact_seals_are_loud(sealed_repo: ArtifactRepo) -> None:
+    nested = sealed_repo.artifact_root / "assets" / SEAL_FILENAME
+    nested.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(WebArtifactViolation, match="exactly one root seal"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_vite_manifest_missing_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.manifest_path.unlink()
+
+    with pytest.raises(WebArtifactViolation, match="Vite manifest missing"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_listed_output_missing_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.entry_path.unlink()
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"listed web artifact file missing: assets/main\.js",
+    ):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_extra_stale_output_is_loud(sealed_repo: ArtifactRepo) -> None:
+    stale = sealed_repo.artifact_root / "assets" / "stale.js"
+    stale.write_text("stale\n", encoding="utf-8")
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"extra stale web artifact file: assets/stale\.js",
+    ):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_one_byte_output_mutation_is_loud(sealed_repo: ArtifactRepo) -> None:
+    before = sealed_repo.entry_path.read_bytes()
+    after = bytearray(before)
+    after[0] ^= 1
+    sealed_repo.entry_path.write_bytes(after)
+    assert len(before) == len(after)
+    assert sum(left != right for left, right in zip(before, after, strict=True)) == 1
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"web artifact byte digest mismatch: assets/main\.js",
+    ):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_frontend_source_stale_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.frontend_entry.write_text(
+        sealed_repo.frontend_entry.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebArtifactViolation, match="frontend/config source input stale"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_vite_config_stale_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.config_path.write_text(
+        sealed_repo.config_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebArtifactViolation, match="frontend/config source input stale"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_package_lock_stale_is_loud(sealed_repo: ArtifactRepo) -> None:
+    sealed_repo.lock_path.write_text(
+        sealed_repo.lock_path.read_text(encoding="utf-8").replace(
+            '"lockfileVersion": 3',
+            '"lockfileVersion": 4',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebArtifactViolation, match="package-lock input stale"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_wrong_source_commit_is_loud(
+    sealed_repo: ArtifactRepo,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(web_artifact, "_current_git_commit", lambda _root: OTHER_COMMIT)
+
+    with pytest.raises(WebArtifactViolation, match="source commit mismatch"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_wrong_declared_source_input_digest_is_loud(sealed_repo: ArtifactRepo) -> None:
+    document = _seal_document(sealed_repo)
+    document["source"]["input_sha256"] = "0" * 64
+    _write_seal_document(sealed_repo, document)
+
+    with pytest.raises(WebArtifactViolation, match="source input digest.*inconsistent"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_wrong_artifact_id_is_loud(sealed_repo: ArtifactRepo) -> None:
+    document = _seal_document(sealed_repo)
+    document["artifact_id"] = "0" * 64
+    _write_seal_document(sealed_repo, document)
+
+    with pytest.raises(WebArtifactViolation, match="web artifact ID mismatch"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_source_resolver_rejects_sealed_toolchain_different_from_current_pins(
+    sealed_repo: ArtifactRepo,
+) -> None:
+    document = _seal_document(sealed_repo)
+    document["toolchain"]["node"] = "23.0.0"
+    core = {key: value for key, value in document.items() if key != "artifact_id"}
+    document["artifact_id"] = web_artifact._canonical_sha256(core)
+    _write_seal_document(sealed_repo, document)
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match="sealed toolchain does not match current exact pins",
+    ):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        (
+            '<!doctype html><script type="module" src="/assets/main.js"></script>\n',
+            r"forbidden absolute /assets URL",
+        ),
+        (
+            '<!doctype html><script type="module" src="file:///tmp/main.js"></script>\n',
+            "forbidden file: URL",
+        ),
+        (
+            '<!doctype html><script src="https://cdn.example/main.js"></script>\n',
+            r"forbidden external HTTP\(S\) resource",
+        ),
+        (
+            '<!doctype html><script type="module" src="/@vite/client"></script>\n',
+            "forbidden Vite dev client",
+        ),
+    ],
+)
+def test_producer_rejects_forbidden_runtime_reference(
+    unsealed_repo: ArtifactRepo,
+    content: str,
+    message: str,
+) -> None:
+    unsealed_repo.index_path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(WebArtifactViolation, match=message):
+        seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_empty_vite_manifest_is_loud(unsealed_repo: ArtifactRepo) -> None:
+    unsealed_repo.manifest_path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(WebArtifactViolation, match="Vite manifest is empty"):
+        seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_producer_records_versions_measured_from_actual_commands(
+    unsealed_repo: ArtifactRepo,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(web_artifact, "_detect_toolchain", _ORIGINAL_DETECT_TOOLCHAIN)
+    versions = {"Node": "24.18.1", "npm": "11.16.0", "Vite": "8.1.5"}
+    monkeypatch.setattr(
+        web_artifact,
+        "_command_version",
+        lambda _command, *, cwd, role: versions[role],
+    )
+
+    seal_repository_web_artifact(
+        unsealed_repo.root,
+        node_command="node-exact",
+        npm_command="npm-exact.cmd",
+        vite_command="vite-exact.cmd",
+    )
+
+    assert _seal_document(unsealed_repo)["toolchain"] == {
+        "node": "24.18.1",
+        "npm": "11.16.0",
+        "vite": "8.1.5",
+    }
+
+
+def test_producer_rejects_actual_toolchain_different_from_pins(
+    unsealed_repo: ArtifactRepo,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(web_artifact, "_detect_toolchain", _ORIGINAL_DETECT_TOOLCHAIN)
+    versions = {"Node": "25.6.0", "npm": "11.16.0", "Vite": "8.1.5"}
+    monkeypatch.setattr(
+        web_artifact,
+        "_command_version",
+        lambda _command, *, cwd, role: versions[role],
+    )
+
+    with pytest.raises(WebArtifactViolation, match="does not match exact pins"):
+        seal_repository_web_artifact(
+            unsealed_repo.root,
+            node_command="node-wrong",
+            npm_command="npm-exact.cmd",
+            vite_command="vite-exact.cmd",
+        )
+
+
+def test_producer_rejects_non_exact_vite_declaration(
+    unsealed_repo: ArtifactRepo,
+) -> None:
+    package_path = unsealed_repo.root / "package.json"
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    package["devDependencies"]["vite"] = "^8.1.5"
+    package_path.write_text(json.dumps(package), encoding="utf-8")
+
+    with pytest.raises(WebArtifactViolation, match="must be an exact semantic version"):
+        web_artifact._declared_toolchain(unsealed_repo.root)
+
+
+def test_producer_refuses_dirty_source_inputs(
+    unsealed_repo: ArtifactRepo,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        web_artifact,
+        "_assert_source_inputs_clean",
+        lambda _root: (_ for _ in ()).throw(
+            WebArtifactViolation("refusing to seal a dirty source tree")
+        ),
+    )
+
+    with pytest.raises(WebArtifactViolation, match="dirty source tree"):
+        seal_repository_web_artifact(unsealed_repo.root)

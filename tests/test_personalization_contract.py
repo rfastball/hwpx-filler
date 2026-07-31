@@ -1,7 +1,14 @@
 """마일스톤 I 설정 존중·개인화 정적/순수 계약(#221)."""
 from __future__ import annotations
 
-from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, app_css
+from _web_source import (
+    REPO_ROOT,
+    SOURCE_ENTRY,
+    SOURCE_INDEX,
+    SOURCE_JS_DIR,
+    app_css,
+    imported_js,
+)
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp.app import _geometry_is_visible
 
@@ -227,9 +234,10 @@ def test_pywebview_selection_and_zoom_decision_are_explicit() -> None:
 
 def test_personalization_shell_and_splitters_are_wired() -> None:
     index = SOURCE_INDEX.read_text(encoding="utf-8")
+    entry = SOURCE_ENTRY.read_text(encoding="utf-8")
     app_js = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
     css = app_css()
-    assert 'src="js/personalization.js"' in index
+    assert "personalization.js" in imported_js(entry)
     # 좌 목록 폭 스플리터의 마지막 DOM 소비처(「기안」)가 화면과 함께 사망(F6 PR-B) —
     # 소비 0. 설정 키(master_width)·배선(공유 계약)은 남아 다음 master-detail 표면이
     # 그대로 쓴다. DOM 이 되살아나면(>0) 이 계약을 다시 세우면 된다.

@@ -1,7 +1,7 @@
 """코드리뷰 3차(js-shared 클러스터) 회귀 가드 — 공유 이스케이퍼(K1)·pool.js 헤더(K11).
 
-K1: 동일 3줄 HTML 이스케이퍼가 web/js 9곳(화면 7 + 피커 2)에 복붙돼 있었다.
-``web/js/esc.js`` 의 ``window.escHtml`` 하나로 통일하고, 사본이 조용히 재유입되거나
+K1: 동일 3줄 HTML 이스케이퍼가 frontend/js 9곳(화면 7 + 피커 2)에 복붙돼 있었다.
+``frontend/js/esc.js`` 의 ``window.escHtml`` 하나로 통일하고, 사본이 조용히 재유입되거나
 로드 순서(공유 파일이 소비 화면보다 먼저)가 깨지는 회귀를 정적으로 차단한다.
 txt.js 사본만 ``"`` 를 escape 하지 않는 변종이었는데 ``title="…"``·``value="…"``
 속성 컨텍스트에도 쓰이고 있어 따옴표 포함 값이 속성을 깨는 잠복 결함 — 통일이 봉합.
@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
+from _web_source import SOURCE_ENTRY, SOURCE_JS_DIR, imported_js
 
-WEB_INDEX = SOURCE_INDEX
 WEB_JS = SOURCE_JS_DIR
 
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
@@ -38,20 +37,19 @@ def test_esc_helper_exists_and_escapes_superset():
 
 
 def test_esc_loaded_before_all_consumers():
-    """index.html 로드 순서 — esc.js 가 모든 소비 스크립트보다 먼저 와야 한다(K1)."""
-    index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'src="js/esc.js"' in index, "esc.js 가 index.html 에 로드되지 않았습니다(K1)."
-    esc_pos = index.index('src="js/esc.js"')
+    """제품 module entry 순서 — esc.js 가 모든 소비 IIFE보다 먼저 와야 한다(K1)."""
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "esc.js" in imports, "esc.js 가 제품 entry 에 import되지 않았습니다(K1)."
+    esc_pos = imports.index("esc.js")
     for rel in ESC_CONSUMERS:
-        needle = f'src="js/{rel}"'
-        assert needle in index, f"{rel} 이 index.html 에 로드되지 않았습니다."
-        assert index.index(needle) > esc_pos, (
+        assert rel in imports, f"{rel} 이 제품 entry 에 import되지 않았습니다."
+        assert imports.index(rel) > esc_pos, (
             f"{rel} 이 esc.js 보다 먼저 로드됩니다 — window.escHtml 미정의 시점 참조(K1)."
         )
 
 
 def test_no_local_escaper_copies_remain():
-    """web/js 어디에도 로컬 이스케이퍼 함수 사본이 재유입되지 않아야 한다(K1 9중복 회귀 가드).
+    """frontend/js 어디에도 로컬 이스케이퍼 사본이 재유입되지 않아야 한다(K1 9중복 회귀 가드).
 
     esc.js(단일 출처) 밖에서 `function esc…` 정의나 escape 치환 맵 리터럴이 보이면
     복붙 사본이 되살아난 것 — 전부 window.escHtml 참조여야 한다.

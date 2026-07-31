@@ -2,7 +2,7 @@
 
 원장: docs/UX_FINDINGS_101_WALKTHROUGH.md (F1·F3·F4·F15·F17·F25·F31·F35).
 전면 카피 레이어는 기각(마크업 간접화 비용 > 이득) — 대신 ①두 곳 이상 쓰이는 문자열만
-web/js/copy.js 로 승격하고 ②이 모듈이 **주석을 걷어낸 사용자 표면**(index.html 텍스트,
+frontend/js/copy.js 로 승격하고 ②이 모듈이 **주석을 걷어낸 사용자 표면**(index.html 텍스트,
 JS 템플릿/문자열)에서 개발 어휘·이슈번호를 탐지한다. 어휘 결정의 정본은 원장 F4/F15.
 """
 from __future__ import annotations
@@ -11,7 +11,7 @@ import ast
 import re
 from pathlib import Path
 
-from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR
+from _web_source import REPO_ROOT, SOURCE_ENTRY, SOURCE_INDEX, SOURCE_JS_DIR, imported_js
 
 ROOT = REPO_ROOT
 WEB_INDEX = SOURCE_INDEX
@@ -97,8 +97,8 @@ def test_web_surfaces_free_of_issue_numbers():
 #  단일 출처 계약은 살아 있는 소비자가 생기면 그 표면의 테스트가 다시 진다.)
 def test_copy_js_still_loaded():
     """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다."""
-    index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'src="js/copy.js"' in index, "copy.js 가 index.html 에 로드되지 않았습니다."
+    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "copy.js" in imports, "copy.js 가 제품 entry 에 import되지 않았습니다."
 
 
 def test_status_pill_calls_the_rule_axis_approval():

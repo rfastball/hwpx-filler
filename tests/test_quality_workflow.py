@@ -55,6 +55,31 @@ def test_distribution_gate_builds_all_portable_targets() -> None:
     assert "distribution (filler + CLI)" in text
 
 
+def test_every_quality_surface_builds_the_same_exact_frontend_artifact() -> None:
+    text, _ = _workflow()
+
+    assert text.count("actions/setup-node@v4") == 3
+    assert text.count("node-version-file: .node-version") == 3
+    assert text.count("Verify exact Node and npm") == 3
+    assert text.count("'v24.18.1'") == 3
+    assert text.count("'11.16.0'") == 3
+    assert text.count("npm.cmd ci") == 3
+    assert text.count("npm.cmd run build") == 3
+    assert text.count("npm.cmd run verify:web") == 3
+
+
+def test_release_builds_the_exact_frontend_before_tests_and_packaging() -> None:
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert release.count("actions/setup-node@v4") == 1
+    assert "node-version-file: .node-version" in release
+    assert "Verify exact Node and npm" in release
+    assert "'v24.18.1'" in release and "'11.16.0'" in release
+    assert release.index("npm.cmd ci") < release.index("npm.cmd run build")
+    assert release.index("npm.cmd run verify:web") < release.index(".\\test.ps1")
+    assert release.index("npm.cmd run verify:web") < release.index(".\\build.ps1")
+
+
 def test_installer_and_signing_remain_release_only() -> None:
     quality, _ = _workflow()
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
