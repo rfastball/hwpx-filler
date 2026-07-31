@@ -31,6 +31,7 @@ from __future__ import annotations
 import ctypes
 import os
 import shutil
+import subprocess
 import sys
 import time
 from collections import deque
@@ -657,6 +658,18 @@ def main() -> int:
     if sys.platform != "win32":
         raise SystemExit("Windows 데스크톱 세션 전용(WebView2 실창 캡처)")
     _refuse_dirty_home()
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(ROOT / "build-web.ps1"),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
     if OUT_DIR.exists():
         shutil.rmtree(OUT_DIR)  # 스크린샷은 전량 재생성 — 스테일 프레임 잔존 금지
 

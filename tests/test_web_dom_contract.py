@@ -223,7 +223,7 @@ def test_all_element_ids_are_globally_unique():
     counts = Counter(_collect_ids())
     dupes = {i: n for i, n in counts.items() if n > 1}
     assert not dupes, (
-        "web/index.html 에 중복 id 가 있습니다(전역 getElementById 오염 위험): "
+        "frontend/index.html 에 중복 id 가 있습니다(전역 getElementById 오염 위험): "
         + ", ".join(f"{i}×{n}" for i, n in sorted(dupes.items()))
     )
 
@@ -852,7 +852,7 @@ def test_component_gallery_links_real_stylesheets_drift_free():
     assert GALLERY.exists(), f"컴포넌트 갤러리가 없습니다: {GALLERY}"
     html = GALLERY.read_text(encoding="utf-8")
     _IdCollector().feed(html)  # 구문 파싱 OK(기존 관례 HTMLParser).
-    linked = linked_css(html, "../web/css/")
+    linked = linked_css(html, "../frontend/css/")
     assert linked == ALL_CSS_FILES, (
         "갤러리의 스타일시트 <link> 가 셸과 다릅니다 — 드리프트-0 불변식 위반.\n"
         f"  갤러리:     {linked}\n"
