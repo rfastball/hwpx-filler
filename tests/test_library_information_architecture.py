@@ -245,7 +245,7 @@ def test_pending_favorite_intent_is_shared_across_screens() -> None:
     사라진다(멱등 재지정이 "껐다"를 삼키는 그 창).
     """
     intent = (SOURCE_JS_DIR / "intent.js").read_text(encoding="utf-8")
-    factory = intent[intent.index("function createFavorite"):intent.index("window.Intent =")]
+    factory = intent[intent.index("function createFavorite"):intent.index("export const Intent =")]
     assert "new Map()" not in factory, "팩토리가 호출마다 사본을 만듭니다(4R)."
     module = intent[:intent.index("function createFavorite")]
     assert "const FAV_PENDING = new Map();" in module and "const FAV_LAST = new Map();" in module

@@ -61,26 +61,37 @@ def _strip_js_comments(text: str) -> str:
 def test_factory_exists_and_exposes_create():
     """datazone.js 가 window.DataZone.create 팩토리를 노출한다(가드 1)."""
     src = DZ_JS.read_text(encoding="utf-8")
-    assert "window.DataZone" in src, "datazone.js 가 window.DataZone 을 노출하지 않습니다."
+    assert "export function createDataZone" in src, (
+        "datazone.js 가 createDataZone 팩토리를 내보내지 않습니다."
+    )
     assert "function create(cfg)" in src, "DataZone 팩토리(create)가 없습니다."
 
 
 def test_load_order_esc_then_shared_then_screens():
-    """평가 순서 — 이스케이퍼 < popover.js·datazone.js < 소비 화면(job) (미정의 시점 참조 방지).
+    """평가 순서 — 이스케이퍼·popover·datazone < 소비 화면(job) (미정의 시점 참조 방지).
 
-    (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.
-     N-04 뒤 이스케이퍼 공급 지점은 esc.js 자신이 아니라 그것을 끌어오는 중앙 compat 이다.)
+    (「기안」 소비자는 화면과 함께 사망 — F6 PR-B. 남은 소비 화면은 job 하나다.)
+
+    N-05 뒤 셋의 평가 지점은 세 파일이 아니라 그들을 끌어오는 중앙 compat 한 곳이다. 그래서
+    "esc < popover < datazone" 처럼 셋의 **상대** 순서를 entry 에서 묻는 형태는 더 이상 성립
+    하지 않는다 — 그 순서는 이제 compat 의 import 그래프가 지고, 세 모듈 사이의 실제 의존은
+    ``test_frontend_build_graph`` 의 간선 대조가 단언한다. 여기 남는 질문은 원래의 결함을
+    막던 것 하나다: **공급이 소비 화면보다 먼저 평가되는가.**
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
     consumers = ("screens/job.js",)
-    esc_provider = evaluation_site("esc.js")
-    for module in (esc_provider, "popover.js", "datazone.js", *consumers):
-        assert module in modules, f"{module} 가 제품 entry 에 없습니다."
-    esc_pos = modules.index(esc_provider)
+    providers = {name: evaluation_site(name)
+                 for name in ("esc.js", "popover.js", "datazone.js")}
+
+    for name, site in providers.items():
+        assert site in modules, f"{name} 의 공급 지점({site})이 제품 entry 에 없습니다."
+        assert name not in modules, (
+            f"{name} 이 entry 에 직접 남아 있습니다 — 두 경로로 들어오면 순서 추론이 무의미해집니다."
+        )
     first_consumer = min(modules.index(module) for module in consumers)
-    for shared in ("popover.js", "datazone.js"):
-        assert esc_pos < modules.index(shared) < first_consumer, (
-            f"평가 순서가 {esc_provider} → {shared} → 소비 화면(job)이 아닙니다."
+    for name, site in providers.items():
+        assert modules.index(site) < first_consumer, (
+            f"평가 순서가 {site}({name}) → 소비 화면(job)이 아닙니다."
         )
 
 
@@ -138,7 +149,7 @@ def test_popover_dismiss_mechanism_single_sourced():
     ``menu_closed`` 프로브가 되읽는다.
     """
     pop = POPOVER_JS.read_text(encoding="utf-8")
-    assert "window.Popover" in pop and "function wireDismiss(" in pop, (
+    assert "export const Popover" in pop and "function wireDismiss(" in pop, (
         "popover.js 가 Popover.wireDismiss 를 노출하지 않습니다."
     )
     assert "let suppressNextClick" in pop, "popover.js 가 인스턴스별 suppress 플래그를 잃었습니다."

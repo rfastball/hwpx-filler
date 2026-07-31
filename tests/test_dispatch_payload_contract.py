@@ -24,7 +24,7 @@ WEB_JS = SOURCE_JS_DIR
 
 #: `Bridge.call(SCREEN|'screen', "action", {…})` — 화면 상수 또는 리터럴 화면 이름.
 _CALL = re.compile(
-    r"Bridge\.call\(\s*(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
+    r"[Bb]ridge\.call\(\s*(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
     r"['\"](?P<action>[a-z0-9_]+)['\"]\s*,\s*"
 )
 

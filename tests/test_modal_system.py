@@ -65,7 +65,7 @@ def test_open_order_and_escape_contract_are_explicit() -> None:
     open_body = src[src.index("function open(") : src.index("function finishClose(")]
     order = [
         open_body.index("const returnFocus ="),
-        open_body.index("window.Popover.closeAll()"),
+        open_body.index("Popover.closeAll()"),
         open_body.index("stack.push("),
         open_body.index("focusTo.focus()"),
     ]

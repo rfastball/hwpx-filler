@@ -23,7 +23,7 @@ from _web_source import (
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     app_css,
-    imported_js,
+    reaches_product_graph,
     linked_css,
 )
 
@@ -508,7 +508,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
         "화면 전환이 펼침 면을 회수하지 않습니다 — 남의 화면 위에 실 DOM 이 남습니다."
     )
     assert "function closeAllAndRestore" in sheets
-    assert "window.Modal.close(id);\n    restore(id);" in sheets
+    assert "Modal.close(id);\n  restore(id);" in sheets
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
     # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
     assert "trigger: trigger" in sheets
@@ -619,12 +619,13 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    assert "sheet_picker.js" in imports, "sheet_picker.js 가 제품 entry 에 import되지 않았습니다(#33)."
+    assert reaches_product_graph("sheet_picker.js"), (
+        "sheet_picker.js 가 제품 그래프에 닿지 않습니다(#33)."
+    )
     assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
     for rel in DATA_PICK_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
-        assert "needs_sheet" in src and "SheetPicker.choose" in src, (
+        assert "needs_sheet" in src and ("SheetPicker.choose" in src or "sheetPicker.choose" in src), (
             f"{rel} 이 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
             "이 화면에서 다중 시트가 조용히 첫 시트로 강등됩니다(#33, 리뷰 P1)."
         )
@@ -637,8 +638,9 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
     여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해
     어느 화면이 래핑을 조용히 떨구는 회귀를 막는다.
     """
-    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    assert "preserve.js" in imports, "preserve.js 가 제품 entry 에 import되지 않았습니다(#28)."
+    assert reaches_product_graph("preserve.js"), (
+        "preserve.js 가 제품 그래프에 닿지 않습니다(#28)."
+    )
     for rel in PRESERVE_WRAPPED_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
         assert "Preserve.around" in src, (
@@ -1124,7 +1126,7 @@ def test_needs_and_missing_template_redirect_to_different_places():
         "편집기가 새 진입 사유의 배너 문안을 모릅니다 — 사유만 실리고 아무 말도 하지 않습니다."
     )
     # ⑤ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
-    assert "Bridge.newJobFromData(context" in entry_js, (
+    assert "bridge.newJobFromData(context" in entry_js, (
         "진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다 — 모든 진입이 자발적 진입으로 떨어집니다."
     )
     assert "newJobFromData(context)" in bridge_js and "new_job_from_data(context" in bridge_js
@@ -1351,7 +1353,7 @@ def test_job_range_draft_surface_contract():
     # 존 발신과 초안 출구가 **한 체인**을 쓴다 — 도착 순서가 뒤바뀌면 취소한 편집이 커밋된다.
     assert 'chainKey: ZONE_CHAIN' in src and 'ZONE_CHAIN = "job:zone"' in src
     zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
-    assert "window.Intent.chained(cfg.chainKey, send)" in zone, "존 발신이 체인을 타지 않습니다."
+    assert "Intent.chained(cfg.chainKey, send)" in zone, "존 발신이 체인을 타지 않습니다."
     # 무변이 질의는 체인 밖 — 응답이 늦는 질의 하나가 이후 모든 변이를 막지 않게.
     assert "ZONE_QUERIES" in zone and '"filter_panel"' in zone
     assert "Bridge.call(SCREEN" not in zone.split("function call(", 1)[1].split("}", 1)[1], (
@@ -1609,8 +1611,9 @@ def test_theme_helper_loaded_and_toggle_present():
     이면 클릭이 화면을 지운다) — id 존재 + a11y 속성만 정적으로 단언한다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    imports = imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    assert "theme.js" in imports, "theme.js 가 제품 entry 에 import되지 않았습니다(다크모드 토글)."
+    assert reaches_product_graph("theme.js"), (
+        "theme.js 가 제품 그래프에 닿지 않습니다(다크모드 토글)."
+    )
     m = re.search(r'<button\b[^>]*\bid="themeToggle"[^>]*>', index)
     assert m, "테마 토글 버튼(id=themeToggle)이 없습니다."
     tag = m.group(0)
@@ -1638,7 +1641,7 @@ def test_theme_persistence_is_origin_independent():
         "영속은 브리지(set_theme)/Python 설정으로만."
     )
     theme_js = (WEB_JS_DIR / "theme.js").read_text(encoding="utf-8")
-    assert "Bridge.setTheme" in theme_js, (
+    assert "bridge.setTheme" in theme_js, (
         "theme.js 가 브리지로 영속하지 않습니다(Bridge.setTheme 부재) — #74 영속 경로."
     )
     assert not re.search(r"localStorage\s*\.", theme_js), (
@@ -1759,11 +1762,11 @@ def test_native_close_and_editor_escape_affordances_are_wired():
         "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 세 진입"
         "(newDraft·newDraftFromData·openGuarded). 진입이 늘 때 이 수도 함께 는다."
     )
-    assert "window.Modal.restoreFocus(" in entry_js, (
+    assert "Modal.restoreFocus(" in entry_js, (
         "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
     )
     modal_js = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
-    assert re.search(r"window\.Modal = \{[^}]*\brestoreFocus\b", modal_js), (
+    assert re.search(r"export const Modal = \{[^}]*\brestoreFocus\b", modal_js), (
         "Modal.restoreFocus 가 내보내지지 않았습니다 — 이탈이 그 규칙을 쓸 수 없습니다."
     )
     for guard in ("async function leaveTo(", "async function gotoSection("):
@@ -1838,7 +1841,7 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
-    assert 'window.Nav.go("editor"' in entry_src, "편집 진입이 편집기 화면으로 착지하지 않습니다."
+    assert 'navigate("editor"' in entry_src, "편집 진입이 편집기 화면으로 착지하지 않습니다."
     for fname, needle in (
         ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/library.js", "EditorEntry.openGuarded"),
@@ -1949,7 +1952,7 @@ def test_edit_entries_carry_their_context():
     assert "async function openGuarded(name, context)" in entry, (
         "공용 진입 seam 이 문맥 인자를 받지 않습니다 — 호출자가 실은 문맥이 버려집니다."
     )
-    assert "Bridge.openJobInEditor(name, context" in entry, (
+    assert "bridge.openJobInEditor(name, context" in entry, (
         "공용 진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다."
     )
     for reason in ("document_browser_repair", "preview_result", "output_result", "run_failure"):

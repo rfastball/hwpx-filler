@@ -25,6 +25,7 @@ from _web_source import (
     evaluated_modules,
     module_imports,
     side_effect_imports,
+    strip_comments,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -409,7 +410,9 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     누적된다. 서비스 안에 재호출 가드를 두는 대신 호출 자리를 하나로 묶었으므로, 그 단일성은
     여기서 세야 한다.
     """
-    compat_source = SOURCE_COMPAT.read_text(encoding="utf-8")
+    #: 이 파일의 헤더 주석은 ``window.Nav`` 를 값으로 붙들면 안 되는 **이유**를 적는다.
+    #: 그 산문을 코드로 세면 "판독이 한 곳뿐인가"라는 질문이 주석 길이에 좌우된다.
+    compat_source = strip_comments(SOURCE_COMPAT.read_text(encoding="utf-8"))
     factories = sorted(
         export for name, export in EXPECTED_ESM_EXPORTS.items()
         if export.startswith("create")
