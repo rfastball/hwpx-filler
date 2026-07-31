@@ -47,6 +47,7 @@ EXPECTED_TEST_FILES = {
     "n08_schema.test.js",
     "n08_runner.test.js",
     "n08_persistence_geometry.test.js",
+    "n08_boot_routing_overlay.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.
