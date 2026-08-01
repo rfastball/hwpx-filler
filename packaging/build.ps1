@@ -2,15 +2,27 @@
 .SYNOPSIS
   onedir 번들(웹 앱 + CLI)을 빌드하고 스모크 검증한다.
 
+.PARAMETER WebMode
+  프런트 산출물을 여기서 **만들지**(`Build`) 아니면 이미 있는 것의 봉인만 **검증할지**
+  (`VerifyExisting`) 고른다. CI 는 한 run 에 생산자가 하나뿐이라 `VerifyExisting` 으로
+  부른다 — 종전에는 워크플로가 프런트를 만든 뒤 이 스크립트가 같은 자리에서 또 만들었다(N-11B).
+
+.PARAMETER ExpectWebIdentity
+  생산자가 낸 identity JSON. 검증하는 산출물이 그것과 다르면 거절한다.
+
 .EXAMPLE
   .\packaging\build.ps1
   .\packaging\build.ps1 -Target cli
+  .\packaging\build.ps1 -WebMode VerifyExisting -ExpectWebIdentity web-artifact-identity.json
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('all', 'filler', 'cli')]
     [string]$Target = 'all',
-    [switch]$SkipCheck
+    [switch]$SkipCheck,
+    [ValidateSet('Build', 'VerifyExisting')]
+    [string]$WebMode = 'Build',
+    [string]$ExpectWebIdentity
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +50,11 @@ if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)
 }
 
 if ($Target -ne 'cli') {
-    & (Join-Path $root 'build-web.ps1')
+    # 해시테이블 splat 이다 — 배열 splat 은 요소를 **위치 인자**로 넘겨 `-Mode` 자체가
+    # $Mode 의 값이 된다(실측: ValidateSet 이 "-Mode" 를 거절).
+    $webArgs = @{ Mode = $WebMode }
+    if ($ExpectWebIdentity) { $webArgs['ExpectIdentity'] = $ExpectWebIdentity }
+    & (Join-Path $root 'build-web.ps1') @webArgs
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 

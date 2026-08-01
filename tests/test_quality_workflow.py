@@ -1,39 +1,217 @@
+"""품질 CI 의 **의미 계약** — 누가 무엇을 만들고 누가 무엇을 검증하는가(N-11B · #424).
+
+종전 이 파일은 문자열 횟수를 셌다(`text.count("npm.cmd run build") == 3`). 그 형태는 "세
+표면이 같은 산출물을 쓴다"를 지키려던 것이었지만 실제로 지킨 것은 **같은 명령을 세 번
+쓴다**였다 — 서로 다른 세 산출물을 만들어도 초록이었고, 실제로 그렇게 돌고 있었다.
+
+그래서 검사를 옮긴다: 횟수가 아니라 **생산자·소비자 관계**와 **책임의 유일성**을 본다.
+비교 대상은 파싱된 job 구조다(YAML 주석은 계약을 만족시킬 수 없다 — 파서가 걷어낸다).
+"""
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
 import sys
 from pathlib import Path
 
 import yaml
+
+from test_suite_partition import AXES, CONTRACT_EXPR
 
 
 ROOT = Path(__file__).resolve().parents[1]
 QUALITY = ROOT / ".github" / "workflows" / "quality.yml"
 CLI_ENTRY = ROOT / "packaging" / "hwpx_cli_entry.py"
 
+#: 프런트를 **만드는** 흔적. 소비자 job 에 하나라도 있으면 그 job 은 소비자가 아니다.
+BUILD_TOKENS = ("npm ci", "npm.cmd ci", "npm run build", "npm.cmd run build", "-Mode Build")
 
-def _workflow() -> tuple[str, dict[str, object]]:
+#: 생산자가 올리고 소비자가 내려받는 산출물 이름.
+SEALED = "sealed-web"
+
+
+def _workflow() -> tuple[str, dict]:
     text = QUALITY.read_text(encoding="utf-8")
     loaded = yaml.load(text, Loader=yaml.BaseLoader)
     assert isinstance(loaded, dict)
     return text, loaded
 
 
-def test_quality_workflow_has_three_parallel_required_surfaces() -> None:
+def _jobs() -> dict[str, dict]:
     _, workflow = _workflow()
     jobs = workflow["jobs"]
-    assert isinstance(jobs, dict)
-    assert set(jobs) == {"static", "pytest-package-floor", "distribution"}
-    assert all("needs" not in job for job in jobs.values())
+    assert isinstance(jobs, dict) and jobs
+    return jobs
 
 
-def test_pytest_job_keeps_native_and_package_floor_visible_separately() -> None:
-    text, _ = _workflow()
-    assert "Windows native positive scenarios" in text
-    assert "tests/test_native_positive.py" in text
-    assert "HWPX_SKIP_NATIVE_TESTS" in text
-    assert "scripts/check_package_coverage.py" in text
-    assert "package-coverage.md" in text
+def _job_text(job: dict) -> str:
+    """job 을 통째로 문자열화 — 주석이 아닌 **실제로 도는 것**만 남는다."""
+    return json.dumps(job, ensure_ascii=False)
+
+
+def _run_commands(job: dict) -> list[str]:
+    return [
+        str(step["run"])
+        for step in job.get("steps", [])
+        if isinstance(step, dict) and "run" in step
+    ]
+
+
+def _runs_axis(job: dict, axis: str) -> bool:
+    """그 job 이 `-m <축>` 으로 pytest 를 도는가(축 이름의 부분일치가 아니라 낱말로)."""
+    return any(re.search(rf"-m {axis}\b", command) for command in _run_commands(job))
+
+
+def _needs(job: dict) -> set[str]:
+    needs = job.get("needs", [])
+    return {needs} if isinstance(needs, str) else set(needs)
+
+
+def _uses_action(job: dict, action: str) -> list[dict]:
+    return [
+        step
+        for step in job.get("steps", [])
+        if isinstance(step, dict) and str(step.get("uses", "")).startswith(action)
+    ]
+
+
+def _downloads_sealed_web(job: dict) -> bool:
+    return any(
+        step.get("with", {}).get("name") == SEALED
+        for step in _uses_action(job, "actions/download-artifact")
+    )
+
+
+# ───────────────────────── 생산자 하나 · 소비자 N ─────────────────────────
+
+
+def test_exactly_one_job_produces_the_frontend() -> None:
+    """한 run 의 프런트 생산자는 **정확히 하나**다.
+
+    종전에는 넷이었다(static · pytest · distribution · 그 안의 packaging/build.ps1). 넷이
+    각자 만든 산출물은 서로 같다는 보장이 없었고, 어느 job 이 무엇을 검증했는지 말할 수 없었다.
+    """
+    builders = {
+        name for name, job in _jobs().items()
+        if any(token in _job_text(job) for token in BUILD_TOKENS)
+    }
+
+    assert builders == {SEALED}, f"프런트 생산자가 {sorted(builders)} 입니다 — 하나여야 합니다."
+
+
+def test_the_producer_uploads_the_tree_with_its_identity() -> None:
+    """생산자는 트리와 **정체성**을 함께 올린다 — 그래야 소비자가 되짚을 수 있다.
+
+    `include-hidden-files` 가 없으면 sealed 트리의 `.vite/manifest.json` 이 조용히 빠져
+    소비자가 엉뚱한 자리를 가리키며 죽는다(upload-artifact 4.4+ 기본값).
+    """
+    producer = _jobs()[SEALED]
+    uploads = _uses_action(producer, "actions/upload-artifact")
+
+    assert len(uploads) == 1, "생산자의 업로드는 하나여야 합니다"
+    options = uploads[0]["with"]
+    assert options["name"] == SEALED
+    assert "build/web" in options["path"]
+    assert "web-artifact-identity.json" in options["path"]
+    assert options["include-hidden-files"] == "true", "hidden 제외로 Vite manifest 가 샙니다"
+    assert options["if-no-files-found"] == "error", "빈 업로드가 성공으로 보이면 안 됩니다"
+
+
+def test_every_consumer_needs_the_producer_and_verifies_instead_of_rebuilding() -> None:
+    """소비자는 생산자를 기다려 **내려받아 검증**한다 — 다시 만들지 않는다.
+
+    stale 로컬 산출물 fallback 도 여기서 닫힌다: 검증은 다운로드한 트리를 이 checkout 의
+    commit·frontend 바이트와 대조하고, identity 대조가 "혹시 자기가 다시 만들었는가"를 잡는다.
+    """
+    consumers = {name: job for name, job in _jobs().items() if _downloads_sealed_web(job)}
+
+    assert consumers, "산출물 소비자가 0개면 생산자는 아무에게도 쓰이지 않습니다"
+    for name, job in consumers.items():
+        text = _job_text(job)
+        assert SEALED in _needs(job), f"{name} 이 생산자를 needs 하지 않습니다"
+        assert "VerifyExisting" in text, f"{name} 이 검증 모드로 돌지 않습니다"
+        assert "web-artifact-identity.json" in text, f"{name} 이 정체성을 되짚지 않습니다"
+        assert not any(token in text for token in BUILD_TOKENS), f"{name} 이 다시 만듭니다"
+
+    orphans = {
+        name for name, job in _jobs().items()
+        if SEALED in _needs(job) and name not in consumers
+    }
+    assert not orphans, f"{sorted(orphans)} 는 생산자를 기다리기만 하고 쓰지 않습니다"
+
+
+def test_packaging_consumes_the_same_artifact_instead_of_building_its_own() -> None:
+    """패키징도 소비자다 — 자기 안에서 프런트를 또 만들지 않는다(종전 4회째 빌드의 자리)."""
+    commands = _run_commands(_jobs()["distribution-webview2"])
+    packaging = [command for command in commands if "packaging" in command]
+
+    assert len(packaging) == 1, f"패키징 호출이 {len(packaging)} 개입니다"
+    assert "-Target all" in packaging[0], packaging[0]
+    assert "-WebMode VerifyExisting" in packaging[0], "패키징이 프런트를 다시 만듭니다"
+
+
+# ─────────────────────────── 책임의 유일성 ───────────────────────────
+
+
+def test_each_resource_axis_runs_in_exactly_one_job() -> None:
+    """자원 축은 각각 **한 job** 에서만 돈다 — 같은 책임을 두 번 태우지 않는다.
+
+    종전 `tests/test_native_positive.py` 는 전용 단계와 무필터 전체 pytest 에서 두 번 돌았다.
+    축으로 고르면 그 중복이 구조적으로 불가능해진다.
+    """
+    jobs = _jobs()
+    for axis in AXES:
+        owners = {name for name, job in jobs.items() if _runs_axis(job, axis)}
+        assert len(owners) == 1, f"`{axis}` 축을 도는 job 이 {sorted(owners)} 입니다"
+
+    contract_owners = {
+        name for name, job in jobs.items() if CONTRACT_EXPR in _job_text(job)
+    }
+    assert len(contract_owners) == 1, f"contract 식을 도는 job 이 {sorted(contract_owners)} 입니다"
+
+
+def test_no_pytest_invocation_collects_without_an_axis_filter() -> None:
+    """모든 pytest 실행은 축 식을 단다 — 무필터 한 줄이 남으면 분리가 통째로 무효다."""
+    unfiltered = [
+        (name, command)
+        for name, job in _jobs().items()
+        for command in _run_commands(job)
+        if "pytest" in command and " -m " not in command
+    ]
+
+    assert not unfiltered, f"축 없이 도는 pytest 가 있습니다: {unfiltered}"
+
+
+def test_the_package_coverage_floor_has_exactly_one_owner() -> None:
+    """커버리지와 하한은 한 job 이 소유한다 — 두 곳에서 재면 수치의 뜻이 흐려진다."""
+    owners = {
+        name for name, job in _jobs().items()
+        if "check_package_coverage.py" in _job_text(job)
+    }
+
+    assert owners == {"pytest-contract"}, f"하한 소유자가 {sorted(owners)} 입니다"
+    assert "--cov=hwpxfiller" in _job_text(_jobs()["pytest-contract"])
+
+
+def test_chrome_evidence_is_not_presented_as_webview2_evidence() -> None:
+    """설치 Chrome 판정과 실 WebView2 판정은 **다른 job·다른 이름**으로 산다.
+
+    둘을 한 자리에 두면 "브라우저에서 됐다"가 "제품에서 됐다"로 읽힌다 — 그 혼동이 이
+    저장소가 겪은 결함류(규칙은 초록인데 사용자는 틀린 것을 본다)의 입구다.
+    """
+    jobs = _jobs()
+    chrome_job = next(name for name, job in jobs.items() if _runs_axis(job, "browser"))
+    live_job = next(name for name, job in jobs.items() if _runs_axis(job, "live"))
+
+    assert chrome_job != live_job
+    assert "Chrome" in jobs[chrome_job]["name"]
+    assert "WebView2" in jobs[live_job]["name"]
+    assert "WebView2" not in _job_text(jobs[chrome_job])
+    assert "chrome" not in _job_text(jobs[live_job]).lower()
+
+
+# ─────────────────────────── 게이트 전제·경계 ───────────────────────────
 
 
 def test_press_geometry_browser_precondition_is_its_own_visible_step() -> None:
@@ -49,23 +227,32 @@ def test_press_geometry_browser_precondition_is_its_own_visible_step() -> None:
     assert "channel='chrome'" in text
 
 
-def test_distribution_gate_builds_all_portable_targets() -> None:
+def test_quickstart_101_live_precondition_is_its_own_visible_step() -> None:
+    """101 실주행 게이트(#423)의 전제를 별 단계로 확인하고, 옵트아웃을 CI 에서 걷는다.
+
+    press-geometry 와 같은 이유다. 다만 여기엔 축이 하나 더 있다 — 이 게이트는 **실행 산출물**
+    (실 HWPX 3건)을 판정하므로, 전제 부재가 조용한 스킵으로 새면 「101 이 도는지 아무도 안 보는」
+    상태로 돌아간다. 그 상태가 정확히 #423 의 출발점이었다(캡처 하니스가 몇 달 깨져 있었고
+    이름을 보는 정적 단언들은 그동안 초록이었다).
+    """
     text, _ = _workflow()
-    assert ".\\packaging\\build.ps1 -Target all" in text
-    assert "distribution (filler + CLI)" in text
+    assert "Quickstart 101 live precondition" in text
+    assert "scripts/capture_101_screenshots.py check --preflight" in text
+    assert "HWPX_SKIP_GUI_TESTS" in text
 
 
-def test_every_quality_surface_builds_the_same_exact_frontend_artifact() -> None:
+def test_no_gate_opt_out_is_switched_on_inside_the_workflow() -> None:
+    """옵트아웃 변수를 **켜는** 줄은 워크플로 어디에도 없다.
+
+    CI 는 셋 다 걷고 돈다(CLAUDE.md). 그런데 "걷는다"는 `Remove-Item` 단계로만 보이고, 어딘가
+    한 줄이 그것을 다시 켜면 그 단계는 선언만 남고 결과가 죽는다 — 이 저장소가 반복해 만난
+    결함류다. 그래서 부재를 직접 센다.
+    """
     text, _ = _workflow()
-
-    assert text.count("actions/setup-node@v4") == 3
-    assert text.count("node-version-file: .node-version") == 3
-    assert text.count("Verify exact Node and npm") == 3
-    assert text.count("'v24.18.1'") == 3
-    assert text.count("'11.16.0'") == 3
-    assert text.count("npm.cmd ci") == 3
-    assert text.count("npm.cmd run build") == 3
-    assert text.count("npm.cmd run verify:web") == 3
+    for variable in AXES.values():
+        assert f"{variable}:" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
+        assert f"{variable}=1" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
+        assert f'{variable} = "1"' not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
 
 
 def test_release_builds_the_exact_frontend_before_tests_and_packaging() -> None:
@@ -114,31 +301,3 @@ def test_frozen_cli_forces_utf8_for_redirected_windows_output(monkeypatch) -> No
     expected = {"encoding": "utf-8", "errors": "backslashreplace"}
     assert stdout.options == expected
     assert stderr.options == expected
-
-
-def test_quickstart_101_live_precondition_is_its_own_visible_step() -> None:
-    """101 실주행 게이트(#423)의 전제를 별 단계로 확인하고, 옵트아웃을 CI 에서 걷는다.
-
-    press-geometry 와 같은 이유다. 다만 여기엔 축이 하나 더 있다 — 이 게이트는 **실행 산출물**
-    (실 HWPX 3건)을 판정하므로, 전제 부재가 조용한 스킵으로 새면 「101 이 도는지 아무도 안 보는」
-    상태로 돌아간다. 그 상태가 정확히 #423 의 출발점이었다(캡처 하니스가 몇 달 깨져 있었고
-    이름을 보는 정적 단언들은 그동안 초록이었다).
-    """
-    text, _ = _workflow()
-    assert "Quickstart 101 live precondition" in text
-    assert "scripts/capture_101_screenshots.py check --preflight" in text
-    assert "HWPX_SKIP_GUI_TESTS" in text
-
-
-def test_no_gate_opt_out_is_switched_on_inside_the_workflow() -> None:
-    """옵트아웃 변수를 **켜는** 줄은 워크플로 어디에도 없다.
-
-    CI 는 셋 다 걷고 돈다(CLAUDE.md). 그런데 "걷는다"는 `Remove-Item` 단계로만 보이고, 어딘가
-    한 줄이 그것을 다시 켜면 그 단계는 선언만 남고 결과가 죽는다 — 이 저장소가 반복해 만난
-    결함류다. 그래서 부재를 직접 센다.
-    """
-    text, _ = _workflow()
-    for variable in ("HWPX_SKIP_GUI_TESTS", "HWPX_SKIP_NATIVE_TESTS", "HWPX_SKIP_MOTION_TESTS"):
-        assert f"{variable}:" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
-        assert f"{variable}=1" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
-        assert f'{variable} = "1"' not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"

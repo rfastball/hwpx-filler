@@ -40,8 +40,11 @@ uv sync --locked --all-extras --group dev --group build   # 최초 1회
 의존성을 바꿨으면 `uv lock` + `uv sync` 후 `uv.lock` 을 함께 커밋한다 — CI 는
 `uv sync --locked` 라 선언과 잠금이 다르면 실패한다.
 
-CI(`.github/workflows/quality.yml`)는 서로 의존하지 않는 세 잡이다: `static`(Ruff·Pyright) /
-`pytest + package coverage floor` / `distribution`. CI 의 Ruff 는 `scripts` 까지 보는데
+CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `sealed-web` 하나가 프런트를
+만들어 봉인·업로드하고, 소비자는 그것을 내려받아 `build-web.ps1 -Mode VerifyExisting` 으로
+되짚는다(소비자 러너에 Node 를 설치하지 않는다). 나머지는 자원 축이 가른다 — `static`
+(Ruff·Pyright) / `pytest-contract`(무표 집합 + 커버리지 하한) / `windows-native` /
+`browser-render` / `live-webview2` / `distribution-webview2`. CI 의 Ruff 는 `scripts` 까지 보는데
 `test.ps1` 은 `src tests conftest.py` 만 본다 — `scripts/` 를 고쳤으면 `uv run ruff check scripts` 를
 따로 돌린다. 릴리스는 `pyproject.toml` 버전과 같은 `vX.Y.Z` 태그 push 로만 나간다.
 
