@@ -194,9 +194,36 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-`.github/workflows/release.yml`은 태그와 프로젝트 버전이 다르면 중단한다. 일치하면 전체
-검사, 두 GUI portable EXE 빌드, self-check, 제품별 설치본 빌드, 설치·제거 스모크,
-SHA-256 생성을 거쳐 GitHub Release에 게시한다.
+`.github/workflows/release.yml`은 태그와 프로젝트 버전이 다르면 중단한다. 일치하면 exact
+frontend 빌드·봉인, 전체 검사, portable EXE 빌드, self-check, 설치본 빌드, 설치·제거 스모크,
+아래 증거 사슬, SHA-256 생성을 거쳐 GitHub Release에 게시한다.
+
+### 출하 증거 사슬
+
+릴리스는 **무엇을 실었는지 말할 수 있어야** 한다. 두 축으로 증명한다.
+
+**① 네 사본의 web artifact identity 가 같다.** `source`(검증된 seal) · `dist`(PyInstaller
+onedir) · `installed`(Inno 설치본) · `portable`(zip 을 푼 결과) 넷을
+`scripts/verify_packaged_web.py` 로 각각 확인한 뒤 **한자리에 놓고** 대조한다. 사본마다 따로
+통과시키는 것으로는 "하나만 다른" 경우가 드러나지 않는다. 순서가 곧 계약인 자리가 둘 있다 —
+설치본 검증은 **제거 앞**에, portable 검증은 **압축·해제 뒤**에 선다.
+
+**② `build-metadata.json` 이 그 identity 를 싣는다.** `version`·`commit`·`python`·
+`pyinstaller` 에 더해 `uv_lock_sha256` 과 `web`(artifact_id · tree_sha256 · source_commit ·
+package_lock_sha256 · toolchain)을 담는다. 값은 전부 fail-closed 검증을 통과한 seal 에서
+읽는다. filler 를 싣지 않는 CLI 전용 빌드는 `web.present=false` 를 **사유와 함께** 기록한다 —
+빈 키로 새면 "프런트 없는 빌드"와 "프런트 검증 실패"가 같은 모양이 된다.
+
+대조 결과는 `release-evidence.json` 으로 릴리스 자산에 오르고, 서술 자산(JSON)도
+`SHA256SUMS.txt` 가 덮는다. 검증할 수 없는 것은 함께 싣지 않는다.
+
+### 릴리스는 문서나르미만 낸다
+
+품질 CI 는 `packaging/build.ps1 -Target all` 로 CLI 번들까지 빌드해 검증하지만, 릴리스는
+**filler 만** 낸다(루트 `build.ps1` 과 `package-installer.ps1` 의 `-App` 이 둘 다 filler 뿐).
+코어 CLI 는 출하 제품이 아니라 Qt-free 코어의 형제 소비자이자 헤드리스 테스터·기반이기
+때문이다. 누락이 아니라 결정이고 `tests/test_quality_workflow.py` 가 그 비대칭을 이유와 함께
+못박는다. CLI 를 출하 제품으로 승격하려면 서명·체크섬·설치본 범위를 함께 넓혀야 한다.
 
 ### 선택형 Windows 코드 서명
 

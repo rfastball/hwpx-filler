@@ -2,7 +2,7 @@
 
 > **문서 상태:** 유효 결정
 > **권위 범위:** 제품의 시각 문법과 채택·기각 근거
-> **후속 정본:** 실제 값과 렌더 표면은 `UI_GALLERY.html`·`web/css/`·디자인 토큰
+> **후속 정본:** 실제 값과 렌더 표면은 `UI_GALLERY.html`·`frontend/css/`·디자인 토큰
 > **편집 정책:** 결정 변경 시만 갱신
 
 이 문서는 hwpx-filler가 **어떤 앱 디자인 언어를 의도적으로 택할 것인가**의 결정을
@@ -133,8 +133,8 @@ Linear 대비 검증된 추가가치가 없어 별개 방향에서 제외 — �
 ## 열린 질문 (미확정 — 추측 안 함)
 
 1. ~~Segoe/Malgun 스택 → 동봉 Pretendard GOV 이관~~ — **착지(#179 슬라이스 2)**. 가변 woff2 한
-   파일(`web/fonts/PretendardGOVVariable.woff2`, ~5.15 MB, SIL OFL 1.1)로 100~900 전 웨이트 동봉,
-   `web/css/base.css` `@font-face` + 스택 선두(`"Pretendard GOV Variable",…` , Malgun=한글 폴백).
+   파일(`frontend/fonts/PretendardGOVVariable.woff2`, ~5.15 MB, SIL OFL 1.1)로 100~900 전 웨이트 동봉,
+   `frontend/css/base.css` `@font-face` + 스택 선두(`"Pretendard GOV Variable",…` , Malgun=한글 폴백).
    정적 2개 합성으로는 앱이 쓰는 400·500·600·700·800 굵기 위계가 뭉개져 가변 단일 파일 채택.
    exe 크기 비용 = **+~5.15 MB**(전 웨이트 가변; PyInstaller `web/` 트리 datas 로 자동 동봉).
    범위는 파일러 앱(`web/`)만 — 당시 같은 저장소에 있던 diff 뷰어(`web-diff`)는 별도 제품이라
@@ -146,7 +146,7 @@ Linear 대비 검증된 추가가치가 없어 별개 방향에서 제외 — �
 ## 착지 경로
 
 인프라상 채택 = **`src/hwpxfiller/gui/design_tokens.json` 편집 + `scripts/gen_design_tokens.py`
-재생성 + `web/css` 조정 → `docs/UI_GALLERY.html` 라이트/다크 눈검증 + WCAG 대비 테스트**. 권장
+재생성 + `frontend/css` 조정 → `docs/UI_GALLERY.html` 라이트/다크 눈검증 + WCAG 대비 테스트**. 권장
 순서: ① 로열블루 색 착지(저위험) → ② 레일 내비 개선 → ③ #58/#59/#60 합류.
 
 ## 목업 (결정 시점 동결 제안 — 라이브 아님)

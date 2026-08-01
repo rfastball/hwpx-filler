@@ -47,9 +47,11 @@ CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `se
 (Ruff·Pyright) / `pytest-contract`(무표 집합 + 커버리지 하한) / `windows-native` /
 `browser-render` / `live-webview2` / `distribution-webview2`. 그 일곱을 명시 열거해 `success`
 만 통과시키는 `quality-gate` 가 브랜치 보호가 겨눌 단 하나의 이름이고, 실주행·패키징 증거는
-`if: always()` 로 실패해도 회수된다. CI 의 Ruff 는 `scripts` 까지 보는데
-`test.ps1` 은 `src tests conftest.py` 만 본다 — `scripts/` 를 고쳤으면 `uv run ruff check scripts` 를
-따로 돌린다. 릴리스는 `pyproject.toml` 버전과 같은 `vX.Y.Z` 태그 push 로만 나간다.
+`if: always()` 로 실패해도 회수된다. CI 와 `test.ps1` 의 Ruff 는 둘 다 `src tests scripts` 를
+본다 — 어느 쪽도 `packaging/` 은 안 보므로 spec·엔트리·빌드 스크립트를 고쳤으면
+`uv run ruff check packaging` 을 따로 돌린다. 릴리스는 `pyproject.toml` 버전과 같은 `vX.Y.Z`
+태그 push 로만 나가고, 네 사본(source·dist·installed·portable)의 web artifact identity 대조와
+`build-metadata.json` 의 프런트 identity 기재가 그 출하의 증거다(`docs/DEVELOPMENT_ENVIRONMENT.md` §5).
 
 ## 아키텍처 — 3링 경계
 
@@ -127,7 +129,8 @@ Python, 문안·확인 UI 는 웹**.
 | 실렌더 기하 | `tests/test_web_press_geometry.py`(+`_press_probe.py`) | sealed `build/web/` CSS를 loopback으로 제공한 최소 문서에서 `:active` 유지 중 기준면 이탈. `prefers-reduced-motion` 을 **명시 강제**(Playwright + 설치 Chrome) |
 | 헤드리스 컨트롤러 | `tests/test_webapp_*.py` | 링2 컨트롤러 dispatch·스냅샷 |
 | 링1 | `tests/test_*_state.py` | ViewModel 판정 |
-| 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI 형상, coverage 하한 |
+| 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI·릴리스 형상, coverage 하한 |
+| 패키징·출하 | `test_packaging_contract.py`, `test_build_metadata.py`, `test_legacy_path_zero.py` | spec hidden import 해소, 릴리스 메타데이터↔seal 대조, 폐기 source 경로 저장소 전역 0 |
 
 이 게이트들은 대체 관계가 아니다 — 구조적 누락은 정적 계약이, 브라우저 런타임에서만 드러나는
 결함은 selftest 가 잡는다. selftest 프로브의 `click` 은 hidden 요소도 통과하므로 가시성 단언을

@@ -363,7 +363,7 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
 
 
 #: 매핑 유형의 표시 어휘 — 라이브러리 상세 「필드 연결」 표가 소비한다. 편집기(웹)가 같은
-#: 어휘를 자기 파일에 따로 두고 있다(`web/js/screens/editor.js` ``TYPE_LABEL``); 그 중복은
+#: 어휘를 자기 파일에 따로 두고 있다(`frontend/js/screens/editor.js` ``TYPE_LABEL``); 그 중복은
 #: 편집기를 재작성하는 F7 에서 이 상수로 걷는다 — 빚을 숨기지 않고 적어 둔다.
 MAPPING_TYPE_LABELS = {"text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값"}
 #: 소스를 아직 고르지 않은 항목 — 「없음」이 아니라 **미지정**이다(조용한 빈칸 금지).

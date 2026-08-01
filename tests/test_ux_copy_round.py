@@ -72,7 +72,7 @@ def _strip_js_comments(text: str) -> str:
 
 
 def _surfaces() -> "list[tuple[str, str]]":
-    out = [("web/index.html", _strip_html_comments(WEB_INDEX.read_text(encoding="utf-8")))]
+    out = [("frontend/index.html", _strip_html_comments(WEB_INDEX.read_text(encoding="utf-8")))]
     for p in JS_FILES:
         out.append((str(p.relative_to(ROOT)), _strip_js_comments(p.read_text(encoding="utf-8"))))
     return out

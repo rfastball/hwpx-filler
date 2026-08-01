@@ -6,7 +6,7 @@
 > **편집 정책:** 계속 갱신
 
 이 문서는 pywebview + WebView2로 배포되는 현재 UI의 계약 진입점이다. 실제 표면은
-[`web/index.html`](../web/index.html)과 그 자산이며, Python 어댑터는
+[`frontend/index.html`](../frontend/index.html)과 그 자산이며, Python 어댑터는
 `src/hwpxfiller/webapp/`에 있다. Qt 셸 시대의 목업 계약은
 [역사 보존본](archive/UI_CONTRACT_QT.md)에서만 확인한다.
 
@@ -30,7 +30,7 @@
 - **디스패치 경로:** 순수 데이터 액션은 `WebFrontend.initial(screen)`과
   `dispatch(screen, action, payload)`를 통하고, 허용 화면·액션·payload 키는
   `webapp/action_registry.py`의 `validate_dispatch`가 검증한다.
-- **직접 브리지 경로:** 네이티브 자원이 관여하는 호출은 `web/js/bridge.js`가
+- **직접 브리지 경로:** 네이티브 자원이 관여하는 호출은 `frontend/js/bridge.js`가
   `WebFrontend` 공개 메서드를 **직접** 부른다 — 파일/폴더 피커(`pick_data_file`,
   `pick_output_folder`, `pick_template_path`, `pick_pool_data_file`), 실행·가져오기
   (`generate`, `import_template_file` — 단건 가져오기+채택(F8 통일, hwpx·txt·RAW 수용),
@@ -155,7 +155,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 
 사용자 확인(파괴 전이의
 `needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**
-(`web/js/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
+(`frontend/js/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
 창 수명 같은 나머지 네이티브 동작도 링2 브리지가 소유한다. 링0·링1이 WebView2 또는 DOM을
 알게 해서는 안 된다.
 
@@ -211,7 +211,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 ### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
 
 데이터 선택은 「문서 만들기」 세션 표면이 여는 **한 오버레이**(`#dataPickerModal`,
-`web/js/data_picker.js`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과 `pool`
+`frontend/js/data_picker.js`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과 `pool`
 화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 세 구획으로 흡수됐다:
 
 | 구획 | 내용 | 백엔드 |
@@ -553,7 +553,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 
 ### `library` 화면(전역 문서 작업 라이브러리) 계약 (§19.6·§19.7)
 
-`LibraryController`(`web/js/screens/library.js`)가 홈 화면을 대체한다(재작성 F2 PR-A). 링1
+`LibraryController`(`frontend/js/screens/library.js`)가 홈 화면을 대체한다(재작성 F2 PR-A). 링1
 투영은 `HomeViewModel` 이 그대로 소유한다 — 모듈명 유지는 지도 §10.8 판정 A 의 기록된 어휘 빚.
 
 - 스냅샷 최상위가 곧 browser 상태다: `view`·`mode`·`query`·`counts`·`facets`·`sections`·
@@ -610,17 +610,17 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 ## 디자인 토큰, CSS와 문구의 단일 출처
 
 - 원시 디자인 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
-  `scripts/gen_design_tokens.py`가 커밋되는 `web/css/tokens.css`와 동결 목업의 생성 구간을 만든다.
+  `scripts/gen_design_tokens.py`가 커밋되는 `frontend/css/tokens.css`와 동결 목업의 생성 구간을 만든다.
   `tests/test_design_tokens.py`가 생성물 드리프트를 막는다.
-- 실제 레이아웃·컴포넌트 스타일의 단일 출처는 `web/css/` 아래 **9개 스타일시트**다
+- 실제 레이아웃·컴포넌트 스타일의 단일 출처는 `frontend/css/` 아래 **9개 스타일시트**다
   (`base`·`draftcard`·`editor`·`job`·`overlay`·`library`·`forced-colors`·`jobdata`·`tail`).
   구 `app.css`를 **순서 보존 컷**으로 자른 것이라 링크 순서대로 이어붙이면 옛 파일과 바이트
   동일하고, 그래서 **`<link>` 순서가 캐스케이드 계약**이다 — 목록·순서의 단일 출처는
   `tests/_web_css.py`의 `APP_CSS_FILES`이고 `tests/test_web_css_manifest.py`가 셸 링크 순서와
-  `web/css/*.css` 전수 등재를 게이트한다. 현재 앱을 판단할 때 동결 목업의 인라인 CSS를
+  `frontend/css/*.css` 전수 등재를 게이트한다. 현재 앱을 판단할 때 동결 목업의 인라인 CSS를
   사용하지 않는다.
-- 한 번만 쓰이는 정적 문구는 `web/index.html` 또는 해당 화면 JavaScript/Python 산출자가
-  소유한다. 둘 이상에서 공유하는 사용자 문구만 `web/js/copy.js` 등 명시적 공용 상수로 올린다.
+- 한 번만 쓰이는 정적 문구는 `frontend/index.html` 또는 해당 화면 JavaScript/Python 산출자가
+  소유한다. 둘 이상에서 공유하는 사용자 문구만 `frontend/js/copy.js` 등 명시적 공용 상수로 올린다.
   문구 규율과 금지어는 [카피 스타일 가이드](COPY_STYLE_GUIDE.md)와 관련 테스트가 맡는다.
 
 ## 변경 규율
