@@ -728,21 +728,37 @@ def _live_terminator(
     :class:`~.selftest_api.HostOperations` 를 지난다 — 표에 있는데 아무도 부르지 않는 op 는
     선언만 살고 결과가 죽는 자리가 되므로, 소비자를 늘리는 쪽이 옳다.
 
-    실패를 삼키지 않는다: 증거를 못 썼으면 하니스는 파일 부재만 보므로 사유를 stderr 에 남기고,
-    두 번째 종료 요청은 ``already_consumed`` 로 거절돼 **누가 두 번 불렀는지**가 진단이 된다.
+    **1회성은 거래 전체가 진다**(#425 리뷰 P2). op 각각의 가드에 기대면 두 번째 호출이 쓰기를
+    먼저 통과해 **첫 증거를 덮어쓴 뒤** 종료 거절 로그만 남긴다 — 실행의 결론이 조용히 바뀌고,
+    그 자리에 남는 것은 "종료를 두 번 불렀다"는 엉뚱한 진단뿐이다. 종결은 실행 하나의 결론을
+    확정하는 사건이라 그 결론은 **처음 것**이다.
+
+    실패를 삼키지 않는다 — 그리고 **내구성 채널**로 삼키지 않는다. 종전 두 실패는
+    :func:`~hwpxcore.native._debug.log` 로 갔는데 그것은 ``HWPX_WEBAPP_LOG`` 가 없으면 no-op
+    이라, "사유를 stderr 로라도 남긴다"고 적힌 주석이 실제로는 아무 데도 안 남기고 있었다.
+    종결의 실패는 하니스가 **파일 부재로만** 만나는 사건이라 사유가 없으면 원인이 한 겹
+    가려진다. 그래서 :func:`.settings.alert`(stderr + 홈 로그)를 쓴다.
     """
     operations = selftest_api.HostOperations(
         write_output=write_output,
         destroy=lambda: window.destroy(),  # type: ignore[attr-defined]
     )
+    consumed: "list[list[str]]" = []
 
     def finish(result: "Mapping[str, object]") -> None:
+        if consumed:
+            settings.alert(
+                "live-run 종결이 두 번 요청됐습니다(already_consumed) — "
+                f"확정된 결론은 {consumed[0]!r} 이고 버린 것은 {sorted(map(str, result))!r}"
+            )
+            return
+        consumed.append(sorted(map(str, result)))
         written = operations.dispatch("output_write", {"result": dict(result)})
         if not written.ok:
-            log(f"live-run output_write 실패: [{written.code}] {written.detail}")
+            settings.alert(f"live-run output_write 실패: [{written.code}] {written.detail}")
         destroyed = operations.dispatch("window_destroy")
         if not destroyed.ok:
-            log(f"live-run window_destroy 실패: [{destroyed.code}] {destroyed.detail}")
+            settings.alert(f"live-run window_destroy 실패: [{destroyed.code}] {destroyed.detail}")
 
     return finish
 

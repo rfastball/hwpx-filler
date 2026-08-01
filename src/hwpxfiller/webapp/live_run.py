@@ -109,10 +109,20 @@ def validate(run: object) -> LiveRun:
         raise LiveRunContractError(f"드라이버가 콜러블이 아닙니다: {run.drive!r}")
     if not callable(run.write_output):
         raise LiveRunContractError(f"증거 기록기가 콜러블이 아닙니다: {run.write_output!r}")
-    if run.file_dialogs is not None and not isinstance(run.file_dialogs, FileDialogs):
-        raise LiveRunContractError(
-            f"file_dialogs 는 FileDialogs 여야 합니다: {type(run.file_dialogs).__name__}"
-        )
+    if run.file_dialogs is not None:
+        if not isinstance(run.file_dialogs, FileDialogs):
+            raise LiveRunContractError(
+                f"file_dialogs 는 FileDialogs 여야 합니다: {type(run.file_dialogs).__name__}"
+            )
+        # 형태만 보면 `FileDialogs(open_file=None, …)` 가 통과해 **첫 파일 선택에서** 죽는다.
+        # 그 시점은 창이 이미 떠 있고 대본이 절반쯤 지난 뒤라, 이 seam 이 등록 시점 실패로
+        # 옮겨 오려던 바로 그 늦은 진단이 된다(#425 리뷰 P2).
+        for member in ("open_file", "open_folder"):
+            answer = getattr(run.file_dialogs, member)
+            if not callable(answer):
+                raise LiveRunContractError(
+                    f"file_dialogs.{member} 가 콜러블이 아닙니다: {answer!r}"
+                )
     _check_drive_arity(run)
     return run
 

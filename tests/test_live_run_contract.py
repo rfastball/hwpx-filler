@@ -180,6 +180,15 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
         ({"drive": "not-callable"}, "콜러블이 아닙니다"),
         ({"write_output": "not-callable"}, "증거 기록기"),
         ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
+        # 형태만 보면 통과해 **첫 파일 선택에서** 죽는다 — 창이 이미 뜬 뒤의 늦은 진단이다.
+        (
+            {"file_dialogs": live_run.FileDialogs(open_file=None, open_folder=lambda *a: None)},
+            r"file_dialogs\.open_file",
+        ),
+        (
+            {"file_dialogs": live_run.FileDialogs(open_file=lambda *a: None, open_folder=None)},
+            r"file_dialogs\.open_folder",
+        ),
     ],
 )
 def test_contract_names_the_malformed_field(kwargs, fragment) -> None:
@@ -208,7 +217,13 @@ def test_an_unreadable_signature_is_refused_not_assumed() -> None:
 
 
 def test_terminator_writes_then_destroys_exactly_once() -> None:
-    """증거 쓰기 **다음** 종료, 각각 한 번. 두 번째 종료는 조용한 no-op 이 아니다."""
+    """증거 쓰기 **다음** 종료, 그리고 **거래 전체가** 한 번.
+
+    op 각각의 가드에 기대면 두 번째 호출이 쓰기를 먼저 통과해 첫 증거를 **덮어쓴 뒤** 종료
+    거절 로그만 남긴다 — 실행의 결론이 조용히 바뀌고, 남는 진단은 "종료를 두 번 불렀다"는
+    엉뚱한 것이 된다(#425 리뷰 P2). 종결은 실행 하나의 결론을 확정하는 사건이라 그 결론은
+    처음 것이어야 한다.
+    """
     order: "list[str]" = []
     window = _FakeWindow(on_destroy=lambda: order.append("destroy"))
 
@@ -218,8 +233,40 @@ def test_terminator_writes_then_destroys_exactly_once() -> None:
     assert order == ["write:{'ok': True}", "destroy"]
     assert window.destroyed == 1
 
-    finish({"ok": True})  # 두 번째 — 쓰기는 지나가지만 종료는 거절된다
+    finish({"ok": False, "error": "늦게 도착한 결론"})
+
+    assert order == ["write:{'ok': True}", "destroy"], "두 번째 결론이 증거를 덮어쓰면 안 된다"
     assert window.destroyed == 1
+
+
+def test_a_refused_second_finish_names_what_it_dropped(capsys) -> None:
+    """두 번째 종결 요청은 조용한 no-op 이 아니다 — 무엇을 버렸는지 이름을 댄다.
+
+    채널은 **내구성 경보**(stderr + 홈 로그)여야 한다. 종전 두 실패가 쓰던
+    ``hwpxcore.native._debug.log`` 는 ``HWPX_WEBAPP_LOG`` 없이는 no-op 이라, 사유를 남긴다고
+    적힌 주석이 실제로는 아무 데도 남기지 않았다(선언은 살고 결과는 죽는다).
+    """
+    finish = app_mod._live_terminator(_FakeWindow(), lambda _result: None)
+    finish({"captured": []})
+    finish({"error": "두 번째"})
+
+    logged = capsys.readouterr().err
+    assert "already_consumed" in logged
+    assert "['captured']" in logged, "확정된 결론이 무엇이었는지"
+    assert "['error']" in logged, "버려진 것이 무엇인지"
+
+
+def test_a_failed_evidence_write_is_alarmed_not_swallowed(capsys) -> None:
+    """증거를 못 쓰면 하니스는 파일 부재만 본다 — 사유가 없으면 원인이 한 겹 가려진다."""
+
+    def refuse(_result):
+        raise OSError("디스크가 가득 찼다")
+
+    app_mod._live_terminator(_FakeWindow(), refuse)({"ok": True})
+
+    logged = capsys.readouterr().err
+    assert "output_write 실패" in logged
+    assert "디스크가 가득 찼다" in logged
 
 
 def test_selftest_context_is_the_same_assembly_main_uses() -> None:
