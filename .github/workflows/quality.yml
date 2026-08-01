@@ -96,11 +96,6 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-        # `npm ci` 는 없다. 이 job 이 Node 를 쓰는 곳은 `node --test` 로 도는 프런트 모듈
-        # 단위 테스트뿐이고 그 테스트들은 `frontend/` 만 import 한다 — node_modules 불요.
       - name: Download the sealed web artifact
         uses: actions/download-artifact@v4
         with:
@@ -108,7 +103,18 @@ jobs:
           path: .
       - name: Verify the downloaded artifact against this checkout
         shell: pwsh
+        # **Node 가 이 job 에 존재하기 전에** 돈다. 순서가 계약이다 — 산출물 검증이 빌드
+        # 도구를 하나도 쓰지 않는다는 주장을 단계 순서가 그대로 증명한다.
         run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Install the locked frontend toolchain for the JS module gate
+        # 산출물을 만들려는 것이 아니다(`npm run build` 없음). `tests/js/*.test.js` 를 모는
+        # `node --test` 게이트가 vite(oxc) 파서를 실제로 불러 전역 위생을 검사한다 —
+        # 그 테스트는 부재를 조용히 스킵하지 않고 사유를 대며 죽게 쓰여 있다.
+        run: npm.cmd ci
       - name: Contract suite with Python coverage
         shell: pwsh
         # 커버리지와 하한은 이 job 이 **혼자** 소유한다. 경계 suite 셋은 앱을 subprocess 로

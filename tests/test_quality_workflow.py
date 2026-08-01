@@ -24,8 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 QUALITY = ROOT / ".github" / "workflows" / "quality.yml"
 CLI_ENTRY = ROOT / "packaging" / "hwpx_cli_entry.py"
 
-#: 프런트를 **만드는** 흔적. 소비자 job 에 하나라도 있으면 그 job 은 소비자가 아니다.
-BUILD_TOKENS = ("npm ci", "npm.cmd ci", "npm run build", "npm.cmd run build", "-Mode Build")
+#: 프런트를 **만드는·봉인하는** 흔적. 소비자 job 에 하나라도 있으면 그 job 은 소비자가 아니다.
+#:
+#: `npm ci` 는 여기 없다 — 의존성 설치는 산출물 생산이 아니다. 실제로 `pytest-contract` 는
+#: `tests/js/*.test.js` 를 모는 `node --test` 게이트 때문에 툴체인이 필요하다(그 게이트는
+#: vite 의 파서를 불러 전역 위생을 본다). 두 필요를 뭉뚱그리면 이 계약이 엉뚱한 것을 막는다.
+#: "산출물 검증은 빌드 도구를 안 쓴다"는 주장은 아래 **단계 순서** 계약이 대신 진다.
+BUILD_TOKENS = ("npm run build", "npm.cmd run build", "-Mode Build")
 
 #: 생산자가 올리고 소비자가 내려받는 산출물 이름.
 SEALED = "sealed-web"
@@ -139,6 +144,32 @@ def test_every_consumer_needs_the_producer_and_verifies_instead_of_rebuilding() 
         if SEALED in _needs(job) and name not in consumers
     }
     assert not orphans, f"{sorted(orphans)} 는 생산자를 기다리기만 하고 쓰지 않습니다"
+
+
+def test_the_artifact_is_verified_before_any_node_appears_in_the_job() -> None:
+    """소비자의 산출물 검증은 **Node 가 그 job 에 들어오기 전에** 끝난다.
+
+    "봉인 검증에 빌드 도구가 필요 없다"는 말은 문장으로 두면 언제든 거짓이 될 수 있다. 단계
+    순서로 두면 그 자체가 증거다 — 검증이 `setup-node` 앞에 있는 한, 그 단계는 Node 없이
+    통과한 것이다. (`pytest-contract` 는 나중에 JS 게이트용으로 툴체인을 깔지만, 그것은 이미
+    끝난 검증의 전제가 아니다.)
+    """
+    for name, job in _jobs().items():
+        steps = job.get("steps", [])
+        if not any("VerifyExisting" in str(step.get("run", "")) for step in steps):
+            continue
+        verify_at = next(
+            index for index, step in enumerate(steps)
+            if "VerifyExisting" in str(step.get("run", ""))
+        )
+        node_at = [
+            index for index, step in enumerate(steps)
+            if str(step.get("uses", "")).startswith("actions/setup-node")
+        ]
+        assert all(verify_at < index for index in node_at), (
+            f"{name}: 산출물 검증이 Node 설치 **뒤**에 있습니다 — 그 순서로는 검증이 Node "
+            "없이 통과한다는 것을 아무도 확인하지 않습니다."
+        )
 
 
 def test_packaging_consumes_the_same_artifact_instead_of_building_its_own() -> None:

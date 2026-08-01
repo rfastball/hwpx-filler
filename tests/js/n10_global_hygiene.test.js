@@ -49,8 +49,9 @@ try {
   ({ parseAst } = await import("vite"));
 } catch (thrown) {
   throw new Error(
-    "프런트 툴체인(`vite`)을 못 불렀습니다 — `npm ci` 가 먼저입니다. CI 세 잡은 모두 pytest "
-    + `앞에서 그것을 돌리므로 부재는 스킵 사유가 아니라 실패입니다: ${thrown.message}`,
+    "프런트 툴체인(`vite`)을 못 불렀습니다 — `npm ci` 가 먼저입니다. 이 게이트를 도는 잡"
+    + "(CI 의 pytest-contract)은 pytest 앞에서 그것을 돌리므로 부재는 스킵 사유가 아니라 "
+    + `실패입니다: ${thrown.message}`,
   );
 }
 
