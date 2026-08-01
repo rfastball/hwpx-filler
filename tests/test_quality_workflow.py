@@ -153,6 +153,25 @@ def test_every_action_is_pinned_to_a_full_commit_sha() -> None:
         assert re.search(r"#\s*v\d", trailer), f"{reference} 에 사람이 읽을 버전 주석이 없습니다"
 
 
+def test_exactly_one_job_may_save_the_uv_cache() -> None:
+    """캐시는 모두가 쓰되 **하나만 저장한다** — 동시 예약은 매 run 경고를 남긴다.
+
+    설명 없는 경고가 상시로 붙어 있으면 다음 사람이 워크플로를 읽을 때마다 지나칠 것이
+    하나 늘고, 그 습관이 진짜 경고를 지나치게 만든다.
+    """
+    savers = {
+        str(step["with"]["save-cache"])
+        for job in _jobs().values()
+        for step in _uses_action(job, "astral-sh/setup-uv")
+        if "save-cache" in step.get("with", {})
+    }
+
+    assert savers, "저장 정책이 없으면 일곱 잡이 같은 키를 두고 경합한다"
+    assert len(savers) == 1 and "github.job ==" in savers.pop(), (
+        "저장 잡을 조건 하나로 고르지 않으면 어느 잡이 저장하는지 읽어 낼 수 없다"
+    )
+
+
 def test_downloads_refuse_a_digest_mismatch() -> None:
     """산출물 전송이 어긋나면 **받는 쪽에서** 죽는다 — 조용히 다른 바이트를 쓰지 않는다."""
     downloads = [

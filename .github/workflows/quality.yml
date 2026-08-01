@@ -45,6 +45,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -82,6 +87,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Ruff
@@ -104,6 +114,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
@@ -173,6 +188,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Windows native positive scenarios
@@ -200,6 +220,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
@@ -244,6 +269,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
@@ -319,6 +349,11 @@ jobs:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
+          # 캐시를 **쓰는** 잡은 전부지만 **저장하는** 잡은 하나다. 일곱이 동시에 같은 키를
+          # 예약하려 들면 러너가 「Unable to reserve cache」로 경고하고, 설명 없는 경고는
+          # 다음 사람이 워크플로를 읽을 때마다 지나칠 것 하나를 더한다. 저장은 환경이 가장
+          # 큰 잡(dev+build)이 진다 — 그 캐시가 나머지의 상위집합이다.
+          save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked build environment
         run: uv sync --locked --all-extras --group dev --group build
       - name: Download the sealed web artifact
