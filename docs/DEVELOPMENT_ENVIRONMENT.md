@@ -211,8 +211,15 @@ onedir) · `installed`(Inno 설치본) · `portable`(zip 을 푼 결과) 넷을
 **② `build-metadata.json` 이 그 identity 를 싣는다.** `version`·`commit`·`python`·
 `pyinstaller` 에 더해 `uv_lock_sha256` 과 `web`(artifact_id · tree_sha256 · source_commit ·
 package_lock_sha256 · toolchain)을 담는다. 값은 전부 fail-closed 검증을 통과한 seal 에서
-읽는다. filler 를 싣지 않는 CLI 전용 빌드는 `web.present=false` 를 **사유와 함께** 기록한다 —
-빈 키로 새면 "프런트 없는 빌드"와 "프런트 검증 실패"가 같은 모양이 된다.
+읽는다.
+
+프런트를 싣는지는 **빌드 계획**이 정한다 — 생성기가 디스크를 보고 추측하지 않는다.
+`scripts/generate_build_metadata.py` 는 `--require-web`(싣는다: 없거나 검증 실패면 중단)와
+`--no-web REASON`(안 싣는다: 산출물을 **찾지도 않고** 사유와 함께 부재 기록) 중 하나를
+**반드시** 받는다. CLI 전용 빌드는 앞선 filler 빌드의 유효한 `build/web` 이 남아 있는 작업
+폴더에서 돌아도 `web.present=false` 여야 한다 — `hwpx_cli.spec` 은 `datas=[]` 라 실제로는
+아무것도 싣지 않기 때문이다. 빈 키로 새면 "프런트 없는 빌드"와 "프런트 검증 실패"가 같은
+모양이 된다.
 
 대조 결과는 `release-evidence.json` 으로 릴리스 자산에 오르고, 서술 자산(JSON)도
 `SHA256SUMS.txt` 가 덮는다. 검증할 수 없는 것은 함께 싣지 않는다.
