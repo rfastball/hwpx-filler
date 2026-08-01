@@ -8,20 +8,30 @@ name: quality
 #
 # 이제 `sealed-web` 하나가 clean checkout 에서 install → build → seal → verify 를 완주해
 # 산출물과 그 정체성(artifact_id·tree_sha256·source commit)을 올리고, 소비자는 그것을
-# 내려받아 `VerifyExisting` 으로 되짚는다. 소비자 러너에는 Node 를 설치하지 않는다 —
-# 없는데도 통과하는 것이 "소비자는 다시 만들지 않는다"의 실물 증거다.
+# 내려받아 `VerifyExisting` 으로 되짚는다. 그 검증은 `setup-node` **앞에** 서서 빌드 도구
+# 없이 통과한다 — 순서가 곧 그 주장의 증거다.
 #
 # 실패 영역도 함께 갈린다. 자원 축(pytest marker)이 잡을 나누므로 어느 잡이 빨간지가 곧
 # 무엇이 깨졌는지다: 결정론적 계약 / 실 Win32 / 설치 Chrome 기하 / 실 WebView2 / frozen 배포.
 # 같은 책임은 한 run 에서 정확히 한 번 돈다(종전 native 이중 실행은 축 분리로 사라졌다).
+#
+# action 은 전부 **full commit SHA** 로 고정한다. 태그는 움직이는 이름이라 같은 워크플로가
+# 어제와 다른 코드를 돌릴 수 있고, 그때 무엇이 바뀌었는지 이 파일은 말해 주지 못한다.
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [master, main]
 
 permissions:
   contents: read
+
+# 같은 PR 의 앞선 run 만 취소한다. `master` push 와 merge queue 는 각자의 이력을 남겨야
+# 하므로 취소 대상이 아니다 — 초록이었는지 아무도 모르는 commit 을 만들지 않는다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   sealed-web:
@@ -29,15 +39,15 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -47,7 +57,7 @@ jobs:
         # 둘이 어긋나는 날이 온다(단일 출처).
         run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
       - name: Upload the sealed web artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sealed-web
           path: |
@@ -66,8 +76,8 @@ jobs:
     # 산출물을 읽지 않는다 — Ruff 대상은 src·tests·scripts 이고 Pyright 는 src 다.
     # 그래서 생산자를 기다리지 않고 Node 도 설치하지 않는다.
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -88,8 +98,8 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -97,16 +107,17 @@ jobs:
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
+          digest-mismatch: error
       - name: Verify the downloaded artifact against this checkout
         shell: pwsh
         # **Node 가 이 job 에 존재하기 전에** 돈다. 순서가 계약이다 — 산출물 검증이 빌드
         # 도구를 하나도 쓰지 않는다는 주장을 단계 순서가 그대로 증명한다.
         run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -138,7 +149,7 @@ jobs:
           exit $gateExit
       - name: Upload pytest and coverage evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pytest-package-coverage
           path: |
@@ -156,8 +167,8 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -183,8 +194,8 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -192,10 +203,11 @@ jobs:
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
+          digest-mismatch: error
       - name: Verify the downloaded artifact against this checkout
         shell: pwsh
         run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
@@ -222,9 +234,12 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
+      # 101 실주행의 보고서·표준출력이 떨어질 자리. 종전에는 pytest 임시 폴더로 가서 잡과
+      # 함께 사라졌다 — 실패한 실주행이 무엇을 봤는지 아무것도 남지 않았다.
+      HWPX_LIVE_EVIDENCE_DIR: ${{ github.workspace }}/live-evidence
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -232,10 +247,11 @@ jobs:
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
       - name: Download the sealed web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
+          digest-mismatch: error
       - name: Verify the downloaded artifact against this checkout
         shell: pwsh
         run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
@@ -252,9 +268,38 @@ jobs:
           uv run --no-sync python scripts/capture_101_screenshots.py check --preflight
       - name: Real app suite and Quickstart 101 check
         shell: pwsh
+        # 제품 단언은 **재시도하지 않는다**. 두 번째 시도가 초록이면 첫 번째 빨강이 무슨
+        # 뜻이었는지 아무도 묻지 않게 되고, 그 상태의 게이트는 이미 게이트가 아니다.
         run: |
           Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
           uv run --no-sync pytest -q -m live --basetemp="$env:RUNNER_TEMP/live"
+      - name: Collect live diagnostics
+        if: always()
+        shell: pwsh
+        # 실패한 실주행은 임시 홈을 **지우지 않고 남긴다**(하니스 계약). 그 잔재의 진단
+        # 파일만 골라 회수 자리로 옮긴다 — 홈 전체를 올리면 실 문서까지 따라온다.
+        run: |
+          $target = "$env:GITHUB_WORKSPACE/live-evidence"
+          New-Item -ItemType Directory -Force $target | Out-Null
+          Get-ChildItem $env:TEMP -Directory -Filter 'hwpx-101-*' -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $leftover = $_
+              Get-ChildItem $leftover.FullName -Recurse -File `
+                -Include '_live101_hang_stacks.txt', '_live101_result.json' `
+                -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                  Copy-Item $_.FullName (Join-Path $target "$($leftover.Name)-$($_.Name)") -Force
+                }
+            }
+          Get-ChildItem $target -File -ErrorAction SilentlyContinue |
+            ForEach-Object { "수집: $($_.Name) ($($_.Length) bytes)" }
+      - name: Upload live evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-webview2-evidence
+          path: live-evidence
+          if-no-files-found: warn
 
   distribution-webview2:
     name: distribution-webview2 (frozen exe)
@@ -268,8 +313,8 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
           enable-cache: true
@@ -277,12 +322,55 @@ jobs:
       - name: Install locked build environment
         run: uv sync --locked --all-extras --group dev --group build
       - name: Download the sealed web artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sealed-web
           path: .
+          digest-mismatch: error
       - name: Build and self-check all portable distributions
         shell: pwsh
         run: >-
           .\packaging\build.ps1 -Target all
           -WebMode VerifyExisting -ExpectWebIdentity web-artifact-identity.json
+      - name: Upload packaging evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-webview2-evidence
+          # 패키징이 내는 증거 6종(산출물 동일성·packaged selftest·외부망 양성/음성 대조·
+          # 검증 요약). 제품 홈 두 개는 뺀다 — 실행 잔재라 증거가 아니고 부피만 크다.
+          path: |
+            build/n03-package-evidence-*/**
+            !build/n03-package-evidence-*/home-network-control/**
+            !build/n03-package-evidence-*/home-offline/**
+          if-no-files-found: warn
+
+  quality-gate:
+    name: quality-gate
+    runs-on: ubuntu-latest
+    # 브랜치 보호가 겨눌 **하나의 이름**. 잡을 늘리거나 이름을 바꿔도 보호 설정을 따라
+    # 고치지 않게 여기서 모은다. 대신 열거가 계약이다 — 필수 job 하나가 목록에서 빠지면
+    # `tests/test_quality_workflow.py` 가 멈춘다.
+    if: always()
+    needs:
+      - sealed-web
+      - static
+      - pytest-contract
+      - windows-native
+      - browser-render
+      - live-webview2
+      - distribution-webview2
+    steps:
+      - name: Refuse anything that is not a success
+        shell: bash
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        # `success` 만 통과다. 지금 이 워크플로에는 의도된 skip 이 없으므로 `skipped` 도
+        # 거절한다 — 조건부 job 을 들이려면 그 의도를 여기 명시로 적어야 한다.
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key)=\(.value.result)"'
+          failed=$(echo "$RESULTS" | jq -r 'to_entries[] | select(.value.result != "success") | .key')
+          if [ -n "$failed" ]; then
+            echo "::error::필수 job 이 성공하지 않았습니다: $(echo "$failed" | tr '\n' ' ')"
+            exit 1
+          fi

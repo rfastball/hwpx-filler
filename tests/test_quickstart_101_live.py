@@ -62,6 +62,22 @@ _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 # ───────────────────────────────── 실주행 ─────────────────────────────────
 
 
+def _evidence_dir(tmp_path_factory) -> Path:
+    """이 실행의 증거가 떨어질 자리.
+
+    기본은 pytest 임시 폴더다 — 로컬에서 저장소를 어지럽히지 않는다. CI 는
+    ``HWPX_LIVE_EVIDENCE_DIR`` 로 **회수 가능한** 자리를 준다: 종전에는 보고서가 러너의
+    임시 폴더로 가서 잡과 함께 사라졌고, 실패한 실주행이 무엇을 봤는지 남는 것이 없었다
+    (N-11B). 증거는 실패했을 때 가장 필요하므로 그 자리를 밖에서 정할 수 있어야 한다.
+    """
+    given = os.environ.get("HWPX_LIVE_EVIDENCE_DIR")
+    if not given:
+        return tmp_path_factory.mktemp("live101")
+    target = Path(given)
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 @pytest.fixture(scope="module")
 def live_check_run(tmp_path_factory) -> dict:
     """101 `check` 를 **모듈당 한 번** 돌리고 그 실행의 사실을 모아 준다.
@@ -73,7 +89,8 @@ def live_check_run(tmp_path_factory) -> dict:
     예제 홈 스냅샷을 **이 실행을 감싸서** 뜬다 — 그래야 「이 실행이 바꿨는가」가 정확한 질문이
     된다(다른 테스트가 사이에 끼면 귀속이 흐려진다).
     """
-    report_path = tmp_path_factory.mktemp("live101") / "check-report.json"
+    evidence = _evidence_dir(tmp_path_factory)
+    report_path = evidence / "check-report.json"
     before = _tree_manifest(EXAMPLE_HOME)
     assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
@@ -91,6 +108,10 @@ def live_check_run(tmp_path_factory) -> dict:
         timeout=_OUTER_TIMEOUT_S,
     )
     after = _tree_manifest(EXAMPLE_HOME)
+    # 하니스가 무엇을 말하며 끝났는지는 **보고서가 없을 때** 가장 필요하다. 단언 문자열은
+    # 2000자로 잘리고 러너 로그는 접혀 있으므로, 회수 가능한 자리에 통째로 남긴다.
+    (evidence / "check-stdout.txt").write_text(proc.stdout, encoding="utf-8")
+    (evidence / "check-stderr.txt").write_text(proc.stderr, encoding="utf-8")
     assert report_path.exists(), (
         f"보고서 미생성 — rc={proc.returncode}\n"
         f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"

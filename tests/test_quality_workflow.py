@@ -35,6 +35,9 @@ BUILD_TOKENS = ("npm run build", "npm.cmd run build", "-Mode Build")
 #: 생산자가 올리고 소비자가 내려받는 산출물 이름.
 SEALED = "sealed-web"
 
+#: 브랜치 보호가 겨누는 단 하나의 이름.
+GATE = "quality-gate"
+
 
 def _workflow() -> tuple[str, dict]:
     text = QUALITY.read_text(encoding="utf-8")
@@ -88,6 +91,105 @@ def _downloads_sealed_web(job: dict) -> bool:
     )
 
 
+# ─────────────────────────── 집계·운영 계약 ───────────────────────────
+
+
+def test_the_aggregate_gate_enumerates_every_other_job() -> None:
+    """`quality-gate` 는 나머지 **전부**를 열거한다 — 빠진 job 은 아무도 안 본다.
+
+    브랜치 보호가 겨누는 이름이 하나라는 것은 편의지만, 그 하나가 무엇을 대표하는지 목록으로
+    적혀 있지 않으면 job 을 추가할 때 조용히 대표에서 빠진다. 그 상태의 초록은 "다 통과했다"가
+    아니라 "우리가 보기로 한 것만 통과했다"이고, 둘의 차이는 보이지 않는다.
+    """
+    jobs = _jobs()
+    assert GATE in jobs, "집계 job 이 없습니다"
+
+    assert _needs(jobs[GATE]) == set(jobs) - {GATE}, (
+        f"열거 누락 {sorted(set(jobs) - {GATE} - _needs(jobs[GATE]))} · "
+        f"없는 job 열거 {sorted(_needs(jobs[GATE]) - set(jobs))}"
+    )
+
+
+def test_the_aggregate_gate_only_accepts_success() -> None:
+    """집계는 `success` 만 통과시킨다 — `if: always()` 와 느슨한 조건의 조합이 함정이다.
+
+    `always()` 로 도는 job 이 결과를 제대로 안 보면 **모든 실패를 초록으로 덮는다**. 그래서
+    판정 줄을 직접 센다: 성공이 아닌 것을 모아 이름을 대며 죽는가.
+    """
+    gate = _job_text(_jobs()[GATE])
+
+    assert "always()" in gate, "집계가 안 돌면 실패한 run 에서 판정 자체가 사라진다"
+    assert '.value.result != \\"success\\"' in gate or '.result != "success"' in gate, (
+        "집계가 성공 이외를 거르는 줄이 없습니다"
+    )
+    assert "exit 1" in gate, "거절이 종료 코드로 나오지 않으면 초록으로 읽힌다"
+
+
+def test_only_pull_request_runs_are_cancelled_by_a_newer_push() -> None:
+    """연속 push 는 앞선 **PR** run 만 취소한다 — master·merge queue 이력은 남는다."""
+    text, workflow = _workflow()
+    concurrency = workflow["concurrency"]
+
+    assert "pull_request.number" in concurrency["group"], "PR 단위로 묶이지 않습니다"
+    assert "github.event_name == 'pull_request'" in concurrency["cancel-in-progress"], (
+        "master push 나 merge queue run 까지 취소하면 초록이었는지 모르는 commit 이 남는다"
+    )
+    assert "merge_group" in workflow["on"], "merge queue 진입 계약이 없습니다"
+
+
+def test_every_action_is_pinned_to_a_full_commit_sha() -> None:
+    """action 은 태그가 아니라 **full commit SHA** 로 고정한다.
+
+    태그는 움직이는 이름이다 — 같은 워크플로가 어제와 다른 코드를 돌릴 수 있고, 그때 무엇이
+    바뀌었는지 이 저장소는 말해 주지 못한다. 사람이 읽을 버전은 주석으로 함께 남긴다.
+    """
+    text, _ = _workflow()
+    uses = re.findall(r"uses: (\S+)(.*)", text)
+
+    assert uses, "action 을 하나도 안 쓰면 이 계약이 아무것도 안 지킨다"
+    for reference, trailer in uses:
+        _, _, version = reference.partition("@")
+        assert re.fullmatch(r"[0-9a-f]{40}", version), f"{reference} 가 SHA 로 고정되지 않았습니다"
+        assert re.search(r"#\s*v\d", trailer), f"{reference} 에 사람이 읽을 버전 주석이 없습니다"
+
+
+def test_downloads_refuse_a_digest_mismatch() -> None:
+    """산출물 전송이 어긋나면 **받는 쪽에서** 죽는다 — 조용히 다른 바이트를 쓰지 않는다."""
+    downloads = [
+        step
+        for job in _jobs().values()
+        for step in _uses_action(job, "actions/download-artifact")
+    ]
+
+    assert downloads, "다운로드가 0건이면 이 계약이 아무것도 안 지킨다"
+    for step in downloads:
+        assert step["with"].get("digest-mismatch") == "error", step["with"]
+
+
+def test_live_and_distribution_evidence_survive_a_failed_run() -> None:
+    """실주행·패키징 증거는 **실패해도** 회수된다 — 증거는 그때 가장 필요하다.
+
+    종전에는 101 보고서가 pytest 임시 폴더로, 패키징 증거 6종이 러너 작업디렉터리로 가서
+    잡과 함께 사라졌다. 남은 것은 빨간 체크 하나뿐이라 "무엇을 봤길래 빨간가"를 다시 돌려서만
+    물을 수 있었다.
+    """
+    for name in ("live-webview2", "distribution-webview2"):
+        uploads = _uses_action(_jobs()[name], "actions/upload-artifact")
+        assert uploads, f"{name} 이 증거를 하나도 올리지 않습니다"
+        for step in uploads:
+            assert step.get("if") == "always()", (
+                f"{name} 의 업로드가 성공 경로에만 붙어 있습니다 — 실패하면 사라집니다"
+            )
+
+
+def test_product_assertions_are_never_retried() -> None:
+    """제품 단언에 재시도를 걸지 않는다 — 두 번째 초록이 첫 번째 빨강을 지운다."""
+    text, _ = _workflow()
+
+    for retry_token in ("nick-fields/retry", "continue-on-error: true", "--reruns"):
+        assert retry_token not in text, f"재시도 흔적: {retry_token}"
+
+
 # ───────────────────────── 생산자 하나 · 소비자 N ─────────────────────────
 
 
@@ -139,9 +241,11 @@ def test_every_consumer_needs_the_producer_and_verifies_instead_of_rebuilding() 
         assert "web-artifact-identity.json" in text, f"{name} 이 정체성을 되짚지 않습니다"
         assert not any(token in text for token in BUILD_TOKENS), f"{name} 이 다시 만듭니다"
 
+    # 집계 job 은 예외다 — 그것은 산출물이 아니라 **결과**를 기다린다(모든 job 을 열거하는
+    # 것이 그 job 의 계약이고, 위 계약이 따로 센다).
     orphans = {
         name for name, job in _jobs().items()
-        if SEALED in _needs(job) and name not in consumers
+        if SEALED in _needs(job) and name not in consumers and name != GATE
     }
     assert not orphans, f"{sorted(orphans)} 는 생산자를 기다리기만 하고 쓰지 않습니다"
 

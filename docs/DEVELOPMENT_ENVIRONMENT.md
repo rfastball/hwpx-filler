@@ -171,6 +171,19 @@ selfcheck를 검증한다.
 
 Chrome 렌더링 증거와 실 WebView2 증거는 이름으로도 job 으로도 섞지 않는다.
 
+8. `quality-gate`: 위 일곱을 **명시 열거**해 `success` 만 통과시킨다. 브랜치 보호는 이 하나의
+   이름을 겨눈다 — 잡을 늘려도 보호 설정을 따라 고칠 필요가 없고, 대신 열거에서 빠진 job 이
+   있으면 `tests/test_quality_workflow.py` 가 멈춘다.
+
+증거는 **실패해도 회수된다**(`if: always()`). `live-webview2` 는 101 보고서·표준출력과 실패한
+실주행이 남긴 임시 홈의 진단 파일(`_live101_hang_stacks.txt`·`_live101_result.json`)을,
+`distribution-webview2` 는 패키징 증거 6종(산출물 동일성·packaged selftest·외부망 양성/음성
+대조·검증 요약)을 올린다. 제품 단언에는 재시도를 걸지 않는다 — 두 번째 초록이 첫 번째 빨강을
+지우기 때문이다.
+
+연속 push 는 **앞선 PR run 만** 취소한다(`master` push 와 merge queue 이력은 남긴다). action 은
+전부 full commit SHA 로 고정하고 사람이 읽을 버전을 주석으로 단다.
+
 Inno Setup installer 생성·설치/제거 스모크·Authenticode 서명은 느리고 비밀값을 사용하는
 release-only 정책이다. PR quality workflow에서는 실행하지 않는다.
 
