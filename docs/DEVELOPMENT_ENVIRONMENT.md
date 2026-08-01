@@ -160,8 +160,15 @@ selfcheck를 검증한다.
 6. `live-webview2 (real WebView2 session)`: `-m live`. 실앱 selftest 와 Quickstart 101 `check`.
 7. `distribution-webview2 (frozen exe)`: portable onedir 2종 빌드와 selfcheck.
 
-3~7 은 산출물 소비자다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …` 로
-**이 checkout 의 commit·frontend 바이트**와 대조한다(소비자 러너에 Node 를 설치하지 않는다).
+산출물 소비자는 3·5·6·7 이다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …`
+로 **이 checkout 의 commit·frontend 바이트**와 대조한다. 그 검증은 `actions/setup-node`
+**앞에** 서고, 순서가 곧 계약이다: 검증이 Node 없이 통과한다는 것을 단계 순서가 증명한다.
+
+- `windows-native`(4)는 소비자가 아니다 — 실 Win32 자원만 쓰므로 생산자를 기다리지 않는다.
+- `pytest-contract`(3)만 검증을 마친 **뒤** 프런트 툴체인을 깐다. 산출물을 만들려는 것이
+  아니라 `tests/js/*.test.js` 를 모는 `node --test` 게이트가 vite 의 파서를 실제로 부르기
+  때문이다(그 게이트는 부재를 조용히 스킵하지 않는다).
+
 Chrome 렌더링 증거와 실 WebView2 증거는 이름으로도 job 으로도 섞지 않는다.
 
 Inno Setup installer 생성·설치/제거 스모크·Authenticode 서명은 느리고 비밀값을 사용하는

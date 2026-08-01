@@ -42,7 +42,8 @@ uv sync --locked --all-extras --group dev --group build   # 최초 1회
 
 CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `sealed-web` 하나가 프런트를
 만들어 봉인·업로드하고, 소비자는 그것을 내려받아 `build-web.ps1 -Mode VerifyExisting` 으로
-되짚는다(소비자 러너에 Node 를 설치하지 않는다). 나머지는 자원 축이 가른다 — `static`
+되짚는다 — 그 검증은 `setup-node` **앞에** 서서 빌드 도구 없이 통과한다(순서가 계약이다).
+나머지는 자원 축이 가른다 — `static`
 (Ruff·Pyright) / `pytest-contract`(무표 집합 + 커버리지 하한) / `windows-native` /
 `browser-render` / `live-webview2` / `distribution-webview2`. CI 의 Ruff 는 `scripts` 까지 보는데
 `test.ps1` 은 `src tests conftest.py` 만 본다 — `scripts/` 를 고쳤으면 `uv run ruff check scripts` 를
