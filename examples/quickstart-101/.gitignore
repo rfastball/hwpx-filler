@@ -8,8 +8,11 @@ settings.json
 webview/
 webapp-alerts.log
 
-# 스크린샷 캡처 도구(scripts/capture_101_screenshots.py)의 임시 산출
+# 라이브 실행 하니스(scripts/capture_101_screenshots.py · scripts/live101/)의 임시 산출.
+# 실패한 실행은 증거를 **남기므로**(_live101_hang_stacks.txt) 무시 목록이 그것까지 덮어야
+# 한다 — 안 그러면 진단 파일이 커밋 후보로 떠서 다음 사람이 지우거나 실수로 커밋한다.
 _capture_*
+_live101_*
 
 # 문서 생성 산출물
 out/

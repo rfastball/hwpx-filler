@@ -1,0 +1,583 @@
+"""Quickstart 101 사용자 여정 — **행동 순서와 결과 판정만**(N-11A · #423).
+
+이 파일에는 창을 띄우는 코드도, 픽셀을 뜨는 코드도, 종료 정책도 없다. 그것들은
+:mod:`.driver` 와 :mod:`.capture` 가 진다. 여기 남는 것은 "사용자가 무엇을 어떤 순서로
+누르고, 그래서 무엇이 참이어야 하는가" 하나다.
+
+셔터는 **이름으로만** 지목한다(``ctx.shoot("session-panel")``). 그 이름이 PNG 가 되는지
+(``capture``) 아무것도 되지 않는지(``check``) 는 부른 쪽이 정한다 — 두 모드가 같은 대본을
+쓰는 것이 이 파일의 요점이고, 그래야 "찍히는 화면"과 "검사되는 화면"이 갈라지지 않는다.
+
+:data:`CAPTURE_POINTS` 는 그 이름들의 **정렬된 단일 출처**다. 종전에는 이름이 대본 안에
+14번 흩어져 있어 커밋된 ``img/`` 와 README 참조와 대본이 서로를 못 봤다 — 셋 중 하나만
+어긋나도 아무도 모르는 상태였다. 이제 셋이 같은 목록을 본다
+(``tests/test_quickstart_101_live.py`` 의 3자 대조).
+"""
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
+from .surface import Surface
+
+#: 캡처 지점 14개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
+#: README 참조·커밋된 ``img/*.png`` 와 3자 대조된다.
+CAPTURE_POINTS: "tuple[str, ...]" = (
+    "job-landing",
+    "library-empty",
+    "template-pick",
+    "mapping-confirm",
+    "save-job",
+    "library-detail",
+    "preview-drawer",
+    "session-panel",
+    "range-editor",
+    "mirror-check",
+    "generated",
+    "workbench-review",
+    "workbench-copied",
+    "workbench-empty-value",
+)
+
+#: 101 이 만드는 작업 이름 — 트랙 A(HWPX) · 트랙 B(TXT) · 오류 연습.
+JOB_NAMES: "tuple[str, ...]" = ("발주요청서", "발주요청 기안", "오류연습")
+
+#: 트랙 A 가 만들어야 하는 문서 수(CSV 3행).
+EXPECTED_HWPX = 3
+
+
+@dataclass
+class ScenarioContext:
+    """대본이 바깥 세계와 닿는 **좁은 통로**."""
+
+    surface: Surface
+    shoot: "Callable[[str], None]"
+    #: 데이터 CSV 의 절대 경로(홈이 임시냐 예제냐에 따라 다르다).
+    csv_path: str
+    #: 다음 native 파일 대화상자의 답을 큐에 넣는다. 큐가 비면 대화상자는 취소로 답한다.
+    queue_file_answer: "Callable[[str], None]"
+    #: 대본이 관측한 사실 — 드라이버가 파일 시스템 사실과 합쳐 보고서를 만든다.
+    observations: dict = field(default_factory=dict)
+
+
+def run(ctx: ScenarioContext) -> dict:
+    """트랙 A·B 와 오류 연습을 실 렌더로 완주하고 관측 사실을 돌려준다."""
+    s = ctx.surface
+    seen = ctx.observations
+
+    # ---- S1 부팅 랜딩(문서 만들기 · 데이터도 작업도 없는 상태) --------------
+    # 좌 목록이 죽은 뒤(F2 PR-B) 이 자리의 출구는 「문서 작업」으로 가는 버튼 하나다.
+    s.wait(
+        "document.querySelector('#jobPickInLibrary') !== null",
+        "빈 상태 랜딩",
+        requires=["#jobPickInLibrary"],
+    )
+    s.wait(
+        "getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none'",
+        "흡수처 출구 상주",
+        requires=["#jobNoDataExit"],
+    )
+    ctx.shoot("job-landing")
+
+    # ---- S2 「문서 작업」 → ＋ 새 작업 → 편집 모드 1단계(라이브러리 피커) ----
+    s.click_sel("#jobPickInLibrary", what="문서 작업으로 가는 출구")
+    s.wait(
+        "document.querySelector('#scr-library.on') !== null",
+        "문서 작업 화면",
+        requires=["#scr-library"],
+    )
+    ctx.shoot("library-empty")
+    s.click_sel("#libraryNewWork", what="새 작업")
+    # 편집기는 몰입 표면이다(재작성 F7) — 상단 2탭을 덮는 자기 화면으로 착지한다.
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null"
+        " && !!window.__cap.btn('#scr-editor','이 템플릿으로')",
+        "편집기 화면·라이브러리 피커",
+        requires=["#scr-editor"],
+    )
+    # 발주요청서 행의 "이 템플릿으로" — data-path 로 정확 겨눔.
+    s.click_sel(
+        '#scr-editor button[data-act="use-library"][data-path*="발주요청서"]',
+        what="발주요청서 템플릿 채택",
+    )
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        "템플릿 선택·필드 스키마",
+        requires=["#scr-editor"],
+    )
+    # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 스키마 표는 템플릿 목록 아래라
+    # 기본 스크롤에서 폴드 밖이고, 위 조건은 그 상태에서도 참이다(문서가 "6개 필드를
+    # 확인한다"고 적은 그림에 표가 없게 된다). 겨눠 스크롤해 그 말을 그림이 지게 한다.
+    s.scroll_to("#scr-editor table.schema-fields")
+    ctx.shoot("template-pick")
+
+    # ---- S3 2단계: 데이터 연결 + 모두 확정 ---------------------------------
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','파일 선택…')",
+        "「필드 연결·표시」 탭 데이터 관문",
+        requires=["#scr-editor"],
+    )
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_text("#scr-editor", "파일 선택…")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
+        "데이터 로드·매핑표 미리보기",
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "모두 확정")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
+        "전 행 확정",
+        requires=["#scr-editor"],
+    )
+    # 확정 게이트 줄(확정 6/6·모두 확정)이 폴드 아래로 잘리지 않게 겨눠 스크롤.
+    s.js("window.__cap.btn('#scr-editor','모두 해제')?.scrollIntoView({block:'center'}); true;")
+    ctx.shoot("mapping-confirm")
+
+    # ---- S4 「파일 이름」 탭: 이름·패턴 → 저장 ------------------------------
+    # 파일 이름은 F7 에서 **전용 탭**으로 승격했고(대조표 20행), 작업 이름은 화면 머리의
+    # 인라인 입력이다(「저장」 분류 사망의 승계 — §10.13.3).
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!document.querySelector('#scr-editor input[data-act=\"pattern\"]')",
+        "파일 이름 탭",
+        requires=['#scr-editor input[data-act="pattern"]'],
+    )
+    s.set_value("#editorName", "발주요청서")
+    s.set_value('#scr-editor input[data-act="pattern"]', "발주요청서-{{공고번호}}")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('발주요청서-2026-001')",
+        "파일명 라이브 예시",
+        requires=["#scr-editor"],
+    )
+    ctx.shoot("save-job")
+    s.click_text("#scr-editor", "작업 저장")
+    # 저장 착지를 먼저 확인한다 — 저장은 비동기라 곧바로 화면을 옮기면 라이브러리가 아직
+    # 없는 작업을 기다린다(경합). 성공 재진술은 Python notice(ok) 채널이 낸다.
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        "작업 저장 착지",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    # 저장 뒤 머리가 판본을 말한다(§10.13 판정 O) — 첫 저장이므로 r1 이다.
+    s.wait(
+        "document.getElementById('editorSaveState').textContent.includes('r1')",
+        "저장 상태·판본 표기",
+        requires=["#editorSaveState"],
+    )
+    seen["hwpx_job_saved"] = True
+    # 편집기는 출구가 하나다 — back 이 원래 업무로 되돌린다(깨끗한 세션이라 가드 없음).
+    s.click_sel("#editorBack", what="편집기 출구")
+    s.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈", requires=["#scr-job"])
+
+    # ---- S5 실행 세션(「문서 작업」에서 골라 문서 만들기로) ------------------
+    # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B).
+    s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭")
+    s.wait(
+        "!!document.querySelector('#libraryList [data-work=\"발주요청서\"]')",
+        "저장·라이브러리 반영",
+        requires=["#libraryList"],
+    )
+    s.click_sel('#libraryList [data-work="발주요청서"]', what="저장된 작업 행")
+    s.wait(
+        "!!document.querySelector('#libraryDetail [data-use]')",
+        "상세 상시 행동",
+        requires=["#libraryDetail"],
+    )
+    ctx.shoot("library-detail")
+    s.click_sel('#libraryDetail [data-use="발주요청서"]', what="문서 만들기에서 사용")
+    # 작업↔데이터 결속(`Job.default_dataset_ref`)과 자동 조준은 U2 §5.3 판정 D 로 폐기됐다
+    # (#347) — 「문서 만들기에서 사용」은 **데이터 선택을 반드시 지난다**. 데이터가 없으면
+    # 백엔드가 그 명시 사건을 보관만 하고(reason=no_data), 마운트 순간
+    # `_apply_preferred_work` 가 그때 판정해 작업을 연다. 101 도 이 순서를 그대로 가르친다.
+    s.wait("document.querySelector('#scr-job.on') !== null", "문서 만들기 착지", requires=["#scr-job"])
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_sel("#jobBtnPickData", what="데이터 선택")
+    s.wait(
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 면",
+        requires=["#dataPickerModal"],
+    )
+    s.click_sel("#dataPickerBrowse", what="파일 찾아보기")
+    # 찾아보기 성사는 **면을 닫지 않는다**(U2 §2.7, #343): 「현재 데이터」가 방금 고른
+    # 파일로 재진술되고 그 자리에 「이 데이터 고정…」이 선다. 존재만 재면 hidden 버튼도
+    # 통과하므로(프로브 click 이 hidden 을 지나는 것과 같은 함정) **가시성**으로 잰다.
+    s.wait(
+        "(function(){"
+        "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
+        "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
+        "const b=document.getElementById('dataPickerPin');"
+        "return !!b && getComputedStyle(b).display !== 'none';})()",
+        "찾아보기 성사·면 유지·고정 버튼 가시",
+        timeout=25.0,
+        requires=["#dataPickerModal", "#dataPickerCurrent", "#dataPickerPin"],
+    )
+    s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
+    # 보관된 명시 사건이 이 마운트에서 판정돼 작업이 열린다. 「열렸다」의 정본은 액션바
+    # 이름이다(「선택한 작업」 존 사망의 승계처 — U2 §4 판정 A, #342): 후보 카드 문안으로
+    # 재면 카드 목록에 이름이 **있기만 해도** 참이 돼 안 열린 화면을 통과로 읽는다.
+    s.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')"
+        " && document.getElementById('jobActionName').textContent.trim() === '발주요청서'"
+        " && document.getElementById('jobDataLabel').value.length > 0"
+        " && !document.getElementById('jobSelAll').disabled",
+        "데이터 마운트·보관 작업 승격",
+        timeout=25.0,
+        requires=["#jobActionName", "#jobDataLabel", "#jobSelAll"],
+    )
+    # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
+    # 사용자가 고른다. 그래서 마운트만으로는 게이트가 열리지 않고, 여기서 전체 선택을
+    # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
+    s.click_sel("#jobSelAll", what="전체 선택")
+
+    # ---- S5a 첫 실행의 결과 확인(F5) ---------------------------------------
+    # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다 — §13-3 대로 결과를 확인해야
+    # 실행할 수 있다. 행을 골라도 게이트는 아직 닫혀 있고, 미리보기에서 확인해야 열린다.
+    # 게이트가 「생성 값 미리보기」를 지목하는데 그 버튼이 잠겨 있으면 이행 불가능한
+    # 지시다 — 지목과 가용성을 **같이** 재고 나서 누른다.
+    s.wait(
+        "document.getElementById('jobGenBtn').disabled"
+        " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')"
+        " && !document.getElementById('jobPreviewOpen').disabled",
+        "첫 실행 검토 요구",
+        requires=["#jobGenBtn", "#jobGate", "#jobPreviewOpen"],
+    )
+    seen["first_run_review_required"] = True
+    s.click_sel("#jobPreviewOpen", what="생성 값 미리보기")
+    s.wait(
+        "!document.getElementById('previewSheet').classList.contains('hidden')"
+        " && document.querySelectorAll('#previewRows .mir-row').length > 0"
+        " && document.getElementById('previewFilename').textContent.length > 0",
+        "확인 면(생성 값 미리보기)·값·파일 이름",
+        requires=["#previewSheet", "#previewRows", "#previewFilename"],
+    )
+    ctx.shoot("preview-drawer")
+    s.click_sel("#previewApprove", what="이 이름과 값으로 승인")
+    # 승인은 명시 사건이다 — 버튼이 사라지는 것이 그 사건의 착지다(면은 열린 채 남아
+    # 나머지 문서를 계속 넘겨볼 수 있다).
+    s.wait(
+        "getComputedStyle(document.getElementById('previewApprove')).display === 'none'",
+        "결과 확인 착지",
+        requires=["#previewApprove"],
+    )
+    seen["preview_approved"] = True
+    s.click_sel("#previewClose", what="확인 면 닫기")
+    s.wait(
+        "document.getElementById('previewSheet').classList.contains('hidden')"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "확인 뒤 게이트 열림",
+        requires=["#previewSheet", "#jobGenBtn"],
+    )
+    ctx.shoot("session-panel")
+
+    # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------
+    # 여는 것 자체가 Python 왕복(초안 생성)이고, 여기서의 편집은 **적용 전까지** 메인 범위를
+    # 바꾸지 않는다. 캡처 뒤 **취소**로 나오므로 아래 단계들의 상태는 그대로다.
+    s.click_sel("#jobDataExpand", what="펼쳐서 행 고르기")
+    s.wait(
+        "!document.getElementById('dataSheet').classList.contains('hidden')"
+        " && document.getElementById('dataSheetSlot').contains("
+        "document.getElementById('jobRangeFoot'))",
+        "범위 편집기·footer",
+        requires=["#dataSheet", "#dataSheetSlot", "#jobRangeFoot"],
+    )
+    # 표시순서를 뒤집어 표가 실제로 따라오는지 본다(보이는 것 = 만들어지는 것).
+    s.set_value("#jobOrderSel", "sourceAsc")
+    s.wait(
+        "(document.querySelector('#jobTableBody tr')||{dataset:{}}).dataset.i === '0'",
+        "표시순서 전환 반영",
+        requires=["#jobTableBody"],
+    )
+    ctx.shoot("range-editor")
+    # 재렌더가 축 선택기를 커밋 값으로 되돌리지 않는지 — 행 하나를 껐다 켜서 **실 왕복**을
+    # 만든다. 판정 수치(footer 「선택 적용: N건」)가 바뀐 것을 먼저 확인해 **push 가 도착한
+    # 뒤**를 재는 것이 요점이다 — 클릭 직후를 재면 아직 안 온 재렌더를 통과로 읽는다.
+    s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 토글")
+    s.wait(
+        "document.getElementById('jobRangeApply').textContent.includes('2건')"
+        " && document.getElementById('jobOrderSel').value === 'sourceAsc'",
+        "재렌더 뒤에도 초안 축 유지",
+        requires=["#jobRangeApply", "#jobOrderSel"],
+    )
+    s.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]', what="행 선택 복원")
+    s.wait(
+        "document.getElementById('jobRangeApply').textContent.includes('3건')",
+        "초안 선택 복원",
+        requires=["#jobRangeApply"],
+    )
+    s.click_sel("#jobRangeCancel", what="범위 편집 취소")
+    # 변경이 있으므로 이탈 가드가 끼어든다(적용하지 않은 편집을 조용히 버리지 않는다).
+    s.wait("!!window.__cap.btn(null,'버리고 닫기')", "이탈 가드")
+    s.click_text(None, "버리고 닫기")
+    # 취소 = 초안만 버린다: 메인 범위(선택 3건)와 축(최신 행 먼저)이 그대로여야 한다.
+    s.wait(
+        "document.getElementById('dataSheet').classList.contains('hidden')"
+        " && document.getElementById('jobOrderSel').value === 'sourceDesc'"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "취소 뒤 메인 범위 보존",
+        requires=["#dataSheet", "#jobOrderSel", "#jobGenBtn"],
+    )
+
+    # ---- S6 본문 확인(한 줄) ------------------------------------------------
+    # 거울 표와 필드축 ack 는 U2 §2.13 으로 폐기됐다(#346) — 값을 말하는 표면은 확인 면
+    # 하나이고, 이 존에 남은 것은 빈 값 표지·이름 건수·확인 면 출구 한 줄이다. 그 줄이
+    # **서 있는 것을 확인한 뒤** 찍는다: 존만 겨눠 찍으면 한 줄이 hidden 인 화면(선택 0건·
+    # 차단 배너)도 같은 컷으로 지나간다.
+    s.wait(
+        "!document.getElementById('jobMirrorLine').hidden"
+        " && document.getElementById('jobMirrorSummary').textContent.trim().length > 0",
+        "본문 확인 한 줄",
+        requires=["#jobMirrorLine", "#jobMirrorSummary"],
+    )
+    s.scroll_to("#jobMirrorZone")
+    ctx.shoot("mirror-check")
+
+    # ---- S7 생성 → 완료 요약 ----------------------------------------------
+    s.click_sel("#jobGenBtn", what="이 작업으로 문서 생성")
+    # 결과는 3태 구획이 받는다(F4) — 제목이 태를, 요약이 수치를 말한다.
+    s.wait(
+        "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",
+        "생성 완료 태",
+        timeout=60.0,
+        requires=["#jobResult"],
+    )
+    seen["hwpx_result_state"] = s.js(
+        "document.getElementById('jobResult').dataset.state"
+    )
+    s.scroll_to("#jobResult")
+    ctx.shoot("generated")
+
+    # ---- S8 트랙 B: TXT 작업 만들기(편집기 「템플릿」 탭 TXT 밴드) ----------
+    # 휘발 「기안」 화면은 F6 PR-B 로 사라졌다 — TXT 도 같은 편집기에서 **저장 작업**으로
+    # 만들고(지도 §10.15.15 점검표 1행), 채워 복사는 검토·복사 작업대가 잇는다.
+    s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(트랙 B)")
+    s.wait(
+        "document.querySelector('#scr-library.on') !== null",
+        "문서 작업 화면(트랙 B)",
+        requires=["#scr-library"],
+    )
+    s.click_sel("#libraryNewWork", what="새 작업(트랙 B)")
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
+        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"발주요청_기안\"]')",
+        "편집기 TXT 밴드",
+        requires=["#scr-editor"],
+    )
+    s.click_sel(
+        '#scr-editor button[data-act="use-library"][data-path*="발주요청_기안"]',
+        what="TXT 템플릿 채택",
+    )
+    # TXT 세션 = 탭 2개(템플릿·필드 연결) — 파일 이름 탭이 없다(§3.2, 파일을 만들지 않는 작업).
+    s.wait(
+        "document.querySelectorAll('#editor-steps .wstep-tab').length === 2"
+        " && document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        "TXT 스키마·탭 2개",
+        requires=["#editor-steps"],
+    )
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','파일 선택…')",
+        "TXT 필드 연결 데이터 관문",
+        requires=["#scr-editor"],
+    )
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_text("#scr-editor", "파일 선택…")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
+        "TXT 매핑표 미리보기",
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "모두 확정")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
+        "TXT 전 행 확정",
+        requires=["#scr-editor"],
+    )
+    s.set_value("#editorName", "발주요청 기안")
+    s.click_text("#scr-editor", "작업 저장")
+    # (구 「등록 데이터 동명 확인 → [덮어쓰기]」 왕복은 #347 로 사라졌다 — 저장은 데이터를
+    #  등록하지도 결속하지도 않는다. 풀 등록은 데이터 선택 면의 「이 데이터 고정」뿐이다.)
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        "TXT 작업 저장 착지",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_sel("#editorBack", what="편집기 출구(트랙 B)")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null",
+        "편집기 이탈(트랙 B)",
+        requires=["#scr-job"],
+    )
+
+    # ---- S9 작업대 진입·검토 -----------------------------------------------
+    # 실행 버튼이 매체 분기(판정 D)로 「검토·복사 시작 · 3건」으로 서고 작업대가 열린다.
+    s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(작업대)")
+    s.wait(
+        "!!document.querySelector('#libraryList [data-work=\"발주요청 기안\"]')",
+        "TXT 작업 라이브러리 반영",
+        requires=["#libraryList"],
+    )
+    s.click_sel('#libraryList [data-work="발주요청 기안"]', what="TXT 작업 행")
+    s.wait(
+        "!!document.querySelector('#libraryDetail [data-use=\"발주요청 기안\"]')",
+        "TXT 상세",
+        requires=["#libraryDetail"],
+    )
+    s.click_sel('#libraryDetail [data-use="발주요청 기안"]', what="문서 만들기에서 사용(TXT)")
+    # 이번엔 데이터 선택을 다시 지나지 않는다 — 앞 단계에서 마운트한 발주목록이 **세션
+    # 소유**라 작업 전환에서 생존한다(데이터-우선 §18.2). 그래서 prefer_work 가 즉시
+    # 승격시키고, 그 사실을 액션바 이름이 말한다.
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
+        " && !document.getElementById('jobSelAll').disabled",
+        "TXT 작업 전환",
+        timeout=25.0,
+        requires=["#jobActionName", "#jobSelAll"],
+    )
+    seen["data_survived_job_switch"] = True
+    s.click_sel("#jobSelAll", what="전체 선택(TXT)")
+    s.wait(
+        "document.getElementById('jobGenBtn').textContent.includes('검토·복사 시작')"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "검토·복사 진입 버튼",
+        requires=["#jobGenBtn"],
+    )
+    s.click_sel("#jobGenBtn", what="검토·복사 시작")
+    # 카드 술어는 표시순서 무관하게 잡는다 — 고정 사본은 「최신 행 먼저」 기본 순서라 첫
+    # 카드가 CSV 1행이 아니다. 템플릿 원문([발주 요청])과 채운 값(구매)이 함께 서야 채움이다.
+    s.wait(
+        "document.querySelector('#scr-workbench.on') !== null"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent"
+        ".includes('[발주 요청]')"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent.includes('구매')",
+        "작업대 카드 채움",
+        requires=["#scr-workbench", "#wbCard"],
+    )
+    ctx.shoot("workbench-review")
+
+    # ---- S10 복사(클립보드) ------------------------------------------------
+    s.click_sel("#wbCopy", what="복사")
+    s.wait(
+        "(document.getElementById('wbCopied')||{textContent:''}).textContent"
+        ".trim().indexOf('1 /') === 0",
+        "복사 카운터",
+        requires=["#wbCopied"],
+    )
+    seen["txt_copied"] = s.js(
+        "document.getElementById('wbCopied').textContent.trim()"
+    )
+    ctx.shoot("workbench-copied")
+    # 미복사 잔량이 있는 이탈은 가드가 확인을 요구한다(T3 승계) — 실 클릭으로 지난다.
+    s.click_sel("#wbBack", what="작업대 출구")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null || !!window.__cap.btn(null,'나가기')",
+        "작업대 이탈 가드",
+    )
+    s.js("window.__cap.clickBtn(null,'나가기'); true;")
+    s.wait("document.querySelector('#scr-job.on') !== null", "작업대 이탈", requires=["#scr-job"])
+
+    # ---- S11 오류 연습: 데이터에 없는 항목 = 비움 확정 → 〈빈 값〉 ----------
+    # 구 「기안」의 빨간 {{토큰}} 은 휘발 세션(미결속 허용)의 표면이었다. 저장 작업은 전 행
+    # 확정이 저장 조건이라, 없는 항목은 편집기가 **비움 확정**을 요구하고(조용히 지나가지
+    # 않는다) 작업대 카드에 〈빈 값〉으로 남는다 — 같은 경보의 새 거처를 그대로 찍는다.
+    s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(오류 연습)")
+    s.wait(
+        "document.querySelector('#scr-library.on') !== null",
+        "문서 작업(오류 연습)",
+        requires=["#scr-library"],
+    )
+    s.click_sel("#libraryNewWork", what="새 작업(오류 연습)")
+    s.wait(
+        "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
+        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"오류연습_미치환\"]')",
+        "편집기 TXT 밴드(오류 연습)",
+        requires=["#scr-editor"],
+    )
+    s.click_sel(
+        '#scr-editor button[data-act="use-library"][data-path*="오류연습_미치환"]',
+        what="오류 연습 템플릿 채택",
+    )
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('담당연락처')",
+        "오류 연습 스키마",
+        requires=["#scr-editor"],
+    )
+    s.click_text("#scr-editor", "다음 ▶")
+    s.wait(
+        "!!window.__cap.btn('#scr-editor','파일 선택…')",
+        "데이터 관문(오류 연습)",
+        requires=["#scr-editor"],
+    )
+    ctx.queue_file_answer(ctx.csv_path)
+    s.click_text("#scr-editor", "파일 선택…")
+    s.wait("!!window.__cap.btn('#scr-editor','모두 확정')", "매핑표(오류 연습)", requires=["#scr-editor"])
+    s.click_text("#scr-editor", "모두 확정")
+    # 데이터에 없는 「담당연락처」 — 채우지 않고 비움으로 확정할지 **묻는다**(이름게이트).
+    s.wait("!!window.__cap.btn(null,'비움으로 확정')", "비움 확정 이름게이트")
+    seen["empty_value_gate_asked"] = True
+    s.click_text(None, "비움으로 확정")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확정 3/3')",
+        "오류 연습 전 행 확정",
+        requires=["#scr-editor"],
+    )
+    s.set_value("#editorName", "오류연습")
+    s.click_text("#scr-editor", "작업 저장")
+    s.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        "오류 연습 저장 착지",
+        timeout=30.0,
+        requires=["#scr-editor"],
+    )
+    s.click_sel("#editorBack", what="편집기 출구(오류 연습)")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null",
+        "편집기 이탈(오류 연습)",
+        requires=["#scr-job"],
+    )
+    s.click_sel('.navbtn[data-scr="library"]', what="문서 작업 탭(오류 연습 실행)")
+    s.wait(
+        "!!document.querySelector('#libraryList [data-work=\"오류연습\"]')",
+        "오류 연습 작업 반영",
+        requires=["#libraryList"],
+    )
+    s.click_sel('#libraryList [data-work="오류연습"]', what="오류 연습 작업 행")
+    s.wait(
+        "!!document.querySelector('#libraryDetail [data-use=\"오류연습\"]')",
+        "오류 연습 상세",
+        requires=["#libraryDetail"],
+    )
+    s.click_sel('#libraryDetail [data-use="오류연습"]', what="문서 만들기에서 사용(오류 연습)")
+    # 여기도 데이터는 그대로다(세션 소유) — 작업만 바뀐다. 화면 전체 텍스트로 재면 후보
+    # 카드에 이름이 **떠 있기만 해도** 참이 되므로 액션바 이름으로 겨눈다.
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === '오류연습'"
+        " && !document.getElementById('jobSelAll').disabled",
+        "오류 연습 작업 전환",
+        timeout=25.0,
+        requires=["#jobActionName", "#jobSelAll"],
+    )
+    s.click_sel("#jobSelAll", what="전체 선택(오류 연습)")
+    s.wait(
+        "!document.getElementById('jobGenBtn').disabled",
+        "검토·복사 진입(오류 연습)",
+        requires=["#jobGenBtn"],
+    )
+    s.click_sel("#jobGenBtn", what="검토·복사 시작(오류 연습)")
+    s.wait(
+        "document.querySelector('#scr-workbench.on') !== null"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent.includes('빈 값')"
+        " && (document.getElementById('wbMapPanel')||{textContent:''}).textContent"
+        ".includes('담당연락처')",
+        "작업대 〈빈 값〉 표면",
+        requires=["#scr-workbench", "#wbCard", "#wbMapPanel"],
+    )
+    seen["empty_value_surfaced"] = True
+    ctx.shoot("workbench-empty-value")
+
+    return seen
