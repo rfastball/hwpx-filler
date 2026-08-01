@@ -275,6 +275,7 @@ foreach ($key in $plan) {
                 evidence_error_present = (
                     $networkEvidence.PSObject.Properties.Name -contains 'error'
                 )
+                evidence_error = $networkEvidence.error
                 external_fetch_completed = $networkEvidence.runtime.external_fetch_completed
                 external_fetch_succeeded = $networkEvidence.runtime.external_fetch_succeeded
                 external_fetch_blocked = $networkEvidence.runtime.external_fetch_blocked

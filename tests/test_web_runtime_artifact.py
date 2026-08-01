@@ -223,6 +223,7 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
         "policy_browser_arguments",
         "control_elapsed_ms",
         "evidence_error_present",
+        "evidence_error = $networkEvidence.error",
         "external_fetch_error",
         "proxy_observed",
         "proxy_hit_parse_failed",
