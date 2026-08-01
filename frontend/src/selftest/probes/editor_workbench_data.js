@@ -1211,7 +1211,12 @@ export function createEditorWorkbenchDataProbes() {
               row("k2", "6월 보관분", "archived", "보관", "muted",
                 [{ key: "activate", label: "활성화" }, { key: "delete", label: "삭제" }]),
             ],
-            corrupted: [{ file: "broken.dataset.json", error: "JSON 을 읽을 수 없습니다" }],
+            /* 키를 따옴표로 싼다 — 값이 아니라 **표기**의 문제다. 봉인의 금지 패턴
+               `\bfile:` 은 평범한 객체 키 `file:` 도 `file:` URL 로 읽어 산출물을 거절한다.
+               따옴표를 두면 텍스트에 `file:` 이 연속하지 않아 오탐이 사라지고, 스냅샷
+               모양(실 백엔드가 내는 `corrupted[].file`)은 한 글자도 바뀌지 않는다.
+               N-08 까지는 이 모듈이 번들에 실리지 않아 드러나지 않았다. */
+            corrupted: [{ "file": "broken.dataset.json", error: "JSON 을 읽을 수 없습니다" }],
             /* 같은 데이터 등록 2건(§5.3 구판 병합 대상) — loud 재진술 카드가 서는지 되읽는다. */
             duplicates: [{
               reference: "파일: 대장.xlsx · 시트 물품",

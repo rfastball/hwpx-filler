@@ -1587,3 +1587,56 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     # 첫 부팅은 넓은 예산이었고, 이 스탬프 뒤로는 좁은 예산이다(판정의 실 왕복).
     assert decide("", stamp)[0] == COLD_BUDGET_SECONDS
     assert decide(stamp, stamp)[0] == WARM_BUDGET_SECONDS
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_selftest_api_is_absent_without_the_capability_in_real_webview(tmp_path) -> None:
+    """능력을 붙이지 않은 실 창에는 ``window.__hwpxTest`` 가 **없다**(#372 D-07).
+
+    ``__hwpxTest`` 비노출을 정적으로 세는 검사는 여럿 있지만(소스에 문자열이 없다, 생산자가
+    하나다), 전부 **선언**을 본다. 능력은 런타임에 조건부로 설치되므로 "정상 실행 창에 그
+    전역이 실제로 없는가"는 실 창에서만 답할 수 있다 — 선언은 살고 결과는 죽는 그 결함류를
+    여기서 닫는다.
+
+    정상 실행에는 드라이버가 없어(``webview.start()`` 에 함수를 주지 않는다) 창 안을 들여다볼
+    길이 없고, 그렇다고 정상 경로에 관측 통로를 새로 내면 그 통로 자체가 제품 표면이 된다.
+    그래서 ``--selftest`` 의 드라이버는 빌리되 **파사드만 붙이지 않는다**: 능력이 없을 때의
+    창은 정상 실행의 창과 같은 번들·같은 코드 경로다.
+
+    부재만 재면 "능력이 없다"와 "페이지가 안 떴다"가 구별되지 않으므로 제품 API 존재를
+    **양성 대조**로 같은 창에서 함께 잰다(계측 층의 부재판별력).
+    """
+    home = tmp_path / "no-capability-home"
+    home.mkdir()
+    out = tmp_path / "no-capability.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_NO_CAPABILITY="1",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    evidence = json.loads(out.read_text(encoding="utf-8"))
+    assert "error" not in evidence, evidence.get("error")
+    probed = evidence["non_exposure"]
+
+    # 양성 대조 — 이것이 없으면 아래 부재 단언은 "페이지가 안 떴다"와 구별되지 않는다.
+    assert probed["product_typeof"] == "object", (
+        f"제품 API 가 없다 — 페이지가 뜨지 않았을 수 있다: {probed!r}"
+    )
+
+    # 음성 ① 전역 부재. own 프로퍼티로도 없어야 한다(만들었다 지우는 길은 두지 않는다).
+    assert probed["selftest_own"] is False
+    assert probed["selftest_typeof"] == "undefined"
+
+    # 음성 ② 호스트 파사드 부재 — 능력의 **유일한** 활성화 조건이 실제로 빠져 있다.
+    assert probed["host_claim_typeof"] == "undefined"
+
+    # 음성 ③ URL 쿼리·해시로는 켜지지 않는다. 실제로 얹은 뒤 다시 물었다.
+    assert "?selftest=1" in probed["url_after"] and probed["url_after"].endswith("#selftest")
+    assert probed["selftest_own_after_query_hash"] is False
+    assert probed["selftest_typeof_after_query_hash"] == "undefined"

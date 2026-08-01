@@ -96,9 +96,55 @@ Promise를 돌려주면 해소를 기다리지 못한 채 형태를 모르는 �
 Python 쪽 어댑터는 `webapp/product_api.py`이고, 표현식 조립·서술자 검증·결과 판정을 그
 파일 하나가 소유한다 — `app.py`는 JS 문자열을 만들지 않는다.
 
-`window.Bridge`·`window.__push`를 비롯한 임시 전역 27개는 **selftest 프로브 71곳**이 아직
-쓰므로 남아 있다(N-08·N-09 소유, 제거 책임 N-10). 제품 코드가 그것들을 fallback으로 쓰는
-경로는 없다.
+`window.Bridge`·`window.__push`를 비롯한 임시 전역 27개는 아직 남아 있다(제거 책임 N-10).
+N-09가 Python selftest의 71개 직접 호출을 0으로 만들었으므로 그 전역들의 **Python 소비자는
+이제 없고**, 남은 소비자는 전역 이름을 아직 쓰는 프런트 자리뿐이다. 제품 코드가 그것들을
+fallback으로 쓰는 경로는 없다.
+
+### selftest 경계 — `window.__hwpxTest` (N-09 · #372 D-07)
+
+Python selftest가 부르는 웹 이름도 **버전 있는 뿌리 하나**다. 종전에는 `app.py`가 JS 프로브
+문자열 28개(139,206자)를 품고 `evaluate_js`를 71곳에서 불러 DOM·전역을 직접 겨눴다.
+
+```js
+window.__hwpxTest                                  // Object.freeze({ version: 1, run })
+window.__hwpxTest.run({version: 1, action: "start", mode, input, flags})
+// → {ok: true, action: "start", runId, state: "running", mode, deadlineMs}
+window.__hwpxTest.run({version: 1, action: "poll", runId})
+// → {ok: true,  state: "running",   elapsedMs, deadlineMs}
+// → {ok: true,  state: "succeeded", evidence, order, timings, …}   ← 종결, **한 번만**
+// → {ok: false, code: "run_failed", evidence, errors, skipped, …}  ← 종결, **한 번만**
+```
+
+**정상 실행에는 이 전역이 없다.** own 프로퍼티로 존재하지 않으며, 만들었다 지우는 경로도
+두지 않는다(지우기가 한 번 실패하면 그 잔존은 아무도 못 듣는다).
+
+활성화 조건은 **하나뿐**이다: `--selftest` 프로세스에서만 Python이 `js_api`에 시험 파사드
+(`selftest_claim`·`selftest_host_op`)를 붙이고, 프런트가 프로세스 메모리 토큰을 **한 번**
+클레임한 뒤에야 전역이 선다. URL 쿼리·`location.hash`·빌드 플래그·정적 산출물은 활성화
+조건이 **아니다** — 전부 페이지 쪽에서 만들 수 있는 조건이라 "호스트가 이 창을 시험용으로
+띄웠다"를 증명하지 못한다. 토큰은 JS 클로저와 Python 메모리에만 있고 URL·로그·결과 JSON·
+증거 파일 어디에도 실리지 않는다.
+
+`run`은 **동기**다(`deliver`와 같은 이유 — `evaluate_js` 뒤의 Python 스레드는 Promise를
+기다리지 못한다). 본질이 비동기인 실행은 두 박자로 접힌다: `start`가 "시작했다"와 일회용
+`runId`를 즉시 주고, `poll`이 그 뒤를 묻는다. 종결 결과는 **정확히 한 번** 회수되고 재조회·
+재시작·미지 `runId`·버전 불일치·시한 초과는 전부 안정 코드로 시끄럽게 거절된다.
+
+정상 실행과 시험 실행은 **같은 한 번의 Vite 빌드**를 쓴다. 갈리는 것은 런타임 호스트 능력
+하나뿐이고 산출물은 바이트까지 같다 — 별도 test entry·chunk·번들은 없다.
+
+Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스트 연산 allowlist·결과
+판정을 그 파일 하나가 소유한다. 프로브 정의는 `frontend/src/selftest/probes/` 45개이고
+러너는 `frontend/src/selftest/runner.js`다.
+
+#### 푸시는 단일 활성 통로를 지난다
+
+제품 `snapshot` 처리기와 selftest 프로브는 **같은 포트**(`frontend/src/push_port.js`)를
+부른다. 프로브가 `ctx.push`를 갈아끼우면 뒤이어 도착하는 **호스트 푸시**도 그 통로를 지나야
+`mirror_pushes`·`reject_pushes`가 실물을 잰다. 처리기가 푸시를 값으로 붙들면 제품 푸시가
+가로채기를 우회하고, 프로브는 "푸시 0"을 보고 그 침묵을 **배선 부재**로 읽는다 — N-07에서
+실제로 난 회귀이고(#379 §5), `tests/js/n09_push_port.test.js`가 음성 대조까지 지고 있다.
 
 사용자 확인(파괴 전이의
 `needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**

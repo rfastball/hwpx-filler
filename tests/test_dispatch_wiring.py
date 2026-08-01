@@ -7,7 +7,7 @@ import pytest
 
 from _web_source import source_text
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY, validate_dispatch
-from hwpxfiller.webapp.app import WebFrontend
+from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY, WebFrontend
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
@@ -108,5 +108,29 @@ def test_webfrontend_dispatch_enforces_registry_before_controller() -> None:
     api = WebFrontend.__new__(WebFrontend)
     api.controllers = {"pool": Stub()}
     assert api.dispatch("pool", "refresh", None) == {"action": "refresh", "payload": {}}
-    with pytest.raises(ValueError, match="미등록 키"):
-        api.dispatch("pool", "refresh", {"typo": True})
+    rejected = api.dispatch("pool", "refresh", {"typo": True})
+    assert set(rejected) == {_DISPATCH_REJECTION_KEY}
+    assert rejected[_DISPATCH_REJECTION_KEY]["name"] == "ValueError"
+    assert "미등록 키=['typo']" in rejected[_DISPATCH_REJECTION_KEY]["message"]
+
+
+def test_webfrontend_dispatch_envelopes_expected_refusal_but_not_defects() -> None:
+    class Stub:
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+
+        def dispatch(self, _action: str, _payload: dict):
+            raise self.error
+
+    api = WebFrontend.__new__(WebFrontend)
+    api.controllers = {"pool": Stub(ValueError("데이터가 없습니다"))}
+    assert api.dispatch("pool", "refresh", {}) == {
+        _DISPATCH_REJECTION_KEY: {
+            "name": "ValueError",
+            "message": "데이터가 없습니다",
+        }
+    }
+
+    api.controllers = {"pool": Stub(RuntimeError("controller defect"))}
+    with pytest.raises(RuntimeError, match="controller defect"):
+        api.dispatch("pool", "refresh", {})

@@ -12,6 +12,7 @@
    하나도 만들지 않으며 매 테스트 뒤 걷는다. */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 const COMPAT = "../../frontend/src/compat.js";
 
@@ -258,37 +259,57 @@ test("compat 은 자체 상태나 새 표면을 갖지 않는다", async (t) => 
   assert.deepEqual(Object.keys(module), [], "compat 은 아무것도 export 하지 않는다");
 });
 
-/* ══════════ N-07 제품 파사드 — 프로브의 전역 교체가 관측된다 ══════════ */
+/* ══════════ N-07·N-09 제품 파사드 — 푸시는 **단일 활성 통로**를 지난다 ══════════
 
-test("__hwpx snapshot 은 window.__push 를 **호출 시점에** 읽는다(프로브 교체 관측)", async (t) => {
+   N-07 은 이 자리에서 회귀를 한 번 겪었다: 파사드의 `snapshot` 처리기가 구성 산물 `push` 를
+   **값으로 붙들어** 프로브의 가로채기를 우회했고, 프로브는 "푸시 0" 을 보고 그 침묵을 배선
+   부재로 읽었다(`mirror_pushes` 1→0, `reject_pushes` 1→0). 당시 수리는 전역 `window.__push`
+   지연 판독이었다.
+
+   N-09 는 같은 늦은 결속을 유지하되 만나는 자리를 **포트**로 옮겼다 — 프런트 프로브는 이제
+   전역이 아니라 `ctx.push` 를 갈아끼우기 때문이다. 그래서 이 파일이 지는 것은 "두 입구가
+   같은 통로로 모이는가" 이고, 갈아끼운 통로가 실제로 관측되는지는
+   `n09_push_port.test.js` 가 실제 러너·프로브 경로로 진다(그쪽에 음성 대조가 있다). */
+
+test("제품 스냅샷 처리기와 window.__push 는 **같은 하나의 통로**로 모인다", async (t) => {
   const host = useHostStub(t);
 
   // compat 은 프로세스당 한 번만 평가되므로(ESM 캐시) 캐시 히트로는 이 대역에 아무것도
   // 설치되지 않는다 — 잎 프로브와 같은 캐시 우회 질의로 **이 대역 위에서** 다시 조립한다.
-  await import(`${COMPAT}?n07-latebind-probe=1`);
+  await import(`${COMPAT}?n09-pushport-probe=1`);
 
   const api = host.window.__hwpx;
   assert.equal(typeof api.deliver, "function");
+  assert.equal(typeof host.window.__push, "function");
 
-  // Python selftest 프로브가 열세 곳에서 하는 일 그대로 — 전역을 래퍼로 갈아끼운다.
-  const real = host.window.__push;
+  /* 도착 지점을 브리지 구독으로 잡는다 — 통로 **끝**에서 세면 중간을 어떻게 배선했든
+     "실제로 렌더러까지 갔는가"가 답이 된다. */
   const seen = [];
-  host.window.__push = function (screen, snapshot) {
-    seen.push([screen, snapshot]);
-    return real(screen, snapshot);
-  };
+  host.window.Bridge.onPush("job", (snapshot) => { seen.push(snapshot); });
 
   const result = api.deliver({
     version: 1,
     event: "snapshot",
     payload: { screen: "job", snapshot: { rows: 1 } },
   });
-
-  host.window.__push = real;
-
   assert.equal(result.ok, true, `deliver 가 실패했습니다: ${JSON.stringify(result)}`);
-  // 구성 산물 `push` 를 값으로 붙들면 여기가 0 이 된다 — 제품 푸시가 래퍼를 우회하고,
-  // 프로브는 "푸시 0" 을 보고 그 침묵을 배선 부재로 읽는다(job_mirror·job_result 회귀).
-  assert.deepEqual(seen, [["job", { rows: 1 }]],
-    "제품 푸시가 갈아끼운 window.__push 를 우회했습니다 — 프로브 관측이 무력화됩니다.");
+
+  host.window.__push("job", { rows: 2 });
+
+  assert.deepEqual(seen, [{ rows: 1 }, { rows: 2 }],
+    "제품 파사드와 전역 별칭이 서로 다른 통로로 갈렸습니다 — 하나를 갈아끼우면 다른 하나가 샙니다.");
+});
+
+test("compat 은 기반 푸시를 값으로 붙들지 않는다(회귀 되살리기 금지 · 소스 계약)", () => {
+  const source = readFileSync(new URL(COMPAT, import.meta.url), "utf8");
+  const body = source.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /* 되살아나는 모양은 정확히 이것이다: 처리기가 구성 산물 `push` 를 직접 부른다.
+     포트를 거치지 않으면 프로브가 갈아끼운 통로를 우회한다. */
+  assert.equal(/snapshot:\s*\([^)]*\)\s*=>\s*push\(/.test(body), false,
+    "snapshot 처리기가 구성 산물 push 를 값으로 붙들었습니다 — N-07 회귀가 되살아납니다.");
+  assert.match(body, /snapshot:\s*\([^)]*\)\s*=>\s*pushPort\.dispatch\(/,
+    "snapshot 처리기는 포트로 보내야 합니다.");
+  assert.match(body, /window\.__push\s*=\s*pushPort\.dispatch/,
+    "전역 별칭도 같은 포트를 가리켜야 두 입구가 갈리지 않습니다.");
 });

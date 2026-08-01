@@ -69,14 +69,21 @@ import { createWorkbenchScreen } from "../js/screens/workbench.js";
 import { createAppShell } from "../js/app.js";
 import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
+import { createPushPort } from "./push_port.js";
+import { bootSelftest } from "./selftest/boot.js";
 
 /* 브리지는 이제 여기서 **정확히 한 번** 구성된다(N-07). 종전에는 `bridge.js` 가 IIFE 로
    `window.Bridge`·`window.__push` 를 스스로 만들고 이 파일이 그걸 되읽었다 — 생산자가 둘로
    갈린 마지막 자리였다. 구성 산물을 아래에서 별칭으로 되걸므로 소비자 표면은 그대로다.
 
-   `bridge` 는 **객체째** 아래로 넘어간다. Python selftest 가 `window.Bridge.call = stub` 처럼
-   프로퍼티를 교체해 통로를 갈아끼우므로(app.py 열 곳), 메서드를 값으로 뽑으면 스텁이 우회된다. */
-const { bridge, push } = createBridge();
+   `bridge` 는 **객체째** 아래로 넘어간다. selftest 프로브가 `Bridge.call = stub` 처럼
+   프로퍼티를 교체해 통로를 갈아끼우므로, 메서드를 값으로 뽑으면 스텁이 우회된다. */
+const { bridge, push, testHost } = createBridge();
+
+/* 관측 푸시의 단일 활성 통로(N-09) — 제품 스냅샷 처리기와 selftest 프로브가 **같은** 통로를
+   부르게 한다. 값으로 붙들면 프로브의 가로채기를 우회하고, 그 침묵이 배선 부재로 읽힌다
+   (`push_port.js` 머리말 · N-07 #379 §5 에서 실제로 한 번 났다). */
+const pushPort = createPushPort(push);
 
 /* late-bound 좌표 — 아래에서 구성되면 채워진다. 콜백이 지연 호출이라 선언만 먼저 선다. */
 let LibraryScreen;
@@ -154,15 +161,17 @@ const productApi = createProductApi({
   handlers: {
     /* 관측 푸시 — 화면은 불투명한 라우팅 값이라 여기서도 해석하지 않는다.
 
-       **`window.__push` 를 호출 시점에 읽는다**(구성 산물 `push` 를 값으로 붙들지 않는다).
-       Python selftest 프로브가 열세 곳에서 원본을 지역에 담아 두고 그 전역 자리에 기록용
-       래퍼를 **대입해** 도착한 푸시를 관측한다(`_JOB_MIRROR_PROBE_JS`·
-       `_JOB_RESULT_PROBE_JS` 등). 여기서 지역 `push` 를 캡처하면 제품 푸시가 그 래퍼를
-       **우회해** 프로브가 "푸시 0" 을 보고, 그 침묵이 배선 부재처럼 읽힌다 — `bridge` 를
-       객체째 넘기는 이유와 정확히 같은 결함류이고, 실제로 이 자리에서 한 번 재발했다
-       (job_mirror·job_result 두 게이트가 잡았다). 별칭 제거는 N-10 이 지고, 그때 이 지연
-       판독도 함께 사라진다. */
-    snapshot: (payload) => window.__push(payload.screen, payload.snapshot),
+       **포트로 보낸다**(구성 산물 `push` 를 값으로 붙들지 않는다). selftest 프로브가 열세
+       곳에서 `ctx.push` 자리에 기록용 래퍼를 **대입해** 도착한 푸시를 관측하는데, 여기서
+       지역 `push` 를 캡처하면 제품 푸시가 그 래퍼를 **우회해** 프로브가 "푸시 0" 을 보고,
+       그 침묵이 배선 부재처럼 읽힌다 — `bridge` 를 객체째 넘기는 이유와 정확히 같은
+       결함류이고, 실제로 이 자리에서 한 번 재발했다(job_mirror·job_result 두 게이트가 잡았다).
+
+       N-07 은 이것을 `window.__push` **전역 지연 판독**으로 고쳤다. N-09 는 같은 늦은 결속을
+       유지하되 전역이 아니라 포트로 옮긴다: 프런트 프로브는 이제 전역이 아니라 `ctx.push` 를
+       갈아끼우므로, 두 소비자가 만나는 자리가 전역일 이유가 없어졌다. 전역 별칭은 N-10 계정을
+       위해 아래에 남지만 **이 경로는 그것에 의존하지 않는다**. */
+    snapshot: (payload) => pushPort.dispatch(payload.screen, payload.snapshot),
 
     /* 네이티브 X 닫기 확인 — **시작만** 한다. 처분은 모달이 브리지로 되돌린다. */
     "close-request": (payload) => AppCloseGuard.prompt(payload.state),
@@ -217,10 +226,51 @@ window.WorkbenchScreen = WorkbenchScreen;
 window.Nav = Nav;
 window.AppCloseGuard = AppCloseGuard;
 /* 구 `bridge.js` IIFE 가 스스로 만들던 둘 — 이제 생산자는 이 파일 하나다(D-05).
-   제거 책임은 N-10, 소비자는 Python selftest 71곳(N-08·N-09). */
+   제거 책임은 N-10. Python selftest 71곳이던 소비자는 N-09 에서 0 이 됐고, 남은 것은
+   전역 이름을 아직 쓰는 프런트 소비자뿐이다.
+
+   `__push` 는 **포트의 dispatch** 를 가리킨다 — 전역으로 들어와도 갈아끼운 통로를 지나게
+   해서, 별칭이 사는 동안 두 입구가 갈리지 않게 한다. */
 window.Bridge = bridge;
-window.__push = push;
+window.__push = pushPort.dispatch;
 
 /* 임시 별칭 스물일곱과 **다른 계정**이다 — 이건 제품 최종 공개 API 다(N-07, D-06).
    위 별칭들은 N-10 에서 사라지지만 이 줄은 남는다. */
 window.__hwpx = productApi;
+
+/* 시험 능력(N-09, D-07) — **호스트가 대는 경우에만** 선다.
+   정상 실행에서는 `testHost.available()` 이 거짓이라 아무것도 설치되지 않고, 이 호출은
+   전역도 부작용도 남기지 않는다. 활성화 조건은 URL·빌드 플래그가 아니라 호스트 프로세스의
+   시험 메서드 존재 하나뿐이다 — 그래서 정상 실행과 시험 실행이 **같은 번들**을 쓴다.
+
+   `window.__hwpxTest` 는 위 별칭 27 과도, 제품 API `__hwpx` 와도 **다른 세 번째 계정**이다:
+   임시 별칭이 아니므로 N-10 의 단조 감소 계측에 들지 않고, 제품 표면이 아니므로 정상 실행에
+   존재해서는 안 된다. 생산자는 `selftest/api.js` 의 `defineProperty` 하나뿐이라 이 파일에는
+   그 이름이 등장하지 않는다.
+
+   반환 Promise 를 기다리지 않는다 — 부팅을 시험 배선에 매달지 않는다. 파이썬은 능력이 설
+   때까지 준비 표현식을 폴링한다(그쪽이 시한과 경보를 진다). */
+bootSelftest({
+  win: window,
+  doc: document,
+  testHost,
+  pushPort,
+  /* 구성 산물 **전수** — 객체째 넘긴다(프로퍼티 교체 관측이 성립해야 한다).
+     골라 넘기지 않는 이유: 프로브 일부가 `ctx.services[name]` 으로 **동적 조회**를 해서
+     정적 검색으로는 필요 목록을 셀 수 없다. 실제로 골라 넘겼다가 `SheetPicker`·`Preserve`·
+     `DataPicker` 셋이 빠져 실엔진에서 세 프로브가 죽었다(러너가 이름을 대며 시끄럽게
+     실패해 한 번에 보였다). 전수를 넘기면 그 결함류가 구조적으로 사라지고, 러너는 프로브가
+     선언한 것만 쓰므로 더 넘겨서 생기는 손해는 없다. */
+  services: {
+    Bridge: bridge, Nav, AppCloseGuard,
+    Copy, escHtml, Guard, SegView, Popover, Preserve, Intent, UndoToast,
+    Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
+    PathTrack, Relink, DataZone, DataPicker, EditorEntry,
+    LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
+  },
+  alarm: (result) => {
+    /* 호스트가 시험용으로 띄웠는데 능력이 서지 못한 경우 — 조용하면 안 된다. 파이썬은
+       뒤이어 "파사드 부재" 로 죽는데, 그때 **왜** 못 섰는지는 이 줄에만 남는다. */
+    window.console.error("[hwpx] selftest 능력 설치 실패", result);
+  },
+});
