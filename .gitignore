@@ -38,6 +38,7 @@ sample_bid_data.csv
 .coverage
 coverage.xml
 pytest.xml
+web-artifact-identity.json
 .ruff_cache/
 .pyright/
 .pytest-codex/

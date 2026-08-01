@@ -1,5 +1,20 @@
 name: quality
 
+# 검증 토폴로지는 **생산자 1 + 소비자 N**(N-11B · #424).
+#
+# 종전에는 세 job 이 각자 프런트를 만들었고 distribution 은 자기 안에서 한 번 더 만들어
+# 한 run 에 빌드가 4회였다. 같은 일을 네 번 하는 것도 문제지만 더 나쁜 것은 **네 개의 서로
+# 다른 산출물**을 검증하고 있었다는 사실이다 — 어느 job 이 무엇을 봤는지 말할 수 없었다.
+#
+# 이제 `sealed-web` 하나가 clean checkout 에서 install → build → seal → verify 를 완주해
+# 산출물과 그 정체성(artifact_id·tree_sha256·source commit)을 올리고, 소비자는 그것을
+# 내려받아 `VerifyExisting` 으로 되짚는다. 소비자 러너에는 Node 를 설치하지 않는다 —
+# 없는데도 통과하는 것이 "소비자는 다시 만들지 않는다"의 실물 증거다.
+#
+# 실패 영역도 함께 갈린다. 자원 축(pytest marker)이 잡을 나누므로 어느 잡이 빨간지가 곧
+# 무엇이 깨졌는지다: 결정론적 계약 / 실 Win32 / 설치 Chrome 기하 / 실 WebView2 / frozen 배포.
+# 같은 책임은 한 run 에서 정확히 한 번 돈다(종전 native 이중 실행은 축 분리로 사라졌다).
+
 on:
   pull_request:
   push:
@@ -9,8 +24,8 @@ permissions:
   contents: read
 
 jobs:
-  static:
-    name: static
+  sealed-web:
+    name: sealed-web (producer)
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -26,28 +41,49 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact Node and npm
+      - name: Install, build, seal and verify the frontend
         shell: pwsh
-        run: |
-          $actualNode = (node.exe --version).Trim()
-          $actualNpm = (npm.cmd --version).Trim()
-          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
-          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
-      - name: Install locked frontend toolchain
-        run: npm.cmd ci
-      - name: Build and verify sealed frontend
-        run: |
-          npm.cmd run build
-          npm.cmd run verify:web
+        # Node/npm/Vite 핀 확인은 스크립트가 진다 — 워크플로가 같은 수치를 따로 들고 있으면
+        # 둘이 어긋나는 날이 온다(단일 출처).
+        run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
+      - name: Upload the sealed web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sealed-web
+          path: |
+            build/web
+            web-artifact-identity.json
+          # sealed 트리에는 `.vite/manifest.json` 이 있다. 이 옵션이 없으면 hidden 으로
+          # 걸러져 소비자가 `Vite manifest missing` 으로 죽는다 — 죽는 것 자체는 옳지만
+          # 원인이 엉뚱한 자리를 가리킨다.
+          include-hidden-files: true
+          if-no-files-found: error
+
+  static:
+    name: static
+    runs-on: windows-latest
+    timeout-minutes: 15
+    # 산출물을 읽지 않는다 — Ruff 대상은 src·tests·scripts 이고 Pyright 는 src 다.
+    # 그래서 생산자를 기다리지 않고 Node 도 설치하지 않는다.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev
       - name: Ruff
         run: uv run --no-sync ruff check src tests scripts
       - name: Pyright
         run: uv run --no-sync pyright
 
-  pytest-package-floor:
-    name: pytest + package coverage floor
+  pytest-contract:
+    name: pytest-contract (package coverage floor)
     runs-on: windows-latest
     timeout-minutes: 30
+    needs: sealed-web
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
@@ -60,53 +96,33 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
+      - name: Download the sealed web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sealed-web
+          path: .
+      - name: Verify the downloaded artifact against this checkout
+        shell: pwsh
+        # **Node 가 이 job 에 존재하기 전에** 돈다. 순서가 계약이다 — 산출물 검증이 빌드
+        # 도구를 하나도 쓰지 않는다는 주장을 단계 순서가 그대로 증명한다.
+        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-      - name: Verify exact Node and npm
-        shell: pwsh
-        run: |
-          $actualNode = (node.exe --version).Trim()
-          $actualNpm = (npm.cmd --version).Trim()
-          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
-          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
-      - name: Install locked frontend toolchain
+      - name: Install the locked frontend toolchain for the JS module gate
+        # 산출물을 만들려는 것이 아니다(`npm run build` 없음). `tests/js/*.test.js` 를 모는
+        # `node --test` 게이트가 vite(oxc) 파서를 실제로 불러 전역 위생을 검사한다 —
+        # 그 테스트는 부재를 조용히 스킵하지 않고 사유를 대며 죽게 쓰여 있다.
         run: npm.cmd ci
-      - name: Build and verify sealed frontend
-        run: |
-          npm.cmd run build
-          npm.cmd run verify:web
-      - name: Windows native positive scenarios
+      - name: Contract suite with Python coverage
         shell: pwsh
-        run: |
-          Remove-Item Env:HWPX_SKIP_NATIVE_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync pytest -q tests/test_native_positive.py --basetemp="$env:RUNNER_TEMP/native"
-      - name: Press-geometry browser precondition
-        shell: pwsh
-        run: |
-          # 눌림 기하 게이트(tests/test_web_press_geometry.py, U2 §2.11)는 **설치 Chrome** 을
-          # channel="chrome" 으로 몬다 — 브라우저 다운로드 없음. 런타임 부재를 조용히 스킵하지
-          # 않는 규율이라 전제를 여기서 시끄럽게 확인한다. 여기서 죽으면 원인이 한 줄로 보이고,
-          # 확인 없이 두면 같은 부재가 테스트 안쪽의 알아보기 힘든 오류로 나온다.
-          Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(channel='chrome'); print('chrome', b.version); b.close(); p.stop()"
-      - name: Quickstart 101 live precondition
-        shell: pwsh
-        run: |
-          # 101 실주행 게이트(tests/test_quickstart_101_live.py, #423)의 전제를 **실행 없이**
-          # 확인한다 — Windows 세션·커밋된 101 자산·봉인된 웹 산출물. 완주 자체는 아래 full
-          # pytest 안에서 한 번만 돈다(실주행을 두 번 태우지 않는다).
-          #
-          # 이 단계가 따로 있는 이유는 press-geometry 와 같다: 전제 부재가 테스트 안쪽의
-          # 알아보기 힘든 오류로 번역돼 나오면 원인 판독이 늦고, 옵트아웃이 러너에서만 조용히
-          # 켜져 있으면 게이트가 통째로 사라진 채 초록이 된다.
-          Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync python scripts/capture_101_screenshots.py check --preflight
-      - name: Full pytest with Python coverage
-        shell: pwsh
+        # 커버리지와 하한은 이 job 이 **혼자** 소유한다. 경계 suite 셋은 앱을 subprocess 로
+        # 띄우거나(실 WebView2) 하한 대상이 아닌 패키지를 겨누므로 부모 프로세스 커버리지에
+        # 애초에 기여하지 않는다 — 그래서 결합(coverage combine)이 필요 없다.
         run: >-
           uv run --no-sync pytest -q
+          -m "not native and not browser and not live"
           --junitxml=pytest.xml
           --cov=hwpxcore --cov=hwpxfiller
           --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
@@ -131,10 +147,123 @@ jobs:
             package-coverage.md
           if-no-files-found: warn
 
-  distribution:
-    name: distribution (filler + CLI)
+  windows-native:
+    name: windows-native (real Win32)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    # 웹 산출물도 Node 도 쓰지 않는다(실 클립보드·실 최상위 창). 생산자를 기다리지 않는다.
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev
+      - name: Windows native positive scenarios
+        shell: pwsh
+        # 옵트아웃을 **같은 단계에서** 걷는다 — 다른 단계에서 걷으면 그 프로세스에만 적용돼
+        # 선언만 남고 결과가 죽는다.
+        run: |
+          Remove-Item Env:HWPX_SKIP_NATIVE_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync pytest -q -m native --basetemp="$env:RUNNER_TEMP/native"
+
+  browser-render:
+    name: browser-render (installed Chrome)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: sealed-web
+    # 여기서 나오는 것은 **Chrome 렌더링 증거**다. 실 WebView2 증거가 아니다 — 두 판정을
+    # 이름으로도 산출물로도 섞지 않는다.
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev
+      - name: Download the sealed web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sealed-web
+          path: .
+      - name: Verify the downloaded artifact against this checkout
+        shell: pwsh
+        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
+      - name: Press-geometry browser precondition
+        shell: pwsh
+        run: |
+          # 눌림 기하 게이트(tests/test_web_press_geometry.py, U2 §2.11)는 **설치 Chrome** 을
+          # channel="chrome" 으로 몬다 — 브라우저 다운로드 없음. 런타임 부재를 조용히 스킵하지
+          # 않는 규율이라 전제를 여기서 시끄럽게 확인한다. 여기서 죽으면 원인이 한 줄로 보이고,
+          # 확인 없이 두면 같은 부재가 테스트 안쪽의 알아보기 힘든 오류로 나온다.
+          Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(channel='chrome'); print('chrome', b.version); b.close(); p.stop()"
+      - name: Press-geometry suite
+        shell: pwsh
+        run: |
+          Remove-Item Env:HWPX_SKIP_MOTION_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync pytest -q -m browser --basetemp="$env:RUNNER_TEMP/browser"
+
+  live-webview2:
+    name: live-webview2 (real WebView2 session)
     runs-on: windows-latest
     timeout-minutes: 30
+    needs: sealed-web
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev
+      - name: Download the sealed web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sealed-web
+          path: .
+      - name: Verify the downloaded artifact against this checkout
+        shell: pwsh
+        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
+      - name: Quickstart 101 live precondition
+        shell: pwsh
+        run: |
+          # 101 실주행 게이트(tests/test_quickstart_101_live.py, #423)의 전제를 **실행 없이**
+          # 확인한다 — Windows 세션·커밋된 101 자산·봉인된 웹 산출물. 완주 자체는 아래 실앱
+          # suite 안에서 한 번만 돈다(실주행을 두 번 태우지 않는다).
+          #
+          # 전제 부재가 테스트 안쪽의 알아보기 힘든 오류로 번역돼 나오면 원인 판독이 늦고,
+          # 옵트아웃이 러너에서만 조용히 켜져 있으면 게이트가 통째로 사라진 채 초록이 된다.
+          Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync python scripts/capture_101_screenshots.py check --preflight
+      - name: Real app suite and Quickstart 101 check
+        shell: pwsh
+        run: |
+          Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync pytest -q -m live --basetemp="$env:RUNNER_TEMP/live"
+
+  distribution-webview2:
+    name: distribution-webview2 (frozen exe)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    needs: sealed-web
+    # frozen 제품·실 WebView2·loopback origin·외부망 격리를 판정한다. Node 를 **설치하지
+    # 않는다** — 번들 경계 검사(Node 런타임·frontend source 재유입 금지)가 PATH 에서도
+    # 참인 상태로 돈다.
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
@@ -147,23 +276,13 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked build environment
         run: uv sync --locked --all-extras --group dev --group build
-      - uses: actions/setup-node@v4
+      - name: Download the sealed web artifact
+        uses: actions/download-artifact@v4
         with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Verify exact Node and npm
-        shell: pwsh
-        run: |
-          $actualNode = (node.exe --version).Trim()
-          $actualNpm = (npm.cmd --version).Trim()
-          if ($actualNode -ne 'v24.18.1') { throw "Node version mismatch: $actualNode" }
-          if ($actualNpm -ne '11.16.0') { throw "npm version mismatch: $actualNpm" }
-      - name: Install locked frontend toolchain
-        run: npm.cmd ci
-      - name: Build and verify sealed frontend
-        run: |
-          npm.cmd run build
-          npm.cmd run verify:web
+          name: sealed-web
+          path: .
       - name: Build and self-check all portable distributions
         shell: pwsh
-        run: .\packaging\build.ps1 -Target all
+        run: >-
+          .\packaging\build.ps1 -Target all
+          -WebMode VerifyExisting -ExpectWebIdentity web-artifact-identity.json

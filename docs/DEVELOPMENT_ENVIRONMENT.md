@@ -146,13 +146,30 @@ selfcheck를 검증한다.
 
 ## 5. CI와 공식 릴리스
 
-`.github/workflows/quality.yml`은 PR과 `master`/`main` push에서 서로 의존하지 않는 세 작업을
-병렬 실행한다. 브랜치 보호의 필수 상태도 이 세 이름으로 설정한다.
+`.github/workflows/quality.yml`은 PR과 `master`/`main` push에서 **생산자 하나와 소비자 여럿**을
+돌린다. 프런트 산출물을 만드는 자리는 한 run 에 하나뿐이고, 나머지는 자원 축(pytest marker)으로
+갈려 실패 영역이 곧 원인을 가리킨다.
 
-1. `static`: Ruff와 Pyright
-2. `pytest + package coverage floor`: Windows native 양성 시나리오, 전체 pytest, 패키지별
-   line/branch floor와 누락 위치 보고
-3. `distribution (filler + CLI)`: 두 portable onedir 빌드와 selfcheck
+1. `sealed-web (producer)`: `npm ci` → Vite 빌드 → seal → verify. 산출물(`build/web`)과 그
+   정체성(`web-artifact-identity.json` — artifact_id·tree_sha256·source commit)을 업로드한다.
+2. `static`: Ruff와 Pyright. 산출물을 읽지 않으므로 생산자를 기다리지 않는다.
+3. `pytest-contract (package coverage floor)`: 무표 집합(`-m "not native and not browser and
+   not live"`), 커버리지와 패키지별 line/branch floor.
+4. `windows-native (real Win32)`: `-m native`. 실 클립보드·실 최상위 창.
+5. `browser-render (installed Chrome)`: `-m browser`. 설치 Chrome 기반 CSS·기하·모션 판정.
+6. `live-webview2 (real WebView2 session)`: `-m live`. 실앱 selftest 와 Quickstart 101 `check`.
+7. `distribution-webview2 (frozen exe)`: portable onedir 2종 빌드와 selfcheck.
+
+산출물 소비자는 3·5·6·7 이다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …`
+로 **이 checkout 의 commit·frontend 바이트**와 대조한다. 그 검증은 `actions/setup-node`
+**앞에** 서고, 순서가 곧 계약이다: 검증이 Node 없이 통과한다는 것을 단계 순서가 증명한다.
+
+- `windows-native`(4)는 소비자가 아니다 — 실 Win32 자원만 쓰므로 생산자를 기다리지 않는다.
+- `pytest-contract`(3)만 검증을 마친 **뒤** 프런트 툴체인을 깐다. 산출물을 만들려는 것이
+  아니라 `tests/js/*.test.js` 를 모는 `node --test` 게이트가 vite 의 파서를 실제로 부르기
+  때문이다(그 게이트는 부재를 조용히 스킵하지 않는다).
+
+Chrome 렌더링 증거와 실 WebView2 증거는 이름으로도 job 으로도 섞지 않는다.
 
 Inno Setup installer 생성·설치/제거 스모크·Authenticode 서명은 느리고 비밀값을 사용하는
 release-only 정책이다. PR quality workflow에서는 실행하지 않는다.
