@@ -50,6 +50,21 @@ _SELFTEST_TIMEOUT = (
     app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + _HARNESS_MARGIN_S
 )
 
+# 부팅 하나의 상한을 늘리면 **최악의 경우가 곱해진다**(#428 리뷰 P1). 이 모듈은 파라미터화
+# 포함 십수 회 부팅하고 pytest 는 시한 초과 뒤에도 다음 테스트로 간다 — WebView2 가 전면
+# 매달리면 대기만으로 CI 잡 상한(30분)을 넘긴다. 그때 러너가 잡을 죽이면 위에서 애써 남긴
+# 진단도 커버리지 산출물도 **회수되기 전에 사라진다**. 진단을 겨냥한 그 시나리오에서 진단을
+# 잃는 셈이라, 합계에도 상한이 있어야 한다.
+#
+# 정상 실행은 이 예산 근처에 오지 않는다(로컬 부팅당 2.2s, 느린 CI 에서도 십수 초). 그래서
+# 이 상한은 "느린 러너"가 아니라 **전면 매달림**에서만 발화하고, 그때는 더 기다려 봐야 배울
+# 것이 없으므로 남은 부팅을 즉시 실패시킨다.
+_AGGREGATE_BOOT_BUDGET_S = 600.0
+
+#: 지금까지 부팅 대기에 쓴 시간과 실제로 시한을 넘긴 부팅들 — 진단이 "몇 번째부터 무너졌나"를
+#: 말할 수 있게 남긴다.
+_boot_waits: "dict[str, object]" = {"spent_s": 0.0, "timed_out": []}
+
 
 def _boot_selftest(
     env: "dict[str, str]", *, out: Path, what: str
@@ -60,7 +75,13 @@ def _boot_selftest(
     것*을 구별하지 못한다(#427). 둘은 원인도 조치도 다르므로 여기서 갈 수 있는 데까지의
     사실을 함께 낸다: 무엇을 띄우려 했는지 · 실제 소요 · **증거 파일이 생겼는지**(= 드라이버가
     종결에 닿았는지) · 자식이 남긴 출력 꼬리 · 그때의 예산 사슬 수치.
+
+    합계 예산이 남지 않으면 **기다리지 않고** 실패한다 — 잘린 시한으로 기다리면 그 실패가
+    이 부팅의 문제인지 합계 소진인지 구별되지 않는다(#428 리뷰 P1).
     """
+    spent = float(_boot_waits["spent_s"])
+    if _AGGREGATE_BOOT_BUDGET_S - spent < _SELFTEST_TIMEOUT:
+        raise AssertionError(_exhausted_report(what, spent))
     started = time.monotonic()
     try:
         return subprocess.run(
@@ -71,9 +92,27 @@ def _boot_selftest(
             timeout=_SELFTEST_TIMEOUT,
         )
     except subprocess.TimeoutExpired as expired:
+        _boot_waits["timed_out"].append(what)  # type: ignore[union-attr]
         raise AssertionError(
             _timeout_report(expired, out=out, what=what, elapsed=time.monotonic() - started)
         ) from None
+    finally:
+        _boot_waits["spent_s"] = spent + (time.monotonic() - started)
+
+
+def _exhausted_report(what: str, spent: float) -> str:
+    """합계 예산 소진 — 이 부팅의 잘못이 아니라는 것을 문안이 분명히 말한다."""
+    stuck = _boot_waits["timed_out"] or ["(없음)"]
+    return "\n".join(
+        [
+            f"selftest 부팅 합계 예산 소진 — {what} 은(는) 기다리지 않고 실패시킵니다",
+            f"  누적 대기 {spent:.0f}s / 합계 상한 {_AGGREGATE_BOOT_BUDGET_S:.0f}s"
+            f" (부팅 하나 상한 {_SELFTEST_TIMEOUT:.0f}s)",
+            f"  먼저 시한을 넘긴 부팅: {stuck}",
+            "  → WebView2 가 전면 매달린 상태로 보입니다. 남은 부팅을 마저 기다리면 CI 잡"
+            " 상한(30분)을 넘겨 이 진단조차 회수되지 못합니다.",
+        ]
+    )
 
 
 def _timeout_report(
@@ -1843,21 +1882,34 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
 # 환경에서도 층화가 뒤집히는 것은 잡혀야 한다(그 뒤집힘이 곧 옵트아웃 없는 러너의 실패다).
 
 
+def _cap_covers_layers_beneath(cap: float, python_budget: float, cold_budget: float) -> bool:
+    """마지막 그물이 그 아래 그물보다 성긴가 — 순수 술어라 대조를 값으로 세울 수 있다."""
+    return cap > python_budget + cold_budget
+
+
 def test_harness_cap_sits_above_every_budget_beneath_it() -> None:
     """마지막 그물은 그 아래 그물보다 **성겨야** 한다 — 아니면 순서가 뒤집힌다.
 
     예산 사슬의 의도는 값이 아니라 **발화 순서**다: JS 가 먼저 구조화된 실패를 내고, 그 다음
     파이썬이 시끄럽게 끝나고, 하니스는 마지막 그물이다. 하니스 상한이 아래 층의 합보다 작으면
     가장 진단이 빈약한 층이 가장 먼저 발화한다 — #427 에서 실제로 그랬다.
+
+    음성 대조는 **조작한 수치**로 세운다(#428 리뷰 P2). 종전 상수 90 을 "아래 층의 합보다
+    작아야 한다"고 단언하면 그 과거값이 생산 예산의 영구 하한이 된다 — 파이썬·콜드 예산을
+    정당하게 줄여 합이 90 이하가 되는 순간, 불변식은 멀쩡한데 이 테스트만 붉어진다. 역사는
+    계약이 아니다.
     """
-    beneath = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS
-    assert _SELFTEST_TIMEOUT > beneath, (
-        f"하니스 상한 {_SELFTEST_TIMEOUT}s 가 아래 층의 합 {beneath}s 보다 촘촘합니다 — "
+    assert _cap_covers_layers_beneath(
+        _SELFTEST_TIMEOUT, app_mod._SELFTEST_BUDGET_S, boot_budget.COLD_BUDGET_SECONDS
+    ), (
+        f"하니스 상한 {_SELFTEST_TIMEOUT}s 가 아래 층의 합 "
+        f"{app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS}s 보다 촘촘합니다 — "
         "가장 진단이 빈약한 층이 먼저 발화합니다."
     )
-    # 음성 대조 — 이 단언에 이빨이 있는가. 종전 상수 90 은 실제로 아래 층의 합보다 작았고,
-    # 그래서 이 검사가 있었다면 그때 붉었어야 한다.
-    assert 90 < beneath, "종전 상수가 이미 아래 층의 합보다 컸다면 이 단언은 아무것도 안 지킨다"
+    # 술어가 뒤집힌 층화를 실제로 거절하는가 — #427 이 관측한 형상(90 < 80+60)이 그 표본이다.
+    assert not _cap_covers_layers_beneath(90.0, 80.0, 60.0)
+    # 그리고 성긴 쪽은 통과시킨다(항상 거짓을 내는 술어가 아니다).
+    assert _cap_covers_layers_beneath(171.0, 80.0, 60.0)
 
 
 def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
@@ -1886,3 +1938,41 @@ def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
     assert "[hwpx] 마지막 한 줄" in hung
     # 예산 사슬 수치를 함께 적는다: 읽는 사람이 "이 상한이 왜 이 값인가"를 되짚을 수 있게.
     assert f"{app_mod._SELFTEST_BUDGET_S:.0f}s" in hung
+
+
+def test_aggregate_boot_budget_fails_fast_instead_of_burning_the_ci_job(monkeypatch) -> None:
+    """전면 매달림에서 남은 부팅은 **기다리지 않는다** — 그 대기가 진단을 삼킨다.
+
+    부팅 하나의 상한을 늘리면 최악의 경우가 곱해진다: 십수 회 × 상한이 CI 잡 상한(30분)을
+    넘기면 러너가 잡을 죽이고, 그때 이 모듈이 남긴 진단도 커버리지 산출물도 회수되지 못한다
+    (#428 리뷰 P1). 그래서 합계에도 상한이 있고, 소진되면 즉시 실패한다.
+    """
+    monkeypatch.setitem(_boot_waits, "spent_s", _AGGREGATE_BOOT_BUDGET_S)
+    monkeypatch.setitem(_boot_waits, "timed_out", ["앞선 부팅"])
+    started = time.monotonic()
+
+    with pytest.raises(AssertionError) as excinfo:
+        _boot_selftest({}, out=Path("nowhere.json"), what="뒤따르는 부팅")
+
+    assert time.monotonic() - started < 5, "소진 뒤에도 기다렸다면 합계 상한이 무의미하다"
+    message = str(excinfo.value)
+    assert "합계 예산 소진" in message
+    assert "기다리지 않고 실패" in message
+    # 이 부팅의 잘못이 아니라는 것과, 먼저 무너진 자리가 어디인지 둘 다 말한다.
+    assert "앞선 부팅" in message
+    assert "전면 매달린" in message
+
+
+def test_the_aggregate_budget_leaves_room_for_a_healthy_run() -> None:
+    """양성 대조 — 정상 실행이 합계 상한에 걸리면 안 된다.
+
+    이 모듈의 부팅 수(파라미터화 포함)에 **느린 CI 부팅 시간**을 곱해도 합계 상한 아래여야
+    한다. 아니면 이 상한은 매달림이 아니라 느린 러너를 잡는다.
+    """
+    boots = len(re.findall(r"_boot_selftest\(", Path(__file__).read_text(encoding="utf-8"))) - 1
+    slow_but_healthy_s = 20.0  # CI 실측 상단(로컬은 2.2s)
+    assert boots >= 8, f"부팅 입구가 예상보다 적습니다({boots}) — 세는 방식이 낡았습니다"
+    assert boots * slow_but_healthy_s < _AGGREGATE_BOOT_BUDGET_S, (
+        f"정상 실행({boots}부팅 × {slow_but_healthy_s}s)이 합계 상한 "
+        f"{_AGGREGATE_BOOT_BUDGET_S}s 를 넘습니다 — 이 상한은 매달림이 아니라 느린 러너를 잡습니다."
+    )
