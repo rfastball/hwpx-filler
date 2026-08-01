@@ -48,6 +48,20 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
     )
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
+    def _add_report(target: argparse.ArgumentParser) -> None:
+        """보고서 경로는 **두 모드 공통**이다 — 판정 근거를 파일로 받는 일에 모드 구분이 없다.
+
+        종전에는 ``capture`` 에만 달려 있었고, ``check --report`` 는 argparse 사용법 오류로
+        죽었다. 그 오류의 종료 코드가 하필 2 라 dirty 홈 거절과 구별되지 않았다
+        (:class:`~live101.driver.ExitCode` 주석 참조).
+        """
+        target.add_argument(
+            "--report",
+            type=Path,
+            default=None,
+            help="실행 보고서(JSON)를 쓸 경로. 미지정이면 표준 출력 요약만 남는다.",
+        )
+
     check = subparsers.add_parser("check", help="동작만 검사한다(PNG 없음)")
     check.add_argument(
         "--home",
@@ -60,6 +74,7 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
         action="store_true",
         help="실행하지 않고 전제(Windows·자산·봉인 산출물)만 증명한다.",
     )
+    _add_report(check)
 
     capture = subparsers.add_parser("capture", help="문서용 14컷을 재생성한다")
     capture.add_argument(
@@ -68,12 +83,7 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
         default="example",
         help="실행 홈. 기본 example — 화면에 뜨는 저장 폴더 경로가 문서와 같아야 한다.",
     )
-    capture.add_argument(
-        "--report",
-        type=Path,
-        default=None,
-        help="캡처 보고서(JSON)를 쓸 경로. 미지정이면 표준 출력 요약만 남는다.",
-    )
+    _add_report(capture)
     return parser.parse_args(argv)
 
 

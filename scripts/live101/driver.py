@@ -80,8 +80,12 @@ class ExitCode:
 
     OK = 0
     SCENARIO_FAILED = 1
-    DIRTY_HOME = 2
+    #: **2 는 쓰지 않는다** — argparse 가 사용법 오류에 쓰는 값이다. 겹쳐 두면 "인자를 잘못
+    #: 줬다"와 "실습 잔재가 있다"가 같은 코드로 나와, 스크립트가 분기할 수 없다(실측으로
+    #: 걸렸다: `check --report` 가 없던 시절 그 오류가 dirty 홈 거절로 읽혔다).
+    USAGE = 2
     ENVIRONMENT = 3
+    DIRTY_HOME = 4
     #: 창은 내려가라는 말을 들었는데 GUI 루프가 안 내려온다.
     TEARDOWN_HUNG = 7
     #: 실행이 자기 끝에 **도달조차 못 했다** — 브리지가 멎어 시한을 되짚을 기회가 없었다.
