@@ -903,7 +903,15 @@ test("시간 예산은 늘지 않았다 — 레거시 표와 자리별 대조", 
     ["job_data_first", 2500 + 2500, 5000],   // app.py:3882 + 3888
     ["job_inherited", 0, 0],                 // 폴링 없음
     ["job_active_card", 2500, 2500],         // app.py:3900
-    ["job_mirror", 200, 200],                // app.py:3910 의 0.2초 sleep
+    /* job_mirror — 레거시 비교 대상이 **성립하지 않는다**(#429). app.py:3910 의 0.2초
+       sleep 은 비동기 확정만 덮었고, 이 프로브가 함께 하는 277줄 동기 구간(getComputedStyle
+       다수 = 강제 레이아웃 반복)에는 레거시에 시한이 **아예 없었다**. 이식 예산이 그 둘을 한
+       값으로 덮으므로 0.2초와 견주는 것은 사과와 배다.
+
+       종전 이 줄은 `[200, 200]` 이었다. 그래서 값·근거문·이 가드 셋이 모두 "200 이 맞다"를
+       인코딩했다 — 정작 근거문은 "시한이 아예 없던 동기 구간까지 이제 이 예산 안에 든다"고
+       스스로 적고 있었는데도. 느린 러너에서 CI 가 두 번 무너지고서야 드러났다. */
+    ["job_mirror", Infinity, 2500],
     ["job_result", 2500, 2500],              // app.py:3923
     ["job_density_narrow", 0, 0],            // 폴링 없음
   ];
@@ -918,7 +926,7 @@ test("시간 예산은 늘지 않았다 — 레거시 표와 자리별 대조", 
     (sum, p) => sum + p.settleBeforeMs + p.cooldownAfterMs, 0,
   );
   assert.equal(totalWait, 800);
-  assert.equal(runner.budgetMs("full"), 5000 + 0 + 2500 + 200 + 2500 + 0 + 800);
+  assert.equal(runner.budgetMs("full"), 5000 + 0 + 2500 + 2500 + 2500 + 0 + 800);
   /* 아무 프로브도 자기 시한을 스스로 처리하지 않는다 — 감시견이 마지막 안전망이다. */
   for (const p of runner.describe()) assert.equal(p.handlesOwnDeadline, false, p.name);
 });
