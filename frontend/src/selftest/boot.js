@@ -79,10 +79,42 @@ function readClaim(raw) {
  *    - `services`      : 프로브가 쓰는 구성 산물 열(객체째).
  *    - `alarm`         : 설치 실패를 알리는 통로(선택). 조용한 실패를 만들지 않는다.
  */
+/** 호스트(pywebview) 가 자기 API 를 주입할 때까지 기다린다.
+ *
+ *  **이 대기가 없으면 능력은 영영 서지 않는다.** 제품 entry 는 모듈 평가 시점에 돌고, 그때
+ *  `window.pywebview` 는 아직 없다 — pywebview 는 페이지 로드 뒤 `pywebviewready` 를 쏘며
+ *  API 를 주입한다. 그래서 그 순간에 한 번 물으면 언제나 "호스트 없음"이고, 다시 묻지
+ *  않으면 그걸로 끝이다. 실제로 첫 실엔진 대면이 이 모양으로 실패했고, 파이썬 쪽은
+ *  `facade-absent` 로 **시끄럽게** 보고했다(조용히 통과하지 않은 것이 진단을 살렸다).
+ *
+ *  `app.js`·`bridge.js` 가 이미 같은 규약을 쓴다 — "준비를 기다리는 일은 `pywebviewready`
+ *  이벤트가 지고, `hostReady()` 는 지금 있는가만 답한다".
+ *
+ *  호스트가 영영 없으면(브라우저 단독 프리뷰) 이 약속은 해소되지 않는다. 그것이 옳다:
+ *  설치할 것이 없고, 기다림은 부작용이 없으며, 파이썬 쪽 시한이 따로 진다. */
+function whenHostReady(win) {
+  if (win.pywebview && win.pywebview.api) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    win.addEventListener("pywebviewready", () => resolve(true), { once: true });
+  });
+}
+
 export function bootSelftest(deps) {
   const { win, doc, testHost, pushPort, services, alarm } = deps || {};
 
-  if (!testHost || typeof testHost.available !== "function" || !testHost.available()) {
+  if (!testHost || typeof testHost.available !== "function") {
+    return Promise.resolve(outcome(false, "host-absent"));
+  }
+
+  return whenHostReady(win).then(() => bootWithHost({
+    win, doc, testHost, pushPort, services, alarm,
+  }));
+}
+
+function bootWithHost(deps) {
+  const { win, doc, testHost, pushPort, services, alarm } = deps;
+
+  if (!testHost.available()) {
     /* 정상 실행의 경로다. 경보하지 않는다 — 여기서 시끄러우면 모든 사용자 부팅이 시끄럽다. */
     return Promise.resolve(outcome(false, "host-absent"));
   }

@@ -1312,6 +1312,37 @@ class SelftestClient:
         """준비 확인 — 파사드가 서 있고 버전이 맞는가. 실패는 전부 예외다(하강 없음)."""
         return parse_readiness(self._eval(readiness_expression(), None))
 
+    def await_readiness(self, deadline: ProcessDeadline) -> int:
+        """파사드가 **설 때까지** 기다린다 — 설치는 비동기다.
+
+        프런트의 능력 설치는 호스트 왕복(``selftest_claim``)을 한 번 거치고, 그 왕복은
+        페이지가 부트스트랩을 마친 뒤에야 일어난다. 그래서 **한 번만 물으면** 아직 부팅
+        중인 창을 "파사드 부재"로 확정한다 — 첫 실엔진 대면에서 실제로 그렇게 났다.
+
+        레거시는 이 자리를 고정 4.5초 ``sleep`` 으로 어림했다. 고정 대기는 두 방향으로
+        틀린다: 느린 콜드부트에서는 모자라고 빠른 부팅에서는 그만큼 버린다. 여기서는
+        **조건을** 폴링하되 시한을 프로세스 예산에 묶는다 — 새 시간 상수를 만들지 않는다.
+
+        시한이 지나면 조용히 넘어가지 않고 마지막 판정을 그대로 올린다(confirm-or-alarm).
+        버전 불일치처럼 **기다린다고 바뀌지 않는** 실패는 즉시 올린다.
+        """
+        last: "SelftestApiError | None" = None
+        while True:
+            try:
+                return self.readiness()
+            except SelftestApiError as exc:
+                if exc.code != CODE_FACADE_ABSENT:
+                    raise
+                last = exc
+            if deadline.expired():
+                self._note(
+                    f"selftest 파사드 준비 시한 초과({deadline.elapsed_s():.1f}s)"
+                    " — 능력이 설치되지 않았다"
+                )
+                assert last is not None
+                raise last
+            self._sleep(self._poll_interval_s)
+
     def start(
         self,
         mode: str,
@@ -1371,7 +1402,8 @@ class SelftestClient:
         """
         deadline = self.new_deadline()
         try:
-            self.readiness()
+            # 한 번 묻지 않고 **선다는 것을 확인할 때까지** 기다린다 — 설치는 비동기다.
+            self.await_readiness(deadline)
             run_id = self.start(mode, probe_input=probe_input, flags=flags)
         except SelftestApiError as exc:
             return self._outcome(mode, exc.code, exc.detail, deadline)
