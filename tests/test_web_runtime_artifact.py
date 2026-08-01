@@ -66,12 +66,15 @@ def test_main_and_selftest_share_the_single_resolver() -> None:
       ③ 두 번째 해석기는 어디에도 없다(D-02).
     """
     source = Path(app_mod.__file__).read_text(encoding="utf-8")
-    main_region = source[source.index("def main()") :]
+    main_region = source[source.index("def main(") :]
     identity_region = inspect.getsource(app_mod._selftest_artifact_identity)
 
     assert main_region.index("artifact = web_artifact()") < main_region.index("import webview")
     assert "str(artifact.index_path)" in main_region
-    assert "(window, artifact)" in main_region
+    # 산출물은 라이브 실행의 봉투에도 실린다 — 드라이버가 정체를 물을 수 있는 유일한 통로다.
+    # (종전에는 `"(window, artifact)"` 라는 **위치 인자 튜플**을 문자열로 단언했다. 그 튜플이
+    #  바로 #423 이 없앤 결함 원인이라 후계는 봉투 조립을 지목한다.)
+    assert "artifact=artifact" in main_region
 
     assert "current_artifact = web_artifact()" in identity_region
     assert "current_artifact.artifact_id != launched_artifact.artifact_id" in identity_region
@@ -164,24 +167,30 @@ def test_offline_probe_responsibility_moved_to_the_frontend_runtime_probe() -> N
     assert "__n03OfflineProbe" not in app_source
 
 
-def test_selftest_evidence_writer_and_terminator_are_separable() -> None:
-    """출력 쓰기와 창 종료는 **분리된 두 책임**이고, 합친 이름도 그대로 남는다.
+def test_live_run_is_the_only_way_the_product_hands_its_window_over() -> None:
+    """창을 남에게 넘기는 통로는 :mod:`~hwpxfiller.webapp.live_run` **하나**다.
 
-    ``scripts/capture_101_screenshots.py`` 가 자기 드라이브 끝에서 ``_finish_selftest`` 를
-    직접 부른다(모듈 수준 seam). 그 스크립트를 도는 테스트가 없으므로 이름이 사라져도
-    조용하다 — 그 침묵을 여기서 막는다.
+    종전 이 자리는 ``_selftest_drive`` 가 **모듈 전역 이름으로 남아 있는지**를 물었다. 캡처
+    하니스가 그 자리를 갈아끼워 창을 빌렸기 때문인데, 그 단언은 이름만 보고 **호출 계약을 못
+    봤다**: #375 가 pywebview 로 넘기는 위치 인자를 하나에서 둘로 늘렸을 때 하니스의
+    ``drive(window)`` 는 그대로였고, 그 뒤로 캡처는 워커 스레드 ``TypeError`` 로 한 줄도 돌지
+    않은 채 GUI 루프에 매달렸다 — 그동안 이 테스트는 초록이었다(선언은 살고 결과는 죽는다).
+
+    후계는 실제 계약을 지목한다. 계약 자체의 양성·음성 대조는
+    ``tests/test_live_run_contract.py`` 가 지고, 여기서는 ``main()`` 이 **다른 통로를 열지
+    않았는지**만 센다.
     """
     assert callable(app_mod._write_selftest_output)
-    assert callable(app_mod._finish_selftest)
     assert callable(app_mod._selftest_drive)
+    # 합친 이름은 사라졌다 — 101 이 호스트 연산 허용목록을 비껴가던 유일한 구멍이었다.
+    assert not hasattr(app_mod, "_finish_selftest")
 
-    # `main()` 은 호출 시점에 **전역 이름**으로 찾는다 — 그래야 캡처 하니스의
-    # `webapp_app._selftest_drive = drive` 치환이 앱 코드 변경 없이 먹는다. 지역 변수로
-    # 붙들거나 partial/lambda 로 감싸면 치환이 성공한 채 무시되고, 캡처는 스크린샷 0장으로
-    # 조용히 "완료"한다(그 스크립트를 도는 테스트는 없다).
     main_source = inspect.getsource(app_mod.main)
     assert "webview.start(" in main_source
-    assert "_selftest_drive," in main_source
+    # 드라이버는 봉투 하나를 받는 0-arity 진입점으로만 넘어간다. 위치 인자를 다시 실으면
+    # 이 단언이 아니라 계약 시험이 먼저 붉어지지만, 여기서도 통로의 이름을 못박아 둔다.
+    assert "live_run.entrypoint(" in main_source
+    assert "_selftest_drive," not in main_source
 
 
 def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -> None:

@@ -12,6 +12,7 @@ from _web_source import (
     source_text,
 )
 from hwpxfiller.webapp import app as app_mod
+from hwpxfiller.webapp import live_run
 from hwpxfiller.webapp.app import _geometry_is_visible
 
 
@@ -126,12 +127,25 @@ class _ProtocolWindow:
         self.destroyed += 1
 
 
+def _drive_selftest(window: object) -> None:
+    """드라이버를 **제품과 같은 조립**으로 부른다(N-11A · #423).
+
+    종전에는 ``app_mod._selftest_drive(window)`` 였다. 그때 드라이버의 인자는 pywebview 가
+    넘기는 위치 인자 튜플이었고, 그 튜플이 길어진 #375 에서 캡처 하니스와 조용히 어긋났다.
+    이제 인자는 봉투 하나이고, 이 헬퍼가 ``main()`` 과 같은 :func:`app_mod._selftest_context`
+    를 쓴다 — 두 곳이 각자 봉투를 지으면 필드가 늘 때 한쪽만 낡는다.
+    """
+    app_mod._selftest_drive(app_mod._selftest_context(window))
+
+
 def _capture_selftest(monkeypatch) -> "list[dict]":
     """드라이버가 쓰려 한 증거를 가로챈다.
 
     가로채는 자리가 ``_finish_selftest`` 에서 ``_write_selftest_output`` 으로 바뀌었다 —
     N-09 에서 쓰기와 종료가 두 책임으로 갈렸고, 드라이버는 그 둘을 호스트 연산 허용목록으로
-    각각 부른다. 합친 이름(``_finish_selftest``)은 캡처 하니스를 위해 남아 있다.
+    각각 부른다. 합친 이름(``_finish_selftest``)은 N-11A 에서 사라졌다 — 101 하니스가
+    직접 부르던 seam 이었고, 이제 두 실행이 같은 종결자(:func:`app_mod._live_terminator`)를
+    지난다.
     """
     captured: "list[dict]" = []
     monkeypatch.setattr(
@@ -169,7 +183,7 @@ def test_font_scale_selftest_echoes_the_request_and_carries_the_readback(monkeyp
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "large")
     window = _ProtocolWindow(poll=_poll_ok({"set_result": "large"}))
 
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert captured == [{"font_scale_write": "large", "set_result": "large"}]
     assert window.destroyed == 1, "정식 종료가 정확히 한 번이어야 한다"
@@ -181,7 +195,7 @@ def test_theme_selftest_echoes_the_request_and_carries_the_readback(monkeypatch)
     monkeypatch.setenv("HWPX_SELFTEST_SET_THEME", "dark")
     window = _ProtocolWindow(poll=_poll_ok({"set_result": "dark"}))
 
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert captured == [{"theme_write": "dark", "set_result": "dark"}]
 
@@ -198,7 +212,7 @@ def test_selftest_reports_a_missing_facade_as_a_loud_error(monkeypatch) -> None:
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "larger")
     window = _ProtocolWindow(poll=None, readiness=None)
 
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert "error" in captured[0]
     assert "facade-absent" in captured[0]["error"]
@@ -212,7 +226,7 @@ def test_selftest_reports_an_evaluation_failure_as_a_loud_error(monkeypatch) -> 
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "large")
     window = _ProtocolWindow(poll=None, raise_on='"action": "start"')
 
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert "bridge failed" in captured[0]["error"]
 
@@ -233,7 +247,7 @@ def test_failed_run_keeps_the_evidence_and_its_error(monkeypatch) -> None:
         "skipped": [], "order": [], "timings": {}, "elapsedMs": 12, "deadlineMs": 75000,
     })
 
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert captured[0]["job_on"] is True, "성공한 프로브의 키는 살아 있어야 한다"
     assert "probe_threw" in captured[0]["error"]
@@ -314,14 +328,26 @@ def test_write_mode_bridge_expressions_moved_to_the_frontend_probe() -> None:
     assert "pywebview" in probe_js
 
 
-def test_capability_is_attached_only_under_explicit_selftest() -> None:
-    """시험 파사드는 명시 ``--selftest`` 에서만 붙는다 — URL·빌드 플래그는 조건이 아니다."""
-    assert app_mod._selftest_capability_wanted(["app", "--selftest"], {}) is True
-    assert app_mod._selftest_capability_wanted(["app"], {}) is False
-    assert app_mod._selftest_capability_wanted(["app"], {"HWPX_SELFTEST_SET_THEME": "dark"}) is False
+def test_capability_is_attached_only_when_the_run_asks_for_it() -> None:
+    """시험 파사드는 **실행이 명시로 요구할 때만** 붙는다 — URL·빌드 플래그는 조건이 아니다.
+
+    종전 조건은 ``"--selftest" in argv`` 라는 문자열이었고, 그래서 창만 빌리려는 실행(101
+    하니스)이 같은 플래그를 흉내 내는 순간 시험 능력까지 딸려 왔다. 이제 두 질문이 갈린다 —
+    "창을 빌려 도는가"와 "시험 표면이 필요한가"(#423 · D-07).
+    """
+    selftest = app_mod._selftest_live_run()
+    harness = live_run.LiveRun(  # 101 처럼 창만 빌리는 실행
+        name="quickstart-101", drive=lambda _ctx: None, write_output=lambda _r: None
+    )
+
+    assert app_mod._selftest_capability_wanted(selftest, {}) is True
+    assert app_mod._selftest_capability_wanted(None, {}) is False
+    assert app_mod._selftest_capability_wanted(None, {"HWPX_SELFTEST_SET_THEME": "dark"}) is False
+    # 창을 빌리는 것과 시험 능력을 켜는 것은 다른 질문이다.
+    assert app_mod._selftest_capability_wanted(harness, {}) is False
     # 음성 대조 모드는 드라이버는 빌리되 능력은 일부러 뺀다.
     assert app_mod._selftest_capability_wanted(
-        ["app", "--selftest"], {"HWPX_SELFTEST_NO_CAPABILITY": "1"}
+        selftest, {"HWPX_SELFTEST_NO_CAPABILITY": "1"}
     ) is False
 
 
@@ -354,7 +380,7 @@ def test_non_capability_mode_measures_absence_with_a_positive_control(monkeypatc
             pass
 
     window = Window()
-    app_mod._selftest_drive(window)
+    _drive_selftest(window)
 
     assert captured[0]["mode"] == "no_capability"
     assert captured[0]["non_exposure"] == probed

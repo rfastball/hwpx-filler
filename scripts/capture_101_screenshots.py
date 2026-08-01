@@ -17,12 +17,17 @@
 
 기술 노트
 ---------
-- 앱은 ``--selftest`` 부팅(단일 인스턴스 가드 우회·정식 종료 경로)을 빌리되, 드라이브
-  함수를 이 스크립트 것으로 갈아끼운다(:func:`hwpxfiller.webapp.app.main` 이 런타임에
-  모듈 전역 ``_selftest_drive`` 를 찾는 점을 이용 — 앱 코드 무변경).
-- native 파일 대화상자만 스텁한다(``app.open_file_dialog`` 를 답변 큐로 치환) — 그
-  아래 실 로드·검증 경로는 전부 실물이 돈다. 그 외 모든 확인은 in-page 모달이라
-  실 클릭으로 지난다.
+- 앱은 :func:`hwpxfiller.webapp.app.main` 에 **라이브 실행을 선언**해 빌린다
+  (:class:`hwpxfiller.webapp.live_run.LiveRun`, N-11A · #423). 종전에는 모듈 전역
+  ``_selftest_drive`` 를 통째로 갈아끼우고 ``sys.argv`` 를 덮어썼는데, 그 관용이 실제로
+  고장 났다 — #375 가 pywebview 에 넘기는 위치 인자를 ``window`` 에서 ``(window, artifact)``
+  로 늘렸을 때 여기 드라이버는 그대로였고, ``TypeError`` 가 워커 스레드에서 나 캡처가
+  한 줄도 안 돈 채 GUI 루프가 무한 대기했다. 이제 드라이버는 봉투 하나(``LiveContext``)를
+  받고 진입점의 인자는 0개다.
+- 이 실행은 시험 능력을 요구하지 않는다(``capability=False``) — 101 은 ``window.__hwpxTest``
+  가 서지 않는 **정상 런타임**을 찍는다.
+- native 파일·폴더 대화상자만 대체한다(``LiveRun.file_dialogs`` 답변 큐) — 그 아래 실
+  로드·검증 경로는 전부 실물이 돈다. 그 외 모든 확인은 in-page 모달이라 실 클릭으로 지난다.
 - 픽셀 캡처는 Win32 ``PrintWindow(PW_RENDERFULLCONTENT)`` — WebView2 는
   DirectComposition 이라 이 플래그 없이는 검은 화면이 나온다.
 - 화면 전환은 **실 DOM 클릭**이다(상단 탭 ``.navbtn[data-scr=…]``). N-10 이전에는 임시
@@ -32,6 +37,7 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import shutil
 import subprocess
@@ -677,18 +683,27 @@ def main() -> int:
         shutil.rmtree(OUT_DIR)  # 스크린샷은 전량 재생성 — 스테일 프레임 잔존 금지
 
     os.environ["HWPXFILLER_HOME"] = str(Q101)
-    os.environ.setdefault("HWPX_SELFTEST_OUT", str(Q101 / "_capture_result.json"))
 
     from hwpxfiller.webapp import app as webapp_app
+    from hwpxfiller.webapp import live_run
 
-    def stub_open_file_dialog(filters, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
+    def answer_file_dialog(filters, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
         return _DIALOG_ANSWERS.popleft() if _DIALOG_ANSWERS else None
 
-    webapp_app.open_file_dialog = stub_open_file_dialog  # native 표면만 스텁 — 로드 경로는 실물
+    def answer_folder_dialog(title, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
+        # 대본이 폴더 피커를 밟지 않는다. 밟는 순간 조용히 취소로 접지 않고 시끄럽게 죽는다 —
+        # 답이 없는 대화상자를 None 으로 넘기면 그 뒤의 화면이 "사용자가 취소했다"가 된다.
+        raise RuntimeError(f"대본에 없는 폴더 대화상자 요청: {title!r}")
+
+    def write_capture_result(result) -> Path:
+        out = Q101 / "_capture_result.json"
+        out.write_text(json.dumps(dict(result), ensure_ascii=False, indent=2), encoding="utf-8")
+        return out
 
     state = {"ok": False, "error": None}
 
-    def drive(window) -> None:
+    def drive(ctx) -> None:
+        window = ctx.window
         result: dict = {}
         try:
             deadline = time.monotonic() + 20.0
@@ -716,7 +731,7 @@ def main() -> int:
             state["error"] = repr(exc)
             result["error"] = repr(exc)
         finally:
-            webapp_app._finish_selftest(window, result)
+            ctx.finish(result)  # 증거 쓰기 → 정식 종료, 제품과 **같은 호스트 연산 허용목록**
             # 워치독: window.destroy 후에도 WinForms 루프가 안 내려오는 pywebview
             # teardown 매달림이 관측됐다(faulthandler 스택: Application.Run 상주).
             # 정상 종료에 10s 유예를 주고, 그래도 살아 있으면 여기서 정리·요약을
@@ -746,9 +761,19 @@ def main() -> int:
 
             threading.Thread(target=_watchdog, daemon=True).start()
 
-    webapp_app._selftest_drive = drive  # main() 은 런타임 전역 조회 — 앱 코드 무변경 치환
-    sys.argv = [sys.argv[0], "--selftest"]
-    rc = webapp_app.main()
+    # 라이브 실행 선언 하나가 종전의 세 침습(전역 치환·argv 변조·종결 함수 직접 호출)을
+    # 대신한다. `argv=[]` 는 "이 프로세스의 명령행은 이 실행과 무관하다"는 뜻이다.
+    rc = webapp_app.main(
+        argv=[],
+        live=live_run.LiveRun(
+            name="quickstart-101",
+            drive=drive,
+            write_output=write_capture_result,
+            file_dialogs=live_run.FileDialogs(
+                open_file=answer_file_dialog, open_folder=answer_folder_dialog
+            ),
+        ),
+    )
 
     (Q101 / "_capture_result.json").unlink(missing_ok=True)
     if not state["ok"]:

@@ -494,12 +494,13 @@ export const NON_PYTEST_OWNERS = Object.freeze([
       + " — 코드 배치 자체를 단언한다(N-09 소관, 이 레인이 아니다).",
     breaksIf: "두 함수 사이에 코드가 들어가거나 함수가 옮겨진다",
   }),
-  Object.freeze({
-    site: "scripts/capture_101_screenshots.py:72",
-    owns: "`webapp_app._selftest_drive` 가 **교체 가능한 모듈 수준 이름**으로 남아 있을 것",
-    breaksIf: "드라이버가 클래스 메서드·클로저로 접히거나 이름이 바뀐다",
-  }),
 ]);
+
+/* N-11A(#423): 넷째 항목이 사라졌다. `scripts/capture_101_screenshots.py` 가 소유하던
+   「`_selftest_drive` 가 교체 가능한 모듈 수준 이름일 것」은 **적힌 줄 번호부터 이미 틀렸고**
+   (`:72` → 실제 `:749`), 그 사이 실제 호출 계약은 조용히 깨져 있었다. 그 책임은 이제 pytest
+   가 진다 — `tests/test_live_run_contract.py` 가 봉투 하나·0-arity 진입점·등록 시점 거절을
+   양성·음성으로 세운다. 원장에서 지운 것이 아니라 **소유자가 pytest 로 옮겨간** 것이다. */
 
 /* ────────────────────────────── 산술 ────────────────────────────── */
 

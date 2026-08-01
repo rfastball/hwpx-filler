@@ -119,6 +119,29 @@ def test_pool_registry_construction_has_one_call_site() -> None:
     )
 
 
+def test_native_dialogs_have_a_single_entrance() -> None:
+    """native 파일·폴더 대화상자는 ``_file_dialog``/``_folder_dialog`` 만 부른다(#423).
+
+    라이브 실행(:mod:`hwpxfiller.webapp.live_run`)이 대화상자를 대체할 때, 직접 호출이 하나라도
+    남아 있으면 **그 자리만 실물이 뜬다** — 종전 101 하니스가 ``open_file_dialog`` 만 갈아끼워
+    폴더 피커에서 매달렸던 그 구멍이다. 반쪽 대체는 "언젠가 조용히 멈춘다"의 예약이라,
+    입구가 둘뿐이라는 사실을 여기서 센다.
+    """
+    source_path = ROOT / "src" / "hwpxfiller" / "webapp" / "app.py"
+    lines = source_path.read_text(encoding="utf-8").splitlines()
+    pattern = re.compile(r"^\s*(?:.*[=(\s])?(open_file_dialog|open_folder_dialog)\(")
+    allowed = {"    return open_file_dialog(", "    return open_folder_dialog("}
+    offenders = [
+        f"{source_path.relative_to(ROOT)}:{lineno}: {line.strip()}"
+        for lineno, line in enumerate(lines, start=1)
+        if pattern.search(line) and not any(line.startswith(prefix) for prefix in allowed)
+    ]
+    assert not offenders, (
+        "native 대화상자 직접 호출 — app.py 의 _file_dialog()/_folder_dialog() 를 지나야 "
+        "라이브 실행의 대체가 전 경로에 먹는다:\n" + "\n".join(offenders)
+    )
+
+
 def test_library_controller_does_not_bypass_vm_registry() -> None:
     """webapp/screen_library.py 는 ``self.vm.registry`` 에 직접 접근하지 않는다(#44).
 
