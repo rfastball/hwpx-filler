@@ -1209,6 +1209,18 @@ def classify_start(raw: object) -> "tuple[str, str, str]":
         return "", CODE_MALFORMED_RESULT, f"start 결과에 참/거짓 ok 가 없다: {dict(raw)!r}"
     if not ok:
         return "", python_code(raw.get("code")), f"파사드가 개시를 거절했다: {dict(raw)!r}"
+    if raw.get("action") != ACTION_START:
+        return (
+            "",
+            CODE_MALFORMED_RESULT,
+            f"start 성공 결과의 action 이 {ACTION_START!r} 가 아니다: {dict(raw)!r}",
+        )
+    if raw.get("state") != STATE_RUNNING:
+        return (
+            "",
+            CODE_MALFORMED_RESULT,
+            f"start 성공 결과의 state 가 {STATE_RUNNING!r} 이 아니다: {dict(raw)!r}",
+        )
     run_id = _str_field(raw, KEY_RUN_ID)
     if run_id is None:
         return "", CODE_MALFORMED_RESULT, f"start 결과에 {KEY_RUN_ID} 가 없다: {dict(raw)!r}"
@@ -1231,12 +1243,25 @@ def classify_poll(run_id: str, raw: object) -> PollOutcome:
             run_id, False, CODE_MALFORMED_RESULT, f"poll 결과에 참/거짓 ok 가 없다: {dict(raw)!r}"
         )
     if ok:
+        identity_error = _poll_identity_error(run_id, raw)
+        if identity_error is not None:
+            return PollOutcome(run_id, False, CODE_MALFORMED_RESULT, identity_error)
         return _classify_settled_ok(run_id, raw)
 
     code = python_code(raw.get("code"))
     if code != CODE_RUN_FAILED:
         return PollOutcome(
             run_id, False, code, f"파사드가 폴을 거절했다: {dict(raw)!r}", "", None, dict(raw)
+        )
+    identity_error = _poll_identity_error(run_id, raw)
+    if identity_error is not None:
+        return PollOutcome(run_id, False, CODE_MALFORMED_RESULT, identity_error)
+    if raw.get("state") != STATE_FAILED:
+        return PollOutcome(
+            run_id,
+            False,
+            CODE_MALFORMED_RESULT,
+            f"run_failed 결과의 state 가 {STATE_FAILED!r} 이 아니다: {dict(raw)!r}",
         )
     # 실패 정착 — 증거는 반드시 살린다.
     evidence = _mapping_field(raw, "evidence")
@@ -1247,6 +1272,25 @@ def classify_poll(run_id: str, raw: object) -> PollOutcome:
         # 증거 없는 실패는 **두 번째 결함**이다. 실패를 삼키지 않고 그 사실까지 재진술한다.
         detail += " (evidence 객체가 없다 — 파사드 계약 위반)"
     return PollOutcome(run_id, False, CODE_RUN_FAILED, detail, STATE_FAILED, evidence, dict(raw))
+
+
+def _poll_identity_error(run_id: str, raw: "Mapping[str, object]") -> "str | None":
+    """회수 응답이 **지금 보낸 poll**의 것인지 확인한다.
+
+    ``runId`` 를 요청에서만 검증하면 와이어 반대편의 회귀가 다른 실행의 종결 봉투를 돌려줘도
+    현재 실행의 증거로 받아들인다. 그 순간 replay·wrong-run-ID 거절은 선언만 살고 결과가
+    죽는다. 성공·실패 정착 모두 ``action:poll`` 과 같은 ``runId`` 를 에코해야 하며, 하나라도
+    다르면 증거를 읽기 전에 형태 위반으로 확정한다.
+    """
+    if raw.get("action") != ACTION_POLL:
+        return f"poll 결과의 action 이 {ACTION_POLL!r} 가 아니다: {dict(raw)!r}"
+    returned_run_id = _str_field(raw, KEY_RUN_ID)
+    if returned_run_id is None:
+        return f"poll 결과에 {KEY_RUN_ID} 가 없다: {dict(raw)!r}"
+    if returned_run_id != run_id:
+        # 어느 id 가 맞는지는 되짚지 않는다. JS 쪽 unknown_run 거절과 같은 비노출 규율이다.
+        return f"poll 결과의 {KEY_RUN_ID} 가 요청과 다르다"
+    return None
 
 
 def _classify_settled_ok(run_id: str, raw: "Mapping[str, object]") -> PollOutcome:

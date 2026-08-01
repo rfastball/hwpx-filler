@@ -884,6 +884,19 @@ def test_start_classification_accepts_the_camel_case_run_id():
 
 
 @pytest.mark.parametrize(
+    "raw",
+    [
+        {"ok": True, "action": "poll", "runId": "r1", "state": "running"},
+        {"ok": True, "action": "start", "runId": "r1", "state": "failed"},
+    ],
+)
+def test_start_success_requires_the_start_action_and_running_state(raw):
+    run_id, code, detail = api.classify_start(raw)
+    assert run_id == "" and code == api.CODE_MALFORMED_RESULT
+    assert detail
+
+
+@pytest.mark.parametrize(
     "raw, code",
     [
         (None, api.CODE_FACADE_ABSENT),
@@ -915,6 +928,21 @@ def test_poll_classification_splits_running_from_succeeded():
     assert settled.result is not None and settled.result["order"] == ["p"]
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        dict(poll_succeeded(), action="start"),
+        dict(poll_succeeded(), runId="other"),
+        {key: value for key, value in poll_succeeded().items() if key != "runId"},
+    ],
+)
+def test_poll_success_refuses_another_action_or_run_id(raw):
+    outcome = api.classify_poll("r1", raw)
+    assert outcome.code == api.CODE_MALFORMED_RESULT
+    assert not outcome.ok and not outcome.terminal
+    assert outcome.evidence is None
+
+
 def test_run_failed_keeps_the_evidence_and_is_terminal():
     outcome = api.classify_poll("r1", poll_failed())
     assert outcome.code == api.CODE_RUN_FAILED
@@ -924,6 +952,21 @@ def test_run_failed_keeps_the_evidence_and_is_terminal():
     assert outcome.evidence is not None and "error" in outcome.evidence
     assert outcome.detail == "프로브 실패 1건"
     assert outcome.result is not None and outcome.result["skipped"] == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        dict(poll_failed(), action="start"),
+        dict(poll_failed(), runId="other"),
+        dict(poll_failed(), state="running"),
+    ],
+)
+def test_run_failed_refuses_another_action_run_id_or_state(raw):
+    outcome = api.classify_poll("r1", raw)
+    assert outcome.code == api.CODE_MALFORMED_RESULT
+    assert not outcome.ok and not outcome.terminal
+    assert outcome.evidence is None
 
 
 def test_run_failed_without_evidence_restates_the_second_defect():
@@ -956,6 +999,14 @@ def test_running_then_succeeded_flow_polls_until_settled():
     assert actions == ["start", "poll", "poll", "poll"]
     assert envelope_of(evaluator.calls[1])["input"] == "dark"
     assert outcome.raise_for_failure() is outcome
+
+
+def test_driver_rejects_succeeded_evidence_for_another_run_id():
+    evaluator = FakeEvaluator(1, start_ok(), dict(poll_succeeded(), runId="other"))
+    outcome = SelftestClient(evaluator).drive("boot")
+    assert outcome.code == api.CODE_MALFORMED_RESULT
+    assert outcome.ok is False and outcome.run_id == "r1"
+    assert outcome.evidence is None and outcome.has_evidence is False
 
 
 def test_terminal_result_is_retrieved_exactly_once():
