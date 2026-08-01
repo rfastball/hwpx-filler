@@ -673,18 +673,33 @@ def test_entry_calls_the_composition_root_exactly_once() -> None:
         rf'(?m)^import\s+\{{\s*{BOOTSTRAP_EXPORT}\s*\}}\s+from\s+"\./{BOOTSTRAP_MODULE}";$',
         entry,
     ), f"entry 가 {BOOTSTRAP_EXPORT} 를 named import 하지 않습니다."
-    calls = re.findall(rf"(?m)^\s*{BOOTSTRAP_EXPORT}\(\);?\s*$", entry)
+    code = strip_js_comments(entry)
+    calls = re.findall(rf"(?m)^\s*{BOOTSTRAP_EXPORT}\(\);?\s*$", code)
     assert len(calls) == 1, (
         f"entry 가 {BOOTSTRAP_EXPORT} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
     )
 
-    #: 제품 소스 전체에서 호출자는 entry 하나뿐이다. 다른 모듈이 부르면 앱이 두 벌 선다.
-    callers = sorted(
-        path.relative_to(SOURCE_ROOT).as_posix()
+    #: 정확한 줄 모양만 세면 `void bootProduct();`·`queueMicrotask(bootProduct)`
+    #: 같은 두 번째 실행 경로가 위의 호출 수를 피한다. 합성 루트는 비멱등이므로
+    #: 제품 소스 전체의 **식별자 참조 수**를 함께 못박는다: 정의 1 + import 1 + 호출 1.
+    references = {
+        path.relative_to(SOURCE_ROOT).as_posix(): len(
+            re.findall(
+                rf"\b{re.escape(BOOTSTRAP_EXPORT)}\b",
+                strip_js_comments(path.read_text(encoding="utf-8")),
+            )
+        )
         for path in SOURCE_ROOT.rglob("*.js")
-        if re.search(rf"(?m)^\s*{BOOTSTRAP_EXPORT}\(\)", path.read_text(encoding="utf-8"))
+    }
+    references = {name: count for name, count in references.items() if count}
+    assert references == {"src/bootstrap.js": 1, "src/main.js": 2}, (
+        f"합성 루트 식별자 참조가 {references} 입니다 — "
+        "bootstrap 정의 1회 + entry import/호출 각 1회만 허용됩니다."
     )
-    assert callers == ["src/main.js"], f"합성 루트 호출자가 {callers} 입니다 — entry 하나여야 합니다."
+
+    #: 검출력 양성 대조 — 줄 머리가 다른 추가 호출도 참조 축은 반드시 본다.
+    mutated = code + f"\nvoid {BOOTSTRAP_EXPORT}();\n"
+    assert len(re.findall(rf"\b{re.escape(BOOTSTRAP_EXPORT)}\b", mutated)) == 3
 
 
 # --------------------------------------------------------------- N-09 시험 능력 경계

@@ -270,6 +270,18 @@ export function scanSource(source, filename = "<입력>") {
       );
     }
 
+    /* ── ①②③ 갱신 쓰기 ──
+       `window.Leak++` 는 대입 연산자가 아니지만, 부재 프로퍼티를 읽은 뒤
+       `NaN`을 다시 써 own 전역을 만든다. 판독으로만 세면 임의 전역이
+       실제로 생겨도 allowlist 게이트가 초록이 된다. */
+    if (node.type === "UpdateExpression" && node.argument.type === "MemberExpression"
+      && isRoot(node.argument.object, scope)) {
+      addWrite(
+        staticKey(node.argument.property, node.argument.computed, constants),
+        node.argument.computed ? "bracket-update" : "dot-update", node, "global",
+      );
+    }
+
     /* ── ⑩ 창을 지역 이름에 담는다 ── */
     if (node.type === "VariableDeclarator" && node.init && isRoot(node.init, scope)) {
       found.globalAliases.push({ name: node.id.name, line: lineOf(node) });
@@ -377,6 +389,24 @@ export function scanHtmlScripts(html) {
   });
 }
 
+/** HTML 시작 태그의 인라인 이벤트 속성을 읽는다.
+ *
+ *  `onclick="window.Leak = 1"` 같은 속성은 `<script>` 가 아니라 위 스캐너의
+ *  AST에 절대 닿지 않지만 브라우저에서는 클래식 스크립트로 실행된다.
+ *  제품 HTML은 그 표면을 사용하지 않으므로 속성 이름을 실행 여부와 관계없이
+ *  금지한다. 주석의 역사 서술은 스크립트 태그 스캐너와 같이 먼저 걷는다. */
+export function scanHtmlEventHandlers(html) {
+  const code = html.replace(/<!--[\s\S]*?-->/g, "");
+  const handlers = [];
+  for (const tag of code.matchAll(/<([A-Za-z][\w:-]*)\b([^>]*)>/g)) {
+    const tagName = tag[1].toLowerCase();
+    for (const attr of tag[2].matchAll(/(?:^|\s)(on[a-z][\w:-]*)\s*=/gi)) {
+      handlers.push({ tag: tagName, attribute: attr[1].toLowerCase() });
+    }
+  }
+  return handlers;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    전반부 — fixture 로 증명하는 검출력. 저장소 상태와 무관하게 자족적이다.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -433,6 +463,14 @@ test("검출력 ③ — 대괄호 쓰기를 문다(문자열·템플릿), 계산
     "판독 축이 죽어 있습니다 — 별칭 27 의 '판독 0' 계약이 무효가 됩니다.");
 });
 
+test("검출력 ③-다 — `window.X++` 갱신도 전역 쓰기로 문다", () => {
+  const hit = scanFixture("pos/window_update.js");
+  assert.deepEqual(names(hit.globalWrites), ["Leak", "LeakBracket"]);
+  assert.deepEqual(hit.globalWrites.map((w) => w.kind).sort(), ["bracket-update", "dot-update"]);
+  assert.ok(hit.globalReads.some((r) => r.name === "Leak"),
+    "갱신 표현식의 읽기 성질도 사라졌습니다.");
+});
+
 test("검출력 ④ — `Object.assign(window, …)` 를 문다 / 다른 수신자는 물지 않는다", () => {
   const hit = scanFixture("pos/object_assign.js");
   assert.deepEqual(names(hit.globalWrites), ["Leak", "LeakTwo"]);
@@ -464,6 +502,17 @@ test("검출력 ⑥ — 클래식 `<script>` 를 문다 / `type=module` 과 주�
   assert.equal(miss.length, 1, "주석 속 옛 스크립트 예시를 실물로 셌습니다.");
   assert.equal(miss[0].classic, false);
   assert.equal(miss[0].type, "module");
+});
+
+test("검출력 ⑥-나 — 인라인 `on*` 핸들러를 문다 / 주석·data 속성은 물지 않는다", () => {
+  const hit = scanHtmlEventHandlers(fixture("pos/inline_handler.html"));
+  assert.deepEqual(hit, [
+    { tag: "button", attribute: "onclick" },
+    { tag: "input", attribute: "onchange" },
+  ]);
+
+  const miss = scanHtmlEventHandlers(fixture("neg/module_script.html"));
+  assert.deepEqual(miss, [], "주석이나 data-onclick 속성을 실행 핸들러로 세셨습니다.");
 });
 
 test("검출력 ⑦ — 최상단 IIFE 를 문다(함수·화살표·단항) / 함수 안의 것은 물지 않는다", () => {
@@ -701,6 +750,10 @@ test("`index.html` 의 스크립트는 `type=module` **하나**뿐이다", () =>
   assert.equal(scripts[0].type, "module");
   assert.equal(scripts[0].src, "./src/main.js",
     "entry 가 합성 루트를 부르는 `src/main.js` 가 아닙니다.");
+
+  const handlers = scanHtmlEventHandlers(html);
+  assert.deepEqual(handlers, [],
+    `제품 HTML에 인라인 이벤트 핸들러가 있습니다: ${JSON.stringify(handlers)}`);
 });
 
 test("모듈 최상단 IIFE 가 0 이다 — 부팅은 평가가 아니라 호출이 진다", () => {

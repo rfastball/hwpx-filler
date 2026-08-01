@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>양성 대조 ⑥-나 — 인라인 이벤트 핸들러</title>
+</head>
+<body>
+<!-- `<script>` 태그가 없어도 아래 속성 본문은 클래식 스크립트로 실행된다. -->
+<button type="button" onclick="window.Leak = 1">누수 심기</button>
+<input type="text" onchange="globalThis.LeakTwo = 2">
+</body>
+</html>
