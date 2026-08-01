@@ -185,6 +185,7 @@ def probe(evidence: dict, name: str):
     )
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 class TestWebSelftestGate:
     """실 창을 띄워 되읽은 DOM 스냅샷에 대한 렌더 거동 계약."""
@@ -1552,6 +1553,7 @@ class TestWebSelftestGate:
         assert w["landed"] is True, "이탈 뒤 「문서 만들기」로 착지하지 않았습니다."
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     """다크모드 선택이 프로세스 재시작을 넘어 유지되고 콜드부트 첫 페인트 전 적용된다(영속+무깜빡임, #74).
@@ -1598,6 +1600,7 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 @pytest.mark.parametrize(("scale", "root_px"), [("large", "20px"), ("larger", "24px")])
 def test_font_scale_persists_across_restart_without_major_overflow(
@@ -1639,6 +1642,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 @pytest.mark.parametrize("mode", ["normal", "maximized", "offscreen"])
 def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: str) -> None:
@@ -1680,6 +1684,7 @@ def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: 
 # test_webapp_profile.test_prepare_purges_orphans_and_legacy_layout이 검증한다.
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None:
     """부팅을 완주하면 완주 스탬프가 홈에 남는다 — 다음 부팅부터 좁은 예산(#77).
@@ -1728,6 +1733,7 @@ def normal_window_evidence(tmp_path_factory) -> dict:
     return evidence
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_selftest_api_is_absent_without_the_capability_in_real_webview(
     normal_window_evidence: dict,
@@ -1796,6 +1802,7 @@ def test_selftest_api_is_absent_without_the_capability_in_real_webview(
     assert len(_RETIRED_COMPAT_GLOBALS) == 27, "은퇴 목록이 바뀌었습니다 — 프로브와 함께 고치십시오."
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_global_allowlist_gate_actually_catches_a_planted_leak(tmp_path) -> None:
     """누수 파수꾼 — 전역 하나를 **일부러 심으면** allowlist 게이트가 실제로 잡는다.
@@ -1841,6 +1848,7 @@ def test_global_allowlist_gate_actually_catches_a_planted_leak(tmp_path) -> None
     assert delta["hwpx_namespace"] != ["__hwpx"]
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
     normal_window_evidence: dict, tmp_path
