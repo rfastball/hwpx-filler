@@ -10,16 +10,33 @@ from __future__ import annotations
 import csv
 import importlib.util
 import io
+import re
 from pathlib import Path
+
+from _web_source import REPO_ROOT, SOURCE_ROOT
 
 from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.lint import lint_template
 from hwpxfiller.core.text_render import template_fields
 
-Q101 = Path(__file__).resolve().parents[1] / "examples" / "quickstart-101"
+Q101 = REPO_ROOT / "examples" / "quickstart-101"
 
 FIELDS = ["공고번호", "수요기관", "공고명", "추정가격", "납품기한", "담당자"]
 PURCHASE_SUBSET = {"수요기관", "공고명", "추정가격", "담당자"}
+
+#: 101·102 문안이 화면을 지목하는 두 문서. 하나만 보면 서로 어긋난 채 각자 초록이다.
+GUIDE_DOCS = ("README.md", "PATTERNS.md")
+
+#: 판정으로 죽은 표면·결속을 가리키는 어휘. 실물에 없다는 것은 코드가 증명할 수 없다
+#: (죽은 이름은 주석·이력에 남으므로 substring 탐색으로는 생사가 안 갈린다) — 그래서
+#: 이 목록만은 손으로 적힌 판정이고, 지키는 것은 **재유입 차단** 하나다.
+RETIRED_VOCABULARY = {
+    "왼쪽 목록": "좌 master 작업 목록은 F2 PR-B 에서 사망 — 후보 카드·문서 탐색 면이 승계",
+    "기본 데이터": "작업↔데이터 결속(default_dataset_ref)은 #347 에서 폐기",
+    "기안 화면": "별도 기안 화면은 없다 — TXT 작업 저장 → 검토·복사 작업대",
+    "데이터 함께 등록": "작업 저장은 데이터를 등록하지도 묶지도 않는다",
+    "템플릿 관리": "scr-tpl 은 F8 에서 사망 — 승계처는 편집기 「템플릿」 자리",
+}
 
 
 def _csv_rows(name: str) -> "tuple[list[str], list[dict[str, str]]]":
@@ -115,6 +132,106 @@ def test_readme_screenshots_exist_one_to_one() -> None:
     assert refs, "README 에 스크린샷 참조가 없다"
     assert refs == files, (
         f"참조-실물 어긋남 — README에만: {sorted(refs - files)}, img/에만: {sorted(files - refs)}"
+    )
+
+
+def _app_label_haystack() -> str:
+    """라벨이 실제로 사는 곳 전부 — 웹 표면(정적·동적)과 링1·링2 문안 소유자.
+
+    source tree 의 물리 이름은 ``_web_source`` 가 단독 소유한다(``test_web_source_role``):
+    여기서 다시 조립하면 중앙 컷오버 뒤에도 이 게이트만 옛 사본을 읽고 초록일 수 있다.
+    """
+    sources = [
+        *sorted(SOURCE_ROOT.rglob("*.js")),
+        *sorted(SOURCE_ROOT.rglob("*.html")),
+        *sorted((REPO_ROOT / "src" / "hwpxfiller" / "gui").rglob("*.py")),
+        *sorted((REPO_ROOT / "src" / "hwpxfiller" / "webapp").rglob("*.py")),
+    ]
+    return "\n".join(path.read_text(encoding="utf-8") for path in sources)
+
+
+def _doc_button_tokens(text: str) -> "set[str]":
+    """문서가 **[…]** 로 지목한 버튼 이름. 글리프와 라이브 수치는 벗긴다.
+
+    문서는 라벨을 화면에 뜬 그대로 인용한다 — 수치가 붙는 라벨(「검토·복사 시작 · 3건」)
+    이나 자리표시자를 낀 라벨(「비우고 진행 확인 (N개 토큰)」)은 그 접미까지 함께 온다.
+    벗기는 것은 **합성분뿐**이고 이름 본체는 손대지 않는다.
+    """
+    tokens: set[str] = set()
+    for raw in re.findall(r"\*\*\[([^\]\n]+)\]\*\*", text):
+        name = raw
+        for glyph in ("…", "▶", "◀", "⤢", "←", "＋"):
+            name = name.replace(glyph, "")
+        name = re.sub(r"\s*\([^)]*\)\s*$", "", name)   # (N개 토큰)
+        name = re.sub(r"\s*·[^·]*$", "", name) if " · " in name else name  # · 3건
+        name = name.strip()
+        if name:
+            tokens.add(name)
+    return tokens
+
+
+def test_guide_docs_quote_button_names_that_exist_in_the_app() -> None:
+    """문서가 지목하는 버튼 이름이 앱 소스에 실제로 있다 — 지어낸 라벨·개명 드리프트 차단.
+
+    **이 단언은 하한이고, 그 하한이 실제로 새는 것을 봤다**(#434 리뷰 4R). 두 겹이다:
+    ① 주석·이력에만 남은 죽은 이름이 통과한다 ② **부분문자열**이라 다른 라벨 안에 든
+    이름도 통과한다 — 렌더되지 않는 `[작업 만들기]` 가 `job.js` 의 「이 데이터로 새 작업
+    만들기」에 얹혀 초록이었다. 건초더미를 렌더 표면으로 좁혀도 ②는 안 닫힌다(실측).
+    제대로 닫으려면 라벨 **전체 일치**로 바꿔야 하는데, 그건 프론트 결합을 끊을 때 손댈
+    자리다. 그때까지 이 게이트가 지키는 것은 **지어낸 이름**이고, 사망 표면은
+    RETIRED_VOCABULARY 가 진다. allowlist 가 0이라 개명은 예외 없이 걸린다.
+    """
+    haystack = _app_label_haystack()
+    offenders: list[str] = []
+    for name in GUIDE_DOCS:
+        text = (Q101 / name).read_text(encoding="utf-8")
+        tokens = _doc_button_tokens(text)
+        assert tokens, f"{name}: 버튼 인용이 하나도 없다 — 추출기가 죽었을 수 있다"
+        offenders.extend(f"{name}: [{t}]" for t in sorted(tokens) if t not in haystack)
+
+    assert not offenders, (
+        "문서가 앱에 없는 버튼 이름을 지목합니다(개명했거나 지어냈습니다):\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_guide_docs_do_not_resurrect_retired_surfaces() -> None:
+    """사망 판정이 난 표면·결속의 어휘가 문서로 되돌아오지 않는다."""
+    offenders: list[str] = []
+    for name in GUIDE_DOCS:
+        text = (Q101 / name).read_text(encoding="utf-8")
+        offenders.extend(
+            f"{name}: 「{term}」 — {why}"
+            for term, why in RETIRED_VOCABULARY.items()
+            if term in text
+        )
+
+    assert not offenders, "문서가 죽은 표면을 현재형으로 서술합니다:\n" + "\n".join(offenders)
+
+
+def test_guide_docs_field_enumerations_match_a_real_template() -> None:
+    """문서가 세는 「N필드(a·b·c)」가 커밋된 템플릿의 실제 필드 집합과 일치한다.
+
+    102 가 부분집합 템플릿을 「4필드(…품명…)」로 적어 둔 적이 있다 — 실물엔 없는 열이라
+    독자가 CSV 에서 그 이름을 찾다 못 찾는다. 개수와 이름을 **둘 다** 실물에서 재읽어 센다.
+    """
+    known = {
+        frozenset(read_fields(str(Q101 / "templates" / "발주요청서.hwpx"))),
+        frozenset(read_fields(str(Q101 / "templates" / "구매요청서.hwpx"))),
+    }
+    seen = 0
+    offenders: list[str] = []
+    for name in GUIDE_DOCS:
+        text = (Q101 / name).read_text(encoding="utf-8")
+        for match in re.finditer(r"(\d+)\s*필드\s*\(([^)]*)\)", text):
+            listed = [p.strip() for p in re.split(r"[·,]", match.group(2)) if p.strip()]
+            seen += 1
+            if len(listed) != int(match.group(1)) or frozenset(listed) not in known:
+                offenders.append(f"{name}: {match.group(0)}")
+
+    assert seen, "문서에 필드 열거가 없다 — 추출기가 죽었을 수 있다"
+    assert not offenders, (
+        "문서의 필드 열거가 커밋된 템플릿과 다릅니다:\n" + "\n".join(offenders)
     )
 
 
