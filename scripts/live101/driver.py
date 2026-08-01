@@ -30,6 +30,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -204,8 +205,10 @@ def run(
     from hwpxfiller.webapp import live_run
 
     answers: "deque[str]" = deque()
-    state: dict = {"ok": False, "error": None, "observations": {}, "sink": None}
+    state: dict = {"result": None, "error": None}
     deadline = Deadline(budget_s)
+    #: `main()` 이 정상 반환하면 선다 — 워치독을 **해제**하는 신호(#426 리뷰 P1).
+    finished = threading.Event()
 
     def answer_file_dialog(filters, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
         return answers.popleft() if answers else None
@@ -220,9 +223,40 @@ def run(
         out.write_text(json.dumps(dict(result), ensure_ascii=False, indent=2), encoding="utf-8")
         return out
 
+    def settle(observations: dict, sink, error: "str | None") -> LiveRunResult:
+        """사실을 모아 **판정까지 끝낸다**.
+
+        판정이 드라이브 스레드 안에서 끝나야 하는 이유는 워치독 때문이다(#426 리뷰 P1):
+        teardown 이 매달리면 ``main()`` 이 영영 반환하지 않고, 판정을 그 뒤에 두면 워치독이
+        **판정 없이** 종료 코드를 정한다. 그러면 생성 0건이나 찢긴 컷이 exit 0 으로 지나간다 —
+        이 하니스가 막으려는 바로 그 침묵이다.
+        """
+        built = report_mod.build(
+            mode=mode,
+            home=home,
+            observations=observations,
+            documents=generated_documents(home),
+            shots=list(sink.shots) if sink is not None else [],
+            unstable=list(sink.unstable) if sink is not None else [],
+            geometry=sink.geometry() if sink is not None else {},
+            window_size=(WINDOW_W, WINDOW_H),
+            elapsed_s=deadline.elapsed_s(),
+        )
+        verdict = report_mod.judge(built, mode=mode)
+        report = {**built, "verdict": verdict.as_dict()}
+        if error:
+            report["error"] = error
+        return LiveRunResult(
+            mode=mode,
+            ok=verdict.ok and error is None,
+            report=report,
+            error=error or verdict.reason,
+        )
+
     def drive(ctx) -> None:
         window = ctx.window
-        evidence: dict = {"mode": mode}
+        observations: dict = {}
+        sink = None
         try:
             _await_bridge(window, deadline)
             window.resize(WINDOW_W, WINDOW_H)
@@ -230,7 +264,6 @@ def run(
             surface = Surface(window, deadline)
             surface.install_helpers()
             sink = _make_sink(mode, out_dir, webapp_app.WINDOW_TITLE)
-            state["sink"] = sink
             observations = scenario_mod.run(
                 scenario_mod.ScenarioContext(
                     surface=surface,
@@ -243,50 +276,44 @@ def run(
                 raise ScenarioFailure(
                     f"대화상자 답변 잔량 {len(answers)} — 대본이 화면과 어긋났습니다"
                 )
-            state["observations"] = observations
-            state["ok"] = True
-            evidence.update(observations)
-            evidence["shots"] = list(sink.shots)
         except Exception as exc:  # noqa: BLE001 — 드라이브 스레드 조용한 증발 금지
             state["error"] = f"{type(exc).__name__}: {exc}"
-            evidence["error"] = state["error"]
         finally:
-            ctx.finish(evidence)
-            _arm_teardown_watchdog(state, home)
+            result = settle(observations, sink, state["error"])
+            state["result"] = result
+            ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
+            _arm_teardown_watchdog(result, home, finished)
 
-    rc = webapp_app.main(
-        argv=[],
-        live=live_run.LiveRun(
-            name="quickstart-101",
-            drive=drive,
-            write_output=write_evidence,
-            file_dialogs=live_run.FileDialogs(
-                open_file=answer_file_dialog, open_folder=answer_folder_dialog
+    try:
+        rc = webapp_app.main(
+            argv=[],
+            live=live_run.LiveRun(
+                name="quickstart-101",
+                drive=drive,
+                write_output=write_evidence,
+                file_dialogs=live_run.FileDialogs(
+                    open_file=answer_file_dialog, open_folder=answer_folder_dialog
+                ),
             ),
-        ),
-    )
+        )
+    finally:
+        # 정상 teardown 이면 워치독을 **해제**한다. 안 그러면 이 함수를 부른 장수 프로세스
+        # (pytest 게이트 등)를 10초 뒤 `os._exit` 가 통째로 죽인다(#426 리뷰 P1).
+        finished.set()
 
     (home / "_live101_result.json").unlink(missing_ok=True)
-    sink = state["sink"]
-    built = report_mod.build(
-        mode=mode,
-        home=home,
-        observations=state["observations"],
-        documents=generated_documents(home),
-        shots=list(sink.shots) if sink is not None else [],
-        unstable=list(sink.unstable) if sink is not None else [],
-        geometry=sink.geometry() if sink is not None else {},
-        window_size=(WINDOW_W, WINDOW_H),
-        elapsed_s=deadline.elapsed_s(),
-    )
-    verdict = report_mod.judge(built, mode=mode)
-    ok = bool(state["ok"]) and verdict.ok and rc == 0
-    return LiveRunResult(
-        mode=mode,
-        ok=ok,
-        report={**built, "verdict": verdict.as_dict()},
-        error=state["error"] or verdict.reason,
-    )
+    result = state["result"]
+    if result is None:
+        # 드라이버가 아예 돌지 않았다(창 생성 실패 등). 판정 없는 성공은 없다.
+        return settle({}, None, state["error"] or "드라이버가 실행되지 않았습니다")
+    if rc != 0:
+        return LiveRunResult(
+            mode=result.mode,
+            ok=False,
+            report=result.report,
+            error=f"앱이 rc={rc} 로 끝났습니다 ({result.error or '시나리오는 통과'})",
+        )
+    return result
 
 
 def _await_bridge(window: object, deadline: Deadline) -> None:
@@ -316,28 +343,46 @@ def _make_sink(mode: str, out_dir: "Path | None", window_title: str):
     return capture_mod.Win32Sink(hwnd, out_dir)
 
 
-def _arm_teardown_watchdog(state: dict, home: Path) -> None:
+def _arm_teardown_watchdog(
+    result: LiveRunResult, home: Path, finished: "threading.Event"
+) -> None:
     """``window.destroy()`` 뒤에도 WinForms 루프가 안 내려오는 pywebview teardown 매달림 대비.
 
-    유예·진단 산출물·exit code 를 **계약으로 적는다**(#423 B). 조용한 무한 대기는 없다:
-    성공이면 정리하고 0으로, 실패면 스택을 남기고 :data:`ExitCode.TEARDOWN_HUNG` 로 나간다.
+    유예·진단 산출물·exit code 를 **계약으로 적는다**(#423 B). 조용한 무한 대기는 없다.
+
+    두 가지가 계약의 핵심이다(#426 리뷰 P1).
+
+    ① **해제 가능하다.** ``finished`` 가 서면 이 스레드는 조용히 물러난다. 안 그러면
+       정상 teardown 뒤에도 10초 뒤 ``os._exit`` 가 이 함수를 부른 장수 프로세스(pytest
+       게이트 등)를 통째로 죽인다.
+    ② **판정으로 나간다.** 종료 코드의 근거는 "시나리오가 예외를 안 냈다"가 아니라 이미
+       끝난 판정이다. 그래야 생성 0건·찢긴 컷이 매달림 경로로 새어 exit 0 이 되지 않는다.
     """
     import faulthandler
-    import threading
 
     def _watchdog() -> None:
-        time.sleep(TEARDOWN_GRACE_S)
-        if state["ok"]:
+        if finished.wait(TEARDOWN_GRACE_S):
+            return  # 정상 teardown — 물러난다
+        if result.ok:
             clean_practice_state(home)
-            os.write(
-                1,
-                (
-                    "완료(teardown 매달림 → 워치독 종료; 잠긴 webview/ 는 다음 부팅이 청소)\n"
-                ).encode("utf-8", "replace"),
+            (home / "_live101_result.json").unlink(missing_ok=True)
+            _say(
+                f"완료: 101 {result.mode} 통과 "
+                "(teardown 매달림 → 워치독 종료; 잠긴 webview/ 는 다음 부팅이 청소)"
             )
             os._exit(ExitCode.OK)
-        with (home / "_live101_hang_stacks.txt").open("w", encoding="utf-8") as fh:
+        stacks = home / "_live101_hang_stacks.txt"
+        with stacks.open("w", encoding="utf-8") as fh:
             faulthandler.dump_traceback(file=fh)
-        os._exit(ExitCode.TEARDOWN_HUNG)
+        _say(f"101 {result.mode} 실패 — {result.error}", stream=2)
+        for failure in result.report.get("verdict", {}).get("failures", []):
+            _say(f"  · {failure}", stream=2)
+        _say(f"보고서: {home / '_live101_result.json'} · 매달림 스택: {stacks}", stream=2)
+        os._exit(ExitCode.SCENARIO_FAILED if result.error else ExitCode.TEARDOWN_HUNG)
 
     threading.Thread(target=_watchdog, daemon=True).start()
+
+
+def _say(message: str, *, stream: int = 1) -> None:
+    """``os._exit`` 직전의 출력 — 버퍼를 지나지 않는 저수준 쓰기라야 실제로 나간다."""
+    os.write(stream, (message + "\n").encode("utf-8", "replace"))

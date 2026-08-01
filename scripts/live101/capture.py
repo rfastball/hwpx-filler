@@ -97,7 +97,14 @@ def grab_frame(hwnd: int) -> "tuple[int, int, bytes]":
         header.biBitCount = 32
         header.biCompression = 0
         buffer = ctypes.create_string_buffer(width * height * 4)
-        gdi32.GetDIBits(hdc_mem, bmp, 0, height, buffer, ctypes.byref(header), 0)
+        copied = gdi32.GetDIBits(hdc_mem, bmp, 0, height, buffer, ctypes.byref(header), 0)
+        if copied != height:
+            # 반쯤 빈 버퍼를 프레임으로 쓰면 **정착 판정이 그것을 통과시킨다**: 연속 두 번
+            # 실패한 판독은 둘 다 0으로 채워져 서로 같으므로 "정착했다"가 되고, 검은 컷이
+            # 조용히 문서로 들어간다(#426 리뷰 P2). 반쪽 판독은 프레임이 아니다.
+            raise RuntimeError(
+                f"GetDIBits 가 {copied}/{height} 줄만 복사했습니다 — 반쪽 판독을 프레임으로 쓰지 않습니다"
+            )
         return width, height, buffer.raw
     finally:
         gdi32.DeleteObject(bmp)
