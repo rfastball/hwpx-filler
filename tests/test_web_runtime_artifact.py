@@ -213,6 +213,22 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "network_control_external_fetch_completed" in build
     assert "network_control_proxy_observed" in build
     assert "network_isolation_mechanism" in build
+    diagnostic_marker = "network_control_diagnostics="
+    assert diagnostic_marker in build
+    assert build.index(diagnostic_marker) < build.index(
+        "control proxy를 통한 packaged WebView2 외부 HTTP probe"
+    )
+    for diagnostic_field in (
+        "environment_browser_arguments",
+        "policy_browser_arguments",
+        "control_elapsed_ms",
+        "evidence_error_present",
+        "external_fetch_error",
+        "proxy_observed",
+        "proxy_hit_parse_failed",
+        "proxy_process_exited",
+    ):
+        assert diagnostic_field in build
     assert "AdditionalBrowserArguments" in build
     assert "HKEY_LOCAL_MACHINE" not in build
     assert "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\" in build

@@ -228,6 +228,7 @@ foreach ($key in $plan) {
             & $setWebViewNetworkArguments (
                 "--proxy-server=http://127.0.0.1:$proxyPort"
             )
+            $networkControlStartedAt = Get-Date
             $networkControl = Start-Process -FilePath $exe -Wait -PassThru `
                 -ArgumentList @('--selftest')
             if ($networkControl.ExitCode -ne 0) {
@@ -238,6 +239,58 @@ foreach ($key in $plan) {
             }
             $networkEvidence = Get-Content -LiteralPath $networkControlOut -Raw -Encoding UTF8 |
                 ConvertFrom-Json
+            $proxyObserved = Test-Path -LiteralPath $proxyHitOut -PathType Leaf
+            $proxyHitDiagnostic = $null
+            $proxyHitParseFailed = $false
+            if ($proxyObserved) {
+                try {
+                    $proxyHitDiagnostic = Get-Content -LiteralPath $proxyHitOut -Raw -Encoding UTF8 |
+                        ConvertFrom-Json
+                }
+                catch {
+                    # 아래 본 검증은 같은 파일을 다시 읽어 원래 오류를 그대로 내야 한다. 여기서는
+                    # 진단 출력 자체가 주 실패를 가리지 않도록 파싱 실패 여부만 기록한다.
+                    $proxyHitParseFailed = $true
+                }
+            }
+            $policyBrowserArguments = $null
+            if ($isElevated) {
+                $policyBrowserArguments = (
+                    Get-Item -LiteralPath $webViewPolicyPath
+                ).GetValue($webViewPolicyName)
+            }
+            $proxyProcessExited = $proxyProcess.HasExited
+            $proxyProcessExitCode = $null
+            if ($proxyProcessExited) {
+                $proxyProcessExitCode = $proxyProcess.ExitCode
+            }
+            $networkControlDiagnostics = [ordered]@{
+                network_isolation_mechanism = $networkIsolationMechanism
+                elevated = $isElevated
+                app_id = $webViewPolicyName
+                environment_browser_arguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+                policy_browser_arguments = $policyBrowserArguments
+                control_elapsed_ms = [int]((Get-Date) - $networkControlStartedAt).TotalMilliseconds
+                control_exit_code = $networkControl.ExitCode
+                evidence_error_present = (
+                    $networkEvidence.PSObject.Properties.Name -contains 'error'
+                )
+                external_fetch_completed = $networkEvidence.runtime.external_fetch_completed
+                external_fetch_succeeded = $networkEvidence.runtime.external_fetch_succeeded
+                external_fetch_blocked = $networkEvidence.runtime.external_fetch_blocked
+                external_fetch_error = $networkEvidence.runtime.external_fetch_error
+                proxy_observed = $proxyObserved
+                proxy_hit_parse_failed = $proxyHitParseFailed
+                proxy_method = $proxyHitDiagnostic.method
+                proxy_host = $proxyHitDiagnostic.host
+                proxy_target = $proxyHitDiagnostic.target
+                proxy_process_exited = $proxyProcessExited
+                proxy_process_exit_code = $proxyProcessExitCode
+            }
+            Write-Host (
+                'network_control_diagnostics=' +
+                ($networkControlDiagnostics | ConvertTo-Json -Compress)
+            )
             if (
                 $networkEvidence.PSObject.Properties.Name -contains 'error' -or
                 $networkEvidence.runtime.external_fetch_completed -ne $true -or
