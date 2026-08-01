@@ -13,7 +13,7 @@ from pathlib import Path
 
 from _web_source import (
     REPO_ROOT,
-    SOURCE_COMPAT,
+    SOURCE_BOOTSTRAP,
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
@@ -106,15 +106,15 @@ def test_web_surfaces_free_of_issue_numbers():
 def test_copy_module_still_reaches_the_product_graph():
     """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다.
 
-    N-04 뒤 copy.js 는 entry 가 직접 싣지 않고 중앙 compat 이 끌어온다. 제품 JS 소비자가
+    N-04 뒤 copy.js 는 entry 가 직접 싣지 않고 합성 루트가 끌어온다. 제품 JS 소비자가
     0인 모듈이라 "그래프에서 빠졌다"가 아무 화면도 깨지 않고 통과할 수 있는 자리다 —
     그래서 도달 경로를 명시적으로 센다.
     """
     modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
     provider = evaluation_site("copy.js")
     assert provider in modules, f"{provider} 가 제품 entry 에 import되지 않았습니다."
-    assert 'from "../js/copy.js"' in SOURCE_COMPAT.read_text(encoding="utf-8"), (
-        "중앙 compat 이 copy.js 를 끌어오지 않습니다 — 공용 문안 모듈이 그래프에서 빠집니다."
+    assert 'from "../js/copy.js"' in SOURCE_BOOTSTRAP.read_text(encoding="utf-8"), (
+        "합성 루트가 copy.js 를 끌어오지 않습니다 — 공용 문안 모듈이 그래프에서 빠집니다."
     )
 
 

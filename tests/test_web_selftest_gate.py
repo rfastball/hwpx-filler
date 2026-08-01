@@ -23,6 +23,8 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
+
 # 게이트: Windows 아니거나 명시 옵트아웃이면 스킵. 자동 감지 스킵 아님(위 docstring).
 _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"))
 _GATE_REASON = "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 옵트아웃)"
@@ -1589,8 +1591,36 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     assert decide(stamp, stamp)[0] == WARM_BUDGET_SECONDS
 
 
+@pytest.fixture(scope="module")
+def normal_window_evidence(tmp_path_factory) -> dict:
+    """능력 **없는** 실 창을 모듈당 1회 띄워 비노출·전역 델타 증거를 함께 얻는다.
+
+    WebView2 콜드스타트는 비싸고 이 기계에서 드물게 매달린다(환경 결함 — 같은 부팅을 여섯 번
+    반복하면 0/6 이지만 전체 스위트처럼 창을 많이 띄운 뒤에는 한 번씩 90s 를 넘긴다). 그래서
+    같은 창을 두 번 띄우지 않는다. 부수 효과로 두 단언이 **같은 창**을 말하게 돼 대조가 는다.
+    """
+    home = tmp_path_factory.mktemp("no-capability-home")
+    out = tmp_path_factory.mktemp("no-capability") / "evidence.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_NO_CAPABILITY="1",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    evidence = json.loads(out.read_text(encoding="utf-8"))
+    assert "error" not in evidence, evidence.get("error")
+    return evidence
+
+
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
-def test_selftest_api_is_absent_without_the_capability_in_real_webview(tmp_path) -> None:
+def test_selftest_api_is_absent_without_the_capability_in_real_webview(
+    normal_window_evidence: dict,
+) -> None:
     """능력을 붙이지 않은 실 창에는 ``window.__hwpxTest`` 가 **없다**(#372 D-07).
 
     ``__hwpxTest`` 비노출을 정적으로 세는 검사는 여럿 있지만(소스에 문자열이 없다, 생산자가
@@ -1606,22 +1636,7 @@ def test_selftest_api_is_absent_without_the_capability_in_real_webview(tmp_path)
     부재만 재면 "능력이 없다"와 "페이지가 안 떴다"가 구별되지 않으므로 제품 API 존재를
     **양성 대조**로 같은 창에서 함께 잰다(계측 층의 부재판별력).
     """
-    home = tmp_path / "no-capability-home"
-    home.mkdir()
-    out = tmp_path / "no-capability.json"
-    env = dict(
-        os.environ,
-        HWPXFILLER_HOME=str(home),
-        HWPX_SELFTEST_OUT=str(out),
-        HWPX_SELFTEST_NO_CAPABILITY="1",
-    )
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
-    assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
-    evidence = json.loads(out.read_text(encoding="utf-8"))
-    assert "error" not in evidence, evidence.get("error")
+    evidence = normal_window_evidence
     probed = evidence["non_exposure"]
 
     # 양성 대조 — 이것이 없으면 아래 부재 단언은 "페이지가 안 떴다"와 구별되지 않는다.
@@ -1640,3 +1655,139 @@ def test_selftest_api_is_absent_without_the_capability_in_real_webview(tmp_path)
     assert "?selftest=1" in probed["url_after"] and probed["url_after"].endswith("#selftest")
     assert probed["selftest_own_after_query_hash"] is False
     assert probed["selftest_typeof_after_query_hash"] == "undefined"
+
+    # ── N-10 전역 allowlist — 이름 하나의 부재가 아니라 **전수**를 센다 ──────────────
+    #
+    # 위 단언들은 "우리가 아는 이름이 없다"까지만 말한다. 정적 게이트가 `window.X =` 모양을
+    # 다 세어도 번들러·동적 경로가 만드는 전역은 소스에 그 모양으로 적혀 있지 않다. 그래서
+    # 실 엔진에서 own 전역 **이름 전수**를 뜨고, 판정은 엔진 판올림에 흔들리지 않는 축으로만
+    # 세운다(엔진 전역 목록을 저장소에 못박으면 CI 의 WebView2 판이 다를 때 제품과 무관한
+    # 이유로 빨개진다).
+    delta = evidence["global_delta"]
+    assert "added_globals_error" not in delta, delta["added_globals_error"]
+
+    # 양성 대조 — 측정이 실제로 창을 봤다. 비면 아래 부재 단언은 전부 공짜로 통과한다.
+    assert delta["total_own"] > 500, f"전역 전수 측정이 헛돌았습니다: {delta}"
+    assert delta["has_document"] and delta["has_location"], "엔진 전역이 안 보입니다 — 측정 오염."
+
+    # ① 제품 공개 API 는 있고(양성) ② 시험 API 는 없다(음성 — 능력이 없으므로).
+    #    이름공간 **전수**로 물어 "우리가 아는 이름"의 한계를 넘는다: 모르는 형제 전역이
+    #    생기면 목록이 달라진다(파수꾼 테스트가 이 축의 검출력을 증명한다).
+    assert delta["hwpx_namespace"] == ["__hwpx"], (
+        f"__hwpx 이름공간에 예상 밖 전역이 있습니다: {delta['hwpx_namespace']}"
+    )
+
+    # ③ 은퇴한 임시 별칭 스물일곱은 실 창에 **하나도** 없다 — N-10 의 본론이다. 정적 게이트가
+    #    소스에서 세는 것과 달리 여기는 **번들이 실제로 만든 결과**를 센다.
+    assert delta["retired_present"] == [], (
+        f"은퇴한 임시 전역이 실 창에 살아 있습니다: {delta['retired_present']}"
+    )
+    assert len(_RETIRED_COMPAT_GLOBALS) == 27, "은퇴 목록이 바뀌었습니다 — 프로브와 함께 고치십시오."
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_global_allowlist_gate_actually_catches_a_planted_leak(tmp_path) -> None:
+    """누수 파수꾼 — 전역 하나를 **일부러 심으면** allowlist 게이트가 실제로 잡는다.
+
+    위 테스트의 전역 단언은 **부재를 재는 계측**이다. 그런 계측은 자기가 부재를 볼 줄 아는지
+    먼저 증명해야 한다 — 아무것도 관측하지 못하는 프로브도 똑같이 "누수 0" 을 낸다. 이
+    저장소가 이미 두 번 겪은 결함류다(계측 층의 조용한 오류).
+
+    ``document``·``__hwpx`` 가 보인다는 사실이 약한 양성 대조이긴 하다. 그러나 그 이름들은
+    **항상** 있으므로 "측정이 살아 있다"까지만 말하고 "**새로** 생긴 이름을 잡는다"는 말하지
+    못한다. 이 테스트가 그 간극을 닫는다.
+
+    심는 자리는 selftest 드라이버이지 제품이 아니다 — 정상 실행에는 이 코드로 가는 길이
+    없고(``--selftest`` + 전용 환경변수), 제품 번들은 한 글자도 달라지지 않는다.
+    """
+    sentinel = "__hwpxLeakSentinel"
+    home = tmp_path / "leak-sentinel-home"
+    home.mkdir()
+    out = tmp_path / "leak-sentinel.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_NO_CAPABILITY="1",
+        HWPX_SELFTEST_LEAK_SENTINEL=sentinel,
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"파수꾼 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    evidence = json.loads(out.read_text(encoding="utf-8"))
+    assert "error" not in evidence, evidence.get("error")
+    assert evidence["leak_sentinel"] == sentinel
+
+    # 양성 대조 — 페이지는 실제로 떴다(부재/존재를 논하기 전에).
+    assert evidence["non_exposure"]["product_typeof"] == "object"
+
+    delta = evidence["global_delta"]
+    assert sentinel in delta["hwpx_namespace"], (
+        f"심은 누수를 측정이 못 봤습니다 — 전역 계측이 헛돕니다: {delta}"
+    )
+
+    # 그리고 그 순간 위 게이트의 이름공간 단언이 **실제로 깨진다**. 이 한 줄이 "본다"와
+    # "실패한다"를 잇는다 — 관측만 하고 판정이 통과하면 게이트가 아니다.
+    assert delta["hwpx_namespace"] != ["__hwpx"]
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
+    normal_window_evidence: dict, tmp_path
+) -> None:
+    """시험 실행이 정상 실행보다 더하는 전역은 **정확히 `__hwpxTest` 하나**다(#372 D-07).
+
+    두 모드가 **같은 표현식**으로 잰 전역 전수를 뺄셈한다. 이름 하나의 존재/부재를 각각 묻던
+    단언들과 다른 질문이다: 그쪽은 "우리가 아는 이름"만 보고, 시험 배선이 곁들여 심은 **모르는
+    이름**은 아무도 말하지 않는다. selftest 는 프로브·러너·호스트 파사드를 창에 얹으므로 그
+    곁들임이 실제로 생길 수 있는 자리이고, 그래서 차이를 집합으로 확인한다.
+
+    같은 번들·같은 코드 경로다(별도 test bundle 0) — 차이의 원인은 호스트 능력 하나뿐이어야
+    한다.
+
+    측정은 ``full`` 실행이 아니라 전용 측정 모드가 낸다. ``full``·쓰기 모드 증거의 최상위 키
+    수는 ``packaging/build.ps1`` 의 책임 게이트(42)가 못박은 값이라, 재는 것을 재어지는 것의
+    자루에 넣으면 릴리스 빌드가 터진다.
+    """
+    # 능력 없는 쪽은 위 픽스처가 띄운 **같은 창**의 측정을 재사용한다(부팅을 늘리지 않는다).
+    normal = normal_window_evidence["global_delta"]
+
+    # 능력 있는 쪽만 새로 띄운다 — 같은 표현식, 다른 것은 호스트 능력 하나뿐이다.
+    home = tmp_path / "delta-capability-home"
+    home.mkdir()
+    out = tmp_path / "delta-capability.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_GLOBAL_DELTA="1",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"능력 측정 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    capability_evidence = json.loads(out.read_text(encoding="utf-8"))
+    assert "error" not in capability_evidence, capability_evidence.get("error")
+    testing = capability_evidence["global_delta"]
+
+    # 양성 대조 — 두 측정이 실제로 돌았다. 하나라도 오류면 아래 뺄셈은 무의미하다.
+    assert "added_globals_error" not in normal, normal["added_globals_error"]
+    assert "added_globals_error" not in testing, testing["added_globals_error"]
+    assert normal["total_own"] > 500 and testing["total_own"] > 500
+
+    # 능력 있는 창에서 `__hwpxTest` 를 뺀 집합의 정체가, 능력 없는 창의 집합 정체와 **같다**.
+    # 이것이 "두 집합은 `__hwpxTest` 하나만 다르다"의 정확한 형태다 — 수량만 비교하면 하나가
+    # 사라지고 둘이 생긴 경우를 놓친다.
+    assert testing["digest_without_test"] == normal["digest"], (
+        "시험 실행의 전역 집합이 정상 실행 + `__hwpxTest` 가 아닙니다 — "
+        f"digest {testing['digest_without_test']} != {normal['digest']}"
+    )
+    assert testing["total_own"] == normal["total_own"] + 1
+    assert testing["hwpx_namespace"] == ["__hwpx", "__hwpxTest"]
+    assert normal["hwpx_namespace"] == ["__hwpx"]
+
+    # 양성 대조 — digest 가 실제로 이름 집합에 반응한다(항상 같은 값을 내는 상수가 아니다).
+    assert testing["digest"] != testing["digest_without_test"]

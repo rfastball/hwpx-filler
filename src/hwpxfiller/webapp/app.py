@@ -728,9 +728,74 @@ _WINDOW_GEOMETRY_JS = (
     "avail_width:screen.availWidth,avail_height:screen.availHeight})"
 )
 
+#: 전역 allowlist 실측(N-10) — 창이 실제로 들고 있는 own 전역을 재되 **작게** 낸다.
+#: DOM 을 건드리지 않고 읽기만 한다.
+#:
+#: 두 번의 설계 실패가 이 모양을 정했고, 둘 다 **계측이 관측 대상을 바꾼** 사례다.
+#:
+#: ① 같은 오리진 ``about:blank`` iframe 으로 "엔진이 원래 주는 것"의 기준선을 떠 차집합을
+#:    냈다. 측정은 정확했지만(엔진 own 1228 기준선) iframe 부착이 서브프레임 항법을 일으키고,
+#:    pywebview 의 ``loaded`` 가 UI 스레드에서 테마 주입·``show()`` 를 다시 탄다. 동기로
+#:    붙들고 있던 ``evaluate_js`` 와 맞물려 창이 멈췄다 — 전체 스위트 **3회 실행 3회** 90s
+#:    시한 초과. 손대지 않은 기준선(``9a5f554``)은 같은 기계에서 2410 passed 로 깨끗했다.
+#: ② iframe 을 걷고 이름 **목록 전수**(1232개)를 그대로 돌려줬다. 단독 실행은 6/6 정상인데
+#:    pytest 가 파이프로 잡고 띄우면 매달렸다. 큰 배열을 ``pywebview.stringify`` 로 접어
+#:    다리 너머로 보내는 값이 그만큼이다.
+#:
+#: 그래서 판정에 필요한 것만 낸다: 수량, ``__hwpx`` 이름공간 전수, 은퇴 별칭 27의 잔존, 그리고
+#: 이름 **집합의 정체**를 접은 digest 둘. ``digest_without_test`` 는 ``__hwpxTest`` 를 뺀
+#: 집합의 정체라, 능력 있는 창의 그것이 능력 없는 창의 ``digest`` 와 같으면 **두 집합이
+#: ``__hwpxTest`` 하나만 다르다**가 정확히 성립한다(D-07). 수량 비교만으로는 하나가 사라지고
+#: 둘이 생긴 경우를 놓치는데, digest 는 그것을 잡는다.
+#:
+#: 엔진 전역 목록을 저장소에 못박는 길은 택하지 않았다 — CI 의 WebView2 판이 다르면 제품과
+#: 무관한 이유로 빨개진다. 그 대가로 **임의 이름의 런타임 누수**는 이 층이 절대적으로는 잡지
+#: 못하고, 정적 AST 게이트(``tests/js/n10_global_hygiene.test.js``)가 진다.
+_GLOBAL_DELTA_FN = r"""function () {
+  var RETIRED = ['AppCloseGuard','Bridge','Copy','DataPicker','DataZone','EditorEntry',
+    'EditorScreen','GroupList','Guard','Intent','JobScreen','LibraryScreen','Modal','Nav',
+    'PathTrack','Personalization','Popover','Preserve','Relink','SegView','SheetPicker',
+    'SurfaceSheet','Theme','UndoToast','WorkbenchScreen','__push','escHtml'];
+  var names = Object.getOwnPropertyNames(window).sort();
+  var digest = function (list) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      for (var j = 0; j < t.length; j++) {
+        h ^= t.charCodeAt(j);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+      }
+      h ^= 10;
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h >>> 0;
+  };
+  var hwpx = [], retired = [], withoutTest = [];
+  for (var i = 0; i < names.length; i++) {
+    if (names[i].indexOf('__hwpx') === 0) { hwpx.push(names[i]); }
+    if (RETIRED.indexOf(names[i]) !== -1) { retired.push(names[i]); }
+    if (names[i] !== '__hwpxTest') { withoutTest.push(names[i]); }
+  }
+  return {
+    total_own: names.length,
+    hwpx_namespace: hwpx,
+    retired_present: retired,
+    digest: digest(names),
+    digest_without_test: digest(withoutTest),
+    has_document: names.indexOf('document') !== -1,
+    has_location: names.indexOf('location') !== -1
+  };
+}"""
+
+#: 능력 있는 창 전용 모드가 쓰는 단독 표현식 — 같은 함수 본문을 공유한다.
+_GLOBAL_DELTA_JS = "(" + _GLOBAL_DELTA_FN + ")()"
+
 #: 비노출 음성 대조 — ``typeof`` 만 쓰고 **아무것도 호출하지 않는다**. 쿼리·해시를 실제로
 #: 얹은 뒤 다시 물어 "URL 로는 켜지지 않는다"를 실행으로 확인한다. 부재만 재면 "페이지가 안
 #: 떴다"와 구별되지 않으므로 제품 API 존재를 **양성 대조**로 같은 창에서 함께 잰다.
+#:
+#: 이름 하나의 부재만 묻는다는 것이 이 상수의 한계다 — 전역 **전수**는 아래
+#: :data:`_GLOBAL_DELTA_JS` 가 따로 잰다(N-10).
 _NON_EXPOSURE_JS = r"""
 (function () {
   var own = function () {
@@ -743,6 +808,12 @@ _NON_EXPOSURE_JS = r"""
     host_claim_typeof: typeof (window.pywebview
       && window.pywebview.api && window.pywebview.api.selftest_claim)
   };
+  /* 전역 전수는 **URL 을 만지기 전에**, 그리고 **같은 평가 안에서** 잰다.
+     아래 replaceState 는 창의 주소를 바꾸고, 그 뒤에 두 번째 evaluate_js 를 보내면
+     간헐적으로 응답이 오지 않는다 — 로컬 전체 스위트와 CI 에서 90s 시한 초과로 드러났다.
+     그래서 이 모드의 평가는 **한 번**이고, 순서가 계약이다. */
+  out.global_delta = (GLOBAL_DELTA_FN)();
+
   try {
     window.history.replaceState(null, '',
       window.location.pathname + '?selftest=1&hwpxTest=on#selftest');
@@ -754,7 +825,20 @@ _NON_EXPOSURE_JS = r"""
   }
   return out;
 })()
-"""
+""".replace(
+    "GLOBAL_DELTA_FN", _GLOBAL_DELTA_FN
+)
+
+
+#: 전역 allowlist 측정 전용 모드. **성공 모드가 아니다** — 프런트 엔진을 몰지 않고 능력이
+#: **선** 창의 전역 전수만 잰다. ``no_capability`` 와 짝을 이뤄 "시험 실행이 더하는 전역은
+#: 정확히 ``__hwpxTest`` 하나"를 뺄셈으로 묻는다(D-07).
+#:
+#: 왜 ``full`` 증거에 얹지 않고 모드를 따로 두는가: ``full``·쓰기 모드의 최상위 키 수는
+#: ``packaging/build.ps1`` 의 책임 게이트(42)와 헤드리스 dict 동치 계약이 함께 못박은 값이다.
+#: 측정 하나를 그 자루에 넣으면 릴리스 빌드가 터지고, 터지지 않게 숫자를 올리면 이번엔
+#: "책임 42" 라는 계측점이 측정용 키 때문에 흐려진다. 재는 것과 재어지는 것을 섞지 않는다.
+_MODE_GLOBAL_DELTA = "global_delta"
 
 #: 음성 대조 전용 모드 이름. **성공 모드가 아니다** — 프런트 엔진을 돌리지 않고 능력 부재만
 #: 잰다. 그래서 성공 모드 합집합(47키)에 들지 않는다.
@@ -812,6 +896,8 @@ def _selftest_mode(environ: "Mapping[str, str]") -> "tuple[str, str]":
     """환경변수 → ``(모드, 입력값)``. 우선순위는 레거시 그대로다."""
     if environ.get("HWPX_SELFTEST_NO_CAPABILITY"):
         return _MODE_NO_CAPABILITY, ""
+    if environ.get("HWPX_SELFTEST_GLOBAL_DELTA"):
+        return _MODE_GLOBAL_DELTA, ""
     if environ.get("HWPX_SELFTEST_GEOMETRY_ONLY"):
         return "geometry_only", ""
     font_scale = environ.get("HWPX_SELFTEST_SET_FONT_SCALE")
@@ -832,6 +918,23 @@ def _selftest_non_exposure_evidence(window: "object") -> dict:
     능력이 없을 때의 창은 정상 실행의 창과 같은 번들·같은 코드 경로다.
     """
     evidence: dict = {"mode": _MODE_NO_CAPABILITY}
+
+    # 전역 델타 게이트의 **음성 대조**(N-10). 부재를 재는 계측은 자기가 부재를 볼 줄 아는지
+    # 먼저 증명해야 한다 — 아무것도 못 보는 프로브도 "누수 0" 을 낸다(계측 층의 조용한 오류).
+    # 그래서 시험 요청이 있으면 창에 이름 하나를 **일부러 심고** 게이트가 그것을 잡아내는지
+    # 본다. 심는 자리는 selftest 드라이버이지 제품이 아니다: 정상 실행에는 이 코드로 가는
+    # 길이 없고(`--selftest` + 전용 환경변수), 제품 번들은 한 글자도 달라지지 않는다.
+    sentinel = os.environ.get("HWPX_SELFTEST_LEAK_SENTINEL")
+    if sentinel:
+        evidence["leak_sentinel"] = sentinel
+        try:
+            window.evaluate_js(  # type: ignore[attr-defined]
+                f"(function () {{ window[{json.dumps(sentinel)}] = 1; return true; }})()"
+            )
+        except Exception as exc:  # noqa: BLE001 — 심지 못했으면 대조가 성립하지 않는다
+            evidence["error"] = f"누수 파수꾼 설치 실패: {exc!r}"
+            return evidence
+
     try:
         probed = window.evaluate_js(_NON_EXPOSURE_JS)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001 — 관측 실패를 성공으로 접지 않는다
@@ -840,8 +943,27 @@ def _selftest_non_exposure_evidence(window: "object") -> dict:
     if not isinstance(probed, Mapping):
         evidence["error"] = f"비노출 음성 대조 반환이 객체가 아니다: {probed!r}"
         return evidence
-    evidence["non_exposure"] = dict(probed)
+    # 한 번의 평가가 둘을 함께 낸다 — 갈라 담되 창은 한 번만 문다(위 상수 머리말).
+    probed = dict(probed)
+    evidence["global_delta"] = dict(probed.pop("global_delta", {}))
+    evidence["non_exposure"] = probed
     return evidence
+
+
+def _selftest_global_delta(window: "object") -> dict:
+    """창이 실제로 들고 있는 own 전역 전수를 재 **제품이 더한 것**만 남긴다(N-10).
+
+    두 모드가 같은 표현식을 쓴다: 능력 없는 실행과 능력 있는 시험 실행. 그래야 "시험 실행은
+    정상 실행보다 정확히 ``__hwpxTest`` 하나가 많다"를 **뺄셈으로** 물을 수 있다(D-07).
+    측정 실패를 성공으로 접지 않는다 — 사유를 그대로 실어 게이트가 읽게 한다.
+    """
+    try:
+        probed = window.evaluate_js(_GLOBAL_DELTA_JS)  # type: ignore[attr-defined]
+    except Exception as exc:  # noqa: BLE001 — 관측 실패를 성공으로 접지 않는다
+        return {"added_globals_error": f"전역 델타 평가 실패: {exc!r}"}
+    if not isinstance(probed, Mapping):
+        return {"added_globals_error": f"전역 델타 반환이 객체가 아니다: {probed!r}"}
+    return dict(probed)
 
 
 def _selftest_drive(
@@ -860,6 +982,23 @@ def _selftest_drive(
 
     if mode == _MODE_NO_CAPABILITY:
         _finish_selftest(window, _selftest_non_exposure_evidence(window))
+        return
+
+    if mode == _MODE_GLOBAL_DELTA:
+        # 능력이 선 창의 전역 전수만 잰다 — 프로브는 돌리지 않는다. 능력 설치는 비동기라
+        # 준비를 먼저 기다린다: 한 번만 물으면 아직 안 선 상태를 "없다"로 확정하고, 그
+        # 확정이 곧 "차이 0" 이라는 거짓 초록이 된다.
+        probe_client = selftest_api.SelftestClient.for_window(
+            window, budget_s=_SELFTEST_BUDGET_S, log=log
+        )
+        delta_evidence: dict = {"mode": _MODE_GLOBAL_DELTA}
+        try:
+            probe_client.await_readiness(probe_client.new_deadline())
+        except Exception as exc:  # noqa: BLE001 — 능력 부재를 성공으로 접지 않는다
+            delta_evidence["error"] = f"시험 능력 준비 실패: {exc!r}"
+        else:
+            delta_evidence["global_delta"] = _selftest_global_delta(window)
+        _finish_selftest(window, delta_evidence)
         return
 
     # `launched_artifact` 는 여기서 **풀지 않는다**. 정체 재확인은 `artifact_identity` 호스트
@@ -894,6 +1033,7 @@ def _selftest_drive(
     if not outcome.ok and "error" not in evidence:
         # 러너가 증거를 못 냈거나 프로토콜 단계에서 죽었다 — 조용히 통과시키지 않는다.
         evidence["error"] = outcome.alarm_text
+
 
     # 출력·종료는 드라이버 소유 책임이지만 **같은 허용목록**을 지난다 — 표에 있는데 아무도
     # 부르지 않는 op 는 선언만 살고 결과가 죽는 자리가 된다.

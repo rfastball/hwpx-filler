@@ -1448,11 +1448,11 @@ test("음성 — 제품 전역을 읽지도 않는다(전부 ctx 주입)", () =>
   /* 문서·창도 주입으로만 만진다 — 맨 `document.`/`window.` 조회가 하나도 없다. */
   assert.equal(/(?<![.\w])document\s*\./.test(SRC), false);
   assert.equal(/(?<![.\w])window\s*\./.test(SRC), false);
-  /* 유일한 import 는 형제 러너 하나다 — 제품 그래프(main.js·compat.js·js/**)에 닿지 않는다. */
+  /* 유일한 import 는 형제 러너 하나다 — 제품 그래프(main.js·bootstrap.js·js/**)에 닿지 않는다. */
   const imports = SRC.match(/^import\s[^\n]*from\s+"[^"]+"/gm) || [];
   assert.equal(imports.length, 1);
   assert.match(imports[0], /"\.\.\/runner\.js"/);
-  for (const name of ["main.js", "compat.js", "bridge.js", "../js/", "../../js/"]) {
+  for (const name of ["main.js", "bootstrap.js", "bridge.js", "../js/", "../../js/"]) {
     assert.equal(SRC.includes(`from "${name}"`), false, name);
   }
 });

@@ -48,7 +48,8 @@ export function createPushPort(basePush) {
   let override = null;
 
   /* 안정된 단일 함수 — 소비자가 이것을 값으로 붙들어도 늦은 결속이 유지된다.
-     그래서 `window.__push` 별칭도 이 함수를 가리킨다(별칭을 통해 들어와도 같은 통로). */
+     N-10 이전에는 임시 전역 별칭도 이 함수를 가리켰다(두 입구가 갈리지 않게). 그 별칭이
+     사라진 지금 입구는 제품 파사드 하나이고, 계약은 그대로다. */
   function dispatch(screen, snapshot) {
     return (override || basePush)(screen, snapshot);
   }

@@ -6,8 +6,8 @@
 > **편집 정책:** 결정 변경 시만 갱신
 
 웹 프론트엔드가 Python→웹 푸시로 화면을 다시 그릴 때 사용자의 **포커스·캐럿·스크롤**을
-어떻게 지킬지에 대한 설계 결정과 그 근거·재고경계를 남긴다. 구현은 `web/js/preserve.js`
-(`window.Preserve.around`)와 각 화면 `render()` 래핑.
+어떻게 지킬지에 대한 설계 결정과 그 근거·재고경계를 남긴다. 구현은 `frontend/js/preserve.js`
+(`Preserve.around` — 전역이 아니라 import/주입으로 닿는다)와 각 화면 `render()` 래핑.
 
 ## 맥락 — 왜 유실이 생기나
 

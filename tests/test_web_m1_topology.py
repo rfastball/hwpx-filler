@@ -10,20 +10,22 @@ from pathlib import Path
 
 from _web_source import (
     ALL_CSS_FILES,
-    COMPAT_MODULE,
+    BOOTSTRAP_EXPORT,
+    BOOTSTRAP_MODULE,
     LEAF_ESM_FILES,
     REPO_ROOT,
     SOURCE_INDEX,
     SOURCE_ROOT,
     entry_js_manifest,
+    module_imports,
 )
 
 PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 VISIBLE_DOM_SHA256 = "e037e81337ea8258de2a48438cdb6a7bab42bea838d661ab9c42498fe793b34c"
 
-# M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04·N-05·N-06이 잎·서비스·화면을
-# 차례로 ESM으로 빼내 중앙 compat 뒤로 옮겼다. 남은 것은 bridge(N-07 소유)와 compat 둘이고
-# 그 순서가 계약이다 — compat이 평가 시점에 window.Bridge를 캡처한다.
+# M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
+# 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을
+# 싣는 형태가 부작용 import에서 **named import + 호출**로 바뀌었다.
 LEGACY_IIFE_ORDER = entry_js_manifest()
 
 # test_web_source_role의 source-root gate를 우회하지 않도록 물리 이름을 경로식으로
@@ -139,33 +141,41 @@ def test_product_index_has_one_module_entry_and_no_classic_scripts() -> None:
 
 
 def test_product_entry_preserves_exact_css_and_legacy_iife_order() -> None:
-    imports = _side_effect_imports(PRODUCT_ENTRY.read_text(encoding="utf-8"))
-    expected = (
-        *(f"../css/{name}" for name in ALL_CSS_FILES),
-        *LEGACY_IIFE_ORDER,
-    )
+    """CSS 캐스케이드 순서는 부작용 import가, JS 도달은 형태 불가지 눈이 진다.
 
-    assert imports == expected
-    assert imports[: len(ALL_CSS_FILES)] == tuple(
-        f"../css/{name}" for name in ALL_CSS_FILES
-    )
-    assert imports[len(ALL_CSS_FILES) :] == LEGACY_IIFE_ORDER
-
-
-def test_converted_leaves_left_the_entry_only_through_central_compat() -> None:
-    """잎 넷은 entry에서 사라지고 그 자리를 중앙 compat 한 줄이 정확히 메운다.
-
-    "직접 import를 지웠다"만 보면 compat을 잊은 채로도 초록이고, 그때 제품은 부팅 직후
-    ``window.escHtml`` 이 undefined 인 화면을 그린다 — 두 방향을 같이 단언한다.
+    N-10 전에는 둘을 한 목록으로 볼 수 있었다(합성 루트도 부작용 import였다). 이제
+    ``import {bootProduct} from "./bootstrap.js";``라 부작용 목록에 없다 — 한 눈으로만
+    보면 "JS가 아예 없다"와 "형태가 바뀌었다"가 구별되지 않으므로 두 눈으로 나눠 묻는다.
     """
-    imports = _side_effect_imports(PRODUCT_ENTRY.read_text(encoding="utf-8"))
+    source = PRODUCT_ENTRY.read_text(encoding="utf-8")
+    css_imports = _side_effect_imports(source)
+    js_imports = tuple(
+        path for path in module_imports(source) if not path.startswith("../css/")
+    )
 
-    assert imports.count(f"./{COMPAT_MODULE}") == 1
+    assert css_imports == tuple(f"../css/{name}" for name in ALL_CSS_FILES)
+    assert js_imports == LEGACY_IIFE_ORDER
+
+
+def test_converted_leaves_left_the_entry_only_through_the_composition_root() -> None:
+    """잎 넷은 entry에서 사라지고 그 자리를 합성 루트 한 줄이 정확히 메운다.
+
+    "직접 import를 지웠다"만 보면 합성 루트를 잊은 채로도 초록이고, 그때 제품은 부팅
+    자체를 하지 못한다 — 두 방향을 같이 단언한다.
+    """
+    source = PRODUCT_ENTRY.read_text(encoding="utf-8")
+    imports = module_imports(source)
+
+    assert imports.count(f"./{BOOTSTRAP_MODULE}") == 1
     for name in LEAF_ESM_FILES:
         assert f"../js/{name}" not in imports, (
-            f"{name} 이 아직 제품 entry에 직접 import돼 있습니다 — 잎은 compat만 거칩니다."
+            f"{name} 이 아직 제품 entry에 직접 import돼 있습니다 — 잎은 합성 루트만 거칩니다."
         )
-    assert (SOURCE_ROOT / "src" / COMPAT_MODULE).is_file()
+    assert (SOURCE_ROOT / "src" / BOOTSTRAP_MODULE).is_file()
+    #: 은퇴한 compat 계층이 파일로 되살아나지 않았다.
+    assert not (SOURCE_ROOT / "src" / "compat.js").exists()
+    #: 싣기만 하고 부르지 않으면 아무 일도 일어나지 않는다 — 부작용 import 시절엔 없던 축.
+    assert f"{BOOTSTRAP_EXPORT}();" in source
 
 
 def test_product_cutover_preserves_normalized_visible_dom() -> None:

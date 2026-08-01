@@ -73,11 +73,14 @@ window.__hwpx.describe()
 window.__hwpx.deliver({ version: 1, event, payload })   // → 동기 · JSON 직렬화 가능한 결과
 ```
 
-| 사건 | payload | 종전 내부 호출 | 의미 |
+종전 내부 호출은 **전부 전역 이름이었고 N-10에서 그 전역들이 사라졌다** — 아래 열은
+이제 승계 관계의 기록이지 현재 도달 경로가 아니다. 오늘 Python이 아는 이름은 `__hwpx`뿐이다.
+
+| 사건 | payload | 종전 내부 호출(전역, 사망) | 의미 |
 |---|---|---|---|
 | `snapshot` | `{screen, snapshot}` | `window.__push` | 관측 푸시. `screen`은 **불투명한 라우팅 값** |
-| `close-request` | `{state}` | `AppCloseGuard.prompt` | 비동기 확인 모달을 **시작**만 한다 |
-| `preferences` | `{personalization, theme?}` | `Personalization.apply` + `Theme.apply` | 창이 숨은 동안 주입. `theme`는 저장값이 light/dark일 때만 실린다 |
+| `close-request` | `{state}` | `window.AppCloseGuard.prompt` | 비동기 확인 모달을 **시작**만 한다 |
+| `preferences` | `{personalization, theme?}` | `window.Personalization.apply` + `window.Theme.apply` | 창이 숨은 동안 주입. `theme`는 저장값이 light/dark일 때만 실린다 |
 | `notice` | `{message}` | `window.alert` | 발사 후 망각. 내구성 기록은 Python이 이미 마쳤다 |
 
 능력 목록과 핸들러 표는 **같은 레지스트리**에서 나온다 — 광고했는데 처리기가 없는 상태를
@@ -96,10 +99,14 @@ Promise를 돌려주면 해소를 기다리지 못한 채 형태를 모르는 �
 Python 쪽 어댑터는 `webapp/product_api.py`이고, 표현식 조립·서술자 검증·결과 판정을 그
 파일 하나가 소유한다 — `app.py`는 JS 문자열을 만들지 않는다.
 
-`window.Bridge`·`window.__push`를 비롯한 임시 전역 27개는 아직 남아 있다(제거 책임 N-10).
-N-09가 Python selftest의 71개 직접 호출을 0으로 만들었으므로 그 전역들의 **Python 소비자는
-이제 없고**, 남은 소비자는 전역 이름을 아직 쓰는 프런트 자리뿐이다. 제품 코드가 그것들을
-fallback으로 쓰는 경로는 없다.
+임시 전역 27개는 **0개가 됐다**(N-10). N-09가 Python selftest의 71개 직접 호출을 0으로
+만들었고, N-10이 마지막 소비자(`scripts/capture_101_screenshots.py`의 `window.Nav.go` 판독)를
+DOM 경로로 재배선한 뒤 별칭 전부와 중앙 compat 계층 파일을 지웠다. 그 자리의 후계는
+`frontend/src/bootstrap.js` — 조립만 하고 전역은 `__hwpx` 하나만 건다.
+
+제품 코드가 만드는 전역은 이제 셋뿐이다: 플랫폼이 주입하는 `window.pywebview`, 제품 공개
+API `window.__hwpx`(생산자 1 = 합성 루트), 명시적 selftest 런타임에만 서는
+`window.__hwpxTest`(생산자 1 = `frontend/src/selftest/api.js`). fallback 경로는 없다.
 
 ### selftest 경계 — `window.__hwpxTest` (N-09 · #372 D-07)
 
@@ -159,7 +166,8 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 승계처(F8)가 서면 죽는 과도기 임시 — 지도 §10.9). 「기안」(`draft`)은 F6 PR-B 에서
 사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
-`web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`(재작성 F7)와 `workbench`(재작성 F6)는
+`frontend/js/app.js`의 앱 셸이 내는 `Nav.go`가 표시 상태를 전환한다(주입으로 전달되는
+구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다). `editor`(재작성 F7)와 `workbench`(재작성 F6)는
 **탭 없는 몰입 표면**이다: 상단 2탭을 덮으므로 nav 버튼이 없고, 나가는 모든 이동이 자기
 이탈 가드를 지난다(`{force:true}` 는 처분을 마친 재호출). 위임은 화면마다의 특례가 아니라
 `app.js` 의 **몰입 표면 목록**(`IMMERSIVE`)이 진다 — 특례를 표면마다 늘리면 가드의 완전성이

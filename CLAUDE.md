@@ -71,7 +71,7 @@ CI(`.github/workflows/quality.yml`)는 서로 의존하지 않는 세 잡이다:
   가 `WebFrontend` 공개 메서드를 직접 부른다. **action registry 밖**이므로 새 직접 메서드를
   추가하면 payload 검증을 메서드 본문에 직접 쓰고 `docs/UI_CONTRACT.md` 의 목록도 갱신한다.
 
-Python→웹은 `window.__push(screen, snapshot)`. 파괴 전이의 확인 왕복(`needs_confirm`)은
+Python→웹은 제품 공개 API `window.__hwpx` 의 `snapshot` 사건이다(임시 전역 `window.__push` 는 N-10 에서 사라졌다). 파괴 전이의 확인 왕복(`needs_confirm`)은
 네이티브 다이얼로그가 아니라 JS `Modal.confirm`(`frontend/js/modal.js`)이 구현한다 — **판정·수치는
 Python, 문안·확인 UI 는 웹**.
 

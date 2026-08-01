@@ -190,7 +190,7 @@ test("공개면은 paint·plain 둘뿐 — 넓히지 않는다", () => {
   assert.equal(typeof SegView.plain, "function");
 });
 
-test("import 만으로 전역을 건드리지 않는다(compat 셔임이 유일한 전역 설치 경로)", async (t) => {
+test("import 만으로 전역을 건드리지 않는다(전역 설치는 합성 루트의 __hwpx 하나뿐)", async (t) => {
   const had = Object.hasOwn(globalThis, "window");
   const prev = globalThis.window;
   globalThis.window = {};

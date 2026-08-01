@@ -32,8 +32,10 @@ const SURFACE = [
   "renderResult", "markResultStale",
 ];
 
-/* 제품 전역 27종(Bridge __push Nav AppCloseGuard + 4화면 + compat 19종) — 게이트 정규식은
-   주석도 보므로 여기서도 소스 전체를 훑는다. */
+/* N-10에서 은퇴한 제품 전역 27종(Bridge __push Nav AppCloseGuard + 4화면 + 서비스 19종).
+   별칭이 죽은 뒤에도 **판독**이 되살아나면 이 화면은 영영 undefined 를 읽고 조용히
+   아무것도 안 하므로, 이름을 그대로 겨눈 채로 둔다. 게이트 정규식은 주석도 보므로
+   여기서도 소스 전체를 훑는다. */
 const PRODUCT_GLOBALS = [
   "Bridge", "__push", "Nav", "AppCloseGuard",
   "JobScreen", "LibraryScreen", "EditorScreen", "WorkbenchScreen",
