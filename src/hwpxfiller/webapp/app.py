@@ -728,37 +728,6 @@ _WINDOW_GEOMETRY_JS = (
     "avail_width:screen.availWidth,avail_height:screen.availHeight})"
 )
 
-#: 비노출 음성 대조 — ``typeof`` 만 쓰고 **아무것도 호출하지 않는다**. 쿼리·해시를 실제로
-#: 얹은 뒤 다시 물어 "URL 로는 켜지지 않는다"를 실행으로 확인한다. 부재만 재면 "페이지가 안
-#: 떴다"와 구별되지 않으므로 제품 API 존재를 **양성 대조**로 같은 창에서 함께 잰다.
-#:
-#: 이름 하나의 부재만 묻는다는 것이 이 상수의 한계다 — 전역 **전수**는 아래
-#: :data:`_GLOBAL_DELTA_JS` 가 따로 잰다(N-10).
-_NON_EXPOSURE_JS = r"""
-(function () {
-  var own = function () {
-    return Object.prototype.hasOwnProperty.call(window, '__hwpxTest');
-  };
-  var out = {
-    selftest_own: own(),
-    selftest_typeof: typeof window.__hwpxTest,
-    product_typeof: typeof window.__hwpx,
-    host_claim_typeof: typeof (window.pywebview
-      && window.pywebview.api && window.pywebview.api.selftest_claim)
-  };
-  try {
-    window.history.replaceState(null, '',
-      window.location.pathname + '?selftest=1&hwpxTest=on#selftest');
-    out.url_after = window.location.href;
-    out.selftest_own_after_query_hash = own();
-    out.selftest_typeof_after_query_hash = typeof window.__hwpxTest;
-  } catch (e) {
-    out.query_hash_error = String(e && e.message ? e.message : e);
-  }
-  return out;
-})()
-"""
-
 #: 전역 allowlist 실측(N-10) — 창이 실제로 들고 있는 own 전역을 재되 **작게** 낸다.
 #: DOM 을 건드리지 않고 읽기만 한다.
 #:
@@ -782,8 +751,7 @@ _NON_EXPOSURE_JS = r"""
 #: 엔진 전역 목록을 저장소에 못박는 길은 택하지 않았다 — CI 의 WebView2 판이 다르면 제품과
 #: 무관한 이유로 빨개진다. 그 대가로 **임의 이름의 런타임 누수**는 이 층이 절대적으로는 잡지
 #: 못하고, 정적 AST 게이트(``tests/js/n10_global_hygiene.test.js``)가 진다.
-_GLOBAL_DELTA_JS = r"""
-(function () {
+_GLOBAL_DELTA_FN = r"""function () {
   var RETIRED = ['AppCloseGuard','Bridge','Copy','DataPicker','DataZone','EditorEntry',
     'EditorScreen','GroupList','Guard','Intent','JobScreen','LibraryScreen','Modal','Nav',
     'PathTrack','Personalization','Popover','Preserve','Relink','SegView','SheetPicker',
@@ -817,8 +785,50 @@ _GLOBAL_DELTA_JS = r"""
     has_document: names.indexOf('document') !== -1,
     has_location: names.indexOf('location') !== -1
   };
+}"""
+
+#: 능력 있는 창 전용 모드가 쓰는 단독 표현식 — 같은 함수 본문을 공유한다.
+_GLOBAL_DELTA_JS = "(" + _GLOBAL_DELTA_FN + ")()"
+
+#: 비노출 음성 대조 — ``typeof`` 만 쓰고 **아무것도 호출하지 않는다**. 쿼리·해시를 실제로
+#: 얹은 뒤 다시 물어 "URL 로는 켜지지 않는다"를 실행으로 확인한다. 부재만 재면 "페이지가 안
+#: 떴다"와 구별되지 않으므로 제품 API 존재를 **양성 대조**로 같은 창에서 함께 잰다.
+#:
+#: 이름 하나의 부재만 묻는다는 것이 이 상수의 한계다 — 전역 **전수**는 아래
+#: :data:`_GLOBAL_DELTA_JS` 가 따로 잰다(N-10).
+_NON_EXPOSURE_JS = r"""
+(function () {
+  var own = function () {
+    return Object.prototype.hasOwnProperty.call(window, '__hwpxTest');
+  };
+  var out = {
+    selftest_own: own(),
+    selftest_typeof: typeof window.__hwpxTest,
+    product_typeof: typeof window.__hwpx,
+    host_claim_typeof: typeof (window.pywebview
+      && window.pywebview.api && window.pywebview.api.selftest_claim)
+  };
+  /* 전역 전수는 **URL 을 만지기 전에**, 그리고 **같은 평가 안에서** 잰다.
+     아래 replaceState 는 창의 주소를 바꾸고, 그 뒤에 두 번째 evaluate_js 를 보내면
+     간헐적으로 응답이 오지 않는다 — 로컬 전체 스위트와 CI 에서 90s 시한 초과로 드러났다.
+     그래서 이 모드의 평가는 **한 번**이고, 순서가 계약이다. */
+  out.global_delta = (GLOBAL_DELTA_FN)();
+
+  try {
+    window.history.replaceState(null, '',
+      window.location.pathname + '?selftest=1&hwpxTest=on#selftest');
+    out.url_after = window.location.href;
+    out.selftest_own_after_query_hash = own();
+    out.selftest_typeof_after_query_hash = typeof window.__hwpxTest;
+  } catch (e) {
+    out.query_hash_error = String(e && e.message ? e.message : e);
+  }
+  return out;
 })()
-"""
+""".replace(
+    "GLOBAL_DELTA_FN", _GLOBAL_DELTA_FN
+)
+
 
 #: 전역 allowlist 측정 전용 모드. **성공 모드가 아니다** — 프런트 엔진을 몰지 않고 능력이
 #: **선** 창의 전역 전수만 잰다. ``no_capability`` 와 짝을 이뤄 "시험 실행이 더하는 전역은
@@ -933,8 +943,10 @@ def _selftest_non_exposure_evidence(window: "object") -> dict:
     if not isinstance(probed, Mapping):
         evidence["error"] = f"비노출 음성 대조 반환이 객체가 아니다: {probed!r}"
         return evidence
-    evidence["non_exposure"] = dict(probed)
-    evidence["global_delta"] = _selftest_global_delta(window)
+    # 한 번의 평가가 둘을 함께 낸다 — 갈라 담되 창은 한 번만 문다(위 상수 머리말).
+    probed = dict(probed)
+    evidence["global_delta"] = dict(probed.pop("global_delta", {}))
+    evidence["non_exposure"] = probed
     return evidence
 
 
