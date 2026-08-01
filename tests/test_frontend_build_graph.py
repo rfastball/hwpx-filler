@@ -692,3 +692,51 @@ def test_one_build_entry_and_no_build_time_branch() -> None:
     assert offenders == set(), (
         f"빌드타임 분기가 있습니다: {sorted(offenders)} — 시험용 산출물이 갈릴 수 있습니다."
     )
+
+
+def test_whole_frontend_graph_from_the_entry_has_no_cycles_and_no_bare_specifiers() -> None:
+    """entry 에서 **실제로 도달하는 전 그래프**에 순환도 외부 지정자도 없다.
+
+    :func:`test_esm_module_graph_has_no_cycles` 는 ``frontend/js/`` 25개와 compat 의
+    ``../js/`` 간선만 본다. N-09 가 selftest 모듈 아홉을 제품 그래프에 **실제로 붙였으므로**
+    (같은 번들 하나가 계약이다 — D-07) 그 부분은 옛 게이트의 사각이었다. 여기서 entry 부터
+    상대 import 를 전부 따라가 사각을 없앤다.
+
+    bare 지정자(``vite``·``lodash`` 같은 외부 패키지)도 0이어야 한다 — 하나라도 생기면
+    배포본이 node_modules 를 필요로 하게 되고, 그것은 오프라인 부팅 계약(D-04)의 파산이다.
+    """
+    from posixpath import dirname, join, normpath
+
+    entry = SOURCE_ENTRY.relative_to(SOURCE_ROOT).as_posix()
+    seen: dict[str, int] = {}
+    bare: list[str] = []
+    visited: set[str] = set()
+
+    def visit(node: str, trail: tuple[str, ...]) -> None:
+        if seen.get(node) == 1:
+            raise AssertionError(f"import 순환: {' -> '.join((*trail, node))}")
+        if seen.get(node) == 2:
+            return
+        seen[node] = 1
+        visited.add(node)
+        path = SOURCE_ROOT / node
+        if path.suffix == ".js" and path.is_file():
+            for spec in module_imports(path.read_text(encoding="utf-8")):
+                if spec.startswith("."):
+                    visit(normpath(join(dirname(node), spec)), (*trail, node))
+                elif not spec.startswith("../css/") and not spec.endswith(".css"):
+                    bare.append(f"{node} -> {spec}")
+        seen[node] = 2
+
+    visit(entry, ())
+
+    assert bare == [], f"외부 지정자가 있습니다: {bare}"
+
+    #: selftest 모듈이 **실제로** 그래프에 붙어 있다 — N-08 의 inert 상태가 끝났다는 실행 증거.
+    #: 이 단언이 없으면 배선이 끊겨도 "순환 0"은 여전히 초록이다.
+    reached_selftest = sorted(n for n in visited if n.startswith("src/selftest/"))
+    assert reached_selftest, "selftest 모듈이 제품 그래프에 닿지 않습니다 — 능력이 설 수 없습니다."
+    assert "src/selftest/api.js" in reached_selftest
+    assert "src/selftest/boot.js" in reached_selftest
+    assert "src/selftest/runner.js" in reached_selftest
+    assert "src/selftest/probes/index.js" in reached_selftest
