@@ -156,6 +156,53 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
     with pytest.raises(live_run.LiveRunContractError):
         live_run.entrypoint(run, other)
 
+    stale = live_run.LiveContext(
+        version=99, run_name="a", window=object(), artifact=object(), finish=lambda _r: None
+    )
+    with pytest.raises(live_run.LiveRunContractError, match="컨텍스트 버전"):
+        live_run.entrypoint(run, stale)
+
+    without_terminator = live_run.LiveContext(
+        version=live_run.LIVE_RUN_VERSION,
+        run_name="a",
+        window=object(),
+        artifact=object(),
+        finish=None,  # type: ignore[arg-type]
+    )
+    with pytest.raises(live_run.LiveRunContractError, match="종결자"):
+        live_run.entrypoint(run, without_terminator)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "fragment"),
+    [
+        ({"name": "  "}, "실행 이름"),
+        ({"drive": "not-callable"}, "콜러블이 아닙니다"),
+        ({"write_output": "not-callable"}, "증거 기록기"),
+        ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
+    ],
+)
+def test_contract_names_the_malformed_field(kwargs, fragment) -> None:
+    """무엇이 틀렸는지 **이름을 대며** 거절한다 — 조립 실수가 한 줄로 읽혀야 한다."""
+    with pytest.raises(live_run.LiveRunContractError, match=fragment):
+        live_run.validate(_run(**kwargs))
+
+
+def test_an_unreadable_signature_is_refused_not_assumed() -> None:
+    """서명을 못 읽는 콜러블은 "아마 맞겠지"로 통과시키지 않는다.
+
+    확인할 수 없는 계약을 통과시키면 그 실행은 워커 스레드에서만 진실을 말한다 — 이 파일이
+    막으려는 바로 그 자리다.
+    """
+
+    def opaque(ctx) -> None:  # pragma: no cover — 서명 판독 단계에서 거절된다
+        pass
+
+    opaque.__signature__ = "서명이 아니다"  # type: ignore[attr-defined]
+
+    with pytest.raises(live_run.LiveRunContractError, match="서명을 읽을 수 없습니다"):
+        live_run.validate(_run(drive=opaque))
+
 
 # ------------------------------------------------------------------ 종결자
 
