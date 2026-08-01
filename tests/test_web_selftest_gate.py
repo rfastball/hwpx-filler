@@ -19,18 +19,87 @@ import os
 import re
 import subprocess
 import sys
+import time
+from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 import pytest
 
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
+from hwpxfiller.webapp import app as app_mod
+from hwpxfiller.webapp import boot_budget
 
 # 게이트: Windows 아니거나 명시 옵트아웃이면 스킵. 자동 감지 스킵 아님(위 docstring).
 _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"))
 _GATE_REASON = "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 옵트아웃)"
 
-# 창 부팅(WebView2 콜드스타트) + 드라이버 sleep(4.5s) + 되읽기 여유. 매달림은 실패로 시끄럽게.
-_SELFTEST_TIMEOUT = 90
+# 하니스 상한은 **아래 층들에서 파생된다**(#427). 종전에는 90 이라는 상수였는데, 그 값이
+# 지키려던 층화를 정작 지키지 못했다:
+#
+#   제품 폴백 표시 예산(콜드) 60s  +  Python selftest 예산 80s   >   하니스 상한 90s
+#
+# 세 층의 의도는 순서다 — JS 가 먼저 구조화된 실패를 내고, 그 다음 파이썬이 시끄럽게 끝나고,
+# 하니스는 **마지막 그물**이다(app.py 의 예산 사슬 주석). 그런데 마지막 그물이 그 아래
+# 그물보다 촘촘하면 순서가 뒤집힌다. 실제로 뒤집혔다: 스위트가 27~39% 느려진 CI 실행에서만
+# 이 상한이 먼저 발화해, 아무 진단도 없이 "90초 기다렸다"만 남겼다(#427).
+#
+# 콜드 예산이 매번 걸리는 것도 우연이 아니다 — 각 테스트가 **새 홈**을 쓰므로 완주 이력이
+# 없고, `boot_budget.decide()` 는 그때마다 "첫 실행"으로 판정한다.
+_HARNESS_MARGIN_S = 30.0
+_SELFTEST_TIMEOUT = (
+    app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + _HARNESS_MARGIN_S
+)
+
+
+def _boot_selftest(
+    env: "dict[str, str]", *, out: Path, what: str
+) -> "subprocess.CompletedProcess":
+    """``--selftest`` 프로세스 하나를 띄운다 — **모든 부팅의 단일 입구**.
+
+    시한 초과를 그냥 던지면 남는 것은 "N초 기다렸다" 뿐이고, 그 문장은 *느린 것*과 *매달린
+    것*을 구별하지 못한다(#427). 둘은 원인도 조치도 다르므로 여기서 갈 수 있는 데까지의
+    사실을 함께 낸다: 무엇을 띄우려 했는지 · 실제 소요 · **증거 파일이 생겼는지**(= 드라이버가
+    종결에 닿았는지) · 자식이 남긴 출력 꼬리 · 그때의 예산 사슬 수치.
+    """
+    started = time.monotonic()
+    try:
+        return subprocess.run(
+            [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=_SELFTEST_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as expired:
+        raise AssertionError(
+            _timeout_report(expired, out=out, what=what, elapsed=time.monotonic() - started)
+        ) from None
+
+
+def _timeout_report(
+    expired: subprocess.TimeoutExpired, *, out: Path, what: str, elapsed: float
+) -> str:
+    """시한 초과를 **진단**으로 바꾼다 — 다음 사람이 재실행 말고 읽을 것이 있게."""
+    tail = _tail(expired.stderr) or _tail(expired.stdout) or "(자식 출력 없음)"
+    reached = "생성됨 — 드라이버가 종결에 닿았다" if out.exists() else "없음 — 종결에 못 닿았다"
+    return "\n".join(
+        [
+            f"selftest 부팅 시한 초과 — {what}",
+            f"  소요 {elapsed:.1f}s / 상한 {_SELFTEST_TIMEOUT:.0f}s"
+            f" (= Python 예산 {app_mod._SELFTEST_BUDGET_S:.0f}s"
+            f" + 콜드 부팅 예산 {boot_budget.COLD_BUDGET_SECONDS:.0f}s"
+            f" + 여유 {_HARNESS_MARGIN_S:.0f}s)",
+            f"  증거 파일: {reached} ({out})",
+            f"  자식 출력 꼬리:\n{tail}",
+        ]
+    )
+
+
+def _tail(stream: "str | bytes | None", limit: int = 2000) -> str:
+    if not stream:
+        return ""
+    text = stream if isinstance(stream, str) else stream.decode("utf-8", "replace")
+    return text[-limit:]
 
 
 @pytest.fixture(scope="module")
@@ -48,13 +117,7 @@ def selftest_result(tmp_path_factory) -> dict:
     out = tmp_path_factory.mktemp("selftest") / "selftest_result.json"
     home = tmp_path_factory.mktemp("selftest-home")
     env = dict(os.environ, HWPX_SELFTEST_OUT=str(out), HWPXFILLER_HOME=str(home))
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=_SELFTEST_TIMEOUT,
-    )
+    proc = _boot_selftest(env, out=out, what="full 모드 모듈 픽스처")
     assert out.exists(), (
         "selftest 결과 파일 미생성 — 창 부팅/렌더 실패 가능. "
         f"rc={proc.returncode}\nstdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
@@ -1451,12 +1514,11 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     # 포트를 고정하지 않는다(#74) — 양 콜드부트가 각자 랜덤 포트=서로 다른 오리진이어도 영속이
     # 유지됨을 실증하는 게 이 테스트의 요점(영속은 이제 오리진 비의존 Python 설정에 있다).
     base = dict(os.environ, HWPXFILLER_HOME=str(home))
-    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
 
     # (1) 쓰기 단계 — 저장 테마를 심고 종료.
-    w = subprocess.run(
-        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-        env=dict(base, HWPX_SELFTEST_OUT=str(out_write), HWPX_SELFTEST_SET_THEME="dark"),
+    w = _boot_selftest(
+        dict(base, HWPX_SELFTEST_OUT=str(out_write), HWPX_SELFTEST_SET_THEME="dark"),
+        out=out_write, what="테마 쓰기 단계",
     )
     assert out_write.exists(), (
         f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}")
@@ -1464,9 +1526,8 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     assert written.get("set_result") == "dark", f"쓰기 단계 Theme.set 실패: {written}"
 
     # (2) 읽기 단계 — 같은 HWPXFILLER_HOME(다른 포트)으로 콜드부트, 주입 적용 결과 되읽기.
-    r = subprocess.run(
-        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-        env=dict(base, HWPX_SELFTEST_OUT=str(out_read)),
+    r = _boot_selftest(
+        dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="테마 읽기 콜드부트"
     )
     assert out_read.exists(), (
         f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={r.stderr[-2000:]}")
@@ -1487,14 +1548,14 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     out_write = tmp_path / f"{scale}-write.json"
     out_read = tmp_path / f"{scale}-read.json"
     base = dict(os.environ, HWPXFILLER_HOME=str(home))
-    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
-    written_proc = subprocess.run(
-        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-        env=dict(
+    written_proc = _boot_selftest(
+        dict(
             base,
             HWPX_SELFTEST_OUT=str(out_write),
             HWPX_SELFTEST_SET_FONT_SCALE=scale,
         ),
+        out=out_write,
+        what=f"배율 쓰기 단계({scale})",
     )
     assert out_write.exists(), f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
     assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
@@ -1502,9 +1563,8 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     saved.update(master_width=333)
     (home / "settings.json").write_text(json.dumps(saved), encoding="utf-8")
 
-    read_proc = subprocess.run(
-        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-        env=dict(base, HWPX_SELFTEST_OUT=str(out_read)),
+    read_proc = _boot_selftest(
+        dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="배율 되읽기 콜드부트"
     )
     assert out_read.exists(), f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
     p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
@@ -1542,10 +1602,7 @@ def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: 
         HWPX_SELFTEST_OUT=str(out),
         HWPX_SELFTEST_GEOMETRY_ONLY="1",
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
+    proc = _boot_selftest(env, out=out, what="창 기하 되읽기")
     assert out.exists(), f"창 기하 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
     actual = json.loads(out.read_text(encoding="utf-8"))["window_geometry"]
     if mode == "normal":
@@ -1577,10 +1634,7 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     home = tmp_path / "home"
     out = tmp_path / "boot.json"
     env = dict(os.environ, HWPXFILLER_HOME=str(home), HWPX_SELFTEST_OUT=str(out))
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
+    proc = _boot_selftest(env, out=out, what="부팅 스탬프")
     assert out.exists(), f"부팅 실패 — rc={proc.returncode}\nstderr={proc.stderr[-2000:]}"
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
     stamp = saved.get("boot_completed_runtime")
@@ -1607,10 +1661,7 @@ def normal_window_evidence(tmp_path_factory) -> dict:
         HWPX_SELFTEST_OUT=str(out),
         HWPX_SELFTEST_NO_CAPABILITY="1",
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
+    proc = _boot_selftest(env, out=out, what="능력 없는 창(음성 대조)")
     assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
     evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in evidence, evidence.get("error")
@@ -1711,10 +1762,7 @@ def test_global_allowlist_gate_actually_catches_a_planted_leak(tmp_path) -> None
         HWPX_SELFTEST_NO_CAPABILITY="1",
         HWPX_SELFTEST_LEAK_SENTINEL=sentinel,
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
+    proc = _boot_selftest(env, out=out, what="누수 파수꾼")
     assert out.exists(), f"파수꾼 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
     evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in evidence, evidence.get("error")
@@ -1764,10 +1812,7 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
         HWPX_SELFTEST_OUT=str(out),
         HWPX_SELFTEST_GLOBAL_DELTA="1",
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
-    )
+    proc = _boot_selftest(env, out=out, what="능력 켠 전역 델타 측정")
     assert out.exists(), f"능력 측정 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
     capability_evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in capability_evidence, capability_evidence.get("error")
@@ -1791,3 +1836,53 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
 
     # 양성 대조 — digest 가 실제로 이름 집합에 반응한다(항상 같은 값을 내는 상수가 아니다).
     assert testing["digest"] != testing["digest_without_test"]
+
+
+# --------------------------------------------------------- 예산 사슬 자체의 계약(#427)
+# 아래 둘은 **게이트 밖**이다: 창을 띄우지 않고 수치와 문안만 본다. 실앱 게이트가 옵트아웃된
+# 환경에서도 층화가 뒤집히는 것은 잡혀야 한다(그 뒤집힘이 곧 옵트아웃 없는 러너의 실패다).
+
+
+def test_harness_cap_sits_above_every_budget_beneath_it() -> None:
+    """마지막 그물은 그 아래 그물보다 **성겨야** 한다 — 아니면 순서가 뒤집힌다.
+
+    예산 사슬의 의도는 값이 아니라 **발화 순서**다: JS 가 먼저 구조화된 실패를 내고, 그 다음
+    파이썬이 시끄럽게 끝나고, 하니스는 마지막 그물이다. 하니스 상한이 아래 층의 합보다 작으면
+    가장 진단이 빈약한 층이 가장 먼저 발화한다 — #427 에서 실제로 그랬다.
+    """
+    beneath = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS
+    assert _SELFTEST_TIMEOUT > beneath, (
+        f"하니스 상한 {_SELFTEST_TIMEOUT}s 가 아래 층의 합 {beneath}s 보다 촘촘합니다 — "
+        "가장 진단이 빈약한 층이 먼저 발화합니다."
+    )
+    # 음성 대조 — 이 단언에 이빨이 있는가. 종전 상수 90 은 실제로 아래 층의 합보다 작았고,
+    # 그래서 이 검사가 있었다면 그때 붉었어야 한다.
+    assert 90 < beneath, "종전 상수가 이미 아래 층의 합보다 컸다면 이 단언은 아무것도 안 지킨다"
+
+
+def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
+    """시한 초과는 "N초 기다렸다"로 끝나지 않는다 — 어디까지 갔는지를 말한다.
+
+    *느린 것*과 *매달린 것*은 원인도 조치도 다르다. 증거 파일의 유무가 그 둘을 가르는 가장
+    싼 신호이므로(드라이버가 종결에 닿았는가), 두 경우의 문안이 실제로 달라지는지 본다.
+    """
+    expired = subprocess.TimeoutExpired(
+        cmd=["python", "-m", "hwpxfiller.webapp.app", "--selftest"],
+        timeout=_SELFTEST_TIMEOUT,
+        output="",
+        stderr="[hwpx] 마지막 한 줄",
+    )
+    missing = tmp_path / "absent.json"
+    reached = tmp_path / "present.json"
+    reached.write_text("{}", encoding="utf-8")
+
+    hung = _timeout_report(expired, out=missing, what="어떤 부팅", elapsed=170.4)
+    slow = _timeout_report(expired, out=reached, what="어떤 부팅", elapsed=170.4)
+
+    assert "어떤 부팅" in hung and "170.4s" in hung
+    assert "종결에 못 닿았다" in hung
+    assert "종결에 닿았다" in slow and "종결에 못 닿았다" not in slow
+    # 자식이 남긴 마지막 말이 실려야 한다 — 그것이 유일한 창 안쪽 단서일 때가 많다.
+    assert "[hwpx] 마지막 한 줄" in hung
+    # 예산 사슬 수치를 함께 적는다: 읽는 사람이 "이 상한이 왜 이 값인가"를 되짚을 수 있게.
+    assert f"{app_mod._SELFTEST_BUDGET_S:.0f}s" in hung
