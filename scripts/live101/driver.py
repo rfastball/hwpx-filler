@@ -415,17 +415,27 @@ def _make_sink(mode: str, out_dir: "Path | None", window_title: str):
     return capture_mod.Win32Sink(hwnd, out_dir)
 
 
-def _dump_stacks(home: Path) -> Path:
-    """매달림의 유일한 진단 — 못 남겨도 종료는 한다(매달림이 더 나쁘다)."""
+def _dump_stacks(home: Path) -> str:
+    """매달림의 유일한 진단 — **로그가 정본**이고 파일은 곁사본이다.
+
+    파일만 남기면 그 파일이 사라지는 경로가 있다(#426 리뷰 라운드 5): 임시 홈에서 도는
+    ``check`` 가 시나리오를 완주한 뒤 teardown 만 매달리면, 워치독이 여기 스택을 쓰고 그
+    경로를 출력한 다음 **성공 착지가 임시 홈을 통째로 지운다**. 출력된 진단 경로가 존재하지
+    않는 상태로 프로세스가 끝나므로, 워치독이 낸 유일한 실행 가능한 증거가 사라진다.
+
+    그래서 stderr 로 먼저 쏟는다 — :func:`_hard_exit` 가 비우고 나가므로 CI 로그에 반드시
+    남는다. 파일은 로컬에서 읽기 편하라고 함께 쓰되, 없어질 수 있음을 문안이 밝힌다.
+    """
     import faulthandler
 
+    faulthandler.dump_traceback(file=sys.stderr)
     stacks = home / "_live101_hang_stacks.txt"
     try:
         with stacks.open("w", encoding="utf-8") as fh:
             faulthandler.dump_traceback(file=fh)
     except OSError:
-        pass
-    return stacks
+        return "위 stderr 스택이 전부입니다(파일로 남기지 못했습니다)"
+    return f"위 stderr 스택 · 곁사본 {stacks}(임시 홈이면 정리와 함께 사라질 수 있습니다)"
 
 
 def _arm_run_watchdog(
@@ -454,10 +464,10 @@ def _arm_run_watchdog(
     def _watchdog() -> None:
         if finished.wait(budget_s):
             return  # 실행이 자기 끝에 닿았다 — 물러난다
-        stacks = _dump_stacks(home)
+        where = _dump_stacks(home)
         _say(
             f"101 {mode} 하드 스톱: 실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다"
-            f" (브리지 무응답 의심). 스택: {stacks}",
+            f" (브리지 무응답 의심). 스택 — {where}",
             stream=2,
         )
         landing.once(
@@ -488,10 +498,10 @@ def _arm_teardown_watchdog(
     def _watchdog() -> None:
         if finished.wait(TEARDOWN_GRACE_S):
             return  # 정상 teardown — 물러난다
-        stacks = _dump_stacks(home)
+        where = _dump_stacks(home)
         _say(
             f"101 {result.mode}: teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 안 내려왔습니다"
-            f" → 워치독 종료(스택: {stacks})",
+            f" → 워치독 종료. 스택 — {where}",
             stream=2,
         )
         _hard_exit(landing.once(result))
