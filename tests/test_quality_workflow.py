@@ -114,3 +114,31 @@ def test_frozen_cli_forces_utf8_for_redirected_windows_output(monkeypatch) -> No
     expected = {"encoding": "utf-8", "errors": "backslashreplace"}
     assert stdout.options == expected
     assert stderr.options == expected
+
+
+def test_quickstart_101_live_precondition_is_its_own_visible_step() -> None:
+    """101 실주행 게이트(#423)의 전제를 별 단계로 확인하고, 옵트아웃을 CI 에서 걷는다.
+
+    press-geometry 와 같은 이유다. 다만 여기엔 축이 하나 더 있다 — 이 게이트는 **실행 산출물**
+    (실 HWPX 3건)을 판정하므로, 전제 부재가 조용한 스킵으로 새면 「101 이 도는지 아무도 안 보는」
+    상태로 돌아간다. 그 상태가 정확히 #423 의 출발점이었다(캡처 하니스가 몇 달 깨져 있었고
+    이름을 보는 정적 단언들은 그동안 초록이었다).
+    """
+    text, _ = _workflow()
+    assert "Quickstart 101 live precondition" in text
+    assert "scripts/capture_101_screenshots.py check --preflight" in text
+    assert "HWPX_SKIP_GUI_TESTS" in text
+
+
+def test_no_gate_opt_out_is_switched_on_inside_the_workflow() -> None:
+    """옵트아웃 변수를 **켜는** 줄은 워크플로 어디에도 없다.
+
+    CI 는 셋 다 걷고 돈다(CLAUDE.md). 그런데 "걷는다"는 `Remove-Item` 단계로만 보이고, 어딘가
+    한 줄이 그것을 다시 켜면 그 단계는 선언만 남고 결과가 죽는다 — 이 저장소가 반복해 만난
+    결함류다. 그래서 부재를 직접 센다.
+    """
+    text, _ = _workflow()
+    for variable in ("HWPX_SKIP_GUI_TESTS", "HWPX_SKIP_NATIVE_TESTS", "HWPX_SKIP_MOTION_TESTS"):
+        assert f"{variable}:" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
+        assert f"{variable}=1" not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"
+        assert f'{variable} = "1"' not in text, f"{variable} 를 켜는 줄이 워크플로에 있습니다"

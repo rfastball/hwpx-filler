@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   exact Node/npm/Vite 도구로 canonical frontend 산출물을 새로 만들고 seal을 검증한다.
 

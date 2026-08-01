@@ -275,6 +275,18 @@ def test_screenshot_capture_builds_before_replacing_outputs() -> None:
         and node.func.attr == "rmtree"
     ]
 
+    # `--no-build` 로 빌드를 건너뛰는 길이 생겼다(#430 리뷰). 불변식의 본체는 「빌드가 먼저」가
+    # 아니라 **「파괴 전에 산출물이 유효하다」** 이므로 건너뛰는 쪽도 검증을 지나야 한다 —
+    # 안 그러면 stale seal 로 14컷을 지운 **뒤에야** 부팅이 거절된다. 두 길을 함께 센다.
+    verify_calls = [
+        node
+        for node in calls
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "preflight"
+    ]
+
     assert len(build_calls) == 1
+    assert verify_calls, "빌드를 건너뛰는 길에 산출물 검증이 없습니다"
     assert destructive_calls
-    assert build_calls[0].lineno < min(node.lineno for node in destructive_calls)
+    first_destruction = min(node.lineno for node in destructive_calls)
+    assert build_calls[0].lineno < first_destruction
+    assert min(node.lineno for node in verify_calls) < first_destruction
