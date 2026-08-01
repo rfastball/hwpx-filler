@@ -126,11 +126,20 @@ def test_the_aggregate_gate_only_accepts_success() -> None:
 
 
 def test_only_pull_request_runs_are_cancelled_by_a_newer_push() -> None:
-    """연속 push 는 앞선 **PR** run 만 취소한다 — master·merge queue 이력은 남는다."""
+    """연속 push 는 앞선 **PR** run 만 취소한다 — master·merge queue 이력은 남는다.
+
+    `cancel-in-progress: false` 는 그 약속의 절반만 진다. 같은 그룹에 대기 중인 run 이
+    있으면 GitHub 이 그것을 **밀어내므로**, 그룹 키가 commit 마다 달라야 가운데 commit 의
+    검증이 완주하지 못한 채 사라지는 일이 없다(코덱스 리뷰 P1).
+    """
     text, workflow = _workflow()
     concurrency = workflow["concurrency"]
 
     assert "pull_request.number" in concurrency["group"], "PR 단위로 묶이지 않습니다"
+    assert "github.sha" in concurrency["group"], (
+        "PR 이 아닌 run 이 commit 마다 자기 그룹을 갖지 않으면, 대기 중이던 run 이 다음 "
+        "push 에 밀려 검증 없이 사라진다"
+    )
     assert "github.event_name == 'pull_request'" in concurrency["cancel-in-progress"], (
         "master push 나 merge queue run 까지 취소하면 초록이었는지 모르는 commit 이 남는다"
     )

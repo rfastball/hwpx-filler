@@ -29,8 +29,13 @@ permissions:
 
 # 같은 PR 의 앞선 run 만 취소한다. `master` push 와 merge queue 는 각자의 이력을 남겨야
 # 하므로 취소 대상이 아니다 — 초록이었는지 아무도 모르는 commit 을 만들지 않는다.
+#
+# 그 약속은 `cancel-in-progress: false` **만으로는 지켜지지 않는다**. 한 그룹에 대기 중인
+# run 이 이미 있을 때 새 run 이 들어오면 GitHub 은 취소 설정과 무관하게 **대기 중인 쪽을
+# 밀어낸다** — `github.ref` 로 묶으면 master 에 세 번 연속 push 했을 때 가운데 commit 의
+# 검증이 완주하지 못한 채 사라진다. 그래서 PR 이 아닌 run 은 commit 마다 자기 그룹을 갖는다.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
