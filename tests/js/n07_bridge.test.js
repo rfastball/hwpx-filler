@@ -3,6 +3,8 @@
  * 기대값은 **전환 이전 동작**이다: IIFE 껍질을 벗기고 두 전역 생산을 factory 반환으로 바꾼
  * 기계적 작업이므로, 이 파일이 초록이면 "껍질만 바뀌고 왕복은 그대로"가 참이다. 브리지는
  * 인자 강제(`|| {}`·`!!`·`Math.round`)와 반환 무가공이 곧 계약이라 23개 통로를 표로 전수한다.
+ * 단, dispatch 의 예상 가능한 Python 거절 봉투는 이 단일 경계에서 원래의 Promise rejection
+ * 의미로 복원한다. pywebview 자체 예외 콜백에 기대지 않되 제품 소비자의 계약은 바꾸지 않는다.
  *
  * N-07 에서 백엔드 판독이 이 파일 하나로 좁혀졌다 — 창 닫기 확인 두 호출과 준비 술어
  * (`hostReady`)가 합류해 21 → 23 이 됐다. 그 둘도 같은 표에서 함께 센다.
@@ -202,6 +204,40 @@ test("반환 무가공 — 값도 promise 도, 거절도 그대로 통과한다(
   const returned = bridge.generate("job", true);
   assert.equal(returned instanceof Promise, true);
   await assert.rejects(() => returned, (err) => err === boom);
+});
+
+test("dispatch 거절 봉투 — 동기·Promise 모두 Error 로 복원하고 정상값은 그대로 둔다", async () => {
+  const { bridge } = createBridge();
+  const key = "__hwpx_dispatch_rejection_v1__";
+
+  RETURNS = { ok: true };
+  assert.equal(bridge.call("job", "refresh", {}), RETURNS, "동기 정상값은 같은 객체다");
+
+  const success = { rows: 2 };
+  RETURNS = Promise.resolve(success);
+  assert.equal(await bridge.call("job", "refresh", {}), success, "Promise 정상값도 같은 객체다");
+
+  RETURNS = { [key]: { name: "ValueError", message: "데이터가 없습니다" } };
+  assert.throws(
+    () => bridge.call("job", "refresh", {}),
+    (err) => err instanceof Error && err.name === "ValueError" && err.message === "데이터가 없습니다",
+  );
+
+  RETURNS = Promise.resolve({ [key]: { name: "ValueError", message: "열 수 없습니다" } });
+  await assert.rejects(
+    () => bridge.call("job", "refresh", {}),
+    (err) => err instanceof Error && err.name === "ValueError" && err.message === "열 수 없습니다",
+  );
+});
+
+test("dispatch 거절 봉투 — 손상은 조용히 정상값으로 통과하지 않는다", async () => {
+  const { bridge } = createBridge();
+  const key = "__hwpx_dispatch_rejection_v1__";
+  RETURNS = Promise.resolve({ [key]: { name: "ValueError" } });
+  await assert.rejects(
+    () => bridge.call("job", "refresh", {}),
+    /dispatch 거절 봉투가 손상되었습니다/,
+  );
 });
 
 /* ══════════════ 3. 살아 있는 객체 — 프로퍼티 교체가 관측된다 ══════════════ */

@@ -57,6 +57,9 @@ from .screens import (
 )
 
 
+_DISPATCH_REJECTION_KEY = "__hwpx_dispatch_rejection_v1__"
+
+
 WINDOW_TITLE = "문서나르미"  # 창 제목(#258 제품명) = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
 DEFAULT_WINDOW_WIDTH = 1440
 DEFAULT_WINDOW_HEIGHT = 900
@@ -237,9 +240,27 @@ class WebFrontend:
         return self._controller(screen).initial()
 
     def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
-        """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
-        checked = validate_dispatch(screen, action, {} if payload is None else payload)
-        return self._controller(screen).dispatch(action, checked)
+        """순수 데이터 액션(창 불필요) 라우팅.
+
+        ``ValueError`` 는 pywebview 자체 예외 왕복에 맡기지 않는다. 그 경로는 Python 작업
+        스레드가 traceback 을 만든 뒤 UI 스레드의 ``evaluate_js`` 를 동기로 다시 불러 Promise
+        rejection 을 완성한다. 패키징 CI 의 상승 실행에서는 정상적인 거절 두 건이 그 콜백에서
+        멎어 프로브 시한을 소진했다. 그래서 예상 가능한 도메인/스키마 거절만 성공 transport 의
+        작은 봉투로 보내고, 프런트 단일 브리지가 즉시 같은 Promise rejection 으로 복원한다.
+
+        성공값은 종전처럼 그대로 반환하고, 예상 밖 예외도 감싸지 않는다. 후자는 pywebview 로그와
+        traceback 을 잃지 않아야 실제 결함이 정상 거절로 위장하지 않는다.
+        """
+        try:
+            checked = validate_dispatch(screen, action, {} if payload is None else payload)
+            return self._controller(screen).dispatch(action, checked)
+        except ValueError as exc:
+            return {
+                _DISPATCH_REJECTION_KEY: {
+                    "name": type(exc).__name__,
+                    "message": str(exc),
+                }
+            }
 
     def set_theme(self, mode: str) -> str:
         """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""

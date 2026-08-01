@@ -16,6 +16,27 @@
    Python selftest 가 프로퍼티를 교체해(`…​.call = stub`) 통로를 갈아끼우므로 소비자는 객체
    참조를 들고 호출 시점에 메서드를 찾아야 한다. 여기서도, 소비자 쪽에서도 메서드를 값으로
    뽑지 않는다 — 뽑는 순간 요청은 프로브에 걸렸는데 발신은 실물로 새는 자리가 생긴다. */
+const DISPATCH_REJECTION_KEY = "__hwpx_dispatch_rejection_v1__";
+
+function unwrapDispatchResult(value) {
+  if (!value || typeof value !== "object" || !Object.hasOwn(value, DISPATCH_REJECTION_KEY)) {
+    return value;
+  }
+  const rejection = value[DISPATCH_REJECTION_KEY];
+  if (!rejection || typeof rejection !== "object" || typeof rejection.message !== "string") {
+    throw new Error("Python dispatch 거절 봉투가 손상되었습니다.");
+  }
+  const error = new Error(rejection.message);
+  if (typeof rejection.name === "string" && rejection.name) error.name = rejection.name;
+  throw error;
+}
+
+function unwrapDispatch(value) {
+  return value && typeof value.then === "function"
+    ? value.then(unwrapDispatchResult)
+    : unwrapDispatchResult(value);
+}
+
 export function createBridge() {
   // screen id → [fn, ...] — 한 채널 복수 구독(F8): 병존 기간 편집기가 tpl push 를 함께
   // 듣는다. 교체 의미의 재등록 소비자는 없다(전 화면이 자기 채널 1회 등록) — 덮어쓰기
@@ -36,7 +57,7 @@ export function createBridge() {
 
     /** 순수 데이터 액션(창 불필요) — Python 이 처리 후 관측 푸시로 되민다. */
     call(screen, action, payload) {
-      return window.pywebview.api.dispatch(screen, action, payload || {});
+      return unwrapDispatch(window.pywebview.api.dispatch(screen, action, payload || {}));
     },
 
     /** 네이티브 파일 다이얼로그 → 링1 VM 로드. 파일명·"ERROR:…"·null(취소), 또는
