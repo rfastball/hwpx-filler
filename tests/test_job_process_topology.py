@@ -124,7 +124,7 @@ def test_write_state_ownership_is_per_process_not_inherited(monkeypatch) -> None
 def test_product_entrypoints_match_documented_single_writer_topology() -> None:
     """웹앱은 registry 생성 전에 단일 인스턴스를 잡고 CLI는 registry를 열지 않는다."""
     app = (ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
-    main = app[app.index("def main() -> int:"):]
+    main = app[app.index("def main("):]
     assert main.index("single_instance.acquire(") < main.index("frontend = WebFrontend(")
 
     cli = (ROOT / "src" / "hwpxfiller" / "cli.py").read_text(encoding="utf-8")

@@ -199,13 +199,15 @@ test("외부 fetch 대조 쌍은 패키지 전용이고 양·음 두 극을 다 
   assert.ok(pair.source.some((s) => s.includes("348-350")));
 });
 
-test("비-pytest 소유자 넷이 적혀 있다", () => {
+test("비-pytest 소유자 셋이 적혀 있다", () => {
   const sites = NON_PYTEST_OWNERS.map((o) => o.site);
-  assert.equal(sites.length, 4);
+  assert.equal(sites.length, 3);
   assert.ok(sites.some((s) => s.includes("build.ps1:314")));
   assert.ok(sites.some((s) => s.includes("build.ps1:317-327")));
   assert.ok(sites.some((s) => s.includes("test_web_runtime_artifact.py:55")));
-  assert.ok(sites.some((s) => s.includes("capture_101_screenshots.py:72")));
+  /* 넷째(캡처 하니스의 `_selftest_drive` 치환)는 N-11A 에서 pytest 소유로 옮겨갔다 —
+     `tests/test_live_run_contract.py`. 원장에 남아 있으면 이미 없는 계약을 가리킨다. */
+  assert.ok(!sites.some((s) => s.includes("capture_101_screenshots.py")));
   for (const owner of NON_PYTEST_OWNERS) {
     assert.equal(typeof owner.owns, "string");
     assert.equal(typeof owner.breaksIf, "string");

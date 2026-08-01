@@ -8,7 +8,10 @@
 Python→웹은 버전 있는 제품 파사드 하나 ``window.__hwpx``(N-07, :mod:`.product_api`)다.
 
 자가검증은 그와 **별도 계정**인 ``window.__hwpxTest``(N-09, :mod:`.selftest_api`)로 가고,
-그 전역은 명시 ``--selftest`` 프로세스에서 능력을 붙였을 때만 선다 — 정상 실행에는 없다.
+그 전역은 능력을 명시로 요구한 라이브 실행에서만 선다 — 정상 실행에는 없다.
+
+사람 대신 창을 모는 실행(부팅 자가검증 · Quickstart 101 하니스)의 호출 계약은
+:mod:`.live_run` 이 소유한다(N-11A). ``main(argv, live=…)`` 이 그 유일한 입구다.
 
 정상 종료는 ``webview.start()`` 반환과 ``window.destroy()`` 를 사용한다. Windows backend 는
 외부 UIA 주입 시 WinForms 접근성 재귀를 피하도록 ``edgechromium`` 으로 고정한다. 배포 형태는
@@ -24,7 +27,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from . import boot_budget, product_api, selftest_api, settings
+from . import boot_budget, live_run, product_api, selftest_api, settings
 from .action_registry import validate_dispatch
 from ..web_artifact import (
     VerifiedWebArtifact,
@@ -73,6 +76,34 @@ _TEMPLATE_FILTERS = [("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")]
 # 라이브러리 가져오기 필터(#108 결정 4) — HWPX·TXT 겸용. 확장자가 곧 매체 라우팅(복사 대상
 # 루트 결정)이라 두 형식을 함께 연다("모든 파일"은 오확장 유입 방지로 제외 — import 는 확장자로만 라우팅).
 _LIBRARY_IMPORT_FILTERS = [("HWPX·TXT 템플릿", "*.hwpx;*.txt")]
+
+
+# ------------------------------------------------------ native 대화상자 단일 입구
+#: 현재 라이브 실행(:mod:`.live_run`)이 세운 대체. ``None`` = 실물 OS 대화상자.
+#: 라이브 실행이 아닌 정상 실행에서는 끝까지 ``None`` 이라 분기 자체가 죽어 있다.
+_live_file_dialogs: "live_run.FileDialogs | None" = None
+
+
+def _file_dialog(filters: "list[tuple[str, str]]") -> "str | None":
+    """native 파일 열기의 **유일한 입구**.
+
+    호출부가 ``open_file_dialog`` 를 직접 부르면 라이브 실행의 대체가 그 자리만 비껴간다 —
+    종전 하니스가 모듈 전역을 통째로 갈아끼워야 했던 이유가 그것이고, 그 치환은 대체 대상이
+    하나 늘 때마다 조용히 반쪽이 됐다. 입구를 하나로 모아 그 반쪽을 구조적으로 없앤다
+    (``tests/test_architecture.py`` 가 우회 호출 0을 센다).
+    """
+    dialogs = _live_file_dialogs
+    if dialogs is not None:
+        return dialogs.open_file(filters, owner_title=WINDOW_TITLE)
+    return open_file_dialog(filters, owner_title=WINDOW_TITLE)
+
+
+def _folder_dialog(title: str) -> "str | None":
+    """native 폴더 선택의 유일한 입구 — :func:`_file_dialog` 의 짝."""
+    dialogs = _live_file_dialogs
+    if dialogs is not None:
+        return dialogs.open_folder(title, owner_title=WINDOW_TITLE)
+    return open_folder_dialog(title, owner_title=WINDOW_TITLE)
 
 
 # ------------------------------------------------------------------ 경로 해석
@@ -287,7 +318,7 @@ class WebFrontend:
         하나**(잠금·매체 라우팅·충돌 접미·무잔재)이고, 편집기는 사본으로 세션을 시작할 수
         있는지만 판정한다(RAW·손상 = 목록 합류 + 수선 경로 notice). 실패는 ``ERROR:`` 접두.
         """
-        path = open_file_dialog(_LIBRARY_IMPORT_FILTERS, owner_title=WINDOW_TITLE)
+        path = _file_dialog(_LIBRARY_IMPORT_FILTERS)
         if not path:
             return None
         try:
@@ -320,7 +351,7 @@ class WebFrontend:
         """
         tpl = self._controller("tpl")
         if folder is None:
-            path = open_folder_dialog("가져올 템플릿 폴더 선택", owner_title=WINDOW_TITLE)
+            path = _folder_dialog("가져올 템플릿 폴더 선택")
             if not path:
                 return None
             try:
@@ -366,7 +397,7 @@ class WebFrontend:
         """
         log(f"pick_data_file: enter screen={screen}")
         filters = _EXCEL_OR_ANY_FILTERS
-        path = open_file_dialog(filters, owner_title=WINDOW_TITLE)
+        path = _file_dialog(filters)
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
             return None
@@ -426,7 +457,7 @@ class WebFrontend:
 
         선택 경로의 표시명 또는 None(취소). 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
         """
-        path = open_folder_dialog("저장 폴더 선택", owner_title=WINDOW_TITLE)
+        path = _folder_dialog("저장 폴더 선택")
         if not path:
             return None
         try:
@@ -522,7 +553,7 @@ class WebFrontend:
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
         """
         filters = _EXCEL_OR_ANY_FILTERS
-        return open_file_dialog(filters, owner_title=WINDOW_TITLE)
+        return _file_dialog(filters)
 
     def pick_template_path(self) -> "str | None":
         """템플릿 다시 연결(#67) '찾아보기' → **경로만** 반환(``pick_pool_data_file`` 미러).
@@ -530,7 +561,7 @@ class WebFrontend:
         ``import_template_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 재연결의
         검증·확정은 dispatch(``relink_template``)의 confirm 게이트가 담당. None = 취소.
         """
-        return open_file_dialog(_TEMPLATE_FILTERS, owner_title=WINDOW_TITLE)
+        return _file_dialog(_TEMPLATE_FILTERS)
 
     def reveal_corrupt_job(self, path: str) -> "str | None":
         """홈 손상 카드 '폴더 열기' → 탐색기에서 해당 파일 표시(#26 #8 해소 동선).
@@ -686,16 +717,50 @@ def _write_selftest_output(result: "Mapping[str, object]") -> Path:
     return out
 
 
-def _finish_selftest(window: "object", result: dict) -> None:
-    """되읽기 결과를 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
+def _live_terminator(
+    window: "object", write_output: "Callable[[Mapping[str, object]], object]"
+) -> "Callable[[Mapping[str, object]], None]":
+    """라이브 실행의 종결자 — 증거 쓰기 **다음** 정식 종료, 각각 정확히 한 번.
 
-    ``destroy`` 는 ``os._exit`` 대체(소이슈 ①). 두 절반이 나뉜 뒤에도 이 이름은 **남는다** —
-    ``scripts/capture_101_screenshots.py`` 가 자기 드라이브 끝에서 직접 부르는 모듈 수준
-    seam 이기 때문이다. 그 스크립트는 ``_selftest_drive`` 를 통째로 갈아끼우므로 이 함수의
-    이름·인자·의미가 그대로여야 캡처 하니스가 앱 코드 변경 없이 계속 돈다.
+    종전의 합친 이름 ``_finish_selftest`` 를 대신한다. 그 이름은 캡처 하니스가 자기 드라이브
+    끝에서 **직접 부르려고** 남아 있었고, 그래서 101 경로만 호스트 연산 허용목록을 통째로
+    비껴갔다(쓰기 payload 검증도, 이중 종료 거절도 그 경로엔 없었다). 이제 두 실행이 같은
+    :class:`~.selftest_api.HostOperations` 를 지난다 — 표에 있는데 아무도 부르지 않는 op 는
+    선언만 살고 결과가 죽는 자리가 되므로, 소비자를 늘리는 쪽이 옳다.
+
+    **1회성은 거래 전체가 진다**(#425 리뷰 P2). op 각각의 가드에 기대면 두 번째 호출이 쓰기를
+    먼저 통과해 **첫 증거를 덮어쓴 뒤** 종료 거절 로그만 남긴다 — 실행의 결론이 조용히 바뀌고,
+    그 자리에 남는 것은 "종료를 두 번 불렀다"는 엉뚱한 진단뿐이다. 종결은 실행 하나의 결론을
+    확정하는 사건이라 그 결론은 **처음 것**이다.
+
+    실패를 삼키지 않는다 — 그리고 **내구성 채널**로 삼키지 않는다. 종전 두 실패는
+    :func:`~hwpxcore.native._debug.log` 로 갔는데 그것은 ``HWPX_WEBAPP_LOG`` 가 없으면 no-op
+    이라, "사유를 stderr 로라도 남긴다"고 적힌 주석이 실제로는 아무 데도 안 남기고 있었다.
+    종결의 실패는 하니스가 **파일 부재로만** 만나는 사건이라 사유가 없으면 원인이 한 겹
+    가려진다. 그래서 :func:`.settings.alert`(stderr + 홈 로그)를 쓴다.
     """
-    _write_selftest_output(result)
-    window.destroy()  # type: ignore[attr-defined]
+    operations = selftest_api.HostOperations(
+        write_output=write_output,
+        destroy=lambda: window.destroy(),  # type: ignore[attr-defined]
+    )
+    consumed: "list[list[str]]" = []
+
+    def finish(result: "Mapping[str, object]") -> None:
+        if consumed:
+            settings.alert(
+                "live-run 종결이 두 번 요청됐습니다(already_consumed) — "
+                f"확정된 결론은 {consumed[0]!r} 이고 버린 것은 {sorted(map(str, result))!r}"
+            )
+            return
+        consumed.append(sorted(map(str, result)))
+        written = operations.dispatch("output_write", {"result": dict(result)})
+        if not written.ok:
+            settings.alert(f"live-run output_write 실패: [{written.code}] {written.detail}")
+        destroyed = operations.dispatch("window_destroy")
+        if not destroyed.ok:
+            settings.alert(f"live-run window_destroy 실패: [{destroyed.code}] {destroyed.detail}")
+
+    return finish
 
 
 def _selftest_artifact_identity(launched_artifact: VerifiedWebArtifact) -> dict:
@@ -883,13 +948,23 @@ def _selftest_host_operations(
     )
 
 
-def _selftest_capability_wanted(argv: "Sequence[str]", environ: "Mapping[str, str]") -> bool:
+def _selftest_capability_wanted(
+    run: "live_run.LiveRun | None", environ: "Mapping[str, str]"
+) -> bool:
     """이 프로세스가 시험 능력을 **붙여야 하는가**.
 
-    조건은 명시 ``--selftest`` 하나다. URL·빌드 플래그는 여기 없다. 음성 대조 모드는 능력을
-    일부러 빼고 부팅해 "능력이 없으면 전역도 없다"를 실 창에서 잰다.
+    조건은 실행의 명시 선언(:attr:`~.live_run.LiveRun.capability`) 하나다. URL·빌드 플래그는
+    여기 없다. 음성 대조 모드는 능력을 일부러 빼고 부팅해 "능력이 없으면 전역도 없다"를 실
+    창에서 잰다.
+
+    종전 조건은 ``"--selftest" in argv`` 라는 **문자열**이었다. 그래서 창을 빌리려는 다른
+    소비자가 같은 플래그를 흉내 내는 순간 시험 능력까지 딸려 왔다 — 101 하니스가 정확히
+    그랬고, 문서 스크린샷은 ``__hwpxTest`` 가 서 있는 창을 찍고 있었다. 두 질문("창을 빌려
+    도는가" / "시험 표면이 필요한가")을 가르면 그 동반은 구조적으로 사라진다(#372 D-07).
     """
-    return "--selftest" in argv and not environ.get("HWPX_SELFTEST_NO_CAPABILITY")
+    return bool(run is not None and run.capability) and not environ.get(
+        "HWPX_SELFTEST_NO_CAPABILITY"
+    )
 
 
 def _selftest_mode(environ: "Mapping[str, str]") -> "tuple[str, str]":
@@ -966,22 +1041,56 @@ def _selftest_global_delta(window: "object") -> dict:
     return dict(probed)
 
 
-def _selftest_drive(
-    window: "object",
-    launched_artifact: VerifiedWebArtifact | None = None,
-) -> None:
+def _selftest_live_run() -> "live_run.LiveRun":
+    """부팅 자가검증 실행의 선언 — ``--selftest`` 가 고르는 **하나**.
+
+    종전에는 이런 선언이 없었고 ``main()`` 이 모듈 전역 ``_selftest_drive`` 를 호출 시점에
+    찾았다. 캡처 하니스는 그 자리를 갈아끼우는 방식으로 창을 빌렸고, 그래서 두 실행이 같은
+    플래그·같은 전역·같은 종결 함수를 공유하면서도 **계약은 어디에도 없었다**.
+    """
+    return live_run.LiveRun(
+        name="selftest",
+        drive=_selftest_drive,
+        write_output=_write_selftest_output,
+        capability=True,
+    )
+
+
+def _selftest_context(
+    window: "object", artifact: "VerifiedWebArtifact | None" = None
+) -> "live_run.LiveContext":
+    """자가검증 봉투 조립 — ``main()`` 과 단위 시험이 **같은 조립**을 쓴다.
+
+    두 곳이 각자 봉투를 지으면 필드가 하나 늘 때 한쪽만 낡고, 그 낡음은 시험이 초록인 채로
+    산다(이 파일이 고치고 있는 결함류 그 자체다).
+    """
+    return live_run.context_for(
+        _selftest_live_run(),
+        window=window,
+        artifact=artifact,
+        finish=_live_terminator(window, _write_selftest_output),
+    )
+
+
+def _selftest_drive(ctx: "live_run.LiveContext") -> None:
     """동결 exe 부팅 자가검증 — 프런트 엔진을 몰아 증거를 확정하고 정식 종료한다.
 
-    이 함수는 **모듈 수준 이름으로 남아야 한다**: ``main()`` 이 호출 시점에 전역으로 찾고
-    ``scripts/capture_101_screenshots.py`` 가 그 자리를 갈아끼워 캡처 하니스를 돌린다.
+    인자는 :class:`~.live_run.LiveContext` **하나**다. 종전에는 pywebview 가 넘기는 위치 인자
+    튜플을 그대로 받았고(``window``, 뒤에 ``launched_artifact`` 가 붙었다), 그 튜플이 길어진
+    #375 에서 캡처 하니스의 드라이버와 조용히 어긋났다.
+
+    ``ctx.artifact`` 는 여기서 **풀지 않는다**. 정체 재확인은 ``artifact_identity`` 호스트
+    연산이 지고, 그 연산은 프런트 ``runtime`` 프로브(full 모드)만 요청한다 — 쓰기 모드가
+    산출물 봉인을 요구하지 않던 레거시 거동 그대로다.
 
     쓰기 모드(``HWPX_SELFTEST_SET_THEME``·``HWPX_SELFTEST_SET_FONT_SCALE``)는 저장값을 심어
     다음 콜드부트의 오리진 비의존 영속 되읽기를 준비한다(#74).
     """
+    window = ctx.window
     mode, echo_value = _selftest_mode(os.environ)
 
     if mode == _MODE_NO_CAPABILITY:
-        _finish_selftest(window, _selftest_non_exposure_evidence(window))
+        ctx.finish(_selftest_non_exposure_evidence(window))
         return
 
     if mode == _MODE_GLOBAL_DELTA:
@@ -998,23 +1107,11 @@ def _selftest_drive(
             delta_evidence["error"] = f"시험 능력 준비 실패: {exc!r}"
         else:
             delta_evidence["global_delta"] = _selftest_global_delta(window)
-        _finish_selftest(window, delta_evidence)
+        ctx.finish(delta_evidence)
         return
 
-    # `launched_artifact` 는 여기서 **풀지 않는다**. 정체 재확인은 `artifact_identity` 호스트
-    # 연산이 지고, 그 연산은 프런트 `runtime` 프로브(full 모드)만 요청한다 — 쓰기 모드가
-    # 산출물 봉인을 요구하지 않던 레거시 거동 그대로다. 인자는 `main()` 이 넘기는 자리를
-    # 지키려고 남는다(pywebview 가 `(window, artifact)` 로 부른다).
     client = selftest_api.SelftestClient.for_window(
         window, budget_s=_SELFTEST_BUDGET_S, log=log
-    )
-    # 드라이버가 **자기 책임으로만** 쓰는 표면 — 출력 쓰기와 정식 종료 둘뿐이다. 프런트가
-    # 요청할 수 있는 여섯은 `main()` 이 파사드에 물려 둔 별도 표면이 진다(위 함수 참조).
-    driver_operations = selftest_api.HostOperations(
-        mode=mode,
-        write_output=_write_selftest_output,
-        destroy=lambda: window.destroy(),  # type: ignore[attr-defined]
-        deadline=client.new_deadline(),
     )
 
     outcome = client.drive(
@@ -1034,14 +1131,10 @@ def _selftest_drive(
         # 러너가 증거를 못 냈거나 프로토콜 단계에서 죽었다 — 조용히 통과시키지 않는다.
         evidence["error"] = outcome.alarm_text
 
-
     # 출력·종료는 드라이버 소유 책임이지만 **같은 허용목록**을 지난다 — 표에 있는데 아무도
-    # 부르지 않는 op 는 선언만 살고 결과가 죽는 자리가 된다.
-    written = driver_operations.dispatch("output_write", {"result": evidence})
-    if not written.ok:
-        # 증거를 못 썼으면 하네스는 파일 부재만 본다. 사유를 stderr 로라도 남긴다.
-        log(f"selftest output_write 실패: [{written.code}] {written.detail}")
-    driver_operations.dispatch("window_destroy")
+    # 부르지 않는 op 는 선언만 살고 결과가 죽는 자리가 된다. 그 두 걸음의 순서·1회성은
+    # :func:`_live_terminator` 가 지고, 101 하니스도 같은 종결자를 쓴다.
+    ctx.finish(evidence)
 
 
 # ------------------------------------------------------------------ 엔트리
@@ -1087,7 +1180,24 @@ def _prepare_webview_profile(webview_root: Path) -> Path:
     return storage_dir
 
 
-def main() -> int:
+def main(
+    argv: "Sequence[str] | None" = None,
+    *,
+    live: "live_run.LiveRun | None" = None,
+) -> int:
+    """제품 창 하나를 띄운다. ``live`` 가 주어지면 그 실행이 창을 몬다.
+
+    ``argv`` 를 인자로 받는 이유는 하나다 — 종전 캡처 하니스는 ``sys.argv`` 를 통째로
+    덮어써서(``[argv0, "--selftest"]``) 제품 ``main()`` 을 다시 불렀고, 그 변조는 프로세스
+    전역이라 그 뒤의 어떤 코드도 원래 인자를 볼 수 없었다. 라이브 실행은 이제 ``live`` 로
+    자기를 선언하고 프로세스 상태를 건드리지 않는다.
+    """
+    global _live_file_dialogs
+    args = list(sys.argv if argv is None else argv)
+    run = live if live is not None else (_selftest_live_run() if "--selftest" in args else None)
+    if run is not None:
+        live_run.validate(run)  # 계약 위반은 워커 스레드가 아니라 **여기서** 시끄럽다
+
     try:
         artifact = web_artifact()
     except (OSError, WebArtifactViolation) as exc:
@@ -1104,8 +1214,8 @@ def main() -> int:
     # 단일 인스턴스(이 홈 기준): 두 번째 실행은 기존 창을 앞으로 내고 조용히 종료한다. private_mode
     # 의 clear_user_data 가 동시 인스턴스 프로필을 밑에서 지우던 경합과, 그를 막으려던 per-pid
     # 프로필·부팅 스윕·profile.lock 기계 전부를 이 가드가 대체한다(#74 리뷰3). rc=0 = 정상 이중
-    # 실행(오류 아님). --selftest 는 테스트 하네스 부팅(격리 홈, 순차 실행)이라 우회한다.
-    if "--selftest" not in sys.argv:
+    # 실행(오류 아님). 라이브 실행은 하네스 부팅(격리 홈, 순차 실행)이라 우회한다.
+    if run is None:
         # 뮤텍스 핸들은 프로세스 종료 시 OS 가 회수하므로 파이썬 참조를 붙들 필요는 없다 —
         # None(=다른 인스턴스 보유)일 때만 분기하면 된다.
         if single_instance.acquire(settings.home_dir()) is None:
@@ -1114,14 +1224,14 @@ def main() -> int:
 
     frontend = WebFrontend(default_text_templates_dir())
 
-    # 시험 능력 부착(N-09 · D-07) — **명시 `--selftest` 에서만**. 정상 실행의 `js_api` 에는
+    # 시험 능력 부착(N-09 · D-07) — **실행이 명시로 요구할 때만**. 정상 실행의 `js_api` 에는
     # 시험 메서드가 아예 없고, 그래서 프런트의 `testHost.available()` 이 거짓이 되어
-    # `window.__hwpxTest` 가 서지 않는다. 활성화 조건은 이 한 줄뿐이다.
+    # `window.__hwpxTest` 가 서지 않는다. 101 하니스처럼 창만 빌리는 실행도 마찬가지다.
     #
     # 창보다 **먼저** 붙인다: pywebview 는 페이지 로드 시점(`_pywebviewready`)에 `js_api` 의
     # 공개 메서드를 훑어 `pywebview.api` 를 만든다. 호스트 연산이 필요로 하는 `window` 는
     # 아래에서 대입되지만, 주입이 지연 호출 클로저라 호출 시점엔 이미 서 있다.
-    if _selftest_capability_wanted(sys.argv, os.environ):
+    if _selftest_capability_wanted(run, os.environ):
         selftest_api.attach_selftest_facade(
             frontend,
             selftest_api.SelftestHostFacade(
@@ -1315,16 +1425,24 @@ def main() -> int:
     webview_root = (settings.home_dir() / "webview").resolve()
     storage_dir = _prepare_webview_profile(webview_root)
     try:
-        if "--selftest" in sys.argv:
-            webview.start(
-                _selftest_drive,
-                (window, artifact),
-                gui=gui,
-                storage_path=str(storage_dir),
+        if run is not None:
+            # 인자 0개 콜러블 — `webview.start(fn)` 은 `args=None` 분기로 들어가 위치 인자를
+            # 넘기지 않는다. 드라이버가 알아야 할 것은 전부 봉투 하나에 실린다(#423).
+            _live_file_dialogs = run.file_dialogs
+            entry = live_run.entrypoint(
+                run,
+                live_run.context_for(
+                    run,
+                    window=window,
+                    artifact=artifact,
+                    finish=_live_terminator(window, run.write_output),
+                ),
             )
+            webview.start(entry, gui=gui, storage_path=str(storage_dir))
         else:
             webview.start(gui=gui, storage_path=str(storage_dir))
     finally:
+        _live_file_dialogs = None  # 대체는 이 실행의 것이다 — 프로세스에 남기지 않는다
         timer.cancel()
         shutil.rmtree(storage_dir, ignore_errors=True)  # 자기 정리(크래시로 못 지우면 다음 부팅 청소)
     return 0
