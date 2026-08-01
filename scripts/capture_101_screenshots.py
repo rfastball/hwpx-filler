@@ -62,6 +62,15 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
             help="실행 보고서(JSON)를 쓸 경로. 미지정이면 표준 출력 요약만 남는다.",
         )
         target.add_argument(
+            "--budget-s",
+            type=float,
+            default=driver.RUN_BUDGET_S,
+            help=(
+                "실행 전체 예산(초). 부른 쪽이 자기 시한을 갖는다면 이 값을 **그보다 작게**"
+                " 줘야 드라이버가 자기 하드 스톱에 먼저 닿아 구조화된 착지를 남긴다."
+            ),
+        )
+        target.add_argument(
             "--no-build",
             action="store_true",
             help=(
@@ -122,10 +131,17 @@ def main(argv: "list[str] | None" = None) -> int:
     # 산출물 빌드가 **파괴보다 먼저**다 — 빌드가 실패한 뒤 스크린샷 폴더를 비우면 문서가
     # 그림 없이 남는다. 이 순서는 tests/test_web_m1_topology.py 가 AST 로 못박는다.
     #
-    # `--no-build` 는 그 순서를 어기는 게 아니라 **빌드 자체를 생략**한다. 산출물이 최신인지는
-    # 빌드가 아니라 **봉인 검증**이 보증한다 — 낡으면 제품이 `source commit mismatch` 로
-    # 부팅을 거절하므로 조용한 스테일 경로가 없다. 이미 만든 러너(CI)가 두 번 만들지 않게 한다.
-    if not args.no_build:
+    # 다만 불변식의 본체는 「빌드가 먼저」가 아니라 **「파괴 전에 산출물이 유효하다」** 다.
+    # 빌드는 그것을 *만들어서* 지키고, `--no-build` 는 *검증해서* 지킨다 — 검증까지 건너뛰면
+    # stale seal 로 14컷을 지운 **뒤에야** 부팅이 거절된다(#430 리뷰). 이미 만든 러너(CI)가
+    # 두 번 만들지 않게 하려던 것이지, 보장을 빼려던 것이 아니다.
+    if args.no_build:
+        problems = driver.preflight(args.mode)
+        for problem in problems:
+            print(f"산출물 검증 실패(--no-build): {problem}", file=sys.stderr)
+        if problems:
+            return driver.ExitCode.ENVIRONMENT
+    else:
         driver.build_web_artifact()
 
     out_dir = None
@@ -157,7 +173,9 @@ def main(argv: "list[str] | None" = None) -> int:
             report_path=getattr(args, "report", None),
         )
 
-    return driver.run(mode=args.mode, home=home, out_dir=out_dir, land=land)
+    return driver.run(
+        mode=args.mode, home=home, out_dir=out_dir, land=land, budget_s=args.budget_s
+    )
 
 
 def _land(

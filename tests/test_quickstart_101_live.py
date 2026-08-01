@@ -42,36 +42,89 @@ _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"
 _GATE_REASON = (
     "101 실주행 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 명시 옵트아웃)"
 )
-#: 실측 9초. 게이트는 `--no-build` 로 도므로 프런트 빌드 시간이 들어가지 않는다 — 산출물이
-#: 최신인지는 빌드가 아니라 **봉인 검증**이 보증하고, 낡으면 제품이 부팅을 거절한다.
-_RUN_TIMEOUT_S = 300
+# 예산 둘의 **순서가 계약이다**(#430 리뷰). 바깥 시한(`subprocess.run`)이 안쪽 하드 스톱보다
+# 촘촘하면 CLI 가 먼저 죽어 드라이버의 구조화된 착지가 통째로 사라지고, 남는 것은 맨
+# `TimeoutExpired` 하나다 — 보고서도, 실패 항목도, 매달림 스택도 없다. #427 이 하니스 층에서
+# 고친 것과 **같은 형상**이라 여기서도 안쪽이 먼저 물게 파생시킨다.
+#
+# 실측 9초라 180초는 20배 여유다. 드라이버는 180 + 60(하드 스톱 여유) = 240초에 물고,
+# 바깥은 그보다 60초 뒤인 300초에야 손을 댄다.
+_LIVE_BUDGET_S = 180.0
+_OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 
 
 # ───────────────────────────────── 실주행 ─────────────────────────────────
 
 
+@pytest.fixture(scope="module")
+def live_check_run(tmp_path_factory) -> dict:
+    """101 `check` 를 **모듈당 한 번** 돌리고 그 실행의 사실을 모아 준다.
+
+    실 WebView2 완주는 비싸다(실측 9초 + 창 부팅). 종전에는 두 테스트가 각자 한 번씩 돌아
+    CI 잡이 같은 여정을 두 번 태웠다(#430 리뷰). 한 번 돌려 그 결과에 여러 단언을 거는 것은
+    이 저장소의 실앱 게이트가 이미 쓰는 관용이다(`test_web_selftest_gate.py` 의 모듈 픽스처).
+
+    예제 홈 스냅샷을 **이 실행을 감싸서** 뜬다 — 그래야 「이 실행이 바꿨는가」가 정확한 질문이
+    된다(다른 테스트가 사이에 끼면 귀속이 흐려진다).
+    """
+    report_path = tmp_path_factory.mktemp("live101") / "check-report.json"
+    before = _tree_manifest(EXAMPLE_HOME)
+    assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
+
+    proc = subprocess.run(
+        [
+            sys.executable, str(CLI), "check",
+            "--home", "temp",
+            "--no-build",
+            "--budget-s", str(_LIVE_BUDGET_S),
+            "--report", str(report_path),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=_OUTER_TIMEOUT_S,
+    )
+    after = _tree_manifest(EXAMPLE_HOME)
+    assert report_path.exists(), (
+        f"보고서 미생성 — rc={proc.returncode}\n"
+        f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
+    )
+    return {
+        "proc": proc,
+        "report": json.loads(report_path.read_text(encoding="utf-8")),
+        "before": before,
+        "after": after,
+    }
+
+
+def test_the_outer_timeout_lets_the_driver_hard_stop_first() -> None:
+    """바깥 시한은 안쪽 하드 스톱보다 **성겨야** 한다 — 아니면 진단이 통째로 사라진다.
+
+    게이트 밖이다: 창 없이 수치만 본다. 이 순서가 뒤집히면 GUI 없는 러너에서도 잡혀야 한다.
+    """
+    inner = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S
+    assert inner < _OUTER_TIMEOUT_S, (
+        f"바깥 시한 {_OUTER_TIMEOUT_S}s 가 드라이버 하드 스톱 {inner}s 보다 촘촘합니다 — "
+        "CLI 가 먼저 죽어 보고서도 실패 항목도 매달림 스택도 남지 않습니다."
+    )
+    # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
+    assert not (180.0 + 60.0 < 120.0)
+
+
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
-def test_check_mode_completes_the_101_journey_on_a_clean_home(tmp_path) -> None:
+def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) -> None:
     """`check` 가 깨끗한 임시 홈에서 완주하고 **실물**을 판정한다.
 
     보고서의 수치를 그대로 다시 단언하는 것이 요점이다 — 하니스가 스스로 초록이라고 말하는
     것과, 그 초록이 무엇을 근거로 하는지를 밖에서 확인하는 것은 다른 질문이다.
     """
-    report_path = tmp_path / "check-report.json"
-    proc = subprocess.run(
-        [sys.executable, str(CLI), "check", "--home", "temp", "--no-build", "--report", str(report_path)],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=_RUN_TIMEOUT_S,
-    )
+    proc = live_check_run["proc"]
     assert proc.returncode == driver.ExitCode.OK, (
         f"101 check 가 exit {proc.returncode} 로 끝났습니다\n"
         f"stdout={proc.stdout[-3000:]}\nstderr={proc.stderr[-3000:]}"
     )
-    assert report_path.exists(), f"보고서 미생성 — stdout={proc.stdout[-2000:]}"
 
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = live_check_run["report"]
     assert report["verdict"]["ok"] is True, report["verdict"]
     assert report["hwpx_generated"] == EXPECTED_HWPX, report["documents"]
     assert tuple(report["shots"]) == CAPTURE_POINTS
@@ -105,28 +158,17 @@ def _tree_manifest(root: Path) -> "dict[str, str]":
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
-def test_check_mode_leaves_the_example_home_untouched(tmp_path) -> None:
+def test_check_mode_leaves_the_example_home_untouched(live_check_run) -> None:
     """임시 홈 실행은 사용자의 실습 폴더를 **한 글자도** 건드리지 않는다.
 
     트리 전체를 해시로 뜬다: 새 파일이 생기는 것뿐 아니라 커밋된 자산이 덮어써지거나 잘리는
     것까지 잡아야 「무오염」이라는 이 모드의 약속이 실제 계약이 된다.
     """
-    before = _tree_manifest(EXAMPLE_HOME)
-    assert before, f"예제 홈이 비어 있습니다 — 이 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
-
-    subprocess.run(
-        [sys.executable, str(CLI), "check", "--home", "temp", "--no-build"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=_RUN_TIMEOUT_S,
-        check=True,
-    )
-
-    after = _tree_manifest(EXAMPLE_HOME)
+    before, after = live_check_run["before"], live_check_run["after"]
     added = sorted(set(after) - set(before))
     removed = sorted(set(before) - set(after))
     changed = sorted(name for name in set(before) & set(after) if before[name] != after[name])
+
     assert not (added or removed or changed), (
         f"임시 홈 실행이 예제 홈을 바꿨습니다 — 생김 {added} · 사라짐 {removed} · 내용 변경 {changed}"
     )
