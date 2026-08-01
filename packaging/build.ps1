@@ -60,11 +60,16 @@ if ($Target -ne 'cli') {
 
 & uv run --no-sync python (Join-Path $PSScriptRoot 'verify_specs.py')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-# filler 를 싣는 빌드는 sealed web artifact 의 부재를 실패로 본다 — 릴리스 메타데이터가
-# "무엇을 실었는가"를 말하지 못한 채 출하되지 않게(#383). cli 전용 빌드는 부재가 정상이고
-# 사유와 함께 명시 기록된다. (uv 는 native 명령이라 배열 splat 이 곧 위치 인자다.)
+# 프런트를 싣는지는 **빌드 계획**이 정한다 — 생성기가 디스크를 보고 추측하게 두지 않는다.
+# cli 전용 빌드는 앞선 filler 빌드가 남긴 유효한 build/web 이 그대로 있어도 부재를 기록해야
+# 한다. hwpx_cli.spec 은 datas=[] 라 실제로 아무것도 안 싣기 때문이다(#383 리뷰).
+# (uv 는 native 명령이라 배열 splat 이 곧 위치 인자다.)
 $metadataArgs = @((Join-Path $root 'scripts\generate_build_metadata.py'))
-if ($Target -ne 'cli') { $metadataArgs += '--require-web' }
+if ($Target -eq 'cli') {
+    $metadataArgs += @('--no-web', 'cli-only build (hwpx_cli.spec bundles no web data)')
+} else {
+    $metadataArgs += '--require-web'
+}
 & uv run --no-sync python @metadataArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
