@@ -322,7 +322,16 @@ def test_readiness_is_a_read_not_a_call():
 
 
 def test_readiness_returns_null_instead_of_throwing_when_absent():
-    assert SelftestClient(FakeEvaluator(None)).drive("boot").code == api.CODE_FACADE_ABSENT
+    """부재는 예외가 아니라 판정이다 — 단, 이제 **시한까지 기다린 뒤** 확정한다.
+
+    가상 시계를 준다: 실제 예산으로 돌리면 이 한 줄이 90초를 먹는다(설치가 비동기라
+    ``drive`` 가 준비를 폴링하기 때문). 시계 주입이 없으면 느린 테스트가 조용히 쌓인다.
+    """
+    clock = FakeClock()
+    client = SelftestClient(
+        FakeEvaluator(None), budget_s=1.0, now=clock.now, sleep=clock.sleep
+    )
+    assert client.drive("boot").code == api.CODE_FACADE_ABSENT
 
 
 def test_every_emitted_expression_touches_only_the_one_root_and_calls_only_run():
@@ -623,8 +632,9 @@ def test_mode_select_returns_the_driver_chosen_mode():
 
 
 def test_input_select_returns_the_named_input():
-    result = host_call(claimed_facade(), "input_select", {"name": "theme"})
-    assert result["ok"] is True and result["value"] == {"name": "theme", "value": "dark"}
+    """payload 는 ``setting``, 결과는 **값 그대로** — 프로브가 문자열과 직접 비교한다."""
+    result = host_call(claimed_facade(), "input_select", {"setting": "theme"})
+    assert result["ok"] is True and result["value"] == "dark"
 
 
 def test_global_deadline_reports_the_python_budget():
@@ -655,7 +665,9 @@ def test_window_geometry_keeps_the_maximized_like_judgment_in_the_host():
 
 def test_current_url_and_artifact_identity_pass_through_verified():
     facade = claimed_facade()
-    assert host_call(facade, "current_url")["value"]["url"].startswith("http://127.0.0.1")
+    # `url` 은 `owner: "host"` 프로브의 **측정값**이라 값 그대로다 — 러너가 그것을 키 하나에
+    # 그대로 싣고, `build.ps1` 이 loopback 오리진 정규식으로 그 문자열을 검사한다.
+    assert host_call(facade, "current_url")["value"].startswith("http://127.0.0.1")
     assert host_call(facade, "artifact_identity")["value"] == {
         "artifact_id": "A1", "tree_sha256": "deadbeef"
     }
@@ -663,8 +675,9 @@ def test_current_url_and_artifact_identity_pass_through_verified():
 
 @pytest.mark.parametrize("key, expected", [("theme", "dark"), ("font_scale", "125")])
 def test_settings_readback_reads_the_allowlisted_keys(key, expected):
-    result = host_call(claimed_facade(), "settings_readback", {"key": key})
-    assert result["ok"] is True and result["value"] == {"key": key, "value": expected}
+    """결과는 **값 그대로** — 프로브가 `(await ctx.host(...)) === theme` 로 직접 비교한다."""
+    result = host_call(claimed_facade(), "settings_readback", {"setting": key})
+    assert result["ok"] is True and result["value"] == expected
 
 
 def test_output_write_hands_the_result_to_the_injected_writer():
@@ -730,21 +743,21 @@ def test_window_resize_refuses_out_of_range_dimensions(payload):
 def test_input_select_refuses_a_missing_or_unknown_name():
     facade = claimed_facade()
     assert host_call(facade, "input_select", {})["code"] == api.CODE_MALFORMED_PAYLOAD
-    unknown = host_call(facade, "input_select", {"name": "무엇"})
+    unknown = host_call(facade, "input_select", {"setting": "무엇"})
     assert unknown["code"] == api.CODE_UNKNOWN_INPUT and "theme" in unknown["detail"]
 
 
 def test_settings_readback_refuses_keys_outside_the_allowlist():
     facade = claimed_facade()
     assert host_call(facade, "settings_readback", {})["code"] == api.CODE_MALFORMED_PAYLOAD
-    assert host_call(facade, "settings_readback", {"key": "load_window_geometry"})["code"] == (
+    assert host_call(facade, "settings_readback", {"setting": "load_window_geometry"})["code"] == (
         api.CODE_UNKNOWN_OP
     )
 
 
 def test_settings_readback_refuses_a_source_without_the_reader():
     facade = claimed_facade(operations=make_operations(settings_source=object()))
-    assert host_call(facade, "settings_readback", {"key": "theme"})["code"] == api.CODE_UNAVAILABLE
+    assert host_call(facade, "settings_readback", {"setting": "theme"})["code"] == api.CODE_UNAVAILABLE
 
 
 def test_output_write_refuses_a_non_object_result():
@@ -999,12 +1012,41 @@ def test_python_deadline_expiry_is_loud_and_yields_no_partial_evidence():
 
 
 def test_facade_absent_stops_before_start():
+    """파사드가 끝내 안 서면 **시한까지 기다린 뒤** 부재로 확정하고 start 는 시도하지 않는다.
+
+    설치는 비동기라 한 번만 묻고 부재로 확정하면 아직 부팅 중인 창을 죽은 것으로 읽는다.
+    그래서 `drive` 는 폴링한다 — 여기서는 예산을 0 으로 줘 첫 판정 직후 시한이 지나게 한다
+    (실제 예산으로 돌리면 이 테스트가 80초 걸린다).
+    """
     evaluator = FakeEvaluator(None)
-    outcome = SelftestClient(evaluator).drive("boot")
+    outcome = SelftestClient(evaluator, budget_s=0.001, sleep=lambda _s: None).drive("boot")
     assert outcome.facade_absent and outcome.code == api.CODE_FACADE_ABSENT
-    assert evaluator.calls == [api.readiness_expression()]  # start 를 시도하지 않는다
+    # 준비 확인만 반복하고 start 표현식은 한 번도 내보내지 않는다.
+    assert set(evaluator.calls) == {api.readiness_expression()}
     with pytest.raises(FacadeAbsentError):
         outcome.raise_for_failure()
+
+
+def test_readiness_wait_settles_once_the_facade_appears():
+    """양성 대조 — 늦게 서는 파사드는 **기다려서** 잡는다(폴링이 실제로 재시도한다).
+
+    음성만 있으면 "언제나 부재"도 통과한다.
+    """
+    answers = [None, None, 1]
+
+    class LateFacade:
+        def __init__(self):
+            self.calls: "list[str]" = []
+
+        def __call__(self, expression: str) -> object:
+            self.calls.append(expression)
+            return answers.pop(0) if answers else 1
+
+    evaluator = LateFacade()
+    client = SelftestClient(evaluator, budget_s=5.0, sleep=lambda _s: None)
+
+    assert client.await_readiness(client.new_deadline()) == 1
+    assert len(evaluator.calls) == 3, "부재 두 번을 지나 세 번째에 잡아야 한다"
 
 
 def test_unsupported_facade_version_stops_before_start():
@@ -1106,7 +1148,7 @@ def test_the_token_never_reaches_an_expression_a_result_a_repr_or_a_log():
     results = [
         host_call(facade, "current_url"),
         host_call(facade, "window_resize", {"width": 900, "height": 820}),
-        host_call(facade, "settings_readback", {"key": "theme"}),
+        host_call(facade, "settings_readback", {"setting": "theme"}),
         host_call(facade, "packaged_process"),
         host_call(facade, "rm_rf"),
         host_call(facade, "current_url", token="틀린-토큰"),

@@ -765,14 +765,25 @@ class HostOperations:
         return _ok(op, {"mode": self._mode})
 
     def _op_input_select(self, op: str, payload: "Mapping[str, object]") -> HostOpResult:
-        name = _str_field(payload, "name")
-        if name is None:
-            return _refuse(op, CODE_MALFORMED_PAYLOAD, f"{op} 은 name(비어 있지 않은 문자열)이 필요하다")
-        if name not in self._inputs:
+        """모드 입력값 판독. payload 는 ``{setting}``, 결과는 **값 그대로**다.
+
+        필드 이름과 결과 모양은 **프로브가 정한다** — `persistence_geometry.js` 가
+        ``ctx.host("input_select", {setting: "theme"})`` 로 부르고 그 반환을 문자열과 직접
+        비교한다. 봉투로 감싸면 비교가 영원히 거짓이고, 그 침묵은 시한 초과로만 보인다
+        (첫 실엔진 대면에서 실제로 그렇게 났다).
+        """
+        setting = _str_field(payload, "setting")
+        if setting is None:
             return _refuse(
-                op, CODE_UNKNOWN_INPUT, f"모르는 입력 이름: {name!r} (있는 것 {sorted(self._inputs)})"
+                op, CODE_MALFORMED_PAYLOAD, f"{op} 은 setting(비어 있지 않은 문자열)이 필요하다"
             )
-        return _ok(op, {"name": name, "value": self._inputs[name]})
+        if setting not in self._inputs:
+            return _refuse(
+                op,
+                CODE_UNKNOWN_INPUT,
+                f"모르는 입력 이름: {setting!r} (있는 것 {sorted(self._inputs)})",
+            )
+        return _ok(op, self._inputs[setting])
 
     def _op_global_deadline(self, op: str, payload: "Mapping[str, object]") -> HostOpResult:
         if payload:
@@ -826,7 +837,10 @@ class HostOperations:
         url = self._current_url()
         if not isinstance(url, str) or not url:
             return _refuse(op, CODE_MALFORMED_RESULT, f"현재 URL 이 문자열이 아니다: {url!r}")
-        return _ok(op, {"url": url})
+        # 값 그대로 — 이 op 는 `owner: "host"` 프로브(`url`)의 측정값이고, 러너가 그것을
+        # 키 하나에 그대로 싣는다(`{url: 측정값}`). 봉투로 감싸면 증거의 `url` 이 객체가 돼
+        # `build.ps1` 의 loopback 오리진 정규식이 어긋난다.
+        return _ok(op, url)
 
     def _op_artifact_identity(self, op: str, payload: "Mapping[str, object]") -> HostOpResult:
         if payload:
@@ -844,21 +858,28 @@ class HostOperations:
         return _ok(op, identity)
 
     def _op_settings_readback(self, op: str, payload: "Mapping[str, object]") -> HostOpResult:
-        key = _str_field(payload, "key")
-        if key is None:
-            return _refuse(op, CODE_MALFORMED_PAYLOAD, f"{op} 은 key(문자열)가 필요하다: {dict(payload)!r}")
-        if key not in SETTINGS_READBACK_KEYS:
+        """디스크 되읽기. payload 는 ``{setting}``, 결과는 **값 그대로**다.
+
+        프로브가 ``(await ctx.host(...)) === theme`` 처럼 **직접 비교**한다 — 봉투로 감싸면
+        그 비교가 영원히 거짓이고 시한 초과로만 드러난다. 필드 이름도 프로브가 정한다.
+        """
+        setting = _str_field(payload, "setting")
+        if setting is None:
+            return _refuse(
+                op, CODE_MALFORMED_PAYLOAD, f"{op} 은 setting(문자열)이 필요하다: {dict(payload)!r}"
+            )
+        if setting not in SETTINGS_READBACK_KEYS:
             return _refuse(
                 op,
                 CODE_UNKNOWN_OP,
-                f"되읽을 수 없는 설정 키: {key!r} (허용 {sorted(SETTINGS_READBACK_KEYS)})",
+                f"되읽을 수 없는 설정 키: {setting!r} (허용 {sorted(SETTINGS_READBACK_KEYS)})",
             )
-        reader = getattr(self._settings, SETTINGS_READBACK_KEYS[key], None)
+        reader = getattr(self._settings, SETTINGS_READBACK_KEYS[setting], None)
         if not callable(reader):
             return _refuse(
-                op, CODE_UNAVAILABLE, f"설정 판독기 {SETTINGS_READBACK_KEYS[key]} 가 없다"
+                op, CODE_UNAVAILABLE, f"설정 판독기 {SETTINGS_READBACK_KEYS[setting]} 가 없다"
             )
-        return _ok(op, {"key": key, "value": reader()})
+        return _ok(op, reader())
 
     def _op_output_write(self, op: str, payload: "Mapping[str, object]") -> HostOpResult:
         result = payload.get("result")

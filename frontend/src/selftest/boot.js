@@ -79,6 +79,27 @@ function readClaim(raw) {
  *    - `services`      : 프로브가 쓰는 구성 산물 열(객체째).
  *    - `alarm`         : 설치 실패를 알리는 통로(선택). 조용한 실패를 만들지 않는다.
  */
+/** 호스트 연산 결과 봉투를 **값으로** 푼다.
+ *
+ *  호스트는 성공·거절을 **같은 모양**으로 돌려준다(`{ok, op, code, detail, value}`). 프로브가
+ *  보는 것은 그 안의 `value` 여야 한다 — 프로브는 `(await ctx.host(...)) === theme` 처럼
+ *  **직접 비교**하고, 봉투째 주면 그 비교가 영원히 거짓이 된다. 그리고 그 거짓은 예외가
+ *  아니라 **시한 초과**로만 드러나므로, 원인이 한 겹 가려진다(첫 실엔진 대면의 실제 증상).
+ *
+ *  거절은 여기서 **던진다**. 러너의 `ctx.host` 가 그 거부를 프로브 실패로 확정하고 사유를
+ *  구조화된 오류로 올린다 — 거절을 값으로 돌려주면 프로브가 그것을 정상값으로 읽는다. */
+function unwrapHostResult(op, envelope) {
+  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
+    throw new Error(`호스트 연산 ${op} 의 반환이 봉투가 아닙니다: ${JSON.stringify(envelope)}`);
+  }
+  if (envelope.ok !== true) {
+    throw new Error(
+      `호스트 연산 ${op} 거절 [${envelope.code}] ${envelope.detail}`,
+    );
+  }
+  return envelope.value;
+}
+
 /** 호스트(pywebview) 가 자기 API 를 주입할 때까지 기다린다.
  *
  *  **이 대기가 없으면 능력은 영영 서지 않는다.** 제품 entry 는 모듈 평가 시점에 돌고, 그때
@@ -151,7 +172,9 @@ function bootWithHost(deps) {
             services,
             host: {
               provides: claim.provides,
-              request: (op, payload) => testHost.request(op, payload),
+              request: (op, payload) => testHost.request(op, payload).then(
+                (envelope) => unwrapHostResult(op, envelope),
+              ),
             },
             now: () => Date.now(),
             sleep: (ms) => new Promise((resolve) => { win.setTimeout(resolve, ms); }),
