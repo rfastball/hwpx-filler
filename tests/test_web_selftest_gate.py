@@ -25,6 +25,7 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+from _web_source import source_text
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp import boot_budget
@@ -163,6 +164,25 @@ def selftest_result(tmp_path_factory) -> dict:
         f"rc={proc.returncode}\nstdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
     )
     return json.loads(out.read_text(encoding="utf-8"))
+
+
+def probe(evidence: dict, name: str):
+    """프로브 결과를 **사유와 함께** 꺼낸다 — 실패한 프로브는 키를 아예 내지 않는다.
+
+    러너는 실패한 프로브의 키를 내보내지 않는다(부분 결과 금지 — 옳은 설계다). 그런데 소비자가
+    ``evidence["job_mirror"]`` 로 곧장 읽으면 원인 **하나**가 ``KeyError`` **열몇 개**로 번역돼
+    로그에서 진짜 사유 한 줄을 파묻는다(#429: 실제로 CI 로그의 실패 11건 중 원인은 첫 줄
+    하나였고 나머지는 전부 그 그림자였다).
+
+    이 접근자는 부재를 「그 프로브가 실패했다」로 재진술하고 러너가 남긴 사유를 함께 댄다.
+    """
+    if name in evidence:
+        return evidence[name]
+    reason = evidence.get("error") or "(러너가 사유를 남기지 않았다)"
+    raise AssertionError(
+        f"`{name}` 프로브가 결과를 내지 못했습니다 — 이 테스트의 단언이 아니라 **그 프로브**가"
+        f" 원인입니다.\n  러너 사유: {reason}"
+    )
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
@@ -576,7 +596,7 @@ class TestWebSelftestGate:
         # 「작업」 본문 존 = 표 없는 한 줄(U2 §2.13) — 합성 스냅샷을 실 render() 에 흘려
         # ①값을 말하는 표가 서지 않고 ②빈 값 표지(필드 이름 지목)와 이름 건수 ③확인 면
         # 출구(생성 값 미리보기 ⤢)가 한 줄로 서는지 되읽는다. 값 표면 단일화의 실물 검증.
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j.get("error") is None, f"본문 존 프로브 예외: {j.get('error')!r}"
         assert j["mirror_no_table"] is True, "본문 존에 값 표가 남아 있습니다(§2.13 값 표면 단일화 위반)."
         assert j["mirror_line_has_blank_flag"] is True, "빈 값 표지가 서지 않았습니다."
@@ -826,7 +846,7 @@ class TestWebSelftestGate:
         )
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j.get("error") is None, j
         # 확인 면 출구(U2 §2.13) — 실클릭이 preview_open 을 발신하고, 죽은 필드축 ack
         # 액션(ack_field·unack_field)은 발신되지 않는다(구 jobConfirmSheet 프로브의 승계).
@@ -868,7 +888,7 @@ class TestWebSelftestGate:
     def test_job_restate_block_keeps_counts_and_loses_names(self, selftest_result: dict) -> None:
         # 재진술 블록 — 선택 유래·산출 수치는 상시 블록으로 남되, 파일 이름 목록은 확인
         # 면의 「이름 계획」 한 줄로 이주했다(U2 §2.13 — 값·이름 표면은 확인 면 하나).
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
         assert j["restate_no_namelist"] is True, (
             "인라인 재진술에 파일 이름 목록이 남아 있습니다(§2.13 값 표면 단일화 위반)."
@@ -879,7 +899,7 @@ class TestWebSelftestGate:
         # 가시 1행 테이블 + <mark> 하이라이트(Python 세그먼트를 그대로 칠함) + 열 머리 필터
         # 아이콘 + 칩 줄(정의 재진술)·가지 ×(프루닝) + 필터 밖 선택 스트립(결정 3) + 선택
         # 유래 수치 병기(S4)로 되읽힌다.
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["tbl_rows"] == 1, f"가시 행 렌더 수가 다릅니다: {j['tbl_rows']!r}"
         assert j["tbl_mark"] == "전산", f"하이라이트 세그먼트 미렌더: {j['tbl_mark']!r}"
         assert j["ficos"] == 2, f"열 머리 필터 아이콘 수가 다릅니다: {j['ficos']!r}"
@@ -902,7 +922,7 @@ class TestWebSelftestGate:
 
     def test_job_datazone_keeps_row_semantics_and_column_kinds(self, selftest_result: dict) -> None:
         """H-06: native 행/셀 의미와 Python 열 kind가 실 표 조판까지 도달한다."""
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["row_role"] is None, "tr에 checkbox role이 남아 native row 의미를 덮었습니다."
         assert j["row_selected"] == "true"
         assert j["row_checkbox"] is True
@@ -914,7 +934,7 @@ class TestWebSelftestGate:
 
     def test_job_row_toggle_is_optimistic_and_uses_live_state(self, selftest_result: dict) -> None:
         """I-217 R2: push를 미결로 둬도 표지가 즉시 뒤집히고 재클릭은 현 DOM 상태를 쓴다."""
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["row_optimistic_off"] is True, f"첫 행 토글이 즉시 해제 표지를 못 냈습니다: {j!r}"
         assert j["row_optimistic_on"] is True, f"push 전 재클릭이 즉시 재선택되지 않았습니다: {j!r}"
         assert j["row_toggle_values"] == [False, True], (
@@ -923,13 +943,13 @@ class TestWebSelftestGate:
 
     def test_filter_panel_shell_appears_before_backend_response(self, selftest_result: dict) -> None:
         """I-217 R4: filter_panel 응답이 미결이어도 제목+로딩 껍데기는 클릭 프레임에 선다."""
-        assert selftest_result["job_mirror"]["panel_shell_immediate"] is True
+        assert probe(selftest_result, "job_mirror")["panel_shell_immediate"] is True
 
     def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
         # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
         # 행동 링크로 선다. 종전엔 거울이 「채움」 표를 그려 문서가 건강해 보이고, 재진술은
         # danger 라 말없이 사라지고, 남는 신호는 하단 회색 캡션 한 줄뿐인 막다른 경보였다.
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["token_banner"] is True, "미해소 파일명 토큰에 차단 배너가 서지 않았습니다."
         assert j["token_no_line"] is True, (
             "차단 중인데 본문 존이 건강한 한 줄을 그대로 그립니다(신호 없는 차단)."
@@ -947,13 +967,13 @@ class TestWebSelftestGate:
     def test_job_filter_panel_hidden_beats_flex(self, selftest_result: dict) -> None:
         # 열 필터 패널 기본 닫힘 — [hidden] 이 .colpanel 의 display:flex 를 실제로 이긴다
         # (부록 B-9 overlay/hidden 충돌 결함류의 자동 눈검증 — 시연에서 실증된 그 결함).
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["panel_hidden"] is True, "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
 
     def test_job_guard_body_composes_counts_and_losses(self, selftest_result: dict) -> None:
         # 세션 가드 확인 본문(결정 27 종류별 수치 재진술) — 합성 문안을 되읽어
         # 수치 배치·소실 목록(행 선택+필터 정의)이 조용히 드리프트하지 않게 한다(RC-02 짝 동형).
-        body = selftest_result["job_mirror"]["guard_body"]
+        body = probe(selftest_result, "job_mirror")["guard_body"]
         assert "직접 선택 3행" in body, f"선택 수치 미표기: {body!r}"
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
         assert "데이터를 바꾸면" in body, f"전이 동사구 누락: {body!r}"
@@ -963,24 +983,24 @@ class TestWebSelftestGate:
         assert "빈 값 확인" not in body, f"폐기된 ack 손실을 열거합니다: {body!r}"
         # 필터 정의는 직전 슬롯에 남지만 **소스 일치**를 요구한다 — 조건을 함께 말한다.
         assert "직전 필터 재적용" in body, f"필터 복원 조건 재진술 누락: {body!r}"
-        minimal = selftest_result["job_mirror"]["guard_body_minimal"]
+        minimal = probe(selftest_result, "job_mirror")["guard_body_minimal"]
         assert "빈 값 확인" not in minimal, f"없는 손실을 열거합니다(과경고): {minimal!r}"
         assert "직전 필터 재적용" not in minimal, (
             f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {minimal!r}")
         # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
-        assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
+        assert probe(selftest_result, "job_mirror")["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
         )
         # 직전 필터 재적용 어포던스(결정 28) — 양 분기를 핀해 항상 떠 있는 죽은 버튼을 막는다.
-        assert selftest_result["job_mirror"]["reapply_shown"] is True, (
+        assert probe(selftest_result, "job_mirror")["reapply_shown"] is True, (
             "reapply_available=true 인데 「직전 필터 재적용」 버튼이 표시되지 않았습니다."
         )
-        assert selftest_result["job_mirror"]["reapply_hidden"] is True, (
+        assert probe(selftest_result, "job_mirror")["reapply_hidden"] is True, (
             "reapply_available=false 인데 「직전 필터 재적용」 버튼이 계속 떠 있습니다."
         )
         # 무엇이 설치되는지 업고 있는가(#127) — 게이트를 3연언으로 좁혀 파괴는 막았지만,
         # 버튼이 여전히 "직전 필터"라고만 말하면 사용자는 누르기 전엔 알 수 없다.
-        assert "(공고명) 포함 「전산」" in selftest_result["job_mirror"]["reapply_title"], (
+        assert "(공고명) 포함 「전산」" in probe(selftest_result, "job_mirror")["reapply_title"], (
             "「직전 필터 재적용」 버튼이 설치할 정의를 업고 있지 않습니다: "
             f"{selftest_result['job_mirror']['reapply_title']!r}"
         )
@@ -1403,7 +1423,7 @@ class TestWebSelftestGate:
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 본문 존 한 줄과 섞이지 않고 차단 배너 + 행동 링크로
         # **교체**된다(결정 36·S9). overlay 로 얹히는 게 아니라 실제로 교체돼 선다.
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
         assert j["drift_fix_link"] is True, "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
         assert j["drift_no_line"] is True, "드리프트인데 본문 존이 건강한 한 줄을 그대로 그립니다."
@@ -1419,7 +1439,7 @@ class TestWebSelftestGate:
         되돌아볼 자리가 없다. 종전엔 대상 수(`total`)를 「N건 생성」으로 적어, 첫 건 전에
         취소한 12건 배치가 **실제 생성 0건인데 「12건 생성」**이라고 주장했다.
         """
-        j = selftest_result["job_mirror"]
+        j = probe(selftest_result, "job_mirror")
         # ① 첫 건 전 취소 — 「생성」 완주 문형이 0건을 주장하지 않고 미착수가 남는다.
         untouched = j["exit_cancelled_untouched"]
         assert "중단" in untouched and "0개 성공" in untouched, untouched
@@ -1452,7 +1472,7 @@ class TestWebSelftestGate:
         # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.
         # 수치 배치(총량·파괴분·신규분)와 파일 이름 목록이 합성되는지 실 함수 출력으로 되읽는다.
         # count 스왑·이름 목록 누락이 조용히 배포돼 사용자가 축소된 그림 위에서 덮어쓰는 것을 막는다.
-        body = selftest_result["job_mirror"]["ow_body"]
+        body = probe(selftest_result, "job_mirror")["ow_body"]
         assert "10건을 생성합니다" in body, f"총량 미표기: {body!r}"
         assert "3건이 기존 파일을 덮어씁니다" in body, f"파괴분 미표기(new_count 와 스왑?): {body!r}"
         assert "나머지 7건은 새 파일" in body, f"신규분 미표기: {body!r}"
@@ -1988,4 +2008,42 @@ def _healthy_run_leaves_room_for_a_hang():
         f"정상 실행({boots}부팅)이 {spent:.0f}s 를 썼습니다 — 합계 상한 "
         f"{_AGGREGATE_BOOT_BUDGET_S:.0f}s 에서 부팅 하나 몫({_SELFTEST_TIMEOUT:.0f}s)조차 "
         "남기지 못합니다. 고립된 매달림 한 번에 나머지가 통째로 실패합니다."
+    )
+
+
+def test_a_dead_probe_names_itself_instead_of_raising_keyerror() -> None:
+    """프로브 하나가 죽었을 때 **원인 한 줄**이 남는가 — 그림자 KeyError 열몇 개가 아니라.
+
+    러너가 실패한 프로브의 키를 안 내는 것은 옳다(부분 결과 금지). 문제는 소비자 쪽이었다:
+    ``evidence["job_mirror"]`` 로 곧장 읽으면 원인 하나가 ``KeyError`` 열몇 개로 번역돼
+    로그에서 진짜 사유를 파묻는다(#429 — CI 로그 실패 11건 중 원인은 첫 줄 하나였다).
+    """
+    healthy = {"job_mirror": {"mirror_line": "x"}}
+    assert probe(healthy, "job_mirror") == {"mirror_line": "x"}
+
+    dead = {"error": "[job_mirror/run/deadline_exceeded] 시한 2500ms 초과"}
+    with pytest.raises(AssertionError) as excinfo:
+        probe(dead, "job_mirror")
+
+    message = str(excinfo.value)
+    assert "job_mirror" in message
+    assert "그 프로브" in message, "이 테스트의 단언이 아니라는 것을 말해야 한다"
+    assert "deadline_exceeded" in message, "러너가 남긴 사유가 실려야 한다"
+
+
+def test_the_tightest_probe_budget_is_not_an_outlier() -> None:
+    """가장 촘촘한 프로브 예산이 형제들과 **자릿수로** 벌어져 있지 않다.
+
+    `job_mirror` 는 200ms 였다 — 같은 클러스터의 2500ms 형제들보다 두 자릿수 작았고, 그 값은
+    레거시의 sleep 하나를 옮긴 것이지 이 프로브가 하는 일(277줄 동기 DOM 읽기)을 잰 값이
+    아니었다(#429). 근거문이 그 사실을 스스로 적어 두고도 값은 그대로였다.
+    """
+    source = source_text("src", "selftest", "probes", "job.js")
+    budgets = [int(value) for value in re.findall(r"deadlineMs:\s*(\d+)", source)]
+    waiting = [value for value in budgets if value > 0]  # 0 = 동기 읽기, 대기 없음
+
+    assert waiting, "대기하는 프로브가 하나도 없다면 이 대조가 무의미하다"
+    assert min(waiting) * 10 >= max(waiting), (
+        f"가장 촘촘한 예산 {min(waiting)}ms 가 가장 넉넉한 {max(waiting)}ms 와 자릿수로 "
+        "벌어져 있습니다 — 그 값이 무엇을 재고 나온 것인지 근거문을 확인하세요."
     )

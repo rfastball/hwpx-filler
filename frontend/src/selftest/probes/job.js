@@ -1296,12 +1296,17 @@ export function createJobProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3904,
-      deadlineMs: 200,
+      deadlineMs: 2500,
       deadlineRationale:
         "이 프로브는 `_probe_late` 를 쓰지 않는다 — 여섯 stash 는 폴링 없는 단발 evaluate 고,"
         + " 레거시가 비동기 확정에 준 예산은 app.py:3910 의 0.2초 sleep 하나뿐이다."
-        + " 200ms 는 그 값 그대로이며, 시한이 아예 없던 동기 구간까지 이제 이 예산 안에 든다"
-        + "(예산은 줄었지 늘지 않았다).",
+        + " 그런데 200ms 를 그대로 쓰던 종전 값은 **레거시보다 넓은 일**을 덮고 있었다:"
+        + " 시한이 아예 없던 동기 구간(277줄, `getComputedStyle` 다수로 강제 레이아웃을"
+        + " 여러 번 유발한다)까지 그 안에 들어왔기 때문이다. 종전 근거문이 그 사실을 스스로"
+        + " 적어 두고도(\"예산은 줄었지 늘지 않았다\") 값은 그대로였고, 느린 러너에서 실제로"
+        + " 터졌다(#429 — CI 2회, 그때마다 이 프로브의 키를 읽는 10여 테스트가 함께 무너졌다)."
+        + " 2500ms 는 같은 클러스터에서 비슷한 동기 읽기를 하는 job_result·job_grid_wide 와"
+        + " 같은 값이다 — 이 프로브만 두 자릿수 작을 이유가 없다.",
       after: ["job_data_first"],
       afterReason:
         "job_data_first 가 **먼저** 돌아야 한다(app.py:3872-3876): 그 프로브는 빈 경로"
