@@ -430,6 +430,109 @@ def test_release_builds_the_exact_frontend_before_tests_and_packaging() -> None:
     assert release.index("npm.cmd run verify:web") < release.index(".\\build.ps1")
 
 
+def _release_steps() -> list[dict]:
+    document = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    )
+    return document["jobs"]["build-release"]["steps"]
+
+
+def _release_step(fragment: str) -> dict:
+    matches = [
+        step for step in _release_steps() if fragment in (step.get("name") or "")
+    ]
+    assert len(matches) == 1, f"release 단계 이름 '{fragment}' 이 {len(matches)}개입니다"
+    return matches[0]
+
+
+def test_release_reconciles_the_web_artifact_across_every_shipped_copy() -> None:
+    """source·dist·installed·portable 네 사본을 **한자리에서** 대조한다(#383).
+
+    사본마다 따로 통과시키는 것으로는 "어느 하나만 다른" 경우가 드러나지 않는다. 그래서
+    네 identity 를 모으는 단계가 있는지, 그리고 그 단계가 넷을 실제로 요구하는지를 센다.
+    """
+    reconcile = _release_step("Reconcile web artifact identity")["run"]
+
+    assert "@('dist', 'installed', 'portable')" in reconcile, (
+        "대조 대상 사본 목록이 셋이 아닙니다"
+    )
+    assert '"$name.json"' in reconcile, "사본 증거 파일을 읽지 않습니다"
+    assert "release evidence 누락" in reconcile, "증거 부재가 실패로 이어지지 않습니다"
+    assert "metadata.web.present" in reconcile, "source 사본은 검증된 seal 에서 온다"
+    assert "Sort-Object -Unique" in reconcile and "throw" in reconcile, (
+        "identity 불일치가 실패로 이어지지 않습니다"
+    )
+    assert "release-evidence.json" in reconcile
+
+
+def test_installed_copy_is_verified_before_it_is_uninstalled() -> None:
+    """순서가 계약이다 — 제거한 뒤에는 설치본에 무엇이 실렸는지 물을 수 없다.
+
+    이 단언이 없으면 검증 줄이 uninstall 뒤로 밀려도 "검증한다"는 선언은 그대로 남는다.
+    """
+    smoke = _release_step("Smoke test install and uninstall")["run"]
+
+    verify_at = smoke.index("verify_packaged_web.py")
+    uninstall_at = smoke.index("Uninstall-Product $fillerDir")
+    assert verify_at < uninstall_at, "설치본 검증이 제거 뒤로 밀렸습니다"
+    assert "installed.json" in smoke
+
+
+def test_portable_zip_is_verified_after_the_round_trip() -> None:
+    """사용자가 여는 것은 dist\\ 가 아니라 zip 을 푼 결과다."""
+    package = _release_step("Package portable bundles")["run"]
+
+    assert package.index("Compress-Archive") < package.index("Expand-Archive")
+    assert package.index("Expand-Archive") < package.index("verify_packaged_web.py")
+    assert "portable.json" in package
+
+
+def test_checksums_cover_the_descriptive_assets_too() -> None:
+    """메타데이터·증거 JSON 도 SHA256SUMS 대상이다 — 검증 못 할 것은 함께 싣지 않는다."""
+    checksums = _release_step("Create checksums")["run"]
+
+    for pattern in ("*.exe", "*.zip", "*.json"):
+        assert f"installer-dist\\{pattern}" in checksums, f"{pattern} 이 해시 대상이 아닙니다"
+
+
+def test_build_metadata_carries_the_frontend_identity() -> None:
+    """릴리스 자산 목록과 생성기가 같은 계약을 본다.
+
+    자산 목록에만 넣고 생성기가 안 만들면 publish 가 조용히 그 파일을 빠뜨린다 —
+    두 끝을 함께 센다.
+    """
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    generator = (ROOT / "scripts" / "generate_build_metadata.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "installer-dist/release-evidence.json" in release
+    assert "installer-dist/build-metadata.json" in release
+    for key in ("uv_lock_sha256", '"web"', "artifact_id", "tree_sha256", "toolchain"):
+        assert key in generator, f"build metadata 에 {key} 가 없습니다"
+    assert "--require-web" in generator
+
+
+def test_release_ships_the_filler_only_and_says_so() -> None:
+    """CLI 는 출하 제품이 아니다 — 조용한 누락이 아니라 **의도**임을 못박는다.
+
+    코어 CLI 는 헤드리스 테스터이자 기반이고(cli-role 결정), 품질 CI 는 그 역할 때문에
+    ``-Target all`` 로 함께 빌드해 검증한다. 그러나 릴리스는 filler 만 낸다. 두 표면이
+    다른 것이 결정이라는 사실을 여기에 적어두지 않으면, 다음 사람이 "빠뜨렸다"고 읽고
+    조용히 늘리거나 거꾸로 품질 CI 쪽을 줄인다.
+    """
+    quality, _ = _workflow()
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    installer = (ROOT / "package-installer.ps1").read_text(encoding="utf-8")
+    runner = (ROOT / "build.ps1").read_text(encoding="utf-8")
+
+    assert "-Target all" in quality, "품질 CI 는 cli 까지 빌드해 검증한다"
+    assert "hwpx-cli" not in release, "릴리스가 CLI 산출물을 싣고 있습니다"
+    assert "-Target all" not in release
+    assert "[ValidateSet('all', 'filler')]" in installer
+    assert "[ValidateSet('all', 'filler')]" in runner
+
+
 def test_installer_and_signing_remain_release_only() -> None:
     quality, _ = _workflow()
     release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")

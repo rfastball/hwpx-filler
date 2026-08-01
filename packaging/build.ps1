@@ -60,7 +60,12 @@ if ($Target -ne 'cli') {
 
 & uv run --no-sync python (Join-Path $PSScriptRoot 'verify_specs.py')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& uv run --no-sync python (Join-Path $root 'scripts\generate_build_metadata.py')
+# filler 를 싣는 빌드는 sealed web artifact 의 부재를 실패로 본다 — 릴리스 메타데이터가
+# "무엇을 실었는가"를 말하지 못한 채 출하되지 않게(#383). cli 전용 빌드는 부재가 정상이고
+# 사유와 함께 명시 기록된다. (uv 는 native 명령이라 배열 splat 이 곧 위치 인자다.)
+$metadataArgs = @((Join-Path $root 'scripts\generate_build_metadata.py'))
+if ($Target -ne 'cli') { $metadataArgs += '--require-web' }
+& uv run --no-sync python @metadataArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $targets = @{
