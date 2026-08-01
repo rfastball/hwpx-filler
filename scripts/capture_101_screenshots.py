@@ -61,6 +61,14 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
             default=None,
             help="실행 보고서(JSON)를 쓸 경로. 미지정이면 표준 출력 요약만 남는다.",
         )
+        target.add_argument(
+            "--no-build",
+            action="store_true",
+            help=(
+                "프런트를 다시 만들지 않고 **이미 봉인된** build/web 을 쓴다."
+                " 산출물을 이미 만든 러너(CI)나 게이트가 쓴다."
+            ),
+        )
 
     check = subparsers.add_parser("check", help="동작만 검사한다(PNG 없음)")
     check.add_argument(
@@ -113,7 +121,12 @@ def main(argv: "list[str] | None" = None) -> int:
 
     # 산출물 빌드가 **파괴보다 먼저**다 — 빌드가 실패한 뒤 스크린샷 폴더를 비우면 문서가
     # 그림 없이 남는다. 이 순서는 tests/test_web_m1_topology.py 가 AST 로 못박는다.
-    driver.build_web_artifact()
+    #
+    # `--no-build` 는 그 순서를 어기는 게 아니라 **빌드 자체를 생략**한다. 산출물이 최신인지는
+    # 빌드가 아니라 **봉인 검증**이 보증한다 — 낡으면 제품이 `source commit mismatch` 로
+    # 부팅을 거절하므로 조용한 스테일 경로가 없다. 이미 만든 러너(CI)가 두 번 만들지 않게 한다.
+    if not args.no_build:
+        driver.build_web_artifact()
 
     out_dir = None
     if args.mode == "capture":

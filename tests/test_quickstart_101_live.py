@@ -42,8 +42,9 @@ _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"
 _GATE_REASON = (
     "101 실주행 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 명시 옵트아웃)"
 )
-#: 실측 9초 + 프런트 빌드·봉인. 매달림은 실패로 시끄럽게.
-_RUN_TIMEOUT_S = 600
+#: 실측 9초. 게이트는 `--no-build` 로 도므로 프런트 빌드 시간이 들어가지 않는다 — 산출물이
+#: 최신인지는 빌드가 아니라 **봉인 검증**이 보증하고, 낡으면 제품이 부팅을 거절한다.
+_RUN_TIMEOUT_S = 300
 
 
 # ───────────────────────────────── 실주행 ─────────────────────────────────
@@ -58,7 +59,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(tmp_path) -> None:
     """
     report_path = tmp_path / "check-report.json"
     proc = subprocess.run(
-        [sys.executable, str(CLI), "check", "--home", "temp", "--report", str(report_path)],
+        [sys.executable, str(CLI), "check", "--home", "temp", "--no-build", "--report", str(report_path)],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -114,7 +115,7 @@ def test_check_mode_leaves_the_example_home_untouched(tmp_path) -> None:
     assert before, f"예제 홈이 비어 있습니다 — 이 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
     subprocess.run(
-        [sys.executable, str(CLI), "check", "--home", "temp"],
+        [sys.executable, str(CLI), "check", "--home", "temp", "--no-build"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
