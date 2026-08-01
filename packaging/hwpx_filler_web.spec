@@ -8,10 +8,13 @@
 확인했으나 'onedir 로 하면 부팅 더 빠름'을 남겼다 — 본작업은 부팅 지연이 큰 데스크톱 앱 UX 를
 위해 onedir(COLLECT)로 확정한다. Qt 앱(hwpx_filler.spec)과 동일 형태라 배포 파이프라인도 대칭.
 
-웹 스택은 Qt 런타임을 싣지 않는다 — PySide6 전량 excludes. 링1(gui.txt_state)만 임포트되며
-그건 Qt-free(스파이크 Q1). 검증된 build/web/ 산출물을 datas 로 번들
+웹 스택은 Qt 런타임을 싣지 않는다 — PySide6 전량 excludes. 링1 ViewModel 은 Qt-free 라
+(스파이크 Q1) 위젯 계층 없이 임포트된다. 검증된 build/web/ 산출물을 datas 로 번들
 (동결 시 _MEIPASS/web 에서 seal과 전체 트리를 다시 검증).
 WebView2 런타임은 Win11 기본 탑재라 별도 동봉 불필요.
+
+hiddenimports 는 **해소 가능한 이름만** 담는다 — PyInstaller 는 없는 이름을 경고로만
+넘기므로 유령 항목이 계약처럼 남는다. verify_specs.py 가 find_spec 으로 그것을 거절한다.
 """
 
 from pathlib import Path
@@ -43,7 +46,6 @@ a = Analysis(
         "hwpxfiller.webapp.screens",
         "hwpxcore.native.clipboard",
         "hwpxcore.native.dialogs",
-        "hwpxfiller.gui.txt_state",
         "hwpxfiller.core.text_registry",
         "hwpxfiller.core.text_render",
         "hwpxcore.atomic",
