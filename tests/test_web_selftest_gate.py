@@ -25,7 +25,7 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
-from _web_source import REPO_ROOT
+from _web_source import source_text
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp import boot_budget
@@ -2038,9 +2038,7 @@ def test_the_tightest_probe_budget_is_not_an_outlier() -> None:
     레거시의 sleep 하나를 옮긴 것이지 이 프로브가 하는 일(277줄 동기 DOM 읽기)을 잰 값이
     아니었다(#429). 근거문이 그 사실을 스스로 적어 두고도 값은 그대로였다.
     """
-    source = (REPO_ROOT / "frontend" / "src" / "selftest" / "probes" / "job.js").read_text(
-        encoding="utf-8"
-    )
+    source = source_text("src", "selftest", "probes", "job.js")
     budgets = [int(value) for value in re.findall(r"deadlineMs:\s*(\d+)", source)]
     waiting = [value for value in budgets if value > 0]  # 0 = 동기 읽기, 대기 없음
 
