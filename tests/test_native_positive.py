@@ -23,6 +23,7 @@ _NATIVE_REASON = (
 )
 
 
+@pytest.mark.native
 @pytest.mark.skipif(_NATIVE_GATE, reason=_NATIVE_REASON)
 def test_dialog_sta_probe_distinguishes_selection_cancel_and_error() -> None:
     """실 대화상자를 띄우지 않고 실제 STA 경계에서 3가지 공용 API 결과를 왕복한다."""
@@ -42,6 +43,7 @@ def test_dialog_sta_probe_distinguishes_selection_cancel_and_error() -> None:
     assert raised.value.errno == 0x3002
 
 
+@pytest.mark.native
 @pytest.mark.skipif(_NATIVE_GATE, reason=_NATIVE_REASON)
 class TestWindowsNativePositivePaths:
     def test_clipboard_unicode_write_readback(self) -> None:

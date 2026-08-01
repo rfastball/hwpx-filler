@@ -117,6 +117,7 @@ def test_the_outer_timeout_lets_the_driver_hard_stop_first() -> None:
     assert not (300.0 + 60.0 < 120.0)
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) -> None:
     """`check` 가 깨끗한 임시 홈에서 완주하고 **실물**을 판정한다.
@@ -145,6 +146,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert report["source"]["commit"]
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_a_healthy_run_stays_far_below_the_live_budget(live_check_run) -> None:
     """양성 대조 — 예산이 **매달림**을 잡는가, 아니면 그냥 느린 러너를 잡는가.
@@ -180,6 +182,7 @@ def _tree_manifest(root: Path) -> "dict[str, str]":
     return manifest
 
 
+@pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_leaves_the_example_home_untouched(live_check_run) -> None:
     """임시 홈 실행은 사용자의 실습 폴더를 **한 글자도** 건드리지 않는다.

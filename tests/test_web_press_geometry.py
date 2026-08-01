@@ -159,6 +159,7 @@ def test_row_surfaces_are_all_covered_by_the_sweep_widths() -> None:
 
 # ------------------------------------------------------- 실렌더 기하(양성·음성 대조)
 
+@pytest.mark.browser
 @pytest.mark.skipif(_MOTION_GATE, reason=_GATE_REASON)
 @pytest.mark.parametrize("selector", list(ROW_SURFACES))
 def test_row_surface_left_edge_does_not_move_while_held(selector: str) -> None:
@@ -187,6 +188,7 @@ def test_row_surface_left_edge_does_not_move_while_held(selector: str) -> None:
     )
 
 
+@pytest.mark.browser
 @pytest.mark.skipif(_MOTION_GATE, reason=_GATE_REASON)
 def test_press_marker_actually_fires_on_a_box_surface() -> None:
     """양성 대조 — 작은 상자에서는 눌림이 **실제로 그려진다**.

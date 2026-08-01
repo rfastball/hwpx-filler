@@ -142,6 +142,13 @@ Python, 문안·확인 UI 는 웹**.
 `HWPX_SKIP_MOTION_TESTS=1`(눌림 기하 — 설치 Chrome 부재). 화면·브라우저 없는 환경에서만 명시로
 쓴다. CI 는 셋 다 **걷고** 돌린다.
 
+같은 세 자원이 pytest marker 축이기도 하다 — `live`(실 WebView2) · `native`(실 Win32) ·
+`browser`(설치 Chrome). marker 는 옵트아웃을 대체하지 않고 그 위에 얹혀 **CI 가 잡을 가르는
+선택자**로 산다(무표 집합 = 결정론적 contract suite). 계약은 두 가지다: 게이트 `skipif` 와 축
+marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다. `tests/test_suite_partition.py` 가
+수집 결과로 그것을 세고, `--strict-markers` 라 새 marker 는 `pyproject.toml` 의 `markers` 에
+**먼저 등록**해야 한다.
+
 ## 단일 출처 목록
 
 바꿀 때 원천을 고치고 생성물을 커밋한다 — 생성물을 직접 고치면 드리프트 게이트가 잡는다.
