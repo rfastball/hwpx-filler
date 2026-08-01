@@ -54,6 +54,9 @@ RUN_BUDGET_S = 900.0
 READY_BUDGET_S = 20.0
 #: `window.destroy()` 뒤 pywebview teardown 에 주는 유예. 넘기면 진단을 남기고 하드 종료.
 TEARDOWN_GRACE_S = 10.0
+#: 실행 예산을 넘긴 뒤 **하드 스톱**까지의 여유. 부드러운 시한(:class:`Deadline`)이 먼저
+#: 발화해 구조화된 실패로 착지할 기회를 주고, 그마저 못 도달할 때만 이 백스톱이 문다.
+RUN_HARD_STOP_MARGIN_S = 60.0
 
 #: 101 이 만드는 것들 — 성공 시 정리 대상(``reset-101.cmd`` 와 같은 집합).
 PRACTICE_STATE = [
@@ -78,7 +81,10 @@ class ExitCode:
     SCENARIO_FAILED = 1
     DIRTY_HOME = 2
     ENVIRONMENT = 3
+    #: 창은 내려가라는 말을 들었는데 GUI 루프가 안 내려온다.
     TEARDOWN_HUNG = 7
+    #: 실행이 자기 끝에 **도달조차 못 했다** — 브리지가 멎어 시한을 되짚을 기회가 없었다.
+    RUN_HUNG = 8
 
 
 class DirtyHome(RuntimeError):
@@ -195,12 +201,34 @@ def run(
     out_dir: "Path | None" = None,
     budget_s: float = RUN_BUDGET_S,
 ) -> LiveRunResult:
-    """제품 창을 띄워 101 을 완주한다. ``mode`` 는 ``"check"`` 또는 ``"capture"``."""
+    """제품 창을 띄워 101 을 완주한다. ``mode`` 는 ``"check"`` 또는 ``"capture"``.
+
+    앱 홈은 이 실행의 것이고 **프로세스에 남지 않는다**(#426 리뷰 P2). ``home_dir()`` 은
+    환경변수를 호출 시점에 읽으므로, 남겨 두면 이 함수를 부른 장수 프로세스(pytest 게이트)의
+    이후 코드가 전부 하니스 홈을 가리킨다 — 그리고 CLI 는 성공한 임시 홈을 지운다. 즉
+    "없어진 폴더를 홈으로 아는 프로세스"가 남는다.
+    """
     if mode not in ("check", "capture"):
         raise ValueError(f"모르는 실행 모드: {mode!r}")
 
+    previous_home = os.environ.get("HWPXFILLER_HOME")
     os.environ["HWPXFILLER_HOME"] = str(home)
+    try:
+        return _run_with_home(mode=mode, home=home, out_dir=out_dir, budget_s=budget_s)
+    finally:
+        if previous_home is None:
+            os.environ.pop("HWPXFILLER_HOME", None)
+        else:
+            os.environ["HWPXFILLER_HOME"] = previous_home
 
+
+def _run_with_home(
+    *,
+    mode: str,
+    home: Path,
+    out_dir: "Path | None",
+    budget_s: float,
+) -> LiveRunResult:
     from hwpxfiller.webapp import app as webapp_app
     from hwpxfiller.webapp import live_run
 
@@ -284,6 +312,7 @@ def run(
             ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
             _arm_teardown_watchdog(result, home, finished)
 
+    _arm_run_watchdog(home, finished, budget_s + RUN_HARD_STOP_MARGIN_S, mode)
     try:
         rc = webapp_app.main(
             argv=[],
@@ -341,6 +370,41 @@ def _make_sink(mode: str, out_dir: "Path | None", window_title: str):
         raise ValueError("capture 모드에는 출력 폴더가 필요합니다")
     hwnd = capture_mod.find_window(window_title)
     return capture_mod.Win32Sink(hwnd, out_dir)
+
+
+def _arm_run_watchdog(
+    home: Path, finished: "threading.Event", budget_s: float, mode: str
+) -> None:
+    """실행 예산의 **하드 백스톱** — 브리지가 멎어도 무는 유일한 이빨(#426 리뷰 P2).
+
+    :class:`~.surface.Deadline` 은 걸음 사이에서만 되짚어진다. 그런데 ``evaluate_js`` 는
+    **동기** 호출이라, WebView2 가 멎으면 그 한 번의 호출이 영영 돌아오지 않는다. 그러면
+    시한을 다시 볼 기회 자체가 없고, ``drive()`` 는 ``finally`` 에 닿지 못해 증거도 못 쓰고
+    teardown 워치독도 무장하지 못한다 — 「조용한 무한 대기 금지」가 정확히 여기서 뚫린다.
+
+    그래서 이 백스톱은 브리지와 **무관한** 스레드에서 시계만 본다. 부드러운 시한이 먼저
+    발화할 여유(:data:`RUN_HARD_STOP_MARGIN_S`)를 준 뒤에만 물므로, 구조화된 실패로 착지할
+    수 있는 실행은 이쪽까지 오지 않는다.
+    """
+    import faulthandler
+
+    def _watchdog() -> None:
+        if finished.wait(budget_s):
+            return  # 실행이 자기 끝에 닿았다 — 물러난다
+        stacks = home / "_live101_hang_stacks.txt"
+        try:
+            with stacks.open("w", encoding="utf-8") as fh:
+                faulthandler.dump_traceback(file=fh)
+        except OSError:
+            pass  # 스택을 못 남겨도 종료는 한다 — 매달림이 더 나쁘다
+        _say(
+            f"101 {mode} 하드 스톱: 실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다"
+            " (브리지 무응답 의심). 스택: " + str(stacks),
+            stream=2,
+        )
+        os._exit(ExitCode.RUN_HUNG)
+
+    threading.Thread(target=_watchdog, daemon=True).start()
 
 
 def _arm_teardown_watchdog(
