@@ -338,8 +338,18 @@ uv run python examples/quickstart-101/make_template.py
 완주하며 다시 찍는다(깨끗한 상태 전제, `reset-101.cmd` 먼저):
 
 ```powershell
-uv run --with pillow --extra gui python scripts/capture_101_screenshots.py
+uv run --with pillow --extra gui python scripts/capture_101_screenshots.py capture
 ```
+
+같은 실습을 **그림 없이 동작만** 검사할 수도 있다. 이쪽은 이 폴더가 아니라 임시 홈에
+자산을 복사해 돌기 때문에 실습 상태를 건드리지 않는다:
+
+```powershell
+uv run --extra gui python scripts/capture_101_screenshots.py check
+```
+
+두 명령 모두 실습을 **실제로** 완주하므로 OS 클립보드를 한 번 덮어쓴다(작업대의
+**[복사]** 를 진짜로 누른다). 지금 클립보드에 둔 것이 있으면 먼저 챙겨 두자.
 
 자산과 문서가 어긋나지 않게 저장소 테스트(`tests/test_quickstart_101_assets.py`)가
 필드·헤더·토큰 대응과 인코딩을 기계로 비준한다. 경계는 이렇다 — **학습 자산**

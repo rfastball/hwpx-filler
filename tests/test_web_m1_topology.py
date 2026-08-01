@@ -226,12 +226,37 @@ def test_executable_source_tools_do_not_read_retired_web_tree() -> None:
 
 
 def test_screenshot_capture_builds_before_replacing_outputs() -> None:
-    source = (REPO_ROOT / "scripts" / "capture_101_screenshots.py").read_text(
+    """빌드가 **파괴보다 먼저**다 — 빌드가 실패한 뒤 컷을 비우면 문서가 그림 없이 남는다.
+
+    N-11A(#423)에서 빌드 호출은 ``live101/driver.build_web_artifact()`` 로 옮겨갔다. 책임이
+    옮겨갔을 뿐 불변식은 같으므로 여기서도 두 조각을 함께 센다: ① 그 함수가 실제로
+    ``build-web.ps1`` 을 부르는가 ② CLI 의 ``main()`` 이 그것을 ``shutil.rmtree`` **앞에**
+    부르는가. 한쪽만 보면 "부르긴 하는데 순서가 뒤집힌" 상태가 초록으로 남는다.
+    """
+    driver_source = (REPO_ROOT / "scripts" / "live101" / "driver.py").read_text(
+        encoding="utf-8"
+    )
+    builder = next(
+        node
+        for node in ast.parse(driver_source).body
+        if isinstance(node, ast.FunctionDef) and node.name == "build_web_artifact"
+    )
+    assert any(
+        isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "subprocess"
+        and node.func.attr == "run"
+        and "build-web.ps1" in (ast.get_source_segment(driver_source, node) or "")
+        for node in ast.walk(builder)
+        if isinstance(node, ast.Call)
+    ), "build_web_artifact() 가 build-web.ps1 을 부르지 않습니다"
+
+    cli_source = (REPO_ROOT / "scripts" / "capture_101_screenshots.py").read_text(
         encoding="utf-8"
     )
     function = next(
         node
-        for node in ast.parse(source).body
+        for node in ast.parse(cli_source).body
         if isinstance(node, ast.FunctionDef) and node.name == "main"
     )
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
@@ -239,10 +264,7 @@ def test_screenshot_capture_builds_before_replacing_outputs() -> None:
         node
         for node in calls
         if isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "subprocess"
-        and node.func.attr == "run"
-        and "build-web.ps1" in (ast.get_source_segment(source, node) or "")
+        and node.func.attr == "build_web_artifact"
     ]
     destructive_calls = [
         node
