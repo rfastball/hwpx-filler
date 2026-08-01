@@ -18,8 +18,14 @@
 두 모드는 **같은 대본**(:mod:`live101.scenario`)을 쓴다. 갈리는 것은 셔터가 픽셀을 만드는지와
 어느 홈에서 도는지뿐이다 — 그래야 "찍히는 화면"과 "검사되는 화면"이 갈라지지 않는다.
 
-``capture`` 는 클립보드를 한 번 덮어쓰고, 예제 홈이 깨끗해야 한다(실습 잔재 = 비결정 화면).
-잔재가 있으면 지우지 않고 **거부**한다 — 사용자의 로컬 실습 상태를 말없이 파괴하지 않는다.
+**두 모드 모두 OS 클립보드를 한 번 덮어쓴다.** 대본이 작업대의 「복사」를 실제로 누르고, 그
+아래는 실물 경로이기 때문이다(native 파일 선택 말고는 아무것도 대체하지 않는 것이 이
+하니스의 계약이다). 종전 이 머리말은 ``capture`` 만 지목했는데, 같은 대본을 쓰는 이상
+``check`` 도 똑같이 덮어쓴다 — 「안전한 검사」로 읽히면 그것이 곧 조용한 손실이다(#426
+라운드 3). 그래서 실행 시작에 한 줄로 다시 알린다.
+
+``capture`` 는 예제 홈이 깨끗해야 한다(실습 잔재 = 비결정 화면). 잔재가 있으면 지우지 않고
+**거부**한다 — 사용자의 로컬 실습 상태를 말없이 파괴하지 않는다.
 """
 from __future__ import annotations
 
@@ -105,37 +111,63 @@ def main(argv: "list[str] | None" = None) -> int:
         if out_dir.exists():
             shutil.rmtree(out_dir)  # 전량 재생성 — 스테일 프레임 잔존 금지
 
+    # 시끄럽게 알린다 — 대본이 작업대의 「복사」를 실제로 누르므로 두 모드 다 클립보드를
+    # 덮어쓴다. 문서에만 적어 두면 `check` 를 "안전한 검사"로 읽는 사람이 잃는다.
+    print("알림: 이 실행은 OS 클립보드를 한 번 덮어씁니다(작업대 「복사」를 실제로 누릅니다).")
+
     temp_root = None
-    result = None
-    try:
-        if use_example_home:
-            home = driver.EXAMPLE_HOME
-        else:
-            temp_root = Path(tempfile.mkdtemp(prefix="hwpx-101-"))
-            home = driver.seed_temp_home(temp_root / "home")
-        result = driver.run(mode=args.mode, home=home, out_dir=out_dir)
-        return _land(result, home=home, use_example_home=use_example_home, args=args)
-    finally:
-        # 성공한 실행만 자기 임시 홈을 지운다 — 실패한 실행의 홈은 진단 증거다.
-        if temp_root is not None and result is not None and result.ok:
-            shutil.rmtree(temp_root, ignore_errors=True)
+    if use_example_home:
+        home = driver.EXAMPLE_HOME
+    else:
+        temp_root = Path(tempfile.mkdtemp(prefix="hwpx-101-"))
+        home = driver.seed_temp_home(temp_root / "home")
+
+    # 착지는 **하나의 함수**다. 드라이버가 정상 반환이든 강제 종료(teardown 매달림·브리지
+    # 무응답)든 반드시 이것을 정확히 한 번 지나게 한다 — 종전에는 워치독의 `os._exit` 가
+    # 두 번째 착지 경로라서, 착지 책임이 하나 생길 때마다 그쪽 복제가 누락됐다(#426 라운드 3).
+    def land(result) -> int:
+        return _land(
+            result,
+            home=home,
+            temp_root=temp_root,
+            use_example_home=use_example_home,
+            report_path=getattr(args, "report", None),
+        )
+
+    return driver.run(mode=args.mode, home=home, out_dir=out_dir, land=land)
 
 
-def _land(result, *, home: Path, use_example_home: bool, args: argparse.Namespace) -> int:
+def _land(
+    result,
+    *,
+    home: Path,
+    temp_root: "Path | None",
+    use_example_home: bool,
+    report_path: "Path | None",
+) -> int:
+    """실행 하나를 마무리한다 — 보고서 쓰기 · 정리 · 요약 · 종료 코드.
+
+    **여기 있는 것이 곧 착지의 정의다.** 새 책임을 더하면 정상 경로와 워치독 경로 양쪽에
+    자동으로 걸린다(그것이 이 함수가 콜백인 이유다).
+    """
     report_json = json.dumps(result.report, ensure_ascii=False, indent=2)
-    report_path = getattr(args, "report", None)
     if report_path is not None:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(report_json, encoding="utf-8")
 
     if not result.ok:
         print(f"101 {result.mode} 실패 — {result.error}", file=sys.stderr)
         for failure in result.report.get("verdict", {}).get("failures", []):
             print(f"  · {failure}", file=sys.stderr)
-        print("잔재를 진단용으로 남깁니다:", home, file=sys.stderr)
+        print(f"잔재를 진단용으로 남깁니다: {home}", file=sys.stderr)
         return result.exit_code()
 
+    # 성공 완주 — 자기 잔재만 치운다.
+    (home / "_live101_result.json").unlink(missing_ok=True)
     if use_example_home:
         driver.clean_practice_state(home)  # 재실행 가능 상태로
+    if temp_root is not None:
+        shutil.rmtree(temp_root, ignore_errors=True)
 
     summary = result.report
     if result.mode == "capture":

@@ -33,6 +33,7 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -198,28 +199,63 @@ def run(
     *,
     mode: str,
     home: Path,
+    land: "Callable[[LiveRunResult], int]",
     out_dir: "Path | None" = None,
     budget_s: float = RUN_BUDGET_S,
-) -> LiveRunResult:
-    """제품 창을 띄워 101 을 완주한다. ``mode`` 는 ``"check"`` 또는 ``"capture"``.
+) -> int:
+    """제품 창을 띄워 101 을 완주하고 **착지 코드**를 돌려준다.
 
-    앱 홈은 이 실행의 것이고 **프로세스에 남지 않는다**(#426 리뷰 P2). ``home_dir()`` 은
+    ## 왜 착지가 콜백인가 — 착지 경로는 하나여야 한다 (#426 리뷰 라운드 3)
+
+    이 하니스에는 강제 종료가 필요하다: pywebview teardown 이 매달리거나 브리지가 멎으면
+    ``main()`` 이 영영 반환하지 않는다. 그런데 그 강제 종료가 ``os._exit`` 로 **두 번째 착지
+    경로**가 되면, 착지 책임이 하나 생길 때마다 그쪽에 복제해야 한다. 실제로 그렇게 됐다 —
+    리뷰 세 라운드가 각각 다른 누락을 짚었다: 판정(라운드 1) · 요청된 보고서(라운드 3) ·
+    임시 홈 정리(라운드 3). 점별로 메우면 다음 라운드에 또 하나가 나온다.
+
+    그래서 경로를 하나로 만든다. 부른 쪽이 "착지란 무엇인가"를 :func:`land` 하나에 적고,
+    드라이버는 **정상 반환이든 강제 종료든 반드시 그것을 정확히 한 번 지나게** 보장한다.
+    앞으로 착지 책임이 늘어도 자동으로 두 경로에 다 걸린다.
+
+    앱 홈은 이 실행의 것이고 **프로세스에 남지 않는다**(리뷰 라운드 2). ``home_dir()`` 은
     환경변수를 호출 시점에 읽으므로, 남겨 두면 이 함수를 부른 장수 프로세스(pytest 게이트)의
-    이후 코드가 전부 하니스 홈을 가리킨다 — 그리고 CLI 는 성공한 임시 홈을 지운다. 즉
-    "없어진 폴더를 홈으로 아는 프로세스"가 남는다.
+    이후 코드가 전부 하니스 홈을 가리킨다 — 그리고 착지는 성공한 임시 홈을 지운다.
     """
     if mode not in ("check", "capture"):
         raise ValueError(f"모르는 실행 모드: {mode!r}")
 
+    landing = _Landing(land)
     previous_home = os.environ.get("HWPXFILLER_HOME")
     os.environ["HWPXFILLER_HOME"] = str(home)
     try:
-        return _run_with_home(mode=mode, home=home, out_dir=out_dir, budget_s=budget_s)
+        result = _run_with_home(
+            mode=mode, home=home, out_dir=out_dir, budget_s=budget_s, landing=landing
+        )
+        return landing.once(result)
     finally:
         if previous_home is None:
             os.environ.pop("HWPXFILLER_HOME", None)
         else:
             os.environ["HWPXFILLER_HOME"] = previous_home
+
+
+class _Landing:
+    """착지를 **정확히 한 번** 지나게 하는 문지기.
+
+    두 스레드(정상 반환 · 워치독)가 동시에 닿을 수 있으므로 잠금이 필요하다. 두 번째
+    호출은 조용한 no-op 이 아니라 첫 코드를 그대로 돌려준다 — 착지의 결론도 처음 것이다.
+    """
+
+    def __init__(self, land: "Callable[[LiveRunResult], int]") -> None:
+        self._land = land
+        self._lock = threading.Lock()
+        self._code: "int | None" = None
+
+    def once(self, result: LiveRunResult) -> int:
+        with self._lock:
+            if self._code is None:
+                self._code = self._land(result)
+            return self._code
 
 
 def _run_with_home(
@@ -228,6 +264,7 @@ def _run_with_home(
     home: Path,
     out_dir: "Path | None",
     budget_s: float,
+    landing: "_Landing",
 ) -> LiveRunResult:
     from hwpxfiller.webapp import app as webapp_app
     from hwpxfiller.webapp import live_run
@@ -310,9 +347,16 @@ def _run_with_home(
             result = settle(observations, sink, state["error"])
             state["result"] = result
             ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
-            _arm_teardown_watchdog(result, home, finished)
+            _arm_teardown_watchdog(result, home, finished, landing)
 
-    _arm_run_watchdog(home, finished, budget_s + RUN_HARD_STOP_MARGIN_S, mode)
+    _arm_run_watchdog(
+        home=home,
+        finished=finished,
+        budget_s=budget_s + RUN_HARD_STOP_MARGIN_S,
+        mode=mode,
+        landing=landing,
+        settle=settle,
+    )
     try:
         rc = webapp_app.main(
             argv=[],
@@ -330,7 +374,6 @@ def _run_with_home(
         # (pytest 게이트 등)를 10초 뒤 `os._exit` 가 통째로 죽인다(#426 리뷰 P1).
         finished.set()
 
-    (home / "_live101_result.json").unlink(missing_ok=True)
     result = state["result"]
     if result is None:
         # 드라이버가 아예 돌지 않았다(창 생성 실패 등). 판정 없는 성공은 없다.
@@ -372,10 +415,29 @@ def _make_sink(mode: str, out_dir: "Path | None", window_title: str):
     return capture_mod.Win32Sink(hwnd, out_dir)
 
 
+def _dump_stacks(home: Path) -> Path:
+    """매달림의 유일한 진단 — 못 남겨도 종료는 한다(매달림이 더 나쁘다)."""
+    import faulthandler
+
+    stacks = home / "_live101_hang_stacks.txt"
+    try:
+        with stacks.open("w", encoding="utf-8") as fh:
+            faulthandler.dump_traceback(file=fh)
+    except OSError:
+        pass
+    return stacks
+
+
 def _arm_run_watchdog(
-    home: Path, finished: "threading.Event", budget_s: float, mode: str
+    *,
+    home: Path,
+    finished: "threading.Event",
+    budget_s: float,
+    mode: str,
+    landing: "_Landing",
+    settle: "Callable[[dict, object, str], LiveRunResult]",
 ) -> None:
-    """실행 예산의 **하드 백스톱** — 브리지가 멎어도 무는 유일한 이빨(#426 리뷰 P2).
+    """실행 예산의 **하드 백스톱** — 브리지가 멎어도 무는 유일한 이빨(#426 리뷰 라운드 2).
 
     :class:`~.surface.Deadline` 은 걸음 사이에서만 되짚어진다. 그런데 ``evaluate_js`` 는
     **동기** 호출이라, WebView2 가 멎으면 그 한 번의 호출이 영영 돌아오지 않는다. 그러면
@@ -385,22 +447,21 @@ def _arm_run_watchdog(
     그래서 이 백스톱은 브리지와 **무관한** 스레드에서 시계만 본다. 부드러운 시한이 먼저
     발화할 여유(:data:`RUN_HARD_STOP_MARGIN_S`)를 준 뒤에만 물므로, 구조화된 실패로 착지할
     수 있는 실행은 이쪽까지 오지 않는다.
+
+    종료 전에 :class:`_Landing` 을 지난다 — 강제 종료도 **착지 경로 하나**를 공유한다.
     """
-    import faulthandler
 
     def _watchdog() -> None:
         if finished.wait(budget_s):
             return  # 실행이 자기 끝에 닿았다 — 물러난다
-        stacks = home / "_live101_hang_stacks.txt"
-        try:
-            with stacks.open("w", encoding="utf-8") as fh:
-                faulthandler.dump_traceback(file=fh)
-        except OSError:
-            pass  # 스택을 못 남겨도 종료는 한다 — 매달림이 더 나쁘다
+        stacks = _dump_stacks(home)
         _say(
             f"101 {mode} 하드 스톱: 실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다"
-            " (브리지 무응답 의심). 스택: " + str(stacks),
+            f" (브리지 무응답 의심). 스택: {stacks}",
             stream=2,
+        )
+        landing.once(
+            settle({}, None, f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)")
         )
         os._exit(ExitCode.RUN_HUNG)
 
@@ -408,41 +469,32 @@ def _arm_run_watchdog(
 
 
 def _arm_teardown_watchdog(
-    result: LiveRunResult, home: Path, finished: "threading.Event"
+    result: LiveRunResult, home: Path, finished: "threading.Event", landing: "_Landing"
 ) -> None:
     """``window.destroy()`` 뒤에도 WinForms 루프가 안 내려오는 pywebview teardown 매달림 대비.
 
     유예·진단 산출물·exit code 를 **계약으로 적는다**(#423 B). 조용한 무한 대기는 없다.
 
-    두 가지가 계약의 핵심이다(#426 리뷰 P1).
+    셋이 계약의 핵심이다.
 
-    ① **해제 가능하다.** ``finished`` 가 서면 이 스레드는 조용히 물러난다. 안 그러면
-       정상 teardown 뒤에도 10초 뒤 ``os._exit`` 가 이 함수를 부른 장수 프로세스(pytest
-       게이트 등)를 통째로 죽인다.
-    ② **판정으로 나간다.** 종료 코드의 근거는 "시나리오가 예외를 안 냈다"가 아니라 이미
-       끝난 판정이다. 그래야 생성 0건·찢긴 컷이 매달림 경로로 새어 exit 0 이 되지 않는다.
+    ① **해제 가능하다**(리뷰 라운드 1). ``finished`` 가 서면 조용히 물러난다. 안 그러면
+       정상 teardown 뒤에도 ``os._exit`` 가 호출자 프로세스(pytest 게이트)를 통째로 죽인다.
+    ② **판정으로 나간다**(리뷰 라운드 1). 종료 코드의 근거는 "시나리오가 예외를 안 냈다"가
+       아니라 이미 끝난 판정이다.
+    ③ **착지를 지나서 나간다**(리뷰 라운드 3). 요청된 보고서 쓰기·임시 홈 정리 같은 착지
+       책임을 여기 복제하지 않는다 — 복제는 매 라운드 하나씩 빠뜨렸다.
     """
-    import faulthandler
 
     def _watchdog() -> None:
         if finished.wait(TEARDOWN_GRACE_S):
             return  # 정상 teardown — 물러난다
-        if result.ok:
-            clean_practice_state(home)
-            (home / "_live101_result.json").unlink(missing_ok=True)
-            _say(
-                f"완료: 101 {result.mode} 통과 "
-                "(teardown 매달림 → 워치독 종료; 잠긴 webview/ 는 다음 부팅이 청소)"
-            )
-            os._exit(ExitCode.OK)
-        stacks = home / "_live101_hang_stacks.txt"
-        with stacks.open("w", encoding="utf-8") as fh:
-            faulthandler.dump_traceback(file=fh)
-        _say(f"101 {result.mode} 실패 — {result.error}", stream=2)
-        for failure in result.report.get("verdict", {}).get("failures", []):
-            _say(f"  · {failure}", stream=2)
-        _say(f"보고서: {home / '_live101_result.json'} · 매달림 스택: {stacks}", stream=2)
-        os._exit(ExitCode.SCENARIO_FAILED if result.error else ExitCode.TEARDOWN_HUNG)
+        stacks = _dump_stacks(home)
+        _say(
+            f"101 {result.mode}: teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 안 내려왔습니다"
+            f" → 워치독 종료(스택: {stacks})",
+            stream=2,
+        )
+        os._exit(landing.once(result))
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
