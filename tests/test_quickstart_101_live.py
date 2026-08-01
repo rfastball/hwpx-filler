@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -84,10 +85,34 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(tmp_path) -> None:
     assert report["source"]["commit"]
 
 
+def _tree_manifest(root: Path) -> "dict[str, str]":
+    """트리 전체의 ``상대경로 → sha256``.
+
+    존재 여부만 세면 **덮어쓰기·잘림·내용 변경을 통째로 놓친다** — 부모 폴더가 남아 있는 한
+    `before == after` 가 참이기 때문이다(#430 리뷰). "한 글자도 안 건드린다"를 이름으로 말할
+    거면 그 한 글자를 실제로 세야 한다.
+
+    ``__pycache__`` 만 뺀다 — 파이썬이 임의로 만들고 지우는 것이라 이 주장의 대상이 아니다.
+    """
+    manifest: "dict[str, str]" = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        manifest[str(path.relative_to(root)).replace("\\", "/")] = digest
+    return manifest
+
+
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_leaves_the_example_home_untouched(tmp_path) -> None:
-    """임시 홈 실행은 사용자의 실습 폴더를 **한 글자도** 건드리지 않는다."""
-    before = {rel: (EXAMPLE_HOME / rel).exists() for rel in driver.REFUSE_STATE}
+    """임시 홈 실행은 사용자의 실습 폴더를 **한 글자도** 건드리지 않는다.
+
+    트리 전체를 해시로 뜬다: 새 파일이 생기는 것뿐 아니라 커밋된 자산이 덮어써지거나 잘리는
+    것까지 잡아야 「무오염」이라는 이 모드의 약속이 실제 계약이 된다.
+    """
+    before = _tree_manifest(EXAMPLE_HOME)
+    assert before, f"예제 홈이 비어 있습니다 — 이 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
+
     subprocess.run(
         [sys.executable, str(CLI), "check", "--home", "temp"],
         cwd=REPO_ROOT,
@@ -96,8 +121,26 @@ def test_check_mode_leaves_the_example_home_untouched(tmp_path) -> None:
         timeout=_RUN_TIMEOUT_S,
         check=True,
     )
-    after = {rel: (EXAMPLE_HOME / rel).exists() for rel in driver.REFUSE_STATE}
-    assert before == after, f"임시 홈 실행이 예제 홈을 바꿨습니다: {before} → {after}"
+
+    after = _tree_manifest(EXAMPLE_HOME)
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    changed = sorted(name for name in set(before) & set(after) if before[name] != after[name])
+    assert not (added or removed or changed), (
+        f"임시 홈 실행이 예제 홈을 바꿨습니다 — 생김 {added} · 사라짐 {removed} · 내용 변경 {changed}"
+    )
+
+
+def test_the_untouched_check_would_notice_a_content_change(tmp_path) -> None:
+    """음성 대조 — 내용만 바뀌어도 잡는가(존재 여부만 보던 종전 형태는 못 잡았다)."""
+    (tmp_path / "asset.txt").write_text("원본", encoding="utf-8")
+    before = _tree_manifest(tmp_path)
+
+    (tmp_path / "asset.txt").write_text("덮어씀", encoding="utf-8")
+    after = _tree_manifest(tmp_path)
+
+    assert set(before) == set(after), "이 대조는 파일 목록이 같은 경우를 겨눈다"
+    assert before != after, "내용 변경을 못 보면 「한 글자도」라는 말이 거짓이 된다"
 
 
 # ─────────────────────── 캡처 지점 3자 대조(게이트 밖) ───────────────────────
