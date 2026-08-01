@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "frontend"
 SOURCE_INDEX = SOURCE_ROOT / "index.html"
 SOURCE_ENTRY = SOURCE_ROOT / "src" / "main.js"
-SOURCE_COMPAT = SOURCE_ROOT / "src" / "compat.js"
+SOURCE_BOOTSTRAP = SOURCE_ROOT / "src" / "bootstrap.js"
 SOURCE_CSS_DIR = SOURCE_ROOT / "css"
 SOURCE_JS_DIR = SOURCE_ROOT / "js"
 
@@ -48,9 +48,9 @@ APP_CSS_FILES = (
 ALL_CSS_FILES = ("tokens.css", *APP_CSS_FILES)
 
 #: N-04에서 true ESM named export로 바뀐 잎 모듈 — 제품 entry가 **직접 import하지 않는다**.
-#: 넷은 중앙 :data:`COMPAT_MODULE` 하나를 통해서만 제품 그래프에 닿고, 기존 전역 별칭
-#: (``Copy``·``escHtml``·``Guard``·``SegView``)도 거기서만 만들어진다. 파일마다 별칭을
-#: 되살리면 생산자가 다시 흩어져 D-05의 "수량 단조 감소" 계측점이 사라진다.
+#: 넷은 :data:`BOOTSTRAP_MODULE` 하나를 통해서만 제품 그래프에 닿는다. N-10 이전에는 그
+#: 자리가 임시 전역 별칭(``Copy``·``escHtml``·``Guard``·``SegView``)의 단일 생산자이기도
+#: 했으나, 별칭 스물일곱은 N-10에서 0이 됐고 남은 것은 합성 책임뿐이다.
 LEAF_ESM_FILES = (
     "copy.js",
     "esc.js",
@@ -59,9 +59,8 @@ LEAF_ESM_FILES = (
 )
 
 #: N-05에서 true ESM으로 바뀐 공용 UI 서비스 15개. 잎과 같은 규칙을 따른다 — entry가 직접
-#: 싣지 않고 중앙 compat이 끌어오며, 임시 전역 별칭도 거기서만 만들어진다. 순서는 N-04까지
-#: entry가 싣던 실행 순서 그대로다(계약이 아니라 **기록**이다: 이제 평가 순서는 compat의
-#: import 그래프가 정한다).
+#: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
+#: 아니라 **기록**이다: 이제 평가 순서는 합성 루트의 import 그래프가 정한다).
 SERVICE_ESM_FILES = (
     "theme.js",
     "personalization.js",
@@ -80,9 +79,9 @@ SERVICE_ESM_FILES = (
     "editor_entry.js",
 )
 
-#: N-06에서 named factory(true ESM)로 바뀐 화면 넷과 앱 셸. entry가 직접 싣지 않고 중앙
-#: compat이 import해 **정확히 한 번** 구성하며, 구성 순서는 구 entry의 IIFE 평가 순서
-#: 그대로다(화면 넷 → 앱 셸). 화면 간 간선과 화면→Nav 간선은 import가 아니라 compat의
+#: N-06에서 named factory(true ESM)로 바뀐 화면 넷과 앱 셸. entry가 직접 싣지 않고 합성
+#: 루트가 import해 **정확히 한 번** 구성하며, 구성 순서는 구 entry의 IIFE 평가 순서
+#: 그대로다(화면 넷 → 앱 셸). 화면 간 간선과 화면→Nav 간선은 import가 아니라 합성 루트의
 #: late-bound 콜백 테이블이 진다 — 그래서 import 그래프에 editor↔job 순환이 없다.
 SCREEN_ESM_FILES = (
     "screens/library.js",
@@ -92,32 +91,58 @@ SCREEN_ESM_FILES = (
     "app.js",
 )
 
-#: compat을 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
-#: N-07에서 마지막 IIFE를 벗고 named factory(true ESM)가 된 브리지. 자리는 특별하다: compat이
-#: 이것을 **정확히 한 번** 구성해 산물을 화면·서비스에 객체째 넘기고, 구 IIFE가 스스로 만들던
-#: ``Bridge``·``__push`` 두 전역도 이제 compat이 만든다.
+#: 합성 루트를 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
+#: N-07에서 마지막 IIFE를 벗고 named factory(true ESM)가 된 브리지. 자리는 특별하다: 합성
+#: 루트가 이것을 **정확히 한 번** 구성해 산물을 화면·서비스에 객체째 넘긴다. 구 IIFE가
+#: 스스로 만들던 ``Bridge``·``__push`` 두 전역은 N-07에서 합성 루트로 옮겨왔다가 N-10에서
+#: 나머지 스물다섯과 함께 사라졌다.
 BRIDGE_ESM_FILES = ("bridge.js",)
 
 ESM_FILES = (*LEAF_ESM_FILES, *SERVICE_ESM_FILES, *SCREEN_ESM_FILES, *BRIDGE_ESM_FILES)
 
-#: ESM 모듈의 임시 전역 별칭을 만드는 유일한 자리(제품 entry 기준 ``./compat.js``).
-COMPAT_MODULE = "compat.js"
+#: 제품 합성 루트(제품 entry 기준 ``./bootstrap.js``). N-10 이전 이름은 ``compat.js``였다 —
+#: 그 파일은 합성과 **임시 전역 별칭 스물일곱의 단일 생산자**를 겸했고(D-05), 별칭이 0이
+#: 되면서 이름도 함께 은퇴했다. 별칭 줄만 지우고 ``compat``이라는 이름을 남기면 "호환 계층이
+#: 아직 있다"는 거짓 표식이 남는다.
+BOOTSTRAP_MODULE = "bootstrap.js"
 
-#: 제품 파사드 모듈 — compat과 같은 ``frontend/src/``에 산다(``../js/``가 아니다).
+#: 합성 루트가 내보내는 유일한 이름 — 제품 entry가 **정확히 한 번** 부른다.
+BOOTSTRAP_EXPORT = "bootProduct"
+
+#: 제품 파사드 모듈 — 합성 루트와 같은 ``frontend/src/``에 산다(``../js/``가 아니다).
 PRODUCT_API_MODULE = "product_api.js"
 
-#: 제품 최종 공개 API 이름. 임시 별칭과 **다른 계정**이다(D-06) — N-10에서 별칭이 전부
-#: 사라져도 이 이름은 남는다.
+#: 제품 최종 공개 API 이름. 임시 별칭과 **다른 계정**이었고(D-06) 별칭이 전부 사라진
+#: N-10 뒤에도 남는다. 정상 실행에서 제품 코드가 만드는 전역은 이 하나뿐이다.
 PRODUCT_API_GLOBAL = "__hwpx"
 
+#: selftest 공개 API 이름(D-07). 생산자는 ``frontend/src/selftest/api.js`` 하나이고
+#: 호스트 capability가 있을 때만 선다 — 정상 실행에는 own property로 존재하지 않는다.
+SELFTEST_API_GLOBAL = "__hwpxTest"
+
+#: 제품 코드가 만들어도 되는 전역의 **전수**. 플랫폼이 주입하는 ``pywebview``는 제품이
+#: 만드는 것이 아니라 여기 없다. 이 집합을 넓히는 것은 #372 상향 사유다.
+ALLOWED_PRODUCT_GLOBALS = frozenset({PRODUCT_API_GLOBAL, SELFTEST_API_GLOBAL})
+
+#: N-10이 지운 임시 전역 별칭 스물일곱 — 생산자도 소비자도 0이어야 한다. 목록을 남기는
+#: 이유는 **되살아나는 모양을 이름으로 겨누기** 위해서다. 수량만 세면 다른 이름이 새로
+#: 생겨도 초록이고, 이름만 세면 수량 회귀를 놓친다.
+RETIRED_COMPAT_GLOBALS = (
+    "Copy", "escHtml", "Guard", "SegView", "Popover", "Preserve", "Intent",
+    "UndoToast", "Modal", "SurfaceSheet", "GroupList", "Theme", "Personalization",
+    "SheetPicker", "PathTrack", "Relink", "DataZone", "DataPicker", "EditorEntry",
+    "LibraryScreen", "EditorScreen", "JobScreen", "WorkbenchScreen", "Nav",
+    "AppCloseGuard", "Bridge", "__push",
+)
+
 #: entry가 side-effect import하는 IIFE — N-07에서 **0개**가 됐다. ``bridge.js``가 ESM factory로
-#: 바뀌며 compat의 static import로 그래프에 들어왔고, 그와 함께 "먼저 평가돼야 한다"는 순서
-#: 계약을 entry에 걸던 마지막 자리도 사라졌다.
+#: 바뀌며 합성 루트의 static import로 그래프에 들어왔고, 그와 함께 "먼저 평가돼야 한다"는
+#: 순서 계약을 entry에 걸던 마지막 자리도 사라졌다.
 LEGACY_JS_FILES: tuple[str, ...] = ()
 
-#: compat이 들어가는 자리 — 이제 entry의 JS는 compat 하나뿐이라 맨 앞이다. 평가 순서 계약은
-#: entry가 아니라 compat의 import 그래프와 본문 순서(구성 → 별칭)가 진다.
-COMPAT_ENTRY_POSITION = 0
+#: 합성 루트가 들어가는 자리 — entry의 JS는 이것 하나뿐이라 맨 앞이다. 평가 순서 계약은
+#: entry가 아니라 합성 루트의 import 그래프와 ``bootProduct`` 본문 순서가 진다.
+BOOTSTRAP_ENTRY_POSITION = 0
 
 
 def source_path(*parts: str) -> Path:
@@ -190,26 +215,32 @@ def imported_js(entry: str) -> tuple[str, ...]:
 
 
 def entry_js_manifest() -> tuple[str, ...]:
-    """제품 entry가 실을 JS side-effect import 경로를 실행 순서대로 조립한다."""
+    """제품 entry가 실을 JS import 경로를 실행 순서대로 조립한다."""
     legacy = [f"../js/{name}" for name in LEGACY_JS_FILES]
     return (
-        *legacy[:COMPAT_ENTRY_POSITION],
-        f"./{COMPAT_MODULE}",
-        *legacy[COMPAT_ENTRY_POSITION:],
+        *legacy[:BOOTSTRAP_ENTRY_POSITION],
+        f"./{BOOTSTRAP_MODULE}",
+        *legacy[BOOTSTRAP_ENTRY_POSITION:],
     )
 
 
 def evaluated_modules(entry: str) -> tuple[str, ...]:
     """제품 entry의 JS import를 **평가 순서의 모듈 이름**으로 정규화한다.
 
-    ``../js/X``는 ``X``로, 중앙 호환 계층은 ``compat.js``로 읽는다. CSS import는 뺀다.
+    ``../js/X``는 ``X``로, 합성 루트는 ``bootstrap.js``로 읽는다. CSS import는 뺀다.
+
+    :func:`side_effect_imports`가 아니라 :func:`module_imports`로 읽는 것이 N-10의 변화다.
+    종전 entry는 합성 루트를 ``import "./compat.js";`` 부작용 import로 실었지만, 이제
+    ``import { bootProduct } from "./bootstrap.js";``라 **named import**다. 부작용 형태만
+    세는 눈으로 보면 합성 루트가 목록에서 조용히 사라지고, "entry가 아무 JS도 싣지 않는다"는
+    거짓 초록이 난다 — :func:`module_imports` 독스트링이 경고하는 바로 그 창이다.
     """
     names: list[str] = []
-    for path in side_effect_imports(entry):
+    for path in module_imports(entry):
         if path.startswith("../js/"):
             names.append(path.removeprefix("../js/"))
-        elif path == f"./{COMPAT_MODULE}":
-            names.append(COMPAT_MODULE)
+        elif path == f"./{BOOTSTRAP_MODULE}":
+            names.append(BOOTSTRAP_MODULE)
     return tuple(names)
 
 
@@ -229,25 +260,25 @@ def module_imports(source: str) -> tuple[str, ...]:
     )
 
 
-def compat_imports() -> tuple[str, ...]:
-    """중앙 compat이 끌어오는 ``../js/`` 모듈 이름을 import 순서대로 읽는다."""
+def bootstrap_imports() -> tuple[str, ...]:
+    """합성 루트가 끌어오는 ``../js/`` 모듈 이름을 import 순서대로 읽는다."""
     prefix = "../js/"
     return tuple(
         path.removeprefix(prefix)
-        for path in module_imports(SOURCE_COMPAT.read_text(encoding="utf-8"))
+        for path in module_imports(SOURCE_BOOTSTRAP.read_text(encoding="utf-8"))
         if path.startswith(prefix)
     )
 
 
 def reaches_product_graph(name: str) -> bool:
-    """모듈이 제품 그래프에 **실제로 닿는지** 묻는다 — entry 직접이든 compat 경유든.
+    """모듈이 제품 그래프에 **실제로 닿는지** 묻는다 — entry 직접이든 합성 루트 경유든.
 
     "이 파일이 앱에 실리는가"를 ``imported_js(entry)`` 로 묻던 계약들의 후계다. 그 질문은
     파일이 entry의 bare import 목록에 있는지를 봤는데, ESM으로 옮겨간 모듈은 그 목록에서
     사라지므로 같은 문자열 검사로는 "안 실린다"와 "이름이 옮겨졌다"를 구별하지 못한다.
     """
     if name in ESM_FILES:
-        return name in compat_imports() and COMPAT_MODULE in evaluated_modules(
+        return name in bootstrap_imports() and BOOTSTRAP_MODULE in evaluated_modules(
             SOURCE_ENTRY.read_text(encoding="utf-8")
         )
     return name in imported_js(SOURCE_ENTRY.read_text(encoding="utf-8"))
@@ -257,9 +288,9 @@ def evaluation_site(name: str) -> str:
     """모듈 이름을 **제품 entry에서 실제로 평가되는 지점**의 이름으로 옮긴다.
 
     "공유 헬퍼가 소비 화면보다 먼저 실행되는가"를 묻던 계약들은 모듈 파일 이름을 entry
-    순서에서 찾았다. N-04의 잎 넷과 N-05의 서비스 열다섯은 entry가 직접 싣지 않고 중앙
-    compat이 끌어오므로, 같은 질문의 답은 그 파일이 아니라 compat의 자리에 있다. 이 함수가
-    그 옮김을 한 곳에 둔다 — 각 테스트가 따로 ``compat.js``를 하드코딩하면 다음 모듈이
+    순서에서 찾았다. N-04의 잎 넷과 N-05의 서비스 열다섯은 entry가 직접 싣지 않고 합성
+    루트가 끌어오므로, 같은 질문의 답은 그 파일이 아니라 합성 루트의 자리에 있다. 이 함수가
+    그 옮김을 한 곳에 둔다 — 각 테스트가 따로 ``bootstrap.js``를 하드코딩하면 다음 모듈이
     옮겨갈 때 조용히 낡는다.
     """
-    return COMPAT_MODULE if name in ESM_FILES else name
+    return BOOTSTRAP_MODULE if name in ESM_FILES else name

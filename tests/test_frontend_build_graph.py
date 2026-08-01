@@ -11,16 +11,18 @@ from typing import Any
 
 from _web_source import (
     ALL_CSS_FILES,
-    COMPAT_MODULE,
+    BOOTSTRAP_EXPORT,
+    BOOTSTRAP_MODULE,
     ESM_FILES,
     LEGACY_JS_FILES,
     PRODUCT_API_GLOBAL,
-    SOURCE_COMPAT,
+    RETIRED_COMPAT_GLOBALS,
+    SOURCE_BOOTSTRAP,
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     SOURCE_ROOT,
-    compat_imports,
+    bootstrap_imports,
     entry_js_manifest,
     evaluated_modules,
     module_imports,
@@ -83,57 +85,64 @@ EXPECTED_ESM_EXPORTS = {
     "bridge.js": "createBridge",
 }
 
-#: 중앙 compat 한 곳이 만드는 임시 전역 별칭 25개. factory 모듈의 별칭 이름은 export 이름
-#: (``createTheme``)이 아니라 **구성된 산물의 이름**(``Theme``·``JobScreen``·``Nav``)이다.
-#: 소비자(Python 직접 호출·selftest 프로브)가 그 이름으로 읽기 때문이다. N-06에서 화면 넷과
-#: ``Nav``·``AppCloseGuard``가 자기 생산을 잃고 여기로 들어왔다 — 생산 자리는 하나여야
-#: D-05의 "수량 단조 감소" 계측점이 산다.
-EXPECTED_CENTRAL_COMPAT_GLOBALS = {
-    "Copy",
-    "Guard",
-    "SegView",
-    "escHtml",
-    "DataPicker",
-    "DataZone",
-    "EditorEntry",
-    "GroupList",
-    "Intent",
-    "Modal",
-    "PathTrack",
-    "Personalization",
-    "Popover",
-    "Preserve",
-    "Relink",
-    "SheetPicker",
-    "SurfaceSheet",
-    "Theme",
-    "UndoToast",
-    "LibraryScreen",
-    "EditorScreen",
-    "JobScreen",
-    "WorkbenchScreen",
-    "Nav",
-    "AppCloseGuard",
-}
-
 #: 자기 파일에서 자기 전역을 만드는 legacy IIFE 생산자 — N-07에서 **0개**가 됐다.
-#: ``bridge.js``가 ESM factory가 되면서 ``Bridge``·``__push``의 생산 자리도 중앙 compat으로
-#: 옮겨갔다(아래 :data:`EXPECTED_BRIDGE_COMPAT_GLOBALS`).
 EXPECTED_LEGACY_GLOBALS: set[str] = set()
 
-#: N-07에서 compat이 생산을 이어받은 둘. 임시 전역이라는 지위는 그대로고(제거 책임 N-10),
-#: 바뀐 것은 **생산 자리**뿐이다 — 그래서 아래 총량 27은 변하지 않는다.
-EXPECTED_BRIDGE_COMPAT_GLOBALS = {
-    "Bridge",
-    "__push",
-}
+#: N-10이 지운 임시 전역 별칭 스물일곱. 이름을 **목록으로 남기는** 이유는 되살아나는 모양을
+#: 이름으로 겨누기 위해서다: 수량만 세면 다른 이름의 새 전역이 생겨도 초록이고, 총량만
+#: 0으로 두면 어느 이름이 돌아왔는지 실패 메시지가 말해 주지 못한다.
+#:
+#: N-04~N-07이 옮긴 것은 생산 **자리**였고 수량은 27로 불변이었다(D-05는 단조 감소만
+#: 요구했다). N-10에서 그 수량이 0이 됐고, 이 상수는 이제 **금지 목록**이다.
+EXPECTED_RUNTIME_GLOBALS: set[str] = set()
 
-#: 임시 런타임 전역 표면 전체 — N-04·N-05·N-06·N-07은 생산 **자리**만 옮기고 수량은 27 그대로다.
-#: 제품 공개 API :data:`PRODUCT_API_GLOBAL`은 여기 들지 않는다: 그것은 임시 별칭이 아니라
-#: N-10 이후에도 남는 **최종** 경계라 계정이 다르다(D-06).
-EXPECTED_RUNTIME_GLOBALS = (
-    EXPECTED_BRIDGE_COMPAT_GLOBALS | EXPECTED_CENTRAL_COMPAT_GLOBALS
-)
+#: 되살아나면 안 되는 이름 전수 — 생산도 판독도 0이어야 한다.
+FORBIDDEN_PRODUCT_GLOBALS = frozenset(RETIRED_COMPAT_GLOBALS)
+
+
+def strip_js_comments(source: str) -> str:
+    """JS 원본에서 주석만 걷는다 — 문자열 리터럴 안의 ``//``·``/*`` 는 건드리지 않는다.
+
+    이 저장소의 프런트 주석은 결정 근거를 길게 보존하고, 그 산문은 죽은 전역 이름을 일부러
+    인용한다("종전에는 ``window.Nav`` 를 읽었다"). 그 인용을 코드로 세면 산문이 게이트를
+    빨갛게 만들고, 결국 주석에서 이름을 지우는 압력이 생긴다 — 계약이 기억을 이기는 자리다.
+
+    반대로 ``re.sub(r"//.*")`` 같은 순진한 제거는 ``"http://…"`` 의 뒤를 통째로 날려 **진짜
+    판독을 숨긴다**. 음성 게이트에서 그 방향의 오차는 조용한 통과라 더 나쁘다. 그래서 문자열·
+    템플릿·정규식 리터럴을 인지하는 최소 렉서로 걷는다. 과다 제거 여부는
+    :func:`test_retired_compat_aliases_have_no_producer_and_no_reader` 의 양성 대조가 잰다.
+    """
+    out: list[str] = []
+    i, n = 0, len(source)
+    while i < n:
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < n else ""
+        if ch == "/" and nxt == "/":
+            while i < n and source[i] != "\n":
+                i += 1
+        elif ch == "/" and nxt == "*":
+            i += 2
+            while i < n and not (source[i] == "*" and source[i + 1 : i + 2] == "/"):
+                i += 1
+            i += 2
+        elif ch in "\"'`":
+            quote = ch
+            out.append(ch)
+            i += 1
+            while i < n and source[i] != quote:
+                if source[i] == "\\":
+                    out.append(source[i])
+                    i += 1
+                if i < n:
+                    out.append(source[i])
+                    i += 1
+            if i < n:
+                out.append(source[i])
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
 
 
 def _run_text(*command: str) -> str:
@@ -246,17 +255,27 @@ def test_frontend_is_the_only_physical_source_tree() -> None:
 
 
 def test_product_entry_is_one_module_with_ordered_side_effect_graph() -> None:
+    """entry 는 module script 하나이고, CSS 캐스케이드 순서를 부작용 import 로 고정한다.
+
+    JS 쪽은 N-10 에서 형태가 바뀌었다: 합성 루트는 이제 부작용 import 가 아니라 **named
+    import + 호출**이라 :func:`side_effect_imports` 에 잡히지 않는다. 그래서 CSS 순서는
+    부작용 목록으로, JS 도달은 :func:`evaluated_modules` 로 각각 묻는다 — 한 눈으로 보면
+    "JS 가 아예 없다"와 "형태가 바뀌었다"가 구별되지 않는다.
+    """
     html = SOURCE_INDEX.read_text(encoding="utf-8")
     scripts = re.findall(r"<script\b[^>]*\bsrc=\"[^\"]+\"[^>]*></script>", html)
 
     assert scripts == ['<script type="module" src="./src/main.js"></script>']
-    expected_imports = (
-        *(f"../css/{name}" for name in ALL_CSS_FILES),
-        *entry_js_manifest(),
+
+    entry = SOURCE_ENTRY.read_text(encoding="utf-8")
+    #: 부작용 import 는 이제 CSS 전수뿐이다 — 순서가 곧 캐스케이드 계약이다.
+    assert side_effect_imports(entry) == tuple(
+        f"../css/{name}" for name in ALL_CSS_FILES
     )
-    assert side_effect_imports(SOURCE_ENTRY.read_text(encoding="utf-8")) == (
-        expected_imports
-    )
+    #: JS 도달은 형태를 가리지 않는 눈으로 따로 묻는다(named import 도 세는 쪽).
+    assert tuple(
+        path for path in module_imports(entry) if not path.startswith("../css/")
+    ) == entry_js_manifest()
 
 
 def test_converted_modules_are_esm_and_own_no_globals() -> None:
@@ -268,15 +287,19 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
 
     잎 넷과 달리 서비스 열다섯은 표준 Web API(``window.addEventListener``·``window.alert``·
     ``window.pywebview`` 등)를 정당하게 쓴다. 그래서 "``window.`` 문자열 0"으로는 셀 수 없고,
-    금지 대상은 **제품 전역 이름**이다. 그 목록을 :data:`EXPECTED_RUNTIME_GLOBALS` 에서
-    가져오므로, 새 제품 전역이 생기면 이 음성 검사도 저절로 넓어진다.
+    금지 대상은 **제품 전역 이름**이다. 그 목록은 N-10에서 사라진 별칭 스물일곱
+    (:data:`FORBIDDEN_PRODUCT_GLOBALS`)이다 — 별칭이 죽었어도 **판독**이 되살아나면 그
+    모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
     assert len(ESM_FILES) == 25
 
+    #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
+    assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
+
     product_globals = re.compile(
         r"\b(?:window|globalThis)\.(?:"
-        + "|".join(sorted(map(re.escape, EXPECTED_RUNTIME_GLOBALS)))
+        + "|".join(sorted(map(re.escape, FORBIDDEN_PRODUCT_GLOBALS)))
         + r")\b"
     )
 
@@ -287,7 +310,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
         )
         assert not re.search(
             r"(?m)^\s*(?:window|globalThis)\.[A-Za-z_$][A-Za-z0-9_$]*\s*=", source
-        ), f"{name} 이 자기 전역을 만듭니다 — 별칭은 중앙 compat 하나가 만듭니다."
+        ), f"{name} 이 자기 전역을 만듭니다 — 제품 전역은 합성 루트의 `__hwpx` 하나뿐입니다."
         leaked = product_globals.findall(source)
         assert not leaked, (
             f"{name} 이 제품 전역을 직접 조회합니다: {sorted(set(leaked))} — "
@@ -355,7 +378,7 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
             f"{name} 의 모듈 간선이 {sorted(actual)} 입니다 — {sorted(expected)} 여야 합니다."
         )
 
-    #: 화면 간 직접 import 0 — 교차 간선은 compat 의 late-bound 콜백 테이블만 진다.
+    #: 화면 간 직접 import 0 — 교차 간선은 합성 루트의 late-bound 콜백 테이블만 진다.
     for name in ("screens/library.js", "screens/editor.js", "screens/job.js",
                  "screens/workbench.js", "app.js"):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
@@ -380,7 +403,7 @@ def test_esm_module_graph_has_no_cycles() -> None:
 
     N-05 의 순환 후보는 ``editor_entry ↔ app`` 하나였고, N-06 에서 화면 넷이 그래프에
     들어오며 ``editor ↔ job``·``library → job``·화면→Nav 가 새 후보로 늘었다. 그 간선들은
-    전부 compat 의 late-bound 콜백 테이블이 그래프 밖에서 지므로 여기서 0이 나온다 —
+    전부 합성 루트의 late-bound 콜백 테이블이 그래프 밖에서 지므로 여기서 0이 나온다 —
     화면이 서로를(또는 앱 셸을) import 하는 구현으로 되돌아가면 이 게이트가 잡는다.
     """
     from posixpath import dirname, join, normpath
@@ -393,7 +416,7 @@ def test_esm_module_graph_has_no_cycles() -> None:
         ]
         for name in ESM_FILES
     }
-    graph[COMPAT_MODULE] = list(compat_imports())
+    graph[BOOTSTRAP_MODULE] = list(bootstrap_imports())
 
     seen: dict[str, int] = {}
 
@@ -420,54 +443,106 @@ def test_segview_imports_the_escaper_instead_of_reading_a_global() -> None:
     ), "segview.js 가 escHtml 을 ESM import 하지 않습니다."
 
 
-def test_temporary_aliases_have_exactly_one_central_producer() -> None:
-    """열아홉 별칭은 중앙 compat 한 파일에서만 만들어진다(D-05 단일 생산자).
+def test_retired_compat_aliases_have_no_producer_and_no_reader() -> None:
+    """임시 별칭 스물일곱은 **생산도 판독도 0**이다 — compat 계층의 종착점(N-10).
 
-    파일마다 되살리면 소비자는 그대로 동작하므로 **동작 테스트로는 안 보인다**. 생산 자리를
-    세는 이 게이트만 그 회귀를 잡는다.
+    이 게이트의 전신은 ``test_temporary_aliases_have_exactly_one_central_producer`` 로,
+    "별칭 스물여덟이 정확히 한 파일에서만 만들어지는가"를 물었다(D-05 단일 생산자). 단일
+    생산자는 **수량을 셀 수 있게 하려고** 세운 규율이었고, 수량이 0이 된 지금 그 질문은
+    "아무도 만들지 않는가"로 바뀐다. 세는 자리도 한 파일에서 ``frontend/`` 전수로 넓어진다 —
+    생산자가 하나여야 할 이유가 사라졌으므로 이제는 **어디에도 없어야** 하기 때문이다.
+
+    판독까지 함께 세는 것이 전신과 다른 점이다. 별칭 대입만 지우면 소비자는 `undefined` 를
+    읽고 **조용히 아무것도 하지 않는다** — 예외도 안 난다. 그 침묵이 정확히 이 저장소가
+    금지하는 실패 모양이라(confirm-or-alarm) 판독 0을 같은 게이트가 진다.
     """
-    compat_source = SOURCE_COMPAT.read_text(encoding="utf-8")
-    producers = re.findall(
-        r"(?m)^\s*window\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=", compat_source
+    #: 양성 대조 — 목록이 비면 아래 루프가 아무것도 겨누지 않은 채 초록이 된다.
+    assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
+    assert PRODUCT_API_GLOBAL not in FORBIDDEN_PRODUCT_GLOBALS
+
+    #: 스캐너 자체의 양성·음성 대조. 주석 인용은 넘기되 **실제 판독은 반드시 잡아야** 하고,
+    #: 문자열 안의 ``//`` 뒤가 통째로 사라지면 그 뒤의 진짜 판독이 숨는다. 두 방향을 한
+    #: 표본에서 함께 잰다 — 부재를 재는 게이트는 자기 눈부터 증명해야 한다.
+    probe = strip_js_comments(
+        '// 종전에는 window.Nav 를 읽었다\n'
+        '/* window.Bridge 도 여기 있었다 */\n'
+        'const u = "http://x/y"; window.Modal.open();\n'
+    )
+    assert re.findall(r"\bwindow\.([A-Za-z_$][\w$]*)", probe) == ["Modal"], (
+        f"전역 스캐너의 눈이 어긋났습니다: {probe!r}"
     )
 
-    assert SOURCE_COMPAT.name == COMPAT_MODULE
-    expected_producers = (
-        EXPECTED_CENTRAL_COMPAT_GLOBALS
-        | EXPECTED_BRIDGE_COMPAT_GLOBALS
-        | {PRODUCT_API_GLOBAL}
-    )
-    assert sorted(producers) == sorted(expected_producers)
-    assert len(producers) == len(set(producers)) == len(expected_producers) == 28
-    assert set(compat_imports()) == set(ESM_FILES), (
-        "compat 의 import 집합이 ESM 모듈 전수와 어긋납니다 — 별칭이 export 와 갈라집니다."
-    )
-
-    elsewhere = {
-        f"{path.relative_to(SOURCE_ROOT).as_posix()}:{alias}"
-        for path in sorted(SOURCE_ROOT.rglob("*.js"))
-        if path != SOURCE_COMPAT
-        for alias in re.findall(
-            r"(?m)^\s*window\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=",
-            path.read_text(encoding="utf-8"),
+    sources = {
+        path.relative_to(SOURCE_ROOT).as_posix(): strip_js_comments(
+            path.read_text(encoding="utf-8")
         )
-        if alias in EXPECTED_CENTRAL_COMPAT_GLOBALS
+        for path in sorted(SOURCE_ROOT.rglob("*.js"))
     }
-    assert not elsewhere, (
-        "전역 별칭이 중앙 compat 밖에서 다시 만들어집니다: " + ", ".join(sorted(elsewhere))
+    #: 부재를 재기 전에 **실제로 읽었는가**를 먼저 잰다(계측 층의 부재판별력).
+    assert len(sources) >= 25, f"프런트 JS 를 {len(sources)}개만 읽었습니다 — 스캔이 헛돕니다."
+
+    produced = {
+        f"{name}:{alias}"
+        for name, source in sources.items()
+        for alias in re.findall(
+            r"(?m)^\s*(?:window|globalThis)\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=", source
+        )
+        if alias in FORBIDDEN_PRODUCT_GLOBALS
+    }
+    assert not produced, (
+        "은퇴한 임시 전역 별칭이 되살아났습니다: " + ", ".join(sorted(produced))
     )
 
+    read = {
+        f"{name}:{alias}"
+        for name, source in sources.items()
+        for alias in re.findall(
+            r"\b(?:window|globalThis)\.([A-Za-z_$][A-Za-z0-9_$]*)\b", source
+        )
+        if alias in FORBIDDEN_PRODUCT_GLOBALS
+    }
+    assert not read, (
+        "은퇴한 전역 별칭을 아직 판독합니다(값은 undefined — 조용히 아무것도 안 합니다): "
+        + ", ".join(sorted(read))
+    )
 
-def test_each_service_is_constructed_exactly_once_in_compat() -> None:
-    """포트를 받는 factory 열셋(서비스 8 + 화면 4 + 앱 셸)은 compat 에서 **정확히 한 번** 불린다.
+    #: 합성 루트가 만드는 전역은 제품 공개 API 하나뿐이다(D-06).
+    bootstrap_source = SOURCE_BOOTSTRAP.read_text(encoding="utf-8")
+    assert SOURCE_BOOTSTRAP.name == BOOTSTRAP_MODULE
+    producers = re.findall(
+        r"(?m)^\s*window\.([A-Za-z_$][A-Za-z0-9_$]*)\s*=", bootstrap_source
+    )
+    assert producers == [PRODUCT_API_GLOBAL], (
+        f"합성 루트가 만드는 전역이 {producers} 입니다 — {PRODUCT_API_GLOBAL} 하나여야 합니다."
+    )
+    assert set(bootstrap_imports()) == set(ESM_FILES), (
+        "합성 루트의 import 집합이 ESM 모듈 전수와 어긋납니다 — 구성에서 빠진 모듈이 있습니다."
+    )
+
+    #: `compat.js` 는 이름째 은퇴했다 — 별칭 줄만 지우고 파일을 남기면 "호환 계층이 아직
+    #: 있다"는 거짓 표식이 남고, 다음 임시 전역이 조용히 그리로 돌아온다.
+    assert not (SOURCE_ROOT / "src" / "compat.js").exists()
+    dangling = sorted(
+        name for name, source in sources.items() if "compat.js" in source
+    )
+    assert not dangling, f"삭제된 compat.js 를 아직 참조합니다: {dangling}"
+
+
+def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> None:
+    """포트를 받는 factory 열넷(서비스 8 + 화면 4 + 앱 셸 + 브리지)은 **정확히 한 번** 불린다.
 
     두 번 부르면 ``pathtrack`` 의 위임 리스너가 겹치고 ``data_picker`` 의 ``onPush`` 가
     누적되며, 화면·앱 셸은 DOM 리스너와 부팅 랜딩이 두 벌이 된다. 모듈 안에 재호출 가드를
     두는 대신 호출 자리를 하나로 묶었으므로, 그 단일성은 여기서 세야 한다.
+
+    N-10 에서 달라진 것은 **단일성의 근거**다. 종전에는 합성이 모듈 평가라 ESM 캐시가
+    한 번을 보장했다. 이제 합성은 ``bootProduct()`` 호출이고, 그 함수는 멱등이 아니다 —
+    한 번을 보장하는 것은 **호출자가 하나뿐이라는 사실**이라
+    :func:`test_entry_calls_the_composition_root_exactly_once` 가 그 축을 따로 진다.
     """
     #: 이 파일의 헤더 주석은 ``Nav`` 를 값으로 붙들면 안 되는 **이유**를 적는다.
     #: 그 산문을 코드로 세면 "판독이 한 곳뿐인가"라는 질문이 주석 길이에 좌우된다.
-    compat_source = strip_comments(SOURCE_COMPAT.read_text(encoding="utf-8"))
+    compat_source = strip_comments(SOURCE_BOOTSTRAP.read_text(encoding="utf-8"))
     factories = sorted(
         export for name, export in EXPECTED_ESM_EXPORTS.items()
         if export.startswith("create")
@@ -477,18 +552,17 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
-            f"compat 이 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
+            f"합성 루트가 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
         )
 
-    #: `navigate` 는 지연 호출 콜백이다 — N-05 의 `window.Nav` 판독은 Nav 생산이 compat 으로
+    #: `navigate` 는 지연 호출 콜백이다 — N-05 의 `window.Nav` 판독은 Nav 생산이 합성 루트로
     #: 들어오며(N-06) 지역 late-bound 참조로 좁혀졌다. 값으로 캡처하면 앱 셸 구성 전의
     #: `undefined` 를 붙든다.
     assert re.search(r"const navigate = \(\.\.\.args\) => Nav\.go\(\.\.\.args\);",
                      compat_source), "navigate 가 지연 호출 콜백이 아닙니다."
-    #: `window.Nav` 는 이제 **별칭 대입 한 줄**뿐이다 — 판독이 되살아나면 순환이 전역 경유로
-    #: 숨는다.
-    assert re.findall(r"window\.Nav\b(?!\s*=)", compat_source) == []
-    assert compat_source.count("window.Nav") == 1
+    #: 전역 경유 판독은 0이다 — 되살아나면 순환이 그래프 밖으로 숨는다. 종전에는 별칭 대입
+    #: 한 줄이 남아 `count == 1` 이었고, N-10 이 그 줄을 지우면서 기대값이 0이 됐다.
+    assert compat_source.count("window.Nav") == 0
     #: `bridge` 는 이제 compat 이 **구성**한다(N-07) — 구 IIFE 를 되읽던 자리의 후계다.
     #: 객체째 넘기는 성질은 그대로여야 한다: 메서드를 뽑으면 selftest 프로브의 스텁 교체가
     #: 우회된다. 그래서 산물을 그대로 받는 구조분해 한 줄인지 본다.
@@ -497,9 +571,10 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     #: 않는** 것이 계약이라(얹으면 화면 넷·서비스 열다섯이 시험 능력을 부를 수 있게 되고
     #: "제품에서 도달 불가"가 표면 하나 차이로 무너진다) factory 의 별도 반환값으로 받는다.
     assert re.search(r"const \{ bridge, push, testHost \} = createBridge\(\);", compat_source)
-    #: `window.Bridge` 는 이제 **별칭 대입 한 줄**뿐이다 — 판독이 되살아나면 생산자가 둘이 된다.
-    assert re.findall(r"window\.Bridge(?!\s*=)", compat_source) == []
-    assert compat_source.count("window.Bridge") == 1
+    #: 전역 경유 판독·생산 둘 다 0이다. 종전에는 별칭 대입 한 줄이 남아 `count == 1` 이었고, 그 옆의
+    #: 「별칭 이외 판독 0」 단언은 정규식에 `` 대신 **백스페이스 바이트(0x08)** 가 들어가
+    #: 있어 아무것도 매치하지 못하는 **공허한 단언**이었다 — 선언은 살고 결과는 죽어 있던 자리다.
+    assert compat_source.count("window.Bridge") == 0
 
     #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 값 캡처(`JobScreen.refreshList` 를
     #: 프로퍼티로 뽑아 저장)로 되돌아가면 구성 순서에 따라 undefined 를 붙든다.
@@ -516,30 +591,34 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
             rf"{member}: \(\.\.\.args\) => Nav\.{member}\(\.\.\.args\),", compat_source
         ), f"navigation.{member} 가 지연 호출 콜백이 아닙니다."
 
-    #: 별칭 25개는 전부 **모든 구성 뒤**에 선다 — 구성 전의 별칭 대입은 undefined 를 걸어
-    #: Python 소비자가 조용히 빈 통로를 읽는다(선언-사용 순서 계약, entry 순서 계약의 후계).
+    #: 제품 API 설치는 **모든 구성 뒤**에 선다 — 구성 전에 걸면 미구성 값이 공개 경계에
+    #: 실리고 Python 소비자가 조용히 빈 통로를 읽는다(선언-사용 순서 계약의 후계).
+    #:
+    #: 종전에는 같은 질문을 **별칭 스물다섯**에 물었다(가장 먼저 서는 별칭이 마지막 구성보다
+    #: 뒤인가). 별칭이 사라지면서 순서 계약이 걸릴 자리는 이 한 줄만 남았다 — 질문은 그대로고
+    #: 대상만 줄었다.
     last_construction = max(
         compat_source.rindex(f"{factory}(") for factory in factories
     )
-    first_alias = min(
-        compat_source.index(f"window.{alias} =")
-        for alias in EXPECTED_CENTRAL_COMPAT_GLOBALS
+    api_install = compat_source.index(f"window.{PRODUCT_API_GLOBAL} =")
+    assert last_construction < api_install, (
+        "제품 API 설치가 factory 구성보다 먼저 섭니다 — 미구성 값이 공개 경계에 걸립니다."
     )
-    assert last_construction < first_alias, (
-        "compat 의 별칭 대입이 factory 구성보다 먼저 섭니다 — 미구성 값이 전역에 걸립니다."
+    #: 시험 배선은 제품 API 설치보다 **뒤**다. 앞에 서면 프로브가 아직 없는 파사드를 붙든다.
+    assert api_install < compat_source.index("bootSelftest("), (
+        "시험 배선이 제품 API 설치보다 먼저 섭니다."
     )
 
 
-def test_no_legacy_iife_remains_and_total_global_surface_is_unchanged() -> None:
-    """IIFE 는 **0개**가 됐고, 임시 제품 전역 표면 전체는 여전히 27개다.
+def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
+    """IIFE 는 **0개**이고, 임시 제품 전역 표면도 이제 **0개**다.
 
-    M1 의 "25 IIFE / 27 globals" 계약의 종착점이다: 25 파일이 전부 ESM 이 됐고 수량은
-    자리만 옮겼다(N-07 전 compat 25 + legacy 2 → 후 compat 27 + legacy 0 = 27). 새 전역이
-    생기거나 어떤 파일이 자기 전역 생산을 되살리면 여기서 잡힌다.
+    M1 의 "25 IIFE / 27 globals" 계약이 여기서 끝난다. N-04~N-07 은 생산 **자리**만 옮겨
+    수량 27 을 보존했고(D-05 는 단조 감소만 요구했다), N-10 이 그 27 을 0 으로 만들었다.
 
-    제품 공개 API ``__hwpx`` 는 이 27 에 **들지 않는다** — 임시 별칭은 N-10 에서 사라지지만
-    그것은 남는 최종 경계라 계정이 다르다(D-06). 같은 자루에 넣으면 "임시 전역 수량이 단조
-    감소한다"는 D-05 의 계측점이 최종 API 하나 때문에 영영 0 에 닿지 못한다.
+    제품 공개 API ``__hwpx`` 는 이 수량에 **들지 않는다** — 임시 별칭이 아니라 남는 최종
+    경계라 계정이 다르다(D-06). 같은 자루에 넣었다면 D-05 의 계측점이 최종 API 하나 때문에
+    영영 0 에 닿지 못했을 것이다.
     """
     scripts = tuple(sorted(SOURCE_JS_DIR.rglob("*.js")))
     non_esm = tuple(
@@ -561,27 +640,51 @@ def test_no_legacy_iife_remains_and_total_global_surface_is_unchanged() -> None:
     }
     assert iife_owners == set(), f"IIFE 가 남아 있습니다: {sorted(iife_owners)}"
 
-    assert len(EXPECTED_RUNTIME_GLOBALS) == 27
+    assert EXPECTED_RUNTIME_GLOBALS == set()
     assert PRODUCT_API_GLOBAL not in EXPECTED_RUNTIME_GLOBALS
 
 
-def test_entry_evaluates_central_compat_only() -> None:
-    """제품 entry 의 JS 는 이제 ``compat.js`` **하나**다.
+def test_entry_calls_the_composition_root_exactly_once() -> None:
+    """제품 entry 의 JS 는 ``bootstrap.js`` **하나**이고, 부팅 호출도 **한 번**이다.
 
     "compat 이 모든 소비 IIFE 보다 먼저 평가된다"던 계약의 종착점이다. 소비 IIFE 가 전부
-    ESM 이 되어 entry 에서 사라졌고, N-07 에서 마지막 하나(``bridge.js``)마저 compat 의
+    ESM 이 되어 entry 에서 사라졌고, N-07 에서 마지막 하나(``bridge.js``)마저 합성 루트의
     static import 로 들어오면서 **entry 에 걸린 평가 순서 계약 자체가 없어졌다**. 남은
-    순서 질문은 전부 compat 안에 있다: 구성→별칭 순서는
-    :func:`test_each_service_is_constructed_exactly_once_in_compat` 이, 그래프 순환 부재는
+    순서 질문은 전부 합성 루트 안에 있다:
+    :func:`test_each_service_is_constructed_exactly_once_in_the_composition_root` 과
     :func:`test_esm_module_graph_has_no_cycles` 가 진다.
+
+    N-10 이 여기 더한 축이 **호출 횟수**다. 종전 entry 는 ``import "./compat.js";`` 부작용
+    import 라 ESM 캐시가 "본문은 한 번만 돈다"를 공짜로 보장했다. 이제 부팅은
+    ``bootProduct()`` 호출이고 그 함수는 멱등이 아니다 — 두 번 부르면 위임 리스너가 한 벌
+    더 서고 부팅 랜딩이 두 번 찍힌다. 공짜였던 보장이 사라졌으므로 그 자리를 이 단언이 갚는다.
 
     화면·서비스가 entry 에 직접 남아 있으면 모듈이 두 경로로 그래프에 들어오므로 그 부재도
     같이 본다.
     """
-    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    entry = SOURCE_ENTRY.read_text(encoding="utf-8")
+    modules = evaluated_modules(entry)
 
-    assert modules == (COMPAT_MODULE,)
+    assert modules == (BOOTSTRAP_MODULE,)
     assert not set(modules) & set(ESM_FILES)
+
+    #: named import 로 들여와 **정확히 한 번** 부른다.
+    assert re.search(
+        rf'(?m)^import\s+\{{\s*{BOOTSTRAP_EXPORT}\s*\}}\s+from\s+"\./{BOOTSTRAP_MODULE}";$',
+        entry,
+    ), f"entry 가 {BOOTSTRAP_EXPORT} 를 named import 하지 않습니다."
+    calls = re.findall(rf"(?m)^\s*{BOOTSTRAP_EXPORT}\(\);?\s*$", entry)
+    assert len(calls) == 1, (
+        f"entry 가 {BOOTSTRAP_EXPORT} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
+    )
+
+    #: 제품 소스 전체에서 호출자는 entry 하나뿐이다. 다른 모듈이 부르면 앱이 두 벌 선다.
+    callers = sorted(
+        path.relative_to(SOURCE_ROOT).as_posix()
+        for path in SOURCE_ROOT.rglob("*.js")
+        if re.search(rf"(?m)^\s*{BOOTSTRAP_EXPORT}\(\)", path.read_text(encoding="utf-8"))
+    )
+    assert callers == ["src/main.js"], f"합성 루트 호출자가 {callers} 입니다 — entry 하나여야 합니다."
 
 
 # --------------------------------------------------------------- N-09 시험 능력 경계

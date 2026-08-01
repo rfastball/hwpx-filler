@@ -25,6 +25,9 @@
   실 클릭으로 지난다.
 - 픽셀 캡처는 Win32 ``PrintWindow(PW_RENDERFULLCONTENT)`` — WebView2 는
   DirectComposition 이라 이 플래그 없이는 검은 화면이 나온다.
+- 화면 전환은 **실 DOM 클릭**이다(상단 탭 ``.navbtn[data-scr=…]``). N-10 이전에는 임시
+  전역 ``window.Nav.go(…)`` 를 직접 불렀는데, 그 전역이 사라지면서 이 스크립트가 마지막
+  executable 소비자였다. 사용자가 실제로 밟는 경로와 같아져 캡처의 충실도도 올라간다.
 """
 from __future__ import annotations
 
@@ -329,7 +332,7 @@ def _drive(d: Driver) -> None:
 
     # ---- S5 실행 세션(「문서 작업」에서 골라 문서 만들기로) ------------------
     # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B).
-    d.js("window.Nav.go('library'); true;")
+    d.click_sel('.navbtn[data-scr="library"]')
     d.wait(
         "!!document.querySelector('#libraryList [data-work=\"발주요청서\"]')",
         "저장·라이브러리 반영",
@@ -488,7 +491,7 @@ def _drive(d: Driver) -> None:
     # ---- S8 트랙 B: TXT 작업 만들기(편집기 「템플릿」 탭 TXT 밴드) ----------
     # 휘발 「기안」 화면은 F6 PR-B 로 사라졌다 — TXT 도 같은 편집기에서 **저장 작업**으로
     # 만들고(지도 §10.15.15 점검표 1행), 채워 복사는 검토·복사 작업대가 잇는다.
-    d.js("window.Nav.go('library'); true;")
+    d.click_sel('.navbtn[data-scr="library"]')
     d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업 화면(트랙 B)")
     d.click_sel("#libraryNewWork")
     d.wait(
@@ -531,7 +534,7 @@ def _drive(d: Driver) -> None:
 
     # ---- S9 작업대 진입·검토 -----------------------------------------------
     # 실행 버튼이 매체 분기(판정 D)로 「검토·복사 시작 · 3건」으로 서고 작업대가 열린다.
-    d.js("window.Nav.go('library'); true;")
+    d.click_sel('.navbtn[data-scr="library"]')
     d.wait(
         "!!document.querySelector('#libraryList [data-work=\"발주요청 기안\"]')",
         "TXT 작업 라이브러리 반영",
@@ -589,7 +592,7 @@ def _drive(d: Driver) -> None:
     # 구 「기안」의 빨간 {{토큰}} 은 휘발 세션(미결속 허용)의 표면이었다. 저장 작업은 전 행
     # 확정이 저장 조건이라, 없는 항목은 편집기가 **비움 확정**을 요구하고(조용히 지나가지
     # 않는다) 작업대 카드에 〈빈 값〉으로 남는다 — 같은 경보의 새 거처를 그대로 찍는다.
-    d.js("window.Nav.go('library'); true;")
+    d.click_sel('.navbtn[data-scr="library"]')
     d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업(오류 연습)")
     d.click_sel("#libraryNewWork")
     d.wait(
@@ -624,7 +627,7 @@ def _drive(d: Driver) -> None:
     )
     d.click_sel("#editorBack")
     d.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈(오류 연습)")
-    d.js("window.Nav.go('library'); true;")
+    d.click_sel('.navbtn[data-scr="library"]')
     d.wait(
         "!!document.querySelector('#libraryList [data-work=\"오류연습\"]')",
         "오류 연습 작업 반영",
@@ -690,7 +693,12 @@ def main() -> int:
         try:
             deadline = time.monotonic() + 20.0
             while time.monotonic() < deadline:
-                if window.evaluate_js("!!(window.pywebview && window.pywebview.api && window.Nav)"):
+                # 준비 신호는 제품 공개 API 다(#372 D-06). 종전에는 내부 이름 `window.Nav` 를
+                # 봤는데, 그 임시 전역은 N-10 에서 사라졌다. `__hwpx` 는 합성 루트가 서비스·
+                # 화면·앱 셸을 **전부 구성한 뒤** 마지막에 거는 이름이라 준비 신호로 더 정확하다.
+                if window.evaluate_js(
+                    "!!(window.pywebview && window.pywebview.api && window.__hwpx)"
+                ):
                     break
                 time.sleep(0.15)
             else:

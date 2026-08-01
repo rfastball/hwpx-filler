@@ -2,8 +2,9 @@
 
    ESM 전환의 불변식 세 가지를 잡는다: ①문자열이 바이트 동일한가 ②공개 표면이 넓어지지
    않았는가(named export 하나·키 하나) ③import 만으로 전역을 건드리지 않는가.
-   ③은 compat 층(frontend/src/compat.js)이 window 재설치를 **단독으로** 소유한다는
-   경계의 테스트다 — 리프가 몰래 전역을 쓰면 두 곳이 같은 전역을 판정하게 된다. */
+   ③은 제품 전역이 합성 루트(frontend/src/bootstrap.js)의 `__hwpx` 하나뿐이라는 경계의
+   테스트다 — 리프가 몰래 전역을 쓰면 두 곳이 같은 전역을 판정하게 된다. N-10 이전에는
+   같은 경계를 중앙 compat 층이 임시 별칭 스물일곱의 단독 생산자로서 졌다. */
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 

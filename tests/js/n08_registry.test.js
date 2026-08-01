@@ -174,7 +174,7 @@ test("간선의 끝이 없으면 **조용히 무시하지 않고** 죽는다(음
 });
 
 /* 주석을 걷어 **코드만** 남긴다. 이 모듈들의 주석은 이관 근거와 죽은 이름을 일부러 보존하므로
-   (`compat.js` 를 왜 import 하지 않는지, `__hwpxTest` 가 왜 N-09 소유인지) 산문을 코드로 세면
+   (합성 루트를 왜 import 하지 않는지, `__hwpxTest` 가 왜 N-09 소유인지) 산문을 코드로 세면
    "참조하면 안 되는 이름이 있다"는 거짓 실패가 난다. CSS 계약이 쓰는 `strip_comments` 와 같은
    결의 도구다. 단, **전역 쓰기**만은 날것으로 센다 — 저장소 게이트가 주석까지 훑기 때문이다. */
 function stripComments(source) {
@@ -189,7 +189,7 @@ test("음성 — 제품 그래프에 닿지 않는다(inert)", () => {
       /from\s+["'][^"']*\/js\//.test(code), false,
       `${name} 이 frontend/js 를 import 합니다 — 제품 그래프에 닿습니다.`,
     );
-    for (const forbidden of ["compat.js", "main.js", "__hwpxTest"]) {
+    for (const forbidden of ["bootstrap.js", "main.js", "__hwpxTest"]) {
       assert.equal(code.includes(forbidden), false, `${name} 이 ${forbidden} 를 참조합니다.`);
     }
     /* 전역 쓰기 0 — 저장소 게이트(`test_temporary_aliases_have_exactly_one_central_producer`)가

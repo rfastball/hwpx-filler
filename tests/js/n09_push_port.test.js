@@ -29,7 +29,7 @@ function makeBasePush() {
   return { push, arrived };
 }
 
-/** 제품 파사드를 **올바른** 배선(포트 경유)으로 세운다 — `compat.js` 와 같은 모양. */
+/** 제품 파사드를 **올바른** 배선(포트 경유)으로 세운다 — `bootstrap.js` 와 같은 모양. */
 function productApiOverPort(port) {
   return createProductApi({
     handlers: {

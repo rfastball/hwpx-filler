@@ -59,11 +59,11 @@
   <main class="stage">
     <!-- ============ 「문서 작업」 전역 라이브러리 (§19.6·§19.7 · 재작성 F2 PR-A) ============ -->
     <!-- 홈(카드 나열 + group-by 렌즈)의 승계자. 안정 DOM(id) + library.js 가
-         window.__push('library', snapshot) 로 값만 채운다. 링1 HomeViewModel 의 보기 4종·작업
+         푸시('library', snapshot) 로 값만 채운다. 링1 HomeViewModel 의 보기 4종·작업
          방식 필터·검색·태그 facet·건강 번역을 그대로 소비 — VM 로직 재구현 없음.
          browser(좌) + detail(우) 2-pane 이고 공간 배분은 목록 길이에 끌려다니지 않는다:
          넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
-         스크롤하지 않는다(library.css .library-browser). 이동은 window.Nav 로만 — 이 화면은 다른
+         스크롤하지 않는다(library.css .library-browser). 이동은 주입된 Nav 로만 — 이 화면은 다른
          화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
     <section class="scr" id="scr-library">
       <header class="scr-head">
@@ -125,7 +125,7 @@
     </section>
 
     <!-- ============ 「문서 만들기」 화면 (구 「작업」 · R-flow #90 · 재작성 R1 2열) ============ -->
-    <!-- 안정 DOM(id) + job.js 가 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
+    <!-- 안정 DOM(id) + job.js 가 푸시('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
          RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음(#87 가드). 좌 master
          목록 클릭 = 우 패널 in-pane 세션(화면 전환 0). 4존 = 헤더·데이터·본문·완료(블록 1). -->
     <section class="scr on" id="scr-job">
@@ -436,7 +436,7 @@
     <!-- ====== TXT 검토·복사 작업대 (v6 S7 · 계약 §11 — 재작성 F6 PR-A) ============ -->
     <!-- 「문서 만들기」에서 TXT 작업을 실행하면 오는 **몰입 화면**(편집기와 같은 부류):
          상단 2탭을 덮고 back 하나로 나간다. 진입 시 고정 사본을 받으므로 데이터 존이 없다.
-         안정 DOM + workbench.js 가 window.__push('workbench', snapshot) 로 값만 채운다. -->
+         안정 DOM + workbench.js 가 푸시('workbench', snapshot) 로 값만 채운다. -->
     <section class="scr" id="scr-workbench">
       <div class="wb-shell">
         <button class="btn sm back" id="wbBack" type="button">← 문서 만들기로 돌아가기</button>
@@ -505,7 +505,7 @@
          #txtEditModal(아래)은 셸 레벨 공용으로 생존하고 소유 JS 만 editor.js 로 옮겼다.) -->
 
     <!-- ============ 데이터 관리 (등록 데이터 참조 · 수명, #26 #4) ============ -->
-    <!-- 안정 DOM(id) + pool.js 가 window.__push('pool', snapshot) 로 값만 채운다(tpl 패턴).
+    <!-- 안정 DOM(id) + pool.js 가 푸시('pool', snapshot) 로 값만 채운다(tpl 패턴).
          링1 DatasetPoolViewModel(참조 등록·상태 전이·행 성형)에 브리지로 배선 — VM 재구현 없음.
          참조만 저장(행·ServiceKey 없음, ADR J) — 실행 때 원본을 다시 읽는다("싱크").
          나라장터 등록은 동결로 미노출(기존 nara 항목 표시는 유지 — 숨김 금지). -->

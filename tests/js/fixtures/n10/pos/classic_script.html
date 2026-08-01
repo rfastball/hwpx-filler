@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>양성 대조 ⑥ — 클래식 스크립트</title>
+</head>
+<body>
+<!-- `type="module"` 이 없는 스크립트는 전역 스코프에서 평가된다. 하나라도 남으면 "제품
+     전역은 셋뿐" 이라는 계약이 정적으로 성립하지 않는다 — 그 파일의 최상단 `var`·함수
+     선언이 전부 창에 실리기 때문이다. src 형태와 인라인 형태를 둘 다 둔다. -->
+<script src="./legacy.js"></script>
+<script>var inlineLeak = 1;</script>
+</body>
+</html>
