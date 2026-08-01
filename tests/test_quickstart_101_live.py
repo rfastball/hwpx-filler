@@ -62,6 +62,39 @@ _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 # ───────────────────────────────── 실주행 ─────────────────────────────────
 
 
+def _evidence_dir(tmp_path_factory) -> Path:
+    """이 실행의 증거가 떨어질 자리.
+
+    기본은 pytest 임시 폴더다 — 로컬에서 저장소를 어지럽히지 않는다. CI 는
+    ``HWPX_LIVE_EVIDENCE_DIR`` 로 **회수 가능한** 자리를 준다: 종전에는 보고서가 러너의
+    임시 폴더로 가서 잡과 함께 사라졌고, 실패한 실주행이 무엇을 봤는지 남는 것이 없었다
+    (N-11B). 증거는 실패했을 때 가장 필요하므로 그 자리를 밖에서 정할 수 있어야 한다.
+    """
+    given = os.environ.get("HWPX_LIVE_EVIDENCE_DIR")
+    if not given:
+        return tmp_path_factory.mktemp("live101")
+    target = Path(given)
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _keep_output(evidence: Path, stdout, stderr) -> None:
+    """하니스가 무엇을 말하며 끝났는지 회수 가능한 자리에 통째로 남긴다.
+
+    단언 문자열은 2000자로 잘리고 러너 로그는 접혀 있다. 시한 초과 경로에서는 잡힌 출력이
+    ``bytes`` 이거나 아예 ``None`` 일 수 있어(:class:`subprocess.TimeoutExpired`) 있는 그대로
+    받아 적는다 — 증거를 남기다 다른 예외를 내면 남는 것이 또 없다.
+    """
+    for name, captured in (("check-stdout.txt", stdout), ("check-stderr.txt", stderr)):
+        if captured is None:
+            text = "(캡처 없음)"
+        elif isinstance(captured, bytes):
+            text = captured.decode("utf-8", errors="backslashreplace")
+        else:
+            text = captured
+        (evidence / name).write_text(text, encoding="utf-8")
+
+
 @pytest.fixture(scope="module")
 def live_check_run(tmp_path_factory) -> dict:
     """101 `check` 를 **모듈당 한 번** 돌리고 그 실행의 사실을 모아 준다.
@@ -73,24 +106,39 @@ def live_check_run(tmp_path_factory) -> dict:
     예제 홈 스냅샷을 **이 실행을 감싸서** 뜬다 — 그래야 「이 실행이 바꿨는가」가 정확한 질문이
     된다(다른 테스트가 사이에 끼면 귀속이 흐려진다).
     """
-    report_path = tmp_path_factory.mktemp("live101") / "check-report.json"
+    evidence = _evidence_dir(tmp_path_factory)
+    report_path = evidence / "check-report.json"
     before = _tree_manifest(EXAMPLE_HOME)
     assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
-    proc = subprocess.run(
-        [
-            sys.executable, str(CLI), "check",
-            "--home", "temp",
-            "--no-build",
-            "--budget-s", str(_LIVE_BUDGET_S),
-            "--report", str(report_path),
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=_OUTER_TIMEOUT_S,
-    )
+    command = [
+        sys.executable, str(CLI), "check",
+        "--home", "temp",
+        "--no-build",
+        "--budget-s", str(_LIVE_BUDGET_S),
+        "--report", str(report_path),
+    ]
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=_OUTER_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as expired:
+        # 바깥 시한이 물었다 = 드라이버의 하드 스톱조차 착지하지 못했다는 뜻이고, 증거가
+        # 가장 필요한 자리가 정확히 여기다. 그런데 이 예외를 그냥 올리면 아래 저장 줄을
+        # 지나치지 못해 **그 시나리오에서만** 표준출력이 사라진다(코덱스 리뷰 P2).
+        _keep_output(evidence, expired.stdout, expired.stderr)
+        raise AssertionError(
+            f"101 check 가 바깥 시한 {_OUTER_TIMEOUT_S:.0f}s 를 넘겼습니다 — 드라이버의 하드 "
+            f"스톱({_LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S:.0f}s)조차 착지하지 "
+            f"못했습니다. 남긴 증거: {evidence}"
+        ) from expired
+
     after = _tree_manifest(EXAMPLE_HOME)
+    _keep_output(evidence, proc.stdout, proc.stderr)
     assert report_path.exists(), (
         f"보고서 미생성 — rc={proc.returncode}\n"
         f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
@@ -115,6 +163,18 @@ def test_the_outer_timeout_lets_the_driver_hard_stop_first() -> None:
     )
     # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
     assert not (300.0 + 60.0 < 120.0)
+
+
+def test_the_evidence_writer_survives_what_a_timeout_hands_it(tmp_path) -> None:
+    """시한 초과가 건네는 출력은 `str` 이 아닐 수 있다 — `bytes` 도 `None` 도 받아 적는다.
+
+    이 경로가 예외를 내면 매달림 진단이 **그 시나리오에서만** 사라진다. 증거를 남기려다
+    증거를 잃는 형상이라 게이트 밖에서 따로 센다(창 없이 도는 순수 검사).
+    """
+    _keep_output(tmp_path, "한글 stdout".encode("utf-8"), None)
+
+    assert (tmp_path / "check-stdout.txt").read_text(encoding="utf-8") == "한글 stdout"
+    assert "캡처 없음" in (tmp_path / "check-stderr.txt").read_text(encoding="utf-8")
 
 
 @pytest.mark.live

@@ -45,7 +45,9 @@ CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `se
 되짚는다 — 그 검증은 `setup-node` **앞에** 서서 빌드 도구 없이 통과한다(순서가 계약이다).
 나머지는 자원 축이 가른다 — `static`
 (Ruff·Pyright) / `pytest-contract`(무표 집합 + 커버리지 하한) / `windows-native` /
-`browser-render` / `live-webview2` / `distribution-webview2`. CI 의 Ruff 는 `scripts` 까지 보는데
+`browser-render` / `live-webview2` / `distribution-webview2`. 그 일곱을 명시 열거해 `success`
+만 통과시키는 `quality-gate` 가 브랜치 보호가 겨눌 단 하나의 이름이고, 실주행·패키징 증거는
+`if: always()` 로 실패해도 회수된다. CI 의 Ruff 는 `scripts` 까지 보는데
 `test.ps1` 은 `src tests conftest.py` 만 본다 — `scripts/` 를 고쳤으면 `uv run ruff check scripts` 를
 따로 돌린다. 릴리스는 `pyproject.toml` 버전과 같은 `vX.Y.Z` 태그 push 로만 나간다.
 

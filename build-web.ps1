@@ -44,7 +44,13 @@ $expectedVite = '8.1.5'
 # seal 검증 CLI 로 넘길 인자. 두 모드가 **같은 검증기**를 부른다 — 모드가 가르는 것은
 # "도구를 부르는가"이지 "무엇을 믿는가"가 아니다.
 $verifyArgs = @()
-if ($IdentityOut) { $verifyArgs += @('--json-out', $IdentityOut) }
+$identityPath = $IdentityOut
+# CI 요약에 **무엇을 검증했는지**를 남긴다. 요약을 워크플로 여섯 자리에 복제하는 대신 여기
+# 한 곳에서 낸다 — 정체성을 아는 것은 이 스크립트이고, 복제된 요약은 하나가 낡아도 조용하다.
+if ($env:GITHUB_STEP_SUMMARY -and -not $identityPath) {
+    $identityPath = Join-Path ([System.IO.Path]::GetTempPath()) "hwpx-web-identity-$PID.json"
+}
+if ($identityPath) { $verifyArgs += @('--json-out', $identityPath) }
 if ($ExpectIdentity) { $verifyArgs += @('--expect-identity', $ExpectIdentity) }
 
 if ($Mode -eq 'Build') {
@@ -121,6 +127,22 @@ $trackedBuildFiles = @(git -C $root ls-files -- 'build/web')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($trackedBuildFiles.Count -ne 0) {
     throw "generated build/web 파일이 Git에 tracked 상태입니다: $($trackedBuildFiles -join ', ')"
+}
+
+if ($env:GITHUB_STEP_SUMMARY -and $identityPath -and (Test-Path -LiteralPath $identityPath)) {
+    $identity = Get-Content -LiteralPath $identityPath -Raw | ConvertFrom-Json
+    $job = if ($env:GITHUB_JOB) { $env:GITHUB_JOB } else { 'local' }
+    @(
+        "### sealed web — $job ($Mode)",
+        '',
+        '| 항목 | 값 |',
+        '|---|---|',
+        "| artifact_id | ``$($identity.artifact_id)`` |",
+        "| tree_sha256 | ``$($identity.tree_sha256)`` |",
+        "| source commit | ``$($identity.source_commit)`` |",
+        "| runner | $env:RUNNER_OS $env:RUNNER_ARCH |",
+        ''
+    ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 
 Write-Host $summary -ForegroundColor Green
