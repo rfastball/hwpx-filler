@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from _web_source import source_text
 from hwpxfiller.web_artifact import VerifiedWebArtifact, WebArtifactViolation
 from hwpxfiller.webapp import app as app_mod
 
@@ -49,17 +51,39 @@ def test_artifact_failure_is_loud_before_webview_window_creation(
 
 
 def test_main_and_selftest_share_the_single_resolver() -> None:
+    """해석기는 하나이고, 정체 재확인은 **자가검증 쪽**이 진다.
+
+    N-09 이전에는 ``_runtime_selftest_evidence`` 와 ``_selftest_drive`` 사이를 문자열로 잘라
+    읽었다. 두 함수가 사라지면 이 테스트는 단언이 아니라 :class:`ValueError` 로 죽어 사유가
+    보이지 않는다 — 그래서 후계는 **함수 자체를 지목**한다(:func:`inspect.getsource`).
+    옮겨도 살아남고, 사라지면 이름을 대며 죽는다.
+
+    지키는 것 셋은 그대로다:
+      ① ``main()`` 은 ``webview`` 를 들이기 **전에** 산출물을 해석한다(봉인 실패가 GUI·서버
+         부작용보다 먼저 부팅을 끊는다).
+      ② 창 생성 **이후**의 정체 교체 판정은 자가검증 산출자가 진다 — ``main()`` 이 대신
+         지면 "창이 뜬 뒤 바뀌었는가"를 아무도 묻지 않게 된다.
+      ③ 두 번째 해석기는 어디에도 없다(D-02).
+    """
     source = Path(app_mod.__file__).read_text(encoding="utf-8")
     main_region = source[source.index("def main()") :]
-    runtime_region = source[
-        source.index("def _runtime_selftest_evidence") : source.index("def _selftest_drive")
-    ]
+    identity_region = inspect.getsource(app_mod._selftest_artifact_identity)
 
     assert main_region.index("artifact = web_artifact()") < main_region.index("import webview")
     assert "str(artifact.index_path)" in main_region
-    assert "current_artifact = web_artifact()" in runtime_region
-    assert "current_artifact.artifact_id != launched_artifact.artifact_id" in runtime_region
     assert "(window, artifact)" in main_region
+
+    assert "current_artifact = web_artifact()" in identity_region
+    assert "current_artifact.artifact_id != launched_artifact.artifact_id" in identity_region
+    # 판정의 **자리**가 계약이다 — main() 으로 옮기면 위 두 문자열은 여전히 소스 어딘가에
+    # 있지만 "창이 뜬 뒤"를 묻는 성질은 사라진다.
+    assert "current_artifact = web_artifact()" not in main_region
+
+    # 그리고 그 산출자가 실제로 호스트 연산에 물려 있어야 한다(선언만 살고 결과가 죽지 않게).
+    assert "artifact_identity=lambda: _selftest_artifact_identity(" in inspect.getsource(
+        app_mod._selftest_host_operations
+    )
+
     assert "HWPXFILLER_WEB_DIR" not in source
     assert '_repo_root() / "web"' not in source
     assert '_repo_root() / "frontend"' not in source
@@ -83,131 +107,88 @@ def test_selftest_rejects_artifact_swap_after_window_creation(
     )
     monkeypatch.setattr(app_mod, "web_artifact", lambda: swapped)
 
-    class Window:
-        def evaluate_js(self, _script):
-            raise AssertionError("artifact swap 거절 전에 DOM을 읽었습니다")
-
+    # 후계는 `artifact_identity` 호스트 연산의 산출자다. **예외**로 올라야 한다 — 구조화된
+    # 거절로 접으면 "정체가 바뀌었다"가 프로브 실패 하나로 뭉개진다.
     with pytest.raises(WebArtifactViolation, match="changed after"):
-        app_mod._runtime_selftest_evidence(Window(), launched)
+        app_mod._selftest_artifact_identity(launched)
 
 
-def _runtime_probe_window(probe: dict) -> object:
-    class Window:
-        def evaluate_js(self, script):
-            if "const pageUrl = new URL" in script:
-                return {
-                    "page_url": "http://127.0.0.1:12345/index.html",
-                    "origin": "http://127.0.0.1:12345",
-                    "resource_urls": ["http://127.0.0.1:12345/assets/app.js"],
-                    "resources_same_origin": True,
-                    "forbidden_resources": [],
-                }
-            if "window.__n03OfflineProbe = state" in script:
-                return None
-            if "window.__n03OfflineProbe ||" in script:
-                return probe
-            raise AssertionError(f"unexpected selftest script: {script[:80]!r}")
-
-    return Window()
-
-
-@pytest.mark.parametrize(
-    ("probe", "completed", "succeeded", "blocked", "error"),
-    [
-        (
-            {
-                "pending": False,
-                "completed": True,
-                "succeeded": True,
-                "blocked": False,
-                "error": "external fetch succeeded",
-            },
-            True,
-            True,
-            False,
-            "external fetch succeeded",
-        ),
-        (
-            {
-                "pending": False,
-                "completed": True,
-                "succeeded": False,
-                "blocked": True,
-                "error": "TypeError: Failed to fetch",
-            },
-            True,
-            False,
-            True,
-            "TypeError: Failed to fetch",
-        ),
-    ],
-)
-def test_runtime_external_probe_distinguishes_success_and_block(
+def test_artifact_identity_returns_the_launched_pair_when_unchanged(
     tmp_path: Path,
     monkeypatch,
-    probe: dict,
-    completed: bool,
-    succeeded: bool,
-    blocked: bool,
-    error: str,
 ) -> None:
-    artifact = VerifiedWebArtifact(
+    """양성 대조 — 바뀌지 않았으면 **띄울 때의** 정체를 그대로 돌려준다.
+
+    음성만 있으면 "언제나 던진다"도 통과한다(부재판별력 리트머스).
+    """
+    launched = VerifiedWebArtifact(
         root=tmp_path,
         index_path=tmp_path / "index.html",
         artifact_id="a" * 64,
         tree_sha256="b" * 64,
     )
-    monkeypatch.setattr(app_mod, "web_artifact", lambda: artifact)
-    monkeypatch.setenv("HWPX_SELFTEST_OFFLINE_PROBE", "1")
+    monkeypatch.setattr(app_mod, "web_artifact", lambda: launched)
 
-    evidence = app_mod._runtime_selftest_evidence(
-        _runtime_probe_window(probe),
-        artifact,
-    )
-
-    assert evidence["external_fetch_completed"] is completed
-    assert evidence["external_fetch_succeeded"] is succeeded
-    assert evidence["external_fetch_blocked"] is blocked
-    assert evidence["external_fetch_error"] == error
+    assert app_mod._selftest_artifact_identity(launched) == {
+        "artifact_id": "a" * 64,
+        "tree_sha256": "b" * 64,
+    }
 
 
-def test_runtime_external_probe_timeout_is_never_success_or_block_evidence(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    artifact = VerifiedWebArtifact(
-        root=tmp_path,
-        index_path=tmp_path / "index.html",
-        artifact_id="a" * 64,
-        tree_sha256="b" * 64,
-    )
-    monkeypatch.setattr(app_mod, "web_artifact", lambda: artifact)
-    monkeypatch.setenv("HWPX_SELFTEST_OFFLINE_PROBE", "1")
-    ticks = iter((0.0, 9.0))
-    monkeypatch.setattr("time.monotonic", lambda: next(ticks))
+def test_offline_probe_responsibility_moved_to_the_frontend_runtime_probe() -> None:
+    """오프라인 대조 셋(성공·차단·시한초과)의 **후계 위치**를 못박는다.
 
-    evidence = app_mod._runtime_selftest_evidence(
-        _runtime_probe_window(
-            {
-                "pending": True,
-                "completed": False,
-                "succeeded": False,
-                "blocked": False,
-                "error": "",
-            }
-        ),
-        artifact,
-    )
+    N-09 이전에는 이 파일이 ``_runtime_selftest_evidence`` 를 직접 몰아 세 갈래를 각각
+    단언했다. 그 책임은 프런트 ``runtime`` 프로브로 통째 넘어갔고, 세 갈래는
+    ``tests/js/n08_persistence_geometry.test.js`` 가 값-수준으로 진다(가상 시계 포함).
 
-    assert evidence["external_fetch_completed"] is False
-    assert evidence["external_fetch_succeeded"] is False
-    assert evidence["external_fetch_blocked"] is None
-    assert evidence["external_fetch_error"] == "offline probe timed out"
+    그래서 여기서 같은 단언을 다시 쓰지 않는다 — 같은 판정을 두 곳이 지면 둘은 반드시
+    갈라진다. 대신 **이관이 실제로 일어났는지**만 센다: 후계 파일이 있고, 릴리스 빌드가
+    읽는 표식 문자열 둘을 그 파일이 들고 있고, 파이썬 쪽에는 남아 있지 않다.
+
+    이 문자열 둘은 ``packaging/build.ps1`` 의 양성·음성 대조가 **정확히 일치**로 읽는다
+    (:func:`test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe`).
+    하나라도 바뀌면 릴리스 빌드가 조용히 대조를 잃는다.
+    """
+    probe_js = source_text("src", "selftest", "probes", "persistence_geometry.js")
+    app_source = Path(app_mod.__file__).read_text(encoding="utf-8")
+
+    assert "external fetch succeeded" in probe_js
+    assert "offline probe timed out" in probe_js
+    # 스킴을 문자열로 적지 않는 난독화도 함께 옮겨갔다(정적 스캐너가 외부 URL 로 읽지 않게).
+    assert "String.fromCharCode(104, 116, 116, 112)" in probe_js
+
+    # 레거시 엔진은 남아 있지 않다 — 두 엔진이 동시에 사는 최종 상태를 금지한다.
+    assert not hasattr(app_mod, "_runtime_selftest_evidence")
+    assert not hasattr(app_mod, "_probe_late")
+    assert "__n03OfflineProbe" not in app_source
+
+
+def test_selftest_evidence_writer_and_terminator_are_separable() -> None:
+    """출력 쓰기와 창 종료는 **분리된 두 책임**이고, 합친 이름도 그대로 남는다.
+
+    ``scripts/capture_101_screenshots.py`` 가 자기 드라이브 끝에서 ``_finish_selftest`` 를
+    직접 부른다(모듈 수준 seam). 그 스크립트를 도는 테스트가 없으므로 이름이 사라져도
+    조용하다 — 그 침묵을 여기서 막는다.
+    """
+    assert callable(app_mod._write_selftest_output)
+    assert callable(app_mod._finish_selftest)
+    assert callable(app_mod._selftest_drive)
+
+    # `main()` 은 호출 시점에 **전역 이름**으로 찾는다 — 그래야 캡처 하니스의
+    # `webapp_app._selftest_drive = drive` 치환이 앱 코드 변경 없이 먹는다. 지역 변수로
+    # 붙들거나 partial/lambda 로 감싸면 치환이 성공한 채 무시되고, 캡처는 스크린샷 0장으로
+    # 조용히 "완료"한다(그 스크립트를 도는 테스트는 없다).
+    main_source = inspect.getsource(app_mod.main)
+    assert "webview.start(" in main_source
+    assert "_selftest_drive," in main_source
 
 
 def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -> None:
     build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
-    app = Path(app_mod.__file__).read_text(encoding="utf-8")
+    # 외부 fetch 대조를 실제로 쏘는 자리는 N-09 에서 프런트 `runtime` 프로브로 옮겨갔다.
+    # 릴리스 빌드가 읽는 것은 그 프로브가 낸 값이므로, 대조 문자열의 대상도 함께 옮긴다.
+    probe_js = source_text("src", "selftest", "probes", "persistence_geometry.js")
     entry = (ROOT / "packaging" / "hwpx_filler_web_entry.py").read_text(
         encoding="utf-8"
     )
@@ -247,8 +228,10 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "falseResponsibilities.Count -ne 0" in build
     assert "resources_same_origin" in build
     assert "external_fetch_blocked" in build
-    assert "String.fromCharCode(104, 116, 116, 112)" in app
-    assert "['example', 'com'].join('.')" in app
+    # 난독화된 스킴은 프런트 프로브로 옮겨갔다(N-09) — 표식이 사라지지 않았는지는
+    # test_offline_probe_responsibility_moved_to_the_frontend_runtime_probe 가 진다.
+    assert "String.fromCharCode(104, 116, 116, 112)" in probe_js
+    assert '["example", "com"].join(".")' in probe_js
     assert "ThreadingHTTPServer" in proxy and "self.send_response(204)" in proxy
     assert "artifact = web_artifact()" in entry
     assert "artifact.artifact_id" in entry and "artifact.tree_sha256" in entry

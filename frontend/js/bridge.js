@@ -132,5 +132,28 @@ export function createBridge() {
     for (const fn of renderers[screen] || []) fn(snapshot);
   }
 
-  return { bridge, push };
+  /* 시험 전용 호스트 통로(N-09) — **공개 브리지 표면이 아니다**.
+     `bridge` 에 얹지 않는 것이 요점이다: 얹는 순간 화면·서비스가 이 통로를 부를 수 있게 되고,
+     그러면 "시험 훅은 제품에서 도달 불가" 라는 계약이 표면 하나 차이로 무너진다. 그래서
+     factory 의 **별도 반환값**으로 나가고, 받는 쪽은 중앙 selftest 부트 하나뿐이다.
+
+     여기 두는 이유는 `pywebview.api` 판독을 이 파일 하나에 가두는 규율을 지키기 위해서다
+     (파일 머리말). 정상 실행에서는 아래 두 메서드가 **호스트에 존재하지 않으므로**
+     `available()` 이 거짓이고 부트는 아무것도 설치하지 않는다 — 활성화 조건은 오직
+     "호스트가 이 프로세스를 시험용으로 띄웠는가" 다. */
+  const testHost = {
+    /** 호스트가 시험 능력을 대는가 — 정상 실행에선 거짓이다(메서드 자체가 없다). */
+    available() {
+      return !!(window.pywebview && window.pywebview.api
+        && typeof window.pywebview.api.selftest_claim === "function");
+    },
+    /** 일회용 토큰 클레임. 두 번째 호출은 호스트가 거절한다. */
+    claim(version) { return window.pywebview.api.selftest_claim(version); },
+    /** 문서 밖 연산 요청(HOST_OPS). op·payload 검증은 **호스트가** 진다. */
+    request(op, payload) {
+      return window.pywebview.api.selftest_host_op(op, payload === undefined ? null : payload);
+    },
+  };
+
+  return { bridge, push, testHost };
 }

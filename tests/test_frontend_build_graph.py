@@ -490,9 +490,13 @@ def test_each_service_is_constructed_exactly_once_in_compat() -> None:
     assert re.findall(r"window\.Nav\b(?!\s*=)", compat_source) == []
     assert compat_source.count("window.Nav") == 1
     #: `bridge` 는 이제 compat 이 **구성**한다(N-07) — 구 IIFE 를 되읽던 자리의 후계다.
-    #: 객체째 넘기는 성질은 그대로여야 한다: 메서드를 뽑으면 Python 프로브의 스텁 교체가
+    #: 객체째 넘기는 성질은 그대로여야 한다: 메서드를 뽑으면 selftest 프로브의 스텁 교체가
     #: 우회된다. 그래서 산물을 그대로 받는 구조분해 한 줄인지 본다.
-    assert re.search(r"const \{ bridge, push \} = createBridge\(\);", compat_source)
+    #:
+    #: N-09 에서 시험 전용 호스트 통로 `testHost` 가 같은 산물에 합류했다. `bridge` 에 **얹지
+    #: 않는** 것이 계약이라(얹으면 화면 넷·서비스 열다섯이 시험 능력을 부를 수 있게 되고
+    #: "제품에서 도달 불가"가 표면 하나 차이로 무너진다) factory 의 별도 반환값으로 받는다.
+    assert re.search(r"const \{ bridge, push, testHost \} = createBridge\(\);", compat_source)
     #: `window.Bridge` 는 이제 **별칭 대입 한 줄**뿐이다 — 판독이 되살아나면 생산자가 둘이 된다.
     assert re.findall(r"window\.Bridge(?!\s*=)", compat_source) == []
     assert compat_source.count("window.Bridge") == 1
@@ -578,3 +582,113 @@ def test_entry_evaluates_central_compat_only() -> None:
 
     assert modules == (COMPAT_MODULE,)
     assert not set(modules) & set(ESM_FILES)
+
+
+# --------------------------------------------------------------- N-09 시험 능력 경계
+#: 시험 능력의 전역 이름. 임시 별칭 27과도, 제품 공개 API ``__hwpx``와도 **다른 세 번째
+#: 계정**이다: 임시 별칭이 아니므로 D-05의 단조 감소 계측에 들지 않고, 제품 표면이 아니므로
+#: 정상 실행에는 **존재해서는 안 된다**.
+SELFTEST_API_GLOBAL = "__hwpxTest"
+
+#: 그 전역을 만드는 유일한 자리. ``Object.defineProperty``라 ``window.X =`` 정규식을 쓰는
+#: 별칭 게이트에는 **잡히지 않는다** — 그래서 이 계정은 자기 게이트를 따로 가진다.
+SELFTEST_API_PRODUCER = "src/selftest/api.js"
+
+
+def _frontend_sources() -> "dict[str, str]":
+    """``frontend/`` 아래 모든 JS 원본 — 주석까지 포함한 날 것."""
+    return {
+        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(SOURCE_ROOT.rglob("*.js"))
+    }
+
+
+def test_selftest_api_global_has_exactly_one_producer() -> None:
+    """``__hwpxTest`` 생산자는 정확히 하나이고 ``defineProperty`` 로만 선다(#372 D-07).
+
+    별칭 게이트(:func:`test_temporary_aliases_have_exactly_one_central_producer`)는
+    ``^window.X =`` 를 세므로 ``defineProperty`` 로 만든 이 전역을 **보지 못한다**. 그 공백을
+    이 게이트가 메운다 — 없으면 이 저장소의 유일한 "생산자 계측이 없는 전역"이 된다.
+
+    대입(``window.__hwpxTest =``)을 금지하는 이유는 재대입·재정의 가능성이다: 쓰기 가능한
+    전역이면 페이지 스크립트가 능력을 갈아끼울 수 있고, 그러면 "호스트가 인증한 통로"라는
+    성질이 사라진다.
+    """
+    sources = _frontend_sources()
+
+    assignments = {
+        name for name, text in sources.items()
+        if re.search(rf"(?:window|globalThis)\.{SELFTEST_API_GLOBAL}\s*=", strip_comments(text))
+    }
+    assert assignments == set(), (
+        f"{SELFTEST_API_GLOBAL} 을 대입으로 만드는 자리가 있습니다: {sorted(assignments)} — "
+        "쓰기 가능한 전역은 페이지가 갈아끼울 수 있습니다."
+    )
+
+    producers = {
+        name for name, text in sources.items()
+        if re.search(
+            rf"defineProperty\([^,]+,\s*(?:SELFTEST_GLOBAL|[\"']{SELFTEST_API_GLOBAL}[\"'])",
+            strip_comments(text),
+        )
+    }
+    assert producers == {SELFTEST_API_PRODUCER}, (
+        f"{SELFTEST_API_GLOBAL} 생산자가 {sorted(producers)} 입니다 — "
+        f"{SELFTEST_API_PRODUCER} 하나여야 합니다."
+    )
+
+    #: 세 계정은 서로 섞이지 않는다.
+    assert SELFTEST_API_GLOBAL not in EXPECTED_RUNTIME_GLOBALS
+    assert SELFTEST_API_GLOBAL != PRODUCT_API_GLOBAL
+
+
+def test_selftest_activation_reads_no_page_controllable_condition() -> None:
+    """URL 쿼리·해시·쿠키로 시험 능력을 켤 수 없다(#381 불변식).
+
+    쿼리스트링·``location.hash``·쿠키는 전부 **페이지 쪽에서 만들 수 있는** 조건이다. 하나라도
+    활성화 경로가 되면 "호스트가 이 창을 시험용으로 띄웠다"를 증명하지 못한다. 그래서 프런트
+    전체에서 그 판독이 **0**이어야 한다.
+
+    이것은 정적 절반이다("선언은 살고 결과는 죽는다") — 실제 창에서의 비노출은
+    ``tests/test_web_selftest_gate.py`` 의 실런타임 음성이 진다.
+    """
+    forbidden = ("location.search", "location.hash", "URLSearchParams", "document.cookie")
+    offenders = {
+        f"{name}:{needle}"
+        for name, text in _frontend_sources().items()
+        for needle in forbidden
+        if needle in strip_comments(text)
+    }
+    assert offenders == set(), (
+        f"페이지가 만들 수 있는 조건을 읽는 자리가 있습니다: {sorted(offenders)}"
+    )
+
+
+def test_one_build_entry_and_no_build_time_branch() -> None:
+    """산출물은 **한 번의 빌드 하나**다 — 테스트 전용 번들·빌드타임 분기가 없다(D-07).
+
+    정상 실행과 시험 실행이 같은 바이트를 쓰려면 갈림이 **런타임 호스트 능력** 하나여야 한다.
+    빌드타임 분기(``import.meta.env`` 등)가 하나라도 있으면 "검사한 것"과 "출하한 것"이 갈릴
+    수 있고, 그 갈림은 산출물 해시가 같아도 보이지 않는다.
+    """
+    config = (ROOT / "vite.config.mjs").read_text(encoding="utf-8")
+
+    for forbidden in ("input:", "rollupOptions", "build.lib", "lib:"):
+        assert forbidden not in config, (
+            f"Vite 설정에 {forbidden} 가 있습니다 — 두 번째 entry/번들의 자리입니다."
+        )
+
+    scripts = re.findall(r"<script\b[^>]*\bsrc=\"[^\"]+\"[^>]*></script>",
+                         SOURCE_INDEX.read_text(encoding="utf-8"))
+    assert scripts == ['<script type="module" src="./src/main.js"></script>']
+
+    branches = ("import.meta.env", "process.env", "__DEV__", "NODE_ENV")
+    offenders = {
+        f"{name}:{needle}"
+        for name, text in _frontend_sources().items()
+        for needle in branches
+        if needle in strip_comments(text)
+    }
+    assert offenders == set(), (
+        f"빌드타임 분기가 있습니다: {sorted(offenders)} — 시험용 산출물이 갈릴 수 있습니다."
+    )

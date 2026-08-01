@@ -25,6 +25,7 @@ from _web_source import (
     app_css,
     reaches_product_graph,
     linked_css,
+    source_text,
 )
 
 WEB_INDEX = SOURCE_INDEX
@@ -548,13 +549,16 @@ def test_job_generation_result_renders_partial_cancellation_honestly():
 
 
 def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
-    """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다."""
-    app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
-        encoding="utf-8"
-    )
+    """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다.
+
+    N-09 에서 프로브가 프런트로 옮겨가며 이 단언의 **대상 파일도 따라갔다**. 계약은 그대로다:
+    호스트 모니터 폭에 기대지 않고 폭을 직접 세워 잰다. 파일이 바뀌었다고 단언을 지우면
+    CI 의 좁은 가상 화면에서 wide 분기가 영영 안 돌고, 그 침묵은 아무도 못 듣는다.
+    """
+    probe_js = source_text("src", "selftest", "probes", "job.js")
     # draftPanel 프로브는 화면 사망(F6 PR-B)과 함께 걷혔다 — 남은 wide 분기는 job 하나.
-    assert "jobPanel.style.flex = '0 0 1100px'" in app_py
-    assert "jobPanel.style.flex = jobPanelFlex" in app_py
+    assert 'jobPanel.style.flex = "0 0 1100px"' in probe_js
+    assert "jobPanel.style.flex = jobPanelFlex" in probe_js
 
 
 def _forced_colors_block(css_text: str) -> str:

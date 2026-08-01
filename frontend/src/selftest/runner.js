@@ -530,6 +530,25 @@ export function createSelftestRunner(capabilities) {
         }
       },
     };
+
+    /* `push` 를 **접근자**로 바꿔 단일 활성 통로에 건다(N-09).
+     *
+     *  프로브 관용은 그대로다 — `const 원본 = ctx.push; ctx.push = 래퍼; … ctx.push = 원본`.
+     *  달라지는 것은 그 대입이 **어디에 닿는가**다: 지역 사본이 아니라 통로 자체를 갈아끼우므로,
+     *  갈아끼운 뒤 도착한 **호스트 푸시**(파이썬이 `__hwpx.deliver({event:"snapshot"})` 로 보낸
+     *  것)도 같은 래퍼를 지난다. 그것이 `mirror_pushes`·`reject_pushes` 가 재는 바로 그 값이고,
+     *  주입만으로는 닫히지 않던 구멍이다(`push_port.js` 헤더 참조).
+     *
+     *  포트가 없으면(단위 테스트의 손수 만든 대역) 종전처럼 평범한 데이터 프로퍼티다 —
+     *  프로브 코드는 어느 쪽에서도 같은 문장으로 돈다. */
+    if (caps.pushPort) {
+      Object.defineProperty(ctx, "push", {
+        get() { return caps.pushPort.active; },
+        set(fn) { caps.pushPort.override(fn); },
+        configurable: true,
+        enumerable: true,
+      });
+    }
     return ctx;
   }
 
@@ -669,6 +688,11 @@ export function createSelftestRunner(capabilities) {
           poisonedBy = probe.name;
         }
       }
+
+      /* 통로 원복 — 프로브가 갈아끼운 채 죽어도 다음 프로브와 제품 푸시가 오염되지 않는다.
+         레거시에는 이 보장이 없었다(전역을 갈아끼운 채 예외가 나면 그 잔존을 아무도 걷지
+         않았다). 프로브가 스스로 복원하는 관용은 그대로 두되, 마지막 그물은 러너가 진다. */
+      if (caps.pushPort) caps.pushPort.restore();
 
       if (!failed) {
         for (const k of probe.keys) report.results[k] = value[k];

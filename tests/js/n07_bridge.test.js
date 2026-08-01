@@ -86,15 +86,31 @@ const NON_HOST_MEMBERS = ["onPush", "hostReady"];
 
 /* ══════════════ 1. 공개 표면 ══════════════ */
 
-test("공개 표면 — createBridge() → { bridge, push }, named export 정확히 하나", () => {
+test("공개 표면 — createBridge() → { bridge, push, testHost }, named export 정확히 하나", () => {
   assert.deepEqual(Object.keys(mod), ["createBridge"], "export 는 정확히 하나(named)");
   assert.equal(mod.default, undefined, "export default 금지");
   assert.equal(typeof createBridge, "function");
 
   const made = createBridge();
-  assert.deepEqual(Object.keys(made), ["bridge", "push"]);
+  assert.deepEqual(Object.keys(made), ["bridge", "push", "testHost"]);
   assert.equal(typeof made.push, "function");
   assert.equal(typeof made.bridge, "object");
+  assert.equal(typeof made.testHost, "object");
+});
+
+test("testHost 는 **공개 브리지 표면이 아니다** — 화면·서비스가 부를 수 없다", () => {
+  const { bridge, testHost } = createBridge();
+
+  /* 이 단언이 요점이다: 시험 통로가 `bridge` 에 얹히면 그것을 받은 모든 소비자(화면 넷·
+     서비스 열다섯)가 시험 능력을 부를 수 있게 되고, "제품에서 도달 불가" 가 무너진다.
+     통로는 factory 의 별도 반환값으로만 나가고 받는 쪽은 중앙 selftest 부트 하나다. */
+  for (const name of ["claim", "request", "available", "testHost", "selftest"]) {
+    assert.equal(name in bridge, false, `${name} 이 공개 브리지 표면에 올라왔습니다`);
+  }
+  assert.deepEqual(Object.keys(testHost).sort(), ["available", "claim", "request"]);
+
+  // 호스트가 시험 메서드를 대지 않으면(=정상 실행) 능력은 없다.
+  assert.equal(testHost.available(), false, "스텁 호스트에 selftest_claim 이 없으면 거짓이어야 한다");
 });
 
 test("bridge 표면은 호스트 메서드 23 + onPush + hostReady 로 정확히 25 다", () => {
@@ -212,8 +228,18 @@ test("소스가 백엔드 핸들을 미리 뽑아 두지 않는다 — 매 호�
     "pywebview 핸들을 변수로 캡처하면 호스트 교체가 관측되지 않는다");
   assert.equal(/\{[^}\n]*\}\s*=\s*window\.pywebview/.test(SRC), false,
     "구조분해로 메서드를 미리 뽑으면 프로퍼티 교체가 우회된다");
-  assert.equal((SRC.match(/window\.pywebview\.api\./g) || []).length, 23,
-    "백엔드 호출은 23개, 전부 호출 시점 조회여야 한다");
+  /* 백엔드 호출 25 = **제품 23 + 시험 전용 2**. 총합만 세면 시험 통로가 늘어난 것과
+     제품 표면이 늘어난 것이 구별되지 않으므로 두 계정을 각각 못박는다 — 제품 23 은
+     N-07 이 동결한 수이고 여기서 변하면 안 된다. */
+  const calls = SRC.match(/window\.pywebview\.api\.(\w+)/g) || [];
+  const testOnly = calls.filter((call) => call.includes(".selftest_"));
+  assert.equal(calls.length - testOnly.length, 23,
+    "제품 백엔드 호출은 23개, 전부 호출 시점 조회여야 한다");
+  assert.deepEqual(testOnly.sort(), [
+    "window.pywebview.api.selftest_claim",
+    "window.pywebview.api.selftest_claim",   // available() 의 존재 판정 + claim() 의 호출
+    "window.pywebview.api.selftest_host_op",
+  ], "시험 전용 호스트 메서드는 클레임·호스트연산 둘뿐이다");
 });
 
 /* ══════════════ 4. push — 관측 푸시 디스패치 ══════════════ */

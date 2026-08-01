@@ -1,12 +1,15 @@
 """마일스톤 I 설정 존중·개인화 정적/순수 계약(#221)."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from _web_source import (
     REPO_ROOT,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     app_css,
     reaches_product_graph,
+    source_text,
 )
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp.app import _geometry_is_visible
@@ -84,143 +87,283 @@ def test_personalization_bridge_setters_delegate_and_return_values(monkeypatch) 
     assert not hasattr(app_mod.WebFrontend, "set_rail_collapsed")
 
 
-def _capture_selftest(monkeypatch) -> list[dict]:
-    captured: list[dict] = []
-    monkeypatch.setattr(app_mod, "_finish_selftest", lambda _window, result: captured.append(result))
+#: 프로토콜 대역이 돌려주는 성공 시작 봉투 — 실제 `api.js` 가 내는 모양 그대로.
+_START_OK = {
+    "ok": True, "action": "start", "runId": "r-1",
+    "state": "running", "mode": "?", "deadlineMs": 75000,
+}
+
+
+class _ProtocolWindow:
+    """``window.__hwpxTest`` 프로토콜을 말하는 최소 창 대역.
+
+    종전 이 파일의 대역들은 **프로브 표현식**에 반응했다(``"pywebview" in script`` 로 준비
+    폴링을 흉내내는 식). N-09 이후 파이썬이 보내는 표현식은 셋뿐이므로 대역도 그 셋만 안다:
+    준비 확인 · ``start`` · ``poll``. 그 밖의 표현식이 오면 **시끄럽게 실패**한다 — 조용히
+    ``True`` 를 돌려주면 파이썬이 몰래 새 통로를 열어도 이 대역이 눈감아 준다.
+    """
+
+    def __init__(self, *, poll, readiness=1, raise_on=None):
+        self.scripts: "list[str]" = []
+        self.destroyed = 0
+        self._poll = poll
+        self._readiness = readiness
+        self._raise_on = raise_on
+
+    def evaluate_js(self, script):
+        self.scripts.append(script)
+        if self._raise_on is not None and self._raise_on in script:
+            raise RuntimeError("bridge failed")
+        if '"action": "start"' in script:
+            return dict(_START_OK)
+        if '"action": "poll"' in script:
+            return self._poll
+        if "window.__hwpxTest.version" in script:
+            return self._readiness
+        raise AssertionError(f"계약 밖 표현식: {script[:120]!r}")
+
+    def destroy(self):
+        self.destroyed += 1
+
+
+def _capture_selftest(monkeypatch) -> "list[dict]":
+    """드라이버가 쓰려 한 증거를 가로챈다.
+
+    가로채는 자리가 ``_finish_selftest`` 에서 ``_write_selftest_output`` 으로 바뀌었다 —
+    N-09 에서 쓰기와 종료가 두 책임으로 갈렸고, 드라이버는 그 둘을 호스트 연산 허용목록으로
+    각각 부른다. 합친 이름(``_finish_selftest``)은 캡처 하니스를 위해 남아 있다.
+    """
+    captured: "list[dict]" = []
+    monkeypatch.setattr(
+        app_mod, "_write_selftest_output", lambda result: captured.append(dict(result))
+    )
     monkeypatch.setattr("time.sleep", lambda _seconds: None)
-    monkeypatch.delenv("HWPX_SELFTEST_SET_THEME", raising=False)
+    for name in (
+        "HWPX_SELFTEST_SET_THEME",
+        "HWPX_SELFTEST_SET_FONT_SCALE",
+        "HWPX_SELFTEST_GEOMETRY_ONLY",
+        "HWPX_SELFTEST_NO_CAPABILITY",
+        "HWPX_SELFTEST_OFFLINE_PROBE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     return captured
 
 
-def test_geometry_only_selftest_shapes_maximized_probe(monkeypatch) -> None:
+def _poll_ok(evidence: dict) -> dict:
+    return {
+        "ok": True, "action": "poll", "runId": "r-1", "state": "succeeded",
+        "mode": "?", "evidence": evidence, "order": [], "timings": {},
+        "elapsedMs": 10, "deadlineMs": 75000,
+    }
+
+
+def test_font_scale_selftest_echoes_the_request_and_carries_the_readback(monkeypatch) -> None:
+    """쓰기 모드 증거는 **에코 키 + 디스크 되읽기** 정확히 둘이다.
+
+    에코(``font_scale_write``)는 파이썬 드라이버가 세우고 되읽기(``set_result``)는 프런트
+    프로브가 ``settings_readback`` 호스트 연산으로 얻는다. 정확한 dict 동치를 유지하는
+    이유는 종전과 같다 — 키가 하나 늘거나 줄면 ``packaging/build.ps1`` 의 책임 수 게이트가
+    릴리스에서 터진다.
+    """
     captured = _capture_selftest(monkeypatch)
-    monkeypatch.setenv("HWPX_SELFTEST_GEOMETRY_ONLY", "1")
-
-    class Window:
-        def evaluate_js(self, script):
-            if "readyState" in script:
-                return True
-            return {
-                "x": 0, "y": 0, "width": 1920, "height": 1080,
-                "avail_x": 0, "avail_y": 0, "avail_width": 1920, "avail_height": 1080,
-            }
-
-    app_mod._selftest_drive(Window())
-    geometry = captured[0]["window_geometry"]
-    assert geometry["maximized_like"] is True
-
-
-def test_geometry_only_selftest_waits_for_document_readiness(monkeypatch) -> None:
-    captured = _capture_selftest(monkeypatch)
-    monkeypatch.setenv("HWPX_SELFTEST_GEOMETRY_ONLY", "1")
-    ticks = iter((0.0, 1.0, 20.0))
-    monkeypatch.setattr("time.monotonic", lambda: next(ticks))
-
-    class Window:
-        def evaluate_js(self, script):
-            if "readyState" in script:
-                return False
-            return {
-                "x": 100, "y": 100, "width": 1000, "height": 700,
-                "avail_x": 0, "avail_y": 0, "avail_width": 1920, "avail_height": 1080,
-            }
-
-    app_mod._selftest_drive(Window())
-    assert captured[0]["window_geometry"]["maximized_like"] is False
-
-
-def test_font_scale_selftest_success_uses_real_bridge_expression(monkeypatch) -> None:
-    captured = _capture_selftest(monkeypatch)
-    monkeypatch.delenv("HWPX_SELFTEST_GEOMETRY_ONLY", raising=False)
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "large")
-    scripts: list[str] = []
+    window = _ProtocolWindow(poll=_poll_ok({"set_result": "large"}))
 
-    class Window:
-        def evaluate_js(self, script):
-            scripts.append(script)
-            return True
+    app_mod._selftest_drive(window)
 
-    monkeypatch.setattr(app_mod.settings, "load_font_scale", lambda: "large")
-    app_mod._selftest_drive(Window())
     assert captured == [{"font_scale_write": "large", "set_result": "large"}]
-    assert any("Personalization.setFontScale" in script for script in scripts)
+    assert window.destroyed == 1, "정식 종료가 정확히 한 번이어야 한다"
 
 
-def test_font_scale_selftest_waits_for_bridge_and_persistence(monkeypatch) -> None:
+def test_theme_selftest_echoes_the_request_and_carries_the_readback(monkeypatch) -> None:
+    """테마 쓰기도 같은 모양이다 — 종전 정확한 dict 동치를 그대로 잇는다."""
     captured = _capture_selftest(monkeypatch)
-    monkeypatch.delenv("HWPX_SELFTEST_GEOMETRY_ONLY", raising=False)
-    monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "large")
-    ready_calls = 0
+    monkeypatch.setenv("HWPX_SELFTEST_SET_THEME", "dark")
+    window = _ProtocolWindow(poll=_poll_ok({"set_result": "dark"}))
 
-    class Window:
-        def evaluate_js(self, script):
-            nonlocal ready_calls
-            if "pywebview" in script:
-                ready_calls += 1
-                return ready_calls > 1
-            return True
+    app_mod._selftest_drive(window)
 
-    scales = iter(("normal", "large", "large"))
-    monkeypatch.setattr(app_mod.settings, "load_font_scale", lambda: next(scales))
-    monkeypatch.setattr("time.monotonic", lambda: 0.0)
-    app_mod._selftest_drive(Window())
-    assert captured[0]["set_result"] == "large"
+    assert captured == [{"theme_write": "dark", "set_result": "dark"}]
 
 
-def test_font_scale_selftest_reports_bridge_timeout(monkeypatch) -> None:
+def test_selftest_reports_a_missing_facade_as_a_loud_error(monkeypatch) -> None:
+    """능력이 없으면 **조용히 빈 증거**가 아니라 ``error`` 다.
+
+    종전 "브리지 준비 시한 초과" 단언의 후계다. 그때는 파이썬이 직접 폴링했고 지금은 준비
+    확인이 ``null`` 을 받는다 — 사건은 같다("구동할 것이 거기 없다"). 이 테스트와 아래
+    평가 실패 테스트는 ``error`` 키의 **유일한 양성 대조**라, 없어지면 실앱 게이트의
+    ``"error" not in result`` 가 무엇을 지키는지 아무도 확인하지 못한다.
+    """
     captured = _capture_selftest(monkeypatch)
-    monkeypatch.delenv("HWPX_SELFTEST_GEOMETRY_ONLY", raising=False)
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "larger")
-    ticks = iter((0.0, 20.0))
-    monkeypatch.setattr("time.monotonic", lambda: next(ticks))
+    window = _ProtocolWindow(poll=None, readiness=None)
 
-    class Window:
-        def evaluate_js(self, _script):
-            return False
+    app_mod._selftest_drive(window)
 
-    app_mod._selftest_drive(Window())
-    assert "브리지 준비 시한 초과" in captured[0]["error"]
+    assert "error" in captured[0]
+    assert "facade-absent" in captured[0]["error"]
+    # 에코는 실패해도 남는다 — 무엇을 시도했는지 잃으면 실패를 읽을 수 없다.
+    assert captured[0]["font_scale_write"] == "larger"
 
 
-def test_font_scale_selftest_reports_evaluation_error(monkeypatch) -> None:
+def test_selftest_reports_an_evaluation_failure_as_a_loud_error(monkeypatch) -> None:
+    """평가기가 던지면 그 사유가 증거의 ``error`` 로 재진술된다(종전 repr 통과 계약)."""
     captured = _capture_selftest(monkeypatch)
-    monkeypatch.delenv("HWPX_SELFTEST_GEOMETRY_ONLY", raising=False)
     monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "large")
-    calls = 0
+    window = _ProtocolWindow(poll=None, raise_on='"action": "start"')
 
-    class Window:
-        def evaluate_js(self, _script):
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                return True
-            raise RuntimeError("bridge failed")
+    app_mod._selftest_drive(window)
 
-    app_mod._selftest_drive(Window())
     assert "bridge failed" in captured[0]["error"]
 
 
-def test_theme_selftest_waits_for_bridge_and_persistence(monkeypatch) -> None:
+def test_failed_run_keeps_the_evidence_and_its_error(monkeypatch) -> None:
+    """프로브가 실패한 실행도 **증거를 들고** 돌아온다.
+
+    러너의 ``toEvidence`` 가 실패한 프로브의 키를 빼고 ``error`` 를 세운 그 객체다. 여기서
+    증거를 버리면 실앱 게이트는 파일 부재만 보고 "창이 안 떴다"로 읽는다 — 원인이 한 겹
+    가려진다. 실패는 **증거와 함께** 시끄러워야 한다.
+    """
     captured = _capture_selftest(monkeypatch)
-    monkeypatch.delenv("HWPX_SELFTEST_GEOMETRY_ONLY", raising=False)
-    monkeypatch.delenv("HWPX_SELFTEST_SET_FONT_SCALE", raising=False)
-    monkeypatch.setenv("HWPX_SELFTEST_SET_THEME", "dark")
-    ready_calls = 0
+    window = _ProtocolWindow(poll={
+        "ok": False, "code": "run_failed", "action": "poll", "runId": "r-1",
+        "state": "failed", "mode": "full",
+        "evidence": {"job_on": True, "error": "[preserve/run/probe_threw] 계약 위반"},
+        "errors": [{"probe": "preserve", "phase": "run", "code": "probe_threw"}],
+        "skipped": [], "order": [], "timings": {}, "elapsedMs": 12, "deadlineMs": 75000,
+    })
+
+    app_mod._selftest_drive(window)
+
+    assert captured[0]["job_on"] is True, "성공한 프로브의 키는 살아 있어야 한다"
+    assert "probe_threw" in captured[0]["error"]
+
+
+def test_window_geometry_host_op_derives_maximized_like_from_the_real_expression() -> None:
+    """``maximized_like`` 판정은 **호스트가** 진다 — 주입된 실 표현식으로 잰다.
+
+    종전 ``_selftest_drive`` 안에 있던 수치가 ``window_geometry`` 호스트 연산으로 옮겨갔다.
+    프런트가 다시 조립하면 같은 상태를 두 곳이 판정하게 되므로 자리를 옮기되 소유는 그대로다.
+    양성·음성 두 값으로 세워 "언제나 참"이 통과하지 못하게 한다.
+    """
+    maximized = {
+        "x": 0, "y": 0, "width": 1920, "height": 1080,
+        "avail_x": 0, "avail_y": 0, "avail_width": 1920, "avail_height": 1080,
+    }
+    windowed = {
+        "x": 100, "y": 100, "width": 1000, "height": 700,
+        "avail_x": 0, "avail_y": 0, "avail_width": 1920, "avail_height": 1080,
+    }
+
+    def geometry_window(measured: dict, seen: "list[str]") -> object:
+        """루프 변수를 **인자로 묶는다** — 클로저로 잡으면 두 회차가 같은 값을 본다."""
+
+        class Window:
+            def evaluate_js(self, script):
+                seen.append(script)
+                return measured
+
+        return Window()
+
+    for measured, expected in ((maximized, True), (windowed, False)):
+        seen: "list[str]" = []
+        window = geometry_window(measured, seen)
+        operations = app_mod._selftest_host_operations(
+            lambda bound=window: bound,
+            lambda: SimpleNamespace(artifact_id="a" * 64, tree_sha256="b" * 64),
+        )
+        result = operations.dispatch("window_geometry", {})
+
+        assert result.ok, result.detail
+        assert result.value["maximized_like"] is expected
+        # 주입된 표현식이 곧 계약이다 — 문서 밖(네이티브 프레임)만 읽는다.
+        assert seen == [app_mod._WINDOW_GEOMETRY_JS]
+        assert "screen.avail" in seen[0]
+
+
+def test_host_surface_offers_exactly_what_the_probes_may_request() -> None:
+    """프런트에 대는 연산은 여섯이고, **출력 쓰기·창 종료는 거기 없다**.
+
+    페이지 쪽에 증거 파일 쓰기나 창 종료를 대주면 그것이 곧 통로가 된다. 능력을 주지 않는
+    것이 "요청은 거절된다"보다 강하다.
+    """
+    operations = app_mod._selftest_host_operations(
+        lambda: None, lambda: SimpleNamespace(artifact_id="a" * 64, tree_sha256="b" * 64)
+    )
+
+    assert set(operations.provides()) == {
+        "input_select", "window_resize", "window_geometry",
+        "current_url", "artifact_identity", "settings_readback",
+    }
+    assert "output_write" not in operations.provides()
+    assert "window_destroy" not in operations.provides()
+
+
+def test_write_mode_bridge_expressions_moved_to_the_frontend_probe() -> None:
+    """실사용 경로(``Theme.set``·``Personalization.setFontScale``)를 그대로 구동하는가.
+
+    종전 이 파일이 파이썬 표현식 문자열에서 확인하던 계약이다. API 직접 호출로 바꾸면
+    ``theme.js``/``personalization.js`` 의 결함이 무커버가 되므로, 자리가 옮겨간 뒤에도
+    **같은 홉을 지나는지**를 후계 소스에서 센다.
+    """
+    probe_js = source_text("src", "selftest", "probes", "persistence_geometry.js")
+
+    assert "Personalization.setFontScale" in probe_js
+    assert "Theme.set" in probe_js
+    # 준비 폴링도 함께 옮겨갔다 — 브리지가 아직 없을 때 조용한 no-op 이 되던 자리(#75 리뷰 #5).
+    assert "pywebview" in probe_js
+
+
+def test_capability_is_attached_only_under_explicit_selftest() -> None:
+    """시험 파사드는 명시 ``--selftest`` 에서만 붙는다 — URL·빌드 플래그는 조건이 아니다."""
+    assert app_mod._selftest_capability_wanted(["app", "--selftest"], {}) is True
+    assert app_mod._selftest_capability_wanted(["app"], {}) is False
+    assert app_mod._selftest_capability_wanted(["app"], {"HWPX_SELFTEST_SET_THEME": "dark"}) is False
+    # 음성 대조 모드는 드라이버는 빌리되 능력은 일부러 뺀다.
+    assert app_mod._selftest_capability_wanted(
+        ["app", "--selftest"], {"HWPX_SELFTEST_NO_CAPABILITY": "1"}
+    ) is False
+
+
+def test_non_capability_mode_measures_absence_with_a_positive_control(monkeypatch) -> None:
+    """음성 대조 모드는 부재와 **함께 양성 대조**를 잰다.
+
+    부재만 재면 "능력이 없다"와 "페이지가 안 떴다"가 구별되지 않는다(계측 층의 부재판별력).
+    실 창에서의 값 판정은 ``tests/test_web_selftest_gate.py`` 가 지고, 여기서는 드라이버가
+    그 질문을 **실제로 던지는지**를 센다.
+    """
+    captured = _capture_selftest(monkeypatch)
+    monkeypatch.setenv("HWPX_SELFTEST_NO_CAPABILITY", "1")
+    probed = {
+        "selftest_own": False, "selftest_typeof": "undefined",
+        "product_typeof": "object", "host_claim_typeof": "undefined",
+        "url_after": "http://127.0.0.1:1/index.html?selftest=1&hwpxTest=on#selftest",
+        "selftest_own_after_query_hash": False,
+        "selftest_typeof_after_query_hash": "undefined",
+    }
 
     class Window:
+        def __init__(self):
+            self.scripts = []
+
         def evaluate_js(self, script):
-            nonlocal ready_calls
-            if "pywebview" in script:
-                ready_calls += 1
-                return ready_calls > 1
-            return True
+            self.scripts.append(script)
+            return probed
 
-    themes = iter(("system", "dark", "dark"))
-    monkeypatch.setattr(app_mod.settings, "load_theme", lambda: next(themes))
-    monkeypatch.setattr("time.monotonic", lambda: 0.0)
-    app_mod._selftest_drive(Window())
-    assert captured[0] == {"theme_write": "dark", "set_result": "dark"}
+        def destroy(self):
+            pass
 
+    window = Window()
+    app_mod._selftest_drive(window)
+
+    assert captured[0]["mode"] == "no_capability"
+    assert captured[0]["non_exposure"] == probed
+    assert "error" not in captured[0]
+    # 질문에 **호출**이 없어야 한다 — 부재를 묻는 질문이 대상을 깨우면 안 된다.
+    script = window.scripts[0]
+    assert "typeof window.__hwpxTest" in script
+    assert "typeof window.__hwpx;" in script or "typeof window.__hwpx," in script
+    assert ".run(" not in script
 
 def test_pywebview_selection_and_zoom_decision_are_explicit() -> None:
     source = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
