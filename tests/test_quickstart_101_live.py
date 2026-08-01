@@ -47,9 +47,15 @@ _GATE_REASON = (
 # `TimeoutExpired` 하나다 — 보고서도, 실패 항목도, 매달림 스택도 없다. #427 이 하니스 층에서
 # 고친 것과 **같은 형상**이라 여기서도 안쪽이 먼저 물게 파생시킨다.
 #
-# 실측 9초라 180초는 20배 여유다. 드라이버는 180 + 60(하드 스톱 여유) = 240초에 물고,
-# 바깥은 그보다 60초 뒤인 300초에야 손을 댄다.
-_LIVE_BUDGET_S = 180.0
+# 안쪽 예산은 **실측에서** 잡는다: 개발 기기 `check` 8.6~9.3초(driver.RUN_BUDGET_S 주석).
+# CI 는 그보다 느리고 WebView2 콜드스타트가 붙지만, 300초는 그 실측의 30배 넘는 여유라
+# 「느린 러너」가 아니라 「매달림」에서만 발화한다. 드라이버는 300 + 60 = 360초에 물고 바깥은
+# 그보다 60초 뒤인 420초에야 손을 댄다.
+#
+# 추정치로 잡지 않는 이유가 있다 — 종전 driver 주석의 "2~4분"은 측정 전 추정이었고, 그 낡은
+# 값을 믿고 계산하면 예산이 통째로 어긋난다(#430 리뷰). 그래서 아래 양성 대조가 **실제 소요**를
+# 예산과 견줘, 정상 실행이 예산에 가까워지면 시끄럽게 알린다.
+_LIVE_BUDGET_S = 300.0
 _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 
 
@@ -108,7 +114,7 @@ def test_the_outer_timeout_lets_the_driver_hard_stop_first() -> None:
         "CLI 가 먼저 죽어 보고서도 실패 항목도 매달림 스택도 남지 않습니다."
     )
     # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
-    assert not (180.0 + 60.0 < 120.0)
+    assert not (300.0 + 60.0 < 120.0)
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
@@ -137,6 +143,23 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     # 무엇으로 잰 실행인지가 남는다 — 스크린샷은 눈검증 증거라 좌표 없이는 대조가 안 된다.
     assert report["source"]["artifact_id"]
     assert report["source"]["commit"]
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_a_healthy_run_stays_far_below_the_live_budget(live_check_run) -> None:
+    """양성 대조 — 예산이 **매달림**을 잡는가, 아니면 그냥 느린 러너를 잡는가.
+
+    예산을 추정치로 잡으면 이 질문에 답할 수 없다. 실제 소요를 예산과 견줘, 정상 실행이 예산의
+    3분의 1을 넘으면 시끄럽게 알린다 — 그 상태의 예산은 「상한」이 아니라 「가끔 터지는 것」이다
+    (#430 리뷰: 낡은 추정치 "2~4분"을 믿고 계산하다 드러난 축).
+    """
+    elapsed = float(live_check_run["report"]["elapsed_s"])
+
+    assert elapsed > 0, "소요가 0이면 이 대조가 아무것도 안 지킨다"
+    assert elapsed < _LIVE_BUDGET_S / 3, (
+        f"정상 실행이 {elapsed:.1f}s 를 썼습니다 — 예산 {_LIVE_BUDGET_S:.0f}s 의 3분의 1을 "
+        "넘습니다. 이 예산은 매달림이 아니라 느린 러너를 잡습니다."
+    )
 
 
 def _tree_manifest(root: Path) -> "dict[str, str]":
