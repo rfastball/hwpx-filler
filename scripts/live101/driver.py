@@ -116,13 +116,27 @@ def refuse_if_dirty(home: Path) -> None:
 
 
 def seed_temp_home(destination: Path) -> Path:
-    """커밋된 101 자산을 임시 홈에 복사한다 — 예제 홈은 한 글자도 건드리지 않는다."""
+    """**커밋된** 101 자산만 임시 홈에 복사한다 — 예제 홈은 한 글자도 건드리지 않는다.
+
+    실습 산출물은 자산이 아니다(#426 리뷰 라운드 6). ``templates/`` 아래에는 생성 결과가
+    떨어지는 ``Results/`` 가 함께 사는데, 사용자가 실습한 뒤라면 그것까지 통째로 복사된다.
+    그러면 임시 홈이 **이미 HWPX 를 가진 채** 시작하고 :func:`generated_documents` 가 그것을
+    세어 「3건 생성」을 거짓으로 만족시키거나, 이름 충돌로 엉뚱한 실패를 낸다 — 「커밋된
+    자산만으로 격리한다」는 이 모드의 약속이 정확히 거기서 깨진다.
+    """
+    ignored = {Path(rel).name for rel in PRACTICE_STATE}
+
+    def _skip_practice_state(directory: str, names: "list[str]") -> "set[str]":
+        return {name for name in names if name in ignored}
+
     destination.mkdir(parents=True, exist_ok=True)
     for name in SEED_ASSETS:
         source = EXAMPLE_HOME / name
         if not source.is_dir():
             raise FileNotFoundError(f"101 자산이 없습니다: {source}")
-        shutil.copytree(source, destination / name, dirs_exist_ok=True)
+        shutil.copytree(
+            source, destination / name, dirs_exist_ok=True, ignore=_skip_practice_state
+        )
     return destination
 
 

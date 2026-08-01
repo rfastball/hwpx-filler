@@ -151,15 +151,13 @@ def _land(
     자동으로 걸린다(그것이 이 함수가 콜백인 이유다).
     """
     report_json = json.dumps(result.report, ensure_ascii=False, indent=2)
-    if report_path is not None:
-        report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(report_json, encoding="utf-8")
 
     if not result.ok:
         print(f"101 {result.mode} 실패 — {result.error}", file=sys.stderr)
         for failure in result.report.get("verdict", {}).get("failures", []):
             print(f"  · {failure}", file=sys.stderr)
         print(f"잔재를 진단용으로 남깁니다: {home}", file=sys.stderr)
+        _write_report(report_path, report_json)
         return result.exit_code()
 
     # 성공 완주 — 자기 잔재만 치운다.
@@ -168,6 +166,11 @@ def _land(
         driver.clean_practice_state(home)  # 재실행 가능 상태로
     if temp_root is not None:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+    # 보고서는 **정리 뒤에** 쓴다(#426 리뷰 라운드 6). 먼저 쓰면 `--report` 가 정리 대상 안을
+    # 가리킬 때(`out/`·`templates/Results/`·임시 홈 안) 그 파일이 몇 줄 아래에서 지워지고,
+    # 명령은 요청받은 보고서가 없는 채로 성공을 알린다.
+    _write_report(report_path, report_json)
 
     summary = result.report
     if result.mode == "capture":
@@ -184,6 +187,14 @@ def _land(
     if report_path is None and result.mode == "capture":
         print(report_json)
     return driver.ExitCode.OK
+
+
+def _write_report(report_path: "Path | None", report_json: str) -> None:
+    """요청받은 보고서를 쓴다 — 정리가 끝난 **뒤에** 불린다."""
+    if report_path is None:
+        return
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report_json, encoding="utf-8")
 
 
 if __name__ == "__main__":
