@@ -463,7 +463,7 @@ def _arm_run_watchdog(
         landing.once(
             settle({}, None, f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)")
         )
-        os._exit(ExitCode.RUN_HUNG)
+        _hard_exit(ExitCode.RUN_HUNG)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -494,11 +494,30 @@ def _arm_teardown_watchdog(
             f" → 워치독 종료(스택: {stacks})",
             stream=2,
         )
-        os._exit(landing.once(result))
+        _hard_exit(landing.once(result))
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
 
 def _say(message: str, *, stream: int = 1) -> None:
-    """``os._exit`` 직전의 출력 — 버퍼를 지나지 않는 저수준 쓰기라야 실제로 나간다."""
-    os.write(stream, (message + "\n").encode("utf-8", "replace"))
+    """강제 종료 직전의 출력 — 즉시 흘려보낸다."""
+    print(message, file=sys.stderr if stream == 2 else sys.stdout, flush=True)
+
+
+def _hard_exit(code: int) -> None:
+    """강제 종료 — **버퍼를 비우고** 나간다. 강제 종료의 **유일한 문**이다.
+
+    ``os._exit`` 는 인터프리터를 그 자리에서 끝내므로 파이썬 스트림 버퍼를 비우지 않는다.
+    CI 처럼 stdout 이 파이프로 리다이렉트되면 블록 버퍼링이라, 착지가 낸 요약과 보고서 JSON 이
+    **한 글자도 나가지 못한 채** 사라진다(#426 리뷰 라운드 4). 강제 종료를 하는 이유가 진단을
+    남기기 위해서인데, 그 진단을 종료가 삼키고 있었다.
+
+    문을 하나로 두면 앞으로 착지가 무엇을 더 출력하든 함께 살아남는다 — 라운드 3 이 착지
+    경로를 하나로 접은 것과 같은 이유다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:  # noqa: BLE001 — 비우기 실패로 종료를 막지 않는다
+            pass
+    os._exit(code)

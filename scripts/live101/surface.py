@@ -149,6 +149,12 @@ class Surface:
         ``requires`` 는 이 걸음이 **있다고 전제하는** selector 들이다. 시한이 지나면 그것들을
         되짚어 없는 것이 있으면 :class:`MissingSurface` 로, 전부 있으면 :class:`StepTimeout`
         으로 죽는다 — 같은 침묵을 두 사건으로 가르는 자리가 여기다.
+
+        셋째 사건이 하나 더 있다: **실행 전체 예산이 끝난 것**. 걸음의 시한은 남은 예산과의
+        최솟값으로 잘리므로, 예산이 바닥나는 **정상적인 방식**은 "짧게 잘린 걸음이 시간을
+        넘기는 것"이다. 그때 :class:`StepTimeout` 을 내면 전체 예산 소진이 특정 걸음의 결함으로
+        둔갑한다 — 도입한 구분이 정작 가장 흔한 경우에서 무력해진다(#426 리뷰 라운드 4).
+        그래서 만료 뒤 **먼저** 전체 시한을 묻는다.
         """
         budget = self.STEP_TIMEOUT_S if timeout is None else timeout
         budget = min(budget, max(self._deadline.remaining_s(), 0.0))
@@ -161,6 +167,11 @@ class Surface:
             if self.js(expression):
                 return
             time.sleep(self.POLL_S)
+        if self._deadline.expired():
+            raise RunDeadlineExceeded(
+                f"실행 예산 {self._deadline.total_s:.0f}s 소진 — 기다리던 것: {what}"
+                f" (이 걸음에 남았던 시간 {budget:.1f}s)"
+            )
         self._diagnose(requires, what)
         raise StepTimeout(what, expression, time.monotonic() - started)
 
