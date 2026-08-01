@@ -255,10 +255,18 @@ bootSelftest({
   doc: document,
   testHost,
   pushPort,
-  /* 프로브가 쓰는 구성 산물 열 — **객체째** 넘긴다(프로퍼티 교체 관측이 성립해야 한다). */
+  /* 구성 산물 **전수** — 객체째 넘긴다(프로퍼티 교체 관측이 성립해야 한다).
+     골라 넘기지 않는 이유: 프로브 일부가 `ctx.services[name]` 으로 **동적 조회**를 해서
+     정적 검색으로는 필요 목록을 셀 수 없다. 실제로 골라 넘겼다가 `SheetPicker`·`Preserve`·
+     `DataPicker` 셋이 빠져 실엔진에서 세 프로브가 죽었다(러너가 이름을 대며 시끄럽게
+     실패해 한 번에 보였다). 전수를 넘기면 그 결함류가 구조적으로 사라지고, 러너는 프로브가
+     선언한 것만 쓰므로 더 넘겨서 생기는 손해는 없다. */
   services: {
-    Bridge: bridge, Nav, Modal, Intent, Popover, SurfaceSheet,
-    PathTrack, Personalization, Theme, JobScreen,
+    Bridge: bridge, Nav, AppCloseGuard,
+    Copy, escHtml, Guard, SegView, Popover, Preserve, Intent, UndoToast,
+    Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
+    PathTrack, Relink, DataZone, DataPicker, EditorEntry,
+    LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
   },
   alarm: (result) => {
     /* 호스트가 시험용으로 띄웠는데 능력이 서지 못한 경우 — 조용하면 안 된다. 파이썬은
