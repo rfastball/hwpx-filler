@@ -63,7 +63,7 @@ _AGGREGATE_BOOT_BUDGET_S = 600.0
 
 #: 지금까지 부팅 대기에 쓴 시간과 실제로 시한을 넘긴 부팅들 — 진단이 "몇 번째부터 무너졌나"를
 #: 말할 수 있게 남긴다.
-_boot_waits: "dict[str, object]" = {"spent_s": 0.0, "timed_out": []}
+_boot_waits: "dict[str, object]" = {"spent_s": 0.0, "timed_out": [], "boots": 0}
 
 
 def _boot_selftest(
@@ -98,6 +98,7 @@ def _boot_selftest(
         ) from None
     finally:
         _boot_waits["spent_s"] = spent + (time.monotonic() - started)
+        _boot_waits["boots"] = int(_boot_waits["boots"]) + 1
 
 
 def _exhausted_report(what: str, spent: float) -> str:
@@ -1963,16 +1964,28 @@ def test_aggregate_boot_budget_fails_fast_instead_of_burning_the_ci_job(monkeypa
     assert "전면 매달린" in message
 
 
-def test_the_aggregate_budget_leaves_room_for_a_healthy_run() -> None:
-    """양성 대조 — 정상 실행이 합계 상한에 걸리면 안 된다.
+@pytest.fixture(scope="module", autouse=True)
+def _healthy_run_leaves_room_for_a_hang():
+    """양성 대조 — 정상 실행이 합계 상한에 걸리면 그 상한은 매달림이 아니라 느린 러너를 잡는다.
 
-    이 모듈의 부팅 수(파라미터화 포함)에 **느린 CI 부팅 시간**을 곱해도 합계 상한 아래여야
-    한다. 아니면 이 상한은 매달림이 아니라 느린 러너를 잡는다.
+    **세지 않고 잰다**(#428 리뷰 P2). 종전에는 소스에서 ``_boot_selftest(`` 호출 지점을
+    정규식으로 세어 부팅 수를 추정했는데, 그 추정은 세 군데서 틀렸다: 파라미터화 배수를
+    빠뜨렸고(글꼴 배율 ×2 가 두 곳, 기하 ×3), 프로세스를 띄우지 않는 fail-fast 단위 테스트까지
+    셌다. 11 대 14 — 안전 여유를 과소평가한 채 초록이었다. 「파라미터화 포함」이라 적힌 주석은
+    살고 그 결과는 죽어 있었던 셈이라, 실측으로 바꾼다.
+
+    기준은 임의의 비율이 아니라 **의미 있는 불변식**이다: 정상 실행이 부팅 하나 몫의 시한조차
+    남기지 못하면, 고립된 매달림 한 번에도 합계가 소진돼 나머지가 통째로 실패한다.
     """
-    boots = len(re.findall(r"_boot_selftest\(", Path(__file__).read_text(encoding="utf-8"))) - 1
-    slow_but_healthy_s = 20.0  # CI 실측 상단(로컬은 2.2s)
-    assert boots >= 8, f"부팅 입구가 예상보다 적습니다({boots}) — 세는 방식이 낡았습니다"
-    assert boots * slow_but_healthy_s < _AGGREGATE_BOOT_BUDGET_S, (
-        f"정상 실행({boots}부팅 × {slow_but_healthy_s}s)이 합계 상한 "
-        f"{_AGGREGATE_BOOT_BUDGET_S}s 를 넘습니다 — 이 상한은 매달림이 아니라 느린 러너를 잡습니다."
+    yield
+    if _boot_waits["timed_out"]:
+        return  # 매달림이 있었던 실행은 「정상 실행」의 표본이 아니다
+    spent = float(_boot_waits["spent_s"])
+    boots = int(_boot_waits["boots"])
+    if not boots:
+        return  # 게이트 옵트아웃 — 부팅이 없었으므로 잴 것도 없다
+    assert spent < _AGGREGATE_BOOT_BUDGET_S - _SELFTEST_TIMEOUT, (
+        f"정상 실행({boots}부팅)이 {spent:.0f}s 를 썼습니다 — 합계 상한 "
+        f"{_AGGREGATE_BOOT_BUDGET_S:.0f}s 에서 부팅 하나 몫({_SELFTEST_TIMEOUT:.0f}s)조차 "
+        "남기지 못합니다. 고립된 매달림 한 번에 나머지가 통째로 실패합니다."
     )
