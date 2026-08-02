@@ -309,21 +309,30 @@ R5 가 delta 를 재는 기준이다. **목표 구조가 아니다**(ADR-12).
 실제로 그랬다(렌더 행은 selftest 를 뺐는데 수명주기 행은 넣어, 비대칭을 107 대신 111 로
 부풀렸다. PR #456 리뷰 지적).
 
-- **제품** = `frontend/js/**` (25 파일) — 아래 수치는 전부 이 범위다.
-- **selftest** = `frontend/src/selftest/**` (9 파일) — **제외**하고, 값이 0이 아니면 따로 적는다.
-- **합성 루트** = `frontend/src/` 의 나머지 4 파일(entry·부트스트랩·제품 API).
+- **제품 렌더 트리** = `frontend/js/**` (25 파일)
+- **selftest** = `frontend/src/selftest/**` (9 파일)
+- **합성 루트** = `frontend/src/` 의 나머지 4 파일(entry·부트스트랩·제품 API)
 
-수치는 믿으라고 적는 것이 아니라 **다시 재라고** 적는다 — 재계산 방법을 함께 둔다.
+**범위는 행마다 다르고, 그래서 행마다 적는다.** 「전부 `frontend/js/**` 다」로 뭉뚱그리면
+거짓이 된다 — ESM 그래프 행은 `frontend/src` 를 포함하고, dispatch 행은 Python
+`ACTION_REGISTRY` 를 세며, DOM 행은 `frontend/index.html` 을 센다. R5 가 이 기준선을 다시 잴 때
+선언된 범위로 값을 **재현할 수 없으면** delta 가 무효다. 아래 「셈한 출처」 열이 그 재현
+지시서다.
 
-| 축 | 값 (제품 범위) | selftest | 재계산 |
+제품/selftest 구분이 의미 있는 축은 셋뿐이다(ESM·렌더·수명주기). 나머지는 구분 자체가 성립하지
+않아 `—` 로 적는다 — 빈칸으로 두지 않는다.
+
+수치는 믿으라고 적는 것이 아니라 **다시 재라고** 적는다.
+
+| 축 | 값 | selftest | 셈한 출처 · 재계산 |
 |---|---|---|---|
-| ESM 그래프 | entry `frontend/src/main.js` → `bootProduct()` **1회** → 합성 루트 `frontend/src/bootstrap.js` 가 제품 잎 **25 파일**을 끌어온다. 순환 **0** | 9 파일 별도 | `find frontend/js -name '*.js'` · `test_frontend_build_graph.py` |
-| 허용 전역 | **1** — `window.__hwpx`(생산자 `src/bootstrap.js` 1곳) | **1** — `window.__hwpxTest`(생산자 `src/selftest/api.js` 1곳, `defineProperty` 조건부) | `_web_source.ALLOWED_PRODUCT_GLOBALS` 는 둘을 **합쳐** 2로 갖는다 — 제품 기준선은 그 합이 아니다 |
-| dispatch 계약 | 화면 **6**, (화면, 액션) 쌍 **119** — Python 쪽이라 범위 무관 | — | `action_registry.ACTION_REGISTRY` |
-| DOM | 화면 루트 **4**(`scr-library`·`scr-job`·`scr-editor`·`scr-workbench`), `frontend/index.html` `id` **232**(전부 유일), `<script>` **1**(module), `<template>` **0** | — | `html.parser` — **정규식 금지**(`data-*` 축이 정규식으로 세 번 틀렸다) |
-| 렌더 | `innerHTML =` **61** · `insertAdjacentHTML` **0** · `document.createElement` **1** | 8 · 0 · 0 | `grep -rn 'innerHTML *=' frontend/js` |
-| 수명주기 | `addEventListener` **119** / `removeEventListener` **12** → 비대칭 **107** · `Bridge.onPush` 구독 **6**곳, 해제 API **없음** | 4 / 0 | `grep -ro 'addEventListener' frontend/js` |
-| 상태 | 가변 모듈 상태 **36** / **6** 파일. 전부 예산 상한에 붙어 있음 | — | `test_web_dom_contract.MUTABLE_MODULE_STATE_BUDGET` |
+| ESM 그래프 | entry `frontend/src/main.js` → `bootProduct()` **1회** → 합성 루트 `frontend/src/bootstrap.js` 가 제품 잎 **25 파일**을 끌어온다. 순환 **0** | 9 파일 별도 | `frontend/js/**` + `frontend/src/**` — `find frontend/js -name '*.js'` · `test_frontend_build_graph.py` |
+| 허용 전역 | **1** — `window.__hwpx`(생산자 `src/bootstrap.js` 1곳) | **1** — `window.__hwpxTest`(생산자 `src/selftest/api.js` 1곳, `defineProperty` 조건부) | `frontend/src/**` — `_web_source.ALLOWED_PRODUCT_GLOBALS` 는 둘을 **합쳐** 2로 갖는다. 제품 기준선은 그 합이 아니다 |
+| dispatch 계약 | 화면 **6**, (화면, 액션) 쌍 **119** | — | **Python** `src/hwpxfiller/webapp/action_registry.py` 의 `ACTION_REGISTRY` — 프런트 트리를 세지 않는다 |
+| DOM | 화면 루트 **4**(`scr-library`·`scr-job`·`scr-editor`·`scr-workbench`), `id` **232**(전부 유일), `<script>` **1**(module), `<template>` **0** | — | **`frontend/index.html`** 한 파일 — `html.parser` 로 판다. **정규식 금지**(`data-*` 축이 정규식으로 세 번 틀렸다) |
+| 렌더 | `innerHTML =` **61** · `insertAdjacentHTML` **0** · `document.createElement` **1** | 8 · 0 · 0 | `frontend/js/**` — `grep -rn 'innerHTML *=' frontend/js` |
+| 수명주기 | `addEventListener` **119** / `removeEventListener` **12** → 비대칭 **107** · `Bridge.onPush` 구독 **6**곳, 해제 API **없음** | 4 / 0 | `frontend/js/**` — `grep -ro 'addEventListener' frontend/js` |
+| 상태 | 가변 모듈 상태 **36** / **6** 파일. 전부 예산 상한에 붙어 있음 | — | **테스트 상수** `test_web_dom_contract.MUTABLE_MODULE_STATE_BUDGET` (대상은 `frontend/js/**` 6파일) |
 
 **화면 루트 4 는 DOM 실측이고, `SCREEN_ROOTS` 계약 상수는 그중 2만 본다** — 판별력 결손이며
 보강 소유는 **#412 (R3-03)** 다(중앙 U5).

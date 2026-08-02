@@ -195,19 +195,38 @@ def _status_token(declared: str) -> str:
     return declared.split(" (", 1)[0].strip()
 
 
-def _map_linked_documents(readme: str) -> dict[str, str]:
-    """문서 지도가 **링크로** 가리키는 `.md` → 지도가 부여한 상태.
+def _map_linked_documents(readme: str) -> dict[str, list[str]]:
+    """문서 지도가 **링크로** 가리키는 `.md` → 지도가 부여한 상태**들**.
 
     「현재 정본」 표에는 상태 칸이 없다 — 절 이름 자체가 상태다.
+
+    값이 리스트인 이유: 같은 문서가 두 절에 얹히면 상태가 둘이 된다. dict 에 덮어쓰면 나중
+    것만 남아 그 모순이 조용히 사라진다 — 지도가 서로 다른 편집 원칙을 **동시에** 부여한
+    상태인데 게이트는 초록이 된다.
     """
-    linked: dict[str, str] = {}
+    linked: dict[str, list[str]] = {}
     for section, implied in (("현재 정본", "현재 정본"), ("결정 기록", None), ("역사·동결 자료", None)):
         for row in _table_rows(_section(readme, section)):
             match = re.search(r"\]\(([^)]+\.md)\)", row[0])
             if not match:
                 continue
-            linked[match.group(1)] = implied or (row[1] if len(row) > 1 else "")
+            linked.setdefault(match.group(1), []).append(
+                implied or (row[1] if len(row) > 1 else "")
+            )
     return linked
+
+
+def _map_registered_names(readme: str) -> set[str]:
+    """지도 표 첫 칸이 등재한 **정확한 이름** — backtick 토큰과 링크 대상.
+
+    부분열로 보면 `react_verification_ledger.toml.bak` 같은 오기가 통과한다. 등재는 이름이
+    맞아야 등재다.
+    """
+    names: set[str] = set()
+    for row in _map_table_rows(readme):
+        names |= set(re.findall(r"`([^`]+)`", row[0]))
+        names |= set(re.findall(r"\]\(([^)]+)\)", row[0]))
+    return names
 
 
 def _map_row(readme: str, link_target: str) -> str | None:
@@ -420,12 +439,12 @@ def test_the_document_map_registers_every_r1_artifact(readme: str) -> None:
     **존재는 단언하지 않는다.** #402·#403 이 아직 착지하지 않은 중간 master 에서 존재를 요구하면
     이 게이트가 R-D12(각 병합 시점 master 의 실행·검증 가능)를 깬다.
     """
-    rows = _map_table_rows(readme)
-    assert rows, "문서 지도에서 표 행을 하나도 찾지 못했습니다(추출 회귀)."
-    registered = "\n".join(row[0] for row in rows)
+    assert _map_table_rows(readme), "문서 지도에서 표 행을 하나도 찾지 못했습니다(추출 회귀)."
+    registered = _map_registered_names(readme)
     missing = [name for name in R1_ARTIFACTS if name not in registered]
     assert not missing, (
-        f"문서 지도의 표에 등재되지 않은 R1 산출물: {', '.join(missing)} — 산문 언급은 등재가 아니다."
+        f"문서 지도의 표에 등재되지 않은 R1 산출물: {', '.join(missing)} — "
+        "산문 언급은 등재가 아니고, 이름이 어긋난 등재(`…​.toml.bak`)도 등재가 아니다."
     )
 
 
@@ -450,7 +469,11 @@ def test_every_mapped_document_header_agrees_with_the_map(readme: str) -> None:
     끼워 넣지도, 고쳐 놓고 목록에 남겨 두지도 못한다. `test_web_source_role.py` 가 쓰는 형식이다.
     """
     mismatched: dict[str, str] = {}
-    for rel, map_status in _map_linked_documents(readme).items():
+    for rel, statuses in _map_linked_documents(readme).items():
+        if len(statuses) > 1:
+            mismatched[rel] = f"지도가 두 절에 얹어 상태가 둘이다: {statuses}"
+            continue
+        map_status = statuses[0]
         target = DOCS / rel
         if not target.exists():
             mismatched[rel] = "지도가 가리키는 파일이 없다"
@@ -483,9 +506,16 @@ def test_the_map_detectors_notice_a_dropped_row(readme: str) -> None:
     line = next(line for line in readme.splitlines() if line.strip().startswith(f"| {row[0]} |"))
     tampered = readme.replace(f"{line}\n", "") + "\n산문에는 react_verification_ledger.toml 이 남는다.\n"
     assert "react_verification_ledger.toml" in tampered, "합성 사본이 산문 언급을 잃었습니다."
-    registered = "\n".join(r[0] for r in _map_table_rows(tampered))
-    assert "react_verification_ledger.toml" not in registered, (
+    assert "react_verification_ledger.toml" not in _map_registered_names(tampered), (
         "표 행을 지워도 등재 검사가 통과한다 — 산문이 표를 가리고 있다(판별력 0)."
+    )
+
+    renamed = readme.replace(
+        "`react_verification_ledger.toml`", "`react_verification_ledger.toml.bak`", 1
+    )
+    assert "react_verification_ledger.toml" in renamed, "합성 사본이 부분열조차 잃었습니다."
+    assert "react_verification_ledger.toml" not in _map_registered_names(renamed), (
+        "이름이 어긋난 등재(`…​.toml.bak`)가 통과한다 — 부분열이 정확 이름을 가린다(판별력 0)."
     )
 
     reverted = readme.replace(
