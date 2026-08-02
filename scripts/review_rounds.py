@@ -1,8 +1,8 @@
-"""리뷰 라운드와 정산 상태를 GitHub 상태에서만 판독한다(`docs/REVIEW_POLICY.md`).
+"""리뷰 정산 상태를 GitHub 상태에서만 판독한다(`docs/REVIEW_POLICY.md`).
 
 이 스크립트는 **계측**만 한다. 「이 지적이 차단인가」는 정책 §1 리트머스로 사람·에이전트가
-판정하고 §2 정산 마커가 담는다. 여기서 세는 것은 그 정산의 **완결성**이다 — 판정과 계측을
-한 곳에 섞으면 둘 다 못 믿게 된다.
+판정하고 §2 정산 마커 — 지적 스레드 **안의 답글** — 가 담는다. 여기서 세는 것은 그 정산의
+**완결성**이다 — 판정과 계측을 한 곳에 섞으면 둘 다 못 믿게 된다.
 
 증거는 원격 상태만 쓴다. 로컬 파일·메모는 그 PR 을 만든 쪽이 혼자 쓸 수 있어 증거가 되지
 못한다.
@@ -42,7 +42,8 @@ def _is_reviewer(login: str | None) -> bool:
 
 
 def _may_settle(comment: dict) -> bool:
-    return comment.get("author_association") in SETTLING_ASSOCIATIONS
+    association = comment.get("authorAssociation") or comment.get("author_association")
+    return association in SETTLING_ASSOCIATIONS
 
 #: 빠른 경로는 **허용 목록**이다. 금지 목록으로 짜면 새로 생긴 경로가 기본값으로 통과한다.
 #:
@@ -57,9 +58,13 @@ FAST_PATH_DOCS_SUFFIXES = (".md", ".html")
 #: 허용 확장자여도 기계가 읽는 것·계약 원문은 뺀다.
 FAST_PATH_EXCEPTIONS = ("docs/UI_CONTRACT.md",)
 
-#: 정산 마커. `docs/REVIEW_POLICY.md` §2 의 계약이다.
+#: 정산 마커. 지적 스레드 **안의 답글** 한 줄이다(`docs/REVIEW_POLICY.md` §2).
+#:
+#: 마커가 스레드에 앵커되므로 코멘트 id 를 옮겨 적는 부기가 없고, 판정이 지적 옆에 남아
+#: 문맥이 보존된다. `block` 은 리트머스 번호(§1 의 ①②③)를 **반드시** 지닌다 — 어느 조항이
+#: 참인지 말하지 못하는 차단은 정책의 정의상 분리다.
 TRIAGE_PATTERN = re.compile(
-    r"^\s*triage:\s*(?P<id>\d+)\s+(?P<verdict>block|defer)(?:\s+#(?P<issue>\d+))?",
+    r"^\s*triage:\s*(?:block:(?P<litmus>[123])|defer\s+#(?P<issue>\d+))\s*$",
     re.MULTILINE,
 )
 
@@ -86,8 +91,21 @@ class NotFound(GitHubError):
 
 
 @dataclass(frozen=True)
+class Triage:
+    """스레드 답글에서 읽은 정산 하나."""
+
+    verdict: str
+    litmus: int | None
+    issue: int | None
+
+
+@dataclass(frozen=True)
 class Finding:
-    """정산해야 하는 인라인 리뷰 지적 하나."""
+    """리뷰어가 뿌리인 리뷰 스레드 하나 = 정산해야 하는 지적 하나.
+
+    리뷰어가 아닌 뿌리(작성자의 자기 메모, 지나가는 코멘트)는 정산 의무를 만들지 않는다 —
+    그 스레드의 해결은 GitHub 룰셋(대화 해결 필수)이 따로 강제한다.
+    """
 
     id: int
     path: str
@@ -95,23 +113,13 @@ class Finding:
     commit: str
     outdated: bool
     resolved: bool
-    author: str
-    by_reviewer: bool
     severity: str
     excerpt: str
+    triage: Triage | None
 
     def label(self) -> str:
         mark = "" if self.line is None else f":{self.line}"
         return f"{self.id} [{self.severity}] {self.path}{mark} — {self.excerpt}"
-
-
-@dataclass(frozen=True)
-class Triage:
-    """정산 마커 한 줄."""
-
-    finding_id: int
-    verdict: str
-    issue: int | None
 
 
 @dataclass
@@ -209,14 +217,29 @@ def _moment(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
-#: 리뷰 스레드의 해결 상태. REST 의 인라인 코멘트에는 실리지 않아 GraphQL 로 읽는다.
+#: 지적·해결 상태·정산 답글을 **한 번에** 읽는다. 세 갈래로 나눠 읽던 시절(REST 인라인
+#: 코멘트 + GraphQL 해결 상태 + 이슈 코멘트 마커)의 API 예산이 이 쿼리 하나로 줄었다.
 THREAD_QUERY = """
 query($owner:String!,$name:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){
       reviewThreads(first:100, after:$after){
         pageInfo{ hasNextPage endCursor }
-        nodes{ isResolved comments(first:1){nodes{databaseId}} }
+        nodes{
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first:100){
+            nodes{
+              databaseId
+              body
+              authorAssociation
+              author{ login }
+              originalCommit{ oid }
+            }
+          }
+        }
       }
     }
   }
@@ -224,20 +247,39 @@ query($owner:String!,$name:String!,$number:Int!,$after:String){
 """
 
 
-def _resolved_threads(client: GitHub, pr: int) -> set[int]:
-    """해결된 스레드의 뿌리 코멘트 id.
+def _thread_triage(replies: list[dict]) -> Triage | None:
+    """스레드 답글에서 정산을 읽는다. 마지막 유효 마커가 앞의 것을 덮는다.
 
-    **해소의 증거는 「전부」이고 「의도적」이어야 한다.**
+    정산을 남길 수 있는 관계(`SETTLING_ASSOCIATIONS`)의 답글만 센다 — 공개 PR 에서는
+    아무나 답글을 달 수 있고, 통제 없이 두면 남이 게이트를 열거나 붙잡아 둘 수 있다.
+    """
+    verdict: Triage | None = None
+    for reply in replies:
+        if not _may_settle(reply):
+            continue
+        for match in TRIAGE_PATTERN.finditer(reply.get("body") or ""):
+            if match.group("litmus"):
+                verdict = Triage(verdict="block", litmus=int(match.group("litmus")), issue=None)
+            else:
+                verdict = Triage(verdict="defer", litmus=None, issue=int(match.group("issue")))
+    return verdict
 
-    의도적 — 스레드 해결만 센다. 코멘트가 outdated 가 된 것은 부수 효과라 증거가 못 된다.
-    무관한 코드가 밀려 앵커가 사라져도 outdated 가 되고, 반대로 정말 고쳐도 GitHub 이
-    최신 커밋으로 재앵커해 살아남는다. 어느 쪽으로도 틀린다.
 
-    전부 — 페이지를 끝까지 돈다. 첫 100건만 보고 판정하면 그 뒤의 해결은 없는 것이 되고,
-    조용히 일부만 본 판정이 전부를 본 판정처럼 보인다.
+def _findings(client: GitHub, pr: int) -> list[Finding]:
+    """리뷰어가 뿌리인 스레드가 곧 지적이다.
+
+    **전부** 본다 — 페이지를 끝까지 돈다. 첫 100건만 보고 판정하면 그 뒤의 해결·정산은
+    없는 것이 되고, 조용히 일부만 본 판정이 전부를 본 판정처럼 보인다.
+
+    스레드 해결(`isResolved`)만 해소의 증거로 센다. 코멘트가 outdated 가 된 것은 부수
+    효과라 증거가 못 된다 — 무관한 코드가 밀려 앵커가 사라져도 outdated 가 되고, 반대로
+    정말 고쳐도 GitHub 이 최신 커밋으로 재앵커해 살아남는다. 어느 쪽으로도 틀린다.
+
+    스레드 안의 답글은 100건까지만 본다(내부 목록은 페이지를 돌지 않는다) — 답글이 그보다
+    많은 스레드는 재호출 예산(정책 §3)이 먼저 막는 병리다.
     """
     owner, _, name = client.repo.partition("/")
-    resolved: set[int] = set()
+    findings: list[Finding] = []
     cursor: str | None = None
     while True:
         # 선택 인자는 생략하거나 `null` 이 규약이다. 빈 문자열도 지금은 받아 주지만 그건
@@ -246,43 +288,31 @@ def _resolved_threads(client: GitHub, pr: int) -> set[int]:
         page = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr, **extra)
         threads = page["data"]["repository"]["pullRequest"]["reviewThreads"]
         for thread in threads["nodes"]:
-            roots = thread["comments"]["nodes"]
-            if roots and thread["isResolved"]:
-                resolved.add(int(roots[0]["databaseId"]))
+            comments = thread["comments"]["nodes"]
+            if not comments:
+                continue
+            root = comments[0]
+            if not _is_reviewer((root.get("author") or {}).get("login")):
+                continue
+            body = root.get("body") or ""
+            severity = SEVERITY_PATTERN.search(body)
+            findings.append(
+                Finding(
+                    id=int(root["databaseId"]),
+                    path=thread.get("path") or "",
+                    line=thread.get("line"),
+                    commit=((root.get("originalCommit") or {}).get("oid")) or "",
+                    outdated=bool(thread.get("isOutdated")),
+                    resolved=bool(thread.get("isResolved")),
+                    severity=severity.group(1) if severity else "??",
+                    excerpt=_plain(body),
+                    triage=_thread_triage(comments[1:]),
+                )
+            )
         info = threads["pageInfo"]
         if not info["hasNextPage"]:
-            return resolved
+            return findings
         cursor = info["endCursor"]
-
-
-def _findings(client: GitHub, pr: int) -> list[Finding]:
-    """인라인 리뷰 코멘트가 곧 지적이다.
-
-    답글(`in_reply_to_id`)은 뺀다 — 뿌리 코멘트가 그 지적을 대표하고, 답글까지 정산 대상으로
-    삼으면 우리가 쓴 해명이 스스로 게이트를 세운다.
-    """
-    resolved = _resolved_threads(client, pr)
-    findings = []
-    for raw in client.paged(f"pulls/{pr}/comments"):
-        if raw.get("in_reply_to_id"):
-            continue
-        body = raw.get("body") or ""
-        severity = SEVERITY_PATTERN.search(body)
-        findings.append(
-            Finding(
-                id=int(raw["id"]),
-                path=raw.get("path") or "",
-                line=raw.get("line"),
-                commit=raw["original_commit_id"],
-                outdated=raw.get("line") is None,
-                resolved=int(raw["id"]) in resolved,
-                author=(login := (raw.get("user") or {}).get("login", "")),
-                by_reviewer=_is_reviewer(login),
-                severity=severity.group(1) if severity else "??",
-                excerpt=_plain(body),
-            )
-        )
-    return findings
 
 
 def _plain(body: str) -> str:
@@ -294,21 +324,6 @@ def _plain(body: str) -> str:
         if stripped:
             return stripped[:100]
     return ""
-
-
-def _triage(client: GitHub, pr: int) -> dict[int, Triage]:
-    settled: dict[int, Triage] = {}
-    for comment in client.paged(f"issues/{pr}/comments"):
-        if not _may_settle(comment):
-            continue  # 남이 남긴 마커가 정산 상태를 바꾸지 않는다
-        for match in TRIAGE_PATTERN.finditer(comment.get("body") or ""):
-            issue = match.group("issue")
-            settled[int(match.group("id"))] = Triage(
-                finding_id=int(match.group("id")),
-                verdict=match.group("verdict"),
-                issue=int(issue) if issue else None,
-            )
-    return settled
 
 
 def _defer_problem(client: GitHub, triage: Triage) -> str | None:
@@ -419,22 +434,16 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         )
 
     findings = _findings(client, pr)
-    settled = _triage(client, pr)
 
-    unsettled = [f for f in findings if f.id not in settled]
+    unsettled = [f for f in findings if f.triage is None]
     open_blocks = [
-        f
-        for f in findings
-        if (t := settled.get(f.id))
-        and t.verdict == "block"
-        and not f.resolved
+        f for f in findings if f.triage and f.triage.verdict == "block" and not f.resolved
     ]
     bad_defers = []
     for finding in findings:
-        triage = settled.get(finding.id)
-        if triage is None or triage.verdict != "defer":
+        if finding.triage is None or finding.triage.verdict != "defer":
             continue
-        problem = _defer_problem(client, triage)
+        problem = _defer_problem(client, finding.triage)
         if problem:
             bad_defers.append((finding, problem))
 
@@ -444,14 +453,16 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     # 자동 리뷰는 **PR 당 한 번** 발화한다(2026-08-02 설정 변경). 그래서 기본으로 묻는 것은
     # 「마지막 push 를 봤는가」가 아니라 **「이 PR 이 한 번이라도 읽혔는가」**다. 앞엣것을
     # 늘 물으면 고칠 때마다 다시 안 읽힌 상태가 돼 영영 안 닫힌다.
-    reviewed = any(f.by_reviewer for f in findings) or signal == "+1"
+    #
+    # 지적(`findings`)은 정의상 리뷰어가 뿌리인 스레드다 — 있다는 것 자체가 읽혔다는 뜻이다.
+    reviewed = bool(findings) or signal == "+1"
 
     # **차단을 고쳤으면 그 결과가 다시 읽혀야 한다.** 고침은 새 코드이고 새 코드는 눈이
     # 필요하다 — 자동 리뷰가 한 번뿐인데 여기서 놓아 주면 라운드 폭증을 **미검토**로 맞바꾼다.
     # 분리만 했다면 코드가 안 바뀌었으므로 부를 이유가 없다.
     #
     # 재리뷰는 저절로 오지 않는다. `@codex review` 로 **우리가 부른다**(정책 §3).
-    fixed_something = any(t.verdict == "block" for t in settled.values())
+    fixed_something = any(f.triage and f.triage.verdict == "block" for f in findings)
 
     # **하나의 긍정형 술어**로 묻는다 — 「지금 head 는 픽스가 읽힌 head 인가」.
     #
@@ -459,9 +470,9 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     # (head 를 읽었다·회수 창이 지났다) `blocked_here` 를 빼먹는 사고가 반복됐다. 나가는 문이
     # 여럿이면 잠금은 문마다 다시 걸어야 한다 — 문을 하나로 만든다.
     blocked_here = any(
-        f.commit == head and (t := settled.get(f.id)) and t.verdict == "block" for f in findings
+        f.commit == head and f.triage and f.triage.verdict == "block" for f in findings
     )
-    read_head = any(f.commit == head and f.by_reviewer for f in findings) or (
+    read_head = any(f.commit == head for f in findings) or (
         signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
     )
     # 차단이 지금 head 에 붙어 있으면 그 지적은 **바로 이 코드**에 대한 것이니 고침이 아직

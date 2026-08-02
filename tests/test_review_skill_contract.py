@@ -29,6 +29,8 @@ def _skill() -> str:
     [
         (".\\test.ps1", "게이트를 돌리는 명령"),
         ("uv run python scripts/review_rounds.py", "상태를 읽는 명령"),
+        ("/replies", "스레드 답글로 정산을 남기는 명령"),
+        ("triage: block:", "리트머스 번호를 지닌 차단 마커"),
         ("resolveReviewThread", "차단의 해소 신호를 남기는 명령"),
         ("@codex review", "재리뷰를 부르는 명령"),
         ("gh pr merge", "머지 명령"),

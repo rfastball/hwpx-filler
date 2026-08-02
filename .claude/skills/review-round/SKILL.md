@@ -28,16 +28,23 @@ uv run python scripts/review_rounds.py
 판정 전에 **코드를 직접 확인한다.** 리뷰어의 지적이 맞는지 읽지 않고 분리로 넘기면 이
 절차 전체가 형식이 된다.
 
-## 3. 정산 마커를 게시한다
+## 3. 스레드 안에 정산을 남긴다
+
+판정은 지적 스레드 **안의 답글**로 남긴다 — 판정이 지적 옆에 남아 문맥이 보존되고, 코멘트
+id 를 옮겨 적는 부기가 없다.
 
 ```powershell
-gh pr comment <PR> --body "triage: <comment-id> block"
-gh issue create --label review-dismissed --title "..." --body "..."   # 분리인 경우
-gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
+# 차단 — 리트머스 조항 번호(1|2|3)를 반드시 함께 적는다
+gh api repos/{owner}/{repo}/pulls/<PR>/comments/<comment-id>/replies -f body="triage: block:2"
+
+# 분리 — 이슈를 먼저 만들고 번호로 지목한다
+gh issue create --label review-dismissed --title "..." --body "..."
+gh api repos/{owner}/{repo}/pulls/<PR>/comments/<comment-id>/replies -f body="triage: defer #<issue>"
 ```
 
-`<comment-id>` 는 1번 출력의 첫 숫자다. 분리의 이슈 번호는 **실재하고 열려 있어야** 통과한다
-— 번호만 적으면 게이트가 막는다.
+`<comment-id>` 는 1번 출력의 첫 숫자다. 분리의 이슈 번호는 **실재해야** 통과한다 — 번호만
+적으면 게이트가 막는다. 분리로 정산한 스레드는 그 자리에서 **해결 처리까지 한다** — 대화
+해결 필수 룰셋이 미해결 스레드의 머지를 막는다(차단 스레드의 해결은 4번, 고친 뒤다).
 
 ## 4. 차단만 이 PR 에서 고친다 — 한 커밋으로 묶는다
 
