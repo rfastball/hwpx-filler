@@ -55,6 +55,19 @@ def build(
     }
 
 
+def environment_verdict(reason: str) -> Verdict:
+    """환경 실패의 판정 — **판정하지 않았다는 판정**(#460).
+
+    실패 목록이 비는 것이 이 함수의 요점이다. 창이 뜨지 못한 실행에는 제품에 대해 말할 수 있는
+    것이 없고, 그런데도 :func:`judge` 를 돌리면 빈 관측이 「HWPX 생성 0건」·「미리보기 미승인」
+    같은 **제품 언어 7줄**로 번역돼 나온다. 그 7줄은 전부 참이지만 전부 파생이라, 로그를 읽는
+    쪽(특히 무인 판정)은 환경 사고를 제품 회귀로 읽는다.
+
+    한 줄로 말한다: 무엇이 환경이었는지만.
+    """
+    return Verdict(False, reason, ())
+
+
 def judge(report: dict, *, mode: str) -> Verdict:
     """보고서만 보고 성패를 가른다 — 픽셀이 아니라 **실물**이 판정 근거다."""
     failures: "list[str]" = []

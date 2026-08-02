@@ -32,6 +32,8 @@ from live101 import driver, report as report_mod  # noqa: E402
 from live101.scenario import CAPTURE_POINTS, EXPECTED_HWPX  # noqa: E402
 from live101.surface import Deadline, MissingSurface, StepTimeout, Surface  # noqa: E402
 
+from hwpxfiller.webapp import boot_budget  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI = REPO_ROOT / "scripts" / "capture_101_screenshots.py"
 EXAMPLE_HOME = REPO_ROOT / "examples" / "quickstart-101"
@@ -395,6 +397,159 @@ def test_each_journey_fact_is_actually_judged(observation, fragment) -> None:
 
     assert verdict.ok is False
     assert any(fragment in failure for failure in verdict.failures), verdict.failures
+
+
+# ─────────────── 창 부팅 = 환경 축의 음성 대조(게이트 밖 · #460) ───────────────
+#
+# 실측이 이 층을 요구했다. `live-webview2` 57표본에서 실패 1건(1.8%)의 `elapsed_s` 는 21.7초 =
+# 앱 준비 1.7초 + pywebview `_api_call` 의 하드코딩 20.0초였고, 정상 완주는 p90 21.8초·최대
+# 27.3초였다. 즉 우리가 선언한 300초 예산은 발화할 기회가 없었고, 천장은 **남의 상수**였다.
+#
+# 그런데 그 실패는 제품 언어 7줄(「HWPX 생성 0건」…)로 나왔다. 아래 셋이 그 둘을 각각 잡는다.
+
+
+class _NeverFires:
+    """서지 않는 이벤트 — 부팅이 예산 안에 못 끝나는 상황."""
+
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 시그니처 계약 유지
+        return False
+
+
+class _AlreadyFired:
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 시그니처 계약 유지
+        return True
+
+
+class _FakeWindow:
+    def __init__(self, **events) -> None:
+        self.events = type("Events", (), events)()
+
+
+def test_a_window_that_never_loads_is_named_environment_not_product() -> None:
+    """창이 안 뜨면 **그 단계를 대며** 환경 실패로 죽는다 — 제품 문장으로 번역되지 않는다."""
+    window = _FakeWindow(loaded=_NeverFires(), shown=_NeverFires())
+
+    with pytest.raises(driver.WindowBootFailure) as excinfo:
+        driver._await_window(window, 0.05, "첫 실행")
+
+    assert excinfo.value.stage == "loaded"
+    assert "예산 근거: 첫 실행" in str(excinfo.value)
+
+
+def test_a_window_that_loads_but_never_shows_names_the_later_stage() -> None:
+    """음성 대조 — 두 단계를 한 덩어리로 기다리지 않는다(어디서 멎었는지가 진단이다)."""
+    window = _FakeWindow(loaded=_AlreadyFired(), shown=_NeverFires())
+
+    with pytest.raises(driver.WindowBootFailure) as excinfo:
+        driver._await_window(window, 0.05, "웜")
+
+    assert excinfo.value.stage == "shown"
+
+
+def test_a_booted_window_passes_so_the_negative_controls_mean_something() -> None:
+    """양성 대조 — 정상 부팅까지 막으면 이 대기는 쓸 수 없다."""
+    driver._await_window(_FakeWindow(loaded=_AlreadyFired(), shown=_AlreadyFired()), 0.05, "웜")
+
+
+def test_an_environment_failure_produces_no_product_failures() -> None:
+    """**이 파일의 존재 이유**(#460) — 환경 실패는 제품 판정을 낳지 않는다.
+
+    종전에는 창이 안 뜬 실행도 :func:`report_mod.judge` 를 그대로 타 「HWPX 생성 0건」·
+    「미리보기 미승인」·「〈빈 값〉 미표면」 7줄을 냈다. 전부 참이지만 전부 파생이라, 무인
+    판정은 그것을 제품 회귀로 읽고 있지도 않은 결함을 고치러 간다.
+    """
+    verdict = report_mod.environment_verdict("WebView2 창이 75s 안에 뜨지 않았습니다")
+
+    assert verdict.ok is False
+    assert verdict.failures == (), "환경 실패가 제품 언어를 낳았습니다"
+    assert "창이" in (verdict.reason or "")
+    # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
+    product = report_mod.judge(
+        {"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check"
+    )
+    assert len(product.failures) == 7, product.failures
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [(True, driver.ExitCode.ENVIRONMENT), (False, driver.ExitCode.SCENARIO_FAILED)],
+)
+def test_the_exit_code_splits_environment_from_product(environment, expected) -> None:
+    """부른 쪽이 **분기할 수 있어야** 한다 — 그것이 ``ExitCode`` 의 존재 이유다.
+
+    종전에는 실행 시작 뒤의 환경 실패가 전부 ``SCENARIO_FAILED`` 로 접혔고, 그래서 CI 도
+    사람도 「환경이었나」를 종료 코드로 물을 수 없었다.
+    """
+    result = driver.LiveRunResult(mode="check", ok=False, environment=environment)
+
+    assert result.exit_code() == expected
+
+
+def _landing_stderr(capsys, tmp_path, *, environment: bool, failures: "list[str]") -> "list[str]":
+    """실패 하나를 착지시키고 stderr 줄만 돌려준다 — 사람이 실제로 읽는 것이 그것이다."""
+    import capture_101_screenshots as cli
+
+    result = driver.LiveRunResult(
+        mode="check",
+        ok=False,
+        report={"verdict": {"ok": False, "reason": "사유", "failures": failures}},
+        error="WebView2 창이 75s 안에 뜨지 않았습니다" if environment else "시나리오가 깨졌습니다",
+        environment=environment,
+    )
+    cli._land(
+        result, home=tmp_path, temp_root=None, use_example_home=False, report_path=None
+    )
+    return [line for line in capsys.readouterr().err.splitlines() if line.strip()]
+
+
+def test_a_boot_failure_no_longer_prints_eight_product_lines(capsys, tmp_path) -> None:
+    """#460 그 자체 — 환경 실패의 로그에 **제품 실패 줄이 없다**.
+
+    관측(run 30753937057)은 첫 줄 「Main window failed to start」 아래 파생 7줄이었다. 사람은
+    첫 줄을 읽지만 무인 판정은 7줄을 읽고 「내 변경이 101 여정을 깼다」로 오독한다.
+    """
+    lines = _landing_stderr(capsys, tmp_path, environment=True, failures=[])
+
+    assert not [line for line in lines if line.lstrip().startswith("·")], lines
+    assert "실패[환경]" in lines[0], lines[0]
+    assert any("제품 판정을 돌리지 않았습니다" in line for line in lines), lines
+
+
+def test_a_real_product_failure_still_prints_every_line(capsys, tmp_path) -> None:
+    """양성 대조 — 제품 실패의 진단까지 접으면 이 조치가 새 침묵을 만든다."""
+    lines = _landing_stderr(
+        capsys, tmp_path, environment=False, failures=["HWPX 생성 0건 (기대 3건)", "승인 미착지"]
+    )
+
+    assert "실패[제품]" in lines[0], lines[0]
+    assert len([line for line in lines if line.lstrip().startswith("·")]) == 2, lines
+
+
+def test_the_harness_waits_longer_than_the_product_fallback() -> None:
+    """순서가 계약이다 — 하니스는 제품의 폴백보다 **성겨야** 한다.
+
+    반대로 서면 하니스가 제품이 살려내려던 부팅을 먼저 죽이고, 제품이 남겼을 강제 show + 경보는
+    영영 나오지 않는다. 창 없이 도는 순수 산술이라 GUI 없는 러너에서도 잡힌다.
+    """
+    for product_budget in (boot_budget.COLD_BUDGET_SECONDS, boot_budget.WARM_BUDGET_SECONDS):
+        assert product_budget + driver.BOOT_GRACE_S > product_budget
+
+    assert driver.BOOT_GRACE_S > 0, "여유가 0이면 하니스와 제품이 동시에 발화한다"
+    # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
+    assert not (60.0 - 5.0 > 60.0)
+
+
+def test_the_boot_budget_comes_from_the_product_not_a_local_constant() -> None:
+    """예산의 출처가 제품이다 — 하니스가 같은 상태를 두 번째로 판정하지 않는다.
+
+    홈은 autouse 픽스처가 임시 폴더에 못박으므로 완주 이력이 없다 = **콜드**. 이 하니스가
+    ``--home temp`` 로 구조적으로 놓이는 자리와 같다.
+    """
+    seconds, reason = driver.boot_budget_s()
+
+    assert seconds == boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
+    assert "첫 실행" in reason
+    assert seconds > 20.0, "종전 하니스 상수(20s)는 제품의 **웜** 값이었다 — 콜드를 못 덮는다"
 
 
 # ─────────────────── 부재/미성립 구분의 음성 대조(게이트 밖) ───────────────────
