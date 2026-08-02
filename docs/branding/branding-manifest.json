@@ -1,5 +1,14 @@
 {
-  "generator_sha256": "e738bbbca59f59d25fd7514f8ae510f2bb246d4c647aae6e5dbc8849d423ff2e",
+  "generator_sha256": "6e97ef8ecb174c5178ddcd8b4cb25527d3dbe392b442e4d648acabd1150911a0",
+  "inputs": {
+    "docs/branding/document-narmi-mark-micro.svg": "0b90af126f8b61f1fff4c044d3a331834b5f1d0ccb6020a6ac06462e5dd3e4e5",
+    "docs/branding/document-narmi-mark-micro-reversed.svg": "de42ff1742ee835ecf90dd6e997121a041e2ce3865ec499b7b38dc82ad747e18",
+    "docs/branding/document-narmi-mark-small.svg": "47da90a0986b24a616d9be5cbaad0cd46b657f62924849e6fc90f1f79cf39d88",
+    "docs/branding/document-narmi-mark-small-reversed.svg": "aa356e573c3aba603dd037b7e0379c7ab49e438cc99bd3f450981ccd4705d13a",
+    "docs/branding/document-narmi-mark-full.svg": "2eaa0f4e0a83d4201c130b2532faa792bd0301bb941514bcba935308d3b89461",
+    "docs/branding/document-narmi-mark-full-reversed.svg": "136f91fddd853bf9ea86b8f11a2b9c226b7632edc4dabe7368ab32ca72329a3a",
+    "docs/branding/document-narmi-lockup.svg": "49995a2e8dd2762533352d69917b36eed8ead4c26c801bce310198ea4b35a694"
+  },
   "files": {
     "docs/branding/document-narmi-mark-full.png": "45ab11e4cd918bd9de3b64848ef4cc71cd013847eebb022f29f73db4d6061382",
     "docs/branding/document-narmi-board.png": "5a8287fb228c5450c590bcfe123f3630a0865e09e9e32fe7bb9427738d8e76a8",

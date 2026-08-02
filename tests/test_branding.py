@@ -220,10 +220,14 @@ def test_generated_bitmaps_match_generator_source() -> None:
 
     위 텍스트 게이트는 SVG/HTML 만 본다 — 정본 SVG 를 고치고 생성기를 안 돌리면 exe·설치본이
     낡은 아이콘을 실은 채 게이트가 침묵한다. Pillow·Chrome 없이 픽셀을 재생성할 수 없으므로
-    생성기가 쓰는 매니페스트를 2면으로 대조한다: ①생성기 **소스 전체** 다이제스트 ↔
-    매니페스트(재실행 누락 검출 — 기하 상수만 재면 0.94 채움·색·보드 배치 같은 렌더 레시피
-    드리프트가 샌다, 3R 정정) ②커밋 파일 ↔ 매니페스트 해시(산출물만 손댄 드리프트 검출).
-    어느 쪽이 갈려도 처방은 같다 — 생성기 재실행.
+    생성기가 쓰는 매니페스트를 3면으로 대조한다: ①생성기 **소스 전체** 다이제스트(렌더
+    레시피 변경 후 재실행 누락 검출) ②**정본 SVG 입력** 해시(#453 P2 — 렌더 기하가
+    스크립트에서 SVG 로 옮겨간 뒤로는 소스만 재면 입력 변경이 샌다: 심벌을 고치고 생성기를
+    안 돌리면 exe 아이콘이 낡은 채 초록이었다) ③커밋 비트맵 해시(산출물만 손댄 드리프트).
+    어느 면이 갈려도 처방은 같다 — 생성기 재실행.
+
+    입력 SVG 는 **개행을 정규화해서** 잰다. 바이트로 재면 CRLF 인 Windows 작업본과 LF 인
+    Linux CI 가 갈려 아무도 손대지 않아도 빨개진다.
     """
     import hashlib
     import json
@@ -234,6 +238,24 @@ def test_generated_bitmaps_match_generator_source() -> None:
         "생성기 소스가 매니페스트와 다르다 — 생성기를 바꿨으면 "
         "render_document_narmi_branding.py 를 다시 돌려 비트맵·매니페스트를 함께 갱신하라"
     )
+    # 입력 목록은 생성기 상수를 그대로 되읽지 않고 **디렉터리에서 독립적으로 센다** —
+    # 단을 새로 추가하고 매니페스트에 안 실으면 그 자리에서 걸리게.
+    inputs = manifest["inputs"]
+    expected_inputs = {
+        path.relative_to(ROOT).as_posix()
+        for path in ROOT.joinpath(*BRANDING).glob("document-narmi-mark-*.svg")
+    } | {"docs/branding/document-narmi-lockup.svg"}
+    assert set(inputs) == expected_inputs, (
+        "매니페스트 입력 목록이 정본 SVG 와 다르다 — 단을 추가·삭제했으면 생성기의 "
+        "SVG_INPUTS 를 함께 고치고 다시 돌려라"
+    )
+    for rel, expected in inputs.items():
+        actual = hashlib.sha256(_read(rel).encode("utf-8")).hexdigest()
+        assert actual == expected, (
+            f"{rel} 이 매니페스트와 다르다 — 정본 SVG 를 고쳤으면 생성기를 다시 돌려 "
+            "비트맵·매니페스트를 함께 갱신하라"
+        )
+
     files = manifest["files"]
     assert set(files) == {
         "docs/branding/document-narmi-mark-full.png",

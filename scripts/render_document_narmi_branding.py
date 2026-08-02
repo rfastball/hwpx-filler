@@ -228,6 +228,21 @@ BITMAP_ARTIFACTS = (
     ROOT / "packaging" / "hwpx-filler.ico",
 )
 
+#: 생성기가 읽는 정본 SVG — 비트맵의 **입력**이다. 렌더 기하가 이 스크립트에서 SVG 로
+#: 옮겨간 순간, 스크립트 다이제스트만으로는 입력 변경을 못 본다: 정본 SVG 를 고치고
+#: 생성기를 안 돌리면 커밋된 .png/.ico 가 낡은 채 게이트가 초록이다. 그래서 입력 해시도
+#: 함께 싣는다(#453 P2). 워드마크는 여기 없다 — 락업 SVG 안에 이미 패스로 박혀 있어
+#: 생성기가 파일로 읽지 않는다.
+SVG_INPUTS = tuple(
+    OUT / f"{stem}.svg"
+    for stem in (
+        MARK_MICRO, f"{MARK_MICRO}-reversed",
+        MARK_SMALL, f"{MARK_SMALL}-reversed",
+        MARK_FULL, f"{MARK_FULL}-reversed",
+        LOCKUP,
+    )
+)
+
 
 def generator_digest() -> str:
     # read_text 의 유니버설 뉴라인이 CRLF 를 \n 으로 접는다 — 게이트(_read)와 같은 정규화.
@@ -235,13 +250,32 @@ def generator_digest() -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def _text_digests(paths) -> dict[str, str]:
+    """텍스트 입력은 **개행을 정규화해서** 잰다.
+
+    SVG 를 바이트로 재면 CRLF 로 체크아웃되는 Windows 작업본과 LF 인 Linux CI 가 갈려
+    아무도 손대지 않아도 게이트가 빨개진다. ``read_text`` 의 유니버설 뉴라인이 CRLF 를
+    ``\\n`` 으로 접는다 — :func:`generator_digest` 와 게이트(``_read``)가 쓰는 같은 정규화다.
+    """
+    return {
+        p.relative_to(ROOT).as_posix():
+            hashlib.sha256(p.read_text(encoding="utf-8").encode("utf-8")).hexdigest()
+        for p in paths
+    }
+
+
+def _binary_digests(paths) -> dict[str, str]:
+    return {
+        p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in paths
+    }
+
+
 def write_manifest() -> None:
     manifest = {
         "generator_sha256": generator_digest(),
-        "files": {
-            p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in BITMAP_ARTIFACTS
-        },
+        "inputs": _text_digests(SVG_INPUTS),
+        "files": _binary_digests(BITMAP_ARTIFACTS),
     }
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
