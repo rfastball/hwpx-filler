@@ -59,7 +59,7 @@ gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t
 ## 5. 게이트를 돌리고 **푸시한 뒤** 재리뷰를 부른다
 
 ```powershell
-.	est.ps1
+.\test.ps1
 uv run ruff check scripts   # scripts/ 를 고쳤다면 — test.ps1 은 이걸 안 본다
 git push
 ```
