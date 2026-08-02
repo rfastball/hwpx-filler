@@ -35,20 +35,65 @@ def test_the_gate_runs_the_base_revision_not_the_pull_request_revision() -> None
 
 
 def test_the_gate_checks_out_the_default_branch_explicitly() -> None:
-    """이벤트마다 기본 체크아웃이 다르다 — 암묵에 기대면 리뷰 이벤트에서 PR head 가 잡힌다."""
+    """이벤트마다 기본 체크아웃이 다르다 — 암묵에 기대면 리뷰 이벤트에서 PR head 가 잡힌다.
+
+    fork 가드가 `pull_request.head.repo` 를 **읽는** 것은 허용한다 — 금지는 head 를
+    체크아웃 대상으로 잡는 것이다(sha·ref)."""
     text, workflow = _workflow()
     steps = workflow["jobs"]["judge"]["steps"]
-    checkout = next(s for s in steps if "checkout" in s.get("uses", ""))
-    assert checkout["with"]["ref"] == "${{ github.event.repository.default_branch }}"
-    assert "pull_request.head" not in text
+    checkouts = [s for s in steps if "checkout" in s.get("uses", "")]
+    assert len(checkouts) == 1
+    assert checkouts[0]["with"]["ref"] == "${{ github.event.repository.default_branch }}"
+    assert "pull_request.head.sha" not in text and "pull_request.head.ref" not in text
 
 
 def test_the_gate_sweeps_open_pull_requests_on_a_schedule() -> None:
-    """리액션·이슈 상태 변화는 이벤트를 만들지 않는다 — 깨울 사건이 없으면 영영 기다린다."""
+    """리액션·회수 창 경과는 이벤트를 만들지 않는다 — 깨울 사건이 없으면 영영 기다린다."""
     _, workflow = _workflow()
     assert "schedule" in workflow["on"]
     steps = workflow["jobs"]["judge"]["steps"]
     assert any("--all-open" in step.get("run", "") for step in steps)
+
+
+def test_the_sweep_cadence_is_hourly_off_peak() -> None:
+    """schedule 은 최선노력 큐다(실측 2.7시간 0회 발화) — 백스톱이지 엔진이 아니다.
+    10분 크론으로 되돌리면 공용 rate 풀을 다시 태우면서 신뢰성은 얻지 못한다. 정시(0분)는
+    부하 스파이크라 피한다."""
+    _, workflow = _workflow()
+    crons = [entry["cron"] for entry in workflow["on"]["schedule"]]
+    assert crons == ["17 * * * *"]
+
+
+def test_the_gate_can_be_kicked_when_no_event_will_come() -> None:
+    """리액션·창 경과의 재판정은 클라이언트 킥이 1차다 — cron 을 각성원으로 믿지 않는다."""
+    _, workflow = _workflow()
+    dispatch = workflow["on"]["workflow_dispatch"]
+    assert dispatch["inputs"]["pr"]["required"] in (True, "true")
+    steps = workflow["jobs"]["judge"]["steps"]
+    judge = next(s for s in steps if "--publish-check" in s.get("run", "") and "--all-open" not in s["run"])
+    assert "inputs.pr" in str(judge["env"]["PR_NUMBER"])
+
+
+def test_a_thread_resolution_re_judges_without_waiting_for_the_sweep() -> None:
+    """스레드 해결이 곧 해소 신호다 — 이 이벤트가 없으면 차단을 다 해소해도 시간당 훑기까지
+    빨간불이 남는다."""
+    _, workflow = _workflow()
+    assert "pull_request_review_thread" in workflow["on"]
+
+
+def test_sweep_runs_do_not_share_a_group_with_pull_request_runs() -> None:
+    """PR 번호가 없는 이벤트가 빈 그룹으로 뭉치면 스윕끼리 서로를 죽인다."""
+    _, workflow = _workflow()
+    group = workflow["concurrency"]["group"]
+    assert "'sweep'" in group and "github.event_name == 'schedule'" in group
+    assert workflow["concurrency"]["cancel-in-progress"] in (True, "true")
+
+
+def test_fork_born_events_do_not_run_the_judge() -> None:
+    """review·thread 계열 이벤트는 base 판본 보장이 없다 — fork 발은 걸러서 스윕이 덮는다."""
+    _, workflow = _workflow()
+    guard = workflow["jobs"]["judge"]["if"]
+    assert "github.event.pull_request.head.repo.full_name == github.repository" in guard
 
 
 def test_the_gate_re_evaluates_when_settlement_markers_arrive() -> None:

@@ -657,17 +657,23 @@ MERGE_TARGET = re.compile(r"gh\s+pr\s+merge\s+(?:\S*/pull/)?(\d+)")
 
 
 def _sweep(client: GitHub) -> int:
-    """열린 PR 을 전부 다시 판정한다.
+    """열린 PR 을 전부 다시 판정한다 — **백스톱**이다(정책 §4).
 
-    **리액션과 이슈 상태 변화는 워크플로 이벤트를 만들지 않는다.** 지적이 없는 PR 은 `+1`
-    리액션만 받으므로 그것을 기다리는 게이트는 깨울 사건이 영영 오지 않는다. 회수 창이
-    지나는 것도, 분리한 이슈가 닫히는 것도 마찬가지다. 그래서 주기적으로 훑는다.
+    리액션과 회수 창 경과는 워크플로 이벤트를 만들지 않는다. 1차 각성은 클라이언트 감시
+    루프의 `workflow_dispatch` 킥이고, 이 훑기는 킥마저 빠진 PR 을 시간당 한 번 줍는다.
+    GitHub 의 schedule 자체가 최선노력이라(실측 2.7시간 0회 발화) 이것을 엔진으로 믿지
+    않는다.
+
+    pending 덮개(`publish_pending`)를 깔지 않는다 — 스윕은 이벤트 경로와 다른 concurrency
+    그룹이라 서로 취소하지 못하고, 느린 스윕이 pending 을 깔면 이벤트 경로의 최신 판정을
+    in_progress 로 가리거나 실패 시 그대로 고아로 남긴다. 단일 PR 재평가(`--publish-check`)
+    는 이전 초록이 권위로 남는 것을 막으려고 pending 을 먼저 깐다 — 그쪽이 옳고, 여기는
+    완료 판정만 얹는다.
     """
     failures = 0
     for pull in client.paged("pulls?state=open"):
         number = int(pull["number"])
         try:
-            publish_pending(client, pull["head"]["sha"])
             report = evaluate(client, number)
             publish_check(client, report)
             print(f"#{number} {report.status}")

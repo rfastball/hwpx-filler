@@ -153,6 +153,8 @@ class FakeGitHub:
         raise AssertionError(f"예상하지 못한 조회: {path}")
 
     def paged(self, path: str) -> list[dict]:
+        if path == "pulls?state=open":
+            return [{"number": PR, "head": {"sha": self.head, "ref": "topic"}}]
         if path == f"pulls/{PR}/files":
             return [{"filename": name} for name in self.files]
         if path == f"issues/{PR}/comments":
@@ -717,6 +719,15 @@ def test_a_pending_check_lands_before_the_verdict_is_recomputed() -> None:
     _, payload = fake.posted[0]
     assert payload["head_sha"] == "head-sha"
     assert payload["status"] == "in_progress" and "conclusion" not in payload
+
+
+def test_the_sweep_publishes_verdicts_without_a_pending_overlay() -> None:
+    """스윕은 이벤트 경로와 다른 concurrency 그룹이라 서로 취소하지 못한다 — 느린 스윕이
+    pending 을 깔면 최신 판정을 in_progress 로 가리거나 실패 시 고아로 남긴다."""
+    fake = FakeGitHub(files=["docs/README.md"])
+    assert review_rounds._sweep(fake) == 0
+    assert fake.posted, "스윕이 판정을 게시하지 않았습니다"
+    assert all(payload["status"] == "completed" for _, payload in fake.posted)
 
 
 def test_the_check_run_is_anchored_to_the_pr_head() -> None:
