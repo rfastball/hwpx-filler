@@ -67,31 +67,7 @@ TRIAGE_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-READY, WAIT, BLOCKED, ESCALATE = "READY", "WAIT", "BLOCKED", "ESCALATE"
-
-#: 루프에 **정해진 출구**를 준다.
-#:
-#: 고치는 것이 push 를 만들고 push 가 리뷰를 부른다. 그래서 모든 지적을 차단으로 보고
-#: 고치면 종료 조건이 「리뷰어가 더 할 말이 없을 때」로 되돌아간다 — 이 정책이 폐기하려던
-#: 바로 그 상태다. 분리는 head 를 바꾸지 않아 그 자리에서 닫히지만, 진짜 차단이 계속
-#: 나오는 경우에는 닫을 길이 없다.
-#:
-#: 그때 게이트는 `ESCALATE` 로 간다. **고치는 것으로는 안 풀린다** — 사람이 남긴 마커로만
-#: 풀리고, 그 마커는 지금 head 를 지목해야 한다. 그래서 라운드가 하나 더 돌 때마다 사람의
-#: 판단이 새로 필요하다. 루프는 항상 끝난다: 초록이거나, 사람을 부르거나.
-BLOCK_STREAK_LIMIT = 3
-REGRESSION_LIMIT = 2
-
-#: `triage: escalated <head-sha> — <사유>`.
-#:
-#: **사유를 요구한다.** 이 마커가 여는 것은 「사람이 판단했다」는 상태인데, SHA 만 적힌 줄이나
-#: 렌더된 자리표시자를 그대로 복사한 줄을 받아 주면 게이트가 남지도 않은 판단을 남았다고
-#: 말하게 된다.
-ESCALATION_PATTERN = re.compile(
-    r"^\s*triage:\s*escalated\s+(?P<head>[0-9a-f]{7,40})"
-    r"\s*[\u2014-]\s*(?P<reason>[^<\n]*[^<\s][^<\n]*)$",
-    re.MULTILINE,
-)
+READY, WAIT, BLOCKED = "READY", "WAIT", "BLOCKED"
 
 #: 리뷰어가 배지 이미지로 싣는 심각도. **입력이지 분류가 아니다** — 표시만 하고 판정에는
 #: 쓰지 않는다(정책 §1). 실제로 이 리뷰어는 P3 를 발급하지 않아, 배지에 정지 조건을 걸면
@@ -162,10 +138,8 @@ class Report:
     bad_defers: list[tuple[Finding, str]]
     regressions: list[tuple[Finding, Finding]]
     signal: str | None
-    head_reviewed: bool
+    reviewed: bool
     timed_out: bool
-    block_streak: int
-    escalated: bool
     status: str
 
     def as_dict(self) -> dict:
@@ -186,10 +160,8 @@ class Report:
                 for before, after in self.regressions
             ],
             "signal": self.signal,
-            "head_reviewed": self.head_reviewed,
+            "reviewed": self.reviewed,
             "timed_out": self.timed_out,
-            "block_streak": self.block_streak,
-            "escalated": self.escalated,
         }
 
 
@@ -397,74 +369,27 @@ def _defer_problem(client: GitHub, triage: Triage) -> str | None:
     return None
 
 
-def _block_streak(rounds: list[Round], settled: dict[int, Triage]) -> int:
-    """**끝에서부터** 차단을 낸 라운드가 몇 번 연속인가.
+def _regressions(
+    rounds: list[Round], settled: dict[int, Triage]
+) -> list[tuple[Finding, Finding]]:
+    """같은 파일·근방 라인에 두 라운드 연속 지적이면 회귀 **후보**로 표시한다.
 
-    가운데 한 번 조용했다가 다시 나오는 것은 다른 이야기다 — 여기서 세려는 것은 「고쳐도
-    같은 자리에서 계속 나온다」는 지금의 추세다.
+    **고친 것만 센다.** 정책이 말하는 회귀는 「고친 결함이 되살아나는 것」이라, 분리로
+    정산해 손대지 않은 지적이 근처에서 또 나오는 것은 회귀가 아니다.
     """
-    streak = 0
-    for round_ in reversed(rounds):
-        if not any(
-            (triage := settled.get(f.id)) and triage.verdict == "block" for f in round_.findings
-        ):
-            return streak
-        streak += 1
-    return streak
 
+    def fixed(finding: Finding) -> bool:
+        triage = settled.get(finding.id)
+        return triage is not None and triage.verdict == "block"
 
-def _settled_rounds(client: GitHub, pr: int, rounds: list[Round], head: str) -> int:
-    """승인이 **정산해 준** 앞쪽 라운드 수.
-
-    승인은 만료되지 않고 그 시점까지를 정산한다. 만료되게 만들면 영영 안 풀린다 — 라운드는
-    지적이 있을 때만 생기므로, 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남아 push 마다 승인을
-    다시 요구하게 된다.
-
-    순서의 정본은 **PR 의 커밋 목록**이다. 승인 SHA 를 라운드 목록에서 찾으면, 지적 없는
-    head 를 지목한 승인이 다음 push 뒤에 미아가 된다 — 그 SHA 는 어떤 라운드의 커밋도 아니라서
-    같은 결함이 되살아난다(라운드 목록은 커밋의 **우연한 부분집합**이다).
-    """
-    order = {
-        commit["sha"]: index
-        for index, commit in enumerate(client.paged(f"pulls/{pr}/commits"))
-    }
-
-    def position(sha: str) -> int | None:
-        for full, index in order.items():
-            if full.startswith(sha):
-                return index
-        return None
-
-    acknowledged = -1
-    for comment in client.paged(f"issues/{pr}/comments"):
-        if not _may_settle(comment):
-            continue
-        for match in ESCALATION_PATTERN.finditer(comment.get("body") or ""):
-            sha = match.group("head")
-            if head.startswith(sha):
-                return len(rounds)  # 지금 head 를 지목했다 = 여기까지 전부 본 것이다
-            where = position(sha)
-            if where is not None:
-                acknowledged = max(acknowledged, where)
-
-    if acknowledged < 0:
-        return 0
-    # 승인된 커밋보다 뒤에 있는 라운드만 남긴다. 리베이스로 역사에서 사라진 라운드 커밋은
-    # 위치를 알 수 없는데, 그것은 이미 지나간 것이므로 정산된 쪽으로 센다.
-    settled = 0
-    for index, round_ in enumerate(rounds):
-        where = position(round_.commit)
-        if where is None or where <= acknowledged:
-            settled = index + 1
-    return settled
-
-
-def _regressions(rounds: list[Round]) -> list[tuple[Finding, Finding]]:
-    """같은 파일·근방 라인에 두 라운드 연속 지적이면 회귀 **후보**로 표시한다."""
     found = []
     for previous, current in zip(rounds, rounds[1:], strict=False):
         for after in current.findings:
+            if not fixed(after):
+                continue
             for before in previous.findings:
+                if not fixed(before):
+                    continue
                 if before.path != after.path or not before.line or not after.line:
                     continue
                 if abs(before.line - after.line) <= REGRESSION_LINE_SPAN:
@@ -560,10 +485,8 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             bad_defers=[],
             regressions=[],
             signal=None,
-            head_reviewed=True,
+            reviewed=True,
             timed_out=False,
-            block_streak=0,
-            escalated=False,
             status=READY,
         )
 
@@ -588,32 +511,22 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         if problem:
             bad_defers.append((finding, problem))
 
-    signal, signalled_at = _signal(client, pr)
+    signal, _ = _signal(client, pr)
+    # 자동 리뷰는 **PR 당 한 번** 발화한다(2026-08-02 설정 변경). 그래서 게이트가 묻는 것은
+    # 「마지막 push 를 봤는가」가 아니라 **「이 PR 이 한 번이라도 읽혔는가」**다. 앞엣것을
+    # 물으면 고칠 때마다 다시 안 읽힌 상태가 돼 영영 안 닫힌다 — 재리뷰는 `@codex review` 로
+    # **우리가 명시 요청할 때만** 온다.
+    reviewed = any(f.by_reviewer for f in findings) or signal == "+1"
+
+    # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 멈추지 않게 열어
+    # 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면 「리뷰를 받았다」와
+    # 「리뷰어가 침묵했다」가 같은 색이 된다.
     pushed_at = _pushed_at(client, pull, now)
-    answered = any(f.commit == head and f.by_reviewer for f in findings) or (
-        signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
-    )
-    # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 루프가 멈추지
-    # 않게 열어 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면
-    # 「리뷰를 받았다」와 「리뷰어가 침묵했다」가 같은 색이 된다.
-    timed_out = not answered and now - pushed_at > RECOVERY_WINDOW
-    head_reviewed = answered or timed_out
+    timed_out = not reviewed and now - pushed_at > RECOVERY_WINDOW
 
-    # 승인이 정산한 앞쪽은 다시 세지 않는다.
-    open_rounds = rounds[_settled_rounds(client, pr, rounds, head) :]
-    regressions = _regressions(open_rounds)
-    streak = _block_streak(open_rounds, settled)
-    if answered and not any(r.commit == head for r in rounds):
-        # 리뷰어가 지금 head 를 보고 아무 말도 하지 않았다 — 그 자체가 연속의 끊김이다.
-        streak = 0
-    escalated = streak >= BLOCK_STREAK_LIMIT or len(regressions) >= REGRESSION_LIMIT
-
-    if escalated:
-        # 차단보다 먼저 본다. 여기서 「고치면 된다」로 읽히면 그 자체가 이 상태의 뜻을 지운다.
-        status = ESCALATE
-    elif open_blocks or bad_defers:
+    if open_blocks or bad_defers:
         status = BLOCKED
-    elif unsettled or not head_reviewed:
+    elif unsettled or not (reviewed or timed_out):
         status = WAIT
     else:
         status = READY
@@ -626,12 +539,10 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         unsettled=unsettled,
         open_blocks=open_blocks,
         bad_defers=bad_defers,
-        regressions=regressions,
+        regressions=_regressions(rounds, settled),
         signal=signal,
-        head_reviewed=head_reviewed,
+        reviewed=reviewed,
         timed_out=timed_out,
-        block_streak=streak,
-        escalated=escalated,
         status=status,
     )
 
@@ -643,13 +554,6 @@ def render(report: Report) -> str:
         return "\n".join(lines)
 
     lines.append(f"라운드 {len(report.rounds)}회 · 신호 {report.signal or '없음'}")
-    if report.escalated:
-        lines.append(
-            f"차단이 {report.block_streak}라운드 연속이거나 회귀가 거듭됩니다 "
-            "— 점별 픽스를 멈춥니다. 고치는 것으로는 이 상태가 풀리지 않습니다."
-        )
-        lines.append("  근본 조치·범위 재단·중단 중 하나를 사람이 정하고 남기십시오:")
-        lines.append(f"    triage: escalated {report.head[:12]} — <사유>")
     for index, round_ in enumerate(report.rounds, start=1):
         lines.append(f"  {index}. {round_.commit[:7]} — 지적 {len(round_.findings)}건")
     if report.unsettled:
@@ -667,8 +571,8 @@ def render(report: Report) -> str:
             "회수 창이 지나도록 리뷰어가 침묵했습니다 — 리뷰를 **받지 못한 채** 닫습니다. "
             "`@codex review` 로 한 번 명시 트리거해 보고, 그래도 무응답이면 그대로 진행합니다."
         )
-    elif not report.head_reviewed:
-        lines.append("마지막 푸시에 대한 리뷰를 아직 회수하지 못했습니다.")
+    elif not report.reviewed:
+        lines.append("자동 리뷰를 아직 회수하지 못했습니다.")
     return "\n".join(lines)
 
 
@@ -680,7 +584,6 @@ CONCLUSIONS = {
     READY: "success",
     WAIT: "action_required",
     BLOCKED: "failure",
-    ESCALATE: "failure",
 }
 
 CHECK_NAME = "review-gate"
@@ -720,9 +623,7 @@ def publish_check(client: GitHub, report: Report) -> None:
             "status": "completed",
             "conclusion": CONCLUSIONS[report.status],
             "output": {
-                "title": "ESCALATE — 사람의 판단이 필요합니다"
-                if report.escalated
-                else "READY (리뷰 없이 회수 창 소진)"
+                "title": "READY (리뷰 없이 회수 창 소진)"
                 if report.timed_out
                 else f"{report.status} — 미정산 {len(report.unsettled)}건 · "
                 f"미해결 차단 {len(report.open_blocks)}건",

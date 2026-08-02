@@ -48,20 +48,10 @@ gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
 **회귀 후보가 하나라도 표시되면** 그 자리에서 점별 픽스를 멈춘다(정책 §3 — 첫 재발부터
 근본 조치다). 판정은 아직 `READY` 일 수 있으니 게이트가 대신 세워 주지 않는다.
 
-판정이 `ESCALATE` 면 **고치는 것으로는 풀리지 않는다.** 점별 픽스를 멈추고 근본 조치·범위
-재단·중단 중 하나를 정한 뒤 그 판단을 남긴다. **사유 없는 마커는 거절된다** — 자리표시자를
-그대로 복사한 것도 마찬가지다.
+라운드를 더 돌려야겠다고 판단되면 **명시 요청한다** — 자동 리뷰는 PR 당 한 번뿐이다.
 
 ```powershell
-gh pr comment <PR> --body "triage: escalated <head-sha> — 무엇을 어떻게 정했는지"
-```
-
-고친 뒤에는 그 스레드를 **`Resolve conversation` 으로 닫는다** — 그것이 해소 신호다.
-코멘트가 outdated 가 되기를 기다리면 안 된다. GitHub 은 앵커 hunk 가 살아 있는 한 코멘트를
-최신 커밋으로 재앵커하므로, 실제로 고쳐도 살아남는 경우가 흔하다.
-
-```powershell
-gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){clientMutationId}}' -F t=<thread-id>
+gh pr comment <PR> --body "@codex review"
 ```
 
 ## 5. 게이트를 돌리고 푸시한다
@@ -72,7 +62,7 @@ uv run ruff check scripts   # scripts/ 를 고쳤다면 — test.ps1 은 이걸 
 git push
 ```
 
-푸시가 곧 다음 라운드 트리거다. 1번으로 돌아간다.
+푸시는 더 이상 리뷰를 부르지 않는다. 1번으로 돌아가 상태만 다시 읽는다.
 
 ## 6. 머지
 

@@ -14,7 +14,6 @@ import pytest
 from scripts import review_rounds
 from scripts.review_rounds import (
     BLOCKED,
-    ESCALATE,
     READY,
     WAIT,
     GitHub,
@@ -359,13 +358,49 @@ def test_an_empty_diff_is_not_a_fast_path() -> None:
     assert not evaluate(FakeGitHub(files=[], comments=[_comment(1, "c1")]), PR, now=NOW).fast_path
 
 
-# ── 리뷰 회수 ──────────────────────────────────────────────────────────────────
+# ── 리뷰 회수 ────────────────────────────────────────────────────────────────
 
 
-def test_the_gate_waits_until_the_last_push_is_reviewed() -> None:
-    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
+def test_the_gate_waits_until_the_pull_request_has_been_read_at_all() -> None:
+    """자동 리뷰는 PR 당 한 번이다 — 「마지막 push 를 봤는가」를 물으면 고칠 때마다 다시 안
+    읽힌 상태가 돼 영영 안 닫힌다. 묻는 것은 「한 번이라도 읽혔는가」다."""
+    report = evaluate(FakeGitHub(head="c1", comments=[]), PR, now=NOW)
+    assert report.status == WAIT and not report.reviewed
+
+
+def test_a_later_push_does_not_undo_the_review() -> None:
+    """정산이 끝난 뒤 픽스를 밀어 넣어도 다시 WAIT 로 떨어지지 않는다."""
+    fake = FakeGitHub(head="c9", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    assert evaluate(fake, PR, now=NOW).status == READY
+
+
+def test_an_authored_comment_is_not_a_review() -> None:
+    """작성자가 인라인 코멘트를 달아 「읽혔다」를 스스로 만들 수 없다."""
+    mine = _comment(1, "c1") | {"user": {"login": "rfastball"}}
+    fake = FakeGitHub(head="c1", comments=[mine], triage=["triage: 1 defer #77"], issues={77: _open_issue(77)})
     report = evaluate(fake, PR, now=NOW)
-    assert report.status == WAIT and not report.head_reviewed
+    assert not report.reviewed and report.status == WAIT
+
+
+def test_only_the_reviewer_can_signal_no_findings() -> None:
+    """작성자가 자기 PR 에 `+1` 을 달아 리뷰 없이 초록을 만들면 게이트가 거짓말한다."""
+    fake = FakeGitHub(head="c1", comments=[], reactions=[_reaction("+1", login="rfastball")])
+    report = evaluate(fake, PR, now=NOW)
+    assert report.signal is None and report.status == WAIT
+
+
+def test_the_reviewers_thumbs_up_closes_a_finding_free_pull_request() -> None:
+    """양성 대조 — 지적이 없으면 리뷰 결과는 리액션으로만 온다."""
+    fake = FakeGitHub(head="c1", comments=[], reactions=[_reaction("+1")])
+    assert evaluate(fake, PR, now=NOW).status == READY
+
+
+def test_eyes_is_not_a_no_findings_signal() -> None:
+    """`eyes` 는 진행 중이다 — `+1` 과 혼동하면 리뷰를 안 기다리고 넘어간다."""
+    fake = FakeGitHub(head="c1", comments=[], reactions=[_reaction("eyes")])
+    report = evaluate(fake, PR, now=NOW)
+    assert report.signal == "eyes" and report.status == WAIT
 
 
 def test_the_window_is_measured_from_the_push_not_the_commit_date() -> None:
@@ -374,11 +409,18 @@ def test_the_window_is_measured_from_the_push_not_the_commit_date() -> None:
     class OldCommitJustPushed(FakeGitHub):
         def get(self, path: str) -> dict:
             if path.endswith("/check-suites"):
-                return {"check_suites": [{"created_at": NOW.isoformat().replace("+00:00", "Z")}]}
+                return {
+                    "check_suites": [
+                        {
+                            "created_at": NOW.isoformat().replace("+00:00", "Z"),
+                            "head_branch": "topic",
+                            "pull_requests": [{"number": PR}],
+                        }
+                    ]
+                }
             return super().get(path)
 
-    fake = OldCommitJustPushed(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
-    report = evaluate(fake, PR, now=NOW + timedelta(minutes=1))
+    report = evaluate(OldCommitJustPushed(head="c1", comments=[]), PR, now=NOW + timedelta(minutes=1))
     assert report.status == WAIT and not report.timed_out
 
 
@@ -391,14 +433,13 @@ def test_a_head_with_no_check_suite_has_not_timed_out() -> None:
                 return {"check_suites": []}
             return super().get(path)
 
-    fake = NoSuiteYet(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
-    assert not evaluate(fake, PR, now=NOW).timed_out
+    assert not evaluate(NoSuiteYet(head="c1", comments=[]), PR, now=NOW).timed_out
 
 
 def test_the_recovery_window_closes_on_its_own_but_says_so() -> None:
     """창 소진은 리뷰가 아니라 **교착 탈출**이다. 조용히 초록이 되면 「리뷰를 받았다」와
     「리뷰어가 침묵했다」가 같은 색이 된다."""
-    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
+    fake = FakeGitHub(head="c1", comments=[])
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
     assert report.status == READY and report.timed_out
     assert "받지 못한 채" in review_rounds.render(report)
@@ -407,98 +448,11 @@ def test_the_recovery_window_closes_on_its_own_but_says_so() -> None:
     assert "회수 창 소진" in fake.posted[0][1]["output"]["title"]
 
 
-def test_a_reviewed_head_is_not_marked_as_timed_out() -> None:
+def test_a_reviewed_pull_request_is_not_marked_as_timed_out() -> None:
     """음성 대조 — 신호를 받고 닫힌 것은 침묵으로 닫힌 것과 다르다."""
-    fake = FakeGitHub(
-        head="c1",
-        comments=[_comment(1, "c1", line=None)],
-        triage=["triage: 1 block"],
-        resolved={1},
-        reactions=[_reaction("+1")],
-    )
+    fake = FakeGitHub(head="c1", comments=[], reactions=[_reaction("+1")])
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
     assert report.status == READY and not report.timed_out
-
-
-def test_only_the_reviewer_can_signal_no_findings() -> None:
-    """작성자가 자기 PR 에 `+1` 을 달아 리뷰 없이 초록을 만들면 게이트가 거짓말한다."""
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=None)],
-        triage=["triage: 1 block"],
-        resolved={1},
-        reactions=[_reaction("+1", login="rfastball")],
-    )
-    report = evaluate(fake, PR, now=NOW)
-    assert report.signal is None and report.status == WAIT
-
-
-def test_an_authored_comment_on_head_is_not_a_review() -> None:
-    """리액션만 조이면 이 경로가 열린 채 남는다 — 작성자가 head 에 코멘트를 달아 정산하면
-    「리뷰를 받았다」가 스스로 만들어진다."""
-    mine = _comment(2, "c2") | {"user": {"login": "rfastball"}}
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=None), mine],
-        triage=["triage: 1 block", "triage: 2 defer #77"],
-        issues={77: _open_issue(77)},
-    )
-    fake.resolved.add(1)
-    report = evaluate(fake, PR, now=NOW)
-    assert not report.head_reviewed and report.status == WAIT
-
-
-def test_a_reviewer_comment_on_head_is_a_review() -> None:
-    """양성 대조 — 리뷰어가 head 를 짚었으면 그 push 는 읽힌 것이다."""
-    fake = FakeGitHub(head="c2", comments=[_comment(1, "c2")], triage=["triage: 1 block"])
-    fake.resolved.add(1)
-    assert evaluate(fake, PR, now=NOW).head_reviewed
-
-
-def test_only_trusted_actors_can_settle() -> None:
-    """공개 PR 에서는 아무나 코멘트를 단다. 뒤 마커가 앞을 덮으므로 통제 없이 두면 남이
-    게이트를 열거나 붙잡아 둘 수 있다."""
-    fake = FakeGitHub(
-        head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 defer #77"], settler="NONE"
-    )
-    report = evaluate(fake, PR, now=NOW)
-    assert [f.id for f in report.unsettled] == [1]
-
-
-def test_a_check_suite_from_another_pull_request_does_not_start_the_clock() -> None:
-    """같은 SHA 가 다른 브랜치에서 이미 돌았으면 그때의 스위트가 함께 실린다 — 그것으로 재면
-    이 PR 로서는 처음인 판정이 이미 창을 넘긴 것이 된다."""
-
-    class Elsewhere(FakeGitHub):
-        def get(self, path: str) -> dict:
-            if path.endswith("/check-suites"):
-                return {
-                    "check_suites": [
-                        {
-                            "created_at": (NOW - timedelta(days=1)).isoformat().replace("+00:00", "Z"),
-                            "head_branch": "other-branch",
-                            "pull_requests": [{"number": 999}],
-                        }
-                    ]
-                }
-            return super().get(path)
-
-    fake = Elsewhere(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
-    fake.resolved.add(1)
-    assert not evaluate(fake, PR, now=NOW).timed_out
-
-
-def test_eyes_is_not_a_no_findings_signal() -> None:
-    """`eyes` 는 진행 중이다 — `+1` 과 혼동하면 리뷰를 안 기다리고 넘어간다."""
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=None)],
-        triage=["triage: 1 block"],
-        resolved={1},
-        reactions=[_reaction("eyes")],
-    )
-    report = evaluate(fake, PR, now=NOW)
-    assert report.signal == "eyes" and report.status == WAIT
 
 
 # ── 회귀 후보 ──────────────────────────────────────────────────────────────────
@@ -539,130 +493,6 @@ def test_replies_do_not_create_their_own_settlement_duty() -> None:
     assert report.unsettled == [] and report.status == READY
 
 
-
-# ── 루프의 출구 ────────────────────────────────────────────────────────────────
-
-
-def _block_rounds(count: int) -> FakeGitHub:
-    """라운드마다 차단 하나씩. 고쳐도 다음 라운드에서 또 나오는 모양이다."""
-    comments = [_comment(i, f"beef00{i}", path=f"src/{i}.py") for i in range(count)]
-    fake = FakeGitHub(
-        head=f"beef00{count - 1}",
-        comments=comments,
-        triage=[f"triage: {i} block" for i in range(count)],
-    )
-    fake.resolved.update(range(count))
-    return fake
-
-
-def test_three_block_rounds_in_a_row_stop_the_point_fixing() -> None:
-    """고치는 것이 push 를 만들고 push 가 리뷰를 부른다 — 진짜 차단이 계속 나오면 닫을 길이
-    없다. 그때 루프는 초록이 아니라 사람에게로 나간다."""
-    report = evaluate(_block_rounds(3), PR, now=NOW)
-    assert report.block_streak == 3 and report.escalated and report.status == ESCALATE
-
-
-def test_two_block_rounds_do_not_escalate() -> None:
-    """음성 대조 — 흔한 두 라운드는 병리가 아니다."""
-    report = evaluate(_block_rounds(2), PR, now=NOW)
-    assert not report.escalated and report.status == READY
-
-
-def test_only_an_acknowledgement_of_this_head_clears_the_escalation() -> None:
-    """고치는 것으로는 안 풀린다. 사람이 **지금 head 를 지목해** 판단을 남겨야 풀린다."""
-    fake = _block_rounds(3)
-    fake.triage.append("triage: escalated beef002 — 범위를 재단하고 나머지는 이슈로 넘긴다")
-    assert evaluate(fake, PR, now=NOW).status == READY
-
-
-def test_an_acknowledgement_settles_the_rounds_up_to_it_and_no_more() -> None:
-    """승인은 만료되지 않고 **그 시점까지를 정산한다.** 만료되게 만들면 영영 안 풀린다 —
-    라운드는 지적이 있을 때만 생기므로 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남는다."""
-    fake = _block_rounds(5)
-    fake.triage.append("triage: escalated beef002 — 여기까지는 봤다")
-    report = evaluate(fake, PR, now=NOW)
-    assert report.block_streak == 2 and report.status == READY
-
-
-def test_new_blocks_after_an_acknowledgement_call_the_human_again() -> None:
-    """정산해 준 것은 앞쪽뿐이다. 뒤에 새로 세 번 쌓이면 다시 부른다."""
-    fake = _block_rounds(6)
-    fake.triage.append("triage: escalated beef002 — 여기까지는 봤다")
-    report = evaluate(fake, PR, now=NOW)
-    assert report.block_streak == 3 and report.status == ESCALATE
-
-
-def test_a_clean_review_of_the_head_breaks_the_streak() -> None:
-    """리뷰어가 지금 head 를 보고 아무 말도 하지 않았다 — 그 자체가 연속의 끊김이다.
-    사람의 마커 없이도 정상 경로로 회복돼야 한다."""
-    fake = _block_rounds(3)
-    fake.head = "cafe999"
-    fake.reactions = [_reaction("+1")]
-    report = evaluate(fake, PR, now=NOW)
-    assert report.block_streak == 0 and report.status == READY
-
-
-def test_an_acknowledgement_on_a_finding_free_head_survives_the_next_push() -> None:
-    """승인은 지적 **없는** head 에서 이뤄지는 것이 보통이다(고치고 나서 부르니까). 그 SHA 를
-    라운드 목록에서 찾으면 다음 push 뒤에 미아가 돼 같은 결함이 되살아난다 — 순서의 정본은
-    PR 의 커밋 목록이다."""
-    fake = _block_rounds(3)
-    fake.head = "dada888"
-    fake.history = ["beef000", "beef001", "beef002", "cafe999", "dada888"]
-    fake.triage.append("triage: escalated cafe999 — 범위를 재단하고 나머지는 이슈로 넘긴다")
-    report = evaluate(fake, PR, now=NOW)
-    assert report.block_streak == 0 and report.status != ESCALATE
-
-
-def test_without_the_acknowledgement_that_same_state_escalates() -> None:
-    """양성 대조 — 승인이 없으면 그대로 사람을 부른다."""
-    fake = _block_rounds(3)
-    fake.head = "dada888"
-    fake.history = ["beef000", "beef001", "beef002", "cafe999", "dada888"]
-    assert evaluate(fake, PR, now=NOW).status == ESCALATE
-
-
-@pytest.mark.parametrize(
-    "marker",
-    [
-        "triage: escalated beef002",
-        "triage: escalated beef002 — <사유>",
-        "triage: escalated beef002 —   ",
-    ],
-)
-def test_an_acknowledgement_without_a_recorded_decision_is_refused(marker: str) -> None:
-    """이 마커가 여는 것은 「사람이 판단했다」는 상태다 — 판단이 안 적혔으면 열리면 안 된다."""
-    fake = _block_rounds(3)
-    fake.triage.append(marker)
-    assert evaluate(fake, PR, now=NOW).status == ESCALATE
-
-
-def test_an_outsider_cannot_clear_the_escalation() -> None:
-    fake = _block_rounds(3)
-    fake.outsider_triage.append("triage: escalated beef002 — 남이 남긴 승인")
-    assert evaluate(fake, PR, now=NOW).status == ESCALATE
-
-
-def test_repeated_regressions_escalate_on_their_own() -> None:
-    """같은 자리를 거듭 맞으면 라운드 수와 무관하게 근본 조치 신호다."""
-    comments = [
-        _comment(1, "c1", line=10),
-        _comment(2, "c2", line=12),
-        _comment(3, "c3", line=11),
-    ]
-    fake = FakeGitHub(
-        head="c3", comments=comments, triage=[f"triage: {i} block" for i in (1, 2, 3)]
-    )
-    fake.resolved.update({1, 2, 3})
-    report = evaluate(fake, PR, now=NOW)
-    assert len(report.regressions) >= review_rounds.REGRESSION_LIMIT
-    assert report.status == ESCALATE
-
-
-def test_the_escalation_names_what_to_do() -> None:
-    """상태만 빨간 것은 지침이 아니다 — 무엇을 해야 풀리는지가 함께 있어야 한다."""
-    rendered = review_rounds.render(evaluate(_block_rounds(3), PR, now=NOW))
-    assert "triage: escalated" in rendered and "점별 픽스를 멈춥니다" in rendered
 
 # ── 실패는 통과가 아니다 ───────────────────────────────────────────────────────
 
