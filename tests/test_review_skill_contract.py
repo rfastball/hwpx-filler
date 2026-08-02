@@ -47,12 +47,17 @@ def test_the_review_request_comes_after_the_push() -> None:
     assert text.index("git push") < text.index("@codex review")
 
 
-def test_the_skill_keeps_the_two_stop_signals_the_policy_defines() -> None:
-    """게이트는 이 둘을 막지 않는다 — 판정이 `READY` 여도 사람이 멈춰야 하는 자리다.
+def test_the_skill_keeps_the_stop_signal_the_policy_defines() -> None:
+    """게이트는 이것을 막지 않는다 — 판정이 `READY` 여도 사람이 멈춰야 하는 자리다.
     게이트가 대신 세워 주지 않으므로 절차에 적혀 있지 않으면 그냥 지나간다."""
     text = _skill()
-    assert "회귀" in text, "첫 재발에서 점별 픽스를 멈추는 단계가 사라졌습니다"
-    assert "3라운드" in text, "차단 3라운드 연속에서 결함류를 닫는 단계가 사라졌습니다"
+    assert "재호출 예산" in text, "재호출 예산에서 결함류를 닫는 단계가 사라졌습니다"
+    assert "세 번째" in text, "세 번째 재호출 앞에서 멈추는 문장이 사라졌습니다"
+
+
+def test_the_skill_batches_fixes_into_one_commit_per_settlement_pass() -> None:
+    """지적 하나마다 push 하면 리뷰어가 중간 상태를 읽고 코멘트가 push 마다 불어난다."""
+    assert "한 커밋으로 묶는다" in _skill()
 
 
 def test_the_skill_points_at_the_policy_instead_of_restating_it() -> None:

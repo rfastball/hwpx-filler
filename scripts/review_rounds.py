@@ -16,15 +16,11 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 #: 리뷰 결과를 기다리는 창. 이 시간이 지나도록 아무 신호가 없으면 회수 창 소진으로 본다.
 RECOVERY_WINDOW = timedelta(minutes=10)
-
-#: 회귀 후보 판정의 라인 근방. 같은 파일에서 이만큼 안에 두 라운드 연속 지적이 들어오면
-#: 같은 자리를 두 번 맞은 것으로 **의심**한다 — 확정은 사람이 한다.
-REGRESSION_LINE_SPAN = 20
 
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
@@ -109,15 +105,6 @@ class Finding:
         return f"{self.id} [{self.severity}] {self.path}{mark} — {self.excerpt}"
 
 
-@dataclass
-class Round:
-    """한 커밋에 앵커된 지적 묶음. 리베이스 전용 푸시는 여기 들어오지 않는다."""
-
-    commit: str
-    tree: str
-    findings: list[Finding] = field(default_factory=list)
-
-
 @dataclass(frozen=True)
 class Triage:
     """정산 마커 한 줄."""
@@ -132,12 +119,10 @@ class Report:
     pr: int
     head: str
     fast_path: bool
-    rounds: list[Round]
+    findings: list[Finding]
     unsettled: list[Finding]
     open_blocks: list[Finding]
     bad_defers: list[tuple[Finding, str]]
-    regressions: list[tuple[Finding, Finding]]
-    block_streak: int
     signal: str | None
     reviewed: bool
     needs_recall: bool
@@ -150,18 +135,10 @@ class Report:
             "head": self.head,
             "status": self.status,
             "fast_path": self.fast_path,
-            "rounds": [
-                {"commit": r.commit, "findings": [f.id for f in r.findings]}
-                for r in self.rounds
-            ],
+            "findings": [f.id for f in self.findings],
             "unsettled": [f.id for f in self.unsettled],
             "open_blocks": [f.id for f in self.open_blocks],
             "bad_defers": [{"finding": f.id, "reason": why} for f, why in self.bad_defers],
-            "block_streak": self.block_streak,
-            "regressions": [
-                {"previous": before.id, "repeat": after.id, "path": after.path}
-                for before, after in self.regressions
-            ],
             "signal": self.signal,
             "reviewed": self.reviewed,
             "needs_recall": self.needs_recall,
@@ -319,30 +296,6 @@ def _plain(body: str) -> str:
     return ""
 
 
-def _rounds(client: GitHub, findings: list[Finding]) -> list[Round]:
-    """`original_commit_id` 로 묶고, 트리가 같은 커밋은 앞 라운드에 흡수한다.
-
-    리베이스는 새 SHA 를 만들어 리뷰어를 재발화시키지만 코드는 안 바뀌었다. 그것을 라운드로
-    세면 착지 순서가 라운드 수를 부풀린다(#426 은 그렇게 3개 늘었다).
-    """
-    order: list[str] = []
-    grouped: dict[str, list[Finding]] = {}
-    for finding in findings:
-        if finding.commit not in grouped:
-            grouped[finding.commit] = []
-            order.append(finding.commit)
-        grouped[finding.commit].append(finding)
-
-    rounds: list[Round] = []
-    for commit in order:
-        tree = client.get(f"commits/{commit}")["commit"]["tree"]["sha"]
-        if rounds and rounds[-1].tree == tree:
-            rounds[-1].findings.extend(grouped[commit])
-            continue
-        rounds.append(Round(commit=commit, tree=tree, findings=list(grouped[commit])))
-    return rounds
-
-
 def _triage(client: GitHub, pr: int) -> dict[int, Triage]:
     settled: dict[int, Triage] = {}
     for comment in client.paged(f"issues/{pr}/comments"):
@@ -371,61 +324,6 @@ def _defer_problem(client: GitHub, triage: Triage) -> str | None:
     if issue.get("state") != "open":
         return f"#{triage.issue} 이슈가 닫혀 있습니다"
     return None
-
-
-def block_streak(rounds: list[Round], settled: dict[int, Triage]) -> int:
-    """끝에서부터 차단을 낸 라운드가 몇 번 연속인가.
-
-    **게이트가 아니라 표시다.** 정책 §3 은 세 번 연속이면 점별 픽스를 멈추고 결함류를 닫으라고
-    하는데, 그 판단은 사람이 한다 — 기계가 그 상태를 들고 있으려 하면 「어디까지가 이미 정산된
-    과거인가」라는 부기가 필요해지고, 그 부기는 이 저장소에서 거듭 틀렸다(#450).
-    """
-    streak = 0
-    for round_ in reversed(rounds):
-        if not any(
-            (triage := settled.get(f.id)) and triage.verdict == "block" for f in round_.findings
-        ):
-            return streak
-        streak += 1
-    return streak
-
-
-def _regressions(
-    rounds: list[Round], settled: dict[int, Triage]
-) -> list[tuple[Finding, Finding]]:
-    """같은 파일·근방 라인에 두 라운드 연속 지적이면 회귀 **후보**로 표시한다.
-
-    **고친 것만 센다.** 정책이 말하는 회귀는 「고친 결함이 되살아나는 것」이라, 분리로
-    정산해 손대지 않은 지적이 근처에서 또 나오는 것은 회귀가 아니다.
-    """
-
-    def fixed(finding: Finding) -> bool:
-        triage = settled.get(finding.id)
-        return triage is not None and triage.verdict == "block"
-
-    def still_open(finding: Finding) -> bool:
-        """아직 분리로 내려놓지 않았다 = 고칠 후보다.
-
-        재발 경고는 **정산하기 전에** 보여야 한다 — 그것을 보고 무엇으로 정산할지 정하기
-        때문이다. 새 지적이 `block` 으로 찍히기를 기다리면 경고가 늘 한 발 늦는다.
-        """
-        triage = settled.get(finding.id)
-        return triage is None or triage.verdict == "block"
-
-    found = []
-    for previous, current in zip(rounds, rounds[1:], strict=False):
-        for after in current.findings:
-            if not still_open(after):
-                continue
-            for before in previous.findings:
-                if not fixed(before):
-                    continue
-                if before.path != after.path or not before.line or not after.line:
-                    continue
-                if abs(before.line - after.line) <= REGRESSION_LINE_SPAN:
-                    found.append((before, after))
-                    break
-    return found
 
 
 def _is_prose(name: str) -> bool:
@@ -509,12 +407,10 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             pr=pr,
             head=head,
             fast_path=True,
-            rounds=[],
+            findings=[],
             unsettled=[],
             open_blocks=[],
             bad_defers=[],
-            regressions=[],
-            block_streak=0,
             signal=None,
             reviewed=True,
             needs_recall=False,
@@ -523,7 +419,6 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         )
 
     findings = _findings(client, pr)
-    rounds = _rounds(client, findings)
     settled = _triage(client, pr)
 
     unsettled = [f for f in findings if f.id not in settled]
@@ -590,12 +485,10 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         pr=pr,
         head=head,
         fast_path=False,
-        rounds=rounds,
+        findings=findings,
         unsettled=unsettled,
         open_blocks=open_blocks,
         bad_defers=bad_defers,
-        regressions=_regressions(rounds, settled),
-        block_streak=block_streak(rounds, settled),
         signal=signal,
         reviewed=reviewed,
         needs_recall=needs_recall,
@@ -610,9 +503,7 @@ def render(report: Report) -> str:
         lines.append("빠른 경로: 계약·제품 코드에 닿지 않아 리뷰 회수를 기다리지 않습니다.")
         return "\n".join(lines)
 
-    lines.append(f"라운드 {len(report.rounds)}회 · 신호 {report.signal or '없음'}")
-    for index, round_ in enumerate(report.rounds, start=1):
-        lines.append(f"  {index}. {round_.commit[:7]} — 지적 {len(round_.findings)}건")
+    lines.append(f"지적 {len(report.findings)}건 · 신호 {report.signal or '없음'}")
     if report.unsettled:
         lines.append("미정산:")
         lines.extend(f"  {f.label()}" for f in report.unsettled)
@@ -621,13 +512,6 @@ def render(report: Report) -> str:
         lines.extend(f"  {f.label()}" for f in report.open_blocks)
     for finding, why in report.bad_defers:
         lines.append(f"분리 불성립: {finding.id} — {why}")
-    if report.block_streak >= 3:
-        lines.append(
-            f"차단이 {report.block_streak}라운드 연속입니다 — 점별 픽스를 멈추고 결함류를"
-            " 하나로 닫을 자리입니다(정책 §3)."
-        )
-    for before, after in report.regressions:
-        lines.append(f"회귀 후보: {after.path}:{after.line} (앞 라운드 {before.id})")
     if report.timed_out:
         lines.append(
             "회수 창이 지나도록 리뷰어가 침묵했습니다 — 리뷰를 **받지 못한 채** 닫습니다. "

@@ -51,7 +51,6 @@ class FakeGitHub:
         settler: str = "OWNER",
         resolved: set[int] | None = None,
         reactions: list[dict] | None = None,
-        trees: dict[str, str] | None = None,
         issues: dict[int, dict] | None = None,
     ) -> None:
         self.repo = "rfastball/hwpx-filler"
@@ -61,9 +60,7 @@ class FakeGitHub:
         self.triage = triage or []
         self.settler = settler
         self.outsider_triage: list[str] = []
-        self.history: list[str] = []
         self.reactions = reactions or []
-        self.trees = trees or {}
         self.issues = issues or {}
         self.posted: list[tuple[str, dict]] = []
         self.resolved: set[int] = set(resolved or ())
@@ -113,14 +110,6 @@ class FakeGitHub:
                     }
                 ]
             }
-        if path.startswith("commits/"):
-            sha = path.split("/", 1)[1]
-            return {
-                "commit": {
-                    "tree": {"sha": self.trees.get(sha, f"tree-{sha}")},
-                    "committer": {"date": PUSHED.isoformat().replace("+00:00", "Z")},
-                }
-            }
         if path.startswith("issues/"):
             number = int(path.split("/", 1)[1])
             if number not in self.issues:
@@ -131,16 +120,6 @@ class FakeGitHub:
     def paged(self, path: str) -> list[dict]:
         if path == f"pulls/{PR}/files":
             return [{"filename": name} for name in self.files]
-        if path == f"pulls/{PR}/commits":
-            if self.history:
-                return [{"sha": sha} for sha in self.history]
-            seen: list[str] = []
-            for raw in self.comments:
-                if raw["original_commit_id"] not in seen:
-                    seen.append(raw["original_commit_id"])
-            if self.head not in seen:
-                seen.append(self.head)
-            return [{"sha": sha} for sha in seen]
         if path == f"pulls/{PR}/comments":
             return self.comments
         if path == f"issues/{PR}/comments":
@@ -165,47 +144,6 @@ def _reaction(content: str, *, login: str = review_rounds.REVIEWER_LOGINS[0]) ->
 
 def _open_issue(number: int) -> dict:
     return {"number": number, "state": "open"}
-
-
-# ── 라운드 카운트 ──────────────────────────────────────────────────────────────
-
-
-def test_rounds_are_counted_by_original_commit_id() -> None:
-    """#426 실측 형상 — 서로 다른 커밋 8개에 앵커된 지적은 8라운드다."""
-    comments = [_comment(100 + i, f"sha{i}") for i in range(8)]
-    report = evaluate(
-        FakeGitHub(head="sha7", comments=comments, triage=[f"triage: {100 + i} block" for i in range(8)]),
-        PR,
-        now=NOW,
-    )
-    assert len(report.rounds) == 8
-    assert [r.commit for r in report.rounds] == [f"sha{i}" for i in range(8)]
-
-
-def test_a_rebase_only_push_is_not_a_round() -> None:
-    """코드가 안 바뀐 재발화는 앞 라운드에 흡수된다 — 착지 순서가 라운드를 부풀리지 않는다."""
-    comments = [_comment(1, "before"), _comment(2, "rebased")]
-    fake = FakeGitHub(
-        head="rebased",
-        comments=comments,
-        trees={"before": "same-tree", "rebased": "same-tree"},
-        triage=["triage: 1 block", "triage: 2 block"],
-    )
-    report = evaluate(fake, PR, now=NOW)
-    assert len(report.rounds) == 1
-    assert [f.id for f in report.rounds[0].findings] == [1, 2]
-
-
-def test_distinct_trees_stay_separate_rounds() -> None:
-    """음성 대조 — 트리가 다르면 흡수하지 않는다."""
-    comments = [_comment(1, "before"), _comment(2, "after")]
-    fake = FakeGitHub(
-        head="after",
-        comments=comments,
-        trees={"before": "tree-a", "after": "tree-b"},
-        triage=["triage: 1 block", "triage: 2 block"],
-    )
-    assert len(evaluate(fake, PR, now=NOW).rounds) == 2
 
 
 # ── 정산 완결성 ────────────────────────────────────────────────────────────────
@@ -407,18 +345,6 @@ def test_the_recovery_window_cannot_rescue_an_unpushed_fix() -> None:
     assert not report.timed_out and report.status == WAIT
 
 
-def test_the_streak_is_reported_so_the_root_cause_rule_can_fire() -> None:
-    """게이트가 막지는 않지만, 세지 않으면 사람이 그 자리를 못 알아본다(정책 §3)."""
-    comments = [_comment(i, f"sha{i}", path=f"src/{i}.py") for i in range(3)]
-    fake = FakeGitHub(
-        head="sha2", comments=comments, triage=[f"triage: {i} block" for i in range(3)]
-    )
-    fake.resolved.update(range(3))
-    report = evaluate(fake, PR, now=NOW)
-    assert report.block_streak == 3
-    assert "3라운드 연속" in review_rounds.render(report)
-
-
 def test_a_reviewer_who_read_the_fix_closes_it() -> None:
     """양성 대조 — 재리뷰가 head 를 짚었으면 그 픽스는 읽힌 것이다."""
     fake = FakeGitHub(
@@ -510,51 +436,6 @@ def test_a_reviewed_pull_request_is_not_marked_as_timed_out() -> None:
     fake = FakeGitHub(head="c1", comments=[], reactions=[_reaction("+1")])
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
     assert report.status == READY and not report.timed_out
-
-
-# ── 회귀 후보 ──────────────────────────────────────────────────────────────────
-
-
-def test_the_same_place_twice_is_flagged_as_a_regression_candidate() -> None:
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=10), _comment(2, "c2", line=12)],
-        triage=["triage: 1 block", "triage: 2 block"],
-    )
-    report = evaluate(fake, PR, now=NOW)
-    assert [(b.id, a.id) for b, a in report.regressions] == [(1, 2)]
-
-
-def test_a_recurrence_shows_before_the_new_finding_is_triaged() -> None:
-    """경고는 **정산하기 전에** 보여야 한다 — 그것을 보고 무엇으로 정산할지 정하기 때문이다."""
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=10), _comment(2, "c2", line=12)],
-        triage=["triage: 1 block"],  # 새 지적 2는 아직 미정산이다
-    )
-    fake.resolved.add(1)
-    assert [(b.id, a.id) for b, a in evaluate(fake, PR, now=NOW).regressions] == [(1, 2)]
-
-
-def test_a_recurrence_set_aside_as_defer_is_not_a_regression() -> None:
-    """음성 대조 — 분리로 내려놓았으면 고칠 후보가 아니다."""
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", line=10), _comment(2, "c2", line=12)],
-        triage=["triage: 1 block", "triage: 2 defer #77"],
-        issues={77: _open_issue(77)},
-    )
-    fake.resolved.add(1)
-    assert evaluate(fake, PR, now=NOW).regressions == []
-
-
-def test_a_different_file_is_not_a_regression_candidate() -> None:
-    fake = FakeGitHub(
-        head="c2",
-        comments=[_comment(1, "c1", path="src/a.py"), _comment(2, "c2", path="src/b.py")],
-        triage=["triage: 1 block", "triage: 2 block"],
-    )
-    assert evaluate(fake, PR, now=NOW).regressions == []
 
 
 # ── 답글은 지적이 아니다 ───────────────────────────────────────────────────────
