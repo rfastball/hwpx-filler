@@ -60,6 +60,8 @@ class FakeGitHub:
     def get(self, path: str) -> dict:
         if path == f"pulls/{PR}":
             return {"head": {"sha": self.head}}
+        if path.endswith("/check-suites"):
+            return {"check_suites": [{"created_at": PUSHED.isoformat().replace("+00:00", "Z")}]}
         if path.startswith("commits/"):
             sha = path.split("/", 1)[1]
             return {
@@ -88,6 +90,14 @@ class FakeGitHub:
 
     def pr_for_current_branch(self) -> int:
         return PR
+
+
+def _reaction(content: str, *, login: str = review_rounds.REVIEWER_LOGINS[0]) -> dict:
+    return {
+        "content": content,
+        "created_at": NOW.isoformat().replace("+00:00", "Z"),
+        "user": {"login": login},
+    }
 
 
 def _open_issue(number: int) -> dict:
@@ -153,7 +163,7 @@ def test_settled_and_resolved_findings_are_ready() -> None:
         head="c1",
         comments=[fixed],
         triage=["triage: 1 block"],
-        reactions=[{"content": "+1", "created_at": NOW.isoformat().replace("+00:00", "Z")}],
+        reactions=[_reaction("+1")],
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.status == READY
@@ -176,7 +186,7 @@ def test_defer_needs_an_issue_that_exists_and_is_open() -> None:
         comments=[_comment(1, "c1")],
         triage=["triage: 1 defer #77"],
         issues={77: _open_issue(77)},
-        reactions=[{"content": "+1", "created_at": NOW.isoformat().replace("+00:00", "Z")}],
+        reactions=[_reaction("+1")],
     )
     assert evaluate(fake, PR, now=NOW).status == READY
 
@@ -233,6 +243,23 @@ def test_anything_but_prose_forfeits_the_fast_path(path: str) -> None:
     assert report.status != READY
 
 
+def test_a_rename_out_of_the_product_is_not_prose() -> None:
+    """`src/x.py` → `docs/x.md` 는 제품 코드를 지우면서 산문뿐인 변경으로 보인다."""
+
+    class Renaming(FakeGitHub):
+        def paged(self, path: str) -> list[dict]:
+            if path == f"pulls/{PR}/files":
+                return [{"filename": "docs/x.md", "previous_filename": "src/x.py"}]
+            return super().paged(path)
+
+    assert not evaluate(Renaming(comments=[_comment(1, "c1")]), PR, now=NOW).fast_path
+
+
+def test_a_root_level_html_asset_is_not_prose() -> None:
+    """루트의 `.html` 은 산문이 아니라 실행되는 웹 자산일 수 있다 — 문서는 root 를 `.md` 로 적었다."""
+    assert not evaluate(FakeGitHub(files=["index.html"], comments=[_comment(1, "c1")]), PR, now=NOW).fast_path
+
+
 def test_an_empty_diff_is_not_a_fast_path() -> None:
     """변경이 없으면 「산문뿐」이 공허하게 참이 된다 — 그 길로 초록이 나가지 않는다."""
     assert not evaluate(FakeGitHub(files=[], comments=[_comment(1, "c1")]), PR, now=NOW).fast_path
@@ -247,11 +274,67 @@ def test_the_gate_waits_until_the_last_push_is_reviewed() -> None:
     assert report.status == WAIT and not report.head_reviewed
 
 
-def test_the_recovery_window_closes_on_its_own() -> None:
-    """창을 넘기면 회수 소진으로 본다 — 폴링이 영원히 돌지 않는다."""
+def test_the_window_is_measured_from_the_push_not_the_commit_date() -> None:
+    """cherry-pick 한 커밋은 만들어진 지 오래다 — 커밋 시각으로 재면 첫 판정부터 창이 지난다."""
+
+    class OldCommitJustPushed(FakeGitHub):
+        def get(self, path: str) -> dict:
+            if path.endswith("/check-suites"):
+                return {"check_suites": [{"created_at": NOW.isoformat().replace("+00:00", "Z")}]}
+            return super().get(path)
+
+    fake = OldCommitJustPushed(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    report = evaluate(fake, PR, now=NOW + timedelta(minutes=1))
+    assert report.status == WAIT and not report.timed_out
+
+
+def test_a_head_with_no_check_suite_has_not_timed_out() -> None:
+    """방금 올라와 CI 도 안 붙은 SHA 를 「창이 지났다」로 읽지 않는다."""
+
+    class NoSuiteYet(FakeGitHub):
+        def get(self, path: str) -> dict:
+            if path.endswith("/check-suites"):
+                return {"check_suites": []}
+            return super().get(path)
+
+    fake = NoSuiteYet(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    assert not evaluate(fake, PR, now=NOW).timed_out
+
+
+def test_the_recovery_window_closes_on_its_own_but_says_so() -> None:
+    """창 소진은 리뷰가 아니라 **교착 탈출**이다. 조용히 초록이 되면 「리뷰를 받았다」와
+    「리뷰어가 침묵했다」가 같은 색이 된다."""
     fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
-    assert report.status == READY and report.head_reviewed
+    assert report.status == READY and report.timed_out
+    assert "받지 못한 채" in review_rounds.render(report)
+
+    review_rounds.publish_check(fake, report)
+    assert "회수 창 소진" in fake.posted[0][1]["output"]["title"]
+
+
+def test_a_reviewed_head_is_not_marked_as_timed_out() -> None:
+    """음성 대조 — 신호를 받고 닫힌 것은 침묵으로 닫힌 것과 다르다."""
+    fake = FakeGitHub(
+        head="c1",
+        comments=[_comment(1, "c1", line=None)],
+        triage=["triage: 1 block"],
+        reactions=[_reaction("+1")],
+    )
+    report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
+    assert report.status == READY and not report.timed_out
+
+
+def test_only_the_reviewer_can_signal_no_findings() -> None:
+    """작성자가 자기 PR 에 `+1` 을 달아 리뷰 없이 초록을 만들면 게이트가 거짓말한다."""
+    fake = FakeGitHub(
+        head="c2",
+        comments=[_comment(1, "c1", line=None)],
+        triage=["triage: 1 block"],
+        reactions=[_reaction("+1", login="rfastball")],
+    )
+    report = evaluate(fake, PR, now=NOW)
+    assert report.signal is None and report.status == WAIT
 
 
 def test_eyes_is_not_a_no_findings_signal() -> None:
@@ -260,7 +343,7 @@ def test_eyes_is_not_a_no_findings_signal() -> None:
         head="c2",
         comments=[_comment(1, "c1", line=None)],
         triage=["triage: 1 block"],
-        reactions=[{"content": "eyes", "created_at": NOW.isoformat().replace("+00:00", "Z")}],
+        reactions=[_reaction("eyes")],
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.signal == "eyes" and report.status == WAIT
@@ -297,7 +380,7 @@ def test_replies_do_not_create_their_own_settlement_duty() -> None:
         head="c1",
         comments=[_comment(1, "c1", line=None), reply],
         triage=["triage: 1 block"],
-        reactions=[{"content": "+1", "created_at": NOW.isoformat().replace("+00:00", "Z")}],
+        reactions=[_reaction("+1")],
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.unsettled == [] and report.status == READY

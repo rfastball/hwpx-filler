@@ -26,12 +26,19 @@ RECOVERY_WINDOW = timedelta(minutes=10)
 #: 같은 자리를 두 번 맞은 것으로 **의심**한다 — 확정은 사람이 한다.
 REGRESSION_LINE_SPAN = 20
 
+#: 리뷰 신호로 인정하는 계정. **누구의 리액션이든 세면 작성자가 자기 PR 에 `+1` 을 달아
+#: 리뷰 없이 초록을 만들 수 있다** — 게이트가 「리뷰를 받았다」고 거짓말하는 경로다.
+REVIEWER_LOGINS = ("chatgpt-codex-connector[bot]",)
+
 #: 빠른 경로는 **허용 목록**이다. 금지 목록으로 짜면 새로 생긴 경로가 기본값으로 통과한다.
 #:
 #: `tests/`·`scripts/` 는 여기 없다. 그 둘은 게이트 기계이고, 게이트가 깨지면 계약이
 #: 거짓말한다 — 101 하니스는 몇 달째 깨진 채였는데 어떤 게이트도 그것을 못 봤다(#423).
 #: 실제로 PR #426 은 `scripts/`·`tests/` 만 고치고도 P1 을 2건 받았다.
-FAST_PATH_SUFFIXES = (".md", ".html")
+#:
+#: 최상위는 `.md` 뿐이다. 루트의 `.html` 은 산문이 아니라 실행되는 웹 자산일 수 있다.
+FAST_PATH_ROOT_SUFFIXES = (".md",)
+FAST_PATH_DOCS_SUFFIXES = (".md", ".html")
 
 #: 허용 확장자여도 기계가 읽는 것·계약 원문은 뺀다.
 FAST_PATH_EXCEPTIONS = ("docs/UI_CONTRACT.md",)
@@ -112,6 +119,7 @@ class Report:
     regressions: list[tuple[Finding, Finding]]
     signal: str | None
     head_reviewed: bool
+    timed_out: bool
     status: str
 
     def as_dict(self) -> dict:
@@ -133,6 +141,7 @@ class Report:
             ],
             "signal": self.signal,
             "head_reviewed": self.head_reviewed,
+            "timed_out": self.timed_out,
         }
 
 
@@ -298,28 +307,62 @@ def _regressions(rounds: list[Round]) -> list[tuple[Finding, Finding]]:
 
 
 def _is_prose(name: str) -> bool:
-    """산문 문서인가 — 최상위 `*.md` 또는 `docs/` 아래의 문서 파일."""
-    if name in FAST_PATH_EXCEPTIONS or not name.endswith(FAST_PATH_SUFFIXES):
+    """산문 문서인가 — 최상위 `*.md` 또는 `docs/` 아래의 `.md`·`.html`."""
+    if name in FAST_PATH_EXCEPTIONS:
         return False
-    return "/" not in name or name.startswith("docs/")
+    if "/" not in name:
+        return name.endswith(FAST_PATH_ROOT_SUFFIXES)
+    return name.startswith("docs/") and name.endswith(FAST_PATH_DOCS_SUFFIXES)
 
 
 def _fast_path(client: GitHub, pr: int) -> bool:
-    changed = [entry["filename"] for entry in client.paged(f"pulls/{pr}/files")]
+    """rename 은 **양쪽 다** 산문이어야 한다.
+
+    GitHub 은 이동한 파일의 목적지를 `filename` 에, 출발지를 `previous_filename` 에 싣는다.
+    뒤엣것을 안 보면 `src/module.py` → `docs/module.md` 가 산문뿐인 변경으로 보이고, 제품
+    코드를 지우면서 리뷰를 건너뛴다.
+    """
+    changed: list[str] = []
+    for entry in client.paged(f"pulls/{pr}/files"):
+        changed.append(entry["filename"])
+        if entry.get("previous_filename"):
+            changed.append(entry["previous_filename"])
     return bool(changed) and all(_is_prose(name) for name in changed)
 
 
 def _signal(client: GitHub, pr: int) -> tuple[str | None, datetime | None]:
-    """무결과는 코멘트가 아니라 리액션으로 온다. `eyes` 는 진행 중, `+1` 이 무결과다."""
+    """무결과는 코멘트가 아니라 리액션으로 온다. `eyes` 는 진행 중, `+1` 이 무결과다.
+
+    **리뷰어의 리액션만 센다.** 아무나 센다면 작성자가 자기 PR 에 `+1` 을 달아 리뷰 없이
+    초록을 만들 수 있다.
+    """
     latest: tuple[str | None, datetime | None] = (None, None)
     for reaction in client.paged(f"issues/{pr}/reactions"):
         content = reaction.get("content")
         if content not in {"+1", "eyes"}:
             continue
+        if (reaction.get("user") or {}).get("login") not in REVIEWER_LOGINS:
+            continue
         when = _moment(reaction["created_at"])
         if latest[1] is None or when > latest[1]:
             latest = (content, when)
     return latest
+
+
+def _pushed_at(client: GitHub, head: str, now: datetime) -> datetime:
+    """이 SHA 가 **밀려 올라온** 시각. 커밋이 만들어진 시각이 아니다.
+
+    `committer.date` 로 재면 cherry-pick·rebase 로 되살린 커밋이 첫 판정부터 회수 창을
+    소진한 것으로 보인다 — 스택 착지가 정확히 그 모양이라(정책 §6) 리뷰를 한 번도 못 받은
+    PR 이 초록이 된다. 체크 스위트 생성 시각은 그 push 가 CI 를 깨운 시각이라 근사가 맞다.
+    """
+    suites = client.get(f"commits/{head}/check-suites").get("check_suites") or []
+    stamps = [_moment(suite["created_at"]) for suite in suites if suite.get("created_at")]
+    if stamps:
+        return min(stamps)
+    # 체크 스위트가 아직 없다 = 방금 올라왔다. 커밋 시각으로 물러서면 창이 이미 지났다고
+    # 볼 수 있으므로, 그런 경우는 **아직 안 지난 것**으로 취급하는 쪽이 안전하다.
+    return now
 
 
 def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
@@ -338,6 +381,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             regressions=[],
             signal=None,
             head_reviewed=True,
+            timed_out=False,
             status=READY,
         )
 
@@ -361,12 +405,15 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             bad_defers.append((finding, problem))
 
     signal, signalled_at = _signal(client, pr)
-    pushed_at = _moment(client.get(f"commits/{head}")["commit"]["committer"]["date"])
-    head_reviewed = (
-        any(f.commit == head for f in findings)
-        or (signal == "+1" and signalled_at is not None and signalled_at >= pushed_at)
-        or now - pushed_at > RECOVERY_WINDOW
+    pushed_at = _pushed_at(client, head, now)
+    answered = any(f.commit == head for f in findings) or (
+        signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
     )
+    # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 루프가 멈추지
+    # 않게 열어 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면
+    # 「리뷰를 받았다」와 「리뷰어가 침묵했다」가 같은 색이 된다.
+    timed_out = not answered and now - pushed_at > RECOVERY_WINDOW
+    head_reviewed = answered or timed_out
 
     if open_blocks or bad_defers:
         status = BLOCKED
@@ -386,6 +433,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         regressions=_regressions(rounds),
         signal=signal,
         head_reviewed=head_reviewed,
+        timed_out=timed_out,
         status=status,
     )
 
@@ -409,7 +457,12 @@ def render(report: Report) -> str:
         lines.append(f"분리 불성립: {finding.id} — {why}")
     for before, after in report.regressions:
         lines.append(f"회귀 후보: {after.path}:{after.line} (앞 라운드 {before.id})")
-    if not report.head_reviewed:
+    if report.timed_out:
+        lines.append(
+            "회수 창이 지나도록 리뷰어가 침묵했습니다 — 리뷰를 **받지 못한 채** 닫습니다. "
+            "`@codex review` 로 한 번 명시 트리거해 보고, 그래도 무응답이면 그대로 진행합니다."
+        )
+    elif not report.head_reviewed:
         lines.append("마지막 푸시에 대한 리뷰를 아직 회수하지 못했습니다.")
     return "\n".join(lines)
 
@@ -438,7 +491,9 @@ def publish_check(client: GitHub, report: Report) -> None:
             "status": "completed",
             "conclusion": CONCLUSIONS[report.status],
             "output": {
-                "title": f"{report.status} — 미정산 {len(report.unsettled)}건 · "
+                "title": "READY (리뷰 없이 회수 창 소진)"
+                if report.timed_out
+                else f"{report.status} — 미정산 {len(report.unsettled)}건 · "
                 f"미해결 차단 {len(report.open_blocks)}건",
                 "summary": f"```\n{body}\n```\n\n절차: `docs/REVIEW_POLICY.md`",
             },
@@ -449,6 +504,26 @@ def publish_check(client: GitHub, report: Report) -> None:
 #: `gh pr merge <번호|URL>` 에서 대상 PR 을 집어낸다. 이것을 안 보고 현재 브랜치만 물으면
 #: 다른 브랜치에 서서 머지할 때 **엉뚱한 PR 을 판정하고 초록을 준다**.
 MERGE_TARGET = re.compile(r"gh\s+pr\s+merge\s+(?:\S*/pull/)?(\d+)")
+
+
+def _sweep(client: GitHub) -> int:
+    """열린 PR 을 전부 다시 판정한다.
+
+    **리액션과 이슈 상태 변화는 워크플로 이벤트를 만들지 않는다.** 지적이 없는 PR 은 `+1`
+    리액션만 받으므로 그것을 기다리는 게이트는 깨울 사건이 영영 오지 않는다. 회수 창이
+    지나는 것도, 분리한 이슈가 닫히는 것도 마찬가지다. 그래서 주기적으로 훑는다.
+    """
+    failures = 0
+    for pull in client.paged("pulls?state=open"):
+        number = int(pull["number"])
+        try:
+            report = evaluate(client, number)
+            publish_check(client, report)
+            print(f"#{number} {report.status}")
+        except GitHubError as error:  # 한 PR 의 실패가 나머지를 못 보게 만들지 않는다
+            failures += 1
+            print(f"#{number} 판정 실패: {error}", file=sys.stderr)
+    return 2 if failures else 0
 
 
 def _hook(argv_json: str) -> int:
@@ -477,6 +552,11 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="리뷰 라운드·정산 상태 판독")
     parser.add_argument("pr", nargs="?", type=int, help="PR 번호(생략하면 현재 브랜치)")
+    parser.add_argument(
+        "--all-open",
+        action="store_true",
+        help="열린 PR 전부를 재판정한다(리액션·이슈 상태는 이벤트를 깨우지 않는다)",
+    )
     parser.add_argument("--json", action="store_true", help="기계 판독용 출력")
     parser.add_argument("--hook", action="store_true", help="stdin 의 훅 payload 를 읽는다")
     parser.add_argument(
@@ -490,6 +570,8 @@ def main() -> int:
         if args.hook:
             return _hook(sys.stdin.read())
         client = GitHub.discover()
+        if args.all_open:
+            return _sweep(client)
         report = evaluate(client, args.pr or client.pr_for_current_branch())
         if args.publish_check:
             publish_check(client, report)

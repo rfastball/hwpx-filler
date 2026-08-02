@@ -23,6 +23,11 @@ on:
     types: [created, edited, deleted]
   issue_comment:
     types: [created, edited, deleted]
+  # **리액션과 이슈 상태 변화는 이벤트를 만들지 않는다.** 지적이 없는 PR 은 `+1` 리액션만
+  # 받으므로 그것을 기다리는 게이트를 깨울 사건이 영영 오지 않고, 회수 창이 지나는 것도
+  # 분리한 이슈가 닫히는 것도 마찬가지다. 그래서 열린 PR 을 주기적으로 훑는다.
+  schedule:
+    - cron: "*/10 * * * *"
 
 permissions:
   contents: read
@@ -44,14 +49,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # `pull_request_target` 의 기본 체크아웃은 base ref 다 — 그것이 이 게이트가 원하는
-      # 판본이다. ref 를 PR head 로 바꾸지 않는다.
+      # ref 를 **명시**한다. 이벤트마다 기본 체크아웃이 무엇인지 다르고, 리뷰 이벤트에서
+      # PR head 가 잡히면 PR 이 자기 게이트를 고쳐 통과할 수 있다. 그 성질이 트리거 한 줄에
+      # 암묵적으로 걸려 있으면 바뀌어도 워크플로는 여전히 잘 도는 것처럼 보인다.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       # 판정기는 표준 라이브러리만 쓴다. 여기서 uv 로 프로젝트 환경을 세우면 게이트가 제품
       # 의존성의 건강에 묶인다 — 리뷰 정산을 읽는 데 그럴 이유가 없다.
       - name: Judge and publish the review-gate check run
+        if: github.event_name != 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: python3 scripts/review_rounds.py "$PR_NUMBER" --publish-check
+
+      - name: Re-judge every open pull request
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/review_rounds.py --all-open --publish-check

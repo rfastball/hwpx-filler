@@ -34,13 +34,21 @@ def test_the_gate_runs_the_base_revision_not_the_pull_request_revision() -> None
     assert "pull_request" not in triggers
 
 
-def test_the_gate_does_not_check_out_the_pull_request_head() -> None:
-    """base 판본을 받아 놓고 head 로 갈아타면 위 계약이 조용히 무효가 된다."""
+def test_the_gate_checks_out_the_default_branch_explicitly() -> None:
+    """이벤트마다 기본 체크아웃이 다르다 — 암묵에 기대면 리뷰 이벤트에서 PR head 가 잡힌다."""
     text, workflow = _workflow()
     steps = workflow["jobs"]["judge"]["steps"]
     checkout = next(s for s in steps if "checkout" in s.get("uses", ""))
-    assert "with" not in checkout, "체크아웃에 ref 를 주면 base 판본 보장이 깨집니다"
-    assert "github.event.pull_request.head.sha" not in text
+    assert checkout["with"]["ref"] == "${{ github.event.repository.default_branch }}"
+    assert "pull_request.head" not in text
+
+
+def test_the_gate_sweeps_open_pull_requests_on_a_schedule() -> None:
+    """리액션·이슈 상태 변화는 이벤트를 만들지 않는다 — 깨울 사건이 없으면 영영 기다린다."""
+    _, workflow = _workflow()
+    assert "schedule" in workflow["on"]
+    steps = workflow["jobs"]["judge"]["steps"]
+    assert any("--all-open" in step.get("run", "") for step in steps)
 
 
 def test_the_gate_re_evaluates_when_settlement_markers_arrive() -> None:
