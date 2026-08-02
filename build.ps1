@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   패키징 러너 — packaging\build.ps1(onedir canonical)로 위임하는 얇은 래퍼.
 
