@@ -49,8 +49,10 @@
 **그러므로 전환의 강제함수는 그 세 조건이 아니다.** 재고경계는 **렌더 정확성** 축에서 세워졌고,
 전환은 **수명주기 소유권** 축에서 온다. 강제함수의 실측 형태:
 
-- `addEventListener` **123** vs `removeEventListener` **12** — 비대칭 **111**. 해제 짝이 없다는
-  것은 게으름이 아니라 **구조**다. 화면 셸에 언마운트 개념이 없어 짝을 놓을 자리 자체가 없다.
+- 제품 트리(`frontend/js/**`)에서 `addEventListener` **119** vs `removeEventListener` **12** —
+  비대칭 **107**. 해제 짝이 없다는 것은 게으름이 아니라 **구조**다. 화면 셸에 언마운트 개념이
+  없어 짝을 놓을 자리 자체가 없다. (selftest 의 4건은 제품이 아니므로 제외했다 — 범위를 섞으면
+  이 수가 부풀고 R5 delta 가 오염된다.)
 - `Bridge.onPush` 구독 지점 **6**곳에 대해 `frontend/js/bridge.js` 는 채널별 배열에 누적만 하고
   **구독 해제 API 가 없다**. 재-init 이 렌더를 2벌로 만드는 것을 각 화면이 `wired` 플래그로 막는다
   — 즉 수명주기를 화면마다 손으로 흉내 낸다.
@@ -77,7 +79,7 @@
   지정**이 필요하다. 후계의 소유는 [old→new 검증 책임 원장](react_verification_ledger.toml)
   (#403) 이다.
 - **예언이 세지 않은 비용.** 「락인 0」은 `Preserve.around` 가 순수 봉투라는 사실에서 나왔고 그
-  자체는 맞다. 하지만 위의 비대칭 111 과 구독 해제 부재는 봉투가 아니라 구조다. **락인이 아니라
+  자체는 맞다. 하지만 위의 비대칭 107 과 구독 해제 부재는 봉투가 아니라 구조다. **락인이 아니라
   미청산 부채였다** — 부채는 삭제로 사라지지 않고 인수된다.
 
 **거절한 대안**: (a) morphdom 커밋 교체 — 렌더 정확성만 고치고 수명주기 소유자를 만들지 못한다.
@@ -252,15 +254,28 @@ React 가 인수하지 않는 상태·동사에 붙이는 분류다. #401 본문
 
 R5 가 delta 를 재는 기준이다. **목표 구조가 아니다**(ADR-12).
 
-| 축 | 값 |
-|---|---|
-| 제품 ESM 그래프 | entry `frontend/src/main.js` → `bootProduct()` 1회 → 합성 루트 `frontend/src/bootstrap.js` 가 `frontend/js/` **25 파일**을 끌어온다. 순환 0 |
-| 제품 전역 | **2** — `window.__hwpx` · `window.__hwpxTest`. 생산자 각 1곳 |
-| dispatch 계약 | 화면 **6**, (화면, 액션) 쌍 **119** |
-| DOM | 화면 루트 **4**, `frontend/index.html` 안정 `id` **232**(전부 유일), `<script>` 1(module), `<template>` 0 |
-| 렌더 | 제품 `innerHTML =` **61** · `insertAdjacentHTML` **0** · 제품 `document.createElement` **1** |
-| 수명주기 | `addEventListener` **123** / `removeEventListener` **12** (비대칭 **111**) · `Bridge.onPush` 구독 **6**곳, 해제 API **없음** |
-| 상태 | 가변 모듈 상태 **36** / **6** 파일. 전부 예산 상한에 붙어 있음 |
+**계측 범위를 먼저 못박는다.** 한 표 안에서 범위가 섞이면 R5 의 delta 가 오염된다 — 초판이
+실제로 그랬다(렌더 행은 selftest 를 뺐는데 수명주기 행은 넣어, 비대칭을 107 대신 111 로
+부풀렸다. PR #456 리뷰 지적).
+
+- **제품** = `frontend/js/**` (25 파일) — 아래 수치는 전부 이 범위다.
+- **selftest** = `frontend/src/selftest/**` (9 파일) — **제외**하고, 값이 0이 아니면 따로 적는다.
+- **합성 루트** = `frontend/src/` 의 나머지 4 파일(entry·부트스트랩·제품 API).
+
+수치는 믿으라고 적는 것이 아니라 **다시 재라고** 적는다 — 재계산 방법을 함께 둔다.
+
+| 축 | 값 (제품 범위) | selftest | 재계산 |
+|---|---|---|---|
+| ESM 그래프 | entry `frontend/src/main.js` → `bootProduct()` **1회** → 합성 루트 `frontend/src/bootstrap.js` 가 제품 잎 **25 파일**을 끌어온다. 순환 **0** | 9 파일 별도 | `find frontend/js -name '*.js'` · `test_frontend_build_graph.py` |
+| 허용 전역 | **2** — 제품 `window.__hwpx`(생산자 `src/bootstrap.js` 1곳) + selftest `window.__hwpxTest`(생산자 `src/selftest/api.js` 1곳, `defineProperty` 조건부) | 위에 포함 | `_web_source.ALLOWED_PRODUCT_GLOBALS` |
+| dispatch 계약 | 화면 **6**, (화면, 액션) 쌍 **119** — Python 쪽이라 범위 무관 | — | `action_registry.ACTION_REGISTRY` |
+| DOM | 화면 루트 **4**(`scr-library`·`scr-job`·`scr-editor`·`scr-workbench`), `frontend/index.html` `id` **232**(전부 유일), `<script>` **1**(module), `<template>` **0** | — | `html.parser` — **정규식 금지**(`data-*` 축이 정규식으로 세 번 틀렸다) |
+| 렌더 | `innerHTML =` **61** · `insertAdjacentHTML` **0** · `document.createElement` **1** | 8 · 0 · 0 | `grep -rn 'innerHTML *=' frontend/js` |
+| 수명주기 | `addEventListener` **119** / `removeEventListener` **12** → 비대칭 **107** · `Bridge.onPush` 구독 **6**곳, 해제 API **없음** | 4 / 0 | `grep -ro 'addEventListener' frontend/js` |
+| 상태 | 가변 모듈 상태 **36** / **6** 파일. 전부 예산 상한에 붙어 있음 | — | `test_web_dom_contract.MUTABLE_MODULE_STATE_BUDGET` |
+
+**화면 루트 4 는 DOM 실측이고, `SCREEN_ROOTS` 계약 상수는 그중 2만 본다** — 판별력 결손이며
+보강 소유는 **#412 (R3-03)** 다(중앙 U5).
 
 ### 「직접 브리지」는 세 개의 다른 집합이다
 
