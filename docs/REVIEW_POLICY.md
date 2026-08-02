@@ -273,8 +273,11 @@ suite 에 못 들어간다).
 
 **Step A — 머지 규율(체크 의존 없음, 재설계 착지 직후):**
 
+PowerShell here-string 을 표준 입력으로 흘린다 — Bash heredoc(`<<'JSON'`)은 이 저장소의
+문서화된 셸(PowerShell)에서 파싱조차 안 된다.
+
 ```powershell
-gh api repos/rfastball/hwpx-filler/rulesets -X POST --input - <<'JSON'
+@'
 { "name": "merge-discipline", "target": "branch", "enforcement": "active",
   "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
   "rules": [
@@ -288,7 +291,7 @@ gh api repos/rfastball/hwpx-filler/rulesets -X POST --input - <<'JSON'
         "required_review_thread_resolution": true,
         "allowed_merge_methods": ["squash"] } }
   ] }
-JSON
+'@ | gh api repos/rfastball/hwpx-filler/rulesets -X POST --input -
 ```
 
 **Step B — required checks 승격(`review-gate` 가 실 PR 에서 초록을 한 번 낸 뒤에만):**
