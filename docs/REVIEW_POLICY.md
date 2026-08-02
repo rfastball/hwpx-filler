@@ -209,9 +209,15 @@ P1 7건·P2 9건이 쌓인 적이 있다(PR #234~#279 → #280 에서 일괄 수
 
 | 층 | 실물 | 우회 가능성 |
 |---|---|---|
+| 룰셋(코드 0줄) | PR 필수 · **대화 해결 필수** · squash 한정 · 삭제/강제 push 금지 | 없음 — GitHub 이 강제 |
 | 필수 체크 | `quality-gate`(품질) · `review-gate`(이 문서) | 없음 — ruleset 이 강제 |
 | 판정기 | `scripts/review_rounds.py` | — 판정 로직의 단일 출처 |
 | 클라이언트 훅 | `.claude/settings.json` 의 `PreToolUse` | 있음 — 그 클라이언트에서만 뜬다 |
+
+**룰셋이 맨 위인 이유**: 스레드 해소의 강제는 GitHub 네이티브 기능(「대화 해결 필수」)이
+공짜로 해 준다 — 우리 판정기가 그 위에 얹는 고유분은 **정산 마커의 실재·문법, defer 이슈의
+실재, 리뷰 1회 회수, 픽스 재읽힘**뿐이다. 존재하는 기능으로 지킬 수 있는 것을 코드로 다시
+짓지 않는다. 룰셋의 실물은 §10 런북이 세운다.
 
 **훅은 게이트가 아니다.** 웹 UI 머지도, 다른 에이전트도, 터미널에서 직접 친 `gh` 도 못
 막는다. 훅은 CI 왕복 전에 낭비를 줄이는 빠른 실패일 뿐이고, 머지를 실제로 막는 것은
@@ -258,3 +264,59 @@ CI 는 같은 스크립트를 `--publish-check` 로 불러 판정을 **PR head S
 계측을 섞지 않는다.
 
 Claude Code 에서는 `/review-round` 가 이 절차를 순서대로 돈다.
+
+## 10. 룰셋 런북
+
+룰셋은 API 상태라 git 이 못 지킨다 — 그래서 세우는 명령·확인하는 명령·끄는 명령을 여기
+적는다. 드리프트 검증은 pytest 가 아니라 이 런북이다(네트워크·토큰이 필요해 결정론 contract
+suite 에 못 들어간다).
+
+**Step A — 머지 규율(체크 의존 없음, 재설계 착지 직후):**
+
+```powershell
+gh api repos/rfastball/hwpx-filler/rulesets -X POST --input - <<'JSON'
+{ "name": "merge-discipline", "target": "branch", "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": true,
+        "allowed_merge_methods": ["squash"] } }
+  ] }
+JSON
+```
+
+**Step B — required checks 승격(`review-gate` 가 실 PR 에서 초록을 한 번 낸 뒤에만):**
+
+```powershell
+# context 문자열은 추측하지 않는다 — 실제 체크런 이름을 먼저 확인한다
+gh api "repos/rfastball/hwpx-filler/commits/<sha>/check-runs" --jq '.check_runs[].name'
+
+# 룰셋을 통째로 다시 보낸다(Step A 의 rules 배열에 아래 항목을 추가한 형태)
+#  { "type": "required_status_checks", "parameters": {
+#      "strict_required_status_checks_policy": false,
+#      "required_status_checks": [
+#        { "context": "review-gate" }, { "context": "quality-gate" } ] } }
+gh api repos/rfastball/hwpx-filler/rulesets/<id> -X PUT --input ruleset.json
+```
+
+**순서가 계약이다.** 존재하지 않는 required check 를 먼저 걸면 **모든 PR 이 영구 대기**한다.
+
+**드리프트 확인** (룰이 실제로 걸려 있는가):
+
+```powershell
+gh api repos/rfastball/hwpx-filler/rules/branches/master --jq '[.[].type] | sort'
+# 기대: ["deletion","non_fast_forward","pull_request","required_status_checks"]
+```
+
+**비상 탈출** (룰셋이 master 를 벽돌로 만들었을 때 — bypass actor 를 두지 않았으므로 이
+명령이 유일한 문이다):
+
+```powershell
+gh api repos/rfastball/hwpx-filler/rulesets/<id> -X PUT -f enforcement=disabled
+```
