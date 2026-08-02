@@ -40,6 +40,11 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname as posixDirname, join as posixJoin, normalize as posixNormalize }
   from "node:path/posix";
+import { pathToFileURL } from "node:url";
+
+/* 산출물의 물리 위치는 **빌드 설정이 단일 출처**다. 여기서 `build/web` 을 다시 조립하면
+   `outDir` 을 옮기는 날 이 게이트만 옛 자리를 보며 초록으로 남는다. */
+import viteConfig from "../../vite.config.mjs";
 
 /* 파서는 `vite`(oxc)가 내준다 — `package.json` 에 이미 있는 devDependency 라 새 의존이 아니다.
    정적 import 로 적으면 부재가 파일 평가 단계에서 `ERR_MODULE_NOT_FOUND` 로 터져 "왜" 가 안
@@ -809,6 +814,193 @@ test("죽은 별칭 스물일곱이 쓰기로도 판독으로도 남아 있지 �
   );
   assert.deepEqual(names(legacy.globalWrites), [...DEAD_ALIASES].sort(),
     "스캐너가 옛 별칭 형상을 못 뭅니다 — 위 0건은 눈먼 초록입니다.");
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   후반부 ② — 출하 산출물. 봉인은 **정체성**을 지키지 **성질**을 지키지 않는다.
+   ══════════════════════════════════════════════════════════════════════════
+
+   위 검사는 전부 `frontend/` 를 본다. 그런데 사용자에게 가는 것은 그 트리가 아니라
+   `build/web/` 의 번들이고, 둘 사이에는 번들러가 있다. `web-artifact-seal.json` 은 그 번들의
+   바이트가 **예상대로임**을 증명하지만 그 바이트에 클래식 스크립트나 새 전역이 없다는 것은
+   증명하지 않는다 — 봉인이 지키는 것은 정체성이지 성질이다.
+
+   런타임 층도 이 자리를 못 메운다. 두 겹 다 구조적으로 못 본다:
+
+     - 전역 델타(`test_selftest_run_adds_exactly_one_global_over_a_normal_run`)는 정상 실행과
+       시험 실행의 **상대 뺄셈**이다. 번들이 양쪽에 똑같이 새는 이름을 만들면 차집합이 그대로라
+       침묵한다.
+     - `resources_same_origin`·`forbidden_resources` 는 오리진 축이다. 동일 오리진 클래식
+       `<script>` 는 forbidden 이 아니므로 그대로 통과한다.
+
+   그래서 같은 스캐너를 산출물에 한 번 더 겨눈다. 지금 값이 0인 시점이 이 게이트를 세우기
+   가장 싼 때다 — vite 업그레이드·플러그인 추가·의존 변경이 산출물에만 무언가를 넣는 날,
+   정적 층은 source 를 보느라 침묵하고 런타임 층은 위 두 이유로 못 본다.
+
+   스캔 대상은 디스크 글롭이 아니라 **봉인이 열거한 파일**이다. 그래야 "무엇을 검사했는가" 와
+   "무엇을 실었는가" 가 같은 목록이 된다. */
+
+/** 출하 산출물 뿌리. 경로는 `vite.config.mjs` 의 `build.outDir` 이 단일 출처다. */
+const ARTIFACT = new URL(`${pathToFileURL(viteConfig.build.outDir).href}/`);
+
+const SEAL_FILENAME = "web-artifact-seal.json";
+
+/** 봉인 목록대로 산출물을 읽고 판다. 부재는 **스킵 사유가 아니라 실패**다 — 이 게이트를 도는
+ *  자리(`test.ps1` 과 CI 의 `pytest-contract`)는 앞서 빌드하거나 봉인된 산출물을 내려받으므로,
+ *  없다는 것은 "검사할 게 없다" 가 아니라 "검사해야 할 것이 사라졌다" 다. */
+function loadShipped() {
+  const sealUrl = new URL(SEAL_FILENAME, ARTIFACT);
+  if (!existsSync(sealUrl)) {
+    throw new Error(
+      `봉인된 산출물이 없습니다: ${sealUrl.pathname}. 이 게이트는 출하되는 바이트를 검사하므로 `
+      + "부재는 스킵 사유가 아니라 실패입니다 — `npm run build` 가 먼저입니다.",
+    );
+  }
+  const seal = JSON.parse(readFileSync(sealUrl, "utf8"));
+  const listed = seal.output.files;
+
+  /* 봉인 목록과 디스크가 어긋나면 아래 전부가 다른 것을 검사하게 된다. `verify:web` 이 지는
+     책임이지만, 이 게이트가 **자기가 읽은 바이트**로 한 번 더 확인한다. */
+  const bytes = new Map();
+  for (const entry of listed) {
+    const url = new URL(entry.path, ARTIFACT);
+    if (!existsSync(url)) throw new Error(`봉인이 열거한 파일이 디스크에 없습니다: ${entry.path}`);
+    const raw = readFileSync(url);
+    if (raw.length !== entry.size) {
+      throw new Error(
+        `봉인과 디스크의 크기가 다릅니다: ${entry.path} — 봉인 ${entry.size} / 디스크 ${raw.length}`,
+      );
+    }
+    bytes.set(entry.path, raw);
+  }
+
+  const js = new Map();
+  for (const entry of listed) {
+    /* `.vite/manifest.json` 은 빌드 메타라 제품 코드가 아니다. */
+    if (!entry.path.endsWith(".js") || entry.path.startsWith(".vite/")) continue;
+    const source = bytes.get(entry.path).toString("utf8");
+    js.set(entry.path, { source, scan: scanSource(source, `build/web/${entry.path}`) });
+  }
+  const htmlEntry = listed.find((entry) => entry.path === "index.html");
+  if (htmlEntry === undefined) throw new Error("봉인에 `index.html` 이 없습니다.");
+
+  return { seal, listed, js, html: bytes.get("index.html").toString("utf8") };
+}
+
+let shippedCache = null;
+function shipped() {
+  if (shippedCache === null) shippedCache = loadShipped();
+  return shippedCache;
+}
+
+test("공허 방지 — 봉인 목록대로 출하 산출물을 읽고 실제로 판다(양성 대조)", () => {
+  const { listed, js, html } = shipped();
+
+  assert.ok(listed.length >= 4,
+    `봉인이 파일을 ${listed.length} 개밖에 열거하지 않습니다 — 산출물이 반쪽입니다.`);
+  assert.ok(js.size >= 1, "출하 JS 를 하나도 못 찾았습니다 — 아래 0건 단언이 전부 눈먼 초록입니다.");
+  assert.ok(html.length > 1000, "출하 `index.html` 을 못 읽었습니다.");
+
+  const totalBytes = [...js.values()].reduce((n, f) => n + f.source.length, 0);
+  assert.ok(totalBytes > 100000,
+    `출하 JS 가 ${totalBytes} 바이트뿐입니다 — 제품 번들이 아닙니다.`);
+
+  /* 스캐너가 이 번들에서 **실제로 무언가를 본다**는 증거. 전부 0 이면 파서가 죽은 것이고,
+     그 침묵은 계약 위반 없음과 구별되지 않는다(source 축과 같은 논거). */
+  const totalReads = [...js.values()].reduce((n, f) => n + f.scan.globalReads.length, 0);
+  assert.ok(totalReads > 10,
+    `번들에서 창 판독을 ${totalReads} 건밖에 못 봤습니다 — 스캐너가 멀었습니다.`);
+});
+
+test("출하 `index.html` 의 스크립트도 `type=module` 하나뿐이다", () => {
+  const { html } = shipped();
+
+  const scripts = scanHtmlScripts(html);
+  assert.equal(scripts.length, 1,
+    `출하 HTML 의 스크립트가 ${scripts.length} 개입니다: ${JSON.stringify(scripts)}`);
+  assert.equal(scripts[0].classic, false, "번들러가 클래식 스크립트를 주입했습니다.");
+  assert.equal(scripts[0].type, "module");
+
+  /* 인라인 스크립트는 `src` 가 없다. 번들러 폴리필·프리로드 헬퍼가 들어오는 통상 경로가
+     여기라, 태그 수만 세면 놓친다. */
+  assert.ok(scripts[0].src !== null, "출하 HTML 에 인라인 스크립트가 있습니다.");
+  assert.ok(scripts[0].src.startsWith("./assets/"),
+    `출하 entry 가 번들 자산을 가리키지 않습니다: ${scripts[0].src}`);
+
+  const handlers = scanHtmlEventHandlers(html);
+  assert.deepEqual(handlers, [],
+    `출하 HTML 에 인라인 이벤트 핸들러가 있습니다: ${JSON.stringify(handlers)}`);
+});
+
+test("출하 번들이 만드는 전역도 정확히 `__hwpx`·`__hwpxTest` 둘뿐이다", () => {
+  const { js } = shipped();
+
+  const direct = new Map();
+  const unknown = [];
+  const aliases = [];
+  const reserved = new Set();
+  for (const [rel, { scan }] of js) {
+    for (const write of scan.globalWrites) {
+      if (!direct.has(write.name)) direct.set(write.name, []);
+      direct.get(write.name).push(`${rel}:${write.line}`);
+    }
+    for (const write of scan.unknownWrites) {
+      if (write.receiver === "global") unknown.push(`${rel}:${write.line}(${write.kind})`);
+    }
+    for (const alias of scan.globalAliases) aliases.push(`${rel}:${alias.line}`);
+    for (const install of scan.reservedInstalls) reserved.add(install.name);
+  }
+
+  assert.deepEqual(unknown, [],
+    `번들에 이름을 정적으로 못 푸는 전역 쓰기가 있습니다: ${unknown.join(", ")}`);
+  assert.deepEqual(aliases, [],
+    `번들이 창을 지역 이름에 담습니다 — 위 축을 통째로 우회합니다: ${aliases.join(", ")}`);
+  assert.deepEqual([...direct.keys()].sort(), ["__hwpx"],
+    `번들이 만드는 직접 전역이 __hwpx 하나가 아닙니다: ${JSON.stringify([...direct])}`);
+
+  /* 허용 목록은 source 축과 **같은 상수**를 쓴다. 두 층이 각자 목록을 들면 갈라지고, 그때
+     어느 쪽이 정본인지 아무도 못 말한다. */
+  assert.deepEqual([...reserved].sort(), ALLOWED_GLOBALS,
+    "번들이 예약 대역에 심는 이름이 `__hwpx`·`__hwpxTest` 둘과 다릅니다.");
+});
+
+test("출하 번들 최상단에 IIFE 가 0 이다", () => {
+  const { js } = shipped();
+
+  const offenders = [];
+  for (const [rel, { scan }] of js) {
+    for (const iife of scan.topLevelIifes) offenders.push(`${rel}:${iife.line}`);
+  }
+  assert.deepEqual(offenders, [], `번들 최상단 IIFE 가 있습니다: ${offenders.join(", ")}`);
+
+  /* 양성 대조 — 같은 번들 뒤에 최상단 IIFE 를 한 줄 붙이면 정확히 하나가 늘어야 한다.
+     fixture 대조는 "스캐너가 IIFE 를 문다" 를 증명하고, 이 대조는 "스캐너가 **이 번들의**
+     최상단을 보고 있다" 를 증명한다. 후자가 없으면 위 0건은 파싱만 성공한 초록일 수 있다. */
+  for (const [rel, { source, scan }] of js) {
+    const probed = scanSource(`${source}\n(function () {})();\n`, `<${rel}+iife>`);
+    assert.equal(probed.topLevelIifes.length, scan.topLevelIifes.length + 1,
+      `${rel} 의 최상단을 스캐너가 못 보고 있습니다 — 위 0건은 눈먼 초록입니다.`);
+  }
+});
+
+test("죽은 별칭 스물일곱이 출하 번들에도 없다", () => {
+  const { js } = shipped();
+  const dead = new Set(DEAD_ALIASES);
+
+  const offenders = [];
+  for (const [rel, { scan }] of js) {
+    for (const write of scan.globalWrites) {
+      if (dead.has(write.name)) offenders.push(`쓰기 ${rel}:${write.line} window.${write.name}`);
+    }
+    /* 판독까지 세는 이유는 source 축과 같다 — 생산자가 없는데 소비자가 남으면 런타임에
+       `undefined` 를 읽고 조용히 죽는다. 번들에서는 그 소비가 트리셰이킹으로도 안 사라진다
+       (`treeshake: false`). */
+    for (const read of scan.globalReads) {
+      if (dead.has(read.name)) offenders.push(`판독 ${rel}:${read.line} window.${read.name}`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `번들에 임시 별칭이 살아 있습니다:\n  ${offenders.join("\n  ")}`);
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
