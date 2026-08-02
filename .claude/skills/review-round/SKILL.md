@@ -42,29 +42,41 @@ gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
 ## 4. 차단만 이 PR 에서 고친다
 
 분리 항목은 손대지 않는다. **루프가 안 닫히면 먼저 「이걸 정말 이 PR 에서 고쳐야 하는가」를
-묻는다** — 고치면 push 가 생기고 push 가 리뷰를 부른다. 분리는 head 를 안 바꾸므로 그 자리에서
-닫힌다.
+묻는다** — 분리는 head 를 안 바꾸므로 그 자리에서 닫힌다.
 
 **회귀 후보가 하나라도 표시되면** 그 자리에서 점별 픽스를 멈춘다(정책 §3 — 첫 재발부터
 근본 조치다). 판정은 아직 `READY` 일 수 있으니 게이트가 대신 세워 주지 않는다.
 
-**차단을 고쳤으면 반드시 재리뷰를 부른다** — 자동 리뷰는 PR 당 한 번뿐이고, 재리뷰는
-저절로 오지 않는다. 게이트가 이것을 강제하므로 안 부르면 초록이 되지 않는다.
-분리만 했다면 코드가 안 바뀌었으니 부르지 않는다.
+고친 뒤에는 그 스레드를 **해결 처리한다.** 그것이 해소 신호다 — 코멘트가 outdated 가 되기를
+기다리면 안 된다. GitHub 은 앵커 hunk 가 살아 있는 한 코멘트를 최신 커밋으로 재앵커하므로
+실제로 고쳐도 살아남는 경우가 흔하고, 그러면 게이트가 `BLOCKED` 에 머문다.
+
+```powershell
+# 스레드 id 는 GraphQL 로 찾는다
+gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-id>
+```
+
+## 5. 게이트를 돌리고 **푸시한 뒤** 재리뷰를 부른다
+
+```powershell
+.	est.ps1
+uv run ruff check scripts   # scripts/ 를 고쳤다면 — test.ps1 은 이걸 안 본다
+git push
+```
+
+**순서가 계약이다.** push 보다 먼저 부르면 리뷰어가 **옛 head 를 읽고**, 그 뒤 push 로 head 가
+바뀌어 정작 픽스는 안 읽힌 채 남는다 — push 는 더 이상 리뷰를 부르지 않으므로 그대로 회수
+창까지 기다리게 된다.
 
 ```powershell
 gh pr comment <PR> --body "@codex review"
 ```
 
-## 5. 게이트를 돌리고 푸시한다
+**차단을 고쳤으면 반드시 부른다.** 자동 리뷰는 PR 당 한 번뿐이고 재리뷰는 저절로 오지
+않는다. 게이트가 강제하므로 안 부르면 초록이 되지 않는다. 분리만 했다면 코드가 안 바뀌었으니
+부르지 않는다.
 
-```powershell
-.\test.ps1
-uv run ruff check scripts   # scripts/ 를 고쳤다면 — test.ps1 은 이걸 안 본다
-git push
-```
-
-푸시는 더 이상 리뷰를 부르지 않는다. 1번으로 돌아가 상태만 다시 읽는다.
+1번으로 돌아간다.
 
 ## 6. 머지
 
