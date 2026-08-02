@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   테스트 러너 — venv 의 pytest 로 tests/ 수집·실행.
 
