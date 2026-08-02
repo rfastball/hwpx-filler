@@ -69,6 +69,15 @@ class LiveContext:
     artifact: object
     #: 증거 쓰기 → 정식 종료를 이 순서로 정확히 한 번. 두 번째 호출은 시끄럽게 거절된다.
     finish: "Callable[[Mapping[str, object]], None]"
+    #: **이 부팅이 실제로 무장한** 폴백 예산(초)과 그 사유(#460 리뷰 P1).
+    #:
+    #: 값으로 건네는 것이 계약이다 — 드라이버가 같은 판정을 **다시 계산하면 안 된다**. 판정의
+    #: 입력(완주 스탬프)을 이 실행 자신이 ``loaded`` 콜백에서 바꾸기 때문이다: 스탬프가 먼저
+    #: 쓰이고 그 뒤 두 번의 동기 왕복을 거쳐 show 하므로, 그 사이에 재계산하면 콜드로 무장한
+    #: 부팅을 웜 예산으로 재는 창이 열린다. 재계산은 「제품의 판정을 받는다」가 아니라 **두
+    #: 번째 판정자**다.
+    boot_budget_s: float = 0.0
+    boot_budget_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -169,6 +178,8 @@ def context_for(
     window: object,
     artifact: object,
     finish: "Callable[[Mapping[str, object]], None]",
+    boot_budget_s: float = 0.0,
+    boot_budget_reason: str = "",
 ) -> LiveContext:
     """실행 하나의 봉투를 짓는다 — 조립을 한 곳에 모아 필드 누락을 없앤다."""
     return LiveContext(
@@ -177,6 +188,8 @@ def context_for(
         window=window,
         artifact=artifact,
         finish=finish,
+        boot_budget_s=boot_budget_s,
+        boot_budget_reason=boot_budget_reason,
     )
 
 

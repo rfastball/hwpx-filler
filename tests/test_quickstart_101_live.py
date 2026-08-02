@@ -32,6 +32,8 @@ from live101 import driver, report as report_mod  # noqa: E402
 from live101.scenario import CAPTURE_POINTS, EXPECTED_HWPX  # noqa: E402
 from live101.surface import Deadline, MissingSurface, StepTimeout, Surface  # noqa: E402
 
+from hwpxfiller.webapp import boot_budget  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLI = REPO_ROOT / "scripts" / "capture_101_screenshots.py"
 EXAMPLE_HOME = REPO_ROOT / "examples" / "quickstart-101"
@@ -395,6 +397,205 @@ def test_each_journey_fact_is_actually_judged(observation, fragment) -> None:
 
     assert verdict.ok is False
     assert any(fragment in failure for failure in verdict.failures), verdict.failures
+
+
+# ─────────────── 창 부팅 = 환경 축의 음성 대조(게이트 밖 · #460) ───────────────
+#
+# 실측이 이 층을 요구했다. `live-webview2` 57표본에서 실패 1건(1.8%)의 `elapsed_s` 는 21.7초 =
+# 앱 준비 1.7초 + pywebview `_api_call` 의 하드코딩 20.0초였고, 정상 완주는 p90 21.8초·최대
+# 27.3초였다. 즉 우리가 선언한 300초 예산은 발화할 기회가 없었고, 천장은 **남의 상수**였다.
+#
+# 그런데 그 실패는 제품 언어 7줄(「HWPX 생성 0건」…)로 나왔다. 아래 셋이 그 둘을 각각 잡는다.
+
+
+class _NeverFires:
+    """서지 않는 이벤트 — 부팅이 예산 안에 못 끝나는 상황."""
+
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 시그니처 계약 유지
+        return False
+
+
+class _AlreadyFired:
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 시그니처 계약 유지
+        return True
+
+
+class _FakeWindow:
+    def __init__(self, **events) -> None:
+        self.events = type("Events", (), events)()
+
+
+def test_a_window_that_never_loads_is_named_environment_not_product() -> None:
+    """창이 안 뜨면 **그 단계를 대며** 환경 실패로 죽는다 — 제품 문장으로 번역되지 않는다."""
+    window = _FakeWindow(loaded=_NeverFires(), shown=_NeverFires())
+
+    with pytest.raises(driver.WindowBootFailure) as excinfo:
+        driver._await_window(window, 0.05, "첫 실행")
+
+    assert excinfo.value.stage == "loaded"
+    assert "예산 근거: 첫 실행" in str(excinfo.value)
+
+
+def test_a_window_that_loads_but_never_shows_names_the_later_stage() -> None:
+    """음성 대조 — 두 단계를 한 덩어리로 기다리지 않는다(어디서 멎었는지가 진단이다)."""
+    window = _FakeWindow(loaded=_AlreadyFired(), shown=_NeverFires())
+
+    with pytest.raises(driver.WindowBootFailure) as excinfo:
+        driver._await_window(window, 0.05, "웜")
+
+    assert excinfo.value.stage == "shown"
+
+
+def test_a_booted_window_passes_so_the_negative_controls_mean_something() -> None:
+    """양성 대조 — 정상 부팅까지 막으면 이 대기는 쓸 수 없다."""
+    driver._await_window(_FakeWindow(loaded=_AlreadyFired(), shown=_AlreadyFired()), 0.05, "웜")
+
+
+def test_an_environment_failure_produces_no_product_failures() -> None:
+    """**이 파일의 존재 이유**(#460) — 환경 실패는 제품 판정을 낳지 않는다.
+
+    종전에는 창이 안 뜬 실행도 :func:`report_mod.judge` 를 그대로 타 「HWPX 생성 0건」·
+    「미리보기 미승인」·「〈빈 값〉 미표면」 7줄을 냈다. 전부 참이지만 전부 파생이라, 무인
+    판정은 그것을 제품 회귀로 읽고 있지도 않은 결함을 고치러 간다.
+    """
+    verdict = report_mod.environment_verdict("WebView2 창이 75s 안에 뜨지 않았습니다")
+
+    assert verdict.ok is False
+    assert verdict.failures == (), "환경 실패가 제품 언어를 낳았습니다"
+    assert "창이" in (verdict.reason or "")
+    # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
+    product = report_mod.judge(
+        {"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check"
+    )
+    assert len(product.failures) == 7, product.failures
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [(True, driver.ExitCode.ENVIRONMENT), (False, driver.ExitCode.SCENARIO_FAILED)],
+)
+def test_the_exit_code_splits_environment_from_product(environment, expected) -> None:
+    """부른 쪽이 **분기할 수 있어야** 한다 — 그것이 ``ExitCode`` 의 존재 이유다.
+
+    종전에는 실행 시작 뒤의 환경 실패가 전부 ``SCENARIO_FAILED`` 로 접혔고, 그래서 CI 도
+    사람도 「환경이었나」를 종료 코드로 물을 수 없었다.
+    """
+    result = driver.LiveRunResult(mode="check", ok=False, environment=environment)
+
+    assert result.exit_code() == expected
+
+
+def _landing_stderr(capsys, tmp_path, *, environment: bool, failures: "list[str]") -> "list[str]":
+    """실패 하나를 착지시키고 stderr 줄만 돌려준다 — 사람이 실제로 읽는 것이 그것이다."""
+    import capture_101_screenshots as cli
+
+    result = driver.LiveRunResult(
+        mode="check",
+        ok=False,
+        report={"verdict": {"ok": False, "reason": "사유", "failures": failures}},
+        error="WebView2 창이 75s 안에 뜨지 않았습니다" if environment else "시나리오가 깨졌습니다",
+        environment=environment,
+    )
+    cli._land(
+        result, home=tmp_path, temp_root=None, use_example_home=False, report_path=None
+    )
+    return [line for line in capsys.readouterr().err.splitlines() if line.strip()]
+
+
+def test_a_boot_failure_no_longer_prints_eight_product_lines(capsys, tmp_path) -> None:
+    """#460 그 자체 — 환경 실패의 로그에 **제품 실패 줄이 없다**.
+
+    관측(run 30753937057)은 첫 줄 「Main window failed to start」 아래 파생 7줄이었다. 사람은
+    첫 줄을 읽지만 무인 판정은 7줄을 읽고 「내 변경이 101 여정을 깼다」로 오독한다.
+    """
+    lines = _landing_stderr(capsys, tmp_path, environment=True, failures=[])
+
+    assert not [line for line in lines if line.lstrip().startswith("·")], lines
+    assert "실패[환경]" in lines[0], lines[0]
+    assert any("제품 판정을 돌리지 않았습니다" in line for line in lines), lines
+
+
+def test_a_real_product_failure_still_prints_every_line(capsys, tmp_path) -> None:
+    """양성 대조 — 제품 실패의 진단까지 접으면 이 조치가 새 침묵을 만든다."""
+    lines = _landing_stderr(
+        capsys, tmp_path, environment=False, failures=["HWPX 생성 0건 (기대 3건)", "승인 미착지"]
+    )
+
+    assert "실패[제품]" in lines[0], lines[0]
+    assert len([line for line in lines if line.lstrip().startswith("·")]) == 2, lines
+
+
+class _Ctx:
+    def __init__(self, boot_budget_s=0.0, boot_budget_reason="") -> None:
+        self.boot_budget_s = boot_budget_s
+        self.boot_budget_reason = boot_budget_reason
+
+
+def test_the_harness_waits_longer_than_the_budget_this_boot_actually_armed() -> None:
+    """순서가 계약이다 — 하니스는 **이 부팅이 무장한** 폴백보다 성겨야 한다.
+
+    반대로 서면 하니스가 제품이 살려내려던 부팅을 먼저 죽이고, 제품이 남겼을 강제 show + 경보는
+    영영 나오지 않는다.
+
+    종전 이 테스트는 ``product + GRACE > product`` 라는 **산술**을 쟀다(#460 리뷰 P1). 그것은
+    상수가 무엇이든 참이라, 하니스가 콜드로 무장한 부팅에 웜 값을 쓰는 실제 결함 앞에서 초록인
+    채였다. 이제 무장값을 넣고 **나온 대기 시간**을 견준다.
+    """
+    for armed in (boot_budget.COLD_BUDGET_SECONDS, boot_budget.WARM_BUDGET_SECONDS):
+        waited, _ = driver.boot_wait_budget(_Ctx(armed, "사유"), Deadline(9999.0))
+        assert waited > armed, f"무장 {armed}s 인데 하니스가 {waited}s 만 기다린다"
+
+    # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가.
+    assert not (boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
+                > boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S)
+
+
+def test_a_cold_armed_boot_is_never_measured_with_the_warm_budget() -> None:
+    """#460 리뷰 P1 — 재계산 금지가 **구조로** 지켜지는가.
+
+    ``loaded`` 콜백이 완주 스탬프를 먼저 쓰므로, 이 자리에서 ``decide()`` 를 다시 부르면 콜드로
+    무장한 부팅이 웜 예산으로 재진다. 값을 건네받는 한 홈 상태가 어떻든 그 일이 없다.
+    """
+    armed = boot_budget.COLD_BUDGET_SECONDS
+    # 스탬프가 이미 쓰인 홈을 흉내 낸다 — 재계산했다면 여기서 웜으로 접혔을 것이다.
+    from hwpxfiller.webapp import settings
+
+    settings.save_boot_completed(boot_budget.detect_runtime_version())
+
+    waited, _ = driver.boot_wait_budget(_Ctx(armed, "첫 실행"), Deadline(9999.0))
+
+    assert waited == armed + driver.BOOT_GRACE_S
+    assert waited > boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
+
+
+def test_the_boot_wait_expires_before_the_hard_stop(tmp_path) -> None:
+    """#460 리뷰 P2 — 부팅 대기가 :class:`Deadline` **안에** 있는가.
+
+    밖에 서면 작은 ``--budget-s`` 에서 하드 스톱(``budget_s + RUN_HARD_STOP_MARGIN_S``)이 먼저
+    물어 ``drive()`` 가 ``finally`` 를 건너뛴다 — 그러면 워치독의 착지가 환경 분류 없이 돌아
+    이 변경이 없앤 제품 실패 7줄이 되돌아온다.
+    """
+    run_budget = 10.0
+    hard_stop = run_budget + driver.RUN_HARD_STOP_MARGIN_S
+    waited, _ = driver.boot_wait_budget(
+        _Ctx(boot_budget.COLD_BUDGET_SECONDS, "첫 실행"), Deadline(run_budget)
+    )
+
+    assert waited <= run_budget, f"부팅 대기 {waited}s 가 실행 예산 {run_budget}s 를 넘습니다"
+    assert waited < hard_stop, "하드 스톱이 먼저 물면 구조화된 환경 착지가 통째로 사라진다"
+    # 음성 대조 — 예산이 넉넉하면 클램프가 아니라 무장값이 이긴다(항상 자르지 않는다).
+    generous, _ = driver.boot_wait_budget(
+        _Ctx(boot_budget.COLD_BUDGET_SECONDS, "첫 실행"), Deadline(9999.0)
+    )
+    assert generous == boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
+
+
+def test_a_context_without_a_budget_is_named_not_silently_generous() -> None:
+    """예산이 안 실려 오면 **사유가 그렇게 말한다** — 조용한 기본값으로 접지 않는다."""
+    waited, reason = driver.boot_wait_budget(_Ctx(), Deadline(9999.0))
+
+    assert waited == driver.BOOT_GRACE_S
+    assert "미전달" in reason
 
 
 # ─────────────────── 부재/미성립 구분의 음성 대조(게이트 밖) ───────────────────

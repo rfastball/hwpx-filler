@@ -60,8 +60,19 @@ WINDOW_W, WINDOW_H = 1180, 760
 #: 전부 덮고도 남게 두되 무한 대기는 막는다. 자기 시한을 가진 호출자는 `budget_s` 로 더 작게
 #: 준다(그 순서는 `tests/test_quickstart_101_live.py` 가 못박는다).
 RUN_BUDGET_S = 900.0
-#: 브리지 준비(제품 공개 API `__hwpx` 가 설 때까지) 예산.
+#: 브리지 준비 예산 — **창이 뜬 뒤** 제품 공개 API `__hwpx` 가 설 때까지.
+#:
+#: 이것은 **제품 축**이다: 페이지가 로드됐는데 합성 루트가 안 서면 그것은 환경이 아니라 제품
+#: 결함이므로 촘촘하게 잡는다. 창 부팅 자체는 성질이 달라 :func:`boot_budget_s` 가 따로 진다
+#: (#460) — 종전에는 이 상수 하나가 두 축을 겸해, 느린 콜드스타트가 「앱이 서지 않았습니다」로
+#: 오분류될 자리에 있었다.
 READY_BUDGET_S = 20.0
+#: 창 부팅 대기에 **제품 판정 위로** 얹는 여유.
+#:
+#: 순서가 계약이다: 제품의 FOUC 폴백이 먼저 발화해 자기 진단(강제 show + 경보)을 남길 기회를
+#: 준 뒤에야 하니스가 포기한다. 반대로 서면 하니스가 제품이 살려내려던 부팅을 먼저 죽이고,
+#: 제품이 남겼을 경보는 영영 나오지 않는다 — :data:`RUN_HARD_STOP_MARGIN_S` 와 같은 형상이다.
+BOOT_GRACE_S = 15.0
 #: `window.destroy()` 뒤 pywebview teardown 에 주는 유예. 넘기면 진단을 남기고 하드 종료.
 TEARDOWN_GRACE_S = 10.0
 #: 실행 예산을 넘긴 뒤 **하드 스톱**까지의 여유. 부드러운 시한(:class:`Deadline`)이 먼저
@@ -105,15 +116,41 @@ class DirtyHome(RuntimeError):
     """실습 잔재가 있는 홈 — 지우지 않고 거절한다(사용자 상태를 말없이 파괴하지 않는다)."""
 
 
+class WindowBootFailure(RuntimeError):
+    """창이 뜨지 못했다 — **환경 실패**다(#460).
+
+    제품 실패와 **타입으로** 갈린다. 문자열 대조가 아닌 이유는 이 저장소가 이미 그 함정을
+    만났기 때문이다(부분열 검사가 구조를 흉내 내면 산문이 구조의 삭제를 가린다): 실패 문안은
+    고쳐 쓰이지만 축은 그대로여야 한다.
+
+    이 예외가 나면 시나리오는 **한 걸음도 돌지 않았다**. 그래서 그때의 빈 관측은 제품의
+    증거가 아니고, 판정을 돌리면 「HWPX 생성 0건」 같은 제품 언어가 환경 사고 위에 덧씌워진다.
+    """
+
+    def __init__(self, stage: str, budget_s: float, reason: str) -> None:
+        self.stage = stage
+        self.budget_s = budget_s
+        self.reason = reason
+        super().__init__(
+            f"WebView2 창이 {budget_s:.0f}s 안에 뜨지 않았습니다"
+            f" (`{stage}` 미발화 · 예산 근거: {reason})"
+        )
+
+
 @dataclass
 class LiveRunResult:
     mode: str
     ok: bool
     report: dict = field(default_factory=dict)
     error: "str | None" = None
+    #: 환경 실패인가 — 제품에 **닿지도 못한** 실행. 판정을 돌리지 않았으므로 파생 실패가 없고,
+    #: 종료 코드도 제품 실패와 갈린다(부른 쪽이 분기할 수 있어야 한다는 ExitCode 의 존재 이유).
+    environment: bool = False
 
     def exit_code(self) -> int:
-        return ExitCode.OK if self.ok else ExitCode.SCENARIO_FAILED
+        if self.ok:
+            return ExitCode.OK
+        return ExitCode.ENVIRONMENT if self.environment else ExitCode.SCENARIO_FAILED
 
 
 # ------------------------------------------------------------------ 홈 수명주기
@@ -297,7 +334,7 @@ def _run_with_home(
     from hwpxfiller.webapp import live_run
 
     answers: "deque[str]" = deque()
-    state: dict = {"result": None, "error": None}
+    state: dict = {"result": None, "error": None, "environment": False}
     deadline = Deadline(budget_s)
     #: `main()` 이 정상 반환하면 선다 — 워치독을 **해제**하는 신호(#426 리뷰 P1).
     finished = threading.Event()
@@ -315,13 +352,21 @@ def _run_with_home(
         out.write_text(json.dumps(dict(result), ensure_ascii=False, indent=2), encoding="utf-8")
         return out
 
-    def settle(observations: dict, sink, error: "str | None") -> LiveRunResult:
+    def settle(
+        observations: dict, sink, error: "str | None", *, environment: bool = False
+    ) -> LiveRunResult:
         """사실을 모아 **판정까지 끝낸다**.
 
         판정이 드라이브 스레드 안에서 끝나야 하는 이유는 워치독 때문이다(#426 리뷰 P1):
         teardown 이 매달리면 ``main()`` 이 영영 반환하지 않고, 판정을 그 뒤에 두면 워치독이
         **판정 없이** 종료 코드를 정한다. 그러면 생성 0건이나 찢긴 컷이 exit 0 으로 지나간다 —
         이 하니스가 막으려는 바로 그 침묵이다.
+
+        ``environment`` 면 사실은 그대로 모으되 **판정을 돌리지 않는다**(#460). 제품에 닿지
+        못한 실행의 빈 관측은 제품의 증거가 아니기 때문이다 — 종전에는 여기서도 ``judge()`` 가
+        돌아 「HWPX 생성 0건」·「미리보기 미승인」·「〈빈 값〉 미표면」 같은 **제품 언어 7줄**이
+        나왔고, 「창이 안 떴다」는 한 줄이 그 밑에 묻혔다. 사람은 첫 줄을 읽지만 무인 판정은
+        7줄을 읽고 있지도 않은 제품 결함을 고치러 간다.
         """
         built = report_mod.build(
             mode=mode,
@@ -334,8 +379,12 @@ def _run_with_home(
             window_size=(WINDOW_W, WINDOW_H),
             elapsed_s=deadline.elapsed_s(),
         )
-        verdict = report_mod.judge(built, mode=mode)
-        report = {**built, "verdict": verdict.as_dict()}
+        verdict = (
+            report_mod.environment_verdict(error or "환경 실패")
+            if environment
+            else report_mod.judge(built, mode=mode)
+        )
+        report = {**built, "verdict": verdict.as_dict(), "environment": environment}
         if error:
             report["error"] = error
         return LiveRunResult(
@@ -343,6 +392,7 @@ def _run_with_home(
             ok=verdict.ok and error is None,
             report=report,
             error=error or verdict.reason,
+            environment=environment,
         )
 
     def drive(ctx) -> None:
@@ -350,6 +400,9 @@ def _run_with_home(
         observations: dict = {}
         sink = None
         try:
+            # 창 부팅은 **제품 단언이 아니라 전제**다 — 우리 예산으로 기다린 뒤에야 창을
+            # 만진다. 이 줄이 없으면 아래 첫 호출이 pywebview 의 20초 상수를 먼저 문다(#460).
+            _await_window(window, *boot_wait_budget(ctx, deadline))
             _await_bridge(window, deadline)
             window.resize(WINDOW_W, WINDOW_H)
             time.sleep(0.6)
@@ -368,10 +421,16 @@ def _run_with_home(
                 raise ScenarioFailure(
                     f"대화상자 답변 잔량 {len(answers)} — 대본이 화면과 어긋났습니다"
                 )
+        except WindowBootFailure as exc:
+            # 환경 축 — 제품에 닿지 못했다. settle 이 판정을 건너뛰어 파생 실패를 만들지 않는다.
+            state["error"] = str(exc)
+            state["environment"] = True
         except Exception as exc:  # noqa: BLE001 — 드라이브 스레드 조용한 증발 금지
             state["error"] = f"{type(exc).__name__}: {exc}"
         finally:
-            result = settle(observations, sink, state["error"])
+            result = settle(
+                observations, sink, state["error"], environment=state["environment"]
+            )
             state["result"] = result
             ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
             _arm_teardown_watchdog(result, home, finished, landing)
@@ -404,15 +463,74 @@ def _run_with_home(
     result = state["result"]
     if result is None:
         # 드라이버가 아예 돌지 않았다(창 생성 실패 등). 판정 없는 성공은 없다.
-        return settle({}, None, state["error"] or "드라이버가 실행되지 않았습니다")
+        return settle(
+            {},
+            None,
+            state["error"] or "드라이버가 실행되지 않았습니다",
+            environment=state["environment"],
+        )
     if rc != 0:
         return LiveRunResult(
             mode=result.mode,
             ok=False,
             report=result.report,
             error=f"앱이 rc={rc} 로 끝났습니다 ({result.error or '시나리오는 통과'})",
+            environment=result.environment,
         )
     return result
+
+
+def boot_wait_budget(ctx: object, deadline: Deadline) -> "tuple[float, str]":
+    """창 부팅 대기 예산 ``(초, 사유)`` — **이 부팅이 무장한 값을 받아** 여유를 얹고 클램프한다.
+
+    ## 왜 재계산하지 않는가 (#460 리뷰 P1)
+
+    처음에는 이 자리에서 :func:`~hwpxfiller.webapp.boot_budget.decide` 를 다시 불렀다. "제품의
+    판정을 받는다"고 적었지만 실제로는 **두 번째 판정자**였고, 판정의 입력을 이 실행 자신이
+    바꾼다: ``loaded`` 콜백이 완주 스탬프를 **먼저** 쓰고 그 뒤 두 번의 동기 왕복을 거쳐 show
+    하므로(``app.py`` 의 ``_apply_theme_then_show``), 그 사이에 재계산하면 콜드(60s)로 무장한
+    부팅을 웜(20s) 예산으로 재게 된다 — 제품 폴백이 살려낼 부팅을 하니스가 먼저 죽인다.
+
+    그래서 값은 :class:`~hwpxfiller.webapp.live_run.LiveContext` 로 **건네받는다**. 판정자는
+    하나고, 그 판정이 실제로 무장한 타이머와 같은 수임이 구조로 보장된다.
+
+    ## 왜 클램프하는가 (#460 리뷰 P2)
+
+    부팅 대기가 :class:`Deadline` 밖에 서면 예산 계층 옆에 시계가 하나 더 생긴다 — 이 변경이
+    없애려던 형상 그대로다. ``--budget-s`` 를 작게 준 호출자에게는 하드 스톱
+    (``budget_s + RUN_HARD_STOP_MARGIN_S``)이 부팅 대기보다 먼저 물어, 워치독이 ``drive()`` 의
+    ``finally`` 를 건너뛰고 **환경 분류 없이** 착지한다. :func:`_await_bridge` 가 이미 쓰는
+    관용(남은 예산과의 최솟값)을 그대로 따른다.
+    """
+    armed = float(getattr(ctx, "boot_budget_s", 0.0) or 0.0)
+    reason = str(getattr(ctx, "boot_budget_reason", "") or "제품 예산 미전달")
+    remaining = max(deadline.remaining_s(), 0.0)
+    return min(armed + BOOT_GRACE_S, remaining), reason
+
+
+def _await_window(window: object, budget_s: float, reason: str) -> None:
+    """pywebview 부팅 이벤트를 **우리 예산으로** 먼저 기다린다(#460).
+
+    이것이 없으면 창을 만지는 첫 호출이 pywebview 안에서 **남의 시계**를 문다:
+    ``@_api_call`` 의 ``event.wait(20)`` 은 라이브러리 상수라 우리 예산 계층
+    (300s → 360s → 420s)에 속하지 않고, 넘기면 ``WebViewException`` 이다.
+
+    실측이 그것을 확정했다(#460): 실패한 CI 실행의 ``elapsed_s`` 21.7초 = 앱 준비 1.7초 +
+    정확히 그 20.0초였고, 같은 잡 57표본의 정상 완주는 p90 21.8초 · 최대 27.3초였다. 우리가
+    선언한 300초는 발화할 기회조차 없었다 — 천장은 우리 것이 아니었다.
+
+    ``loaded`` 를 먼저 기다린다: 제품은 창을 ``hidden=True`` 로 만들고 ``loaded`` 에서 테마를
+    주입한 뒤 show 하므로(FOUC 은닉, #74) 인과 순서가 그렇다. 순서대로 기다려야 **어느 단계에서
+    멎었는지**가 진단에 남는다 — 둘을 한 덩어리로 기다리면 "안 떴다"만 남는다.
+    """
+    end = time.monotonic() + budget_s
+    events = getattr(window, "events", None)
+    for stage in ("loaded", "shown"):
+        event = getattr(events, stage, None)
+        if event is None:
+            continue  # 이 이벤트를 갖지 않는 대역품 — 기다릴 것이 없다
+        if not event.wait(max(end - time.monotonic(), 0.0)):
+            raise WindowBootFailure(stage, budget_s, reason)
 
 
 def _await_bridge(window: object, deadline: Deadline) -> None:
@@ -421,6 +539,11 @@ def _await_bridge(window: object, deadline: Deadline) -> None:
     종전에는 내부 이름 ``window.Nav`` 를 봤는데 그 임시 전역은 N-10 에서 사라졌다.
     ``__hwpx`` 는 합성 루트가 서비스·화면·앱 셸을 **전부 구성한 뒤** 마지막에 거는 이름이라
     준비 신호로 더 정확하다.
+
+    여기까지 왔다는 것은 :func:`_await_window` 가 이미 통과했다는 뜻이므로 — 즉 창은 **실제로**
+    떴다 — 아래 실패 문안의 "창은 떴으나"가 비로소 참이다(#460). 종전에는 이 함수가 부팅과
+    브리지 두 축을 겸해, 느린 콜드스타트도 「앱이 서지 않았습니다」라는 제품 문장으로 나올
+    자리에 있었다.
     """
     budget = min(READY_BUDGET_S, max(deadline.remaining_s(), 0.0))
     end = time.monotonic() + budget

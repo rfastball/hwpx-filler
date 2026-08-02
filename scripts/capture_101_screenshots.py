@@ -194,9 +194,19 @@ def _land(
     report_json = json.dumps(result.report, ensure_ascii=False, indent=2)
 
     if not result.ok:
-        print(f"101 {result.mode} 실패 — {result.error}", file=sys.stderr)
+        # 첫 줄이 **축**을 말한다 — 환경인가 제품인가(#460). 로그를 읽는 쪽(특히 무인 판정)이
+        # 「내 변경이 깼나」를 그 한 줄로 답할 수 있어야 한다. 종전에는 창이 안 뜬 실행도
+        # 제품 실패 7줄을 달고 나와, 그 질문의 답이 로그 어디에도 없었다.
+        axis = "환경" if result.environment else "제품"
+        print(f"101 {result.mode} 실패[{axis}] — {result.error}", file=sys.stderr)
         for failure in result.report.get("verdict", {}).get("failures", []):
             print(f"  · {failure}", file=sys.stderr)
+        if result.environment:
+            print(
+                "  (제품 판정을 돌리지 않았습니다 — 창이 뜨지 못한 실행은 제품에 대해"
+                " 아무것도 말하지 않습니다)",
+                file=sys.stderr,
+            )
         print(f"잔재를 진단용으로 남깁니다: {home}", file=sys.stderr)
         _write_report(report_path, report_json)
         return result.exit_code()
