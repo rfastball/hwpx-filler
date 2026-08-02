@@ -3,31 +3,49 @@ name: review-gate
 # 리뷰 지적의 **정산 완결성**을 머지 조건으로 세운다(`docs/REVIEW_POLICY.md`).
 #
 # 이 게이트가 `quality.yml` 이 아니라 별도 파일인 이유는 둘이다. 첫째, 트리거가 다르다 —
-# 정산 마커는 코멘트로 오므로 코드 push 가 아닌 이벤트에도 재평가해야 한다. 둘째,
+# 정산 마커는 스레드 답글로 오므로 코드 push 가 아닌 이벤트에도 재평가해야 한다. 둘째,
 # `tests/test_quality_workflow.py` 가 `quality-gate` 의 job 열거를 계약으로 잠그고 있어
 # 거기 job 을 더하면 그 계약이 이 게이트의 사정으로 흔들린다.
 #
 # 클라이언트 훅이 아니라 여기 서는 이유: Claude Code 훅은 Codex 세션에서 안 뜨고 Codex 쪽
 # 설정은 사용자 전역이라 저장소가 소유할 수 없다. **저장소가 소유할 수 없는 규칙은 저장소
 # 규율이 아니다.** 두 에이전트가 공통으로 통과하는 지점은 GitHub 뿐이다.
+#
+# 대기의 1차 주체는 이 워크플로가 아니라 **클라이언트 감시 루프**다(정책 §4). 여기는 강제만
+# 한다 — 이벤트가 오면 재판정하고, required check 로 머지를 막는다.
 
 on:
   # `pull_request` 가 아니다. 전자는 **PR 판본**의 워크플로와 스크립트가 돌아 PR 이 자기
   # 게이트를 약화시킬 수 있다. `pull_request_target` 은 base(master) 판본이 돈다. PR head 를
   # 체크아웃하지 않고 `gh api` 만 부르므로 이 트리거의 통상 위험(신뢰 못 할 코드 실행)은
   # 여기 해당하지 않는다.
+  #
+  # 정직하게 적어 둔다: 아래 review·thread 계열 이벤트는 `pull_request_target` 가족이
+  # 아니라 PR 병합 참조 문맥에서 돈다. 그쪽의 방어는 셋이다 — 이 저장소의 PR 은 같은
+  # 저장소 브랜치에서 나오고, 체크아웃은 기본 브랜치를 명시하며, fork 발 이벤트는 아래
+  # job 가드가 걸러 스윕·dispatch 경로로 넘긴다.
   pull_request_target:
   pull_request_review:
     types: [submitted, edited, dismissed]
   pull_request_review_comment:
     types: [created, edited, deleted]
+  # 스레드 해결이 곧 해소 신호다(정책 §2) — 해결 즉시 재판정해야 cron 을 기다리지 않는다.
+  pull_request_review_thread:
+    types: [resolved, unresolved]
   issue_comment:
     types: [created, edited, deleted]
-  # **리액션과 이슈 상태 변화는 이벤트를 만들지 않는다.** 지적이 없는 PR 은 `+1` 리액션만
-  # 받으므로 그것을 기다리는 게이트를 깨울 사건이 영영 오지 않고, 회수 창이 지나는 것도
-  # 분리한 이슈가 닫히는 것도 마찬가지다. 그래서 열린 PR 을 주기적으로 훑는다.
+  # 이벤트가 안 오는 축(리액션·회수 창 경과)은 클라이언트 감시 루프가 이것으로 깨운다.
+  # workflow_dispatch 는 이 파일이 기본 브랜치에 있어야 동작한다.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "재판정할 PR 번호"
+        required: true
+  # 시간당 훑기는 **백스톱이지 엔진이 아니다.** GitHub 의 schedule 은 최선노력 큐라 지연·
+  # 결손이 정상 동작이다 — 실측으로 2.7시간 동안 0회 발화한 적이 있다(2026-08-02). 정시를
+  # 피한 분(17)은 부하 스파이크를 피하는 공개된 요령이다.
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
 
 permissions:
   contents: read
@@ -35,8 +53,12 @@ permissions:
   issues: read
   checks: write
 
+# 스윕은 자기들끼리 한 그룹이다 — PR 번호가 없는 이벤트가 빈 그룹으로 뭉쳐 서로를 죽이던
+# 형상을 없앤다. 스윕 그룹과 PR 그룹은 서로 취소하지 못하므로 느린 스윕이 이벤트 경로의
+# 최신 판정을 덮는 좁은 경합 창이 남는다 — 스윕에서 pending 덮개를 깔지 않고(판정기 쪽)
+# 스윕을 시간당으로 물려 창을 줄였고, 다음 이벤트·킥이 바로잡는다. 알고 수용한다.
 concurrency:
-  group: review-gate-${{ github.event.pull_request.number || github.event.issue.number }}
+  group: review-gate-${{ github.event_name == 'schedule' && 'sweep' || github.event.pull_request.number || github.event.issue.number || inputs.pr }}
   cancel-in-progress: true
 
 jobs:
@@ -44,8 +66,12 @@ jobs:
   # SHA 에 직접 게시하는 체크런 쪽이고, 둘이 같은 이름이면 어느 것이 필수인지 흐려진다.
   judge:
     name: judge review settlement
-    # 봇이 남긴 PR 아닌 이슈의 코멘트까지 깨우지 않는다.
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    # 봇이 남긴 PR 아닌 이슈의 코멘트까지 깨우지 않는다. fork 발 PR 이벤트는 거른다 —
+    # 그쪽은 스윕과 dispatch 가 덮는다.
+    if: >-
+      (github.event_name != 'issue_comment' || github.event.issue.pull_request)
+      && (!github.event.pull_request
+          || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -58,15 +84,19 @@ jobs:
 
       # 판정기는 표준 라이브러리만 쓴다. 여기서 uv 로 프로젝트 환경을 세우면 게이트가 제품
       # 의존성의 건강에 묶인다 — 리뷰 정산을 읽는 데 그럴 이유가 없다.
+      #
+      # REVIEW_GATE_REVIEWERS: 리뷰 봇 로그인이 바뀌면 코드 PR 없이 저장소 변수로 회전한다.
       - name: Judge and publish the review-gate check run
         if: github.event_name != 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REVIEW_GATE_REVIEWERS: ${{ vars.REVIEW_GATE_REVIEWERS }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
         run: python3 scripts/review_rounds.py "$PR_NUMBER" --publish-check
 
       - name: Re-judge every open pull request
         if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
+          REVIEW_GATE_REVIEWERS: ${{ vars.REVIEW_GATE_REVIEWERS }}
         run: python3 scripts/review_rounds.py --all-open --publish-check
