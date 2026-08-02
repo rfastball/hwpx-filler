@@ -608,14 +608,34 @@ def test_the_three_sets_really_are_different_sets_today() -> None:
     )
 
 
-def test_the_prose_bridge_list_names_no_ghosts() -> None:
-    """산문 정본이 실재하지 않는 `WebFrontend` 메서드를 열거하지 않는다.
+def test_the_prose_bridge_list_is_complete_in_both_directions() -> None:
+    """산문 정본 절이 **제품 직접 브리지 집합과 정확히 같다** — 유령도, 누락도 없다.
 
-    이쪽은 크기와 무관한 정직성 제약이라 표면이 자라도 계속 참이어야 한다.
+    한 방향(유령)만 보면 **누락이 보이지 않는다.** 그리고 누락은 조용하다: 어떤 이름을 정본
+    절에서 지워도 그 이름이 문서 다른 곳에 남아 있으면 오늘의 두 게이트가 **둘 다 초록**이다.
+    이쪽은 절만 보고 유령만 찾았고, `test_architecture.py:399` 는 파일 전체에서 backtick 을
+    찾는다. 실물이 있다 — `generate` 는 `docs/UI_CONTRACT.md:36`(정본 절)과 `:463`(다른 절)
+    두 곳에 있어, 정본 절에서 지워도 아무도 붉어지지 않는다(리뷰 지적, PR #456).
+
+    비교 상대는 **유도한다** — 이름을 손으로 적으면 그 목록이 다음 드리프트의 자리가 된다.
+    제품 직접 브리지 = `bridge.js` 의 `api.<이름>` ∩ `WebFrontend` 공개 표면. 교집합이
+    selftest 소유 메서드(`selftest_claim`·`selftest_host_op`)를 자동으로 떨군다 —
+    그것들은 `WebFrontend` 메서드가 아니기 때문이다.
     """
     prose = _prose_bridge_methods(UI_CONTRACT_PATH.read_text(encoding="utf-8"))
-    ghosts = sorted(prose - _python_reachable_methods())
-    assert not ghosts, f"UI 계약 직접 브리지 목록이 실재하지 않는 메서드를 적습니다: {ghosts}"
+    gate = _gate_bridge_methods(BRIDGE_JS_PATH.read_text(encoding="utf-8"))
+    product_direct = gate & _python_reachable_methods()
+
+    assert prose and product_direct, (
+        f"집합 추출이 비었습니다(추출 회귀): 산문 {len(prose)} · 제품 직접 브리지 {len(product_direct)}"
+    )
+    ghosts = sorted(prose - product_direct)
+    omissions = sorted(product_direct - prose)
+    assert not ghosts and not omissions, (
+        "UI 계약 「직접 브리지 경로」 절이 제품 직접 브리지 집합과 다릅니다 — "
+        f"유령(절에는 있으나 실재 없음): {ghosts} · "
+        f"누락(브리지가 부르는데 절에 없음): {omissions}"
+    )
 
 
 def test_the_baseline_detector_notices_an_overwritten_number(adr: str) -> None:
