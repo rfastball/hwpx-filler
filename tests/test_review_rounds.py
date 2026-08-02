@@ -67,6 +67,7 @@ class FakeGitHub:
         threads: list[dict] | None = None,
         reactions: list[dict] | None = None,
         issues: dict[int, dict] | None = None,
+        recalls: list[dict] | None = None,
     ) -> None:
         self.repo = "rfastball/hwpx-filler"
         self.head = head
@@ -74,6 +75,7 @@ class FakeGitHub:
         self.threads = threads or []
         self.reactions = reactions or []
         self.issues = issues or {}
+        self.recalls = recalls or []
         self.posted: list[tuple[str, dict]] = []
         self.resolved: set[int] = set()
 
@@ -153,6 +155,8 @@ class FakeGitHub:
     def paged(self, path: str) -> list[dict]:
         if path == f"pulls/{PR}/files":
             return [{"filename": name} for name in self.files]
+        if path == f"issues/{PR}/comments":
+            return self.recalls
         if path == f"issues/{PR}/reactions":
             return self.reactions
         raise AssertionError(f"예상하지 못한 목록 조회: {path}")
@@ -171,6 +175,14 @@ def _reaction(content: str, *, login: str = REVIEWER) -> dict:
 
 def _open_issue(number: int) -> dict:
     return {"number": number, "state": "open"}
+
+
+def _recall(when: datetime, association: str = "OWNER") -> dict:
+    return {
+        "body": "@codex review",
+        "author_association": association,
+        "created_at": when.isoformat().replace("+00:00", "Z"),
+    }
 
 
 # ── 정산 완결성 ────────────────────────────────────────────────────────────────
@@ -448,6 +460,77 @@ def test_the_recovery_window_cannot_rescue_an_unpushed_fix() -> None:
     )
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(minutes=5))
     assert not report.timed_out and report.status == WAIT
+
+
+def test_a_fixed_pull_request_does_not_time_out_before_the_recall_is_posted() -> None:
+    """픽스 뒤의 회수 창은 재호출이 선행해야 돈다 — 안 부르면 10분이 지나도 안 닫힌다.
+    종전에는 여기가 뚫려 「픽스가 읽힐 때까지 막는다」던 문서가 거짓말이었다."""
+    fake = FakeGitHub(
+        head="c9", threads=[_thread(1, "c1", resolved=True, replies=["triage: block:2"])]
+    )
+    report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(hours=3))
+    assert not report.timed_out and report.needs_recall and report.status == WAIT
+
+
+def test_a_fixed_pull_request_times_out_after_the_recall_went_unanswered() -> None:
+    """양성 대조 — 재호출을 불렀는데도 리뷰어가 침묵하면 창 소진으로 시끄럽게 닫힌다."""
+    called = PUSHED + timedelta(minutes=1)
+    fake = FakeGitHub(
+        head="c9",
+        threads=[_thread(1, "c1", resolved=True, replies=["triage: block:2"])],
+        recalls=[_recall(called)],
+    )
+    report = evaluate(fake, PR, now=called + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
+    assert report.timed_out and report.status == READY
+
+
+def test_the_recall_window_counts_from_the_call_not_the_push() -> None:
+    """재호출이 push 보다 한참 늦었으면 창도 거기서부터다 — push 시각으로 재면 부르자마자
+    이미 소진돼 있어 재리뷰가 읽힐 틈이 없다."""
+    called = PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(minutes=30)
+    fake = FakeGitHub(
+        head="c9",
+        threads=[_thread(1, "c1", resolved=True, replies=["triage: block:2"])],
+        recalls=[_recall(called)],
+    )
+    report = evaluate(fake, PR, now=called + timedelta(minutes=5))
+    assert not report.timed_out and report.status == WAIT
+
+
+def test_a_recall_posted_before_the_push_does_not_count() -> None:
+    """순서가 계약이다 — push 앞의 재호출은 리뷰어가 옛 head 를 읽었다는 뜻이라, 그것으로
+    창을 돌리면 픽스는 안 읽힌 채 초록이 된다."""
+    fake = FakeGitHub(
+        head="c9",
+        threads=[_thread(1, "c1", resolved=True, replies=["triage: block:2"])],
+        recalls=[_recall(PUSHED - timedelta(minutes=30))],
+    )
+    report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(hours=1))
+    assert not report.timed_out and report.status == WAIT
+
+
+def test_an_outsiders_recall_does_not_open_the_window() -> None:
+    """남이 재호출 코멘트를 달아 잠금을 밖에서 풀 수 없다."""
+    called = PUSHED + timedelta(minutes=1)
+    fake = FakeGitHub(
+        head="c9",
+        threads=[_thread(1, "c1", resolved=True, replies=["triage: block:2"])],
+        recalls=[_recall(called, association="NONE")],
+    )
+    report = evaluate(fake, PR, now=called + review_rounds.RECOVERY_WINDOW + timedelta(hours=1))
+    assert not report.timed_out and report.status == WAIT
+
+
+def test_reviewer_logins_rotate_by_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """봇 로그인이 바뀌면 코드 수정 없이 env 로 회전한다."""
+    monkeypatch.setenv("REVIEW_GATE_REVIEWERS", "new-reviewer[bot]")
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", author="new-reviewer[bot]")])
+    report = evaluate(fake, PR, now=NOW)
+    assert report.reviewed
+    assert [f.id for f in report.unsettled] == [1]
+
+    stale = FakeGitHub(head="c1", threads=[_thread(1, "c1")])  # 옛 로그인
+    assert not evaluate(stale, PR, now=NOW).reviewed
 
 
 def test_a_reviewer_who_read_the_fix_closes_it() -> None:

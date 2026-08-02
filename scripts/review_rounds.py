@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -30,7 +31,17 @@ RECOVERY_WINDOW = timedelta(minutes=10)
 
 #: 리뷰를 **낸다**고 인정하는 계정. 아니면 작성자가 자기 PR 에 `+1` 이나 인라인 코멘트를
 #: 달아 「리뷰를 받았다」를 스스로 만들 수 있다.
+#:
+#: 봇 로그인이 바뀌면 `REVIEW_GATE_REVIEWERS`(콤마 분리)로 코드 수정 없이 회전한다 —
+#: 로그인이 어긋나면 `reviewed` 가 영영 거짓이 되고 전부 회수 창으로 빠져 시끄럽게 닫히니,
+#: 체크런 제목의 「회수 창 소진」 연발이 그 어긋남의 경보다.
 REVIEWER_LOGINS = ("chatgpt-codex-connector[bot]",)
+
+
+def _reviewers() -> tuple[str, ...]:
+    configured = os.environ.get("REVIEW_GATE_REVIEWERS", "")
+    names = tuple(login.strip() for login in configured.split(",") if login.strip())
+    return names or REVIEWER_LOGINS
 
 #: 정산을 **남긴다**고 인정하는 관계. 공개 PR 에서는 아무나 코멘트를 달 수 있고, 뒤 마커가
 #: 앞 마커를 덮으므로 통제 없이 두면 남이 게이트를 열거나 붙잡아 둘 수 있다.
@@ -38,7 +49,7 @@ SETTLING_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
 def _is_reviewer(login: str | None) -> bool:
-    return login in REVIEWER_LOGINS
+    return login in _reviewers()
 
 
 def _may_settle(comment: dict) -> bool:
@@ -140,6 +151,7 @@ class Report:
     signal: str | None
     reviewed: bool
     needs_recall: bool
+    recall_requested: bool
     timed_out: bool
     status: str
 
@@ -156,6 +168,7 @@ class Report:
             "signal": self.signal,
             "reviewed": self.reviewed,
             "needs_recall": self.needs_recall,
+            "recall_requested": self.recall_requested,
             "timed_out": self.timed_out,
         }
 
@@ -393,6 +406,24 @@ def _signal(client: GitHub, pr: int) -> tuple[str | None, datetime | None]:
     return latest
 
 
+def _recalled_at(client: GitHub, pr: int) -> datetime | None:
+    """재리뷰를 부른 마지막 시각. 정산을 남길 수 있는 관계의 `@codex review` 코멘트만 센다.
+
+    아무나 셀 수는 없다 — 공개 PR 에서 남이 재호출 코멘트를 달아 회수 창을 열게 두면,
+    「픽스 뒤에는 재호출이 선행해야 창이 돈다」는 잠금이 밖에서 풀린다.
+    """
+    latest: datetime | None = None
+    for comment in client.paged(f"issues/{pr}/comments"):
+        if not _may_settle(comment):
+            continue
+        if "@codex review" not in (comment.get("body") or ""):
+            continue
+        when = _moment(comment["created_at"])
+        if latest is None or when > latest:
+            latest = when
+    return latest
+
+
 def _pushed_at(client: GitHub, pull: dict, now: datetime) -> datetime:
     """이 PR 의 현재 head 가 **밀려 올라온** 시각. 커밋이 만들어진 시각이 아니다.
 
@@ -438,6 +469,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             signal=None,
             reviewed=True,
             needs_recall=False,
+            recall_requested=False,
             timed_out=False,
             status=READY,
         )
@@ -490,8 +522,20 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     needs_recall = fixed_something and not fix_was_read
 
     settled_enough = reviewed and not needs_recall
+
+    # **차단을 고친 PR 은 재리뷰를 부른 시점부터만 회수 창이 돈다.** 종전에는 창이 push 부터
+    # 돌아, 재호출을 안 불러도 10분 뒤 조용히 초록이 됐다 — 「픽스가 읽힐 때까지 막는다」던
+    # 문서가 거짓말이었다. 픽스가 없는 PR 은 push 부터 도는 창이 정직한 종료 조건이다:
+    # 리뷰어의 「더 없음」 신호는 원리적으로 오지 않으므로(증분 리뷰) 무활동 창이 생태계
+    # 공통의 종결자다.
+    recalled_at = _recalled_at(client, pr)
+    recall_requested = recalled_at is not None and recalled_at >= pushed_at
+    window_base = recalled_at if (fixed_something and recall_requested and recalled_at) else pushed_at
     timed_out = (
-        not settled_enough and not blocked_here and now - pushed_at > RECOVERY_WINDOW
+        not settled_enough
+        and not blocked_here
+        and (not fixed_something or recall_requested)
+        and now - window_base > RECOVERY_WINDOW
     )
 
     if open_blocks or bad_defers:
@@ -512,6 +556,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         signal=signal,
         reviewed=reviewed,
         needs_recall=needs_recall,
+        recall_requested=recall_requested,
         timed_out=timed_out,
         status=status,
     )
@@ -537,6 +582,8 @@ def render(report: Report) -> str:
             "회수 창이 지나도록 리뷰어가 침묵했습니다 — 리뷰를 **받지 못한 채** 닫습니다. "
             "`@codex review` 로 한 번 명시 트리거해 보고, 그래도 무응답이면 그대로 진행합니다."
         )
+    elif report.needs_recall and report.recall_requested:
+        lines.append("재리뷰를 불렀습니다 — 픽스가 읽히거나 회수 창이 지나기를 기다립니다.")
     elif report.needs_recall:
         lines.append(
             "차단을 고쳤으니 그 결과가 다시 읽혀야 합니다. 재리뷰는 저절로 오지 않습니다 —"
