@@ -74,11 +74,13 @@ def test_the_gate_can_be_kicked_when_no_event_will_come() -> None:
     assert "inputs.pr" in str(judge["env"]["PR_NUMBER"])
 
 
-def test_a_thread_resolution_re_judges_without_waiting_for_the_sweep() -> None:
-    """스레드 해결이 곧 해소 신호다 — 이 이벤트가 없으면 차단을 다 해소해도 시간당 훑기까지
-    빨간불이 남는다."""
+def test_the_rejected_thread_trigger_stays_out() -> None:
+    """`pull_request_review_thread` 는 Actions 파서가 거부한다(2026-08-02 실측) — 문서·
+    PyYAML·이 테스트 파일의 옛 단언까지 전부 초록인 채 **머지 직후 파일 전체가 파싱 불능**이
+    돼 게이트가 통째로 죽었다. 선언은 살고 결과는 죽는 결함류의 표본이라, 여기서는 반대
+    방향을 계약으로 잠근다."""
     _, workflow = _workflow()
-    assert "pull_request_review_thread" in workflow["on"]
+    assert "pull_request_review_thread" not in workflow["on"]
 
 
 def test_sweep_runs_do_not_share_a_group_with_pull_request_runs() -> None:

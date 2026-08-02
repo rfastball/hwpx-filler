@@ -109,9 +109,15 @@ gh workflow run review-gate.yml -f pr=<PR>
 
 그래도 `WAIT` 면 **멈추고 사람에게 보고한다** — 무한 폴링 루프를 만들지 않는다.
 
-## 7. 머지
+## 7. 머지 — 체크런을 먼저 동기화한다
+
+로컬 판정과 원격 체크런은 따로 논다 — READY 로 넘어온 마지막 전이가 이벤트 없는 축
+(리액션 `+1`·스레드 해결)이었다면 체크런은 아직 낡은 색이다. 머지 전에 확인하고, 낡았으면
+같은 킥으로 동기화한 뒤 초록을 보고 머지한다:
 
 ```powershell
+gh pr checks <PR>              # review-gate 가 로컬 판정과 다르면 ↓
+gh workflow run review-gate.yml -f pr=<PR>
 gh pr merge <PR> --squash
 ```
 
