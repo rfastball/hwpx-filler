@@ -20,11 +20,13 @@
      에서 사망, 실행·작업 에디터 별도 화면은 그 이전 슬라이스에서 사망. -->
 <div class="app">
   <header class="topbar">
-    <!-- #258 제품명 문서나르미 — 세 열린 문서 면이 오른쪽 위로 흐르는 심벌과 워드마크 락업. 심벌은 장식이라
-         aria-hidden(접근 이름은 텍스트 워드마크가 담당). 원본 SVG=docs/branding/document-narmi-mark-final.svg.
-         path 에 class 를 달지 않는다 — 제품 고유색은 stroke 속성이 지므로 규칙이 한 줄도 없는
-         class 가 되고(고아 게이트), 원본 SVG 와 마크업이 같아야 드리프트 가드가 한 형태만 본다. -->
-    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-name">문서나르미</span></span></div>
+    <!-- #258 제품명 문서나르미 — 세 문서 면이 겹쳐 흐르는 심벌과 텍스트 제품명 락업. 심벌은 장식이라
+         aria-hidden(접근 이름은 텍스트 제품명이 담당). 정본=docs/branding/document-narmi-mark-micro.svg.
+         레일은 24px 라 **축약형(micro)** 을 싣는다 — 풀 디테일은 이 크기에서 뭉갠다(크기 3단은
+         scripts/render_document_narmi_branding.py 의 tier_for 가 단일 출처). path 에 class 를 달지
+         않는다 — 제품 고유색은 fill 속성이 지므로 규칙이 한 줄도 없는 class 가 되고(고아 게이트),
+         정본 SVG 와 마크업의 path 열이 같아야 드리프트 가드가 한 형태만 본다. -->
+    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M3.5 14 L22.5 10.5 L29 16.5 L29.6 22.5 L16 25.5 L17.5 36 L9 40.2 Z" fill="#0E3FAE"/><path d="M20 27.5 L40 23.2 L46.7 29.3 L47.3 34 L29.5 38 L31.8 49.5 L25.5 53.4 Z" fill="#1857D8"/><path d="M34 38.5 L53 34.3 L60 40.5 L61.5 58 L39.5 62 Z" fill="#43C9A8"/><path d="M46 43 H54 V55 H46 Z" fill="#0E3FAE"/></svg><span class="brand-name">문서나르미</span></span></div>
 
     <!-- 세그먼트 내비 — 계약 2탭 최종 형상(§10.9 판정 B → F8 완성): 과도기 임시 항목·구분선
          제도 자체가 은퇴했다(「기안」 F6 PR-B → 「템플릿 관리」 F8, §10.17.2 판정 E). 활성 =
