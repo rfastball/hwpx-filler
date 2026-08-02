@@ -21,7 +21,11 @@ from _web_source import (
 )
 
 PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
-VISIBLE_DOM_SHA256 = "e037e81337ea8258de2a48438cdb6a7bab42bea838d661ab9c42498fe793b34c"
+#: 사용자가 보는 정적 DOM 의 지문 — Vite 컷오버가 **모양을 안 건드렸음**을 증명하려고 박았다.
+#: 그래서 이 숫자는 빌드 배관을 고칠 때 움직이면 안 되고, 화면을 의도적으로 바꿀 때만 함께
+#: 옮긴다. 옮길 때는 무엇이 바뀌었는지 커밋이 말해야 한다(마지막 이동: 레일 심벌을 브랜드
+#: 3단의 축약형으로 교체 — feat(brand) 문서나르미 심벌 3단 체계).
+VISIBLE_DOM_SHA256 = "3bedf75c3d85812b588be31fb2a6906266e11c6b9e961e889acdbec57926dbee"
 
 # M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
 # 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을

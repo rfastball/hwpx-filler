@@ -1,4 +1,4 @@
-<img src="docs/branding/document-narmi-mark-final.svg" alt="" width="48" align="left">
+<img src="docs/branding/document-narmi-mark-full.svg" alt="" width="48" align="left">
 
 # 문서나르미
 

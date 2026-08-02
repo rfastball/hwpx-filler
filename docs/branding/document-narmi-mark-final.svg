@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">문서나르미 심벌</title>
-  <desc id="desc">세 열린 문서 면이 오른쪽 위로 흐르며 결과물로 이어지는 심벌</desc>
-  <path d="M10 50V17L11 13L14 11L18 10L40 15" fill="none" stroke="#0E3FAE" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M22 57V30L23 27L26 24L31 23L51 28" fill="none" stroke="#1857D8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 58V44L37 41L40 38L45 37L58 41" fill="none" stroke="#43C9A8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
