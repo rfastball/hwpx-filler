@@ -51,6 +51,11 @@ class FakeGitHub:
         self.reactions = reactions or []
         self.trees = trees or {}
         self.issues = issues or {}
+        self.posted: list[tuple[str, dict]] = []
+
+    def post(self, path: str, payload: dict) -> dict:
+        self.posted.append((path, payload))
+        return {"id": 1}
 
     def get(self, path: str) -> dict:
         if path == f"pulls/{PR}":
@@ -330,8 +335,60 @@ def test_the_hook_refuses_a_merge_that_is_not_ready(
     assert "/review-round" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        f"gh pr merge {PR} --squash",
+        f"gh pr merge https://github.com/rfastball/hwpx-filler/pull/{PR}",
+    ],
+)
+def test_the_hook_judges_the_pr_named_in_the_command(
+    command: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """현재 브랜치만 물으면 다른 브랜치에 서서 머지할 때 엉뚱한 PR 에 초록을 준다."""
+
+    class WrongBranch(FakeGitHub):
+        def pr_for_current_branch(self) -> int:
+            raise AssertionError("명령에 적힌 PR 을 두고 현재 브랜치를 물었습니다")
+
+    fake = WrongBranch(head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
+    assert review_rounds._hook(json.dumps({"tool_input": {"command": command}})) == 2
+
+
 def test_the_hook_allows_a_ready_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeGitHub(files=["docs/README.md"])
     monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
     payload = json.dumps({"tool_input": {"command": "gh pr merge 430 --squash"}})
     assert review_rounds._hook(payload) == 0
+
+
+# ── 체크런 게시 ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("triage", "status", "conclusion"),
+    [
+        (["triage: 1 block"], BLOCKED, "failure"),
+        ([], WAIT, "action_required"),
+    ],
+)
+def test_the_check_run_carries_the_verdict(triage: list[str], status: str, conclusion: str) -> None:
+    """`success` 만 머지를 연다. 아직 안 끝난 것과 틀린 것은 다른 색으로 찍는다."""
+    fake = FakeGitHub(head="c1", comments=[_comment(1, "c1")], triage=triage)
+    report = evaluate(fake, PR, now=NOW)
+    assert report.status == status
+    review_rounds.publish_check(fake, report)
+    path, payload = fake.posted[0]
+    assert path == "check-runs"
+    assert payload["name"] == review_rounds.CHECK_NAME
+    assert payload["conclusion"] == conclusion
+
+
+def test_the_check_run_is_anchored_to_the_pr_head() -> None:
+    """이벤트가 무엇이든 head SHA 에 붙어야 required check 로 성립한다."""
+    fake = FakeGitHub(files=["docs/README.md"], head="head-sha")
+    review_rounds.publish_check(fake, evaluate(fake, PR, now=NOW))
+    _, payload = fake.posted[0]
+    assert payload["head_sha"] == "head-sha"
+    assert payload["conclusion"] == "success"

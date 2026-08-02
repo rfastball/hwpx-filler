@@ -45,9 +45,12 @@ web-artifact-identity.json
 error.log
 
 # 에이전트 도구 자산(제품 아님 — 머신 고정이라 커밋 금지)
-# .claude/skills/ 는 .agents/skills/ 를 가리키는 절대경로 심링크다.
+# .claude/skills/ 의 대부분은 .agents/skills/ 를 가리키는 절대경로 심링크다. 저장소가
+# 소유하는 스킬만 예외로 되살린다 — 부모 디렉터리가 통째로 제외되면 재포함이 안 되므로
+# `/*` 형태여야 한다.
 .agents/
-.claude/skills/
+.claude/skills/*
+!.claude/skills/review-round/
 skills-lock.json
 
 # Installer output

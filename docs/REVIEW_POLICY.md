@@ -158,6 +158,10 @@ uv run python scripts/review_rounds.py            # 현재 브랜치 PR 의 상�
 uv run python scripts/review_rounds.py 430 --json # 특정 PR, 기계 판독용
 ```
 
+CI 는 같은 스크립트를 `--publish-check` 로 불러 판정을 **PR head SHA 의 `review-gate`
+체크런**으로 게시한다. 이벤트에 따라 워크플로의 기본 status 가 기본 브랜치에 붙어 버리기
+때문에, 체크런을 직접 게시하는 경로 하나만 쓴다.
+
 판정과 exit code:
 
 | 판정 | exit | 뜻 |

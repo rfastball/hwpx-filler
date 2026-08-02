@@ -147,10 +147,12 @@ class GitHub:
         return cls(cls._run(["gh", "repo", "view", "--json", "nameWithOwner"])["nameWithOwner"])
 
     @staticmethod
-    def _run(command: list[str]) -> dict:
+    def _run(command: list[str], stdin: str | None = None) -> dict:
         if shutil.which(command[0]) is None:
             raise GitHubError(f"{command[0]} 을 찾지 못했습니다")
-        done = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
+        done = subprocess.run(
+            command, input=stdin, capture_output=True, text=True, encoding="utf-8"
+        )
         if done.returncode != 0:
             message = (done.stderr or done.stdout or "").strip()
             if "404" in message or "Not Found" in message:
@@ -160,6 +162,12 @@ class GitHub:
 
     def get(self, path: str) -> dict:
         return self._run(["gh", "api", f"repos/{self.repo}/{path}"])
+
+    def post(self, path: str, payload: dict) -> dict:
+        return self._run(
+            ["gh", "api", "-X", "POST", f"repos/{self.repo}/{path}", "--input", "-"],
+            stdin=json.dumps(payload),
+        )
 
     def paged(self, path: str) -> list[dict]:
         """페이지를 직접 돈다 — `--paginate` 는 gh 판본에 따라 붙인 JSON 을 뱉는다."""
@@ -406,6 +414,43 @@ def render(report: Report) -> str:
     return "\n".join(lines)
 
 
+#: 판정 → 체크런 결론. `success` 만 머지를 연다 — 나머지는 전부 막는다.
+#:
+#: `WAIT` 를 `failure` 로 찍지 않는 이유는 정직함이다. 아직 안 끝난 것과 틀린 것은 다르고,
+#: 둘을 같은 빨간색으로 칠하면 빨간색이 무슨 뜻인지 아무도 안 묻게 된다.
+CONCLUSIONS = {READY: "success", WAIT: "action_required", BLOCKED: "failure"}
+
+CHECK_NAME = "review-gate"
+
+
+def publish_check(client: GitHub, report: Report) -> None:
+    """PR head SHA 에 체크런을 **직접** 게시한다.
+
+    `issue_comment` 로 돌아간 워크플로의 기본 status 는 기본 브랜치에 붙는다 — 그러면
+    required check 로 성립하지 않는다. 이벤트별로 갈리지 않게 항상 이 경로 하나만 쓴다.
+    """
+    body = render(report)
+    client.post(
+        "check-runs",
+        {
+            "name": CHECK_NAME,
+            "head_sha": report.head,
+            "status": "completed",
+            "conclusion": CONCLUSIONS[report.status],
+            "output": {
+                "title": f"{report.status} — 미정산 {len(report.unsettled)}건 · "
+                f"미해결 차단 {len(report.open_blocks)}건",
+                "summary": f"```\n{body}\n```\n\n절차: `docs/REVIEW_POLICY.md`",
+            },
+        },
+    )
+
+
+#: `gh pr merge <번호|URL>` 에서 대상 PR 을 집어낸다. 이것을 안 보고 현재 브랜치만 물으면
+#: 다른 브랜치에 서서 머지할 때 **엉뚱한 PR 을 판정하고 초록을 준다**.
+MERGE_TARGET = re.compile(r"gh\s+pr\s+merge\s+(?:\S*/pull/)?(\d+)")
+
+
 def _hook(argv_json: str) -> int:
     """`gh pr merge` 직전의 빠른 실패. **게이트가 아니다** — 게이트는 required check 다."""
     try:
@@ -416,7 +461,8 @@ def _hook(argv_json: str) -> int:
     if "gh pr merge" not in command:
         return 0
     client = GitHub.discover()
-    report = evaluate(client, client.pr_for_current_branch())
+    target = MERGE_TARGET.search(command)
+    report = evaluate(client, int(target.group(1)) if target else client.pr_for_current_branch())
     if report.status == READY:
         return 0
     print(render(report), file=sys.stderr)
@@ -433,6 +479,11 @@ def main() -> int:
     parser.add_argument("pr", nargs="?", type=int, help="PR 번호(생략하면 현재 브랜치)")
     parser.add_argument("--json", action="store_true", help="기계 판독용 출력")
     parser.add_argument("--hook", action="store_true", help="stdin 의 훅 payload 를 읽는다")
+    parser.add_argument(
+        "--publish-check",
+        action="store_true",
+        help=f"판정을 PR head SHA 의 `{CHECK_NAME}` 체크런으로 게시한다(CI 용)",
+    )
     args = parser.parse_args()
 
     try:
@@ -440,11 +491,18 @@ def main() -> int:
             return _hook(sys.stdin.read())
         client = GitHub.discover()
         report = evaluate(client, args.pr or client.pr_for_current_branch())
+        if args.publish_check:
+            publish_check(client, report)
     except GitHubError as error:
+        # 게시까지 실패하면 체크런이 아예 안 생긴다 — required check 가 비어 머지가 막힌다.
+        # 판정 불가는 판정 통과가 아니므로 그 방향이 옳다.
         print(f"리뷰 상태를 읽지 못했습니다: {error}", file=sys.stderr)
         return 2
 
     print(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) if args.json else render(report))
+    if args.publish_check:
+        # 판정은 체크런이 진다. 잡까지 빨갛게 만들면 「무엇이 빨간가」가 두 곳이 된다.
+        return 0
     return 0 if report.status == READY else 1
 
 
