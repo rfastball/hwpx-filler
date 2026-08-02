@@ -293,7 +293,7 @@ def test_a_prose_reply_does_not_create_its_own_settlement_duty() -> None:
 # ── 분리는 이슈 실재로 확인된다 ────────────────────────────────────────────────
 
 
-def test_defer_needs_an_issue_that_exists_and_is_open() -> None:
+def test_defer_needs_an_issue_that_exists() -> None:
     fake = FakeGitHub(
         head="c1",
         threads=[_thread(1, "c1", replies=["triage: defer #77"])],
@@ -307,7 +307,6 @@ def test_defer_needs_an_issue_that_exists_and_is_open() -> None:
     ("issues", "fragment"),
     [
         ({}, "이슈가 없습니다"),
-        ({77: {"number": 77, "state": "closed"}}, "닫혀 있습니다"),
         ({77: {"number": 77, "state": "open", "pull_request": {}}}, "PR 입니다"),
     ],
 )
@@ -319,6 +318,18 @@ def test_a_defer_marker_alone_does_not_pass(issues: dict, fragment: str) -> None
     report = evaluate(fake, PR, now=NOW)
     assert report.status == BLOCKED
     assert fragment in report.bad_defers[0][1]
+
+
+def test_a_defer_survives_its_issue_being_closed() -> None:
+    """남의 이슈 정리가 무관한 PR 을 빨갛게 만들지 않는다 — 실재는 남는다. 닫힌 이슈도
+    증거는 증거이고, 「안 끝난 것」과 「틀린 것」은 다른 색이어야 한다."""
+    fake = FakeGitHub(
+        head="c1",
+        threads=[_thread(1, "c1", replies=["triage: defer #77"])],
+        issues={77: {"number": 77, "state": "closed"}},
+        reactions=[_reaction("+1")],
+    )
+    assert evaluate(fake, PR, now=NOW).status == READY
 
 
 def test_a_defer_without_a_number_is_not_a_settlement() -> None:
@@ -333,7 +344,7 @@ def test_a_defer_without_a_number_is_not_a_settlement() -> None:
 
 def test_prose_only_changes_take_the_fast_path() -> None:
     fake = FakeGitHub(
-        files=["docs/README.md", "CLAUDE.md", "docs/UI_GALLERY.html"],
+        files=["docs/README.md", "README.md", "docs/UI_GALLERY.html"],
         threads=[_thread(1, "c1")],
     )
     report = evaluate(fake, PR, now=NOW)
@@ -352,6 +363,10 @@ def test_prose_only_changes_take_the_fast_path() -> None:
         "scripts/capture_101_screenshots.py",
         # `docs/` 아래여도 기계가 읽는 원장은 산문이 아니다.
         "docs/package_coverage_floors.toml",
+        # 규칙서는 규칙의 대상이다 — 빠른 경로면 리뷰 규칙을 무리뷰로 고칠 수 있다.
+        "docs/REVIEW_POLICY.md",
+        "CLAUDE.md",
+        "AGENTS.md",
     ],
 )
 def test_anything_but_prose_forfeits_the_fast_path(path: str) -> None:

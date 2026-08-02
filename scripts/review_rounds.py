@@ -55,8 +55,14 @@ def _may_settle(comment: dict) -> bool:
 FAST_PATH_ROOT_SUFFIXES = (".md",)
 FAST_PATH_DOCS_SUFFIXES = (".md", ".html")
 
-#: 허용 확장자여도 기계가 읽는 것·계약 원문은 뺀다.
-FAST_PATH_EXCEPTIONS = ("docs/UI_CONTRACT.md",)
+#: 허용 확장자여도 기계가 읽는 것·계약 원문·**규칙서 자신**은 뺀다. 규칙서가 빠른 경로면
+#: 리뷰 규칙을 무리뷰로 고칠 수 있다 — 규칙서는 규칙의 대상이다.
+FAST_PATH_EXCEPTIONS = (
+    "docs/UI_CONTRACT.md",
+    "docs/REVIEW_POLICY.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+)
 
 #: 정산 마커. 지적 스레드 **안의 답글** 한 줄이다(`docs/REVIEW_POLICY.md` §2).
 #:
@@ -327,7 +333,12 @@ def _plain(body: str) -> str:
 
 
 def _defer_problem(client: GitHub, triage: Triage) -> str | None:
-    """분리는 이슈가 **실재하고 열려 있어야** 성립한다. 번호만 적어서는 못 지나간다."""
+    """분리는 이슈가 **실재해야** 성립한다. 번호만 적어서는 못 지나간다.
+
+    열려 있음까지는 묻지 않는다 — 분리한 이슈를 누가 먼저 고쳐 닫으면 아무것도 안 틀린
+    PR 이 빨간색이 된다. 「아직 안 끝난 것」과 「틀린 것」을 같은 색으로 칠하지 않는다는
+    원칙이 여기도 적용된다. 실재는 남는다 — 닫힌 이슈도 증거는 증거다.
+    """
     if triage.issue is None:
         return "이슈 번호가 없습니다"
     try:
@@ -336,8 +347,6 @@ def _defer_problem(client: GitHub, triage: Triage) -> str | None:
         return f"#{triage.issue} 이슈가 없습니다"
     if "pull_request" in issue:
         return f"#{triage.issue} 은 이슈가 아니라 PR 입니다"
-    if issue.get("state") != "open":
-        return f"#{triage.issue} 이슈가 닫혀 있습니다"
     return None
 
 
