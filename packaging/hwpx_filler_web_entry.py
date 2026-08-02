@@ -43,15 +43,18 @@ def _selfcheck() -> int:
         and any(f["name"] == "공고명" for f in snap["fields"])
     )
 
+    # ``web_artifact()`` 는 fail-closed 다 — seal 과 전체 트리 검증에 실패하면 값을 돌려주는
+    # 대신 예외를 던진다. 그래서 여기 도달했다는 것 자체가 판정이고, 별도 boolean 을 두면
+    # 선언만 살고 결과가 죽는다(#383: 종전 ``web_ok = True`` 는 아무것도 재지 않았다).
+    # 검증된 identity 를 그대로 실어 무엇이 번들에 실렸는지 로그가 말하게 한다.
     artifact = web_artifact()
-    web_ok = True
 
     print(
         f"selfcheck: txt_templates={txt_names} fields={len(snap['fields'])} "
-        f"web_ok={web_ok} artifact_id={artifact.artifact_id} "
-        f"tree_sha256={artifact.tree_sha256} -> {'OK' if vm_ok and web_ok else 'FAIL'}"
+        f"artifact_id={artifact.artifact_id} "
+        f"tree_sha256={artifact.tree_sha256} -> {'OK' if vm_ok else 'FAIL'}"
     )
-    return 0 if (vm_ok and web_ok) else 1
+    return 0 if vm_ok else 1
 
 
 if __name__ == "__main__":
