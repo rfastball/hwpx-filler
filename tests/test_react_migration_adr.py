@@ -93,6 +93,7 @@ BASELINE_BRIDGE_SET_SIZES = {"산문 정본 집합": 21, "Python 도달 집합":
 
 _ADR_HEADING = re.compile(r"^### (ADR-\d{2})\b", re.MULTILINE)
 _TRACE_LINE = re.compile(r"^\*\*추적:\*\*(.*)$", re.MULTILINE)
+_REFERENCE_LINE = re.compile(r"^\*\*참조:\*\*(.*)$", re.MULTILINE)
 _DECISION_TOKEN = re.compile(r"R-D\d{2}")
 
 
@@ -106,15 +107,34 @@ def _adr_entries(adr: str) -> dict[str, str]:
     return entries
 
 
-def _traced_decisions(adr: str) -> dict[str, set[str]]:
-    """항목 → 그 항목이 승계 선언한 R-D 번호 집합. 추적 줄이 없으면 빈 집합."""
-    traced: dict[str, set[str]] = {}
+def _decision_lines(adr: str, pattern: re.Pattern[str]) -> dict[str, set[str]]:
+    """항목 → 그 줄이 적은 R-D 번호 집합. 줄이 없으면 빈 집합."""
+    found: dict[str, set[str]] = {}
     for name, body in _adr_entries(adr).items():
         tokens: set[str] = set()
-        for match in _TRACE_LINE.finditer(body):
+        for match in pattern.finditer(body):
             tokens.update(_DECISION_TOKEN.findall(match.group(1)))
-        traced[name] = tokens
-    return traced
+        found[name] = tokens
+    return found
+
+
+def _traced_decisions(adr: str) -> dict[str, set[str]]:
+    """항목 → 그 항목이 **소유**를 선언한 R-D 번호 집합."""
+    return _decision_lines(adr, _TRACE_LINE)
+
+
+def _referenced_decisions(adr: str) -> dict[str, set[str]]:
+    """항목 → 소유하지 않고 **참조**만 하는 R-D 번호 집합."""
+    return _decision_lines(adr, _REFERENCE_LINE)
+
+
+def _owners(adr: str) -> dict[str, list[str]]:
+    """R-D 번호 → 그것을 소유한다고 선언한 항목들. 정상이면 항목 리스트 길이가 1."""
+    owners: dict[str, list[str]] = {}
+    for name, tokens in sorted(_traced_decisions(adr).items()):
+        for token in sorted(tokens):
+            owners.setdefault(token, []).append(name)
+    return owners
 
 
 def _section(document: str, heading: str) -> str:
@@ -259,42 +279,60 @@ def readme() -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 술어 1 — 상위 결정 원장 R-D01~R-D17 과의 1:1 추적
+# 술어 1 — 상위 결정 원장 R-D01~R-D17 과의 1:1 추적 (소유는 정확히 하나)
 # --------------------------------------------------------------------------- #
 
 
-def test_every_parent_decision_has_an_owning_adr_entry(adr: str) -> None:
-    """R-D 17항 각각이 어느 ADR 항목엔가 `**추적:**` 으로 주인을 갖는다.
+def test_every_parent_decision_has_exactly_one_owning_adr_entry(adr: str) -> None:
+    """R-D 17항 각각의 주인이 **정확히 하나**다 — 없어도, 둘이어도 붉어진다.
 
-    주인 없는 결정은 ADR 이 「1:1 추적」이라 선언해 놓고 실제로는 부분집합만 옮긴 상태다 —
-    R1-99 가 그것을 산문 대조로 잡아내야 하는 상황을 만들지 않는다.
+    「1:1 추적」은 전사(全射)만으로는 참이 아니다. 두 항목이 같은 결정을 주장하면 나중에 한쪽만
+    고쳐졌을 때 어느 쪽이 정본인지 말할 수 없고, 그 상태로도 커버리지 검사는 초록이다 —
+    선언은 살고 결과는 죽는 그 자리다. 초판이 실제로 그랬다: R-D05 를 ADR-03·ADR-04 가,
+    R-D11 을 ADR-09·ADR-12 가 함께 주장했고 게이트는 침묵했다(리뷰 지적, PR #456).
     """
-    traced = _traced_decisions(adr)
-    assert traced, "ADR 에서 `### ADR-nn` 항목을 하나도 찾지 못했습니다(추출 회귀)."
-    covered: set[str] = set().union(*traced.values())
-    missing = sorted(ALL_DECISIONS - covered)
-    assert not missing, (
-        f"ADR 어느 항목도 승계하지 않은 상위 결정: {', '.join(missing)} — "
+    entries = _adr_entries(adr)
+    assert entries, "ADR 에서 `### ADR-nn` 항목을 하나도 찾지 못했습니다(추출 회귀)."
+    owners = _owners(adr)
+    orphaned = sorted(ALL_DECISIONS - set(owners))
+    assert not orphaned, (
+        f"주인 없는 상위 결정: {', '.join(orphaned)} — "
         f"#394 결정 원장은 {DECISION_COUNT}항이고 ADR 은 1:1 추적을 선언한다."
+    )
+    shared = {token: names for token, names in owners.items() if len(names) > 1}
+    assert not shared, (
+        f"두 항목 이상이 같은 결정을 소유한다고 주장합니다: {shared} — "
+        "소유는 하나여야 한다. 관련만 있는 항목은 `**참조:**` 로 적으세요."
     )
 
 
-def test_no_adr_entry_traces_an_unknown_decision(adr: str) -> None:
-    """역방향 — 존재하지 않는 R-D 번호를 승계 선언하지 않는다(오타·유령 추적 차단)."""
-    traced = _traced_decisions(adr)
-    unknown = sorted(set().union(*traced.values()) - ALL_DECISIONS)
+def test_no_adr_entry_names_an_unknown_decision(adr: str) -> None:
+    """역방향 — 존재하지 않는 R-D 번호를 적지 않는다. **추적·참조 양쪽 모두**에서."""
+    named: set[str] = set()
+    for mapping in (_traced_decisions(adr), _referenced_decisions(adr)):
+        named |= set().union(*mapping.values()) if mapping else set()
+    unknown = sorted(named - ALL_DECISIONS)
     assert not unknown, (
-        f"#394 결정 원장에 없는 번호를 추적합니다: {', '.join(unknown)} — "
+        f"#394 결정 원장에 없는 번호를 적습니다: {', '.join(unknown)} — "
         f"오늘의 원장은 R-D01~R-D{DECISION_COUNT:02d} 다."
     )
 
 
-def test_every_adr_entry_declares_its_trace(adr: str) -> None:
-    """추적 줄이 없는 항목이 없다 — 있으면 그 항목은 어느 결정의 후계인지 모른다."""
-    untraced = sorted(name for name, tokens in _traced_decisions(adr).items() if not tokens)
-    assert not untraced, (
-        f"`**추적:**` 줄이 없거나 비어 있는 ADR 항목: {', '.join(untraced)}"
-    )
+def test_every_adr_entry_declares_a_trace_or_a_reference(adr: str) -> None:
+    """어느 상위 결정과도 연결되지 않은 항목이 없다.
+
+    소유하면 `**추적:**`, 관련만 있으면 `**참조:**`. 둘 다 없는 항목은 어디서 왔는지 모른다.
+    """
+    traced, referenced = _traced_decisions(adr), _referenced_decisions(adr)
+    dangling = sorted(name for name in _adr_entries(adr) if not traced[name] and not referenced[name])
+    assert not dangling, f"`**추적:**` 도 `**참조:**` 도 없는 ADR 항목: {', '.join(dangling)}"
+
+
+def test_a_reference_never_doubles_as_ownership(adr: str) -> None:
+    """참조가 소유를 겸하지 않는다 — 같은 항목이 한 결정을 추적하면서 참조하지 않는다."""
+    traced, referenced = _traced_decisions(adr), _referenced_decisions(adr)
+    both = {name: sorted(traced[name] & referenced[name]) for name in traced if traced[name] & referenced[name]}
+    assert not both, f"같은 항목이 한 결정을 추적이자 참조로 적습니다: {both}"
 
 
 def test_the_trace_detector_notices_a_dropped_decision(adr: str) -> None:
@@ -302,8 +340,16 @@ def test_the_trace_detector_notices_a_dropped_decision(adr: str) -> None:
     victim = "R-D17"
     tampered = adr.replace(f"**추적:** {victim}", "**추적:** R-D04")
     assert tampered != adr, "합성 대상 추적 줄을 찾지 못했습니다(fixture 회귀)."
-    covered: set[str] = set().union(*_traced_decisions(tampered).values())
-    assert victim not in covered, "추적 줄에서 결정을 빼도 추출기가 여전히 본다 — 판별력 0."
+    assert victim not in _owners(tampered), "추적 줄에서 결정을 빼도 추출기가 여전히 본다 — 판별력 0."
+
+
+def test_the_owner_detector_notices_shared_ownership(adr: str) -> None:
+    """음성 대조 — 두 항목이 같은 결정을 주장하는 사본에서 검출된다(초판의 실제 형상)."""
+    tampered = adr.replace("**참조:** R-D05 (소유는 ADR-03)", "**추적:** R-D05 (소유는 ADR-03)", 1)
+    assert tampered != adr, "합성 대상 참조 줄을 찾지 못했습니다(fixture 회귀)."
+    assert len(_owners(tampered).get("R-D05", [])) == 2, (
+        "참조를 추적으로 바꿔도 소유 중복이 보이지 않는다 — 판별력 0."
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -14,9 +14,17 @@
 
 ## 추적성 계약
 
-각 ADR 항목은 제목 바로 아래에 `**추적:**` 줄을 갖고, 그 줄이 이 항목이 승계하는 R-00 결정
-번호를 적는다. **R-D01~R-D17 17개가 모두 어느 항목엔가 등장해야 한다** — 하나라도 주인이 없으면
-`tests/test_react_migration_adr.py` 가 붉어진다. 역방향(항목이 없는 R-D 번호를 적는 것)도 막는다.
+각 ADR 항목은 제목 바로 아래에 **추적 줄 또는 참조 줄**을 갖는다. 둘은 다른 것을 뜻한다:
+
+- `**추적:**` — 이 항목이 그 R-00 결정을 **승계·소유**한다. **결정 하나의 주인은 정확히 하나다.**
+- `**참조:**` — 관련은 있으나 소유하지 않는다. ADR 이 새로 세우는 장기 불변식이 기존 결정에
+  기대는 경우가 이쪽이다(R1 의 소유에 「장기 불변식」이 포함되므로 새 결정이 생길 수 있다).
+
+**R-D01~R-D17 17개가 각각 정확히 한 항목에 소유돼야 한다.** 주인이 없어도, 둘이어도
+`tests/test_react_migration_adr.py` 가 붉어진다 — 소유가 겹치면 나중에 한쪽만 고쳐졌을 때
+어느 쪽이 정본인지 말할 수 없고, 그 순간 「1:1 추적」은 초록인 채 거짓이 된다. 초판이 실제로
+그랬다(R-D05 를 두 항목이, R-D11 을 또 두 항목이 주장했다 — 리뷰 지적, PR #456).
+존재하지 않는 R-D 번호를 적는 것도 양쪽 줄 모두에서 막는다.
 
 **그 게이트가 못 보는 것을 밝힌다.** #394 본문이 R-D18 을 얻어도 저장소는 그것을 모른다 — 이슈
 본문은 저장소 밖이고, 사본을 들이면 그 사본이 다시 조용히 갈린다(U1 이 정정한 「게이트 없는
@@ -104,10 +112,11 @@ Python 에 남는 것: 사실, 거래 상태, 판정, 사용자 문안, 파일·
 
 **추적:** R-D05
 
-Python 이 아는 웹 이름은 버전 있는 파사드 하나다. `73473de` 실측으로 제품 전역은 **정확히 2**개
-(`window.__hwpx` 생산자 `frontend/src/bootstrap.js` 1곳 · `window.__hwpxTest` 생산자
-`frontend/src/selftest/api.js` 1곳, `defineProperty` 조건부)이고, N-10 에서 종전 내부 전역 5개가
-사라졌다. **전환은 이 수를 늘리지 않는다.**
+Python 이 아는 웹 이름은 버전 있는 파사드 하나다. `73473de` 실측으로 **제품 전역은 정확히
+1개**(`window.__hwpx`, 생산자 `frontend/src/bootstrap.js` 1곳)이고, selftest 전역이 **따로
+1개**다(`window.__hwpxTest`, 생산자 `frontend/src/selftest/api.js` 1곳, `defineProperty`
+조건부 — 제품 표면이 아니다). N-10 에서 종전 내부 전역 5개가 사라졌다. **전환은 어느 쪽도
+늘리지 않는다.**
 
 `describe()` 가 반환하는 capability **순서가 계약**이다(`webapp/product_api.py`). React root 가
 생기더라도 이 계약의 생산자는 하나로 남는다 — root 가 여럿이면 어느 root 가 파사드를 세우는지가
@@ -115,7 +124,8 @@ Python 이 아는 웹 이름은 버전 있는 파사드 하나다. `73473de` 실
 
 ### ADR-04 — feature/component 는 전역을 직접 읽지 않는다. 브리지는 **객체째 주입**한다
 
-**추적:** R-D05
+**참조:** R-D05 (소유는 ADR-03) — 이 항목이 세우는 「객체째 주입」은 R-00 에 없는 **새 장기
+불변식**이므로 승계가 아니다.
 
 컴포넌트는 `window.pywebview` 도 `window.__hwpx` 도 직접 조회하지 않고 typed bridge client 를
 통한다. 오늘 프런트에서 `window.pywebview.api` 를 직접 조회하는 파일은 `frontend/js/bridge.js`
@@ -183,14 +193,12 @@ selftest live 게이트가 진다.
 React 가 mount/update/dispose 를 소유하는 **adapter 안**에 머문다 — 엔진이 React 밖에서 DOM 을
 직접 들면 ADR-02 의 수명주기 권위가 깨진다.
 
-### ADR-09 — 단계 실행 규율: 진입 게이트·단계별 재설계·master 불변식·독립 판정
+### ADR-09 — 단계 실행 규율: 실행 권위·진입 게이트·master 불변식·독립 판정
 
-**추적:** R-D01 · R-D02 · R-D11 · R-D12 · R-D13
+**추적:** R-D01 · R-D02 · R-D12 · R-D13
 
 - **실행 권위**는 #394 다. 이 ADR 은 그 결정의 저장소 표현이지 상위 권위가 아니다.
 - **진입 게이트**: R1 구현은 #384 N-99 가 병합 master SHA 에서 통과한 뒤에만 열린다.
-- **단계별 재설계**: 하위 이슈 본문은 경계만 등록하고, 세부 DAG·write set·검증 패킷은 **각 단계
-  진입 master 를 다시 측정한 뒤** 확정한다. 인용이 아니라 재실측이다 — 수치는 낡는다.
 - **master 불변식**: 각 병합 시점의 master 는 실행·검증·revert 가능해야 한다. **여러 미완성 PR 을
   동시에 합쳐야 정상화되는 방식은 금지한다.** 실무 귀결: 문서 지도가 「아직 없는 파일」을 가리키는
   중간 master 가 생기더라도, 그 지도를 읽는 게이트는 **존재를 단언하지 않는다**(존재 단언은 각
@@ -223,10 +231,12 @@ React 이관 뒤 실제 잔존 구조를 다시 계측해 최종 패킷을 닫�
 오늘의 표면 크기: 화면 **6**(`library`·`editor`·`job`·`workbench`·`pool`·`tpl`), (화면, 액션) 쌍
 **119**. 이 수가 R 단계에서 **늘면** 이 항목 위반이다.
 
-### ADR-12 — 오늘의 배치는 기준선이지 목표 구조가 아니다
+### ADR-12 — 단계별 재설계: 오늘의 배치는 기준선이지 목표 구조가 아니다
 
 **추적:** R-D11
 
+**단계별 재설계**: 하위 이슈 본문은 경계만 등록하고, 세부 DAG·write set·검증 패킷은 **각 단계
+진입 master 를 다시 측정한 뒤** 확정한다. 인용이 아니라 재실측이다 — 수치는 낡는다. 그래서
 ADR 은 목표 상태와 경계를 고정하되 **현재 파일 배치를 영구 구조로 박제하지 않는다.** 아래
 「오늘의 배치」 절의 수치는 R5 가 delta 를 재기 위한 기준선이고, 그 자체가 지켜야 할 값이 아니다.
 
@@ -267,7 +277,7 @@ R5 가 delta 를 재는 기준이다. **목표 구조가 아니다**(ADR-12).
 | 축 | 값 (제품 범위) | selftest | 재계산 |
 |---|---|---|---|
 | ESM 그래프 | entry `frontend/src/main.js` → `bootProduct()` **1회** → 합성 루트 `frontend/src/bootstrap.js` 가 제품 잎 **25 파일**을 끌어온다. 순환 **0** | 9 파일 별도 | `find frontend/js -name '*.js'` · `test_frontend_build_graph.py` |
-| 허용 전역 | **2** — 제품 `window.__hwpx`(생산자 `src/bootstrap.js` 1곳) + selftest `window.__hwpxTest`(생산자 `src/selftest/api.js` 1곳, `defineProperty` 조건부) | 위에 포함 | `_web_source.ALLOWED_PRODUCT_GLOBALS` |
+| 허용 전역 | **1** — `window.__hwpx`(생산자 `src/bootstrap.js` 1곳) | **1** — `window.__hwpxTest`(생산자 `src/selftest/api.js` 1곳, `defineProperty` 조건부) | `_web_source.ALLOWED_PRODUCT_GLOBALS` 는 둘을 **합쳐** 2로 갖는다 — 제품 기준선은 그 합이 아니다 |
 | dispatch 계약 | 화면 **6**, (화면, 액션) 쌍 **119** — Python 쪽이라 범위 무관 | — | `action_registry.ACTION_REGISTRY` |
 | DOM | 화면 루트 **4**(`scr-library`·`scr-job`·`scr-editor`·`scr-workbench`), `frontend/index.html` `id` **232**(전부 유일), `<script>` **1**(module), `<template>` **0** | — | `html.parser` — **정규식 금지**(`data-*` 축이 정규식으로 세 번 틀렸다) |
 | 렌더 | `innerHTML =` **61** · `insertAdjacentHTML` **0** · `document.createElement` **1** | 8 · 0 · 0 | `grep -rn 'innerHTML *=' frontend/js` |
@@ -344,7 +354,7 @@ R1 은 경계와 권위만 고정한다. 아래는 **여기서 답하지 않으�
 
 이 ADR 은 산문이지만 **다섯 술어가 기계로 지킨다** — `tests/test_react_migration_adr.py`.
 
-1. R-D01~R-D17 **17개 전부**가 어느 항목엔가 `**추적:**` 으로 등장하고, 미지의 R-D 번호는 없다.
+1. R-D01~R-D17 **17개 각각의 주인이 정확히 하나**이고, 미지의 R-D 번호는 추적·참조 어디에도 없다.
    (상위 원장이 자라는 것은 이 게이트가 보지 못한다 — 위 「추적성 계약」이 그 결손을 밝힌다.)
 2. ADR 이 [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) 을 승계 대상으로 명시하고, **그 파일의
    머리말이 실제로** `부분 대체` + 후속 정본 = 이 파일이다. 두 파일을 함께 읽어 대조한다.
