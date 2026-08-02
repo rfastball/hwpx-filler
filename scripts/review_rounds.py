@@ -82,9 +82,15 @@ READY, WAIT, BLOCKED, ESCALATE = "READY", "WAIT", "BLOCKED", "ESCALATE"
 BLOCK_STREAK_LIMIT = 3
 REGRESSION_LIMIT = 2
 
-#: `triage: escalated <head-sha> — <사유>`. head 를 지목해야 그 상태에 대한 승인이 된다.
+#: `triage: escalated <head-sha> — <사유>`.
+#:
+#: **사유를 요구한다.** 이 마커가 여는 것은 「사람이 판단했다」는 상태인데, SHA 만 적힌 줄이나
+#: 렌더된 자리표시자를 그대로 복사한 줄을 받아 주면 게이트가 남지도 않은 판단을 남았다고
+#: 말하게 된다.
 ESCALATION_PATTERN = re.compile(
-    r"^\s*triage:\s*escalated\s+(?P<head>[0-9a-f]{7,40})\b", re.MULTILINE
+    r"^\s*triage:\s*escalated\s+(?P<head>[0-9a-f]{7,40})"
+    r"\s*[\u2014-]\s*(?P<reason>[^<\n]*[^<\s][^<\n]*)$",
+    re.MULTILINE,
 )
 
 #: 리뷰어가 배지 이미지로 싣는 심각도. **입력이지 분류가 아니다** — 표시만 하고 판정에는
@@ -411,21 +417,45 @@ def _settled_rounds(client: GitHub, pr: int, rounds: list[Round], head: str) -> 
     """승인이 **정산해 준** 앞쪽 라운드 수.
 
     승인은 만료되지 않고 그 시점까지를 정산한다. 만료되게 만들면 영영 안 풀린다 — 라운드는
-    지적이 있을 때만 생기므로, 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남아 push 마다
-    승인을 다시 요구하게 된다. 승인 뒤에 **새로** 차단이 3라운드 쌓이면 다시 부른다.
+    지적이 있을 때만 생기므로, 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남아 push 마다 승인을
+    다시 요구하게 된다.
+
+    순서의 정본은 **PR 의 커밋 목록**이다. 승인 SHA 를 라운드 목록에서 찾으면, 지적 없는
+    head 를 지목한 승인이 다음 push 뒤에 미아가 된다 — 그 SHA 는 어떤 라운드의 커밋도 아니라서
+    같은 결함이 되살아난다(라운드 목록은 커밋의 **우연한 부분집합**이다).
     """
-    settled = 0
+    order = {
+        commit["sha"]: index
+        for index, commit in enumerate(client.paged(f"pulls/{pr}/commits"))
+    }
+
+    def position(sha: str) -> int | None:
+        for full, index in order.items():
+            if full.startswith(sha):
+                return index
+        return None
+
+    acknowledged = -1
     for comment in client.paged(f"issues/{pr}/comments"):
         if not _may_settle(comment):
             continue
         for match in ESCALATION_PATTERN.finditer(comment.get("body") or ""):
             sha = match.group("head")
             if head.startswith(sha):
-                settled = len(rounds)  # 지금 head 를 지목했다 = 여기까지 전부 본 것이다
-                continue
-            for index, round_ in enumerate(rounds):
-                if round_.commit.startswith(sha):
-                    settled = max(settled, index + 1)
+                return len(rounds)  # 지금 head 를 지목했다 = 여기까지 전부 본 것이다
+            where = position(sha)
+            if where is not None:
+                acknowledged = max(acknowledged, where)
+
+    if acknowledged < 0:
+        return 0
+    # 승인된 커밋보다 뒤에 있는 라운드만 남긴다. 리베이스로 역사에서 사라진 라운드 커밋은
+    # 위치를 알 수 없는데, 그것은 이미 지나간 것이므로 정산된 쪽으로 센다.
+    settled = 0
+    for index, round_ in enumerate(rounds):
+        where = position(round_.commit)
+        if where is None or where <= acknowledged:
+            settled = index + 1
     return settled
 
 

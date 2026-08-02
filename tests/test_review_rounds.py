@@ -62,6 +62,7 @@ class FakeGitHub:
         self.triage = triage or []
         self.settler = settler
         self.outsider_triage: list[str] = []
+        self.history: list[str] = []
         self.reactions = reactions or []
         self.trees = trees or {}
         self.issues = issues or {}
@@ -131,6 +132,16 @@ class FakeGitHub:
     def paged(self, path: str) -> list[dict]:
         if path == f"pulls/{PR}/files":
             return [{"filename": name} for name in self.files]
+        if path == f"pulls/{PR}/commits":
+            if self.history:
+                return [{"sha": sha} for sha in self.history]
+            seen: list[str] = []
+            for raw in self.comments:
+                if raw["original_commit_id"] not in seen:
+                    seen.append(raw["original_commit_id"])
+            if self.head not in seen:
+                seen.append(self.head)
+            return [{"sha": sha} for sha in seen]
         if path == f"pulls/{PR}/comments":
             return self.comments
         if path == f"issues/{PR}/comments":
@@ -589,6 +600,41 @@ def test_a_clean_review_of_the_head_breaks_the_streak() -> None:
     fake.reactions = [_reaction("+1")]
     report = evaluate(fake, PR, now=NOW)
     assert report.block_streak == 0 and report.status == READY
+
+
+def test_an_acknowledgement_on_a_finding_free_head_survives_the_next_push() -> None:
+    """승인은 지적 **없는** head 에서 이뤄지는 것이 보통이다(고치고 나서 부르니까). 그 SHA 를
+    라운드 목록에서 찾으면 다음 push 뒤에 미아가 돼 같은 결함이 되살아난다 — 순서의 정본은
+    PR 의 커밋 목록이다."""
+    fake = _block_rounds(3)
+    fake.head = "dada888"
+    fake.history = ["beef000", "beef001", "beef002", "cafe999", "dada888"]
+    fake.triage.append("triage: escalated cafe999 — 범위를 재단하고 나머지는 이슈로 넘긴다")
+    report = evaluate(fake, PR, now=NOW)
+    assert report.block_streak == 0 and report.status != ESCALATE
+
+
+def test_without_the_acknowledgement_that_same_state_escalates() -> None:
+    """양성 대조 — 승인이 없으면 그대로 사람을 부른다."""
+    fake = _block_rounds(3)
+    fake.head = "dada888"
+    fake.history = ["beef000", "beef001", "beef002", "cafe999", "dada888"]
+    assert evaluate(fake, PR, now=NOW).status == ESCALATE
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "triage: escalated beef002",
+        "triage: escalated beef002 — <사유>",
+        "triage: escalated beef002 —   ",
+    ],
+)
+def test_an_acknowledgement_without_a_recorded_decision_is_refused(marker: str) -> None:
+    """이 마커가 여는 것은 「사람이 판단했다」는 상태다 — 판단이 안 적혔으면 열리면 안 된다."""
+    fake = _block_rounds(3)
+    fake.triage.append(marker)
+    assert evaluate(fake, PR, now=NOW).status == ESCALATE
 
 
 def test_an_outsider_cannot_clear_the_escalation() -> None:

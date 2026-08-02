@@ -45,11 +45,15 @@ gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
 묻는다** — 고치면 push 가 생기고 push 가 리뷰를 부른다. 분리는 head 를 안 바꾸므로 그 자리에서
 닫힌다.
 
+**회귀 후보가 하나라도 표시되면** 그 자리에서 점별 픽스를 멈춘다(정책 §3 — 첫 재발부터
+근본 조치다). 판정은 아직 `READY` 일 수 있으니 게이트가 대신 세워 주지 않는다.
+
 판정이 `ESCALATE` 면 **고치는 것으로는 풀리지 않는다.** 점별 픽스를 멈추고 근본 조치·범위
-재단·중단 중 하나를 정한 뒤 그 판단을 남긴다:
+재단·중단 중 하나를 정한 뒤 그 판단을 남긴다. **사유 없는 마커는 거절된다** — 자리표시자를
+그대로 복사한 것도 마찬가지다.
 
 ```powershell
-gh pr comment <PR> --body "triage: escalated <head-sha> — <사유>"
+gh pr comment <PR> --body "triage: escalated <head-sha> — 무엇을 어떻게 정했는지"
 ```
 
 고친 뒤에는 그 스레드를 **`Resolve conversation` 으로 닫는다** — 그것이 해소 신호다.
