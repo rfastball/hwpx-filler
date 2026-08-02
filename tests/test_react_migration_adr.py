@@ -26,14 +26,14 @@ ADR 은 산문이라 기계가 볼 수 없는 부분이 크다 — 근거의 참
 3. 브리지 표면의 크기가 **자라는 것**은 위반으로 보지 않는다. 기준선 수치는 동결이고, HEAD 에서
    보는 것은 관계뿐이다.
 
-**이 게이트가 하지 않는 것**: R1 산출물 TOML 두 개의 **존재**는 단언하지 않는다. #401 이 먼저
-착지하고 #402·#403 이 뒤따르므로, 존재를 단언하면 중간 master 에서 거짓 실패가 나
-R-D12(각 병합 시점의 master 는 실행·검증·revert 가능)를 이 게이트가 깬다. 존재 단언은 각
-산출물 자신의 게이트가 진다.
+**한 단언만 ADR 범위를 넘는다** — `test_every_mapped_document_header_agrees_with_the_map`.
+결함류가 넘기 때문이다. 「문서가 스스로에 대해 주장하는 것과 정본 지도가 말하는 것이 갈린다」는
+한 파일의 사고가 아니라서, 한 짝만 지키면 다음 문서에서 같은 모양으로 돌아온다.
 """
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -73,6 +73,13 @@ CLASSIFICATION_VOCABULARY = frozenset(
 
 # ADR 이 이름 지은 세 집합. 하나의 수로 적으면 게이트가 세는 값과 갈린다.
 SET_NAMES = ("산문 정본 집합", "Python 도달 집합", "게이트 대조 집합")
+
+# 지도↔머리말 상태 일치의 **명시 면제**. 이유와 소유를 함께 적는다 — 조용한 스킵 금지.
+# 목록이 실제 불일치 집합과 정확히 같아야 하므로, 고쳐지면 게이트가 「면제를 지우라」고 말한다.
+HEADER_STATUS_EXEMPTIONS = {
+    # 2026-07-29 동결 문서라 머리말이 없다. 신설은 #401 의 write set 밖(#458 소유).
+    "archive/DATA_FIRST_INTEGRATION_MAP.md": "동결 문서 — 머리말 신설은 #458",
+}
 
 # `73473de` 실측 **동결값**이다. R5 가 delta 를 재는 기준선이라 HEAD 를 좇지 않는다 —
 # 좇게 하면 브리지 표면이 바뀔 때마다 기준선이 덮어써져 비교 대상 자체가 사라진다.
@@ -161,6 +168,26 @@ def _header_field(document: str, label: str) -> str | None:
     pattern = re.compile(rf"^> \*\*{re.escape(label)}:\*\*\s*(.+)$", re.MULTILINE)
     match = pattern.search(document)
     return match.group(1).strip() if match else None
+
+
+def _status_token(declared: str) -> str:
+    """`유효 결정 (**판정 완결 …**)` 처럼 주석이 붙은 상태에서 상태어만 뽑는다."""
+    return declared.split(" (", 1)[0].strip()
+
+
+def _map_linked_documents(readme: str) -> dict[str, str]:
+    """문서 지도가 **링크로** 가리키는 `.md` → 지도가 부여한 상태.
+
+    「현재 정본」 표에는 상태 칸이 없다 — 절 이름 자체가 상태다.
+    """
+    linked: dict[str, str] = {}
+    for section, implied in (("현재 정본", "현재 정본"), ("결정 기록", None), ("역사·동결 자료", None)):
+        for row in _table_rows(_section(readme, section)):
+            match = re.search(r"\]\(([^)]+\.md)\)", row[0])
+            if not match:
+                continue
+            linked[match.group(1)] = implied or (row[1] if len(row) > 1 else "")
+    return linked
 
 
 def _map_row(readme: str, link_target: str) -> str | None:
@@ -362,6 +389,41 @@ def test_the_document_map_reflects_the_superseded_status(readme: str) -> None:
     assert row is not None, "문서 지도에서 웹 재렌더 보존 행을 찾지 못했습니다."
     assert _row_status(row) == "부분 대체", (
         f"지도의 웹 재렌더 보존 행 상태가 '{_row_status(row)}' 입니다 — '부분 대체' 여야 합니다."
+    )
+
+
+def test_every_mapped_document_header_agrees_with_the_map(readme: str) -> None:
+    """지도가 부여한 상태와 그 문서 **자신의 머리말**이 같다 — 저장소 전체에서.
+
+    이 단언만 이 파일에서 ADR 범위를 넘는다. 결함류가 넘기 때문이다: 「문서가 스스로에 대해
+    주장하는 것과 정본 지도가 말하는 것이 갈린다」는 한 파일의 사고가 아니다. 실제로 이 PR 의
+    ADR 자신이 머리말에 `현재 정본`, 지도에 `유효 결정` 을 적어 **두 상태의 편집 원칙이
+    정반대**인 채로 착지할 뻔했다(리뷰 지적, PR #456). 한 짝만 검사하던 것을 전 짝으로 넓힌다.
+
+    면제는 **명시 목록**이고, 목록이 실제 불일치 집합과 정확히 같아야 한다 — 새 면제를 조용히
+    끼워 넣지도, 고쳐 놓고 목록에 남겨 두지도 못한다. `test_web_source_role.py` 가 쓰는 형식이다.
+    """
+    mismatched: dict[str, str] = {}
+    for rel, map_status in _map_linked_documents(readme).items():
+        target = DOCS / rel
+        if not target.exists():
+            mismatched[rel] = "지도가 가리키는 파일이 없다"
+            continue
+        declared = _header_field(target.read_text(encoding="utf-8"), "문서 상태")
+        if declared is None:
+            mismatched[rel] = f"머리말에 문서 상태가 없다 (지도={map_status})"
+        elif _status_token(declared) != map_status:
+            mismatched[rel] = f"지도={map_status} · 머리말={_status_token(declared)}"
+
+    unexpected = {rel: why for rel, why in mismatched.items() if rel not in HEADER_STATUS_EXEMPTIONS}
+    assert not unexpected, (
+        "문서 지도와 머리말의 상태가 갈립니다 — 두 상태는 편집 원칙이 다르므로 읽는 사람이 "
+        f"모순된 안내를 받습니다:\n{json.dumps(unexpected, ensure_ascii=False, indent=2)}"
+    )
+    healed = sorted(set(HEADER_STATUS_EXEMPTIONS) - set(mismatched))
+    assert not healed, (
+        f"면제 목록에 남아 있지만 이미 일치합니다: {healed} — 면제를 지우세요(고친 것이 "
+        "면제 목록에 남으면 그 목록이 다음 드리프트를 가립니다)."
     )
 
 
