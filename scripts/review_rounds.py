@@ -49,7 +49,16 @@ SETTLING_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
 def _is_reviewer(login: str | None) -> bool:
-    return login in _reviewers()
+    """`[bot]` 접미사를 양쪽에서 벗기고 비교한다.
+
+    같은 계정을 REST 는 `chatgpt-codex-connector[bot]` 로, GraphQL 은
+    `chatgpt-codex-connector` 로 준다 — 실주행 양성 대조가 잡았다(지적 15건이 0건으로
+    읽혔다). 표기 하나로 걸면 다른 쪽 경로가 조용히 전부 남이 된다.
+    """
+    if not login:
+        return False
+    names = {name.removesuffix("[bot]") for name in _reviewers()}
+    return login.removesuffix("[bot]") in names
 
 
 def _may_settle(comment: dict) -> bool:

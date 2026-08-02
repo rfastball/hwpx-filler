@@ -523,6 +523,15 @@ def test_an_outsiders_recall_does_not_open_the_window() -> None:
     assert not report.timed_out and report.status == WAIT
 
 
+def test_the_reviewers_graphql_spelling_still_counts() -> None:
+    """같은 봇을 REST 는 `…[bot]`, GraphQL 은 접미사 없이 쓴다 — 실주행 양성 대조가 잡은
+    결함이다(지적 15건이 0건으로 읽혔다). 표기 하나로 걸면 다른 경로가 조용히 남이 된다."""
+    bare = REVIEWER.removesuffix("[bot]")
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", author=bare)])
+    report = evaluate(fake, PR, now=NOW)
+    assert report.reviewed and [f.id for f in report.unsettled] == [1]
+
+
 def test_reviewer_logins_rotate_by_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """봇 로그인이 바뀌면 코드 수정 없이 env 로 회전한다."""
     monkeypatch.setenv("REVIEW_GATE_REVIEWERS", "new-reviewer[bot]")
