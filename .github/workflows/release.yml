@@ -132,17 +132,82 @@ jobs:
 
           Install-Product $fillerSetup $fillerDir 'filler'
           Invoke-SelfCheck (Join-Path $fillerDir 'hwpx-filler-web.exe') @('--selfcheck') 'filler'
+          # 설치본이 실제로 무엇을 실었는지는 **제거하기 전에만** 물을 수 있다. 종료코드만
+          # 보면 "부팅은 했는데 다른 프런트가 실린" 상태가 초록으로 지나간다(#383).
+          # 이 줄이 uninstall 앞에 있는 것이 계약이다.
+          uv run --no-sync python scripts\verify_packaged_web.py `
+            --repo-root . --bundle-root (Join-Path $fillerDir '_internal') `
+            --json-out (Join-Path $env:RUNNER_TEMP 'release-evidence\installed.json')
+          if ($LASTEXITCODE -ne 0) { throw 'installed web artifact identity mismatch' }
           Uninstall-Product $fillerDir 'filler'
       - name: Package portable bundles
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $version = $env:RELEASE_TAG.TrimStart('v')
-          Compress-Archive -Path dist\hwpx-filler-web\* -DestinationPath ("installer-dist\HWPX-Filler-$version-portable.zip")
+          $zip = "installer-dist\HWPX-Filler-$version-portable.zip"
+          Compress-Archive -Path dist\hwpx-filler-web\* -DestinationPath $zip
+          # 사용자가 실제로 여는 것은 dist\ 가 아니라 이 zip 을 푼 결과다. 압축·해제 왕복이
+          # 트리를 바꾸지 않았음을 같은 검증기로 되짚는다.
+          $expanded = Join-Path $env:RUNNER_TEMP 'portable-expanded'
+          Expand-Archive -Path $zip -DestinationPath $expanded -Force
+          uv run --no-sync python scripts\verify_packaged_web.py `
+            --repo-root . --bundle-root (Join-Path $expanded '_internal') `
+            --json-out (Join-Path $env:RUNNER_TEMP 'release-evidence\portable.json')
+          if ($LASTEXITCODE -ne 0) { throw 'portable web artifact identity mismatch' }
+      - name: Reconcile web artifact identity across every shipped copy
+        shell: pwsh
+        run: |
+          # source / PyInstaller dist / installed / portable — 네 사본이 같은 프런트인가.
+          # 각 사본을 따로 통과시키는 것만으로는 부족하다: 넷을 한자리에 놓고 대조해야
+          # "어느 한 사본만 다른" 경우가 드러난다(설계 패킷 §5 four artifact IDs).
+          $ErrorActionPreference = 'Stop'
+          $evidenceDir = Join-Path $env:RUNNER_TEMP 'release-evidence'
+          uv run --no-sync python scripts\verify_packaged_web.py `
+            --repo-root . --bundle-root dist\hwpx-filler-web\_internal `
+            --json-out (Join-Path $evidenceDir 'dist.json')
+          if ($LASTEXITCODE -ne 0) { throw 'dist web artifact identity mismatch' }
+
+          $metadata = Get-Content build\version\build-metadata.json -Raw -Encoding UTF8 |
+            ConvertFrom-Json
+          if (-not $metadata.web.present) {
+            throw 'build metadata 에 sealed web artifact identity 가 없습니다.'
+          }
+          $copies = [ordered]@{ source = $metadata.web }
+          foreach ($name in @('dist', 'installed', 'portable')) {
+            $path = Join-Path $evidenceDir "$name.json"
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "release evidence 누락: $path"
+            }
+            $copies[$name] = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
+          }
+          $ids = $copies.Values | ForEach-Object { $_.artifact_id }
+          $trees = $copies.Values | ForEach-Object { $_.tree_sha256 }
+          if (@($ids | Sort-Object -Unique).Count -ne 1 -or
+              @($trees | Sort-Object -Unique).Count -ne 1) {
+            throw (
+              '출하 사본들의 web artifact identity 가 다릅니다: ' +
+              ($copies | ConvertTo-Json -Depth 5 -Compress)
+            )
+          }
+          [ordered]@{
+            version = $metadata.version
+            commit = $metadata.commit
+            artifact_id = $metadata.web.artifact_id
+            tree_sha256 = $metadata.web.tree_sha256
+            toolchain = $metadata.web.toolchain
+            copies = @($copies.Keys)
+          } | ConvertTo-Json -Depth 5 |
+            Set-Content installer-dist\release-evidence.json -Encoding UTF8
       - name: Create checksums and collect metadata
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           Copy-Item build\version\build-metadata.json installer-dist\build-metadata.json
-          $files = @(Get-ChildItem installer-dist\*.exe) + @(Get-ChildItem installer-dist\*.zip)
+          # 서술 자산(메타데이터·증거)도 해시 대상이다 — 검증 가능한 것만 함께 실어 보낸다.
+          $files = @(Get-ChildItem installer-dist\*.exe) +
+            @(Get-ChildItem installer-dist\*.zip) +
+            @(Get-ChildItem installer-dist\*.json)
           $lines = foreach ($file in $files) {
             $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($file.Name)"
@@ -160,3 +225,4 @@ jobs:
             installer-dist/*.zip
             installer-dist/SHA256SUMS.txt
             installer-dist/build-metadata.json
+            installer-dist/release-evidence.json
