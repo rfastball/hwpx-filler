@@ -29,9 +29,10 @@ on:
     types: [submitted, edited, dismissed]
   pull_request_review_comment:
     types: [created, edited, deleted]
-  # 스레드 해결이 곧 해소 신호다(정책 §2) — 해결 즉시 재판정해야 cron 을 기다리지 않는다.
-  pull_request_review_thread:
-    types: [resolved, unresolved]
+  # `pull_request_review_thread` 는 여기 **없다 — 일부러가 아니라 못 쓴다.** Actions 파서가
+  # `Unexpected value` 로 거부한다(2026-08-02 실측 — 문서·PyYAML·형상 테스트는 전부
+  # 통과했는데 머지 직후 파일 전체가 파싱 불능이 돼 게이트가 통째로 죽었다). 스레드 해결의
+  # 재판정은 dispatch 킥과 스윕이 진다. 이 키를 되살리려면 실 저장소에서 파싱부터 확인하라.
   issue_comment:
     types: [created, edited, deleted]
   # 이벤트가 안 오는 축(리액션·회수 창 경과)은 클라이언트 감시 루프가 이것으로 깨운다.

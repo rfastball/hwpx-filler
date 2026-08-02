@@ -164,9 +164,10 @@ gh pr comment <PR> --body "@codex review"
 큐라 실측으로 2.7시간 동안 0회 발화했다(2026-08-02). 그 형상에서 `WAIT` 인 PR 은 누가
 코멘트를 달아 주기 전까지 **영영 재판정되지 않는다.**
 
-`review-gate` 는 **대기가 아니라 강제**다. 리뷰·코멘트·스레드 해결이 이벤트로 오면 그때그때
-재판정해 체크런을 갱신하고, required check 로 머지를 막는다. 이벤트가 안 오는 축의 재판정은
-두 겹이다:
+`review-gate` 는 **대기가 아니라 강제**다. 리뷰·코멘트가 이벤트로 오면 그때그때 재판정해
+체크런을 갱신하고, required check 로 머지를 막는다. 이벤트가 안 오는 축 — 리액션, 회수 창
+경과, 그리고 **스레드 해결**(`pull_request_review_thread` 트리거는 Actions 파서가 거부한다,
+2026-08-02 실측) — 의 재판정은 두 겹이다:
 
 - **클라이언트 킥(1차)**: 감시 루프가 회수 창 경과를 보면
   `gh workflow run review-gate.yml -f pr=<PR>` 로 재판정을 깨운다. `workflow_dispatch` 는
