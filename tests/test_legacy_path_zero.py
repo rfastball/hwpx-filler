@@ -33,24 +33,29 @@ _RETIRED_ROOT = "w" + "eb"
 #:
 #: - 역할 세그먼트를 **요구**한다 — 산문 속 "{root}/ 강제 색상 모드" 같은 무해한 표현을 잡지
 #:   않기 위해서다.
-#: - 앞에 경로 구분자나 낱말 문자가 붙은 것은 **놓는다** — ``build/web/css/base.css`` 는
-#:   폐기된 source 가 아니라 sealed 산출물이고, 이 저장소가 소비하는 정상 경로다.
-#: - 단 ``../`` 계열 상대 접두는 매치의 일부로 먼저 삼켜서, 목업의
-#:   ``href="../../{root}/css/base.css"`` 는 잡는다.
+#: - 낱말·확장자 **중간**은 아니어야 한다(``myweb/js`` · ``a.web/js`` 는 다른 것이다).
+#: - 바로 앞 경로 성분을 함께 삼켜 :data:`SEALED_PARENT` 하나만 면제한다. 구분자가 앞에
+#:   붙었다는 이유로 통째 면제하면 ``./{root}/css`` · ``/{root}/css`` ·
+#:   ``C:\\repo\\{root}\\css`` 같은 흔한 형태가 조용히 빠져나간다(#383 리뷰 라운드 2).
 #: - 뒤따르는 경로 성분까지 삼켜 진단이 "무엇이 새로 들어왔는지"를 말하게 한다.
-#:
-#: **선언된 축소**: ``docs/../web/css`` 처럼 디렉터리를 거슬러 올라가는 표기는 앞의
-#: 구분자 때문에 놓친다. 문서·목업에서 쓰이지 않는 형태라 잡지 않기로 한 것이고, 조용한
-#: 누락이 아니라 여기 적어둔 한계다.
-LEGACY_PATH_RE = re.compile(
-    r"(?<![\w.\\/-])(?:\.\.[\\/])*"
+_PATH_SEGMENT = r"[\w.\-]+"
+_SEP = r"[\\/]"
+_CANDIDATE_RE = re.compile(
+    r"(?<![\w.\-])(?:(?P<parent>" + _PATH_SEGMENT + r")" + _SEP + r")?"
     + _RETIRED_ROOT
-    + r"[\\/](?:js|css|img|fonts|src|index\.html)(?:[\\/][\w.\-]+)*"
+    + _SEP
+    + r"(?:js|css|img|fonts|src|index\.html)(?:" + _SEP + _PATH_SEGMENT + r")*"
 )
 
-#: 바이너리·대용량 자산은 텍스트로 읽지 않는다.
+#: 유일하게 면제되는 부모 성분 — ``build/web`` 은 폐기된 source 가 아니라 이 저장소가
+#: 소비하는 sealed 산출물이다. 면제는 **이 이름 하나**이고 그 밖은 전부 위반이다.
+SEALED_PARENT = "build"
+
+#: 바이너리 자산만 건너뛴다. SVG 는 UTF-8 XML **source** 라 ``href``·``xlink:href``·
+#: CSS ``url()`` 로 살아 있는 참조를 담을 수 있다 — 건너뛰면 "저장소 전역"이라는 이 게이트의
+#: 주장이 거짓이 된다(#383 리뷰 라운드 2).
 _SKIP_SUFFIXES = frozenset(
-    {".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".woff2", ".hwpx", ".xlsx", ".zip"}
+    {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff2", ".hwpx", ".xlsx", ".zip"}
 )
 
 #: 사유와, 허용되는 인용의 **정확한 다중집합**. 전부 과거 시점의 실재 경로를 인용하는
@@ -108,8 +113,23 @@ def _tracked_files() -> tuple[Path, ...]:
 
 
 def scan(text: str) -> list[str]:
-    """폐기된 source 경로 참조를 **하나씩** 돌려준다(음성 대조가 직접 부르는 몸통)."""
-    return LEGACY_PATH_RE.findall(text)
+    """폐기된 source 경로 참조를 **하나씩** 돌려준다(음성 대조가 직접 부르는 몸통).
+
+    면제는 부모 성분이 :data:`SEALED_PARENT` 인 경우 **하나뿐**이다. 앞에 무언가 붙었다는
+    이유로 면제하지 않는다 — 그러면 ``./`` · ``/`` · 절대 Windows 경로가 전부 빠져나간다.
+    """
+    hits: list[str] = []
+    for match in _CANDIDATE_RE.finditer(text):
+        if match.group("parent") == SEALED_PARENT:
+            continue
+        # 면제되지 않은 매치는 부모 성분을 뗀 폐기 경로 그대로 보고한다 — 허용 목록의
+        # 다중집합이 "어느 파일에 있었는가"가 아니라 "무엇을 가리키는가"로 서게.
+        start = match.start()
+        parent = match.group("parent")
+        if parent is not None:
+            start += len(parent) + 1
+        hits.append(text[start : match.end()])
+    return hits
 
 
 def _expand(citations: tuple[str, ...]) -> tuple[str, ...]:
@@ -144,6 +164,13 @@ def test_scanner_catches_every_shape_a_reference_can_take() -> None:
         "windows": _RETIRED_ROOT + "\\css\\base.css",
         "relative-link": '<link href="../../' + _RETIRED_ROOT + '/css/tail.css">',
         "relative-windows": "..\\" + _RETIRED_ROOT + "\\img\\narmi-mark.svg",
+        # 부모 성분이 붙은 형태 — 라운드 1 수정이 구분자 앞선 것을 통째 면제해 이 넷을
+        # 조용히 놓쳤다(#383 리뷰 라운드 2). 면제는 sealed 부모 하나뿐이어야 한다.
+        "dot-relative": "./" + _RETIRED_ROOT + "/css/base.css",
+        "root-relative": "/" + _RETIRED_ROOT + "/css/base.css",
+        "absolute-windows": "C:\\repo\\" + _RETIRED_ROOT + "\\css\\base.css",
+        "nested-parent": "docs/" + _RETIRED_ROOT + "/js/app.js",
+        "svg-href": '<image xlink:href="../../' + _RETIRED_ROOT + '/img/old.svg"/>',
     }
     missed = [name for name, text in shapes.items() if not scan(text)]
     assert not missed, f"스캐너가 놓친 참조 형태: {missed}"
@@ -157,14 +184,44 @@ def test_scanner_leaves_the_sealed_artifact_and_prose_alone() -> None:
     대조는 역할 세그먼트 없는 ``build/web/`` 만 물어서 이 오탐을 놓쳤다).
     """
     allowed = (
-        "sealed 산출물은 build/" + _RETIRED_ROOT + "/css/base.css 에 있다",
-        "번들 진입은 build/" + _RETIRED_ROOT + "/index.html 이다",
-        "frozen 은 build\\" + _RETIRED_ROOT + "\\index.html 을 싣는다",
+        "sealed 산출물은 " + SEALED_PARENT + "/" + _RETIRED_ROOT + "/css/base.css 에 있다",
+        "번들 진입은 " + SEALED_PARENT + "/" + _RETIRED_ROOT + "/index.html 이다",
+        "frozen 은 " + SEALED_PARENT + "\\" + _RETIRED_ROOT + "\\index.html 을 싣는다",
         "강제 색상 모드는 " + _RETIRED_ROOT + "/ 전역에 걸린다",
         "front" + "end/js/bridge.js 가 직접 브리지를 진다",
+        # 낱말·확장자 중간은 다른 이름이다.
+        "my" + _RETIRED_ROOT + "/js/x.js 는 다른 것이다",
+        "a." + _RETIRED_ROOT + "/js/x.js 도 다른 것이다",
     )
     caught = {text: scan(text) for text in allowed if scan(text)}
     assert not caught, f"스캐너가 무해한 표현을 잡았습니다: {caught}"
+
+
+def test_only_the_sealed_parent_is_exempt() -> None:
+    """면제가 **이름 하나**임을 직접 센다 — 구분자 앞선 것을 통째 면제하지 않는다.
+
+    같은 경로를 sealed 부모와 다른 부모 아래에 각각 놓고, 하나만 통과하는지 본다.
+    한쪽만 물으면 "둘 다 놓아준" 상태가 초록으로 남는다(라운드 1 이 그랬다).
+    """
+    tail = _RETIRED_ROOT + "/css/base.css"
+
+    assert not scan(SEALED_PARENT + "/" + tail), "sealed 산출물을 위반으로 잡았습니다"
+    assert scan("dist/" + tail), "sealed 아닌 부모까지 면제됐습니다"
+    assert scan("./" + tail), "dot-relative 경로가 면제됐습니다"
+
+
+def test_svg_is_scanned_because_it_is_source() -> None:
+    """SVG 는 UTF-8 XML **source** 다 — 건너뛰면 "저장소 전역"이 거짓말이 된다.
+
+    추적 SVG 가 실제로 걸러지는 대상에 들어 있는지(=건너뛰기 목록 밖인지)와, SVG 가 담을 수
+    있는 참조 형태를 스캐너가 잡는지를 함께 센다.
+    """
+    assert ".svg" not in _SKIP_SUFFIXES
+    tracked_svg = [path for path in _tracked_files() if path.suffix.lower() == ".svg"]
+    assert tracked_svg, "추적 SVG 가 없다면 이 계약의 전제가 바뀐 것이다"
+
+    assert scan('<image xlink:href="../../' + _RETIRED_ROOT + '/img/old.svg"/>')
+    assert scan("url(../" + _RETIRED_ROOT + "/img/mark.svg)")
 
 
 def test_no_tracked_file_points_at_the_retired_source_tree() -> None:
