@@ -9,8 +9,22 @@ ADR 은 산문이라 기계가 볼 수 없는 부분이 크다 — 근거의 참
 - ADR 이 적은 수(「직접 브리지 21」)와 게이트가 실제로 세는 수(23)가 갈려도 아무도 붉어지지
   않는다 — 실제로 오늘 `frontend/js/bridge.js` 머리말이 그렇게 낡아 있다.
 
-그래서 다섯 술어는 **이름이 아니라 결과**를 센다. 그리고 각 술어에는 합성 fixture 음성 대조
-짝이 있다 — 「빠뜨리면 붉어진다」를 먼저 증명하지 않은 게이트는 초록의 의미가 없다.
+그래서 다섯 술어는 **이름이 아니라 결과**를 센다. 그리고 각 술어에는 음성 대조 짝이 있다 —
+「빠뜨리면 붉어진다」를 먼저 증명하지 않은 게이트는 초록의 의미가 없다.
+
+**음성 대조의 변형은 최소여야 한다.** 전역 치환으로 만들면 「표에서만 사라지고 산문에는 남았다」
+같은 실제 구멍을 만들지 못해, 대조가 자기가 증명하려던 판별력을 스스로 감춘다. 이 파일의 초판이
+바로 그 함정에 빠졌었다(리뷰 지적, PR #456).
+
+**이 게이트가 하지 않는 것** — 셋:
+
+1. R1 산출물 TOML 두 개의 **존재**는 단언하지 않는다. #401 이 먼저 착지하고 #402·#403 이
+   뒤따르므로, 존재를 단언하면 중간 master 에서 거짓 실패가 나 R-D12(각 병합 시점의 master 는
+   실행·검증·revert 가능)를 이 게이트가 깬다. 존재 단언은 각 산출물 자신의 게이트가 진다.
+2. #394 본문이 **R-D18 을 얻는 것**은 감지하지 못한다 — `DECISION_COUNT` 옆 주석이 그 결손과
+   소유(#457)를 적는다.
+3. 브리지 표면의 크기가 **자라는 것**은 위반으로 보지 않는다. 기준선 수치는 동결이고, HEAD 에서
+   보는 것은 관계뿐이다.
 
 **이 게이트가 하지 않는 것**: R1 산출물 TOML 두 개의 **존재**는 단언하지 않는다. #401 이 먼저
 착지하고 #402·#403 이 뒤따르므로, 존재를 단언하면 중간 master 에서 거짓 실패가 나
@@ -36,11 +50,16 @@ UI_CONTRACT_PATH = DOCS / "UI_CONTRACT.md"
 BRIDGE_JS_PATH = SOURCE_JS_DIR / "bridge.js"
 
 # 상위 결정 원장의 항 수. 출처: #394 본문 「결정 원장」 R-D01~R-D17, `73473de` 시점.
-# 늘면 이 상수가 시끄럽게 실패한다 — ADR 이 새 항을 조용히 놓치는 것보다 낫다.
+#
+# **이 상수는 상위 원장의 성장을 감지하지 못한다.** #394 가 R-D18 을 얻어도 저장소는 그것을
+# 모른다 — 이슈 본문은 저장소 밖이고, 사본을 들이면 그 사본이 다시 조용히 갈린다. 상수의
+# 실제 역할은 ADR 과 게이트를 서로 묶는 **자물쇠**다: ADR 이 R-D18 을 추적하기 시작하면
+# 상수를 올리지 않는 한 붉어지고, 상수를 올리면 ADR 이 그 항의 주인을 대야 붉은색이 풀린다.
+# 상위 성장의 감지는 단계 개방 시 재실측(ADR-09)과 R1-99(#400) 재대조가 진다. 결손은 #457.
 DECISION_COUNT = 17
 ALL_DECISIONS = frozenset(f"R-D{n:02d}" for n in range(1, DECISION_COUNT + 1))
 
-# `R1-ARTIFACT-LAYOUT:v1`(#395)이 동결한 R1 3산출물. 지도가 셋을 다 언급해야 한다.
+# `R1-ARTIFACT-LAYOUT:v1`(#395)이 동결한 R1 3산출물. 지도의 **표에** 셋이 다 있어야 한다.
 R1_ARTIFACTS = (
     "REACT_MIGRATION_DECISIONS.md",
     "react_ownership_inventory.toml",
@@ -48,16 +67,17 @@ R1_ARTIFACTS = (
 )
 
 # #401 본문의 대문자 분류값을 소문자로 승계한 어휘. #402 TOML 이 이 철자를 enum 으로 쓴다.
-CLASSIFICATION_VOCABULARY = (
-    "react",
-    "python_product",
-    "host",
-    "retire",
-    "p_review_required",
+CLASSIFICATION_VOCABULARY = frozenset(
+    {"react", "python_product", "host", "retire", "p_review_required"}
 )
 
 # ADR 이 이름 지은 세 집합. 하나의 수로 적으면 게이트가 세는 값과 갈린다.
 SET_NAMES = ("산문 정본 집합", "Python 도달 집합", "게이트 대조 집합")
+
+# `73473de` 실측 **동결값**이다. R5 가 delta 를 재는 기준선이라 HEAD 를 좇지 않는다 —
+# 좇게 하면 브리지 표면이 바뀔 때마다 기준선이 덮어써져 비교 대상 자체가 사라진다.
+# HEAD 에서 지켜야 하는 것은 이 수가 아니라 **세 집합이 서로 다르다**는 관계다(아래 술어 5).
+BASELINE_BRIDGE_SET_SIZES = {"산문 정본 집합": 21, "Python 도달 집합": 24, "게이트 대조 집합": 23}
 
 
 # --------------------------------------------------------------------------- #
@@ -88,6 +108,52 @@ def _traced_decisions(adr: str) -> dict[str, set[str]]:
             tokens.update(_DECISION_TOKEN.findall(match.group(1)))
         traced[name] = tokens
     return traced
+
+
+def _section(document: str, heading: str) -> str:
+    """`## 제목` 부터 다음 `## ` 직전까지. 없으면 빈 문자열."""
+    lines = document.splitlines()
+    try:
+        start = lines.index(f"## {heading}")
+    except ValueError:
+        return ""
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end])
+
+
+def _table_rows(section: str) -> list[list[str]]:
+    """마크다운 표의 **데이터 행**만 셀 리스트로. 머리행·구분선은 뺀다.
+
+    「그 문자열이 파일 어딘가에 있다」가 아니라 「그 표의 행으로 있다」를 묻기 위한 것이다.
+    산문에 남은 언급이 표에서 사라진 항목을 가려 주는 것이 이 저장소의 반복 결함류다.
+    """
+    rows: list[list[str]] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if all(cell and set(cell) <= {"-", ":"} for cell in cells):  # 구분선
+            if rows:
+                rows.pop()  # 바로 앞 행은 머리행이었다 (한 절에 표가 여럿이어도 맞다)
+            continue
+        rows.append(cells)
+    return rows
+
+
+def _map_table_rows(readme: str) -> list[list[str]]:
+    """문서 지도의 두 표(현재 정본 · 결정 기록) 데이터 행 전부."""
+    return _table_rows(_section(readme, "현재 정본")) + _table_rows(_section(readme, "결정 기록"))
+
+
+def _declared_vocabulary(adr: str) -> set[str]:
+    """ADR 「권위 분류 어휘」 **표의 첫 칸**에 backtick 으로 정의된 값."""
+    values: set[str] = set()
+    for row in _table_rows(_section(adr, "권위 분류 어휘")):
+        match = re.fullmatch(r"`([a-z_]+)`", row[0])
+        if match:
+            values.add(match.group(1))
+    return values
 
 
 def _header_field(document: str, label: str) -> str | None:
@@ -152,14 +218,6 @@ def _python_reachable_methods() -> set[str]:
         name
         for name in dir(WebFrontend)
         if not name.startswith("_") and callable(getattr(WebFrontend, name))
-    }
-
-
-def _measured_set_sizes() -> dict[str, int]:
-    return {
-        "산문 정본 집합": len(_prose_bridge_methods(UI_CONTRACT_PATH.read_text(encoding="utf-8"))),
-        "Python 도달 집합": len(_python_reachable_methods()),
-        "게이트 대조 집합": len(_gate_bridge_methods(BRIDGE_JS_PATH.read_text(encoding="utf-8"))),
     }
 
 
@@ -283,12 +341,18 @@ def test_the_successor_detector_notices_a_missing_pointer() -> None:
 def test_the_document_map_registers_every_r1_artifact(readme: str) -> None:
     """지도에 없는 산출물은 저장소에서 발견되지 않는다 — 지도가 유일한 입구다.
 
+    **표의 행으로** 있는지를 묻는다. 파일 전체 부분열 검사면 산문에 남은 언급이 표에서 빠진
+    항목을 가려 준다 — 등재는 표가 지는 것이고 산문은 등재가 아니다.
+
     **존재는 단언하지 않는다.** #402·#403 이 아직 착지하지 않은 중간 master 에서 존재를 요구하면
     이 게이트가 R-D12(각 병합 시점 master 의 실행·검증 가능)를 깬다.
     """
-    missing = [name for name in R1_ARTIFACTS if name not in readme]
+    rows = _map_table_rows(readme)
+    assert rows, "문서 지도에서 표 행을 하나도 찾지 못했습니다(추출 회귀)."
+    registered = "\n".join(row[0] for row in rows)
+    missing = [name for name in R1_ARTIFACTS if name not in registered]
     assert not missing, (
-        f"문서 지도(docs/README.md)에 등재되지 않은 R1 산출물: {', '.join(missing)}"
+        f"문서 지도의 표에 등재되지 않은 R1 산출물: {', '.join(missing)} — 산문 언급은 등재가 아니다."
     )
 
 
@@ -302,15 +366,25 @@ def test_the_document_map_reflects_the_superseded_status(readme: str) -> None:
 
 
 def test_the_map_detectors_notice_a_dropped_row(readme: str) -> None:
-    """음성 대조 — 등재를 빼거나 상태를 되돌린 사본에서 각각 검출된다."""
-    without_ledger = readme.replace("react_verification_ledger.toml", "(삭제됨)")
-    assert "react_verification_ledger.toml" not in without_ledger, (
-        "산출물 등재를 지워도 검출되지 않는다 — 판별력 0."
+    """음성 대조 — **표 행만** 지우고 산문 언급은 남긴 사본에서도 검출된다.
+
+    변형을 최소로 한다. 전역 치환으로 음성 대조를 만들면 「표에서 사라졌지만 산문에는 남았다」는
+    바로 그 구멍이 대조에서 가려진다 — 음성 대조가 자기가 증명하려던 판별력을 스스로 감춘다.
+    """
+    row = next(r for r in _map_table_rows(readme) if "react_verification_ledger.toml" in r[0])
+    line = next(line for line in readme.splitlines() if line.strip().startswith(f"| {row[0]} |"))
+    tampered = readme.replace(f"{line}\n", "") + "\n산문에는 react_verification_ledger.toml 이 남는다.\n"
+    assert "react_verification_ledger.toml" in tampered, "합성 사본이 산문 언급을 잃었습니다."
+    registered = "\n".join(r[0] for r in _map_table_rows(tampered))
+    assert "react_verification_ledger.toml" not in registered, (
+        "표 행을 지워도 등재 검사가 통과한다 — 산문이 표를 가리고 있다(판별력 0)."
     )
 
-    row = _map_row(readme, "WEB_RENDER_PRESERVATION.md")
-    assert row is not None
-    reverted = readme.replace(row, row.replace("| 부분 대체 |", "| 유효 결정 |", 1))
+    reverted = readme.replace(
+        "| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 |",
+        "| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 유효 결정 |",
+        1,
+    )
     assert _row_status(_map_row(reverted, "WEB_RENDER_PRESERVATION.md")) == "유효 결정", (
         "지도 행 상태를 되돌려도 추출기가 새 값을 본다 — 판별력 0."
     )
@@ -322,89 +396,142 @@ def test_the_map_detectors_notice_a_dropped_row(readme: str) -> None:
 
 
 def test_adr_defines_the_classification_vocabulary_verbatim(adr: str) -> None:
-    """#402 TOML 이 enum 으로 쓸 철자가 ADR 에 정확히 그대로 있다.
+    """#402 TOML 이 enum 으로 쓸 철자가 ADR 「권위 분류 어휘」 **표에** 정확히 그대로 있다.
 
-    철자가 갈리면 두 문서가 각자 초록인 채 서로 다른 어휘를 쓴다 — 분류 정본이 둘이 된다.
+    정본은 그 표이므로 그 표를 읽는다. 파일 전체 부분열 검사면 표에서 값이 지워져도 아래
+    산문에 그 이름이 한 번 더 나오는 것만으로 초록이 유지된다 — 실제로 이 문서에서
+    `p_review_required` 는 표 바로 아래 문단에 다시 등장한다.
+
+    집합 상등으로 본다. 없는 값뿐 아니라 **표에만 몰래 늘어난 값**도 잡아야 #402 enum 이
+    정본과 갈리지 않는다.
     """
-    missing = [value for value in CLASSIFICATION_VOCABULARY if f"`{value}`" not in adr]
-    assert not missing, (
-        f"ADR 에 분류 어휘가 그 철자로 정의되지 않았습니다: {', '.join(missing)}"
+    declared = _declared_vocabulary(adr)
+    assert declared == CLASSIFICATION_VOCABULARY, (
+        "ADR 「권위 분류 어휘」 표가 정본 어휘와 다릅니다 — "
+        f"빠짐: {sorted(CLASSIFICATION_VOCABULARY - declared)} · "
+        f"군더더기: {sorted(declared - CLASSIFICATION_VOCABULARY)}"
     )
 
 
-def test_the_vocabulary_detector_notices_a_respelled_value(adr: str) -> None:
-    """음성 대조 — 철자를 바꾼 사본에서 검출된다."""
-    tampered = adr.replace("`p_review_required`", "`pReviewRequired`")
-    assert tampered != adr, "합성 대상 어휘를 찾지 못했습니다(fixture 회귀)."
-    assert "`p_review_required`" not in tampered, "철자를 바꿔도 검출되지 않는다 — 판별력 0."
+def test_the_vocabulary_detector_notices_a_respell_hidden_by_prose(adr: str) -> None:
+    """음성 대조 — **표 행만** 고치고 산문은 그대로 둔 사본에서 검출된다.
+
+    변형이 최소여야 판별력이 증명된다. 전역 치환은 「표에서만 사라졌다」는 경우를 만들지
+    못해, 정작 겨눠야 할 구멍을 지나친다.
+    """
+    tampered = adr.replace(
+        "| `p_review_required` | Python 제품에 남지만", "| `pReviewRequired` | Python 제품에 남지만", 1
+    )
+    assert tampered != adr, "합성 대상 표 행을 찾지 못했습니다(fixture 회귀)."
+    assert "`p_review_required`" in tampered, "산문 언급이 함께 사라졌습니다 — 최소 변형이 아닙니다."
+    assert "p_review_required" not in _declared_vocabulary(tampered), (
+        "표 행 철자를 바꿔도 검출되지 않는다 — 산문이 표를 가리고 있다(판별력 0)."
+    )
 
 
 # --------------------------------------------------------------------------- #
-# 술어 5 — 「직접 브리지」 세 집합을 저장소에서 재계산해 대조
+# 술어 5 — 「직접 브리지」는 세 개의 다른 집합이다
+#
+# 두 가지를 **따로** 지킨다. 섞으면 둘 다 잃는다:
+#   (a) `73473de` 기준선 수치 — R5 가 delta 를 재려고 동결한 값. HEAD 를 좇으면 안 된다.
+#       브리지 표면이 바뀔 때마다 덮어써지면 비교 대상 자체가 사라지고, 그동안 필수 게이트는
+#       「기준선을 다시 쓰라」며 붉은 채로 머지를 막는다.
+#   (b) HEAD 에서 참이어야 하는 **관계** — 셋이 서로 다른 집합이고, 산문이 유령을 열거하지
+#       않는다. 크기는 바뀌어도 되지만 이 관계가 깨지면 ADR 의 주장이 거짓이 된다.
 # --------------------------------------------------------------------------- #
 
 
-def test_adr_records_three_distinct_bridge_sets(adr: str) -> None:
-    """세 집합이 각각 이름과 크기로 등장한다 — 단일 수로 적으면 게이트와 갈린다."""
+def test_adr_records_three_named_bridge_sets(adr: str) -> None:
+    """세 집합이 각각 **이름과 크기**로 등장한다 — 단일 수로 적으면 무엇을 센 수인지 잃는다."""
     recorded = _recorded_set_sizes(adr)
     missing = [name for name in SET_NAMES if name not in recorded]
-    assert not missing, (
-        f"ADR 이 이름과 크기로 적지 않은 직접 브리지 집합: {', '.join(missing)}"
-    )
-    assert len(set(recorded.values())) == 3, (
-        f"세 집합의 크기가 서로 달라야 합니다(각각 다른 것을 세므로): {recorded}"
-    )
+    assert not missing, f"ADR 이 이름과 크기로 적지 않은 직접 브리지 집합: {', '.join(missing)}"
 
 
-def test_recorded_bridge_set_sizes_match_the_repository(adr: str) -> None:
-    """ADR 이 적은 세 수를 저장소에서 **재계산해** 대조한다.
+def test_recorded_bridge_set_sizes_stay_frozen_at_the_baseline(adr: str) -> None:
+    """ADR 의 세 수가 `73473de` 동결 기준선 그대로다 — **HEAD 를 좇지 않는다**.
 
-    정적 상수를 믿지 않는다. 오늘 `frontend/js/bridge.js:2` 머리말이 이 표면을 낡은 분해로
-    적고 있는 것이 실물 표본이다 — 선언은 살아 있고 결과는 이미 갈렸다.
+    이 수는 R5 가 delta 를 재는 기준선이다. HEAD 재측정에 묶으면 R2 가 브리지 메서드를 하나
+    더하는 순간 게이트가 붉어지고, 그것을 풀려면 기준선을 덮어써야 하며, 그 순간 비교 대상이
+    사라진다. 그래서 대조 상대는 저장소 HEAD 가 아니라 **동결 상수**다.
+
+    이 단언이 붉어지는 경우는 하나뿐이다: 누가 ADR 의 기준선 표를 고쳤을 때. 그때는 고치지
+    말라고 말해 주는 것이 옳다 — 기준선은 갱신 대상이 아니라 보존 대상이다.
     """
     recorded = _recorded_set_sizes(adr)
-    measured = _measured_set_sizes()
-    assert all(measured.values()), f"집합 추출이 비었습니다(추출 회귀): {measured}"
-    mismatched = {
-        name: (recorded.get(name), measured[name])
+    drifted = {
+        name: (recorded.get(name), BASELINE_BRIDGE_SET_SIZES[name])
         for name in SET_NAMES
-        if recorded.get(name) != measured[name]
+        if recorded.get(name) != BASELINE_BRIDGE_SET_SIZES[name]
     }
-    assert not mismatched, (
-        "ADR 의 직접 브리지 집합 크기가 저장소 실측과 다릅니다 "
-        f"(기재 → 실측): {mismatched} — ADR 을 갱신하거나 표면 변경을 되돌리세요."
+    assert not drifted, (
+        f"ADR 기준선 표가 동결값과 다릅니다 (기재 → 동결): {drifted} — "
+        "이 수는 `73473de` 실측이고 R5 delta 의 기준이라 HEAD 에 맞춰 고치는 값이 아닙니다. "
+        "오늘의 표면이 궁금하면 아래 관계 단언이 HEAD 에서 봅니다."
     )
 
 
-def test_the_three_sets_really_are_different_sets() -> None:
-    """세 집합이 이름만 다른 같은 것이 아님을 실제 원소로 보인다.
+def test_the_three_sets_really_are_different_sets_today() -> None:
+    """HEAD 에서 셋이 실제로 **서로 다른 집합**이다 — ADR 의 주장이 오늘 참인지를 본다.
 
-    ADR 의 주장(「세 개의 다른 집합이다」)이 오늘 참인지를 여기서 확인한다 — 크기 대조만으로는
-    우연히 같은 수가 나올 때 침묵한다.
+    크기가 아니라 원소로 본다. 크기 비교는 우연히 같은 수가 나올 때 침묵하고, 반대로 표면이
+    정상적으로 자라기만 해도 시끄럽다. 지켜야 할 것은 「셋이 다르다」이지 「셋이 21·24·23」이
+    아니다.
     """
     prose = _prose_bridge_methods(UI_CONTRACT_PATH.read_text(encoding="utf-8"))
     gate = _gate_bridge_methods(BRIDGE_JS_PATH.read_text(encoding="utf-8"))
     python = _python_reachable_methods()
 
-    assert gate - python, (
-        "게이트 대조 집합이 Python 공개 표면의 부분집합이 됐습니다 — "
-        "ADR 이 적은 '두 여분은 WebFrontend 메서드가 아니다' 가 더 이상 참이 아닙니다."
+    assert prose and gate and python, (
+        f"집합 추출이 비었습니다(추출 회귀): 산문 {len(prose)} · 게이트 {len(gate)} · Python {len(python)}"
     )
-    assert python - prose - {"initial", "dispatch"}, (
-        "Python 도달 집합이 산문 정본 + dispatch 2개로 소진됐습니다 — "
-        "ADR-05 가 실물로 든 단방향 게이트 표본(close_guard_state)이 사라졌습니다."
-    )
-    assert prose <= python, (
-        f"산문 정본이 실재하지 않는 메서드를 열거합니다: {sorted(prose - python)}"
+    collapsed = [
+        f"{left_name} == {right_name}"
+        for left_name, left, right_name, right in (
+            ("산문 정본 집합", prose, "Python 도달 집합", python),
+            ("산문 정본 집합", prose, "게이트 대조 집합", gate),
+            ("Python 도달 집합", python, "게이트 대조 집합", gate),
+        )
+        if left == right
+    ]
+    assert not collapsed, (
+        f"직접 브리지 집합 둘이 같아졌습니다: {', '.join(collapsed)} — "
+        "ADR 이 셋을 구분해 적을 이유가 사라졌으므로 ADR 을 갱신하세요."
     )
 
 
-def test_the_size_detector_notices_a_stale_number(adr: str) -> None:
-    """음성 대조 — ADR 의 기재 수를 하나 틀리게 만든 사본에서 검출된다."""
-    recorded = _recorded_set_sizes(adr)
+def test_the_prose_bridge_list_names_no_ghosts() -> None:
+    """산문 정본이 실재하지 않는 `WebFrontend` 메서드를 열거하지 않는다.
+
+    이쪽은 크기와 무관한 정직성 제약이라 표면이 자라도 계속 참이어야 한다.
+    """
+    prose = _prose_bridge_methods(UI_CONTRACT_PATH.read_text(encoding="utf-8"))
+    ghosts = sorted(prose - _python_reachable_methods())
+    assert not ghosts, f"UI 계약 직접 브리지 목록이 실재하지 않는 메서드를 적습니다: {ghosts}"
+
+
+def test_the_baseline_detector_notices_an_overwritten_number(adr: str) -> None:
+    """음성 대조 — 기준선 표 행 하나를 덮어쓴 사본에서 검출된다."""
     victim = "게이트 대조 집합"
-    tampered = adr.replace(f"| **{victim}** | {recorded[victim]} |", f"| **{victim}** | 21 |")
+    frozen = BASELINE_BRIDGE_SET_SIZES[victim]
+    tampered = adr.replace(f"| **{victim}** | {frozen} |", f"| **{victim}** | {frozen + 1} |", 1)
     assert tampered != adr, "합성 대상 표 행을 찾지 못했습니다(fixture 회귀)."
-    assert _recorded_set_sizes(tampered)[victim] != _measured_set_sizes()[victim], (
-        "기재 수를 틀리게 만들어도 대조가 통과한다 — 판별력 0."
+    assert _recorded_set_sizes(tampered)[victim] != frozen, (
+        "기준선 수를 덮어써도 검출되지 않는다 — 판별력 0."
+    )
+
+
+def test_the_collapse_detector_notices_two_sets_becoming_one() -> None:
+    """음성 대조 — 두 집합이 같아진 합성 트리에서 검출된다.
+
+    실재 유령이 없는 축이라 합성으로 세운다(오늘 셋은 서로 다르다). 산문 절이 게이트 집합과
+    똑같은 목록을 열거하도록 조작한 사본을 만들어, 그 붕괴가 실제로 보이는지 확인한다.
+    """
+    gate = _gate_bridge_methods(BRIDGE_JS_PATH.read_text(encoding="utf-8"))
+    synthetic_contract = (
+        "- **직접 브리지 경로:** " + ", ".join(f"`{name}`" for name in sorted(gate)) + "\n\n### 끝\n"
+    )
+    assert _prose_bridge_methods(synthetic_contract) == gate, (
+        "합성 사본에서 산문 집합이 게이트 집합과 같아지지 않았다 — 붕괴를 만들지 못하면 "
+        "그 축의 판별력을 증명할 수 없다."
     )
