@@ -41,6 +41,7 @@ class FakeGitHub:
         comments: list[dict] | None = None,
         triage: list[str] | None = None,
         settler: str = "OWNER",
+        resolved: set[int] | None = None,
         reactions: list[dict] | None = None,
         trees: dict[str, str] | None = None,
         issues: dict[int, dict] | None = None,
@@ -55,21 +56,33 @@ class FakeGitHub:
         self.trees = trees or {}
         self.issues = issues or {}
         self.posted: list[tuple[str, dict]] = []
-        self.resolved: set[int] = set()
+        self.resolved: set[int] = set(resolved or ())
 
     def graphql(self, query: str, **variables: object) -> dict:
+        """스레드를 한 쪽에 하나씩만 실어 **페이지를 끝까지 도는지** 시험한다."""
+        roots = [raw for raw in self.comments if not raw.get("in_reply_to_id")]
+        index = int(variables.get("after") or 0)
+        page = roots[index : index + 1]
         nodes = [
             {
                 "isResolved": raw["id"] in self.resolved,
-                "isOutdated": raw.get("line") is None,
                 "comments": {"nodes": [{"databaseId": raw["id"]}]},
             }
-            for raw in self.comments
-            if not raw.get("in_reply_to_id")
+            for raw in page
         ]
         return {
             "data": {
-                "repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "pageInfo": {
+                                "hasNextPage": index + 1 < len(roots),
+                                "endCursor": str(index + 1),
+                            },
+                            "nodes": nodes,
+                        }
+                    }
+                }
             }
         }
 
@@ -180,20 +193,26 @@ def test_distinct_trees_stay_separate_rounds() -> None:
 
 def test_an_unsettled_finding_holds_the_gate() -> None:
     settled_and_fixed = _comment(1, "c1", line=None)
-    fake = FakeGitHub(head="c1", comments=[settled_and_fixed, _comment(2, "c1")], triage=["triage: 1 block"])
+    fake = FakeGitHub(
+        head="c1",
+        comments=[settled_and_fixed, _comment(2, "c1")],
+        triage=["triage: 1 block"],
+        resolved={1},
+    )
     report = evaluate(fake, PR, now=NOW)
     assert report.status == WAIT
     assert [f.id for f in report.unsettled] == [2]
 
 
 def test_settled_and_resolved_findings_are_ready() -> None:
-    """차단은 **outdated 가 되어야** 해소다 — 코멘트가 사라진 것이 고쳐졌다는 원격 증거다."""
+    """정산이 끝나고 차단이 해결됐으면 머지 가능이다."""
     fixed = _comment(1, "c0", line=None)
     fake = FakeGitHub(
         head="c1",
         comments=[fixed],
         triage=["triage: 1 block"],
         reactions=[_reaction("+1")],
+        resolved={1},
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.status == READY
@@ -207,6 +226,21 @@ def test_a_resolved_thread_closes_a_block_even_while_the_comment_lives() -> None
     fake.resolved.add(1)
     report = evaluate(fake, PR, now=NOW)
     assert report.open_blocks == [] and report.status == READY
+
+
+def test_an_outdated_block_still_needs_an_explicit_resolution() -> None:
+    """outdated 는 부수 효과다 — 무관한 코드가 밀려 앵커가 사라져도 그렇게 된다."""
+    fake = FakeGitHub(head="c1", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    report = evaluate(fake, PR, now=NOW)
+    assert [f.id for f in report.open_blocks] == [1] and report.status == BLOCKED
+
+
+def test_resolutions_beyond_the_first_page_are_seen() -> None:
+    """첫 쪽만 보고 판정하면 그 뒤의 해결은 없는 것이 되고, 일부만 본 판정이 전부처럼 보인다."""
+    comments = [_comment(i, "c1", line=None) for i in range(1, 6)]
+    fake = FakeGitHub(head="c1", comments=comments, triage=[f"triage: {i} block" for i in range(1, 6)])
+    fake.resolved.update(range(1, 6))
+    assert evaluate(fake, PR, now=NOW).open_blocks == []
 
 
 def test_a_block_that_is_still_live_blocks() -> None:
@@ -308,7 +342,7 @@ def test_an_empty_diff_is_not_a_fast_path() -> None:
 
 
 def test_the_gate_waits_until_the_last_push_is_reviewed() -> None:
-    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
     report = evaluate(fake, PR, now=NOW)
     assert report.status == WAIT and not report.head_reviewed
 
@@ -322,7 +356,7 @@ def test_the_window_is_measured_from_the_push_not_the_commit_date() -> None:
                 return {"check_suites": [{"created_at": NOW.isoformat().replace("+00:00", "Z")}]}
             return super().get(path)
 
-    fake = OldCommitJustPushed(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake = OldCommitJustPushed(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
     report = evaluate(fake, PR, now=NOW + timedelta(minutes=1))
     assert report.status == WAIT and not report.timed_out
 
@@ -336,14 +370,14 @@ def test_a_head_with_no_check_suite_has_not_timed_out() -> None:
                 return {"check_suites": []}
             return super().get(path)
 
-    fake = NoSuiteYet(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake = NoSuiteYet(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
     assert not evaluate(fake, PR, now=NOW).timed_out
 
 
 def test_the_recovery_window_closes_on_its_own_but_says_so() -> None:
     """창 소진은 리뷰가 아니라 **교착 탈출**이다. 조용히 초록이 되면 「리뷰를 받았다」와
     「리뷰어가 침묵했다」가 같은 색이 된다."""
-    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake = FakeGitHub(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
     assert report.status == READY and report.timed_out
     assert "받지 못한 채" in review_rounds.render(report)
@@ -358,6 +392,7 @@ def test_a_reviewed_head_is_not_marked_as_timed_out() -> None:
         head="c1",
         comments=[_comment(1, "c1", line=None)],
         triage=["triage: 1 block"],
+        resolved={1},
         reactions=[_reaction("+1")],
     )
     report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(seconds=1))
@@ -370,6 +405,7 @@ def test_only_the_reviewer_can_signal_no_findings() -> None:
         head="c2",
         comments=[_comment(1, "c1", line=None)],
         triage=["triage: 1 block"],
+        resolved={1},
         reactions=[_reaction("+1", login="rfastball")],
     )
     report = evaluate(fake, PR, now=NOW)
@@ -426,7 +462,7 @@ def test_a_check_suite_from_another_pull_request_does_not_start_the_clock() -> N
                 }
             return super().get(path)
 
-    fake = Elsewhere(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake = Elsewhere(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"], resolved={1})
     fake.resolved.add(1)
     assert not evaluate(fake, PR, now=NOW).timed_out
 
@@ -437,6 +473,7 @@ def test_eyes_is_not_a_no_findings_signal() -> None:
         head="c2",
         comments=[_comment(1, "c1", line=None)],
         triage=["triage: 1 block"],
+        resolved={1},
         reactions=[_reaction("eyes")],
     )
     report = evaluate(fake, PR, now=NOW)
@@ -475,6 +512,7 @@ def test_replies_do_not_create_their_own_settlement_duty() -> None:
         comments=[_comment(1, "c1", line=None), reply],
         triage=["triage: 1 block"],
         reactions=[_reaction("+1")],
+        resolved={1},
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.unsettled == [] and report.status == READY
@@ -560,6 +598,15 @@ def test_the_check_run_carries_the_verdict(triage: list[str], status: str, concl
     assert path == "check-runs"
     assert payload["name"] == review_rounds.CHECK_NAME
     assert payload["conclusion"] == conclusion
+
+
+def test_a_pending_check_lands_before_the_verdict_is_recomputed() -> None:
+    """재평가가 도중에 실패하면 이전 초록이 그대로 권위로 남는다 — 읽기 전에 덮는다."""
+    fake = FakeGitHub(head="head-sha")
+    review_rounds.publish_pending(fake, "head-sha")
+    _, payload = fake.posted[0]
+    assert payload["head_sha"] == "head-sha"
+    assert payload["status"] == "in_progress" and "conclusion" not in payload
 
 
 def test_the_check_run_is_anchored_to_the_pr_head() -> None:

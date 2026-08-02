@@ -228,13 +228,14 @@ def _moment(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
-#: 리뷰 스레드의 해결·outdated 상태. REST 의 인라인 코멘트에는 이 둘이 실리지 않는다.
+#: 리뷰 스레드의 해결 상태. REST 의 인라인 코멘트에는 실리지 않아 GraphQL 로 읽는다.
 THREAD_QUERY = """
-query($owner:String!,$name:String!,$number:Int!){
+query($owner:String!,$name:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){
-      reviewThreads(first:100){
-        nodes{ isResolved isOutdated comments(first:1){nodes{databaseId}} }
+      reviewThreads(first:100, after:$after){
+        pageInfo{ hasNextPage endCursor }
+        nodes{ isResolved comments(first:1){nodes{databaseId}} }
       }
     }
   }
@@ -242,22 +243,32 @@ query($owner:String!,$name:String!,$number:Int!){
 """
 
 
-def _thread_states(client: GitHub, pr: int) -> dict[int, tuple[bool, bool]]:
-    """뿌리 코멘트 id → (해결됨, outdated).
+def _resolved_threads(client: GitHub, pr: int) -> set[int]:
+    """해결된 스레드의 뿌리 코멘트 id.
 
-    **「고쳐서 코멘트가 사라졌는가」로는 해소를 못 잰다.** GitHub 은 앵커 hunk 가 살아 있는
-    한 코멘트를 최신 커밋으로 재앵커해 유지하므로, 바로 옆을 고쳐도 outdated 가 되지 않는다.
-    스레드 해결은 사람이 「이건 처리했다」고 남긴 **원격 행위**라 그쪽이 옳은 신호다.
+    **해소의 증거는 「전부」이고 「의도적」이어야 한다.**
+
+    의도적 — 스레드 해결만 센다. 코멘트가 outdated 가 된 것은 부수 효과라 증거가 못 된다.
+    무관한 코드가 밀려 앵커가 사라져도 outdated 가 되고, 반대로 정말 고쳐도 GitHub 이
+    최신 커밋으로 재앵커해 살아남는다. 어느 쪽으로도 틀린다.
+
+    전부 — 페이지를 끝까지 돈다. 첫 100건만 보고 판정하면 그 뒤의 해결은 없는 것이 되고,
+    조용히 일부만 본 판정이 전부를 본 판정처럼 보인다.
     """
     owner, _, name = client.repo.partition("/")
-    data = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr)
-    threads = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
-    states: dict[int, tuple[bool, bool]] = {}
-    for thread in threads:
-        roots = thread["comments"]["nodes"]
-        if roots:
-            states[int(roots[0]["databaseId"])] = (thread["isResolved"], thread["isOutdated"])
-    return states
+    resolved: set[int] = set()
+    cursor = ""
+    while True:
+        page = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr, after=cursor)
+        threads = page["data"]["repository"]["pullRequest"]["reviewThreads"]
+        for thread in threads["nodes"]:
+            roots = thread["comments"]["nodes"]
+            if roots and thread["isResolved"]:
+                resolved.add(int(roots[0]["databaseId"]))
+        info = threads["pageInfo"]
+        if not info["hasNextPage"]:
+            return resolved
+        cursor = info["endCursor"]
 
 
 def _findings(client: GitHub, pr: int) -> list[Finding]:
@@ -266,7 +277,7 @@ def _findings(client: GitHub, pr: int) -> list[Finding]:
     답글(`in_reply_to_id`)은 뺀다 — 뿌리 코멘트가 그 지적을 대표하고, 답글까지 정산 대상으로
     삼으면 우리가 쓴 해명이 스스로 게이트를 세운다.
     """
-    states = _thread_states(client, pr)
+    resolved = _resolved_threads(client, pr)
     findings = []
     for raw in client.paged(f"pulls/{pr}/comments"):
         if raw.get("in_reply_to_id"):
@@ -279,8 +290,8 @@ def _findings(client: GitHub, pr: int) -> list[Finding]:
                 path=raw.get("path") or "",
                 line=raw.get("line"),
                 commit=raw["original_commit_id"],
-                outdated=states.get(int(raw["id"]), (False, raw.get("line") is None))[1],
-                resolved=states.get(int(raw["id"]), (False, False))[0],
+                outdated=raw.get("line") is None,
+                resolved=int(raw["id"]) in resolved,
                 author=(login := (raw.get("user") or {}).get("login", "")),
                 by_reviewer=_is_reviewer(login),
                 severity=severity.group(1) if severity else "??",
@@ -471,7 +482,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         for f in findings
         if (t := settled.get(f.id))
         and t.verdict == "block"
-        and not (f.outdated or f.resolved)
+        and not f.resolved
     ]
     bad_defers = []
     for finding in findings:
@@ -554,6 +565,25 @@ CONCLUSIONS = {READY: "success", WAIT: "action_required", BLOCKED: "failure"}
 CHECK_NAME = "review-gate"
 
 
+def publish_pending(client: GitHub, head: str) -> None:
+    """판정을 **시작하기 전에** 그 SHA 의 초록을 내린다.
+
+    같은 SHA 에 이미 성공한 `review-gate` 가 있는데 원격 상태가 나중에 바뀌면(새 지적이
+    오거나 분리 이슈가 닫히면) 재평가가 돌아야 한다. 그 재평가가 도중에 실패하면 **이전
+    초록이 그대로 권위로 남아** 이제는 미정산인 PR 이 머지될 수 있다. 판정 불가는 판정
+    통과가 아니므로, 읽기 전에 먼저 대기 상태로 덮는다.
+    """
+    client.post(
+        "check-runs",
+        {
+            "name": CHECK_NAME,
+            "head_sha": head,
+            "status": "in_progress",
+            "output": {"title": "정산 상태를 다시 읽는 중", "summary": "`docs/REVIEW_POLICY.md`"},
+        },
+    )
+
+
 def publish_check(client: GitHub, report: Report) -> None:
     """PR head SHA 에 체크런을 **직접** 게시한다.
 
@@ -595,6 +625,7 @@ def _sweep(client: GitHub) -> int:
     for pull in client.paged("pulls?state=open"):
         number = int(pull["number"])
         try:
+            publish_pending(client, pull["head"]["sha"])
             report = evaluate(client, number)
             publish_check(client, report)
             print(f"#{number} {report.status}")
@@ -650,7 +681,10 @@ def main() -> int:
         client = GitHub.discover()
         if args.all_open:
             return _sweep(client)
-        report = evaluate(client, args.pr or client.pr_for_current_branch())
+        pr = args.pr or client.pr_for_current_branch()
+        if args.publish_check:
+            publish_pending(client, client.get(f"pulls/{pr}")["head"]["sha"])
+        report = evaluate(client, pr)
         if args.publish_check:
             publish_check(client, report)
     except GitHubError as error:
