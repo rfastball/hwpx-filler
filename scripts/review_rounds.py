@@ -407,19 +407,26 @@ def _block_streak(rounds: list[Round], settled: dict[int, Triage]) -> int:
     return streak
 
 
-def _acknowledged(client: GitHub, pr: int, head: str) -> bool:
-    """사람이 **지금 head 를 지목해** 승인했는가.
+def _settled_rounds(client: GitHub, pr: int, rounds: list[Round], head: str) -> int:
+    """승인이 **정산해 준** 앞쪽 라운드 수.
 
-    head 를 지목하게 하는 이유는, push 가 하나 더 붙으면 승인이 자동으로 만료돼야 하기
-    때문이다. 그래야 라운드가 더 돌 때마다 사람의 판단이 새로 필요하다.
+    승인은 만료되지 않고 그 시점까지를 정산한다. 만료되게 만들면 영영 안 풀린다 — 라운드는
+    지적이 있을 때만 생기므로, 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남아 push 마다
+    승인을 다시 요구하게 된다. 승인 뒤에 **새로** 차단이 3라운드 쌓이면 다시 부른다.
     """
+    settled = 0
     for comment in client.paged(f"issues/{pr}/comments"):
         if not _may_settle(comment):
             continue
         for match in ESCALATION_PATTERN.finditer(comment.get("body") or ""):
-            if head.startswith(match.group("head")):
-                return True
-    return False
+            sha = match.group("head")
+            if head.startswith(sha):
+                settled = len(rounds)  # 지금 head 를 지목했다 = 여기까지 전부 본 것이다
+                continue
+            for index, round_ in enumerate(rounds):
+                if round_.commit.startswith(sha):
+                    settled = max(settled, index + 1)
+    return settled
 
 
 def _regressions(rounds: list[Round]) -> list[tuple[Finding, Finding]]:
@@ -562,11 +569,14 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     timed_out = not answered and now - pushed_at > RECOVERY_WINDOW
     head_reviewed = answered or timed_out
 
-    regressions = _regressions(rounds)
-    streak = _block_streak(rounds, settled)
-    escalated = (
-        streak >= BLOCK_STREAK_LIMIT or len(regressions) >= REGRESSION_LIMIT
-    ) and not _acknowledged(client, pr, head)
+    # 승인이 정산한 앞쪽은 다시 세지 않는다.
+    open_rounds = rounds[_settled_rounds(client, pr, rounds, head) :]
+    regressions = _regressions(open_rounds)
+    streak = _block_streak(open_rounds, settled)
+    if answered and not any(r.commit == head for r in rounds):
+        # 리뷰어가 지금 head 를 보고 아무 말도 하지 않았다 — 그 자체가 연속의 끊김이다.
+        streak = 0
+    escalated = streak >= BLOCK_STREAK_LIMIT or len(regressions) >= REGRESSION_LIMIT
 
     if escalated:
         # 차단보다 먼저 본다. 여기서 「고치면 된다」로 읽히면 그 자체가 이 상태의 뜻을 지운다.

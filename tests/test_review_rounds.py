@@ -564,11 +564,31 @@ def test_only_an_acknowledgement_of_this_head_clears_the_escalation() -> None:
     assert evaluate(fake, PR, now=NOW).status == READY
 
 
-def test_an_acknowledgement_of_an_older_head_does_not_carry_over() -> None:
-    """push 가 하나 더 붙으면 승인은 만료된다 — 라운드마다 판단이 새로 필요하다."""
+def test_an_acknowledgement_settles_the_rounds_up_to_it_and_no_more() -> None:
+    """승인은 만료되지 않고 **그 시점까지를 정산한다.** 만료되게 만들면 영영 안 풀린다 —
+    라운드는 지적이 있을 때만 생기므로 깨끗한 리뷰를 받아도 옛 라운드가 그대로 남는다."""
+    fake = _block_rounds(5)
+    fake.triage.append("triage: escalated beef002 — 여기까지는 봤다")
+    report = evaluate(fake, PR, now=NOW)
+    assert report.block_streak == 2 and report.status == READY
+
+
+def test_new_blocks_after_an_acknowledgement_call_the_human_again() -> None:
+    """정산해 준 것은 앞쪽뿐이다. 뒤에 새로 세 번 쌓이면 다시 부른다."""
+    fake = _block_rounds(6)
+    fake.triage.append("triage: escalated beef002 — 여기까지는 봤다")
+    report = evaluate(fake, PR, now=NOW)
+    assert report.block_streak == 3 and report.status == ESCALATE
+
+
+def test_a_clean_review_of_the_head_breaks_the_streak() -> None:
+    """리뷰어가 지금 head 를 보고 아무 말도 하지 않았다 — 그 자체가 연속의 끊김이다.
+    사람의 마커 없이도 정상 경로로 회복돼야 한다."""
     fake = _block_rounds(3)
-    fake.triage.append("triage: escalated beef000 — 지난 상태에 대한 승인")
-    assert evaluate(fake, PR, now=NOW).status == ESCALATE
+    fake.head = "cafe999"
+    fake.reactions = [_reaction("+1")]
+    report = evaluate(fake, PR, now=NOW)
+    assert report.block_streak == 0 and report.status == READY
 
 
 def test_an_outsider_cannot_clear_the_escalation() -> None:
