@@ -40,6 +40,7 @@ class FakeGitHub:
         files: list[str] | None = None,
         comments: list[dict] | None = None,
         triage: list[str] | None = None,
+        settler: str = "OWNER",
         reactions: list[dict] | None = None,
         trees: dict[str, str] | None = None,
         issues: dict[int, dict] | None = None,
@@ -49,6 +50,7 @@ class FakeGitHub:
         self.files = files if files is not None else ["src/a.py"]
         self.comments = comments or []
         self.triage = triage or []
+        self.settler = settler
         self.reactions = reactions or []
         self.trees = trees or {}
         self.issues = issues or {}
@@ -77,9 +79,17 @@ class FakeGitHub:
 
     def get(self, path: str) -> dict:
         if path == f"pulls/{PR}":
-            return {"head": {"sha": self.head}}
+            return {"number": PR, "head": {"sha": self.head, "ref": "topic"}}
         if path.endswith("/check-suites"):
-            return {"check_suites": [{"created_at": PUSHED.isoformat().replace("+00:00", "Z")}]}
+            return {
+                "check_suites": [
+                    {
+                        "created_at": PUSHED.isoformat().replace("+00:00", "Z"),
+                        "head_branch": "topic",
+                        "pull_requests": [{"number": PR}],
+                    }
+                ]
+            }
         if path.startswith("commits/"):
             sha = path.split("/", 1)[1]
             return {
@@ -101,7 +111,9 @@ class FakeGitHub:
         if path == f"pulls/{PR}/comments":
             return self.comments
         if path == f"issues/{PR}/comments":
-            return [{"body": body} for body in self.triage]
+            return [
+                {"body": body, "author_association": self.settler} for body in self.triage
+            ]
         if path == f"issues/{PR}/reactions":
             return self.reactions
         raise AssertionError(f"예상하지 못한 목록 조회: {path}")
@@ -362,6 +374,61 @@ def test_only_the_reviewer_can_signal_no_findings() -> None:
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.signal is None and report.status == WAIT
+
+
+def test_an_authored_comment_on_head_is_not_a_review() -> None:
+    """리액션만 조이면 이 경로가 열린 채 남는다 — 작성자가 head 에 코멘트를 달아 정산하면
+    「리뷰를 받았다」가 스스로 만들어진다."""
+    mine = _comment(2, "c2") | {"user": {"login": "rfastball"}}
+    fake = FakeGitHub(
+        head="c2",
+        comments=[_comment(1, "c1", line=None), mine],
+        triage=["triage: 1 block", "triage: 2 defer #77"],
+        issues={77: _open_issue(77)},
+    )
+    fake.resolved.add(1)
+    report = evaluate(fake, PR, now=NOW)
+    assert not report.head_reviewed and report.status == WAIT
+
+
+def test_a_reviewer_comment_on_head_is_a_review() -> None:
+    """양성 대조 — 리뷰어가 head 를 짚었으면 그 push 는 읽힌 것이다."""
+    fake = FakeGitHub(head="c2", comments=[_comment(1, "c2")], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    assert evaluate(fake, PR, now=NOW).head_reviewed
+
+
+def test_only_trusted_actors_can_settle() -> None:
+    """공개 PR 에서는 아무나 코멘트를 단다. 뒤 마커가 앞을 덮으므로 통제 없이 두면 남이
+    게이트를 열거나 붙잡아 둘 수 있다."""
+    fake = FakeGitHub(
+        head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 defer #77"], settler="NONE"
+    )
+    report = evaluate(fake, PR, now=NOW)
+    assert [f.id for f in report.unsettled] == [1]
+
+
+def test_a_check_suite_from_another_pull_request_does_not_start_the_clock() -> None:
+    """같은 SHA 가 다른 브랜치에서 이미 돌았으면 그때의 스위트가 함께 실린다 — 그것으로 재면
+    이 PR 로서는 처음인 판정이 이미 창을 넘긴 것이 된다."""
+
+    class Elsewhere(FakeGitHub):
+        def get(self, path: str) -> dict:
+            if path.endswith("/check-suites"):
+                return {
+                    "check_suites": [
+                        {
+                            "created_at": (NOW - timedelta(days=1)).isoformat().replace("+00:00", "Z"),
+                            "head_branch": "other-branch",
+                            "pull_requests": [{"number": 999}],
+                        }
+                    ]
+                }
+            return super().get(path)
+
+    fake = Elsewhere(head="c2", comments=[_comment(1, "c1", line=None)], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    assert not evaluate(fake, PR, now=NOW).timed_out
 
 
 def test_eyes_is_not_a_no_findings_signal() -> None:

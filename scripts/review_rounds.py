@@ -26,9 +26,27 @@ RECOVERY_WINDOW = timedelta(minutes=10)
 #: 같은 자리를 두 번 맞은 것으로 **의심**한다 — 확정은 사람이 한다.
 REGRESSION_LINE_SPAN = 20
 
-#: 리뷰 신호로 인정하는 계정. **누구의 리액션이든 세면 작성자가 자기 PR 에 `+1` 을 달아
-#: 리뷰 없이 초록을 만들 수 있다** — 게이트가 「리뷰를 받았다」고 거짓말하는 경로다.
+# ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
+#
+# 원격 입력마다 「이 행위자를 믿는가」를 따로 판정하면 한 군데 조이는 동안 다른 데가 열린
+# 채로 남는다(실제로 리액션을 조인 라운드에 head 코멘트 경로가 그대로 열려 있었다). 축은
+# 둘뿐이고, 밖에서 들어오는 모든 것이 이 둘 중 하나를 지난다.
+
+#: 리뷰를 **낸다**고 인정하는 계정. 아니면 작성자가 자기 PR 에 `+1` 이나 인라인 코멘트를
+#: 달아 「리뷰를 받았다」를 스스로 만들 수 있다.
 REVIEWER_LOGINS = ("chatgpt-codex-connector[bot]",)
+
+#: 정산을 **남긴다**고 인정하는 관계. 공개 PR 에서는 아무나 코멘트를 달 수 있고, 뒤 마커가
+#: 앞 마커를 덮으므로 통제 없이 두면 남이 게이트를 열거나 붙잡아 둘 수 있다.
+SETTLING_ASSOCIATIONS = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
+
+
+def _is_reviewer(login: str | None) -> bool:
+    return login in REVIEWER_LOGINS
+
+
+def _may_settle(comment: dict) -> bool:
+    return comment.get("author_association") in SETTLING_ASSOCIATIONS
 
 #: 빠른 경로는 **허용 목록**이다. 금지 목록으로 짜면 새로 생긴 경로가 기본값으로 통과한다.
 #:
@@ -82,6 +100,7 @@ class Finding:
     outdated: bool
     resolved: bool
     author: str
+    by_reviewer: bool
     severity: str
     excerpt: str
 
@@ -262,7 +281,8 @@ def _findings(client: GitHub, pr: int) -> list[Finding]:
                 commit=raw["original_commit_id"],
                 outdated=states.get(int(raw["id"]), (False, raw.get("line") is None))[1],
                 resolved=states.get(int(raw["id"]), (False, False))[0],
-                author=(raw.get("user") or {}).get("login", ""),
+                author=(login := (raw.get("user") or {}).get("login", "")),
+                by_reviewer=_is_reviewer(login),
                 severity=severity.group(1) if severity else "??",
                 excerpt=_plain(body),
             )
@@ -308,6 +328,8 @@ def _rounds(client: GitHub, findings: list[Finding]) -> list[Round]:
 def _triage(client: GitHub, pr: int) -> dict[int, Triage]:
     settled: dict[int, Triage] = {}
     for comment in client.paged(f"issues/{pr}/comments"):
+        if not _may_settle(comment):
+            continue  # 남이 남긴 마커가 정산 상태를 바꾸지 않는다
         for match in TRIAGE_PATTERN.finditer(comment.get("body") or ""):
             issue = match.group("issue")
             settled[int(match.group("id"))] = Triage(
@@ -382,7 +404,7 @@ def _signal(client: GitHub, pr: int) -> tuple[str | None, datetime | None]:
         content = reaction.get("content")
         if content not in {"+1", "eyes"}:
             continue
-        if (reaction.get("user") or {}).get("login") not in REVIEWER_LOGINS:
+        if not _is_reviewer((reaction.get("user") or {}).get("login")):
             continue
         when = _moment(reaction["created_at"])
         if latest[1] is None or when > latest[1]:
@@ -390,25 +412,38 @@ def _signal(client: GitHub, pr: int) -> tuple[str | None, datetime | None]:
     return latest
 
 
-def _pushed_at(client: GitHub, head: str, now: datetime) -> datetime:
-    """이 SHA 가 **밀려 올라온** 시각. 커밋이 만들어진 시각이 아니다.
+def _pushed_at(client: GitHub, pull: dict, now: datetime) -> datetime:
+    """이 PR 의 현재 head 가 **밀려 올라온** 시각. 커밋이 만들어진 시각이 아니다.
 
     `committer.date` 로 재면 cherry-pick·rebase 로 되살린 커밋이 첫 판정부터 회수 창을
     소진한 것으로 보인다 — 스택 착지가 정확히 그 모양이라(정책 §6) 리뷰를 한 번도 못 받은
-    PR 이 초록이 된다. 체크 스위트 생성 시각은 그 push 가 CI 를 깨운 시각이라 근사가 맞다.
+    PR 이 초록이 된다.
+
+    그렇다고 같은 SHA 의 체크 스위트를 통째로 세면 안 된다. 같은 커밋이 다른 브랜치나 다른
+    PR 에서 이미 돈 적이 있으면 그때의 스위트가 함께 실려, 이 PR 로서는 처음인 판정이 이미
+    창을 넘긴 것으로 보인다. **이 PR 에 딸린 스위트만** 본다.
     """
+    head, branch = pull["head"]["sha"], pull["head"]["ref"]
+    number = int(pull["number"])
     suites = client.get(f"commits/{head}/check-suites").get("check_suites") or []
-    stamps = [_moment(suite["created_at"]) for suite in suites if suite.get("created_at")]
+    mine = [
+        suite
+        for suite in suites
+        if any(int(p["number"]) == number for p in suite.get("pull_requests") or [])
+        or suite.get("head_branch") == branch
+    ]
+    stamps = [_moment(suite["created_at"]) for suite in mine if suite.get("created_at")]
     if stamps:
         return min(stamps)
-    # 체크 스위트가 아직 없다 = 방금 올라왔다. 커밋 시각으로 물러서면 창이 이미 지났다고
+    # 이 PR 의 스위트가 아직 없다 = 방금 올라왔다. 커밋 시각으로 물러서면 창이 이미 지났다고
     # 볼 수 있으므로, 그런 경우는 **아직 안 지난 것**으로 취급하는 쪽이 안전하다.
     return now
 
 
 def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     now = now or datetime.now(timezone.utc)
-    head = client.get(f"pulls/{pr}")["head"]["sha"]
+    pull = client.get(f"pulls/{pr}")
+    head = pull["head"]["sha"]
 
     if _fast_path(client, pr):
         return Report(
@@ -448,8 +483,8 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             bad_defers.append((finding, problem))
 
     signal, signalled_at = _signal(client, pr)
-    pushed_at = _pushed_at(client, head, now)
-    answered = any(f.commit == head for f in findings) or (
+    pushed_at = _pushed_at(client, pull, now)
+    answered = any(f.commit == head and f.by_reviewer for f in findings) or (
         signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
     )
     # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 루프가 멈추지
