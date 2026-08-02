@@ -24,7 +24,7 @@
 | 문서 | 권위 |
 |---|---|
 | [개발·빌드·배포 환경](DEVELOPMENT_ENVIRONMENT.md) | Python·의존성·품질 게이트·패키징·릴리스 절차 |
-| [PR·리뷰·머지 절차](REVIEW_POLICY.md) | 리뷰 지적의 트리아지, 정지 조건, 머지 게이트 |
+| [PR·리뷰·머지 절차](REVIEW_POLICY.md) | 리뷰 지적의 트리아지(스레드 정산), 정지 조건, 머지 게이트, 룰셋 런북 |
 | [UI 계약](UI_CONTRACT.md) | 현재 웹 UI의 계층, 화면 소유권, 계약 테스트 |
 | [화면 문안 스타일](COPY_STYLE_GUIDE.md) | 사용자 대면 문장의 문형·길이·금지 표현 |
 | [UI 용어 규약](UI_VOCABULARY.md) | 사용자 가시 용어·단위·폼 배치의 단일 출처 |
