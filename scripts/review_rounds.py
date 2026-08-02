@@ -137,6 +137,7 @@ class Report:
     open_blocks: list[Finding]
     bad_defers: list[tuple[Finding, str]]
     regressions: list[tuple[Finding, Finding]]
+    block_streak: int
     signal: str | None
     reviewed: bool
     needs_recall: bool
@@ -156,6 +157,7 @@ class Report:
             "unsettled": [f.id for f in self.unsettled],
             "open_blocks": [f.id for f in self.open_blocks],
             "bad_defers": [{"finding": f.id, "reason": why} for f, why in self.bad_defers],
+            "block_streak": self.block_streak,
             "regressions": [
                 {"previous": before.id, "repeat": after.id, "path": after.path}
                 for before, after in self.regressions
@@ -371,6 +373,23 @@ def _defer_problem(client: GitHub, triage: Triage) -> str | None:
     return None
 
 
+def block_streak(rounds: list[Round], settled: dict[int, Triage]) -> int:
+    """끝에서부터 차단을 낸 라운드가 몇 번 연속인가.
+
+    **게이트가 아니라 표시다.** 정책 §3 은 세 번 연속이면 점별 픽스를 멈추고 결함류를 닫으라고
+    하는데, 그 판단은 사람이 한다 — 기계가 그 상태를 들고 있으려 하면 「어디까지가 이미 정산된
+    과거인가」라는 부기가 필요해지고, 그 부기는 이 저장소에서 거듭 틀렸다(#450).
+    """
+    streak = 0
+    for round_ in reversed(rounds):
+        if not any(
+            (triage := settled.get(f.id)) and triage.verdict == "block" for f in round_.findings
+        ):
+            return streak
+        streak += 1
+    return streak
+
+
 def _regressions(
     rounds: list[Round], settled: dict[int, Triage]
 ) -> list[tuple[Finding, Finding]]:
@@ -495,6 +514,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             open_blocks=[],
             bad_defers=[],
             regressions=[],
+            block_streak=0,
             signal=None,
             reviewed=True,
             needs_recall=False,
@@ -537,28 +557,31 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     #
     # 재리뷰는 저절로 오지 않는다. `@codex review` 로 **우리가 부른다**(정책 §3).
     fixed_something = any(t.verdict == "block" for t in settled.values())
-    read_head = any(f.commit == head and f.by_reviewer for f in findings) or (
-        signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
-    )
-    # **지금 head 에 차단이 붙어 있으면 그 head 는 「픽스가 읽힌」 것일 수 없다.** 그 지적은
-    # 바로 이 코드에 대한 것이니, 고침은 아직 여기 없다. 이 조건이 없으면 head 에 받은 차단을
-    # 마커만 달고 스레드를 해결해 **픽스를 push 하지도 않고** 초록을 만들 수 있다.
+
+    # **하나의 긍정형 술어**로 묻는다 — 「지금 head 는 픽스가 읽힌 head 인가」.
     #
-    # 「고친 뒤에 읽혔는가」를 시각이나 저장된 경계로 재지 않는 것이 요점이다 — 그 부기는 이
-    # 저장소에서 거듭 틀렸다(#450). 지금 head 의 **내용**만 본다.
+    # 종전에는 이것을 부정형 조건의 조합으로 뒀고, 그래서 초록으로 나가는 길이 하나 늘 때마다
+    # (head 를 읽었다·회수 창이 지났다) `blocked_here` 를 빼먹는 사고가 반복됐다. 나가는 문이
+    # 여럿이면 잠금은 문마다 다시 걸어야 한다 — 문을 하나로 만든다.
     blocked_here = any(
         f.commit == head and (t := settled.get(f.id)) and t.verdict == "block" for f in findings
     )
-    needs_recall = fixed_something and not (read_head and not blocked_here)
+    read_head = any(f.commit == head and f.by_reviewer for f in findings) or (
+        signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
+    )
+    # 차단이 지금 head 에 붙어 있으면 그 지적은 **바로 이 코드**에 대한 것이니 고침이 아직
+    # 여기 없다. 그 head 는 무엇으로도 「픽스가 읽힌」 것이 되지 못한다 — 회수 창으로도.
+    fix_was_read = read_head and not blocked_here
+    needs_recall = fixed_something and not fix_was_read
 
-    # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 멈추지 않게 열어
-    # 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면 「리뷰를 받았다」와
-    # 「리뷰어가 침묵했다」가 같은 색이 된다.
-    timed_out = not (reviewed and not needs_recall) and now - pushed_at > RECOVERY_WINDOW
+    settled_enough = reviewed and not needs_recall
+    timed_out = (
+        not settled_enough and not blocked_here and now - pushed_at > RECOVERY_WINDOW
+    )
 
     if open_blocks or bad_defers:
         status = BLOCKED
-    elif unsettled or not ((reviewed and not needs_recall) or timed_out):
+    elif unsettled or not (settled_enough or timed_out):
         status = WAIT
     else:
         status = READY
@@ -572,6 +595,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         open_blocks=open_blocks,
         bad_defers=bad_defers,
         regressions=_regressions(rounds, settled),
+        block_streak=block_streak(rounds, settled),
         signal=signal,
         reviewed=reviewed,
         needs_recall=needs_recall,
@@ -597,6 +621,11 @@ def render(report: Report) -> str:
         lines.extend(f"  {f.label()}" for f in report.open_blocks)
     for finding, why in report.bad_defers:
         lines.append(f"분리 불성립: {finding.id} — {why}")
+    if report.block_streak >= 3:
+        lines.append(
+            f"차단이 {report.block_streak}라운드 연속입니다 — 점별 픽스를 멈추고 결함류를"
+            " 하나로 닫을 자리입니다(정책 §3)."
+        )
     for before, after in report.regressions:
         lines.append(f"회귀 후보: {after.path}:{after.line} (앞 라운드 {before.id})")
     if report.timed_out:

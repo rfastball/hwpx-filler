@@ -398,6 +398,27 @@ def test_a_block_on_the_current_head_cannot_be_closed_without_pushing_the_fix() 
     assert report.needs_recall and report.status == WAIT
 
 
+def test_the_recovery_window_cannot_rescue_an_unpushed_fix() -> None:
+    """나가는 문이 여럿이면 잠금은 문마다 다시 걸어야 한다 — 그래서 문을 하나로 뒀다.
+    회수 창은 리뷰어가 안 왔을 때의 탈출구지, 고치지 않은 차단의 탈출구가 아니다."""
+    fake = FakeGitHub(head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    report = evaluate(fake, PR, now=PUSHED + review_rounds.RECOVERY_WINDOW + timedelta(minutes=5))
+    assert not report.timed_out and report.status == WAIT
+
+
+def test_the_streak_is_reported_so_the_root_cause_rule_can_fire() -> None:
+    """게이트가 막지는 않지만, 세지 않으면 사람이 그 자리를 못 알아본다(정책 §3)."""
+    comments = [_comment(i, f"sha{i}", path=f"src/{i}.py") for i in range(3)]
+    fake = FakeGitHub(
+        head="sha2", comments=comments, triage=[f"triage: {i} block" for i in range(3)]
+    )
+    fake.resolved.update(range(3))
+    report = evaluate(fake, PR, now=NOW)
+    assert report.block_streak == 3
+    assert "3라운드 연속" in review_rounds.render(report)
+
+
 def test_a_reviewer_who_read_the_fix_closes_it() -> None:
     """양성 대조 — 재리뷰가 head 를 짚었으면 그 픽스는 읽힌 것이다."""
     fake = FakeGitHub(
