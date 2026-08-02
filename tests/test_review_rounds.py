@@ -44,6 +44,7 @@ class FakeGitHub:
         trees: dict[str, str] | None = None,
         issues: dict[int, dict] | None = None,
     ) -> None:
+        self.repo = "rfastball/hwpx-filler"
         self.head = head
         self.files = files if files is not None else ["src/a.py"]
         self.comments = comments or []
@@ -52,6 +53,23 @@ class FakeGitHub:
         self.trees = trees or {}
         self.issues = issues or {}
         self.posted: list[tuple[str, dict]] = []
+        self.resolved: set[int] = set()
+
+    def graphql(self, query: str, **variables: object) -> dict:
+        nodes = [
+            {
+                "isResolved": raw["id"] in self.resolved,
+                "isOutdated": raw.get("line") is None,
+                "comments": {"nodes": [{"databaseId": raw["id"]}]},
+            }
+            for raw in self.comments
+            if not raw.get("in_reply_to_id")
+        ]
+        return {
+            "data": {
+                "repository": {"pullRequest": {"reviewThreads": {"nodes": nodes}}}
+            }
+        }
 
     def post(self, path: str, payload: dict) -> dict:
         self.posted.append((path, payload))
@@ -168,6 +186,15 @@ def test_settled_and_resolved_findings_are_ready() -> None:
     report = evaluate(fake, PR, now=NOW)
     assert report.status == READY
     assert report.open_blocks == []
+
+
+def test_a_resolved_thread_closes_a_block_even_while_the_comment_lives() -> None:
+    """GitHub 은 앵커 hunk 가 살아 있으면 코멘트를 재앵커해 유지한다 — 바로 옆을 고쳐도
+    outdated 가 되지 않으므로 그것만으로는 해소를 못 잰다. 스레드 해결이 옳은 신호다."""
+    fake = FakeGitHub(head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    report = evaluate(fake, PR, now=NOW)
+    assert report.open_blocks == [] and report.status == READY
 
 
 def test_a_block_that_is_still_live_blocks() -> None:

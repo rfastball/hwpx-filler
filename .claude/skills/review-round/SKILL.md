@@ -44,8 +44,13 @@ gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
 분리 항목은 손대지 않는다. 차단은 고치되, **회귀 후보**가 표시됐거나 차단이 3라운드 연속
 나왔다면 점별 픽스를 멈추고 결함류를 하나로 닫는다(정책 §3).
 
-`block` 마커는 그 코멘트가 outdated 가 되어야 해소로 친다. 마커만 달고 안 고치면 게이트가
-계속 빨간색이다.
+고친 뒤에는 그 스레드를 **`Resolve conversation` 으로 닫는다** — 그것이 해소 신호다.
+코멘트가 outdated 가 되기를 기다리면 안 된다. GitHub 은 앵커 hunk 가 살아 있는 한 코멘트를
+최신 커밋으로 재앵커하므로, 실제로 고쳐도 살아남는 경우가 흔하다.
+
+```powershell
+gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){clientMutationId}}' -F t=<thread-id>
+```
 
 ## 5. 게이트를 돌리고 푸시한다
 

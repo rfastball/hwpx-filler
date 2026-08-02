@@ -80,6 +80,7 @@ class Finding:
     line: int | None
     commit: str
     outdated: bool
+    resolved: bool
     author: str
     severity: str
     excerpt: str
@@ -178,6 +179,12 @@ class GitHub:
             stdin=json.dumps(payload),
         )
 
+    def graphql(self, query: str, **variables: str | int) -> dict:
+        command = ["gh", "api", "graphql", "-f", f"query={query}"]
+        for key, value in variables.items():
+            command += ["-F", f"{key}={value}"]
+        return self._run(command)
+
     def paged(self, path: str) -> list[dict]:
         """페이지를 직접 돈다 — `--paginate` 는 gh 판본에 따라 붙인 JSON 을 뱉는다."""
         joiner = "&" if "?" in path else "?"
@@ -202,12 +209,45 @@ def _moment(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
+#: 리뷰 스레드의 해결·outdated 상태. REST 의 인라인 코멘트에는 이 둘이 실리지 않는다.
+THREAD_QUERY = """
+query($owner:String!,$name:String!,$number:Int!){
+  repository(owner:$owner,name:$name){
+    pullRequest(number:$number){
+      reviewThreads(first:100){
+        nodes{ isResolved isOutdated comments(first:1){nodes{databaseId}} }
+      }
+    }
+  }
+}
+"""
+
+
+def _thread_states(client: GitHub, pr: int) -> dict[int, tuple[bool, bool]]:
+    """뿌리 코멘트 id → (해결됨, outdated).
+
+    **「고쳐서 코멘트가 사라졌는가」로는 해소를 못 잰다.** GitHub 은 앵커 hunk 가 살아 있는
+    한 코멘트를 최신 커밋으로 재앵커해 유지하므로, 바로 옆을 고쳐도 outdated 가 되지 않는다.
+    스레드 해결은 사람이 「이건 처리했다」고 남긴 **원격 행위**라 그쪽이 옳은 신호다.
+    """
+    owner, _, name = client.repo.partition("/")
+    data = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr)
+    threads = data["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+    states: dict[int, tuple[bool, bool]] = {}
+    for thread in threads:
+        roots = thread["comments"]["nodes"]
+        if roots:
+            states[int(roots[0]["databaseId"])] = (thread["isResolved"], thread["isOutdated"])
+    return states
+
+
 def _findings(client: GitHub, pr: int) -> list[Finding]:
     """인라인 리뷰 코멘트가 곧 지적이다.
 
     답글(`in_reply_to_id`)은 뺀다 — 뿌리 코멘트가 그 지적을 대표하고, 답글까지 정산 대상으로
     삼으면 우리가 쓴 해명이 스스로 게이트를 세운다.
     """
+    states = _thread_states(client, pr)
     findings = []
     for raw in client.paged(f"pulls/{pr}/comments"):
         if raw.get("in_reply_to_id"):
@@ -220,7 +260,8 @@ def _findings(client: GitHub, pr: int) -> list[Finding]:
                 path=raw.get("path") or "",
                 line=raw.get("line"),
                 commit=raw["original_commit_id"],
-                outdated=raw.get("line") is None,
+                outdated=states.get(int(raw["id"]), (False, raw.get("line") is None))[1],
+                resolved=states.get(int(raw["id"]), (False, False))[0],
                 author=(raw.get("user") or {}).get("login", ""),
                 severity=severity.group(1) if severity else "??",
                 excerpt=_plain(body),
@@ -393,7 +434,9 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     open_blocks = [
         f
         for f in findings
-        if (t := settled.get(f.id)) and t.verdict == "block" and not f.outdated
+        if (t := settled.get(f.id))
+        and t.verdict == "block"
+        and not (f.outdated or f.resolved)
     ]
     bad_defers = []
     for finding in findings:
