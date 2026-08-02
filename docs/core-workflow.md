@@ -1095,7 +1095,7 @@ stateDiagram-v2
 ### 19.12 시각 문법 — 제품 토큰 직접 소비
 
 v6는 자체 색 팔레트를 두지 않는다. `core-workflow-ui-mvp-demo-v6.html`이 제품 생성물
-`../web/css/tokens.css`를 직접 링크하고, `core-workflow-prototype/v6.css`는 그 토큰만 소비한다
+`../frontend/css/tokens.css`를 직접 링크하고, `core-workflow-prototype/v6.css`는 그 토큰만 소비한다
 (`docs/UI_GALLERY.html`과 같은 방식 — 드리프트 0). 따라서 색·여백·모서리·글자크기·모션·
 라이트/다크의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이며, 토큰이 바뀌면 시안도
 같이 바뀐다.

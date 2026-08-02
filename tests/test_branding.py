@@ -101,7 +101,7 @@ def test_root_readme_is_product_entry() -> None:
 
 
 def test_favicon_asset_bundled() -> None:
-    """web/img 심벌 SVG(파비콘)가 세 색의 열린 문서 면을 담는다."""
+    """frontend/img 심벌 SVG(파비콘)가 세 색의 열린 문서 면을 담는다."""
     svg = source_text("img", "narmi-mark.svg")
     for color in ("#0E3FAE", "#1857D8", "#43C9A8"):
         assert f'stroke="{color}"' in svg

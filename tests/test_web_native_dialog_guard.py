@@ -1,4 +1,4 @@
-"""네이티브 다이얼로그 재유입 방지 가드(#86, R-flow 부록 B-2) — ``web/js`` 에서
+"""네이티브 다이얼로그 재유입 방지 가드(#86, R-flow 부록 B-2) — ``frontend/js`` 에서
 ``window.confirm``·``window.prompt`` 검출 금지.
 
 네이티브 ``confirm`` 은 Enter-반사로 파괴 동작이 무의식 통과되는 결함 클래스(F7)라, 확인은
@@ -34,7 +34,7 @@ def _strip_js_comments(text: str) -> str:
 
 
 def test_no_native_confirm_or_prompt_in_web_js():
-    """web/js 코드(주석 제외)에 window.confirm·window.prompt 가 없어야 한다(#86)."""
+    """frontend/js 코드(주석 제외)에 window.confirm·window.prompt 가 없어야 한다(#86)."""
     offenders = []
     for p in JS_FILES:
         body = _strip_js_comments(p.read_text(encoding="utf-8"))
@@ -43,7 +43,7 @@ def test_no_native_confirm_or_prompt_in_web_js():
                 line = body.count("\n", 0, m.start()) + 1
                 offenders.append(f"{p.relative_to(ROOT).as_posix()}:{line}: '{term}'")
     assert not offenders, (
-        "네이티브 다이얼로그가 web/js 에 재유입됐습니다 — Modal.confirm/Modal.prompt 로 "
+        "네이티브 다이얼로그가 frontend/js 에 재유입됐습니다 — Modal.confirm/Modal.prompt 로 "
         "이관하세요(#86, Enter-반사 파괴 결함 F7):\n" + "\n".join(offenders)
     )
 

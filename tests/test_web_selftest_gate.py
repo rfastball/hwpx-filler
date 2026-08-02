@@ -1,6 +1,6 @@
 ﻿"""실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
 
-파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``web/index.html`` 의 *정적*
+파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``frontend/index.html`` 의 *정적*
 구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
 실 :class:`~hwpxfiller.webapp.app.WebFrontend` + 실 컨트롤러 + 실 ``render()`` 를 pywebview 로
 구동하고 ``evaluate_js`` 로 DOM 을 되읽어 **렌더 거동**(창 부팅·작업 기본 화면·홈 경보·내비 실체)을
