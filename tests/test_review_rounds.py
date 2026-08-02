@@ -368,11 +368,38 @@ def test_the_gate_waits_until_the_pull_request_has_been_read_at_all() -> None:
     assert report.status == WAIT and not report.reviewed
 
 
-def test_a_later_push_does_not_undo_the_review() -> None:
-    """정산이 끝난 뒤 픽스를 밀어 넣어도 다시 WAIT 로 떨어지지 않는다."""
+def test_a_defer_only_settlement_survives_a_later_push() -> None:
+    """분리만 했으면 코드가 안 바뀌었다 — 다시 읽힐 이유가 없다."""
+    fake = FakeGitHub(
+        head="c9",
+        comments=[_comment(1, "c1")],
+        triage=["triage: 1 defer #77"],
+        issues={77: _open_issue(77)},
+    )
+    assert evaluate(fake, PR, now=NOW).status == READY
+
+
+def test_fixing_a_block_requires_the_result_to_be_read_again() -> None:
+    """자동 리뷰가 PR 당 한 번인데 여기서 놓아 주면 라운드 폭증을 **미검토**로 맞바꾼다 —
+    초기 diff 만 읽히고 그 뒤 픽스는 영영 안 읽힌 채 머지된다."""
     fake = FakeGitHub(head="c9", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
     fake.resolved.add(1)
-    assert evaluate(fake, PR, now=NOW).status == READY
+    report = evaluate(fake, PR, now=NOW)
+    assert report.needs_recall and report.status == WAIT
+    assert "@codex review" in review_rounds.render(report)
+
+
+def test_a_reviewer_who_read_the_fix_closes_it() -> None:
+    """양성 대조 — 재리뷰가 head 를 짚었으면 그 픽스는 읽힌 것이다."""
+    fake = FakeGitHub(
+        head="c9",
+        comments=[_comment(1, "c1"), _comment(2, "c9")],
+        triage=["triage: 1 block", "triage: 2 defer #77"],
+        issues={77: _open_issue(77)},
+    )
+    fake.resolved.add(1)
+    report = evaluate(fake, PR, now=NOW)
+    assert not report.needs_recall and report.status == READY
 
 
 def test_an_authored_comment_is_not_a_review() -> None:

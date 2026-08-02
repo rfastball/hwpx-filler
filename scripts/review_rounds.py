@@ -139,6 +139,7 @@ class Report:
     regressions: list[tuple[Finding, Finding]]
     signal: str | None
     reviewed: bool
+    needs_recall: bool
     timed_out: bool
     status: str
 
@@ -161,6 +162,7 @@ class Report:
             ],
             "signal": self.signal,
             "reviewed": self.reviewed,
+            "needs_recall": self.needs_recall,
             "timed_out": self.timed_out,
         }
 
@@ -486,6 +488,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             regressions=[],
             signal=None,
             reviewed=True,
+            needs_recall=False,
             timed_out=False,
             status=READY,
         )
@@ -511,22 +514,33 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         if problem:
             bad_defers.append((finding, problem))
 
-    signal, _ = _signal(client, pr)
-    # 자동 리뷰는 **PR 당 한 번** 발화한다(2026-08-02 설정 변경). 그래서 게이트가 묻는 것은
+    signal, signalled_at = _signal(client, pr)
+    pushed_at = _pushed_at(client, pull, now)
+
+    # 자동 리뷰는 **PR 당 한 번** 발화한다(2026-08-02 설정 변경). 그래서 기본으로 묻는 것은
     # 「마지막 push 를 봤는가」가 아니라 **「이 PR 이 한 번이라도 읽혔는가」**다. 앞엣것을
-    # 물으면 고칠 때마다 다시 안 읽힌 상태가 돼 영영 안 닫힌다 — 재리뷰는 `@codex review` 로
-    # **우리가 명시 요청할 때만** 온다.
+    # 늘 물으면 고칠 때마다 다시 안 읽힌 상태가 돼 영영 안 닫힌다.
     reviewed = any(f.by_reviewer for f in findings) or signal == "+1"
+
+    # **차단을 고쳤으면 그 결과가 다시 읽혀야 한다.** 고침은 새 코드이고 새 코드는 눈이
+    # 필요하다 — 자동 리뷰가 한 번뿐인데 여기서 놓아 주면 라운드 폭증을 **미검토**로 맞바꾼다.
+    # 분리만 했다면 코드가 안 바뀌었으므로 부를 이유가 없다.
+    #
+    # 재리뷰는 저절로 오지 않는다. `@codex review` 로 **우리가 부른다**(정책 §3).
+    fixed_something = any(t.verdict == "block" for t in settled.values())
+    head_read = any(f.commit == head and f.by_reviewer for f in findings) or (
+        signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
+    )
+    needs_recall = fixed_something and not head_read
 
     # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 멈추지 않게 열어
     # 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면 「리뷰를 받았다」와
     # 「리뷰어가 침묵했다」가 같은 색이 된다.
-    pushed_at = _pushed_at(client, pull, now)
-    timed_out = not reviewed and now - pushed_at > RECOVERY_WINDOW
+    timed_out = not (reviewed and not needs_recall) and now - pushed_at > RECOVERY_WINDOW
 
     if open_blocks or bad_defers:
         status = BLOCKED
-    elif unsettled or not (reviewed or timed_out):
+    elif unsettled or not ((reviewed and not needs_recall) or timed_out):
         status = WAIT
     else:
         status = READY
@@ -542,6 +556,7 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         regressions=_regressions(rounds, settled),
         signal=signal,
         reviewed=reviewed,
+        needs_recall=needs_recall,
         timed_out=timed_out,
         status=status,
     )
@@ -570,6 +585,11 @@ def render(report: Report) -> str:
         lines.append(
             "회수 창이 지나도록 리뷰어가 침묵했습니다 — 리뷰를 **받지 못한 채** 닫습니다. "
             "`@codex review` 로 한 번 명시 트리거해 보고, 그래도 무응답이면 그대로 진행합니다."
+        )
+    elif report.needs_recall:
+        lines.append(
+            "차단을 고쳤으니 그 결과가 다시 읽혀야 합니다. 재리뷰는 저절로 오지 않습니다 —"
+            " `gh pr comment " + str(report.pr) + ' --body "@codex review"` 로 부르십시오.'
         )
     elif not report.reviewed:
         lines.append("자동 리뷰를 아직 회수하지 못했습니다.")
