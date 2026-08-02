@@ -1436,6 +1436,11 @@ def main(
                     window=window,
                     artifact=artifact,
                     finish=_live_terminator(window, run.write_output),
+                    # 위에서 **이미 무장한** 예산을 그대로 건넨다(#460 리뷰 P1). 드라이버가
+                    # 다시 계산하면 아래 loaded 콜백이 먼저 쓴 완주 스탬프를 읽어, 콜드로
+                    # 무장한 이 부팅을 웜 예산으로 재게 된다.
+                    boot_budget_s=budget_seconds,
+                    boot_budget_reason=budget_reason,
                 ),
             )
             webview.start(entry, gui=gui, storage_path=str(storage_dir))

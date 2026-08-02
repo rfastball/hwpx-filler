@@ -402,7 +402,7 @@ def _run_with_home(
         try:
             # 창 부팅은 **제품 단언이 아니라 전제**다 — 우리 예산으로 기다린 뒤에야 창을
             # 만진다. 이 줄이 없으면 아래 첫 호출이 pywebview 의 20초 상수를 먼저 문다(#460).
-            _await_window(window, *boot_budget_s())
+            _await_window(window, *boot_wait_budget(ctx, deadline))
             _await_bridge(window, deadline)
             window.resize(WINDOW_W, WINDOW_H)
             time.sleep(0.6)
@@ -480,34 +480,32 @@ def _run_with_home(
     return result
 
 
-def boot_budget_s() -> "tuple[float, str]":
-    """창 부팅 대기 예산 ``(초, 사유)`` — **제품의 판정을 받아** 여유만 얹는다(#460).
+def boot_wait_budget(ctx: object, deadline: Deadline) -> "tuple[float, str]":
+    """창 부팅 대기 예산 ``(초, 사유)`` — **이 부팅이 무장한 값을 받아** 여유를 얹고 클램프한다.
 
-    이 숫자를 여기서 새로 고르지 않는 것이 요점이다. "WebView2 부팅이 얼마나 걸릴 수 있는가"는
-    제품이 이미 재고 정당화한 질문이고(:mod:`hwpxfiller.webapp.boot_budget` — 콜드 부트스트랩
-    30~60s), 하니스가 자기 상수로 다시 답하면 **같은 상태를 두 곳이 판정한다**.
+    ## 왜 재계산하지 않는가 (#460 리뷰 P1)
 
-    실제로 그렇게 돼 있었다. 종전 하니스의 20초는 제품의 **웜** 값과 같은 수였는데, 이 하니스는
-    ``--home temp`` 라 구조적으로 언제나 **콜드**다 — 완주 스탬프가 남을 홈이 매 실행 새것이라
-    :func:`~hwpxfiller.webapp.boot_budget.decide` 는 항상 콜드를 낸다. 제품이 "이 상황은 60초"
-    라고 답해 둔 질문에 하니스만 20초로 답하고 있었다.
+    처음에는 이 자리에서 :func:`~hwpxfiller.webapp.boot_budget.decide` 를 다시 불렀다. "제품의
+    판정을 받는다"고 적었지만 실제로는 **두 번째 판정자**였고, 판정의 입력을 이 실행 자신이
+    바꾼다: ``loaded`` 콜백이 완주 스탬프를 **먼저** 쓰고 그 뒤 두 번의 동기 왕복을 거쳐 show
+    하므로(``app.py`` 의 ``_apply_theme_then_show``), 그 사이에 재계산하면 콜드(60s)로 무장한
+    부팅을 웜(20s) 예산으로 재게 된다 — 제품 폴백이 살려낼 부팅을 하니스가 먼저 죽인다.
 
-    홈은 :func:`run` 이 ``HWPXFILLER_HOME`` 에 못박은 뒤라 이 실행의 것이다.
+    그래서 값은 :class:`~hwpxfiller.webapp.live_run.LiveContext` 로 **건네받는다**. 판정자는
+    하나고, 그 판정이 실제로 무장한 타이머와 같은 수임이 구조로 보장된다.
 
-    힌트를 못 읽어도 부팅을 막지 않는다 — 콜드로 접는다(관대한 쪽). 예산 판정 실패가 실행을
-    죽이면 이 함수가 막으려던 것보다 큰 것을 잃는다.
+    ## 왜 클램프하는가 (#460 리뷰 P2)
+
+    부팅 대기가 :class:`Deadline` 밖에 서면 예산 계층 옆에 시계가 하나 더 생긴다 — 이 변경이
+    없애려던 형상 그대로다. ``--budget-s`` 를 작게 준 호출자에게는 하드 스톱
+    (``budget_s + RUN_HARD_STOP_MARGIN_S``)이 부팅 대기보다 먼저 물어, 워치독이 ``drive()`` 의
+    ``finally`` 를 건너뛰고 **환경 분류 없이** 착지한다. :func:`_await_bridge` 가 이미 쓰는
+    관용(남은 예산과의 최솟값)을 그대로 따른다.
     """
-    from hwpxfiller.webapp import boot_budget, settings  # 부재는 시끄럽게 — 제품이 없다는 사실이다
-
-    try:
-        seen = settings.load_boot_completed()
-    except OSError as exc:
-        return (
-            boot_budget.COLD_BUDGET_SECONDS + BOOT_GRACE_S,
-            f"완주 이력을 못 읽음({exc!r}) — 콜드로 접음",
-        )
-    seconds, reason = boot_budget.decide(seen, boot_budget.detect_runtime_version())
-    return seconds + BOOT_GRACE_S, reason
+    armed = float(getattr(ctx, "boot_budget_s", 0.0) or 0.0)
+    reason = str(getattr(ctx, "boot_budget_reason", "") or "제품 예산 미전달")
+    remaining = max(deadline.remaining_s(), 0.0)
+    return min(armed + BOOT_GRACE_S, remaining), reason
 
 
 def _await_window(window: object, budget_s: float, reason: str) -> None:

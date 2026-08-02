@@ -525,31 +525,77 @@ def test_a_real_product_failure_still_prints_every_line(capsys, tmp_path) -> Non
     assert len([line for line in lines if line.lstrip().startswith("·")]) == 2, lines
 
 
-def test_the_harness_waits_longer_than_the_product_fallback() -> None:
-    """순서가 계약이다 — 하니스는 제품의 폴백보다 **성겨야** 한다.
+class _Ctx:
+    def __init__(self, boot_budget_s=0.0, boot_budget_reason="") -> None:
+        self.boot_budget_s = boot_budget_s
+        self.boot_budget_reason = boot_budget_reason
+
+
+def test_the_harness_waits_longer_than_the_budget_this_boot_actually_armed() -> None:
+    """순서가 계약이다 — 하니스는 **이 부팅이 무장한** 폴백보다 성겨야 한다.
 
     반대로 서면 하니스가 제품이 살려내려던 부팅을 먼저 죽이고, 제품이 남겼을 강제 show + 경보는
-    영영 나오지 않는다. 창 없이 도는 순수 산술이라 GUI 없는 러너에서도 잡힌다.
+    영영 나오지 않는다.
+
+    종전 이 테스트는 ``product + GRACE > product`` 라는 **산술**을 쟀다(#460 리뷰 P1). 그것은
+    상수가 무엇이든 참이라, 하니스가 콜드로 무장한 부팅에 웜 값을 쓰는 실제 결함 앞에서 초록인
+    채였다. 이제 무장값을 넣고 **나온 대기 시간**을 견준다.
     """
-    for product_budget in (boot_budget.COLD_BUDGET_SECONDS, boot_budget.WARM_BUDGET_SECONDS):
-        assert product_budget + driver.BOOT_GRACE_S > product_budget
+    for armed in (boot_budget.COLD_BUDGET_SECONDS, boot_budget.WARM_BUDGET_SECONDS):
+        waited, _ = driver.boot_wait_budget(_Ctx(armed, "사유"), Deadline(9999.0))
+        assert waited > armed, f"무장 {armed}s 인데 하니스가 {waited}s 만 기다린다"
 
-    assert driver.BOOT_GRACE_S > 0, "여유가 0이면 하니스와 제품이 동시에 발화한다"
-    # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
-    assert not (60.0 - 5.0 > 60.0)
+    # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가.
+    assert not (boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
+                > boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S)
 
 
-def test_the_boot_budget_comes_from_the_product_not_a_local_constant() -> None:
-    """예산의 출처가 제품이다 — 하니스가 같은 상태를 두 번째로 판정하지 않는다.
+def test_a_cold_armed_boot_is_never_measured_with_the_warm_budget() -> None:
+    """#460 리뷰 P1 — 재계산 금지가 **구조로** 지켜지는가.
 
-    홈은 autouse 픽스처가 임시 폴더에 못박으므로 완주 이력이 없다 = **콜드**. 이 하니스가
-    ``--home temp`` 로 구조적으로 놓이는 자리와 같다.
+    ``loaded`` 콜백이 완주 스탬프를 먼저 쓰므로, 이 자리에서 ``decide()`` 를 다시 부르면 콜드로
+    무장한 부팅이 웜 예산으로 재진다. 값을 건네받는 한 홈 상태가 어떻든 그 일이 없다.
     """
-    seconds, reason = driver.boot_budget_s()
+    armed = boot_budget.COLD_BUDGET_SECONDS
+    # 스탬프가 이미 쓰인 홈을 흉내 낸다 — 재계산했다면 여기서 웜으로 접혔을 것이다.
+    from hwpxfiller.webapp import settings
 
-    assert seconds == boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
-    assert "첫 실행" in reason
-    assert seconds > 20.0, "종전 하니스 상수(20s)는 제품의 **웜** 값이었다 — 콜드를 못 덮는다"
+    settings.save_boot_completed(boot_budget.detect_runtime_version())
+
+    waited, _ = driver.boot_wait_budget(_Ctx(armed, "첫 실행"), Deadline(9999.0))
+
+    assert waited == armed + driver.BOOT_GRACE_S
+    assert waited > boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
+
+
+def test_the_boot_wait_expires_before_the_hard_stop(tmp_path) -> None:
+    """#460 리뷰 P2 — 부팅 대기가 :class:`Deadline` **안에** 있는가.
+
+    밖에 서면 작은 ``--budget-s`` 에서 하드 스톱(``budget_s + RUN_HARD_STOP_MARGIN_S``)이 먼저
+    물어 ``drive()`` 가 ``finally`` 를 건너뛴다 — 그러면 워치독의 착지가 환경 분류 없이 돌아
+    이 변경이 없앤 제품 실패 7줄이 되돌아온다.
+    """
+    run_budget = 10.0
+    hard_stop = run_budget + driver.RUN_HARD_STOP_MARGIN_S
+    waited, _ = driver.boot_wait_budget(
+        _Ctx(boot_budget.COLD_BUDGET_SECONDS, "첫 실행"), Deadline(run_budget)
+    )
+
+    assert waited <= run_budget, f"부팅 대기 {waited}s 가 실행 예산 {run_budget}s 를 넘습니다"
+    assert waited < hard_stop, "하드 스톱이 먼저 물면 구조화된 환경 착지가 통째로 사라진다"
+    # 음성 대조 — 예산이 넉넉하면 클램프가 아니라 무장값이 이긴다(항상 자르지 않는다).
+    generous, _ = driver.boot_wait_budget(
+        _Ctx(boot_budget.COLD_BUDGET_SECONDS, "첫 실행"), Deadline(9999.0)
+    )
+    assert generous == boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
+
+
+def test_a_context_without_a_budget_is_named_not_silently_generous() -> None:
+    """예산이 안 실려 오면 **사유가 그렇게 말한다** — 조용한 기본값으로 접지 않는다."""
+    waited, reason = driver.boot_wait_budget(_Ctx(), Deadline(9999.0))
+
+    assert waited == driver.BOOT_GRACE_S
+    assert "미전달" in reason
 
 
 # ─────────────────── 부재/미성립 구분의 음성 대조(게이트 밖) ───────────────────
