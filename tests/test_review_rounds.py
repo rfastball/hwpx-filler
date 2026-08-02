@@ -245,7 +245,7 @@ def test_a_resolved_thread_closes_a_block_even_while_the_comment_lives() -> None
     fake = FakeGitHub(head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
     fake.resolved.add(1)
     report = evaluate(fake, PR, now=NOW)
-    assert report.open_blocks == [] and report.status == READY
+    assert report.open_blocks == []
 
 
 def test_an_outdated_block_still_needs_an_explicit_resolution() -> None:
@@ -389,6 +389,15 @@ def test_fixing_a_block_requires_the_result_to_be_read_again() -> None:
     assert "@codex review" in review_rounds.render(report)
 
 
+def test_a_block_on_the_current_head_cannot_be_closed_without_pushing_the_fix() -> None:
+    """그 지적은 바로 이 코드에 대한 것이니 고침은 아직 여기 없다 — 마커와 스레드 해결만으로
+    초록이 되면 결함을 그대로 둔 채 머지된다."""
+    fake = FakeGitHub(head="c1", comments=[_comment(1, "c1")], triage=["triage: 1 block"])
+    fake.resolved.add(1)
+    report = evaluate(fake, PR, now=NOW)
+    assert report.needs_recall and report.status == WAIT
+
+
 def test_a_reviewer_who_read_the_fix_closes_it() -> None:
     """양성 대조 — 재리뷰가 head 를 짚었으면 그 픽스는 읽힌 것이다."""
     fake = FakeGitHub(
@@ -495,6 +504,29 @@ def test_the_same_place_twice_is_flagged_as_a_regression_candidate() -> None:
     assert [(b.id, a.id) for b, a in report.regressions] == [(1, 2)]
 
 
+def test_a_recurrence_shows_before_the_new_finding_is_triaged() -> None:
+    """경고는 **정산하기 전에** 보여야 한다 — 그것을 보고 무엇으로 정산할지 정하기 때문이다."""
+    fake = FakeGitHub(
+        head="c2",
+        comments=[_comment(1, "c1", line=10), _comment(2, "c2", line=12)],
+        triage=["triage: 1 block"],  # 새 지적 2는 아직 미정산이다
+    )
+    fake.resolved.add(1)
+    assert [(b.id, a.id) for b, a in evaluate(fake, PR, now=NOW).regressions] == [(1, 2)]
+
+
+def test_a_recurrence_set_aside_as_defer_is_not_a_regression() -> None:
+    """음성 대조 — 분리로 내려놓았으면 고칠 후보가 아니다."""
+    fake = FakeGitHub(
+        head="c2",
+        comments=[_comment(1, "c1", line=10), _comment(2, "c2", line=12)],
+        triage=["triage: 1 block", "triage: 2 defer #77"],
+        issues={77: _open_issue(77)},
+    )
+    fake.resolved.add(1)
+    assert evaluate(fake, PR, now=NOW).regressions == []
+
+
 def test_a_different_file_is_not_a_regression_candidate() -> None:
     fake = FakeGitHub(
         head="c2",
@@ -512,9 +544,9 @@ def test_replies_do_not_create_their_own_settlement_duty() -> None:
     fake = FakeGitHub(
         head="c1",
         comments=[_comment(1, "c1", line=None), reply],
-        triage=["triage: 1 block"],
+        triage=["triage: 1 defer #77"],
+        issues={77: _open_issue(77)},
         reactions=[_reaction("+1")],
-        resolved={1},
     )
     report = evaluate(fake, PR, now=NOW)
     assert report.unsettled == [] and report.status == READY

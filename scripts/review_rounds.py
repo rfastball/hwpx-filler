@@ -384,10 +384,19 @@ def _regressions(
         triage = settled.get(finding.id)
         return triage is not None and triage.verdict == "block"
 
+    def still_open(finding: Finding) -> bool:
+        """아직 분리로 내려놓지 않았다 = 고칠 후보다.
+
+        재발 경고는 **정산하기 전에** 보여야 한다 — 그것을 보고 무엇으로 정산할지 정하기
+        때문이다. 새 지적이 `block` 으로 찍히기를 기다리면 경고가 늘 한 발 늦는다.
+        """
+        triage = settled.get(finding.id)
+        return triage is None or triage.verdict == "block"
+
     found = []
     for previous, current in zip(rounds, rounds[1:], strict=False):
         for after in current.findings:
-            if not fixed(after):
+            if not still_open(after):
                 continue
             for before in previous.findings:
                 if not fixed(before):
@@ -528,10 +537,19 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     #
     # 재리뷰는 저절로 오지 않는다. `@codex review` 로 **우리가 부른다**(정책 §3).
     fixed_something = any(t.verdict == "block" for t in settled.values())
-    head_read = any(f.commit == head and f.by_reviewer for f in findings) or (
+    read_head = any(f.commit == head and f.by_reviewer for f in findings) or (
         signal == "+1" and signalled_at is not None and signalled_at >= pushed_at
     )
-    needs_recall = fixed_something and not head_read
+    # **지금 head 에 차단이 붙어 있으면 그 head 는 「픽스가 읽힌」 것일 수 없다.** 그 지적은
+    # 바로 이 코드에 대한 것이니, 고침은 아직 여기 없다. 이 조건이 없으면 head 에 받은 차단을
+    # 마커만 달고 스레드를 해결해 **픽스를 push 하지도 않고** 초록을 만들 수 있다.
+    #
+    # 「고친 뒤에 읽혔는가」를 시각이나 저장된 경계로 재지 않는 것이 요점이다 — 그 부기는 이
+    # 저장소에서 거듭 틀렸다(#450). 지금 head 의 **내용**만 본다.
+    blocked_here = any(
+        f.commit == head and (t := settled.get(f.id)) and t.verdict == "block" for f in findings
+    )
+    needs_recall = fixed_something and not (read_head and not blocked_here)
 
     # 회수 창 소진은 **리뷰가 아니라 교착 탈출**이다. 리뷰어가 죽어 있어도 멈추지 않게 열어
     # 두되, 그렇게 닫혔다는 사실은 시끄럽게 남긴다(§7). 조용히 초록이 되면 「리뷰를 받았다」와
