@@ -41,8 +41,16 @@ gh pr comment <PR> --body "triage: <comment-id> defer #<issue>"
 
 ## 4. 차단만 이 PR 에서 고친다
 
-분리 항목은 손대지 않는다. 차단은 고치되, **회귀 후보**가 표시됐거나 차단이 3라운드 연속
-나왔다면 점별 픽스를 멈추고 결함류를 하나로 닫는다(정책 §3).
+분리 항목은 손대지 않는다. **루프가 안 닫히면 먼저 「이걸 정말 이 PR 에서 고쳐야 하는가」를
+묻는다** — 고치면 push 가 생기고 push 가 리뷰를 부른다. 분리는 head 를 안 바꾸므로 그 자리에서
+닫힌다.
+
+판정이 `ESCALATE` 면 **고치는 것으로는 풀리지 않는다.** 점별 픽스를 멈추고 근본 조치·범위
+재단·중단 중 하나를 정한 뒤 그 판단을 남긴다:
+
+```powershell
+gh pr comment <PR> --body "triage: escalated <head-sha> — <사유>"
+```
 
 고친 뒤에는 그 스레드를 **`Resolve conversation` 으로 닫는다** — 그것이 해소 신호다.
 코멘트가 outdated 가 되기를 기다리면 안 된다. GitHub 은 앵커 hunk 가 살아 있는 한 코멘트를

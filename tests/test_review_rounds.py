@@ -12,7 +12,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from scripts import review_rounds
-from scripts.review_rounds import BLOCKED, READY, WAIT, GitHub, GitHubError, NotFound, evaluate
+from scripts.review_rounds import (
+    BLOCKED,
+    ESCALATE,
+    READY,
+    WAIT,
+    GitHub,
+    GitHubError,
+    NotFound,
+    evaluate,
+)
 
 PR = 430
 NOW = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
@@ -52,6 +61,7 @@ class FakeGitHub:
         self.comments = comments or []
         self.triage = triage or []
         self.settler = settler
+        self.outsider_triage: list[str] = []
         self.reactions = reactions or []
         self.trees = trees or {}
         self.issues = issues or {}
@@ -126,7 +136,7 @@ class FakeGitHub:
         if path == f"issues/{PR}/comments":
             return [
                 {"body": body, "author_association": self.settler} for body in self.triage
-            ]
+            ] + [{"body": body, "author_association": "NONE"} for body in self.outsider_triage]
         if path == f"issues/{PR}/reactions":
             return self.reactions
         raise AssertionError(f"예상하지 못한 목록 조회: {path}")
@@ -517,6 +527,76 @@ def test_replies_do_not_create_their_own_settlement_duty() -> None:
     report = evaluate(fake, PR, now=NOW)
     assert report.unsettled == [] and report.status == READY
 
+
+
+# ── 루프의 출구 ────────────────────────────────────────────────────────────────
+
+
+def _block_rounds(count: int) -> FakeGitHub:
+    """라운드마다 차단 하나씩. 고쳐도 다음 라운드에서 또 나오는 모양이다."""
+    comments = [_comment(i, f"beef00{i}", path=f"src/{i}.py") for i in range(count)]
+    fake = FakeGitHub(
+        head=f"beef00{count - 1}",
+        comments=comments,
+        triage=[f"triage: {i} block" for i in range(count)],
+    )
+    fake.resolved.update(range(count))
+    return fake
+
+
+def test_three_block_rounds_in_a_row_stop_the_point_fixing() -> None:
+    """고치는 것이 push 를 만들고 push 가 리뷰를 부른다 — 진짜 차단이 계속 나오면 닫을 길이
+    없다. 그때 루프는 초록이 아니라 사람에게로 나간다."""
+    report = evaluate(_block_rounds(3), PR, now=NOW)
+    assert report.block_streak == 3 and report.escalated and report.status == ESCALATE
+
+
+def test_two_block_rounds_do_not_escalate() -> None:
+    """음성 대조 — 흔한 두 라운드는 병리가 아니다."""
+    report = evaluate(_block_rounds(2), PR, now=NOW)
+    assert not report.escalated and report.status == READY
+
+
+def test_only_an_acknowledgement_of_this_head_clears_the_escalation() -> None:
+    """고치는 것으로는 안 풀린다. 사람이 **지금 head 를 지목해** 판단을 남겨야 풀린다."""
+    fake = _block_rounds(3)
+    fake.triage.append("triage: escalated beef002 — 범위를 재단하고 나머지는 이슈로 넘긴다")
+    assert evaluate(fake, PR, now=NOW).status == READY
+
+
+def test_an_acknowledgement_of_an_older_head_does_not_carry_over() -> None:
+    """push 가 하나 더 붙으면 승인은 만료된다 — 라운드마다 판단이 새로 필요하다."""
+    fake = _block_rounds(3)
+    fake.triage.append("triage: escalated beef000 — 지난 상태에 대한 승인")
+    assert evaluate(fake, PR, now=NOW).status == ESCALATE
+
+
+def test_an_outsider_cannot_clear_the_escalation() -> None:
+    fake = _block_rounds(3)
+    fake.outsider_triage.append("triage: escalated beef002 — 남이 남긴 승인")
+    assert evaluate(fake, PR, now=NOW).status == ESCALATE
+
+
+def test_repeated_regressions_escalate_on_their_own() -> None:
+    """같은 자리를 거듭 맞으면 라운드 수와 무관하게 근본 조치 신호다."""
+    comments = [
+        _comment(1, "c1", line=10),
+        _comment(2, "c2", line=12),
+        _comment(3, "c3", line=11),
+    ]
+    fake = FakeGitHub(
+        head="c3", comments=comments, triage=[f"triage: {i} block" for i in (1, 2, 3)]
+    )
+    fake.resolved.update({1, 2, 3})
+    report = evaluate(fake, PR, now=NOW)
+    assert len(report.regressions) >= review_rounds.REGRESSION_LIMIT
+    assert report.status == ESCALATE
+
+
+def test_the_escalation_names_what_to_do() -> None:
+    """상태만 빨간 것은 지침이 아니다 — 무엇을 해야 풀리는지가 함께 있어야 한다."""
+    rendered = review_rounds.render(evaluate(_block_rounds(3), PR, now=NOW))
+    assert "triage: escalated" in rendered and "점별 픽스를 멈춥니다" in rendered
 
 # ── 실패는 통과가 아니다 ───────────────────────────────────────────────────────
 

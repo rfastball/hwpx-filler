@@ -67,7 +67,25 @@ TRIAGE_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-READY, WAIT, BLOCKED = "READY", "WAIT", "BLOCKED"
+READY, WAIT, BLOCKED, ESCALATE = "READY", "WAIT", "BLOCKED", "ESCALATE"
+
+#: 루프에 **정해진 출구**를 준다.
+#:
+#: 고치는 것이 push 를 만들고 push 가 리뷰를 부른다. 그래서 모든 지적을 차단으로 보고
+#: 고치면 종료 조건이 「리뷰어가 더 할 말이 없을 때」로 되돌아간다 — 이 정책이 폐기하려던
+#: 바로 그 상태다. 분리는 head 를 바꾸지 않아 그 자리에서 닫히지만, 진짜 차단이 계속
+#: 나오는 경우에는 닫을 길이 없다.
+#:
+#: 그때 게이트는 `ESCALATE` 로 간다. **고치는 것으로는 안 풀린다** — 사람이 남긴 마커로만
+#: 풀리고, 그 마커는 지금 head 를 지목해야 한다. 그래서 라운드가 하나 더 돌 때마다 사람의
+#: 판단이 새로 필요하다. 루프는 항상 끝난다: 초록이거나, 사람을 부르거나.
+BLOCK_STREAK_LIMIT = 3
+REGRESSION_LIMIT = 2
+
+#: `triage: escalated <head-sha> — <사유>`. head 를 지목해야 그 상태에 대한 승인이 된다.
+ESCALATION_PATTERN = re.compile(
+    r"^\s*triage:\s*escalated\s+(?P<head>[0-9a-f]{7,40})\b", re.MULTILINE
+)
 
 #: 리뷰어가 배지 이미지로 싣는 심각도. **입력이지 분류가 아니다** — 표시만 하고 판정에는
 #: 쓰지 않는다(정책 §1). 실제로 이 리뷰어는 P3 를 발급하지 않아, 배지에 정지 조건을 걸면
@@ -140,6 +158,8 @@ class Report:
     signal: str | None
     head_reviewed: bool
     timed_out: bool
+    block_streak: int
+    escalated: bool
     status: str
 
     def as_dict(self) -> dict:
@@ -162,6 +182,8 @@ class Report:
             "signal": self.signal,
             "head_reviewed": self.head_reviewed,
             "timed_out": self.timed_out,
+            "block_streak": self.block_streak,
+            "escalated": self.escalated,
         }
 
 
@@ -257,9 +279,12 @@ def _resolved_threads(client: GitHub, pr: int) -> set[int]:
     """
     owner, _, name = client.repo.partition("/")
     resolved: set[int] = set()
-    cursor = ""
+    cursor: str | None = None
     while True:
-        page = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr, after=cursor)
+        # 선택 인자는 생략하거나 `null` 이 규약이다. 빈 문자열도 지금은 받아 주지만 그건
+        # GitHub 의 관대함에 기대는 것이다(#448).
+        extra = {"after": cursor} if cursor else {}
+        page = client.graphql(THREAD_QUERY, owner=owner, name=name, number=pr, **extra)
         threads = page["data"]["repository"]["pullRequest"]["reviewThreads"]
         for thread in threads["nodes"]:
             roots = thread["comments"]["nodes"]
@@ -366,6 +391,37 @@ def _defer_problem(client: GitHub, triage: Triage) -> str | None:
     return None
 
 
+def _block_streak(rounds: list[Round], settled: dict[int, Triage]) -> int:
+    """**끝에서부터** 차단을 낸 라운드가 몇 번 연속인가.
+
+    가운데 한 번 조용했다가 다시 나오는 것은 다른 이야기다 — 여기서 세려는 것은 「고쳐도
+    같은 자리에서 계속 나온다」는 지금의 추세다.
+    """
+    streak = 0
+    for round_ in reversed(rounds):
+        if not any(
+            (triage := settled.get(f.id)) and triage.verdict == "block" for f in round_.findings
+        ):
+            return streak
+        streak += 1
+    return streak
+
+
+def _acknowledged(client: GitHub, pr: int, head: str) -> bool:
+    """사람이 **지금 head 를 지목해** 승인했는가.
+
+    head 를 지목하게 하는 이유는, push 가 하나 더 붙으면 승인이 자동으로 만료돼야 하기
+    때문이다. 그래야 라운드가 더 돌 때마다 사람의 판단이 새로 필요하다.
+    """
+    for comment in client.paged(f"issues/{pr}/comments"):
+        if not _may_settle(comment):
+            continue
+        for match in ESCALATION_PATTERN.finditer(comment.get("body") or ""):
+            if head.startswith(match.group("head")):
+                return True
+    return False
+
+
 def _regressions(rounds: list[Round]) -> list[tuple[Finding, Finding]]:
     """같은 파일·근방 라인에 두 라운드 연속 지적이면 회귀 **후보**로 표시한다."""
     found = []
@@ -469,6 +525,8 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
             signal=None,
             head_reviewed=True,
             timed_out=False,
+            block_streak=0,
+            escalated=False,
             status=READY,
         )
 
@@ -504,7 +562,16 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
     timed_out = not answered and now - pushed_at > RECOVERY_WINDOW
     head_reviewed = answered or timed_out
 
-    if open_blocks or bad_defers:
+    regressions = _regressions(rounds)
+    streak = _block_streak(rounds, settled)
+    escalated = (
+        streak >= BLOCK_STREAK_LIMIT or len(regressions) >= REGRESSION_LIMIT
+    ) and not _acknowledged(client, pr, head)
+
+    if escalated:
+        # 차단보다 먼저 본다. 여기서 「고치면 된다」로 읽히면 그 자체가 이 상태의 뜻을 지운다.
+        status = ESCALATE
+    elif open_blocks or bad_defers:
         status = BLOCKED
     elif unsettled or not head_reviewed:
         status = WAIT
@@ -519,10 +586,12 @@ def evaluate(client: GitHub, pr: int, now: datetime | None = None) -> Report:
         unsettled=unsettled,
         open_blocks=open_blocks,
         bad_defers=bad_defers,
-        regressions=_regressions(rounds),
+        regressions=regressions,
         signal=signal,
         head_reviewed=head_reviewed,
         timed_out=timed_out,
+        block_streak=streak,
+        escalated=escalated,
         status=status,
     )
 
@@ -534,6 +603,13 @@ def render(report: Report) -> str:
         return "\n".join(lines)
 
     lines.append(f"라운드 {len(report.rounds)}회 · 신호 {report.signal or '없음'}")
+    if report.escalated:
+        lines.append(
+            f"차단이 {report.block_streak}라운드 연속이거나 회귀가 거듭됩니다 "
+            "— 점별 픽스를 멈춥니다. 고치는 것으로는 이 상태가 풀리지 않습니다."
+        )
+        lines.append("  근본 조치·범위 재단·중단 중 하나를 사람이 정하고 남기십시오:")
+        lines.append(f"    triage: escalated {report.head[:12]} — <사유>")
     for index, round_ in enumerate(report.rounds, start=1):
         lines.append(f"  {index}. {round_.commit[:7]} — 지적 {len(round_.findings)}건")
     if report.unsettled:
@@ -560,7 +636,12 @@ def render(report: Report) -> str:
 #:
 #: `WAIT` 를 `failure` 로 찍지 않는 이유는 정직함이다. 아직 안 끝난 것과 틀린 것은 다르고,
 #: 둘을 같은 빨간색으로 칠하면 빨간색이 무슨 뜻인지 아무도 안 묻게 된다.
-CONCLUSIONS = {READY: "success", WAIT: "action_required", BLOCKED: "failure"}
+CONCLUSIONS = {
+    READY: "success",
+    WAIT: "action_required",
+    BLOCKED: "failure",
+    ESCALATE: "failure",
+}
 
 CHECK_NAME = "review-gate"
 
@@ -599,7 +680,9 @@ def publish_check(client: GitHub, report: Report) -> None:
             "status": "completed",
             "conclusion": CONCLUSIONS[report.status],
             "output": {
-                "title": "READY (리뷰 없이 회수 창 소진)"
+                "title": "ESCALATE — 사람의 판단이 필요합니다"
+                if report.escalated
+                else "READY (리뷰 없이 회수 창 소진)"
                 if report.timed_out
                 else f"{report.status} — 미정산 {len(report.unsettled)}건 · "
                 f"미해결 차단 {len(report.open_blocks)}건",
