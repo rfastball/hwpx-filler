@@ -299,13 +299,20 @@ class _IndexParse:
     #: `data-*` 를 든 요소의 (줄, id) — id 가 없는 것이 `dom_static` 232 **밖**이다.
     data_attr_elements: list[tuple[int, str | None]] = field(default_factory=list)
     unbalanced: int = 0
+    #: 닫는 태그가 여는 태그와 **이름이 다른** 자리 — `(줄, 기대, 실제)`.
+    #:
+    #: 개수만 세면 `<div><span></div></span>` 처럼 **수는 맞고 순서가 틀린** 오정렬이
+    #: 통과한다. 그때 브라우저의 관용 복구는 이 파서와 **다른 트리**를 만들 수 있고,
+    #: 그러면 :attr:`ancestors` 가 거짓이 되어 접기(컨테이너 귀속)가 함께 거짓이 된다.
+    mismatched: list[tuple[int, str, str]] = field(default_factory=list)
 
 
 class _IndexCollector(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.out = _IndexParse()
-        self._stack: list[str | None] = []
+        #: `(태그 이름, id)` — 이름을 함께 들어야 닫는 짝을 **대조**할 수 있다.
+        self._stack: list[tuple[str, str | None]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         mapping = dict(attrs)
@@ -316,13 +323,13 @@ class _IndexCollector(HTMLParser):
             self.out.ids.append(element_id)
             self.out.id_lines[element_id] = self.getpos()[0]
             self.out.ancestors[element_id] = tuple(
-                name for name in self._stack if name is not None
+                name for _tag, name in self._stack if name is not None
             )
         for name in mapping:
             if name.startswith("data-"):
                 self.out.data_attributes[name] += 1
         if tag not in _VOID_ELEMENTS:
-            self._stack.append(element_id)
+            self._stack.append((tag, element_id))
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -332,10 +339,12 @@ class _IndexCollector(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag in _VOID_ELEMENTS:
             return
-        if self._stack:
-            self._stack.pop()
-        else:
+        if not self._stack:
             self.out.unbalanced += 1
+            return
+        opened, _element_id = self._stack.pop()
+        if opened != tag:
+            self.out.mismatched.append((self.getpos()[0], opened, tag))
 
     def close(self) -> None:  # noqa: D102 - HTMLParser API
         super().close()
@@ -379,11 +388,20 @@ def _html_data_attrs(repo: Repo) -> list[str]:
 
 
 def _html_parse_anomalies(repo: Repo) -> list[str]:
-    """파서의 관용 복구가 삼킬 수 있는 것 — 중복 id 와 태그 불균형."""
+    """파서의 관용 복구가 삼킬 수 있는 것 — 중복 id · 태그 불균형 · **오정렬**.
+
+    오정렬(`<div><span></div></span>`)은 여닫는 **수가 맞아** 불균형 계수에 안 걸린다.
+    그런데 브라우저의 복구는 이 파서와 다른 트리를 만들 수 있고, 그러면 조상 사슬이
+    거짓이 되어 접기가 함께 거짓이 된다 — 개수가 아니라 **이름을 대조**해야 보인다.
+    """
     parsed = repo.html()
     counts = Counter(parsed.ids)
     rows = [f"duplicate-id:{name}" for name, n in sorted(counts.items()) if n > 1]
     rows += [f"unbalanced-tag:{parsed.unbalanced}"] if parsed.unbalanced else []
+    rows += [
+        f"mismatched-close:{line}:{opened}/{closed}"
+        for line, opened, closed in parsed.mismatched
+    ]
     return rows
 
 

@@ -164,7 +164,7 @@ implementation = "src/hwpxfiller/gui/*_state.py 파일 전수"
 
 [extractors.html_parse_anomalies]
 backing = "parser"
-implementation = "중복 id · 태그 불균형 — 파서의 관용 복구가 삼킬 수 있는 것"
+implementation = "중복 id · 태그 불균형 · 오정렬(여닫는 이름 대조) — 파서의 관용 복구가 삼킬 수 있는 것"
 
 [extractors.html_data_attr_elements]
 backing = "parser"

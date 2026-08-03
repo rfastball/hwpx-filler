@@ -930,6 +930,29 @@ def test_baseline_sha_is_pinned_to_a_real_coordinate(mutable_document: dict[str,
     assert "baseline_sha" in _failures(report), _failures(report)
 
 
+def test_misnested_close_is_refused(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+) -> None:
+    """오정렬은 여닫는 **수가 맞아** 불균형 계수에 안 걸린다.
+
+    그런데 브라우저의 관용 복구는 이 파서와 다른 트리를 만들 수 있고, 그러면
+    조상 사슬이 거짓이 되어 **접기(컨테이너 귀속)가 함께 거짓**이 된다. 개수가 아니라
+    이름을 대조해야 보이는 자리다 — PR #467 리뷰 지적(`block:3`)의 회귀 잠금.
+    """
+    target = clone_source / "index.html"
+    text = target.read_text(encoding="utf-8")
+    marker = "</body>"
+    assert marker in text, "index.html 에 </body> 가 없습니다 — 앵커를 다시 고르십시오."
+    text = text.replace(marker, '<div><span id="misnestZ"></div></span>\n' + marker, 1)
+    target.write_text(text, encoding="utf-8")
+
+    report = gate.check(document, frontend_tree, axes=["dom_static"], metrics=[])
+    assert not report.ok, "오정렬이 조용히 통과했습니다."
+    text_out = _failures(report)
+    assert "mismatched-close" in text_out, text_out
+    assert "div/span" in text_out, text_out
+
+
 @pytest.mark.parametrize(
     ("form", "snippet", "expected"),
     [
