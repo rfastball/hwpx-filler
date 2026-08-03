@@ -1,8 +1,9 @@
 """검증 책임 원장(``docs/react_verification_ledger.toml``)의 재실측기 + 음성 대조.
 
-설계 정본은 #403 의 ``R-DESIGN-PACKET:v1`` rev3. 다섯 질문뿐이고 전부 비교 상대가 **저장소**다
+설계 정본은 #403 의 ``R-DESIGN-PACKET:v1`` rev3. 아래 질문들뿐이고 전부 비교 상대가 **저장소**다
 — 게이트의 리터럴 사본과 대조하는 항목이 하나도 없다(2차의 「지어낸 SHA 를 자기 사본과 비교」가
-났던 자리를 아예 만들지 않는다):
+났던 자리를 아예 만들지 않는다). 개수를 세지 않는 것이 계약이다: 세는 순간 그 수가 산문에
+박히고, 질문을 하나 더할 때마다 산문이 먼저 거짓이 된다:
 
 ===  ====================================================================
 G0   구조: 필수 필드가 차 있고 **모르는 키가 없는가**(``sucessor`` 오타 차단)
@@ -11,6 +12,8 @@ G2   제외의 순도: 제외 목록의 어떤 파일도 웹 표면에 **닿지*
 G3   모든 ``file`` 이 **색인과 디스크 양쪽에** 실재하는가
 G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **다른 자산 행**인가
 G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
+G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언 차단)
+G7   그 축이 **파티션과 겹치지 않는가**(자산을 분모 밖으로 미는 우회 차단)
 ===  ====================================================================
 
 **원장이 어떤 개수도 들지 않는다.** 2차 구현(#469)은 게이트의 테스트 개수가 원장의 값이라
@@ -28,6 +31,14 @@ DOM 조작**을 못 봤고, ``_read`` 는 디코드 실패를 「안 닿는다�
 색인만 봐서 디스크에서 지워진 파일을 통과시켰고, G4 는 **제외 항목**을 후계로 받았다. 전부
 **책임을 조용히 사라지게 하는 길**이었고, 뿌리는 하나다 — 술어가 「무엇을 부르는가」만 보고
 「무엇에 닿는가」를 안 봤다.
+
+G6·G7 은 R1-99 독립 감사가 낸 것이고 **다른 층**을 연다. 앞의 것들이 파티션 *안쪽*을 지킨다면
+이 둘은 **분모 자체**를 지킨다 — 트리가 안 보는 무리를 침묵으로 두면 「전수 피복」이 실제보다
+넓게 읽힌다. 조치는 축을 트리로 끌어들이는 것이 아니라 **주장을 정직하게 좁히고 그 좁힘을
+실행되는 술어로 만드는 것**이다(선언이 죽으면 G6 가, 선언이 자산을 삼키면 G7 이 문다).
+같은 감사가 G2 도 다시 넓혔다: 헬퍼 이름 ``_web_artifact_contract`` 는 있는데 그것이 가리키는
+**도메인 어휘**가 없어 봉인 산출물 소비자 둘이 제외에 앉아 있었다 — **집합 하나를 넓히고 그
+형제를 안 넓힌 것**이다.
 """
 
 from __future__ import annotations
@@ -97,6 +108,11 @@ REQUIRED_ASSET_FIELDS = ("file", "responsibility", "owner_stage")
 #: 여기서 그 결함은 특히 날카롭다: ``sucessor`` 로 오타 나면 행이 ``keep`` 으로 읽히고
 #: R2~R4 의 인계 증거가 조용히 사라진다.
 ALLOWED_ASSET_KEYS = frozenset({*REQUIRED_ASSET_FIELDS, "successor"})
+
+#: 분모 밖 축의 키·매칭 어휘. 자산 행과 같은 이유로 모르는 키를 거절한다 — 여기서 오타가 나면
+#: 「이만큼을 안 본다」는 선언이 조용히 아무것도 선언하지 않게 된다.
+ALLOWED_AXIS_KEYS = frozenset({"id", "match", "reason", "owner_stage"})
+AXIS_MATCH_KINDS = frozenset({"prefix", "root_suffix", "exact"})
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +276,76 @@ def g0_structure(document: dict[str, Any]) -> list[str]:
             problems.append(f"{row.get('file')}: 모르는 키 {key!r} — 오타인가")
     if not str(document.get("out_of_scope", {}).get("reason", "")).strip():
         problems.append("out_of_scope.reason 이 비었다")
+    problems.extend(_axis_structure(document))
+    return problems
+
+
+def _axis_structure(document: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    seen: set[str] = set()
+    for row in document.get("excluded_axis", []):
+        axis_id = str(row.get("id", ""))
+        if not axis_id.strip():
+            problems.append("excluded_axis: id 가 비었다")
+        elif axis_id in seen:
+            problems.append(f"excluded_axis {axis_id!r}: id 가 중복이다")
+        seen.add(axis_id)
+        if not str(row.get("reason", "")).strip():
+            problems.append(f"excluded_axis {axis_id!r}: reason 이 비었다")
+        if row.get("owner_stage") not in KNOWN_STAGES:
+            problems.append(
+                f"excluded_axis {axis_id!r}: 알 수 없는 owner_stage -> {row.get('owner_stage')!r}"
+            )
+        for key in sorted(set(row) - ALLOWED_AXIS_KEYS):
+            problems.append(f"excluded_axis {axis_id!r}: 모르는 키 {key!r} — 오타인가")
+        match = row.get("match")
+        if not isinstance(match, dict) or match.get("kind") not in AXIS_MATCH_KINDS:
+            problems.append(f"excluded_axis {axis_id!r}: match.kind 가 어휘 밖이다 -> {match!r}")
+    return problems
+
+
+def _axis_members(row: dict[str, Any], tracked: list[str]) -> set[str]:
+    """축이 **실제로 가리키는 추적 파일**. 선언이 아니라 저장소가 답한다."""
+    match = row.get("match") or {}
+    kind, value = match.get("kind"), match.get("value")
+    if kind == "prefix":
+        return {p for p in tracked if p.startswith(str(value))}
+    if kind == "root_suffix":
+        return {p for p in tracked if "/" not in p and p.endswith(str(value))}
+    if kind == "exact":
+        wanted = set(value or ())
+        return {p for p in tracked if p in wanted}
+    return set()
+
+
+def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
+    """선언된 축이 **죽어 있지 않은가**.
+
+    「분모가 이만큼을 안 본다」는 선언은 그 이만큼이 실재할 때만 정직하다. 경로가 개명되면
+    선언은 조용히 아무것도 안 가리키게 되고, 그때 이 절은 **없는 사각을 사과하는 산문**이 된다.
+    """
+    problems: list[str] = []
+    for row in document.get("excluded_axis", []):
+        if not _axis_members(row, tracked):
+            problems.append(f"excluded_axis {row.get('id')!r}: 가리키는 추적 파일이 0 이다")
+    return problems
+
+
+def g7_axes_stay_outside_the_partition(
+    document: dict[str, Any], tracked: list[str], tree: set[str]
+) -> list[str]:
+    """축이 **파티션과 겹치지 않는가**.
+
+    겹치면 같은 파일이 「행이 있다」와 「분모 밖이다」를 동시에 주장한다. G1 이 파티션 *안쪽*의
+    폐포를 지킨다면 이것은 그 **바깥 경계**를 지킨다 — 축을 넓혀 자산을 분모 밖으로 밀어내는
+    우회가 이 자리로 들어온다.
+    """
+    covered = tree | set(_asset_files(document)) | set(_excluded_files(document))
+    problems: list[str] = []
+    for row in document.get("excluded_axis", []):
+        overlap = sorted(_axis_members(row, tracked) & covered)
+        if overlap:
+            problems.append(f"excluded_axis {row.get('id')!r}: 파티션과 겹친다 -> {overlap}")
     return problems
 
 
@@ -319,6 +405,18 @@ def test_g4_successors_resolve(ledger: dict[str, Any]) -> None:
 
 def test_g5_stages_are_known(ledger: dict[str, Any]) -> None:
     assert g5_stage_vocabulary(ledger) == []
+
+
+def test_g6_declared_axes_point_at_real_files(
+    ledger: dict[str, Any], tracked: list[str]
+) -> None:
+    assert g6_axes_are_live(ledger, tracked) == []
+
+
+def test_g7_declared_axes_stay_outside_the_partition(
+    ledger: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    assert g7_axes_stay_outside_the_partition(ledger, tracked, tree) == []
 
 
 def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
@@ -588,3 +686,44 @@ def test_n10_a_duplicated_asset_row_is_caught(mutable: dict[str, Any], tree: set
     mutable["asset"].append(copy.deepcopy(mutable["asset"][0]))
     problems = g1_partition(mutable, tree)
     assert any("중복" in problem for problem in problems), problems
+
+
+def test_n11_a_sealed_artifact_consumer_cannot_sit_in_exclusions(
+    mutable: dict[str, Any],
+) -> None:
+    """봉인 산출물을 다루는 파일이 제외에 앉으면 문다 — R1-99 가 잡은 그 자리다.
+
+    변형은 최소로: 이미 자산인 봉인 producer 한 행을 **제외로 옮긴다**. 합성 문자열이 아니라
+    저장소의 실물이라 술어가 실재를 무는지 그대로 답한다.
+    """
+    victim = "scripts/seal_web_artifact.py"
+    mutable["asset"] = [row for row in mutable["asset"] if row["file"] != victim]
+    mutable["out_of_scope"]["files"] = sorted([*mutable["out_of_scope"]["files"], victim])
+    problems = g2_exclusion_purity(mutable)
+    assert any(victim in problem for problem in problems), problems
+
+
+def test_n12_a_dead_axis_declaration_is_caught(
+    mutable: dict[str, Any], tracked: list[str]
+) -> None:
+    """가리키는 것이 없어진 축 선언은 **사각의 사과가 아니라 거짓말**이 된다."""
+    mutable["excluded_axis"][0]["match"] = {"kind": "prefix", "value": "이-경로는-없다/"}
+    problems = g6_axes_are_live(mutable, tracked)
+    assert any("0 이다" in problem for problem in problems), problems
+
+
+def test_n13_an_axis_that_swallows_the_partition_is_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """축을 넓혀 자산을 분모 밖으로 밀어내는 우회를 막는다."""
+    mutable["excluded_axis"][0]["match"] = {"kind": "prefix", "value": "tests/"}
+    problems = g7_axes_stay_outside_the_partition(mutable, tracked, tree)
+    assert any("겹친다" in problem for problem in problems), problems
+
+
+def test_n14_a_typo_in_an_axis_key_is_caught(mutable: dict[str, Any]) -> None:
+    """``sucessor`` 오타가 행을 조용히 삼킨 전례와 같은 이유로 축에서도 모르는 키를 거절한다."""
+    mutable["excluded_axis"][0]["resaon"] = mutable["excluded_axis"][0].pop("reason")
+    problems = g0_structure(mutable)
+    assert any("resaon" in problem for problem in problems), problems
+    assert any("reason 이 비었다" in problem for problem in problems), problems

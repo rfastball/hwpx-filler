@@ -113,6 +113,11 @@ responsibility = "build/web 의 fail-closed Vite 산출물 봉인 producer"
 owner_stage = "R2-04"
 
 [[asset]]
+file = "scripts/verify_packaged_web.py"
+responsibility = "source Vite 산출물과 PyInstaller 번들 web 트리의 봉인 정체성 대조 — 출하 경로의 소비자"
+owner_stage = "R5-03"
+
+[[asset]]
 file = "tests/_press_probe.py"
 responsibility = "눌림 기하 측정 창구 — sealed CSS 를 loopback 으로 제공해 실 상자를 잰다"
 owner_stage = "R3-03"
@@ -373,6 +378,11 @@ responsibility = "패키지별 커버리지 하한과 비재귀 경로의 신규
 owner_stage = "R2-04"
 
 [[asset]]
+file = "tests/test_packaging_contract.py"
+responsibility = "spec hidden import 해소와 봉인 산출물 검증 호출의 실재 — 가짜 boolean 이 검증을 대신하지 않게"
+owner_stage = "R5-03"
+
+[[asset]]
 file = "tests/test_personalization_contract.py"
 responsibility = "사용자 설정 존중·개인화의 정적·순수 계약"
 owner_stage = "R4-04"
@@ -626,7 +636,6 @@ files = [
   "scripts/live101/capture.py",
   "scripts/render_document_narmi_branding.py",
   "scripts/selftest_http_proxy.py",
-  "scripts/verify_packaged_web.py",
   "tests/_suite_probe.py",
   "tests/test_atomic.py",
   "tests/test_audit_test_portfolio.py",
@@ -664,7 +673,6 @@ files = [
   "tests/test_nara_state.py",
   "tests/test_native_positive.py",
   "tests/test_package.py",
-  "tests/test_packaging_contract.py",
   "tests/test_partial_gate.py",
   "tests/test_pipeline.py",
   "tests/test_pipeline_builder_state.py",
@@ -686,3 +694,51 @@ files = [
   "tests/test_work_candidates.py",
   "tests/test_work_mode.py",
 ]
+
+# ---------------------------------------------------------------------------
+# 분모가 안 보는 축 — **부재를 선언으로 남긴다**
+#
+# 위 파티션(자산 ∪ 제외)의 분모는 검증 **트리**이고, 그 트리는 게이트의 `TREE_SPECS` 가
+# `tests/**.py` · `tests/js/**.test.js` · `scripts/**{.py,.mjs}` + `conftest.py` 로 정의한다.
+# 그래서 검증 사슬의 일부이면서도 **행이 아예 안 생기는** 파일 무리가 있다. 그것을 적지 않으면
+# 「전수 피복」이 실제보다 넓게 읽힌다 — 침묵은 0 건과 구별되지 않는다.
+#
+# 이 절이 하는 일은 **주장을 정직하게 좁히는 것**이고, 축을 트리로 끌어들이는 것이 아니다.
+# 형제 원장(`react_ownership_inventory.toml`)이 `excluded_axes` 로 같은 문제를 푼다.
+# 배정은 이미 났다(PR-B 착지 판정: 비-Python/JS 검증 자산의 트리 편입은 R5-02) — 그 결정이
+# **데이터에 없어서** R1-99 감사자 눈에 침묵이었던 것이 이 절이 태어난 이유다.
+#
+# 크기를 여기 적지 않는다. 이 원장은 수치 값을 하나도 들지 않는 것이 불변식이고, 그 불변식이
+# 2차 라운드를 무너뜨린 자기참조를 끊는다. 게이트는 각 축이 **실재 파일을 가리키는지**와
+# **파티션과 겹치지 않는지**를 재실측한다.
+# ---------------------------------------------------------------------------
+
+[[excluded_axis]]
+id = "packaging-chain"
+match = { kind = "prefix", value = "packaging/" }
+reason = "PyInstaller spec·엔트리·포터블 빌드 러너. 게이트 사슬이지만 Python 테스트도 스크립트도 아니라 트리 밖이고, Ruff 조차 이 경로를 안 본다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "ci-workflows"
+match = { kind = "prefix", value = ".github/workflows/" }
+reason = "품질·릴리스 CI 형상. 생산자 1 + 소비자 N 토폴로지 자체가 검증 자산이지만 YAML 이라 트리 밖이다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "root-runners"
+match = { kind = "root_suffix", value = ".ps1" }
+reason = "게이트 러너·프런트 빌드 러너·설치본 패키저. 검증을 실행하는 층인데 검증 대상 목록에는 없다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "js-negative-fixtures"
+match = { kind = "prefix", value = "tests/js/fixtures/" }
+reason = "node 게이트의 음성 대조 재료. 확장자가 `.test.js` 가 아니라 트리 밖인데, 판별력의 증거는 여기 산다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "frontend-build-config"
+match = { kind = "exact", value = ["vite.config.mjs", "package.json", "package-lock.json"] }
+reason = "Vite 빌드의 입력. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다."
+owner_stage = "R5-02"
