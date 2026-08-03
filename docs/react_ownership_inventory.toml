@@ -91,6 +91,9 @@ probe = { kind = "node_extractor", name = "selftest_surface_sites" }
 scope = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
 unit = "구성 지점(`export function`) · 모듈 스코프 상태 · id 사이트를 한 목록으로 센다. 1건 = 1."
 current = 26
+# 내용만 세면 `export const probe = …` 만 든 모듈이 아무것도 안 보태 숫자가 안 움직인다 —
+# 그런데 `covers` 는 그 글롭 전체를 전수 피복에서 면제한다. 파일 수가 그 자리를 막는다.
+files = 9
 covers_note = "frontend/src/selftest/** 9파일"
 judgment = "오늘 23 + 1 + 2. 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
 
@@ -110,6 +113,7 @@ probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "pe
 scope = ["frontend/css/**/*.css"]
 unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
 current = 1692
+files = 10
 judgment = "오늘 10파일 1,692줄. 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
 # ── 추출기 레지스트리 ────────────────────────────────────────────────────
@@ -180,7 +184,7 @@ implementation = "무앵커 data-[a-z-]+ 와 파서 결과의 차집합 — 정�
 
 [extractors.js_id_attr_anchor_gaps]
 backing = "regex-convention"
-implementation = "다른 속성명 접미 · 홑따옴표 · 무따옴표 보간 · 선택자 리터럴 네 형태"
+implementation = "일곱 형태 — 다른 속성명 접미 · 홑따옴표 · 무따옴표 보간 · 선택자 리터럴 · setAttribute(\"id\") · .id 대입 · [\"id\"] 대입. 파일 전체에 돌아 줄바꿈을 넘고 속성명 대소문자를 함께 문다"
 
 [extractors.action_registry_dynamic]
 backing = "regex-convention"
@@ -192,7 +196,7 @@ implementation = "gui/ 아래 *_state.py 이름 규약 밖의 모듈"
 
 [extractors.listener_convention_gaps]
 backing = "regex-convention"
-implementation = "주석 안 일치 · 대괄호 표기 호출 — 관례 정규식이 함께 세거나 못 보는 것"
+implementation = "두 형태 — 주석 안 일치 · 대괄호 표기 호출. 관례 정규식이 함께 세거나 못 보는 것"
 
 # ── 축 선언 ──────────────────────────────────────────────────────────────
 
@@ -248,14 +252,26 @@ JS 가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아
 description = """
 AST 가 리터럴 노드를 고르고 **속성 판독은 앵커 정규식**이다(「AST 로 닫힌다」가 아니다).
 **전수라고 주장하지 않는다** — 전수를 주장하려면 그것을 확인하는 프로브가 있어야 하고 없다.
-오늘 **알려진 여섯 형태**를 센다: id 로 끝나는 다른 속성명 · 홑따옴표 속성 · 무따옴표 보간 ·
-선택자 문자열 · `setAttribute("id", …)` · `el.id = …`. 뒤 둘은 마크업 문자열이 아니라 DOM API 로
-심는 길이고, 반증 라운드가 「네 형태가 전수」라는 선언을 깨뜨려 편입됐다.
+오늘 **알려진 일곱 형태**를 센다: id 로 끝나는 다른 속성명 · 홑따옴표 속성 · 무따옴표 보간 ·
+선택자 문자열 · `setAttribute("id", …)`(줄바꿈·속성명 대소문자 포함) · `el.id = …` ·
+`el["id"] = …`. 뒤 셋은 마크업 문자열이 아니라 DOM API 로 심는 길이고, 반증 라운드가
+「네 형태가 전수」라는 선언을 차례로 깨뜨려 편입됐다.
+목록은 산문이 아니라 아래 `known_forms` **데이터**이고 게이트가 추출기의 형태 전수와 대조한다 —
+형태를 늘리고 설명을 안 고치는 순간 원장이 자기가 기술하는 추출기와 어긋나기 때문이다.
 """
 probe = { kind = "extractor", name = "js_id_attr_anchor_gaps" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "알려진 여섯 형태 중 하나의 일치 1건 = 1."
+unit = "알려진 일곱 형태 중 하나의 일치 1건 = 1."
+known_forms = [
+  "other-attr-suffix",
+  "single-quoted",
+  "unquoted-interpolation",
+  "selector-literal",
+  "set-attribute",
+  "id-property-assignment",
+  "computed-id-assignment",
+]
 current = 0
 members = []
 judgment = """
@@ -361,6 +377,7 @@ description = """
 못 본다. 오늘 둘 다 0이다.
 """
 probe = { kind = "extractor", name = "listener_convention_gaps" }
+known_forms = ["comment", "bracket-call"]
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "주석 안 일치 또는 대괄호 표기 호출 1건 = 1."
@@ -394,6 +411,16 @@ unit = """
 푸시 구독 등록 사이트 1건 = 1노드. scope 를 들어야 6이다 — frontend/js 전수로 세면 7이고
 그 하나는 bridge.js 머리말 주석이다.
 """
+[axes.subscription_push.scope_limitation]
+statement = """
+이 축이 재는 것은 「화면 파일 + `data_picker.js` 안의 푸시 구독」이지 **제품 전체의 푸시
+구독이 아니다**. `frontend/js/modal.js` 나 `frontend/src/main.js` 에 등록이 생기면 이 축은
+그것을 영영 못 보고, 제품 트리 전수 피복도 그 파일이 이미 다른 축에 속하므로 조용하다.
+사각 프로브도 해제 API 이름을 `bridge.js` 안에서만 찾는다.
+scope 를 넓히지 않는 이유는 오늘의 단위가 옳기 때문이다 — 구독은 화면이 소유하고, 그 밖의
+등록은 「셸이 구독을 갖는가」라는 **다른 질문**이라 그 질문을 여는 슬라이스가 범위를 정해야 한다.
+"""
+owner = "R2-04 #408"
 [axes.subscription_push.blind_spot]
 description = "구독 해제 API 자체가 없다. offPush·unsubscribe 어느 이름도 bridge 에 0건이다."
 probe = { kind = "regex", pattern = "offPush|unsubscribe", flavor = "python-re", granularity = "per-occurrence" }

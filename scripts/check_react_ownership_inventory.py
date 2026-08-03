@@ -159,6 +159,14 @@ EXPECTED_REVIEW_ITEM_IDS = frozenset({
     "gate/screen-roots-partial", "gate/preserve-wrapped-files-partial",
     "doc/bridge-header-breakdown", "doc/screens-py-transport-comment",
 })
+#: 제품 트리보다 **좁은 scope** 를 든 축 → 그 한계의 소유자. scope 를 넓히는 것이 답이 아닌
+#: 자리가 있다(오늘의 6은 「화면 파일 + data_picker.js 안의 푸시 구독」이 맞는 단위다). 그때는
+#: 기계를 넓히지 말고 **주장을 정확히 좁힌다** — 다만 그 좁힘이 산문 각주면 늙으므로,
+#: 게이트가 「이 축은 한계를 선언해야 한다」를 들고 그 선언의 소유자까지 대조한다.
+NARROW_SCOPE_AXES: dict[str, str] = {
+    "subscription_push": "R2-04 #408",
+}
+
 #: 제외 축 → 「크기 프로브를 요구하는가」. `size` 블록을 통째로 지우면 조용한 유예로
 #: 되돌아가므로 **어느 제외가 크기를 드는지**도 게이트가 든다.
 EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
@@ -377,6 +385,10 @@ class Extractor:
     scope: tuple[str, ...]
     run: Callable[[Repo], list[str]]
     scope_excluded: tuple[str, ...] = ()
+    #: 여러 형태를 함께 세는 추출기는 **형태 이름 전수**를 든다. 원장이 같은 목록을
+    #: `known_forms` 로 적고 게이트가 대조한다 — 「알려진 여섯 형태」라 적는 동안 추출기가
+    #: 일곱을 세던 자리는 산문을 고쳐서는 다시 열린다.
+    forms: tuple[str, ...] = ()
 
 
 def _html_ids(repo: Repo) -> list[str]:
@@ -692,7 +704,8 @@ EXTRACTORS: dict[str, Extractor] = {
         "ast", PRODUCT_JS_SCOPE, _js_template_ids, SELFTEST_EXCLUDED
     ),
     "js_id_attr_anchor_gaps": Extractor(
-        "regex-convention", PRODUCT_JS_SCOPE, _js_id_attr_anchor_gaps, SELFTEST_EXCLUDED
+        "regex-convention", PRODUCT_JS_SCOPE, _js_id_attr_anchor_gaps, SELFTEST_EXCLUDED,
+        tuple(name for name, _ in _ID_ATTR_GAP_PATTERNS),
     ),
     "js_module_state": Extractor(
         "ast", PRODUCT_JS_SCOPE, _js_module_state, SELFTEST_EXCLUDED
@@ -727,7 +740,8 @@ EXTRACTORS: dict[str, Extractor] = {
         "python-glob", ("src/hwpxfiller/gui/*.py",), _gui_non_state_modules
     ),
     "listener_convention_gaps": Extractor(
-        "regex-convention", PRODUCT_JS_SCOPE, _listener_convention_gaps, SELFTEST_EXCLUDED
+        "regex-convention", PRODUCT_JS_SCOPE, _listener_convention_gaps, SELFTEST_EXCLUDED,
+        tuple(name for name, _ in _LISTENER_GAP_PATTERNS),
     ),
 }
 
@@ -1235,6 +1249,18 @@ def _check_coverage_claim(
     except InventoryGateError as exc:
         report.structural.append(f"축 {axis_name}: {field} 프로브 실패 — {exc}")
         return
+    probe = claim["probe"]
+    if probe.get("kind") in {"extractor", "node_extractor"}:
+        extractor = EXTRACTORS.get(str(probe.get("name")))
+        if extractor is not None and extractor.forms:
+            declared_forms = list(claim.get("known_forms") or [])
+            if declared_forms != list(extractor.forms):
+                report.structural.append(
+                    f"축 {axis_name}: `{field}.known_forms` 가 추출기 "
+                    f"{probe.get('name')!r} 의 형태 전수와 다릅니다 — 원장의 설명이 자기가 "
+                    "기술하는 추출기와 어긋납니다.\n"
+                    f"  원장: {declared_forms}\n  추출기: {list(extractor.forms)}"
+                )
     if len(found) != int(claim["current"]):
         axis_report.blind_spot_delta.append(
             f"{label}이 움직였습니다({field}): 기록 {claim['current']} → 실측 {len(found)}. "
@@ -1453,6 +1479,35 @@ def _product_tree_coverage(
             "제품 트리에 **어떤 축의 scope 에도 명시 제외에도 안 덮인 파일**이 있습니다 — "
             "scope 를 좁히면 측정 집합이 함께 줄어 폐포가 조용해지므로, 전수 피복이 1차 방벽입니다.\n"
             + "\n".join(f"  덮이지 않음: {rel}" for rel in uncovered)
+        )
+
+
+def _check_scope_limitation(
+    axis_name: str, axis_decl: dict[str, Any], report: Report
+) -> None:
+    """제품보다 좁은 scope 를 든 축은 **무엇을 못 보는지**를 소유자와 함께 든다.
+
+    제품 트리 전수 피복은 「그 파일이 **어떤** 축에 속하는가」만 묻는다. 그래서 `modal.js` 에
+    새 푸시 구독이 생겨도 그 파일은 이미 다른 축들에 덮여 있어 조용하다. 여기서 scope 를
+    넓히면 축의 단위가 흐려지므로, 넓히는 대신 **그 한계를 정직하게 선언**한다.
+    선언이 산문 각주면 늙는다 — 필드로 두고 사라지면 붉힌다.
+    """
+    owner = NARROW_SCOPE_AXES.get(axis_name)
+    if owner is None:
+        return
+    limitation = axis_decl.get("scope_limitation")
+    if not isinstance(limitation, dict):
+        report.structural.append(
+            f"축 {axis_name}: `scope_limitation` 이 없습니다 — 제품 트리보다 좁은 scope 는 "
+            "「이 밖에 생기면 이 축은 못 본다」를 소유자와 함께 적어야 합니다."
+        )
+        return
+    if not limitation.get("statement"):
+        report.structural.append(f"축 {axis_name}: `scope_limitation.statement` 이 비었습니다.")
+    if limitation.get("owner") != owner:
+        report.structural.append(
+            f"축 {axis_name}: `scope_limitation.owner` 가 {limitation.get('owner')!r} 인데 "
+            f"게이트는 {owner!r} 를 듭니다 — 한계의 소유자는 원장이 혼자 정하지 않습니다."
         )
 
 
@@ -1696,6 +1751,20 @@ def check(
                 f"제외 축 {axis_name}: 제외한 표면이 움직였습니다 — 기록 {size['current']} → "
                 f"실측 {len(found)}. 제외는 소리 나야 합니다."
             )
+        # 크기를 **내용**으로만 재면 `export const probe = …` 만 든 모듈은 아무것도 보태지
+        # 않아 숫자가 안 움직인다. 그런데 `covers` 가 그 글롭 전체를 전수 피복에서 면제하므로
+        # 제외가 소리를 안 낸다. 파일 **수** 한 줄이 그 자리를 막는다.
+        actual_files = len(repo.files(tuple(str(g) for g in excluded.get("covers") or ())))
+        if size.get("files") is None:
+            report.structural.append(
+                f"제외 축 {axis_name}: `size.files` 가 없습니다 — 내용만 세면 셀 것 없는 "
+                "모듈이 조용히 들어옵니다."
+            )
+        elif int(size["files"]) != actual_files:
+            report.structural.append(
+                f"제외 축 {axis_name}: 면제한 **파일 수**가 움직였습니다 — 기록 "
+                f"{size['files']} → 실측 {actual_files}."
+            )
     selected_axes = set(declared_axes) if axes is None else set(axes)
     unknown_axes = selected_axes - set(declared_axes)
     if unknown_axes:
@@ -1735,6 +1804,7 @@ def check(
             report.structural.append(f"축 {axis_name}: 재실측 실패 — {exc}")
             continue
         axis_members[axis_name] = measured
+        _check_scope_limitation(axis_name, decl, report)
         floor = AXIS_FLOORS.get(axis_name)
         if floor is not None and len(measured) < floor:
             report.structural.append(

@@ -980,3 +980,78 @@ def test_id_planting_forms_seven_to_nine_are_seen(
     text = _failures(report)
     assert "사각이 움직였습니다" in text, text
     assert expected in text, text
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 음성 — 「주장이 저장소보다 넓다」 세 자리
+#
+# 셋 다 기계를 넓혀서가 아니라 **주장을 정확히 좁혀서** 닫는다. 이 저장소가 이미 축복한
+# 형식이다(`blind_spot`·`false_positive`·`excluded_axes`) — 「전수를 못 본다」를 선언으로
+# 정직하게 적는 것이 「전수를 보게 만드는 것」보다 싸고, 거짓말하지 않는다는 점에서 같은 값을 한다.
+# 그러려면 선언이 **산문 각주가 아니라 필드**여야 하고, 그 필드가 사라지거나 어긋나면 붉어야 한다.
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_probe_form_list_matches_the_extractor(mutable_document: dict[str, Any]) -> None:
+    """F1 — 원장이 「여섯 형태」라 적는 동안 추출기는 일곱을 세고 있었다.
+
+    산문만 고치면 다음에 형태가 늘 때 같은 자리로 돌아온다. 목록을 데이터로 두고 게이트가
+    추출기와 대조하면 그 어긋남이 조용할 수 없다.
+    """
+    claim = mutable_document["axes"]["dom_js_site"]["blind_spot"]
+    assert "computed-id-assignment" in claim["known_forms"], (
+        "일곱째 형태가 원장에 데이터로 없습니다."
+    )
+    claim["known_forms"] = [
+        form for form in claim["known_forms"] if form != "computed-id-assignment"
+    ]
+    report = gate.check(mutable_document, REPO_ROOT, axes=["dom_js_site"], metrics=[])
+    assert not report.ok, "추출기가 세는 형태를 원장이 빠뜨렸는데 통과했습니다."
+    text = _failures(report)
+    assert "known_forms" in text, text
+    assert "computed-id-assignment" in text, text
+
+
+def test_excluded_surface_counts_files_not_only_content(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """F2 — `export const probe = …` 만 든 selftest 모듈.
+
+    크기 프로브가 **내용**만 세면 이 모듈은 아무것도 보태지 않아 숫자가 안 움직인다. 그런데
+    `covers` 는 그 글롭 전체를 제품 트리 피복에서 면제하므로 제외가 소리를 안 낸다.
+    파일 **수** 한 줄이면 닫힌다 — 해시 체계를 지을 자리가 아니다.
+    """
+    module = clone_source / "src" / "selftest" / "__neg_const.js"
+    module.write_text("export const probe = { id: 'neg' };\n", encoding="utf-8")
+    # `axes=[]` — 제외 행 검사는 축 선택과 무관하게 머리말에서 돈다. 복제 트리에는 `tests/` 가
+    # 없어 전체 실행을 쓰면 `verification` 잡음이 섞여 red 의 사유가 흐려진다.
+    report = gate.check(document, frontend_tree, axes=[], metrics=[])
+    assert not report.ok, "셀 것이 없는 제외 모듈이 조용히 들어왔습니다."
+    text = _failures(report)
+    assert "selftest_frontend_surface" in text, text
+    assert "파일" in text, text
+
+
+def test_narrow_axis_states_its_limit_with_an_owner(
+    mutable_document: dict[str, Any]
+) -> None:
+    """F3 — 제품보다 좁은 scope 는 **그렇게 적혀 있어야** 한다.
+
+    `subscription_push` 가 재는 것은 「화면 파일 + `data_picker.js` 안의 푸시 구독」이지
+    「제품 전체의 푸시 구독」이 아니다. scope 를 넓히는 대신 그 차이를 소유자와 함께 선언한다 —
+    선언이 사라지면 축이 다시 자기 범위를 넘어 주장하게 되므로 그 자리가 붉어야 한다.
+    """
+    axis = mutable_document["axes"]["subscription_push"]
+    limitation = axis["scope_limitation"]
+    assert limitation["owner"] == "R2-04 #408", (
+        "좁은 scope 의 소유자가 사라졌습니다 — 소유자 없는 한계는 유예로 읽힙니다."
+    )
+    assert "modal.js" in limitation["statement"] or "제품" in limitation["statement"], (
+        "한계 진술이 무엇을 못 보는지 말하지 않습니다."
+    )
+    axis.pop("scope_limitation")
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_push"], metrics=[])
+    assert not report.ok, "좁은 scope 가 한계 선언 없이 통과했습니다."
+    text = _failures(report)
+    assert "scope_limitation" in text, text
+    assert "subscription_push" in text, text
