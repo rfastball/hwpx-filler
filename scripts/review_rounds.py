@@ -42,6 +42,13 @@ WATCH_DIR = "review-gate-watch"
 #: 이름 문자를 GitHub 이 허용하는 것으로 좁힌다. 넓게 잡으면 `..` 같은 조각이 경로로 흘러간다.
 CREATED_PR = re.compile(r"https?://[^/\s]+/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)/pull/(\d+)")
 
+#: 발행 명령. 부분열(`"gh pr create" in command`)로 재면 `gh  pr create` 나 줄바꿈이 낀 판이
+#: **조용히 빠져나간다** — 표식이 안 써지고 Stop 훅은 볼 것이 없어 세션을 그냥 내보낸다.
+#: 구조를 부분열로 검사하면 무엇이 빠졌는지 보이지 않는다는 것은 이 저장소가 이미 배운 것이다.
+#: 줄 이음(`\` + 줄바꿈)도 셸에게는 그냥 구분자다.
+_GAP = r"(?:\s|\\\r?\n)+"
+CREATE_COMMAND = re.compile(rf"\bgh{_GAP}pr{_GAP}create\b")
+
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
 # 원격 입력마다 「이 행위자를 믿는가」를 따로 판정하면 한 군데 조이는 동안 다른 데가 열린
@@ -837,7 +844,7 @@ def _hook_post(argv_json: str) -> int:
     except json.JSONDecodeError:
         return 0
     command = ((payload.get("tool_input") or {}).get("command")) or ""
-    if "gh pr create" not in command:
+    if not CREATE_COMMAND.search(command):
         return 0
     result = json.dumps(payload.get("tool_response") or "", ensure_ascii=False)
     found = CREATED_PR.search(result)

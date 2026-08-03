@@ -773,10 +773,30 @@ class JustPushed(FakeGitHub):
         return super().get(path)
 
 
-def test_the_post_hook_ignores_commands_that_do_not_create_a_pr(watch: Path) -> None:
-    payload = json.dumps({"tool_input": {"command": "gh pr view 430"}})
+@pytest.mark.parametrize("command", ["gh pr view 430", "gh pr createx", "git push"])
+def test_the_post_hook_ignores_commands_that_do_not_create_a_pr(watch: Path, command: str) -> None:
+    payload = json.dumps({"tool_input": {"command": command}})
     assert review_rounds._hook_post(payload) == 0
     assert _entries() == set()
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["gh  pr create --fill", "gh pr\ncreate --fill", "gh pr \\\n  create --fill"],
+)
+def test_the_post_hook_reads_the_command_as_tokens_not_as_one_spelling(
+    watch: Path, command: str
+) -> None:
+    """셸이 받아들이는 띄어쓰기를 부분열 하나로 재면 **조용히** 빠져나간다 — 표식이 안 써지고
+    Stop 훅은 볼 것이 없어 세션을 그냥 내보낸다. 이 층이 막으려던 구멍 그 자체가 열린다."""
+    payload = json.dumps(
+        {
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": f"https://github.com/{REPO}/pull/456\n"},
+        }
+    )
+    assert review_rounds._hook_post(payload) == 0
+    assert _entries() == {(REPO, 456)}
 
 
 def test_the_post_hook_records_the_new_pr_and_tells_the_session(
