@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -134,7 +135,7 @@ class FakeGitHub:
 
     def get(self, path: str) -> dict:
         if path == f"pulls/{PR}":
-            return {"number": PR, "head": {"sha": self.head, "ref": "topic"}}
+            return {"number": PR, "state": "open", "head": {"sha": self.head, "ref": "topic"}}
         if path.endswith("/check-suites"):
             return {
                 "check_suites": [
@@ -697,6 +698,344 @@ def test_the_hook_allows_a_ready_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
     payload = json.dumps({"tool_input": {"command": "gh pr merge 430 --squash"}})
     assert review_rounds._hook(payload) == 0
+
+
+# ── 입구 훅: 발행 인지와 정산 전 종료 차단 ─────────────────────────────────────
+#
+# 머지 훅은 루프의 **출구**에 선다. 발행하고 아무것도 안 한 채 턴이 끝나는 길은 그 훅이 영영
+# 못 본다 — 머지를 시도하지 않으니까. 아래 둘이 그 입구를 맡는다.
+
+
+REPO = "rfastball/hwpx-filler"
+SESSION = json.dumps({"session_id": "session-one"})
+OTHER = json.dumps({"session_id": "session-two"})
+
+
+@pytest.fixture
+def watch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """감시 목록을 임시 폴더로 못박는다 — 실제 `.git/` 을 건드리지 않는다."""
+    root = tmp_path / review_rounds.WATCH_DIR
+    monkeypatch.setattr(review_rounds, "_watch_dir", lambda: root)
+    return root
+
+
+def _watch_now(pr: int = PR, *, repo: str = REPO) -> None:
+    review_rounds._watch(repo, pr)
+
+
+def _created(pr: int, *, repo: str = REPO) -> str:
+    return json.dumps(
+        {
+            "tool_input": {"command": "gh pr create --fill"},
+            "tool_response": {"stdout": f"https://github.com/{repo}/pull/{pr}\n"},
+        }
+    )
+
+
+def _entries() -> set[tuple[str, int]]:
+    return {(w.repo, w.pr) for w in review_rounds._watched()}
+
+
+def _told(session: str = "session-one", *, pr: int = PR, repo: str = REPO) -> str | None:
+    for watched in review_rounds._watched():
+        if (watched.repo, watched.pr) == (repo, pr):
+            return watched.told(session)
+    return None
+
+
+def _serving(fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`GitHub(repo)` 를 대역으로 갈아 끼우고, **어느 저장소로 물었는지** 받아 둔다."""
+    asked: list[str] = []
+
+    def factory(repo: str) -> FakeGitHub:
+        asked.append(repo)
+        return fake
+
+    monkeypatch.setattr(review_rounds, "GitHub", factory)
+    return asked
+
+
+class JustPushed(FakeGitHub):
+    """회수 창이 아직 도는 PR.
+
+    훅은 `evaluate` 를 **실시간**으로 부른다 — 고정 픽스처 시각을 쓰면 창이 이미 지난 것으로
+    읽혀 대기가 통째로 `READY` 가 되고, 이 축의 음성 대조가 사라진다.
+    """
+
+    def get(self, path: str) -> dict:
+        if path.endswith("/check-suites"):
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {
+                "check_suites": [
+                    {"created_at": now, "head_branch": "topic", "pull_requests": [{"number": PR}]}
+                ]
+            }
+        return super().get(path)
+
+
+@pytest.mark.parametrize("command", ["gh pr view 430", "gh pr createx", "git push"])
+def test_the_post_hook_ignores_commands_that_do_not_create_a_pr(watch: Path, command: str) -> None:
+    payload = json.dumps({"tool_input": {"command": command}})
+    assert review_rounds._hook_post(payload) == 0
+    assert _entries() == set()
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["gh  pr create --fill", "gh pr\ncreate --fill", "gh pr \\\n  create --fill"],
+)
+def test_the_post_hook_reads_the_command_as_tokens_not_as_one_spelling(
+    watch: Path, command: str
+) -> None:
+    """셸이 받아들이는 띄어쓰기를 부분열 하나로 재면 **조용히** 빠져나간다 — 표식이 안 써지고
+    Stop 훅은 볼 것이 없어 세션을 그냥 내보낸다. 이 층이 막으려던 구멍 그 자체가 열린다."""
+    payload = json.dumps(
+        {
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": f"https://github.com/{REPO}/pull/456\n"},
+        }
+    )
+    assert review_rounds._hook_post(payload) == 0
+    assert _entries() == {(REPO, 456)}
+
+
+def test_the_post_hook_records_the_new_pr_and_tells_the_session(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """훅은 스킬을 대신 부를 수 없다 — 확정할 수 있는 것은 **인지**뿐이라 그것을 확정한다."""
+    assert review_rounds._hook_post(_created(456)) == 0
+    assert _entries() == {(REPO, 456)}
+    spoken = json.loads(capsys.readouterr().out)
+    assert "/review-round" in spoken["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_post_hook_stays_silent_when_the_creation_failed(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """명령만 보고 기록하면 실패한 발행이 감시 목록에 올라 매 턴 판정 실패로 시끄러워진다."""
+    payload = json.dumps(
+        {
+            "tool_input": {"command": "gh pr create --fill"},
+            "tool_response": {"stderr": "a pull request already exists"},
+        }
+    )
+    assert review_rounds._hook_post(payload) == 0
+    assert _entries() == set()
+    assert capsys.readouterr().out == ""
+
+
+def test_the_post_hook_keeps_the_repository_the_url_named(watch: Path) -> None:
+    """`--repo` 로 낸 PR 을 번호만 적어 두면, 나중에 **현재 폴더**에서 같은 번호를 판정한다 —
+    그 번호가 여기 있으면 남의 PR 의 초록으로 턴이 풀리고, 정작 낸 PR 은 아무도 안 본다.
+    같은 결함류를 `MERGE_TARGET` 이 이미 겪었다."""
+    assert review_rounds._hook_post(_created(PR, repo="rfastball/hwpx-diff")) == 0
+    assert _entries() == {("rfastball/hwpx-diff", PR)}
+
+
+def test_recording_one_pr_never_touches_another(watch: Path) -> None:
+    """항목 하나를 적는 데 **다른 항목을 읽지 않는다.** 목록 하나를 읽고-고쳐-쓰면 두 lane 이
+    같은 순간에 발행할 때 나중 쓰기가 앞 PR 을 통째로 삼키고, 그러면 병렬 웨이브에서 감시가
+    조용히 빈다 — 이 자리를 공용 git dir 에 둔 이유가 바로 그 시나리오였다."""
+    _watch_now(457)  # lane B 가 먼저 올렸다
+    _watch_now(456)  # lane A 는 B 를 못 본 채 자기 것만 쓴다
+    assert _entries() == {(REPO, 456), (REPO, 457)}
+
+
+# ── 정체성을 값으로 대체하지 않는다 ────────────────────────────────────────────
+#
+# 이 PR 이 같은 가족을 네 번 냈다: 저장소를 버려 **다른 PR 이** 같아 보였고, 파일 이름의
+# `/`→`-` 치환이 **다른 저장소를**, 카운트 지문이 **다른 지적 집합을**, PR 단위 확인이
+# **다른 세션을** 같아 보이게 했다. 파생 표현은 정체성을 잃지 않게 담거나 아예 쓰지 않는다.
+
+
+def test_two_repositories_that_alias_under_a_flat_key_stay_apart(watch: Path) -> None:
+    """`/` 를 `-` 로 바꾸면 `foo-bar/baz#1` 과 `foo/bar-baz#1` 이 같은 이름이 되고, 나중 쓰기가
+    앞 항목을 조용히 덮어 그 PR 이 감시에서 사라진다."""
+    _watch_now(1, repo="foo-bar/baz")
+    _watch_now(1, repo="foo/bar-baz")
+    assert _entries() == {("foo-bar/baz", 1), ("foo/bar-baz", 1)}
+
+
+@pytest.mark.parametrize("repo", ["../..", "./x", "a/..", "a b/c"])
+def test_a_name_that_could_escape_the_watch_directory_is_not_watched(
+    watch: Path, repo: str
+) -> None:
+    """경로 조각이 정체성이 되려면 그 조각이 이름이어야 한다 — 아니면 감시 폴더 밖을 쓴다."""
+    _watch_now(1, repo=repo)
+    assert _entries() == set()
+
+
+def test_the_fingerprint_names_the_findings_instead_of_counting_them() -> None:
+    """하나가 정산되는 사이 하나가 도착하면 카운트는 그대로다 — 그러면 새 지적이 「이미 말한
+    것」으로 삼켜진 채 턴이 끝난다. 두 판정은 **같은 수, 다른 집합**이다."""
+    before = evaluate(FakeGitHub(head="c1", threads=[_thread(1, "c1")]), PR, now=NOW)
+    after = evaluate(FakeGitHub(head="c1", threads=[_thread(2, "c1")]), PR, now=NOW)
+    assert len(before.unsettled) == len(after.unsettled) == 1
+    assert before.status == after.status
+    assert review_rounds._verdict_print(before) != review_rounds._verdict_print(after)
+
+
+def test_the_fingerprint_separates_the_recall_required_state_from_silence() -> None:
+    """차단을 고치고 해결한 직후에는 지적 집합이 비지만 **새 지시**가 생긴다 — 「재리뷰를
+    부르라」. 그 상태가 발행 직후의 침묵과 같은 지문이면 지시가 삼켜진다."""
+    fresh = evaluate(JustPushed(head="c1", threads=[]), PR)
+    fixed = evaluate(
+        JustPushed(head="c1", threads=[_thread(1, "c0", resolved=True, replies=["triage: block:2"])]),
+        PR,
+    )
+    assert fresh.status == fixed.status == WAIT
+    assert not fresh.unsettled and not fixed.unsettled
+    assert not fresh.open_blocks and not fixed.open_blocks
+    assert fixed.needs_recall and not fresh.needs_recall
+    assert review_rounds._verdict_print(fresh) != review_rounds._verdict_print(fixed)
+
+
+def test_the_stop_hook_does_nothing_without_a_watched_pr(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """감시할 PR 이 없으면 API 도 안 부른다 — 모든 턴 끝에서 도는 훅이라 침묵이 기본값이다."""
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_the_stop_hook_holds_the_turn_until_the_review_is_settled(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    _watch_now()
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", replies=["triage: block:2"])])
+    _serving(fake, monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    spoken = json.loads(capsys.readouterr().out)
+    assert spoken["decision"] == "block"
+    assert "/review-round" in spoken["reason"]
+    assert _told() == "BLOCKED|recall|b1"
+
+
+def test_the_stop_hook_asks_the_repository_the_entry_carries(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """읽는 쪽도 항목이 든 저장소를 쓴다 — 여기서 현재 폴더를 물으면 기록해 둔 저장소가
+    장식이 된다(선언은 살고 결과는 죽는다). **같은 번호**를 자매 저장소에 두어 겨눈다."""
+    _watch_now(repo="rfastball/hwpx-diff")
+    asked = _serving(FakeGitHub(files=["docs/README.md"]), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert asked == ["rfastball/hwpx-diff"]
+
+
+def test_the_stop_hook_holds_a_pr_that_is_still_waiting_for_its_review(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """**발행 직후의 `WAIT` 이 곧 루프가 끊기는 지점이다.** 대기를 놓아 주면 이 훅이 겨눈 것을
+    그대로 놓친다 — 지적이 아직 하나도 없는 상태가 정확히 그 모양이다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+
+def test_the_stop_hook_says_the_same_verdict_only_once(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """훅은 「이미 감시 중인 세션」과 「발행하고 잊은 세션」을 구분하지 못한다 — 판정이 그대로면
+    말할 것도 그대로다. 실주행 첫 회에 정상 절차를 밟는 세션이 붙잡혔다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert capsys.readouterr().out == "", "같은 판정을 되풀이하는 것은 인지가 아니라 잔소리다"
+    assert _entries(), "조용해졌다고 감시를 놓으면 다음 전이를 못 본다"
+
+
+def test_each_session_hears_it_for_itself(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """확인은 **세션의 성질**이다. PR 단위로 적어 두면 lane 세션이 들은 것을 오케스트레이터가
+    들은 것으로 치고, 아무도 못 들은 채 본체 턴이 끝난다 — 공용 dir 로 옮긴 목적 그 자체를
+    무너뜨리는 자리다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+    assert review_rounds._hook_stop(OTHER) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block", "다른 세션은 아직 못 들었다"
+
+
+def test_an_unknown_session_is_always_held(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """누구에게 말했는지 모르는 채로 조용해지면 아무도 못 들은 채 턴이 끝난다 — 모르면 붙잡는
+    쪽으로 틀린다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+    for _ in range(2):
+        assert review_rounds._hook_stop("{}") == 0
+        assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+
+def test_the_stop_hook_speaks_again_when_the_verdict_changes(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """지적이 도착하면 할 말이 달라진다 — 그때는 다시 붙잡는다. 이것이 없으면 「한 번만」이
+    곧 「발행 직후 한 번만」이 되어 트리아지 단계에는 입구가 없다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    capsys.readouterr()
+
+    _serving(FakeGitHub(head="c1", threads=[_thread(1, "c1")]), monkeypatch)  # 미정산 1건
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+    assert _told() == "WAIT||u1"
+
+
+def test_the_stop_hook_releases_a_settled_pr(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    _watch_now()
+    _serving(FakeGitHub(files=["docs/README.md"]), monkeypatch)  # 빠른 경로 → READY
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert _entries() == set(), "정산이 끝난 PR 을 계속 감시하면 매 턴 API 를 헛되이 친다"
+    assert capsys.readouterr().out == ""
+
+
+def test_the_stop_hook_drops_a_pr_that_is_no_longer_open(
+    watch: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _watch_now()
+
+    class Merged(FakeGitHub):
+        def get(self, path: str) -> dict:
+            if path == f"pulls/{PR}":
+                return {"number": PR, "state": "closed", "head": {"sha": self.head}}
+            raise AssertionError("닫힌 PR 을 계속 판정했습니다")
+
+    _serving(Merged(), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert _entries() == set()
+
+
+def test_the_stop_hook_does_not_brick_the_session_when_github_is_unreachable(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로 만든다 —
+    실제 게이트는 required check 라 놓아 주어도 머지는 못 한다."""
+    _watch_now()
+
+    class Unreachable(FakeGitHub):
+        def get(self, path: str) -> dict:
+            raise GitHubError("gh 미인증")
+
+    _serving(Unreachable(), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    spoken = json.loads(capsys.readouterr().out)
+    assert "decision" not in spoken
+    assert "읽지 못했습니다" in spoken["systemMessage"]
+    assert _entries(), "판정하지 못한 PR 을 감시에서 지우면 다음 턴에 다시 보지 못한다"
 
 
 # ── 체크런 게시 ────────────────────────────────────────────────────────────────

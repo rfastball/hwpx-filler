@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -19,9 +20,34 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 #: 리뷰 결과를 기다리는 창. 이 시간이 지나도록 아무 신호가 없으면 회수 창 소진으로 본다.
 RECOVERY_WINDOW = timedelta(minutes=10)
+
+#: 발행했으나 정산이 안 끝난 PR 을 적어 두는 자리. `.git/` 안이라 커밋될 수 없고 새 무시
+#: 규칙도 필요 없다. **common** git dir 을 쓰는 이유는 worktree 다 — lane 이 worktree 에서
+#: PR 을 내고 오케스트레이터가 본체에서 턴을 끝내면, 따로 살면 그 PR 을 아무도 못 본다.
+#:
+#: 파일 하나에 목록이 아니라 **PR 당 파일 하나**인 이유도 같은 자리다(§7).
+WATCH_DIR = "review-gate-watch"
+
+#: `gh pr create` 는 발행된 PR 의 URL 을 **결과로** 뱉는다. 명령만 보고 기록하면 실패한 발행도
+#: 감시 목록에 올라 매 턴 판정 실패로 시끄러워진다.
+#:
+#: 번호만 집지 않는다. `--repo` 로 냈거나 다른 저장소로 옮겨 간 셸에서 낸 PR 은 그 번호가
+#: 여기서도 살아 있을 수 있고, 그러면 **엉뚱한 PR 의 초록으로 턴이 풀린다** — 같은 결함류를
+#: `MERGE_TARGET` 이 이미 겪었다(§8 판독 노하우).
+#:
+#: 이름 문자를 GitHub 이 허용하는 것으로 좁힌다. 넓게 잡으면 `..` 같은 조각이 경로로 흘러간다.
+CREATED_PR = re.compile(r"https?://[^/\s]+/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)/pull/(\d+)")
+
+#: 발행 명령. 부분열(`"gh pr create" in command`)로 재면 `gh  pr create` 나 줄바꿈이 낀 판이
+#: **조용히 빠져나간다** — 표식이 안 써지고 Stop 훅은 볼 것이 없어 세션을 그냥 내보낸다.
+#: 구조를 부분열로 검사하면 무엇이 빠졌는지 보이지 않는다는 것은 이 저장소가 이미 배운 것이다.
+#: 줄 이음(`\` + 줄바꿈)도 셸에게는 그냥 구분자다.
+_GAP = r"(?:\s|\\\r?\n)+"
+CREATE_COMMAND = re.compile(rf"\bgh{_GAP}pr{_GAP}create\b")
 
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
@@ -692,6 +718,240 @@ def _sweep(client: GitHub) -> int:
     return 2 if failures else 0
 
 
+def _watch_dir() -> Path | None:
+    """감시 목록의 자리. git 을 못 물으면 `None` 이고, 그때 훅은 아무것도 하지 않는다."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError:  # git 부재 — 저장소가 아니면 감시할 PR 도 없다
+        return None
+    if done.returncode != 0:
+        return None
+    return Path(done.stdout.strip()) / WATCH_DIR
+
+
+#: 감시 항목의 **정체성은 `(repo, pr)` 튜플 하나**다. 파일 이름도 지문도 그것의 파생일 뿐이고,
+#: 파생이 정체성을 손실 압축하는 순간 서로 다른 것이 같아 보인다 — 이 PR 이 그 가족을 세 번
+#: 냈다(저장소를 버림 · 이름에서 `/`→`-` 별칭 · 지문을 카운트로). 그래서 규칙을 하나로 못박는다:
+#: **파생은 정체성을 무손실로 담거나, 아예 정체성을 쓰지 않는다.**
+#:
+#: 경로는 `<owner>/<repo>/<pr>.json` 중첩이라 무손실이다 — GitHub 이름에 `/` 가 못 들어가므로
+#: 두 튜플이 같은 경로로 갈 수 없다. 그 전제를 지키려고 이름 문자를 여기서 다시 검사한다.
+LEGAL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+#: 감시 대상임을 선언하는 파일. 이름이 고정이라 같은 PR 을 두 번 올려도 같은 자리다.
+WATCH_MARK = "watch.json"
+
+#: 「이 **세션**이 이 판정을 들었다」를 적는 곳. 확인은 세션의 성질이지 PR 의 성질이 아니다 —
+#: PR 단위로 적어 두면 lane 세션이 들은 것을 오케스트레이터가 들은 것으로 치고 그냥 내보낸다.
+#: 세션마다 자기 파일이라 여기서도 읽고-고쳐-쓰기가 없다.
+TOLD_DIR = "told"
+
+
+def _watch_home(root: Path, repo: str, pr: int) -> Path | None:
+    owner, _, name = repo.partition("/")
+    parts = (owner, name)
+    if not all(LEGAL_NAME.fullmatch(part) and part not in {".", ".."} for part in parts):
+        return None  # 경로를 벗어나거나 별칭이 될 이름은 감시하지 않는다
+    return root.joinpath(owner, name, str(pr))
+
+
+def _write_atomic(target: Path, payload: dict) -> None:
+    """반쯤 쓰인 파일을 읽는 훅이 없도록 원자적으로 갈아 끼운다.
+
+    tmp 이름에 pid 를 넣어 같은 자리를 동시에 쓰는 두 프로세스가 서로의 임시 파일을 밟지 않게
+    한다.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staged = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    staged.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(staged, target)
+
+
+def _watch(repo: str, pr: int) -> None:
+    """PR 하나를 감시 대상으로 올린다 — **자기 자리에만** 쓴다.
+
+    남의 항목을 읽지 않으므로 지울 수도 없다. 단 그 말이 참이려면 경로가 무손실이어야 한다
+    (`_watch_home`). 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이 같은 순간에 발행하면
+    나중 쓰기가 앞 PR 을 통째로 삼켰다.
+    """
+    root = _watch_dir()
+    home = None if root is None else _watch_home(root, repo, pr)
+    if home is None:
+        return
+    _write_atomic(home / WATCH_MARK, {"repo": repo, "pr": pr})
+
+
+@dataclass(frozen=True)
+class Watched:
+    """감시 중인 PR 하나. `repo` 를 함께 드는 이유는 §8 의 「엉뚱한 PR」 결함류다."""
+
+    home: Path
+    repo: str
+    pr: int
+
+    def _told_at(self, session: str) -> Path:
+        # 세션 id 를 파일 이름으로 그냥 쓰지 않는다 — 경로에 못 쓸 문자가 섞이면 별칭이 된다.
+        # 되읽을 일이 없고 필요한 것은 같음 판정뿐이라 충돌 저항 해시로 충분하다.
+        digest = hashlib.sha256(session.encode("utf-8")).hexdigest()[:32]
+        return self.home / TOLD_DIR / f"{digest}.json"
+
+    def told(self, session: str) -> str | None:
+        try:
+            return json.loads(self._told_at(session).read_text(encoding="utf-8"))["verdict"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def acknowledge(self, session: str, verdict: str) -> None:
+        _write_atomic(self._told_at(session), {"verdict": verdict})
+
+    def release(self) -> None:
+        shutil.rmtree(self.home, ignore_errors=True)
+
+
+def _watched() -> list[Watched]:
+    root = _watch_dir()
+    if root is None or not root.is_dir():
+        return []
+    found: list[Watched] = []
+    for path in sorted(root.rglob(WATCH_MARK)):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            found.append(Watched(path.parent, str(entry["repo"]), int(entry["pr"])))
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue  # 부기 하나가 깨진 것이 나머지 감시를 못 막는다
+    return found
+
+
+def _emit(message: dict) -> None:
+    """훅의 stdout 은 **JSON 하나**다. 두 번 찍으면 전부 무시된다."""
+    print(json.dumps(message, ensure_ascii=False))
+
+
+def _hook_post(argv_json: str) -> int:
+    """`gh pr create` 직후. **막지 않는다** — 발행 사실을 세션에 심고 감시 목록에 올린다.
+
+    훅은 스킬을 대신 부를 수 없다(플랫폼 계약). 할 수 있는 것은 **모르고 지나가는 길을
+    없애는 것**뿐이라 인지는 여기서 확정하고, 종료 차단은 `--hook-stop` 이 진다.
+    """
+    try:
+        payload = json.loads(argv_json)
+    except json.JSONDecodeError:
+        return 0
+    command = ((payload.get("tool_input") or {}).get("command")) or ""
+    if not CREATE_COMMAND.search(command):
+        return 0
+    result = json.dumps(payload.get("tool_response") or "", ensure_ascii=False)
+    found = CREATED_PR.search(result)
+    if not found:  # 발행이 실패했다 — 그 오류는 명령 자신이 이미 보여 준다
+        return 0
+    repo, pr = found.group(1), int(found.group(2))
+    _watch(repo, pr)
+    _emit(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": (
+                    f"{repo}#{pr} 이 발행됐습니다. 리뷰 대기의 1차 주체는 이 세션입니다"
+                    "(`docs/REVIEW_POLICY.md` §4) — `/review-round` 로 정산·감시를 이어가십시오."
+                    " 정산이 남은 채 턴을 끝내려 하면 Stop 훅이 붙잡습니다(판정이 달라질 때마다"
+                    " 한 번)."
+                ),
+            }
+        }
+    )
+    return 0
+
+
+def _verdict_print(report: Report) -> str:
+    """붙잡을지 말지를 가르는 지문. 「무엇이 남았는가」가 바뀌었을 때만 다시 말한다.
+
+    **세지 않고 지목한다.** 카운트로 지으면 하나가 정산되는 사이 하나가 도착할 때 두 스냅숏이
+    같은 값이 되어, 새 지적이 「이미 말한 것」으로 삼켜진 채 턴이 끝난다 — 정체성을 값으로
+    대체하는 같은 가족이다(`LEGAL_NAME` 위 주석).
+
+    렌더 전체를 지문으로 쓰지는 않는다. head 는 push 마다 움직이는데 그때 할 말이 새로 생기는
+    것은 아니라서, 작업 중인 세션을 push 마다 붙잡게 된다.
+    """
+    marks = sorted(
+        [f"u{f.id}" for f in report.unsettled]
+        + [f"b{f.id}" for f in report.open_blocks]
+        + [f"d{f.id}" for f, _ in report.bad_defers]
+    )
+    # `needs_recall` 은 지적 집합이 비어도 참이 될 수 있다 — 차단을 고치고 해결한 직후가 그
+    # 모양이고, 그때 새로 생기는 지시(「`@codex review` 를 부르라」)가 발행 직후의 침묵과 같은
+    # 지문이 되면 삼켜진다.
+    recall = "recall" if report.needs_recall else ""
+    return f"{report.status}|{recall}|{','.join(marks)}"
+
+
+def _hook_stop(argv_json: str) -> int:
+    """턴이 끝나려는 자리. 발행해 놓고 정산 없이 나가는 길을 막는다.
+
+    **대기(`WAIT`)도 붙잡는다.** 발행 직후의 대기야말로 루프가 끊기는 지점이라 거기서 놓아
+    주면 이 훅이 겨눈 것을 그대로 놓친다.
+
+    **같은 판정으로는 한 번만 붙잡는다.** 붙잡기의 목적은 인지이고, 이미 감시에 들어간
+    세션에게 같은 말을 되풀이하는 것은 인지가 아니라 잔소리다 — 훅은 그 둘을 구분하지 못해
+    똑같이 붙잡는다(실주행 첫 회에 바로 드러났다). 붙잡기는 상태를 바꾸지 못하므로 같은
+    판정에서 두 번 붙잡는 길이 없고, 무한 루프 방지가 임의의 예산이 아니라 구조에서 나온다.
+    """
+    try:
+        session = str((json.loads(argv_json) or {}).get("session_id") or "")
+    except json.JSONDecodeError:
+        session = ""
+    holds: list[str] = []
+    notes: list[str] = []
+    for entry in _watched():
+        # 저장소는 감시 항목이 든 것을 쓴다. 여기서 현재 폴더를 물으면 `--repo` 로 낸 PR 을
+        # **같은 번호의 남의 PR** 로 판정하고, 그쪽이 초록이면 턴이 그냥 풀린다.
+        client = GitHub(entry.repo)
+        try:
+            # 닫힌 PR 은 정산 의무가 끝났다. 「open 이 아니면」으로 뒤집어 쓰지 않는다 —
+            # 응답 형상이 바뀌면 감시가 통째로 조용히 죽는 쪽으로 틀린다.
+            if client.get(f"pulls/{entry.pr}").get("state") == "closed":
+                entry.release()
+                continue
+            report = evaluate(client, entry.pr)
+        except GitHubError as error:
+            # 조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로
+            # 만든다 — 실제 게이트는 required check 라 놓아 주어도 머지는 못 한다. 대신 조용히
+            # 놓지 않고, 감시 항목도 지우지 않는다(다음 턴에 다시 본다).
+            notes.append(f"{entry.repo}#{entry.pr} 상태를 읽지 못했습니다: {error}")
+            continue
+        if report.status == READY:
+            entry.release()
+            continue
+        verdict = _verdict_print(report)
+        # 세션을 모르면 **붙잡는 쪽으로** 틀린다. 확인은 세션의 성질이라, 누구에게 말했는지
+        # 모르는 채로 조용해지면 아무도 못 들은 채 턴이 끝날 수 있다.
+        if session and verdict == entry.told(session):  # 이 세션에겐 이미 말했다
+            continue
+        if session:
+            entry.acknowledge(session, verdict)
+        holds.append(f"{entry.repo}\n{render(report)}")
+
+    if holds:
+        message: dict = {
+            "decision": "block",
+            "reason": "\n\n".join(holds)
+            + "\n\n발행한 PR 의 정산이 끝나지 않았습니다 — `/review-round` 로 이어가십시오"
+            "(`docs/REVIEW_POLICY.md` §4). 같은 판정으로는 다시 붙잡지 않습니다.",
+        }
+        if notes:
+            message["systemMessage"] = "\n".join(notes)
+        _emit(message)
+        return 0
+    if notes:
+        _emit({"systemMessage": "\n".join(notes)})
+    return 0
+
+
 def _hook(argv_json: str) -> int:
     """`gh pr merge` 직전의 빠른 실패. **게이트가 아니다** — 게이트는 required check 다."""
     try:
@@ -726,6 +986,16 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="기계 판독용 출력")
     parser.add_argument("--hook", action="store_true", help="stdin 의 훅 payload 를 읽는다")
     parser.add_argument(
+        "--hook-post",
+        action="store_true",
+        help="PostToolUse — `gh pr create` 를 감시 목록에 올린다",
+    )
+    parser.add_argument(
+        "--hook-stop",
+        action="store_true",
+        help="Stop — 정산이 안 끝난 PR 이 있으면 턴 종료를 붙잡는다",
+    )
+    parser.add_argument(
         "--publish-check",
         action="store_true",
         help=f"판정을 PR head SHA 의 `{CHECK_NAME}` 체크런으로 게시한다(CI 용)",
@@ -735,6 +1005,10 @@ def main() -> int:
     try:
         if args.hook:
             return _hook(sys.stdin.read())
+        if args.hook_post:
+            return _hook_post(sys.stdin.read())
+        if args.hook_stop:
+            return _hook_stop(sys.stdin.read())
         client = GitHub.discover()
         if args.all_open:
             return _sweep(client)

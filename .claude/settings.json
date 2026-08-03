@@ -1,6 +1,28 @@
 {
-  "$comment": "머지 직전의 빠른 실패. 게이트가 아니다 — 게이트는 review-gate required check 다(docs/REVIEW_POLICY.md §7). 훅은 이 클라이언트의 Bash 경로만 막으므로 규칙의 하한일 뿐이고, 판정 로직은 CI 와 같은 스크립트 하나를 공유한다.",
+  "$comment": "리뷰 루프의 **클라이언트 하한** 셋. 게이트가 아니다 — 게이트는 review-gate required check 다(docs/REVIEW_POLICY.md §7). 훅은 이 클라이언트의 경로만 막으므로 규칙의 하한일 뿐이고, 판정 로직은 CI 와 같은 스크립트 하나를 공유한다. PostToolUse=발행 인지 · Stop=정산 전 종료 차단 · PreToolUse=머지 직전의 빠른 실패.",
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\" \"$CLAUDE_PROJECT_DIR/scripts/review_rounds.py\" --hook-post"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\" \"$CLAUDE_PROJECT_DIR/scripts/review_rounds.py\" --hook-stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

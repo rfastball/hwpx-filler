@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / ".claude" / "skills" / "review-round" / "SKILL.md"
 POLICY = ROOT / "docs" / "REVIEW_POLICY.md"
+SETTINGS = ROOT / ".claude" / "settings.json"
+SCRIPT = ROOT / "scripts" / "review_rounds.py"
 
 
 def _skill() -> str:
@@ -67,3 +70,26 @@ def test_the_skill_points_at_the_policy_instead_of_restating_it() -> None:
     """규칙 원문은 한 곳이 소유한다 — 두 벌은 따로 늙는다."""
     assert "docs/REVIEW_POLICY.md" in _skill()
     assert POLICY.exists()
+
+
+@pytest.mark.parametrize(
+    ("event", "flag", "why"),
+    [
+        ("PostToolUse", "--hook-post", "발행을 감시 목록에 올리는 입구"),
+        ("Stop", "--hook-stop", "정산 전 종료를 붙잡는 잠금"),
+        ("PreToolUse", "--hook", "머지 직전의 빠른 실패"),
+    ],
+)
+def test_the_client_hooks_stay_wired_to_modes_the_script_implements(
+    event: str, flag: str, why: str
+) -> None:
+    """훅은 설정 파일에만 살아서 **지워져도 아무 테스트가 안 죽는다.** 스킬 단계가 세 번
+    조용히 죽은 것과 같은 자리라(이 파일의 존재 이유) 배선도 함께 센다.
+
+    선언과 구현을 **같은 단언에서** 맞춘다 — 설정만 보면 없는 모드를 가리켜도 초록이고,
+    스크립트만 보면 배선이 끊겨도 초록이다.
+    """
+    settings = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    commands = [hook["command"] for entry in settings["hooks"][event] for hook in entry["hooks"]]
+    assert any(command.endswith(flag) for command in commands), f"{why}({event})이 끊겼습니다"
+    assert flag in SCRIPT.read_text(encoding="utf-8"), f"스크립트가 {flag} 를 더 이상 받지 않습니다"
