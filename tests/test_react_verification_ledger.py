@@ -397,14 +397,32 @@ def _check_anchor(
         if body is None:
             report.fail(where, f"앵커가 가리키는 파일이 없다: {rel} (참조 {ref!r})")
             return
-        if not re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}\b", body, re.M):
-            report.fail(where, f"{rel} 에 함수 {fn} 이 없다 (참조 {ref!r})")
+        if executable:
+            # 호출 앵커의 `::` 는 「이 함수가 그 스크립트를 부른다」는 뜻이다 — test 일 필요는
+            # 없지만 실행되는 파일이어야 한다.
+            if Path(rel).suffix.lower() not in EXECUTABLE_SUFFIXES:
+                report.fail(
+                    where,
+                    f"호출 앵커가 실행되지 않는 파일을 가리킨다: {rel} (참조 {ref!r}). "
+                    "산문·주석의 언급은 호출이 아니다.",
+                )
+                return
+            if not re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}", body, re.M):
+                report.fail(where, f"{rel} 에 함수 {fn} 이 없다 (참조 {ref!r})")
             return
-        if executable and Path(rel).suffix.lower() not in EXECUTABLE_SUFFIXES:
+        # 증거 앵커의 `::` 는 「이 대조가 돈다」는 뜻이다. pytest 가 **수집하는** test 여야
+        # 하고, 그 개념은 이 게이트가 이미 쓰는 것과 같은 자리에서 나온다 — 두 곳이 각자
+        # 정의하면 그 둘이 갈리는 날이 온다.
+        if fn not in collected_test_names(repo, rel):
+            has_def = re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}", body, re.M)
             report.fail(
                 where,
-                f"호출 앵커가 실행되지 않는 파일을 가리킨다: {rel} (참조 {ref!r}). "
-                "산문·주석의 언급은 호출이 아니다.",
+                f"{rel} 의 {fn} 은 pytest 가 수집하는 test 가 아니다 (참조 {ref!r})."
+                + (
+                    " 그 이름의 def 는 있지만 헬퍼다 — 실행되지 않는 코드는 판별력의 증거가 못 된다."
+                    if has_def
+                    else " 그 이름의 정의 자체가 없다."
+                ),
             )
         return
     if "#" in ref:
@@ -566,6 +584,36 @@ def measure_module_level_marks(repo: Repo, rel: str) -> bool:
         return False
 
     return has_pytestmark(tree.body)
+
+
+def collected_test_names(repo: Repo, rel: str) -> set[str]:
+    """pytest 가 **수집하는** test 함수 이름. 앵커 유효성과 센서스가 같은 개념을 쓴다.
+
+    모듈 최상위의 `test_*` 와 `Test*` 클래스 안의 `test_*` 만이다. 「그 이름의 `def` 가 파일
+    어딘가에 있다」로 세면 헬퍼가 음성 대조의 증거를 자칭할 수 있고, 원장은 실행되지 않는
+    코드를 가리키며 「판별력이 있다」고 말하게 된다.
+    """
+    body = repo.text(rel)
+    if body is None:
+        return set()
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return set()
+    found: set[str] = set()
+
+    def walk(node: ast.AST, collectible: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                walk(child, collectible and child.name.startswith("Test"))
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if collectible and child.name.startswith("test_"):
+                    found.add(child.name)
+            else:
+                walk(child, collectible)
+
+    walk(tree, True)
+    return found
 
 
 def measure_static_test_functions(repo: Repo, rel: str) -> tuple[int, int, bool]:
@@ -1105,6 +1153,25 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
         landed = [a for a in adjustments if a.get("kind") == "landed"]
         if not landed:
             report.fail(where, "landed adjustment 가 하나도 없다.")
+        # 사슬의 원소는 **신원**을 갖는다. 집합 소속으로만 보면 같은 파일의 델타가 두 번
+        # 실려도 통과하고, 공표된 사슬이 중의적이 되어 소비자가 그것을 두 번 센다.
+        identities: dict[tuple, int] = {}
+        for adj in adjustments:
+            if not isinstance(adj, dict):
+                continue
+            key = (
+                ("expected_landing", adj.get("file"))
+                if adj.get("kind") == "expected_landing"
+                else ("landed", adj.get("from_sha"), adj.get("to_sha"))
+            )
+            identities[key] = identities.get(key, 0) + 1
+        for key, count in sorted(identities.items(), key=lambda kv: str(kv[0])):
+            if count > 1:
+                report.fail(
+                    where,
+                    f"같은 신원의 adjustment 가 {count} 번 실렸다: {key}. "
+                    "사슬이 중의적이 되고 소비자가 그 델타를 두 번 센다.",
+                )
         for adj in adjustments:
             kind = adj.get("kind")
             if kind == "landed":
@@ -2574,3 +2641,40 @@ def test_c_predicate_33b_an_unmarked_delta_counting_marked_cases_is_refused(
                     adj["delta"] = unmarked + 1
 
         _expect_red(_mutate(document, mutate), repo, "무표 test 함수 수")
+
+
+def test_c_predicate_34_a_helper_posing_as_a_negative_control_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """`::` 증거가 pytest 가 수집하지 않는 헬퍼를 가리키면, 원장은 실행되지 않는 코드를
+    두고 「판별력이 있다」고 말하는 셈이다."""
+    helper = next(
+        (
+            n.name
+            for n in ast.walk(ast.parse(repo.text("tests/test_web_selftest_gate.py") or ""))
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and not n.name.startswith("test_")
+        ),
+        None,
+    )
+    assert helper, "대조 재료를 못 만들었다 — 그 파일에 헬퍼가 없다."
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["tests/test_web_selftest_gate.py"]["nc_evidence"] = [
+            f"tests/test_web_selftest_gate.py::{helper}"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "수집하는 test 가 아니다", helper)
+
+
+def test_c_predicate_35_a_duplicated_adjustment_row_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """사슬의 원소는 신원을 갖는다 — 같은 파일의 델타가 두 번 실리면 소비자가 두 번 센다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        block = doc["census"]["pytest_collected"]
+        landing = [a for a in block["adjustment"] if a.get("kind") == "expected_landing"]
+        block["adjustment"] = [*block["adjustment"], dict(landing[0])]
+
+    _expect_red(_mutate(document, mutate), repo, "같은 신원의 adjustment", "두 번 센다")

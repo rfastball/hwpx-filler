@@ -92,7 +92,7 @@ reason   = "PR #467(R1-02 · PR-A) — tests/test_react_ownership_inventory.py �
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 67
+delta    = 69
 reason   = "자기 게이트 파일의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다. 게이트가 그 파일의 test 함수를 AST 로 세어 이 값을 재확인한다."
 
 [census.pytest_unmarked]
@@ -113,7 +113,7 @@ reason   = "PR #467 신설분이 전부 무표라 무표 축의 델타가 전체
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 67
+delta    = 69
 reason   = "자기 게이트 파일도 축 marker 를 쓰지 않는다."
 
 [census.pytest_live]
