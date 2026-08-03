@@ -568,27 +568,46 @@ def measure_module_level_marks(repo: Repo, rel: str) -> bool:
     return has_pytestmark(tree.body)
 
 
-def measure_static_test_functions(repo: Repo, rel: str) -> tuple[int, bool]:
-    """(`def test_*` 수, `parametrize` 를 쓰는가). 후자가 참이면 수집 수와 함수 수가 갈린다."""
+def measure_static_test_functions(repo: Repo, rel: str) -> tuple[int, int, bool]:
+    """(`def test_*` 수, 그중 **축 marker 가 없는** 수, `parametrize` 를 쓰는가).
+
+    두 수를 함께 내는 이유는 센서스 축이 서로 다른 것을 세기 때문이다 — 전체 수집 축은
+    파일의 사례 전수를, 무표 축은 축 marker 가 없는 사례만 센다. 하나로 세면 marker 를 든
+    파일이 생기는 순간 무표 축이 거짓 총계를 강요받거나 영영 빨개진다.
+    클래스에 붙은 marker 는 `measure_axis_markers` 와 같은 규율로 메서드에 내려온다.
+    """
     body = repo.text(rel)
     if body is None:
-        return 0, False
+        return 0, 0, False
     tree = ast.parse(body)
     count = 0
+    unmarked = 0
     parametrized = False
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not node.name.startswith("test_"):
-            continue
-        count += 1
-        # 파일 어딘가에 `parametrize` 라는 **글자**가 있는지 묻지 않는다 — 그 술어는 이
-        # 파일 자신처럼 그 이름을 설명하는 산문만으로도 참이 된다. 데코레이터를 센다.
-        for dec in node.decorator_list:
-            expr = dec.func if isinstance(dec, ast.Call) else dec
-            if isinstance(expr, ast.Attribute) and expr.attr == "parametrize":
-                parametrized = True
-    return count, parametrized
+
+    def walk(node: ast.AST, inherited: set[str]) -> None:
+        nonlocal count, unmarked, parametrized
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                walk(child, inherited | _axis_marks_on(child))
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not child.name.startswith("test_"):
+                    walk(child, inherited)
+                    continue
+                count += 1
+                if not (inherited | _axis_marks_on(child)):
+                    unmarked += 1
+                # 파일 어딘가에 `parametrize` 라는 **글자**가 있는지 묻지 않는다 — 그 술어는
+                # 이 파일 자신처럼 그 이름을 설명하는 산문만으로도 참이 된다. 데코레이터를 센다.
+                for dec in child.decorator_list:
+                    expr = dec.func if isinstance(dec, ast.Call) else dec
+                    if isinstance(expr, ast.Attribute) and expr.attr == "parametrize":
+                        parametrized = True
+                continue
+            walk(child, inherited)
+
+    walk(tree, set())
+    return count, unmarked, parametrized
 
 
 def measure_workflow_jobs(repo: Repo) -> tuple[set[str], set[str]]:
@@ -1112,7 +1131,7 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
                         where,
                         "expected_landing adjustment 가 to_sha 를 든다 — 착지 SHA 는 작성 시점에 알 수 없다.",
                     )
-                _check_expected_landing_delta(where, adj, repo, report)
+                _check_expected_landing_delta(where, name, adj, repo, report)
             else:
                 report.fail(where, f"adjustment.kind 가 landed/expected_landing 밖이다: {kind!r}")
             _require_count(where, "delta", adj.get("delta"), report, signed=True)
@@ -1172,7 +1191,14 @@ def _check_census_chain_is_complete(
             for adj in block.get("adjustment", [])
             if isinstance(adj, dict) and adj.get("kind") == "expected_landing"
         }
-        missing = [rel for rel in new_files if rel not in accounted]
+        # 무표 축은 **무표 사례가 있는 파일만** 요구한다. 전부 축 marker 를 든 파일은 그
+        # 축에 한 건도 기여하지 않으므로 사슬에 넣으라고 요구하면 거짓 총계를 강요한다.
+        required = [
+            rel
+            for rel in new_files
+            if axis != "pytest_unmarked" or measure_static_test_functions(repo, rel)[1] > 0
+        ]
+        missing = [rel for rel in required if rel not in accounted]
         if missing:
             report.fail(
                 f"census.{axis}",
@@ -1182,9 +1208,12 @@ def _check_census_chain_is_complete(
 
 
 def _check_expected_landing_delta(
-    where: str, adj: dict[str, Any], repo: Repo, report: Report
+    where: str, axis: str, adj: dict[str, Any], repo: Repo, report: Report
 ) -> None:
-    """미착지 델타는 **재측정한다.** 파일 하나의 사례 수는 재귀 없이 셀 수 있다."""
+    """미착지 델타는 **재측정한다.** 파일 하나의 사례 수는 재귀 없이 셀 수 있다.
+
+    축마다 세는 것이 다르다 — 전체 수집 축은 사례 전수, 무표 축은 축 marker 가 없는 사례만.
+    """
     rel = adj.get("file")
     if not isinstance(rel, str) or not rel:
         report.fail(
@@ -1202,17 +1231,19 @@ def _check_expected_landing_delta(
             "미착지 델타는 이 PR 이 새로 들이는 파일의 몫이다.",
         )
         return
-    count, parametrized = measure_static_test_functions(repo, rel)
+    count, unmarked, parametrized = measure_static_test_functions(repo, rel)
+    expected = unmarked if axis == "pytest_unmarked" else count
     if parametrized:
         report.fail(
             where,
             f"{rel} 이 parametrize 를 쓴다 — 함수 수와 수집 수가 갈리므로 이 재측정이 성립하지 않는다.",
         )
         return
-    if adj.get("delta") != count:
+    if adj.get("delta") != expected:
         report.fail(
             where,
-            f"expected_landing delta {adj.get('delta')!r} 이 {rel} 의 실측 test 함수 수 {count} 와 다르다.",
+            f"expected_landing delta {adj.get('delta')!r} 이 {rel} 의 실측 "
+            f"{'무표 ' if axis == 'pytest_unmarked' else ''}test 함수 수 {expected} 와 다르다.",
         )
 
 
@@ -2508,3 +2539,38 @@ def test_c_predicate_32_a_coordinate_in_a_migration_era_suffix_is_refused(
         assert "생 file:line" in report.text(), (
             f"{coordinate} 가 좌표로 안 잡힌다 — 규칙 1 이 이 형식에서만 침묵한다.\n{report.text()}"
         )
+
+
+def test_c_predicate_33_the_unmarked_chain_counts_only_unmarked_cases(repo: Repo) -> None:
+    """축 의미를 안 지키면 marker 를 든 새 파일 하나가 무표 축을 거짓으로 만들거나
+    게이트를 영영 붉힌다.
+
+    실제 파일을 새로 만들지 않고, **이미 두 종류를 섞어 든 파일**로 술어를 직접 잰다 —
+    `tests/test_web_selftest_gate.py` 는 축 marker 를 든 함수와 안 든 함수를 함께 갖고,
+    `tests/test_native_positive.py` 는 클래스 데코레이터까지 써서 전부 marker 를 든다.
+    """
+    total, unmarked, _ = measure_static_test_functions(repo, "tests/test_web_selftest_gate.py")
+    assert total > unmarked > 0, (
+        "섞인 파일에서 전수와 무표 수가 갈리지 않는다 — 두 축이 같은 것을 세고 있다."
+    )
+    all_marked_total, all_marked_unmarked, _ = measure_static_test_functions(
+        repo, "tests/test_native_positive.py"
+    )
+    assert all_marked_total > 0 and all_marked_unmarked == 0, (
+        "전부 marker 를 든 파일의 무표 수가 0 이 아니다 — 클래스 데코레이터를 못 보고 있다. "
+        "이 파일이 무표 축의 사슬에 요구되면 그 축은 거짓 총계를 강요받는다."
+    )
+
+
+def test_c_predicate_33b_an_unmarked_delta_counting_marked_cases_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """무표 축의 델타를 전체 수집 축의 값으로 적으면 붉는다."""
+    total, unmarked, _ = measure_static_test_functions(repo, SELF_REL)
+    if total == unmarked:  # 이 게이트 파일은 오늘 전부 무표다 — 대조 재료를 합성한다
+        def mutate(doc: dict[str, Any]) -> None:
+            for adj in doc["census"]["pytest_unmarked"]["adjustment"]:
+                if adj.get("kind") == "expected_landing":
+                    adj["delta"] = unmarked + 1
+
+        _expect_red(_mutate(document, mutate), repo, "무표 test 함수 수")
