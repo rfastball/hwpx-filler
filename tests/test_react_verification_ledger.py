@@ -407,14 +407,14 @@ def _check_anchor(
                     "산문·주석의 언급은 호출이 아니다.",
                 )
                 return
-            if not re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}", body, re.M):
+            if not re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}\b", body, re.M):
                 report.fail(where, f"{rel} 에 함수 {fn} 이 없다 (참조 {ref!r})")
             return
         # 증거 앵커의 `::` 는 「이 대조가 돈다」는 뜻이다. pytest 가 **수집하는** test 여야
         # 하고, 그 개념은 이 게이트가 이미 쓰는 것과 같은 자리에서 나온다 — 두 곳이 각자
         # 정의하면 그 둘이 갈리는 날이 온다.
         if fn not in collected_test_names(repo, rel):
-            has_def = re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}", body, re.M)
+            has_def = re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}\b", body, re.M)
             report.fail(
                 where,
                 f"{rel} 의 {fn} 은 pytest 가 수집하는 test 가 아니다 (참조 {ref!r})."
@@ -2678,3 +2678,23 @@ def test_c_predicate_35_a_duplicated_adjustment_row_is_refused(
         block["adjustment"] = [*block["adjustment"], dict(landing[0])]
 
     _expect_red(_mutate(document, mutate), repo, "같은 신원의 adjustment", "두 번 센다")
+
+
+def test_c_predicate_36_this_gate_carries_no_control_characters(repo: Repo) -> None:
+    """정규식에 눈에 안 보이는 제어 문자가 섞이면 그 술어는 **어떤 입력에도 안 맞는다.**
+
+    이 파일에서 세 번 났다 — 매번 `\b` 를 쓰려다 셸을 거치며 U+0008 이 됐고, 매번 초록이라
+    아무도 안 물었다. 눈으로 못 보는 결함은 눈으로 막을 수 없으므로 여기서 센다.
+    """
+    body = repo.text(SELF_REL) or ""
+    offenders = sorted(
+        {
+            f"U+{ord(ch):04X}"
+            for ch in body
+            if ch < " " and ch not in "\n\t"
+        }
+    )
+    assert not offenders, (
+        f"이 게이트 소스가 제어 문자를 든다: {offenders}. 정규식 안에 섞이면 그 술어는 "
+        "영영 안 맞고, 초록이라 아무도 묻지 않는다."
+    )
