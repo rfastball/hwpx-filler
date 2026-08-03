@@ -10,7 +10,8 @@
 # 손으로 고칠 때의 규칙 넷:
 #   1. 파일 참조는 `path` · `path::test_함수명` · `path#부분문자열[@N]` 셋 중 하나다.
 #      **생 `file:line` 은 원장 값으로 금지**한다 — 앞줄이 하나 늘면 그날로 거짓이 된다.
-#      `#` 앵커는 그 파일에서 **유일**해야 하고, 유일하지 않으면 `@N` 으로 수를 적는다.
+#      `#` 앵커는 그 파일에서 **유일**해야 하고, 유일하지 않으면 `@N`(N≥1)으로 수를 적는다.
+#      `@0` 은 앵커가 아니다 — 없는 것을 가리키면 아무 문자열이나 증거가 된다.
 #   2. 값을 든 항목은 `predicate`·`scope`·`unit` 을 예외 없이 든다. 값만 있는 항목은
 #      원장 항목으로 성립하지 않는다.
 #   3. 셀 수 있는 사실은 **필드**다(L17). 산문 필드는 「왜 이렇게 세는가」만 진다 —
@@ -91,7 +92,7 @@ reason   = "PR #467(R1-02 · PR-A) — tests/test_react_ownership_inventory.py �
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 45
+delta    = 59
 reason   = "자기 게이트 파일의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다. 게이트가 그 파일의 test 함수를 AST 로 세어 이 값을 재확인한다."
 
 [census.pytest_unmarked]
@@ -112,7 +113,7 @@ reason   = "PR #467 신설분이 전부 무표라 무표 축의 델타가 전체
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 45
+delta    = 59
 reason   = "자기 게이트 파일도 축 marker 를 쓰지 않는다."
 
 [census.pytest_live]
@@ -351,6 +352,20 @@ reason = "n10 전역 위생 게이트의 양성·음성 fixture. 그 자체가 �
 owner  = "R2-04 #408"
 globs  = ["tests/js/fixtures/**/*.js"]
 size   = 27
+
+[[excluded_axis]]
+axis   = "selftest_probe_surface"
+reason = "실 창 프로브가 브라우저에서 실행하는 모듈과 그것을 여는 Python 능력면. pytest 도 node --test 도 이것을 사례로 세지 않는다 — 그 산출을 판정하는 것은 tests/test_web_selftest_gate.py 자산 행이고, 이 트리가 자라면 그 행의 blind_spot 이 먼저 말한다."
+owner  = "R2-04 #408"
+globs  = ["frontend/src/selftest/**/*.js", "src/hwpxfiller/webapp/selftest_api.py"]
+size   = 10
+
+[[excluded_axis]]
+axis   = "packaging_specs"
+reason = "PyInstaller spec. 검증 자산이 아니라 포장 선언이고, 그 선언의 hidden import 가 실제로 해소되는지는 packaging/verify_specs.py 와 tests/test_packaging_contract.py 가 자산으로 든다."
+owner  = "R5-03 #421"
+globs  = ["packaging/**/*.spec"]
+size   = 2
 
 [[excluded_axis]]
 axis   = "example_fixture_generators"

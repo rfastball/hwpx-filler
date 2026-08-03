@@ -47,6 +47,8 @@ EXPECTED_SCHEMA = "react_verification_ledger/v1"
 #: 이 값은 **git 이 아는 커밋**이어야 한다. 게이트가 그것을 확인한다 — 리터럴끼리 비교하면
 #: 지어낸 40자도 자기 사본과는 언제나 같다.
 EXPECTED_BASE_SHA = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
+#: landed 사슬의 반대쪽 끝. 이것이 없으면 from_sha 가 아무 조상이어도 통과한다.
+EXPECTED_PREVIOUS_SHA = "8fcc30ed07393ffe4608638761a778535caf3be5"
 EXPECTED_OWNER_ISSUE = 403
 EXPECTED_GATE = SELF_REL
 
@@ -70,17 +72,22 @@ VERIFICATION_TREE_GLOBS = (
     "packaging/**/*.py",
     "examples/**/*.py",
     "*.py",
-    "*.ps1",
     "*.mjs",
-    "packaging/**/*.ps1",
+    # 어디에 생기든 셸 러너는 트리 안이다. 제외 글롭보다 좁으면 제외가 트리 밖을 덮어
+    # 「덮이지 않은 것 0」이 거짓 빨강을 낸다.
+    "**/*.ps1",
+    "packaging/**/*.spec",
+    # React 이관이 낳을 파일 형태. 지금 0 이지만 글롭이 없으면 그때 조용히 트리 밖이 된다.
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "tests/**/*.jsx",
+    "frontend/src/selftest/**/*.js",
+    "src/hwpxfiller/webapp/selftest_api.py",
 )
 
 #: 전수 하한. 정확값이 아니라 하한이라 정상 성장은 안 막고 붕괴만 잡는다.
 ASSET_FLOOR = 170
 R_SCOPE_TRUE_FLOOR = 105
-#: 판별력 등급이 확정된 행의 하한. 이것이 없으면 전부 `unassessed` 로 내려도 초록이다 —
-#: 유예는 자유롭고 등급은 자유롭지 않아야 한다.
-GRADED_FLOOR = 13
 
 CENSUS_AXES = frozenset(
     {
@@ -102,6 +109,8 @@ EXCLUDED_AXES = frozenset(
         "powershell_runners",
         "node_hygiene_fixtures",
         "example_fixture_generators",
+        "selftest_probe_surface",
+        "packaging_specs",
     }
 )
 ORPHAN_SCRIPTS = frozenset(
@@ -117,9 +126,15 @@ ORPHAN_SCRIPTS = frozenset(
 DOC_PROBES = frozenset(
     {"preserve_wrapped_files", "preserve_scroll_ids", "product_push_producers", "none"}
 )
-REQUIRED_DOC_PROBES = frozenset(
-    {"preserve_wrapped_files", "preserve_scroll_ids", "product_push_producers"}
-)
+#: 프로브별로 **어느 문서의 낡음인지**까지 고정한다. file 이 자유로우면 낡음 주장과 기계
+#: 검사가 서로 다른 문서를 볼 수 있다.
+REQUIRED_DOC_PROBES: dict[str, str] = {
+    "preserve_wrapped_files": "docs/WEB_RENDER_PRESERVATION.md",
+    "preserve_scroll_ids": "docs/WEB_RENDER_PRESERVATION.md",
+    "product_push_producers": "docs/WEB_RENDER_PRESERVATION.md",
+}
+#: 앵커가 한 글자여도 어떤 문서에서나 참이다. 좌표가 되려면 길이와 유일성이 있어야 한다.
+DOC_ANCHOR_MIN_LENGTH = 8
 
 #: 등급을 유예할 수 없는 행. 이 목록이 없으면 전부 `unassessed` 로 내려 nc_evidence 를
 #: 비우는 길이 열린다.
@@ -138,6 +153,15 @@ GRADED_ROWS = frozenset(
         "tests/test_quickstart_101_live.py",
         "tests/test_react_ownership_inventory.py",
         SELF_REL,
+    }
+)
+#: 「알려진 결손」으로 고정된 행. `none` 을 `unassessed` 로 바꾸면 구현이 지던 수리가
+#: 감사의 유예로 세탁된다 — U5 규율이 한 방향으로만 서 있던 자리다.
+GAP_ROWS = frozenset(
+    {
+        "tests/test_web_dom_contract.py",
+        "tests/test_web_product_api.py",
+        "tests/test_web_css_manifest.py",
     }
 )
 #: 알려진 결손을 든 행. 지울 수 있으면 결손 기록이 흔적 없이 사라진다.
@@ -256,6 +280,16 @@ class Repo:
         rx = _glob_regex(pattern)
         return sorted(p for p in self.tracked() if rx.fullmatch(p))
 
+    def path_exists_at(self, sha: str, rel: str) -> bool:
+        return (
+            subprocess.run(
+                ["git", "cat-file", "-e", f"{sha}:{rel}"],
+                cwd=self.root,
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+
     def commit_exists(self, sha: str) -> bool:
         return (
             subprocess.run(
@@ -322,8 +356,11 @@ class Report:
 _RAW_LINE_REF = re.compile(
     r"(?<![\w/\\.-])[\w./\\-]+\.(?:py|js|mjs|ts|html|css|toml|json|md|yml|ps1):\d+"
 )
-#: `path#needle` · `path#needle@N` — N 은 기대 출현 수. 생략하면 **유일**해야 한다.
-_OCCURRENCE_SUFFIX = re.compile(r"^(?P<needle>.*)@(?P<count>\d+)$")
+#: `path#needle` · `path#needle@N` — N 은 기대 출현 수이고 **1 이상**이다. 생략하면 유일해야
+#: 한다. `@0` 을 받으면 「없는 것을 없다고 확인했다」가 되어 아무 문자열이나 앵커가 된다 —
+#: 그것은 앵커의 반대말이고, 이 형식을 들이기 전보다 나쁘다.
+_OCCURRENCE_SUFFIX = re.compile(r"^(?P<needle>.+)@(?P<count>[1-9]\d*)$")
+_ZERO_OCCURRENCE = re.compile(r"@0+$")
 
 
 def _check_anchor(
@@ -345,13 +382,33 @@ def _check_anchor(
             return
         if not re.search(rf"^\s*(?:async\s+)?def\s+{re.escape(fn)}\b", body, re.M):
             report.fail(where, f"{rel} 에 함수 {fn} 이 없다 (참조 {ref!r})")
+            return
+        if executable and Path(rel).suffix.lower() not in EXECUTABLE_SUFFIXES:
+            report.fail(
+                where,
+                f"호출 앵커가 실행되지 않는 파일을 가리킨다: {rel} (참조 {ref!r}). "
+                "산문·주석의 언급은 호출이 아니다.",
+            )
         return
     if "#" in ref:
         rel, raw = ref.split("#", 1)
+        if _ZERO_OCCURRENCE.search(raw):
+            report.fail(
+                where,
+                f"@0 앵커 {ref!r} — 「없는 것을 없다고 확인했다」는 앵커가 아니다. "
+                "그 형태를 받으면 아무 문자열이나 증거가 된다.",
+            )
+            return
         needle, expected = raw, 1
         m = _OCCURRENCE_SUFFIX.match(raw)
         if m:
             needle, expected = m.group("needle"), int(m.group("count"))
+        elif re.fullmatch(r"@\d+", raw):
+            report.fail(where, f"빈 앵커 {ref!r} — 어떤 파일에서나 참이다.")
+            return
+        if not needle.strip():
+            report.fail(where, f"빈 앵커 {ref!r} — 어떤 파일에서나 참이다.")
+            return
         body = repo.text(rel)
         if body is None:
             report.fail(where, f"앵커가 가리키는 파일이 없다: {rel} (참조 {ref!r})")
@@ -738,8 +795,18 @@ def _check_assets(document: dict[str, Any], repo: Repo, report: Report) -> dict[
                     "고아는 침묵이 아니라 명시 예외여야 한다.",
                 )
             else:
+                path = Path(rel)
+                # 패키지 초기화 모듈은 자기 파일 이름이 아니라 **패키지 이름**으로 불린다.
+                stem = path.parent.name if path.name == "__init__.py" else path.stem
                 for ref in invoked:
                     _check_anchor(where + ".invoked_by", ref, repo, report, executable=True)
+                    target = ref.split("#", 1)[-1].split("::", 1)[-1]
+                    if stem not in target:
+                        report.fail(
+                            where + ".invoked_by",
+                            f"앵커 {ref!r} 가 {stem!r} 를 이름으로 부르지 않는다 — "
+                            "그 파일의 아무 줄이나 가리키면 「호출자가 있다」의 증거가 아니다.",
+                        )
         else:
             declared_jobs = row.get("ci_jobs")
             if not isinstance(declared_jobs, list) or not declared_jobs:
@@ -750,6 +817,15 @@ def _check_assets(document: dict[str, Any], repo: Repo, report: Report) -> dict[
                         report.fail(where, f"ci_jobs 의 {job!r} 가 {WORKFLOW} 에 없다.")
                     elif job not in gate_needs:
                         report.fail(where, f"ci_jobs 의 {job!r} 가 quality-gate needs 열거에 없다.")
+
+        if runner == "node":
+            declared_jobs = row.get("ci_jobs")
+            if declared_jobs != [CONTRACT_JOB]:
+                report.fail(
+                    where,
+                    f"node 행의 ci_jobs 는 {[CONTRACT_JOB]} 여야 한다 — 이 축은 무표 pytest "
+                    f"사례 하나가 서브프로세스로 몬다. 선언 {declared_jobs!r} 은 자유 서술이다.",
+                )
 
         # 술어 15 — markers 는 선언이 아니라 실측이다.
         if runner == "pytest":
@@ -826,6 +902,12 @@ def _check_assets(document: dict[str, Any], repo: Repo, report: Report) -> dict[
                         where,
                         f"assessment_owner {owner!r} 가 감사 이슈를 안 가리킨다 — 판정 유예의 임자는 감사다.",
                     )
+        if rel in GAP_ROWS and nc != "none":
+            report.fail(
+                where,
+                f"이 행의 등급은 none 으로 고정돼 있다 — {nc!r} 로 바꾸면 구현이 지던 수리가 "
+                "감사의 유예로 세탁된다. 내리려면 게이트의 목록을 먼저 고쳐야 한다.",
+            )
         if rel in GRADED_ROWS and nc == "unassessed":
             report.fail(
                 where,
@@ -915,6 +997,12 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
                         "사슬은 기준에서 닫혀야 한다.",
                     )
                 _check_sha((where, "from_sha"), adj.get("from_sha"), repo, report)
+                if adj.get("from_sha") != EXPECTED_PREVIOUS_SHA:
+                    report.fail(
+                        where,
+                        f"landed adjustment 의 from_sha 가 게이트가 든 직전 기준과 다르다: "
+                        f"{adj.get('from_sha')!r}. 아무 조상이나 받으면 사슬의 한쪽 끝이 자유롭다.",
+                    )
                 if "owner_pr" in adj:
                     report.fail(where, "landed adjustment 가 owner_pr 을 든다 — 그 열은 미착지 몫이다.")
             elif kind == "expected_landing":
@@ -965,6 +1053,13 @@ def _check_expected_landing_delta(
         return
     if not repo.exists(rel):
         report.fail(where, f"expected_landing 이 가리키는 파일이 없다: {rel}")
+        return
+    if repo.path_exists_at(EXPECTED_BASE_SHA, rel):
+        report.fail(
+            where,
+            f"expected_landing 이 base_sha 에 **이미 있던** 파일을 가리킨다: {rel}. "
+            "미착지 델타는 이 PR 이 새로 들이는 파일의 몫이다.",
+        )
         return
     count, parametrized = measure_static_test_functions(repo, rel)
     if parametrized:
@@ -1042,6 +1137,17 @@ def _check_doc_staleness(document: dict[str, Any], repo: Repo, report: Report) -
                 f"앵커 {anchor!r} 가 {rel} 에서 사라졌다. 낡음 기록이 스스로 낡았다 — "
                 "이 행의 은퇴는 그 텍스트를 고친 PR 의 몫이다.",
             )
+        if isinstance(anchor, str) and body is not None:
+            if len(anchor) < DOC_ANCHOR_MIN_LENGTH:
+                report.fail(
+                    where,
+                    f"앵커 {anchor!r} 가 너무 짧다 — 한두 글자는 어떤 문서에서나 참이라 좌표가 아니다.",
+                )
+            elif body.count(anchor) != 1:
+                report.fail(
+                    where,
+                    f"앵커 {anchor!r} 가 {rel} 에서 {body.count(anchor)} 번 나온다 — 유일해야 좌표다.",
+                )
         for key in ("stale_claim", "predicate", "scope", "unit", "successor_doc"):
             value = row.get(key)
             if not isinstance(value, str) or not value.strip():
@@ -1054,6 +1160,13 @@ def _check_doc_staleness(document: dict[str, Any], repo: Repo, report: Report) -
         if probe in seen_probes:
             report.fail(where, f"probe {probe!r} 가 두 행에 있다 — 같은 사실을 두 자리가 든다.")
         seen_probes.add(probe)
+        expected_file = REQUIRED_DOC_PROBES.get(probe)
+        if expected_file is not None and rel != expected_file:
+            report.fail(
+                where,
+                f"probe {probe!r} 는 {expected_file} 의 낡음을 재는데 이 행의 file 은 {rel!r} 이다 — "
+                "낡음 주장과 기계 검사가 다른 문서를 보면 둘 다 의미가 없다.",
+            )
 
         if probe == "none":
             owner = row.get("assessment_owner")
@@ -1064,6 +1177,12 @@ def _check_doc_staleness(document: dict[str, Any], repo: Repo, report: Report) -
             continue
 
         measured = measure_doc_probe(repo, probe)
+        if measured == [] :
+            report.fail(
+                where,
+                f"probe {probe!r} 의 추출기가 아무것도 못 찾았다 — 저장소가 정말 비었거나 "
+                "술어가 겨누던 모양이 사라졌다. 빈손은 조용한 0 이 아니다.",
+            )
         recorded = row.get("today_measured")
         if isinstance(measured, list):
             if not isinstance(recorded, list) or sorted(recorded) != measured:
@@ -1073,13 +1192,19 @@ def _check_doc_staleness(document: dict[str, Any], repo: Repo, report: Report) -
                     "부분집합도 초집합도 아닌 **정확 일치**여야 줄어드는 방향을 잡는다.",
                 )
         elif isinstance(measured, int):
-            if recorded != measured:
+            if isinstance(recorded, bool) or not isinstance(recorded, int):
+                report.fail(
+                    where,
+                    f"today_measured 가 정수가 아니다: {recorded!r}. False 와 0.0 은 0 과 "
+                    "같다고 비교돼 통과한다.",
+                )
+            elif recorded != measured:
                 report.fail(
                     where,
                     f"today_measured 기록값 {recorded!r} 이 실측 {measured!r} 과 다르다.",
                 )
 
-    missing = REQUIRED_DOC_PROBES - seen_probes
+    missing = set(REQUIRED_DOC_PROBES) - seen_probes
     if missing:
         report.fail(
             "doc_staleness",
@@ -1167,6 +1292,8 @@ def _check_excluded_axes(document: dict[str, Any], repo: Repo, report: Report) -
                 where,
                 f"size 기록값 {row.get('size')!r} 이 실측 {len(measured)} 과 다르다: {measured}",
             )
+        if not measured:
+            report.fail(where, "아무것도 안 덮는 제외 축이다 — 크기 0 의 제외는 장식이다.")
         swallowed = sorted(set(measured) & runner_files)
         if swallowed:
             report.fail(
@@ -1174,6 +1301,18 @@ def _check_excluded_axes(document: dict[str, Any], repo: Repo, report: Report) -
                 f"제외 글롭이 러너 글롭이 잡는 자산 {len(swallowed)} 개를 삼킨다: {swallowed[:10]}. "
                 "제외를 넓혀 자산 행을 지우는 길을 막는다.",
             )
+    seen: dict[str, str] = {}
+    for row in rows:
+        axis = row.get("axis")
+        for glob in row.get("globs") or []:
+            for path in repo.glob(glob):
+                if path in seen and seen[path] != axis:
+                    report.fail(
+                        "excluded_axis",
+                        f"{path} 를 두 축이 함께 든다: {seen[path]} · {axis}. "
+                        "축 사이에 파일을 옮기면 사유·소유가 장식이 된다.",
+                    )
+                seen.setdefault(path, axis)
     report.notes["excluded_axis_sizes"] = {
         row.get("axis"): row.get("size") for row in rows if isinstance(row, dict)
     }
@@ -1262,6 +1401,14 @@ def _check_coverage(
             "「안 센 것」은 침묵이 아니라 데이터다.",
         )
 
+    outside = sorted(excluded_files - universe)
+    if outside:
+        report.fail(
+            "coverage",
+            f"제외가 검증 트리 밖을 덮는다 {len(outside)}: {outside[:10]}. "
+            "트리보다 넓은 제외는 「덮이지 않은 것 0」을 거짓 빨강으로 만든다.",
+        )
+
     if len(assets) < ASSET_FLOOR:
         report.fail("coverage", f"자산 행 {len(assets)} 이 하한 {ASSET_FLOOR} 아래다.")
 
@@ -1285,17 +1432,13 @@ def _check_coverage(
             f"게이트가 명시 판정으로 든 자산이 원장에서 r_scope=true 가 아니다: {stale_judged}",
         )
 
+    # 등급의 방벽은 하한이 아니라 **GRADED_ROWS 목록**이다. 하한은 그 목록의 크기를 복제할
+    # 뿐이라 정직한 성장·하향에서 먼저 깨지고, 부정직한 하향은 목록이 이미 막는다.
     graded = {
         rel
         for rel, row in assets.items()
-        if row.get("negative_control") in {"present", "partial"}
+        if row.get("r_scope") is True and row.get("negative_control") in {"present", "partial"}
     }
-    if len(graded) < GRADED_FLOOR:
-        report.fail(
-            "negative_control",
-            f"판별력 등급이 확정된 행 {len(graded)} 이 하한 {GRADED_FLOOR} 아래다 — "
-            "전부 유예로 내리는 길을 막는다.",
-        )
 
     report.notes["asset_rows"] = len(assets)
     report.notes["r_scope_true"] = len(true_rows)
@@ -1372,7 +1515,9 @@ def test_the_gate_reports_the_shape_it_measured_out_loud(
     assert notes["asset_rows"] >= ASSET_FLOOR
     assert notes["r_scope_true"] >= R_SCOPE_TRUE_FLOOR
     assert notes["r_scope_true"] + notes["r_scope_false"] == notes["asset_rows"]
-    assert notes["graded"] >= GRADED_FLOOR
+    assert notes["graded"] == len(GRADED_ROWS), (
+        "등급 확정 행이 게이트가 든 목록과 다르다 — 목록이 방벽이고 수는 그 그림자다."
+    )
     assert notes["orphan_scripts"] == sorted(ORPHAN_SCRIPTS)
     assert notes["orphan_disposition_unknown"] == len(ORPHAN_SCRIPTS)
     assert set(notes["excluded_axis_sizes"]) == set(EXCLUDED_AXES)
@@ -1910,3 +2055,190 @@ def test_c_predicate_18_a_blocking_ci_job_nobody_owns_is_refused(
         ]
 
     _expect_red(_mutate(document, mutate), repo, "sealed-web", "차단 잡이 조용히")
+
+
+# ── 2왕복 반증이 연 자리들 ─────────────────────────────────────────────────
+def test_c_predicate_19_a_zero_occurrence_anchor_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """`@N` 형식이 열어 버린 자리 — `@0` 은 아무 문자열이나 증거로 만든다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["tests/test_legacy_path_zero.py"]["nc_evidence"] = [
+            "tests/test_legacy_path_zero.py#Q7x_NO_SUCH_TOKEN_9z@0"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "@0 앵커", "앵커가 아니다")
+
+
+def test_c_predicate_19b_an_empty_anchor_needle_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["tests/test_legacy_path_zero.py"]["nc_evidence"] = [
+            "tests/test_legacy_path_zero.py#@3"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "빈 앵커")
+
+
+def test_c_predicate_20_a_prose_invoker_in_function_form_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """`#` 형식만 막고 `::` 형식은 열려 있던 자리 — 같은 거짓이 다른 문법으로 통과했다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["scripts/gen_design_tokens.py"]["invoked_by"] = [
+            "docs/UX_FEEDBACK_U2.md::_run_marker"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "실행되지 않는 파일")
+
+
+def test_c_predicate_20b_an_invoker_anchor_that_never_names_the_script_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """실행되는 파일의 실행되는 줄이어도, 그 스크립트를 안 부르면 호출의 증거가 아니다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["scripts/gen_design_tokens.py"]["invoked_by"] = [
+            "tests/test_react_verification_ledger.py#ASSET_FLOOR = 170"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "이름으로 부르지 않는다")
+
+
+def test_c_predicate_21_an_unlanded_delta_pointed_at_an_existing_file_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """`file` 이 원장의 자유 변수이면 재측정이 자기 일관성일 뿐 검증이 아니다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        for adj in doc["census"]["pytest_collected"]["adjustment"]:
+            if adj.get("kind") == "expected_landing":
+                adj["file"] = "tests/test_webapp_editor.py"
+                adj["delta"] = 114
+
+    _expect_red(_mutate(document, mutate), repo, "이미 있던", "미착지 델타는")
+
+
+def test_c_predicate_22_a_landed_chain_starting_anywhere_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """사슬의 한쪽 끝만 고정하면 반대쪽은 아무 조상이어도 통과한다."""
+    root = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()[0]
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["census"]["pytest_collected"]["adjustment"][0]["from_sha"] = root
+
+    _expect_red(_mutate(document, mutate), repo, "직전 기준과 다르다")
+
+
+def test_c_predicate_23_a_node_row_claiming_a_job_it_does_not_run_in_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """node 행의 ci_jobs 가 자유 서술이면 차단 잡 피복이 세탁된다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["asset"]["tests/js/n10_global_hygiene.test.js"]["ci_jobs"] = ["distribution-webview2"]
+        doc["uncovered_ci_job"] = [
+            r for r in doc["uncovered_ci_job"] if r.get("job") != "distribution-webview2"
+        ]
+
+    _expect_red(_mutate(document, mutate), repo, "node 행의 ci_jobs")
+
+
+def test_c_predicate_24_laundering_a_known_gap_into_a_deferral_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """U5 가 한 방향으로만 서 있던 자리 — 결손을 유예로 바꾸면 임자가 구현에서 감사로 넘어간다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        row = doc["asset"]["tests/test_web_product_api.py"]
+        row["negative_control"] = "unassessed"
+        row.pop("reinforcement", None)
+        row["assessment_owner"] = "R1-99 #400"
+
+    _expect_red(_mutate(document, mutate), repo, "none 으로 고정")
+
+
+def test_c_predicate_25_a_staleness_row_pointed_at_another_document_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """낡음 주장과 기계 검사가 서로 다른 문서를 보던 자리."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        for row in doc["doc_staleness"]:
+            if row.get("probe") == "preserve_scroll_ids":
+                row["file"] = "docs/README.md"
+                row["anchor"] = "유지·아카이브·폐기 기준"
+
+    _expect_red(_mutate(document, mutate), repo, "다른 문서를 보면")
+
+
+def test_c_predicate_25b_a_one_character_staleness_anchor_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["doc_staleness"][0]["anchor"] = "3"
+
+    _expect_red(_mutate(document, mutate), repo, "너무 짧다")
+
+
+def test_c_predicate_26_a_boolean_masquerading_as_a_count_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """`False == 0` 이라 정수 분기가 형을 안 물으면 조용히 통과한다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        for row in doc["doc_staleness"]:
+            if row.get("probe") == "product_push_producers":
+                row["today_measured"] = False
+
+    _expect_red(_mutate(document, mutate), repo, "정수가 아니다")
+
+
+def test_c_predicate_27_an_exclusion_that_excludes_nothing_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    def mutate(doc: dict[str, Any]) -> None:
+        for row in doc["excluded_axis"]:
+            if row.get("axis") == "node_hygiene_fixtures":
+                row["globs"] = ["tests/js/NOTHING/**/*.js"]
+                row["size"] = 0
+
+    _expect_red(_mutate(document, mutate), repo, "크기 0 의 제외는 장식")
+
+
+def test_c_predicate_27b_two_axes_covering_the_same_file_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """축 사이로 파일을 옮길 수 있으면 사유·소유가 장식이 된다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        for row in doc["excluded_axis"]:
+            if row.get("axis") == "pytest_support_modules":
+                row["globs"] = [*row["globs"], "tests/js/fixtures/**/*.js"]
+                row["size"] = 6 + 27
+
+    _expect_red(_mutate(document, mutate), repo, "두 축이 함께 든다")
+
+
+def test_c_predicate_28_an_exclusion_wider_than_the_declared_tree_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """트리보다 넓은 제외는 「덮이지 않은 것 0」을 거짓 빨강으로 만든다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        for row in doc["excluded_axis"]:
+            if row.get("axis") == "example_fixture_generators":
+                row["globs"] = ["examples/**/*.py", "docs/**/*.md"]
+                row["size"] = 1 + len(Repo(REPO_ROOT).glob("docs/**/*.md"))
+
+    _expect_red(_mutate(document, mutate), repo, "검증 트리 밖을 덮는다")
