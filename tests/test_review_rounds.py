@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -134,7 +135,7 @@ class FakeGitHub:
 
     def get(self, path: str) -> dict:
         if path == f"pulls/{PR}":
-            return {"number": PR, "head": {"sha": self.head, "ref": "topic"}}
+            return {"number": PR, "state": "open", "head": {"sha": self.head, "ref": "topic"}}
         if path.endswith("/check-suites"):
             return {
                 "check_suites": [
@@ -697,6 +698,169 @@ def test_the_hook_allows_a_ready_merge(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
     payload = json.dumps({"tool_input": {"command": "gh pr merge 430 --squash"}})
     assert review_rounds._hook(payload) == 0
+
+
+# ── 입구 훅: 발행 인지와 정산 전 종료 차단 ─────────────────────────────────────
+#
+# 머지 훅은 루프의 **출구**에 선다. 발행하고 아무것도 안 한 채 턴이 끝나는 길은 그 훅이 영영
+# 못 본다 — 머지를 시도하지 않으니까. 아래 둘이 그 입구를 맡는다.
+
+
+@pytest.fixture
+def watch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """감시 목록을 임시 폴더로 못박는다 — 실제 `.git/` 을 건드리지 않는다."""
+    path = tmp_path / review_rounds.WATCH_FILE
+    monkeypatch.setattr(review_rounds, "_watch_path", lambda: path)
+    return path
+
+
+class JustPushed(FakeGitHub):
+    """회수 창이 아직 도는 PR.
+
+    훅은 `evaluate` 를 **실시간**으로 부른다 — 고정 픽스처 시각을 쓰면 창이 이미 지난 것으로
+    읽혀 대기가 통째로 `READY` 가 되고, 이 축의 음성 대조가 사라진다.
+    """
+
+    def get(self, path: str) -> dict:
+        if path.endswith("/check-suites"):
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            return {
+                "check_suites": [
+                    {"created_at": now, "head_branch": "topic", "pull_requests": [{"number": PR}]}
+                ]
+            }
+        return super().get(path)
+
+
+def test_the_post_hook_ignores_commands_that_do_not_create_a_pr(watch: Path) -> None:
+    payload = json.dumps({"tool_input": {"command": "gh pr view 430"}})
+    assert review_rounds._hook_post(payload) == 0
+    assert not watch.exists()
+
+
+def test_the_post_hook_records_the_new_pr_and_tells_the_session(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """훅은 스킬을 대신 부를 수 없다 — 확정할 수 있는 것은 **인지**뿐이라 그것을 확정한다."""
+    payload = json.dumps(
+        {
+            "tool_input": {"command": "gh pr create --fill"},
+            "tool_response": {"stdout": "https://github.com/rfastball/hwpx-filler/pull/456\n"},
+        }
+    )
+    assert review_rounds._hook_post(payload) == 0
+    assert json.loads(watch.read_text(encoding="utf-8")) == {"456": {"holds": 0}}
+    spoken = json.loads(capsys.readouterr().out)
+    assert "/review-round" in spoken["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_post_hook_stays_silent_when_the_creation_failed(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """명령만 보고 기록하면 실패한 발행이 감시 목록에 올라 매 턴 판정 실패로 시끄러워진다."""
+    payload = json.dumps(
+        {
+            "tool_input": {"command": "gh pr create --fill"},
+            "tool_response": {"stderr": "a pull request already exists"},
+        }
+    )
+    assert review_rounds._hook_post(payload) == 0
+    assert not watch.exists()
+    assert capsys.readouterr().out == ""
+
+
+def test_the_stop_hook_does_nothing_without_a_watched_pr(
+    watch: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """감시할 PR 이 없으면 API 도 안 부른다 — 모든 턴 끝에서 도는 훅이라 침묵이 기본값이다."""
+    assert review_rounds._hook_stop("{}") == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_the_stop_hook_holds_the_turn_until_the_review_is_settled(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    watch.write_text(json.dumps({str(PR): {"holds": 0}}), encoding="utf-8")
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", replies=["triage: block:2"])])
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
+    assert review_rounds._hook_stop("{}") == 0
+    spoken = json.loads(capsys.readouterr().out)
+    assert spoken["decision"] == "block"
+    assert "/review-round" in spoken["reason"]
+    assert json.loads(watch.read_text(encoding="utf-8")) == {str(PR): {"holds": 1}}
+
+
+def test_the_stop_hook_holds_a_pr_that_is_still_waiting_for_its_review(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """**발행 직후의 `WAIT` 이 곧 루프가 끊기는 지점이다.** 대기를 놓아 주면 이 훅이 겨눈 것을
+    그대로 놓친다 — 지적이 아직 하나도 없는 상태가 정확히 그 모양이다."""
+    watch.write_text(json.dumps({str(PR): {"holds": 0}}), encoding="utf-8")
+    fake = JustPushed(head="c1", threads=[])
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
+    assert review_rounds._hook_stop("{}") == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+
+def test_the_stop_hook_releases_a_settled_pr(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    watch.write_text(json.dumps({str(PR): {"holds": 1}}), encoding="utf-8")
+    fake = FakeGitHub(files=["docs/README.md"])  # 빠른 경로 → READY
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
+    assert review_rounds._hook_stop("{}") == 0
+    assert not watch.exists(), "정산이 끝난 PR 을 계속 감시하면 매 턴 API 를 헛되이 친다"
+    assert capsys.readouterr().out == ""
+
+
+def test_the_stop_hook_drops_a_pr_that_is_no_longer_open(
+    watch: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    watch.write_text(json.dumps({str(PR): {"holds": 0}}), encoding="utf-8")
+
+    class Merged(FakeGitHub):
+        def get(self, path: str) -> dict:
+            if path == f"pulls/{PR}":
+                return {"number": PR, "state": "closed", "head": {"sha": self.head}}
+            raise AssertionError("닫힌 PR 을 계속 판정했습니다")
+
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: Merged()))
+    assert review_rounds._hook_stop("{}") == 0
+    assert not watch.exists()
+
+
+def test_the_stop_hook_lets_go_after_the_hold_budget(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """플랫폼에는 「이 종료가 훅 때문인가」를 알려 주는 표시가 없다 — 우리가 세지 않으면
+    리뷰가 영영 안 오는 PR 에서 세션이 못 빠져나온다."""
+    spent = json.dumps({str(PR): {"holds": review_rounds.STOP_HOLD_BUDGET}})
+    watch.write_text(spent, encoding="utf-8")
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", replies=["triage: block:2"])])
+    monkeypatch.setattr(GitHub, "discover", staticmethod(lambda: fake))
+    assert review_rounds._hook_stop("{}") == 0
+    spoken = json.loads(capsys.readouterr().out)
+    assert "decision" not in spoken, "예산을 넘기고도 붙잡으면 무한 루프다"
+    assert "사람 판단" in spoken["systemMessage"], "놓을 때는 조용히 놓지 않는다"
+    assert not watch.exists()
+
+
+def test_the_stop_hook_does_not_brick_the_session_when_github_is_unreachable(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로 만든다 —
+    실제 게이트는 required check 라 놓아 주어도 머지는 못 한다."""
+    watch.write_text(json.dumps({str(PR): {"holds": 0}}), encoding="utf-8")
+
+    def explode() -> GitHub:
+        raise GitHubError("gh 미인증")
+
+    monkeypatch.setattr(GitHub, "discover", staticmethod(explode))
+    assert review_rounds._hook_stop("{}") == 0
+    spoken = json.loads(capsys.readouterr().out)
+    assert "decision" not in spoken
+    assert "읽지 못했습니다" in spoken["systemMessage"]
+    assert watch.exists(), "판정하지 못한 PR 을 감시에서 지우면 다음 턴에 다시 보지 못한다"
 
 
 # ── 체크런 게시 ────────────────────────────────────────────────────────────────

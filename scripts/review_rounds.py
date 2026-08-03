@@ -19,9 +19,24 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 #: 리뷰 결과를 기다리는 창. 이 시간이 지나도록 아무 신호가 없으면 회수 창 소진으로 본다.
 RECOVERY_WINDOW = timedelta(minutes=10)
+
+#: 발행했으나 정산이 안 끝난 PR 을 적어 두는 자리. `.git/` 안이라 커밋될 수 없고 새 무시
+#: 규칙도 필요 없다. **common** git dir 을 쓰는 이유는 worktree 다 — lane 이 worktree 에서
+#: PR 을 내고 오케스트레이터가 본체에서 턴을 끝내면, 따로 살면 그 PR 을 아무도 못 본다.
+WATCH_FILE = "review-gate-watch.json"
+
+#: Stop 훅이 턴 종료를 붙잡을 수 있는 횟수. 플랫폼에는 「이 종료가 훅 때문인가」를 알려 주는
+#: 표시가 없으므로 우리가 센다 — 세지 않으면 리뷰가 영영 안 오는 PR 에서 무한 루프가 된다.
+#: 스킬의 「무한 폴링 루프를 만들지 않는다」와 같은 규율의 기계 쪽 얼굴이다.
+STOP_HOLD_BUDGET = 3
+
+#: `gh pr create` 는 발행된 PR 의 URL 을 **결과로** 뱉는다. 명령만 보고 기록하면 실패한 발행도
+#: 감시 목록에 올라 매 턴 판정 실패로 시끄러워진다.
+CREATED_PR = re.compile(r"/pull/(\d+)")
 
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
@@ -692,6 +707,147 @@ def _sweep(client: GitHub) -> int:
     return 2 if failures else 0
 
 
+def _watch_path() -> Path | None:
+    """감시 목록의 자리. git 을 못 물으면 `None` 이고, 그때 훅은 아무것도 하지 않는다."""
+    try:
+        done = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError:  # git 부재 — 저장소가 아니면 감시할 PR 도 없다
+        return None
+    if done.returncode != 0:
+        return None
+    return Path(done.stdout.strip()) / WATCH_FILE
+
+
+def _watched() -> dict[str, dict]:
+    path = _watch_path()
+    if path is None or not path.exists():
+        return {}
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # 부기가 깨진 것이 세션을 막지는 않는다
+        return {}
+    return entries if isinstance(entries, dict) else {}
+
+
+def _write_watched(entries: dict[str, dict]) -> None:
+    path = _watch_path()
+    if path is None:
+        return
+    if not entries:
+        path.unlink(missing_ok=True)
+        return
+    path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+
+
+def _emit(message: dict) -> None:
+    """훅의 stdout 은 **JSON 하나**다. 두 번 찍으면 전부 무시된다."""
+    print(json.dumps(message, ensure_ascii=False))
+
+
+def _hook_post(argv_json: str) -> int:
+    """`gh pr create` 직후. **막지 않는다** — 발행 사실을 세션에 심고 감시 목록에 올린다.
+
+    훅은 스킬을 대신 부를 수 없다(플랫폼 계약). 할 수 있는 것은 **모르고 지나가는 길을
+    없애는 것**뿐이라 인지는 여기서 확정하고, 종료 차단은 `--hook-stop` 이 진다.
+    """
+    try:
+        payload = json.loads(argv_json)
+    except json.JSONDecodeError:
+        return 0
+    command = ((payload.get("tool_input") or {}).get("command")) or ""
+    if "gh pr create" not in command:
+        return 0
+    result = json.dumps(payload.get("tool_response") or "", ensure_ascii=False)
+    found = CREATED_PR.search(result)
+    if not found:  # 발행이 실패했다 — 그 오류는 명령 자신이 이미 보여 준다
+        return 0
+    pr = found.group(1)
+    entries = _watched()
+    entries.setdefault(pr, {"holds": 0})
+    _write_watched(entries)
+    _emit(
+        {
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": (
+                    f"PR #{pr} 이 발행됐습니다. 리뷰 대기의 1차 주체는 이 세션입니다"
+                    "(`docs/REVIEW_POLICY.md` §4) — `/review-round` 로 정산·감시를 이어가십시오."
+                    f" 정산 전에 턴을 끝내려 하면 Stop 훅이 최대 {STOP_HOLD_BUDGET}회 붙잡습니다."
+                ),
+            }
+        }
+    )
+    return 0
+
+
+def _hook_stop(argv_json: str) -> int:
+    """턴이 끝나려는 자리. 발행해 놓고 정산 없이 나가는 길을 막는다.
+
+    **대기(`WAIT`)도 붙잡는다.** 발행 직후의 대기야말로 루프가 끊기는 지점이라 거기서 놓아
+    주면 이 훅이 겨눈 것을 그대로 놓친다. 대신 `STOP_HOLD_BUDGET` 으로 유계화한다 — 리뷰가
+    영영 안 오는 PR 을 무한히 붙잡지 않는다.
+    """
+    del argv_json  # 상태는 payload 가 아니라 GitHub 과 감시 목록이 가진다
+    entries = _watched()
+    if not entries:
+        return 0
+    try:
+        client = GitHub.discover()
+    except GitHubError as error:
+        # 조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로 만든다 —
+        # 실제 게이트는 required check 라 놓아 주어도 머지는 못 한다. 대신 조용히 놓지 않는다.
+        _emit({"systemMessage": f"리뷰 정산 감시를 건너뜁니다 — 상태를 읽지 못했습니다: {error}"})
+        return 0
+
+    remaining: dict[str, dict] = {}
+    holds: list[str] = []
+    notes: list[str] = []
+    for number, entry in entries.items():
+        try:
+            pr = int(number)
+            # 닫힌 PR 은 정산 의무가 끝났다. 「open 이 아니면」으로 뒤집어 쓰지 않는다 —
+            # 응답 형상이 바뀌면 감시가 통째로 조용히 죽는 쪽으로 틀린다.
+            if client.get(f"pulls/{pr}").get("state") == "closed":
+                continue
+            report = evaluate(client, pr)
+        except (GitHubError, ValueError) as error:
+            notes.append(f"PR #{number} 판정 실패: {error}")
+            remaining[number] = entry
+            continue
+        if report.status == READY:
+            continue
+        held = int(entry.get("holds", 0)) + 1
+        if held > STOP_HOLD_BUDGET:
+            notes.append(
+                f"PR #{pr} 은 {STOP_HOLD_BUDGET}회 붙잡고도 {report.status} 입니다 — 감시를 놓습니다."
+                " 사람 판단이 필요합니다(정책 §3 정지 신호)."
+            )
+            continue
+        remaining[number] = {"holds": held}
+        holds.append(render(report))
+    _write_watched(remaining)
+
+    if holds:
+        message: dict = {
+            "decision": "block",
+            "reason": "\n\n".join(holds)
+            + "\n\n발행한 PR 의 정산이 끝나지 않았습니다 — `/review-round` 로 이어가십시오"
+            f"(`docs/REVIEW_POLICY.md` §4). 붙잡기는 최대 {STOP_HOLD_BUDGET}회입니다.",
+        }
+        if notes:
+            message["systemMessage"] = "\n".join(notes)
+        _emit(message)
+        return 0
+    if notes:
+        _emit({"systemMessage": "\n".join(notes)})
+    return 0
+
+
 def _hook(argv_json: str) -> int:
     """`gh pr merge` 직전의 빠른 실패. **게이트가 아니다** — 게이트는 required check 다."""
     try:
@@ -726,6 +882,16 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="기계 판독용 출력")
     parser.add_argument("--hook", action="store_true", help="stdin 의 훅 payload 를 읽는다")
     parser.add_argument(
+        "--hook-post",
+        action="store_true",
+        help="PostToolUse — `gh pr create` 를 감시 목록에 올린다",
+    )
+    parser.add_argument(
+        "--hook-stop",
+        action="store_true",
+        help="Stop — 정산이 안 끝난 PR 이 있으면 턴 종료를 붙잡는다",
+    )
+    parser.add_argument(
         "--publish-check",
         action="store_true",
         help=f"판정을 PR head SHA 의 `{CHECK_NAME}` 체크런으로 게시한다(CI 용)",
@@ -735,6 +901,10 @@ def main() -> int:
     try:
         if args.hook:
             return _hook(sys.stdin.read())
+        if args.hook_post:
+            return _hook_post(sys.stdin.read())
+        if args.hook_stop:
+            return _hook_stop(sys.stdin.read())
         client = GitHub.discover()
         if args.all_open:
             return _sweep(client)
