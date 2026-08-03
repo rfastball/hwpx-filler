@@ -196,9 +196,6 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   selftest 시나리오까지 갱신한다.
 - 동결 목업(`docs/UI_PROTOTYPE_APPB.html`, `docs/r-flow-mockups/`)은 현재 기능을 설계·검증하려고
   먼저 고치지 않는다.
-- PR 발행부터 머지까지 — 리뷰 지적의 트리아지, 정지 조건, 머지 게이트 — 는
-  `docs/REVIEW_POLICY.md` 가 정본이다. 라운드 수가 아니라 **미해결 결함 집합**이 정지 조건이고,
-  판정은 `scripts/review_rounds.py` 가 읽는 정산 마커로 남긴다.
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호(`feat: … (#319)`, 파괴적 변경은 `feat!:`).
 - 커밋하지 않는 것: `.venv/`, `.secrets/`, `build/`·`dist/`·`installer-dist/`, coverage·pytest 보고서,
   `.claude/settings.local.json`, `research-private/`.
