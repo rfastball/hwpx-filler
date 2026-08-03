@@ -705,8 +705,73 @@ def measure_doc_probe(repo: Repo, probe: str) -> list[str] | int | None:
 
 
 # ── 본 검사 ───────────────────────────────────────────────────────────────
+def _check_no_raw_coordinates(document: dict[str, Any], report: Report) -> None:
+    """규칙 1 은 **원장 값 전체**에 걸린다 — 앵커와 defect.claim 두 자리만이 아니다."""
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}" if path else str(key))
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, f"{path}[{index}]")
+        elif isinstance(node, str):
+            m = _RAW_LINE_REF.search(node)
+            if m:
+                report.fail(
+                    "raw_coordinate",
+                    f"{path} 가 생 file:line 을 든다: {m.group(0)!r}. "
+                    "좌표는 앵커가 지고 산문은 판단만 진다.",
+                )
+
+    walk(document, "")
+
+
+def _probe_indirect_markers(repo: Repo, rels: set[str]) -> list[str]:
+    """축 marker 를 별칭·`getattr` 로 붙인 자리 — 데코레이터 술어가 못 보는 형태.
+
+    **AST 로 본다.** 원문을 정규식으로 훑으면 이 파일 자신처럼 그 모양을 문자열로 든
+    테스트가 자기를 신고한다 — 부분열을 구조로 착각하는 그 결함류다.
+    """
+    found: list[str] = []
+    for rel in sorted(rels):
+        body = repo.text(rel)
+        if body is None:
+            continue
+        try:
+            tree = ast.parse(body)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            value = None
+            if isinstance(node, ast.Assign):
+                value = node.value
+            elif isinstance(node, ast.AnnAssign):
+                value = node.value
+            if (
+                isinstance(value, ast.Attribute)
+                and value.attr in AXIS_MARKERS
+                and isinstance(value.value, ast.Attribute)
+                and value.value.attr == "mark"
+            ):
+                found.append(rel)
+                break
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and node.args
+                and isinstance(node.args[0], ast.Attribute)
+                and node.args[0].attr == "mark"
+            ):
+                found.append(rel)
+                break
+    return found
+
+
 def check(document: dict[str, Any], repo: Repo) -> Report:
     report = Report()
+    _check_no_raw_coordinates(document, report)
     _check_meta(document, repo, report)
     assets = _check_assets(document, repo, report)
     _check_census(document, repo, report)
@@ -1453,6 +1518,7 @@ def _check_coverage(
     report.notes["module_level_marks"] = sorted(
         rel for rel in measured["pytest"] if measure_module_level_marks(repo, rel)
     )
+    report.notes["indirect_marks"] = _probe_indirect_markers(repo, measured["pytest"])
 
 
 # ── 하니스 ────────────────────────────────────────────────────────────────
@@ -1526,6 +1592,10 @@ def test_the_gate_reports_the_shape_it_measured_out_loud(
         "검증 트리가 자산과 제외의 합과 다르다 — 어느 쪽에도 안 든 파일이 있다는 뜻이다."
     )
     assert notes["unassessed"] > 0, "유예가 0 이면 이 원장은 읽지 않은 것을 등급으로 승격했다는 뜻이다."
+    assert notes["indirect_marks"] == [], (
+        "축 marker 를 별칭이나 getattr 로 붙인 파일이 생겼다. markers 술어는 "
+        f"`pytest.mark.<축>` 모양만 보므로 그 파일의 축을 지금 잘못 세고 있다: {notes['indirect_marks']}"
+    )
     assert notes["module_level_marks"] == [], (
         "모듈·클래스 몸통에 pytestmark 가 생겼다. markers 술어는 데코레이터만 보므로 "
         f"그 파일의 축은 지금 잘못 세고 있다: {notes['module_level_marks']}"
@@ -2242,3 +2312,24 @@ def test_c_predicate_28_an_exclusion_wider_than_the_declared_tree_is_refused(
                 row["size"] = 1 + len(Repo(REPO_ROOT).glob("docs/**/*.md"))
 
     _expect_red(_mutate(document, mutate), repo, "검증 트리 밖을 덮는다")
+
+
+def test_c_predicate_29_the_indirect_marker_probe_actually_fires(repo: Repo) -> None:
+    """프로브가 **살아 있는가**를 묻는다.
+
+    이 단언 없이 실린 첫 판은 정규식 끝에 제어 문자 하나가 섞여 어떤 입력에도 영영
+    안 맞았다 — 「사각을 본다」는 선언만 남고 결과는 죽어 있었다. 프로브가 잡아야 할
+    모양을 실제로 만들어 먹여 본다.
+    """
+    target = "tests/test_native_positive.py"
+    body = repo.text(target) or ""
+    for injected in (
+        "native = pytest.mark.native\n" + body.replace("@pytest.mark.native", "@native", 1),
+        'native = getattr(pytest.mark, "native")\n' + body.replace("@pytest.mark.native", "@native", 1),
+    ):
+        overlay = OverlayRepo(repo, {target: injected})
+        assert _probe_indirect_markers(overlay, {target}) == [target], (
+            "프로브가 자기가 잡겠다고 선언한 모양을 못 잡는다."
+        )
+    # 양성 대조 — 오늘의 저장소에는 그 모양이 없다.
+    assert _probe_indirect_markers(repo, {target}) == []

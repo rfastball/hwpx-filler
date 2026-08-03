@@ -92,7 +92,7 @@ reason   = "PR #467(R1-02 · PR-A) — tests/test_react_ownership_inventory.py �
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 59
+delta    = 60
 reason   = "자기 게이트 파일의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다. 게이트가 그 파일의 test 함수를 AST 로 세어 이 값을 재확인한다."
 
 [census.pytest_unmarked]
@@ -113,7 +113,7 @@ reason   = "PR #467 신설분이 전부 무표라 무표 축의 델타가 전체
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
 file     = "tests/test_react_verification_ledger.py"
-delta    = 59
+delta    = 60
 reason   = "자기 게이트 파일도 축 marker 를 쓰지 않는다."
 
 [census.pytest_live]
@@ -1855,7 +1855,7 @@ successor_asset  = "R2 #406 이 세울 교차 언어 등가 게이트(G7)"
 stage            = "R2 #406"
 negative_control = "none"
 nc_evidence      = []
-blind_spot       = "각 언어가 자기 리터럴에 초록으로 고정되므로 두 사본이 함께 틀려도 이 게이트는 못 본다. 무게이트 산문 사본 둘(product_api.py:18 · UI_CONTRACT.md:72)이 그 자리다."
+blind_spot       = "각 언어가 자기 리터럴에 초록으로 고정되므로 두 사본이 함께 틀려도 이 게이트는 못 본다. 무게이트 산문 사본이 Python 파사드 모듈 머리말과 UI 계약 문서 양쪽에 하나씩 있고 그 자리를 지키는 기계는 없다."
 reinforcement    = 406
 
 [asset."tests/test_web_runtime_artifact.py"]
