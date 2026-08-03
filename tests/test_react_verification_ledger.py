@@ -9,7 +9,7 @@ G0   구조: 필수 필드가 차 있고 **모르는 키가 없는가**(``sucess
 G1   파티션: ``자산 ∪ 제외 == 검증 트리`` 이고 교집합이 공집합인가
 G2   제외의 순도: 제외 목록의 어떤 파일도 웹 표면에 **닿지** 않는가
 G3   모든 ``file`` 이 **색인과 디스크 양쪽에** 실재하는가
-G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **검증 트리 안에** 있는가
+G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **다른 자산 행**인가
 G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 ===  ====================================================================
 
@@ -23,9 +23,11 @@ G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 **술어는 여기 한 벌만 산다** — ``WEB_SURFACE``·``TREE_SPECS`` 의 사본이 원장에 없다. rev3
 집필 중 같은 술어를 두 벌 쓰다 값이 갈린 실물 사고가 있었다(``selftest`` 누락).
 
-이 파일의 G2·G3·G4·G0 형상은 반증 왕복이 낸 것이다. 좁은 술어는 **헬퍼 경유 소비**를 못 봤고,
-``_read`` 는 디코드 실패를 「안 닿는다」와 같은 초록으로 보고했고, G3 는 색인만 봐서 디스크에서
-지워진 파일을 통과시켰다. 셋 다 **자산을 제외로 강등하는 길**이었다.
+이 파일의 G0·G2·G3·G4 형상은 전부 반증이 낸 것이다. 좁은 술어는 **헬퍼 경유 소비**와 **직접
+DOM 조작**을 못 봤고, ``_read`` 는 디코드 실패를 「안 닿는다」와 같은 초록으로 보고했고, G3 는
+색인만 봐서 디스크에서 지워진 파일을 통과시켰고, G4 는 **제외 항목**을 후계로 받았다. 전부
+**책임을 조용히 사라지게 하는 길**이었고, 뿌리는 하나다 — 술어가 「무엇을 부르는가」만 보고
+「무엇에 닿는가」를 안 봤다.
 """
 
 from __future__ import annotations
@@ -56,15 +58,23 @@ TREE_SPECS: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: 안전망인데 ``tests/`` 밑이 아니라 축 밖이었다.
 TREE_EXTRA_FILES: tuple[str, ...] = ("conftest.py",)
 
-#: 「이 파일이 웹 표면에 닿는가」의 **유일한** 술어.
+#: 「이 파일이 웹 표면에 닿는가」의 **유일한** 술어. 세 갈래로 묻는다.
 #:
-#: 뒤쪽 세 이름이 **헬퍼 경유 소비**를 잡는다. 이것이 없으면 술어가 규약을 지킬수록 눈이 먼다 —
-#: ``tests/test_web_source_role.py`` 가 정적 테스트에게 물리 source 경로 재조립을 **금지**하므로,
-#: 모범적인 웹 테스트일수록 ``frontend/`` 를 직접 안 쓰고 ``_web_source`` 를 통해 읽는다.
-#: 좁은 판으로는 그런 파일 10개가 제외에 영영 앉아 있을 수 있었다(실측).
+#: ⑴ **제품 경로·전역을 이름으로 부른다** — 첫 줄.
+#: ⑵ **헬퍼를 경유해 소비한다** — 둘째 줄. 이것이 없으면 술어가 규약을 지킬수록 눈이 먼다:
+#:    ``tests/test_web_source_role.py`` 가 정적 테스트에게 물리 source 경로 재조립을
+#:    **금지**하므로, 모범적인 웹 테스트일수록 ``frontend/`` 를 직접 안 쓴다. 좁은 판에서
+#:    그런 파일 열이 제외에 앉아 있었다(실측).
+#: ⑶ **DOM 을 직접 몬다** — 셋째 줄. 제품 경로 이름을 하나도 안 쓰고 웹 표면을 조작하는
+#:    자리다. ``scripts/live101/{scenario,surface}.py`` 가 ``querySelector``·``dispatchEvent``
+#:    ·``evaluate_js`` 로 실앱을 몰면서 제외에 앉아 있었다(실측).
+#:
+#: 셋은 같은 결함의 세 변종이다 — **술어가 「무엇을 부르는가」만 보고 「무엇에 닿는가」를
+#: 안 봤다.** 넓히는 방향은 언제나 자유이므로 새 접촉 방식이 보이면 여기에 더한다.
 WEB_SURFACE = re.compile(
-    r"frontend/|webapp|build/web|__hwpx|pywebview|WebFrontend|selftest|bridge\.js"
-    r"|index\.html|_web_source|_press_probe|_web_artifact_contract"
+    r"frontend/|webapp|build/web|__hwpx|pywebview|WebFrontend|selftest|bridge\.js|index\.html"
+    r"|_web_source|_press_probe|_web_artifact_contract"
+    r"|querySelector|getElementById|evaluate_js|dispatchEvent|window\.__cap"
 )
 
 #: 인계선 어휘. 원장에서 유도하면 오타가 새 단계를 발명하므로 리터럴로 든다.
@@ -191,14 +201,20 @@ def g3_files_exist(document: dict[str, Any], tracked: set[str]) -> list[str]:
     return problems
 
 
-def g4_successors_exist(document: dict[str, Any], tree: set[str]) -> list[str]:
-    """``successor`` 는 기본값이 ``keep`` 이고, 그 밖의 값은 **검증 트리 안**이어야 한다.
+def g4_successors_exist(document: dict[str, Any]) -> list[str]:
+    """``successor`` 는 기본값이 ``keep`` 이고, 그 밖의 값은 **다른 자산 행**이어야 한다.
 
-    트리 안까지 요구하는 이유: 검증 책임의 후계는 검증 자산이어야 한다. 추적 여부만 물으면
-    ``README.md`` 나 **자기 자신**이 후계로 통과한다(실측).
+    자산 행까지 요구하는 이유: 검증 책임의 후계는 그 자체로 검증 책임을 지는 자산이어야 한다.
+
+    * 추적 여부만 물으면 ``README.md`` 가 통과한다.
+    * **검증 트리 안**만 물어도 부족하다 — 트리는 자산과 제외의 합이라, ``tests/test_atomic.py``
+      같은 **제외 항목**에 웹 검증 책임을 넘겼다고 주장할 수 있다. 제외는 「React 가 안
+      건드린다」는 뜻이므로 그런 인계는 책임의 소멸과 구분되지 않는다.
+    * 자기 자신도 안 된다 — 「옮겼다」가 아무것도 뜻하지 않게 된다.
 
     R1 에서 이 검사는 **휴면**이다(그런 행이 0). 그래서 살아 있다는 증거는 음성 대조뿐이다.
     """
+    eligible = set(_asset_files(document))
     problems: list[str] = []
     for row in document.get("asset", []):
         successor = row.get("successor", "keep")
@@ -209,8 +225,8 @@ def g4_successors_exist(document: dict[str, Any], tree: set[str]) -> list[str]:
             continue
         if successor == row.get("file"):
             problems.append(f"{row.get('file')}: 후계가 자기 자신이다")
-        elif successor not in tree:
-            problems.append(f"{row.get('file')}: 후계가 검증 트리 안에 없다 -> {successor}")
+        elif successor not in eligible:
+            problems.append(f"{row.get('file')}: 후계가 자산 행이 아니다 -> {successor}")
     return problems
 
 
@@ -289,8 +305,8 @@ def test_g3_every_row_points_at_a_real_file(ledger: dict[str, Any], tracked: lis
     assert g3_files_exist(ledger, set(tracked)) == []
 
 
-def test_g4_successors_resolve(ledger: dict[str, Any], tree: set[str]) -> None:
-    assert g4_successors_exist(ledger, tree) == []
+def test_g4_successors_resolve(ledger: dict[str, Any]) -> None:
+    assert g4_successors_exist(ledger) == []
 
 
 def test_g5_stages_are_known(ledger: dict[str, Any]) -> None:
@@ -426,32 +442,56 @@ def test_n3_moving_a_web_facing_file_into_exclusions_is_caught(
     assert any(moved["file"] in problem for problem in problems), problems
 
 
-def test_n4_a_successor_that_does_not_exist_is_caught(
-    mutable: dict[str, Any], tree: set[str]
-) -> None:
+def test_n4_a_successor_that_does_not_exist_is_caught(mutable: dict[str, Any]) -> None:
     """휴면 검사(G4)가 살아 있다는 유일한 증거."""
     mutable["asset"][0]["successor"] = "tests/test_this_file_does_not_exist.py"
-    problems = g4_successors_exist(mutable, tree)
-    assert any("검증 트리 안에 없다" in problem for problem in problems), problems
+    problems = g4_successors_exist(mutable)
+    assert any("자산 행이 아니다" in problem for problem in problems), problems
 
 
 def test_n4b_a_successor_outside_the_verification_tree_is_caught(
-    mutable: dict[str, Any], tree: set[str]
+    mutable: dict[str, Any],
 ) -> None:
     """추적되기만 하면 통과하던 자리 — 검증 책임의 후계는 검증 자산이어야 한다."""
     mutable["asset"][0]["successor"] = "README.md"
-    problems = g4_successors_exist(mutable, tree)
+    problems = g4_successors_exist(mutable)
     assert any("README.md" in problem for problem in problems), problems
 
 
-def test_n4c_a_successor_pointing_at_itself_is_caught(
-    mutable: dict[str, Any], tree: set[str]
-) -> None:
+def test_n4c_a_successor_pointing_at_itself_is_caught(mutable: dict[str, Any]) -> None:
     """자기 자신을 후계로 적으면 「옮겼다」가 아무것도 뜻하지 않는다."""
     row = mutable["asset"][0]
     row["successor"] = row["file"]
-    problems = g4_successors_exist(mutable, tree)
+    problems = g4_successors_exist(mutable)
     assert any("자기 자신" in problem for problem in problems), problems
+
+
+def test_n4e_a_successor_that_is_an_excluded_file_is_caught(
+    mutable: dict[str, Any],
+) -> None:
+    """**검증 트리 안**만 물으면 뚫리던 자리.
+
+    트리는 자산과 제외의 합이다. 그래서 제외 항목을 후계로 적으면 「웹 검증 책임을 넘겼다」는
+    주장이 통과했는데, 제외의 뜻은 「React 가 안 건드린다」이므로 그 인계는 책임의 소멸과
+    구분되지 않는다. 후계는 **자산 행**이어야 한다.
+    """
+    excluded = mutable["out_of_scope"]["files"][0]
+    mutable["asset"][0]["successor"] = excluded
+    problems = g4_successors_exist(mutable)
+    assert any(excluded in problem for problem in problems), problems
+
+
+def test_n4f_a_dom_driving_file_cannot_sit_in_exclusions(mutable: dict[str, Any]) -> None:
+    """제품 경로 이름을 하나도 안 쓰고 **DOM 을 직접 모는** 파일도 제외에 못 앉는다.
+
+    ``scripts/live101/{scenario,surface}.py`` 가 실제로 그 상태였다 — ``querySelector`` ·
+    ``dispatchEvent`` · ``evaluate_js`` 로 실앱을 몰면서 제외 목록에 있었다.
+    """
+    driver = "scripts/live101/surface.py"
+    mutable["asset"] = [row for row in mutable["asset"] if row["file"] != driver]
+    mutable["out_of_scope"]["files"] = [*mutable["out_of_scope"]["files"], driver]
+    problems = g2_exclusion_purity(mutable)
+    assert any(driver in problem for problem in problems), problems
 
 
 def test_n4d_a_typo_in_the_successor_key_is_caught(mutable: dict[str, Any]) -> None:

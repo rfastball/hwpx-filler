@@ -98,6 +98,16 @@ responsibility = "101 실행 보고서 조립과 판정(앱 없이 음성 대조
 owner_stage = "R5-03"
 
 [[asset]]
+file = "scripts/live101/scenario.py"
+responsibility = "101 여정 시나리오 — 무엇을 누르고 무엇을 확인하는가"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "scripts/live101/surface.py"
+responsibility = "실앱 DOM 조작 표면 — 프로브 주입과 요소 겨눔"
+owner_stage = "R5-03"
+
+[[asset]]
 file = "scripts/seal_web_artifact.py"
 responsibility = "build/web 의 fail-closed Vite 산출물 봉인 producer"
 owner_stage = "R2-04"
@@ -614,8 +624,6 @@ files = [
   "scripts/gen_scenario_fixtures.py",
   "scripts/live101/__init__.py",
   "scripts/live101/capture.py",
-  "scripts/live101/scenario.py",
-  "scripts/live101/surface.py",
   "scripts/render_document_narmi_branding.py",
   "scripts/selftest_http_proxy.py",
   "scripts/verify_packaged_web.py",
