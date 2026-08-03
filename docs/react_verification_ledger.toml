@@ -1,0 +1,2684 @@
+# old→new 검증 책임 원장 — R1-03 (#403)
+#
+# 이 파일은 **기계 판독 원장**이다. 산문 설계는 `docs/REACT_MIGRATION_DECISIONS.md`(#401)가
+# 지고, DOM·상태·구독·수명주기의 소유권은 `docs/react_ownership_inventory.toml`(#402)이
+# 진다. 셋은 같은 문장을 두 번 들지 않는다.
+#
+# 게이트: `tests/test_react_verification_ledger.py`. 그 게이트는 **이 파일의 선언을 믿지
+# 않는다** — 축마다 술어를 저장소에 다시 돌리고, 원장이 안 든 파일이 있으면 거절한다.
+#
+# 손으로 고칠 때의 규칙 넷:
+#   1. 파일 참조는 `path` · `path::test_함수명` · `path#부분문자열` 셋 중 하나다.
+#      **생 `file:line` 은 원장 값으로 금지**한다 — 앞줄이 하나 늘면 그날로 거짓이 된다.
+#   2. 값을 든 항목은 `predicate`·`scope`·`unit` 을 예외 없이 든다. 값만 있는 항목은
+#      원장 항목으로 성립하지 않는다.
+#   3. 셀 수 있는 사실은 **필드**다(L17). 산문 필드는 「왜 이렇게 세는가」만 진다 —
+#      개수·집합·범위를 산문에 적으면 술어를 고칠 때마다 그 문장이 새 결함이 된다.
+#   4. 자산이 하나 늘면 행도 하나 는다. `r_scope = false` 여도 행은 있어야 하고 `reason`
+#      이 필요하다. 「안 센 것」은 침묵이 아니라 데이터다.
+#
+# **분모는 이 파일이 아니라 게이트가 든다.** 축 이름 집합 · 자산 하한 · 계측 목록 ·
+# `r_scope = true` 하한과 판정 목록 · 제외 축 목록은 `tests/test_react_verification_ledger.py`
+# 의 리터럴로 산다. 원장에서 유도하면 축을 지우고 그만큼 행을 정리하는 것으로 초록이 되고,
+# 극단에는 **빈 원장이 통과**한다.
+#
+# **`r_scope` 도 원장의 자유 변수가 아니다.** 게이트가 하한 술어를 저장소에 돌려
+# 「프런트 트리·웹 표면을 이름으로 부르는 자산」을 세고, 그 집합은 전부 `r_scope = true`
+# 여야 한다. 술어가 못 보는데 사람이 R 책임으로 판정한 자산만 게이트의 명시 목록으로
+# 들어온다 — 판정은 넓히는 방향으로만 자유롭다.
+
+schema      = "react_verification_ledger/v1"
+base_sha    = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+owner_issue = 403
+gate        = "tests/test_react_verification_ledger.py"
+
+# 이 원장이 「검증 책임 공백 0」이라 말할 때의 정확한 범위. 산문이 아니라 머리말 데이터다.
+scope_statement = """
+공백 0 은 아래 네 러너 축의 전수에 대해 0 이다: tests/test_*.py · tests/*_test.py ·
+tests/js/*.test.js · scripts/**/*.py. 저장소 전체에 대해 0 이 아니다.
+축 밖인 것은 excluded_axis 가 크기와 함께 든다.
+"""
+
+# 이 원장이 **기계로 재지 않는다고 선언하는 것**. 선언하지 않으면 다음 사람이 잰 줄 안다.
+not_asserted = """
+assertion 의 강약. react_equivalent 행의 후계가 원본보다 약한지는 기계가 못 잰다 —
+사람 판정(R2~R5 감사) 소관이다. 술어 4는 후계 지목의 **존재**만 강제한다.
+"""
+
+# 세 목록은 전단사가 아니다. 술어 3 전수 ⊋ r_scope=true 자산군 ⊋ 판별력 등급 확정분.
+row_scope = """
+전수 안에 r_scope=true 가 있고, 그 안에 판별력 등급이 확정된 행이 있다. 세 크기는 게이트가
+매번 세어 보고하므로 여기 적지 않는다 — 적으면 다음 파일이 하나 늘 때 이 문장이 거짓이 된다.
+등급이 unassessed 인 것은 결손이 아니라 **판정 유예**이고 assessment_owner 가 그 임자를 든다.
+"""
+
+# 술어 8이 reinforcement 로 허용하는 이슈 = R-GATE-MAP:v1 분배 항 ∪ 아래 목록.
+# 산문이 아니라 기계 검사 대상이다.
+[[succession_issue]]
+id     = 455
+reason = "센서스 CI 스텝 게이트. U4 가 R1 밖으로 유예했고 V4 가 reopen 했다."
+origin = "U4 / V4"
+
+# ── 센서스 ────────────────────────────────────────────────────────────────
+# 값을 든 축이다. 게이트는 이 값을 **재측정하지 않는다** — pytest 안에서 pytest 를 다시
+# 수집하면 autouse 홈 격리·coverage·--strict-markers 가 겹쳐 재귀가 된다(R3c). 게이트가
+# 지키는 것은 구조다: 술어 3종 + blind_spot 의 존재, landed 사슬이 base_sha 에서 닫히는가,
+# expected_landing 이 to_sha 대신 owner_pr 을 드는가. 실측 대조는 #455(CI 스텝)와 R1-99.
+
+[census.pytest_collected]
+predicate  = "uv run pytest --collect-only -q -p no:cacheprovider"
+scope      = "pyproject.toml 의 testpaths=['tests'] (python_files 미설정 → 기본 test_*.py + *_test.py)"
+unit       = "수집된 테스트 사례(파라미터화 전개 포함)"
+value      = 2737
+blind_spot = "수집 ≠ 실행. 옵트아웃(HWPX_SKIP_GUI_TESTS·_MOTION_·_NATIVE_) 아래서도 수집은 그대로다 — 실행 여부는 이 축이 못 본다."
+
+[[census.pytest_collected.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 70
+reason   = "PR #467(R1-02 · PR-A) — tests/test_react_ownership_inventory.py 신설. 그 파일 하나가 델타 전량이라 잔차가 없다."
+
+[[census.pytest_collected.adjustment]]
+kind     = "expected_landing"
+owner_pr = "PR-B (#403)"
+delta    = 30
+reason   = "자기 게이트 파일 tests/test_react_verification_ledger.py 의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다."
+
+[census.pytest_unmarked]
+predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m \"not live and not native and not browser\""
+scope      = "위와 같은 testpaths, 축 marker 가 없는 사례만"
+unit       = "무표 결정론 contract suite 의 사례"
+value      = 2644
+blind_spot = "무표라는 것은 자원을 안 켠다는 뜻이지 실행된다는 뜻이 아니다 — skipif 로 조용히 서는 경로는 이 축이 못 본다."
+
+[[census.pytest_unmarked.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 70
+reason   = "PR #467 신설분이 전부 무표라 무표 축의 델타가 전체 델타와 같다."
+
+[[census.pytest_unmarked.adjustment]]
+kind     = "expected_landing"
+owner_pr = "PR-B (#403)"
+delta    = 30
+reason   = "자기 게이트 파일도 축 marker 를 쓰지 않는다."
+
+[census.pytest_live]
+predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m live"
+scope      = "위와 같은 testpaths, @pytest.mark.live 사례만"
+unit       = "실 WebView2 창을 띄우는 사례"
+value      = 83
+blind_spot = "HWPX_SKIP_GUI_TESTS=1 아래서도 수집은 그대로다. 도달성과 실행은 다른 축이고 이 축은 앞의 것만 든다."
+
+[[census.pytest_live.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 0
+reason   = "PR #467 은 축 marker 를 쓰지 않는다."
+
+[census.pytest_browser]
+predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m browser"
+scope      = "위와 같은 testpaths, @pytest.mark.browser 사례만"
+unit       = "설치 Chrome + Playwright 로 실렌더 기하를 재는 사례"
+value      = 4
+blind_spot = "HWPX_SKIP_MOTION_TESTS=1 아래서도 수집은 4 다."
+
+[[census.pytest_browser.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 0
+reason   = "PR #467 은 축 marker 를 쓰지 않는다."
+
+[census.pytest_native]
+predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m native"
+scope      = "위와 같은 testpaths, @pytest.mark.native 사례만"
+unit       = "실 Win32 자원을 잡는 사례"
+value      = 6
+blind_spot = "HWPX_SKIP_NATIVE_TESTS=1 아래서도 수집은 6 이다."
+
+[[census.pytest_native.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 0
+reason   = "PR #467 은 축 marker 를 쓰지 않는다."
+
+[census.node_pass]
+predicate  = "node --test \"tests/js/*.test.js\" 의 TAP 요약 중 `# pass`"
+scope      = "tests/js/*.test.js"
+unit       = "통과한 node:test 사례"
+value      = 596
+# 이 축 전량이 pytest 사례 하나에 매달려 있고, 그 사례가 요구하는 것은 실측값이 아니라 **하한**이다.
+# 그 하한을 여기 필드로 들어 게이트가 소스에서 다시 읽는다 — 하한이 움직이면 그 자리에서 붉는다.
+runner_floor           = 220
+runner_floor_predicate = "tests/test_frontend_module_units.py 의 `counts.get(\"pass\", 0) >= N` 에서 N"
+blind_spot = "value 와 runner_floor 의 차만큼은 이 축이 무너져도 pytest 가 초록이다. 그 차를 이 원장이 재지 않고 두 값을 나란히 두는 이유는, 하한을 올리는 일이 #408 의 몫이지 이 원장의 몫이 아니기 때문이다."
+
+[[census.node_pass.adjustment]]
+kind     = "landed"
+from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+delta    = 0
+reason   = "PR #467 은 tests/js/ 를 건드리지 않는다."
+
+# ── 직접 브리지 집합 ───────────────────────────────────────────────────────
+# `R1-ARTIFACT-LAYOUT:v2` §5 흡수처 표가 이 원장에 배정한 값이다. #402 는 이 값을 들지
+# 않는다(그쪽은 close_guard_state 를 review_item 으로만 든다) — 한 사실이 두 원장에 살지
+# 않는다.
+#
+# 이 네 집합이 여기 있는 이유는 §8.1 의 test_architecture.py 행이 「주장」과 「실제 술어」를
+# 다른 칸에 적기 때문이다. 그 차이를 산문으로 적으면 다음 드리프트를 못 막는다.
+
+[bridge_set.documented]
+predicate  = "UI_CONTRACT.md 의 「직접 브리지 경로」 불릿 블록 안 백틱 식별자 `[a-z_][a-z0-9_]*`"
+scope      = "docs/UI_CONTRACT.md"
+scope_anchor = "docs/UI_CONTRACT.md#직접 브리지 경로"
+unit       = "고유 이름"
+value      = 21
+blind_spot = "블록 경계를 「그 불릿 줄부터 첫 빈 줄까지」로 잡는다 — 절이 재구성되면 경계가 달라지고 값이 달라진다. 그때 붉는 것이 이 항목의 목적이다."
+
+[bridge_set.bridge_js]
+predicate  = "frontend/js/bridge.js 전문의 고유 `api.(\\w+)` 에서 initial·dispatch 제외"
+scope      = "frontend/js/bridge.js"
+unit       = "고유 이름"
+value      = 23
+blind_spot = "`api` 라는 지역 이름에만 물린다 — 브리지를 다른 이름으로 받아 부르면 못 본다."
+
+[bridge_set.python_public]
+predicate  = "AST · class WebFrontend 직속 · 이름이 밑줄로 시작하지 않는 함수 정의"
+scope      = "src/hwpxfiller/webapp/app.py"
+unit       = "메서드"
+value      = 24
+blind_spot = "정의를 세지 pywebview 가 실제로 무엇을 반사로 노출하는지는 안 본다. 들여쓰기를 클래스 소속으로 착각하는 정규식은 중첩 함수까지 함께 세어 더 큰 값을 낸다 — 그래서 AST 다."
+
+[bridge_set.python_public_non_dispatch]
+predicate  = "위 집합에서 initial·dispatch 제외"
+scope      = "src/hwpxfiller/webapp/app.py"
+unit       = "메서드"
+value      = 22
+blind_spot = "위와 같다."
+
+# 세 집합이 만드는 오늘의 차. 게이트가 집합 대수로 재유도해 대조한다.
+[bridge_set.derived]
+js_only            = 2   # bridge_js − python_public_non_dispatch = {selftest_claim, selftest_host_op}
+python_only        = 1   # python_public_non_dispatch − bridge_js = {close_guard_state}
+documented_equals_intersection = true
+
+# `tests/test_architecture.py` 의 직접 브리지 대조가 오늘 무엇을 통과시키는가.
+# 이 세 수가 그 게이트의 술어와 그 이름·docstring 의 주장 사이의 거리다.
+[bridge_set.contract_gate_slack]
+predicate  = "bridge_js 의 각 이름이 UI_CONTRACT.md 전문에서 백틱으로 등장하는 줄 수와, 그중 직접 브리지 절 안의 등장 수를 함께 센다"
+scope      = "frontend/js/bridge.js + docs/UI_CONTRACT.md"
+unit       = "이름"
+satisfied_only_outside_section = 2   # 절 안 등장 0 인데 전문 등장이 있어 오늘 이미 초록
+has_copy_outside_section       = 5   # 절 안에도 있고 절 밖에도 사본이 있다
+green_after_single_deletion    = 3   # 그중 절 안 등장이 1회뿐이라 한 번 지우면 조용히 초록
+invisible_to_the_gate          = 1   # python_only — 추출 소스가 bridge.js 뿐이라 영영 시야 밖
+blind_spot = "백틱 등장만 센다. 백틱 없이 쓰인 이름은 양쪽 모두에서 안 보인다."
+
+# ── 문서 낡음 ─────────────────────────────────────────────────────────────
+# `R-VERIFY-ROUND:v1-CLOSE` V6 이 승인한 4분할 중 「저장소 사실 조각」을 받는 자리다.
+# 앵커가 그 파일에서 사라지면 게이트가 붉고 **행을 은퇴시켜야 한다** — 낡음 기록이
+# 스스로 낡지 않는다. 은퇴는 그 텍스트를 고친 PR 의 몫이다.
+
+[[doc_staleness]]
+file          = "docs/WEB_RENDER_PRESERVATION.md"
+anchor        = "3개 화면(`txt`·`editor`·`run`)"
+stale_claim   = "정적 게이트가 txt·editor·run 세 화면의 Preserve.around 래핑을 지킨다"
+predicate     = "tests/test_web_dom_contract.py 의 PRESERVE_WRAPPED_FILES 튜플 원소"
+scope         = "tests/test_web_dom_contract.py"
+unit          = "래핑이 게이트로 보장되는 화면 파일"
+today_value   = "screens/editor.js · screens/job.js · screens/workbench.js — 셋이고 이름이 전부 다르다"
+successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+
+[[doc_staleness]]
+file          = "docs/WEB_RENDER_PRESERVATION.md"
+anchor        = "shipped `window.__push` 경로로"
+stale_claim   = "실화면 회귀가 shipped window.__push 경로로 세 화면의 실 render() 를 구동한다"
+predicate     = "frontend/ 와 src/ 에서 제품 전역 window.__push 의 생산자 수"
+scope         = "frontend/ · src/hwpxfiller/"
+unit          = "제품 전역 생산 지점"
+today_value   = "0 — N-10 에서 은퇴했다. 남은 참조는 은퇴를 지키는 쪽이다(app.py 의 _GLOBAL_DELTA_FN 안 RETIRED 배열은 주석이 아니라 실행되는 JS 리터럴이다)"
+successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+
+[[doc_staleness]]
+file          = "docs/WEB_RENDER_PRESERVATION.md"
+anchor        = "`renderView`·`tokPanel`·`editor-body`·`recList`·"
+stale_claim   = "옵트인 스크롤 컨테이너 여섯이 index.html 의 정적 요소라 안정 id 를 갖는다"
+predicate     = "frontend/index.html 에서 data-preserve-scroll 속성을 든 요소의 id"
+scope         = "frontend/index.html"
+unit          = "옵트인 스크롤 컨테이너"
+today_value   = "libraryList · jobTableWrap · editor-body · wbMapPanel · wbCard · jobBrowseRows — 여섯 중 문서가 든 이름과 겹치는 것은 editor-body 하나다"
+successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+
+[[doc_staleness]]
+file             = "docs/WEB_RENDER_PRESERVATION.md"
+anchor           = "재렌더되는 자유 입력 텍스트 필드가 **현재는 없어서**"
+stale_claim      = "포커스·캐럿 보존이 실효를 낼 대상이 오늘 없다"
+predicate        = "render() 가 재구성하는 서브트리 안의 안정 id 자유 입력 필드 수"
+scope            = "frontend/js/screens/"
+unit             = "노드"
+today_value      = ""
+assessment_owner = "R3-99 #409"
+successor_doc    = "docs/REACT_MIGRATION_DECISIONS.md"
+
+# ── 고아 스크립트 ─────────────────────────────────────────────────────────
+# 명시 허용 목록이다. 선례는 docs/package_coverage_floors.toml 의 unmatched_allow —
+# 게이트는 목록에 없는 것을 거절하고, 면제는 커밋된 값 + 사유로만 산다.
+# 게이트가 이 목록의 **크기와 내용을 출력**한다. 조용한 스킵이 아니라 시끄러운 예외다.
+
+[[orphan_script]]
+path              = "scripts/build_nara_testset.py"
+invoked_by        = []
+evidence          = "tests/corpus/nara_mulpum/README.md#build_nara_testset"
+reason            = "나라장터 소스 동결(CLAUDE.md) — 재수확은 수동 절차다. 도달 경로는 산문 런북뿐이다."
+disposition_owner = "unknown"
+
+[[orphan_script]]
+path              = "scripts/gen_scenario_fixtures.py"
+invoked_by        = []
+evidence          = "tests/corpus/scenario/README.md#gen_scenario_fixtures"
+reason            = "결정적 fixture 생성기 — 산출물이 커밋돼 있어 재실행이 상시 필요하지 않다."
+disposition_owner = "unknown"
+
+# ── 제외 축 ───────────────────────────────────────────────────────────────
+# 술어 3 의 네 러너 글롭 밖인데 검증 성질을 지는 파일들. 「안 센 것」을 크기와 함께 든다.
+# 크기가 자라면 게이트가 붉는다 — 제외는 자라도 되지만 조용히 자라면 안 된다.
+
+[[excluded_axis]]
+axis    = "node_extractor_scripts"
+reason  = "scripts/ 아래 .mjs 추출기. Python 러너도 node --test 러너도 이것을 사례로 세지 않고, 도달성은 그것을 부르는 .py 자산 행이 이미 든다."
+owner   = "R1-02 #402"
+globs   = ["scripts/**/*.mjs"]
+size    = 1
+
+[[excluded_axis]]
+axis    = "pytest_support_modules"
+reason  = "test_*.py 가 아니라 수집되지 않는 지원 모듈(프로브·소스 접근자·홈 격리 conftest). 독립 검증 책임을 지지 않고 그것을 부르는 자산 행 위에 얹힌다."
+owner   = "R1-99 #400"
+globs   = ["tests/_*.py", "tests/conftest.py", "conftest.py"]
+size    = 6
+
+[[excluded_axis]]
+axis    = "powershell_runners"
+reason  = "게이트를 **부르는** 셸 러너이지 검증 자산이 아니다. 그 형상 계약은 tests/test_powershell_encoding.py 와 tests/test_quality_workflow.py 가 자산으로 든다."
+owner   = "R1-99 #400"
+globs   = ["*.ps1", "packaging/*.ps1"]
+size    = 6
+
+# ── 검증 자산 ─────────────────────────────────────────────────────────────
+# 술어 3 전수. 행이 없는 파일은 구조 오류이고, r_scope=false 도 reason 을 든다.
+# ── pytest 자산 128 ──────────────────────────────────────────────────────
+
+[asset."tests/test_architecture.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링 경계 · 코어 역의존 금지 · 직접 브리지 이름의 문서 등장"
+successor        = "react_equivalent"
+successor_asset  = "R2 #406 이 세울 양방향 drift 게이트"
+stage            = "R2 #406"
+negative_control = "partial"
+nc_evidence      = [
+  "tests/test_architecture.py#assert methods",
+]
+blind_spot       = "직접 브리지 대조가 bridge.js → 문서 단방향이라 JS 가 안 부르는 Python 공개 메서드는 영영 시야 밖이다(close_guard_state 가 실물)."
+defect           = [
+  "판정문이 UI_CONTRACT.md 전문을 보므로 실제 술어는 「이름이 문서 어딘가에 백틱으로 있다」이지 테스트 이름·docstring 이 주장하는 「정본 절이 열거한다」가 아니다 — bridge_set.* 계측 항목이 그 차이를 수로 든다",
+]
+reinforcement    = 406
+
+[asset."tests/test_atomic.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_audit_test_portfolio.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."tests/test_authoring.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_batch_gate.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_boot_budget.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "빌드·부팅·경로·브랜딩 부수 계약 — 웹 표면을 읽지만 화면 소유는 아니다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 실행 결과는 못 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_branding.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "빌드·부팅·경로·브랜딩 부수 계약 — 웹 표면을 읽지만 화면 소유는 아니다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 실행 결과는 못 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_build_metadata.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "빌드·부팅·경로·브랜딩 부수 계약 — 웹 표면을 읽지만 화면 소유는 아니다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 실행 결과는 못 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_cli.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "코어 CLI — 링2 없이 도는 형제 소비자. React 는 CLI 를 인수하지 않는다."
+
+[asset."tests/test_compile_badge.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_contrast_wcag.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "WCAG AA 대비 — 토큰 색이 다시 옅어지면 시끄럽게 잡는다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "토큰 값에서 계산하지 실제 합성 결과(투명도·겹침)를 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_core_paths.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "빌드·부팅·경로·브랜딩 부수 계약 — 웹 표면을 읽지만 화면 소유는 아니다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 실행 결과는 못 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_corpus_golden.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_danger_confirm_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_data_factory.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_dataset_pool.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_dataset_pool_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_design_tokens.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "디자인 토큰 단일 출처 — JSON → tokens.css 생성물 드리프트"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "생성물의 텍스트 일치를 보지 그 토큰이 화면에서 쓰이는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_dispatch_payload_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_dispatch_wiring.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "액션 레지스트리 ↔ 컨트롤러 ↔ screens/*.js 리터럴 의 유일 drift 축"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "추출 소스 경로가 screens/*.js 로 하드코딩돼 있다. 소비처가 .tsx 가 되면 리터럴 추출이 빈 집합이 되고 게이트는 조용히 초록이다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_edit_session.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_engine.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_excel_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_extract_invariants.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_extract_synthetic.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_fields.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_file_filters.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "여러 표면이 공유하는 문자열·정책의 단일 출처 검사. 소비처가 바뀌어도 출처 계약은 불변이다."
+
+[asset."tests/test_fill_ledger.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_filter_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_forgiveness_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_format_engine.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_frontend_build_graph.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "핀 잠금 · entry 1 · 구성 1회 · 순환 0 · 전역 생산자 유일 · 은퇴 alias 무생산자"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 #405"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_frontend_build_graph.py::test_retired_compat_aliases_have_no_producer_and_no_reader",
+  "tests/test_frontend_build_graph.py::test_converted_modules_are_esm_and_own_no_globals",
+]
+blind_spot       = "빌드 그래프의 형상을 보지 번들의 런타임 거동은 안 본다."
+
+[asset."tests/test_frontend_module_units.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "node --test 러너의 산출값 회수 — 모듈 export 의 실제 값과 파일 전수"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정"
+negative_control = "partial"
+nc_evidence      = [
+  "tests/test_frontend_module_units.py#EXPECTED_TEST_FILES",
+]
+blind_spot       = "러너가 죽어도 파일 전수만 맞으면 하한까지는 초록이다."
+defect           = [
+  "이 게이트가 요구하는 것은 실측값이 아니라 하한이라, 그 차만큼 node 축이 무너져도 초록이다 — 두 수는 census.node_pass 의 value 와 runner_floor 가 든다",
+]
+reinforcement    = 408
+
+[asset."tests/test_header_footer_fields.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_home_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_identity_summary.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "여러 표면이 공유하는 문자열·정책의 단일 출처 검사. 소비처가 바뀌어도 출처 계약은 불변이다."
+
+[asset."tests/test_interaction_responsiveness.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_jamo.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_job.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_job_editor_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_job_process_topology.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "프로세스 topology·소유권 잠금. 창이 무엇으로 그려지든 같다."
+
+[asset."tests/test_legacy_path_zero.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "폐기 source 경로 인용 저장소 전역 0 — git ls-files 전수로 본문을 읽는다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #420"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_legacy_path_zero.py::test_scanner_catches_every_shape_a_reference_can_take",
+  "tests/test_legacy_path_zero.py::test_scanner_leaves_the_sealed_artifact_and_prose_alone",
+  "tests/test_legacy_path_zero.py::test_a_new_reference_in_an_allowlisted_file_is_caught",
+]
+blind_spot       = "바이너리 확장자는 건너뛴다. 허용 목록은 파일별 정확한 다중집합이라 목록 안 파일의 증가만 잡는다."
+
+[asset."tests/test_library_information_architecture.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_lineseg.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_lint.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "Python 소스 위생. 프런트 트리를 읽지 않는다."
+
+[asset."tests/test_live_run_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_mapping.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_mapping_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_modal_system.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_motw.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "실 Win32·OS 경계. 렌더러 교체와 무관하다."
+
+[asset."tests/test_naming.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_nara.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "나라장터 어댑터 — 동결 소스(CLAUDE.md). 웹 표면에 노출되지 않는다."
+
+[asset."tests/test_nara_mulpum.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "나라장터 코퍼스 — 동결 소스."
+
+[asset."tests/test_nara_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "나라장터 링1 — 동결 소스."
+
+[asset."tests/test_native_positive.py"]
+runner           = "pytest"
+markers          = [
+  "native",
+]
+ci_jobs          = [
+  "pytest-contract",
+  "windows-native",
+]
+r_scope          = false
+reason           = "실 Win32·OS 경계. 렌더러 교체와 무관하다."
+
+[asset."tests/test_package.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "배포 패키지 메타 — 웹 산출물 identity 는 별도 자산이 진다."
+
+[asset."tests/test_package_coverage_gate.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "패키지별 커버리지 하한 기계 — 비재귀 경로라 새 서브패키지는 등록 없이 실패한다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "하한의 존재를 보지 하한이 적정한지는 안 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_packaging_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "spec hidden import 가 실제로 해소되는가 — 선언과 결과의 대조"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_packaging_contract.py::test_ghost_hidden_import_is_rejected",
+  "tests/test_packaging_contract.py::test_non_literal_hidden_import_is_rejected",
+]
+blind_spot       = "리터럴 hiddenimport 만 본다 — 계산된 이름은 술어 밖이다."
+
+[asset."tests/test_partial_gate.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_personalization_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_pipeline.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_pipeline_builder_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_popover_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_powershell_encoding.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "셸 스크립트 인코딩. 프런트 트리 밖이다."
+
+[asset."tests/test_quality_workflow.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "CI 형상 — 잡 열거 · quality-gate needs · 스텝 순서 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "워크플로 텍스트를 보지 실행 결과를 안 본다. 문자열 언급을 호출로 셀 수 있다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_quickstart_101_assets.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "101 예제 동봉 — 템플릿·데이터가 저장소에 실재하고 문서와 정합한가"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "자산의 실재를 보지 그것으로 만든 문서의 내용은 안 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_quickstart_101_live.py"]
+runner           = "pytest"
+markers          = [
+  "live",
+]
+ci_jobs          = [
+  "pytest-contract",
+  "live-webview2",
+]
+r_scope          = true
+protects         = "101 실주행 — 실 창 부팅부터 문서 산출까지, 환경 실패와 제품 실패의 분리"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_quickstart_101_live.py::test_a_healthy_report_passes_so_the_negative_controls_mean_something",
+  "tests/test_quickstart_101_live.py::test_zero_documents_fails_even_with_every_screenshot_present",
+  "tests/test_quickstart_101_live.py::test_a_torn_frame_fails_the_capture_verdict",
+]
+blind_spot       = "HWPX_SKIP_GUI_TESTS=1 아래서는 수집되고 실행되지 않는다. 재시도 금지(L11)."
+
+[asset."tests/test_r3_editor.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_js.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_library.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_picker.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_pool.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_py_core.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_r3_runmx.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_react_ownership_inventory.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "소유권 인벤토리 원장의 폐포·술어 계약·음성 대조 — 형제 원장의 게이트"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R1 #402 · R5 #419 재대조"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_react_ownership_inventory.py#음성 대조",
+]
+blind_spot       = "자기 원장의 축이 본 것에 대해서만 「미분류 0」이다 — 그 범위는 원장의 scope_statement 가 든다."
+
+[asset."tests/test_react_verification_ledger.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "검증 책임 원장의 전수 피복·술어 재실행·분모 고정 — 이 원장 자신의 게이트"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R1 #403 · R5 #419 재대조"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_react_verification_ledger.py::test_the_shipped_ledger_passes_so_the_negative_controls_mean_something",
+  "tests/test_react_verification_ledger.py::test_c_predicate_14_an_empty_ledger_does_not_pass",
+  "tests/test_react_verification_ledger.py::test_c_predicate_11_flipping_a_web_facing_asset_out_of_scope_is_refused",
+]
+blind_spot       = "센서스 축의 value 는 재측정하지 않는다 — pytest 안에서 pytest 를 다시 수집하면 재귀다. 그 축은 구조만 보고 실측 대조는 #455 CI 스텝과 R1-99 가 진다."
+
+[asset."tests/test_review_gate_workflow.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."tests/test_review_rounds.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "빌드·부팅·경로·브랜딩 부수 계약 — 웹 표면을 읽지만 화면 소유는 아니다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 실행 결과는 못 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_review_skill_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."tests/test_review_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."tests/test_run_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_scenario_e2e.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "코어 종단 시나리오 — 문서 생성 결과물을 잰다. 표면 무관."
+
+[asset."tests/test_schema.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_scroll_topology.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_scrollbar_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_secret_store.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "비밀 저장 — 동결 나라장터 부속."
+
+[asset."tests/test_selection_state.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링1 ViewModel 판정 — Qt-free·DOM-free. React 는 링2 를 인수하고 이 판정을 그대로 소비한다."
+
+[asset."tests/test_selftest_api.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_selftest_http_proxy.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "포장본 오프라인 부팅의 결정적 네트워크 통제 — 프록시가 기대 호스트만 받는가"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421(G11)"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "프록시의 수락·거절을 보지 포장본이 실제로 그 프록시만 쓰는지는 안 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_single_instance.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "실 Win32·OS 경계. 렌더러 교체와 무관하다."
+
+[asset."tests/test_source_profile.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_sticky_material.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_suite_partition.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "marker 축 배타 · 게이트 skipif 와 축 marker 의 동반 · 무표 집합의 결정론"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_suite_partition.py::test_a_healthy_pairing_passes_so_the_negative_controls_mean_something",
+  "tests/test_suite_partition.py::test_the_pairing_check_notices_each_way_it_can_drift",
+  "tests/test_suite_partition.py::test_the_partition_check_notices_overlapping_axes",
+]
+blind_spot       = "축의 배타와 동반을 보지 그 축이 CI 에서 실제로 도는지는 안 본다."
+
+[asset."tests/test_template_groups.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_template_manager.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_template_status.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_text_registry.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_text_render.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 도메인 — hwpxcore 파서·엔진·서식. UI 런타임을 모르고 React 와 교집합 0 이다."
+
+[asset."tests/test_tracking_locate.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_txt_queue.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_ui_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "동결 목업↔링1 정합. 자기 docstring 이 「실제 배포 DOM·현재 라우팅의 계약은 test_web_dom_contract.py 가 소유한다」고 적는다 — Qt 시대 seam 의 역사 보존이다."
+
+[asset."tests/test_ux_copy_round.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_ux_css_round.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_web_artifact_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "봉인 계약 표면 — 생산자↔소비자 identity 대조의 계약 형상"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 #408(G10) · R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "같은 커밋 안의 자기 일관성만 본다 — 커밋 간 tree_sha256 바이트 동일은 단언 대상이 아니다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_web_artifact_seal.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "봉인 identity — artifact_id · tree_sha256 · source.commit 의 자기 일관성"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 #408(G10) · R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "identity 는 정체성을 지키지 성질을 안 지킨다(L12). 성질은 n10 이 출하 번들을 AST 로 판다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_web_css_manifest.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "CSS 캐스케이드 순서 — import 순서 ↔ 매니페스트 ↔ 디스크의 3방향"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "none"
+nc_evidence      = []
+blind_spot       = "순서를 보지 그 순서가 만드는 캐스케이드 결과를 안 본다."
+defect           = [
+  "양방향 대조라 구조적 판별력은 있으나 자기 눈을 증명하는 대조는 0",
+]
+reinforcement    = 412
+
+[asset."tests/test_web_css_orphan_classes.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "고아 클래스 — CSS 에만 있고 DOM 에 없는 선택자"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 문서의 class 속성만 본다 — JS 가 심는 클래스는 술어 밖이다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/test_web_datazone.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_web_dom_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "정적 DOM 계약 — id 격자 · 화면 루트 · Preserve 배선 · 렌더층 가변 상태 예산 · 모달 semantics · breakpoint"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412(공용) · R4(화면별)"
+negative_control = "none"
+nc_evidence      = []
+blind_spot       = "정적 파서라 런타임 기하·CSS 캐스케이드 결과를 못 본다. SCREEN_ROOTS 선언 밖 화면 루트는 파생 가드에만 걸린다."
+defect           = [
+  "SCREEN_ROOTS(:107)=2 인데 실제 화면 루트는 4. 실 무방비는 scr-workbench 하나 — scr-editor 는 :1843 좌변 split 이 IndexError 로 시끄럽게 죽고 :1892 는 screens/editor.js 문자열이라 루트 가드가 아니다",
+  "PRESERVE_WRAPPED_FILES(:47)=3 vs Preserve.around 실호출 5(library.js:47 · data_picker.js:189 무가드) vs docstring(:647) 「4개 화면」 — 3갈래",
+  "이 파일의 사례 중 게이트 자기 판별력을 증명하는 대조 0, 추출기 생존 가드 0",
+]
+reinforcement    = 412
+
+[asset."tests/test_web_m1_topology.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_web_native_dialog_guard.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "화면·표면별 배선과 계약 — React 이관에서 화면 단위로 후계가 정해진다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 거동은 못 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_web_press_geometry.py"]
+runner           = "pytest"
+markers          = [
+  "browser",
+]
+ci_jobs          = [
+  "pytest-contract",
+  "browser-render",
+]
+r_scope          = true
+protects         = "눌림 유지 중 기준면 이탈 — sealed CSS 를 loopback 으로 제공한 최소 문서의 실렌더 기하"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412(공용 CSS 이관 시 재실측 의무)"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_web_press_geometry.py::test_row_surface_left_edge_does_not_move_while_held",
+  "tests/test_web_press_geometry.py::test_press_marker_actually_fires_on_a_box_surface",
+]
+blind_spot       = "HWPX_SKIP_MOTION_TESTS=1 아래서는 수집되고 도달 가능하면서 한 번도 실행되지 않는다. prefers-reduced-motion 을 명시 강제하지 않으면 모션 층 전체가 강등돼 영영 초록이다."
+
+[asset."tests/test_web_product_api.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "Python 쪽 window.__hwpx 파사드 · capability 순서 리터럴 고정"
+successor        = "react_equivalent"
+successor_asset  = "R2 #406 이 세울 교차 언어 등가 게이트(G7)"
+stage            = "R2 #406"
+negative_control = "none"
+nc_evidence      = []
+blind_spot       = "각 언어가 자기 리터럴에 초록으로 고정되므로 두 사본이 함께 틀려도 이 게이트는 못 본다. 무게이트 산문 사본 둘(product_api.py:18 · UI_CONTRACT.md:72)이 그 자리다."
+reinforcement    = 406
+
+[asset."tests/test_web_runtime_artifact.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "런타임이 소비하는 웹 사본의 실재·경로·검증 경유"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 #408(G10) · R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "사본의 존재와 경로를 보지 그 안 JS 의 성질은 안 본다."
+assessment_owner = "R1-99 #400"
+
+[asset."tests/test_web_selftest_gate.py"]
+runner           = "pytest"
+markers          = [
+  "live",
+]
+ci_jobs          = [
+  "pytest-contract",
+  "live-webview2",
+]
+r_scope          = true
+protects         = "실 창 렌더 · 브리지 왕복 되읽기 · focus/scroll 생존 · 예산 사슬 층화"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 접속(G11) · R5 최종 #421"
+negative_control = "present"
+nc_evidence      = [
+  "tests/test_web_selftest_gate.py::test_selftest_api_is_absent_without_the_capability_in_real_webview",
+  "tests/test_web_selftest_gate.py::test_harness_cap_sits_above_every_budget_beneath_it",
+  "tests/test_web_selftest_gate.py#control_before",
+]
+blind_spot       = "HWPX_SKIP_GUI_TESTS=1 아래서는 수집되고 도달 가능하면서 한 번도 실행되지 않는다. 제품 단언에 재시도를 걸지 않는다(L11)."
+
+[asset."tests/test_web_source_role.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "source 경로 단일 접근자 — 정적 테스트가 물리 루트를 재유도하지 못하게 한다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #420"
+negative_control = "partial"
+nc_evidence      = [
+  "tests/test_web_source_role.py::test_static_tests_do_not_rederive_physical_source_roots",
+]
+blind_spot       = "면제 목록의 정확 일치가 추출기 생존 가드로 산다 — 그 목록 밖 우회는 못 본다."
+
+[asset."tests/test_webapp_bridge.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 브리지 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_editor.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 에디터 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_job.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 작업 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_library.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 라이브러리 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_pool.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 데이터 풀 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_profile.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 프로필 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_settings.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 설정 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_template.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 템플릿 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_webapp_workbench.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "링2 워크벤치 컨트롤러의 dispatch·스냅샷 의미 — Python 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "컨트롤러가 낸 스냅샷의 의미를 보지 그것이 DOM 에 어떻게 그려지는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/test_work_candidates.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "링0 저장 모델·데이터 소스. 표면이 바뀌어도 이 계약은 그대로다."
+
+[asset."tests/test_work_mode.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = false
+reason           = "여러 표면이 공유하는 문자열·정책의 단일 출처 검사. 소비처가 바뀌어도 출처 계약은 불변이다."
+
+[asset."tests/test_workcard_contract.py"]
+runner           = "pytest"
+markers          = []
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 표면의 상호작용·시각 계약 — 화면 하나가 아니라 층 전체가 지는 성질"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
+assessment_owner = "R3-99 #409"
+
+# ── node 자산 27 ────────────────────────────────────────────────────────
+
+[asset."tests/js/bootstrap.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "합성 루트의 부팅 순서와 전역 설치 지점"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R2-99 #404"
+
+[asset."tests/js/copy.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "공용 문안 상수의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/esc.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "이스케이프 헬퍼의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/guard.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "가드 헬퍼의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n05_data_picker.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-05 서비스·오버레이·피커 층의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n05_editor_entry.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-05 서비스·오버레이·피커 층의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n05_foundation.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-05 서비스·오버레이·피커 층의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n05_overlay.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-05 서비스·오버레이·피커 층의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n05_services.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-05 서비스·오버레이·피커 층의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+[asset."tests/js/n06_app_shell.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-06 화면·셸 모듈의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n06_editor.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-06 화면·셸 모듈의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n06_job.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-06 화면·셸 모듈의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n06_library.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-06 화면·셸 모듈의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n06_workbench.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-06 화면·셸 모듈의 export 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n07_bridge.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-07 브리지 factory 와 제품 파사드의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R2-99 #404"
+
+[asset."tests/js/n07_product_api.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-07 브리지 factory 와 제품 파사드의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R2-99 #404"
+
+[asset."tests/js/n08_boot_routing_overlay.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_editor_workbench_data.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_job.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_persistence_geometry.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_registry.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_runner.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n08_schema.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-08 제품 그래프 비접촉 프로브 모듈의 단위 계약"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R4 #413"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R4-99 #413"
+
+[asset."tests/js/n09_push_port.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-09 푸시 포트·selftest API 의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R2-99 #404"
+
+[asset."tests/js/n09_selftest_api.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "N-09 푸시 포트·selftest API 의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R2-99 #404"
+
+[asset."tests/js/n10_global_hygiene.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "oxc AST 로 소스와 출하 번들 양쪽의 전역 생산자·IIFE 0·순환 0"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 · R5 전역 0 #420"
+negative_control = "present"
+nc_evidence      = [
+  "tests/js/n10_global_hygiene.test.js#검출력",
+]
+blind_spot       = "AST 가 보는 것은 정적 구조다 — 런타임에 계산되는 전역 설치는 못 본다."
+
+[asset."tests/js/segview.test.js"]
+runner           = "node"
+ci_jobs          = [
+  "pytest-contract",
+]
+r_scope          = true
+protects         = "세그먼트 렌더 헬퍼의 산출값"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2 러너 확정 시 재판정 · R3 #412"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
+assessment_owner = "R3-99 #409"
+
+# ── script 자산 20 ──────────────────────────────────────────────────────
+
+[asset."scripts/audit_test_portfolio.py"]
+runner           = "script"
+invoked_by       = [
+  "tests/test_audit_test_portfolio.py#audit_test_portfolio",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."scripts/build_nara_testset.py"]
+runner           = "script"
+invoked_by       = []
+r_scope          = false
+reason           = "나라장터 코퍼스 재수확 — 동결 소스, 수동 절차."
+
+[asset."scripts/capture_101_screenshots.py"]
+runner           = "script"
+invoked_by       = [
+  ".github/workflows/quality.yml#scripts/capture_101_screenshots.py",
+  "examples/quickstart-101/README.md#capture_101_screenshots.py",
+]
+r_scope          = true
+protects         = "101 실주행 하니스의 진입점 — 인자·홈·live101 조각의 접합"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/check_package_coverage.py"]
+runner           = "script"
+invoked_by       = [
+  ".github/workflows/quality.yml#scripts/check_package_coverage.py",
+  "tests/test_package_coverage_gate.py#check_package_coverage.py",
+]
+r_scope          = false
+reason           = "Python 패키지 커버리지 하한. 프런트 트리를 읽지 않는다."
+
+[asset."scripts/check_react_ownership_inventory.py"]
+runner           = "script"
+invoked_by       = [
+  "tests/test_react_ownership_inventory.py#check_react_ownership_inventory.py",
+]
+r_scope          = true
+protects         = "소유권 인벤토리 원장의 재실측기"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/check_release_version.py"]
+runner           = "script"
+invoked_by       = [
+  ".github/workflows/release.yml#scripts/check_release_version.py",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."scripts/gen_design_tokens.py"]
+runner           = "script"
+invoked_by       = [
+  "docs/UI_CONTRACT.md#scripts/gen_design_tokens.py",
+  "frontend/css/tokens.css#scripts/gen_design_tokens.py",
+]
+r_scope          = true
+protects         = "디자인 토큰 단일 출처에서 tokens.css 를 찍는 생성기"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/gen_scenario_fixtures.py"]
+runner           = "script"
+invoked_by       = []
+r_scope          = false
+reason           = "결정적 도메인 fixture 생성기."
+
+[asset."scripts/generate_build_metadata.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/build.ps1#generate_build_metadata.py",
+  "tests/test_build_metadata.py#generate_build_metadata.py",
+]
+r_scope          = true
+protects         = "빌드 메타데이터 — 프런트 identity 기재의 생산자"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/__init__.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/capture_101_screenshots.py#from live101 import driver",
+]
+r_scope          = true
+protects         = "101 하니스 패키지 경계"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/capture.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/live101/driver.py#from . import capture as capture_mod",
+]
+r_scope          = true
+protects         = "실 창 픽셀 캡처"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/driver.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/capture_101_screenshots.py#from live101 import driver",
+  "tests/test_web_m1_topology.py#live101",
+]
+r_scope          = true
+protects         = "101 실주행 구동·판정"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/report.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/live101/driver.py#from . import report as report_mod",
+]
+r_scope          = true
+protects         = "101 실주행 보고서 산출"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/scenario.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/live101/driver.py#from . import scenario as scenario_mod",
+]
+r_scope          = true
+protects         = "101 실주행 대본 — 캡처·무캡처 두 모드의 단일 출처"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/live101/surface.py"]
+runner           = "script"
+invoked_by       = [
+  "scripts/live101/driver.py#surface",
+]
+r_scope          = true
+protects         = "101 하니스가 겨누는 웹 표면 좌표"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R5 #421"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/render_document_narmi_branding.py"]
+runner           = "script"
+invoked_by       = [
+  "frontend/index.html#render_document_narmi_branding.py",
+  "tests/test_branding.py#render_document_narmi_branding.py",
+]
+r_scope          = true
+protects         = "문서나르미 심벌 3단 래스터·매니페스트 생성기"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/review_rounds.py"]
+runner           = "script"
+invoked_by       = [
+  ".github/workflows/review-gate.yml#scripts/review_rounds.py",
+  ".claude/settings.json#scripts/review_rounds.py",
+]
+r_scope          = false
+reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
+
+[asset."scripts/seal_web_artifact.py"]
+runner           = "script"
+invoked_by       = [
+  "package.json#scripts/seal_web_artifact.py",
+  "build-web.ps1#seal_web_artifact.py",
+]
+r_scope          = true
+protects         = "웹 산출물 봉인 — identity 3필드의 생산자이자 검증자"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/selftest_http_proxy.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/build.ps1#selftest_http_proxy.py",
+  "tests/test_selftest_http_proxy.py#selftest_http_proxy",
+]
+r_scope          = true
+protects         = "포장본 오프라인 부팅의 결정적 네트워크 통제"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."scripts/verify_packaged_web.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/build.ps1#verify_packaged_web.py",
+  ".github/workflows/release.yml#verify_packaged_web.py",
+]
+r_scope          = true
+protects         = "포장된 웹 사본의 identity 검증"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
