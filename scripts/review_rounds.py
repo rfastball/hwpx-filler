@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -736,47 +737,74 @@ def _watch_dir() -> Path | None:
 LEGAL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
-def _watch_target(root: Path, repo: str, pr: int) -> Path | None:
+#: 감시 대상임을 선언하는 파일. 이름이 고정이라 같은 PR 을 두 번 올려도 같은 자리다.
+WATCH_MARK = "watch.json"
+
+#: 「이 **세션**이 이 판정을 들었다」를 적는 곳. 확인은 세션의 성질이지 PR 의 성질이 아니다 —
+#: PR 단위로 적어 두면 lane 세션이 들은 것을 오케스트레이터가 들은 것으로 치고 그냥 내보낸다.
+#: 세션마다 자기 파일이라 여기서도 읽고-고쳐-쓰기가 없다.
+TOLD_DIR = "told"
+
+
+def _watch_home(root: Path, repo: str, pr: int) -> Path | None:
     owner, _, name = repo.partition("/")
     parts = (owner, name)
     if not all(LEGAL_NAME.fullmatch(part) and part not in {".", ".."} for part in parts):
         return None  # 경로를 벗어나거나 별칭이 될 이름은 감시하지 않는다
-    return root.joinpath(owner, name, f"{pr}.json")
+    return root.joinpath(owner, name, str(pr))
 
 
-def _watch(repo: str, pr: int, verdict: str | None) -> None:
-    """PR 하나의 감시 상태를 **자기 파일에만** 쓴다.
+def _write_atomic(target: Path, payload: dict) -> None:
+    """반쯤 쓰인 파일을 읽는 훅이 없도록 원자적으로 갈아 끼운다.
 
-    남의 항목을 읽지 않으므로 지울 수도 없다 — 단 그 말이 참이려면 경로가 무손실이어야 한다
-    (`_watch_target`). 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이 같은 순간에 발행하면
-    나중 쓰기가 앞 PR 을 통째로 삼켰다. 그러면 병렬 웨이브에서 감시가 조용히 비고, 그것이 바로
-    이 자리를 공용 dir 에 둔 이유였다.
+    tmp 이름에 pid 를 넣어 같은 자리를 동시에 쓰는 두 프로세스가 서로의 임시 파일을 밟지 않게
+    한다.
     """
-    root = _watch_dir()
-    if root is None:
-        return
-    target = _watch_target(root, repo, pr)
-    if target is None:
-        return
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload: dict = {"repo": repo, "pr": pr}
-    if verdict is not None:
-        payload["verdict"] = verdict
-    # 반쯤 쓰인 파일을 읽는 훅이 없도록 원자적으로 갈아 끼운다. tmp 이름에 pid 를 넣어 같은
-    # PR 을 동시에 쓰는 두 프로세스가 서로의 임시 파일을 밟지 않게 한다.
     staged = target.with_name(f"{target.name}.{os.getpid()}.tmp")
     staged.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     os.replace(staged, target)
+
+
+def _watch(repo: str, pr: int) -> None:
+    """PR 하나를 감시 대상으로 올린다 — **자기 자리에만** 쓴다.
+
+    남의 항목을 읽지 않으므로 지울 수도 없다. 단 그 말이 참이려면 경로가 무손실이어야 한다
+    (`_watch_home`). 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이 같은 순간에 발행하면
+    나중 쓰기가 앞 PR 을 통째로 삼켰다.
+    """
+    root = _watch_dir()
+    home = None if root is None else _watch_home(root, repo, pr)
+    if home is None:
+        return
+    _write_atomic(home / WATCH_MARK, {"repo": repo, "pr": pr})
 
 
 @dataclass(frozen=True)
 class Watched:
     """감시 중인 PR 하나. `repo` 를 함께 드는 이유는 §8 의 「엉뚱한 PR」 결함류다."""
 
-    path: Path
+    home: Path
     repo: str
     pr: int
-    verdict: str | None
+
+    def _told_at(self, session: str) -> Path:
+        # 세션 id 를 파일 이름으로 그냥 쓰지 않는다 — 경로에 못 쓸 문자가 섞이면 별칭이 된다.
+        # 되읽을 일이 없고 필요한 것은 같음 판정뿐이라 충돌 저항 해시로 충분하다.
+        digest = hashlib.sha256(session.encode("utf-8")).hexdigest()[:32]
+        return self.home / TOLD_DIR / f"{digest}.json"
+
+    def told(self, session: str) -> str | None:
+        try:
+            return json.loads(self._told_at(session).read_text(encoding="utf-8"))["verdict"]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            return None
+
+    def acknowledge(self, session: str, verdict: str) -> None:
+        _write_atomic(self._told_at(session), {"verdict": verdict})
+
+    def release(self) -> None:
+        shutil.rmtree(self.home, ignore_errors=True)
 
 
 def _watched() -> list[Watched]:
@@ -784,10 +812,10 @@ def _watched() -> list[Watched]:
     if root is None or not root.is_dir():
         return []
     found: list[Watched] = []
-    for path in sorted(root.rglob("*.json")):
+    for path in sorted(root.rglob(WATCH_MARK)):
         try:
             entry = json.loads(path.read_text(encoding="utf-8"))
-            found.append(Watched(path, str(entry["repo"]), int(entry["pr"]), entry.get("verdict")))
+            found.append(Watched(path.parent, str(entry["repo"]), int(entry["pr"])))
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             continue  # 부기 하나가 깨진 것이 나머지 감시를 못 막는다
     return found
@@ -816,7 +844,7 @@ def _hook_post(argv_json: str) -> int:
     if not found:  # 발행이 실패했다 — 그 오류는 명령 자신이 이미 보여 준다
         return 0
     repo, pr = found.group(1), int(found.group(2))
-    _watch(repo, pr, None)
+    _watch(repo, pr)
     _emit(
         {
             "hookSpecificOutput": {
@@ -848,7 +876,11 @@ def _verdict_print(report: Report) -> str:
         + [f"b{f.id}" for f in report.open_blocks]
         + [f"d{f.id}" for f, _ in report.bad_defers]
     )
-    return f"{report.status}|{','.join(marks)}"
+    # `needs_recall` 은 지적 집합이 비어도 참이 될 수 있다 — 차단을 고치고 해결한 직후가 그
+    # 모양이고, 그때 새로 생기는 지시(「`@codex review` 를 부르라」)가 발행 직후의 침묵과 같은
+    # 지문이 되면 삼켜진다.
+    recall = "recall" if report.needs_recall else ""
+    return f"{report.status}|{recall}|{','.join(marks)}"
 
 
 def _hook_stop(argv_json: str) -> int:
@@ -862,7 +894,10 @@ def _hook_stop(argv_json: str) -> int:
     똑같이 붙잡는다(실주행 첫 회에 바로 드러났다). 붙잡기는 상태를 바꾸지 못하므로 같은
     판정에서 두 번 붙잡는 길이 없고, 무한 루프 방지가 임의의 예산이 아니라 구조에서 나온다.
     """
-    del argv_json  # 상태는 payload 가 아니라 GitHub 과 감시 목록이 가진다
+    try:
+        session = str((json.loads(argv_json) or {}).get("session_id") or "")
+    except json.JSONDecodeError:
+        session = ""
     holds: list[str] = []
     notes: list[str] = []
     for entry in _watched():
@@ -873,7 +908,7 @@ def _hook_stop(argv_json: str) -> int:
             # 닫힌 PR 은 정산 의무가 끝났다. 「open 이 아니면」으로 뒤집어 쓰지 않는다 —
             # 응답 형상이 바뀌면 감시가 통째로 조용히 죽는 쪽으로 틀린다.
             if client.get(f"pulls/{entry.pr}").get("state") == "closed":
-                entry.path.unlink(missing_ok=True)
+                entry.release()
                 continue
             report = evaluate(client, entry.pr)
         except GitHubError as error:
@@ -883,12 +918,15 @@ def _hook_stop(argv_json: str) -> int:
             notes.append(f"{entry.repo}#{entry.pr} 상태를 읽지 못했습니다: {error}")
             continue
         if report.status == READY:
-            entry.path.unlink(missing_ok=True)
+            entry.release()
             continue
         verdict = _verdict_print(report)
-        if verdict == entry.verdict:  # 이미 말했다 — 되풀이는 인지가 아니다
+        # 세션을 모르면 **붙잡는 쪽으로** 틀린다. 확인은 세션의 성질이라, 누구에게 말했는지
+        # 모르는 채로 조용해지면 아무도 못 들은 채 턴이 끝날 수 있다.
+        if session and verdict == entry.told(session):  # 이 세션에겐 이미 말했다
             continue
-        _watch(entry.repo, entry.pr, verdict)
+        if session:
+            entry.acknowledge(session, verdict)
         holds.append(f"{entry.repo}\n{render(report)}")
 
     if holds:

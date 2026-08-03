@@ -707,6 +707,8 @@ def test_the_hook_allows_a_ready_merge(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 REPO = "rfastball/hwpx-filler"
+SESSION = json.dumps({"session_id": "session-one"})
+OTHER = json.dumps({"session_id": "session-two"})
 
 
 @pytest.fixture
@@ -717,8 +719,8 @@ def watch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     return root
 
 
-def _watch_now(pr: int = PR, *, repo: str = REPO, verdict: str | None = None) -> None:
-    review_rounds._watch(repo, pr, verdict)
+def _watch_now(pr: int = PR, *, repo: str = REPO) -> None:
+    review_rounds._watch(repo, pr)
 
 
 def _created(pr: int, *, repo: str = REPO) -> str:
@@ -728,6 +730,29 @@ def _created(pr: int, *, repo: str = REPO) -> str:
             "tool_response": {"stdout": f"https://github.com/{repo}/pull/{pr}\n"},
         }
     )
+
+
+def _entries() -> set[tuple[str, int]]:
+    return {(w.repo, w.pr) for w in review_rounds._watched()}
+
+
+def _told(session: str = "session-one", *, pr: int = PR, repo: str = REPO) -> str | None:
+    for watched in review_rounds._watched():
+        if (watched.repo, watched.pr) == (repo, pr):
+            return watched.told(session)
+    return None
+
+
+def _serving(fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`GitHub(repo)` 를 대역으로 갈아 끼우고, **어느 저장소로 물었는지** 받아 둔다."""
+    asked: list[str] = []
+
+    def factory(repo: str) -> FakeGitHub:
+        asked.append(repo)
+        return fake
+
+    monkeypatch.setattr(review_rounds, "GitHub", factory)
+    return asked
 
 
 class JustPushed(FakeGitHub):
@@ -748,26 +773,10 @@ class JustPushed(FakeGitHub):
         return super().get(path)
 
 
-def _serving(fake: FakeGitHub, monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """`GitHub(repo)` 를 대역으로 갈아 끼우고, **어느 저장소로 물었는지** 받아 둔다."""
-    asked: list[str] = []
-
-    def factory(repo: str) -> FakeGitHub:
-        asked.append(repo)
-        return fake
-
-    monkeypatch.setattr(review_rounds, "GitHub", factory)
-    return asked
-
-
-def _entries() -> dict[tuple[str, int], str | None]:
-    return {(w.repo, w.pr): w.verdict for w in review_rounds._watched()}
-
-
 def test_the_post_hook_ignores_commands_that_do_not_create_a_pr(watch: Path) -> None:
     payload = json.dumps({"tool_input": {"command": "gh pr view 430"}})
     assert review_rounds._hook_post(payload) == 0
-    assert _entries() == {}
+    assert _entries() == set()
 
 
 def test_the_post_hook_records_the_new_pr_and_tells_the_session(
@@ -775,7 +784,7 @@ def test_the_post_hook_records_the_new_pr_and_tells_the_session(
 ) -> None:
     """훅은 스킬을 대신 부를 수 없다 — 확정할 수 있는 것은 **인지**뿐이라 그것을 확정한다."""
     assert review_rounds._hook_post(_created(456)) == 0
-    assert _entries() == {(REPO, 456): None}
+    assert _entries() == {(REPO, 456)}
     spoken = json.loads(capsys.readouterr().out)
     assert "/review-round" in spoken["hookSpecificOutput"]["additionalContext"]
 
@@ -791,7 +800,7 @@ def test_the_post_hook_stays_silent_when_the_creation_failed(
         }
     )
     assert review_rounds._hook_post(payload) == 0
-    assert _entries() == {}
+    assert _entries() == set()
     assert capsys.readouterr().out == ""
 
 
@@ -800,31 +809,31 @@ def test_the_post_hook_keeps_the_repository_the_url_named(watch: Path) -> None:
     그 번호가 여기 있으면 남의 PR 의 초록으로 턴이 풀리고, 정작 낸 PR 은 아무도 안 본다.
     같은 결함류를 `MERGE_TARGET` 이 이미 겪었다."""
     assert review_rounds._hook_post(_created(PR, repo="rfastball/hwpx-diff")) == 0
-    assert _entries() == {("rfastball/hwpx-diff", PR): None}
+    assert _entries() == {("rfastball/hwpx-diff", PR)}
 
 
 def test_recording_one_pr_never_touches_another(watch: Path) -> None:
     """항목 하나를 적는 데 **다른 항목을 읽지 않는다.** 목록 하나를 읽고-고쳐-쓰면 두 lane 이
     같은 순간에 발행할 때 나중 쓰기가 앞 PR 을 통째로 삼키고, 그러면 병렬 웨이브에서 감시가
     조용히 빈다 — 이 자리를 공용 git dir 에 둔 이유가 바로 그 시나리오였다."""
-    review_rounds._watch(REPO, 457, None)  # lane B 가 먼저 올렸다
-    review_rounds._watch(REPO, 456, None)  # lane A 는 B 를 못 본 채 자기 것만 쓴다
-    assert _entries() == {(REPO, 456): None, (REPO, 457): None}
+    _watch_now(457)  # lane B 가 먼저 올렸다
+    _watch_now(456)  # lane A 는 B 를 못 본 채 자기 것만 쓴다
+    assert _entries() == {(REPO, 456), (REPO, 457)}
 
 
 # ── 정체성을 값으로 대체하지 않는다 ────────────────────────────────────────────
 #
-# 이 PR 이 같은 가족을 세 번 냈다: 저장소를 버려 다른 PR 이 같아 보였고, 파일 이름의
-# `/`→`-` 치환이 다른 저장소를 같아 보이게 했고, 카운트 지문이 다른 지적 집합을 같아 보이게
-# 했다. 파생 표현은 정체성을 **무손실로 담거나 아예 쓰지 않는다** — 아래 둘이 그 계약이다.
+# 이 PR 이 같은 가족을 네 번 냈다: 저장소를 버려 **다른 PR 이** 같아 보였고, 파일 이름의
+# `/`→`-` 치환이 **다른 저장소를**, 카운트 지문이 **다른 지적 집합을**, PR 단위 확인이
+# **다른 세션을** 같아 보이게 했다. 파생 표현은 정체성을 잃지 않게 담거나 아예 쓰지 않는다.
 
 
 def test_two_repositories_that_alias_under_a_flat_key_stay_apart(watch: Path) -> None:
-    """`/` 를 `-` 로 바꾸면 `foo-bar/baz` 와 `foo/bar-baz` 가 같은 이름이 되고, 나중 쓰기가
+    """`/` 를 `-` 로 바꾸면 `foo-bar/baz#1` 과 `foo/bar-baz#1` 이 같은 이름이 되고, 나중 쓰기가
     앞 항목을 조용히 덮어 그 PR 이 감시에서 사라진다."""
-    review_rounds._watch("foo-bar/baz", 1, None)
-    review_rounds._watch("foo/bar-baz", 1, None)
-    assert _entries() == {("foo-bar/baz", 1): None, ("foo/bar-baz", 1): None}
+    _watch_now(1, repo="foo-bar/baz")
+    _watch_now(1, repo="foo/bar-baz")
+    assert _entries() == {("foo-bar/baz", 1), ("foo/bar-baz", 1)}
 
 
 @pytest.mark.parametrize("repo", ["../..", "./x", "a/..", "a b/c"])
@@ -832,8 +841,8 @@ def test_a_name_that_could_escape_the_watch_directory_is_not_watched(
     watch: Path, repo: str
 ) -> None:
     """경로 조각이 정체성이 되려면 그 조각이 이름이어야 한다 — 아니면 감시 폴더 밖을 쓴다."""
-    review_rounds._watch(repo, 1, None)
-    assert _entries() == {}
+    _watch_now(1, repo=repo)
+    assert _entries() == set()
 
 
 def test_the_fingerprint_names_the_findings_instead_of_counting_them() -> None:
@@ -846,11 +855,26 @@ def test_the_fingerprint_names_the_findings_instead_of_counting_them() -> None:
     assert review_rounds._verdict_print(before) != review_rounds._verdict_print(after)
 
 
+def test_the_fingerprint_separates_the_recall_required_state_from_silence() -> None:
+    """차단을 고치고 해결한 직후에는 지적 집합이 비지만 **새 지시**가 생긴다 — 「재리뷰를
+    부르라」. 그 상태가 발행 직후의 침묵과 같은 지문이면 지시가 삼켜진다."""
+    fresh = evaluate(JustPushed(head="c1", threads=[]), PR)
+    fixed = evaluate(
+        JustPushed(head="c1", threads=[_thread(1, "c0", resolved=True, replies=["triage: block:2"])]),
+        PR,
+    )
+    assert fresh.status == fixed.status == WAIT
+    assert not fresh.unsettled and not fixed.unsettled
+    assert not fresh.open_blocks and not fixed.open_blocks
+    assert fixed.needs_recall and not fresh.needs_recall
+    assert review_rounds._verdict_print(fresh) != review_rounds._verdict_print(fixed)
+
+
 def test_the_stop_hook_does_nothing_without_a_watched_pr(
     watch: Path, capsys: pytest.CaptureFixture
 ) -> None:
     """감시할 PR 이 없으면 API 도 안 부른다 — 모든 턴 끝에서 도는 훅이라 침묵이 기본값이다."""
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert capsys.readouterr().out == ""
 
 
@@ -858,12 +882,13 @@ def test_the_stop_hook_holds_the_turn_until_the_review_is_settled(
     watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     _watch_now()
-    _serving(FakeGitHub(head="c1", threads=[_thread(1, "c1", replies=["triage: block:2"])]), monkeypatch)
-    assert review_rounds._hook_stop("{}") == 0
+    fake = FakeGitHub(head="c1", threads=[_thread(1, "c1", replies=["triage: block:2"])])
+    _serving(fake, monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
     spoken = json.loads(capsys.readouterr().out)
     assert spoken["decision"] == "block"
     assert "/review-round" in spoken["reason"]
-    assert _entries() == {(REPO, PR): "BLOCKED|b1"}
+    assert _told() == "BLOCKED|recall|b1"
 
 
 def test_the_stop_hook_asks_the_repository_the_entry_carries(
@@ -873,7 +898,7 @@ def test_the_stop_hook_asks_the_repository_the_entry_carries(
     장식이 된다(선언은 살고 결과는 죽는다). **같은 번호**를 자매 저장소에 두어 겨눈다."""
     _watch_now(repo="rfastball/hwpx-diff")
     asked = _serving(FakeGitHub(files=["docs/README.md"]), monkeypatch)
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert asked == ["rfastball/hwpx-diff"]
 
 
@@ -884,7 +909,7 @@ def test_the_stop_hook_holds_a_pr_that_is_still_waiting_for_its_review(
     그대로 놓친다 — 지적이 아직 하나도 없는 상태가 정확히 그 모양이다."""
     _watch_now()
     _serving(JustPushed(head="c1", threads=[]), monkeypatch)
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "block"
 
 
@@ -896,12 +921,40 @@ def test_the_stop_hook_says_the_same_verdict_only_once(
     _watch_now()
     _serving(JustPushed(head="c1", threads=[]), monkeypatch)
 
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "block"
 
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert capsys.readouterr().out == "", "같은 판정을 되풀이하는 것은 인지가 아니라 잔소리다"
     assert _entries(), "조용해졌다고 감시를 놓으면 다음 전이를 못 본다"
+
+
+def test_each_session_hears_it_for_itself(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """확인은 **세션의 성질**이다. PR 단위로 적어 두면 lane 세션이 들은 것을 오케스트레이터가
+    들은 것으로 치고, 아무도 못 들은 채 본체 턴이 끝난다 — 공용 dir 로 옮긴 목적 그 자체를
+    무너뜨리는 자리다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block"
+
+    assert review_rounds._hook_stop(OTHER) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] == "block", "다른 세션은 아직 못 들었다"
+
+
+def test_an_unknown_session_is_always_held(
+    watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """누구에게 말했는지 모르는 채로 조용해지면 아무도 못 들은 채 턴이 끝난다 — 모르면 붙잡는
+    쪽으로 틀린다."""
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+    for _ in range(2):
+        assert review_rounds._hook_stop("{}") == 0
+        assert json.loads(capsys.readouterr().out)["decision"] == "block"
 
 
 def test_the_stop_hook_speaks_again_when_the_verdict_changes(
@@ -909,20 +962,24 @@ def test_the_stop_hook_speaks_again_when_the_verdict_changes(
 ) -> None:
     """지적이 도착하면 할 말이 달라진다 — 그때는 다시 붙잡는다. 이것이 없으면 「한 번만」이
     곧 「발행 직후 한 번만」이 되어 트리아지 단계에는 입구가 없다."""
-    _watch_now(verdict="WAIT|")
+    _watch_now()
+    _serving(JustPushed(head="c1", threads=[]), monkeypatch)
+    assert review_rounds._hook_stop(SESSION) == 0
+    capsys.readouterr()
+
     _serving(FakeGitHub(head="c1", threads=[_thread(1, "c1")]), monkeypatch)  # 미정산 1건
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "block"
-    assert _entries() == {(REPO, PR): "WAIT|u1"}
+    assert _told() == "WAIT||u1"
 
 
 def test_the_stop_hook_releases_a_settled_pr(
     watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
-    _watch_now(verdict="WAIT|")
+    _watch_now()
     _serving(FakeGitHub(files=["docs/README.md"]), monkeypatch)  # 빠른 경로 → READY
-    assert review_rounds._hook_stop("{}") == 0
-    assert _entries() == {}, "정산이 끝난 PR 을 계속 감시하면 매 턴 API 를 헛되이 친다"
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert _entries() == set(), "정산이 끝난 PR 을 계속 감시하면 매 턴 API 를 헛되이 친다"
     assert capsys.readouterr().out == ""
 
 
@@ -938,8 +995,8 @@ def test_the_stop_hook_drops_a_pr_that_is_no_longer_open(
             raise AssertionError("닫힌 PR 을 계속 판정했습니다")
 
     _serving(Merged(), monkeypatch)
-    assert review_rounds._hook_stop("{}") == 0
-    assert _entries() == {}
+    assert review_rounds._hook_stop(SESSION) == 0
+    assert _entries() == set()
 
 
 def test_the_stop_hook_does_not_brick_the_session_when_github_is_unreachable(
@@ -954,7 +1011,7 @@ def test_the_stop_hook_does_not_brick_the_session_when_github_is_unreachable(
             raise GitHubError("gh 미인증")
 
     _serving(Unreachable(), monkeypatch)
-    assert review_rounds._hook_stop("{}") == 0
+    assert review_rounds._hook_stop(SESSION) == 0
     spoken = json.loads(capsys.readouterr().out)
     assert "decision" not in spoken
     assert "읽지 못했습니다" in spoken["systemMessage"]
