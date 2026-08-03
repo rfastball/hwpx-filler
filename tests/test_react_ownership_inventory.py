@@ -126,29 +126,59 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
     report = gate.check(document, REPO_ROOT)
     empty = sorted(name for name, axis in report.axes.items() if axis.measured == 0)
     assert not empty, f"측정이 0인 축이 있습니다(추출기가 아무것도 못 봤을 수 있습니다): {empty}"
-    assert set(report.axes) == set(document["axes"]), "선언한 축과 측정한 축이 다릅니다."
-
-
-#: **분모의 두 번째 앵커.** 게이트 스크립트의 `AXIS_FLOORS` 가 1차 앵커이고(R1-99 가 스크립트만
-#: 돌려도 강제된다), 이 리터럴이 그 상수 자체가 조용히 줄어드는 것을 막는다. 축을 지우려면 두
-#: 파일을 함께 고쳐야 하고, 그 diff 가 리뷰 표면에 뜬다.
-EXPECTED_AXES = frozenset({
-    "dom_static", "dom_data_attr", "dom_js_site",
-    "state_js_module", "state_snapshot_channel", "state_ring1",
-    "subscription_listener", "subscription_release", "subscription_push",
-    "lifecycle_factory", "lifecycle_hook",
-})
-
-
-def test_axis_set_is_anchored_outside_the_ledger() -> None:
-    """분모가 원장의 자유 변수가 아님을 두 자리에서 못박는다."""
-    assert set(gate.AXIS_FLOORS) == EXPECTED_AXES, (
-        "게이트의 AXIS_FLOORS 와 이 파일의 EXPECTED_AXES 가 다릅니다 — 축을 줄이거나 늘리는 것은 "
-        "계약 변경이라 두 자리를 함께 고쳐야 합니다."
+    # `set(report.axes) == set(document["axes"])` 는 **자기참조**라 빈 원장에서도 참이었다.
+    # 분모는 게이트가 든 계약과 대조한다.
+    assert set(report.axes) == set(EXPECTED_AXIS_CONTRACT), (
+        "측정한 축이 게이트·테스트가 든 계약과 다릅니다."
     )
-    assert all(floor > 0 for floor in gate.AXIS_FLOORS.values()), (
-        "측정 하한이 0인 축이 있습니다 — 0 하한은 하한이 아닙니다."
+
+
+#: **분모의 세 번째 자리.** 원장이 측정 계약을 들고, 게이트가 하한과 지문을 들고, 이 리터럴이
+#: 그 상수 자체를 든다. 이름 집합만 두면 **값**은 여전히 1파일 앵커라 하한을 전부 1로 낮춰도
+#: 조용했다 — 그래서 이름이 아니라 `(하한, 지문)` 쌍을 든다. 축의 측정 계약을 바꾸려면
+#: 원장·게이트·이 표 **셋**이 함께 움직이고 그 diff 가 리뷰 표면에 뜬다.
+EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
+    "dom_data_attr": (8, "e0bd6cb1822fd50fefbda2c3fac621d5"),
+    "dom_js_site": (22, "21f6634bedf7f3777ec66d1b72991493"),
+    "dom_static": (200, "a0de506720a9704065dde2bf17410d50"),
+    "lifecycle_factory": (16, "cf3701bfb0908f4d0582200ce8273918"),
+    "lifecycle_hook": (9, "05809936a7af41d071c9da1f786c0370"),
+    "state_js_module": (44, "1633eccf8b783f1d712a5b9e158a6ed5"),
+    "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
+    "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
+    "subscription_listener": (105, "2fc5bdf7415bc281524144a514e9ee28"),
+    "subscription_push": (5, "5201c1ab611d0f09a743bd1e6afced4a"),
+    "subscription_release": (10, "b6ac96d2f30c9122a679e7c1c01643b1"),
+}
+
+
+def test_axis_contract_is_anchored_outside_the_gate() -> None:
+    """하한의 **값**과 술어의 **지문**까지 두 자리에서 못박는다.
+
+    이름 집합만 대조하던 판은 하한 열한 개를 전부 1로 낮춰도 초록이었다 — 「이 리터럴이 그
+    상수가 조용히 줄어드는 것을 막는다」가 값에 대해서는 거짓이었다.
+    """
+    actual = {
+        name: (floor, gate.AXIS_DIGESTS.get(name, "<지문 없음>"))
+        for name, floor in gate.AXIS_FLOORS.items()
+    }
+    assert actual == EXPECTED_AXIS_CONTRACT, (
+        "게이트의 (하한, 측정 계약 지문) 과 이 파일의 EXPECTED_AXIS_CONTRACT 가 다릅니다.\n"
+        f"  게이트: {sorted(actual.items())}\n"
+        f"  기대:   {sorted(EXPECTED_AXIS_CONTRACT.items())}"
     )
+
+
+def test_product_tree_globs_are_gate_owned() -> None:
+    """제품 트리의 **정의역**이 원장 밖에 있음을 못박는다."""
+    assert gate.PRODUCT_TREE_GLOBS, "제품 트리 열거가 비었습니다 — 전수 피복이 공허해집니다."
+    assert all(
+        glob.startswith("frontend/") for glob in gate.PRODUCT_TREE_GLOBS
+    ), "제품 트리 글롭이 프런트 밖을 가리킵니다."
+    assert {".js", ".mjs", ".html", ".css"} == {
+        glob.rsplit(".", 1)[-1] and "." + glob.rsplit(".", 1)[-1]
+        for glob in gate.PRODUCT_TREE_GLOBS
+    }, "제품 트리 확장자 집합이 줄었습니다 — 확장자 하나가 전 축의 사각이 됩니다."
 
 
 def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, Any]) -> None:
@@ -736,3 +766,194 @@ def test_named_extractor_scope_cannot_be_rewritten_by_the_ledger(
     report = gate.check(mutable_document, REPO_ROOT, axes=["state_js_module"], metrics=[])
     assert not report.ok, "추출기 scope_excluded 위조가 통과했습니다."
     assert "scope_excluded" in _failures(report), _failures(report)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 음성 — 재검증 라운드가 뚫은 자리 (분모의 **정의역**)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_m26_silent_shrink_inside_the_floor_slack_is_refused(
+    mutable_document: dict[str, Any]
+) -> None:
+    """M26 — 축 `scope_excluded` 로 한 파일의 리스너 표면 13건을 통째로 지운다.
+
+    하한은 **구간**이라 「측정 − 하한」만큼 무음 삭감 예산이 남는다. 축의 측정 계약을 게이트가
+    지문으로 들면 그 예산 안에서도 붉는다 — 분모를 밖에 뒀어도 **정의역**이 안에 있으면
+    같은 자리로 돌아온다.
+    """
+    axis = mutable_document["axes"]["subscription_listener"]
+    axis["scope_excluded"] = [*axis["scope_excluded"], "frontend/js/screens/workbench.js"]
+    mutable_document["node"] = [
+        node for node in mutable_document["node"]
+        if node["id"] != "subscription/listener/workbench"
+    ]
+    metric = next(
+        m for m in mutable_document["metric"] if m["id"] == "listener-attach-sites"
+    )
+    metric["value"] = 106
+    metric["scope_excluded"] = axis["scope_excluded"]
+    report = gate.check(mutable_document, REPO_ROOT)
+    assert not report.ok, "하한 여유분 안의 무음 삭감이 통과했습니다."
+    text = _failures(report)
+    assert "측정 계약이 게이트가 든 지문과 다릅니다" in text, text
+    assert "subscription_listener" in text, text
+
+
+def test_m24_narrowing_a_predicate_is_refused(
+    mutable_document: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M24 — 술어를 좁히고 행을 지우고 **하한까지 함께 낮춘** 경우.
+
+    하한만이 앵커였을 때는 파일 둘만 고치면 축의 절반이 조용히 사라졌다.
+    """
+    hook = mutable_document["axes"]["lifecycle_hook"]
+    hook["predicate"]["pattern"] = hook["predicate"]["pattern"].replace(
+        "Preserve\\.around\\s*\\(|", ""
+    )
+    mutable_document["node"] = [
+        node for node in mutable_document["node"] if node["id"] != "lifecycle/preserve-around"
+    ]
+    monkeypatch.setitem(gate.AXIS_FLOORS, "lifecycle_hook", 4)
+    report = gate.check(mutable_document, REPO_ROOT, axes=["lifecycle_hook"], metrics=[])
+    assert not report.ok, "술어 축소가 하한 인하와 함께 통과했습니다."
+    assert "측정 계약이 게이트가 든 지문과 다릅니다" in _failures(report), _failures(report)
+
+
+def test_m24b_lowering_every_floor_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """M24b — 게이트의 하한을 전부 1로 낮추는 극단. 값 앵커가 이 파일에도 있어야 한다."""
+    for name in gate.AXIS_FLOORS:
+        monkeypatch.setitem(gate.AXIS_FLOORS, name, 1)
+    with pytest.raises(AssertionError):
+        test_axis_contract_is_anchored_outside_the_gate()
+
+
+def test_file_outside_every_axis_is_refused(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """전수 피복 — 제품 트리의 새 파일이 **어느 축에도 명시 제외에도** 안 들면 붉는다."""
+    module = clone_source / "widgets" / "card.js"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text("export const Card = {};\n", encoding="utf-8")
+    report = gate.check(document, frontend_tree, metrics=[])
+    assert not report.ok, "전 축 밖 신설 파일이 통과했습니다."
+    text = _failures(report)
+    assert "덮이지 않음: frontend/widgets/card.js" in text, text
+
+
+@pytest.mark.parametrize("mutation", ["ghost-member", "wrong-axes", "deleted"])
+def test_cross_axis_overlap_is_derived_not_declared(
+    mutable_document: dict[str, Any], mutation: str
+) -> None:
+    """교차 겹침은 **측정에서 유도**된다 — 신설 필드가 거짓을 적기 쉬운 자리였다."""
+    if mutation == "ghost-member":
+        mutable_document["cross_axis_overlap"][0]["member"] = "frontend/js/ghost.js:999"
+    elif mutation == "wrong-axes":
+        mutable_document["cross_axis_overlap"][0]["axes"] = ["dom_static", "state_ring1"]
+    else:
+        mutable_document["cross_axis_overlap"] = []
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, f"`cross_axis_overlap` 의 {mutation} 이 통과했습니다."
+    assert "cross_axis_overlap" in _failures(report), _failures(report)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["false-positive-deleted", "false-positive-neutered", "blind-spot-neutered"]
+)
+def test_coverage_probes_cannot_be_neutered_by_the_ledger(
+    mutable_document: dict[str, Any], mutation: str
+) -> None:
+    """사각·오검 프로브는 원장의 자유 변수가 아니다.
+
+    원장 세 줄(`probe` 를 없는 패턴으로 · `current = 0` · `members = []`)로 뼈대를 없는 것으로
+    만들 수 있었고, `false_positive` 는 블록째 지워도 게이트가 초록이었다 — 커밋이 적은
+    「blind_spot 과 대칭」이 그 자리에서 성립하지 않았다.
+    """
+    if mutation == "false-positive-deleted":
+        mutable_document["axes"]["lifecycle_factory"].pop("false_positive")
+        axis = "lifecycle_factory"
+    elif mutation == "false-positive-neutered":
+        claim = mutable_document["axes"]["lifecycle_factory"]["false_positive"]
+        claim["scope"] = ["nonexistent/**"]
+        claim["current"] = 0
+        claim["members"] = []
+        axis = "lifecycle_factory"
+    else:
+        claim = mutable_document["axes"]["lifecycle_hook"]["blind_spot"]
+        claim["probe"] = {
+            "kind": "regex", "pattern": "ZZZNOPE",
+            "flavor": "python-re", "granularity": "per-line",
+        }
+        claim["current"] = 0
+        claim["members"] = []
+        axis = "lifecycle_hook"
+    report = gate.check(mutable_document, REPO_ROOT, axes=[axis], metrics=[])
+    assert not report.ok, f"{mutation} 이 통과했습니다."
+    text = _failures(report)
+    assert "측정 계약이 게이트가 든 지문과 다릅니다" in text, text
+    assert axis in text, text
+
+
+def test_blind_spot_unit_is_required(mutable_document: dict[str, Any]) -> None:
+    """술어 3종은 사각 진술에도 예외 없이 걸린다 — `unit` 에 기본값을 두던 구멍."""
+    mutable_document["axes"]["subscription_push"]["blind_spot"].pop("unit")
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_push"], metrics=[])
+    assert not report.ok, "`blind_spot.unit` 누락이 통과했습니다."
+    assert "unit" in _failures(report), _failures(report)
+
+
+def test_excluded_axis_size_block_cannot_be_deleted(mutable_document: dict[str, Any]) -> None:
+    """크기 블록을 지우면 「소리 나는 제외」가 조용한 유예로 되돌아간다."""
+    excluded = next(
+        item for item in mutable_document["excluded_axes"]
+        if item["axis"] == "selftest_frontend_surface"
+    )
+    excluded.pop("size")
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "크기 블록 삭제가 통과했습니다."
+    assert "selftest_frontend_surface" in _failures(report), _failures(report)
+
+
+def test_unoccupied_classifications_is_measured(mutable_document: dict[str, Any]) -> None:
+    """부재를 데이터로 적는 습관은 **그 부재를 세야** 성립한다."""
+    mutable_document["unoccupied_classifications"] = ["react"]
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, "거짓 부재 선언이 통과했습니다."
+    assert "unoccupied_classifications" in _failures(report), _failures(report)
+
+
+def test_baseline_sha_is_pinned_to_a_real_coordinate(mutable_document: dict[str, Any]) -> None:
+    """40자리 hex 모양만 보면 `\"0\"*40` 도 통과한다 — 재고정은 중앙 판정이 붙는 사건이다."""
+    mutable_document["baseline_sha"] = "0" * 40
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "없는 커밋이 기준선으로 통과했습니다."
+    assert "baseline_sha" in _failures(report), _failures(report)
+
+
+@pytest.mark.parametrize(
+    ("form", "snippet", "expected"),
+    [
+        ("computed", 'function __n(el){ el["id"] = "sneakyG"; }', "computed-id-assignment"),
+        ("wrapped", 'function __n(el){ el.setAttribute(\n  "id",\n  "sneakyH",\n); }', "set-attribute"),
+        ("uppercase", 'function __n(el){ el.setAttribute("ID", "sneakyI"); }', "set-attribute"),
+    ],
+)
+def test_id_planting_forms_seven_to_nine_are_seen(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+    form: str, snippet: str, expected: str,
+) -> None:
+    """일곱째~아홉째 형태.
+
+    특히 **줄바꿈된 `setAttribute("id", …)`** 는 원장이 「센다」고 적은 바로 그 형태를 프로브가
+    못 넘던 자리다(줄 단위로 돌면 `\\s*` 가 개행을 못 넘는다). 선언과 결과가 어긋난 자리라
+    미선언 형태 둘(계산 속성·대문자)과 등급이 다르다.
+    """
+    target = clone_source / "js" / "theme.js"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n" + snippet + "\n", encoding="utf-8"
+    )
+    report = gate.check(document, frontend_tree, axes=["dom_js_site"], metrics=[])
+    assert not report.ok, f"{form} 형태가 사각에서 안 잡혔습니다."
+    text = _failures(report)
+    assert "사각이 움직였습니다" in text, text
+    assert expected in text, text

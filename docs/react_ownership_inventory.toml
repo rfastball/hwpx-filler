@@ -20,6 +20,12 @@
 # **리터럴로** 산다. 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼 행을 정리하는 것으로
 # 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「미분류 0」은 분모가 고정돼야 명제다.
 # 하한을 낮추는 변경은 사유와 함께 그쪽을 고쳐야 하고, 그 변경 자체가 리뷰 대상이다.
+#
+# **분모의 정의역도 밖이다.** 하한만으로는 축마다 「측정 − 하한」의 무음 삭감 예산이 남고,
+# 축의 scope 를 좁히면 측정 집합 M 자체가 줄어 폐포는 계속 참이다. 그래서 게이트가
+# `PRODUCT_TREE_GLOBS` 로 **제품 트리를 스스로 열거**해 「모든 파일이 어떤 축의 scope 또는
+# 명시 제외에 덮이는가」를 1차로 묻고, `AXIS_DIGESTS` 가 축의 술어·scope·프로브를 지문으로
+# 못박는다 — **원장은 값을, 게이트는 술어를** 든다. 술어를 바꾸려면 세 파일이 함께 움직인다.
 
 schema = 1
 
@@ -62,6 +68,9 @@ frontend/js 가 템플릿 조각으로 심는 data-* 속성의 전수. 정규식
 속성 위치**를 판별하는 추출기가 오늘 없다. 정적 문서 쪽 축(dom_data_attr)은 파서로 닫혔다.
 """
 owner = "#412"
+# 이 제외는 제품 트리의 파일을 설명하지 않는다 — `frontend/js/**` 는 이미 축들이 덮고 있고,
+# 빠진 것은 그 파일들 **안의 한 축**이다. 그래서 `covers` 는 빈 목록이다.
+covers = []
 # 크기 프로브 없음 — 이 축은 **오답 술어밖에 없다는 것이 제외 사유 자체**다. 무앵커 정규식의
 # 66종/302회를 `size` 로 실으면 프런트 템플릿을 고칠 때마다 숫자만 올리는 의식이 되고, 그러면
 # 사각이 자란 것과 코드가 자란 것을 못 가른다. 소유자가 참 추출기를 지을 때 크기가 생긴다.
@@ -76,12 +85,32 @@ innerHTML 83 · 리스너 123 · pywebview 36 alias 에서는 이 트리를 **�
 그래서 빼되 **크기를 잰다**.
 """
 owner = "R2-04 #408"
+covers = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
 [excluded_axes.size]
 probe = { kind = "node_extractor", name = "selftest_surface_sites" }
 scope = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
 unit = "구성 지점(`export function`) · 모듈 스코프 상태 · id 사이트를 한 목록으로 센다. 1건 = 1."
 current = 26
+covers_note = "frontend/src/selftest/** 9파일"
 judgment = "오늘 23 + 1 + 2. 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
+
+[[excluded_axes]]
+axis = "frontend_stylesheets"
+reason = """
+`frontend/css/**` 10파일. 이 원장의 노드 종류는 dom·state·subscription·lifecycle 넷이고
+스타일 규칙은 그 어디에도 안 든다 — CSS 는 이관에서 **그대로 옮겨지는 자산**이고 그 동등성은
+별도 축(#412 의 CSS·DOM·ARIA·focus·geometry)이 진다. 저장소에는 이미 그 층을 보는 게이트가
+있다(`test_web_css_manifest.py` 의 순서 매니페스트 · 실렌더 기하 프로브).
+제품 트리 전수 피복이 이 열 파일을 물으므로 **침묵이 아니라 명시 제외**로 답한다.
+"""
+owner = "R3-03 #412"
+covers = ["frontend/css/**/*.css"]
+[excluded_axes.size]
+probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "per-matching-line" }
+scope = ["frontend/css/**/*.css"]
+unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
+current = 1692
+judgment = "오늘 10파일 1,692줄. 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
 # ── 추출기 레지스트리 ────────────────────────────────────────────────────
 # `backing` 은 「이 값이 얼마나 믿을 만한가」를 이름이 아니라 종류로 말한다. 구현은
@@ -136,6 +165,14 @@ implementation = "src/hwpxfiller/gui/*_state.py 파일 전수"
 [extractors.html_parse_anomalies]
 backing = "parser"
 implementation = "중복 id · 태그 불균형 — 파서의 관용 복구가 삼킬 수 있는 것"
+
+[extractors.html_data_attr_elements]
+backing = "parser"
+implementation = "html.parser — data-* 를 하나라도 든 시작태그(요소)"
+
+[extractors.html_data_attr_elements_without_id]
+backing = "parser"
+implementation = "그중 id 속성이 없어 dom_static 232 밖인 요소"
 
 [extractors.html_data_attr_regex_delta]
 backing = "regex-convention"
@@ -544,6 +581,19 @@ status = "wrong"
 predicate = { kind = "regex", pattern = "data-[a-z-]+", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/index.html"]
 unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함께 센다(6종 오탐). 참값은 파서가 낸 50회다."
+
+[[metric]]
+id = "data-attribute-bearing-elements"
+value = 43
+predicate = { kind = "extractor", name = "html_data_attr_elements" }
+scope = ["frontend/index.html"]
+unit = "`data-*` 를 하나라도 든 요소 1개 = 1."
+note = "`dom_data_attr.unit` 의 근거 문장을 데이터로 만든다 — 산문 수리는 다음 드리프트를 막지 못하고, 이 항목은 막는다."
+[[metric.aliases]]
+value = 7
+predicate = { kind = "extractor", name = "html_data_attr_elements_without_id" }
+scope = ["frontend/index.html"]
+unit = "그중 id 가 없어 dom_static 232 **밖**인 요소 1개 = 1. 나머지 36 에 대해서만 출현 계상이 이중 계상이다."
 
 [[metric]]
 id = "js-generated-id-sites"

@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import re
 import shutil
@@ -90,10 +91,28 @@ HANDOFF_SLICES = frozenset(
 )
 
 
+#: **분모의 정의역도 원장 밖이다.** 하한만으로는 부족했다 — 축의 `scope`·`scope_excluded` 가
+#: 원장 안에 있으면 scope 를 좁히고 그만큼 행을 정리하는 것으로 **측정 집합 M 자체가** 줄고,
+#: 폐포(`M−C`)는 계속 참이라 조용하다. 그래서 게이트가 **제품 트리를 스스로 열거**하고
+#: 「모든 파일이 어떤 축의 scope 또는 명시 제외에 덮이는가」를 1차 방벽으로 세운다.
+PRODUCT_TREE_GLOBS = (
+    "frontend/**/*.js",
+    "frontend/**/*.mjs",
+    "frontend/**/*.html",
+    "frontend/**/*.css",
+)
+
+#: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
+#: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
+EXPECTED_BASELINE_SHA = "8fcc30ed07393ffe4608638761a778535caf3be5"
+
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
 #: 죽는다」의 정확한 형태다. 여기 값은 **정확값이 아니라 하한**이라 정상 성장은 안 막고 붕괴만
 #: 잡는다. **하한을 낮추는 변경은 그 자체가 리뷰 대상**이고 사유를 주석으로 남긴다.
+#: 축별 하한은 **2차 백스톱**이다. 하한에는 슬랙이 있고 그 슬랙이 축마다 무음 삭감 예산이 되므로
+#: 1차 방벽은 전수 피복과 :data:`AXIS_DIGESTS` 다. 하한을 낮추는 변경은 사유와 함께여야 하고
+#: 테스트의 `EXPECTED_AXIS_CONTRACT` 도 함께 고쳐야 한다.
 AXIS_FLOORS: dict[str, int] = {
     "dom_static": 200,              # 오늘 232
     "dom_data_attr": 8,             # 오늘 9
@@ -108,12 +127,31 @@ AXIS_FLOORS: dict[str, int] = {
     "lifecycle_hook": 9,            # 오늘 10
 }
 
+#: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.
+#: 원장이 술어를 좁히거나(M24) 축 제외를 넓히거나(M26) 프로브를 「없는 것」으로 만들면
+#: 여기와 어긋난다. **원장은 값을, 게이트는 술어를** 든다.
+#: 값은 `uv run python scripts/check_react_ownership_inventory.py --print-pins` 가 낸다.
+AXIS_DIGESTS: dict[str, str] = {
+    "dom_data_attr": "e0bd6cb1822fd50fefbda2c3fac621d5",
+    "dom_js_site": "21f6634bedf7f3777ec66d1b72991493",
+    "dom_static": "a0de506720a9704065dde2bf17410d50",
+    "lifecycle_factory": "cf3701bfb0908f4d0582200ce8273918",
+    "lifecycle_hook": "05809936a7af41d071c9da1f786c0370",
+    "state_js_module": "1633eccf8b783f1d712a5b9e158a6ed5",
+    "state_ring1": "9742c77daae0c11112e40c009a5b23c6",
+    "state_snapshot_channel": "5891957f0ed54565587e17c150eed087",
+    "subscription_listener": "2fc5bdf7415bc281524144a514e9ee28",
+    "subscription_push": "5201c1ab611d0f09a743bd1e6afced4a",
+    "subscription_release": "b6ac96d2f30c9122a679e7c1c01643b1",
+}
+
 #: 계측·판정 요구 항목도 같은 이유로 게이트가 목록을 든다 — 항목을 지우는 것은 값이 아니라
 #: **계약을 줄이는 것**이라 원장 혼자 결정할 수 없다.
 EXPECTED_METRIC_IDS = frozenset({
     "innerhtml-assignment", "mutable-module-state", "push-subscription-sites",
     "listener-attach-sites", "listener-release-sites", "dom-stable-ids",
-    "dom-data-attribute-kinds", "js-generated-id-sites", "screen-action-pairs",
+    "dom-data-attribute-kinds", "data-attribute-bearing-elements",
+    "js-generated-id-sites", "screen-action-pairs",
     "window-pywebview-references", "pywebview-api-references", "export-function-declarations",
 })
 EXPECTED_REVIEW_ITEM_IDS = frozenset({
@@ -121,7 +159,13 @@ EXPECTED_REVIEW_ITEM_IDS = frozenset({
     "gate/screen-roots-partial", "gate/preserve-wrapped-files-partial",
     "doc/bridge-header-breakdown", "doc/screens-py-transport-comment",
 })
-EXPECTED_EXCLUDED_AXES = frozenset({"js_planted_data_attrs", "selftest_frontend_surface"})
+#: 제외 축 → 「크기 프로브를 요구하는가」. `size` 블록을 통째로 지우면 조용한 유예로
+#: 되돌아가므로 **어느 제외가 크기를 드는지**도 게이트가 든다.
+EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
+    "js_planted_data_attrs": False,   # 오답 술어밖에 없다는 것이 제외 사유 자체다
+    "selftest_frontend_surface": True,
+    "frontend_stylesheets": True,
+}
 
 #: 접기가 있어도 이만큼은 손으로 분류돼 있어야 한다. 노드 행을 0으로 만드는 것은 폐포를
 #: 「측정 0 == 피복 0」으로 닫아 버리는 길이다.
@@ -252,6 +296,8 @@ class _IndexParse:
     #: id → 자기 자신을 **포함하지 않는** 조상 스택(문서 순서, 바깥→안쪽).
     ancestors: dict[str, tuple[str, ...]] = field(default_factory=dict)
     data_attributes: Counter[str] = field(default_factory=Counter)
+    #: `data-*` 를 든 요소의 (줄, id) — id 가 없는 것이 `dom_static` 232 **밖**이다.
+    data_attr_elements: list[tuple[int, str | None]] = field(default_factory=list)
     unbalanced: int = 0
 
 
@@ -264,6 +310,8 @@ class _IndexCollector(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         mapping = dict(attrs)
         element_id = mapping.get("id")
+        if any(name.startswith("data-") for name in mapping):
+            self.out.data_attr_elements.append((self.getpos()[0], element_id))
         if element_id:
             self.out.ids.append(element_id)
             self.out.id_lines[element_id] = self.getpos()[0]
@@ -349,6 +397,20 @@ def _html_data_attr_regex_delta(repo: Repo) -> list[str]:
     return sorted(naive - set(repo.html().data_attributes))
 
 
+def _html_data_attr_elements(repo: Repo) -> list[str]:
+    """`data-*` 를 든 **요소** 전수. `dom_data_attr.unit` 의 근거 문장을 데이터로 만든다."""
+    return [f"frontend/index.html:{line}" for line, _ in repo.html().data_attr_elements]
+
+
+def _html_data_attr_elements_without_id(repo: Repo) -> list[str]:
+    """그중 id 가 없어 `dom_static` 232 밖인 것 — 이름 축이 유일한 계약면인 요소들."""
+    return [
+        f"frontend/index.html:{line}"
+        for line, element_id in repo.html().data_attr_elements
+        if not element_id
+    ]
+
+
 def _js_template_ids(repo: Repo) -> list[str]:
     return list(repo.node_axes()["js_template_ids"])
 
@@ -363,16 +425,20 @@ def _js_nonexported_fn_state(repo: Repo) -> list[str]:
 
 #: `dom_js_site` 의 앵커 정규식이 못 보는 네 형태. 오늘 전부 0이지만 **오늘 0인 것과 앞으로도
 #: 0인 것은 다르다** — 그래서 프로브가 매번 그 0을 재확인한다.
+#: 알려진 일곱 형태. **전수라고 주장하지 않는다** — 그것을 확인하는 프로브가 없다.
+#:
+#: 다섯째 이후는 마크업 문자열이 아니라 **DOM API** 로 id 를 심는 길이다. 셋 다 반증 라운드가
+#: 찾아냈고, 특히 「줄바꿈된 `setAttribute("id", …)`」는 **선언한 형태를 프로브가 못 넘던**
+#: 자리였다(줄 단위로 돌면 `\s*` 가 개행을 못 넘는다). 그래서 이 프로브는 파일 전체에 돌고
+#: 좌표는 match 시작 줄로 낸다. 속성명은 HTML 에서 대소문자 무시라 `[iI][dD]` 로 문다.
 _ID_ATTR_GAP_PATTERNS = (
     ("other-attr-suffix", r'[-a-zA-Z]id="'),
     ("single-quoted", r"id='"),
     ("unquoted-interpolation", r"id=\$\{"),
     ("selector-literal", r"\[id="),
-    # 다섯째·여섯째 — 마크업 문자열이 아니라 **DOM API** 로 id 를 심는 길. 반증 라운드가
-    # 「네 형태가 전수」라는 선언을 깬 자리다: 전수를 주장하려면 그것을 확인하는 프로브가
-    # 있어야 하고, 그럴 수 없으면 「알려진 형태 N개」로 낮춘다.
-    ("set-attribute", r'setAttribute\(\s*["\']id["\']'),
+    ("set-attribute", r'setAttribute\(\s*["\'][iI][dD]["\']'),
     ("id-property-assignment", r"\.id\s*=(?!=)"),
+    ("computed-id-assignment", r"\[\s*[\"\']\s*[iI][dD]\s*[\"\']\s*\]\s*=(?!=)"),
 )
 
 
@@ -396,9 +462,11 @@ def _js_id_attr_anchor_gaps(repo: Repo) -> list[str]:
         if text is None:
             continue
         for name, pattern in _ID_ATTR_GAP_PATTERNS:
-            for line_no, line in enumerate(text.splitlines(), 1):
-                for _ in re.finditer(pattern, line):
-                    rows.append(f"{repo.relative(path)}:{line_no}:{name}")
+            # 줄 단위가 아니라 **파일 전체**에 돌린다 — prettier 가 만드는 줄바꿈이 방금 편입한
+            # 형태를 그대로 무력화하던 자리다.
+            for match in re.finditer(pattern, text):
+                line_no = text[: match.start()].count("\n") + 1
+                rows.append(f"{repo.relative(path)}:{line_no}:{name}")
     return sorted(rows)
 
 
@@ -592,6 +660,12 @@ EXTRACTORS: dict[str, Extractor] = {
     "html_data_attrs": Extractor("parser", ("frontend/index.html",), _html_data_attrs),
     "html_parse_anomalies": Extractor(
         "parser", ("frontend/index.html",), _html_parse_anomalies
+    ),
+    "html_data_attr_elements": Extractor(
+        "parser", ("frontend/index.html",), _html_data_attr_elements
+    ),
+    "html_data_attr_elements_without_id": Extractor(
+        "parser", ("frontend/index.html",), _html_data_attr_elements_without_id
     ),
     "html_data_attr_regex_delta": Extractor(
         "regex-convention", ("frontend/index.html",), _html_data_attr_regex_delta
@@ -1130,7 +1204,7 @@ def _check_coverage_claim(
             "predicate": claim["probe"],
             "scope": claim["scope"],
             "scope_excluded": claim.get("scope_excluded"),
-            "unit": claim.get("unit", "건"),
+            "unit": claim.get("unit"),
         },
         report,
     ):
@@ -1150,6 +1224,12 @@ def _check_coverage_claim(
         )
         return
     declared_members = claim.get("members")
+    if declared_members is None and found:
+        report.structural.append(
+            f"축 {axis_name}: `{field}.members` 가 없습니다 — 크기가 0이 아니면 **무엇이** 그 "
+            "안에 있는지를 들어야 다음 사람이 자란 것과 옮겨간 것을 가릅니다."
+        )
+        return
     if declared_members is not None and sorted(declared_members) != sorted(found):
         axis_report.blind_spot_delta.append(
             f"{label} 멤버가 어긋납니다({field}).\n"
@@ -1297,6 +1377,121 @@ def load_document(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
+def axis_measurement_digest(axis_decl: dict[str, Any]) -> str:
+    """축의 **측정 계약**만 정규화해 지문을 낸다.
+
+    값(`current`·`members`)과 산문(`unit`·`description`·`judgment`)은 뺀다 — 그것들은 매번
+    재실측되거나 사람이 읽는 것이고, 지문이 겨누는 것은 「무엇을 어떻게 재는가」다.
+    프로브를 통째로 지우는 것도 지문을 바꾸므로 `false_positive` 삭제가 여기서 붉는다.
+    """
+
+    def measurement(item: Any) -> Any:
+        if not isinstance(item, dict):
+            return None
+        return {
+            "probe": item.get("probe"),
+            "scope": list(item.get("scope") or []),
+            "scope_excluded": list(item.get("scope_excluded") or []),
+        }
+
+    payload = {
+        "predicate": axis_decl.get("predicate"),
+        "scope": list(axis_decl.get("scope") or []),
+        "scope_excluded": list(axis_decl.get("scope_excluded") or []),
+        "fold": axis_decl.get("fold"),
+        "blind_spot": measurement(axis_decl.get("blind_spot")),
+        "false_positive": measurement(axis_decl.get("false_positive")),
+    }
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+def _product_tree_coverage(
+    document: dict[str, Any], repo: Repo, report: Report
+) -> None:
+    """게이트가 **제품 트리를 스스로 열거**하고 전수 피복을 주장한다.
+
+    폐포 검사는 집합 기반이라 옳게 돌지만, 측정 집합 M 자체가 원장이 선언한 scope 에서 나온다.
+    scope 를 좁히면 M 도 함께 줄어 폐포는 계속 참이다 — 분모를 밖으로 뺐어도 **정의역**이 안에
+    있으면 같은 자리로 돌아온다. 그래서 여기서는 원장에 묻지 않고 트리를 직접 센다.
+    """
+    enumerated = {repo.relative(path) for path in repo.files(PRODUCT_TREE_GLOBS)}
+    covered: set[str] = set()
+    for decl in (document.get("axes") or {}).values():
+        if not isinstance(decl, dict) or not decl.get("scope"):
+            continue
+        covered.update(
+            repo.relative(path)
+            for path in repo.files(
+                tuple(decl["scope"]), tuple(decl.get("scope_excluded") or ())
+            )
+        )
+    for excluded in document.get("excluded_axes") or []:
+        for pattern in excluded.get("covers") or []:
+            covered.update(repo.relative(path) for path in repo.files((str(pattern),)))
+    uncovered = sorted(enumerated - covered)
+    if uncovered:
+        report.structural.append(
+            "제품 트리에 **어떤 축의 scope 에도 명시 제외에도 안 덮인 파일**이 있습니다 — "
+            "scope 를 좁히면 측정 집합이 함께 줄어 폐포가 조용해지므로, 전수 피복이 1차 방벽입니다.\n"
+            + "\n".join(f"  덮이지 않음: {rel}" for rel in uncovered)
+        )
+
+
+def _check_cross_axis_overlap(
+    document: dict[str, Any], axis_members: dict[str, list[str]], report: Report
+) -> None:
+    """축을 가로질러 같은 좌표를 세는 자리를 **실측에서 유도**해 선언과 대조한다.
+
+    선언만 있고 검사가 없으면 신설 필드가 「거짓을 적기 쉬운 자리」가 된다.
+    """
+    owners: dict[str, list[str]] = {}
+    for axis_name, members in axis_members.items():
+        for member in members:
+            owners.setdefault(member, []).append(axis_name)
+    measured = {
+        member: sorted(axes) for member, axes in owners.items() if len(axes) > 1
+    }
+    declared = {
+        str(row.get("member")): sorted(row.get("axes") or [])
+        for row in document.get("cross_axis_overlap") or []
+    }
+    if declared != measured:
+        report.structural.append(
+            "`cross_axis_overlap` 이 실측과 다릅니다 — 축을 가로지르는 겹침은 선언이 아니라 "
+            "측정에서 나와야 합니다.\n"
+            f"  선언에만: {sorted(set(declared) - set(measured))}\n"
+            f"  실측에만: {sorted(set(measured) - set(declared))}\n"
+            f"  축 쌍이 다름: "
+            f"{sorted(m for m in set(declared) & set(measured) if declared[m] != measured[m])}"
+        )
+    for row in document.get("cross_axis_overlap") or []:
+        if not row.get("reason"):
+            report.structural.append(
+                f"교차 겹침 {row.get('member')}: `reason` 이 없습니다 — 겹침은 사고일 수도 "
+                "설계일 수도 있고, 그것을 가르는 것이 이 필드입니다."
+            )
+
+
+def _check_unoccupied_classifications(
+    document: dict[str, Any], report: Report
+) -> None:
+    """「오늘 점유자가 없는 분류값」도 선언이 아니라 측정이어야 한다."""
+    used = {
+        str(node.get("classification"))
+        for node in document.get("node") or []
+        if node.get("classification")
+    }
+    measured = sorted(CLASSIFICATIONS - used)
+    declared = sorted(document.get("unoccupied_classifications") or [])
+    if declared != measured:
+        report.structural.append(
+            "`unoccupied_classifications` 가 실측과 다릅니다 — 부재를 데이터로 적는 습관은 "
+            "그 부재를 세야 성립합니다.\n"
+            f"  선언: {declared}\n  실측: {measured}"
+        )
+
+
 def _referenced_extractors(document: dict[str, Any]) -> set[str]:
     """원장이 실제로 쓰는 추출기 이름 전수 — 축·사각·오검·제외 크기·계측·alias 를 다 훑는다."""
     names: set[str] = set()
@@ -1339,10 +1534,11 @@ def check(
         if not document.get(field_name):
             report.structural.append(f"머리말 `{field_name}` 이(가) 없습니다.")
     baseline = str(document.get("baseline_sha") or "")
-    if baseline and not re.fullmatch(r"[0-9a-f]{40}", baseline):
+    if baseline and baseline != EXPECTED_BASELINE_SHA:
         report.structural.append(
-            f"`baseline_sha` 가 40자리 커밋 해시가 아닙니다 — {baseline!r}. "
-            "재고정이 계약인 원장에서 이 필드가 산문이면 안 됩니다."
+            f"`baseline_sha` 가 게이트가 든 기준선과 다릅니다 — 원장 {baseline!r} vs "
+            f"게이트 {EXPECTED_BASELINE_SHA!r}. 재고정은 값 하나를 고치는 일이 아니라 중앙 "
+            "판정이 붙는 사건입니다."
         )
     if document.get("repo_wide_metrics") is None:
         report.structural.append(
@@ -1371,6 +1567,27 @@ def check(
         )
 
     declared_axes = dict(document.get("axes") or {})
+
+    # ── 1차 방벽: 제품 트리 전수 피복 ────────────────────────────────────
+    if axes is None:
+        _product_tree_coverage(document, repo, report)
+        _check_unoccupied_classifications(document, report)
+
+    # ── 측정 계약 지문 — 원장은 값을, 게이트는 술어를 든다 ────────────────
+    for axis_name in sorted(set(declared_axes) & set(AXIS_DIGESTS)):
+        actual = axis_measurement_digest(declared_axes[axis_name])
+        if actual != AXIS_DIGESTS[axis_name]:
+            report.structural.append(
+                f"축 {axis_name}: 측정 계약이 게이트가 든 지문과 다릅니다 — "
+                f"기록 {AXIS_DIGESTS[axis_name]} vs 실제 {actual}. 술어·scope·scope_excluded·"
+                "사각/오검 프로브를 바꾸려면 게이트와 테스트를 함께 고쳐야 합니다."
+            )
+    missing_digests = sorted(set(declared_axes) - set(AXIS_DIGESTS))
+    if missing_digests:
+        report.structural.append(
+            f"측정 계약 지문이 없는 축이 있습니다: {missing_digests}. 지문 없는 축은 술어를 "
+            "혼자 바꿀 수 있습니다."
+        )
 
     # ── 분모 방어 ────────────────────────────────────────────────────────
     # 원장은 자기 주장의 크기를 스스로 줄일 수 없다. 축 이름 집합·계측 목록·판정 요구 목록·
@@ -1408,8 +1625,8 @@ def check(
         report.structural.append(
             "명시 제외 축 목록이 게이트의 EXPECTED_EXCLUDED_AXES 와 다릅니다 — 제외를 지우는 것은 "
             "「소리 나는 제외」를 조용한 유예로 되돌리는 것입니다.\n"
-            f"  원장에만: {sorted(declared_excluded - EXPECTED_EXCLUDED_AXES)}\n"
-            f"  게이트에만: {sorted(EXPECTED_EXCLUDED_AXES - declared_excluded)}"
+            f"  원장에만: {sorted(declared_excluded - set(EXPECTED_EXCLUDED_AXES))}\n"
+            f"  게이트에만: {sorted(set(EXPECTED_EXCLUDED_AXES) - declared_excluded)}"
         )
     for excluded in excluded_axes:
         axis_name = str(excluded.get("axis", "<이름 없음>"))
@@ -1421,8 +1638,18 @@ def check(
                 )
         # 제외 축이 **크기를 잴 수 있는 것**이면 그 크기를 든다. 「안 센다」와 「얼마나 안 세는지
         # 모른다」는 다르다 — 후자는 조용한 유예로 되돌아가는 길이다.
+        if excluded.get("covers") is None:
+            report.structural.append(
+                f"제외 축 {axis_name}: `covers` 가 없습니다 — 제외가 제품 트리의 **어느 파일**을 "
+                "설명하는지 적지 않으면 전수 피복이 성립하지 않습니다."
+            )
         size = excluded.get("size")
         if size is None:
+            if EXPECTED_EXCLUDED_AXES.get(axis_name):
+                report.structural.append(
+                    f"제외 축 {axis_name}: 게이트가 크기 프로브를 요구하는 제외인데 `size` 가 "
+                    "없습니다 — 블록을 지우면 조용한 유예로 되돌아갑니다."
+                )
             continue
         if not isinstance(size, dict) or size.get("current") is None:
             report.structural.append(f"제외 축 {axis_name}: `size` 는 `current` 를 든 표여야 합니다.")
@@ -1504,6 +1731,7 @@ def check(
 
     if axes is None:
         _check_review_items(document, repo, report)
+        _check_cross_axis_overlap(document, axis_members, report)
 
     declared_metrics = list(document.get("metric") or [])
     for metric in declared_metrics:
@@ -1547,6 +1775,8 @@ def main(argv: list[str] | None = None) -> int:
     # 음성 대조를 손으로 재현할 수 없다. 부분 실행은 전체 실행의 부분집합이 아니라
     # **다른 계약**이므로 두 선택자를 대칭으로 둔다.
     parser.add_argument("--metric", action="append", dest="metrics")
+    # 지문은 손으로 못 쓴다 — 계약을 바꾼 사람이 이것을 돌려 게이트 상수를 갱신한다.
+    parser.add_argument("--print-pins", action="store_true")
     args = parser.parse_args(argv)
 
     # 진단이 한국어라 콘솔 기본 코드페이지(cp949)에서는 실패 메시지 자체가 죽는다 —
@@ -1557,6 +1787,16 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         document = load_document(args.document)
+    except InventoryGateError as exc:
+        print(f"게이트 전제가 깨졌습니다: {exc}", file=sys.stderr)
+        return 2
+
+    if args.print_pins:
+        for name, decl in sorted((document.get("axes") or {}).items()):
+            print(f'    "{name}": "{axis_measurement_digest(decl)}",')
+        return 0
+
+    try:
         report = check(
             document, args.repo_root.resolve(), axes=args.axes, metrics=args.metrics
         )
