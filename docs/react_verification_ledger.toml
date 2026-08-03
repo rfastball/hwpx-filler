@@ -8,41 +8,48 @@
 # 않는다** — 축마다 술어를 저장소에 다시 돌리고, 원장이 안 든 파일이 있으면 거절한다.
 #
 # 손으로 고칠 때의 규칙 넷:
-#   1. 파일 참조는 `path` · `path::test_함수명` · `path#부분문자열` 셋 중 하나다.
+#   1. 파일 참조는 `path` · `path::test_함수명` · `path#부분문자열[@N]` 셋 중 하나다.
 #      **생 `file:line` 은 원장 값으로 금지**한다 — 앞줄이 하나 늘면 그날로 거짓이 된다.
+#      `#` 앵커는 그 파일에서 **유일**해야 하고, 유일하지 않으면 `@N` 으로 수를 적는다.
 #   2. 값을 든 항목은 `predicate`·`scope`·`unit` 을 예외 없이 든다. 값만 있는 항목은
 #      원장 항목으로 성립하지 않는다.
 #   3. 셀 수 있는 사실은 **필드**다(L17). 산문 필드는 「왜 이렇게 세는가」만 진다 —
 #      개수·집합·범위를 산문에 적으면 술어를 고칠 때마다 그 문장이 새 결함이 된다.
+#      이 파일의 주석에도 수를 적지 않는다. 게이트가 매번 세어 보고한다.
 #   4. 자산이 하나 늘면 행도 하나 는다. `r_scope = false` 여도 행은 있어야 하고 `reason`
 #      이 필요하다. 「안 센 것」은 침묵이 아니라 데이터다.
 #
 # **분모는 이 파일이 아니라 게이트가 든다.** 축 이름 집합 · 자산 하한 · 계측 목록 ·
-# `r_scope = true` 하한과 판정 목록 · 제외 축 목록은 `tests/test_react_verification_ledger.py`
-# 의 리터럴로 산다. 원장에서 유도하면 축을 지우고 그만큼 행을 정리하는 것으로 초록이 되고,
-# 극단에는 **빈 원장이 통과**한다.
+# `r_scope` 하한과 판정 목록 · 등급 필수 행 · 결손 필수 행 · 제외 축 목록은
+# `tests/test_react_verification_ledger.py` 의 리터럴로 산다. 원장에서 유도하면 축을 지우고
+# 그만큼 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다.
 #
-# **`r_scope` 도 원장의 자유 변수가 아니다.** 게이트가 하한 술어를 저장소에 돌려
-# 「프런트 트리·웹 표면을 이름으로 부르는 자산」을 세고, 그 집합은 전부 `r_scope = true`
-# 여야 한다. 술어가 못 보는데 사람이 R 책임으로 판정한 자산만 게이트의 명시 목록으로
-# 들어온다 — 판정은 넓히는 방향으로만 자유롭다.
+# **제외도 자유 변수가 아니다.** 제외 글롭은 러너 글롭이 잡는 파일을 하나도 건드리지
+# 못한다 — 그것이 없으면 제외를 넓히고 크기를 맞추고 삼킨 행을 지우는 것으로 원장이 자기
+# 분모를 줄일 수 있다.
+#
+# **`r_scope` 도 마찬가지다.** 게이트가 하한 술어를 저장소에 돌려 「프런트 트리·웹 표면을
+# 이름으로 부르는 자산」을 세고, 그 집합은 전부 `r_scope = true` 여야 한다. 술어가 못 보는데
+# 사람이 R 책임으로 판정한 자산만 게이트의 명시 목록으로 들어온다 — 판정은 **넓히는
+# 방향으로만** 자유롭다.
 
 schema      = "react_verification_ledger/v1"
-base_sha    = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+base_sha    = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 owner_issue = 403
 gate        = "tests/test_react_verification_ledger.py"
 
 # 이 원장이 「검증 책임 공백 0」이라 말할 때의 정확한 범위. 산문이 아니라 머리말 데이터다.
 scope_statement = """
-공백 0 은 아래 네 러너 축의 전수에 대해 0 이다: tests/test_*.py · tests/*_test.py ·
-tests/js/*.test.js · scripts/**/*.py. 저장소 전체에 대해 0 이 아니다.
-축 밖인 것은 excluded_axis 가 크기와 함께 든다.
+공백 0 은 게이트가 든 검증 트리 전수에 대해 0 이다. 저장소 전체에 대해 0 이 아니다.
+그 트리 안의 파일은 자산 행이거나 excluded_axis 가 크기와 함께 드는 명시 제외이고,
+트리 밖은 이 원장이 주장하지 않는다.
 """
 
 # 이 원장이 **기계로 재지 않는다고 선언하는 것**. 선언하지 않으면 다음 사람이 잰 줄 안다.
 not_asserted = """
 assertion 의 강약. react_equivalent 행의 후계가 원본보다 약한지는 기계가 못 잰다 —
 사람 판정(R2~R5 감사) 소관이다. 술어 4는 후계 지목의 **존재**만 강제한다.
+센서스의 총계도 재지 않는다(재귀). 재는 것은 구조와 미착지 델타뿐이다.
 """
 
 # 세 목록은 전단사가 아니다. 술어 3 전수 ⊋ r_scope=true 자산군 ⊋ 판별력 등급 확정분.
@@ -60,10 +67,11 @@ reason = "센서스 CI 스텝 게이트. U4 가 R1 밖으로 유예했고 V4 가
 origin = "U4 / V4"
 
 # ── 센서스 ────────────────────────────────────────────────────────────────
-# 값을 든 축이다. 게이트는 이 값을 **재측정하지 않는다** — pytest 안에서 pytest 를 다시
-# 수집하면 autouse 홈 격리·coverage·--strict-markers 가 겹쳐 재귀가 된다(R3c). 게이트가
-# 지키는 것은 구조다: 술어 3종 + blind_spot 의 존재, landed 사슬이 base_sha 에서 닫히는가,
-# expected_landing 이 to_sha 대신 owner_pr 을 드는가. 실측 대조는 #455(CI 스텝)와 R1-99.
+# 값을 든 축이다. 게이트는 이 **총계**를 재측정하지 않는다 — pytest 안에서 pytest 를 다시
+# 수집하면 autouse 홈 격리·coverage·--strict-markers 가 겹쳐 재귀가 된다. 게이트가 지키는
+# 것은 ①술어 3종 + blind_spot 의 존재 ②landed 사슬이 base_sha 에서 닫히고 그 SHA 들이 실제
+# 커밋인가 ③미착지 델타가 to_sha 대신 owner_pr 과 file 을 들고, 그 파일의 사례 수와 맞는가.
+# 총계의 실측 대조는 #455(CI 스텝)와 R1-99 가 진다.
 
 [census.pytest_collected]
 predicate  = "uv run pytest --collect-only -q -p no:cacheprovider"
@@ -75,15 +83,16 @@ blind_spot = "수집 ≠ 실행. 옵트아웃(HWPX_SKIP_GUI_TESTS·_MOTION_·_NA
 [[census.pytest_collected.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 70
 reason   = "PR #467(R1-02 · PR-A) — tests/test_react_ownership_inventory.py 신설. 그 파일 하나가 델타 전량이라 잔차가 없다."
 
 [[census.pytest_collected.adjustment]]
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
-delta    = 30
-reason   = "자기 게이트 파일 tests/test_react_verification_ledger.py 의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다."
+file     = "tests/test_react_verification_ledger.py"
+delta    = 45
+reason   = "자기 게이트 파일의 수집분. 병합 전에는 master 값이 아니므로 landed 로 세지 않는다. 게이트가 그 파일의 test 함수를 AST 로 세어 이 값을 재확인한다."
 
 [census.pytest_unmarked]
 predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m \"not live and not native and not browser\""
@@ -95,14 +104,15 @@ blind_spot = "무표라는 것은 자원을 안 켠다는 뜻이지 실행된다
 [[census.pytest_unmarked.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 70
 reason   = "PR #467 신설분이 전부 무표라 무표 축의 델타가 전체 델타와 같다."
 
 [[census.pytest_unmarked.adjustment]]
 kind     = "expected_landing"
 owner_pr = "PR-B (#403)"
-delta    = 30
+file     = "tests/test_react_verification_ledger.py"
+delta    = 45
 reason   = "자기 게이트 파일도 축 marker 를 쓰지 않는다."
 
 [census.pytest_live]
@@ -115,7 +125,7 @@ blind_spot = "HWPX_SKIP_GUI_TESTS=1 아래서도 수집은 그대로다. 도달�
 [[census.pytest_live.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 0
 reason   = "PR #467 은 축 marker 를 쓰지 않는다."
 
@@ -124,12 +134,12 @@ predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m browser"
 scope      = "위와 같은 testpaths, @pytest.mark.browser 사례만"
 unit       = "설치 Chrome + Playwright 로 실렌더 기하를 재는 사례"
 value      = 4
-blind_spot = "HWPX_SKIP_MOTION_TESTS=1 아래서도 수집은 4 다."
+blind_spot = "HWPX_SKIP_MOTION_TESTS=1 아래서도 수집은 그대로다."
 
 [[census.pytest_browser.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 0
 reason   = "PR #467 은 축 marker 를 쓰지 않는다."
 
@@ -138,17 +148,17 @@ predicate  = "uv run pytest --collect-only -q -p no:cacheprovider -m native"
 scope      = "위와 같은 testpaths, @pytest.mark.native 사례만"
 unit       = "실 Win32 자원을 잡는 사례"
 value      = 6
-blind_spot = "HWPX_SKIP_NATIVE_TESTS=1 아래서도 수집은 6 이다."
+blind_spot = "HWPX_SKIP_NATIVE_TESTS=1 아래서도 수집은 그대로다. 축 marker 는 클래스에도 붙을 수 있어 함수 데코레이터만 세면 이 축의 분포를 잘못 읽는다."
 
 [[census.pytest_native.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 0
 reason   = "PR #467 은 축 marker 를 쓰지 않는다."
 
 [census.node_pass]
-predicate  = "node --test \"tests/js/*.test.js\" 의 TAP 요약 중 `# pass`"
+predicate  = "node --test --test-reporter=tap \"tests/js/*.test.js\" 의 TAP 요약 중 `# pass`"
 scope      = "tests/js/*.test.js"
 unit       = "통과한 node:test 사례"
 value      = 596
@@ -161,25 +171,27 @@ blind_spot = "value 와 runner_floor 의 차만큼은 이 축이 무너져도 py
 [[census.node_pass.adjustment]]
 kind     = "landed"
 from_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
-to_sha   = "8a69bc48b96a3f3a2fbbba7dcd2b0e93ba18e1c9"
+to_sha   = "8a69bc4c858eaf918e01089c0eec5d4dd127b4b8"
 delta    = 0
 reason   = "PR #467 은 tests/js/ 를 건드리지 않는다."
 
 # ── 직접 브리지 집합 ───────────────────────────────────────────────────────
-# `R1-ARTIFACT-LAYOUT:v2` §5 흡수처 표가 이 원장에 배정한 값이다. #402 는 이 값을 들지
-# 않는다(그쪽은 close_guard_state 를 review_item 으로만 든다) — 한 사실이 두 원장에 살지
-# 않는다.
+# `R1-ARTIFACT-LAYOUT:v2` §5 흡수처 표가 이 원장에 배정한 값이다.
+#
+# #402 는 같은 수를 자기 review_item 의 **산문 서술** 안에 들지만, 그쪽에는 그 수를 재는
+# 게이트가 없다(그 원장의 술어 계약은 자기 축에만 걸린다). 값의 소유와 그 값을 지키는 기계는
+# 이쪽이고, 브리지가 바뀌면 이 항목이 붉어 저쪽 산문의 낡음을 알린다.
 #
 # 이 네 집합이 여기 있는 이유는 §8.1 의 test_architecture.py 행이 「주장」과 「실제 술어」를
 # 다른 칸에 적기 때문이다. 그 차이를 산문으로 적으면 다음 드리프트를 못 막는다.
 
 [bridge_set.documented]
-predicate  = "UI_CONTRACT.md 의 「직접 브리지 경로」 불릿 블록 안 백틱 식별자 `[a-z_][a-z0-9_]*`"
-scope      = "docs/UI_CONTRACT.md"
+predicate    = "UI_CONTRACT.md 의 「직접 브리지 경로」 불릿 블록 안 백틱 식별자 `[a-z_][a-z0-9_]*`"
+scope        = "docs/UI_CONTRACT.md"
 scope_anchor = "docs/UI_CONTRACT.md#직접 브리지 경로"
-unit       = "고유 이름"
-value      = 21
-blind_spot = "블록 경계를 「그 불릿 줄부터 첫 빈 줄까지」로 잡는다 — 절이 재구성되면 경계가 달라지고 값이 달라진다. 그때 붉는 것이 이 항목의 목적이다."
+unit         = "고유 이름"
+value        = 21
+blind_spot   = "블록 경계를 「그 불릿 줄부터 첫 빈 줄까지」로 잡는다 — 목록 전체를 경계로 잡으면 다른 값이 나오고, 절이 재구성되면 경계 자체가 달라진다. 그때 붉는 것이 이 항목의 목적이다."
 
 [bridge_set.bridge_js]
 predicate  = "frontend/js/bridge.js 전문의 고유 `api.(\\w+)` 에서 initial·dispatch 제외"
@@ -204,72 +216,87 @@ blind_spot = "위와 같다."
 
 # 세 집합이 만드는 오늘의 차. 게이트가 집합 대수로 재유도해 대조한다.
 [bridge_set.derived]
-js_only            = 2   # bridge_js − python_public_non_dispatch = {selftest_claim, selftest_host_op}
-python_only        = 1   # python_public_non_dispatch − bridge_js = {close_guard_state}
+js_only                        = 2
+python_only                    = 1
 documented_equals_intersection = true
 
 # `tests/test_architecture.py` 의 직접 브리지 대조가 오늘 무엇을 통과시키는가.
-# 이 세 수가 그 게이트의 술어와 그 이름·docstring 의 주장 사이의 거리다.
+# 이 네 수가 그 게이트의 술어와 그 이름·docstring 의 주장 사이의 거리다.
 [bridge_set.contract_gate_slack]
-predicate  = "bridge_js 의 각 이름이 UI_CONTRACT.md 전문에서 백틱으로 등장하는 줄 수와, 그중 직접 브리지 절 안의 등장 수를 함께 센다"
-scope      = "frontend/js/bridge.js + docs/UI_CONTRACT.md"
-unit       = "이름"
-satisfied_only_outside_section = 2   # 절 안 등장 0 인데 전문 등장이 있어 오늘 이미 초록
-has_copy_outside_section       = 5   # 절 안에도 있고 절 밖에도 사본이 있다
-green_after_single_deletion    = 3   # 그중 절 안 등장이 1회뿐이라 한 번 지우면 조용히 초록
-invisible_to_the_gate          = 1   # python_only — 추출 소스가 bridge.js 뿐이라 영영 시야 밖
+predicate = "bridge_js 의 각 이름이 UI_CONTRACT.md 전문에서 백틱으로 등장하는 줄과, 그중 직접 브리지 절 안의 등장을 함께 센다"
+scope     = "frontend/js/bridge.js + docs/UI_CONTRACT.md"
+unit      = "이름"
+satisfied_only_outside_section = 2
+has_copy_outside_section       = 5
+green_after_single_deletion    = 3
+invisible_to_the_gate          = 1
 blind_spot = "백틱 등장만 센다. 백틱 없이 쓰인 이름은 양쪽 모두에서 안 보인다."
 
 # ── 문서 낡음 ─────────────────────────────────────────────────────────────
 # `R-VERIFY-ROUND:v1-CLOSE` V6 이 승인한 4분할 중 「저장소 사실 조각」을 받는 자리다.
 # 앵커가 그 파일에서 사라지면 게이트가 붉고 **행을 은퇴시켜야 한다** — 낡음 기록이
 # 스스로 낡지 않는다. 은퇴는 그 텍스트를 고친 PR 의 몫이다.
+#
+# `probe` 는 **열거값**이다. 게이트가 이 값으로 분기하고 필수 프로브가 다 있는지 센다 —
+# 서술 문자열로 분기하면 문장을 다듬는 것만으로 기계 검사가 조용히 꺼진다.
+# `today_measured` 는 **정확 일치**로 대조한다. 초집합 검사였다면 줄어드는 방향이 조용하다.
 
 [[doc_staleness]]
-file          = "docs/WEB_RENDER_PRESERVATION.md"
-anchor        = "3개 화면(`txt`·`editor`·`run`)"
-stale_claim   = "정적 게이트가 txt·editor·run 세 화면의 Preserve.around 래핑을 지킨다"
-predicate     = "tests/test_web_dom_contract.py 의 PRESERVE_WRAPPED_FILES 튜플 원소"
-scope         = "tests/test_web_dom_contract.py"
-unit          = "래핑이 게이트로 보장되는 화면 파일"
-today_value   = "screens/editor.js · screens/job.js · screens/workbench.js — 셋이고 이름이 전부 다르다"
-successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+file           = "docs/WEB_RENDER_PRESERVATION.md"
+anchor         = "3개 화면(`txt`·`editor`·`run`)"
+stale_claim    = "정적 게이트가 txt·editor·run 세 화면의 Preserve.around 래핑을 지킨다"
+probe          = "preserve_wrapped_files"
+predicate      = "tests/test_web_dom_contract.py 의 PRESERVE_WRAPPED_FILES 튜플 원소"
+scope          = "tests/test_web_dom_contract.py"
+unit           = "래핑이 게이트로 보장되는 화면 파일"
+today_measured = ["screens/editor.js", "screens/job.js", "screens/workbench.js"]
+today_value    = "문서가 든 세 이름 중 오늘의 상수와 겹치는 것은 editor 하나이고, 나머지 둘은 사망한 화면이다"
+successor_doc  = "docs/REACT_MIGRATION_DECISIONS.md"
 
 [[doc_staleness]]
-file          = "docs/WEB_RENDER_PRESERVATION.md"
-anchor        = "shipped `window.__push` 경로로"
-stale_claim   = "실화면 회귀가 shipped window.__push 경로로 세 화면의 실 render() 를 구동한다"
-predicate     = "frontend/ 와 src/ 에서 제품 전역 window.__push 의 생산자 수"
-scope         = "frontend/ · src/hwpxfiller/"
-unit          = "제품 전역 생산 지점"
-today_value   = "0 — N-10 에서 은퇴했다. 남은 참조는 은퇴를 지키는 쪽이다(app.py 의 _GLOBAL_DELTA_FN 안 RETIRED 배열은 주석이 아니라 실행되는 JS 리터럴이다)"
-successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+file           = "docs/WEB_RENDER_PRESERVATION.md"
+anchor         = "shipped `window.__push` 경로로"
+stale_claim    = "실화면 회귀가 shipped window.__push 경로로 세 화면의 실 render() 를 구동한다"
+probe          = "product_push_producers"
+predicate      = "frontend/ 와 src/hwpxfiller/ 에서 `window.__push =` 의 출현 수"
+scope          = "frontend/ · src/hwpxfiller/"
+unit           = "제품 전역 생산 지점"
+today_measured = 0
+today_value    = "N-10 에서 은퇴했다. 남은 참조는 은퇴를 지키는 쪽이다 — app.py 의 _GLOBAL_DELTA_FN 안 RETIRED 배열은 주석이 아니라 실행되는 JS 리터럴이다"
+successor_doc  = "docs/REACT_MIGRATION_DECISIONS.md"
 
 [[doc_staleness]]
-file          = "docs/WEB_RENDER_PRESERVATION.md"
-anchor        = "`renderView`·`tokPanel`·`editor-body`·`recList`·"
-stale_claim   = "옵트인 스크롤 컨테이너 여섯이 index.html 의 정적 요소라 안정 id 를 갖는다"
-predicate     = "frontend/index.html 에서 data-preserve-scroll 속성을 든 요소의 id"
-scope         = "frontend/index.html"
-unit          = "옵트인 스크롤 컨테이너"
-today_value   = "libraryList · jobTableWrap · editor-body · wbMapPanel · wbCard · jobBrowseRows — 여섯 중 문서가 든 이름과 겹치는 것은 editor-body 하나다"
-successor_doc = "docs/REACT_MIGRATION_DECISIONS.md"
+file           = "docs/WEB_RENDER_PRESERVATION.md"
+anchor         = "`renderView`·`tokPanel`·`editor-body`·`recList`·"
+stale_claim    = "옵트인 스크롤 컨테이너 여섯이 index.html 의 정적 요소라 안정 id 를 갖는다"
+probe          = "preserve_scroll_ids"
+predicate      = "frontend/index.html 에서 data-preserve-scroll 속성을 든 요소의 id"
+scope          = "frontend/index.html"
+unit           = "옵트인 스크롤 컨테이너"
+today_measured = ["editor-body", "jobBrowseRows", "jobTableWrap", "libraryList", "wbCard", "wbMapPanel"]
+today_value    = "수는 그대로인데 이름이 거의 다 갈렸다 — 문서가 든 여섯 중 오늘도 실재하는 것은 editor-body 하나다"
+successor_doc  = "docs/REACT_MIGRATION_DECISIONS.md"
 
 [[doc_staleness]]
 file             = "docs/WEB_RENDER_PRESERVATION.md"
 anchor           = "재렌더되는 자유 입력 텍스트 필드가 **현재는 없어서**"
 stale_claim      = "포커스·캐럿 보존이 실효를 낼 대상이 오늘 없다"
+probe            = "none"
 predicate        = "render() 가 재구성하는 서브트리 안의 안정 id 자유 입력 필드 수"
 scope            = "frontend/js/screens/"
 unit             = "노드"
-today_value      = ""
 assessment_owner = "R3-99 #409"
+today_value      = ""
 successor_doc    = "docs/REACT_MIGRATION_DECISIONS.md"
 
 # ── 고아 스크립트 ─────────────────────────────────────────────────────────
 # 명시 허용 목록이다. 선례는 docs/package_coverage_floors.toml 의 unmatched_allow —
 # 게이트는 목록에 없는 것을 거절하고, 면제는 커밋된 값 + 사유로만 산다.
 # 게이트가 이 목록의 **크기와 내용을 출력**한다. 조용한 스킵이 아니라 시끄러운 예외다.
+#
+# 「고아」의 술어는 **실행되는 파일의 실행되는 줄에서 불리는가**다. 산문·주석의 언급을
+# 호출로 세면 「테스트에 이름이 적힌 모든 스크립트」가 도달 가능이 되고, 그것이 이 저장소가
+# 이름 붙인 결함류다.
 
 [[orphan_script]]
 path              = "scripts/build_nara_testset.py"
@@ -285,34 +312,75 @@ evidence          = "tests/corpus/scenario/README.md#gen_scenario_fixtures"
 reason            = "결정적 fixture 생성기 — 산출물이 커밋돼 있어 재실행이 상시 필요하지 않다."
 disposition_owner = "unknown"
 
+[[orphan_script]]
+path              = "scripts/render_document_narmi_branding.py"
+invoked_by        = []
+evidence          = "tests/test_branding.py#render_document_narmi_branding.py@3"
+reason            = "심벌 래스터·매니페스트 생성기 — 산출물이 커밋돼 있다. 참조는 전부 주석·런북·소스 텍스트 읽기이고 그 어느 것도 이것을 실행하지 않는다. test_branding.py 는 이 파일을 **텍스트로 읽어** 대조할 뿐이다."
+disposition_owner = "unknown"
+
 # ── 제외 축 ───────────────────────────────────────────────────────────────
-# 술어 3 의 네 러너 글롭 밖인데 검증 성질을 지는 파일들. 「안 센 것」을 크기와 함께 든다.
+# 검증 트리 안인데 러너 글롭 밖인 파일들. 「안 센 것」을 크기와 함께 든다.
 # 크기가 자라면 게이트가 붉는다 — 제외는 자라도 되지만 조용히 자라면 안 된다.
+# 글롭은 **재귀**로 적는다. 비재귀로 적으면 하위 디렉터리 신설이 조용히 새 나간다.
 
 [[excluded_axis]]
-axis    = "node_extractor_scripts"
-reason  = "scripts/ 아래 .mjs 추출기. Python 러너도 node --test 러너도 이것을 사례로 세지 않고, 도달성은 그것을 부르는 .py 자산 행이 이미 든다."
-owner   = "R1-02 #402"
-globs   = ["scripts/**/*.mjs"]
-size    = 1
+axis   = "node_build_and_extractor_modules"
+reason = "Node 가 도는 .mjs — 추출기와 번들 설정. Python 러너도 node --test 러너도 이것을 사례로 세지 않고, 도달성은 그것을 부르는 .py 자산 행과 package.json 이 이미 든다."
+owner  = "R1-02 #402"
+globs  = ["scripts/**/*.mjs", "*.mjs"]
+size   = 2
 
 [[excluded_axis]]
-axis    = "pytest_support_modules"
-reason  = "test_*.py 가 아니라 수집되지 않는 지원 모듈(프로브·소스 접근자·홈 격리 conftest). 독립 검증 책임을 지지 않고 그것을 부르는 자산 행 위에 얹힌다."
-owner   = "R1-99 #400"
-globs   = ["tests/_*.py", "tests/conftest.py", "conftest.py"]
-size    = 6
+axis   = "pytest_support_modules"
+reason = "test_*.py 가 아니라 수집되지 않는 지원 모듈(프로브·소스 접근자·홈 격리 conftest). 독립 검증 책임을 지지 않고 그것을 부르는 자산 행 위에 얹힌다."
+owner  = "R1-99 #400"
+globs  = ["tests/_*.py", "tests/conftest.py", "conftest.py"]
+size   = 6
 
 [[excluded_axis]]
-axis    = "powershell_runners"
-reason  = "게이트를 **부르는** 셸 러너이지 검증 자산이 아니다. 그 형상 계약은 tests/test_powershell_encoding.py 와 tests/test_quality_workflow.py 가 자산으로 든다."
-owner   = "R1-99 #400"
-globs   = ["*.ps1", "packaging/*.ps1"]
-size    = 6
+axis   = "powershell_runners"
+reason = "게이트를 **부르는** 셸 러너이지 검증 자산이 아니다. 그 형상 계약은 tests/test_powershell_encoding.py 와 tests/test_quality_workflow.py 가 자산으로 든다."
+owner  = "R1-99 #400"
+globs  = ["**/*.ps1"]
+size   = 6
+
+[[excluded_axis]]
+axis   = "node_hygiene_fixtures"
+reason = "n10 전역 위생 게이트의 양성·음성 fixture. 그 자체가 검증 자산이 아니라 한 자산의 **판별력 재료**이고, 수가 바뀌면 그 자산 행의 nc_evidence 가 먼저 말한다. pytest_support_modules 와 같은 사유의 node 쪽 짝이다."
+owner  = "R2-04 #408"
+globs  = ["tests/js/fixtures/**/*.js"]
+size   = 27
+
+[[excluded_axis]]
+axis   = "example_fixture_generators"
+reason = "101 예제의 동봉 템플릿 생성기. 제품도 게이트도 부르지 않고 예제 자산의 재현 수단으로만 산다 — 그 예제의 실재는 tests/test_quickstart_101_assets.py 가 자산으로 든다."
+owner  = "R5-03 #421"
+globs  = ["examples/**/*.py"]
+size   = 1
+
+# ── 자산 없는 차단 잡 ─────────────────────────────────────────────────────
+# quality-gate 가 요구하는 잡 중 어느 자산 행도 지지 않는 것. 선언→실재 한 방향만 보면
+# 차단 잡이 원장 밖으로 조용히 샌다. 비어 있음을 **명시**해야 다음 사람이 안다.
+
+[[uncovered_ci_job]]
+job    = "sealed-web"
+reason = "프런트를 만들어 봉인·업로드하는 생산자 잡. 테스트를 돌리지 않으므로 검증 자산이 아니고, 그 산출물의 identity 는 소비자 잡에서 자산이 대조한다."
+owner  = "R2-04 #408"
+
+[[uncovered_ci_job]]
+job    = "static"
+reason = "Ruff·Pyright. 정적 검사기는 테스트 자산이 아니라 도구이고, 그 실행 형상은 tests/test_quality_workflow.py 가 자산으로 든다."
+owner  = "R1-99 #400"
+
+[[uncovered_ci_job]]
+job    = "distribution-webview2"
+reason = "frozen exe 의 포장·selfcheck. pytest 사례가 아니라 packaging/build.ps1 절차이고, 그 절차가 부르는 검증 스크립트는 자산 행으로 들어 있다."
+owner  = "R5-03 #421"
 
 # ── 검증 자산 ─────────────────────────────────────────────────────────────
-# 술어 3 전수. 행이 없는 파일은 구조 오류이고, r_scope=false 도 reason 을 든다.
-# ── pytest 자산 128 ──────────────────────────────────────────────────────
+# 러너 글롭 전수. 행이 없는 파일은 구조 오류이고, r_scope=false 도 reason 을 든다.
+# ── pytest 자산 ──────────────────────────────────────────────────────────
 
 [asset."tests/test_architecture.py"]
 runner           = "pytest"
@@ -331,7 +399,7 @@ nc_evidence      = [
 ]
 blind_spot       = "직접 브리지 대조가 bridge.js → 문서 단방향이라 JS 가 안 부르는 Python 공개 메서드는 영영 시야 밖이다(close_guard_state 가 실물)."
 defect           = [
-  "판정문이 UI_CONTRACT.md 전문을 보므로 실제 술어는 「이름이 문서 어딘가에 백틱으로 있다」이지 테스트 이름·docstring 이 주장하는 「정본 절이 열거한다」가 아니다 — bridge_set.* 계측 항목이 그 차이를 수로 든다",
+  { claim = "판정문이 UI_CONTRACT.md 전문을 보므로 실제 술어는 「이름이 문서 어딘가에 백틱으로 있다」이지 테스트 이름·docstring 이 주장하는 「정본 절이 열거한다」가 아니다 — 그 차이는 bridge_set.contract_gate_slack 이 수로 든다", evidence = ["tests/test_architecture.py#not in contract"] },
 ]
 reinforcement    = 406
 
@@ -706,11 +774,11 @@ successor_asset  = ""
 stage            = "R2 러너 확정 시 재판정"
 negative_control = "partial"
 nc_evidence      = [
-  "tests/test_frontend_module_units.py#EXPECTED_TEST_FILES",
+  "tests/test_frontend_module_units.py#EXPECTED_TEST_FILES@3",
 ]
 blind_spot       = "러너가 죽어도 파일 전수만 맞으면 하한까지는 초록이다."
 defect           = [
-  "이 게이트가 요구하는 것은 실측값이 아니라 하한이라, 그 차만큼 node 축이 무너져도 초록이다 — 두 수는 census.node_pass 의 value 와 runner_floor 가 든다",
+  { claim = "이 게이트가 요구하는 것은 실측값이 아니라 하한이라, 그 차만큼 node 축이 무너져도 초록이다 — 두 수는 census.node_pass 의 value 와 runner_floor 가 든다", evidence = ["tests/test_frontend_module_units.py#counts.get(\"pass\", 0) >= 220"] },
 ]
 reinforcement    = 408
 
@@ -961,7 +1029,6 @@ markers          = [
   "native",
 ]
 ci_jobs          = [
-  "pytest-contract",
   "windows-native",
 ]
 r_scope          = false
@@ -1257,7 +1324,7 @@ successor_asset  = ""
 stage            = "R1 #402 · R5 #419 재대조"
 negative_control = "present"
 nc_evidence      = [
-  "tests/test_react_ownership_inventory.py#음성 대조",
+  "tests/test_react_ownership_inventory.py#음성 대조@11",
 ]
 blind_spot       = "자기 원장의 축이 본 것에 대해서만 「미분류 0」이다 — 그 범위는 원장의 scope_statement 가 든다."
 
@@ -1650,7 +1717,7 @@ negative_control = "none"
 nc_evidence      = []
 blind_spot       = "순서를 보지 그 순서가 만드는 캐스케이드 결과를 안 본다."
 defect           = [
-  "양방향 대조라 구조적 판별력은 있으나 자기 눈을 증명하는 대조는 0",
+  { claim = "양방향 대조라 구조적 판별력은 있으나 자기 눈을 증명하는 대조가 없다", evidence = ["tests/test_web_css_manifest.py"] },
 ]
 reinforcement    = 412
 
@@ -1701,9 +1768,9 @@ negative_control = "none"
 nc_evidence      = []
 blind_spot       = "정적 파서라 런타임 기하·CSS 캐스케이드 결과를 못 본다. SCREEN_ROOTS 선언 밖 화면 루트는 파생 가드에만 걸린다."
 defect           = [
-  "SCREEN_ROOTS(:107)=2 인데 실제 화면 루트는 4. 실 무방비는 scr-workbench 하나 — scr-editor 는 :1843 좌변 split 이 IndexError 로 시끄럽게 죽고 :1892 는 screens/editor.js 문자열이라 루트 가드가 아니다",
-  "PRESERVE_WRAPPED_FILES(:47)=3 vs Preserve.around 실호출 5(library.js:47 · data_picker.js:189 무가드) vs docstring(:647) 「4개 화면」 — 3갈래",
-  "이 파일의 사례 중 게이트 자기 판별력을 증명하는 대조 0, 추출기 생존 가드 0",
+  { claim = "화면 루트 선언이 실제 루트보다 좁다. 실 무방비는 scr-workbench 하나 — scr-editor 는 좌변 split 이 IndexError 로 시끄럽게 죽고, screens/editor.js 문자열 단언은 index.html 을 안 보므로 루트 가드가 아니다", evidence = ["tests/test_web_dom_contract.py#SCREEN_ROOTS = (", "frontend/index.html#id=\"scr-workbench\""] },
+  { claim = "Preserve 래핑이 상수·실호출·docstring 세 갈래다. 상수가 지키는 것보다 실호출이 많고 그 차이가 무가드다", evidence = ["tests/test_web_dom_contract.py#PRESERVE_WRAPPED_FILES = (", "frontend/js/screens/library.js#Preserve.around(", "frontend/js/data_picker.js#Preserve.around(", "tests/test_web_dom_contract.py#4개 화면"] },
+  { claim = "이 파일의 사례 중 게이트 자기 판별력을 증명하는 대조가 없고 추출기 생존 가드도 없다", evidence = ["tests/test_web_dom_contract.py"] },
 ]
 reinforcement    = 412
 
@@ -1810,7 +1877,7 @@ negative_control = "present"
 nc_evidence      = [
   "tests/test_web_selftest_gate.py::test_selftest_api_is_absent_without_the_capability_in_real_webview",
   "tests/test_web_selftest_gate.py::test_harness_cap_sits_above_every_budget_beneath_it",
-  "tests/test_web_selftest_gate.py#control_before",
+  "tests/test_web_selftest_gate.py#control_before@2",
 ]
 blind_spot       = "HWPX_SKIP_GUI_TESTS=1 아래서는 수집되고 도달 가능하면서 한 번도 실행되지 않는다. 제품 단언에 재시도를 걸지 않는다(L11)."
 
@@ -2009,7 +2076,7 @@ nc_evidence      = []
 blind_spot       = "정적 층이라 런타임 기하·실사용 타이밍은 못 본다."
 assessment_owner = "R3-99 #409"
 
-# ── node 자산 27 ────────────────────────────────────────────────────────
+# ── node 자산 ────────────────────────────────────────────────────────────
 
 [asset."tests/js/bootstrap.test.js"]
 runner           = "node"
@@ -2398,7 +2465,7 @@ successor_asset  = ""
 stage            = "R2 · R5 전역 0 #420"
 negative_control = "present"
 nc_evidence      = [
-  "tests/js/n10_global_hygiene.test.js#검출력",
+  "tests/js/n10_global_hygiene.test.js#검출력@18",
 ]
 blind_spot       = "AST 가 보는 것은 정적 구조다 — 런타임에 계산되는 전역 설치는 못 본다."
 
@@ -2417,12 +2484,51 @@ nc_evidence      = []
 blind_spot       = "모듈의 산출값을 보지 그 모듈이 실제 화면에 붙는지는 안 본다."
 assessment_owner = "R3-99 #409"
 
-# ── script 자산 20 ──────────────────────────────────────────────────────
+# ── script 자산 ──────────────────────────────────────────────────────────
+
+[asset."packaging/hwpx_cli_entry.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/hwpx_cli.spec#hwpx_cli_entry.py",
+]
+r_scope          = false
+reason           = "코어 CLI 의 frozen 진입 shim. 링2 를 부팅하지 않는다."
+
+[asset."packaging/hwpx_filler_web_entry.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/hwpx_filler_web.spec#hwpx_filler_web_entry.py",
+]
+r_scope          = true
+protects         = "frozen 웹 제품의 진입 shim — 번들된 sealed web 을 부팅한다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
+
+[asset."packaging/verify_specs.py"]
+runner           = "script"
+invoked_by       = [
+  "packaging/build.ps1#verify_specs.py",
+  "tests/test_packaging_contract.py#verify_specs.py@4",
+]
+r_scope          = true
+protects         = "PyInstaller spec 의 hidden import 가 실제로 해소되는지 빌드 **전에** 거절한다"
+successor        = "keep"
+successor_asset  = ""
+stage            = "R2"
+negative_control = "unassessed"
+nc_evidence      = []
+blind_spot       = "스크립트의 산출을 보는 자산이 따로 있다 — 이 행은 그 스크립트가 도달 가능한지만 든다."
+assessment_owner = "R1-99 #400"
 
 [asset."scripts/audit_test_portfolio.py"]
 runner           = "script"
 invoked_by       = [
-  "tests/test_audit_test_portfolio.py#audit_test_portfolio",
+  "tests/test_audit_test_portfolio.py#audit_test_portfolio@2",
 ]
 r_scope          = false
 reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
@@ -2437,7 +2543,6 @@ reason           = "나라장터 코퍼스 재수확 — 동결 소스, 수동 �
 runner           = "script"
 invoked_by       = [
   ".github/workflows/quality.yml#scripts/capture_101_screenshots.py",
-  "examples/quickstart-101/README.md#capture_101_screenshots.py",
 ]
 r_scope          = true
 protects         = "101 실주행 하니스의 진입점 — 인자·홈·live101 조각의 접합"
@@ -2484,8 +2589,9 @@ reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 
 [asset."scripts/gen_design_tokens.py"]
 runner           = "script"
 invoked_by       = [
-  "docs/UI_CONTRACT.md#scripts/gen_design_tokens.py",
-  "frontend/css/tokens.css#scripts/gen_design_tokens.py",
+  "tests/test_design_tokens.py#import gen_design_tokens",
+  "tests/test_contrast_wcag.py#import gen_design_tokens",
+  "tests/test_web_selftest_gate.py#import gen_design_tokens",
 ]
 r_scope          = true
 protects         = "디자인 토큰 단일 출처에서 tokens.css 를 찍는 생성기"
@@ -2553,7 +2659,6 @@ assessment_owner = "R1-99 #400"
 runner           = "script"
 invoked_by       = [
   "scripts/capture_101_screenshots.py#from live101 import driver",
-  "tests/test_web_m1_topology.py#live101",
 ]
 r_scope          = true
 protects         = "101 실주행 구동·판정"
@@ -2598,7 +2703,8 @@ assessment_owner = "R1-99 #400"
 [asset."scripts/live101/surface.py"]
 runner           = "script"
 invoked_by       = [
-  "scripts/live101/driver.py#surface",
+  "scripts/live101/driver.py#from .surface import",
+  "scripts/live101/scenario.py#from .surface import Surface",
 ]
 r_scope          = true
 protects         = "101 하니스가 겨누는 웹 표면 좌표"
@@ -2612,10 +2718,7 @@ assessment_owner = "R1-99 #400"
 
 [asset."scripts/render_document_narmi_branding.py"]
 runner           = "script"
-invoked_by       = [
-  "frontend/index.html#render_document_narmi_branding.py",
-  "tests/test_branding.py#render_document_narmi_branding.py",
-]
+invoked_by       = []
 r_scope          = true
 protects         = "문서나르미 심벌 3단 래스터·매니페스트 생성기"
 successor        = "keep"
@@ -2629,8 +2732,8 @@ assessment_owner = "R1-99 #400"
 [asset."scripts/review_rounds.py"]
 runner           = "script"
 invoked_by       = [
-  ".github/workflows/review-gate.yml#scripts/review_rounds.py",
-  ".claude/settings.json#scripts/review_rounds.py",
+  ".github/workflows/review-gate.yml#scripts/review_rounds.py@2",
+  ".claude/settings.json#scripts/review_rounds.py@3",
 ]
 r_scope          = false
 reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 표면을 읽지 않는다."
@@ -2638,7 +2741,7 @@ reason           = "운영 기계(리뷰 루프·릴리스·포장 부수). 웹 
 [asset."scripts/seal_web_artifact.py"]
 runner           = "script"
 invoked_by       = [
-  "package.json#scripts/seal_web_artifact.py",
+  "package.json#scripts/seal_web_artifact.py@2",
   "build-web.ps1#seal_web_artifact.py",
 ]
 r_scope          = true
@@ -2655,7 +2758,7 @@ assessment_owner = "R1-99 #400"
 runner           = "script"
 invoked_by       = [
   "packaging/build.ps1#selftest_http_proxy.py",
-  "tests/test_selftest_http_proxy.py#selftest_http_proxy",
+  "tests/test_selftest_http_proxy.py#scripts.selftest_http_proxy",
 ]
 r_scope          = true
 protects         = "포장본 오프라인 부팅의 결정적 네트워크 통제"
@@ -2671,7 +2774,7 @@ assessment_owner = "R1-99 #400"
 runner           = "script"
 invoked_by       = [
   "packaging/build.ps1#verify_packaged_web.py",
-  ".github/workflows/release.yml#verify_packaged_web.py",
+  ".github/workflows/release.yml#verify_packaged_web.py@3",
 ]
 r_scope          = true
 protects         = "포장된 웹 사본의 identity 검증"
