@@ -220,8 +220,15 @@ WORKFLOW = "quality.yml"
 NODE_AXIS_SOURCE = "tests/test_frontend_module_units.py"
 NODE_AXIS_SYMBOL = "EXPECTED_TEST_FILES"
 
+#: 원장이 **읽는다고 선언한** 형식. 좌표 탐지(`_RAW_LINE_REF`)가 이 집합에서 유도되므로,
+#: 검증 트리에 새 형식을 들이면 여기 한 줄이 규칙 전체를 함께 넓힌다.
+#: `.tsx`·`.jsx` 는 오늘 0 개지만 트리가 이미 겨누므로 지금 든다 — 그 파일이 생긴 날
+#: 규칙만 안 넓어져 있는 상태를 만들지 않는다.
 TEXT_SUFFIXES = frozenset(
-    {".py", ".js", ".mjs", ".ts", ".html", ".css", ".toml", ".json", ".md", ".yml", ".ps1", ".txt", ".spec"}
+    {
+        ".py", ".js", ".mjs", ".ts", ".tsx", ".jsx", ".html", ".css",
+        ".toml", ".json", ".md", ".yml", ".yaml", ".ps1", ".txt", ".spec",
+    }
 )
 #: `invoked_by` 앵커가 살 수 있는 파일. 산문·스타일시트는 호출하지 못한다 — 문자열 언급을
 #: 호출로 세는 것이 이 저장소가 이름 붙인 결함류다.
@@ -233,6 +240,9 @@ COMMENT_PREFIXES = {
     ".yaml": ("#",),
     ".mjs": ("//", "/*", "*"),
     ".js": ("//", "/*", "*"),
+    ".ts": ("//", "/*", "*"),
+    ".tsx": ("//", "/*", "*"),
+    ".jsx": ("//", "/*", "*"),
     ".json": (),
     ".spec": ("#",),
 }
@@ -353,8 +363,15 @@ class Report:
 # ── 앵커 (술어 1) ──────────────────────────────────────────────────────────
 #: 문자열 **어디에든** 생 `file:line` 이 있으면 잡는다. 앞머리만 보면 산문 가운데 박힌
 #: 좌표가 통과한다.
+#:
+#: 확장자 목록을 손으로 적지 않고 `TEXT_SUFFIXES` 에서 **유도**한다. 손으로 적으면 트리를
+#: 넓힐 때 이 규칙만 안 넓어지고, 규칙이 존재하는데 그 자리에서만 침묵한다 — 직전 왕복에서
+#: `.ts`·`.tsx`·`.jsx`·`.spec` 을 검증 트리에 들이면서 여기를 안 고쳐 실제로 그렇게 됐다.
+#: 유도하면 「원장이 읽는다고 선언한 형식」과 「좌표로 알아보는 형식」이 정의상 같아진다.
 _RAW_LINE_REF = re.compile(
-    r"(?<![\w/\\.-])[\w./\\-]+\.(?:py|js|mjs|ts|html|css|toml|json|md|yml|ps1):\d+"
+    r"(?<![\w/\\.-])[\w./\\-]+\.(?:"
+    + "|".join(re.escape(s.lstrip(".")) for s in sorted(TEXT_SUFFIXES))
+    + r"):\d+"
 )
 #: `path#needle` · `path#needle@N` — N 은 기대 출현 수이고 **1 이상**이다. 생략하면 유일해야
 #: 한다. `@0` 을 받으면 「없는 것을 없다고 확인했다」가 되어 아무 문자열이나 앵커가 된다 —
@@ -1102,6 +1119,8 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
             if not isinstance(adj.get("reason"), str) or not adj.get("reason", "").strip():
                 report.fail(where, "adjustment 가 reason 을 안 든다 — 정당화 없는 증감은 정당화가 아니다.")
 
+    _check_census_chain_is_complete(census, repo, report)
+
     node_axis = census.get("node_pass", {})
     if "runner_floor" in node_axis:
         measured_floor = measure_node_runner_floor(repo)
@@ -1121,6 +1140,45 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
             report.fail("census.node_pass", "runner_floor 가 자기 술어를 안 든다.")
     else:
         report.fail("census.node_pass", "runner_floor 가 없다 — 이 축이 실제로 요구받는 하한은 값과 다르다.")
+
+
+#: 미착지 델타를 요구받는 축. node 축은 러너가 달라 이 술어의 대상이 아니다.
+_PYTEST_CENSUS_AXES = ("pytest_collected", "pytest_unmarked")
+
+
+def _check_census_chain_is_complete(
+    census: dict[str, Any], repo: Repo, report: Report
+) -> None:
+    """`base_sha` 이후 새로 생긴 테스트 파일은 **전부** 미착지 행으로 계상돼야 한다.
+
+    총계 자체는 재측정하지 않는다 — pytest 안에서 pytest 를 다시 수집하는 것이라 재귀다.
+    그러나 「사슬에 빠진 파일이 있는가」는 재귀 없이 물을 수 있고, 그것이 없으면 미착지 행
+    하나를 지우는 것으로 그 파일의 사례가 공표된 총계에서 **조용히** 빠진다.
+    """
+    new_files = sorted(
+        rel
+        for pattern in RUNNER_GLOBS["pytest"]
+        for rel in repo.glob(pattern)
+        if not repo.path_exists_at(EXPECTED_BASE_SHA, rel)
+    )
+    if not new_files:
+        return
+    for axis in _PYTEST_CENSUS_AXES:
+        block = census.get(axis)
+        if not isinstance(block, dict):
+            continue
+        accounted = {
+            adj.get("file")
+            for adj in block.get("adjustment", [])
+            if isinstance(adj, dict) and adj.get("kind") == "expected_landing"
+        }
+        missing = [rel for rel in new_files if rel not in accounted]
+        if missing:
+            report.fail(
+                f"census.{axis}",
+                f"base_sha 이후 새로 생긴 테스트 파일 {len(missing)} 개가 미착지 행으로 "
+                f"계상되지 않았다: {missing}. 그 사례들이 공표된 총계에서 조용히 빠진다.",
+            )
 
 
 def _check_expected_landing_delta(
@@ -2413,4 +2471,40 @@ def test_c_predicate_30c_the_numeric_contract_covers_every_counting_field(
         report = check(_mutate(document, mutate), repo)
         assert "정수가 아니다" in report.text(), (
             f"{name} 이 불리언을 받는다 — 수치 계약이 이 자리에 안 걸려 있다.\n{report.text()}"
+        )
+
+
+def test_c_predicate_31_dropping_an_unlanded_row_from_the_chain_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """총계는 재측정하지 않지만 **사슬의 완비성**은 재귀 없이 물을 수 있다 —
+    미착지 행을 지우면 이 PR 이 들이는 사례가 공표된 총계에서 조용히 빠진다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        block = doc["census"]["pytest_unmarked"]
+        block["adjustment"] = [a for a in block["adjustment"] if a.get("kind") != "expected_landing"]
+
+    _expect_red(_mutate(document, mutate), repo, "미착지 행으로", "조용히 빠진다")
+
+
+def test_c_predicate_32_a_coordinate_in_a_migration_era_suffix_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """규칙 1 의 확장자 목록이 검증 트리보다 좁던 자리.
+
+    `.tsx`·`.jsx`·`.yaml`·`.spec` 은 트리가 이미 겨누는데 좌표 탐지만 안 넓어져 있었다.
+    이제 둘 다 `TEXT_SUFFIXES` 하나에서 나오므로 정의상 같이 움직인다.
+    """
+    for coordinate in (
+        "frontend/src/App.tsx:123",
+        "frontend/src/App.jsx:7",
+        ".github/workflows/x.yaml:12",
+        "packaging/hwpx_cli.spec:30",
+    ):
+        def mutate(doc: dict[str, Any], c: str = coordinate) -> None:
+            doc["asset"]["tests/test_web_dom_contract.py"]["blind_spot"] = f"사각 하나는 {c} 다."
+
+        report = check(_mutate(document, mutate), repo)
+        assert "생 file:line" in report.text(), (
+            f"{coordinate} 가 좌표로 안 잡힌다 — 규칙 1 이 이 형식에서만 침묵한다.\n{report.text()}"
         )
