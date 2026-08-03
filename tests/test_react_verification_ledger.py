@@ -453,6 +453,22 @@ def _check_executable_anchor(
     )
 
 
+def _require_count(where: str, name: str, value: Any, report: Report, *, signed: bool = False) -> bool:
+    """원장의 수치 필드는 `bool` 이 아니고, 세는 값은 음수가 아니다.
+
+    `bool` 은 `int` 의 하위형이라 `False == 0` · `True == 1` 이 참이다. 그래서 실측과
+    비교하는 자리에서도 `False` 가 0 을 통과하고, **재측정하지 않는 축**(센서스 총계)에서는
+    아무 경고 없이 불가능한 수가 실린다.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        report.fail(where, f"{name} 이 정수가 아니다: {value!r}. bool 은 정수처럼 비교돼 조용히 통과한다.")
+        return False
+    if not signed and value < 0:
+        report.fail(where, f"{name} 이 음수다: {value}. 세는 값은 음수일 수 없다.")
+        return False
+    return True
+
+
 # ── 술어 6·9: 값 항목의 술어 계약 ──────────────────────────────────────────
 def _require_predicate_triple(where: str, item: dict[str, Any], report: Report) -> None:
     for key in ("predicate", "scope", "unit"):
@@ -947,8 +963,10 @@ def _check_assets(document: dict[str, Any], repo: Repo, report: Report) -> dict[
                     _check_anchor(where + ".nc_evidence", ref, repo, report)
         elif nc == "none":
             issue = row.get("reinforcement")
-            if not isinstance(issue, int):
+            if issue is None:
                 report.fail(where, "negative_control=none 인데 reinforcement 가 없다 — 알려진 결손은 임자를 든다.")
+            elif not _require_count(where, "reinforcement", issue, report):
+                pass
             elif issue in AUDIT_ISSUES:
                 report.fail(
                     where,
@@ -1043,8 +1061,7 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
     for name, axis in sorted(census.items()):
         where = f"census.{name}"
         _require_predicate_triple(where, axis, report)
-        if not isinstance(axis.get("value"), int):
-            report.fail(where, "value 가 정수가 아니다.")
+        _require_count(where, "value", axis.get("value"), report)
         adjustments = axis.get("adjustment")
         if not isinstance(adjustments, list) or not adjustments:
             report.fail(where, "adjustment 가 없다 — 기준 SHA 에서 오늘까지의 사슬이 있어야 한다.")
@@ -1081,8 +1098,7 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
                 _check_expected_landing_delta(where, adj, repo, report)
             else:
                 report.fail(where, f"adjustment.kind 가 landed/expected_landing 밖이다: {kind!r}")
-            if not isinstance(adj.get("delta"), int):
-                report.fail(where, "adjustment 가 정수 delta 를 안 든다.")
+            _require_count(where, "delta", adj.get("delta"), report, signed=True)
             if not isinstance(adj.get("reason"), str) or not adj.get("reason", "").strip():
                 report.fail(where, "adjustment 가 reason 을 안 든다 — 정당화 없는 증감은 정당화가 아니다.")
 
@@ -1094,6 +1110,8 @@ def _check_census(document: dict[str, Any], repo: Repo, report: Report) -> None:
                 "census.node_pass",
                 f"{NODE_AXIS_SOURCE} 에서 하한 술어를 못 찾았다 — 그 단언이 사라졌거나 모양이 바뀌었다.",
             )
+        elif not _require_count("census.node_pass", "runner_floor", node_axis["runner_floor"], report):
+            pass
         elif node_axis["runner_floor"] != measured_floor:
             report.fail(
                 "census.node_pass",
@@ -1152,12 +1170,19 @@ def _check_bridge_sets(document: dict[str, Any], repo: Repo, report: Report) -> 
         where = f"bridge_set.{name}"
         item = block[name]
         _require_predicate_triple(where, item, report)
-        if item.get("value") != measured[name]:
+        if not _require_count(where, "value", item.get("value"), report):
+            pass
+        elif item.get("value") != measured[name]:
             report.fail(where, f"기록값 {item.get('value')!r} 이 실측 {measured[name]} 과 다르다.")
         anchor = item.get("scope_anchor")
         if anchor is not None:
             _check_anchor(where + ".scope_anchor", anchor, repo, report)
     derived = block.get("derived", {})
+    for key in ("js_only", "python_only"):
+        if key in derived:
+            _require_count("bridge_set.derived", key, derived[key], report)
+    if not isinstance(derived.get("documented_equals_intersection"), bool):
+        report.fail("bridge_set.derived", "documented_equals_intersection 이 불리언이 아니다.")
     for key in ("js_only", "python_only", "documented_equals_intersection"):
         if key not in derived:
             report.fail("bridge_set.derived", f"{key} 가 없다.")
@@ -1176,6 +1201,8 @@ def _check_bridge_sets(document: dict[str, Any], repo: Repo, report: Report) -> 
     ):
         if key not in slack:
             report.fail("bridge_set.contract_gate_slack", f"{key} 가 없다.")
+        elif not _require_count("bridge_set.contract_gate_slack", key, slack[key], report):
+            pass
         elif slack[key] != measured[key]:
             report.fail(
                 "bridge_set.contract_gate_slack",
@@ -1352,6 +1379,8 @@ def _check_excluded_axes(document: dict[str, Any], repo: Repo, report: Report) -
             if not isinstance(row.get(key), str) or not row.get(key, "").strip():
                 report.fail(where, f"{key} 가 없다.")
         measured = sorted({p for g in globs for p in repo.glob(g)})
+        if not _require_count(where, "size", row.get("size"), report):
+            continue
         if row.get("size") != len(measured):
             report.fail(
                 where,
@@ -1390,9 +1419,9 @@ def _check_succession_issues(document: dict[str, Any], report: Report) -> None:
         return
     for index, row in enumerate(rows):
         where = f"succession_issue[{index}]"
-        if not isinstance(row.get("id"), int):
-            report.fail(where, "id 가 정수가 아니다.")
-        elif row["id"] in AUDIT_ISSUES:
+        if not _require_count(where, "id", row.get("id"), report):
+            continue
+        if row["id"] in AUDIT_ISSUES:
             report.fail(where, f"승계 이슈가 감사 이슈 #{row['id']} 다.")
         for key in ("reason", "origin"):
             if not isinstance(row.get(key), str) or not row.get(key, "").strip():
@@ -2333,3 +2362,55 @@ def test_c_predicate_29_the_indirect_marker_probe_actually_fires(repo: Repo) -> 
         )
     # 양성 대조 — 오늘의 저장소에는 그 모양이 없다.
     assert _probe_indirect_markers(repo, {target}) == []
+
+
+def test_c_predicate_30_a_boolean_census_total_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """센서스 총계는 재귀 때문에 재측정하지 않는 **유일한** 축이라, 형을 안 물으면
+    `false` 가 0 으로 실린 채 영영 조용하다."""
+
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["census"]["pytest_collected"]["value"] = False
+
+    _expect_red(_mutate(document, mutate), repo, "정수가 아니다", "bool 은 정수처럼")
+
+
+def test_c_predicate_30b_a_negative_census_total_is_refused(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    def mutate(doc: dict[str, Any]) -> None:
+        doc["census"]["pytest_collected"]["value"] = -1
+
+    _expect_red(_mutate(document, mutate), repo, "음수다", "세는 값은 음수일 수 없다")
+
+
+def test_c_predicate_30c_the_numeric_contract_covers_every_counting_field(
+    document: dict[str, Any], repo: Repo
+) -> None:
+    """지적은 센서스 한 자리를 겨눴지만 같은 결함류는 원장의 모든 수치 필드였다.
+
+    필드마다 고치면 다음 필드가 다음 지적이 된다 — 계약을 하나 세우고 그것이 전 필드에
+    걸리는지를 여기서 센다.
+    """
+    coordinates = [
+        ("census.pytest_collected.value", lambda d: d["census"]["pytest_collected"].__setitem__("value", True)),
+        ("census.node_pass.runner_floor", lambda d: d["census"]["node_pass"].__setitem__("runner_floor", True)),
+        ("bridge_set.documented.value", lambda d: d["bridge_set"]["documented"].__setitem__("value", True)),
+        ("bridge_set.derived.js_only", lambda d: d["bridge_set"]["derived"].__setitem__("js_only", True)),
+        (
+            "bridge_set.contract_gate_slack",
+            lambda d: d["bridge_set"]["contract_gate_slack"].__setitem__("invisible_to_the_gate", True),
+        ),
+        ("excluded_axis.size", lambda d: d["excluded_axis"][0].__setitem__("size", True)),
+        ("succession_issue.id", lambda d: d["succession_issue"][0].__setitem__("id", True)),
+        (
+            "adjustment.delta",
+            lambda d: d["census"]["pytest_collected"]["adjustment"][0].__setitem__("delta", True),
+        ),
+    ]
+    for name, mutate in coordinates:
+        report = check(_mutate(document, mutate), repo)
+        assert "정수가 아니다" in report.text(), (
+            f"{name} 이 불리언을 받는다 — 수치 계약이 이 자리에 안 걸려 있다.\n{report.text()}"
+        )
