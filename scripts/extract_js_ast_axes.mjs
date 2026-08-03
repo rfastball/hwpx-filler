@@ -91,12 +91,35 @@ function walk(node, visit) {
   }
 }
 
+/* ── 범위 ──────────────────────────────────────────────────────────
+ *
+ * 제품 프런트 그래프 = `frontend/js/**` + `frontend/src/**` **에서 selftest 를 뺀 것**.
+ *
+ * `frontend/src/*.js` 비재귀로는 `frontend/src/<하위>/store.js` 신설이 조용히 축 밖이었다.
+ * 재귀로 넓히되 selftest 는 제외한다 — 그 트리는 제품 그래프가 아니고(`schema.js` 는 출하
+ * 번들에도 없다) 원장이 `excluded_axes` 로 **소리 나게** 제외하며 크기를 프로브로 잰다.
+ *
+ * `.mjs` 를 함께 문다. 오늘 `frontend/` 에 0건이지만 저장소는 이미 `.mjs` 를 쓰고 있어
+ * 확장자 하나가 전 축의 사각이 되는 자리를 열어 둘 이유가 없다.
+ */
+const PRODUCT_SCOPE = [
+  "frontend/js/**/*.js", "frontend/js/**/*.mjs",
+  "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+];
+const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
+const SELFTEST_PREFIX = "frontend/src/selftest/";
+
 /** 멤버 키는 **저장소 상대 POSIX 경로**다 — OS 마다 달라지면 원장이 못 산다. */
-function sources(root, pattern) {
-  return globSync(pattern, { cwd: root })
-    .map((rel) => rel.split(sep).join("/"))
-    .sort()
-    .map((rel) => ({ rel, text: readFileSync(join(root, rel), "utf8") }));
+function sources(root, patterns, { excludeSelftest = false } = {}) {
+  const seen = new Map();
+  for (const pattern of [].concat(patterns)) {
+    for (const raw of globSync(pattern, { cwd: root })) {
+      const rel = raw.split(sep).join("/");
+      if (excludeSelftest && rel.startsWith(SELFTEST_PREFIX)) continue;
+      if (!seen.has(rel)) seen.set(rel, { rel, text: readFileSync(join(root, rel), "utf8") });
+    }
+  }
+  return [...seen.values()].sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }
 
 /* ── 축 1: JS 가 만드는 id 사이트 ────────────────────────────────────
@@ -110,9 +133,9 @@ function sources(root, pattern) {
  */
 const ID_ATTR = /(?<![\w-])id="([^"]*)$|(?<![\w-])id="([^"]*)"/g;
 
-function jsTemplateIds(root) {
+function jsTemplateIds(root, patterns, options) {
   const rows = [];
-  for (const { rel, text } of sources(root, "frontend/js/**/*.js")) {
+  for (const { rel, text } of sources(root, patterns, options)) {
     const lineOf = lineIndex(text);
     const program = parseAst(text, { sourceFilename: rel });
     walk(program, (node) => {
@@ -194,23 +217,46 @@ function mutableDeclarators(body) {
     .flatMap((s) => s.declarations.flatMap((d) => bindingNames(d.id)));
 }
 
-function jsModuleState(root, patterns, { exported = true, includeProgram = true } = {}) {
+function jsModuleState(root, patterns, options = {}) {
+  const { exported = true, includeProgram = true, ...scopeOptions } = options;
   const rows = [];
-  for (const pattern of patterns) {
-    for (const { rel, text } of sources(root, pattern)) {
-      const lineOf = lineIndex(text);
-      const program = parseAst(text, { sourceFilename: rel });
-      const hits = [
-        ...(includeProgram ? mutableDeclarators(program.body) : []),
-        ...program.body.flatMap(
-          (s) => mutableDeclarators(topLevelFunctionBody(s, { exported })),
-        ),
-      ];
-      for (const identifier of hits) {
-        rows.push(`${rel}:${lineOf(identifier.start)} ${identifier.name}`);
-      }
+  for (const { rel, text } of sources(root, patterns, scopeOptions)) {
+    const lineOf = lineIndex(text);
+    const program = parseAst(text, { sourceFilename: rel });
+    const hits = [
+      ...(includeProgram ? mutableDeclarators(program.body) : []),
+      ...program.body.flatMap(
+        (s) => mutableDeclarators(topLevelFunctionBody(s, { exported })),
+      ),
+    ];
+    for (const identifier of hits) {
+      rows.push(`${rel}:${lineOf(identifier.start)} ${identifier.name}`);
     }
   }
+  return rows.sort();
+}
+
+/* ── 명시 제외 축의 크기 ─────────────────────────────────────────────
+ *
+ * `frontend/src/selftest/**` 를 축에서 빼면서 **크기는 잰다**. 제외가 조용하면 「미분류 0」이
+ * 거짓말이 되므로, 세 성격(구성 지점 · 모듈 상태 · id 사이트)을 한 목록으로 낸다.
+ */
+function selftestSurface(root) {
+  const rows = [];
+  for (const { rel, text } of sources(root, SELFTEST_SCOPE)) {
+    const lineOf = lineIndex(text);
+    for (const [index, line] of text.split("\n").entries()) {
+      if (/^export function /.test(line)) rows.push(`export-function:${rel}:${index + 1}`);
+    }
+    const program = parseAst(text, { sourceFilename: rel });
+    for (const identifier of [
+      ...mutableDeclarators(program.body),
+      ...program.body.flatMap((s) => mutableDeclarators(topLevelFunctionBody(s, { exported: true }))),
+    ]) {
+      rows.push(`module-state:${rel}:${lineOf(identifier.start)} ${identifier.name}`);
+    }
+  }
+  for (const site of jsTemplateIds(root, SELFTEST_SCOPE)) rows.push(`id-site:${site}`);
   return rows.sort();
 }
 
@@ -219,19 +265,19 @@ function jsModuleState(root, patterns, { exported = true, includeProgram = true 
 const { repoRoot: root } = parseArgs(process.argv.slice(2));
 
 const payload = {
-  js_template_ids: jsTemplateIds(root),
-  js_module_state: jsModuleState(
-    root,
-    ["frontend/js/**/*.js", "frontend/src/*.js"],
-    { exported: true },
-  ),
+  js_template_ids: jsTemplateIds(root, PRODUCT_SCOPE, { excludeSelftest: true }),
+  js_module_state: jsModuleState(root, PRODUCT_SCOPE, {
+    exported: true,
+    excludeSelftest: true,
+  }),
   /* 사각 프로브 — 비-export 최상위 함수의 body 최상위 let/var. Program 최상위는 빼야
-     값 축과 겹치지 않는다. */
-  js_nonexported_fn_state: jsModuleState(
-    root,
-    ["frontend/js/**/*.js"],
-    { exported: false, includeProgram: false },
-  ),
+     값 축과 겹치지 않는다. 값 축과 **같은 범위**를 봐야 그 차이가 사각이다. */
+  js_nonexported_fn_state: jsModuleState(root, PRODUCT_SCOPE, {
+    exported: false,
+    includeProgram: false,
+    excludeSelftest: true,
+  }),
+  selftest_surface: selftestSurface(root),
 };
 
 process.stdout.write(`${JSON.stringify(payload, null, 1)}\n`);

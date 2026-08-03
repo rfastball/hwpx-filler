@@ -17,6 +17,13 @@
 각 케이스는 red 가 나는 것만이 아니라 **실패 메시지가 그 좌표를 이름으로 말하는지**까지
 단언한다. 좌표를 못 말하는 red 는 다음 사람에게 아무것도 주지 않는다.
 
+## 부분 실행은 전체 실행의 부분집합이 **아니다**
+
+``check(..., axes=[…])`` 는 고른 축만 재고 `verification` 실재 확인과 판정 요구 항목 검사를
+끈다. 음성 대조가 부분 트리를 쓰려면 그 선택자가 필요하지만, 그래서 **부분 실행에서 초록인
+것이 전체 실행에서도 초록이라는 뜻이 아니다**. 전체 실행만 겨누는 대조는 아래에서 `axes=None`
+으로 따로 세운다.
+
 ## 먼저 인정하는 것
 
 이 슬라이스는 **실재 유령으로 red 를 낼 수 없다**. 원장과 게이트가 같은 PR 에서 태어나므로
@@ -122,6 +129,28 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
     assert set(report.axes) == set(document["axes"]), "선언한 축과 측정한 축이 다릅니다."
 
 
+#: **분모의 두 번째 앵커.** 게이트 스크립트의 `AXIS_FLOORS` 가 1차 앵커이고(R1-99 가 스크립트만
+#: 돌려도 강제된다), 이 리터럴이 그 상수 자체가 조용히 줄어드는 것을 막는다. 축을 지우려면 두
+#: 파일을 함께 고쳐야 하고, 그 diff 가 리뷰 표면에 뜬다.
+EXPECTED_AXES = frozenset({
+    "dom_static", "dom_data_attr", "dom_js_site",
+    "state_js_module", "state_snapshot_channel", "state_ring1",
+    "subscription_listener", "subscription_release", "subscription_push",
+    "lifecycle_factory", "lifecycle_hook",
+})
+
+
+def test_axis_set_is_anchored_outside_the_ledger() -> None:
+    """분모가 원장의 자유 변수가 아님을 두 자리에서 못박는다."""
+    assert set(gate.AXIS_FLOORS) == EXPECTED_AXES, (
+        "게이트의 AXIS_FLOORS 와 이 파일의 EXPECTED_AXES 가 다릅니다 — 축을 줄이거나 늘리는 것은 "
+        "계약 변경이라 두 자리를 함께 고쳐야 합니다."
+    )
+    assert all(floor > 0 for floor in gate.AXIS_FLOORS.values()), (
+        "측정 하한이 0인 축이 있습니다 — 0 하한은 하한이 아닙니다."
+    )
+
+
 def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, Any]) -> None:
     """「미분류 0」의 범위와 제외 축은 산문 각주가 아니라 머리말 데이터여야 한다."""
     assert document["scope_statement"].strip(), "scope_statement 가 비었습니다."
@@ -135,11 +164,25 @@ def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, A
         "거짓말이 됩니다."
     )
     assert excluded["js_planted_data_attrs"]["owner"], "제외 축에 소유자가 없습니다."
+    assert "selftest_frontend_surface" in excluded, (
+        "selftest 트리의 **명시 제외**가 사라졌습니다 — 같은 원장이 alias 에서는 그 트리를 "
+        "계상하면서 축에서만 조용히 빼면 「미분류 0」이 거짓말이 됩니다."
+    )
+    assert excluded["selftest_frontend_surface"]["size"]["current"] > 0, (
+        "제외한 표면의 크기가 데이터로 없습니다 — 「안 센다」와 「얼마나 안 세는지 모른다」는 다릅니다."
+    )
+    assert document.get("unoccupied_classifications") == ["host"], (
+        "어휘 5종 중 오늘 점유자가 없는 값의 선언이 사라졌습니다 — 부재도 데이터로 적는다."
+    )
 
 
-#: 복제 트리에서 잴 수 있는 축 — Python import 두 축(`state_snapshot_channel`·`state_ring1`)은
-#: `src/` 를 복사하지 않으므로 뺀다. 없는 파일 때문에 무관한 축이 죽으면 그 음성 대조는 자기가
-#: 겨눈 좌표를 증명하지 못한다.
+#: 복제 트리에서 잴 수 있는 축 — Python 쪽 두 축(`state_snapshot_channel`·`state_ring1`)은
+#: 복제가 `src/` 를 담지 않아 **그 트리에서 잴 수 없다**. 없는 파일 때문에 무관한 축이 죽으면
+#: 그 음성 대조는 자기가 겨눈 좌표를 증명하지 못한다.
+#:
+#: 이 이유는 「추출기가 트리를 본다」가 참일 때만 성립한다 — 액션 레지스트리를 import 로 읽던
+#: 동안에는 두 축이 복제와 무관하게 **설치본**을 재서 조용히 초록이었다. 그래서 그 추출기를
+#: `ast` 로 옮겼고, 이 목록의 사유가 이제 실제와 맞는다.
 CLONE_AXES = [
     "dom_static", "dom_data_attr", "dom_js_site", "state_js_module",
     "subscription_listener", "subscription_release", "subscription_push",
@@ -390,3 +433,306 @@ def test_n14_blind_spot_size_is_remeasured(mutable_document: dict[str, Any]) -> 
     assert not report.ok, "사각 크기 불일치가 안 잡혔습니다."
     assert "사각이 움직였습니다" in _failures(report), _failures(report)
     assert "state_js_module" in _failures(report), _failures(report)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 음성 — 반증 라운드가 뚫은 자리 (분모 · 제외 · 전수 선언 · 미겨눔 분기)
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_m15_empty_ledger_is_refused(document: dict[str, Any]) -> None:
+    """M15 — **빈 원장**. 축 0·노드 0·계측 0 이 통과하면 「미분류 0」은 명제가 아니다."""
+    empty = {
+        "schema": 1,
+        "baseline_sha": document["baseline_sha"],
+        "scope_statement": document["scope_statement"],
+        "repo_wide_metrics": [],
+        "extractors": {},
+        "axes": {},
+        "node": [],
+        "metric": [],
+        "review_item": [],
+        "excluded_axes": [],
+    }
+    report = gate.check(empty, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "빈 원장이 통과했습니다 — 분모가 원장의 자유 변수입니다."
+    text = _failures(report)
+    assert "원장에서 축이 사라졌습니다" in text, text
+    assert "계측 항목 목록" in text, text
+    assert "판정 요구 항목 목록" in text, text
+    assert "명시 제외 축 목록" in text, text
+    assert "노드 행" in text, text
+
+
+def test_m8_deleting_an_axis_is_refused(mutable_document: dict[str, Any]) -> None:
+    """M8 — 축 선언 + 그 행 + 계측을 함께 지워도 붉어야 한다."""
+    mutable_document["axes"].pop("subscription_release")
+    mutable_document["node"] = [
+        node for node in mutable_document["node"] if node["axis"] != "subscription_release"
+    ]
+    mutable_document["metric"] = [
+        metric for metric in mutable_document["metric"]
+        if metric["id"] != "listener-release-sites"
+    ]
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "축을 통째로 지운 원장이 통과했습니다."
+    assert "subscription_release" in _failures(report), _failures(report)
+
+
+def test_m12_narrowing_a_regex_axis_scope_trips_the_floor(
+    mutable_document: dict[str, Any]
+) -> None:
+    """M12 — regex 축의 scope 를 좁히고 밖의 행을 정리하면 계수만으로는 안 붉는다.
+
+    저장소에 앵커된 **측정 하한**이 그 축소를 잡는다.
+    """
+    axis = mutable_document["axes"]["subscription_listener"]
+    axis["scope"] = ["frontend/js/screens/*.js"]
+    axis["scope_excluded"] = []
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_listener"], metrics=[])
+    assert not report.ok, "scope 축소가 통과했습니다."
+    text = _failures(report)
+    assert "게이트 하한" in text, text
+    assert "subscription_listener" in text, text
+
+
+def test_m7b_dom_api_id_planting_grows_the_blind_spot(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """M7b′ — 마크업 문자열이 아니라 **DOM API** 로 id 를 심는 길.
+
+    「못 보는 네 형태」를 전수라고 선언했던 자리다. 다섯째·여섯째를 프로브에 편입했으므로
+    이제 사각이 자라고 붉는다.
+    """
+    target = clone_source / "js" / "theme.js"
+    target.write_text(
+        target.read_text(encoding="utf-8")
+        + '\nfunction __negHelper(el) { el.setAttribute("id", "sneakyB"); el.id = "sneakyC"; }\n',
+        encoding="utf-8",
+    )
+    report = gate.check(document, frontend_tree, axes=["dom_js_site"], metrics=[])
+    assert not report.ok, "DOM API 로 심는 id 가 사각에서 안 잡혔습니다."
+    text = _failures(report)
+    assert "사각이 움직였습니다" in text, text
+    assert "set-attribute" in text and "id-property-assignment" in text, text
+
+
+def test_m7c_new_module_under_src_subdirectory_is_seen(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """M7c″ — `frontend/src/<하위>/store.js` 신설.
+
+    scope 가 `frontend/src/*.js` **비재귀**였을 때 이 파일은 상태와 팩토리를 들고 와도
+    전 축 밖이었다. 재귀로 넓히고 selftest 만 명시 제외한 것이 이 대조의 값이다.
+    """
+    module = clone_source / "src" / "newfeature" / "store.js"
+    module.parent.mkdir(parents=True, exist_ok=True)
+    module.write_text("let __srcState = 1;\nexport function bump() { __srcState += 1; }\n",
+                      encoding="utf-8")
+    report = gate.check(
+        document, frontend_tree, axes=["state_js_module", "lifecycle_factory"], metrics=[]
+    )
+    assert not report.ok, "src 하위 신설 모듈이 축 밖이었습니다."
+    text = _failures(report)
+    assert "frontend/src/newfeature/store.js:1 __srcState" in text, text
+    assert "frontend/src/newfeature/store.js:2" in text, text
+
+
+def test_s4_new_mjs_module_is_seen(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """S4 — `.mjs` 확장자. 저장소는 이미 `.mjs` 를 쓰는데 전 축의 글롭이 `.js` 뿐이었다."""
+    module = clone_source / "js" / "sneaky.mjs"
+    module.write_text("let __mjsState = 1;\n", encoding="utf-8")
+    report = gate.check(document, frontend_tree, axes=["state_js_module"], metrics=[])
+    assert not report.ok, "`.mjs` 신설 모듈이 축 밖이었습니다."
+    assert "frontend/js/sneaky.mjs:1 __mjsState" in _failures(report), _failures(report)
+
+
+def test_s3_non_utf8_source_is_a_structural_error(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """S3 — UTF-8 로 못 읽는 `.js`.
+
+    조용히 `continue` 하면 정규식 축은 그 파일을 못 보고 AST 축은 본다. 「런타임 부재를 자동
+    감지해 조용히 스킵하지 않는다」와 같은 축이라 구조 오류로 든다.
+    """
+    target = clone_source / "js" / "badenc.js"
+    target.write_bytes("// 한글 주석\nwindow.addEventListener(\"click\", () => {});\n".encode("cp949"))
+    report = gate.check(document, frontend_tree, axes=["subscription_listener"], metrics=[])
+    assert not report.ok, "비-UTF8 소스가 조용히 스킵됐습니다."
+    text = _failures(report)
+    assert "frontend/js/badenc.js" in text, text
+    assert "UTF-8" in text, text
+
+
+def test_s2_anchor_occurrence_catches_a_shifted_line(mutable_document: dict[str, Any]) -> None:
+    """S2 — 앵커가 「그 줄의 부분열」이면 반복 토큰 구간에서 줄이 밀려도 초록이었다."""
+    victim = next(
+        node for node in mutable_document["node"] if node["id"] == "subscription/listener/app-shell"
+    )
+    evidence = victim["evidence"][0]
+    assert evidence.get("occurrence"), "이 행은 유일하지 않은 앵커를 들고 있어야 대조가 성립한다."
+    source = (REPO_ROOT / evidence["file"]).read_text(encoding="utf-8").splitlines()
+    hits = [n for n, line in enumerate(source, 1) if evidence["anchor"] in line]
+    moved = next(n for n in hits if n != evidence["line"])
+    evidence["line"] = moved
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_listener"], metrics=[])
+    assert not report.ok, "같은 앵커를 가진 다른 줄로 밀렸는데 통과했습니다."
+    text = _failures(report)
+    assert "occurrence" in text, text
+    assert victim["id"] in text, text
+
+
+def test_s5_derived_metric_scope_must_match_a_pathless_axis(
+    mutable_document: dict[str, Any]
+) -> None:
+    """M9′/S5 — 멤버 키에 경로가 없는 축에서는 scope 필터가 아무것도 안 거른다.
+
+    그러면 v2 §2 의 세 필드 중 하나가 장식이 된다. 파생 계측은 축 scope 를 그대로 상속한다.
+    """
+    metric = next(m for m in mutable_document["metric"] if m["id"] == "dom-stable-ids")
+    metric["scope"] = ["nonexistent/never.html"]
+    report = gate.check(
+        mutable_document, REPO_ROOT, axes=["dom_static"], metrics=["dom-stable-ids"]
+    )
+    assert not report.ok, "경로 없는 축의 파생 scope 위조가 통과했습니다."
+    text = _failures(report)
+    assert "scope 필터가 아무것도" in text, text
+    assert "dom-stable-ids" in text, text
+
+
+def test_m13_verification_pointing_at_a_missing_test_is_refused(
+    mutable_document: dict[str, Any]
+) -> None:
+    """M13 — `verification` 이 없는 테스트 함수를 가리키면 붉는다(**전체 실행 전용 분기**)."""
+    victim = next(
+        node for node in mutable_document["node"]
+        if node["verification"] != ["none"]
+    )
+    victim["verification"] = ["tests/test_web_dom_contract.py::test_this_function_does_not_exist"]
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, "없는 테스트를 가리키는 verification 이 통과했습니다."
+    text = _failures(report)
+    assert "test_this_function_does_not_exist" in text, text
+    assert victim["id"] in text, text
+
+
+@pytest.mark.parametrize("dropped", ["predicate", "scope", "unit"])
+def test_m21_axis_level_predicate_triple_is_required(
+    mutable_document: dict[str, Any], dropped: str
+) -> None:
+    """M21 — 술어 3종은 계측만이 아니라 **축 선언에도** 예외 없이 걸린다."""
+    mutable_document["axes"]["subscription_release"].pop(dropped)
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_release"], metrics=[])
+    assert not report.ok, f"축 수준 `{dropped}` 누락이 통과했습니다."
+    text = _failures(report)
+    assert dropped in text, text
+    assert "subscription_release" in text, text
+
+
+@pytest.mark.parametrize("dropped", ["__all__", "description", "probe", "scope", "current"])
+def test_m22_blind_spot_fields_are_required(
+    mutable_document: dict[str, Any], dropped: str
+) -> None:
+    """M22·M23 — `blind_spot` 통째 삭제와 다섯 필드 각각. 사각 진술은 선택이 아니다."""
+    axis = mutable_document["axes"]["subscription_push"]
+    if dropped == "__all__":
+        axis.pop("blind_spot")
+    else:
+        axis["blind_spot"].pop(dropped)
+    report = gate.check(mutable_document, REPO_ROOT, axes=["subscription_push"], metrics=[])
+    assert not report.ok, f"`blind_spot` 의 `{dropped}` 누락이 통과했습니다."
+    text = _failures(report)
+    assert "blind_spot" in text, text
+    assert "subscription_push" in text, text
+
+
+def test_false_positive_direction_is_remeasured(mutable_document: dict[str, Any]) -> None:
+    """오검 방향도 사각과 같은 규칙으로 재실측된다 — 「18개 팩토리」가 붉은 자리."""
+    claim = mutable_document["axes"]["lifecycle_factory"]["false_positive"]
+    claim["current"] = claim["current"] + 1
+    report = gate.check(mutable_document, REPO_ROOT, axes=["lifecycle_factory"], metrics=[])
+    assert not report.ok, "오검 크기 불일치가 안 잡혔습니다."
+    text = _failures(report)
+    assert "false_positive" in text, text
+    assert "lifecycle_factory" in text, text
+
+
+def test_excluded_axis_size_is_remeasured(mutable_document: dict[str, Any]) -> None:
+    """명시 제외 축의 **크기**도 데이터다 — 「소리 나는 제외」의 기계 형태."""
+    excluded = next(
+        item for item in mutable_document["excluded_axes"]
+        if item["axis"] == "selftest_frontend_surface"
+    )
+    excluded["size"]["current"] = excluded["size"]["current"] - 1
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "제외한 표면의 크기 불일치가 안 잡혔습니다."
+    assert "selftest_frontend_surface" in _failures(report), _failures(report)
+
+
+def test_excluded_surface_growth_is_loud(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path
+) -> None:
+    """제외한 트리가 **자라면** 붉는다 — 조용한 유예와 소리 나는 제외를 가르는 자리."""
+    module = clone_source / "src" / "selftest" / "__neg_probe.js"
+    module.write_text("export function __negProbe() { return 1; }\n", encoding="utf-8")
+    report = gate.check(document, frontend_tree, axes=[], metrics=[])
+    assert not report.ok, "제외한 표면이 자랐는데 조용했습니다."
+    text = _failures(report)
+    assert "selftest_frontend_surface" in text, text
+    assert "제외는 소리 나야 합니다" in text, text
+
+
+def test_repo_wide_scope_must_be_declared(mutable_document: dict[str, Any]) -> None:
+    """저장소 전수 scope 는 관측자 오염에 노출된다 — 선언 없이 생기면 붉는다."""
+    metric = next(
+        m for m in mutable_document["metric"] if m["id"] == "push-subscription-sites"
+    )
+    metric["aliases"][0]["scope"] = ["**/*.js"]
+    report = gate.check(
+        mutable_document, REPO_ROOT, axes=[], metrics=["push-subscription-sites"]
+    )
+    assert not report.ok, "저장소 전수 scope 가 선언 없이 통과했습니다."
+    assert "repo_wide_metrics" in _failures(report), _failures(report)
+
+
+def test_baseline_sha_must_be_a_commit_hash(mutable_document: dict[str, Any]) -> None:
+    """재고정이 계약인 원장에서 `baseline_sha` 가 산문이면 안 된다."""
+    mutable_document["baseline_sha"] = "8fcc30e"
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "짧은 해시가 통과했습니다."
+    assert "baseline_sha" in _failures(report), _failures(report)
+
+
+def test_review_item_five_evidence_is_required(mutable_document: dict[str, Any]) -> None:
+    """G15 는 노드 표와 **판정 요구 표 양쪽**에 걸린다 — 음성 대조가 한쪽만 겨눴던 자리."""
+    victim = next(
+        item for item in mutable_document["review_item"] if item.get("requires_p_review")
+    )
+    victim["p_review"]["call_path"] = ""
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, "판정 요구 항목의 공란 증거가 통과했습니다."
+    text = _failures(report)
+    assert "call_path" in text, text
+    assert victim["id"] in text, text
+
+
+def test_extractor_table_backing_must_match_the_implementation(
+    mutable_document: dict[str, Any]
+) -> None:
+    """`[extractors.*]` 의 `backing` 은 산문이 아니라 구현과의 대조 대상이다."""
+    mutable_document["extractors"]["html_ids"]["backing"] = "regex-convention"
+    report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
+    assert not report.ok, "추출기 표의 거짓 backing 이 통과했습니다."
+    assert "html_ids" in _failures(report), _failures(report)
+
+
+def test_named_extractor_scope_cannot_be_rewritten_by_the_ledger(
+    mutable_document: dict[str, Any]
+) -> None:
+    """이름 붙은 추출기의 scope·scope_excluded 는 코드가 든다 — 원장이 혼자 다시 못 쓴다."""
+    mutable_document["axes"]["state_js_module"]["scope_excluded"] = []
+    report = gate.check(mutable_document, REPO_ROOT, axes=["state_js_module"], metrics=[])
+    assert not report.ok, "추출기 scope_excluded 위조가 통과했습니다."
+    assert "scope_excluded" in _failures(report), _failures(report)

@@ -44,6 +44,7 @@ R1-99 감사자는 write 0 · 네트워크 0 · 실행 1회로 판정한다::
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import shutil
@@ -66,7 +67,7 @@ CLASSIFICATIONS = frozenset(
     {"react", "python_product", "host", "retire", "p_review_required"}
 )
 NODE_KINDS = frozenset({"dom", "state", "subscription", "lifecycle"})
-BACKINGS = frozenset({"parser", "ast", "regex-convention", "python-import"})
+BACKINGS = frozenset({"parser", "ast", "regex-convention", "python-ast", "python-glob"})
 #: ``per-line`` 은 줄 단위로 돌린 **일치 수**, ``per-occurrence`` 는 파일 전체에 돌린 일치 수,
 #: ``per-matching-line`` 은 **일치가 있는 줄 수**다. 셋을 가르는 이유가 원장에 실측으로 있다 —
 #: 같은 술어 ``window\.pywebview`` 가 32(줄) 와 34(회) 를 낸다.
@@ -89,6 +90,47 @@ HANDOFF_SLICES = frozenset(
 )
 
 
+#: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
+#: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
+#: 죽는다」의 정확한 형태다. 여기 값은 **정확값이 아니라 하한**이라 정상 성장은 안 막고 붕괴만
+#: 잡는다. **하한을 낮추는 변경은 그 자체가 리뷰 대상**이고 사유를 주석으로 남긴다.
+AXIS_FLOORS: dict[str, int] = {
+    "dom_static": 200,              # 오늘 232
+    "dom_data_attr": 8,             # 오늘 9
+    "dom_js_site": 22,              # 오늘 26
+    "state_js_module": 44,          # 오늘 50
+    "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
+    "state_ring1": 10,              # 오늘 11
+    "subscription_listener": 105,   # 오늘 119
+    "subscription_release": 10,     # 오늘 12
+    "subscription_push": 5,         # 오늘 6
+    "lifecycle_factory": 16,        # 오늘 18
+    "lifecycle_hook": 9,            # 오늘 10
+}
+
+#: 계측·판정 요구 항목도 같은 이유로 게이트가 목록을 든다 — 항목을 지우는 것은 값이 아니라
+#: **계약을 줄이는 것**이라 원장 혼자 결정할 수 없다.
+EXPECTED_METRIC_IDS = frozenset({
+    "innerhtml-assignment", "mutable-module-state", "push-subscription-sites",
+    "listener-attach-sites", "listener-release-sites", "dom-stable-ids",
+    "dom-data-attribute-kinds", "js-generated-id-sites", "screen-action-pairs",
+    "window-pywebview-references", "pywebview-api-references", "export-function-declarations",
+})
+EXPECTED_REVIEW_ITEM_IDS = frozenset({
+    "bridge/close-guard-state", "gate/architecture-bridge-one-way",
+    "gate/screen-roots-partial", "gate/preserve-wrapped-files-partial",
+    "doc/bridge-header-breakdown", "doc/screens-py-transport-comment",
+})
+EXPECTED_EXCLUDED_AXES = frozenset({"js_planted_data_attrs", "selftest_frontend_surface"})
+
+#: 접기가 있어도 이만큼은 손으로 분류돼 있어야 한다. 노드 행을 0으로 만드는 것은 폐포를
+#: 「측정 0 == 피복 0」으로 닫아 버리는 길이다.
+NODE_ROW_FLOOR = 80
+
+#: `repo_wide_metrics` 판정 — scope 의 첫 경로 조각이 리터럴이 아니면 저장소 전수로 본다.
+_REPO_WIDE_HEAD = re.compile(r"[*?\[]")
+
+
 class InventoryGateError(RuntimeError):
     """원장·저장소가 아니라 **게이트 자신의 전제**가 깨졌을 때만 던진다."""
 
@@ -96,6 +138,12 @@ class InventoryGateError(RuntimeError):
 # ──────────────────────────────────────────────────────────────────────────
 # 저장소 컨텍스트 — 추출기가 공유하는 캐시
 # ──────────────────────────────────────────────────────────────────────────
+
+
+#: 이 확장자는 **텍스트여야 한다**. 디코드 실패를 `continue` 로 넘기면 정규식 축이 그 파일을
+#: 조용히 안 보고, 같은 파일을 AST 축은 본다 — 「런타임 부재를 자동 감지해 조용히 스킵하지
+#: 않는다」와 같은 축의 결함이라 구조 오류로 든다.
+TEXT_SUFFIXES = frozenset({".js", ".mjs", ".py", ".html", ".css", ".toml", ".json", ".md"})
 
 
 def _read_text(path: Path) -> str | None:
@@ -111,21 +159,37 @@ class Repo:
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._files: dict[tuple[str, ...], list[Path]] = {}
+        self._files: dict[tuple[tuple[str, ...], tuple[str, ...]], list[Path]] = {}
         self._node_axes: dict[str, list[str]] | None = None
         self._html: _IndexParse | None = None
+        #: 텍스트여야 하는데 UTF-8 로 못 읽은 파일 — 조용히 넘기지 않고 보고한다.
+        self.decode_failures: set[str] = set()
 
-    def files(self, scope: tuple[str, ...]) -> list[Path]:
-        cached = self._files.get(scope)
+    def files(self, scope: tuple[str, ...], excluded: tuple[str, ...] = ()) -> list[Path]:
+        key = (scope, excluded)
+        cached = self._files.get(key)
         if cached is None:
+            blocked: set[Path] = set()
+            for pattern in excluded:
+                blocked.update(self.root.glob(pattern))
             seen: dict[Path, None] = {}
             for pattern in scope:
                 for path in sorted(self.root.glob(pattern)):
-                    if path.is_file():
-                        seen[path] = None
+                    if not path.is_file():
+                        continue
+                    if any(parent in blocked for parent in (path, *path.parents)):
+                        continue
+                    seen[path] = None
             cached = list(seen)
-            self._files[scope] = cached
+            self._files[key] = cached
         return cached
+
+    def text(self, path: Path) -> str | None:
+        """scope 안의 파일을 읽되 **텍스트여야 하는데 못 읽은 것**은 기록한다."""
+        content = _read_text(path)
+        if content is None and path.suffix.lower() in TEXT_SUFFIXES:
+            self.decode_failures.add(self.relative(path))
+        return content
 
     def relative(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
@@ -255,6 +319,7 @@ class Extractor:
     backing: str
     scope: tuple[str, ...]
     run: Callable[[Repo], list[str]]
+    scope_excluded: tuple[str, ...] = ()
 
 
 def _html_ids(repo: Repo) -> list[str]:
@@ -303,13 +368,31 @@ _ID_ATTR_GAP_PATTERNS = (
     ("single-quoted", r"id='"),
     ("unquoted-interpolation", r"id=\$\{"),
     ("selector-literal", r"\[id="),
+    # 다섯째·여섯째 — 마크업 문자열이 아니라 **DOM API** 로 id 를 심는 길. 반증 라운드가
+    # 「네 형태가 전수」라는 선언을 깬 자리다: 전수를 주장하려면 그것을 확인하는 프로브가
+    # 있어야 하고, 그럴 수 없으면 「알려진 형태 N개」로 낮춘다.
+    ("set-attribute", r'setAttribute\(\s*["\']id["\']'),
+    ("id-property-assignment", r"\.id\s*=(?!=)"),
 )
+
+
+#: 제품 프런트 그래프 — `scripts/extract_js_ast_axes.mjs` 의 PRODUCT_SCOPE 와 같은 문장이다.
+#: `frontend/src/*.js` **비재귀**가 `frontend/src/<하위>/store.js` 신설을 조용히 축 밖에 두던
+#: 구멍을 닫고, `.mjs` 를 함께 문다(오늘 0건이지만 확장자 하나가 전 축의 사각이 될 이유가 없다).
+PRODUCT_JS_SCOPE = (
+    "frontend/js/**/*.js", "frontend/js/**/*.mjs",
+    "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+)
+#: selftest 트리는 제품 그래프가 아니다(`schema.js` 는 출하 번들에도 없다). 축에서 빼되
+#: 원장이 `excluded_axes` 로 **소리 나게** 제외하고 크기를 프로브로 잰다.
+SELFTEST_EXCLUDED = ("frontend/src/selftest/**",)
+SELFTEST_SCOPE = ("frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs")
 
 
 def _js_id_attr_anchor_gaps(repo: Repo) -> list[str]:
     rows: list[str] = []
-    for path in repo.files(("frontend/js/**/*.js",)):
-        text = _read_text(path)
+    for path in repo.files(PRODUCT_JS_SCOPE, SELFTEST_EXCLUDED):
+        text = repo.text(path)
         if text is None:
             continue
         for name, pattern in _ID_ATTR_GAP_PATTERNS:
@@ -331,7 +414,7 @@ def _js_module_state_convention(repo: Repo) -> list[str]:
     """
     rows: list[str] = []
     for path in repo.files(("frontend/js/**/*.js",)):
-        text = _read_text(path)
+        text = repo.text(path)
         if text is None:
             continue
         rel = repo.relative(path)
@@ -358,17 +441,13 @@ def _js_module_state_convention_budget(repo: Repo) -> list[str]:
 
 
 def _action_registry_screens(repo: Repo) -> list[str]:
-    from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
-
-    return sorted(ACTION_REGISTRY)
+    return sorted(_action_registry(repo))
 
 
 def _action_registry_pairs(repo: Repo) -> list[str]:
-    from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
-
     return sorted(
         f"{screen}/{action}"
-        for screen, actions in ACTION_REGISTRY.items()
+        for screen, actions in _action_registry(repo).items()
         for action in actions
     )
 
@@ -378,7 +457,7 @@ def _action_registry_dynamic(repo: Repo) -> list[str]:
     rows: list[str] = []
     pattern = r"ACTION_REGISTRY\s*\[|ACTION_REGISTRY\.(?:setdefault|update|pop)"
     for path in repo.files(("src/hwpxfiller/webapp/*.py",)):
-        text = _read_text(path)
+        text = repo.text(path)
         if text is None:
             continue
         for line_no, line in enumerate(text.splitlines(), 1):
@@ -409,8 +488,8 @@ _LISTENER_GAP_PATTERNS = (
 def _listener_convention_gaps(repo: Repo) -> list[str]:
     """관례 정규식이 **함께 세거나 못 보는** 것 — 주석 안 일치와 대괄호 표기 호출."""
     rows: list[str] = []
-    for path in repo.files(("frontend/js/**/*.js",)):
-        text = _read_text(path)
+    for path in repo.files(PRODUCT_JS_SCOPE, SELFTEST_EXCLUDED):
+        text = repo.text(path)
         if text is None:
             continue
         rel = repo.relative(path)
@@ -419,6 +498,93 @@ def _listener_convention_gaps(repo: Repo) -> list[str]:
                 line_no = text[: match.start()].count("\n") + 1
                 rows.append(f"{rel}:{line_no}:{name}")
     return sorted(rows)
+
+
+def _selftest_surface_sites(repo: Repo) -> list[str]:
+    """명시 제외 축의 **크기** — 구성 지점 · 모듈 상태 · id 사이트를 한 목록으로 낸다.
+
+    제외가 조용하면 「미분류 0」이 거짓말이 된다. 이 프로브가 그 제외를 소리 나게 만든다.
+    """
+    return list(repo.node_axes()["selftest_surface"])
+
+
+def _action_registry(repo: Repo) -> dict[str, list[str]]:
+    """`ACTION_REGISTRY` 를 **그 트리의 소스에서** 읽는다.
+
+    import 로 읽으면 `repo_root` 를 무시하고 **설치본**을 잰다 — 같은 파일 안에서 축마다 다른
+    트리를 보게 되고, 원장이 든 `scope` 가 측정 대상이 아니게 된다(editable install 이라 값만
+    우연히 같았다). AST 로 읽으면 scope 가 진짜 scope 다.
+    """
+    path = repo.root / "src" / "hwpxfiller" / "webapp" / "action_registry.py"
+    text = repo.text(path)
+    if text is None:
+        raise InventoryGateError(f"액션 레지스트리를 읽지 못했습니다: {path}")
+    tree = ast.parse(text, filename=str(path))
+
+    literals: dict[str, ast.Dict] = {}
+    exported: str | None = None
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        elif isinstance(node, ast.Assign):
+            targets = list(node.targets)
+        else:
+            continue
+        names = [target.id for target in targets if isinstance(target, ast.Name)]
+        if not names or node.value is None:
+            continue
+        if isinstance(node.value, ast.Dict):
+            for name in names:
+                literals[name] = node.value
+        if "ACTION_REGISTRY" in names:
+            # `MappingProxyType({screen: … for screen, actions in _REGISTRY.items()})` 처럼
+            # 감싸는 층을 넘어 **어느 dict 리터럴을 내보내는지**를 이름으로 되짚는다.
+            referenced = {
+                child.id for child in ast.walk(node.value) if isinstance(child, ast.Name)
+            }
+            exported = next(
+                (name for name in referenced if name in literals or name.endswith("REGISTRY")),
+                None,
+            )
+            if isinstance(node.value, ast.Dict):
+                exported = "ACTION_REGISTRY"
+
+    source = literals.get(exported or "") or literals.get("ACTION_REGISTRY")
+    if source is None:
+        raise InventoryGateError(
+            "ACTION_REGISTRY 가 내보내는 dict 리터럴을 찾지 못했습니다 — 레지스트리가 모듈 상수라는 "
+            "이 축의 전제가 깨졌습니다."
+        )
+    registry: dict[str, list[str]] = {}
+    for key, value in zip(source.keys, source.values, strict=True):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            raise InventoryGateError("액션 레지스트리의 화면 키가 문자열 리터럴이 아닙니다.")
+        registry[key.value] = _literal_dict_keys(value, literals, f"레지스트리[{key.value!r}]")
+    return registry
+
+
+def _literal_dict_keys(node: ast.expr, literals: dict[str, ast.Dict], where: str) -> list[str]:
+    """dict 리터럴의 키를 읽되 ``**공유묶음`` 전개를 따라간다.
+
+    `job` 화면은 `**_DATA_ZONE` 으로 공유 액션을 싣고 그 묶음이 다시 `**_ZONE_MUTATIONS` 를
+    싣는다. 전개를 안 따라가면 그 화면의 액션이 조용히 줄어 값이 틀린다.
+    """
+    if not isinstance(node, ast.Dict):
+        raise InventoryGateError(f"{where} 가 dict 리터럴이 아닙니다.")
+    keys: list[str] = []
+    for key, value in zip(node.keys, node.values, strict=True):
+        if key is None:  # `**expr` 전개
+            if not isinstance(value, ast.Name) or value.id not in literals:
+                raise InventoryGateError(
+                    f"{where} 의 `**` 전개가 모듈 상수 dict 가 아닙니다 — 레지스트리가 모듈 "
+                    "상수라는 이 축의 전제가 깨졌습니다."
+                )
+            keys.extend(_literal_dict_keys(literals[value.id], literals, f"{where}/{value.id}"))
+            continue
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            raise InventoryGateError(f"{where} 의 키가 문자열 리터럴이 아닙니다.")
+        keys.append(key.value)
+    return keys
 
 
 EXTRACTORS: dict[str, Extractor] = {
@@ -430,16 +596,19 @@ EXTRACTORS: dict[str, Extractor] = {
     "html_data_attr_regex_delta": Extractor(
         "regex-convention", ("frontend/index.html",), _html_data_attr_regex_delta
     ),
-    "js_template_ids": Extractor("ast", ("frontend/js/**/*.js",), _js_template_ids),
+    "js_template_ids": Extractor(
+        "ast", PRODUCT_JS_SCOPE, _js_template_ids, SELFTEST_EXCLUDED
+    ),
     "js_id_attr_anchor_gaps": Extractor(
-        "regex-convention", ("frontend/js/**/*.js",), _js_id_attr_anchor_gaps
+        "regex-convention", PRODUCT_JS_SCOPE, _js_id_attr_anchor_gaps, SELFTEST_EXCLUDED
     ),
     "js_module_state": Extractor(
-        "ast", ("frontend/js/**/*.js", "frontend/src/*.js"), _js_module_state
+        "ast", PRODUCT_JS_SCOPE, _js_module_state, SELFTEST_EXCLUDED
     ),
     "js_nonexported_fn_state": Extractor(
-        "ast", ("frontend/js/**/*.js",), _js_nonexported_fn_state
+        "ast", PRODUCT_JS_SCOPE, _js_nonexported_fn_state, SELFTEST_EXCLUDED
     ),
+    "selftest_surface_sites": Extractor("ast", SELFTEST_SCOPE, _selftest_surface_sites),
     "js_module_state_convention": Extractor(
         "regex-convention", ("frontend/js/**/*.js",), _js_module_state_convention
     ),
@@ -447,12 +616,12 @@ EXTRACTORS: dict[str, Extractor] = {
         "regex-convention", _BUDGET_SCOPE, _js_module_state_convention_budget
     ),
     "action_registry_screens": Extractor(
-        "python-import",
+        "python-ast",
         ("src/hwpxfiller/webapp/action_registry.py",),
         _action_registry_screens,
     ),
     "action_registry_pairs": Extractor(
-        "python-import",
+        "python-ast",
         ("src/hwpxfiller/webapp/action_registry.py",),
         _action_registry_pairs,
     ),
@@ -460,13 +629,13 @@ EXTRACTORS: dict[str, Extractor] = {
         "regex-convention", ("src/hwpxfiller/webapp/*.py",), _action_registry_dynamic
     ),
     "ring1_state_modules": Extractor(
-        "python-import", ("src/hwpxfiller/gui/*_state.py",), _ring1_state_modules
+        "python-glob", ("src/hwpxfiller/gui/*_state.py",), _ring1_state_modules
     ),
     "gui_non_state_modules": Extractor(
-        "python-import", ("src/hwpxfiller/gui/*.py",), _gui_non_state_modules
+        "python-glob", ("src/hwpxfiller/gui/*.py",), _gui_non_state_modules
     ),
     "listener_convention_gaps": Extractor(
-        "regex-convention", ("frontend/js/**/*.js",), _listener_convention_gaps
+        "regex-convention", PRODUCT_JS_SCOPE, _listener_convention_gaps, SELFTEST_EXCLUDED
     ),
 }
 
@@ -482,7 +651,8 @@ _NODE_BACKED = frozenset(
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def _regex_sites(repo: Repo, pattern: str, scope: tuple[str, ...], granularity: str) -> list[str]:
+def _regex_sites(repo: Repo, pattern: str, scope: tuple[str, ...], granularity: str,
+                 excluded: tuple[str, ...] = ()) -> list[str]:
     """정규식 술어를 사이트 좌표로 편다.
 
     ``per-line`` 은 줄 단위로 돌린다 — 셸 ``grep`` 과 같은 눈이라 줄 끝 대입에서 값이 갈리는
@@ -490,8 +660,8 @@ def _regex_sites(repo: Repo, pattern: str, scope: tuple[str, ...], granularity: 
     """
     compiled = re.compile(pattern)
     rows: list[str] = []
-    for path in repo.files(scope):
-        text = _read_text(path)
+    for path in repo.files(scope, excluded):
+        text = repo.text(path)
         if text is None:
             continue
         rel = repo.relative(path)
@@ -516,7 +686,8 @@ def _regex_sites(repo: Repo, pattern: str, scope: tuple[str, ...], granularity: 
 
 
 def _measure(repo: Repo, predicate: dict[str, Any], scope: tuple[str, ...],
-             axis_members: dict[str, list[str]] | None = None) -> list[str]:
+             axis_members: dict[str, list[str]] | None = None,
+             excluded: tuple[str, ...] = ()) -> list[str]:
     """술어 하나를 저장소에 재실행해 **멤버 키 목록**을 돌려준다."""
     kind = predicate.get("kind")
     if kind in {"extractor", "node_extractor"}:
@@ -527,22 +698,29 @@ def _measure(repo: Repo, predicate: dict[str, Any], scope: tuple[str, ...],
         return list(extractor.run(repo))
     if kind == "regex":
         return _regex_sites(
-            repo, predicate["pattern"], scope, predicate.get("granularity", "per-occurrence")
+            repo, predicate["pattern"], scope,
+            predicate.get("granularity", "per-occurrence"), excluded,
         )
     if kind == "derived":
         axis = predicate.get("axis")
         if axis_members is None or axis not in axis_members:
             raise InventoryGateError(f"파생 술어가 가리키는 축을 못 잽니다: {axis!r}")
         members = axis_members[axis]
-        return [member for member in members if _member_in_scope(member, scope)]
+        return [member for member in members if _member_in_scope(member, scope, excluded)]
     raise InventoryGateError(f"알 수 없는 술어 종류: {kind!r}")
 
 
-def _member_in_scope(member: str, scope: tuple[str, ...]) -> bool:
-    """멤버 키의 경로 접두를 scope 글롭에 맞춘다 — 경로가 없는 멤버는 전부 통과."""
+def _member_in_scope(member: str, scope: tuple[str, ...], excluded: tuple[str, ...] = ()) -> bool:
+    """멤버 키의 경로 접두를 scope 글롭에 맞춘다 — 경로가 없는 멤버는 전부 통과.
+
+    「전부 통과」가 곧 사각이다(경로 없는 축에서 `scope` 가 장식이 된다). 그래서 그런 축의
+    파생 계측은 **scope 가 축과 정확히 같아야** 하고, 그 강제는 :func:`_check_metric` 이 진다.
+    """
     head = member.split(":", 1)[0].split(" ", 1)[0]
     if "/" not in head:
         return True
+    if any(_glob_match(head, pattern.removesuffix("/**") + "/**") for pattern in excluded):
+        return False
     return any(_glob_match(head, pattern) for pattern in scope)
 
 
@@ -667,6 +845,14 @@ def _require_predicate_triple(where: str, item: dict[str, Any], report: Report) 
                 f"원장은 {list(declared)} 라고 적었습니다."
             )
             ok = False
+        declared_excluded = tuple(item.get("scope_excluded") or ())
+        if declared_excluded != extractor.scope_excluded:
+            report.structural.append(
+                f"{where}: 추출기 {name!r} 의 scope_excluded 는 "
+                f"{list(extractor.scope_excluded)} 인데 원장은 {list(declared_excluded)} "
+                "라고 적었습니다."
+            )
+            ok = False
     elif kind != "derived":
         report.structural.append(f"{where}: 알 수 없는 술어 종류 {kind!r}.")
         ok = False
@@ -688,7 +874,7 @@ def _check_evidence(node_id: str, evidence: Any, repo: Repo, report: Report) -> 
         if not path.is_file():
             report.structural.append(f"노드 {node_id}: 증거 파일이 없습니다 — {item['file']}")
             continue
-        text = _read_text(path)
+        text = repo.text(path)
         if text is None:
             report.structural.append(f"노드 {node_id}: 증거 파일을 읽지 못했습니다 — {item['file']}")
             continue
@@ -700,10 +886,39 @@ def _check_evidence(node_id: str, evidence: Any, repo: Repo, report: Report) -> 
                 f"{item['file']}:{line_no} (총 {len(lines)}행)"
             )
             continue
-        if str(item["anchor"]) not in lines[line_no - 1]:
+        anchor = str(item["anchor"])
+        if anchor not in lines[line_no - 1]:
             report.structural.append(
                 f"노드 {node_id}: 증거 앵커가 그 줄에 없습니다 — "
-                f"{item['file']}:{line_no} 에서 {item['anchor']!r} 를 찾지 못했습니다."
+                f"{item['file']}:{line_no} 에서 {anchor!r} 를 찾지 못했습니다."
+            )
+            continue
+        # 앵커가 파일에서 유일하지 않으면 「그 줄에 있다」는 좌표를 지키지 못한다 —
+        # 반복 토큰 구간에서는 줄이 밀려도 초록이었다. 유일하지 않으면 `occurrence` 로
+        # **몇 번째 줄인지**를 함께 든다.
+        hits = [n for n, line in enumerate(lines, 1) if anchor in line]
+        if len(hits) == 1:
+            if item.get("occurrence") is not None:
+                report.structural.append(
+                    f"노드 {node_id}: 앵커가 유일한데 `occurrence` 를 들었습니다 — "
+                    f"{item['file']}:{line_no}"
+                )
+            continue
+        occurrence = item.get("occurrence")
+        if occurrence is None:
+            report.structural.append(
+                f"노드 {node_id}: 증거 앵커가 유일하지 않습니다 — "
+                f"{item['file']} 안에서 {anchor!r} 가 {len(hits)}줄에 있습니다. "
+                "`occurrence` 로 몇 번째인지를 들거나 유일한 앵커로 바꾸세요."
+            )
+            continue
+        index = int(occurrence)
+        if not 1 <= index <= len(hits) or hits[index - 1] != line_no:
+            report.structural.append(
+                f"노드 {node_id}: 증거의 occurrence 가 어긋납니다 — "
+                f"{item['file']} 의 {anchor!r} {index}번째는 "
+                f"{hits[index - 1] if 1 <= index <= len(hits) else '없음'}행인데 "
+                f"원장은 {line_no}행이라고 적었습니다."
             )
 
 
@@ -879,6 +1094,70 @@ def _axis_coverage(
     return result
 
 
+def _check_coverage_claim(
+    axis_name: str,
+    field: str,
+    label: str,
+    claim: Any,
+    repo: Repo,
+    axis_members: dict[str, list[str]],
+    report: Report,
+    axis_report: AxisReport,
+    required: bool,
+) -> None:
+    """`blind_spot`(못 보는 것)과 `false_positive`(잘못 보는 것)를 같은 규칙으로 검사한다.
+
+    술어는 값뿐 아니라 **자기 커버리지**를 진술해야 하고, 커버리지는 두 방향이다. 한 방향만
+    들면 「18개 팩토리」처럼 값은 옳고 이름이 틀린 자리를 못 잡는다.
+    """
+    if claim is None:
+        if required:
+            report.structural.append(
+                f"축 {axis_name}: `{field}` 이(가) 없습니다 — 추출기 항목은 「{label}」을 데이터로 "
+                "듭니다(없으면 `current = 0` 과 그것을 세는 프로브를)."
+            )
+        return
+    if not isinstance(claim, dict):
+        report.structural.append(f"축 {axis_name}: `{field}` 은 표여야 합니다.")
+        return
+    for field_name in ("description", "probe", "scope", "current"):
+        if claim.get(field_name) is None:
+            report.structural.append(f"축 {axis_name}: `{field}.{field_name}` 이(가) 없습니다.")
+            return
+    if not _require_predicate_triple(
+        f"축 {axis_name} 의 {field}",
+        {
+            "predicate": claim["probe"],
+            "scope": claim["scope"],
+            "scope_excluded": claim.get("scope_excluded"),
+            "unit": claim.get("unit", "건"),
+        },
+        report,
+    ):
+        return
+    try:
+        found = _measure(
+            repo, claim["probe"], tuple(claim["scope"]), axis_members,
+            tuple(claim.get("scope_excluded") or ()),
+        )
+    except InventoryGateError as exc:
+        report.structural.append(f"축 {axis_name}: {field} 프로브 실패 — {exc}")
+        return
+    if len(found) != int(claim["current"]):
+        axis_report.blind_spot_delta.append(
+            f"{label}이 움직였습니다({field}): 기록 {claim['current']} → 실측 {len(found)}. "
+            f"실측 전수: {sorted(found)}"
+        )
+        return
+    declared_members = claim.get("members")
+    if declared_members is not None and sorted(declared_members) != sorted(found):
+        axis_report.blind_spot_delta.append(
+            f"{label} 멤버가 어긋납니다({field}).\n"
+            f"  기록에만: {sorted(set(declared_members) - set(found))}\n"
+            f"  실측에만: {sorted(set(found) - set(declared_members))}"
+        )
+
+
 def _check_blind_spot(
     axis_name: str,
     axis_decl: dict[str, Any],
@@ -887,41 +1166,14 @@ def _check_blind_spot(
     report: Report,
     axis_report: AxisReport,
 ) -> None:
-    blind = axis_decl.get("blind_spot")
-    if not isinstance(blind, dict):
-        report.structural.append(
-            f"축 {axis_name}: `blind_spot` 이 없습니다 — 추출기 항목은 「이 술어가 못 보는 것」을 "
-            "데이터로 듭니다(없으면 `current = 0` 과 그것을 세는 프로브를)."
-        )
-        return
-    for field_name in ("description", "probe", "scope", "current"):
-        if blind.get(field_name) is None:
-            report.structural.append(f"축 {axis_name}: `blind_spot.{field_name}` 이(가) 없습니다.")
-            return
-    if not _require_predicate_triple(
-        f"축 {axis_name} 의 blind_spot",
-        {"predicate": blind["probe"], "scope": blind["scope"], "unit": blind.get("unit", "건")},
-        report,
-    ):
-        return
-    try:
-        found = _measure(repo, blind["probe"], tuple(blind["scope"]), axis_members)
-    except InventoryGateError as exc:
-        report.structural.append(f"축 {axis_name}: 사각 프로브 실패 — {exc}")
-        return
-    if len(found) != int(blind["current"]):
-        axis_report.blind_spot_delta.append(
-            f"사각이 움직였습니다: 기록 {blind['current']} → 실측 {len(found)}. "
-            f"실측 전수: {sorted(found)}"
-        )
-        return
-    declared_members = blind.get("members")
-    if declared_members is not None and sorted(declared_members) != sorted(found):
-        axis_report.blind_spot_delta.append(
-            "사각 멤버가 어긋납니다.\n"
-            f"  기록에만: {sorted(set(declared_members) - set(found))}\n"
-            f"  실측에만: {sorted(set(found) - set(declared_members))}"
-        )
+    _check_coverage_claim(
+        axis_name, "blind_spot", "사각", axis_decl.get("blind_spot"),
+        repo, axis_members, report, axis_report, required=True,
+    )
+    _check_coverage_claim(
+        axis_name, "false_positive", "오검", axis_decl.get("false_positive"),
+        repo, axis_members, report, axis_report, required=False,
+    )
 
 
 def _check_review_items(document: dict[str, Any], repo: Repo, report: Report) -> None:
@@ -937,14 +1189,21 @@ def _check_review_items(document: dict[str, Any], repo: Repo, report: Report) ->
         if item_id in seen:
             report.structural.append(f"판정 요구 항목 id 가 중복입니다: {item_id}")
         seen.add(item_id)
-        for field_name in ("id", "subject", "classification", "owner"):
+        for field_name in ("id", "subject", "owner"):
             if not item.get(field_name):
                 report.structural.append(f"판정 요구 항목 {item_id}: `{field_name}` 이(가) 없습니다.")
-        classification = item.get("classification")
-        if classification is not None and classification not in CLASSIFICATIONS:
+        # `classification` 은 노드 표에서 「React 이후 이 노드의 소유자」다. 같은 이름을 여기
+        # 붙이면 「이 사실의 처분을 누가 지는가」라는 **다른 명제**를 지게 되고, V7 이 두 열을
+        # 합쳐 없앤 형상이 「한 이름 · 두 표」로 되돌아온다. 그래서 이 표는 그 이름을 안 쓴다.
+        if "classification" in item:
             report.structural.append(
-                f"판정 요구 항목 {item_id}: `classification` 은 소문자 5종 중 하나여야 합니다 — "
-                f"{classification!r}"
+                f"판정 요구 항목 {item_id}: `classification` 은 노드 표의 이름입니다 — "
+                "여기서는 `owner`(처분 소유)와 `requires_p_review`(5증거 요구)를 씁니다."
+            )
+        requires = item.get("requires_p_review")
+        if not isinstance(requires, bool):
+            report.structural.append(
+                f"판정 요구 항목 {item_id}: `requires_p_review` 를 true|false 로 듭니다."
             )
         owner = item.get("owner")
         if owner and owner not in HANDOFF_SLICES:
@@ -952,11 +1211,11 @@ def _check_review_items(document: dict[str, Any], repo: Repo, report: Report) ->
                 f"판정 요구 항목 {item_id}: 알 수 없는 소유 슬라이스 {owner!r}."
             )
         _check_evidence(item_id, item.get("evidence"), repo, report)
-        if classification == "p_review_required":
+        if requires is True:
             review = item.get("p_review")
             if not isinstance(review, dict):
                 report.structural.append(
-                    f"판정 요구 항목 {item_id}: `p_review_required` 는 5증거 표를 듭니다."
+                    f"판정 요구 항목 {item_id}: `requires_p_review = true` 는 5증거 표를 듭니다."
                 )
                 continue
             for field_name in P_REVIEW_FIELDS:
@@ -979,6 +1238,7 @@ def _check_metric(
     metric: dict[str, Any],
     repo: Repo,
     axis_members: dict[str, list[str]],
+    declared_axes: dict[str, Any],
     report: Report,
 ) -> None:
     metric_id = str(metric.get("id", "<id 없음>"))
@@ -990,8 +1250,31 @@ def _check_metric(
     for where, item in items:
         if not _require_predicate_triple(f"계측 {where}", item, report):
             continue
+        predicate = item["predicate"]
+        if predicate.get("kind") == "derived":
+            axis_name = predicate.get("axis")
+            axis_decl = declared_axes.get(axis_name or "")
+            if not isinstance(axis_decl, dict):
+                report.metric_mismatch.append(
+                    f"계측 {where}: 파생 술어가 선언되지 않은 축 {axis_name!r} 을 가리킵니다."
+                )
+                continue
+            members = axis_members.get(axis_name or "", [])
+            pathless = any("/" not in m.split(":", 1)[0].split(" ", 1)[0] for m in members)
+            if pathless and tuple(item["scope"]) != tuple(axis_decl.get("scope") or ()):
+                # 멤버 키에 경로가 없는 축(요소 id·속성 이름·화면 이름)에서는 scope 필터가
+                # 아무것도 거르지 못한다 — 그러면 v2 §2 의 세 필드 중 하나가 장식이 된다.
+                report.metric_mismatch.append(
+                    f"계측 {where}: 축 {axis_name} 의 멤버에 경로가 없어 scope 필터가 아무것도 "
+                    f"거르지 못합니다. 파생 계측은 축 scope {list(axis_decl.get('scope') or ())} "
+                    f"를 그대로 상속해야 하는데 {list(item['scope'])} 라고 적었습니다."
+                )
+                continue
         try:
-            found = _measure(repo, item["predicate"], tuple(item["scope"]), axis_members)
+            found = _measure(
+                repo, predicate, tuple(item["scope"]), axis_members,
+                tuple(item.get("scope_excluded") or ()),
+            )
         except InventoryGateError as exc:
             report.metric_mismatch.append(f"계측 {where}: 재실측 실패 — {exc}")
             continue
@@ -1014,6 +1297,28 @@ def load_document(path: Path) -> dict[str, Any]:
     return tomllib.loads(path.read_text(encoding="utf-8"))
 
 
+def _referenced_extractors(document: dict[str, Any]) -> set[str]:
+    """원장이 실제로 쓰는 추출기 이름 전수 — 축·사각·오검·제외 크기·계측·alias 를 다 훑는다."""
+    names: set[str] = set()
+
+    def scan(item: Any) -> None:
+        if isinstance(item, dict):
+            for key in ("predicate", "probe"):
+                predicate = item.get(key)
+                if isinstance(predicate, dict) and predicate.get("name"):
+                    names.add(str(predicate["name"]))
+            for value in item.values():
+                scan(value)
+        elif isinstance(item, list):
+            for value in item:
+                scan(value)
+
+    scan(document.get("axes"))
+    scan(document.get("metric"))
+    scan(document.get("excluded_axes"))
+    return names
+
+
 def check(
     document: dict[str, Any],
     repo_root: Path,
@@ -1033,20 +1338,119 @@ def check(
     for field_name in ("baseline_sha", "scope_statement"):
         if not document.get(field_name):
             report.structural.append(f"머리말 `{field_name}` 이(가) 없습니다.")
+    baseline = str(document.get("baseline_sha") or "")
+    if baseline and not re.fullmatch(r"[0-9a-f]{40}", baseline):
+        report.structural.append(
+            f"`baseline_sha` 가 40자리 커밋 해시가 아닙니다 — {baseline!r}. "
+            "재고정이 계약인 원장에서 이 필드가 산문이면 안 됩니다."
+        )
     if document.get("repo_wide_metrics") is None:
         report.structural.append(
             "머리말 `repo_wide_metrics` 가 없습니다 — 저장소 전수 scope 계측이 오늘 몇 개인지를 "
             "데이터로 들어야 합니다(0이면 빈 배열)."
         )
-    for excluded in document.get("excluded_axes") or []:
+
+    # `[extractors.*]` 는 읽는 사람에게 「이 값이 얼마나 믿을 만한가」를 말하는 표다. 코드의
+    # 실제 backing 과 어긋나면 그 설명이 늙는다 — 산문이 아니라 대조 대상으로 둔다.
+    declared_extractors = dict(document.get("extractors") or {})
+    for name, entry in sorted(declared_extractors.items()):
+        extractor = EXTRACTORS.get(name)
+        if extractor is None:
+            report.structural.append(f"추출기 표에 등록되지 않은 이름이 있습니다: {name}")
+            continue
+        if entry.get("backing") != extractor.backing:
+            report.structural.append(
+                f"추출기 {name}: 원장이 backing 을 {entry.get('backing')!r} 이라 적었는데 구현은 "
+                f"{extractor.backing!r} 입니다."
+            )
+        if not entry.get("implementation"):
+            report.structural.append(f"추출기 {name}: `implementation` 이 없습니다.")
+    for name in sorted(_referenced_extractors(document) - set(declared_extractors)):
+        report.structural.append(
+            f"추출기 {name}: 원장이 쓰는데 `[extractors.{name}]` 설명이 없습니다."
+        )
+
+    declared_axes = dict(document.get("axes") or {})
+
+    # ── 분모 방어 ────────────────────────────────────────────────────────
+    # 원장은 자기 주장의 크기를 스스로 줄일 수 없다. 축 이름 집합·계측 목록·판정 요구 목록·
+    # 노드 행 하한을 **게이트가** 들고 대조한다.
+    missing_axes = sorted(set(AXIS_FLOORS) - set(declared_axes))
+    extra_axes = sorted(set(declared_axes) - set(AXIS_FLOORS))
+    if missing_axes:
+        report.structural.append(
+            f"원장에서 축이 사라졌습니다: {missing_axes}. 분모는 원장이 아니라 게이트의 "
+            "AXIS_FLOORS 가 듭니다 — 축을 줄이는 것은 계약 축소이고 사유와 함께 그쪽을 고쳐야 합니다."
+        )
+    if extra_axes:
+        report.structural.append(
+            f"게이트가 모르는 축이 원장에 있습니다: {extra_axes}. AXIS_FLOORS 에 하한을 "
+            "등록하지 않은 축은 측정 하한 없이 사는 축입니다."
+        )
+    declared_metric_ids = {str(m.get("id")) for m in document.get("metric") or []}
+    if declared_metric_ids != set(EXPECTED_METRIC_IDS):
+        report.structural.append(
+            "계측 항목 목록이 게이트의 EXPECTED_METRIC_IDS 와 다릅니다.\n"
+            f"  원장에만: {sorted(declared_metric_ids - EXPECTED_METRIC_IDS)}\n"
+            f"  게이트에만: {sorted(EXPECTED_METRIC_IDS - declared_metric_ids)}"
+        )
+    declared_review_ids = {str(i.get("id")) for i in document.get("review_item") or []}
+    if declared_review_ids != set(EXPECTED_REVIEW_ITEM_IDS):
+        report.structural.append(
+            "판정 요구 항목 목록이 게이트의 EXPECTED_REVIEW_ITEM_IDS 와 다릅니다.\n"
+            f"  원장에만: {sorted(declared_review_ids - EXPECTED_REVIEW_ITEM_IDS)}\n"
+            f"  게이트에만: {sorted(EXPECTED_REVIEW_ITEM_IDS - declared_review_ids)}"
+        )
+
+    excluded_axes = list(document.get("excluded_axes") or [])
+    declared_excluded = {str(e.get("axis")) for e in excluded_axes}
+    if declared_excluded != set(EXPECTED_EXCLUDED_AXES):
+        report.structural.append(
+            "명시 제외 축 목록이 게이트의 EXPECTED_EXCLUDED_AXES 와 다릅니다 — 제외를 지우는 것은 "
+            "「소리 나는 제외」를 조용한 유예로 되돌리는 것입니다.\n"
+            f"  원장에만: {sorted(declared_excluded - EXPECTED_EXCLUDED_AXES)}\n"
+            f"  게이트에만: {sorted(EXPECTED_EXCLUDED_AXES - declared_excluded)}"
+        )
+    for excluded in excluded_axes:
+        axis_name = str(excluded.get("axis", "<이름 없음>"))
         for field_name in ("axis", "reason", "owner"):
             if not excluded.get(field_name):
                 report.structural.append(
-                    f"제외 축 {excluded.get('axis', '<이름 없음>')}: `{field_name}` 이(가) 없습니다 — "
+                    f"제외 축 {axis_name}: `{field_name}` 이(가) 없습니다 — "
                     "조용한 유예가 아니라 소리 나는 제외여야 합니다."
                 )
-
-    declared_axes = dict(document.get("axes") or {})
+        # 제외 축이 **크기를 잴 수 있는 것**이면 그 크기를 든다. 「안 센다」와 「얼마나 안 세는지
+        # 모른다」는 다르다 — 후자는 조용한 유예로 되돌아가는 길이다.
+        size = excluded.get("size")
+        if size is None:
+            continue
+        if not isinstance(size, dict) or size.get("current") is None:
+            report.structural.append(f"제외 축 {axis_name}: `size` 는 `current` 를 든 표여야 합니다.")
+            continue
+        if not _require_predicate_triple(
+            f"제외 축 {axis_name} 의 size",
+            {
+                "predicate": size.get("probe"),
+                "scope": size.get("scope"),
+                "scope_excluded": size.get("scope_excluded"),
+                "unit": size.get("unit"),
+            },
+            report,
+        ):
+            continue
+        try:
+            found = _measure(
+                repo, size["probe"], tuple(size["scope"]), None,
+                tuple(size.get("scope_excluded") or ()),
+            )
+        except InventoryGateError as exc:
+            report.structural.append(f"제외 축 {axis_name}: size 프로브 실패 — {exc}")
+            continue
+        if len(found) != int(size["current"]):
+            report.structural.append(
+                f"제외 축 {axis_name}: 제외한 표면이 움직였습니다 — 기록 {size['current']} → "
+                f"실측 {len(found)}. 제외는 소리 나야 합니다."
+            )
     selected_axes = set(declared_axes) if axes is None else set(axes)
     unknown_axes = selected_axes - set(declared_axes)
     if unknown_axes:
@@ -1054,6 +1458,11 @@ def check(
 
     nodes = list(document.get("node") or [])
     report.node_rows = len(nodes)
+    if len(nodes) < NODE_ROW_FLOOR:
+        report.structural.append(
+            f"노드 행이 {len(nodes)} 개로 하한 {NODE_ROW_FLOOR} 아래입니다 — 행을 지우면 폐포가 "
+            "「측정 0 == 피복 0」으로 조용히 닫힙니다."
+        )
     duplicate_ids = sorted(
         name for name, count in Counter(str(node.get("id")) for node in nodes).items() if count > 1
     )
@@ -1073,11 +1482,21 @@ def check(
         if not _require_predicate_triple(f"축 {axis_name}", decl, report):
             continue
         try:
-            measured = _measure(repo, decl["predicate"], tuple(decl["scope"]))
+            measured = _measure(
+                repo, decl["predicate"], tuple(decl["scope"]), None,
+                tuple(decl.get("scope_excluded") or ()),
+            )
         except InventoryGateError as exc:
             report.structural.append(f"축 {axis_name}: 재실측 실패 — {exc}")
             continue
         axis_members[axis_name] = measured
+        floor = AXIS_FLOORS.get(axis_name)
+        if floor is not None and len(measured) < floor:
+            report.structural.append(
+                f"축 {axis_name}: 측정 {len(measured)} 이 게이트 하한 {floor} 아래입니다 — "
+                "술어나 scope 가 좁아졌는지 보세요. 하한을 낮추려면 사유와 함께 AXIS_FLOORS 를 "
+                "고쳐야 하고 그 변경 자체가 리뷰 대상입니다."
+            )
         axis_nodes = [node for node in nodes if node.get("axis") == axis_name]
         axis_report = _axis_coverage(axis_name, decl, axis_nodes, measured, repo)
         report.axes[axis_name] = axis_report
@@ -1090,7 +1509,30 @@ def check(
     for metric in declared_metrics:
         if metrics is not None and str(metric.get("id")) not in metrics:
             continue
-        _check_metric(metric, repo, axis_members, report)
+        _check_metric(metric, repo, axis_members, declared_axes, report)
+
+    # 저장소 전수 scope 를 든 계측은 관측자 오염에 노출된다(다른 세션의 미커밋 변경이 값을
+    # 바꾼다). 「오늘 0개」를 선언으로 두지 않고 실제 scope 를 읽어 대조한다.
+    repo_wide: set[str] = set()
+    for metric in declared_metrics:
+        items = [metric, *(metric.get("aliases") or [])]
+        for item in items:
+            for pattern in item.get("scope") or []:
+                if _REPO_WIDE_HEAD.search(str(pattern).split("/", 1)[0]):
+                    repo_wide.add(str(metric.get("id")))
+    declared_repo_wide = set(document.get("repo_wide_metrics") or [])
+    if repo_wide != declared_repo_wide:
+        report.structural.append(
+            "`repo_wide_metrics` 가 실제 scope 와 다릅니다 — 저장소 전수 scope 계측은 고정 수치가 "
+            "아니라 base_sha 앵커 + 정당화된 delta 로만 적을 수 있습니다.\n"
+            f"  실측: {sorted(repo_wide)}\n  선언: {sorted(declared_repo_wide)}"
+        )
+
+    for rel in sorted(repo.decode_failures):
+        report.structural.append(
+            f"텍스트여야 하는 파일을 UTF-8 로 읽지 못했습니다: {rel} — 정규식 축이 이 파일을 "
+            "조용히 건너뛰고 AST 축은 봅니다. 부재를 자동 감지해 스킵하지 않습니다."
+        )
 
     return report
 
@@ -1101,6 +1543,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--document", type=Path, default=DEFAULT_DOCUMENT)
     parser.add_argument("--report", choices=("text", "json"), default="text")
     parser.add_argument("--axis", action="append", dest="axes")
+    # `--axis` 만 있으면 고른 축 밖을 가리키는 파생 계측이 전부 「재실측 실패」로 붉어
+    # 음성 대조를 손으로 재현할 수 없다. 부분 실행은 전체 실행의 부분집합이 아니라
+    # **다른 계약**이므로 두 선택자를 대칭으로 둔다.
+    parser.add_argument("--metric", action="append", dest="metrics")
     args = parser.parse_args(argv)
 
     # 진단이 한국어라 콘솔 기본 코드페이지(cp949)에서는 실패 메시지 자체가 죽는다 —
@@ -1111,7 +1557,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         document = load_document(args.document)
-        report = check(document, args.repo_root.resolve(), axes=args.axes)
+        report = check(
+            document, args.repo_root.resolve(), axes=args.axes, metrics=args.metrics
+        )
     except InventoryGateError as exc:
         print(f"게이트 전제가 깨졌습니다: {exc}", file=sys.stderr)
         return 2

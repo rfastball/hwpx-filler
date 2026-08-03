@@ -13,6 +13,13 @@
 #   2. `evidence` 의 `anchor` 는 그 줄에 실제로 있어야 한다. 좌표가 밀리면 그 자리에서 붉는다.
 #   3. 접힌 컨테이너 행의 `members_expected` 는 성장 탐지의 유일한 기계다. 새 id 가 컨테이너
 #      **안쪽**에 꽂히면 `M−C` 는 조용하고 이 정수만 어긋난다.
+#
+# **분모는 이 파일이 아니라 게이트가 든다.** 축 이름 집합 · 축별 측정 하한 · 계측 목록 · 판정
+# 요구 목록 · 노드 행 하한은 `scripts/check_react_ownership_inventory.py` 의 AXIS_FLOORS ·
+# EXPECTED_METRIC_IDS · EXPECTED_REVIEW_ITEM_IDS · EXPECTED_EXCLUDED_AXES · NODE_ROW_FLOOR 에
+# **리터럴로** 산다. 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼 행을 정리하는 것으로
+# 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「미분류 0」은 분모가 고정돼야 명제다.
+# 하한을 낮추는 변경은 사유와 함께 그쪽을 고쳐야 하고, 그 변경 자체가 리뷰 대상이다.
 
 schema = 1
 
@@ -32,6 +39,17 @@ scope_statement = """
 # 로 한정돼 tests/** 변동에 무감하다. 하나가 생기면 이 규칙이 그 자리에서 걸린다.
 repo_wide_metrics = []
 
+# 분류 어휘 5종 중 오늘 점유자가 없는 값. 부재를 데이터로 적는 이 원장의 습관을 어휘에도 쓴다 —
+# 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
+unoccupied_classifications = ["host"]
+
+# 물리 사이트 하나가 성격이 둘이라 **두 축에 함께 드는** 자리. 축별 폐포는 각각 닫히지만 축을
+# 가로질러 세면 그만큼 겹친다 — 「측정 노드 합계」를 물리 사이트 수로 읽지 말라는 뜻이다.
+[[cross_axis_overlap]]
+member = "frontend/js/app.js:220"
+axes = ["subscription_listener", "lifecycle_hook"]
+reason = "부팅 훅은 부착 사이트이면서 수명주기 경계다. 두 행 다 R3-02 #411 이라 소유권 모순은 없다."
+
 # ── 폐포에서 명시 제외하는 축 ─────────────────────────────────────────────
 # 「안 센 것」을 데이터로 적는다. 조용한 유예가 아니라 **소리 나는 제외**여야 「미분류 0」이
 # 거짓말이 되지 않는다.
@@ -44,6 +62,26 @@ frontend/js 가 템플릿 조각으로 심는 data-* 속성의 전수. 정규식
 속성 위치**를 판별하는 추출기가 오늘 없다. 정적 문서 쪽 축(dom_data_attr)은 파서로 닫혔다.
 """
 owner = "#412"
+# 크기 프로브 없음 — 이 축은 **오답 술어밖에 없다는 것이 제외 사유 자체**다. 무앵커 정규식의
+# 66종/302회를 `size` 로 실으면 프런트 템플릿을 고칠 때마다 숫자만 올리는 의식이 되고, 그러면
+# 사각이 자란 것과 코드가 자란 것을 못 가른다. 소유자가 참 추출기를 지을 때 크기가 생긴다.
+
+[[excluded_axes]]
+axis = "selftest_frontend_surface"
+reason = """
+`frontend/src/selftest/**` 9파일. 제품 그래프가 아니다 — 합성 루트가 import 하지 않고
+`schema.js` 는 출하 번들에도 없다(고유 export 이름 4개가 번들에서 각각 0회). 그러나 같은 원장이
+innerHTML 83 · 리스너 123 · pywebview 36 alias 에서는 이 트리를 **명시 계상**하므로, 축에서만
+조용히 빠지면 한 원장이 같은 트리를 어떤 축에서는 세고 어떤 축에서는 침묵하게 된다.
+그래서 빼되 **크기를 잰다**.
+"""
+owner = "R2-04 #408"
+[excluded_axes.size]
+probe = { kind = "node_extractor", name = "selftest_surface_sites" }
+scope = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
+unit = "구성 지점(`export function`) · 모듈 스코프 상태 · id 사이트를 한 목록으로 센다. 1건 = 1."
+current = 26
+judgment = "오늘 23 + 1 + 2. 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
 
 # ── 추출기 레지스트리 ────────────────────────────────────────────────────
 # `backing` 은 「이 값이 얼마나 믿을 만한가」를 이름이 아니라 종류로 말한다. 구현은
@@ -79,15 +117,20 @@ backing = "regex-convention"
 implementation = "위 관례를 MUTABLE_MODULE_STATE_BUDGET 6파일로 좁힌 것 — 그 안에서는 AST 와 일치한다"
 
 [extractors.action_registry_screens]
-backing = "python-import"
-implementation = "hwpxfiller.webapp.action_registry.ACTION_REGISTRY 의 키"
+backing = "python-ast"
+implementation = "그 트리의 action_registry.py 를 ast 로 읽어 dict 리터럴의 화면 키(`**` 전개 추적)"
+note = "import 로 읽으면 repo_root 를 무시하고 **설치본**을 잰다 — 같은 파일 안에서 축마다 다른 트리를 보게 되고 scope 가 측정 대상이 아니게 된다."
 
 [extractors.action_registry_pairs]
-backing = "python-import"
-implementation = "같은 레지스트리의 (화면, 액션) 쌍"
+backing = "python-ast"
+implementation = "같은 리터럴의 (화면, 액션) 쌍"
+
+[extractors.selftest_surface_sites]
+backing = "ast"
+implementation = "명시 제외 축의 크기 — selftest 트리의 export function · 모듈 상태 · id 사이트"
 
 [extractors.ring1_state_modules]
-backing = "python-import"
+backing = "python-glob"
 implementation = "src/hwpxfiller/gui/*_state.py 파일 전수"
 
 [extractors.html_parse_anomalies]
@@ -107,7 +150,7 @@ backing = "regex-convention"
 implementation = "ACTION_REGISTRY 의 런타임 변형 사이트"
 
 [extractors.gui_non_state_modules]
-backing = "python-import"
+backing = "python-glob"
 implementation = "gui/ 아래 *_state.py 이름 규약 밖의 모듈"
 
 [extractors.listener_convention_gaps]
@@ -120,7 +163,7 @@ implementation = "주석 안 일치 · 대괄호 표기 호출 — 관례 정규
 predicate = { kind = "extractor", name = "html_ids" }
 scope = ["frontend/index.html"]
 unit = "시작태그의 id 속성 1개 = 1노드. 분모 = html.parser 가 읽은 id 속성 전수."
-fold = "nearest-declared-container, self-exclusive"
+fold = "nearest-declared-container, self-exclusive; exact rows are removed before folding"
 [axes.dom_static.blind_spot]
 description = """
 파서는 문서에 쓰인 시작태그만 본다. 오류 복구로 중복 id·태그 불균형을 조용히 삼키면 값이
@@ -137,8 +180,11 @@ judgment = "오늘 중복 0 · 불균형 0. 「없음을 확인했다」의 기�
 predicate = { kind = "extractor", name = "html_data_attrs" }
 scope = ["frontend/index.html"]
 unit = """
-data-* 속성 **이름** 1개 = 1노드. 출현 횟수(50)는 노드가 아니다 — 출현한 요소는 이미
-dom_static 232 안에 있어 이중 계상이 된다. 변화율이 다른 축을 같은 행에 섞지 않는다.
+data-* 속성 **이름** 1개 = 1노드. 출현 횟수(50)는 노드가 아니다.
+실측: data-* 를 든 요소는 43이고 그중 **36은 id 가 있어 dom_static 232 안**(그 36에 대해서는
+출현을 세는 것이 이중 계상이다), **7은 id 가 없어 어느 축도 요소로 세지 않는다**
+(index.html:39·43 의 셸 상단 탭 두 개 포함). 그 일곱에게는 이름 축이 유일한 계약면이다.
+값이 아니라 **변화율**이 축을 가른다 — 이름은 구조가 움직일 때만 바뀌고 출현은 렌더 변경마다 바뀐다.
 """
 [axes.dom_data_attr.blind_spot]
 description = """
@@ -155,7 +201,8 @@ judgment = "여섯 다 CSS 클래스 이름 또는 주석 산문이다. 참값�
 
 [axes.dom_js_site]
 predicate = { kind = "node_extractor", name = "js_template_ids" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = """
 JS 가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아니라 사이트다 — 완전 동적
 3건은 이름이 소스에 없으므로 이름을 단위로 잡으면 그 셋이 영영 미분류이거나 조용히 빠진다.
@@ -163,12 +210,15 @@ JS 가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아
 [axes.dom_js_site.blind_spot]
 description = """
 AST 가 리터럴 노드를 고르고 **속성 판독은 앵커 정규식**이다(「AST 로 닫힌다」가 아니다).
-그 앵커가 못 보는 네 형태를 센다: id 로 끝나는 다른 속성명 · 홑따옴표 속성 · 무따옴표 보간 ·
-선택자 문자열. 오늘 넷 다 0이지만 오늘 0인 것과 앞으로도 0인 것은 다르다.
+**전수라고 주장하지 않는다** — 전수를 주장하려면 그것을 확인하는 프로브가 있어야 하고 없다.
+오늘 **알려진 여섯 형태**를 센다: id 로 끝나는 다른 속성명 · 홑따옴표 속성 · 무따옴표 보간 ·
+선택자 문자열 · `setAttribute("id", …)` · `el.id = …`. 뒤 둘은 마크업 문자열이 아니라 DOM API 로
+심는 길이고, 반증 라운드가 「네 형태가 전수」라는 선언을 깨뜨려 편입됐다.
 """
 probe = { kind = "extractor", name = "js_id_attr_anchor_gaps" }
-scope = ["frontend/js/**/*.js"]
-unit = "네 형태 중 하나의 일치 1건 = 1."
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "알려진 여섯 형태 중 하나의 일치 1건 = 1."
 current = 0
 members = []
 judgment = """
@@ -178,7 +228,8 @@ judgment = """
 
 [axes.state_js_module]
 predicate = { kind = "node_extractor", name = "js_module_state" }
-scope = ["frontend/js/**/*.js", "frontend/src/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = """
 let/var 선언자 1개 = 1노드(구조분해는 바인딩 이름을 전부 편다).
 스코프 = Program 최상위 ∪ export 된 최상위 함수(구성 1회 팩토리)의 body 최상위.
@@ -192,8 +243,9 @@ description = """
 질문이었다.
 """
 probe = { kind = "node_extractor", name = "js_nonexported_fn_state" }
-scope = ["frontend/js/**/*.js"]
-unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1."
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
 current = 13
 members = [
   "frontend/js/grouplist.js:57 request",
@@ -260,15 +312,20 @@ judgment = "아홉 다 여러 표면이 공유하는 단일 출처 상수·값 �
 
 [axes.subscription_listener]
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js"]
-unit = "부착 호출 1건 = 1노드. 좌표는 `파일:줄`(한 줄에 둘이면 `#2` 가 붙는다)."
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+부착 호출 1건 = 1노드. 좌표는 `파일:줄`이고 한 줄에 둘이면 `#2` 가 붙는다 — `per-line` 은
+줄이 아니라 **줄 안의 일치**를 세므로 unit 과 어긋나지 않는다(줄을 세는 것은 `per-matching-line`).
+"""
 [axes.subscription_listener.blind_spot]
 description = """
 관례 정규식이라 주석·문자열 안 일치를 함께 세고, 대괄호 표기 동적 호출(el[m](\"click\", …))을
 못 본다. 오늘 둘 다 0이다.
 """
 probe = { kind = "extractor", name = "listener_convention_gaps" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "주석 안 일치 또는 대괄호 표기 호출 1건 = 1."
 current = 0
 members = []
@@ -276,7 +333,8 @@ judgment = "0이므로 오늘의 119는 전부 실호출이다."
 
 [axes.subscription_release]
 predicate = { kind = "regex", pattern = "\\.removeEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "해제 호출 1건 = 1노드."
 [axes.subscription_release.blind_spot]
 description = """
@@ -285,7 +343,8 @@ description = """
 원본이 존재하지 않는다.
 """
 probe = { kind = "regex", pattern = "AbortController|\\{\\s*signal", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "signal 기반 해제 형태 1건 = 1."
 current = 0
 members = []
@@ -309,17 +368,25 @@ judgment = "0이므로 구독 수명 = 화면 수명이라는 오늘의 전제�
 
 [axes.lifecycle_factory]
 predicate = { kind = "regex", pattern = "^export function ", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/src/*.js"]
-unit = "구성 1회 팩토리 선언 1건 = 1노드."
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+최상위 `export function` 선언 1건 = 1노드. **「팩토리 18개」가 아니다** — 술어가 내는 18 안에
+합성 루트가 1회 구성하는 팩토리 16(`create*`)과 성격이 다른 둘(잎 이스케이퍼 `escHtml` ·
+합성 루트 자신 `bootProduct`)이 함께 있다. 그 둘은 false_positive 가 이름으로 든다.
+이 이름을 그대로 두면 R2·R3 슬라이스가 `esc.js` 를 「팩토리」로 물려받는다.
+"""
 [axes.lifecycle_factory.blind_spot]
 description = """
-`export const X = { … }` 형태의 서비스 네임스페이스 객체는 이 술어가 못 본다. 오늘 11이고
-전부 정적 객체(팩토리가 아니다)라 「구성 1회」 계약의 대상이 아니다 — 그러나 React 이관에서는
-이 열하나가 팩토리와 다른 절취선을 요구한다.
+이 술어가 **못 보는** 방향. `export const X = { … }` 서비스 네임스페이스 객체와
+`export async function` · `export default function` 세 형태를 센다. 오늘 11 = const 11 + 나머지 0.
+열하나는 전부 정적 객체라 「구성 1회」 계약의 대상이 아니지만, React 이관에서는 팩토리와
+다른 절취선을 요구한다.
 """
-probe = { kind = "regex", pattern = "^export const ", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/src/*.js"]
-unit = "const 형태 export 선언 1건 = 1."
+probe = { kind = "regex", pattern = "^export const |^export async function |^export default function ", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "세 형태 중 하나의 export 선언 1건 = 1."
 current = 11
 members = [
   "frontend/js/copy.js:5",
@@ -335,10 +402,25 @@ members = [
   "frontend/src/product_api.js:41",
 ]
 judgment = "열하나는 Copy·Guard·SegView·Intent·Modal·Popover·Preserve·GroupList·SurfaceSheet·UndoToast·PRODUCT_ERROR_CODES 다."
+[axes.lifecycle_factory.false_positive]
+description = """
+이 술어가 **잘못 보는** 방향 — `export function` 이지만 「구성 1회 팩토리」가 아닌 것.
+사각만 들고 오검을 안 들면 값은 옳고 이름이 틀린 자리를 못 잡는다(「18개 팩토리」).
+`escHtml` 은 저장소의 현행 계약이 이미 다르게 가른 이름이다(`EXPECTED_ESM_EXPORTS` 의
+「N-04 잎」 군). `bootProduct` 는 구성 대상이 아니라 구성하는 주체다.
+"""
+probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
+current = 2
+members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:109"]
+judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
 
 [axes.lifecycle_hook]
 predicate = { kind = "regex", pattern = "Preserve\\.around\\s*\\(|function leaveTo\\s*\\(|owner\\.leaveTo\\s*\\(|const IMMERSIVE\\s*=|addEventListener\\(\"pywebviewready\"", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = """
 React 이관에서 useEffect·route guard 로 재설계될 수명주기 훅 다섯 형태의 사이트 1건 = 1노드:
 렌더 보존 래퍼 · 이탈 가드 정의 · 이탈 가드 위임 · 몰입 표면 목록 · 부팅 훅.
@@ -349,7 +431,8 @@ description = """
 간접으로 부르는 자리가 그렇다. 오늘 2건이며 둘 다 app.js:109 한 줄이다.
 """
 probe = { kind = "regex", pattern = "\\.leaveTo\\b", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "`.leaveTo` 참조 1건 = 1."
 current = 2
 members = ["frontend/js/app.js:109", "frontend/js/app.js:109#2"]
@@ -388,7 +471,8 @@ unit = "줄 끝 대입 11건을 놓친다 — `[^=]` 가 줄 뒤에 문자를 �
 id = "mutable-module-state"
 value = 50
 predicate = { kind = "derived", axis = "state_js_module" }
-scope = ["frontend/js/**/*.js", "frontend/src/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다."
 [[metric.aliases]]
 value = 44
@@ -424,7 +508,8 @@ unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센
 id = "listener-attach-sites"
 value = 119
 predicate = { kind = "derived", axis = "subscription_listener" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "노드 폐포의 원소 수."
 [[metric.aliases]]
 value = 123
@@ -436,7 +521,8 @@ unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 
 id = "listener-release-sites"
 value = 12
 predicate = { kind = "derived", axis = "subscription_release" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "노드 폐포의 원소 수. 부착 119 와의 차 107 이 이 축의 사실이다."
 
 [[metric]]
@@ -463,12 +549,14 @@ unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함�
 id = "js-generated-id-sites"
 value = 26
 predicate = { kind = "derived", axis = "dom_js_site" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "사이트 1개 = 1. 정적 완전 id 8 + 동적 접두 가족 15 + 접두 없는 완전 동적 3."
 [[metric.aliases]]
 value = 26
 predicate = { kind = "regex", pattern = "id=\"", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
 unit = "앵커 없는 양성 대조. 오늘 앵커 유무가 값을 바꾸지 않음을 이 alias 가 매번 재확인한다."
 
 [[metric]]
@@ -514,11 +602,16 @@ scope = ["frontend/**/*.js"]
 unit = "selftest 축 포함."
 
 [[metric]]
-id = "export-factory-sites"
+id = "export-function-declarations"
 value = 18
 predicate = { kind = "derived", axis = "lifecycle_factory" }
-scope = ["frontend/js/**/*.js", "frontend/src/*.js"]
-unit = "노드 폐포의 원소 수. 합성 루트가 이것들을 정확히 한 번 구성해 산물을 객체째 넘긴다."
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+노드 폐포의 원소 수. 그중 **16이 합성 루트가 정확히 한 번 구성하는 팩토리**(`create*`)이고
+둘은 성격이 다르다(axes.lifecycle_factory.false_positive 가 이름으로 든다).
+「18개 팩토리」로 읽으면 술어가 자기 unit 을 못 내는 자리로 되돌아간다.
+"""
 
 # ── 판정 요구 항목 ───────────────────────────────────────────────────────
 # 축의 멤버가 아니면서 사람 판정을 요구하는 사실. 「비소유」의 실행 규칙대로 **고치지 않고
@@ -527,7 +620,7 @@ unit = "노드 폐포의 원소 수. 합성 루트가 이것들을 정확히 한
 [[review_item]]
 id = "bridge/close-guard-state"
 subject = "close_guard_state 는 pywebview 반사로 js_api 에 노출되는데 문서에도 bridge.js 에도 없다 — JS 에서 도달 가능한 무계약 표면이다."
-classification = "p_review_required"
+requires_p_review = true
 evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 481, anchor = "def close_guard_state" }]
 owner = "R2-02 #406"
 disposition = "#433"
@@ -541,21 +634,21 @@ test = "tests/test_webapp_bridge.py (Python 쪽 호출만 검증한다 — JS �
 [[review_item]]
 id = "gate/architecture-bridge-one-way"
 subject = "test_architecture.py 의 직접 브리지 대조가 bridge.js → 문서 **단방향**이라 Python 쪽에만 있는 이름(close_guard_state)을 구조적으로 못 본다."
-classification = "react"
+requires_p_review = false
 evidence = [{ file = "tests/test_architecture.py", line = 411, anchor = "UI_CONTRACT.md 직접 브리지 목록에 없는 메서드" }]
 owner = "R2-02 #406"
 
 [[review_item]]
 id = "gate/screen-roots-partial"
 subject = "SCREEN_ROOTS 상수는 화면 루트 4 중 2만 든다 — 계약이 표면의 절반만 겨눈다."
-classification = "react"
+requires_p_review = false
 evidence = [{ file = "tests/test_web_dom_contract.py", line = 107, anchor = "SCREEN_ROOTS = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
 id = "gate/preserve-wrapped-files-partial"
 subject = "PRESERVE_WRAPPED_FILES 는 3인데 Preserve.around 실호출은 5다(docstring 은 4라고 적는다). 셋이 서로 다르다."
-classification = "react"
+requires_p_review = false
 evidence = [{ file = "tests/test_web_dom_contract.py", line = 47, anchor = "PRESERVE_WRAPPED_FILES = (" }]
 owner = "R3-03 #412"
 note = "소유 제안은 중앙 승인 대기(상향 U5)다. 결함 원장의 정본은 #403 이고 여기서는 참조만 한다."
@@ -563,14 +656,14 @@ note = "소유 제안은 중앙 승인 대기(상향 U5)다. 결함 원장의 �
 [[review_item]]
 id = "doc/bridge-header-breakdown"
 subject = "bridge.js 머리말의 「23개(21+2)」 분해가 낡았다 — 총량 23은 우연히 맞지만 실제는 19(데이터·네이티브) + 2(창 닫기) + 2(selftest)이고 문서 21은 이미 창 닫기 2를 포함한다."
-classification = "react"
+requires_p_review = false
 evidence = [{ file = "frontend/js/bridge.js", line = 2, anchor = "창 닫기 확인 2" }]
 owner = "R2-02 #406"
 
 [[review_item]]
 id = "doc/screens-py-transport-comment"
 subject = "webapp/screens.py 의 머리말 주석이 앱을 evaluate_js 로 서술한다 — 전송 층에서는 여전히 참이라 「낡음」은 해석이고 미확인이다."
-classification = "react"
+requires_p_review = false
 evidence = [{ file = "src/hwpxfiller/webapp/screens.py", line = 1, anchor = "화면별 컨트롤러" }]
 owner = "R5-01 #419"
 
@@ -854,7 +947,7 @@ selector = { kind = "exact", members = [
   "data-busy-lock",
   "data-preserve-scroll",
 ] }
-evidence = [{ file = "frontend/index.html", line = 93, anchor = "data-busy-lock" }]
+evidence = [{ file = "frontend/index.html", line = 93, anchor = "data-busy-lock", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
@@ -865,7 +958,7 @@ id = "dom/data-attr/routing"
 kind = "dom"
 axis = "dom_data_attr"
 selector = { kind = "exact", members = ["data-scr"] }
-evidence = [{ file = "frontend/index.html", line = 33, anchor = "data-scr" }]
+evidence = [{ file = "frontend/index.html", line = 33, anchor = "data-scr", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
@@ -878,7 +971,7 @@ selector = { kind = "exact", members = [
   "data-library-mode",
   "data-library-view",
 ] }
-evidence = [{ file = "frontend/index.html", line = 97, anchor = "data-library-view" }]
+evidence = [{ file = "frontend/index.html", line = 97, anchor = "data-library-view", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
@@ -888,7 +981,7 @@ id = "dom/data-attr/workbench-view"
 kind = "dom"
 axis = "dom_data_attr"
 selector = { kind = "exact", members = ["data-wb-view"] }
-evidence = [{ file = "frontend/index.html", line = 473, anchor = "data-wb-view" }]
+evidence = [{ file = "frontend/index.html", line = 473, anchor = "data-wb-view", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
@@ -902,7 +995,7 @@ selector = { kind = "exact", members = [
   "data-level",
   "data-state",
 ] }
-evidence = [{ file = "frontend/index.html", line = 146, anchor = "data-level" }]
+evidence = [{ file = "frontend/index.html", line = 146, anchor = "data-level", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
@@ -938,7 +1031,7 @@ selector = { kind = "exact", members = [
   "frontend/js/grouplist.js:90:dynamic:",
   "frontend/js/grouplist.js:91:dynamic:",
 ] }
-evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "id=\"" }]
+evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "id=\"", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
@@ -982,7 +1075,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/workbench.js:64:dynamic:wbMap-ck-",
   "frontend/js/screens/workbench.js:70:dynamic:wbMap-row-",
 ] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "id=\"wbLintAction" }]
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "id=\"wbLintAction", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
@@ -1033,7 +1126,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/library.js:736 seated",
   "frontend/js/screens/workbench.js:416 wired",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 53, anchor = "wired" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 53, anchor = "wired", occurrence = 2 }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_mutable_module_state_stays_within_budget"]
@@ -1052,7 +1145,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/job.js:1394 RESULT",
   "frontend/js/screens/job.js:32 generating",
 ] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1271, anchor = "logStarted" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 1271, anchor = "logStarted", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
@@ -1073,7 +1166,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/job.js:866 rangeApplied",
   "frontend/js/screens/job.js:867 rangeForceClose",
 ] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1562, anchor = "switching" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 1562, anchor = "switching", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
@@ -1092,7 +1185,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/editor.js:56 tokFoldOpen",
   "frontend/js/screens/editor.js:88 pendingFieldEdit",
 ] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 103, anchor = "pendingAim" }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 103, anchor = "pendingAim", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
@@ -1106,7 +1199,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/library.js:32 menuFor",
   "frontend/js/screens/library.js:33 searchTimer",
 ] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 31, anchor = "LAST" }]
+evidence = [{ file = "frontend/js/screens/library.js", line = 31, anchor = "LAST", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
@@ -1116,7 +1209,7 @@ id = "state/workbench"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:19 LAST"] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 19, anchor = "LAST" }]
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 19, anchor = "LAST", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
@@ -1130,7 +1223,7 @@ selector = { kind = "exact", members = [
   "frontend/js/data_picker.js:51 session",
   "frontend/js/data_picker.js:52 loading",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 50, anchor = "LAST" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 50, anchor = "LAST", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1143,7 +1236,7 @@ selector = { kind = "exact", members = [
   "frontend/js/app.js:15 closePromptPending",
   "frontend/js/app.js:55 routingReady",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 15, anchor = "closePromptPending" }]
+evidence = [{ file = "frontend/js/app.js", line = 15, anchor = "closePromptPending", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
@@ -1153,7 +1246,7 @@ id = "state/theme"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/theme.js:17 ORDER"] }
-evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "ORDER" }]
+evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "ORDER", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
@@ -1163,7 +1256,7 @@ id = "state/editor-entry"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/editor_entry.js:29 entryFocus"] }
-evidence = [{ file = "frontend/js/editor_entry.js", line = 29, anchor = "entryFocus" }]
+evidence = [{ file = "frontend/js/editor_entry.js", line = 29, anchor = "entryFocus", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["none"]
@@ -1178,7 +1271,7 @@ selector = { kind = "exact", members = [
   "frontend/js/undo_toast.js:3 undo",
   "frontend/js/undo_toast.js:4 timer",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 29, anchor = "pendingDialog" }]
+evidence = [{ file = "frontend/js/modal.js", line = 29, anchor = "pendingDialog", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1195,7 +1288,7 @@ selector = { kind = "exact", members = [
   "frontend/src/bootstrap.js:127 WorkbenchScreen",
   "frontend/src/bootstrap.js:128 Nav",
 ] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 124, anchor = "LibraryScreen" }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 124, anchor = "LibraryScreen", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["none"]
@@ -1206,7 +1299,7 @@ id = "state/push-port"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/src/push_port.js:48 override"] }
-evidence = [{ file = "frontend/src/push_port.js", line = 48, anchor = "override" }]
+evidence = [{ file = "frontend/src/push_port.js", line = 48, anchor = "override", occurrence = 3 }]
 classification = "react"
 handoff_slice = "R2-03 #407"
 verification = ["none"]
@@ -1267,7 +1360,7 @@ selector = { kind = "exact", members = [
   "src/hwpxfiller/gui/selection_state.py",
   "src/hwpxfiller/gui/template_manager_state.py",
 ] }
-evidence = [{ file = "src/hwpxfiller/gui/dataset_pool_state.py", line = 1, anchor = "\"\"\"" }]
+evidence = [{ file = "src/hwpxfiller/gui/dataset_pool_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
 classification = "python_product"
 verification = ["tests/test_architecture.py::test_src_has_no_pyside6_runtime_imports"]
 p_handoff = "no"
@@ -1280,7 +1373,7 @@ id = "state/ring1/nara"
 kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/nara_state.py"] }
-evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"" }]
+evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
 classification = "p_review_required"
 verification = ["tests/test_nara_state.py"]
 note = "나라장터 소스는 동결이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지 않는다."
@@ -1296,7 +1389,7 @@ id = "state/ring1/pipeline-builder"
 kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/pipeline_builder_state.py"] }
-evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"" }]
+evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
 classification = "p_review_required"
 verification = ["tests/test_pipeline_builder_state.py"]
 note = "소비자 0의 파킹 모듈이다. retire 로 단정하지 않는다 — 처분은 사람 판정이다."
@@ -1326,7 +1419,7 @@ selector = { kind = "exact", members = [
   "frontend/js/popover.js:93",
   "frontend/js/undo_toast.js:22",
 ] }
-evidence = [{ file = "frontend/js/popover.js", line = 102, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/popover.js", line = 102, anchor = "addEventListener", occurrence = 7 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1356,7 +1449,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/job.js:1904",
   "frontend/js/screens/job.js:1938",
 ] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1790, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 1790, anchor = "addEventListener", occurrence = 12 }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["none"]
@@ -1382,7 +1475,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/job.js:1845",
   "frontend/js/screens/job.js:1930",
 ] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1666, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 1666, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1401,7 +1494,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/editor.js:1383",
   "frontend/js/screens/editor.js:1384",
 ] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1343, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1343, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["none"]
@@ -1422,7 +1515,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/library.js:712",
   "frontend/js/screens/library.js:720",
 ] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 704, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/screens/library.js", line = 704, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1446,7 +1539,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/workbench.js:388",
   "frontend/js/screens/workbench.js:404",
 ] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 342, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 342, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["none"]
@@ -1466,7 +1559,7 @@ selector = { kind = "exact", members = [
   "frontend/js/data_picker.js:473",
   "frontend/js/data_picker.js:474",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 435, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 435, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1489,7 +1582,7 @@ selector = { kind = "exact", members = [
   "frontend/js/datazone.js:594",
   "frontend/js/datazone.js:602",
 ] }
-evidence = [{ file = "frontend/js/datazone.js", line = 560, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/datazone.js", line = 560, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1502,7 +1595,7 @@ selector = { kind = "exact", members = [
   "frontend/js/sheet_picker.js:51",
   "frontend/js/sheet_picker.js:62",
 ] }
-evidence = [{ file = "frontend/js/sheet_picker.js", line = 51, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 51, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1525,7 +1618,7 @@ selector = { kind = "exact", members = [
   "frontend/js/app.js:220",
   "frontend/js/app.js:46",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 142, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/app.js", line = 142, anchor = "addEventListener", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
@@ -1542,7 +1635,7 @@ selector = { kind = "exact", members = [
   "frontend/js/modal.js:291",
   "frontend/js/modal.js:292",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 102, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/modal.js", line = 102, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1556,7 +1649,7 @@ selector = { kind = "exact", members = [
   "frontend/js/grouplist.js:132",
   "frontend/js/grouplist.js:98",
 ] }
-evidence = [{ file = "frontend/js/grouplist.js", line = 131, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/grouplist.js", line = 131, anchor = "addEventListener", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1576,7 +1669,7 @@ id = "subscription/listener/undo-toast"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = ["frontend/js/undo_toast.js:23"] }
-evidence = [{ file = "frontend/js/undo_toast.js", line = 23, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/undo_toast.js", line = 23, anchor = "addEventListener", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1593,7 +1686,7 @@ selector = { kind = "exact", members = [
   "frontend/js/app.js:177",
   "frontend/js/app.js:178",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 176, anchor = "removeEventListener" }]
+evidence = [{ file = "frontend/js/app.js", line = 176, anchor = "removeEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
@@ -1610,7 +1703,7 @@ selector = { kind = "exact", members = [
   "frontend/js/modal.js:243",
   "frontend/js/modal.js:244",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 115, anchor = "removeEventListener" }]
+evidence = [{ file = "frontend/js/modal.js", line = 115, anchor = "removeEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
@@ -1623,7 +1716,7 @@ selector = { kind = "exact", members = [
   "frontend/js/data_picker.js:204",
   "frontend/js/data_picker.js:440",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 204, anchor = "removeEventListener" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 204, anchor = "removeEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1646,7 +1739,7 @@ id = "subscription/push/editor-tpl"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1368"] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1368, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1368, anchor = "onPush", occurrence = 2 }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
 verification = ["none"]
@@ -1660,7 +1753,7 @@ id = "subscription/push/editor"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1363"] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1363, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1363, anchor = "onPush", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["none"]
@@ -1670,7 +1763,7 @@ id = "subscription/push/job"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/job.js:1954"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1954, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 1954, anchor = "onPush", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["none"]
@@ -1680,7 +1773,7 @@ id = "subscription/push/library"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/library.js:739"] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 739, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/screens/library.js", line = 739, anchor = "onPush", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1700,7 +1793,7 @@ id = "subscription/push/data-picker"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/data_picker.js:488"] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 488, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 488, anchor = "onPush", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
@@ -1709,47 +1802,65 @@ verification = ["none"]
 #     산물을 객체째 넘기는 현행 규율(L14)이 이 축의 값이다.
 
 [[node]]
-id = "lifecycle/factory/r2-01"
+id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/src/bootstrap.js:109"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 109, anchor = "export function" }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 109, anchor = "export function bootProduct" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
+note = "합성 루트 **자신**이라 「구성 1회 팩토리」가 아니다. 14-팩토리 단언의 대상도 아니고, 이름을 부르는 맞는 게이트가 따로 있다."
 
 [[node]]
-id = "lifecycle/factory/r2-02"
+id = "lifecycle/factory/bridge"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/js/bridge.js:40",
-  "frontend/src/product_api.js:155",
-] }
-evidence = [{ file = "frontend/js/bridge.js", line = 40, anchor = "export function" }]
+selector = { kind = "exact", members = ["frontend/js/bridge.js:40"] }
+evidence = [{ file = "frontend/js/bridge.js", line = 40, anchor = "export function createBridge" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
 
 [[node]]
-id = "lifecycle/factory/r2-03"
+id = "lifecycle/factory/product-api"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/product_api.js:155"] }
+evidence = [{ file = "frontend/src/product_api.js", line = 155, anchor = "export function createProductApi" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["none"]
+note = "14-팩토리 단언은 `frontend/js` 의 create* 만 센다 — 이 구성 지점은 오늘 무검증이다. `verification` 을 넘겨 주장하지 않는다."
+
+[[node]]
+id = "lifecycle/factory/push-port"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/src/push_port.js:43"] }
-evidence = [{ file = "frontend/src/push_port.js", line = 43, anchor = "export function" }]
+evidence = [{ file = "frontend/src/push_port.js", line = 43, anchor = "export function createPushPort" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["none"]
+note = "위와 같다 — `frontend/src` 의 구성 지점 둘은 14-팩토리 단언 밖이다."
+
+[[node]]
+id = "lifecycle/factory/leaf-escaper"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/esc.js:10"] }
+evidence = [{ file = "frontend/js/esc.js", line = 10, anchor = "export function escHtml" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_frontend_build_graph.py::test_converted_modules_are_esm_and_own_no_globals"]
+note = "팩토리가 아니라 **렌더마다 불리는 순수 이스케이퍼**다. 저장소의 EXPECTED_ESM_EXPORTS 가 이미 「N-04 잎」으로 따로 가른 이름이고, 축의 false_positive 가 그것을 든다."
 
 [[node]]
 id = "lifecycle/factory/r3-01"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/js/esc.js:10",
-  "frontend/js/pathtrack.js:8",
-] }
-evidence = [{ file = "frontend/js/esc.js", line = 10, anchor = "export function" }]
+selector = { kind = "exact", members = ["frontend/js/pathtrack.js:8"] }
+evidence = [{ file = "frontend/js/pathtrack.js", line = 8, anchor = "export function createPathTrack" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1763,7 +1874,7 @@ selector = { kind = "exact", members = [
   "frontend/js/personalization.js:5",
   "frontend/js/theme.js:16",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 12, anchor = "export function" }]
+evidence = [{ file = "frontend/js/app.js", line = 12, anchor = "export function createAppShell" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1779,7 +1890,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/library.js:24",
   "frontend/js/sheet_picker.js:14",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 46, anchor = "export function" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 46, anchor = "export function createDataPicker" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1793,7 +1904,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/editor.js:17",
   "frontend/js/screens/workbench.js:15",
 ] }
-evidence = [{ file = "frontend/js/editor_entry.js", line = 16, anchor = "export function" }]
+evidence = [{ file = "frontend/js/editor_entry.js", line = 16, anchor = "export function createEditorEntry" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1803,7 +1914,7 @@ id = "lifecycle/factory/r4-03"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/js/screens/job.js:26"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 26, anchor = "export function" }]
+evidence = [{ file = "frontend/js/screens/job.js", line = 26, anchor = "export function createJobScreen" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1821,7 +1932,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/library.js:47",
   "frontend/js/screens/workbench.js:200",
 ] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 189, anchor = "Preserve.around" }]
+evidence = [{ file = "frontend/js/data_picker.js", line = 189, anchor = "Preserve.around", occurrence = 2 }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
 verification = ["tests/test_web_dom_contract.py::test_preserve_helper_loaded_and_wraps_screen_renders"]
@@ -1840,7 +1951,7 @@ selector = { kind = "exact", members = [
   "frontend/js/app.js:220",
   "frontend/js/app.js:70",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 70, anchor = "const IMMERSIVE = [" }, { file = "frontend/js/app.js", line = 220, anchor = "pywebviewready" }]
+evidence = [{ file = "frontend/js/app.js", line = 70, anchor = "const IMMERSIVE = [" }, { file = "frontend/js/app.js", line = 220, anchor = "pywebviewready", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
@@ -1854,7 +1965,7 @@ selector = { kind = "exact", members = [
   "frontend/js/screens/editor.js:1457",
   "frontend/js/screens/workbench.js:303",
 ] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1457, anchor = "leaveTo" }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1457, anchor = "leaveTo", occurrence = 3 }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 note = "이탈 가드의 **본체**는 화면 소유이고, 위임 목록(IMMERSIVE)과 호출은 셸 소유다(lifecycle/app-routing 행). SCREEN-SPLIT-ROADMAP:v1 이 editor.js 의 「저장·취소·이탈」을 R4 책임으로 든 것과 정합한다."
