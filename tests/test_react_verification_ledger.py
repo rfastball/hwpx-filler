@@ -68,13 +68,21 @@ TREE_EXTRA_FILES: tuple[str, ...] = ("conftest.py",)
 #: ⑶ **DOM 을 직접 몬다** — 셋째 줄. 제품 경로 이름을 하나도 안 쓰고 웹 표면을 조작하는
 #:    자리다. ``scripts/live101/{scenario,surface}.py`` 가 ``querySelector``·``dispatchEvent``
 #:    ·``evaluate_js`` 로 실앱을 몰면서 제외에 앉아 있었다(실측).
+#: ⑷ **봉인된 웹 산출물을 다룬다** — 넷째 줄. 프런트가 무엇으로 빌드되든 그 산출물의 정체성을
+#:    재는 자리다. ⑵ 가 헬퍼 *이름* ``_web_artifact_contract`` 를 넣으면서 같은 것을 가리키는
+#:    **도메인 어휘**를 안 넣어, ``scripts/verify_packaged_web.py`` (첫 줄이 "Compare the source
+#:    Vite artifact with a PyInstaller bundled web tree") 와 ``tests/test_packaging_contract.py``
+#:    가 제외에 앉아 있었다(R1-99 감사 실측). R2 가 빌드를 갈아 끼우면 정확히 이 축이 움직인다.
 #:
-#: 셋은 같은 결함의 세 변종이다 — **술어가 「무엇을 부르는가」만 보고 「무엇에 닿는가」를
-#: 안 봤다.** 넓히는 방향은 언제나 자유이므로 새 접촉 방식이 보이면 여기에 더한다.
+#: 넷은 같은 결함의 네 변종이다 — **술어가 「무엇을 부르는가」만 보고 「무엇에 닿는가」를
+#: 안 봤다.** ⑷ 는 그 위에 한 겹을 더 얹는다: **집합 하나를 넓히고 그 형제를 안 넓혔다**
+#: (헬퍼 이름은 넣고 도메인 어휘는 안 넣었다). 넓히는 방향은 언제나 자유이므로 새 접촉
+#: 방식이 보이면 여기에 더한다.
 WEB_SURFACE = re.compile(
     r"frontend/|webapp|build/web|__hwpx|pywebview|WebFrontend|selftest|bridge\.js|index\.html"
     r"|_web_source|_press_probe|_web_artifact_contract"
     r"|querySelector|getElementById|evaluate_js|dispatchEvent|window\.__cap"
+    r"|web_artifact|artifact_id|tree_sha256|resolve_web_artifact|Vite"
 )
 
 #: 인계선 어휘. 원장에서 유도하면 오타가 새 단계를 발명하므로 리터럴로 든다.
