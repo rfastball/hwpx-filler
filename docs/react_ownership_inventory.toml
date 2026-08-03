@@ -1,0 +1,2050 @@
+# React 소유권 인벤토리 원장 — R1-02 (#402)
+#
+# 이 파일은 **기계 판독 원장**이다. 산문 설계는 `docs/REACT_MIGRATION_DECISIONS.md`(#401)가
+# 지고, old→new 검증 책임은 `docs/react_verification_ledger.toml`(#403)이 진다. 셋은 같은
+# 문장을 두 번 들지 않는다.
+#
+# 게이트: `scripts/check_react_ownership_inventory.py`(+ `tests/test_react_ownership_inventory.py`).
+# 그 게이트는 **이 파일의 선언을 믿지 않는다** — 축마다 추출기를 저장소에 다시 돌려 네 방향
+# (`M−C` 미분류 · `C−M` 유령 · `members_expected` · `blind_spot`)으로 센다.
+#
+# 손으로 고칠 때의 규칙 셋:
+#   1. 계측 항목은 `predicate`·`scope`·`unit` 을 **예외 없이** 든다. 값만 있는 항목은 성립하지 않는다.
+#   2. `evidence` 의 `anchor` 는 그 줄에 실제로 있어야 한다. 좌표가 밀리면 그 자리에서 붉는다.
+#   3. 접힌 컨테이너 행의 `members_expected` 는 성장 탐지의 유일한 기계다. 새 id 가 컨테이너
+#      **안쪽**에 꽂히면 `M−C` 는 조용하고 이 정수만 어긋난다.
+#
+# **분모는 이 파일이 아니라 게이트가 든다.** 축 이름 집합 · 축별 측정 하한 · 계측 목록 · 판정
+# 요구 목록 · 노드 행 하한은 `scripts/check_react_ownership_inventory.py` 의 AXIS_FLOORS ·
+# EXPECTED_METRIC_IDS · EXPECTED_REVIEW_ITEM_IDS · EXPECTED_EXCLUDED_AXES · NODE_ROW_FLOOR 에
+# **리터럴로** 산다. 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼 행을 정리하는 것으로
+# 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「미분류 0」은 분모가 고정돼야 명제다.
+# 하한을 낮추는 변경은 사유와 함께 그쪽을 고쳐야 하고, 그 변경 자체가 리뷰 대상이다.
+#
+# **분모의 정의역도 밖이다.** 하한만으로는 축마다 「측정 − 하한」의 무음 삭감 예산이 남고,
+# 축의 scope 를 좁히면 측정 집합 M 자체가 줄어 폐포는 계속 참이다. 그래서 게이트가
+# `PRODUCT_TREE_GLOBS` 로 **제품 트리를 스스로 열거**해 「모든 파일이 어떤 축의 scope 또는
+# 명시 제외에 덮이는가」를 1차로 묻고, `AXIS_DIGESTS` 가 축의 술어·scope·프로브를 지문으로
+# 못박는다 — **원장은 값을, 게이트는 술어를** 든다. 술어를 바꾸려면 세 파일이 함께 움직인다.
+
+schema = 1
+
+# 이 원장을 실측한 기준. 재고정 v2 가 `d508724 → 8fcc30e` 무드리프트를 확인했고(frontend/ 무변경)
+# 계측은 그 위에서 다시 돌렸다.
+baseline_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+
+# 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
+scope_statement = """
+미분류 0 은 아래 axes 의 추출기가 본 것에 대해 0 이다. 저장소 전체에 대해 0 이 아니다.
+각 축의 blind_spot 이 그 차이의 오늘 크기를 들고, 게이트가 그 크기를 매번 재측정한다.
+사각을 없애지는 못해도 조용히 자라지는 못한다 — 오늘 도달 가능한 최선이 그것이다.
+"""
+
+# 저장소 전수를 도는 scope 를 가진 계측 항목의 목록. 그런 항목은 고정 수치가 아니라 base_sha
+# 앵커 + 정당화된 delta 로만 적을 수 있다. 오늘 0개다 — 모든 축이 frontend/** + src/hwpxfiller
+# 로 한정돼 tests/** 변동에 무감하다. 하나가 생기면 이 규칙이 그 자리에서 걸린다.
+repo_wide_metrics = []
+
+# 분류 어휘 5종 중 오늘 점유자가 없는 값. 부재를 데이터로 적는 이 원장의 습관을 어휘에도 쓴다 —
+# 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
+unoccupied_classifications = ["host"]
+
+# 물리 사이트 하나가 성격이 둘이라 **두 축에 함께 드는** 자리. 축별 폐포는 각각 닫히지만 축을
+# 가로질러 세면 그만큼 겹친다 — 「측정 노드 합계」를 물리 사이트 수로 읽지 말라는 뜻이다.
+[[cross_axis_overlap]]
+member = "frontend/js/app.js:220"
+axes = ["subscription_listener", "lifecycle_hook"]
+reason = "부팅 훅은 부착 사이트이면서 수명주기 경계다. 두 행 다 R3-02 #411 이라 소유권 모순은 없다."
+
+# ── 폐포에서 명시 제외하는 축 ─────────────────────────────────────────────
+# 「안 센 것」을 데이터로 적는다. 조용한 유예가 아니라 **소리 나는 제외**여야 「미분류 0」이
+# 거짓말이 되지 않는다.
+
+[[excluded_axes]]
+axis = "js_planted_data_attrs"
+reason = """
+frontend/js 가 템플릿 조각으로 심는 data-* 속성의 전수. 정규식은 CSS 선택자 문자열·산문
+주석·클래스 이름을 함께 세어 오답을 낸다(무앵커로 세면 66종/302회). 템플릿 조각 **안의
+속성 위치**를 판별하는 추출기가 오늘 없다. 정적 문서 쪽 축(dom_data_attr)은 파서로 닫혔다.
+"""
+owner = "#412"
+# 이 제외는 제품 트리의 파일을 설명하지 않는다 — `frontend/js/**` 는 이미 축들이 덮고 있고,
+# 빠진 것은 그 파일들 **안의 한 축**이다. 그래서 `covers` 는 빈 목록이다.
+covers = []
+# 크기 프로브 없음 — 이 축은 **오답 술어밖에 없다는 것이 제외 사유 자체**다. 무앵커 정규식의
+# 66종/302회를 `size` 로 실으면 프런트 템플릿을 고칠 때마다 숫자만 올리는 의식이 되고, 그러면
+# 사각이 자란 것과 코드가 자란 것을 못 가른다. 소유자가 참 추출기를 지을 때 크기가 생긴다.
+
+[[excluded_axes]]
+axis = "selftest_frontend_surface"
+reason = """
+`frontend/src/selftest/**` 9파일. 제품 그래프가 아니다 — 합성 루트가 import 하지 않고
+`schema.js` 는 출하 번들에도 없다(고유 export 이름 4개가 번들에서 각각 0회). 그러나 같은 원장이
+innerHTML 83 · 리스너 123 · pywebview 36 alias 에서는 이 트리를 **명시 계상**하므로, 축에서만
+조용히 빠지면 한 원장이 같은 트리를 어떤 축에서는 세고 어떤 축에서는 침묵하게 된다.
+그래서 빼되 **크기를 잰다**.
+"""
+owner = "R2-04 #408"
+covers = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
+[excluded_axes.size]
+probe = { kind = "node_extractor", name = "selftest_surface_sites" }
+scope = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
+unit = "구성 지점(`export function`) · 모듈 스코프 상태 · id 사이트를 한 목록으로 센다. 1건 = 1."
+current = 26
+# 내용만 세면 `export const probe = …` 만 든 모듈이 아무것도 안 보태 숫자가 안 움직인다 —
+# 그런데 `covers` 는 그 글롭 전체를 전수 피복에서 면제한다. 파일 수가 그 자리를 막는다.
+files = 9
+covers_note = "frontend/src/selftest/** 9파일"
+judgment = "오늘 23 + 1 + 2. 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
+
+[[excluded_axes]]
+axis = "frontend_stylesheets"
+reason = """
+`frontend/css/**` 10파일. 이 원장의 노드 종류는 dom·state·subscription·lifecycle 넷이고
+스타일 규칙은 그 어디에도 안 든다 — CSS 는 이관에서 **그대로 옮겨지는 자산**이고 그 동등성은
+별도 축(#412 의 CSS·DOM·ARIA·focus·geometry)이 진다. 저장소에는 이미 그 층을 보는 게이트가
+있다(`test_web_css_manifest.py` 의 순서 매니페스트 · 실렌더 기하 프로브).
+제품 트리 전수 피복이 이 열 파일을 물으므로 **침묵이 아니라 명시 제외**로 답한다.
+"""
+owner = "R3-03 #412"
+covers = ["frontend/css/**/*.css"]
+[excluded_axes.size]
+probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "per-matching-line" }
+scope = ["frontend/css/**/*.css"]
+unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
+current = 1692
+files = 10
+judgment = "오늘 10파일 1,692줄. 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
+
+# ── 추출기 레지스트리 ────────────────────────────────────────────────────
+# `backing` 은 「이 값이 얼마나 믿을 만한가」를 이름이 아니라 종류로 말한다. 구현은
+# `scripts/check_react_ownership_inventory.py` 의 EXTRACTORS 가 소유하고, 그쪽이 scope 를
+# 함께 들어 원장이 범위를 혼자 다시 쓰지 못하게 한다.
+
+[extractors.html_ids]
+backing = "parser"
+implementation = "html.parser(stdlib) — 시작태그의 id 속성"
+
+[extractors.html_data_attrs]
+backing = "parser"
+implementation = "html.parser(stdlib) — 시작태그의 data-* 속성 이름"
+
+[extractors.js_template_ids]
+backing = "ast"
+implementation = "vite(oxc) parseAst — 템플릿 리터럴 quasi·문자열 리터럴 + 앵커 정규식 (?<![\\w-])id=\""
+
+[extractors.js_module_state]
+backing = "ast"
+implementation = "vite(oxc) parseAst — Program 최상위 ∪ export 된 최상위 함수 body 최상위의 let/var"
+
+[extractors.js_nonexported_fn_state]
+backing = "ast"
+implementation = "위와 같은 추출기의 exported 조건을 뒤집은 것 — 값과 사각을 한 함수가 낸다"
+
+[extractors.js_module_state_convention]
+backing = "regex-convention"
+implementation = "^  (?:let|var)\\s+([A-Za-z_$][\\w$]*) — test_web_dom_contract.py 의 예산 헬퍼와 같은 눈"
+
+[extractors.js_module_state_convention_budget]
+backing = "regex-convention"
+implementation = "위 관례를 MUTABLE_MODULE_STATE_BUDGET 6파일로 좁힌 것 — 그 안에서는 AST 와 일치한다"
+
+[extractors.action_registry_screens]
+backing = "python-ast"
+implementation = "그 트리의 action_registry.py 를 ast 로 읽어 dict 리터럴의 화면 키(`**` 전개 추적)"
+note = "import 로 읽으면 repo_root 를 무시하고 **설치본**을 잰다 — 같은 파일 안에서 축마다 다른 트리를 보게 되고 scope 가 측정 대상이 아니게 된다."
+
+[extractors.action_registry_pairs]
+backing = "python-ast"
+implementation = "같은 리터럴의 (화면, 액션) 쌍"
+
+[extractors.selftest_surface_sites]
+backing = "ast"
+implementation = "명시 제외 축의 크기 — selftest 트리의 export function · 모듈 상태 · id 사이트"
+
+[extractors.ring1_state_modules]
+backing = "python-glob"
+implementation = "src/hwpxfiller/gui/*_state.py 파일 전수"
+
+[extractors.html_parse_anomalies]
+backing = "parser"
+implementation = "중복 id · 태그 불균형 · 오정렬(여닫는 이름 대조) — 파서의 관용 복구가 삼킬 수 있는 것"
+
+[extractors.html_data_attr_elements]
+backing = "parser"
+implementation = "html.parser — data-* 를 하나라도 든 시작태그(요소)"
+
+[extractors.html_data_attr_elements_without_id]
+backing = "parser"
+implementation = "그중 id 속성이 없어 dom_static 232 밖인 요소"
+
+[extractors.html_data_attr_regex_delta]
+backing = "regex-convention"
+implementation = "무앵커 data-[a-z-]+ 와 파서 결과의 차집합 — 정규식이 더 잡는 이름"
+
+[extractors.js_id_attr_anchor_gaps]
+backing = "regex-convention"
+implementation = "일곱 형태 — 다른 속성명 접미 · 홑따옴표 · 무따옴표 보간 · 선택자 리터럴 · setAttribute(\"id\") · .id 대입 · [\"id\"] 대입. 파일 전체에 돌아 줄바꿈을 넘고 속성명 대소문자를 함께 문다"
+
+[extractors.action_registry_dynamic]
+backing = "regex-convention"
+implementation = "ACTION_REGISTRY 의 런타임 변형 사이트"
+
+[extractors.gui_non_state_modules]
+backing = "python-glob"
+implementation = "gui/ 아래 *_state.py 이름 규약 밖의 모듈"
+
+[extractors.listener_convention_gaps]
+backing = "regex-convention"
+implementation = "두 형태 — 주석 안 일치 · 대괄호 표기 호출. 관례 정규식이 함께 세거나 못 보는 것"
+
+# ── 축 선언 ──────────────────────────────────────────────────────────────
+
+[axes.dom_static]
+predicate = { kind = "extractor", name = "html_ids" }
+scope = ["frontend/index.html"]
+unit = "시작태그의 id 속성 1개 = 1노드. 분모 = html.parser 가 읽은 id 속성 전수."
+fold = "nearest-declared-container, self-exclusive; exact rows are removed before folding"
+[axes.dom_static.blind_spot]
+description = """
+파서는 문서에 쓰인 시작태그만 본다. 오류 복구로 중복 id·태그 불균형을 조용히 삼키면 값이
+줄어든다. JS 가 만드는 id 는 이 축이 아니라 dom_js_site 가 진다(폐포에 함께 든다).
+"""
+probe = { kind = "extractor", name = "html_parse_anomalies" }
+scope = ["frontend/index.html"]
+unit = "이상 1건 = 1. 중복 id 이름 1개 또는 불균형 태그 총계 1건."
+current = 0
+members = []
+judgment = "오늘 중복 0 · 불균형 0. 「없음을 확인했다」의 기계 형태다."
+
+[axes.dom_data_attr]
+predicate = { kind = "extractor", name = "html_data_attrs" }
+scope = ["frontend/index.html"]
+unit = """
+data-* 속성 **이름** 1개 = 1노드. 출현 횟수(50)는 노드가 아니다.
+실측: data-* 를 든 요소는 43이고 그중 **36은 id 가 있어 dom_static 232 안**(그 36에 대해서는
+출현을 세는 것이 이중 계상이다), **7은 id 가 없어 어느 축도 요소로 세지 않는다**
+(index.html:39·43 의 셸 상단 탭 두 개 포함). 그 일곱에게는 이름 축이 유일한 계약면이다.
+값이 아니라 **변화율**이 축을 가른다 — 이름은 구조가 움직일 때만 바뀌고 출현은 렌더 변경마다 바뀐다.
+"""
+[axes.dom_data_attr.blind_spot]
+description = """
+무앵커 정규식과 파서의 차이. 정규식으로 세면 CSS 클래스 이름·산문을 함께 세어 값이 부푼다
+(15종/59회 대 참값 9종/50회). 파서가 못 보는 축 — frontend/js 가 심는 data-* — 은
+excluded_axes 의 js_planted_data_attrs 로 명시 제외했다.
+"""
+probe = { kind = "extractor", name = "html_data_attr_regex_delta" }
+scope = ["frontend/index.html"]
+unit = "정규식만 잡는 이름 1개 = 1. 전부 속성이 아니다."
+current = 6
+members = ["data-first", "data-grid", "data-picker", "data-sheet-body", "data-theme", "data-zone"]
+judgment = "여섯 다 CSS 클래스 이름 또는 주석 산문이다. 참값은 파서가 낸 9종이다."
+
+[axes.dom_js_site]
+predicate = { kind = "node_extractor", name = "js_template_ids" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+JS 가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아니라 사이트다 — 완전 동적
+3건은 이름이 소스에 없으므로 이름을 단위로 잡으면 그 셋이 영영 미분류이거나 조용히 빠진다.
+"""
+[axes.dom_js_site.blind_spot]
+description = """
+AST 가 리터럴 노드를 고르고 **속성 판독은 앵커 정규식**이다(「AST 로 닫힌다」가 아니다).
+**전수라고 주장하지 않는다** — 전수를 주장하려면 그것을 확인하는 프로브가 있어야 하고 없다.
+오늘 **알려진 일곱 형태**를 센다: id 로 끝나는 다른 속성명 · 홑따옴표 속성 · 무따옴표 보간 ·
+선택자 문자열 · `setAttribute("id", …)`(줄바꿈·속성명 대소문자 포함) · `el.id = …` ·
+`el["id"] = …`. 뒤 셋은 마크업 문자열이 아니라 DOM API 로 심는 길이고, 반증 라운드가
+「네 형태가 전수」라는 선언을 차례로 깨뜨려 편입됐다.
+목록은 산문이 아니라 아래 `known_forms` **데이터**이고 게이트가 추출기의 형태 전수와 대조한다 —
+형태를 늘리고 설명을 안 고치는 순간 원장이 자기가 기술하는 추출기와 어긋나기 때문이다.
+"""
+probe = { kind = "extractor", name = "js_id_attr_anchor_gaps" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "알려진 일곱 형태 중 하나의 일치 1건 = 1."
+known_forms = [
+  "other-attr-suffix",
+  "single-quoted",
+  "unquoted-interpolation",
+  "selector-literal",
+  "set-attribute",
+  "id-property-assignment",
+  "computed-id-assignment",
+]
+current = 0
+members = []
+judgment = """
+양성 대조는 축의 값 자신이다 — `id=\"` 무앵커 출현이 26 이고 축의 사이트도 26 이라
+오늘은 앵커 유무가 값을 바꾸지 않는다. 그래도 앵커한다.
+"""
+
+[axes.state_js_module]
+predicate = { kind = "node_extractor", name = "js_module_state" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+let/var 선언자 1개 = 1노드(구조분해는 바인딩 이름을 전부 편다).
+스코프 = Program 최상위 ∪ export 된 최상위 함수(구성 1회 팩토리)의 body 최상위.
+const 는 세지 않는다 — 가변성이 병이라는 기존 판단을 승계한다.
+"""
+[axes.state_js_module.blind_spot]
+description = """
+비-export 최상위 함수·콜백의 body let/var 는 지역으로 보고 세지 않는다. 그 함수가 사실은
+1회 호출 팩토리면 놓친다. 이 사각을 데이터로 두는 이유: 2칸 들여쓰기 **관례** 술어를 자기
+계약 밖에 재사용했을 때 거짓양성 12·거짓음성 4가 났고, 그것을 잡은 것이 값이 아니라 커버리지
+질문이었다.
+"""
+probe = { kind = "node_extractor", name = "js_nonexported_fn_state" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
+current = 13
+members = [
+  "frontend/js/grouplist.js:57 request",
+  "frontend/js/grouplist.js:75 onConfirm",
+  "frontend/js/grouplist.js:76 confirmed",
+  "frontend/js/grouplist.js:77 confirmedGroup",
+  "frontend/js/modal.js:157 found",
+  "frontend/js/popover.js:33 registered",
+  "frontend/js/preserve.js:24 act",
+  "frontend/js/preserve.js:25 focusId",
+  "frontend/js/preserve.js:26 selDir",
+  "frontend/js/preserve.js:26 selEnd",
+  "frontend/js/preserve.js:26 selStart",
+  "frontend/js/preserve.js:34 scrolls",
+  "frontend/js/preserve.js:35 marked",
+]
+judgment = """
+열셋 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
+createMoveDialog 는 조작마다, open 은 모달마다, register 는 등록마다 돈다. 새 항목이 생기면
+게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열셋뿐이다.
+"""
+
+[axes.state_snapshot_channel]
+predicate = { kind = "extractor", name = "action_registry_screens" }
+scope = ["src/hwpxfiller/webapp/action_registry.py"]
+unit = """
+스냅샷 채널(화면) 1개 = 1노드. 119개 액션 키는 노드가 아니다 — 키는 제품 변경마다 움직이지만
+React 소유권 판정은 그때 바뀌지 않는다. 값이 아니라 **좌표**를 모델링한다.
+"""
+[axes.state_snapshot_channel.blind_spot]
+description = "런타임에 채널을 더하는 경로. 레지스트리는 모듈 상수라 오늘 그런 사이트가 없다."
+probe = { kind = "extractor", name = "action_registry_dynamic" }
+scope = ["src/hwpxfiller/webapp/*.py"]
+unit = "ACTION_REGISTRY 를 첨자·setdefault·update·pop 으로 만지는 줄 1개 = 1."
+current = 0
+members = []
+judgment = "레지스트리는 읽기 전용 상수다. 0이 아니게 되는 날 이 축의 전수 전제가 깨진다."
+
+[axes.state_ring1]
+predicate = { kind = "extractor", name = "ring1_state_modules" }
+scope = ["src/hwpxfiller/gui/*_state.py"]
+unit = "링1 ViewModel 모듈 파일 1개 = 1노드."
+[axes.state_ring1.blind_spot]
+description = """
+`*_state.py` 이름 규약을 안 따르는 링1 이웃은 이 축이 못 본다. 오늘 9개이며 전부 값 객체·
+포매터·상수 모듈이다(판정을 소유한 ViewModel 이 아니다).
+"""
+probe = { kind = "extractor", name = "gui_non_state_modules" }
+scope = ["src/hwpxfiller/gui/*.py"]
+unit = "gui/ 아래 *_state.py 도 __init__.py 도 아닌 모듈 1개 = 1."
+current = 9
+members = [
+  "src/hwpxfiller/gui/compile_badge.py",
+  "src/hwpxfiller/gui/edit_session.py",
+  "src/hwpxfiller/gui/file_filters.py",
+  "src/hwpxfiller/gui/record_range.py",
+  "src/hwpxfiller/gui/result_errors.py",
+  "src/hwpxfiller/gui/txt_card.py",
+  "src/hwpxfiller/gui/txt_queue.py",
+  "src/hwpxfiller/gui/work_candidates.py",
+  "src/hwpxfiller/gui/work_mode.py",
+]
+judgment = "아홉 다 여러 표면이 공유하는 단일 출처 상수·값 객체다. React 이관이 건드리지 않는다."
+
+[axes.subscription_listener]
+predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+부착 호출 1건 = 1노드. 좌표는 `파일:줄`이고 한 줄에 둘이면 `#2` 가 붙는다 — `per-line` 은
+줄이 아니라 **줄 안의 일치**를 세므로 unit 과 어긋나지 않는다(줄을 세는 것은 `per-matching-line`).
+"""
+[axes.subscription_listener.blind_spot]
+description = """
+관례 정규식이라 주석·문자열 안 일치를 함께 세고, 대괄호 표기 동적 호출(el[m](\"click\", …))을
+못 본다. 오늘 둘 다 0이다.
+"""
+probe = { kind = "extractor", name = "listener_convention_gaps" }
+known_forms = ["comment", "bracket-call"]
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "주석 안 일치 또는 대괄호 표기 호출 1건 = 1."
+current = 0
+members = []
+judgment = "0이므로 오늘의 119는 전부 실호출이다."
+
+[axes.subscription_release]
+predicate = { kind = "regex", pattern = "\\.removeEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "해제 호출 1건 = 1노드."
+[axes.subscription_release.blind_spot]
+description = """
+`AbortController`·`{ signal }` 로 하는 해제는 removeEventListener 를 부르지 않으므로 이 술어가
+못 본다. 오늘 0건이다 — 즉 오늘의 비대칭 107은 진짜 비대칭이고, useEffect cleanup 에 대응할
+원본이 존재하지 않는다.
+"""
+probe = { kind = "regex", pattern = "AbortController|\\{\\s*signal", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "signal 기반 해제 형태 1건 = 1."
+current = 0
+members = []
+judgment = "0. 해제 책임 = 없음(부팅 1회 부착 후 영구)을 명시 값으로 둔다."
+
+[axes.subscription_push]
+predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/screens/*.js", "frontend/js/data_picker.js"]
+unit = """
+푸시 구독 등록 사이트 1건 = 1노드. scope 를 들어야 6이다 — frontend/js 전수로 세면 7이고
+그 하나는 bridge.js 머리말 주석이다.
+"""
+[axes.subscription_push.scope_limitation]
+statement = """
+이 축이 재는 것은 「화면 파일 + `data_picker.js` 안의 푸시 구독」이지 **제품 전체의 푸시
+구독이 아니다**. `frontend/js/modal.js` 나 `frontend/src/main.js` 에 등록이 생기면 이 축은
+그것을 영영 못 보고, 제품 트리 전수 피복도 그 파일이 이미 다른 축에 속하므로 조용하다.
+사각 프로브도 해제 API 이름을 `bridge.js` 안에서만 찾는다.
+scope 를 넓히지 않는 이유는 오늘의 단위가 옳기 때문이다 — 구독은 화면이 소유하고, 그 밖의
+등록은 「셸이 구독을 갖는가」라는 **다른 질문**이라 그 질문을 여는 슬라이스가 범위를 정해야 한다.
+"""
+owner = "R2-04 #408"
+[axes.subscription_push.blind_spot]
+description = "구독 해제 API 자체가 없다. offPush·unsubscribe 어느 이름도 bridge 에 0건이다."
+probe = { kind = "regex", pattern = "offPush|unsubscribe", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/bridge.js"]
+unit = "해제 API 이름 출현 1건 = 1."
+current = 0
+members = []
+judgment = "0이므로 구독 수명 = 화면 수명이라는 오늘의 전제가 구조로 굳어 있다."
+
+[axes.lifecycle_factory]
+predicate = { kind = "regex", pattern = "^export function ", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+최상위 `export function` 선언 1건 = 1노드. **「팩토리 18개」가 아니다** — 술어가 내는 18 안에
+합성 루트가 1회 구성하는 팩토리 16(`create*`)과 성격이 다른 둘(잎 이스케이퍼 `escHtml` ·
+합성 루트 자신 `bootProduct`)이 함께 있다. 그 둘은 false_positive 가 이름으로 든다.
+이 이름을 그대로 두면 R2·R3 슬라이스가 `esc.js` 를 「팩토리」로 물려받는다.
+"""
+[axes.lifecycle_factory.blind_spot]
+description = """
+이 술어가 **못 보는** 방향. `export const X = { … }` 서비스 네임스페이스 객체와
+`export async function` · `export default function` 세 형태를 센다. 오늘 11 = const 11 + 나머지 0.
+열하나는 전부 정적 객체라 「구성 1회」 계약의 대상이 아니지만, React 이관에서는 팩토리와
+다른 절취선을 요구한다.
+"""
+probe = { kind = "regex", pattern = "^export const |^export async function |^export default function ", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "세 형태 중 하나의 export 선언 1건 = 1."
+current = 11
+members = [
+  "frontend/js/copy.js:5",
+  "frontend/js/grouplist.js:138",
+  "frontend/js/guard.js:16",
+  "frontend/js/intent.js:110",
+  "frontend/js/modal.js:394",
+  "frontend/js/popover.js:144",
+  "frontend/js/preserve.js:59",
+  "frontend/js/segview.js:42",
+  "frontend/js/surface_sheet.js:82",
+  "frontend/js/undo_toast.js:33",
+  "frontend/src/product_api.js:41",
+]
+judgment = "열하나는 Copy·Guard·SegView·Intent·Modal·Popover·Preserve·GroupList·SurfaceSheet·UndoToast·PRODUCT_ERROR_CODES 다."
+[axes.lifecycle_factory.false_positive]
+description = """
+이 술어가 **잘못 보는** 방향 — `export function` 이지만 「구성 1회 팩토리」가 아닌 것.
+사각만 들고 오검을 안 들면 값은 옳고 이름이 틀린 자리를 못 잡는다(「18개 팩토리」).
+`escHtml` 은 저장소의 현행 계약이 이미 다르게 가른 이름이다(`EXPECTED_ESM_EXPORTS` 의
+「N-04 잎」 군). `bootProduct` 는 구성 대상이 아니라 구성하는 주체다.
+"""
+probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
+current = 2
+members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:109"]
+judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
+
+[axes.lifecycle_hook]
+predicate = { kind = "regex", pattern = "Preserve\\.around\\s*\\(|function leaveTo\\s*\\(|owner\\.leaveTo\\s*\\(|const IMMERSIVE\\s*=|addEventListener\\(\"pywebviewready\"", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+React 이관에서 useEffect·route guard 로 재설계될 수명주기 훅 다섯 형태의 사이트 1건 = 1노드:
+렌더 보존 래퍼 · 이탈 가드 정의 · 이탈 가드 위임 · 몰입 표면 목록 · 부팅 훅.
+"""
+[axes.lifecycle_hook.blind_spot]
+description = """
+객체 노출·간접 호출은 못 본다. 화면이 `leaveTo` 를 공개 객체에 얹는 자리와 셸이 그것을
+간접으로 부르는 자리가 그렇다. 오늘 2건이며 둘 다 app.js:109 한 줄이다.
+"""
+probe = { kind = "regex", pattern = "\\.leaveTo\\b", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "`.leaveTo` 참조 1건 = 1."
+current = 2
+members = ["frontend/js/app.js:109", "frontend/js/app.js:109#2"]
+judgment = "둘 다 app.js:109 의 존재 확인 + 호출이다. 화면 쪽 객체 노출은 export const 축(위)이 든다."
+
+# ── 계측 항목 ────────────────────────────────────────────────────────────
+# 술어 3종은 예외 없이 필수다. `derived` 도 predicate.kind 의 한 값이므로 면제가 아니다.
+# aliases 는 **같은 이름이 가리키는 다른 술어**를 한자리에 모은다 — 오답 술어도 함께 싣는다.
+# 다음 사람이 가장 잘 만날 오답이야말로 원장이 들고 있어야 「드리프트 아님」이 즉시 판별된다.
+
+[[metric]]
+id = "innerhtml-assignment"
+value = 61
+predicate = { kind = "regex", pattern = "innerHTML\\s*=(?!=)", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js"]
+unit = "대입 1건 = 1. 분모 = scope 의 모든 줄(주석 포함)."
+note = "제품의 DOM 생성은 사실상 한 형태다 — $(\"안정 id\").innerHTML = 템플릿 문자열 전체 재구성. 이것이 preserve.js 의 존재 이유이자 React 이관의 주 절취선이다."
+[[metric.aliases]]
+value = 71
+predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js", "frontend/index.html"]
+unit = "출현 1건 = 1. 대입·판독·주석을 구분하지 않는다."
+[[metric.aliases]]
+value = 83
+predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/**/*"]
+unit = "위와 같음. selftest 축까지 포함한다(텍스트로 못 읽는 파일은 세지 않는다)."
+[[metric.aliases]]
+value = 50
+status = "wrong"
+predicate = { kind = "regex", pattern = "innerHTML\\s*=[^=]", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js"]
+unit = "줄 끝 대입 11건을 놓친다 — `[^=]` 가 줄 뒤에 문자를 요구한다. 셸에서 가장 잘 나오는 오답이므로 원장이 든다."
+
+[[metric]]
+id = "mutable-module-state"
+value = 50
+predicate = { kind = "derived", axis = "state_js_module" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다."
+[[metric.aliases]]
+value = 44
+predicate = { kind = "derived", axis = "state_js_module" }
+scope = ["frontend/js/**/*.js"]
+unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
+[[metric.aliases]]
+value = 36
+status = "narrower-scope"
+predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
+scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
+unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
+[[metric.aliases]]
+value = 52
+status = "wrong"
+predicate = { kind = "extractor", name = "js_module_state_convention" }
+scope = ["frontend/js/**/*.js"]
+unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성 12 + 거짓음성 4 = 52 대 참값 44."
+
+[[metric]]
+id = "push-subscription-sites"
+value = 6
+predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/screens/*.js", "frontend/js/data_picker.js"]
+unit = "코드 등록 사이트 1개 = 1."
+[[metric.aliases]]
+value = 7
+predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/js/**/*.js"]
+unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센다."
+
+[[metric]]
+id = "listener-attach-sites"
+value = 119
+predicate = { kind = "derived", axis = "subscription_listener" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "노드 폐포의 원소 수."
+[[metric.aliases]]
+value = 123
+predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
+scope = ["frontend/**/*.js"]
+unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다."
+
+[[metric]]
+id = "listener-release-sites"
+value = 12
+predicate = { kind = "derived", axis = "subscription_release" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "노드 폐포의 원소 수. 부착 119 와의 차 107 이 이 축의 사실이다."
+
+[[metric]]
+id = "dom-stable-ids"
+value = 232
+predicate = { kind = "derived", axis = "dom_static" }
+scope = ["frontend/index.html"]
+unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0)."
+
+[[metric]]
+id = "dom-data-attribute-kinds"
+value = 9
+predicate = { kind = "derived", axis = "dom_data_attr" }
+scope = ["frontend/index.html"]
+unit = "속성 이름 1개 = 1."
+[[metric.aliases]]
+value = 59
+status = "wrong"
+predicate = { kind = "regex", pattern = "data-[a-z-]+", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/index.html"]
+unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함께 센다(6종 오탐). 참값은 파서가 낸 50회다."
+
+[[metric]]
+id = "data-attribute-bearing-elements"
+value = 43
+predicate = { kind = "extractor", name = "html_data_attr_elements" }
+scope = ["frontend/index.html"]
+unit = "`data-*` 를 하나라도 든 요소 1개 = 1."
+note = "`dom_data_attr.unit` 의 근거 문장을 데이터로 만든다 — 산문 수리는 다음 드리프트를 막지 못하고, 이 항목은 막는다."
+[[metric.aliases]]
+value = 7
+predicate = { kind = "extractor", name = "html_data_attr_elements_without_id" }
+scope = ["frontend/index.html"]
+unit = "그중 id 가 없어 dom_static 232 **밖**인 요소 1개 = 1. 나머지 36 에 대해서만 출현 계상이 이중 계상이다."
+
+[[metric]]
+id = "js-generated-id-sites"
+value = 26
+predicate = { kind = "derived", axis = "dom_js_site" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "사이트 1개 = 1. 정적 완전 id 8 + 동적 접두 가족 15 + 접두 없는 완전 동적 3."
+[[metric.aliases]]
+value = 26
+predicate = { kind = "regex", pattern = "id=\"", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "앵커 없는 양성 대조. 오늘 앵커 유무가 값을 바꾸지 않음을 이 alias 가 매번 재확인한다."
+
+[[metric]]
+id = "screen-action-pairs"
+value = 119
+predicate = { kind = "extractor", name = "action_registry_pairs" }
+scope = ["src/hwpxfiller/webapp/action_registry.py"]
+unit = "(화면, 액션) 쌍 1개 = 1."
+[[metric.aliases]]
+value = 6
+predicate = { kind = "derived", axis = "state_snapshot_channel" }
+scope = ["src/hwpxfiller/webapp/action_registry.py"]
+unit = "화면 1개 = 1. 노드 축은 이쪽이다."
+
+[[metric]]
+id = "window-pywebview-references"
+value = 34
+predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js"]
+unit = "출현 1건 = 1."
+note = "app.js:82 와 editor.js:1508 은 bridge.js 의 hostReady() 술어가 있는데도 존재 판정을 직접 한다 — 오늘의 실재 규율 이탈 2건이고 R2 typed client 게이트를 물릴 천연 재료다."
+[[metric.aliases]]
+value = 32
+predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-matching-line" }
+scope = ["frontend/js/**/*.js"]
+unit = "**줄** 1개 = 1. `grep -rn … | wc -l` 이 내는 값이고 출현 34와 다르다 — unit 이 없으면 같은 술어가 두 값을 낸다."
+[[metric.aliases]]
+value = 36
+predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/**/*.js"]
+unit = "selftest 축 포함."
+
+[[metric]]
+id = "pywebview-api-references"
+value = 35
+predicate = { kind = "regex", pattern = "pywebview\\.api", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/js/**/*.js"]
+unit = "출현 1건 = 1. 제품 코드에서 `.api` 를 직접 조회하는 파일은 bridge.js 하나이고 나머지 3은 주석이다."
+[[metric.aliases]]
+value = 41
+predicate = { kind = "regex", pattern = "pywebview\\.api", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/**/*.js"]
+unit = "selftest 축 포함."
+
+[[metric]]
+id = "export-function-declarations"
+value = 18
+predicate = { kind = "derived", axis = "lifecycle_factory" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = """
+노드 폐포의 원소 수. 그중 **16이 합성 루트가 정확히 한 번 구성하는 팩토리**(`create*`)이고
+둘은 성격이 다르다(axes.lifecycle_factory.false_positive 가 이름으로 든다).
+「18개 팩토리」로 읽으면 술어가 자기 unit 을 못 내는 자리로 되돌아간다.
+"""
+
+# ── 판정 요구 항목 ───────────────────────────────────────────────────────
+# 축의 멤버가 아니면서 사람 판정을 요구하는 사실. 「비소유」의 실행 규칙대로 **고치지 않고
+# 기록하며 수정 소유 단계를 지목**한다. p_review_required 인 항목은 5증거를 든다.
+
+[[review_item]]
+id = "bridge/close-guard-state"
+subject = "close_guard_state 는 pywebview 반사로 js_api 에 노출되는데 문서에도 bridge.js 에도 없다 — JS 에서 도달 가능한 무계약 표면이다."
+requires_p_review = true
+evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 481, anchor = "def close_guard_state" }]
+owner = "R2-02 #406"
+disposition = "#433"
+[review_item.p_review]
+producer = "src/hwpxfiller/webapp/app.py:481 WebFrontend.close_guard_state"
+consumer = "unknown — bridge.js 에 이름이 없어 오늘 실제 JS 호출자가 있는지 확인하지 못했다."
+call_path = "pywebview 가 js_api 공개 메서드를 반사로 노출하므로 window.pywebview.api.close_guard_state 로 도달 가능하다."
+contract = "없음 — docs/UI_CONTRACT.md 의 직접 브리지 목록 21에도 없다."
+test = "tests/test_webapp_bridge.py (Python 쪽 호출만 검증한다 — JS 도달 경로는 무검증)"
+
+[[review_item]]
+id = "gate/architecture-bridge-one-way"
+subject = "test_architecture.py 의 직접 브리지 대조가 bridge.js → 문서 **단방향**이라 Python 쪽에만 있는 이름(close_guard_state)을 구조적으로 못 본다."
+requires_p_review = false
+evidence = [{ file = "tests/test_architecture.py", line = 411, anchor = "UI_CONTRACT.md 직접 브리지 목록에 없는 메서드" }]
+owner = "R2-02 #406"
+
+[[review_item]]
+id = "gate/screen-roots-partial"
+subject = "SCREEN_ROOTS 상수는 화면 루트 4 중 2만 든다 — 계약이 표면의 절반만 겨눈다."
+requires_p_review = false
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 107, anchor = "SCREEN_ROOTS = (" }]
+owner = "R3-03 #412"
+
+[[review_item]]
+id = "gate/preserve-wrapped-files-partial"
+subject = "PRESERVE_WRAPPED_FILES 는 3인데 Preserve.around 실호출은 5다(docstring 은 4라고 적는다). 셋이 서로 다르다."
+requires_p_review = false
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 47, anchor = "PRESERVE_WRAPPED_FILES = (" }]
+owner = "R3-03 #412"
+note = "소유 제안은 중앙 승인 대기(상향 U5)다. 결함 원장의 정본은 #403 이고 여기서는 참조만 한다."
+
+[[review_item]]
+id = "doc/bridge-header-breakdown"
+subject = "bridge.js 머리말의 「23개(21+2)」 분해가 낡았다 — 총량 23은 우연히 맞지만 실제는 19(데이터·네이티브) + 2(창 닫기) + 2(selftest)이고 문서 21은 이미 창 닫기 2를 포함한다."
+requires_p_review = false
+evidence = [{ file = "frontend/js/bridge.js", line = 2, anchor = "창 닫기 확인 2" }]
+owner = "R2-02 #406"
+
+[[review_item]]
+id = "doc/screens-py-transport-comment"
+subject = "webapp/screens.py 의 머리말 주석이 앱을 evaluate_js 로 서술한다 — 전송 층에서는 여전히 참이라 「낡음」은 해석이고 미확인이다."
+requires_p_review = false
+evidence = [{ file = "src/hwpxfiller/webapp/screens.py", line = 1, anchor = "화면별 컨트롤러" }]
+owner = "R5-01 #419"
+
+# ── 노드 항목 ──────────────────────────────────────────────────────────
+
+# ═══ dom_static — 정적 DOM 232. 접기는 self-exclusive 이고 컨테이너 루트 자신은
+#     자기 컨테이너에 안 들어가므로 루트 직속 9가 전부 exact 로 명시된다.
+
+[[node]]
+id = "dom/root/app-shell-controls"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "exact", members = [
+  "fontScaleLabel",
+  "fontScaleToggle",
+  "themeLabel",
+  "themeToggle",
+] }
+evidence = [{ file = "frontend/index.html", line = 52, anchor = "id=\"themeToggle\"" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/test_web_dom_contract.py::test_theme_helper_loaded_and_toggle_present"]
+note = "셸 우상단 테마·글자 크기 토글. 컨테이너에 안 들어가는 루트 직속이라 exact 다."
+
+[[node]]
+id = "dom/root/screen-roots"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "exact", members = [
+  "overlayRoot",
+  "scr-editor",
+  "scr-job",
+  "scr-library",
+  "scr-workbench",
+] }
+evidence = [{ file = "frontend/index.html", line = 133, anchor = "id=\"scr-job\"" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/test_web_dom_contract.py::test_screen_roots_present"]
+note = "화면 루트 4 + overlay 루트 1. React 라우터가 이 다섯의 후계를 진다. SCREEN_ROOTS 상수는 이 중 둘만 본다(review_item 참조)."
+
+[[node]]
+id = "dom/scr-library"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "scr-library", members_expected = 17 }
+evidence = [{ file = "frontend/index.html", line = 70, anchor = "id=\"scr-library\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom/scr-job"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "scr-job", members_expected = 5 }
+evidence = [{ file = "frontend/index.html", line = 133, anchor = "id=\"scr-job\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom/scr-editor"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "scr-editor", members_expected = 9 }
+evidence = [{ file = "frontend/index.html", line = 407, anchor = "id=\"scr-editor\"" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom/scr-workbench"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "scr-workbench", members_expected = 20 }
+evidence = [{ file = "frontend/index.html", line = 442, anchor = "id=\"scr-workbench\"" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom/overlayRoot"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "overlayRoot", members_expected = 19 }
+evidence = [{ file = "frontend/index.html", line = 522, anchor = "id=\"overlayRoot\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+note = "overlay 루트 직속 19 — 12 모달 루트 자신과 메뉴·토스트."
+
+[[node]]
+id = "dom/job/jobDataGrid"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobDataGrid", members_expected = 29 }
+evidence = [{ file = "frontend/index.html", line = 166, anchor = "id=\"jobDataGrid\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/job/jobMirrorZone"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobMirrorZone", members_expected = 4 }
+evidence = [{ file = "frontend/index.html", line = 243, anchor = "id=\"jobMirrorZone\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/job/jobResultZone"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobResultZone", members_expected = 17 }
+evidence = [{ file = "frontend/index.html", line = 262, anchor = "id=\"jobResultZone\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/job/jobSideCard"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobSideCard", members_expected = 7 }
+evidence = [{ file = "frontend/index.html", line = 312, anchor = "id=\"jobSideCard\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/job/jobActionBar"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobActionBar", members_expected = 8 }
+evidence = [{ file = "frontend/index.html", line = 358, anchor = "id=\"jobActionBar\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/job/jobOutRow"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobOutRow", members_expected = 3 }
+evidence = [{ file = "frontend/index.html", line = 344, anchor = "id=\"jobOutRow\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+
+[[node]]
+id = "dom/overlay/poolRegModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "poolRegModal", members_expected = 8 }
+evidence = [{ file = "frontend/index.html", line = 540, anchor = "id=\"poolRegModal\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/txtEditModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "txtEditModal", members_expected = 7 }
+evidence = [{ file = "frontend/index.html", line = 562, anchor = "id=\"txtEditModal\"" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/sheetModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "sheetModal", members_expected = 4 }
+evidence = [{ file = "frontend/index.html", line = 579, anchor = "id=\"sheetModal\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/dataPickerModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "dataPickerModal", members_expected = 11 }
+evidence = [{ file = "frontend/index.html", line = 596, anchor = "id=\"dataPickerModal\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/previewSheet"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "previewSheet", members_expected = 19 }
+evidence = [{ file = "frontend/index.html", line = 640, anchor = "id=\"previewSheet\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/libraryMoveModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "libraryMoveModal", members_expected = 6 }
+evidence = [{ file = "frontend/index.html", line = 711, anchor = "id=\"libraryMoveModal\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/dataSheet"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "dataSheet", members_expected = 3 }
+evidence = [{ file = "frontend/index.html", line = 725, anchor = "id=\"dataSheet\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/jobBrowseSheet"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "jobBrowseSheet", members_expected = 6 }
+evidence = [{ file = "frontend/index.html", line = 739, anchor = "id=\"jobBrowseSheet\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/tplMoveModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "tplMoveModal", members_expected = 6 }
+evidence = [{ file = "frontend/index.html", line = 766, anchor = "id=\"tplMoveModal\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/confirmModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "confirmModal", members_expected = 4 }
+evidence = [{ file = "frontend/index.html", line = 781, anchor = "id=\"confirmModal\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/chooseModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "chooseModal", members_expected = 5 }
+evidence = [{ file = "frontend/index.html", line = 795, anchor = "id=\"chooseModal\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+[[node]]
+id = "dom/overlay/promptModal"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "subtree", root = "promptModal", members_expected = 6 }
+evidence = [{ file = "frontend/index.html", line = 808, anchor = "id=\"promptModal\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+
+# ═══ dom_data_attr — 속성 **이름** 9행이다. 출현 50회는 이미 dom_static 232 안에
+#     있는 요소들이라 이중 계상하지 않는다(L8·L9 의 노드 좌표-키 원칙).
+
+[[node]]
+id = "dom/data-attr/render-preservation"
+kind = "dom"
+axis = "dom_data_attr"
+selector = { kind = "exact", members = [
+  "data-busy-lock",
+  "data-preserve-scroll",
+] }
+evidence = [{ file = "frontend/index.html", line = 93, anchor = "data-busy-lock", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+note = "React 렌더 보존의 원본 — innerHTML 전면 재구성이 스크롤·포커스를 날리던 자리의 표식."
+
+[[node]]
+id = "dom/data-attr/routing"
+kind = "dom"
+axis = "dom_data_attr"
+selector = { kind = "exact", members = ["data-scr"] }
+evidence = [{ file = "frontend/index.html", line = 33, anchor = "data-scr", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+
+[[node]]
+id = "dom/data-attr/library-view"
+kind = "dom"
+axis = "dom_data_attr"
+selector = { kind = "exact", members = [
+  "data-library-mode",
+  "data-library-view",
+] }
+evidence = [{ file = "frontend/index.html", line = 97, anchor = "data-library-view", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+
+[[node]]
+id = "dom/data-attr/workbench-view"
+kind = "dom"
+axis = "dom_data_attr"
+selector = { kind = "exact", members = ["data-wb-view"] }
+evidence = [{ file = "frontend/index.html", line = 473, anchor = "data-wb-view", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+
+[[node]]
+id = "dom/data-attr/overlay-state"
+kind = "dom"
+axis = "dom_data_attr"
+selector = { kind = "exact", members = [
+  "data-act",
+  "data-level",
+  "data-state",
+] }
+evidence = [{ file = "frontend/index.html", line = 146, anchor = "data-level", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+
+# ═══ dom_js_site — JS 가 템플릿으로 만드는 id 사이트 26. **단위는 이름이 아니라
+#     사이트**다 — 완전 동적 3건은 이름이 소스에 없어 이름을 단위로 잡으면 영영 빠진다.
+
+[[node]]
+id = "dom-js/data-picker"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = ["frontend/js/data_picker.js:84:static:dataPickerPin"] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 84, anchor = "id=\"dataPickerPin" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/datazone"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = ["frontend/js/datazone.js:386:dynamic:"] }
+evidence = [{ file = "frontend/js/datazone.js", line = 386, anchor = "id=\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/grouplist"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = [
+  "frontend/js/grouplist.js:90:dynamic:",
+  "frontend/js/grouplist.js:91:dynamic:",
+] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "id=\"", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/editor"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/editor.js:339:dynamic:libgrp-",
+  "frontend/js/screens/editor.js:843:static:save-msg",
+] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 339, anchor = "id=\"libgrp-" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/library"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = ["frontend/js/screens/library.js:175:static:libraryClearFacets"] }
+evidence = [{ file = "frontend/js/screens/library.js", line = 175, anchor = "id=\"libraryClearFacets" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/workbench"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/workbench.js:117:static:wbLintAction",
+  "frontend/js/screens/workbench.js:119:static:wbLintAction",
+  "frontend/js/screens/workbench.js:34:dynamic:wbMap-src-",
+  "frontend/js/screens/workbench.js:38:dynamic:wbMap-sug-",
+  "frontend/js/screens/workbench.js:42:dynamic:wbMap-rev-",
+  "frontend/js/screens/workbench.js:47:dynamic:wbMap-type-",
+  "frontend/js/screens/workbench.js:53:dynamic:wbMap-fmt-",
+  "frontend/js/screens/workbench.js:61:dynamic:wbMap-val-",
+  "frontend/js/screens/workbench.js:64:dynamic:wbMap-ck-",
+  "frontend/js/screens/workbench.js:70:dynamic:wbMap-row-",
+] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "id=\"wbLintAction", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/job-result"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:1453:dynamic:jobResultFail-"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1453, anchor = "id=\"jobResultFail-" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+[[node]]
+id = "dom-js/job-browse"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:393:static:jobCandMenuBtn",
+  "frontend/js/screens/job.js:401:dynamic:jobFav-",
+  "frontend/js/screens/job.js:405:dynamic:jobCand-",
+  "frontend/js/screens/job.js:571:dynamic:jobBrowseTab-",
+  "frontend/js/screens/job.js:598:dynamic:jobBrowseNeeds-",
+  "frontend/js/screens/job.js:605:dynamic:jobBrowseRow-",
+  "frontend/js/screens/job.js:661:static:jobCandNewWork",
+  "frontend/js/screens/job.js:699:static:jobBrowseOpen",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 393, anchor = "id=\"jobCandMenuBtn" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+
+# ═══ state_js_module — 모듈 스코프 가변 상태 50(frontend/js 44 + src 제품분 6).
+#     AST 인구조사다. 2칸 들여쓰기 관례로 세면 거짓양성 12·거짓음성 4가 난다.
+
+[[node]]
+id = "state/idempotence-guards"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:53 wired",
+  "frontend/js/screens/editor.js:1359 wired",
+  "frontend/js/screens/editor.js:1360 seated",
+  "frontend/js/screens/job.js:1950 wired",
+  "frontend/js/screens/job.js:1951 seated",
+  "frontend/js/screens/library.js:735 wired",
+  "frontend/js/screens/library.js:736 seated",
+  "frontend/js/screens/workbench.js:416 wired",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 53, anchor = "wired", occurrence = 2 }]
+classification = "retire"
+handoff_slice = "R5-01 #419"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_mutable_module_state_stays_within_budget"]
+p_handoff = "no"
+p_reason = "화면 결합"
+r_exit_evidence = "React 마운트가 멱등을 구조로 해결하므로 이 플래그의 후계는 없다."
+p_input_evidence = "없음 — 제품 계약이 아니라 Vanilla 배선의 재진입 가드다."
+note = "오늘의 우연한 소유권을 목표 권위로 승격하지 않는다 — 멱등 가드는 이관 대상이 아니라 소멸 대상이다."
+
+[[node]]
+id = "state/job/run-result"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:1271 logStarted",
+  "frontend/js/screens/job.js:1394 RESULT",
+  "frontend/js/screens/job.js:32 generating",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1271, anchor = "logStarted", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+
+[[node]]
+id = "state/job/browse-selection"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:1562 switching",
+  "frontend/js/screens/job.js:296 pendingOrder",
+  "frontend/js/screens/job.js:31 LAST",
+  "frontend/js/screens/job.js:33 lastSessionKey",
+  "frontend/js/screens/job.js:41 pendingZoneMutations",
+  "frontend/js/screens/job.js:799 browsePickedName",
+  "frontend/js/screens/job.js:803 browseOpenGen",
+  "frontend/js/screens/job.js:806 browseAfterClose",
+  "frontend/js/screens/job.js:866 rangeApplied",
+  "frontend/js/screens/job.js:867 rangeForceClose",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1562, anchor = "switching", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+
+[[node]]
+id = "state/editor"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/editor.js:103 pendingAim",
+  "frontend/js/screens/editor.js:108 libMenuFor",
+  "frontend/js/screens/editor.js:111 folderImportInFlight",
+  "frontend/js/screens/editor.js:116 txtEdit",
+  "frontend/js/screens/editor.js:29 LAST",
+  "frontend/js/screens/editor.js:55 foldOpen",
+  "frontend/js/screens/editor.js:56 tokFoldOpen",
+  "frontend/js/screens/editor.js:88 pendingFieldEdit",
+] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 103, anchor = "pendingAim", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+
+[[node]]
+id = "state/library"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/library.js:31 LAST",
+  "frontend/js/screens/library.js:32 menuFor",
+  "frontend/js/screens/library.js:33 searchTimer",
+] }
+evidence = [{ file = "frontend/js/screens/library.js", line = 31, anchor = "LAST", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+
+[[node]]
+id = "state/workbench"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:19 LAST"] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 19, anchor = "LAST", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+
+[[node]]
+id = "state/data-picker"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:50 LAST",
+  "frontend/js/data_picker.js:51 session",
+  "frontend/js/data_picker.js:52 loading",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 50, anchor = "LAST", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "state/app-shell"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/app.js:15 closePromptPending",
+  "frontend/js/app.js:55 routingReady",
+] }
+evidence = [{ file = "frontend/js/app.js", line = 15, anchor = "closePromptPending", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["none"]
+
+[[node]]
+id = "state/theme"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = ["frontend/js/theme.js:17 ORDER"] }
+evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "ORDER", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["none"]
+
+[[node]]
+id = "state/editor-entry"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = ["frontend/js/editor_entry.js:29 entryFocus"] }
+evidence = [{ file = "frontend/js/editor_entry.js", line = 29, anchor = "entryFocus", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["none"]
+
+[[node]]
+id = "state/overlay-services"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/js/modal.js:29 pendingDialog",
+  "frontend/js/popover.js:9 suppressNextClick",
+  "frontend/js/undo_toast.js:3 undo",
+  "frontend/js/undo_toast.js:4 timer",
+] }
+evidence = [{ file = "frontend/js/modal.js", line = 29, anchor = "pendingDialog", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+note = "0칸 최상위 4(modal:29·popover:9·undo_toast:3,4)를 포함한다 — 2칸 관례 술어가 통째로 못 보던 자리다."
+
+[[node]]
+id = "state/boot-composition"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/src/bootstrap.js:124 LibraryScreen",
+  "frontend/src/bootstrap.js:125 EditorScreen",
+  "frontend/src/bootstrap.js:126 JobScreen",
+  "frontend/src/bootstrap.js:127 WorkbenchScreen",
+  "frontend/src/bootstrap.js:128 Nav",
+] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 124, anchor = "LibraryScreen", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R2-01 #405"
+verification = ["none"]
+note = "구성 1회 팩토리 산물 5. React 단일 root 가 이 자리의 후계다."
+
+[[node]]
+id = "state/push-port"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = ["frontend/src/push_port.js:48 override"] }
+evidence = [{ file = "frontend/src/push_port.js", line = 48, anchor = "override", occurrence = 3 }]
+classification = "react"
+handoff_slice = "R2-03 #407"
+verification = ["none"]
+
+# ═══ state_snapshot_channel — 스냅샷 채널 6. 값(119 액션 키)이 아니라 **채널**이
+#     노드다: 키는 제품 변경마다 움직이지만 채널은 구조가 움직일 때만 바뀐다.
+
+[[node]]
+id = "state/snapshot/product-channels"
+kind = "state"
+axis = "state_snapshot_channel"
+selector = { kind = "exact", members = [
+  "editor",
+  "job",
+  "library",
+  "pool",
+  "workbench",
+] }
+evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 135, anchor = "\"job\": {" }]
+classification = "python_product"
+verification = ["tests/test_dispatch_wiring.py::test_registry_has_exactly_the_runtime_controller_surface"]
+p_handoff = "no"
+p_reason = "제품 계약 결합"
+r_exit_evidence = "React 는 이 채널의 소비자만 바꾼다 — 판정·문안은 링1·링2 Python 이 계속 소유한다."
+p_input_evidence = "없음 — P-00 인계 대상이 아니다."
+
+[[node]]
+id = "state/snapshot/tpl-channel"
+kind = "state"
+axis = "state_snapshot_channel"
+selector = { kind = "exact", members = ["tpl"] }
+evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 231, anchor = "\"tpl\": {" }]
+classification = "p_review_required"
+verification = ["tests/test_dispatch_wiring.py::test_registry_has_exactly_the_runtime_controller_surface"]
+note = "상단 탭은 job·library 2탭이고 tpl 은 과도기 잔존이다 — 이관인지 소멸인지는 기계가 못 본다."
+[node.p_review]
+producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\""
+consumer = "frontend/js/screens/editor.js — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비"
+call_path = "editor.js → bridge.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)"
+contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」"
+test = "tests/test_dispatch_wiring.py"
+
+# ═══ state_ring1 — 링1 ViewModel 11 모듈. Qt-free·DOM-free 라 React 이관이
+#     건드리지 않는다. 이 축을 원장에 두는 이유는 「안 옮긴다」도 판정이기 때문이다.
+
+[[node]]
+id = "state/ring1/product-viewmodels"
+kind = "state"
+axis = "state_ring1"
+selector = { kind = "exact", members = [
+  "src/hwpxfiller/gui/dataset_pool_state.py",
+  "src/hwpxfiller/gui/filter_state.py",
+  "src/hwpxfiller/gui/home_state.py",
+  "src/hwpxfiller/gui/job_editor_state.py",
+  "src/hwpxfiller/gui/mapping_state.py",
+  "src/hwpxfiller/gui/review_state.py",
+  "src/hwpxfiller/gui/run_state.py",
+  "src/hwpxfiller/gui/selection_state.py",
+  "src/hwpxfiller/gui/template_manager_state.py",
+] }
+evidence = [{ file = "src/hwpxfiller/gui/dataset_pool_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+classification = "python_product"
+verification = ["tests/test_architecture.py::test_src_has_no_pyside6_runtime_imports"]
+p_handoff = "no"
+p_reason = "제품 계약 결합"
+r_exit_evidence = "링1 은 UI 런타임을 모른다 — 렌더러 교체의 write set 밖이다."
+p_input_evidence = "없음."
+
+[[node]]
+id = "state/ring1/nara"
+kind = "state"
+axis = "state_ring1"
+selector = { kind = "exact", members = ["src/hwpxfiller/gui/nara_state.py"] }
+evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+classification = "p_review_required"
+verification = ["tests/test_nara_state.py"]
+note = "나라장터 소스는 동결이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지 않는다."
+[node.p_review]
+producer = "src/hwpxfiller/gui/nara_state.py (NaraAcquireViewModel)"
+consumer = "링1 내부 2(dataset_pool_state.py:27 · run_state.py:194). 링2 소비자 0."
+call_path = "CLI --source nara 어댑터 접합부. 웹 dispatch 경로 없음."
+contract = "CLAUDE.md 「나라장터 소스는 동결」 · docs/README.md 동결 결정"
+test = "tests/test_nara_state.py"
+
+[[node]]
+id = "state/ring1/pipeline-builder"
+kind = "state"
+axis = "state_ring1"
+selector = { kind = "exact", members = ["src/hwpxfiller/gui/pipeline_builder_state.py"] }
+evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+classification = "p_review_required"
+verification = ["tests/test_pipeline_builder_state.py"]
+note = "소비자 0의 파킹 모듈이다. retire 로 단정하지 않는다 — 처분은 사람 판정이다."
+[node.p_review]
+producer = "src/hwpxfiller/gui/pipeline_builder_state.py (PipelineBuilderViewModel)"
+consumer = "unknown — 제품 소비자 0. 참조는 테스트 2건뿐이다."
+call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다."
+contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외"
+test = "tests/test_pipeline_builder_state.py"
+
+# ═══ subscription_listener — 부착 사이트 119. 나머지 107은 부팅 1회 부착 후
+#     영구다. 즉 **useEffect cleanup 에 대응할 원본이 존재하지 않는다** — 그 부재
+#     자체가 이 축의 값이고, 공란으로 두면 R3/R4 가 신규와 승계를 못 가른다.
+
+[[node]]
+id = "subscription/module-eval-attachments"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/popover.js:102",
+  "frontend/js/popover.js:107",
+  "frontend/js/popover.js:57",
+  "frontend/js/popover.js:65",
+  "frontend/js/popover.js:80",
+  "frontend/js/popover.js:86",
+  "frontend/js/popover.js:88",
+  "frontend/js/popover.js:93",
+  "frontend/js/undo_toast.js:22",
+] }
+evidence = [{ file = "frontend/js/popover.js", line = 102, anchor = "addEventListener", occurrence = 7 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+note = "모듈 평가 시점(0칸)에 document·window 에 앉는 9. React root 가 생기기 **전에** 붙고 어떤 팩토리의 생명주기에도 매이지 않는다 — 이관 시 신규 설계가 필요한 자리다."
+
+[[node]]
+id = "subscription/listener/job-run"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:1790",
+  "frontend/js/screens/job.js:1791",
+  "frontend/js/screens/job.js:1792",
+  "frontend/js/screens/job.js:1794",
+  "frontend/js/screens/job.js:1796",
+  "frontend/js/screens/job.js:1803",
+  "frontend/js/screens/job.js:1813",
+  "frontend/js/screens/job.js:1825",
+  "frontend/js/screens/job.js:1833",
+  "frontend/js/screens/job.js:1850",
+  "frontend/js/screens/job.js:1854",
+  "frontend/js/screens/job.js:1856",
+  "frontend/js/screens/job.js:1860",
+  "frontend/js/screens/job.js:1874",
+  "frontend/js/screens/job.js:1883",
+  "frontend/js/screens/job.js:1895",
+  "frontend/js/screens/job.js:1904",
+  "frontend/js/screens/job.js:1938",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1790, anchor = "addEventListener", occurrence = 12 }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/job-browse"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:1666",
+  "frontend/js/screens/job.js:1697",
+  "frontend/js/screens/job.js:1707",
+  "frontend/js/screens/job.js:1708",
+  "frontend/js/screens/job.js:1719",
+  "frontend/js/screens/job.js:1733",
+  "frontend/js/screens/job.js:1778",
+  "frontend/js/screens/job.js:1779",
+  "frontend/js/screens/job.js:1780",
+  "frontend/js/screens/job.js:1783",
+  "frontend/js/screens/job.js:1784",
+  "frontend/js/screens/job.js:1838",
+  "frontend/js/screens/job.js:1842",
+  "frontend/js/screens/job.js:1845",
+  "frontend/js/screens/job.js:1930",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1666, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/editor"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/editor.js:1343",
+  "frontend/js/screens/editor.js:1372",
+  "frontend/js/screens/editor.js:1373",
+  "frontend/js/screens/editor.js:1374",
+  "frontend/js/screens/editor.js:1375",
+  "frontend/js/screens/editor.js:1379",
+  "frontend/js/screens/editor.js:1383",
+  "frontend/js/screens/editor.js:1384",
+] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1343, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/library"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/library.js:704",
+  "frontend/js/screens/library.js:705",
+  "frontend/js/screens/library.js:706",
+  "frontend/js/screens/library.js:707",
+  "frontend/js/screens/library.js:708",
+  "frontend/js/screens/library.js:709",
+  "frontend/js/screens/library.js:710",
+  "frontend/js/screens/library.js:711",
+  "frontend/js/screens/library.js:712",
+  "frontend/js/screens/library.js:720",
+] }
+evidence = [{ file = "frontend/js/screens/library.js", line = 704, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/workbench"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/workbench.js:342",
+  "frontend/js/screens/workbench.js:343",
+  "frontend/js/screens/workbench.js:345",
+  "frontend/js/screens/workbench.js:347",
+  "frontend/js/screens/workbench.js:348",
+  "frontend/js/screens/workbench.js:349",
+  "frontend/js/screens/workbench.js:352",
+  "frontend/js/screens/workbench.js:356",
+  "frontend/js/screens/workbench.js:359",
+  "frontend/js/screens/workbench.js:364",
+  "frontend/js/screens/workbench.js:369",
+  "frontend/js/screens/workbench.js:388",
+  "frontend/js/screens/workbench.js:404",
+] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 342, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/data-picker"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:435",
+  "frontend/js/data_picker.js:458",
+  "frontend/js/data_picker.js:462",
+  "frontend/js/data_picker.js:466",
+  "frontend/js/data_picker.js:467",
+  "frontend/js/data_picker.js:468",
+  "frontend/js/data_picker.js:472",
+  "frontend/js/data_picker.js:473",
+  "frontend/js/data_picker.js:474",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 435, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/datazone"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/datazone.js:560",
+  "frontend/js/datazone.js:561",
+  "frontend/js/datazone.js:562",
+  "frontend/js/datazone.js:563",
+  "frontend/js/datazone.js:569",
+  "frontend/js/datazone.js:579",
+  "frontend/js/datazone.js:584",
+  "frontend/js/datazone.js:591",
+  "frontend/js/datazone.js:592",
+  "frontend/js/datazone.js:593",
+  "frontend/js/datazone.js:594",
+  "frontend/js/datazone.js:602",
+] }
+evidence = [{ file = "frontend/js/datazone.js", line = 560, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/sheet-picker"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/sheet_picker.js:51",
+  "frontend/js/sheet_picker.js:62",
+] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 51, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/app-shell"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/app.js:142",
+  "frontend/js/app.js:159",
+  "frontend/js/app.js:161",
+  "frontend/js/app.js:167",
+  "frontend/js/app.js:184",
+  "frontend/js/app.js:185",
+  "frontend/js/app.js:186",
+  "frontend/js/app.js:188",
+  "frontend/js/app.js:211",
+  "frontend/js/app.js:215",
+  "frontend/js/app.js:220",
+  "frontend/js/app.js:46",
+] }
+evidence = [{ file = "frontend/js/app.js", line = 142, anchor = "addEventListener", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/modal"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/modal.js:102",
+  "frontend/js/modal.js:180",
+  "frontend/js/modal.js:289",
+  "frontend/js/modal.js:290",
+  "frontend/js/modal.js:291",
+  "frontend/js/modal.js:292",
+] }
+evidence = [{ file = "frontend/js/modal.js", line = 102, anchor = "addEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/grouplist"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/js/grouplist.js:131",
+  "frontend/js/grouplist.js:132",
+  "frontend/js/grouplist.js:98",
+] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 131, anchor = "addEventListener", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/pathtrack"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = ["frontend/js/pathtrack.js:69"] }
+evidence = [{ file = "frontend/js/pathtrack.js", line = 69, anchor = "addEventListener" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+
+[[node]]
+id = "subscription/listener/undo-toast"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = ["frontend/js/undo_toast.js:23"] }
+evidence = [{ file = "frontend/js/undo_toast.js", line = 23, anchor = "addEventListener", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+
+# ═══ subscription_release — 해제 사이트 12. 부착 119 대비 비대칭 107 이 이 축의
+#     사실이다. 해제 책임 = **없음(부팅 영구)** 을 명시 값으로 적는다.
+
+[[node]]
+id = "subscription/release/app-splitter"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = [
+  "frontend/js/app.js:176",
+  "frontend/js/app.js:177",
+  "frontend/js/app.js:178",
+] }
+evidence = [{ file = "frontend/js/app.js", line = 176, anchor = "removeEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["none"]
+
+[[node]]
+id = "subscription/release/modal"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = [
+  "frontend/js/modal.js:115",
+  "frontend/js/modal.js:123",
+  "frontend/js/modal.js:241",
+  "frontend/js/modal.js:242",
+  "frontend/js/modal.js:243",
+  "frontend/js/modal.js:244",
+] }
+evidence = [{ file = "frontend/js/modal.js", line = 115, anchor = "removeEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["none"]
+
+[[node]]
+id = "subscription/release/data-picker"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:204",
+  "frontend/js/data_picker.js:440",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 204, anchor = "removeEventListener", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/release/sheet-picker"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = ["frontend/js/sheet_picker.js:33"] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 33, anchor = "removeEventListener" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+# ═══ subscription_push — 푸시 구독 6. bridge 에 해제 API 가 없다(offPush·
+#     unsubscribe 각 0건) — 구독은 화면 수명과 같다는 오늘의 전제가 여기 산다.
+
+[[node]]
+id = "subscription/push/editor-tpl"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1368"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1368, anchor = "onPush", occurrence = 2 }]
+classification = "retire"
+handoff_slice = "R5-01 #419"
+verification = ["none"]
+p_handoff = "no"
+p_reason = "중복 권위"
+r_exit_evidence = "tpl 화면 흡수 뒤 남은 병존기 이중 구독이다 — 후계 구독이 아니라 제거 대상."
+p_input_evidence = "없음."
+
+[[node]]
+id = "subscription/push/editor"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1363"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1363, anchor = "onPush", occurrence = 1 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["none"]
+
+[[node]]
+id = "subscription/push/job"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:1954"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 1954, anchor = "onPush", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["none"]
+
+[[node]]
+id = "subscription/push/library"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/screens/library.js:739"] }
+evidence = [{ file = "frontend/js/screens/library.js", line = 739, anchor = "onPush", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+[[node]]
+id = "subscription/push/workbench"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:420"] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 420, anchor = "onPush" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["none"]
+
+[[node]]
+id = "subscription/push/data-picker"
+kind = "subscription"
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/js/data_picker.js:488"] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 488, anchor = "onPush", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["none"]
+
+# ═══ lifecycle_factory — 구성 1회 팩토리 18. 합성 루트가 **정확히 한 번** 구성해
+#     산물을 객체째 넘기는 현행 규율(L14)이 이 축의 값이다.
+
+[[node]]
+id = "lifecycle/factory/composition-root"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:109"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 109, anchor = "export function bootProduct" }]
+classification = "react"
+handoff_slice = "R2-01 #405"
+verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
+note = "합성 루트 **자신**이라 「구성 1회 팩토리」가 아니다. 14-팩토리 단언의 대상도 아니고, 이름을 부르는 맞는 게이트가 따로 있다."
+
+[[node]]
+id = "lifecycle/factory/bridge"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/bridge.js:40"] }
+evidence = [{ file = "frontend/js/bridge.js", line = 40, anchor = "export function createBridge" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+[[node]]
+id = "lifecycle/factory/product-api"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/product_api.js:155"] }
+evidence = [{ file = "frontend/src/product_api.js", line = 155, anchor = "export function createProductApi" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["none"]
+note = "14-팩토리 단언은 `frontend/js` 의 create* 만 센다 — 이 구성 지점은 오늘 무검증이다. `verification` 을 넘겨 주장하지 않는다."
+
+[[node]]
+id = "lifecycle/factory/push-port"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/push_port.js:43"] }
+evidence = [{ file = "frontend/src/push_port.js", line = 43, anchor = "export function createPushPort" }]
+classification = "react"
+handoff_slice = "R2-03 #407"
+verification = ["none"]
+note = "위와 같다 — `frontend/src` 의 구성 지점 둘은 14-팩토리 단언 밖이다."
+
+[[node]]
+id = "lifecycle/factory/leaf-escaper"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/esc.js:10"] }
+evidence = [{ file = "frontend/js/esc.js", line = 10, anchor = "export function escHtml" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_frontend_build_graph.py::test_converted_modules_are_esm_and_own_no_globals"]
+note = "팩토리가 아니라 **렌더마다 불리는 순수 이스케이퍼**다. 저장소의 EXPECTED_ESM_EXPORTS 가 이미 「N-04 잎」으로 따로 가른 이름이고, 축의 false_positive 가 그것을 든다."
+
+[[node]]
+id = "lifecycle/factory/r3-01"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/pathtrack.js:8"] }
+evidence = [{ file = "frontend/js/pathtrack.js", line = 8, anchor = "export function createPathTrack" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+[[node]]
+id = "lifecycle/factory/r3-02"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/js/app.js:12",
+  "frontend/js/personalization.js:5",
+  "frontend/js/theme.js:16",
+] }
+evidence = [{ file = "frontend/js/app.js", line = 12, anchor = "export function createAppShell" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+[[node]]
+id = "lifecycle/factory/r4-01"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:46",
+  "frontend/js/datazone.js:41",
+  "frontend/js/relink.js:8",
+  "frontend/js/screens/library.js:24",
+  "frontend/js/sheet_picker.js:14",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 46, anchor = "export function createDataPicker" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+[[node]]
+id = "lifecycle/factory/r4-02"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/js/editor_entry.js:16",
+  "frontend/js/screens/editor.js:17",
+  "frontend/js/screens/workbench.js:15",
+] }
+evidence = [{ file = "frontend/js/editor_entry.js", line = 16, anchor = "export function createEditorEntry" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+[[node]]
+id = "lifecycle/factory/r4-03"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:26"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 26, anchor = "export function createJobScreen" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+
+# ═══ lifecycle_hook — 이관에서 useEffect·route guard 로 재설계될 훅 10.
+
+[[node]]
+id = "lifecycle/preserve-around"
+kind = "lifecycle"
+axis = "lifecycle_hook"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:189",
+  "frontend/js/screens/editor.js:130",
+  "frontend/js/screens/job.js:90",
+  "frontend/js/screens/library.js:47",
+  "frontend/js/screens/workbench.js:200",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 189, anchor = "Preserve.around", occurrence = 2 }]
+classification = "retire"
+handoff_slice = "R5-01 #419"
+verification = ["tests/test_web_dom_contract.py::test_preserve_helper_loaded_and_wraps_screen_renders"]
+p_handoff = "no"
+p_reason = "화면 결합"
+r_exit_evidence = "React 조정이 전면 재구성을 대체하면 포커스·캐럿·스크롤 보존 래퍼의 존재 이유가 사라진다."
+p_input_evidence = "없음."
+note = "게이트 상수 PRESERVE_WRAPPED_FILES 는 3만 본다(실호출 5) — review_item 참조."
+
+[[node]]
+id = "lifecycle/app-routing"
+kind = "lifecycle"
+axis = "lifecycle_hook"
+selector = { kind = "exact", members = [
+  "frontend/js/app.js:109",
+  "frontend/js/app.js:220",
+  "frontend/js/app.js:70",
+] }
+evidence = [{ file = "frontend/js/app.js", line = 70, anchor = "const IMMERSIVE = [" }, { file = "frontend/js/app.js", line = 220, anchor = "pywebviewready", occurrence = 2 }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
+note = "IMMERSIVE 배열 · 이탈 가드 위임 · pywebviewready 부팅 훅. 몰입 표면의 이탈 위임은 화면별 특례가 아니라 app.js 의 목록이 진다."
+
+[[node]]
+id = "lifecycle/screen-leave-guard"
+kind = "lifecycle"
+axis = "lifecycle_hook"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/editor.js:1457",
+  "frontend/js/screens/workbench.js:303",
+] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1457, anchor = "leaveTo", occurrence = 3 }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+note = "이탈 가드의 **본체**는 화면 소유이고, 위임 목록(IMMERSIVE)과 호출은 셸 소유다(lifecycle/app-routing 행). SCREEN-SPLIT-ROADMAP:v1 이 editor.js 의 「저장·취소·이탈」을 R4 책임으로 든 것과 정합한다."
+verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
+
