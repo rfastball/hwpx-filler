@@ -33,6 +33,8 @@
 | `test_portfolio_classification.toml` | 테스트 사례의 위험·계층·속도 분류 원장 |
 | [테스트 포트폴리오 매트릭스](TEST_PORTFOLIO_MATRIX.md) | 생성기로 갱신하는 현재 테스트 위험 지도 |
 | `test_portfolio_inventory.csv`, `test_portfolio_metadata.json` | 포트폴리오 감사의 생성 원장·메타데이터 |
+| `react_ownership_inventory.toml` | React 이관 대상 소유권과 그 계측의 기계 판독 원장 |
+| `react_verification_ledger.toml` | 검증 자산의 old→new 책임과 인계 단계의 기계 판독 원장 |
 
 ## 결정 기록
 
@@ -42,7 +44,8 @@
 | [UI/백엔드 분리](ARCH_UI_SEPARATION.md) | 부분 대체 | 링0·링1 분리는 유효, Qt 링2는 [UI 계약](UI_CONTRACT.md)이 대체 |
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
-| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 유효 결정 | 전체 스냅샷 렌더에서 포커스·캐럿·스크롤을 보존하는 이유 |
+| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 | 결정 본문(전체 스냅샷 유지·부분 패치 금지)은 [React 전환 ADR](REACT_MIGRATION_DECISIONS.md)이 대체. 포커스·캐럿·스크롤 보존 **책임**과 재고 술어의 틀은 유효하다. 근거 1·「현재 실효 범위」·검증 절은 오늘 거짓이니 배경으로만 읽는다 |
+| [React 전환 아키텍처 ADR](REACT_MIGRATION_DECISIONS.md) | 유효 결정 | React/TS 이관의 목표 구조와 계층별 권위 경계. 계측값·검증 책임은 위 원장 2종이 소유한다 |
 | [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
 
 ## 역사·동결 자료
