@@ -37,7 +37,9 @@ WATCH_DIR = "review-gate-watch"
 #: 번호만 집지 않는다. `--repo` 로 냈거나 다른 저장소로 옮겨 간 셸에서 낸 PR 은 그 번호가
 #: 여기서도 살아 있을 수 있고, 그러면 **엉뚱한 PR 의 초록으로 턴이 풀린다** — 같은 결함류를
 #: `MERGE_TARGET` 이 이미 겪었다(§8 판독 노하우).
-CREATED_PR = re.compile(r"https?://[^/\s]+/([^/\s]+/[^/\s]+)/pull/(\d+)")
+#:
+#: 이름 문자를 GitHub 이 허용하는 것으로 좁힌다. 넓게 잡으면 `..` 같은 조각이 경로로 흘러간다.
+CREATED_PR = re.compile(r"https?://[^/\s]+/([A-Za-z0-9._-]+/[A-Za-z0-9._-]+)/pull/(\d+)")
 
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
@@ -724,23 +726,39 @@ def _watch_dir() -> Path | None:
     return Path(done.stdout.strip()) / WATCH_DIR
 
 
-def _watch_key(repo: str, pr: int) -> str:
-    """파일 이름은 열쇠일 뿐이고 정본은 내용이다 — 이름을 되파싱하지 않는다."""
-    return re.sub(r"[^A-Za-z0-9._-]", "-", f"{repo}-{pr}") + ".json"
+#: 감시 항목의 **정체성은 `(repo, pr)` 튜플 하나**다. 파일 이름도 지문도 그것의 파생일 뿐이고,
+#: 파생이 정체성을 손실 압축하는 순간 서로 다른 것이 같아 보인다 — 이 PR 이 그 가족을 세 번
+#: 냈다(저장소를 버림 · 이름에서 `/`→`-` 별칭 · 지문을 카운트로). 그래서 규칙을 하나로 못박는다:
+#: **파생은 정체성을 무손실로 담거나, 아예 정체성을 쓰지 않는다.**
+#:
+#: 경로는 `<owner>/<repo>/<pr>.json` 중첩이라 무손실이다 — GitHub 이름에 `/` 가 못 들어가므로
+#: 두 튜플이 같은 경로로 갈 수 없다. 그 전제를 지키려고 이름 문자를 여기서 다시 검사한다.
+LEGAL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _watch_target(root: Path, repo: str, pr: int) -> Path | None:
+    owner, _, name = repo.partition("/")
+    parts = (owner, name)
+    if not all(LEGAL_NAME.fullmatch(part) and part not in {".", ".."} for part in parts):
+        return None  # 경로를 벗어나거나 별칭이 될 이름은 감시하지 않는다
+    return root.joinpath(owner, name, f"{pr}.json")
 
 
 def _watch(repo: str, pr: int, verdict: str | None) -> None:
     """PR 하나의 감시 상태를 **자기 파일에만** 쓴다.
 
-    남의 항목을 읽지 않으므로 지울 수도 없다. 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이
-    같은 순간에 발행하면 나중 쓰기가 앞 PR 을 통째로 삼켰다 — 그러면 병렬 웨이브에서 감시가
-    조용히 비고, 그것이 바로 이 자리를 공용 dir 에 둔 이유였다.
+    남의 항목을 읽지 않으므로 지울 수도 없다 — 단 그 말이 참이려면 경로가 무손실이어야 한다
+    (`_watch_target`). 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이 같은 순간에 발행하면
+    나중 쓰기가 앞 PR 을 통째로 삼켰다. 그러면 병렬 웨이브에서 감시가 조용히 비고, 그것이 바로
+    이 자리를 공용 dir 에 둔 이유였다.
     """
     root = _watch_dir()
     if root is None:
         return
-    root.mkdir(parents=True, exist_ok=True)
-    target = root / _watch_key(repo, pr)
+    target = _watch_target(root, repo, pr)
+    if target is None:
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
     payload: dict = {"repo": repo, "pr": pr}
     if verdict is not None:
         payload["verdict"] = verdict
@@ -766,7 +784,7 @@ def _watched() -> list[Watched]:
     if root is None or not root.is_dir():
         return []
     found: list[Watched] = []
-    for path in sorted(root.glob("*.json")):
+    for path in sorted(root.rglob("*.json")):
         try:
             entry = json.loads(path.read_text(encoding="utf-8"))
             found.append(Watched(path, str(entry["repo"]), int(entry["pr"]), entry.get("verdict")))
@@ -816,8 +834,21 @@ def _hook_post(argv_json: str) -> int:
 
 
 def _verdict_print(report: Report) -> str:
-    """붙잡을지 말지를 가르는 지문. 「무엇이 남았는가」가 바뀌었을 때만 다시 말한다."""
-    return f"{report.status}/{len(report.unsettled)}/{len(report.open_blocks)}"
+    """붙잡을지 말지를 가르는 지문. 「무엇이 남았는가」가 바뀌었을 때만 다시 말한다.
+
+    **세지 않고 지목한다.** 카운트로 지으면 하나가 정산되는 사이 하나가 도착할 때 두 스냅숏이
+    같은 값이 되어, 새 지적이 「이미 말한 것」으로 삼켜진 채 턴이 끝난다 — 정체성을 값으로
+    대체하는 같은 가족이다(`LEGAL_NAME` 위 주석).
+
+    렌더 전체를 지문으로 쓰지는 않는다. head 는 push 마다 움직이는데 그때 할 말이 새로 생기는
+    것은 아니라서, 작업 중인 세션을 push 마다 붙잡게 된다.
+    """
+    marks = sorted(
+        [f"u{f.id}" for f in report.unsettled]
+        + [f"b{f.id}" for f in report.open_blocks]
+        + [f"d{f.id}" for f, _ in report.bad_defers]
+    )
+    return f"{report.status}|{','.join(marks)}"
 
 
 def _hook_stop(argv_json: str) -> int:

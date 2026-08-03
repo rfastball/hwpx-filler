@@ -812,6 +812,40 @@ def test_recording_one_pr_never_touches_another(watch: Path) -> None:
     assert _entries() == {(REPO, 456): None, (REPO, 457): None}
 
 
+# ── 정체성을 값으로 대체하지 않는다 ────────────────────────────────────────────
+#
+# 이 PR 이 같은 가족을 세 번 냈다: 저장소를 버려 다른 PR 이 같아 보였고, 파일 이름의
+# `/`→`-` 치환이 다른 저장소를 같아 보이게 했고, 카운트 지문이 다른 지적 집합을 같아 보이게
+# 했다. 파생 표현은 정체성을 **무손실로 담거나 아예 쓰지 않는다** — 아래 둘이 그 계약이다.
+
+
+def test_two_repositories_that_alias_under_a_flat_key_stay_apart(watch: Path) -> None:
+    """`/` 를 `-` 로 바꾸면 `foo-bar/baz` 와 `foo/bar-baz` 가 같은 이름이 되고, 나중 쓰기가
+    앞 항목을 조용히 덮어 그 PR 이 감시에서 사라진다."""
+    review_rounds._watch("foo-bar/baz", 1, None)
+    review_rounds._watch("foo/bar-baz", 1, None)
+    assert _entries() == {("foo-bar/baz", 1): None, ("foo/bar-baz", 1): None}
+
+
+@pytest.mark.parametrize("repo", ["../..", "./x", "a/..", "a b/c"])
+def test_a_name_that_could_escape_the_watch_directory_is_not_watched(
+    watch: Path, repo: str
+) -> None:
+    """경로 조각이 정체성이 되려면 그 조각이 이름이어야 한다 — 아니면 감시 폴더 밖을 쓴다."""
+    review_rounds._watch(repo, 1, None)
+    assert _entries() == {}
+
+
+def test_the_fingerprint_names_the_findings_instead_of_counting_them() -> None:
+    """하나가 정산되는 사이 하나가 도착하면 카운트는 그대로다 — 그러면 새 지적이 「이미 말한
+    것」으로 삼켜진 채 턴이 끝난다. 두 판정은 **같은 수, 다른 집합**이다."""
+    before = evaluate(FakeGitHub(head="c1", threads=[_thread(1, "c1")]), PR, now=NOW)
+    after = evaluate(FakeGitHub(head="c1", threads=[_thread(2, "c1")]), PR, now=NOW)
+    assert len(before.unsettled) == len(after.unsettled) == 1
+    assert before.status == after.status
+    assert review_rounds._verdict_print(before) != review_rounds._verdict_print(after)
+
+
 def test_the_stop_hook_does_nothing_without_a_watched_pr(
     watch: Path, capsys: pytest.CaptureFixture
 ) -> None:
@@ -829,7 +863,7 @@ def test_the_stop_hook_holds_the_turn_until_the_review_is_settled(
     spoken = json.loads(capsys.readouterr().out)
     assert spoken["decision"] == "block"
     assert "/review-round" in spoken["reason"]
-    assert _entries() == {(REPO, PR): "BLOCKED/0/1"}
+    assert _entries() == {(REPO, PR): "BLOCKED|b1"}
 
 
 def test_the_stop_hook_asks_the_repository_the_entry_carries(
@@ -875,17 +909,17 @@ def test_the_stop_hook_speaks_again_when_the_verdict_changes(
 ) -> None:
     """지적이 도착하면 할 말이 달라진다 — 그때는 다시 붙잡는다. 이것이 없으면 「한 번만」이
     곧 「발행 직후 한 번만」이 되어 트리아지 단계에는 입구가 없다."""
-    _watch_now(verdict="WAIT/0/0")
+    _watch_now(verdict="WAIT|")
     _serving(FakeGitHub(head="c1", threads=[_thread(1, "c1")]), monkeypatch)  # 미정산 1건
     assert review_rounds._hook_stop("{}") == 0
     assert json.loads(capsys.readouterr().out)["decision"] == "block"
-    assert _entries() == {(REPO, PR): "WAIT/1/0"}
+    assert _entries() == {(REPO, PR): "WAIT|u1"}
 
 
 def test_the_stop_hook_releases_a_settled_pr(
     watch: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
-    _watch_now(verdict="WAIT/0/0")
+    _watch_now(verdict="WAIT|")
     _serving(FakeGitHub(files=["docs/README.md"]), monkeypatch)  # 빠른 경로 → READY
     assert review_rounds._hook_stop("{}") == 0
     assert _entries() == {}, "정산이 끝난 PR 을 계속 감시하면 매 턴 API 를 헛되이 친다"
