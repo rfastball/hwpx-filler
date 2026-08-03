@@ -25,13 +25,13 @@
 |---|---|---|---|---|---|
 | ADR-01 | 렌더 모델 | 전체 스냅샷 + 서브트리 통째 재구성 → React 소유 선언적 렌더 | R-D01 · R-D04 | `inventory:innerhtml-assignment` · `inventory:lifecycle/preserve-around` | [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md)의 「부분 패치/vdom 전환 금지」 **대체** |
 | ADR-02 | 권위 분리 | Python=도메인·애플리케이션, React/TS=DOM·표현·UI 수명주기, host=창·OS | R-D04 · R-D15 | `inventory:screen-action-pairs` · `inventory:mutable-module-state` | [UI/백엔드 분리](ARCH_UI_SEPARATION.md)의 링 방향 **승계** |
-| ADR-03 | 공개 경계 | 제품은 `window.__hwpx`, selftest 는 `window.__hwpxTest`. 컴포넌트는 전역을 직접 안 읽는다 | R-D05 | `inventory:window-pywebview-references` · `inventory:pywebview-api-references` | [UI 계약](UI_CONTRACT.md)의 두 경로 구분 **승계** |
+| ADR-03 | 공개 경계 | 제품은 `window.__hwpx`, selftest 는 `window.__hwpxTest`. 컴포넌트는 전역을 직접 안 읽는다 | R-D05 | `inventory:window-pywebview-references` · `inventory:pywebview-api-references` · `inventory:bridge/close-guard-state` | [UI 계약](UI_CONTRACT.md)의 두 경로 구분 **승계** |
 | ADR-04 | 브리지 주입 | 전역 조회가 아니라 **객체째 주입**. typed client 층에서도 유지 | R-D05 · R-D08 | `inventory:lifecycle/factory/bridge` | 현 브리지 팩토리 규율 **승계** |
 | ADR-05 | 계약 정본 | Python↔TS 계약은 한 정본에서 생성·검증하고 drift 가 CI 에서 loud fail. 도구는 후결정 | R-D08 · R-D09 | `inventory:gate/architecture-bridge-one-way` · `inventory:doc/bridge-header-breakdown` | 손으로 유지하는 양쪽 목록 **폐기** |
 | ADR-06 | 단일 UI 런타임 | React root 는 하나. 임시 legacy host 는 제거 책임과 종료 단계를 지고 신규 기능을 안 받는다 | R-D07 · R-D17 | `inventory:lifecycle/app-routing` | 화면별 수동 init/render **폐기** |
 | ADR-07 | 단일 산출물 | 실행·selftest·패키징이 한 clean 빌드의 같은 sealed 산출물을 소비한다 | R-D06 · R-D12 | `ledger:scripts/seal_web_artifact.py` | 마일스톤 N 의 봉인 계약 **승계** |
 | ADR-08 | 의미 불변 | 사용자 관찰 가능 동작과 Python 제품 계약을 보존한다. 의도적 UX 변경은 상향 | R-D03 · R-D10 | `ledger:tests/test_web_selftest_gate.py` | 기능 이슈는 **후속 소비자**로 분리 |
-| ADR-09 | 보존 책임 | 포커스·캐럿·스크롤 연속성은 폐기되지 않고 React 층으로 이관된다 | R-D03 | `ledger:tests/test_web_dom_contract.py` · `ledger:tests/test_web_press_geometry.py` | 보존 문서의 **재고 술어 틀 승계**, 실물은 원장이 진다 |
+| ADR-09 | 보존 책임 | 포커스·캐럿·스크롤 연속성은 폐기되지 않고 React 층으로 이관된다 | R-D03 | `ledger:tests/test_web_dom_contract.py`(정적 배선) · `ledger:tests/test_web_selftest_gate.py`(실거동) | 보존 문서의 **재고 술어 틀 승계**, 실물은 원장이 진다 |
 | ADR-10 | 재설계 규율 | 목표와 경계만 고정하고 현재 파일 배치를 박제하지 않는다. 설계·구현·판정의 컨텍스트를 나눈다 | R-D01 · R-D02 · R-D11 · R-D13 | — | 단계 진입마다 **재실측** |
 | ADR-11 | master 불변식 | 각 병합 시점 master 는 실행·검증·revert 가능하다 | R-D12 | — | 여러 미완성 PR 동시 병합 **금지** |
 | ADR-12 | P 인계 | R 은 Python 내부 구조의 해법을 만들지 않고 인계 후보와 증거만 남긴다 | R-D14 · R-D15 · R-D16 | `inventory:bridge/close-guard-state` | Python 구조 결정은 **P-00 소유** |
