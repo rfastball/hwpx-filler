@@ -300,6 +300,21 @@ class Repo:
             == 0
         )
 
+    def is_shallow(self) -> bool:
+        """얕은 클론인가. CI 의 `actions/checkout` 은 기본 depth 1 이라 참이다.
+
+        얕은 트리에서는 기준 커밋도 그 시점의 파일도 **없다** — 「값이 틀렸다」와
+        「환경이 답할 수 없다」는 다른 사실이고, 둘을 같은 실패로 적으면 CI 가 원장을
+        거짓으로 고발한다.
+        """
+        out = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        return out == "true"
+
     def commit_exists(self, sha: str) -> bool:
         return (
             subprocess.run(
@@ -349,9 +364,15 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
 class Report:
     problems: list[str] = field(default_factory=list)
     notes: dict[str, Any] = field(default_factory=dict)
+    #: 환경이 답할 수 없어 **수행하지 못한** 검사. 조용한 스킵이 아니라 시끄러운 목록이다 —
+    #: 형상 보고 단언이 이 목록을 읽고, 온전한 클론에서는 비어 있어야 한다.
+    unverifiable: list[str] = field(default_factory=list)
 
     def fail(self, where: str, message: str) -> None:
         self.problems.append(f"[{where}] {message}")
+
+    def cannot_verify(self, where: str, message: str) -> None:
+        self.unverifiable.append(f"[{where}] {message}")
 
     def __bool__(self) -> bool:  # 문제가 있으면 참
         return bool(self.problems)
@@ -909,6 +930,13 @@ def _check_sha(where: tuple[str, str], sha: Any, repo: Repo, report: Report) -> 
         report.fail(place, f"{field_name} 가 40자리 커밋 해시가 아니다: {sha!r}")
         return
     if not repo.commit_exists(sha):
+        if repo.is_shallow():
+            report.cannot_verify(
+                place,
+                f"{field_name} {sha} 의 실재를 확인하지 못했다 — 얕은 클론이라 그 커밋이 "
+                "이 트리에 없다. 값이 틀렸다는 뜻이 아니다.",
+            )
+            return
         report.fail(
             place,
             f"{field_name} 가 이 저장소에 없는 커밋이다: {sha}. "
@@ -1241,6 +1269,13 @@ def _check_census_chain_is_complete(
     그러나 「사슬에 빠진 파일이 있는가」는 재귀 없이 물을 수 있고, 그것이 없으면 미착지 행
     하나를 지우는 것으로 그 파일의 사례가 공표된 총계에서 **조용히** 빠진다.
     """
+    if repo.is_shallow():
+        report.cannot_verify(
+            "census",
+            "기준 커밋의 트리가 없어 「기준 이후 새로 생긴 파일」을 셀 수 없다 — 얕은 클론이다. "
+            "이 축의 사슬 완비성은 온전한 클론(로컬·감사자 fresh clone)에서 판정된다.",
+        )
+        return
     new_files = sorted(
         rel
         for pattern in RUNNER_GLOBS["pytest"]
@@ -1291,7 +1326,12 @@ def _check_expected_landing_delta(
     if not repo.exists(rel):
         report.fail(where, f"expected_landing 이 가리키는 파일이 없다: {rel}")
         return
-    if repo.path_exists_at(EXPECTED_BASE_SHA, rel):
+    if repo.is_shallow():
+        report.cannot_verify(
+            where,
+            f"{rel} 이 기준 커밋에 이미 있었는지 확인하지 못했다 — 얕은 클론이다.",
+        )
+    elif repo.path_exists_at(EXPECTED_BASE_SHA, rel):
         report.fail(
             where,
             f"expected_landing 이 base_sha 에 **이미 있던** 파일을 가리킨다: {rel}. "
@@ -1781,6 +1821,16 @@ def test_the_gate_reports_the_shape_it_measured_out_loud(
         "축 marker 를 별칭이나 getattr 로 붙인 파일이 생겼다. markers 술어는 "
         f"`pytest.mark.<축>` 모양만 보므로 그 파일의 축을 지금 잘못 세고 있다: {notes['indirect_marks']}"
     )
+    # 환경이 답 못 한 검사는 조용한 스킵이 아니라 목록이다. 온전한 클론에서는 비어 있고,
+    # 얕은 클론(CI 기본 checkout)에서는 무엇을 못 봤는지가 실패 메시지에 이름으로 남는다.
+    if repo.is_shallow():
+        assert report.unverifiable, (
+            "얕은 클론인데 수행 못 한 검사가 하나도 없다 — 환경 한계가 조용히 통과했다는 뜻이다."
+        )
+    else:
+        assert not report.unverifiable, (
+            f"온전한 클론인데 수행 못 한 검사가 있다: {report.unverifiable}"
+        )
     assert notes["module_level_marks"] == [], (
         "모듈·클래스 몸통에 pytestmark 가 생겼다. markers 술어는 데코레이터만 보므로 "
         f"그 파일의 축은 지금 잘못 세고 있다: {notes['module_level_marks']}"
@@ -1788,7 +1838,21 @@ def test_the_gate_reports_the_shape_it_measured_out_loud(
 
 
 def test_the_base_sha_is_a_commit_this_repository_actually_has(repo: Repo) -> None:
-    """리터럴끼리 비교하면 지어낸 40자도 자기 사본과는 언제나 같다."""
+    """리터럴끼리 비교하면 지어낸 40자도 자기 사본과는 언제나 같다.
+
+    단 **얕은 클론에서는 물을 수 없다.** CI 의 기본 checkout 이 그렇고, 거기서 「없는
+    커밋」과 「안 가져온 커밋」은 구별되지 않는다 — 그 둘을 같은 실패로 적으면 CI 가 원장을
+    거짓으로 고발한다. 환경이 답할 수 있을 때만 묻고, 못 할 때는 그 사실을 이름으로 남긴다.
+    """
+    if repo.is_shallow():
+        # 스킵하지 않는다. 이 저장소는 런타임 부재의 자동 스킵을 금지하므로, 답할 수 없는
+        # 환경에서는 **그 사실이 보고됐는지**를 대신 단언한다 — 검사가 사라지지 않는다.
+        report = check(load_document(), repo)
+        assert any("base_sha" in u for u in report.unverifiable), (
+            "얕은 클론인데 base_sha 를 확인 못 했다는 사실이 보고되지 않았다 — "
+            f"환경 한계가 조용히 통과했다: {report.unverifiable}"
+        )
+        return
     assert repo.commit_exists(EXPECTED_BASE_SHA), (
         f"게이트가 든 base_sha {EXPECTED_BASE_SHA} 가 이 저장소에 없는 커밋이다."
     )
@@ -2100,6 +2164,17 @@ def test_c_predicate_7d_a_fabricated_commit_hash_is_refused(
     document: dict[str, Any], repo: Repo
 ) -> None:
     """앞 일곱 자만 맞고 나머지를 지어낸 SHA — 리터럴 대조만으로는 영영 안 걸리는 자리."""
+    if repo.is_shallow():
+        # 지어낸 SHA 와 안 가져온 SHA 가 구별되지 않는 환경이다. red 를 요구하는 대신
+        # **못 봤다는 사실이 남는지**를 단언한다.
+        def mutate_shallow(doc: dict[str, Any]) -> None:
+            doc["census"]["pytest_collected"]["adjustment"][0]["from_sha"] = (
+                "8fcc30eddeadbeefdeadbeefdeadbeefdeadbeef"
+            )
+
+        report = check(_mutate(document, mutate_shallow), repo)
+        assert any("from_sha" in u for u in report.unverifiable), report.unverifiable
+        return
 
     def mutate(doc: dict[str, Any]) -> None:
         doc["census"]["pytest_collected"]["adjustment"][0]["from_sha"] = (
@@ -2367,6 +2442,10 @@ def test_c_predicate_21_an_unlanded_delta_pointed_at_an_existing_file_is_refused
     document: dict[str, Any], repo: Repo
 ) -> None:
     """`file` 이 원장의 자유 변수이면 재측정이 자기 일관성일 뿐 검증이 아니다."""
+    if repo.is_shallow():
+        report = check(document, repo)
+        assert any("이미 있었는지" in u for u in report.unverifiable), report.unverifiable
+        return
 
     def mutate(doc: dict[str, Any]) -> None:
         for adj in doc["census"]["pytest_collected"]["adjustment"]:
@@ -2577,6 +2656,10 @@ def test_c_predicate_31_dropping_an_unlanded_row_from_the_chain_is_refused(
 ) -> None:
     """총계는 재측정하지 않지만 **사슬의 완비성**은 재귀 없이 물을 수 있다 —
     미착지 행을 지우면 이 PR 이 들이는 사례가 공표된 총계에서 조용히 빠진다."""
+    if repo.is_shallow():
+        report = check(document, repo)
+        assert any("사슬 완비성" in u for u in report.unverifiable), report.unverifiable
+        return
 
     def mutate(doc: dict[str, Any]) -> None:
         block = doc["census"]["pytest_unmarked"]
