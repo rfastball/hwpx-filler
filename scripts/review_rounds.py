@@ -27,16 +27,17 @@ RECOVERY_WINDOW = timedelta(minutes=10)
 #: 발행했으나 정산이 안 끝난 PR 을 적어 두는 자리. `.git/` 안이라 커밋될 수 없고 새 무시
 #: 규칙도 필요 없다. **common** git dir 을 쓰는 이유는 worktree 다 — lane 이 worktree 에서
 #: PR 을 내고 오케스트레이터가 본체에서 턴을 끝내면, 따로 살면 그 PR 을 아무도 못 본다.
-WATCH_FILE = "review-gate-watch.json"
-
-#: Stop 훅이 턴 종료를 붙잡을 수 있는 횟수. 플랫폼에는 「이 종료가 훅 때문인가」를 알려 주는
-#: 표시가 없으므로 우리가 센다 — 세지 않으면 리뷰가 영영 안 오는 PR 에서 무한 루프가 된다.
-#: 스킬의 「무한 폴링 루프를 만들지 않는다」와 같은 규율의 기계 쪽 얼굴이다.
-STOP_HOLD_BUDGET = 3
+#:
+#: 파일 하나에 목록이 아니라 **PR 당 파일 하나**인 이유도 같은 자리다(§7).
+WATCH_DIR = "review-gate-watch"
 
 #: `gh pr create` 는 발행된 PR 의 URL 을 **결과로** 뱉는다. 명령만 보고 기록하면 실패한 발행도
 #: 감시 목록에 올라 매 턴 판정 실패로 시끄러워진다.
-CREATED_PR = re.compile(r"/pull/(\d+)")
+#:
+#: 번호만 집지 않는다. `--repo` 로 냈거나 다른 저장소로 옮겨 간 셸에서 낸 PR 은 그 번호가
+#: 여기서도 살아 있을 수 있고, 그러면 **엉뚱한 PR 의 초록으로 턴이 풀린다** — 같은 결함류를
+#: `MERGE_TARGET` 이 이미 겪었다(§8 판독 노하우).
+CREATED_PR = re.compile(r"https?://[^/\s]+/([^/\s]+/[^/\s]+)/pull/(\d+)")
 
 # ── 신뢰의 축 ──────────────────────────────────────────────────────────────────
 #
@@ -707,7 +708,7 @@ def _sweep(client: GitHub) -> int:
     return 2 if failures else 0
 
 
-def _watch_path() -> Path | None:
+def _watch_dir() -> Path | None:
     """감시 목록의 자리. git 을 못 물으면 `None` 이고, 그때 훅은 아무것도 하지 않는다."""
     try:
         done = subprocess.run(
@@ -720,28 +721,58 @@ def _watch_path() -> Path | None:
         return None
     if done.returncode != 0:
         return None
-    return Path(done.stdout.strip()) / WATCH_FILE
+    return Path(done.stdout.strip()) / WATCH_DIR
 
 
-def _watched() -> dict[str, dict]:
-    path = _watch_path()
-    if path is None or not path.exists():
-        return {}
-    try:
-        entries = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):  # 부기가 깨진 것이 세션을 막지는 않는다
-        return {}
-    return entries if isinstance(entries, dict) else {}
+def _watch_key(repo: str, pr: int) -> str:
+    """파일 이름은 열쇠일 뿐이고 정본은 내용이다 — 이름을 되파싱하지 않는다."""
+    return re.sub(r"[^A-Za-z0-9._-]", "-", f"{repo}-{pr}") + ".json"
 
 
-def _write_watched(entries: dict[str, dict]) -> None:
-    path = _watch_path()
-    if path is None:
+def _watch(repo: str, pr: int, verdict: str | None) -> None:
+    """PR 하나의 감시 상태를 **자기 파일에만** 쓴다.
+
+    남의 항목을 읽지 않으므로 지울 수도 없다. 목록 하나를 읽고-고쳐-쓰던 형상에서는 두 lane 이
+    같은 순간에 발행하면 나중 쓰기가 앞 PR 을 통째로 삼켰다 — 그러면 병렬 웨이브에서 감시가
+    조용히 비고, 그것이 바로 이 자리를 공용 dir 에 둔 이유였다.
+    """
+    root = _watch_dir()
+    if root is None:
         return
-    if not entries:
-        path.unlink(missing_ok=True)
-        return
-    path.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / _watch_key(repo, pr)
+    payload: dict = {"repo": repo, "pr": pr}
+    if verdict is not None:
+        payload["verdict"] = verdict
+    # 반쯤 쓰인 파일을 읽는 훅이 없도록 원자적으로 갈아 끼운다. tmp 이름에 pid 를 넣어 같은
+    # PR 을 동시에 쓰는 두 프로세스가 서로의 임시 파일을 밟지 않게 한다.
+    staged = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    staged.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(staged, target)
+
+
+@dataclass(frozen=True)
+class Watched:
+    """감시 중인 PR 하나. `repo` 를 함께 드는 이유는 §8 의 「엉뚱한 PR」 결함류다."""
+
+    path: Path
+    repo: str
+    pr: int
+    verdict: str | None
+
+
+def _watched() -> list[Watched]:
+    root = _watch_dir()
+    if root is None or not root.is_dir():
+        return []
+    found: list[Watched] = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            entry = json.loads(path.read_text(encoding="utf-8"))
+            found.append(Watched(path, str(entry["repo"]), int(entry["pr"]), entry.get("verdict")))
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            continue  # 부기 하나가 깨진 것이 나머지 감시를 못 막는다
+    return found
 
 
 def _emit(message: dict) -> None:
@@ -766,18 +797,17 @@ def _hook_post(argv_json: str) -> int:
     found = CREATED_PR.search(result)
     if not found:  # 발행이 실패했다 — 그 오류는 명령 자신이 이미 보여 준다
         return 0
-    pr = found.group(1)
-    entries = _watched()
-    entries.setdefault(pr, {"holds": 0})
-    _write_watched(entries)
+    repo, pr = found.group(1), int(found.group(2))
+    _watch(repo, pr, None)
     _emit(
         {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
                 "additionalContext": (
-                    f"PR #{pr} 이 발행됐습니다. 리뷰 대기의 1차 주체는 이 세션입니다"
+                    f"{repo}#{pr} 이 발행됐습니다. 리뷰 대기의 1차 주체는 이 세션입니다"
                     "(`docs/REVIEW_POLICY.md` §4) — `/review-round` 로 정산·감시를 이어가십시오."
-                    f" 정산 전에 턴을 끝내려 하면 Stop 훅이 최대 {STOP_HOLD_BUDGET}회 붙잡습니다."
+                    " 정산이 남은 채 턴을 끝내려 하면 Stop 훅이 붙잡습니다(판정이 달라질 때마다"
+                    " 한 번)."
                 ),
             }
         }
@@ -785,59 +815,57 @@ def _hook_post(argv_json: str) -> int:
     return 0
 
 
+def _verdict_print(report: Report) -> str:
+    """붙잡을지 말지를 가르는 지문. 「무엇이 남았는가」가 바뀌었을 때만 다시 말한다."""
+    return f"{report.status}/{len(report.unsettled)}/{len(report.open_blocks)}"
+
+
 def _hook_stop(argv_json: str) -> int:
     """턴이 끝나려는 자리. 발행해 놓고 정산 없이 나가는 길을 막는다.
 
     **대기(`WAIT`)도 붙잡는다.** 발행 직후의 대기야말로 루프가 끊기는 지점이라 거기서 놓아
-    주면 이 훅이 겨눈 것을 그대로 놓친다. 대신 `STOP_HOLD_BUDGET` 으로 유계화한다 — 리뷰가
-    영영 안 오는 PR 을 무한히 붙잡지 않는다.
+    주면 이 훅이 겨눈 것을 그대로 놓친다.
+
+    **같은 판정으로는 한 번만 붙잡는다.** 붙잡기의 목적은 인지이고, 이미 감시에 들어간
+    세션에게 같은 말을 되풀이하는 것은 인지가 아니라 잔소리다 — 훅은 그 둘을 구분하지 못해
+    똑같이 붙잡는다(실주행 첫 회에 바로 드러났다). 붙잡기는 상태를 바꾸지 못하므로 같은
+    판정에서 두 번 붙잡는 길이 없고, 무한 루프 방지가 임의의 예산이 아니라 구조에서 나온다.
     """
     del argv_json  # 상태는 payload 가 아니라 GitHub 과 감시 목록이 가진다
-    entries = _watched()
-    if not entries:
-        return 0
-    try:
-        client = GitHub.discover()
-    except GitHubError as error:
-        # 조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로 만든다 —
-        # 실제 게이트는 required check 라 놓아 주어도 머지는 못 한다. 대신 조용히 놓지 않는다.
-        _emit({"systemMessage": f"리뷰 정산 감시를 건너뜁니다 — 상태를 읽지 못했습니다: {error}"})
-        return 0
-
-    remaining: dict[str, dict] = {}
     holds: list[str] = []
     notes: list[str] = []
-    for number, entry in entries.items():
+    for entry in _watched():
+        # 저장소는 감시 항목이 든 것을 쓴다. 여기서 현재 폴더를 물으면 `--repo` 로 낸 PR 을
+        # **같은 번호의 남의 PR** 로 판정하고, 그쪽이 초록이면 턴이 그냥 풀린다.
+        client = GitHub(entry.repo)
         try:
-            pr = int(number)
             # 닫힌 PR 은 정산 의무가 끝났다. 「open 이 아니면」으로 뒤집어 쓰지 않는다 —
             # 응답 형상이 바뀌면 감시가 통째로 조용히 죽는 쪽으로 틀린다.
-            if client.get(f"pulls/{pr}").get("state") == "closed":
+            if client.get(f"pulls/{entry.pr}").get("state") == "closed":
+                entry.path.unlink(missing_ok=True)
                 continue
-            report = evaluate(client, pr)
-        except (GitHubError, ValueError) as error:
-            notes.append(f"PR #{number} 판정 실패: {error}")
-            remaining[number] = entry
+            report = evaluate(client, entry.pr)
+        except GitHubError as error:
+            # 조회 불가는 판정 불가다. 그렇다고 붙잡으면 인증 하나 끊긴 것이 세션을 벽돌로
+            # 만든다 — 실제 게이트는 required check 라 놓아 주어도 머지는 못 한다. 대신 조용히
+            # 놓지 않고, 감시 항목도 지우지 않는다(다음 턴에 다시 본다).
+            notes.append(f"{entry.repo}#{entry.pr} 상태를 읽지 못했습니다: {error}")
             continue
         if report.status == READY:
+            entry.path.unlink(missing_ok=True)
             continue
-        held = int(entry.get("holds", 0)) + 1
-        if held > STOP_HOLD_BUDGET:
-            notes.append(
-                f"PR #{pr} 은 {STOP_HOLD_BUDGET}회 붙잡고도 {report.status} 입니다 — 감시를 놓습니다."
-                " 사람 판단이 필요합니다(정책 §3 정지 신호)."
-            )
+        verdict = _verdict_print(report)
+        if verdict == entry.verdict:  # 이미 말했다 — 되풀이는 인지가 아니다
             continue
-        remaining[number] = {"holds": held}
-        holds.append(render(report))
-    _write_watched(remaining)
+        _watch(entry.repo, entry.pr, verdict)
+        holds.append(f"{entry.repo}\n{render(report)}")
 
     if holds:
         message: dict = {
             "decision": "block",
             "reason": "\n\n".join(holds)
             + "\n\n발행한 PR 의 정산이 끝나지 않았습니다 — `/review-round` 로 이어가십시오"
-            f"(`docs/REVIEW_POLICY.md` §4). 붙잡기는 최대 {STOP_HOLD_BUDGET}회입니다.",
+            "(`docs/REVIEW_POLICY.md` §4). 같은 판정으로는 다시 붙잡지 않습니다.",
         }
         if notes:
             message["systemMessage"] = "\n".join(notes)
