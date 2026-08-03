@@ -1,0 +1,628 @@
+# React 전환 old→new 검증 책임 원장 (R1-03 · #403)
+#
+# 설계 정본: #403 의 `R-DESIGN-PACKET:v1` rev3.
+# 상위 결정: #394 (R-D03 의미 불변 · R-D11 단계별 재설계 · L17 실행되지 않는 텍스트는 계약이 아니다).
+#
+# ## 이 원장이 하는 일 — 딱 하나
+#
+# R2~R4 가 검증 자산을 교체할 때 **비교 대상이 되는 「before」 열을 고정**한다.
+# R1 은 어떤 자산도 옮기지 않는다. 그래서 오늘 모든 행의 `successor` 는 `keep` 이고,
+# 그것이 기본값이라 적히지 않는다. `successor` 가 적히는 순간이 실제 교체가 일어나는
+# 순간이고, 그때 그 PR 이 후계를 대고 게이트가 실재를 확인한다.
+#
+# ## 이 원장이 **들지 않는** 것
+#
+# 개수를 들지 않는다. 센서스도, 집합 크기도, 테스트 수도.
+#
+# 2차 폐기(#469)의 진단이 그것이었다 — 게이트의 테스트 개수가 이 원장의 값이라,
+# 음성 대조를 하나 더할 때마다 원장을 손으로 고쳐야 했고 여덟 번 반복했다. 지금은
+# `tests/test_react_verification_ledger.py` 도 그냥 자산 행 하나이고 개수가 없다.
+# 게이트를 키워도 이 파일은 안 변한다. **치닫는 회로가 존재하지 않는다.**
+#
+# 테스트 센서스의 소유는 #455 다. 이 원장은 그 자리를 비워 두고 가리키기만 한다.
+#
+# ## 두 필드의 계약
+#
+# `responsibility` 는 **산문**이다. 게이트가 읽지 않고(L17 ⑴), 검증자의 위임 범위
+# 밖이다(L17 ⑵). 늙어도 초록이며, 그 조건에서만 이 필드를 둔다. 실제 판별은 R2~R4 가
+# 자산을 교체할 때 그 PR 이 진다.
+#
+# `owner_stage` 는 **인계선**이다. 이 자산을 어느 단계가 만질지 미리 지목한다.
+# 어휘는 게이트 리터럴이 든다 — 여기서 유도하면 오타가 새 단계를 발명한다.
+#
+# ## 분모를 줄이는 길이 막혀 있다
+#
+# 검증 트리의 정의(어떤 경로가 이 원장의 대상인가)와 `r_scope` 술어는 **게이트에만**
+# 산다. 이 파일에 사본이 없는 이유는 사본이 늙기 때문이다 — rev3 집필 중에 실제로
+# 같은 술어를 두 벌 쓰다가 값이 2 만큼 갈렸다(`selftest` 한 조각 누락).
+#
+# `out_of_scope` 로 파일을 옮겨 자산을 줄이는 것은 게이트가 막는다: 제외 목록의 어떤
+# 파일도 웹 표면을 이름으로 부르면 안 된다. 넓히는 방향(제외 → 자산)은 언제나 자유다.
+
+schema = "react-verification-ledger/v1"
+baseline_sha = "931157b00f120e5be24a8caadeda251263f673a5"
+
+# 각 자산이 어느 단계에서 만져질지의 인계선. 값 공간은 게이트 리터럴이 정본이다.
+#
+#   R2-01 단일 React root·제품 entry     R2-02 Python↔TS 계약·typed bridge client
+#   R2-03 상태·구독·selector 경계        R2-04 테스트·동일 산출물·패키징 기반
+#   R3-01 공용 상호작용·overlay 수명주기  R3-02 앱 셸·navigation·부팅 수명주기
+#   R3-03 CSS·DOM·ARIA·focus·geometry    R4-01 읽기·탐색 표면
+#   R4-02 편집·매핑 표면                 R4-03 실행·결과 표면
+#   R4-04 화면 간 상태·전이·소유권        R5-01 legacy 제거
+#   R5-02 음성 게이트                    R5-03 동일 산출물·오프라인·설치본
+
+# ---------------------------------------------------------------------------
+# 자산 — React 이관이 검증 책임에 닿는 파일
+# ---------------------------------------------------------------------------
+
+[[asset]]
+file = "scripts/capture_101_screenshots.py"
+responsibility = "101 라이브 실행 CLI — 인자 해석·실행 홈 결정·하니스 조립"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "scripts/check_react_ownership_inventory.py"
+responsibility = "#402 소유권 인벤토리 원장의 재실측기"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "scripts/extract_js_ast_axes.mjs"
+responsibility = "프런트 JS 소유권 두 축의 유일한 AST 추출기"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "scripts/gen_design_tokens.py"
+responsibility = "디자인 토큰 단일 출처 → CSS 재생성·검증"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "scripts/generate_build_metadata.py"
+responsibility = "릴리스 서술 자산 build-metadata.json 생성"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "scripts/live101/driver.py"
+responsibility = "실앱 부팅·준비·시한·증거·종료와 실습 홈 수명주기"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "scripts/live101/report.py"
+responsibility = "101 실행 보고서 조립과 판정(앱 없이 음성 대조 가능한 순수 함수)"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "scripts/seal_web_artifact.py"
+responsibility = "build/web 의 fail-closed Vite 산출물 봉인 producer"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/_press_probe.py"
+responsibility = "눌림 기하 측정 창구 — sealed CSS 를 loopback 으로 제공해 실 상자를 잰다"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/_web_artifact_contract.py"
+responsibility = "웹 빌드 산출물의 관찰 가능한 계약을 고정하는 테스트 전용 oracle"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/_web_source.py"
+responsibility = "프런트엔드 정적 소스 역할을 읽는 단일 테스트 창구"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/conftest.py"
+responsibility = "테스트 전역 홈 격리 — 실 사용자 홈 오염 차단"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/js/bootstrap.test.js"
+responsibility = "제품 합성 루트 — 제품 전역은 정확히 하나, 조립은 정확히 한 번"
+owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/js/copy.test.js"
+responsibility = "공유 카피 단일 출처 ESM 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/esc.test.js"
+responsibility = "공유 HTML 이스케이퍼 ESM 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/guard.test.js"
+responsibility = "세션 가드 재진술 합성기 ESM 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/n05_data_picker.test.js"
+responsibility = "데이터 선택 다이얼로그의 ESM 경계와 전환 이전 동작"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/n05_editor_entry.test.js"
+responsibility = "편집 진입 seam 의 공개 표면 6키와 경계 넷"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/n05_foundation.test.js"
+responsibility = "기반 서비스 넷(popover·preserve·intent·undo_toast)의 ESM 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/n05_overlay.test.js"
+responsibility = "오버레이 스택(modal·surface_sheet)의 ESM 계약과 전환 이전 동작"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/n05_services.test.js"
+responsibility = "재사용 서비스·팩토리 7종의 공개 표면과 Bridge 명시 포트"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/n06_app_shell.test.js"
+responsibility = "앱 셸의 ESM factory 전환과 전역 조회 제거"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/js/n06_editor.test.js"
+responsibility = "편집기 화면 factory 의 공개 표면 4키"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/n06_job.test.js"
+responsibility = "「문서 만들기」 화면 factory 의 공개 표면 12키"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/n06_library.test.js"
+responsibility = "「문서 작업」 화면 factory 경계"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/n06_workbench.test.js"
+responsibility = "TXT 검토·복사 작업대 factory 경계"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/n07_bridge.test.js"
+responsibility = "bridge.js factory 전환 — 껍질만 바뀌고 왕복은 보존"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/js/n07_product_api.test.js"
+responsibility = "버전 있는 제품 파사드의 계약 형태(서술자·실패 코드·직렬화 가능성)"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/js/n08_boot_routing_overlay.test.js"
+responsibility = "selftest 프로브 클러스터 B — 부팅·라우팅·오버레이 이식 충실성"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/js/n08_editor_workbench_data.test.js"
+responsibility = "selftest 프로브 클러스터 D — 편집기·작업대·데이터"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/n08_job.test.js"
+responsibility = "selftest 프로브 클러스터 C — 저장소 최대 프로브 다섯"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/n08_persistence_geometry.test.js"
+responsibility = "selftest 프로브 클러스터 E — 영속·기하, 네 레인의 기준 이식본"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/js/n08_registry.test.js"
+responsibility = "프로브 47키 전수 이관과 28 레거시 상수의 후계 1:1"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/js/n08_runner.test.js"
+responsibility = "프로브 하니스 — 옛 스태시 규약의 두 결함을 승계하지 않음"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/js/n08_schema.test.js"
+responsibility = "selftest 결과 계약의 공개 표면"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/js/n09_push_port.test.js"
+responsibility = "푸시 포트 가로채기 성립 — 호스트 푸시가 통로를 우회하지 않음"
+owner_stage = "R2-03"
+
+[[asset]]
+file = "tests/js/n09_selftest_api.test.js"
+responsibility = "시험 능력 프로토콜의 단위 계약"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/js/n10_global_hygiene.test.js"
+responsibility = "제품이 만드는 창 전역이 정확히 셋이라는 정적 증거"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/js/segview.test.js"
+responsibility = "SegView 특성화 — ESM 전환의 안전망"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_architecture.py"
+responsibility = "링 경계와 코어 역의존 금지"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_boot_budget.py"
+responsibility = "부팅 폴백 예산과 그 판정의 비퇴화"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/test_branding.py"
+responsibility = "사용자 노출 제품명과 기술 식별자의 국경"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_build_metadata.py"
+responsibility = "릴리스 메타데이터가 무엇을 실었는지 말하는가 — seal 대조"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "tests/test_core_paths.py"
+responsibility = "앱 홈 경로 단일 출처의 해석 규약과 위임 대칭"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_dispatch_payload_contract.py"
+responsibility = "프런트가 실제로 보내는 payload 키가 등록 스키마와 맞는가"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/test_dispatch_wiring.py"
+responsibility = "화면 범위 dispatch 레지스트리의 완결성과 거절 게이트"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/test_forgiveness_contract.py"
+responsibility = "관용·되돌리기 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/test_frontend_build_graph.py"
+responsibility = "Vite build graph 와 물리 source 전이·잎 ESM 전이 계약"
+owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/test_frontend_module_units.py"
+responsibility = "프런트 모듈 단위 경계"
+owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/test_job.py"
+responsibility = "작업 데이터모델 — 저장→로드가 매핑을 값·행위까지 보존"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_job_editor_state.py"
+responsibility = "작업 저장 게이트(링1)의 술어와 확인 왕복"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_job_process_topology.py"
+responsibility = "JobRegistry 프로세스 topology — 작업 디렉터리당 writer 하나"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_legacy_path_zero.py"
+responsibility = "폐기된 source 트리 이름이 저장소 전역에서 0"
+owner_stage = "R5-01"
+
+[[asset]]
+file = "tests/test_library_information_architecture.py"
+responsibility = "부팅 랜딩·라이브러리 정보 위생·첫 실행 CTA"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_live_run_contract.py"
+responsibility = "라이브 실행 호출 계약 — 위치 인자 변경이 조용히 깨지지 않음"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "tests/test_package_coverage_gate.py"
+responsibility = "패키지별 커버리지 하한과 비재귀 경로의 신규 서브패키지 등록"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_personalization_contract.py"
+responsibility = "사용자 설정 존중·개인화의 정적·순수 계약"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_quality_workflow.py"
+responsibility = "품질 CI 의 의미 계약 — 누가 무엇을 만들고 누가 검증하는가"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_quickstart_101_assets.py"
+responsibility = "101 학습 세트 정합 — 템플릿 필드명과 CSV 헤더 정확 일치"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "tests/test_quickstart_101_live.py"
+responsibility = "101 라이브 게이트 — 실주행과 그 판정의 음성 대조"
+owner_stage = "R5-03"
+
+[[asset]]
+file = "tests/test_r3_editor.py"
+responsibility = "editor 클러스터 회귀 — 컨트롤러와 매핑 상태"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_r3_js.py"
+responsibility = "공유 이스케이퍼 단일화와 pool 헤더 회귀"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/test_r3_library.py"
+responsibility = "라이브러리 태그 왕복과 새로고침 배선 회귀"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_r3_picker.py"
+responsibility = "데이터 선택 다이얼로그의 정적 계약(사망한 두 표면의 승계분)"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/test_r3_pool.py"
+responsibility = "확정 참조 교체가 보관 항목을 조용히 되살리지 않음"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_r3_py_core.py"
+responsibility = "격리 루프 단일화·손상 조용한 증발 봉합·멀티시트 게이트 통일"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_r3_runmx.py"
+responsibility = "풀 래퍼 공용화와 소스 라벨 합성"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_react_ownership_inventory.py"
+responsibility = "#402 원장의 폐포 게이트와 판별력 음성 대조"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_selftest_api.py"
+responsibility = "자가검증 호스트 어댑터 계약"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/test_selftest_http_proxy.py"
+responsibility = "selftest HTTP 프록시 경계"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_template_groups.py"
+responsibility = "템플릿 그룹 모델 — 지정 CRUD·구획 뷰·접힘의 단일 규칙 재사용"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_template_manager.py"
+responsibility = "템플릿 관리 워크숍 ViewModel(링1) 계약"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_tracking_locate.py"
+responsibility = "추적성 로케이트 — 백엔드 화이트리스트가 임의 경로를 막는다"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_ux_copy_round.py"
+responsibility = "개발 어휘의 UI 재유입 금지어 가드"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_ux_css_round.py"
+responsibility = "버튼·열 레이아웃 착지의 정적 회귀 차단"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_web_artifact_contract.py"
+responsibility = "빌드 산출물의 테스트 전용 양성·음성 계약"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_web_artifact_seal.py"
+responsibility = "제품 Vite 산출물 seal producer 와 source/frozen resolver"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_web_css_manifest.py"
+responsibility = "분할 스타일시트의 순서와 전수를 사람이 아니라 게이트가 지킨다"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_web_css_orphan_classes.py"
+responsibility = "셸이 내는 class 중 규칙이 한 줄도 없는 것을 시끄럽게 만든다"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_web_datazone.py"
+responsibility = "데이터 존 공용 팩토리의 단일 출처·분리 계약"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_web_dom_contract.py"
+responsibility = "canonical 프런트엔드 정적 소스의 DOM 계약 — id 유일성·화면 루트·module graph"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_web_m1_topology.py"
+responsibility = "제품 entry·visible DOM·legacy runtime fallback 의 정적 계약"
+owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/test_web_native_dialog_guard.py"
+responsibility = "네이티브 confirm/prompt 재유입 방지"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/test_web_product_api.py"
+responsibility = "제품 파사드 어댑터 계약"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/test_web_runtime_artifact.py"
+responsibility = "제품 runtime 이 sealed build/web 하나만 소비하는 중앙 seam"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_web_selftest_gate.py"
+responsibility = "실 WebView2 부팅·렌더·클릭·브리지 왕복 되읽기"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/test_web_source_role.py"
+responsibility = "정적 테스트가 source 역할 접근자를 우회하지 않음"
+owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_webapp_bridge.py"
+responsibility = "웹 프론트엔드 브리지 계약(헤드리스)"
+owner_stage = "R2-02"
+
+[[asset]]
+file = "tests/test_webapp_editor.py"
+responsibility = "편집기 화면 컨트롤러 계약(헤드리스)"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_webapp_job.py"
+responsibility = "「작업」 화면 컨트롤러 계약 — 패널 4존이 소비하는 링1 배선"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_webapp_library.py"
+responsibility = "「문서 작업」 라이브러리 컨트롤러 계약(헤드리스)"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_webapp_pool.py"
+responsibility = "데이터 관리 화면 컨트롤러 — 상태 배지와 상태별 게이트 액션"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_webapp_profile.py"
+responsibility = "부팅 프로필 준비와 단일 인스턴스 가드"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/test_webapp_settings.py"
+responsibility = "웹앱 설정(테마) 영속"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_webapp_template.py"
+responsibility = "템플릿 관리 화면 컨트롤러 계약(헤드리스)"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_webapp_workbench.py"
+responsibility = "TXT 검토·복사 작업대 컨트롤러가 소유한 판정"
+owner_stage = "R4-02"
+# ---------------------------------------------------------------------------
+# 제외 — React 이관이 검증 책임에 닿지 않는 파일
+#
+# 「검증이 없어도 된다」가 아니라 「R1 이 서술을 쓰지 않는다」는 뜻이다.
+# 이 목록의 어떤 파일도 웹 표면을 이름으로 부르지 않는다 — 게이트가 재확인한다.
+# ---------------------------------------------------------------------------
+
+[out_of_scope]
+reason = "React 이관이 이 파일의 검증 책임에 닿지 않는다 — 도메인·코어·CLI·패키징 전용"
+files = [
+  "scripts/audit_test_portfolio.py",
+  "scripts/build_nara_testset.py",
+  "scripts/check_package_coverage.py",
+  "scripts/check_release_version.py",
+  "scripts/gen_scenario_fixtures.py",
+  "scripts/live101/__init__.py",
+  "scripts/live101/capture.py",
+  "scripts/live101/scenario.py",
+  "scripts/live101/surface.py",
+  "scripts/render_document_narmi_branding.py",
+  "scripts/selftest_http_proxy.py",
+  "scripts/verify_packaged_web.py",
+  "tests/_suite_probe.py",
+  "tests/test_atomic.py",
+  "tests/test_audit_test_portfolio.py",
+  "tests/test_authoring.py",
+  "tests/test_batch_gate.py",
+  "tests/test_cli.py",
+  "tests/test_compile_badge.py",
+  "tests/test_contrast_wcag.py",
+  "tests/test_corpus_golden.py",
+  "tests/test_danger_confirm_contract.py",
+  "tests/test_data_factory.py",
+  "tests/test_dataset_pool.py",
+  "tests/test_dataset_pool_state.py",
+  "tests/test_design_tokens.py",
+  "tests/test_edit_session.py",
+  "tests/test_engine.py",
+  "tests/test_excel_contract.py",
+  "tests/test_extract_invariants.py",
+  "tests/test_extract_synthetic.py",
+  "tests/test_fields.py",
+  "tests/test_file_filters.py",
+  "tests/test_fill_ledger.py",
+  "tests/test_filter_state.py",
+  "tests/test_format_engine.py",
+  "tests/test_header_footer_fields.py",
+  "tests/test_home_state.py",
+  "tests/test_identity_summary.py",
+  "tests/test_interaction_responsiveness.py",
+  "tests/test_jamo.py",
+  "tests/test_lineseg.py",
+  "tests/test_lint.py",
+  "tests/test_mapping.py",
+  "tests/test_mapping_state.py",
+  "tests/test_modal_system.py",
+  "tests/test_motw.py",
+  "tests/test_naming.py",
+  "tests/test_nara.py",
+  "tests/test_nara_mulpum.py",
+  "tests/test_nara_state.py",
+  "tests/test_native_positive.py",
+  "tests/test_package.py",
+  "tests/test_packaging_contract.py",
+  "tests/test_partial_gate.py",
+  "tests/test_pipeline.py",
+  "tests/test_pipeline_builder_state.py",
+  "tests/test_popover_contract.py",
+  "tests/test_powershell_encoding.py",
+  "tests/test_review_state.py",
+  "tests/test_run_state.py",
+  "tests/test_scenario_e2e.py",
+  "tests/test_schema.py",
+  "tests/test_scroll_topology.py",
+  "tests/test_scrollbar_contract.py",
+  "tests/test_secret_store.py",
+  "tests/test_selection_state.py",
+  "tests/test_single_instance.py",
+  "tests/test_source_profile.py",
+  "tests/test_sticky_material.py",
+  "tests/test_suite_partition.py",
+  "tests/test_template_status.py",
+  "tests/test_text_registry.py",
+  "tests/test_text_render.py",
+  "tests/test_txt_queue.py",
+  "tests/test_ui_contract.py",
+  "tests/test_web_press_geometry.py",
+  "tests/test_work_candidates.py",
+  "tests/test_work_mode.py",
+  "tests/test_workcard_contract.py",
+]
