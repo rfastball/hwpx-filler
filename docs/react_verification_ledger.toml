@@ -32,12 +32,18 @@
 #
 # ## 분모를 줄이는 길이 막혀 있다
 #
-# 검증 트리의 정의(어떤 경로가 이 원장의 대상인가)와 `r_scope` 술어는 **게이트에만**
-# 산다. 이 파일에 사본이 없는 이유는 사본이 늙기 때문이다 — rev3 집필 중에 실제로
-# 같은 술어를 두 벌 쓰다가 값이 2 만큼 갈렸다(`selftest` 한 조각 누락).
+# 검증 트리의 정의(어떤 경로가 이 원장의 대상인가)와 웹 표면 술어는 **게이트에만** 산다.
+# 이 파일에 사본이 없는 이유는 사본이 늙기 때문이다 — rev3 집필 중에 실제로 같은 술어를
+# 두 벌 쓰다가 값이 갈렸다(`selftest` 한 조각 누락).
 #
 # `out_of_scope` 로 파일을 옮겨 자산을 줄이는 것은 게이트가 막는다: 제외 목록의 어떤
-# 파일도 웹 표면을 이름으로 부르면 안 된다. 넓히는 방향(제외 → 자산)은 언제나 자유다.
+# 파일도 웹 표면에 닿으면 안 된다. 넓히는 방향(제외 → 자산)은 언제나 자유다.
+#
+# 그 술어는 **헬퍼 경유 소비까지** 본다(`_web_source`·`_press_probe`·`_web_artifact_contract`).
+# 이게 없으면 술어가 규약을 지킬수록 눈이 먼다 — `tests/test_web_source_role.py` 가 정적
+# 테스트에게 물리 source 경로 재조립을 금지하므로, 모범적인 웹 테스트일수록 `frontend/` 를
+# 직접 안 쓴다. 좁은 판에서는 그런 파일 열이 제외에 영영 앉아 있을 수 있었고, 그중에는
+# 실렌더 눌림 기하(`tests/test_web_press_geometry.py`)도 있었다.
 
 schema = "react-verification-ledger/v1"
 baseline_sha = "931157b00f120e5be24a8caadeda251263f673a5"
@@ -143,7 +149,7 @@ owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/js/n05_editor_entry.test.js"
-responsibility = "편집 진입 seam 의 공개 표면 6키와 경계 넷"
+responsibility = "편집 진입 seam 의 공개 표면과 경계"
 owner_stage = "R4-02"
 
 [[asset]]
@@ -158,7 +164,7 @@ owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/js/n05_services.test.js"
-responsibility = "재사용 서비스·팩토리 7종의 공개 표면과 Bridge 명시 포트"
+responsibility = "재사용 서비스·팩토리의 공개 표면과 Bridge 명시 포트"
 owner_stage = "R3-01"
 
 [[asset]]
@@ -168,12 +174,12 @@ owner_stage = "R3-02"
 
 [[asset]]
 file = "tests/js/n06_editor.test.js"
-responsibility = "편집기 화면 factory 의 공개 표면 4키"
+responsibility = "편집기 화면 factory 의 공개 표면"
 owner_stage = "R4-02"
 
 [[asset]]
 file = "tests/js/n06_job.test.js"
-responsibility = "「문서 만들기」 화면 factory 의 공개 표면 12키"
+responsibility = "「문서 만들기」 화면 factory 의 공개 표면"
 owner_stage = "R4-03"
 
 [[asset]]
@@ -218,7 +224,7 @@ owner_stage = "R3-03"
 
 [[asset]]
 file = "tests/js/n08_registry.test.js"
-responsibility = "프로브 47키 전수 이관과 28 레거시 상수의 후계 1:1"
+responsibility = "프로브 키 전수 이관과 레거시 상수의 후계 대응"
 owner_stage = "R2-04"
 
 [[asset]]
@@ -277,6 +283,16 @@ responsibility = "앱 홈 경로 단일 출처의 해석 규약과 위임 대칭
 owner_stage = "R2-04"
 
 [[asset]]
+file = "tests/test_danger_confirm_contract.py"
+responsibility = "파괴 전이의 확인 왕복 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/test_design_tokens.py"
+responsibility = "디자인 토큰 단일 출처와 생성물의 드리프트 게이트"
+owner_stage = "R3-03"
+
+[[asset]]
 file = "tests/test_dispatch_payload_contract.py"
 responsibility = "프런트가 실제로 보내는 payload 키가 등록 스키마와 맞는가"
 owner_stage = "R2-02"
@@ -302,6 +318,11 @@ responsibility = "프런트 모듈 단위 경계"
 owner_stage = "R2-01"
 
 [[asset]]
+file = "tests/test_interaction_responsiveness.py"
+responsibility = "조작 응답성 — :active 피복과 낙관 플립"
+owner_stage = "R3-01"
+
+[[asset]]
 file = "tests/test_job.py"
 responsibility = "작업 데이터모델 — 저장→로드가 매핑을 값·행위까지 보존"
 owner_stage = "R4-03"
@@ -318,7 +339,7 @@ owner_stage = "R4-03"
 
 [[asset]]
 file = "tests/test_legacy_path_zero.py"
-responsibility = "폐기된 source 트리 이름이 저장소 전역에서 0"
+responsibility = "폐기된 source 트리 이름이 저장소 전역에서 나오지 않음"
 owner_stage = "R5-01"
 
 [[asset]]
@@ -332,6 +353,11 @@ responsibility = "라이브 실행 호출 계약 — 위치 인자 변경이 조
 owner_stage = "R5-03"
 
 [[asset]]
+file = "tests/test_modal_system.py"
+responsibility = "모달 시스템의 구조와 닫힘 전이"
+owner_stage = "R3-01"
+
+[[asset]]
 file = "tests/test_package_coverage_gate.py"
 responsibility = "패키지별 커버리지 하한과 비재귀 경로의 신규 서브패키지 등록"
 owner_stage = "R2-04"
@@ -340,6 +366,11 @@ owner_stage = "R2-04"
 file = "tests/test_personalization_contract.py"
 responsibility = "사용자 설정 존중·개인화의 정적·순수 계약"
 owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_popover_contract.py"
+responsibility = "팝오버 수명주기와 바깥 클릭 처리"
+owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/test_quality_workflow.py"
@@ -397,6 +428,21 @@ responsibility = "#402 원장의 폐포 게이트와 판별력 음성 대조"
 owner_stage = "R5-02"
 
 [[asset]]
+file = "tests/test_react_verification_ledger.py"
+responsibility = "이 원장의 재실측기 — 파티션·제외 순도·실재·후계·어휘"
+owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_scroll_topology.py"
+responsibility = "스크롤 소유권 위상 — 어느 상자가 구르는가"
+owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_scrollbar_contract.py"
+responsibility = "스크롤바 표현 계약"
+owner_stage = "R3-03"
+
+[[asset]]
 file = "tests/test_selftest_api.py"
 responsibility = "자가검증 호스트 어댑터 계약"
 owner_stage = "R2-02"
@@ -405,6 +451,11 @@ owner_stage = "R2-02"
 file = "tests/test_selftest_http_proxy.py"
 responsibility = "selftest HTTP 프록시 경계"
 owner_stage = "R2-04"
+
+[[asset]]
+file = "tests/test_sticky_material.py"
+responsibility = "고정 표면의 재질·층위 계약"
+owner_stage = "R3-03"
 
 [[asset]]
 file = "tests/test_template_groups.py"
@@ -472,6 +523,11 @@ responsibility = "네이티브 confirm/prompt 재유입 방지"
 owner_stage = "R3-01"
 
 [[asset]]
+file = "tests/test_web_press_geometry.py"
+responsibility = "실렌더 눌림 기하 — 모션 층을 prefers-reduced-motion 두 값으로 강제해 잰다"
+owner_stage = "R3-03"
+
+[[asset]]
 file = "tests/test_web_product_api.py"
 responsibility = "제품 파사드 어댑터 계약"
 owner_stage = "R2-02"
@@ -503,7 +559,7 @@ owner_stage = "R4-02"
 
 [[asset]]
 file = "tests/test_webapp_job.py"
-responsibility = "「작업」 화면 컨트롤러 계약 — 패널 4존이 소비하는 링1 배선"
+responsibility = "「작업」 화면 컨트롤러 계약 — 패널 존이 소비하는 링1 배선"
 owner_stage = "R4-03"
 
 [[asset]]
@@ -535,16 +591,22 @@ owner_stage = "R4-01"
 file = "tests/test_webapp_workbench.py"
 responsibility = "TXT 검토·복사 작업대 컨트롤러가 소유한 판정"
 owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_workcard_contract.py"
+responsibility = "작업 카드의 구조와 퇴화 큐 처리"
+owner_stage = "R4-01"
 # ---------------------------------------------------------------------------
 # 제외 — React 이관이 검증 책임에 닿지 않는 파일
 #
 # 「검증이 없어도 된다」가 아니라 「R1 이 서술을 쓰지 않는다」는 뜻이다.
-# 이 목록의 어떤 파일도 웹 표면을 이름으로 부르지 않는다 — 게이트가 재확인한다.
+# 이 목록의 어떤 파일도 웹 표면에 닿지 않는다 — 게이트가 본문을 다시 읽어 확인한다.
 # ---------------------------------------------------------------------------
 
 [out_of_scope]
 reason = "React 이관이 이 파일의 검증 책임에 닿지 않는다 — 도메인·코어·CLI·패키징 전용"
 files = [
+  "conftest.py",
   "scripts/audit_test_portfolio.py",
   "scripts/build_nara_testset.py",
   "scripts/check_package_coverage.py",
@@ -566,11 +628,9 @@ files = [
   "tests/test_compile_badge.py",
   "tests/test_contrast_wcag.py",
   "tests/test_corpus_golden.py",
-  "tests/test_danger_confirm_contract.py",
   "tests/test_data_factory.py",
   "tests/test_dataset_pool.py",
   "tests/test_dataset_pool_state.py",
-  "tests/test_design_tokens.py",
   "tests/test_edit_session.py",
   "tests/test_engine.py",
   "tests/test_excel_contract.py",
@@ -584,13 +644,11 @@ files = [
   "tests/test_header_footer_fields.py",
   "tests/test_home_state.py",
   "tests/test_identity_summary.py",
-  "tests/test_interaction_responsiveness.py",
   "tests/test_jamo.py",
   "tests/test_lineseg.py",
   "tests/test_lint.py",
   "tests/test_mapping.py",
   "tests/test_mapping_state.py",
-  "tests/test_modal_system.py",
   "tests/test_motw.py",
   "tests/test_naming.py",
   "tests/test_nara.py",
@@ -602,27 +660,21 @@ files = [
   "tests/test_partial_gate.py",
   "tests/test_pipeline.py",
   "tests/test_pipeline_builder_state.py",
-  "tests/test_popover_contract.py",
   "tests/test_powershell_encoding.py",
   "tests/test_review_state.py",
   "tests/test_run_state.py",
   "tests/test_scenario_e2e.py",
   "tests/test_schema.py",
-  "tests/test_scroll_topology.py",
-  "tests/test_scrollbar_contract.py",
   "tests/test_secret_store.py",
   "tests/test_selection_state.py",
   "tests/test_single_instance.py",
   "tests/test_source_profile.py",
-  "tests/test_sticky_material.py",
   "tests/test_suite_partition.py",
   "tests/test_template_status.py",
   "tests/test_text_registry.py",
   "tests/test_text_render.py",
   "tests/test_txt_queue.py",
   "tests/test_ui_contract.py",
-  "tests/test_web_press_geometry.py",
   "tests/test_work_candidates.py",
   "tests/test_work_mode.py",
-  "tests/test_workcard_contract.py",
 ]
