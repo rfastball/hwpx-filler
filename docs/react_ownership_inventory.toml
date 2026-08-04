@@ -478,7 +478,7 @@ scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", 
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
 current = 2
-members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:110"]
+members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:113"]
 judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
 
 [axes.lifecycle_hook]
@@ -1370,13 +1370,13 @@ id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:125 LibraryScreen",
-  "frontend/src/bootstrap.js:126 EditorScreen",
-  "frontend/src/bootstrap.js:127 JobScreen",
-  "frontend/src/bootstrap.js:128 WorkbenchScreen",
-  "frontend/src/bootstrap.js:129 Nav",
+  "frontend/src/bootstrap.js:128 LibraryScreen",
+  "frontend/src/bootstrap.js:129 EditorScreen",
+  "frontend/src/bootstrap.js:130 JobScreen",
+  "frontend/src/bootstrap.js:131 WorkbenchScreen",
+  "frontend/src/bootstrap.js:132 Nav",
 ] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 125, anchor = "LibraryScreen", occurrence = 2 }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 128, anchor = "LibraryScreen", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["none"]
@@ -1893,8 +1893,8 @@ verification = ["none"]
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:110"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 110, anchor = "export function bootProduct" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:113"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 113, anchor = "export function bootProduct" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
