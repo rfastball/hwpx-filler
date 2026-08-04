@@ -14,7 +14,7 @@
    소비자는 아직 없다(R2-01 의 빈 root 와 같은 기반 착지). 합성 루트가 정확히 한 번
    구성해 반환값으로 내고, R2-03+ 의 feature 가 그 주입을 이어받는다 — component 가
    전역을 직접 뒤지는 형태는 여기서부터 구조적으로 막힌다. */
-import { HOST_INTERNAL_METHODS, HOST_METHODS } from "../contract/contract.gen.ts";
+import { HOST_INTERNAL_METHODS, HOST_METHODS, SCREEN_ACTIONS } from "../contract/contract.gen.ts";
 import type {
   ActionName,
   HostInternalMethodName,
@@ -25,6 +25,24 @@ import type { HostResult } from "./adapter.ts";
 
 /** client 가 내보내는 메서드 이름 — host-internal(웹 소비자 0 의 기록)은 표면이 아니다. */
 export type ClientMethodName = Exclude<HostMethodName, HostInternalMethodName>;
+
+/** payload 의 **키 집합**을 생성 스키마에서 유도한다 — required 는 필수 키, optional 은
+ *  선택 키, 그 밖의 키는 초과 프로퍼티로 tsc 가 거절한다. 값 타입은 v1 계약에 없으므로
+ *  전부 `unknown` 이다(더 좁히면 그게 조용한 추측이다). */
+export type DispatchPayload<S extends ScreenName, A extends ActionName<S>> =
+  (typeof SCREEN_ACTIONS)[S][A] extends {
+    required: readonly (infer R extends string)[];
+    optional: readonly (infer O extends string)[];
+  }
+    ? { [K in R]: unknown } & { [K in O]?: unknown }
+    : never;
+
+/** required 가 빈 액션만 payload 를 통째로 생략할 수 있다 — 필수 키가 있는데 인자를
+ *  생략하는 호출은 런타임(Python 거절)이 아니라 컴파일에서 죽는다. */
+type DispatchPayloadArg<S extends ScreenName, A extends ActionName<S>> =
+  (typeof SCREEN_ACTIONS)[S][A] extends { required: readonly [] }
+    ? [payload?: DispatchPayload<S, A>]
+    : [payload: DispatchPayload<S, A>];
 
 /** 어댑터 주입 형태 — 구조 타입이라 실물(`createRuntimeAdapter` 산물)과 테스트 대역이 같다. */
 type RuntimeAdapter = {
@@ -59,13 +77,16 @@ export function createBridgeClient({ adapter }: { adapter: RuntimeAdapter }) {
       return invoke("initial", screen);
     },
 
-    /** 순수 데이터 액션 — 화면×액션 짝이 생성 유니온으로 좁혀진다. payload 기본은 빈
-     *  객체(bridge.js `|| {}` 와 같은 강제 — 미지정과 빈 payload 는 같은 발신이다). */
-    dispatch<S extends ScreenName>(
+    /** 순수 데이터 액션 — 화면×액션×payload 키가 전부 생성 스키마로 좁혀진다: 오타 키·
+     *  필수 키 누락은 Python 거절(런타임)보다 먼저 tsc 가 잡는다. 키 집합 거절의 **정본**은
+     *  여전히 `validate_dispatch` 하나다 — 타입은 같은 계약의 컴파일 시점 투영이지 두 번째
+     *  판정자가 아니다. payload 기본은 빈 객체(bridge.js `|| {}` 와 같은 강제). */
+    dispatch<S extends ScreenName, A extends ActionName<S>>(
       screen: S,
-      action: ActionName<S>,
-      payload?: Record<string, unknown>,
+      action: A,
+      ...rest: DispatchPayloadArg<S, A>
     ): Promise<HostResult> {
+      const payload = rest[0];
       return invoke("dispatch", screen, action, payload === undefined ? {} : payload);
     },
   };
