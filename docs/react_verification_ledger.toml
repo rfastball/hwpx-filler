@@ -790,7 +790,7 @@ owner_stage = "R5-02"
 [[excluded_axis]]
 id = "coverage-floors"
 match = { kind = "file", value = "docs/package_coverage_floors.toml" }
-reason = "패키지별 커버리지 하한 — 차단 게이트가 데이터로 읽는다. 루트 밖 단일 파일이라 루트 폐포가 못 받으므로, 단일 파일 축으로 들어 선언의 삭제가 게이트에 걸리게 한다."
+reason = "패키지별 커버리지 하한 — 차단 게이트가 데이터로 읽는다. 루트 밖 단일 파일이라 루트 폐포가 못 받으므로, 단일 파일 축으로 들어 선언의 삭제·재조준이 게이트에 걸리게 한다(대상 경로는 게이트가 핀으로 든다)."
 owner_stage = "R5-02"
 
 [[excluded_axis]]

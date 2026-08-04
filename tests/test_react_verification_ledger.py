@@ -15,7 +15,7 @@ G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언·죽은 멤버 차단)
 G7   그 축이 **파티션·다른 축과 겹치지 않는가**(밀어내기 우회·이중 주장 차단)
 G8   ``tests/`` 아래에 트리도 축도 아닌 **침묵한 파일이 없는가**(선언 집합의 전수성)
-G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제로 침묵 복원 차단)
+G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제·재조준으로 침묵 복원 차단)
 G10  루트 추적 파일 전부가 트리·축·사슬 밖 선언 중 한 곳에 있는가(G8 의 루트 형제)
 ===  ====================================================================
 
@@ -179,6 +179,16 @@ REQUIRED_AXIS_IDS = frozenset(
         "example-101-assets",
     }
 )
+
+#: 비루트 단일 파일 축의 **대상 경로 핀**. 재조준이 남긴 마지막 구멍을 닫는다(2라운드 리뷰
+#: P2 실측): ``file`` 값의 삭제는 G9 의 id 검사가, 루트 대상은 G10 폐포가 잡지만, 비루트
+#: 대상을 다른 추적 파일로 갈아 끼우면 G0~G10 전부 초록인 채 원 대상이 무적재가 됐다.
+#: 핀을 원장에서 유도하면 **재조준이 자기를 정당화**하므로 ``REQUIRED_AXIS_IDS`` 와 같은
+#: 이유로 리터럴이다. 루트 대상 ``file`` 축은 폐포가 지키므로 핀이 필요 없고, 비루트 대상은
+#: 핀 등록이 **의무**다(G0 이 형식으로 강제 — 다음 file 축이 같은 구멍을 다시 열지 못하게).
+REQUIRED_FILE_AXIS_TARGETS: "dict[str, str]" = {
+    "coverage-floors": "docs/package_coverage_floors.toml",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -389,10 +399,16 @@ def _axis_structure(document: dict[str, Any]) -> list[str]:
                     problems.append(
                         f"excluded_axis {axis_id!r}: exact 멤버는 루트 파일이라야 한다 -> {member!r}"
                     )
-        elif kind == "file" and not (isinstance(value, str) and value.strip()):
-            problems.append(
-                f"excluded_axis {axis_id!r}: file 값이 경로 문자열이 아니다 -> {value!r}"
-            )
+        elif kind == "file":
+            if not (isinstance(value, str) and value.strip()):
+                problems.append(
+                    f"excluded_axis {axis_id!r}: file 값이 경로 문자열이 아니다 -> {value!r}"
+                )
+            elif "/" in value and axis_id not in REQUIRED_FILE_AXIS_TARGETS:
+                problems.append(
+                    f"excluded_axis {axis_id!r}: 비루트 file 축은 게이트 핀"
+                    f"(REQUIRED_FILE_AXIS_TARGETS)에 등록해야 한다 -> {value!r}"
+                )
     return problems
 
 
@@ -441,17 +457,29 @@ def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
 
 
 def g9_required_axes_survive(document: dict[str, Any]) -> list[str]:
-    """사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**.
+    """사각을 닫으려고 세운 축 선언이 **여전히 서 있는가** — id 와, 핀이 있으면 대상까지.
 
     G8 이 폐포로 답하는 범위는 ``tests/`` 뿐이다. ``packaging/``·workflows·루트 러너·빌드 설정·
     학습 세트 축은 지워도 G0~G8 이 전부 초록이었고, 그 삭제는 정확히 이 절이 닫으려던 침묵을
     되돌린다. 선언은 **한 번 적는 것**이 아니라 **계속 서 있는 것**이라야 값이 있다.
+
+    id 생존만으로는 부족하다(2라운드 리뷰 P2) — ``file`` 축은 id 를 그대로 두고 **값만**
+    다른 추적 파일로 돌려도 선언이 서 있는 척하며 원 대상을 무적재로 만든다. 핀에 오른
+    축은 대상 경로까지 지켜야 서 있는 것으로 친다.
     """
-    declared = {str(row.get("id", "")) for row in document.get("excluded_axis", [])}
-    return [
+    declared_rows = {str(row.get("id", "")): row for row in document.get("excluded_axis", [])}
+    problems = [
         f"선언이 사라졌다: 축 {axis_id!r} — 그 사각이 다시 침묵이 된다"
-        for axis_id in sorted(REQUIRED_AXIS_IDS - declared)
+        for axis_id in sorted(REQUIRED_AXIS_IDS - set(declared_rows))
     ]
+    for axis_id, pinned in sorted(REQUIRED_FILE_AXIS_TARGETS.items()):
+        row = declared_rows.get(axis_id)
+        if row is None:
+            continue  # 축 자체의 실종은 위 id 검사가 이미 물었다
+        match = row.get("match") or {}
+        if match.get("kind") != "file" or match.get("value") != pinned:
+            problems.append(f"축 {axis_id!r} 가 핀에서 벗어났다 -> {match!r} (핀: file {pinned!r})")
+    return problems
 
 
 def g8_tests_tree_is_fully_accounted(
@@ -1069,6 +1097,41 @@ def test_n24_a_file_axis_pointing_nowhere_is_caught(
     axis["match"]["value"] = "docs/renamed_floors.toml"
     problems = g6_axes_are_live(mutable, tracked)
     assert any("coverage-floors" in problem for problem in problems), problems
+
+
+def test_pinned_file_axes_are_also_required_ids() -> None:
+    """핀은 id 생존 검사 위에 얹힌다 — 핀만 있고 id 요구가 없으면 축을 통째로 지우는 길이 남는다."""
+    assert set(REQUIRED_FILE_AXIS_TARGETS) <= REQUIRED_AXIS_IDS
+
+
+def test_n26_retargeting_a_pinned_file_axis_is_caught(mutable: dict[str, Any]) -> None:
+    """``file`` 축의 값을 갈아 끼우면 원 대상이 조용히 무적재가 된다(2라운드 리뷰 P2).
+
+    삭제는 G9 의 id 검사가, 루트 대상은 G10 폐포가 잡지만 **비루트 대상의 재조준**은 어느
+    쪽도 못 봤다 — 실측: coverage-floors 를 다른 추적 파일로 돌려도 전 게이트가 초록이었다.
+    """
+    axis = _axis_by_id(mutable, "coverage-floors")
+    axis["match"]["value"] = "docs/README.md"
+    problems = g9_required_axes_survive(mutable)
+    assert any("coverage-floors" in problem and "핀" in problem for problem in problems), problems
+
+
+def test_n27_an_unpinned_non_root_file_axis_is_rejected(mutable: dict[str, Any]) -> None:
+    """새 비루트 ``file`` 축은 핀 등록 없이 못 선다 — 인스턴스가 아니라 결함류를 닫는다.
+
+    핀을 coverage-floors 하나에만 걸면 다음 file 축이 같은 구멍을 다시 연다(「집합 하나를
+    넓히고 형제를 안 넓힌다」). 비루트 대상은 폐포가 없으므로 핀이 유일한 지속 장치다.
+    """
+    mutable["excluded_axis"].append(
+        {
+            "id": "rogue-single",
+            "match": {"kind": "file", "value": "docs/README.md"},
+            "reason": "x",
+            "owner_stage": "R5-02",
+        }
+    )
+    problems = g0_structure(mutable)
+    assert any("rogue-single" in problem and "핀" in problem for problem in problems), problems
 
 
 def test_n25_two_axes_claiming_the_same_file_are_caught(
