@@ -58,6 +58,8 @@ EXPECTED_TEST_FILES = {
     # N-09 — 시험 능력 프로토콜과, 제품·프로브가 만나는 단일 푸시 통로(음성 대조 포함).
     "n09_selftest_api.test.js",
     "n09_push_port.test.js",
+    # R2-01 — React root 상태기계(주입 기록자)와 요소 배선. 실 커밋 증거는 live 게이트.
+    "react_root.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

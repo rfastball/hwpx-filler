@@ -95,6 +95,7 @@ import { createAppShell } from "../js/app.js";
 import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
 import { createPushPort } from "./push_port.js";
+import { bootReactRoot } from "./react/boot.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -273,6 +274,23 @@ export function bootProduct() {
       /* 호스트가 시험용으로 띄웠는데 능력이 서지 못한 경우 — 조용하면 안 된다. 파이썬은
          뒤이어 "파사드 부재" 로 죽는데, 그때 **왜** 못 섰는지는 이 줄에만 남는다. */
       window.console.error("[hwpx] selftest 능력 설치 실패", result);
+    },
+  });
+
+  /* React root (R2-01 · #405) — 기존 조립 **뒤에** 선다. legacy 두 트리와 겹치지 않는
+     `#reactRoot` 하나가 React 소유 경계의 전부이고, React 를 아는 것은 `./react/boot.ts`
+     쪽이다(`.js` 그래프는 bare import 0 을 유지한다 — 정적 게이트가 잰다).
+
+     실패는 시끄럽고 부팅은 계속된다: 이 단계의 React 트리는 화면을 아직 지지 않으므로
+     마운트 실패가 제품 기능을 깎지 않지만, 그 사실을 조용히 접으면 실 WebView2 에서만
+     드러나는 회귀가 침묵이 된다. node 의 합성 루트 테스트 환경에선 대역 DOM 이 실
+     createRoot 를 통과하지 못해 이 경보가 매번 도는 것이 허용 상태다 — 실물 커밋 증거는
+     live 게이트의 마운트 마커 되읽기가 진다. */
+  bootReactRoot({
+    doc: document,
+    alarm: (message) => {
+      console.error("[hwpx] React root 부팅 실패", message);
+      window.alert(message);
     },
   });
 

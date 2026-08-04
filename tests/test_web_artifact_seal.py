@@ -414,6 +414,16 @@ def test_source_resolver_rejects_sealed_toolchain_different_from_current_pins(
             '<!doctype html><script src="https://cdn.example/main.js"></script>\n',
             r"forbidden external HTTP\(S\) resource",
         ),
+        # HTML 에는 불활성 면제가 **없다**(R2-01 · #405 + #484 Codex P2) — 등장 자체가
+        # 로딩 맥락일 개연성이 지배적이라, 면제 목록의 URL 이라도 HTML 에선 죽는다.
+        (
+            '<!doctype html><img src="https://react.dev/errors/418">\n',
+            r"forbidden external HTTP\(S\) resource",
+        ),
+        (
+            '<!doctype html><script src="http://www.w3.org/2000/svg"></script>\n',
+            r"forbidden external HTTP\(S\) resource",
+        ),
         (
             '<!doctype html><script type="module" src="/@vite/client"></script>\n',
             "forbidden Vite dev client",
@@ -429,6 +439,57 @@ def test_producer_rejects_forbidden_runtime_reference(
 
     with pytest.raises(WebArtifactViolation, match=message):
         seal_repository_web_artifact(unsealed_repo.root)
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        # 정확 열거 항목을 **연장**해 허용을 훔치는 모양 — 토큰 전체 대조가 잡는다.
+        'const ns = "http://www.w3.org/2000/svg.evil.example/x.js";\n',
+        # 허용 접두를 닮았지만 다른 경로.
+        'const doc = "https://react.dev/errors-evil";\n',
+        # 면제 목록 밖의 평범한 외부 URL.
+        'const cdn = "https://cdn.example/x.js";\n',
+    ],
+)
+def test_producer_rejects_non_inert_urls_even_inside_the_js_bundle(
+    unsealed_repo: ArtifactRepo,
+    snippet: str,
+) -> None:
+    """음성 대조(R2-01 · #405) — `.js` 면제는 열거 항목 그 토큰뿐이다."""
+    js_path = unsealed_repo.artifact_root / "assets" / "main.js"
+    js_path.write_text(js_path.read_text(encoding="utf-8") + snippet, encoding="utf-8")
+
+    with pytest.raises(
+        WebArtifactViolation, match=r"forbidden external HTTP\(S\) resource"
+    ):
+        seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_producer_accepts_the_inert_url_census_of_a_react_bundle(
+    unsealed_repo: ArtifactRepo,
+) -> None:
+    """양성 대조(R2-01 · #405) — React 번들의 불활성 URL 전수는 봉인을 통과한다.
+
+    표본은 실측 그대로이고 **자리도 실측 그대로**(`.js` 번들 문자열)다: XML 네임스페이스
+    식별자 넷(``createElementNS`` 의 이름 인자 — 어떤 로더도 fetch 하지 않는다)과 프로덕션
+    오류 메시지의 문서 링크(코드가 뒤에 붙는 접두). 무맥락 전면 금지로 되돌리면 이 대조가
+    빨갛게 서서 「프레임워크 번들 전부가 거짓 빨강」이던 자리를 지킨다.
+    """
+    js_path = unsealed_repo.artifact_root / "assets" / "main.js"
+    js_path.write_text(
+        js_path.read_text(encoding="utf-8")
+        + 'createElementNS("http://www.w3.org/2000/svg");\n'
+        + 'createElementNS("http://www.w3.org/1999/xlink");\n'
+        + 'createElementNS("http://www.w3.org/XML/1998/namespace");\n'
+        + 'createElementNS("http://www.w3.org/1998/Math/MathML");\n'
+        + 'const help = "https://react.dev/errors/" + code;\n',
+        encoding="utf-8",
+    )
+
+    artifact = seal_repository_web_artifact(unsealed_repo.root)
+
+    assert artifact.index_path == unsealed_repo.index_path
 
 
 def test_empty_vite_manifest_is_loud(unsealed_repo: ArtifactRepo) -> None:

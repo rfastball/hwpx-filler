@@ -35,6 +35,41 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE_VERSION = "24.18.1"
 NPM_VERSION = "11.16.0"
 VITE_VERSION = "8.1.5"
+TYPESCRIPT_VERSION = "5.9.3"
+REACT_VERSION = "19.2.8"
+TYPES_REACT_VERSION = "19.2.18"
+TYPES_REACT_DOM_VERSION = "19.2.4"
+
+#: 제품 ``dependencies`` 정확-동등 핀 (R2-01 · #405). **bare specifier 허용 목록이 여기서
+#: 유도된다** — package.json 에서 유도하면 「선언 한 줄 + import 한 줄」로 핀 빨강 없이
+#: 의존이 조용히 열린다(L16 B4). 이 상수를 넓히는 diff 만이 의존을 넓힌다.
+PINNED_DEPENDENCIES = {
+    "react": REACT_VERSION,
+    "react-dom": REACT_VERSION,
+}
+
+#: devDependencies 정확-동등 핀. ``@types/*`` 가 든 이유: React 19 는 자체 TS 타입을
+#: 동봉하지 않아(착수 실측 — npm ``types`` 필드 부재), 이 둘 없이는 ``tsc --noEmit`` 이
+#: 서지 않는다(rev3 §4.2-2).
+PINNED_DEV_DEPENDENCIES = {
+    "@types/react": TYPES_REACT_VERSION,
+    "@types/react-dom": TYPES_REACT_DOM_VERSION,
+    "typescript": TYPESCRIPT_VERSION,
+    "vite": VITE_VERSION,
+}
+
+
+def _ts_bare_allowed(spec: str) -> bool:
+    """``.ts`` 서브트리에만 허용되는 bare specifier — 핀 상수의 패키지와 그 하위 경로만.
+
+    ``.js`` 도달 그래프는 이 함수를 거치지 않고 **bare 0 을 유지**한다 — legacy 25 가
+    ``import "react"`` 를 싣는 경로의 원천 차단이다(L16 N4: ADR-06 「legacy 신규 기능
+    금지」가 리뷰 계약에서 게이트 계약으로 올라온 자리).
+    """
+    return any(
+        spec == package or spec.startswith(f"{package}/")
+        for package in PINNED_DEPENDENCIES
+    )
 
 EXPECTED_CSS_FILES = {
     "base.css",
@@ -202,10 +237,18 @@ def test_exact_node_npm_vite_pins_are_locked() -> None:
     assert (ROOT / ".node-version").read_text(encoding="utf-8").strip() == NODE_VERSION
     assert package["packageManager"] == f"npm@{NPM_VERSION}"
     assert package["engines"] == {"node": NODE_VERSION, "npm": NPM_VERSION}
-    assert package["devDependencies"] == {"vite": VITE_VERSION}
+    assert package["devDependencies"] == PINNED_DEV_DEPENDENCIES
+    #: R2-01 이 신설한 런타임 의존 핀 — devDependencies 와 같은 형태의 정확 동등이다.
+    #: 이 핀이 무는 한 「미핀 패키지 선언」은 여기서 빨갛고, 「선언 없는 import」는
+    #: bare specifier 폐포에서 빨갛다 — 두 축이 합쳐져 조용한 의존 확장이 사라진다.
+    assert package["dependencies"] == PINNED_DEPENDENCIES
     assert lock["lockfileVersion"] == 3
-    assert lock["packages"][""]["devDependencies"] == {"vite": VITE_VERSION}
-    assert lock["packages"]["node_modules/vite"]["version"] == VITE_VERSION
+    assert lock["packages"][""]["devDependencies"] == PINNED_DEV_DEPENDENCIES
+    assert lock["packages"][""]["dependencies"] == PINNED_DEPENDENCIES
+    for name, version in (*PINNED_DEPENDENCIES.items(), *PINNED_DEV_DEPENDENCIES.items()):
+        assert lock["packages"][f"node_modules/{name}"]["version"] == version, (
+            f"lock 의 {name} 이 선언 핀 {version} 과 다릅니다 — uv.lock 규율의 npm 판입니다."
+        )
 
     npmrc = (ROOT / ".npmrc").read_text(encoding="utf-8").splitlines()
     assert npmrc == ["engine-strict=true", "save-exact=true"]
@@ -240,6 +283,52 @@ def test_vite_production_graph_is_atomic_and_relative() -> None:
             "treeshake": False,
         },
     }
+
+
+def test_typescript_config_is_erasable_and_exactly_this() -> None:
+    """tsconfig 는 **erasable syntax 전용**이고 형상은 딕셔너리 동등으로 잠근다.
+
+    node 직접 적재(type stripping)와 형식 검사(``tsc --noEmit``)와 Vite 빌드가 **같은
+    파일**을 보는 것이 R2-01 의 계약이다. ``erasableSyntaxOnly`` 가 그 등가를 지킨다 —
+    enum·namespace 처럼 런타임 산출이 있는 TS 문법이 들어오면 node 적재와 tsc 가 갈린다.
+    ``.tsx`` 는 이 단계에서 닫혀 있다: Node 24 는 ``.ts`` 만 싣는다(패킷 rev2 L16 B2 실증).
+    """
+    config = json.loads((ROOT / "tsconfig.json").read_text(encoding="utf-8"))
+
+    assert config == {
+        "compilerOptions": {
+            "target": "ES2022",
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "lib": ["ES2022", "DOM", "DOM.Iterable"],
+            "strict": True,
+            "noEmit": True,
+            "erasableSyntaxOnly": True,
+            "verbatimModuleSyntax": True,
+            "allowImportingTsExtensions": True,
+            "useDefineForClassFields": True,
+            "forceConsistentCasingInFileNames": True,
+            "skipLibCheck": False,
+            "types": [],
+        },
+        "include": ["frontend/src/**/*.ts"],
+    }
+
+
+def test_typescript_sources_pass_the_type_check() -> None:
+    """``tsc --noEmit`` 초록 — 형식 검사가 게이트 안에서 실제로 돈다.
+
+    별도 스크립트로 두면 `test.ps1` 과 CI 잡 중 아무도 부르지 않는 채 초록일 수 있다 —
+    node 모듈 단위 게이트를 pytest 가 직접 모는 것과 같은 논거로 여기서 돈다.
+    """
+    node = shutil.which("node")
+    assert node is not None, f"Node {NODE_VERSION}이 PATH에 없습니다"
+    tsc = ROOT / "node_modules" / "typescript" / "bin" / "tsc"
+    assert tsc.is_file(), (
+        "잠긴 typescript 가 설치돼 있지 않습니다 — `npm ci` 가 이 게이트의 전제입니다."
+    )
+
+    _run_text(node, str(tsc), "-p", str(ROOT / "tsconfig.json"))
 
 
 def test_frontend_is_the_only_physical_source_tree() -> None:
@@ -472,14 +561,12 @@ def test_retired_compat_aliases_have_no_producer_and_no_reader() -> None:
         f"전역 스캐너의 눈이 어긋났습니다: {probe!r}"
     )
 
+    #: 공유 수집 집합(`.js`+`.ts`)을 소비한다 — 별칭의 생산·판독은 파일 형식을 가리지 않는다.
     sources = {
-        path.relative_to(SOURCE_ROOT).as_posix(): strip_js_comments(
-            path.read_text(encoding="utf-8")
-        )
-        for path in sorted(SOURCE_ROOT.rglob("*.js"))
+        name: strip_js_comments(text) for name, text in _frontend_sources().items()
     }
     #: 부재를 재기 전에 **실제로 읽었는가**를 먼저 잰다(계측 층의 부재판별력).
-    assert len(sources) >= 25, f"프런트 JS 를 {len(sources)}개만 읽었습니다 — 스캔이 헛돕니다."
+    assert len(sources) >= 25, f"프런트 소스를 {len(sources)}개만 읽었습니다 — 스캔이 헛돕니다."
 
     produced = {
         f"{name}:{alias}"
@@ -682,14 +769,16 @@ def test_entry_calls_the_composition_root_exactly_once() -> None:
     #: 정확한 줄 모양만 세면 `void bootProduct();`·`queueMicrotask(bootProduct)`
     #: 같은 두 번째 실행 경로가 위의 호출 수를 피한다. 합성 루트는 비멱등이므로
     #: 제품 소스 전체의 **식별자 참조 수**를 함께 못박는다: 정의 1 + import 1 + 호출 1.
+    #: 공유 수집 집합을 소비하므로 신설 `.ts` 의 참조도 같은 자격으로 계수에 든다 —
+    #: `.ts` 가 두 번째 실행 경로가 되는 모양을 여기서 막는다(rev3 §4.2-1).
     references = {
-        path.relative_to(SOURCE_ROOT).as_posix(): len(
+        name: len(
             re.findall(
                 rf"\b{re.escape(BOOTSTRAP_EXPORT)}\b",
-                strip_js_comments(path.read_text(encoding="utf-8")),
+                strip_js_comments(text),
             )
         )
-        for path in SOURCE_ROOT.rglob("*.js")
+        for name, text in _frontend_sources().items()
     }
     references = {name: count for name, count in references.items() if count}
     assert references == {"src/bootstrap.js": 1, "src/main.js": 2}, (
@@ -714,11 +803,38 @@ SELFTEST_API_PRODUCER = "src/selftest/api.js"
 
 
 def _frontend_sources() -> "dict[str, str]":
-    """``frontend/`` 아래 모든 JS 원본 — 주석까지 포함한 날 것."""
+    """``frontend/`` 아래 모든 JS·**TS** 원본 — 소스-축 술어 전부가 소비하는 단일 수집 집합.
+
+    확장은 **여기 한 곳**에서만 일어난다(rev3 §4.2-1). 낱개 술어가 각자 ``rglob("*.js")``
+    를 들면 새 파일 형식이 생길 때마다 「집합 하나를 넓히고 형제를 안 넓힌다」 결함류가
+    자란다 — 이 저장소가 네 번 밟은 자리이고, `.ts` 서브트리가 정적 음성 축 전체의
+    사각에서 자라는 것이 L16 B1 이 잡은 위험이었다. 그래서 열거 대신 집합을 넓혀,
+    다음 술어가 이 파일에 늘어도 `.ts` 를 자동으로 본다.
+    """
     return {
         path.relative_to(SOURCE_ROOT).as_posix(): path.read_text(encoding="utf-8")
-        for path in sorted(SOURCE_ROOT.rglob("*.js"))
+        for pattern in ("*.js", "*.ts")
+        for path in sorted(SOURCE_ROOT.rglob(pattern))
     }
+
+
+def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
+    """수집 집합의 부재판별력 — `.ts` 를 실제로 걷는다는 사실을 먼저 세운다.
+
+    이것이 없으면 아래 음성 술어들의 「위반 0」은 `.ts` 를 한 장도 안 읽은 초록과
+    구별되지 않는다(계측 층의 부재판별력).
+    """
+    sources = _frontend_sources()
+    ts_members = sorted(name for name in sources if name.endswith(".ts"))
+
+    assert ts_members == [
+        "src/react/boot.ts",
+        "src/react/boundary.ts",
+        "src/react/root.ts",
+    ], f"R2-01 의 `.ts` 서브트리 전수가 어긋납니다: {ts_members}"
+    assert len(sources) >= 40, (
+        f"프런트 소스를 {len(sources)}장만 읽었습니다 — 수집이 헛돕니다."
+    )
 
 
 def test_selftest_api_global_has_exactly_one_producer() -> None:
@@ -760,26 +876,177 @@ def test_selftest_api_global_has_exactly_one_producer() -> None:
     assert SELFTEST_API_GLOBAL != PRODUCT_API_GLOBAL
 
 
+#: 페이지 쪽에서 만들 수 있는 활성화 조건 — 시험 능력의 켜짐 경로가 되면 안 된다(#381).
+_PAGE_CONTROLLED_CONDITIONS = (
+    "location.search", "location.hash", "URLSearchParams", "document.cookie",
+)
+
+#: 빌드타임 분기 — 하나라도 있으면 "검사한 것"과 "출하한 것"이 갈릴 수 있다(D-07).
+_BUILD_TIME_BRANCHES = ("import.meta.env", "process.env", "__DEV__", "NODE_ENV")
+
+
+def _page_condition_offenders(sources: "dict[str, str]") -> "set[str]":
+    """페이지-제어 조건을 읽는 자리 — 공유 수집 집합 위의 순수 술어."""
+    return {
+        f"{name}:{needle}"
+        for name, text in sources.items()
+        for needle in _PAGE_CONTROLLED_CONDITIONS
+        if needle in strip_js_comments(text)
+    }
+
+
+def _build_branch_offenders(sources: "dict[str, str]") -> "set[str]":
+    """빌드타임 분기가 있는 자리 — 공유 수집 집합 위의 순수 술어."""
+    return {
+        f"{name}:{needle}"
+        for name, text in sources.items()
+        for needle in _BUILD_TIME_BRANCHES
+        if needle in strip_js_comments(text)
+    }
+
+
+def _bare_specifier_offenders(sources: "dict[str, str]") -> "list[str]":
+    """bare specifier 위반 전수 — ``.js`` 는 전부, ``.ts`` 는 핀 유도 허용 목록 밖만.
+
+    도달 그래프 순회와 달리 **파일 전수**를 평면으로 걷는다: 그래프에 아직 붙지 않은
+    파일도 위반을 품은 채 앉아 있을 수 없고, 술어가 순수해 합성 표본으로 판별력을 잴 수
+    있다(프로브 생존 검사). 도달성·순환은 그래프 순회 게이트가 따로 진다.
+    """
+    return [
+        f"{name} -> {spec}"
+        for name, text in sorted(sources.items())
+        for spec in module_imports(strip_js_comments(text))
+        if not spec.startswith(".")
+        and not spec.endswith(".css")
+        and not (name.endswith(".ts") and _ts_bare_allowed(spec))
+    ]
+
+
+def _reserved_global_producers(sources: "dict[str, str]") -> "set[tuple[str, str]]":
+    """``__hwpx`` 계열 예약 전역의 생산자 전수 — 대입이든 ``defineProperty`` 든.
+
+    별칭 게이트는 은퇴 목록 27 이름만, selftest 생산자 게이트는 ``__hwpxTest`` 만 겨눈다.
+    그 사이에 「`.ts` 가 같은 예약 이름을 재대입한다」와 「새 ``__hwpx*`` 이름을 만든다」가
+    사각으로 남는다 — 정적 층의 이 한 줄이 그 자리를 메우고, 런타임 후계는 live 왕복이
+    진다(rev3 착수 반영 ①).
+    """
+    producers: "set[tuple[str, str]]" = set()
+    for name, text in sources.items():
+        code = strip_js_comments(text)
+        for alias in re.findall(
+            r"(?m)(?:window|globalThis)\.(__hwpx[A-Za-z0-9_$]*)\s*=(?!=)", code
+        ):
+            producers.add((name, alias))
+        for match in re.findall(
+            r"defineProperty\([^,]+,\s*(?:SELFTEST_GLOBAL|[\"'](__hwpx[A-Za-z0-9_$]*)[\"'])",
+            code,
+        ):
+            producers.add((name, match or "__hwpxTest"))
+    return producers
+
+
 def test_selftest_activation_reads_no_page_controllable_condition() -> None:
     """URL 쿼리·해시·쿠키로 시험 능력을 켤 수 없다(#381 불변식).
 
     쿼리스트링·``location.hash``·쿠키는 전부 **페이지 쪽에서 만들 수 있는** 조건이다. 하나라도
     활성화 경로가 되면 "호스트가 이 창을 시험용으로 띄웠다"를 증명하지 못한다. 그래서 프런트
-    전체에서 그 판독이 **0**이어야 한다.
+    전체(`.js`+`.ts` 공유 수집 집합)에서 그 판독이 **0**이어야 한다.
 
     이것은 정적 절반이다("선언은 살고 결과는 죽는다") — 실제 창에서의 비노출은
     ``tests/test_web_selftest_gate.py`` 의 실런타임 음성이 진다.
     """
-    forbidden = ("location.search", "location.hash", "URLSearchParams", "document.cookie")
-    offenders = {
-        f"{name}:{needle}"
-        for name, text in _frontend_sources().items()
-        for needle in forbidden
-        if needle in strip_comments(text)
-    }
+    offenders = _page_condition_offenders(_frontend_sources())
+
     assert offenders == set(), (
         f"페이지가 만들 수 있는 조건을 읽는 자리가 있습니다: {sorted(offenders)}"
     )
+
+
+def test_reserved_global_family_has_exactly_the_two_known_producers() -> None:
+    """예약 이름(``__hwpx`` 계열)의 생산자는 정확히 둘 — 합성 루트와 selftest api 뿐이다."""
+    producers = _reserved_global_producers(_frontend_sources())
+
+    assert producers == {
+        ("src/bootstrap.js", PRODUCT_API_GLOBAL),
+        ("src/selftest/api.js", SELFTEST_API_GLOBAL),
+    }, f"예약 전역 생산자 전수가 어긋납니다: {sorted(producers)}"
+
+
+def test_bare_specifiers_are_closed_over_the_whole_source_set() -> None:
+    """bare specifier 폐포 — ``.js`` 는 0, ``.ts`` 는 핀 유도 허용 목록 안뿐이다."""
+    offenders = _bare_specifier_offenders(_frontend_sources())
+
+    assert offenders == [], f"허용 밖 bare specifier 가 있습니다: {offenders}"
+
+
+def test_the_react_subtree_holds_no_edge_into_the_legacy_graph() -> None:
+    """Vanilla fallback 부재의 정적 절반 — `.ts` 서브트리에서 legacy 로 가는 간선이 0 이다.
+
+    fallback 은 코드 경로가 있어야 성립한다. React 모듈이 legacy 트리(``frontend/js/**``)를
+    import 하지도, legacy 화면 루트를 DOM 으로 붙들지도 않으면 「React 실패 시 Vanilla 복귀」
+    는 구조적으로 불가능하다(#405 불변식 — 부팅 실패를 폴백으로 숨기지 않는다). 실패의
+    착지는 경보 경로 하나이고, 그 경로의 실거동은 node 게이트(react_root.test.js)가 진다.
+    """
+    ts_sources = {
+        name: strip_js_comments(text)
+        for name, text in _frontend_sources().items()
+        if name.endswith(".ts")
+    }
+    assert ts_sources, "`.ts` 서브트리를 한 장도 못 읽었습니다 — 아래 0건이 공허합니다."
+
+    legacy_imports = {
+        f"{name} -> {spec}"
+        for name, text in ts_sources.items()
+        for spec in module_imports(text)
+        if spec.startswith(".") and "/js/" in spec
+    }
+    assert legacy_imports == set(), (
+        f"React 서브트리가 legacy 모듈을 import 합니다: {sorted(legacy_imports)}"
+    )
+
+    legacy_surfaces = {
+        f"{name}:{needle}"
+        for name, text in ts_sources.items()
+        for needle in ("scr-library", "scr-job", "scr-editor", "scr-workbench", "overlayRoot")
+        if needle in text
+    }
+    assert legacy_surfaces == set(), (
+        f"React 서브트리가 legacy 화면 루트를 붙듭니다: {sorted(legacy_surfaces)}"
+    )
+
+
+def test_the_extended_scan_predicates_bite_a_synthetic_ts_probe() -> None:
+    """프로브 생존 — 합성 ``.ts`` 표본에 각 술어가 실제로 문다(rev3 §4.2-1·§7).
+
+    확장이 선언으로만 살고 결과가 죽는 모양(스캔은 넓혔는데 술어가 안 무는 상태)을 여기서
+    막는다. 표본은 실파일이 아니라 값이다 — 다음 사람의 작업트리를 위협하지 않는다.
+    """
+    probe = {
+        "src/react/zz_probe.ts": (
+            'import "left-pad";\n'
+            'import { createRoot } from "react-dom/client";\n'
+            "const q = location.search;\n"
+            "const env = import.meta.env;\n"
+            "void bootProduct();\n"
+            'window.__hwpx = {};\n'
+            'Object.defineProperty(window, "__hwpxProbe", { value: 1 });\n'
+        ),
+    }
+
+    assert _bare_specifier_offenders(probe) == ["src/react/zz_probe.ts -> left-pad"], (
+        "핀 유도 허용 목록이 미선언 지정자를 놓치거나 선언 의존을 물었습니다."
+    )
+    assert _page_condition_offenders(probe) == {"src/react/zz_probe.ts:location.search"}
+    assert _build_branch_offenders(probe) == {"src/react/zz_probe.ts:import.meta.env"}
+    assert _reserved_global_producers(probe) == {
+        ("src/react/zz_probe.ts", "__hwpx"),
+        ("src/react/zz_probe.ts", "__hwpxProbe"),
+    }
+    #: 합성 루트 참조 핀도 같은 표본을 문다 — `.ts` 의 두 번째 실행 경로 차단이 실재한다.
+    assert len(
+        re.findall(rf"\b{re.escape(BOOTSTRAP_EXPORT)}\b",
+                   strip_js_comments(probe["src/react/zz_probe.ts"]))
+    ) == 1
 
 
 def test_one_build_entry_and_no_build_time_branch() -> None:
@@ -800,13 +1067,7 @@ def test_one_build_entry_and_no_build_time_branch() -> None:
                          SOURCE_INDEX.read_text(encoding="utf-8"))
     assert scripts == ['<script type="module" src="./src/main.js"></script>']
 
-    branches = ("import.meta.env", "process.env", "__DEV__", "NODE_ENV")
-    offenders = {
-        f"{name}:{needle}"
-        for name, text in _frontend_sources().items()
-        for needle in branches
-        if needle in strip_comments(text)
-    }
+    offenders = _build_branch_offenders(_frontend_sources())
     assert offenders == set(), (
         f"빌드타임 분기가 있습니다: {sorted(offenders)} — 시험용 산출물이 갈릴 수 있습니다."
     )
@@ -838,17 +1099,34 @@ def test_whole_frontend_graph_from_the_entry_has_no_cycles_and_no_bare_specifier
         seen[node] = 1
         visited.add(node)
         path = SOURCE_ROOT / node
-        if path.suffix == ".js" and path.is_file():
+        #: `.ts` 도 간선 방문만 하고 내부를 안 읽으면 그 서브트리는 게이트의 사각에서
+        #: 자란다(L16 B1 — rev1 은 「충돌」로 반대로 적었던 자리다). 같은 술어로 걷는다.
+        if path.suffix in (".js", ".ts") and path.is_file():
             for spec in module_imports(path.read_text(encoding="utf-8")):
                 if spec.startswith("."):
                     visit(normpath(join(dirname(node), spec)), (*trail, node))
-                elif not spec.startswith("../css/") and not spec.endswith(".css"):
+                elif spec.startswith("../css/") or spec.endswith(".css"):
+                    continue
+                elif path.suffix == ".ts" and _ts_bare_allowed(spec):
+                    #: 빌드가 해소하는 **핀된** 의존 — `.ts` 에만 열린 문이다. `.js` 는
+                    #: 여전히 bare 0 이라 legacy 25 가 React 를 직접 싣는 경로가 없다.
+                    continue
+                else:
                     bare.append(f"{node} -> {spec}")
         seen[node] = 2
 
     visit(entry, ())
 
     assert bare == [], f"외부 지정자가 있습니다: {bare}"
+
+    #: React root 모듈 셋이 **실제로** 제품 그래프에 붙어 있다 — 배선이 끊겨도 "순환 0"은
+    #: 여전히 초록이므로, selftest 와 같은 논거로 도달 사실을 따로 단언한다(R2-01).
+    reached_react = sorted(n for n in visited if n.startswith("src/react/"))
+    assert reached_react == [
+        "src/react/boot.ts",
+        "src/react/boundary.ts",
+        "src/react/root.ts",
+    ], f"React root 모듈이 제품 그래프에 닿지 않습니다: {reached_react}"
 
     #: selftest 모듈이 **실제로** 그래프에 붙어 있다 — N-08 의 inert 상태가 끝났다는 실행 증거.
     #: 이 단언이 없으면 배선이 끊겨도 "순환 0"은 여전히 초록이다.

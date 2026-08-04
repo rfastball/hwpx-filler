@@ -64,8 +64,48 @@ _ABSOLUTE_ASSET_RE = re.compile(
     """
 )
 _FILE_URL_RE = re.compile(r"(?i)\bfile:(?://)?")
-_EXTERNAL_URL_RE = re.compile(r"(?i)\bhttps?://")
+#: 외부 URL **토큰** — 스킴부터 토큰 끝(공백·따옴표·괄호·역슬래시)까지 한 번에 잡는다.
+#: 토큰 전체를 대조해야 정확 열거 항목이 ``…/svg.evil.example`` 같은 연장으로 허용을
+#: 훔치지 못한다.
+_EXTERNAL_URL_RE = re.compile(r"(?i)\bhttps?://[^\s\"'`<>()\\]*")
 _VITE_CLIENT_RE = re.compile(r"(?i)(?:/@vite/client|@vite/client)")
+#: 산출물 텍스트에 존재해도 오프라인 부팅 계약(ADR-07)을 깨지 않는 **불활성** URL 전수
+#: (R2-01 · #405 실측). XML 네임스페이스 식별자 넷은 React 가 ``createElementNS`` 의
+#: 이름 인자로 쓰는 런타임 상수라 어떤 로더도 fetch 하지 않고, ``react.dev/errors`` 는
+#: 프로덕션 오류 **메시지 본문**의 문서 링크다. 금지의 과녁은 외부 자원 *로드*이지 문자열
+#: 등장이 아니다 — 무맥락 전면 금지는 프레임워크 번들 전부를 거짓 빨강으로 만든다.
+#:
+#: 면제는 **``.js`` 번들 텍스트에만** 선다. HTML·CSS 의 외부 URL 은 등장 자체가 로딩
+#: 맥락(``src``·``href``·``url()``)일 개연성이 지배적이라 전면 금지를 유지한다 — 텍스트만
+#: 보고 소비 맥락을 안 보면 ``<script src="http://www.w3.org/2000/svg">`` 가 면제를
+#: 훔친다(#484 Codex P2). 실측 모집단 5종 20회는 전부 JS 문자열이다.
+#:
+#: 이 열거 밖의 ``http(s)://`` 는 여전히 전부 거절이다(fail-closed 불변). 넓힐 때는
+#: 「그 URL 을 소비하는 로더가 산출물 안에 있는가」를 먼저 반증한다.
+_INERT_OUTPUT_URLS = frozenset(
+    {
+        "http://www.w3.org/1999/xlink",
+        "http://www.w3.org/2000/svg",
+        "http://www.w3.org/XML/1998/namespace",
+        "http://www.w3.org/1998/Math/MathML",
+    }
+)
+_INERT_OUTPUT_URL_PREFIX = "https://react.dev/errors/"
+
+
+def _external_url_offenders(text: str, *, allow_inert: bool) -> "list[str]":
+    """외부 URL 토큰 위반 전수 — ``allow_inert`` 는 ``.js`` 번들에만 참이다."""
+    return [
+        token
+        for token in _EXTERNAL_URL_RE.findall(text)
+        if not (
+            allow_inert
+            and (
+                token in _INERT_OUTPUT_URLS
+                or token.startswith(_INERT_OUTPUT_URL_PREFIX)
+            )
+        )
+    ]
 
 
 class WebArtifactViolation(RuntimeError):
@@ -440,7 +480,6 @@ def _validate_output_references(
         ("Vite dev client", _VITE_CLIENT_RE),
         ("absolute /assets URL", _ABSOLUTE_ASSET_RE),
         ("file: URL", _FILE_URL_RE),
-        ("external HTTP(S) resource", _EXTERNAL_URL_RE),
     )
     for record in records:
         path = artifact_root / PurePosixPath(record.path)
@@ -457,6 +496,17 @@ def _validate_output_references(
                 raise WebArtifactViolation(
                     f"forbidden {label} in web artifact: {record.path}"
                 )
+        #: 외부 URL 만은 무맥락 검색이 아니라 토큰 대조다 — `.js` 번들에서만 불활성
+        #: 열거(선언 곁 주석 참조)를 감산하고 나머지는 전부 거절한다. 실패 문안이 첫 위반
+        #: 토큰을 지목해 원인 판독이 재빌드 없이 선다.
+        external = _external_url_offenders(
+            text, allow_inert=path.suffix.lower() == ".js"
+        )
+        if external:
+            raise WebArtifactViolation(
+                "forbidden external HTTP(S) resource in web artifact: "
+                f"{record.path} ({external[0]})"
+            )
 
 
 def _assert_exact_keys(
