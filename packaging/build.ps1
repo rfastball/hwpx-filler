@@ -433,8 +433,8 @@ foreach ($key in $plan) {
             $responsibilities = @(
                 $evidence.PSObject.Properties.Name | Where-Object { $_ -ne 'runtime' }
             )
-            if ($responsibilities.Count -ne 42) {
-                throw "기존 selftest responsibility 수 불일치: $($responsibilities.Count) != 42"
+            if ($responsibilities.Count -ne 43) {
+                throw "기존 selftest responsibility 수 불일치: $($responsibilities.Count) != 43"
             }
             $falseResponsibilities = @(
                 foreach ($name in $responsibilities) {
@@ -446,6 +446,23 @@ foreach ($key in $plan) {
                 throw (
                     'packaged selftest top-level boolean false 책임이 있습니다: ' +
                     ($falseResponsibilities -join ', ')
+                )
+            }
+            # React 실런타임 마커(R2-04 · #408) — 동결 exe 오프라인 국면에서 React 가 실제로
+            # 커밋했고 store 신호가 서 있다는 형상 단언. 값의 크기(0/양수)는 4국면 live
+            # 게이트 소유라 여기서 겸하지 않는다.
+            $reactRuntime = $evidence.react_runtime
+            if ($null -eq $reactRuntime) {
+                throw 'packaged selftest 에 react_runtime 증거가 없습니다.'
+            }
+            if (
+                $reactRuntime.mounted -ne '1' -or
+                $reactRuntime.store_rev -notmatch '^[0-9]+$' -or
+                $reactRuntime.roots -ne 1
+            ) {
+                throw (
+                    'packaged WebView2 의 React 실런타임 마커가 계약과 다릅니다: ' +
+                    ($reactRuntime | ConvertTo-Json -Compress)
                 )
             }
             if ($evidence.url -notmatch '^http://127\.0\.0\.1:\d+/index\.html$') {

@@ -78,7 +78,7 @@ covers = []
 [[excluded_axes]]
 axis = "selftest_frontend_surface"
 reason = """
-`frontend/src/selftest/**` 9파일. 제품 그래프가 아니다 — 합성 루트가 import 하지 않고
+`frontend/src/selftest/**` 10파일. 제품 그래프가 아니다 — 합성 루트가 import 하지 않고
 `schema.js` 는 출하 번들에도 없다(고유 export 이름 4개가 번들에서 각각 0회). 그러나 같은 원장이
 innerHTML 83 · 리스너 123 · pywebview 36 alias 에서는 이 트리를 **명시 계상**하므로, 축에서만
 조용히 빠지면 한 원장이 같은 트리를 어떤 축에서는 세고 어떤 축에서는 침묵하게 된다.
@@ -90,12 +90,12 @@ covers = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
 probe = { kind = "node_extractor", name = "selftest_surface_sites" }
 scope = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"]
 unit = "구성 지점(`export function`) · 모듈 스코프 상태 · id 사이트를 한 목록으로 센다. 1건 = 1."
-current = 26
+current = 28
 # 내용만 세면 `export const probe = …` 만 든 모듈이 아무것도 안 보태 숫자가 안 움직인다 —
 # 그런데 `covers` 는 그 글롭 전체를 전수 피복에서 면제한다. 파일 수가 그 자리를 막는다.
-files = 9
-covers_note = "frontend/src/selftest/** 9파일"
-judgment = "오늘 23 + 1 + 2. 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
+files = 10
+covers_note = "frontend/src/selftest/** 10파일"
+judgment = "오늘 25 + 1 + 2(R2-04 클러스터 R `react_runtime.js` 의 구성 지점 2 편입). 이 표면이 자라면 제외가 붉는다 — 조용한 유예가 아니라 소리 나는 제외다."
 
 [[excluded_axes]]
 axis = "frontend_stylesheets"

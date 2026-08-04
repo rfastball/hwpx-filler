@@ -116,6 +116,30 @@
   재초기화 신품성을 되읽는다. 화면 selector 의 실물과 legacy 구독(`wired`/`seated`)의 후계
   지정은 R3+ 가 이 경계 위에 세운다 — 이 단계의 소비자는 StoreSignal 뿐이다.
 
+### 검증·동일 산출물·패키징 기반 접속 (R2-04 · #408)
+
+R2 가 세운 React 기반(root·계약·store)의 검증이 기존 행렬 — 동일 산출물·실 WebView2·오프라인
+패키징 — 에 공백 없이 연결되는 경계다. 새 러너·새 번들·새 창을 만들지 않는다.
+
+- **selftest 클러스터 R**(`frontend/src/selftest/probes/react_runtime.js`) 이 실창 문서에서
+  React 마커 셋을 판독한다: 커밋 마커 `data-react-mounted` == "1" · store 마커
+  `data-react-store-rev` 십진 문자열 · 마커 단 요소 정확 1(**마커 규율 census** — 마커를 심는
+  경로가 root.ts 하나뿐임의 재확인이지, 마커를 안 심는 날 `createRoot` 둘째 root 의 방어가
+  아니다). 위반은 프로브 throw 라 source 게이트(프로브 무오류 단언)와 packaged 판정
+  (`packaging/build.ps1` — 책임 수 43 + `react_runtime` 형상 단언, 오프라인 국면 소유)이
+  각자의 기존 경로로 붉는다. 값의 크기(0/양수) 단언은 4국면 live 게이트의 소유로 남는다.
+- **다중 root 의 실방어는 정적 층이다**: `react-dom/*` 결속은 `react/boot.ts` 하나로 핀,
+  날 `createRoot(` 호출 census 1(멤버-접근·정의는 세지 않는다), 합성 루트 factory
+  (`bootReactRoot`·`createSnapshotStore`) 착좌 census 각 1 — R2-00 불변식(다중 island 금지)의
+  기계 검사(`tests/test_frontend_build_graph.py`).
+- **봉인 입력에 tsconfig.json 이 편입됐다**(`web_artifact.py` `_SOURCE_CONFIG_PATHS`) — Vite 의
+  `.ts` 변환이 읽는 실빌드 입력이라 dirty 거부·source 레코드 양쪽에 닿는다. 봉인 외부 URL
+  술어의 불활성 열거(정확 4 + 접두 1, `.js` 한정 면제)는 R2-01 경계 개정 형상 그대로
+  **존치**한다 — 어느 URL 도 소비하는 로더가 산출물 안에 없다(재판정 완료, #408 패킷 §2.3).
+- **Vitest/jsdom·범용 JS/TS lint 는 이 단계에서 기각됐다** — DOM 수명주기의 실증은 실
+  WebView2 층이 이미 지고(마운트 커밋·reload 재초기화·store 4국면), jsdom 은 그보다 약한
+  둘째 오러클이다. 요구가 증명되는 시점(R3+ 화면 이관)의 재개방 사유는 #408 패킷 §4.5.
+
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
 Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름
