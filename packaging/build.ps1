@@ -455,9 +455,14 @@ foreach ($key in $plan) {
             if ($null -eq $reactRuntime) {
                 throw 'packaged selftest 에 react_runtime 증거가 없습니다.'
             }
+            # 형 가드가 먼저다 — PS 5.1 의 배열 LHS `-ne`/`-notmatch` 는 필터라 ["1"] 같은
+            # 배열이, 스칼라 강제 변환은 숫자 1 이 값 비교를 조용히 통과한다(L16 실증).
             if (
+                -not ($reactRuntime.mounted -is [string]) -or
                 $reactRuntime.mounted -ne '1' -or
+                -not ($reactRuntime.store_rev -is [string]) -or
                 $reactRuntime.store_rev -notmatch '^[0-9]+$' -or
+                -not ($reactRuntime.roots -is [int] -or $reactRuntime.roots -is [long]) -or
                 $reactRuntime.roots -ne 1
             ) {
                 throw (

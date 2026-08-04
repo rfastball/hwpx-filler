@@ -204,7 +204,7 @@ test("비-pytest 소유자 넷이 적혀 있다", () => {
   assert.equal(sites.length, 4);
   assert.ok(sites.some((s) => s.includes("build.ps1:436-437")));
   assert.ok(sites.some((s) => s.includes("build.ps1:439-450")));
-  assert.ok(sites.some((s) => s.includes("build.ps1:451-468")));
+  assert.ok(sites.some((s) => s.includes("build.ps1:451-472")));
   assert.ok(sites.some((s) => s.includes("test_web_runtime_artifact.py:55")));
   /* 넷째(캡처 하니스의 `_selftest_drive` 치환)는 N-11A 에서 pytest 소유로 옮겨갔다 —
      `tests/test_live_run_contract.py`. 원장에 남아 있으면 이미 없는 계약을 가리킨다. */

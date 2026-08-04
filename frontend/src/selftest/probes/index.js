@@ -1,4 +1,5 @@
-/* 프로브 묶음 레지스트리(N-08 중앙) — 네 묶음을 한 러너에 모으는 유일한 자리.
+/* 프로브 묶음 레지스트리(N-08 중앙) — 다섯 묶음(이관 4 + R2-04 신설 R)을 한 러너에
+   모으는 유일한 자리.
 
    각 묶음은 자기 파일 안에서만 완결이고, **묶음을 가로지르는 사실**은 어디에도 적힐 곳이
    없었다. 그 자리가 여기다.
@@ -113,17 +114,17 @@ export const CROSS_CLUSTER_EDGES = Object.freeze([
   }),
 ]);
 
-/** 네 묶음의 프로브 정의 전체 — 등록 없이 정의만 본다(순수). */
+/** 다섯 묶음의 프로브 정의 전체 — 등록 없이 정의만 본다(순수). */
 export function createAllProbes() {
   return CLUSTER_ORDER.flatMap((id) => PROBE_CLUSTERS[id].create());
 }
 
-/** 네 묶음의 키 전체 — 합집합이 아니라 **이어붙임**이다(겹침이 있으면 여기서 드러나야 한다). */
+/** 다섯 묶음의 키 전체 — 합집합이 아니라 **이어붙임**이다(겹침이 있으면 여기서 드러나야 한다). */
 export function allClusterKeys() {
   return CLUSTER_ORDER.flatMap((id) => [...PROBE_CLUSTERS[id].keys]);
 }
 
-/** 한 러너에 네 묶음을 모두 등록한다 — 묶음 간 간선도 여기서 얹는다. */
+/** 한 러너에 다섯 묶음을 모두 등록한다 — 묶음 간 간선도 여기서 얹는다. */
 export function registerAllProbes(runner) {
   const defs = createAllProbes();
   const names = new Set(defs.map((def) => def.name));

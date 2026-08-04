@@ -504,7 +504,7 @@ export const NON_PYTEST_OWNERS = Object.freeze([
     breaksIf: "어떤 책임이 false 로 떨어진다",
   }),
   Object.freeze({
-    site: "packaging/build.ps1:451-468",
+    site: "packaging/build.ps1:451-472",
     owns: "react_runtime 형상(mounted '1' · store_rev 십진 문자열 · roots 1)",
     breaksIf: "React 마커 계약이 바뀌거나 증거에서 빠진다",
   }),
