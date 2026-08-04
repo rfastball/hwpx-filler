@@ -13,7 +13,7 @@ G3   모든 ``file`` 이 **색인과 디스크 양쪽에** 실재하는가
 G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **다른 자산 행**인가
 G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언·죽은 멤버 차단)
-G7   그 축이 **파티션과 겹치지 않는가**(자산을 분모 밖으로 미는 우회 차단)
+G7   그 축이 **파티션·다른 축과 겹치지 않는가**(밀어내기 우회·이중 주장 차단)
 G8   ``tests/`` 아래에 트리도 축도 아닌 **침묵한 파일이 없는가**(선언 집합의 전수성)
 G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제로 침묵 복원 차단)
 G10  루트 추적 파일 전부가 트리·축·사슬 밖 선언 중 한 곳에 있는가(G8 의 루트 형제)
@@ -148,7 +148,11 @@ ALLOWED_AXIS_KEYS = frozenset({"id", "match", "reason", "owner_stage"})
 #: ``exact`` 는 루트 파일 열거 전용이다(G0 이 강제) — 열거는 좁힘·형제 누락이 나는 형식이라
 #: G10 폐포가 받아 주는 범위에서만 허용한다. 루트 밖 단일 파일은 ``file`` 이 든다: 멤버가
 #: 하나뿐이라 좁힘이 곧 삭제이고, 삭제는 G9 가 잡는다.
-AXIS_MATCH_KINDS = frozenset({"prefix", "root_suffix", "exact", "file"})
+#:
+#: ``root_suffix`` 는 **폐지**했다(초판 리뷰 P2) — 루트에서 유일하게 살아남은 계산 종류라,
+#: 새 루트 ``.ps1`` 이 폐포를 지나지 않고 기존 축의 사유 밑으로 조용히 편입됐다. 루트는
+#: 전부 열거(``exact``·``file``)이고, 비루트 subtree 주장만 계산(``prefix``)으로 남는다.
+AXIS_MATCH_KINDS = frozenset({"prefix", "exact", "file"})
 
 #: 선언이 **사라지는 것**을 막는 자리. G8 은 ``tests/`` 범위만 폐포로 답하므로 그 밖의 축은
 #: 지워도 아무도 안 울고, 그러면 그 축이 닫으려던 사각이 조용히 되돌아온다 — 선언의 값은
@@ -398,8 +402,6 @@ def _axis_members(row: dict[str, Any], tracked: list[str]) -> set[str]:
     kind, value = match.get("kind"), match.get("value")
     if kind == "prefix":
         return {p for p in tracked if p.startswith(str(value))}
-    if kind == "root_suffix":
-        return {p for p in tracked if "/" not in p and p.endswith(str(value))}
     if kind == "exact":
         wanted = set(value or ())
         return {p for p in tracked if p in wanted}
@@ -414,10 +416,9 @@ def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
     「분모가 이만큼을 안 본다」는 선언은 그 이만큼이 실재할 때만 정직하다. 경로가 개명되면
     선언은 조용히 아무것도 안 가리키게 되고, 그때 이 절은 **없는 사각을 사과하는 산문**이 된다.
 
-    계산 종류(``prefix``·``root_suffix``)는 죽으면 멤버가 0 이 되어 앞 문단이 잡는다. 열거
-    종류(``exact``·``file``)는 다르다 — 멤버 하나가 개명돼도 형제가 축을 살려 두므로, 죽은
-    멤버는 「선언은 서 있는데 실질이 줄어드는」 길이 된다(F1 의 이웃). 그래서 멤버 단위로도
-    묻는다.
+    계산 종류(``prefix``)는 죽으면 멤버가 0 이 되어 앞 문단이 잡는다. 열거 종류(``exact``·
+    ``file``)는 다르다 — 멤버 하나가 개명돼도 형제가 축을 살려 두므로, 죽은 멤버는 「선언은
+    서 있는데 실질이 줄어드는」 길이 된다(F1 의 이웃). 그래서 멤버 단위로도 묻는다.
     """
     tracked_set = set(tracked)
     problems: list[str] = []
@@ -510,18 +511,32 @@ def g10_root_files_are_fully_accounted(
 def g7_axes_stay_outside_the_partition(
     document: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> list[str]:
-    """축이 **파티션과 겹치지 않는가**.
+    """축이 **파티션과 겹치지 않는가** — 그리고 **축끼리도 같은 파일을 주장하지 않는가**.
 
-    겹치면 같은 파일이 「행이 있다」와 「분모 밖이다」를 동시에 주장한다. G1 이 파티션 *안쪽*의
-    폐포를 지킨다면 이것은 그 **바깥 경계**를 지킨다 — 축을 넓혀 자산을 분모 밖으로 밀어내는
-    우회가 이 자리로 들어온다.
+    파티션과 겹치면 같은 파일이 「행이 있다」와 「분모 밖이다」를 동시에 주장한다. G1 이
+    파티션 *안쪽*의 폐포를 지킨다면 이것은 그 **바깥 경계**를 지킨다 — 축을 넓혀 자산을
+    분모 밖으로 밀어내는 우회가 이 자리로 들어온다.
+
+    축끼리의 겹침도 같은 모순이다(초판 리뷰 P2) — 원장은 「정확히 한 곳」을 선언하는데,
+    두 축이 한 파일을 들면 서로 다른 사유·인계선(``owner_stage``)이 그 파일을 동시에
+    주장하면서 합집합 뒤에 숨는다. 선언이 살고 결과가 죽는 자리라 여기서 잰다.
     """
     covered = tree | set(_asset_files(document)) | set(_excluded_files(document))
     problems: list[str] = []
+    claimed: dict[str, str] = {}
     for row in document.get("excluded_axis", []):
-        overlap = sorted(_axis_members(row, tracked) & covered)
+        members = _axis_members(row, tracked)
+        overlap = sorted(members & covered)
         if overlap:
             problems.append(f"excluded_axis {row.get('id')!r}: 파티션과 겹친다 -> {overlap}")
+        axis_id = str(row.get("id"))
+        for path in sorted(members):
+            if path in claimed:
+                problems.append(
+                    f"두 축이 같은 파일을 주장한다: {path} ({claimed[path]!r}, {axis_id!r})"
+                )
+            else:
+                claimed[path] = axis_id
     return problems
 
 
@@ -976,16 +991,20 @@ def test_n17_narrowing_an_exact_axis_is_caught(
     assert any(".node-version" in problem for problem in problems), problems
 
 
+@pytest.mark.parametrize("newcomer", ["tsconfig.json", "cleanup.ps1"])
 def test_n18_a_new_root_file_demands_classification(
-    ledger: dict[str, Any], tracked: list[str], tree: set[str]
+    ledger: dict[str, Any], tracked: list[str], tree: set[str], newcomer: str
 ) -> None:
     """R2 가 루트에 파일을 더하는 순간의 형상 — 분류 없이는 초록이 없다.
 
     F2 를 미래형으로 죽이는 대조다: 형제 누락은 기억의 문제였고, 이제 저장소가 답한다.
     원장은 안 건드리고 색인 목록에만 미래의 파일을 더해 그 형상을 만든다.
+
+    ``.ps1`` 표본이 두 번째로 선 이유(초판 리뷰 P2): ``root-runners`` 가 접미 계산이던
+    판에서는 새 루트 러너가 이 문을 지나지 않고 그 축의 사유 밑으로 조용히 편입됐다.
     """
-    problems = g10_root_files_are_fully_accounted(ledger, [*tracked, "tsconfig.json"], tree)
-    assert any("tsconfig.json" in problem for problem in problems), problems
+    problems = g10_root_files_are_fully_accounted(ledger, [*tracked, newcomer], tree)
+    assert any(newcomer in problem for problem in problems), problems
 
 
 def test_n19_claiming_chain_and_non_chain_at_once_is_caught(
@@ -1050,3 +1069,17 @@ def test_n24_a_file_axis_pointing_nowhere_is_caught(
     axis["match"]["value"] = "docs/renamed_floors.toml"
     problems = g6_axes_are_live(mutable, tracked)
     assert any("coverage-floors" in problem for problem in problems), problems
+
+
+def test_n25_two_axes_claiming_the_same_file_are_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """한 파일을 두 축이 들면 「정확히 한 곳」이 깨진다 — 합집합 뒤에 숨는 모순을 편다.
+
+    각 축은 살아 있고(G6) 파티션 밖이라(G7 첫 검사) 종전에는 아무도 안 물었다(초판 리뷰
+    P2). 서로 다른 사유·인계선이 같은 파일을 주장하는 상태는 조용히 지나갈 수 없다.
+    """
+    axis = _axis_by_id(mutable, "quality-config")
+    axis["match"]["value"] = [*axis["match"]["value"], ".npmrc"]
+    problems = g7_axes_stay_outside_the_partition(mutable, tracked, tree)
+    assert any(".npmrc" in problem and "두 축" in problem for problem in problems), problems

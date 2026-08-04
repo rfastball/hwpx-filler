@@ -736,8 +736,14 @@ owner_stage = "R5-02"
 
 [[excluded_axis]]
 id = "root-runners"
-match = { kind = "root_suffix", value = ".ps1" }
-reason = "게이트 러너·프런트 빌드 러너·설치본 패키저. 검증을 실행하는 층인데 검증 대상 목록에는 없다."
+match = { kind = "exact", value = [
+  "build-web.ps1",
+  "build.ps1",
+  "package-installer.ps1",
+  "run-filler.ps1",
+  "test.ps1",
+] }
+reason = "게이트 러너·프런트 빌드 러너·설치본 패키저. 검증을 실행하는 층인데 검증 대상 목록에는 없다. 접미(root_suffix)로 계산하지 않고 열거한다 — 계산 종류는 새 루트 러너를 추측으로 조용히 편입시켜 폐포의 「분류 요구」를 깬다."
 owner_stage = "R5-02"
 
 [[excluded_axis]]
