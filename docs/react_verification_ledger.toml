@@ -79,6 +79,11 @@ responsibility = "#402 소유권 인벤토리 원장의 재실측기"
 owner_stage = "R5-02"
 
 [[asset]]
+file = "scripts/classify_webview_evidence.py"
+responsibility = "packaged WebView2 selftest 증거의 환경/제품 실패 판별 — 콜드 부팅 재시도 허가의 유일한 술어"
+owner_stage = "R5-03"
+
+[[asset]]
 file = "scripts/extract_js_ast_axes.mjs"
 responsibility = "프런트 JS 소유권 두 축의 유일한 AST 추출기"
 owner_stage = "R5-02"

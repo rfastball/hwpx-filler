@@ -254,17 +254,57 @@ foreach ($key in $plan) {
             & $setWebViewNetworkArguments (
                 "--proxy-server=http://127.0.0.1:$proxyPort"
             )
-            $networkControlStartedAt = Get-Date
-            $networkControl = Start-Process -FilePath $exe -Wait -PassThru `
-                -ArgumentList @('--selftest')
-            if ($networkControl.ExitCode -ne 0) {
-                throw "packaged WebView2 외부망 양성 대조 실패(exit $($networkControl.ExitCode))"
+            # 콜드 부팅 실패(환경)만 유한 재시도한다(#477). 판별은 Python 판별기가 소유하고
+            # (scripts\classify_webview_evidence.py — 음성 대조가 붙는 유일한 자리), 제품
+            # 증거가 있는 실패는 어떤 경우에도 재시도되지 않는다 — quality.yml 의 「제품
+            # 단언은 재시도하지 않는다」 계약을 이 분류가 보존한다. 시도마다 홈·증거·proxy
+            # 관측 잔재를 지운다: 앞 시도의 잔재가 이번 시도의 양성 대조를 오염시키면
+            # proxy_observed 가 부팅 없이 참이 되는 길이 열린다.
+            $classifyScript = Join-Path $root 'scripts\classify_webview_evidence.py'
+            $bootRetryLimit = 3
+            $bootFlakeErrors = @()
+            for ($bootAttempt = 1; $bootAttempt -le $bootRetryLimit; $bootAttempt++) {
+                foreach ($stale in @($networkControlOut, $proxyHitOut)) {
+                    if (Test-Path -LiteralPath $stale -PathType Leaf) {
+                        Remove-Item -LiteralPath $stale -Force
+                    }
+                }
+                if (Test-Path -LiteralPath $env:HWPXFILLER_HOME -PathType Container) {
+                    Remove-Item -LiteralPath $env:HWPXFILLER_HOME -Recurse -Force
+                }
+                $networkControlStartedAt = Get-Date
+                $networkControl = Start-Process -FilePath $exe -Wait -PassThru `
+                    -ArgumentList @('--selftest')
+                if ($networkControl.ExitCode -ne 0) {
+                    throw "packaged WebView2 외부망 양성 대조 실패(exit $($networkControl.ExitCode))"
+                }
+                if (-not (Test-Path -LiteralPath $networkControlOut -PathType Leaf)) {
+                    throw "packaged WebView2 외부망 양성 대조 증거 누락: $networkControlOut"
+                }
+                $networkEvidence = Get-Content -LiteralPath $networkControlOut -Raw -Encoding UTF8 |
+                    ConvertFrom-Json
+                if (-not ($networkEvidence.PSObject.Properties.Name -contains 'error')) {
+                    break
+                }
+                & $pythonExe $classifyScript $networkControlOut | Write-Host
+                if ($LASTEXITCODE -ne 0) {
+                    # 제품 증거가 있거나 환경 서명 밖이거나 판정 불능 — 재시도 없이 아래 본
+                    # 검증이 종전 문장으로 시끄럽게 던진다.
+                    break
+                }
+                $bootFlakeErrors += [string]$networkEvidence.error
+                $flakeLine = 'webview_boot_flake attempt={0}/{1} error={2}' -f `
+                    $bootAttempt, $bootRetryLimit, $networkEvidence.error
+                Write-Host $flakeLine
+                if ($bootAttempt -eq $bootRetryLimit) {
+                    throw (
+                        "packaged WebView2 콜드 부팅이 환경 판정으로 $bootRetryLimit" +
+                        '회 연속 실패했습니다 — 임계 도달은 조용한 재시도가 아니라 그 자체가 ' +
+                        '결함으로 올라갑니다(#477). 시도별 오류: ' +
+                        ($bootFlakeErrors -join ' | ')
+                    )
+                }
             }
-            if (-not (Test-Path -LiteralPath $networkControlOut -PathType Leaf)) {
-                throw "packaged WebView2 외부망 양성 대조 증거 누락: $networkControlOut"
-            }
-            $networkEvidence = Get-Content -LiteralPath $networkControlOut -Raw -Encoding UTF8 |
-                ConvertFrom-Json
             $proxyObserved = Test-Path -LiteralPath $proxyHitOut -PathType Leaf
             $proxyHitDiagnostic = $null
             $proxyHitParseFailed = $false
@@ -298,6 +338,8 @@ foreach ($key in $plan) {
                 policy_browser_arguments = $policyBrowserArguments
                 control_elapsed_ms = [int]((Get-Date) - $networkControlStartedAt).TotalMilliseconds
                 control_exit_code = $networkControl.ExitCode
+                boot_flake_attempts = $bootAttempt
+                boot_flake_errors = $bootFlakeErrors
                 evidence_error_present = (
                     $networkEvidence.PSObject.Properties.Name -contains 'error'
                 )
