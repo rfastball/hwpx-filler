@@ -1,5 +1,9 @@
-"""네이티브 다이얼로그 재유입 방지 가드(#86, R-flow 부록 B-2) — ``frontend/js`` 에서
+"""네이티브 다이얼로그 재유입 방지 가드(#86, R-flow 부록 B-2) — 프런트 코드 전수에서
 ``window.confirm``·``window.prompt`` 검출 금지.
+
+수집은 ``frontend/js`` `.js` 열거가 아니라 **frontend 전수 − 정적 폐포 계약의 감산 목록**
+이다(#490 — `.ts`/React 층이 이 그물 밖에서 자라던 사각을 형식으로 닫는다. #410 READY
+기록이 지목한 인접 그물).
 
 네이티브 ``confirm`` 은 Enter-반사로 파괴 동작이 무의식 통과되는 결함 클래스(F7)라, 확인은
 공유 ``Modal.confirm``/``Modal.prompt``(Promise 기반, 기본 포커스=취소·Escape=머무르기)로 전수
@@ -12,12 +16,22 @@
 """
 from __future__ import annotations
 
+import json
 import re
 
-from _web_source import REPO_ROOT, SOURCE_JS_DIR
+from _web_source import REPO_ROOT, SOURCE_ROOT
 
 ROOT = REPO_ROOT
-JS_FILES = sorted(SOURCE_JS_DIR.rglob("*.js"))
+_EXCLUDED_SUFFIXES = set(
+    json.loads(
+        (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+    )["non_code_suffixes"]
+)
+JS_FILES = sorted(
+    path
+    for path in SOURCE_ROOT.rglob("*")
+    if path.is_file() and path.suffix not in _EXCLUDED_SUFFIXES
+)
 
 # window.alert 은 통지 성격이라 의도적으로 제외한다(별도 후속 검토).
 BANNED = ("window.confirm", "window.prompt")
