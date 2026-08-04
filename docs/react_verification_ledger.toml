@@ -299,6 +299,11 @@ responsibility = "runtime adapter 오류 변환 셋과 typed client 전송 표�
 owner_stage = "R2-02"
 
 [[asset]]
+file = "tests/js/state_store.test.js"
+responsibility = "스냅샷 store 계약 — 구독·해제·이중 해제 throw·당김 revision 가드·리스너 격리·hook 결속"
+owner_stage = "R2-03"
+
+[[asset]]
 file = "tests/js/segview.test.js"
 responsibility = "SegView 특성화 — ESM 전환의 안전망"
 owner_stage = "R4-02"
@@ -487,6 +492,11 @@ owner_stage = "R5-02"
 file = "tests/test_react_root_live.py"
 responsibility = "실 WebView2 React 커밋 마커 되읽기 — sealed artifact 자체 창 소비"
 owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/test_react_store_live.py"
+responsibility = "실 WebView2 store revision 마커 되읽기 — Python push 수신과 reload 재초기화 신품성"
+owner_stage = "R2-03"
 
 [[asset]]
 file = "tests/test_react_verification_ledger.py"

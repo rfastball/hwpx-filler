@@ -87,6 +87,35 @@
 - payload **값** 타입은 v1 계약에 없다(키 집합이 계약의 전부 — `unknown` 이 정직한 번역).
   selftest 계약은 제품 계약에 섞이지 않는다(오러클이 비혼합을 단언한다).
 
+### 상태·구독·selector 경계 — 스냅샷 store (R2-03 · #407)
+
+상태는 세 부류로 갈리고 소유가 다르다: **① Python 권위 상태**(링1 판정·게이트·문안 — 스냅샷
+으로 투영), **② frontend local draft**(아직 Python 에 커밋되지 않은 입력 — `pendingFieldEdit`
+류, 정산/폐기/되돌림 3출구), **③ ephemeral UI 상태**(열림·포커스·접힘 — 표시 전용). React 가
+①을 소비하는 유일한 store 경계가 `frontend/src/state/store.ts` 다.
+
+- **전송-충실이 계약이다.** store 는 도착한 스냅샷을 도착 순서로 보관할 뿐 값을 해석·병합
+  하지 않는다 — 부분 스냅샷(생성 진행 델타)의 해석은 소비 화면의 도메인이고, store 가
+  병합하면 두 번째 판정자가 된다. stale 3의미(사라진 세계의 요청 / 결과 강등 / 낡은 LAST
+  규율)·pending 2의미(미커밋 draft / 왕복 미결)·낙관 갱신의 기존 의미는 전부 기존 소유자에
+  남는다 — store 층은 어느 것도 재판정하지 않는다.
+- **배선은 브리지 채널(포트 하류)이다.** 합성 루트가 `contract.gen.ts` 화면 유니온에서 유도한
+  6채널 각각에 `bridge.onPush` 탭 하나를 건다 — selftest 프로브가 push 통로를 갈아끼우면
+  legacy render 와 store 가 **같은 세계**를 본다. 리스너 예외는 store 안에서 격리·경보되어
+  같은 채널 뒤의 legacy render 를 죽이지 않는다.
+- **구독은 해제 가능하고 채널별 subscribe 는 안정 참조다**(`useSyncExternalStore` 재구독 요동
+  방어). 이중 해제는 throw, unmount 뒤 listener 0 은 `listenerCount` 관측면과 node 계약이
+  잰다. React 결합은 `frontend/src/react/use_screen_snapshot.ts` 의 위임 하나다(외부 상태
+  라이브러리 채택이 아니다 — React 내장 API).
+- **당김 착지는 revision 가드를 진다**: `ingestPulled` 는 당김 시작 이후 push 가 착지한
+  채널에 낡은 결과를 덮지 않고 그 판정을 반환값으로 알린다(「등록 전 push 는 버려진다·
+  부팅은 initial 당김이 정본」의 store 판 번역).
+- **실물 증거**: React 트리의 StoreSignal 이 수신 총 revision 을 `#reactRoot` 의
+  `data-react-store-rev` 로 반영하고(기입 주체는 target 을 닫은 `boot.ts` 클로저 — 신호는
+  DOM 을 모른다), `tests/test_react_store_live.py` 가 실 WebView2 에서 push 수신과 reload
+  재초기화 신품성을 되읽는다. 화면 selector 의 실물과 legacy 구독(`wired`/`seated`)의 후계
+  지정은 R3+ 가 이 경계 위에 세운다 — 이 단계의 소비자는 StoreSignal 뿐이다.
+
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
 Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름

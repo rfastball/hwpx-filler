@@ -98,6 +98,7 @@ import { createPushPort } from "./push_port.js";
 import { bootReactRoot } from "./react/boot.ts";
 import { createRuntimeAdapter } from "./runtime/adapter.ts";
 import { createBridgeClient } from "./runtime/client.ts";
+import { createSnapshotStore } from "./state/store.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -107,7 +108,7 @@ import { bootSelftest } from "./selftest/boot.js";
  *  **호출자가 하나뿐이라는 사실**이 진다(`main.js` 한 줄, 정적 게이트가 그 유일성을 센다).
  *
  *  @returns {{bridge: object, pushPort: object, productApi: object, services: object,
- *    client: object}}
+ *    client: object, store: object}}
  *    구성 산물. entry 는 쓰지 않는다 — 합성 계약을 묻는 테스트의 관측면이다(머리말 참조).
  */
 export function bootProduct() {
@@ -123,6 +124,23 @@ export function bootProduct() {
      부르게 한다. 값으로 붙들면 프로브의 가로채기를 우회하고, 그 침묵이 배선 부재로 읽힌다
      (`push_port.js` 머리말 · N-07 #379 §5 에서 실제로 한 번 났다). */
   const pushPort = createPushPort(push);
+
+  /* 스냅샷 store (R2-03 · #407) — Python 권위 스냅샷의 전송-충실 보관소. React 소비의
+     유일한 store 경계이고, 여기서 **정확히 한 번** 구성된다(reload 시 재구성 = renderers
+     와 같은 수명). 탭은 **브리지 채널**(포트 하류)에 선다: selftest 프로브가 pushPort 를
+     `override` 로 갈아끼우면(mirror·reject) legacy render 와 store 가 **같은 세계**를
+     본다 — 파사드 처리기 옆에 탭을 두면 reject 중에도 store 만 갱신돼 두 소비자가 갈린다
+     (관측자 오염, N-07 #379 §5 결함류). 채널 목록은 생성 계약 유도라 손 목록이 없고,
+     `ingest` 는 안정 함수라 값으로 넘겨도 늦은 결속이 깨지지 않는다(리스너 예외는 store
+     안에서 격리·경보되므로 이 탭이 같은 채널 뒤 legacy render 를 죽이지 않는다).
+     `services` 에 싣지 않는 이유는 client 와 같다 — 그 표는 selftest 주입 계약(키 26 핀)
+     이고 store 는 시험 표면이 아니라 신규 제품 통로다. */
+  const store = createSnapshotStore({
+    alarm: (message) => console.error("[hwpx] snapshot store 리스너 실패", message),
+  });
+  for (const screen of store.channels) {
+    bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));
+  }
 
   /* late-bound 좌표 — 아래에서 구성되면 채워진다. 콜백이 지연 호출이라 선언만 먼저 선다. */
   let LibraryScreen;
@@ -295,6 +313,9 @@ export function bootProduct() {
       console.error("[hwpx] React root 부팅 실패", message);
       window.alert(message);
     },
+    /* R2-03 — 트리의 StoreSignal 이 이 store 를 구독한다. boot.ts 가 늦은 결속 슬롯으로
+       요소 factory 에 넘기므로 여기서는 객체째 한 번 건네면 된다. */
+    store,
   });
 
   /* typed bridge client (R2-02 · #406) — 여기서 **정확히 한 번** 구성된다. 소비자는 아직
@@ -304,5 +325,5 @@ export function bootProduct() {
      전역 판독은 호출 시점의 어댑터 몫이다. */
   const client = createBridgeClient({ adapter: createRuntimeAdapter({ win: window }) });
 
-  return { bridge, pushPort, productApi, services, client };
+  return { bridge, pushPort, productApi, services, client, store };
 }
