@@ -1094,6 +1094,20 @@ def test_react_root_and_store_are_single_sited() -> None:
         " 자리입니다. 정당한 확장이면 이 핀의 diff 가 그 등재입니다."
     )
 
+    #: ①-보강(#489 Codex P2): 결속의 **형태**도 잠근다 — named import 만. 이름공간(`* as`)·
+    #: 기본 결속이 허용 파일 안에 서면 `NS.createRoot(…)` 멤버-접근 호출이 census 의
+    #: 멤버-접근 제외를 정확히 타고 우회한다. 형태를 잠그면 「react-dom 에 결속된
+    #: 멤버-접근」이 존재할 수 없어, 그 제외(root.ts 주입 소비의 거짓 빨강 방어)가 안전하다.
+    for name, text in sorted(sources.items()):
+        for clause in re.findall(
+            r"import\s+([^;]*?)\s+from\s*[\"']react-dom(?:/[^\"']*)?[\"']",
+            strip_js_comments(text),
+        ):
+            assert re.fullmatch(r"(?:type\s+)?\{[^}]*\}", clause.strip()), (
+                f"{name} 의 react-dom import 가 named 형태가 아닙니다: {clause!r} — "
+                "이름공간·기본 결속은 멤버-접근 호출로 census 를 우회합니다."
+            )
+
     #: ② 날 `createRoot(` 호출은 boot.ts 의 주입 클로저 한 곳 — root.ts 의 멤버-접근
     #: 사용(deps.createRoot)은 결속이 아니라 주입의 소비라 세지 않는다.
     assert _invocation_census(sources, "createRoot") == {"src/react/boot.ts": 1}
@@ -1123,6 +1137,26 @@ def test_the_multi_root_census_bites_synthetic_probes() -> None:
     assert any(
         spec.startswith("react-dom")
         for spec in module_imports(strip_js_comments(island["src/react/zz_island.ts"]))
+    )
+
+    #: 무는 쪽 2(#489 Codex P2) — 이름공간 결속의 멤버-접근 호출. census 는 이것을 **못
+    #: 본다**(멤버-접근 제외) — 그 사실의 확인이, 형태 핀이 의무인 이유의 실증이다.
+    namespaced = {
+        "src/react/zz_ns.ts": (
+            'import * as ReactDOM from "react-dom/client";\n'
+            "export function seat(host: Element): void {\n"
+            "  ReactDOM.createRoot(host);\n"
+            "}\n"
+        ),
+    }
+    assert _invocation_census(namespaced, "createRoot") == {}
+    clauses = re.findall(
+        r"import\s+([^;]*?)\s+from\s*[\"']react-dom(?:/[^\"']*)?[\"']",
+        strip_js_comments(namespaced["src/react/zz_ns.ts"]),
+    )
+    assert clauses == ["* as ReactDOM"]
+    assert re.fullmatch(r"(?:type\s+)?\{[^}]*\}", clauses[0].strip()) is None, (
+        "형태 핀이 이름공간 결속을 통과시키면 census 우회가 열립니다."
     )
 
     #: 안 무는 쪽 — 정의와 멤버-접근 위장.
