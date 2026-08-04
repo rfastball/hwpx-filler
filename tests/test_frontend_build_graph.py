@@ -827,11 +827,15 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
     sources = _frontend_sources()
     ts_members = sorted(name for name in sources if name.endswith(".ts"))
 
+    #: 등재 지점 — 새 단계의 `.ts` 는 여기 행 추가로 편입된다(R2 패킷 §4.3 의 규정과 같다).
     assert ts_members == [
+        "src/contract/contract.gen.ts",  # R2-02 — 생성 계약(정본은 Python 실물)
         "src/react/boot.ts",
         "src/react/boundary.ts",
         "src/react/root.ts",
-    ], f"R2-01 의 `.ts` 서브트리 전수가 어긋납니다: {ts_members}"
+        "src/runtime/adapter.ts",  # R2-02 — pywebview 접촉의 유일한 신규 소유자
+        "src/runtime/client.ts",  # R2-02 — 생성 유니온으로 좁혀진 전송 표면
+    ], f"`.ts` 서브트리 전수가 어긋납니다: {ts_members}"
     assert len(sources) >= 40, (
         f"프런트 소스를 {len(sources)}장만 읽었습니다 — 수집이 헛돕니다."
     )

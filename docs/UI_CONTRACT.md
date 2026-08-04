@@ -48,14 +48,44 @@
   시트 적재(`load_data_sheet`),
   네이티브 X 닫기 확인의 처분 통보(`confirm_window_close`, `cancel_window_close` — N-07에서
   앱 셸이 `window.pywebview.api`를 직접 부르던 자리를 브리지 표면
-  `Bridge.confirmWindowClose()`/`cancelWindowClose()`로 옮겼다. 프런트에서
-  `window.pywebview.api`를 직접 조회하는 파일은 이제 `frontend/js/bridge.js` 하나다).
+  `Bridge.confirmWindowClose()`/`cancelWindowClose()`로 옮겼다).
+  전역 `pywebview`에 **닿는**(프로퍼티 접근 — 주입 별칭 `win.`·`ctx.win.` 포함) 파일의
+  실측 전수는 일곱이다: legacy 단일 백엔드 통로 `frontend/js/bridge.js`, 존재 판정 한 줄씩의
+  `js/app.js`·`js/screens/editor.js`, selftest 층 셋(`src/selftest/boot.js`·
+  `probes/boot_routing_overlay.js`·`probes/persistence_geometry.js`), 그리고 신규 통로의
+  유일한 소유자 `src/runtime/adapter.ts`(R2-02). 이 전수는
+  `tests/js/pywebview_allowlist.test.js`가 AST 술어 + 게이트 안 핀으로 양방향 대조한다 —
+  여덟 번째 파일이 전역에 닿으면 빨갛다.
   이 경로는 action registry **밖**이므로, 새 직접 메서드를
   추가하면 이 목록과 payload 검증 책임(메서드 본문)을 함께 갱신한다.
   `pick_data_file`/`load_data_sheet` 의 성사 반환은 **마운트 descriptor**
   (`{label, path, sheet, rows}` — U2 §2.7 3행)다: 데이터 선택 면이 닫히지 않고 「현재
   데이터」를 재진술하고 「이 데이터 고정」을 세우는 근거가 이 호출의 결과여야 한다(다음
   푸시 도착에 기대면 발신 순서 의존 — [[bridge-call-ordering-contract]] 결함류).
+
+### Python↔TypeScript 단일 계약과 typed bridge client (R2-02 · #406)
+
+위 두 경로의 어휘(화면×액션×payload 키·직접 메서드 24·프로토콜 v1 상수·오류 어휘·거절
+봉투)는 **Python 실물이 정본**이고, TypeScript 쪽은 생성물 하나로만 소비한다 — 같은 계약을
+두 언어에서 손으로 중복 유지하지 않는다.
+
+- **생성 사슬:** `scripts/gen_bridge_contract.py` 가 정본(`action_registry`·`product_api`·
+  `app.py` WebFrontend·`frontend/src/product_api.js` snake 어휘)을 추출해
+  `frontend/src/contract/contract.gen.ts` 를 찍는다. 생성물은 커밋되는 소스이고 손으로
+  고치지 않는다 — `tests/test_bridge_contract.py` 가 재생성 바이트 비교(드리프트)에 더해
+  **생성기와 코드를 공유하지 않는 독립 오러클**(Python 직접 import · `webapp.app` 런타임
+  리플렉션 · 독립 JS 판독)로 지키므로, 생성기가 정본을 오독하면 바이트 비교가 초록이어도
+  오러클이 빨갛다.
+- **runtime adapter:** `frontend/src/runtime/adapter.ts` — `window.pywebview` ready 대기·
+  호출·오류 변환의 유일한 신규 소유자. 변환 대상은 웹→Python 실패 셋뿐이다(dispatch 거절
+  봉투 → typed 오류·원문 보존 / `"ERROR:"` 문자열 규약 → typed 결과 / 메서드 부재 → loud
+  typed 오류). 그 밖의 실패는 감싸지 않고 그대로 던져진다.
+- **typed client:** `frontend/src/runtime/client.ts` — 화면·액션·메서드 이름이 생성 유니온으로
+  좁혀진 전송 표면. 합성 루트가 정확히 한 번 구성해 반환값으로 내고, 소비자는 R2-03+ 의
+  feature 다(legacy 화면 25는 계속 `bridge.js` 를 쓴다 — ADR-06). `close_guard_state` 는
+  웹 소비자 0 인 host-internal 로 **기록**되며 client 표면에 오르지 않는다.
+- payload **값** 타입은 v1 계약에 없다(키 집합이 계약의 전부 — `unknown` 이 정직한 번역).
+  selftest 계약은 제품 계약에 섞이지 않는다(오러클이 비혼합을 단언한다).
 
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 

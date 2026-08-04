@@ -96,6 +96,8 @@ import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
 import { createPushPort } from "./push_port.js";
 import { bootReactRoot } from "./react/boot.ts";
+import { createRuntimeAdapter } from "./runtime/adapter.ts";
+import { createBridgeClient } from "./runtime/client.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -104,7 +106,8 @@ import { bootSelftest } from "./selftest/boot.js";
  *  위임 리스너를 한 벌 더 붙이고 앱 셸이 랜딩을 다시 찍는다. 재호출 방지는 서비스가 아니라
  *  **호출자가 하나뿐이라는 사실**이 진다(`main.js` 한 줄, 정적 게이트가 그 유일성을 센다).
  *
- *  @returns {{bridge: object, pushPort: object, productApi: object, services: object}}
+ *  @returns {{bridge: object, pushPort: object, productApi: object, services: object,
+ *    client: object}}
  *    구성 산물. entry 는 쓰지 않는다 — 합성 계약을 묻는 테스트의 관측면이다(머리말 참조).
  */
 export function bootProduct() {
@@ -294,5 +297,12 @@ export function bootProduct() {
     },
   });
 
-  return { bridge, pushPort, productApi, services };
+  /* typed bridge client (R2-02 · #406) — 여기서 **정확히 한 번** 구성된다. 소비자는 아직
+     없다(R2-03+ 의 feature 가 이 주입을 이어받는다 — React root 가 빈 채로 먼저 선 것과
+     같은 기반 착지). `services` 에 싣지 않는 이유: 그 표는 selftest 주입 계약(키 전수
+     26 핀)이고, client 는 시험 표면이 아니라 신규 제품 통로다. 구성은 부작용이 없다 —
+     전역 판독은 호출 시점의 어댑터 몫이다. */
+  const client = createBridgeClient({ adapter: createRuntimeAdapter({ win: window }) });
+
+  return { bridge, pushPort, productApi, services, client };
 }

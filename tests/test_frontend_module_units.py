@@ -27,6 +27,10 @@ MODULE_TEST_DIR = Path(__file__).resolve().parent / "js"
 
 #: 잎 넷 + 합성 루트 + N-05 서비스 다섯 묶음 + N-06 화면·셸 다섯 묶음 + N-07 브리지·파사드
 #: 둘 + N-10 전역 위생. 파일이 사라지면 러너는 여전히 초록이므로 여기서 전수를 센다.
+#:
+#: **등재 지점 규정**(R2 패킷 §4.3 — #405·#406): 새 단계가 `.test.js` 를 더하며 이 집합에
+#: 행을 추가하는 것은 소유 침범이 아니라 **등재**다. 행 추가 + 단계 주석까지가 등재이고,
+#: 기존 행의 변경·삭제는 그 행 소유 단계의 몫이다.
 EXPECTED_TEST_FILES = {
     "bootstrap.test.js",
     "n10_global_hygiene.test.js",
@@ -60,6 +64,9 @@ EXPECTED_TEST_FILES = {
     "n09_push_port.test.js",
     # R2-01 — React root 상태기계(주입 기록자)와 요소 배선. 실 커밋 증거는 live 게이트.
     "react_root.test.js",
+    # R2-02 — runtime adapter/typed client 의 오류 변환 셋과 pywebview 접촉 allowlist.
+    "runtime_client.test.js",
+    "pywebview_allowlist.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

@@ -89,6 +89,11 @@ responsibility = "프런트 JS 소유권 두 축의 유일한 AST 추출기"
 owner_stage = "R5-02"
 
 [[asset]]
+file = "scripts/gen_bridge_contract.py"
+responsibility = "Python↔TS 브리지 계약의 정본 추출·생성물 재생성·드리프트 검사"
+owner_stage = "R2-02"
+
+[[asset]]
 file = "scripts/gen_design_tokens.py"
 responsibility = "디자인 토큰 단일 출처 → CSS 재생성·검증"
 owner_stage = "R3-03"
@@ -279,9 +284,19 @@ responsibility = "제품이 만드는 창 전역이 정확히 셋이라는 정�
 owner_stage = "R5-02"
 
 [[asset]]
+file = "tests/js/pywebview_allowlist.test.js"
+responsibility = "전역 pywebview 접촉 파일 전수의 AST allowlist — 주입 별칭 포함 양방향 핀"
+owner_stage = "R2-02"
+
+[[asset]]
 file = "tests/js/react_root.test.js"
 responsibility = "React root 상태기계(주입 기록자) — 요청 1회·커밋-키 가드·unmount 정산"
 owner_stage = "R2-01"
+
+[[asset]]
+file = "tests/js/runtime_client.test.js"
+responsibility = "runtime adapter 오류 변환 셋과 typed client 전송 표면의 단위 계약"
+owner_stage = "R2-02"
 
 [[asset]]
 file = "tests/js/segview.test.js"
@@ -302,6 +317,11 @@ owner_stage = "R3-02"
 file = "tests/test_branding.py"
 responsibility = "사용자 노출 제품명과 기술 식별자의 국경"
 owner_stage = "R3-03"
+
+[[asset]]
+file = "tests/test_bridge_contract.py"
+responsibility = "Python↔TS 계약 생성물의 드리프트 게이트와 생성기 비경유 독립 오러클"
+owner_stage = "R2-02"
 
 [[asset]]
 file = "tests/test_build_metadata.py"
