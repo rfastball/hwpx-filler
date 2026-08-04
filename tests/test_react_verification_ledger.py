@@ -12,10 +12,11 @@ G2   제외의 순도: 제외 목록의 어떤 파일도 웹 표면에 **닿지*
 G3   모든 ``file`` 이 **색인과 디스크 양쪽에** 실재하는가
 G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **다른 자산 행**인가
 G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
-G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언 차단)
-G7   그 축이 **파티션과 겹치지 않는가**(자산을 분모 밖으로 미는 우회 차단)
+G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언·죽은 멤버 차단)
+G7   그 축이 **파티션·다른 축과 겹치지 않는가**(밀어내기 우회·이중 주장 차단)
 G8   ``tests/`` 아래에 트리도 축도 아닌 **침묵한 파일이 없는가**(선언 집합의 전수성)
-G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제로 침묵 복원 차단)
+G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제·재조준으로 침묵 복원 차단)
+G10  루트 추적 파일 전부가 트리·축·사슬 밖 선언 중 한 곳에 있는가(G8 의 루트 형제)
 ===  ====================================================================
 
 **원장이 어떤 개수도 들지 않는다.** 2차 구현(#469)은 게이트의 테스트 개수가 원장의 값이라
@@ -47,6 +48,16 @@ G8 은 그 다음 반증이 낸 것이고, 앞의 수정이 **같은 실수를 �
 빠뜨렸다(33건). 축을 손으로 열거하는 한 그 빠뜨림은 **기억의 문제**로 남으므로, ``tests/``
 범위에 한해 **저장소가 답하게** 했다. 같은 반증이 음성 대조의 오조준도 잡았다 — ⑷ 를 겨눈다던
 단언의 피해자가 ⑴ 에 이미 물려서, ⑷ 를 통째로 지워도 전부 초록이었다.
+
+G10 과 G6 의 멤버 실재, ``exact`` 의 루트 제약은 R1-99 감사 F1·F2(#481)가 낸 것이다. G9 는
+축 **id 의 존재**만 지켜서 ``exact`` 를 멤버 하나로 좁혀도 전 게이트가 초록이었고(F1), 직계
+형제인 루트 dotfile 일곱이 트리에도 축에도 없이 침묵했다(F2). 열거를 늘리는 조치는 같은
+결함을 네 번 재생산했으므로 여기서도 **저장소가 답한다** — 루트는 G10 이 폐포로 묻고, 새
+루트 파일은 분류를 요구받는다. 감사가 유력하다 본 「``exact`` 폐지」(계산 종류로 대체)는
+실측에서 기각했다: ``root_suffix`` 류 계산 종류는 새 형제를 **추측으로 조용히 삼키는데**,
+그 조용한 편입이 이 제품이 금지하는 바로 그 전이다. 폐포는 좁힘 가드를 겸한다 — ``exact``
+멤버는 전부 루트라(G0) 덜어낸 멤버가 반드시 미아가 된다. 남는 사각은 ``prefix`` **값 자체**를
+좁히는 변경(디렉터리 하강)으로, 게이트가 못 보고 diff 리뷰 몫이다 — 정직하게 좁혀 적는다.
 """
 
 from __future__ import annotations
@@ -112,9 +123,7 @@ _SURFACE_HELPER = r"_web_source|_press_probe|_web_artifact_contract"
 _SURFACE_DOM = r"querySelector|getElementById|evaluate_js|dispatchEvent|window\.__cap"
 _SURFACE_SEALED = r"web_artifact|artifact_id|tree_sha256|[Vv]ite"
 
-WEB_SURFACE = re.compile(
-    "|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM, _SURFACE_SEALED))
-)
+WEB_SURFACE = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM, _SURFACE_SEALED)))
 
 #: ⑷ 를 뺀 술어. **음성 대조 전용**이고 게이트 판정에는 안 쓴다.
 SURFACE_WITHOUT_SEALED = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM)))
@@ -135,7 +144,15 @@ ALLOWED_ASSET_KEYS = frozenset({*REQUIRED_ASSET_FIELDS, "successor"})
 #: 분모 밖 축의 키·매칭 어휘. 자산 행과 같은 이유로 모르는 키를 거절한다 — 여기서 오타가 나면
 #: 「이만큼을 안 본다」는 선언이 조용히 아무것도 선언하지 않게 된다.
 ALLOWED_AXIS_KEYS = frozenset({"id", "match", "reason", "owner_stage"})
-AXIS_MATCH_KINDS = frozenset({"prefix", "root_suffix", "exact"})
+
+#: ``exact`` 는 루트 파일 열거 전용이다(G0 이 강제) — 열거는 좁힘·형제 누락이 나는 형식이라
+#: G10 폐포가 받아 주는 범위에서만 허용한다. 루트 밖 단일 파일은 ``file`` 이 든다: 멤버가
+#: 하나뿐이라 좁힘이 곧 삭제이고, 삭제는 G9 가 잡는다.
+#:
+#: ``root_suffix`` 는 **폐지**했다(초판 리뷰 P2) — 루트에서 유일하게 살아남은 계산 종류라,
+#: 새 루트 ``.ps1`` 이 폐포를 지나지 않고 기존 축의 사유 밑으로 조용히 편입됐다. 루트는
+#: 전부 열거(``exact``·``file``)이고, 비루트 subtree 주장만 계산(``prefix``)으로 남는다.
+AXIS_MATCH_KINDS = frozenset({"prefix", "exact", "file"})
 
 #: 선언이 **사라지는 것**을 막는 자리. G8 은 ``tests/`` 범위만 폐포로 답하므로 그 밖의 축은
 #: 지워도 아무도 안 울고, 그러면 그 축이 닫으려던 사각이 조용히 되돌아온다 — 선언의 값은
@@ -157,9 +174,21 @@ REQUIRED_AXIS_IDS = frozenset(
         "test-corpora",
         "test-fixtures",
         "quality-config",
+        "coverage-floors",
+        "byte-normalization",
         "example-101-assets",
     }
 )
+
+#: 비루트 단일 파일 축의 **대상 경로 핀**. 재조준이 남긴 마지막 구멍을 닫는다(2라운드 리뷰
+#: P2 실측): ``file`` 값의 삭제는 G9 의 id 검사가, 루트 대상은 G10 폐포가 잡지만, 비루트
+#: 대상을 다른 추적 파일로 갈아 끼우면 G0~G10 전부 초록인 채 원 대상이 무적재가 됐다.
+#: 핀을 원장에서 유도하면 **재조준이 자기를 정당화**하므로 ``REQUIRED_AXIS_IDS`` 와 같은
+#: 이유로 리터럴이다. 루트 대상 ``file`` 축은 폐포가 지키므로 핀이 필요 없고, 비루트 대상은
+#: 핀 등록이 **의무**다(G0 이 형식으로 강제 — 다음 file 축이 같은 구멍을 다시 열지 못하게).
+REQUIRED_FILE_AXIS_TARGETS: "dict[str, str]" = {
+    "coverage-floors": "docs/package_coverage_floors.toml",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -323,6 +352,8 @@ def g0_structure(document: dict[str, Any]) -> list[str]:
             problems.append(f"{row.get('file')}: 모르는 키 {key!r} — 오타인가")
     if not str(document.get("out_of_scope", {}).get("reason", "")).strip():
         problems.append("out_of_scope.reason 이 비었다")
+    if not str(document.get("root_out_of_chain", {}).get("reason", "")).strip():
+        problems.append("root_out_of_chain.reason 이 비었다")
     problems.extend(_axis_structure(document))
     return problems
 
@@ -348,6 +379,36 @@ def _axis_structure(document: dict[str, Any]) -> list[str]:
         match = row.get("match")
         if not isinstance(match, dict) or match.get("kind") not in AXIS_MATCH_KINDS:
             problems.append(f"excluded_axis {axis_id!r}: match.kind 가 어휘 밖이다 -> {match!r}")
+            continue
+        kind, value = match["kind"], match.get("value")
+        if kind == "prefix" and not (isinstance(value, str) and value.endswith("/")):
+            # 파일 이름 접두("packaging/build")로 좁히는 가장 값싼 변형을 형식에서 자른다.
+            # 디렉터리 단위 하강은 여전히 게이트 밖이고 diff 리뷰 몫이다.
+            problems.append(
+                f"excluded_axis {axis_id!r}: prefix 값은 '/' 로 끝나는 디렉터리 주장이라야 한다"
+                f" -> {value!r}"
+            )
+        elif kind == "exact":
+            members = value if isinstance(value, list) else []
+            if not members:
+                problems.append(
+                    f"excluded_axis {axis_id!r}: exact 값이 빈 목록이거나 목록이 아니다 -> {value!r}"
+                )
+            for member in members:
+                if not isinstance(member, str) or "/" in member:
+                    problems.append(
+                        f"excluded_axis {axis_id!r}: exact 멤버는 루트 파일이라야 한다 -> {member!r}"
+                    )
+        elif kind == "file":
+            if not (isinstance(value, str) and value.strip()):
+                problems.append(
+                    f"excluded_axis {axis_id!r}: file 값이 경로 문자열이 아니다 -> {value!r}"
+                )
+            elif "/" in value and axis_id not in REQUIRED_FILE_AXIS_TARGETS:
+                problems.append(
+                    f"excluded_axis {axis_id!r}: 비루트 file 축은 게이트 핀"
+                    f"(REQUIRED_FILE_AXIS_TARGETS)에 등록해야 한다 -> {value!r}"
+                )
     return problems
 
 
@@ -357,39 +418,68 @@ def _axis_members(row: dict[str, Any], tracked: list[str]) -> set[str]:
     kind, value = match.get("kind"), match.get("value")
     if kind == "prefix":
         return {p for p in tracked if p.startswith(str(value))}
-    if kind == "root_suffix":
-        return {p for p in tracked if "/" not in p and p.endswith(str(value))}
     if kind == "exact":
         wanted = set(value or ())
         return {p for p in tracked if p in wanted}
+    if kind == "file":
+        return {p for p in tracked if p == str(value)}
     return set()
 
 
 def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
-    """선언된 축이 **죽어 있지 않은가**.
+    """선언된 축이 **죽어 있지 않은가** — 축 단위와 멤버 단위 둘 다.
 
     「분모가 이만큼을 안 본다」는 선언은 그 이만큼이 실재할 때만 정직하다. 경로가 개명되면
     선언은 조용히 아무것도 안 가리키게 되고, 그때 이 절은 **없는 사각을 사과하는 산문**이 된다.
+
+    계산 종류(``prefix``)는 죽으면 멤버가 0 이 되어 앞 문단이 잡는다. 열거 종류(``exact``·
+    ``file``)는 다르다 — 멤버 하나가 개명돼도 형제가 축을 살려 두므로, 죽은 멤버는 「선언은
+    서 있는데 실질이 줄어드는」 길이 된다(F1 의 이웃). 그래서 멤버 단위로도 묻는다.
     """
+    tracked_set = set(tracked)
     problems: list[str] = []
     for row in document.get("excluded_axis", []):
         if not _axis_members(row, tracked):
             problems.append(f"excluded_axis {row.get('id')!r}: 가리키는 추적 파일이 0 이다")
+        match = row.get("match") or {}
+        if match.get("kind") == "exact":
+            declared = [str(v) for v in (match.get("value") or ())]
+        elif match.get("kind") == "file":
+            declared = [str(match.get("value", ""))]
+        else:
+            declared = []
+        for member in declared:
+            if member not in tracked_set:
+                problems.append(
+                    f"excluded_axis {row.get('id')!r}: 선언한 멤버가 추적 밖이다 -> {member}"
+                )
     return problems
 
 
 def g9_required_axes_survive(document: dict[str, Any]) -> list[str]:
-    """사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**.
+    """사각을 닫으려고 세운 축 선언이 **여전히 서 있는가** — id 와, 핀이 있으면 대상까지.
 
     G8 이 폐포로 답하는 범위는 ``tests/`` 뿐이다. ``packaging/``·workflows·루트 러너·빌드 설정·
     학습 세트 축은 지워도 G0~G8 이 전부 초록이었고, 그 삭제는 정확히 이 절이 닫으려던 침묵을
     되돌린다. 선언은 **한 번 적는 것**이 아니라 **계속 서 있는 것**이라야 값이 있다.
+
+    id 생존만으로는 부족하다(2라운드 리뷰 P2) — ``file`` 축은 id 를 그대로 두고 **값만**
+    다른 추적 파일로 돌려도 선언이 서 있는 척하며 원 대상을 무적재로 만든다. 핀에 오른
+    축은 대상 경로까지 지켜야 서 있는 것으로 친다.
     """
-    declared = {str(row.get("id", "")) for row in document.get("excluded_axis", [])}
-    return [
+    declared_rows = {str(row.get("id", "")): row for row in document.get("excluded_axis", [])}
+    problems = [
         f"선언이 사라졌다: 축 {axis_id!r} — 그 사각이 다시 침묵이 된다"
-        for axis_id in sorted(REQUIRED_AXIS_IDS - declared)
+        for axis_id in sorted(REQUIRED_AXIS_IDS - set(declared_rows))
     ]
+    for axis_id, pinned in sorted(REQUIRED_FILE_AXIS_TARGETS.items()):
+        row = declared_rows.get(axis_id)
+        if row is None:
+            continue  # 축 자체의 실종은 위 id 검사가 이미 물었다
+        match = row.get("match") or {}
+        if match.get("kind") != "file" or match.get("value") != pinned:
+            problems.append(f"축 {axis_id!r} 가 핀에서 벗어났다 -> {match!r} (핀: file {pinned!r})")
+    return problems
 
 
 def g8_tests_tree_is_fully_accounted(
@@ -403,7 +493,8 @@ def g8_tests_tree_is_fully_accounted(
     ``tests/corpus/`` 를 빠뜨린 것이 가장 최근 표본이다(L16 실측 33건).
 
     그래서 여기서는 기억 대신 **저장소가 답한다**. 범위를 ``tests/`` 로 좁혀 적는 것은 정직을
-    위해서다 — 저장소 전역의 폐포는 이 게이트가 지지 않는다(그 밖의 자료는 축이 이름으로 든다).
+    위해서다 — 저장소 전역의 폐포는 이 게이트가 지지 않는다. 루트는 G10 이 같은 방식으로
+    답하고, 그 밖(비루트·비-``tests/``)은 **여전히 축이 이름으로 드는 만큼만 보인다**.
     """
     under_tests = {path for path in tracked if path.startswith("tests/")}
     declared: set[str] = set()
@@ -413,21 +504,67 @@ def g8_tests_tree_is_fully_accounted(
     return [f"tests/ 아래인데 트리에도 선언된 축에도 없다: {path}" for path in orphans]
 
 
+def g10_root_files_are_fully_accounted(
+    document: dict[str, Any], tracked: list[str], tree: set[str]
+) -> list[str]:
+    """루트 추적 파일 **전부**가 트리·선언된 축·사슬 밖 선언 중 한 곳에 있는가 — G8 의 루트 형제.
+
+    R1-99 감사 F1·F2(#481)가 낸 층이다. 폐포는 좁힘 가드를 겸한다 — ``exact`` 멤버는 전부
+    루트라(G0), 덜어낸 멤버는 반드시 여기서 미아가 된다. 그래서 「피복이 줄었는가」를 재는
+    술어를 따로 세우지 않는다. 새 루트 파일도 같은 문으로 들어온다: 축이든 사슬 밖이든
+    **사람이 분류를 확정**해야 초록이 된다. 계산 종류로 자동 편입시키지 않는 것은 의도다 —
+    그건 조용한 추측이고, R2 가 루트에 더할 파일들이 정확히 이 문을 지나야 한다.
+
+    사슬 밖 목록 자체도 잰다: 유령(추적 밖·비루트)은 죽은 선언이고, 트리·축과의 겹침은
+    「사슬이다」와 「사슬이 아니다」를 동시에 주장하는 모순이다.
+    """
+    tracked_set = set(tracked)
+    root_files = {p for p in tracked_set if "/" not in p}
+    non_chain = {str(p) for p in document.get("root_out_of_chain", {}).get("files", [])}
+    axis_members: set[str] = set()
+    for row in document.get("excluded_axis", []):
+        axis_members |= _axis_members(row, tracked)
+
+    problems: list[str] = []
+    for path in sorted(non_chain):
+        if path not in tracked_set or "/" in path:
+            problems.append(f"root_out_of_chain 이 루트 추적 파일이 아닌 것을 든다: {path}")
+    for path in sorted(non_chain & (tree | axis_members)):
+        problems.append(f"검증 사슬(트리·축)에 있으면서 사슬 밖이라고도 주장한다: {path}")
+    for path in sorted(root_files - tree - axis_members - non_chain):
+        problems.append(f"루트 추적 파일인데 트리에도 축에도 사슬 밖 선언에도 없다: {path}")
+    return problems
+
+
 def g7_axes_stay_outside_the_partition(
     document: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> list[str]:
-    """축이 **파티션과 겹치지 않는가**.
+    """축이 **파티션과 겹치지 않는가** — 그리고 **축끼리도 같은 파일을 주장하지 않는가**.
 
-    겹치면 같은 파일이 「행이 있다」와 「분모 밖이다」를 동시에 주장한다. G1 이 파티션 *안쪽*의
-    폐포를 지킨다면 이것은 그 **바깥 경계**를 지킨다 — 축을 넓혀 자산을 분모 밖으로 밀어내는
-    우회가 이 자리로 들어온다.
+    파티션과 겹치면 같은 파일이 「행이 있다」와 「분모 밖이다」를 동시에 주장한다. G1 이
+    파티션 *안쪽*의 폐포를 지킨다면 이것은 그 **바깥 경계**를 지킨다 — 축을 넓혀 자산을
+    분모 밖으로 밀어내는 우회가 이 자리로 들어온다.
+
+    축끼리의 겹침도 같은 모순이다(초판 리뷰 P2) — 원장은 「정확히 한 곳」을 선언하는데,
+    두 축이 한 파일을 들면 서로 다른 사유·인계선(``owner_stage``)이 그 파일을 동시에
+    주장하면서 합집합 뒤에 숨는다. 선언이 살고 결과가 죽는 자리라 여기서 잰다.
     """
     covered = tree | set(_asset_files(document)) | set(_excluded_files(document))
     problems: list[str] = []
+    claimed: dict[str, str] = {}
     for row in document.get("excluded_axis", []):
-        overlap = sorted(_axis_members(row, tracked) & covered)
+        members = _axis_members(row, tracked)
+        overlap = sorted(members & covered)
         if overlap:
             problems.append(f"excluded_axis {row.get('id')!r}: 파티션과 겹친다 -> {overlap}")
+        axis_id = str(row.get("id"))
+        for path in sorted(members):
+            if path in claimed:
+                problems.append(
+                    f"두 축이 같은 파일을 주장한다: {path} ({claimed[path]!r}, {axis_id!r})"
+                )
+            else:
+                claimed[path] = axis_id
     return problems
 
 
@@ -489,9 +626,7 @@ def test_g5_stages_are_known(ledger: dict[str, Any]) -> None:
     assert g5_stage_vocabulary(ledger) == []
 
 
-def test_g6_declared_axes_point_at_real_files(
-    ledger: dict[str, Any], tracked: list[str]
-) -> None:
+def test_g6_declared_axes_point_at_real_files(ledger: dict[str, Any], tracked: list[str]) -> None:
     assert g6_axes_are_live(ledger, tracked) == []
 
 
@@ -509,6 +644,12 @@ def test_g8_tests_directory_has_no_silent_orphans(
 
 def test_g9_axis_declarations_still_stand(ledger: dict[str, Any]) -> None:
     assert g9_required_axes_survive(ledger) == []
+
+
+def test_g10_root_files_are_fully_accounted(
+    ledger: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    assert g10_root_files_are_fully_accounted(ledger, tracked, tree) == []
 
 
 def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
@@ -817,9 +958,7 @@ def test_n16_dropping_a_non_test_axis_is_caught(mutable: dict[str, Any]) -> None
     이 절이 방금 닫은 사각이 조용히 되돌아온다(봇 리뷰 실측).
     """
     victim = "packaging-chain"
-    mutable["excluded_axis"] = [
-        row for row in mutable["excluded_axis"] if row.get("id") != victim
-    ]
+    mutable["excluded_axis"] = [row for row in mutable["excluded_axis"] if row.get("id") != victim]
     problems = g9_required_axes_survive(mutable)
     assert any(victim in problem for problem in problems), problems
 
@@ -833,16 +972,12 @@ def test_n15_dropping_a_declared_axis_reopens_the_silence(
     이제 ``tests/`` 범위에 한해 그 삭제가 소리를 낸다.
     """
     victim = "js-negative-fixtures"
-    mutable["excluded_axis"] = [
-        row for row in mutable["excluded_axis"] if row.get("id") != victim
-    ]
+    mutable["excluded_axis"] = [row for row in mutable["excluded_axis"] if row.get("id") != victim]
     problems = g8_tests_tree_is_fully_accounted(mutable, tracked, tree)
     assert any("tests/js/fixtures/" in problem for problem in problems), problems
 
 
-def test_n12_a_dead_axis_declaration_is_caught(
-    mutable: dict[str, Any], tracked: list[str]
-) -> None:
+def test_n12_a_dead_axis_declaration_is_caught(mutable: dict[str, Any], tracked: list[str]) -> None:
     """가리키는 것이 없어진 축 선언은 **사각의 사과가 아니라 거짓말**이 된다."""
     mutable["excluded_axis"][0]["match"] = {"kind": "prefix", "value": "이-경로는-없다/"}
     problems = g6_axes_are_live(mutable, tracked)
@@ -864,3 +999,150 @@ def test_n14_a_typo_in_an_axis_key_is_caught(mutable: dict[str, Any]) -> None:
     problems = g0_structure(mutable)
     assert any("resaon" in problem for problem in problems), problems
     assert any("reason 이 비었다" in problem for problem in problems), problems
+
+
+def _axis_by_id(document: dict[str, Any], axis_id: str) -> dict[str, Any]:
+    return next(row for row in document["excluded_axis"] if row.get("id") == axis_id)
+
+
+def test_n17_narrowing_an_exact_axis_is_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """F1 의 재현 — ``exact`` 멤버를 하나 덜어내도 어제까지는 전 게이트가 초록이었다.
+
+    이제 덜어낸 멤버는 루트 폐포에서 미아가 되어 G10 이 운다. 「피복이 줄었는가」를 재는
+    술어를 세우는 대신, 좁혀서 떨어진 파일이 조용히 갈 곳을 없앴다.
+    """
+    axis = _axis_by_id(mutable, "frontend-build-config")
+    axis["match"]["value"] = [m for m in axis["match"]["value"] if m != ".node-version"]
+    problems = g10_root_files_are_fully_accounted(mutable, tracked, tree)
+    assert any(".node-version" in problem for problem in problems), problems
+
+
+@pytest.mark.parametrize("newcomer", ["tsconfig.json", "cleanup.ps1"])
+def test_n18_a_new_root_file_demands_classification(
+    ledger: dict[str, Any], tracked: list[str], tree: set[str], newcomer: str
+) -> None:
+    """R2 가 루트에 파일을 더하는 순간의 형상 — 분류 없이는 초록이 없다.
+
+    F2 를 미래형으로 죽이는 대조다: 형제 누락은 기억의 문제였고, 이제 저장소가 답한다.
+    원장은 안 건드리고 색인 목록에만 미래의 파일을 더해 그 형상을 만든다.
+
+    ``.ps1`` 표본이 두 번째로 선 이유(초판 리뷰 P2): ``root-runners`` 가 접미 계산이던
+    판에서는 새 루트 러너가 이 문을 지나지 않고 그 축의 사유 밑으로 조용히 편입됐다.
+    """
+    problems = g10_root_files_are_fully_accounted(ledger, [*tracked, newcomer], tree)
+    assert any(newcomer in problem for problem in problems), problems
+
+
+def test_n19_claiming_chain_and_non_chain_at_once_is_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """축에 있는 파일을 사슬 밖이라고도 적으면 모순이고, 모순은 조용히 못 지나간다."""
+    files = mutable["root_out_of_chain"]["files"]
+    mutable["root_out_of_chain"]["files"] = [*files, "package.json"]
+    problems = g10_root_files_are_fully_accounted(mutable, tracked, tree)
+    assert any("package.json" in problem and "주장" in problem for problem in problems), problems
+
+
+def test_n20_a_ghost_in_the_non_chain_list_is_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """사슬 밖 목록의 유령은 죽은 선언이다 — 축의 G6 와 같은 이유로 거절한다."""
+    files = mutable["root_out_of_chain"]["files"]
+    mutable["root_out_of_chain"]["files"] = [*files, "GHOST.md"]
+    problems = g10_root_files_are_fully_accounted(mutable, tracked, tree)
+    assert any("GHOST.md" in problem for problem in problems), problems
+
+
+def test_n21_an_exact_member_outside_the_root_is_caught(mutable: dict[str, Any]) -> None:
+    """``exact`` 를 루트 밖으로 넓히면 그 멤버는 어느 폐포도 안 받는다.
+
+    그 순간 좁힘 가드(G10)가 그 멤버에 한해 도로 죽으므로, 형식에서 거절한다. 루트 밖
+    단일 파일이 필요하면 ``file`` 종류가 있고, 그쪽은 G9 가 삭제를 잡는다.
+    """
+    axis = _axis_by_id(mutable, "quality-config")
+    axis["match"]["value"] = [*axis["match"]["value"], "packaging/build.ps1"]
+    problems = g0_structure(mutable)
+    assert any("packaging/build.ps1" in problem for problem in problems), problems
+
+
+def test_n22_a_dead_member_of_an_enumerating_axis_is_caught(
+    mutable: dict[str, Any], tracked: list[str]
+) -> None:
+    """열거 축의 멤버 하나가 개명돼도 형제가 축을 살려 둔다 — 그 침묵 축소를 멤버 단위로 문다."""
+    axis = _axis_by_id(mutable, "frontend-build-config")
+    axis["match"]["value"] = [
+        ".npmrc-renamed" if m == ".npmrc" else m for m in axis["match"]["value"]
+    ]
+    problems = g6_axes_are_live(mutable, tracked)
+    assert any(".npmrc-renamed" in problem for problem in problems), problems
+
+
+def test_n23_a_prefix_that_is_not_a_directory_claim_is_caught(
+    mutable: dict[str, Any],
+) -> None:
+    """``prefix`` 를 파일 이름 접두로 좁히는 가장 값싼 변형을 형식에서 자른다."""
+    axis = _axis_by_id(mutable, "packaging-chain")
+    axis["match"] = {"kind": "prefix", "value": "packaging/build"}
+    problems = g0_structure(mutable)
+    assert any("packaging/build" in problem for problem in problems), problems
+
+
+def test_n24_a_file_axis_pointing_nowhere_is_caught(
+    mutable: dict[str, Any], tracked: list[str]
+) -> None:
+    """``file`` 축의 대상이 개명되면 선언이 통째로 죽는다 — 축 단위와 멤버 단위 둘 다 운다."""
+    axis = _axis_by_id(mutable, "coverage-floors")
+    axis["match"]["value"] = "docs/renamed_floors.toml"
+    problems = g6_axes_are_live(mutable, tracked)
+    assert any("coverage-floors" in problem for problem in problems), problems
+
+
+def test_pinned_file_axes_are_also_required_ids() -> None:
+    """핀은 id 생존 검사 위에 얹힌다 — 핀만 있고 id 요구가 없으면 축을 통째로 지우는 길이 남는다."""
+    assert set(REQUIRED_FILE_AXIS_TARGETS) <= REQUIRED_AXIS_IDS
+
+
+def test_n26_retargeting_a_pinned_file_axis_is_caught(mutable: dict[str, Any]) -> None:
+    """``file`` 축의 값을 갈아 끼우면 원 대상이 조용히 무적재가 된다(2라운드 리뷰 P2).
+
+    삭제는 G9 의 id 검사가, 루트 대상은 G10 폐포가 잡지만 **비루트 대상의 재조준**은 어느
+    쪽도 못 봤다 — 실측: coverage-floors 를 다른 추적 파일로 돌려도 전 게이트가 초록이었다.
+    """
+    axis = _axis_by_id(mutable, "coverage-floors")
+    axis["match"]["value"] = "docs/README.md"
+    problems = g9_required_axes_survive(mutable)
+    assert any("coverage-floors" in problem and "핀" in problem for problem in problems), problems
+
+
+def test_n27_an_unpinned_non_root_file_axis_is_rejected(mutable: dict[str, Any]) -> None:
+    """새 비루트 ``file`` 축은 핀 등록 없이 못 선다 — 인스턴스가 아니라 결함류를 닫는다.
+
+    핀을 coverage-floors 하나에만 걸면 다음 file 축이 같은 구멍을 다시 연다(「집합 하나를
+    넓히고 형제를 안 넓힌다」). 비루트 대상은 폐포가 없으므로 핀이 유일한 지속 장치다.
+    """
+    mutable["excluded_axis"].append(
+        {
+            "id": "rogue-single",
+            "match": {"kind": "file", "value": "docs/README.md"},
+            "reason": "x",
+            "owner_stage": "R5-02",
+        }
+    )
+    problems = g0_structure(mutable)
+    assert any("rogue-single" in problem and "핀" in problem for problem in problems), problems
+
+
+def test_n25_two_axes_claiming_the_same_file_are_caught(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """한 파일을 두 축이 들면 「정확히 한 곳」이 깨진다 — 합집합 뒤에 숨는 모순을 편다.
+
+    각 축은 살아 있고(G6) 파티션 밖이라(G7 첫 검사) 종전에는 아무도 안 물었다(초판 리뷰
+    P2). 서로 다른 사유·인계선이 같은 파일을 주장하는 상태는 조용히 지나갈 수 없다.
+    """
+    axis = _axis_by_id(mutable, "quality-config")
+    axis["match"]["value"] = [*axis["match"]["value"], ".npmrc"]
+    problems = g7_axes_stay_outside_the_partition(mutable, tracked, tree)
+    assert any(".npmrc" in problem and "두 축" in problem for problem in problems), problems
