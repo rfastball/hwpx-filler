@@ -279,6 +279,11 @@ responsibility = "제품이 만드는 창 전역이 정확히 셋이라는 정�
 owner_stage = "R5-02"
 
 [[asset]]
+file = "tests/js/react_root.test.js"
+responsibility = "React root 상태기계(주입 기록자) — 요청 1회·커밋-키 가드·unmount 정산"
+owner_stage = "R2-01"
+
+[[asset]]
 file = "tests/js/segview.test.js"
 responsibility = "SegView 특성화 — ESM 전환의 안전망"
 owner_stage = "R4-02"
@@ -457,6 +462,11 @@ owner_stage = "R4-03"
 file = "tests/test_react_ownership_inventory.py"
 responsibility = "#402 원장의 폐포 게이트와 판별력 음성 대조"
 owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_react_root_live.py"
+responsibility = "실 WebView2 React 커밋 마커 되읽기 — sealed artifact 자체 창 소비"
+owner_stage = "R2-01"
 
 [[asset]]
 file = "tests/test_react_verification_ledger.py"
@@ -765,8 +775,9 @@ match = { kind = "exact", value = [
   "package-lock.json",
   ".node-version",
   ".npmrc",
+  "tsconfig.json",
 ] }
-reason = "Vite 빌드의 입력 — 설정·의존 선언·잠금과 Node 버전·npm 설치 규율의 고정. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다."
+reason = "Vite 빌드의 입력 — 설정·의존 선언·잠금과 Node 버전·npm 설치 규율의 고정. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다. tsconfig.json 은 R2-01 이 예정대로 더한 첫 멤버다(#405 — node 적재·tsc·Vite 가 같은 파일을 보는 erasable 설정)."
 owner_stage = "R5-02"
 
 [[excluded_axis]]

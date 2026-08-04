@@ -819,6 +819,11 @@
     </div>
 </div>
 
+<!-- React 단독 소유 subtree (R2-01 · #405) — legacy 두 트리(div.app·#overlayRoot)와 공동
+     변이하지 않는 유일한 React DOM 경계. 비어 보이는 것이 정상이다: 마운트의 실물 증거는
+     정적 존재가 아니라 커밋 시 심기는 data-react-mounted 마커가 진다. -->
+<div id="reactRoot"></div>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

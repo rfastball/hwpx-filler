@@ -230,15 +230,15 @@ data-* 속성 **이름** 1개 = 1노드. 출현 횟수(50)는 노드가 아니�
 [axes.dom_data_attr.blind_spot]
 description = """
 무앵커 정규식과 파서의 차이. 정규식으로 세면 CSS 클래스 이름·산문을 함께 세어 값이 부푼다
-(15종/59회 대 참값 9종/50회). 파서가 못 보는 축 — frontend/js 가 심는 data-* — 은
+(16종/60회 대 참값 9종/50회). 파서가 못 보는 축 — frontend/js 가 심는 data-* — 은
 excluded_axes 의 js_planted_data_attrs 로 명시 제외했다.
 """
 probe = { kind = "extractor", name = "html_data_attr_regex_delta" }
 scope = ["frontend/index.html"]
 unit = "정규식만 잡는 이름 1개 = 1. 전부 속성이 아니다."
-current = 6
-members = ["data-first", "data-grid", "data-picker", "data-sheet-body", "data-theme", "data-zone"]
-judgment = "여섯 다 CSS 클래스 이름 또는 주석 산문이다. 참값은 파서가 낸 9종이다."
+current = 7
+members = ["data-first", "data-grid", "data-picker", "data-react-mounted", "data-sheet-body", "data-theme", "data-zone"]
+judgment = "일곱 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). 참값은 파서가 낸 9종이다."
 
 [axes.dom_js_site]
 predicate = { kind = "node_extractor", name = "js_template_ids" }
@@ -478,7 +478,7 @@ scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", 
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
 current = 2
-members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:109"]
+members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:110"]
 judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
 
 [axes.lifecycle_hook]
@@ -591,7 +591,7 @@ unit = "노드 폐포의 원소 수. 부착 119 와의 차 107 이 이 축의 �
 
 [[metric]]
 id = "dom-stable-ids"
-value = 232
+value = 233
 predicate = { kind = "derived", axis = "dom_static" }
 scope = ["frontend/index.html"]
 unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0)."
@@ -603,11 +603,11 @@ predicate = { kind = "derived", axis = "dom_data_attr" }
 scope = ["frontend/index.html"]
 unit = "속성 이름 1개 = 1."
 [[metric.aliases]]
-value = 59
+value = 60
 status = "wrong"
 predicate = { kind = "regex", pattern = "data-[a-z-]+", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/index.html"]
-unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함께 센다(6종 오탐). 참값은 파서가 낸 50회다."
+unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함께 센다(7종 오탐). 참값은 파서가 낸 50회다."
 
 [[metric]]
 id = "data-attribute-bearing-elements"
@@ -781,6 +781,17 @@ classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_screen_roots_present"]
 note = "화면 루트 4 + overlay 루트 1. React 라우터가 이 다섯의 후계를 진다. SCREEN_ROOTS 상수는 이 중 둘만 본다(review_item 참조)."
+
+[[node]]
+id = "dom/root/react-root"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "exact", members = ["reactRoot"] }
+evidence = [{ file = "frontend/index.html", line = 825, anchor = "id=\"reactRoot\"" }]
+classification = "react"
+handoff_slice = "R2-01 #405"
+verification = ["tests/test_react_root_live.py::test_react_root_commits_in_a_real_webview2_window"]
+note = "React 단독 소유 subtree — legacy 두 트리(div.app·#overlayRoot)와 공동 변이하지 않는 유일한 React DOM 경계. 커밋 증거는 정적 존재가 아니라 런타임 data-react-mounted 마커가 진다."
 
 [[node]]
 id = "dom/scr-library"
@@ -1359,13 +1370,13 @@ id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:124 LibraryScreen",
-  "frontend/src/bootstrap.js:125 EditorScreen",
-  "frontend/src/bootstrap.js:126 JobScreen",
-  "frontend/src/bootstrap.js:127 WorkbenchScreen",
-  "frontend/src/bootstrap.js:128 Nav",
+  "frontend/src/bootstrap.js:125 LibraryScreen",
+  "frontend/src/bootstrap.js:126 EditorScreen",
+  "frontend/src/bootstrap.js:127 JobScreen",
+  "frontend/src/bootstrap.js:128 WorkbenchScreen",
+  "frontend/src/bootstrap.js:129 Nav",
 ] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 124, anchor = "LibraryScreen", occurrence = 2 }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 125, anchor = "LibraryScreen", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["none"]
@@ -1882,8 +1893,8 @@ verification = ["none"]
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:109"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 109, anchor = "export function bootProduct" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:110"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 110, anchor = "export function bootProduct" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]

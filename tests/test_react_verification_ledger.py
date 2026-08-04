@@ -1019,7 +1019,7 @@ def test_n17_narrowing_an_exact_axis_is_caught(
     assert any(".node-version" in problem for problem in problems), problems
 
 
-@pytest.mark.parametrize("newcomer", ["tsconfig.json", "cleanup.ps1"])
+@pytest.mark.parametrize("newcomer", ["tsconfig.node.json", "cleanup.ps1"])
 def test_n18_a_new_root_file_demands_classification(
     ledger: dict[str, Any], tracked: list[str], tree: set[str], newcomer: str
 ) -> None:
@@ -1027,6 +1027,10 @@ def test_n18_a_new_root_file_demands_classification(
 
     F2 를 미래형으로 죽이는 대조다: 형제 누락은 기억의 문제였고, 이제 저장소가 답한다.
     원장은 안 건드리고 색인 목록에만 미래의 파일을 더해 그 형상을 만든다.
+
+    초판 표본은 ``tsconfig.json`` 이었다 — R2-01(#405)이 그 파일을 실제로 더하고 분류하면서
+    표본이 실재가 되어 판별력을 잃었고(분류된 파일은 문제를 못 만든다), 같은 계열의 아직-미래
+    이름으로 교체됐다. 이 표본은 실재하지 않는 동안만 대조다.
 
     ``.ps1`` 표본이 두 번째로 선 이유(초판 리뷰 P2): ``root-runners`` 가 접미 계산이던
     판에서는 새 루트 러너가 이 문을 지나지 않고 그 축의 사유 밑으로 조용히 편입됐다.
