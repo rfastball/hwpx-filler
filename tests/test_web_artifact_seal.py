@@ -414,6 +414,16 @@ def test_source_resolver_rejects_sealed_toolchain_different_from_current_pins(
             '<!doctype html><script src="https://cdn.example/main.js"></script>\n',
             r"forbidden external HTTP\(S\) resource",
         ),
+        # 불활성 열거의 판별력 음성 대조(R2-01 · #405) — 정확 열거 항목을 **연장**해 허용을
+        # 훔치는 모양과, 허용 접두를 닮았지만 다른 경로. 둘 다 토큰 대조에서 죽어야 한다.
+        (
+            "<!doctype html><p>http://www.w3.org/2000/svg.evil.example/x.js</p>\n",
+            r"forbidden external HTTP\(S\) resource",
+        ),
+        (
+            "<!doctype html><p>https://react.dev/errors-evil</p>\n",
+            r"forbidden external HTTP\(S\) resource",
+        ),
         (
             '<!doctype html><script type="module" src="/@vite/client"></script>\n',
             "forbidden Vite dev client",
@@ -429,6 +439,32 @@ def test_producer_rejects_forbidden_runtime_reference(
 
     with pytest.raises(WebArtifactViolation, match=message):
         seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_producer_accepts_the_inert_url_census_of_a_react_bundle(
+    unsealed_repo: ArtifactRepo,
+) -> None:
+    """양성 대조(R2-01 · #405) — React 번들의 불활성 URL 전수는 봉인을 통과한다.
+
+    표본은 실측 그대로다: XML 네임스페이스 식별자 넷(``createElementNS`` 의 이름 인자 —
+    어떤 로더도 fetch 하지 않는다)과 프로덕션 오류 메시지의 문서 링크(코드가 뒤에 붙는
+    접두). 무맥락 전면 금지로 되돌리면 이 대조가 빨갛게 서서 「프레임워크 번들 전부가
+    거짓 빨강」이던 자리를 지킨다.
+    """
+    unsealed_repo.index_path.write_text(
+        "<!doctype html><p>"
+        'createElementNS("http://www.w3.org/2000/svg") '
+        'createElementNS("http://www.w3.org/1999/xlink") '
+        'createElementNS("http://www.w3.org/XML/1998/namespace") '
+        'createElementNS("http://www.w3.org/1998/Math/MathML") '
+        "visit https://react.dev/errors/418 for the full message"
+        "</p>\n",
+        encoding="utf-8",
+    )
+
+    artifact = seal_repository_web_artifact(unsealed_repo.root)
+
+    assert artifact.index_path == unsealed_repo.index_path
 
 
 def test_empty_vite_manifest_is_loud(unsealed_repo: ArtifactRepo) -> None:
