@@ -716,7 +716,10 @@ files = [
 #
 # 크기를 여기 적지 않는다. 이 원장은 수치 값을 하나도 들지 않는 것이 불변식이고, 그 불변식이
 # 2차 라운드를 무너뜨린 자기참조를 끊는다. 게이트는 각 축이 **실재 파일을 가리키는지**와
-# **파티션과 겹치지 않는지**를 재실측한다.
+# **파티션과 겹치지 않는지**를 재실측한다. 열거 종류(`exact`·`file`)는 멤버 하나하나의
+# 실재까지 재실측하고, `exact` 는 루트 파일에만 허용한다 — 루트는 맨 아래 폐포가 받아 주므로
+# 멤버를 조용히 덜어낼 수 없다(R1-99 F1 「좁힘」의 조치). 남는 사각은 `prefix` 값 자체를
+# 좁히는 변경이고, 그것은 게이트가 못 보므로 diff 리뷰 몫이다.
 # ---------------------------------------------------------------------------
 
 [[excluded_axis]]
@@ -745,8 +748,14 @@ owner_stage = "R5-02"
 
 [[excluded_axis]]
 id = "frontend-build-config"
-match = { kind = "exact", value = ["vite.config.mjs", "package.json", "package-lock.json"] }
-reason = "Vite 빌드의 입력. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다."
+match = { kind = "exact", value = [
+  "vite.config.mjs",
+  "package.json",
+  "package-lock.json",
+  ".node-version",
+  ".npmrc",
+] }
+reason = "Vite 빌드의 입력 — 설정·의존 선언·잠금과 Node 버전·npm 설치 규율의 고정. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다."
 owner_stage = "R5-02"
 
 [[excluded_axis]]
@@ -763,8 +772,25 @@ owner_stage = "R5-02"
 
 [[excluded_axis]]
 id = "quality-config"
-match = { kind = "exact", value = ["docs/package_coverage_floors.toml", "pyproject.toml", "uv.lock"] }
-reason = "게이트가 데이터로 읽는 형상 — 커버리지 하한·marker 등록·잠긴 의존성. 판정의 입력인데 트리 밖이다."
+match = { kind = "exact", value = [
+  "pyproject.toml",
+  "uv.lock",
+  ".python-version",
+  ".pre-commit-config.yaml",
+] }
+reason = "게이트가 데이터로 읽는 형상 — marker 등록·잠긴 의존성·Python 버전 고정·커밋 훅. 판정의 입력인데 루트 파일이라 트리 밖이다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "coverage-floors"
+match = { kind = "file", value = "docs/package_coverage_floors.toml" }
+reason = "패키지별 커버리지 하한 — 차단 게이트가 데이터로 읽는다. 루트 밖 단일 파일이라 루트 폐포가 못 받으므로, 단일 파일 축으로 들어 선언의 삭제가 게이트에 걸리게 한다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "byte-normalization"
+match = { kind = "file", value = ".gitattributes" }
+reason = "줄 끝 정규화 — 체크아웃 바이트를 바꿔 봉인 정체성(tree_sha256)과 기계 간 바이트 동일 대조에 닿는다."
 owner_stage = "R5-02"
 
 [[excluded_axis]]
@@ -772,3 +798,27 @@ id = "example-101-assets"
 match = { kind = "prefix", value = "examples/quickstart-101/" }
 reason = "101 실주행 게이트가 소비하는 학습 세트. 실행 증거의 입력인데 트리 밖이다."
 owner_stage = "R5-03"
+
+# ---------------------------------------------------------------------------
+# 사슬 밖 루트 파일 — 루트는 폐포로 답한다
+#
+# 루트 추적 파일은 전부 검증 트리·분모 밖 축·이 목록 중 정확히 한 곳에 있어야 하고,
+# 게이트가 그 폐포를 재실측한다. 그래서 새 루트 파일은 축이든 여기든 **분류를 요구받는다**
+# — 조용한 편입도(계산 종류가 추측으로 삼키는 것), 조용한 탈락도(열거에서 빠지는 것) 없다.
+# R1-99 감사(F2)가 잡은 「형제 누락」이 이 폐포가 태어난 이유다: 축을 손으로 열거하는 한
+# 빠뜨림은 기억의 문제로 남고, 이 저장소는 그 결함류를 한 라운드에 네 번 밟았다.
+#
+# 이 목록의 뜻은 「게이트가 데이터로 읽지 않고 판정 바이트에도 닿지 않는다」다.
+# 반대 증거가 생기면 옮기는 방향(사슬 밖 → 축)은 언제나 자유다.
+# ---------------------------------------------------------------------------
+
+[root_out_of_chain]
+reason = "검증 사슬이 아니다 — 게이트가 데이터로 읽지 않고 판정 바이트에도 닿지 않는다. .editorconfig 는 편집기 관례, .gitignore 는 무엇이 색인에 안 드는가의 선언(분모는 색인에서 읽으므로 정의상 밖), 나머지는 서사 문서다."
+files = [
+  ".editorconfig",
+  ".gitignore",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "LICENSE",
+  "README.md",
+]
