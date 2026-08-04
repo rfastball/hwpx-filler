@@ -14,6 +14,7 @@
 게이트 밖 층이 있는 이유가 요점이다: 실주행만 두면 GUI 없는 러너에서 이 파일 전체가 조용히
 사라지고, 그때 하니스의 판정이 옳은지 아무도 묻지 않는다.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -22,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -49,15 +51,17 @@ _GATE_REASON = (
 # `TimeoutExpired` 하나다 — 보고서도, 실패 항목도, 매달림 스택도 없다. #427 이 하니스 층에서
 # 고친 것과 **같은 형상**이라 여기서도 안쪽이 먼저 물게 파생시킨다.
 #
-# 안쪽 예산은 **실측에서** 잡는다: 개발 기기 `check` 8.6~9.3초(driver.RUN_BUDGET_S 주석).
-# CI 는 그보다 느리고 WebView2 콜드스타트가 붙지만, 300초는 그 실측의 30배 넘는 여유라
-# 「느린 러너」가 아니라 「매달림」에서만 발화한다. 드라이버는 300 + 60 = 360초에 물고 바깥은
-# 그보다 60초 뒤인 420초에야 손을 댄다.
+# 안쪽 예산은 **매달림 전용**이다(#477). 종전 300초는 "로컬 실측 9초의 30배면 느린 러너를
+# 안 문다"는 계산이었는데, 공유 러너가 그 30배를 실제로 넘었다 — PR #476 CI 에서 정상 여정이
+# 하드 스톱(360초)까지 밀렸고 코드 무변경 재실행이 초록이었다. 느린 러너를 잡는 값은 제품에
+# 대해 아무것도 말하지 않으므로, 이 값은 「명백히 멈춘 것」만 잡게 벌린다: 관측 최악 완주
+# 360초를 훨씬 웃돌고(약 1.7배·로컬 실측의 60배), driver.RUN_BUDGET_S 관대한 천장(900초)
+# 아래다. 성능(정상 실행이 얼마나 빠른가)은 아래 양성 대조가 **보고**한다 — 차단하지 않는다.
 #
 # 추정치로 잡지 않는 이유가 있다 — 종전 driver 주석의 "2~4분"은 측정 전 추정이었고, 그 낡은
 # 값을 믿고 계산하면 예산이 통째로 어긋난다(#430 리뷰). 그래서 아래 양성 대조가 **실제 소요**를
 # 예산과 견줘, 정상 실행이 예산에 가까워지면 시끄럽게 알린다.
-_LIVE_BUDGET_S = 300.0
+_LIVE_BUDGET_S = 600.0
 _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 
 
@@ -114,11 +118,16 @@ def live_check_run(tmp_path_factory) -> dict:
     assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
     command = [
-        sys.executable, str(CLI), "check",
-        "--home", "temp",
+        sys.executable,
+        str(CLI),
+        "check",
+        "--home",
+        "temp",
         "--no-build",
-        "--budget-s", str(_LIVE_BUDGET_S),
-        "--report", str(report_path),
+        "--budget-s",
+        str(_LIVE_BUDGET_S),
+        "--report",
+        str(report_path),
     ]
     try:
         proc = subprocess.run(
@@ -208,22 +217,51 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert report["source"]["commit"]
 
 
+def _budget_health_note(elapsed: float, budget_s: float) -> "str | None":
+    """예산 대비 실제 소요의 건강 소견 — **보고**용이고 게이트가 아니다(#477).
+
+    종전에는 이 문턱(예산의 3분의 1)이 단언이라 quality-gate 를 막았고, 공유 러너의 감속만으로
+    빨개진 뒤 코드 무변경 재실행에 초록이 됐다. 「정상 실행이 N초 아래인가」는 공유 CI 에서
+    제품이 아니라 인프라를 재므로, 넘으면 시끄럽게 적되 차단하지 않는다. 문턱 자체는 유지한다
+    — 정상 실행이 여기 가까워지면 예산은 「상한」이 아니라 「가끔 터지는 것」이고(#430 리뷰),
+    그 소견이 예산 재조정의 신호다.
+    """
+    if elapsed >= budget_s / 3:
+        return (
+            f"정상 실행이 {elapsed:.1f}s 를 썼습니다 — 예산 {budget_s:.0f}s 의 3분의 1을 "
+            "넘습니다. 이 거리면 예산은 매달림이 아니라 러너 속도를 재기 시작합니다"
+            " (#477 보고 축 — 차단하지 않습니다)."
+        )
+    return None
+
+
+def test_the_budget_health_note_fires_and_stays_quiet_on_the_right_sides() -> None:
+    """보고 술어의 양·음성 — 경보로 강등한 문턱이 실제로 무는지 합성 수치로 고정한다.
+
+    단언을 경보로 바꾸면 「선언은 살고 결과는 죽는」 길이 하나 더 생긴다 — 문턱 술어가 아무
+    값에도 안 물면 보고 축이 통째로 침묵하고, 그 침묵은 초록과 구별되지 않는다. 게이트 밖
+    층이다: 창 없이 돈다.
+    """
+    fired = _budget_health_note(_LIVE_BUDGET_S / 3, _LIVE_BUDGET_S)
+    assert fired is not None and "차단하지 않습니다" in fired
+    assert _budget_health_note(_LIVE_BUDGET_S / 3 - 1.0, _LIVE_BUDGET_S) is None
+
+
 @pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
-def test_a_healthy_run_stays_far_below_the_live_budget(live_check_run) -> None:
-    """양성 대조 — 예산이 **매달림**을 잡는가, 아니면 그냥 느린 러너를 잡는가.
+def test_a_healthy_run_reports_when_it_nears_the_live_budget(live_check_run) -> None:
+    """양성 대조 — 예산이 **매달림**을 잡는가, 아니면 그냥 느린 러너를 잡는가. 답은 보고한다.
 
-    예산을 추정치로 잡으면 이 질문에 답할 수 없다. 실제 소요를 예산과 견줘, 정상 실행이 예산의
-    3분의 1을 넘으면 시끄럽게 알린다 — 그 상태의 예산은 「상한」이 아니라 「가끔 터지는 것」이다
-    (#430 리뷰: 낡은 추정치 "2~4분"을 믿고 계산하다 드러난 축).
+    소요 0 단언은 남는다 — 그것은 성능이 아니라 「이 대조가 무언가를 쟀는가」(계측 실패)라
+    차단이 정당하다. 성능 소견은 경보로 낸다(#477): 실제 소요를 예산과 견줘 시끄럽게 적되,
+    공유 러너에서 제품이 아니라 인프라를 재는 축으로는 머지를 막지 않는다.
     """
     elapsed = float(live_check_run["report"]["elapsed_s"])
 
     assert elapsed > 0, "소요가 0이면 이 대조가 아무것도 안 지킨다"
-    assert elapsed < _LIVE_BUDGET_S / 3, (
-        f"정상 실행이 {elapsed:.1f}s 를 썼습니다 — 예산 {_LIVE_BUDGET_S:.0f}s 의 3분의 1을 "
-        "넘습니다. 이 예산은 매달림이 아니라 느린 러너를 잡습니다."
-    )
+    note = _budget_health_note(elapsed, _LIVE_BUDGET_S)
+    if note is not None:
+        warnings.warn(note, stacklevel=1)
 
 
 def _tree_manifest(root: Path) -> "dict[str, str]":
@@ -371,9 +409,7 @@ def test_zero_documents_fails_even_with_every_screenshot_present() -> None:
 
 def test_a_torn_frame_fails_the_capture_verdict() -> None:
     """정착하지 못한 컷은 찢겨 있을 수 있다 — 조용히 문서에 넣지 않는다(#425 실측)."""
-    verdict = report_mod.judge(
-        _healthy_report(unstable_shots=["range-editor"]), mode="capture"
-    )
+    verdict = report_mod.judge(_healthy_report(unstable_shots=["range-editor"]), mode="capture")
 
     assert verdict.ok is False
     assert any("정착하지 못한 컷" in failure for failure in verdict.failures), verdict.failures
@@ -464,9 +500,7 @@ def test_an_environment_failure_produces_no_product_failures() -> None:
     assert verdict.failures == (), "환경 실패가 제품 언어를 낳았습니다"
     assert "창이" in (verdict.reason or "")
     # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
-    product = report_mod.judge(
-        {"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check"
-    )
+    product = report_mod.judge({"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check")
     assert len(product.failures) == 7, product.failures
 
 
@@ -496,9 +530,7 @@ def _landing_stderr(capsys, tmp_path, *, environment: bool, failures: "list[str]
         error="WebView2 창이 75s 안에 뜨지 않았습니다" if environment else "시나리오가 깨졌습니다",
         environment=environment,
     )
-    cli._land(
-        result, home=tmp_path, temp_root=None, use_example_home=False, report_path=None
-    )
+    cli._land(result, home=tmp_path, temp_root=None, use_example_home=False, report_path=None)
     return [line for line in capsys.readouterr().err.splitlines() if line.strip()]
 
 
@@ -546,8 +578,10 @@ def test_the_harness_waits_longer_than_the_budget_this_boot_actually_armed() -> 
         assert waited > armed, f"무장 {armed}s 인데 하니스가 {waited}s 만 기다린다"
 
     # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가.
-    assert not (boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
-                > boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S)
+    assert not (
+        boot_budget.WARM_BUDGET_SECONDS + driver.BOOT_GRACE_S
+        > boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
+    )
 
 
 def test_a_cold_armed_boot_is_never_measured_with_the_warm_budget() -> None:

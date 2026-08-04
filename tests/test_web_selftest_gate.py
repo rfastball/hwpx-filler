@@ -1,4 +1,4 @@
-﻿"""실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
+"""실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
 
 파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``frontend/index.html`` 의 *정적*
 구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
@@ -12,6 +12,7 @@ CI 에서 가드한다.
 클라우드-CI 헤드리스 커버가 아니다. 이 게이트가 확인하는 대상은 Windows 앱의
 focus/scroll/layout 거동이다.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -32,7 +34,9 @@ from hwpxfiller.webapp import boot_budget
 
 # 게이트: Windows 아니거나 명시 옵트아웃이면 스킵. 자동 감지 스킵 아님(위 docstring).
 _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"))
-_GATE_REASON = "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 옵트아웃)"
+_GATE_REASON = (
+    "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용(HWPX_SKIP_GUI_TESTS=1 로 옵트아웃)"
+)
 
 # 하니스 상한은 **아래 층들에서 파생된다**(#427). 종전에는 90 이라는 상수였는데, 그 값이
 # 지키려던 층화를 정작 지키지 못했다:
@@ -46,10 +50,16 @@ _GATE_REASON = "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용
 #
 # 콜드 예산이 매번 걸리는 것도 우연이 아니다 — 각 테스트가 **새 홈**을 쓰므로 완주 이력이
 # 없고, `boot_budget.decide()` 는 그때마다 "첫 실행"으로 판정한다.
-_HARNESS_MARGIN_S = 30.0
-_SELFTEST_TIMEOUT = (
-    app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + _HARNESS_MARGIN_S
-)
+#
+# 여유(margin)는 「러너가 이만큼은 느릴 수 있다」는 인내가 아니라 **판별 불능 구간의 정직한
+# 폭**이다(#477). 종전 30초는 층화(#427)만 지키고 공유 러너의 실측을 안 봤다 — PR #476 CI 가
+# 이 상한을 여유 0.0(170.0s/170s)으로 물었고, 코드 무변경 재실행이 초록이었다. 그 값으로는
+# 완주 직전이었는지 매달렸는지 말할 수 없다. 상한이 무는 순간 "명백히 멈췄다"라고 말할 수
+# 있으려면 실측 최악(콜드 부팅 76.9초·40배 감속 여정)을 훨씬 웃돌아야 하고, 그 아래 구간의
+# 성능은 차단이 아니라 **보고**의 몫이다(모듈 끝 양성 대조). 시한 자체는 남는다 — 매달림은
+# 진짜 결함이고, 이 상한이 마지막 그물이다.
+_HARNESS_MARGIN_S = 460.0
+_SELFTEST_TIMEOUT = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + _HARNESS_MARGIN_S
 
 # 부팅 하나의 상한을 늘리면 **최악의 경우가 곱해진다**(#428 리뷰 P1). 이 모듈은 파라미터화
 # 포함 십수 회 부팅하고 pytest 는 시한 초과 뒤에도 다음 테스트로 간다 — WebView2 가 전면
@@ -60,16 +70,20 @@ _SELFTEST_TIMEOUT = (
 # 정상 실행은 이 예산 근처에 오지 않는다(로컬 부팅당 2.2s, 느린 CI 에서도 십수 초). 그래서
 # 이 상한은 "느린 러너"가 아니라 **전면 매달림**에서만 발화하고, 그때는 더 기다려 봐야 배울
 # 것이 없으므로 남은 부팅을 즉시 실패시킨다.
-_AGGREGATE_BOOT_BUDGET_S = 600.0
+#
+# 산술(#477 갱신 — 부팅 하나 상한을 벌리면 합계도 같이 벌려야 이 관계가 산다):
+#   발화선 = 합계 1200 - 부팅 하나 몫 600 = 600s. 정상 소진(로컬 실측 33s·감속 러너 수백 초)
+#   의 18배라 느린 러너로는 안 닿는다.
+#   최악 대기는 유계다: 매달림 한 번(600s) 뒤 남은 예산이 부팅 하나 몫 아래로 떨어져 나머지가
+#   즉시 실패하므로, 대기 총량 ≤ 1200s = 20분 < CI 잡 상한 30분 - 셋업·증거 회수 여유.
+_AGGREGATE_BOOT_BUDGET_S = 1200.0
 
 #: 지금까지 부팅 대기에 쓴 시간과 실제로 시한을 넘긴 부팅들 — 진단이 "몇 번째부터 무너졌나"를
 #: 말할 수 있게 남긴다.
 _boot_waits: "dict[str, object]" = {"spent_s": 0.0, "timed_out": [], "boots": 0}
 
 
-def _boot_selftest(
-    env: "dict[str, str]", *, out: Path, what: str
-) -> "subprocess.CompletedProcess":
+def _boot_selftest(env: "dict[str, str]", *, out: Path, what: str) -> "subprocess.CompletedProcess":
     """``--selftest`` 프로세스 하나를 띄운다 — **모든 부팅의 단일 입구**.
 
     시한 초과를 그냥 던지면 남는 것은 "N초 기다렸다" 뿐이고, 그 문장은 *느린 것*과 *매달린
@@ -194,17 +208,13 @@ class TestWebSelftestGate:
         # evaluate_js 프로브가 예외 없이 전부 돌았는가(브리지/렌더 파이프 무결).
         assert "error" not in selftest_result, selftest_result.get("error")
 
-    def test_sealed_artifact_runs_on_one_loopback_origin(
-        self, selftest_result: dict
-    ) -> None:
+    def test_sealed_artifact_runs_on_one_loopback_origin(self, selftest_result: dict) -> None:
         """제품/selftest가 같은 seal을 쓰며 file/dev/external resource를 하나도 싣지 않는다."""
         runtime = selftest_result["runtime"]
         url = selftest_result["url"]
         assert re.fullmatch(r"http://127\.0\.0\.1:\d+/index\.html", url), url
         assert runtime["page_url"] == url
-        assert runtime["origin"] == (
-            f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
-        )
+        assert runtime["origin"] == (f"{urlsplit(url).scheme}://{urlsplit(url).netloc}")
         assert re.fullmatch(r"[0-9a-f]{64}", runtime["artifact_id"])
         assert re.fullmatch(r"[0-9a-f]{64}", runtime["tree_sha256"])
         assert runtime["resource_urls"], "제품 CSS/JS resource가 하나도 기록되지 않았습니다."
@@ -221,6 +231,7 @@ class TestWebSelftestGate:
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
         # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드. 기대 수는 NAV_SCREENS가 소유한다.
         from test_web_dom_contract import NAV_SCREENS
+
         assert selftest_result["nav_count"] == len(NAV_SCREENS)
 
     def test_job_is_default_screen(self, selftest_result: dict) -> None:
@@ -289,7 +300,8 @@ class TestWebSelftestGate:
         assert probe["dupes_shown"] is True, probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
-        self, selftest_result: dict,
+        self,
+        selftest_result: dict,
     ) -> None:
         """네 화면군이 실 click→JS bridge→Python registry→snapshot을 한 부팅에서 왕복한다.
 
@@ -321,7 +333,10 @@ class TestWebSelftestGate:
         assert selftest_result["home_screen_gone"] is True
         assert selftest_result["library_surface"] is True
         assert selftest_result["library_view_tabs"] == [
-            "all", "recent", "favorites", "needsAction",
+            "all",
+            "recent",
+            "favorites",
+            "needsAction",
         ]
 
     def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
@@ -427,9 +442,13 @@ class TestWebSelftestGate:
         # #86/부록 B-9: 네이티브 confirm 대체 모달이 실 앱에서 실제로 열리고 닫히는지 계산 스타일로
         # 확인한다 — .modal{display:flex} 가 hidden 을 덮으면(B-9 결함 클래스) 닫아도 계속 보인다.
         m = selftest_result["modal_a11y"]
-        assert m["confirm_display_closed_before"] == "none", "열기 전 confirmModal 이 이미 보입니다."
+        assert m["confirm_display_closed_before"] == "none", (
+            "열기 전 confirmModal 이 이미 보입니다."
+        )
         assert m["confirm_opened"] is True, "Modal.confirm 이 hidden 을 해제하지 못했습니다."
-        assert m["confirm_display_open"] == "flex", "열린 confirmModal 의 display 가 flex 가 아닙니다."
+        assert m["confirm_display_open"] == "flex", (
+            "열린 confirmModal 의 display 가 flex 가 아닙니다."
+        )
         # 기본 포커스=취소(머무르기) — Enter-반사 파괴 차단(F7, 결정 27/36/38).
         assert m["confirm_focus"] == "confirmModalCancel", (
             f"확인 모달 초기 포커스가 취소가 아닙니다(현재: {m['confirm_focus']!r})."
@@ -469,7 +488,9 @@ class TestWebSelftestGate:
             "Modal.open 이 .modal 없는 요소를 조용히 삼켰습니다 — loud 거절(console.error)+미개방 기대."
         )
 
-    def test_danger_confirm_toggles_visual_variant_without_leaking(self, selftest_result: dict) -> None:
+    def test_danger_confirm_toggles_visual_variant_without_leaking(
+        self, selftest_result: dict
+    ) -> None:
         """#219: 실 WebView2에서 danger 버튼이 솔리드 배경으로 서고 다음 중립 확인엔 남지 않는다."""
         m = selftest_result["modal_a11y"]
         assert m["danger_class"] is True
@@ -539,11 +560,14 @@ class TestWebSelftestGate:
         assert s["cancelled"] is None, f"취소가 null(중단)로 해소 안 됨: {s.get('cancelled')!r}"
         assert s["closed_after"] is True, "취소 후 시트 모달이 닫히지 않았습니다(#33)."
 
-    def test_responsive_shell_keeps_all_tabs_reachable_at_min_width(self, selftest_result: dict) -> None:
+    def test_responsive_shell_keeps_all_tabs_reachable_at_min_width(
+        self, selftest_result: dict
+    ) -> None:
         # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 3개(기안 탭
         # 사망 — F6 PR-B)는 전부 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에
         # 못 가는 것이 상단 셸의 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
         from test_web_dom_contract import NAV_SCREENS
+
         narrow = selftest_result["grid_narrow"]
         assert narrow["tabs"] == len(NAV_SCREENS), f"최소폭에서 탭이 사라짐: {narrow!r}"
         assert narrow["brand_visible"] is False, f"최소폭에서 브랜드 워드마크가 안 접힘: {narrow!r}"
@@ -553,6 +577,7 @@ class TestWebSelftestGate:
         # 넓힐 때(경계 위) 워드마크가 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
         # 축약이 눌러앉아 상시 접힘이 되는 회귀 가드(#27 승계).
         from test_web_dom_contract import NAV_SCREENS
+
         wide = selftest_result["grid_wide"]
         assert wide["rows"] == 2, f"넓은 폭에서 .app 이 토바+스테이지 2행이 아님: {wide!r}"
         assert wide["brand_visible"] is True, f"넓은 폭에서 브랜드 워드마크가 안 펴짐: {wide!r}"
@@ -599,10 +624,14 @@ class TestWebSelftestGate:
         # 출구(생성 값 미리보기 ⤢)가 한 줄로 서는지 되읽는다. 값 표면 단일화의 실물 검증.
         j = probe(selftest_result, "job_mirror")
         assert j.get("error") is None, f"본문 존 프로브 예외: {j.get('error')!r}"
-        assert j["mirror_no_table"] is True, "본문 존에 값 표가 남아 있습니다(§2.13 값 표면 단일화 위반)."
+        assert j["mirror_no_table"] is True, (
+            "본문 존에 값 표가 남아 있습니다(§2.13 값 표면 단일화 위반)."
+        )
         assert j["mirror_line_has_blank_flag"] is True, "빈 값 표지가 서지 않았습니다."
         line = j["mirror_line"]
-        assert "빈 값" in line and "1필드" in line and "낙찰율" in line, f"빈 값 지목 누락: {line!r}"
+        assert "빈 값" in line and "1필드" in line and "낙찰율" in line, (
+            f"빈 값 지목 누락: {line!r}"
+        )
         assert "이름" in line and "2건" in line, f"이름 건수 누락: {line!r}"
         assert j["mirror_preview_exit"] is True, "확인 면 출구(생성 값 미리보기 ⤢)가 없습니다."
         # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 두 자리가 배타로 서는지(#364).
@@ -676,12 +705,21 @@ class TestWebSelftestGate:
         # 실패 시 판별 증거만 좁혀 보인다(전체 dict 는 pytest 가 자른다 — 판독 불능 덤프 금지).
         if not (j["reject_state"] == "rejected" and "빈 값" in j["reject_text"]):
             print("REJECT_EVIDENCE_BEGIN")
-            for k in ("reject_state", "reject_text", "reject_gen", "reject_log",
-                      "reject_hidden", "reject_pushes", "runlog_last"):
+            for k in (
+                "reject_state",
+                "reject_text",
+                "reject_gen",
+                "reject_log",
+                "reject_hidden",
+                "reject_pushes",
+                "runlog_last",
+            ):
                 print(f"  {k} = {j.get(k)!r}")
             print("REJECT_EVIDENCE_END")
         assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], (
-            j["reject_state"], j["reject_text"])
+            j["reject_state"],
+            j["reject_text"],
+        )
         # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
         # 접힘이 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
         assert j["runlog_collapsed"] and j["runlog_last_visible"], j
@@ -737,7 +775,9 @@ class TestWebSelftestGate:
         # 「선택한 작업」 존 사망(U2 §4, #342) — 작업 미선택이면 액션바 이름이 비고 자리를
         # 접는다(게이트 문안이 다음 할 일을 말한다). 정체 표시 실렌더는 job_active_card 소관.
         assert j["action_name_empty"] is True, "작업 미선택인데 액션바가 이름을 말합니다."
-        assert j["tbl_rows_order"] == ["1", "0"], f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
+        assert j["tbl_rows_order"] == ["1", "0"], (
+            f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
+        )
         # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않고(파일명·폴더 정의 불가 = 과진술),
         # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
         assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
@@ -770,16 +810,14 @@ class TestWebSelftestGate:
         assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]
         # 왕복 중 두 번째 클릭은 의도를 뒤집고(첫 카드는 이미 즐겨찾기 → false, true),
         # **앞 왕복이 끝나기 전에는 보내지 않는다**(클릭 순서 = 쓰기 순서, 4R P2).
-        assert j["fav_sync_sends"] == 0, j["fav_sync_sends"]     # 클릭 = 체인 진입
+        assert j["fav_sync_sends"] == 0, j["fav_sync_sends"]  # 클릭 = 체인 진입
         assert j["fav_intents"] == "[]", j["fav_intents"]
         assert json.loads(j["fav_chain"])["inflight"] == 1, j["fav_chain"]  # 둘째 대기
         # 발신열 = ① 첫 카드(즐겨찾기 상태) 두 번 = false,true — 클릭 순서 = 쓰기 순서,
         # ② 둘째 카드(미즐겨찾기) 3연속 = true,false,true 뒤 **첫 왕복만 실패로 완료**된
         # 상태의 4번째 클릭 = false. 정리를 값 비교로 하면 최신 의도가 지워져 여기서
         # true 가 나오고(=껐다가 다시 켜짐) 사용자 의도가 소실된다(5R P2).
-        assert json.loads(j["fav_order"]) == [
-            False, True, True, False, True, False
-        ], j["fav_order"]
+        assert json.loads(j["fav_order"]) == [False, True, True, False, True, False], j["fav_order"]
 
     def test_job_document_browser_sheet_renders_tabs_rows_and_reasons(
         self, selftest_result: dict
@@ -792,7 +830,7 @@ class TestWebSelftestGate:
         assert j["browse_open"] is True, j["browse_open"]
         assert j["browse_tabs"] == ["사용 가능 7/false", "확인 필요 1/true"], j["browse_tabs"]
         assert len(j["browse_rows"]) == 1, j["browse_rows"]
-        row = j["browse_rows"][0]      # flex gap 이라 textContent 에는 공백이 없다
+        row = j["browse_rows"][0]  # flex gap 이라 textContent 에는 공백이 없다
         assert row.startswith("견적서") and "없는 열: 담당자" in row, row
         assert "2건" in j["browse_note"], j["browse_note"]
         assert j["browse_focus_is_query"] is True, "탐색 면 초기 포커스가 검색 입력이 아닙니다."
@@ -838,10 +876,12 @@ class TestWebSelftestGate:
         assert j["relink_visible_no_data"] is True, (
             "후보 구획이 숨은 상태에서 재연결 어포던스가 화면에 없습니다 — 도달 보장 소멸."
         )
-        assert j["warn_redirect_modal"] is True, "경고 카드 클릭이 안내 다이얼로그를 열지 않았습니다."
-        assert "선택" in j["warn_modal_body"] and "다시 연결" in j["warn_modal_body"], (
-            j["warn_modal_body"]
+        assert j["warn_redirect_modal"] is True, (
+            "경고 카드 클릭이 안내 다이얼로그를 열지 않았습니다."
         )
+        assert "선택" in j["warn_modal_body"] and "다시 연결" in j["warn_modal_body"], j[
+            "warn_modal_body"
+        ]
         assert json.loads(j["warn_click_sends"]) == [], (
             f"경고 카드 클릭이 발신을 만들었습니다(선택이 아니어야 합니다): {j['warn_click_sends']!r}"
         )
@@ -927,7 +967,9 @@ class TestWebSelftestGate:
         assert j["row_role"] is None, "tr에 checkbox role이 남아 native row 의미를 덮었습니다."
         assert j["row_selected"] == "true"
         assert j["row_checkbox"] is True
-        assert j["row_doccell_display"] == "flex", "table-cell 대신 내부 래퍼가 flex를 소유해야 합니다."
+        assert j["row_doccell_display"] == "flex", (
+            "table-cell 대신 내부 래퍼가 flex를 소유해야 합니다."
+        )
         assert j["lead_hint"] == "선택하면 파일명이 정해집니다"
         assert j["repeated_placeholder"] == 0
         assert j["amount_align"] == "right"
@@ -942,7 +984,9 @@ class TestWebSelftestGate:
             f"재클릭 값이 화면의 현재 상태를 따르지 않습니다: {j['row_toggle_values']!r}"
         )
 
-    def test_filter_panel_shell_appears_before_backend_response(self, selftest_result: dict) -> None:
+    def test_filter_panel_shell_appears_before_backend_response(
+        self, selftest_result: dict
+    ) -> None:
         """I-217 R4: filter_panel 응답이 미결이어도 제목+로딩 껍데기는 클릭 프레임에 선다."""
         assert probe(selftest_result, "job_mirror")["panel_shell_immediate"] is True
 
@@ -969,7 +1013,9 @@ class TestWebSelftestGate:
         # 열 필터 패널 기본 닫힘 — [hidden] 이 .colpanel 의 display:flex 를 실제로 이긴다
         # (부록 B-9 overlay/hidden 충돌 결함류의 자동 눈검증 — 시연에서 실증된 그 결함).
         j = probe(selftest_result, "job_mirror")
-        assert j["panel_hidden"] is True, "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
+        assert j["panel_hidden"] is True, (
+            "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
+        )
 
     def test_job_guard_body_composes_counts_and_losses(self, selftest_result: dict) -> None:
         # 세션 가드 확인 본문(결정 27 종류별 수치 재진술) — 합성 문안을 되읽어
@@ -987,7 +1033,8 @@ class TestWebSelftestGate:
         minimal = probe(selftest_result, "job_mirror")["guard_body_minimal"]
         assert "빈 값 확인" not in minimal, f"없는 손실을 열거합니다(과경고): {minimal!r}"
         assert "직전 필터 재적용" not in minimal, (
-            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {minimal!r}")
+            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {minimal!r}"
+        )
         # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
         assert probe(selftest_result, "job_mirror")["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
@@ -1033,9 +1080,7 @@ class TestWebSelftestGate:
     #  프로브 결과가 「기안」 화면과 함께 걷혔다, F6 PR-B. 좌 목록·그룹 계약의 생존 판은
     #  라이브러리·tpl 프로브가, 세션·복사 계약은 작업대 프로브(test_workbench_*)가 진다.)
 
-    def test_tab_disposition_actually_continues_after_saving(
-        self, selftest_result: dict
-    ) -> None:
+    def test_tab_disposition_actually_continues_after_saving(self, selftest_result: dict) -> None:
         # F7 1R P1 의 영구 가드 — 「저장하고 이동」은 **저장 뒤 이동까지** 가야 한다.
         # 정적 계약은 이 결함을 못 봤다: 배선·문안·판정이 전부 제자리이고 성사 뒤 **이어짐**만
         # 끊겼다(`doSave` 가 성공에 undefined 를 돌려줘 가드가 조기 반환). 실 클릭 → 실 모달 →
@@ -1081,9 +1126,9 @@ class TestWebSelftestGate:
         assert d["name_value_after_cancel"] == "공고서 수정", (
             f"취소했는데 친 값이 사라졌습니다: {d['name_value_after_cancel']!r}"
         )
-        assert d["discard_enabled_after_cancel"] is True and d["save_enabled_after_cancel"] is True, (
-            f"취소 뒤 두 행동이 잠겼습니다 — 손댄 세션인데 버릴 길도 저장할 길도 없습니다: {d!r}"
-        )
+        assert (
+            d["discard_enabled_after_cancel"] is True and d["save_enabled_after_cancel"] is True
+        ), f"취소 뒤 두 행동이 잠겼습니다 — 손댄 세션인데 버릴 길도 저장할 길도 없습니다: {d!r}"
         assert d["discarded"] is False, "취소했는데 discard_patch 가 발신됐습니다."
 
     def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
@@ -1168,7 +1213,9 @@ class TestWebSelftestGate:
             "편집기를 나온 뒤에도 상단 2탭이 숨어 있습니다 — 몰입이 영구 은닉이 됐습니다."
         )
 
-    def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:
+    def test_editor_chip_live_renders_ownership_and_toggle_chips(
+        self, selftest_result: dict
+    ) -> None:
         # 매핑 분류 칩-라이브(결정 12·13) — 합성 매핑 스냅샷을 실
         # render() 에 흘려 사용할 헤더가 즉시 토글 칩(체크박스 스테이징 소거)으로, 미사용
         # 구역이 펼쳐지고, 소유권 태그 4종과 touched 행 ↩(자동 제안 복귀)가 흡수된 편집
@@ -1176,14 +1223,20 @@ class TestWebSelftestGate:
         e = selftest_result["editor_chip"]
         assert e.get("error") is None, f"칩-라이브 프로브 예외: {e.get('error')!r}"
         assert e["active_chips"] == 3, f"활성 칩(즉시 토글)이 3개가 아닙니다: {e!r}"
-        assert e["has_checkbox_staging"] is False, "체크박스 스테이징이 남아 있습니다 — 결정 13 소거 위반."
+        assert e["has_checkbox_staging"] is False, (
+            "체크박스 스테이징이 남아 있습니다 — 결정 13 소거 위반."
+        )
         assert e["ignored_chip"] is True, "미사용 칩(토글형)이 없습니다."
-        assert e["ignored_fold_open"] is True, "ignored_expanded 인데 미사용 구역이 펼쳐지지 않았습니다(결정 13)."
+        assert e["ignored_fold_open"] is True, (
+            "ignored_expanded 인데 미사용 구역이 펼쳐지지 않았습니다(결정 13)."
+        )
         assert e["use_none_btn"] is True, "'전체 미사용' 버튼이 없습니다(결정 13 대칭쌍)."
         tags = e["tags"]
         for want in ("확정", "수동", "제안", "후보 없음"):
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
-        assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↻) 버튼이 없습니다(리뷰 R5)."
+        assert e["auto_revert_option"] is True, (
+            "touched 행에 '자동 제안으로 되돌리기'(↻) 버튼이 없습니다(리뷰 R5)."
+        )
         # 그 버튼이 select 와 **같은 줄에** 서는가(U2 §2.6). 정적 CSS 검사로는 못 보고
         # 실렌더 기하로만 드러나는 결함이라 여기서 잰다: 버튼 있는 수동 행과 없는 제안
         # 행의 「데이터 열」 칸 높이가 같으면 줄바꿈이 없는 것이다.
@@ -1229,7 +1282,9 @@ class TestWebSelftestGate:
         assert g["reverted_discard_disabled"] is True, (
             "되돌려 쳤는데 「변경 버리기」가 열린 채입니다 — 버릴 것 없는 버리기를 권합니다."
         )
-        assert g["pattern_present"] is True, "파일명 패턴 입력이 없습니다 — 프로브가 겨눌 자리 소실."
+        assert g["pattern_present"] is True, (
+            "파일명 패턴 입력이 없습니다 — 프로브가 겨눌 자리 소실."
+        )
         assert g["pattern_typing_enabled"] is True, (
             "패턴을 고쳤는데 저장이 잠긴 채입니다 — 이름만 고치고 패턴은 빠졌습니다."
         )
@@ -1268,7 +1323,9 @@ class TestWebSelftestGate:
         assert t["rows_visible"] == 4, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {t!r}"
         assert t["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
         assert t["row_more"] == 4, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
-        assert t["assign_chips"] == 2, "＋그룹지정 칩은 「그룹 없음」 행에만 노출돼야 합니다(결정 2)."
+        assert t["assign_chips"] == 2, (
+            "＋그룹지정 칩은 「그룹 없음」 행에만 노출돼야 합니다(결정 2)."
+        )
         assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
         assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
         assert t["band_caption"] is True, "밴드 캡션(개수·루트 경로 — 점검표 10행)이 없습니다."
@@ -1287,7 +1344,9 @@ class TestWebSelftestGate:
         )
         # ＋그룹지정 칩 → 이동 다이얼로그 개폐(기존 #tplMoveModal DOM 재사용).
         assert t["move_hidden_before"] is True, "이동 다이얼로그가 기본 닫힘이 아닙니다."
-        assert t["move_shown_after_chip"] is True, "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
+        assert t["move_shown_after_chip"] is True, (
+            "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
+        )
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
         assert t["flat_heads"] == 0 and t["flat_rows"] == 1, f"퇴화 평면 위반: {t!r}"
 
@@ -1308,11 +1367,16 @@ class TestWebSelftestGate:
         assert h["job_steps"] == [
             # 「실행 기록」 = 결과 3태 구획이 결과 사건을 가져간 뒤 로그 상자에 남은 역할
             # (F4 판정 D) — 같은 존 안의 부캡션이라 이 목록에 함께 잡힌다.
-            "현재 데이터", "본문 확인", "생성 결과", "실행 기록",
+            "현재 데이터",
+            "본문 확인",
+            "생성 결과",
+            "실행 기록",
             # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
             # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
             # 「선택한 작업」 존은 사망(U2 §4 판정 A, #342) — 활성 카드·액션바 이름이 승계.
-            "시작하기", "이 데이터에 사용할 문서", "생성 준비",
+            "시작하기",
+            "이 데이터에 사용할 문서",
+            "생성 준비",
         ]
 
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:
@@ -1325,7 +1389,9 @@ class TestWebSelftestGate:
         assert h["selected_card"]["border_left"] != "rgba(0, 0, 0, 0)"
         assert h["selected_card"]["background"] != h["card_base"]["background"]
 
-    def test_milestone_h_disabled_primary_and_pathtrack_hierarchy(self, selftest_result: dict) -> None:
+    def test_milestone_h_disabled_primary_and_pathtrack_hierarchy(
+        self, selftest_result: dict
+    ) -> None:
         """H-11/H-12: disabled primary가 물러나고 로케이트 동사는 아이콘 접근 이름을 갖는다."""
         h = selftest_result["milestone_h_wave1"]
         assert h["disabled_primary"]["background"] != h["enabled_primary"]["background"]
@@ -1345,18 +1411,25 @@ class TestWebSelftestGate:
         assert s["scroll_top"] > 0
         assert s["sticky_holds"] is True
 
-    def test_milestone_h_overlay_root_scrollbar_and_sticky_material_render(self, selftest_result: dict) -> None:
+    def test_milestone_h_overlay_root_scrollbar_and_sticky_material_render(
+        self, selftest_result: dict
+    ) -> None:
         h = selftest_result["milestone_h_overlay"]
         assert h.get("error") is None, h.get("error")
         assert h["pending"] is False
         assert h["overlay_root_direct"] is True and h["overlay_children_owned"] is True
         assert h["scrollbar"] == {
-            "width": "8px", "button_display": "none", "button_width": "0px", "button_height": "0px",
+            "width": "8px",
+            "button_display": "none",
+            "button_width": "0px",
+            "button_height": "0px",
         }
         assert h["sticky_material"]["position"] == "sticky"
         assert "blur(14px)" in h["sticky_material"]["backdrop"]
 
-    def test_milestone_h_workcard_and_popover_interactions_render(self, selftest_result: dict) -> None:
+    def test_milestone_h_workcard_and_popover_interactions_render(
+        self, selftest_result: dict
+    ) -> None:
         # workcard 프로브는 「기안」 카드 사망으로 작업대 #wbCard(.wb-preview + wc-render +
         # f-* 글꼴)로 재겨눔(F6 PR-B) — 구 .wc-render 전용 gutter/overscroll 은 승계 규칙에
         # 없어 프로브도 재지 않는다.
@@ -1378,14 +1451,18 @@ class TestWebSelftestGate:
         assert w["dot_hit"] == ["24px", "24px"] and w["dot_mark"] == ["14px", "14px"]
         assert w["dots_overflow"] == "visible"
         p = h["popover_place"]
-        assert p["placement"] == "top" and p["in_viewport"] is True and p["origin"].endswith(" bottom")
+        assert (
+            p["placement"] == "top" and p["in_viewport"] is True and p["origin"].endswith(" bottom")
+        )
         assert p["radius"] == "12px" and p["shadow"] != "none"
         assert h["drag_closed"] is True and h["click_after_drag"] is True
         assert h["click_after_right"] is True
         assert h["focusout_closed"] is True and h["scroll_closed"] is True
         assert h["close_all_closed"] is True
 
-    def test_milestone_h_modal_stack_ime_focus_and_short_viewport_render(self, selftest_result: dict) -> None:
+    def test_milestone_h_modal_stack_ime_focus_and_short_viewport_render(
+        self, selftest_result: dict
+    ) -> None:
         h = selftest_result["milestone_h_overlay"]
         assert h["modal_closed_popover"] is True and h["z_order"] is True
         # 표적 모달 재겨눔(draftSaveTplModal 사망 → txtEditModal, F6 PR-B).
@@ -1414,10 +1491,16 @@ class TestWebSelftestGate:
         assert e["filter_notice"] is True, "매체 밴드 고지(파일 생성/복사)가 렌더되지 않았습니다."
         assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
         # 그룹 헤더 안정 id는 재렌더 뒤 Preserve 포커스 복원의 근거다.
-        assert e["grp_head_has_id"] is True, "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
+        assert e["grp_head_has_id"] is True, (
+            "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
+        )
         # 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
-        assert e["fname_ellipsis"] == "ellipsis", f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
-        assert e["fname_minwidth"] == "0px", f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
+        assert e["fname_ellipsis"] == "ellipsis", (
+            f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
+        )
+        assert e["fname_minwidth"] == "0px", (
+            f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
+        )
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
         assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"퇴화 평면 위반: {e!r}"
 
@@ -1426,7 +1509,9 @@ class TestWebSelftestGate:
         # **교체**된다(결정 36·S9). overlay 로 얹히는 게 아니라 실제로 교체돼 선다.
         j = probe(selftest_result, "job_mirror")
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
-        assert j["drift_fix_link"] is True, "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
+        assert j["drift_fix_link"] is True, (
+            "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
+        )
         assert j["drift_no_line"] is True, "드리프트인데 본문 존이 건강한 한 줄을 그대로 그립니다."
         # 재진술 블록은 danger 차단(드리프트 등) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
         assert j["restate_hidden_on_drift"] is True, (
@@ -1451,15 +1536,22 @@ class TestWebSelftestGate:
         for needle in ("5개 성공", "1개 실패", "미착수 6건"):
             assert needle in mixed, f"퇴장 요약이 수치를 흘립니다({needle}): {mixed!r}"
         # ③ 레코드 처리 전 실패 — 수치를 통째로 생략하던 태가 사실을 말한다.
-        assert "생성 시작 전 실패 · 대상 12건" in j["exit_prebatch_failed"], j["exit_prebatch_failed"]
+        assert "생성 시작 전 실패 · 대상 12건" in j["exit_prebatch_failed"], j[
+            "exit_prebatch_failed"
+        ]
         # ④ 정상 완주 · ⑤ 일부 실패 — 0 인 성분(실패·미착수)은 붙지 않는다(지어내지 않는다).
         assert j["exit_completed"].startswith("'발주요청서' 12개 성공")
         assert "미착수" not in j["exit_completed"] and "실패" not in j["exit_completed"]
         assert "10개 성공 · 2개 실패" in j["exit_partial_failure"], j["exit_partial_failure"]
         assert "미착수" not in j["exit_partial_failure"], j["exit_partial_failure"]
         # 다섯 태 모두 착지 폴더를 남긴다 — 손으로 고른 저장 폴더의 마지막 보관처다(§2.18 ⑷).
-        for key in ("exit_cancelled_untouched", "exit_cancelled_mixed",
-                    "exit_prebatch_failed", "exit_completed", "exit_partial_failure"):
+        for key in (
+            "exit_cancelled_untouched",
+            "exit_cancelled_mixed",
+            "exit_prebatch_failed",
+            "exit_completed",
+            "exit_partial_failure",
+        ):
             assert j[key].endswith("D:\\out"), (key, j[key])
         # 생성이 아닌 태에는 퇴장 한 줄이 없다(없는 실행을 지어내지 않는다).
         assert j["exit_rejected"] == "" and j["exit_running"] == ""
@@ -1475,7 +1567,9 @@ class TestWebSelftestGate:
         # count 스왑·이름 목록 누락이 조용히 배포돼 사용자가 축소된 그림 위에서 덮어쓰는 것을 막는다.
         body = probe(selftest_result, "job_mirror")["ow_body"]
         assert "10건을 생성합니다" in body, f"총량 미표기: {body!r}"
-        assert "3건이 기존 파일을 덮어씁니다" in body, f"파괴분 미표기(new_count 와 스왑?): {body!r}"
+        assert "3건이 기존 파일을 덮어씁니다" in body, (
+            f"파괴분 미표기(new_count 와 스왑?): {body!r}"
+        )
         assert "나머지 7건은 새 파일" in body, f"신규분 미표기: {body!r}"
         assert "a.hwpx" in body and "b.hwpx" in body, f"덮어쓸 파일 이름 목록 누락: {body!r}"
         assert "외 5개" in body, f"초과분(conflict_more) 미표기: {body!r}"
@@ -1498,9 +1592,7 @@ class TestWebSelftestGate:
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
         assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
 
-    def test_workbench_is_immersive_and_the_queue_degenerates(
-        self, selftest_result: dict
-    ) -> None:
+    def test_workbench_is_immersive_and_the_queue_degenerates(self, selftest_result: dict) -> None:
         """TXT 검토·복사 작업대(재작성 F6 PR-A) — 실 WebView2 되읽기.
 
         정적 계약이 통과시키는 세 가지를 실물로 잡는다: ①몰입 셸이 실제로 상단 2탭을
@@ -1540,7 +1632,9 @@ class TestWebSelftestGate:
         # 없으면 사용자가 소유 행을 손으로 찾는다(8R P2). 신원(data-token)·착지(포커스)·
         # 표지(계산된 스타일) 셋이 다 서야 길이 열린 것이다 — 하나만 빠져도 정적으론 초록이다.
         assert w["card_tokens"] == 2, f"조각이 토큰 신원을 안 지고 나갑니다: {w['card_tokens']}"
-        assert w["aim_row"] == "수신", f"결과 조각이 소유 규칙 행을 겨누지 못합니다: {w['aim_row']!r}"
+        assert w["aim_row"] == "수신", (
+            f"결과 조각이 소유 규칙 행을 겨누지 못합니다: {w['aim_row']!r}"
+        )
         assert w["aim_marked"] not in ("", "none"), (
             f"겨눈 행이 아무 표지도 못 받습니다(표 클래스↔스타일시트 드리프트): {w['aim_marked']!r}"
         )
@@ -1580,10 +1674,12 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     # (1) 쓰기 단계 — 저장 테마를 심고 종료.
     w = _boot_selftest(
         dict(base, HWPX_SELFTEST_OUT=str(out_write), HWPX_SELFTEST_SET_THEME="dark"),
-        out=out_write, what="테마 쓰기 단계",
+        out=out_write,
+        what="테마 쓰기 단계",
     )
     assert out_write.exists(), (
-        f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}")
+        f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}"
+    )
     written = json.loads(out_write.read_text(encoding="utf-8"))
     assert written.get("set_result") == "dark", f"쓰기 단계 Theme.set 실패: {written}"
 
@@ -1592,10 +1688,12 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="테마 읽기 콜드부트"
     )
     assert out_read.exists(), (
-        f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={r.stderr[-2000:]}")
+        f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={r.stderr[-2000:]}"
+    )
     tp = json.loads(out_read.read_text(encoding="utf-8"))["theme_persist"]
     assert tp["data_theme"] == "dark", (
-        f"콜드부트에서 저장 테마 미적용 — Python 설정 영속 또는 loaded 주입 실패: {tp!r}")
+        f"콜드부트에서 저장 테마 미적용 — Python 설정 영속 또는 loaded 주입 실패: {tp!r}"
+    )
     dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
 
@@ -1620,7 +1718,9 @@ def test_font_scale_persists_across_restart_without_major_overflow(
         out=out_write,
         what=f"배율 쓰기 단계({scale})",
     )
-    assert out_write.exists(), f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
+    assert out_write.exists(), (
+        f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
+    )
     assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
     saved.update(master_width=333)
@@ -1629,7 +1729,9 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     read_proc = _boot_selftest(
         dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="배율 되읽기 콜드부트"
     )
-    assert out_read.exists(), f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
+    assert out_read.exists(), (
+        f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
+    )
     p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
     assert p["font_scale"] == scale and p["root_px"] == root_px
     assert p["master_width"] == 333
@@ -1637,6 +1739,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     full = json.loads(out_read.read_text(encoding="utf-8"))
     # 큰 배율에서도 좁은 창의 탭 도달성과 넓은 창의 토바 전개가 유지된다(배율×셸 교차 회귀).
     from test_web_dom_contract import NAV_SCREENS
+
     assert full["grid_narrow"]["tabs"] == len(NAV_SCREENS)
     assert full["grid_narrow"]["overflow"] is False
     assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True
@@ -1656,9 +1759,7 @@ def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: 
         "height": 700,
         "maximized": mode == "maximized",
     }
-    (home / "settings.json").write_text(
-        json.dumps({"window_geometry": geometry}), encoding="utf-8"
-    )
+    (home / "settings.json").write_text(json.dumps({"window_geometry": geometry}), encoding="utf-8")
     out = tmp_path / f"geometry-{mode}.json"
     env = dict(
         os.environ,
@@ -1678,6 +1779,7 @@ def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: 
         assert actual["maximized_like"] is True, f"최대화 복원 실패: {actual!r}"
     else:
         assert actual["x"] < 50_000 and actual["maximized_like"] is False
+
 
 # InPrivate 의미론이 바뀌어도 부팅마다 webview_root를 청소하고 고정 프로필을 새로 만든다.
 # 재시작 간 공유 캐시·구판 잔재 차단은
@@ -1704,7 +1806,8 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
     stamp = saved.get("boot_completed_runtime")
     assert isinstance(stamp, str) and stamp, (
-        f"완주 스탬프 미기록 — 모든 부팅이 첫 실행으로 남습니다(#77): {saved!r}")
+        f"완주 스탬프 미기록 — 모든 부팅이 첫 실행으로 남습니다(#77): {saved!r}"
+    )
     # 첫 부팅은 넓은 예산이었고, 이 스탬프 뒤로는 좁은 예산이다(판정의 실 왕복).
     assert decide("", stamp)[0] == COLD_BUDGET_SECONDS
     assert decide(stamp, stamp)[0] == WARM_BUDGET_SECONDS
@@ -1799,7 +1902,9 @@ def test_selftest_api_is_absent_without_the_capability_in_real_webview(
     assert delta["retired_present"] == [], (
         f"은퇴한 임시 전역이 실 창에 살아 있습니다: {delta['retired_present']}"
     )
-    assert len(_RETIRED_COMPAT_GLOBALS) == 27, "은퇴 목록이 바뀌었습니다 — 프로브와 함께 고치십시오."
+    assert len(_RETIRED_COMPAT_GLOBALS) == 27, (
+        "은퇴 목록이 바뀌었습니다 — 프로브와 함께 고치십시오."
+    )
 
 
 @pytest.mark.live
@@ -1992,6 +2097,37 @@ def test_aggregate_boot_budget_fails_fast_instead_of_burning_the_ci_job(monkeypa
     assert "전면 매달린" in message
 
 
+def _aggregate_health_note(spent: float, boots: int) -> "str | None":
+    """합계 상한 대비 정상 소진의 건강 소견 — **보고**용이고 게이트가 아니다(#477).
+
+    기준은 임의의 비율이 아니라 **의미 있는 불변식**이다: 정상 실행이 부팅 하나 몫의 시한조차
+    남기지 못하면, 고립된 매달림 한 번에도 합계가 소진돼 나머지가 통째로 실패한다. 다만 그
+    소진을 만드는 것은 러너 속도라, 공유 CI 에서 이 문턱으로 머지를 막으면 제품이 아니라
+    인프라를 재는 축이 거부권을 갖는다(#477 의 진단 그대로). 넘으면 시끄럽게 적는다 — 그것이
+    합계 상한 재조정의 신호다.
+    """
+    if spent >= _AGGREGATE_BOOT_BUDGET_S - _SELFTEST_TIMEOUT:
+        return (
+            f"정상 실행({boots}부팅)이 {spent:.0f}s 를 썼습니다 — 합계 상한 "
+            f"{_AGGREGATE_BOOT_BUDGET_S:.0f}s 에서 부팅 하나 몫({_SELFTEST_TIMEOUT:.0f}s)조차 "
+            "남기지 못합니다. 고립된 매달림 한 번에 나머지가 통째로 실패합니다"
+            " (#477 보고 축 — 차단하지 않습니다)."
+        )
+    return None
+
+
+def test_the_aggregate_health_note_fires_and_stays_quiet_on_the_right_sides() -> None:
+    """보고 술어의 양·음성 — 경보로 강등한 문턱이 실제로 무는지 합성 수치로 고정한다(#477).
+
+    단언을 경보로 바꾸면 술어가 죽어도 아무도 모른다 — 침묵과 초록이 구별되지 않는다.
+    게이트 밖 층이다: 창 없이 돈다.
+    """
+    line = _AGGREGATE_BOOT_BUDGET_S - _SELFTEST_TIMEOUT
+    fired = _aggregate_health_note(line, boots=7)
+    assert fired is not None and "차단하지 않습니다" in fired and "7부팅" in fired
+    assert _aggregate_health_note(line - 1.0, boots=7) is None
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _healthy_run_leaves_room_for_a_hang():
     """양성 대조 — 정상 실행이 합계 상한에 걸리면 그 상한은 매달림이 아니라 느린 러너를 잡는다.
@@ -2002,8 +2138,8 @@ def _healthy_run_leaves_room_for_a_hang():
     셌다. 11 대 14 — 안전 여유를 과소평가한 채 초록이었다. 「파라미터화 포함」이라 적힌 주석은
     살고 그 결과는 죽어 있었던 셈이라, 실측으로 바꾼다.
 
-    기준은 임의의 비율이 아니라 **의미 있는 불변식**이다: 정상 실행이 부팅 하나 몫의 시한조차
-    남기지 못하면, 고립된 매달림 한 번에도 합계가 소진돼 나머지가 통째로 실패한다.
+    판정은 :func:`_aggregate_health_note` 가 들고, 여기서는 **경보로 낸다**(#477) — 문턱의
+    불변식은 유효하지만 그것을 넘게 만드는 것은 러너 속도이고, 그 축은 차단하지 않는다.
     """
     yield
     if _boot_waits["timed_out"]:
@@ -2012,11 +2148,9 @@ def _healthy_run_leaves_room_for_a_hang():
     boots = int(_boot_waits["boots"])
     if not boots:
         return  # 게이트 옵트아웃 — 부팅이 없었으므로 잴 것도 없다
-    assert spent < _AGGREGATE_BOOT_BUDGET_S - _SELFTEST_TIMEOUT, (
-        f"정상 실행({boots}부팅)이 {spent:.0f}s 를 썼습니다 — 합계 상한 "
-        f"{_AGGREGATE_BOOT_BUDGET_S:.0f}s 에서 부팅 하나 몫({_SELFTEST_TIMEOUT:.0f}s)조차 "
-        "남기지 못합니다. 고립된 매달림 한 번에 나머지가 통째로 실패합니다."
-    )
+    note = _aggregate_health_note(spent, boots)
+    if note is not None:
+        warnings.warn(note, stacklevel=1)
 
 
 def test_a_dead_probe_names_itself_instead_of_raising_keyerror() -> None:
