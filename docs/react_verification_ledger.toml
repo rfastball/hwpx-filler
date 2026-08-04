@@ -44,6 +44,12 @@
 # 테스트에게 물리 source 경로 재조립을 금지하므로, 모범적인 웹 테스트일수록 `frontend/` 를
 # 직접 안 쓴다. 좁은 판에서는 그런 파일 열이 제외에 영영 앉아 있을 수 있었고, 그중에는
 # 실렌더 눌림 기하(`tests/test_web_press_geometry.py`)도 있었다.
+#
+# **봉인된 산출물을 다루는 것까지도 본다**(R1-99 감사가 넓혔다). 헬퍼 *이름*은 들었는데 그것이
+# 가리키는 도메인 어휘를 안 들어, Vite 산출물의 정체성을 대조하는 파일 둘이 제외에 앉아 있었다.
+# 프런트가 무엇으로 빌드되든 그 산출물을 재는 자리는 R2 가 빌드를 갈아 끼우면 함께 움직인다.
+#
+# 술어의 실물과 갈래는 여전히 게이트에만 있다. 이 문단은 **왜 그 갈래인가**만 적는다.
 
 schema = "react-verification-ledger/v1"
 baseline_sha = "931157b00f120e5be24a8caadeda251263f673a5"
@@ -742,3 +748,27 @@ id = "frontend-build-config"
 match = { kind = "exact", value = ["vite.config.mjs", "package.json", "package-lock.json"] }
 reason = "Vite 빌드의 입력. R2 가 갈아 끼울 바로 그 자리인데 루트 파일이라 트리 밖이다."
 owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "test-corpora"
+match = { kind = "prefix", value = "tests/corpus/" }
+reason = "golden·실물 코퍼스. 시나리오·불변식·나라 물품 테스트가 이것을 읽어 판정하므로 검증 재료인데 `.py` 가 아니라 트리 밖이다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "test-fixtures"
+match = { kind = "prefix", value = "tests/fixtures/" }
+reason = "바이너리·문서 픽스처(멀티시트 엑셀 등). `js-negative-fixtures` 의 직계 형제인데 첫 판이 한쪽만 선언했다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "quality-config"
+match = { kind = "exact", value = ["docs/package_coverage_floors.toml", "pyproject.toml", "uv.lock"] }
+reason = "게이트가 데이터로 읽는 형상 — 커버리지 하한·marker 등록·잠긴 의존성. 판정의 입력인데 트리 밖이다."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
+id = "example-101-assets"
+match = { kind = "prefix", value = "examples/quickstart-101/" }
+reason = "101 실주행 게이트가 소비하는 학습 세트. 실행 증거의 입력인데 트리 밖이다."
+owner_stage = "R5-03"

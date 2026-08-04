@@ -14,6 +14,7 @@ G4   ``successor`` 가 ``keep`` 이 아닌 행의 후계가 **다른 자산 행*
 G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언 차단)
 G7   그 축이 **파티션과 겹치지 않는가**(자산을 분모 밖으로 미는 우회 차단)
+G8   ``tests/`` 아래에 트리도 축도 아닌 **침묵한 파일이 없는가**(선언 집합의 전수성)
 ===  ====================================================================
 
 **원장이 어떤 개수도 들지 않는다.** 2차 구현(#469)은 게이트의 테스트 개수가 원장의 값이라
@@ -39,6 +40,12 @@ G6·G7 은 R1-99 독립 감사가 낸 것이고 **다른 층**을 연다. 앞의
 같은 감사가 G2 도 다시 넓혔다: 헬퍼 이름 ``_web_artifact_contract`` 는 있는데 그것이 가리키는
 **도메인 어휘**가 없어 봉인 산출물 소비자 둘이 제외에 앉아 있었다 — **집합 하나를 넓히고 그
 형제를 안 넓힌 것**이다.
+
+G8 은 그 다음 반증이 낸 것이고, 앞의 수정이 **같은 실수를 한 번 더** 했기 때문에 생겼다:
+``tests/js/fixtures/`` 를 선언하면서 직계 형제 ``tests/fixtures/``·``tests/corpus/`` 를
+빠뜨렸다(33건). 축을 손으로 열거하는 한 그 빠뜨림은 **기억의 문제**로 남으므로, ``tests/``
+범위에 한해 **저장소가 답하게** 했다. 같은 반증이 음성 대조의 오조준도 잡았다 — ⑷ 를 겨눈다던
+단언의 피해자가 ⑴ 에 이미 물려서, ⑷ 를 통째로 지워도 전부 초록이었다.
 """
 
 from __future__ import annotations
@@ -69,7 +76,7 @@ TREE_SPECS: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: 안전망인데 ``tests/`` 밑이 아니라 축 밖이었다.
 TREE_EXTRA_FILES: tuple[str, ...] = ("conftest.py",)
 
-#: 「이 파일이 웹 표면에 닿는가」의 **유일한** 술어. 세 갈래로 묻는다.
+#: 「이 파일이 웹 표면에 닿는가」의 **유일한** 술어. 네 갈래로 묻는다.
 #:
 #: ⑴ **제품 경로·전역을 이름으로 부른다** — 첫 줄.
 #: ⑵ **헬퍼를 경유해 소비한다** — 둘째 줄. 이것이 없으면 술어가 규약을 지킬수록 눈이 먼다:
@@ -89,12 +96,27 @@ TREE_EXTRA_FILES: tuple[str, ...] = ("conftest.py",)
 #: 안 봤다.** ⑷ 는 그 위에 한 겹을 더 얹는다: **집합 하나를 넓히고 그 형제를 안 넓혔다**
 #: (헬퍼 이름은 넣고 도메인 어휘는 안 넣었다). 넓히는 방향은 언제나 자유이므로 새 접촉
 #: 방식이 보이면 여기에 더한다.
-WEB_SURFACE = re.compile(
+#: 네 갈래를 **이름 붙여 조립**한다. 사본을 뜨지 않으려는 것이다 — 음성 대조가 「이 피해자는
+#: ⑷ 없이는 안 물린다」를 단언하려면 ⑴⑵⑶ 만 든 술어가 필요한데, 그것을 손으로 다시 적으면
+#: 술어가 두 벌이 되고 값이 갈린다(rev3 집필 중 실제로 났던 사고다).
+#:
+#: ⑷ 의 주의 둘. **``web_artifact`` 가 ``resolve_web_artifact``·``_web_artifact_contract`` 를
+#: 부분열로 포섭**하므로 그 둘을 ⑷ 에 따로 들지 않는다(들면 잉여이고 독립 항으로 읽힌다).
+#: ``[Vv]ite`` 는 대소문자 둘 다 문다 — ``Vite`` 만 들면 ``vite.config`` 를 쓰는 파일이 조용히
+#: 빠지고, R2 가 빌드를 갈아 끼울 때 움직이는 어휘가 정확히 소문자 쪽이다.
+_SURFACE_NAMED = (
     r"frontend/|webapp|build/web|__hwpx|pywebview|WebFrontend|selftest|bridge\.js|index\.html"
-    r"|_web_source|_press_probe|_web_artifact_contract"
-    r"|querySelector|getElementById|evaluate_js|dispatchEvent|window\.__cap"
-    r"|web_artifact|artifact_id|tree_sha256|resolve_web_artifact|Vite"
 )
+_SURFACE_HELPER = r"_web_source|_press_probe|_web_artifact_contract"
+_SURFACE_DOM = r"querySelector|getElementById|evaluate_js|dispatchEvent|window\.__cap"
+_SURFACE_SEALED = r"web_artifact|artifact_id|tree_sha256|[Vv]ite"
+
+WEB_SURFACE = re.compile(
+    "|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM, _SURFACE_SEALED))
+)
+
+#: ⑷ 를 뺀 술어. **음성 대조 전용**이고 게이트 판정에는 안 쓴다.
+SURFACE_WITHOUT_SEALED = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM)))
 
 #: 인계선 어휘. 원장에서 유도하면 오타가 새 단계를 발명하므로 리터럴로 든다.
 KNOWN_STAGES = frozenset(
@@ -153,7 +175,7 @@ def _read(path: str) -> tuple[str, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# 다섯 질문 — 각각 문제 목록을 낸다(빈 목록 = 통과)
+# 질문들 — 각각 문제 목록을 낸다(빈 목록 = 통과). 개수는 안 센다(위 docstring 참조).
 # ---------------------------------------------------------------------------
 
 
@@ -331,6 +353,27 @@ def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
     return problems
 
 
+def g8_tests_tree_is_fully_accounted(
+    document: dict[str, Any], tracked: list[str], tree: set[str]
+) -> list[str]:
+    """``tests/`` 아래 **모든** 추적 파일이 트리이거나 선언된 축인가.
+
+    G6·G7 이 선언 하나하나의 건강을 본다면 이것은 **선언 집합이 전수인가**를 본다. 축을 손으로
+    열거하는 한 「형제를 안 넓혔다」는 기억의 문제로 남고, 이 저장소는 그 결함류를 이미 여러 번
+    밟았다 — 첫 판이 ``tests/js/fixtures/`` 를 선언하면서 직계 형제 ``tests/fixtures/``·
+    ``tests/corpus/`` 를 빠뜨린 것이 가장 최근 표본이다(L16 실측 33건).
+
+    그래서 여기서는 기억 대신 **저장소가 답한다**. 범위를 ``tests/`` 로 좁혀 적는 것은 정직을
+    위해서다 — 저장소 전역의 폐포는 이 게이트가 지지 않는다(그 밖의 자료는 축이 이름으로 든다).
+    """
+    under_tests = {path for path in tracked if path.startswith("tests/")}
+    declared: set[str] = set()
+    for row in document.get("excluded_axis", []):
+        declared |= _axis_members(row, tracked)
+    orphans = sorted(under_tests - tree - declared)
+    return [f"tests/ 아래인데 트리에도 선언된 축에도 없다: {path}" for path in orphans]
+
+
 def g7_axes_stay_outside_the_partition(
     document: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> list[str]:
@@ -379,7 +422,7 @@ def mutable(ledger: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 양성 — 오늘의 저장소에서 다섯 질문이 전부 조용하다
+# 양성 — 오늘의 저장소에서 그 질문들이 전부 조용하다
 # ---------------------------------------------------------------------------
 
 
@@ -417,6 +460,12 @@ def test_g7_declared_axes_stay_outside_the_partition(
     ledger: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> None:
     assert g7_axes_stay_outside_the_partition(ledger, tracked, tree) == []
+
+
+def test_g8_tests_directory_has_no_silent_orphans(
+    ledger: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    assert g8_tests_tree_is_fully_accounted(ledger, tracked, tree) == []
 
 
 def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
@@ -688,19 +737,50 @@ def test_n10_a_duplicated_asset_row_is_caught(mutable: dict[str, Any], tree: set
     assert any("중복" in problem for problem in problems), problems
 
 
+#: ⑷ 의 어휘로**만** 물리는 실물 둘. 피해자를 이렇게 고르는 것이 이 음성 대조의 전부다 —
+#: 첫 판은 ``scripts/seal_web_artifact.py`` 를 썼는데 그 파일은 ⑴ 의 ``build/web`` 에 이미
+#: 물려서, **⑷ 를 통째로 지워도 초록이었다**(L16 실측: S1 전체 revert 에 43 passed). 방어한다고
+#: 세운 단언이 아무것도 안 지키는 상태였고, 그것이 이 원장이 겨누는 결함 그 자체다.
+#: 둘은 ⑷ 의 **서로 다른 어휘**로 물리므로 어느 쪽을 지워도 최소 하나가 빨개진다.
+SEALED_ONLY_VICTIMS = (
+    ("tests/test_packaging_contract.py", "web_artifact"),
+    ("scripts/verify_packaged_web.py", "ite"),
+)
+
+
+@pytest.mark.parametrize(("victim", "term"), SEALED_ONLY_VICTIMS)
 def test_n11_a_sealed_artifact_consumer_cannot_sit_in_exclusions(
-    mutable: dict[str, Any],
+    mutable: dict[str, Any], victim: str, term: str
 ) -> None:
     """봉인 산출물을 다루는 파일이 제외에 앉으면 문다 — R1-99 가 잡은 그 자리다.
 
-    변형은 최소로: 이미 자산인 봉인 producer 한 행을 **제외로 옮긴다**. 합성 문자열이 아니라
-    저장소의 실물이라 술어가 실재를 무는지 그대로 답한다.
+    변형은 최소로: 이미 자산인 한 행을 **제외로 옮긴다**. 합성 문자열이 아니라 저장소의
+    실물이라 술어가 실재를 무는지 그대로 답한다. 첫 단언이 **피해자 자격**을 먼저 확인한다 —
+    그것이 없으면 이 대조는 자기가 겨눈다고 적은 것을 안 겨눈 채 초록일 수 있다.
     """
-    victim = "scripts/seal_web_artifact.py"
+    assert not SURFACE_WITHOUT_SEALED.search(
+        (REPO_ROOT / victim).read_text(encoding="utf-8", errors="replace")
+    ), f"{victim} 이 ⑷ 이전 어휘에도 물린다 — 이 음성 대조는 ⑷ 를 안 지킨다"
     mutable["asset"] = [row for row in mutable["asset"] if row["file"] != victim]
     mutable["out_of_scope"]["files"] = sorted([*mutable["out_of_scope"]["files"], victim])
     problems = g2_exclusion_purity(mutable)
-    assert any(victim in problem for problem in problems), problems
+    assert any(victim in problem and term in problem for problem in problems), problems
+
+
+def test_n15_dropping_a_declared_axis_reopens_the_silence(
+    mutable: dict[str, Any], tracked: list[str], tree: set[str]
+) -> None:
+    """축 선언을 빼면 그만큼이 **다시 침묵**이 되고 G8 이 그것을 운다.
+
+    첫 판에는 축 집합 자체를 지키는 단언이 없어 선언을 통째로 지워도 초록이었다(L16 실측).
+    이제 ``tests/`` 범위에 한해 그 삭제가 소리를 낸다.
+    """
+    victim = "js-negative-fixtures"
+    mutable["excluded_axis"] = [
+        row for row in mutable["excluded_axis"] if row.get("id") != victim
+    ]
+    problems = g8_tests_tree_is_fully_accounted(mutable, tracked, tree)
+    assert any("tests/js/fixtures/" in problem for problem in problems), problems
 
 
 def test_n12_a_dead_axis_declaration_is_caught(
