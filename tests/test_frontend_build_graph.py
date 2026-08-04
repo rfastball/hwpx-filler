@@ -979,6 +979,42 @@ def test_bare_specifiers_are_closed_over_the_whole_source_set() -> None:
     assert offenders == [], f"허용 밖 bare specifier 가 있습니다: {offenders}"
 
 
+def test_the_react_subtree_holds_no_edge_into_the_legacy_graph() -> None:
+    """Vanilla fallback 부재의 정적 절반 — `.ts` 서브트리에서 legacy 로 가는 간선이 0 이다.
+
+    fallback 은 코드 경로가 있어야 성립한다. React 모듈이 legacy 트리(``frontend/js/**``)를
+    import 하지도, legacy 화면 루트를 DOM 으로 붙들지도 않으면 「React 실패 시 Vanilla 복귀」
+    는 구조적으로 불가능하다(#405 불변식 — 부팅 실패를 폴백으로 숨기지 않는다). 실패의
+    착지는 경보 경로 하나이고, 그 경로의 실거동은 node 게이트(react_root.test.js)가 진다.
+    """
+    ts_sources = {
+        name: strip_js_comments(text)
+        for name, text in _frontend_sources().items()
+        if name.endswith(".ts")
+    }
+    assert ts_sources, "`.ts` 서브트리를 한 장도 못 읽었습니다 — 아래 0건이 공허합니다."
+
+    legacy_imports = {
+        f"{name} -> {spec}"
+        for name, text in ts_sources.items()
+        for spec in module_imports(text)
+        if spec.startswith(".") and "/js/" in spec
+    }
+    assert legacy_imports == set(), (
+        f"React 서브트리가 legacy 모듈을 import 합니다: {sorted(legacy_imports)}"
+    )
+
+    legacy_surfaces = {
+        f"{name}:{needle}"
+        for name, text in ts_sources.items()
+        for needle in ("scr-library", "scr-job", "scr-editor", "scr-workbench", "overlayRoot")
+        if needle in text
+    }
+    assert legacy_surfaces == set(), (
+        f"React 서브트리가 legacy 화면 루트를 붙듭니다: {sorted(legacy_surfaces)}"
+    )
+
+
 def test_the_extended_scan_predicates_bite_a_synthetic_ts_probe() -> None:
     """프로브 생존 — 합성 ``.ts`` 표본에 각 술어가 실제로 문다(rev3 §4.2-1·§7).
 

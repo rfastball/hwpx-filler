@@ -6,10 +6,18 @@
 (``frontend/src/react/root.ts``), 이 게이트가 실 창에서 그 마커를 ``evaluate_js`` 로
 되읽는다.
 
-**자체 pywebview 창으로 sealed artifact 를 직접 소비한다** — ``webapp/**`` 배선(js_api·
-selftest 파사드·푸시 통로) 없이 sealed ``index.html`` 만 싣는다. React 마운트는 호스트
-브리지 없이 성립하므로 백엔드 조립이 불요하고, ``--selftest`` 는 재활용하지 않는다
-(프로브 레지스트리는 R2-04 소유 — 패킷 rev3 §7).
+**자체 pywebview 창으로 sealed artifact 를 직접 소비한다** — ``--selftest`` 는 재활용하지
+않는다(프로브 레지스트리는 R2-04 소유 — 패킷 rev3 §7).
+
+패킷은 「React 마운트는 호스트 브리지 없이 성립하므로 백엔드 조립이 불요하다」고 예정했고
+그 전제 자체는 참이지만(설치 Chrome + loopback 실측: 호스트 없이 커밋 마커 초록), **pywebview
+창은 「호스트 없음」을 만들 수 없다**(착수 실측): ``js_api`` 를 주지 않아도 ``window.pywebview``
+와 **빈 ``api``(키 0)** 가 주입되고 ``pywebviewready`` 가 발화한다. 그 형상에서 셸은 호스트가
+있다고 판정해 첫 호출에서 죽고, 그 실패는 설계대로 **시끄러운 경보(alert)** 로 착지한다 —
+alert 는 JS 스레드를 세워 ``evaluate_js`` 가 영영 돌아오지 않는다. 페이지가 아니라 「깨진
+호스트」를 만든 하니스의 결함이므로, 자식은 실제 앱과 같은 두 줄로 **실 백엔드**
+(:class:`WebFrontend` + ``_window`` 대입)를 단다 — 가짜 호스트를 만들지 않고, 일반 실행과
+같은 entry·부팅 사슬을 지나 커밋을 잰다(경계 계약의 「일반 실행·selftest 의 같은 entry 사용」).
 
 판정 술어(:func:`judge_mount_readback`)는 창을 모는 자식 프로세스와 **같은 하나**다 —
 자식은 이 모듈을 import 해 완주 조건을 묻고, 부모는 같은 술어로 최종 판정한다. 두 곳이
@@ -125,27 +133,31 @@ def test_the_verdict_rejects_each_degraded_shape(raw: object, fragment: str) -> 
 
 # ────────────────────────────────── 실 창 게이트 ──────────────────────────────────
 
-#: 자식 드라이버 — sealed artifact 를 **호스트 배선 없이** 자체 창으로 싣고, 이 모듈의
+#: 자식 드라이버 — sealed artifact 를 실 백엔드가 달린 자체 창으로 싣고, 이 모듈의
 #: 술어가 통과를 말할 때까지 되읽는다. storage_path 는 절대 경로여야 한다(상대 경로는
-#: WebView2 생성 실패 → MSHTML 조용 폴백 — app.py 의 같은 함정).
+#: WebView2 생성 실패 → MSHTML 조용 폴백 — app.py 의 같은 함정). ``WebFrontend`` 구성과
+#: ``_window`` 대입은 app.py 의 실제 부팅 두 줄을 그대로 소비한다(webapp 무변경).
 _CHILD_DRIVER = """
 import json, sys, tempfile, time
 from pathlib import Path
 
 import webview
 
-from hwpxfiller.webapp.app import web_artifact
+from hwpxfiller.webapp.app import WebFrontend, default_text_templates_dir, web_artifact
 from test_react_root_live import (
     MOUNT_READBACK_EXPRESSION, _PROBE_BUDGET_S, _READBACK_LINE_PREFIX, judge_mount_readback,
 )
 
 artifact = web_artifact()
+frontend = WebFrontend(default_text_templates_dir())
 storage = Path(tempfile.mkdtemp(prefix="hwpx-react-live-")).resolve()
 window = webview.create_window(
     "hwpx-filler React root 게이트",
     str(artifact.index_path),
+    js_api=frontend,
     hidden=True,
 )
+frontend._window = window
 
 
 def probe() -> None:
