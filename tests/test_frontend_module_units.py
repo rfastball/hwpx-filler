@@ -67,6 +67,8 @@ EXPECTED_TEST_FILES = {
     # R2-02 — runtime adapter/typed client 의 오류 변환 셋과 pywebview 접촉 allowlist.
     "runtime_client.test.js",
     "pywebview_allowlist.test.js",
+    # R2-03 — 스냅샷 store 계약(구독·해제·당김 가드·격리)과 hook 결속. 실물 증거는 live 게이트.
+    "state_store.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

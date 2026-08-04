@@ -11,8 +11,9 @@
    시끄럽게 재진술된다. legacy 트리로 되돌아가 실패를 숨기는 경로는 만들지 않는다(#405
    불변식). 지금 이 트리의 유일한 자식은 화면 없는 마운트 신호라 이 표면이 실제로 보일
    일은 없지만, 화면이 이관되기 전에 실패의 착지 형태부터 계약으로 세운다. */
-import { Component, createElement, useEffect } from "react";
+import { Component, createElement, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import type { SnapshotStore } from "../state/store.ts";
 
 type BoundaryProps = {
   alarm: (message: string) => void;
@@ -56,14 +57,48 @@ function MountSignal(props: { onCommit: () => void }): null {
   return null;
 }
 
+/** store 사건 수신의 화면 없는 신호 (R2-03 · #407) — snapshot→store→구독→React 인과
+ *  경로의 실물이다. 6채널 구독을 합성해 총 revision 을 콜백으로 알릴 뿐, DOM 을 직접
+ *  판독·기입하지 않는다(마커 기입은 target 을 닫은 boot.ts 클로저 몫 — 침묵 전역 판독
+ *  경로를 구조로 봉쇄한다). 화면·문안·판정도 지지 않는다 — 그것이 자라면 R3 선점이다. */
+function StoreSignal(props: {
+  store: SnapshotStore;
+  reflectStoreRevision: (revision: number) => void;
+}): null {
+  const { store, reflectStoreRevision } = props;
+  /* 합성 subscribe 는 store 에 결속된 안정 참조여야 한다 — 렌더마다 새 클로저면
+     useSyncExternalStore 가 매 렌더 전 채널을 해제→재구독한다(hook 파일 머리말). */
+  const subscribeAll = useMemo(
+    () => (listener: () => void) => {
+      const unsubscribes = store.channels.map((screen) => store.subscriber(screen)(listener));
+      return () => {
+        unsubscribes.forEach((unsubscribe) => unsubscribe());
+      };
+    },
+    [store],
+  );
+  const total = useSyncExternalStore(subscribeAll, () =>
+    store.channels.reduce((sum, screen) => sum + store.revision(screen), 0));
+  useEffect(() => {
+    reflectStoreRevision(total);
+  }, [total, reflectStoreRevision]);
+  return null;
+}
+
 /** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다. */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;
+  store: SnapshotStore;
+  reflectStoreRevision: (revision: number) => void;
 }): ReactNode {
   return createElement(
     ReactErrorBoundary,
     { alarm: hooks.alarm, onCommit: hooks.onCommit },
     createElement(MountSignal, { onCommit: hooks.onCommit }),
+    createElement(StoreSignal, {
+      store: hooks.store,
+      reflectStoreRevision: hooks.reflectStoreRevision,
+    }),
   );
 }

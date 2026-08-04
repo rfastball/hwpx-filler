@@ -363,6 +363,67 @@ test("제품 파사드와 푸시 포트는 **같은 하나의 통로**로 모인
     "제품 파사드와 푸시 포트가 서로 다른 통로로 갈렸습니다 — 하나를 갈아끼우면 다른 하나가 샙니다.");
 });
 
+/* ══════════ R2-03 스냅샷 store — 탭은 포트 **하류**에, 채널은 계약 유도로 ══════════ */
+
+test("합성 루트는 store 를 계약 유도 채널로 세우고 반환값에 싣는다", async (t) => {
+  const { composed } = await boot(t);
+  const { SCREEN_ACTIONS } = await import("../../frontend/src/contract/contract.gen.ts");
+
+  assert.equal(typeof composed.store, "object", "store 가 구성 산물에 없습니다.");
+  assert.deepEqual([...composed.store.channels], Object.keys(SCREEN_ACTIONS),
+    "store 채널이 생성 계약과 갈렸습니다 — 어딘가 손 목록이 생겼습니다.");
+  /* store 는 selftest 주입 계약(services 키 26 핀)의 표면이 아니다 — client 와 같은 결. */
+  assert.equal(Object.hasOwn(composed.services, "store"), false);
+});
+
+test("파사드 snapshot 은 legacy 렌더러와 store 에 **같은 세계**로 착지한다", async (t) => {
+  const { composed } = await boot(t);
+
+  const seen = [];
+  composed.bridge.onPush("job", (snapshot) => { seen.push(snapshot); });
+  const snapshot = { rows: 7 };
+
+  const result = composed.productApi.deliver({
+    version: 1,
+    event: "snapshot",
+    payload: { screen: "job", snapshot },
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(seen, [snapshot], "legacy 렌더러가 push 를 받지 못했습니다.");
+  assert.equal(composed.store.get("job"), snapshot,
+    "store 가 legacy 와 다른 참조를 들었습니다 — 두 소비자가 다른 세계를 봅니다.");
+  assert.equal(composed.store.revision("job"), 1);
+});
+
+test("프로브가 포트를 갈아끼우면 store 도 legacy 처럼 조용해진다(관측자 오염 음성 대조)", async (t) => {
+  const { composed } = await boot(t);
+
+  /* reject_pushes 형상 — 갈아끼운 통로가 기반 푸시를 부르지 않는다. 탭이 파사드 옆에
+     잘못 서 있으면 이 대조가 빨갛다: reject 중에도 store 만 갱신돼 두 소비자가 갈린다. */
+  const rejected = [];
+  composed.pushPort.override((screen, snapshot) => { rejected.push([screen, snapshot]); });
+
+  composed.productApi.deliver({
+    version: 1,
+    event: "snapshot",
+    payload: { screen: "job", snapshot: { rows: 1 } },
+  });
+
+  assert.equal(rejected.length, 1, "override 가 push 를 받지 못했습니다.");
+  assert.equal(composed.store.revision("job"), 0,
+    "reject 중에 store 가 갱신됐습니다 — 탭이 포트 상류(파사드 옆)에 서 있습니다.");
+
+  composed.pushPort.restore();
+  composed.productApi.deliver({
+    version: 1,
+    event: "snapshot",
+    payload: { screen: "job", snapshot: { rows: 2 } },
+  });
+  assert.equal(composed.store.revision("job"), 1, "restore 뒤에도 store 에 닿지 않습니다.");
+  assert.deepEqual(composed.store.get("job"), { rows: 2 });
+});
+
 test("합성 루트는 기반 푸시를 값으로 붙들지 않는다(회귀 되살리기 금지 · 소스 계약)", () => {
   const source = readFileSync(new URL(BOOTSTRAP, import.meta.url), "utf8");
   const body = source.replace(/\/\*[\s\S]*?\*\//g, "");
