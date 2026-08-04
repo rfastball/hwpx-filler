@@ -828,6 +828,12 @@ reason = "바이너리·문서 픽스처(멀티시트 엑셀 등). `js-negative-
 owner_stage = "R5-02"
 
 [[excluded_axis]]
+id = "static-closure-contract"
+match = { kind = "file", value = "tests/static_closure_contract.json" }
+reason = "정적 폐포 계약(#490) — 예약 전역 가족·접촉 allowlist 와 수집 감산 목록의 단일 출처. node AST 게이트(pywebview_allowlist.test.js)와 pytest 결선 술어(test_frontend_build_graph.py)가 데이터로 읽는다. 판정의 입력인데 `.py` 도 `.test.js` 도 아니라 트리 밖이다(coverage-floors 와 같은 자리)."
+owner_stage = "R5-02"
+
+[[excluded_axis]]
 id = "quality-config"
 match = { kind = "exact", value = [
   "pyproject.toml",
