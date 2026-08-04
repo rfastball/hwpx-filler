@@ -15,6 +15,7 @@ G5   ``owner_stage`` 가 알려진 단계 어휘 안인가
 G6   선언된 분모 밖 축이 **실재 파일을 가리키는가**(죽은 선언 차단)
 G7   그 축이 **파티션과 겹치지 않는가**(자산을 분모 밖으로 미는 우회 차단)
 G8   ``tests/`` 아래에 트리도 축도 아닌 **침묵한 파일이 없는가**(선언 집합의 전수성)
+G9   사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**(삭제로 침묵 복원 차단)
 ===  ====================================================================
 
 **원장이 어떤 개수도 들지 않는다.** 2차 구현(#469)은 게이트의 테스트 개수가 원장의 값이라
@@ -135,6 +136,30 @@ ALLOWED_ASSET_KEYS = frozenset({*REQUIRED_ASSET_FIELDS, "successor"})
 #: 「이만큼을 안 본다」는 선언이 조용히 아무것도 선언하지 않게 된다.
 ALLOWED_AXIS_KEYS = frozenset({"id", "match", "reason", "owner_stage"})
 AXIS_MATCH_KINDS = frozenset({"prefix", "root_suffix", "exact"})
+
+#: 선언이 **사라지는 것**을 막는 자리. G8 은 ``tests/`` 범위만 폐포로 답하므로 그 밖의 축은
+#: 지워도 아무도 안 울고, 그러면 그 축이 닫으려던 사각이 조용히 되돌아온다 — 선언의 값은
+#: 지속성인데 지속을 아무도 안 지키는 상태였다(봇 리뷰 실측).
+#:
+#: ``KNOWN_STAGES`` 와 같은 이유로 게이트가 리터럴로 든다: 원장에서 유도하면 **삭제가 자기를
+#: 정당화**한다. 이것은 2차를 무너뜨린 자기참조와 다르다 — 그쪽은 게이트가 자라면 원장의 *값*이
+#: 변하는 회로였고, 이 집합은 게이트가 아무리 자라도 안 변한다.
+#:
+#: **부분집합 요구**다. 새 축을 더하는 것은 자유이고 줄이는 것만 막는다 — 이 파일의 다른 축들과
+#: 같은 방향 규율이다.
+REQUIRED_AXIS_IDS = frozenset(
+    {
+        "packaging-chain",
+        "ci-workflows",
+        "root-runners",
+        "js-negative-fixtures",
+        "frontend-build-config",
+        "test-corpora",
+        "test-fixtures",
+        "quality-config",
+        "example-101-assets",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +378,20 @@ def g6_axes_are_live(document: dict[str, Any], tracked: list[str]) -> list[str]:
     return problems
 
 
+def g9_required_axes_survive(document: dict[str, Any]) -> list[str]:
+    """사각을 닫으려고 세운 축 선언이 **여전히 서 있는가**.
+
+    G8 이 폐포로 답하는 범위는 ``tests/`` 뿐이다. ``packaging/``·workflows·루트 러너·빌드 설정·
+    학습 세트 축은 지워도 G0~G8 이 전부 초록이었고, 그 삭제는 정확히 이 절이 닫으려던 침묵을
+    되돌린다. 선언은 **한 번 적는 것**이 아니라 **계속 서 있는 것**이라야 값이 있다.
+    """
+    declared = {str(row.get("id", "")) for row in document.get("excluded_axis", [])}
+    return [
+        f"선언이 사라졌다: 축 {axis_id!r} — 그 사각이 다시 침묵이 된다"
+        for axis_id in sorted(REQUIRED_AXIS_IDS - declared)
+    ]
+
+
 def g8_tests_tree_is_fully_accounted(
     document: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> list[str]:
@@ -466,6 +505,10 @@ def test_g8_tests_directory_has_no_silent_orphans(
     ledger: dict[str, Any], tracked: list[str], tree: set[str]
 ) -> None:
     assert g8_tests_tree_is_fully_accounted(ledger, tracked, tree) == []
+
+
+def test_g9_axis_declarations_still_stand(ledger: dict[str, Any]) -> None:
+    assert g9_required_axes_survive(ledger) == []
 
 
 def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
@@ -765,6 +808,20 @@ def test_n11_a_sealed_artifact_consumer_cannot_sit_in_exclusions(
     mutable["out_of_scope"]["files"] = sorted([*mutable["out_of_scope"]["files"], victim])
     problems = g2_exclusion_purity(mutable)
     assert any(victim in problem and term in problem for problem in problems), problems
+
+
+def test_n16_dropping_a_non_test_axis_is_caught(mutable: dict[str, Any]) -> None:
+    """``tests/`` **밖** 축을 지우는 것도 문다 — G8 의 폐포가 안 닿는 자리다.
+
+    이 대조가 없던 판에서는 `packaging-chain` 을 통째로 지워도 전 게이트가 초록이었고, 그러면
+    이 절이 방금 닫은 사각이 조용히 되돌아온다(봇 리뷰 실측).
+    """
+    victim = "packaging-chain"
+    mutable["excluded_axis"] = [
+        row for row in mutable["excluded_axis"] if row.get("id") != victim
+    ]
+    problems = g9_required_axes_survive(mutable)
+    assert any(victim in problem for problem in problems), problems
 
 
 def test_n15_dropping_a_declared_axis_reopens_the_silence(
