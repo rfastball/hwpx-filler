@@ -31,7 +31,7 @@ export const SELFTEST_MODES = Object.freeze({
     env: null,
     kind: "key-set",
     baseMode: null,
-    /** 43키. 순서는 알파벳 — 드라이버 실행 순서가 아니다(그건 runner 의 `legacySite`). */
+    /** 44키. 순서는 알파벳 — 드라이버 실행 순서가 아니다(그건 runner 의 `legacySite`). */
     keys: Object.freeze([
       "action_roundtrip", "chain_recovery", "data_picker", "data_picker_buttons",
       "data_sheet", "editor_chip", "editor_discard_cancel", "editor_guard",
@@ -41,8 +41,8 @@ export const SELFTEST_MODES = Object.freeze({
       "job_mirror", "job_on", "job_result", "library_surface", "library_view_tabs",
       "milestone_h_overlay", "milestone_h_wave1", "modal_a11y", "modal_confirm_serial",
       "nav_count", "personalization_persist", "preserve", "preserve_real",
-      "preview_drawer", "range_draft", "runtime", "sheet_gate", "theme_persist",
-      "title_dom", "tpl_options", "url", "view_order", "workbench",
+      "preview_drawer", "range_draft", "react_runtime", "runtime", "sheet_gate",
+      "theme_persist", "title_dom", "tpl_options", "url", "view_order", "workbench",
     ]),
     echo: null,
     valueDeltas: Object.freeze([]),
@@ -113,8 +113,9 @@ export const MODE_MODIFIERS = Object.freeze(["offline_probe"]);
 
 /* ────────────────────────────── 클러스터 ────────────────────────────── */
 
-/** 이식 레인 넷. E 만 이 레인(N08-S)이 실측으로 확정했고 B·C·D 는 각 레인이 자기 키를
- *  `SELFTEST_KEYS[key].cluster` 에 적어 채운다. 미할당은 **숨기지 않는다** —
+/** 이식 레인 넷 + 신설 축 하나. E 만 이 레인(N08-S)이 실측으로 확정했고 B·C·D 는 각
+ *  레인이 자기 키를 `SELFTEST_KEYS[key].cluster` 에 적어 채운다. R 는 레거시 이관이 아니라
+ *  R2-04(#408)가 세운 React 실런타임 마커 축이다. 미할당은 **숨기지 않는다** —
  *  `unassignedClusterKeys()` 가 소리 내어 남은 것을 센다(confirm-or-alarm). */
 export const CLUSTERS = Object.freeze({
   B: Object.freeze({
@@ -136,6 +137,11 @@ export const CLUSTERS = Object.freeze({
     id: "E",
     assigned: true,
     module: "frontend/src/selftest/probes/persistence_geometry.js",
+  }),
+  R: Object.freeze({
+    id: "R",
+    assigned: true,
+    module: "frontend/src/selftest/probes/react_runtime.js",
   }),
 });
 
@@ -166,7 +172,7 @@ function key(descriptor) {
   });
 }
 
-/** 성공 경로 47키의 전수 서술. `error` 는 여기 **없다** — 부재 계약이라 따로 산다. */
+/** 성공 경로 48키의 전수 서술. `error` 는 여기 **없다** — 부재 계약이라 따로 산다. */
 export const SELFTEST_KEYS = Object.freeze({
   // ── 클러스터 E(이 레인) ──────────────────────────────────────────
   url: key({
@@ -179,7 +185,7 @@ export const SELFTEST_KEYS = Object.freeze({
     hostFields: ["artifact_id", "tree_sha256"],
     consumedBy: ["tests/test_web_selftest_gate.py", "packaging/build.ps1"],
     note:
-      "build.ps1:311 이 책임 수를 셀 때 **유일하게 제외**하는 키. 값-수준 모드"
+      "build.ps1:434 가 책임 수를 셀 때 **유일하게 제외**하는 키. 값-수준 모드"
       + "(offline_probe)의 유일한 무대이기도 하다.",
   }),
   chain_recovery: key({
@@ -234,6 +240,16 @@ export const SELFTEST_KEYS = Object.freeze({
     note:
       "settings.load_theme()/load_font_scale() 의 **디스크 되읽기** — 호스트 소유."
       + " 요청값과 다를 수 있다(무효 값이면 이전 값이 그대로 나온다).",
+  }),
+
+  // ── 클러스터 R(React 실런타임 — R2-04 신설 축) ──────────────────
+  react_runtime: key({
+    kind: "object", modes: ["full"], cluster: "R", owner: "frontend",
+    consumedBy: ["packaging/build.ps1"],
+    note:
+      "React 마운트 커밋 마커·store 사건 마커의 존재 증명(문서 안 3판독). 위반은 프로브"
+      + " throw 라 source 게이트는 error 부재 단언이 문다. 값의 크기 단언은"
+      + " tests/test_react_store_live.py(4국면)의 소유.",
   }),
 
   // ── 아직 레인 미할당(B·C·D 가 각자 cluster 를 채운다) ─────────────
@@ -431,7 +447,7 @@ export const SELFTEST_KEYS = Object.freeze({
 /* ─────────────────────── `error` — 부재 계약 ─────────────────────── */
 
 /** `error` 는 성공 키가 **아니다**. 실패했을 때만 서고, 그때 `test_no_probe_error` 와
- *  `build.ps1:308` 이 각각 붉어진다. 성공 합집합에 접어 넣으면 "47 vs 48" 이 흐려지고
+ *  `build.ps1:430-432` 가 각각 붉어진다. 성공 합집합에 접어 넣으면 "48 vs 49" 가 흐려지고
  *  더 나쁘게는 "있어도 되는 키"로 읽힌다 — 그래서 별도 상수다. */
 export const ERROR_CONTRACT = Object.freeze({
   key: "error",
@@ -439,14 +455,14 @@ export const ERROR_CONTRACT = Object.freeze({
   meaning: "프로브가 예외·시한 초과로 끝났다는 **시끄러운 표식**. 성공 경로에는 없어야 한다.",
   assertedAbsentBy: Object.freeze([
     "tests/test_web_selftest_gate.py::TestWebSelftestGate::test_no_probe_error",
-    "packaging/build.ps1:308",
+    "packaging/build.ps1:430-432",
   ]),
   assertedPresentBy: Object.freeze([
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_bridge_timeout",
     "tests/test_personalization_contract.py::test_font_scale_selftest_reports_evaluation_error",
   ]),
-  /** 성공 키 47 + 이 키 = 48. "44" 는 폐기된 설계 수치다. */
-  unionWithError: 48,
+  /** 성공 키 48 + 이 키 = 49. "44" 는 폐기된 설계 수치다. */
+  unionWithError: 49,
 });
 
 /* ───────────────────── build.ps1 — 비-pytest 소유자 ───────────────────── */
@@ -454,13 +470,13 @@ export const ERROR_CONTRACT = Object.freeze({
 /** 패키지 릴리스 빌드가 **키 집합 자체**를 소유하는 두 자리. pytest 만 보면 안 보인다. */
 export const BUILD_INVARIANTS = Object.freeze({
   responsibilityCount: Object.freeze({
-    source: "packaging/build.ps1:314",
-    expected: 42,
+    source: "packaging/build.ps1:436-437",
+    expected: 43,
     excludes: Object.freeze(["runtime"]),
-    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 42. 키를 더하거나 빼면 릴리스가 죽는다.",
+    rule: "최상위 키에서 `runtime` 하나를 뺀 수가 정확히 43. 키를 더하거나 빼면 릴리스가 죽는다.",
   }),
   noTopLevelBooleanFalse: Object.freeze({
-    source: "packaging/build.ps1:317-327",
+    source: "packaging/build.ps1:439-450",
     rule: "최상위 값이 boolean `false` 인 키가 하나라도 있으면 패키지 빌드가 throw 한다.",
     booleanKeys: Object.freeze([
       "data_picker_buttons", "home_screen_gone", "job_on", "library_surface",
@@ -478,14 +494,19 @@ export const BUILD_INVARIANTS = Object.freeze({
 /** pytest 밖에서 이 계약을 붙들고 있는 자리 전수 — 설계 패킷이 놓쳤던 넷. */
 export const NON_PYTEST_OWNERS = Object.freeze([
   Object.freeze({
-    site: "packaging/build.ps1:314",
-    owns: "최상위 책임 키 수 == 42(runtime 제외)",
+    site: "packaging/build.ps1:436-437",
+    owns: "최상위 책임 키 수 == 43(runtime 제외)",
     breaksIf: "키를 더하거나 뺀다",
   }),
   Object.freeze({
-    site: "packaging/build.ps1:317-327",
+    site: "packaging/build.ps1:439-450",
     owns: "최상위 boolean false 금지",
     breaksIf: "어떤 책임이 false 로 떨어진다",
+  }),
+  Object.freeze({
+    site: "packaging/build.ps1:451-472",
+    owns: "react_runtime 형상(mounted '1' · store_rev 십진 문자열 · roots 1)",
+    breaksIf: "React 마커 계약이 바뀌거나 증거에서 빠진다",
   }),
   Object.freeze({
     site: "tests/test_web_runtime_artifact.py:55",
@@ -496,7 +517,10 @@ export const NON_PYTEST_OWNERS = Object.freeze([
   }),
 ]);
 
-/* N-11A(#423): 넷째 항목이 사라졌다. `scripts/capture_101_screenshots.py` 가 소유하던
+/* 셋째 build.ps1 항목(react_runtime 형상)은 R2-04(#408)의 신설이다 — 아래 이력의
+   「사라진 넷째」와 다른 자리이니 혼동하지 않는다.
+
+   N-11A(#423): 넷째 항목이 사라졌다. `scripts/capture_101_screenshots.py` 가 소유하던
    「`_selftest_drive` 가 교체 가능한 모듈 수준 이름일 것」은 **적힌 줄 번호부터 이미 틀렸고**
    (`:72` → 실제 `:749`), 그 사이 실제 호출 계약은 조용히 깨져 있었다. 그 책임은 이제 pytest
    가 진다 — `tests/test_live_run_contract.py` 가 봉투 하나·0-arity 진입점·등록 시점 거절을

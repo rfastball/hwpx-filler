@@ -250,8 +250,12 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "$policyKey.GetValueNames().Count -eq 0" in build
     assert "'hklm-app-policy'" in build
     assert "'process-environment'" in build
-    assert "responsibilities.Count -ne 42" in build
+    assert "responsibilities.Count -ne 43" in build
+    assert "responsibilities.Count -ne 42" not in build
     assert "falseResponsibilities.Count -ne 0" in build
+    # React 실런타임 형상 단언(R2-04 · #408)이 packaged 판정에 실재한다.
+    assert "react_runtime 증거가 없습니다" in build
+    assert "$reactRuntime.roots -ne 1" in build
     assert "resources_same_origin" in build
     assert "external_fetch_blocked" in build
     # 난독화된 스킴은 프런트 프로브로 옮겨갔다(N-09) — 표식이 사라지지 않았는지는

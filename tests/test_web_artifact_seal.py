@@ -103,6 +103,12 @@ def _write_repo(root: Path) -> ArtifactRepo:
         "export default { base: './', build: { manifest: true } };\n",
         encoding="utf-8",
     )
+    # tsconfig 는 R2-04 에서 봉인 입력으로 편입됐다(`_SOURCE_CONFIG_PATHS`) — Vite 의 `.ts`
+    # 변환이 읽는 실빌드 입력이라서다. 없으면 `_required_file_record` 가 시끄럽게 죽는다.
+    (root / "tsconfig.json").write_text(
+        json.dumps({"compilerOptions": {"strict": True}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     artifact_root = root / "build" / "web"
     (artifact_root / "assets").mkdir(parents=True)
@@ -340,6 +346,26 @@ def test_vite_config_stale_is_loud(sealed_repo: ArtifactRepo) -> None:
 
     with pytest.raises(WebArtifactViolation, match="frontend/config source input stale"):
         resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_tsconfig_stale_is_loud(sealed_repo: ArtifactRepo) -> None:
+    """tsconfig 만 고친 채 봉인을 재사용하는 사각(R2-01 인계 ②)이 닫혔는가 — R2-04 편입의
+    음성 대조. 편입 전에는 이 변조가 신선도 검사를 조용히 통과했다."""
+    tsconfig = sealed_repo.root / "tsconfig.json"
+    tsconfig.write_text(
+        tsconfig.read_text(encoding="utf-8").replace('"strict": true', '"strict": false'),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WebArtifactViolation, match="frontend/config source input stale"):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_seal_records_tsconfig_as_source_input(sealed_repo: ArtifactRepo) -> None:
+    """양성 — 봉인 문서의 source 레코드에 tsconfig 가 실제로 실린다(편입의 존재 증명)."""
+    document = _seal_document(sealed_repo)
+    recorded = {record["path"] for record in document["source"]["files"]}
+    assert "tsconfig.json" in recorded
 
 
 def test_package_lock_stale_is_loud(sealed_repo: ArtifactRepo) -> None:

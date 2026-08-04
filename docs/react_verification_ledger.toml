@@ -254,6 +254,11 @@ responsibility = "selftest 프로브 클러스터 E — 영속·기하, 네 레�
 owner_stage = "R3-03"
 
 [[asset]]
+file = "tests/js/n08_react_runtime.test.js"
+responsibility = "selftest 프로브 클러스터 R — React 실런타임 마커의 단위 계약(R2-04 신설 축)"
+owner_stage = "R2-04"
+
+[[asset]]
 file = "tests/js/n08_registry.test.js"
 responsibility = "프로브 키 전수 이관과 레거시 상수의 후계 대응"
 owner_stage = "R2-04"

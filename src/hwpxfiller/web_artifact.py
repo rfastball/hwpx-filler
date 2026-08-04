@@ -32,6 +32,10 @@ _SOURCE_CONFIG_PATHS = (
     ".npmrc",
     "package.json",
     "package-lock.json",
+    # tsconfig 는 Vite 의 `.ts` 변환이 읽는 실빌드 입력이다(useDefineForClassFields 류가
+    # 출력 바이트에 닿는다 — class field 실물은 react/boundary.ts). 여기 없으면 tsconfig 만
+    # 고친 채 봉인해도 신선도 검사가 통과하는 사각이 남는다(R2-04 · #408, R2-01 인계 정산).
+    "tsconfig.json",
     "vite.config.mjs",
 )
 _TEXT_OUTPUT_SUFFIXES = {

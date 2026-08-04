@@ -2,13 +2,13 @@
  *
  * 이 파일이 실측하는 것:
  *  ① 공개 표면 — 이름·개수가 계약 표와 같고 `export default` 가 없다.
- *  ② **산술을 구조로 확인한다** — 47 을 손으로 적어 비교하지 않는다. 모드 행렬에서
- *     합집합을 계산하고, 그 결과가 43 ∪ {window_geometry, theme_write, font_scale_write,
- *     set_result} 와 같은지를 **집합 연산으로** 본다. 하드코딩한 47 을 하드코딩한 47 과
+ *  ② **산술을 구조로 확인한다** — 48 을 손으로 적어 비교하지 않는다. 모드 행렬에서
+ *     합집합을 계산하고, 그 결과가 44 ∪ {window_geometry, theme_write, font_scale_write,
+ *     set_result} 와 같은지를 **집합 연산으로** 본다. 하드코딩한 48 을 하드코딩한 48 과
  *     비교하는 테스트는 아무것도 못 본다.
  *  ③ 값-수준 모드 — `offline_probe` 는 키를 더하지 않는다(full 과 키 집합 동일).
  *  ④ `error` 는 성공 합집합 **밖**에 있다(부재 계약).
- *  ⑤ build.ps1 불변식 둘이 기계로 검사된다(42 · boolean false 금지).
+ *  ⑤ build.ps1 불변식 둘이 기계로 검사된다(43 · boolean false 금지).
  *  ⑥ `tpl_options` 는 소비 0건이 **명시로** 적혀 있다 — 조용히 사라지지도, 없던 단언이
  *     붙지도 않는다.
  *  ⑦ 음성 — 소스에 `window.X =` 0 · `__hwpxTest` 0 · `export default` 0, 그리고 bare import
@@ -45,9 +45,9 @@ const SRC = readFileSync(
   "utf8",
 );
 
-/* 실측 기준(base SHA ae1b689, 실 WebView2 5모드 구동). 이 셋만 리터럴로 둔다 —
-   나머지는 전부 이 값들에서 **계산**한다. */
-const FULL_MODE_KEY_COUNT = 43;
+/* 실측 기준(base SHA ae1b689, 실 WebView2 5모드 구동) + R2-04 신설 축 1(react_runtime).
+   이 셋만 리터럴로 둔다 — 나머지는 전부 이 값들에서 **계산**한다. */
+const FULL_MODE_KEY_COUNT = 44;
 const MODE_ONLY_KEYS = ["font_scale_write", "set_result", "theme_write", "window_geometry"];
 
 test("공개 표면 — 이름 전수와 export default 부재", () => {
@@ -100,17 +100,17 @@ test("offline_probe 는 값-수준 모드다 — 키를 하나도 더하지 않�
   }
 });
 
-test("합집합 산술 — 모드 행렬에서 **계산**해 47 이 나온다", () => {
+test("합집합 산술 — 모드 행렬에서 **계산**해 48 이 나온다", () => {
   const full = keysForMode("full");
   assert.equal(full.length, FULL_MODE_KEY_COUNT);
   assert.equal(new Set(full).size, FULL_MODE_KEY_COUNT, "full 모드 키에 중복이 없다.");
 
   const union = successUnion();
-  /* 합집합 = full ∪ 모드-한정 4. 손으로 적은 47 과 47 을 비교하지 않는다. */
+  /* 합집합 = full ∪ 모드-한정 4. 손으로 적은 48 과 48 을 비교하지 않는다. */
   const computed = Array.from(new Set([...full, ...MODE_ONLY_KEYS])).sort();
   assert.deepEqual(union, computed);
   assert.equal(union.length, FULL_MODE_KEY_COUNT + MODE_ONLY_KEYS.length);
-  assert.equal(union.length, 47);
+  assert.equal(union.length, 48);
 
   /* 모드-한정 키는 full 에 없다(그래야 4가 더해진다). */
   for (const k of MODE_ONLY_KEYS) assert.equal(full.includes(k), false, k);
@@ -133,9 +133,9 @@ test("`error` 는 성공 합집합 밖의 **부재 계약**이다", () => {
   assert.equal(ERROR_CONTRACT.kind, "absence");
   assert.equal(successUnion().includes("error"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(SELFTEST_KEYS, "error"), false);
-  /* 47 + error = 48. 폐기된 설계 수치 44 가 아니다. */
+  /* 48 + error = 49. 폐기된 설계 수치 44 가 아니다. */
   assert.equal(ERROR_CONTRACT.unionWithError, successUnion().length + 1);
-  assert.equal(ERROR_CONTRACT.unionWithError, 48);
+  assert.equal(ERROR_CONTRACT.unionWithError, 49);
   assert.ok(ERROR_CONTRACT.assertedAbsentBy.some((s) => s.includes("test_no_probe_error")));
   assert.ok(ERROR_CONTRACT.assertedAbsentBy.some((s) => s.includes("build.ps1")));
   /* 실패 경로에서 **있어야** 하는 자리도 적혀 있다 — 부재만 적으면 반쪽이다. */
@@ -149,15 +149,15 @@ test("`error` 부재 검사는 사유를 재진술한다", () => {
   assert.match(violation.message, /bridge failed/);
 });
 
-test("build.ps1 불변식 ① — runtime 을 뺀 책임 수가 42", () => {
-  assert.equal(BUILD_INVARIANTS.responsibilityCount.expected, 42);
+test("build.ps1 불변식 ① — runtime 을 뺀 책임 수가 43", () => {
+  assert.equal(BUILD_INVARIANTS.responsibilityCount.expected, 43);
   assert.deepEqual(BUILD_INVARIANTS.responsibilityCount.excludes, ["runtime"]);
-  assert.match(BUILD_INVARIANTS.responsibilityCount.source, /build\.ps1:314/);
+  assert.match(BUILD_INVARIANTS.responsibilityCount.source, /build\.ps1:436-437/);
 
-  /* 43키 실행 증거를 흉내 내 세어 본다 — 43 - runtime = 42. */
+  /* 44키 실행 증거를 흉내 내 세어 본다 — 44 - runtime = 43. */
   const evidence = {};
   for (const k of keysForMode("full")) evidence[k] = k === "runtime" ? {} : "value";
-  assert.equal(responsibilityKeys(evidence).length, 42);
+  assert.equal(responsibilityKeys(evidence).length, 43);
   assert.deepEqual(checkBuildInvariants(evidence), []);
 
   /* 키 하나를 더하면 릴리스가 죽는다 — 그 사실이 여기서 보인다. */
@@ -165,7 +165,7 @@ test("build.ps1 불변식 ① — runtime 을 뺀 책임 수가 42", () => {
   const violations = checkBuildInvariants(grown);
   assert.equal(violations.length, 1);
   assert.equal(violations[0].invariant, "responsibilityCount");
-  assert.match(violations[0].message, /43 != 42/);
+  assert.match(violations[0].message, /44 != 43/);
 });
 
 test("build.ps1 불변식 ② — 최상위 boolean false 금지", () => {
@@ -199,11 +199,12 @@ test("외부 fetch 대조 쌍은 패키지 전용이고 양·음 두 극을 다 
   assert.ok(pair.source.some((s) => s.includes("348-350")));
 });
 
-test("비-pytest 소유자 셋이 적혀 있다", () => {
+test("비-pytest 소유자 넷이 적혀 있다", () => {
   const sites = NON_PYTEST_OWNERS.map((o) => o.site);
-  assert.equal(sites.length, 3);
-  assert.ok(sites.some((s) => s.includes("build.ps1:314")));
-  assert.ok(sites.some((s) => s.includes("build.ps1:317-327")));
+  assert.equal(sites.length, 4);
+  assert.ok(sites.some((s) => s.includes("build.ps1:436-437")));
+  assert.ok(sites.some((s) => s.includes("build.ps1:439-450")));
+  assert.ok(sites.some((s) => s.includes("build.ps1:451-472")));
   assert.ok(sites.some((s) => s.includes("test_web_runtime_artifact.py:55")));
   /* 넷째(캡처 하니스의 `_selftest_drive` 치환)는 N-11A 에서 pytest 소유로 옮겨갔다 —
      `tests/test_live_run_contract.py`. 원장에 남아 있으면 이미 없는 계약을 가리킨다. */
@@ -251,17 +252,18 @@ test("키 서술표 — 값 종류·소유·모드가 전부 알려진 어휘 �
   assert.deepEqual(SELFTEST_KEYS.runtime.hostFields, ["artifact_id", "tree_sha256"]);
 });
 
-test("클러스터 — 네 묶음이 47키를 **겹침 0·고아 0** 으로 나눈다", () => {
-  assert.deepEqual(Object.keys(CLUSTERS).sort(), ["B", "C", "D", "E"]);
-  for (const id of ["B", "C", "D", "E"]) {
+test("클러스터 — 다섯 묶음이 48키를 **겹침 0·고아 0** 으로 나눈다", () => {
+  assert.deepEqual(Object.keys(CLUSTERS).sort(), ["B", "C", "D", "E", "R"]);
+  for (const id of ["B", "C", "D", "E", "R"]) {
     assert.equal(CLUSTERS[id].assigned, true, `${id} 가 아직 미할당입니다.`);
     assert.match(CLUSTERS[id].module, /^frontend\/src\/selftest\/probes\/[a-z_]+\.js$/);
   }
   assert.match(CLUSTERS.E.module, /probes\/persistence_geometry\.js$/);
+  assert.match(CLUSTERS.R.module, /probes\/react_runtime\.js$/);
 
   /* 모듈 경로는 묶음마다 **다르다** — 둘이 같으면 한 파일이 두 묶음을 진다. */
-  const modules = ["B", "C", "D", "E"].map((id) => CLUSTERS[id].module);
-  assert.equal(new Set(modules).size, 4);
+  const modules = ["B", "C", "D", "E", "R"].map((id) => CLUSTERS[id].module);
+  assert.equal(new Set(modules).size, 5);
 
   assert.deepEqual(keysForCluster("E"), [
     "chain_recovery", "font_scale_write", "grid_narrow", "grid_wide",
@@ -270,14 +272,14 @@ test("클러스터 — 네 묶음이 47키를 **겹침 0·고아 0** 으로 나�
   ]);
 
   /* 분할의 산술을 **구조로** 센다 — 손으로 적은 수를 다시 적으면 둘 다 같이 낡는다. */
-  const perCluster = ["B", "C", "D", "E"].map((id) => keysForCluster(id));
-  assert.deepEqual(perCluster.map((keys) => keys.length), [15, 6, 15, 11]);
+  const perCluster = ["B", "C", "D", "E", "R"].map((id) => keysForCluster(id));
+  assert.deepEqual(perCluster.map((keys) => keys.length), [15, 6, 15, 11, 1]);
 
   const union = successUnion();
   const flat = perCluster.flat();
-  assert.equal(flat.length, union.length, "묶음 합계가 47 과 다릅니다(겹침 또는 고아).");
+  assert.equal(flat.length, union.length, "묶음 합계가 48 과 다릅니다(겹침 또는 고아).");
   assert.equal(new Set(flat).size, flat.length, "한 키가 두 묶음에 들어 있습니다.");
-  assert.deepEqual([...flat].sort(), [...union].sort(), "묶음 합집합이 47키와 다릅니다.");
+  assert.deepEqual([...flat].sort(), [...union].sort(), "묶음 합집합이 48키와 다릅니다.");
 
   /* 고아 0 — 미할당이 남으면 그 키는 아무도 이관하지 않은 채 조용히 사라진다. */
   assert.deepEqual(unassignedClusterKeys(), []);

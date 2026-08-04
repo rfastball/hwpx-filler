@@ -69,6 +69,9 @@ EXPECTED_TEST_FILES = {
     "pywebview_allowlist.test.js",
     # R2-03 — 스냅샷 store 계약(구독·해제·당김 가드·격리)과 hook 결속. 실물 증거는 live 게이트.
     "state_store.test.js",
+    # R2-04 — selftest 클러스터 R(React 실런타임 마커)의 단위 계약. 실창 증거는 selftest
+    # 게이트·packaged 판정이 진다.
+    "n08_react_runtime.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.
@@ -124,7 +127,10 @@ def test_frontend_module_units_pass() -> None:
     assert counts.get("skipped") == 0, f"조용히 스킵된 모듈 단위 테스트가 있습니다.\n{report}"
     assert counts.get("todo") == 0, f"todo로 유예된 모듈 단위 테스트가 있습니다.\n{report}"
     assert counts.get("cancelled") == 0, f"취소된 모듈 단위 테스트가 있습니다.\n{report}"
-    assert counts.get("pass", 0) >= 220, (
+    # 하한 600 은 실측(R2-04 시점 649)의 보수 하한이다 — 종전 220 은 실제치의 1/3 수준이라
+    # 파일 몇 개가 수집을 잃어도 초록이었다(선언 살고 결과 죽는 자리). 수는 늘기만 하므로
+    # 하한 상향은 미래 마찰이 아니다.
+    assert counts.get("pass", 0) >= 600, (
         "통과 수가 기대보다 적습니다 — 파일은 있는데 테스트가 수집되지 않았을 수 있습니다.\n"
         f"{report}"
     )

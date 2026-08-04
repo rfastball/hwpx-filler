@@ -1,4 +1,5 @@
-/* 프로브 묶음 레지스트리(N-08 중앙) — 네 묶음을 한 러너에 모으는 유일한 자리.
+/* 프로브 묶음 레지스트리(N-08 중앙) — 다섯 묶음(이관 4 + R2-04 신설 R)을 한 러너에
+   모으는 유일한 자리.
 
    각 묶음은 자기 파일 안에서만 완결이고, **묶음을 가로지르는 사실**은 어디에도 적힐 곳이
    없었다. 그 자리가 여기다.
@@ -36,6 +37,11 @@ import {
   PERSISTENCE_GEOMETRY_KEYS,
   createPersistenceGeometryProbes,
 } from "./persistence_geometry.js";
+import {
+  REACT_RUNTIME_CLUSTER,
+  REACT_RUNTIME_KEYS,
+  createReactRuntimeProbes,
+} from "./react_runtime.js";
 
 /* 묶음 표 — 참조 레인(E)과 뒤따른 셋의 export 이름이 갈렸다(E 는 슬러그, B·C·D 는 글자).
    여기서 별칭으로 맞추고 파일 셋을 건드리지 않는다: 이름을 통일하려고 세 파일을 다시
@@ -66,10 +72,20 @@ export const PROBE_CLUSTERS = Object.freeze({
     create: createPersistenceGeometryProbes,
     module: "frontend/src/selftest/probes/persistence_geometry.js",
   }),
+  /* R 는 레거시 이관 레인이 아니라 R2-04 신설 축이다 — 네 레인의 별칭 표를 그대로 따르되
+     출처 상수 대응(레거시 28)의 정의역 밖이라는 사실은 자기 파일 머리말이 진다. */
+  [REACT_RUNTIME_CLUSTER]: Object.freeze({
+    id: REACT_RUNTIME_CLUSTER,
+    keys: REACT_RUNTIME_KEYS,
+    create: createReactRuntimeProbes,
+    module: "frontend/src/selftest/probes/react_runtime.js",
+  }),
 });
 
-/** 묶음 순서 — 레거시 드라이버가 도는 순서와 같다(B 의 부팅 확인이 먼저). */
-export const CLUSTER_ORDER = Object.freeze(["B", "C", "D", "E"]);
+/** 묶음 순서 — 레거시 드라이버가 도는 순서와 같다(B 의 부팅 확인이 먼저). R 는 레거시
+ *  밖 신설 축이라 말미에 선다 — 판독이 순서 독립이라 어디든 무해하나, 기존 네 묶음의
+ *  순서·간선을 건드리지 않는 자리가 말미다. */
+export const CLUSTER_ORDER = Object.freeze(["B", "C", "D", "E", "R"]);
 
 /* 묶음을 가로지르는 순서 간선. **양 끝이 다른 파일에 있어** 레인이 선언할 수 없던 것들이다.
    `legacySite` 숫자가 이미 같은 정렬을 만들지만, 숫자는 *왜*를 잃는다 — 여기 적힌 이유가
@@ -98,17 +114,17 @@ export const CROSS_CLUSTER_EDGES = Object.freeze([
   }),
 ]);
 
-/** 네 묶음의 프로브 정의 전체 — 등록 없이 정의만 본다(순수). */
+/** 다섯 묶음의 프로브 정의 전체 — 등록 없이 정의만 본다(순수). */
 export function createAllProbes() {
   return CLUSTER_ORDER.flatMap((id) => PROBE_CLUSTERS[id].create());
 }
 
-/** 네 묶음의 키 전체 — 합집합이 아니라 **이어붙임**이다(겹침이 있으면 여기서 드러나야 한다). */
+/** 다섯 묶음의 키 전체 — 합집합이 아니라 **이어붙임**이다(겹침이 있으면 여기서 드러나야 한다). */
 export function allClusterKeys() {
   return CLUSTER_ORDER.flatMap((id) => [...PROBE_CLUSTERS[id].keys]);
 }
 
-/** 한 러너에 네 묶음을 모두 등록한다 — 묶음 간 간선도 여기서 얹는다. */
+/** 한 러너에 다섯 묶음을 모두 등록한다 — 묶음 간 간선도 여기서 얹는다. */
 export function registerAllProbes(runner) {
   const defs = createAllProbes();
   const names = new Set(defs.map((def) => def.name));

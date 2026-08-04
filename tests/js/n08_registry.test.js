@@ -1,7 +1,8 @@
-/* N-08 중앙 — 네 묶음이 **함께 섰을 때만** 물을 수 있는 것들.
+/* N-08 중앙 — 다섯 묶음이 **함께 섰을 때만** 물을 수 있는 것들.
  *
- * 묶음별 테스트는 자기 파일 안에서 완결이다. 여기서 세는 것은 그 넷을 합쳤을 때의 사실이다:
- * 47키 전수 이관(누락 0·중복 0), 28 레거시 상수의 후계 1:1, 묶음 간 순서 간선의 실효,
+ * 묶음별 테스트는 자기 파일 안에서 완결이다. 여기서 세는 것은 그 다섯을 합쳤을 때의 사실이다:
+ * 48키 전수(누락 0·중복 0 — 이관 47 + R2-04 신설 축 react_runtime 1), 28 레거시 상수의
+ * 후계 1:1(신설 R 는 그 정의역 밖), 묶음 간 순서 간선의 실효,
  * 그리고 "제품 그래프에 닿지 않는다"는 N-08 의 존재 조건.
  *
  * 이 파일이 없으면 각 묶음은 초록인데 **합계가 틀린** 상태가 통과한다 — 선언은 살고 결과는
@@ -29,7 +30,7 @@ import { createSelftestRunner } from "../../frontend/src/selftest/runner.js";
 const PROBE_DIR = new URL("../../frontend/src/selftest/probes/", import.meta.url);
 const SRC = Object.fromEntries(
   ["index.js", "boot_routing_overlay.js", "job.js", "editor_workbench_data.js",
-    "persistence_geometry.js"].map(
+    "persistence_geometry.js", "react_runtime.js"].map(
     (name) => [name, readFileSync(new URL(name, PROBE_DIR), "utf8")],
   ),
 );
@@ -49,15 +50,15 @@ const LEGACY_PROBE_CONSTANTS = [
   "_WORKBENCH_PROBE_SETUP_JS",
 ];
 
-test("묶음 넷이 47키를 **누락 0·중복 0** 으로 진다", () => {
-  assert.deepEqual(CLUSTER_ORDER, ["B", "C", "D", "E"]);
+test("묶음 다섯이 48키를 **누락 0·중복 0** 으로 진다", () => {
+  assert.deepEqual(CLUSTER_ORDER, ["B", "C", "D", "E", "R"]);
 
   const flat = allClusterKeys();
   const union = successUnion();
 
   assert.equal(new Set(flat).size, flat.length, "한 키를 두 묶음이 집니다.");
-  assert.deepEqual([...flat].sort(), [...union].sort(), "묶음 합계가 47키와 다릅니다.");
-  assert.equal(flat.length, 47);
+  assert.deepEqual([...flat].sort(), [...union].sort(), "묶음 합계가 48키와 다릅니다.");
+  assert.equal(flat.length, 48);
 
   /* 묶음 파일이 신고한 키와 스키마가 배정한 키가 **서로** 맞는지 양방향으로 본다. */
   for (const id of CLUSTER_ORDER) {
@@ -100,14 +101,15 @@ test("프로브가 내는 키가 모드별로 정확히 스키마와 맞는다",
     assert.deepEqual(dupes, [], `${mode} 안에서 두 프로브가 같은 키를 냅니다: ${dupes}`);
   }
 
-  /* full 모드의 산출이 **실측 43키**와 같다 — 이 수는 실 WebView2 결과에서 나왔고,
-     packaging/build.ps1:314 도 (runtime 을 뺀) 42 를 하드코딩해 같은 계약을 두 번째로 진다. */
+  /* full 모드의 산출이 **44키**(실측 43 + R2-04 신설 1)와 같다 — 실측 43 은 실 WebView2
+     결과에서 나왔고, packaging/build.ps1:436-437 도 (runtime 을 뺀) 43 을 하드코딩해 같은
+     계약을 두 번째로 진다. */
   const fullKeys = defs
     .filter((def) => def.modes.includes("full"))
     .flatMap((def) => def.keys);
-  assert.equal(fullKeys.length, 43, "full 모드 산출이 실측 43키와 다릅니다.");
-  assert.equal(fullKeys.filter((key) => key !== "runtime").length, 42,
-    "runtime 을 뺀 책임 수가 build.ps1:314 의 42 와 다릅니다.");
+  assert.equal(fullKeys.length, 44, "full 모드 산출이 44키와 다릅니다.");
+  assert.equal(fullKeys.filter((key) => key !== "runtime").length, 43,
+    "runtime 을 뺀 책임 수가 build.ps1:436-437 의 43 과 다릅니다.");
 });
 
 test("레거시 28 상수의 후계가 1:1 로 있다", () => {

@@ -1055,6 +1055,126 @@ def test_the_extended_scan_predicates_bite_a_synthetic_ts_probe() -> None:
     ) == 1
 
 
+def _invocation_census(sources: "dict[str, str]", callee: str) -> "dict[str, int]":
+    """이름 하나의 **날 호출** 지점 census — 정의·멤버-접근은 세지 않는다(R2-04 · #408).
+
+    두 제외가 각각 오늘의 거짓 빨강을 막는다: ``function NAME(`` 정의(boot.ts:40 ·
+    store.ts:69)와 ``deps.createRoot(target)`` 류 멤버-접근 호출(root.ts:56 — 주입받은
+    factory 의 사용이지 새 결속이 아니다). 판별력은 합성 표본 게이트가 잰다.
+    """
+    pattern = re.compile(rf"(?<![.\w$])(?<!function ){re.escape(callee)}\(")
+    census = {
+        name: len(pattern.findall(strip_js_comments(text)))
+        for name, text in sources.items()
+    }
+    return {name: count for name, count in census.items() if count > 0}
+
+
+def test_react_root_and_store_are_single_sited() -> None:
+    """다중 root 의 정적 음성(R2-04 · #408) — 결속과 착좌가 각각 정확히 한 자리다.
+
+    커밋-키 가드(root.ts)는 **같은 컨테이너**의 재마운트만 막고, 마운트 마커는 root.ts
+    경로만 심는다 — 다른 컨테이너에 둘째 root 를 세우는 파일은 런타임 가드도 실창 마커
+    census 도 보지 못한다. R2-00 불변식(「다중 island 를 최종 구조로 만들지 않는다」)의
+    유일한 방어가 이 정적 층이다.
+    """
+    sources = _frontend_sources()
+
+    #: ① react-dom 결속은 `boot.ts` 하나 — bare 허용(`_ts_bare_allowed`)이 `.ts` 전역이라
+    #: 둘째 파일의 `react-dom/client` import 는 이 핀 없이는 어느 게이트에도 안 걸린다.
+    binders = {
+        name for name, text in sorted(sources.items())
+        if any(
+            spec == "react-dom" or spec.startswith("react-dom/")
+            for spec in module_imports(strip_js_comments(text))
+        )
+    }
+    assert binders == {"src/react/boot.ts"}, (
+        f"react-dom 에 결속한 파일이 {sorted(binders)} 입니다 — 둘째 결속은 둘째 root 의"
+        " 자리입니다. 정당한 확장이면 이 핀의 diff 가 그 등재입니다."
+    )
+
+    #: ①-보강(#489 Codex P2): 결속의 **형태**도 잠근다 — named import 만. 이름공간(`* as`)·
+    #: 기본 결속이 허용 파일 안에 서면 `NS.createRoot(…)` 멤버-접근 호출이 census 의
+    #: 멤버-접근 제외를 정확히 타고 우회한다. 형태를 잠그면 「react-dom 에 결속된
+    #: 멤버-접근」이 존재할 수 없어, 그 제외(root.ts 주입 소비의 거짓 빨강 방어)가 안전하다.
+    for name, text in sorted(sources.items()):
+        for clause in re.findall(
+            r"import\s+([^;]*?)\s+from\s*[\"']react-dom(?:/[^\"']*)?[\"']",
+            strip_js_comments(text),
+        ):
+            assert re.fullmatch(r"(?:type\s+)?\{[^}]*\}", clause.strip()), (
+                f"{name} 의 react-dom import 가 named 형태가 아닙니다: {clause!r} — "
+                "이름공간·기본 결속은 멤버-접근 호출로 census 를 우회합니다."
+            )
+
+    #: ② 날 `createRoot(` 호출은 boot.ts 의 주입 클로저 한 곳 — root.ts 의 멤버-접근
+    #: 사용(deps.createRoot)은 결속이 아니라 주입의 소비라 세지 않는다.
+    assert _invocation_census(sources, "createRoot") == {"src/react/boot.ts": 1}
+
+    #: ③ 합성 루트 factory 착좌 census — 각각 bootstrap.js 정확 1회.
+    assert _invocation_census(sources, "bootReactRoot") == {"src/bootstrap.js": 1}
+    assert _invocation_census(sources, "createSnapshotStore") == {"src/bootstrap.js": 1}
+
+
+def test_the_multi_root_census_bites_synthetic_probes() -> None:
+    """census 술어의 판별력 — 겨눈 것은 물고, 제외한 것은 물지 않는다.
+
+    음성 대조의 절반은 「안 무는 쪽」이다: 정의·멤버-접근을 세면 오늘 당장 거짓 빨강이라
+    (boot.ts:40 정의 · root.ts:56 멤버-접근), 무는 쪽만 확인한 술어는 내일 그 둘을 세는
+    회귀를 못 막는다.
+    """
+    #: 무는 쪽 — 둘째 결속·둘째 날 호출.
+    island = {
+        "src/react/zz_island.ts": (
+            'import { createRoot } from "react-dom/client";\n'
+            "export function seatSecondIsland(host: Element): void {\n"
+            "  createRoot(host);\n"
+            "}\n"
+        ),
+    }
+    assert _invocation_census(island, "createRoot") == {"src/react/zz_island.ts": 1}
+    assert any(
+        spec.startswith("react-dom")
+        for spec in module_imports(strip_js_comments(island["src/react/zz_island.ts"]))
+    )
+
+    #: 무는 쪽 2(#489 Codex P2) — 이름공간 결속의 멤버-접근 호출. census 는 이것을 **못
+    #: 본다**(멤버-접근 제외) — 그 사실의 확인이, 형태 핀이 의무인 이유의 실증이다.
+    namespaced = {
+        "src/react/zz_ns.ts": (
+            'import * as ReactDOM from "react-dom/client";\n'
+            "export function seat(host: Element): void {\n"
+            "  ReactDOM.createRoot(host);\n"
+            "}\n"
+        ),
+    }
+    assert _invocation_census(namespaced, "createRoot") == {}
+    clauses = re.findall(
+        r"import\s+([^;]*?)\s+from\s*[\"']react-dom(?:/[^\"']*)?[\"']",
+        strip_js_comments(namespaced["src/react/zz_ns.ts"]),
+    )
+    assert clauses == ["* as ReactDOM"]
+    assert re.fullmatch(r"(?:type\s+)?\{[^}]*\}", clauses[0].strip()) is None, (
+        "형태 핀이 이름공간 결속을 통과시키면 census 우회가 열립니다."
+    )
+
+    #: 안 무는 쪽 — 정의와 멤버-접근 위장.
+    disguised = {
+        "src/react/zz_disguise.ts": (
+            "export function bootReactRoot(host: unknown): void {\n"
+            "  void host;\n"
+            "}\n"
+            "const deps = { createRoot: (target: Element): void => { void target; } };\n"
+            "export function seat(target: Element): void {\n"
+            "  deps.createRoot(target);\n"
+            "}\n"
+        ),
+    }
+    assert _invocation_census(disguised, "bootReactRoot") == {}
+    assert _invocation_census(disguised, "createRoot") == {}
+
+
 def test_one_build_entry_and_no_build_time_branch() -> None:
     """산출물은 **한 번의 빌드 하나**다 — 테스트 전용 번들·빌드타임 분기가 없다(D-07).
 
