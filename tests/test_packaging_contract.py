@@ -263,7 +263,7 @@ def test_the_build_runner_wires_the_classifier_before_retry() -> None:
     이 자리에만 산다.
     """
     build = (PACKAGING / "build.ps1").read_text(encoding="utf-8")
-    assert "scripts\classify_webview_evidence.py" in build
+    assert r"scripts\classify_webview_evidence.py" in build
     assert "$bootRetryLimit = 3" in build
     assert "webview_boot_flake" in build
     assert "boot_flake_attempts" in build
