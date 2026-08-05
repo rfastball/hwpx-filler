@@ -316,6 +316,15 @@ export function bootProduct() {
     /* R2-03 — 트리의 StoreSignal 이 이 store 를 구독한다. boot.ts 가 늦은 결속 슬롯으로
        요소 factory 에 넘기므로 여기서는 객체째 한 번 건네면 된다. */
     store,
+    /* R3-01 — 트리의 OverlayHost 가 완전 데이터-구동 표면 4 를 렌더·집행한다. 문서 리스너
+       이양분(popover 부착 명세)이 host effect 에서 모달 keydown 보다 먼저 부착되는 것이
+       Escape 층화(팝오버 먼저 → 최상위 모달)의 순서 계약이다. */
+    overlay: {
+      doc: document,
+      win: window,
+      notify: (message) => window.alert(message),
+      documentAttachments: Popover.documentAttachments,
+    },
   });
 
   /* typed bridge client (R2-02 · #406) — 여기서 **정확히 한 번** 구성된다. 소비자는 아직

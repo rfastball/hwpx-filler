@@ -16,7 +16,7 @@ function recorder(log, name) {
     beginClose: () => log.push(`${name}.beginClose`),
     finishClose: () => log.push(`${name}.finishClose`),
     focusInitial: () => log.push(`${name}.focusInitial`),
-    trapTab: (backward) => log.push(`${name}.trapTab(${backward})`),
+    trapTab: (backward) => { log.push(`${name}.trapTab(${backward})`); return true; },
     restoreFocus: () => log.push(`${name}.restoreFocus`),
   };
 }
@@ -143,12 +143,12 @@ test("handleKeydown — 빈 스택 none·IME 통과·퇴장 중 소비·Escape �
   assert.deepEqual(engine.handleKeydown({ key: "Tab" }), { kind: "consume" });
 });
 
-test("trapTab 위임 — 등록된 host 의 집행자로 방향이 전달된다", () => {
+test("trapTab 위임 — 등록 host 로 방향이 전달되고 개입 여부가 되돌아온다", () => {
   const engine = createOverlayEngine();
   const log = [];
   engine.open({ host: "A", executor: recorder(log, "A") });
-  engine.trapTab("A", true);
-  engine.trapTab("ghost", false);
+  assert.equal(engine.trapTab("A", true), true);
+  assert.equal(engine.trapTab("ghost", false), false, "미등록 host 는 개입 없음");
   assert.deepEqual(log.slice(-1), ["A.trapTab(true)"]);
 });
 

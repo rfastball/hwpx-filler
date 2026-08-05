@@ -40,8 +40,10 @@ export type OverlayExecutor = {
   focusInitial(): void;
   /** 트랩 경계 집행 — 방향에 따라 첫/끝 포커스 가능 요소로 이동. 포커스 가능 목록·경계
    *  판정(첫↔끝·바깥 이탈)까지 집행자가 진다: 그 판정은 DOM 판독(offsetParent·tabIndex)
-   *  없이는 성립하지 않고, 엔진은 「최상위가 트랩을 소유한다」는 사실만 판정한다. */
-  trapTab(backward: boolean): void;
+   *  없이는 성립하지 않고, 엔진은 「최상위가 트랩을 소유한다」는 사실만 판정한다.
+   *  반환은 **개입 여부** — 경계에서만 개입하는 기존 의미(브라우저 자연 이동 존중)를
+   *  keydown 핸들러의 preventDefault 조건으로 잇는다. */
+  trapTab(backward: boolean): boolean;
   /** 복귀 집행 — 옮겨 보고 확인 + 화면 루트 착지 폴백(modal.js:136-148 규율 그대로). */
   restoreFocus(): void;
 };
@@ -212,10 +214,12 @@ export function createOverlayEngine() {
       return { kind: "none" };
     },
 
-    /** Tab 트랩 집행 위임 — 판정(최상위 소유)과 방향만 정하고 경계 이동은 집행자가 진다. */
-    trapTab(host: unknown, backward: boolean): void {
+    /** Tab 트랩 집행 위임 — 판정(최상위 소유)과 방향만 정하고 경계 이동은 집행자가 진다.
+     *  반환은 개입 여부(false = 브라우저 자연 이동에 맡김). */
+    trapTab(host: unknown, backward: boolean): boolean {
       const record = recordOf(host);
-      if (record !== null) record.entry.executor.trapTab(backward);
+      if (record === null) return false;
+      return record.entry.executor.trapTab(backward);
     },
   };
 }
