@@ -139,6 +139,7 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
 #: 원장·게이트·이 표 **셋**이 함께 움직이고 그 diff 가 리뷰 표면에 뜬다.
 EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     "dom_data_attr": (8, "e0bd6cb1822fd50fefbda2c3fac621d5"),
+    "dom_js_data_attr": (80, "34434413efa1aeb4dd7a9779ad680252"),
     "dom_js_site": (22, "21f6634bedf7f3777ec66d1b72991493"),
     "dom_static": (200, "a0de506720a9704065dde2bf17410d50"),
     "lifecycle_factory": (16, "cf3701bfb0908f4d0582200ce8273918"),
@@ -194,11 +195,10 @@ def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, A
         "delta 로 적어야 합니다."
     )
     excluded = {item["axis"]: item for item in document["excluded_axes"]}
-    assert "js_planted_data_attrs" in excluded, (
-        "JS 가 심는 data-* 축의 **명시 제외**가 사라졌습니다 — 조용한 유예가 되면 「미분류 0」이 "
-        "거짓말이 됩니다."
+    assert "js_planted_data_attrs" not in excluded, (
+        "JS/TS 가 심는 data-* 축의 제외가 되살아났습니다 — dom_js_data_attr AST 축이 후계입니다."
     )
-    assert excluded["js_planted_data_attrs"]["owner"], "제외 축에 소유자가 없습니다."
+    assert "dom_js_data_attr" in document["axes"], "JS/TS data-* 생산자 후계 축이 없습니다."
     assert "selftest_frontend_surface" in excluded, (
         "selftest 트리의 **명시 제외**가 사라졌습니다 — 같은 원장이 alias 에서는 그 트리를 "
         "계상하면서 축에서만 조용히 빼면 「미분류 0」이 거짓말이 됩니다."
@@ -219,7 +219,7 @@ def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, A
 #: 동안에는 두 축이 복제와 무관하게 **설치본**을 재서 조용히 초록이었다. 그래서 그 추출기를
 #: `ast` 로 옮겼고, 이 목록의 사유가 이제 실제와 맞는다.
 CLONE_AXES = [
-    "dom_static", "dom_data_attr", "dom_js_site", "state_js_module",
+    "dom_static", "dom_data_attr", "dom_js_data_attr", "dom_js_site", "state_js_module",
     "subscription_listener", "subscription_release", "subscription_push",
     "lifecycle_factory", "lifecycle_hook",
 ]
@@ -348,6 +348,101 @@ def test_n5_zero_indent_module_state_is_seen(
     report = gate.check(document, frontend_tree, axes=["state_js_module"], metrics=[])
     assert not report.ok, "0칸 최상위 상태가 미분류로 안 잡혔습니다."
     assert "__neg" in _failures(report), _failures(report)
+
+
+@pytest.mark.parametrize(
+    ("relative", "source", "expected"),
+    [
+        ("js/theme.js", '\nconst __r3Markup = `<i data-r3-markup="1"></i>`;\n', "data-r3-markup"),
+        (
+            "src/react/root.ts",
+            '\nconst __R3_SET = "data-r3-set"; document.body.setAttribute(__R3_SET, "1");\n',
+            "data-r3-set",
+        ),
+        ("js/theme.js", "\ndocument.body.dataset.r3Dataset = \"1\";\n", "data-r3-dataset"),
+        (
+            "src/react/root.ts",
+            '\nel("div", { "data-r3-prop": "1" });\n',
+            "data-r3-prop",
+        ),
+    ],
+)
+def test_js_data_attribute_producer_forms_are_seen(
+    document: dict[str, Any], clone_source: Path, relative: str, source: str, expected: str,
+) -> None:
+    """마크업·setAttribute(+모듈 const)·dataset·React 객체 속성 네 생산형을 AST가 본다."""
+    target = clone_source / relative
+    target.write_text(target.read_text(encoding="utf-8") + source, encoding="utf-8")
+    report = gate.check(document, clone_source.parent, axes=["dom_js_data_attr"], metrics=[])
+    assert not report.ok, f"{expected} 생산자가 미분류로 안 잡혔습니다."
+    assert expected in _failures(report), _failures(report)
+
+
+@pytest.mark.parametrize(
+    ("relative", "source", "form"),
+    [
+        (
+            "js/theme.js",
+            '\nconst __r3Name = window.name; document.body.setAttribute(__r3Name, "1");\n',
+            "dynamic-set-attribute",
+        ),
+        (
+            "js/theme.js",
+            '\ndocument.body.dataset[window.name] = "1";\n',
+            "computed-dataset",
+        ),
+        (
+            "js/theme.js",
+            '\nconst __r3DynamicMarkup = `<i data-${window.name}="1"></i>`;\n',
+            "dynamic-markup-name",
+        ),
+        (
+            "src/react/root.ts",
+            '\nel("div", { ...window.__r3Props });\n',
+            "jsx-spread",
+        ),
+    ],
+)
+def test_dynamic_js_data_attribute_name_moves_the_blind_spot(
+    document: dict[str, Any], clone_source: Path, relative: str, source: str, form: str,
+) -> None:
+    """네 동적 생산형은 조용히 빠지지 않고 이름 있는 사각 크기를 움직인다."""
+    target = clone_source / relative
+    target.write_text(
+        target.read_text(encoding="utf-8") + source,
+        encoding="utf-8",
+    )
+    report = gate.check(document, clone_source.parent, axes=["dom_js_data_attr"], metrics=[])
+    assert not report.ok, "동적 data-* 이름이 사각 크기를 움직이지 않았습니다."
+    assert "사각이 움직였습니다" in _failures(report), _failures(report)
+    assert form in _failures(report), _failures(report)
+
+
+def test_js_data_attribute_axis_excludes_selftest(
+    document: dict[str, Any], clone_source: Path,
+) -> None:
+    target = clone_source / "src" / "selftest" / "api.js"
+    target.write_text(
+        target.read_text(encoding="utf-8") + '\nconst __r3 = `<i data-r3-selftest></i>`;\n',
+        encoding="utf-8",
+    )
+    report = gate.check(document, clone_source.parent, axes=["dom_js_data_attr"], metrics=[])
+    assert report.ok, "selftest 생산자가 제품 data-* 축으로 샜습니다.\n" + _failures(report)
+
+
+def test_js_data_attribute_selectors_and_reads_are_not_producers(
+    document: dict[str, Any], clone_source: Path,
+) -> None:
+    target = clone_source / "js" / "theme.js"
+    target.write_text(
+        target.read_text(encoding="utf-8")
+        + '\ndocument.querySelector("[data-r3-read]");\n'
+        + 'document.body.getAttribute("data-r3-read");\n'
+        + 'const __r3Read = document.body.dataset.r3Read;\n',
+        encoding="utf-8",
+    )
+    report = gate.check(document, clone_source.parent, axes=["dom_js_data_attr"], metrics=[])
+    assert report.ok, "selector/getAttribute/dataset read가 생산자로 오검됐습니다.\n" + _failures(report)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -755,6 +850,26 @@ def test_review_item_five_evidence_is_required(mutable_document: dict[str, Any])
     text = _failures(report)
     assert "call_path" in text, text
     assert victim["id"] in text, text
+
+
+def test_review_item_resolution_is_machine_readable(
+    mutable_document: dict[str, Any],
+) -> None:
+    victim = next(item for item in mutable_document["review_item"] if item["resolved"])
+    victim["resolved"] = "done"
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, "문자열 resolved가 통과했습니다."
+    assert "resolved" in _failures(report) and victim["id"] in _failures(report)
+
+
+def test_resolved_review_item_requires_a_disposition(
+    mutable_document: dict[str, Any],
+) -> None:
+    victim = next(item for item in mutable_document["review_item"] if item["resolved"])
+    victim.pop("disposition")
+    report = gate.check(mutable_document, REPO_ROOT, metrics=[])
+    assert not report.ok, "처분 없는 resolved=true가 통과했습니다."
+    assert "disposition" in _failures(report) and victim["id"] in _failures(report)
 
 
 def test_extractor_table_backing_must_match_the_implementation(

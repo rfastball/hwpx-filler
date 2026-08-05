@@ -72,14 +72,27 @@ class 에 대해 아무 말도 하지 않는다. 존 패딩 0 · 구분선 소�
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
-from _web_source import REPO_ROOT, SOURCE_CSS_DIR, SOURCE_INDEX, SOURCE_JS_DIR
+from _web_source import REPO_ROOT, SOURCE_CSS_DIR, SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT
 
 ROOT = REPO_ROOT
-#: 검사 대상 — 배포되는 셸과 화면 JS 전수(이름 회수·미해독 판정이 같은 목록을 본다).
-_SOURCES = [SOURCE_INDEX, *sorted(SOURCE_JS_DIR.glob("**/*.js"))]
+#: 검사 대상 — 정적 폐포 계약이 코드로 보는 제품 파일 전수. selftest 는 출하 그래프가 아니므로
+#: 제외하고, index.html 은 마크업 생산자라 코드 확장자 목록과 별도로 포함한다.
+_STATIC_CLOSURE = json.loads(
+    (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+)
+_NON_CODE_SUFFIXES = frozenset(_STATIC_CLOSURE["non_code_suffixes"])
+_PRODUCT_CODE_SOURCES = tuple(sorted(
+    path
+    for path in SOURCE_ROOT.rglob("*")
+    if path.is_file()
+    and path.suffix.lower() not in _NON_CODE_SUFFIXES
+    and not path.relative_to(SOURCE_ROOT).as_posix().startswith("src/selftest/")
+))
+_SOURCES = [SOURCE_INDEX, *_PRODUCT_CODE_SOURCES]
 
 #: 규칙이 없어도 정당한 class — **사유 없이는 등재하지 않는다**.
 #:
@@ -118,6 +131,7 @@ _HOLE = "\x00"
 #: 다음 사람이 다른 쪽으로 적는 날 조용히 눈을 감는다. 못 읽는 형태는 아래 테스트가 시끄럽다.
 _CLASS_ATTR = re.compile(r"""class\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 _CLASS_NAME_ASSIGN = re.compile(r"\.className\s*=\s*([^;]+);")
+_CLASS_NAME_PROP = re.compile(r"\bclassName\s*:\s*([^,}\n]+)")
 _CLASS_LIST = re.compile(r"classList\.(add|remove|toggle)\s*\(")
 _STRING_LIT = re.compile(r"\"([^\"]*)\"|'([^']*)'|`([^`]*)`")
 _IDENT = re.compile(r"[A-Za-z_][\w-]*\Z")
@@ -334,6 +348,7 @@ def _first_arg(args: str) -> str:
 def _class_sinks(text: str) -> list[str]:
     """이 파일이 class 를 내는 자리들의 **식** — 이름 회수와 미해독 판정이 같은 목록을 쓴다."""
     sinks = [m.group(1) for m in _CLASS_NAME_ASSIGN.finditer(text)]
+    sinks.extend(m.group(1) for m in _CLASS_NAME_PROP.finditer(text))
     for match in _CLASS_LIST.finditer(text):
         args = _arg_body(text, match.end() - 1)
         # add/remove 는 인자가 전부 이름이고, toggle 은 첫 인자만 이름이다.
@@ -537,6 +552,29 @@ def test_variable_backed_class_names_are_seen() -> None:
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 변수·속성 결속 회수가 깨졌습니다."
         )
+
+
+def test_typescript_class_name_properties_are_seen() -> None:
+    """React/TS 렌더 객체의 ``className`` 생산도 JS 대입과 같은 그물 안에 든다."""
+    emitted = _emitted_classes()
+    site = "frontend/src/overlay/host.ts"
+    for name in ("modal", "modal-card", "modal-actions", "undo-toast"):
+        assert site in emitted.get(name, set()), (
+            f".{name} 이 {site} 의 산출 목록에 없습니다 — TS className 객체 속성이 scope 밖입니다."
+        )
+
+
+def test_set_attribute_class_sink_is_a_loud_unsupported_form() -> None:
+    """아직 없는 ``setAttribute('class', …)`` 가 생기면 조용히 빠지지 않고 확장을 요구한다."""
+    sites = []
+    pattern = re.compile(r"\.setAttribute\(\s*['\"]class['\"]\s*,")
+    for path in _PRODUCT_CODE_SOURCES:
+        if pattern.search(path.read_text(encoding="utf-8")):
+            sites.append(path.relative_to(ROOT).as_posix())
+    assert not sites, (
+        "지원하지 않는 setAttribute('class', …) 생산자가 생겼습니다 — class sink 추출기를 "
+        f"넓혀야 합니다: {', '.join(sites)}"
+    )
 
 
 def test_allowlist_entries_carry_a_reason() -> None:

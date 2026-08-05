@@ -7,15 +7,38 @@
 """
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
-from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, app_css
+from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app_css
 
 ROOT = REPO_ROOT
 APP_CSS = app_css()  # 분할 조각을 링크 순서대로 이어붙인 문자열(구 app.css 등가)
 JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
 EDITOR_JS = SOURCE_JS_DIR / "screens" / "editor.js"
 PATHTRACK_JS = SOURCE_JS_DIR / "pathtrack.js"
+_NON_CODE_SUFFIXES = frozenset(json.loads(
+    (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+)["non_code_suffixes"])
+
+
+def _product_code_sources() -> tuple[Path, ...]:
+    return tuple(sorted(
+        path
+        for path in SOURCE_ROOT.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() not in _NON_CODE_SUFFIXES
+        and not path.relative_to(SOURCE_ROOT).as_posix().startswith("src/selftest/")
+    ))
+
+
+def _inline_font_size_offenders(sources: list[tuple[str, str]]) -> list[str]:
+    offenders = []
+    for where, text in sources:
+        for match in re.finditer(r"font-size:\s*[\d.]+px", text):
+            offenders.append(f"{where}: {match.group(0)}")
+    return offenders
 
 
 def _css() -> str:
@@ -228,11 +251,19 @@ def test_web_markup_free_of_inline_font_size_literals():
     이 라운드가 걷어낸 인라인 12px(5역할 타입 스케일 밖 값)가 index.html·JS 템플릿 문자열로
     되돌아오는 회귀를 막는다. 크기는 var(--fs-*) 또는 클래스(capnote 등)로만.
     """
-    targets = [SOURCE_INDEX, *sorted(SOURCE_JS_DIR.rglob("*.js"))]
-    offenders = []
-    for path in targets:
-        for m in re.finditer(r"font-size:\s*[\d.]+px", path.read_text(encoding="utf-8")):
-            offenders.append(f"{path.relative_to(ROOT)}: {m.group(0)}")
+    targets = [SOURCE_INDEX, *_product_code_sources()]
+    offenders = _inline_font_size_offenders([
+        (path.relative_to(ROOT).as_posix(), path.read_text(encoding="utf-8"))
+        for path in targets
+    ])
     assert not offenders, (
         "인라인 font-size px 리터럴 잔존 → var(--fs-*)/클래스로: " + "; ".join(offenders)
     )
+
+
+def test_inline_font_size_scan_has_a_typescript_positive_control():
+    """TS 렌더 파일이 같은 술어로 스캔됨을 인라인 양성 대조로 증명한다."""
+    assert _inline_font_size_offenders([
+        ("inline.ts", 'el("span", { style: "font-size: 13px" })'),
+    ]) == ["inline.ts: font-size: 13px"]
+    assert any(path.suffix == ".ts" for path in _product_code_sources())

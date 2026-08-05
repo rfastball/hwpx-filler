@@ -26,14 +26,14 @@
   .bar>i{background:Highlight}
 
   /* 채움 소유권 3종 — 자동/직접 고침/무결속 수기를 시스템색 밑줄로 계속 구별한다. */
+  /* Chromium은 forced-colors에서 box-shadow를 none으로 제거하므로 실보더를 쓴다(#412). */
   .wc-render .seg-fill{border:1px solid CanvasText;background:Canvas}
-  .wc-render .seg-fill.own-auto{box-shadow:inset 0 -3px 0 Highlight}
-  .wc-render .seg-fill.own-hand{box-shadow:inset 0 -3px 0 Mark}
-  .wc-render .seg-fill.own-man{box-shadow:inset 0 -3px 0 LinkText}
+  .wc-render .seg-fill.own-auto{border-bottom:3px solid Highlight}
+  .wc-render .seg-fill.own-hand{border-bottom:3px solid Mark}
+  .wc-render .seg-fill.own-man{border-bottom:3px solid LinkText}
   .own{border:1px solid CanvasText;background:CanvasText}
   .own.auto{background:Highlight}.own.man{background:LinkText}
 
   /* 겨눈 규칙 행 — 강제 색 모드에선 배경이 시스템 소유라 시스템색 표지로 갈음한다. */
   #wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 Highlight}
 }
-

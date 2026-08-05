@@ -104,8 +104,8 @@ PRODUCT_TREE_GLOBS = (
 
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
-#: 재고정 v3 = R3-01(#410) overlay 이관 — base 는 `IMPLEMENTING` 전이가 고정한 `5895029`.
-EXPECTED_BASELINE_SHA = "e8e20ff4772f64040864cda5c6571f7b70963f8c"
+#: 재고정 v5 = R3-03(#412) parity 검증 — base 는 rev4 packet 이 고정한 `15d3444`.
+EXPECTED_BASELINE_SHA = "15d3444a256057f95b6ea6fcedd31b562a03f28d"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -117,6 +117,7 @@ EXPECTED_BASELINE_SHA = "e8e20ff4772f64040864cda5c6571f7b70963f8c"
 AXIS_FLOORS: dict[str, int] = {
     "dom_static": 200,              # 오늘 232
     "dom_data_attr": 8,             # 오늘 9
+    "dom_js_data_attr": 80,         # 오늘 86 — JS/TS 생산자 이름×파일
     "dom_js_site": 22,              # 오늘 26
     "state_js_module": 44,          # 오늘 50
     "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
@@ -142,6 +143,7 @@ AXIS_FLOORS: dict[str, int] = {
 #: 값은 `uv run python scripts/check_react_ownership_inventory.py --print-pins` 가 낸다.
 AXIS_DIGESTS: dict[str, str] = {
     "dom_data_attr": "e0bd6cb1822fd50fefbda2c3fac621d5",
+    "dom_js_data_attr": "34434413efa1aeb4dd7a9779ad680252",
     "dom_js_site": "21f6634bedf7f3777ec66d1b72991493",
     "dom_static": "a0de506720a9704065dde2bf17410d50",
     "lifecycle_factory": "cf3701bfb0908f4d0582200ce8273918",
@@ -179,7 +181,6 @@ NARROW_SCOPE_AXES: dict[str, str] = {
 #: 제외 축 → 「크기 프로브를 요구하는가」. `size` 블록을 통째로 지우면 조용한 유예로
 #: 되돌아가므로 **어느 제외가 크기를 드는지**도 게이트가 든다.
 EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
-    "js_planted_data_attrs": False,   # 오답 술어밖에 없다는 것이 제외 사유 자체다
     "selftest_frontend_surface": True,
     "frontend_stylesheets": True,
 }
@@ -204,7 +205,9 @@ class InventoryGateError(RuntimeError):
 #: 이 확장자는 **텍스트여야 한다**. 디코드 실패를 `continue` 로 넘기면 정규식 축이 그 파일을
 #: 조용히 안 보고, 같은 파일을 AST 축은 본다 — 「런타임 부재를 자동 감지해 조용히 스킵하지
 #: 않는다」와 같은 축의 결함이라 구조 오류로 든다.
-TEXT_SUFFIXES = frozenset({".js", ".mjs", ".py", ".html", ".css", ".toml", ".json", ".md"})
+TEXT_SUFFIXES = frozenset({
+    ".js", ".mjs", ".ts", ".tsx", ".py", ".html", ".css", ".toml", ".json", ".md",
+})
 
 
 def _read_text(path: Path) -> str | None:
@@ -454,6 +457,14 @@ def _js_template_ids(repo: Repo) -> list[str]:
     return list(repo.node_axes()["js_template_ids"])
 
 
+def _js_planted_data_attrs(repo: Repo) -> list[str]:
+    return list(repo.node_axes()["js_planted_data_attrs"])
+
+
+def _js_data_attr_dynamic(repo: Repo) -> list[str]:
+    return list(repo.node_axes()["js_data_attr_dynamic"])
+
+
 def _js_module_state(repo: Repo) -> list[str]:
     return list(repo.node_axes()["js_module_state"])
 
@@ -487,6 +498,12 @@ _ID_ATTR_GAP_PATTERNS = (
 PRODUCT_JS_SCOPE = (
     "frontend/js/**/*.js", "frontend/js/**/*.mjs",
     "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+)
+DATA_ATTR_SCOPE = (
+    "frontend/js/**/*.js", "frontend/js/**/*.mjs",
+    "frontend/js/**/*.ts", "frontend/js/**/*.tsx",
+    "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+    "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
 )
 #: selftest 트리는 제품 그래프가 아니다(`schema.js` 는 출하 번들에도 없다). 축에서 빼되
 #: 원장이 `excluded_axes` 로 **소리 나게** 제외하고 크기를 프로브로 잰다.
@@ -711,6 +728,12 @@ EXTRACTORS: dict[str, Extractor] = {
     ),
     "js_template_ids": Extractor(
         "ast", PRODUCT_JS_SCOPE, _js_template_ids, SELFTEST_EXCLUDED
+    ),
+    "js_planted_data_attrs": Extractor(
+        "ast", DATA_ATTR_SCOPE, _js_planted_data_attrs, SELFTEST_EXCLUDED
+    ),
+    "js_data_attr_dynamic": Extractor(
+        "ast", DATA_ATTR_SCOPE, _js_data_attr_dynamic, SELFTEST_EXCLUDED
     ),
     "js_id_attr_anchor_gaps": Extractor(
         "regex-convention", PRODUCT_JS_SCOPE, _js_id_attr_anchor_gaps, SELFTEST_EXCLUDED,
@@ -1337,6 +1360,15 @@ def _check_review_items(document: dict[str, Any], repo: Repo, report: Report) ->
         if not isinstance(requires, bool):
             report.structural.append(
                 f"판정 요구 항목 {item_id}: `requires_p_review` 를 true|false 로 듭니다."
+            )
+        resolved = item.get("resolved")
+        if not isinstance(resolved, bool):
+            report.structural.append(
+                f"판정 요구 항목 {item_id}: `resolved` 를 true|false 로 듭니다."
+            )
+        elif resolved and not item.get("disposition"):
+            report.structural.append(
+                f"판정 요구 항목 {item_id}: `resolved = true` 는 `disposition` 을 듭니다."
             )
         owner = item.get("owner")
         if owner and owner not in HANDOFF_SLICES:

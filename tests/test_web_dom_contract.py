@@ -22,6 +22,7 @@ from _web_source import (
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
+    SOURCE_ROOT,
     app_css,
     reaches_product_graph,
     linked_css,
@@ -44,7 +45,13 @@ WEB_JS_DIR = SOURCE_JS_DIR
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
 # 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
 # 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
-PRESERVE_WRAPPED_FILES = ("screens/editor.js", "screens/job.js", "screens/workbench.js")
+PRESERVE_WRAPPED_FILES = (
+    "data_picker.js",
+    "screens/editor.js",
+    "screens/job.js",
+    "screens/library.js",
+    "screens/workbench.js",
+)
 
 # 렌더 층 **가변 모듈 상태 예산**. Python 이 상태를 단일 소유하고 스냅샷을 미는 모델에서 JS 의
 # 가변 모듈 상태는 전부 "스냅샷이 답하지 않아 표면이 답하는 것"이다 — 조용히 자라면 파생 가능한
@@ -117,6 +124,8 @@ SCREEN_ROOTS = (
     "scr-job",
     # 「기안」(scr-draft)은 사망(F6 PR-B) — TXT 생성은 편집기 TXT 밴드·검토는 작업대가
     # 승계했다(§10.15.15).
+    "scr-editor",
+    "scr-workbench",
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
@@ -159,6 +168,19 @@ HOST_MODAL_LABELLEDBY = {
     # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
     # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
     "chooseModal": "chooseModalTitle",
+}
+
+# React가 정적 골격을 인수한 렌더 표면. 정적 부재+소스 소유만 보면 실행 중 렌더가 빠진
+# 회귀를 못 보고, 실행 테스트만 보면 index.html 골격이 되살아난 두 세계 분열을 못 본다.
+# 그래서 표면마다 정적 계약과 브라우저/runtime 쌍을 한 행에 둔다.
+REACT_RENDER_CONTRACT = {
+    "src/overlay/host.ts": {
+        "static_owner": HOST_MODAL_LABELLEDBY,
+        "runtime_twins": (
+            "tests/js/overlay_host.test.js",
+            "tests/test_react_overlay_live.py",
+        ),
+    },
 }
 
 
@@ -354,7 +376,7 @@ def test_custom_modals_have_dialog_semantics():
 
     # R3-01 승계 형태 — 이전된 3종은 정적 **부재**(재도입 즉시 빨강)와 host 렌더 소유(같은
     # role·aria 짝)를 양면으로 단언한다. 렌더 산출 검증은 node overlay_host.test.js 가 진다.
-    host_src = source_text("src", "overlay", "host.ts")
+    host_src = source_text(*next(iter(REACT_RENDER_CONTRACT)).split("/"))
     for mid, label_id in HOST_MODAL_LABELLEDBY.items():
         assert mid not in modals and mid not in ids, (
             f"{mid} 가 index.html 에 재도입됐습니다 — R3-01 뒤 이 골격은 React host 렌더 "
@@ -367,6 +389,17 @@ def test_custom_modals_have_dialog_semantics():
     assert host_src.count('role: "dialog"') == len(HOST_MODAL_LABELLEDBY), (
         "host 렌더 다이얼로그의 role=dialog 수가 이전 3종과 다릅니다."
     )
+
+
+def test_react_render_contract_records_static_and_runtime_twins():
+    """React 렌더 소유 표면마다 정적 계약과 브라우저/runtime 검증 쌍이 모두 실재한다."""
+    for source, contract in REACT_RENDER_CONTRACT.items():
+        assert (SOURCE_ROOT / source).is_file(), f"React 렌더 소스가 없습니다: {source}"
+        assert contract["static_owner"], f"{source}: 정적 소유 계약이 비었습니다."
+        twins = contract["runtime_twins"]
+        assert len(twins) >= 2, f"{source}: 브라우저/runtime 쌍이 둘보다 적습니다."
+        for twin in twins:
+            assert (REPO_ROOT / twin).is_file(), f"{source}: 검증 쌍이 실재하지 않습니다: {twin}"
 
 
 # 숨김 관례(슬라이스 7 PR-3 리뷰): 이 앱의 CSS 에는 **일반 `.hidden` 규칙이 없다** —
@@ -669,7 +702,7 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
 
 
 def test_preserve_helper_loaded_and_wraps_screen_renders():
-    """상호작용 보존 헬퍼가 로드되고 4개 화면 render() 가 Preserve.around 로 감싸져 있어야 한다(#28).
+    """상호작용 보존 헬퍼가 로드되고 다섯 렌더 소유자가 Preserve.around 로 감싸져야 한다(#28).
 
     실 재구성 가로지르기 거동(포커스·캐럿·스크롤 유지)은 selftest 게이트가 되읽어 단언한다 —
     여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해

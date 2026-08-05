@@ -222,6 +222,24 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   대상의 축소)과 파괴 확정 감사의 `.ts` 수집 확장(confirm 호출이 React 층으로 옮는 첫
   슬라이스가 진다). **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
 
+### React 패리티 검증 매트릭스 (R3-03 · #412)
+
+이 표는 검증 종류를 “테스트가 많다”는 산문으로 뭉개지 않는다. 각 동등성 축마다 정적·브라우저·
+실창 증거를 따로 들고, 아직 증거가 없는 칸은 공란 대신 **왜 비어 있는지**를 적는다. 아래 마커와
+표 형식은 `tests/test_parity_matrix.py`가 파싱하므로 이름을 바꾸거나 행을 줄이는 것도 계약 변경이다.
+
+<!-- R3-03-PARITY-MATRIX:START -->
+| 축 | 정적 | 브라우저 | 실창 |
+|---|---|---|---|
+| css-cascade | `tests/test_web_css_manifest.py::test_app_css_manifest_matches_product_entry_import_order` | 비어 있음 — 링크 순서와 파일 전수는 실렌더 상태가 아니라 빌드 그래프 계약이다. | 비어 있음 — R4 화면 이관 전에는 CSS 순서를 다시 재는 별도 WebView2 부팅을 늘리지 않는다. |
+| dom-aria | `tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics` | `tests/js/overlay_host.test.js` | `tests/test_react_overlay_live.py::test_overlay_host_commits_skeletons_and_survives_reinit_in_a_real_window` |
+| keyboard-focus | `tests/test_web_dom_contract.py::test_card_families_keep_keyboard_focus_outline` | `tests/js/n05_overlay.test.js` | `tests/test_web_selftest_gate.py::TestWebSelftestGate::test_modal_escape_closes_and_restores_focus` |
+| geometry | `tests/test_scroll_topology.py::test_capped_scrollport_inventory_matches_dom_and_behavior_contract` | `tests/test_web_press_geometry.py::test_row_surface_left_edge_does_not_move_while_held` | `tests/test_web_selftest_gate.py::test_window_geometry_restores_or_falls_back_in_real_webview` |
+| motion | `tests/test_interaction_responsiveness.py::test_press_feedback_covers_round_trip_surfaces_and_reduced_motion` | `tests/test_web_press_geometry.py::test_press_marker_actually_fires_on_a_box_surface` | 비어 있음 — 실제 OS 모션 설정을 변이하지 않는 정책이라 강제 대조는 Playwright가 소유한다. |
+| forced-colors | `tests/test_personalization_contract.py::test_forced_colors_preserves_three_owner_signals` | `tests/test_web_press_geometry.py::test_forced_colors_ownership_markers_render_only_in_active_media` | 비어 있음 — WebView2에서 사용자 Windows 고대비 설정을 시험이 바꾸지 않으며 Playwright 양면 렌더가 후계다. |
+| ts-copy | `tests/test_web_css_orphan_classes.py::test_typescript_class_name_properties_are_seen` | 비어 있음 — TS 생산자 편입 여부는 소스 폐포 술어의 책임이고 렌더 결과는 해당 DOM 축에서 본다. | 비어 있음 — R4 화면 실이관 전에는 TS 복제만 위한 별도 콜드 부팅을 만들지 않는다. |
+<!-- R3-03-PARITY-MATRIX:END -->
+
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
 Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름

@@ -85,7 +85,7 @@ owner_stage = "R5-03"
 
 [[asset]]
 file = "scripts/extract_js_ast_axes.mjs"
-responsibility = "프런트 JS 소유권 두 축의 유일한 AST 추출기"
+responsibility = "프런트 JS 소유권 두 축 + JS/TS data-* 생산자·동적 이름 사각의 유일한 AST 추출기"
 owner_stage = "R5-02"
 
 [[asset]]
@@ -135,7 +135,7 @@ owner_stage = "R5-03"
 
 [[asset]]
 file = "tests/_press_probe.py"
-responsibility = "눌림 기하 측정 창구 — sealed CSS 를 loopback 으로 제공해 실 상자를 잰다"
+responsibility = "sealed CSS loopback 실렌더 창구 — 눌림 기하와 forced-colors active/none 양면 렌더"
 owner_stage = "R3-03"
 
 [[asset]]
@@ -445,7 +445,7 @@ owner_stage = "R5-03"
 
 [[asset]]
 file = "tests/test_personalization_contract.py"
-responsibility = "사용자 설정 존중·개인화의 정적·순수 계약"
+responsibility = "사용자 설정 존중·개인화의 정적·순수 계약 + forced-colors 시스템색 border 표지"
 owner_stage = "R4-04"
 
 [[asset]]
@@ -507,6 +507,11 @@ owner_stage = "R4-03"
 file = "tests/test_react_ownership_inventory.py"
 responsibility = "#402 원장의 폐포 게이트와 판별력 음성 대조"
 owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_parity_matrix.py"
+responsibility = "R3-03 CSS·DOM·ARIA·focus·geometry 축별 정적/브라우저/실창 증거와 사유 있는 공란의 폐포"
+owner_stage = "R3-03"
 
 [[asset]]
 file = "tests/test_react_overlay_live.py"
@@ -590,7 +595,7 @@ owner_stage = "R3-03"
 
 [[asset]]
 file = "tests/test_ux_css_round.py"
-responsibility = "버튼·열 레이아웃 착지의 정적 회귀 차단"
+responsibility = "버튼·열 레이아웃 착지와 JS/TS 인라인 타입 스케일의 정적 회귀 차단"
 owner_stage = "R3-03"
 
 [[asset]]
@@ -610,7 +615,7 @@ owner_stage = "R3-03"
 
 [[asset]]
 file = "tests/test_web_css_orphan_classes.py"
-responsibility = "셸이 내는 class 중 규칙이 한 줄도 없는 것을 시끄럽게 만든다"
+responsibility = "JS/TS 렌더가 내는 class 중 규칙이 한 줄도 없는 것을 시끄럽게 만든다"
 owner_stage = "R3-03"
 
 [[asset]]
@@ -620,7 +625,7 @@ owner_stage = "R4-03"
 
 [[asset]]
 file = "tests/test_web_dom_contract.py"
-responsibility = "canonical 프런트엔드 정적 소스의 DOM 계약 — id 유일성·화면 루트·module graph"
+responsibility = "canonical DOM 계약 — id 유일성·화면 루트 전수·Preserve 5소유자·React 정적/runtime 쌍"
 owner_stage = "R3-03"
 
 [[asset]]
@@ -635,7 +640,7 @@ owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/test_web_press_geometry.py"
-responsibility = "실렌더 눌림 기하 — 모션 층을 prefers-reduced-motion 두 값으로 강제해 잰다"
+responsibility = "실렌더 눌림 기하 + forced-colors active/none 소유권 표지 양면 렌더"
 owner_stage = "R3-03"
 
 [[asset]]
