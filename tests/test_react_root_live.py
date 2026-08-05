@@ -37,6 +37,8 @@ from pathlib import Path
 
 import pytest
 
+from _live_gate import LIVE_CHILD_TIMEOUT_S, LIVE_PROBE_BUDGET_S
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -61,11 +63,11 @@ MOUNT_READBACK_EXPRESSION = (
 #: 자식이 마커 줄로 내보내는 되읽기 원문의 접두 — 부모는 이 줄만 신뢰한다.
 _READBACK_LINE_PREFIX = "HWPX-REACT-READBACK="
 
-#: 창 안 폴링 예산. 콜드 부팅(초회 WebView2 런타임 기동·AV 스캔)까지 품는 값이고, 정상
-#: 실행은 수 초 안에 커밋한다 — 이 예산이 무는 것은 「느림」이 아니라 매달림·미커밋이다.
-_PROBE_BUDGET_S = 90.0
-#: 자식 프로세스 상한 — 폴링 예산 + 부팅·정리 여유. 초과는 전면 매달림으로 즉시 실패다.
-_CHILD_TIMEOUT_S = 240.0
+#: 예산은 실 게이트 넷의 단일 출처에서 온다(`tests/_live_gate.py` — 값과 그 사유, 그리고
+#: 「콜드 부팅을 늘리지 않는다」 정책이 함께 산다). 이 예산이 무는 것은 「느림」이 아니라
+#: 매달림·미커밋이다.
+_PROBE_BUDGET_S = LIVE_PROBE_BUDGET_S
+_CHILD_TIMEOUT_S = LIVE_CHILD_TIMEOUT_S
 
 
 def judge_mount_readback(raw: object) -> "tuple[bool, str]":

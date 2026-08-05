@@ -519,6 +519,16 @@ responsibility = "실 WebView2 셸 수명주기 — 부팅 랜딩·실클릭 동
 owner_stage = "R3-02"
 
 [[asset]]
+file = "tests/_live_gate.py"
+responsibility = "실 게이트 공용 예산의 단일 출처와 콜드 부팅 정책 본문(부팅을 늘리지 않는다·예산은 넉넉하다)"
+owner_stage = "R3-02"
+
+[[asset]]
+file = "tests/test_live_gate_shape.py"
+responsibility = "실 게이트 형상 폐포 — 실 창 자식 드라이버 전수 고정(조용한 부팅 증가 차단)과 예산 단일 출처 준수"
+owner_stage = "R3-02"
+
+[[asset]]
 file = "tests/test_react_root_live.py"
 responsibility = "실 WebView2 React 커밋 마커 되읽기 — sealed artifact 자체 창 소비"
 owner_stage = "R2-01"

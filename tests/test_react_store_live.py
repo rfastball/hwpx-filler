@@ -30,6 +30,8 @@ from pathlib import Path
 
 import pytest
 
+from _live_gate import LIVE_CHILD_TIMEOUT_S, LIVE_PROBE_BUDGET_S
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -54,9 +56,9 @@ STORE_READBACK_EXPRESSION = (
 #: 자식이 단계별 되읽기를 실어 내보내는 줄의 접두 — 부모는 이 줄만 신뢰한다.
 _READBACK_LINE_PREFIX = "HWPX-STORE-READBACK="
 
-#: 창 안 폴링 예산(4단계 합산)·자식 상한 — root live 게이트의 예산 산정을 승계한다.
-_PROBE_BUDGET_S = 120.0
-_CHILD_TIMEOUT_S = 240.0
+#: 창 안 폴링 예산(4단계 합산)·자식 상한 — 실 게이트 넷의 단일 출처(`tests/_live_gate.py`).
+_PROBE_BUDGET_S = LIVE_PROBE_BUDGET_S
+_CHILD_TIMEOUT_S = LIVE_CHILD_TIMEOUT_S
 
 #: 단계 이름 — 자식과 부모가 같은 순서를 공유한다(둘이 갈리면 판정이 갈린다).
 PHASES = ("boot", "pushed", "reloaded", "repushed")
