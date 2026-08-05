@@ -22,6 +22,7 @@ from _web_source import (
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
+    SOURCE_ROOT,
     app_css,
     reaches_product_graph,
     linked_css,
@@ -393,7 +394,7 @@ def test_custom_modals_have_dialog_semantics():
 def test_react_render_contract_records_static_and_runtime_twins():
     """React 렌더 소유 표면마다 정적 계약과 브라우저/runtime 검증 쌍이 모두 실재한다."""
     for source, contract in REACT_RENDER_CONTRACT.items():
-        assert (REPO_ROOT / "frontend" / source).is_file(), f"React 렌더 소스가 없습니다: {source}"
+        assert (SOURCE_ROOT / source).is_file(), f"React 렌더 소스가 없습니다: {source}"
         assert contract["static_owner"], f"{source}: 정적 소유 계약이 비었습니다."
         twins = contract["runtime_twins"]
         assert len(twins) >= 2, f"{source}: 브라우저/runtime 쌍이 둘보다 적습니다."
