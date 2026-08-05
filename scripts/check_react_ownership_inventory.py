@@ -61,6 +61,10 @@ from typing import Any, Callable
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOCUMENT = REPO_ROOT / "docs" / "react_ownership_inventory.toml"
 NODE_EXTRACTOR_SCRIPT = "scripts/extract_js_ast_axes.mjs"
+STATIC_CLOSURE_CONTRACT = json.loads(
+    (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+)
+NON_CODE_SUFFIXES = tuple(str(suffix) for suffix in STATIC_CLOSURE_CONTRACT["non_code_suffixes"])
 
 #: 분류 어휘 — `R1-ARTIFACT-LAYOUT:v2` §2 가 정본이고 중앙 V1 이 소문자로 못박았다.
 #: `classification` 과 구 `p_authority` 는 값 공간이 같은 한 축이라 중앙 V7 이 열을 합쳤다.
@@ -95,17 +99,31 @@ HANDOFF_SLICES = frozenset(
 #: 원장 안에 있으면 scope 를 좁히고 그만큼 행을 정리하는 것으로 **측정 집합 M 자체가** 줄고,
 #: 폐포(`M−C`)는 계속 참이라 조용하다. 그래서 게이트가 **제품 트리를 스스로 열거**하고
 #: 「모든 파일이 어떤 축의 scope 또는 명시 제외에 덮이는가」를 1차 방벽으로 세운다.
-PRODUCT_TREE_GLOBS = (
-    "frontend/**/*.js",
-    "frontend/**/*.mjs",
-    "frontend/**/*.html",
-    "frontend/**/*.css",
+PRODUCT_TREE_GLOBS = ("frontend/**/*",)
+
+#: 제품 코드의 형식을 열거하지 않는다. 정적 폐포 계약이 「코드가 아닌 것」만 들고, 그 목록을
+#: 제품 트리 전수에서 감산한다. 따라서 다음 `.tsx`·새 코드 형식은 자동 편입되고, 파서가 못
+#: 읽으면 초록으로 누락되지 않고 시끄럽게 실패한다(#490의 단일 출처를 다섯째 소비자가 공유).
+PRODUCT_CODE_SCOPE = ("frontend/**/*",)
+SELFTEST_EXCLUDED = ("frontend/src/selftest/**",)
+PRODUCT_CODE_EXCLUDED = (
+    *SELFTEST_EXCLUDED,
+    *(f"frontend/**/*{suffix}" for suffix in NON_CODE_SUFFIXES),
+)
+REACT_HOST_CODE_SCOPE = (
+    "frontend/src/overlay/**/*",
+    "frontend/src/shell/**/*",
+)
+REACT_HOST_CODE_EXCLUDED = tuple(
+    f"{prefix}**/*{suffix}"
+    for prefix in ("frontend/src/overlay/", "frontend/src/shell/")
+    for suffix in NON_CODE_SUFFIXES
 )
 
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
-#: 재고정 v5 = R3-03(#412) parity 검증 — base 는 rev4 packet 이 고정한 `15d3444`.
-EXPECTED_BASELINE_SHA = "15d3444a256057f95b6ea6fcedd31b562a03f28d"
+#: 재고정 v6 = #491 감산형 TS/TSX 폐포 — base 는 R3-99가 감사한 master `a6f21a3`.
+EXPECTED_BASELINE_SHA = "a6f21a3df6a6624eeb57eea94aebd46cfe034d80"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -117,24 +135,18 @@ EXPECTED_BASELINE_SHA = "15d3444a256057f95b6ea6fcedd31b562a03f28d"
 AXIS_FLOORS: dict[str, int] = {
     "dom_static": 200,              # 오늘 232
     "dom_data_attr": 8,             # 오늘 9
-    "dom_js_data_attr": 80,         # 오늘 86 — JS/TS 생산자 이름×파일
-    "dom_js_site": 22,              # 오늘 26
-    "state_js_module": 44,          # 오늘 50
+    "dom_js_data_attr": 80,         # 오늘 86 — 제품 코드 생산자 이름×파일
+    "dom_js_site": 46,              # 오늘 48 — JS 26 + TS 22
+    "state_js_module": 61,          # 오늘 63 — JS 45 + TS 18
     "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
     "state_ring1": 10,              # 오늘 11
-    # R3-01(#410)이 문서 리스너 소유를 이양하며 두 축이 줄었다: popover 모듈-평가 부착 8 +
-    # undo_toast 1 + modal.js 부착 5/해제 5 가 엔진 배선·React host(`.ts` — 이 축의 scope 밖,
-    # READY 기록의 #490 인접 사각)로 옮겨 갔다. 하한 인하는 그 실측을 따른다 — 더 줄면
-    # 그때 또 사유가 필요하다(조용한 삭감 금지).
-    # R3-02(#411)가 셸 리스너 7(백스톱·탭 2접점 아닌 nav 위임 1·도구 2·라벨 동기 2·부팅 훅)을
-    # app.js 서술 + React ShellHost 부착(src/shell/host.ts — 같은 `.ts` 사각, #491)으로
-    # 이양했다. 부팅 훅 이양으로 lifecycle_hook 도 함께 줄었다(IMMERSIVE 목록은 상태기계
-    # nav.ts 로). 인하는 실측 그대로다.
-    "subscription_listener": 96,    # 오늘 98
-    "subscription_release": 6,      # 오늘 7
+    # #491이 TS 사각을 닫아 R2 runtime 1 + R3 overlay 7 + shell 2 attach와 R3 release 9가
+    # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
+    "subscription_listener": 106,   # 오늘 108
+    "subscription_release": 15,     # 오늘 16
     "subscription_push": 5,         # 오늘 6
-    "lifecycle_factory": 16,        # 오늘 18
-    "lifecycle_hook": 7,            # 오늘 8
+    "lifecycle_factory": 32,        # 오늘 34 — JS 18 + TS 16
+    "lifecycle_hook": 9,            # 오늘 10
 }
 
 #: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.
@@ -143,17 +155,17 @@ AXIS_FLOORS: dict[str, int] = {
 #: 값은 `uv run python scripts/check_react_ownership_inventory.py --print-pins` 가 낸다.
 AXIS_DIGESTS: dict[str, str] = {
     "dom_data_attr": "e0bd6cb1822fd50fefbda2c3fac621d5",
-    "dom_js_data_attr": "34434413efa1aeb4dd7a9779ad680252",
-    "dom_js_site": "21f6634bedf7f3777ec66d1b72991493",
+    "dom_js_data_attr": "d6c24f47a9f809b5e6f63ddd2b09e372",
+    "dom_js_site": "7ce48e5d41ae530e66a2156e113bb0bb",
     "dom_static": "a0de506720a9704065dde2bf17410d50",
-    "lifecycle_factory": "cf3701bfb0908f4d0582200ce8273918",
-    "lifecycle_hook": "05809936a7af41d071c9da1f786c0370",
-    "state_js_module": "1633eccf8b783f1d712a5b9e158a6ed5",
+    "lifecycle_factory": "f774587af230cf5222697cd0f0e0a050",
+    "lifecycle_hook": "1f090f972ecaf5c9e0a54796c6849437",
+    "state_js_module": "fef89b77255e04f0cf05d4b19e09c733",
     "state_ring1": "9742c77daae0c11112e40c009a5b23c6",
     "state_snapshot_channel": "5891957f0ed54565587e17c150eed087",
-    "subscription_listener": "2fc5bdf7415bc281524144a514e9ee28",
+    "subscription_listener": "8064cf796b67e47a094e61c7362e4b5b",
     "subscription_push": "5201c1ab611d0f09a743bd1e6afced4a",
-    "subscription_release": "b6ac96d2f30c9122a679e7c1c01643b1",
+    "subscription_release": "08fce41a56c1108632cb8bfd7364912c",
 }
 
 #: 계측·판정 요구 항목도 같은 이유로 게이트가 목록을 든다 — 항목을 지우는 것은 값이 아니라
@@ -164,6 +176,7 @@ EXPECTED_METRIC_IDS = frozenset({
     "dom-data-attribute-kinds", "data-attribute-bearing-elements",
     "js-generated-id-sites", "screen-action-pairs",
     "window-pywebview-references", "pywebview-api-references", "export-function-declarations",
+    "react-direct-dom-mutations", "react-listener-cleanup-gaps",
 })
 EXPECTED_REVIEW_ITEM_IDS = frozenset({
     "bridge/close-guard-state", "gate/architecture-bridge-one-way",
@@ -183,6 +196,7 @@ NARROW_SCOPE_AXES: dict[str, str] = {
 EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
     "selftest_frontend_surface": True,
     "frontend_stylesheets": True,
+    "frontend_static_assets": True,
 }
 
 #: 접기가 있어도 이만큼은 손으로 분류돼 있어야 한다. 노드 행을 0으로 만드는 것은 폐포를
@@ -264,7 +278,7 @@ class Repo:
         return self._html
 
     def node_axes(self) -> dict[str, list[str]]:
-        """Node AST 추출기를 **한 번** 돌려 세 축을 받는다.
+        """Node AST 추출기를 **한 번** 돌려 제품 코드 축 묶음을 받는다.
 
         Node 부재는 조용한 스킵이 아니라 실패다 — Node 는 이 저장소의 빌드 전제조건이고
         CI contract 잡은 pytest 앞에서 프런트 툴체인을 설치한다.
@@ -473,6 +487,14 @@ def _js_nonexported_fn_state(repo: Repo) -> list[str]:
     return list(repo.node_axes()["js_nonexported_fn_state"])
 
 
+def _react_direct_dom_mutations(repo: Repo) -> list[str]:
+    return list(repo.node_axes()["react_direct_dom_mutations"])
+
+
+def _react_listener_cleanup_gaps(repo: Repo) -> list[str]:
+    return list(repo.node_axes()["react_listener_cleanup_gaps"])
+
+
 #: `dom_js_site` 의 앵커 정규식이 못 보는 네 형태. 오늘 전부 0이지만 **오늘 0인 것과 앞으로도
 #: 0인 것은 다르다** — 그래서 프로브가 매번 그 0을 재확인한다.
 #: 알려진 일곱 형태. **전수라고 주장하지 않는다** — 그것을 확인하는 프로브가 없다.
@@ -492,28 +514,14 @@ _ID_ATTR_GAP_PATTERNS = (
 )
 
 
-#: 제품 프런트 그래프 — `scripts/extract_js_ast_axes.mjs` 의 PRODUCT_SCOPE 와 같은 문장이다.
-#: `frontend/src/*.js` **비재귀**가 `frontend/src/<하위>/store.js` 신설을 조용히 축 밖에 두던
-#: 구멍을 닫고, `.mjs` 를 함께 문다(오늘 0건이지만 확장자 하나가 전 축의 사각이 될 이유가 없다).
-PRODUCT_JS_SCOPE = (
-    "frontend/js/**/*.js", "frontend/js/**/*.mjs",
-    "frontend/src/**/*.js", "frontend/src/**/*.mjs",
-)
-DATA_ATTR_SCOPE = (
-    "frontend/js/**/*.js", "frontend/js/**/*.mjs",
-    "frontend/js/**/*.ts", "frontend/js/**/*.tsx",
-    "frontend/src/**/*.js", "frontend/src/**/*.mjs",
-    "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
-)
 #: selftest 트리는 제품 그래프가 아니다(`schema.js` 는 출하 번들에도 없다). 축에서 빼되
 #: 원장이 `excluded_axes` 로 **소리 나게** 제외하고 크기를 프로브로 잰다.
-SELFTEST_EXCLUDED = ("frontend/src/selftest/**",)
 SELFTEST_SCOPE = ("frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs")
 
 
 def _js_id_attr_anchor_gaps(repo: Repo) -> list[str]:
     rows: list[str] = []
-    for path in repo.files(PRODUCT_JS_SCOPE, SELFTEST_EXCLUDED):
+    for path in repo.files(PRODUCT_CODE_SCOPE, PRODUCT_CODE_EXCLUDED):
         text = repo.text(path)
         if text is None:
             continue
@@ -612,7 +620,7 @@ _LISTENER_GAP_PATTERNS = (
 def _listener_convention_gaps(repo: Repo) -> list[str]:
     """관례 정규식이 **함께 세거나 못 보는** 것 — 주석 안 일치와 대괄호 표기 호출."""
     rows: list[str] = []
-    for path in repo.files(PRODUCT_JS_SCOPE, SELFTEST_EXCLUDED):
+    for path in repo.files(PRODUCT_CODE_SCOPE, PRODUCT_CODE_EXCLUDED):
         text = repo.text(path)
         if text is None:
             continue
@@ -727,23 +735,32 @@ EXTRACTORS: dict[str, Extractor] = {
         "regex-convention", ("frontend/index.html",), _html_data_attr_regex_delta
     ),
     "js_template_ids": Extractor(
-        "ast", PRODUCT_JS_SCOPE, _js_template_ids, SELFTEST_EXCLUDED
+        "ast", PRODUCT_CODE_SCOPE, _js_template_ids, PRODUCT_CODE_EXCLUDED
     ),
     "js_planted_data_attrs": Extractor(
-        "ast", DATA_ATTR_SCOPE, _js_planted_data_attrs, SELFTEST_EXCLUDED
+        "ast", PRODUCT_CODE_SCOPE, _js_planted_data_attrs, PRODUCT_CODE_EXCLUDED
     ),
     "js_data_attr_dynamic": Extractor(
-        "ast", DATA_ATTR_SCOPE, _js_data_attr_dynamic, SELFTEST_EXCLUDED
+        "ast", PRODUCT_CODE_SCOPE, _js_data_attr_dynamic, PRODUCT_CODE_EXCLUDED
     ),
     "js_id_attr_anchor_gaps": Extractor(
-        "regex-convention", PRODUCT_JS_SCOPE, _js_id_attr_anchor_gaps, SELFTEST_EXCLUDED,
+        "regex-convention", PRODUCT_CODE_SCOPE, _js_id_attr_anchor_gaps,
+        PRODUCT_CODE_EXCLUDED,
         tuple(name for name, _ in _ID_ATTR_GAP_PATTERNS),
     ),
     "js_module_state": Extractor(
-        "ast", PRODUCT_JS_SCOPE, _js_module_state, SELFTEST_EXCLUDED
+        "ast", PRODUCT_CODE_SCOPE, _js_module_state, PRODUCT_CODE_EXCLUDED
     ),
     "js_nonexported_fn_state": Extractor(
-        "ast", PRODUCT_JS_SCOPE, _js_nonexported_fn_state, SELFTEST_EXCLUDED
+        "ast", PRODUCT_CODE_SCOPE, _js_nonexported_fn_state, PRODUCT_CODE_EXCLUDED
+    ),
+    "react_direct_dom_mutations": Extractor(
+        "ast", REACT_HOST_CODE_SCOPE, _react_direct_dom_mutations,
+        REACT_HOST_CODE_EXCLUDED,
+    ),
+    "react_listener_cleanup_gaps": Extractor(
+        "ast", REACT_HOST_CODE_SCOPE, _react_listener_cleanup_gaps,
+        REACT_HOST_CODE_EXCLUDED,
     ),
     "selftest_surface_sites": Extractor("ast", SELFTEST_SCOPE, _selftest_surface_sites),
     "js_module_state_convention": Extractor(
@@ -772,7 +789,8 @@ EXTRACTORS: dict[str, Extractor] = {
         "python-glob", ("src/hwpxfiller/gui/*.py",), _gui_non_state_modules
     ),
     "listener_convention_gaps": Extractor(
-        "regex-convention", PRODUCT_JS_SCOPE, _listener_convention_gaps, SELFTEST_EXCLUDED,
+        "regex-convention", PRODUCT_CODE_SCOPE, _listener_convention_gaps,
+        PRODUCT_CODE_EXCLUDED,
         tuple(name for name, _ in _LISTENER_GAP_PATTERNS),
     ),
 }
@@ -1447,7 +1465,7 @@ def _check_metric(
         if recorded is None or int(recorded) != len(found):
             report.metric_mismatch.append(
                 f"계측 {where}: 기록 {recorded} → 재실측 {len(found)} (술어 {item['predicate']}, "
-                f"scope {item['scope']})"
+                f"scope {item['scope']}, 표본 {found[:3]})"
             )
 
 

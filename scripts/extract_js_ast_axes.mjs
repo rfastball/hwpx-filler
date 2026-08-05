@@ -1,4 +1,4 @@
-/* R1-02 소유권 인벤토리 — 프런트 JS 두 축을 **AST 로** 뽑는 유일한 추출기.
+/* R1-02 소유권 인벤토리 — 제품 코드의 DOM·state·listener 축을 **AST 로** 뽑는 유일한 추출기.
  *
  * ## 왜 파서인가
  *
@@ -27,8 +27,8 @@
  *
  *   node scripts/extract_js_ast_axes.mjs [--repo-root <path>]
  */
-import { readFileSync, globSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { readFileSync, globSync, statSync } from "node:fs";
+import { extname, join, resolve, sep } from "node:path";
 
 let parseAst;
 try {
@@ -43,12 +43,16 @@ try {
 
 let ts;
 let TypeScriptAPI;
+let TypeScriptSymbolFlags;
 try {
   ts = await import("typescript/unstable/ast");
-  ({ API: TypeScriptAPI } = await import("typescript/unstable/sync"));
+  ({
+    API: TypeScriptAPI,
+    SymbolFlags: TypeScriptSymbolFlags,
+  } = await import("typescript/unstable/sync"));
 } catch (thrown) {
   throw new Error(
-    "TypeScript compiler API를 못 불렀습니다 — JS/TS data-* 생산 축은 정규식이 아니라 "
+    "TypeScript compiler API를 못 불렀습니다 — 제품 코드 DOM·state·listener 축은 정규식이 아니라 "
     + "parser를 전제로 합니다. `npm ci`가 먼저입니다: "
     + `${thrown.message}`,
   );
@@ -106,35 +110,30 @@ function walk(node, visit) {
 
 /* ── 범위 ──────────────────────────────────────────────────────────
  *
- * 제품 프런트 그래프 = `frontend/js/**` + `frontend/src/**` **에서 selftest 를 뺀 것**.
- *
- * `frontend/src/*.js` 비재귀로는 `frontend/src/<하위>/store.js` 신설이 조용히 축 밖이었다.
- * 재귀로 넓히되 selftest 는 제외한다 — 그 트리는 제품 그래프가 아니고(`schema.js` 는 출하
- * 번들에도 없다) 원장이 `excluded_axes` 로 **소리 나게** 제외하며 크기를 프로브로 잰다.
- *
- * `.mjs` 를 함께 문다. 오늘 `frontend/` 에 0건이지만 저장소는 이미 `.mjs` 를 쓰고 있어
- * 확장자 하나가 전 축의 사각이 되는 자리를 열어 둘 이유가 없다.
+ * 확장자를 열거하지 않는다. 정적 폐포 계약(#490)이 코드가 **아닌** 접미사만 들고, 제품
+ * 프런트 전수에서 그것을 감산한다. 새 `.tsx`·다음 코드 형식은 자동 편입되며, 파서가 못
+ * 읽는 형식이면 조용히 누락되지 않고 실패한다.
  */
-const PRODUCT_SCOPE = [
-  "frontend/js/**/*.js", "frontend/js/**/*.mjs",
-  "frontend/src/**/*.js", "frontend/src/**/*.mjs",
-];
-const DATA_ATTR_SCOPE = [
-  "frontend/js/**/*.js", "frontend/js/**/*.mjs",
-  "frontend/js/**/*.ts", "frontend/js/**/*.tsx",
-  "frontend/src/**/*.js", "frontend/src/**/*.mjs",
-  "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
-];
+const STATIC_CLOSURE = JSON.parse(readFileSync(
+  new URL("../tests/static_closure_contract.json", import.meta.url),
+  "utf8",
+));
+const NON_CODE_SUFFIXES = STATIC_CLOSURE.non_code_suffixes;
+const PRODUCT_SCOPE = ["frontend/**/*"];
+const OXC_SUFFIXES = new Set([".js", ".mjs"]);
 const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
 const SELFTEST_PREFIX = "frontend/src/selftest/";
+const REACT_HOST_PREFIXES = ["frontend/src/overlay/", "frontend/src/shell/"];
 
 /** 멤버 키는 **저장소 상대 POSIX 경로**다 — OS 마다 달라지면 원장이 못 산다. */
-function sources(root, patterns, { excludeSelftest = false } = {}) {
+function sources(root, patterns, { excludeSelftest = false, excludeNonCode = false } = {}) {
   const seen = new Map();
   for (const pattern of [].concat(patterns)) {
     for (const raw of globSync(pattern, { cwd: root })) {
       const rel = raw.split(sep).join("/");
+      if (!statSync(join(root, rel)).isFile()) continue;
       if (excludeSelftest && rel.startsWith(SELFTEST_PREFIX)) continue;
+      if (excludeNonCode && NON_CODE_SUFFIXES.some((suffix) => rel.endsWith(suffix))) continue;
       if (!seen.has(rel)) seen.set(rel, { rel, text: readFileSync(join(root, rel), "utf8") });
     }
   }
@@ -155,6 +154,7 @@ const ID_ATTR = /(?<![\w-])id="([^"]*)$|(?<![\w-])id="([^"]*)"/g;
 function jsTemplateIds(root, patterns, options) {
   const rows = [];
   for (const { rel, text } of sources(root, patterns, options)) {
+    if (!OXC_SUFFIXES.has(extname(rel))) continue;
     const lineOf = lineIndex(text);
     const program = parseAst(text, { sourceFilename: rel });
     walk(program, (node) => {
@@ -240,6 +240,7 @@ function jsModuleState(root, patterns, options = {}) {
   const { exported = true, includeProgram = true, ...scopeOptions } = options;
   const rows = [];
   for (const { rel, text } of sources(root, patterns, scopeOptions)) {
+    if (!OXC_SUFFIXES.has(extname(rel))) continue;
     const lineOf = lineIndex(text);
     const program = parseAst(text, { sourceFilename: rel });
     const hits = [
@@ -393,10 +394,245 @@ function stringTokenText(node) {
   return stringKinds.has(node.kind) && typeof node.text === "string" ? node.text : null;
 }
 
-function jsPlantedDataAttrs(root) {
+function tsBindingIdentifiers(name, out = []) {
+  if (!name) return out;
+  if (ts.isIdentifier(name)) {
+    out.push(name);
+  } else if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element)) tsBindingIdentifiers(element.name, out);
+    }
+  }
+  return out;
+}
+
+function hasExportModifier(node) {
+  return Boolean(node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
+}
+
+function tsMutableDeclarators(statements) {
+  const identifiers = [];
+  for (const statement of statements ?? []) {
+    if (
+      !ts.isVariableStatement(statement)
+      || (statement.declarationList.flags & ts.NodeFlags.Const) !== 0
+    ) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      tsBindingIdentifiers(declaration.name, identifiers);
+    }
+  }
+  return identifiers;
+}
+
+function tsModuleState(sourceFile, rel, lineOf, { exported, includeProgram }) {
+  const hits = includeProgram ? tsMutableDeclarators(sourceFile.statements) : [];
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isFunctionDeclaration(statement)
+      && Boolean(statement.body)
+      && hasExportModifier(statement) === exported
+    ) {
+      hits.push(...tsMutableDeclarators(statement.body.statements));
+    }
+  }
+  return hits.map(
+    (identifier) => `${rel}:${lineOf(identifier.getStart(sourceFile))} ${identifier.text}`,
+  );
+}
+
+function tsIdSite(rel, sourceFile, lineOf, node, valueNode, bindings) {
+  const value = literalString(valueNode, bindings);
+  return `${rel}:${lineOf(node.getStart(sourceFile))}:${value === null ? "dynamic" : "static"}:`
+    + `${value ?? ""}`;
+}
+
+function normalizedNodeText(node, sourceFile) {
+  return node ? node.getText(sourceFile).replace(/\s+/g, "") : "<default>";
+}
+
+function symbolProvenance(checker, node) {
+  let symbol = checker.getSymbolAtLocation(node);
+  if (!symbol) return null;
+  if ((symbol.flags & TypeScriptSymbolFlags.Alias) !== 0) {
+    try {
+      symbol = checker.getAliasedSymbol(symbol);
+    } catch {
+      // 깨진 alias도 아래 선언 좌표로 fail-closed 식별한다.
+    }
+  }
+  return `symbol:${symbol.id}`;
+}
+
+function collectIterationBindings(sourceFile, checker) {
+  const bindings = new Map();
+  function collect(node) {
+    if (ts.isForOfStatement(node) && ts.isVariableDeclarationList(node.initializer)) {
+      const origin = `for-of:${expressionIdentity(node.expression, checker, sourceFile)}`;
+      for (const declaration of node.initializer.declarations) {
+        for (const identifier of tsBindingIdentifiers(declaration.name)) {
+          bindings.set(aliasKey(identifier, checker, sourceFile), origin);
+        }
+      }
+    }
+    node.forEachChild(collect);
+  }
+  collect(sourceFile);
+  return bindings;
+}
+
+function expressionIdentity(node, checker, sourceFile, iterationBindings = new Map()) {
+  const current = unwrapExpression(node);
+  if (!current) return "<missing>";
+  if (ts.isIdentifier(current)) {
+    return iterationBindings.get(aliasKey(current, checker, sourceFile))
+      ?? `symbol:${symbolProvenance(checker, current)
+        ?? `${sourceFile.fileName}:${current.getStart(sourceFile)}`}`;
+  }
+  if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    const nameNode = ts.isPropertyAccessExpression(current)
+      ? current.name
+      : current.argumentExpression;
+    return [
+      "member",
+      expressionIdentity(current.expression, checker, sourceFile, iterationBindings),
+      propertyName(current, new Map()) ?? normalizedNodeText(nameNode, sourceFile),
+      symbolProvenance(checker, nameNode) ?? "<unresolved-property>",
+    ].join(":");
+  }
+  if (current.kind === ts.SyntaxKind.ThisKeyword) {
+    let owner = current.parent;
+    while (owner && !ts.isFunctionLike(owner) && !ts.isClassLike(owner)) owner = owner.parent;
+    return `this:${sourceFile.fileName}:${owner?.getStart(sourceFile) ?? 0}`;
+  }
+  if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+    return `function-literal:${sourceFile.fileName}:${current.getStart(sourceFile)}`;
+  }
+  return `expression:${sourceFile.fileName}:${current.getStart(sourceFile)}:${current.kind}`;
+}
+
+const DOM_FACTORY_NAMES = new Set(["createElement", "createElementNS", "insertAdjacentHTML"]);
+
+function aliasKey(identifier, checker, sourceFile) {
+  return symbolProvenance(checker, identifier)
+    ?? `${sourceFile.fileName}:${identifier.getStart(sourceFile)}`;
+}
+
+function domFactoryOrigin(node, aliases, checker, sourceFile, bindings) {
+  const current = unwrapExpression(node);
+  if (!current) return null;
+  if (ts.isIdentifier(current)) return aliases.get(aliasKey(current, checker, sourceFile)) ?? null;
+  if (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    const name = propertyName(current, bindings);
+    if (DOM_FACTORY_NAMES.has(name)) {
+      return normalizedNodeText(current, sourceFile);
+    }
+    return null;
+  }
+  if (ts.isCallExpression(current)) {
+    const callee = unwrapExpression(current.expression);
+    if (
+      callee
+      && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+      && propertyName(callee, bindings) === "bind"
+    ) {
+      return domFactoryOrigin(callee.expression, aliases, checker, sourceFile, bindings);
+    }
+  }
+  return null;
+}
+
+function bindingElementPropertyName(element, bindings) {
+  const node = element.propertyName ?? element.name;
+  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) {
+    return node.text;
+  }
+  if (ts.isComputedPropertyName(node)) return literalString(node.expression, bindings);
+  return null;
+}
+
+function collectDomFactoryAliases(sourceFile, checker, bindings) {
+  const aliases = new Map();
+  const candidates = [];
+  function collect(node) {
+    if (ts.isVariableDeclaration(node) || ts.isBinaryExpression(node)) candidates.push(node);
+    node.forEachChild(collect);
+  }
+  collect(sourceFile);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const candidate of candidates) {
+      if (ts.isVariableDeclaration(candidate)) {
+        if (candidate.initializer && ts.isIdentifier(candidate.name)) {
+          const origin = domFactoryOrigin(
+            candidate.initializer, aliases, checker, sourceFile, bindings,
+          );
+          const key = aliasKey(candidate.name, checker, sourceFile);
+          if (origin !== null && aliases.get(key) !== origin) {
+            aliases.set(key, origin);
+            changed = true;
+          }
+        }
+        if (
+          candidate.initializer
+          && ts.isObjectBindingPattern(candidate.name)
+        ) {
+          for (const element of candidate.name.elements) {
+            const name = bindingElementPropertyName(element, bindings);
+            if (!DOM_FACTORY_NAMES.has(name)) continue;
+            for (const identifier of tsBindingIdentifiers(element.name)) {
+              const key = aliasKey(identifier, checker, sourceFile);
+              const origin = `${normalizedNodeText(candidate.initializer, sourceFile)}.${name}`;
+              if (aliases.get(key) !== origin) {
+                aliases.set(key, origin);
+                changed = true;
+              }
+            }
+          }
+        }
+        continue;
+      }
+      if (
+        candidate.operatorToken.kind === ts.SyntaxKind.EqualsToken
+        && ts.isIdentifier(candidate.left)
+      ) {
+        const origin = domFactoryOrigin(candidate.right, aliases, checker, sourceFile, bindings);
+        const key = aliasKey(candidate.left, checker, sourceFile);
+        if (origin !== null && aliases.get(key) !== origin) {
+          aliases.set(key, origin);
+          changed = true;
+        }
+      }
+    }
+  }
+  return aliases;
+}
+
+function invokedDomFactory(callee, aliases, checker, sourceFile, bindings) {
+  const current = unwrapExpression(callee);
+  if (
+    current
+    && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))
+    && ["call", "apply"].includes(propertyName(current, bindings))
+  ) {
+    return domFactoryOrigin(current.expression, aliases, checker, sourceFile, bindings);
+  }
+  return domFactoryOrigin(current, aliases, checker, sourceFile, bindings);
+}
+
+function typescriptAxes(root) {
   const members = new Set();
   const dynamic = new Set();
-  const scopedSources = sources(root, DATA_ATTR_SCOPE, { excludeSelftest: true });
+  const templateIds = [];
+  const moduleState = [];
+  const nonexportedState = [];
+  const directDom = [];
+  const listenerPairs = new Map();
+  const scopedSources = sources(root, PRODUCT_SCOPE, {
+    excludeSelftest: true,
+    excludeNonCode: true,
+  });
   const api = new TypeScriptAPI({ cwd: resolve(root) });
   let snapshot;
   try {
@@ -408,8 +644,25 @@ function jsPlantedDataAttrs(root) {
       const project = snapshot.getDefaultProjectForFile(file);
       const sourceFile = project?.program.getSourceFile(file);
       if (!sourceFile) throw new Error(`TypeScript AST를 읽지 못한 파일: ${rel}`);
+      const checker = project.checker;
       const bindings = constStringBindings(sourceFile);
+      const domFactoryAliases = collectDomFactoryAliases(sourceFile, checker, bindings);
+      const iterationBindings = collectIterationBindings(sourceFile, checker);
       const lineOf = lineIndex(text);
+      // JS/MJS는 OXC 축이 이미 소유한다. 그 밖의 **모든 감산 결과**는 TS AST 축이 맡고,
+      // TS API가 못 읽는 새 형식은 위 sourceFile 부재에서 조용하지 않게 실패한다.
+      const usesTsOwnershipAxes = !OXC_SUFFIXES.has(extname(rel));
+      const isReactHost = REACT_HOST_PREFIXES.some((prefix) => rel.startsWith(prefix));
+      if (usesTsOwnershipAxes) {
+        moduleState.push(...tsModuleState(sourceFile, rel, lineOf, {
+          exported: true,
+          includeProgram: true,
+        }));
+        nonexportedState.push(...tsModuleState(sourceFile, rel, lineOf, {
+          exported: false,
+          includeProgram: false,
+        }));
+      }
       const add = (name) => {
         if (name?.startsWith("data-")) members.add(`${rel}:${name}`);
       };
@@ -438,6 +691,16 @@ function jsPlantedDataAttrs(root) {
           ) {
             gap("dynamic-markup-name", node);
           }
+          if (usesTsOwnershipAxes) {
+            ID_ATTR.lastIndex = 0;
+            for (const match of token.matchAll(ID_ATTR)) {
+              const isDynamic = match[1] !== undefined;
+              templateIds.push(
+                `${rel}:${lineOf(node.getStart(sourceFile) + match.index)}:`
+                + `${isDynamic ? "dynamic" : "static"}:${isDynamic ? match[1] : match[2]}`,
+              );
+            }
+          }
         }
 
         if (ts.isCallExpression(node)) {
@@ -461,7 +724,51 @@ function jsPlantedDataAttrs(root) {
                   continue;
                 }
                 add(objectPropertyName(prop, bindings));
+                if (
+                  usesTsOwnershipAxes
+                  && objectPropertyName(prop, bindings)?.toLowerCase() === "id"
+                ) {
+                  const valueNode = ts.isPropertyAssignment(prop) ? prop.initializer : null;
+                  templateIds.push(tsIdSite(
+                    rel, sourceFile, lineOf, prop, valueNode, bindings,
+                  ));
+                }
               }
+            }
+          }
+
+          if (isReactHost && callee) {
+            const domFactory = invokedDomFactory(
+              callee, domFactoryAliases, checker, sourceFile, bindings,
+            );
+            if (domFactory !== null) {
+              directDom.push(
+                `${rel}:${lineOf(node.getStart(sourceFile))}:${domFactory}`,
+              );
+            }
+            if (
+              (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+              && (called === "addEventListener" || called === "removeEventListener")
+            ) {
+                const signature = [
+                  rel,
+                  expressionIdentity(
+                    callee.expression, checker, sourceFile, iterationBindings,
+                  ),
+                  normalizedNodeText(node.arguments[0], sourceFile),
+                  expressionIdentity(
+                    node.arguments[1], checker, sourceFile, iterationBindings,
+                  ),
+                  normalizedNodeText(node.arguments[2], sourceFile),
+                ].join("|");
+                const pair = listenerPairs.get(signature) ?? { adds: [], removes: [] };
+                const entry = {
+                  rel,
+                  line: lineOf(node.getStart(sourceFile)),
+                  text: node.getText(sourceFile).replace(/\s+/g, " "),
+                };
+                pair[called === "addEventListener" ? "adds" : "removes"].push(entry);
+                listenerPairs.set(signature, pair);
             }
           }
         }
@@ -473,9 +780,28 @@ function jsPlantedDataAttrs(root) {
           const name = datasetAttributeName(node.left, bindings);
           if (name === "<dynamic>") gap("computed-dataset", node.left);
           else add(name);
+          if (isReactHost) {
+            const targetName = propertyName(unwrapExpression(node.left), bindings);
+            if (targetName === "innerHTML" || targetName === "outerHTML") {
+              directDom.push(
+                `${rel}:${lineOf(node.getStart(sourceFile))}:${node.left.getText(sourceFile)}`,
+              );
+            }
+          }
         }
 
         if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) add(node.name.text);
+        if (
+          usesTsOwnershipAxes
+          && ts.isJsxAttribute(node)
+          && ts.isIdentifier(node.name)
+          && node.name.text.toLowerCase() === "id"
+        ) {
+          const valueNode = node.initializer && ts.isJsxExpression(node.initializer)
+            ? node.initializer.expression
+            : node.initializer;
+          templateIds.push(tsIdSite(rel, sourceFile, lineOf, node, valueNode, bindings));
+        }
         if (ts.isJsxSpreadAttribute(node)) gap("jsx-spread", node);
         node.forEachChild(visit);
       }
@@ -485,9 +811,26 @@ function jsPlantedDataAttrs(root) {
     snapshot?.dispose();
     api.close();
   }
+  const cleanupGaps = [];
+  for (const pair of listenerPairs.values()) {
+    if (pair.adds.length > pair.removes.length) {
+      for (const entry of pair.adds.slice(pair.removes.length)) {
+        cleanupGaps.push(`add:${entry.rel}:${entry.line}:${entry.text}`);
+      }
+    } else if (pair.removes.length > pair.adds.length) {
+      for (const entry of pair.removes.slice(pair.adds.length)) {
+        cleanupGaps.push(`remove:${entry.rel}:${entry.line}:${entry.text}`);
+      }
+    }
+  }
   return {
     members: [...members].sort(),
     dynamic: [...dynamic].sort(),
+    templateIds: templateIds.sort(),
+    moduleState: moduleState.sort(),
+    nonexportedState: nonexportedState.sort(),
+    directDom: directDom.sort(),
+    cleanupGaps: cleanupGaps.sort(),
   };
 }
 
@@ -495,24 +838,33 @@ function jsPlantedDataAttrs(root) {
 
 const { repoRoot: root } = parseArgs(process.argv.slice(2));
 
-const dataAttrs = jsPlantedDataAttrs(root);
+const typescript = typescriptAxes(root);
+const oxcOptions = { excludeSelftest: true, excludeNonCode: true };
 
 const payload = {
-  js_template_ids: jsTemplateIds(root, PRODUCT_SCOPE, { excludeSelftest: true }),
-  js_module_state: jsModuleState(root, PRODUCT_SCOPE, {
-    exported: true,
-    excludeSelftest: true,
-  }),
+  js_template_ids: [
+    ...jsTemplateIds(root, PRODUCT_SCOPE, oxcOptions),
+    ...typescript.templateIds,
+  ].sort(),
+  js_module_state: [
+    ...jsModuleState(root, PRODUCT_SCOPE, { exported: true, ...oxcOptions }),
+    ...typescript.moduleState,
+  ].sort(),
   /* 사각 프로브 — 비-export 최상위 함수의 body 최상위 let/var. Program 최상위는 빼야
      값 축과 겹치지 않는다. 값 축과 **같은 범위**를 봐야 그 차이가 사각이다. */
-  js_nonexported_fn_state: jsModuleState(root, PRODUCT_SCOPE, {
-    exported: false,
-    includeProgram: false,
-    excludeSelftest: true,
-  }),
+  js_nonexported_fn_state: [
+    ...jsModuleState(root, PRODUCT_SCOPE, {
+      exported: false,
+      includeProgram: false,
+      ...oxcOptions,
+    }),
+    ...typescript.nonexportedState,
+  ].sort(),
   selftest_surface: selftestSurface(root),
-  js_planted_data_attrs: dataAttrs.members,
-  js_data_attr_dynamic: dataAttrs.dynamic,
+  js_planted_data_attrs: typescript.members,
+  js_data_attr_dynamic: typescript.dynamic,
+  react_direct_dom_mutations: typescript.directDom,
+  react_listener_cleanup_gaps: typescript.cleanupGaps,
 };
 
 process.stdout.write(`${JSON.stringify(payload, null, 1)}\n`);
