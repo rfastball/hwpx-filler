@@ -39,18 +39,20 @@ def test_public_registry_and_close_all_contract():
 
 
 def test_only_corresponding_primary_click_is_consumed():
+    # R3-01(#410): 부착 자체는 bootProduct 구성 몫으로 이양 — popover.js 는 부착 **명세**
+    # (DOCUMENT_ATTACHMENTS)와 핸들러를 소유한다. needle 은 그 새 거처를 겨눈다.
     src = _read(POPOVER)
     assert "e.button === 0" in src and "e.isPrimary !== false" in src
     assert "sameTarget(pending.target, e.target)" in src
-    assert 'addEventListener("pointerup"' in src and "setTimeout" in src
-    assert 'addEventListener("pointercancel"' in src
-    assert re.search(r'addEventListener\("pointerdown"[\s\S]+?suppressNextClick\s*=\s*null', src)
+    assert 'type: "pointerup", handler: onDocumentPointerUp' in src and "setTimeout" in src
+    assert 'type: "pointercancel", handler: onDocumentPointerCancel' in src
+    assert re.search(r'function onDocumentPointerDown\(e\)[\s\S]+?suppressNextClick\s*=\s*null', src)
 
 
 def test_focusout_and_capture_scroll_share_registry():
     src = _read(POPOVER)
-    assert re.search(r'addEventListener\("focusout"[\s\S]+?e\.relatedTarget', src)
-    assert re.search(r'addEventListener\("scroll"[\s\S]+?\},\s*true\)', src)
+    assert re.search(r'function onDocumentFocusOut\(e\)[\s\S]+?e\.relatedTarget', src)
+    assert 'type: "scroll", handler: onDocumentScroll, capture: true' in src
     # 화면별 임시 scroll-close는 공용 capture 계약으로 대체되어야 한다.
     # (고정 열거 → 실존 화면 전수 — draft.js 사망(F6 PR-B) 같은 화면 증감에 목록이 썩지 않게.)
     for path in sorted((WEB / "js" / "screens").glob("*.js")):

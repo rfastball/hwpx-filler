@@ -22,9 +22,11 @@ const MODULES = {
   UndoToast: new URL("../../frontend/js/undo_toast.js", import.meta.url),
 };
 
-/* 계약 §1-A 표 — 키 순서까지 그대로다. */
+/* 계약 §1-A 표 — 키 순서까지 그대로다. R3-01(#410)이 Popover 에 `documentAttachments`
+   (문서 부착 **명세** — 부착 집행은 bootProduct 구성 몫)를 더했다. 함수가 아닌 유일한
+   키라 아래 표면 테스트가 형상을 따로 잰다. */
 const SURFACE = {
-  Popover: ["register", "wireDismiss", "closeAll", "place"],
+  Popover: ["register", "wireDismiss", "closeAll", "place", "documentAttachments"],
   Preserve: ["around"],
   Intent: ["chained", "settle", "createFavorite"],
   UndoToast: ["show", "hide"],
@@ -49,6 +51,20 @@ class StubNode {
   contains(other) {
     for (let node = other; node; node = node.parentNode) if (node === this) return true;
     return false;
+  }
+
+  /* host 컨트롤러의 골격 판독(`#id` 하위 조회)에 필요한 최소 표면 — 그 이상은 안 준다. */
+  querySelector(selector) {
+    const id = String(selector).replace(/^#/, "");
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.id === id) return child;
+        const found = walk(child);
+        if (found !== null) return found;
+      }
+      return null;
+    };
+    return walk(this);
   }
 
   addEventListener(type, handler) {
@@ -196,16 +212,18 @@ function tracked(promise) {
 
 // ------------------------------------------------------------ boot import --
 
-/* popover·undo_toast 는 **모듈 평가 시점**에 document 리스너를 붙인다. static import 는
-   테스트 본문보다 먼저 평가되므로 stub 을 세울 창이 없다 — 그래서 dynamic import 다.
-   이 BOOT dom 이 두 모듈의 평가 시점 리스너를 소유하고, 그 리스너를 발화하는 테스트는
-   같은 dom 을 다시 설치해 쓴다. */
+/* R3-01(#410) 이후 모듈 평가의 문서 부작용은 **0** 이다 — dismissal 부착은 bootProduct
+   구성 시(개정 10), 토스트 DOM·배선은 React host 컨트롤러 몫이다. dynamic import 를
+   유지하는 이유: 평가 시점 부작용이 0 이라는 사실 자체를 이 BOOT dom 스냅샷이 재고,
+   행동 테스트는 하니스가 재현한 「구성 시 부착」 리스너를 같은 dom 으로 발화한다. */
 const BOOT = makeDom();
 const bootRestore = installDom(BOOT);
 const popoverNs = await import(MODULES.Popover.href);
 const preserveNs = await import(MODULES.Preserve.href);
 const intentNs = await import(MODULES.Intent.href);
 const undoNs = await import(MODULES.UndoToast.href);
+const hostNs = await import("../../frontend/src/overlay/host.ts");
+const instanceNs = await import("../../frontend/src/overlay/instance.ts");
 bootRestore();
 
 const { Popover } = popoverNs;
@@ -213,14 +231,34 @@ const { Preserve } = preserveNs;
 const { Intent } = intentNs;
 const { UndoToast } = undoNs;
 
-/* 평가 시점 등록의 스냅샷 — 뒤 테스트가 사본 모듈을 평가해 같은 dom 에 한 벌 더 붙이므로
-   **이 자리에서** 떠야 한다(라이브 배열을 나중에 세면 관측이 오염된다). */
+/* 평가 시점 등록의 스냅샷 — 아래 구성 재현이 같은 dom 에 리스너를 붙이므로 **이 자리에서**
+   떠야 한다(라이브 배열을 나중에 세면 관측이 오염된다). */
 const BOOT_DOC_AT_EVAL = BOOT.docListeners.slice();
 const BOOT_WIN_AT_EVAL = BOOT.winListeners.slice();
 
+/* bootProduct 구성 몫의 재현 ① (개정 10) — dismissal 부착은 모듈 평가가 아니라 합성 루트
+   호출이 진다. 행동 테스트(fireDoc/fireWin)는 이 리스너들을 발화한다. */
+for (const attachment of Popover.documentAttachments) {
+  if (attachment.target === "window") BOOT.window.addEventListener(attachment.type, attachment.handler);
+  else BOOT.document.addEventListener(attachment.type, attachment.handler, attachment.capture);
+}
+
+/* bootProduct 구성 몫의 재현 ② — React host 가 effect 로 세우는 컨트롤러의 **실물**을
+   슬롯에 앉힌다(UndoToast 파사드는 이 슬롯으로 위임한다). 다이얼로그 3 root 는 이 파일
+   범위 밖이라 형상만 갖춘 자리표다 — 실물 fixture 사슬은 n05_overlay 가 진다. */
 const BOOT_TOAST = BOOT.put(new StubElement("undoToast"));
-const BOOT_TOAST_TEXT = BOOT.put(new StubElement("undoToastText"));
-const BOOT_TOAST_BTN = BOOT.put(new StubElement("undoToastBtn", "BUTTON"));
+const BOOT_TOAST_TEXT = BOOT.put(BOOT_TOAST.add(new StubElement("undoToastText")));
+const BOOT_TOAST_BTN = BOOT.put(BOOT_TOAST.add(new StubElement("undoToastBtn", "BUTTON")));
+instanceNs.setOverlayDialogHost(hostNs.createOverlayDialogController({
+  doc: BOOT.document,
+  notify: (message) => BOOT.window.alert(message),
+  roots: {
+    confirm: new StubElement("confirmModal"),
+    choose: new StubElement("chooseModal"),
+    prompt: new StubElement("promptModal"),
+    toast: BOOT_TOAST,
+  },
+}).controller);
 
 // ------------------------------------------------------------ 공개 표면 --
 
@@ -236,6 +274,11 @@ test("네 모듈은 계약 표와 정확히 같은 named export 하나씩만 낸
     assert.equal(ns.default, undefined, `${name}: default export 가 있습니다`);
     assert.deepEqual(Object.keys(ns[name]), SURFACE[name], `${name}: 공개 키가 다릅니다`);
     for (const key of SURFACE[name]) {
+      if (name === "Popover" && key === "documentAttachments") {
+        // 유일한 비함수 키 — 부착 명세 배열(집행은 bootProduct 구성 몫, R3-01).
+        assert.equal(Array.isArray(ns[name][key]), true, "documentAttachments 가 배열이 아닙니다");
+        continue;
+      }
       assert.equal(typeof ns[name][key], "function", `${name}.${key} 가 함수가 아닙니다`);
     }
   }
@@ -293,8 +336,11 @@ test("팝오버 레지스트리는 import 당 하나다 — 사본 평가는 갈
   assert.notEqual(fresh.Popover, Popover);
   fresh.Popover.closeAll();
   assert.deepEqual(closed, ["shared"], "사본이 원본 레지스트리를 닫았습니다");
-  assert.equal(dom.docListeners.filter((l) => l.type === "keydown").length, 2,
-    "사본 평가가 BOOT dom 에 리스너를 한 벌 더 붙였어야 한다(음성 대조 자체의 대조)");
+  // 사본은 자기 부착 명세(다른 핸들러 정체성)를 내지만 문서에는 아무것도 붙이지 않는다 —
+  // 부작용 이양(개정 10)의 음성 대조: keydown 은 하니스가 구성 재현으로 붙인 한 벌뿐이다.
+  assert.notEqual(fresh.Popover.documentAttachments, Popover.documentAttachments);
+  assert.equal(dom.docListeners.filter((l) => l.type === "keydown").length, 1,
+    "사본 평가가 BOOT dom 에 리스너를 붙였습니다 — 모듈 평가의 문서 부작용은 0 이어야 한다");
 });
 
 test("Intent 의 CALL_CHAINS 는 모듈 스코프 하나다 — 사본은 자기 Map 을 갖는다", async () => {
@@ -320,26 +366,30 @@ test("Intent 의 CALL_CHAINS 는 모듈 스코프 하나다 — 사본은 자기
   assert.equal(settled.settled, true);
 });
 
-test("모듈 평가 시점 document 리스너는 8개이고 phase 도 그대로다", () => {
+test("모듈 평가의 문서 부작용은 0 — 8개 리스너는 부착 명세가 순서대로 낸다", () => {
+  /* R3-01 이전에는 popover(7)·undo_toast(DOMContentLoaded) 가 평가 시점에 직접 붙였다.
+     이관 후 평가는 부작용 0 이고, 같은 7개가 **명세**(documentAttachments)로 나와
+     bootProduct 구성 시 이 순서 그대로 부착된다. DOMContentLoaded 배선은 토스트 DOM 이
+     React host 소유가 되며 소멸했다 — 종류·순서·phase 가 곧 Escape 층화의 전제다. */
+  assert.deepEqual(BOOT_DOC_AT_EVAL, [], "모듈 평가가 document 에 리스너를 붙였습니다");
+  assert.deepEqual(BOOT_WIN_AT_EVAL, [], "모듈 평가가 window 에 리스너를 붙였습니다");
   assert.deepEqual(
-    BOOT_DOC_AT_EVAL.map((l) => [l.type, l.capture === true]),
+    Popover.documentAttachments.map((a) => [a.target, a.type, a.capture === true]),
     [
-      ["click", true],
-      ["pointerdown", true],
-      ["pointerup", true],
-      ["pointercancel", true],
-      ["keydown", true],
-      ["focusout", true],
-      ["scroll", true],
-      ["DOMContentLoaded", false],
+      ["document", "click", true],
+      ["document", "pointerdown", true],
+      ["document", "pointerup", true],
+      ["document", "pointercancel", true],
+      ["document", "keydown", true],
+      ["document", "focusout", true],
+      ["document", "scroll", true],
+      ["window", "resize", false],
     ],
-    "평가 시점 등록의 종류·순서·phase 가 바뀌었습니다",
+    "부착 명세의 대상·종류·순서·phase 가 바뀌었습니다",
   );
-  assert.deepEqual(
-    BOOT_WIN_AT_EVAL.map((l) => l.type),
-    ["resize"],
-    "window resize 등록이 사라졌습니다",
-  );
+  for (const attachment of Popover.documentAttachments) {
+    assert.equal(typeof attachment.handler, "function", `${attachment.type}: handler 가 함수가 아닙니다`);
+  }
 });
 
 // ------------------------------------------------------------- Popover --
@@ -748,8 +798,8 @@ test("되돌리기 버튼은 콜백을 부르고 닫으며, 실패는 alert 로 
   BOOT_TOAST.hidden = true;
   BOOT_TOAST_BTN.disabled = false;
 
-  // 평가 시점에 걸린 DOMContentLoaded 배선이 버튼 리스너를 심는다.
-  if (!BOOT_TOAST_BTN.listeners.has("click")) dom.fireDoc("DOMContentLoaded", {});
+  // host 컨트롤러 기립(구성 재현)이 버튼 리스너를 정확히 1벌 심는다 — DOMContentLoaded
+  // 배선은 토스트 DOM 이 React host 소유가 되며 소멸했다(R3-01).
   assert.equal(BOOT_TOAST_BTN.listeners.get("click").length, 1);
 
   // 콜백이 없으면 아무 일도 없다.

@@ -1,22 +1,23 @@
-/* 오버레이 스택(modal · surface_sheet) ESM 전환의 특성화 테스트 — N-05 패킷 B.
+/* 오버레이 스택(modal · surface_sheet)의 특성화 테스트 — N-05 패킷 B, R3-01(#410) 제자리 진화.
  *
- * 기대값은 전부 **전환 이전** 동작이다. 전환은 IIFE 껍질을 벗기고 `window.Popover`·
- * `window.Modal` 조회를 정적 import 로 바꾼 기계적 작업이라, 이 파일이 초록이면
- * "겉껍질만 바뀌고 거동은 그대로"가 참이다.
+ * 기대값은 전부 **이관 이전** 동작이다. R3-01 은 판정(스택·직렬화·Escape/Tab/복귀)을
+ * 트리-불가지 엔진(src/overlay/engine.ts)으로, promise 다이얼로그·토스트의 DOM 집행을
+ * React host 의 컨트롤러(src/overlay/host.ts)로 옮겼다 — 이 파일이 초록이면 "거처만
+ * 바뀌고 거동은 그대로"가 참이다. 그래서 하니스는 대역이 아니라 **실물 사슬**을 세운다:
+ * 실물 modal.js(파사드) → 실물 엔진 → 실물 컨트롤러(createOverlayDialogController)를
+ * 스텁 fixture 위에 그대로 굴린다.
  *
  * 왜 정적 소스 대조로 부족한가: 정적 검사는 **규칙의 존재**를 보고 **결과**를 못 본다.
- * 특히 이 라운드가 건드리는 것 중 저장소에 프로브가 **없던** 계약이 하나 있다 —
- * document capture 리스너의 **등록 순서**. popover.js 는 모듈 평가 시점에 keydown 을 걸고
- * modal.js 는 `Modal.open()` 에서 건다. modal 의 `stopImmediatePropagation()` 은 자기
- * **뒤에** 등록된 리스너만 막으므로 popover 는 안 막힌다 — Escape 한 번이 열린 팝오버와
- * 최상위 모달을 그 순서로 닫는 것이 현행 의도다. ESM import 는 그 순서를 구조적으로
- * 못박는다(modal.js 가 popover.js 를 import 하므로 popover 가 반드시 먼저 평가된다).
- * 아래 마지막 테스트가 그 그물이다.
+ * 특히 document capture 리스너의 **등록 순서** — dismissal 계열(popover)은 bootProduct
+ * 구성 시 상시, 모달 keydown 은 첫 open 부착(instance.ts)이다. 구성이 언제나 open 보다
+ * 앞이므로 Escape 한 번이 열린 팝오버와 최상위 모달을 그 순서로 닫는다(개정 4·10).
+ * 하니스가 bootProduct 의 구성 몫(dismissal 부착·host 컨트롤러 기립)을 재현하고,
+ * 아래 마지막 테스트가 그 순서의 그물이다.
  *
  * DOM 은 node:test 만으로 돌리려고 손으로 세운 최소 스텁이다. 전역(window/document/
- * Element/Node)은 매 테스트 뒤 걷어낸다 — 다만 **객체 정체성**은 유지한다. popover.js 가
- * 모듈 평가 시점에 그 document 에 리스너를 걸어 두기 때문에, 새 객체로 갈아끼우면
- * 검사 대상인 등록 순서 자체가 사라진다.
+ * Element/Node)은 매 테스트 뒤 걷어낸다 — 다만 **객체 정체성**은 유지한다. 구성 시
+ * 부착(dismissal)이 그 document 에 걸려 있기 때문에, 새 객체로 갈아끼우면 검사 대상인
+ * 등록 순서 자체가 사라진다.
  */
 import { after, afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
@@ -336,6 +337,15 @@ function buildFixture() {
           modal("sheet2Modal", [createElement("button", { id: "sheet2Close" }),
             createElement("div", { id: "sheet2Slot" })]),
           createElement("div", { id: "notAModal", cls: ["hidden"] }),
+          // R3-01 — host 컨트롤러의 토스트 골격(제품에선 React 렌더가 소유하는 형상).
+          createElement("div", {
+            id: "undoToast",
+            cls: ["undo-toast"],
+            kids: [
+              createElement("span", { id: "undoToastText" }),
+              createElement("button", { id: "undoToastBtn" }),
+            ],
+          }),
         ],
       }),
     ],
@@ -361,22 +371,53 @@ function uninstall() {
 }
 
 /* ────────────────────────── 대상 모듈 적재 ──────────────────────────
-   popover.js 는 모듈 평가 시점에 document 리스너를 건다 — import 전에 전역이 서 있어야
-   한다. 그래서 여기서만 미리 세우고, 테스트 사이에는 매번 걷었다 다시 세운다. */
+   모듈 평가는 문서 부작용이 0 이다(개정 10) — 그래도 import 전에 전역을 세우는 것은
+   스텁 세계의 일관성을 위해서다. 테스트 사이에는 매번 걷었다 다시 세운다. */
 
 buildFixture();
 install();
 const { Modal } = await import("../../frontend/js/modal.js");
 const { SurfaceSheet } = await import("../../frontend/js/surface_sheet.js");
 const { Popover } = await import("../../frontend/js/popover.js");
+const { createOverlayDialogController } = await import("../../frontend/src/overlay/host.ts");
+const { setOverlayDialogHost } = await import("../../frontend/src/overlay/instance.ts");
 uninstall();
+
+/* bootProduct 구성 몫의 재현 ① — dismissal 계열 문서 리스너는 구성 시 상시 부착이다
+   (개정 10). DOC 은 테스트를 가로질러 정체성이 유지되므로 여기 한 번이면 제품과 같은
+   「구성이 먼저, 첫 open 이 나중」 등록 순서가 선다(모달 keydown 은 instance.ts 소유). */
+for (const attachment of Popover.documentAttachments) {
+  if (attachment.target === "window") WIN.addEventListener(attachment.type, attachment.handler);
+  else DOC.addEventListener(attachment.type, attachment.handler);
+}
 
 const MODAL_SRC = readFileSync(new URL("../../frontend/js/modal.js", import.meta.url), "utf8");
 const SHEET_SRC = readFileSync(new URL("../../frontend/js/surface_sheet.js", import.meta.url), "utf8");
 
+/* bootProduct 구성 몫의 재현 ② — React host 가 마운트 effect 에서 세우는 다이얼로그·토스트
+   컨트롤러의 **실물**을 fixture 골격 위에 세운다(대역이면 파사드~집행자 사슬이 시험되지
+   않는다). fixture 가 매 테스트 신품이라 컨트롤러도 매 테스트 세우고 대칭으로 걷는다. */
+let hostSession = null;
+
+function standUpHost() {
+  const session = createOverlayDialogController({
+    doc: DOC,
+    notify: (message) => alerts.push(String(message)),
+    roots: {
+      confirm: DOC.getElementById("confirmModal"),
+      choose: DOC.getElementById("chooseModal"),
+      prompt: DOC.getElementById("promptModal"),
+      toast: DOC.getElementById("undoToast"),
+    },
+  });
+  const release = setOverlayDialogHost(session.controller);
+  hostSession = { dispose: session.dispose, release };
+}
+
 beforeEach(() => {
   install();
   buildFixture();
+  standUpHost();
   alerts.length = 0;
   trace.on = false;
   trace.log.length = 0;
@@ -390,6 +431,9 @@ afterEach(() => {
     Modal.close(id);
     flushClose(id);
   }
+  hostSession.release();
+  hostSession.dispose();
+  hostSession = null;
   uninstall();
 });
 
@@ -950,15 +994,17 @@ test("10. Escape — 팝오버가 먼저 닫히고 그 다음 최상위 모달�
   }
 });
 
-test("10. popover 의 keydown 은 modal 보다 먼저 등록된다(import 간선이 보장)", () => {
-  // modal.js 가 popover.js 를 import 하므로 popover 는 반드시 먼저 평가된다. 그래서
-  // 모듈 평가 시점 리스너가 Modal.open 시점 리스너보다 항상 앞자리다.
+test("10. popover 의 keydown 은 modal 보다 먼저 등록된다(구성 시 부착 < 첫 open 부착)", () => {
+  // dismissal 계열은 bootProduct 구성 시 상시(개정 10 — 하니스가 재현), 모달 keydown 은
+  // instance.ts 가 첫 open 에 부착·스택 빌 때 해제한다(개정 4). 구성이 언제나 open 보다
+  // 앞이므로 dismissal 이 항상 앞자리다 — 순서가 import 간선이 아니라 부착 시점 계약에서 선다.
   const before = DOC.listenerCount("keydown");
-  assert.ok(before >= 1, "popover 가 모듈 평가 시점에 document keydown 을 건다");
+  assert.ok(before >= 1, "dismissal keydown 이 구성 시(하니스 재현)부터 서 있다");
   Modal.open("modalA");
   const list = DOC.listeners.get("keydown");
   assert.equal(list.length, before + 1);
   assert.equal(list[list.length - 1].name, "onKeydown", "modal 의 리스너가 뒤에 붙는다");
   Modal.close("modalA");
   flushClose("modalA");
+  assert.equal(DOC.listenerCount("keydown"), before, "스택이 비면 modal keydown 은 해제된다");
 });

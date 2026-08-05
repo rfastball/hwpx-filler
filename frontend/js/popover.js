@@ -54,15 +54,15 @@ function sameTarget(a, b) {
     (a.contains(b) || b.contains(a)));
 }
 
-document.addEventListener("click", (e) => {
+function onDocumentClick(e) {
   const pending = suppressNextClick;
   suppressNextClick = null;
   if (!pending || !sameTarget(pending.target, e.target)) return;
   e.stopPropagation();
   e.preventDefault();
-}, true);
+}
 
-document.addEventListener("pointerdown", (e) => {
+function onDocumentPointerDown(e) {
   // 이전 제스처의 후보는 새 pointerdown 경계에서 반드시 만료된다.
   suppressNextClick = null;
   let closed = false;
@@ -75,36 +75,52 @@ document.addEventListener("pointerdown", (e) => {
   if (closed && e.button === 0 && e.isPrimary !== false) {
     suppressNextClick = { target: e.target, pointerId: e.pointerId };
   }
-}, true);
+}
 
-document.addEventListener("pointerup", (e) => {
+function onDocumentPointerUp(e) {
   const pending = suppressNextClick;
   if (!pending || pending.pointerId !== e.pointerId) return;
   // 호환 click은 pointerup 직후 같은 task에 발행된다. 없으면 다음 task 전에 후보를 걷는다.
   setTimeout(() => { if (suppressNextClick === pending) suppressNextClick = null; }, 0);
-}, true);
-document.addEventListener("pointercancel", () => { suppressNextClick = null; }, true);
+}
 
-document.addEventListener("keydown", (e) => {
+function onDocumentPointerCancel() { suppressNextClick = null; }
+
+function onDocumentKeydown(e) {
   if (e.key !== "Escape") return;
   closeAll();
-}, true);
+}
 
-document.addEventListener("focusout", (e) => {
+function onDocumentFocusOut(e) {
   Array.from(entries).forEach((entry) => {
     if (!isOpen(entry) || !contains(entry, e.target) || contains(entry, e.relatedTarget)) return;
     entry.close();
   });
-}, true);
+}
 
 // scroll은 bubble하지 않으므로 capture로 듣는다. 패널 내부 목록 스크롤은 유지하고,
 // 트리거의 조상 스크롤포트·문서 스크롤처럼 표면 바깥 scroll만 닫는다.
-document.addEventListener("scroll", (e) => {
+function onDocumentScroll(e) {
   Array.from(entries).forEach((entry) => {
     if (isOpen(entry) && !contains(entry, e.target)) entry.close();
   });
-}, true);
-window.addEventListener("resize", closeAll);
+}
+
+/* 문서 부착 **명세** (R3-01 · #410 개정 10) — 부착 자체는 `bootProduct` 가 구성 시 이 순서
+   그대로 집행한다(모듈 평가 부착의 이양 — 부작용은 평가가 아니라 호출이 진다). 순서가
+   계약이다: keydown(Escape→closeAll)이 모달 keydown 보다 **앞**에 서야 「팝오버 먼저 닫히고
+   이어 최상위 모달」 층화가 보존된다 — 모달 keydown 은 첫 open 부착(instance.ts)이라
+   구성 시 부착인 이 목록이 구조적으로 항상 앞이다. */
+const DOCUMENT_ATTACHMENTS = [
+  { target: "document", type: "click", handler: onDocumentClick, capture: true },
+  { target: "document", type: "pointerdown", handler: onDocumentPointerDown, capture: true },
+  { target: "document", type: "pointerup", handler: onDocumentPointerUp, capture: true },
+  { target: "document", type: "pointercancel", handler: onDocumentPointerCancel, capture: true },
+  { target: "document", type: "keydown", handler: onDocumentKeydown, capture: true },
+  { target: "document", type: "focusout", handler: onDocumentFocusOut, capture: true },
+  { target: "document", type: "scroll", handler: onDocumentScroll, capture: true },
+  { target: "window", type: "resize", handler: closeAll, capture: false },
+];
 
 function clamp(value, low, high) {
   return Math.max(low, Math.min(value, Math.max(low, high)));
@@ -141,4 +157,7 @@ function place(el, anchor, opts) {
   return { left, top, placement: el.dataset.placement };
 }
 
-export const Popover = { register, wireDismiss, closeAll, place };
+export const Popover = {
+  register, wireDismiss, closeAll, place,
+  documentAttachments: DOCUMENT_ATTACHMENTS,
+};

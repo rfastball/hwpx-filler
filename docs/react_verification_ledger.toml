@@ -289,6 +289,16 @@ responsibility = "제품이 만드는 창 전역이 정확히 셋이라는 정�
 owner_stage = "R5-02"
 
 [[asset]]
+file = "tests/js/overlay_engine.test.js"
+responsibility = "트리-불가지 overlay 엔진 순수층 — 중첩 스택·promise 직렬화·트랩/복귀 판정·구독 해제 계약"
+owner_stage = "R3-01"
+
+[[asset]]
+file = "tests/js/overlay_host.test.js"
+responsibility = "React overlay host — 골격 4 의 렌더 요소 계약(실 서버 렌더)과 컨트롤러 집행 계약(초점·danger 양방향·합성 루트 단일 인스턴스)"
+owner_stage = "R3-01"
+
+[[asset]]
 file = "tests/js/pywebview_allowlist.test.js"
 responsibility = "전역 pywebview 접촉 파일 전수의 AST allowlist — 주입 별칭 포함 양방향 핀"
 owner_stage = "R2-02"
@@ -492,6 +502,11 @@ owner_stage = "R4-03"
 file = "tests/test_react_ownership_inventory.py"
 responsibility = "#402 원장의 폐포 게이트와 판별력 음성 대조"
 owner_stage = "R5-02"
+
+[[asset]]
+file = "tests/test_react_overlay_live.py"
+responsibility = "실 WebView2 overlay host 마커 되읽기 — 골격 커밋·직속 자식·닫힘 상시 렌더·id 유일과 reload 재초기화"
+owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/test_react_root_live.py"

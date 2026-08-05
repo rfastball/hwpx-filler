@@ -23,10 +23,11 @@ from _web_source import (
 PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 #: 사용자가 보는 정적 DOM 의 지문 — Vite 컷오버가 **모양을 안 건드렸음**을 증명하려고 박았다.
 #: 그래서 이 숫자는 빌드 배관을 고칠 때 움직이면 안 되고, 화면을 의도적으로 바꿀 때만 함께
-#: 옮긴다. 옮길 때는 무엇이 바뀌었는지 커밋이 말해야 한다(마지막 이동: React 단독 소유
-#: subtree `#reactRoot` 를 body 직계에 신설 — R2-01 #405. 빈 컨테이너 하나라 사용자 관찰
-#: 픽셀은 불변이고, 그 불변은 실렌더·selftest 게이트가 재확인한다).
-VISIBLE_DOM_SHA256 = "ebf4e8e569c9fcfbf89e7a62a3ee469d7a92b9c966dca371939b61de06db5e53"
+#: 옮긴다. 옮길 때는 무엇이 바뀌었는지 커밋이 말해야 한다(마지막 이동: promise 다이얼로그
+#: 3종 + 되돌리기 토스트의 정적 골격이 React host(#reactOverlayHost) 렌더로 이전 — R3-01
+#: #410. 넷 다 닫힘 상태(hidden)로만 정적 존재하던 표면이라 사용자 관찰 픽셀은 불변이고,
+#: 같은 id·클래스·ARIA 의 렌더 존재는 overlay_host 렌더 계약·live 게이트가 재확인한다).
+VISIBLE_DOM_SHA256 = "bc1b2cb5cba4a41a70778da35e24a4183f969022c5dc8cab15fa67510c6a0a54"
 
 # M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
 # 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을

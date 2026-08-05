@@ -158,10 +158,12 @@ def test_popover_dismiss_mechanism_single_sourced():
         "popover.js 가 Popover.wireDismiss 를 노출하지 않습니다."
     )
     assert "let suppressNextClick" in pop, "popover.js 가 인스턴스별 suppress 플래그를 잃었습니다."
+    # R3-01(#410): 부착은 bootProduct 구성 몫 — 기제의 needle 은 부착 호출이 아니라
+    # popover.js 가 소유한 핸들러·부착 명세(DOCUMENT_ATTACHMENTS)를 겨눈다.
     for needle, what in (
-        (r'addEventListener\("click",[\s\S]{0,200}?suppressNextClick', "캡처 클릭 소비자"),
-        (r'addEventListener\("pointerdown",', "바깥 pointerdown 닫기"),
-        (r'addEventListener\("keydown",[\s\S]{0,120}?Escape', "Escape 닫기"),
+        (r'function onDocumentClick\(e\)[\s\S]{0,200}?suppressNextClick', "캡처 클릭 소비자"),
+        (r'type: "pointerdown", handler: onDocumentPointerDown', "바깥 pointerdown 닫기"),
+        (r'function onDocumentKeydown\(e\)[\s\S]{0,120}?Escape', "Escape 닫기"),
     ):
         assert re.search(needle, pop), f"popover.js 에 {what}가 없습니다."
     # 두 표면은 헬퍼 소비만 — 손수 판(자기 suppress 플래그) 재유입 금지(주석 제외).

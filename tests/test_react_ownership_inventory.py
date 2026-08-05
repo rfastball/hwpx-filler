@@ -146,9 +146,12 @@ EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     "state_js_module": (44, "1633eccf8b783f1d712a5b9e158a6ed5"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
-    "subscription_listener": (105, "2fc5bdf7415bc281524144a514e9ee28"),
+    # R3-01(#410) 재고정 — 문서 리스너 소유 이양(popover 모듈-평가 8·undo_toast·modal 의
+    # 부착/해제가 엔진 배선·React host `.ts` 로 이동)에 따른 하한 인하. 지문은 불변(술어·scope
+    # 는 안 좁혔다 — 줄어든 것은 실측이다).
+    "subscription_listener": (100, "2fc5bdf7415bc281524144a514e9ee28"),
     "subscription_push": (5, "5201c1ab611d0f09a743bd1e6afced4a"),
-    "subscription_release": (10, "b6ac96d2f30c9122a679e7c1c01643b1"),
+    "subscription_release": (6, "b6ac96d2f30c9122a679e7c1c01643b1"),
 }
 
 

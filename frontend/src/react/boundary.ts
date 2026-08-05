@@ -14,6 +14,8 @@
 import { Component, createElement, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { SnapshotStore } from "../state/store.ts";
+import { OverlayHost } from "../overlay/host.ts";
+import type { OverlayHostPorts } from "../overlay/host.ts";
 
 type BoundaryProps = {
   alarm: (message: string) => void;
@@ -85,12 +87,15 @@ function StoreSignal(props: {
   return null;
 }
 
-/** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다. */
+/** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다.
+ *  자식 셋: 마운트 신호 · store 신호 · overlay host(R3-01 — 완전 데이터-구동 표면 4 의
+ *  React 소유 DOM). */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;
   store: SnapshotStore;
   reflectStoreRevision: (revision: number) => void;
+  overlay: OverlayHostPorts;
 }): ReactNode {
   return createElement(
     ReactErrorBoundary,
@@ -100,5 +105,6 @@ export function createAppElement(hooks: {
       store: hooks.store,
       reflectStoreRevision: hooks.reflectStoreRevision,
     }),
+    createElement(OverlayHost, hooks.overlay),
   );
 }

@@ -521,10 +521,8 @@
 <!-- H-16: 모달·팝오버의 유일한 포털. 앱 그리드/스크롤 stacking context 밖 body 직속에 둔다. -->
 <div id="overlayRoot">
 
-    <div id="undoToast" class="undo-toast" role="status" aria-live="polite" hidden>
-      <span id="undoToastText"></span>
-      <button class="btn sm" id="undoToastBtn">되돌리기</button>
-    </div>
+    <!-- (되돌리기 토스트 #undoToast 는 R3-01 에서 React host(#reactOverlayHost)로 이전 —
+         id·클래스·ARIA·거동 동등, 정적 골격은 여기 두지 않는다.) -->
 
     <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
     <div id="libraryGroupMenu" class="ctx-menu" role="menu" style="display:none"></div>
@@ -776,47 +774,11 @@
       </div>
     </div>
 
-    <!-- 확인 모달(#86) — 네이티브 window.confirm 대체. 기본 포커스=취소(머무르기), Escape=머무르기.
-         파괴 동작의 수치 재진술은 호출부가 본문(confirmModalBody)에 그대로 싣는다(조용한 통과 금지). -->
-    <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
-      <div class="modal-card">
-        <h3 id="confirmModalTitle">확인</h3>
-        <p class="modal-body" id="confirmModalBody"></p>
-        <div class="modal-actions">
-          <button class="btn" id="confirmModalCancel">취소</button>
-          <button class="btn primary" id="confirmModalOk">확인</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 3택 모달(재작성 F7) — patch 처분(저장하고 이동 · 버리고 이동 · 머무르기)처럼 답이
-         셋인 자리. 확인 모달로 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고(이동인가
-         편집인가) 그 모호함이 곧 조용한 파기다. 기본 포커스·Escape = 머무르기(안전측). -->
-    <div id="chooseModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="chooseModalTitle">
-      <div class="modal-card">
-        <h3 id="chooseModalTitle">선택</h3>
-        <p class="modal-body" id="chooseModalBody"></p>
-        <div class="modal-actions">
-          <button class="btn" id="chooseModalCancel">머무르기</button>
-          <button class="btn" id="chooseModalAlt"></button>
-          <button class="btn primary" id="chooseModalOk"></button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 입력 모달(#86) — 네이티브 window.prompt 대체. 기본 포커스=입력칸, Enter=확인, Escape=취소. -->
-    <div id="promptModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
-      <div class="modal-card">
-        <h3 id="promptModalTitle">입력</h3>
-        <p class="modal-body" id="promptModalBody"></p>
-        <input class="field" id="promptModalInput" type="text">
-        <p id="promptModalError" class="note dangerbox" role="alert" style="display:none"></p>
-        <div class="modal-actions">
-          <button class="btn" id="promptModalCancel">취소</button>
-          <button class="btn primary" id="promptModalOk">확인</button>
-        </div>
-      </div>
-    </div>
+    <!-- (promise 다이얼로그 3종 — #confirmModal·#chooseModal·#promptModal — 은 R3-01 에서
+         React host(#reactOverlayHost)로 이전. 완전 데이터-구동 표면이라 정적 골격 없이
+         host 렌더가 같은 id·클래스·ARIA·초기 문안을 소유한다. 기본 포커스=취소/머무르기·
+         Escape=머무르기·danger 재진술 계약(#86·F7·#219)은 파사드 modal.js 가 그대로 진다.
+         index.html 재도입은 id 중복(정적 계약 빨강)이다.) -->
 </div>
 
 <!-- React 단독 소유 subtree (R2-01 · #405) — legacy 두 트리(div.app·#overlayRoot)와 공동

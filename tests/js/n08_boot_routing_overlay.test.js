@@ -361,11 +361,16 @@ function createDom(options) {
   body.appendChild(make("div", "jobOutTrack"));
   body.appendChild(make("div", "editor-body"));
 
-  /* ── 오버레이 루트 + 모달 셋 ── */
+  /* ── 오버레이 포털 둘 + 모달 셋 (R3-01 · #410 개정 8) ──
+     legacy 모달(txtEditModal)은 #overlayRoot, promise 다이얼로그(confirm·choose)는 React
+     호스트 컨테이너 #reactOverlayHost 의 **직속** 자식이다 — 제품의 두-포털 형상 그대로를
+     모델링해야 `overlay_children_owned` 의 양성이 새 가지(React 호스트 부모)를 실제로 밟는다. */
   const overlayRoot = make("div", "overlayRoot");
   body.appendChild(overlayRoot);
+  const reactOverlayHost = make("div", "reactOverlayHost");
+  body.appendChild(reactOverlayHost);
 
-  const buildModal = (id, extras) => {
+  const buildModal = (id, extras, host) => {
     const modal = make("div", id, "modal hidden");
     modal._style = { zIndex: "80" };
     const card = make("div", "", "modal-card");
@@ -383,15 +388,17 @@ function createDom(options) {
       const child = make("button", childId);
       actions.appendChild(child);
     });
-    overlayRoot.appendChild(modal);
+    (host || overlayRoot).appendChild(modal);
     return modal;
   };
 
   buildModal("txtEditModal", ["txtEditName"]);
-  const confirmModal = buildModal("confirmModal", ["confirmModalCancel", "confirmModalOk"]);
+  const confirmModal = buildModal(
+    "confirmModal", ["confirmModalCancel", "confirmModalOk"], reactOverlayHost,
+  );
   const confirmBody = make("div", "confirmModalBody");
   confirmModal._q[".modal-card"].appendChild(confirmBody);
-  buildModal("chooseModal", ["chooseModalCancel", "chooseModalAlt", "chooseModalOk"]);
+  buildModal("chooseModal", ["chooseModalCancel", "chooseModalAlt", "chooseModalOk"], reactOverlayHost);
   doc.getElementById("chooseModalOk").className = "primary";
   doc.getElementById("confirmModalOk").className = "primary";
   /* 15px 구획 역할의 정적 생존 표본(app.py:3086) — 모달 DOM 은 셸 레벨 상주라 여기 산다. */
@@ -867,7 +874,11 @@ test("시간 예산은 늘지 않았다 — 레거시 old→new 대조", () => {
     title_dom: 0, nav_count: 0, tpl_options: 0, job_on: 0,
     home_screen_gone: 0, library_surface: 0, library_view_tabs: 0, data_picker_buttons: 0,
     action_roundtrip: 10000,   // app.py:3744
-    modal_a11y: 0, preserve: 0, preserve_real: 0,
+    /* modal_a11y 만 레거시 0 에서 벗어난다 — R3-01(#410)에서 confirm·choose 골격이 React
+       host 커밋 산물이 되며 마운트 전제 시한이 붙었다(react_runtime 5000ms 와 동형의 신설
+       축). 본문 측정은 여전히 마이크로태스크뿐이라 실측 시간은 늘지 않는다. */
+    modal_a11y: 5000,
+    preserve: 0, preserve_real: 0,
     milestone_h_wave1: 0, milestone_h_overlay: 0,
   };
   for (const [name, budget] of Object.entries(legacy)) {
@@ -895,8 +906,9 @@ test("시간 예산은 늘지 않았다 — 레거시 old→new 대조", () => {
     assert.equal(p.settleBeforeMs, 0, p.name);
     assert.equal(p.cooldownAfterMs, 0, p.name);
   }
-  /* 이 클러스터의 최악 예산 = 10초(action_roundtrip) + 0.6초(overlay 앞뒤 대기). */
-  assert.equal(runner.budgetMs("full"), 10600);
+  /* 이 클러스터의 최악 예산 = 10초(action_roundtrip) + 5초(modal_a11y 마운트 전제 시한,
+     R3-01) + 0.6초(overlay 앞뒤 대기). 실측 경로에서 전제는 즉시 참이라 벽시계는 안 는다. */
+  assert.equal(runner.budgetMs("full"), 15600);
 });
 
 test("호스트 요청은 창 크기 변경 하나뿐이고 선언과 요청이 같이 산다", () => {
@@ -1314,10 +1326,20 @@ test("milestone_h_overlay — 720x500 에서 재고 호스트가 창을 되돌�
   assert.equal(h.short_viewport.viewport, 500);
 });
 
-test("milestone_h_overlay — 오버레이 소유·스크롤바·sticky 재질", async () => {
-  const { report } = await runFull();
+test("milestone_h_overlay — 오버레이 소유(두 포털)·스크롤바·sticky 재질", async () => {
+  const { report, dom } = await runFull();
   const h = report.results.milestone_h_overlay;
   assert.equal(h.overlay_root_direct, true);
+  /* 양성이 공허하지 않다는 대조 — fixture 가 실제로 두 포털에 갈라 심었는가(R3-01 개정 8).
+     이 두 단언이 없으면 전부 overlayRoot 자식인 낡은 형상에서도 아래 true 가 나온다. */
+  assert.equal(
+    dom.doc.getElementById("confirmModal").parentElement,
+    dom.doc.getElementById("reactOverlayHost"),
+  );
+  assert.equal(
+    dom.doc.getElementById("txtEditModal").parentElement,
+    dom.doc.getElementById("overlayRoot"),
+  );
   assert.equal(h.overlay_children_owned, true);
   assert.deepEqual(h.scrollbar, {
     width: "8px", button_display: "none", button_width: "0px", button_height: "0px",

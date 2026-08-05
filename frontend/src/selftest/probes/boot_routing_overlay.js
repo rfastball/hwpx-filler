@@ -394,10 +394,15 @@ export function createBootRoutingOverlayProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3833,
-      deadlineMs: 0,
+      deadlineMs: 5000,
       deadlineRationale:
-        "레거시는 동기 IIFE 한 번 + 다음 호출의 되읽기 한 번이고 폴링이 없다."
-        + " 여기서 기다리는 것은 마이크로태스크뿐이라 시간 예산이 늘지 않는다.",
+        "레거시는 동기 IIFE 한 번 + 되읽기 한 번이라 0 이었다. R3-01(#410) 뒤 confirm·"
+        + "choose·prompt 골격은 정적 index.html 이 아니라 React host **커밋 산물**이라,"
+        + " 마운트 완료를 전제조건으로 시한 안에 기다린다(react_runtime 과 같은 경합 창"
+        + " 닫기 — 실측상 프로브 도달 전에 이미 참이다). 본문 측정은 여전히 마이크로태스크뿐이다.",
+      precondition: (ctx) => ctx.doc.getElementById("confirmModal") !== null
+        && ctx.doc.getElementById("chooseModal") !== null,
+      preconditionWhat: "React overlay host 골격(confirm·choose) 커밋",
       note:
         "가시성 공백: `.click()` 다섯 자리 가운데 가시성을 단언하는 것은 `choose_all_visible`"
         + "(app.py:763) 뿐이다. `display:none` 버튼을 눌러도 이 프로브는 성공한다 —"
@@ -885,8 +890,15 @@ export function createBootRoutingOverlayProbes() {
 
         const root = doc.getElementById("overlayRoot");
         out.overlay_root_direct = root && root.parentElement === doc.body;
+        /* R3-01(#410 개정 8) — H-16 불변식(오버레이 표면은 앱 그리드 stacking context 밖
+           포털에 산다)의 합법 포털은 이제 둘이다: legacy #overlayRoot 와 React 오버레이
+           호스트 컨테이너(#reactOverlayHost — promise 다이얼로그·토스트는 그 **직속** 자식).
+           술어를 overlayRoot 한정으로 좁히는 대안은 기각 — React 쪽 배치 드리프트(다이얼로그가
+           중첩 stacking context 안으로 새는 회귀)에 눈멀게 되는 관측 축소다. */
+        const reactHost = doc.getElementById("reactOverlayHost");
         out.overlay_children_owned = all(doc, ".modal,.ctx-menu,.colpanel")
-          .every((el) => el.parentElement === root);
+          .every((el) => el.parentElement === root
+            || (reactHost !== null && el.parentElement === reactHost));
 
         /* 전역 스크롤바 재질 + sticky 머리 재질. */
         const scrollHost = doc.createElement("div");

@@ -1,5 +1,9 @@
 /* ---- 모달 ---- */
 #overlayRoot{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
+/* React overlay host (R3-01) — #overlayRoot 와 등가의 위치 맥락. #reactRoot 는 DOM 후행이라
+   동급 z 에서 위에 그려진다 — promise 다이얼로그가 legacy 폼 모달 위에 서는 스택 의미와
+   일치한다(pool 재등록 중첩). 자식 .modal 은 기존 규칙이 그대로 적용된다(같은 클래스=같은 규칙). */
+#reactOverlayHost{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
 .modal{position:absolute;inset:0;box-sizing:border-box;padding:var(--sp-16);
   background:var(--a-scrim);backdrop-filter:blur(6px);display:flex;align-items:center;
   justify-content:center;z-index:calc(var(--z-modal) + var(--modal-depth,0));pointer-events:auto}

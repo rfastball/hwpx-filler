@@ -188,9 +188,13 @@ def test_group_merge_confirm_runs_after_the_prompt_settles() -> None:
     assert prompt_at < settled_at < confirm_at, (
         "병합 확인이 prompt 가 풀리기 전에 열립니다 — pendingDialog 가 거절합니다(3R)."
     )
-    # modal.js 의 그 직렬화가 실재한다는 전제 고정(바뀌면 이 가드의 근거가 사라진다).
+    # 그 직렬화가 실재한다는 전제 고정(바뀌면 이 가드의 근거가 사라진다) — R3-01(#410)에서
+    # 판정의 거처가 modal.js 의 자기 불리언에서 엔진(src/overlay/engine.ts)으로 옮겨 갔고,
+    # 파사드는 엔진 관측면(isDialogPending)으로 같은 거절을 잇는다.
+    engine = (SOURCE_JS_DIR.parent / "src" / "overlay" / "engine.ts").read_text(encoding="utf-8")
+    assert "pendingDialog" in engine and "if (pendingDialog)" in engine
     modal = (SOURCE_JS_DIR / "modal.js").read_text(encoding="utf-8")
-    assert "pendingDialog" in modal and "if (pendingDialog)" in modal
+    assert "overlayEngine.isDialogPending()" in modal
 
 
 def test_favorite_intent_is_serialized_through_the_shared_mechanism() -> None:
