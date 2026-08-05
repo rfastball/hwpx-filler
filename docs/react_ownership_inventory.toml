@@ -32,10 +32,9 @@ schema = 1
 # 이 원장을 실측한 기준. 재고정 v2 가 `d508724 → 8fcc30e` 무드리프트를 확인했고(frontend/ 무변경)
 # 계측은 그 위에서 다시 돌렸다. 재고정 v3(R3-01 #410, base `5895029`)은 overlay 이관을 따라
 # dom_static(골격 4 이전)·state_js_module·subscription 두 축·계측 6 항을 다시 실측했다.
-# 재고정 v4(R3-02 #411, base `e8e20ff`)는 셸 이관을 따라 state_js_module(app.js 상태 2 →
-# nav.ts)·subscription_listener(셸 리스너 7 → 서술 + ShellHost 부착)·lifecycle_hook(부팅 훅·
-# IMMERSIVE 목록 → host.ts·nav.ts)·app.js/bootstrap.js 좌표 전체를 다시 실측했다.
-baseline_sha = "e8e20ff4772f64040864cda5c6571f7b70963f8c"
+# 재고정 v5(R3-03 #412, base `15d3444`)는 JS/TS가 생산하는 data-* 이름을 AST 축으로 편입해
+# `js_planted_data_attrs` 명시 제외를 은퇴시켰다. 다른 기존 축의 값은 같은 base에서 재실측했다.
+baseline_sha = "15d3444a256057f95b6ea6fcedd31b562a03f28d"
 
 # 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
 scope_statement = """
@@ -62,21 +61,6 @@ unoccupied_classifications = ["host"]
 # ── 폐포에서 명시 제외하는 축 ─────────────────────────────────────────────
 # 「안 센 것」을 데이터로 적는다. 조용한 유예가 아니라 **소리 나는 제외**여야 「미분류 0」이
 # 거짓말이 되지 않는다.
-
-[[excluded_axes]]
-axis = "js_planted_data_attrs"
-reason = """
-frontend/js 가 템플릿 조각으로 심는 data-* 속성의 전수. 정규식은 CSS 선택자 문자열·산문
-주석·클래스 이름을 함께 세어 오답을 낸다(무앵커로 세면 66종/302회). 템플릿 조각 **안의
-속성 위치**를 판별하는 추출기가 오늘 없다. 정적 문서 쪽 축(dom_data_attr)은 파서로 닫혔다.
-"""
-owner = "#412"
-# 이 제외는 제품 트리의 파일을 설명하지 않는다 — `frontend/js/**` 는 이미 축들이 덮고 있고,
-# 빠진 것은 그 파일들 **안의 한 축**이다. 그래서 `covers` 는 빈 목록이다.
-covers = []
-# 크기 프로브 없음 — 이 축은 **오답 술어밖에 없다는 것이 제외 사유 자체**다. 무앵커 정규식의
-# 66종/302회를 `size` 로 실으면 프런트 템플릿을 고칠 때마다 숫자만 올리는 의식이 되고, 그러면
-# 사각이 자란 것과 코드가 자란 것을 못 가른다. 소유자가 참 추출기를 지을 때 크기가 생긴다.
 
 [[excluded_axes]]
 axis = "selftest_frontend_surface"
@@ -135,6 +119,14 @@ implementation = "html.parser(stdlib) — 시작태그의 data-* 속성 이름"
 [extractors.js_template_ids]
 backing = "ast"
 implementation = "vite(oxc) parseAst — 템플릿 리터럴 quasi·문자열 리터럴 + 앵커 정규식 (?<![\\w-])id=\""
+
+[extractors.js_planted_data_attrs]
+backing = "ast"
+implementation = "TypeScript 7 AST — 마크업 문자열 속성 위치·setAttribute 정적 이름/모듈 const·dataset 대입·createElement/el 객체 속성·JSX 속성"
+
+[extractors.js_data_attr_dynamic]
+backing = "ast"
+implementation = "같은 AST 순회의 동적 속성명 사각 — computed dataset·동적 setAttribute·동적 마크업 이름·JSX/object spread"
 
 [extractors.js_module_state]
 backing = "ast"
@@ -233,8 +225,8 @@ data-* 속성 **이름** 1개 = 1노드. 출현 횟수(50)는 노드가 아니�
 [axes.dom_data_attr.blind_spot]
 description = """
 무앵커 정규식과 파서의 차이. 정규식으로 세면 CSS 클래스 이름·산문을 함께 세어 값이 부푼다
-(16종/60회 대 참값 9종/50회). 파서가 못 보는 축 — frontend/js 가 심는 data-* — 은
-excluded_axes 의 js_planted_data_attrs 로 명시 제외했다.
+(16종/60회 대 참값 9종/50회). JS/TS가 심는 data-*는 별도 `dom_js_data_attr` AST 축이
+생산 형태와 동적 이름 사각을 함께 진다.
 """
 probe = { kind = "extractor", name = "html_data_attr_regex_delta" }
 scope = ["frontend/index.html"]
@@ -242,6 +234,21 @@ unit = "정규식만 잡는 이름 1개 = 1. 전부 속성이 아니다."
 current = 7
 members = ["data-first", "data-grid", "data-picker", "data-react-mounted", "data-sheet-body", "data-theme", "data-zone"]
 judgment = "일곱 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). 참값은 파서가 낸 9종이다."
+
+[axes.dom_js_data_attr]
+predicate = { kind = "node_extractor", name = "js_planted_data_attrs" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/js/**/*.ts", "frontend/js/**/*.tsx", "frontend/src/**/*.js", "frontend/src/**/*.mjs", "frontend/src/**/*.ts", "frontend/src/**/*.tsx"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "제품 JS/TS가 DOM에 생산하는 data-* 이름×파일 1쌍 = 1노드(`path:data-name`). selector·getAttribute·dataset read는 생산자가 아니다."
+[axes.dom_js_data_attr.blind_spot]
+description = "정적으로 확정할 수 없는 속성명. computed dataset·동적 setAttribute 첫 인자·템플릿에서 보간되는 속성명·JSX/object spread를 같은 AST 순회가 별도 계상한다."
+probe = { kind = "node_extractor", name = "js_data_attr_dynamic" }
+scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/js/**/*.ts", "frontend/js/**/*.tsx", "frontend/src/**/*.js", "frontend/src/**/*.mjs", "frontend/src/**/*.ts", "frontend/src/**/*.tsx"]
+scope_excluded = ["frontend/src/selftest/**"]
+unit = "동적 생산 지점 1곳 = 1. 이름을 확정할 수 없으므로 폐포 멤버가 아니라 시끄러운 사각 크기로 센다."
+current = 0
+members = []
+judgment = "오늘 동적 속성명 생산은 0. 정적 생산자는 15파일 86쌍이며 selftest와 read-only 소비는 제외된다."
 
 [axes.dom_js_site]
 predicate = { kind = "node_extractor", name = "js_template_ids" }
@@ -707,6 +714,7 @@ unit = """
 id = "bridge/close-guard-state"
 subject = "close_guard_state 는 pywebview 반사로 js_api 에 노출되는데 문서에도 bridge.js 에도 없다 — JS 에서 도달 가능한 무계약 표면이다."
 requires_p_review = true
+resolved = false
 evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 481, anchor = "def close_guard_state" }]
 owner = "R2-02 #406"
 disposition = "#433"
@@ -721,28 +729,33 @@ test = "tests/test_webapp_bridge.py (Python 쪽 호출만 검증한다 — JS �
 id = "gate/architecture-bridge-one-way"
 subject = "test_architecture.py 의 직접 브리지 대조가 bridge.js → 문서 **단방향**이라 Python 쪽에만 있는 이름(close_guard_state)을 구조적으로 못 본다."
 requires_p_review = false
+resolved = false
 evidence = [{ file = "tests/test_architecture.py", line = 411, anchor = "UI_CONTRACT.md 직접 브리지 목록에 없는 메서드" }]
 owner = "R2-02 #406"
 
 [[review_item]]
 id = "gate/screen-roots-partial"
-subject = "SCREEN_ROOTS 상수는 화면 루트 4 중 2만 든다 — 계약이 표면의 절반만 겨눈다."
+subject = "SCREEN_ROOTS 상수가 화면 루트 4개 전부를 든다 — R3-03에서 부분 계약을 폐쇄했다."
 requires_p_review = false
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 107, anchor = "SCREEN_ROOTS = (" }]
+resolved = true
+disposition = "SCREEN_ROOTS를 scr-library·scr-job·scr-editor·scr-workbench 전수로 확장하고 test_screen_roots_present가 대조한다."
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 113, anchor = "SCREEN_ROOTS = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
 id = "gate/preserve-wrapped-files-partial"
-subject = "PRESERVE_WRAPPED_FILES 는 3인데 Preserve.around 실호출은 5다(docstring 은 4라고 적는다). 셋이 서로 다르다."
+subject = "PRESERVE_WRAPPED_FILES가 Preserve.around 실호출 5파일 전부를 들고 docstring도 다섯 소유자로 맞췄다."
 requires_p_review = false
+resolved = true
+disposition = "data_picker.js·library.js를 목록에 더해 실호출 5파일과 정확히 맞추고 정적 배선 게이트가 전수 대조한다."
 evidence = [{ file = "tests/test_web_dom_contract.py", line = 47, anchor = "PRESERVE_WRAPPED_FILES = (" }]
 owner = "R3-03 #412"
-note = "소유 제안은 중앙 승인 대기(상향 U5)다. 결함 원장의 정본은 #403 이고 여기서는 참조만 한다."
 
 [[review_item]]
 id = "doc/bridge-header-breakdown"
 subject = "bridge.js 머리말의 「23개(21+2)」 분해가 낡았다 — 총량 23은 우연히 맞지만 실제는 19(데이터·네이티브) + 2(창 닫기) + 2(selftest)이고 문서 21은 이미 창 닫기 2를 포함한다."
 requires_p_review = false
+resolved = false
 evidence = [{ file = "frontend/js/bridge.js", line = 2, anchor = "창 닫기 확인 2" }]
 owner = "R2-02 #406"
 
@@ -750,6 +763,7 @@ owner = "R2-02 #406"
 id = "doc/screens-py-transport-comment"
 subject = "webapp/screens.py 의 머리말 주석이 앱을 evaluate_js 로 서술한다 — 전송 층에서는 여전히 참이라 「낡음」은 해석이고 미확인이다."
 requires_p_review = false
+resolved = false
 evidence = [{ file = "src/hwpxfiller/webapp/screens.py", line = 1, anchor = "화면별 컨트롤러" }]
 owner = "R5-01 #419"
 
@@ -789,7 +803,7 @@ evidence = [{ file = "frontend/index.html", line = 133, anchor = "id=\"scr-job\"
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_screen_roots_present"]
-note = "화면 루트 4 + overlay 루트 1. React 라우터가 이 다섯의 후계를 진다. SCREEN_ROOTS 상수는 이 중 둘만 본다(review_item 참조)."
+note = "화면 루트 4 + overlay 루트 1. React 라우터가 이 다섯의 후계를 진다. SCREEN_ROOTS는 R3-03에서 화면 루트 넷을 전수 대조하도록 폐쇄됐다."
 
 [[node]]
 id = "dom/root/react-root"
@@ -1074,6 +1088,246 @@ evidence = [{ file = "frontend/index.html", line = 146, anchor = "data-level", o
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+
+# ═══ dom_js_data_attr — 제품 JS/TS가 생산하는 data-* 이름×파일 86. selector·read-only 소비는
+#     세지 않고, 이름이 동적인 생산자는 축의 blind_spot 크기로 따로 센다.
+
+[[node]]
+id = "dom-js-data/data-picker"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/data_picker.js:data-act",
+  "frontend/js/data_picker.js:data-busy-lock",
+  "frontend/js/data_picker.js:data-dup-keep",
+  "frontend/js/data_picker.js:data-key",
+  "frontend/js/data_picker.js:data-name",
+  "frontend/js/data_picker.js:data-row",
+] }
+evidence = [{ file = "frontend/js/data_picker.js", line = 120, anchor = "data-key" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/datazone"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/datazone.js:data-act",
+  "frontend/js/datazone.js:data-busy-lock",
+  "frontend/js/datazone.js:data-col",
+  "frontend/js/datazone.js:data-ctext",
+  "frontend/js/datazone.js:data-i",
+  "frontend/js/datazone.js:data-prune",
+  "frontend/js/datazone.js:data-rerr",
+  "frontend/js/datazone.js:data-rjoin",
+  "frontend/js/datazone.js:data-rop",
+  "frontend/js/datazone.js:data-rval",
+  "frontend/js/datazone.js:data-unsel",
+  "frontend/js/datazone.js:data-val",
+  "frontend/js/datazone.js:data-val-all",
+] }
+evidence = [{ file = "frontend/js/datazone.js", line = 99, anchor = "<button data-act=\"panel-close\"" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/grouplist"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/js/grouplist.js:data-new"] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "<input type=\"radio\" name=\"${cfg.radioName}\" value=\"\" data-new" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/pathtrack"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/pathtrack.js:data-path",
+  "frontend/js/pathtrack.js:data-track-act",
+] }
+evidence = [{ file = "frontend/js/pathtrack.js", line = 34, anchor = "class=\"btn sm icon track-btn\" data-track-act" }]
+classification = "react"
+handoff_slice = "R4-04 #417"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/personalization"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/js/personalization.js:data-font-scale"] }
+evidence = [{ file = "frontend/js/personalization.js", line = 18, anchor = "root.setAttribute(\"data-font-scale\", scale);" }]
+classification = "react"
+handoff_slice = "R5-01 #419"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/popover"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/js/popover.js:data-placement"] }
+evidence = [{ file = "frontend/js/popover.js", line = 156, anchor = "el.dataset.placement = below ?" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/editor"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/editor.js:data-act",
+  "frontend/js/screens/editor.js:data-field",
+  "frontend/js/screens/editor.js:data-group",
+  "frontend/js/screens/editor.js:data-index",
+  "frontend/js/screens/editor.js:data-key",
+  "frontend/js/screens/editor.js:data-level",
+  "frontend/js/screens/editor.js:data-media",
+  "frontend/js/screens/editor.js:data-menu",
+  "frontend/js/screens/editor.js:data-path",
+  "frontend/js/screens/editor.js:data-section",
+] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 253, anchor = "data-section" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/job"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/job.js:data-act",
+  "frontend/js/screens/job.js:data-browse-mode",
+  "frontend/js/screens/job.js:data-browse-new",
+  "frontend/js/screens/job.js:data-browse-open",
+  "frontend/js/screens/job.js:data-browse-pick",
+  "frontend/js/screens/job.js:data-browse-tab",
+  "frontend/js/screens/job.js:data-busy-lock",
+  "frontend/js/screens/job.js:data-cand",
+  "frontend/js/screens/job.js:data-cand-menu",
+  "frontend/js/screens/job.js:data-cand-mode",
+  "frontend/js/screens/job.js:data-cands-exit",
+  "frontend/js/screens/job.js:data-fav",
+  "frontend/js/screens/job.js:data-field",
+  "frontend/js/screens/job.js:data-level",
+  "frontend/js/screens/job.js:data-missing",
+  "frontend/js/screens/job.js:data-missing-cols",
+  "frontend/js/screens/job.js:data-new-work",
+  "frontend/js/screens/job.js:data-path",
+  "frontend/js/screens/job.js:data-state",
+  "frontend/js/screens/job.js:data-track-act",
+] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 393, anchor = "id=\"jobCandMenuBtn\" data-cand-menu" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/library"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/library.js:data-axis",
+  "frontend/js/screens/library.js:data-busy-lock",
+  "frontend/js/screens/library.js:data-clear-filters",
+  "frontend/js/screens/library.js:data-clone",
+  "frontend/js/screens/library.js:data-del-corrupt",
+  "frontend/js/screens/library.js:data-delete",
+  "frontend/js/screens/library.js:data-edit",
+  "frontend/js/screens/library.js:data-fav",
+  "frontend/js/screens/library.js:data-gmenu",
+  "frontend/js/screens/library.js:data-group",
+  "frontend/js/screens/library.js:data-group-more",
+  "frontend/js/screens/library.js:data-label",
+  "frontend/js/screens/library.js:data-move",
+  "frontend/js/screens/library.js:data-new-work",
+  "frontend/js/screens/library.js:data-preserve-scroll",
+  "frontend/js/screens/library.js:data-relink",
+  "frontend/js/screens/library.js:data-rename",
+  "frontend/js/screens/library.js:data-reveal",
+  "frontend/js/screens/library.js:data-tags",
+  "frontend/js/screens/library.js:data-use",
+  "frontend/js/screens/library.js:data-val",
+  "frontend/js/screens/library.js:data-work",
+] }
+evidence = [{ file = "frontend/js/screens/library.js", line = 88, anchor = "data-reveal=\"${esc(c.path)}\"" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/workbench"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/screens/workbench.js:data-fullwidth",
+  "frontend/js/screens/workbench.js:data-i",
+  "frontend/js/screens/workbench.js:data-level",
+  "frontend/js/screens/workbench.js:data-name",
+] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 34, anchor = "id=\"wbMap-src-${encodeURIComponent(t.name)}\" data-name" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/segview"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/js/segview.js:data-token"] }
+evidence = [{ file = "frontend/js/segview.js", line = 24, anchor = "const tok = s.name ? ` data-token" }]
+classification = "react"
+handoff_slice = "R4-04 #417"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/sheet-picker"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = [
+  "frontend/js/sheet_picker.js:data-first",
+  "frontend/js/sheet_picker.js:data-sheet",
+] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 25, anchor = "data-sheet" }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/theme"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/js/theme.js:data-theme"] }
+evidence = [{ file = "frontend/js/theme.js", line = 26, anchor = "document.documentElement.setAttribute(\"data-theme\", mode);" }]
+classification = "react"
+handoff_slice = "R5-01 #419"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/react-boot"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/src/react/boot.ts:data-react-store-rev"] }
+evidence = [{ file = "frontend/src/react/boot.ts", line = 22, anchor = "data-react-store-rev" }]
+classification = "react"
+handoff_slice = "R2-03 #407"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+
+[[node]]
+id = "dom-js-data/react-root"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/src/react/root.ts:data-react-mounted"] }
+evidence = [{ file = "frontend/src/react/root.ts", line = 37, anchor = "export const MOUNT_MARKER_ATTRIBUTE = \"data-react-mounted\";" }]
+classification = "react"
+handoff_slice = "R2-01 #405"
+verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
 
 # ═══ dom_js_site — JS 가 템플릿으로 만드는 id 사이트 26. **단위는 이름이 아니라
 #     사이트**다 — 완전 동적 3건은 이름이 소스에 없어 이름을 단위로 잡으면 영영 빠진다.
@@ -2004,4 +2258,3 @@ classification = "react"
 handoff_slice = "R4-02 #415"
 note = "이탈 가드의 **본체**는 화면 소유이고, 위임 목록(IMMERSIVE)과 호출은 셸 소유다(lifecycle/app-routing 행). SCREEN-SPLIT-ROADMAP:v1 이 editor.js 의 「저장·취소·이탈」을 R4 책임으로 든 것과 정합한다."
 verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
-

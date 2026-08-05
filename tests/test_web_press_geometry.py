@@ -35,18 +35,45 @@ Playwright + 설치 Chrome 의 ``reduced_motion`` 컨텍스트다. 데스크톱 
 
 from __future__ import annotations
 
+import json
 import os
 import re
+from pathlib import Path
 
 import pytest
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css, strip_comments
+from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_ROOT, app_css, strip_comments
 
 _MOTION_GATE = bool(os.environ.get("HWPX_SKIP_MOTION_TESTS"))
 _GATE_REASON = (
     "눌림 기하 게이트 — Playwright + 설치 Chrome 필요"
     "(HWPX_SKIP_MOTION_TESTS=1 로 명시 옵트아웃)"
 )
+
+_NON_CODE_SUFFIXES = frozenset(json.loads(
+    (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+)["non_code_suffixes"])
+
+
+def _product_code_sources() -> tuple[Path, ...]:
+    return tuple(sorted(
+        path
+        for path in SOURCE_ROOT.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() not in _NON_CODE_SUFFIXES
+        and not path.relative_to(SOURCE_ROOT).as_posix().startswith("src/selftest/")
+    ))
+
+
+def _selector_producers(
+    selector: str, assets: list[tuple[str, str]] | None = None,
+) -> list[str]:
+    name = selector.lstrip(".")
+    haystack = assets or [
+        (path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8"))
+        for path in (SOURCE_INDEX, *_product_code_sources())
+    ]
+    return [where for where, text in haystack if name in text]
 
 #: 컨테이너를 채우는 눌림 표면. 값은 U2 §2.11 전수조사가 실 레이아웃(1440×900)에서 잰
 #: 실폭이다 — 파손 크기가 폭에 비례하므로 근거로 남긴다. 이 표면들은 `scale` 을 쓰지 않는다.
@@ -136,11 +163,8 @@ def test_press_scale_selectors_are_exactly_the_declared_box_surfaces() -> None:
 def test_dead_selectors_carry_no_press_marker() -> None:
     """산출자가 없는 선택자는 눌림 계약을 늘리지 않는다 — 죽은 규칙은 다음 사람을 속인다."""
     block = _press_block()
-    assets = [p.read_text(encoding="utf-8") for p in SOURCE_JS_DIR.rglob("*.js")]
-    assets.append(SOURCE_INDEX.read_text(encoding="utf-8"))
     for selector in DEAD_SELECTORS:
-        name = selector.lstrip(".")
-        producers = [t for t in assets if name in t]
+        producers = _selector_producers(selector)
         assert not producers, (
             f"{selector} 의 산출자가 되살아났습니다 — DEAD_SELECTORS 에서 내리고 "
             "ROW_SURFACES/BOX_SURFACES 중 하나로 판정하세요."
@@ -148,6 +172,14 @@ def test_dead_selectors_carry_no_press_marker() -> None:
         assert selector not in block, (
             f"{selector} 는 웹 자산 어디에서도 만들어지지 않는데 눌림 표지를 들고 있습니다."
         )
+
+
+def test_dead_selector_scan_reads_typescript_producers() -> None:
+    """TS ``className`` 생산자가 죽은 선택자 판정의 haystack 밖으로 빠지지 않는다."""
+    host = "frontend/src/overlay/host.ts"
+    assert host in _selector_producers(".modal-card")
+    inline = [("inline.ts", 'el("button", { className: "future-surface" })')]
+    assert _selector_producers(".future-surface", inline) == ["inline.ts"]
 
 
 def test_row_surfaces_are_all_covered_by_the_sweep_widths() -> None:
@@ -208,3 +240,27 @@ def test_press_marker_actually_fires_on_a_box_surface() -> None:
         "reduced-motion 에서 눌림이 남아 있습니다 — 강등 규칙(base.css:129-141)이 깨졌습니다."
     )
     assert abs(live["d_left"]) > 0.5, "눌림이 기하에 나타나지 않아 프로브가 눈이 없습니다."
+
+
+@pytest.mark.browser
+@pytest.mark.skipif(_MOTION_GATE, reason=_GATE_REASON)
+def test_forced_colors_ownership_markers_render_only_in_active_media() -> None:
+    """강제 색상 media가 제거되는 shadow 대신 3px 시스템색 border를 실제로 렌더한다."""
+    from _press_probe import measure_forced_colors
+
+    rendered = measure_forced_colors()
+    assert rendered["active"]["matches"] is True
+    assert rendered["none"]["matches"] is False
+    for name in ("auto", "hand", "man"):
+        active = rendered["active"]["markers"][name]
+        control = rendered["none"]["markers"][name]
+        assert active["boxShadow"] == "none", (
+            f"{name}: forced-colors에서 shadow가 제거된다는 양성 전제가 바뀌었습니다: {active}"
+        )
+        assert active["borderBottomWidth"] == "3px" and active["borderBottomStyle"] == "solid", (
+            f"{name}: active media의 3px 시스템색 border 표지가 없습니다: {active}"
+        )
+        assert control["boxShadow"] != "none", f"{name}: 평시 2px shadow 대조가 없습니다: {control}"
+        assert control["borderBottomWidth"] == "0px", (
+            f"{name}: forced-colors 전용 border가 평시에도 샙니다: {control}"
+        )

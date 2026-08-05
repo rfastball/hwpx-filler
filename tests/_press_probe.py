@@ -162,3 +162,62 @@ def measure_press(scaffold: str, width: int, motion: str) -> dict:
         "resources_same_origin": True,
         "artifact_id": artifact_id,
     }
+
+
+_FORCED_COLORS_SCAFFOLD = """
+<div class="wc-render">
+  <span id="auto" class="seg-fill own-auto">자동</span>
+  <span id="hand" class="seg-fill own-hand">직접 고침</span>
+  <span id="man" class="seg-fill own-man">수기</span>
+</div>
+"""
+
+_MEASURE_FORCED_COLORS = """() => ({
+  matches: matchMedia("(forced-colors: active)").matches,
+  markers: Object.fromEntries(["auto", "hand", "man"].map((id) => {
+    const style = getComputedStyle(document.getElementById(id));
+    return [id, {
+      boxShadow: style.boxShadow,
+      borderBottomWidth: style.borderBottomWidth,
+      borderBottomStyle: style.borderBottomStyle,
+      borderBottomColor: style.borderBottomColor,
+    }];
+  })),
+})"""
+
+
+def measure_forced_colors() -> dict:
+    """sealed CSS를 forced-colors active/none 두 컨텍스트에서 렌더해 대조한다."""
+    from playwright.sync_api import sync_playwright
+
+    css_path, artifact_id = _built_css_path()
+    html = _DOC.format(css_path=css_path, width=800, scaffold=_FORCED_COLORS_SCAFFOLD)
+    with _loopback_document(html) as (url, served_artifact_id):
+        assert served_artifact_id == artifact_id
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel="chrome")
+            try:
+                measured = {}
+                for mode in ("active", "none"):
+                    context = browser.new_context(
+                        viewport={"width": 1000, "height": 600}, forced_colors=mode,
+                    )
+                    page = context.new_page()
+                    page.goto(url, wait_until="networkidle")
+                    page.wait_for_timeout(120)
+                    measured[mode] = page.evaluate(_MEASURE_FORCED_COLORS)
+                    resources = page.evaluate(
+                        "() => performance.getEntriesByType('resource').map((entry) => entry.name)"
+                    )
+                    assert resources, "sealed CSS resource가 forced-colors probe에서 로드되지 않았습니다."
+                    origin = f"{urlsplit(url).scheme}://{urlsplit(url).netloc}"
+                    assert all(
+                        f"{urlsplit(resource).scheme}://{urlsplit(resource).netloc}" == origin
+                        and urlsplit(resource).scheme != "file"
+                        and "@vite/client" not in resource
+                        for resource in resources
+                    ), f"forced-colors probe가 loopback 외 resource를 로드했습니다: {resources}"
+                    context.close()
+            finally:
+                browser.close()
+    return {**measured, "artifact_id": artifact_id, "url": url}

@@ -28,7 +28,7 @@
  *   node scripts/extract_js_ast_axes.mjs [--repo-root <path>]
  */
 import { readFileSync, globSync } from "node:fs";
-import { join, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 let parseAst;
 try {
@@ -37,6 +37,19 @@ try {
   throw new Error(
     "프런트 툴체인(`vite`)을 못 불렀습니다 — `npm ci` 가 먼저입니다. 이 추출기를 도는 게이트"
     + "(pytest contract 집합)는 Node 를 전제하므로 부재는 스킵 사유가 아니라 실패입니다: "
+    + `${thrown.message}`,
+  );
+}
+
+let ts;
+let TypeScriptAPI;
+try {
+  ts = await import("typescript/unstable/ast");
+  ({ API: TypeScriptAPI } = await import("typescript/unstable/sync"));
+} catch (thrown) {
+  throw new Error(
+    "TypeScript compiler API를 못 불렀습니다 — JS/TS data-* 생산 축은 정규식이 아니라 "
+    + "parser를 전제로 합니다. `npm ci`가 먼저입니다: "
     + `${thrown.message}`,
   );
 }
@@ -105,6 +118,12 @@ function walk(node, visit) {
 const PRODUCT_SCOPE = [
   "frontend/js/**/*.js", "frontend/js/**/*.mjs",
   "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+];
+const DATA_ATTR_SCOPE = [
+  "frontend/js/**/*.js", "frontend/js/**/*.mjs",
+  "frontend/js/**/*.ts", "frontend/js/**/*.tsx",
+  "frontend/src/**/*.js", "frontend/src/**/*.mjs",
+  "frontend/src/**/*.ts", "frontend/src/**/*.tsx",
 ];
 const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
 const SELFTEST_PREFIX = "frontend/src/selftest/";
@@ -260,9 +279,223 @@ function selftestSurface(root) {
   return rows.sort();
 }
 
+/* ── 축 3: JS/TS가 DOM에 심는 data-* ────────────────────────────────
+ *
+ * 정적 index.html의 data-*는 html.parser가 이름 축으로 센다. 이 축은 그 바깥, 즉 제품
+ * JS/TS가 런타임에 **생산하는** 속성만 센다. 소비(`dataset` read·getAttribute·selector)는
+ * 소유권 이동 대상이 아니므로 제외한다. 같은 파일에서 같은 이름을 여러 번 생산해도 소유
+ * 단위는 하나다. 반대로 같은 이름을 다른 화면 파일이 생산하면 R4 인계가 다르므로 별개다.
+ *
+ * oxc `parseAst`는 TypeScript syntax를 받지 않는다. 이 축은 이미 devDependency인
+ * TypeScript compiler API로 JS/TS를 함께 파싱한다 — root.ts의 type 선언을 regex/strip으로
+ * 우회하면 정확히 이 축이 닫으려는 조용한 사각이 되기 때문이다.
+ */
+const MARKUP_DATA_ATTR = /[\s<](data-[a-z][a-z0-9-]*)(?=\s|=|\/?>|$)/g;
+const BARE_MARKUP_DATA_ATTR = /^(data-[a-z][a-z0-9-]*)(?=\s|=|$)/g;
+const DYNAMIC_MARKUP_DATA_ATTR = /(?:^|[\s<])data-$/;
+
+function unwrapExpression(node) {
+  let current = node;
+  while (
+    current
+    && (ts.isParenthesizedExpression(current)
+      || ts.isAsExpression(current)
+      || ts.isTypeAssertion(current)
+      || ts.isSatisfiesExpression(current)
+      || ts.isNonNullExpression(current))
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function literalString(node, bindings, seen = new Set()) {
+  const current = unwrapExpression(node);
+  if (!current) return null;
+  if (ts.isStringLiteral(current) || ts.isNoSubstitutionTemplateLiteral(current)) {
+    return current.text;
+  }
+  if (ts.isIdentifier(current) && bindings.has(current.text) && !seen.has(current.text)) {
+    seen.add(current.text);
+    return literalString(bindings.get(current.text), bindings, seen);
+  }
+  return null;
+}
+
+function constStringBindings(sourceFile) {
+  const bindings = new Map();
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isVariableStatement(statement)
+      || (statement.declarationList.flags & ts.NodeFlags.Const) === 0
+    ) {
+      continue;
+    }
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.initializer) {
+        bindings.set(declaration.name.text, declaration.initializer);
+      }
+    }
+  }
+  return bindings;
+}
+
+function propertyName(node, bindings) {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text;
+  if (ts.isElementAccessExpression(node)) {
+    return literalString(node.argumentExpression, bindings);
+  }
+  return null;
+}
+
+function objectPropertyName(node, bindings) {
+  const name = node.name;
+  if (!name) return null;
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+    return name.text;
+  }
+  if (ts.isComputedPropertyName(name)) return literalString(name.expression, bindings);
+  return null;
+}
+
+function assignmentOperator(kind) {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
+function isDatasetObject(node, bindings) {
+  const current = unwrapExpression(node);
+  return Boolean(
+    current
+    && (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current))
+    && propertyName(current, bindings) === "dataset"
+  );
+}
+
+function datasetAttributeName(target, bindings) {
+  const current = unwrapExpression(target);
+  if (!current || (!ts.isPropertyAccessExpression(current) && !ts.isElementAccessExpression(current))) {
+    return null;
+  }
+  if (!isDatasetObject(current.expression, bindings)) return null;
+  const key = propertyName(current, bindings);
+  if (key === null) return "<dynamic>";
+  return `data-${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+}
+
+function stringTokenText(node) {
+  const stringKinds = new Set([
+    ts.SyntaxKind.StringLiteral,
+    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+    ts.SyntaxKind.TemplateHead,
+    ts.SyntaxKind.TemplateMiddle,
+    ts.SyntaxKind.TemplateTail,
+  ]);
+  return stringKinds.has(node.kind) && typeof node.text === "string" ? node.text : null;
+}
+
+function jsPlantedDataAttrs(root) {
+  const members = new Set();
+  const dynamic = new Set();
+  const scopedSources = sources(root, DATA_ATTR_SCOPE, { excludeSelftest: true });
+  const api = new TypeScriptAPI({ cwd: resolve(root) });
+  let snapshot;
+  try {
+    const files = scopedSources.map(({ rel }) => resolve(root, rel).split(sep).join("/"));
+    snapshot = api.updateSnapshot({ openFiles: files });
+
+    for (const { rel, text } of scopedSources) {
+      const file = resolve(root, rel).split(sep).join("/");
+      const project = snapshot.getDefaultProjectForFile(file);
+      const sourceFile = project?.program.getSourceFile(file);
+      if (!sourceFile) throw new Error(`TypeScript AST를 읽지 못한 파일: ${rel}`);
+      const bindings = constStringBindings(sourceFile);
+      const lineOf = lineIndex(text);
+      const add = (name) => {
+        if (name?.startsWith("data-")) members.add(`${rel}:${name}`);
+      };
+      const gap = (form, node) => {
+        dynamic.add(`${form}:${rel}:${lineOf(node.getStart(sourceFile))}`);
+      };
+
+      function visit(node) {
+        const token = stringTokenText(node);
+        if (token !== null) {
+          MARKUP_DATA_ATTR.lastIndex = 0;
+          for (const match of token.matchAll(MARKUP_DATA_ATTR)) add(match[1]);
+          const literal = node.parent && ts.isTemplateExpression(node.parent) ? node.parent : node;
+          const parent = literal.parent;
+          const isMarkupFragment = parent && (
+            (ts.isVariableDeclaration(parent) && parent.initializer === literal)
+            || (ts.isArrowFunction(parent) && parent.body === literal)
+          );
+          if (isMarkupFragment) {
+            BARE_MARKUP_DATA_ATTR.lastIndex = 0;
+            for (const match of token.matchAll(BARE_MARKUP_DATA_ATTR)) add(match[1]);
+          }
+          if (
+            (node.kind === ts.SyntaxKind.TemplateHead || node.kind === ts.SyntaxKind.TemplateMiddle)
+            && DYNAMIC_MARKUP_DATA_ATTR.test(token)
+          ) {
+            gap("dynamic-markup-name", node);
+          }
+        }
+
+        if (ts.isCallExpression(node)) {
+          const callee = unwrapExpression(node.expression);
+          const called = callee && (
+            ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)
+          ) ? propertyName(callee, bindings) : null;
+          if (called === "setAttribute" && node.arguments.length > 0) {
+            const name = literalString(node.arguments[0], bindings);
+            if (name === null) gap("dynamic-set-attribute", node.arguments[0]);
+            else add(name.toLowerCase());
+          }
+
+          const factory = callee && ts.isIdentifier(callee) ? callee.text : null;
+          if ((factory === "createElement" || factory === "el") && node.arguments.length > 1) {
+            const props = unwrapExpression(node.arguments[1]);
+            if (props && ts.isObjectLiteralExpression(props)) {
+              for (const prop of props.properties) {
+                if (ts.isSpreadAssignment(prop)) {
+                  gap("jsx-spread", prop);
+                  continue;
+                }
+                add(objectPropertyName(prop, bindings));
+              }
+            }
+          }
+        }
+
+        if (
+          ts.isBinaryExpression(node)
+          && assignmentOperator(node.operatorToken.kind)
+        ) {
+          const name = datasetAttributeName(node.left, bindings);
+          if (name === "<dynamic>") gap("computed-dataset", node.left);
+          else add(name);
+        }
+
+        if (ts.isJsxAttribute(node) && ts.isIdentifier(node.name)) add(node.name.text);
+        if (ts.isJsxSpreadAttribute(node)) gap("jsx-spread", node);
+        node.forEachChild(visit);
+      }
+      visit(sourceFile);
+    }
+  } finally {
+    snapshot?.dispose();
+    api.close();
+  }
+  return {
+    members: [...members].sort(),
+    dynamic: [...dynamic].sort(),
+  };
+}
+
 /* ── 실행 ─────────────────────────────────────────────────────────── */
 
 const { repoRoot: root } = parseArgs(process.argv.slice(2));
+
+const dataAttrs = jsPlantedDataAttrs(root);
 
 const payload = {
   js_template_ids: jsTemplateIds(root, PRODUCT_SCOPE, { excludeSelftest: true }),
@@ -278,6 +511,8 @@ const payload = {
     excludeSelftest: true,
   }),
   selftest_surface: selftestSurface(root),
+  js_planted_data_attrs: dataAttrs.members,
+  js_data_attr_dynamic: dataAttrs.dynamic,
 };
 
 process.stdout.write(`${JSON.stringify(payload, null, 1)}\n`);

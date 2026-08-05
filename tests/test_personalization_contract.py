@@ -427,4 +427,9 @@ def test_forced_colors_preserves_three_owner_signals() -> None:
         (".wc-render.seg-fill.own-hand", "Mark"),
         (".wc-render.seg-fill.own-man", "LinkText"),
     ):
-        assert selector in block and color in block.split(selector, 1)[1].split("}", 1)[0]
+        rule = block.split(selector, 1)[1].split("}", 1)[0]
+        assert selector in block and f"border-bottom:3pxsolid{color}" in rule
+        assert "box-shadow" not in rule, (
+            "forced-colors는 box-shadow를 계산값 none으로 제거합니다 — 실렌더가 보존하는 "
+            "border-bottom 시스템색 표지를 써야 합니다."
+        )
