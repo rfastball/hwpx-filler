@@ -32,9 +32,9 @@ schema = 1
 # 이 원장을 실측한 기준. 재고정 v2 가 `d508724 → 8fcc30e` 무드리프트를 확인했고(frontend/ 무변경)
 # 계측은 그 위에서 다시 돌렸다. 재고정 v3(R3-01 #410, base `5895029`)은 overlay 이관을 따라
 # dom_static(골격 4 이전)·state_js_module·subscription 두 축·계측 6 항을 다시 실측했다.
-# 재고정 v5(R3-03 #412, base `15d3444`)는 JS/TS가 생산하는 data-* 이름을 AST 축으로 편입해
-# `js_planted_data_attrs` 명시 제외를 은퇴시켰다. 다른 기존 축의 값은 같은 base에서 재실측했다.
-baseline_sha = "15d3444a256057f95b6ea6fcedd31b562a03f28d"
+# 재고정 v6(#491, base `a6f21a3`)은 확장자 열거를 폐기하고 정적 폐포 계약의 non-code 감산을
+# 공유한다. TS/TSX state·DOM·listener·lifecycle 전수가 처음 같은 분모에 들어왔다.
+baseline_sha = "a6f21a3df6a6624eeb57eea94aebd46cfe034d80"
 
 # 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
 scope_statement = """
@@ -52,11 +52,20 @@ repo_wide_metrics = []
 # 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
 unoccupied_classifications = ["host"]
 
+[[cross_axis_overlap]]
+member = "frontend/src/runtime/adapter.ts:94"
+axes = ["lifecycle_hook", "subscription_listener"]
+reason = "R2 typed runtime의 pywebviewready 부착은 리스너 사이트이자 ready 수명주기 훅이다."
+
+[[cross_axis_overlap]]
+member = "frontend/src/shell/host.ts:77"
+axes = ["lifecycle_hook", "subscription_listener"]
+reason = "R3 ShellHost의 pywebviewready 부착은 리스너 사이트이자 셸 부팅 수명주기 훅이다."
+
 # 물리 사이트 하나가 성격이 둘이라 **두 축에 함께 드는** 자리. 축별 폐포는 각각 닫히지만 축을
 # 가로질러 세면 그만큼 겹친다 — 「측정 노드 합계」를 물리 사이트 수로 읽지 말라는 뜻이다.
-# R3-02 재고정: 유일 표본이던 부팅 훅(구 app.js:220 — 부착 사이트이자 수명주기 경계)이 React
-# ShellHost(src/shell/host.ts — `.ts` 라 두 축 모두 scope 밖)로 이양돼 오늘 실측 겹침은 0이다.
-# 빈 목록도 측정 유도값이다 — 게이트가 매번 재유도해 선언과 대조한다.
+# #491 재고정: runtime adapter와 ShellHost의 pywebviewready 부착 2곳이 각각 listener이자
+# lifecycle hook이다. 머리말 cross_axis_overlap 두 행을 게이트가 실측에서 매번 재유도한다.
 
 # ── 폐포에서 명시 제외하는 축 ─────────────────────────────────────────────
 # 「안 센 것」을 데이터로 적는다. 조용한 유예가 아니라 **소리 나는 제외**여야 「미분류 0」이
@@ -103,6 +112,23 @@ current = 1696
 files = 10
 judgment = "오늘 10파일 1,696줄(R3-01 이 overlay.css 에 #reactOverlayHost 호스트 규칙 4줄을 더했다). 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
+[[excluded_axes]]
+axis = "frontend_static_assets"
+reason = """
+정적 폐포 계약이 코드 술어에서 빼는 SVG·라이선스 TXT·WOFF2 세 파일. CSS는 별도 제외 축,
+HTML은 dom_static이 소유하므로 이 행은 나머지 비코드 자산만 설명한다. 감산 목록에 새 형식이
+생기거나 자산 파일이 늘면 파일 수가 붉어 조용한 유예가 되지 않는다.
+"""
+owner = "#491"
+covers = ["frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+[excluded_axes.size]
+probe = { kind = "regex", pattern = "\\A", flavor = "python-re", granularity = "per-occurrence" }
+scope = ["frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "UTF-8로 읽히는 정적 자산 파일 1개 = 1. 바이너리 WOFF2까지 포함한 전수는 `files`가 별도로 고정한다."
+current = 2
+files = 3
+judgment = "SVG 1 + 라이선스 TXT 1은 내용 프로브 2, WOFF2 1을 합친 면제 파일 전수는 3. 어느 형식이 늘어도 파일 수가 붉는다."
+
 # ── 추출기 레지스트리 ────────────────────────────────────────────────────
 # `backing` 은 「이 값이 얼마나 믿을 만한가」를 이름이 아니라 종류로 말한다. 구현은
 # `scripts/check_react_ownership_inventory.py` 의 EXTRACTORS 가 소유하고, 그쪽이 scope 를
@@ -118,7 +144,7 @@ implementation = "html.parser(stdlib) — 시작태그의 data-* 속성 이름"
 
 [extractors.js_template_ids]
 backing = "ast"
-implementation = "vite(oxc) parseAst — 템플릿 리터럴 quasi·문자열 리터럴 + 앵커 정규식 (?<![\\w-])id=\""
+implementation = "Vite(oxc) JS 문자열/템플릿 + TypeScript 7 TS/TSX 문자열·createElement/el id prop·JSX id 속성"
 
 [extractors.js_planted_data_attrs]
 backing = "ast"
@@ -130,7 +156,7 @@ implementation = "같은 AST 순회의 동적 속성명 사각 — computed data
 
 [extractors.js_module_state]
 backing = "ast"
-implementation = "vite(oxc) parseAst — Program 최상위 ∪ export 된 최상위 함수 body 최상위의 let/var"
+implementation = "Vite(oxc) JS + TypeScript 7 TS/TSX — Program 최상위 ∪ export 된 최상위 함수 body 최상위의 let/var"
 
 [extractors.js_nonexported_fn_state]
 backing = "ast"
@@ -193,6 +219,14 @@ implementation = "gui/ 아래 *_state.py 이름 규약 밖의 모듈"
 backing = "regex-convention"
 implementation = "두 형태 — 주석 안 일치 · 대괄호 표기 호출. 관례 정규식이 함께 세거나 못 보는 것"
 
+[extractors.react_direct_dom_mutations]
+backing = "ast"
+implementation = "TypeScript 7 AST — 완료된 overlay/shell host의 property createElement·createElementNS·insertAdjacentHTML 호출과 innerHTML/outerHTML 대입"
+
+[extractors.react_listener_cleanup_gaps]
+backing = "ast"
+implementation = "TypeScript 7 AST — 완료된 overlay/shell host의 receiver·event·handler·options별 add/removeEventListener 다중집합 차"
+
 # ── 축 선언 ──────────────────────────────────────────────────────────────
 
 [axes.dom_static]
@@ -237,14 +271,14 @@ judgment = "일곱 다 CSS 클래스 이름 또는 주석 산문이다(data-reac
 
 [axes.dom_js_data_attr]
 predicate = { kind = "node_extractor", name = "js_planted_data_attrs" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/js/**/*.ts", "frontend/js/**/*.tsx", "frontend/src/**/*.js", "frontend/src/**/*.mjs", "frontend/src/**/*.ts", "frontend/src/**/*.tsx"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "제품 JS/TS가 DOM에 생산하는 data-* 이름×파일 1쌍 = 1노드(`path:data-name`). selector·getAttribute·dataset read는 생산자가 아니다."
 [axes.dom_js_data_attr.blind_spot]
 description = "정적으로 확정할 수 없는 속성명. computed dataset·동적 setAttribute 첫 인자·템플릿에서 보간되는 속성명·JSX/object spread를 같은 AST 순회가 별도 계상한다."
 probe = { kind = "node_extractor", name = "js_data_attr_dynamic" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/js/**/*.ts", "frontend/js/**/*.tsx", "frontend/src/**/*.js", "frontend/src/**/*.mjs", "frontend/src/**/*.ts", "frontend/src/**/*.tsx"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "동적 생산 지점 1곳 = 1. 이름을 확정할 수 없으므로 폐포 멤버가 아니라 시끄러운 사각 크기로 센다."
 current = 0
 members = []
@@ -252,10 +286,10 @@ judgment = "오늘 동적 속성명 생산은 0. 정적 생산자는 15파일 86
 
 [axes.dom_js_site]
 predicate = { kind = "node_extractor", name = "js_template_ids" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
-JS 가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아니라 사이트다 — 완전 동적
+제품 코드가 만드는 id 속성 **사이트** 1개 = 1노드. 단위는 이름이 아니라 사이트다 — 완전 동적
 3건은 이름이 소스에 없으므로 이름을 단위로 잡으면 그 셋이 영영 미분류이거나 조용히 빠진다.
 """
 [axes.dom_js_site.blind_spot]
@@ -270,8 +304,8 @@ AST 가 리터럴 노드를 고르고 **속성 판독은 앵커 정규식**이�
 형태를 늘리고 설명을 안 고치는 순간 원장이 자기가 기술하는 추출기와 어긋나기 때문이다.
 """
 probe = { kind = "extractor", name = "js_id_attr_anchor_gaps" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "알려진 일곱 형태 중 하나의 일치 1건 = 1."
 known_forms = [
   "other-attr-suffix",
@@ -285,14 +319,14 @@ known_forms = [
 current = 0
 members = []
 judgment = """
-양성 대조는 축의 값 자신이다 — `id=\"` 무앵커 출현이 26 이고 축의 사이트도 26 이라
-오늘은 앵커 유무가 값을 바꾸지 않는다. 그래도 앵커한다.
+legacy 마크업 문자열의 양성 대조 `id=\"`는 26이다. TS React object prop 22는 다른 AST
+형태라 그 alias에 들지 않고, 주 추출기가 두 형태를 합쳐 48사이트를 센다.
 """
 
 [axes.state_js_module]
 predicate = { kind = "node_extractor", name = "js_module_state" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
 let/var 선언자 1개 = 1노드(구조분해는 바인딩 이름을 전부 편다).
 스코프 = Program 최상위 ∪ export 된 최상위 함수(구성 1회 팩토리)의 body 최상위.
@@ -306,8 +340,8 @@ description = """
 질문이었다.
 """
 probe = { kind = "node_extractor", name = "js_nonexported_fn_state" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
 current = 16
 members = [
@@ -380,8 +414,8 @@ judgment = "아홉 다 여러 표면이 공유하는 단일 출처 상수·값 �
 
 [axes.subscription_listener]
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
 부착 호출 1건 = 1노드. 좌표는 `파일:줄`이고 한 줄에 둘이면 `#2` 가 붙는다 — `per-line` 은
 줄이 아니라 **줄 안의 일치**를 세므로 unit 과 어긋나지 않는다(줄을 세는 것은 `per-matching-line`).
@@ -393,27 +427,28 @@ description = """
 """
 probe = { kind = "extractor", name = "listener_convention_gaps" }
 known_forms = ["comment", "bracket-call"]
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "주석 안 일치 또는 대괄호 표기 호출 1건 = 1."
 current = 0
 members = []
-judgment = "0이므로 오늘의 119는 전부 실호출이다."
+judgment = "0이므로 오늘의 108은 전부 실호출이다."
 
 [axes.subscription_release]
 predicate = { kind = "regex", pattern = "\\.removeEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "해제 호출 1건 = 1노드."
 [axes.subscription_release.blind_spot]
 description = """
 `AbortController`·`{ signal }` 로 하는 해제는 removeEventListener 를 부르지 않으므로 이 술어가
-못 본다. 오늘 0건이다 — 즉 오늘의 비대칭 107은 진짜 비대칭이고, useEffect cleanup 에 대응할
-원본이 존재하지 않는다.
+못 본다. 오늘 0건이다. 전체 attach/release 차는 legacy 영구 부착과 once 리스너를 포함하므로,
+완료 R3 host의 실제 대칭은 별도 `react-listener-cleanup-gaps = 0`이 진다. 그 계측은 abort
+수명주기를 별도로 증명하지 않는 한 signal/once도 면제하지 않고 명시 remove를 요구한다.
 """
 probe = { kind = "regex", pattern = "AbortController|\\{\\s*signal", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "signal 기반 해제 형태 1건 = 1."
 current = 0
 members = []
@@ -447,26 +482,24 @@ judgment = "0이므로 구독 수명 = 화면 수명이라는 오늘의 전제�
 
 [axes.lifecycle_factory]
 predicate = { kind = "regex", pattern = "^export function ", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
-최상위 `export function` 선언 1건 = 1노드. **「팩토리 18개」가 아니다** — 술어가 내는 18 안에
-합성 루트가 1회 구성하는 팩토리 16(`create*`)과 성격이 다른 둘(잎 이스케이퍼 `escHtml` ·
-합성 루트 자신 `bootProduct`)이 함께 있다. 그 둘은 false_positive 가 이름으로 든다.
-이 이름을 그대로 두면 R2·R3 슬라이스가 `esc.js` 를 「팩토리」로 물려받는다.
+최상위 `export function` 선언 1건 = 1노드. **「팩토리 34개」가 아니다** — component·attach·
+bind/query API도 함께 들며, `create`로 시작하지 않는 10은 false_positive가 이름으로 든다.
 """
 [axes.lifecycle_factory.blind_spot]
 description = """
 이 술어가 **못 보는** 방향. `export const X = { … }` 서비스 네임스페이스 객체와
-`export async function` · `export default function` 세 형태를 센다. 오늘 11 = const 11 + 나머지 0.
-열하나는 전부 정적 객체라 「구성 1회」 계약의 대상이 아니지만, React 이관에서는 팩토리와
+`export async function` · `export default function` 세 형태를 센다. 오늘 29 = const 29 + 나머지 0.
+스물아홉은 전부 정적 객체라 「구성 1회」 계약의 대상이 아니지만, React 이관에서는 팩토리와
 다른 절취선을 요구한다.
 """
 probe = { kind = "regex", pattern = "^export const |^export async function |^export default function ", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "세 형태 중 하나의 export 선언 1건 = 1."
-current = 11
+current = 29
 members = [
   "frontend/js/copy.js:5",
   "frontend/js/grouplist.js:138",
@@ -478,9 +511,27 @@ members = [
   "frontend/js/segview.js:42",
   "frontend/js/surface_sheet.js:82",
   "frontend/js/undo_toast.js:24",
+  "frontend/src/contract/contract.gen.ts:10",
+  "frontend/src/contract/contract.gen.ts:12",
+  "frontend/src/contract/contract.gen.ts:15",
+  "frontend/src/contract/contract.gen.ts:199",
+  "frontend/src/contract/contract.gen.ts:229",
+  "frontend/src/contract/contract.gen.ts:27",
+  "frontend/src/contract/contract.gen.ts:44",
+  "frontend/src/contract/contract.gen.ts:55",
+  "frontend/src/contract/contract.gen.ts:57",
+  "frontend/src/contract/contract.gen.ts:60",
+  "frontend/src/overlay/instance.ts:23",
   "frontend/src/product_api.js:41",
+  "frontend/src/react/boot.ts:17",
+  "frontend/src/react/boot.ts:22",
+  "frontend/src/react/root.ts:37",
+  "frontend/src/shell/nav.ts:44",
+  "frontend/src/shell/nav.ts:51",
+  "frontend/src/shell/nav.ts:59",
+  "frontend/src/state/store.ts:45",
 ]
-judgment = "열하나는 Copy·Guard·SegView·Intent·Modal·Popover·Preserve·GroupList·SurfaceSheet·UndoToast·PRODUCT_ERROR_CODES 다."
+judgment = "legacy namespace 11 + 생성 계약/React/R3 상태 상수 18. 구성 함수와 다른 절취선을 별도 크기로 고정한다."
 [axes.lifecycle_factory.false_positive]
 description = """
 이 술어가 **잘못 보는** 방향 — `export function` 이지만 「구성 1회 팩토리」가 아닌 것.
@@ -489,17 +540,28 @@ description = """
 「N-04 잎」 군). `bootProduct` 는 구성 대상이 아니라 구성하는 주체다.
 """
 probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
-current = 2
-members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:115"]
-judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
+current = 10
+members = [
+  "frontend/js/esc.js:10",
+  "frontend/src/bootstrap.js:115",
+  "frontend/src/overlay/host.ts:491",
+  "frontend/src/overlay/instance.ts:110",
+  "frontend/src/overlay/instance.ts:121",
+  "frontend/src/react/boot.ts:46",
+  "frontend/src/react/use_screen_snapshot.ts:26",
+  "frontend/src/react/use_screen_snapshot.ts:37",
+  "frontend/src/shell/host.ts:66",
+  "frontend/src/shell/host.ts:89",
+]
+judgment = "create*가 아닌 export function 10은 합성 루트·잎·component·attach/bind/query API다. 정확한 이름을 오검 데이터로 든다."
 
 [axes.lifecycle_hook]
 predicate = { kind = "regex", pattern = "Preserve\\.around\\s*\\(|function leaveTo\\s*\\(|owner\\.leaveTo\\s*\\(|const IMMERSIVE\\s*=|addEventListener\\(\"pywebviewready\"", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
 React 이관에서 useEffect·route guard 로 재설계될 수명주기 훅 다섯 형태의 사이트 1건 = 1노드:
 렌더 보존 래퍼 · 이탈 가드 정의 · 이탈 가드 위임 · 몰입 표면 목록 · 부팅 훅.
@@ -511,8 +573,8 @@ description = """
 R3-02 재고정으로 구 :109 에서 이사) 한 줄이다.
 """
 probe = { kind = "regex", pattern = "\\.leaveTo\\b", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`.leaveTo` 참조 1건 = 1."
 current = 2
 members = ["frontend/js/app.js:65", "frontend/js/app.js:65#2"]
@@ -527,8 +589,9 @@ judgment = "둘 다 app.js:65 의 존재 확인 + 호출이다. 화면 쪽 객�
 id = "innerhtml-assignment"
 value = 61
 predicate = { kind = "regex", pattern = "innerHTML\\s*=(?!=)", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/**/*.js"]
-unit = "대입 1건 = 1. 분모 = scope 의 모든 줄(주석 포함)."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "대입 1건 = 1. 분모 = 정적 폐포 계약에서 non-code와 selftest를 감산한 제품 코드 전수(주석 포함)."
 note = "제품의 DOM 생성은 사실상 한 형태다 — $(\"안정 id\").innerHTML = 템플릿 문자열 전체 재구성. 이것이 preserve.js 의 존재 이유이자 React 이관의 주 절취선이다."
 [[metric.aliases]]
 value = 71
@@ -548,12 +611,30 @@ scope = ["frontend/js/**/*.js"]
 unit = "줄 끝 대입 11건을 놓친다 — `[^=]` 가 줄 뒤에 문자를 요구한다. 셸에서 가장 잘 나오는 오답이므로 원장이 든다."
 
 [[metric]]
+id = "react-direct-dom-mutations"
+value = 0
+predicate = { kind = "node_extractor", name = "react_direct_dom_mutations" }
+scope = ["frontend/src/overlay/**/*", "frontend/src/shell/**/*"]
+scope_excluded = ["frontend/src/overlay/**/*.css", "frontend/src/overlay/**/*.html", "frontend/src/overlay/**/*.svg", "frontend/src/overlay/**/*.txt", "frontend/src/overlay/**/*.woff2", "frontend/src/shell/**/*.css", "frontend/src/shell/**/*.html", "frontend/src/shell/**/*.svg", "frontend/src/shell/**/*.txt", "frontend/src/shell/**/*.woff2"]
+unit = "완료된 R3 React host의 직접 DOM 생성/HTML 대입 사이트 1곳 = 1. bare React createElement는 DOM API 호출이 아니다."
+note = "R3-99 F2 통제 변이 cd74cdf(document.createElement)와 innerHTML 재유입을 0 기준선에서 거절한다."
+
+[[metric]]
+id = "react-listener-cleanup-gaps"
+value = 0
+predicate = { kind = "node_extractor", name = "react_listener_cleanup_gaps" }
+scope = ["frontend/src/overlay/**/*", "frontend/src/shell/**/*"]
+scope_excluded = ["frontend/src/overlay/**/*.css", "frontend/src/overlay/**/*.html", "frontend/src/overlay/**/*.svg", "frontend/src/overlay/**/*.txt", "frontend/src/overlay/**/*.woff2", "frontend/src/shell/**/*.css", "frontend/src/shell/**/*.html", "frontend/src/shell/**/*.svg", "frontend/src/shell/**/*.txt", "frontend/src/shell/**/*.woff2"]
+unit = "symbol/provenance가 같은 receiver·handler와 event·options의 attach/release 다중집합 잔차 1건 = 1. ephemeral callback과 증명 없는 once/signal은 면제하지 않는다."
+note = "R3-99 F1 통제 변이 710459c(cleanup 없는 window listener)를 0 기준선에서 거절한다."
+
+[[metric]]
 id = "mutable-module-state"
-value = 45
+value = 63
 predicate = { kind = "derived", axis = "state_js_module" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다. R3-01 재고정: modal.js pendingDialog·undo_toast undo/timer 셋이 엔진·host(.ts — 이 축의 scope 밖)로 이양돼 50 → 47. R3-02 재고정: app.js closePromptPending·routingReady 가 셸 상태기계(src/shell/nav.ts — 같은 .ts 사각)로 이양돼 47 → 45."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "노드 폐포의 원소 수. #491 재고정으로 JS 45 + TS 18을 같은 감산형 분모에서 센다."
 [[metric.aliases]]
 value = 39
 predicate = { kind = "derived", axis = "state_js_module" }
@@ -586,11 +667,11 @@ unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센
 
 [[metric]]
 id = "listener-attach-sites"
-value = 98
+value = 108
 predicate = { kind = "derived", axis = "subscription_listener" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. R3-01 재고정: popover 모듈-평가 8·undo_toast 2·modal 4 가 엔진 배선·host(.ts)로 이양되고 bootstrap 구성 시 부착 1 이 생겨 119 → 105. R3-02 재고정: 셸 리스너 7 이 서술 + ShellHost 부착(src/shell/host.ts — .ts)으로 이양돼 105 → 98."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "노드 폐포의 원소 수. JS 98 + TS attach 10(R2 runtime 1 · R3 overlay 7 · shell 2)."
 [[metric.aliases]]
 value = 102
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
@@ -599,11 +680,11 @@ unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 
 
 [[metric]]
 id = "listener-release-sites"
-value = 7
+value = 16
 predicate = { kind = "derived", axis = "subscription_release" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 부착 98 과의 차 91 이 이 축의 사실이다(R3-01 재고정: modal.js 해제 5 가 host 컨트롤러로 이양 · R3-02 재고정: 부착 쪽이 7 줄어 차가 98 → 91)."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "노드 폐포의 원소 수. JS 7 + 완료 R3 host TS release 9."
 
 [[metric]]
 id = "dom-stable-ids"
@@ -640,16 +721,16 @@ unit = "그중 id 가 없어 dom_static 232 **밖**인 요소 1개 = 1. 나머�
 
 [[metric]]
 id = "js-generated-id-sites"
-value = 26
+value = 48
 predicate = { kind = "derived", axis = "dom_js_site" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
-unit = "사이트 1개 = 1. 정적 완전 id 8 + 동적 접두 가족 15 + 접두 없는 완전 동적 3."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "사이트 1개 = 1. legacy 마크업 문자열 26 + React overlay object prop 22."
 [[metric.aliases]]
 value = 26
 predicate = { kind = "regex", pattern = "id=\"", flavor = "python-re", granularity = "per-occurrence" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "앵커 없는 양성 대조. 오늘 앵커 유무가 값을 바꾸지 않음을 이 alias 가 매번 재확인한다."
 
 [[metric]]
@@ -696,14 +777,13 @@ unit = "selftest 축 포함."
 
 [[metric]]
 id = "export-function-declarations"
-value = 18
+value = 34
 predicate = { kind = "derived", axis = "lifecycle_factory" }
-scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
-scope_excluded = ["frontend/src/selftest/**"]
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = """
-노드 폐포의 원소 수. 그중 **16이 합성 루트가 정확히 한 번 구성하는 팩토리**(`create*`)이고
-둘은 성격이 다르다(axes.lifecycle_factory.false_positive 가 이름으로 든다).
-「18개 팩토리」로 읽으면 술어가 자기 unit 을 못 내는 자리로 되돌아간다.
+노드 폐포의 원소 수. JS 18 + TS 16. `create*` 팩토리와 component·attach·bind/query API가
+함께 드는 선언 축이며, 성격이 다른 10은 false_positive가 이름으로 든다.
 """
 
 # ── 판정 요구 항목 ───────────────────────────────────────────────────────
@@ -1329,7 +1409,7 @@ classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
 
-# ═══ dom_js_site — JS 가 템플릿으로 만드는 id 사이트 26. **단위는 이름이 아니라
+# ═══ dom_js_site — 제품 코드가 만드는 id 사이트 48(JS 26 + TS 22). **단위는 이름이 아니라
 #     사이트**다 — 완전 동적 3건은 이름이 소스에 없어 이름을 단위로 잡으면 영영 빠진다.
 
 [[node]]
@@ -1438,7 +1518,41 @@ classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
 
-# ═══ state_js_module — 모듈 스코프 가변 상태 50(frontend/js 44 + src 제품분 6).
+[[node]]
+id = "dom-js/react-overlay-host"
+kind = "dom"
+axis = "dom_js_site"
+selector = { kind = "exact", members = [
+  "frontend/src/overlay/host.ts:287:static:confirmModal",
+  "frontend/src/overlay/host.ts:292:static:confirmModalTitle",
+  "frontend/src/overlay/host.ts:293:static:confirmModalBody",
+  "frontend/src/overlay/host.ts:295:static:confirmModalCancel",
+  "frontend/src/overlay/host.ts:296:static:confirmModalOk",
+  "frontend/src/overlay/host.ts:298:static:chooseModal",
+  "frontend/src/overlay/host.ts:303:static:chooseModalTitle",
+  "frontend/src/overlay/host.ts:304:static:chooseModalBody",
+  "frontend/src/overlay/host.ts:306:static:chooseModalCancel",
+  "frontend/src/overlay/host.ts:307:static:chooseModalAlt",
+  "frontend/src/overlay/host.ts:308:static:chooseModalOk",
+  "frontend/src/overlay/host.ts:310:static:promptModal",
+  "frontend/src/overlay/host.ts:315:static:promptModalTitle",
+  "frontend/src/overlay/host.ts:316:static:promptModalBody",
+  "frontend/src/overlay/host.ts:317:static:promptModalInput",
+  "frontend/src/overlay/host.ts:319:static:promptModalError",
+  "frontend/src/overlay/host.ts:323:static:promptModalCancel",
+  "frontend/src/overlay/host.ts:324:static:promptModalOk",
+  "frontend/src/overlay/host.ts:326:static:undoToast",
+  "frontend/src/overlay/host.ts:329:static:undoToastText",
+  "frontend/src/overlay/host.ts:330:static:undoToastBtn",
+  "frontend/src/overlay/host.ts:525:static:reactOverlayHost",
+] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 287, anchor = "id: \"confirmModal\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/js/overlay_host.test.js"]
+note = "R3-01에서 정적 overlay 골격이 React createElement 소유로 이동한 22사이트. #491이 TS 사각을 닫아 처음 분모에 편입했다."
+
+# ═══ state_js_module — 모듈 스코프 가변 상태 63(JS 45 + TS 18).
 #     AST 인구조사다. 2칸 들여쓰기 관례로 세면 거짓양성 12·거짓음성 4가 난다.
 
 [[node]]
@@ -1557,9 +1671,7 @@ classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
 
-# (구 state/app-shell — closePromptPending·routingReady — 는 R3-02 재고정에서 행째 소멸:
-#  두 상태가 셸 상태기계(src/shell/nav.ts — `.ts` 라 이 축의 scope 밖, #491 사각)의 폐쇄
-#  변수로 이양됐다. app.js 에 모듈 가변 상태는 남지 않았다.)
+# (구 state/app-shell은 app.js에서 소멸했고, 후계 nav.ts 상태 4는 state/shell-machine이 든다.)
 
 [[node]]
 id = "state/theme"
@@ -1587,12 +1699,18 @@ kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = [
   "frontend/js/popover.js:9 suppressNextClick",
+  "frontend/src/overlay/engine.ts:79 pendingDialog",
+  "frontend/src/overlay/engine.ts:80 nextTicket",
+  "frontend/src/overlay/host.ts:363 undoAction",
+  "frontend/src/overlay/host.ts:364 toastTimer",
+  "frontend/src/overlay/instance.ts:107 dialogHost",
+  "frontend/src/overlay/instance.ts:41 keydownDocument",
 ] }
 evidence = [{ file = "frontend/js/popover.js", line = 9, anchor = "suppressNextClick", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
-note = "R3-01 재고정: modal.js pendingDialog(직렬화 불리언 — 잔존 금지 계약)와 undo_toast 의 undo/timer 는 엔진(src/overlay/engine.ts)·host 컨트롤러(src/overlay/host.ts)로 이양돼 이 축의 scope(.js) 밖이다. 남는 것은 popover 의 클릭 소비 후보 슬롯 하나."
+note = "R3-01 이양분 6과 legacy popover 슬롯 1. #491 감산형 scope에서 엔진·host 상태가 더 이상 사각이 아니다."
 
 [[node]]
 id = "state/boot-composition"
@@ -1604,12 +1722,36 @@ selector = { kind = "exact", members = [
   "frontend/src/bootstrap.js:149 JobScreen",
   "frontend/src/bootstrap.js:150 WorkbenchScreen",
   "frontend/src/bootstrap.js:151 Nav",
+  "frontend/src/react/boot.ts:32 controller",
+  "frontend/src/react/boot.ts:39 currentStore",
+  "frontend/src/react/boot.ts:40 currentTarget",
+  "frontend/src/react/boot.ts:41 currentOverlay",
+  "frontend/src/react/boot.ts:42 currentShell",
+  "frontend/src/react/root.ts:42 root",
+  "frontend/src/react/root.ts:43 container",
+  "frontend/src/react/root.ts:44 committed",
 ] }
 evidence = [{ file = "frontend/src/bootstrap.js", line = 147, anchor = "LibraryScreen", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["none"]
-note = "구성 1회 팩토리 산물 5. React 단일 root 가 이 자리의 후계다."
+note = "legacy 구성 산물 5와 R2-01 React boot/root 수명 상태 8. TS 상태도 같은 분모에서 R2-01 소유로 분류한다."
+
+[[node]]
+id = "state/shell-machine"
+kind = "state"
+axis = "state_js_module"
+selector = { kind = "exact", members = [
+  "frontend/src/shell/nav.ts:100 routingReady",
+  "frontend/src/shell/nav.ts:101 closePromptPending",
+  "frontend/src/shell/nav.ts:98 executor",
+  "frontend/src/shell/nav.ts:99 current",
+] }
+evidence = [{ file = "frontend/src/shell/nav.ts", line = 98, anchor = "let executor" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/js/shell_nav.test.js"]
+note = "app.js에서 이양된 셸 상태기계의 네 폐쇄 변수. #491 전에는 .ts 사각이었다."
 
 [[node]]
 id = "state/push-port"
@@ -1717,9 +1859,8 @@ call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다.
 contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외"
 test = "tests/test_pipeline_builder_state.py"
 
-# ═══ subscription_listener — 부착 사이트 105. 나머지 98은 부팅 1회 부착 후
-#     영구다. 즉 **useEffect cleanup 에 대응할 원본이 존재하지 않는다** — 그 부재
-#     자체가 이 축의 값이고, 공란으로 두면 R3/R4 가 신규와 승계를 못 가른다.
+# ═══ subscription_listener — 부착 사이트 108. R3 host attach 9와 R2 runtime 1까지
+#     감산형 제품 코드 분모에 든다. 완료 host의 대칭은 0-잔차 계측이 별도로 지킨다.
 
 [[node]]
 id = "subscription/boot-attachments"
@@ -1732,7 +1873,51 @@ evidence = [{ file = "frontend/src/bootstrap.js", line = 319, anchor = "addEvent
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/js/n05_foundation.test.js"]
-note = "구 `subscription/module-eval-attachments`(popover 8 + undo_toast 1, 모듈 평가 부착)의 후계 — R3-01 이 부착을 `bootProduct` 구성 시 1 사이트(부착 명세 루프)로 이양했다(개정 10). 모달 keydown 부착/해제와 dismissal 명세 자체는 엔진 배선(src/overlay/instance.ts)·popover.js 가 소유하고, 다이얼로그·토스트 내부 리스너는 React host 컨트롤러(src/overlay/host.ts — .ts 라 이 축의 scope 밖, READY 기록의 #490 인접 사각)가 소유한다."
+note = "구 모듈-평가 부착의 후계인 bootProduct 명세 루프 1사이트. TS 집행 사이트는 아래 R2/R3 노드가 별도로 소유한다."
+
+[[node]]
+id = "subscription/listener/r2-runtime-adapter"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = ["frontend/src/runtime/adapter.ts:94"] }
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "addEventListener(\"pywebviewready\"" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["tests/js/runtime_client.test.js"]
+note = "once:true 자동 해제 리스너. lifecycle_hook과의 의도된 교차 계상은 머리말 데이터가 든다."
+
+[[node]]
+id = "subscription/listener/react-overlay-host"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/src/overlay/host.ts:122",
+  "frontend/src/overlay/host.ts:244",
+  "frontend/src/overlay/host.ts:245",
+  "frontend/src/overlay/host.ts:246",
+  "frontend/src/overlay/host.ts:247",
+  "frontend/src/overlay/host.ts:385",
+  "frontend/src/overlay/instance.ts:66",
+] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 122, anchor = "addEventListener(\"transitionend\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/js/overlay_host.test.js", "tests/js/overlay_engine.test.js"]
+note = "R3 overlay 엔진 배선·promise 버튼·토스트의 attach 7. react-listener-cleanup-gaps가 대응 release를 별도로 0 잔차로 센다."
+
+[[node]]
+id = "subscription/listener/react-shell-host"
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = [
+  "frontend/src/shell/host.ts:68",
+  "frontend/src/shell/host.ts:77",
+] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 68, anchor = "addEventListener(attachment.type" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
+note = "서술 attachments 루프와 pywebviewready 부착. 반환 cleanup의 두 release와 다중집합으로 대칭이다."
 
 [[node]]
 id = "subscription/listener/job-run"
@@ -1924,7 +2109,7 @@ evidence = [{ file = "frontend/js/app.js", line = 187, anchor = "addEventListene
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
-note = "R3-02 재고정: 셸 리스너 7(백스톱 unhandledrejection·nav 클릭 위임·fontScale/theme 토글·라벨 동기 2·pywebviewready 부팅 훅)은 app.js 가 **서술**(attachments)로 캡처하고 부착/해제는 React ShellHost(src/shell/host.ts — `.ts` 라 이 축의 scope 밖, #491 사각)가 진다. 남는 것은 스플리터 제스처 5(pointerdown·move/up/cancel·keydown — 제스처 단위 add/remove 대칭이라 adapter 잔존)."
+note = "app.js에 남는 것은 스플리터 제스처 5. 셸 attachments와 pywebviewready 집행은 subscription/listener/react-shell-host가 별도로 든다."
 
 [[node]]
 id = "subscription/listener/modal"
@@ -1967,9 +2152,8 @@ verification = ["none"]
 #  host 컨트롤러(src/overlay/host.ts)로 이양되며 소멸했다. 검증은 n05_foundation 의 토스트
 #  삼형제 + overlay_host.test.js 가 승계한다.)
 
-# ═══ subscription_release — 해제 사이트 7. 부착 105 대비 비대칭 98 이 이 축의
-#     사실이다. 해제 책임 = **없음(부팅 영구)** 을 명시 값으로 적는다. R3-01 이 세운
-#     해제-소유 수명주기(host effect cleanup·엔진 keydown 해제)는 .ts 라 이 축 밖이다.
+# ═══ subscription_release — 해제 사이트 16. R3 host release 9가 TS 사각에서 편입됐다.
+#     전체 attach와의 차이는 legacy 영구 부착 + R2 runtime once:true이다.
 
 [[node]]
 id = "subscription/release/app-splitter"
@@ -2020,6 +2204,39 @@ evidence = [{ file = "frontend/js/sheet_picker.js", line = 33, anchor = "removeE
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
+
+[[node]]
+id = "subscription/release/react-overlay-host"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = [
+  "frontend/src/overlay/host.ts:132",
+  "frontend/src/overlay/host.ts:191",
+  "frontend/src/overlay/host.ts:192",
+  "frontend/src/overlay/host.ts:193",
+  "frontend/src/overlay/host.ts:194",
+  "frontend/src/overlay/host.ts:483",
+  "frontend/src/overlay/instance.ts:68",
+] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 132, anchor = "removeEventListener(\"transitionend\"" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/js/overlay_host.test.js", "tests/js/overlay_engine.test.js"]
+note = "overlay attach 7의 대칭 release 7."
+
+[[node]]
+id = "subscription/release/react-shell-host"
+kind = "subscription"
+axis = "subscription_release"
+selector = { kind = "exact", members = [
+  "frontend/src/shell/host.ts:80",
+  "frontend/src/shell/host.ts:82",
+] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 80, anchor = "removeEventListener(\"pywebviewready\"" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
+note = "ShellHost 반환 cleanup의 두 release."
 
 # ═══ subscription_push — 푸시 구독 6. bridge 에 해제 API 가 없다(offPush·
 #     unsubscribe 각 0건) — 구독은 화면 수명과 같다는 오늘의 전제가 여기 산다.
@@ -2088,8 +2305,8 @@ classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
 
-# ═══ lifecycle_factory — 구성 1회 팩토리 18. 합성 루트가 **정확히 한 번** 구성해
-#     산물을 객체째 넘기는 현행 규율(L14)이 이 축의 값이다.
+# ═══ lifecycle_factory — 최상위 export function 34(JS 18 + TS 16). 구성 1회 팩토리와
+#     component·attach·bind/query API를 false_positive 데이터로 구분한다.
 
 [[node]]
 id = "lifecycle/factory/composition-root"
@@ -2101,6 +2318,77 @@ classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
 note = "합성 루트 **자신**이라 「구성 1회 팩토리」가 아니다. 14-팩토리 단언의 대상도 아니고, 이름을 부르는 맞는 게이트가 따로 있다."
+
+[[node]]
+id = "lifecycle/factory/r2-01-react"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/src/react/boot.ts:46",
+  "frontend/src/react/boundary.ts:95",
+  "frontend/src/react/root.ts:41",
+] }
+evidence = [{ file = "frontend/src/react/root.ts", line = 41, anchor = "export function createReactRootController" }]
+classification = "react"
+handoff_slice = "R2-01 #405"
+verification = ["tests/js/react_root.test.js", "tests/test_react_root_live.py"]
+
+[[node]]
+id = "lifecycle/factory/r2-02-runtime"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/src/runtime/adapter.ts:77",
+  "frontend/src/runtime/client.ts:54",
+] }
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 77, anchor = "export function createRuntimeAdapter" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["tests/js/runtime_client.test.js"]
+
+[[node]]
+id = "lifecycle/factory/r2-03-state"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/src/react/use_screen_snapshot.ts:26",
+  "frontend/src/react/use_screen_snapshot.ts:37",
+  "frontend/src/state/store.ts:69",
+] }
+evidence = [{ file = "frontend/src/state/store.ts", line = 69, anchor = "export function createSnapshotStore" }]
+classification = "react"
+handoff_slice = "R2-03 #407"
+verification = ["tests/js/state_store.test.js"]
+
+[[node]]
+id = "lifecycle/factory/r3-01-overlay"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/src/overlay/engine.ts:77",
+  "frontend/src/overlay/host.ts:353",
+  "frontend/src/overlay/host.ts:491",
+  "frontend/src/overlay/instance.ts:110",
+  "frontend/src/overlay/instance.ts:121",
+] }
+evidence = [{ file = "frontend/src/overlay/engine.ts", line = 77, anchor = "export function createOverlayEngine" }]
+classification = "react"
+handoff_slice = "R3-01 #410"
+verification = ["tests/js/overlay_engine.test.js", "tests/js/overlay_host.test.js"]
+
+[[node]]
+id = "lifecycle/factory/r3-02-shell"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = [
+  "frontend/src/shell/host.ts:66",
+  "frontend/src/shell/host.ts:89",
+  "frontend/src/shell/nav.ts:97",
+] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 66, anchor = "export function attachShell" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/js/n06_app_shell.test.js", "tests/js/shell_nav.test.js"]
 
 [[node]]
 id = "lifecycle/factory/bridge"
@@ -2243,7 +2531,27 @@ evidence = [{ file = "frontend/js/app.js", line = 65, anchor = "owner.leaveTo" }
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
-note = "R3-02 재고정: IMMERSIVE 목록 정본은 상태기계(src/shell/nav.ts), pywebviewready 부팅 훅 부착은 React ShellHost(src/shell/host.ts) — 둘 다 `.ts` 라 이 축의 scope 밖(#491 사각). 남는 것은 이탈 가드 위임 **집행**(delegateLeave 의 owner.leaveTo 호출) 1이다. 몰입 표면의 이탈 위임 판정은 화면별 특례가 아니라 상태기계의 목록이 진다."
+note = "이 행은 이탈 가드 위임 집행 1을 든다. ShellHost ready 훅은 lifecycle/shell-ready가 같은 감산형 분모에서 별도로 든다."
+
+[[node]]
+id = "lifecycle/runtime-ready"
+kind = "lifecycle"
+axis = "lifecycle_hook"
+selector = { kind = "exact", members = ["frontend/src/runtime/adapter.ts:94"] }
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "addEventListener(\"pywebviewready\"" }]
+classification = "react"
+handoff_slice = "R2-02 #406"
+verification = ["tests/js/runtime_client.test.js"]
+
+[[node]]
+id = "lifecycle/shell-ready"
+kind = "lifecycle"
+axis = "lifecycle_hook"
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:77"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 77, anchor = "addEventListener(\"pywebviewready\"" }]
+classification = "react"
+handoff_slice = "R3-02 #411"
+verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
 
 [[node]]
 id = "lifecycle/screen-leave-guard"

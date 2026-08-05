@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -139,22 +140,18 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
 #: 원장·게이트·이 표 **셋**이 함께 움직이고 그 diff 가 리뷰 표면에 뜬다.
 EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     "dom_data_attr": (8, "e0bd6cb1822fd50fefbda2c3fac621d5"),
-    "dom_js_data_attr": (80, "34434413efa1aeb4dd7a9779ad680252"),
-    "dom_js_site": (22, "21f6634bedf7f3777ec66d1b72991493"),
+    "dom_js_data_attr": (80, "d6c24f47a9f809b5e6f63ddd2b09e372"),
+    "dom_js_site": (46, "7ce48e5d41ae530e66a2156e113bb0bb"),
     "dom_static": (200, "a0de506720a9704065dde2bf17410d50"),
-    "lifecycle_factory": (16, "cf3701bfb0908f4d0582200ce8273918"),
-    "lifecycle_hook": (7, "05809936a7af41d071c9da1f786c0370"),
-    "state_js_module": (44, "1633eccf8b783f1d712a5b9e158a6ed5"),
+    "lifecycle_factory": (32, "f774587af230cf5222697cd0f0e0a050"),
+    "lifecycle_hook": (9, "1f090f972ecaf5c9e0a54796c6849437"),
+    "state_js_module": (61, "fef89b77255e04f0cf05d4b19e09c733"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
-    # R3-01(#410) 재고정 — 문서 리스너 소유 이양(popover 모듈-평가 8·undo_toast·modal 의
-    # 부착/해제가 엔진 배선·React host `.ts` 로 이동)에 따른 하한 인하. 지문은 불변(술어·scope
-    # 는 안 좁혔다 — 줄어든 것은 실측이다). R3-02(#411) 재고정 — 셸 리스너 7·부팅 훅이
-    # app.js 서술 + ShellHost 부착(`.ts`)으로 이양돼 subscription_listener·lifecycle_hook 이
-    # 함께 내렸다(같은 논리·같은 #491 사각).
-    "subscription_listener": (96, "2fc5bdf7415bc281524144a514e9ee28"),
+    # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
+    "subscription_listener": (106, "8064cf796b67e47a094e61c7362e4b5b"),
     "subscription_push": (5, "5201c1ab611d0f09a743bd1e6afced4a"),
-    "subscription_release": (6, "b6ac96d2f30c9122a679e7c1c01643b1"),
+    "subscription_release": (15, "08fce41a56c1108632cb8bfd7364912c"),
 }
 
 
@@ -178,13 +175,23 @@ def test_axis_contract_is_anchored_outside_the_gate() -> None:
 def test_product_tree_globs_are_gate_owned() -> None:
     """제품 트리의 **정의역**이 원장 밖에 있음을 못박는다."""
     assert gate.PRODUCT_TREE_GLOBS, "제품 트리 열거가 비었습니다 — 전수 피복이 공허해집니다."
-    assert all(
-        glob.startswith("frontend/") for glob in gate.PRODUCT_TREE_GLOBS
-    ), "제품 트리 글롭이 프런트 밖을 가리킵니다."
-    assert {".js", ".mjs", ".html", ".css"} == {
-        glob.rsplit(".", 1)[-1] and "." + glob.rsplit(".", 1)[-1]
-        for glob in gate.PRODUCT_TREE_GLOBS
-    }, "제품 트리 확장자 집합이 줄었습니다 — 확장자 하나가 전 축의 사각이 됩니다."
+    assert gate.PRODUCT_TREE_GLOBS == ("frontend/**/*",), (
+        "제품 트리는 확장자를 열거하지 않고 frontend 전수를 수집해야 합니다 — 새 .ts/.tsx 형식이 "
+        "축 밖에서 태어나면 안 됩니다."
+    )
+
+
+def test_product_code_scope_subtracts_the_static_closure_contract() -> None:
+    """코드 정의역은 형식 allowlist가 아니라 정적 폐포 계약의 non-code 감산이다."""
+    contract = json.loads(
+        (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+    )
+    expected = {
+        *(f"frontend/**/*{suffix}" for suffix in contract["non_code_suffixes"]),
+        "frontend/src/selftest/**",
+    }
+    assert gate.PRODUCT_CODE_SCOPE == ("frontend/**/*",)
+    assert set(gate.PRODUCT_CODE_EXCLUDED) == expected
 
 
 def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, Any]) -> None:
@@ -952,17 +959,172 @@ def test_m24b_lowering_every_floor_is_refused(monkeypatch: pytest.MonkeyPatch) -
         test_axis_contract_is_anchored_outside_the_gate()
 
 
-def test_file_outside_every_axis_is_refused(
+def test_new_product_code_file_is_collected_by_the_subtraction_scope(
     document: dict[str, Any], frontend_tree: Path, clone_source: Path
 ) -> None:
-    """전수 피복 — 제품 트리의 새 파일이 **어느 축에도 명시 제외에도** 안 들면 붉는다."""
+    """감산형 전수 — 새 제품 코드 파일은 확장자 allowlist 없이 기존 축의 실측에 든다."""
     module = clone_source / "widgets" / "card.js"
     module.parent.mkdir(parents=True, exist_ok=True)
     module.write_text("export const Card = {};\n", encoding="utf-8")
-    report = gate.check(document, frontend_tree, metrics=[])
-    assert not report.ok, "전 축 밖 신설 파일이 통과했습니다."
+    report = gate.check(document, frontend_tree, axes=["lifecycle_factory"], metrics=[])
+    assert not report.ok, "신설 제품 코드 파일이 감산형 축 밖에서 조용히 통과했습니다."
     text = _failures(report)
-    assert "덮이지 않음: frontend/widgets/card.js" in text, text
+    assert "frontend/widgets/card.js:1" in text and "사각이 움직였습니다" in text, text
+
+
+def test_ts_state_is_inside_the_inventory_definition(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+) -> None:
+    """R3-99 F1 — 완료 표면의 TypeScript 상태가 JS 전용 scope 밖으로 빠지지 않는다."""
+    target = clone_source / "src" / "shell" / "host.ts"
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\nlet __r3AuditState = 0;\n",
+        encoding="utf-8",
+    )
+    report = gate.check(document, frontend_tree, axes=["state_js_module"], metrics=[])
+    assert not report.ok, "ShellHost의 새 TypeScript 모듈 상태가 조용히 통과했습니다."
+    text = _failures(report)
+    assert "frontend/src/shell/host.ts" in text and "__r3AuditState" in text, text
+
+
+def test_tsx_generated_id_is_inside_the_dom_inventory(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+) -> None:
+    """R3-99 F2 — TSX가 생산하는 id도 dom_js_site의 측정 집합에 든다."""
+    target = clone_source / "src" / "shell" / "__r3_audit.tsx"
+    target.write_text(
+        "export function Audit(){ return <div id=\"r3AuditTsx\" />; }\n",
+        encoding="utf-8",
+    )
+    report = gate.check(document, frontend_tree, axes=["dom_js_site"], metrics=[])
+    assert not report.ok, "TSX가 생산한 id가 dom_js_site 밖에서 조용히 통과했습니다."
+    text = _failures(report)
+    assert "frontend/src/shell/__r3_audit.tsx" in text and "r3AuditTsx" in text, text
+
+
+@pytest.mark.parametrize(
+    ("suffix", "body", "state_name", "dom_id"),
+    [
+        (
+            ".jsx",
+            'let __r3JsxState = 0;\nexport default () => <div id="r3AuditJsx" />;\n',
+            "__r3JsxState",
+            "r3AuditJsx",
+        ),
+        (
+            ".mts",
+            'let __r3MtsState = 0;\nexport const markup = \'<div id="r3AuditMts"></div>\';\n',
+            "__r3MtsState",
+            "r3AuditMts",
+        ),
+    ],
+)
+def test_new_code_suffixes_enter_state_and_dom_axes(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+    suffix: str, body: str, state_name: str, dom_id: str,
+) -> None:
+    """감산 결과의 새 코드 접미사는 AST 축에 들어오거나 parser가 시끄럽게 실패해야 한다."""
+    target = clone_source / "src" / "shell" / f"__r3_suffix_audit{suffix}"
+    target.write_text(body, encoding="utf-8")
+
+    report = gate.check(
+        document,
+        frontend_tree,
+        axes=["state_js_module", "dom_js_site"],
+        metrics=[],
+    )
+
+    assert not report.ok, f"{suffix} 제품 코드가 state/dom 축 밖에서 조용히 통과했습니다."
+    text = _failures(report)
+    assert state_name in text and dom_id in text, text
+
+
+@pytest.mark.parametrize(
+    ("metric_id", "snippet", "needle"),
+    [
+        (
+            "react-direct-dom-mutations",
+            'document.createElement("div");',
+            "document.createElement",
+        ),
+        (
+            "react-direct-dom-mutations",
+            'document.body.innerHTML = "<div></div>";',
+            "innerHTML",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            'window.addEventListener("r3-audit-zombie", () => undefined);',
+            "r3-audit-zombie",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            'window.addEventListener("r3-audit-identity", () => undefined);\n'
+            'window.removeEventListener("r3-audit-identity", () => undefined);',
+            "r3-audit-identity",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            '{ const __r3Target = window; const __r3Handler = () => undefined; '
+            '__r3Target.addEventListener("r3-audit-shadow", __r3Handler); }\n'
+            '{ const __r3Target = window; const __r3Handler = () => undefined; '
+            '__r3Target.removeEventListener("r3-audit-shadow", __r3Handler); }',
+            "r3-audit-shadow",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            'const __r3SignalHandler = () => undefined;\n'
+            'window.addEventListener("r3-audit-signal", __r3SignalHandler, '
+            '{ signal: undefined });',
+            "r3-audit-signal",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            'const __r3OnceHandler = () => undefined;\n'
+            'window.addEventListener("r3-audit-once", __r3OnceHandler, { once: true });',
+            "r3-audit-once",
+        ),
+        (
+            "react-listener-cleanup-gaps",
+            'const __r3Controller = new AbortController();\n'
+            'const __r3AbortHandler = () => undefined;\n'
+            'window.addEventListener("r3-audit-abort", __r3AbortHandler, '
+            '{ signal: __r3Controller.signal });',
+            "r3-audit-abort",
+        ),
+        (
+            "react-direct-dom-mutations",
+            'const __r3BoundCreate = document.createElement.bind(document);\n'
+            '__r3BoundCreate("div");',
+            "document.createElement",
+        ),
+        (
+            "react-direct-dom-mutations",
+            'const { createElement: __r3DestructuredCreate } = document;\n'
+            '__r3DestructuredCreate("div");',
+            "document.createElement",
+        ),
+        (
+            "react-direct-dom-mutations",
+            'document.createElement.call(document, "div");',
+            "document.createElement",
+        ),
+    ],
+)
+def test_completed_react_host_negative_gates_reject_audit_mutants(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+    metric_id: str, snippet: str, needle: str,
+) -> None:
+    """R3-99 통제 변이 — React host의 직접 DOM과 미해제 리스너는 반드시 red다."""
+    target = clone_source / "src" / "shell" / "host.ts"
+    target.write_text(
+        target.read_text(encoding="utf-8") + f"\n{snippet}\n",
+        encoding="utf-8",
+    )
+    report = gate.check(document, frontend_tree, axes=[], metrics=[metric_id])
+    assert not report.ok, f"{metric_id} 통제 변이가 조용히 통과했습니다."
+    text = _failures(report)
+    assert metric_id in text and needle in text, text
 
 
 @pytest.mark.parametrize("mutation", ["ghost-member", "wrong-axes", "fabricated"])
@@ -1035,16 +1197,34 @@ def test_blind_spot_unit_is_required(mutable_document: dict[str, Any]) -> None:
     assert "unit" in _failures(report), _failures(report)
 
 
-def test_excluded_axis_size_block_cannot_be_deleted(mutable_document: dict[str, Any]) -> None:
+@pytest.mark.parametrize("axis_name", ["selftest_frontend_surface", "frontend_static_assets"])
+def test_excluded_axis_size_block_cannot_be_deleted(
+    mutable_document: dict[str, Any], axis_name: str,
+) -> None:
     """크기 블록을 지우면 「소리 나는 제외」가 조용한 유예로 되돌아간다."""
     excluded = next(
         item for item in mutable_document["excluded_axes"]
-        if item["axis"] == "selftest_frontend_surface"
+        if item["axis"] == axis_name
     )
     excluded.pop("size")
     report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
     assert not report.ok, "크기 블록 삭제가 통과했습니다."
-    assert "selftest_frontend_surface" in _failures(report), _failures(report)
+    assert axis_name in _failures(report), _failures(report)
+
+
+def test_static_asset_growth_moves_the_pinned_file_count(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+) -> None:
+    """텍스트 프로브가 못 읽는 새 바이너리 자산도 면제 파일 수를 움직여 red다."""
+    asset = clone_source / "assets" / "__r3_audit.woff2"
+    asset.parent.mkdir(parents=True, exist_ok=True)
+    asset.write_bytes(b"\xff\xfe\x00\x01")
+
+    report = gate.check(document, frontend_tree, axes=[], metrics=[])
+
+    assert not report.ok, "새 바이너리 정적 자산이 명시 제외 안에서 조용히 통과했습니다."
+    text = _failures(report)
+    assert "frontend_static_assets" in text and "파일 수" in text, text
 
 
 def test_unoccupied_classifications_is_measured(mutable_document: dict[str, Any]) -> None:
