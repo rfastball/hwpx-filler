@@ -38,6 +38,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -458,6 +459,12 @@ def probe() -> None:
         sys.stdout.flush()
         if not closed_event.is_set():
             window.destroy()
+        #: 해체 정착 — 확정 닫힘은 js_api 응답 왕복 **중의** destroy 라(제품 실경로 그대로)
+        #: 브라우저 프로세스 무리의 철거가 비동기로 꼬리를 끈다. 인터프리터가 즉시 죽으면
+        #: 그 꼬리가 러너 전역 상태와 겨뤄 **다음 게이트의 창 생성**이 출력 0 으로 매달렸다
+        #: (CI 3차: 이 게이트 초록·직후 store 게이트만 3/3 매달림·master 8/8 초록 —
+        #: 상관의 방향이 이쪽이다). 살아 있는 인터프리터 아래서 2s 를 정착에 준다.
+        time.sleep(2.0)
 
 
 webview.start(probe, gui="edgechromium", storage_path=str(storage))
@@ -491,6 +498,10 @@ def test_shell_lifecycle_lands_navigates_and_closes_in_a_real_window() -> None:
             f"전면 매달림입니다.\nstdout 꼬리: {str(expired.stdout)[-2000:]}\n"
             f"stderr 꼬리: {str(expired.stderr)[-2000:]}"
         ) from None
+
+    #: 자식 해체 꼬리의 러너 정착(위 자식 finally 주석) — 형제 게이트가 곧바로 창을 세워도
+    #: 겨루지 않게 부모 쪽에서도 한 번 더 양보한다. 판정 자체와는 무관한 격리 비용이다.
+    time.sleep(3.0)
 
     report = f"rc={child.returncode}\nstdout:\n{child.stdout}\nstderr:\n{child.stderr[-3000:]}"
     assert child.returncode == 0, f"shell 게이트 창이 비정상 종료했습니다.\n{report}"
