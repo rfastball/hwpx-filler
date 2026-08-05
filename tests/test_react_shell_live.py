@@ -14,8 +14,9 @@ node 에 없다. 그래서 이 게이트가 실 창에서 재는 것은 다섯�
   (``_close_prompt_open`` 이 False 로 돌아왔는가 — 취소가 실 브리지를 지났다는 직접 증거.
   DOM 닫힘만 재면 브리지 무동작이 조용히 초록이 되고, ``_close_prompt_open`` 고착은 이후
   X 마다 프롬프트 없는 닫힘 거부라 confirm-or-alarm 위반이다).
-- **재초기화**: ``location.reload()`` 가 ``bootProduct()`` 전체 재구성을 돌려 랜딩·전환이
-  신품으로 다시 선다(상태기계·ShellHost 부착의 재구성 실측).
+- **재초기화**: 문서 재적재(``load_url`` — 해체 중 평가 응답 경합이 없는 통로)가
+  ``bootProduct()`` 전체 재구성을 돌려 랜딩·전환이 신품으로 다시 선다(상태기계·ShellHost
+  부착의 재구성 실측).
 - **닫기 확정**: 두 번째 ``close-request`` 에서 「종료」 클릭 → 실 브리지
   ``confirm_window_close`` 가 창을 실제로 닫는다(``closed`` 이벤트로 잰다).
 
@@ -336,6 +337,8 @@ window = webview.create_window(
 frontend._window = window
 closed_event = threading.Event()
 window.events.closed += closed_event.set
+loaded_event = threading.Event()
+window.events.loaded += loaded_event.set
 
 CLOSE_STATE = {"armed": True, "reasons": ["실 게이트 편집 세션"]}
 ALERT_STUB = (
@@ -423,13 +426,21 @@ def probe() -> None:
         results["cancel_reached_backend"] = frontend._close_prompt_open is False
         results["alerts_before_reload"] = evaluate(ALERTS_READBACK)
         mark("cancel-settled")
-        #: 재초기화 — reload 가 bootProduct() 를 다시 돌려 상태기계·ShellHost 부착이
+        #: 재초기화 — 문서 재적재가 bootProduct() 를 다시 돌려 상태기계·ShellHost 부착이
         #: 신품으로 선다. 랜딩·동기 전환을 같은 술어로 다시 잰다.
-        #: reload 는 **다음 매크로태스크로 미룬다** — 같은 턴에 실행하면 문서 해체가 평가
-        #: 응답 채널과 경합해 evaluate_js 가 영영 안 돌아올 수 있다(CI 2차 실패의 실측:
-        #: cancel-settled 까지 전 단계 초록 → 이 지점 js-thread-stuck. 로컬은 응답이 먼저
-        #: 나가는 쪽으로 5회 이겼고 CI 저속 러너가 2회 졌다 — 순서를 운에 맡기지 않는다).
-        evaluate("setTimeout(function () { location.reload(); }, 0); true", 10.0)
+        #:
+        #: 재적재는 **평가가 아니라 Python `load_url`** 로 몬다 — reload 를 evaluate 로
+        #: 쏘면 문서 해체가 평가 응답 채널과 경합해 evaluate_js 가 영영 안 돌아온다(CI 2차
+        #: + 전체 스위트 로컬 실측: cancel-settled 까지 전 단계 초록 → 그 지점
+        #: js-thread-stuck. setTimeout 지연으로도 부하 아래선 응답이 진다). load_url 은
+        #: 응답을 기다리지 않고, 해체~재부팅 구간의 평가는 loaded 사건 대기로 0 이 된다 —
+        #: 경합 창 자체를 없앤다(순서를 운에 맡기지 않는다).
+        loaded_event.clear()
+        #: file URI 형이 계약이다 — 맨 Windows 경로를 넘기면 항행이 조용히 일어나지 않는다
+        #: (create_window 는 경로를 받아 주지만 load_url 은 아니었다 — 최소 하니스 실측).
+        window.load_url(artifact.index_path.as_uri())
+        if not loaded_event.wait(30.0):
+            mark("reload-load-timeout")
         poll("reloaded")
         evaluate(ALERT_STUB)
         shot("renav", NAV_CLICK_EXPRESSION)
