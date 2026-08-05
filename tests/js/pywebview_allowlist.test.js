@@ -79,8 +79,10 @@ function childNodes(node) {
   return out;
 }
 
-/** 정적으로 확정되는 프로퍼티 키 — 못 푸는 계산 키는 null(여기선 접촉 아님으로 남는다:
- *  `x[name]` 이 예약 이름을 가리키려면 그 이름이 어딘가 리터럴로 있고 그쪽이 잡힌다). */
+/** 정적으로 확정되는 프로퍼티 키 — 못 푸는 계산 키는 null 이고 **커버리지 밖**이다.
+ *  변수 간접 계산 키(`const k = "__hwpx"; win[k]`)는 이 술어가 못 본다 — 문자열 리터럴
+ *  값 자체를 접촉으로 세면 api.js 의 SELFTEST_GLOBAL 상수가 오탐되므로(아래 음성 대조가
+ *  그 비접촉을 핀), 자연형(점·대괄호 리터럴 접근)만 겨눈다. 간접형은 diff 리뷰 몫이다. */
 function staticKey(property, computed) {
   if (!computed && property.type === "Identifier") return property.name;
   if (property.type === "Literal" && typeof property.value === "string") return property.value;

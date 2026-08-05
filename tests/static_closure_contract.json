@@ -1,7 +1,8 @@
 {
   "_readme": [
-    "정적 폐포 계약의 단일 출처 (#490). 소비자 둘: tests/test_frontend_build_graph.py(수집·생산 술어) ·",
-    "tests/js/pywebview_allowlist.test.js(AST 접촉 술어). 목록 둘 다 '넓히는 열거'가 아니라 '감산·가족'의 좌표다:",
+    "정적 폐포 계약의 단일 출처 (#490). 소비자 넷: tests/test_frontend_build_graph.py(수집·생산 술어) ·",
+    "tests/js/pywebview_allowlist.test.js(AST 접촉 술어) · tests/js/n10_global_hygiene.test.js(전역 위생 수집) ·",
+    "tests/test_web_native_dialog_guard.py(네이티브 다이얼로그 수집). 목록 둘 다 '넓히는 열거'가 아니라 '감산·가족'의 좌표다:",
     "non_code_suffixes — 코드 술어가 읽지 않는 형식의 명시 제외. 여기 없는 새 형식은 코드로 수집되며,",
     "  텍스트로 읽히지 않으면 수집기가 시끄럽게 실패한다(조용한 사각 없음).",
     "reserved_globals — 제품 전역 가족의 접촉(멤버 접근·구조분해) allowlist. 파일 목록은 실측 전수와",

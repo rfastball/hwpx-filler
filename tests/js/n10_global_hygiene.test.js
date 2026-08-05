@@ -234,7 +234,11 @@ function isObjectStatic(node, scope, member) {
 export function scanSource(source, filename = "<입력>") {
   let program;
   try {
-    program = parseAst(source);
+    /* `.ts`/`.tsx` 는 lang 옵션이 있어야 파싱된다(무옵션 parseAst 는 TS 문법에서 죽는다 —
+       allowlist 게이트 착수 실측과 같다). 미지 확장자는 js 로 시도하고, 실패는 스킵이
+       아니라 실패다. */
+    const lang = filename.endsWith(".tsx") ? "tsx" : filename.endsWith(".ts") ? "ts" : "js";
+    program = parseAst(source, { lang });
   } catch (thrown) {
     throw new Error(`${filename} 파싱 실패 — 게이트가 볼 수 없는 파일입니다: ${thrown.message}`);
   }
@@ -246,8 +250,25 @@ export function scanSource(source, filename = "<입력>") {
   };
   const lineOf = (node) => source.slice(0, node.start).split("\n").length;
 
-  const isRoot = (node, scope) => node.type === "Identifier"
-    && GLOBAL_ROOTS.has(node.name) && !resolves(scope, node.name);
+  /* TS erasable 래퍼는 투명하다(#490 검증 라운드 실측) — `.ts` 의 자연형은 캐스트를
+     지나므로(`(window as Record<string, unknown>).x = 1`; 캐스트 없는 창 확장은 strict
+     tsc 가 형식 오류로 먼저 문다), 래퍼를 안 벗기면 수집만 넓힌 채 술어가 `.ts` 전역
+     생산을 영영 못 본다 — 선언은 살고 결과는 죽는 그 결함류다. */
+  const unwrap = (node) => {
+    let current = node;
+    while (current && (current.type === "TSAsExpression"
+      || current.type === "TSSatisfiesExpression"
+      || current.type === "TSNonNullExpression"
+      || current.type === "ParenthesizedExpression")) {
+      current = current.expression;
+    }
+    return current;
+  };
+  const isRoot = (rawNode, scope) => {
+    const node = unwrap(rawNode);
+    return node.type === "Identifier"
+      && GLOBAL_ROOTS.has(node.name) && !resolves(scope, node.name);
+  };
 
   const addWrite = (name, kind, node, receiver) => {
     if (name === null) {
@@ -613,21 +634,31 @@ const DEAD_ALIASES = [
   "EditorScreen", "JobScreen", "WorkbenchScreen", "Nav", "AppCloseGuard", "Bridge", "__push",
 ];
 
-function listJs(relativeDir) {
+/** 수집은 감산형이다(#490 F2) — 확장자 열거가 아니라 계약의 non_code_suffixes 만 뺀다.
+ *  이 게이트가 「제품이 만드는 창 전역」의 유일한 정적 집행자라, `.js` 열거로 두면 `.ts`
+ *  서브트리의 전역 생산이 그물 밖에서 자란다(#490 검증 라운드 B1 실측 — `.ts` 에 신규
+ *  전역을 넣어도 전 게이트 초록이었다). allowlist 게이트와 같은 계약 파일을 읽는다. */
+const NON_CODE_SUFFIXES = JSON.parse(
+  readFileSync(new URL("../static_closure_contract.json", import.meta.url), "utf8"),
+).non_code_suffixes;
+
+function listSources(relativeDir) {
   const out = [];
   const walkDir = (rel) => {
     const url = new URL(rel, FRONTEND);
     if (!existsSync(url)) return;
     for (const entry of readdirSync(url, { withFileTypes: true })) {
       if (entry.isDirectory()) walkDir(`${rel}${entry.name}/`);
-      else if (entry.name.endsWith(".js")) out.push(`${rel}${entry.name}`);
+      else if (!NON_CODE_SUFFIXES.some((suffix) => entry.name.endsWith(suffix))) {
+        out.push(`${rel}${entry.name}`);
+      }
     }
   };
   walkDir(relativeDir);
   return out.sort();
 }
 
-const PRODUCT_FILES = [...listJs("src/"), ...listJs("js/")];
+const PRODUCT_FILES = [...listSources("src/"), ...listSources("js/")];
 
 const PRODUCT = new Map(
   PRODUCT_FILES.map((rel) => [rel, readFileSync(new URL(rel, FRONTEND), "utf8")]),
@@ -650,6 +681,31 @@ test("공허 방지 — 스캔 대상이 실재한다(양성 대조)", () => {
      경로가 틀린 것이고, 그 둘은 계약 위반 없음과 구별되지 않는다. */
   const totalReads = [...SCANS.values()].reduce((n, s) => n + s.globalReads.length, 0);
   assert.ok(totalReads > 10, `창 판독을 ${totalReads} 건밖에 못 봤습니다 — 스캐너가 멀었습니다.`);
+});
+
+test("검출력 — `.ts` 캐스트 래퍼를 지나는 창 쓰기·판독을 문다(#490)", () => {
+  /* `.ts` 의 자연형 — 캐스트 없는 창 확장은 strict tsc 가 형식 오류로 먼저 무므로,
+     이 게이트가 실제로 만날 형태는 래퍼를 지난 쪽이다. 래퍼가 투명하지 않으면 수집을
+     `.ts` 로 넓힌 것이 선언으로만 남는다(위 unwrap 주석). */
+  const cast = scanSource(
+    "export function leak(): void {\n"
+    + "  (window as unknown as Record<string, unknown>).probeNewGlobal = 1;\n"
+    + "}\n",
+    "probe.ts",
+  );
+  assert.deepEqual(cast.globalWrites.map((w) => w.name), ["probeNewGlobal"],
+    "TSAsExpression 래퍼를 지난 창 쓰기를 놓쳤습니다");
+
+  const nonNull = scanSource("const v = window!.name;\n", "probe2.ts");
+  assert.deepEqual(nonNull.globalReads.map((r) => r.name), ["name"],
+    "TSNonNullExpression 래퍼를 지난 창 판독을 놓쳤습니다");
+
+  /* 음성 — 지역으로 가려진 이름은 래퍼를 벗겨도 창이 아니다. */
+  const shadowed = scanSource(
+    "export function f(window: { x: number }): number { return (window as { x: number }).x; }\n",
+    "probe3.ts",
+  );
+  assert.deepEqual(shadowed.globalReads, [], "가려진 window 매개변수를 창으로 오인했습니다");
 });
 
 test("제품이 만드는 전역은 정확히 `__hwpx`·`__hwpxTest` 둘뿐이다", () => {
