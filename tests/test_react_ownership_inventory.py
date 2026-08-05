@@ -83,7 +83,7 @@ def mutable_document(document: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.fixture
 def frontend_tree(tmp_path: Path) -> Path:
-    """복제 트리의 **저장소 루트** — 정적 소스에서 글꼴만 뺀다(5.4 MB).
+    """복제 트리의 **저장소 루트** — 정적 자산 파일 수 계약까지 그대로 복제한다.
 
     저장소 변이는 실 저장소를 절대 건드리지 않는다. `axes=[…]` 인자로 해당 축만 검사해
     없는 파일 때문에 무관한 축이 죽지 않게 한다 — 그 인자가 필요한 이유가 여기다.
@@ -93,11 +93,7 @@ def frontend_tree(tmp_path: Path) -> Path:
     """
     root = tmp_path / "tree"
     root.mkdir()
-    shutil.copytree(
-        SOURCE_ROOT,
-        root / SOURCE_ROOT.name,
-        ignore=shutil.ignore_patterns("fonts"),
-    )
+    shutil.copytree(SOURCE_ROOT, root / SOURCE_ROOT.name)
     return root
 
 
