@@ -291,7 +291,14 @@ def test_typescript_config_is_erasable_and_exactly_this() -> None:
     node 직접 적재(type stripping)와 형식 검사(``tsc --noEmit``)와 Vite 빌드가 **같은
     파일**을 보는 것이 R2-01 의 계약이다. ``erasableSyntaxOnly`` 가 그 등가를 지킨다 —
     enum·namespace 처럼 런타임 산출이 있는 TS 문법이 들어오면 node 적재와 tsc 가 갈린다.
-    ``.tsx`` 는 이 단계에서 닫혀 있다: Node 24 는 ``.ts`` 만 싣는다(패킷 rev2 L16 B2 실증).
+
+    ``include`` 는 확장자 열거가 아니라 **경로 전체**다(#490 F2) — tsc 는 그 안에서
+    TS-가족(``.ts``·``.tsx``·``.mts`` …)을 스스로 고르므로 새 확장자가 자동 편입된다.
+    ``.tsx`` 는 이 단계에서 여전히 닫혀 있고 집행은 두 겹이다(착수 실측): **존재**는
+    감산형 등재 핀이 문다(¬``.js`` 필터 — 미등재 ``.tsx`` 는 도달 불가여도 빨강),
+    **JSX 문법**은 ``jsx`` 옵션 부재의 tsc 가 문다(JSX 없는 ``.tsx`` 는 tsc 만으로는
+    초록이라 존재 축을 tsc 에 맡길 수 없다 — 그래서 등재 핀이 1차다). Node 24 가 ``.ts``
+    만 싣는다는 실증은 패킷 rev2 L16 B2.
     """
     config = json.loads((ROOT / "tsconfig.json").read_text(encoding="utf-8"))
 
@@ -311,7 +318,7 @@ def test_typescript_config_is_erasable_and_exactly_this() -> None:
             "skipLibCheck": False,
             "types": [],
         },
-        "include": ["frontend/src/**/*.ts"],
+        "include": ["frontend/src/**/*"],
     }
 
 
@@ -802,20 +809,37 @@ SELFTEST_API_GLOBAL = "__hwpxTest"
 SELFTEST_API_PRODUCER = "src/selftest/api.js"
 
 
-def _frontend_sources() -> "dict[str, str]":
-    """``frontend/`` 아래 모든 JS·**TS** 원본 — 소스-축 술어 전부가 소비하는 단일 수집 집합.
+#: 정적 폐포 계약의 단일 출처(#490) — 수집 감산 목록과 예약 전역 가족·allowlist 를
+#: node 쪽 AST 게이트(tests/js/pywebview_allowlist.test.js)와 **같은 파일**에서 읽는다.
+STATIC_CLOSURE_CONTRACT = json.loads(
+    (ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+)
 
-    확장은 **여기 한 곳**에서만 일어난다(rev3 §4.2-1). 낱개 술어가 각자 ``rglob("*.js")``
-    를 들면 새 파일 형식이 생길 때마다 「집합 하나를 넓히고 형제를 안 넓힌다」 결함류가
-    자란다 — 이 저장소가 네 번 밟은 자리이고, `.ts` 서브트리가 정적 음성 축 전체의
-    사각에서 자라는 것이 L16 B1 이 잡은 위험이었다. 그래서 열거 대신 집합을 넓혀,
-    다음 술어가 이 파일에 늘어도 `.ts` 를 자동으로 본다.
+
+def _frontend_sources() -> "dict[str, str]":
+    """``frontend/`` 아래 코드 원본 **전수** — 소스-축 술어 전부가 소비하는 단일 수집 집합.
+
+    수집은 확장자 **열거가 아니라 감산**이다(#490 F2): ``frontend/**`` 전 파일에서 계약의
+    ``non_code_suffixes``(코드 술어가 읽지 않는 형식의 명시 제외)만 뺀다. 그래서 새 코드
+    형식(``.tsx``·``.mts`` …)은 등재 없이 **자동 편입**되고 — 편입된 뒤 `.js` 아닌 파일은
+    아래 정확-집합 핀이 등재를 요구한다 — 텍스트가 아닌 새 형식은 여기서 시끄럽게
+    실패한다(코드가 아니면 계약에 명시 등재하라는 강제). 「집합 하나를 넓히고 형제를 안
+    넓힌다」 결함류(`.js` 에 `.ts` 를 더할 때 `.tsx` 를 안 더한 자리)를 형식 자체로 없앤다.
     """
-    return {
-        path.relative_to(SOURCE_ROOT).as_posix(): path.read_text(encoding="utf-8")
-        for pattern in ("*.js", "*.ts")
-        for path in sorted(SOURCE_ROOT.rglob(pattern))
-    }
+    excluded = set(STATIC_CLOSURE_CONTRACT["non_code_suffixes"])
+    sources: "dict[str, str]" = {}
+    for path in sorted(SOURCE_ROOT.rglob("*")):
+        if not path.is_file() or path.suffix in excluded:
+            continue
+        rel = path.relative_to(SOURCE_ROOT).as_posix()
+        try:
+            sources[rel] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            raise AssertionError(
+                f"{rel}: 텍스트로 읽히지 않는 형식입니다 — 코드가 아니면 "
+                "tests/static_closure_contract.json 의 non_code_suffixes 에 명시 등재하세요."
+            ) from error
+    return sources
 
 
 def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
@@ -825,7 +849,10 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
     구별되지 않는다(계측 층의 부재판별력).
     """
     sources = _frontend_sources()
-    ts_members = sorted(name for name in sources if name.endswith(".ts"))
+    #: 필터도 감산형이다(#490 F2) — 「`.ts` 만」이 아니라 「`.js` 아닌 전부」. 수집이
+    #: 감산이라 새 코드 형식(`.tsx` 등)은 자동 편입되고, 여기 정확-집합에 등재되기 전엔
+    #: **존재 자체가 빨강**이다(도달 불가 파일이 전 정적 축의 사각에서 자라는 경로 차단).
+    ts_members = sorted(name for name in sources if not name.endswith(".js"))
 
     #: 등재 지점 — 새 단계의 `.ts` 는 여기 행 추가로 편입된다(R2 패킷 §4.3 의 규정과 같다).
     assert ts_members == [
@@ -976,6 +1003,31 @@ def test_reserved_global_family_has_exactly_the_two_known_producers() -> None:
         ("src/bootstrap.js", PRODUCT_API_GLOBAL),
         ("src/selftest/api.js", SELFTEST_API_GLOBAL),
     }, f"예약 전역 생산자 전수가 어긋납니다: {sorted(producers)}"
+
+
+def test_reserved_global_contract_is_single_sourced() -> None:
+    """예약 전역의 이름·접촉 allowlist 는 계약 파일 하나가 정본이다(#490 F1).
+
+    판독 술어(node AST 게이트 ``tests/js/pywebview_allowlist.test.js``)와 생산 술어(위
+    producer 전수)가 **같은 파일**을 읽어야 「pywebview 를 막을 때 ``__hwpx`` 를 안
+    넓힌다」 결함류가 형식으로 죽는다. 여기서는 그 결선을 고정한다 — 이름 전수가 제품
+    전역 상수와 일치하고, allowlist 의 파일이 전부 실재하며(등재가 실물을 앞지르는
+    방향은 node 쪽 양방향 대조가 막는다), 가족 술어의 접두가 이름 전수를 덮는다.
+    """
+    contract = STATIC_CLOSURE_CONTRACT["reserved_globals"]
+
+    assert set(contract) == {"pywebview", PRODUCT_API_GLOBAL, SELFTEST_API_GLOBAL}, (
+        f"계약의 예약 전역 이름 전수가 어긋납니다: {sorted(contract)}"
+    )
+    for name, files in contract.items():
+        for rel in files:
+            assert (SOURCE_ROOT / rel).is_file(), (
+                f"{name} allowlist 의 {rel} 이 저장소에 없습니다 — 등재가 실물을 앞섰습니다"
+            )
+    assert all(name == "pywebview" or name.startswith("__hwpx") for name in contract), (
+        "가족 술어(pywebview 정확 일치 + __hwpx 접두)가 계약 이름을 못 덮습니다 — "
+        "새 전역은 술어와 계약을 한 변경으로 넓혀야 합니다"
+    )
 
 
 def test_bare_specifiers_are_closed_over_the_whole_source_set() -> None:
@@ -1225,17 +1277,21 @@ def test_whole_frontend_graph_from_the_entry_has_no_cycles_and_no_bare_specifier
         seen[node] = 1
         visited.add(node)
         path = SOURCE_ROOT / node
-        #: `.ts` 도 간선 방문만 하고 내부를 안 읽으면 그 서브트리는 게이트의 사각에서
-        #: 자란다(L16 B1 — rev1 은 「충돌」로 반대로 적었던 자리다). 같은 술어로 걷는다.
-        if path.suffix in (".js", ".ts") and path.is_file():
+        #: 간선 방문만 하고 내부를 안 읽으면 그 서브트리는 게이트의 사각에서 자란다
+        #: (L16 B1 — rev1 은 「충돌」로 반대로 적었던 자리다). 하강도 확장자 열거가 아니라
+        #: **전부**다(#490 리뷰 P2): `.ts` 열거로 두면 미래의 정당한 `.tsx`/`.mts` 가 등재
+        #: 뒤에도 자기 간선을 영영 안 읽혀, 그 안의 순환·bare 가 조용히 통과한다. 상대
+        #: import 가 가리키는 노드는 정의상 코드 모듈이라 무조건 읽는다.
+        if path.is_file():
             for spec in module_imports(path.read_text(encoding="utf-8")):
                 if spec.startswith("."):
                     visit(normpath(join(dirname(node), spec)), (*trail, node))
                 elif spec.startswith("../css/") or spec.endswith(".css"):
                     continue
-                elif path.suffix == ".ts" and _ts_bare_allowed(spec):
-                    #: 빌드가 해소하는 **핀된** 의존 — `.ts` 에만 열린 문이다. `.js` 는
-                    #: 여전히 bare 0 이라 legacy 25 가 React 를 직접 싣는 경로가 없다.
+                elif path.suffix != ".js" and _ts_bare_allowed(spec):
+                    #: 빌드가 해소하는 **핀된** 의존 — TS-가족(¬`.js` — 등재 필터와 같은
+                    #: 감산형)에만 열린 문이다. `.js` 는 여전히 bare 0 이라 legacy 25 가
+                    #: React 를 직접 싣는 경로가 없다.
                     continue
                 else:
                     bare.append(f"{node} -> {spec}")

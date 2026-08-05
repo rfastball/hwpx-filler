@@ -177,6 +177,7 @@ REQUIRED_AXIS_IDS = frozenset(
         "coverage-floors",
         "byte-normalization",
         "example-101-assets",
+        "static-closure-contract",
     }
 )
 
@@ -188,6 +189,7 @@ REQUIRED_AXIS_IDS = frozenset(
 #: 핀 등록이 **의무**다(G0 이 형식으로 강제 — 다음 file 축이 같은 구멍을 다시 열지 못하게).
 REQUIRED_FILE_AXIS_TARGETS: "dict[str, str]" = {
     "coverage-floors": "docs/package_coverage_floors.toml",
+    "static-closure-contract": "tests/static_closure_contract.json",
 }
 
 
