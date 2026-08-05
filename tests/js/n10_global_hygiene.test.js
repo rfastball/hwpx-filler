@@ -254,6 +254,9 @@ export function scanSource(source, filename = "<입력>") {
      지나므로(`(window as Record<string, unknown>).x = 1`; 캐스트 없는 창 확장은 strict
      tsc 가 형식 오류로 먼저 문다), 래퍼를 안 벗기면 수집만 넓힌 채 술어가 `.ts` 전역
      생산을 영영 못 본다 — 선언은 살고 결과는 죽는 그 결함류다. */
+  /* 이 4형이 「초록 트리에 존재 가능한 erasable 래퍼 전수」다 — 각괄호 단언(`<T>x`)은
+     핀된 `erasableSyntaxOnly` 아래 tsc 가 TS1294 로 거부하므로 도달 불가(#490 재반증 N1).
+     훗날 그 핀을 끄는 변경은 여기 TSTypeAssertion 추가를 동반해야 한다. */
   const unwrap = (node) => {
     let current = node;
     while (current && (current.type === "TSAsExpression"
@@ -321,10 +324,13 @@ export function scanSource(source, filename = "<입력>") {
     /* ── ④⑤⑪ Object.assign / defineProperty(-ies) ── */
     if (node.type === "CallExpression") {
       const target = node.arguments[0];
-      const receiverOf = (arg) => {
-        if (!arg) return null;
-        if (isRoot(arg, scope)) return "global";
-        /* 지역 식별자 수신자 — 주입받은 창일 수 있다. 이름 축(예약 대역)으로만 센다. */
+      const receiverOf = (rawArg) => {
+        if (!rawArg) return null;
+        if (isRoot(rawArg, scope)) return "global";
+        /* 지역 식별자 수신자 — 주입받은 창일 수 있다. 이름 축(예약 대역)으로만 센다.
+           래퍼는 여기서도 벗긴다(#490 재반증 S1) — isRoot 만 벗기면 `.ts` 의
+           `Object.assign(win as Window, …)` 가 injected 판정을 벗어난다. */
+        const arg = unwrap(rawArg);
         return arg.type === "Identifier" ? "injected" : null;
       };
       if (isObjectStatic(node.callee, scope, "assign")) {
@@ -706,6 +712,18 @@ test("검출력 — `.ts` 캐스트 래퍼를 지나는 창 쓰기·판독을 �
     "probe3.ts",
   );
   assert.deepEqual(shadowed.globalReads, [], "가려진 window 매개변수를 창으로 오인했습니다");
+
+  /* 주입 수신자도 래퍼를 벗긴다(재반증 S1) — Object.assign(win as Window, …) 의 예약
+     이름 설치가 injected 축에서 잡혀야 `.ts` 조합 탈출이 남지 않는다. */
+  const injectedCast = scanSource(
+    "export function g(win: Window): void {\n"
+    + "  Object.assign(win as Window, { __hwpxViaAssign: 1 });\n"
+    + "}\n",
+    "probe4.ts",
+  );
+  assert.deepEqual(injectedCast.reservedInstalls.map((r) => [r.name, r.receiver]),
+    [["__hwpxViaAssign", "injected"]],
+    "캐스트된 주입 수신자의 예약 이름 설치를 놓쳤습니다");
 });
 
 test("제품이 만드는 전역은 정확히 `__hwpx`·`__hwpxTest` 둘뿐이다", () => {
