@@ -739,7 +739,7 @@ subject = "SCREEN_ROOTS 상수가 화면 루트 4개 전부를 든다 — R3-03�
 requires_p_review = false
 resolved = true
 disposition = "SCREEN_ROOTS를 scr-library·scr-job·scr-editor·scr-workbench 전수로 확장하고 test_screen_roots_present가 대조한다."
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 113, anchor = "SCREEN_ROOTS = (" }]
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 114, anchor = "SCREEN_ROOTS = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
@@ -748,7 +748,7 @@ subject = "PRESERVE_WRAPPED_FILES가 Preserve.around 실호출 5파일 전부를
 requires_p_review = false
 resolved = true
 disposition = "data_picker.js·library.js를 목록에 더해 실호출 5파일과 정확히 맞추고 정적 배선 게이트가 전수 대조한다."
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 47, anchor = "PRESERVE_WRAPPED_FILES = (" }]
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 48, anchor = "PRESERVE_WRAPPED_FILES = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
