@@ -8,8 +8,8 @@ C9: library.js(구 home.js) editTags 가 현재 태그를 '축=값, 축=값' 콤
 
 N1: 새로고침 경로의 Bridge.call 이 fire-and-forget 이라 레지스트리 IO 실패 등의
 rejection 이 삼켜져 무반응이 됐다. .catch 로 표면화한다. 수동 새로고침 버튼(homeRefresh)은
-F6 으로 제거됐다 — 이 화면의 갱신은 전환 자동 새로고침(app.js REFRESH_ON_NAV)이 유일 경로이므로
-N1 가드도 그 배선으로 이관한다(버튼 재도입·자동 갱신 탈락 둘 다 회귀).
+F6 으로 제거됐다 — 이 화면의 갱신은 전환 자동 새로고침(셸 상태기계 nav.ts 의 REFRESH_ON_NAV,
+R3-02)이 유일 경로이므로 N1 가드도 그 배선으로 이관한다(버튼 재도입·자동 갱신 탈락 둘 다 회귀).
 
 순수 JS 지점이라 정적 계약 테스트(test_r3_js.py 패턴) + 백엔드 전제(콤마 값 허용)는
 LibraryController 로 실행 검증한다.

@@ -1,22 +1,28 @@
 """실 WebView2 셸 수명주기 게이트 — 랜딩·동기 전환·닫기 왕복·재초기화 (R3-02 · #411).
 
 node 계약 테스트는 상태기계 판정(shell_nav)과 adapter 결합(n06 — attachShell 같은 실물)까지를
-재고, 「React ShellHost 가 실 창에서 리스너를 실제로 부착해 탭이 응답하고, 부팅 시퀀스가
-실제로 돌고, 닫기 확인이 실 브리지로 왕복한다」는 별개 사실이다 — 실 React 커밋·실 클릭
-디스패치·실 pywebviewready 발화는 node 에 없다. 그래서 이 게이트가 실 창에서 재는 것은
-다섯이다:
+재고, 「React ShellHost 가 실 창에서 리스너를 실제로 부착해 탭이 응답하고, 닫기 확인이 실
+브리지로 왕복한다」는 별개 사실이다 — 실 React 커밋·실 클릭 디스패치·실 브리지 IPC 는
+node 에 없다. 그래서 이 게이트가 실 창에서 재는 것은 다섯이다:
 
 - **부팅 랜딩**: 커밋 마커가 서고 ``scr-job`` 에 ``.on``, job 탭에 ``aria-current`` — 기존
   부팅·라우팅 프로브(``job_on``·``nav_count``)와 같은 document 판독을 자체 창에서 잰다.
 - **동기 전환**: library 탭 **실클릭과 같은 동기 턴**에 클래스·aria 전환이 완료돼 있다 —
   ShellHost 가 부착한 리스너의 실물 증거이자 n06 동기 핀의 live 쌍둥이(React 재렌더 비경유).
 - **닫기 취소 왕복**: ``close-request`` 배달 → React overlay 위 확인창(종료 라벨·danger·
-  「계속 작업」 문안 잔존 계약) → 취소 클릭 → 창 유지 + 확인창 닫힘(실 브리지
-  ``cancel_window_close`` 경유).
+  「계속 작업」 문안 잔존 계약) → 취소 클릭 → 확인창 닫힘 + **백엔드 도달 되읽기**
+  (``_close_prompt_open`` 이 False 로 돌아왔는가 — 취소가 실 브리지를 지났다는 직접 증거.
+  DOM 닫힘만 재면 브리지 무동작이 조용히 초록이 되고, ``_close_prompt_open`` 고착은 이후
+  X 마다 프롬프트 없는 닫힘 거부라 confirm-or-alarm 위반이다).
 - **재초기화**: ``location.reload()`` 가 ``bootProduct()`` 전체 재구성을 돌려 랜딩·전환이
   신품으로 다시 선다(상태기계·ShellHost 부착의 재구성 실측).
 - **닫기 확정**: 두 번째 ``close-request`` 에서 「종료」 클릭 → 실 브리지
   ``confirm_window_close`` 가 창을 실제로 닫는다(``closed`` 이벤트로 잰다).
+
+여기서 재지 **않는** 것도 명시한다(측정과 문안의 일치): ``routingReady`` 전이·init 5 재생의
+**내용-결선**은 이 게이트의 판독 밖이다 — 실앱에서의 그 증거는 selftest 게이트의 화면 내용
+프로브(``library_surface``·``data_picker_buttons`` 등)가 이미 지고, harness 수준 결선은
+n06 이 attachShell 같은 실물로 진다. 이 게이트가 그 프로브들과 겹치지 않는 이유다.
 
 창 하니스(실 백엔드 두 줄·절대 storage_path·단일 판정 술어·마커 줄 프로토콜)는
 ``test_react_root_live.py``/``test_react_overlay_live.py`` 를 그대로 승계한다.
@@ -357,10 +363,17 @@ def probe() -> None:
         #: 전환은 클릭과 같은 턴에 완료돼야 한다(재시도는 그 계약의 위반을 가린다).
         shot("nav", NAV_CLICK_EXPRESSION)
         #: 닫기 취소 왕복 — Python 이 real closing 에서 보내는 것과 같은 배달 표현식.
+        #: closing 게이트가 세우는 대기 플래그를 하니스도 세운다 — 취소가 실 브리지를
+        #: 지나 cancel_window_close 에 닿으면 False 로 돌아온다(백엔드 도달의 직접 증거).
+        frontend._close_prompt_open = True
         window.evaluate_js(close_request_expression(CLOSE_STATE))
         poll("close_prompt")
         window.evaluate_js("document.getElementById('confirmModalCancel').click()")
         poll("close_cancelled")
+        #: 브리지 IPC 는 DOM 닫힘과 비동기다 — 도달을 따로 폴링한다.
+        while frontend._close_prompt_open and time.monotonic() < deadline:
+            time.sleep(0.1)
+        results["cancel_reached_backend"] = frontend._close_prompt_open is False
         #: 재초기화 — reload 가 bootProduct() 를 다시 돌려 상태기계·ShellHost 부착이
         #: 신품으로 선다. 랜딩·동기 전환을 같은 술어로 다시 잰다.
         try:
@@ -370,6 +383,8 @@ def probe() -> None:
         poll("reloaded")
         shot("renav", NAV_CLICK_EXPRESSION)
         #: 닫기 확정 — 「종료」 클릭이 실 브리지 confirm_window_close 로 창을 실제로 닫는다.
+        #: (대기 플래그도 실 경로 그대로 — 확정 쪽 정산은 closed 이벤트가 잰다.)
+        frontend._close_prompt_open = True
         window.evaluate_js(close_request_expression(CLOSE_STATE))
         poll("confirm_prompt")
         try:
@@ -433,6 +448,10 @@ def test_shell_lifecycle_lands_navigates_and_closes_in_a_real_window() -> None:
     for nav_phase in ("nav", "renav"):
         ok, reason = judge_nav_click_readback(results.get(nav_phase))
         assert ok, f"[{nav_phase}] {reason}\n{report}"
+    assert results.get("cancel_reached_backend") is True, (
+        "취소가 백엔드에 닿지 않았습니다(_close_prompt_open 고착) — 이후 X 마다 프롬프트 없는 "
+        f"닫힘 거부가 됩니다.\n{report}"
+    )
     assert results.get("confirm_closed") is True, (
         f"「종료」 확정이 실 창을 닫지 못했습니다 — confirm_window_close 경로 미착지.\n{report}"
     )

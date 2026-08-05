@@ -515,7 +515,7 @@ owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/test_react_shell_live.py"
-responsibility = "실 WebView2 셸 수명주기 — 부팅 랜딩·동기 전환·재초기화 후 리스너 단일성·닫기 확인 왕복(confirm→cancel 양갈래)"
+responsibility = "실 WebView2 셸 수명주기 — 부팅 랜딩·실클릭 동기 전환·닫기 왕복(취소=백엔드 도달 되읽기·확정=실 창 닫힘)·reload 재실측 (init 내용-결선은 selftest 게이트 몫)"
 owner_stage = "R3-02"
 
 [[asset]]

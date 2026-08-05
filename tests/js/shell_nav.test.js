@@ -268,8 +268,13 @@ test("위임 중단 전환은 통지하지 않는다 — 상태가 변하지 않
 /* ══════════════ 9. 음성 — 소스 형상 ══════════════ */
 
 test("음성 — DOM·전역·React·pywebview 접촉 0(판정층 순수성)", () => {
-  for (const forbidden of ["document.", "window.", "globalThis", "pywebview", "react", "createElement"]) {
+  // 전역 이름 needle 은 주석까지 문다(표기 자체 금지 — n06 규율). React 는 산문 언급이
+  // 정당하므로 실행 접촉형(import 지정자·요소 생성)만 문다.
+  for (const forbidden of ["document.", "window.", "globalThis", "pywebview"]) {
     assert.equal(SRC.includes(forbidden), false, `nav.ts 에 ${forbidden} 금지 — 집행은 adapter 몫`);
+  }
+  for (const forbidden of ['from "react"', "createElement"]) {
+    assert.equal(SRC.includes(forbidden), false, `nav.ts 에 ${forbidden} 금지 — React 결합은 host 몫`);
   }
 });
 
