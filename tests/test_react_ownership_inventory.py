@@ -142,14 +142,16 @@ EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     "dom_js_site": (22, "21f6634bedf7f3777ec66d1b72991493"),
     "dom_static": (200, "a0de506720a9704065dde2bf17410d50"),
     "lifecycle_factory": (16, "cf3701bfb0908f4d0582200ce8273918"),
-    "lifecycle_hook": (9, "05809936a7af41d071c9da1f786c0370"),
+    "lifecycle_hook": (7, "05809936a7af41d071c9da1f786c0370"),
     "state_js_module": (44, "1633eccf8b783f1d712a5b9e158a6ed5"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # R3-01(#410) 재고정 — 문서 리스너 소유 이양(popover 모듈-평가 8·undo_toast·modal 의
     # 부착/해제가 엔진 배선·React host `.ts` 로 이동)에 따른 하한 인하. 지문은 불변(술어·scope
-    # 는 안 좁혔다 — 줄어든 것은 실측이다).
-    "subscription_listener": (100, "2fc5bdf7415bc281524144a514e9ee28"),
+    # 는 안 좁혔다 — 줄어든 것은 실측이다). R3-02(#411) 재고정 — 셸 리스너 7·부팅 훅이
+    # app.js 서술 + ShellHost 부착(`.ts`)으로 이양돼 subscription_listener·lifecycle_hook 이
+    # 함께 내렸다(같은 논리·같은 #491 사각).
+    "subscription_listener": (96, "2fc5bdf7415bc281524144a514e9ee28"),
     "subscription_push": (5, "5201c1ab611d0f09a743bd1e6afced4a"),
     "subscription_release": (6, "b6ac96d2f30c9122a679e7c1c01643b1"),
 }
@@ -387,9 +389,13 @@ def test_n8_uppercase_classification_is_rejected(mutable_document: dict[str, Any
 def test_n9_deleted_node_row_leaves_members_unclassified(
     mutable_document: dict[str, Any]
 ) -> None:
-    """N9 — 노드 행 하나를 지우면 그 멤버가 미분류로 나온다."""
+    """N9 — 노드 행 하나를 지우면 그 멤버가 미분류로 나온다.
+
+    (표본은 R3-02 재고정으로 state/app-shell 이 행째 소멸해 state/data-picker 로 옮겼다 —
+    변이의 요지는 「측정되는 멤버를 가진 행」이면 어느 행이든 같다.)
+    """
     victim = next(
-        node for node in mutable_document["node"] if node["id"] == "state/app-shell"
+        node for node in mutable_document["node"] if node["id"] == "state/data-picker"
     )
     members = victim["selector"]["members"]
     mutable_document["node"].remove(victim)
@@ -402,7 +408,7 @@ def test_n9_deleted_node_row_leaves_members_unclassified(
 def test_n10_row_for_a_nonexistent_node_is_a_ghost(mutable_document: dict[str, Any]) -> None:
     """N10 — 저장소에 없는 좌표를 든 행은 유령이다."""
     victim = next(
-        node for node in mutable_document["node"] if node["id"] == "state/app-shell"
+        node for node in mutable_document["node"] if node["id"] == "state/data-picker"
     )
     victim["selector"]["members"] = [*victim["selector"]["members"], "frontend/js/ghost.js:1 X"]
     report = gate.check(mutable_document, REPO_ROOT, axes=["state_js_module"], metrics=[])
@@ -844,17 +850,26 @@ def test_file_outside_every_axis_is_refused(
     assert "덮이지 않음: frontend/widgets/card.js" in text, text
 
 
-@pytest.mark.parametrize("mutation", ["ghost-member", "wrong-axes", "deleted"])
+@pytest.mark.parametrize("mutation", ["ghost-member", "wrong-axes", "fabricated"])
 def test_cross_axis_overlap_is_derived_not_declared(
     mutable_document: dict[str, Any], mutation: str
 ) -> None:
-    """교차 겹침은 **측정에서 유도**된다 — 신설 필드가 거짓을 적기 쉬운 자리였다."""
+    """교차 겹침은 **측정에서 유도**된다 — 신설 필드가 거짓을 적기 쉬운 자리였다.
+
+    R3-02 재고정으로 실측 겹침이 0이 됐다(구 표본 app.js:220 부팅 훅이 ShellHost `.ts` 로
+    이양) — 그래서 변이 방향도 뒤집힌다: 구판은 「있는 겹침을 지우면 붉는가」였고, 이제는
+    「없는 겹침을 선언으로 만들어내면 붉는가」다. 셋 다 선언≠유도를 민다.
+    """
     if mutation == "ghost-member":
-        mutable_document["cross_axis_overlap"][0]["member"] = "frontend/js/ghost.js:999"
+        entry = {"member": "frontend/js/ghost.js:999",
+                 "axes": ["subscription_listener", "lifecycle_hook"], "reason": "가짜 좌표"}
     elif mutation == "wrong-axes":
-        mutable_document["cross_axis_overlap"][0]["axes"] = ["dom_static", "state_ring1"]
-    else:
-        mutable_document["cross_axis_overlap"] = []
+        entry = {"member": "frontend/js/app.js:65",
+                 "axes": ["dom_static", "state_ring1"], "reason": "실재 좌표·가짜 축"}
+    else:  # fabricated — 실재 좌표·실재 축이지만 그 좌표는 한 축에만 측정된다
+        entry = {"member": "frontend/js/app.js:65",
+                 "axes": ["subscription_listener", "lifecycle_hook"], "reason": "겹침 아님"}
+    mutable_document["cross_axis_overlap"] = [entry]
     report = gate.check(mutable_document, REPO_ROOT, metrics=[])
     assert not report.ok, f"`cross_axis_overlap` 의 {mutation} 이 통과했습니다."
     assert "cross_axis_overlap" in _failures(report), _failures(report)

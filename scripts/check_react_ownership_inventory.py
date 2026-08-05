@@ -105,7 +105,7 @@ PRODUCT_TREE_GLOBS = (
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
 #: 재고정 v3 = R3-01(#410) overlay 이관 — base 는 `IMPLEMENTING` 전이가 고정한 `5895029`.
-EXPECTED_BASELINE_SHA = "58950294ae2855c898d44812fd298a498f0eae69"
+EXPECTED_BASELINE_SHA = "e8e20ff4772f64040864cda5c6571f7b70963f8c"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -125,11 +125,15 @@ AXIS_FLOORS: dict[str, int] = {
     # undo_toast 1 + modal.js 부착 5/해제 5 가 엔진 배선·React host(`.ts` — 이 축의 scope 밖,
     # READY 기록의 #490 인접 사각)로 옮겨 갔다. 하한 인하는 그 실측을 따른다 — 더 줄면
     # 그때 또 사유가 필요하다(조용한 삭감 금지).
-    "subscription_listener": 100,   # 오늘 105
+    # R3-02(#411)가 셸 리스너 7(백스톱·탭 2접점 아닌 nav 위임 1·도구 2·라벨 동기 2·부팅 훅)을
+    # app.js 서술 + React ShellHost 부착(src/shell/host.ts — 같은 `.ts` 사각, #491)으로
+    # 이양했다. 부팅 훅 이양으로 lifecycle_hook 도 함께 줄었다(IMMERSIVE 목록은 상태기계
+    # nav.ts 로). 인하는 실측 그대로다.
+    "subscription_listener": 96,    # 오늘 98
     "subscription_release": 6,      # 오늘 7
     "subscription_push": 5,         # 오늘 6
     "lifecycle_factory": 16,        # 오늘 18
-    "lifecycle_hook": 9,            # 오늘 10
+    "lifecycle_hook": 7,            # 오늘 8
 }
 
 #: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.

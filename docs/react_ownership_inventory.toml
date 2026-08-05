@@ -32,7 +32,10 @@ schema = 1
 # 이 원장을 실측한 기준. 재고정 v2 가 `d508724 → 8fcc30e` 무드리프트를 확인했고(frontend/ 무변경)
 # 계측은 그 위에서 다시 돌렸다. 재고정 v3(R3-01 #410, base `5895029`)은 overlay 이관을 따라
 # dom_static(골격 4 이전)·state_js_module·subscription 두 축·계측 6 항을 다시 실측했다.
-baseline_sha = "58950294ae2855c898d44812fd298a498f0eae69"
+# 재고정 v4(R3-02 #411, base `e8e20ff`)는 셸 이관을 따라 state_js_module(app.js 상태 2 →
+# nav.ts)·subscription_listener(셸 리스너 7 → 서술 + ShellHost 부착)·lifecycle_hook(부팅 훅·
+# IMMERSIVE 목록 → host.ts·nav.ts)·app.js/bootstrap.js 좌표 전체를 다시 실측했다.
+baseline_sha = "e8e20ff4772f64040864cda5c6571f7b70963f8c"
 
 # 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
 scope_statement = """
@@ -52,10 +55,9 @@ unoccupied_classifications = ["host"]
 
 # 물리 사이트 하나가 성격이 둘이라 **두 축에 함께 드는** 자리. 축별 폐포는 각각 닫히지만 축을
 # 가로질러 세면 그만큼 겹친다 — 「측정 노드 합계」를 물리 사이트 수로 읽지 말라는 뜻이다.
-[[cross_axis_overlap]]
-member = "frontend/js/app.js:220"
-axes = ["subscription_listener", "lifecycle_hook"]
-reason = "부팅 훅은 부착 사이트이면서 수명주기 경계다. 두 행 다 R3-02 #411 이라 소유권 모순은 없다."
+# R3-02 재고정: 유일 표본이던 부팅 훅(구 app.js:220 — 부착 사이트이자 수명주기 경계)이 React
+# ShellHost(src/shell/host.ts — `.ts` 라 두 축 모두 scope 밖)로 이양돼 오늘 실측 겹침은 0이다.
+# 빈 목록도 측정 유도값이다 — 게이트가 매번 재유도해 선언과 대조한다.
 
 # ── 폐포에서 명시 제외하는 축 ─────────────────────────────────────────────
 # 「안 센 것」을 데이터로 적는다. 조용한 유예가 아니라 **소리 나는 제외**여야 「미분류 0」이
@@ -484,7 +486,7 @@ scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", 
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
 current = 2
-members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:114"]
+members = ["frontend/js/esc.js:10", "frontend/src/bootstrap.js:115"]
 judgment = "둘 다 이름 규약(`create*`)으로 갈리고, 그 규약이 저장소의 14-팩토리 게이트가 쓰는 필터와 같다."
 
 [axes.lifecycle_hook]
@@ -498,15 +500,16 @@ React 이관에서 useEffect·route guard 로 재설계될 수명주기 훅 다�
 [axes.lifecycle_hook.blind_spot]
 description = """
 객체 노출·간접 호출은 못 본다. 화면이 `leaveTo` 를 공개 객체에 얹는 자리와 셸이 그것을
-간접으로 부르는 자리가 그렇다. 오늘 2건이며 둘 다 app.js:109 한 줄이다.
+간접으로 부르는 자리가 그렇다. 오늘 2건이며 둘 다 app.js:65(집행 adapter 의 delegateLeave —
+R3-02 재고정으로 구 :109 에서 이사) 한 줄이다.
 """
 probe = { kind = "regex", pattern = "\\.leaveTo\\b", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "`.leaveTo` 참조 1건 = 1."
 current = 2
-members = ["frontend/js/app.js:109", "frontend/js/app.js:109#2"]
-judgment = "둘 다 app.js:109 의 존재 확인 + 호출이다. 화면 쪽 객체 노출은 export const 축(위)이 든다."
+members = ["frontend/js/app.js:65", "frontend/js/app.js:65#2"]
+judgment = "둘 다 app.js:65 의 존재 확인 + 호출이다. 화면 쪽 객체 노출은 export const 축(위)이 든다."
 
 # ── 계측 항목 ────────────────────────────────────────────────────────────
 # 술어 3종은 예외 없이 필수다. `derived` 도 predicate.kind 의 한 값이므로 면제가 아니다.
@@ -539,13 +542,13 @@ unit = "줄 끝 대입 11건을 놓친다 — `[^=]` 가 줄 뒤에 문자를 �
 
 [[metric]]
 id = "mutable-module-state"
-value = 47
+value = 45
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다. R3-01 재고정: modal.js pendingDialog·undo_toast undo/timer 셋이 엔진·host(.ts — 이 축의 scope 밖)로 이양돼 50 → 47."
+unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다. R3-01 재고정: modal.js pendingDialog·undo_toast undo/timer 셋이 엔진·host(.ts — 이 축의 scope 밖)로 이양돼 50 → 47. R3-02 재고정: app.js closePromptPending·routingReady 가 셸 상태기계(src/shell/nav.ts — 같은 .ts 사각)로 이양돼 47 → 45."
 [[metric.aliases]]
-value = 41
+value = 39
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js"]
 unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
@@ -556,11 +559,11 @@ predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
 scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
 unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
 [[metric.aliases]]
-value = 54
+value = 52
 status = "wrong"
 predicate = { kind = "extractor", name = "js_module_state_convention" }
 scope = ["frontend/js/**/*.js"]
-unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성·거짓음성이 상쇄 없이 겹쳐 54 대 참값 41 — 관례 술어를 계약 밖에 재사용하면 안 되는 이유가 이 간극이다."
+unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성·거짓음성이 상쇄 없이 겹쳐 52 대 참값 39 — 관례 술어를 계약 밖에 재사용하면 안 되는 이유가 이 간극이다(R3-02 재고정: app.js 상태 2 이양으로 54→52·41→39, 간극 13 유지)."
 
 [[metric]]
 id = "push-subscription-sites"
@@ -576,16 +579,16 @@ unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센
 
 [[metric]]
 id = "listener-attach-sites"
-value = 105
+value = 98
 predicate = { kind = "derived", axis = "subscription_listener" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. R3-01 재고정: popover 모듈-평가 8·undo_toast 2·modal 4 가 엔진 배선·host(.ts)로 이양되고 bootstrap 구성 시 부착 1 이 생겨 119 → 105."
+unit = "노드 폐포의 원소 수. R3-01 재고정: popover 모듈-평가 8·undo_toast 2·modal 4 가 엔진 배선·host(.ts)로 이양되고 bootstrap 구성 시 부착 1 이 생겨 119 → 105. R3-02 재고정: 셸 리스너 7 이 서술 + ShellHost 부착(src/shell/host.ts — .ts)으로 이양돼 105 → 98."
 [[metric.aliases]]
-value = 109
+value = 102
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
-unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다."
+unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102."
 
 [[metric]]
 id = "listener-release-sites"
@@ -593,7 +596,7 @@ value = 7
 predicate = { kind = "derived", axis = "subscription_release" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 부착 105 와의 차 98 이 이 축의 사실이다(R3-01 재고정: modal.js 해제 5 가 host 컨트롤러로 이양)."
+unit = "노드 폐포의 원소 수. 부착 98 과의 차 91 이 이 축의 사실이다(R3-01 재고정: modal.js 해제 5 가 host 컨트롤러로 이양 · R3-02 재고정: 부착 쪽이 7 줄어 차가 98 → 91)."
 
 [[metric]]
 id = "dom-stable-ids"
@@ -1300,18 +1303,9 @@ classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["none"]
 
-[[node]]
-id = "state/app-shell"
-kind = "state"
-axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/app.js:15 closePromptPending",
-  "frontend/js/app.js:55 routingReady",
-] }
-evidence = [{ file = "frontend/js/app.js", line = 15, anchor = "closePromptPending", occurrence = 1 }]
-classification = "react"
-handoff_slice = "R3-02 #411"
-verification = ["none"]
+# (구 state/app-shell — closePromptPending·routingReady — 는 R3-02 재고정에서 행째 소멸:
+#  두 상태가 셸 상태기계(src/shell/nav.ts — `.ts` 라 이 축의 scope 밖, #491 사각)의 폐쇄
+#  변수로 이양됐다. app.js 에 모듈 가변 상태는 남지 않았다.)
 
 [[node]]
 id = "state/theme"
@@ -1351,13 +1345,13 @@ id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:146 LibraryScreen",
-  "frontend/src/bootstrap.js:147 EditorScreen",
-  "frontend/src/bootstrap.js:148 JobScreen",
-  "frontend/src/bootstrap.js:149 WorkbenchScreen",
-  "frontend/src/bootstrap.js:150 Nav",
+  "frontend/src/bootstrap.js:147 LibraryScreen",
+  "frontend/src/bootstrap.js:148 EditorScreen",
+  "frontend/src/bootstrap.js:149 JobScreen",
+  "frontend/src/bootstrap.js:150 WorkbenchScreen",
+  "frontend/src/bootstrap.js:151 Nav",
 ] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 146, anchor = "LibraryScreen", occurrence = 2 }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 147, anchor = "LibraryScreen", occurrence = 2 }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["none"]
@@ -1478,9 +1472,9 @@ id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:309",
+  "frontend/src/bootstrap.js:319",
 ] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 309, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 319, anchor = "addEventListener" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/js/n05_foundation.test.js"]
@@ -1666,23 +1660,17 @@ id = "subscription/listener/app-shell"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = [
-  "frontend/js/app.js:142",
-  "frontend/js/app.js:159",
-  "frontend/js/app.js:161",
-  "frontend/js/app.js:167",
-  "frontend/js/app.js:184",
-  "frontend/js/app.js:185",
-  "frontend/js/app.js:186",
-  "frontend/js/app.js:188",
-  "frontend/js/app.js:211",
-  "frontend/js/app.js:215",
-  "frontend/js/app.js:220",
-  "frontend/js/app.js:46",
+  "frontend/js/app.js:187",
+  "frontend/js/app.js:204",
+  "frontend/js/app.js:205",
+  "frontend/js/app.js:206",
+  "frontend/js/app.js:208",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 142, anchor = "addEventListener", occurrence = 2 }]
+evidence = [{ file = "frontend/js/app.js", line = 187, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
+note = "R3-02 재고정: 셸 리스너 7(백스톱 unhandledrejection·nav 클릭 위임·fontScale/theme 토글·라벨 동기 2·pywebviewready 부팅 훅)은 app.js 가 **서술**(attachments)로 캡처하고 부착/해제는 React ShellHost(src/shell/host.ts — `.ts` 라 이 축의 scope 밖, #491 사각)가 진다. 남는 것은 스플리터 제스처 5(pointerdown·move/up/cancel·keydown — 제스처 단위 add/remove 대칭이라 adapter 잔존)."
 
 [[node]]
 id = "subscription/listener/modal"
@@ -1734,11 +1722,11 @@ id = "subscription/release/app-splitter"
 kind = "subscription"
 axis = "subscription_release"
 selector = { kind = "exact", members = [
-  "frontend/js/app.js:176",
-  "frontend/js/app.js:177",
-  "frontend/js/app.js:178",
+  "frontend/js/app.js:196",
+  "frontend/js/app.js:197",
+  "frontend/js/app.js:198",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 176, anchor = "removeEventListener", occurrence = 1 }]
+evidence = [{ file = "frontend/js/app.js", line = 196, anchor = "removeEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["none"]
@@ -1853,8 +1841,8 @@ verification = ["none"]
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:114"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 114, anchor = "export function bootProduct" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:115"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 115, anchor = "export function bootProduct" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
@@ -1918,11 +1906,11 @@ id = "lifecycle/factory/r3-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = [
-  "frontend/js/app.js:12",
+  "frontend/js/app.js:23",
   "frontend/js/personalization.js:5",
   "frontend/js/theme.js:16",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 12, anchor = "export function createAppShell" }]
+evidence = [{ file = "frontend/js/app.js", line = 23, anchor = "export function createAppShell" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
@@ -1995,15 +1983,13 @@ id = "lifecycle/app-routing"
 kind = "lifecycle"
 axis = "lifecycle_hook"
 selector = { kind = "exact", members = [
-  "frontend/js/app.js:109",
-  "frontend/js/app.js:220",
-  "frontend/js/app.js:70",
+  "frontend/js/app.js:65",
 ] }
-evidence = [{ file = "frontend/js/app.js", line = 70, anchor = "const IMMERSIVE = [" }, { file = "frontend/js/app.js", line = 220, anchor = "pywebviewready", occurrence = 2 }]
+evidence = [{ file = "frontend/js/app.js", line = 65, anchor = "owner.leaveTo" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
-note = "IMMERSIVE 배열 · 이탈 가드 위임 · pywebviewready 부팅 훅. 몰입 표면의 이탈 위임은 화면별 특례가 아니라 app.js 의 목록이 진다."
+note = "R3-02 재고정: IMMERSIVE 목록 정본은 상태기계(src/shell/nav.ts), pywebviewready 부팅 훅 부착은 React ShellHost(src/shell/host.ts) — 둘 다 `.ts` 라 이 축의 scope 밖(#491 사각). 남는 것은 이탈 가드 위임 **집행**(delegateLeave 의 owner.leaveTo 호출) 1이다. 몰입 표면의 이탈 위임 판정은 화면별 특례가 아니라 상태기계의 목록이 진다."
 
 [[node]]
 id = "lifecycle/screen-leave-guard"

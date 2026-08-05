@@ -185,6 +185,41 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
 - **R4 인계**: 9 모달·메뉴 3·콜패널·이동 다이얼로그 2 의 DOM 실이관(내용 생산자=화면과 한
   몸). **R5 인계**: 파사드 모듈 자체의 은퇴와 release 비대칭의 최종 정산.
 
+### 앱 셸·navigation 수명주기 (R3-02 · #411)
+
+앱 셸을 셋으로 갈랐다 — **판정·수명주기·집행**. 파사드(`Nav.go`·`Nav.refresh`·
+`AppCloseGuard.prompt`)와 그 거동은 무변경이다.
+
+- **판정 = 셸 상태기계**(`frontend/src/shell/nav.ts`): 현재 화면·기본 랜딩(`DEFAULT_SCREEN`)·
+  몰입 이탈 위임(`IMMERSIVE_SURFACES` — id·cls 한 행, 새 몰입 표면은 여기 한 줄)·ready
+  게이트(`routingReady`)·전환 자동 재당김 규약(`REFRESH_ON_NAV` — 단일 정의)·닫기 직렬화
+  (`closePromptPending` 승계)를 소유한다. DOM 기입·판독 0·전역 접촉 0 — 집행자 포트가 주입
+  이고, 결속은 정확히 1회(이중 결속 throw). `go` 는 synchronous 다: 파사드 호출 → 판정 →
+  집행이 한 동기 턴이고 React 재렌더를 경유하지 않는다.
+- **수명주기 = React ShellHost**(`frontend/src/shell/host.ts`): 셸 리스너(백스톱
+  `unhandledrejection`·탭 클릭·도구 클릭·라벨 동기)의 부착/해제와 부팅 시퀀스(호스트 ready
+  사건 훅 → `markReady` → init 5 재생: library→editor→job→workbench→DataPicker)를 트리
+  자식으로 소유한다. 부착 실물(`attachShell`)은 effect 와 node 하니스가 같은 하나를 쓴다.
+  부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로 놓침 창을
+  닫고, 리스너는 once 가 아니다(재발화 시 init 재주행 — 멱등은 각 화면 `wired` 가드 소유).
+- **집행 = app.js 집행 adapter**: 클래스·속성 토글(aria-current·`.scr.on`·몰입 body 클래스)·
+  `SurfaceSheet.closeAllAndRestore()` 회수·refresh 발신(`Bridge.call` + notice/실패 재진술)·
+  스플리터 제스처(제스처 단위 add/remove 대칭이라 잔존)·리스너 **서술**(attachments — 구성
+  시 캡처)이 남는다. **닫기 확인의 호출·문안(`앱 종료 확인`·`confirmLabel: "종료"`·`계속
+  작업`)·`danger: true`·`Bridge.confirmWindowClose/cancelWindowClose` 발신도 app.js 잔존이
+  계약이다** — 파괴 확정 감사망(danger 감사·dom-contract)이 legacy 층 원문 위에서 완전하기
+  때문이고(#411 패킷 rev3 개정 5), 직렬화 판정만 상태기계를 지난다. adapter 가 판정을
+  재조립하면 그것이 경계 위반이다(음성 게이트가 든다).
+- **마운트 실패의 반경**: R3-01(확인 창)에 더해 탭·도구 응답·화면 init 이 React 마운트에
+  선다 — 실패는 경보(alert)로 착지하고 Vanilla fallback 은 없다(#405 불변식).
+- **검증 배치**: 상태기계 순수층은 `tests/js/shell_nav.test.js`, adapter 결합·부착 실물은
+  `tests/js/n06_app_shell.test.js`(attachShell 로 종전 거동 계측), 실창 증거는 기존 selftest
+  부팅·라우팅 프로브(무변경 초록) + 신설 `tests/test_react_shell_live.py`(랜딩·실클릭 동기
+  전환·닫기 취소/확정 왕복·reload 재초기화)가 진다.
+- **R4 인계**: 화면 init 본문·refresh 의 화면별 의미·화면 루트 DOM 실이관(adapter 집행
+  대상의 축소)과 파괴 확정 감사의 `.ts` 수집 확장(confirm 호출이 React 층으로 옮는 첫
+  슬라이스가 진다). **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
+
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
 Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름
@@ -295,12 +330,15 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
 `frontend/js/app.js`의 앱 셸이 내는 `Nav.go`가 표시 상태를 전환한다(주입으로 전달되는
-구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다). `editor`(재작성 F7)와 `workbench`(재작성 F6)는
+구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다. R3-02 부터 판정은 셸 상태기계
+`frontend/src/shell/nav.ts`, app.js 는 집행 adapter 다 — 위 「앱 셸·navigation 수명주기」).
+`editor`(재작성 F7)와 `workbench`(재작성 F6)는
 **탭 없는 몰입 표면**이다: 상단 2탭을 덮으므로 nav 버튼이 없고, 나가는 모든 이동이 자기
 이탈 가드를 지난다(`{force:true}` 는 처분을 마친 재호출). 위임은 화면마다의 특례가 아니라
-`app.js` 의 **몰입 표면 목록**(`IMMERSIVE`)이 진다 — 특례를 표면마다 늘리면 가드의 완전성이
-표면 수에 비례하고, 그것이 이 두 표면을 화면으로 올린 바로 그 이유다. 새 몰입 표면은 그
-목록에 한 줄이면 되고 셸 은닉(`body.<cls>-open`)과 이탈 위임이 함께 따라온다.
+상태기계의 **몰입 표면 목록**(`IMMERSIVE_SURFACES`)이 진다 — 특례를 표면마다 늘리면 가드의
+완전성이 표면 수에 비례하고, 그것이 이 두 표면을 화면으로 올린 바로 그 이유다. 새 몰입
+표면은 그 목록에 한 줄이면 되고 셸 은닉(`body.<cls>-open` — 집행은 adapter)과 이탈 위임이
+함께 따라온다.
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
