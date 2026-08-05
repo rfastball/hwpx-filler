@@ -1277,17 +1277,21 @@ def test_whole_frontend_graph_from_the_entry_has_no_cycles_and_no_bare_specifier
         seen[node] = 1
         visited.add(node)
         path = SOURCE_ROOT / node
-        #: `.ts` 도 간선 방문만 하고 내부를 안 읽으면 그 서브트리는 게이트의 사각에서
-        #: 자란다(L16 B1 — rev1 은 「충돌」로 반대로 적었던 자리다). 같은 술어로 걷는다.
-        if path.suffix in (".js", ".ts") and path.is_file():
+        #: 간선 방문만 하고 내부를 안 읽으면 그 서브트리는 게이트의 사각에서 자란다
+        #: (L16 B1 — rev1 은 「충돌」로 반대로 적었던 자리다). 하강도 확장자 열거가 아니라
+        #: **전부**다(#490 리뷰 P2): `.ts` 열거로 두면 미래의 정당한 `.tsx`/`.mts` 가 등재
+        #: 뒤에도 자기 간선을 영영 안 읽혀, 그 안의 순환·bare 가 조용히 통과한다. 상대
+        #: import 가 가리키는 노드는 정의상 코드 모듈이라 무조건 읽는다.
+        if path.is_file():
             for spec in module_imports(path.read_text(encoding="utf-8")):
                 if spec.startswith("."):
                     visit(normpath(join(dirname(node), spec)), (*trail, node))
                 elif spec.startswith("../css/") or spec.endswith(".css"):
                     continue
-                elif path.suffix == ".ts" and _ts_bare_allowed(spec):
-                    #: 빌드가 해소하는 **핀된** 의존 — `.ts` 에만 열린 문이다. `.js` 는
-                    #: 여전히 bare 0 이라 legacy 25 가 React 를 직접 싣는 경로가 없다.
+                elif path.suffix != ".js" and _ts_bare_allowed(spec):
+                    #: 빌드가 해소하는 **핀된** 의존 — TS-가족(¬`.js` — 등재 필터와 같은
+                    #: 감산형)에만 열린 문이다. `.js` 는 여전히 bare 0 이라 legacy 25 가
+                    #: React 를 직접 싣는 경로가 없다.
                     continue
                 else:
                     bare.append(f"{node} -> {spec}")
