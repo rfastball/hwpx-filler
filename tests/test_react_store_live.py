@@ -148,7 +148,7 @@ def test_the_phase_table_matches_the_reinit_contract() -> None:
 #: 자식 드라이버 — 실 백엔드가 달린 자체 창에서 4단계(부팅 0 → push 양수 → reload 0 →
 #: 재push 양수)를 이 모듈의 술어로 폴링하고, 단계별 마지막 되읽기를 한 줄로 내보낸다.
 _CHILD_DRIVER = """
-import json, sys, tempfile, time
+import json, sys, tempfile, threading, time
 from pathlib import Path
 
 import webview
@@ -169,6 +169,8 @@ window = webview.create_window(
     hidden=True,
 )
 frontend._window = window
+loaded_event = threading.Event()
+window.events.loaded += loaded_event.set
 
 
 def probe() -> None:
@@ -193,11 +195,15 @@ def probe() -> None:
         #: 조기 반환하므로 legacy 경로 부작용이 없다(모듈 머리말).
         frontend._push("workbench", {"probe": 1})
         poll("pushed")
-        #: 재초기화 — 문서 reload 가 bootProduct() 를 다시 돌려 store 가 신품으로 선다.
-        try:
-            window.evaluate_js("location.reload()")
-        except Exception:  # noqa: BLE001 — 문서 해체 중 반환 실패는 정상
-            pass
+        #: 재초기화 — 문서 재적재가 bootProduct() 를 다시 돌려 store 가 신품으로 선다.
+        #: evaluate 로 reload 를 쏘면 문서 해체가 평가 응답과 경합해 evaluate_js 가 영영
+        #: 안 돌아올 수 있다(#411 shell 게이트가 실증·폐쇄한 경합 클래스 — CI 저속 러너에서
+        #: 이 게이트가 같은 서명(출력 0 매달림)으로 3/3 발화). load_url 은 응답을 기다리지
+        #: 않고 loaded 사건 대기로 해체 구간 평가를 0 으로 만든다. file URI 형이 계약이다
+        #: (맨 경로는 항행이 조용히 일어나지 않는다).
+        loaded_event.clear()
+        window.load_url(artifact.index_path.as_uri())
+        loaded_event.wait(30.0)
         poll("reloaded")
         frontend._push("workbench", {"probe": 2})
         poll("repushed")

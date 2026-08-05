@@ -11,6 +11,8 @@ from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
 APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
+# R3-02(#411) — 랜딩 기본값·ready 게이트 판정의 정본은 셸 상태기계로 이동했다.
+NAV_TS = (SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
 LIB = (SOURCE_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
 JOB = (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
 CSS = app_css()
@@ -21,9 +23,9 @@ def test_cold_boot_lands_on_jobs() -> None:
     assert '<section class="scr on" id="scr-job">' in INDEX
     assert 'data-scr="library" aria-current="true"' not in INDEX
     assert '<section class="scr on" id="scr-library">' not in INDEX
-    assert 'const DEFAULT_SCREEN = "job"' in APP
-    assert "go(DEFAULT_SCREEN)" in APP
-    assert "if (!routingReady) return" in APP
+    assert 'const DEFAULT_SCREEN = "job"' in NAV_TS, "랜딩 정본은 상태기계(R3-02)"
+    assert "go(DEFAULT_SCREEN)" in APP, "구성=랜딩 호출은 집행 adapter 에 남는다"
+    assert "if (!routingReady) return" in NAV_TS, "ready 게이트 판정은 상태기계 소유"
 
 
 def test_kpi_and_continue_surfaces_stay_removed_with_their_layout() -> None:

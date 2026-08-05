@@ -87,7 +87,9 @@ Python, 문안·확인 UI 는 웹**.
 
 상단 탭은 `job`(문서 만들기)·`library`(문서 작업) 2탭이고 `tpl` 은 과도기 잔존이다.
 `editor`·`workbench` 는 탭 없는 **몰입 표면**으로, 이탈 가드 위임은 화면별 특례가 아니라
-`frontend/js/app.js` 의 `IMMERSIVE` 목록이 진다. 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS 의
+셸 상태기계 `frontend/src/shell/nav.ts` 의 `IMMERSIVE_SURFACES` 목록이 진다(R3-02 —
+판정은 상태기계, 클래스·속성 집행은 `frontend/js/app.js` adapter, 리스너·부팅 수명주기는
+React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS 의
 `SCREEN`, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry, `docs/UI_CONTRACT.md`
 를 **한 계약 변경으로** 갱신한다.
 

@@ -2,7 +2,8 @@
  *
  * 지키는 것 다섯:
  *  ① 공개 표면 — `createWorkbenchScreen({ Bridge, Nav })` 가 `{ init, render, leaveTo }` 를
- *     낸다. `leaveTo` 는 앱 셸(IMMERSIVE 목록)이 몰입 이탈에 쓰는 공개 API — 시그니처·의미 불변.
+ *     낸다. `leaveTo` 는 셸(상태기계 IMMERSIVE_SURFACES 판정 → adapter 위임 집행, R3-02)이
+ *     몰입 이탈에 쓰는 공개 API — 시그니처·의미 불변.
  *  ② init 멱등 — initial 당김이 없는 화면이라 wired 가드만: 재호출 시 listener·onPush
  *     추가 등록 0(계측 stub 로 실측). onPush 에 등록된 렌더러는 공개 render 그 함수다.
  *  ③ 이탈 단일 관문 — leaveTo 는 **정산(Intent.settle) → leave_guard → (확인) → close →

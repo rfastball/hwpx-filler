@@ -98,6 +98,7 @@ import { createPushPort } from "./push_port.js";
 import { bootReactRoot } from "./react/boot.ts";
 import { createRuntimeAdapter } from "./runtime/adapter.ts";
 import { createBridgeClient } from "./runtime/client.ts";
+import { createShellNav } from "./shell/nav.ts";
 import { createSnapshotStore } from "./state/store.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
@@ -196,12 +197,21 @@ export function bootProduct() {
   });
   WorkbenchScreen = createWorkbenchScreen({ Bridge: bridge, Nav: navigation });
 
-  /* 앱 셸 — 마지막. 구성이 곧 부팅 랜딩(`go("job")`)이라 화면·서비스 뒤에 선다. */
+  /* 셸 상태기계 (R3-02 · #411) — 라우팅·ready·닫기 직렬화 **판정**의 단일 정본. 여기서
+     **정확히 한 번** 구성된다(reload 시 재구성 = store·renderers 와 같은 수명). 집행자
+     결속은 아래 adapter 구성이 정확히 1회 지고, 두 번째 결속은 상태기계가 throw 한다 —
+     `bootProduct` 재호출 방지가 「호출자 유일성」에 더해 구조 한 겹을 얻었다. */
+  const shellNav = createShellNav();
+
+  /* 앱 셸 집행 adapter — 마지막. 구성이 곧 부팅 랜딩(`go("job")`)이라 화면·서비스 뒤에
+     선다. 셸 리스너·부팅 시퀀스는 여기서 **서술**(`shellHost`)로만 캡처되고, 부착/해제
+     수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
     Bridge: bridge, Theme, Personalization, DataPicker,
     screens: {
       library: LibraryScreen, editor: EditorScreen, job: JobScreen, workbench: WorkbenchScreen,
     },
+    shellNav,
   });
   Nav = appShell.Nav;
   const AppCloseGuard = appShell.AppCloseGuard;
@@ -313,11 +323,12 @@ export function bootProduct() {
      `#reactRoot` 하나가 React 소유 경계의 전부이고, React 를 아는 것은 `./react/boot.ts`
      쪽이다(`.js` 그래프는 bare import 0 을 유지한다 — 정적 게이트가 잰다).
 
-     실패는 시끄럽고 부팅은 계속된다: 이 단계의 React 트리는 화면을 아직 지지 않으므로
-     마운트 실패가 제품 기능을 깎지 않지만, 그 사실을 조용히 접으면 실 WebView2 에서만
-     드러나는 회귀가 침묵이 된다. node 의 합성 루트 테스트 환경에선 대역 DOM 이 실
-     createRoot 를 통과하지 못해 이 경보가 매번 도는 것이 허용 상태다 — 실물 커밋 증거는
-     live 게이트의 마운트 마커 되읽기가 진다. */
+     실패는 시끄럽고 부팅은 계속된다 — 그러나 R3-01(overlay 표면 4)·R3-02(셸 리스너·부팅
+     시퀀스)부터 이 트리는 제품 경로다: 마운트 실패 = 확인 창·탭 응답·화면 init 이 서지
+     않는다. 그 실패를 조용히 접지 않고 경보(alert)로 착지시키는 것이 이 배선의 계약이고,
+     Vanilla fallback 은 만들지 않는다(#405 불변식). node 의 합성 루트 테스트 환경에선 대역
+     DOM 이 실 createRoot 를 통과하지 못해 이 경보가 매번 도는 것이 허용 상태다 — 실물
+     커밋 증거는 live 게이트의 마운트 마커 되읽기가 진다. */
   bootReactRoot({
     doc: document,
     alarm: (message) => {
@@ -334,6 +345,10 @@ export function bootProduct() {
       doc: document,
       notify: (message) => window.alert(message),
     },
+    /* R3-02 — 트리의 ShellHost 가 셸 리스너 부착/해제와 부팅 시퀀스(ready 사건 훅 →
+       상태기계 markReady → init 5)를 소유한다. 서술은 adapter 구성 시 캡처된 것을 그대로
+       넘긴다 — 여기서 풀어 헤치면 합성 루트가 두 번째 셸 조립자가 된다. */
+    shell: appShell.shellHost,
   });
 
   /* typed bridge client (R2-02 · #406) — 여기서 **정확히 한 번** 구성된다. 소비자는 아직

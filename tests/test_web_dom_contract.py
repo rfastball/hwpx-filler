@@ -1864,13 +1864,20 @@ def test_unhandledrejection_backstop_present_in_shell():
     (diff 셸의 짝 백스톱은 hwpx-diff 저장소가 같은 단언으로 지킨다 — 분리 전에는 이
     루프가 두 셸을 함께 돌았다.)
     """
+    # R3-02(#411) — 부착/해제 수명주기는 React ShellHost 가 소유하고, app.js 는 핸들러
+    # 본문(재진술 집행)을 서술(attachments)로 캡처한다. 백스톱의 실물은 그 서술 행이다.
     app_js = WEB_JS_DIR / "app.js"
     src = app_js.read_text(encoding="utf-8")
-    m = re.search(r'addEventListener\("unhandledrejection",[\s\S]*?\}\);', src)
-    assert m, f"{app_js} 에 unhandledrejection 백스톱이 없습니다 — 조용한 무반응 결함류 재개방."
+    m = re.search(r'type: "unhandledrejection",[\s\S]*?\},\n  \}\);', src)
+    assert m, f"{app_js} 에 unhandledrejection 백스톱 서술이 없습니다 — 조용한 무반응 결함류 재개방."
     block = m.group(0)
     assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
     assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
+    # 서술은 부착자가 있어야 실물이 된다 — ShellHost 의 부착 실물(attachShell)이 전수를 건다.
+    shell_host_ts = (WEB_JS_DIR.parent / "src" / "shell" / "host.ts").read_text(encoding="utf-8")
+    assert "attachment.target.addEventListener(attachment.type, attachment.handler)" in shell_host_ts, (
+        "ShellHost 가 리스너 서술을 부착하지 않습니다 — 백스톱 서술이 죽은 데이터가 됩니다."
+    )
 
 
 def test_editor_is_an_immersive_screen_with_one_exit():
@@ -1892,19 +1899,27 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert 'id="jobEditExit"' not in html and 'id="jobEditExitNote"' not in html, (
         "구 편집 모드 출구·복귀 고지가 부활했습니다 — 그 소임은 patch 처분이 승계했습니다."
     )
-    # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다.
+    # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다. R3-02(#411)부터
+    # 몰입 목록의 정본은 셸 상태기계(nav.ts)이고 app.js 는 그 목록으로 body 클래스를 집행한다.
     app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
-    assert "editor-open" in app_js and "body.editor-open .nav" in WEB_CSS, (
+    nav_ts = (WEB_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
+    assert '{ id: "editor", cls: "editor-open" }' in nav_ts and "body.editor-open .nav" in WEB_CSS, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
+    )
+    assert "IMMERSIVE_SURFACES.forEach" in app_js and "classList.toggle(im.cls" in app_js, (
+        "집행 adapter 가 몰입 목록으로 셸 표지를 내리지 않습니다 — 판정만 있고 은닉이 죽습니다."
     )
     # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다
     # 늘리면 가드의 완전성이 표면 수에 비례한다(이 표면이 존재하는 바로 그 이유). 그래서
-    # 목록에 등록됐는지와, 목록이 leaveTo 로 위임하는지를 함께 센다.
-    assert "IMMERSIVE" in app_js and "owner.leaveTo" in app_js, (
-        "Nav 가 몰입 표면의 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
+    # 목록 판정(상태기계)과 위임 집행(adapter 의 leaveTo 호출)을 함께 센다.
+    assert "IMMERSIVE_SURFACES.some" in nav_ts and "delegateLeave" in nav_ts, (
+        "상태기계가 몰입 표면의 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
     )
-    for owner in ("EditorScreen", "WorkbenchScreen"):
-        assert owner in app_js, f"{owner} 이 몰입 표면 목록에 없습니다."
+    assert "owner.leaveTo" in app_js, (
+        "adapter 가 소유 화면의 leaveTo 로 위임하지 않습니다 — 가드가 판정만 남습니다."
+    )
+    for surface in ('{ id: "editor", cls: "editor-open" }', '{ id: "workbench", cls: "workbench-open" }'):
+        assert surface in nav_ts, f"몰입 표면 목록에 {surface} 가 없습니다."
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):

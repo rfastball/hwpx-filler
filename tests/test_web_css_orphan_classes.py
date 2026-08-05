@@ -351,6 +351,22 @@ def _readable(path: Path) -> str:
     return _expand_interpolations(text, _raw_bindings(text))
 
 
+#: R3-02(#411) — 몰입 표면 목록(id·cls)의 정본이 셸 상태기계(`src/shell/nav.ts`)로 이사해
+#: app.js 의 `im.cls` sink 는 **다른 파일**의 속성 결속으로만 읽힌다. 「같은 파일 결속」
+#: 원칙의 명시 예외 하나이고 app.js 한정으로만 회수를 넓힌다 — `.ts` 전면 편입(ux_css
+#: 그물의 scope 재설계)은 R3-03(#412)이 진다.
+_SHELL_NAV_TS = SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts"
+
+
+def _bindings_for(path: Path, text: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """파일 하나의 결속 — app.js 는 셸 상태기계 정본의 속성 결속을 함께 회수한다(위 주석)."""
+    variables, properties = _bindings(text)
+    if path.name == "app.js":
+        for prop, got in _bindings(_SHELL_NAV_TS.read_text(encoding="utf-8"))[1].items():
+            properties.setdefault(prop, set()).update(got)
+    return variables, properties
+
+
 def _emitted_classes() -> dict[str, set[str]]:
     """셸과 화면 JS 가 실제로 DOM 에 내는 class → 그 자리들."""
     found: dict[str, set[str]] = {}
@@ -359,7 +375,7 @@ def _emitted_classes() -> dict[str, set[str]]:
         names: set[str] = set()
         for match in _CLASS_ATTR.finditer(text):
             names |= _tokens(match.group(1) if match.group(1) is not None else match.group(2))
-        variables, properties = _bindings(text)
+        variables, properties = _bindings_for(path, text)
         for expr in _class_sinks(text):
             names |= _sink_names(expr, variables, properties)
         where = path.relative_to(ROOT).as_posix()
@@ -451,7 +467,7 @@ def test_every_class_sink_yields_a_readable_name() -> None:
     unreadable: list[str] = []
     for path in _SOURCES:
         text = _readable(path)
-        variables, properties = _bindings(text)
+        variables, properties = _bindings_for(path, text)
         where = path.relative_to(ROOT).as_posix()
         for expr in _class_sinks(text):
             if not _sink_names(expr, variables, properties):

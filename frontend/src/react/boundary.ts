@@ -9,13 +9,15 @@
 
    경계가 잡은 실패는 `role="alert"` 실패 표면으로 그 자리에서 보이고, 경보 콜백으로
    시끄럽게 재진술된다. legacy 트리로 되돌아가 실패를 숨기는 경로는 만들지 않는다(#405
-   불변식). 지금 이 트리의 유일한 자식은 화면 없는 마운트 신호라 이 표면이 실제로 보일
-   일은 없지만, 화면이 이관되기 전에 실패의 착지 형태부터 계약으로 세운다. */
+   불변식). R3-01 이 overlay 표면 4 를, R3-02 가 셸 리스너·부팅 시퀀스를 이 트리에 실은
+   뒤로 렌더 실패는 실제 제품 반경(확인 창·탭 응답)을 가진다 — 착지 형태가 계약인 이유다. */
 import { Component, createElement, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { SnapshotStore } from "../state/store.ts";
 import { OverlayHost } from "../overlay/host.ts";
 import type { OverlayHostPorts } from "../overlay/host.ts";
+import { ShellHost } from "../shell/host.ts";
+import type { ShellHostPorts } from "../shell/host.ts";
 
 type BoundaryProps = {
   alarm: (message: string) => void;
@@ -88,14 +90,15 @@ function StoreSignal(props: {
 }
 
 /** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다.
- *  자식 셋: 마운트 신호 · store 신호 · overlay host(R3-01 — 완전 데이터-구동 표면 4 의
- *  React 소유 DOM). */
+ *  자식 넷: 마운트 신호 · store 신호 · overlay host(R3-01 — 완전 데이터-구동 표면 4 의
+ *  React 소유 DOM) · shell host(R3-02 — 셸 리스너·부팅 시퀀스의 수명주기). */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;
   store: SnapshotStore;
   reflectStoreRevision: (revision: number) => void;
   overlay: OverlayHostPorts;
+  shell: ShellHostPorts;
 }): ReactNode {
   return createElement(
     ReactErrorBoundary,
@@ -106,5 +109,6 @@ export function createAppElement(hooks: {
       reflectStoreRevision: hooks.reflectStoreRevision,
     }),
     createElement(OverlayHost, hooks.overlay),
+    createElement(ShellHost, hooks.shell),
   );
 }

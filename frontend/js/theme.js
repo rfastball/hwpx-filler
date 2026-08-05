@@ -39,7 +39,7 @@ export function createTheme({ bridge }) {
     // 파일마다 흩어지면 그 백엔드를 바꿀 때 조용히 빠뜨리는 곳이 생긴다.
     if (bridge.hostReady()) {
       // 동기 throw(Bridge 부재 등)도 삼키지 않는다(confirm-or-alarm) — 비동기 rejection 은
-      // app.js 의 unhandledrejection 백스톱이 받는다.
+      // 셸의 unhandledrejection 백스톱(app.js 서술·ShellHost 부착, R3-02)이 받는다.
       try { bridge.setTheme(current()); }
       catch (e) { window.alert(String((e && e.message) || e)); }
     }
