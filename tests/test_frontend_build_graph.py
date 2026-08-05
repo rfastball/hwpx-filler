@@ -466,7 +466,9 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         "screens/workbench.js": {
             "../esc.js", "../intent.js", "../modal.js", "../preserve.js", "../segview.js",
         },
-        "app.js": {"./modal.js", "./surface_sheet.js"},
+        # R3-02(#411): 집행 adapter 가 판정 정본(DEFAULT_SCREEN·IMMERSIVE_SURFACES)을 상태
+        # 기계 모듈에서 읽는다 — modal.js 와 같은 js→ts 합법 방향.
+        "app.js": {"./modal.js", "./surface_sheet.js", "../src/shell/nav.ts"},
     }
 
     for name, expected in expected_edges.items():
@@ -868,6 +870,8 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/react/use_screen_snapshot.ts",  # R2-03 — store↔React 결속(useSyncExternalStore 위임)
         "src/runtime/adapter.ts",  # R2-02 — pywebview 접촉의 유일한 신규 소유자
         "src/runtime/client.ts",  # R2-02 — 생성 유니온으로 좁혀진 전송 표면
+        "src/shell/host.ts",  # R3-02 — React ShellHost: 셸 리스너·부팅 시퀀스 수명주기
+        "src/shell/nav.ts",  # R3-02 — 셸 상태기계(라우팅·ready·재당김 규약·닫기 직렬화 판정)
         "src/state/store.ts",  # R2-03 — 전송-충실 스냅샷 store(값 해석 0)
     ], f"`.ts` 서브트리 전수가 어긋납니다: {ts_members}"
     assert len(sources) >= 40, (

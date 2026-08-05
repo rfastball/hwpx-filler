@@ -234,9 +234,11 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     화이트리스트의 각 화면은 실제로 ``_do_refresh`` 를 가진 컨트롤러여야 한다(미지 액션은
     dispatch 가 loud 거절하므로, 이름만 넣고 백엔드가 없으면 전환마다 경보가 울린다).
     """
-    src = _js("app.js")
-    m = re.search(r"REFRESH_ON_NAV\s*=\s*\[([^\]]*)\]", src)
-    assert m, "app.js 에 REFRESH_ON_NAV 화이트리스트가 없습니다 — 전환 시 스냅샷 고착 회귀(C6)."
+    # R3-02(#411) — 화이트리스트 정본은 셸 상태기계(nav.ts)로 이동했다. 백엔드 대조(조용한
+    # 무차별 dispatch 금지)는 축을 바꿔 그대로 보존한다.
+    nav_ts = (WEB_JS.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
+    m = re.search(r"REFRESH_ON_NAV[^=]*=\s*Object\.freeze\(\[([^\]]*)\]\)", nav_ts)
+    assert m, "상태기계에 REFRESH_ON_NAV 화이트리스트가 없습니다 — 전환 시 스냅샷 고착 회귀(C6)."
     listed = set(re.findall(r'"(\w+)"', m.group(1)))
     # job 포함 — 레지스트리 파생 작업 목록을 스냅샷으로 그리는 표면이 빠지면 에디터에서 막
     # 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). run 은 사망(슬라이스 3).
@@ -247,16 +249,20 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     # 아니고, 템플릿 탭 재진입 재스캔 + tpl push 재당김 구독이 그 역할을 진다.
     assert listed == {"library", "job"}
 
-    # 재당김의 **단일 정의**(8R 근본 조치) — 화이트리스트 판정 + refresh dispatch 가 한 자리에
-    # 살고, 전환은 그것을 소비하며 실패를 표면화한다(.catch). 정의가 둘이면 한쪽만 고쳐진다.
-    defn = _segment(src, "function refresh(id)", "function go(id, opts)")
+    # 재당김의 **단일 정의**(8R 근본 조치)의 R3-02 형태 — 화이트리스트 **판정**은 상태기계
+    # refresh 한 자리, refresh dispatch **발신**은 집행 adapter(app.js) 한 자리에 살고,
+    # 전환(go)은 판정을 소비하며 실패를 표면화한다(.catch). 어느 축이든 정의가 둘이면
+    # 한쪽만 고쳐진다.
+    defn = _segment(nav_ts, "function refresh(id: string)", "function go(id: string")
     assert "REFRESH_ON_NAV.includes(id)" in defn
-    assert re.search(r'Bridge\.call\(id,\s*"refresh"', defn), "재당김 refresh dispatch 부재(C6)."
-    seg = _segment(src, "function go(id, opts)", "const Nav = {")
+    assert nav_ts.count("REFRESH_ON_NAV.includes") == 1, "화이트리스트 판정이 두 벌입니다(8R)."
+    src = _js("app.js")
+    assert src.count('Bridge.call(id, "refresh"') == 1, "재당김 refresh dispatch 는 정확히 한 자리(C6)."
+    seg = _segment(nav_ts, "function go(id: string", "return {")
     assert re.search(r"refresh\(id\)\.catch", seg), (
         "전환 자동 refresh 실패가 조용히 삼켜집니다(C6·confirm-or-alarm)."
     )
-    assert not re.search(r'Bridge\.call\(id,\s*"refresh"', seg), (
+    assert "dispatchRefresh" not in seg, (
         "전환이 재당김을 자체 조립합니다 — 정의가 두 벌이면 한 경로만 고쳐집니다(8R)."
     )
 

@@ -1,15 +1,16 @@
-/* 앱 셸(app.js) ESM factory 전환의 특성화 테스트 — N-06 lane E.
+/* 앱 셸 집행 adapter 의 특성화 테스트 — N-06 lane E, R3-02(#411)에서 제자리 진화.
  *
- * 기대값은 **전환 이전 동작**이다. 전환은 IIFE 껍질을 벗기고 `window.Bridge`·
- * `window[im.owner]` 동적 조회·`window.Theme` 류 전역 조회를 주입/직접 import 로 드러낸
- * 기계적 작업이므로, 이 파일이 초록이면 "껍질만 바뀌고 거동은 그대로"가 참이다.
- * 셸에는 init 멱등 계약이 없다(compat 이 1회 호출을 계약) — 대신 2회 구성·pywebviewready
- * 2회 발화가 **오늘 무엇을 낳는지**를 계측해 그대로 단언한다(가드를 심지 않는다).
+ * 기대값은 **셸 이관 이전 동작**이다. R3-02 는 판정(상태기계)·수명주기(React ShellHost)·
+ * 집행(이 adapter)을 갈랐지만 파사드(`Nav.go`·`Nav.refresh`·`AppCloseGuard.prompt`)와 그
+ * 거동은 그대로여야 한다 — 이 파일이 초록이면 "절취선만 생기고 거동은 그대로"가 참이다.
+ * 판정층 자체의 전수는 shell_nav.test.js 가 지고, 여기는 adapter 결합(집행·서술·파사드)을
+ * 진다. 리스너 부착은 이제 서술(`shellHost.attachments`)이라, React effect 와 **같은 실물**
+ * (`attachShell`)로 부착해 종전 거동을 계측한다 — 부착/해제 대칭이 새 계약이다.
  *
  * DOM 은 node:test 만으로 돌리려고 손으로 세운 최소 스텁(FakeEl)이다. app.js 의 정적
  * import 간선(modal.js → popover.js)이 **모듈 평가 시점**에 document/window 리스너를 걸므로
  * 전역 대역을 먼저 설치한 뒤 동적 import 한다(n05 관례). 제품 전역(window.Bridge 등)은
- * 한 번도 세우지 않는다 — 그것이 이 전환의 요점이다.
+ * 한 번도 세우지 않는다.
  */
 import { after, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
@@ -162,6 +163,8 @@ const SRC = readFileSync(SRC_URL, "utf8");
 
 const mod = await import("../../frontend/js/app.js");
 const { Modal } = await import("../../frontend/js/modal.js");
+const { createShellNav } = await import("../../frontend/src/shell/nav.ts");
+const { attachShell } = await import("../../frontend/src/shell/host.ts");
 const { createAppShell } = mod;
 
 /* ────────────────────── 주입 대역 ────────────────────── */
@@ -181,6 +184,8 @@ function makeDeps() {
          쓴다. 대역도 실물과 같은 자리로 위임해야 "셸이 브리지를 거친다"는 사실이 검사된다. */
       confirmWindowClose() { return window.pywebview.api.confirm_window_close(); },
       cancelWindowClose() { return window.pywebview.api.cancel_window_close(); },
+      /* R3-02 — 부팅 시퀀서의 선판정도 브리지 술어를 거친다(bridge.js hostReady 계약). */
+      hostReady() { return !!(window.pywebview && window.pywebview.api); },
     },
     Theme: {
       mode: "system",
@@ -220,8 +225,15 @@ function makeDeps() {
 
 function makeShell() {
   const bag = makeDeps();
+  bag.shellNav = createShellNav();
+  bag.deps.shellNav = bag.shellNav;
   bag.shell = createAppShell(bag.deps);
   return bag;
+}
+
+/** React ShellHost effect 와 같은 실물로 부착한다 — 반환은 대칭 해제 클로저. */
+function mount(bag) {
+  return attachShell(bag.shell.shellHost);
 }
 
 const ready = () => WIN.fire("pywebviewready", {});
@@ -233,17 +245,23 @@ beforeEach(buildFixture);
 
 /* ══════════════ 1. 공개 표면 ══════════════ */
 
-test("공개 표면 — createAppShell({Bridge, Theme, Personalization, DataPicker, screens}) → {Nav, AppCloseGuard}", () => {
+test("공개 표면 — createAppShell({…, shellNav}) → {Nav, AppCloseGuard, shellHost}", () => {
   assert.deepEqual(Object.keys(mod), ["createAppShell"], "export 는 정확히 하나(named)");
   assert.equal(mod.default, undefined, "export default 금지");
   assert.equal(typeof createAppShell, "function");
-  const { shell } = makeShell();
-  assert.deepEqual(Object.keys(shell), ["Nav", "AppCloseGuard"]);
+  const { shell, shellNav } = makeShell();
+  assert.deepEqual(Object.keys(shell), ["Nav", "AppCloseGuard", "shellHost"]);
   assert.deepEqual(Object.keys(shell.Nav), ["go", "refresh"]);
   assert.equal(typeof shell.Nav.go, "function");
   assert.equal(typeof shell.Nav.refresh, "function");
   assert.deepEqual(Object.keys(shell.AppCloseGuard), ["prompt"]);
   assert.equal(typeof shell.AppCloseGuard.prompt, "function");
+  // ShellHost 주입 서술 — 수명주기(부착/해제·시퀀서)는 React 몫이라 여기는 형태만 계약한다.
+  assert.deepEqual(Object.keys(shell.shellHost), ["nav", "attachments", "boot"]);
+  assert.equal(shell.shellHost.nav, shellNav, "상태기계 객체째 — 메서드 사전 추출 금지");
+  assert.deepEqual(Object.keys(shell.shellHost.boot), ["win", "hostReady", "initSequence"]);
+  assert.equal(shell.shellHost.boot.win, WIN, "ready 사건의 대상은 window");
+  assert.equal(shell.shellHost.boot.initSequence.length, 5, "init 5(화면 넷 + DataPicker)");
 });
 
 /* ══════════════ 2. 구성 즉시 기본 랜딩·go 동기성 ══════════════ */
@@ -305,7 +323,9 @@ test("workbench 도 동형이다 — 몰입 목록이 위임·은닉을 함께 �
 /* ══════════════ 4. 전환 자동 새로고침(REFRESH_ON_NAV)·notice ══════════════ */
 
 test("routingReady 후 화이트리스트 화면 전환은 refresh 를 쏘고, refreshed:true 는 쏘지 않는다", async () => {
-  const { shell, bridgeLog, rerenders } = makeShell();
+  const bag = makeShell();
+  const { shell, bridgeLog, rerenders } = bag;
+  mount(bag);
   ready();
   shell.Nav.go("library");
   await tick();
@@ -326,7 +346,9 @@ test("routingReady 후 화이트리스트 화면 전환은 refresh 를 쏘고, r
 });
 
 test("refresh 가 notice 를 돌려주면 alert 로 시끄럽게 알린다", async () => {
-  const { shell, deps } = makeShell();
+  const bag = makeShell();
+  const { shell, deps } = bag;
+  mount(bag);
   ready();
   deps.Bridge.call = () => Promise.resolve({ notice: "열린 세션이 다른 화면의 삭제로 닫혔습니다" });
   shell.Nav.go("library");
@@ -335,8 +357,10 @@ test("refresh 가 notice 를 돌려주면 alert 로 시끄럽게 알린다", asy
 });
 
 test("가드 — routingReady 전·pywebview 부재·비화이트리스트는 무동작 이행 약속(null)", async () => {
-  const { shell, bridgeLog } = makeShell();
+  const bag = makeShell();
+  const { shell, bridgeLog } = bag;
   assert.equal(await shell.Nav.refresh("job"), null, "routingReady 전");
+  mount(bag);
   ready();
   assert.equal(await shell.Nav.refresh("editor"), null, "화이트리스트 밖");
   WIN.pywebview = null;
@@ -344,25 +368,55 @@ test("가드 — routingReady 전·pywebview 부재·비화이트리스트는 �
   assert.deepEqual(bridgeLog, [], "셋 다 브리지 발신 0");
 });
 
-/* ══════════════ 5. pywebviewready — init 5개 순서, 2회 발화 계측 ══════════════ */
+/* ══════════════ 5. 부팅 시퀀스 — 선판정·발화 순서·재발화 계측·해제 대칭 ══════════════ */
 
-test("pywebviewready 1회 → init 5개가 정확한 순서로 각 1회", () => {
-  const { initLog } = makeShell();
-  assert.deepEqual(initLog, [], "이벤트 전에는 아무 init 도 돌지 않는다");
+test("호스트 부재로 mount → init 0, pywebviewready 1회 → init 5개가 정확한 순서로 각 1회", () => {
+  const bag = makeShell();
+  WIN.pywebview = null;  // 실 부팅 창: effect 부착 시점엔 아직 호스트 주입 전이다.
+  mount(bag);
+  assert.deepEqual(bag.initLog, [], "사건 전에는 아무 init 도 돌지 않는다");
   ready();
-  assert.deepEqual(initLog, ["library", "editor", "job", "workbench", "DataPicker"]);
+  assert.deepEqual(bag.initLog, ["library", "editor", "job", "workbench", "DataPicker"]);
 });
 
-test("계측: pywebviewready 2회 발화 → 셸은 가드 없이 init 5개를 한 벌 더 돌린다(현 동작 보존)", () => {
-  const { initLog } = makeShell();
+test("선판정 — 호스트가 이미 준비면 mount 즉시 init 5(부착이 비동기라 생기는 놓침 창 폐쇄)", () => {
+  const bag = makeShell();
+  mount(bag);  // fixture 는 pywebview 를 이미 들고 있다 — 사건을 놓친 형상.
+  assert.deepEqual(bag.initLog, ["library", "editor", "job", "workbench", "DataPicker"],
+    "adapter.ts whenReady·selftest boot.js 와 같은 선판정+이벤트 규약");
+});
+
+test("계측: pywebviewready 2회 발화 → 시퀀서는 가드 없이 init 5개를 한 벌 더 돌린다(현 동작 보존)", () => {
+  const bag = makeShell();
+  WIN.pywebview = null;
+  mount(bag);
   ready();
   ready();
-  // 셸 자신은 재발화를 막지 않는다 — 멱등은 각 화면 init 의 wired 가드(N-06 화면 계약)가
+  // 시퀀서 자신은 재발화를 막지 않는다 — 멱등은 각 화면 init 의 wired 가드(N-06 화면 계약)가
   // 진다. 여기서는 스텁이라 원호출 그대로 2벌이 보인다(계측 결과의 정본).
-  assert.deepEqual(initLog, [
+  assert.deepEqual(bag.initLog, [
     "library", "editor", "job", "workbench", "DataPicker",
     "library", "editor", "job", "workbench", "DataPicker",
   ]);
+});
+
+test("해제 대칭 — detach 후 ready 사건·셸 리스너가 전부 걷힌다(재초기화 복제 금지의 실물)", () => {
+  const bag = makeShell();
+  WIN.pywebview = null;
+  const detach = mount(bag);
+  const attachedWindowTypes = ["unhandledrejection", "pywebviewready",
+    "hwpx:personalizationchange", "hwpx:themechange"];
+  for (const type of attachedWindowTypes) {
+    assert.equal(WIN.listenerCount(type), 1, `${type}: 부착 1`);
+  }
+  for (const b of NAVS) assert.equal(b.listenerCount("click"), 1);
+  detach();
+  for (const type of attachedWindowTypes) {
+    assert.equal(WIN.listenerCount(type), 0, `${type}: 해제 0`);
+  }
+  for (const b of NAVS) assert.equal(b.listenerCount("click"), 0);
+  ready();
+  assert.deepEqual(bag.initLog, [], "해제 뒤 사건은 init 을 돌리지 않는다");
 });
 
 /* ══════════════ 6. AppCloseGuard — 직렬화·양 경로·오류 시 안전측 ══════════════ */
@@ -413,8 +467,10 @@ test("Modal.confirm 이 죽으면 안전측 — cancel_window_close + alert 재�
 /* ══════════════ 7. job 착지 시 editor 재렌더 ══════════════ */
 
 test("job 착지 시 screens.editor.rerender 가 돈다(#138 리뷰 F12)", async () => {
-  const { shell, rerenders } = makeShell();
+  const bag = makeShell();
+  const { shell, rerenders } = bag;
   assert.deepEqual(rerenders, [], "구성 랜딩(routingReady 전)은 재렌더하지 않는다");
+  mount(bag);
   ready();
   shell.Nav.go("library");
   assert.deepEqual(rerenders, [], "job 외 착지는 재렌더 없음");
@@ -426,7 +482,8 @@ test("job 착지 시 screens.editor.rerender 가 돈다(#138 리뷰 F12)", async
 /* ══════════════ 8. 셸 백스톱(unhandledrejection) ══════════════ */
 
 test("unhandledrejection 백스톱 — preventDefault + alert 재진술(조용한 무반응 차단)", () => {
-  makeShell();
+  const bag = makeShell();
+  mount(bag);
   const listeners = WIN.listeners.get("unhandledrejection") || [];
   assert.equal(listeners.length, 1);
   let prevented = false;
@@ -438,7 +495,9 @@ test("unhandledrejection 백스톱 — preventDefault + alert 재진술(조용�
 /* ══════════════ 9. 테마·개인화 배선(주입 객체 소비) ══════════════ */
 
 test("테마·글자 크기 라벨은 주입 객체와 hwpx:* 이벤트로 동기화된다", () => {
-  const { deps } = makeShell();
+  const bag = makeShell();
+  const { deps } = bag;
+  mount(bag);
   assert.equal(DOC.getElementById("themeLabel").textContent, "시스템", "직접 호출은 기본 라벨");
   assert.equal(DOC.getElementById("fontScaleLabel").textContent, "기본");
 
@@ -459,7 +518,9 @@ test("테마·글자 크기 라벨은 주입 객체와 hwpx:* 이벤트로 동�
 /* ══════════════ 10. Bridge 는 객체째 — 프로퍼티 교체가 보인다 ══════════════ */
 
 test("포트 교체 — Bridge.call = stub 프로퍼티 교체가 refresh 발신에 반영된다", async () => {
-  const { shell, deps, bridgeLog } = makeShell();
+  const bag = makeShell();
+  const { shell, deps, bridgeLog } = bag;
+  mount(bag);
   ready();
   const swapped = [];
   deps.Bridge.call = (id, action, payload) => {
@@ -472,21 +533,32 @@ test("포트 교체 — Bridge.call = stub 프로퍼티 교체가 refresh 발신
   assert.deepEqual(bridgeLog, [], "옛 함수로 새지 않는다 — 메서드 사전 추출 금지의 실측");
 });
 
-/* ══════════════ 11. 계측: factory 2회 구성(compat 계약 밖) ══════════════ */
+/* ══════════════ 11. 재초기화 — 구조 가드와 계측 ══════════════ */
 
-test("계측: factory 2회 구성 → listener·배선이 한 벌씩 더 선다(가드 없음 — compat 이 1회 호출을 계약)", () => {
+test("같은 상태기계로 factory 2회 구성 → bindExecutor 가 throw(두 번째 실행 경로 차단)", () => {
+  const bag = makeShell();
+  assert.throws(() => createAppShell(bag.deps), /이미 결속/,
+    "종전 「가드 없음 — 호출자 유일성만」에 상태기계 결속의 구조 한 겹이 더해졌다");
+});
+
+test("계측: 기계·factory 를 새로 2벌 구성 + 각각 mount → listener 가 한 벌씩 더 선다", () => {
   const one = makeShell();
   const two = makeShell();
-  // window listener: unhandledrejection·pywebviewready·personalizationchange·themechange 각 2.
+  mount(one);
+  mount(two);
   for (const type of ["unhandledrejection", "pywebviewready",
     "hwpx:personalizationchange", "hwpx:themechange"]) {
     assert.equal(WIN.listenerCount(type), 2, `${type}: 2벌`);
   }
   for (const b of NAVS) assert.equal(b.listenerCount("click"), 2, "탭 클릭도 2벌");
-  // 두 셸이 같은 DOM 을 공유하므로 ready 1회에 양쪽 init 이 전부 돈다.
+  // 두 셸이 같은 DOM 을 공유하고 fixture 는 호스트를 이미 들고 있다 — 각 mount 의 선판정이
+  // 자기 init 을 이미 돌렸고, ready 1회에 양쪽 init 이 한 벌씩 더 돈다(가드 없음 보존).
   ready();
-  assert.deepEqual(one.initLog, ["library", "editor", "job", "workbench", "DataPicker"]);
-  assert.deepEqual(two.initLog, ["library", "editor", "job", "workbench", "DataPicker"]);
+  assert.deepEqual(one.initLog, [
+    "library", "editor", "job", "workbench", "DataPicker",
+    "library", "editor", "job", "workbench", "DataPicker",
+  ]);
+  assert.deepEqual(two.initLog, one.initLog);
 });
 
 /* ══════════════ 12. 음성 — 소스 형상 ══════════════ */
@@ -509,11 +581,12 @@ test("음성 — IIFE 0·window[ 동적 조회 0·제품 전역 27종 조회 0(�
   assert.equal(/(?:window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(SRC), false, "자기 전역 생산 금지");
 });
 
-test("음성 — import 는 Modal·SurfaceSheet 둘뿐(화면 간 import 0), export 는 createAppShell 하나", () => {
+test("음성 — import 는 Modal·SurfaceSheet·상태기계 정본 셋뿐(화면 간 import 0), export 는 createAppShell 하나", () => {
   const importLines = [...SRC.matchAll(/^import .*$/gm)].map((m) => m[0]);
   assert.deepEqual(importLines, [
     'import { Modal } from "./modal.js";',
     'import { SurfaceSheet } from "./surface_sheet.js";',
+    'import { DEFAULT_SCREEN, IMMERSIVE_SURFACES } from "../src/shell/nav.ts";',
   ]);
   assert.equal(/from "\.{1,2}\/screens\//.test(SRC), false, "화면 파일 import 금지 — screens 는 주입");
   assert.equal(/export\s+default/.test(SRC), false);
@@ -521,16 +594,22 @@ test("음성 — import 는 Modal·SurfaceSheet 둘뿐(화면 간 import 0), exp
   assert.deepEqual(names, ["createAppShell"]);
 });
 
-test("Python 계약 앵커 — Nav 리터럴·go 시그니처·refresh 발신·기본 랜딩·몰입 소유 단어", () => {
+test("음성 — 판정 재조립 잔존 0: adapter 에 화면 판정·목록 정본이 남지 않았다", () => {
+  assert.equal(/const DEFAULT_SCREEN\s*=/.test(SRC), false, "랜딩 정본은 상태기계(nav.ts) 하나");
+  assert.equal(/const REFRESH_ON_NAV\s*=/.test(SRC), false, "화이트리스트 정본은 상태기계 하나");
+  assert.equal(/const IMMERSIVE\s*=/.test(SRC), false, "몰입 목록 정본은 상태기계 하나");
+  assert.equal(SRC.includes("REFRESH_ON_NAV.includes"), false, "규약 판정 재조립 금지");
+  assert.equal(SRC.includes("routingReady"), false, "ready 게이트 판정 재조립 금지");
+  assert.equal(/let\s+closePromptPending/.test(SRC), false, "닫기 직렬화 상태는 상태기계 소유");
+});
+
+test("Python 계약 앵커 — Nav 리터럴·go 시그니처·refresh 발신·기본 랜딩·잔존 계약 문자열", () => {
   assert.ok(SRC.includes("const Nav = { go, refresh };"), "window.Nav 의 후계 리터럴 그대로");
   assert.ok(SRC.includes("function go(id, opts) {"), "go 는 synchronous 시그니처 텍스트 보존");
-  assert.ok(SRC.includes('Bridge.call(id, "refresh", {})'), "refresh 발신 텍스트(대문자 Bridge)");
-  assert.ok(SRC.includes('const DEFAULT_SCREEN = "job"'));
-  assert.ok(SRC.includes("go(DEFAULT_SCREEN);"), "구성 즉시 랜딩");
-  assert.ok(SRC.includes("const owner = im.owner;") && SRC.includes("owner && owner.leaveTo"),
-    "이탈 위임 형상 유지");
-  assert.ok(SRC.includes("SurfaceSheet.closeAllAndRestore()"), "펼침 면 회수(F7)");
-  assert.ok(SRC.includes("EditorScreen") && SRC.includes("WorkbenchScreen"),
-    "몰입 소유 화면 단어는 게이트 앵커라 주석에 남긴다");
-  assert.ok(SRC.includes('const REFRESH_ON_NAV = ["library", "job"];'));
+  assert.ok(SRC.includes('Bridge.call(id, "refresh", {})'), "재당김 발신 텍스트(대문자 Bridge)");
+  assert.ok(SRC.includes("go(DEFAULT_SCREEN);"), "구성 즉시 랜딩(정본은 import)");
+  assert.ok(SRC.includes("owner && owner.leaveTo"), "이탈 위임 집행 형상 유지");
+  assert.ok(SRC.includes("SurfaceSheet.closeAllAndRestore()"), "펼침 면 회수(F7) — 잔존 계약");
+  assert.ok(SRC.includes('confirmLabel: "종료"') && SRC.includes("danger: true"),
+    "닫기 확인의 호출·문안·danger 잔존(패킷 rev3 개정 5 — danger 감사망의 소재 계약)");
 });

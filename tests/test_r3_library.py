@@ -98,6 +98,9 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
 # --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)
 
 APP_JS = SOURCE_JS_DIR / "app.js"
+# R3-02(#411) — 화이트리스트·재당김 규약 판정의 정본은 셸 상태기계로 이동했다. 발신
+# (Bridge.call)과 실패 재진술(alert)은 집행 adapter(app.js)에 남는다.
+NAV_TS = SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts"
 WEB_INDEX = SOURCE_INDEX
 
 
@@ -124,22 +127,28 @@ def test_nav_refresh_covers_library_and_surfaces_rejection():
     하는가를 본다(구현 형태를 못 박으면 다음 정리가 무고하게 붉어진다).
     """
     src = APP_JS.read_text(encoding="utf-8")
-    m = re.search(r"const REFRESH_ON_NAV = \[[^\]]*\]", src)
+    nav_ts = NAV_TS.read_text(encoding="utf-8")
+    m = re.search(r"REFRESH_ON_NAV[^=]*=\s*Object\.freeze\(\[[^\]]*\]\)", nav_ts)
     assert m and '"library"' in m.group(0), (
-        "app.js REFRESH_ON_NAV 에 library 가 없습니다 — 수동 버튼 제거(F6) 전제가 무너집니다."
+        "상태기계 REFRESH_ON_NAV 에 library 가 없습니다 — 수동 버튼 제거(F6) 전제가 무너집니다."
     )
-    definition = re.search(r"function refresh\(id\) \{[\s\S]*?\n  \}", src)
-    assert definition, "재당김 단일 정의(Nav.refresh)가 없습니다(REFRESH_ON_NAV 소비처 소실)."
+    definition = re.search(r"function refresh\(id: string\)[\s\S]*?\n  \}", nav_ts)
+    assert definition, "재당김 단일 정의(상태기계 refresh)가 없습니다(REFRESH_ON_NAV 소비처 소실)."
     wiring = definition.group(0)
     assert "REFRESH_ON_NAV.includes(id)" in wiring, (
         "재당김 정의가 REFRESH_ON_NAV 화이트리스트를 보지 않습니다 — 미지 액션 무차별 dispatch."
     )
-    assert '"refresh"' in wiring, "자동 새로고침이 refresh 액션을 호출하지 않습니다."
-    assert re.search(r"refresh\(id\)\.catch\([\s\S]*?window\.alert", src), (
+    assert re.search(r'Bridge\.call\(id, "refresh"', src), (
+        "집행 adapter 가 refresh 액션을 발신하지 않습니다 — 판정이 통과해도 재당김이 죽습니다."
+    )
+    assert re.search(r"refresh\(id\)\.catch\([\s\S]*?notifyRefreshFailure", nav_ts), (
         "전환의 자동 새로고침이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
     )
+    assert re.search(r"notifyRefreshFailure\(err\) \{[\s\S]*?window\.alert", src), (
+        "실패 재진술 포트가 alert 로 착지하지 않습니다 — 재진술 없는 표면화는 침묵입니다(N1)."
+    )
     # N-06 후계: Nav 는 앱 셸 factory 산물(`const Nav = { go, refresh }`)이고 전역 별칭은
-    # 중앙 compat 이 건다 — 여기서는 표면에 refresh 가 실려 반환되는가를 본다.
+    # 죽었다 — 여기서는 표면에 refresh 가 실려 반환되는가를 본다.
     assert re.search(r"const Nav = \{[^}]*\brefresh\b", src), (
         "Nav.refresh 가 노출되지 않았습니다 — 이탈 착지가 전환 전에 기다릴 수 없습니다(8R P1)."
     )
