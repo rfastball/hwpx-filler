@@ -43,6 +43,8 @@ from pathlib import Path
 
 import pytest
 
+from _live_gate import LIVE_CHILD_TIMEOUT_S, LIVE_PROBE_BUDGET_S
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TESTS_DIR = Path(__file__).resolve().parent
 
@@ -120,11 +122,12 @@ _READBACK_LINE_PREFIX = "HWPX-SHELL-READBACK="
 #: 「출력 0 의 240s 매달림」이라 지점 특정이 불가능했다 — 증거 없는 빨강을 반복하지 않는다).
 _PHASE_LINE_PREFIX = "HWPX-SHELL-PHASE="
 
-#: 창 안 폴링 예산(전 단계 합산)·자식 상한. 형제(overlay — 2단계 120s/240s)보다 단계가
-#: 많아(폴링 5 + 단발 2 + 정착 대기) 예산을 늘린다 — 바깥 상한이 안쪽 진단(유계 판독의
-#: 마커)보다 빡빡하면 매달림이 「출력 0」으로 뭉개진다(N-11A 교훈: 150 + 30 + 여유 < 300).
-_PROBE_BUDGET_S = 150.0
-_CHILD_TIMEOUT_S = 300.0
+#: 창 안 폴링 예산(전 단계 합산)·자식 상한 — 실 게이트 넷의 단일 출처(`tests/_live_gate.py`).
+#: 이 게이트는 단계가 가장 많지만(폴링 5 + 단발 2 + 정착 대기) 예산을 따로 들지 않는다:
+#: 파일마다 제 숫자를 들면 형제 간 자릿수 차가 조용히 벌어진다. 바깥 상한이 안쪽 진단(유계
+#: 판독의 마커)보다 빡빡하면 매달림이 「출력 0」으로 뭉개진다는 N-11A 교훈은 공용 값이 진다.
+_PROBE_BUDGET_S = LIVE_PROBE_BUDGET_S
+_CHILD_TIMEOUT_S = LIVE_CHILD_TIMEOUT_S
 
 #: 폴링 단계 이름 — 부팅 랜딩 → 취소 확인창 → 취소 정착 → 재초기화 랜딩 → 확정 확인창.
 #: (동기 전환 nav/renav 는 폴링이 아니라 단발 판독, confirm_closed 는 이벤트 불리언이다.)
