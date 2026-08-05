@@ -257,8 +257,9 @@ test("공개 표면 — createAppShell({…, shellNav}) → {Nav, AppCloseGuard,
   assert.deepEqual(Object.keys(shell.AppCloseGuard), ["prompt"]);
   assert.equal(typeof shell.AppCloseGuard.prompt, "function");
   // ShellHost 주입 서술 — 수명주기(부착/해제·시퀀서)는 React 몫이라 여기는 형태만 계약한다.
-  assert.deepEqual(Object.keys(shell.shellHost), ["nav", "attachments", "boot"]);
+  assert.deepEqual(Object.keys(shell.shellHost), ["nav", "attachments", "catchUp", "boot"]);
   assert.equal(shell.shellHost.nav, shellNav, "상태기계 객체째 — 메서드 사전 추출 금지");
+  assert.equal(shell.shellHost.catchUp.length, 2, "부착 직후 따라잡기 = 라벨 동기 2");
   assert.deepEqual(Object.keys(shell.shellHost.boot), ["win", "hostReady", "initSequence"]);
   assert.equal(shell.shellHost.boot.win, WIN, "ready 사건의 대상은 window");
   assert.equal(shell.shellHost.boot.initSequence.length, 5, "init 5(화면 넷 + DataPicker)");
@@ -493,6 +494,20 @@ test("unhandledrejection 백스톱 — preventDefault + alert 재진술(조용�
 });
 
 /* ══════════════ 9. 테마·개인화 배선(주입 객체 소비) ══════════════ */
+
+test("부착 전에 지나간 hwpx:* 사건은 mount 따라잡기가 만회한다(#74 라벨 어긋남 폐쇄)", () => {
+  const bag = makeShell();
+  const { deps } = bag;
+  // 부팅 preferences 주입이 effect 부착보다 빨랐던 형상 — 사건은 이미 지나갔다.
+  deps.Theme.mode = "dark";
+  deps.Personalization.scale = "large";
+  WIN.fire("hwpx:themechange", {});
+  WIN.fire("hwpx:personalizationchange", {});
+  assert.equal(DOC.getElementById("themeLabel").textContent, "시스템", "부착 전이라 낡아 있다");
+  mount(bag);
+  assert.equal(DOC.getElementById("themeLabel").textContent, "다크", "따라잡기가 현재 상태를 재판독");
+  assert.equal(DOC.getElementById("fontScaleLabel").textContent, "크게 (125%)");
+});
 
 test("테마·글자 크기 라벨은 주입 객체와 hwpx:* 이벤트로 동기화된다", () => {
   const bag = makeShell();

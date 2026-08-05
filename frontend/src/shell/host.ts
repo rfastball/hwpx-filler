@@ -46,6 +46,11 @@ export type ShellHostPorts = {
   nav: { markReady(): void };
   /** 셸 리스너 전수 — adapter 구성 시 캡처(NodeList 캡처 시점 보존, 패킷 §1 ③). */
   attachments: readonly ShellAttachment[];
+  /** 부착 직후의 따라잡기 — 부착이 비동기라 **부착 전에 지나간 사건**(부팅 preferences
+   *  주입의 라벨 동기 등)을 현재 상태 재판독으로 만회한다. 선판정+이벤트와 같은 규약의
+   *  사건판이다: 사건이 먼저면 여기가, 나중이면 리스너가 잇는다 — 어느 쪽이든 창이 없다
+   *  (#74 라벨 어긋남 결함류의 구조 폐쇄). */
+  catchUp: ReadonlyArray<() => void>;
   boot: {
     /** ready 사건의 대상 — 제품은 window, 테스트는 대역. */
     win: ShellAttachment["target"];
@@ -62,6 +67,7 @@ export function attachShell(ports: ShellHostPorts): () => void {
   for (const attachment of ports.attachments) {
     attachment.target.addEventListener(attachment.type, attachment.handler);
   }
+  for (const step of ports.catchUp) step();
   const onHostReady = (): void => {
     ports.nav.markReady();
     for (const step of ports.boot.initSequence) step();

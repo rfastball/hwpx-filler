@@ -236,10 +236,13 @@ export function createAppShell({ Bridge, Theme, Personalization, DataPicker, scr
   return {
     Nav,
     AppCloseGuard,
-    /* React ShellHost 주입 서술 — 합성 루트가 그대로 bootReactRoot 로 넘긴다. */
+    /* React ShellHost 주입 서술 — 합성 루트가 그대로 bootReactRoot 로 넘긴다. catchUp 은
+       부착 전에 지나간 사건의 만회다: 부팅 preferences 주입(hwpx:* 발화)이 effect 부착보다
+       빠르면 라벨이 낡는다(#74 결함류) — 부착 직후 현재 상태를 한 번 재판독한다. */
     shellHost: {
       nav: shellNav,
       attachments,
+      catchUp: [syncPersonalizationLabels, syncThemeLabel],
       boot: { win: window, hostReady: () => Bridge.hostReady(), initSequence },
     },
   };

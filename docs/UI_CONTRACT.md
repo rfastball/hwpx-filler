@@ -200,8 +200,10 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   `unhandledrejection`·탭 클릭·도구 클릭·라벨 동기)의 부착/해제와 부팅 시퀀스(호스트 ready
   사건 훅 → `markReady` → init 5 재생: library→editor→job→workbench→DataPicker)를 트리
   자식으로 소유한다. 부착 실물(`attachShell`)은 effect 와 node 하니스가 같은 하나를 쓴다.
-  부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로 놓침 창을
-  닫고, 리스너는 once 가 아니다(재발화 시 init 재주행 — 멱등은 각 화면 `wired` 가드 소유).
+  부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로, 부착 전에
+  지나간 `hwpx:*` 라벨 동기 사건은 **부착 직후 따라잡기**(`catchUp` — 현재 상태 재판독)로
+  놓침 창을 닫는다(#74 라벨 어긋남 결함류의 구조 폐쇄). 리스너는 once 가 아니다(재발화 시
+  init 재주행 — 멱등은 각 화면 `wired` 가드 소유).
 - **집행 = app.js 집행 adapter**: 클래스·속성 토글(aria-current·`.scr.on`·몰입 body 클래스)·
   `SurfaceSheet.closeAllAndRestore()` 회수·refresh 발신(`Bridge.call` + notice/실패 재진술)·
   스플리터 제스처(제스처 단위 add/remove 대칭이라 잔존)·리스너 **서술**(attachments — 구성
