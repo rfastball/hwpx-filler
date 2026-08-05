@@ -110,13 +110,18 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
 
 
 def test_danger_button_has_light_dark_and_forced_color_contract() -> None:
+    # R3-01(#410): danger 판정(불리언)은 파사드가 spec 으로 싣고, 같은 안정 버튼의 **양방향
+    # 토글 집행**은 React host 컨트롤러가 진다 — 두 거처를 각각 겨눈다(단방향만 남으면
+    # danger 뒤 중립 confirm 이 빨갛게 남는 상태 누수가 재발한다).
     modal = (WEB_JS / "modal.js").read_text(encoding="utf-8")
+    host = (WEB_JS.parent / "src" / "overlay" / "host.ts").read_text(encoding="utf-8")
     # `.btn.danger{`(base.css)와 forced-colors 의 `Mark` 강등(forced-colors.css)이 서로 다른
     # 조각에 살지만, 이어붙인 문자열에서는 한 단언이 둘 다 본다.
     css = app_css()
     tokens = (SOURCE_CSS_DIR / "tokens.css").read_text(encoding="utf-8")
-    assert 'classList.toggle("danger", !!opts.danger)' in modal
-    assert 'classList.toggle("primary", !opts.danger)' in modal
+    assert "danger: !!opts.danger" in modal
+    assert 'classList.toggle("danger", spec.danger)' in host
+    assert 'classList.toggle("primary", !spec.danger)' in host
     assert ".btn.danger{" in css and "background:var(--a-danger)" in css
     assert ".btn.danger:not(:disabled){background:Mark;color:MarkText" in css
     assert tokens.count("--a-danger:") >= 3  # light + OS dark + explicit dark

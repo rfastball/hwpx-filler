@@ -7,8 +7,8 @@
  *
  * - **파사드 표면**(open/close/confirm/prompt/choose/restoreFocus — 소비 12 모듈 무변경)
  * - **legacy 9 모달의 DOM 집행**(hidden·is-closing 토글·160ms 전이 정착·트랩 이동·복귀)
- * - **문안·기본 라벨·danger 판정·거절 재진술** — 파괴 확정 감사(`Modal.confirm(` 라벨
- *   전수)와 문안 그물이 legacy 층 원문 위에서 완전하다는 형제 패킷 판정의 집행이다.
+ * - **문안·기본 라벨·danger 판정·거절 재진술** — 파괴 확정 감사(`Modal.confirm` 호출
+ *   라벨 전수)와 문안 그물이 legacy 층 원문 위에서 완전하다는 형제 패킷 판정의 집행이다.
  *
  * confirm/prompt/choose 의 DOM 은 React host(`src/overlay/host.ts`)가 렌더·집행한다 —
  * 여기서는 해석된 spec 을 늦은 결속 슬롯으로 넘긴다. host 부재(부팅 창·마운트 실패)는
