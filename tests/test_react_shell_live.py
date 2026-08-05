@@ -114,9 +114,15 @@ CLOSE_SETTLED_READBACK_EXPRESSION = (
 #: 자식이 단계별 되읽기를 실어 내보내는 줄의 접두 — 부모는 이 줄만 신뢰한다.
 _READBACK_LINE_PREFIX = "HWPX-SHELL-READBACK="
 
-#: 창 안 폴링 예산(전 단계 합산)·자식 상한 — 형제 live 게이트의 예산 산정을 승계한다.
-_PROBE_BUDGET_S = 120.0
-_CHILD_TIMEOUT_S = 240.0
+#: 단계 진행 마커 — 매달림이 나면 stdout 꼬리의 마지막 마커가 지점을 지목한다(CI 첫 실패가
+#: 「출력 0 의 240s 매달림」이라 지점 특정이 불가능했다 — 증거 없는 빨강을 반복하지 않는다).
+_PHASE_LINE_PREFIX = "HWPX-SHELL-PHASE="
+
+#: 창 안 폴링 예산(전 단계 합산)·자식 상한. 형제(overlay — 2단계 120s/240s)보다 단계가
+#: 많아(폴링 5 + 단발 2 + 정착 대기) 예산을 늘린다 — 바깥 상한이 안쪽 진단(유계 판독의
+#: 마커)보다 빡빡하면 매달림이 「출력 0」으로 뭉개진다(N-11A 교훈: 150 + 30 + 여유 < 300).
+_PROBE_BUDGET_S = 150.0
+_CHILD_TIMEOUT_S = 300.0
 
 #: 폴링 단계 이름 — 부팅 랜딩 → 취소 확인창 → 취소 정착 → 재초기화 랜딩 → 확정 확인창.
 #: (동기 전환 nav/renav 는 폴링이 아니라 단발 판독, confirm_closed 는 이벤트 불리언이다.)
@@ -297,6 +303,13 @@ def test_the_verdicts_reject_each_degraded_shape(judge, raw: object, fragment: s
 #: 자식 드라이버 — 실 백엔드가 달린 자체 창에서 랜딩 → 동기 전환 → 닫기 취소 왕복 →
 #: reload 재실측 → 닫기 확정(실제 창 닫힘)을 이 모듈의 술어로 폴링·단발 판독하고,
 #: 단계별 마지막 되읽기를 한 줄로 내보낸다.
+#:
+#: CI 첫 실패의 교훈 세 겹이 형태를 정했다: ①모든 판독은 **유계**다(`evaluate` 워커 +
+#: 시한) — JS 스레드가 무엇에 막혀도 자식은 자기 발로 종결해 마커를 내보내고, 좀비 창이
+#: 뒤 게이트(store·selftest)를 오염시키지 않는다 ②단계 진행을 즉시 flush 로 내보낸다 —
+#: 다음 매달림은 마지막 마커가 지점을 지목한다 ③`window.alert` 는 부팅 확인 직후 기록형
+#: 스텁으로 바꾼다 — alert 는 JS 스레드를 세워 evaluate_js 를 영영 막는 유일 클래스라
+#: (root_live 머리말의 기지 함정) 차단 대신 **기록 + 빈 목록 단언**으로 소리를 보존한다.
 _CHILD_DRIVER = """
 import json, sys, tempfile, threading, time
 from pathlib import Path
@@ -308,7 +321,7 @@ from hwpxfiller.webapp.product_api import close_request_expression
 from test_react_shell_live import (
     CLOSE_PROMPT_READBACK_EXPRESSION, CLOSE_SETTLED_READBACK_EXPRESSION,
     LANDING_READBACK_EXPRESSION, NAV_CLICK_EXPRESSION, PHASE_JUDGES,
-    _PROBE_BUDGET_S, _READBACK_LINE_PREFIX,
+    _PHASE_LINE_PREFIX, _PROBE_BUDGET_S, _READBACK_LINE_PREFIX,
 )
 
 artifact = web_artifact()
@@ -325,6 +338,12 @@ closed_event = threading.Event()
 window.events.closed += closed_event.set
 
 CLOSE_STATE = {"armed": True, "reasons": ["실 게이트 편집 세션"]}
+ALERT_STUB = (
+    "window.alert = function (message) {"
+    " (window.__shellLiveAlerts = window.__shellLiveAlerts || []).push(String(message));"
+    "};"
+)
+ALERTS_READBACK = "JSON.stringify(window.__shellLiveAlerts || [])"
 PHASE_EXPRESSIONS = {
     "boot": LANDING_READBACK_EXPRESSION,
     "close_prompt": CLOSE_PROMPT_READBACK_EXPRESSION,
@@ -333,6 +352,35 @@ PHASE_EXPRESSIONS = {
     "confirm_prompt": CLOSE_PROMPT_READBACK_EXPRESSION,
 }
 
+js_dead = threading.Event()
+
+
+def mark(step):
+    print(_PHASE_LINE_PREFIX + step, flush=True)
+
+
+def evaluate(expression, timeout=20.0):
+    #: 유계 판독 — JS 스레드가 죽으면(모달 네이티브 다이얼로그·전면 매달림) 워커가 안
+    #: 돌아온다. 그 사실을 기록하고 이후 판독을 즉시 접는다(스레드 누수 상한 = 1).
+    if js_dead.is_set():
+        return None
+    box = {}
+    done = threading.Event()
+
+    def run():
+        try:
+            box["value"] = window.evaluate_js(expression)
+        except Exception:  # noqa: BLE001 — 부팅·reload·닫힘 중 호출은 실패가 정상
+            box["value"] = None
+        done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    if not done.wait(timeout):
+        js_dead.set()
+        mark("js-thread-stuck")
+        return None
+    return box.get("value")
+
 
 def probe() -> None:
     results = {}
@@ -340,25 +388,24 @@ def probe() -> None:
 
     def poll(phase):
         raw = None
-        while time.monotonic() < deadline:
-            try:
-                raw = window.evaluate_js(PHASE_EXPRESSIONS[phase])
-            except Exception:  # noqa: BLE001 — 부팅·reload 중 호출은 실패가 정상
-                raw = None
+        while time.monotonic() < deadline and not js_dead.is_set():
+            value = evaluate(PHASE_EXPRESSIONS[phase])
+            raw = value if isinstance(value, str) else None
             if PHASE_JUDGES[phase](raw)[0]:
                 break
             time.sleep(0.25)
-        results[phase] = raw if isinstance(raw, str) else None
+        results[phase] = raw
+        mark(phase)
 
     def shot(phase, expression):
-        try:
-            raw = window.evaluate_js(expression)
-        except Exception:  # noqa: BLE001 — 최종 판정은 부모 몫
-            raw = None
-        results[phase] = raw if isinstance(raw, str) else None
+        value = evaluate(expression)
+        results[phase] = value if isinstance(value, str) else None
+        mark(phase)
 
     try:
         poll("boot")
+        #: alert 기록 스텁(머리말 ③) — 부팅 확인 뒤·구동 전. 문서별 전역이라 reload 후 재설치.
+        evaluate(ALERT_STUB)
         #: 동기 전환 — 폴링이 아니라 단발이다. 마커가 섰다면 부착은 끝나 있어야 하고,
         #: 전환은 클릭과 같은 턴에 완료돼야 한다(재시도는 그 계약의 위반을 가린다).
         shot("nav", NAV_CLICK_EXPRESSION)
@@ -366,32 +413,31 @@ def probe() -> None:
         #: closing 게이트가 세우는 대기 플래그를 하니스도 세운다 — 취소가 실 브리지를
         #: 지나 cancel_window_close 에 닿으면 False 로 돌아온다(백엔드 도달의 직접 증거).
         frontend._close_prompt_open = True
-        window.evaluate_js(close_request_expression(CLOSE_STATE))
+        evaluate(close_request_expression(CLOSE_STATE))
         poll("close_prompt")
-        window.evaluate_js("document.getElementById('confirmModalCancel').click()")
+        evaluate("document.getElementById('confirmModalCancel').click()")
         poll("close_cancelled")
         #: 브리지 IPC 는 DOM 닫힘과 비동기다 — 도달을 따로 폴링한다.
         while frontend._close_prompt_open and time.monotonic() < deadline:
             time.sleep(0.1)
         results["cancel_reached_backend"] = frontend._close_prompt_open is False
+        results["alerts_before_reload"] = evaluate(ALERTS_READBACK)
+        mark("cancel-settled")
         #: 재초기화 — reload 가 bootProduct() 를 다시 돌려 상태기계·ShellHost 부착이
         #: 신품으로 선다. 랜딩·동기 전환을 같은 술어로 다시 잰다.
-        try:
-            window.evaluate_js("location.reload()")
-        except Exception:  # noqa: BLE001 — 문서 해체 중 반환 실패는 정상
-            pass
+        evaluate("location.reload()", 10.0)
         poll("reloaded")
+        evaluate(ALERT_STUB)
         shot("renav", NAV_CLICK_EXPRESSION)
         #: 닫기 확정 — 「종료」 클릭이 실 브리지 confirm_window_close 로 창을 실제로 닫는다.
         #: (대기 플래그도 실 경로 그대로 — 확정 쪽 정산은 closed 이벤트가 잰다.)
+        results["alerts_after_reload"] = evaluate(ALERTS_READBACK)
         frontend._close_prompt_open = True
-        window.evaluate_js(close_request_expression(CLOSE_STATE))
+        evaluate(close_request_expression(CLOSE_STATE))
         poll("confirm_prompt")
-        try:
-            window.evaluate_js("document.getElementById('confirmModalOk').click()")
-        except Exception:  # noqa: BLE001 — 닫힘 경쟁으로 반환이 실패할 수 있다(정착은 이벤트가 잰다)
-            pass
+        evaluate("document.getElementById('confirmModalOk').click()", 10.0)
         results["confirm_closed"] = closed_event.wait(30.0)
+        mark("confirm-settled")
     finally:
         print(_READBACK_LINE_PREFIX + json.dumps(results))
         sys.stdout.flush()
@@ -452,6 +498,12 @@ def test_shell_lifecycle_lands_navigates_and_closes_in_a_real_window() -> None:
         "취소가 백엔드에 닿지 않았습니다(_close_prompt_open 고착) — 이후 X 마다 프롬프트 없는 "
         f"닫힘 거부가 됩니다.\n{report}"
     )
+    #: 구동 전 구간에서 alert 가 났다면 그 문안이 곧 실패 사유다 — 기록 스텁이 잡은 재진술을
+    #: 그대로 지목한다(차단 다이얼로그가 「출력 0 매달림」으로 뭉개지던 CI 첫 실패의 후계).
+    for capture in ("alerts_before_reload", "alerts_after_reload"):
+        assert results.get(capture) == "[]", (
+            f"셸 구동 중 alert 재진술이 발화했습니다({capture}={results.get(capture)!r}).\n{report}"
+        )
     assert results.get("confirm_closed") is True, (
         f"「종료」 확정이 실 창을 닫지 못했습니다 — confirm_window_close 경로 미착지.\n{report}"
     )
