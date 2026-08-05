@@ -140,6 +140,51 @@ R2 가 세운 React 기반(root·계약·store)의 검증이 기존 행렬 — �
   WebView2 층이 이미 지고(마운트 커밋·reload 재초기화·store 4국면), jsdom 은 그보다 약한
   둘째 오러클이다. 요구가 증명되는 시점(R3+ 화면 이관)의 재개방 사유는 #408 패킷 §4.5.
 
+### 공용 상호작용·overlay 수명주기 (R3-01 · #410)
+
+overlay 판정의 단일 정본과 완전 데이터-구동 표면 4(confirm·choose·prompt·되돌리기 토스트)의
+React 소유 이전. 합법 중첩(폼 모달 위 promise 다이얼로그 — pool 재등록)이 legacy DOM 모달과
+React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 세계로 갈리면 같은 상태의 두
+판정자가 된다 — 그래서 판정은 하나이고 집행만 갈린다.
+
+- **판정 = 트리-불가지 엔진**(`frontend/src/overlay/engine.ts`): 중첩 스택·promise 직렬화
+  (`pendingDialog`)·Escape/Tab/복귀 승계·keydown 시점(`keydownWanted`)을 소유한다. DOM
+  기입·판독 0 — 요소는 불투명 참조다. modal.js 의 자기 스택·자기 직렬화 불리언은 **잔존
+  금지가 계약**이다(정적 게이트가 음성으로 든다).
+- **집행 = 두 집행자, 한 계약**(`OverlayExecutor`): legacy 9 모달은 `frontend/js/modal.js` 의
+  legacy 집행자가, promise 다이얼로그·토스트는 React host(`frontend/src/overlay/host.ts`)의
+  컨트롤러가 집행한다. host 는 골격을 **1회 렌더**하고 동적 전이(문안·클래스·포커스·퇴장)는
+  ref 노드 위 **명령형 동기 집행**이다 — 상태 재렌더가 없어 ⑴파사드 호출과 같은 동기 턴에
+  DOM 이 전이하고 ⑵노드 정체성이 open↔close 를 가로질러 유지되고 ⑶불량 root 판정이 실 DOM
+  classList 판독이다(`flushSync` 는 소비자가 없어 쓰지 않는다).
+- **파사드는 남는다**: `Modal.open/close/confirm/prompt/choose/restoreFocus` 소비 12 모듈
+  무변경. 문안·기본 라벨·danger 판정·거절 재진술은 파사드 소유이고 host 는 **해석된 spec**
+  만 받는다(골격 불량 loud 거절 문안 `missingText` 포함). 다이얼로그 DOM 집행은 늦은 결속
+  슬롯(`instance.ts` `setOverlayDialogHost` — 마운트 effect 가 정확히 1회 대입, 이중 대입
+  throw)으로 넘어가고, host 부재(부팅 창·마운트 실패)·골격 부재/불량(`.modal` 상실·필수 자식
+  결측 — 호출 시점 실 DOM 판독)은 조용한 무동작이 아니라 안전측 거절 + loud 다.
+- **문서 리스너의 시점 계약**: dismissal 계열(팝오버 바깥닫기·Escape·resize)은 popover.js 가
+  **부착 명세**(`Popover.documentAttachments`)로 내고 `bootProduct` 가 **구성 시** 그 순서
+  그대로 부착한다(모듈 평가 부작용 0). 모달 keydown 은 엔진 배선(`instance.ts`)이 엔진 구독
+  으로 **첫 open 부착·스택 빌 때 해제**한다. 구성이 언제나 첫 open 보다 앞이므로 Escape
+  층화(팝오버 먼저 닫히고 최상위 모달 나중)가 부착 순서로 선다. 둘 다 React 마운트와
+  독립이다 — 마운트 실패가 legacy 모달의 Escape/Tab 까지 걷는 두 번째 실행 경로를 만들지
+  않는다.
+- **골격 4 의 거처**: React host 가 `#reactOverlayHost`(#overlayRoot 등가의 위치 맥락 —
+  `overlay.css` 호스트 규칙) 안에 같은 id·클래스·ARIA·초기 문안으로 렌더하고, 다이얼로그·
+  토스트는 그 **직속** 자식이다. 정적 `index.html` 에는 **부재가 계약**이다 — 재도입은 id
+  중복·두 세계 분열이고 정적 계약이 즉시 붉는다. 합법 오버레이 포털은 둘(`#overlayRoot` ·
+  `#reactOverlayHost`)이고, live 소유 술어(`overlay_children_owned`)가 그 두-포털 형상을
+  document 전역에서 재측정한다.
+- **검증 배치**: 엔진 순수층은 `tests/js/overlay_engine.test.js`, host 렌더 요소 계약(실 서버
+  렌더)·집행 계약은 `tests/js/overlay_host.test.js`, 파사드~엔진~집행자 실물 사슬은
+  `tests/js/n05_overlay.test.js`(하니스가 bootProduct 구성 몫을 재현), 실창 증거는 기존
+  selftest 게이트(`modal_a11y`·`modal_confirm_serial` — React 표면 위 무변경 초록, 골격은
+  React 커밋 산물이라 마운트 전제조건 대기) + 신설 `tests/test_react_overlay_live.py`(host
+  마커·직속 자식·닫힘 상시 렌더·id 유일의 reload 재초기화 되읽기)가 진다.
+- **R4 인계**: 9 모달·메뉴 3·콜패널·이동 다이얼로그 2 의 DOM 실이관(내용 생산자=화면과 한
+  몸). **R5 인계**: 파사드 모듈 자체의 은퇴와 release 비대칭의 최종 정산.
+
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
 Python이 부르는 웹 이름은 **버전 있는 파사드 하나**다. 종전에는 다섯 내부 이름

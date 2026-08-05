@@ -180,8 +180,10 @@ function dialogGate(kind, refusal, missingText) {
    danger 는 영구 파일/정의 삭제·덮어쓰기처럼 내구 파괴인 확정에만 쓴다(#219). */
 function confirm(opts) {
   opts = opts || {};
-  const gate = dialogGate("confirmModal", false,
-    "확인 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.");
+  // host 부재(파사드 관문)와 골격 불량(host 의 실 DOM 판독)이 같은 문안으로 거절한다 —
+  // 사용자에겐 「확인 창이 안 섰다」는 한 사실이고, 문안 소유는 파사드라 spec 으로 싣는다.
+  const missingText = "확인 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.";
+  const gate = dialogGate("confirmModal", false, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
   Popover.closeAll();
@@ -193,6 +195,7 @@ function confirm(opts) {
     // 같은 안정 버튼을 재사용하므로 host 가 양방향 토글한다 — danger 뒤 중립 confirm 이
     // 빨갛게 남거나 primary 뒤 danger 가 파란색으로 남는 상태 누수 차단.
     danger: !!opts.danger,
+    missingText: missingText,
     returnFocus: returnFocus,
   });
 }
@@ -202,8 +205,8 @@ function confirm(opts) {
    opts: { body, value?, title? }. */
 function prompt(opts) {
   opts = opts || {};
-  const gate = dialogGate("promptModal", null,
-    "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.");
+  const missingText = "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.";
+  const gate = dialogGate("promptModal", null, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
   Popover.closeAll();
@@ -212,6 +215,7 @@ function prompt(opts) {
     body: opts.body || "",
     value: opts.value == null ? "" : String(opts.value),
     validate: opts.validate,
+    missingText: missingText,
     returnFocus: returnFocus,
   });
 }
@@ -226,8 +230,8 @@ function choose(opts) {
   const primary = list[0] || { value: "ok", label: "확인" };
   const alt = list[1] || { value: "alt", label: "" };
   const refusal = list[2] || { value: "cancel", label: "취소" };
-  const gate = dialogGate("chooseModal", refusal.value,
-    "선택 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.");
+  const missingText = "선택 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.";
+  const gate = dialogGate("chooseModal", refusal.value, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
   Popover.closeAll();
@@ -237,6 +241,7 @@ function choose(opts) {
     primary: primary,
     alt: alt,
     refusal: refusal,   // 기본 포커스=거절(안전측, confirm 과 같은 규율)은 host 계약이다.
+    missingText: missingText,
     returnFocus: returnFocus,
   });
 }

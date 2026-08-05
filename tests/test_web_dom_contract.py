@@ -140,16 +140,25 @@ MODAL_LABELLEDBY = {
     "dataPickerModal": "dataPickerTitle",  # 데이터 선택 통합 면(재작성 F1 — pool 화면 승계)
     # 「작업」 덮어쓰기 확인은 슬라이스 2(A-2-22)에서 공용 confirmModal(수치 합성 본문)로 이관 —
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
-    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
-    "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
-    # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
-    # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
-    "chooseModal": "chooseModalTitle",
+    # confirmModal·promptModal·chooseModal 3종은 R3-01(#410)에서 React host 렌더로 이전 —
+    # 아래 HOST_MODAL_LABELLEDBY 가 정적 **부재** + host 렌더 소유의 양면을 진다.
     # draftMapSheet 은 「기안」과 함께 사망(F6 PR-B) — 맞추기 표는 작업대 #wbMapPanel 승계.
     "dataSheet": "dataSheetTitle",  # 작업 데이터 펼침 면(#271/#272 — 기안 몫은 F6 PR-B 사망)
     # jobConfirmSheet(작업 거울·재진술 펼침 면 #272)은 U2 §2.13 에서 사망 — 확인 면은
     # 시트로 승격한 생성 값 미리보기(#previewSheet) 하나다.
     "previewSheet": "previewTitle",
+}
+
+# R3-01(#410) — 완전 데이터-구동 다이얼로그 3종은 React host(src/overlay/host.ts)가 같은
+# id·클래스·ARIA 로 렌더한다. 정적 index.html 은 **부재**가 계약이다: 재도입하면 host 렌더와
+# id 가 중복되고(문서 순서상 정적 골격이 getElementById 를 선점) 두 세계 분열이 된다.
+# 렌더 결과 검증은 node overlay_host.test.js(실 서버 렌더)와 live 게이트가 진다.
+HOST_MODAL_LABELLEDBY = {
+    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
+    "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
+    # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
+    # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
+    "chooseModal": "chooseModalTitle",
 }
 
 
@@ -342,6 +351,22 @@ def test_custom_modals_have_dialog_semantics():
             f"{mid} 의 aria-labelledby 는 '{label_id}' 여야 합니다(현재: {attrs.get('aria-labelledby')!r})."
         )
         assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."
+
+    # R3-01 승계 형태 — 이전된 3종은 정적 **부재**(재도입 즉시 빨강)와 host 렌더 소유(같은
+    # role·aria 짝)를 양면으로 단언한다. 렌더 산출 검증은 node overlay_host.test.js 가 진다.
+    host_src = source_text("src", "overlay", "host.ts")
+    for mid, label_id in HOST_MODAL_LABELLEDBY.items():
+        assert mid not in modals and mid not in ids, (
+            f"{mid} 가 index.html 에 재도입됐습니다 — R3-01 뒤 이 골격은 React host 렌더 "
+            "소유라 정적 재도입은 id 중복·두 세계 분열입니다."
+        )
+        assert f'id: "{mid}"' in host_src, f"host 렌더에 #{mid} 골격이 없습니다."
+        assert f'"aria-labelledby": "{label_id}"' in host_src, (
+            f"host 렌더 #{mid} 의 aria-labelledby('{label_id}') 연결이 사라졌습니다."
+        )
+    assert host_src.count('role: "dialog"') == len(HOST_MODAL_LABELLEDBY), (
+        "host 렌더 다이얼로그의 role=dialog 수가 이전 3종과 다릅니다."
+    )
 
 
 # 숨김 관례(슬라이스 7 PR-3 리뷰): 이 앱의 CSS 에는 **일반 `.hidden` 규칙이 없다** —
@@ -836,20 +861,38 @@ def test_job_completion_zone_reset_gated_by_session_change():
 
 
 def test_modal_promise_dialog_serialization_guards_present():
-    """PR #92 리뷰 #1/#3/#4 정적 가드: modal.js 가 native 단일-실행 직렬화의 세 다리를 유지한다.
+    """PR #92 리뷰 #1/#3/#4 정적 가드 — R3-01(#410) 뒤 세 다리의 **새 거처**를 겨눈다.
 
     실 거동(재진입 loud 거절·Tab 순환·개폐)은 selftest 게이트가 되읽는다 — 여기선 헤드리스
     포함 전 플랫폼에서 가드 코드의 존재를 정적으로 단언해 조용한 삭제 회귀를 막는다:
-      - 재진입 가드(pendingDialog): promise 다이얼로그 동시 1건 — 없으면 공유 골격에 리스너가
-        이중 바인딩돼 확인 1클릭으로 두 파괴 동작이 실행된다(리뷰 #1).
-      - 포커스 트랩(trapTab): 배경 버튼 Tab+Enter 발화 차단(리뷰 #1).
-      - IME 조합 가드(isComposing): 한글 조합 확정 Enter 조기 제출로 잘린 값 저장 방지(리뷰 #3).
-      - loud 거절(window.alert + console.error): 골격 부재·재진입의 조용한 no-op 금지(리뷰 #4).
+      - 재진입 가드(pendingDialog): 판정은 엔진(engine.ts)이 소유하고 파사드는 관측면으로
+        같은 거절을 잇는다(리뷰 #1). modal.js 의 자기 불리언 **잔존은 금지 계약**이다 —
+        남으면 legacy 와 React 다이얼로그의 직렬화가 두 세계로 갈린다(#410 §4.3).
+      - 포커스 트랩(trapTab): legacy 집행은 modal.js, React 다이얼로그 집행은 host.ts —
+        두 집행자가 같은 엔진 판정(최상위 소유) 아래 선다(리뷰 #1).
+      - IME 조합 가드(isComposing): 문서 keydown 판정은 엔진, prompt Enter 는 host(리뷰 #3).
+      - loud 거절(window.alert + console.error): 문안·거절 재진술은 파사드 소유 그대로(리뷰 #4).
     """
     src = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
-    assert "pendingDialog" in src, "promise 다이얼로그 재진입 가드(pendingDialog)가 사라졌습니다(#92 #1)."
-    assert "trapTab" in src, "포커스 트랩(trapTab)이 사라졌습니다 — 배경 Tab 이탈 재개방(#92 #1)."
-    assert "isComposing" in src, "IME 조합 가드(isComposing)가 사라졌습니다 — 조기 제출 회귀(#92 #3)."
+    engine = source_text("src", "overlay", "engine.ts")
+    host = source_text("src", "overlay", "host.ts")
+    assert "pendingDialog" in engine and "acquireDialog" in engine, (
+        "promise 다이얼로그 재진입 가드(pendingDialog)가 엔진에서 사라졌습니다(#92 #1)."
+    )
+    assert "pendingDialog" not in src, (
+        "modal.js 에 자기 직렬화 불리언이 잔존합니다 — 판정 이원화(두 세계 분열, #410 §4.3)."
+    )
+    assert "const stack" not in src and "stack.push(" not in src, (
+        "modal.js 에 자기 스택이 잔존합니다 — 판정 이원화(두 세계 분열, #410 §4.3)."
+    )
+    assert "overlayEngine.isDialogPending()" in src, (
+        "파사드가 엔진 직렬화 관측면을 잇지 않습니다 — 재진입 거절 경로 상실(#92 #1)."
+    )
+    assert "trapTab" in src, "legacy 포커스 트랩(trapTab)이 사라졌습니다 — 배경 Tab 이탈 재개방(#92 #1)."
+    assert "trapWithin" in host, "React 다이얼로그 포커스 트랩(trapWithin)이 사라졌습니다(#92 #1)."
+    assert "isComposing" in engine and "isComposing" in host, (
+        "IME 조합 가드(isComposing)가 사라졌습니다 — 조기 제출 회귀(#92 #3)."
+    )
     assert "window.alert" in src and "console.error" in src, (
         "골격 부재/재진입 거절의 loud 경로(window.alert/console.error)가 사라졌습니다 — "
         "조용한 no-op 는 confirm-or-alarm 위반(#92 #4)."

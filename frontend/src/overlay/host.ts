@@ -16,7 +16,10 @@
  * 문안·기본 라벨·danger 판정·거절 재진술은 파사드(legacy modal.js)가 계속 소유한다 —
  * 이 파일은 **해석된 spec** 을 받아 그린다(파괴 확정 감사·문안 그물이 legacy 층 원문
  * 위에서 완전하다는 형제 패킷 판정과 정합). 스택·직렬화·Escape/Tab 판정은 엔진
- * (`engine.ts`) 소유이고 여기는 집행자다. */
+ * (`engine.ts`) 소유이고 여기는 집행자다. 문서 리스너도 이 파일 소유가 아니다 —
+ * dismissal 계열은 bootProduct 구성 시 상시(bootstrap.js·개정 10), 모달 keydown 은
+ * 첫 open 부착·스택 빌 때 해제(instance.ts·개정 4)라, React 마운트가 실패해도 legacy
+ * 모달의 Escape/Tab 이 조용히 죽는 두 번째 실행 경로가 없다. */
 import { createElement, useEffect, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 
@@ -27,22 +30,10 @@ import type { OverlayExecutor } from "./engine.ts";
 /** CSS 160ms 전이가 없거나 transitionend 가 누락될 때만 쓰는 안전망(modal.js 계약 승계). */
 const CLOSE_FALLBACK_MS = 220;
 
-/** 문서 리스너 이양분(패킷 §4.3) — popover.js 가 내보내는 부착 명세를 host effect 가
- *  명시 순서로 부착·해제한다(R3-01 이 세우는 해제-소유 수명주기). */
-export type DocumentAttachment = {
-  target: "document" | "window";
-  type: string;
-  handler: (event: Event) => void;
-  capture?: boolean;
-};
-
 export type OverlayHostPorts = {
   doc: Document;
-  win: Pick<Window, "addEventListener" | "removeEventListener">;
-  /** 실패 재진술(토스트 되돌리기 실패 등) — window.alert 은 주입으로 받는다. */
+  /** 실패 재진술(토스트 되돌리기 실패·골격 불량 거절) — window.alert 은 주입으로 받는다. */
   notify: (message: string) => void;
-  /** dismissal 계열(팝오버) 부착 명세 — 모달 keydown 보다 **앞** 순서가 계약(§2.4). */
-  documentAttachments: DocumentAttachment[];
 };
 
 /* ── 집행 헬퍼 — modal.js 의 검증된 거동을 그대로 옮긴다 ── */
@@ -348,6 +339,153 @@ function byId<T extends HTMLElement>(root: HTMLElement, id: string): T {
   return found;
 }
 
+/** 다이얼로그 골격의 호출 시점 판독 — 부재를 throw 가 아니라 null 로 알린다. 판정은
+ *  호출자(컨트롤러)가 안전측 거절로 잇는다: 렌더 계약상 도달 불가여도, 외부 변이(노드
+ *  제거·클래스 훼손)에 조용한 교착 대신 loud 거절이 서야 한다(개정 3-3·#92 리뷰 #4). */
+function find<T extends HTMLElement>(root: HTMLElement, id: string): T | null {
+  return root.querySelector<T>(`#${id}`);
+}
+
+/** 다이얼로그·토스트의 DOM 집행 컨트롤러 — React host effect 와 node 하니스가 **같은
+ *  실물**을 세운다(React 는 골격 렌더와 수명주기만 얹는다). 골격 검증은 매 호출 실 DOM
+ *  판독이다: root 의 `.modal` 상실·필수 자식 부재는 acquire 전에 안전측 거절 + loud 라
+ *  pendingDialog 가 갇히지 않는다(base modal.js `_promiseModal` 가드의 승계). */
+export function createOverlayDialogController(args: {
+  doc: Document;
+  notify: (message: string) => void;
+  roots: { confirm: HTMLElement; choose: HTMLElement; prompt: HTMLElement; toast: HTMLElement };
+}): { controller: DialogHost; dispose: () => void } {
+  const { doc, notify, roots } = args;
+
+  /* ── 토스트 — 1슬롯·10초·실패 재진술(undo_toast.js 거동 이식) ── */
+  const toastText = byId<HTMLElement>(roots.toast, "undoToastText");
+  const toastButton = byId<HTMLButtonElement>(roots.toast, "undoToastBtn");
+  let undoAction: (() => unknown) | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  const toastHide = (): void => {
+    roots.toast.hidden = true;
+    undoAction = null;
+    if (toastTimer !== null) clearTimeout(toastTimer);
+    toastTimer = null;
+  };
+  const onToastClick = async (): Promise<void> => {
+    const action = undoAction;
+    if (action === null) return;
+    toastButton.disabled = true;
+    try {
+      await action();
+      toastHide();
+    } catch (thrown) {
+      const failure = thrown as { message?: unknown } | null;
+      notify(String((failure && failure.message) || thrown));
+    } finally {
+      toastButton.disabled = false;
+    }
+  };
+  toastButton.addEventListener("click", onToastClick);
+
+  function refuse<T>(id: string, missingText: string, refusal: T): Promise<T> {
+    console.error("Modal: 다이얼로그 골격 부재/불량 — " + id);
+    notify(missingText);
+    return Promise.resolve(refusal);
+  }
+
+  const controller: DialogHost = {
+    confirm(spec) {
+      const ok = find<HTMLButtonElement>(roots.confirm, "confirmModalOk");
+      const cancel = find<HTMLButtonElement>(roots.confirm, "confirmModalCancel");
+      if (!roots.confirm.classList.contains("modal") || ok === null || cancel === null) {
+        return refuse("confirmModal", spec.missingText, false);
+      }
+      const refs: DialogRefs = { root: roots.confirm, ok, cancel, alt: null, input: null, error: null };
+      return runDialog<boolean>({
+        refs, doc, notify,
+        refusal: false,
+        prepare: () => {
+          setText(find(roots.confirm, "confirmModalTitle"), spec.title);
+          setText(find(roots.confirm, "confirmModalBody"), spec.body);
+          ok.textContent = spec.confirmLabel;
+          cancel.textContent = spec.cancelLabel;
+          ok.classList.toggle("danger", spec.danger);
+          ok.classList.toggle("primary", !spec.danger);
+        },
+        initialFocus: () => cancel,
+        okValue: () => true,
+        returnFocus: spec.returnFocus,
+      });
+    },
+    prompt(spec) {
+      const ok = find<HTMLButtonElement>(roots.prompt, "promptModalOk");
+      const cancel = find<HTMLButtonElement>(roots.prompt, "promptModalCancel");
+      const input = find<HTMLInputElement>(roots.prompt, "promptModalInput");
+      if (!roots.prompt.classList.contains("modal") || ok === null || cancel === null || input === null) {
+        return refuse("promptModal", spec.missingText, null);
+      }
+      const refs: DialogRefs = {
+        root: roots.prompt, ok, cancel, alt: null, input,
+        error: find<HTMLElement>(roots.prompt, "promptModalError"),
+      };
+      return runDialog<string | null>({
+        refs, doc, notify,
+        refusal: null,
+        prepare: () => {
+          setText(find(roots.prompt, "promptModalTitle"), spec.title);
+          setText(find(roots.prompt, "promptModalBody"), spec.body);
+          input.value = spec.value;
+          if (refs.error !== null) {
+            refs.error.textContent = "";
+            refs.error.style.display = "none";
+          }
+        },
+        initialFocus: () => input,
+        okValue: () => input.value,
+        validate: spec.validate as ((value: string | null) => unknown) | undefined,
+        returnFocus: spec.returnFocus,
+      });
+    },
+    choose(spec) {
+      const ok = find<HTMLButtonElement>(roots.choose, "chooseModalOk");
+      const cancel = find<HTMLButtonElement>(roots.choose, "chooseModalCancel");
+      const alt = find<HTMLButtonElement>(roots.choose, "chooseModalAlt");
+      if (!roots.choose.classList.contains("modal") || ok === null || cancel === null || alt === null) {
+        return refuse("chooseModal", spec.missingText, spec.refusal.value);
+      }
+      const refs: DialogRefs = { root: roots.choose, ok, cancel, alt, input: null, error: null };
+      return runDialog<string>({
+        refs, doc, notify,
+        refusal: spec.refusal.value,
+        altValue: spec.alt.value,
+        prepare: () => {
+          setText(find(roots.choose, "chooseModalTitle"), spec.title);
+          setText(find(roots.choose, "chooseModalBody"), spec.body);
+          ok.textContent = spec.primary.label;
+          alt.textContent = spec.alt.label;
+          cancel.textContent = spec.refusal.label;
+        },
+        initialFocus: () => cancel,
+        okValue: () => spec.primary.value,
+        returnFocus: spec.returnFocus,
+      });
+    },
+    toastShow(message, undo) {
+      setText(toastText, message);
+      undoAction = undo;
+      roots.toast.hidden = false;
+      if (toastTimer !== null) clearTimeout(toastTimer);
+      toastTimer = setTimeout(toastHide, 10000);
+    },
+    toastHide,
+  };
+
+  return {
+    controller,
+    dispose: () => {
+      toastButton.removeEventListener("click", onToastClick);
+      toastHide();
+    },
+  };
+}
+
 /** 다이얼로그·토스트 host — 트리에 정확히 하나. 골격을 1회 렌더하고 mount effect 가
  *  컨트롤러 슬롯·문서 리스너·토스트 배선을 세우며 cleanup 이 대칭으로 걷는다. */
 export function OverlayHost(ports: OverlayHostPorts): ReactNode {
@@ -357,7 +495,6 @@ export function OverlayHost(ports: OverlayHostPorts): ReactNode {
   const toastRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const { doc, win, notify } = ports;
     const confirmRoot = confirmRef.current;
     const chooseRoot = chooseRef.current;
     const promptRoot = promptRef.current;
@@ -366,152 +503,18 @@ export function OverlayHost(ports: OverlayHostPorts): ReactNode {
       throw new Error("overlay host 골격이 마운트되지 않았습니다 — 렌더 계약이 깨졌습니다.");
     }
 
-    /* ── 토스트 — 1슬롯·10초·실패 재진술(undo_toast.js 거동 이식) ── */
-    const toastText = byId<HTMLElement>(toastRoot, "undoToastText");
-    const toastButton = byId<HTMLButtonElement>(toastRoot, "undoToastBtn");
-    let undoAction: (() => unknown) | null = null;
-    let toastTimer: ReturnType<typeof setTimeout> | null = null;
-    const toastHide = (): void => {
-      toastRoot.hidden = true;
-      undoAction = null;
-      if (toastTimer !== null) clearTimeout(toastTimer);
-      toastTimer = null;
-    };
-    const onToastClick = async (): Promise<void> => {
-      const action = undoAction;
-      if (action === null) return;
-      toastButton.disabled = true;
-      try {
-        await action();
-        toastHide();
-      } catch (thrown) {
-        const failure = thrown as { message?: unknown } | null;
-        notify(String((failure && failure.message) || thrown));
-      } finally {
-        toastButton.disabled = false;
-      }
-    };
-    toastButton.addEventListener("click", onToastClick);
-
-    /* ── 컨트롤러 — 파사드가 호출 시점 슬롯으로 닿는 DOM 집행 표면 ── */
-    const controller: DialogHost = {
-      confirm(spec) {
-        const refs: DialogRefs = {
-          root: confirmRoot,
-          ok: byId(confirmRoot, "confirmModalOk"),
-          cancel: byId(confirmRoot, "confirmModalCancel"),
-          alt: null, input: null, error: null,
-        };
-        return runDialog<boolean>({
-          refs, doc, notify,
-          refusal: false,
-          prepare: () => {
-            setText(byId(confirmRoot, "confirmModalTitle"), spec.title);
-            setText(byId(confirmRoot, "confirmModalBody"), spec.body);
-            refs.ok.textContent = spec.confirmLabel;
-            refs.cancel.textContent = spec.cancelLabel;
-            refs.ok.classList.toggle("danger", spec.danger);
-            refs.ok.classList.toggle("primary", !spec.danger);
-          },
-          initialFocus: () => refs.cancel,
-          okValue: () => true,
-          returnFocus: spec.returnFocus,
-        });
-      },
-      prompt(spec) {
-        const refs: DialogRefs = {
-          root: promptRoot,
-          ok: byId(promptRoot, "promptModalOk"),
-          cancel: byId(promptRoot, "promptModalCancel"),
-          alt: null,
-          input: byId(promptRoot, "promptModalInput"),
-          error: byId(promptRoot, "promptModalError"),
-        };
-        return runDialog<string | null>({
-          refs, doc, notify,
-          refusal: null,
-          prepare: () => {
-            setText(byId(promptRoot, "promptModalTitle"), spec.title);
-            setText(byId(promptRoot, "promptModalBody"), spec.body);
-            if (refs.input !== null) refs.input.value = spec.value;
-            if (refs.error !== null) {
-              refs.error.textContent = "";
-              refs.error.style.display = "none";
-            }
-          },
-          initialFocus: () => refs.input,
-          okValue: () => (refs.input !== null ? refs.input.value : null),
-          validate: spec.validate as ((value: string | null) => unknown) | undefined,
-          returnFocus: spec.returnFocus,
-        });
-      },
-      choose(spec) {
-        const refs: DialogRefs = {
-          root: chooseRoot,
-          ok: byId(chooseRoot, "chooseModalOk"),
-          cancel: byId(chooseRoot, "chooseModalCancel"),
-          alt: byId(chooseRoot, "chooseModalAlt"),
-          input: null, error: null,
-        };
-        return runDialog<string>({
-          refs, doc, notify,
-          refusal: spec.refusal.value,
-          altValue: spec.alt.value,
-          prepare: () => {
-            setText(byId(chooseRoot, "chooseModalTitle"), spec.title);
-            setText(byId(chooseRoot, "chooseModalBody"), spec.body);
-            refs.ok.textContent = spec.primary.label;
-            if (refs.alt !== null) refs.alt.textContent = spec.alt.label;
-            refs.cancel.textContent = spec.refusal.label;
-          },
-          initialFocus: () => refs.cancel,
-          okValue: () => spec.primary.value,
-          returnFocus: spec.returnFocus,
-        });
-      },
-      toastShow(message, undo) {
-        setText(toastText, message);
-        undoAction = undo;
-        toastRoot.hidden = false;
-        if (toastTimer !== null) clearTimeout(toastTimer);
-        toastTimer = setTimeout(toastHide, 10000);
-      },
-      toastHide,
-    };
+    /* 컨트롤러(파사드가 호출 시점 슬롯으로 닿는 DOM 집행 표면)는 팩토리가 세운다 —
+       React 의 몫은 골격 렌더와 이 수명주기(슬롯 대입·cleanup 대칭 회수)뿐이다. */
+    const { controller, dispose } = createOverlayDialogController({
+      doc: ports.doc,
+      notify: ports.notify,
+      roots: { confirm: confirmRoot, choose: chooseRoot, prompt: promptRoot, toast: toastRoot },
+    });
     const releaseHost = setOverlayDialogHost(controller);
 
-    /* ── 문서 리스너 — dismissal 계열 먼저, 모달 keydown 나중(같은 캡처 — §2.4 순서 보존) ── */
-    const onKeydown = (event: KeyboardEvent): void => {
-      const decision = overlayEngine.handleKeydown(event);
-      if (decision.kind === "none") return;
-      if (decision.kind === "consume") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-      if (decision.kind === "escape") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        overlayEngine.requestClose(decision.host);
-        return;
-      }
-      if (overlayEngine.trapTab(decision.host, decision.backward)) event.preventDefault();
-    };
-    for (const attachment of ports.documentAttachments) {
-      const target = attachment.target === "window" ? win : doc;
-      target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);
-    }
-    doc.addEventListener("keydown", onKeydown as (event: Event) => void, true);
-
     return () => {
-      doc.removeEventListener("keydown", onKeydown as (event: Event) => void, true);
-      for (const attachment of [...ports.documentAttachments].reverse()) {
-        const target = attachment.target === "window" ? win : doc;
-        target.removeEventListener(attachment.type, attachment.handler, attachment.capture === true);
-      }
       releaseHost();
-      toastButton.removeEventListener("click", onToastClick);
-      toastHide();
+      dispose();
     };
     /* ports 는 boot 늦은 결속 슬롯이 대는 안정 참조 — 재구성은 reload(신품 그래프)뿐이다. */
     // eslint-disable-next-line react-hooks/exhaustive-deps

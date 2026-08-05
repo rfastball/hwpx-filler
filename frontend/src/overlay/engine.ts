@@ -21,10 +21,11 @@
  *
  * ## 문서 리스너의 시점 계약 (패킷 §4.1·n05_data_picker 0→2→0→2 핀의 승계)
  *
- * dismissal 계열(팝오버 바깥닫기·Escape)은 구성 시 상시, 모달 keydown 은 **첫 open 부착·
- * 스택 빌 때 해제**다. 엔진은 부착하지 않는다 — 시점 판정(`keydownWanted`)과 핸들러
- * (`handleKeydown`)만 소유하고, 실제 부착/해제는 리스너 수명주기 소유자(React host effect
- * — R3-01 이 세우는 해제-소유 선례)가 `subscribe` 로 시점 변화를 구독해 집행한다. */
+ * dismissal 계열(팝오버 바깥닫기·Escape)은 bootProduct 구성 시 상시, 모달 keydown 은
+ * **첫 open 부착·스택 빌 때 해제**다. 엔진은 부착하지 않는다 — 시점 판정(`keydownWanted`)
+ * 과 판정 함수(`handleKeydown`)만 소유하고, 실제 부착/해제는 제품 배선(`instance.ts`)이
+ * `subscribe` 로 시점 변화를 구독해 집행한다(React 마운트와 독립 — 마운트 실패가 legacy
+ * 모달의 Escape/Tab 을 함께 걷는 두 번째 실행 경로 금지). */
 
 /** 집행자 — 스택 항목 하나의 DOM 효과 전부. 판정은 엔진이, 집행은 이쪽이 진다. */
 export type OverlayExecutor = {

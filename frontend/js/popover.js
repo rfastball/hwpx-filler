@@ -106,10 +106,11 @@ function onDocumentScroll(e) {
   });
 }
 
-/* 문서 부착 **명세** (R3-01 · #410) — 부착 자체는 React host effect 가 이 순서 그대로
-   집행·해제한다(모듈 평가 부착의 이양 — 해제-소유 수명주기의 첫 실물). 순서가 계약이다:
-   keydown(Escape→closeAll)이 모달 keydown 보다 **앞**에 서야 「팝오버 먼저 닫히고 이어
-   최상위 모달」 층화가 보존된다(host 가 이 목록을 먼저 부착하고 자기 keydown 을 뒤에 단다). */
+/* 문서 부착 **명세** (R3-01 · #410 개정 10) — 부착 자체는 `bootProduct` 가 구성 시 이 순서
+   그대로 집행한다(모듈 평가 부착의 이양 — 부작용은 평가가 아니라 호출이 진다). 순서가
+   계약이다: keydown(Escape→closeAll)이 모달 keydown 보다 **앞**에 서야 「팝오버 먼저 닫히고
+   이어 최상위 모달」 층화가 보존된다 — 모달 keydown 은 첫 open 부착(instance.ts)이라
+   구성 시 부착인 이 목록이 구조적으로 항상 앞이다. */
 const DOCUMENT_ATTACHMENTS = [
   { target: "document", type: "click", handler: onDocumentClick, capture: true },
   { target: "document", type: "pointerdown", handler: onDocumentPointerDown, capture: true },

@@ -30,8 +30,9 @@
 schema = 1
 
 # 이 원장을 실측한 기준. 재고정 v2 가 `d508724 → 8fcc30e` 무드리프트를 확인했고(frontend/ 무변경)
-# 계측은 그 위에서 다시 돌렸다.
-baseline_sha = "8fcc30ed07393ffe4608638761a778535caf3be5"
+# 계측은 그 위에서 다시 돌렸다. 재고정 v3(R3-01 #410, base `5895029`)은 overlay 이관을 따라
+# dom_static(골격 4 이전)·state_js_module·subscription 두 축·계측 6 항을 다시 실측했다.
+baseline_sha = "58950294ae2855c898d44812fd298a498f0eae69"
 
 # 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
 scope_statement = """
@@ -112,9 +113,9 @@ covers = ["frontend/css/**/*.css"]
 probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "per-matching-line" }
 scope = ["frontend/css/**/*.css"]
 unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
-current = 1692
+current = 1696
 files = 10
-judgment = "오늘 10파일 1,692줄. 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
+judgment = "오늘 10파일 1,696줄(R3-01 이 overlay.css 에 #reactOverlayHost 호스트 규칙 4줄을 더했다). 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
 # ── 추출기 레지스트리 ────────────────────────────────────────────────────
 # `backing` 은 「이 값이 얼마나 믿을 만한가」를 이름이 아니라 종류로 말한다. 구현은
@@ -299,14 +300,17 @@ probe = { kind = "node_extractor", name = "js_nonexported_fn_state" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
 unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
-current = 13
+current = 16
 members = [
   "frontend/js/grouplist.js:57 request",
   "frontend/js/grouplist.js:75 onConfirm",
   "frontend/js/grouplist.js:76 confirmed",
   "frontend/js/grouplist.js:77 confirmedGroup",
-  "frontend/js/modal.js:157 found",
+  "frontend/js/modal.js:74 closeTimer",
+  "frontend/js/modal.js:75 card",
+  "frontend/js/modal.js:76 onTransitionEnd",
   "frontend/js/popover.js:33 registered",
+  "frontend/js/popover.js:68 closed",
   "frontend/js/preserve.js:24 act",
   "frontend/js/preserve.js:25 focusId",
   "frontend/js/preserve.js:26 selDir",
@@ -316,9 +320,11 @@ members = [
   "frontend/js/preserve.js:35 marked",
 ]
 judgment = """
-열셋 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
-createMoveDialog 는 조작마다, open 은 모달마다, register 는 등록마다 돈다. 새 항목이 생기면
-게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열셋뿐이다.
+열여섯 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
+createMoveDialog 는 조작마다, legacyExecutor 의 셋(closeTimer·card·onTransitionEnd)은
+모달 개폐마다, register·onDocumentPointerDown 은 등록·제스처마다 돈다(R3-01 재고정:
+modal.js:157 found 는 close 판정이 엔진으로 이양되며 사라졌다). 새 항목이 생기면
+게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열여섯뿐이다.
 """
 
 [axes.state_snapshot_channel]
@@ -457,12 +463,12 @@ members = [
   "frontend/js/grouplist.js:138",
   "frontend/js/guard.js:16",
   "frontend/js/intent.js:110",
-  "frontend/js/modal.js:394",
-  "frontend/js/popover.js:144",
+  "frontend/js/modal.js:253",
+  "frontend/js/popover.js:160",
   "frontend/js/preserve.js:59",
   "frontend/js/segview.js:42",
   "frontend/js/surface_sheet.js:82",
-  "frontend/js/undo_toast.js:33",
+  "frontend/js/undo_toast.js:24",
   "frontend/src/product_api.js:41",
 ]
 judgment = "열하나는 Copy·Guard·SegView·Intent·Modal·Popover·Preserve·GroupList·SurfaceSheet·UndoToast·PRODUCT_ERROR_CODES 다."
@@ -533,13 +539,13 @@ unit = "줄 끝 대입 11건을 놓친다 — `[^=]` 가 줄 뒤에 문자를 �
 
 [[metric]]
 id = "mutable-module-state"
-value = 50
+value = 47
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다."
+unit = "노드 폐포의 원소 수. 게이트가 축에서 계산하고 이 값과 대조한다. R3-01 재고정: modal.js pendingDialog·undo_toast undo/timer 셋이 엔진·host(.ts — 이 축의 scope 밖)로 이양돼 50 → 47."
 [[metric.aliases]]
-value = 44
+value = 41
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js"]
 unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
@@ -550,11 +556,11 @@ predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
 scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
 unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
 [[metric.aliases]]
-value = 52
+value = 54
 status = "wrong"
 predicate = { kind = "extractor", name = "js_module_state_convention" }
 scope = ["frontend/js/**/*.js"]
-unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성 12 + 거짓음성 4 = 52 대 참값 44."
+unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성·거짓음성이 상쇄 없이 겹쳐 54 대 참값 41 — 관례 술어를 계약 밖에 재사용하면 안 되는 이유가 이 간극이다."
 
 [[metric]]
 id = "push-subscription-sites"
@@ -570,31 +576,31 @@ unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센
 
 [[metric]]
 id = "listener-attach-sites"
-value = 119
+value = 105
 predicate = { kind = "derived", axis = "subscription_listener" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수."
+unit = "노드 폐포의 원소 수. R3-01 재고정: popover 모듈-평가 8·undo_toast 2·modal 4 가 엔진 배선·host(.ts)로 이양되고 bootstrap 구성 시 부착 1 이 생겨 119 → 105."
 [[metric.aliases]]
-value = 123
+value = 109
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
 unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다."
 
 [[metric]]
 id = "listener-release-sites"
-value = 12
+value = 7
 predicate = { kind = "derived", axis = "subscription_release" }
 scope = ["frontend/js/**/*.js", "frontend/js/**/*.mjs", "frontend/src/**/*.js", "frontend/src/**/*.mjs"]
 scope_excluded = ["frontend/src/selftest/**"]
-unit = "노드 폐포의 원소 수. 부착 119 와의 차 107 이 이 축의 사실이다."
+unit = "노드 폐포의 원소 수. 부착 105 와의 차 98 이 이 축의 사실이다(R3-01 재고정: modal.js 해제 5 가 host 컨트롤러로 이양)."
 
 [[metric]]
 id = "dom-stable-ids"
-value = 233
+value = 212
 predicate = { kind = "derived", axis = "dom_static" }
 scope = ["frontend/index.html"]
-unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0)."
+unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0). R3-01 재고정: 골격 4(다이얼로그 3 + 토스트, 내부 id 포함 21)가 React host 렌더로 이전돼 233 → 212."
 
 [[metric]]
 id = "dom-data-attribute-kinds"
@@ -787,7 +793,7 @@ id = "dom/root/react-root"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["reactRoot"] }
-evidence = [{ file = "frontend/index.html", line = 825, anchor = "id=\"reactRoot\"" }]
+evidence = [{ file = "frontend/index.html", line = 787, anchor = "id=\"reactRoot\"" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_root_live.py::test_react_root_commits_in_a_real_webview2_window"]
@@ -837,12 +843,12 @@ verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_global
 id = "dom/overlayRoot"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "overlayRoot", members_expected = 19 }
+selector = { kind = "subtree", root = "overlayRoot", members_expected = 13 }
 evidence = [{ file = "frontend/index.html", line = 522, anchor = "id=\"overlayRoot\"" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
-note = "overlay 루트 직속 19 — 12 모달 루트 자신과 메뉴·토스트."
+note = "overlay 루트 직속 13 — 9 모달 루트 자신과 메뉴·경량층. R3-01 재고정: promise 다이얼로그 3 과 되돌리기 토스트는 React host(#reactOverlayHost) 렌더로 이전돼 정적 골격이 소멸했다(19 → 13)."
 
 [[node]]
 id = "dom/job/jobDataGrid"
@@ -909,7 +915,7 @@ id = "dom/overlay/poolRegModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "poolRegModal", members_expected = 8 }
-evidence = [{ file = "frontend/index.html", line = 540, anchor = "id=\"poolRegModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 538, anchor = "id=\"poolRegModal\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -919,7 +925,7 @@ id = "dom/overlay/txtEditModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "txtEditModal", members_expected = 7 }
-evidence = [{ file = "frontend/index.html", line = 562, anchor = "id=\"txtEditModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 560, anchor = "id=\"txtEditModal\"" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -929,7 +935,7 @@ id = "dom/overlay/sheetModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "sheetModal", members_expected = 4 }
-evidence = [{ file = "frontend/index.html", line = 579, anchor = "id=\"sheetModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 577, anchor = "id=\"sheetModal\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -939,7 +945,7 @@ id = "dom/overlay/dataPickerModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "dataPickerModal", members_expected = 11 }
-evidence = [{ file = "frontend/index.html", line = 596, anchor = "id=\"dataPickerModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 594, anchor = "id=\"dataPickerModal\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -949,7 +955,7 @@ id = "dom/overlay/previewSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "previewSheet", members_expected = 19 }
-evidence = [{ file = "frontend/index.html", line = 640, anchor = "id=\"previewSheet\"" }]
+evidence = [{ file = "frontend/index.html", line = 638, anchor = "id=\"previewSheet\"" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -959,7 +965,7 @@ id = "dom/overlay/libraryMoveModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "libraryMoveModal", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 711, anchor = "id=\"libraryMoveModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 709, anchor = "id=\"libraryMoveModal\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -969,7 +975,7 @@ id = "dom/overlay/dataSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "dataSheet", members_expected = 3 }
-evidence = [{ file = "frontend/index.html", line = 725, anchor = "id=\"dataSheet\"" }]
+evidence = [{ file = "frontend/index.html", line = 723, anchor = "id=\"dataSheet\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -979,7 +985,7 @@ id = "dom/overlay/jobBrowseSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobBrowseSheet", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 739, anchor = "id=\"jobBrowseSheet\"" }]
+evidence = [{ file = "frontend/index.html", line = 737, anchor = "id=\"jobBrowseSheet\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
@@ -989,40 +995,18 @@ id = "dom/overlay/tplMoveModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "tplMoveModal", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 766, anchor = "id=\"tplMoveModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 764, anchor = "id=\"tplMoveModal\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
 
-[[node]]
-id = "dom/overlay/confirmModal"
-kind = "dom"
-axis = "dom_static"
-selector = { kind = "subtree", root = "confirmModal", members_expected = 4 }
-evidence = [{ file = "frontend/index.html", line = 781, anchor = "id=\"confirmModal\"" }]
-classification = "react"
-handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
-
-[[node]]
-id = "dom/overlay/chooseModal"
-kind = "dom"
-axis = "dom_static"
-selector = { kind = "subtree", root = "chooseModal", members_expected = 5 }
-evidence = [{ file = "frontend/index.html", line = 795, anchor = "id=\"chooseModal\"" }]
-classification = "react"
-handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
-
-[[node]]
-id = "dom/overlay/promptModal"
-kind = "dom"
-axis = "dom_static"
-selector = { kind = "subtree", root = "promptModal", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 808, anchor = "id=\"promptModal\"" }]
-classification = "react"
-handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+# (R3-01 #410 재고정 — `dom/overlay/confirmModal`(4) · `dom/overlay/chooseModal`(5) ·
+#  `dom/overlay/promptModal`(6) 세 노드는 정적 골격이 React host(#reactOverlayHost) 렌더로
+#  이전되며 소멸했다. 이것이 감소 원장의 실측 축이다: overlay 포털 안 DOM 을 기입하는
+#  생산자에서 promise 골격 3 + 토스트의 기입이 0 이 됐다. 같은 id·클래스·ARIA 의 렌더 소유는
+#  `frontend/src/overlay/host.ts` 가 지고, 검증은 tests/js/overlay_host.test.js(렌더 요소 계약)
+#  + tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics(정적 부재 + host
+#  소스 소유) + tests/test_react_overlay_live.py(실창 커밋·직속 자식·닫힘 상시 렌더)가 진다.)
 
 # ═══ dom_data_attr — 속성 **이름** 9행이다. 출현 50회는 이미 dom_static 232 안에
 #     있는 요소들이라 이중 계상하지 않는다(L8·L9 의 노드 좌표-키 원칙).
@@ -1354,16 +1338,13 @@ id = "state/overlay-services"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = [
-  "frontend/js/modal.js:29 pendingDialog",
   "frontend/js/popover.js:9 suppressNextClick",
-  "frontend/js/undo_toast.js:3 undo",
-  "frontend/js/undo_toast.js:4 timer",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 29, anchor = "pendingDialog", occurrence = 1 }]
+evidence = [{ file = "frontend/js/popover.js", line = 9, anchor = "suppressNextClick", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
-note = "0칸 최상위 4(modal:29·popover:9·undo_toast:3,4)를 포함한다 — 2칸 관례 술어가 통째로 못 보던 자리다."
+note = "R3-01 재고정: modal.js pendingDialog(직렬화 불리언 — 잔존 금지 계약)와 undo_toast 의 undo/timer 는 엔진(src/overlay/engine.ts)·host 컨트롤러(src/overlay/host.ts)로 이양돼 이 축의 scope(.js) 밖이다. 남는 것은 popover 의 클릭 소비 후보 슬롯 하나."
 
 [[node]]
 id = "state/boot-composition"
@@ -1488,30 +1469,22 @@ call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다.
 contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외"
 test = "tests/test_pipeline_builder_state.py"
 
-# ═══ subscription_listener — 부착 사이트 119. 나머지 107은 부팅 1회 부착 후
+# ═══ subscription_listener — 부착 사이트 105. 나머지 98은 부팅 1회 부착 후
 #     영구다. 즉 **useEffect cleanup 에 대응할 원본이 존재하지 않는다** — 그 부재
 #     자체가 이 축의 값이고, 공란으로 두면 R3/R4 가 신규와 승계를 못 가른다.
 
 [[node]]
-id = "subscription/module-eval-attachments"
+id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = [
-  "frontend/js/popover.js:102",
-  "frontend/js/popover.js:107",
-  "frontend/js/popover.js:57",
-  "frontend/js/popover.js:65",
-  "frontend/js/popover.js:80",
-  "frontend/js/popover.js:86",
-  "frontend/js/popover.js:88",
-  "frontend/js/popover.js:93",
-  "frontend/js/undo_toast.js:22",
+  "frontend/src/bootstrap.js:309",
 ] }
-evidence = [{ file = "frontend/js/popover.js", line = 102, anchor = "addEventListener", occurrence = 7 }]
+evidence = [{ file = "frontend/src/bootstrap.js", line = 309, anchor = "addEventListener" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
-note = "모듈 평가 시점(0칸)에 document·window 에 앉는 9. React root 가 생기기 **전에** 붙고 어떤 팩토리의 생명주기에도 매이지 않는다 — 이관 시 신규 설계가 필요한 자리다."
+verification = ["tests/js/n05_foundation.test.js"]
+note = "구 `subscription/module-eval-attachments`(popover 8 + undo_toast 1, 모듈 평가 부착)의 후계 — R3-01 이 부착을 `bootProduct` 구성 시 1 사이트(부착 명세 루프)로 이양했다(개정 10). 모달 keydown 부착/해제와 dismissal 명세 자체는 엔진 배선(src/overlay/instance.ts)·popover.js 가 소유하고, 다이얼로그·토스트 내부 리스너는 React host 컨트롤러(src/overlay/host.ts — .ts 라 이 축의 scope 밖, READY 기록의 #490 인접 사각)가 소유한다."
 
 [[node]]
 id = "subscription/listener/job-run"
@@ -1716,17 +1689,13 @@ id = "subscription/listener/modal"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = [
-  "frontend/js/modal.js:102",
-  "frontend/js/modal.js:180",
-  "frontend/js/modal.js:289",
-  "frontend/js/modal.js:290",
-  "frontend/js/modal.js:291",
-  "frontend/js/modal.js:292",
+  "frontend/js/modal.js:100",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 102, anchor = "addEventListener", occurrence = 1 }]
+evidence = [{ file = "frontend/js/modal.js", line = 100, anchor = "addEventListener" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
+note = "R3-01 재고정: 문서 keydown 부착(구 :102)은 엔진 배선(instance.ts), promise 다이얼로그 버튼 4(구 :289-292)는 host 컨트롤러(host.ts)로 이양 — 남는 것은 legacy 집행자의 transitionend 1."
 
 [[node]]
 id = "subscription/listener/grouplist"
@@ -1752,18 +1721,13 @@ classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
 
-[[node]]
-id = "subscription/listener/undo-toast"
-kind = "subscription"
-axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/js/undo_toast.js:23"] }
-evidence = [{ file = "frontend/js/undo_toast.js", line = 23, anchor = "addEventListener", occurrence = 2 }]
-classification = "react"
-handoff_slice = "R3-01 #410"
-verification = ["none"]
+# (R3-01 #410 재고정 — `subscription/listener/undo-toast` 노드는 토스트 DOM·버튼 배선이
+#  host 컨트롤러(src/overlay/host.ts)로 이양되며 소멸했다. 검증은 n05_foundation 의 토스트
+#  삼형제 + overlay_host.test.js 가 승계한다.)
 
-# ═══ subscription_release — 해제 사이트 12. 부착 119 대비 비대칭 107 이 이 축의
-#     사실이다. 해제 책임 = **없음(부팅 영구)** 을 명시 값으로 적는다.
+# ═══ subscription_release — 해제 사이트 7. 부착 105 대비 비대칭 98 이 이 축의
+#     사실이다. 해제 책임 = **없음(부팅 영구)** 을 명시 값으로 적는다. R3-01 이 세운
+#     해제-소유 수명주기(host effect cleanup·엔진 keydown 해제)는 .ts 라 이 축 밖이다.
 
 [[node]]
 id = "subscription/release/app-splitter"
@@ -1784,17 +1748,13 @@ id = "subscription/release/modal"
 kind = "subscription"
 axis = "subscription_release"
 selector = { kind = "exact", members = [
-  "frontend/js/modal.js:115",
-  "frontend/js/modal.js:123",
-  "frontend/js/modal.js:241",
-  "frontend/js/modal.js:242",
-  "frontend/js/modal.js:243",
-  "frontend/js/modal.js:244",
+  "frontend/js/modal.js:106",
 ] }
-evidence = [{ file = "frontend/js/modal.js", line = 115, anchor = "removeEventListener", occurrence = 1 }]
+evidence = [{ file = "frontend/js/modal.js", line = 106, anchor = "removeEventListener" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["none"]
+note = "R3-01 재고정: keydown 해제(구 :115)는 엔진 배선, 다이얼로그 cleanup 4(구 :241-244)는 host 컨트롤러로 이양 — 남는 것은 legacy 집행자의 transitionend 해제 1."
 
 [[node]]
 id = "subscription/release/data-picker"

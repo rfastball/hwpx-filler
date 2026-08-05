@@ -632,8 +632,12 @@ export function createEditorWorkbenchDataProbes() {
           for (;;) {
             await ctx.sleep(50);
             ticks += 1;
+            /* R3-01(#410): chooseModal 골격은 React host 커밋 산물이라 이 프로브(실행 순서상
+               첫 골격 소비자, 3794)가 닿는 시점의 부재를 관용한다 — 같은 폴링이 마운트 대기를
+               겸하고, 끝내 안 뜨면 `why: "모달 미개방"` 이 게이트(`why == "완료"` 단언)에서 붉는다. */
             const ok = byId(ctx, "chooseModalOk");
-            const open = !byId(ctx, "chooseModal").classList.contains("hidden");
+            const chooseRoot = byId(ctx, "chooseModal");
+            const open = chooseRoot !== null && !chooseRoot.classList.contains("hidden");
             if (open && ok) {
               out.modal_label = textOf(ok);
               ok.click();                             // 「저장하고 이동」

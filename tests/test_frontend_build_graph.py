@@ -437,7 +437,9 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
     그 질문은 이제 import 문 자체가 답한다.
     """
     expected_edges = {
-        "modal.js": {"./popover.js"},
+        # R3-01(#410): 파사드가 스택·직렬화 판정을 엔진 배선(instance.ts)에 위임한다 —
+        # js→ts 상대 import 는 bootstrap.js 선례의 합법 방향(역방향 ts→legacy 는 0 게이트).
+        "modal.js": {"./popover.js", "../src/overlay/instance.ts"},
         "surface_sheet.js": {"./modal.js"},
         "grouplist.js": {"./esc.js", "./popover.js", "./modal.js"},
         "datazone.js": {"./esc.js", "./popover.js", "./intent.js"},
@@ -857,6 +859,9 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
     #: 등재 지점 — 새 단계의 `.ts` 는 여기 행 추가로 편입된다(R2 패킷 §4.3 의 규정과 같다).
     assert ts_members == [
         "src/contract/contract.gen.ts",  # R2-02 — 생성 계약(정본은 Python 실물)
+        "src/overlay/engine.ts",  # R3-01 — 트리-불가지 overlay 판정(스택·직렬화·트랩·복귀)
+        "src/overlay/host.ts",  # R3-01 — React host: 데이터-구동 표면 4 의 렌더·명령형 집행
+        "src/overlay/instance.ts",  # R3-01 — 엔진 단일 인스턴스·다이얼로그 host 슬롯·keydown 배선
         "src/react/boot.ts",
         "src/react/boundary.ts",
         "src/react/root.ts",

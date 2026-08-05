@@ -298,6 +298,17 @@ export function bootProduct() {
     },
   });
 
+  /* overlay dismissal 계열 문서 리스너 (R3-01 · #410 개정 10) — **bootProduct 구성 시**
+     상시 부착이다. 모듈 평가가 아니라 이 호출이 부작용을 진다(머리말의 합성 루트 계약).
+     React host effect 도 아니다 — effect 는 커밋 뒤 비동기라 「구성 시」가 아니고, 마운트
+     실패가 팝오버 바깥닫기까지 조용히 걷는 두 번째 실행 경로가 된다. 모달 keydown 은
+     첫 open 부착(instance.ts·개정 4)이라 언제나 이 목록 **뒤** 순서 — Escape 층화(팝오버
+     먼저 닫히고 최상위 모달 나중)가 부착 순서로 선다. 해제는 없다: reload = 신품 그래프. */
+  for (const attachment of Popover.documentAttachments) {
+    const target = attachment.target === "window" ? window : document;
+    target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);
+  }
+
   /* React root (R2-01 · #405) — 기존 조립 **뒤에** 선다. legacy 두 트리와 겹치지 않는
      `#reactRoot` 하나가 React 소유 경계의 전부이고, React 를 아는 것은 `./react/boot.ts`
      쪽이다(`.js` 그래프는 bare import 0 을 유지한다 — 정적 게이트가 잰다).
@@ -316,14 +327,12 @@ export function bootProduct() {
     /* R2-03 — 트리의 StoreSignal 이 이 store 를 구독한다. boot.ts 가 늦은 결속 슬롯으로
        요소 factory 에 넘기므로 여기서는 객체째 한 번 건네면 된다. */
     store,
-    /* R3-01 — 트리의 OverlayHost 가 완전 데이터-구동 표면 4 를 렌더·집행한다. 문서 리스너
-       이양분(popover 부착 명세)이 host effect 에서 모달 keydown 보다 먼저 부착되는 것이
-       Escape 층화(팝오버 먼저 → 최상위 모달)의 순서 계약이다. */
+    /* R3-01 — 트리의 OverlayHost 가 완전 데이터-구동 표면 4(confirm·choose·prompt·토스트)를
+       렌더·집행한다. 문서 리스너는 여기 몫이 아니다(dismissal=위 구성 시 부착, keydown=
+       instance.ts 첫 open 부착). */
     overlay: {
       doc: document,
-      win: window,
       notify: (message) => window.alert(message),
-      documentAttachments: Popover.documentAttachments,
     },
   });
 

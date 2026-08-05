@@ -138,25 +138,28 @@ test("createRoot 실패는 경보 후 false 다 — 조용한 폴백도, 예외 
   assert.equal(alarms.length, 2);
 });
 
-test("실물 요소 배선 — 경계가 최외곽이고 두 신호가 요소 계약대로 실려 있다", () => {
+test("실물 요소 배선 — 경계가 최외곽이고 세 자식이 요소 계약대로 실려 있다", () => {
   const onCommit = () => {};
   const alarm = () => {};
   const store = { channels: [], subscriber: () => () => () => {}, revision: () => 0 };
   const reflectStoreRevision = () => {};
+  const overlay = { doc: {}, notify: () => {} };
 
-  const element = createAppElement({ onCommit, alarm, store, reflectStoreRevision });
+  const element = createAppElement({ onCommit, alarm, store, reflectStoreRevision, overlay });
 
   assert.equal(element.type, ReactErrorBoundary,
     "최외곽 요소가 오류 경계가 아닙니다 — 렌더 실패가 경계 밖으로 샙니다.");
   assert.equal(element.props.alarm, alarm);
   assert.equal(element.props.onCommit, onCommit,
     "커밋 신호가 최외곽 props 에 없습니다 — 렌더 실물 없는 기록자가 커밋 경로에 닿지 못합니다.");
-  /* R2-03 — 자식은 정확히 둘이다: 마운트 신호 + store 신호. 하나로 접히면 어느 한쪽의
-     실물 증거(마운트 마커 / store revision 마커)가 조용히 죽는다. */
+  /* R2-03 + R3-01 — 자식은 정확히 셋이다: 마운트 신호 + store 신호 + overlay host.
+     하나로 접히면 어느 한쪽의 실물 증거(마운트 마커 / store revision 마커 / 다이얼로그
+     4 표면)가 조용히 죽는다. */
   const children = element.props.children;
-  assert.equal(Array.isArray(children), true, "신호 자식이 배열이 아닙니다 — 형제 신호가 사라졌습니다.");
-  assert.equal(children.length, 2, "신호 자식이 정확히 둘(MountSignal·StoreSignal)이어야 합니다.");
-  const [mountSignal, storeSignal] = children;
+  assert.equal(Array.isArray(children), true, "신호 자식이 배열이 아닙니다 — 형제 자식이 사라졌습니다.");
+  assert.equal(children.length, 3,
+    "자식이 정확히 셋(MountSignal·StoreSignal·OverlayHost)이어야 합니다.");
+  const [mountSignal, storeSignal, overlayHost] = children;
   assert.equal(typeof mountSignal.type, "function", "마운트 신호 자식이 없습니다.");
   assert.equal(mountSignal.props.onCommit, onCommit);
   assert.equal(typeof storeSignal.type, "function", "store 신호 자식이 없습니다.");
@@ -164,6 +167,11 @@ test("실물 요소 배선 — 경계가 최외곽이고 두 신호가 요소 �
     "StoreSignal 이 주입된 store 와 다른 객체를 받았습니다.");
   assert.equal(storeSignal.props.reflectStoreRevision, reflectStoreRevision,
     "StoreSignal 의 반영 sink 가 주입된 콜백이 아닙니다 — DOM 직접 판독으로 흐른 자리입니다.");
+  assert.equal(typeof overlayHost.type, "function", "overlay host 자식이 없습니다.");
+  assert.equal(overlayHost.props.doc, overlay.doc,
+    "OverlayHost 가 주입된 overlay 포트와 다른 doc 을 받았습니다.");
+  assert.equal(overlayHost.props.notify, overlay.notify,
+    "OverlayHost 의 notify 가 주입된 콜백이 아닙니다 — 실패 재진술이 다른 통로로 샙니다.");
 });
 
 test("제품 배선은 컨테이너 부재를 침묵으로 접지 않는다", async () => {
@@ -174,6 +182,7 @@ test("제품 배선은 컨테이너 부재를 침묵으로 접지 않는다", as
     doc: { getElementById: () => null },
     alarm: (message) => alarms.push(message),
     store: { channels: [], subscriber: () => () => () => {}, revision: () => 0 },
+    overlay: { doc: {}, notify: () => {} },
   });
 
   assert.equal(booted, false);

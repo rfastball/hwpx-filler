@@ -22,8 +22,57 @@ import type { OverlayEngine } from "./engine.ts";
 
 export const overlayEngine: OverlayEngine = createOverlayEngine();
 
+/* ## 문서 keydown 의 수명주기 — 첫 open 부착 · 스택 빌 때 해제 (패킷 §4.1·개정 4)
+ *
+ * 시점 판정(`keydownWanted`)은 엔진이, 부착·해제 집행은 엔진과 한 몸인 이 배선 모듈이
+ * 진다 — React host 가 아니다. 이유는 둘이다: ① legacy 모달의 Escape/Tab 은 오늘도 React
+ * 마운트와 독립이어야 한다(마운트 실패·부팅 창에서 keydown 만 조용히 죽는 두 번째 실행
+ * 경로 금지). ② 소비자 쪽 캡처 선점(data_picker 가 자기 Escape 가드를 modal 보다 먼저
+ * 세우는 계약)은 「모달 keydown 은 open 호출 사슬 안에서 부착된다」에 기대고 있다.
+ *
+ * dismissal 계열(popover)은 bootProduct 구성 시 상시 부착(개정 10)이라 언제나 이 리스너보다
+ * 앞 순서다 — Escape 한 번에 팝오버가 먼저 닫히고 최상위 모달이 나중인 층화가 부착 순서로
+ * 선다. 부착 대상 document 는 부착 시점에 읽는다(모듈 평가의 문서 부작용 0). */
+type KeydownDocument = {
+  addEventListener(type: string, listener: (event: KeyboardEvent) => void, capture: boolean): void;
+  removeEventListener(type: string, listener: (event: KeyboardEvent) => void, capture: boolean): void;
+};
+
+let keydownDocument: KeydownDocument | null = null;
+
+function onKeydown(event: KeyboardEvent): void {
+  const decision = overlayEngine.handleKeydown(event);
+  if (decision.kind === "none") return;
+  if (decision.kind === "consume") {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  if (decision.kind === "escape") {
+    event.preventDefault();
+    event.stopImmediatePropagation(); // 같은 document 의 전역 Escape 가 아래 층까지 걷지 않게 한 겹 소비.
+    overlayEngine.requestClose(decision.host);
+    return;
+  }
+  if (overlayEngine.trapTab(decision.host, decision.backward)) event.preventDefault();
+}
+
+overlayEngine.subscribe(() => {
+  const wanted = overlayEngine.keydownWanted();
+  if (wanted && keydownDocument === null) {
+    const doc = (globalThis as { document?: KeydownDocument }).document;
+    if (doc === undefined) return;
+    keydownDocument = doc;
+    keydownDocument.addEventListener("keydown", onKeydown, true);
+  } else if (!wanted && keydownDocument !== null) {
+    keydownDocument.removeEventListener("keydown", onKeydown, true);
+    keydownDocument = null;
+  }
+});
+
 /** promise 다이얼로그·토스트의 DOM 집행 표면 — React host 가 마운트 시 공급한다.
- *  문안·기본 라벨·danger 판정은 파사드(legacy)가 소유하고, 여기는 **해석된 spec** 만 받는다. */
+ *  문안·기본 라벨·danger 판정은 파사드(legacy)가 소유하고, 여기는 **해석된 spec** 만 받는다 —
+ *  골격 부재/불량의 loud 거절 문안(`missingText`)도 그 소유의 일부라 spec 으로 실린다. */
 export type DialogHost = {
   confirm(spec: {
     title: string;
@@ -31,12 +80,14 @@ export type DialogHost = {
     confirmLabel: string;
     cancelLabel: string;
     danger: boolean;
+    missingText: string;
     returnFocus?: unknown;
   }): Promise<boolean>;
   prompt(spec: {
     title: string;
     body: string;
     value: string;
+    missingText: string;
     validate?: (value: string) => unknown;
     returnFocus?: unknown;
   }): Promise<string | null>;
@@ -46,6 +97,7 @@ export type DialogHost = {
     primary: { value: string; label: string };
     alt: { value: string; label: string };
     refusal: { value: string; label: string };
+    missingText: string;
     returnFocus?: unknown;
   }): Promise<string>;
   toastShow(message: string, undo: () => unknown): void;

@@ -72,6 +72,10 @@ EXPECTED_TEST_FILES = {
     # R2-04 — selftest 클러스터 R(React 실런타임 마커)의 단위 계약. 실창 증거는 selftest
     # 게이트·packaged 판정이 진다.
     "n08_react_runtime.test.js",
+    # R3-01 — 트리-불가지 overlay 엔진(판정 순수층)과 React host(렌더 요소 계약·집행 계약).
+    # 실창 증거는 test_react_overlay_live 가 진다.
+    "overlay_engine.test.js",
+    "overlay_host.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

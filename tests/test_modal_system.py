@@ -14,6 +14,10 @@ INDEX = SOURCE_INDEX
 # 단언은 119-128·838·894-900·932-933 이 한 문자열 안에 함께 있어야 성립한다.
 CSS = app_css()
 MODAL_JS = SOURCE_JS_DIR / "modal.js"
+# R3-01(#410) — 판정(스택·직렬화·Escape/Tab/복귀)의 거처는 트리-불가지 엔진이고, 문서
+# keydown 부착/해제는 엔진 배선이 진다. modal.js 는 파사드 + legacy 집행자로 남는다.
+ENGINE_TS = SOURCE_JS_DIR.parent / "src" / "overlay" / "engine.ts"
+INSTANCE_TS = SOURCE_JS_DIR.parent / "src" / "overlay" / "instance.ts"
 
 
 class _OverlayTree(HTMLParser):
@@ -51,6 +55,10 @@ def _compact(text: str) -> str:
 
 
 def test_overlay_root_is_body_direct_and_owns_every_modal() -> None:
+    # R3-01(#410) 뒤 이 정적 핀의 관측 의미는 **legacy 전용**으로 좁아졌다 — promise
+    # 다이얼로그 3종·토스트는 React host(#reactOverlayHost) 렌더 소유라 index.html 에 없다.
+    # 런타임 전수 판(두 지정 호스트)은 쌍둥이 프로브 `overlay_children_owned`
+    # (frontend/src/selftest/probes/boot_routing_overlay.js)가 잰다.
     tree = _OverlayTree()
     tree.feed(INDEX.read_text(encoding="utf-8"))
     assert tree.overlay_parent == "body"
@@ -62,19 +70,29 @@ def test_overlay_root_is_body_direct_and_owns_every_modal() -> None:
 
 def test_open_order_and_escape_contract_are_explicit() -> None:
     src = MODAL_JS.read_text(encoding="utf-8")
-    open_body = src[src.index("function open(") : src.index("function finishClose(")]
+    # H-16 개방 순서는 파사드 소유 그대로: 복귀점 포착 → 경량층 닫기 → 엔진 등록(스택·초점).
+    open_body = src[src.index("function open(") : src.index("function close(")]
     order = [
         open_body.index("const returnFocus ="),
         open_body.index("Popover.closeAll()"),
-        open_body.index("stack.push("),
-        open_body.index("focusTo.focus()"),
+        open_body.index("overlayEngine.open("),
     ]
-    assert order == sorted(order), "returnFocus→Popover.closeAll→stack→initialFocus 순서가 깨졌습니다."
+    assert order == sorted(order), "returnFocus→Popover.closeAll→engine.open 순서가 깨졌습니다."
 
-    key_body = src[src.index("function onKeydown(") : src.index("function open(")]
-    assert key_body.index("e.isComposing || e.keyCode === 229") < key_body.index('e.key === "Escape"')
-    assert "const t = top()" in key_body and "close(t.el.id)" in key_body
-    assert "stopImmediatePropagation" in key_body
+    # Escape/IME 판정은 엔진이 소유한다(R3-01) — IME 조합 통과가 Escape 판정보다 먼저.
+    engine = ENGINE_TS.read_text(encoding="utf-8")
+    key_body = engine[engine.index("handleKeydown(") : engine.index("trapTab(host")]
+    assert key_body.index("event.isComposing || event.keyCode === 229") < key_body.index(
+        'event.key === "Escape"'
+    )
+    # 스택 등록 → 개방 집행 → 초점 순서는 엔진 open 본문이 진다.
+    engine_open = engine[engine.index("open(entry: OverlayEntry)") : engine.index("requestClose(")]
+    assert engine_open.index("stack.push(") < engine_open.index("executor.show(")
+    assert engine_open.index("executor.show(") < engine_open.index("executor.focusInitial()")
+    # 부착·소비 집행은 엔진 배선(instance.ts) — Escape 는 최상위 닫기 요청으로 잇고 한 겹 소비.
+    wiring = INSTANCE_TS.read_text(encoding="utf-8")
+    assert "stopImmediatePropagation" in wiring
+    assert "overlayEngine.requestClose(decision.host)" in wiring
 
 
 def test_close_keeps_blocking_layer_until_symmetric_transition_finishes() -> None:
@@ -84,12 +102,16 @@ def test_close_keeps_blocking_layer_until_symmetric_transition_finishes() -> Non
     assert "transition:background-colorvar(--dur-modal)var(--ease-in-out),backdrop-filtervar(--dur-modal)var(--ease-in-out)" in css
     assert "transition:opacityvar(--dur-modal)var(--ease-in-out),transformvar(--dur-modal)var(--ease-in-out)" in css
 
+    # 전이 집행(is-closing·transitionend·안전망)은 legacy 집행자가 소유한다(R3-01).
     src = MODAL_JS.read_text(encoding="utf-8")
-    close_body = src[src.index("function close(") : src.index("function _setText(")]
-    assert 'el.classList.add("is-closing")' in close_body
-    assert "transitionend" in close_body and "CLOSE_FALLBACK_MS" in close_body
-    finish_body = src[src.index("function finishClose(") : src.index("function close(")]
-    assert finish_body.index('classList.add("hidden")') < finish_body.index("onCloseCb")
+    executor_body = src[src.index("function legacyExecutor(") : src.index("function open(")]
+    assert 'el.classList.add("is-closing")' in executor_body
+    assert "transitionend" in executor_body and "CLOSE_FALLBACK_MS" in executor_body
+    assert 'el.classList.add("hidden")' in executor_body
+    # 정착 순서(집행 정리 → 스택 제거 → 복귀 → 통지)는 엔진 settleClose 가 진다.
+    engine = ENGINE_TS.read_text(encoding="utf-8")
+    settle_body = engine[engine.index("settleClose(") : engine.index("acquireDialog(")]
+    assert settle_body.index("executor.finishClose()") < settle_body.index("onClose()")
 
 
 def test_modal_surface_reaches_actions_in_short_viewports_and_has_accessible_scrim() -> None:

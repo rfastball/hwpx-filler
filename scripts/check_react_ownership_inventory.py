@@ -104,7 +104,8 @@ PRODUCT_TREE_GLOBS = (
 
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
-EXPECTED_BASELINE_SHA = "8fcc30ed07393ffe4608638761a778535caf3be5"
+#: 재고정 v3 = R3-01(#410) overlay 이관 — base 는 `IMPLEMENTING` 전이가 고정한 `5895029`.
+EXPECTED_BASELINE_SHA = "58950294ae2855c898d44812fd298a498f0eae69"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -120,8 +121,12 @@ AXIS_FLOORS: dict[str, int] = {
     "state_js_module": 44,          # 오늘 50
     "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
     "state_ring1": 10,              # 오늘 11
-    "subscription_listener": 105,   # 오늘 119
-    "subscription_release": 10,     # 오늘 12
+    # R3-01(#410)이 문서 리스너 소유를 이양하며 두 축이 줄었다: popover 모듈-평가 부착 8 +
+    # undo_toast 1 + modal.js 부착 5/해제 5 가 엔진 배선·React host(`.ts` — 이 축의 scope 밖,
+    # READY 기록의 #490 인접 사각)로 옮겨 갔다. 하한 인하는 그 실측을 따른다 — 더 줄면
+    # 그때 또 사유가 필요하다(조용한 삭감 금지).
+    "subscription_listener": 100,   # 오늘 105
+    "subscription_release": 6,      # 오늘 7
     "subscription_push": 5,         # 오늘 6
     "lifecycle_factory": 16,        # 오늘 18
     "lifecycle_hook": 9,            # 오늘 10

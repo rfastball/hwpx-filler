@@ -18,9 +18,13 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     home = _read("js/screens/library.js")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
-    # 되돌리기 토스트가 앱 그래프에 실제로 닿는가 — N-05 뒤 이 모듈은 entry 의 bare import
-    # 목록이 아니라 중앙 compat 을 통해 들어온다. 같은 질문을 도달성으로 묻는다.
-    assert 'id="undoToast"' in index and reaches_product_graph("undo_toast.js")
+    # 되돌리기 토스트가 앱 그래프에 실제로 닿는가 — R3-01(#410)에서 토스트 골격은 React
+    # host 렌더 소유로 이전됐다. 정적 index.html 은 **부재**가 계약(재도입=중복 id·두 세계
+    # 분열)이고, 파사드 undo_toast.js 는 여전히 제품 그래프에 닿아야 한다(렌더 존재 쪽
+    # 절반은 node overlay_host.test.js + live 게이트가 진다).
+    host = source_text("src", "overlay", "host.ts")
+    assert 'id="undoToast"' not in index and 'id: "undoToast"' in host
+    assert reaches_product_graph("undo_toast.js")
     assert 'id="jobGenCancel"' in index and '"cancel_generation"' in job
     assert 'data-act="restore-confirmed"' in editor and '"restore_confirmed"' in editor
     # TXT 저작 모달 dirty 가드 — 소유가 editor.js 로 이주(F8, tpl 화면 사망).
