@@ -177,7 +177,7 @@ def test_the_verdict_rejects_each_degraded_shape(raw: object, fragment: str) -> 
 #: 자식 드라이버 — 실 백엔드가 달린 자체 창에서 2단계(부팅 커밋 → reload 신품 마운트)를
 #: 이 모듈의 술어로 폴링하고, 단계별 마지막 되읽기를 한 줄로 내보낸다.
 _CHILD_DRIVER = """
-import json, sys, tempfile, time
+import json, sys, tempfile, threading, time
 from pathlib import Path
 
 import webview
@@ -198,6 +198,8 @@ window = webview.create_window(
     hidden=True,
 )
 frontend._window = window
+loaded_event = threading.Event()
+window.events.loaded += loaded_event.set
 
 
 def probe() -> None:
@@ -218,12 +220,14 @@ def probe() -> None:
 
     try:
         poll("boot")
-        #: 재초기화 — 문서 reload 가 bootProduct() 를 다시 돌려 host 마운트·다이얼로그
+        #: 재초기화 — 문서 재적재가 bootProduct() 를 다시 돌려 host 마운트·다이얼로그
         #: 슬롯이 신품으로 선다(같은 문서 안 이중 마운트는 슬롯이 throw 로 막는 별개 축).
-        try:
-            window.evaluate_js("location.reload()")
-        except Exception:  # noqa: BLE001 — 문서 해체 중 반환 실패는 정상
-            pass
+        #: evaluate 로 reload 를 쏘면 문서 해체가 평가 응답과 경합해 evaluate_js 가 영영
+        #: 안 돌아올 수 있다(#411 shell 게이트가 실증·폐쇄한 경합 클래스) — load_url(file
+        #: URI) + loaded 대기로 해체 구간 평가를 0 으로 만든다.
+        loaded_event.clear()
+        window.load_url(artifact.index_path.as_uri())
+        loaded_event.wait(30.0)
         poll("reloaded")
     finally:
         print(_READBACK_LINE_PREFIX + json.dumps(results))
