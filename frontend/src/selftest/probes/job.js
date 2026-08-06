@@ -88,6 +88,36 @@ function requireServices(ctx, names) {
   return services;
 }
 
+/** 합성 snapshot으로 재는 프로브는 화면 전환이 자동으로 쏘는 실 refresh를 이미 대체한다.
+ *  이를 명시하지 않으면 늦게 도착한 실 스냅샷이 React portal을 비운 뒤 합성 ID를 읽게 된다. */
+function enterSyntheticJob(services, options = {}) {
+  services.Nav.go("job", { ...options, refreshed: true });
+}
+
+/** 한 합성 snapshot 위에서 legacy remainder와 R4 React owner가 서로 다른 백엔드 세계를
+ *  보지 않게 `Bridge.call`과 typed `Client.dispatch`를 한 수명으로 교체한다. make는 기존
+ *  raw Bridge 계약을 유지하고 typed 쪽만 HostResult로 감싼다. */
+function stubDispatch(services, make) {
+  const Bridge = services.Bridge;
+  const real = Bridge.call;
+  const mine = make(real);
+  Bridge.call = mine;
+  const Client = services.Client;
+  const realDispatch = Client && Client.dispatch;
+  const typedMine = typeof realDispatch === "function"
+    ? async function (screen, action, payload) {
+      return { ok: true, value: await mine(screen, action, payload) };
+    }
+    : null;
+  if (typedMine) Client.dispatch = typedMine;
+  return {
+    restore() {
+      if (Bridge.call === mine) Bridge.call = real;
+      if (typedMine && Client.dispatch === typedMine) Client.dispatch = realDispatch;
+    },
+  };
+}
+
 function displayOf(ctx, el) {
   return ctx.win.getComputedStyle(el).display;
 }
@@ -103,6 +133,24 @@ function mapAll(nodes, fn) {
 /** 레거시가 `JSON.parse(JSON.stringify(snap))` 로 쓰던 깊은 사본 — 원판을 만지지 않는다. */
 function deepCopy(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+/** React external-store 구독은 push와 같은 호출 스택에서 값을 받지만 concurrent root의 DOM
+ *  커밋은 다음 turn에 끝날 수 있다. 고정 지연 없이 한 turn만 넘겨 현재 안정 ID를 읽는다. */
+async function pushAndSettle(ctx, screen, snapshot) {
+  ctx.push(screen, snapshot);
+  await ctx.sleep(0);
+}
+
+/** concurrent root가 첫 portal 묶음을 나눠 커밋하고 앞선 실 push가 합성판을 덮을 수 있으므로,
+ *  존재 계약이 설 때까지 합성판을 다시 밀며 0ms turn만 양보한다. 조건 충족 즉시 끝난다. */
+async function pushUntil(ctx, screen, snapshot, ready, turns = 12) {
+  for (let turn = 0; turn < turns; turn += 1) {
+    ctx.push(screen, snapshot);
+    await ctx.sleep(0);
+    if (ready()) return true;
+  }
+  return !!ready();
 }
 
 function activeId(doc) {
@@ -375,13 +423,14 @@ function browseLateFields(pickFocus, sheetClosed, closeFocus) {
  *
  *  동기 구간(면 열기·검색어 경합·탭 포커스)은 첫 await 앞에 있으므로 레거시와 같은 turn 에
  *  끝난다. 반환 promise 는 호출부가 나중에 await 한다(레거시는 파이썬이 flag 를 폴링했다). */
-async function driveBrowseSheet(ctx, out, snap) {
+async function driveBrowseSheet(ctx, out, snap, setupReady = () => {}) {
   const doc = ctx.doc;
   const services = ctx.services;
 
   const exit = doc.querySelector("#jobCandidates [data-browse-open]");
   if (!exit) {
     out.browse_open = "no-exit";
+    setupReady();
     /* 레거시는 여기서 IIFE 를 빠져나가 완료 flag 를 세우지 않는다 — 파이썬 폴링이 2.5초를
        채우고 **정의되지 않은 스태시**를 읽어 간다. 그 산출을 그대로 낸다. */
     return browseLateFields(undefined, undefined, undefined);
@@ -406,19 +455,22 @@ async function driveBrowseSheet(ctx, out, snap) {
   const qi = doc.getElementById("jobBrowseQuery");
   qi.focus();
   qi.value = "견적요청";
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.browse_query_kept = qi.value;
   qi.blur();
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.browse_query_settled = qi.value;
 
   /* 탭 전환 재렌더에서 키보드 포커스가 살아남는가(리뷰 1R P2 — 안정 id + preserve). */
   const tabA = doc.getElementById("jobBrowseTab-available");
   if (tabA) {
     tabA.focus();
-    ctx.push("job", snap);
+    await pushAndSettle(ctx, "job", snap);
     out.browse_tab_focus = activeId(doc);
   }
+  /* 여기까지가 레거시의 동기 구간이다. R4 DOM 커밋을 기다리는 0ms turn 동안 뒤 즐겨찾기
+     프로브가 포커스를 뺏지 않도록 부모에게 이 구간의 확정을 알린다. */
+  setupReady();
 
   /* 사용 가능 행을 고르면 **성사 뒤에** 면이 닫히고 포커스가 그 시점의 실 DOM 에 선다.
      스텁은 select_job 만 가로채고 스냅샷을 밀지 않는다 — 프로덕션에선 push·render 가
@@ -428,27 +480,22 @@ async function driveBrowseSheet(ctx, out, snap) {
     tab: "available", query: "", rows: [{ name: "공고서", missing: [] }],
     available_count: 7, needs_count: 1, filtered_out: 0,
   };
-  ctx.push("job", avail);
+  await pushAndSettle(ctx, "job", avail);
   const row = doc.getElementById("jobBrowseRow-" + encodeURIComponent("공고서"));
   if (!row) return browseLateFields("no-row", undefined, undefined);
 
-  const real = services.Bridge.call;
-  const stub = function (screen, action) {
+  const dispatchStub = stubDispatch(services, (real) => function (screen, action) {
     if (action !== "select_job") return real.apply(null, arguments);
     return Promise.resolve({});
-  };
-  services.Bridge.call = stub;
-  const unstub = () => {                            // 새 스텁이 이미 들어섰으면 건드리지 않는다
-    if (services.Bridge.call === stub) services.Bridge.call = real;
-  };
+  });
   row.click();                                      // ※ 가시성 단언 없음(레거시 그대로)
 
   await ctx.sleep(450);
-  unstub();
+  dispatchStub.restore();
   const cls = doc.getElementById("jobBrowseSheet").classList;
   const sheetClosed = cls.contains("is-closing") || cls.contains("hidden");
   const pickFocus = activeId(doc);
-  ctx.push("job", snap);                            // 원판 복구(뒤 프로브 방해 금지)
+  await pushAndSettle(ctx, "job", snap);            // 원판 복구(뒤 프로브 방해 금지)
   doc.querySelector("#jobCandidates [data-browse-open]").click();   // ※ 가시성 단언 없음
   await ctx.sleep(60);
   doc.getElementById("jobBrowseClose").click();      // ※ 가시성 단언 없음(그냥 닫기)
@@ -480,18 +527,17 @@ async function driveFavoriteIntents(ctx, out, snap) {
 
   const sent = [];
   const release = [];
-  const real = services.Bridge.call;
-  services.Bridge.call = function (screen, action, payload) {
+  const dispatchStub = stubDispatch(services, (real) => function (screen, action, payload) {
     if (action !== "toggle_favorite") return real.apply(null, arguments);
     sent.push(payload.value);
     return new Promise((res) => { release.push(res); });
-  };
+  });
   let favChain = null;
   const drain = (res) => { const r = release.shift(); if (r) r(res); };
   /* 레일 진입이 유발한 **실 refresh** 스냅샷이 뒤늦게 도착해 합성 화면을 덮는다(실 홈엔
      데이터가 없어 후보 줄이 비워진다). 클릭 단계마다 합성 스냅샷을 다시 밀어 카드를
      되살린다 — 표시는 여전히 낡은 상태이므로 DOM-대-미결 의도 시나리오는 그대로 성립한다. */
-  const repush = () => { ctx.push("job", snap); };
+  const repush = () => pushAndSettle(ctx, "job", snap);
 
   starOf("공고서").click();                          // ※ 가시성 단언 없음(레거시 그대로)
   starOf("공고서").click();                          // ※ 가시성 단언 없음(레거시 그대로)
@@ -504,24 +550,24 @@ async function driveFavoriteIntents(ctx, out, snap) {
     () => { drain({ ok: true }); },                  // 첫 카드 큐 소진
     // ② 정리 식별: 같은 값이 다시 큐에 드는 3연속(true→false→true) 뒤,
     //    **첫 왕복만** 실패로 완료시키고 4번째 클릭의 의도를 관측한다.
-    () => {
-      repush();
+    async () => {
+      await repush();
       starOf("계약서").click(); starOf("계약서").click(); starOf("계약서").click();
     },
     () => { drain({ ok: false, error: "실패 시늉" }); },
-    () => { repush(); starOf("계약서").click(); },
+    async () => { await repush(); starOf("계약서").click(); },
     // 남은 큐를 전부 흘려 보내 최종 발신열을 확정한다(각 단계 = 이벤트 루프 1회전).
     () => { drain({ ok: false, error: "실패 시늉" }); },
     () => { drain({ ok: false, error: "실패 시늉" }); },
     () => { drain({ ok: false, error: "실패 시늉" }); },
-    () => { services.Bridge.call = real; },
+    () => { dispatchStub.restore(); },
   ];
 
   const diag = [];
   for (let i = 0; i < steps.length; i += 1) {
     await ctx.sleep(0);
     try {
-      steps[i]();
+      await steps[i]();
       diag.push("ok" + i);
     } catch (thrown) {
       diag.push("err" + i + ":" + (thrown && thrown.message) + " ids="
@@ -544,9 +590,11 @@ async function runJobDataFirst(ctx) {
   const doc = ctx.doc;
   const out = {};
 
-  services.Nav.go("job");
+  enterSyntheticJob(services);
   const snap = dataFirstSnapshot();
-  ctx.push("job", snap);
+  await pushUntil(ctx, "job", snap, () => (
+    doc.querySelectorAll("#jobCandidates [data-cand]").length === snap.candidates.top.length
+  ));
 
   out.zones_shown = isShown(ctx, doc.getElementById("jobZones"));
   out.actionbar_plane = measureActionbarPlane(ctx);
@@ -563,8 +611,11 @@ async function runJobDataFirst(ctx) {
   out.cand_disabled_chips = doc.querySelectorAll("#jobCandidates button[disabled]").length;
 
   /* 탐색 면 — 동기 구간은 지금 끝나고, 착지 사슬은 뒤에서 await 한다. */
-  const browseChain = driveBrowseSheet(ctx, out, snap);
+  let browseSetupReady;
+  const browseSetup = new Promise((resolve) => { browseSetupReady = resolve; });
+  const browseChain = driveBrowseSheet(ctx, out, snap, browseSetupReady);
   browseChain.catch(() => {});   // 둘이 함께 거절해도 미처리 거절로 프로세스를 죽이지 않는다
+  await browseSetup;
 
   out.cand_order = mapAll(
     doc.querySelectorAll("#jobCandidates [data-cand]"), (b) => b.getAttribute("data-cand"),
@@ -595,23 +646,6 @@ async function runJobDataFirst(ctx) {
   const favChain = driveFavoriteIntents(ctx, out, snap);
   favChain.catch(() => {});      // 위와 같은 이유 — 실패는 아래 Promise.all 이 그대로 올린다
 
-  /* 별 포커스가 재렌더(별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
-     이름 유래 안정 id 가 실제로 붙었는지 실물로 본다. */
-  out.fav_focus_restored = (() => {
-    const star = doc.getElementById("jobFav-" + encodeURIComponent("계약서"));
-    if (!star) return "no-id";
-    star.focus();
-    const moved = deepCopy(snap);                  // 깊은 사본만 만진다(원판 불변)
-    moved.candidates.top.reverse();
-    moved.candidates.top[0].favorited = true;      // 즐겨찾기 지정 후 1순위로 이동한 판
-    ctx.push("job", moved);
-    const kept = doc.activeElement
-      && doc.activeElement.id === "jobFav-" + encodeURIComponent("계약서");
-    const restored = kept ? "kept" : String(activeId(doc));
-    ctx.push("job", snap);                         // 뒤 프로브를 위해 원판 복구
-    return restored;
-  })();
-
   out.gate_text = doc.getElementById("jobGate").textContent;
   out.gen_disabled = doc.getElementById("jobGenBtn").disabled;
   out.action_name_empty = doc.getElementById("jobActionName").textContent === "";
@@ -625,21 +659,41 @@ async function runJobDataFirst(ctx) {
   const [favLate, browseLate] = await Promise.all([favChain, browseChain]);
   Object.assign(out, favLate);
   Object.assign(out, browseLate);
+
+  /* 별 포커스가 재렌더(별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
+     이름 유래 안정 id 가 실제로 붙었는지 실물로 본다. 탐색과 즐겨찾기 사슬도 초점을
+     의도적으로 움직이므로 둘을 회수한 뒤 재렌더만 단독으로 재야 서로의 착지를 오염시키지 않는다. */
+  out.fav_focus_restored = await (async () => {
+    const star = doc.getElementById("jobFav-" + encodeURIComponent("계약서"));
+    if (!star) return "no-id";
+    star.focus();
+    const moved = deepCopy(snap);                  // 깊은 사본만 만진다(원판 불변)
+    moved.candidates.top.reverse();
+    moved.candidates.top[0].favorited = true;      // 즐겨찾기 지정 후 1순위로 이동한 판
+    await pushAndSettle(ctx, "job", moved);
+    const kept = doc.activeElement
+      && doc.activeElement.id === "jobFav-" + encodeURIComponent("계약서");
+    const restored = kept ? "kept" : String(activeId(doc));
+    await pushAndSettle(ctx, "job", snap);         // 뒤 프로브를 위해 원판 복구
+    return restored;
+  })();
+
   ctx.state.favOrder = out.fav_order;
   ctx.state.browsePickFocus = out.browse_pick_focus;
 
   return { job_data_first: out };
 }
 
-/** app.py:1572-1626 + 3895. 동기 측정뿐 — 레거시에도 폴링·sleep 이 없다. */
-function runJobInherited(ctx) {
+/** app.py:1572-1626 + 3895. 고정 대기·폴링은 없다. R4 selectJob은 편집 정산을 먼저 await
+ *  하므로 클릭 프레임 측정 뒤 마이크로태스크만 흘려 typed 발신이 스텁에 들어온 것을 확인한다. */
+async function runJobInherited(ctx) {
   const services = requireServices(ctx, ["Nav", "Bridge"]);
   const doc = ctx.doc;
   const out = {};
 
-  services.Nav.go("job");
+  enterSyntheticJob(services);
   const snap = inheritedSnapshot();
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
 
   /* ① 「여는 중」 지연 표지(#217 R1) — 좌 목록 행에 있던 계약을 후보 카드가 진다. 왕복을
      **우리가 풀 수 있는** 미결로 세워 클릭 프레임의 표지를 읽고 곧바로 풀어 준다. */
@@ -648,15 +702,26 @@ function runJobInherited(ctx) {
     out.opening_marker_immediate = "no-card";
   } else {
     let release;
-    const real = services.Bridge.call;
-    services.Bridge.call = function () {
+    let entered = false;
+    const dispatchStub = stubDispatch(services, () => function () {
+      entered = true;
       return new Promise((res) => { release = res; });
-    };
+    });
     card.click();
-    out.opening_marker_immediate = card.getAttribute("aria-busy") === "true"
-      && card.textContent.indexOf("여는 중") >= 0;
-    services.Bridge.call = real;
+    /* 레거시는 클릭 안에서 곧바로 Bridge를 불렀다. R4는 flushPendingEdits()의 await 하나를
+       지나 typed Client를 읽으므로 여기서 즉시 복원하면 합성 이름이 실 backend로 샌다.
+       타이머를 늘리지 않고 마이크로태스크 두 번만 흘려 발신 진입을 확인한다. */
+    for (let turn = 0; !entered && turn < 4; turn += 1) await Promise.resolve();
+    await ctx.sleep(0);
+    const liveCard = doc.getElementById("jobCand-" + encodeURIComponent("공고서"));
+    out.opening_marker_immediate = !!liveCard
+      && liveCard.textContent.indexOf("여는 중") >= 0;
     if (release) release({});
+    await ctx.sleep(0);
+    dispatchStub.restore();
+    if (!entered) {
+      ctx.fail(ERROR_CODES.CONTRACT, "job_inherited: 카드 선택 발신이 typed 스텁에 들어오지 않았습니다.");
+    }
   }
 
   /* ② 흡수처 출구(판정 C) — 데이터가 있으면 숨고(소음 금지), 데이터·작업이 둘 다 없으면
@@ -666,7 +731,7 @@ function runJobInherited(ctx) {
   empty.has_data = false; empty.record_count = 0; empty.records = [];
   empty.table = { columns: [], rows: [], visible_count: 0, hidden_selected: [] };
   empty.candidates = { top: [], more: 0, needs_count: 0, suggested: "" };
-  ctx.push("job", empty);
+  await pushAndSettle(ctx, "job", empty);
   out.no_data_exit_shown = isShown(ctx, doc.getElementById("jobNoDataExit"));
   out.no_data_exit_target = !!doc.getElementById("jobPickInLibrary");
 
@@ -675,13 +740,13 @@ function runJobInherited(ctx) {
 
 /** app.py:1636-1743 + 3899·3900. */
 async function runJobActiveCard(ctx) {
-  const services = requireServices(ctx, ["Nav", "Bridge", "Popover"]);
+  const services = requireServices(ctx, ["Nav", "Bridge"]);
   const doc = ctx.doc;
   const out = {};
 
-  services.Nav.go("job");
+  enterSyntheticJob(services);
   const snap = activeCardSnapshot();
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
 
   // ① 액션바가 활성 작업 이름을 말한다(§4-A 상속 의무 — 상수 높이 층의 정체 표시).
   out.action_name = doc.getElementById("jobActionName").textContent;
@@ -693,16 +758,19 @@ async function runJobActiveCard(ctx) {
   })();
   out.menu_btn_in_active = !!(activeCard && activeCard.querySelector("[data-cand-menu]"));
   out.menu_btn_count = doc.querySelectorAll("#jobCandidates [data-cand-menu]").length;
-  // ⋮ 클릭 → 부유 메뉴의 두 항목이 그 템플릿 경로를 겨눈다(PathTrack 위임).
+  // ⋮ 클릭 → React 카드 안의 두 항목이 그 템플릿 경로를 겨눈다(PathActions 위임).
   doc.getElementById("jobCandMenuBtn").click();
-  const menu = doc.getElementById("jobCandMenu");
-  out.menu_open = menu.style.display !== "none";
+  await ctx.sleep(0);
+  const menuSelector = "#jobCandidates .cand-inline-menu";
+  const menu = doc.querySelector(menuSelector);
+  out.menu_open = !!menu;
   out.menu_items = mapAll(
-    menu.querySelectorAll("[data-track-act]"),
+    menu ? menu.querySelectorAll("[data-track-act]") : [],
     (b) => b.getAttribute("data-track-act") + ":" + b.getAttribute("data-path") + ":" + b.textContent,
   );
-  services.Popover.closeAll();          // 바깥닫기 기제 경유(뒤 프로브 오염 방지)
-  out.menu_closed = menu.style.display === "none";
+  doc.getElementById("jobCandMenuBtn").click();    // 같은 소유자 토글로 닫아 뒤 프로브 오염 방지
+  await ctx.sleep(0);
+  out.menu_closed = !doc.querySelector(menuSelector);
   // ③ 경고 카드 — 「연결 상태」는 텍스트가 정본이다(색만으로 말하지 않는다).
   const warnCard = doc.querySelector("#jobCandidates .job-cand-card.warn");
   out.warn_conn = (() => {
@@ -720,7 +788,7 @@ async function runJobActiveCard(ctx) {
     gone.table = { columns: [], rows: [], visible_count: 0, hidden_selected: [] };
     gone.candidates = { top: [], sections: [], more: 0, needs_count: 0, suggested: "", txt_note: "" };
     gone.template_missing = true; gone.conn_label = "템플릿 없음";
-    ctx.push("job", gone);
+    await pushAndSettle(ctx, "job", gone);
     out.cands_hidden_when_no_data = displayOf(ctx, doc.getElementById("jobCandsRow")) === "none";
     out.cand_cards_when_no_data = doc.querySelectorAll("#jobCandidates [data-cand]").length;
     const conn = doc.getElementById("jobActionConn");
@@ -729,24 +797,24 @@ async function runJobActiveCard(ctx) {
     /* 실제로 **눈에 보이는가** — hidden 을 지운 것과 렌더된 것은 다른 사실이다(프로브
        click 이 hidden 을 통과한다는 교훈의 같은 계열). */
     out.relink_visible_no_data = !relink.hidden && relink.offsetParent !== null;
-    ctx.push("job", snap);              // 원판 복구(뒤 단계 오염 금지)
+    await pushAndSettle(ctx, "job", snap);          // 원판 복구(뒤 단계 오염 금지)
   }
   /* ④ 경고 카드 클릭 = 선택이 아니다(판정 D) — 안내 다이얼로그가 서고, 취소하면 아무
      발신도 없다. 발신열은 취소 정착(160ms) 뒤에 확정되므로 400ms 뒤에 회수한다. */
   const sent = [];
-  const real = services.Bridge.call;
-  services.Bridge.call = function (screen, action) {
+  const dispatchStub = stubDispatch(services, () => function (screen, action) {
     sent.push(action);
     return Promise.resolve({});
-  };
+  });
   doc.getElementById("jobCand-" + encodeURIComponent("계약서")).click();
+  await ctx.sleep(0);
   const cm = doc.getElementById("confirmModal");
   out.warn_redirect_modal = !!cm && !cm.classList.contains("hidden");
   out.warn_modal_body = doc.getElementById("confirmModalBody").textContent;
   doc.getElementById("confirmModalCancel").click();
 
   await ctx.sleep(400);
-  services.Bridge.call = real;
+  dispatchStub.restore();
   /* 레거시는 `JSON.stringify(sent)` 를 스태시에 담고 파이썬이 `String(...)` 로 회수했다 —
      소비 테스트가 `json.loads` 로 다시 푼다. 문자열인 채로 낸다. */
   out.warn_click_sends = String(JSON.stringify(sent));
@@ -762,9 +830,9 @@ async function runJobMirror(ctx) {
   const win = ctx.win;
   const out = {};
 
-  services.Nav.go("job");
-  const snap = mirrorSnapshot();
-  ctx.push("job", snap);
+  enterSyntheticJob(services);
+  let snap = mirrorSnapshot();
+  await pushAndSettle(ctx, "job", snap);
 
   /* 본문 존 = 표 없는 한 줄(U2 §2.13). 한 줄은 안정 DOM(#jobMirrorLine)이고 #jobMirror 는
      danger 배너 전용이다(#364) — 자리를 가르는 것이 트리거를 재렌더에서 지키는 기제다. */
@@ -782,11 +850,13 @@ async function runJobMirror(ctx) {
   out.mirror_trigger_disabled = doc.getElementById("jobMirrorPreviewOpen").disabled;
   /* 음성 대조(두 값) — 가용성이 실제로 `can_open` 에 결속돼 있는가. 한 값만 재면
      「늘 열려 있는 버튼」도 초록이라 잠금 계약이 검사되지 않는다. */
+  snap = deepCopy(snap);
   snap.preview.can_open = false;
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.mirror_trigger_locked = doc.getElementById("jobMirrorPreviewOpen").disabled;
+  snap = deepCopy(snap);
   snap.preview.can_open = true;
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
 
   out.restate_shown = isShown(ctx, doc.getElementById("jobRestate"));
   out.restate_no_namelist = !doc.querySelector("#jobRestate .namelist");
@@ -826,9 +896,8 @@ async function runJobMirror(ctx) {
 
   /* 왕복을 일부러 미결로 둔 채 두 번 누른다. 둘째 값이 첫 낙관 표지를 기준으로 계산돼야
      true→false→true 가 되고, checkbox·aria-selected·행 tint 가 같은 프레임에 맞는다(#217 R2). */
-  const realCall = services.Bridge.call;
   const toggleValues = [];
-  services.Bridge.call = function (screen, action, payload) {
+  const zoneStub = stubDispatch(services, (realCall) => function (screen, action, payload) {
     if (action === "toggle_record") {
       /* **해소되는** 스텁이다(리뷰 2R): 존 변이는 한 체인에 직렬화되므로 영원히 미결인 첫
          발신은 둘째를 영영 막는다. 재는 것은 "push 가 오기 전 재클릭이 화면의 현재 상태를
@@ -838,44 +907,53 @@ async function runJobMirror(ctx) {
     }
     if (action === "filter_panel") return new Promise(function () {});
     return realCall.call(services.Bridge, screen, action, payload);
-  };
+  });
   renderedRow.click();                              // ※ 가시성 단언 없음(레거시 그대로)
+  await ctx.sleep(0);                              // React 낙관 상태 DOM 커밋
   out.row_optimistic_off = !renderedRow.classList.contains("on")
     && renderedRow.getAttribute("aria-selected") === "false"
     && !renderedRow.querySelector("input").checked;
   renderedRow.click();                              // ※ 가시성 단언 없음(레거시 그대로)
+  await ctx.sleep(0);                              // 둘째 실시간 의도 DOM 커밋
   out.row_optimistic_on = renderedRow.classList.contains("on")
     && renderedRow.getAttribute("aria-selected") === "true"
     && renderedRow.querySelector("input").checked;
   out.row_toggle_values = toggleValues.slice();     // 즉시분(첫 발신) — 최종 확인은 아래 되읽기
   /* filter_panel 응답이 영원히 미결이어도 클릭 프레임에 제목 + 로딩 껍데기가 먼저 선다(#217 R4). */
   doc.querySelector("#jobTableHead .fico").click(); // ※ 가시성 단언 없음(레거시 그대로)
-  const loadingPanel = doc.getElementById("jobColPanel");
-  out.panel_shell_immediate = !loadingPanel.hidden
+  await ctx.sleep(0);
+  /* R4는 정적 #jobColPanel을 채우지 않고 현재 portal 안에 React 패널을 마운트한다. 같은
+     노드 identity/hidden 속성이 아니라 현재 React 소유 표면의 존재와 제거를 잰다. */
+  const panelSelector = "#jobTableHost .react-colpanel";
+  const loadingPanel = doc.querySelector(panelSelector);
+  out.panel_shell_immediate = !!loadingPanel
     && loadingPanel.getAttribute("aria-busy") === "true"
     && loadingPanel.textContent.indexOf("불러오는 중") >= 0
     && loadingPanel.textContent.indexOf("공고명") >= 0;
-  loadingPanel.querySelector('[data-act="panel-close"]').click();   // ※ 가시성 단언 없음
-  services.Bridge.call = realCall;
-  /* 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(overlay/hidden 결함류의
-     자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다). */
-  out.panel_hidden = displayOf(ctx, doc.getElementById("jobColPanel")) === "none";
+  const panelClose = loadingPanel && loadingPanel.querySelector('[data-act="panel-close"]');
+  if (panelClose) panelClose.click();                 // ※ 가시성 단언 없음(레거시 그대로)
+  await ctx.sleep(0);
+  zoneStub.restore();
+  /* 열 패널 기본 닫힘 — React owner에서는 hidden 토글이 아니라 조건부 언마운트가 계약이다. */
+  out.panel_hidden = !doc.querySelector(panelSelector);
 
   /* 드리프트 스냅샷 → 본문 존 한 줄이 차단 배너 + 행동 링크로 교체되는지(overlay 가 아닌
      실제 교체). 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다. */
+  snap = deepCopy(snap);
   snap.drift = ["유령", "계약조건"]; snap.blank_fields = [];
   snap.gate = { enabled: false, level: "danger", text: "템플릿 구조가 확정 매핑과 달라졌습니다." };
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.drift_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
   out.drift_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-mapping"]');
   out.drift_no_line = !doc.querySelector("#jobMirror .mirline");
   out.restate_hidden_on_drift = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
 
   /* 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. */
+  snap = deepCopy(snap);
   snap.drift = []; snap.name_tokens = ["납품기한"];
   snap.blank_fields = [];
   snap.gate = { enabled: false, level: "danger", text: "파일명 패턴의 토큰이…" };
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.token_banner = !!doc.querySelector('#jobMirror .mir-drift[role="alert"]');
   out.token_fix_link = !!doc.querySelector('#jobMirror [data-act="fix-filename"]');
   out.token_no_line = !doc.querySelector("#jobMirror .mirline");
@@ -884,8 +962,6 @@ async function runJobMirror(ctx) {
     return b ? b.textContent : "";
   })();
   out.token_restate_hidden = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
-  snap.name_tokens = [];
-
   /* 덮어쓰기 확인 본문 합성 되읽기 — overwrite_count/new_count 스왑·이름 목록 누락의 핀. */
   out.ow_body = services.JobScreen.overwriteBody({
     total: 10, overwrite_count: 3, new_count: 7, conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 5,
@@ -925,21 +1001,23 @@ async function runJobMirror(ctx) {
   out.guard_body_minimal = services.JobScreen.guardBody(
     { sel_count: 1, in_def: 0, extra: 0, filter_active: false, filter_parts: 0 }, "데이터를 바꾸면",
   );
-  out.data_guard_wired = typeof services.JobScreen.confirmDataSwapIfArmed === "function";
+  out.data_guard_wired = typeof services.JobScreen.confirmDestructiveIfArmed === "function";
 
   /* 직전 필터 재적용(결정 28) — 양 분기 모두 핀한다: 켜짐만 고정하면 "항상 떠 있는 죽은
      버튼" 회귀가 초록으로 샌다. */
   out.reapply_shown = isShown(ctx, doc.getElementById("jobFilterReapply"));
   out.reapply_title = doc.getElementById("jobFilterReapply").title;
+  snap = deepCopy(snap);
   snap.filter.reapply_available = false;
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
   out.reapply_hidden = displayOf(ctx, doc.getElementById("jobFilterReapply")) === "none";
-  snap.filter.reapply_available = true;
 
+  snap = deepCopy(snap);
+  snap.filter.reapply_available = true;
   snap.drift = []; snap.name_tokens = [];
   snap.gate = { enabled: true, level: "", text: "생성 준비" };
   snap.blank_fields = ["필드0"];
-  ctx.push("job", snap);
+  await pushAndSettle(ctx, "job", snap);
 
   /* CI 가상 데스크톱은 창 크기를 실제 화면 상한에서 클램프한다. 운영 CSS 를 바꾸지 않고
      컨테이너 자체를 900px 경계 너머로 고정해 wide 분기를 검증한 뒤 즉시 복원한다
@@ -954,11 +1032,10 @@ async function runJobMirror(ctx) {
   /* 확인 면 출구는 비동기(정산 뒤 발신)라 발신은 이 turn 뒤에 확정된다. 레거시는 발신열을
      창 객체에 남기고 파이썬이 새 JS 턴으로 되읽었다 — 여기서는 그냥 await 한다. */
   const dispatched = [];
-  const sheetRealCall = services.Bridge.call;
-  services.Bridge.call = function (screen, action) {
+  const sheetStub = stubDispatch(services, () => function (screen, action) {
     dispatched.push({ screen, action });
     return Promise.resolve({});
-  };
+  });
   /* 이 창도 실 push 에서 격리한다: 프로브 첫머리 `Nav.go('job')` 이 쏜 실 refresh 의 푸시
      (세션 없는 실 스냅샷)가 호스트 스레드에서 늦게 착지해 정확히 이 비동기 창에 들어온다.
      그러면 트리거가 `can_open:false` 로 잠기고, 닫힘 시점의 초점 복귀는 **비활성 트리거를
@@ -1010,7 +1087,7 @@ async function runJobMirror(ctx) {
       return b.disabled ? "disabled" : (b.isConnected ? "ready" : "detached");
     })();
     ctx.push = mirrorRealPush;
-    services.Bridge.call = sheetRealCall;
+    sheetStub.restore();
     return { previewFocus, focusTargetState };
   })();
 
@@ -1019,7 +1096,7 @@ async function runJobMirror(ctx) {
   services.Nav.go("editor", { force: true });
   out.edit_closes_sheets = !doc.getElementById("scr-job").classList.contains("on")
     && doc.getElementById("scr-editor").classList.contains("on");
-  services.Nav.go("job", { force: true });
+  enterSyntheticJob(services, { force: true });
 
   const closed = await closing;
 
@@ -1041,7 +1118,7 @@ async function runJobResult(ctx) {
   const doc = ctx.doc;
   const out = {};
 
-  services.Nav.go("job");
+  enterSyntheticJob(services);
   const baseSnap = resultSnapshot();
   ctx.push("job", baseSnap);
 

@@ -282,13 +282,15 @@ def test_discard_confirm_has_single_source():
     entry = (SOURCE_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
-    for rel, needle in (
-        ("screens/library.js", "EditorEntry.newDraft"),
+    for path, rel, needle in (
+        (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts",
+         "src/screens/library.ts", "deps.ports.editorEntry.current().newDraft"),
         # (template.js 는 화면과 함께 사망(F8) — 그 소비처였던 「이 서식으로 새 작업」의
         #  폐기 확인은 편집기 안 use-library 의 confirmNewSessionIfUnsaved 가 잇는다.)
-        ("screens/editor.js", "EditorEntry.confirmDiscard"),
+        (SOURCE_JS_DIR / "screens" / "editor.js",
+         "screens/editor.js", "EditorEntry.confirmDiscard"),
     ):
-        src = (SOURCE_JS_DIR / rel).read_text(encoding="utf-8")
+        src = path.read_text(encoding="utf-8")
         assert needle in src, f"{rel} 가 폐기 확인 단일 출처({needle})를 쓰지 않습니다."
     # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
     editor = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")

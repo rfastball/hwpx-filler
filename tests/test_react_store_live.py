@@ -4,9 +4,10 @@ node 계약 테스트는 store·hook 결속까지를 재고, 「Python push 가 
 실제로 흐른다」는 별개 사실이다 — 실 React 렌더 루프·실 브리지·실 `evaluate_js` 사슬은
 node 에 없다. 그래서 트리의 StoreSignal 이 수신 총 revision 을 ``data-react-store-rev`` 로
 반영하고(기입 주체는 target 을 닫은 ``boot.ts`` 클로저), 이 게이트가 실 창에서 그 마커를
-되읽는다: 부팅 직후 ``"0"`` → 실 백엔드 push 뒤 양수 → **문서 재초기화(reload) 뒤 다시
-``"0"`` → 재push 뒤 다시 양수**. 뒤 두 단계가 #407 의 「재초기화 검증」 축이다 — reload 는
-``bootProduct()`` 전체 재구성이라 store·구독이 신품으로 서는 것을 실물로 잰다.
+되읽는다. R4부터 부팅 initial pull도 revision을 올리므로 0 고정값 대신, 명시 push burst만큼
+증가 → **문서 재초기화(reload) 뒤 burst 소거** → 재push 뒤 다시 증가하는 상대 관계를 잰다.
+뒤 두 단계가 #407 의 「재초기화 검증」 축이다 — reload 는 ``bootProduct()`` 전체 재구성이라
+store·구독이 신품으로 서는 것을 실물로 잰다.
 
 push 채널은 ``workbench`` 다 — legacy 렌더러가 ``s.open`` 없으면 조기 반환하는 유일한
 채널이라(`workbench.js` 데이터 상태 게이트), 합성 스냅샷이 legacy 경로에 부작용을 만들지
@@ -62,9 +63,12 @@ _CHILD_TIMEOUT_S = LIVE_CHILD_TIMEOUT_S
 
 #: 단계 이름 — 자식과 부모가 같은 순서를 공유한다(둘이 갈리면 판정이 갈린다).
 PHASES = ("boot", "pushed", "reloaded", "repushed")
+PUSH_BURST = 8
 
 
-def judge_store_readback(raw: object, *, expect_positive: bool) -> "tuple[bool, str]":
+def judge_store_readback(
+    raw: object, *, expect_positive: bool | None
+) -> "tuple[bool, str]":
     """되읽기 원문 → (통과, 사유). 컨테이너·커밋·revision 형상 전부를 판정한다.
 
     ``expect_positive=False`` 는 **신품 store**(부팅·재초기화 직후 ``"0"``)를,
@@ -91,9 +95,9 @@ def judge_store_readback(raw: object, *, expect_positive: bool) -> "tuple[bool, 
         return False, (
             f"store revision 마커 부재·붕괴(rev={rev!r}) — StoreSignal 이 반영하지 못했습니다"
         )
-    if expect_positive and int(rev) < 1:
+    if expect_positive is True and int(rev) < 1:
         return False, f"push 뒤에도 revision 이 오르지 않았습니다(rev={rev!r})"
-    if not expect_positive and int(rev) != 0:
+    if expect_positive is False and int(rev) != 0:
         return False, (
             f"신품 store 의 revision 이 0 이 아닙니다(rev={rev!r}) — 재초기화가 이전 세계를 "
             "이월했거나 예상 밖 push 가 섞였습니다"
@@ -101,9 +105,9 @@ def judge_store_readback(raw: object, *, expect_positive: bool) -> "tuple[bool, 
     return True, "store revision 마커 확인"
 
 
-def phase_expectation(phase: str) -> bool:
-    """단계 → ``expect_positive``. 자식 폴링과 부모 최종 판정이 같은 표를 쓴다."""
-    return phase in ("pushed", "repushed")
+def read_revision(raw: str) -> int:
+    """이미 shape 판정을 통과한 되읽기에서 십진 revision을 꺼낸다."""
+    return int(json.loads(raw)["rev"])
 
 
 # ─────────────────────────── 술어의 판별력 (창 없는 대조) ───────────────────────────
@@ -141,14 +145,15 @@ def test_the_verdict_rejects_each_degraded_shape(
 
 
 def test_the_phase_table_matches_the_reinit_contract() -> None:
-    """단계 표 자체의 계약 — 재초기화 단계가 신품(0)을 요구하는 것이 이 게이트의 요지다."""
-    assert [phase_expectation(p) for p in PHASES] == [False, True, False, True]
+    """R4 initial pull과 명시 push burst를 구별할 만큼 단계와 간격이 충분하다."""
+    assert PHASES == ("boot", "pushed", "reloaded", "repushed")
+    assert PUSH_BURST >= 2
 
 
 # ────────────────────────────────── 실 창 게이트 ──────────────────────────────────
 
-#: 자식 드라이버 — 실 백엔드가 달린 자체 창에서 4단계(부팅 0 → push 양수 → reload 0 →
-#: 재push 양수)를 이 모듈의 술어로 폴링하고, 단계별 마지막 되읽기를 한 줄로 내보낸다.
+#: 자식 드라이버 — 실 백엔드가 달린 자체 창에서 4단계(부팅 → push burst → reload →
+#: 재push)를 이 모듈의 술어로 폴링하고, 단계별 마지막 되읽기를 한 줄로 내보낸다.
 _CHILD_DRIVER = """
 import json, sys, tempfile, threading, time
 from pathlib import Path
@@ -157,8 +162,8 @@ import webview
 
 from hwpxfiller.webapp.app import WebFrontend, default_text_templates_dir, web_artifact
 from test_react_store_live import (
-    PHASES, STORE_READBACK_EXPRESSION, _PROBE_BUDGET_S, _READBACK_LINE_PREFIX,
-    judge_store_readback, phase_expectation,
+    PUSH_BURST, STORE_READBACK_EXPRESSION, _PROBE_BUDGET_S, _READBACK_LINE_PREFIX,
+    judge_store_readback, read_revision,
 )
 
 artifact = web_artifact()
@@ -179,24 +184,29 @@ def probe() -> None:
     results = {}
     deadline = time.monotonic() + _PROBE_BUDGET_S
 
-    def poll(phase):
+    def poll(phase, minimum_revision=0):
         raw = None
         while time.monotonic() < deadline:
             try:
                 raw = window.evaluate_js(STORE_READBACK_EXPRESSION)
             except Exception:  # noqa: BLE001 — 부팅·reload 중 호출은 실패가 정상
                 raw = None
-            if judge_store_readback(raw, expect_positive=phase_expectation(phase))[0]:
+            if (
+                judge_store_readback(raw, expect_positive=None)[0]
+                and read_revision(raw) >= minimum_revision
+            ):
                 break
             time.sleep(0.25)
         results[phase] = raw if isinstance(raw, str) else None
+        return read_revision(raw) if isinstance(raw, str) else -1
 
     try:
-        poll("boot")
+        boot_revision = poll("boot")
         #: 컨트롤러가 주입받는 실제 sink 그대로 — workbench 렌더러는 open 없는 스냅샷에
         #: 조기 반환하므로 legacy 경로 부작용이 없다(모듈 머리말).
-        frontend._push("workbench", {"probe": 1})
-        poll("pushed")
+        for index in range(PUSH_BURST):
+            frontend._push("workbench", {"probe": index + 1})
+        poll("pushed", boot_revision + PUSH_BURST)
         #: 재초기화 — 문서 재적재가 bootProduct() 를 다시 돌려 store 가 신품으로 선다.
         #: evaluate 로 reload 를 쏘면 문서 해체가 평가 응답과 경합해 evaluate_js 가 영영
         #: 안 돌아올 수 있다(#411 shell 게이트가 실증·폐쇄한 경합 클래스 — CI 저속 러너에서
@@ -206,9 +216,9 @@ def probe() -> None:
         loaded_event.clear()
         window.load_url(artifact.index_path.as_uri())
         loaded_event.wait(30.0)
-        poll("reloaded")
+        reloaded_revision = poll("reloaded")
         frontend._push("workbench", {"probe": 2})
-        poll("repushed")
+        poll("repushed", reloaded_revision + 1)
     finally:
         print(_READBACK_LINE_PREFIX + json.dumps(results))
         sys.stdout.flush()
@@ -258,8 +268,16 @@ def test_snapshot_store_receives_pushes_and_survives_reinit_in_a_real_window() -
     assert len(lines) == 1, f"되읽기 마커 줄이 정확히 하나가 아닙니다.\n{report}"
 
     results = json.loads(lines[0])
+    revisions: dict[str, int] = {}
     for phase in PHASES:
         ok, reason = judge_store_readback(
-            results.get(phase), expect_positive=phase_expectation(phase)
+            results.get(phase), expect_positive=None
         )
         assert ok, f"[{phase}] {reason}\n{report}"
+        revisions[phase] = read_revision(results[phase])
+
+    assert revisions["pushed"] >= revisions["boot"] + PUSH_BURST, report
+    assert revisions["reloaded"] < revisions["pushed"], (
+        "reload 뒤 store가 명시 push burst를 이월했습니다.\n" + report
+    )
+    assert revisions["repushed"] > revisions["reloaded"], report

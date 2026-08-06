@@ -23,7 +23,6 @@ from _web_source import (
     SOURCE_JS_DIR,
     evaluated_modules,
     evaluation_site,
-    imported_js,
 )
 
 WEB_JS = SOURCE_JS_DIR
@@ -37,9 +36,9 @@ WEB_JS = SOURCE_JS_DIR
 # 화면과 함께(F8 §10.17) 사망.
 ESC_ESM_CONSUMERS = (
     "segview.js",
-    "sheet_picker.js", "data_picker.js", "datazone.js",
+    "sheet_picker.js",
     "grouplist.js", "pathtrack.js",
-    "screens/library.js", "screens/editor.js", "screens/job.js",
+    "screens/editor.js", "screens/job.js",
     "screens/workbench.js",
 )
 
@@ -81,7 +80,8 @@ def test_no_local_escaper_copies_remain():
     """
     copy_def = re.compile(r"function\s+esc(Html)?\s*\(")
     escape_map = re.compile(r"""["']&["']\s*:\s*["']&amp;["']""")
-    for path in WEB_JS.rglob("*.js"):
+    paths = [*WEB_JS.rglob("*.js"), *(WEB_JS.parent / "src").rglob("*.ts")]
+    for path in paths:
         src = path.read_text(encoding="utf-8")
         if path.name == "esc.js":
             continue
@@ -107,15 +107,15 @@ def test_data_picker_header_describes_delivered_state():
     구 pool.js 헤더 계약의 승계분(재작성 F1): 헤더가 말하는 소유 경계와 배선이 실제 코드에
     있어야 한다(주석-코드 정합).
     """
-    src = (WEB_JS / "data_picker.js").read_text(encoding="utf-8")
+    src = (WEB_JS.parent / "src" / "screens" / "data_picker.ts").read_text(encoding="utf-8")
     header, body = src.split("import ", 1)  # 첫 import 이전 = 파일 헤더 주석
     for stale in ("추가 예정", "그때까지", "임시로"):
         assert stale not in header, (
             f"data_picker.js 헤더에 낡은 미래형 기술('{stale}')이 남아 있습니다(K11)."
         )
-    assert "PoolController" in header and "load_pool" in header, (
-        "data_picker.js 헤더가 소유 경계(pool 컨트롤러 소비·호스트 마운트)를 기술하지 않습니다(K11)."
+    assert "React 표면" in header and "session/loading/status" in header, (
+        "data_picker.ts 헤더가 controller·React producer 소유 경계를 기술하지 않습니다(K11)."
     )
-    assert "pickPoolDataFile" in body and "poolRegBrowse" in body, (
-        "헤더가 기술한 등록 모달 배선(poolRegBrowse→pickPoolDataFile)이 코드에 없습니다."
+    assert 'invoke("pick_data_file"' in body and "poolRegBrowse" in body, (
+        "헤더가 기술한 파일 선택·등록 모달 배선이 코드에 없습니다."
     )

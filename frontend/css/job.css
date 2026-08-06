@@ -1,6 +1,10 @@
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}
 .run-recs-head{justify-content:space-between}
+/* R4-01 portal shell: 두 host는 기존 job-data-zone의 조판에 새 wrapper를 만들지 않는다. */
+#jobDataHeaderReactHost,#jobDataBodyReactHost{display:contents}
+/* direct side portal target은 content가 실제로 있을 때만 기존 .zone 형상을 가진다. */
+#jobNoDataExit:empty,#jobCandsRow:empty{display:none}
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
    면 바닥에 붙어 표를 스크롤하는 동안에도 적용·취소가 상시 도달 가능하다. */
 .range-foot{display:none}
@@ -296,4 +300,5 @@ body.resizing-master{cursor:col-resize;user-select:none}
 /* text_select=True에서 본문은 선택·복사 가능하되 조작 표면은 드래그 선택을 만들지 않는다.
    jobtb 행의 user-select:none은 Shift+클릭 범위 선택 이벤트를 보존하면서 파란 텍스트 선택만 막는다. */
 .topbar,button,select,input[type="checkbox"],input[type="radio"],.jobtb tbody tr{user-select:none}
-
+/* R4 화면 portal의 무의미한 중간 div는 기존 side-card의 직접 자식 흐름을 바꾸지 않는다. */
+.job-read-side-content{display:contents}

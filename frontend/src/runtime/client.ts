@@ -91,3 +91,7 @@ export function createBridgeClient({ adapter }: { adapter: RuntimeAdapter }) {
     },
   };
 }
+
+/** 화면 런타임과 제품 컴포넌트가 받는 좁은 전송 표면. 구현을 다시 손으로 적지 않고
+ * factory 반환형에서 유도해 생성 계약과 함께 늙게 한다. */
+export type BridgeClient = ReturnType<typeof createBridgeClient>;

@@ -16,6 +16,7 @@ from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app
 ROOT = REPO_ROOT
 APP_CSS = app_css()  # 분할 조각을 링크 순서대로 이어붙인 문자열(구 app.css 등가)
 JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
+JOB_READ_TS = SOURCE_ROOT / "src" / "screens" / "job_read.ts"
 EDITOR_JS = SOURCE_JS_DIR / "screens" / "editor.js"
 PATHTRACK_JS = SOURCE_JS_DIR / "pathtrack.js"
 _NON_CODE_SUFFIXES = frozenset(json.loads(
@@ -160,16 +161,17 @@ def test_job_relink_entrance_gated_by_template_missing():
     승계했고, 둘 다 같은 조건에 묶인다: ①경고 카드 표식(`data-missing`) ②액션바의 연결
     상태·재연결(도달 보장 축, 3R 근본 조치). 어느 하나가 조건을 잃으면 정상 상태에서
     복구 동선이 상시 노출된다."""
-    src = JOB_JS.read_text(encoding="utf-8")
-    body = _fn_body(src, "candCard", "candMenuOpen")
-    assert "c.template_missing" in body, (
+    src = JOB_READ_TS.read_text(encoding="utf-8")
+    body = _fn_body(src, "CandidateCard", "NewWorkButton")
+    assert "row.template_missing" in body, (
         "카드 경고 판정이 template_missing 을 읽지 않습니다(F30 승계)."
     )
-    gate = body.index("c.template_missing")
-    assert 'data-missing="1"' in body and gate < body.index('data-missing="1"'), (
+    gate = body.index("row.template_missing")
+    assert '"data-missing": missing ? "1" : undefined' in body and gate < body.index('"data-missing"'), (
         "재연결 표식이 template_missing 조건 없이 상시 렌더됩니다(F30 승계)."
     )
-    bar = _fn_body(src, "renderActiveIdentity", "renderOrderBar")
+    legacy = JOB_JS.read_text(encoding="utf-8")
+    bar = _fn_body(legacy, "renderActiveIdentity", "renderPreflight")
     assert "s.template_missing" in bar, (
         "액션바 재연결이 template_missing 조건 없이 상시 노출됩니다(F30 승계)."
     )
@@ -187,13 +189,14 @@ def test_normal_state_restatements_are_quiet_not_green_boxes():
     quiet 분기만 본다. (run.js 사망(슬라이스 3) 후 job.js 가 생성 표면.)
     """
     job_src = JOB_JS.read_text(encoding="utf-8")
-    assert "okbox" not in job_src, (
+    job_read = JOB_READ_TS.read_text(encoding="utf-8")
+    assert "okbox" not in job_src + job_read, (
         "job.js 에 okbox 가 재도입됐습니다 — 정상 상태 초록 배너는 노이즈입니다(F32)."
     )
-    for fn, nxt in (("renderData", "renderPreflight"), ("renderPreflight", "renderMirror")):
-        body = _fn_body(job_src, fn, nxt)
-        if '"ok"' in body:
-            assert '"quiet"' in body, f"job.js {fn} 의 ok 레벨이 quiet 로 렌더되지 않습니다(F32)."
+    data = _fn_body(job_read, "JobDataHeader", "JobDataHeaderPortal")
+    assert 'notice?.level === "ok" ? "quiet" : "warnbox"' in data
+    preflight = _fn_body(job_src, "renderPreflight", "renderMirror")
+    assert 'p.level === "ok" ? "quiet"' in preflight
     ed_src = EDITOR_JS.read_text(encoding="utf-8")
     assert re.search(r'notice\.level === "ok" \? "quiet"', ed_src), (
         "editor.js 세션 통지의 ok 레벨이 quiet 가 아닙니다(F32)."

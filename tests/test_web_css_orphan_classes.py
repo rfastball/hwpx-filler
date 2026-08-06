@@ -121,6 +121,9 @@ STYLELESS_BY_DESIGN: dict[str, str] = {
     "tb": "표 골격 판별자 — 스타일은 결합 이름(.jobtb·.lib-bindings)이 진다"
           "(구 .tb.mir 사망 — U2 §2.13)",
     "preview-sheet-body": "확인 면 본문 자리 표지(스타일은 .sheet-body 가 진다 — U2 §2.13)",
+    "browse-rows": "문서 탐색 스크롤 목록 표지(치수·스크롤은 안정 id #jobBrowseRows가 진다)",
+    "browse-sheet": "문서 탐색 sheet 식별 표지(레이아웃은 함께 붙은 .sheet-card가 진다)",
+    "react-colpanel": "R4 React 소유권 표지(시각·배치는 함께 붙은 .colpanel이 진다)",
 }
 
 #: 템플릿 보간 자리 표식 — `class="col-${i}"` 의 `col-` 같은 **조각**은 class 이름이 아니다.
@@ -150,6 +153,10 @@ _NOT_A_NAME_SOURCE = re.compile(r"\(|\bawait\b|\bnew\b")
 _PROP_BINDING = re.compile(r"\b([A-Za-z_$][\w$]*)\s*:\s*(\"[^\"]*\"|'[^']*')")
 _BARE_IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)")
 _MEMBER_PROP = re.compile(r"\.([A-Za-z_$][\w$]*)")
+_TEMPLATE_FALLBACK = re.compile(
+    rf"`(?P<prefix>[A-Za-z_][\w-]*-){_HOLE}[^`{_HOLE}]*\|\|\s*"
+    rf"(?:\"(?P<double>[A-Za-z_][\w-]*)\"|'(?P<single>[A-Za-z_][\w-]*)'){_HOLE}`"
+)
 
 
 def _raw_literals(expr: str) -> "list[str]":
@@ -292,6 +299,11 @@ def _sink_names(expr: str, bindings: dict[str, set[str]], props: dict[str, set[s
     """class sink 한 자리의 식 → 그 자리가 낼 수 있는 이름들(리터럴 + 결속 회수)."""
     expr = _COMPARED_LIT.sub(" ", expr)
     names = _literal_names(expr)
+    for match in _TEMPLATE_FALLBACK.finditer(expr):
+        fallback = match.group("double") or match.group("single")
+        composed = match.group("prefix") + fallback
+        if _IDENT.match(composed):
+            names.add(composed)
     # 리터럴을 걷어낸 뒤에야 식별자를 본다 — 문자열 **안**의 단어가 변수 이름으로 읽히지
     # 않게(`"note warnbox"` 의 `note` 는 식별자가 아니다).
     bare = _STRING_LIT.sub(" ", expr)
@@ -505,9 +517,10 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
     """
     emitted = _emitted_classes()
     for name, site in (
-        ("job-cand-card", "frontend/js/screens/job.js"),   # 보간 앞의 온전한 이름
-        ("active", "frontend/js/screens/job.js"),          # 보간이 더하는 상태 class
-        ("suggested", "frontend/js/screens/job.js"),
+        ("job-cand-card", "frontend/src/screens/job_read.ts"),  # React 보간 앞 이름
+        ("active", "frontend/src/screens/job_read.ts"),          # 보간 상태 class
+        ("suggested", "frontend/src/screens/job_read.ts"),
+        ("col-text", "frontend/src/screens/data_zone.ts"),  # 동적 열 kind의 유한 기본값
         ("f-gulimche", "frontend/js/screens/workbench.js"),  # 조각 합성
         # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
         # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
@@ -545,7 +558,7 @@ def test_variable_backed_class_names_are_seen() -> None:
     """
     emitted = _emitted_classes()
     for name, site in (
-        ("openingMark", "frontend/js/screens/job.js"),
+        ("openingMark", "frontend/src/screens/job_read.ts"),
         ("editor-open", "frontend/js/app.js"),
         ("workbench-open", "frontend/js/app.js"),
     ):

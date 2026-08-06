@@ -34,7 +34,7 @@ schema = 1
 # dom_static(골격 4 이전)·state_js_module·subscription 두 축·계측 6 항을 다시 실측했다.
 # 재고정 v6(#491, base `a6f21a3`)은 확장자 열거를 폐기하고 정적 폐포 계약의 non-code 감산을
 # 공유한다. TS/TSX state·DOM·listener·lifecycle 전수가 처음 같은 분모에 들어왔다.
-baseline_sha = "a6f21a3df6a6624eeb57eea94aebd46cfe034d80"
+baseline_sha = "3cabe7be79e8ef98d039c870c9644559777667e6"
 
 # 이 원장이 주장하는 「미분류 0」의 **정확한 범위**. 산문이 아니라 머리말 데이터다.
 scope_statement = """
@@ -108,9 +108,9 @@ covers = ["frontend/css/**/*.css"]
 probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "per-matching-line" }
 scope = ["frontend/css/**/*.css"]
 unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
-current = 1696
+current = 1703
 files = 10
-judgment = "오늘 10파일 1,696줄(R3-01 이 overlay.css 에 #reactOverlayHost 호스트 규칙 4줄을 더했다). 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
+judgment = "오늘 10파일 1,703줄(R4-01 portal wrapper·후보 메뉴·열 조판 규칙 반영 뒤 순증 1줄). 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
 [[excluded_axes]]
 axis = "frontend_static_assets"
@@ -265,9 +265,9 @@ description = """
 probe = { kind = "extractor", name = "html_data_attr_regex_delta" }
 scope = ["frontend/index.html"]
 unit = "정규식만 잡는 이름 1개 = 1. 전부 속성이 아니다."
-current = 7
-members = ["data-first", "data-grid", "data-picker", "data-react-mounted", "data-sheet-body", "data-theme", "data-zone"]
-judgment = "일곱 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). 참값은 파서가 낸 9종이다."
+current = 6
+members = ["data-first", "data-grid", "data-react-mounted", "data-sheet-body", "data-theme", "data-zone"]
+judgment = "여섯 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). 참값은 파서가 낸 7종이다."
 
 [axes.dom_js_data_attr]
 predicate = { kind = "node_extractor", name = "js_planted_data_attrs" }
@@ -343,7 +343,7 @@ probe = { kind = "node_extractor", name = "js_nonexported_fn_state" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
-current = 16
+current = 17
 members = [
   "frontend/js/grouplist.js:57 request",
   "frontend/js/grouplist.js:75 onConfirm",
@@ -361,13 +361,14 @@ members = [
   "frontend/js/preserve.js:26 selStart",
   "frontend/js/preserve.js:34 scrolls",
   "frontend/js/preserve.js:35 marked",
+  "frontend/src/screens/library.ts:373 content",
 ]
 judgment = """
-열여섯 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
+열일곱 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
 createMoveDialog 는 조작마다, legacyExecutor 의 셋(closeTimer·card·onTransitionEnd)은
 모달 개폐마다, register·onDocumentPointerDown 은 등록·제스처마다 돈다(R3-01 재고정:
 modal.js:157 found 는 close 판정이 엔진으로 이양되며 사라졌다). 새 항목이 생기면
-게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열여섯뿐이다.
+게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열일곱뿐이다.
 """
 
 [axes.state_snapshot_channel]
@@ -523,8 +524,8 @@ members = [
   "frontend/src/contract/contract.gen.ts:60",
   "frontend/src/overlay/instance.ts:23",
   "frontend/src/product_api.js:41",
-  "frontend/src/react/boot.ts:17",
-  "frontend/src/react/boot.ts:22",
+  "frontend/src/react/boot.ts:18",
+  "frontend/src/react/boot.ts:23",
   "frontend/src/react/root.ts:37",
   "frontend/src/shell/nav.ts:44",
   "frontend/src/shell/nav.ts:51",
@@ -543,20 +544,37 @@ probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "pyt
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
-current = 10
+current = 27
 members = [
   "frontend/js/esc.js:10",
-  "frontend/src/bootstrap.js:115",
+  "frontend/src/bootstrap.js:126",
   "frontend/src/overlay/host.ts:491",
   "frontend/src/overlay/instance.ts:110",
   "frontend/src/overlay/instance.ts:121",
-  "frontend/src/react/boot.ts:46",
+  "frontend/src/react/boot.ts:49",
   "frontend/src/react/use_screen_snapshot.ts:26",
   "frontend/src/react/use_screen_snapshot.ts:37",
+  "frontend/src/screens/data_picker.ts:360",
+  "frontend/src/screens/data_picker.ts:403",
+  "frontend/src/screens/data_zone.ts:123",
+  "frontend/src/screens/host.ts:11",
+  "frontend/src/screens/host.ts:24",
+  "frontend/src/screens/host.ts:45",
+  "frontend/src/screens/job_read.ts:475",
+  "frontend/src/screens/job_read.ts:492",
+  "frontend/src/screens/job_read.ts:510",
+  "frontend/src/screens/job_read.ts:562",
+  "frontend/src/screens/job_read.ts:572",
+  "frontend/src/screens/job_read.ts:631",
+  "frontend/src/screens/job_read.ts:670",
+  "frontend/src/screens/library.ts:555",
+  "frontend/src/screens/library.ts:591",
+  "frontend/src/screens/path_actions.ts:35",
+  "frontend/src/screens/runtime.ts:18",
   "frontend/src/shell/host.ts:66",
   "frontend/src/shell/host.ts:89",
 ]
-judgment = "create*가 아닌 export function 10은 합성 루트·잎·component·attach/bind/query API다. 정확한 이름을 오검 데이터로 든다."
+judgment = "create*가 아닌 export function 27은 합성 루트·잎·component·attach/bind/query API다. 정확한 이름을 오검 데이터로 든다."
 
 [axes.lifecycle_hook]
 predicate = { kind = "regex", pattern = "Preserve\\.around\\s*\\(|function leaveTo\\s*\\(|owner\\.leaveTo\\s*\\(|const IMMERSIVE\\s*=|addEventListener\\(\"pywebviewready\"", flavor = "python-re", granularity = "per-line" }
@@ -587,24 +605,24 @@ judgment = "둘 다 app.js:65 의 존재 확인 + 호출이다. 화면 쪽 객�
 
 [[metric]]
 id = "innerhtml-assignment"
-value = 61
+value = 27
 predicate = { kind = "regex", pattern = "innerHTML\\s*=(?!=)", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "대입 1건 = 1. 분모 = 정적 폐포 계약에서 non-code와 selftest를 감산한 제품 코드 전수(주석 포함)."
 note = "제품의 DOM 생성은 사실상 한 형태다 — $(\"안정 id\").innerHTML = 템플릿 문자열 전체 재구성. 이것이 preserve.js 의 존재 이유이자 React 이관의 주 절취선이다."
 [[metric.aliases]]
-value = 71
+value = 37
 predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/js/**/*.js", "frontend/index.html"]
 unit = "출현 1건 = 1. 대입·판독·주석을 구분하지 않는다."
 [[metric.aliases]]
-value = 83
+value = 49
 predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*"]
 unit = "위와 같음. selftest 축까지 포함한다(텍스트로 못 읽는 파일은 세지 않는다)."
 [[metric.aliases]]
-value = 50
+value = 25
 status = "wrong"
 predicate = { kind = "regex", pattern = "innerHTML\\s*=[^=]", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/js/**/*.js"]
@@ -630,24 +648,24 @@ note = "R3-99 F1 통제 변이 710459c(cleanup 없는 window listener)를 0 기�
 
 [[metric]]
 id = "mutable-module-state"
-value = 63
+value = 70
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. #491 재고정으로 JS 45 + TS 18을 같은 감산형 분모에서 센다."
 [[metric.aliases]]
-value = 39
+value = 21
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js"]
 unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
 [[metric.aliases]]
-value = 36
+value = 18
 status = "narrower-scope"
 predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
 scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
 unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
 [[metric.aliases]]
-value = 52
+value = 34
 status = "wrong"
 predicate = { kind = "extractor", name = "js_module_state_convention" }
 scope = ["frontend/js/**/*.js"]
@@ -655,25 +673,25 @@ unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거�
 
 [[metric]]
 id = "push-subscription-sites"
-value = 6
+value = 3
 predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/js/screens/*.js", "frontend/js/data_picker.js"]
 unit = "코드 등록 사이트 1개 = 1."
 [[metric.aliases]]
-value = 7
+value = 4
 predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/js/**/*.js"]
 unit = "bridge.js 머리말 주석의 `bridge.onPush(screen, fn)` 을 함께 센다."
 
 [[metric]]
 id = "listener-attach-sites"
-value = 108
+value = 64
 predicate = { kind = "derived", axis = "subscription_listener" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. JS 98 + TS attach 10(R2 runtime 1 · R3 overlay 7 · shell 2)."
 [[metric.aliases]]
-value = 102
+value = 56
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
 unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102."
@@ -688,19 +706,19 @@ unit = "노드 폐포의 원소 수. JS 7 + 완료 R3 host TS release 9."
 
 [[metric]]
 id = "dom-stable-ids"
-value = 212
+value = 139
 predicate = { kind = "derived", axis = "dom_static" }
 scope = ["frontend/index.html"]
 unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0). R3-01 재고정: 골격 4(다이얼로그 3 + 토스트, 내부 id 포함 21)가 React host 렌더로 이전돼 233 → 212."
 
 [[metric]]
 id = "dom-data-attribute-kinds"
-value = 9
+value = 7
 predicate = { kind = "derived", axis = "dom_data_attr" }
 scope = ["frontend/index.html"]
 unit = "속성 이름 1개 = 1."
 [[metric.aliases]]
-value = 60
+value = 31
 status = "wrong"
 predicate = { kind = "regex", pattern = "data-[a-z-]+", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/index.html"]
@@ -708,26 +726,26 @@ unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함�
 
 [[metric]]
 id = "data-attribute-bearing-elements"
-value = 43
+value = 22
 predicate = { kind = "extractor", name = "html_data_attr_elements" }
 scope = ["frontend/index.html"]
 unit = "`data-*` 를 하나라도 든 요소 1개 = 1."
 note = "`dom_data_attr.unit` 의 근거 문장을 데이터로 만든다 — 산문 수리는 다음 드리프트를 막지 못하고, 이 항목은 막는다."
 [[metric.aliases]]
-value = 7
+value = 4
 predicate = { kind = "extractor", name = "html_data_attr_elements_without_id" }
 scope = ["frontend/index.html"]
 unit = "그중 id 가 없어 dom_static 232 **밖**인 요소 1개 = 1. 나머지 36 에 대해서만 출현 계상이 이중 계상이다."
 
 [[metric]]
 id = "js-generated-id-sites"
-value = 48
+value = 124
 predicate = { kind = "derived", axis = "dom_js_site" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "사이트 1개 = 1. legacy 마크업 문자열 26 + React overlay object prop 22."
 [[metric.aliases]]
-value = 26
+value = 15
 predicate = { kind = "regex", pattern = "id=\"", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
@@ -777,7 +795,7 @@ unit = "selftest 축 포함."
 
 [[metric]]
 id = "export-function-declarations"
-value = 34
+value = 56
 predicate = { kind = "derived", axis = "lifecycle_factory" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
@@ -828,7 +846,7 @@ subject = "PRESERVE_WRAPPED_FILES가 Preserve.around 실호출 5파일 전부를
 requires_p_review = false
 resolved = true
 disposition = "data_picker.js·library.js를 목록에 더해 실호출 5파일과 정확히 맞추고 정적 배선 게이트가 전수 대조한다."
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 48, anchor = "PRESERVE_WRAPPED_FILES = (" }]
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 54, anchor = "PRESERVE_WRAPPED_FILES = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
@@ -856,385 +874,321 @@ owner = "R5-01 #419"
 id = "dom/root/app-shell-controls"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "exact", members = [
-  "fontScaleLabel",
-  "fontScaleToggle",
-  "themeLabel",
-  "themeToggle",
-] }
-evidence = [{ file = "frontend/index.html", line = 52, anchor = "id=\"themeToggle\"" }]
+selector = { kind = "exact", members = ["fontScaleLabel", "fontScaleToggle", "themeLabel", "themeToggle"] }
+evidence = [{ file = "frontend/index.html", line = 57, anchor = "<span class=\"ti\" aria-hidden=\"true\">A</span><span class=\"d\" id=\"fontScaleLabel\">기본</span></button>" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/test_web_dom_contract.py::test_theme_helper_loaded_and_toggle_present"]
-note = "셸 우상단 테마·글자 크기 토글. 컨테이너에 안 들어가는 루트 직속이라 exact 다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/root/screen-roots"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "exact", members = [
-  "overlayRoot",
-  "scr-editor",
-  "scr-job",
-  "scr-library",
-  "scr-workbench",
-] }
-evidence = [{ file = "frontend/index.html", line = 133, anchor = "id=\"scr-job\"" }]
+selector = { kind = "exact", members = ["overlayRoot", "scr-editor", "scr-job", "scr-library", "scr-workbench"] }
+evidence = [{ file = "frontend/index.html", line = 397, anchor = "<div id=\"overlayRoot\">" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/test_web_dom_contract.py::test_screen_roots_present"]
-note = "화면 루트 4 + overlay 루트 1. React 라우터가 이 다섯의 후계를 진다. SCREEN_ROOTS는 R3-03에서 화면 루트 넷을 전수 대조하도록 폐쇄됐다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/root/react-root"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["reactRoot"] }
-evidence = [{ file = "frontend/index.html", line = 787, anchor = "id=\"reactRoot\"" }]
+evidence = [{ file = "frontend/index.html", line = 580, anchor = "<div id=\"reactRoot\"></div>" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["tests/test_react_root_live.py::test_react_root_commits_in_a_real_webview2_window"]
-note = "React 단독 소유 subtree — legacy 두 트리(div.app·#overlayRoot)와 공동 변이하지 않는 유일한 React DOM 경계. 커밋 증거는 정적 존재가 아니라 런타임 data-react-mounted 마커가 진다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/scr-library"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "scr-library", members_expected = 17 }
-evidence = [{ file = "frontend/index.html", line = 70, anchor = "id=\"scr-library\"" }]
+selector = { kind = "subtree", root = "scr-library", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 70, anchor = "<section class=\"scr\" id=\"scr-library\"></section>" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/scr-job"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "scr-job", members_expected = 5 }
-evidence = [{ file = "frontend/index.html", line = 133, anchor = "id=\"scr-job\"" }]
+evidence = [{ file = "frontend/index.html", line = 76, anchor = "<section class=\"scr on\" id=\"scr-job\">" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/scr-editor"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "scr-editor", members_expected = 9 }
-evidence = [{ file = "frontend/index.html", line = 407, anchor = "id=\"scr-editor\"" }]
+evidence = [{ file = "frontend/index.html", line = 282, anchor = "<section class=\"scr\" id=\"scr-editor\">" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/scr-workbench"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "scr-workbench", members_expected = 20 }
-evidence = [{ file = "frontend/index.html", line = 442, anchor = "id=\"scr-workbench\"" }]
+evidence = [{ file = "frontend/index.html", line = 317, anchor = "<section class=\"scr\" id=\"scr-workbench\">" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlayRoot"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "overlayRoot", members_expected = 13 }
-evidence = [{ file = "frontend/index.html", line = 522, anchor = "id=\"overlayRoot\"" }]
+evidence = [{ file = "frontend/index.html", line = 397, anchor = "<div id=\"overlayRoot\">" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
-note = "overlay 루트 직속 13 — 9 모달 루트 자신과 메뉴·경량층. R3-01 재고정: promise 다이얼로그 3 과 되돌리기 토스트는 React host(#reactOverlayHost) 렌더로 이전돼 정적 골격이 소멸했다(19 → 13)."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "dom/job/jobDataGrid"
+id = "dom/job/jobDataGrid-shell"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobDataGrid", members_expected = 29 }
-evidence = [{ file = "frontend/index.html", line = 166, anchor = "id=\"jobDataGrid\"" }]
+selector = { kind = "subtree", root = "jobDataGrid", members_expected = 5 }
+evidence = [{ file = "frontend/index.html", line = 109, anchor = "<div class=\"data-grid\" id=\"jobDataGrid\">" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/job/jobMirrorZone"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobMirrorZone", members_expected = 4 }
-evidence = [{ file = "frontend/index.html", line = 243, anchor = "id=\"jobMirrorZone\"" }]
+evidence = [{ file = "frontend/index.html", line = 126, anchor = "<div class=\"zone job-mirror-zone\" id=\"jobMirrorZone\">" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/job/jobResultZone"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobResultZone", members_expected = 17 }
-evidence = [{ file = "frontend/index.html", line = 262, anchor = "id=\"jobResultZone\"" }]
+evidence = [{ file = "frontend/index.html", line = 145, anchor = "<div class=\"zone job-result-zone\" id=\"jobResultZone\" tabindex=\"-1\">" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "dom/job/jobSideCard"
+id = "dom/job/jobSideCard-read"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobSideCard", members_expected = 7 }
-evidence = [{ file = "frontend/index.html", line = 312, anchor = "id=\"jobSideCard\"" }]
+selector = { kind = "subtree", root = "jobSideCard", members_expected = 2 }
+evidence = [{ file = "frontend/index.html", line = 195, anchor = "<aside class=\"dg-side\" id=\"jobSideCard\" aria-label=\"이 데이터에 사용할 문서\">" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/job/jobActionBar"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobActionBar", members_expected = 8 }
-evidence = [{ file = "frontend/index.html", line = 358, anchor = "id=\"jobActionBar\"" }]
+evidence = [{ file = "frontend/index.html", line = 233, anchor = "<div class=\"session-actionbar\" id=\"jobActionBar\" style=\"display:none\">" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/job/jobOutRow"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobOutRow", members_expected = 3 }
-evidence = [{ file = "frontend/index.html", line = 344, anchor = "id=\"jobOutRow\"" }]
+evidence = [{ file = "frontend/index.html", line = 219, anchor = "<div class=\"run-row\" id=\"jobOutRow\"><span class=\"lbl\">저장 폴더</span>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_job_session_surface_uses_v6_two_column_captions"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/poolRegModal"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "poolRegModal", members_expected = 8 }
-evidence = [{ file = "frontend/index.html", line = 538, anchor = "id=\"poolRegModal\"" }]
+selector = { kind = "subtree", root = "poolRegModal", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 413, anchor = "<div id=\"poolRegModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"poolRegTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/txtEditModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "txtEditModal", members_expected = 7 }
-evidence = [{ file = "frontend/index.html", line = 560, anchor = "id=\"txtEditModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 416, anchor = "<div id=\"txtEditModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"txtEditTitle\">" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/sheetModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "sheetModal", members_expected = 4 }
-evidence = [{ file = "frontend/index.html", line = 577, anchor = "id=\"sheetModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 433, anchor = "<div id=\"sheetModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheetTitle\">" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/dataPickerModal"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "dataPickerModal", members_expected = 11 }
-evidence = [{ file = "frontend/index.html", line = 594, anchor = "id=\"dataPickerModal\"" }]
+selector = { kind = "subtree", root = "dataPickerModal", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 450, anchor = "<div id=\"dataPickerModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/previewSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "previewSheet", members_expected = 19 }
-evidence = [{ file = "frontend/index.html", line = 638, anchor = "id=\"previewSheet\"" }]
+evidence = [{ file = "frontend/index.html", line = 459, anchor = "<div id=\"previewSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/libraryMoveModal"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "libraryMoveModal", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 709, anchor = "id=\"libraryMoveModal\"" }]
+selector = { kind = "subtree", root = "libraryMoveModal", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 530, anchor = "<div id=\"libraryMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"libraryMoveTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/dataSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "dataSheet", members_expected = 3 }
-evidence = [{ file = "frontend/index.html", line = 723, anchor = "id=\"dataSheet\"" }]
+evidence = [{ file = "frontend/index.html", line = 533, anchor = "<div id=\"dataSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/jobBrowseSheet"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobBrowseSheet", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 737, anchor = "id=\"jobBrowseSheet\"" }]
+selector = { kind = "subtree", root = "jobBrowseSheet", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 547, anchor = "<div id=\"jobBrowseSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/overlay/tplMoveModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "tplMoveModal", members_expected = 6 }
-evidence = [{ file = "frontend/index.html", line = 764, anchor = "id=\"tplMoveModal\"" }]
+evidence = [{ file = "frontend/index.html", line = 557, anchor = "<div id=\"tplMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"tplMoveTitle\">" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics"]
-
-# (R3-01 #410 재고정 — `dom/overlay/confirmModal`(4) · `dom/overlay/chooseModal`(5) ·
-#  `dom/overlay/promptModal`(6) 세 노드는 정적 골격이 React host(#reactOverlayHost) 렌더로
-#  이전되며 소멸했다. 이것이 감소 원장의 실측 축이다: overlay 포털 안 DOM 을 기입하는
-#  생산자에서 promise 골격 3 + 토스트의 기입이 0 이 됐다. 같은 id·클래스·ARIA 의 렌더 소유는
-#  `frontend/src/overlay/host.ts` 가 지고, 검증은 tests/js/overlay_host.test.js(렌더 요소 계약)
-#  + tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics(정적 부재 + host
-#  소스 소유) + tests/test_react_overlay_live.py(실창 커밋·직속 자식·닫힘 상시 렌더)가 진다.)
-
-# ═══ dom_data_attr — 속성 **이름** 9행이다. 출현 50회는 이미 dom_static 232 안에
-#     있는 요소들이라 이중 계상하지 않는다(L8·L9 의 노드 좌표-키 원칙).
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/data-attr/render-preservation"
 kind = "dom"
 axis = "dom_data_attr"
-selector = { kind = "exact", members = [
-  "data-busy-lock",
-  "data-preserve-scroll",
-] }
-evidence = [{ file = "frontend/index.html", line = 93, anchor = "data-busy-lock", occurrence = 1 }]
+selector = { kind = "exact", members = ["data-busy-lock", "data-preserve-scroll"] }
+evidence = [{ file = "frontend/index.html", line = 156, anchor = "data-busy-lock hidden>실패한 건만 선택</button>" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
-note = "React 렌더 보존의 원본 — innerHTML 전면 재구성이 스크롤·포커스를 날리던 자리의 표식."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/data-attr/routing"
 kind = "dom"
 axis = "dom_data_attr"
 selector = { kind = "exact", members = ["data-scr"] }
-evidence = [{ file = "frontend/index.html", line = 33, anchor = "data-scr", occurrence = 1 }]
+evidence = [{ file = "frontend/index.html", line = 33, anchor = "은은한 틴트 + 액센트 잉크. `data-scr` 는 **화면 키 그대로**(job·library)이고 개명된" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "dom/data-attr/library-view"
+id = "dom-js-data/library-view"
 kind = "dom"
-axis = "dom_data_attr"
-selector = { kind = "exact", members = [
-  "data-library-mode",
-  "data-library-view",
-] }
-evidence = [{ file = "frontend/index.html", line = 97, anchor = "data-library-view", occurrence = 1 }]
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:data-library-mode", "frontend/src/screens/library.ts:data-library-view"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 547, anchor = "\"data-library-mode\": mode, \"aria-pressed\": snapshot.mode === mode ? \"true\" : \"false\"," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/data-attr/workbench-view"
 kind = "dom"
 axis = "dom_data_attr"
 selector = { kind = "exact", members = ["data-wb-view"] }
-evidence = [{ file = "frontend/index.html", line = 473, anchor = "data-wb-view", occurrence = 1 }]
+evidence = [{ file = "frontend/index.html", line = 348, anchor = "<button class=\"btn sm\" type=\"button\" data-wb-view=\"filled\">채운 모습</button>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom/data-attr/overlay-state"
 kind = "dom"
 axis = "dom_data_attr"
-selector = { kind = "exact", members = [
-  "data-act",
-  "data-level",
-  "data-state",
-] }
-evidence = [{ file = "frontend/index.html", line = 146, anchor = "data-level", occurrence = 1 }]
+selector = { kind = "exact", members = ["data-act", "data-level", "data-state"] }
+evidence = [{ file = "frontend/index.html", line = 293, anchor = "data-act=\"name\" placeholder=\"작업 이름을 입력하세요\"" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_scoped_data_labels_present_and_unique"]
-
-# ═══ dom_js_data_attr — 제품 JS/TS가 생산하는 data-* 이름×파일 86. selector·read-only 소비는
-#     세지 않고, 이름이 동적인 생산자는 축의 blind_spot 크기로 따로 센다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/data-picker"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:data-act",
-  "frontend/js/data_picker.js:data-busy-lock",
-  "frontend/js/data_picker.js:data-dup-keep",
-  "frontend/js/data_picker.js:data-key",
-  "frontend/js/data_picker.js:data-name",
-  "frontend/js/data_picker.js:data-row",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 120, anchor = "data-key" }]
+selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:data-act", "frontend/src/screens/data_picker.ts:data-busy-lock", "frontend/src/screens/data_picker.ts:data-dup-keep", "frontend/src/screens/data_picker.ts:data-key", "frontend/src/screens/data_picker.ts:data-name", "frontend/src/screens/data_picker.ts:data-row"] }
+evidence = [{ file = "frontend/src/screens/data_picker.ts", line = 335, anchor = "className: \"btn sm\", \"data-act\": action.key, \"data-key\": row.key, \"data-name\": row.name," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/datazone"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/datazone.js:data-act",
-  "frontend/js/datazone.js:data-busy-lock",
-  "frontend/js/datazone.js:data-col",
-  "frontend/js/datazone.js:data-ctext",
-  "frontend/js/datazone.js:data-i",
-  "frontend/js/datazone.js:data-prune",
-  "frontend/js/datazone.js:data-rerr",
-  "frontend/js/datazone.js:data-rjoin",
-  "frontend/js/datazone.js:data-rop",
-  "frontend/js/datazone.js:data-rval",
-  "frontend/js/datazone.js:data-unsel",
-  "frontend/js/datazone.js:data-val",
-  "frontend/js/datazone.js:data-val-all",
-] }
-evidence = [{ file = "frontend/js/datazone.js", line = 99, anchor = "<button data-act=\"panel-close\"" }]
+selector = { kind = "exact", members = ["frontend/src/screens/data_zone.ts:data-act", "frontend/src/screens/data_zone.ts:data-busy-lock", "frontend/src/screens/data_zone.ts:data-col", "frontend/src/screens/data_zone.ts:data-ctext", "frontend/src/screens/data_zone.ts:data-i", "frontend/src/screens/data_zone.ts:data-prune", "frontend/src/screens/data_zone.ts:data-rerr", "frontend/src/screens/data_zone.ts:data-rjoin", "frontend/src/screens/data_zone.ts:data-rop", "frontend/src/screens/data_zone.ts:data-rval", "frontend/src/screens/data_zone.ts:data-unsel", "frontend/src/screens/data_zone.ts:data-val", "frontend/src/screens/data_zone.ts:data-val-all"] }
+evidence = [{ file = "frontend/src/screens/data_zone.ts", line = 70, anchor = "h(\"button\", { \"data-act\": \"panel-close\", onClick: close, \"aria-label\": \"닫기\" }, \"✕\")),", occurrence = 1 }]
 classification = "react"
-handoff_slice = "R4-03 #416"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/grouplist"
-kind = "dom"
-axis = "dom_js_data_attr"
-selector = { kind = "exact", members = ["frontend/js/grouplist.js:data-new"] }
-evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "<input type=\"radio\" name=\"${cfg.radioName}\" value=\"\" data-new" }]
+kind = "subscription"
+axis = "subscription_listener"
+selector = { kind = "exact", members = ["frontend/js/grouplist.js:131"] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 131, anchor = "$(okId).addEventListener(\"click\", confirm);" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/pathtrack"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/pathtrack.js:data-path",
-  "frontend/js/pathtrack.js:data-track-act",
-] }
-evidence = [{ file = "frontend/js/pathtrack.js", line = 34, anchor = "class=\"btn sm icon track-btn\" data-track-act" }]
+selector = { kind = "exact", members = ["frontend/js/pathtrack.js:data-track-act"] }
+evidence = [{ file = "frontend/js/pathtrack.js", line = 3, anchor = "핸들러가 data-track-act 를 Bridge 로 라우팅한다(각 화면이 재렌더해도 위임이라 안전)." }]
 classification = "react"
 handoff_slice = "R4-04 #417"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/personalization"
@@ -1244,546 +1198,338 @@ selector = { kind = "exact", members = ["frontend/js/personalization.js:data-fon
 evidence = [{ file = "frontend/js/personalization.js", line = 18, anchor = "root.setAttribute(\"data-font-scale\", scale);" }]
 classification = "react"
 handoff_slice = "R5-01 #419"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/popover"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/js/popover.js:data-placement"] }
-evidence = [{ file = "frontend/js/popover.js", line = 156, anchor = "el.dataset.placement = below ?" }]
+evidence = [{ file = "frontend/js/popover.js", line = 156, anchor = "el.dataset.placement = below ? \"bottom\" : \"top\";" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/editor"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/editor.js:data-act",
-  "frontend/js/screens/editor.js:data-field",
-  "frontend/js/screens/editor.js:data-group",
-  "frontend/js/screens/editor.js:data-index",
-  "frontend/js/screens/editor.js:data-key",
-  "frontend/js/screens/editor.js:data-level",
-  "frontend/js/screens/editor.js:data-media",
-  "frontend/js/screens/editor.js:data-menu",
-  "frontend/js/screens/editor.js:data-path",
-  "frontend/js/screens/editor.js:data-section",
-] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 253, anchor = "data-section" }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:data-act", "frontend/js/screens/editor.js:data-index", "frontend/js/screens/editor.js:data-level", "frontend/js/screens/editor.js:data-media", "frontend/js/screens/editor.js:data-menu", "frontend/js/screens/editor.js:data-path"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 159, anchor = "const el = document.querySelector('#editor-body input[data-act=\"pattern\"]');" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "dom-js-data/job"
+id = "dom-js-data/job-run"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:data-act",
-  "frontend/js/screens/job.js:data-browse-mode",
-  "frontend/js/screens/job.js:data-browse-new",
-  "frontend/js/screens/job.js:data-browse-open",
-  "frontend/js/screens/job.js:data-browse-pick",
-  "frontend/js/screens/job.js:data-browse-tab",
-  "frontend/js/screens/job.js:data-busy-lock",
-  "frontend/js/screens/job.js:data-cand",
-  "frontend/js/screens/job.js:data-cand-menu",
-  "frontend/js/screens/job.js:data-cand-mode",
-  "frontend/js/screens/job.js:data-cands-exit",
-  "frontend/js/screens/job.js:data-fav",
-  "frontend/js/screens/job.js:data-field",
-  "frontend/js/screens/job.js:data-level",
-  "frontend/js/screens/job.js:data-missing",
-  "frontend/js/screens/job.js:data-missing-cols",
-  "frontend/js/screens/job.js:data-new-work",
-  "frontend/js/screens/job.js:data-path",
-  "frontend/js/screens/job.js:data-state",
-  "frontend/js/screens/job.js:data-track-act",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 393, anchor = "id=\"jobCandMenuBtn\" data-cand-menu" }]
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:data-act", "frontend/js/screens/job.js:data-busy-lock", "frontend/js/screens/job.js:data-field", "frontend/js/screens/job.js:data-level", "frontend/js/screens/job.js:data-state"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 269, anchor = "`<button class=\"btn sm\" data-act=\"fix-mapping\" data-busy-lock>편집에서 매핑 확정…</button>` +" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/library"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/library.js:data-axis",
-  "frontend/js/screens/library.js:data-busy-lock",
-  "frontend/js/screens/library.js:data-clear-filters",
-  "frontend/js/screens/library.js:data-clone",
-  "frontend/js/screens/library.js:data-del-corrupt",
-  "frontend/js/screens/library.js:data-delete",
-  "frontend/js/screens/library.js:data-edit",
-  "frontend/js/screens/library.js:data-fav",
-  "frontend/js/screens/library.js:data-gmenu",
-  "frontend/js/screens/library.js:data-group",
-  "frontend/js/screens/library.js:data-group-more",
-  "frontend/js/screens/library.js:data-label",
-  "frontend/js/screens/library.js:data-move",
-  "frontend/js/screens/library.js:data-new-work",
-  "frontend/js/screens/library.js:data-preserve-scroll",
-  "frontend/js/screens/library.js:data-relink",
-  "frontend/js/screens/library.js:data-rename",
-  "frontend/js/screens/library.js:data-reveal",
-  "frontend/js/screens/library.js:data-tags",
-  "frontend/js/screens/library.js:data-use",
-  "frontend/js/screens/library.js:data-val",
-  "frontend/js/screens/library.js:data-work",
-] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 88, anchor = "data-reveal=\"${esc(c.path)}\"" }]
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:data-axis", "frontend/src/screens/library.ts:data-busy-lock", "frontend/src/screens/library.ts:data-clear-filters", "frontend/src/screens/library.ts:data-clone", "frontend/src/screens/library.ts:data-del-corrupt", "frontend/src/screens/library.ts:data-delete", "frontend/src/screens/library.ts:data-edit", "frontend/src/screens/library.ts:data-fav", "frontend/src/screens/library.ts:data-gmenu", "frontend/src/screens/library.ts:data-group", "frontend/src/screens/library.ts:data-group-more", "frontend/src/screens/library.ts:data-label", "frontend/src/screens/library.ts:data-move", "frontend/src/screens/library.ts:data-new-work", "frontend/src/screens/library.ts:data-preserve-scroll", "frontend/src/screens/library.ts:data-relink", "frontend/src/screens/library.ts:data-rename", "frontend/src/screens/library.ts:data-reveal", "frontend/src/screens/library.ts:data-tags", "frontend/src/screens/library.ts:data-use", "frontend/src/screens/library.ts:data-val", "frontend/src/screens/library.ts:data-work"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 499, anchor = "className: `pill${entry.active ? \"\" : \" muted\"}`, \"data-axis\": facet.axis," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/workbench"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/workbench.js:data-fullwidth",
-  "frontend/js/screens/workbench.js:data-i",
-  "frontend/js/screens/workbench.js:data-level",
-  "frontend/js/screens/workbench.js:data-name",
-] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 34, anchor = "id=\"wbMap-src-${encodeURIComponent(t.name)}\" data-name" }]
+selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:data-fullwidth", "frontend/js/screens/workbench.js:data-level", "frontend/js/screens/workbench.js:data-name"] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "+ `<button class=\"btn sm\" type=\"button\" id=\"wbLintAction\" data-fullwidth=\"off\">되돌리기</button>`" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/segview"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = ["frontend/js/segview.js:data-token"] }
-evidence = [{ file = "frontend/js/segview.js", line = 24, anchor = "const tok = s.name ? ` data-token" }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:data-field"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 165, anchor = "`#editor-body table.map tr[data-field=\"${CSS.escape(field)}\"]`);" }]
 classification = "react"
-handoff_slice = "R4-04 #417"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/sheet-picker"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = [
-  "frontend/js/sheet_picker.js:data-first",
-  "frontend/js/sheet_picker.js:data-sheet",
-] }
-evidence = [{ file = "frontend/js/sheet_picker.js", line = 25, anchor = "data-sheet" }]
+selector = { kind = "exact", members = ["frontend/js/sheet_picker.js:data-sheet"] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 25, anchor = "`<button type=\"button\" class=\"btn sheet-opt\" data-sheet=\"${escHtml(s.name)}\"` +" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/theme"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/js/theme.js:data-theme"] }
-evidence = [{ file = "frontend/js/theme.js", line = 26, anchor = "document.documentElement.setAttribute(\"data-theme\", mode);" }]
+evidence = [{ file = "frontend/js/theme.js", line = 3, anchor = "System → Light → Dark 3상태 순환. documentElement 의 data-theme 속성이 tokens.css 의" }]
 classification = "react"
 handoff_slice = "R5-01 #419"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/react-boot"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/react/boot.ts:data-react-store-rev"] }
-evidence = [{ file = "frontend/src/react/boot.ts", line = 22, anchor = "data-react-store-rev" }]
+evidence = [{ file = "frontend/src/react/boot.ts", line = 23, anchor = "export const STORE_REVISION_ATTRIBUTE = \"data-react-store-rev\";" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js-data/react-root"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/react/root.ts:data-react-mounted"] }
-evidence = [{ file = "frontend/src/react/root.ts", line = 37, anchor = "export const MOUNT_MARKER_ATTRIBUTE = \"data-react-mounted\";" }]
+evidence = [{ file = "frontend/src/react/root.ts", line = 19, anchor = "`data-react-mounted=\"1\"` 을 심고, 실 WebView2 게이트가 그 마커를 되읽는다. */" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["tests/test_react_ownership_inventory.py::test_js_data_attribute_producer_forms_are_seen"]
-
-# ═══ dom_js_site — 제품 코드가 만드는 id 사이트 48(JS 26 + TS 22). **단위는 이름이 아니라
-#     사이트**다 — 완전 동적 3건은 이름이 소스에 없어 이름을 단위로 잡으면 영영 빠진다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/data-picker"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/js/data_picker.js:84:static:dataPickerPin"] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 84, anchor = "id=\"dataPickerPin" }]
+selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:367:static:dataPickerTitle", "frontend/src/screens/data_picker.ts:369:static:dataPickerNote", "frontend/src/screens/data_picker.ts:372:static:dataPickerCurCap", "frontend/src/screens/data_picker.ts:373:static:dataPickerCurrent", "frontend/src/screens/data_picker.ts:379:static:dataPickerPin", "frontend/src/screens/data_picker.ts:382:static:dataPickerPinCap", "frontend/src/screens/data_picker.ts:383:static:dataPickerPinned", "frontend/src/screens/data_picker.ts:387:static:dataPickerDupes", "frontend/src/screens/data_picker.ts:392:static:dataPickerCorrupt", "frontend/src/screens/data_picker.ts:395:static:dataPickerOtherCap", "frontend/src/screens/data_picker.ts:397:static:dataPickerBrowse", "frontend/src/screens/data_picker.ts:400:static:dataPickerClose", "frontend/src/screens/data_picker.ts:411:static:poolRegTitle", "frontend/src/screens/data_picker.ts:414:static:poolRegName", "frontend/src/screens/data_picker.ts:417:static:poolRegPath", "frontend/src/screens/data_picker.ts:419:static:poolRegBrowse", "frontend/src/screens/data_picker.ts:422:static:poolRegSheet", "frontend/src/screens/data_picker.ts:425:static:poolRegNote", "frontend/src/screens/data_picker.ts:429:static:poolRegCancel", "frontend/src/screens/data_picker.ts:430:static:poolRegOk"] }
+evidence = [{ file = "frontend/src/screens/data_picker.ts", line = 367, anchor = "h(\"h3\", { id: \"dataPickerTitle\" }, \"데이터 선택\")," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/datazone"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/js/datazone.js:386:dynamic:"] }
-evidence = [{ file = "frontend/js/datazone.js", line = 386, anchor = "id=\"" }]
+selector = { kind = "exact", members = ["frontend/src/screens/data_zone.ts:211:static:jobRecsHead", "frontend/src/screens/data_zone.ts:213:static:jobFilterSearch", "frontend/src/screens/data_zone.ts:216:static:jobFilterReapply", "frontend/src/screens/data_zone.ts:223:static:jobSelCount", "frontend/src/screens/data_zone.ts:225:static:jobSelAll", "frontend/src/screens/data_zone.ts:227:static:jobSelNone", "frontend/src/screens/data_zone.ts:229:static:jobOrderBar", "frontend/src/screens/data_zone.ts:231:static:jobOrderSel", "frontend/src/screens/data_zone.ts:235:static:jobOrderNote", "frontend/src/screens/data_zone.ts:236:static:jobFilterChips", "frontend/src/screens/data_zone.ts:249:static:jobTableHost", "frontend/src/screens/data_zone.ts:252:static:jobTableHead", "frontend/src/screens/data_zone.ts:270:static:jobTableBody", "frontend/src/screens/data_zone.ts:273:dynamic:jobRow-", "frontend/src/screens/data_zone.ts:306:static:jobTableEmpty", "frontend/src/screens/data_zone.ts:318:static:jobSelStrip", "frontend/src/screens/data_zone.ts:329:static:jobRangeFoot", "frontend/src/screens/data_zone.ts:330:static:jobRangeNote", "frontend/src/screens/data_zone.ts:333:static:jobRangeSelectedOnly", "frontend/src/screens/data_zone.ts:335:static:jobRangeCancel", "frontend/src/screens/data_zone.ts:337:static:jobRangeApply"] }
+evidence = [{ file = "frontend/src/screens/data_zone.ts", line = 211, anchor = "h(\"div\", { className: \"run-row run-recs-head\", id: \"jobRecsHead\" }," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/grouplist"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = [
-  "frontend/js/grouplist.js:90:dynamic:",
-  "frontend/js/grouplist.js:91:dynamic:",
-] }
-evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "id=\"", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/grouplist.js:90:dynamic:", "frontend/js/grouplist.js:91:dynamic:"] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 90, anchor = "`<label class=\"grp-opt\"><input type=\"radio\" name=\"${cfg.radioName}\" value=\"\" data-new=\"1\" id=\"${cfg.newRadioId}\"> 새 그룹:` +" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/editor"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/editor.js:339:dynamic:libgrp-",
-  "frontend/js/screens/editor.js:843:static:save-msg",
-] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 339, anchor = "id=\"libgrp-" }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:339:dynamic:libgrp-", "frontend/js/screens/editor.js:843:static:save-msg"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 339, anchor = "return `<div class=\"job-grp\"><button class=\"job-grp-head\" id=\"libgrp-${media}-${idx}\" data-act=\"toggle-lib-group\"` +" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/library"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/js/screens/library.js:175:static:libraryClearFacets"] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 175, anchor = "id=\"libraryClearFacets" }]
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:410:static:libraryPanel", "frontend/src/screens/library.ts:413:static:libraryCount", "frontend/src/screens/library.ts:415:static:libraryList", "frontend/src/screens/library.ts:428:static:libraryDetail", "frontend/src/screens/library.ts:507:static:librarySearch", "frontend/src/screens/library.ts:515:static:libraryViewLabel", "frontend/src/screens/library.ts:516:static:libraryViewTabs", "frontend/src/screens/library.ts:523:static:library-view-all", "frontend/src/screens/library.ts:528:static:library-view-recent", "frontend/src/screens/library.ts:533:static:library-view-favorites", "frontend/src/screens/library.ts:538:static:library-view-needsAction", "frontend/src/screens/library.ts:544:static:libraryModeLabel", "frontend/src/screens/library.ts:545:static:libraryModeFilters", "frontend/src/screens/library.ts:549:static:libraryFacets", "frontend/src/screens/library.ts:551:static:libraryClearFacets", "frontend/src/screens/library.ts:573:static:libraryNewWork", "frontend/src/screens/library.ts:575:static:libraryAlerts", "frontend/src/screens/library.ts:578:static:libraryCorrupt", "frontend/src/screens/library.ts:595:static:libraryMoveTitle", "frontend/src/screens/library.ts:596:static:libraryMoveName", "frontend/src/screens/library.ts:597:static:libraryMoveList", "frontend/src/screens/library.ts:609:static:libraryMoveErr", "frontend/src/screens/library.ts:611:static:libMoveCancel", "frontend/src/screens/library.ts:612:static:libMoveOk"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 410, anchor = "className: \"library-list-pane\", id: \"libraryPanel\", role: \"tabpanel\"," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/workbench"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/workbench.js:117:static:wbLintAction",
-  "frontend/js/screens/workbench.js:119:static:wbLintAction",
-  "frontend/js/screens/workbench.js:34:dynamic:wbMap-src-",
-  "frontend/js/screens/workbench.js:38:dynamic:wbMap-sug-",
-  "frontend/js/screens/workbench.js:42:dynamic:wbMap-rev-",
-  "frontend/js/screens/workbench.js:47:dynamic:wbMap-type-",
-  "frontend/js/screens/workbench.js:53:dynamic:wbMap-fmt-",
-  "frontend/js/screens/workbench.js:61:dynamic:wbMap-val-",
-  "frontend/js/screens/workbench.js:64:dynamic:wbMap-ck-",
-  "frontend/js/screens/workbench.js:70:dynamic:wbMap-row-",
-] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "id=\"wbLintAction", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:117:static:wbLintAction", "frontend/js/screens/workbench.js:119:static:wbLintAction", "frontend/js/screens/workbench.js:34:dynamic:wbMap-src-", "frontend/js/screens/workbench.js:38:dynamic:wbMap-sug-", "frontend/js/screens/workbench.js:42:dynamic:wbMap-rev-", "frontend/js/screens/workbench.js:47:dynamic:wbMap-type-", "frontend/js/screens/workbench.js:53:dynamic:wbMap-fmt-", "frontend/js/screens/workbench.js:61:dynamic:wbMap-val-", "frontend/js/screens/workbench.js:64:dynamic:wbMap-ck-", "frontend/js/screens/workbench.js:70:dynamic:wbMap-row-"] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 117, anchor = "+ `<button class=\"btn sm\" type=\"button\" id=\"wbLintAction\" data-fullwidth=\"off\">되돌리기</button>`" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/job-result"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:1453:dynamic:jobResultFail-"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1453, anchor = "id=\"jobResultFail-" }]
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:755:dynamic:jobResultFail-"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 755, anchor = "return `<div class=\"result3-fail\" id=\"jobResultFail-${esc(String(f.index))}\">" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/job-browse"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:393:static:jobCandMenuBtn",
-  "frontend/js/screens/job.js:401:dynamic:jobFav-",
-  "frontend/js/screens/job.js:405:dynamic:jobCand-",
-  "frontend/js/screens/job.js:571:dynamic:jobBrowseTab-",
-  "frontend/js/screens/job.js:598:dynamic:jobBrowseNeeds-",
-  "frontend/js/screens/job.js:605:dynamic:jobBrowseRow-",
-  "frontend/js/screens/job.js:661:static:jobCandNewWork",
-  "frontend/js/screens/job.js:699:static:jobBrowseOpen",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 393, anchor = "id=\"jobCandMenuBtn" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:481:static:jobDataExpand", "frontend/src/screens/job_read.ts:484:static:jobDataLabel", "frontend/src/screens/job_read.ts:486:static:jobBtnPickData", "frontend/src/screens/job_read.ts:488:static:jobDataNotice", "frontend/src/screens/job_read.ts:504:static:jobTableWrap", "frontend/src/screens/job_read.ts:528:dynamic:jobFav-", "frontend/src/screens/job_read.ts:531:dynamic:jobCand-", "frontend/src/screens/job_read.ts:544:static:jobCandMenuBtn", "frontend/src/screens/job_read.ts:556:static:jobCandNewWork", "frontend/src/screens/job_read.ts:568:static:jobPickInLibrary", "frontend/src/screens/job_read.ts:592:static:jobCandidates", "frontend/src/screens/job_read.ts:599:static:jobBrowseOpen", "frontend/src/screens/job_read.ts:613:dynamic:jobBrowseNeeds-", "frontend/src/screens/job_read.ts:622:dynamic:jobBrowseRow-", "frontend/src/screens/job_read.ts:651:static:jobBrowseTitle", "frontend/src/screens/job_read.ts:652:static:jobBrowseClose", "frontend/src/screens/job_read.ts:654:static:jobBrowseTabs", "frontend/src/screens/job_read.ts:656:dynamic:jobBrowseTab-", "frontend/src/screens/job_read.ts:659:static:jobBrowseQuery", "frontend/src/screens/job_read.ts:663:static:jobBrowseNote", "frontend/src/screens/job_read.ts:664:static:jobBrowseRows"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 481, anchor = "h(\"button\", { className: \"btn sm\", id: \"jobDataExpand\", type: \"button\"," }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_all_element_ids_are_globally_unique"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "dom-js/react-overlay-host"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = [
-  "frontend/src/overlay/host.ts:287:static:confirmModal",
-  "frontend/src/overlay/host.ts:292:static:confirmModalTitle",
-  "frontend/src/overlay/host.ts:293:static:confirmModalBody",
-  "frontend/src/overlay/host.ts:295:static:confirmModalCancel",
-  "frontend/src/overlay/host.ts:296:static:confirmModalOk",
-  "frontend/src/overlay/host.ts:298:static:chooseModal",
-  "frontend/src/overlay/host.ts:303:static:chooseModalTitle",
-  "frontend/src/overlay/host.ts:304:static:chooseModalBody",
-  "frontend/src/overlay/host.ts:306:static:chooseModalCancel",
-  "frontend/src/overlay/host.ts:307:static:chooseModalAlt",
-  "frontend/src/overlay/host.ts:308:static:chooseModalOk",
-  "frontend/src/overlay/host.ts:310:static:promptModal",
-  "frontend/src/overlay/host.ts:315:static:promptModalTitle",
-  "frontend/src/overlay/host.ts:316:static:promptModalBody",
-  "frontend/src/overlay/host.ts:317:static:promptModalInput",
-  "frontend/src/overlay/host.ts:319:static:promptModalError",
-  "frontend/src/overlay/host.ts:323:static:promptModalCancel",
-  "frontend/src/overlay/host.ts:324:static:promptModalOk",
-  "frontend/src/overlay/host.ts:326:static:undoToast",
-  "frontend/src/overlay/host.ts:329:static:undoToastText",
-  "frontend/src/overlay/host.ts:330:static:undoToastBtn",
-  "frontend/src/overlay/host.ts:525:static:reactOverlayHost",
-] }
-evidence = [{ file = "frontend/src/overlay/host.ts", line = 287, anchor = "id: \"confirmModal\"" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:287:static:confirmModal", "frontend/src/overlay/host.ts:292:static:confirmModalTitle", "frontend/src/overlay/host.ts:293:static:confirmModalBody", "frontend/src/overlay/host.ts:295:static:confirmModalCancel", "frontend/src/overlay/host.ts:296:static:confirmModalOk", "frontend/src/overlay/host.ts:298:static:chooseModal", "frontend/src/overlay/host.ts:303:static:chooseModalTitle", "frontend/src/overlay/host.ts:304:static:chooseModalBody", "frontend/src/overlay/host.ts:306:static:chooseModalCancel", "frontend/src/overlay/host.ts:307:static:chooseModalAlt", "frontend/src/overlay/host.ts:308:static:chooseModalOk", "frontend/src/overlay/host.ts:310:static:promptModal", "frontend/src/overlay/host.ts:315:static:promptModalTitle", "frontend/src/overlay/host.ts:316:static:promptModalBody", "frontend/src/overlay/host.ts:317:static:promptModalInput", "frontend/src/overlay/host.ts:319:static:promptModalError", "frontend/src/overlay/host.ts:323:static:promptModalCancel", "frontend/src/overlay/host.ts:324:static:promptModalOk", "frontend/src/overlay/host.ts:326:static:undoToast", "frontend/src/overlay/host.ts:329:static:undoToastText", "frontend/src/overlay/host.ts:330:static:undoToastBtn", "frontend/src/overlay/host.ts:525:static:reactOverlayHost", "frontend/src/screens/host.ts:52:static:reactScreenStage"] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 287, anchor = "key: \"confirmModal\", id: \"confirmModal\", ref: refs.confirm," }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/js/overlay_host.test.js"]
-note = "R3-01에서 정적 overlay 골격이 React createElement 소유로 이동한 22사이트. #491이 TS 사각을 닫아 처음 분모에 편입했다."
-
-# ═══ state_js_module — 모듈 스코프 가변 상태 63(JS 45 + TS 18).
-#     AST 인구조사다. 2칸 들여쓰기 관례로 세면 거짓양성 12·거짓음성 4가 난다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/idempotence-guards"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:53 wired",
-  "frontend/js/screens/editor.js:1359 wired",
-  "frontend/js/screens/editor.js:1360 seated",
-  "frontend/js/screens/job.js:1950 wired",
-  "frontend/js/screens/job.js:1951 seated",
-  "frontend/js/screens/library.js:735 wired",
-  "frontend/js/screens/library.js:736 seated",
-  "frontend/js/screens/workbench.js:416 wired",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 53, anchor = "wired", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1359 wired", "frontend/js/screens/editor.js:1360 seated", "frontend/js/screens/job.js:986 wired", "frontend/js/screens/workbench.js:416 wired"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1359, anchor = "let wired = false;" }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_mutable_module_state_stays_within_budget"]
 p_handoff = "no"
-p_reason = "화면 결합"
-r_exit_evidence = "React 마운트가 멱등을 구조로 해결하므로 이 플래그의 후계는 없다."
-p_input_evidence = "없음 — 제품 계약이 아니라 Vanilla 배선의 재진입 가드다."
-note = "오늘의 우연한 소유권을 목표 권위로 승격하지 않는다 — 멱등 가드는 이관 대상이 아니라 소멸 대상이다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/job/run-result"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:1271 logStarted",
-  "frontend/js/screens/job.js:1394 RESULT",
-  "frontend/js/screens/job.js:32 generating",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1271, anchor = "logStarted", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:24 LAST", "frontend/js/screens/job.js:25 generating", "frontend/js/screens/job.js:26 lastSessionKey", "frontend/js/screens/job.js:576 logStarted", "frontend/js/screens/job.js:696 RESULT"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 24, anchor = "let LAST = null;" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/job/browse-selection"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:1562 switching",
-  "frontend/js/screens/job.js:296 pendingOrder",
-  "frontend/js/screens/job.js:31 LAST",
-  "frontend/js/screens/job.js:33 lastSessionKey",
-  "frontend/js/screens/job.js:41 pendingZoneMutations",
-  "frontend/js/screens/job.js:799 browsePickedName",
-  "frontend/js/screens/job.js:803 browseOpenGen",
-  "frontend/js/screens/job.js:806 browseAfterClose",
-  "frontend/js/screens/job.js:866 rangeApplied",
-  "frontend/js/screens/job.js:867 rangeForceClose",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1562, anchor = "switching", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:100 browseAfterClose", "frontend/src/screens/job_read.ts:101 searchTimer", "frontend/src/screens/job_read.ts:102 columnTimer", "frontend/src/screens/job_read.ts:103 rangeApplied", "frontend/src/screens/job_read.ts:104 rangeForceClose", "frontend/src/screens/job_read.ts:579 cards", "frontend/src/screens/job_read.ts:685 callbacks", "frontend/src/screens/job_read.ts:686 release", "frontend/src/screens/job_read.ts:687 lastFull", "frontend/src/screens/job_read.ts:688 lastProgress", "frontend/src/screens/job_read.ts:87 ui", "frontend/src/screens/job_read.ts:96 zoneTail", "frontend/src/screens/job_read.ts:97 browseTail", "frontend/src/screens/job_read.ts:98 switching", "frontend/src/screens/job_read.ts:99 browseGeneration"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 100, anchor = "let browseAfterClose: (() => void) | null = null;" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/editor"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/editor.js:103 pendingAim",
-  "frontend/js/screens/editor.js:108 libMenuFor",
-  "frontend/js/screens/editor.js:111 folderImportInFlight",
-  "frontend/js/screens/editor.js:116 txtEdit",
-  "frontend/js/screens/editor.js:29 LAST",
-  "frontend/js/screens/editor.js:55 foldOpen",
-  "frontend/js/screens/editor.js:56 tokFoldOpen",
-  "frontend/js/screens/editor.js:88 pendingFieldEdit",
-] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 103, anchor = "pendingAim", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:103 pendingAim", "frontend/js/screens/editor.js:108 libMenuFor", "frontend/js/screens/editor.js:111 folderImportInFlight", "frontend/js/screens/editor.js:116 txtEdit", "frontend/js/screens/editor.js:29 LAST", "frontend/js/screens/editor.js:55 foldOpen", "frontend/js/screens/editor.js:56 tokFoldOpen", "frontend/js/screens/editor.js:88 pendingFieldEdit"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 103, anchor = "let pendingAim = null;" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/library"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/library.js:31 LAST",
-  "frontend/js/screens/library.js:32 menuFor",
-  "frontend/js/screens/library.js:33 searchTimer",
-] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 31, anchor = "LAST", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:59 axisTail", "frontend/src/screens/library.ts:63 menuFor", "frontend/src/screens/library.ts:64 moveState"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 59, anchor = "let axisTail = Promise.resolve();" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/workbench"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:19 LAST"] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 19, anchor = "LAST", occurrence = 1 }]
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 19, anchor = "let LAST = null;" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_web_dom_contract.py::test_render_layer_state_budget_covers_every_screen"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/data-picker"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:50 LAST",
-  "frontend/js/data_picker.js:51 session",
-  "frontend/js/data_picker.js:52 loading",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 50, anchor = "LAST", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:71 state", "frontend/src/screens/data_picker.ts:72 reg", "frontend/src/screens/ports.ts:10 implementation", "frontend/src/screens/ports.ts:11 handedOff", "frontend/src/screens/ports.ts:9 owner"] }
+evidence = [{ file = "frontend/src/screens/data_picker.ts", line = 71, anchor = "let state: PickerState = { session: null, loading: false, status: \"\", level: \"\" };" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
-
-# (구 state/app-shell은 app.js에서 소멸했고, 후계 nav.ts 상태 4는 state/shell-machine이 든다.)
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/theme"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/theme.js:17 ORDER"] }
-evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "ORDER", occurrence = 1 }]
+evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "var ORDER = [\"system\", \"light\", \"dark\"];" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/editor-entry"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/js/editor_entry.js:29 entryFocus"] }
-evidence = [{ file = "frontend/js/editor_entry.js", line = 29, anchor = "entryFocus", occurrence = 1 }]
+evidence = [{ file = "frontend/js/editor_entry.js", line = 29, anchor = "let entryFocus = null;" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/overlay-services"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/js/popover.js:9 suppressNextClick",
-  "frontend/src/overlay/engine.ts:79 pendingDialog",
-  "frontend/src/overlay/engine.ts:80 nextTicket",
-  "frontend/src/overlay/host.ts:363 undoAction",
-  "frontend/src/overlay/host.ts:364 toastTimer",
-  "frontend/src/overlay/instance.ts:107 dialogHost",
-  "frontend/src/overlay/instance.ts:41 keydownDocument",
-] }
-evidence = [{ file = "frontend/js/popover.js", line = 9, anchor = "suppressNextClick", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/popover.js:9 suppressNextClick", "frontend/src/overlay/engine.ts:79 pendingDialog", "frontend/src/overlay/engine.ts:80 nextTicket", "frontend/src/overlay/host.ts:363 undoAction", "frontend/src/overlay/host.ts:364 toastTimer", "frontend/src/overlay/instance.ts:107 dialogHost", "frontend/src/overlay/instance.ts:41 keydownDocument"] }
+evidence = [{ file = "frontend/js/popover.js", line = 9, anchor = "let suppressNextClick = null;  // { target, pointerId } — 현재 primary 제스처 하나만" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
-note = "R3-01 이양분 6과 legacy popover 슬롯 1. #491 감산형 scope에서 엔진·host 상태가 더 이상 사각이 아니다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:147 LibraryScreen",
-  "frontend/src/bootstrap.js:148 EditorScreen",
-  "frontend/src/bootstrap.js:149 JobScreen",
-  "frontend/src/bootstrap.js:150 WorkbenchScreen",
-  "frontend/src/bootstrap.js:151 Nav",
-  "frontend/src/react/boot.ts:32 controller",
-  "frontend/src/react/boot.ts:39 currentStore",
-  "frontend/src/react/boot.ts:40 currentTarget",
-  "frontend/src/react/boot.ts:41 currentOverlay",
-  "frontend/src/react/boot.ts:42 currentShell",
-  "frontend/src/react/root.ts:42 root",
-  "frontend/src/react/root.ts:43 container",
-  "frontend/src/react/root.ts:44 committed",
-] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 147, anchor = "LibraryScreen", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:171 LibraryScreen", "frontend/src/bootstrap.js:172 EditorScreen", "frontend/src/bootstrap.js:173 JobScreen", "frontend/src/bootstrap.js:174 WorkbenchScreen", "frontend/src/bootstrap.js:175 Nav", "frontend/src/bootstrap.js:258 releaseJobRun", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 171, anchor = "let LibraryScreen;" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["none"]
-note = "legacy 구성 산물 5와 R2-01 React boot/root 수명 상태 8. TS 상태도 같은 분모에서 R2-01 소유로 분류한다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/shell-machine"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = [
-  "frontend/src/shell/nav.ts:100 routingReady",
-  "frontend/src/shell/nav.ts:101 closePromptPending",
-  "frontend/src/shell/nav.ts:98 executor",
-  "frontend/src/shell/nav.ts:99 current",
-] }
-evidence = [{ file = "frontend/src/shell/nav.ts", line = 98, anchor = "let executor" }]
+selector = { kind = "exact", members = ["frontend/src/shell/nav.ts:100 routingReady", "frontend/src/shell/nav.ts:101 closePromptPending", "frontend/src/shell/nav.ts:98 executor", "frontend/src/shell/nav.ts:99 current"] }
+evidence = [{ file = "frontend/src/shell/nav.ts", line = 100, anchor = "let routingReady = false;" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/js/shell_nav.test.js"]
-note = "app.js에서 이양된 셸 상태기계의 네 폐쇄 변수. #491 전에는 .ts 사각이었다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/push-port"
 kind = "state"
 axis = "state_js_module"
 selector = { kind = "exact", members = ["frontend/src/push_port.js:48 override"] }
-evidence = [{ file = "frontend/src/push_port.js", line = 48, anchor = "override", occurrence = 3 }]
+evidence = [{ file = "frontend/src/push_port.js", line = 48, anchor = "let override = null;" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
-verification = ["none"]
-
-# ═══ state_snapshot_channel — 스냅샷 채널 6. 값(119 액션 키)이 아니라 **채널**이
-#     노드다: 키는 제품 변경마다 움직이지만 채널은 구조가 움직일 때만 바뀐다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/snapshot/product-channels"
 kind = "state"
 axis = "state_snapshot_channel"
-selector = { kind = "exact", members = [
-  "editor",
-  "job",
-  "library",
-  "pool",
-  "workbench",
-] }
-evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 135, anchor = "\"job\": {" }]
+selector = { kind = "exact", members = ["editor", "job", "library", "pool", "workbench"] }
+evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 93, anchor = "\"editor\": {" }]
 classification = "python_product"
-verification = ["tests/test_dispatch_wiring.py::test_registry_has_exactly_the_runtime_controller_surface"]
 p_handoff = "no"
-p_reason = "제품 계약 결합"
-r_exit_evidence = "React 는 이 채널의 소비자만 바꾼다 — 판정·문안은 링1·링2 Python 이 계속 소유한다."
-p_input_evidence = "없음 — P-00 인계 대상이 아니다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/snapshot/tpl-channel"
@@ -1792,777 +1538,567 @@ axis = "state_snapshot_channel"
 selector = { kind = "exact", members = ["tpl"] }
 evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 231, anchor = "\"tpl\": {" }]
 classification = "p_review_required"
-verification = ["tests/test_dispatch_wiring.py::test_registry_has_exactly_the_runtime_controller_surface"]
-note = "상단 탭은 job·library 2탭이고 tpl 은 과도기 잔존이다 — 이관인지 소멸인지는 기계가 못 본다."
-[node.p_review]
-producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\""
-consumer = "frontend/js/screens/editor.js — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비"
-call_path = "editor.js → bridge.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)"
-contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」"
-test = "tests/test_dispatch_wiring.py"
-
-# ═══ state_ring1 — 링1 ViewModel 11 모듈. Qt-free·DOM-free 라 React 이관이
-#     건드리지 않는다. 이 축을 원장에 두는 이유는 「안 옮긴다」도 판정이기 때문이다.
+p_review = { producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\"", consumer = "frontend/js/screens/editor.js — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비", call_path = "editor.js → bridge.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)", contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」", test = "tests/test_dispatch_wiring.py" }
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/ring1/product-viewmodels"
 kind = "state"
 axis = "state_ring1"
-selector = { kind = "exact", members = [
-  "src/hwpxfiller/gui/dataset_pool_state.py",
-  "src/hwpxfiller/gui/filter_state.py",
-  "src/hwpxfiller/gui/home_state.py",
-  "src/hwpxfiller/gui/job_editor_state.py",
-  "src/hwpxfiller/gui/mapping_state.py",
-  "src/hwpxfiller/gui/review_state.py",
-  "src/hwpxfiller/gui/run_state.py",
-  "src/hwpxfiller/gui/selection_state.py",
-  "src/hwpxfiller/gui/template_manager_state.py",
-] }
-evidence = [{ file = "src/hwpxfiller/gui/dataset_pool_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+selector = { kind = "exact", members = ["src/hwpxfiller/gui/dataset_pool_state.py", "src/hwpxfiller/gui/filter_state.py", "src/hwpxfiller/gui/home_state.py", "src/hwpxfiller/gui/job_editor_state.py", "src/hwpxfiller/gui/mapping_state.py", "src/hwpxfiller/gui/review_state.py", "src/hwpxfiller/gui/run_state.py", "src/hwpxfiller/gui/selection_state.py", "src/hwpxfiller/gui/template_manager_state.py"] }
+evidence = [{ file = "src/hwpxfiller/gui/dataset_pool_state.py", line = 1, anchor = "\"\"\"데이터셋 풀 워크숍 ViewModel — Qt 비의존(링1). durable 데이터 참조 관리면." }]
 classification = "python_product"
-verification = ["tests/test_architecture.py::test_src_has_no_pyside6_runtime_imports"]
 p_handoff = "no"
-p_reason = "제품 계약 결합"
-r_exit_evidence = "링1 은 UI 런타임을 모른다 — 렌더러 교체의 write set 밖이다."
-p_input_evidence = "없음."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/ring1/nara"
 kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/nara_state.py"] }
-evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"나라장터 취득 ViewModel — Qt 비의존(링1). 키 등록/취득 결정의 단일 진실원." }]
 classification = "p_review_required"
-verification = ["tests/test_nara_state.py"]
-note = "나라장터 소스는 동결이다 — 어댑터·CLI 접합부만 유지하고 웹 표면에 노출하지 않는다."
-[node.p_review]
-producer = "src/hwpxfiller/gui/nara_state.py (NaraAcquireViewModel)"
-consumer = "링1 내부 2(dataset_pool_state.py:27 · run_state.py:194). 링2 소비자 0."
-call_path = "CLI --source nara 어댑터 접합부. 웹 dispatch 경로 없음."
-contract = "CLAUDE.md 「나라장터 소스는 동결」 · docs/README.md 동결 결정"
-test = "tests/test_nara_state.py"
+p_review = { producer = "src/hwpxfiller/gui/nara_state.py (NaraAcquireViewModel)", consumer = "링1 내부 2(dataset_pool_state.py:27 · run_state.py:194). 링2 소비자 0.", call_path = "CLI --source nara 어댑터 접합부. 웹 dispatch 경로 없음.", contract = "CLAUDE.md 「나라장터 소스는 동결」 · docs/README.md 동결 결정", test = "tests/test_nara_state.py" }
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "state/ring1/pipeline-builder"
 kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/pipeline_builder_state.py"] }
-evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"", occurrence = 1 }]
+evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"파이프라인 빌더 ViewModel — Qt 비의존(링1). 조립 파이프라인 저작·미리보기면." }]
 classification = "p_review_required"
-verification = ["tests/test_pipeline_builder_state.py"]
-note = "소비자 0의 파킹 모듈이다. retire 로 단정하지 않는다 — 처분은 사람 판정이다."
-[node.p_review]
-producer = "src/hwpxfiller/gui/pipeline_builder_state.py (PipelineBuilderViewModel)"
-consumer = "unknown — 제품 소비자 0. 참조는 테스트 2건뿐이다."
-call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다."
-contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외"
-test = "tests/test_pipeline_builder_state.py"
-
-# ═══ subscription_listener — 부착 사이트 108. R3 host attach 9와 R2 runtime 1까지
-#     감산형 제품 코드 분모에 든다. 완료 host의 대칭은 0-잔차 계측이 별도로 지킨다.
+p_review = { producer = "src/hwpxfiller/gui/pipeline_builder_state.py (PipelineBuilderViewModel)", consumer = "unknown — 제품 소비자 0. 참조는 테스트 2건뿐이다.", call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다.", contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외", test = "tests/test_pipeline_builder_state.py" }
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/src/bootstrap.js:319",
-] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 319, anchor = "addEventListener" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:405"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 405, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/js/n05_foundation.test.js"]
-note = "구 모듈-평가 부착의 후계인 bootProduct 명세 루프 1사이트. TS 집행 사이트는 아래 R2/R3 노드가 별도로 소유한다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/r2-runtime-adapter"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = ["frontend/src/runtime/adapter.ts:94"] }
-evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "addEventListener(\"pywebviewready\"" }]
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "win.addEventListener(\"pywebviewready\", () => { resolve(); }, { once: true });" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
-verification = ["tests/js/runtime_client.test.js"]
-note = "once:true 자동 해제 리스너. lifecycle_hook과의 의도된 교차 계상은 머리말 데이터가 든다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/react-overlay-host"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/src/overlay/host.ts:122",
-  "frontend/src/overlay/host.ts:244",
-  "frontend/src/overlay/host.ts:245",
-  "frontend/src/overlay/host.ts:246",
-  "frontend/src/overlay/host.ts:247",
-  "frontend/src/overlay/host.ts:385",
-  "frontend/src/overlay/instance.ts:66",
-] }
-evidence = [{ file = "frontend/src/overlay/host.ts", line = 122, anchor = "addEventListener(\"transitionend\"" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:122", "frontend/src/overlay/host.ts:244", "frontend/src/overlay/host.ts:245", "frontend/src/overlay/host.ts:246", "frontend/src/overlay/host.ts:247", "frontend/src/overlay/host.ts:385", "frontend/src/overlay/instance.ts:66"] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 122, anchor = "card.addEventListener(\"transitionend\", machinery.onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/js/overlay_host.test.js", "tests/js/overlay_engine.test.js"]
-note = "R3 overlay 엔진 배선·promise 버튼·토스트의 attach 7. react-listener-cleanup-gaps가 대응 release를 별도로 0 잔차로 센다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/react-shell-host"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/src/shell/host.ts:68",
-  "frontend/src/shell/host.ts:77",
-] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 68, anchor = "addEventListener(attachment.type" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:68", "frontend/src/shell/host.ts:77"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 68, anchor = "attachment.target.addEventListener(attachment.type, attachment.handler);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
-note = "서술 attachments 루프와 pywebviewready 부착. 반환 cleanup의 두 release와 다중집합으로 대칭이다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/job-run"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:1790",
-  "frontend/js/screens/job.js:1791",
-  "frontend/js/screens/job.js:1792",
-  "frontend/js/screens/job.js:1794",
-  "frontend/js/screens/job.js:1796",
-  "frontend/js/screens/job.js:1803",
-  "frontend/js/screens/job.js:1813",
-  "frontend/js/screens/job.js:1825",
-  "frontend/js/screens/job.js:1833",
-  "frontend/js/screens/job.js:1850",
-  "frontend/js/screens/job.js:1854",
-  "frontend/js/screens/job.js:1856",
-  "frontend/js/screens/job.js:1860",
-  "frontend/js/screens/job.js:1874",
-  "frontend/js/screens/job.js:1883",
-  "frontend/js/screens/job.js:1895",
-  "frontend/js/screens/job.js:1904",
-  "frontend/js/screens/job.js:1938",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1790, anchor = "addEventListener", occurrence = 12 }]
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:879", "frontend/js/screens/job.js:880", "frontend/js/screens/job.js:881", "frontend/js/screens/job.js:883", "frontend/js/screens/job.js:885", "frontend/js/screens/job.js:889", "frontend/js/screens/job.js:897", "frontend/js/screens/job.js:909", "frontend/js/screens/job.js:915", "frontend/js/screens/job.js:920", "frontend/js/screens/job.js:921", "frontend/js/screens/job.js:922", "frontend/js/screens/job.js:925", "frontend/js/screens/job.js:934", "frontend/js/screens/job.js:941", "frontend/js/screens/job.js:946", "frontend/js/screens/job.js:953", "frontend/js/screens/job.js:972"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 879, anchor = "$(\"jobPreviewOpen\").addEventListener(\"click\", openPreview);" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/job-browse"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/job.js:1666",
-  "frontend/js/screens/job.js:1697",
-  "frontend/js/screens/job.js:1707",
-  "frontend/js/screens/job.js:1708",
-  "frontend/js/screens/job.js:1719",
-  "frontend/js/screens/job.js:1733",
-  "frontend/js/screens/job.js:1778",
-  "frontend/js/screens/job.js:1779",
-  "frontend/js/screens/job.js:1780",
-  "frontend/js/screens/job.js:1783",
-  "frontend/js/screens/job.js:1784",
-  "frontend/js/screens/job.js:1838",
-  "frontend/js/screens/job.js:1842",
-  "frontend/js/screens/job.js:1845",
-  "frontend/js/screens/job.js:1930",
-] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1666, anchor = "addEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:673"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 673, anchor = "props.closeButton.addEventListener(\"click\", close);" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/editor"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/editor.js:1343",
-  "frontend/js/screens/editor.js:1372",
-  "frontend/js/screens/editor.js:1373",
-  "frontend/js/screens/editor.js:1374",
-  "frontend/js/screens/editor.js:1375",
-  "frontend/js/screens/editor.js:1379",
-  "frontend/js/screens/editor.js:1383",
-  "frontend/js/screens/editor.js:1384",
-] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1343, anchor = "addEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1343", "frontend/js/screens/editor.js:1372", "frontend/js/screens/editor.js:1373", "frontend/js/screens/editor.js:1374", "frontend/js/screens/editor.js:1375", "frontend/js/screens/editor.js:1379", "frontend/js/screens/editor.js:1383", "frontend/js/screens/editor.js:1384"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1343, anchor = "el.addEventListener(\"input\", () => el.removeAttribute(\"aria-invalid\"), { once: true });" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/library"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/library.js:704",
-  "frontend/js/screens/library.js:705",
-  "frontend/js/screens/library.js:706",
-  "frontend/js/screens/library.js:707",
-  "frontend/js/screens/library.js:708",
-  "frontend/js/screens/library.js:709",
-  "frontend/js/screens/library.js:710",
-  "frontend/js/screens/library.js:711",
-  "frontend/js/screens/library.js:712",
-  "frontend/js/screens/library.js:720",
-] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 704, anchor = "addEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:565"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 565, anchor = "menu.addEventListener(\"click\", onClick);" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/workbench"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/workbench.js:342",
-  "frontend/js/screens/workbench.js:343",
-  "frontend/js/screens/workbench.js:345",
-  "frontend/js/screens/workbench.js:347",
-  "frontend/js/screens/workbench.js:348",
-  "frontend/js/screens/workbench.js:349",
-  "frontend/js/screens/workbench.js:352",
-  "frontend/js/screens/workbench.js:356",
-  "frontend/js/screens/workbench.js:359",
-  "frontend/js/screens/workbench.js:364",
-  "frontend/js/screens/workbench.js:369",
-  "frontend/js/screens/workbench.js:388",
-  "frontend/js/screens/workbench.js:404",
-] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 342, anchor = "addEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:342", "frontend/js/screens/workbench.js:343", "frontend/js/screens/workbench.js:345", "frontend/js/screens/workbench.js:347", "frontend/js/screens/workbench.js:348", "frontend/js/screens/workbench.js:349", "frontend/js/screens/workbench.js:352", "frontend/js/screens/workbench.js:356", "frontend/js/screens/workbench.js:359", "frontend/js/screens/workbench.js:364", "frontend/js/screens/workbench.js:369", "frontend/js/screens/workbench.js:388", "frontend/js/screens/workbench.js:404"] }
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 342, anchor = "$(\"wbBack\").addEventListener(\"click\", () => leaveTo(\"job\"));" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/data-picker"
-kind = "subscription"
-axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:435",
-  "frontend/js/data_picker.js:458",
-  "frontend/js/data_picker.js:462",
-  "frontend/js/data_picker.js:466",
-  "frontend/js/data_picker.js:467",
-  "frontend/js/data_picker.js:468",
-  "frontend/js/data_picker.js:472",
-  "frontend/js/data_picker.js:473",
-  "frontend/js/data_picker.js:474",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 435, anchor = "addEventListener", occurrence = 1 }]
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:403", "frontend/src/screens/data_picker.ts:61"] }
+evidence = [{ file = "frontend/src/screens/data_picker.ts", line = 403, anchor = "export function PoolRegistrationDialog(props: { controller: DataPickerController }): ReactNode {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/datazone"
-kind = "subscription"
-axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/datazone.js:560",
-  "frontend/js/datazone.js:561",
-  "frontend/js/datazone.js:562",
-  "frontend/js/datazone.js:563",
-  "frontend/js/datazone.js:569",
-  "frontend/js/datazone.js:579",
-  "frontend/js/datazone.js:584",
-  "frontend/js/datazone.js:591",
-  "frontend/js/datazone.js:592",
-  "frontend/js/datazone.js:593",
-  "frontend/js/datazone.js:594",
-  "frontend/js/datazone.js:602",
-] }
-evidence = [{ file = "frontend/js/datazone.js", line = 560, anchor = "addEventListener", occurrence = 1 }]
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:492", "frontend/src/screens/job_read.ts:510", "frontend/src/screens/job_read.ts:562", "frontend/src/screens/job_read.ts:572", "frontend/src/screens/job_read.ts:631"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 492, anchor = "export function JobDataHeaderPortal(props: {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/sheet-picker"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/sheet_picker.js:51",
-  "frontend/js/sheet_picker.js:62",
-] }
-evidence = [{ file = "frontend/js/sheet_picker.js", line = 51, anchor = "addEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/sheet_picker.js:51", "frontend/js/sheet_picker.js:62"] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 51, anchor = "list.addEventListener(\"click\", onPick);" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["none"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/app-shell"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/app.js:187",
-  "frontend/js/app.js:204",
-  "frontend/js/app.js:205",
-  "frontend/js/app.js:206",
-  "frontend/js/app.js:208",
-] }
+selector = { kind = "exact", members = ["frontend/js/app.js:187", "frontend/js/app.js:204", "frontend/js/app.js:205", "frontend/js/app.js:206", "frontend/js/app.js:208"] }
 evidence = [{ file = "frontend/js/app.js", line = 187, anchor = "addEventListener", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["none"]
-note = "app.js에 남는 것은 스플리터 제스처 5. 셸 attachments와 pywebviewready 집행은 subscription/listener/react-shell-host가 별도로 든다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/modal"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/modal.js:100",
-] }
-evidence = [{ file = "frontend/js/modal.js", line = 100, anchor = "addEventListener" }]
+selector = { kind = "exact", members = ["frontend/js/modal.js:100"] }
+evidence = [{ file = "frontend/js/modal.js", line = 100, anchor = "if (card) card.addEventListener(\"transitionend\", onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
-note = "R3-01 재고정: 문서 keydown 부착(구 :102)은 엔진 배선(instance.ts), promise 다이얼로그 버튼 4(구 :289-292)는 host 컨트롤러(host.ts)로 이양 — 남는 것은 legacy 집행자의 transitionend 1."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/grouplist"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = [
-  "frontend/js/grouplist.js:131",
-  "frontend/js/grouplist.js:132",
-  "frontend/js/grouplist.js:98",
-] }
-evidence = [{ file = "frontend/js/grouplist.js", line = 131, anchor = "addEventListener", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/js/grouplist.js:132", "frontend/js/grouplist.js:98"] }
+evidence = [{ file = "frontend/js/grouplist.js", line = 132, anchor = "$(cancelId).addEventListener(\"click\", () => Modal.close(cfg.modalId));" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/listener/pathtrack"
 kind = "subscription"
 axis = "subscription_listener"
 selector = { kind = "exact", members = ["frontend/js/pathtrack.js:69"] }
-evidence = [{ file = "frontend/js/pathtrack.js", line = 69, anchor = "addEventListener" }]
+evidence = [{ file = "frontend/js/pathtrack.js", line = 69, anchor = "document.addEventListener(\"click\", onClick);  // 위임 1회 부착(화면 재렌더 무관)" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
-
-# (R3-01 #410 재고정 — `subscription/listener/undo-toast` 노드는 토스트 DOM·버튼 배선이
-#  host 컨트롤러(src/overlay/host.ts)로 이양되며 소멸했다. 검증은 n05_foundation 의 토스트
-#  삼형제 + overlay_host.test.js 가 승계한다.)
-
-# ═══ subscription_release — 해제 사이트 16. R3 host release 9가 TS 사각에서 편입됐다.
-#     전체 attach와의 차이는 legacy 영구 부착 + R2 runtime once:true이다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/app-splitter"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = [
-  "frontend/js/app.js:196",
-  "frontend/js/app.js:197",
-  "frontend/js/app.js:198",
-] }
-evidence = [{ file = "frontend/js/app.js", line = 196, anchor = "removeEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/js/app.js:196", "frontend/js/app.js:197", "frontend/js/app.js:198"] }
+evidence = [{ file = "frontend/js/app.js", line = 196, anchor = "splitter.removeEventListener(\"pointermove\", move);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/modal"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = [
-  "frontend/js/modal.js:106",
-] }
-evidence = [{ file = "frontend/js/modal.js", line = 106, anchor = "removeEventListener" }]
+selector = { kind = "exact", members = ["frontend/js/modal.js:106"] }
+evidence = [{ file = "frontend/js/modal.js", line = 106, anchor = "if (card && onTransitionEnd) card.removeEventListener(\"transitionend\", onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["none"]
-note = "R3-01 재고정: keydown 해제(구 :115)는 엔진 배선, 다이얼로그 cleanup 4(구 :241-244)는 host 컨트롤러로 이양 — 남는 것은 legacy 집행자의 transitionend 해제 1."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/data-picker"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:204",
-  "frontend/js/data_picker.js:440",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 204, anchor = "removeEventListener", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:674", "frontend/src/screens/library.ts:566"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 674, anchor = "return () => props.closeButton.removeEventListener(\"click\", close);" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/sheet-picker"
 kind = "subscription"
 axis = "subscription_release"
 selector = { kind = "exact", members = ["frontend/js/sheet_picker.js:33"] }
-evidence = [{ file = "frontend/js/sheet_picker.js", line = 33, anchor = "removeEventListener" }]
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 33, anchor = "list.removeEventListener(\"click\", onPick);" }]
 classification = "react"
-handoff_slice = "R4-01 #414"
-verification = ["none"]
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/react-overlay-host"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = [
-  "frontend/src/overlay/host.ts:132",
-  "frontend/src/overlay/host.ts:191",
-  "frontend/src/overlay/host.ts:192",
-  "frontend/src/overlay/host.ts:193",
-  "frontend/src/overlay/host.ts:194",
-  "frontend/src/overlay/host.ts:483",
-  "frontend/src/overlay/instance.ts:68",
-] }
-evidence = [{ file = "frontend/src/overlay/host.ts", line = 132, anchor = "removeEventListener(\"transitionend\"" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:132", "frontend/src/overlay/host.ts:191", "frontend/src/overlay/host.ts:192", "frontend/src/overlay/host.ts:193", "frontend/src/overlay/host.ts:194", "frontend/src/overlay/host.ts:483", "frontend/src/overlay/instance.ts:68"] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 132, anchor = "card.removeEventListener(\"transitionend\", machinery.onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/js/overlay_host.test.js", "tests/js/overlay_engine.test.js"]
-note = "overlay attach 7의 대칭 release 7."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/release/react-shell-host"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = [
-  "frontend/src/shell/host.ts:80",
-  "frontend/src/shell/host.ts:82",
-] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 80, anchor = "removeEventListener(\"pywebviewready\"" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:80", "frontend/src/shell/host.ts:82"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 80, anchor = "ports.boot.win.removeEventListener(\"pywebviewready\", onHostReady);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
-note = "ShellHost 반환 cleanup의 두 release."
-
-# ═══ subscription_push — 푸시 구독 6. bridge 에 해제 API 가 없다(offPush·
-#     unsubscribe 각 0건) — 구독은 화면 수명과 같다는 오늘의 전제가 여기 산다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/editor-tpl"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1368"] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1368, anchor = "onPush", occurrence = 2 }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1368, anchor = "Bridge.onPush(\"tpl\", () => { Bridge.initial(SCREEN).then(render); });" }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
-verification = ["none"]
 p_handoff = "no"
-p_reason = "중복 권위"
-r_exit_evidence = "tpl 화면 흡수 뒤 남은 병존기 이중 구독이다 — 후계 구독이 아니라 제거 대상."
-p_input_evidence = "없음."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/editor"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1363"] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1363, anchor = "onPush", occurrence = 1 }]
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1363, anchor = "Bridge.onPush(SCREEN, render);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/job"
-kind = "subscription"
-axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:1954"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 1954, anchor = "onPush", occurrence = 2 }]
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:670", "frontend/src/screens/job_read.ts:680", "frontend/src/screens/job_read.ts:85"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 670, anchor = "export function JobReadEffects(props: { controller: JobReadController; closeButton: HTMLElement }): null {" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/library"
-kind = "subscription"
-axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/js/screens/library.js:739"] }
-evidence = [{ file = "frontend/js/screens/library.js", line = 739, anchor = "onPush", occurrence = 2 }]
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/screens/library.ts:57", "frontend/src/screens/library.ts:591", "frontend/src/screens/path_actions.ts:35"] }
+evidence = [{ file = "frontend/src/screens/library.ts", line = 57, anchor = "export function createLibraryController(deps: LibraryControllerDeps) {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/workbench"
 kind = "subscription"
 axis = "subscription_push"
 selector = { kind = "exact", members = ["frontend/js/screens/workbench.js:420"] }
-evidence = [{ file = "frontend/js/screens/workbench.js", line = 420, anchor = "onPush" }]
+evidence = [{ file = "frontend/js/screens/workbench.js", line = 420, anchor = "Bridge.onPush(SCREEN, render);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["none"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "subscription/push/data-picker"
-kind = "subscription"
-axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/js/data_picker.js:488"] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 488, anchor = "onPush", occurrence = 2 }]
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/src/screens/host.ts:11", "frontend/src/screens/host.ts:24", "frontend/src/screens/host.ts:45", "frontend/src/screens/runtime.ts:18"] }
+evidence = [{ file = "frontend/src/screens/host.ts", line = 11, anchor = "export function screenPortal<P extends object>(" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["none"]
-
-# ═══ lifecycle_factory — 최상위 export function 34(JS 18 + TS 16). 구성 1회 팩토리와
-#     component·attach·bind/query API를 false_positive 데이터로 구분한다.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:115"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 115, anchor = "export function bootProduct" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:126"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 126, anchor = "export function bootProduct() {" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["tests/test_frontend_build_graph.py::test_entry_calls_the_composition_root_exactly_once"]
-note = "합성 루트 **자신**이라 「구성 1회 팩토리」가 아니다. 14-팩토리 단언의 대상도 아니고, 이름을 부르는 맞는 게이트가 따로 있다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r2-01-react"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/src/react/boot.ts:46",
-  "frontend/src/react/boundary.ts:95",
-  "frontend/src/react/root.ts:41",
-] }
-evidence = [{ file = "frontend/src/react/root.ts", line = 41, anchor = "export function createReactRootController" }]
+selector = { kind = "exact", members = ["frontend/src/react/boot.ts:49", "frontend/src/react/boundary.ts:96", "frontend/src/react/root.ts:41"] }
+evidence = [{ file = "frontend/src/react/boot.ts", line = 49, anchor = "export function bootReactRoot(host: BootHost): boolean {" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
-verification = ["tests/js/react_root.test.js", "tests/test_react_root_live.py"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r2-02-runtime"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/src/runtime/adapter.ts:77",
-  "frontend/src/runtime/client.ts:54",
-] }
-evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 77, anchor = "export function createRuntimeAdapter" }]
+selector = { kind = "exact", members = ["frontend/src/runtime/adapter.ts:77", "frontend/src/runtime/client.ts:54"] }
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 77, anchor = "export function createRuntimeAdapter({ win }: { win: HostWindow }) {" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
-verification = ["tests/js/runtime_client.test.js"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r2-03-state"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/src/react/use_screen_snapshot.ts:26",
-  "frontend/src/react/use_screen_snapshot.ts:37",
-  "frontend/src/state/store.ts:69",
-] }
-evidence = [{ file = "frontend/src/state/store.ts", line = 69, anchor = "export function createSnapshotStore" }]
+selector = { kind = "exact", members = ["frontend/src/react/use_screen_snapshot.ts:26", "frontend/src/react/use_screen_snapshot.ts:37", "frontend/src/state/store.ts:69"] }
+evidence = [{ file = "frontend/src/react/use_screen_snapshot.ts", line = 26, anchor = "export function bindScreenSnapshot(store: SnapshotStore, screen: ScreenName): {" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
-verification = ["tests/js/state_store.test.js"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r3-01-overlay"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/src/overlay/engine.ts:77",
-  "frontend/src/overlay/host.ts:353",
-  "frontend/src/overlay/host.ts:491",
-  "frontend/src/overlay/instance.ts:110",
-  "frontend/src/overlay/instance.ts:121",
-] }
-evidence = [{ file = "frontend/src/overlay/engine.ts", line = 77, anchor = "export function createOverlayEngine" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/engine.ts:77", "frontend/src/overlay/host.ts:353", "frontend/src/overlay/host.ts:491", "frontend/src/overlay/instance.ts:110", "frontend/src/overlay/instance.ts:121"] }
+evidence = [{ file = "frontend/src/overlay/engine.ts", line = 77, anchor = "export function createOverlayEngine() {" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/js/overlay_engine.test.js", "tests/js/overlay_host.test.js"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r3-02-shell"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/src/shell/host.ts:66",
-  "frontend/src/shell/host.ts:89",
-  "frontend/src/shell/nav.ts:97",
-] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 66, anchor = "export function attachShell" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:66", "frontend/src/shell/host.ts:89", "frontend/src/shell/nav.ts:97"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 66, anchor = "export function attachShell(ports: ShellHostPorts): () => void {" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/js/n06_app_shell.test.js", "tests/js/shell_nav.test.js"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/bridge"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/js/bridge.js:40"] }
-evidence = [{ file = "frontend/js/bridge.js", line = 40, anchor = "export function createBridge" }]
+evidence = [{ file = "frontend/js/bridge.js", line = 40, anchor = "export function createBridge() {" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/product-api"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/src/product_api.js:155"] }
-evidence = [{ file = "frontend/src/product_api.js", line = 155, anchor = "export function createProductApi" }]
+evidence = [{ file = "frontend/src/product_api.js", line = 155, anchor = "export function createProductApi(ports) {" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
-verification = ["none"]
-note = "14-팩토리 단언은 `frontend/js` 의 create* 만 센다 — 이 구성 지점은 오늘 무검증이다. `verification` 을 넘겨 주장하지 않는다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/push-port"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/src/push_port.js:43"] }
-evidence = [{ file = "frontend/src/push_port.js", line = 43, anchor = "export function createPushPort" }]
+evidence = [{ file = "frontend/src/push_port.js", line = 43, anchor = "export function createPushPort(basePush) {" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
-verification = ["none"]
-note = "위와 같다 — `frontend/src` 의 구성 지점 둘은 14-팩토리 단언 밖이다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/leaf-escaper"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/js/esc.js:10"] }
-evidence = [{ file = "frontend/js/esc.js", line = 10, anchor = "export function escHtml" }]
+evidence = [{ file = "frontend/js/esc.js", line = 10, anchor = "export function escHtml(s) {" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_frontend_build_graph.py::test_converted_modules_are_esm_and_own_no_globals"]
-note = "팩토리가 아니라 **렌더마다 불리는 순수 이스케이퍼**다. 저장소의 EXPECTED_ESM_EXPORTS 가 이미 「N-04 잎」으로 따로 가른 이름이고, 축의 false_positive 가 그것을 든다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r3-01"
 kind = "lifecycle"
 axis = "lifecycle_factory"
 selector = { kind = "exact", members = ["frontend/js/pathtrack.js:8"] }
-evidence = [{ file = "frontend/js/pathtrack.js", line = 8, anchor = "export function createPathTrack" }]
+evidence = [{ file = "frontend/js/pathtrack.js", line = 8, anchor = "export function createPathTrack({ bridge }) {" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r3-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/js/app.js:23",
-  "frontend/js/personalization.js:5",
-  "frontend/js/theme.js:16",
-] }
-evidence = [{ file = "frontend/js/app.js", line = 23, anchor = "export function createAppShell" }]
+selector = { kind = "exact", members = ["frontend/js/app.js:23", "frontend/js/personalization.js:5", "frontend/js/theme.js:16"] }
+evidence = [{ file = "frontend/js/app.js", line = 23, anchor = "export function createAppShell({ Bridge, Theme, Personalization, DataPicker, screens, shellNav }) {" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r4-01"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:46",
-  "frontend/js/datazone.js:41",
-  "frontend/js/relink.js:8",
-  "frontend/js/screens/library.js:24",
-  "frontend/js/sheet_picker.js:14",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 46, anchor = "export function createDataPicker" }]
+selector = { kind = "exact", members = ["frontend/src/ports/service_handoff.ts:18", "frontend/src/screens/data_picker.ts:360", "frontend/src/screens/data_zone.ts:123", "frontend/src/screens/job_read.ts:475", "frontend/src/screens/library.ts:555", "frontend/src/screens/ports.ts:8", "frontend/src/screens/ports.ts:86", "frontend/src/screens/runtime.ts:39"] }
+evidence = [{ file = "frontend/src/ports/service_handoff.ts", line = 18, anchor = "export function createServiceHandoffPorts() {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r4-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = [
-  "frontend/js/editor_entry.js:16",
-  "frontend/js/screens/editor.js:17",
-  "frontend/js/screens/workbench.js:15",
-] }
-evidence = [{ file = "frontend/js/editor_entry.js", line = 16, anchor = "export function createEditorEntry" }]
+selector = { kind = "exact", members = ["frontend/js/editor_entry.js:16", "frontend/js/screens/editor.js:17", "frontend/js/screens/workbench.js:15"] }
+evidence = [{ file = "frontend/js/editor_entry.js", line = 16, anchor = "export function createEditorEntry({ bridge, navigate }) {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r4-03"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:26"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 26, anchor = "export function createJobScreen" }]
+selector = { kind = "exact", members = ["frontend/js/screens/job.js:19"] }
+evidence = [{ file = "frontend/js/screens/job.js", line = 19, anchor = "export function createJobScreen({" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_frontend_build_graph.py::test_each_service_is_constructed_exactly_once_in_the_composition_root"]
-
-# ═══ lifecycle_hook — 이관에서 useEffect·route guard 로 재설계될 훅 10.
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/preserve-around"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = [
-  "frontend/js/data_picker.js:189",
-  "frontend/js/screens/editor.js:130",
-  "frontend/js/screens/job.js:90",
-  "frontend/js/screens/library.js:47",
-  "frontend/js/screens/workbench.js:200",
-] }
-evidence = [{ file = "frontend/js/data_picker.js", line = 189, anchor = "Preserve.around", occurrence = 2 }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:130", "frontend/js/screens/job.js:36", "frontend/js/screens/workbench.js:200"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 130, anchor = "Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)" }]
 classification = "retire"
 handoff_slice = "R5-01 #419"
-verification = ["tests/test_web_dom_contract.py::test_preserve_helper_loaded_and_wraps_screen_renders"]
 p_handoff = "no"
-p_reason = "화면 결합"
-r_exit_evidence = "React 조정이 전면 재구성을 대체하면 포커스·캐럿·스크롤 보존 래퍼의 존재 이유가 사라진다."
-p_input_evidence = "없음."
-note = "게이트 상수 PRESERVE_WRAPPED_FILES 는 3만 본다(실호출 5) — review_item 참조."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/app-routing"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = [
-  "frontend/js/app.js:65",
-] }
-evidence = [{ file = "frontend/js/app.js", line = 65, anchor = "owner.leaveTo" }]
+selector = { kind = "exact", members = ["frontend/js/app.js:65"] }
+evidence = [{ file = "frontend/js/app.js", line = 65, anchor = "if (owner && owner.leaveTo) { owner.leaveTo(to); return true; }" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
-note = "이 행은 이탈 가드 위임 집행 1을 든다. ShellHost ready 훅은 lifecycle/shell-ready가 같은 감산형 분모에서 별도로 든다."
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/runtime-ready"
 kind = "lifecycle"
 axis = "lifecycle_hook"
 selector = { kind = "exact", members = ["frontend/src/runtime/adapter.ts:94"] }
-evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "addEventListener(\"pywebviewready\"" }]
+evidence = [{ file = "frontend/src/runtime/adapter.ts", line = 94, anchor = "win.addEventListener(\"pywebviewready\", () => { resolve(); }, { once: true });" }]
 classification = "react"
 handoff_slice = "R2-02 #406"
-verification = ["tests/js/runtime_client.test.js"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/shell-ready"
 kind = "lifecycle"
 axis = "lifecycle_hook"
 selector = { kind = "exact", members = ["frontend/src/shell/host.ts:77"] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 77, anchor = "addEventListener(\"pywebviewready\"" }]
+evidence = [{ file = "frontend/src/shell/host.ts", line = 77, anchor = "ports.boot.win.addEventListener(\"pywebviewready\", onHostReady);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
-verification = ["tests/js/n06_app_shell.test.js", "tests/test_react_shell_live.py"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/screen-leave-guard"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = [
-  "frontend/js/screens/editor.js:1457",
-  "frontend/js/screens/workbench.js:303",
-] }
-evidence = [{ file = "frontend/js/screens/editor.js", line = 1457, anchor = "leaveTo", occurrence = 3 }]
+selector = { kind = "exact", members = ["frontend/js/screens/editor.js:1457", "frontend/js/screens/workbench.js:303"] }
+evidence = [{ file = "frontend/js/screens/editor.js", line = 1457, anchor = "async function leaveTo(target) {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-note = "이탈 가드의 **본체**는 화면 소유이고, 위임 목록(IMMERSIVE)과 호출은 셸 소유다(lifecycle/app-routing 행). SCREEN-SPLIT-ROADMAP:v1 이 editor.js 의 「저장·취소·이탈」을 R4 책임으로 든 것과 정합한다."
-verification = ["tests/test_web_dom_contract.py::test_editor_is_an_immersive_screen_with_one_exit"]
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
+
+[[node]]
+id = "dom/job/jobPreflight"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "exact", members = ["jobPreflight"] }
+evidence = [{ file = "frontend/index.html", line = 115, anchor = "<div class=\"preflight note\" id=\"jobPreflight\" style=\"display:none\"></div>" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
+
+[[node]]
+id = "dom/job/jobSideCard-run"
+kind = "dom"
+axis = "dom_static"
+selector = { kind = "exact", members = ["jobRunCap", "jobOutRow", "jobRestate"] }
+evidence = [{ file = "frontend/index.html", line = 218, anchor = "<div class=\"zone-cap\" id=\"jobRunCap\">생성 준비</div>" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
+
+[[node]]
+id = "dom-js-data/job-read"
+kind = "dom"
+axis = "dom_js_data_attr"
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:data-browse-mode", "frontend/src/screens/job_read.ts:data-browse-new", "frontend/src/screens/job_read.ts:data-browse-open", "frontend/src/screens/job_read.ts:data-browse-pick", "frontend/src/screens/job_read.ts:data-browse-tab", "frontend/src/screens/job_read.ts:data-busy-lock", "frontend/src/screens/job_read.ts:data-cand", "frontend/src/screens/job_read.ts:data-cand-menu", "frontend/src/screens/job_read.ts:data-cand-mode", "frontend/src/screens/job_read.ts:data-cands-exit", "frontend/src/screens/job_read.ts:data-fav", "frontend/src/screens/job_read.ts:data-missing", "frontend/src/screens/job_read.ts:data-missing-cols", "frontend/src/screens/job_read.ts:data-new-work", "frontend/src/screens/job_read.ts:data-path", "frontend/src/screens/job_read.ts:data-preserve-scroll", "frontend/src/screens/path_actions.ts:data-path", "frontend/src/screens/path_actions.ts:data-track-act"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 645, anchor = "? browse.sections.map((section: Obj) => h(\"div\", { className: \"browse-sec\", \"data-browse-mode\": section.mode, key: section.mode }," }]
+classification = "react"
+handoff_slice = "R4-01 #414"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
+
+[[node]]
+id = "lifecycle/factory/sheet-picker"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/sheet_picker.js:14"] }
+evidence = [{ file = "frontend/js/sheet_picker.js", line = 14, anchor = "export function createSheetPicker({ bridge }) {" }]
+classification = "react"
+handoff_slice = "R4-02 #415"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
+
+[[node]]
+id = "lifecycle/factory/relink"
+kind = "lifecycle"
+axis = "lifecycle_factory"
+selector = { kind = "exact", members = ["frontend/js/relink.js:8"] }
+evidence = [{ file = "frontend/js/relink.js", line = 8, anchor = "export function createRelink({ bridge }) {" }]
+classification = "react"
+handoff_slice = "R4-03 #416"
+verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

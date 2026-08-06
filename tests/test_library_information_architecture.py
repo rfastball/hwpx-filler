@@ -13,7 +13,7 @@ INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
 APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
 # R3-02(#411) — 랜딩 기본값·ready 게이트 판정의 정본은 셸 상태기계로 이동했다.
 NAV_TS = (SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
-LIB = (SOURCE_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+LIB = (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts").read_text(encoding="utf-8")
 JOB = (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
 CSS = app_css()
 
@@ -47,23 +47,22 @@ def test_dead_home_surface_leaves_no_dom_or_css_behind() -> None:
 
 def test_library_keeps_conditional_alert_information() -> None:
     """경보 승계 — 개수 타일은 없어도 조치가 필요한 조건은 계속 시끄럽게 말한다."""
-    assert 'id="libraryAlerts"' in INDEX
-    assert "function renderAlerts" in LIB
-    assert "missing_template_count" in LIB and "pool_corrupted" in LIB
-    assert "renderCorrupt(s.corrupt_rows)" in LIB
+    assert 'id: "libraryAlerts"' in LIB
+    assert "alerts.missing_template_count" in LIB and "alerts.pool_corrupted" in LIB
+    assert "snapshot.corrupt_rows || []" in LIB
 
 
 def test_library_carries_the_four_axes_and_two_pane_skeleton() -> None:
     """§19.6 browser+detail — 축 4종과 2-pane 이 정적 DOM 에 서 있다."""
-    for anchor in ('id="librarySearch"', 'id="libraryViewTabs"', 'id="libraryModeFilters"',
-                   'id="libraryFacets"', 'id="libraryList"', 'id="libraryDetail"',
-                   'id="libraryCount"', 'class="library-browser"'):
-        assert anchor in INDEX, f"라이브러리 골격이 없습니다: {anchor}"
+    for anchor in ('id: "librarySearch"', 'id: "libraryViewTabs"', 'id: "libraryModeFilters"',
+                   'id: "libraryFacets"', 'id: "libraryList"', 'id: "libraryDetail"',
+                   'id: "libraryCount"', 'className: "library-browser"'):
+        assert anchor in LIB, f"React 라이브러리 producer 골격이 없습니다: {anchor}"
     # 보기 4종은 계약 표(§19.6) 그대로 — 하나라도 빠지면 그 투영에 도달할 길이 없다.
     for view in ("all", "recent", "favorites", "needsAction"):
-        assert f'data-library-view="{view}"' in INDEX
+        assert f'"data-library-view": "{view}"' in LIB
     # 결과 수는 role=status 로 재진술한다 — 필터가 목록을 비운 사실이 조용히 지나가지 않게.
-    assert 'id="libraryCount" tabindex="-1" role="status"' in INDEX
+    assert 'id: "libraryCount", tabIndex: -1, role: "status"' in LIB
     # 2-pane 치수 계약(≥921px·≥760px)은 CSS 가 진다 — 그보다 좁으면 세로 퇴화.
     assert "@media(min-width:921px) and (min-height:760px)" in CSS
 
@@ -74,10 +73,10 @@ def test_library_row_keeps_favorite_outside_the_select_button() -> None:
     중첩하면 즐겨찾기 클릭이 행 선택을 함께 발화한다. 이 배치가 동시에 「표시 상한과 무관한
     도달성」(§8.4 2행)의 새 거처다 — 순위 밖 작업도 여기서 별을 켤 수 있다.
     """
-    row = LIB.split("function rowHtml", 1)[1].split("function sectionHtml", 1)[0]
-    main = row.split('class="lib-row-main"', 1)[1].split("</button>", 1)[0]
-    assert "data-fav" not in main, "즐겨찾기 버튼이 행 선택 버튼 **안에** 있습니다(§19.6 위반)."
-    assert 'class="lib-fav" data-fav=' in row
+    row = LIB.split("function LibraryRow", 1)[1].split("function LibraryList", 1)[0]
+    main = row.split('className: "lib-row-main"', 1)[1].split('className: "lib-fav"', 1)[0]
+    assert '"data-fav"' not in main, "즐겨찾기 버튼이 행 선택 버튼 **안에** 있습니다(§19.6 위반)."
+    assert 'className: "lib-fav", "data-fav": row.name' in row
 
 
 def test_new_job_entry_is_single_sourced_in_the_library() -> None:
@@ -92,9 +91,9 @@ def test_new_job_entry_is_single_sourced_in_the_library() -> None:
     라이브러리에서는 성립하지 않아 중복이 아니다. 그쪽은 `newDraftFromData` 로 갈라져
     있으므로 여기서 세는 것은 여전히 `newDraft()` 하나다.
     """
-    assert 'id="libraryNewWork"' in INDEX
+    assert 'id: "libraryNewWork"' in LIB
     assert 'id="jobNewBtn"' not in INDEX and 'id="jobEmptyNewBtn"' not in INDEX
-    assert "EditorEntry.newDraft()" in LIB
+    assert "newWork: () => deps.ports.editorEntry.current().newDraft()" in LIB
     assert "EditorEntry.newDraft(" not in JOB
 
 
@@ -106,17 +105,17 @@ def test_management_verbs_read_identity_from_the_unfiltered_detail() -> None:
     실제 태그를 통째로 지우고 그룹을 벗겨 낸다 — 조용한 파괴다. 상세는 걸러지지 않은
     `rows()` 에서 성형되므로 선택이 살아 있는 한 언제나 있고, 없으면 꾸며내지 않고 멈춘다.
     """
-    assert "function selectedWork" in LIB
-    src = LIB[LIB.index("function selectedWork"):LIB.index("function allGroups")]
-    assert "LAST.detail" in src, "선택 정체를 상세 스냅샷에서 읽지 않습니다(P1)."
-    assert "window.alert" in src and "return null" in src, (
+    assert "function selected(name: string)" in LIB
+    src = LIB[LIB.index("function selected(name: string)"):LIB.index("async function jobDispatch")]
+    assert "snapshot()?.detail" in src, "선택 정체를 상세 스냅샷에서 읽지 않습니다(P1)."
+    assert "deps.notify" in src and "return null" in src, (
         "정체를 못 읽었을 때 조용히 진행합니다 — 빈 메타 조작으로 이어집니다(confirm-or-alarm)."
     )
-    for fn, nxt in (("async function editTags", "function relinkTemplate"),
-                    ("function moveJob", "const favorite")):
+    for fn, nxt in (("async function editTags", "async function removeJob"),
+                    ("function openMove", "async function confirmMove")):
         body = LIB[LIB.index(fn):LIB.index(nxt)]
-        assert "selectedWork(name)" in body, f"{fn} 가 상세에서 정체를 읽지 않습니다(P1)."
-        assert "if (!row) return" in body, f"{fn} 가 정체 부재를 통과시킵니다(P1)."
+        assert "selected(name)" in body, f"{fn} 가 상세에서 정체를 읽지 않습니다(P1)."
+        assert "if (row === null) return" in body, f"{fn} 가 정체 부재를 통과시킵니다(P1)."
     # 걸러진 구획에서 정체를 긁던 옛 헬퍼가 되살아나면 같은 결함이 재발한다.
     assert "function findRow" not in LIB
 
@@ -127,9 +126,9 @@ def test_move_dialog_targets_come_from_the_registry_wide_group_list() -> None:
     평면 보기(최근·즐겨찾기·확인 필요)나 켜진 필터는 구획에서 그룹을 없앤다 — 거기서
     파생하면 실재하는 그룹으로 옮길 길이 사라진다(job·draft 화면은 완전한 목록을 받는다).
     """
-    src = LIB[LIB.index("function allGroups"):LIB.index("async function renameJob")]
-    assert "LAST.group_names" in src, "도착지 후보가 레지스트리 전역 목록이 아닙니다(P2)."
-    assert "LAST.sections" not in src, "도착지 후보를 걸러진 구획에서 파생합니다(P2)."
+    src = LIB[LIB.index("function openMove"):LIB.index("async function confirmMove")]
+    assert "snapshot()?.group_names" in src, "도착지 후보가 레지스트리 전역 목록이 아닙니다(P2)."
+    assert "snapshot()?.sections" not in src, "도착지 후보를 걸러진 구획에서 파생합니다(P2)."
 
 
 def test_primary_action_target_comes_from_python_not_the_surface() -> None:
@@ -140,8 +139,8 @@ def test_primary_action_target_comes_from_python_not_the_surface() -> None:
     TXT(2R)와 미연결(3R)이 똑같이 「후보에서 배제 → 확인 필요에서도 배제 → 빈 화면 착지」로
     끝났다. 목적지·라벨은 Python 이 한 번에 내고 표면은 라우팅만 한다.
     """
-    body = LIB[LIB.index("async function runPrimary"):LIB.index("function editJob")]
-    assert "work.primary && work.primary.target" in body, (
+    body = LIB[LIB.index("async function runPrimary"):LIB.index("async function toggleFavorite")]
+    assert "work.primary?.target" in body, (
         "목적지를 Python 페이로드에서 읽지 않습니다(3R 근본 조치)."
     )
     for derived in ('media === "txt"', "template_linked", "mode_label"):
@@ -149,11 +148,11 @@ def test_primary_action_target_comes_from_python_not_the_surface() -> None:
     # 두 목적지 전부 실제 착지처가 있다 — 빈 화면으로 보내지 않는다. TXT 는 F6 PR-B 로
     # `job` 에 합쳐졌다(실행 버튼 2분기는 판정 D 소유 — 여기 매체 분기 부활 금지).
     assert 'target === "draft"' not in body and "DraftScreen" not in body
-    assert "editJob(name," in body          # 미연결·미상 방식 → 고칠 수 있는 곳(문맥 동반, F7)
+    assert "openGuarded(name," in body      # 미연결·미상 방식 → 고칠 수 있는 곳(문맥 동반, F7)
     assert "prefer_work" in body            # 연결분(hwpx·txt)은 「문서 만들기」로
     # 라벨도 목적지와 함께 온다 — 표면이 짝을 다시 맞추면 또 갈린다.
-    detail = LIB[LIB.index("function renderDetail"):LIB.index("async function runPrimary")]
-    assert "esc(primary.label)" in detail, "라벨을 Python 페이로드에서 읽지 않습니다."
+    detail = LIB[LIB.index("function LibraryDetail"):LIB.index("function LibraryToolbar")]
+    assert "primary.label" in detail, "라벨을 Python 페이로드에서 읽지 않습니다."
     # 라벨을 매체로 고르면 목적지와 짝이 또 갈린다 — 방어 기본값 하나만 허용한다.
     assert 'd.media === "txt"' not in detail
     assert detail.count('"기안에서 열기"') == 0
@@ -166,11 +165,11 @@ def test_rename_carries_the_selection_only_when_it_succeeded() -> None:
     이름으로의 개명이 거절됐는데도 선택이 그 **남의 작업**으로 옮겨가 오류 모달이 엉뚱한
     상세 위에 뜬다(3R). 성공 여부로 가른다.
     """
-    body = LIB[LIB.index("async function jobDispatch"):LIB.index("function selectedWork")]
-    assert "const ok = !(r && r.ok === false);" in body, "성공 여부를 가리지 않습니다(3R)."
-    assert 'refresh", ok && selectIfOk ? { select: selectIfOk } : {}' in body
-    rename = LIB[LIB.index("async function renameJob"):LIB.index("function moveJob")]
-    assert '"rename_job", { name, new: v }, next' in rename, (
+    body = LIB[LIB.index("async function jobDispatch"):LIB.index("function emitMove")]
+    assert "result.ok === false || selectIfOk === \"\"" in body, "성공 여부를 가리지 않습니다(3R)."
+    assert "? {} : { select: selectIfOk }" in body
+    rename = LIB[LIB.index("async function renameJob"):LIB.index("function parseTags")]
+    assert '"rename_job", { name, new: raw }, next' in rename, (
         "이름 변경이 새 이름을 refresh 로 넘기지 않습니다(2R)."
     )
 
@@ -184,9 +183,9 @@ def test_group_merge_confirm_runs_after_the_prompt_settles() -> None:
     """
     body = LIB[LIB.index("async function renameGroup"):LIB.index("async function disbandGroup")]
     assert "validate:" not in body, "그룹 개명이 아직 validate 안에서 확정을 겁니다(3R)."
-    prompt_at = body.index("Modal.prompt")
-    settled_at = body.index("if (val === null) return;")
-    confirm_at = body.index("Modal.confirm")
+    prompt_at = body.index("deps.modal.prompt")
+    settled_at = body.index("if (value === null) return;")
+    confirm_at = body.index("deps.modal.confirm")
     assert prompt_at < settled_at < confirm_at, (
         "병합 확인이 prompt 가 풀리기 전에 열립니다 — pendingDialog 가 거절합니다(3R)."
     )
@@ -206,10 +205,11 @@ def test_favorite_intent_is_serialized_through_the_shared_mechanism() -> None:
     보냈다(계약 거짓말). 왕복 중 두 번째 클릭이 낡은 값을 읽으면 멱등 재지정이 "껐다"를
     삼켜 켜진 채로 남는다 — §8.4 4행(지연 왕복 중의 의도)이 이미 세운 결함류다.
     """
-    assert "Intent.createFavorite(" in LIB, "공용 기제를 쓰지 않습니다(3R)."
+    assert "const favoriteIntent = new Map<string, boolean>();" in LIB
     assert "data-next" not in LIB, "다음 값을 DOM 에서 읽습니다 — 미결 의도가 아닙니다(3R)."
-    handler = LIB[LIB.index("function onListClick"):LIB.index("function onDetailClick")]
-    assert 'favorite.toggle(fav.dataset.fav, fav.getAttribute("aria-pressed") === "true")' in handler
+    handler = LIB[LIB.index("async function toggleFavorite"):LIB.index("async function deleteCorrupt")]
+    assert "const intended = !(favoriteIntent.get(name) ?? shown);" in handler
+    assert '"toggle_favorite", { name, value }' in handler
 
 
 def test_library_axis_mutations_share_one_chain() -> None:
@@ -219,13 +219,13 @@ def test_library_axis_mutations_share_one_chain() -> None:
     검색이 도는 중 다른 축을 만지면 늦게 도착한 옛 응답이 새 결과를 되돌려, 목록은 옛
     검색어로 걸러진 채 입력창만 새 글자를 유지한다(「작업」 화면 탐색이 이미 밟은 결함류).
     """
-    assert "function axis(action, payload)" in LIB
-    axis_fn = LIB[LIB.index("function axis(action, payload)"):LIB.index("function cancelPendingSearch")]
-    assert "Intent.chained(SCREEN" in axis_fn, "축 변이가 체인을 타지 않습니다(4R)."
+    assert "function axis(action: string, payload: Obj = {})" in LIB
+    axis_fn = LIB[LIB.index("function axis(action: string"):LIB.index("function snapshot")]
+    assert "axisTail.then(send, send)" in axis_fn, "축 변이가 체인을 타지 않습니다(4R)."
     for action in ("set_view", "set_mode", "set_query", "toggle_facet", "clear_facets",
                    "clear_filters", "toggle_group", "select_work"):
         assert f'axis("{action}"' in LIB, f"{action} 이 축 체인을 타지 않습니다(4R)."
-        assert f'Bridge.call(SCREEN, "{action}"' not in LIB, (
+        assert f'deps.client.dispatch("library", "{action}"' not in LIB, (
             f"{action} 이 체인을 우회해 직접 발신합니다(4R)."
         )
 
@@ -236,11 +236,11 @@ def test_clearing_filters_cancels_the_pending_search() -> None:
     타이머를 안 취소하면 방금 지운 필터 위로 옛 검색어가 다시 얹힌다. 반대로 다른 축을
     누를 때는 취소하지 않는다 — 사용자가 친 글자는 그의 의사이고 체인이 순서를 지킨다.
     """
-    assert "function cancelPendingSearch" in LIB
-    handler = LIB[LIB.index("const cf = e.target.closest"):LIB.index("function onDetailClick")]
-    assert "cancelPendingSearch();" in handler, "지우기가 대기 검색을 취소하지 않습니다(4R)."
-    # 다른 축 경로에는 취소가 없어야 한다(친 글자를 말없이 버리지 않는다).
-    assert LIB.count("cancelPendingSearch()") == 2  # 정의부 1 + 지우기 1
+    toolbar = LIB[LIB.index("function LibraryToolbar"):LIB.index("export function LibraryScreen")]
+    assert "const timer = useRef" in toolbar
+    assert "if (timer.current !== null) clearTimeout(timer.current);" in toolbar
+    assert "useEffect(() => () =>" in toolbar, "unmount가 대기 검색을 취소하지 않습니다(4R)."
+    assert 'controller.axis("clear_filters")' in LIB
 
 
 def test_pending_favorite_intent_is_shared_across_screens() -> None:
@@ -250,8 +250,13 @@ def test_pending_favorite_intent_is_shared_across_screens() -> None:
     눌렀을 때 두 인스턴스가 똑같이 `true` 를 계산해 같은 쓰기가 두 번 나가고 두 번째 토글이
     사라진다(멱등 재지정이 "껐다"를 삼키는 그 창).
     """
-    intent = (SOURCE_JS_DIR / "intent.js").read_text(encoding="utf-8")
-    factory = intent[intent.index("function createFavorite"):intent.index("export const Intent =")]
-    assert "new Map()" not in factory, "팩토리가 호출마다 사본을 만듭니다(4R)."
-    module = intent[:intent.index("function createFavorite")]
-    assert "const FAV_PENDING = new Map();" in module and "const FAV_LAST = new Map();" in module
+    factory = LIB[
+        LIB.index("export function createLibraryController"):
+        LIB.index("export type LibraryController =")
+    ]
+    assert "const favoriteTail = new Map<string, Promise<void>>();" in factory
+    assert "const favoriteIntent = new Map<string, boolean>();" in factory
+    module = LIB[:LIB.index("export function createLibraryController")]
+    assert "favoriteIntent" not in module and "favoriteTail" not in module, (
+        "즐겨찾기 미결 의도가 모듈 전역으로 새어 독립 화면 수명주기를 공유합니다."
+    )

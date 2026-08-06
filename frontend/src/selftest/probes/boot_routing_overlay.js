@@ -751,10 +751,43 @@ export function createBootRoutingOverlayProbes() {
         + " 되돌아온다. 다만 `#scr-job .zone-cap` 목록은 여전히 앞선 job 렌더(클러스터 C 의"
         + " job_data_first, app.py:3877)를 소비한다 — 클러스터를 넘는 그 순서는 `legacySite`"
         + " 숫자(3877 < 3969)가 잇는다.",
-      run(ctx) {
+      async run(ctx) {
         const doc = ctx.doc;
         const win = ctx.win;
         const style = (selector) => styleOf(ctx, doc.querySelector(selector));
+
+        const captionText = (element) => {
+          if (!element) return "";
+          const label = element.cloneNode(true);
+          label.querySelectorAll("button").forEach((button) => { button.remove(); });
+          return label.textContent.trim();
+        };
+        /* legacy 판에서는 조건부 존이 숨김 DOM 으로 함께 있었지만 React 포털은 비활성 존을
+           unmount 한다. 전환 직전의 data-first 캡션을 보관하고 빈 세션 캡션과 합쳐 같은
+           타이포 표본 집합을 증명한다. */
+        const candidateCaption = all(doc, "#scr-job .zone-cap")
+          .map(captionText)
+          .find((text) => text === "이 데이터에 사용할 문서") || "";
+
+        /* R4 portal 캡션도 이 프로브의 표본이다. probe별 ctx.state는 격리되므로 preserve_real의
+           스태시를 빌리지 않고, 화면 계약의 최소 빈 세션을 직접 밀어 React 커밋을 기다린다. */
+        const emptyJob = {
+          has_job: false, has_data: false, job_name: "",
+          data_source_label: "", data_target: {}, data_notice: null,
+          record_count: 0, selected_count: 0, records: [],
+          filter: { active: false, search: "", columns: [], chips: [], branches: [] },
+          candidates: { top: [], sections: [], more: 0, needs_count: 0, suggested: "", txt_note: "" },
+          browse: { tab: "available", query: "", rows: [], available_count: 0, needs_count: 0, filtered_out: 0 },
+          table: { columns: [], rows: [], visible_count: 0, hidden_selected: [], hidden_columns: [] },
+          new_work: { can: true, reason: "" },
+        };
+        if (doc.getElementById("reactScreenStage")) {
+          for (let turn = 0; turn < 12; turn += 1) {
+            ctx.push("job", emptyJob);
+            await ctx.sleep(0);
+            if (captionText(doc.querySelector("#jobNoDataExit .zone-cap")) === "시작하기") break;
+          }
+        }
 
         const gen = doc.getElementById("jobGenBtn");
         const wasDisabled = gen.disabled;
@@ -808,6 +841,12 @@ export function createBootRoutingOverlayProbes() {
         };
         scrollHost.remove();
 
+        const jobSteps = all(doc, "#scr-job .zone-cap").map(captionText);
+        if (candidateCaption && !jobSteps.includes(candidateCaption)) {
+          const generationIndex = jobSteps.indexOf("생성 준비");
+          jobSteps.splice(generationIndex < 0 ? jobSteps.length : generationIndex, 0, candidateCaption);
+        }
+
         return {
           milestone_h_wave1: {
             headings: {
@@ -815,11 +854,7 @@ export function createBootRoutingOverlayProbes() {
               section: style(".modal-card h3"),
               zone: style("#scr-job .zone-cap"),
             },
-            job_steps: all(doc, "#scr-job .zone-cap").map((e) => {
-              const label = e.cloneNode(true);
-              label.querySelectorAll("button").forEach((b) => { b.remove(); });
-              return label.textContent.trim();
-            }),
+            job_steps: jobSteps,
             job_step_badges: doc.querySelectorAll("#scr-job .zone-cap .znum").length,
             card_base: baseCard,
             selected_card: selectedCard,

@@ -137,16 +137,55 @@ function settleModal(ctx, id) {
   return true;
 }
 
-/** `Bridge.call` 을 **자기 액션만** 가로챈다. 복원은 "내 스텁일 때만" — 앞 블록의 복원이 뒤
- *  블록의 발신을 삼키는 표본이 이미 있다(프로브 교차 오염 금지, [[gate-env-gotchas]]). */
+/** legacy `Bridge.call`과 R4 `Client.dispatch`를 **같은 수명**으로 가로챈다.
+ *
+ *  R4 React owner는 typed client를 부르고 #416 legacy remainder는 Bridge를 부른다. 합성
+ *  snapshot 위에서 하나만 스텁하면 다른 하나가 실 백엔드로 새어 서로 다른 세계를 본다.
+ *  typed 쪽 반환은 HostResult로 감싸되 스텁 본문은 기존 raw Bridge 계약을 그대로 쓴다.
+ *  복원은 "내 스텁일 때만" — 앞 블록의 복원이 뒤 블록의 발신을 삼키는 표본이 이미 있다
+ *  (프로브 교차 오염 금지, [[gate-env-gotchas]]). */
 function stubBridgeCall(ctx, make) {
   const Bridge = service(ctx, "Bridge");
   const real = Bridge.call;
   const mine = make(real);
   Bridge.call = mine;
+  const Client = ctx.services && ctx.services.Client;
+  const realDispatch = Client && Client.dispatch;
+  const typedMine = typeof realDispatch === "function"
+    ? async function (screen, action, payload) {
+      return { ok: true, value: await mine(screen, action, payload) };
+    }
+    : null;
+  if (typedMine) Client.dispatch = typedMine;
   return {
     real,
-    restore() { if (Bridge.call === mine) Bridge.call = real; },
+    restore() {
+      if (Bridge.call === mine) Bridge.call = real;
+      if (typedMine && Client.dispatch === typedMine) Client.dispatch = realDispatch;
+    },
+  };
+}
+
+/** 직접 bridge 메서드도 R4 `Client.invoke(snake_name, …)`와 한 수명으로 교체한다. */
+function stubBridgeInvoke(ctx, bridgeName, contractName, make) {
+  const Bridge = service(ctx, "Bridge");
+  const real = Bridge[bridgeName];
+  const mine = make(real);
+  Bridge[bridgeName] = mine;
+  const Client = ctx.services && ctx.services.Client;
+  const realInvoke = Client && Client.invoke;
+  const typedMine = typeof realInvoke === "function"
+    ? async function (method, ...args) {
+      if (method !== contractName) return realInvoke.call(Client, method, ...args);
+      return { ok: true, value: await mine(...args) };
+    }
+    : null;
+  if (typedMine) Client.invoke = typedMine;
+  return {
+    restore() {
+      if (Bridge[bridgeName] === mine) Bridge[bridgeName] = real;
+      if (typedMine && Client.invoke === typedMine) Client.invoke = realInvoke;
+    },
   };
 }
 
@@ -264,7 +303,9 @@ export function createEditorWorkbenchDataProbes() {
     },
 
     /* ── data_sheet (app.py:2698 상수 · 3764·3767·3772 호출) ──────────────────
-       ⤢ 데이터 펼침 면의 실 DOM 이동·복귀(#271/#272)와 범위 편집기 footer 의 자리(F3). */
+       ⤢ 데이터 펼침 면의 React 재마운트·복귀와 범위 편집기 footer 의 자리(F3).
+       R4 전에는 SurfaceSheet 가 같은 노드를 옮겼지만, 이제 inline/sheet portal 중 한쪽만
+       렌더한다. 그러므로 캡처한 노드의 identity 가 아니라 안정 ID의 현재 소유 위치를 잰다. */
     {
       name: "data_sheet",
       keys: ["data_sheet"],
@@ -288,21 +329,29 @@ export function createEditorWorkbenchDataProbes() {
         + " 그 응답(작업 미선택 스냅샷)이 내가 연 면을 닫는다. 부팅 기본 화면이 이미 job 이다.",
       async run(ctx) {
         const ids = ["jobRecsHead", "jobOrderBar", "jobFilterChips", "jobTableHost",
-          "jobSelStrip", "jobColPanel", "jobRangeFoot"];
+          "jobSelStrip", "jobRangeFoot"];
         const out = { pending: true };
-        const nodes = ids.map((id) => byId(ctx, id));
-        out.present = nodes.every(Boolean);
+        const liveNodes = () => ids.map((id) => byId(ctx, id));
+        const inside = (host, node) => !!host && !!node
+          && (host.contains(node) || node.parentNode === host);
+        out.present = liveNodes().every(Boolean);
         if (!out.present) { out.pending = false; return { data_sheet: out }; }
 
-        const parents = nodes.map((el) => el.parentNode);
+        const inlineHost = byId(ctx, "jobDataBodyReactHost");
         const slot = byId(ctx, "dataSheetSlot");
         const trigger = byId(ctx, "jobDataExpand");
-        ctx.state.nodes = nodes;
-        ctx.state.parents = parents;
+        ctx.state.ids = ids;
+        ctx.state.inlineHost = inlineHost;
+        ctx.state.slot = slot;
 
-        /* 초안 생성만 자기 액션으로 스텁하고 복원은 "내 스텁일 때만". */
+        /* 이 프로브가 합성한 초안의 생성·폐기만 스텁한다. R4 close guard는 폐기 성공 **뒤**에
+           면을 닫으므로 open만 가로채면 cancel이 초안 없는 실 backend로 새고 복귀가 막힌다.
+           다음 range_draft 프로브의 실 open은 복원 뒤라 양성 대조를 그대로 유지한다. */
         const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
-          if (screen === "job" && action === "range_draft_open") return Promise.resolve({ ok: true });
+          if (screen === "job"
+            && (action === "range_draft_open" || action === "range_draft_cancel")) {
+            return Promise.resolve({ ok: true });
+          }
           return real(screen, action, payload);
         });
         ctx.state.stub = stub;
@@ -347,8 +396,9 @@ export function createEditorWorkbenchDataProbes() {
         await ctx.sleep(0);
 
         try {
-          out.moved = nodes.every((el) => slot.contains(el));
-          out.not_moved = ids.filter((id, i) => !slot.contains(nodes[i]));
+          const sheetNodes = liveNodes();
+          out.moved = sheetNodes.every((el) => inside(slot, el));
+          out.not_moved = ids.filter((_id, i) => !inside(slot, sheetNodes[i]));
           out.first_sticky = styleOf(
             ctx, ctx.doc.querySelector("#jobTableHead th:first-child"),
           ).position === "sticky";
@@ -361,7 +411,7 @@ export function createEditorWorkbenchDataProbes() {
           for (;;) {
             await ctx.sleep(50);
             settleModal(ctx, "dataSheet");
-            const done = nodes.every((el, i) => el.parentNode === parents[i]);
+            const done = liveNodes().every((el) => inside(inlineHost, el));
             if (done || tries++ > 40) {
               out.restored = done && ctx.doc.activeElement === trigger;
               break;
@@ -379,15 +429,20 @@ export function createEditorWorkbenchDataProbes() {
          구제를 조용히 했지만 여기서는 구제가 필요했다는 사실 자체를 시끄럽게 남긴다. */
       teardown(ctx) {
         if (ctx.state.stub) ctx.state.stub.restore();
-        const nodes = ctx.state.nodes;
-        const parents = ctx.state.parents;
-        if (!nodes || !parents) return;
-        if (nodes.every((el, i) => el.parentNode === parents[i])) return;
+        const ids = ctx.state.ids;
+        const inlineHost = ctx.state.inlineHost;
+        if (!ids || !inlineHost) return;
+        const restored = () => ids.every((id) => {
+          const node = byId(ctx, id);
+          return !!node && (inlineHost.contains(node) || node.parentNode === inlineHost);
+        });
+        if (restored()) return;
         try {
           const SurfaceSheet = ctx.services ? ctx.services.SurfaceSheet : null;
           if (SurfaceSheet) SurfaceSheet.closeAndRestore("dataSheet");
           settleModal(ctx, "dataSheet");
         } catch (_) { /* 구제 실패도 아래에서 한 번에 시끄럽다 */ }
+        if (restored()) return;
         throw new Error(
           "⤢ 펼침 면이 열린 채 남았습니다 — 뒤 프로브의 포커스·모달 스택을 오염시킵니다.",
         );
@@ -542,7 +597,7 @@ export function createEditorWorkbenchDataProbes() {
              세션은 살려 둔다 — 트리거가 살아 있어야 "초점이 트리거로 돌아온다"를 잴 수 있다
              (세션째 죽이면 트리거가 비활성이 되고, 그건 초점 **대안 착지**라는 다른 계약이다). */
           ctx.push("job", {
-            job_name: "공고서", has_job: true,
+            job_name: "공고서", has_job: true, has_data: true,
             preview: {
               open: false, pos: 0, total: 2, can_open: true,
               blank_only: false, blank_count: 0, can_prev: false, can_next: false,
@@ -1015,14 +1070,15 @@ export function createEditorWorkbenchDataProbes() {
         "`Bridge.loadDataSheet` 는 창을 실제로 열지 않도록 스텁(확정 시 파일명 반환)하고"
         + " 저장·복원한다. 확정/취소 두 회차가 서로 다른 값을 내야 게이트가 실물을 잰 것이다.",
       async run(ctx) {
-        const Bridge = service(ctx, "Bridge");
+        service(ctx, "Bridge");
         const SheetPicker = service(ctx, "SheetPicker");
         const out = { status: "running" };
-        const origLoad = Bridge.loadDataSheet;
-        ctx.state.restoreLoad = () => { Bridge.loadDataSheet = origLoad; };
-        Bridge.loadDataSheet = function (screen, path, sheet) {
+        const loadStub = stubBridgeInvoke(
+          ctx, "loadDataSheet", "load_data_sheet", () => function (screen, path, sheet) {
           return Promise.resolve(`확정됨:${sheet}`);   // 실 다이얼로그 대신 확정 시트명을 되쏨
-        };
+          },
+        );
+        ctx.state.restoreLoad = () => { loadStub.restore(); };
         const payload = {
           needs_sheet: true, path: "C:/x/multi.xlsx", name: "multi.xlsx",
           sheets: [{ name: "공고목록", rows: 3, cols: 2 }, { name: "낙찰현황", rows: 4, cols: 3 }],
@@ -1057,7 +1113,7 @@ export function createEditorWorkbenchDataProbes() {
              에서 붉어졌다. 러너 계약에서는 실패한 프로브의 키가 결과에 실리지 않는다. */
           ctx.fail(ERROR_CODES.PROBE_THREW, String(thrown && thrown.message));
         } finally {
-          Bridge.loadDataSheet = origLoad;
+          loadStub.restore();
         }
         return { sheet_gate: out };
       },
@@ -1185,19 +1241,35 @@ export function createEditorWorkbenchDataProbes() {
         + " 이유를 안 적으면 다음 이식에서 조용히 사라진다(그리고 그때 깨지는 것은 남의 계약이다).",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
-        const Bridge = service(ctx, "Bridge");
+        service(ctx, "Bridge");
         const DataPicker = service(ctx, "DataPicker");
         const Modal = service(ctx, "Modal");
         const out = { pending: true };
         try {
           Nav.go("job");
-          DataPicker.open({
-            screen: "job",
-            current: {
-              label: "파일: 대장.xlsx", detail: "3건", path: "C:/d/대장.xlsx",
-              sheet: "물품", origin: "file",
-            },
+          /* open()은 pool/refresh를 fire-and-forget으로 쏜다. 이 프로브는 바로 아래의 합성 pool
+             snapshot이 정본이므로, 늦은 실 refresh가 React 목록을 0행으로 되돌리지 못하게
+             그 한 발신만 같은 Bridge/typed 수명에서 흡수한다. */
+          const refreshStub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+            if (screen === "pool" && action === "refresh") return Promise.resolve({});
+            if (typeof real === "function") return real(screen, action, payload);
+            return Promise.resolve({});
           });
+          try {
+            DataPicker.open({
+              screen: "job",
+              current: {
+                label: "파일: 대장.xlsx", detail: "3건", path: "C:/d/대장.xlsx",
+                sheet: "물품", origin: "file",
+              },
+            });
+          } finally {
+            refreshStub.restore();
+          }
+          /* controller 외부 스토어는 같은 호출 스택에서 갱신되지만 concurrent React root의
+             portal DOM 커밋은 다음 turn일 수 있다. 현재 데이터 카드·고정 버튼을 읽기 전에
+             고정 지연 없이 한 turn만 넘긴다. */
+          await ctx.sleep(0);
           out.opened = !byId(ctx, "dataPickerModal").classList.contains("hidden");
           out.pin_offered = !!byId(ctx, "dataPickerPin");
           // 「＋ 직접 등록…」 사망(U2 §2.7 4행) — DOM 자체가 없어야 한다.
@@ -1228,6 +1300,7 @@ export function createEditorWorkbenchDataProbes() {
             }],
             count: "2건", empty: false, result: { text: "", level: "muted" },
           });
+          await ctx.sleep(0);                      // pool external-store → portal DOM 커밋
           const host = byId(ctx, "dataPickerPinned");
           out.rows = host.querySelectorAll(".tplcard").length;
           const uses = host.querySelectorAll('[data-act="use"]');
@@ -1244,6 +1317,7 @@ export function createEditorWorkbenchDataProbes() {
             && dupes.querySelectorAll("[data-dup-keep]").length === 2;
           /* 「이 데이터 고정」 = 등록 모달 재사용(현재 대상 프리필) — 제목·프리필까지 되읽는다. */
           byId(ctx, "dataPickerPin").click();
+          await ctx.sleep(0);                      // regModel → 등록 portal DOM 커밋
           out.pin_title = textOf(byId(ctx, "poolRegTitle"));
           out.pin_ok = textOf(byId(ctx, "poolRegOk"));
           out.pin_path = byId(ctx, "poolRegPath").value;
@@ -1254,13 +1328,14 @@ export function createEditorWorkbenchDataProbes() {
           out.pin_browse_hidden = isHidden(ctx, byId(ctx, "poolRegBrowse"));
           Modal.close("poolRegModal");
           /* 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다. */
-          const origPick = Bridge.pickDataFile;
-          ctx.state.restorePick = () => { Bridge.pickDataFile = origPick; };
-          Bridge.pickDataFile = function () {
+          const pickStub = stubBridgeInvoke(
+            ctx, "pickDataFile", "pick_data_file", () => function () {
             return Promise.resolve({
               label: "파일: 새목록.xlsx", path: "C:/d/새목록.xlsx", sheet: "", rows: 5,
             });
-          };
+            },
+          );
+          ctx.state.restorePick = () => { pickStub.restore(); };
           try {
             byId(ctx, "dataPickerBrowse").click();
             /* browseFile 은 async — 상태줄 재진술이 설 때까지 짧게 폴링(마이크로태스크 흘리기). */
@@ -1270,7 +1345,7 @@ export function createEditorWorkbenchDataProbes() {
               if (note.indexOf("새목록.xlsx") >= 0) break;
             }
           } finally {
-            Bridge.pickDataFile = origPick;
+            pickStub.restore();
           }
           out.browse_kept_open = !byId(ctx, "dataPickerModal").classList.contains("hidden");
           out.browse_restated = textOf(byId(ctx, "dataPickerCurrent")).indexOf("새목록.xlsx") >= 0;

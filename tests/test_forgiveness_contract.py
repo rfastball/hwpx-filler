@@ -15,7 +15,7 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     modal = _read("js/modal.js")
     editor = _read("js/screens/editor.js")
     job = _read("js/screens/job.js")
-    home = _read("js/screens/library.js")
+    home = _read("src/screens/library.ts")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
     # 되돌리기 토스트가 앱 그래프에 실제로 닿는가 — R3-01(#410)에서 토스트 골격은 React
@@ -34,21 +34,21 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
 
 
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
-    library = _read("js/screens/library.js")
+    library = _read("src/screens/library.ts")
     editor = _read("js/screens/editor.js")
     # 복구 가능한 삭제 자체는 사전 확인 없음 — 라이브러리의 confirm 은 백엔드 needs_confirm
     # (타 화면 무장 세션 소실 = 파일 복원으로 못 돌아오는 파괴, #268 리뷰)이 돌려줄
     # 때만 발화한다. 무조건 confirm 재유입은 이 순서 검사가 잡는다.
-    lib_block = library[library.index("async function deleteJob"):
-                        library.index("function closeGroupMenu")]
+    lib_block = library[library.index("async function removeJob"):
+                        library.index("async function runPrimary")]
     assert "needs_confirm" in lib_block
-    assert lib_block.index("needs_confirm") < lib_block.index("Modal.confirm")
+    assert lib_block.index("needs_confirm") < lib_block.index("deps.modal.confirm")
     # 템플릿 삭제(30일 휴지통) — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8). 계약 불변:
     # 복구 가능한 삭제는 사전 확인 대신 UndoToast.
     start = editor.index("async function deleteLibTemplate")
     delete_block = editor[start:editor.index("UndoToast.show", start)]
     assert "Modal.confirm" not in delete_block
-    assert "UndoToast.show" in library and "UndoToast.show" in editor
+    assert "deps.undo.show" in library and "UndoToast.show" in editor
 
 
 def test_undo_toast_receives_pointer_events() -> None:

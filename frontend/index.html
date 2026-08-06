@@ -67,64 +67,7 @@
          넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
          스크롤하지 않는다(library.css .library-browser). 이동은 주입된 Nav 로만 — 이 화면은 다른
          화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
-    <section class="scr" id="scr-library">
-      <header class="scr-head">
-        <div>
-          <h1>문서 작업</h1>
-          <!-- §19.6 서문의 재진술: 여기서 행을 골라도 「작업」의 선택·데이터는 그대로다.
-               상세 선택이 활성 작업을 바꾼다는 오해가 이 화면의 유일한 큰 오해다. -->
-          <p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다. 여기서 다른 작업을 열어도 「문서 만들기」의 선택과 데이터는 그대로입니다.</p>
-        </div>
-        <div class="scr-head-actions">
-          <button class="btn primary sm" id="libraryNewWork">＋ 새 작업</button>
-        </div>
-      </header>
-
-      <!-- 조치가 필요한 조건만 경보로(#239 결정 8 승계) — 개수 타일은 렌더하지 않는다. -->
-      <div id="libraryAlerts"></div>
-      <!-- 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05, 있을 때만) -->
-      <div id="libraryCorrupt" style="display:none"></div>
-
-      <!-- 축 도구줄: 검색 · 보기 4종 · 작업 방식 필터 · 태그 facet. 넷이 이 화면의 절단자라
-           0건이 되면 목록 자리에 「필터 지우고 전체 보기」 출구가 상주한다(§8.4 도달성 면). -->
-      <div class="library-toolbar">
-        <label class="library-search-field"><span class="lbl">작업 검색</span>
-          <input class="field" id="librarySearch" type="search" autocomplete="off"
-                 placeholder="작업 이름, 그룹, 태그" data-busy-lock></label>
-        <div class="library-filter-group">
-          <span class="library-filter-label" id="libraryViewLabel">보기</span>
-          <div class="library-tabs" role="tablist" aria-labelledby="libraryViewLabel" id="libraryViewTabs">
-            <button type="button" role="tab" id="library-view-all" data-library-view="all"
-                    aria-controls="libraryPanel" aria-selected="true" data-busy-lock>모든 작업</button>
-            <button type="button" role="tab" id="library-view-recent" data-library-view="recent"
-                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>최근 사용</button>
-            <button type="button" role="tab" id="library-view-favorites" data-library-view="favorites"
-                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>즐겨찾기</button>
-            <button type="button" role="tab" id="library-view-needsAction" data-library-view="needsAction"
-                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>확인 필요</button>
-          </div>
-        </div>
-        <div class="library-filter-group">
-          <span class="library-filter-label" id="libraryModeLabel">작업 방식</span>
-          <div class="library-modes" role="group" aria-labelledby="libraryModeLabel" id="libraryModeFilters">
-            <button class="pill" type="button" data-library-mode="all" aria-pressed="true" data-busy-lock>전체</button>
-            <button class="pill" type="button" data-library-mode="hwpx" aria-pressed="false" data-busy-lock>HWPX 문서 생성</button>
-            <button class="pill" type="button" data-library-mode="txt" aria-pressed="false" data-busy-lock>온나라 기안 검토·복사</button>
-          </div>
-        </div>
-        <!-- 태그 facet — 축이 하나도 없으면 UI 전체를 숨긴다(§19.6 · 퇴화-코퍼스 불변식). -->
-        <div class="library-facets" id="libraryFacets" style="display:none"></div>
-      </div>
-
-      <div class="library-browser">
-        <section class="library-list-pane" id="libraryPanel" role="tabpanel" aria-labelledby="library-view-all">
-          <!-- 결과 수 재진술 — 필터가 목록을 비웠다는 사실이 조용히 지나가지 않게(§9.3 정체 면). -->
-          <p class="library-count" id="libraryCount" tabindex="-1" role="status" aria-live="polite"></p>
-          <div class="library-list" id="libraryList" data-preserve-scroll></div>
-        </section>
-        <aside class="library-detail" id="libraryDetail" aria-label="선택한 작업 상세"></aside>
-      </div>
-    </section>
+    <section class="scr" id="scr-library"></section>
 
     <!-- ============ 「문서 만들기」 화면 (구 「작업」 · R-flow #90 · 재작성 R1 2열) ============ -->
     <!-- 안정 DOM(id) + job.js 가 푸시('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
@@ -168,69 +111,9 @@
             <section class="dg-main">
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
             <div class="zone job-data-zone">
-              <div class="zone-cap zone-cap-actions"><span>현재 데이터</span>
-                <button class="btn sm" id="jobDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
-              <!-- 데이터 선택은 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래는 모두
-                   #dataPickerModal 안에서 갈린다(구 2버튼 「등록 데이터…」·「파일 선택…」 승계). -->
-              <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
-                <input class="field ro" id="jobDataLabel" type="text" readonly
-                       placeholder="데이터를 선택하세요">
-                <button class="btn primary" id="jobBtnPickData" data-busy-lock>데이터 선택…</button></div>
-              <div class="note" id="jobDataNotice" style="display:none;white-space:pre-line"></div>
+              <div id="jobDataHeaderReactHost"></div>
               <div class="preflight note" id="jobPreflight" style="display:none"></div>
-
-              <div class="run-row run-recs-head" id="jobRecsHead">
-                <span class="lbl" style="font-weight:600">생성 대상 문서</span>
-                <!-- 전열 검색 = 재현 OR 그룹 편집기(블록 4 결정 23) — 검색창을 비우면 그룹이 걷힌다. -->
-                <input class="field jobsearch" id="jobFilterSearch" type="search"
-                       placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
-                <!-- 직전 필터 재적용(결정 28) — 슬롯 존재·소스 일치일 때만 노출. 정의(보기)만
-                     복원하고 선택은 불변(전체 선택과 2클릭 분리 — 의사표시 격 구분). -->
-                <button class="btn sm filter-reapply" id="jobFilterReapply" style="display:none"
-                        data-busy-lock>직전 필터 재적용</button>
-                <div class="acts"><span class="muted capnote" id="jobSelCount">선택 0/0</span>
-                  <button class="btn sm" id="jobSelAll" data-busy-lock>전체 선택</button>
-                  <button class="btn sm" id="jobSelNone" data-busy-lock>전체 해제</button></div>
-              </div>
-              <!-- 전체 표시순서 축(계약 §18.10, 재작성 F3) — 표·필터 밖 스트립·실행 입력·
-                   파일 이름 계획이 이 한 축을 공유한다(보이는 것 = 만들어지는 것). 옆 문안은
-                   순서와 파일 이름의 연동을 상시 재진술한다(지도 §10.11 판정 I — 보이는
-                   변화 앞에 확인 왕복을 두지 않는다). ⤢ 면에도 같은 요소가 따라간다. -->
-              <div class="run-row job-orderbar" id="jobOrderBar">
-                <label class="lbl" for="jobOrderSel">표시순서</label>
-                <select class="field sm" id="jobOrderSel" data-busy-lock>
-                  <option value="sourceDesc">최신 행 먼저</option>
-                  <option value="sourceAsc">원본 순서</option>
-                </select>
-                <span class="muted capnote" id="jobOrderNote"></span>
-              </div>
-              <!-- 칩 줄 — 필터 정의 재진술(정의줄 단일 출처, 결정 4) + 가지 칩(× 프루닝) + 지우기. -->
-              <div class="fchips" id="jobFilterChips" style="display:none"></div>
-              <!-- 데이터 테이블 — 선두 「문서」 열(파일명·식별 요약, F33 승계) + 원본 데이터 열
-                   (열 머리 필터 아이콘 = 엑셀식 펼침, 결정 25). 행 클릭 토글 + Shift 범위(결정 2). -->
-              <div class="jobtb-host" id="jobTableHost">
-                <div class="tbwrap jobtbwrap" id="jobTableWrap" data-preserve-scroll>
-                  <table class="tb jobtb">
-                    <thead id="jobTableHead"></thead>
-                    <tbody id="jobTableBody"></tbody>
-                  </table>
-                </div>
-                <div class="job-empty muted" id="jobTableEmpty">데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.</div>
-              </div>
-              <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
-              <div class="fstrip" id="jobSelStrip" style="display:none"></div>
-              <!-- 전문 범위 편집기 footer(F3) — ⤢ 펼침 면 **안에서만** 선다. 화면 안에서는
-                   CSS 가 숨기고(`.range-foot`), 면 슬롯으로 이동했을 때만 보인다: 「기안」도
-                   같은 면(#dataSheet)을 쓰므로 면 마크업에 두면 남의 화면에 남의 footer 가
-                   뜬다. 초안 의미론(적용 전 메인 범위 불변)은 Python 이 진다. -->
-              <div class="range-foot" id="jobRangeFoot">
-                <p class="muted" id="jobRangeNote"></p>
-                <button class="btn" id="jobRangeSelectedOnly" type="button"
-                        aria-pressed="false" data-busy-lock>선택된 항목만 보기</button>
-                <button class="btn" id="jobRangeCancel" type="button" data-busy-lock>취소</button>
-                <button class="btn primary" id="jobRangeApply" type="button"
-                        data-busy-lock>선택 적용: 0건</button>
-              </div>
+              <div id="jobDataBodyReactHost"></div>
             </div>
 
             <!-- 본문 존 — 표 없는 한 줄(U2 §2.13). 구 거울 테이블·필드축 ack(클릭=확인)는
@@ -314,20 +197,12 @@
                    작업을 보는 경로는 「문서 작업」이 흡수했고(사용자 확정), 여기서는 그
                    흡수처를 가리키기만 한다. 흡수했다고 적어 놓고 가는 길을 안 보여 주면
                    그게 조용한 소실이다(막다른 화면 금지). -->
-              <div class="zone" id="jobNoDataExit" style="display:none">
-                <div class="zone-cap">시작하기</div>
-                <p class="muted capnote">데이터를 먼저 고르면 그 데이터로 쓸 수 있는 문서 작업이 여기에 표시됩니다.</p>
-                <p class="muted capnote">쓸 작업을 이미 알고 있다면 「문서 작업」에서 고른 뒤 <b>문서 만들기에서 사용</b>을 누르세요.</p>
-                <button class="btn sm" id="jobPickInLibrary" type="button">「문서 작업」에서 고르기</button>
-              </div>
+              <div class="zone" id="jobNoDataExit"></div>
               <!-- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 현재 데이터로 만들 수 있는
                    저장 작업. 판정·순위·추천은 Python(work_candidates) 단일 출처, 여기는 카드
                    렌더만. top=상위 5 순위(별 토글·추천 표지)·more=잘린 수 고지·
                    needs=정직한 비활성(없는 열 병기). -->
-              <div class="zone job-cands-row" id="jobCandsRow" style="display:none">
-                <div class="zone-cap">이 데이터에 사용할 문서</div>
-                <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>
-              </div>
+              <div class="zone job-cands-row" id="jobCandsRow"></div>
 
               <!-- 구 「선택한 작업」 존은 사망했다(U2 §4 판정 A, #342) — 실측상 이 존의
                    어포던스는 이관 대상이 아니라 **세 번째 사본**이었다. 승계처: 작업명 =
@@ -535,26 +410,7 @@
     <!-- 데이터 고정·등록 모달(#26 #4 → 재작성 F1 승계) — 참조만(경로 포인터). 동명 재등록은
          확인 승격. 데이터 선택 다이얼로그 **위에** 스택으로 뜨며 제목은 진입 사유로 갈린다
          (「이 데이터 고정」·「데이터 등록」·「데이터 다시 연결」 — data_picker.js 소유). -->
-    <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
-      <div class="modal-card">
-        <h3 id="poolRegTitle">데이터 등록</h3>
-        <p class="modal-sub">파일 위치만 기억하고, 실행할 때 원본을 읽습니다.</p>
-        <label class="ctl"><span class="lbl">이름</span>
-          <input class="field" id="poolRegName" type="text" placeholder="예: 7월 공고목록"></label>
-        <label class="ctl"><span class="lbl">파일 경로(.xlsx/.csv)</span>
-          <span class="row">
-            <input class="field mono spacer" id="poolRegPath" type="text" placeholder="C:\...\데이터.xlsx">
-            <button class="btn" id="poolRegBrowse" type="button">찾아보기…</button></span></label>
-        <label class="ctl"><span class="lbl">시트(선택)</span>
-          <input class="field" id="poolRegSheet" type="text" placeholder="비우면 첫/유일 시트"></label>
-        <label class="ctl"><span class="lbl">메모(선택)</span>
-          <input class="field" id="poolRegNote" type="text"></label>
-        <div class="modal-actions">
-          <button class="btn" id="poolRegCancel">취소</button>
-          <button class="btn primary" id="poolRegOk">등록</button>
-        </div>
-      </div>
-    </div>
+    <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle"></div>
 
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
     <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle">
@@ -592,42 +448,7 @@
          현재/고정한/다른 세 구획이 한 면에 있고, 구 `pool` 화면의 목록·등록·보관·활성화·
          삭제·다시 연결·손상 격리를 전부 승계한다(지도 §10.7.4 점검표). 거동은 data_picker.js. -->
     <div id="dataPickerModal" class="modal hidden" role="dialog" aria-modal="true"
-         aria-labelledby="dataPickerTitle">
-      <div class="modal-card data-picker">
-        <h3 id="dataPickerTitle">데이터 선택</h3>
-        <p class="modal-sub">엑셀·CSV 는 위치(경로·시트)만 기억하고, 고를 때 원본을 읽습니다.</p>
-        <p id="dataPickerNote" class="note" role="status" aria-live="polite"
-           style="display:none;white-space:pre-line"></p>
-
-        <section class="picker-sec" aria-labelledby="dataPickerCurCap">
-          <div class="cap" id="dataPickerCurCap">현재 데이터</div>
-          <div id="dataPickerCurrent"></div>
-        </section>
-
-        <section class="picker-sec" aria-labelledby="dataPickerPinCap">
-          <!-- 캡션의 .acts 는 통째로 죽었다: 「새로고침」은 U2 §2.3(열 때마다 pool.refresh
-               재스캔 — 상시 버튼은 목록이 낡았을 수 있다는 인상만 준다), 「＋ 직접 등록…」은
-               U2 §2.7 4행(유일한 고유 기능=「읽지 않고 등록」이 곧 결함 — 등록은 「이 데이터
-               고정」·「다시 연결」 두 명시 진입만 남는다). -->
-          <div class="cap" id="dataPickerPinCap">고정한 데이터</div>
-          <div id="dataPickerPinned" class="tpllist"></div>
-          <!-- 같은 데이터(경로+시트)를 가리키는 등록 2+건(§5.3 구판 마이그레이션의 병합
-               대상) — 조용히 하나 버리지 않고 여기서 loud 재진술 + 사용자 확정으로 정리. -->
-          <div id="dataPickerDupes"></div>
-          <div id="dataPickerCorrupt"></div>
-        </section>
-
-        <section class="picker-sec" aria-labelledby="dataPickerOtherCap">
-          <div class="cap" id="dataPickerOtherCap">다른 데이터</div>
-          <p class="muted capnote">한 번만 쓸 파일. 고른 뒤 「이 데이터 고정」으로 남길 수 있습니다.</p>
-          <button class="btn" id="dataPickerBrowse" data-busy-lock>파일 찾아보기…</button>
-        </section>
-
-        <div class="modal-actions">
-          <button class="btn" id="dataPickerClose">닫기</button>
-        </div>
-      </div>
-    </div>
+         aria-labelledby="dataPickerTitle"></div>
 
     <!-- 확인 면 = 생성 값 미리보기 **시트**(재작성 F5 드로어의 승격 — U2 §2.13). 레코드별
          실제 주입값·파일 이름·이름 계획 한 줄·명시 승인. 값과 이름은 **실행 입력과 같은
@@ -706,18 +527,7 @@
          함께 사망했고(F2 PR-B), 아래 셋이 화면별 wiring 격리로 남는다 — 라이브러리가 작업
          그룹 이동의 승계처다(지도 §10.9 판정 F).
          목록은 library.js 가 스냅샷 그룹명으로 채운다(공용 grouplist.js moveDialog 팩토리). -->
-    <div id="libraryMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libraryMoveTitle">
-      <div class="modal-card">
-        <h3 id="libraryMoveTitle">그룹으로 이동</h3>
-        <p class="modal-sub" id="libraryMoveName"></p>
-        <div id="libraryMoveList" class="sheet-list"></div>
-        <p id="libraryMoveErr" class="note dangerbox" style="display:none"></p>
-        <div class="modal-actions">
-          <button class="btn" id="libMoveCancel">취소</button>
-          <button class="btn primary" id="libMoveOk">이동</button>
-        </div>
-      </div>
-    </div>
+    <div id="libraryMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libraryMoveTitle"></div>
 
     <!-- 기안·작업이 한 벌을 쓰는 데이터 펼침 면(#271/#272). 소유 화면의 실 DOM을 이 슬롯으로 이동한다. -->
     <div id="dataSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
@@ -735,24 +545,7 @@
          상단 탭은 계속 「문서 만들기」가 활성이다(별 라우트 아님). 탭·검색·행 판정은 Python(work_candidates)
          소유이고 여기는 받은 구획을 그린다. 사용 가능 행 클릭 = 작업 선택(세션 데이터는 생존). -->
     <div id="jobBrowseSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
-         aria-labelledby="jobBrowseTitle">
-      <div class="modal-card sheet-card">
-        <div class="sheet-head">
-          <h3 id="jobBrowseTitle">문서 작업 찾기</h3>
-          <button class="btn" id="jobBrowseClose" type="button">닫기</button>
-        </div>
-        <div class="sheet-body">
-          <div class="browse-bar">
-            <div class="browse-tabs" id="jobBrowseTabs" role="tablist"
-                 aria-label="현재 데이터 기준 분류"></div>
-            <input class="field" id="jobBrowseQuery" type="search"
-                   placeholder="작업 이름으로 찾기" aria-label="작업 이름 검색">
-          </div>
-          <p class="muted capnote" id="jobBrowseNote" role="status"></p>
-          <div id="jobBrowseRows" data-preserve-scroll></div>
-        </div>
-      </div>
-    </div>
+         aria-labelledby="jobBrowseTitle"></div>
 
     <!-- (작업 확인 펼침 면(#272 · 2 pane)은 사망 — U2 §2.13: 두 pane 은 이미 둘 다
          점유돼 있었고(거울 + 파일 이름 계획) 그 내용이 확인 면(#previewSheet) 하나로

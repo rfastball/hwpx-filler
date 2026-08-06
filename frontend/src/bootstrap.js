@@ -78,16 +78,13 @@ import { Modal } from "../js/modal.js";
 import { SurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
 import { createSheetPicker } from "../js/sheet_picker.js";
-import { createDataPicker } from "../js/data_picker.js";
 import { createPathTrack } from "../js/pathtrack.js";
 import { createRelink } from "../js/relink.js";
 import { Popover } from "../js/popover.js";
-import { createDataZone } from "../js/datazone.js";
 import { Intent } from "../js/intent.js";
 import { GroupList } from "../js/grouplist.js";
 import { createEditorEntry } from "../js/editor_entry.js";
 
-import { createLibraryScreen } from "../js/screens/library.js";
 import { createEditorScreen } from "../js/screens/editor.js";
 import { createJobScreen } from "../js/screens/job.js";
 import { createWorkbenchScreen } from "../js/screens/workbench.js";
@@ -100,6 +97,20 @@ import { createRuntimeAdapter } from "./runtime/adapter.ts";
 import { createBridgeClient } from "./runtime/client.ts";
 import { createShellNav } from "./shell/nav.ts";
 import { createSnapshotStore } from "./state/store.ts";
+import { createScreenRuntime } from "./screens/runtime.ts";
+import { createScreenPorts } from "./screens/ports.ts";
+import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
+import { screenPortal } from "./screens/host.ts";
+import {
+  LibraryMoveDialog, LibraryScreen as ReactLibraryScreen, createLibraryController,
+} from "./screens/library.ts";
+import {
+  DataPickerDialog, PoolRegistrationDialog, createDataPickerController,
+} from "./screens/data_picker.ts";
+import {
+  JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeaderPortal, JobNoDataExit,
+  createJobReadController, createJobRunAdapter,
+} from "./screens/job_read.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -113,6 +124,10 @@ import { bootSelftest } from "./selftest/boot.js";
  *    구성 산물. entry 는 쓰지 않는다 — 합성 계약을 묻는 테스트의 관측면이다(머리말 참조).
  */
 export function bootProduct() {
+  const dataSheetClose = document.getElementById("dataSheetClose");
+  if (dataSheetClose === null) {
+    throw new Error("R4 React close button host가 없습니다: #dataSheetClose");
+  }
   /* 브리지는 여기서 **정확히 한 번** 구성된다(N-07). 종전에는 `bridge.js` 가 IIFE 로
      `window.Bridge`·`window.__push` 를 스스로 만들고 합성 루트가 그걸 되읽었다 — 생산자가
      둘로 갈린 마지막 자리였다.
@@ -134,14 +149,23 @@ export function bootProduct() {
      (관측자 오염, N-07 #379 §5 결함류). 채널 목록은 생성 계약 유도라 손 목록이 없고,
      `ingest` 는 안정 함수라 값으로 넘겨도 늦은 결속이 깨지지 않는다(리스너 예외는 store
      안에서 격리·경보되므로 이 탭이 같은 채널 뒤 legacy render 를 죽이지 않는다).
-     `services` 에 싣지 않는 이유는 client 와 같다 — 그 표는 selftest 주입 계약(키 26 핀)
-     이고 store 는 시험 표면이 아니라 신규 제품 통로다. */
+     `services` 에 싣지 않는 이유는 store가 시험에서 교체할 전송 표면이 아니기 때문이다.
+     반대로 client는 R4 React 화면이 실제로 부르는 살아 있는 객체라 아래 selftest 주입 표에
+     싣는다. 그래야 기존 probe가 합성 snapshot 위에서 dispatch를 갈아끼울 때 typed 경로만
+     실 백엔드로 새지 않는다. */
   const store = createSnapshotStore({
     alarm: (message) => console.error("[hwpx] snapshot store 리스너 실패", message),
   });
   for (const screen of store.channels) {
     bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));
   }
+
+  /* R4 화면 런타임은 React boot보다 먼저 선다. raw push의 제품 구독자는 위 store tap 하나고,
+     화면 model과 임시 job-run adapter는 그 하류에서 같은 사건 순서를 본다. */
+  const client = createBridgeClient({ adapter: createRuntimeAdapter({ win: window }) });
+  const runtime = createScreenRuntime({ client, store });
+  const screenPorts = createScreenPorts();
+  const servicePorts = createServiceHandoffPorts();
 
   /* late-bound 좌표 — 아래에서 구성되면 채워진다. 콜백이 지연 호출이라 선언만 먼저 선다. */
   let LibraryScreen;
@@ -158,9 +182,12 @@ export function bootProduct() {
 
   /* editor·library→job 간선 — 소비 메서드만 좁게 싣는다(전 표면을 실으면 절단이 무의미). */
   const jobCallbacks = {
-    refreshList: (...args) => JobScreen.refreshList(...args),
-    openPreview: (...args) => JobScreen.openPreview(...args),
-    openBrowseNeedsAction: (...args) => JobScreen.openBrowseNeedsAction(...args),
+    refreshList: (...args) => screenPorts.jobRead.current().refreshList(...args),
+    openPreview: (_event, options = {}) => screenPorts.jobRun.current().openPreview({
+      at: options.at,
+      focusTarget: options.focusTarget,
+    }),
+    openBrowseNeedsAction: (...args) => screenPorts.jobRead.current().openBrowseNeedsAction(...args),
   };
 
   /* job→editor 간선. */
@@ -178,23 +205,82 @@ export function bootProduct() {
   const Personalization = createPersonalization({ bridge });
   const SheetPicker = createSheetPicker({ bridge });
   const PathTrack = createPathTrack({ bridge });
-  const DataPicker = createDataPicker({ bridge, sheetPicker: SheetPicker, pathTrack: PathTrack });
   const Relink = createRelink({ bridge });
-  const DataZone = createDataZone({ bridge });
   const EditorEntry = createEditorEntry({ bridge, navigate });
+
+  servicePorts.sheetPicker.bindLegacy({
+    choose: (...args) => SheetPicker.choose(...args),
+  });
+  servicePorts.relink.bindLegacy({
+    relinkTemplate: (...args) => Relink.relinkTemplate(...args),
+  });
+  screenPorts.editorEntry.bindLegacy(EditorEntry);
+  screenPorts.jobRunCoordination.bindLegacy({
+    confirmDestructiveIfArmed: (...args) => JobScreen.confirmDestructiveIfArmed(...args),
+    log: (...args) => JobScreen.log(...args),
+  });
 
   /* 화면 넷 — 구성 순서는 구 entry 의 IIFE 평가 순서 그대로다. 교차 간선은 위 콜백 테이블로
      받으므로 구성 시점의 상호 참조가 없다. */
-  LibraryScreen = createLibraryScreen({
-    Bridge: bridge, Nav: navigation, JobScreen: jobCallbacks, EditorEntry, PathTrack, Relink,
+  const LibraryController = createLibraryController({
+    doc: document,
+    runtime, client, ports: screenPorts, services: servicePorts,
+    modal: Modal, undo: UndoToast,
+    groupMenu: GroupList.createMenu({ menuId: "libraryGroupMenu" }),
+    navigation,
+    notify: (message) => window.alert(message),
+  });
+  const DataPicker = createDataPickerController({
+    doc: document,
+    runtime, client, services: servicePorts, modal: Modal,
+    notify: (message) => window.alert(message),
+  });
+  const JobRead = createJobReadController({
+    runtime, client, ports: screenPorts, services: servicePorts,
+    modal: Modal, surfaceSheet: SurfaceSheet, dataPicker: DataPicker,
+    navigation, doc: document,
+    notify: (message) => window.alert(message),
   });
   EditorScreen = createEditorScreen({
     Bridge: bridge, Nav: navigation, JobScreen: jobCallbacks, EditorEntry, PathTrack, SheetPicker,
   });
-  JobScreen = createJobScreen({
+  const LegacyJobScreen = createJobScreen({
     Bridge: bridge, Nav: navigation, EditorScreen: editorCallbacks,
-    DataZone, PathTrack, Relink, EditorEntry, DataPicker,
+    PathTrack, EditorEntry,
+    JobDataCoordinator: screenPorts.jobData,
+    JobRelinkFlow: screenPorts.jobRelinkFlow,
   });
+  screenPorts.jobRun.bindLegacy(createJobRunAdapter({
+    model: runtime.model("job"),
+    beforePreview: () => screenPorts.jobData.current().flushPendingEdits(),
+    openPreview: (request) => LegacyJobScreen.openPreview(null, request),
+  }));
+  let releaseJobRun = null;
+  LibraryScreen = { init: () => LibraryController.init() };
+  const DataPickerService = {
+    init: () => DataPicker.init(),
+    open: (...args) => DataPicker.open(...args),
+  };
+  JobScreen = {
+    overwriteBody: (...args) => LegacyJobScreen.overwriteBody(...args),
+    guardBody: (...args) => LegacyJobScreen.guardBody(...args),
+    resultExitLine: (...args) => LegacyJobScreen.resultExitLine(...args),
+    confirmDestructiveIfArmed: (...args) => LegacyJobScreen.confirmDestructiveIfArmed(...args),
+    log: (...args) => LegacyJobScreen.log(...args),
+    openPreview: (...args) => LegacyJobScreen.openPreview(...args),
+    renderResult: (...args) => LegacyJobScreen.renderResult(...args),
+    markResultStale: (...args) => LegacyJobScreen.markResultStale(...args),
+    async init() {
+      await LegacyJobScreen.init();
+      if (releaseJobRun === null) {
+        releaseJobRun = screenPorts.jobRun.current().attach({
+          onFull: (snapshot) => LegacyJobScreen.acceptFull(snapshot),
+          onProgress: (progress) => LegacyJobScreen.acceptProgress(progress),
+        });
+      }
+      return runtime.loadInitial("job");
+    },
+  };
   WorkbenchScreen = createWorkbenchScreen({ Bridge: bridge, Nav: navigation });
 
   /* 셸 상태기계 (R3-02 · #411) — 라우팅·ready·닫기 직렬화 **판정**의 단일 정본. 여기서
@@ -207,7 +293,7 @@ export function bootProduct() {
      선다. 셸 리스너·부팅 시퀀스는 여기서 **서술**(`shellHost`)로만 캡처되고, 부착/해제
      수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
-    Bridge: bridge, Theme, Personalization, DataPicker,
+    Bridge: bridge, Theme, Personalization, DataPicker: DataPickerService,
     screens: {
       library: LibraryScreen, editor: EditorScreen, job: JobScreen, workbench: WorkbenchScreen,
     },
@@ -219,10 +305,10 @@ export function bootProduct() {
   /* 구성 산물 전수 — 시험 배선과 반환값이 같은 표를 쓴다. 골라 넘기지 않는 이유는
      `bootSelftest` 호출부 주석에 있다. */
   const services = {
-    Bridge: bridge, Nav, AppCloseGuard,
+    Bridge: bridge, Client: client, Nav, AppCloseGuard,
     Copy, escHtml, Guard, SegView, Popover, Preserve, Intent, UndoToast,
     Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
-    PathTrack, Relink, DataZone, DataPicker, EditorEntry,
+    PathTrack, Relink, DataPicker: DataPickerService, EditorEntry,
     LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
   };
 
@@ -349,14 +435,31 @@ export function bootProduct() {
        상태기계 markReady → init 5)를 소유한다. 서술은 adapter 구성 시 캡처된 것을 그대로
        넘긴다 — 여기서 풀어 헤치면 합성 루트가 두 번째 셸 조립자가 된다. */
     shell: appShell.shellHost,
+    /* R4-01 — 한 React root의 portal registry. target은 모두 static shell이고 내부 legacy
+       child가 0인지는 ScreenMigrationHost가 mount 전에 fail-closed로 검사한다. */
+    screens: {
+      doc: document,
+      portals: [
+        screenPortal("scr-library", ReactLibraryScreen, { controller: LibraryController }),
+        screenPortal("libraryMoveModal", LibraryMoveDialog, { controller: LibraryController }),
+        screenPortal("poolRegModal", PoolRegistrationDialog, { controller: DataPicker }),
+        screenPortal("dataPickerModal", DataPickerDialog, { controller: DataPicker }),
+        screenPortal("jobDataHeaderReactHost", JobDataHeaderPortal, {
+          controller: JobRead,
+          closeButton: dataSheetClose,
+        }),
+        screenPortal("jobDataBodyReactHost", JobDataBody, {
+          controller: JobRead, location: "inline",
+        }),
+        screenPortal("dataSheetSlot", JobDataBody, {
+          controller: JobRead, location: "sheet",
+        }),
+        screenPortal("jobNoDataExit", JobNoDataExit, { controller: JobRead }),
+        screenPortal("jobCandsRow", JobCandidates, { controller: JobRead }),
+        screenPortal("jobBrowseSheet", JobBrowseDialog, { controller: JobRead }),
+      ],
+    },
   });
-
-  /* typed bridge client (R2-02 · #406) — 여기서 **정확히 한 번** 구성된다. 소비자는 아직
-     없다(R2-03+ 의 feature 가 이 주입을 이어받는다 — React root 가 빈 채로 먼저 선 것과
-     같은 기반 착지). `services` 에 싣지 않는 이유: 그 표는 selftest 주입 계약(키 전수
-     26 핀)이고, client 는 시험 표면이 아니라 신규 제품 통로다. 구성은 부작용이 없다 —
-     전역 판독은 호출 시점의 어댑터 몫이다. */
-  const client = createBridgeClient({ adapter: createRuntimeAdapter({ win: window }) });
 
   return { bridge, pushPort, productApi, services, client, store };
 }

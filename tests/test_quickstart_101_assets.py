@@ -143,6 +143,7 @@ def _app_label_haystack() -> str:
     """
     sources = [
         *sorted(SOURCE_ROOT.rglob("*.js")),
+        *sorted(SOURCE_ROOT.rglob("*.ts")),
         *sorted(SOURCE_ROOT.rglob("*.html")),
         *sorted((REPO_ROOT / "src" / "hwpxfiller" / "gui").rglob("*.py")),
         *sorted((REPO_ROOT / "src" / "hwpxfiller" / "webapp").rglob("*.py")),

@@ -301,8 +301,6 @@ function createJobBand(conf) {
   const candConn = make("span"); candConn.textContent = "템플릿 없음";
   warnCard.sub.set(".cand-conn", candConn);
   sel.set("#jobCandidates .job-cand-card.warn", warnCard);
-  const candMenu = make("div", "jobCandMenu");
-  candMenu.style.display = "none";
   const itemOpen = make("button");
   itemOpen.attributes["data-track-act"] = "open";
   itemOpen.attributes["data-path"] = "C:\\t\\공고서.hwpx";
@@ -311,8 +309,16 @@ function createJobBand(conf) {
   itemReveal.attributes["data-track-act"] = "reveal";
   itemReveal.attributes["data-path"] = "C:\\t\\공고서.hwpx";
   itemReveal.textContent = "폴더에서 보기";
-  candMenu.subAll.set("[data-track-act]", [itemOpen, itemReveal]);
-  candMenuBtn.behavior = () => { candMenu.style.display = "block"; };
+  candMenuBtn.behavior = () => {
+    const selector = "#jobCandidates .cand-inline-menu";
+    if (sel.has(selector)) {
+      sel.delete(selector);
+      return;
+    }
+    const inlineMenu = make("span");
+    inlineMenu.subAll.set("[data-track-act]", [itemOpen, itemReveal]);
+    sel.set(selector, inlineMenu);
+  };
 
   const confirmModal = make("div", "confirmModal");
   confirmModal.classList.add("hidden");
@@ -401,14 +407,6 @@ function createJobBand(conf) {
   strip.textContent = "필터 밖 선택 1행 · doc-002.hwpx";
   strip.css.backgroundColor = "rgb(245, 245, 245)";
   sel.set('#jobSelStrip [data-unsel="1"]', make("button"));
-
-  const colPanel = make("div", "jobColPanel");
-  colPanel.hidden = true;
-  colPanel.css.display = "flex";
-  colPanel.hiddenLoses = !!options.panelHiddenLoses;
-  const panelClose = make("button");
-  panelClose.behavior = () => { colPanel.hidden = true; };
-  colPanel.sub.set('[data-act="panel-close"]', panelClose);
 
   const jobMirrorLine = make("div", "jobMirrorLine");
   jobMirrorLine.textContent = "빈 값 1필드(낙찰율) · 이름 2건";
@@ -596,7 +594,7 @@ function createJobBand(conf) {
       if (!byId.has("jobBrowseRow-" + NOTICE)) {
         const row = make("div", "jobBrowseRow-" + NOTICE);
         row.behavior = () => {
-          band.services.Bridge.call("job", "select_job", { name: "공고서" }).then(() => {
+          band.services.Client.dispatch("job", "select_job", { name: "공고서" }).then(() => {
             sheet.classList.add("is-closing");
             cards.get("공고서").focus();
           });
@@ -645,9 +643,9 @@ function createJobBand(conf) {
     star.behavior = () => {
       const next = !favIntent.get(name);
       favIntent.set(name, next);
-      const dispatch = band.services.Bridge.call;   // 요청 시점 통로 고정(같은 근거)
+      const dispatch = band.services.Client.dispatch; // R4 typed 통로를 요청 시점에 고정
       favChain = favChain
-        .then(() => dispatch.call(band.services.Bridge, "job", "toggle_favorite", { name, value: next }))
+        .then(() => dispatch.call(band.services.Client, "job", "toggle_favorite", { name, value: next }))
         .catch(() => {});
     };
   }
@@ -655,12 +653,16 @@ function createJobBand(conf) {
   cardNotice.behavior = () => {
     cardNotice.setAttribute("aria-busy", "true");
     cardNotice.textContent = "공고서 여는 중…";
-    band.services.Bridge.call("job", "select_job", { name: "공고서" });
+    /* R4 selectJob은 flushPendingEdits() 뒤 다음 마이크로태스크에서 typed 발신한다. 프로브가
+       클릭 직후 스텁을 거두는 회귀를 잡으려면 대역도 이 실제 순서를 따라야 한다. */
+    Promise.resolve().then(() => band.services.Client.dispatch(
+      "job", "select_job", { name: "공고서" },
+    ));
   };
   cardContract.behavior = () => {
     /* 경고 카드 클릭은 **선택이 아니다** — 안내 다이얼로그가 서고 발신은 없다. */
     if (options.warnCardSelects) {
-      band.services.Bridge.call("job", "select_job", { name: "계약서" });
+      band.services.Client.dispatch("job", "select_job", { name: "계약서" });
       return;
     }
     confirmModal.classList.remove("hidden");
@@ -674,19 +676,25 @@ function createJobBand(conf) {
     tableRow.classList.toggle("on", next);
     tableRow.attributes["aria-selected"] = next ? "true" : "false";
     rowInput.checked = next;
-    /* 통로는 **요청 시점**에 붙든다(frontend/js/datazone.js:281) — 큐에서 풀릴 때 다시 찾으면
-       그 사이 바뀐 통로로 나간다. 프로브 스텁이 바로 그 대표 사례이고, 거울 프로브가 두
-       번째 토글 값을 지연 회수로 확인할 수 있는 근거가 이 한 줄이다. */
-    const dispatch = band.services.Bridge.call;
+    /* R4 owner의 typed 통로는 **요청 시점**에 붙든다 — 큐에서 풀릴 때 다시 찾으면 그 사이
+       바뀐 통로로 나간다. 프로브 스텁이 바로 그 대표 사례이고, 거울 프로브가 두 번째 토글
+       값을 지연 회수로 확인할 수 있는 근거가 이 한 줄이다. */
+    const dispatch = band.services.Client.dispatch;
     rowChain = rowChain
-      .then(() => dispatch.call(band.services.Bridge, "job", "toggle_record", { index: 0, value: next }))
+      .then(() => dispatch.call(band.services.Client, "job", "toggle_record", { index: 0, value: next }))
       .catch(() => {});
   };
   ficoA.behavior = () => {
-    band.services.Bridge.call("job", "filter_panel", { col: "공고명" });
-    colPanel.hidden = false;
-    colPanel.setAttribute("aria-busy", "true");
-    colPanel.textContent = "공고명 · 불러오는 중…";
+    band.services.Client.dispatch("job", "filter_panel", { col: "공고명" });
+    const reactPanel = make("div");
+    reactPanel.setAttribute("aria-busy", "true");
+    reactPanel.textContent = "공고명 · 불러오는 중…";
+    const panelClose = make("button");
+    panelClose.behavior = () => {
+      if (!options.panelCloseSticks) sel.delete("#jobTableHost .react-colpanel");
+    };
+    reactPanel.sub.set('[data-act="panel-close"]', panelClose);
+    sel.set("#jobTableHost .react-colpanel", reactPanel);
   };
 
   const services = {
@@ -704,8 +712,14 @@ function createJobBand(conf) {
       },
       generate: () => Promise.resolve({ ok: true }),
     },
+    Client: {
+      dispatch: (screen, action, payload) => {
+        band.navLog.push({ client: action, payload });
+        return Promise.resolve({ ok: true, value: {} });
+      },
+    },
     Modal: { close: () => { previewCard.classList.add("is-closing"); } },
-    Popover: { closeAll: () => { candMenu.style.display = "none"; } },
+    Popover: { closeAll: () => {} },
     JobScreen: {
       overwriteBody: (info) => `총 ${info.total}건 · 덮어쓰기 ${info.overwrite_count}`
         + ` · 새로 만들기 ${info.new_count} · ${info.conflict_names.join(", ")} 외 ${info.conflict_more}`,
@@ -722,7 +736,7 @@ function createJobBand(conf) {
         if (counts.filter_active) parts.push(`필터 정의(${counts.filter_parts}개 조건) · 직전 필터 재적용`);
         return parts.join(" · ");
       },
-      confirmDataSwapIfArmed: () => Promise.resolve(true),
+      confirmDestructiveIfArmed: () => Promise.resolve(true),
       renderResult,
       markResultStale,
     },
@@ -732,7 +746,7 @@ function createJobBand(conf) {
   band.doc = doc;
   band.win = win;
   band.el = {
-    jobGate, jobGenBtn, previewOpen, colPanel, filterReapply, jobPanel, jobDataGrid,
+    jobGate, jobGenBtn, previewOpen, filterReapply, jobPanel, jobDataGrid,
     jobResult, jobResultStale, jobActionRelink, jobNoDataExit, sheet, browseQuery,
     jobRunLogLast, folderLine, cards, stars, browseOpen, jobRestate,
   };
@@ -944,6 +958,10 @@ test("full 한 바퀴 — 여섯 키가 전부 서고 오류가 없다", async (
     "job_data_first", "job_inherited", "job_active_card",
     "job_mirror", "job_result", "job_density_narrow",
   ]);
+  const syntheticEntries = band.navLog.filter((entry) => entry.screen === "job");
+  assert.ok(syntheticEntries.length >= 6);
+  assert.ok(syntheticEntries.every((entry) => entry.opts && entry.opts.refreshed === true),
+    "합성 job 스냅샷 앞에서는 자동 실 refresh를 중복 발신하지 않습니다.");
   assert.ok(band.hostPushes.length > 20, "실 render 구동이 주입 push 로 실제로 일어났습니다.");
 });
 
@@ -1053,9 +1071,13 @@ test("job_data_first — 탐색 출구가 없으면 'no-exit' 이고 착지 3필
 /* ────────────────── job_inherited — 두 극 ────────────────── */
 
 test("job_inherited — 「여는 중」 표지와 흡수처 출구 두 극", async () => {
-  const { report } = await runFull();
+  const { report, band } = await runFull();
   const j = report.results.job_inherited;
   assert.equal(j.opening_marker_immediate, true, "후보 카드 클릭 프레임에 지연 표지가 선다");
+  assert.equal(
+    band.navLog.some((entry) => entry.client === "select_job"), false,
+    "합성 작업 선택이 typed 스텁을 벗어나 실 Client로 샜습니다.",
+  );
   /* 데이터가 있으면 숨고(소음 금지), 둘 다 없으면 상주한다(막다른 화면 금지). */
   assert.equal(j.no_data_exit_with_data, false);
   assert.equal(j.no_data_exit_shown, true);
@@ -1166,13 +1188,13 @@ test("job_mirror — 필터 표면·표 의미·낙관 토글", async () => {
   assert.equal(j.panel_shell_immediate, true);
 });
 
-test("job_mirror — [hidden] 이 display:flex 를 이긴다(양성) / 지면 잡힌다(음성)", async () => {
+test("job_mirror — React 열 패널은 닫으면 언마운트된다(양성/음성)", async () => {
   const positive = await runFull();
   assert.equal(positive.report.results.job_mirror.panel_hidden, true);
-  const negative = await runFull({ panelHiddenLoses: true });
+  const negative = await runFull({ panelCloseSticks: true });
   assert.equal(
     negative.report.results.job_mirror.panel_hidden, false,
-    "colpanel 이 항시 떠 있는 회귀는 계산 스타일로만 보인다",
+    "React colpanel이 닫힌 뒤에도 남는 회귀를 잡습니다.",
   );
 });
 

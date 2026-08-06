@@ -58,7 +58,9 @@ LEAF_ESM_FILES = (
     "segview.js",
 )
 
-#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 15개. 잎과 같은 규칙을 따른다 — entry가 직접
+#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4 뒤에도 ``frontend/js``에 남은 13개.
+#: Data picker와 DataZone은 ``frontend/src/screens/*.ts`` React producer/controller로 승계돼
+#: 이 legacy-JS 매니페스트에서는 빠진다. 잎과 같은 규칙을 따른다 — entry가 직접
 #: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
 #: 아니라 **기록**이다: 이제 평가 순서는 합성 루트의 import 그래프가 정한다).
 SERVICE_ESM_FILES = (
@@ -69,22 +71,20 @@ SERVICE_ESM_FILES = (
     "surface_sheet.js",
     "undo_toast.js",
     "sheet_picker.js",
-    "data_picker.js",
     "pathtrack.js",
     "relink.js",
     "popover.js",
-    "datazone.js",
     "intent.js",
     "grouplist.js",
     "editor_entry.js",
 )
 
-#: N-06에서 named factory(true ESM)로 바뀐 화면 넷과 앱 셸. entry가 직접 싣지 않고 합성
+#: N-06에서 named factory(true ESM)로 바뀐 화면 가운데 R4 뒤에도 legacy JS에 남은 셋과
+#: 앱 셸. Library는 ``frontend/src/screens/library.ts``가 승계했다. entry가 직접 싣지 않고 합성
 #: 루트가 import해 **정확히 한 번** 구성하며, 구성 순서는 구 entry의 IIFE 평가 순서
 #: 그대로다(화면 넷 → 앱 셸). 화면 간 간선과 화면→Nav 간선은 import가 아니라 합성 루트의
 #: late-bound 콜백 테이블이 진다 — 그래서 import 그래프에 editor↔job 순환이 없다.
 SCREEN_ESM_FILES = (
-    "screens/library.js",
     "screens/editor.js",
     "screens/job.js",
     "screens/workbench.js",
