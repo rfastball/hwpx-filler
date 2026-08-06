@@ -459,7 +459,8 @@ export function createEditorController(deps: EditorControllerDeps) {
     };
     patchView({ txtEdit: state });
     deps.modal.open("txtEditModal", {
-      initialFocus: deps.doc.getElementById(mode === "new" ? "txtEditName" : "txtEditContent"),
+      /* 초기 포커스는 여기서 넘기지 않는다 — 이 시점엔 창 내용이 아직 커밋 전이라 대상이
+         없다. 겨눔은 `TxtEditDialog` 의 커밋 뒤 effect 가 진다. */
       returnFocus: trigger,
       beforeClose: () => {
         const current = view.txtEdit;
@@ -1638,6 +1639,15 @@ export function TxtEditDialog(props: { controller: EditorController }): ReactNod
   const { controller } = props;
   const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot);
   const state = view.txtEdit;
+  /* 초기 포커스는 **커밋 뒤** 이 자리가 겨눈다. 모달 executor 의 `initialFocus` 는 열림
+     **시점**의 DOM 을 보는데 이 창의 내용은 그 뒤 커밋에서 생기므로, 열림 시점에 넘기면
+     대상이 없어 되돌림 트리거로 떨어진다(시트 선택이 같은 이유로 같은 형태를 쓴다). */
+  useEffect(() => {
+    if (state === null) return;
+    const target = controller.doc.getElementById(
+      state.mode === "new" ? "txtEditName" : "txtEditContent");
+    target?.focus();
+  }, [state === null, state?.mode]);
   return h("div", { className: "modal-card" },
     h("h3", { id: "txtEditTitle" }, state?.title || "새 TXT 템플릿"),
     h("label", {

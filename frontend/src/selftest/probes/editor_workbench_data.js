@@ -127,6 +127,26 @@ function service(ctx, name) {
   return found;
 }
 
+/** React 제어 입력에 값을 넣는다 — `el.value = …` 는 React 의 값 추적기를 지나쳐
+ *  `onChange` 가 안 뜬다(제어 컴포넌트는 자기가 쓴 값을 기억한다). 네이티브 setter 로
+ *  써야 추적기가 「바뀌었다」를 보고, 그때서야 사용자 입력과 같은 경로가 된다.
+ *  legacy 는 비제어 입력이라 대입 한 줄이면 됐다 — 그 차이가 이 헬퍼의 존재 이유다. */
+function typeValue(ctx, element, value) {
+  /* setter 는 **원소의 프로토타입 사슬**에서 찾는다 — 생성자 이름(`HTMLInputElement`)으로
+     집으면 그 전역이 없는 대역에서 던지고, 그 던짐은 계약이 아니라 환경의 사실이다. */
+  let setter = null;
+  for (let proto = Object.getPrototypeOf(element); proto; proto = Object.getPrototypeOf(proto)) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
+    if (descriptor && typeof descriptor.set === "function") {
+      setter = descriptor.set;
+      break;
+    }
+  }
+  if (setter) setter.call(element, value);
+  else element.value = value;          // 접근자가 없는 대역 — 대입이 곧 값이다
+  fire(ctx, element, "input");
+}
+
 /** React 커밋 한 turn 양보 — R4 표면은 push·상태 변이를 **같은 호출 스택에서 받지만**
  *  concurrent root 의 DOM 커밋은 다음 turn 에 끝난다. 고정 지연이 아니라 0ms turn 하나다.
  *  legacy 렌더가 동기였던 자리마다 이 한 줄이 들어간다(`probes/job.js` 의 같은 관례). */
@@ -802,8 +822,7 @@ export function createEditorWorkbenchDataProbes() {
           }
           // ① 클린 세션에 타이핑 — 대기 편집이 서고 버리기가 열린다(1R 계약).
           nameEl.focus();
-          nameEl.value = "공고서 수정";
-          fire(ctx, nameEl, "input");
+          typeValue(ctx, nameEl, "공고서 수정");
           out.discard_enabled_on_typing = !discardOf().disabled;
           // ② 곧바로 버리기 클릭. 실제 순서 그대로 blur→change(=큐 적재) 뒤 click 이 온다.
           fire(ctx, nameEl, "change");
@@ -1534,8 +1553,7 @@ export function createEditorWorkbenchDataProbes() {
           // ② 이름을 고친다. 발신은 change(=blur) 뿐이지만 **버튼은 지금 열려야** 첫 클릭이 산다.
           const nameEl = byId(ctx, "editorName");
           nameEl.focus();
-          nameEl.value = "공고서 수정";
-          fire(ctx, nameEl, "input");
+          typeValue(ctx, nameEl, "공고서 수정");
           out.typing_enabled = !!(saveBtn() && !saveBtn().disabled);
           /* 「변경 버리기」도 **같은 술어로 지금** 열려야 한다(§2.17 · PR #354 리뷰) — 저장만
              열면 clean 세션 타이핑 직후 버리기의 첫 클릭이 삼켜진다(같은 결함류의 다른 버튼). */
@@ -1547,8 +1565,7 @@ export function createEditorWorkbenchDataProbes() {
           await settleRender(ctx);
           out.rerender_keeps_enabled = !!(saveBtn() && !saveBtn().disabled);
           // ③ 되돌려 치면 편집이 없던 것과 같다 — 열어 둔 채로 두지 않는다.
-          nameEl.value = "공고서";
-          fire(ctx, nameEl, "input");
+          typeValue(ctx, nameEl, "공고서");
           out.reverted_disabled = !!(saveBtn() && saveBtn().disabled);
           out.reverted_discard_disabled = !!(discardBtn() && discardBtn().disabled);
           // ④ 파일명 패턴도 같은 자격(재구성되는 입력이라 위임으로 받는다).
@@ -1556,13 +1573,11 @@ export function createEditorWorkbenchDataProbes() {
           out.pattern_present = !!patEl;
           if (patEl) {
             patEl.focus();
-            patEl.value = "공고서-{{공고번호}}-2";
-            fire(ctx, patEl, "input");
+            typeValue(ctx, patEl, "공고서-{{공고번호}}-2");
             out.pattern_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
             /* 다음 단계로 넘어가기 전에 이 편집을 되돌린다 — 안 그러면 대기 상태가 그대로
                이어져 다음 단계의 「깨끗한 상태」 측정이 거짓 양성이 된다(자기 잔재를 재는 꼴). */
-            patEl.value = snap.pattern;
-            fire(ctx, patEl, "input");
+            typeValue(ctx, patEl, snap.pattern);
             patEl.blur();
           }
           nameEl.blur();
@@ -1587,17 +1602,14 @@ export function createEditorWorkbenchDataProbes() {
           out.row_const_present = !!constEl;
           if (constEl) {
             constEl.focus();
-            constEl.value = "고정값 수정";
-            fire(ctx, constEl, "input");
+            typeValue(ctx, constEl, "고정값 수정");
             out.row_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
-            constEl.value = "고정값";
-            fire(ctx, constEl, "input");
+            typeValue(ctx, constEl, "고정값");
             out.row_reverted_disabled = !!(saveBtn() && saveBtn().disabled);
             /* ⑥ **타이핑 도중 푸시**(리뷰 R4 P1) — `#editor-body` 가 옛 스냅샷으로 다시
                그려져도 친 값이 살아 있어야 한다. 값이 사라졌는데 버튼만 열려 있으면 사용자는
                사라진 값을 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지). */
-            constEl.value = "푸시 중 입력";
-            fire(ctx, constEl, "input");
+            typeValue(ctx, constEl, "푸시 중 입력");
             ctx.push("editor", rowSnap);
             await settleRender(ctx);
             const after = ctx.doc.querySelector('#editor-body [data-act="row-const"]');
