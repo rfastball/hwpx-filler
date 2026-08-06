@@ -865,6 +865,9 @@ def test_generate_rejects_concurrent_entry(tmp_path):
         "ok": False,
         "error": "이미 문서를 생성하고 있습니다.",
         "level": "warn",
+        # 자물쇠 앞 거절도 **그 실행의 응답**이라 상관 토큰을 되돌린다(R4-03) — 표면이
+        # "내가 기다리던 그 호출인가"를 물을 수 있어야 늦은 응답이 새 실행을 덮지 않는다.
+        "run_token": "",
     }
 
 
@@ -1021,6 +1024,66 @@ def test_overwrite_confirm_flow(tmp_path):
     assert len(res["conflict_names"]) == 2 and res["conflict_more"] == 0
     # 확인 후 재호출 → 생성.
     assert ctrl.generate(confirm_overwrite=True)["ok"] is True
+
+
+# ---------------------------------------------- 실행 상관 토큰(R4-03)
+def test_generate_echoes_run_token_on_every_direct_branch(tmp_path):
+    """토큰은 **모든** direct 갈래로 되돌아온다 — 갈래 하나가 빠지면 그 갈래에서만
+    표면이 응답의 주인을 잃고, 그 창은 조용하다(늦은 응답이 새 실행을 덮는다)."""
+    ctrl, _ = _controller(tmp_path)
+
+    # ① 작업 미선택 거절
+    assert ctrl.generate(run_token="t-1")["run_token"] == "t-1"
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    _approve_run(ctrl)
+
+    # ② 성공
+    ok = ctrl.generate(run_token="t-2")
+    assert ok["ok"] is True and ok["run_token"] == "t-2"
+
+    # ③ 덮어쓰기 필요 — 이 갈래는 push 가 없어 direct 반환이 유일한 통로다.
+    needs = ctrl.generate(run_token="t-3")
+    assert needs.get("needs_overwrite") is True and needs["run_token"] == "t-3"
+
+    # ④ 확인 재호출은 **같은 의도**라 같은 토큰을 다시 쓴다(새 op 가 아니다).
+    committed = ctrl.generate(confirm_overwrite=True, run_token="t-3")
+    assert committed["ok"] is True and committed["run_token"] == "t-3"
+
+
+def test_progress_delta_carries_the_run_token(tmp_path):
+    """진행 델타는 direct 반환과 다른 채널이라 payload 안에 주인이 있어야 한다."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    _approve_run(ctrl)
+    ctrl.generate(run_token="run-42")
+
+    deltas = [snap["progress"] for _s, snap in pushes
+              if isinstance(snap, dict) and "progress" in snap]
+    assert deltas, "진행 델타가 하나도 없다"
+    assert all(d["run_token"] == "run-42" for d in deltas)
+    assert all({"done", "total", "run_token"} == set(d) for d in deltas)
+
+
+def test_run_token_is_opaque_to_python(tmp_path):
+    """Python 은 토큰으로 아무 판정도 하지 않는다 — 생략·빈 문자열·이상한 값이 전부
+    같은 판정을 내고 그대로 되돌아온다(해석하는 순간 실행 의미가 전송층으로 샌다)."""
+    weird = "  \n<script> t/1 é  "
+    for index, (token, expected) in enumerate(((None, ""), ("", ""), (weird, weird))):
+        home = tmp_path / f"h{index}"
+        home.mkdir()
+        ctrl, _ = _controller(home)
+        ctrl.dispatch("select_job", {"name": "공고서"})
+        _mount_all(ctrl, _data_csv(home))
+        ctrl.set_output_folder(str(home / "out"))
+        _approve_run(ctrl)
+        res = ctrl.generate() if token is None else ctrl.generate(run_token=token)
+        assert res["ok"] is True
+        assert res["run_token"] == expected
 
 
 # ---------------------------------------------- 본문 존 거울
