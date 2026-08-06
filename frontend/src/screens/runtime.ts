@@ -126,10 +126,22 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     });
   }
 
+  /** **no-push 동사의 반환 스냅샷** 착지 — 그 동사는 푸시를 내지 않으므로(`is_no_push`,
+   *  `mapping_verbs.py`) 이 반환이 화면의 **유일한** 갱신 경로다. 들이지 않으면 백엔드만
+   *  새 값을 알고 화면은 옛 판을 든 채로 남는다.
+   *
+   *  push 와 같은 last-delivery 로 넣는다(legacy 의 `.then(render)` 와 같은 의미).
+   *  `ingestPulled` 의 revision 가드를 쓰면 그사이 온 push 를 이유로 **우리가 방금 만든
+   *  값**을 버리게 되는데, 이 스냅샷은 그 push 보다 뒤에 만들어진 것이라 반대다. */
+  function land(screen: ScreenName, snapshot: unknown): void {
+    store.ingest(screen, snapshot);
+  }
+
   return {
     model,
     loadInitial,
     refresh,
+    land,
     listenerCount(screen: ScreenName): number {
       return ensure(screen).listeners.size;
     },

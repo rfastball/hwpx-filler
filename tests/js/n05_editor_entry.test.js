@@ -122,7 +122,10 @@ test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign
   /* loud 실패 통로는 legacy 의 `window.alert` 2곳에서 주입 `notify` 2곳으로 옮겨졌다 —
      전역을 아예 안 만지므로 이 파일에는 `window.` 가 하나도 없다. */
   assert.equal(/\bwindow\./.test(code), false, "이 seam 은 전역 window 를 만지지 않는다");
-  assert.equal((code.match(/deps\.notify\(/g) || []).length, 2, "loud 실패 통로 2곳 보존");
+  /* 진입 셋이 각자 자기 실패를 재진술한다 — `open_job_in_editor`·`new_job_from_data` 는
+     `ERROR:` 반환으로, `new_session` 은 dispatch 의 `{ok:false}` 봉투로 온다(형태가 달라도
+     「조용히 착지하지 않는다」는 같다). */
+  assert.equal((code.match(/deps\.notify\(/g) || []).length, 3, "loud 실패 통로 3곳 보존");
 });
 
 test("client 는 객체로만 쓴다 — 모듈/팩토리 스코프에 메서드를 뽑지 않는다", () => {
@@ -206,6 +209,27 @@ test("포트 교체 — 미저장 판정도 갈아끼운 client.invoke 를 본�
   client.invoke = async () => ({ ok: true, value: true });
   assert.equal(await entry.confirmDiscard("본문"), false, "미저장이 생기면 다음 질의가 본다");
   assert.equal(log.length, 1);
+});
+
+test("음성 — new_session 폐기가 실패하면 착지하지 않고 사유를 재진술한다", async () => {
+  const log = [];
+  const notices = [];
+  const entry = createEditorEntry({
+    doc: { activeElement: null },
+    client: {
+      async invoke() { return { ok: true, value: false }; },
+      async dispatch(...args) {
+        log.push(args);
+        return { ok: false, failure: { message: "세션을 비우지 못했습니다" } };
+      },
+    },
+    modal: { async confirm() { return true; }, restoreFocus() {} },
+    navigate: (...args) => log.push(["navigate", ...args]),
+    notify: (message) => notices.push(String(message)),
+  });
+  assert.equal(await entry.newDraft(), false, "폐기 실패는 성공으로 보고하지 않는다");
+  assert.equal(log.some((row) => row[0] === "navigate"), false, "실패 뒤 착지 0");
+  assert.deepEqual(notices, ["editor/new_session: 세션을 비우지 못했습니다"]);
 });
 
 test("포트 실패는 삼키지 않는다 — 손상된 호스트 결과는 throw 로 올라온다", async () => {

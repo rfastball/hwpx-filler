@@ -94,7 +94,12 @@ function harness(cfg) {
   const navigation = { go: (...args) => navigations.push(args) };
   const controller = createWorkbenchController({
     doc: { getElementById: () => null },
-    runtime: { model: () => model, loadInitial: async () => snapshot, refresh: async () => snapshot },
+    runtime: {
+      model: () => model, loadInitial: async () => snapshot,
+      refresh: async () => snapshot,
+      /* no-push 동사의 반환 스냅샷 착지 — 실 runtime 은 store 에 넣는다. */
+      land: (_screen, value) => { snapshot = value; for (const listener of [...listeners]) listener(); },
+    },
     client, modal, chain: Intent, navigation,
     notify: (message) => notices.push(String(message)),
   });

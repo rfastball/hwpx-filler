@@ -167,12 +167,19 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
     await commit(field, "set_source", { name, col: column, confirm: true });
   }
 
-  /** 값 입력은 blur 에서만 발신한다 — 타이핑 중 재구성이 없도록. */
+  /** 값 입력은 blur 에서만 발신한다 — 타이핑 중 재구성이 없도록.
+   *
+   *  `set_map_value` 는 이 저장소 유일의 **no-push** 동사다(포커스된 입력을 서버 푸시가
+   *  재구성하지 않게). 그래서 **반환 스냅샷이 유일한 갱신 경로**이고, 안 들이면 백엔드만
+   *  새 값을 안 채로 카드·미저장 수·린트·검토 배지가 옛 판에 남는다 — 그 상태로 「복사」를
+   *  누르면 사전확인과 클립보드는 **새 값**, 눈에 보이는 카드는 **옛 값**이 된다(이 화면의
+   *  제일 계약 「복사되는 것 = 눈에 보이는 것」 위반). legacy 는 `.then(render)` 였다. */
   function commitValue(name: string): void {
     const field = mapField(name, "value");
     const state = draft.fields[field];
     if (state === undefined || !state.dirty) return;
-    void commit(field, "set_map_value", { name, text: state.draftValue });
+    void commit(field, "set_map_value", { name, text: state.draftValue })
+      .then((result) => { if (result !== null) deps.runtime.land(SCREEN, result); });
   }
 
   async function saveRules(): Promise<void> {

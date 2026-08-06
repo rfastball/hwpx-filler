@@ -66,7 +66,16 @@ export function createEditorEntry(deps: EditorEntryDeps): EditorEntryPort {
     if (!(await confirmDiscard(
       "새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
-    await deps.client.dispatch("editor", "new_session", {});
+    /* `dispatch` 는 실패를 **던지지 않고** `{ok:false, failure}` 로 해소한다 — 그대로 두면
+       폐기가 실패했는데도 착지해 「새 작업을 시작했다」고 보고하고, 사용자는 옛 세션을 새
+       것으로 안다. 다른 두 진입이 `ERROR:` 로 하는 것과 같은 모양으로 재진술하고 멈춘다. */
+    try {
+      expectHostValue(
+        await deps.client.dispatch("editor", "new_session", {}), "editor/new_session");
+    } catch (error) {
+      deps.notify(String((error as Obj)?.message || error));
+      return false;
+    }
     land();
     return true;
   }

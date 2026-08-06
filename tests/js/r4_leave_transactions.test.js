@@ -248,7 +248,13 @@ function workbenchHarness(options = {}) {
   };
   const controller = createWorkbenchController({
     doc: { getElementById: () => null },
-    runtime: { model: () => model, loadInitial: async () => snapshot, refresh: async () => snapshot },
+    runtime: {
+      model: () => model, loadInitial: async () => snapshot,
+      refresh: async () => snapshot,
+      /* no-push 동사의 반환 스냅샷 착지 — 이 파일은 이탈 거래만 재므로 구독 통지가 없다.
+         값만 갈아 두면 뒤이은 `snapshot()` 판독이 새 판을 본다(실 runtime 은 store 에 넣는다). */
+      land: (_screen, value) => { snapshot = value; },
+    },
     client,
     modal: {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return options.confirm ?? false; },

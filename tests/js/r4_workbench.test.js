@@ -59,7 +59,12 @@ function build(options = {}) {
   };
   const controller = createWorkbenchController({
     doc: { getElementById: () => null },
-    runtime: { model: () => model, loadInitial: async () => snapshot, refresh: async () => snapshot },
+    runtime: {
+      model: () => model, loadInitial: async () => snapshot,
+      refresh: async () => snapshot,
+      /* no-push 동사의 반환 스냅샷 착지 — 실 runtime 은 store 에 넣는다. */
+      land: (_screen, value) => { snapshot = value; for (const listener of [...listeners]) listener(); },
+    },
     client,
     modal: {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return options.confirm ?? false; },
@@ -122,6 +127,34 @@ test("값 커밋은 blur 에서만, 그것도 dirty 일 때만 나간다", async
   h.controller.commitValue("비고");
   await tick();
   assert.deepEqual(h.actions(), [["set_map_value", { name: "비고", text: "고친 값" }]]);
+});
+
+test("no-push 동사의 반환 스냅샷은 화면에 들어간다 — 복사되는 것 = 눈에 보이는 것", async () => {
+  /* `set_map_value` 는 이 저장소 유일의 `is_no_push` 동사다(Python `mapping_verbs.py`).
+     푸시가 안 오므로 **반환 스냅샷이 유일한 갱신 경로**이고, 안 들이면 백엔드만 새 값을 안
+     채로 카드·미저장 수가 옛 판에 남는다 — 그 상태에서 복사하면 클립보드와 눈이 갈린다. */
+  const updated = {
+    ...OPEN, dirty: { count: 1 },
+    rows: [OPEN.rows[0], { ...OPEN.rows[1], value: "고친 값" }],
+    card: { ...OPEN.card, review_state: "recheck" },
+  };
+  const h = build({ dispatch: (_s, action) => (action === "set_map_value" ? updated : {}) });
+  h.controller.type(mapField("비고", "value"), "고친 값");
+  h.controller.commitValue("비고");
+  await tick();
+  assert.equal(h.controller.model.getSnapshot(), updated,
+    "반환 스냅샷이 화면에 안 들어가면 카드·미저장 수·검토 배지가 옛 판에 남는다");
+  assert.equal(h.controller.model.getSnapshot().card.review_state, "recheck");
+});
+
+test("음성 — no-push 커밋이 실패하면 옛 스냅샷을 그대로 둔다(빈 판 착지 금지)", async () => {
+  const h = build({ dispatchFails: (_s, action) => action === "set_map_value" });
+  const before = h.controller.model.getSnapshot();
+  h.controller.type(mapField("비고", "value"), "고친 값");
+  h.controller.commitValue("비고");
+  await tick();
+  assert.equal(h.controller.model.getSnapshot(), before, "실패한 왕복이 화면을 갈아치우지 않는다");
+  assert.equal(h.notices.length, 1, "실패는 재진술된다");
 });
 
 test("체크·유형·표시형은 낙관 표시와 발신을 함께 낸다", async () => {
