@@ -13,7 +13,7 @@
    - 판정·문안·수치는 Python 이다. 표면은 그리기와 발신만 한다.
    - 브리지 왕복은 **한 줄에 선다**(`EDIT_CHAIN`). 커밋(이동·저장·이탈)은 그 줄을 먼저 정산한다.
    - 확인 전에는 draft 를 파기하지 않는다. */
-import { createElement, useEffect, useSyncExternalStore } from "react";
+import { createElement, Fragment, useEffect, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -80,6 +80,12 @@ const TYPE_LABEL: Record<string, string> = {
 const INFERRED_LABEL: Record<string, string> = {
   text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호",
 };
+/** 매핑 행 상태 → class. Python 이 내는 닫힌 집합 넷과 1:1(발명·누락 금지). */
+const ROW_STATE_CLASS: Record<string, string> = {
+  confirmed: "r-confirmed", unconfirmed: "r-unconfirmed",
+  schemaonly: "r-schemaonly", unmatched: "r-unmatched",
+};
+
 const SECTION_TITLES: Record<string, string> = {
   template: "템플릿", binding: "필드 연결·표시", filename: "파일 이름",
 };
@@ -309,22 +315,35 @@ export function createEditorController(deps: EditorControllerDeps) {
     deps.rowMenu.hide();
   }
 
+  /** 메뉴 조각 하나 — 값이 든 버튼은 **요소로 지어** 이스케이프를 브라우저에 맡긴다.
+   *
+   *  이 화면에서 문자열 html 이 필요한 자리는 `rowMenu.show(html, …)` 하나뿐이고, 그 안에
+   *  Python 이 낸 값(수선 동사의 key·label)이 들어간다. 지역 이스케이퍼를 두면 아홉 사본을
+   *  한 곳으로 걷은 공용 잎의 열 번째가 된다(K1). `dataset`·`textContent` 로 지으면
+   *  이스케이프 규칙 자체를 우리가 안 든다 — 사본이 생길 자리가 없다. */
+  function menuButton(action: string, label: string, danger?: boolean): string {
+    const button = deps.doc.createElement("button");
+    button.dataset.menu = action;
+    if (danger) button.className = "danger";
+    button.textContent = label;
+    return button.outerHTML;
+  }
+
   function openLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {
     let html: string;
     if (kind === "group") {
-      html = `<button data-menu="grp-rename">그룹 이름 변경</button>` +
-        `<button data-menu="grp-disband">그룹 해산</button>`;
+      html = menuButton("grp-rename", "그룹 이름 변경") + menuButton("grp-disband", "그룹 해산");
       patchView({ libMenu: { media, kind, group: id, trigger } });
     } else {
       const item = findLibItem(media, id);
       /* 수선 동사의 목록·라벨은 링1 소유 — 스냅샷 actions 를 그대로 그린다(발명 금지). */
       const repairs = media === "hwpx"
         ? ((item && item.actions) || []).map((action: Obj) =>
-          `<button data-menu="act:${escapeHtml(action.key)}">${escapeHtml(action.label)}</button>`).join("")
-        : (item && !item.error ? `<button data-menu="edit">내용 편집</button>` : "");
+          menuButton(`act:${String(action.key)}`, String(action.label))).join("")
+        : (item && !item.error ? menuButton("edit", "내용 편집") : "");
       html = repairs + (repairs ? `<div class="sep"></div>` : "") +
-        (item && item.group ? `<button data-menu="move">그룹으로 이동…</button>` : "") +
-        `<button data-menu="delete" class="danger">삭제</button>`;
+        (item && item.group ? menuButton("move", "그룹으로 이동…") : "") +
+        menuButton("delete", "삭제", true);
       patchView({ libMenu: { media, kind, key: id, item, trigger } });
     }
     deps.rowMenu.show(html, trigger);
@@ -885,12 +904,6 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
   return createElement(tag, props, ...children);
 }
 
-/** 메뉴 html 만 문자열이라 이 자리에서만 이스케이프한다(요소 트리는 React 가 태운다). */
-function escapeHtml(value: unknown): string {
-  return String(value ?? "").replace(/[&<>"]/g, (ch) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch] as string));
-}
-
 function stageTitle(snapshot: Obj, section: string): string {
   const title = SECTION_TITLES[section] || section;
   if (isEditing(snapshot)) return title;
@@ -975,7 +988,9 @@ function StepHeader(props: { snapshot: Obj; controller: EditorController }): Rea
 
 function LibRowTail(props: { media: string; item: Obj; controller: EditorController }): ReactNode {
   const { media, item, controller } = props;
-  return h("span", { className: "libselrow-tail" },
+  /* legacy 는 두 버튼을 감싸지 않고 이어 붙였다 — 요소 트리에서 감싸면 `.libselrow` 의
+     flex 자식 수가 바뀌어 배치가 달라진다. Fragment 는 DOM 노드를 만들지 않는다. */
+  return createElement(Fragment, null,
     item.group ? null : h("button", {
       className: "tpl-assign", "data-act": "lib-assign", "data-media": media, "data-key": item.key,
       onClick: (event: Obj) => controller.openLibMoveDialog(
@@ -999,7 +1014,8 @@ function HwpxLibRow(props: { item: Obj; controller: EditorController }): ReactNo
         className: "btn sm", "data-act": "use-library", "data-path": item.path,
         onClick: () => controller.guarded(() => controller.useLibraryTemplate(item.path)),
       }, "이 템플릿으로"));
-  return h("div", { className: "libsel-item", key: item.key },
+  /* 행과 경고 줄은 **형제**다(legacy 의 문자열 이어붙이기) — 감싸면 경고가 행 안으로 들어간다. */
+  return createElement(Fragment, { key: item.key },
     h("div", { className: `libselrow${item.current ? " cur" : ""}` },
       h("span", { className: "fname" }, item.name),
       item.badge_label ? h("span", { className: "tbadge", title: item.detail || "" }, item.badge_label) : null,
@@ -1044,7 +1060,8 @@ function LibraryBand(props: {
       ...sections.flatMap((section: Obj) => (section.items || []).map((item: Obj) =>
         h(Row as any, { key: item.key, item, controller }))));
   }
-  return h("div", { className: "libsel-band" },
+  /* 그룹 구획도 형제 나열이다(legacy `sections.map(...).join("")`). */
+  return createElement(Fragment, null,
     ...sections.flatMap((section: Obj, index: number) => {
       const label = section.group || "그룹 없음";
       const head = h("div", { className: "job-grp", key: `head-${index}` },
@@ -1090,7 +1107,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
   const hwpx = library.hwpx || {};
   const txt = library.txt || {};
   const result = library.result || {};
-  return h("div", { className: "libsel" },
+  return createElement(Fragment, null,
     /* 가져오기는 hwpx·txt 겸용(확장자가 매체 라우팅)이라 밴드 밖 공용 줄에 둔다. */
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
       h("button", {
@@ -1127,7 +1144,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         emptyText: "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.",
       })),
     result.text ? h("div", {
-      className: `run-result${result.level && result.level !== "muted" ? ` ${result.level}` : ""}`,
+      className: `run-result${result.level && result.level !== "muted" ? " " + result.level : ""}`,
     }, result.text) : null);
 }
 
@@ -1309,7 +1326,12 @@ function MapRow(props: {
     : (row.preview_empty
       ? h("span", { className: "pv emptyval" }, "(이 행에서 빈 값)")
       : h("span", { className: "pv" }, row.preview));
-  return h("tr", { className: `r-${row.row_state}`, "data-field": row.template_field, key: index },
+  /* 행 상태 class 는 **닫힌 집합**이다(Python `screen_editor.py` 가 넷 중 하나를 낸다).
+     보간으로 지으면 이름이 코드에 안 남아 CSS 고아 검사가 이 자리를 통째로 건너뛴다 —
+     넷을 리터럴로 적어 그 검사에 들게 하고, 계약 밖 값은 조용히 무-class 로 접지 않는다. */
+  const rowClass = ROW_STATE_CLASS[String(row.row_state)];
+  if (rowClass === undefined) throw new Error(`알 수 없는 행 상태: ${row.row_state}`);
+  return h("tr", { className: rowClass, "data-field": row.template_field, key: index },
     h("td", null, h("input", {
       type: "checkbox", className: "cbx", "data-act": "row-confirm", "data-index": index,
       checked: !!row.confirmed,
@@ -1385,7 +1407,8 @@ function MappingStage(props: {
         h(MapRow as any, { key: row.index, row, snapshot, draft, controller }))))),
     h("div", { className: "stepper" },
       snapshot.preview_count
-        ? h("span", { className: "stepper-nav" },
+        /* `.stepper` 는 flex 다 — 셋을 감싸면 세 항목이 하나가 돼 간격이 무너진다. */
+        ? createElement(Fragment, null,
           h("button", {
             className: "btn sm", "data-act": "prev-rec",
             onClick: () => controller.guarded(() => controller.sendEdit("step_preview", { delta: -1 })),
@@ -1640,10 +1663,10 @@ export function TxtEditDialog(props: { controller: EditorController }): ReactNod
     h("div", { className: "modal-actions" },
       h("button", {
         className: "btn", id: "txtEditCancel",
-        onClick: () => { void controller.confirmDiscardTxtEdit(); },
+        onClick: () => controller.guarded(() => controller.confirmDiscardTxtEdit()),
       }, "취소"),
       h("button", {
         className: "btn primary", id: "txtEditOk",
-        onClick: () => { void controller.submitTxtEdit(); },
+        onClick: () => controller.guarded(() => controller.submitTxtEdit()),
       }, "저장")));
 }

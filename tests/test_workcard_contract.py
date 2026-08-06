@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app_css
 
 
 # 카드 수치(.wb-preview·.wb-dots)는 tail.css, 점·글꼴 클래스(.wc-dot·.wc-render.f-*)는
 # draftcard.css 에 있다 — 이 창구를 거쳐야 한 검사가 승계 관계를 가로질러 본다.
 CSS = app_css()
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
-WORKBENCH = (SOURCE_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+WORKBENCH = (SOURCE_ROOT / "src" / "screens" / "workbench.ts").read_text(encoding="utf-8")
 PRESERVE = (SOURCE_JS_DIR / "preserve.js").read_text(encoding="utf-8")
 
 
@@ -40,7 +40,10 @@ def test_workbench_card_is_a_bounded_preserved_scrollport():
     날이 온다. 1열 퇴화에서만 캡이 돌아온다(세로로 줄을 서면 나눠 가질 높이가 없다).
     min-height 는 빈 카드가 접히지 않게 하는 바닥이라 두 regime 모두에서 산다.
     """
-    assert re.search(r'<article class="wb-preview" id="wbCard"[^>]*data-preserve-scroll', INDEX)
+    # R4-02 — 면·id·보존 마크 셋이 정적 HTML 에서 React 요소 props 로 함께 옮겨 왔다.
+    assert re.search(
+        r'h\("article", \{\s*className: `wb-preview[^`]*`,\s*id: "wbCard", "data-preserve-scroll": true,',
+        WORKBENCH)
     rule = _declarations(".wb-preview")
     assert "min-height:180px" in rule
     assert "flex:1" in rule, "2열에서 남는 높이를 안 받으면 캡 시절의 끝단 어긋남이 돌아온다."
@@ -51,7 +54,9 @@ def test_workbench_card_is_a_bounded_preserved_scrollport():
 
 def test_workbench_card_wears_the_render_and_font_classes():
     """기안 카드 시각 계약 승계 — 렌더 판(.wc-render)과 대상 글꼴 클래스(f-*)를 JS 가 얹는다."""
-    assert '"wb-preview wc-render f-" + (s.target_font || "gulimche")' in WORKBENCH
+    # R4-02 — 문자열 이어붙이기가 템플릿 리터럴이 됐다. 세 조각(면·렌더 판·글꼴)이
+    # 한 자리에서 함께 붙는다는 계약은 그대로다.
+    assert 'className: `wb-preview wc-render f-${snapshot.target_font || "gulimche"}`' in WORKBENCH
     # 글꼴 클래스의 CSS 실체(사어 클래스 명중 방지) — 세 글꼴 전부.
     for font in ("gulimche", "dotumche", "malgun"):
         assert f".wc-render.f-{font}" in CSS, f".wc-render.f-{font} 규칙이 없습니다"
@@ -76,4 +81,5 @@ def test_queue_dot_keeps_fourteen_pixel_mark_inside_24px_hit_target():
 
 def test_degenerate_queue_hiding_survives():
     """퇴화 큐(1건) = 점 색인 은닉 — 승계 규칙이 workbench.js 에 산다."""
-    assert "host.hidden = !!c.queue_degenerate" in WORKBENCH
+    assert "const degenerate = !!card.queue_degenerate;" in WORKBENCH
+    assert "hidden: degenerate," in WORKBENCH

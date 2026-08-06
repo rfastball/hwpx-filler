@@ -335,6 +335,7 @@ function MapRow(props: {
   const declared = !!row.blank_declared;
   const isAuto = row.own === "auto";
   const typeValue = valueOf(draft, mapField(name, "type"));
+  const valueEmpty = valueOf(draft, mapField(name, "value")).trim() === "";
   const formats = ((snapshot.fmt_options || {})[typeValue] || []) as Obj[];
   return h("tr", {
     "data-name": name, id: `wbMap-row-${key}`, tabIndex: -1,
@@ -382,7 +383,9 @@ function MapRow(props: {
       title: "비우기로 확정한 값입니다. 복사 전 확인에서 제외됩니다.",
     }, "비움 확정")
     : h("textarea", {
-      className: `mapval-in${valueOf(draft, mapField(name, "value")).trim() === "" ? " empty" : ""}`,
+      /* 계산을 prop 자리에서 하면 class sink 회수가 첫 쉼표에서 잘려 이름을 못 읽는다 —
+         값은 위에서 뽑고 여기엔 리터럴 둘만 남긴다. */
+      className: `mapval-in${valueEmpty ? " empty" : ""}`,
       rows: 1, id: `wbMap-val-${key}`, "data-name": name, placeholder: "직접 입력",
       "aria-label": `${name} 값`, value: valueOf(draft, mapField(name, "value")),
       onChange: (event: Obj) => controller.type(mapField(name, "value"), String(event.currentTarget.value)),

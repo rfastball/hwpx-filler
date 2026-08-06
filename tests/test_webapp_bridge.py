@@ -328,7 +328,6 @@ def test_web_assets_present_and_wired():
         "css/tokens.css",
         "js/bridge.js",
         "js/app.js",
-        "js/screens/workbench.js",
     ):
         assert (WEB / rel).exists(), f"source/{rel} 없음"
     # 앱 스타일시트는 분할됐다 — 목록 단일 출처는 매니페스트이고, 링크 순서·전수 등재는

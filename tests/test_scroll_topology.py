@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app_css
+from _web_source import SOURCE_INDEX, SOURCE_ROOT, app_css
 
 
 CSS = app_css()
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
-EDITOR = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+EDITOR = (SOURCE_ROOT / "src" / "screens" / "editor.ts").read_text(encoding="utf-8")
+WORKBENCH = (SOURCE_ROOT / "src" / "screens" / "workbench.ts").read_text(encoding="utf-8")
+SHEET_PICKER = (SOURCE_ROOT / "src" / "screens" / "sheet_picker.ts").read_text(encoding="utf-8")
 DATAZONE = (SOURCE_ROOT / "src" / "screens" / "data_zone.ts").read_text(encoding="utf-8")
 DATA_PICKER = (SOURCE_ROOT / "src" / "screens" / "data_picker.ts").read_text(encoding="utf-8")
 JOB_READ = (SOURCE_ROOT / "src" / "screens" / "job_read.ts").read_text(encoding="utf-8")
@@ -31,8 +33,11 @@ def _declarations(selector: str) -> str:
 
 def test_wizard_tables_share_a_real_vertical_scrollport() -> None:
     """위저드 표 3벌의 sticky 기준은 높이 제한이 있는 공용 tblwrap이다."""
+    # R4-02 — 문자열 조립이 요소 트리가 됐다. 묻는 것은 그대로다: 세 표가 **같은**
+    # `.tblwrap` 안에 산다(각자 자기 스크롤포트를 만들지 않는다).
     for table in ("schema-fields", "data-preview", "map"):
-        assert f'<div class="tblwrap"><table class="{table}">' in EDITOR
+        assert f'h("div", {{ className: "tblwrap" }}' in EDITOR
+        assert f'h("table", {{ className: "{table}" }}' in EDITOR
 
     wrap = _declarations(".tblwrap")
     assert "max-height:" in wrap
@@ -57,7 +62,7 @@ def test_workbench_map_header_sticks_inside_a_bounded_host() -> None:
     서면 나눠 가질 남는 높이가 없다). 둘 중 무엇이든 **경계가 있어야** sticky 헤더가 뜻을
     갖는다 — 경계 없는 host 에서는 표가 바깥 면을 밀고 헤더는 붙을 데가 없다.
     """
-    assert 'id="wbMapPanel"' in INDEX
+    assert 'id: "wbMapPanel", "data-preserve-scroll": true' in WORKBENCH
     host = _declarations("#wbMapPanel")
     assert "overflow:auto" in host
     assert "flex:1" in host, "2열에서 남는 높이를 받지 않으면 캡 시절의 footer 침범이 돌아온다."
@@ -83,15 +88,15 @@ def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None
     inventory = {
         ".tblwrap": EDITOR,
         ".jobtbwrap": JOB_READ,
-        "#wbMapPanel": INDEX,
+        "#wbMapPanel": WORKBENCH,
         ".tpllist": DATA_PICKER,
-        ".sheet-list": INDEX,
+        ".sheet-list": SHEET_PICKER,
         ".colpanel .cp-vals": DATAZONE,
     }
     dom_needles = {
-        ".tblwrap": 'class="tblwrap"',
+        ".tblwrap": 'className: "tblwrap"',
         ".jobtbwrap": "jobtbwrap",
-        "#wbMapPanel": 'id="wbMapPanel"',
+        "#wbMapPanel": 'id: "wbMapPanel"',
         ".tpllist": "tpllist",
         ".sheet-list": "sheet-list",
         ".colpanel .cp-vals": "cp-vals",

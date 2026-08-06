@@ -129,15 +129,19 @@ def test_modal_surface_reaches_actions_in_short_viewports_and_has_accessible_scr
 
 
 def test_menu_spawned_modals_carry_original_trigger_through_close_all() -> None:
-    group = (SOURCE_JS_DIR / "grouplist.js").read_text(encoding="utf-8")
-    assert "returnFocus: opts.returnFocus" in group
-    assert "if (confirmed && cb) cb(confirmedGroup)" in group and "cb(group)" not in group
+    # R4-02 — 그룹 이동 다이얼로그가 `GroupList.createMoveDialog` 에서 React
+    # `screens/group_move_dialog.ts` 로 옮겼다. 묻는 것은 그대로다: 원 트리거를 들고 가고,
+    # **확정은 초점이 돌아간 뒤에** 콜백을 부른다(먼저 보내면 push 재렌더가 트리거를 파괴한다).
+    group = (SOURCE_JS_DIR.parent / "src" / "screens" / "group_move_dialog.ts").read_text(
+        encoding="utf-8")
+    assert "returnFocus: next.returnFocus || null" in group
+    assert "if (accepted !== null && pending !== null) void pending.onConfirm(accepted.group);" in group
     # (screens/draft.js 는 「기안」 화면 사망(F6 PR-B), screens/template.js 는 「템플릿
     #  관리」 사망(F8)으로 제외 — 메뉴발 모달의 새 소비자는 편집기 「템플릿」 탭이다.)
     sources = {
         "src/screens/library.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts",
         "js/screens/job.js": SOURCE_JS_DIR / "screens" / "job.js",
-        "js/screens/editor.js": SOURCE_JS_DIR / "screens" / "editor.js",
+        "src/screens/editor.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts",
     }
     for rel, path in sources.items():
         src = path.read_text(encoding="utf-8")

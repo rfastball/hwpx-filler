@@ -84,8 +84,20 @@ function build(options = {}) {
       close: (id) => { trace.push(["modal.close", id]); openSpec?.onClose?.(); },
     },
   });
+  /* 메뉴 조각은 요소로 지어진다 — 대역은 무엇이 **속성으로** 들어갔는지 기록만 하고
+     문자열 조립을 흉내 내지 않는다(이스케이프 규칙을 테스트가 다시 쓰면 그 초록은
+     테스트의 성질이 된다). 실 이스케이프 증거는 실렌더 층이 진다. */
+  const built = [];
+  const createElement = (tag) => {
+    const element = {
+      tagName: tag, dataset: {}, className: "", textContent: "",
+      get outerHTML() { return `<${tag} data-menu="${this.dataset.menu}"></${tag}>`; },
+    };
+    built.push(element);
+    return element;
+  };
   const controller = createEditorController({
-    doc: { getElementById: () => null, querySelector: () => null },
+    doc: { getElementById: () => null, querySelector: () => null, createElement },
     runtime, client, ports, services,
     modal: {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return options.confirm ?? false; },
@@ -106,7 +118,7 @@ function build(options = {}) {
     notify: (message) => notices.push(String(message)),
   });
   return {
-    controller, groupMove, store, trace, notices, modalOpens, undoToasts, menuCalls,
+    controller, groupMove, store, trace, notices, modalOpens, undoToasts, menuCalls, built,
     actions: () => trace.filter((row) => row[0] === "dispatch").map((row) => [row[1], row[2], row[3]]),
     editorSpec: () => openSpec,
     async ready() { await controller.init(); },
@@ -253,6 +265,33 @@ test("메뉴 토글 — 같은 자리를 다시 누르면 닫힌다(#215 동류�
   h.controller.toggleLibMenu("hwpx", "row", "k1", trigger);
   assert.equal(h.controller.isLibMenuOpen(), false);
   assert.deepEqual(h.menuCalls.map((row) => row[0]), ["show", "hide"]);
+});
+
+test("메뉴의 Python 유래 값은 문자열에 끼워지지 않고 속성·textContent 로 간다(K1)", async () => {
+  const hostile = '<img src=x onerror="alert(1)">';
+  const h = build({
+    snapshot: {
+      ...BASE,
+      library: {
+        hwpx: {
+          sections: [{ items: [{
+            key: "k1", name: "T1", path: "P",
+            actions: [{ key: "compile", label: hostile }],
+          }] }],
+        },
+      },
+    },
+  });
+  await h.ready();
+  h.controller.toggleLibMenu("hwpx", "row", "k1", { id: "btn" });
+
+  const labelled = h.built.find((element) => element.textContent === hostile);
+  assert.ok(labelled, "라벨이 textContent 로 들어가야 브라우저가 이스케이프를 소유한다");
+  assert.equal(labelled.dataset.menu, "act:compile");
+  /* 조립된 html 안에 원문이 그대로 있으면 문자열 경로가 살아 있다는 뜻이다. */
+  const html = h.menuCalls.find((row) => row[0] === "show")[1];
+  assert.equal(html.includes("onerror"), false);
+  assert.equal(html.includes("<img"), false);
 });
 
 test("삭제는 되돌리기 토스트를 세우고 되돌리기가 실패하면 시끄럽다", async () => {

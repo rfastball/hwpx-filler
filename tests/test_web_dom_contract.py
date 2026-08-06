@@ -733,7 +733,7 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     assert 'id: "sheetList"' in picker and 'id: "sheetCancel"' in picker, (
         "React 시트 선택 표면이 목록·취소 골격을 생산하지 않습니다(#33)."
     )
-    assert '"data-first": "1"' in picker and '"data-sheet"' in picker, (
+    assert '"data-first": index === 0 ? "1" : undefined' in picker and '"data-sheet"' in picker, (
         "명시 선택의 표지(data-sheet)와 초기 포커스 표지(data-first)가 사라졌습니다."
     )
     for path in DATA_PICK_FILES:
