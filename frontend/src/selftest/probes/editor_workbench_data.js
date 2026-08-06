@@ -127,6 +127,23 @@ function service(ctx, name) {
   return found;
 }
 
+/** React 커밋 한 turn 양보 — R4 표면은 push·상태 변이를 **같은 호출 스택에서 받지만**
+ *  concurrent root 의 DOM 커밋은 다음 turn 에 끝난다. 고정 지연이 아니라 0ms turn 하나다.
+ *  legacy 렌더가 동기였던 자리마다 이 한 줄이 들어간다(`probes/job.js` 의 같은 관례). */
+function settleRender(ctx) {
+  return ctx.sleep(0);
+}
+
+/** 조건이 설 때까지 turn 을 양보한다 — 첫 portal 묶음이 나뉘어 커밋될 때의 방어선.
+ *  조건 충족 즉시 끝나므로 고정 지연이 아니고, 안 서면 그대로 읽어 **빨강으로** 남는다. */
+async function settleUntil(ctx, ready, turns = 12) {
+  for (let turn = 0; turn < turns; turn += 1) {
+    if (ready()) return true;
+    await ctx.sleep(0);
+  }
+  return !!ready();
+}
+
 /** 모달 닫힘 전이(CSS opacity)를 정착시킨다. 카드가 없으면 이미 정착한 것으로 본다. */
 function settleModal(ctx, id) {
   const card = ctx.doc.querySelector(`#${id} .modal-card`);
@@ -1086,6 +1103,7 @@ export function createEditorWorkbenchDataProbes() {
         try {
           // (1) 확정 경로 — 열림·버튼수·초기포커스 되읽고 둘째 시트를 클릭해 해소.
           const p1 = SheetPicker.choose("job", payload);
+          await settleUntil(ctx, () => ctx.doc.querySelectorAll("#sheetList .sheet-opt").length > 0);
           const opened = !byId(ctx, "sheetModal").classList.contains("hidden");
           const btns = ctx.doc.querySelectorAll("#sheetList .sheet-opt");
           const focusFirst = ctx.doc.activeElement === btns[0];
@@ -1097,6 +1115,7 @@ export function createEditorWorkbenchDataProbes() {
           const picked = await p1;
           // (2) 취소 경로 — 다시 열고 Escape → null 로 해소(로드 없음).
           const p2 = SheetPicker.choose("job", payload);
+          await settleRender(ctx);
           ctx.doc.dispatchEvent(
             new ctx.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
           settleModal(ctx, "sheetModal");
@@ -1603,7 +1622,7 @@ export function createEditorWorkbenchDataProbes() {
         + "그룹 ⋮·＋그룹지정 칩). 프로브 click 은 hidden 을 통과하므로 눈으로 본 것과 다른"
         + " 결론이 날 수 있다 — 이식에서 고치지 않고 그대로 옮긴다(계약을 바꾸는 별건)."
         + ` 클러스터 전체의 같은 자리는 ${CLICK_SITES_WITHOUT_VISIBILITY.length} 군이다.`,
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const Modal = service(ctx, "Modal");
         const out = {};
@@ -1646,6 +1665,7 @@ export function createEditorWorkbenchDataProbes() {
           });
           ctx.push("editor", draft);
           const host = byId(ctx, "scr-editor");
+          await settleUntil(ctx, () => host.querySelectorAll(".libselrow").length > 0);
           /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침. */
           out.toolbar = ["import-template", "import-folder", "lib-new-txt", "lib-refresh"]
             .map((a) => !!host.querySelector(`button[data-act="${a}"]`));
@@ -1699,6 +1719,7 @@ export function createEditorWorkbenchDataProbes() {
           };
           draft.library.txt = { flat: true, count: 0, group_names: [], dir: "C:/txt", sections: [] };
           ctx.push("editor", draft);
+          await settleUntil(ctx, () => host.querySelectorAll(".job-grp-head").length === 0);
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll(".libselrow").length;
           out.error = null;
