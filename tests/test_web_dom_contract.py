@@ -48,14 +48,25 @@ R4_DATA_ZONE = R4_SCREENS_DIR / "data_zone.ts"
 R4_LIBRARY = R4_SCREENS_DIR / "library.ts"
 R4_DATA_PICKER = R4_SCREENS_DIR / "data_picker.ts"
 R4_PORTS = R4_SCREENS_DIR / "ports.ts"
+R4_EDITOR = R4_SCREENS_DIR / "editor.ts"
+R4_EDITOR_ENTRY = R4_SCREENS_DIR / "editor_entry.ts"
+R4_EDITOR_STATE = R4_SCREENS_DIR / "editor_state.ts"
+R4_WORKBENCH = R4_SCREENS_DIR / "workbench.ts"
+R4_SHEET_PICKER = R4_SCREENS_DIR / "sheet_picker.ts"
+R4_GROUP_MOVE = R4_SCREENS_DIR / "group_move_dialog.ts"
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
 # 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
 # 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
+# (R4-02: editor·workbench 는 이 목록에서 빠졌다 — React 소유에서는 재구성 자체가 없어
+#  「되찾을 포커스·캐럿」이 생기지 않는다. 그 자리를 대신 지키는 것은 draft reducer 이고,
+#  아래 :func:`test_preserve_helper_loaded_and_wraps_screen_renders` 가 두 축을 함께 잰다.)
 PRESERVE_WRAPPED_FILES = (
-    "screens/editor.js",
     "screens/job.js",
-    "screens/workbench.js",
 )
+
+#: 재구성 대신 **값의 소유**로 보존을 푸는 React 표면 — 편집 가능한 컨트롤이 전부 draft
+#: reducer 에서 값을 읽어야 한다(스냅샷 push 가 입력 중인 값을 덮지 않는 구조적 거처).
+DRAFT_OWNED_FILES = (R4_EDITOR, R4_WORKBENCH)
 
 # 렌더 층 **가변 모듈 상태 예산**. Python 이 상태를 단일 소유하고 스냅샷을 미는 모델에서 JS 의
 # 가변 모듈 상태는 전부 "스냅샷이 답하지 않아 표면이 답하는 것"이다 — 조용히 자라면 파생 가능한
@@ -85,7 +96,9 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
     # +1(N-06): wired — init 멱등 가드(initial 없는 화면이라 seated 는 없다).
-    "screens/workbench.js": 2,
+    # (screens/workbench.js·screens/editor.js 는 R4-02 에서 React 로 이관되며 파일째
+    #  사라졌다 — 그 화면들의 가변 상태는 이제 소유권 인벤토리 `state_js_module` 축이
+    #  `.ts` 까지 같은 분모로 센다. 여기 남기면 없는 파일에 예산을 매기는 유령 행이 된다.)
     # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
     # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
     # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
@@ -103,8 +116,6 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # (배치 push 는 끝에 1회 — 진행 중은 스냅샷 밖 사건) ②DOM(버튼 disabled) 파생은 진행
     # 중 도착하는 무관 push 재렌더가 도로 풀어 버린다. 판정 정본은 Python 비차단 잠금이고
     # 이 플래그는 재클릭을 삼키는 어포던스 잠금이다.
-    # +2(N-06): wired·seated — job.js 와 같은 init 멱등·재시도 가드(파생 불가 사유 동일).
-    "screens/editor.js": 10,
 }
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
@@ -369,6 +380,10 @@ def test_custom_modals_have_dialog_semantics():
     react_labels = {
         "poolRegModal": (R4_DATA_PICKER, "PoolRegistrationDialog"),
         "dataPickerModal": (R4_DATA_PICKER, "DataPickerDialog"),
+        # R4-02 — 편집 표면 셋. 제목 id 의 생산자도 함께 이동했다.
+        "txtEditModal": (R4_EDITOR, "TxtEditDialog"),
+        "sheetModal": (R4_SHEET_PICKER, "SheetPickerDialog"),
+        "tplMoveModal": (R4_GROUP_MOVE, "GroupMoveDialog"),
     }
     for mid, label_id in MODAL_LABELLEDBY.items():
         assert mid in modals, f"커스텀 모달이 사라졌습니다: {mid}"
@@ -695,7 +710,7 @@ def test_forced_colors_media_query_exists():
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
 # 「작업」·「기안」의 파일 선택은 데이터 선택 다이얼로그 한 곳으로 수렴했다(재작성 F1) —
 # 두 화면이 같은 모듈을 쓰므로 계약도 그 모듈이 진다. 에디터는 아직 자기 경로를 쓴다(F7).
-DATA_PICK_FILES = (SOURCE_JS_DIR / "screens" / "editor.js", R4_DATA_PICKER)
+DATA_PICK_FILES = (R4_EDITOR, R4_DATA_PICKER)
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -708,10 +723,19 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    assert reaches_product_graph("sheet_picker.js"), (
-        "sheet_picker.js 가 제품 그래프에 닿지 않습니다(#33)."
+    picker = R4_SHEET_PICKER.read_text(encoding="utf-8")
+    #: R4-02 — 헬퍼는 `src/screens/sheet_picker.ts` 로 이관됐고 모달 내용은 React portal 이
+    #: 생산한다. 정적 골격은 root 하나뿐이라(중복 생산자 금지) 여기서는 **생산자**를 잰다.
+    assert 'id="sheetModal"' in index, "시트 선택 모달 root 가 없습니다(#33)."
+    assert 'id="sheetList"' not in index and 'id="sheetCancel"' not in index, (
+        "시트 선택 모달 내용이 정적으로 재도입됐습니다 — React portal 과 두 생산자가 됩니다."
     )
-    assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
+    assert 'id: "sheetList"' in picker and 'id: "sheetCancel"' in picker, (
+        "React 시트 선택 표면이 목록·취소 골격을 생산하지 않습니다(#33)."
+    )
+    assert '"data-first": "1"' in picker and '"data-sheet"' in picker, (
+        "명시 선택의 표지(data-sheet)와 초기 포커스 표지(data-first)가 사라졌습니다."
+    )
     for path in DATA_PICK_FILES:
         src = path.read_text(encoding="utf-8")
         assert "needs_sheet" in src and (
@@ -739,10 +763,17 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{rel} 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
-    for path in (R4_DATA_PICKER, R4_LIBRARY, R4_JOB_READ, R4_DATA_ZONE):
+    for path in (R4_DATA_PICKER, R4_LIBRARY, R4_JOB_READ, R4_DATA_ZONE, R4_EDITOR, R4_WORKBENCH):
         src = path.read_text(encoding="utf-8")
         assert "Preserve.around" not in src
         assert "createElement" in src
+    #: R4-02 — 편집 표면은 재구성이 없는 대신 **값의 소유**로 같은 것을 지킨다: 편집 가능한
+    #: 컨트롤이 draft reducer 에서 값을 읽고(`valueOf(draft, …)`), push 흡수는 그 reducer 를
+    #: 지난다. 이 두 축이 없으면 스냅샷이 입력 중인 값을 조용히 덮는다.
+    for path in DRAFT_OWNED_FILES:
+        src = path.read_text(encoding="utf-8")
+        assert "valueOf(draft," in src, f"{path.name} 의 컨트롤이 draft 값을 읽지 않습니다."
+        assert "ingestSnapshot(draft" in src, f"{path.name} 이 push 를 draft reducer 로 흡수하지 않습니다."
     assert "data-preserve-scroll" in R4_LIBRARY.read_text(encoding="utf-8")
     assert "jobRow-${row.index}" in R4_DATA_ZONE.read_text(encoding="utf-8")
 
@@ -1139,7 +1170,7 @@ def test_job_active_zone_death_and_candidate_card_succession():
     job_js = R4_JOB_READ.read_text(encoding="utf-8")
     run_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     lib_js = R4_LIBRARY.read_text(encoding="utf-8")
-    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor_js = R4_EDITOR.read_text(encoding="utf-8")
     relink_js = (WEB_JS_DIR / "relink.js").read_text(encoding="utf-8")
     css = "".join(WEB_CSS.split())
 
@@ -1200,7 +1231,7 @@ def test_job_active_zone_death_and_candidate_card_succession():
     )
     assert '"template_path": job.template_path' in lib_py
     # ⑦ 편집기 「템플릿」 탭의 같은 어포던스는 그대로 산다(§2.20 ⑷ — 옮기는 것이 아니다).
-    assert "PathTrack.affordances(s.template_path)" in editor_js
+    assert "path: snapshot.template_path" in editor_js
 
 
 def test_needs_and_missing_template_redirect_to_different_places():
@@ -1217,9 +1248,9 @@ def test_needs_and_missing_template_redirect_to_different_places():
     각자 따로 단언하면 나중에 한쪽이 다른 쪽으로 접혀도 둘 다 초록이다.
     """
     job_js = R4_JOB_READ.read_text(encoding="utf-8")
-    entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    entry_js = R4_EDITOR_ENTRY.read_text(encoding="utf-8")
     bridge_js = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
-    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor_js = R4_EDITOR.read_text(encoding="utf-8")
 
     # ① 확인 필요 행은 죽은 줄이 아니라 마법사 입구다 — 사유 문안은 그대로 남는다.
     assert 'className: "browse-row off"' not in job_js, (
@@ -1251,7 +1282,7 @@ def test_needs_and_missing_template_redirect_to_different_places():
         "편집기가 새 진입 사유의 배너 문안을 모릅니다 — 사유만 실리고 아무 말도 하지 않습니다."
     )
     # ⑤ 데이터의 정체는 웹이 싣지 않는다 — 지금 무엇이 올라와 있는지는 Python 이 답한다.
-    assert "bridge.newJobFromData(context" in entry_js, (
+    assert 'invoke("new_job_from_data", context' in entry_js, (
         "진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다 — 모든 진입이 자발적 진입으로 떨어집니다."
     )
     assert "newJobFromData(context)" in bridge_js and "new_job_from_data(context" in bridge_js
@@ -1664,7 +1695,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     html = WEB_INDEX.read_text(encoding="utf-8")
     app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
     app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
-    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor_js = R4_EDITOR.read_text(encoding="utf-8")
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
 
     assert "window.events.closing += frontend._handle_window_closing" in app_py
@@ -1679,8 +1710,8 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert "window.pywebview.api" not in app_js, (
         "앱 셸이 다시 호스트 API 를 직접 조회합니다 — private backend 는 bridge.js 하나입니다."
     )
-    assert 'id="editorBack"' in html and 'editorBack' in editor_js
-    assert 'data-act="cancel-new"' in editor_js
+    assert 'id: "editorBack"' in editor_js, "편집기 back 어포던스의 생산자가 없습니다."
+    assert '"data-act": "cancel-new"' in editor_js
     assert 'sendEdit("discard_session", {})' in editor_js   # 체인 경유(5R P2)
     assert "async function leaveTo(" in editor_js, (
         "편집기 이탈의 단일 출구(leaveTo)가 없습니다 — 출구가 여럿이면 처분 가드가 새어 나갑니다."
@@ -1697,37 +1728,40 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     # (헤더 토글·확정·되돌리기…)가 밖에 남아, 누르자마자 back 을 누른 사용자의 편집이
     # 판정보다 늦게 도착한다. 체인 밖 예외는 둘뿐 — 첫 스냅샷 당김과 정산 **뒤** 컨트롤러
     # 직접 질의(자기가 기다리는 줄에 서면 안 된다).
-    assert editor_js.count("Bridge.call(SCREEN") == 1, (
-        "편집기 왕복이 체인을 우회합니다 — `sendEdit` 하나만 Bridge.call(SCREEN 을 씁니다."
+    assert editor_js.count("chained(EDIT_CHAIN") == 2, (
+        "편집기 왕복이 체인을 우회합니다 — 체인에 서는 자리는 `sendEdit` 와 "
+        "`flushPendingEdits` 둘뿐입니다(발신과 정산)."
     )
-    assert "Intent.chained(EDIT_CHAIN" in editor_js, (
+    assert "chain.chained(EDIT_CHAIN" in editor_js, (
         "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
     )
     # **확인 왕복도 정산 뒤에 연다**(§2.17 2R P2): 버리기가 blur 전에 눌릴 수 있게 된 뒤로
     # (1R), 정산 없이 모달을 열면 큐에 든 `set_*` 이 모달 뒤에 도착해 `#editor-foot` 을 갈아
     # 끼우고 저장해 둔 트리거가 분리된다 — 취소가 화면 루트로 떨어진다. 정산은 새 기제를
     # 만들지 않고 goto·leave 와 **같은** `flushPendingEdits` 를 쓴다.
-    discard = editor_js[editor_js.index('case "discard-patch"'):]
+    discard = editor_js[editor_js.index("async function discardPatch("):]
     discard = discard[:discard.index('sendEdit("discard_patch"')]
     assert "await flushPendingEdits()" in discard, (
         "버리기가 대기 편집을 정산하지 않고 확인을 엽니다 — 큐의 발신이 모달 뒤에 도착해"
-        " 트리거가 분리되고 취소 착지가 어긋납니다(2R P2)."
+        " 판정이 아직 도착하지 않은 편집 위에서 납니다(2R P2)."
     )
-    assert discard.index("await flushPendingEdits()") < discard.index("Modal.confirm"), (
+    assert discard.index("await flushPendingEdits()") < discard.index("modal.confirm"), (
         "정산이 확인보다 **뒤에** 섭니다 — 순서가 뒤집히면 정산의 존재가 무의미합니다."
     )
-    assert 'querySelector(\'#editor-foot [data-act="discard-patch"]\')' in discard, (
-        "정산 뒤 트리거를 다시 잡지 않습니다 — 정산이 부른 재구성으로 옛 참조는 분리됩니다."
-    )
+    # R4-02 — 트리거 재획득 요구는 **원인이 사라져** 승계하지 않는다: 정산이 부르는 것은
+    # `innerHTML` 재구성이 아니라 React 재렌더이고 같은 버튼 노드가 그대로 산다(분리 없음).
+    # 남는 계약은 「확인이 그 트리거로 돌아간다」 하나이고 그것은 그대로 잰다.
     assert "returnFocus: trigger" in discard, (
-        "확인이 재획득한 트리거가 아니라 옛 참조로 돌아갑니다."
+        "확인이 누른 트리거로 돌아가지 않습니다 — 취소 착지가 화면 루트로 떨어집니다."
+    )
+    assert "controller.discardPatch(event.currentTarget)" in editor_js, (
+        "버리기 버튼이 자기 트리거를 넘기지 않습니다."
     )
     # 복귀는 **규칙을 다시 읽은 뒤** 목적 화면을 노출한다(8R P1 근본 조치). 5R 은 이 순서를
     # 미리보기 복귀에만 세웠고, 그래서 데이터·결과 복귀는 옛 규칙을 든 화면을 내보인 채
     # 「만들기」를 열어 뒀다 — 순서는 **모든** 복귀가 지나는 착지 절차 한 자리에 산다.
-    land = editor_js[editor_js.index("async function landOn("):]
-    land = land[:land.index("\n  }") + 4]
-    assert land.index("await Nav.refresh(") < land.index("Nav.go("), (
+    land = _function_body(editor_js, "async function landOn(")
+    assert land.index("await deps.navigation.refresh(") < land.index("navigation.go("), (
         "착지가 재적재를 기다리지 않고 화면을 노출합니다 — 편집 전 규칙으로 실행됩니다(8R P1)."
     )
     assert "refreshed: true" in land, (
@@ -1735,22 +1769,22 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     )
     # 편집기를 나가는 길은 **모두** 그 절차를 지난다 — Nav.go 직행이 하나라도 남으면
     # 그 경로만 재적재를 건너뛰는 비대칭이 다시 생긴다(F7 이 네 라운드에 걸쳐 겪은 자리).
-    assert editor_js.count("Nav.go(") == 1, (
+    assert editor_js.count("navigation.go(") == 1, (
         "편집기에 Nav.go 직행 경로가 남았습니다 — 착지 절차(landOn) 하나만 전환해야 합니다."
     )
     # **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점이 방금 숨겨진 편집기 back 버튼에 남아
     # 키보드 사용자가 보이는 초점 없이 착지한다. 되돌릴 자리를 아는 곳은 진입 seam 하나이고
     # (복귀처 넷에 focus_target 을 심으면 새 진입처가 조용히 빠진다), 되돌림 **규칙**은
     # 모달이 이미 가진 것을 쓴다(분리·비활성 요소 판정을 두 번 쓰지 않는다).
-    assert "EditorEntry.restoreEntryFocus()" in land, (
+    assert "editorEntry.current().restoreEntryFocus()" in land, (
         "이탈이 초점을 되돌리지 않습니다 — 숨은 요소에 초점이 남습니다(9R P2)."
     )
-    entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    entry_js = R4_EDITOR_ENTRY.read_text(encoding="utf-8")
     assert entry_js.count("rememberEntryFocus()") == 4, (
         "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 세 진입"
         "(newDraft·newDraftFromData·openGuarded). 진입이 늘 때 이 수도 함께 는다."
     )
-    assert "Modal.restoreFocus(" in entry_js, (
+    assert "modal.restoreFocus(" in entry_js, (
         "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
     )
     modal_js = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
@@ -1764,7 +1798,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
             f"{guard} 가 대기 중 입력을 정산하지 않고 판정합니다(4R P2)."
         )
     # 탭 가드의 「버리고 이동」은 **모달이 말한 자리만** 되돌린다(2R P2).
-    assert 'discard_patch", { section: r.section }' in editor_js, (
+    assert 'discard_patch", { section: result.section }' in editor_js, (
         "탭 가드의 되돌리기가 세션 전체를 겨눕니다 — 확인 문안보다 넓은 파기입니다."
     )
     assert "jobEditResume" not in job_js and "jobEditResume" not in html, (
@@ -1810,10 +1844,14 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     비례한다. 출구가 하나여야 patch 3택이 한 곳에서 끝난다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    editor_sec = html.split('id="scr-editor"')[1].split('id="scr-workbench"')[0]
+    assert 'id="scr-editor"' in html, "편집기 화면 root 가 사라졌습니다."
+    #: R4-02 — 화면 안쪽 전부가 React 생산이라 컨테이너 3종·머리 컨트롤의 거처는 producer 다.
+    #: 정적 재도입은 두 생산자가 되므로 **부재**도 함께 잰다(portal 이 mount 전에 거절한다).
+    editor_src = R4_EDITOR.read_text(encoding="utf-8")
     for cid in ("editorBack", "editorName", "editorSaveState", "editorContext",
                 "editor-steps", "editor-body", "editor-foot"):
-        assert cid in editor_sec, f"{cid} 가 편집기 화면에 없습니다."
+        assert f'id: "{cid}"' in editor_src, f"{cid} 를 React 편집기가 생산하지 않습니다."
+        assert f'id="{cid}"' not in html, f"{cid} 정적 골격이 React producer 와 중복됩니다."
     # 구 거처 재유입 가드 — 편집 호스트·두 모드 출구는 승계처가 섰으므로 되살아나면 안 된다.
     assert 'id="jobEditHost"' not in html, "구 편집 호스트가 부활했습니다(F7 판정 N)."
     assert 'id="jobEditExit"' not in html and 'id="jobEditExitNote"' not in html, (
@@ -1841,7 +1879,7 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     for surface in ('{ id: "editor", cls: "editor-open" }', '{ id: "workbench", cls: "workbench-open" }'):
         assert surface in nav_ts, f"몰입 표면 목록에 {surface} 가 없습니다."
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
-    entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    entry_src = R4_EDITOR_ENTRY.read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
     assert 'navigate("editor"' in entry_src, "편집 진입이 편집기 화면으로 착지하지 않습니다."
@@ -1866,8 +1904,9 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert "showEditMode" not in job_js and "exitEditToRun" not in job_js, (
         "job.js 두 모드 배선이 되살아났습니다 — 편집은 자기 화면으로 나갔습니다(F7)."
     )
-    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert '$("scr-editor")' in editor_js, "editor.js 위임 루트가 몰입 표면으로 이사하지 않았습니다."
+    editor_js = R4_EDITOR.read_text(encoding="utf-8")
+    assert 'screenPortal("scr-editor"' in (WEB_JS_DIR.parent / "src" / "bootstrap.js").read_text(
+        encoding="utf-8"), "React 편집기 표면이 몰입 화면 root 에 portal 되지 않았습니다."
 
 
 def test_editor_folder_import_is_wired_without_session_confirm():
@@ -1879,20 +1918,21 @@ def test_editor_folder_import_is_wired_without_session_confirm():
     새-세션 확인(confirmNewSessionIfUnsaved)이 이 경로에 서면 안 된다 — 세션 무변경 동사에
     세션 파괴 확인이 붙으면 확인이 거짓말이 된다.
     """
-    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor = R4_EDITOR.read_text(encoding="utf-8")
     bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
     app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
     )
-    assert 'data-act="import-folder"' in editor, "폴더 가져오기 버튼이 행동 줄에 없습니다."
-    start = editor.index('case "import-folder"')
-    block = editor[start:editor.index('case "', start + 10)]
-    assert "importTemplatesFolder" in block, "핸들러가 직접 브리지 메서드를 부르지 않습니다."
+    assert '"data-act": "import-folder"' in editor, "폴더 가져오기 버튼이 행동 줄에 없습니다."
+    start = editor.index("async function importFolder(")
+    block = _function_body(editor, "async function importFolder(")
+    assert "import_templates_folder" in block, "핸들러가 직접 브리지 메서드를 부르지 않습니다."
     # 호출 형태로 잰다 — 주석의 언급(왜 안 거는지의 선언)은 결함이 아니다.
     assert "confirmNewSessionIfUnsaved()" not in block, (
         "채택 없는 일괄 등록에 새-세션 확인이 붙었습니다 — 세션 무변경 동사입니다(#339)."
     )
-    assert block.index("Modal.confirm") < block.index("importTemplatesFolder(r.folder, true, r.files)"), (
+    assert block.index("modal.confirm") < block.index(
+        '"import_templates_folder", scanned.folder, true, scanned.files'), (
         "확정 실행이 재진술 확인보다 앞에 있거나 재진술된 후보 목록(r.files)을 나르지"
         " 않습니다 — 확정 전에는 홈에 아무것도 쓰지 않고, 실행은 확인한 목록에 결속된다."
     )
@@ -1905,14 +1945,15 @@ def test_editor_folder_import_is_wired_without_session_confirm():
     # 재진입 가드(PR #355 2R) — in-flight 플래그가 흐름 **전체**(스캔→확정→실행)를 덮고,
     # 취소·실패 출구 포함 어디로 나가든 풀린다(finally). 잠긴 채 남으면 버튼이 영구 사망.
     # 판정 정본은 Python(tpl import_folder 비차단 잠금)이고 이 플래그는 어포던스 잠금이다.
-    assert "if (folderImportInFlight) break;" in block, (
+    assert "if (view.folderImportInFlight) return;" in block, (
         "폴더 가져오기에 in-flight 가드가 없습니다 — 느린 드라이브에서 재클릭이 두 번째"
         " 스캔/확정 모달/배치를 시작합니다(PR #355 2R)."
     )
-    assert block.index("folderImportInFlight = true") < block.index("importTemplatesFolder()"), (
+    assert block.index("folderImportInFlight: true") < block.index(
+        'invoke("import_templates_folder"'), (
         "가드가 첫 브리지 발신보다 늦게 섭니다 — 스캔·확정 모달이 가드 밖입니다."
     )
-    assert "finally" in block and "folderImportInFlight = false" in block, (
+    assert "finally" in block and "folderImportInFlight: false" in block, (
         "in-flight 해제가 finally 에 없습니다 — 취소·실패 출구에서 버튼이 영구히 잠깁니다."
     )
     tpl_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp"
@@ -1944,7 +1985,7 @@ def test_edit_entries_carry_their_context():
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     lib = R4_LIBRARY.read_text(encoding="utf-8")
     bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
-    entry = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    entry = R4_EDITOR_ENTRY.read_text(encoding="utf-8")
     assert "openJobInEditor(name, context)" in bridge, (
         "브리지가 진입 문맥을 나르지 않습니다 — 문맥 없는 편집기는 나갈 곳이 없다."
     )
@@ -1952,10 +1993,10 @@ def test_edit_entries_carry_their_context():
     # 실어도 공용 seam 이 인자를 흘리면 모든 진입이 기본 자발적 진입으로 떨어져 배너·복귀처가
     # 통째로 사라진다. 종전 계약은 "호출자가 무엇을 싣는가"만 보고 "seam 이 흘려보내는가"를
     # 보지 않아 그 드리프트를 통과시켰다.
-    assert "async function openGuarded(name, context)" in entry, (
+    assert "async function openGuarded(name: string, context?: Obj)" in entry, (
         "공용 진입 seam 이 문맥 인자를 받지 않습니다 — 호출자가 실은 문맥이 버려집니다."
     )
-    assert "bridge.openJobInEditor(name, context" in entry, (
+    assert 'invoke("open_job_in_editor", name, context' in entry, (
         "공용 진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다."
     )
     for reason in ("document_browser_repair", "preview_result", "output_result", "run_failure"):
@@ -1971,12 +2012,12 @@ def test_edit_entries_carry_their_context():
     # **약속한 복귀 상태는 실제로 되돌린다**(1R P2): 「미리보기로 돌아가기」가 보통의
     # 「문서 만들기」로 데려다 놓으면 라벨이 거짓이 된다. 보낸 표면이 세운 `reopen_drawer` 를
     # 복귀가 소비하고, 여는 절차는 그 화면의 seam 하나가 소유한다(열기 규율 두 벌 금지).
-    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor = R4_EDITOR.read_text(encoding="utf-8")
     assert "reopen_drawer" in job and "reopen_drawer" in editor, (
         "미리보기 복귀 상태가 세워지기만 하고 소비되지 않습니다 — 라벨이 약속한 자리와"
         " 실제 착지가 다릅니다."
     )
-    assert "JobScreen.openPreview" in editor and "openPreview," in job, (
+    assert "jobRun.current().openPreview" in editor and "openPreview," in job, (
         "복귀가 미리보기 열기 seam 을 쓰지 않습니다 — 열기 절차가 두 벌이 됩니다."
     )
 
@@ -1991,7 +2032,7 @@ def test_preview_row_fix_deep_link_is_wired_end_to_end():
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    editor = R4_EDITOR.read_text(encoding="utf-8")
     # 발신 쪽 — 행 버튼·파일 이름 버튼·target 두 형태·preview_index 생산.
     assert 'data-act="preview-fix"' in job, "행별 「수정」 버튼이 없습니다."
     assert 'id="previewFixFilename"' in html, "파일 이름 「수정」 버튼(정적 DOM)이 없습니다."
@@ -2009,12 +2050,12 @@ def test_preview_row_fix_deep_link_is_wired_end_to_end():
     assert "aimAt" in editor and 'tr[data-field="' in editor.replace("${CSS.escape(field)}", '"'), (
         "편집기가 target 행을 겨누지 않습니다(탭 착지만 하고 행을 버립니다)."
     )
-    assert "ret.preview_index" in editor and "focusTarget: ctx.target" in editor, (
+    assert "ret.preview_index" in editor and "focusTarget: String(context.target" in editor, (
         "복귀가 같은 자리·같은 행(§10.14.3)을 소비하지 않습니다."
     )
     assert "focusPreviewTarget" in job, "재개 드로어가 복귀 행에 초점을 세우지 않습니다."
     # 배제 유지(판정 E) — 작업대는 편집기로 나가는 deep-link 를 갖지 않는다.
-    wb = (WEB_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+    wb = R4_WORKBENCH.read_text(encoding="utf-8")
     assert "openJobInEditor" not in wb and "EditorEntry" not in wb, (
         "작업대가 편집기 진입을 얻었습니다 — 판정 E(배제 선언)를 먼저 뒤집어야 합니다."
     )
@@ -2062,8 +2103,8 @@ def test_editor_overwrite_confirm_echoes_the_text_it_showed():
     Python 이 쓰기 잠금 안에서 문안을 다시 만들어 대조하고, 달라졌으면 새 문안으로 다시 묻는다
     — JS 는 무엇을 보여 줬는지만 실어 보낸다(판정은 Python 이 지금, JS 는 문안만).
     """
-    src = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert "confirmed_overwrite_text: res.overwrite_text" in src, (
+    src = R4_EDITOR.read_text(encoding="utf-8")
+    assert "confirmed_overwrite_text: result.overwrite_text" in src, (
         "확정 호출이 본 문안을 되돌리지 않습니다 — 검증 불가한 확인이 됩니다(#149)."
     )
 
@@ -2238,9 +2279,9 @@ def test_job_screen_branches_the_output_surfaces_on_the_media_python_declared():
 # 그래서 규약을 여기 못박는다: **같은 상태를 바꾸는 발신은 한 체인, 그 상태를 읽는 커밋은 그
 # 체인을 먼저 정산한다.** 새 화면이 이걸 빠뜨리면 리뷰 라운드가 아니라 이 게이트가 잡는다.
 COMMIT_SETTLE_GUARDS = (
-    ("screens/workbench.js", "async function copyCard()", "Intent.settle(WB_CHAIN)"),
-    ("screens/workbench.js", "async function saveRules()", "Intent.settle(WB_CHAIN)"),
-    ("screens/workbench.js", "async function leaveTo(", "Intent.settle(WB_CHAIN)"),
+    ("../src/screens/workbench.ts", "async function copyCard()", "chain.settle(WB_CHAIN)"),
+    ("../src/screens/workbench.ts", "async function saveRules()", "chain.settle(WB_CHAIN)"),
+    ("../src/screens/workbench.ts", "async function leaveTo(", "chain.settle(WB_CHAIN)"),
     ("screens/job.js", "async function doGenerate(", "JobDataCoordinator.current().flushPendingEdits()"),
     # (「기안」 flushDeb 행 삭제 — draftsession.js 가 화면과 함께 사망, F6 PR-B.
     #  복사 커밋의 승계처는 작업대 copyCard 로 위에 이미 서 있다.)
@@ -2293,7 +2334,7 @@ def test_workbench_sends_all_share_one_chain():
     맨 `Bridge.call` 로 남은 변이가 하나라도 있으면 그것만 순서 밖으로 새므로, 커밋이 정산해도
     잡히지 않는다(정산은 체인에 든 것만 기다린다).
     """
-    text = (WEB_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+    text = R4_WORKBENCH.read_text(encoding="utf-8")
     # 커밋 3종은 정산으로 순서를 지키므로 체인 밖 직접 발신이 정당하다(위 테스트가 담보).
     commit_bodies = "".join(
         _function_body(text, h) for h in

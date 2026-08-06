@@ -4,7 +4,7 @@
    patch 처분(저장·버리기·머무르기)이 그 한 출구에서 끝난다. 탭은 계약 §5.1 의 section
    문자열이고 **집합은 Python 이 매체에서 파생**해 내려준다 — 여기서 목록을 발명하지 않는다.
 
-   달라진 것은 소유다. legacy 는 `innerHTML` 재구성 + `Preserve.around` 로 포커스·캐럿을
+   달라진 것은 소유다. legacy 는 `innerHTML` 재구성 + 공용 보존 헬퍼로 포커스·캐럿을
    되찾고 `pendingFieldEdit` 1슬롯으로 커밋 전 타이핑을 들었다. React 소유에서는 노드가
    살아 있어 되찾을 것이 없고, 커밋 전 값의 주인은 `editor_state.ts` reducer 하나다.
 
