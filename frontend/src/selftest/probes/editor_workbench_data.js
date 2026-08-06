@@ -408,6 +408,7 @@ export function createEditorWorkbenchDataProbes() {
           preflight: { level: "ok", text: "ok" }, blank_fields: [], drift: [], name_tokens: [],
           gate: { enabled: true, level: "", text: "생성 준비" },
         });
+        await settleRender(ctx);
         trigger.focus();
         trigger.click();
         await ctx.sleep(0);
@@ -588,6 +589,7 @@ export function createEditorWorkbenchDataProbes() {
             can_approve: true, empty_note: "",
           },
         });
+        await settleRender(ctx);
         btn.focus();
         btn.click();
         await ctx.sleep(60);
@@ -696,6 +698,7 @@ export function createEditorWorkbenchDataProbes() {
             active_source_fields: [], ignored_source_fields: [], sample_rows: [],
             type_options: [], fmt_options: {}, provenance: null,
           }));
+          await settleRender(ctx);
           const tab = ctx.doc.querySelector('#editor-steps button[data-section="filename"]');
           if (!tab) { out.why = "탭 버튼 없음"; out.pending = false; return { editor_guard: out }; }
           tab.click();
@@ -790,6 +793,7 @@ export function createEditorWorkbenchDataProbes() {
         try {
           Nav.go("editor", { force: true });
           ctx.push("editor", clean);
+          await settleRender(ctx);
           const nameEl = byId(ctx, "editorName");
           if (!nameEl || !discardOf()) {
             out.why = "편집 표면 미구성";
@@ -869,7 +873,7 @@ export function createEditorWorkbenchDataProbes() {
         "레거시의 `teardown_error` 필드가 태어난 자리(app.py:3322). 그 필드를 읽는 테스트가"
         + " **하나도 없어** 정리 실패가 보이지 않았다 — 필드는 배선 호환으로 남기고, 실패는"
         + " 러너의 teardown 계약으로 시끄럽게 세운다.",
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = { pending: true };
         ctx.state.out = out;
@@ -895,6 +899,7 @@ export function createEditorWorkbenchDataProbes() {
             },
           });
           ctx.push("editor", base);
+          await settleRender(ctx);
           const caps = Array.prototype.map.call(
             ctx.doc.querySelectorAll("#editor-body .grp .cap"), (el) => el.textContent);
           out.bands = caps.filter((t) => t === "HWPX 서식" || t === "TXT 기안");
@@ -904,6 +909,7 @@ export function createEditorWorkbenchDataProbes() {
             sections: ["template", "binding"], template_path: "C:/t/기안.txt",
             template_name: "기안.txt", template_media: "txt",
           }));
+          await settleRender(ctx);
           out.txt_tabs = ctx.doc.querySelectorAll("#editor-steps .wstep-tab").length;
           out.why = "완료";
         } catch (thrown) {
@@ -1161,7 +1167,7 @@ export function createEditorWorkbenchDataProbes() {
       note:
         "마지막 `nav_back_after_leave` 는 **측정**이지 정리가 아니다 — 몰입이 영구 은닉이"
         + " 되는 회귀를 이 한 줄이 잡는다. 그래서 teardown 으로 옮기지 않았다.",
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
         try {
@@ -1178,11 +1184,13 @@ export function createEditorWorkbenchDataProbes() {
             field_count: 0, fields: [], raw_block: "", editing_origin: "",
           });
           ctx.push("editor", draft);
+          await settleRender(ctx);
           out.wizard_steps = ctx.doc.querySelectorAll("#editor-steps .wstep-tab .k").length;
           out.foot_shown_new = !isHidden(ctx, byId(ctx, "editor-foot"));
           draft.editing_origin = "공고서";
           draft.is_draft = false;
           ctx.push("editor", draft);
+          await settleRender(ctx);
           out.edit_tabs = ctx.doc.querySelectorAll("#editor-steps button.wstep-tab.as-tab").length;
           /* 편집의 주 행동(「변경 저장」)은 어느 탭에서도 상시 있다(§10.13 판정 E). */
           out.foot_shown_edit = !isHidden(ctx, byId(ctx, "editor-foot"));
@@ -1194,10 +1202,11 @@ export function createEditorWorkbenchDataProbes() {
           out.discard_shown_clean = !!discardOf();
           out.discard_disabled_clean = !!(discardOf() && discardOf().disabled);
           out.save_disabled_clean = !!(saveOf() && saveOf().disabled);
-          out.edit_dirty_tab_marked = (function () {
+          out.edit_dirty_tab_marked = await (async function () {
             draft.dirty_sections = ["binding"];
             draft.dirty = true;                 // 세션 수준 판정은 Python 이 낸 값 하나(3R)
             ctx.push("editor", draft);
+            await settleRender(ctx);
             /* 손댄 상태에서는 머리가 「저장하지 않은 변경」을 말하고 제자리 되돌리기가 활성이다 —
                「저장됨」이라 말하면서 버릴 길도 없던 자리(3R P2). */
             out.dirty_head = textOf(byId(ctx, "editorSaveState"));
@@ -1212,6 +1221,7 @@ export function createEditorWorkbenchDataProbes() {
           draft.dirty_sections = [];
           draft.dirty = false;
           ctx.push("editor", draft);
+          await settleRender(ctx);
           out.name_input_value = byId(ctx, "editorName").value;
           out.save_state = textOf(byId(ctx, "editorSaveState"));
           /* 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다. */
@@ -1221,6 +1231,7 @@ export function createEditorWorkbenchDataProbes() {
             return_context: { surface: "preview" },
           };
           ctx.push("editor", draft);
+          await settleRender(ctx);
           out.ctx_shown = !isHidden(ctx, byId(ctx, "editorContext"));
           out.ctx_text = textOf(byId(ctx, "editorContext"));
           out.ctx_return_btn = !!ctx.doc.querySelector('#editorContext [data-act="context-return"]');
@@ -1402,7 +1413,7 @@ export function createEditorWorkbenchDataProbes() {
         "app.py:3957 의 0.4초 정산이 이 둘 **사이**에 있다 — data_picker 가 닫은 모달의"
         + " 백드롭이 아직 살아 있으면 이 프로브의 첫 클릭이 삼켜진다. 순서를 잃으면 그 대기가"
         + " 아무 데도 걸리지 않는 시간이 된다(cooldownAfterMs 는 data_picker 가 진다).",
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
         try {
@@ -1439,6 +1450,7 @@ export function createEditorWorkbenchDataProbes() {
           });
           Nav.go("editor", { force: true });
           ctx.push("editor", snap);
+          await settleRender(ctx);
           const root = byId(ctx, "scr-editor");
           out.active_chips = root.querySelectorAll('.hchip.on[data-act="toggle-header"]').length;
           out.has_checkbox_staging = !!root.querySelector(".hbx");  // 스테이징 소거 → false 여야
@@ -1491,7 +1503,7 @@ export function createEditorWorkbenchDataProbes() {
       deadlineRationale: "동기 evaluate_js 한 번(app.py:3961-3963) — 레거시에도 폴링이 없다.",
       after: ["editor_chip"],
       afterReason: "레거시 드라이버 순서 그대로(3959 → 3961) — 같은 편집기 표면을 잇달아 쓴다.",
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
         try {
@@ -1514,6 +1526,7 @@ export function createEditorWorkbenchDataProbes() {
           });
           Nav.go("editor", { force: true });
           ctx.push("editor", snap);
+          await settleRender(ctx);
           const saveBtn = () => ctx.doc.querySelector('#editor-foot [data-act="save"]');
           out.save_present = !!saveBtn();
           // ① 깨끗한 저장본 — 바꾼 것이 없으니 잠겨 있다(U2 §2.4 게이트 자체).
@@ -1531,6 +1544,7 @@ export function createEditorWorkbenchDataProbes() {
           /* ②-b 그 사이 push 가 와 footer 가 다시 그려져도 열린 채여야 한다 — 직접 켠 버튼만
              으로는 재렌더 한 번에 도로 잠기고, 그 push 는 사용자가 만지지 않은 이유로도 온다. */
           ctx.push("editor", snap);
+          await settleRender(ctx);
           out.rerender_keeps_enabled = !!(saveBtn() && !saveBtn().disabled);
           // ③ 되돌려 치면 편집이 없던 것과 같다 — 열어 둔 채로 두지 않는다.
           nameEl.value = "공고서";
@@ -1567,6 +1581,7 @@ export function createEditorWorkbenchDataProbes() {
             }],
           });
           ctx.push("editor", rowSnap);
+          await settleRender(ctx);
           out.row_clean_disabled = !!(saveBtn() && saveBtn().disabled);
           let constEl = ctx.doc.querySelector('#editor-body [data-act="row-const"]');
           out.row_const_present = !!constEl;
@@ -1584,14 +1599,17 @@ export function createEditorWorkbenchDataProbes() {
             constEl.value = "푸시 중 입력";
             fire(ctx, constEl, "input");
             ctx.push("editor", rowSnap);
+            await settleRender(ctx);
             const after = ctx.doc.querySelector('#editor-body [data-act="row-const"]');
             out.row_value_survives_push = !!after && after.value === "푸시 중 입력";
             out.row_enabled_after_push = !!(saveBtn() && !saveBtn().disabled);
             /* ⑦ 되돌릴 자리가 사라지면(단계 이동) 대기도 버려야 한다 — 남은 편집이 없는데
                열린 버튼은 거짓말이다. */
             ctx.push("editor", snap);
+            await settleRender(ctx);
             out.gone_control_disables = !!(saveBtn() && saveBtn().disabled);
             ctx.push("editor", rowSnap);
+            await settleRender(ctx);
             constEl = ctx.doc.querySelector('#editor-body [data-act="row-const"]');
             if (constEl) constEl.blur();
           }
@@ -1664,6 +1682,7 @@ export function createEditorWorkbenchDataProbes() {
             },
           });
           ctx.push("editor", draft);
+          await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
           await settleUntil(ctx, () => host.querySelectorAll(".libselrow").length > 0);
           /* 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·폴더 일괄(#339)·새 TXT·새로고침. */
@@ -1746,7 +1765,7 @@ export function createEditorWorkbenchDataProbes() {
       afterReason:
         "레거시 드라이버 순서 그대로(3966 → 3985). 사이의 3969~3983 은 다른 클러스터(B)의"
         + " 폭 측정·overlay 프로브라 `after` 로 가리키지 않는다 — legacySite 가 그 순서를 잇는다.",
-      run(ctx) {
+      async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = {};
         try {
@@ -1778,6 +1797,7 @@ export function createEditorWorkbenchDataProbes() {
             },
           });
           ctx.push("editor", draft);
+          await settleRender(ctx);
           const host = byId(ctx, "scr-editor");
           out.grp_heads = host.querySelectorAll(".job-grp-head").length;   // 입찰·계약·그룹없음
           out.rows_visible = host.querySelectorAll(".libselrow").length;   // 계약 접힘 → 2+1
@@ -1808,6 +1828,7 @@ export function createEditorWorkbenchDataProbes() {
             txt: { flat: true, sections: [] },
           };
           ctx.push("editor", draft);
+          await settleRender(ctx);
           out.flat_heads = host.querySelectorAll(".job-grp-head").length;
           out.flat_rows = host.querySelectorAll(".libselrow").length;
           out.error = null;
