@@ -69,7 +69,6 @@
 import { Copy } from "../js/copy.js";
 import { escHtml } from "../js/esc.js";
 import { Guard } from "../js/guard.js";
-import { SegView } from "../js/segview.js";
 
 import { createTheme } from "../js/theme.js";
 import { createPersonalization } from "../js/personalization.js";
@@ -77,17 +76,13 @@ import { Preserve } from "../js/preserve.js";
 import { Modal } from "../js/modal.js";
 import { SurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
-import { createSheetPicker } from "../js/sheet_picker.js";
 import { createPathTrack } from "../js/pathtrack.js";
 import { createRelink } from "../js/relink.js";
 import { Popover } from "../js/popover.js";
 import { Intent } from "../js/intent.js";
 import { GroupList } from "../js/grouplist.js";
-import { createEditorEntry } from "../js/editor_entry.js";
 
-import { createEditorScreen } from "../js/screens/editor.js";
 import { createJobScreen } from "../js/screens/job.js";
-import { createWorkbenchScreen } from "../js/screens/workbench.js";
 import { createAppShell } from "../js/app.js";
 import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
@@ -111,6 +106,15 @@ import {
   JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeaderPortal, JobNoDataExit,
   createJobReadController, createJobRunAdapter,
 } from "./screens/job_read.ts";
+import {
+  EditorScreen as ReactEditorScreen, TxtEditDialog, createEditorController,
+} from "./screens/editor.ts";
+import { createEditorEntry } from "./screens/editor_entry.ts";
+import {
+  WorkbenchScreen as ReactWorkbenchScreen, createWorkbenchController,
+} from "./screens/workbench.ts";
+import { GroupMoveDialog, createGroupMoveDialog } from "./screens/group_move_dialog.ts";
+import { SheetPickerDialog, createSheetPickerController } from "./screens/sheet_picker.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -203,18 +207,25 @@ export function bootProduct() {
      부작용(위임 리스너 부착 등)을 구성 시점에 한 번 치르므로 두 번 부르면 리스너가 겹친다. */
   const Theme = createTheme({ bridge });
   const Personalization = createPersonalization({ bridge });
-  const SheetPicker = createSheetPicker({ bridge });
   const PathTrack = createPathTrack({ bridge });
   const Relink = createRelink({ bridge });
-  const EditorEntry = createEditorEntry({ bridge, navigate });
-
-  servicePorts.sheetPicker.bindLegacy({
-    choose: (...args) => SheetPicker.choose(...args),
+  /* R4-02 — 시트 선택·편집기 진입 seam 은 React 구현이 **유일한 owner** 다. legacy 구현이
+     남지 않으므로 handoff 할 상대가 없다: 빈 port 에 한 번 결속하고, 둘째 결속은 throw 한다
+     (중간 dual-dispatch 창이 애초에 생기지 않는다). */
+  const SheetPickerController = createSheetPickerController({
+    doc: document, client, modal: Modal,
   });
+  const SheetPicker = SheetPickerController.port;
+  const EditorEntry = createEditorEntry({
+    doc: document, client, modal: Modal, navigate,
+    notify: (message) => window.alert(message),
+  });
+
+  servicePorts.sheetPicker.bindReact(SheetPicker);
   servicePorts.relink.bindLegacy({
     relinkTemplate: (...args) => Relink.relinkTemplate(...args),
   });
-  screenPorts.editorEntry.bindLegacy(EditorEntry);
+  screenPorts.editorEntry.bindReact(EditorEntry);
   screenPorts.jobRunCoordination.bindLegacy({
     confirmDestructiveIfArmed: (...args) => JobScreen.confirmDestructiveIfArmed(...args),
     log: (...args) => JobScreen.log(...args),
@@ -241,8 +252,19 @@ export function bootProduct() {
     navigation, doc: document,
     notify: (message) => window.alert(message),
   });
-  EditorScreen = createEditorScreen({
-    Bridge: bridge, Nav: navigation, JobScreen: jobCallbacks, EditorEntry, PathTrack, SheetPicker,
+  const GroupMove = createGroupMoveDialog({ modal: Modal });
+  const EditorController = createEditorController({
+    doc: document,
+    runtime, client, ports: screenPorts, services: servicePorts,
+    modal: Modal, undo: UndoToast, popover: Popover, chain: Intent,
+    rowMenu: GroupList.createMenu({ menuId: "tplRowMenu" }),
+    groupMove: GroupMove,
+    navigation,
+    notify: (message) => window.alert(message),
+  });
+  const WorkbenchController = createWorkbenchController({
+    doc: document, runtime, client, modal: Modal, chain: Intent, navigation,
+    notify: (message) => window.alert(message),
   });
   const LegacyJobScreen = createJobScreen({
     Bridge: bridge, Nav: navigation, EditorScreen: editorCallbacks,
@@ -257,6 +279,17 @@ export function bootProduct() {
   }));
   let releaseJobRun = null;
   LibraryScreen = { init: () => LibraryController.init() };
+  /* 화면 facade — 셸(app.js)이 부르는 이름만 좁게 싣는다. 표면이 곧 소비 계약이다. */
+  EditorScreen = {
+    init: () => EditorController.init(),
+    rerender: () => EditorController.rerender(),
+    leaveTo: (...args) => EditorController.leaveTo(...args),
+    aimAt: (...args) => EditorController.aimAt(...args),
+  };
+  WorkbenchScreen = {
+    init: () => WorkbenchController.init(),
+    leaveTo: (...args) => WorkbenchController.leaveTo(...args),
+  };
   const DataPickerService = {
     init: () => DataPicker.init(),
     open: (...args) => DataPicker.open(...args),
@@ -281,7 +314,6 @@ export function bootProduct() {
       return runtime.loadInitial("job");
     },
   };
-  WorkbenchScreen = createWorkbenchScreen({ Bridge: bridge, Nav: navigation });
 
   /* 셸 상태기계 (R3-02 · #411) — 라우팅·ready·닫기 직렬화 **판정**의 단일 정본. 여기서
      **정확히 한 번** 구성된다(reload 시 재구성 = store·renderers 와 같은 수명). 집행자
@@ -306,7 +338,7 @@ export function bootProduct() {
      `bootSelftest` 호출부 주석에 있다. */
   const services = {
     Bridge: bridge, Client: client, Nav, AppCloseGuard,
-    Copy, escHtml, Guard, SegView, Popover, Preserve, Intent, UndoToast,
+    Copy, escHtml, Guard, Popover, Preserve, Intent, UndoToast,
     Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
     PathTrack, Relink, DataPicker: DataPickerService, EditorEntry,
     LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
@@ -457,6 +489,13 @@ export function bootProduct() {
         screenPortal("jobNoDataExit", JobNoDataExit, { controller: JobRead }),
         screenPortal("jobCandsRow", JobCandidates, { controller: JobRead }),
         screenPortal("jobBrowseSheet", JobBrowseDialog, { controller: JobRead }),
+        /* R4-02 — 편집·매핑 표면 다섯. 몰입 화면 둘의 외곽 `.scr` class/ARIA 는 셸이 계속
+           집행하고, 그 **안쪽 전부**를 React 가 생산한다. */
+        screenPortal("scr-editor", ReactEditorScreen, { controller: EditorController }),
+        screenPortal("scr-workbench", ReactWorkbenchScreen, { controller: WorkbenchController }),
+        screenPortal("txtEditModal", TxtEditDialog, { controller: EditorController }),
+        screenPortal("tplMoveModal", GroupMoveDialog, { controller: GroupMove }),
+        screenPortal("sheetModal", SheetPickerDialog, { controller: SheetPickerController }),
       ],
     },
   });

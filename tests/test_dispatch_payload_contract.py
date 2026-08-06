@@ -30,7 +30,14 @@ _CALL = re.compile(
 )
 
 _LOCAL_CALL = re.compile(
-    r"(?:controller\.)?(?P<method>axis|jobDispatch|zone)\(\s*"
+    r"(?:controller\.)?(?P<method>axis|jobDispatch|zone|sendEdit|sendWb)\(\s*"
+    r"['\"](?P<action>[a-z0-9_]+)['\"]\s*,\s*"
+)
+
+#: 액션 리터럴이 **둘째 인자**인 발신 헬퍼(R4-02 `commit(field, "set_source", {…})`) —
+#: 첫 인자는 draft field 이고 그 뒤가 종전과 같은 (액션, 페이로드) 쌍이다.
+_ARG2_CALL = re.compile(
+    r"(?P<method>commit)\(\s*[^,()]+,\s*"
     r"['\"](?P<action>[a-z0-9_]+)['\"]\s*,\s*"
 )
 
@@ -39,12 +46,12 @@ _KEY = re.compile(r"^(?:\"(?P<q>[A-Za-z_][\w]*)\"|(?P<b>[A-Za-z_][\w]*))\s*(?::|
 
 #: 화면 상수(`SCREEN`)의 소유 화면 — 공용 모듈은 화면을 인자로 받으므로 여기 두지 않는다.
 SCREEN_OF_FILE = {
-    "js/screens/editor.js": "editor",
     "js/screens/job.js": "job",
     # ("screens/draft.js" 행 삭제 — 「기안」 화면 사망, F6 PR-B.)
     # ("screens/template.js" 행 삭제 — 「템플릿 관리」 화면 사망, F8 §10.17. tpl 액션의
     #  리터럴 호출은 editor.js 안에 살고 _CALL 이 리터럴 화면명으로 tpl 스키마 대조한다.)
-    "js/screens/workbench.js": "workbench",
+    "src/screens/editor.ts": "editor",
+    "src/screens/workbench.ts": "workbench",
     "src/screens/library.ts": "library",
     "src/screens/data_picker.ts": "pool",
     "src/screens/job_read.ts": "job",
@@ -53,6 +60,8 @@ SCREEN_OF_FILE = {
 
 LOCAL_SCREEN = {
     "src/screens/library.ts": {"axis": "library", "jobDispatch": "job"},
+    "src/screens/editor.ts": {"sendEdit": "editor", "commit": "editor"},
+    "src/screens/workbench.ts": {"sendWb": "workbench", "commit": "workbench"},
     "src/screens/job_read.ts": {"zone": "job"},
     "src/screens/data_zone.ts": {"zone": "job"},
 }
@@ -134,6 +143,11 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
             for match in _LOCAL_CALL.finditer(text)
             if relative in LOCAL_SCREEN and match.group("method") in LOCAL_SCREEN[relative]
         )
+        matches.extend(
+            (LOCAL_SCREEN[relative][match.group("method")], match.group("action"), match.end())
+            for match in _ARG2_CALL.finditer(text)
+            if relative in LOCAL_SCREEN and match.group("method") in LOCAL_SCREEN[relative]
+        )
         for screen, action, body_at in matches:
             schema = ACTION_REGISTRY.get(screen, {}).get(action)
             if schema is None:
@@ -206,6 +220,13 @@ def test_every_registered_action_has_a_frontend_consumer() -> None:
         text = path.read_text(encoding="utf-8")
         for match in _CALL.finditer(text):
             called.add((match.group("screen") or owner, match.group("action")))
+        #: 화면-지역 발신 헬퍼(R4 React 표면의 `sendWb`·`sendEdit`·`axis`…)를 통과한 리터럴도
+        #: 소비다 — 헬퍼가 화면 상수를 안으로 감췄다고 그 액션이 미배선인 것은 아니다.
+        for pattern in (_LOCAL_CALL, _ARG2_CALL):
+            for match in pattern.finditer(text):
+                local = LOCAL_SCREEN.get(relative, {}).get(match.group("method"))
+                if local is not None:
+                    called.add((local, match.group("action")))
     orphans = sorted(
         f"{screen}/{action}"
         for screen in SELF_CONTAINED_SCREENS

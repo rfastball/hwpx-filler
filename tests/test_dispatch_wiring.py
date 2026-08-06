@@ -29,15 +29,15 @@ CONTROLLERS = {
 # 해당 액션의 백엔드 MRO↔registry 동등성으로 검증한다.
 SCREEN_JS = {
     "library": "src/screens/library.ts",
-    "editor": "js/screens/editor.js",
+    "editor": "src/screens/editor.ts",
     "job": "js/screens/job.js",
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
     "pool": "src/screens/data_picker.ts",
     # `tpl` 화면도 사망(F8 §10.17) — 12액션의 프런트 소비자는 편집기 「템플릿」 탭이고 호출은
-    # 전부 명시 리터럴("tpl")이라 editor.js 스캔(owner="editor")에서 그대로 검증된다.
-    # 별도 행을 두면 editor.js 의 SCREEN 상수 호출이 tpl 로 오해석돼 거짓 실패가 난다.
-    "workbench": "js/screens/workbench.js",
+    # 전부 명시 리터럴("tpl")이라 editor.ts 스캔(owner="editor")에서 그대로 검증된다.
+    # 별도 행을 두면 editor.ts 의 SCREEN 상수 호출이 tpl 로 오해석돼 거짓 실패가 난다.
+    "workbench": "src/screens/workbench.ts",
 }
 
 _LITERAL_CALL = re.compile(

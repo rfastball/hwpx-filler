@@ -111,9 +111,25 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     return started;
   }
 
+  /* 재당김(R4-02) — `loadInitial` 은 화면당 **한 번**을 기억하는 부팅 당김이라 두 번째
+     호출이 다시 묻지 않는다. 편집기는 그것으로 부족하다: tpl 관리 동사가 목록을 바꾸면
+     Python 은 `tpl` 채널을 밀고, editor 스냅샷은 **다시 물어야** 최신이 된다(legacy
+     `Bridge.initial(SCREEN).then(render)` 의 후계). 같은 ingest 경로·같은 revision 가드를
+     쓰므로 늦게 도착한 당김이 그사이 온 push 를 덮지 않는다. */
+  function refresh(screen: ScreenName): Promise<unknown> {
+    ensure(screen);
+    const sinceRevision = store.revision(screen);
+    return client.initial(screen).then((result) => {
+      const value = expectHostValue(result, `${screen} initial`);
+      store.ingestPulled(screen, value, sinceRevision);
+      return value;
+    });
+  }
+
   return {
     model,
     loadInitial,
+    refresh,
     listenerCount(screen: ScreenName): number {
       return ensure(screen).listeners.size;
     },
