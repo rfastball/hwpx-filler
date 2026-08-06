@@ -720,9 +720,16 @@ export function createBootRoutingOverlayProbes() {
           snap.fields = fields;
           snap.schema_summary = "필드 40개";
           ctx.push("editor", snap);
+          /* R4-02 — 본문이 React 소유가 되면서 커밋이 다음 turn 이다. 커밋 전에 scrollTop 을
+             쓰면 아직 넘칠 내용이 없어 **0 으로 클램프**되고, 그 0 이 「보존 실패」로 읽힌다.
+             넘칠 만큼 자란 뒤에 쓴다 — 조건이 서면 즉시 진행하므로 고정 지연이 아니다. */
           const box = doc.getElementById("editor-body");
+          for (let turn = 0; turn < 12 && box.scrollHeight <= box.clientHeight; turn += 1) {
+            await ctx.sleep(0);
+          }
           box.scrollTop = 60;                 // 오버플로 안 — 클램프 없이 남을 값
-          ctx.push("editor", snap);           // 실 재렌더 — Preserve 가 스크롤 복원해야
+          ctx.push("editor", snap);           // 실 재렌더 — 스크롤이 가로질러 살아야
+          await ctx.sleep(0);
           out.editor_scroll_top = doc.getElementById("editor-body").scrollTop;
         } catch (e) { out.editor_scroll_top = "throw:" + (e && e.message); }
         Nav.go("job", { force: true });       // 자기 판을 자기가 걷는다(몰입 셸 잔존 금지)

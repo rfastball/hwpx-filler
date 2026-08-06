@@ -407,6 +407,10 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
   const draft = useSyncExternalStore(controller.draftModel.subscribe, controller.draftModel.getSnapshot);
   /* 카드 조각 클릭 → 소유 행 겨눔. 조각엔 id 가 없다(같은 토큰이 여러 번 나올 수 있어
      신원은 `data-token` 이다) — 그래서 위임으로 받는다. */
+  /* 세션이 없는 동안에는 `#wbCard` 자체가 없다(아래 이른 반환). 부착을 마운트 1회로 묶으면
+     그때 카드가 없어 **영영** 안 붙는다 — 열림 여부를 의존에 넣어 카드가 서는 커밋에서 붙고
+     닫히는 커밋에서 걷힌다. 열린 채 스냅샷이 갱신되는 동안에는 값이 안 바뀌어 재부착이 없다. */
+  const cardOpen = snapshot !== null && !!snapshot.open;
   useEffect(() => {
     const card = controller.doc.getElementById("wbCard");
     if (card === null) return;
@@ -416,7 +420,7 @@ export function WorkbenchScreen(props: { controller: WorkbenchController }): Rea
     };
     card.addEventListener("click", onClick);
     return () => card.removeEventListener("click", onClick);
-  }, [controller]);
+  }, [controller, cardOpen]);
 
   if (snapshot === null || !snapshot.open) {
     /* 세션 없음 — 화면은 라우팅 가드가 막는다. 골격은 그대로 두고 값만 비운다. */
