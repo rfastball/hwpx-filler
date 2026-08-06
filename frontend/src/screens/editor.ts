@@ -67,6 +67,9 @@ export type EditorControllerDeps = {
   groupMove: GroupMoveDialogController;
   chain: ChainPort;
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
+  /** 공용 이스케이퍼(`js/esc.js`) — 지역 사본을 두지 않는다(K1). 주입인 이유는 이 파일이
+   *  모든 의존을 주입으로 받기 때문이고, `.js` 잎을 `.ts` 에서 직접 import 하지 않는다. */
+  escapeHtml(value: string): string;
   notify(message: string): void;
 };
 
@@ -315,18 +318,15 @@ export function createEditorController(deps: EditorControllerDeps) {
     deps.rowMenu.hide();
   }
 
-  /** 메뉴 조각 하나 — 값이 든 버튼은 **요소로 지어** 이스케이프를 브라우저에 맡긴다.
+  /** 메뉴 조각 하나 — 이 화면에서 문자열 html 이 필요한 자리는 `rowMenu.show(html, …)`
+   *  하나뿐이고, 그 안에 Python 이 낸 값(수선 동사의 key·label)이 들어간다.
    *
-   *  이 화면에서 문자열 html 이 필요한 자리는 `rowMenu.show(html, …)` 하나뿐이고, 그 안에
-   *  Python 이 낸 값(수선 동사의 key·label)이 들어간다. 지역 이스케이퍼를 두면 아홉 사본을
-   *  한 곳으로 걷은 공용 잎의 열 번째가 된다(K1). `dataset`·`textContent` 로 지으면
-   *  이스케이프 규칙 자체를 우리가 안 든다 — 사본이 생길 자리가 없다. */
+   *  이스케이프는 **주입된 공용 잎**이 진다. 지역 사본을 두면 아홉을 한 곳으로 걷은 그 잎의
+   *  열 번째가 되고(K1), 요소를 지어 `outerHTML` 을 뽑는 우회는 React 트리 밖 DOM 생산이라
+   *  같은 파일의 다른 계약(직접 DOM 조작 0)을 깬다. */
   function menuButton(action: string, label: string, danger?: boolean): string {
-    const button = deps.doc.createElement("button");
-    button.dataset.menu = action;
-    if (danger) button.className = "danger";
-    button.textContent = label;
-    return button.outerHTML;
+    const cls = danger ? ' class="danger"' : "";
+    return `<button data-menu="${deps.escapeHtml(action)}"${cls}>${deps.escapeHtml(label)}</button>`;
   }
 
   function openLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {

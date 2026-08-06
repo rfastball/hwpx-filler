@@ -357,8 +357,8 @@ members = [
   "frontend/js/preserve.js:26 selStart",
   "frontend/js/preserve.js:34 scrolls",
   "frontend/js/preserve.js:35 marked",
-  "frontend/src/screens/editor.ts:1182 gate",
-  "frontend/src/screens/editor.ts:1458 display",
+  "frontend/src/screens/editor.ts:1199 gate",
+  "frontend/src/screens/editor.ts:1481 display",
   "frontend/src/screens/library.ts:373 content",
 ]
 judgment = """
@@ -567,8 +567,8 @@ members = [
   "frontend/src/screens/data_picker.ts:360",
   "frontend/src/screens/data_picker.ts:403",
   "frontend/src/screens/data_zone.ts:123",
-  "frontend/src/screens/editor.ts:1559",
-  "frontend/src/screens/editor.ts:1614",
+  "frontend/src/screens/editor.ts:1582",
+  "frontend/src/screens/editor.ts:1637",
   "frontend/src/screens/editor_state.ts:119",
   "frontend/src/screens/editor_state.ts:132",
   "frontend/src/screens/editor_state.ts:139",
@@ -601,7 +601,7 @@ members = [
   "frontend/src/screens/segment_view.ts:52",
   "frontend/src/screens/segment_view.ts:60",
   "frontend/src/screens/sheet_picker.ts:125",
-  "frontend/src/screens/workbench.ts:401",
+  "frontend/src/screens/workbench.ts:404",
   "frontend/src/screens/workbench_state.ts:18",
   "frontend/src/screens/workbench_state.ts:22",
   "frontend/src/screens/workbench_state.ts:38",
@@ -634,12 +634,12 @@ current = 8
 members = [
   "frontend/js/app.js:65",
   "frontend/js/app.js:65#2",
-  "frontend/src/bootstrap.js:286",
-  "frontend/src/bootstrap.js:291",
-  "frontend/src/screens/editor.ts:1599",
-  "frontend/src/screens/editor.ts:952",
-  "frontend/src/screens/workbench.ts:423",
-  "frontend/src/screens/workbench.ts:445",
+  "frontend/src/bootstrap.js:287",
+  "frontend/src/bootstrap.js:292",
+  "frontend/src/screens/editor.ts:1622",
+  "frontend/src/screens/editor.ts:965",
+  "frontend/src/screens/workbench.ts:426",
+  "frontend/src/screens/workbench.ts:448",
 ]
 judgment = "둘 다 app.js:65 의 존재 확인 + 호출이다. 화면 쪽 객체 노출은 export const 축(위)이 든다."
 
@@ -1184,7 +1184,7 @@ id = "dom/data-attr/workbench-view"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:data-wb-view"] }
-evidence = [{ file = "frontend/src/screens/workbench.ts", line = 484, anchor = "className: \"btn sm\", type: \"button\", \"data-wb-view\": view, key: view," }]
+evidence = [{ file = "frontend/src/screens/workbench.ts", line = 487, anchor = "className: \"btn sm\", type: \"button\", \"data-wb-view\": view, key: view," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1264,7 +1264,7 @@ id = "dom-js-data/editor"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:data-act", "frontend/src/screens/editor.ts:data-field", "frontend/src/screens/editor.ts:data-group", "frontend/src/screens/editor.ts:data-index", "frontend/src/screens/editor.ts:data-key", "frontend/src/screens/editor.ts:data-level", "frontend/src/screens/editor.ts:data-media", "frontend/src/screens/editor.ts:data-menu", "frontend/src/screens/editor.ts:data-path", "frontend/src/screens/editor.ts:data-preserve-scroll", "frontend/src/screens/editor.ts:data-section"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 274, anchor = "`#editor-body table.map tr[data-field=\"${CSS.escape(field)}\"]`);" }]
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 283, anchor = "`#editor-body table.map tr[data-field=\"${CSS.escape(field)}\"]`);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1294,7 +1294,7 @@ id = "dom-js-data/workbench"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:data-fullwidth", "frontend/src/screens/workbench.ts:data-i", "frontend/src/screens/workbench.ts:data-level", "frontend/src/screens/workbench.ts:data-name", "frontend/src/screens/workbench.ts:data-preserve-scroll"] }
-evidence = [{ file = "frontend/src/screens/workbench.ts", line = 340, anchor = "\"data-name\": name, id: `wbMap-row-${key}`, tabIndex: -1," }]
+evidence = [{ file = "frontend/src/screens/workbench.ts", line = 341, anchor = "\"data-name\": name, id: `wbMap-row-${key}`, tabIndex: -1," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1383,8 +1383,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js/editor"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1052:dynamic:libgrp-", "frontend/src/screens/editor.ts:1507:static:save-msg", "frontend/src/screens/editor.ts:1522:static:editor-foot", "frontend/src/screens/editor.ts:1535:static:editor-foot", "frontend/src/screens/editor.ts:1598:static:editorBack", "frontend/src/screens/editor.ts:1604:static:editor-body", "frontend/src/screens/editor.ts:1619:static:txtEditTitle", "frontend/src/screens/editor.ts:1621:static:txtNameRow", "frontend/src/screens/editor.ts:1626:static:txtEditName", "frontend/src/screens/editor.ts:1632:static:txtEditContent", "frontend/src/screens/editor.ts:1637:static:txtEditError", "frontend/src/screens/editor.ts:1642:static:txtEditCancel", "frontend/src/screens/editor.ts:1646:static:txtEditOk", "frontend/src/screens/editor.ts:919:static:editorTitle", "frontend/src/screens/editor.ts:921:static:editorName", "frontend/src/screens/editor.ts:931:static:editorSubtitle", "frontend/src/screens/editor.ts:933:static:editorSaveState", "frontend/src/screens/editor.ts:941:static:editorContext", "frontend/src/screens/editor.ts:948:static:editorContext", "frontend/src/screens/editor.ts:972:static:editor-steps"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 919, anchor = "h(\"h1\", { id: \"editorTitle\" }," }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1069:dynamic:libgrp-", "frontend/src/screens/editor.ts:1530:static:save-msg", "frontend/src/screens/editor.ts:1545:static:editor-foot", "frontend/src/screens/editor.ts:1558:static:editor-foot", "frontend/src/screens/editor.ts:1621:static:editorBack", "frontend/src/screens/editor.ts:1627:static:editor-body", "frontend/src/screens/editor.ts:1642:static:txtEditTitle", "frontend/src/screens/editor.ts:1644:static:txtNameRow", "frontend/src/screens/editor.ts:1649:static:txtEditName", "frontend/src/screens/editor.ts:1655:static:txtEditContent", "frontend/src/screens/editor.ts:1660:static:txtEditError", "frontend/src/screens/editor.ts:1665:static:txtEditCancel", "frontend/src/screens/editor.ts:1669:static:txtEditOk", "frontend/src/screens/editor.ts:932:static:editorTitle", "frontend/src/screens/editor.ts:934:static:editorName", "frontend/src/screens/editor.ts:944:static:editorSubtitle", "frontend/src/screens/editor.ts:946:static:editorSaveState", "frontend/src/screens/editor.ts:954:static:editorContext", "frontend/src/screens/editor.ts:961:static:editorContext", "frontend/src/screens/editor.ts:985:static:editor-steps"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 932, anchor = "h(\"h1\", { id: \"editorTitle\" }," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1403,8 +1403,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js/workbench"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:340:dynamic:wbMap-row-", "frontend/src/screens/workbench.ts:347:dynamic:wbMap-src-", "frontend/src/screens/workbench.ts:355:dynamic:wbMap-sug-", "frontend/src/screens/workbench.ts:360:dynamic:wbMap-rev-", "frontend/src/screens/workbench.ts:365:dynamic:wbMap-type-", "frontend/src/screens/workbench.ts:373:dynamic:wbMap-fmt-", "frontend/src/screens/workbench.ts:386:dynamic:wbMap-val-", "frontend/src/screens/workbench.ts:395:dynamic:wbMap-ck-", "frontend/src/screens/workbench.ts:422:static:wbBack", "frontend/src/screens/workbench.ts:444:static:wbBack", "frontend/src/screens/workbench.ts:449:static:wbMode", "frontend/src/screens/workbench.ts:450:static:wbTitle", "frontend/src/screens/workbench.ts:453:static:wbPosition", "frontend/src/screens/workbench.ts:454:static:wbCopied", "frontend/src/screens/workbench.ts:455:static:wbRevision", "frontend/src/screens/workbench.ts:458:static:wbNotice", "frontend/src/screens/workbench.ts:466:static:wbDirtyNote", "frontend/src/screens/workbench.ts:470:static:wbSaveRules", "frontend/src/screens/workbench.ts:474:static:wbMapPanel", "frontend/src/screens/workbench.ts:490:static:wbTargetFont", "frontend/src/screens/workbench.ts:498:static:wbReview", "frontend/src/screens/workbench.ts:501:static:wbDots", "frontend/src/screens/workbench.ts:515:static:wbCard", "frontend/src/screens/workbench.ts:518:static:wbLint", "frontend/src/screens/workbench.ts:522:static:wbLintAction", "frontend/src/screens/workbench.ts:527:static:wbLintAction", "frontend/src/screens/workbench.ts:533:static:wbAdvance", "frontend/src/screens/workbench.ts:537:static:wbNote", "frontend/src/screens/workbench.ts:540:static:wbPrev", "frontend/src/screens/workbench.ts:546:static:wbNext", "frontend/src/screens/workbench.ts:553:static:wbCopy"] }
-evidence = [{ file = "frontend/src/screens/workbench.ts", line = 450, anchor = "h(\"h1\", { id: \"wbTitle\" }, snapshot.job_name || \"검토·복사\")," }]
+selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:341:dynamic:wbMap-row-", "frontend/src/screens/workbench.ts:348:dynamic:wbMap-src-", "frontend/src/screens/workbench.ts:356:dynamic:wbMap-sug-", "frontend/src/screens/workbench.ts:361:dynamic:wbMap-rev-", "frontend/src/screens/workbench.ts:366:dynamic:wbMap-type-", "frontend/src/screens/workbench.ts:374:dynamic:wbMap-fmt-", "frontend/src/screens/workbench.ts:389:dynamic:wbMap-val-", "frontend/src/screens/workbench.ts:398:dynamic:wbMap-ck-", "frontend/src/screens/workbench.ts:425:static:wbBack", "frontend/src/screens/workbench.ts:447:static:wbBack", "frontend/src/screens/workbench.ts:452:static:wbMode", "frontend/src/screens/workbench.ts:453:static:wbTitle", "frontend/src/screens/workbench.ts:456:static:wbPosition", "frontend/src/screens/workbench.ts:457:static:wbCopied", "frontend/src/screens/workbench.ts:458:static:wbRevision", "frontend/src/screens/workbench.ts:461:static:wbNotice", "frontend/src/screens/workbench.ts:469:static:wbDirtyNote", "frontend/src/screens/workbench.ts:473:static:wbSaveRules", "frontend/src/screens/workbench.ts:477:static:wbMapPanel", "frontend/src/screens/workbench.ts:493:static:wbTargetFont", "frontend/src/screens/workbench.ts:501:static:wbReview", "frontend/src/screens/workbench.ts:504:static:wbDots", "frontend/src/screens/workbench.ts:518:static:wbCard", "frontend/src/screens/workbench.ts:521:static:wbLint", "frontend/src/screens/workbench.ts:525:static:wbLintAction", "frontend/src/screens/workbench.ts:530:static:wbLintAction", "frontend/src/screens/workbench.ts:536:static:wbAdvance", "frontend/src/screens/workbench.ts:540:static:wbNote", "frontend/src/screens/workbench.ts:543:static:wbPrev", "frontend/src/screens/workbench.ts:549:static:wbNext", "frontend/src/screens/workbench.ts:556:static:wbCopy"] }
+evidence = [{ file = "frontend/src/screens/workbench.ts", line = 453, anchor = "h(\"h1\", { id: \"wbTitle\" }, snapshot.job_name || \"검토·복사\")," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1474,8 +1474,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/editor"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:143 draft", "frontend/src/screens/editor.ts:145 wired", "frontend/src/screens/editor.ts:146 view", "frontend/src/screens/editor.ts:1592 body", "frontend/src/screens/group_move_dialog.ts:41 state", "frontend/src/screens/group_move_dialog.ts:42 request", "frontend/src/screens/group_move_dialog.ts:43 confirmed"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 143, anchor = "let draft: DraftState = emptyDraft();" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:152 draft", "frontend/src/screens/editor.ts:154 wired", "frontend/src/screens/editor.ts:155 view", "frontend/src/screens/editor.ts:1615 body", "frontend/src/screens/group_move_dialog.ts:41 state", "frontend/src/screens/group_move_dialog.ts:42 request", "frontend/src/screens/group_move_dialog.ts:43 confirmed"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 152, anchor = "let draft: DraftState = emptyDraft();" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1544,7 +1544,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:175 LibraryScreen", "frontend/src/bootstrap.js:176 EditorScreen", "frontend/src/bootstrap.js:177 JobScreen", "frontend/src/bootstrap.js:178 WorkbenchScreen", "frontend/src/bootstrap.js:179 Nav", "frontend/src/bootstrap.js:280 releaseJobRun", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:175 LibraryScreen", "frontend/src/bootstrap.js:176 EditorScreen", "frontend/src/bootstrap.js:177 JobScreen", "frontend/src/bootstrap.js:178 WorkbenchScreen", "frontend/src/bootstrap.js:179 Nav", "frontend/src/bootstrap.js:281 releaseJobRun", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
 evidence = [{ file = "frontend/src/bootstrap.js", line = 175, anchor = "let LibraryScreen;" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
@@ -1624,8 +1624,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:437"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 437, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:438"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 438, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1684,8 +1684,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/editor"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1573"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 1573, anchor = "menu.addEventListener(\"click\", onClick);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1596"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 1596, anchor = "menu.addEventListener(\"click\", onClick);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1704,8 +1704,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/workbench"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:414"] }
-evidence = [{ file = "frontend/src/screens/workbench.ts", line = 414, anchor = "card.addEventListener(\"click\", onClick);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:417"] }
+evidence = [{ file = "frontend/src/screens/workbench.ts", line = 417, anchor = "card.addEventListener(\"click\", onClick);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1804,8 +1804,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/release/sheet-picker"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1574", "frontend/src/screens/workbench.ts:415"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 1574, anchor = "return () => menu.removeEventListener(\"click\", onClick);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1597", "frontend/src/screens/workbench.ts:418"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 1597, anchor = "return () => menu.removeEventListener(\"click\", onClick);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1847,8 +1847,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/editor"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:176"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 176, anchor = "model.subscribe(absorb);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:185"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 185, anchor = "model.subscribe(absorb);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1859,8 +1859,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/editor-tpl"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:836"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 836, anchor = "tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:855"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 855, anchor = "tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });" }]
 classification = "react"
 handoff_slice = "R5-01 #419"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2039,8 +2039,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r4-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:139", "frontend/src/screens/editor.ts:1559", "frontend/src/screens/editor.ts:1614", "frontend/src/screens/editor_entry.ts:34", "frontend/src/screens/editor_state.ts:119", "frontend/src/screens/editor_state.ts:132", "frontend/src/screens/editor_state.ts:139", "frontend/src/screens/editor_state.ts:158", "frontend/src/screens/editor_state.ts:194", "frontend/src/screens/editor_state.ts:199", "frontend/src/screens/editor_state.ts:204", "frontend/src/screens/editor_state.ts:210", "frontend/src/screens/editor_state.ts:215", "frontend/src/screens/editor_state.ts:231", "frontend/src/screens/editor_state.ts:235", "frontend/src/screens/editor_state.ts:57", "frontend/src/screens/editor_state.ts:74", "frontend/src/screens/editor_state.ts:82", "frontend/src/screens/group_move_dialog.ts:115", "frontend/src/screens/group_move_dialog.ts:40", "frontend/src/screens/segment_view.ts:52", "frontend/src/screens/segment_view.ts:60", "frontend/src/screens/workbench.ts:401", "frontend/src/screens/workbench.ts:65", "frontend/src/screens/workbench_state.ts:18", "frontend/src/screens/workbench_state.ts:22", "frontend/src/screens/workbench_state.ts:38", "frontend/src/screens/workbench_state.ts:42", "frontend/src/screens/workbench_state.ts:48"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 139, anchor = "export function createEditorController(deps: EditorControllerDeps) {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:148", "frontend/src/screens/editor.ts:1582", "frontend/src/screens/editor.ts:1637", "frontend/src/screens/editor_entry.ts:34", "frontend/src/screens/editor_state.ts:119", "frontend/src/screens/editor_state.ts:132", "frontend/src/screens/editor_state.ts:139", "frontend/src/screens/editor_state.ts:158", "frontend/src/screens/editor_state.ts:194", "frontend/src/screens/editor_state.ts:199", "frontend/src/screens/editor_state.ts:204", "frontend/src/screens/editor_state.ts:210", "frontend/src/screens/editor_state.ts:215", "frontend/src/screens/editor_state.ts:231", "frontend/src/screens/editor_state.ts:235", "frontend/src/screens/editor_state.ts:57", "frontend/src/screens/editor_state.ts:74", "frontend/src/screens/editor_state.ts:82", "frontend/src/screens/group_move_dialog.ts:115", "frontend/src/screens/group_move_dialog.ts:40", "frontend/src/screens/segment_view.ts:52", "frontend/src/screens/segment_view.ts:60", "frontend/src/screens/workbench.ts:404", "frontend/src/screens/workbench.ts:65", "frontend/src/screens/workbench_state.ts:18", "frontend/src/screens/workbench_state.ts:22", "frontend/src/screens/workbench_state.ts:38", "frontend/src/screens/workbench_state.ts:42", "frontend/src/screens/workbench_state.ts:48"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 148, anchor = "export function createEditorController(deps: EditorControllerDeps) {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2100,8 +2100,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/screen-leave-guard"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:652", "frontend/src/screens/workbench.ts:236"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 652, anchor = "async function leaveTo(target: string): Promise<void> {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:671", "frontend/src/screens/workbench.ts:236"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 671, anchor = "async function leaveTo(target: string): Promise<void> {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

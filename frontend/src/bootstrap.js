@@ -260,6 +260,7 @@ export function bootProduct() {
     rowMenu: GroupList.createMenu({ menuId: "tplRowMenu" }),
     groupMove: GroupMove,
     navigation,
+    escapeHtml: escHtml,
     notify: (message) => window.alert(message),
   });
   const WorkbenchController = createWorkbenchController({
