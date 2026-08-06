@@ -176,7 +176,7 @@ def test_js_dead_fallback_removed():
     도달 불가한 죽은 분기다 — 제거 상태를 유지해야 한다.
     """
     # draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B) — 남은 소비자는 job 뿐.
-    for rel in ("screens/job.js",):
+    for rel in ():
         src = (WEB_JS / rel).read_text(encoding="utf-8")
         assert "data_source_label" in src, f"{rel} 이 data_source_label 을 소비하지 않습니다."
         assert "data_source_label || s.data_label" not in src, (

@@ -14,7 +14,9 @@ APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
 # R3-02(#411) — 랜딩 기본값·ready 게이트 판정의 정본은 셸 상태기계로 이동했다.
 NAV_TS = (SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
 LIB = (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts").read_text(encoding="utf-8")
-JOB = (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+from _web_source import react_job_run_source
+
+JOB = react_job_run_source()
 CSS = app_css()
 
 

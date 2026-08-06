@@ -57,8 +57,8 @@ LEAF_ESM_FILES = (
     "guard.js",
 )
 
-#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4-02 뒤에도 ``frontend/js``에 남은 11개.
-#: Data picker와 DataZone은 ``frontend/src/screens/*.ts`` React producer/controller로 승계돼
+#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4-03 뒤에도 ``frontend/js``에 남은 10개.
+#: Data picker·DataZone·Relink는 ``frontend/src/screens/*.ts`` React producer/controller로 승계돼
 #: 이 legacy-JS 매니페스트에서는 빠진다. 잎과 같은 규칙을 따른다 — entry가 직접
 #: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
 #: 아니라 **기록**이다: 이제 평가 순서는 합성 루트의 import 그래프가 정한다).
@@ -70,20 +70,26 @@ SERVICE_ESM_FILES = (
     "surface_sheet.js",
     "undo_toast.js",
     "pathtrack.js",
-    "relink.js",
     "popover.js",
     "intent.js",
     "grouplist.js",
 )
 
-#: N-06에서 named factory(true ESM)로 바뀐 화면 가운데 R4-02 뒤에도 legacy JS에 남은 하나와
-#: 앱 셸. Library는 ``frontend/src/screens/library.ts``가 승계했다. entry가 직접 싣지 않고 합성
-#: 루트가 import해 **정확히 한 번** 구성하며, 구성 순서는 구 entry의 IIFE 평가 순서
-#: 그대로다(화면 넷 → 앱 셸). 화면 간 간선과 화면→Nav 간선은 import가 아니라 합성 루트의
-#: late-bound 콜백 테이블이 진다 — 그래서 import 그래프에 editor↔job 순환이 없다.
-SCREEN_ESM_FILES = (
-    "screens/job.js",
-    "app.js",
+#: R4-03 뒤 legacy JS에 남은 화면 모듈은 **앱 셸 하나**다. 제품 화면 넷은 전부
+#: ``frontend/src/screens/*.ts`` React 컨트롤러가 승계했다(library=#414, editor·workbench=#415,
+#: job 실행·결과=#416). 셸은 여전히 합성 루트가 import해 **정확히 한 번** 구성하며, 화면 간
+#: 간선과 화면→Nav 간선은 import가 아니라 late-bound 콜백 테이블이 진다.
+SCREEN_ESM_FILES = ("app.js",)
+
+#: 「문서 만들기」 실행·결과 표면의 React 후계 셋. legacy ``screens/job.js`` 하나를 읽던
+#: 정적 계약들이 겨눌 자리다 — 한 파일이 셋으로 갈렸으므로 **읽는 자리도 한 곳에 둔다**
+#: (각 테스트가 세 경로를 손으로 열거하면 넷째가 생길 때 조용히 낡는다).
+REACT_JOB_RUN_FILES = (
+    "src/screens/job_run.ts",
+    "src/screens/job_result.ts",
+    "src/screens/job_preview.ts",
+    "src/screens/job_run_state.ts",
+    "src/screens/job_relink.ts",
 )
 
 #: 합성 루트를 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
@@ -148,6 +154,14 @@ def source_path(*parts: str) -> Path:
 def source_text(*parts: str) -> str:
     """정적 프런트엔드 소스 파일을 UTF-8로 읽는다."""
     return source_path(*parts).read_text(encoding="utf-8")
+
+
+def react_job_run_source() -> str:
+    """실행·결과 React 후계 소스를 이어붙여 돌려준다 — 구 ``screens/job.js`` 등가."""
+    return "".join(
+        (SOURCE_ROOT / name).read_text(encoding="utf-8")
+        for name in REACT_JOB_RUN_FILES
+    )
 
 
 def app_css() -> str:

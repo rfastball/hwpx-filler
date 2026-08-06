@@ -1009,3 +1009,38 @@ files = [
   "LICENSE",
   "README.md",
 ]
+
+[[asset]]
+file = "tests/js/r4_job_run_state.test.js"
+responsibility = "실행 정체 reducer — 화면 세대·세션 지문·실행 토큰 셋의 귀속 판정과 결과 수명"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/r4_job_run.test.js"
+responsibility = "실행 표면 컨트롤러 — 생성 흐름·게이트·거울·액션바 배선"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/r4_job_result_lifetime.test.js"
+responsibility = "결과 3태 구획의 수명 — 초기화·강등·명시 파기와 남의 결과 처분"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/r4_job_generate_order.test.js"
+responsibility = "full/progress/direct 우선순위와 옛 토큰·세션 전환·terminal barrier"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/r4_job_preview.test.js"
+responsibility = "확인 면 — 스냅샷 파생 렌더와 가용성 판정 단일 출처"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/js/r4_job_relink.test.js"
+responsibility = "저수준 재연결 port — 피커→needs-confirm→커밋 순서와 boolean 단일 결과"
+owner_stage = "R4-03"
+
+[[asset]]
+file = "tests/test_r4_job_run_static_to_js_successor_map.py"
+responsibility = "static→dom_js_site 승계 52 site 의 exact 대조"
+owner_stage = "R4-03"

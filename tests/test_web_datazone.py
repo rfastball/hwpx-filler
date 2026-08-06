@@ -15,7 +15,9 @@ from _web_source import SOURCE_JS_DIR, SOURCE_ROOT, app_css
 DATA_ZONE = SOURCE_ROOT / "src" / "screens" / "data_zone.ts"
 JOB_READ = SOURCE_ROOT / "src" / "screens" / "job_read.ts"
 BOOTSTRAP = SOURCE_ROOT / "src" / "bootstrap.js"
-LEGACY_JOB = SOURCE_JS_DIR / "screens" / "job.js"
+# R4-03 — legacy job 화면은 절단됐다. 「read renderer·DataZone 상태가 다시 생기지
+# 않는다」는 음성 대조는 이제 React 실행 표면을 겨눈다.
+from _web_source import react_job_run_source as _react_job_run_source
 
 ZONE_ACTIONS = (
     "filter_panel",
@@ -71,7 +73,7 @@ def test_job_consumes_factory_with_job_identity():
 def test_zone_dispatch_actions_single_sourced_in_factory():
     """데이터 존 액션은 React producer/controller 쌍에만 있고 run remainder에는 없다."""
     owner = _read(DATA_ZONE) + _read(JOB_READ)
-    remainder = _strip_js_comments(_read(LEGACY_JOB))
+    remainder = _strip_js_comments(_react_job_run_source())
     for action in ZONE_ACTIONS:
         assert f'"{action}"' in owner, f"R4 DataZone 소유자에 {action!r}가 없습니다."
         assert f'"{action}"' not in remainder, f"run remainder에 {action!r}가 재유입됐습니다."
@@ -106,7 +108,7 @@ def test_factory_snapshot_observed_unconditionally():
 
 def test_moved_surfaces_not_redefined_in_job():
     """legacy job.js에는 R4 read renderer와 DataZone 상태가 다시 생기지 않는다."""
-    job = _strip_js_comments(_read(LEGACY_JOB))
+    job = _strip_js_comments(_react_job_run_source())
     for symbol in (
         "function renderTable(",
         "function renderChips(",

@@ -146,10 +146,11 @@ def test_status_pill_calls_the_rule_axis_approval():
     문안과 그 근거가 **같은 자리**에 있는지를 본다.
     """
     body = _strip_js_comments(
-        (SOURCE_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+        __import__("_web_source").react_job_run_source()
     )
-    status = re.search(r"function renderStatus\(s\) \{.*?\n  \}", body, re.S)
-    assert status, "renderStatus 를 찾지 못했습니다 — 가드가 겨눌 자리가 사라졌습니다."
+    # R4-03 — 표지는 `JobStatusPill` 이 그린다. 겨눔만 옮기고 묻는 것은 그대로다.
+    status = re.search(r"function JobStatusPill\(.*?\n\}", body, re.S)
+    assert status, "JobStatusPill 을 찾지 못했습니다 — 가드가 겨눌 자리가 사라졌습니다."
     src = status.group(0)
     assert "승인 필요" in src, "규칙축이 막고 있을 때 표지가 「승인」을 안 씁니다."
     assert "review_required" in src, (

@@ -92,6 +92,8 @@ EXPECTED_TEST_FILES = {
     "r4_editor_entry_handoff.test.js",
     "r4_editor_state.test.js",
     "r4_leave_transactions.test.js",
+    "r4_job_relink.test.js",
+    "r4_job_run_state.test.js",
     "r4_sheet_picker.test.js",
     "r4_workbench.test.js",
 }
