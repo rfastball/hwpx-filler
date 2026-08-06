@@ -416,13 +416,19 @@ export function createBootRoutingOverlayProbes() {
         const trigger = doc.querySelector(".navbtn");
         trigger.focus();
         const before = doc.activeElement.getAttribute("data-scr");
-        Modal.open("txtEditModal", { initialFocus: doc.getElementById("txtEditName") });
-        const opened = !doc.getElementById("txtEditModal").classList.contains("hidden");
+        /* 표적 모달 재겨눔(R4-02): `txtEditModal` 은 **폼 모달이 아니게 됐다** — 내용의
+           생산자가 편집기 React 표면이라 그 창을 열어 두는 것만으로는 안에 아무 요소도
+           없다(초기 포커스가 겨눌 자리 자체가 없다). 이 프로브의 주어는 「커스텀 모달의
+           개폐·초기 포커스·Escape·복귀」이지 편집기가 아니므로, 골격이 **항상 서 있는**
+           promise 다이얼로그(#promptModal — R3-01 이 React host 렌더로 옮긴 뒤 상주)로
+           옮긴다. 앞선 재겨눔(draftSaveTplModal 사망 → txtEditModal, F6 PR-B)과 같은 처분. */
+        Modal.open("promptModal", { initialFocus: doc.getElementById("promptModalInput") });
+        const opened = !doc.getElementById("promptModal").classList.contains("hidden");
         const focusIn = doc.activeElement.id;
         keydown(ctx, "Escape");
-        const escapeClosing = doc.getElementById("txtEditModal").classList.contains("is-closing");
-        finishModal(ctx, "txtEditModal");
-        const closed = doc.getElementById("txtEditModal").classList.contains("hidden");
+        const escapeClosing = doc.getElementById("promptModal").classList.contains("is-closing");
+        finishModal(ctx, "promptModal");
+        const closed = doc.getElementById("promptModal").classList.contains("hidden");
         const restored = doc.activeElement.getAttribute("data-scr");
 
         /* (2) 네이티브 confirm 대체 모달 — `.modal{display:flex}` 가 `.hidden` 을 덮지 않는가
@@ -1025,10 +1031,11 @@ export function createBootRoutingOverlayProbes() {
         };
 
         trigger.focus();
-        Modal.open("txtEditModal", {
-          initialFocus: doc.getElementById("txtEditName"), returnFocus: trigger,
+        /* 같은 재겨눔(R4-02) — 위 modal_a11y 의 주석이 사유를 든다. */
+        Modal.open("promptModal", {
+          initialFocus: doc.getElementById("promptModalInput"), returnFocus: trigger,
         });
-        const formModal = doc.getElementById("txtEditModal");
+        const formModal = doc.getElementById("promptModal");
         out.modal_closed_popover = !popOpen;
         out.modal_focus_in = doc.activeElement.id;
         out.z_order = parseInt(win.getComputedStyle(formModal).zIndex, 10)
@@ -1040,18 +1047,18 @@ export function createBootRoutingOverlayProbes() {
         keydown(ctx, "Escape");
         out.exit_blocks_pointer = formModal.classList.contains("is-closing")
           && win.getComputedStyle(formModal).pointerEvents === "auto";
-        finishModal(ctx, "txtEditModal");
+        finishModal(ctx, "promptModal");
         out.menu_trigger_restored = doc.activeElement === trigger;
 
         /* 두 겹에서 Escape 한 번은 최상위만 퇴장시킨다. */
-        Modal.open("txtEditModal", { returnFocus: trigger });
+        Modal.open("promptModal", { returnFocus: trigger });
         Modal.open("confirmModal", { returnFocus: trigger });
         keydown(ctx, "Escape");
         out.escape_one_layer = doc.getElementById("confirmModal").classList.contains("is-closing")
-          && !doc.getElementById("txtEditModal").classList.contains("is-closing");
+          && !doc.getElementById("promptModal").classList.contains("is-closing");
         finishModal(ctx, "confirmModal");
-        Modal.close("txtEditModal");
-        finishModal(ctx, "txtEditModal");
+        Modal.close("promptModal");
+        finishModal(ctx, "promptModal");
 
         /* 720x500 에서 200줄 본문을 끝까지 스크롤하면 액션이 viewport 안에 도달한다. */
         const longModal = doc.getElementById("confirmModal");

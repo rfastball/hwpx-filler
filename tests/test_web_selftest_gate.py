@@ -425,11 +425,13 @@ class TestWebSelftestGate:
         assert c["after_value"] == "ok"
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
-        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(txtEditName)으로 들어간다.
-        # (표적 모달은 draftSaveTplModal 사망으로 txtEditModal 로 재겨눔 — F6 PR-B.)
+        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(promptModalInput)으로 들어간다.
+        # (표적 모달 재겨눔 2회: draftSaveTplModal 사망 → txtEditModal(F6 PR-B) →
+        #  txtEditModal 이 폼 모달이 아니게 됨 → promptModal(R4-02). 내용의 생산자가 편집기
+        #  React 표면으로 옮겨 「열어 두면 안에 요소가 있다」가 더는 참이 아니다.)
         m = selftest_result["modal_a11y"]
         assert m["opened"] is True
-        assert m["focus_in"] == "txtEditName"
+        assert m["focus_in"] == "promptModalInput"
 
     def test_modal_escape_closes_and_restores_focus(self, selftest_result: dict) -> None:
         # Escape 로 닫히고, 포커스가 열기 직전 트리거로 복귀한다(조용한 포커스 유실 금지 — #28).
@@ -1465,8 +1467,8 @@ class TestWebSelftestGate:
     ) -> None:
         h = selftest_result["milestone_h_overlay"]
         assert h["modal_closed_popover"] is True and h["z_order"] is True
-        # 표적 모달 재겨눔(draftSaveTplModal 사망 → txtEditModal, F6 PR-B).
-        assert h["modal_focus_in"] == "txtEditName"
+        # 표적 모달 재겨눔(→ txtEditModal, F6 PR-B → promptModal, R4-02 — 위 참조).
+        assert h["modal_focus_in"] == "promptModalInput"
         assert h["ime_escape_kept_open"] is True
         assert h["exit_blocks_pointer"] is True and h["menu_trigger_restored"] is True
         assert h["escape_one_layer"] is True
