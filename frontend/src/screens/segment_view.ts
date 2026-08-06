@@ -24,20 +24,26 @@ export type SegmentOwners = Readonly<Record<string, string>> | null | undefined;
 /** 세그먼트 하나의 요소 — literal 은 요소가 아니라 문자열이다(legacy 와 같은 산출). */
 function segmentNode(segment: Segment, owners: SegmentOwners, key: number): ReactNode {
   const name = segment.name;
-  const token = name ? { "data-token": name } : {};
+  /* 이름 없는 조각에는 속성을 **안 붙인다**. 조건부 객체를 펼치는 편이 짧지만, 전개는
+     소유권 추출기가 못 보는 자리라 `data-token` 이 분모에서 조용히 사라진다(같은 이유로
+     `sheet_picker.ts` 의 `data-first` 도 리터럴이다). `undefined` 는 React 가 속성을
+     생략하므로 산출은 legacy 와 같다. */
+  const token = name ? String(name) : undefined;
   if (segment.kind === "fill") {
     const own = owners && name ? owners[name] : "";
     return createElement("span", {
-      key, className: own ? `seg-fill own-${own}` : "seg-fill", ...token,
+      key, className: own ? `seg-fill own-${own}` : "seg-fill", "data-token": token,
     }, String(segment.text));
   }
   if (segment.kind === "blank") {
     return createElement("span", {
-      key, className: "seg-blank", ...token, title: `{{${String(name)}}}: 빈 값`,
+      key, className: "seg-blank", "data-token": token, title: `{{${String(name)}}}: 빈 값`,
     }, "〈빈 값〉");
   }
   if (segment.kind === "missing") {
-    return createElement("span", { key, className: "seg-missing", ...token }, String(segment.text));
+    return createElement("span", {
+      key, className: "seg-missing", "data-token": token,
+    }, String(segment.text));
   }
   return String(segment.text);
 }

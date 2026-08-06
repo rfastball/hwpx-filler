@@ -37,6 +37,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import re
 import shutil
 import sys
 from collections import Counter
@@ -136,18 +137,23 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
 #: 조용했다 — 그래서 이름이 아니라 `(하한, 지문)` 쌍을 든다. 축의 측정 계약을 바꾸려면
 #: 원장·게이트·이 표 **셋**이 함께 움직이고 그 diff 가 리뷰 표면에 뜬다.
 EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
-    "dom_data_attr": (7, "e0bd6cb1822fd50fefbda2c3fac621d5"),
+    # R4-02 재고정 — 이관이 끝난 축은 legacy 생산 자리가 사라지며 분모가 준다. 하한을
+    # 함께 내리지 않으면 게이트가 이관 자체를 빨강으로 보고, 그 빨강을 피하려 legacy
+    # 잔재를 남기는 압력이 생긴다(게이트 AXIS_FLOORS 주석에 같은 사유가 있다).
+    "dom_data_attr": (4, "e0bd6cb1822fd50fefbda2c3fac621d5"),
     "dom_js_data_attr": (80, "d6c24f47a9f809b5e6f63ddd2b09e372"),
     "dom_js_site": (120, "7ce48e5d41ae530e66a2156e113bb0bb"),
-    "dom_static": (139, "a0de506720a9704065dde2bf17410d50"),
+    "dom_static": (93, "a0de506720a9704065dde2bf17410d50"),
     "lifecycle_factory": (54, "f774587af230cf5222697cd0f0e0a050"),
-    "lifecycle_hook": (8, "1f090f972ecaf5c9e0a54796c6849437"),
+    "lifecycle_hook": (6, "1f090f972ecaf5c9e0a54796c6849437"),
     "state_js_module": (65, "fef89b77255e04f0cf05d4b19e09c733"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
-    "subscription_listener": (62, "8064cf796b67e47a094e61c7362e4b5b"),
-    "subscription_push": (3, "5201c1ab611d0f09a743bd1e6afced4a"),
+    "subscription_listener": (40, "8064cf796b67e47a094e61c7362e4b5b"),
+    # R4-02 — 축 단위가 「화면이 구독한다」에서 「기반이 탭을 세우고 화면은 model 을
+    # 구독한다」로 바뀌었다. 술어에 `.subscribe(` 가 붙고 scope 가 React 트리로 갔다.
+    "subscription_push": (6, "6b30b15e7ca10851763bd0ec96b48725"),
     "subscription_release": (15, "08fce41a56c1108632cb8bfd7364912c"),
 }
 
@@ -365,10 +371,14 @@ def test_n3_deleted_assignment_moves_the_metric_only(
     유령 행은 나지 않는다. `innerHTML` 은 `[[metric]]` 이고 노드 축이 아니기 때문이다 —
     두 종류를 섞어 기대하면 음성 대조가 자기 스키마를 잘못 안다는 뜻이 된다.
     """
-    target = clone_source / "js" / "sheet_picker.js"
+    # R4-02 가 `sheet_picker.js` 를 지우면서 겨눔을 옮겼다. 변이는 **하나**로 유지한다 —
+    # 파일 안 대입 수를 먼저 못박고 그중 하나만 지운다(전역 술어 치환은 자기가 겨눈 것과
+    # 다른 구멍까지 함께 감춘다).
+    target = clone_source / "js" / "grouplist.js"
     lines = target.read_text(encoding="utf-8").splitlines()
-    kept = [line for line in lines if "innerHTML" not in line or "=" not in line]
-    assert len(kept) == len(lines) - 1, "sheet_picker.js 의 대입이 하나가 아닙니다 — 변이를 다시 겨눠야 합니다."
+    hits = [index for index, line in enumerate(lines) if re.search(r"innerHTML\s*=[^=]", line)]
+    assert len(hits) == 2, "grouplist.js 의 대입 수가 바뀌었습니다 — 변이를 다시 겨눠야 합니다."
+    kept = [line for index, line in enumerate(lines) if index != hits[0]]
     target.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
     report = gate.check(document, frontend_tree, axes=[], metrics=["innerhtml-assignment"])
@@ -382,10 +392,11 @@ def test_n4_removed_state_declaration_becomes_a_ghost_row(
     document: dict[str, Any], frontend_tree: Path, clone_source: Path
 ) -> None:
     """N4 — 코드가 사라지고 원장이 남으면 `C − M` 이 그 좌표를 든다."""
-    target = clone_source / "js" / "screens" / "workbench.js"
+    # R4-02 가 `screens/workbench.js` 를 지우면서 남은 legacy 화면으로 겨눔을 옮겼다.
+    target = clone_source / "js" / "screens" / "job.js"
     lines = target.read_text(encoding="utf-8").splitlines()
     kept = [line for line in lines if line.strip() != "let wired = false;"]
-    assert len(kept) == len(lines) - 1, "workbench.js 의 `let wired` 좌표가 바뀌었습니다."
+    assert len(kept) == len(lines) - 1, "job.js 의 `let wired` 좌표가 바뀌었습니다."
     target.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
     report = gate.check(document, frontend_tree, axes=["state_js_module"], metrics=[])
@@ -1404,13 +1415,18 @@ def test_narrow_axis_states_its_limit_with_an_owner(
 ) -> None:
     """F3 — 제품보다 좁은 scope 는 **그렇게 적혀 있어야** 한다.
 
-    `subscription_push` 가 재는 것은 「화면 파일 + `data_picker.js` 안의 푸시 구독」이지
-    「제품 전체의 푸시 구독」이 아니다. scope 를 넓히는 대신 그 차이를 소유자와 함께 선언한다 —
-    선언이 사라지면 축이 다시 자기 범위를 넘어 주장하게 되므로 그 자리가 붉어야 한다.
+    `subscription_push` 가 재는 것은 「합성 루트·화면 파일 안의 스냅샷 구독 등록」이지
+    「제품 전체의 구독」이 아니다 — overlay engine 구독과 store 의 구독 **구현**은 밖이다.
+    scope 를 넓히는 대신 그 차이를 소유자와 함께 선언한다 — 선언이 사라지면 축이 다시 자기
+    범위를 넘어 주장하게 되므로 그 자리가 붉어야 한다.
+
+    소유자가 R2-04 에서 R4-02 로 옮겼다. 종전 한계문이 「그 질문을 여는 슬라이스가 범위를
+    정해야 한다」를 예고했고, 편집기·작업대의 마지막 화면 소유 `Bridge.onPush` 를 걷어
+    legacy scope 안 측정을 0 으로 만드는 슬라이스가 정확히 그 슬라이스다.
     """
     axis = mutable_document["axes"]["subscription_push"]
     limitation = axis["scope_limitation"]
-    assert limitation["owner"] == "R2-04 #408", (
+    assert limitation["owner"] == "R4-02 #415", (
         "좁은 scope 의 소유자가 사라졌습니다 — 소유자 없는 한계는 유예로 읽힙니다."
     )
     assert "modal.js" in limitation["statement"] or "제품" in limitation["statement"], (

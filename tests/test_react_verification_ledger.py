@@ -63,6 +63,7 @@ G10 과 G6 의 멤버 실재, ``exact`` 의 루트 제약은 R1-99 감사 F1·F2
 from __future__ import annotations
 
 import copy
+import hashlib
 import re
 import subprocess
 import tomllib
@@ -662,7 +663,11 @@ def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
 
 
 def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> None:
-    """rev8 중앙 판정의 R4 검증 자산 39개 배분을 단계 사이에서 고정한다."""
+    """rev8 중앙 판정의 R4 검증 자산 배분을 단계 사이에서 고정한다.
+
+    R4-02 가 10 → 17 로 자랐다. 산술은 패킷 rev5 §1 의 **10 + Node 5 + Python 1 + Node 1**
+    이고, 아래 digest 가 그 17 이 정확히 어느 경로인지까지 든다.
+    """
     actual = Counter(
         row["owner_stage"]
         for row in ledger["asset"]
@@ -670,11 +675,33 @@ def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> No
     )
     assert actual == {
         "R4-01": 17,
-        "R4-02": 10,
+        "R4-02": 17,
         "R4-03": 8,
         "R4-04": 4,
     }
-    assert sum(actual.values()) == 39
+    assert sum(actual.values()) == 46
+
+
+#: R4-02 착지 경로 집합의 정본 지문 — 패킷 rev5 §1 이 구현 **전에** 고정했다.
+#: 개수만 세면 「하나 빼고 하나 더하기」가 조용하다. 경로 집합 자체를 한 값으로 든다.
+R4_02_LEDGER_DIGEST = "00e682f819182f3e9837dd96e9fd23d2feee46395bc786958cfc5436a6d291eb"
+
+
+def test_r4_02_asset_path_set_matches_the_designed_digest(ledger: dict[str, Any]) -> None:
+    """경로 집합을 UTF-8 ordinal sort + LF 로 이어 붙인 바이트의 SHA-256 대조.
+
+    비교 상대는 게이트의 사본이 아니라 **설계가 구현 전에 발행한 값**이다 — 원장에서 유도해
+    원장과 비교하면 언제나 같다(2차 라운드가 「지어낸 SHA 를 자기 사본과 비교」했던 자리).
+    """
+    paths = sorted(
+        row["file"] for row in ledger["asset"] if row.get("owner_stage") == "R4-02"
+    )
+    blob = "".join(f"{path}\n" for path in paths).encode("utf-8")
+    digest = hashlib.sha256(blob).hexdigest()
+    assert digest == R4_02_LEDGER_DIGEST, (
+        "R4-02 자산 경로 집합이 설계가 고정한 17경로와 다릅니다.\n"
+        f"  실제: {paths}"
+    )
 
 
 def _repo_is_shallow() -> bool:

@@ -143,7 +143,9 @@ export function SheetPickerDialog(props: { controller: SheetPickerController }):
       ...sheets.map((sheet: Obj, index: number) => h("button", {
         type: "button", className: "btn sheet-opt", key: String(sheet.name),
         "data-sheet": String(sheet.name),
-        ...(index === 0 ? { "data-first": "1" } : {}),
+        /* 리터럴로 쓴다 — 조건부 전개는 소유권 추출기가 못 보는 자리라 이 축이 분모에서
+           조용히 빠진다. `undefined` 는 React 가 속성을 생략한다(산출 동일). */
+        "data-first": index === 0 ? "1" : undefined,
         disabled: !!session?.picking,
         onClick: () => { void controller.pick(String(sheet.name)); },
       },

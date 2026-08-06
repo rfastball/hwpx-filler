@@ -92,8 +92,18 @@ export function ingestSnapshot(
       continue;
     }
     const held = previous.dirty || previous.focused || previous.composing;
+    /* 든 값은 그대로 두되 `dirty` 는 **다시 센다**(규칙 6 의 승격 자리). 커밋 응답만으로는
+       올리지 않기 때문에, Python 이 새 값을 확인해 준 이 push 가 그 유일한 승격 경로다.
+       여기서 옛 `dirty` 를 그대로 이월하면 저장이 성사된 뒤에도 화면이 영영 미저장이라고
+       말하고 이탈 가드가 계속 묻는다 — 규칙 6 이 「승격하지 않는다」가 아니라 「확인 뒤에만
+       승격한다」인 이유다. */
     fields[key] = held
-      ? { ...previous, serverValue: value, baseRevision: args.revision }
+      ? {
+        ...previous,
+        serverValue: value,
+        baseRevision: args.revision,
+        dirty: previous.draftValue !== value,
+      }
       : { ...cleanField(value, args.revision), focused: previous.focused, error: previous.error };
   }
   return {
