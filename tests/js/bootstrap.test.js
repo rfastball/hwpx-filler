@@ -81,7 +81,6 @@ const FACTORY_SERVICES = {
   ],
   SheetPicker: ["choose"],
   PathTrack: ["affordances"],
-  Relink: ["relinkTemplate"],
   DataPicker: ["init", "open"],
   EditorEntry: [
     "openGuarded", "land", "confirmDiscard", "newDraft",
@@ -284,8 +283,8 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 25,
-    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-02 의 SegView 은퇴 뒤 서비스는 25개입니다.");
+  assert.equal(SERVICE_NAMES.length, 24,
+    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-03 의 Relink 은퇴 뒤 서비스는 24개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {

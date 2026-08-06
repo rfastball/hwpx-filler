@@ -77,12 +77,10 @@ import { Modal } from "../js/modal.js";
 import { SurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
 import { createPathTrack } from "../js/pathtrack.js";
-import { createRelink } from "../js/relink.js";
 import { Popover } from "../js/popover.js";
 import { Intent } from "../js/intent.js";
 import { GroupList } from "../js/grouplist.js";
 
-import { createJobScreen } from "../js/screens/job.js";
 import { createAppShell } from "../js/app.js";
 import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
@@ -104,8 +102,15 @@ import {
 } from "./screens/data_picker.ts";
 import {
   JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeaderPortal, JobNoDataExit,
-  createJobReadController, createJobRunAdapter,
+  createJobReadController,
 } from "./screens/job_read.ts";
+import {
+  JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
+  JobStatusPill, createJobRunController,
+} from "./screens/job_run.ts";
+import { JobResultZone } from "./screens/job_result.ts";
+import { JobPreviewSheet } from "./screens/job_preview.ts";
+import { createJobRelink } from "./screens/job_relink.ts";
 import {
   EditorScreen as ReactEditorScreen, TxtEditDialog, createEditorController,
 } from "./screens/editor.ts";
@@ -208,7 +213,6 @@ export function bootProduct() {
   const Theme = createTheme({ bridge });
   const Personalization = createPersonalization({ bridge });
   const PathTrack = createPathTrack({ bridge });
-  const Relink = createRelink({ bridge });
   /* R4-02 — 시트 선택·편집기 진입 seam 은 React 구현이 **유일한 owner** 다. legacy 구현이
      남지 않으므로 handoff 할 상대가 없다: 빈 port 에 한 번 결속하고, 둘째 결속은 throw 한다
      (중간 dual-dispatch 창이 애초에 생기지 않는다). */
@@ -222,14 +226,10 @@ export function bootProduct() {
   });
 
   servicePorts.sheetPicker.bindReact(SheetPicker);
-  servicePorts.relink.bindLegacy({
-    relinkTemplate: (...args) => Relink.relinkTemplate(...args),
-  });
+  servicePorts.relink.bindReact(createJobRelink({
+    client, modal: Modal, alarm: (message) => window.alert(message),
+  }));
   screenPorts.editorEntry.bindReact(EditorEntry);
-  screenPorts.jobRunCoordination.bindLegacy({
-    confirmDestructiveIfArmed: (...args) => JobScreen.confirmDestructiveIfArmed(...args),
-    log: (...args) => JobScreen.log(...args),
-  });
 
   /* 화면 넷 — 구성 순서는 구 entry 의 IIFE 평가 순서 그대로다. 교차 간선은 위 콜백 테이블로
      받으므로 구성 시점의 상호 참조가 없다. */
@@ -267,18 +267,14 @@ export function bootProduct() {
     doc: document, runtime, client, modal: Modal, chain: Intent, navigation,
     notify: (message) => window.alert(message),
   });
-  const LegacyJobScreen = createJobScreen({
-    Bridge: bridge, Nav: navigation, EditorScreen: editorCallbacks,
-    PathTrack, EditorEntry,
-    JobDataCoordinator: screenPorts.jobData,
-    JobRelinkFlow: screenPorts.jobRelinkFlow,
+  /* R4-03 — 실행·결과 표면의 단일 owner. legacy `screens/job.js` 는 이 커밋에서 사라지므로
+     `createJobRunAdapter` 를 거치는 임시 fan-out 도 함께 은퇴한다(port 를 직접 결속한다). */
+  const JobRunController = createJobRunController({
+    runtime, client, ports: screenPorts, services: servicePorts,
+    modal: Modal, navigation, doc: document,
+    selectionLine: Guard.selectionLine,
+    notify: (message) => window.alert(message),
   });
-  screenPorts.jobRun.bindLegacy(createJobRunAdapter({
-    model: runtime.model("job"),
-    beforePreview: () => screenPorts.jobData.current().flushPendingEdits(),
-    openPreview: (request) => LegacyJobScreen.openPreview(null, request),
-  }));
-  let releaseJobRun = null;
   LibraryScreen = { init: () => LibraryController.init() };
   /* 화면 facade — 셸(app.js)이 부르는 이름만 좁게 싣는다. 표면이 곧 소비 계약이다. */
   EditorScreen = {
@@ -296,24 +292,15 @@ export function bootProduct() {
     open: (...args) => DataPicker.open(...args),
   };
   JobScreen = {
-    overwriteBody: (...args) => LegacyJobScreen.overwriteBody(...args),
-    guardBody: (...args) => LegacyJobScreen.guardBody(...args),
-    resultExitLine: (...args) => LegacyJobScreen.resultExitLine(...args),
-    confirmDestructiveIfArmed: (...args) => LegacyJobScreen.confirmDestructiveIfArmed(...args),
-    log: (...args) => LegacyJobScreen.log(...args),
-    openPreview: (...args) => LegacyJobScreen.openPreview(...args),
-    renderResult: (...args) => LegacyJobScreen.renderResult(...args),
-    markResultStale: (...args) => LegacyJobScreen.markResultStale(...args),
-    async init() {
-      await LegacyJobScreen.init();
-      if (releaseJobRun === null) {
-        releaseJobRun = screenPorts.jobRun.current().attach({
-          onFull: (snapshot) => LegacyJobScreen.acceptFull(snapshot),
-          onProgress: (progress) => LegacyJobScreen.acceptProgress(progress),
-        });
-      }
-      return runtime.loadInitial("job");
-    },
+    overwriteBody: (...args) => JobRunController.overwriteBody(...args),
+    guardBody: (...args) => JobRunController.guardBody(...args),
+    resultExitLine: (...args) => JobRunController.resultExitLine(...args),
+    confirmDestructiveIfArmed: (...args) => JobRunController.confirmDestructiveIfArmed(...args),
+    log: (...args) => JobRunController.log(...args),
+    openPreview: (_event, request) => screenPorts.jobRun.current().openPreview(request),
+    renderResult: (...args) => JobRunController.renderResult(...args),
+    markResultStale: (...args) => JobRunController.markResultStale(...args),
+    init: () => JobRunController.init(),
   };
 
   /* 셸 상태기계 (R3-02 · #411) — 라우팅·ready·닫기 직렬화 **판정**의 단일 정본. 여기서
@@ -341,7 +328,7 @@ export function bootProduct() {
     Bridge: bridge, Client: client, Nav, AppCloseGuard,
     Copy, escHtml, Guard, Popover, Preserve, Intent, UndoToast,
     Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
-    PathTrack, Relink, DataPicker: DataPickerService, EditorEntry,
+    PathTrack, DataPicker: DataPickerService, EditorEntry,
     LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
   };
 
@@ -497,6 +484,19 @@ export function bootProduct() {
         screenPortal("txtEditModal", TxtEditDialog, { controller: EditorController }),
         screenPortal("tplMoveModal", GroupMoveDialog, { controller: GroupMove }),
         screenPortal("sheetModal", SheetPickerDialog, { controller: SheetPickerController }),
+        /* R4-03 — 실행·결과 표면 아홉. static shell 은 자리(class·role·aria·조판)만 소유하고
+           그 **안쪽 전부**를 React 가 생산한다. 「이 존이 없는 축」(TXT) 판정은 자리를
+           비우는 것으로 말하고 CSS `:empty` 가 접는다 — portal target 의 속성은 React 가
+           만지지 않으므로 legacy 의 `style.display` 토글이 여기로 올 수 없다. */
+        screenPortal("jobStatusHost", JobStatusPill, { controller: JobRunController }),
+        screenPortal("jobPreflight", JobPreflight, { controller: JobRunController }),
+        screenPortal("jobMirrorZone", JobMirrorZone, { controller: JobRunController }),
+        screenPortal("jobRunCap", JobRunCap, { controller: JobRunController }),
+        screenPortal("jobOutRow", JobOutRow, { controller: JobRunController }),
+        screenPortal("jobRestate", JobRestate, { controller: JobRunController }),
+        screenPortal("jobResultZone", JobResultZone, { controller: JobRunController }),
+        screenPortal("jobActionBar", JobActionBar, { controller: JobRunController }),
+        screenPortal("previewSheet", JobPreviewSheet, { controller: JobRunController }),
       ],
     },
   });

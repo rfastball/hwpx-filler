@@ -678,7 +678,10 @@ test("공허 방지 — 스캔 대상이 실재한다(양성 대조)", () => {
     `제품 JS 를 ${PRODUCT_FILES.length} 개밖에 못 찾았습니다 — 경로가 어긋났습니다.`);
   assert.ok(PRODUCT_FILES.includes("src/main.js"));
   assert.ok(PRODUCT_FILES.includes("src/selftest/api.js"));
-  assert.ok(PRODUCT_FILES.some((rel) => rel.startsWith("js/screens/")));
+  /* R4-03 이 `js/screens/` 의 마지막 파일(job.js)을 절단했다 — 양성 대조는 사라진 것이
+     아니라 **후계 자리**를 겨눈다. 화면 소스가 그래프에 실재한다는 사실이 이 대조의
+     내용이고, 그 사실은 디렉터리 이름이 아니라 화면이 있다는 것에 걸린다. */
+  assert.ok(PRODUCT_FILES.some((rel) => rel.startsWith("src/screens/")));
   for (const [rel, source] of PRODUCT) {
     assert.ok(source.length > 0, `${rel} 이 비었습니다.`);
   }
@@ -858,7 +861,7 @@ test("`src/main.js` 에서 도달하는 그래프에 순환도 외부 지정자�
   assert.ok(visited.size >= 30, `도달 모듈이 ${visited.size} 개뿐입니다 — 배선이 끊겼습니다.`);
   assert.ok(visited.has("src/bootstrap.js"), "entry 가 합성 루트에 닿지 않습니다.");
   assert.ok(visited.has("src/selftest/api.js"), "시험 능력이 그래프에 닿지 않습니다.");
-  assert.ok(visited.has("js/screens/job.js"), "화면이 그래프에 닿지 않습니다.");
+  assert.ok(visited.has("src/screens/job_run.ts"), "화면이 그래프에 닿지 않습니다.");
 });
 
 test("죽은 별칭 스물일곱이 쓰기로도 판독으로도 남아 있지 않다", () => {

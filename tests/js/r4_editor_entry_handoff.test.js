@@ -129,9 +129,11 @@ test("합성 루트는 두 port 를 bindReact 로 잇고 legacy 결속을 남기
 });
 
 test("음성 — aimAt 간선이 끊기면 결과에서 규칙 행을 겨눌 길이 사라진다(D5)", () => {
-  const job = readFileSync(new URL("../../frontend/js/screens/job.js", import.meta.url), "utf8");
-  assert.ok(job.includes("EditorScreen.aimAt(target)"),
-    "작업 화면 remainder 가 여전히 겨눔을 부른다(소비자 양성 대조)");
+  /* R4-03 이 실행 remainder 를 절단하며 이 소비자도 React 로 옮겼다 — 겨눔을 부르는
+     자리는 사라진 것이 아니라 이사했고, 양성 대조는 그 새 자리를 겨눈다. */
+  const job = readFileSync(new URL("../../frontend/src/screens/job_run.ts", import.meta.url), "utf8");
+  assert.ok(job.includes("editor.aimAt(target)"),
+    "작업 실행 표면이 여전히 겨눔을 부른다(소비자 양성 대조)");
   assert.match(BOOTSTRAP, /aimAt: \(\.\.\.args\) => EditorScreen\.aimAt\(\.\.\.args\),/);
   assert.match(BOOTSTRAP, /aimAt: \(\.\.\.args\) => EditorController\.aimAt\(\.\.\.args\),/);
 });

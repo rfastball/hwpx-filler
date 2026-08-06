@@ -5,6 +5,14 @@
 #jobDataHeaderReactHost,#jobDataBodyReactHost{display:contents}
 /* direct side portal target은 content가 실제로 있을 때만 기존 .zone 형상을 가진다. */
 #jobNoDataExit:empty,#jobCandsRow:empty{display:none}
+
+/* R4-03 실행 표면 portal target — legacy 가 `style.display` 로 토글하던 자리의 후계다.
+   portal target 의 **속성은 React 가 만지지 않으므로**(children 만 들어간다) 「이 존이
+   없는 축」 판정은 자리를 비우는 것으로 말하고 CSS 가 그것을 접는다. 조건 열거가 아니라
+   빈 자리 하나가 규칙이라 새 갈래가 생겨도 여기가 늘지 않는다. */
+#jobPreflight:empty,#jobMirrorZone:empty,#jobOutRow:empty,#jobRestate:empty{display:none}
+/* 두 host 는 기존 조판에 새 상자를 만들지 않는다(#414 의 header/body host 와 같은 형태). */
+#jobStatusHost,#jobPreflight{display:contents}
 /* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
    면 바닥에 붙어 표를 스크롤하는 동안에도 적용·취소가 상시 도달 가능하다. */
 .range-foot{display:none}
