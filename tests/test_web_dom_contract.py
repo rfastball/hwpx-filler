@@ -42,14 +42,18 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = SOURCE_JS_DIR
+R4_SCREENS_DIR = SOURCE_ROOT / "src" / "screens"
+R4_JOB_READ = R4_SCREENS_DIR / "job_read.ts"
+R4_DATA_ZONE = R4_SCREENS_DIR / "data_zone.ts"
+R4_LIBRARY = R4_SCREENS_DIR / "library.ts"
+R4_DATA_PICKER = R4_SCREENS_DIR / "data_picker.ts"
+R4_PORTS = R4_SCREENS_DIR / "ports.ts"
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
 # 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
 # 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
 PRESERVE_WRAPPED_FILES = (
-    "data_picker.js",
     "screens/editor.js",
     "screens/job.js",
-    "screens/library.js",
     "screens/workbench.js",
 )
 
@@ -101,10 +105,6 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 이 플래그는 재클릭을 삼키는 어포던스 잠금이다.
     # +2(N-06): wired·seated — job.js 와 같은 init 멱등·재시도 가드(파생 불가 사유 동일).
     "screens/editor.js": 10,
-    # +2(N-06): wired·seated — 동일.
-    "screens/library.js": 5,
-    "data_picker.js": 4,
-    "datazone.js": 0,
 }
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
@@ -277,11 +277,13 @@ def test_screen_roots_present():
 
 
 def test_scoped_data_labels_present_and_unique():
-    """개명된 화면별 데이터 라벨이 각각 정확히 1회 존재(#27 — 공용 dataLabel 재도입 차단)."""
+    """React producer의 화면별 데이터 라벨은 정확히 한 곳에서 생산된다."""
     counts = Counter(_collect_ids())
+    job_read = R4_JOB_READ.read_text(encoding="utf-8")
     for label in SCOPED_DATA_LABELS:
-        assert counts[label] == 1, (
-            f"{label} 가 {counts[label]}회 — 화면별 고유 데이터 라벨이 정확히 1개여야 합니다."
+        assert counts[label] == 0, f"{label} 정적 골격이 React producer와 함께 존재합니다."
+        assert job_read.count(f'id: "{label}"') == 1, (
+            f"{label} React 생산자가 정확히 한 곳이어야 합니다."
         )
     # 공용 dataLabel 이 다시 들어오면 크로스-스크린 오염 재발 → 명시적으로 금지.
     assert counts["dataLabel"] == 0, "공용 id='dataLabel' 재도입 — 화면별 고유 id 로 분리하세요(#27)."
@@ -364,6 +366,10 @@ def test_custom_modals_have_dialog_semantics():
     """
     ids = set(_collect_ids())
     modals = _collect_modals()
+    react_labels = {
+        "poolRegModal": (R4_DATA_PICKER, "PoolRegistrationDialog"),
+        "dataPickerModal": (R4_DATA_PICKER, "DataPickerDialog"),
+    }
     for mid, label_id in MODAL_LABELLEDBY.items():
         assert mid in modals, f"커스텀 모달이 사라졌습니다: {mid}"
         attrs = modals[mid]
@@ -372,7 +378,16 @@ def test_custom_modals_have_dialog_semantics():
         assert attrs.get("aria-labelledby") == label_id, (
             f"{mid} 의 aria-labelledby 는 '{label_id}' 여야 합니다(현재: {attrs.get('aria-labelledby')!r})."
         )
-        assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."
+        if mid in react_labels:
+            owner, component = react_labels[mid]
+            src = owner.read_text(encoding="utf-8")
+            assert f"export function {component}" in src
+            assert src.count(f'id: "{label_id}"') == 1, (
+                f"{mid} 의 React 제목 id '{label_id}' 생산자가 정확히 하나여야 합니다."
+            )
+            assert label_id not in ids, f"{label_id} 정적 골격이 React producer와 중복됩니다."
+        else:
+            assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."
 
     # R3-01 승계 형태 — 이전된 3종은 정적 **부재**(재도입 즉시 빨강)와 host 렌더 소유(같은
     # role·aria 짝)를 양면으로 단언한다. 렌더 산출 검증은 node overlay_host.test.js 가 진다.
@@ -496,6 +511,8 @@ def test_milestone_l_job_density_and_expansion_sheets():
     html = WEB_INDEX.read_text(encoding="utf-8")
     css = "".join(WEB_CSS.split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    job_read = R4_JOB_READ.read_text(encoding="utf-8")
+    data_zone = R4_DATA_ZONE.read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
     app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
@@ -520,8 +537,9 @@ def test_milestone_l_job_density_and_expansion_sheets():
     main, side = grid.split('class="dg-side"', 1)
     # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 생성 준비
     # (구 「선택한 작업」 존은 U2 §4 판정 A(#342)로 사망 — 아래 승계 계약 테스트가 잇는다).
-    assert main.index('id="jobTableHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
-    assert side.index('id="jobCandidates"') < side.index('id="jobOutDir"')
+    assert main.index('id="jobDataBodyReactHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
+    assert side.index('id="jobCandsRow"') < side.index('id="jobOutDir"')
+    assert 'id: "jobTableHost"' in data_zone and 'id: "jobCandidates"' in job_read
     # 본문 존 = 표 없는 한 줄(U2 §2.13) — 420px 캡·캡스트립은 표와 함께 사망했다.
     assert "jobMirrorCapstrip" not in html and "max-height:420px" not in css
     # 컬럼 템플릿은 한 곳에서만 선언한다(U2 §2.2) — 세션 카드와 그 아래 액션바가 같은
@@ -554,7 +572,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert ".sheet-duo" not in css and ".sheet-pane" not in css, (
         "확인 2 pane 골격이 재유입됐습니다(§2.13 — 1 pane 확정)."
     )
-    assert "펼쳐서 행 고르기 ⤢" in html and "생성 값 미리보기 ⤢" in html
+    assert "펼쳐서 행 고르기 ⤢" in job_read and "생성 값 미리보기 ⤢" in html
     # 확인 면 출구는 **안정 DOM** 이다(#364 리뷰 P2): 재렌더로 교체되는 트리거는 Modal 의
     # 복귀점에서 분리돼(`isConnected` 실패) 키보드 초점이 화면 루트로 떨어진다 — #280 이
     # 캡스트립에서 배운 결함이라 한 줄은 「버튼 고정 + 문안만 휘발」로 짓는다.
@@ -563,10 +581,11 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert 'id="jobMirrorPreviewOpen"' not in job_js, (
         "한 줄 렌더가 트리거를 다시 짓습니다 — 복귀 초점이 분리된 노드를 겨눕니다."
     )
-    for node_id in (
-        "jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip", "jobColPanel",
-    ):
-        assert f'{{ id: "{node_id}", slotId: "dataSheetSlot" }}' in job_js
+    for node_id in ("jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip"):
+        assert f'id: "{node_id}"' in data_zone
+    assert 'screenPortal("dataSheetSlot", JobDataBody' in SOURCE_ROOT.joinpath(
+        "src", "bootstrap.js"
+    ).read_text(encoding="utf-8")
     # 화면을 떠날 때의 일괄 회수(재작성 F7) — 펼침 면은 실 DOM 을 오버레이로 옮겨 띄우므로
     # 열린 채 화면이 바뀌면 남의 화면 위에 이 화면의 DOM 이 뜬다. 소유가 화면 전환으로
     # 올라가 어느 화면이 늘어도 같은 회수가 걸린다(종전엔 편집 모드 진입이 그 자리에서 닫았다).
@@ -579,8 +598,8 @@ def test_milestone_l_job_density_and_expansion_sheets():
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
     # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
     assert "trigger: trigger" in sheets
-    assert "SurfaceSheet.trigger(e," in job_js
-    assert "returnFocus: e && e.currentTarget" not in job_js
+    assert "surfaceSheet.open({" in job_read
+    assert "returnFocus: trigger" in job_read
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
     # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
     assert ".data-sheet-body.jobtbtbodytr.ontd:first-child{background:var(--a-sel)}" in css
@@ -676,7 +695,7 @@ def test_forced_colors_media_query_exists():
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
 # 「작업」·「기안」의 파일 선택은 데이터 선택 다이얼로그 한 곳으로 수렴했다(재작성 F1) —
 # 두 화면이 같은 모듈을 쓰므로 계약도 그 모듈이 진다. 에디터는 아직 자기 경로를 쓴다(F7).
-DATA_PICK_FILES = ("screens/editor.js", "data_picker.js")
+DATA_PICK_FILES = (SOURCE_JS_DIR / "screens" / "editor.js", R4_DATA_PICKER)
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -693,16 +712,20 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
         "sheet_picker.js 가 제품 그래프에 닿지 않습니다(#33)."
     )
     assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
-    for rel in DATA_PICK_FILES:
-        src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
-        assert "needs_sheet" in src and ("SheetPicker.choose" in src or "sheetPicker.choose" in src), (
-            f"{rel} 이 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
+    for path in DATA_PICK_FILES:
+        src = path.read_text(encoding="utf-8")
+        assert "needs_sheet" in src and (
+            "SheetPicker.choose" in src
+            or "sheetPicker.choose" in src
+            or "sheetPicker.current().choose" in src
+        ), (
+            f"{path} 이 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
             "이 화면에서 다중 시트가 조용히 첫 시트로 강등됩니다(#33, 리뷰 P1)."
         )
 
 
 def test_preserve_helper_loaded_and_wraps_screen_renders():
-    """상호작용 보존 헬퍼가 로드되고 다섯 렌더 소유자가 Preserve.around 로 감싸져야 한다(#28).
+    """legacy renderer는 Preserve를, R4 React renderer는 reconciliation·stable id를 쓴다.
 
     실 재구성 가로지르기 거동(포커스·캐럿·스크롤 유지)은 selftest 게이트가 되읽어 단언한다 —
     여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해
@@ -716,6 +739,12 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{rel} 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+    for path in (R4_DATA_PICKER, R4_LIBRARY, R4_JOB_READ, R4_DATA_ZONE):
+        src = path.read_text(encoding="utf-8")
+        assert "Preserve.around" not in src
+        assert "createElement" in src
+    assert "data-preserve-scroll" in R4_LIBRARY.read_text(encoding="utf-8")
+    assert "jobRow-${row.index}" in R4_DATA_ZONE.read_text(encoding="utf-8")
 
 
 def _mutable_module_state(src: str) -> list[str]:
@@ -1001,7 +1030,9 @@ def test_job_session_surface_uses_v6_two_column_captions():
     승계한다.
     """
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
+    job_static = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
+    job_react = " ".join(R4_JOB_READ.read_text(encoding="utf-8").split())
+    job = job_static + job_react
     # 「선택한 작업」 캡션은 존 사망(U2 §4 판정 A, #342)으로 이 목록에서 빠졌다 — 정체는
     # 활성 후보 카드·액션바 이름이 승계한다(승계 계약은 전용 테스트가 진다).
     for caption in (
@@ -1010,9 +1041,8 @@ def test_job_session_surface_uses_v6_two_column_captions():
     ):
         # 캡션 자리에 id 가 붙을 수 있다(「생성 준비」는 매체에 따라 「복사 준비」로 바뀐다) —
         # 계약이 세는 것은 **zone-cap 캡션의 존재**이지 속성 목록이 아니다.
-        needle = rf'<div class="zone-cap[^"]*"[^>]*>(?:<span[^>]*>)?{re.escape(caption)}'
-        assert re.search(needle, job), f"세션 구획 캡션이 없습니다: {caption}"
-    assert '<span class="znum">' not in job, (
+        assert caption in job, f"세션 구획 캡션이 없습니다: {caption}"
+    assert '<span class="znum">' not in job_static and 'className: "znum"' not in job_react, (
         "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
     )
     # (znum 존치 단언 삭제 — 유일 소비자였던 「기안」이 화면째 사망, F6 PR-B.)
@@ -1106,19 +1136,23 @@ def test_job_active_zone_death_and_candidate_card_succession():
     정본, 색은 강조). 편집기 「템플릿」 탭의 같은 어포던스는 그대로 산다(사본 셋→둘, §2.20 ⑷).
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    lib_js = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    job_js = R4_JOB_READ.read_text(encoding="utf-8")
+    run_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    lib_js = R4_LIBRARY.read_text(encoding="utf-8")
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     relink_js = (WEB_JS_DIR / "relink.js").read_text(encoding="utf-8")
     css = "".join(WEB_CSS.split())
 
     # ① 존은 죽었다 — 조각(id·class)이 셸·화면 JS 어디에도 남지 않는다.
-    for dead in ("jobHeadTitle", "jobHeadTpl", "jobRelink", "job-active-zone"):
-        assert dead not in html and dead not in job_js, f"죽은 존 조각이 남았습니다: {dead}"
+    for dead in ("jobHeadTitle", "jobHeadTpl", "jobRelink"):
+        assert f'id="{dead}"' not in html and f'id: "{dead}"' not in job_js, (
+            f"죽은 존 조각이 남았습니다: {dead}"
+        )
+    assert "job-active-zone" not in html and "job-active-zone" not in job_js
     # ② 작업명의 상시성(§4-A 상속 의무) — 활성 카드는 스크롤 위로 사라지므로 상수 높이
     #    층인 액션바가 이름을 겸한다. 빈 값은 자리도 비운다(capnote 와 같은 규칙).
     assert 'id="jobActionName"' in html
-    assert '$("jobActionName").textContent' in job_js
+    assert '$("jobActionName").textContent' in run_js
     assert ".actionbar-job:empty{display:none}" in css
     # ②-b **재연결 도달 보장은 액션바(상수 층)가 진다**(#342 리뷰 3라운드 근본 조치).
     #    후보 구획은 데이터 마운트·호환성·순위 슬라이스 셋에 걸린 투영이라 그 위에 보장을
@@ -1127,21 +1161,21 @@ def test_job_active_zone_death_and_candidate_card_succession():
     #    tests/test_webapp_job.py 의 불변식 테스트가 진다.
     for pid in ("jobActionConn", "jobActionRelink"):
         assert f'id="{pid}"' in html, f"액션바 연결 상태·재연결 조각 누락: {pid}"
-    assert "s.template_missing" in job_js and "s.conn_label" in job_js, (
+    assert "s.template_missing" in run_js and "s.conn_label" in run_js, (
         "액션바가 세션 축의 연결 상태를 읽지 않습니다 — 도달 보장이 다시 카드에 기생합니다."
     )
-    assert '$("jobActionRelink").hidden' in job_js, (
+    assert '$("jobActionRelink").hidden' in run_js, (
         "재연결 버튼을 disabled 로 가리면 setBusy 의 busy-lock 일괄 복원이 되살립니다."
     )
     # 정렬 여백은 **묶음 하나**가 진다 — 「마지막 보이는 것」에 거는 규칙은 상태 열거가 되고,
     # 이 라운드가 고치는 결함류가 정확히 그 형태다.
     assert ".actionbar-identity{display:flex;align-items:center;gap:var(--sp-8);min-width:0;margin-right:auto}" in css
     # ③ 활성 카드 확장 부제 + ⋮ — 부유 메뉴 호스트(그룹 ⋮ 동형)와 PathTrack 위임 재사용.
-    assert "cand-tpl" in job_js and "data-cand-menu" in job_js
-    assert 'id="jobCandMenu" class="ctx-menu"' in html
-    assert 'data-track-act="open"' in job_js and 'data-track-act="reveal"' in job_js
+    assert "cand-tpl" in job_js and '"data-cand-menu": true' in job_js
+    assert 'className: "cand-inline-menu", role: "menu"' in job_js
+    assert "h(PathActions as any" in job_js
     # ④ 「연결 상태」 — 문안은 Python(conn_label)이 내고 카드가 그린다. 색은 강조일 뿐이다.
-    assert "c.conn_label" in job_js
+    assert "row.conn_label" in job_js
     assert ".cand-conn{color:var(--a-warn);font-weight:700}" in css
     # 활성+경고 겹침은 경고가 이긴다 — 경고 규칙이 활성 규칙 **뒤에** 서야 한다.
     assert css.index(".job-cand-card.active{") < css.index(".job-cand-card.warn{")
@@ -1151,16 +1185,16 @@ def test_job_active_zone_death_and_candidate_card_succession():
     # ⑤ 경고 카드 기본 클릭 = 재연결 리다이렉트(선택이 아님), 커밋 성사 뒤에만 이어서 선택.
     #    두 입구(경고 카드·액션바)는 **한 몸통**을 쓴다 — 각자 흐름을 들면 확인 문안·T1
     #    가드·발신 순서가 갈린다.
-    assert 'data-missing="1"' in job_js and "relinkTemplateFor" in job_js
-    assert job_js.count("Relink.relinkTemplate(") == 1, (
+    assert '"data-missing": missing ? "1"' in job_js and "relinkTemplateFor" in job_js
+    assert job_js.count("services.relink.current().relinkTemplate(") == 1, (
         "재연결 흐름의 입구가 둘인데 몸통도 둘이면 가드·문안이 갈립니다."
     )
-    assert "await Relink.relinkTemplate" in job_js
+    assert "await deps.services.relink.current().relinkTemplate" in job_js
     assert "return false" in relink_js and "return true" in relink_js, (
         "relink 공용 흐름이 커밋 성사 여부를 반환하지 않으면 「이어서 선택」이 실패 뒤에도 나갑니다."
     )
     # ⑥ 라이브러리 상세 신설(§2.20) — payload 한 칸(template_path)이 선행이고 그 칸을 겨눈다.
-    assert "PathTrack.affordances(d.template_path)" in lib_js
+    assert "h(PathActions as any" in lib_js and "path: detail.template_path" in lib_js
     lib_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "screen_library.py").read_text(
         encoding="utf-8"
     )
@@ -1182,33 +1216,33 @@ def test_needs_and_missing_template_redirect_to_different_places():
     두 값을 한 테스트가 **대조**하는 이유는 이 판정의 내용이 「둘이 다르다」이기 때문이다 —
     각자 따로 단언하면 나중에 한쪽이 다른 쪽으로 접혀도 둘 다 초록이다.
     """
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    job_js = R4_JOB_READ.read_text(encoding="utf-8")
     entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     bridge_js = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
 
     # ① 확인 필요 행은 죽은 줄이 아니라 마법사 입구다 — 사유 문안은 그대로 남는다.
-    assert 'class="browse-row off"' not in job_js, (
+    assert 'className: "browse-row off"' not in job_js, (
         "확인 필요 행이 여전히 비활성 div 입니다 — 판정 E 의 목적지가 서지 않았습니다."
     )
     assert "data-browse-new" in job_js and "현재 데이터에 없는 열" in job_js, (
         "확인 필요 행이 사유(없는 열)와 목적지를 함께 말하지 않습니다."
     )
     # ② 목적지가 갈린다 — needs 는 새 작업 흐름, 템플릿 부재는 재연결 흐름.
-    needs_at = job_js.index('closest("[data-browse-new]")')
+    needs_at = job_js.index("function BrowseRow(")
     assert "newWorkFromData" in job_js and "relinkTemplateFor" in job_js
-    needs_branch = job_js[needs_at:needs_at + 600]
-    assert "newWorkFromData" in needs_branch and "relinkTemplateFor" not in needs_branch, (
+    needs_branch = job_js[needs_at:job_js.index("export function JobBrowseDialog", needs_at)]
+    assert "newWorkAfterBrowseClose" in needs_branch and "relinkTemplateFor" not in needs_branch, (
         "확인 필요 행이 재연결로 갑니다 — 두 사유의 목적지가 접혔습니다."
     )
-    miss_at = job_js.index('btn.dataset.missing === "1"')
-    miss_branch = job_js[miss_at:miss_at + 400]
+    miss_at = job_js.index("function CandidateCard(")
+    miss_branch = job_js[miss_at:job_js.index("function NewWorkButton", miss_at)]
     assert "relinkTemplateFor" in miss_branch and "newWorkFromData" not in miss_branch, (
         "템플릿 부재 카드가 마법사로 갑니다 — 재연결 자리(#342)가 소실됐습니다."
     )
     # ③ 두 입구(§2.4 후보 줄 버튼 · 판정 E 확인 필요 행)는 **한 몸통**을 쓴다.
-    assert "data-new-work" in job_js and 'id="jobCandNewWork"' in job_js
-    assert job_js.count("EditorEntry.newDraftFromData(") == 1, (
+    assert '"data-new-work"' in job_js and 'id: "jobCandNewWork"' in job_js
+    assert job_js.count("editorEntry.current().newDraftFromData(") == 1, (
         "「이 데이터로 새 작업」의 입구가 둘인데 몸통도 둘이면 확인 문안·문맥이 갈립니다."
     )
     # ④ 진입 문맥은 보낸 표면이 싣고 편집기가 그 사유로 배너를 세운다(문맥 없는 진입 금지).
@@ -1236,52 +1270,23 @@ def test_every_new_work_entrance_passes_the_same_handoff_gate():
     입구를 지을 수 있는가」**다 — 훅 발행처를 한 표로 묶고, 그 표 밖의 발행을 금지한다.
     새 입구가 생겨도 헬퍼를 쓰지 않으면 여기서 먼저 걸린다(선언이 아니라 결과를 센다).
     """
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    job_js = R4_JOB_READ.read_text(encoding="utf-8")
 
-    # ① 판정을 읽는 자리는 하나 — 입구마다 스냅샷을 다시 해석하면 답이 갈린다.
-    assert job_js.count("function newWorkGate(") == 1
-    assert job_js.count(".new_work") == 1, (
-        "승계 가부 스냅샷을 두 곳 이상이 읽습니다 — 읽는 자리가 곧 판정하는 자리가 됩니다."
-    )
-    # ② 훅 발행처는 한 표(NEW_WORK_HOOKS) + 그 표를 게이트가 감싼다(newWorkAttrs).
-    assert job_js.count("const NEW_WORK_HOOKS") == 1
-    assert job_js.count("function newWorkAttrs(") == 1
-    hooks_at = job_js.index("const NEW_WORK_HOOKS")
-    hooks_end = job_js.index("};", hooks_at)
-    # ③ **훅은 그 표 밖에서 발행되지 않는다.** 소비(위임 조회)는 예외 — 발행이 아니다.
-    for m in re.finditer(r"data-(?:new-work|browse-new)", job_js):
-        if hooks_at <= m.start() <= hooks_end:
-            continue
-        line = job_js[job_js.rfind("\n", 0, m.start()): job_js.find("\n", m.start())]
-        assert "closest(" in line or "getAttribute(" in line, (
-            "행동 훅이 게이트 밖에서 발행됐습니다 — 그 입구는 승계 가부를 묻지 않습니다:"
-            f" {line.strip()!r}"
-        )
-    # ④ 두 입구가 실제로 그 헬퍼를 통과한다(요소 안에 게이트가 있다).
-    for eid in ('id="jobCandNewWork"', 'id="jobBrowseNeeds-'):
-        at = job_js.index(eid)
-        element = job_js[at:job_js.index("</button>", at)]
-        assert "newWorkAttrs(" in element, f"{eid} 입구가 게이트를 지나지 않습니다."
-    # ⑤ 막힘은 **숨기지 않는다** — 두 입구 모두 사유를 제자리에서 말한다.
-    assert "cand-newwork-why" in job_js, "후보 줄 입구가 막힌 사유를 말하지 않습니다."
-    needs_at = job_js.index('id="jobBrowseNeeds-')
-    needs_el = job_js[needs_at:job_js.index("</button>", needs_at)]
-    assert "g.reason" in needs_el, (
-        "확인 필요 행이 막혀도 「새 작업 만들기」라고 약속합니다 — 못 가는 목적지 문안입니다."
-    )
-    # ⑥ 비활성엔 busy-lock 을 달지 않는다 — setBusy 의 일괄 복원이 되살린다(#342 교훈).
-    attrs = job_js[job_js.index("function newWorkAttrs("):]
-    attrs = attrs[:attrs.index("\n  }")]
-    assert "data-busy-lock" in attrs and "disabled" in attrs
-    assert attrs.index("data-busy-lock") < attrs.index("disabled"), (
-        "비활성 갈래에 busy-lock 이 달렸습니다 — 생성 종료의 일괄 복원이 입구를 되살립니다."
-    )
-    # ⑦ 흐름 몸통도 같은 게이트를 지난다 — 렌더와 클릭 사이의 창에서도 제자리에서 막는다.
     body_at = job_js.index("function newWorkFromData(")
-    body = job_js[body_at:job_js.index("EditorEntry.newDraftFromData(", body_at)]
-    assert "newWorkGate(LAST)" in body and "return Promise.resolve(false)" in body, (
-        "흐름 몸통이 게이트를 지나지 않습니다 — 렌더 뒤 바뀐 마운트에서 백엔드까지 갑니다."
-    )
+    body = job_js[body_at:job_js.index("async function relinkTemplateFor", body_at)]
+    assert "current?.new_work" in body and "gate.can === false" in body
+    assert "gate.reason" in body and "return false" in body
+    assert body.count("editorEntry.current().newDraftFromData(") == 1
+
+    # 후보 줄과 확인 필요 행은 둘 다 controller의 같은 재검증 몸통만 호출한다.
+    assert job_js.count("controller.newWorkFromData(") == 2
+    assert "cand-newwork-why muted" in job_js
+    assert '"data-busy-lock": gate.can === false ? undefined : true' in job_js
+    assert "disabled: gate.can === false" in job_js
+    assert "title: gate.reason || \"\"" in job_js
+    browse = job_js[job_js.index("function BrowseRow("):job_js.index("export function JobBrowseDialog")]
+    assert '"data-browse-new": gate.can === false ? undefined : row.name' in browse
+    assert "현재 데이터에 없는 열" in browse and "gate.reason" in browse
 
 
 def test_browse_sheet_starts_the_next_flow_only_after_it_finished_closing():
@@ -1296,32 +1301,25 @@ def test_browse_sheet_starts_the_next_flow_only_after_it_finished_closing():
     이 단언이 세는 것은 「지금 초점이 어디 있나」(실렌더 층의 질문)가 아니라 **「겹칠 수 있는
     배선인가」**다: 확인을 여는 흐름이 닫힘 완료 슬롯을 거치지 않고 직접 불리면 실패한다.
     """
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    job_js = R4_JOB_READ.read_text(encoding="utf-8")
 
-    # ① 확인 필요 행은 흐름을 **예약**한다 — 같은 줄에서 닫으며 곧바로 부르지 않는다.
-    rows_at = job_js.index('$("jobBrowseRows").addEventListener')
-    branch = job_js[rows_at:job_js.index("data-browse-pick]", rows_at)]
-    for m in re.finditer(r"newWorkFromData\(", branch):
-        line = branch[branch.rfind("\n", 0, m.start()): branch.find("\n", m.start())]
-        assert "browseAfterClose" in line, (
-            "확인 필요 행이 닫힘과 겹쳐 흐름을 시작합니다 — 닫힘 착지가 모달 뒤로 샙니다:"
-            f" {line.strip()!r}"
-        )
-    assert branch.index("browseAfterClose =") < branch.index('Modal.close("jobBrowseSheet")'), (
-        "예약보다 닫기가 먼저 서면 예약이 이번 닫힘에 실리지 않습니다."
-    )
-    # ② 소비는 닫힘 1지점, 그리고 **착지 뒤**다 — 흐름이 기억할 복귀점이 실재해야 한다.
-    close_cb = job_js[job_js.index("onClose: () => {", job_js.index("function openBrowseSheet")):]
-    close_cb = close_cb[:close_cb.index("\n      },")]
-    assert "focusAfterPick(" in close_cb and "if (next) next();" in close_cb
-    assert close_cb.index("focusAfterPick(") < close_cb.index("if (next) next();"), (
-        "닫힘 착지보다 다음 흐름이 먼저 섭니다 — 그 흐름이 기억하는 복귀점이 사라진 노드입니다."
-    )
-    # ③ 슬롯은 새 개폐로 넘어가지 않는다 — 미소비 의도가 다음 닫힘에 뒤늦게 실행되면
-    #    사용자가 하지 않은 전이가 일어난다(개폐 세대 규율과 같은 근거).
-    open_fn = job_js[job_js.index("function openBrowseSheet"):]
-    open_fn = open_fn[:open_fn.index("\n  }")]
-    assert "browseAfterClose = null" in open_fn, "새 개폐가 지난 의도를 물려받습니다."
+    reserve = job_js[job_js.index("function newWorkAfterBrowseClose("):
+                     job_js.index("async function openBrowseNeedsAction")]
+    assert reserve.index("browseAfterClose =") < reserve.index('modal.close("jobBrowseSheet")')
+    assert "controller.newWorkFromData" in reserve
+    browse_open_at = job_js.index("async function openBrowse(")
+    close_at = job_js.index("onClose: () => {", browse_open_at)
+    close_cb = job_js[close_at:job_js.index("    });", close_at)]
+    assert "const next = browseAfterClose" in close_cb
+    assert "browseAfterClose = null" in close_cb
+    assert "if (next !== null) next();" in close_cb
+    open_fn = job_js[job_js.index("async function openBrowse("):
+                     job_js.index("function newWorkAfterBrowseClose")]
+    assert "browseAfterClose = null" in open_fn
+    browse_row = job_js[job_js.index("function BrowseRow("):
+                        job_js.index("export function JobBrowseDialog")]
+    assert "newWorkAfterBrowseClose" in browse_row
+    assert "closeBrowse();" not in browse_row
 
 
 def test_job_data_first_prework_surface_contract():
@@ -1332,25 +1330,28 @@ def test_job_data_first_prework_surface_contract():
     실렌더 동작판은 selftest ``job_data_first`` 프로브.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'id="jobCandsRow"' in html and 'id="jobCandidates"' in html, (
+    react = R4_JOB_READ.read_text(encoding="utf-8")
+    assert 'id="jobCandsRow"' in html and 'id: "jobCandidates"' in react, (
         "문서 작업 후보 구획이 없습니다(데이터-우선 §18.4)."
     )
     assert "jobEmptyPanel" not in html, (
         "은퇴한 미선택 빈 패널이 재유입됐습니다 — 세션 존은 무작업에도 살아야 합니다(§18.2)."
     )
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "function renderCandidates(s)" in src
-    assert "jobEmptyPanel" not in src
+    assert "export function JobCandidates" in react
+    assert "jobEmptyPanel" not in src and "jobEmptyPanel" not in react
     # prework 게이트의 구획 지목 — 이제 **링1 이 낸 축 이름**을 읽는다(#342 리뷰 P2).
     # 서열(데이터 → 행 → 문서)은 `prework_gate` 가 이름으로 내고 표면은 자리로 옮기기만
     # 한다. 이름 없는 갈래(hwpx warn)만 자리로 유추하는 폴백이 남는다.
     assert "GATE_ZONE[g.reason" in src, "무작업 prework 게이트의 구획 지목 배선이 없습니다."
     assert "no_data:" in src and "no_job:" in src, "prework 축 이름의 자리 배선이 없습니다."
     assert "if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;" in src
-    assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
+    assert '"data-cand": row.name' in react  # 후보 카드 클릭 → select_job 위임
     # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
     # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).
-    assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
+    assert "if (!active) void controller.selectJob(row.name)" in react, (
+        "활성 후보 재활성화 가드가 없습니다."
+    )
 
 
 def test_job_display_order_axis_surface_contract():
@@ -1361,17 +1362,19 @@ def test_job_display_order_axis_surface_contract():
     ③⤢ 펼침 면 이동 목록에 동행(축이 메인에만 남으면 펼친 면에서 도달 불가) ④왕복 중
     의도 보호(pendingOrder) — 셋 다 "지우면 조용히 나빠지는" 배선이다.
     """
-    html = WEB_INDEX.read_text(encoding="utf-8")
-    for element in ('id="jobOrderBar"', 'id="jobOrderSel"', 'id="jobOrderNote"'):
-        assert element in html, f"표시순서 축 요소가 없습니다: {element}"
-    assert 'value="sourceDesc"' in html and 'value="sourceAsc"' in html, (
+    zone = R4_DATA_ZONE.read_text(encoding="utf-8")
+    for element in ("jobOrderBar", "jobOrderSel", "jobOrderNote"):
+        assert f'id: "{element}"' in zone, f"표시순서 축 요소가 없습니다: {element}"
+    assert 'value: "sourceDesc"' in zone and 'value: "sourceAsc"' in zone, (
         "표시순서 2값(§18.10)이 계약 어휘와 다릅니다."
     )
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    moves = src.split("openJobDataSheet", 1)[1].split("moves: [", 1)[1].split("]", 1)[0]
-    assert "jobOrderBar" in moves, "⤢ 펼침 면에 표시순서 축이 따라가지 않습니다(판정 C)."
-    assert "pendingOrder" in src, "왕복 중 의도 보호가 없습니다 — push 가 선택을 되돌립니다."
-    assert "set_view_order" in src
+    bootstrap = SOURCE_ROOT.joinpath("src", "bootstrap.js").read_text(encoding="utf-8")
+    assert 'screenPortal("dataSheetSlot", JobDataBody' in bootstrap
+    assert 'location: "sheet"' in bootstrap
+    assert 'value: snapshot.range_draft?.open' in zone
+    assert 'controller.zone("set_view_order"' in zone
+    controller = R4_JOB_READ.read_text(encoding="utf-8")
+    assert "let zoneTail = Promise.resolve()" in controller
 
 
 def test_job_range_draft_surface_contract():
@@ -1381,92 +1384,37 @@ def test_job_range_draft_surface_contract():
     뜬다) ②모든 출구(취소·닫기·Escape)가 `beforeClose` 한 관문을 지난다 — 경로마다 가드를
     걸면 하나는 반드시 빠진다 ③초안 생성이 성사된 뒤에만 면을 연다.
     """
-    html = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'id="jobRangeFoot"' in html, "범위 편집기 footer 가 없습니다."
-    # 소유 = 「문서 만들기」 화면 루트 안(공용 펼침 면 마크업 밖). 면 안에 두면 같은 면을
-    # 쓰는 「기안」에 남의 footer 가 뜬다 — 실 DOM 이동이 소유를 대신 증명한다.
-    job_screen = html.split('id="scr-job"', 1)[1].split('id="dataSheet"', 1)[0]
-    assert 'id="jobRangeFoot"' in job_screen, (
-        "footer 가 화면 소유가 아닙니다 — 공용 펼침 면 마크업에 있으면 「기안」에도 뜹니다."
+    src = R4_JOB_READ.read_text(encoding="utf-8")
+    zone = R4_DATA_ZONE.read_text(encoding="utf-8")
+    for element in ("jobRangeFoot", "jobRangeApply", "jobRangeCancel", "jobRangeSelectedOnly", "jobRangeNote"):
+        assert f'id: "{element}"' in zone, f"범위 편집기 출구가 없습니다: {element}"
+
+    open_fn = src[src.index("async function openDataSheet("):src.index("function dropPendingEdits")]
+    assert open_fn.index("await flushPendingEdits()") < open_fn.index('await zone("range_draft_open"')
+    assert open_fn.index('await zone("range_draft_open"') < open_fn.index("surfaceSheet.open({")
+    assert "beforeClose: () => guardRangeClose()" in open_fn
+
+    discard = src[src.index("async function discardRange("):src.index("function guardRangeClose")]
+    assert discard.index("dropPendingEdits()") < discard.index('await zone("range_draft_cancel"')
+    assert discard.index('await zone("range_draft_cancel"') < discard.index('surfaceSheet.close("dataSheet")')
+    apply_fn = src[src.index("async function applyRange("):src.index("async function toggleFavorite")]
+    assert apply_fn.index("await flushPendingEdits()") < apply_fn.index('await zone("range_draft_apply"')
+    assert apply_fn.index('await zone("range_draft_apply"') < apply_fn.index('surfaceSheet.close("dataSheet")')
+
+    guard = src[src.index("function guardRangeClose("):src.index("async function applyRange")]
+    assert "draft.dirty" in guard and "ui.pendingSearch" in guard and "ui.pendingColumn" in guard
+    assert "modal.confirm({" in guard and "void discardRange()" in guard
+    assert 'props.controller.closeDataSheet();' in zone, (
+        "범위 취소 버튼이 SurfaceSheet.close의 beforeClose 이탈 가드를 우회합니다."
     )
-    for element in ("jobRangeApply", "jobRangeCancel", "jobRangeSelectedOnly", "jobRangeNote"):
-        assert f'id="{element}"' in html, f"범위 편집기 출구가 없습니다: {element}"
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "beforeClose: guardRangeClose" in src, "이탈 가드가 닫기 관문에 걸려 있지 않습니다."
-    assert 'Bridge.call(SCREEN, "range_draft_open"' in src
-    assert "SurfaceSheet.open" in src.split("range_draft_open", 1)[1], (
-        "초안 생성 **뒤에** 면을 여는 순서가 아닙니다(성사 뒤에만 닫고 연다)."
-    )
-    # 열기도 **존 체인**에 선다(리뷰 5R): 방금 친 편집이 큐에 있는데 열기가 먼저 도착하면
-    # 그 편집이 옛 세대로 거절돼 사용자가 본 변경이 커밋에도 초안에도 없이 사라진다.
-    open_fn2 = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
-    assert "flushPendingEdits" in open_fn2 and "Intent.chained(ZONE_CHAIN" in open_fn2, (
-        "열기가 대기 중 편집을 추월합니다(정산·직렬화 없음)."
-    )
-    # 데이터-우선(§18.2): 데이터 면은 **렌더마다 닫지 않는다** — 작업 미선택 렌더마다 닫으면
-    # 작업을 고르기 전엔 범위 편집기가 첫 왕복마다 취소돼 쓸 수 없다(리뷰 5R). 화면을 떠날
-    # 때의 회수는 이제 전환이 진다(재작성 F7 — SurfaceSheet.closeAllAndRestore).
-    mode_fn = src.split("function syncModeDisplay", 1)[1].split("\n  }", 1)[0]
-    assert 'closeAndRestore("dataSheet")' not in mode_fn, (
-        "데이터 면을 렌더마다 닫습니다 — 작업 미선택 세션에서 범위 편집기가 못 쓰게 됩니다."
-    )
-    # (구 거울 펼침 면 강제 닫기는 면 사망 — U2 §2.13 — 과 함께 걷혔다. 확인 면의 개폐는
-    #  Python 소유 `preview.open` 이 지고, 작업 전환은 백엔드가 preview_close 로 닫는다.)
-    assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
-    # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
-    # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
-    discard = src.split("async function discardAndClose", 1)[1].split("\n  }", 1)[0]
-    assert discard.index("await Intent.chained") < discard.index("SurfaceSheet.close"), (
-        "취소가 폐기 성사 전에 면을 닫습니다."
-    )
-    # 디바운스 안에서 누른 취소는 대기 중 편집을 **보내지 않는다**(리뷰 2R P1) — 초안이
-    # 사라진 뒤 도착하면 버린 검색어가 커밋된 필터에 착지한다. 적용 쪽은 반대로 정산한다.
-    assert discard.index("dropPendingEdits") < discard.index("range_draft_cancel"), (
-        "취소가 대기 중 편집을 폐기하지 않습니다."
-    )
-    apply_fn = src.split("async function applyRangeDraft", 1)[1].split("\n  }", 1)[0]
-    assert apply_fn.index("flushPendingEdits") < apply_fn.index("range_draft_apply"), (
-        "적용이 대기 중 편집을 정산하지 않습니다(방금 친 조건이 사라집니다)."
-    )
-    # 존 변이는 **대상 세계 세대**를 업고 간다(리뷰 4R) — 느린 출구 뒤에 줄 선 편집이
-    # 커밋 범위에 착지하던 창을 원천에서 닫는다. 판정은 Python, 웹은 나르기만.
-    assert "epoch: () => (LAST ? LAST.zone_epoch : undefined)" in src, (
-        "존 변이가 대상 세계 세대를 싣지 않습니다."
-    )
-    assert "pendingZoneMutations" in src, "대기 중 편집 카운터가 없습니다(이탈 가드 소재)."
-    guard = src.split("function guardRangeClose", 1)[1].split("\n  }", 1)[0]
-    assert "pendingZoneMutations === 0" in guard, (
-        "이탈 가드가 아직 푸시 안 온 편집을 못 봅니다 — 확인 없이 버립니다."
-    )
-    # 축 왕복 실패는 선택기를 되돌린다(스냅샷이 안 오므로 화면이 거짓말한 채 남는다).
-    order_fail = src.split("async function onOrderChange", 1)[1].split("\n  }", 1)[0]
-    assert "renderOrderBar(LAST)" in order_fail, "축 왕복 실패가 선택기를 되돌리지 않습니다."
-    # 존 발신과 초안 출구가 **한 체인**을 쓴다 — 도착 순서가 뒤바뀌면 취소한 편집이 커밋된다.
-    assert 'chainKey: ZONE_CHAIN' in src and 'ZONE_CHAIN = "job:zone"' in src
-    zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
-    assert "Intent.chained(cfg.chainKey, send)" in zone, "존 발신이 체인을 타지 않습니다."
-    # 무변이 질의는 체인 밖 — 응답이 늦는 질의 하나가 이후 모든 변이를 막지 않게.
-    assert "ZONE_QUERIES" in zone and '"filter_panel"' in zone
-    assert "Bridge.call(SCREEN" not in zone.split("function call(", 1)[1].split("}", 1)[1], (
-        "존 발신 중 통로를 우회하는 호출이 남아 있습니다."
-    )
-    # 열기 왕복 중 화면 이탈 — 전역 면이 남의 화면 위에 뜨지 않게 열지 않고 초안을 거둔다.
-    open_fn = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
-    assert 'classList.contains("on")' in open_fn, (
-        "열기 왕복 중 화면 이탈을 확인하지 않습니다."
-    )
-    # 결과 강등 판정은 표의 선택 표지가 아니라 Python 이 낸 커밋 지문을 쓴다(리뷰 1R P1).
-    key = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
-    assert "selection_key" in key and ".selected" not in key, (
-        "세션 지문이 표의 선택 표지에서 파생됩니다 — 초안이 결과를 강등시킵니다."
-    )
-    # 축 왕복도 **같은 체인**을 탄다(리뷰 1R P2·3R P1) — 체인 키는 상태 단위이지 위젯 단위가
-    # 아니다. 축만 따로 세우면 취소가 먼저 초안을 지우고 늦은 축 변경이 커밋에 착지한다.
-    order_fn = src.split("async function onOrderChange", 1)[1].split("\n  }", 1)[0]
-    assert "Intent.chained(ZONE_CHAIN" in order_fn, "표시순서가 존 체인 밖에서 발신됩니다."
-    assert "job:view_order" not in src, "축 전용 체인 키가 남아 있습니다(두 줄 = 순서 미보장)."
+    # 모든 변이는 epoch를 싣고 zoneTail 하나로 직렬화하고, filter_panel 질의만 즉시 보낸다.
+    call = src[src.index("function zone("):src.index("function browse(")]
+    assert "zone_epoch" in call and "zoneTail.then(send, send)" in call
+    assert "if (query) return send();" in call
+    assert 'controller.zone("filter_panel", { column }, true)' in zone
+    assert "job:view_order" not in src
     sheet = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
-    assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
+    assert "beforeClose" in sheet
 
 
 def test_job_user_column_hiding_surface_contract():
@@ -1476,21 +1424,21 @@ def test_job_user_column_hiding_surface_contract():
     그 판정을 **소비하는 배선**이 빠지면 백엔드만 있고 표면이 침묵하는 반쪽이 된다(선언은
     살고 결과는 죽는 결함류). 여기서 그 소비를 센다.
     """
-    zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
+    zone = R4_DATA_ZONE.read_text(encoding="utf-8")
     # 표시 여부는 Python 플래그 소비 — 머리·셀이 같은 판정으로 함께 빠진다(ci 정렬 유지).
-    assert zone.count("if (!c.visible) return \"\";") == 2, (
+    assert zone.count("if (column.visible === false) return null") == 1
+    assert zone.count("return column.visible === false") == 1, (
         "숨긴 열의 머리·셀 렌더 스킵이 한 쌍이 아닙니다 — 표와 머리가 어긋납니다."
     )
     # 패널 항목은 can_hide(Python 판정)에만 선다 — 시트로 이사한 패널에는 서지 않는다.
-    assert "d.can_hide" in zone and 'data-act="col-hide"' in zone
+    assert "data.can_hide" in zone and '"data-act": "col-hide"' in zone
     assert '"hide_column"' in zone and '"unhide_columns"' in zone
     # 숨김 표지는 상시 칩 — 문안이 축을 말한다(숨김은 보기뿐, 생성 제외가 아니다).
-    assert "hidden_columns" in zone and 'data-act="unhide-cols"' in zone
+    assert "hidden_columns" in zone and '"data-act": "unhide-cols"' in zone
     assert "생성에는 그대로 쓰입니다" in zone, "숨김 표지 문안이 축(보기≠생성)을 말하지 않습니다."
     assert "보기에서만 숨깁니다" in zone, "패널 항목 문안이 축(보기≠생성)을 말하지 않습니다."
     # 칩 줄은 필터가 없어도 숨김이 있으면 선다(상시 표지 — 0개가 아니면 칩이 선다).
-    chips_fn = zone.split("function renderChips", 1)[1].split("\n    }", 1)[0]
-    assert "hiddenCols.length" in chips_fn, "숨김 표지가 필터 활성에 묶여 있습니다."
+    assert "filter.active || hiddenColumns.length" in zone, "숨김 표지가 필터 활성에 묶여 있습니다."
     css = (SOURCE_CSS_DIR / "jobdata.css").read_text(encoding="utf-8")
     assert ".fchip.hidecols" in css, "숨김 표지 칩 변형 스타일이 없습니다."
 
@@ -1502,53 +1450,25 @@ def test_job_document_browser_surface_contract():
     시트 루트·탭·검색·행 호스트가 실재하고, JS 는 목록을 자체 필터하지 않는다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    for dom_id in ("jobBrowseSheet", "jobBrowseTabs", "jobBrowseQuery", "jobBrowseRows",
-                   "jobBrowseNote", "jobBrowseClose"):
-        assert f'id="{dom_id}"' in html, f"문서 탐색 면 요소 누락: {dom_id}"
-    # 라우팅 화면은 다섯 개 그대로다 — 탐색은 시트라 SCREEN·컨트롤러가 늘지 않는다.
+    src = R4_JOB_READ.read_text(encoding="utf-8")
+    assert 'id="jobBrowseSheet"' in html
+    for dom_id in ("jobBrowseTabs", "jobBrowseQuery", "jobBrowseRows", "jobBrowseNote", "jobBrowseClose"):
+        assert f'id: "{dom_id}"' in src, f"문서 탐색 React 요소 누락: {dom_id}"
+        assert f'id="{dom_id}"' not in html, f"{dom_id} 정적 골격이 React producer와 중복됩니다."
     assert 'id="scr-browse"' not in html and "scr-documents" not in html
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "browse_tab" in src and "browse_query" in src, "탐색 액션 배선이 없습니다."
-    assert "data-browse-pick" in src, "탐색 행 선택(명시 사건) 배선이 없습니다."
-    # 재렌더를 가로지르는 포커스 계약(1R P2): 탭·행·출구에 안정 id 가 있고, 선택 뒤 착지는
-    # Preserve 복원 **뒤에** 일어난다(안쪽이면 복원이 덮어써 탐색 면 컨트롤에 갇힌다).
-    for token in ('id="jobBrowseTab-', 'id="jobBrowseRow-', 'id="jobBrowseOpen"'):
+    assert 'browse("browse_tab"' in src and 'browse("browse_query"' in src
+    assert '"data-browse-pick": row.name' in src
+    for token in ('id: `jobBrowseTab-', 'id: `jobBrowseRow-', 'id: "jobBrowseOpen"'):
         assert token in src, f"탐색 면 안정 id 누락: {token}"
-    # 포커스 착지는 **예약이 아니라** 닫은 직후 실 DOM 조회다(3R P2): 예약 방식은 왕복 순서에
-    # 의존해 렌더보다 늦고, 남은 예약이 무관한 뒤 렌더를 흔들었다.
-    assert "function focusAfterPick(" in src, "선택 후 포커스 착지가 없습니다."
-    # 단순 닫기의 복귀도 노드 보관이 아니라 닫힘 시점 재조회다(6R P2 — 면 안 재렌더가
-    # 붙잡아 둔 출구를 끊으면 Modal 은 복귀를 건너뛰고 포커스가 숨은 면에 남는다).
-    assert "returnFocus: null" in src and "onClose:" in src, (
-        "탐색 면 닫기 복귀가 보관 노드에 묶여 있습니다."
-    )
-    # 착지 결정은 닫힘 1지점에서만(사유 플래그) — 선택 경로가 따로 focus 하면 전이 종료 뒤
-    # onClose 가 덮어써 두 착지가 경합한다.
-    assert "browsePickedName" in src, "닫힘 사유 표식이 없습니다(착지 경합)."
-    # 큐에 선 선택은 그 사이 면이 닫히면 무효다(P2): 취소한 전환이 뒤늦게 일어나고 표식이
-    # 남아 다음 닫기의 착지까지 오염시킨다. 개폐 세대로 자기 것이 아닌 큐를 접는다.
-    assert "browseOpenGen" in src and "gen !== browseOpenGen" in src, (
-        "탐색 선택 큐의 개폐 세대 가드가 없습니다."
-    )
-    # 정의 1 + 호출 1 = 2 (호출이 늘면 닫힘 1지점 계약이 깨진 것)
-    assert src.count("focusAfterPick(") == 2, "착지 호출이 닫힘 1지점 밖에도 있습니다."
-    # 타이핑 중 스냅샷이 검색 입력을 덮지 않는다(4R P2 — 데이터 존과 같은 규칙).
-    assert 'document.activeElement !== q' in src, "탐색 검색이 왕복 경합에 입력을 덮습니다."
-    assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
-    # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
-    # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
-    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다. ⤢ 펼침 면 2종도
-    # 같은 자격이다(F3): 실 DOM 이동이라 잠글 요소가 면 안으로 **옮겨가** 화면 질의에서 빠진다.
-    busy_roots = src.split("function setBusy", 1)[1].split("forEach", 1)[0]
-    for root in ("jobBrowseSheet", "dataPickerModal", "dataSheet", "previewSheet"):
-        assert f'$("{root}")' in busy_roots, f"setBusy 가 {root} 을(를) 잠그지 않습니다."
-    assert src.count("data-busy-lock data-browse") == 3, (
-        "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
-    )
-    # 검색·분류를 JS 가 재계산하지 않는다(RC-23 동형 — 판정은 Python 이 지금).
-    browse = src.split("function renderBrowse")[1][:2200]
-    for banned in ("filter(", "toLowerCase", "includes("):
-        assert banned not in browse, f"탐색 렌더가 자체 필터를 합니다: {banned!r}"
+    assert "browseGeneration" in src and "generation !== browseGeneration" in src
+    pick = src[src.index("async pickBrowse("):src.index("newWorkFromData,", src.index("async pickBrowse("))]
+    assert pick.index("browseTail.then") < pick.index("selectJob(name)") < pick.index('modal.close("jobBrowseSheet")')
+    browse_component = src[src.index("export function JobBrowseDialog"):src.index("export function JobReadEffects")]
+    assert browse_component.count('"data-busy-lock": true') >= 3
+    browse_row = src[src.index("function BrowseRow("):src.index("export function JobBrowseDialog")]
+    assert '"data-busy-lock": true' in browse_row
+    for banned in (".filter(", "toLowerCase", ".includes("):
+        assert banned not in browse_component, f"탐색 렌더가 자체 필터를 합니다: {banned!r}"
 
 
 def test_job_candidate_ranking_surface_contract():
@@ -1556,48 +1476,15 @@ def test_job_candidate_ranking_surface_contract():
 
     판정·순위는 Python 소유라 JS 는 **받은 순서를 그대로** 그린다(정렬 재구현 금지).
     """
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
-    # 도달성(리뷰 2R P2 → F2 PR-B 이사): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는
-    # **절단되지 않는 표면**이 져야 한다. 그 표면이던 좌 목록 ⋮ 메뉴가 죽었으므로(지도 §10.9)
-    # 이제 「문서 작업」 라이브러리 **행**의 별이 그 자리다(§19.6: 행 선택 버튼 밖 형제).
-    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
-    assert 'class="lib-fav" data-fav=' in lib, (
-        "라이브러리 행에 즐겨찾기 별이 없습니다 — 순위 밖 승격 도달성이 끊깁니다(§8.4 2행)."
-    )
-    assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
-    # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
-    # 계산해야 하고(3R P2 — 멱등 재지정이 "껐다"를 삼키는 창), 쓰기 자체도 클릭 순서로
-    # 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라 동시 발신이면 나중 클릭의
-    # 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
-    #
-    # **기제는 공용 몸통(js/intent.js)이 소유한다**(재작성 F2 리뷰 3R 근본 조치): 라이브러리가
-    # 같은 별을 새로 그리며 기제 없이 DOM 값만 보내 같은 결함류가 표면을 넘어 재발했다.
-    # 그래서 가드도 몸통 하나를 보고, 두 소비 표면이 그것을 쓰는지 함께 본다.
-    intent = (WEB_JS_DIR / "intent.js").read_text(encoding="utf-8")
-    assert "function chained(" in intent and "CALL_CHAINS" in intent, "호출 직렬화 몸통이 없습니다."
-    assert "function createFavorite(" in intent and "function pending(" in intent, (
-        "즐겨찾기 미결 의도 직렬화가 공용 몸통에 없습니다."
-    )
-    assert 'chained("favorite"' in intent, "즐겨찾기 쓰기가 체인을 타지 않습니다."
-    # 저장되는 링은 **절대 reject 하지 않는다**(5R): 실패한 promise 가 체인에 남으면 이후
-    # 같은 키의 모든 호출이 거기 붙어 영영 실행되지 않는다. 실행 성질은 실앱 프로브가 본다.
-    chain = intent[intent.index("function chained("):intent.index("const FAV_PENDING")]
-    assert "result.catch(() => {})" in chain, "저장 링이 실패를 흡수하지 않습니다(5R)."
-    assert "return result;" in chain, "호출자에게 실패를 전하지 않습니다 — 되돌리기가 죽습니다."
-    for consumer in ("screens/job.js", "screens/library.js"):
-        text = (WEB_JS_DIR / consumer).read_text(encoding="utf-8")
-        assert "Intent.createFavorite(" in text, (
-            f"{consumer} 가 즐겨찾기 기제를 공용 몸통에서 받지 않습니다 — 두 벌이면 또 갈린다."
-        )
-        assert "FAV_PENDING" not in text, f"{consumer} 에 손짠 의도 큐가 남아 있습니다."
-    # 미결 의도 판독(`pending`)의 소비처였던 좌 목록 ⋮ 메뉴 문안은 표면과 함께 죽었다
-    # (F2 PR-B) — 별은 두 표면 모두 aria-pressed 를 스냅샷에서 받으므로 「이 클릭이 할 일」을
-    # 문장으로 말할 자리가 없다. 기제는 몸통에 남겨 둔다: 다음 표면이 다시 손으로 짜지 않게.
-    assert "function pending(" in intent, "미결 의도 판독이 공용 몸통에서 사라졌습니다."
-    assert src.count('Intent.chained("browse"') == 3, (
-        "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
-    )
+    src = R4_JOB_READ.read_text(encoding="utf-8")
+    lib = R4_LIBRARY.read_text(encoding="utf-8")
+    assert '"data-fav": row.name' in src and '"toggle_favorite"' in src
+    assert 'className: "lib-fav", "data-fav": row.name' in lib
+    for owner in (src, lib):
+        assert owner.count("async function toggleFavorite(") == 1
+        assert "favoriteIntent" in owner and "favoriteTail" in owner
+        assert "const intended = !(favoriteIntent.get(name) ?? shown)" in owner
+        assert "previous.then(async () =>" in owner
     # 최근 사용 문안은 **링1으로 이사했다**(F6): 두 매체가 다른 술어를 쓰므로(§19.4 HWPX
     # 완주 / TXT 복사 1건) 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을
     # 거짓으로 말한다. 여기선 표면이 문구를 **다시 짓지 않는지**만 본다.
@@ -1610,18 +1497,18 @@ def test_job_candidate_ranking_surface_contract():
         "카드 부제에 작업 방식 텍스트가 없습니다 — 색만으로 방식을 구별하지 않는다."
     )
     # 구획 여부·순서 판정은 Python 이고 표면은 머리글만 그린다(§19.3).
-    assert "c.sections" in src and "sections.length > 1" in src, (
+    assert "candidates.sections" in src and "sections.length > 1" in src, (
         "방식 구획이 Python 판정(sections)을 소비하지 않습니다."
     )
-    assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
+    assert "candidates.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     # 확인 필요 목록은 탐색 면으로 이사했다 — 후보 줄엔 수치 + 출구만 남는다(슬라이스 3).
-    assert "c.needs_count" in src and "data-browse-open" in src, (
+    assert "candidates.needs_count" in src and '"data-browse-open": true' in src, (
         "확인 필요 수치·문서 탐색 출구가 후보 줄에 없습니다."
     )
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).
     for banned in ("favorited_at <", "sort(", "localeCompare"):
-        assert banned not in src.split("renderCandidates")[1][:2000], (
+        assert banned not in src[src.index("export function JobCandidates"):src.index("function BrowseRow")], (
             f"후보 렌더가 자체 정렬을 합니다: {banned!r}"
         )
     css = "".join(WEB_CSS.split())
@@ -1958,21 +1845,21 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
     assert 'navigate("editor"' in entry_src, "편집 진입이 편집기 화면으로 착지하지 않습니다."
-    for fname, needle in (
-        ("screens/library.js", "EditorEntry.newDraft"),
-        ("screens/library.js", "EditorEntry.openGuarded"),
+    for path, needle in (
+        (R4_LIBRARY, "editorEntry.current().newDraft"),
+        (R4_LIBRARY, "editorEntry.current().openGuarded"),
         # (template.js 의 EditorEntry.land 소비는 화면 사망(F8)으로 은퇴 — 편집기 안 선택은
         #  이미 편집기 화면이라 착지 seam 이 필요 없다.)
-        ("screens/job.js", "EditorEntry.openGuarded"),
+        (WEB_JS_DIR / "screens" / "job.js", "EditorEntry.openGuarded"),
     ):
-        src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
-        assert needle in src, f"{fname} 가 진입 단일 출처({needle})를 쓰지 않습니다."
+        src = path.read_text(encoding="utf-8")
+        assert needle in src, f"{path} 가 진입 단일 출처({needle})를 쓰지 않습니다."
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     # **맨손 새 작업**은 여전히 라이브러리 소관이다(F8 승계). 금지의 근거는 "진입점이 둘이면
     # 중복"이었는데, U2 §2.4(#349)의 「이 데이터로 새 작업」은 그 중복이 아니다: 마운트된
     # 데이터를 들고 시작하는 진입이라 데이터가 없는 라이브러리에서는 **성립하지 않는다**.
     # 그래서 금지는 사라지지 않고 **좁아진다** — 데이터 없는 `newDraft(` 만 계속 막는다.
-    assert "EditorEntry.newDraft(" not in job_js, (
+    assert "EditorEntry.newDraft(" not in job_js and "editorEntry.current().newDraft(" not in R4_JOB_READ.read_text(encoding="utf-8"), (
         "「문서 만들기」에 맨손 새 작업 진입이 되살아났습니다 — 그 승계처는 라이브러리 "
         "`＋ 새 작업`이고, 여기서 여는 것은 데이터를 든 `newDraftFromData` 뿐입니다."
     )
@@ -2055,7 +1942,7 @@ def test_edit_entries_carry_their_context():
     사용자가 방금 본 화면이 갈린다).
     """
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    lib = R4_LIBRARY.read_text(encoding="utf-8")
     bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
     entry = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     assert "openJobInEditor(name, context)" in bridge, (
@@ -2074,6 +1961,9 @@ def test_edit_entries_carry_their_context():
     for reason in ("document_browser_repair", "preview_result", "output_result", "run_failure"):
         assert reason in job, f"「문서 만들기」의 편집 진입이 사유({reason})를 싣지 않습니다."
     assert 'entry_reason: "library"' in lib, "라이브러리 편집 진입이 사유를 싣지 않습니다."
+    ports = R4_PORTS.read_text(encoding="utf-8")
+    for key in ("openGuarded", "newDraft", "newDraftFromData", "land", "confirmDiscard", "restoreEntryFocus"):
+        assert key in ports, f"EditorEntry handoff 6키 중 {key}가 없습니다."
     # F4 가 남긴 빚의 회수 — 파일 이름 규칙 수리는 이제 전용 탭으로 곧장 착지한다.
     assert 'section: "filename"' in job, (
         "결과의 파일 이름 수리가 파일 이름 탭으로 착지하지 않습니다(F7 이 승격한 자리)."
@@ -2137,11 +2027,11 @@ def test_use_in_job_goes_straight_to_the_run_surface():
     이 화면이 보이는 동안 편집기는 열려 있지 않다(몰입 표면은 셸을 덮는다). 승계처가 선
     뒤에도 옛 정산을 남겨 두면 죽은 배선이 계약처럼 읽힌다.
     """
-    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    lib = R4_LIBRARY.read_text(encoding="utf-8")
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):]
-    use = use[:use.index("Nav.go(JOB);") + len("Nav.go(JOB);")]
-    assert "Nav.go(JOB);" in use, "「문서 만들기에서 사용」이 실행 화면으로 가지 않습니다."
+    use = lib[lib.index("async function runPrimary("):lib.index("async function toggleFavorite(")]
+    assert 'dispatch("job", "prefer_work", { name })' in use
+    assert 'deps.navigation.go("job")' in use, "「문서 만들기에서 사용」이 실행 화면으로 가지 않습니다."
     assert "landRunMode" not in lib and "landRunMode" not in job, (
         "구 실행 모드 착지 seam 이 남아 있습니다 — 두 모드가 사라졌으므로 되돌릴 모드도 없습니다."
     )
@@ -2157,10 +2047,10 @@ def test_group_confirm_copy_states_the_rule_not_a_promised_count():
     """
     # 좌 목록 사망(F2 PR-B)으로 그룹 확인 문안의 거처가 라이브러리로 옮겼다 — 판정은 여전히
     # 「문서 만들기」 컨트롤러(교차 화면 dispatch)가 내고, 문안 계약은 표면을 따라간다.
-    src = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    src = R4_LIBRARY.read_text(encoding="utf-8")
     assert "지금 기준" in src, "그룹 확인 수치가 관측으로 표기되지 않았습니다(#149)."
     assert "해산 시점의 소속 작업 전부" in src, "해산 확인이 이동 집합 규칙을 말하지 않습니다(#149)."
-    assert src.count("seen: r.count") == 2, (
+    assert "seen: result.count" in src and "seen: first.count" in src, (
         "확인 때 본 수를 확정 호출에 실어 보내지 않습니다 — 어긋남 판정(Python)이 불가(#149)."
     )
     assert "drift_note" in src, "실제 이동 건수의 어긋남 고지를 소비하지 않습니다(#149)."
@@ -2280,10 +2170,8 @@ def test_job_mirror_zone_is_one_line_without_a_value_table():
     )
     # 복귀 트리거 해석은 공용 단일 정의를 쓴다 — 위임/직접 클릭을 각자 풀면 한쪽이 빠진다.
     open_fn = src.split("async function openPreview", 1)[1].split("\n  }", 1)[0]
-    assert "SurfaceSheet.trigger(e" in open_fn, (
-        "확인 면 복귀 트리거가 currentTarget 파생입니다 — 위임 클릭이면 포커스 불가능한 "
-        "컨테이너가 복귀점이 됩니다(#364)."
-    )
+    assert 'e?.target?.closest?.("button") || $("jobPreviewOpen")' in open_fn
+    assert "returnFocus: trigger" in open_fn
     # 두 출구의 가용성은 **한 지점**에서 정한다(둘이 갈리면 한쪽만 열린 채 남는다).
     busy_fn2 = src.split("function setBusy", 1)[1].split("\n  }", 1)[0]
     assert '$("jobMirrorPreviewOpen").disabled' in busy_fn2
@@ -2353,7 +2241,7 @@ COMMIT_SETTLE_GUARDS = (
     ("screens/workbench.js", "async function copyCard()", "Intent.settle(WB_CHAIN)"),
     ("screens/workbench.js", "async function saveRules()", "Intent.settle(WB_CHAIN)"),
     ("screens/workbench.js", "async function leaveTo(", "Intent.settle(WB_CHAIN)"),
-    ("screens/job.js", "async function doGenerate(", "Intent.settle(ZONE_CHAIN)"),
+    ("screens/job.js", "async function doGenerate(", "JobDataCoordinator.current().flushPendingEdits()"),
     # (「기안」 flushDeb 행 삭제 — draftsession.js 가 화면과 함께 사망, F6 PR-B.
     #  복사 커밋의 승계처는 작업대 copyCard 로 위에 이미 서 있다.)
 )
@@ -2431,10 +2319,10 @@ def test_volatile_draft_retirement_notices_have_producer_and_consumer() -> None:
     src = REPO_ROOT / "src" / "hwpxfiller" / "webapp"
     job_py = (src / "screen_job.py").read_text(encoding="utf-8")
     tpl_py = (src / "screen_template.py").read_text(encoding="utf-8")
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    job_js = R4_JOB_READ.read_text(encoding="utf-8")
     # ① 문서 만들기 후보 TXT 구획 빈 상태 — screen_job 이 내고 job.js 가 그린다.
     assert '"txt_note"' in job_py and "_txt_onboarding_note" in job_py
-    assert "c.txt_note" in job_js
+    assert "candidates.txt_note" in job_js
     # ② tpl TXT 밴드 고지는 화면과 함께 사망(F8 §10.17) — 생산이 되살아나면 소비 없는
     # 유령 페이로드다(「등록만 되고 배선 없는」 결함류의 역방향).
     assert 'txt["notice"]' not in tpl_py

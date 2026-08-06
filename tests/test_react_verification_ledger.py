@@ -66,6 +66,7 @@ import copy
 import re
 import subprocess
 import tomllib
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -658,6 +659,22 @@ def test_r1_moves_nothing_yet(ledger: dict[str, Any]) -> None:
     """전 행의 successor 가 기본값이다 — R2 가 **의도적으로** 깨는 자리이고 G4 가 받는다."""
     moved = [row["file"] for row in ledger["asset"] if row.get("successor", "keep") != "keep"]
     assert moved == [], f"R1 에서 옮겨진 자산이 있다: {moved}"
+
+
+def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> None:
+    """rev8 중앙 판정의 R4 검증 자산 39개 배분을 단계 사이에서 고정한다."""
+    actual = Counter(
+        row["owner_stage"]
+        for row in ledger["asset"]
+        if str(row.get("owner_stage", "")).startswith("R4-")
+    )
+    assert actual == {
+        "R4-01": 17,
+        "R4-02": 10,
+        "R4-03": 8,
+        "R4-04": 4,
+    }
+    assert sum(actual.values()) == 39
 
 
 def _repo_is_shallow() -> bool:

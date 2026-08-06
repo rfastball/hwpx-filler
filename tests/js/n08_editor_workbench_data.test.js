@@ -494,26 +494,34 @@ function dataSheetStage(conf) {
   const stage = createStage();
   const options = conf || {};
   const ids = ["jobRecsHead", "jobOrderBar", "jobFilterChips", "jobTableHost",
-    "jobSelStrip", "jobColPanel", "jobRangeFoot"];
-  const screenHost = new El(stage, "div");
+    "jobSelStrip", "jobRangeFoot"];
+  const screenHost = stage.mk("#jobDataBodyReactHost");
+  screenHost.holds = [];
   const slot = stage.mk("#dataSheetSlot");
   slot.holds = [];
-  const nodes = ids.map((id) => {
-    const el = stage.mk(`#${id}`);
-    el.parentNode = screenHost;
-    return el;
-  });
-  const foot = stage.doc.getElementById("jobRangeFoot");
-  foot.computed = { display: "none" };
+  let nodes = [];
+  function mount(host) {
+    nodes.forEach((node) => { node.isConnected = false; });
+    nodes = ids.map((id) => {
+      const el = stage.mk(`#${id}`);
+      el.parentNode = host;
+      if (id === "jobRangeFoot") {
+        el.computed = { display: host === slot ? "flex" : "none" };
+      }
+      return el;
+    });
+    screenHost.holds = host === screenHost ? nodes.slice() : [];
+    slot.holds = host === slot ? nodes.slice() : [];
+    return nodes;
+  }
+  mount(screenHost);
   const th = stage.mk("#jobTableHead th:first-child");
   th.computed = { position: options.sticky === false ? "static" : "sticky" };
   const trigger = stage.mk("#jobDataExpand");
   const close = stage.mk("#dataSheetClose");
   stage.mk("#dataSheet .modal-card");
   trigger.on.click = () => {
-    nodes.forEach((el) => { el.parentNode = slot; });
-    slot.holds = nodes.slice();
-    foot.computed = { display: "flex" };
+    mount(slot);
   };
   let ticks = 0;
   close.on.click = () => { ticks = 0; stage.closing = true; };
@@ -521,15 +529,14 @@ function dataSheetStage(conf) {
     if (!stage.closing) return;
     ticks += 1;
     if (ticks >= (options.restoreAfter === undefined ? 2 : options.restoreAfter)) {
-      nodes.forEach((el) => { el.parentNode = screenHost; });
-      slot.holds = [];
+      mount(screenHost);
       stage.doc.activeElement = trigger;
       stage.closing = false;
     }
   };
   /* 정착 전이(transitionend)가 폴링마다 오는 것을 흉내 낸다. */
   stage.map.get("#dataSheet .modal-card")[0].on.transitionend = () => stage.step();
-  stage.nodes = nodes;
+  stage.nodes = () => nodes.slice();
   stage.trigger = trigger;
   return stage;
 }
@@ -546,6 +553,37 @@ test("data_sheet — 이동·헤더 고정·footer 자리·복귀가 전부 산�
   assert.equal(value.foot_shown_in_sheet, true, "footer 는 면 안에서만 선다");
   assert.equal(value.restored, true);
   assert.equal(value.pending, false);
+});
+
+test("data_sheet — R4 typed dispatch도 같은 스텁을 보고 HostResult로 복원된다", async () => {
+  const stage = dataSheetStage();
+  const Bridge = { call: () => Promise.reject(new Error("실 legacy dispatch 금지")) };
+  let realCalls = 0;
+  const Client = {
+    dispatch: () => { realCalls += 1; return Promise.reject(new Error("실 typed dispatch 금지")); },
+  };
+  const realDispatch = Client.dispatch;
+  const open = stage.trigger.on.click;
+  const closeButton = stage.doc.getElementById("dataSheetClose");
+  const close = closeButton.on.click;
+  let typedResult = null;
+  let typedCancel = null;
+  stage.trigger.on.click = () => {
+    typedResult = Client.dispatch("job", "range_draft_open", {});
+    open();
+  };
+  closeButton.on.click = () => {
+    typedCancel = Client.dispatch("job", "range_draft_cancel", {});
+    close();
+  };
+
+  const { report } = await runSolo(stage, "data_sheet", { Bridge, Client });
+
+  assert.equal(report.ok, true, JSON.stringify(report.errors));
+  assert.deepEqual(await typedResult, { ok: true, value: { ok: true } });
+  assert.deepEqual(await typedCancel, { ok: true, value: { ok: true } });
+  assert.equal(realCalls, 0, "React 명령이 합성 세계를 빠져나가 실 backend로 샜습니다.");
+  assert.equal(Client.dispatch, realDispatch, "typed dispatch 스텁이 다음 프로브로 샙니다.");
 });
 
 test("data_sheet — 면이 안 닫히면 정리가 시끄럽다(뒤 프로브 오염 차단)", async () => {
@@ -568,7 +606,7 @@ function runner_evidence_error(report) {
   return lines.join(" | ");
 }
 
-test("data_sheet — 스텁은 자기 액션만 가로채고 되돌려 놓는다", async () => {
+test("data_sheet — 스텁은 합성 초안 open/cancel만 가로채고 되돌려 놓는다", async () => {
   const stage = dataSheetStage();
   const seen = [];
   const Bridge = {
@@ -635,6 +673,10 @@ function previewStage() {
   btn.on.click = () => { modal.classList.remove("hidden"); stage.doc.activeElement = btn; };
   card.on.transitionend = () => { if (stage.stateClosed) modal.classList.add("hidden"); };
   stage.onPush = (screen, snap) => {
+    if (screen === "job"
+      && (typeof snap.has_data !== "boolean" || typeof snap.has_job !== "boolean")) {
+      throw new Error("R4 job snapshot 판정 누락");
+    }
     if (screen === "job" && snap.preview && snap.preview.open === false) stage.stateClosed = true;
   };
   stage.btn = btn;
@@ -1294,6 +1336,60 @@ test("data_picker — 보관은 숨기지 않고 정직하게 비활성 · 고�
   assert.equal(value.error, null);
   assert.equal(value.pending, false);
   assert.deepEqual(services.Modal.closed, ["poolRegModal", "dataPickerModal"]);
+});
+
+test("data_picker — R4 typed invoke도 descriptor 스텁과 복원을 함께 본다", async () => {
+  const stage = pickerStage();
+  const services = pickerServices(stage);
+  let realCalls = 0;
+  services.Client = {
+    invoke: () => { realCalls += 1; return Promise.reject(new Error("실 typed picker 금지")); },
+  };
+  const realInvoke = services.Client.invoke;
+  let typedResult = null;
+  stage.doc.getElementById("dataPickerBrowse").on.click = () => {
+    typedResult = services.Client.invoke("pick_data_file", "job").then((result) => {
+      const descriptor = result.value;
+      stage.doc.getElementById("dataPickerNote").textContent = `마운트: ${descriptor.path.split("/").pop()}`;
+      stage.doc.getElementById("dataPickerCurrent").textContent = descriptor.label;
+      return result;
+    });
+  };
+
+  const { value, report } = await runSolo(stage, "data_picker", services);
+
+  assert.equal(report.ok, true, JSON.stringify(report.errors));
+  assert.equal(value.browse_restated, true);
+  assert.deepEqual(await typedResult, {
+    ok: true,
+    value: { label: "파일: 새목록.xlsx", path: "C:/d/새목록.xlsx", sheet: "", rows: 5 },
+  });
+  assert.equal(realCalls, 0, "React picker가 descriptor 스텁을 우회했습니다.");
+  assert.equal(services.Client.invoke, realInvoke, "typed invoke 스텁이 다음 프로브로 샙니다.");
+});
+
+test("data_picker — 합성 pool 판을 늦은 open refresh가 덮지 않는다", async () => {
+  const stage = pickerStage();
+  const services = pickerServices(stage);
+  let realRefreshes = 0;
+  services.Client = {
+    dispatch: () => {
+      realRefreshes += 1;
+      return Promise.reject(new Error("실 pool refresh 금지"));
+    },
+  };
+  const realDispatch = services.Client.dispatch;
+  services.DataPicker.open = () => {
+    stage.modal.classList.remove("hidden");
+    void services.Client.dispatch("pool", "refresh", {});
+  };
+
+  const { value, report } = await runSolo(stage, "data_picker", services);
+
+  assert.equal(report.ok, true, JSON.stringify(report.errors));
+  assert.equal(value.rows, 2);
+  assert.equal(realRefreshes, 0, "합성 목록 뒤에 실 refresh가 도착했습니다.");
+  assert.equal(services.Client.dispatch, realDispatch, "refresh 스텁이 다음 프로브로 샙니다.");
 });
 
 test("data_picker — 고정 버튼이 배선만 되고 안 보이면 잡힌다(실가시성 단언)", async () => {

@@ -131,7 +131,9 @@ const { createRelink } = await import("../../frontend/js/relink.js");
 const { createTheme } = await import("../../frontend/js/theme.js");
 const { createPersonalization } = await import("../../frontend/js/personalization.js");
 const { createSheetPicker } = await import("../../frontend/js/sheet_picker.js");
-const { createDataZone } = await import("../../frontend/js/datazone.js");
+const { createJobReadController } = await import("../../frontend/src/screens/job_read.ts");
+const { createScreenPorts } = await import("../../frontend/src/screens/ports.ts");
+const { createServiceHandoffPorts } = await import("../../frontend/src/ports/service_handoff.ts");
 const { Modal } = await import("../../frontend/js/modal.js");
 const { Popover } = await import("../../frontend/js/popover.js");
 const { Intent } = await import("../../frontend/js/intent.js");
@@ -149,7 +151,46 @@ function patch(obj, keys, t) {
   return log;
 }
 
-const FILES = ["grouplist", "datazone", "pathtrack", "relink", "theme", "personalization", "sheet_picker"];
+const FILES = ["grouplist", "pathtrack", "relink", "theme", "personalization", "sheet_picker"];
+const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
+const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
+
+function reactZoneHarness(onDispatch) {
+  const calls = [];
+  const snapshot = { has_job: true, has_data: true, filter: { search: "" }, zone_epoch: 7 };
+  const ports = createScreenPorts();
+  ports.jobRunCoordination.bindLegacy({ confirmDestructiveIfArmed: async () => true, log() {} });
+  ports.editorEntry.bindLegacy({
+    openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
+    confirmDiscard() {}, restoreEntryFocus() {},
+  });
+  const services = createServiceHandoffPorts();
+  services.relink.bindLegacy({ relinkTemplate: async () => true });
+  const client = {
+    dispatch: async (screen, action, payload) => {
+      calls.push([screen, action, payload]);
+      const value = onDispatch ? await onDispatch(screen, action, payload) : {};
+      return { ok: true, value };
+    },
+  };
+  const timers = new Map();
+  let timerId = 0;
+  const controller = createJobReadController({
+    runtime: { model: () => ({ getSnapshot: () => ({ full: snapshot, progress: null }), subscribe: () => () => {} }) },
+    client, ports, services,
+    modal: { confirm: async () => false, open() {}, close() {} },
+    surfaceSheet: { open() {}, close() {} }, dataPicker: { open: async () => null },
+    navigation: { go() {} }, notify() {},
+    doc: {
+      activeElement: null, getElementById: () => null,
+      defaultView: {
+        setTimeout(fn) { timerId += 1; timers.set(timerId, fn); return timerId; },
+        clearTimeout(id) { timers.delete(id); },
+      },
+    },
+  });
+  return { controller, client, ports, calls, timers };
+}
 
 /* ================= 1. 공개 표면이 §1 표와 정확히 일치 ================= */
 
@@ -178,9 +219,10 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   assert.equal(typeof createSheetPicker, "function");
   assert.deepEqual(Object.keys(createSheetPicker({ bridge })).sort(), ["choose"]);
 
-  assert.equal(typeof createDataZone, "function");
-  const dz = createDataZone({ bridge });
-  assert.deepEqual(Object.keys(dz).sort(), ["create"]);
+  assert.equal(typeof createJobReadController, "function");
+  const rz = reactZoneHarness();
+  assert.equal(typeof rz.controller.zone, "function");
+  assert.equal(rz.ports.jobData.owner(), "react");
 });
 
 test("공개 표면 — GroupList 하위 팩토리 반환 키", (t) => {
@@ -189,16 +231,16 @@ test("공개 표면 — GroupList 하위 팩토리 반환 키", (t) => {
   assert.deepEqual(Object.keys(GroupList.createMoveDialog({ modalId: "d" })).sort(), ["open", "wire"]);
 });
 
-test("공개 표면 — DataZone.create 반환 키 6종", (t) => {
-  const dom = freshDom(t);
-  const zone = createDataZone({ bridge: {} }).create(zoneCfg(dom));
-  assert.deepEqual(Object.keys(zone).sort(),
-    ["dropPendingEdits", "flushPendingEdits", "flushPendingSearch", "render", "sync", "wire"]);
+test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 낸다", (t) => {
+  freshDom(t);
+  const rz = reactZoneHarness();
+  assert.deepEqual(Object.keys(rz.ports.jobData.current()), ["flushPendingEdits"]);
+  assert.equal(rz.ports.jobData.current().flushPendingEdits, rz.controller.flushPendingEdits);
 });
 
 test("파일당 export 는 하나 — export default 없음", () => {
   const EXPECTED = {
-    grouplist: ["GroupList"], datazone: ["createDataZone"], pathtrack: ["createPathTrack"],
+    grouplist: ["GroupList"], pathtrack: ["createPathTrack"],
     relink: ["createRelink"], theme: ["createTheme"], personalization: ["createPersonalization"],
     sheet_picker: ["createSheetPicker"],
   };
@@ -208,6 +250,11 @@ test("파일당 export 는 하나 — export default 없음", () => {
     const names = [...src.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
     assert.deepEqual(names, EXPECTED[f], `${f}: export 는 하나뿐`);
   }
+  assert.equal(/export\s+default/.test(DATA_ZONE_SRC), false);
+  assert.deepEqual(
+    [...DATA_ZONE_SRC.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]),
+    ["JobDataZone"],
+  );
 });
 
 /* ================= 2. 의존은 명시적 import, Bridge 는 명시적 포트 ================= */
@@ -216,8 +263,6 @@ test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", (
   const EXPECTED = {
     grouplist: ['import { escHtml } from "./esc.js";', 'import { Popover } from "./popover.js";',
       'import { Modal } from "./modal.js";'],
-    datazone: ['import { escHtml } from "./esc.js";', 'import { Popover } from "./popover.js";',
-      'import { Intent } from "./intent.js";'],
     pathtrack: ['import { escHtml } from "./esc.js";'],
     relink: ['import { Modal } from "./modal.js";'],
     sheet_picker: ['import { escHtml } from "./esc.js";', 'import { Modal } from "./modal.js";'],
@@ -229,6 +274,10 @@ test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", (
     const found = [...src.matchAll(/^import .*$/gm)].map((m) => m[0]);
     assert.deepEqual(found, EXPECTED[f], `${f}: import 목록이 계약과 동일`);
   }
+  assert.equal(DATA_ZONE_SRC.includes('from "./job_read.ts"'), false,
+    "producer↔controller 런타임 순환을 만들지 않는다");
+  assert.ok(DATA_ZONE_SRC.includes("type JobReadController ="));
+  assert.ok(DATA_ZONE_SRC.includes('from "react"'));
 });
 
 test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign(window) 전부 0", () => {
@@ -243,11 +292,12 @@ test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign
     assert.equal(PRODUCT.test(code), false, `${f}: 제품 전역 조회 금지`);
     assert.equal(code.includes("Object.assign(window"), false, `${f}: Object.assign(window) 금지`);
   }
+  assert.equal(/(?:window|globalThis)\.(?:Bridge|Modal|DataZone|JobScreen)\b/.test(DATA_ZONE_SRC), false);
 });
 
 test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
   const FACTORY = {
-    datazone: "createDataZone", pathtrack: "createPathTrack", relink: "createRelink",
+    pathtrack: "createPathTrack", relink: "createRelink",
     theme: "createTheme", personalization: "createPersonalization", sheet_picker: "createSheetPicker",
   };
   for (const [f, name] of Object.entries(FACTORY)) {
@@ -261,11 +311,10 @@ test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코�
   assert.equal(read("grouplist").includes("bridge"), false);
 });
 
-test("datazone 의 요청 시점 캡처는 형태 그대로 포트로만 바뀌었다", () => {
-  const src = read("datazone");
-  assert.ok(src.includes("const dispatch = bridge.call;"));
-  assert.ok(src.includes("const send = () => dispatch.call(bridge, SCREEN, action, body);"));
-  assert.ok(src.includes("Intent.chained(cfg.chainKey, send)"));
+test("DataZone 요청은 JobRead controller의 단일 zone tail과 client port를 지난다", () => {
+  assert.ok(JOB_READ_SRC.includes("const dispatch = deps.client.dispatch"));
+  assert.ok(JOB_READ_SRC.includes("const next = zoneTail.then(send, send);"));
+  assert.ok(JOB_READ_SRC.includes("zoneTail = next.then(() => undefined, () => undefined);"));
 });
 
 /* ================= 3. 포트 프로퍼티 교체가 보인다(프로브 경로 생존) ================= */
@@ -349,51 +398,43 @@ test("포트 교체 — SheetPicker 는 갈아끼운 bridge.loadDataSheet 를 �
   assert.ok(opened.length >= 2);
 });
 
-test("포트 교체 — DataZone 의 **새** 요청은 갈아끼운 bridge.call 을 본다", async (t) => {
-  const dom = freshDom(t);
+test("포트 교체 — React DataZone의 새 요청은 갈아끼운 client.dispatch를 본다", async (t) => {
+  freshDom(t);
   const seen = [];
-  const bridge = { call: (...a) => { seen.push(["A", ...a]); return Promise.resolve({}); } };
-  const zone = createDataZone({ bridge }).create(zoneCfg(dom));
-  zone.sync({ has_data: true, filter: { search: "" } });
-  dom.get("dzSearch").value = "가";
-  await zone.flushPendingSearch();
-  bridge.call = (...a) => { seen.push(["B", ...a]); return Promise.resolve({}); };
-  dom.get("dzSearch").value = "나";
-  await zone.flushPendingSearch();
-  assert.deepEqual(seen.map((r) => [r[0], r[2], r[3]]),
-    [["A", "filter_search", { text: "가" }], ["B", "filter_search", { text: "나" }]]);
+  const rz = reactZoneHarness();
+  rz.client.dispatch = async (...args) => { seen.push(["A", ...args]); return { ok: true, value: {} }; };
+  await rz.controller.zone("filter_search", { text: "가" });
+  rz.client.dispatch = async (...args) => { seen.push(["B", ...args]); return { ok: true, value: {} }; };
+  await rz.controller.zone("filter_search", { text: "나" });
+  assert.deepEqual(seen.map((r) => [r[0], r[2], r[3]]), [
+    ["A", "filter_search", { text: "가", epoch: 7 }],
+    ["B", "filter_search", { text: "나", epoch: 7 }],
+  ]);
 });
 
-/* ================= 4. datazone 요청 시점 dispatch 캡처 ================= */
+/* ================= 4. React DataZone queue/host envelope ================= */
 
-test("DataZone — 요청 뒤 통로를 바꿔도 이미 붙든 통로로 나간다(큐 대기 중 교체 무시)", async (t) => {
-  const dom = freshDom(t);
+test("DataZone — queue 대기 중 교체한 client port가 다음 발신에 적용된다", async (t) => {
+  freshDom(t);
   const seen = [];
-  const bridge = { call: (...a) => { seen.push(["captured", ...a]); return Promise.resolve({}); } };
-  const zone = createDataZone({ bridge }).create({ ...zoneCfg(dom), chainKey: "n05-c-test" });
-  zone.sync({ has_data: true, filter: { search: "" } });
-  dom.get("dzSearch").value = "가";
-
-  const inflight = zone.flushPendingSearch();          // 요청 시점에 통로를 붙든다
-  bridge.call = (...a) => { seen.push(["late", ...a]); return Promise.resolve({}); };
-  await inflight;                                      // 체인에서 풀릴 때 발신
-
-  assert.deepEqual(seen.map((r) => r[0]), ["captured"]);
-  // 붙든 통로는 **함수**지만 수신자는 bridge 객체다(dispatch.call(bridge, …)).
-  assert.equal(seen[0][1], "job");
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const rz = reactZoneHarness();
+  rz.client.dispatch = async (...args) => { seen.push(["first", ...args]); await held; return { ok: true, value: {} }; };
+  const first = rz.controller.zone("set_all", {});
+  await Promise.resolve();
+  const second = rz.controller.zone("set_none", {});
+  rz.client.dispatch = async (...args) => { seen.push(["late", ...args]); return { ok: true, value: {} }; };
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(seen.map((r) => [r[0], r[2]]), [["first", "set_all"], ["late", "set_none"]]);
 });
 
-test("DataZone — 붙든 dispatch 의 this 는 bridge 객체다", async (t) => {
-  const dom = freshDom(t);
-  let receiver = null;
-  const bridge = {
-    call(...a) { receiver = this; return Promise.resolve({}); },
-  };
-  const zone = createDataZone({ bridge }).create({ ...zoneCfg(dom), chainKey: "n05-c-this" });
-  zone.sync({ has_data: true, filter: { search: "" } });
-  dom.get("dzSearch").value = "가";
-  await zone.flushPendingSearch();
-  assert.equal(receiver, bridge);
+test("DataZone — 손상된 HostResult envelope는 loud failure다", async (t) => {
+  freshDom(t);
+  const rz = reactZoneHarness();
+  rz.client.dispatch = async () => ({ value: {} });
+  await assert.rejects(rz.controller.zone("set_all", {}), /호스트 결과가 손상/);
 });
 
 /* ================= 5. Theme/Personalization 영속 호출 인자 전수 ================= */
@@ -621,29 +662,24 @@ test("팩토리를 두 번 부르면 독립 인스턴스가 나온다(중앙은 
   createPathTrack({ bridge: {} });
   assert.equal(dom.clicks().length, 2);
 
-  // DataZone: 인스턴스 상태(LAST·앵커·디바운스)는 클로저에 갇혀 서로를 안 본다.
+  // React DataZone: controller의 queue와 pending state는 인스턴스별로 격리된다.
   const sentA = [], sentB = [];
-  const zoneA = createDataZone({ bridge: { call: (...a) => { sentA.push(a); return Promise.resolve({}); } } })
-    .create(zoneCfg(dom, "A"));
-  const zoneB = createDataZone({ bridge: { call: (...a) => { sentB.push(a); return Promise.resolve({}); } } })
-    .create(zoneCfg(dom, "B"));
-  zoneA.sync({ has_data: true, filter: { search: "" } });
-  dom.get("dzSearchA").value = "가";
-  await zoneA.flushPendingSearch();
-  await zoneB.flushPendingSearch();   // B 는 LAST 가 없어 아무것도 안 보낸다
+  const zoneA = reactZoneHarness((...args) => { sentA.push(args); return {}; });
+  const zoneB = reactZoneHarness((...args) => { sentB.push(args); return {}; });
+  zoneA.controller.scheduleSearch("가");
+  await zoneA.controller.flushPendingEdits();
+  await zoneB.controller.flushPendingEdits();
   assert.equal(sentA.length, 1);
   assert.deepEqual(sentB, []);
 });
 
-test("DataZone — 모듈 스코프 가변 상태 0(인스턴스 상태는 create 클로저)", () => {
-  const src = read("datazone");
-  const head = src.slice(0, src.indexOf("export function createDataZone"));
-  assert.equal(/^\s*(let|var)\s/m.test(head), false, "import 위 모듈 스코프에 가변 상태 없음");
-  const factoryBody = src.slice(src.indexOf("export function createDataZone"), src.indexOf("  function create(cfg)"));
-  assert.equal(/^\s*(let|var)\s/m.test(factoryBody), false, "팩토리 스코프에도 가변 상태 없음");
-  for (const name of ["LAST", "panelCol", "panelData", "panelEpoch", "colTextTimer",
-    "selAnchor", "selAnchorState", "lastTableKey", "searchTimer", "colTextPending"]) {
-    assert.ok(new RegExp(`^\\s{4}let ${name}`, "m").test(src), `${name} 은 create 클로저 안`);
+test("DataZone — 모듈 스코프 가변 상태 0(controller·hooks 안에만 상태)", () => {
+  const zoneHead = DATA_ZONE_SRC.slice(0, DATA_ZONE_SRC.indexOf("export function JobDataZone"));
+  const readHead = JOB_READ_SRC.slice(0, JOB_READ_SRC.indexOf("export function createJobReadController"));
+  assert.equal(/^\s*(let|var)\s/m.test(zoneHead), false);
+  assert.equal(/^\s*(let|var)\s/m.test(readHead), false);
+  for (const name of ["zoneTail", "searchTimer", "columnTimer", "rangeApplied", "rangeForceClose"]) {
+    assert.ok(new RegExp(`^\\s{2}let ${name}`, "m").test(JOB_READ_SRC), `${name}은 controller closure 안`);
   }
 });
 

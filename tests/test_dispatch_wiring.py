@@ -28,12 +28,12 @@ CONTROLLERS = {
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신
 # 해당 액션의 백엔드 MRO↔registry 동등성으로 검증한다.
 SCREEN_JS = {
-    "library": "js/screens/library.js",
+    "library": "src/screens/library.ts",
     "editor": "js/screens/editor.js",
     "job": "js/screens/job.js",
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
-    "pool": "js/data_picker.js",
+    "pool": "src/screens/data_picker.ts",
     # `tpl` 화면도 사망(F8 §10.17) — 12액션의 프런트 소비자는 편집기 「템플릿」 탭이고 호출은
     # 전부 명시 리터럴("tpl")이라 editor.js 스캔(owner="editor")에서 그대로 검증된다.
     # 별도 행을 두면 editor.js 의 SCREEN 상수 호출이 tpl 로 오해석돼 거짓 실패가 난다.
@@ -41,7 +41,7 @@ SCREEN_JS = {
 }
 
 _LITERAL_CALL = re.compile(
-    r"Bridge\.call\(\s*(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
+    r"(?:Bridge\.call|dispatch)\(\s*(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
     r"['\"](?P<action>[a-z0-9_]+)['\"]"
 )
 

@@ -123,7 +123,11 @@ const PRODUCT_SCOPE = ["frontend/**/*"];
 const OXC_SUFFIXES = new Set([".js", ".mjs"]);
 const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
 const SELFTEST_PREFIX = "frontend/src/selftest/";
-const REACT_HOST_PREFIXES = ["frontend/src/overlay/", "frontend/src/shell/"];
+const REACT_HOST_PREFIXES = [
+  "frontend/src/overlay/",
+  "frontend/src/shell/",
+  "frontend/src/screens/",
+];
 
 /** 멤버 키는 **저장소 상대 POSIX 경로**다 — OS 마다 달라지면 원장이 못 산다. */
 function sources(root, patterns, { excludeSelftest = false, excludeNonCode = false } = {}) {
@@ -442,8 +446,12 @@ function tsModuleState(sourceFile, rel, lineOf, { exported, includeProgram }) {
 
 function tsIdSite(rel, sourceFile, lineOf, node, valueNode, bindings) {
   const value = literalString(valueNode, bindings);
+  const current = unwrapExpression(valueNode);
+  const prefix = value === null && current && ts.isTemplateExpression(current)
+    ? current.head.text
+    : "";
   return `${rel}:${lineOf(node.getStart(sourceFile))}:${value === null ? "dynamic" : "static"}:`
-    + `${value ?? ""}`;
+    + `${value ?? prefix}`;
 }
 
 function normalizedNodeText(node, sourceFile) {
@@ -673,8 +681,12 @@ function typescriptAxes(root) {
       function visit(node) {
         const token = stringTokenText(node);
         if (token !== null) {
-          MARKUP_DATA_ATTR.lastIndex = 0;
-          for (const match of token.matchAll(MARKUP_DATA_ATTR)) add(match[1]);
+          /* HTML 조각 안의 속성만 본다. 보통 prop 문자열인 `className: "... data-x"`를
+             markup으로 오인하면 CSS class가 semantic data-* 생산자로 둔갑한다. */
+          if (token.includes("<")) {
+            MARKUP_DATA_ATTR.lastIndex = 0;
+            for (const match of token.matchAll(MARKUP_DATA_ATTR)) add(match[1]);
+          }
           const literal = node.parent && ts.isTemplateExpression(node.parent) ? node.parent : node;
           const parent = literal.parent;
           const isMarkupFragment = parent && (
@@ -715,7 +727,9 @@ function typescriptAxes(root) {
           }
 
           const factory = callee && ts.isIdentifier(callee) ? callee.text : null;
-          if ((factory === "createElement" || factory === "el") && node.arguments.length > 1) {
+          /* `h`는 R4 screen component의 얇은 createElement 별칭이다. 인자 순서가 같은 이
+             호출을 빼면 실제 React producer 75곳이 소유권 축에서 통째로 사라진다. */
+          if (["createElement", "el", "h"].includes(factory) && node.arguments.length > 1) {
             const props = unwrapExpression(node.arguments[1]);
             if (props && ts.isObjectLiteralExpression(props)) {
               for (const prop of props.properties) {

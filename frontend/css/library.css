@@ -108,4 +108,5 @@
 .jcard.corrupt{border-left-color:var(--a-danger)}
 .jcard:focus-visible,.tplcard:focus-visible{
   outline:2px solid var(--a-primary);outline-offset:2px}
-
+/* R4 화면 portal wrapper는 정적 화면 root의 레이아웃 자식 관계를 보존한다. */
+.library-react-surface{display:contents}

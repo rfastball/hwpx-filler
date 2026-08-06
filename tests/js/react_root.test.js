@@ -138,7 +138,7 @@ test("createRoot 실패는 경보 후 false 다 — 조용한 폴백도, 예외 
   assert.equal(alarms.length, 2);
 });
 
-test("실물 요소 배선 — 경계가 최외곽이고 네 자식이 요소 계약대로 실려 있다", () => {
+test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소 계약대로 실려 있다", () => {
   const onCommit = () => {};
   const alarm = () => {};
   const store = { channels: [], subscriber: () => () => () => {}, revision: () => 0 };
@@ -151,22 +151,24 @@ test("실물 요소 배선 — 경계가 최외곽이고 네 자식이 요소 �
     boot: { win: { addEventListener: () => {}, removeEventListener: () => {} },
       hostReady: () => false, initSequence: [] },
   };
+  const screens = { doc: {}, portals: [] };
 
-  const element = createAppElement({ onCommit, alarm, store, reflectStoreRevision, overlay, shell });
+  const element = createAppElement({
+    onCommit, alarm, store, reflectStoreRevision, overlay, shell, screens,
+  });
 
   assert.equal(element.type, ReactErrorBoundary,
     "최외곽 요소가 오류 경계가 아닙니다 — 렌더 실패가 경계 밖으로 샙니다.");
   assert.equal(element.props.alarm, alarm);
   assert.equal(element.props.onCommit, onCommit,
     "커밋 신호가 최외곽 props 에 없습니다 — 렌더 실물 없는 기록자가 커밋 경로에 닿지 못합니다.");
-  /* R2-03 + R3-01 + R3-02 — 자식은 정확히 넷이다: 마운트 신호 + store 신호 + overlay host
-     + shell host. 하나로 접히면 어느 한쪽의 실물 증거(마운트 마커 / store revision 마커 /
-     다이얼로그 4 표면 / 셸 리스너·부팅 시퀀스)가 조용히 죽는다. */
+  /* R2-03 + R3-01 + R3-02 + R4-01 — 마운트·store·overlay·shell·screen portal host가
+     각각 독립 자식이다. */
   const children = element.props.children;
   assert.equal(Array.isArray(children), true, "신호 자식이 배열이 아닙니다 — 형제 자식이 사라졌습니다.");
-  assert.equal(children.length, 4,
-    "자식이 정확히 넷(MountSignal·StoreSignal·OverlayHost·ShellHost)이어야 합니다.");
-  const [mountSignal, storeSignal, overlayHost, shellHost] = children;
+  assert.equal(children.length, 5,
+    "자식이 정확히 다섯(MountSignal·StoreSignal·OverlayHost·ShellHost·ScreenMigrationHost)이어야 합니다.");
+  const [mountSignal, storeSignal, overlayHost, shellHost, screenHost] = children;
   assert.equal(typeof mountSignal.type, "function", "마운트 신호 자식이 없습니다.");
   assert.equal(mountSignal.props.onCommit, onCommit);
   assert.equal(typeof storeSignal.type, "function", "store 신호 자식이 없습니다.");
@@ -186,6 +188,9 @@ test("실물 요소 배선 — 경계가 최외곽이고 네 자식이 요소 �
     "ShellHost 의 리스너 서술이 주입분과 다릅니다 — adapter 캡처 시점 계약이 깨집니다.");
   assert.equal(shellHost.props.boot, shell.boot,
     "ShellHost 의 부팅 서술이 주입분과 다릅니다 — 시퀀서가 다른 세계를 봅니다.");
+  assert.equal(typeof screenHost.type, "function", "screen portal host 자식이 없습니다.");
+  assert.equal(screenHost.props.doc, screens.doc);
+  assert.equal(screenHost.props.portals, screens.portals);
 });
 
 test("제품 배선은 컨테이너 부재를 침묵으로 접지 않는다", async () => {

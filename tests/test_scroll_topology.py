@@ -7,13 +7,15 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app_css
 
 
 CSS = app_css()
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
 EDITOR = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-DATAZONE = (SOURCE_JS_DIR / "datazone.js").read_text(encoding="utf-8")
+DATAZONE = (SOURCE_ROOT / "src" / "screens" / "data_zone.ts").read_text(encoding="utf-8")
+DATA_PICKER = (SOURCE_ROOT / "src" / "screens" / "data_picker.ts").read_text(encoding="utf-8")
+JOB_READ = (SOURCE_ROOT / "src" / "screens" / "job_read.ts").read_text(encoding="utf-8")
 
 
 def _declarations(selector: str) -> str:
@@ -80,9 +82,9 @@ def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None
     """
     inventory = {
         ".tblwrap": EDITOR,
-        ".jobtbwrap": INDEX,
+        ".jobtbwrap": JOB_READ,
         "#wbMapPanel": INDEX,
-        ".tpllist": INDEX,
+        ".tpllist": DATA_PICKER,
         ".sheet-list": INDEX,
         ".colpanel .cp-vals": DATAZONE,
     }

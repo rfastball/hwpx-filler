@@ -23,7 +23,9 @@
 
    프로브가 `services.Bridge.call = stub` 처럼 프로퍼티를 갈아끼워 통로를 관측한다. 여기서
    메서드를 값으로 뽑아 넘기면 스텁이 우회돼 "요청은 프로브에 걸렸는데 발신은 실물로 새는"
-   자리가 생긴다 — `bridge.js`·`bootstrap.js` 머리말이 두 번 적은 그 결함류다.
+   자리가 생긴다 — `bridge.js`·`bootstrap.js` 머리말이 두 번 적은 그 결함류다. R4 React
+   화면은 같은 이유로 살아 있는 `services.Client` 객체를 받는다. 프로브는 이 둘을 한
+   스텁 수명으로 함께 갈아끼워 legacy remainder와 React owner가 같은 합성 세계를 보게 한다.
 
    ## 푸시는 **포트**로 넘긴다
 

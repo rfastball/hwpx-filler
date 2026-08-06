@@ -79,6 +79,13 @@ EXPECTED_TEST_FILES = {
     # R3-02 — 셸 상태기계(판정 순수층). adapter 결합·부착 실물은 n06, 실창 증거는
     # test_react_shell_live 가 진다.
     "shell_nav.test.js",
+    # R4-01 — read surface React controller/runtime/typed handoff 회귀 단위.
+    "r4_data_picker.test.js",
+    "r4_job_read.test.js",
+    "r4_job_relink_flow.test.js",
+    "r4_library.test.js",
+    "r4_screen_runtime.test.js",
+    "r4_service_handoff.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

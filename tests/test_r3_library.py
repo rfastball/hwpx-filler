@@ -24,13 +24,13 @@ from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_library import LibraryController
 
-LIB_JS = SOURCE_JS_DIR / "screens" / "library.js"
+LIB_TS = SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts"
 
 
 def _edit_tags_body(src: str) -> str:
     """editTags 함수 본문 조각 — 다음 최상위 함수 정의 전까지(정적 검사 범위 한정)."""
-    start = src.index("function editTags")
-    end = src.index("function relinkTemplate")
+    start = src.index("async function editTags")
+    end = src.index("async function removeJob")
     return src[start:end]
 
 
@@ -41,21 +41,21 @@ def test_edit_tags_roundtrip_guard_before_prompt():
 
     가드가 prompt 뒤로 밀리거나 사라지면 쉼표 값 태그가 OK 한 번에 조용히 쪼개진다.
     """
-    src = LIB_JS.read_text(encoding="utf-8")
+    src = LIB_TS.read_text(encoding="utf-8")
     body = _edit_tags_body(src)
-    assert "parseTags(ser)" in body, (
+    assert "parseTags(serialized)" in body, (
         "editTags 가 프리필 직렬화(ser)를 재파싱해 원본과 대조하지 않습니다 — C9 왕복 가드 소실."
     )
-    assert "sameTags(" in body, "editTags 왕복 가드가 의미 동치 비교(sameTags)를 하지 않습니다(C9)."
-    guard_pos = body.index("parseTags(ser)")
+    assert "JSON.stringify(roundTrip.tags) !== JSON.stringify(current)" in body
+    guard_pos = body.index("parseTags(serialized)")
     # 네이티브 window.prompt 는 Modal.prompt 로 이관됨(#86) — 가드는 여전히 그 이전이어야 한다.
-    prompt_pos = body.index("Modal.prompt")
+    prompt_pos = body.index("deps.modal.prompt")
     assert guard_pos < prompt_pos, (
         "왕복 가드가 Modal.prompt 뒤에 있습니다 — 편집 진입 전에 중단해야 합니다(C9)."
     )
     # 가드 불일치 분기는 조용한 진행이 아니라 loud alert + 중단이어야 한다.
     guard_branch = body[guard_pos:prompt_pos]
-    assert "window.alert" in guard_branch and "return" in guard_branch, (
+    assert "deps.notify" in guard_branch and "return" in guard_branch, (
         "왕복 가드 불일치 분기가 alert 후 중단하지 않습니다 — confirm-or-alarm 위반(C9)."
     )
 
@@ -63,7 +63,7 @@ def test_edit_tags_roundtrip_guard_before_prompt():
 def test_edit_tags_single_parser_no_inline_copy():
     """파싱 로직은 parseTags 단일 정의여야 한다 — 프리필 검증·입력 파싱이 갈라지면
     가드가 검사하는 문법과 실제 저장 문법이 어긋난다(C9)."""
-    src = LIB_JS.read_text(encoding="utf-8")
+    src = LIB_TS.read_text(encoding="utf-8")
     assert "function parseTags" in src, "parseTags 공유 파서가 없습니다(C9)."
     # '=' 분할 파싱(indexOf("="))이 parseTags 밖에 복제되면 안 된다.
     positions = [m.start() for m in re.finditer(re.escape('indexOf("=")'), src)]
@@ -71,7 +71,7 @@ def test_edit_tags_single_parser_no_inline_copy():
         f"'=' 분할 파싱이 {len(positions)}곳에 있습니다 — parseTags 단일 출처 회귀(C9)."
     )
     body = _edit_tags_body(src)
-    assert "parseTags(raw)" in body, "editTags 가 사용자 입력을 parseTags 로 파싱하지 않습니다(C9)."
+    assert 'parseTags(String(raw ?? ""))' in body
 
 
 def test_backend_set_tags_accepts_comma_values(tmp_path):
@@ -110,8 +110,8 @@ def test_manual_home_refresh_button_removed():
     assert 'id="homeRefresh"' not in WEB_INDEX.read_text(encoding="utf-8"), (
         "homeRefresh 버튼이 다시 들어왔습니다 — 홈은 전환 자동 새로고침이 유일 경로입니다(F6)."
     )
-    assert "homeRefresh" not in LIB_JS.read_text(encoding="utf-8"), (
-        "home.js 가 제거된 homeRefresh 를 참조합니다(F6)."
+    assert "homeRefresh" not in LIB_TS.read_text(encoding="utf-8"), (
+        "library.ts 가 제거된 homeRefresh 를 참조합니다(F6)."
     )
 
 

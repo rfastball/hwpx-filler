@@ -58,42 +58,48 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
 
 
 def test_data_rows_flip_locally_before_dispatch_and_use_live_dom_state() -> None:
-    src = _read("js/datazone.js")
-    body = src[src.index("function toggleRow("):src.index("function onTableClick(")]
-    assert 'tr.getAttribute("aria-selected")' in body
-    # 발신은 존 공용 통로(`call`)를 지난다(재작성 F3: 변이 직렬화) — 낙관 표지가 **먼저**다.
-    assert body.index("applyRowSelection(tr, selAnchorState)") < body.index(
-        'call("toggle_record"'
+    src = _read("src/screens/data_zone.ts")
+    body = src[src.index("function toggleRow("):src.index("const selected =")]
+    assert "const value = !selectedFor(row);" in body, (
+        "미결 낙관 상태를 포함한 현재 행 상태에서 다음 의도를 읽지 않습니다."
     )
-    apply = src[src.index("function applyRowSelection("):src.index("function toggleRow(")]
-    for needle in ('classList.toggle("on"', 'setAttribute("aria-selected"', "box.checked = value"):
-        assert needle in apply
+    # React producer는 DOM을 직접 뒤집지 않고 낙관 상태와 anchor를 먼저 세운 뒤 직렬화 통로로 보낸다.
+    assert body.index("showSelection(row.index, value);") < body.index(
+        'sendSelection("toggle_record"'
+    )
+    assert body.index("anchor.current = { index: row.index, value };") < body.index(
+        'sendSelection("toggle_record"'
+    )
+    producer = src[src.index("...(table.rows || []).map"):src.index("h(RangeFooter")]
+    for needle in ('className: selectedFor(row) ? "on" : ""',
+                   '"aria-selected": selectedFor(row) ? "true" : "false"',
+                   "checked: selectedFor(row)"):
+        assert needle in producer
 
 
 def test_filter_panel_renders_loading_shell_before_query() -> None:
-    src = _read("js/datazone.js")
-    body = src[src.index("async function openColPanel("):src.index("function panelHead(")]
-    assert body.index("renderColPanelShell(col)") < body.index(
-        'await call("filter_panel"'
+    src = _read("src/screens/data_zone.ts")
+    body = src[src.index("async function openPanel("):src.index("function toggleRow(")]
+    assert body.index("setPanel({ column, data: null })") < body.index(
+        'await controller.zone("filter_panel"'
     )
-    assert "panelEpoch" in body and "renderColPanelError" in body
+    assert "current?.column === column" in body and "controller.notify" in body
 
 
 def test_group_collapse_uses_one_optimistic_helper_on_all_three_surfaces() -> None:
-    helper = _read("js/grouplist.js")
-    assert "function toggleGroup(button, persist, errorMessage)" in helper
-    assert helper.index("setGroupExpanded(button, !wasExpanded)") < helper.index("request = persist()")
-    assert "Promise.resolve(request).catch" in helper and "window.alert" in helper
+    helper = _read("src/screens/library.ts")
     # 소비 표면 — 「문서 만들기」 좌 목록(F2 PR-B)·「기안」 좌 목록(F6 PR-B)·「템플릿
     # 관리」(F8 §10.17)가 차례로 죽어 즉답 토글의 소비 표면은 라이브러리 하나다. 편집기
     # 「템플릿」 탭의 접힘은 설계상 백엔드 왕복(toggle_library_group — 공유 그룹 모델
     # 영속)이라 이 기제의 소비자가 아니다.
-    for rel in ("js/screens/library.js",):
-        src = _read(rel)
-        assert "GroupList.toggleGroup(" in src, f"{rel}이 공용 즉답 토글을 쓰지 않습니다."
-        assert 'sec.collapsed ? " hidden" : ""' in src, (
-            f"{rel}이 접힌 본문을 DOM에 보존하지 않아 로컬 펼침이 불가능합니다."
-        )
+    body = helper[helper.index('className: "lib-grp-head"'):
+                  helper.index('className: "lib-grp-rows"')]
+    assert body.index('target.setAttribute("aria-expanded"') < body.index(
+        'controller.axis("toggle_group"'
+    )
+    assert 'hidden: !!section.collapsed' in helper, (
+        "React 라이브러리가 접힌 본문을 DOM에 보존하지 않습니다."
+    )
 
 
 def test_job_opening_marker_precedes_search_flush_and_backend_load() -> None:
@@ -102,11 +108,11 @@ def test_job_opening_marker_precedes_search_flush_and_backend_load() -> None:
     좌 목록 사망(F2 PR-B)으로 이 계약의 거처가 후보 카드·문서 탐색 행으로 옮겼다 —
     몸통은 하나(selectJobWithMarker)이고 두 표면이 그것을 쓴다(지도 §10.9 판정 E).
     """
-    src = _read("js/screens/job.js")
-    body = src[src.index("async function selectJobWithMarker("):src.index("function onMasterClick(")
-               if "function onMasterClick(" in src else len(src)]
-    assert body.index("setJobOpening(btn, true)") < body.index("await dz.flushPendingSearch()")
-    assert "여는 중…" in src and 'setAttribute("aria-busy", "true")' in src
+    src = _read("src/screens/job_read.ts")
+    body = src[src.index("async function selectJob("):src.index("function currentData(")]
+    assert body.index("patchUi({ openingName: name })") < body.index("await flushPendingEdits()")
+    assert body.index("await flushPendingEdits()") < body.index('await call("job", "select_job"')
+    assert "여는 중…" in src and "openingName === row.name" in src
     assert "작업 열기 실패:" in src
     # 두 소비처가 같은 몸통을 쓴다 — 한쪽만 표지를 잃는 드리프트 금지.
-    assert src.count("selectJobWithMarker(") >= 3  # 정의 1 + 후보 카드 + 탐색 행
+    assert src.count("selectJob(") >= 4  # 정의 1 + 후보 카드 + 탐색 행 + 다시 연결 후 선택

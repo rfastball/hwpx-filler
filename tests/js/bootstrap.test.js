@@ -69,6 +69,9 @@ const PLAIN_SERVICES = {
    이 키 목록은 **소비 계약**이다: 화면 넷의 공개 메서드를 selftest 프로브가 이름으로 부르므로
    (`ctx.services[name]`), 표면이 좁아지면 프로브가 실엔진에서야 죽는다. */
 const FACTORY_SERVICES = {
+  /* R4 React 화면이 실제로 부르는 typed 전송 객체. selftest는 이 참조의 dispatch/invoke를
+     교체해 합성 snapshot과 백엔드 세계가 갈라지지 않게 한다. */
+  Client: ["hostReady", "whenReady", "invoke", "initial", "dispatch"],
   Theme: ["set", "toggle", "current", "apply"],
   Personalization: [
     "apply", "currentFontScale", "toggleFontScale", "setFontScale",
@@ -77,7 +80,6 @@ const FACTORY_SERVICES = {
   SheetPicker: ["choose"],
   PathTrack: ["affordances"],
   Relink: ["relinkTemplate"],
-  DataZone: ["create"],
   DataPicker: ["init", "open"],
   EditorEntry: [
     "openGuarded", "land", "confirmDiscard", "newDraft",
@@ -86,8 +88,7 @@ const FACTORY_SERVICES = {
   LibraryScreen: ["init"],
   EditorScreen: ["init", "rerender", "leaveTo", "aimAt"],
   JobScreen: [
-    "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDataSwapIfArmed",
-    "openJob", "refreshList", "openJobDataSheet", "openBrowseNeedsAction",
+    "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDestructiveIfArmed", "log",
     "openPreview", "renderResult", "markResultStale",
   ],
   WorkbenchScreen: ["init", "render", "leaveTo"],
@@ -105,8 +106,8 @@ const FACTORY_SERVICES = {
   ],
 };
 
-/* selftest 에 넘기는 구성 산물 전수 = 반환 `services` 의 키 전수. 이름은 은퇴한 별칭
-   스물일곱과 같다 — 옮겨간 것은 **거처**이지 이름이 아니다(전역 → 명시적 주입). */
+/* selftest 에 넘기는 구성 산물 전수 = 반환 `services` 의 키 전수. R4에서 DataZone은
+   React job-read controller로 흡수됐고, 남은 이름만 명시 주입 거처를 유지한다. */
 const SERVICE_NAMES = [
   ...Object.keys(PLAIN_SERVICES),
   ...Object.keys(FACTORY_SERVICES),
@@ -268,7 +269,7 @@ test("부팅이 심는 제품 전역은 `__hwpx` **하나**뿐이다(N-10 종착
   assert.equal(typeof host.window.__hwpxTest, "undefined");
 });
 
-test("은퇴한 별칭 스물일곱은 부팅 뒤에도 전역에 없다(음성 대조)", async (t) => {
+test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 대조)", async (t) => {
   const { host } = await boot(t);
 
   /* 양성 대조는 위 「전역 프로브가 실제 쓰기를 잡는다」가 진다 — 이 대역에서 쓰기가
@@ -278,7 +279,7 @@ test("은퇴한 별칭 스물일곱은 부팅 뒤에도 전역에 없다(음성 
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
   assert.equal(SERVICE_NAMES.length, 26,
-    "구성 산물 이름 수가 바뀌었습니다 — 은퇴 별칭 27 = 이 26 + __push 입니다.");
+    "R4 구성 산물 이름 수가 바뀌었습니다 — typed Client를 포함한 서비스는 26개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {
@@ -303,6 +304,8 @@ test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 
   /* 브리지는 **객체째** 넘어간다 — 주입된 것과 반환된 것이 같은 참조여야 selftest 의
      `Bridge.call = stub` 교체가 소비자에게 보인다. */
   assert.equal(composed.services.Bridge, composed.bridge);
+  assert.equal(composed.services.Client, composed.client,
+    "React 화면과 selftest가 서로 다른 typed client 사본을 봅니다.");
 });
 
 test("앱 셸 구성이 부팅 랜딩(job)을 실제로 찍었다 — 조립이 돌았다는 실행 증거", async (t) => {
@@ -372,7 +375,7 @@ test("합성 루트는 store 를 계약 유도 채널로 세우고 반환값에 
   assert.equal(typeof composed.store, "object", "store 가 구성 산물에 없습니다.");
   assert.deepEqual([...composed.store.channels], Object.keys(SCREEN_ACTIONS),
     "store 채널이 생성 계약과 갈렸습니다 — 어딘가 손 목록이 생겼습니다.");
-  /* store 는 selftest 주입 계약(services 키 26 핀)의 표면이 아니다 — client 와 같은 결. */
+  /* store 는 selftest에서 교체할 전송 표면이 아니라 services에 싣지 않는다. */
   assert.equal(Object.hasOwn(composed.services, "store"), false);
 });
 

@@ -122,8 +122,8 @@ REACT_HOST_CODE_EXCLUDED = tuple(
 
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
-#: 재고정 v6 = #491 감산형 TS/TSX 폐포 — base 는 R3-99가 감사한 master `a6f21a3`.
-EXPECTED_BASELINE_SHA = "a6f21a3df6a6624eeb57eea94aebd46cfe034d80"
+#: 재고정 v7 = #414 R4-01 화면 read surface 이관 — base 는 착수 시 감사한 master `3cabe7b`.
+EXPECTED_BASELINE_SHA = "3cabe7be79e8ef98d039c870c9644559777667e6"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -133,20 +133,20 @@ EXPECTED_BASELINE_SHA = "a6f21a3df6a6624eeb57eea94aebd46cfe034d80"
 #: 1차 방벽은 전수 피복과 :data:`AXIS_DIGESTS` 다. 하한을 낮추는 변경은 사유와 함께여야 하고
 #: 테스트의 `EXPECTED_AXIS_CONTRACT` 도 함께 고쳐야 한다.
 AXIS_FLOORS: dict[str, int] = {
-    "dom_static": 200,              # 오늘 232
-    "dom_data_attr": 8,             # 오늘 9
+    "dom_static": 139,              # 오늘 139 — R4-01 정적 subtree를 React 생산자로 이관
+    "dom_data_attr": 7,              # 오늘 7
     "dom_js_data_attr": 80,         # 오늘 86 — 제품 코드 생산자 이름×파일
-    "dom_js_site": 46,              # 오늘 48 — JS 26 + TS 22
-    "state_js_module": 61,          # 오늘 63 — JS 45 + TS 18
+    "dom_js_site": 120,             # 오늘 124 — R4 화면의 안정 ID 생산자를 TS로 이관
+    "state_js_module": 65,          # 오늘 69 — 화면 controller 상태를 TS 폐포에 편입
     "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
     "state_ring1": 10,              # 오늘 11
     # #491이 TS 사각을 닫아 R2 runtime 1 + R3 overlay 7 + shell 2 attach와 R3 release 9가
     # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
-    "subscription_listener": 106,   # 오늘 108
+    "subscription_listener": 62,    # 오늘 64 — R4 화면의 위임 listener를 React handler로 이관
     "subscription_release": 15,     # 오늘 16
-    "subscription_push": 5,         # 오늘 6
-    "lifecycle_factory": 32,        # 오늘 34 — JS 18 + TS 16
-    "lifecycle_hook": 9,            # 오늘 10
+    "subscription_push": 3,         # 오늘 3 — library/data-picker/job-read를 raw store 구독으로 이관
+    "lifecycle_factory": 54,        # 오늘 56 — R4 controller/component/port factory 편입
+    "lifecycle_hook": 8,            # 오늘 8
 }
 
 #: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.
@@ -201,7 +201,7 @@ EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
 
 #: 접기가 있어도 이만큼은 손으로 분류돼 있어야 한다. 노드 행을 0으로 만드는 것은 폐포를
 #: 「측정 0 == 피복 0」으로 닫아 버리는 길이다.
-NODE_ROW_FLOOR = 80
+NODE_ROW_FLOOR = 123
 
 #: `repo_wide_metrics` 판정 — scope 의 첫 경로 조각이 리터럴이 아니면 저장소 전수로 본다.
 _REPO_WIDE_HEAD = re.compile(r"[*?\[]")

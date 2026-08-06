@@ -19,12 +19,10 @@ K12: 모달 골격은 index.html 정적 소유여야 정적 파싱 가드(test_w
 """
 from __future__ import annotations
 
-import re
-
 from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
 
 WEB_INDEX = SOURCE_INDEX
-PICKER_JS = SOURCE_JS_DIR / "data_picker.js"
+PICKER_JS = SOURCE_JS_DIR.parent / "src" / "screens" / "data_picker.ts"
 
 
 def _picker_src() -> str:
@@ -53,15 +51,15 @@ def test_mount_call_is_guarded_by_try_finally():
         "마운트 호출이 try/catch/finally 로 감싸져 있지 않습니다 — 거절 시 loading 고착(C8)."
     )
     tail = seg[seg.index("} finally {"):]
-    assert re.search(r"loading\s*=\s*false", tail), (
+    assert "patch({ loading: false })" in tail, (
         "finally 블록이 loading 을 해제하지 않습니다 — 거절 경로에서 클릭 영구 무시(C8)."
     )
     catch_body = seg[seg.index("} catch"):seg.index("} finally {")]
-    assert "setStatus(" in catch_body, (
+    assert "patch({ status:" in catch_body and 'level: "danger"' in catch_body, (
         "catch 블록이 오류를 면 안 상태줄에 표면화하지 않습니다 — 조용한 삼킴(C8)."
     )
     # 실패는 면을 닫지 않는다(계약면 4) — 성사(finish)는 ok 경로에만 있다.
-    fail_paths = seg[seg.index("setStatus(\"⚠ "):]
+    fail_paths = seg[seg.index("} catch"):]
     assert "finish(" not in fail_paths, (
         "실패 경로가 면을 닫습니다 — 사용자가 문맥을 잃고 재선택도 못 합니다(계약면 4)."
     )
@@ -70,31 +68,15 @@ def test_mount_call_is_guarded_by_try_finally():
 def test_escape_and_close_are_blocked_while_loading():
     """로드 중 Escape·닫기 버튼이 닫힘 대신 차단+표기로 귀결돼야 한다(C8 후반부)."""
     src = _picker_src()
-    assert re.search(r'e\.key\s*===\s*"Escape"\s*&&\s*loading', src), (
-        "로드 중 Escape 를 가드하는 분기가 없습니다 — 로드 중 '가짜 취소' 재발(C8)."
+    opened = _segment(src, 'modal.open("dataPickerModal"', "void dispatch")
+    assert "beforeClose:" in opened and "if (!state.loading) return true" in opened
+    assert "return false" in opened, "Escape·scrim 닫기가 loading 중 소비되지 않습니다(C8)."
+    assert "onClose: () => finish(" in opened, "Escape 닫힘이 session을 정산하지 않습니다."
+    close = _segment(src, "close(): void", "browseFile,")
+    assert "if (state.loading)" in close and "finish(" in close, (
+        "React 닫기 버튼 경로가 loading 가드·정산을 함께 타지 않습니다(C8)."
     )
-    assert "stopImmediatePropagation" in src, (
-        "Escape 차단이 stopImmediatePropagation 없이 이뤄집니다 — Modal 캡처 핸들러가 "
-        "여전히 모달을 닫아 가짜 취소가 됩니다(C8)."
-    )
-    # 캡처 리스너는 Modal.open 보다 먼저 등록돼야 선행 수신한다(같은 대상 캡처는 등록 순).
-    add_pos = src.find('document.addEventListener("keydown", onEscCapture, true)')
-    open_pos = src.find('Modal.open("dataPickerModal"')
-    assert 0 <= add_pos < open_pos, (
-        "onEscCapture 등록이 Modal.open 보다 뒤에 있습니다 — Modal 이 먼저 받아 닫아버려 "
-        "로드 중 Escape 차단이 무력화됩니다(C8)."
-    )
-    # 닫기 버튼도 loading 가드를 태워야 한다(닫힘=onClose=취소 경로 봉쇄).
-    m = re.search(
-        r'\$\("dataPickerClose"\)\.addEventListener\("click",\s*\(\)\s*=>\s*\{(?P<body>.*?)\n    \}\)',
-        src,
-        re.S,
-    )
-    assert m, "닫기 버튼 배선이 사라졌습니다 — 면을 닫을 길이 없습니다."
-    assert re.search(r"if\s*\(loading\)", m.group("body")), (
-        "닫기 버튼 핸들러에 loading 가드가 없습니다 — 로드 중 클릭이 가짜 취소로 귀결(C8)."
-    )
-    assert "noteLoadingBlock" in src and "닫을 수 없습니다" in src, (
+    assert 'patch({ status: "⚠ 불러오는 중입니다. 끝날 때까지 닫을 수 없습니다."' in src, (
         "로드 중 닫기 차단 사실을 표기하는 문구/함수가 없습니다 — 조용한 무시(C8)."
     )
 
@@ -108,12 +90,12 @@ def test_corrupted_rows_are_consumed_and_rendered_separately():
     무표시 증발한다 — 조용한 드롭이 UI 층으로 이동만 한 것이다.
     """
     src = _picker_src()
-    assert re.search(r"LAST\s*&&\s*LAST\.corrupted", src), (
+    assert "pool?.corrupted || []" in src, (
         "data_picker.js 가 pool 스냅샷의 corrupted 를 읽지 않습니다 — 손상 무표시 증발(C5)."
     )
-    seg = _segment(src, "function renderCorrupt", "function renderAll")
-    assert "esc(c.file)" in seg and "esc(c.error)" in seg, (
-        "손상 행의 파일명·오류가 escHtml 을 태워 렌더되지 않습니다(C5 소비측)."
+    seg = _segment(src, 'h("div", { id: "dataPickerCorrupt"', 'h("section", { className: "picker-sec", "aria-labelledby": "dataPickerOtherCap"')
+    assert "entry.file" in seg and "entry.error" in seg, (
+        "손상 행의 파일명·오류가 React text child로 렌더되지 않습니다(C5 소비측)."
     )
     assert 'dataPickerCorrupt' in seg and 'dataPickerNote' not in seg, (
         "손상 표지가 상태줄(#dataPickerNote)과 자리를 공유합니다 — 로드 오류 문구에 덮여 "
@@ -133,6 +115,7 @@ def test_picker_skeleton_is_static_in_index_html():
     assert 'id="dataPickerModal"' in index, (
         "dataPickerModal 정적 골격이 index.html 에 없습니다 — DOM 계약 가드 사각(K12)."
     )
+    picker = _picker_src()
     for inner in (
         "dataPickerTitle", "dataPickerNote", "dataPickerCurrent", "dataPickerPinned",
         # (dataPickerRefresh 는 U2 §2.3 에서 사망 — open() 이 여는 순간 재스캔하므로 상시
@@ -144,13 +127,13 @@ def test_picker_skeleton_is_static_in_index_html():
         "dataPickerDupes",
         "dataPickerClose",
     ):
-        assert f'id="{inner}"' in index, (
-            f"다이얼로그 내부 요소 id='{inner}' 가 index.html 에 없습니다(K12)."
+        assert f'id: "{inner}"' in picker, (
+            f"다이얼로그 내부 요소 id='{inner}' 가 React producer에 없습니다(K12/R4)."
         )
-    # 골격은 정적 소유다 — 모듈이 다시 만들어 내면 정적 파싱 가드가 무력해진다.
-    assert "createElement" not in _picker_src(), (
-        "data_picker.js 가 골격을 동적 생성합니다 — 정적 DOM 계약 사각 재발(K12)."
-    )
+    # overlay root는 정적이고, content subtree만 단일 React root의 portal이 소유한다.
+    assert 'screenPortal("dataPickerModal", DataPickerDialog' in (
+        SOURCE_JS_DIR.parent / "src" / "bootstrap.js"
+    ).read_text(encoding="utf-8")
 
 
 def test_direct_register_is_dead():
@@ -192,18 +175,18 @@ def test_wiring_happens_once():
     (삭제 확인 2연발 등 파괴 경로에서 특히 나쁘다).
     """
     src = _picker_src()
-    assert re.search(r"if\s*\(wired\)\s*return;", src), (
-        "배선 1회 가드(wired)가 사라졌습니다 — 재호출 시 리스너 중복(K12)."
-    )
+    assert "addEventListener(" not in src and "wired" not in src
+    producer = _segment(src, "export function DataPickerDialog", "export function PoolRegistrationDialog")
+    assert "onClick: controller.close" in producer and "onClick: () =>" in producer
 
 
 def test_picker_header_describes_delivered_ownership():
     """헤더가 정적 골격 소유와 승계 경계를 기술해야 한다(주석-코드 정합)."""
-    header = _picker_src().split("(function", 1)[0]
-    assert "index.html" in header or "정적" in header, (
-        "data_picker.js 헤더가 골격 소유를 기술하지 않습니다(K12)."
+    header = _picker_src().split("import ", 1)[0]
+    assert "React 표면" in header and "content DOM" in header, (
+        "data_picker.ts 헤더가 React content 소유를 기술하지 않습니다(K12/R4)."
     )
-    assert "PoolController" in header, (
-        "data_picker.js 헤더가 목록·수명 관리의 백엔드 소유자를 기술하지 않습니다 — "
+    assert "controller" in header and "session/loading/status" in header, (
+        "data_picker.ts 헤더가 목록·수명 관리의 controller 소유를 기술하지 않습니다 — "
         "표면이 판정을 재구현했다는 오해를 남깁니다."
     )

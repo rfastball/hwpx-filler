@@ -10,7 +10,7 @@ from _web_source import SOURCE_ROOT, app_css
 WEB = SOURCE_ROOT
 POPOVER = WEB / "js" / "popover.js"
 GROUPLIST = WEB / "js" / "grouplist.js"
-DATAZONE = WEB / "js" / "datazone.js"
+DATAZONE = WEB / "src" / "screens" / "data_zone.ts"
 # 분할 조각을 이어붙인 문자열 — `.ctx-menu`(job.css)와 `.colpanel`(tail.css)이 서로 다른
 # 조각에 살지만, 이 창구를 거치면 `^\.ctx-menu{` 줄머리 정규식이 둘 다에 그대로 걸린다.
 CSS = app_css()
@@ -69,8 +69,10 @@ def test_rendered_size_drives_clamp_flip_and_origin():
     assert "window.innerHeight - margin - height" in pop
     assert "el.style.transformOrigin" in pop
     assert "Popover.place(m, btn)" in group
-    assert "Popover.place(p, anchor)" in data
-    assert "offsetParent: $(ids.tableHost)" not in data
+    # DataZone 열 패널은 R4 React subtree 안에서 표 host와 함께 렌더돼 별도 좌표 조립이 없다.
+    assert 'className: "colpanel react-colpanel"' in data
+    assert "Popover.place(" not in data
+    assert "offsetParent" not in data
     assert "host.width - 260" not in data
 
 

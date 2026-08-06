@@ -39,6 +39,7 @@ import importlib.util
 import json
 import shutil
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -135,18 +136,18 @@ def test_every_declared_axis_actually_measures_something(document: dict[str, Any
 #: 조용했다 — 그래서 이름이 아니라 `(하한, 지문)` 쌍을 든다. 축의 측정 계약을 바꾸려면
 #: 원장·게이트·이 표 **셋**이 함께 움직이고 그 diff 가 리뷰 표면에 뜬다.
 EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
-    "dom_data_attr": (8, "e0bd6cb1822fd50fefbda2c3fac621d5"),
+    "dom_data_attr": (7, "e0bd6cb1822fd50fefbda2c3fac621d5"),
     "dom_js_data_attr": (80, "d6c24f47a9f809b5e6f63ddd2b09e372"),
-    "dom_js_site": (46, "7ce48e5d41ae530e66a2156e113bb0bb"),
-    "dom_static": (200, "a0de506720a9704065dde2bf17410d50"),
-    "lifecycle_factory": (32, "f774587af230cf5222697cd0f0e0a050"),
-    "lifecycle_hook": (9, "1f090f972ecaf5c9e0a54796c6849437"),
-    "state_js_module": (61, "fef89b77255e04f0cf05d4b19e09c733"),
+    "dom_js_site": (120, "7ce48e5d41ae530e66a2156e113bb0bb"),
+    "dom_static": (139, "a0de506720a9704065dde2bf17410d50"),
+    "lifecycle_factory": (54, "f774587af230cf5222697cd0f0e0a050"),
+    "lifecycle_hook": (8, "1f090f972ecaf5c9e0a54796c6849437"),
+    "state_js_module": (65, "fef89b77255e04f0cf05d4b19e09c733"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
-    "subscription_listener": (106, "8064cf796b67e47a094e61c7362e4b5b"),
-    "subscription_push": (5, "5201c1ab611d0f09a743bd1e6afced4a"),
+    "subscription_listener": (62, "8064cf796b67e47a094e61c7362e4b5b"),
+    "subscription_push": (3, "5201c1ab611d0f09a743bd1e6afced4a"),
     "subscription_release": (15, "08fce41a56c1108632cb8bfd7364912c"),
 }
 
@@ -166,6 +167,63 @@ def test_axis_contract_is_anchored_outside_the_gate() -> None:
         f"  게이트: {sorted(actual.items())}\n"
         f"  기대:   {sorted(EXPECTED_AXIS_CONTRACT.items())}"
     )
+
+
+def test_r4_handoff_row_allocation_is_exact(document: dict[str, Any]) -> None:
+    """rev8 중앙 판정의 R4 69행 배분은 단계 사이에서 조용히 이동할 수 없다."""
+    actual = Counter(
+        node["handoff_slice"]
+        for node in document["node"]
+        if str(node.get("handoff_slice", "")).startswith("R4-")
+    )
+    assert actual == {
+        "R4-01 #414": 28,
+        "R4-02 #415": 25,
+        "R4-03 #416": 15,
+        "R4-04 #417": 1,
+    }
+    assert sum(actual.values()) == 69
+
+
+def test_r4_job_split_and_landed_static_shell_are_explicit(
+    document: dict[str, Any],
+) -> None:
+    """job read/run 경계와 R4-01이 비운 정적 subtree를 행 이름·selector로 고정한다."""
+    nodes = {node["id"]: node for node in document["node"]}
+    assert {
+        "dom/job/jobDataGrid-shell",
+        "dom/job/jobPreflight",
+        "dom/job/jobSideCard-read",
+        "dom/job/jobSideCard-run",
+        "dom-js-data/job-read",
+        "dom-js-data/job-run",
+    } <= nodes.keys()
+    assert {
+        "dom/job/jobDataGrid",
+        "dom/job/jobSideCard",
+        "dom-js-data/job",
+    }.isdisjoint(nodes)
+
+    expected_subtrees = {
+        "dom/scr-library": ("scr-library", 0),
+        "dom/job/jobDataGrid-shell": ("jobDataGrid", 5),
+        "dom/job/jobSideCard-read": ("jobSideCard", 2),
+        "dom/overlay/poolRegModal": ("poolRegModal", 0),
+        "dom/overlay/dataPickerModal": ("dataPickerModal", 0),
+        "dom/overlay/libraryMoveModal": ("libraryMoveModal", 0),
+        "dom/overlay/jobBrowseSheet": ("jobBrowseSheet", 0),
+    }
+    for node_id, (root, count) in expected_subtrees.items():
+        assert nodes[node_id]["selector"] == {
+            "kind": "subtree",
+            "root": root,
+            "members_expected": count,
+        }
+
+    assert nodes["dom/job/jobPreflight"]["handoff_slice"] == "R4-03 #416"
+    assert nodes["dom/job/jobSideCard-run"]["handoff_slice"] == "R4-03 #416"
+    assert nodes["dom-js-data/job-read"]["handoff_slice"] == "R4-01 #414"
+    assert nodes["dom-js-data/job-run"]["handoff_slice"] == "R4-03 #416"
 
 
 def test_product_tree_globs_are_gate_owned() -> None:

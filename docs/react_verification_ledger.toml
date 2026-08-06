@@ -621,7 +621,7 @@ owner_stage = "R3-03"
 [[asset]]
 file = "tests/test_web_datazone.py"
 responsibility = "데이터 존 공용 팩토리의 단일 출처·분리 계약"
-owner_stage = "R4-03"
+owner_stage = "R4-01"
 
 [[asset]]
 file = "tests/test_web_dom_contract.py"
@@ -711,6 +711,51 @@ owner_stage = "R4-02"
 [[asset]]
 file = "tests/test_workcard_contract.py"
 responsibility = "작업 카드의 구조와 퇴화 큐 처리"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_screen_runtime.test.js"
+responsibility = "R4 화면 raw store 구독·초기 revision guard·job full/progress 병합 계약"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_library.test.js"
+responsibility = "React 라이브러리 read surface controller·안정 ID·직렬화된 즐겨찾기 계약"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_data_picker.test.js"
+responsibility = "React data picker·pool register 수명주기와 즉시 loaded 통지 단일성"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_job_read.test.js"
+responsibility = "React job 후보·browse·data zone 읽기 표면과 run remainder 인계"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_service_handoff.test.js"
+responsibility = "R4 안정 service handoff port와 EditorEntry 6키 계약"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/js/r4_job_relink_flow.test.js"
+responsibility = "job read relink 흐름과 후속 실행 표면 인계 계약"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_r4_static_to_js_successor_map.py"
+responsibility = "정적 DOM에서 React 생산자로 이동한 75개 ID의 exact successor 지도"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_r4_existing_js_id_successors.py"
+responsibility = "기존 JS 생산 ID 11종과 동적 prefix 6종의 React successor 계약"
+owner_stage = "R4-01"
+
+[[asset]]
+file = "tests/test_r4_data_attr_successors.py"
+responsibility = "R4 semantic data-* producer 그룹 6/22/2/13/17/5 exact 계약"
 owner_stage = "R4-01"
 # ---------------------------------------------------------------------------
 # 제외 — React 이관이 검증 책임에 닿지 않는 파일

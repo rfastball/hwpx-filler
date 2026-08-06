@@ -176,6 +176,10 @@ def test_register_save_oserror_is_worded_not_raised(tmp_path):
 
 # ================================================================== C7·N1(JS 정적 계약)
 def _js(rel: str) -> str:
+    if rel == "data_picker.js":
+        return (WEB_JS.parent / "src" / "screens" / "data_picker.ts").read_text(
+            encoding="utf-8"
+        )
     return (WEB_JS / rel).read_text(encoding="utf-8")
 
 
@@ -192,21 +196,21 @@ def test_data_picker_row_actions_are_guarded():
     재진술 채널만 바뀐다: 화면이 없으니 alert 이 아니라 **면 안 상태줄**이다(오버레이의
     실패 경로 문맥 보존 — 지도 §10.7.1 계약면 4).
     """
-    seg = _segment(_js("data_picker.js"), "async function onPinnedClick", "function openRegDialog")
-    assert "try {" in seg and "catch" in seg and "setStatus(" in seg, (
-        "data_picker.js onPinnedClick 이 무방비 await/fire-and-forget 으로 회귀(C7)."
+    seg = _segment(_js("data_picker.js"), "async function poolAction", "async function resolveDuplicate")
+    assert "try {" in seg and "catch" in seg and "patch({ status:" in seg, (
+        "data_picker.ts poolAction 이 무방비 await/fire-and-forget 으로 회귀(C7)."
     )
-    assert not re.search(r"(?<!await )Bridge\.call\(", seg), (
-        "data_picker.js onPinnedClick 에 await 없는 Bridge.call 이 남아 있습니다 — "
+    assert not re.search(r"(?<!await )dispatch\(", seg), (
+        "data_picker.ts poolAction 에 await 없는 dispatch 가 남아 있습니다 — "
         "rejection 이 try/catch 를 우회합니다(C7)."
     )
 
 
 def test_data_picker_register_dialog_is_guarded():
     """고정·등록 확정 — 브리지 예외를 try/catch 로 표면화(버튼 무반응 금지)."""
-    seg = _segment(_js("data_picker.js"), "async function submitRegDialog", "function onEscCapture")
-    assert "try {" in seg and "catch" in seg and "window.alert" in seg, (
-        "data_picker.js submitRegDialog 이 무방비 await 로 회귀(C7)."
+    seg = _segment(_js("data_picker.js"), "async function submitReg", "async function poolAction")
+    assert "try {" in seg and "catch" in seg and "patchReg({ error:" in seg, (
+        "data_picker.ts submitReg 이 무방비 await 로 회귀(C7)."
     )
 
 
@@ -217,10 +221,10 @@ def test_pool_rescan_is_guarded():
     실패 표면화가 곧 계약의 전부다. 조용히 실패하면 면은 낡은 목록을 새 목록인 양 보인다.
     """
     src = _js("data_picker.js")
-    assert '() => Bridge.call(SCREEN, "refresh"' not in src, (
+    assert '() => dispatch("pool", "refresh"' not in src, (
         "data_picker.js 의 풀 재스캔이 무방비 fire-and-forget 으로 회귀(N1)."
     )
-    seg = _segment(src, 'bridge.call("pool", "refresh"', "function build()")
+    seg = _segment(src, 'void dispatch("pool", "refresh"', "close(): void")
     assert "catch" in seg, "풀 재스캔 배선에 catch 표면화가 없습니다(N1)."
     # (tpl 새로고침은 화면 사망(F8 §10.17)으로 편집기 lib-refresh 로 이주 — 그 배선은
     #  editor.js onClick 디스패처의 공용 try/catch 가드가 상속한다: test_r3_editor 의
@@ -299,8 +303,8 @@ def test_pool_rescan_rides_on_opening_the_dialog():
     )
     index = SOURCE_INDEX.read_text(encoding="utf-8")
     assert 'id="dataPickerRefresh"' not in index, "셸에 새로고침 버튼 DOM 이 남아 있습니다."
-    seg = _segment(src, "function open(", "function build()")
-    assert 'bridge.call("pool", "refresh"' in seg, (
+    seg = _segment(src, "open(options:", "close(): void")
+    assert 'dispatch("pool", "refresh"' in seg, (
         "여는 경로의 재스캔이 사라졌습니다 — 수동 버튼도 없으므로 목록을 갱신할 길이 없습니다."
     )
     # tpl 수동 새로고침은 편집기 「템플릿」 탭 상단 행동 줄(lib-refresh)로 이주(F8) — 존속.

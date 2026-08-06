@@ -25,11 +25,10 @@ import { readFileSync } from "node:fs";
 const SRC_URL = new URL("../../frontend/js/screens/job.js", import.meta.url);
 const SRC = readFileSync(SRC_URL, "utf8");
 
-/* 계약 §1 표 — 공개 표면 12키, 리터럴 배치 순서 그대로. */
+/* R4-01 뒤 legacy 파일은 실행·결과·미리보기 remainder 11키만 소유한다. */
 const SURFACE = [
-  "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDataSwapIfArmed",
-  "openJob", "refreshList", "openJobDataSheet", "openBrowseNeedsAction", "openPreview",
-  "renderResult", "markResultStale",
+  "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDestructiveIfArmed", "log",
+  "openPreview", "renderResult", "markResultStale", "acceptFull", "acceptProgress",
 ];
 
 /* N-10에서 은퇴한 제품 전역 27종(Bridge __push Nav AppCloseGuard + 4화면 + 서비스 19종).
@@ -159,24 +158,17 @@ function makeBridge(snapshot) {
 
 function makeDeps(bridge) {
   const trace = { nav: [], entry: [], aim: [] };
-  const dz = {
-    wire() {}, render() {}, sync() {},
-    flushPendingSearch: () => Promise.resolve(),
-    flushPendingEdits: () => Promise.resolve(),
-    dropPendingEdits() {},
-  };
   const deps = {
     Bridge: bridge,
     Nav: { go: (s) => trace.nav.push(s), refresh() {} },
     EditorScreen: {},   // 교차 화면 콜백 테이블 — aimAt 은 테스트가 나중에 심는다(late-binding)
-    DataZone: { create: () => dz },
     PathTrack: { affordances: () => "" },
-    Relink: { relinkTemplate: () => Promise.resolve(false) },
     EditorEntry: {
       openGuarded: (name, ctx) => { trace.entry.push([name, ctx]); return Promise.resolve(true); },
       newDraftFromData: () => Promise.resolve(true),
     },
-    DataPicker: { open() {} },
+    JobDataCoordinator: { current: () => ({ flushPendingEdits: () => Promise.resolve() }) },
+    JobRelinkFlow: { current: () => ({ relinkTemplateFor: () => Promise.resolve() }) },
   };
   return { deps, trace };
 }
@@ -206,7 +198,7 @@ test("음성: IIFE 래퍼 0 · 제품 전역 27종 참조 0 · export 1개 · �
   }
 });
 
-test("공개 표면 12키 — 키 집합·순서·타입 정확 일치", async () => {
+test("공개 표면 11키 — 실행 remainder 키 집합·순서·타입 정확 일치", async () => {
   resetDom();
   const bridge = makeBridge(SNAP);
   const { deps } = makeDeps(bridge);
@@ -215,7 +207,7 @@ test("공개 표면 12키 — 키 집합·순서·타입 정확 일치", async (
   for (const k of SURFACE) assert.equal(typeof api[k], "function", k + " 는 함수여야 한다");
 });
 
-test("init 멱등 — 2회째 listener·onPush·initial 등록 delta 0 (실측)", async () => {
+test("init 멱등 — 실행 DOM listener만 한 벌이고 raw snapshot 구독은 0", async () => {
   resetDom();
   const bridge = makeBridge(SNAP);
   const { deps } = makeDeps(bridge);
@@ -226,54 +218,45 @@ test("init 멱등 — 2회째 listener·onPush·initial 등록 delta 0 (실측)"
   const afterFirst = listenerTotal();
   const wired = afterFirst - before;
   assert.ok(wired > 0, "첫 init 이 listener 를 하나도 달지 않았다(계측 무효)");
-  assert.equal(bridge.onPushCount, 1);
-  assert.equal(bridge.initialCount, 1);
-  // 렌더가 실제로 돌았다(스냅샷 값이 DOM 대역에 착지).
-  assert.equal(REGISTRY.get("jobDataLabel").value, SNAP.data_source_label);
+  assert.equal(bridge.onPushCount, 0, "snapshot 구독은 screen runtime 소유");
+  assert.equal(bridge.initialCount, 0, "initial pull은 screen runtime 소유");
 
   await api.init();
   assert.equal(listenerTotal() - afterFirst, 0, "재-init 이 listener 를 추가 등록했다");
-  assert.equal(bridge.onPushCount, 1, "재-init 이 onPush 를 중복 등록했다");
-  assert.equal(bridge.initialCount, 1, "재-init 이 initial 을 다시 당겼다");
+  assert.equal(bridge.onPushCount, 0);
+  assert.equal(bridge.initialCount, 0);
 });
 
-test("동시 init 2회 — 같은 초기화 공유(initial 1회)", async () => {
+test("동시 init 2회 — 실행 listener는 한 벌만 설치", async () => {
   resetDom();
   const bridge = makeBridge(SNAP);
   const { deps } = makeDeps(bridge);
   const api = createJobScreen(deps);
+  const before = listenerTotal();
   const p1 = api.init();
   const p2 = api.init();
   await Promise.all([p1, p2]);
-  assert.equal(bridge.initialCount, 1, "동시 init 이 initial 을 두 번 당겼다");
-  assert.equal(bridge.onPushCount, 1);
+  assert.ok(listenerTotal() - before > 0);
+  const after = listenerTotal();
+  await api.init();
+  assert.equal(listenerTotal(), after);
+  assert.equal(bridge.initialCount, 0);
+  assert.equal(bridge.onPushCount, 0);
 });
 
-test("첫 initial reject → 전파 + 명시적 재-init 회복(listener 중복 0)", async () => {
+test("snapshot 수명주기 제거 — legacy init은 Bridge.initial/onPush를 읽지 않는다", async () => {
   resetDom();
   const bridge = makeBridge(SNAP);
   const { deps } = makeDeps(bridge);
   const api = createJobScreen(deps);
 
-  bridge.respond = () => Promise.reject(new Error("initial down"));
   const before = listenerTotal();
-  await assert.rejects(api.init(), /initial down/);   // 조용히 삼키지 않는다
-  const afterFail = listenerTotal();
-  assert.ok(afterFail - before > 0);
-  assert.equal(bridge.onPushCount, 1);
-  assert.equal(bridge.initialCount, 1);
-
-  // 스스로 재시도하지 않는다 — 회복은 다음 **명시적** init 이 initial 만 다시 당긴다.
-  bridge.respond = () => Promise.resolve(SNAP);
   await api.init();
-  assert.equal(bridge.initialCount, 2, "재-init 이 initial 을 다시 당기지 않았다(실패 고착)");
-  assert.equal(bridge.onPushCount, 1, "재-init 이 onPush 를 중복 등록했다");
-  assert.equal(listenerTotal() - afterFail, 0, "재-init 이 listener 를 중복 설치했다");
-  assert.equal(REGISTRY.get("jobDataLabel").value, SNAP.data_source_label);
-
-  // 성공 뒤 재호출은 다시 멱등(initial 그대로).
-  await api.init();
-  assert.equal(bridge.initialCount, 2);
+  assert.ok(listenerTotal() - before > 0);
+  assert.equal(bridge.initialCount, 0);
+  assert.equal(bridge.onPushCount, 0);
+  api.acceptFull(SNAP);
+  assert.equal(REGISTRY.get("jobActionName").textContent, SNAP.job_name);
 });
 
 test("교차 콜백 EditorScreen.aimAt — 진입 성사 뒤 호출 + late-binding", async () => {
@@ -282,6 +265,7 @@ test("교차 콜백 EditorScreen.aimAt — 진입 성사 뒤 호출 + late-bindi
   const { deps, trace } = makeDeps(bridge);
   const api = createJobScreen(deps);
   await api.init();
+  api.acceptFull(SNAP);
 
   // 파일 이름 「수정」 → previewFix("filename/filenamePattern") → EditorEntry.openGuarded
   // 성사 → aimAt. 구성 시점의 테이블에는 aimAt 이 없다 — 없으면 호출 없이 조용히 지나간다.
@@ -300,26 +284,24 @@ test("교차 콜백 EditorScreen.aimAt — 진입 성사 뒤 호출 + late-bindi
   assert.equal(trace.entry.length, 2);
   assert.deepEqual(trace.aim, ["filename/filenamePattern"]);
 
-  // Nav 도 주입 테이블 — openJob 은 Nav.go("job") 으로 착지한다(활성 작업 재진입 = 무전환).
-  api.openJob(SNAP.job_name);
-  assert.deepEqual(trace.nav, ["job"]);
 });
 
-test("Bridge 는 객체째 — call 프로퍼티 교체가 다음 발신에서 관측된다", async () => {
+test("Bridge 는 객체째 — preview 발신이 교체한 call 프로퍼티를 본다", async () => {
   resetDom();
   const bridge = makeBridge(SNAP);
   const { deps } = makeDeps(bridge);
   const api = createJobScreen(deps);
   await api.init();
+  api.acceptFull(SNAP);
 
   const swapped = [];
   bridge.call = (screen, action, payload) => {   // Python selftest 의 스텁 계약과 같은 형태
     swapped.push([screen, action, payload]);
     return Promise.resolve({});
   };
-  api.refreshList();
+  REGISTRY.get("previewNext").dispatchClick();
   await tick();
-  assert.deepEqual(swapped, [["job", "refresh", {}]],
+  assert.deepEqual(swapped, [["job", "preview_move", { delta: 1 }]],
     "교체한 Bridge.call 이 관측되지 않았다 — 메서드가 사전 추출됐다");
-  assert.deepEqual(ALERTS, [], "refreshList 성공 경로에서 alert 가 떴다");
+  assert.deepEqual(ALERTS, [], "preview 이동 성공 경로에서 alert 가 떴다");
 });

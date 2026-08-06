@@ -17,14 +17,20 @@ from __future__ import annotations
 
 import re
 
-from _web_source import SOURCE_JS_DIR
+from _web_source import SOURCE_ROOT
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 
-WEB_JS = SOURCE_JS_DIR
+WEB_ROOT = SOURCE_ROOT
 
 #: `Bridge.call(SCREEN|'screen', "action", {…})` — 화면 상수 또는 리터럴 화면 이름.
 _CALL = re.compile(
-    r"[Bb]ridge\.call\(\s*(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
+    r"(?:[Bb]ridge\.call|dispatch|(?:controller\.)?call)\(\s*"
+    r"(?:SCREEN|['\"](?P<screen>[a-z]+)['\"])\s*,\s*"
+    r"['\"](?P<action>[a-z0-9_]+)['\"]\s*,\s*"
+)
+
+_LOCAL_CALL = re.compile(
+    r"(?:controller\.)?(?P<method>axis|jobDispatch|zone)\(\s*"
     r"['\"](?P<action>[a-z0-9_]+)['\"]\s*,\s*"
 )
 
@@ -33,14 +39,22 @@ _KEY = re.compile(r"^(?:\"(?P<q>[A-Za-z_][\w]*)\"|(?P<b>[A-Za-z_][\w]*))\s*(?::|
 
 #: 화면 상수(`SCREEN`)의 소유 화면 — 공용 모듈은 화면을 인자로 받으므로 여기 두지 않는다.
 SCREEN_OF_FILE = {
-    "screens/library.js": "library",
-    "screens/editor.js": "editor",
-    "screens/job.js": "job",
+    "js/screens/editor.js": "editor",
+    "js/screens/job.js": "job",
     # ("screens/draft.js" 행 삭제 — 「기안」 화면 사망, F6 PR-B.)
     # ("screens/template.js" 행 삭제 — 「템플릿 관리」 화면 사망, F8 §10.17. tpl 액션의
     #  리터럴 호출은 editor.js 안에 살고 _CALL 이 리터럴 화면명으로 tpl 스키마 대조한다.)
-    "screens/workbench.js": "workbench",
-    "data_picker.js": "pool",
+    "js/screens/workbench.js": "workbench",
+    "src/screens/library.ts": "library",
+    "src/screens/data_picker.ts": "pool",
+    "src/screens/job_read.ts": "job",
+    "src/screens/data_zone.ts": "job",
+}
+
+LOCAL_SCREEN = {
+    "src/screens/library.ts": {"axis": "library", "jobDispatch": "job"},
+    "src/screens/job_read.ts": {"zone": "job"},
+    "src/screens/data_zone.ts": {"zone": "job"},
 }
 
 
@@ -107,17 +121,24 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
     offenders: list[str] = []
     checked = 0
     for relative, owner in SCREEN_OF_FILE.items():
-        path = WEB_JS / relative
+        path = WEB_ROOT / relative
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        for match in _CALL.finditer(text):
-            screen = match.group("screen") or owner
-            action = match.group("action")
+        matches = [
+            (match.group("screen") or owner, match.group("action"), match.end())
+            for match in _CALL.finditer(text)
+        ]
+        matches.extend(
+            (LOCAL_SCREEN[relative][match.group("method")], match.group("action"), match.end())
+            for match in _LOCAL_CALL.finditer(text)
+            if relative in LOCAL_SCREEN and match.group("method") in LOCAL_SCREEN[relative]
+        )
+        for screen, action, body_at in matches:
             schema = ACTION_REGISTRY.get(screen, {}).get(action)
             if schema is None:
                 continue                  # 이름 계약은 test_dispatch_wiring 이 본다
-            body = _object_literal(text, match.end())
+            body = _object_literal(text, body_at)
             if body is None or "..." in body:
                 continue
             parts = _top_level_parts(body)
@@ -179,7 +200,7 @@ def test_every_registered_action_has_a_frontend_consumer() -> None:
     """
     called: "set[tuple[str, str]]" = set()
     for relative, owner in SCREEN_OF_FILE.items():
-        path = WEB_JS / relative
+        path = WEB_ROOT / relative
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")

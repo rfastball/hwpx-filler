@@ -134,6 +134,11 @@ def test_menu_spawned_modals_carry_original_trigger_through_close_all() -> None:
     assert "if (confirmed && cb) cb(confirmedGroup)" in group and "cb(group)" not in group
     # (screens/draft.js 는 「기안」 화면 사망(F6 PR-B), screens/template.js 는 「템플릿
     #  관리」 사망(F8)으로 제외 — 메뉴발 모달의 새 소비자는 편집기 「템플릿」 탭이다.)
-    for rel in ("screens/library.js", "screens/job.js", "screens/editor.js"):
-        src = (SOURCE_JS_DIR / rel).read_text(encoding="utf-8")
+    sources = {
+        "src/screens/library.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts",
+        "js/screens/job.js": SOURCE_JS_DIR / "screens" / "job.js",
+        "js/screens/editor.js": SOURCE_JS_DIR / "screens" / "editor.js",
+    }
+    for rel, path in sources.items():
+        src = path.read_text(encoding="utf-8")
         assert "trigger" in src and "returnFocus" in src, rel

@@ -18,6 +18,8 @@ import { OverlayHost } from "../overlay/host.ts";
 import type { OverlayHostPorts } from "../overlay/host.ts";
 import { ShellHost } from "../shell/host.ts";
 import type { ShellHostPorts } from "../shell/host.ts";
+import { ScreenMigrationHost } from "../screens/host.ts";
+import type { ScreenMigrationHostPorts } from "../screens/host.ts";
 
 type BoundaryProps = {
   alarm: (message: string) => void;
@@ -90,8 +92,7 @@ function StoreSignal(props: {
 }
 
 /** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다.
- *  자식 넷: 마운트 신호 · store 신호 · overlay host(R3-01 — 완전 데이터-구동 표면 4 의
- *  React 소유 DOM) · shell host(R3-02 — 셸 리스너·부팅 시퀀스의 수명주기). */
+ *  자식 다섯: 마운트 신호 · store 신호 · overlay host · shell host · 화면 portal host. */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;
@@ -99,6 +100,7 @@ export function createAppElement(hooks: {
   reflectStoreRevision: (revision: number) => void;
   overlay: OverlayHostPorts;
   shell: ShellHostPorts;
+  screens: ScreenMigrationHostPorts;
 }): ReactNode {
   return createElement(
     ReactErrorBoundary,
@@ -110,5 +112,6 @@ export function createAppElement(hooks: {
     }),
     createElement(OverlayHost, hooks.overlay),
     createElement(ShellHost, hooks.shell),
+    createElement(ScreenMigrationHost, hooks.screens),
   );
 }

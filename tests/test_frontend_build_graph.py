@@ -106,12 +106,9 @@ EXPECTED_ESM_EXPORTS = {
     "sheet_picker.js": "createSheetPicker",
     "pathtrack.js": "createPathTrack",
     "relink.js": "createRelink",
-    "datazone.js": "createDataZone",
-    "data_picker.js": "createDataPicker",
     "editor_entry.js": "createEditorEntry",
     # N-06 화면 넷 + 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아
     # 중앙에서 한 번 구성되는 다섯
-    "screens/library.js": "createLibraryScreen",
     "screens/editor.js": "createEditorScreen",
     "screens/job.js": "createJobScreen",
     "screens/workbench.js": "createWorkbenchScreen",
@@ -388,7 +385,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 25
+    assert len(ESM_FILES) == 22
 
     #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
     assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
@@ -442,26 +439,19 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         "modal.js": {"./popover.js", "../src/overlay/instance.ts"},
         "surface_sheet.js": {"./modal.js"},
         "grouplist.js": {"./esc.js", "./popover.js", "./modal.js"},
-        "datazone.js": {"./esc.js", "./popover.js", "./intent.js"},
         "pathtrack.js": {"./esc.js"},
         "relink.js": {"./modal.js"},
         "sheet_picker.js": {"./esc.js", "./modal.js"},
-        "data_picker.js": {"./esc.js", "./modal.js", "./preserve.js"},
         "editor_entry.js": {"./modal.js"},
         "segview.js": {"./esc.js"},
         # N-06 화면 넷 — named export 서비스·잎만 import 간선으로 적는다. factory 산물
         # (EditorEntry·PathTrack 등)과 교차 화면·Nav 는 주입이라 여기 없어야 한다.
-        "screens/library.js": {
-            "../esc.js", "../grouplist.js", "../intent.js", "../modal.js",
-            "../popover.js", "../preserve.js", "../undo_toast.js",
-        },
         "screens/editor.js": {
             "../esc.js", "../grouplist.js", "../intent.js", "../modal.js",
             "../popover.js", "../preserve.js", "../undo_toast.js",
         },
         "screens/job.js": {
-            "../esc.js", "../modal.js", "../popover.js", "../preserve.js",
-            "../intent.js", "../surface_sheet.js", "../grouplist.js", "../guard.js",
+            "../esc.js", "../modal.js", "../preserve.js", "../guard.js",
         },
         "screens/workbench.js": {
             "../esc.js", "../intent.js", "../modal.js", "../preserve.js", "../segview.js",
@@ -479,7 +469,7 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         )
 
     #: 화면 간 직접 import 0 — 교차 간선은 합성 루트의 late-bound 콜백 테이블만 진다.
-    for name in ("screens/library.js", "screens/editor.js", "screens/job.js",
+    for name in ("screens/editor.js", "screens/job.js",
                  "screens/workbench.js", "app.js"):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         crossing = [p for p in module_imports(source)
@@ -646,11 +636,23 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
         if export.startswith("create")
     )
 
-    assert len(factories) == 14
+    assert len(factories) == 11
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
             f"합성 루트가 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
+        )
+
+    # R4-01에서 legacy factory 셋은 React controller/runtime/port 합성으로 교체됐다. 이들은
+    # EXPECTED_ESM_EXPORTS(legacy JS 파일당 단일 export 계정) 밖이므로 별도 전수로 단일성을 센다.
+    r4_factories = (
+        "createScreenRuntime", "createScreenPorts", "createServiceHandoffPorts",
+        "createLibraryController", "createDataPickerController", "createJobReadController",
+    )
+    for factory in r4_factories:
+        calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
+        assert len(calls) == 1, (
+            f"합성 루트가 R4 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
         )
 
     #: `navigate` 는 지연 호출 콜백이다 — N-05 의 `window.Nav` 판독은 Nav 생산이 합성 루트로
@@ -676,11 +678,12 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
 
     #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 값 캡처(`JobScreen.refreshList` 를
     #: 프로퍼티로 뽑아 저장)로 되돌아가면 구성 순서에 따라 undefined 를 붙든다.
-    for member in ("refreshList", "openPreview", "openBrowseNeedsAction"):
+    for member in ("refreshList", "openBrowseNeedsAction"):
         assert re.search(
-            rf"{member}: \(\.\.\.args\) => JobScreen\.{member}\(\.\.\.args\),",
+            rf"{member}: \(\.\.\.args\) => screenPorts\.jobRead\.current\(\)\.{member}\(\.\.\.args\),",
             compat_source,
         ), f"jobCallbacks.{member} 가 지연 호출 콜백이 아닙니다."
+    assert "openPreview: (_event, options = {}) => screenPorts.jobRun.current().openPreview({" in compat_source
     assert re.search(
         r"aimAt: \(\.\.\.args\) => EditorScreen\.aimAt\(\.\.\.args\),", compat_source
     ), "editorCallbacks.aimAt 가 지연 호출 콜백이 아닙니다."
@@ -696,7 +699,7 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
     #: 뒤인가). 별칭이 사라지면서 순서 계약이 걸릴 자리는 이 한 줄만 남았다 — 질문은 그대로고
     #: 대상만 줄었다.
     last_construction = max(
-        compat_source.rindex(f"{factory}(") for factory in factories
+        compat_source.rindex(f"{factory}(") for factory in (*factories, *r4_factories)
     )
     api_install = compat_source.index(f"window.{PRODUCT_API_GLOBAL} =")
     assert last_construction < api_install, (
@@ -725,7 +728,7 @@ def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(scripts) == 25
+    assert len(scripts) == 22
     assert non_esm == ()
     assert LEGACY_JS_FILES == ()
     assert EXPECTED_LEGACY_GLOBALS == set()
@@ -864,12 +867,21 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/overlay/engine.ts",  # R3-01 — 트리-불가지 overlay 판정(스택·직렬화·트랩·복귀)
         "src/overlay/host.ts",  # R3-01 — React host: 데이터-구동 표면 4 의 렌더·명령형 집행
         "src/overlay/instance.ts",  # R3-01 — 엔진 단일 인스턴스·다이얼로그 host 슬롯·keydown 배선
+        "src/ports/service_handoff.ts",  # R4-01 — legacy 서비스의 typed handoff 슬롯
         "src/react/boot.ts",
         "src/react/boundary.ts",
         "src/react/root.ts",
         "src/react/use_screen_snapshot.ts",  # R2-03 — store↔React 결속(useSyncExternalStore 위임)
         "src/runtime/adapter.ts",  # R2-02 — pywebview 접촉의 유일한 신규 소유자
         "src/runtime/client.ts",  # R2-02 — 생성 유니온으로 좁혀진 전송 표면
+        "src/screens/data_picker.ts",  # R4-01 — 데이터 선택·등록 React producer/controller
+        "src/screens/data_zone.ts",  # R4-01 — job 데이터 표 React producer
+        "src/screens/host.ts",  # R4-01 — 단일 root 아래 화면 portal host
+        "src/screens/job_read.ts",  # R4-01 — job read surface controller/producer
+        "src/screens/library.ts",  # R4-01 — 문서 작업 React surface
+        "src/screens/path_actions.ts",  # R4-01 — 경로 열기 React action
+        "src/screens/ports.ts",  # R4-01 — 화면 경계 typed ports
+        "src/screens/runtime.ts",  # R4-01 — raw snapshot fanout/runtime model
         "src/shell/host.ts",  # R3-02 — React ShellHost: 셸 리스너·부팅 시퀀스 수명주기
         "src/shell/nav.ts",  # R3-02 — 셸 상태기계(라우팅·ready·재당김 규약·닫기 직렬화 판정)
         "src/state/store.ts",  # R2-03 — 전송-충실 스냅샷 store(값 해석 0)
@@ -1150,10 +1162,12 @@ def test_react_root_and_store_are_single_sited() -> None:
             for spec in module_imports(strip_js_comments(text))
         )
     }
-    assert binders == {"src/react/boot.ts"}, (
+    assert binders == {"src/react/boot.ts", "src/screens/host.ts"}, (
         f"react-dom 에 결속한 파일이 {sorted(binders)} 입니다 — 둘째 결속은 둘째 root 의"
-        " 자리입니다. 정당한 확장이면 이 핀의 diff 가 그 등재입니다."
+        " 자리입니다. screens/host.ts는 createPortal만 소유하는 명시적 예외입니다."
     )
+    host_source = strip_js_comments(sources["src/screens/host.ts"])
+    assert "createPortal" in host_source and not re.search(r"\bcreateRoot\s*\(", host_source)
 
     #: ①-보강(#489 Codex P2): 결속의 **형태**도 잠근다 — named import 만. 이름공간(`* as`)·
     #: 기본 결속이 허용 파일 안에 서면 `NS.createRoot(…)` 멤버-접근 호출이 census 의
