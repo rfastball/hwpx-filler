@@ -141,6 +141,8 @@ export function createEditorController(deps: EditorControllerDeps) {
   const tplModel = deps.runtime.model<Obj | null>("tpl");
 
   let draft: DraftState = emptyDraft();
+  /** 배선 1회 가드 — 셸의 ready 사건은 재발화하고 그때 화면 init 이 다시 불린다(`app.js`). */
+  let wired = false;
   let view: ViewState = {
     libMenu: null, folderImportInFlight: false, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, invalidField: "", aim: "",
@@ -823,8 +825,16 @@ export function createEditorController(deps: EditorControllerDeps) {
   return {
     init(): Promise<unknown> {
       /* tpl 채널의 관리 동사 결과는 editor 스냅샷 **재당김**으로 되그린다 — 목록·결과 렌더의
-         정본은 editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다). */
-      tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });
+         정본은 editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다).
+
+         구독은 **정확히 한 번**이다. init 은 재발화하는 ready 사건이 다시 부르는 자리라
+         가드가 없으면 tpl push 하나가 재당김을 두 번·세 번 태운다(legacy `wired` 가드의
+         후계). 첫 initial 이 실패한 뒤의 명시적 재-init 은 initial 만 다시 당긴다 —
+         `loadInitial` 이 실패에서 기억을 지우므로 그쪽은 저절로 재시도가 된다. */
+      if (!wired) {
+        wired = true;
+        tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });
+      }
       return deps.runtime.loadInitial(SCREEN);
     },
     /** 현 스냅샷 재당김 — 편집 모드 복귀 때 공유 그룹 접힘을 반영한다(#138 F12). */
