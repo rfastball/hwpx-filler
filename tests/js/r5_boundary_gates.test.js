@@ -89,13 +89,171 @@ function declarationNames(declaration) {
   return out;
 }
 
-function countIdentifiers(node, name) {
-  let count = 0;
+function patternHasName(pattern, name) {
+  const names = [];
+  bindingNames(pattern, names);
+  return names.includes(name);
+}
+
+function declarationOwner(tree, name) {
+  for (const statement of tree.body) {
+    const declaration = statement.type === "ExportNamedDeclaration"
+      ? statement.declaration : statement;
+    if (!declaration) continue;
+    if (declaration.type === "VariableDeclaration") {
+      for (const declarator of declaration.declarations) {
+        if (patternHasName(declarator.id, name)) return declarator;
+      }
+    } else if (declarationNames(declaration).includes(name)) return declaration;
+  }
+  return null;
+}
+
+function blockDirectlyBinds(block, name) {
+  return block.body.some((statement) => {
+    if (statement.type === "VariableDeclaration" && statement.kind !== "var") {
+      return statement.declarations.some((item) => patternHasName(item.id, name));
+    }
+    return ["FunctionDeclaration", "ClassDeclaration"].includes(statement.type)
+      && statement.id?.name === name;
+  });
+}
+
+function functionVarBinds(node, name) {
+  let found = false;
   const visit = (current) => {
-    if (current.type === "Identifier" && current.name === name) count += 1;
+    if (found || !current) return;
+    if (current !== node && [
+      "FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression",
+    ].includes(current.type)) return;
+    if (current.type === "VariableDeclaration" && current.kind === "var"
+      && current.declarations.some((item) => patternHasName(item.id, name))) {
+      found = true;
+      return;
+    }
     for (const child of childNodes(current)) visit(child);
   };
-  visit(node);
+  visit(node.body);
+  return found;
+}
+
+/**
+ * top-level 선언 하나로 실제 resolve되는 참조만 센다. 같은 철자의 nested binding은
+ * 별개 symbol이다 — 이름 출현 수로 세면 review P2의 거짓 초록이 돌아온다.
+ */
+function topLevelBindingReferences(tree, name, owner) {
+  let count = 0;
+  const walkBindingExtras = (pattern) => {
+    if (!pattern) return;
+    walk(pattern.typeAnnotation);
+    if (pattern.type === "AssignmentPattern") {
+      walkBindingExtras(pattern.left);
+      walk(pattern.right);
+    } else if (pattern.type === "RestElement") {
+      walkBindingExtras(pattern.argument);
+    } else if (pattern.type === "ObjectPattern") {
+      for (const property of pattern.properties) {
+        walkBindingExtras(property.type === "RestElement" ? property.argument : property.value);
+      }
+    } else if (pattern.type === "ArrayPattern") {
+      for (const element of pattern.elements) walkBindingExtras(element);
+    }
+  };
+  const walk = (node) => {
+    if (!node || node === owner) return;
+    if (node.type === "Identifier") {
+      if (node.name === name) count += 1;
+      return;
+    }
+    if (node.type === "Program") {
+      for (const statement of node.body) walk(statement);
+      return;
+    }
+    if (node.type === "VariableDeclaration") {
+      for (const declarator of node.declarations) {
+        walkBindingExtras(declarator.id);
+        walk(declarator.init);
+      }
+      return;
+    }
+    if (node.type === "VariableDeclarator") {
+      walkBindingExtras(node.id);
+      walk(node.init);
+      return;
+    }
+    if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) {
+      for (const param of node.params) walkBindingExtras(param);
+      walk(node.typeParameters);
+      walk(node.returnType);
+      const shadowed = node.id?.name === name
+        || node.params.some((param) => patternHasName(param, name))
+        || functionVarBinds(node, name);
+      if (!shadowed) walk(node.body);
+      return;
+    }
+    if (node.type === "BlockStatement") {
+      if (!blockDirectlyBinds(node, name)) for (const statement of node.body) walk(statement);
+      return;
+    }
+    if (node.type === "CatchClause") {
+      if (!patternHasName(node.param, name)) walk(node.body);
+      return;
+    }
+    if (["ForInStatement", "ForOfStatement"].includes(node.type)) {
+      if (node.left?.type === "VariableDeclaration"
+        && node.left.kind !== "var"
+        && node.left.declarations.some((item) => patternHasName(item.id, name))) return;
+      walk(node.left);
+      walk(node.right);
+      walk(node.body);
+      return;
+    }
+    if (node.type === "ForStatement") {
+      if (node.init?.type === "VariableDeclaration"
+        && node.init.kind !== "var"
+        && node.init.declarations.some((item) => patternHasName(item.id, name))) return;
+      walk(node.init);
+      walk(node.test);
+      walk(node.update);
+      walk(node.body);
+      return;
+    }
+    if (["ClassDeclaration", "ClassExpression"].includes(node.type)) {
+      walk(node.superClass);
+      walk(node.typeParameters);
+      walk(node.superTypeArguments);
+      for (const item of node.implements ?? []) walk(item);
+      if (node.id?.name !== name) walk(node.body);
+      return;
+    }
+    if (node.type === "ImportDeclaration" || node.type === "ExportAllDeclaration") return;
+    if (node.type === "ExportNamedDeclaration") {
+      walk(node.declaration);
+      return;
+    }
+    if (node.type === "ExportDefaultDeclaration") {
+      walk(node.declaration);
+      return;
+    }
+    if (["MemberExpression", "OptionalMemberExpression"].includes(node.type)) {
+      walk(node.object);
+      if (node.computed) walk(node.property);
+      return;
+    }
+    if (["Property", "PropertyDefinition", "MethodDefinition"].includes(node.type)) {
+      if (node.computed) walk(node.key);
+      walk(node.typeAnnotation);
+      walk(node.value);
+      return;
+    }
+    if (node.type === "LabeledStatement") {
+      walk(node.body);
+      return;
+    }
+    if (["BreakStatement", "ContinueStatement", "MetaProperty"].includes(node.type)) return;
+    for (const child of childNodes(node)) walk(child);
+  };
+  walk(tree);
   return count;
 }
 
@@ -103,37 +261,13 @@ function moduleFacts(source, name) {
   const tree = parse(source, name);
   const imports = [];
   const importedNames = [];
+  const importBindings = new Map();
   const exports = [];
+  const exportLocals = new Map();
   const reexports = [];
-  const identifierCounts = new Map();
-  const selfIdentifierCounts = new Map();
   const unknownDynamicImports = [];
 
-  const addSelfIdentifierCount = (name, count) => {
-    selfIdentifierCounts.set(name, (selfIdentifierCounts.get(name) ?? 0) + count);
-  };
-  const recordDeclarationSelf = (declaration) => {
-    if (declaration.type === "VariableDeclaration") {
-      for (const declarator of declaration.declarations) {
-        const declared = [];
-        bindingNames(declarator.id, declared);
-        for (const declaredName of declared) {
-          addSelfIdentifierCount(declaredName, countIdentifiers(declarator, declaredName));
-        }
-      }
-    } else {
-      for (const declaredName of declarationNames(declaration)) {
-        addSelfIdentifierCount(
-          declaredName, countIdentifiers(declaration, declaredName),
-        );
-      }
-    }
-  };
-
   const visit = (node) => {
-    if (node.type === "Identifier") {
-      identifierCounts.set(node.name, (identifierCounts.get(node.name) ?? 0) + 1);
-    }
     if (node.type === "ImportExpression") {
       if (node.source?.type === "Literal" && typeof node.source.value === "string") {
         imports.push(node.source.value);
@@ -146,12 +280,6 @@ function moduleFacts(source, name) {
   visit(tree);
 
   for (const node of tree.body) {
-    if (["VariableDeclaration", "FunctionDeclaration", "ClassDeclaration"].includes(node.type)) {
-      recordDeclarationSelf(node);
-    }
-  }
-
-  for (const node of tree.body) {
     if ((node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration"
       || node.type === "ExportAllDeclaration") && node.source) {
       imports.push(node.source.value);
@@ -159,50 +287,80 @@ function moduleFacts(source, name) {
     if (node.type === "ImportDeclaration") {
       for (const specifier of node.specifiers) {
         if (specifier.type === "ImportSpecifier") {
+          const imported = specifier.imported.name ?? specifier.imported.value;
           importedNames.push({
             source: node.source.value,
-            name: specifier.imported.name ?? specifier.imported.value,
+            name: imported,
           });
+          importBindings.set(specifier.local.name, { source: node.source.value, imported });
         } else if (specifier.type === "ImportDefaultSpecifier") {
           importedNames.push({ source: node.source.value, name: "default" });
+          importBindings.set(specifier.local.name, { source: node.source.value, imported: "default" });
         } else {
           importedNames.push({ source: node.source.value, name: "*" });
+          importBindings.set(specifier.local.name, { source: node.source.value, imported: "*" });
         }
       }
     }
-    if (node.type === "ExportDefaultDeclaration") exports.push("default");
+  }
+
+  for (const node of tree.body) {
+    if (node.type === "ExportDefaultDeclaration") {
+      exports.push("default");
+      exportLocals.set("default", null);
+    }
     if (node.type === "ExportNamedDeclaration") {
       if (node.declaration) {
         const names = declarationNames(node.declaration);
         exports.push(...names);
-        recordDeclarationSelf(node.declaration);
+        for (const declaredName of names) exportLocals.set(declaredName, declaredName);
       }
       else {
         for (const specifier of node.specifiers) {
           const exported = specifier.exported.name ?? specifier.exported.value;
+          const local = specifier.local.name ?? specifier.local.value;
           exports.push(exported);
-          addSelfIdentifierCount(exported, countIdentifiers(specifier, exported));
           if (node.source) {
             reexports.push({
               source: node.source.value,
-              imported: specifier.local.name ?? specifier.local.value,
+              imported: local,
               exported,
             });
+            exportLocals.set(exported, null);
+          } else if (importBindings.has(local)) {
+            const binding = importBindings.get(local);
+            reexports.push({ ...binding, exported });
+            exportLocals.set(exported, null);
+          } else {
+            exportLocals.set(exported, local);
           }
         }
       }
     }
     if (node.type === "ExportAllDeclaration") {
-      reexports.push({ source: node.source.value, imported: "*", exported: "*" });
+      const exported = node.exported?.name ?? node.exported?.value;
+      if (exported) {
+        exports.push(exported);
+        exportLocals.set(exported, null);
+        reexports.push({ source: node.source.value, imported: "*", exported });
+      } else {
+        reexports.push({ source: node.source.value, imported: "*", exported: "*" });
+      }
     }
+  }
+  const internalReferences = new Map();
+  for (const [exported, local] of exportLocals) {
+    const owner = local ? declarationOwner(tree, local) : null;
+    internalReferences.set(
+      exported, owner ? topLevelBindingReferences(tree, local, owner) : 0,
+    );
   }
   return {
     imports,
     importedNames,
     exports,
     reexports,
-    identifierCounts,
-    selfIdentifierCounts,
+    internalReferences,
     unknownDynamicImports,
   };
 }
@@ -354,11 +512,9 @@ function deadExports(analysis, imported, publicModules = new Set()) {
     const consumers = imported.get(name) ?? new Set();
     for (const exported of facts.exports) {
       if (consumers.has("*") || consumers.has(exported)) continue;
-      /* 자기 선언 안의 참조(재귀 포함)는 소비자가 아니다. 선언 바깥에서 참조되는 helper는
-         살리되, 자기 자신만 부르는 고립 export는 dead public surface로 남긴다. */
-      const outsideDeclaration = (facts.identifierCounts.get(exported) ?? 0)
-        - (facts.selfIdentifierCounts.get(exported) ?? 0);
-      if (outsideDeclaration <= 0) dead.push(`${name}:${exported}`);
+      if ((facts.internalReferences.get(exported) ?? 0) === 0) {
+        dead.push(`${name}:${exported}`);
+      }
     }
   }
   return dead.sort();
@@ -439,6 +595,21 @@ test("검출력 — 소비·내부참조 없는 export만 dead이고 내부 help
   const analysis = analyzeModules(sources, ["main.js"]);
   const imported = importedProductNames(analysis, sources);
   assert.deepEqual(deadExports(analysis, imported), ["lib.js:abandoned"]);
+
+  const shadowed = new Map([
+    ["main.js", 'import "./lib.js";'],
+    ["lib.js", [
+      "export const value = 1;",
+      "function consumeLocal() { const value = 2; return value; }",
+      "consumeLocal();",
+    ].join("\n")],
+  ]);
+  const shadowedAnalysis = analyzeModules(shadowed, ["main.js"]);
+  assert.deepEqual(
+    deadExports(shadowedAnalysis, importedProductNames(shadowedAnalysis, shadowed)),
+    ["lib.js:value"],
+    "nested scope의 같은 철자를 top-level export 소비로 오인했습니다.",
+  );
 });
 
 test("검출력 — 재귀·export-list 고립 표면은 dead이고 barrel 소비는 원본까지 전파된다", () => {
@@ -486,6 +657,19 @@ test("검출력 — 재귀·export-list 고립 표면은 dead이고 barrel 소�
   assert.deepEqual(
     deadExports(exportAllAnalysis, importedProductNames(exportAllAnalysis, exportAll)),
     [],
+  );
+
+  const namespace = new Map([
+    ["main.js", 'import { lib } from "./barrel.js"; void lib.foo;'],
+    ["barrel.js", 'export * as lib from "./lib.js";'],
+    ["lib.js", "export const foo = 1; export const bar = 2;"],
+  ]);
+  const namespaceAnalysis = analyzeModules(namespace, ["main.js"]);
+  assert.deepEqual(namespaceAnalysis.orphanFiles, []);
+  assert.deepEqual(
+    deadExports(namespaceAnalysis, importedProductNames(namespaceAnalysis, namespace)),
+    [],
+    "namespace re-export 소비는 원본 모듈의 export 전부를 소비합니다.",
   );
 });
 
