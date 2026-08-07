@@ -1713,27 +1713,39 @@ export function createEditorWorkbenchDataProbes() {
           /* 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비"
              플래그가 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소. */
           const flush = () => { ctx.doc.body.click(); };
-          const menu = byId(ctx, "tplRowMenu");
+          const menuActions = () => {
+            const menu = byId(ctx, "tplRowMenu");
+            if (!menu) return [];
+            return Array.prototype.map.call(
+              menu.querySelectorAll("button[data-context-menu-action]"),
+              (button) => button.dataset.contextMenuAction,
+            );
+          };
           /* 그룹 있는 HWPX 행 ⋮ = [링1 상태 동사(변환·검토), 이동, 삭제] — 소비 동사 없음. */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
-          out.menu_shown = !isHidden(ctx, menu);
-          out.hwpx_menu_items = Array.prototype.map.call(
-            menu.querySelectorAll("button[data-menu]"), (b) => b.dataset.menu);
+          await settleRender(ctx);
+          const firstMenu = byId(ctx, "tplRowMenu");
+          out.menu_shown = !!firstMenu && !isHidden(ctx, firstMenu);
+          out.hwpx_menu_items = menuActions();
           ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
-          out.menu_closed = isHidden(ctx, menu);
+          await settleRender(ctx);
+          const closedMenu = byId(ctx, "tplRowMenu");
+          out.menu_closed = !closedMenu || isHidden(ctx, closedMenu);
           /* 무그룹 TXT 행 ⋮ = [내용 편집, 삭제](이동은 칩 소관). */
           flush();
           host.querySelector('[data-act="lib-more"][data-key="메모.txt"]').click();
-          out.txt_menu_items = Array.prototype.map.call(
-            menu.querySelectorAll("button[data-menu]"), (b) => b.dataset.menu);
+          await settleRender(ctx);
+          out.txt_menu_items = menuActions();
           ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
+          await settleRender(ctx);
           /* 그룹 헤더 ⋮ = [개명, 해산]. */
           flush();
           host.querySelector(".grp-more").click();
-          out.group_menu_items = Array.prototype.map.call(
-            menu.querySelectorAll("button[data-menu]"), (b) => b.dataset.menu);
+          await settleRender(ctx);
+          out.group_menu_items = menuActions();
           ctx.doc.body.dispatchEvent(new ctx.win.MouseEvent("pointerdown", { bubbles: true }));
+          await settleRender(ctx);
           /* ＋그룹지정 칩 → 이동 다이얼로그(기존 #tplMoveModal DOM 재사용). */
           out.move_hidden_before = byId(ctx, "tplMoveModal").classList.contains("hidden");
           flush();
