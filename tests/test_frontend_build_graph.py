@@ -299,6 +299,8 @@ def test_typescript_config_is_erasable_and_exactly_this() -> None:
             "moduleResolution": "bundler",
             "lib": ["ES2022", "DOM", "DOM.Iterable"],
             "strict": True,
+            "noUnusedLocals": True,
+            "noUnusedParameters": True,
             "noEmit": True,
             "erasableSyntaxOnly": True,
             "verbatimModuleSyntax": True,
@@ -854,7 +856,6 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/react/boot.ts",
         "src/react/boundary.ts",
         "src/react/root.ts",
-        "src/react/use_screen_snapshot.ts",  # R2-03 — store↔React 결속(useSyncExternalStore 위임)
         "src/runtime/adapter.ts",  # R2-02 — pywebview 접촉의 유일한 신규 소유자
         "src/runtime/client.ts",  # R2-02 — 생성 유니온으로 좁혀진 전송 표면
         "src/screens/context_menu.ts",  # R4-04 — React 문맥 메뉴 상태·Popover 배치

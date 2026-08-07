@@ -103,10 +103,11 @@
   6채널 각각에 `bridge.onPush` 탭 하나를 건다 — selftest 프로브가 push 통로를 갈아끼우면
   legacy render 와 store 가 **같은 세계**를 본다. 리스너 예외는 store 안에서 격리·경보되어
   같은 채널 뒤의 legacy render 를 죽이지 않는다.
-- **구독은 해제 가능하고 채널별 subscribe 는 안정 참조다**(`useSyncExternalStore` 재구독 요동
-  방어). 이중 해제는 throw, unmount 뒤 listener 0 은 `listenerCount` 관측면과 node 계약이
-  잰다. React 결합은 `frontend/src/react/use_screen_snapshot.ts` 의 위임 하나다(외부 상태
-  라이브러리 채택이 아니다 — React 내장 API).
+- **구독은 해제 가능하고 화면 model의 subscribe 는 안정 참조다**(`useSyncExternalStore`
+  재구독 요동 방어). 이중 해제는 throw, unmount 뒤 listener 0 은 `listenerCount` 관측면과
+  node 계약이 잰다. R4 이후 각 화면 component는 controller model의
+  `subscribe/getSnapshot`을 React 내장 API에 직접 건넨다. R2의 범용
+  `use_screen_snapshot.ts`는 제품 소비자 0이 확인돼 R5-02에서 제거됐다.
 - **당김 착지는 revision 가드를 진다**: `ingestPulled` 는 당김 시작 이후 push 가 착지한
   채널에 낡은 결과를 덮지 않고 그 판정을 반환값으로 알린다(「등록 전 push 는 버려진다·
   부팅은 initial 당김이 정본」의 store 판 번역).

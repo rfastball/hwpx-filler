@@ -8,7 +8,11 @@
     "reserved_globals — 제품 전역 가족의 접촉(멤버 접근·구조분해) allowlist. 파일 목록은 실측 전수와",
     "  양방향 대조된다(넓히면 등재가 실물을 앞질러 빨강, 새 접촉은 미등재라 빨강).",
     "  가족 술어는 이름 열거보다 넓다: pywebview 정확 일치 + __hwpx 접두 전부 — 표에 없는 가족 이름의",
-    "  접촉은 allowlist 없이 무조건 위반이다(다음 전역에서 같은 결함이 재발하지 않게)."
+    "  접촉은 allowlist 없이 무조건 위반이다(다음 전역에서 같은 결함이 재발하지 않게).",
+    "module_closure — R5-02의 모듈 폐포 분류. product_entries에서 닿지 않는 코드는 exact test-only",
+    "  entry여야 하고, 소비자 없는 export는 exact generated public contract에서만 허용한다.",
+    "  React runtime region은 핀된 Vite의 unminified sealed bundle에서 exact-once로 대조한다.",
+    "dev_dependency_owners — 정적 import로 보이지 않는 빌드/형식 전용 의존의 exact 책임 분류."
   ],
   "non_code_suffixes": [".css", ".html", ".svg", ".txt", ".woff2"],
   "reserved_globals": {
@@ -23,5 +27,27 @@
       "src/bootstrap.js"
     ],
     "__hwpxTest": []
+  },
+  "module_closure": {
+    "product_entries": ["src/main.js"],
+    "test_only_entries": {
+      "src/selftest/schema.js": "Node 계약 테스트가 직접 소비하는 selftest 결과 스키마. 제품·출하 그래프 비포함이 계약이다."
+    },
+    "generated_public_modules": {
+      "src/contract/contract.gen.ts": "Python 제품 계약에서 생성되는 TS 공개 표면. 미소비 export도 교차 언어 스키마 증거다."
+    },
+    "react_bundle_regions": [
+      "node_modules/react/cjs/react.production.js",
+      "node_modules/react/index.js",
+      "node_modules/react-dom/cjs/react-dom.production.js",
+      "node_modules/react-dom/index.js",
+      "node_modules/react-dom/cjs/react-dom-client.production.js"
+    ]
+  },
+  "dev_dependency_owners": {
+    "@types/react": "tsc가 React 19 TS 소스의 선언을 해석한다.",
+    "@types/react-dom": "tsc가 react-dom/client·portal·flushSync 선언을 해석한다.",
+    "typescript": "test_frontend_build_graph가 tsc --noEmit을 직접 실행한다.",
+    "vite": "제품 build와 R5 AST 음성 게이트가 같은 핀된 파서를 쓴다."
   }
 }

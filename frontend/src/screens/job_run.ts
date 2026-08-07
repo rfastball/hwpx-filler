@@ -22,7 +22,7 @@ import type { BridgeClient } from "../runtime/client.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import { PathActions } from "./path_actions.ts";
 import type { PreviewRequest, ScreenPorts } from "./ports.ts";
-import type { JobScreenModel, ScreenModel, ScreenRuntime } from "./runtime.ts";
+import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
 import {
   acceptDirect, acceptFull, acceptProgress, beginRun, bumpEpoch, closeResult,

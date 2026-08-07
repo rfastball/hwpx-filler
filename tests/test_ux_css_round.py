@@ -194,7 +194,7 @@ def test_normal_state_restatements_are_quiet_not_green_boxes():
     assert "okbox" not in job_src + job_read, (
         "job.js 에 okbox 가 재도입됐습니다 — 정상 상태 초록 배너는 노이즈입니다(F32)."
     )
-    data = _fn_body(job_read, "JobDataHeader", "JobDataHeaderPortal")
+    data = _fn_body(job_read, "JobDataHeader", "JobTableScroll")
     assert 'notice?.level === "ok" ? "quiet" : "warnbox"' in data
     preflight = _fn_body(job_src, "JobPreflight", "JobMirrorZone")
     assert 'p.level === "ok" ? "quiet"' in preflight
