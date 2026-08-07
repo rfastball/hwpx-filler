@@ -105,12 +105,21 @@ test("데이터 교체는 이름이 같아도 결과를 초기화한다", async 
   assert.equal(h.controller.getRun().result, null);
 });
 
-test("초기화 갈래는 퇴장 한 줄을 **남긴다** — 리셋이 기록을 비운 뒤에 적는다", async () => {
+test("초기화 갈래는 기록을 비운 뒤 퇴장 한 줄만 남긴다", async () => {
   const h = await withResult();
+  // 죽은 세션의 줄을 실제로 세워 둔다 — 없으면 「비웠는가」가 공허하다.
+  await h.controller.cancelGeneration();
+  h.controller.toggleLog();
+  assert.ok(h.lines().length >= 1, "치울 줄이 없으면 이 단언은 아무것도 재지 않는다");
+
   h.push(snap({ job_name: "다른 공고", last_run_job: "공고서" }));
   const lines = h.lines();
-  assert.ok(lines.length > 0, "리셋 뒤에 적지 않으면 이 줄이 곧바로 지워진다");
-  assert.ok(lines.at(-1).includes("공고서"), "어느 작업의 결과가 나갔는지 이름을 댄다");
+  /* 「줄이 있는가」가 아니라 「**그 줄만** 있는가」를 잰다 — 비우지 않으면 죽은 세션의
+     줄이 밑에 쌓여 다음 실행과 한 세션으로 읽히는데, 마지막 줄만 보는 단언은 그걸 통과시킨다
+     (legacy `resetGenResult` 는 두 호출자 모두에서 기록을 비웠다). */
+  assert.equal(lines.length, 1, `리셋이 기록을 안 비웠습니다: ${JSON.stringify(lines)}`);
+  assert.ok(lines[0].includes("공고서"), "어느 작업의 결과가 나갔는지 이름을 댄다");
+  assert.equal(h.controller.getUi().logOpen, false, "죽은 세션의 펼침은 승계되지 않는다");
 });
 
 test("퇴장 한 줄은 초기화 갈래에서만 난다 — 강등에는 없다", async () => {
@@ -165,14 +174,21 @@ test("개명은 전환이 아니다 — 주체가 이름을 따라가면 결과�
 
 /* ================= ④ 명시 파기 ================= */
 
-test("명시 파기는 결과를 비우고 흔적을 남기지 않는다", async () => {
+test("명시 파기는 결과와 그 실행의 기록을 함께 치운다", async () => {
   const h = await withResult();
-  const before = h.log().length;
+  h.controller.toggleLog();                       // 이 세션의 펼침 의사표시
+  assert.ok(h.log().length > 0, "치울 기록이 없으면 이 단언은 공허하다");
+  assert.equal(h.controller.getUi().logOpen, true);
+
   h.controller.closeResult();
   const run = h.controller.getRun();
   assert.equal(run.result, null);
   assert.equal(run.progress, null);
-  assert.equal(h.log().length, before, "치우라는 행동을 반만 들으면 안 된다");
+  /* 「줄이 늘지 않았는가」가 아니라 「치워졌는가」를 잰다 — 종전 이 자리는 전자였고,
+     그래서 로그가 통째로 남는 결함(legacy `resetGenResult` 동등성 누락)을 통과시켰다.
+     남으면 다음 실행의 첫 줄이 남의 끝줄 밑에 붙어 한 세션으로 읽힌다. */
+  assert.deepEqual(h.log(), [], "치우라는 행동을 반만 들으면 안 된다");
+  assert.equal(h.controller.getUi().logOpen, false, "세션이 죽으면 기록도 다시 접힌다");
 });
 
 /* ================= ⑤ 실행 중 ================= */

@@ -162,14 +162,17 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   function ingestFull(value: unknown): void {
     const before = run;
     const next = acceptFull(before, value as Obj);
-    // 퇴장 한 줄은 **초기화 갈래에서만** 그리고 리셋 뒤에 적는다(리셋이 실행 기록도
-    // 비우므로 순서를 바꾸면 그 줄이 곧바로 지워진다).
     const disposal = disposeBySession(before, sessionKeyOf(before.lastFull), sessionKeyOf(value as Obj));
+    /* 퇴장 한 줄은 **초기화 갈래에서만** 선다. 그 갈래는 legacy `resetGenResult` 와 같이
+       실행 기록을 **먼저 비운다** — 안 비우면 죽은 세션의 줄이 다음 세션 밑에 그대로 쌓여
+       「이어지는 한 실행」으로 읽힌다(마지막 줄만 보는 계약은 이 누적을 통과시킨다).
+       문안은 리셋 **전** 상태에서 조립하고, 로그는 리셋 **뒤에** 적는다(순서를 바꾸면 방금
+       적은 줄이 곧바로 지워진다). `ui` 를 `setRun` 앞에 두어 emit 한 번에 함께 실린다. */
+    const resetting = !before.running && disposal.kind === "reset";
+    const line = resetting ? resultExitLine(before.result, disposal.exitOwner) : "";
+    if (resetting) ui = { log: [], logOpen: false };
     setRun(next);
-    if (!before.running && disposal.kind === "reset") {
-      const line = resultExitLine(before.result, disposal.exitOwner);
-      if (line) log(line);
-    }
+    if (line) log(line);
   }
 
   function pump(): void {
@@ -364,6 +367,11 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
     },
     closeResult(): void {
+      /* legacy `resetGenResult` 동등 — 명시 파기는 결과만이 아니라 **그 실행의 기록까지**
+         치운다. 로그가 남으면 치우라는 행동을 반만 들은 것이 되고, 다음 실행의 첫 줄이 남의
+         실행 끝줄 밑에 붙어 「이어지는 한 세션」으로 읽힌다. 펼침은 그 세션의 의사표시라
+         함께 접는다. `log`·`logOpen` 은 JobRunState 가 아니라 UiState 라 reducer 밖이다. */
+      ui = { log: [], logOpen: false };
       setRun(closeResult(run));
       const button = deps.doc.getElementById("jobGenBtn") as HTMLButtonElement | null;
       if (button && !button.disabled) button.focus();
