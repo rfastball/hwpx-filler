@@ -555,7 +555,7 @@ probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "pyt
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
-current = 80
+current = 77
 members = [
   "frontend/js/esc.js:10",
   "frontend/src/bootstrap.js:120",
@@ -564,8 +564,6 @@ members = [
   "frontend/src/overlay/instance.ts:108",
   "frontend/src/overlay/instance.ts:119",
   "frontend/src/react/boot.ts:49",
-  "frontend/src/react/use_screen_snapshot.ts:26",
-  "frontend/src/react/use_screen_snapshot.ts:37",
   "frontend/src/screens/data_picker.ts:360",
   "frontend/src/screens/data_picker.ts:403",
   "frontend/src/screens/data_zone.ts:123",
@@ -588,7 +586,6 @@ members = [
   "frontend/src/screens/group_move_dialog.ts:115",
   "frontend/src/screens/job_preview.ts:57",
   "frontend/src/screens/job_read.ts:475",
-  "frontend/src/screens/job_read.ts:492",
   "frontend/src/screens/job_read.ts:510",
   "frontend/src/screens/job_read.ts:562",
   "frontend/src/screens/job_read.ts:572",
@@ -638,7 +635,7 @@ members = [
   "frontend/src/shell/host.ts:63",
   "frontend/src/shell/host.ts:86",
 ]
-judgment = "create*가 아닌 export function 80건은 합성 루트·잎·component·attach/bind/query API다. 정확한 이름을 오검 데이터로 든다."
+judgment = "create*가 아닌 export function 77건은 합성 루트·잎·component·attach/query API다. R5-02가 미도달 hook 둘과 미착좌 portal 하나를 제거했다."
 
 [axes.lifecycle_hook]
 predicate = { kind = "regex", pattern = "Preserve\\.around\\s*\\(|function leaveTo\\s*\\(|owner\\.leaveTo\\s*\\(|const IMMERSIVE\\s*=|addEventListener\\(\"pywebviewready\"", flavor = "python-re", granularity = "per-line" }
@@ -870,7 +867,7 @@ unit = "selftest 축 포함."
 
 [[metric]]
 id = "export-function-declarations"
-value = 116
+value = 113
 predicate = { kind = "derived", axis = "lifecycle_factory" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
@@ -1774,8 +1771,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/datazone"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:492", "frontend/src/screens/job_read.ts:510", "frontend/src/screens/job_read.ts:562", "frontend/src/screens/job_read.ts:572", "frontend/src/screens/job_read.ts:631"] }
-evidence = [{ file = "frontend/src/screens/job_read.ts", line = 492, anchor = "export function JobDataHeaderPortal(props: {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_read.ts:510", "frontend/src/screens/job_read.ts:562", "frontend/src/screens/job_read.ts:572", "frontend/src/screens/job_read.ts:631"] }
+evidence = [{ file = "frontend/src/screens/job_read.ts", line = 510, anchor = "export function JobDataBody(props: { controller: JobReadController; location: \"inline\" | \"sheet\" }): ReactNode {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1977,8 +1974,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r2-03-state"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/react/use_screen_snapshot.ts:26", "frontend/src/react/use_screen_snapshot.ts:37", "frontend/src/state/store.ts:69"] }
-evidence = [{ file = "frontend/src/react/use_screen_snapshot.ts", line = 26, anchor = "export function bindScreenSnapshot(store: SnapshotStore, screen: ScreenName): {" }]
+selector = { kind = "exact", members = ["frontend/src/state/store.ts:69"] }
+evidence = [{ file = "frontend/src/state/store.ts", line = 69, anchor = "export function createSnapshotStore({ alarm }: { alarm: (message: string) => void }) {" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

@@ -2,8 +2,8 @@
 
    `state/store.ts` 는 React 도 DOM 도 모르는 순수 모듈이다 — 여기서 직접 만들어 계약
    전수를 잰다: 도착 순 보관·참조 안정·해제 가능한 구독·이중 해제 throw·리스너 격리·
-   당김 revision 가드·계약 유도 채널. React 결합(`use_screen_snapshot.ts`)은 결속 쌍
-   (`bindScreenSnapshot`)까지를 여기서 재고, 실 React 렌더 루프 위의 실물 증거는
+   당김 revision 가드·계약 유도 채널. React 결합은 화면 runtime model의 안정된 결속 쌍
+   (`subscribe/getSnapshot`)까지를 여기서 재고, 실 React 렌더 루프 위의 실물 증거는
    `tests/test_react_store_live.py` 의 마커 되읽기가 진다(R2-01 검증 분업 선례).
 
    `.ts` 를 확장자 그대로 싣는 것 자체가 계약이다 — Node 24 type stripping 이 제품
@@ -15,7 +15,7 @@ import {
   SNAPSHOT_CHANNELS,
   createSnapshotStore,
 } from "../../frontend/src/state/store.ts";
-import { bindScreenSnapshot } from "../../frontend/src/react/use_screen_snapshot.ts";
+import { createScreenRuntime } from "../../frontend/src/screens/runtime.ts";
 import { SCREEN_ACTIONS } from "../../frontend/src/contract/contract.gen.ts";
 
 function storeWith(alarms = []) {
@@ -182,17 +182,18 @@ test("계약 밖 채널은 시끄럽게 거절된다 — 빈 채널로 접히면
   assert.throws(() => store.subscribe("job", null), /함수가 아닙니다/);
 });
 
-test("hook 결속 쌍은 store 표면에 그대로 붙는다(bindScreenSnapshot)", () => {
+test("화면 runtime model이 안정된 subscribe/getSnapshot 결속을 직접 낸다", () => {
   const store = storeWith();
-  const binding = bindScreenSnapshot(store, "workbench");
+  const runtime = createScreenRuntime({ client: { initial: assert.fail }, store });
+  const binding = runtime.model("workbench");
 
-  assert.equal(binding.subscribe, store.subscriber("workbench"),
-    "hook 의 subscribe 가 채널 안정 바인딩이 아닙니다 — 인라인 클로저는 재구독 요동을 만듭니다.");
+  assert.equal(binding.subscribe, runtime.model("workbench").subscribe,
+    "화면 model의 subscribe가 안정 참조가 아닙니다 — 인라인 클로저는 재구독 요동을 만듭니다.");
 
   const snapshot = { open: true };
   store.ingest("workbench", snapshot);
   assert.equal(binding.getSnapshot(), snapshot,
-    "getSnapshot 이 store 의 마지막 도착 참조를 돌려주지 않습니다.");
+    "getSnapshot이 화면 runtime에 착지한 마지막 도착 참조를 돌려주지 않습니다.");
 
   //: 결속을 통한 구독도 해제 계약을 진다.
   let calls = 0;
@@ -201,5 +202,7 @@ test("hook 결속 쌍은 store 표면에 그대로 붙는다(bindScreenSnapshot)
   unsubscribe();
   store.ingest("workbench", { open: true });
   assert.equal(calls, 1);
+  assert.equal(runtime.listenerCount("workbench"), 0);
+  runtime.dispose();
   assert.equal(store.listenerCount("workbench"), 0);
 });

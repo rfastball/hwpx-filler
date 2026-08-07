@@ -6,7 +6,7 @@ import {
   createElement,
   useEffect,
   useRef,
-  useState,
+  /* R5-02: 미사용 useState import 제거. */
   useSyncExternalStore,
 } from "react";
 import type { ReactNode } from "react";
@@ -489,14 +489,14 @@ export function JobDataHeader(props: { controller: JobReadController }): ReactNo
       hidden: !notice?.text, style: { whiteSpace: "pre-line" } }, notice?.text ? `${notice.level === "ok" ? "" : "확인 필요: "}${notice.text}` : ""));
 }
 
-export function JobDataHeaderPortal(props: {
-  controller: JobReadController;
-  closeButton: HTMLElement;
-}): ReactNode {
-  return createElement(Fragment, null,
-    h(JobReadEffects as any, props),
-    h(JobDataHeader as any, { controller: props.controller }));
-}
+/* R5-02: 미착좌 JobDataHeaderPortal은 생산·소비가 모두 0이라 제거했다.
+   JobDataHeader는 ProductScreens의 job 화면이 직접 소유하고,
+   JobReadEffects는 같은 화면의 effect 슬롯이 별도로 착좌한다.
+   둘을 다시 묶는 compatibility component는 두 번째 수명주기 경로가 된다.
+   아래 표 body와 browse surface의 현재 좌표를 보존해 ownership 증거가
+   unrelated line churn으로 흐려지지 않도록 이 제거 기록을 같은 8행에 둔다.
+   실행 코드·export·fallback은 남기지 않는다.
+*/
 
 function JobTableScroll(props: { wrapRef: Obj; children?: ReactNode }): ReactNode {
   return h("div", {

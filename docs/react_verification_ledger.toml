@@ -309,6 +309,11 @@ responsibility = "전역 pywebview 접촉 파일 전수의 AST allowlist — 주
 owner_stage = "R2-02"
 
 [[asset]]
+file = "tests/js/r5_boundary_gates.test.js"
+responsibility = "제품 모듈 폐포·cycle·dead export·React 번들 영역·dependency/lock 일치의 양·음성 정적 게이트"
+owner_stage = "R5-02"
+
+[[asset]]
 file = "tests/js/react_root.test.js"
 responsibility = "React root 상태기계(주입 기록자) — 요청 1회·커밋-키 가드·unmount 정산"
 owner_stage = "R2-01"
@@ -320,7 +325,7 @@ owner_stage = "R2-02"
 
 [[asset]]
 file = "tests/js/state_store.test.js"
-responsibility = "스냅샷 store 계약 — 구독·해제·이중 해제 throw·당김 revision 가드·리스너 격리·hook 결속"
+responsibility = "스냅샷 store·화면 runtime 계약 — 구독·해제·이중 해제 throw·당김 revision 가드·리스너 격리"
 owner_stage = "R2-03"
 
 [[asset]]

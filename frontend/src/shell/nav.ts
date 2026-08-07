@@ -217,5 +217,3 @@ export function createShellNav() {
     },
   };
 }
-
-export type ShellNav = ReturnType<typeof createShellNav>;

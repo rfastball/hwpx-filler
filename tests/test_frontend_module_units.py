@@ -67,7 +67,9 @@ EXPECTED_TEST_FILES = {
     # R2-02 — runtime adapter/typed client 의 오류 변환 셋과 pywebview 접촉 allowlist.
     "runtime_client.test.js",
     "pywebview_allowlist.test.js",
-    # R2-03 — 스냅샷 store 계약(구독·해제·당김 가드·격리)과 hook 결속. 실물 증거는 live 게이트.
+    # R5-02 — module/dead export/dependency와 sealed React runtime cardinality 폐포.
+    "r5_boundary_gates.test.js",
+    # R2-03 — 스냅샷 store 계약과 화면 runtime model 결속. 실물 증거는 live 게이트.
     "state_store.test.js",
     # R2-04 — selftest 클러스터 R(React 실런타임 마커)의 단위 계약. 실창 증거는 selftest
     # 게이트·packaged 판정이 진다.

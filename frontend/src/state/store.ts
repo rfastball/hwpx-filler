@@ -36,8 +36,8 @@
    ## 이 파일에 없는 것
 
    DOM·전역·pywebview 접촉 0(신규 전송 통로는 `runtime/adapter.ts` 하나 — allowlist 게이트).
-   React 도 모른다 — React 결합은 `react/use_screen_snapshot.ts` 가 진다(전송과 component 의
-   분리가 #407 불변식이다). */
+   React 도 모른다 — 화면 controller model의 안정된 subscribe/getSnapshot을 component가
+   `useSyncExternalStore`에 직접 건네는 결합 경계가 진다. */
 import { SCREEN_ACTIONS } from "../contract/contract.gen.ts";
 import type { ScreenName } from "../contract/contract.gen.ts";
 
