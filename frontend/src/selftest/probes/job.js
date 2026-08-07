@@ -1286,7 +1286,16 @@ async function runJobResult(ctx) {
   out.runlog_collapsed = !doc.getElementById("jobRunLog").open;
   out.runlog_last_visible = isShown(ctx, doc.getElementById("jobRunLogLast"));
 
-  /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다. */
+  /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
+     누를 수 있는 상태는 **스냅샷으로** 만든다(세션 성분은 그대로라 강등·초기화가 아니다).
+     종전 이 자리는 DOM 프로퍼티를 직접 뒤집었다 — legacy 는 노드에 리스너를 달았으니 그것으로
+     충분했지만 React 는 `onClick` 을 부르기 전 **자기 props 의 `disabled`** 를 본다
+     (`shouldPreventMouseEvent`). 프로퍼티만 뒤집으면 핸들러가 영영 안 불리고, 그 침묵은
+     「거절이 안 그려졌다」와 똑같이 생겼다. 계측이 모델을 우회하면 그 계측은 아무것도 안 잰다. */
+  const genSnap = deepCopy(baseSnap);
+  genSnap.gate = { enabled: true, level: "", text: "" };
+  await pushAndSettle(ctx, "job", genSnap);
+
   let rejectGenCalls = 0;
   const genStub = stubGenerate(services, (args) => {
     rejectGenCalls += 1;
@@ -1335,8 +1344,8 @@ async function runJobResult(ctx) {
     return {};
   });
   const genBtn = doc.getElementById("jobGenBtn");
-  const rejectBtnDisabled = genBtn.disabled;   // 눌리는 상태였는지 자체가 갈래를 가른다
-  genBtn.disabled = false;
+  // React 가 **스스로** 연 상태여야 한다 — 여기가 참이면 이후 단언 전체가 공허하다.
+  const rejectBtnDisabled = genBtn.disabled;
   genBtn.click();
 
   await ctx.sleep(60);

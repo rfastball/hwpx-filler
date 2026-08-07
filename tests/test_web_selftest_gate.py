@@ -723,6 +723,10 @@ class TestWebSelftestGate:
             ):
                 print(f"  {k} = {j.get(k)!r}")
             print("REJECT_EVIDENCE_END")
+        # 누를 수 있는 상태가 아니었으면 아래 단언들은 전부 공허하다 — 먼저 그것부터 센다.
+        assert j["reject_btn_disabled"] is False, (
+            "생성 버튼이 잠긴 채였습니다 — 클릭이 핸들러에 닿지 않아 이후 단언이 공허합니다."
+        )
         assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], (
             j["reject_state"],
             j["reject_text"],
