@@ -318,7 +318,8 @@ test("소스 음성: IIFE 0 · 제품 전역 27종 0 · export 집합 · 화면 
   assert.ok(targets.length > 0, "직접 ESM import 가 있다(양성 대조)");
   assert.deepEqual(targets, [
     "react", "../runtime/client.ts", "../ports/service_handoff.ts", "./ports.ts",
-    "./runtime.ts", "./path_actions.ts", "./group_move_dialog.ts", "./editor_state.ts",
+    "./runtime.ts", "./context_menu.ts", "./path_actions.ts", "./group_move_dialog.ts",
+    "./editor_state.ts",
   ]);
   /* 화면 간 간선 0 — 다른 화면의 producer·controller 를 직접 부르지 않는다. 교차 소비는
      전부 `ScreenPorts` 를 지난다(③ 이 실행으로 잰다). */

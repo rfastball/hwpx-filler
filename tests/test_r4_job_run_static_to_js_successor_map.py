@@ -8,8 +8,8 @@
 되면서 같은 ID 들이 여기로 옮겨 왔다 — **두 자리가 같은 51 을 든다**.
 
 52 번째는 ``jobStatus`` 다. 이 자리만 정적 shell 로 남길 수 없었다: ``data-level`` 이 Python
-판정의 파생이라 shell 이 그것을 들면 판정을 두 곳이 하게 된다. 그래서 ``jobStatusHost``
-portal 을 신설하고 React 가 ``jobStatus`` 를 만든다(delta D20).
+판정의 파생이라 shell 이 그것을 들면 판정을 두 곳이 하게 된다. R4-04 뒤에는 별도 migration
+host 없이 ProductScreens가 ``jobStatus`` 를 직접 만든다(delta D20).
 
 **이 파일이 52 의 정본이다.** 소유권 원장과 형제 지도는 각자 세지 않고 여기를 참조한다 —
 세 곳이 각자 세면 하나가 늦게 늘어도 조용하다.
@@ -71,12 +71,9 @@ R4_03_SITE_COUNT = 52
 #: 동적 prefix — 값이 아니라 **접두**가 계약이다(신원은 인코딩된 인덱스가 진다).
 DYNAMIC_PREFIXES = {"jobResultFail-"}
 
-#: 정적 shell 이 자리만 남기고 안쪽을 통째로 넘긴 portal target. 여기 있는 id 는 index 에
-#: **정확히 한 번** 서야 하고(React 가 그 안을 채운다), MIGRATED 는 index 에 **없어야** 한다.
-PORTAL_TARGETS = {
-    "jobStatusHost", "jobPreflight", "jobMirrorZone", "jobRunCap", "jobOutRow",
-    "jobRestate", "jobResultZone", "jobActionBar", "previewSheet",
-}
+#: R4-04에서 inline 실행 표면은 ProductScreens 안으로 합쳐졌다. preview만 modal overlay라
+#: 정적 portal target으로 남는다.
+PORTAL_TARGETS = {"previewSheet"}
 
 
 def _axes() -> dict[str, list[str]]:
@@ -127,12 +124,11 @@ def test_r4_03_dynamic_prefixes_are_registered() -> None:
     assert dynamic == DYNAMIC_PREFIXES
 
 
-def test_migrated_ids_left_static_html_and_portal_targets_remain() -> None:
-    """옮긴 51 은 index 에서 사라지고, 자리를 넘긴 아홉은 **정확히 한 번** 남는다.
+def test_migrated_ids_left_static_html_and_overlay_target_remains() -> None:
+    """옮긴 51 은 index 에서 사라지고, preview overlay target만 **정확히 한 번** 남는다.
 
-    두 방향을 함께 재는 것이 요점이다. 부재만 재면 portal target 이 함께 지워져도 초록이고
-    (그 상태의 앱은 mount 에서 추락한다), 실재만 재면 정적 재도입이 조용하다(생산자가 둘이
-    되어 되읽기가 어느 쪽을 본지 모른다).
+    inline shell과 화면 root는 최종 successor 지도가 ProductScreens 생산을 별도로 고정한다.
+    여기서는 R4-03이 넘긴 안정 ID와 이 슬라이스의 유일한 정적 overlay 경계만 잰다.
     """
     html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
     for migrated in MIGRATED:

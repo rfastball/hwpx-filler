@@ -17,7 +17,8 @@ const SURFACE = [
   "init", "model", "moveModel", "setMove", "closeMove", "confirmMove", "axis",
   "toggleFavorite", "runPrimary", "newWork", "editWork", "renameJob", "openMove",
   "editTags", "cloneJob", "removeJob", "relink", "revealCorrupt", "deleteCorrupt",
-  "showGroupMenu", "closeGroupMenu", "handleGroupMenu", "doc", "client", "notify",
+  "showGroupMenu", "closeGroupMenu", "handleGroupMenu", "doc", "client",
+  "groupContextMenu", "popover", "notify",
 ];
 
 function build(options = {}) {
@@ -75,6 +76,7 @@ function build(options = {}) {
   const controller = createLibraryController({
     doc: { activeElement: null, getElementById: () => null }, runtime, client, ports, services, modal,
     undo: { show: (...args) => menuCalls.push(["undo", ...args]) },
+    popover: { place() {}, wireDismiss: () => () => {} },
     groupMenu: { show: (...args) => menuCalls.push(["show", ...args]), hide: () => menuCalls.push(["hide"]) },
     navigation: { go: (screen) => navigation.push(screen) },
     notify: (message) => notifications.push(String(message)),

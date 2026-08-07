@@ -13,7 +13,7 @@ import { createReactRootController } from "./root.ts";
 import type { SnapshotStore } from "../state/store.ts";
 import type { OverlayHostPorts } from "../overlay/host.ts";
 import type { ShellHostPorts } from "../shell/host.ts";
-import type { ScreenMigrationHostPorts } from "../screens/host.ts";
+import type { ProductScreensPorts } from "../screens/product_screens.ts";
 
 export const REACT_ROOT_ID = "reactRoot";
 
@@ -28,7 +28,7 @@ type BootHost = {
   store: SnapshotStore;
   overlay: OverlayHostPorts;
   shell: ShellHostPorts;
-  screens: ScreenMigrationHostPorts;
+  screens: ProductScreensPorts;
 };
 
 let controller: ReturnType<typeof createReactRootController> | null = null;
@@ -42,7 +42,7 @@ let currentStore: SnapshotStore | null = null;
 let currentTarget: Element | null = null;
 let currentOverlay: OverlayHostPorts | null = null;
 let currentShell: ShellHostPorts | null = null;
-let currentScreens: ScreenMigrationHostPorts | null = null;
+let currentScreens: ProductScreensPorts | null = null;
 
 /** 제품 React root 를 세운다 — 합성 루트가 기존 조립 **뒤에** 정확히 한 번 부른다.
  *  실패는 경보 후 `false` 다: 부팅을 React 마운트에 매달지 않되, 침묵으로 접지도 않는다. */

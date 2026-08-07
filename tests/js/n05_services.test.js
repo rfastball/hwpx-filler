@@ -125,8 +125,6 @@ function freshDom(t) {
 const SRC = (n) => new URL(`../../frontend/js/${n}.js`, import.meta.url);
 const read = (n) => fs.readFileSync(SRC(n), "utf8");
 
-const { GroupList } = await import("../../frontend/js/grouplist.js");
-const { createPathTrack } = await import("../../frontend/js/pathtrack.js");
 const { createTheme } = await import("../../frontend/js/theme.js");
 const { createPersonalization } = await import("../../frontend/js/personalization.js");
 /* R4-02 — 시트 선택은 이 파일의 범위를 떠났다. legacy `sheet_picker.js` 가 삭제되면서
@@ -152,7 +150,7 @@ function patch(obj, keys, t) {
   return log;
 }
 
-const FILES = ["grouplist", "pathtrack", "theme", "personalization"];
+const FILES = ["theme", "personalization"];
 const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
 const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
 
@@ -199,17 +197,6 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   freshDom(t);
   const bridge = {};
 
-  /* R4-02 — GroupList 표면은 `createMenu` 하나로 좁아졌다. `createMoveDialog` 는 React
-     `screens/group_move_dialog.ts` 로 옮겨졌고(그 3 listener site 가 retirement 의 실물),
-     `toggleGroup`·`setGroupExpanded` 는 #414 가 마지막 소비자를 걷어 간 뒤 죽은 export 라
-     함께 절제됐다. 남은 이유는 소비자 둘(`libraryGroupMenu`·`tplRowMenu`)이고, 파일 자체의
-     은퇴는 그 둘을 걷는 #417 이 진다. */
-  assert.equal(typeof GroupList, "object");
-  assert.deepEqual(Object.keys(GroupList).sort(), ["createMenu"]);
-
-  assert.equal(typeof createPathTrack, "function");
-  assert.deepEqual(Object.keys(createPathTrack({ bridge })).sort(), ["affordances"]);
-
   assert.equal(typeof createTheme, "function");
   assert.deepEqual(Object.keys(createTheme({ bridge })).sort(),
     ["apply", "current", "set", "toggle"]);
@@ -225,11 +212,6 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   assert.equal(rz.ports.jobData.owner(), "react");
 });
 
-test("공개 표면 — GroupList 하위 팩토리 반환 키", (t) => {
-  freshDom(t);
-  assert.deepEqual(Object.keys(GroupList.createMenu({ menuId: "m" })).sort(), ["hide", "show"]);
-});
-
 test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 낸다", (t) => {
   freshDom(t);
   const rz = reactZoneHarness();
@@ -239,7 +221,6 @@ test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 
 
 test("파일당 export 는 하나 — export default 없음", () => {
   const EXPECTED = {
-    grouplist: ["GroupList"], pathtrack: ["createPathTrack"],
     theme: ["createTheme"], personalization: ["createPersonalization"],
   };
   for (const f of FILES) {
@@ -259,12 +240,6 @@ test("파일당 export 는 하나 — export default 없음", () => {
 
 test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", () => {
   const EXPECTED = {
-    /* `createMoveDialog` 절제로 `modal.js`·`esc.js` 두 간선이 함께 죽었다 — 남은
-       `createMenu` 는 팝오버 배치만 쓴다(문안 이스케이프는 부르는 화면 몫). 간선이 줄어든
-       것 자체가 이관이 실물이라는 증거다. */
-    grouplist: ['import { Popover } from "./popover.js";'],
-    pathtrack: ['import { escHtml } from "./esc.js";'],
-    relink: ['import { Modal } from "./modal.js";'],
     theme: [], personalization: [],
   };
   for (const f of FILES) {
@@ -296,7 +271,6 @@ test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign
 
 test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
   const FACTORY = {
-    pathtrack: "createPathTrack",
     theme: "createTheme", personalization: "createPersonalization",
   };
   for (const [f, name] of Object.entries(FACTORY)) {
@@ -306,8 +280,6 @@ test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코�
     // 그래도 계측으로 못박는다: 프로브가 프로퍼티를 갈아끼우는 통로가 살아 있어야 한다.
     assert.equal(/^const\s+\w+\s*=\s*bridge\./m.test(src), false, `${f}: 모듈 스코프 캡처 금지`);
   }
-  // grouplist 는 포트가 없다(§1-A 평범한 named export).
-  assert.equal(read("grouplist").includes("bridge"), false);
 });
 
 test("DataZone 요청은 JobRead controller의 단일 zone tail과 client port를 지난다", () => {
@@ -342,21 +314,6 @@ test("포트 교체 — Personalization 은 갈아끼운 bridge.setFontScale 를
   bridge.setFontScale = (v) => seen.push(["B", v]);
   pers.setFontScale("larger");
   assert.deepEqual(seen, [["A", "large"], ["B", "larger"]]);
-});
-
-test("포트 교체 — PathTrack 위임 핸들러는 갈아끼운 bridge.openPath 를 본다", async (t) => {
-  const dom = freshDom(t);
-  const seen = [];
-  const bridge = { openPath: (p) => { seen.push(["A", p]); return ""; } };
-  createPathTrack({ bridge });
-  const onClick = dom.clicks()[0].fn;
-  const el = new FakeEl("b");
-  el.dataset.trackAct = "open";
-  el.dataset.path = "P:\\a.hwpx";
-  await onClick({ target: { closest: () => el } });
-  bridge.openPath = (p) => { seen.push(["B", p]); return ""; };
-  await onClick({ target: { closest: () => el } });
-  assert.deepEqual(seen, [["A", "P:\\a.hwpx"], ["B", "P:\\a.hwpx"]]);
 });
 
 /* R4-03 — 저수준 재연결은 legacy `relink.js` 와 함께 이 파일의 주어(재사용 서비스 팩토리)를
@@ -496,50 +453,6 @@ test("Personalization — apply 는 영속 없이 셸만(app.py loaded 경로)",
    옮겨졌다. 후계에서 「클릭 통로를 걷는다」는 리스너 해제가 아니라 **버튼 disabled +
    settled 플래그**로 서므로, 같은 성질을 재려면 관측점 자체가 달라야 한다. */
 
-/* ================= 7. PathTrack 위임 리스너 ================= */
-
-test("PathTrack — 위임 리스너는 1회, bubble phase(capture 인자 없음)", (t) => {
-  const dom = freshDom(t);
-  createPathTrack({ bridge: {} });
-  const clicks = dom.clicks();
-  assert.equal(clicks.length, 1);
-  assert.equal(clicks[0].opts, undefined, "3번째 인자 없음 = bubble phase");
-  assert.equal((dom.docListeners.get("pointerdown") || []).length, 0);
-});
-
-test("PathTrack — affordances 산출은 옛 마크업 그대로(속성 순서·이스케이프 포함)", (t) => {
-  freshDom(t);
-  const pt = createPathTrack({ bridge: {} });
-  assert.equal(pt.affordances(""), "");
-  assert.equal(pt.affordances(null), "");
-  const html = pt.affordances('C:\\a&b<"x>.hwpx');
-  assert.ok(html.startsWith('<span class="track-affords" title="C:\\a&amp;b&lt;&quot;x&gt;.hwpx">'));
-  assert.equal((html.match(/data-track-act=/g) || []).length, 2, "기본은 열기·폴더보기 2개");
-  assert.equal(html.includes('data-track-act="copy"'), false);
-  assert.equal(
-    (pt.affordances("p", { only: ["copy"] }).match(/data-track-act="copy"/g) || []).length, 1);
-});
-
-/* ================= 8. GroupList 팩토리 재사용 ================= */
-
-test("GroupList — createMenu 를 표면마다 다시 불러도 서로 다른 메뉴를 소유한다", (t) => {
-  const dom = freshDom(t);
-  const plog = patch(Popover, ["place"], t);
-  const a = dom.ensure("menuA"), b = dom.ensure("menuB");
-  const menuA = GroupList.createMenu({ menuId: "menuA" });
-  const menuB = GroupList.createMenu({ menuId: "menuB" });
-  menuA.show("<button>A</button>", new FakeEl("btnA"));
-  assert.equal(a.innerHTML, "<button>A</button>");
-  assert.equal(a.style.display, "block");
-  assert.equal(b.innerHTML, "");
-  menuB.show("<button>B</button>", new FakeEl("btnB"));
-  menuA.hide();
-  assert.equal(a.innerHTML, "");
-  assert.equal(a.style.display, "none");
-  assert.equal(b.innerHTML, "<button>B</button>");
-  assert.deepEqual(plog.map((r) => r[0]), ["place", "place"]);
-});
-
 /* `createMoveDialog` 인스턴스 격리(자기 confirm 상태만 든다)의 후계는 React
    `GroupMoveDialog` 이고 `r4_editor.test.js` 가 잰다 — 그 dialog 는 이제 편집기 controller 가
    주입받는 표면이라 이 파일의 "재사용 서비스" 주어에 들지 않는다.
@@ -564,11 +477,6 @@ test("팩토리를 두 번 부르면 독립 인스턴스가 나온다(중앙은 
   themeB.set("light");
   assert.deepEqual(seenA, ["dark"]);
   assert.deepEqual(seenB, ["light"]);
-
-  // PathTrack: 두 인스턴스는 각각 자기 위임 리스너를 문서에 건다.
-  createPathTrack({ bridge: {} });
-  createPathTrack({ bridge: {} });
-  assert.equal(dom.clicks().length, 2);
 
   // React DataZone: controller의 queue와 pending state는 인스턴스별로 격리된다.
   const sentA = [], sentB = [];

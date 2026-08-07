@@ -20,7 +20,7 @@ from _web_source import REACT_JOB_RUN_FILES, react_job_run_source
 JOB_JS = SOURCE_ROOT / REACT_JOB_RUN_FILES[0]
 JOB_READ_TS = SOURCE_ROOT / "src" / "screens" / "job_read.ts"
 EDITOR_JS = SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts"
-PATHTRACK_JS = SOURCE_JS_DIR / "pathtrack.js"
+PATH_ACTIONS_TS = SOURCE_ROOT / "src" / "screens" / "path_actions.ts"
 _NON_CODE_SUFFIXES = frozenset(json.loads(
     (REPO_ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
 )["non_code_suffixes"])
@@ -112,9 +112,9 @@ def test_confirmed_row_shows_green_tint():
 def test_pathtrack_default_affordances_are_open_and_reveal():
     """PathTrack 기본 어포던스는 열기·폴더보기 2개(F29) — 「경로 복사」는 경로 텍스트가
     실제로 필요한 곳(저장 폴더 등)만 opts.only 로 명시해 살린다."""
-    src = PATHTRACK_JS.read_text(encoding="utf-8")
-    m = re.search(r"opts\.only\)\s*\|\|\s*\[([^\]]*)\]", src)
-    assert m, "PathTrack.affordances 의 기본 액션 배열이 없습니다(F29)."
+    src = PATH_ACTIONS_TS.read_text(encoding="utf-8")
+    m = re.search(r"props\.only\s*\?\?\s*\[([^\]]*)\]", src)
+    assert m, "PathActions 의 기본 액션 배열이 없습니다(F29)."
     defaults = [p.strip().strip('"') for p in m.group(1).split(",")]
     assert defaults == ["open", "reveal"], (
         f"PathTrack 기본 어포던스가 {defaults} — 열기·폴더보기 2개여야 합니다(F29: "
@@ -128,18 +128,16 @@ def test_pathtrack_secondary_actions_are_accessible_icon_buttons():
     버튼 title 은 경로를 병기한다(#264 리뷰) — 아이콘 버튼 위에선 버튼 자신의 title 이
     부모 .track-affords 의 경로 title 을 가리므로, 라벨만 남기면 경로 텍스트를 안 그리는
     호출부(풀 카드 등)에서 전체 경로가 발견 불가능해진다(full-path-tooltip 계약)."""
-    src = PATHTRACK_JS.read_text(encoding="utf-8")
+    src = PATH_ACTIONS_TS.read_text(encoding="utf-8")
     for action, label in (("open", "열기"), ("reveal", "폴더에서 보기"), ("copy", "경로 복사")):
-        assert f"{action}: '<svg" in src
-        assert f'label: "{label}", icon: ICONS.{action}' in src
-    assert 'class="btn sm icon track-btn"' in src
-    assert 'title="${spec.label} — ${esc(path)}"' in src
-    assert 'aria-label="${spec.label}"' in src
-    assert '${spec.icon}</button>' in src
-    # 복사 피드백 복원도 「라벨 — 경로」(#280 리뷰) — 라벨만 되돌리면 첫 복사 이후
-    # 경로 툴팁이 재렌더까지 사라진다.
-    assert 'el.setAttribute("title", `${spec.label} — ${path}`)' in src
-    assert 'el.setAttribute("title", spec.label)' not in src
+        assert f'{action}: "{label}"' in src
+    assert 'createElement("svg"' in src
+    assert 'className: "btn sm icon track-btn"' in src
+    assert 'title: done ? label : `${label} — ${path}`' in src
+    assert '"aria-label": label' in src
+    assert 'icon(done ? "done" : action)' in src
+    # 복사 피드백은 state로 잠시 「복사됨」을 내고 원래 라벨·경로 title로 되돌아간다.
+    assert "setCopied(true)" in src and "setCopied(false)" in src
 
 
 def test_pathtrack_icon_style_is_visually_secondary_and_focusable():

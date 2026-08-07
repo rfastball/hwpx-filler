@@ -140,20 +140,19 @@ EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     # R4-02 재고정 — 이관이 끝난 축은 legacy 생산 자리가 사라지며 분모가 준다. 하한을
     # 함께 내리지 않으면 게이트가 이관 자체를 빨강으로 보고, 그 빨강을 피하려 legacy
     # 잔재를 남기는 압력이 생긴다(게이트 AXIS_FLOORS 주석에 같은 사유가 있다).
-    # R4-03 재고정 — 실행·결과 표면이 React 소유로 가며 정적 HTML 의 분모가 마지막으로
-    # 크게 줄었다. 셋(dom_static·dom_data_attr·subscription_listener)은 **옮겨 간 것**이고
-    # lifecycle_hook 은 **사라진 것**이다: 제품 코드의 Preserve.around 가 0 이 됐다.
+    # R4-04 재고정 — 제품 화면 골격이 ProductScreens로 가며 정적 HTML과 화면별 legacy
+    # listener 분모가 다시 줄었다. 둘은 사라진 것이 아니라 React 구성·lifecycle 소유로 옮겨 갔다.
     "dom_data_attr": (1, "e0bd6cb1822fd50fefbda2c3fac621d5"),
     "dom_js_data_attr": (80, "d6c24f47a9f809b5e6f63ddd2b09e372"),
     "dom_js_site": (120, "7ce48e5d41ae530e66a2156e113bb0bb"),
-    "dom_static": (42, "a0de506720a9704065dde2bf17410d50"),
+    "dom_static": (20, "a0de506720a9704065dde2bf17410d50"),
     "lifecycle_factory": (54, "f774587af230cf5222697cd0f0e0a050"),
     "lifecycle_hook": (5, "1f090f972ecaf5c9e0a54796c6849437"),
     "state_js_module": (65, "fef89b77255e04f0cf05d4b19e09c733"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
-    "subscription_listener": (22, "8064cf796b67e47a094e61c7362e4b5b"),
+    "subscription_listener": (19, "8064cf796b67e47a094e61c7362e4b5b"),
     # R4-02 — 축 단위가 「화면이 구독한다」에서 「기반이 탭을 세우고 화면은 model 을
     # 구독한다」로 바뀌었다. 술어에 `.subscribe(` 가 붙고 scope 가 React 트리로 갔다.
     "subscription_push": (6, "6b30b15e7ca10851763bd0ec96b48725"),
@@ -194,10 +193,27 @@ def test_r4_handoff_row_allocation_is_exact(document: dict[str, Any]) -> None:
     assert sum(actual.values()) == 69
 
 
+def test_r4_product_screens_metric_family_is_exact(document: dict[str, Any]) -> None:
+    """R4-04 착지 계측은 main 1 + alias 10의 값·형식을 한 묶음으로 고정한다."""
+    metric = next(
+        row for row in document["metric"]
+        if row["id"] == "r4_product_screens_integration"
+    )
+    assert metric["value"] == 1
+    assert [alias["value"] for alias in metric["aliases"]] == [
+        1, 1, 1, 0, 1, 2, 0, 0, 0, 5,
+    ]
+    assert 1 + len(metric["aliases"]) == 11
+    for row in [metric, *metric["aliases"]]:
+        assert row["predicate"]["kind"] in {"regex", "derived"}
+        assert row["scope"]
+        assert row["unit"]
+
+
 def test_r4_job_split_and_landed_static_shell_are_explicit(
     document: dict[str, Any],
 ) -> None:
-    """job read/run 경계와 R4-01이 비운 정적 subtree를 행 이름·selector로 고정한다."""
+    """job read/run 경계와 R4-04 ProductScreens 착지를 행 이름·selector로 고정한다."""
     nodes = {node["id"]: node for node in document["node"]}
     assert {
         "dom/job/jobDataGrid-shell",
@@ -213,16 +229,39 @@ def test_r4_job_split_and_landed_static_shell_are_explicit(
         "dom-js-data/job",
     }.isdisjoint(nodes)
 
-    expected_subtrees = {
-        "dom/scr-library": ("scr-library", 0),
-        "dom/job/jobDataGrid-shell": ("jobDataGrid", 5),
-        "dom/job/jobSideCard-read": ("jobSideCard", 2),
+    expected_exact = {
+        "dom/scr-library": [
+            "frontend/src/screens/context_menu.ts:115:dynamic:",
+            "frontend/src/screens/library.ts:585:static:libraryGroupMenu",
+        ],
+        "dom/job/jobDataGrid-shell": [
+            "frontend/src/screens/product_screens.ts:128:static:jobZones",
+            "frontend/src/screens/product_screens.ts:129:static:jobDataGrid",
+        ],
+        "dom/job/jobSideCard-read": [
+            "frontend/src/screens/product_screens.ts:139:static:jobSideCard",
+            "frontend/src/screens/product_screens.ts:140:static:jobNoDataExit",
+            "frontend/src/screens/product_screens.ts:142:static:jobCandsRow",
+        ],
+        "dom/job/jobPreflight": [
+            "frontend/src/screens/product_screens.ts:133:static:jobPreflight",
+        ],
+        "dom/job/jobSideCard-run": [
+            "frontend/src/screens/product_screens.ts:145:static:jobRunCap",
+            "frontend/src/screens/product_screens.ts:149:static:jobRestate",
+        ],
+    }
+    for node_id, members in expected_exact.items():
+        assert nodes[node_id]["axis"] == "dom_js_site"
+        assert nodes[node_id]["selector"] == {"kind": "exact", "members": members}
+
+    expected_empty_overlay_subtrees = {
         "dom/overlay/poolRegModal": ("poolRegModal", 0),
         "dom/overlay/dataPickerModal": ("dataPickerModal", 0),
         "dom/overlay/libraryMoveModal": ("libraryMoveModal", 0),
         "dom/overlay/jobBrowseSheet": ("jobBrowseSheet", 0),
     }
-    for node_id, (root, count) in expected_subtrees.items():
+    for node_id, (root, count) in expected_empty_overlay_subtrees.items():
         assert nodes[node_id]["selector"] == {
             "kind": "subtree",
             "root": root,
@@ -341,20 +380,19 @@ def test_n1b_new_id_inside_a_folded_container_breaks_the_member_count(
     """
     index = clone_source / "index.html"
     text = index.read_text(encoding="utf-8")
-    # R4-03 이 `jobStatus` 를 React 생산으로 옮기며(D20 — `data-level` 이 판정 파생이라
-    # 정적 shell 로 남길 수 없다) 삽입 지점을 그 portal target 으로 옮겼다. 겨눔은 「접힌
-    # 컨테이너(`scr-job`) 안쪽의 한 자리」이지 특정 id 가 아니다.
-    marker = '<div id="jobStatusHost"></div>'
+    # R4-04 뒤 화면 정적 subtree는 사라졌으므로, 남은 정적 portal 컨테이너 overlayRoot의
+    # 시작태그 바로 안쪽을 겨눈다.
+    marker = '<div id="overlayRoot">'
     assert marker in text, "N1b 의 삽입 지점이 사라졌습니다 — 음성 대조를 다시 겨눠야 합니다."
     # 같은 줄에 끼운다 — 줄을 늘리면 아래쪽 증거 좌표가 전부 밀려 실패가 22건으로 번지고,
     # 「한 좌표만 바꾼다」가 거짓이 된다. 변이는 최소여야 그 red 가 무엇의 것인지 말할 수 있다.
     index.write_text(
-        text.replace(marker, '<div id="__negctl_job__"></div>' + marker, 1), encoding="utf-8"
+        text.replace(marker, marker + '<div id="__negctl_overlay__"></div>', 1), encoding="utf-8"
     )
     report = gate.check(document, frontend_tree, axes=["dom_static"], metrics=[])
     assert not report.ok, "접힌 컨테이너 안쪽 성장이 안 잡혔습니다."
     assert len(report.failures) == 1, "변이 하나가 실패 하나여야 합니다.\n" + _failures(report)
-    assert "scr-job" in _failures(report), _failures(report)
+    assert "overlayRoot" in _failures(report), _failures(report)
     assert "members_expected" in _failures(report), _failures(report)
 
 
@@ -372,23 +410,21 @@ def test_n2_new_listener_site_is_unclassified(
     assert "frontend/js/theme.js:" in _failures(report), _failures(report)
 
 
-def test_n3_deleted_assignment_moves_the_metric_only(
+def test_n3_added_assignment_moves_the_metric_only(
     document: dict[str, Any], frontend_tree: Path, clone_source: Path
 ) -> None:
-    """N3 — `innerHTML =` 대입을 하나 지우면 **계측 불일치만** 난다.
+    """N3 — 0 기준선에 `innerHTML =` 대입을 하나 넣으면 **계측 불일치만** 난다.
 
     유령 행은 나지 않는다. `innerHTML` 은 `[[metric]]` 이고 노드 축이 아니기 때문이다 —
     두 종류를 섞어 기대하면 음성 대조가 자기 스키마를 잘못 안다는 뜻이 된다.
     """
-    # R4-02 가 `sheet_picker.js` 를 지우면서 겨눔을 옮겼다. 변이는 **하나**로 유지한다 —
-    # 파일 안 대입 수를 먼저 못박고 그중 하나만 지운다(전역 술어 치환은 자기가 겨눈 것과
-    # 다른 구멍까지 함께 감춘다).
-    target = clone_source / "js" / "grouplist.js"
-    lines = target.read_text(encoding="utf-8").splitlines()
-    hits = [index for index, line in enumerate(lines) if re.search(r"innerHTML\s*=[^=]", line)]
-    assert len(hits) == 2, "grouplist.js 의 대입 수가 바뀌었습니다 — 변이를 다시 겨눠야 합니다."
-    kept = [line for index, line in enumerate(lines) if index != hits[0]]
-    target.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    # R4-04가 제품 대입을 0으로 닫았다. 기존 행을 지우는 대조 대신 안전한 복제 트리에
+    # 하나를 추가해 0 기준선이 실제로 재유입을 거절하는지 본다.
+    target = clone_source / "js" / "theme.js"
+    target.write_text(
+        target.read_text(encoding="utf-8") + '\ndocument.body.innerHTML = "<main></main>";\n',
+        encoding="utf-8",
+    )
 
     report = gate.check(document, frontend_tree, axes=[], metrics=["innerhtml-assignment"])
     assert not report.ok, "계측 재실측이 안 붉었습니다."

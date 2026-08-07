@@ -495,7 +495,7 @@ function dataSheetStage(conf) {
   const options = conf || {};
   const ids = ["jobRecsHead", "jobOrderBar", "jobFilterChips", "jobTableHost",
     "jobSelStrip", "jobRangeFoot"];
-  const screenHost = stage.mk("#jobDataBodyReactHost");
+  const screenHost = stage.mk("#scr-job");
   screenHost.holds = [];
   const slot = stage.mk("#dataSheetSlot");
   slot.holds = [];

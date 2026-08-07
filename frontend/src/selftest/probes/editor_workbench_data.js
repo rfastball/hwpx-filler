@@ -374,7 +374,7 @@ export function createEditorWorkbenchDataProbes() {
         out.present = liveNodes().every(Boolean);
         if (!out.present) { out.pending = false; return { data_sheet: out }; }
 
-        const inlineHost = byId(ctx, "jobDataBodyReactHost");
+        const inlineHost = byId(ctx, "scr-job");
         const slot = byId(ctx, "dataSheetSlot");
         const trigger = byId(ctx, "jobDataExpand");
         ctx.state.ids = ids;

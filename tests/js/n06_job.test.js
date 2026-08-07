@@ -24,7 +24,7 @@ const SRC = readFileSync(SRC_URL, "utf8");
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
-  "model", "subscribe", "getRun", "getUi",
+  "model", "subscribe", "getRun", "getUi", "client", "notify",
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
   "renderResult", "markResultStale",

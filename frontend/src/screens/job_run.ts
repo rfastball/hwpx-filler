@@ -361,6 +361,8 @@ export function createJobRunController(deps: JobRunControllerDeps) {
 
   const controller = {
     model,
+    client: deps.client,
+    notify: deps.notify,
     subscribe(listener: Listener): () => void {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
@@ -621,7 +623,12 @@ export function JobOutRow(props: { controller: JobRunController }): ReactNode {
       onClick: () => { void props.controller.pickOutputFolder(); },
     }, "찾아보기…"),
     h("span", { id: "jobOutTrack" },
-      out ? createElement(PathActions as any, { path: out, only: ["reveal", "copy"] }) : null));
+      out ? createElement(PathActions as any, {
+        client: props.controller.client,
+        path: out,
+        only: ["reveal", "copy"],
+        notify: props.controller.notify,
+      }) : null));
 }
 
 /** 재진술 블록 — 이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. */

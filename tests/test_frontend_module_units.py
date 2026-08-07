@@ -102,6 +102,10 @@ EXPECTED_TEST_FILES = {
     "r4_job_preview.test.js",
     "r4_sheet_picker.test.js",
     "r4_workbench.test.js",
+    # R4-04 — 단일 ProductScreens 트리, 동기 화면 executor, PathActions 최종 발신 계약.
+    "r4_product_screens.test.js",
+    "r4_product_screen_executor.test.js",
+    "r4_path_actions.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

@@ -142,7 +142,10 @@ export function JobResultZone(props: { controller: JobRunController }): ReactNod
           // 저장 폴더 어포던스는 **실패 태에서도** 남는다 — 실패 진단의 첫 걸음이 그 폴더 열기다.
           h("span", { id: "jobResultTrack" },
             hasDir ? createElement(PathActions as any, {
-              path: String(shown.out_dir), only: ["reveal", "copy"],
+              client: props.controller.client,
+              path: String(shown.out_dir),
+              only: ["reveal", "copy"],
+              notify: props.controller.notify,
             }) : null)),
         h("div", { className: "result3-fails", id: "jobResultFails" },
           ...fails.map((f, i) => createElement(FailRow as any, { key: i, fail: f }))),

@@ -9,7 +9,7 @@ from _web_source import SOURCE_ROOT, app_css
 
 WEB = SOURCE_ROOT
 POPOVER = WEB / "js" / "popover.js"
-GROUPLIST = WEB / "js" / "grouplist.js"
+CONTEXT_MENU = WEB / "src" / "screens" / "context_menu.ts"
 DATAZONE = WEB / "src" / "screens" / "data_zone.ts"
 # 분할 조각을 이어붙인 문자열 — `.ctx-menu`(job.css)와 `.colpanel`(tail.css)이 서로 다른
 # 조각에 살지만, 이 창구를 거치면 `^\.ctx-menu{` 줄머리 정규식이 둘 다에 그대로 걸린다.
@@ -61,14 +61,19 @@ def test_focusout_and_capture_scroll_share_registry():
 
 def test_rendered_size_drives_clamp_flip_and_origin():
     pop = _read(POPOVER)
-    group = _read(GROUPLIST)
+    menu = _read(CONTEXT_MENU)
     data = _read(DATAZONE)
     assert "const measured = el.getBoundingClientRect()" in pop
     assert "belowSpace" in pop and "aboveSpace" in pop
     assert "window.innerWidth - margin - width" in pop
     assert "window.innerHeight - margin - height" in pop
     assert "el.style.transformOrigin" in pop
-    assert "Popover.place(m, btn)" in group
+    assert "popover.place(menu, state.trigger)" in menu
+    assert "popover.wireDismiss({" in menu
+    assert "close: onDismiss" in menu
+    assert "target.closest(triggerSelector)" in menu
+    assert 'querySelector<HTMLElement>("button")?.focus()' in menu
+    assert "innerHTML" not in menu
     # DataZone 열 패널은 R4 React subtree 안에서 표 host와 함께 렌더돼 별도 좌표 조립이 없다.
     assert 'className: "colpanel react-colpanel"' in data
     assert "Popover.place(" not in data

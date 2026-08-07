@@ -820,15 +820,32 @@ export function createBootRoutingOverlayProbes() {
         const selectedCard = styleOf(ctx, card);
         card.remove();
 
-        /* 로케이트 어포던스 표본 자급 — 목적이 아이콘·접근 이름 *스타일 계약*이므로 직접 심는다. */
+        /* 로케이트 어포던스 표본 자급 — 목적은 React PathActions 후계의 아이콘·접근 이름
+           *스타일 계약*이다. 제품 handler를 복제하지 않고 같은 class/ARIA 표본만 만든다. */
+        let syntheticPathButtons = [];
         if (!doc.querySelector(".track-btn")) {
           const ot = doc.getElementById("jobOutTrack");
-          const PathTrack = ctx.services.PathTrack;
-          if (ot && PathTrack) {
-            ot.innerHTML = PathTrack.affordances("C:\\Probe\\Results", { only: ["reveal", "copy"] });
+          if (ot) {
+            const specs = [["reveal", "폴더에서 보기", "⌖"], ["copy", "경로 복사", "⧉"]];
+            const buttons = specs.map(([action, label, glyph]) => {
+              const button = doc.createElement("button");
+              button.className = "track-btn";
+              button.type = "button";
+              button.dataset.trackAct = action;
+              button.setAttribute("aria-label", label);
+              button.setAttribute("title", label + " — C:/selftest/result.hwpx");
+              const svg = doc.createElement("svg");
+              svg.setAttribute("aria-hidden", "true");
+              button.appendChild(svg);
+              button.append(glyph);
+              return button;
+            });
+            ot.replaceChildren(...buttons);
+            syntheticPathButtons = buttons;
           }
         }
-        const pathButtons = all(doc, ".track-btn");
+        const pathButtons = syntheticPathButtons.length
+          ? syntheticPathButtons : all(doc, ".track-btn");
 
         const scrollHost = doc.createElement("div");
         scrollHost.className = "tblwrap";

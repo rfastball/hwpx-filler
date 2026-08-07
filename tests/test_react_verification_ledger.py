@@ -671,6 +671,9 @@ def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> No
     R4-03 은 8 → 15. 한 파일(`screens/job.js`)이 지던 실행·결과 표면이 다섯으로 갈리면서
     검증도 같은 축으로 갈렸다: 실행 정체 reducer · 컨트롤러 배선 · 결과 3태 수명 · 발신
     우선순위 · 확인 면 · 재연결 port(Node 6) + 승계 52 site 의 exact 대조(Python 1).
+
+    R4-04 는 기존 4자산을 그대로 유지하고, PathActions·ProductScreens·executor
+    Node 3과 최종 successor·fail-closed inventory Python 2를 더한 exact 9다.
     """
     actual = Counter(
         row["owner_stage"]
@@ -681,9 +684,9 @@ def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> No
         "R4-01": 17,
         "R4-02": 17,
         "R4-03": 15,
-        "R4-04": 4,
+        "R4-04": 9,
     }
-    assert sum(actual.values()) == 53
+    assert sum(actual.values()) == 58
 
 
 #: R4-02 착지 경로 집합의 정본 지문 — 패킷 rev5 §1 이 구현 **전에** 고정했다.
@@ -704,6 +707,23 @@ def test_r4_02_asset_path_set_matches_the_designed_digest(ledger: dict[str, Any]
     digest = hashlib.sha256(blob).hexdigest()
     assert digest == R4_02_LEDGER_DIGEST, (
         "R4-02 자산 경로 집합이 설계가 고정한 17경로와 다릅니다.\n"
+        f"  실제: {paths}"
+    )
+
+
+#: R4-04 착수 패킷이 제품 수정 전에 고정한 exact 9경로 지문.
+R4_04_LEDGER_DIGEST = "bef76d13ebf6a1ed2612178aec6ece0dd77fdc29b0271c564278506c537ce8e8"
+
+
+def test_r4_04_asset_path_set_matches_the_designed_digest(ledger: dict[str, Any]) -> None:
+    """R4-04 경로 집합을 UTF-8 ordinal sort + LF SHA-256으로 대조한다."""
+    paths = sorted(
+        row["file"] for row in ledger["asset"] if row.get("owner_stage") == "R4-04"
+    )
+    blob = "".join(f"{path}\n" for path in paths).encode("utf-8")
+    digest = hashlib.sha256(blob).hexdigest()
+    assert digest == R4_04_LEDGER_DIGEST, (
+        "R4-04 자산 경로 집합이 설계가 고정한 9경로와 다릅니다.\n"
         f"  실제: {paths}"
     )
 

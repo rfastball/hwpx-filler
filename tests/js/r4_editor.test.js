@@ -14,7 +14,10 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { ContextMenu } from "../../frontend/src/screens/context_menu.ts";
 import { createEditorController } from "../../frontend/src/screens/editor.ts";
 import { createGroupMoveDialog } from "../../frontend/src/screens/group_move_dialog.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
@@ -22,7 +25,6 @@ import { createServiceHandoffPorts } from "../../frontend/src/ports/service_hand
 import { createScreenRuntime } from "../../frontend/src/screens/runtime.ts";
 import { createSnapshotStore } from "../../frontend/src/state/store.ts";
 import { Intent } from "../../frontend/js/intent.js";
-import { escHtml } from "../../frontend/js/esc.js";
 import {
   NAME_FIELD, rowField, valueOf,
 } from "../../frontend/src/screens/editor_state.ts";
@@ -47,7 +49,6 @@ function build(options = {}) {
   const notices = [];
   const modalOpens = [];
   const undoToasts = [];
-  const menuCalls = [];
   let openSpec = null;
   const client = {
     async initial() { return { ok: true, value: options.snapshot ?? BASE }; },
@@ -96,20 +97,14 @@ function build(options = {}) {
       close: (id) => { trace.push(["modal.close", id]); },
     },
     undo: { show: (message, action) => undoToasts.push([message, action]) },
-    popover: { wireDismiss: () => () => {} },
-    rowMenu: {
-      show: (html, trigger) => menuCalls.push(["show", html, trigger]),
-      hide: () => menuCalls.push(["hide"]),
-    },
+    popover: { place() {}, wireDismiss: () => () => {} },
     groupMove,
     chain: Intent,
     navigation: { go() {}, refresh: async () => {} },
-    /* 실물 공용 잎 — 대역으로 갈면 「이스케이프한다」가 대역의 성질이 된다. */
-    escapeHtml: escHtml,
     notify: (message) => notices.push(String(message)),
   });
   return {
-    controller, groupMove, store, trace, notices, modalOpens, undoToasts, menuCalls,
+    controller, groupMove, store, trace, notices, modalOpens, undoToasts,
     actions: () => trace.filter((row) => row[0] === "dispatch").map((row) => [row[1], row[2], row[3]]),
     editorSpec: () => openSpec,
     async ready() { await controller.init(); },
@@ -255,10 +250,10 @@ test("메뉴 토글 — 같은 자리를 다시 누르면 닫힌다(#215 동류�
   assert.equal(h.controller.isLibMenuOpen(), true);
   h.controller.toggleLibMenu("hwpx", "row", "k1", trigger);
   assert.equal(h.controller.isLibMenuOpen(), false);
-  assert.deepEqual(h.menuCalls.map((row) => row[0]), ["show", "hide"]);
+  assert.equal(h.controller.libContextMenu.model.getSnapshot(), null);
 });
 
-test("메뉴의 Python 유래 값은 주입된 공용 잎으로 이스케이프된다(K1)", async () => {
+test("메뉴의 Python 유래 값은 React text node로 렌더되어 markup이 될 수 없다", async () => {
   const hostile = '<img src=x onerror="alert(1)">';
   const h = build({
     snapshot: {
@@ -276,10 +271,17 @@ test("메뉴의 Python 유래 값은 주입된 공용 잎으로 이스케이프�
   await h.ready();
   h.controller.toggleLibMenu("hwpx", "row", "k1", { id: "btn" });
 
-  const html = h.menuCalls.find((row) => row[0] === "show")[1];
-  assert.equal(html.includes("<img"), false, "원문 태그가 그대로 들어가면 이스케이프가 없는 것이다");
-  assert.ok(html.includes(escHtml(hostile)), "공용 잎이 낸 그 문자열이 그대로 들어간다");
-  assert.ok(html.includes('data-menu="act:compile"'));
+  const html = renderToStaticMarkup(createElement(ContextMenu, {
+    id: "tplRowMenu",
+    controller: h.controller.libContextMenu,
+    popover: { place() {}, wireDismiss: () => () => {} },
+    triggerSelector: ".job-more",
+    onDismiss() {},
+    onSelect() {},
+  }));
+  assert.equal(html.includes("<img"), false, "Python 문안이 element markup으로 해석되면 안 된다");
+  assert.ok(html.includes("&lt;img"), "React text node가 위험 문자를 escape한다");
+  assert.ok(html.includes('data-context-menu-action="act:compile"'));
 });
 
 test("삭제는 되돌리기 토스트를 세우고 되돌리기가 실패하면 시끄럽다", async () => {

@@ -149,6 +149,23 @@ class FakeEl {
     return child;
   }
 
+  append(...items) {
+    for (const item of items) {
+      if (typeof item === "string") this.textContent += item;
+      else this.appendChild(item);
+    }
+  }
+
+  replaceChildren(...children) {
+    for (const child of this.children) {
+      child.parentNode = null;
+      if (child.id && this.doc) this.doc.ids.delete(child.id);
+    }
+    this.children = [];
+    this._html = "";
+    for (const child of children) this.appendChild(child);
+  }
+
   removeChild(child) {
     this.children = this.children.filter((c) => c !== child);
     child.parentNode = null;
@@ -177,9 +194,20 @@ class FakeEl {
 
   getBoundingClientRect() { return { ...this.rect }; }
 
-  querySelector(sel) { return sel in this._q ? this._q[sel] : null; }
+  querySelector(sel) { return sel in this._q ? this._q[sel] : (this.querySelectorAll(sel)[0] || null); }
 
-  querySelectorAll(sel) { return sel in this._qa ? this._qa[sel].slice() : []; }
+  querySelectorAll(sel) {
+    if (sel in this._qa) return this._qa[sel].slice();
+    if (!/^[a-z][\w-]*$/i.test(sel)) return [];
+    const found = [];
+    const tag = sel.toUpperCase();
+    const visit = (node) => {
+      if (node.tagName === tag) found.push(node);
+      node.children.forEach(visit);
+    };
+    this.children.forEach(visit);
+    return found;
+  }
 
   cloneNode() {
     const clone = new FakeEl(this.tagName, this.doc);
@@ -251,9 +279,20 @@ function createDom(options) {
   doc.querySelector = (sel) => {
     if (sel in doc._q) return doc._q[sel];
     if (/^#[\w-]+$/.test(sel)) return doc.getElementById(sel.slice(1));
-    return null;
+    return doc.querySelectorAll(sel)[0] || null;
   };
-  doc.querySelectorAll = (sel) => (sel in doc._qa ? doc._qa[sel].slice() : []);
+  doc.querySelectorAll = (sel) => {
+    if (sel in doc._qa) return doc._qa[sel].slice();
+    const classMatch = /^\.([\w-]+)$/.exec(sel);
+    if (!classMatch) return [];
+    const found = [];
+    const visit = (node) => {
+      if (node.classList?.contains(classMatch[1])) found.push(node);
+      node.children.forEach(visit);
+    };
+    visit(body);
+    return found;
+  };
   doc.addEventListener = (type, fn, opts) => {
     const list = doc._listeners.get(type) || [];
     list.push({ fn, capture: !!(opts && opts.capture) });

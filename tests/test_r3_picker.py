@@ -130,8 +130,12 @@ def test_picker_skeleton_is_static_in_index_html():
         assert f'id: "{inner}"' in picker, (
             f"다이얼로그 내부 요소 id='{inner}' 가 React producer에 없습니다(K12/R4)."
         )
-    # overlay root는 정적이고, content subtree만 단일 React root의 portal이 소유한다.
-    assert 'screenPortal("dataPickerModal", DataPickerDialog' in (
+    # overlay root는 정적이고, content subtree만 ProductScreens와 같은 React root의
+    # portal이 소유한다.
+    assert (
+        'productOverlayComponent("dataPickerModal", '
+        "PRODUCT_OVERLAY_COMPONENTS.DataPickerDialog"
+    ) in (
         SOURCE_JS_DIR.parent / "src" / "bootstrap.js"
     ).read_text(encoding="utf-8")
 

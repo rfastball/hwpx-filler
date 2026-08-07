@@ -62,6 +62,8 @@ R4_GROUP_MOVE = R4_SCREENS_DIR / "group_move_dialog.ts"
 R4_JOB_RUN = R4_SCREENS_DIR / "job_run.ts"
 R4_JOB_RESULT = R4_SCREENS_DIR / "job_result.ts"
 R4_JOB_PREVIEW = R4_SCREENS_DIR / "job_preview.ts"
+R4_PRODUCT_SCREENS = R4_SCREENS_DIR / "product_screens.ts"
+R4_PRODUCT_EXECUTOR = R4_SCREENS_DIR / "product_screen_executor.ts"
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
 # 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
 # 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
@@ -144,6 +146,8 @@ MUTABLE_MODULE_STATE_BUDGET = {
     "workbench.ts": 1,           # R4-02 — draft
     "job_result.ts": 1,          # R4-03 — 진행바 pct(렌더 지역 파생)
     "job_run_state.ts": 1,       # R4-03 — 토큰 발급 직렬 번호
+    "context_menu.ts": 1,        # R4-04 — 메뉴 store의 현재 snapshot
+    "product_screens.ts": 1,     # R4-04 — visibility store의 현재 화면
 }
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
@@ -311,8 +315,11 @@ def test_all_element_ids_are_globally_unique():
 
 def test_screen_roots_present():
     ids = set(_collect_ids())
-    missing = [r for r in SCREEN_ROOTS if r not in ids]
-    assert not missing, f"화면 루트가 사라졌습니다: {missing}"
+    product = R4_PRODUCT_SCREENS.read_text(encoding="utf-8")
+    assert not set(SCREEN_ROOTS) & ids, "화면 root가 정적 셸과 ProductScreens에 이중 생산됩니다."
+    for root in SCREEN_ROOTS:
+        screen = root.removeprefix("scr-")
+        assert product.count(f'"{screen}"') >= 1, f"ProductScreens 화면 root가 사라졌습니다: {root}"
 
 
 def test_scoped_data_labels_present_and_unique():
@@ -465,7 +472,7 @@ def test_react_render_contract_records_static_and_runtime_twins():
 #: 합성 루트가 등록하는 portal target 의 **오늘 수**. 폐포를 「bootstrap 이 부른 것 전수」로
 #: 유도하므로 이 정수는 집합을 열거하지 않고 **추출기가 눈을 감는 것**만 막는다 — 정규식이
 #: 죽어 빈 목록을 내면 폐포는 공허하게 닫히고 이 하한만 어긋난다.
-REACT_PORTAL_TARGET_FLOOR = 24
+REACT_PORTAL_TARGET_FLOOR = 10
 
 
 def test_every_react_portal_target_stands_in_the_static_shell() -> None:
@@ -481,7 +488,10 @@ def test_every_react_portal_target_stands_in_the_static_shell() -> None:
     않고 **합성 루트에서 유도한다** — 등록이 늘면 검사도 함께 는다.
     """
     bootstrap = SOURCE_BOOTSTRAP.read_text(encoding="utf-8")
-    targets = re.findall(r'screenPortal\(\s*"([A-Za-z0-9_-]+)"', _strip_js_comments(bootstrap))
+    targets = ["reactScreenStage", *re.findall(
+        r'productOverlayComponent\(\s*"([A-Za-z0-9_-]+)"',
+        _strip_js_comments(bootstrap),
+    )]
     assert len(targets) >= REACT_PORTAL_TARGET_FLOOR, (
         f"portal 등록을 {len(targets)} 개만 봤습니다(하한 {REACT_PORTAL_TARGET_FLOOR}) — "
         "추출기가 눈을 감았는지 보세요. 등록이 실제로 줄었으면 사유와 함께 하한을 고칩니다."
@@ -597,6 +607,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
     실 DOM 이동/복귀)은 그대로 살아 여기서 계속 고정된다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
+    product = R4_PRODUCT_SCREENS.read_text(encoding="utf-8")
     css = "".join(WEB_CSS.split())
     job_js = react_job_run_source()
     job_read = R4_JOB_READ.read_text(encoding="utf-8")
@@ -617,21 +628,24 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert ".data-sheet-body.jobtbth:first-child" in css
     assert "position:sticky;left:0" in css
 
-    assert 'class="data-grid" id="jobDataGrid"' in html
+    assert 'className: "data-grid", id: "jobDataGrid"' in product
     assert 'class="duo job-duo"' not in html and ".job-duo{" not in css, (
         "구 표|거울 duo 가 재유입됐습니다 — R1 의 가로 축은 데이터↔문서 선택기입니다."
     )
-    grid = html.split('id="jobDataGrid"', 1)[1].split("job-edit-host", 1)[0]
-    main, side = grid.split('class="dg-side"', 1)
     # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 생성 준비
     # (구 「선택한 작업」 존은 U2 §4 판정 A(#342)로 사망 — 아래 승계 계약 테스트가 잇는다).
     # 좌 열의 아래 두 자리(거울·결과)는 R4-03 에서 React 생산이라 정적 index 에는 **자리**만
     # 남는다 — 순서 계약이 겨눌 것도 그 자리다(안쪽 id 를 계속 찾으면 이동을 회귀로 오독한다).
-    assert main.index('id="jobDataBodyReactHost"') < main.index('id="jobMirrorZone"')         < main.index('id="jobResultZone"')
-    assert side.index('id="jobCandsRow"') < side.index('id="jobOutRow"')
+    ordered = [
+        'id: "jobDataGrid"', 'id: "jobPreflight"', 'location: "inline"',
+        'id: "jobMirrorZone"', 'id: "jobResultZone"', 'id: "jobSideCard"',
+        'id: "jobCandsRow"', 'id: "jobOutRow"', 'id: "jobActionBar"',
+    ]
+    positions = [product.index(needle) for needle in ordered]
+    assert positions == sorted(positions), f"ProductScreens job 구획 순서가 어긋났습니다: {ordered}"
     assert 'id: "jobTableHost"' in data_zone and 'id: "jobCandidates"' in job_read
     # 본문 존 = 표 없는 한 줄(U2 §2.13) — 420px 캡·캡스트립은 표와 함께 사망했다.
-    assert "jobMirrorCapstrip" not in html and "max-height:420px" not in css
+    assert "jobMirrorCapstrip" not in html + product and "max-height:420px" not in css
     # 컬럼 템플릿은 한 곳에서만 선언한다(U2 §2.2) — 세션 카드와 그 아래 액션바가 같은
     # 기준면을 써야 「미리보기·생성」이 자기 입력(좌 열)과 같은 열의 오른쪽 끝에 선다.
     # 리터럴이 두 번 적히면 한쪽만 고쳐져 두 표면이 조용히 어긋난다.
@@ -681,14 +695,14 @@ def test_milestone_l_job_density_and_expansion_sheets():
         )
     for node_id in ("jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip"):
         assert f'id: "{node_id}"' in data_zone
-    assert 'screenPortal("dataSheetSlot", JobDataBody' in SOURCE_ROOT.joinpath(
+    assert 'productOverlayComponent("dataSheetSlot", PRODUCT_OVERLAY_COMPONENTS.JobDataBody' in SOURCE_ROOT.joinpath(
         "src", "bootstrap.js"
     ).read_text(encoding="utf-8")
     # 화면을 떠날 때의 일괄 회수(재작성 F7) — 펼침 면은 실 DOM 을 오버레이로 옮겨 띄우므로
     # 열린 채 화면이 바뀌면 남의 화면 위에 이 화면의 DOM 이 뜬다. 소유가 화면 전환으로
     # 올라가 어느 화면이 늘어도 같은 회수가 걸린다(종전엔 편집 모드 진입이 그 자리에서 닫았다).
-    app_js_src = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
-    assert "SurfaceSheet.closeAllAndRestore()" in app_js_src, (
+    bootstrap_src = SOURCE_BOOTSTRAP.read_text(encoding="utf-8")
+    assert "reclaimSurfaces: () => SurfaceSheet.closeAllAndRestore()" in bootstrap_src, (
         "화면 전환이 펼침 면을 회수하지 않습니다 — 남의 화면 위에 실 DOM 이 남습니다."
     )
     assert "function closeAllAndRestore" in sheets
@@ -1212,8 +1226,7 @@ def test_job_session_surface_uses_v6_two_column_captions():
     소비자가 없다. 번호의 정보(다음에 어디로)는 게이트 문안의 구획 지목(`gateStep`)이
     승계한다.
     """
-    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    job_static = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
+    job_static = " ".join(R4_PRODUCT_SCREENS.read_text(encoding="utf-8").split())
     # 캡션 여섯의 생산자가 셋으로 갈렸다(정적 셸 · read 표면 · 실행 표면). 합쳐서 묻는
     # 이유는 계약이 재는 것이 **캡션의 존재**이지 어느 파일이 적었는가가 아니기 때문이다.
     job_react = " ".join(R4_JOB_READ.read_text(encoding="utf-8").split())
@@ -1276,10 +1289,10 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     지목 자체가 거짓말이 된다. 지목 문자열은 반드시 실제 `zone-cap` 캡션과 일치해야 한다.
     """
     src = react_job_run_source()
-    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
+    product = " ".join(R4_PRODUCT_SCREENS.read_text(encoding="utf-8").split())
     # 캡션 생산자가 셋으로 갈렸으므로 「지목이 실재하는 구획을 가리키는가」도 셋을 합쳐 묻는다.
     job = (
-        html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
+        product
         + " ".join(R4_JOB_READ.read_text(encoding="utf-8").split())
         + " ".join(src.split())
     )
@@ -1524,8 +1537,9 @@ def test_job_data_first_prework_surface_contract():
     실렌더 동작판은 selftest ``job_data_first`` 프로브.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
+    product = R4_PRODUCT_SCREENS.read_text(encoding="utf-8")
     react = R4_JOB_READ.read_text(encoding="utf-8")
-    assert 'id="jobCandsRow"' in html and 'id: "jobCandidates"' in react, (
+    assert 'id: "jobCandsRow"' in product and 'id: "jobCandidates"' in react, (
         "문서 작업 후보 구획이 없습니다(데이터-우선 §18.4)."
     )
     assert "jobEmptyPanel" not in html, (
@@ -1563,7 +1577,7 @@ def test_job_display_order_axis_surface_contract():
         "표시순서 2값(§18.10)이 계약 어휘와 다릅니다."
     )
     bootstrap = SOURCE_ROOT.joinpath("src", "bootstrap.js").read_text(encoding="utf-8")
-    assert 'screenPortal("dataSheetSlot", JobDataBody' in bootstrap
+    assert 'productOverlayComponent("dataSheetSlot", PRODUCT_OVERLAY_COMPONENTS.JobDataBody' in bootstrap
     assert 'location: "sheet"' in bootstrap
     assert 'value: snapshot.range_draft?.open' in zone
     assert 'controller.zone("set_view_order"' in zone
@@ -2007,7 +2021,9 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     비례한다. 출구가 하나여야 patch 3택이 한 곳에서 끝난다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'id="scr-editor"' in html, "편집기 화면 root 가 사라졌습니다."
+    product = R4_PRODUCT_SCREENS.read_text(encoding="utf-8")
+    assert 'screenProps("editor", active)' in product, "ProductScreens 편집기 화면 root가 사라졌습니다."
+    assert 'id="scr-editor"' not in html, "편집기 root가 정적 셸과 React에 이중 생산됩니다."
     #: R4-02 — 화면 안쪽 전부가 React 생산이라 컨테이너 3종·머리 컨트롤의 거처는 producer 다.
     #: 정적 재도입은 두 생산자가 되므로 **부재**도 함께 잰다(portal 이 mount 전에 거절한다).
     editor_src = R4_EDITOR.read_text(encoding="utf-8")
@@ -2022,13 +2038,14 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     )
     # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다. R3-02(#411)부터
     # 몰입 목록의 정본은 셸 상태기계(nav.ts)이고 app.js 는 그 목록으로 body 클래스를 집행한다.
-    app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
+    executor_ts = R4_PRODUCT_EXECUTOR.read_text(encoding="utf-8")
+    bootstrap = SOURCE_BOOTSTRAP.read_text(encoding="utf-8")
     nav_ts = (WEB_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
     assert '{ id: "editor", cls: "editor-open" }' in nav_ts and "body.editor-open .nav" in WEB_CSS, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
     )
-    assert "IMMERSIVE_SURFACES.forEach" in app_js and "classList.toggle(im.cls" in app_js, (
-        "집행 adapter 가 몰입 목록으로 셸 표지를 내리지 않습니다 — 판정만 있고 은닉이 죽습니다."
+    assert "IMMERSIVE_SURFACES.forEach" in executor_ts and "classList.toggle(surface.cls" in executor_ts, (
+        "ProductScreens executor가 몰입 목록으로 셸 표지를 내리지 않습니다 — 판정만 있고 은닉이 죽습니다."
     )
     # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다
     # 늘리면 가드의 완전성이 표면 수에 비례한다(이 표면이 존재하는 바로 그 이유). 그래서
@@ -2036,8 +2053,8 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert "IMMERSIVE_SURFACES.some" in nav_ts and "delegateLeave" in nav_ts, (
         "상태기계가 몰입 표면의 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
     )
-    assert "owner.leaveTo" in app_js, (
-        "adapter 가 소유 화면의 leaveTo 로 위임하지 않습니다 — 가드가 판정만 남습니다."
+    assert 'lifecycle.register("editor"' in bootstrap and 'lifecycle.register("workbench"' in bootstrap, (
+        "합성 루트가 몰입 화면 lifecycle owner를 등록하지 않습니다 — 가드가 판정만 남습니다."
     )
     for surface in ('{ id: "editor", cls: "editor-open" }', '{ id: "workbench", cls: "workbench-open" }'):
         assert surface in nav_ts, f"몰입 표면 목록에 {surface} 가 없습니다."
@@ -2071,8 +2088,10 @@ def test_editor_is_an_immersive_screen_with_one_exit():
         "job.js 두 모드 배선이 되살아났습니다 — 편집은 자기 화면으로 나갔습니다(F7)."
     )
     editor_js = R4_EDITOR.read_text(encoding="utf-8")
-    assert 'screenPortal("scr-editor"' in (WEB_JS_DIR.parent / "src" / "bootstrap.js").read_text(
-        encoding="utf-8"), "React 편집기 표면이 몰입 화면 root 에 portal 되지 않았습니다."
+    product_src = R4_PRODUCT_SCREENS.read_text(encoding="utf-8")
+    assert 'screenProps("editor", active)' in product_src and 'createPortal(screens, targets.stage' in product_src, (
+        "React 편집기 표면이 ProductScreens 단일 stage portal에 합성되지 않았습니다."
+    )
 
 
 def test_editor_folder_import_is_wired_without_session_confirm():
@@ -2464,7 +2483,7 @@ def test_job_screen_branches_the_output_surfaces_on_the_media_python_declared():
         "매체 분기의 근거가 Python 이 낸 실행 행동 키가 아닙니다."
     )
     # 거울 존은 통째로 걷힌다(빈 상태 문안이 이행 불가능한 지시로 남지 않게).
-    assert 'jobMirrorZone' in job_js and 'id="jobMirrorZone"' in WEB_INDEX.read_text(
+    assert 'jobMirrorZone' in job_js and 'id: "jobMirrorZone"' in R4_PRODUCT_SCREENS.read_text(
         encoding="utf-8")
     # 저장 폴더 행·피커는 이 매체에 없는 축이다 — 그 판정도 같은 실행 행동 키에서 나온다.
     # (portal target `#jobOutRow` 의 실재는 위 거울 존 단언과 successor map 이 함께 진다.)

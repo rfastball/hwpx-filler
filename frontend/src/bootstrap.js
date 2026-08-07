@@ -76,10 +76,8 @@ import { Preserve } from "../js/preserve.js";
 import { Modal } from "../js/modal.js";
 import { SurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
-import { createPathTrack } from "../js/pathtrack.js";
 import { Popover } from "../js/popover.js";
 import { Intent } from "../js/intent.js";
-import { GroupList } from "../js/grouplist.js";
 
 import { createAppShell } from "../js/app.js";
 import { createBridge } from "../js/bridge.js";
@@ -93,33 +91,21 @@ import { createSnapshotStore } from "./state/store.ts";
 import { createScreenRuntime } from "./screens/runtime.ts";
 import { createScreenPorts } from "./screens/ports.ts";
 import { createServiceHandoffPorts } from "./ports/service_handoff.ts";
-import { screenPortal } from "./screens/host.ts";
 import {
-  LibraryMoveDialog, LibraryScreen as ReactLibraryScreen, createLibraryController,
-} from "./screens/library.ts";
-import {
-  DataPickerDialog, PoolRegistrationDialog, createDataPickerController,
-} from "./screens/data_picker.ts";
-import {
-  JobBrowseDialog, JobCandidates, JobDataBody, JobDataHeaderPortal, JobNoDataExit,
-  createJobReadController,
-} from "./screens/job_read.ts";
-import {
-  JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
-  JobStatusPill, createJobRunController,
-} from "./screens/job_run.ts";
-import { JobResultZone } from "./screens/job_result.ts";
-import { JobPreviewSheet } from "./screens/job_preview.ts";
+  PRODUCT_OVERLAY_COMPONENTS, createProductScreenVisibility, productOverlayComponent,
+} from "./screens/product_screens.ts";
+import { createProductScreenExecutor } from "./screens/product_screen_executor.ts";
+import { createScreenLifecycleRegistry } from "./screens/screen_lifecycle_registry.ts";
+import { createLibraryController } from "./screens/library.ts";
+import { createDataPickerController } from "./screens/data_picker.ts";
+import { createJobReadController } from "./screens/job_read.ts";
+import { createJobRunController } from "./screens/job_run.ts";
 import { createJobRelink } from "./screens/job_relink.ts";
-import {
-  EditorScreen as ReactEditorScreen, TxtEditDialog, createEditorController,
-} from "./screens/editor.ts";
+import { createEditorController } from "./screens/editor.ts";
 import { createEditorEntry } from "./screens/editor_entry.ts";
-import {
-  WorkbenchScreen as ReactWorkbenchScreen, createWorkbenchController,
-} from "./screens/workbench.ts";
-import { GroupMoveDialog, createGroupMoveDialog } from "./screens/group_move_dialog.ts";
-import { SheetPickerDialog, createSheetPickerController } from "./screens/sheet_picker.ts";
+import { createWorkbenchController } from "./screens/workbench.ts";
+import { createGroupMoveDialog } from "./screens/group_move_dialog.ts";
+import { createSheetPickerController } from "./screens/sheet_picker.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -216,7 +202,6 @@ export function bootProduct() {
      부작용(위임 리스너 부착 등)을 구성 시점에 한 번 치르므로 두 번 부르면 리스너가 겹친다. */
   const Theme = createTheme({ bridge });
   const Personalization = createPersonalization({ bridge });
-  const PathTrack = createPathTrack({ bridge });
   /* R4-02 — 시트 선택·편집기 진입 seam 은 React 구현이 **유일한 owner** 다. legacy 구현이
      남지 않으므로 handoff 할 상대가 없다: 빈 port 에 한 번 결속하고, 둘째 결속은 throw 한다
      (중간 dual-dispatch 창이 애초에 생기지 않는다). */
@@ -240,8 +225,7 @@ export function bootProduct() {
   const LibraryController = createLibraryController({
     doc: document,
     runtime, client, ports: screenPorts, services: servicePorts,
-    modal: Modal, undo: UndoToast,
-    groupMenu: GroupList.createMenu({ menuId: "libraryGroupMenu" }),
+    modal: Modal, undo: UndoToast, popover: Popover,
     navigation,
     notify: (message) => window.alert(message),
   });
@@ -261,10 +245,8 @@ export function bootProduct() {
     doc: document,
     runtime, client, ports: screenPorts, services: servicePorts,
     modal: Modal, undo: UndoToast, popover: Popover, chain: Intent,
-    rowMenu: GroupList.createMenu({ menuId: "tplRowMenu" }),
     groupMove: GroupMove,
     navigation,
-    escapeHtml: escHtml,
     notify: (message) => window.alert(message),
   });
   const WorkbenchController = createWorkbenchController({
@@ -312,16 +294,37 @@ export function bootProduct() {
      결속은 아래 adapter 구성이 정확히 1회 지고, 두 번째 결속은 상태기계가 throw 한다 —
      `bootProduct` 재호출 방지가 「호출자 유일성」에 더해 구조 한 겹을 얻었다. */
   const shellNav = createShellNav();
+  const visibility = createProductScreenVisibility();
+  const lifecycle = createScreenLifecycleRegistry();
+  lifecycle.register("editor", {
+    leaveTo: (...args) => EditorController.leaveTo(...args),
+    rerender: () => EditorController.rerender(),
+  });
+  lifecycle.register("workbench", {
+    leaveTo: (...args) => WorkbenchController.leaveTo(...args),
+  });
+  shellNav.bindExecutor(createProductScreenExecutor({
+    doc: document,
+    bridge,
+    visibility,
+    lifecycle,
+    reclaimSurfaces: () => SurfaceSheet.closeAllAndRestore(),
+    notify: (message) => window.alert(message),
+  }));
+
+  const initSequence = [
+    () => LibraryController.init(),
+    () => EditorController.init(),
+    () => JobRunController.init(),
+    () => WorkbenchController.init(),
+    () => DataPicker.init(),
+  ];
 
   /* 앱 셸 집행 adapter — 마지막. 구성이 곧 부팅 랜딩(`go("job")`)이라 화면·서비스 뒤에
      선다. 셸 리스너·부팅 시퀀스는 여기서 **서술**(`shellHost`)로만 캡처되고, 부착/해제
      수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
-    Bridge: bridge, Theme, Personalization, DataPicker: DataPickerService,
-    screens: {
-      library: LibraryScreen, editor: EditorScreen, job: JobScreen, workbench: WorkbenchScreen,
-    },
-    shellNav,
+    Bridge: bridge, Theme, Personalization, shellNav, initSequence,
   });
   Nav = appShell.Nav;
   const AppCloseGuard = appShell.AppCloseGuard;
@@ -331,8 +334,8 @@ export function bootProduct() {
   const services = {
     Bridge: bridge, Client: client, Nav, AppCloseGuard,
     Copy, escHtml, Guard, Popover, Preserve, Intent, UndoToast,
-    Modal, SurfaceSheet, GroupList, Theme, Personalization, SheetPicker,
-    PathTrack, DataPicker: DataPickerService, EditorEntry,
+    Modal, SurfaceSheet, Theme, Personalization, SheetPicker,
+    DataPicker: DataPickerService, EditorEntry,
     LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
   };
 
@@ -459,48 +462,39 @@ export function bootProduct() {
        상태기계 markReady → init 5)를 소유한다. 서술은 adapter 구성 시 캡처된 것을 그대로
        넘긴다 — 여기서 풀어 헤치면 합성 루트가 두 번째 셸 조립자가 된다. */
     shell: appShell.shellHost,
-    /* R4-01 — 한 React root의 portal registry. target은 모두 static shell이고 내부 legacy
-       child가 0인지는 ScreenMigrationHost가 mount 전에 fail-closed로 검사한다. */
+    /* R4-04 — static stage 하나에 제품 화면 넷을 한 portal로, overlay는 같은 subtree의
+       기존 target으로 보낸다. ProductScreens가 target 중복·static child를 fail-closed한다. */
     screens: {
       doc: document,
-      portals: [
-        screenPortal("scr-library", ReactLibraryScreen, { controller: LibraryController }),
-        screenPortal("libraryMoveModal", LibraryMoveDialog, { controller: LibraryController }),
-        screenPortal("poolRegModal", PoolRegistrationDialog, { controller: DataPicker }),
-        screenPortal("dataPickerModal", DataPickerDialog, { controller: DataPicker }),
-        screenPortal("jobDataHeaderReactHost", JobDataHeaderPortal, {
-          controller: JobRead,
-          closeButton: dataSheetClose,
-        }),
-        screenPortal("jobDataBodyReactHost", JobDataBody, {
-          controller: JobRead, location: "inline",
-        }),
-        screenPortal("dataSheetSlot", JobDataBody, {
-          controller: JobRead, location: "sheet",
-        }),
-        screenPortal("jobNoDataExit", JobNoDataExit, { controller: JobRead }),
-        screenPortal("jobCandsRow", JobCandidates, { controller: JobRead }),
-        screenPortal("jobBrowseSheet", JobBrowseDialog, { controller: JobRead }),
-        /* R4-02 — 편집·매핑 표면 다섯. 몰입 화면 둘의 외곽 `.scr` class/ARIA 는 셸이 계속
-           집행하고, 그 **안쪽 전부**를 React 가 생산한다. */
-        screenPortal("scr-editor", ReactEditorScreen, { controller: EditorController }),
-        screenPortal("scr-workbench", ReactWorkbenchScreen, { controller: WorkbenchController }),
-        screenPortal("txtEditModal", TxtEditDialog, { controller: EditorController }),
-        screenPortal("tplMoveModal", GroupMoveDialog, { controller: GroupMove }),
-        screenPortal("sheetModal", SheetPickerDialog, { controller: SheetPickerController }),
-        /* R4-03 — 실행·결과 표면 아홉. static shell 은 자리(class·role·aria·조판)만 소유하고
-           그 **안쪽 전부**를 React 가 생산한다. 「이 존이 없는 축」(TXT) 판정은 자리를
-           비우는 것으로 말하고 CSS `:empty` 가 접는다 — portal target 의 속성은 React 가
-           만지지 않으므로 legacy 의 `style.display` 토글이 여기로 올 수 없다. */
-        screenPortal("jobStatusHost", JobStatusPill, { controller: JobRunController }),
-        screenPortal("jobPreflight", JobPreflight, { controller: JobRunController }),
-        screenPortal("jobMirrorZone", JobMirrorZone, { controller: JobRunController }),
-        screenPortal("jobRunCap", JobRunCap, { controller: JobRunController }),
-        screenPortal("jobOutRow", JobOutRow, { controller: JobRunController }),
-        screenPortal("jobRestate", JobRestate, { controller: JobRunController }),
-        screenPortal("jobResultZone", JobResultZone, { controller: JobRunController }),
-        screenPortal("jobActionBar", JobActionBar, { controller: JobRunController }),
-        screenPortal("previewSheet", JobPreviewSheet, { controller: JobRunController }),
+      visibility,
+      library: LibraryController,
+      editor: EditorController,
+      workbench: WorkbenchController,
+      jobRead: JobRead,
+      jobRun: JobRunController,
+      dataPicker: DataPicker,
+      groupMove: GroupMove,
+      sheetPicker: SheetPickerController,
+      dataSheetClose,
+      overlays: [
+        productOverlayComponent("libraryMoveModal", PRODUCT_OVERLAY_COMPONENTS.LibraryMoveDialog,
+          { controller: LibraryController }),
+        productOverlayComponent("poolRegModal", PRODUCT_OVERLAY_COMPONENTS.PoolRegistrationDialog,
+          { controller: DataPicker }),
+        productOverlayComponent("dataPickerModal", PRODUCT_OVERLAY_COMPONENTS.DataPickerDialog,
+          { controller: DataPicker }),
+        productOverlayComponent("dataSheetSlot", PRODUCT_OVERLAY_COMPONENTS.JobDataBody,
+          { controller: JobRead, location: "sheet" }),
+        productOverlayComponent("jobBrowseSheet", PRODUCT_OVERLAY_COMPONENTS.JobBrowseDialog,
+          { controller: JobRead }),
+        productOverlayComponent("txtEditModal", PRODUCT_OVERLAY_COMPONENTS.TxtEditDialog,
+          { controller: EditorController }),
+        productOverlayComponent("tplMoveModal", PRODUCT_OVERLAY_COMPONENTS.GroupMoveDialog,
+          { controller: GroupMove }),
+        productOverlayComponent("sheetModal", PRODUCT_OVERLAY_COMPONENTS.SheetPickerDialog,
+          { controller: SheetPickerController }),
+        productOverlayComponent("previewSheet", PRODUCT_OVERLAY_COMPONENTS.JobPreviewSheet,
+          { controller: JobRunController }),
       ],
     },
   });

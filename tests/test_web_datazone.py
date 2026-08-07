@@ -56,10 +56,14 @@ def test_load_order_esc_then_shared_then_screens():
     """ESM 간선과 합성 루트가 DataZone producer를 제품의 단일 React root에 연결한다."""
     job = _read(JOB_READ)
     bootstrap = _read(BOOTSTRAP)
+    product_screens = _read(SOURCE_ROOT / "src/screens/product_screens.ts")
     assert 'import { JobDataZone } from "./data_zone.ts";' in job
     assert 'from "./screens/job_read.ts";' in bootstrap
-    assert 'screenPortal("jobDataBodyReactHost", JobDataBody' in bootstrap
-    assert 'screenPortal("dataSheetSlot", JobDataBody' in bootstrap
+    assert 'h(JobDataBody as any, { controller: jobRead, location: "inline" })' in product_screens
+    assert (
+        'productOverlayComponent("dataSheetSlot", PRODUCT_OVERLAY_COMPONENTS.JobDataBody'
+        in bootstrap
+    )
 
 
 def test_job_consumes_factory_with_job_identity():

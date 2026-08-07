@@ -64,7 +64,6 @@ const PLAIN_SERVICES = {
   UndoToast: ["undo_toast.js", "UndoToast"],
   Modal: ["modal.js", "Modal"],
   SurfaceSheet: ["surface_sheet.js", "SurfaceSheet"],
-  GroupList: ["grouplist.js", "GroupList"],
 };
 
 /* factory 산물 — 합성 루트가 구성한 인스턴스라 동일성 비교가 안 된다. 표면(키)으로 센다.
@@ -80,7 +79,6 @@ const FACTORY_SERVICES = {
     "setMasterWidth", "saveMasterWidth", "masterMin", "masterMax",
   ],
   SheetPicker: ["choose"],
-  PathTrack: ["affordances"],
   DataPicker: ["init", "open"],
   EditorEntry: [
     "openGuarded", "land", "confirmDiscard", "newDraft",
@@ -166,6 +164,9 @@ function useHostStub(t) {
 
   const listeners = [];
   const byId = new Map();
+  const stage = new FakeEl("stage");
+  stage.scrollTop = 0;
+  stage.scrollLeft = 0;
   globalThis.document = {
     addEventListener: (type, fn, opts) => listeners.push({ type, fn, opts }),
     removeEventListener: () => {},
@@ -175,7 +176,7 @@ function useHostStub(t) {
       if (!byId.has(id)) byId.set(id, new FakeEl(id));
       return byId.get(id);
     },
-    querySelector: () => null,
+    querySelector: (selector) => selector === "main.stage" ? stage : null,
     /* 앱 셸의 라우팅은 `.scr`·`.navbtn` **집합**에 걸린다. 전신의 대역은 여기서 빈 배열을
        돌려줬고, 그래서 부팅 랜딩이 아무 요소에도 찍히지 않아 "조립이 돌았다"를 실제로 볼 수
        없었다(전신의 랜딩 테스트가 사실상 공허했던 진짜 이유). 두 선택자만 채워 랜딩을
@@ -285,8 +286,8 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 24,
-    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-03 의 Relink 은퇴 뒤 서비스는 24개입니다.");
+  assert.equal(SERVICE_NAMES.length, 22,
+    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-04의 GroupList·PathTrack 은퇴 뒤 22개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {
@@ -315,15 +316,14 @@ test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 
     "React 화면과 selftest가 서로 다른 typed client 사본을 봅니다.");
 });
 
-test("앱 셸 구성이 부팅 랜딩(job)을 실제로 찍었다 — 조립이 돌았다는 실행 증거", async (t) => {
-  const { host } = await boot(t);
+test("앱 셸 구성이 부팅 랜딩(job)을 상태 정본에 실제로 찍었다", async (t) => {
+  const { composed } = await boot(t);
 
-  /* 전신은 ESM 캐시 히트 때문에 이 사실을 다시 볼 수 없어 "firstInstall !== null" 만
-     확인했다(사실상 공허했다). 부팅이 호출이 되면서 대역 위에서 실제 랜딩을 잰다. */
-  const job = host.byId.get("scr-job");
-  assert.ok(job, "앱 셸이 scr-job 을 만지지 않았습니다 — 랜딩이 돌지 않았습니다.");
-  assert.equal(job.classList.contains("on"), true,
-    "부팅 랜딩이 job 화면을 켜지 않았습니다.");
+  /* 화면 class는 ProductScreens가 React commit으로 소유한다. 이 단위 대역은 React DOM을
+     만들지 않으므로 셸 판정 정본에서 랜딩을 관측하고, 실제 class/ARIA는 전용 React·live
+     게이트가 잰다. */
+  assert.equal(composed.services.Nav.currentScreen(), "job",
+    "부팅 랜딩이 셸 상태 정본을 job으로 옮기지 않았습니다.");
 });
 
 test("합성 루트의 공개 표면은 `bootProduct` 하나다", async (t) => {
