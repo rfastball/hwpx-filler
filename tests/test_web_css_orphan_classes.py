@@ -551,9 +551,13 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
         ("suggested", "frontend/src/screens/job_read.ts"),
         ("col-text", "frontend/src/screens/data_zone.ts"),  # 동적 열 kind의 유한 기본값
         ("f-gulimche", "frontend/src/screens/workbench.ts"),  # 조각 합성(보간 꼬리)
-        # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
-        # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
-        ("muted", "frontend/js/screens/job.js"),
+        # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본) — 안을 지우면 이 자리의
+        # class 가 검사 밖이 된다. 종전 표본은 `job.js` 의 `${v ? esc(v) :
+        # "<em class='muted'>(빈 값)</em>"}` 였는데 R4-03 이 그 파일을 절단했고, React 판은
+        # 같은 자리를 `h("em", { className: "muted" }, …)` 로 쓴다 — **그 형태가 아니다**.
+        # 그래서 표본을 형태로 다시 고른다: 마크업 문자열이 살아 있는 두 자리가 그것이다.
+        ("sep", "frontend/src/screens/editor.ts"),
+        ("danger", "frontend/src/screens/library.ts"),
         # 속성 **전체**가 변수인 자리(리뷰 R4): `const cls = ... "seg-fill"` → `class="${cls}"`.
         # 붙어 있는 이웃이 없으므로 갈래 자체가 온전한 이름이다(앞 공백을 요구하면 못 본다).
         ("seg-fill", "frontend/src/screens/segment_view.ts"),

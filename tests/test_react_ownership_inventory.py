@@ -140,17 +140,20 @@ EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     # R4-02 재고정 — 이관이 끝난 축은 legacy 생산 자리가 사라지며 분모가 준다. 하한을
     # 함께 내리지 않으면 게이트가 이관 자체를 빨강으로 보고, 그 빨강을 피하려 legacy
     # 잔재를 남기는 압력이 생긴다(게이트 AXIS_FLOORS 주석에 같은 사유가 있다).
-    "dom_data_attr": (4, "e0bd6cb1822fd50fefbda2c3fac621d5"),
+    # R4-03 재고정 — 실행·결과 표면이 React 소유로 가며 정적 HTML 의 분모가 마지막으로
+    # 크게 줄었다. 셋(dom_static·dom_data_attr·subscription_listener)은 **옮겨 간 것**이고
+    # lifecycle_hook 은 **사라진 것**이다: 제품 코드의 Preserve.around 가 0 이 됐다.
+    "dom_data_attr": (1, "e0bd6cb1822fd50fefbda2c3fac621d5"),
     "dom_js_data_attr": (80, "d6c24f47a9f809b5e6f63ddd2b09e372"),
     "dom_js_site": (120, "7ce48e5d41ae530e66a2156e113bb0bb"),
-    "dom_static": (93, "a0de506720a9704065dde2bf17410d50"),
+    "dom_static": (42, "a0de506720a9704065dde2bf17410d50"),
     "lifecycle_factory": (54, "f774587af230cf5222697cd0f0e0a050"),
-    "lifecycle_hook": (6, "1f090f972ecaf5c9e0a54796c6849437"),
+    "lifecycle_hook": (5, "1f090f972ecaf5c9e0a54796c6849437"),
     "state_js_module": (65, "fef89b77255e04f0cf05d4b19e09c733"),
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
-    "subscription_listener": (40, "8064cf796b67e47a094e61c7362e4b5b"),
+    "subscription_listener": (22, "8064cf796b67e47a094e61c7362e4b5b"),
     # R4-02 — 축 단위가 「화면이 구독한다」에서 「기반이 탭을 세우고 화면은 model 을
     # 구독한다」로 바뀌었다. 술어에 `.subscribe(` 가 붙고 scope 가 React 트리로 갔다.
     "subscription_push": (6, "6b30b15e7ca10851763bd0ec96b48725"),
@@ -273,7 +276,10 @@ def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, A
     assert excluded["selftest_frontend_surface"]["size"]["current"] > 0, (
         "제외한 표면의 크기가 데이터로 없습니다 — 「안 센다」와 「얼마나 안 세는지 모른다」는 다릅니다."
     )
-    assert document.get("unoccupied_classifications") == ["host"], (
+    # R4-03: legacy `screens/job.js` 가 사라지며 `retire` 를 든 두 행(배선 멱등 가드 ·
+    # 렌더 보존 래퍼)의 대상이 함께 없어졌다. 어휘가 죽은 것이 아니라 **오늘 점유자가 0**
+    # 이고, 그 사실도 데이터로 적는다 — R5-01 이 걷을 잔재가 여기서 먼저 소진됐다는 뜻이다.
+    assert document.get("unoccupied_classifications") == ["host", "retire"], (
         "어휘 5종 중 오늘 점유자가 없는 값의 선언이 사라졌습니다 — 부재도 데이터로 적는다."
     )
 
@@ -335,7 +341,10 @@ def test_n1b_new_id_inside_a_folded_container_breaks_the_member_count(
     """
     index = clone_source / "index.html"
     text = index.read_text(encoding="utf-8")
-    marker = '<div class="status" id="jobStatus"'
+    # R4-03 이 `jobStatus` 를 React 생산으로 옮기며(D20 — `data-level` 이 판정 파생이라
+    # 정적 shell 로 남길 수 없다) 삽입 지점을 그 portal target 으로 옮겼다. 겨눔은 「접힌
+    # 컨테이너(`scr-job`) 안쪽의 한 자리」이지 특정 id 가 아니다.
+    marker = '<div id="jobStatusHost"></div>'
     assert marker in text, "N1b 의 삽입 지점이 사라졌습니다 — 음성 대조를 다시 겨눠야 합니다."
     # 같은 줄에 끼운다 — 줄을 늘리면 아래쪽 증거 좌표가 전부 밀려 실패가 22건으로 번지고,
     # 「한 좌표만 바꾼다」가 거짓이 된다. 변이는 최소여야 그 red 가 무엇의 것인지 말할 수 있다.
@@ -392,17 +401,19 @@ def test_n4_removed_state_declaration_becomes_a_ghost_row(
     document: dict[str, Any], frontend_tree: Path, clone_source: Path
 ) -> None:
     """N4 — 코드가 사라지고 원장이 남으면 `C − M` 이 그 좌표를 든다."""
-    # R4-02 가 `screens/workbench.js` 를 지우면서 남은 legacy 화면으로 겨눔을 옮겼다.
-    target = clone_source / "js" / "screens" / "job.js"
+    # R4-03 이 legacy 화면 **전부**를 지우면서 겨눔이 React 소유 파일로 옮겨왔다. 이름은
+    # 일부러 긴 것을 고른다 — `run` 같은 짧은 이름은 경로(`job_run.ts`)의 부분열이라 그
+    # red 가 자기가 겨눈 것 때문에 난 것인지 말하지 못한다.
+    target = clone_source / "src" / "screens" / "job_run.ts"
     lines = target.read_text(encoding="utf-8").splitlines()
-    kept = [line for line in lines if line.strip() != "let wired = false;"]
-    assert len(kept) == len(lines) - 1, "job.js 의 `let wired` 좌표가 바뀌었습니다."
+    kept = [line for line in lines if line.strip() != "let lastProgressSeen: unknown = null;"]
+    assert len(kept) == len(lines) - 1, "job_run.ts 의 `lastProgressSeen` 좌표가 바뀌었습니다."
     target.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
     report = gate.check(document, frontend_tree, axes=["state_js_module"], metrics=[])
     assert not report.ok, "사라진 상태 선언이 유령 행으로 안 잡혔습니다."
     assert "유령" in _failures(report), _failures(report)
-    assert "wired" in _failures(report), _failures(report)
+    assert "lastProgressSeen" in _failures(report), _failures(report)
 
 
 def test_n5_zero_indent_module_state_is_seen(
@@ -1003,14 +1014,23 @@ def test_m24_narrowing_a_predicate_is_refused(
 
     하한만이 앵커였을 때는 파일 둘만 고치면 축의 절반이 조용히 사라졌다.
     """
+    # R4-03 재겨눔: 종전에는 `Preserve.around` 갈래와 `lifecycle/preserve-around` 행을
+    # 지웠는데, 그 행이 이 슬라이스에서 **실제로 사라졌다**(제품 코드의 보존 래퍼가 0).
+    # 없는 행을 지우는 변이는 무해하지만 **아무것도 증명하지 않는다** — 「행을 지우고」가
+    # 공허해진 채로 초록이 유지된다. 살아 있는 갈래·행 쌍으로 옮긴다.
     hook = mutable_document["axes"]["lifecycle_hook"]
-    hook["predicate"]["pattern"] = hook["predicate"]["pattern"].replace(
-        "Preserve\\.around\\s*\\(|", ""
-    )
+    pattern = hook["predicate"]["pattern"]
+    assert "function leaveTo\\s*\\(|" in pattern, "M24 가 겨눈 갈래가 사라졌습니다."
+    hook["predicate"]["pattern"] = pattern.replace("function leaveTo\\s*\\(|", "")
+    victim = "lifecycle/screen-leave-guard"
+    before = len(mutable_document["node"])
     mutable_document["node"] = [
-        node for node in mutable_document["node"] if node["id"] != "lifecycle/preserve-around"
+        node for node in mutable_document["node"] if node["id"] != victim
     ]
-    monkeypatch.setitem(gate.AXIS_FLOORS, "lifecycle_hook", 4)
+    assert len(mutable_document["node"]) == before - 1, (
+        f"M24 가 지우려던 행({victim})이 원장에 없습니다 — 변이가 공허합니다."
+    )
+    monkeypatch.setitem(gate.AXIS_FLOORS, "lifecycle_hook", 3)
     report = gate.check(mutable_document, REPO_ROOT, axes=["lifecycle_hook"], metrics=[])
     assert not report.ok, "술어 축소가 하한 인하와 함께 통과했습니다."
     assert "측정 계약이 게이트가 든 지문과 다릅니다" in _failures(report), _failures(report)

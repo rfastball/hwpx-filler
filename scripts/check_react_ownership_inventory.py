@@ -139,8 +139,14 @@ EXPECTED_BASELINE_SHA = "3cabe7be79e8ef98d039c870c9644559777667e6"
 #: 그래서 내린 값은 전부 **오늘의 실측**이고, 다음 슬라이스가 또 내리려면 같은 설명을 다시
 #: 써야 한다(조용한 감소는 여전히 막힌다).
 AXIS_FLOORS: dict[str, int] = {
-    "dom_static": 93,               # R4-02: 편집기·작업대·모달 셋의 정적 subtree 46이 React로
-    "dom_data_attr": 4,             # R4-02: data-act·data-preserve-scroll·data-wb-view가 JS 생산으로
+    # R4-03: 실행·결과 표면의 정적 골격 51이 React 생산으로 갔다. 남은 42는 portal target
+    # 과 셸뿐이라 「이관이 끝나면 분모가 정당하게 준다」의 마지막 큰 걸음이다 — 안 내리면
+    # 게이트가 이관 자체를 빨강으로 보고 legacy 잔재를 남기는 압력이 된다.
+    "dom_static": 42,
+    # R4-03: data-busy-lock·data-level·data-state 가 React 생산으로 갔다. 정적 HTML 에
+    # 남은 data-* 이름은 셸 라우팅의 `data-scr` 하나다(생산자가 준 것이 아니라 옮겨 갔다 —
+    # 같은 셋을 dom_js_data_attr 이 계속 든다).
+    "dom_data_attr": 1,
     "dom_js_data_attr": 80,         # 오늘 93 — 제품 코드 생산자 이름×파일
     "dom_js_site": 120,             # 오늘 173 — R4 화면의 안정 ID 생산자를 TS로 이관
     "state_js_module": 65,          # 오늘 68 — 화면 controller 상태를 TS 폐포에 편입
@@ -148,11 +154,15 @@ AXIS_FLOORS: dict[str, int] = {
     "state_ring1": 10,              # 오늘 11
     # #491이 TS 사각을 닫아 R2 runtime 1 + R3 overlay 7 + shell 2 attach와 R3 release 9가
     # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
-    "subscription_listener": 40,    # R4-02: 편집기 8·작업대 13·시트 2의 위임 listener가 React props로
+    # R4-03: 실행 표면의 위임 listener 18이 React element prop 으로 접혔다. 「구독한다」는
+    # 사실은 model 구독 하나로 남아 subscription_push 가 든다 — 축이 준 것이 아니라 옮겼다.
+    "subscription_listener": 22,
     "subscription_release": 15,     # 오늘 17
     "subscription_push": 6,         # R4-02: 축 단위가 「화면 구독」에서 「기반 탭 + model 구독」으로
     "lifecycle_factory": 54,        # 오늘 83 — R4 controller/component/port factory 편입
-    "lifecycle_hook": 6,            # R4-02: Preserve.around 2가 React 소유로 사라졌다
+    # R4-03: 제품 코드의 Preserve.around 가 **0**이 됐다(남은 둘은 축 밖 selftest 프로브).
+    # React 는 서브트리를 통째로 재구성하지 않으므로 보존 래퍼가 겨눌 손실 자체가 없다.
+    "lifecycle_hook": 5,
 }
 
 #: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.
@@ -212,7 +222,11 @@ EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
 
 #: 접기가 있어도 이만큼은 손으로 분류돼 있어야 한다. 노드 행을 0으로 만드는 것은 폐포를
 #: 「측정 0 == 피복 0」으로 닫아 버리는 길이다.
-NODE_ROW_FLOOR = 123
+# R4-03: 승계자 없이 **소멸한** 네 행만큼 내린다 — 정적 data-* 둘(생산자가 React 로 이동),
+# legacy 배선 멱등 가드 `wired`, 렌더 보존 래퍼. 앞의 둘은 dom_js_data_attr 이 같은 셋을
+# 계속 들고, 뒤의 둘은 겨눌 코드가 사라졌다. 「행이 줄었다」와 「행이 옮겨졌다」는 다르고
+# 이 인하는 앞엣것에만 대응한다.
+NODE_ROW_FLOOR = 119
 
 #: `repo_wide_metrics` 판정 — scope 의 첫 경로 조각이 리터럴이 아니면 저장소 전수로 본다.
 _REPO_WIDE_HEAD = re.compile(r"[*?\[]")

@@ -30,8 +30,12 @@ PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 #: 렌더 결과 동등성은 R4 Node 계약과 live WebView2 게이트가 재확인한다. R4-02(#415)는
 #: 편집기·작업대 두 몰입 화면과 TXT 저작·시트 선택·그룹 이동 세 모달의 정적 subtree 46을
 #: 같은 root의 portal producer로 옮겼다 — 정적 index 는 그 다섯 자리에서 **빈 컨테이너**만
-#: 남는다).
-VISIBLE_DOM_SHA256 = "034efabb04a0e87c8741024593494b7d6441e7be63cead0cb5f41a8af5e04b6f"
+#: 남는다. R4-03(#416)은 실행·결과 표면의 정적 subtree 51 을 같은 root 의 portal producer 로
+#: 옮겼고, 그와 함께 정적 id 는 92 → 41 이 됐다. 그 이동에 딸린 정정 둘이 이 지문에 함께
+#: 들어 있다: ①`libraryMoveModal` portal target 복원(R4-01 소유 표면인데 overlay 구간
+#: 재작성에 딸려 지워졌다 — 그 상태의 앱은 resolvePortalTargets 가 던져 부팅에서 추락한다)
+#: ②`#scr-job` 을 조기 종료시키던 잉여 `</div>` 제거).
+VISIBLE_DOM_SHA256 = "0d25f86a256d4fcca863034ba3d3e0a188e2ad3068531257cc2455003cf111ef"
 
 # M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
 # 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을
