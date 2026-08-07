@@ -824,6 +824,9 @@ export function createEditorWorkbenchDataProbes() {
           nameEl.focus();
           typeValue(ctx, nameEl, "공고서 수정");
           out.discard_enabled_on_typing = !discardOf().disabled;
+          out.name_node_stable = nameEl === byId(ctx, "editorName");
+          out.name_node_connected = nameEl.isConnected;
+          out.name_focus_stable = ctx.doc.activeElement === nameEl;
           // ② 곧바로 버리기 클릭. 실제 순서 그대로 blur→change(=큐 적재) 뒤 click 이 온다.
           fire(ctx, nameEl, "change");
           nameEl.blur();

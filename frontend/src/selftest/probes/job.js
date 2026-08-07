@@ -497,6 +497,9 @@ async function driveBrowseSheet(ctx, out, snap, setupReady = () => {}) {
   qi.value = "견적요청";
   await pushAndSettle(ctx, "job", snap);
   out.browse_query_kept = qi.value;
+  out.browse_query_node_stable = qi === doc.getElementById("jobBrowseQuery");
+  out.browse_query_node_connected = qi.isConnected;
+  out.browse_query_focus_stable = doc.activeElement === qi;
   qi.blur();
   await pushAndSettle(ctx, "job", snap);
   out.browse_query_settled = qi.value;
