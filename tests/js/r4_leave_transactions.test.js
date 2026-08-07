@@ -45,10 +45,10 @@ function editorHarness(options = {}) {
   const store = createSnapshotStore({ alarm: assert.fail });
   const runtime = createScreenRuntime({ client, store });
   const ports = createScreenPorts();
-  ports.jobRead.bindReact({
+  ports.jobRead.bind({
     refreshList: () => { trace.push(["refreshList"]); }, openBrowseNeedsAction: async () => {},
   });
-  ports.editorEntry.bindReact({
+  ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     confirmDiscard: async (body) => {
       trace.push(["entry.confirmDiscard", body]);
@@ -57,7 +57,7 @@ function editorHarness(options = {}) {
     restoreEntryFocus: () => { trace.push(["restoreEntryFocus"]); },
   });
   const services = createServiceHandoffPorts();
-  services.sheetPicker.bindReact({ choose: async () => null });
+  services.sheetPicker.bind({ choose: async () => null });
   const controller = createEditorController({
     doc: { getElementById: () => null, querySelector: () => null },
     runtime, client, ports, services,

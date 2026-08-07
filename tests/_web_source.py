@@ -57,27 +57,22 @@ LEAF_ESM_FILES = (
     "guard.js",
 )
 
-#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4-04 뒤에도 ``frontend/js``에 남은 8개.
+#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R5-01 뒤에도 ``frontend/js``에 남은 5개.
 #: Data picker·DataZone·Relink는 ``frontend/src/screens/*.ts`` React producer/controller로 승계돼
 #: 이 legacy-JS 매니페스트에서는 빠진다. 잎과 같은 규칙을 따른다 — entry가 직접
 #: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
 #: 아니라 **기록**이다: 이제 평가 순서는 합성 루트의 import 그래프가 정한다).
 SERVICE_ESM_FILES = (
-    "theme.js",
-    "personalization.js",
     "preserve.js",
-    "modal.js",
     "surface_sheet.js",
     "undo_toast.js",
     "popover.js",
     "intent.js",
 )
 
-#: R4-03 뒤 legacy JS에 남은 화면 모듈은 **앱 셸 하나**다. 제품 화면 넷은 전부
-#: ``frontend/src/screens/*.ts`` React 컨트롤러가 승계했다(library=#414, editor·workbench=#415,
-#: job 실행·결과=#416). 셸은 여전히 합성 루트가 import해 **정확히 한 번** 구성하며, 화면 간
-#: 간선과 화면→Nav 간선은 import가 아니라 late-bound 콜백 테이블이 진다.
-SCREEN_ESM_FILES = ("app.js",)
+#: R5-01 뒤 legacy JS 화면·셸 모듈은 0개다. 앱 셸은 ``frontend/src/shell/app.ts``로
+#: 승계됐고 화면 간 간선과 화면→Nav 간선은 late-bound 콜백 테이블이 진다.
+SCREEN_ESM_FILES: tuple[str, ...] = ()
 
 #: 「문서 만들기」 실행·결과 표면의 React 후계 셋. legacy ``screens/job.js`` 하나를 읽던
 #: 정적 계약들이 겨눌 자리다 — 한 파일이 셋으로 갈렸으므로 **읽는 자리도 한 곳에 둔다**
@@ -90,7 +85,7 @@ REACT_JOB_RUN_FILES = (
     "src/screens/job_relink.ts",
 )
 
-#: 합성 루트를 통해 제품 그래프에 닿는 ESM 모듈 전체(잎 4 + 서비스 15 + 화면·셸 5).
+#: 합성 루트를 통해 제품 그래프에 닿는 legacy-JS ESM 모듈 전체.
 #: N-07에서 마지막 IIFE를 벗고 named factory(true ESM)가 된 브리지. 자리는 특별하다: 합성
 #: 루트가 이것을 **정확히 한 번** 구성해 산물을 화면·서비스에 객체째 넘긴다. 구 IIFE가
 #: 스스로 만들던 ``Bridge``·``__push`` 두 전역은 N-07에서 합성 루트로 옮겨왔다가 N-10에서

@@ -505,7 +505,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   /* JobRunPort·JobRunCoordinationPort — legacy 구현을 **파일째** 지우므로 handoff 상대가
      없다(#415 D10 과 같은 형태). 빈 port 에 한 번 결속하고 둘째 결속은 throw 한다:
      중간 dual-dispatch 창이 애초에 생기지 않으므로 불변식은 handoff 보다 강하다. */
-  deps.ports.jobRun.bindReact({
+  deps.ports.jobRun.bind({
     attach(callbacks) {
       if (attached !== null) throw new Error("JobRunPort: run callback은 정확히 한 번 attach합니다.");
       attached = callbacks;
@@ -516,7 +516,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     openPreview,
     dispose() { controller.dispose(); },
   });
-  deps.ports.jobRunCoordination.bindReact({ confirmDestructiveIfArmed, log });
+  deps.ports.jobRunCoordination.bind({ confirmDestructiveIfArmed, log });
 
   return controller;
 }

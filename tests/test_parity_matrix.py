@@ -214,11 +214,11 @@ def test_blank_cell_without_a_reason_is_rejected(collection_evidence) -> None:
 def test_browser_column_rejects_product_app_js_mutant(collection_evidence) -> None:
     planted = _matrix_text().replace(
         "tests/test_web_press_geometry.py::test_row_surface_left_edge_does_not_move_while_held",
-        "frontend/js/app.js",
+        "frontend/src/shell/app.ts",
         1,
     )
     failures = _validate_matrix(planted, *collection_evidence)
-    assert any("geometry/브라우저" in failure and "frontend/js/app.js" in failure for failure in failures), failures
+    assert any("geometry/브라우저" in failure and "frontend/src/shell/app.ts" in failure for failure in failures), failures
 
 
 def test_browser_column_rejects_unmarked_pytest_node(collection_evidence) -> None:

@@ -748,7 +748,7 @@ function createJobBand(conf) {
     },
     Modal: { close: () => { previewCard.classList.add("is-closing"); } },
     Popover: { closeAll: () => {} },
-    JobScreen: {
+    JobRun: {
       overwriteBody: (info) => `총 ${info.total}건 · 덮어쓰기 ${info.overwrite_count}`
         + ` · 새로 만들기 ${info.new_count} · ${info.conflict_names.join(", ")} 외 ${info.conflict_more}`,
       resultExitLine: (payload, owner) => {

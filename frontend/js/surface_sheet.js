@@ -1,6 +1,6 @@
 /* 전체 화면 펼침 면(#271/#272) — 이미 배선된 실 DOM을 슬롯으로 이동하고 정확히 복귀시킨다.
    cloneNode/innerHTML 복제는 입력값·스크롤·리스너·서버 push의 목적지를 갈라놓으므로 금지한다. */
-import { Modal } from "./modal.js";
+export function createSurfaceSheet({ modal }) {
 
 const active = {};
 
@@ -20,8 +20,8 @@ function restore(id) {
 
 function open(spec) {
   if (!spec || active[spec.modalId]) return;
-  const modal = document.getElementById(spec.modalId);
-  if (!modal) return;
+  const modalEl = document.getElementById(spec.modalId);
+  if (!modalEl) return;
   if (spec.beforeOpen) spec.beforeOpen();
   const moves = [];
   (spec.moves || []).forEach(function (pair) {
@@ -36,8 +36,8 @@ function open(spec) {
     slot.appendChild(el);
   });
   active[spec.modalId] = { moves: moves, afterRestore: spec.afterRestore || null };
-  Modal.open(spec.modalId, {
-    initialFocus: spec.initialFocus || modal.querySelector("button, input, select, [tabindex]"),
+  modal.open(spec.modalId, {
+    initialFocus: spec.initialFocus || modalEl.querySelector("button, input, select, [tabindex]"),
     returnFocus: spec.returnFocus,
     // 이탈 가드(F3): false 를 돌려 닫기 요청을 소비한다 — Escape·닫기 버튼·프로그램 close 가
     // 전부 이 한 관문을 지난다(경로마다 가드를 걸면 하나는 반드시 빠진다).
@@ -62,10 +62,10 @@ function trigger(e, fallback) {
   return fallback || document.activeElement;
 }
 
-function close(id) { if (active[id]) Modal.close(id); }
+function close(id) { if (active[id]) modal.close(id); }
 function closeAndRestore(id) {
   if (!active[id]) return;
-  Modal.close(id);
+  modal.close(id);
   restore(id);
 }
 function isOpen(id) { return !!active[id]; }
@@ -79,8 +79,9 @@ function closeAllAndRestore() {
   Object.keys(active).forEach(closeAndRestore);
 }
 
-export const SurfaceSheet = {
+return {
   open: open, close: close, closeAndRestore: closeAndRestore,
   closeAllAndRestore: closeAllAndRestore,
   isOpen: isOpen, restore: restore, trigger: trigger,
 };
+}

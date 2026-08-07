@@ -110,7 +110,7 @@ function unwrapHostResult(op, envelope) {
  *  않으면 그걸로 끝이다. 실제로 첫 실엔진 대면이 이 모양으로 실패했고, 파이썬 쪽은
  *  `facade-absent` 로 **시끄럽게** 보고했다(조용히 통과하지 않은 것이 진단을 살렸다).
  *
- *  `app.js`·`bridge.js` 가 이미 같은 규약을 쓴다 — "준비를 기다리는 일은 `pywebviewready`
+ *  `shell/app.ts`·`bridge.js` 가 이미 같은 규약을 쓴다 — "준비를 기다리는 일은 `pywebviewready`
  *  이벤트가 지고, `hostReady()` 는 지금 있는가만 답한다".
  *
  *  호스트가 영영 없으면(브라우저 단독 프리뷰) 이 약속은 해소되지 않는다. 그것이 옳다:

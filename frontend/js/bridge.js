@@ -38,9 +38,7 @@ function unwrapDispatch(value) {
 }
 
 export function createBridge() {
-  // screen id → [fn, ...] — 한 채널 복수 구독(F8): 병존 기간 편집기가 tpl push 를 함께
-  // 듣는다. 교체 의미의 재등록 소비자는 없다(전 화면이 자기 채널 1회 등록) — 덮어쓰기
-  // 단일 슬롯이면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가 렌더를 잃는다.
+  // screen id → [fn, ...] — 한 채널 복수 구독이 앞의 소비자를 조용히 밀어내지 않도록 배열로 둔다.
   const renderers = {};
 
   const bridge = {

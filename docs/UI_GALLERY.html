@@ -61,7 +61,7 @@ body{padding:0}
 <header class="gal-mast">
   <h1>컴포넌트 갤러리</h1>
   <p>실 <span class="path">frontend/css/tokens.css</span> + 앱 스타일시트 9조각을 셸과 같은 순서로 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
-  <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 frontend/js/theme.js 소유. -->
+  <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 frontend/src/shell/preferences.ts 소유. -->
   <button class="gal-theme" id="galTheme" type="button">테마: 시스템</button>
 </header>
 
@@ -246,7 +246,7 @@ body{padding:0}
 </main>
 <script>
 /* 갤러리 테마 검증 토글 — System→Light→Dark 순환. documentElement 의 data-theme 만 세팅해
-   링크된 tokens.css 의 :root[data-theme] override 를 켠다(실앱 theme.js 와 같은 기제, 여기선
+   링크된 tokens.css 의 :root[data-theme] override 를 켠다(실앱 preferences.ts 와 같은 기제, 여기선
    영속 없이 순간 검증만). 색 리터럴을 일절 두지 않아 드리프트-0 가드를 통과한다. */
 (function () {
   var ORDER = ["system", "light", "dark"];

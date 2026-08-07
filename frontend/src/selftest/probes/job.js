@@ -871,7 +871,7 @@ async function runJobActiveCard(ctx) {
 
 /** app.py:1278-1565 + 3904·3907·3911·3913·3915·3917·3919. 이 클러스터에서 가장 큰 프로브. */
 async function runJobMirror(ctx) {
-  const services = requireServices(ctx, ["Nav", "Bridge", "Modal", "JobScreen"]);
+  const services = requireServices(ctx, ["Nav", "Bridge", "Modal", "JobRun"]);
   const doc = ctx.doc;
   const win = ctx.win;
   const out = {};
@@ -1009,45 +1009,45 @@ async function runJobMirror(ctx) {
   })();
   out.token_restate_hidden = displayOf(ctx, doc.getElementById("jobRestate")) === "none";
   /* 덮어쓰기 확인 본문 합성 되읽기 — overwrite_count/new_count 스왑·이름 목록 누락의 핀. */
-  out.ow_body = services.JobScreen.overwriteBody({
+  out.ow_body = services.JobRun.overwriteBody({
     total: 10, overwrite_count: 3, new_count: 7, conflict_names: ["a.hwpx", "b.hwpx"], conflict_more: 5,
   });
   /* 퇴장 한 줄(§2.18)의 네 태 산출 — 결과 구획이 초기화된 뒤 **유일하게 남는 흔적**이라
      거짓 진술이 여기서 조용히 배포되면 되돌아볼 자리가 없다(#363 리뷰 P2). */
-  out.exit_cancelled_untouched = services.JobScreen.resultExitLine(
+  out.exit_cancelled_untouched = services.JobRun.resultExitLine(
     { exit_summary: "중단 · 0개 성공 · 미착수 12건", out_dir: "D:\\out" }, "발주요청서",
   );
-  out.exit_cancelled_mixed = services.JobScreen.resultExitLine(
+  out.exit_cancelled_mixed = services.JobRun.resultExitLine(
     { exit_summary: "중단 · 5개 성공 · 1개 실패 · 미착수 6건", out_dir: "D:\\out" }, "발주요청서",
   );
-  out.exit_prebatch_failed = services.JobScreen.resultExitLine(
+  out.exit_prebatch_failed = services.JobRun.resultExitLine(
     { exit_summary: "생성 시작 전 실패 · 대상 12건", out_dir: "D:\\out" }, "발주요청서",
   );
-  out.exit_completed = services.JobScreen.resultExitLine(
+  out.exit_completed = services.JobRun.resultExitLine(
     { exit_summary: "12개 성공", out_dir: "D:\\out" }, "발주요청서",
   );
-  out.exit_partial_failure = services.JobScreen.resultExitLine(
+  out.exit_partial_failure = services.JobRun.resultExitLine(
     { exit_summary: "10개 성공 · 2개 실패", out_dir: "D:\\out" }, "발주요청서",
   );
   /* 생성이 아닌 태는 적을 것이 없다 — 거절·진행에 퇴장 한 줄을 지어내지 않는다(음성 극). */
-  out.exit_rejected = services.JobScreen.resultExitLine(
+  out.exit_rejected = services.JobRun.resultExitLine(
     { rejected: true, title: "생성하지 않았습니다", summary: "빈 값" }, "발주요청서",
   );
-  out.exit_running = services.JobScreen.resultExitLine(
+  out.exit_running = services.JobRun.resultExitLine(
     { running: true, title: "생성 중… 1/3" }, "발주요청서",
   );
   /* 요약 없는 **실행 결과**는 조용히 넘기지 않는다 — 수치를 지어내지 않고 모른다고 적는가. */
-  out.exit_missing_summary = services.JobScreen.resultExitLine(
+  out.exit_missing_summary = services.JobRun.resultExitLine(
     { ok: true, status: "completed", title: "문서 생성 완료 · 3개", out_dir: "D:\\out" }, "발주요청서",
   );
   /* 세션 가드 재진술 본문 — 있는 손실만 열거한다(과경고는 경보의 인플레). 두 극을 함께 낸다. */
-  out.guard_body = services.JobScreen.guardBody(
+  out.guard_body = services.JobRun.guardBody(
     { sel_count: 3, in_def: 2, extra: 1, filter_active: true, filter_parts: 2 }, "데이터를 바꾸면",
   );
-  out.guard_body_minimal = services.JobScreen.guardBody(
+  out.guard_body_minimal = services.JobRun.guardBody(
     { sel_count: 1, in_def: 0, extra: 0, filter_active: false, filter_parts: 0 }, "데이터를 바꾸면",
   );
-  out.data_guard_wired = typeof services.JobScreen.confirmDestructiveIfArmed === "function";
+  out.data_guard_wired = typeof services.JobRun.confirmDestructiveIfArmed === "function";
 
   /* 직전 필터 재적용(결정 28) — 양 분기 모두 핀한다: 켜짐만 고정하면 "항상 떠 있는 죽은
      버튼" 회귀가 초록으로 샌다. */
@@ -1160,7 +1160,7 @@ async function runJobMirror(ctx) {
 
 /** app.py:1755-1947 + 3922·3923. */
 async function runJobResult(ctx) {
-  const services = requireServices(ctx, ["Nav", "Bridge", "JobScreen"]);
+  const services = requireServices(ctx, ["Nav", "Bridge", "JobRun"]);
   const doc = ctx.doc;
   const out = {};
 
@@ -1169,7 +1169,7 @@ async function runJobResult(ctx) {
   await pushAndSettle(ctx, "job", baseSnap);
 
   const partial = partialResult();
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
   const box = doc.getElementById("jobResult");
   out.state = box.dataset.state;
@@ -1186,7 +1186,7 @@ async function runJobResult(ctx) {
   const evidence = doc.getElementById("jobResultEvidence");
   out.evidence_shown = !evidence.hidden;
   evidence.open = true;
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
   out.evidence_open_survives_rerender = doc.getElementById("jobResultEvidence").open;
 
@@ -1194,7 +1194,7 @@ async function runJobResult(ctx) {
      사라진다(1R P2). 노출·라벨은 호스트 수치(failed_selectable)가 정한다.
      `out_dir` 리터럴은 레거시(app.py:1814)가 이스케이프 하나를 빠뜨려 실제 값이 `D:out` 인
      자리다. 아무 소비자도 읽지 않으므로 감도를 바꾸지 않게 **그대로** 옮긴다. */
-  services.JobScreen.renderResult({
+  services.JobRun.renderResult({
     ok: true, status: "failed", title: "문서 생성 실패",
     summary: "문서를 만들지 못했습니다. 대상 3건이 모두 생성되지 않았습니다.",
     level: "danger", stage: "생성 시작 전", message: "[WinError 5] 액세스가 거부되었습니다",
@@ -1205,11 +1205,11 @@ async function runJobResult(ctx) {
   out.rowless_recovery_shown = !doc.getElementById("jobResultFailedSel").hidden;
   out.rowless_recovery_label = textOf(doc, "jobResultFailedSel");
   out.rowless_no_fake_rows = doc.getElementById("jobResultFails").children.length === 0;
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
 
   /* 지문 변화 = 강등이지 파기가 아니다(판정 G) — 결과가 남고 「직전 실행」이 붙는다. */
-  services.JobScreen.markResultStale();
+  services.JobRun.markResultStale();
   await settle(ctx);
   out.stale_shown = !doc.getElementById("jobResultStale").hidden;
   out.alive_after_stale = !doc.getElementById("jobResult").hidden;
@@ -1219,7 +1219,7 @@ async function runJobResult(ctx) {
   const snapR = deepCopy(baseSnap);
   snapR.job_name = "공고서(수정)"; snapR.last_run_job = "공고서(수정)";
   await pushAndSettle(ctx, "job", snapR);
-  services.JobScreen.markResultStale();
+  services.JobRun.markResultStale();
   await settle(ctx);
   out.renamed_rename_shown = !doc.getElementById("jobResultRename").hidden;
   out.renamed_failedsel_shown = !doc.getElementById("jobResultFailedSel").hidden;
@@ -1234,8 +1234,8 @@ async function runJobResult(ctx) {
 
   /* 강등 렌더러의 주체 방어(3R P2) — 푸시를 거치지 않고 결과가 재수립되는 경로에서
      남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다. 증거는 남는다. */
-  services.JobScreen.renderResult(partial);
-  services.JobScreen.markResultStale();
+  services.JobRun.renderResult(partial);
+  services.JobRun.markResultStale();
   await settle(ctx);
   out.foreign_rename_hidden = doc.getElementById("jobResultRename").hidden;
   out.foreign_failedsel_hidden = doc.getElementById("jobResultFailedSel").hidden;
@@ -1244,7 +1244,7 @@ async function runJobResult(ctx) {
 
   /* ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다. */
   await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(원 작업 문맥)
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
   const snapSel = deepCopy(baseSnap);
   snapSel.selection_key = "0,1";
@@ -1261,7 +1261,7 @@ async function runJobResult(ctx) {
   out.data_swap_exit_line = textOf(doc, "jobRunLogLast");
   out.data_swap_label_unchanged = snapData.data_source_label === "파일: d.csv";
   await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(다음 단계는 같은 작업 문맥)
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
 
   /* 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 붙는가. */
@@ -1270,12 +1270,12 @@ async function runJobResult(ctx) {
   );
   /* 진행 태에서는 저장 폴더 줄이 숨는다 — display:flex 가 UA [hidden] 을 이기는 결함
      클래스라 계산 스타일로 확인한다(속성만 보면 통과해 버린다). 두 극을 한 쌍으로 잰다. */
-  services.JobScreen.renderResult({ running: true, title: "생성 중… 1/3", summary: "" });
+  services.JobRun.renderResult({ running: true, title: "생성 중… 1/3", summary: "" });
   await settle(ctx);
   out.folder_hidden_while_running = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) === "none";
-  services.JobScreen.renderResult(partial);
+  services.JobRun.renderResult(partial);
   await settle(ctx);
   out.folder_shown_on_result = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),

@@ -8,7 +8,6 @@ from _web_source import (
     SOURCE_INDEX,
     SOURCE_JS_DIR,
     app_css,
-    reaches_product_graph,
     source_text,
 )
 from hwpxfiller.webapp import app as app_mod
@@ -317,7 +316,7 @@ def test_write_mode_bridge_expressions_moved_to_the_frontend_probe() -> None:
     """실사용 경로(``Theme.set``·``Personalization.setFontScale``)를 그대로 구동하는가.
 
     종전 이 파일이 파이썬 표현식 문자열에서 확인하던 계약이다. API 직접 호출로 바꾸면
-    ``theme.js``/``personalization.js`` 의 결함이 무커버가 되므로, 자리가 옮겨간 뒤에도
+    ``shell/preferences.ts`` 의 결함이 무커버가 되므로, 자리가 옮겨간 뒤에도
     **같은 홉을 지나는지**를 후계 소스에서 센다.
     """
     probe_js = source_text("src", "selftest", "probes", "persistence_geometry.js")
@@ -402,9 +401,10 @@ def test_pywebview_selection_and_zoom_decision_are_explicit() -> None:
 
 def test_personalization_shell_and_splitters_are_wired() -> None:
     index = SOURCE_INDEX.read_text(encoding="utf-8")
-    app_js = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
+    app_js = source_text("src", "shell", "app.ts")
+    bootstrap = source_text("src", "bootstrap.js")
     css = app_css()
-    assert reaches_product_graph("personalization.js")
+    assert 'from "./shell/preferences.ts"' in bootstrap
     # 좌 목록 폭 스플리터의 마지막 DOM 소비처(「기안」)가 화면과 함께 사망(F6 PR-B) —
     # 소비 0. 설정 키(master_width)·배선(공유 계약)은 남아 다음 master-detail 표면이
     # 그대로 쓴다. DOM 이 되살아나면(>0) 이 계약을 다시 세우면 된다.

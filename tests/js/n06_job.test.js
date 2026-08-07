@@ -84,7 +84,7 @@ function harness(options = {}) {
   const port = (impl) => {
     let bound = impl ?? null;
     return {
-      bindReact(value) {
+      bind(value) {
         if (bound !== null) throw new Error("두 번째 결속");
         bound = value;
       },

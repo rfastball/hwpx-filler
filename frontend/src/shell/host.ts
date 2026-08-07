@@ -5,7 +5,7 @@
  * 이 컴포넌트는 화면이 없다(`null` 렌더). 소유하는 것은 수명주기 둘뿐이다:
  *
  * - **셸 리스너 부착/해제** — 탭 클릭·도구 클릭·개인화/테마 라벨 동기·비동기 백스톱.
- *   대상·핸들러는 집행 adapter(app.js)가 구성 시 캡처해 서술로 넘긴다(`attachments`) —
+ *   대상·핸들러는 집행 adapter(shell/app.ts)가 구성 시 캡처해 서술로 넘긴다(`attachments`) —
  *   판정·문안·DOM 기입은 전부 그쪽 소유이고, 여기는 부착과 **대칭 해제**만 진다(재초기화가
  *   리스너를 복제하지 않는다는 불변식의 구조적 거처 — Popover.documentAttachments 를
  *   bootProduct 가 순회하는 형태의 React 판).
@@ -33,12 +33,9 @@ import type { ReactNode } from "react";
 /** 리스너 서술 하나 — 대상·유형·핸들러. 캡처 옵션은 셸 리스너에 소비자가 없어 싣지 않는다
  *  (필요해지는 순간 그 소비자가 이 형을 넓힌다 — 미리 넓히면 죽은 표면이다). */
 export type ShellAttachment = {
-  target: {
-    addEventListener(type: string, handler: (event: never) => void): void;
-    removeEventListener(type: string, handler: (event: never) => void): void;
-  };
+  target: Pick<EventTarget, "addEventListener" | "removeEventListener">;
   type: string;
-  handler: (event: never) => void;
+  handler: EventListener;
 };
 
 export type ShellHostPorts = {

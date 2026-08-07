@@ -6,9 +6,7 @@
  *
  * ## 두 소비자, 한 인스턴스
  *
- * - legacy 파사드(`frontend/js/modal.js`)가 js→ts 상대 import 로 이 모듈을 읽어 스택·직렬화
- *   판정을 위임한다(`bootstrap.js` 가 `.ts` 를 import 하는 선례 — 역방향 `.ts`→legacy 간선은
- *   게이트가 0 으로 막는다).
+ * - 명시 구성되는 overlay adapter(`modal.js`)가 같은 디렉터리에서 스택·직렬화 판정을 위임한다.
  * - React host(`host.ts`)가 트리 안에서 같은 인스턴스를 구독·집행한다.
  *
  * ## 다이얼로그 host 슬롯 — 늦은 결속
@@ -71,7 +69,7 @@ overlayEngine.subscribe(() => {
 });
 
 /** promise 다이얼로그·토스트의 DOM 집행 표면 — React host 가 마운트 시 공급한다.
- *  문안·기본 라벨·danger 판정은 파사드(legacy)가 소유하고, 여기는 **해석된 spec** 만 받는다 —
+ *  문안·기본 라벨·danger 판정은 modal adapter가 소유하고, 여기는 **해석된 spec** 만 받는다 —
  *  골격 부재/불량의 loud 거절 문안(`missingText`)도 그 소유의 일부라 spec 으로 실린다. */
 export type DialogHost = {
   confirm(spec: {
@@ -117,7 +115,7 @@ export function setOverlayDialogHost(host: DialogHost): () => void {
   };
 }
 
-/** 파사드의 호출 시점 판독 — 부재는 null 로 알리고, 거절 문안·alert 은 파사드가 진다. */
+/** adapter의 호출 시점 판독 — 부재는 null 로 알리고, 거절 문안·alert 은 adapter가 진다. */
 export function overlayDialogHost(): DialogHost | null {
   return dialogHost;
 }

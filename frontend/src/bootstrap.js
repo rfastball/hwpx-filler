@@ -3,8 +3,8 @@
    ## 이 파일의 내력과 N-10 이 지운 것
 
    이 자리에는 `compat.js` 가 있었다. 그 파일은 **두 가지**를 했다: ①모듈을 조립하는 합성
-   루트, ②아직 전역 이름으로 읽는 소비자를 위한 임시 별칭 스물일곱(`window.Modal`·
-   `window.Nav`·`window.JobScreen` …)의 단일 생산자(#372 D-05). ②는 전환기의 부채였고
+   루트, ②아직 전역 이름으로 읽는 소비자를 위한 임시 별칭 스물일곱의 단일 생산자
+   (#372 D-05). ②는 전환기의 부채였고
    N-10 이 그것을 0 으로 만들면서 파일 이름도 함께 은퇴했다 — **별칭 줄만 지우고 `compat`
    이라는 이름을 남기면 "호환 계층이 아직 있다"는 거짓 표식이 남는다**. 남은 책임은 ①뿐이고,
    그 책임의 정직한 이름이 bootstrap 이다.
@@ -28,7 +28,7 @@
    제품 entry(`main.js`)는 이 모듈의 `bootProduct` 를 **정확히 한 번** 부른다. 화면·서비스는
    전부 이 모듈의 static import 로 그래프에 들어오고, ESM 규칙상 import 가 본문보다 먼저
    평가되므로 호출 시점에 모든 factory 가 서 있다. 구성 순서는 본문이 정한다:
-   서비스 → 화면 넷 → 앱 셸 → 제품 API → 시험 배선. 앱 셸 구성은 구 `app.js` IIFE 평가와
+   서비스 → 화면 넷 → 앱 셸 → 제품 API → 시험 배선. 앱 셸 구성은
    같은 의미로 `go(DEFAULT_SCREEN)` 을 즉시 실행하므로 서비스·화면보다 반드시 뒤에 선다.
 
    부작용을 **모듈 평가**가 아니라 **호출**이 지는 것이 `compat.js` 와의 실질적 차이다.
@@ -70,16 +70,15 @@ import { Copy } from "../js/copy.js";
 import { escHtml } from "../js/esc.js";
 import { Guard } from "../js/guard.js";
 
-import { createTheme } from "../js/theme.js";
-import { createPersonalization } from "../js/personalization.js";
+import { createTheme, createPersonalization } from "./shell/preferences.ts";
 import { Preserve } from "../js/preserve.js";
-import { Modal } from "../js/modal.js";
-import { SurfaceSheet } from "../js/surface_sheet.js";
+import { createModal } from "./overlay/modal.js";
+import { createSurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
 import { Popover } from "../js/popover.js";
 import { Intent } from "../js/intent.js";
 
-import { createAppShell } from "../js/app.js";
+import { createAppShell } from "./shell/app.ts";
 import { createBridge } from "../js/bridge.js";
 import { createProductApi } from "./product_api.js";
 import { createPushPort } from "./push_port.js";
@@ -163,10 +162,6 @@ export function bootProduct() {
   const servicePorts = createServiceHandoffPorts();
 
   /* late-bound 좌표 — 아래에서 구성되면 채워진다. 콜백이 지연 호출이라 선언만 먼저 선다. */
-  let LibraryScreen;
-  let EditorScreen;
-  let JobScreen;
-  let WorkbenchScreen;
   let Nav;
 
   /* 화면→Nav 간선. `Nav` 는 앱 셸 구성 산물이라 마지막에 대입된다. */
@@ -191,7 +186,7 @@ export function bootProduct() {
 
   /* job→editor 간선. */
   const editorCallbacks = {
-    aimAt: (...args) => EditorScreen.aimAt(...args),
+    aimAt: (...args) => EditorController.aimAt(...args),
   };
 
   /* EditorEntry 의 착지 콜백 — N-05 에선 `window.Nav` 판독이었지만 Nav 생산이 합성 루트로
@@ -202,6 +197,8 @@ export function bootProduct() {
      부작용(위임 리스너 부착 등)을 구성 시점에 한 번 치르므로 두 번 부르면 리스너가 겹친다. */
   const Theme = createTheme({ bridge });
   const Personalization = createPersonalization({ bridge });
+  const Modal = createModal({ popover: Popover });
+  const SurfaceSheet = createSurfaceSheet({ modal: Modal });
   /* R4-02 — 시트 선택·편집기 진입 seam 은 React 구현이 **유일한 owner** 다. legacy 구현이
      남지 않으므로 handoff 할 상대가 없다: 빈 port 에 한 번 결속하고, 둘째 결속은 throw 한다
      (중간 dual-dispatch 창이 애초에 생기지 않는다). */
@@ -214,11 +211,11 @@ export function bootProduct() {
     notify: (message) => window.alert(message),
   });
 
-  servicePorts.sheetPicker.bindReact(SheetPicker);
-  servicePorts.relink.bindReact(createJobRelink({
+  servicePorts.sheetPicker.bind(SheetPicker);
+  servicePorts.relink.bind(createJobRelink({
     client, modal: Modal, alarm: (message) => window.alert(message),
   }));
-  screenPorts.editorEntry.bindReact(EditorEntry);
+  screenPorts.editorEntry.bind(EditorEntry);
 
   /* 화면 넷 — 구성 순서는 구 entry 의 IIFE 평가 순서 그대로다. 교차 간선은 위 콜백 테이블로
      받으므로 구성 시점의 상호 참조가 없다. */
@@ -261,32 +258,9 @@ export function bootProduct() {
     selectionLine: Guard.selectionLine,
     notify: (message) => window.alert(message),
   });
-  LibraryScreen = { init: () => LibraryController.init() };
-  /* 화면 facade — 셸(app.js)이 부르는 이름만 좁게 싣는다. 표면이 곧 소비 계약이다. */
-  EditorScreen = {
-    init: () => EditorController.init(),
-    rerender: () => EditorController.rerender(),
-    leaveTo: (...args) => EditorController.leaveTo(...args),
-    aimAt: (...args) => EditorController.aimAt(...args),
-  };
-  WorkbenchScreen = {
-    init: () => WorkbenchController.init(),
-    leaveTo: (...args) => WorkbenchController.leaveTo(...args),
-  };
   const DataPickerService = {
     init: () => DataPicker.init(),
     open: (...args) => DataPicker.open(...args),
-  };
-  JobScreen = {
-    overwriteBody: (...args) => JobRunController.overwriteBody(...args),
-    guardBody: (...args) => JobRunController.guardBody(...args),
-    resultExitLine: (...args) => JobRunController.resultExitLine(...args),
-    confirmDestructiveIfArmed: (...args) => JobRunController.confirmDestructiveIfArmed(...args),
-    log: (...args) => JobRunController.log(...args),
-    openPreview: (_event, request) => screenPorts.jobRun.current().openPreview(request),
-    renderResult: (...args) => JobRunController.renderResult(...args),
-    markResultStale: (...args) => JobRunController.markResultStale(...args),
-    init: () => JobRunController.init(),
   };
 
   /* 셸 상태기계 (R3-02 · #411) — 라우팅·ready·닫기 직렬화 **판정**의 단일 정본. 여기서
@@ -324,7 +298,7 @@ export function bootProduct() {
      선다. 셸 리스너·부팅 시퀀스는 여기서 **서술**(`shellHost`)로만 캡처되고, 부착/해제
      수명주기는 아래 React root 의 ShellHost effect 가 진다(R3-02). */
   const appShell = createAppShell({
-    Bridge: bridge, Theme, Personalization, shellNav, initSequence,
+    Bridge: bridge, modal: Modal, Theme, Personalization, shellNav, initSequence,
   });
   Nav = appShell.Nav;
   const AppCloseGuard = appShell.AppCloseGuard;
@@ -336,7 +310,7 @@ export function bootProduct() {
     Copy, escHtml, Guard, Popover, Preserve, Intent, UndoToast,
     Modal, SurfaceSheet, Theme, Personalization, SheetPicker,
     DataPicker: DataPickerService, EditorEntry,
-    LibraryScreen, EditorScreen, JobScreen, WorkbenchScreen,
+    JobRun: JobRunController,
   };
 
   /* 제품 공개 경계(N-07 · D-06) — Python 이 부르는 유일한 이름이다. 종전에는 Python 이

@@ -18,8 +18,7 @@
  * React 다이얼로그는 host 렌더가 정적으로 소유하고, 이 파일은 *동적* 거동만 소유한다.
  * 네이티브 confirm 의 Enter-반사 결함 클래스(F7)·기본 포커스=취소·Escape=머무르기
  * (결정 27/36/38) 계약은 그대로다. */
-import { Popover } from "./popover.js";
-import { overlayEngine, overlayDialogHost } from "../src/overlay/instance.ts";
+import { overlayEngine, overlayDialogHost } from "./instance.ts";
 
 const CLOSE_FALLBACK_MS = 220; // CSS 160ms 전이가 없거나 transitionend가 누락될 때만 쓰는 안전망.
 
@@ -114,7 +113,7 @@ function legacyExecutor(el, opts, returnFocus) {
   };
 }
 
-function open(id, opts) {
+function open(popover, id, opts) {
   const el = document.getElementById(id);
   if (!el) return;
   opts = opts || {};
@@ -124,7 +123,7 @@ function open(id, opts) {
   // H-16 개방 순서(바꾸지 말 것): 복귀점을 먼저 붙잡고 → 경량층을 모두 닫고 → 스택 등록 → 초점.
   // 메뉴 항목 자신은 closeAll()에서 사라질 수 있으므로 호출부가 넘긴 원 트리거가 최우선이다.
   const returnFocus = opts.returnFocus || document.activeElement;
-  Popover.closeAll();
+  popover.closeAll();
   // 같은 모달 이중 open 은 엔진이 무시(idempotent) — 스택 중복으로 닫힘 의미가 꼬이는 것 방지.
   overlayEngine.open({
     host: el,
@@ -178,7 +177,7 @@ function dialogGate(kind, refusal, missingText) {
 /* 네이티브 window.confirm 대체(#86) — Promise<boolean>. 기본 포커스=취소(머무르기),
    Escape·복귀=머무르기(false). opts: { body, title?, confirmLabel?, cancelLabel?, danger? }.
    danger 는 영구 파일/정의 삭제·덮어쓰기처럼 내구 파괴인 확정에만 쓴다(#219). */
-function confirm(opts) {
+function confirm(popover, opts) {
   opts = opts || {};
   // host 부재(파사드 관문)와 골격 불량(host 의 실 DOM 판독)이 같은 문안으로 거절한다 —
   // 사용자에겐 「확인 창이 안 섰다」는 한 사실이고, 문안 소유는 파사드라 spec 으로 싣는다.
@@ -186,7 +185,7 @@ function confirm(opts) {
   const gate = dialogGate("confirmModal", false, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
-  Popover.closeAll();
+  popover.closeAll();
   return gate.host.confirm({
     title: opts.title || "확인",
     body: opts.body || "",
@@ -203,13 +202,13 @@ function confirm(opts) {
 /* 네이티브 window.prompt 대체(#86) — Promise<string|null>. 확인=입력 문자열(빈 문자열 포함),
    취소·Escape·복귀=null. 기본 포커스=입력칸, Enter=확인(IME 조합 확정 Enter 제외).
    opts: { body, value?, title? }. */
-function prompt(opts) {
+function prompt(popover, opts) {
   opts = opts || {};
   const missingText = "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.";
   const gate = dialogGate("promptModal", null, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
-  Popover.closeAll();
+  popover.closeAll();
   return gate.host.prompt({
     title: opts.title || "입력",
     body: opts.body || "",
@@ -224,7 +223,7 @@ function prompt(opts) {
    Escape·복귀·프로그램적 close = **거절 값**(머무르기)이라 창을 닫아 편집을 잃는 경로가
    없다. 라벨은 호출부가 준다 — 이 골격은 "셋 중 하나"라는 형상만 소유한다.
    opts: { title?, body, choices: [주, 보조, 거절] }(각 {value,label}). */
-function choose(opts) {
+function choose(popover, opts) {
   opts = opts || {};
   const list = opts.choices || [];
   const primary = list[0] || { value: "ok", label: "확인" };
@@ -234,7 +233,7 @@ function choose(opts) {
   const gate = dialogGate("chooseModal", refusal.value, missingText);
   if (!gate.host) return Promise.resolve(gate.refuse);
   const returnFocus = opts.returnFocus || document.activeElement;
-  Popover.closeAll();
+  popover.closeAll();
   return gate.host.choose({
     title: opts.title || "선택",
     body: opts.body || "",
@@ -250,4 +249,13 @@ function choose(opts) {
 // 같은 사건이다(면을 닫는 것과 화면을 되돌리는 것의 차이일 뿐). 규칙을 저쪽에서 다시
 // 쓰면 되돌림 판정이 두 벌이 되고, 이 함수가 일부러 피한 함정(분리·비활성 요소 흉내내기)을
 // 그 두 번째 사본이 되풀이한다.
-export const Modal = { open, close, confirm, prompt, choose, restoreFocus };
+export function createModal({ popover }) {
+  return {
+    open: (id, opts) => open(popover, id, opts),
+    close,
+    confirm: (opts) => confirm(popover, opts),
+    prompt: (opts) => prompt(popover, opts),
+    choose: (opts) => choose(popover, opts),
+    restoreFocus,
+  };
+}

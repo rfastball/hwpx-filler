@@ -321,16 +321,16 @@ def test_discard_confirm_has_single_source():
 def test_editor_library_management_wiring_is_static():
     """정적 계약(F8 — §10.17.2 판정 B·D): tpl 화면 사망의 승계 배선.
 
-    ①편집기가 tpl 채널 push 를 구독해 관리 동사의 결과를 재당김으로 되그린다(구독이 없으면
-    가져오기·삭제·그룹 변경이 다음 진입까지 비가시) ②관리 동사는 tpl 채널을 **리터럴**로
+    ①편집기가 tpl 관리 동사의 완료와 같은 인과선에서 editor를 재당겨 결과를 되그린다
+    ②관리 동사는 tpl 채널을 **리터럴**로
     부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③메뉴 내용은
     공용 React ContextMenu 가, 위치·dismiss 는 주입된 Popover 가 맡는다.
     """
     src = EDITOR_TS
-    # R4-02 — tpl 채널 구독은 `Bridge.onPush` 에서 store 채널 model 구독이 됐고, 그 push 는
-    # editor 스냅샷 **재당김**을 태운다(성형의 정본은 editor 스냅샷 하나).
-    assert "tplModel.subscribe(" in src, "tpl push 구독 소실 — 관리 결과가 편집기에 비가시."
-    assert "deps.runtime.refresh(SCREEN)" in src, "tpl push 뒤 재당김이 없습니다."
+    # R5-01 — migration용 교차 채널 구독을 걷고, tpl 동사 성공 직후 editor snapshot을
+    # 재당긴다. 성형의 정본은 여전히 editor 스냅샷 하나다.
+    assert "tplModel.subscribe(" not in src and "let wired" not in src
+    assert 'if (screen === "tpl") await deps.runtime.refresh(SCREEN);' in src
     for action in ("set_group", "rename_group", "disband_group", "delete", "undo_delete"):
         assert f'dispatch("tpl", "{action}"' in src, (
             f"관리 동사 {action} 이 tpl 채널을 부르지 않습니다 — 채널 재구현 금지."
@@ -348,9 +348,9 @@ def test_editor_library_management_wiring_is_static():
 
 
 def test_bridge_push_supports_multiple_subscribers_per_screen():
-    """정적 계약(F8) — 한 채널 복수 구독: 병존 기간 editor 가 tpl push 를 함께 듣는다.
-    단일 슬롯(덮어쓰기)으로 되돌리면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가
-    렌더를 잃는다(template.js ↔ editor.js 어느 쪽이든 init 순서 복권)."""
+    """정적 계약 — 한 채널의 독립 소비자는 서로를 덮어쓰지 않는다.
+    R5-01에서 editor↔tpl migration 구독은 죽었지만 bridge의 복수 소비자 계약은 남는다.
+    단일 슬롯으로 되돌리면 나중 등록이 먼저 등록을 조용히 밀어낸다."""
     bridge = (SOURCE_JS_DIR / "bridge.js").read_text(encoding="utf-8")
     assert "renderers[screen] = renderers[screen] || []" in bridge, (
         "onPush 가 복수 구독을 지원하지 않습니다 — 덮어쓰기 단일 슬롯은 조용한 렌더 소실."

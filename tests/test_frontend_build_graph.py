@@ -62,7 +62,7 @@ PINNED_DEV_DEPENDENCIES = {
 def _ts_bare_allowed(spec: str) -> bool:
     """``.ts`` 서브트리에만 허용되는 bare specifier — 핀 상수의 패키지와 그 하위 경로만.
 
-    ``.js`` 도달 그래프는 이 함수를 거치지 않고 **bare 0 을 유지**한다 — legacy 25 가
+    ``.js`` 도달 그래프는 이 함수를 거치지 않고 **bare 0 을 유지**한다 — 비 React JS가
     ``import "react"`` 를 싣는 경로의 원천 차단이다(L16 N4: ADR-06 「legacy 신규 기능
     금지」가 리뷰 계약에서 게이트 계약으로 올라온 자리).
     """
@@ -96,15 +96,7 @@ EXPECTED_ESM_EXPORTS = {
     "preserve.js": "Preserve",
     "intent.js": "Intent",
     "undo_toast.js": "UndoToast",
-    "modal.js": "Modal",
-    "surface_sheet.js": "SurfaceSheet",
-    # N-05 서비스 — 포트를 받아 중앙에서 한 번 구성되는 여덟
-    "theme.js": "createTheme",
-    "personalization.js": "createPersonalization",
-    # N-06 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아 중앙에서 한 번
-    # 구성된다. R4-03 이 실행·결과 표면을 React 로 옮기며 **legacy 화면은 0 이 됐고**,
-    # 저수준 재연결(`relink.js`)도 `screens/job_relink.ts` 로 함께 갔다. 남은 것은 셸뿐이다.
-    "app.js": "createAppShell",
+    "surface_sheet.js": "createSurfaceSheet",
     # N-07 브리지 — 마지막 IIFE. 산물 ``{bridge, push}`` 를 중앙이 한 번 구성해 나눠 준다.
     "bridge.js": "createBridge",
 }
@@ -122,6 +114,15 @@ EXPECTED_RUNTIME_GLOBALS: set[str] = set()
 
 #: 되살아나면 안 되는 이름 전수 — 생산도 판독도 0이어야 한다.
 FORBIDDEN_PRODUCT_GLOBALS = frozenset(RETIRED_COMPAT_GLOBALS)
+
+#: R5-01(#419)에서 물리적으로 폐기한 마지막 셸/선호/overlay 파사드 경로.
+#: 수량이 아니라 이름을 고정해야 다른 파일 하나가 지워진 자리를 대신해도 초록이 되지 않는다.
+RETIRED_R5_MODULES = (
+    "js/app.js",
+    "js/theme.js",
+    "js/personalization.js",
+    "js/modal.js",
+)
 
 
 def strip_js_comments(source: str) -> str:
@@ -364,20 +365,20 @@ def test_product_entry_is_one_module_with_ordered_side_effect_graph() -> None:
 
 
 def test_converted_modules_are_esm_and_own_no_globals() -> None:
-    """ESM 19개는 IIFE도 전역 생산자도 아니고 자기 공개 이름 하나만 낸다.
+    """남은 JS ESM 9개는 IIFE도 전역 생산자도 아니고 자기 공개 이름 하나만 낸다.
 
     M1의 "25 IIFE 전수"를 이 후계가 잇는다. 여기서 수량만 세면 모듈이 export를 내면서
     ``window.SegView`` 도 같이 남기는 이중 유지가 통과한다 — 그래서 파일별로 IIFE 0,
     자기 전역 write 0, 정확한 export 이름을 함께 단언한다.
 
-    잎 넷과 달리 서비스 열다섯은 표준 Web API(``window.addEventListener``·``window.alert``·
+    잎 넷과 달리 서비스 다섯은 표준 Web API(``window.addEventListener``·``window.alert``·
     ``window.pywebview`` 등)를 정당하게 쓴다. 그래서 "``window.`` 문자열 0"으로는 셀 수 없고,
     금지 대상은 **제품 전역 이름**이다. 그 목록은 N-10에서 사라진 별칭 스물일곱
     (:data:`FORBIDDEN_PRODUCT_GLOBALS`)이다 — 별칭이 죽었어도 **판독**이 되살아나면 그
     모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 13
+    assert len(ESM_FILES) == 9
 
     #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
     assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
@@ -418,6 +419,12 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
         assert "export default" not in source, f"{name} 이 default export 를 냅니다."
 
 
+def test_r5_retired_shell_and_overlay_modules_are_physically_absent() -> None:
+    """#419 삭제 경로가 이름 그대로 되살아나는 회귀를 막는다."""
+    survivors = [relative for relative in RETIRED_R5_MODULES if (SOURCE_ROOT / relative).exists()]
+    assert not survivors, f"R5 폐기 모듈이 되살아났습니다: {survivors}"
+
+
 def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
     """서비스 간·잎 의존이 **그래프에 적힌 단방향 간선**이다(암묵 로드 순서의 후계).
 
@@ -426,14 +433,8 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
     그 질문은 이제 import 문 자체가 답한다.
     """
     expected_edges = {
-        # R3-01(#410): 파사드가 스택·직렬화 판정을 엔진 배선(instance.ts)에 위임한다 —
-        # js→ts 상대 import 는 bootstrap.js 선례의 합법 방향(역방향 ts→legacy 는 0 게이트).
-        "modal.js": {"./popover.js", "../src/overlay/instance.ts"},
-        "surface_sheet.js": {"./modal.js"},
+        "surface_sheet.js": set(),
         # R4-02 — 이동 다이얼로그·접힘 토글이 React 후계로 떠나며 esc·modal 간선도 함께 죽었다.
-        # R3-02(#411): 집행 adapter 가 판정 정본(DEFAULT_SCREEN·IMMERSIVE_SURFACES)을 상태
-        # 기계 모듈에서 읽는다 — modal.js 와 같은 js→ts 합법 방향.
-        "app.js": {"./modal.js", "../src/shell/nav.ts"},
     }
 
     for name, expected in expected_edges.items():
@@ -443,21 +444,9 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
             f"{name} 의 모듈 간선이 {sorted(actual)} 입니다 — {sorted(expected)} 여야 합니다."
         )
 
-    #: 화면 간 직접 import 0 — 교차 간선은 합성 루트의 late-bound 콜백 테이블만 진다.
-    #: legacy 화면이 0 이 된 뒤로 이 질문의 남은 대상은 셸 하나다. 술어를 지우지 않는 이유는
-    #: **되살아나는 모양**을 계속 겨누기 위해서다(새 legacy 화면이 생기면 여기서 먼저 붉다).
-    for name in ("app.js",):
-        source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
-        crossing = [p for p in module_imports(source)
-                    if "screens/" in p or p.endswith("/app.js") or p == "./app.js"]
-        assert not crossing, (
-            f"{name} 이 다른 화면·셸을 직접 import 합니다: {crossing} — "
-            "교차 간선은 중앙 콜백 테이블이 집니다."
-        )
-
     #: 간선이 없어야 하는 모듈은 정말 없어야 한다(잎다움의 음성 대조).
     for name in ("copy.js", "esc.js", "guard.js", "popover.js", "preserve.js",
-                 "intent.js", "undo_toast.js", "theme.js", "personalization.js"):
+                 "intent.js", "undo_toast.js"):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         assert not [p for p in module_imports(source) if p.startswith("./")], (
             f"{name} 이 다른 제품 모듈을 import 합니다 — 잎이 아니게 됐습니다."
@@ -618,11 +607,17 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
         if export.startswith("create")
     )
 
-    assert len(factories) == 4
+    assert len(factories) == 2
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
             f"합성 루트가 {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
+        )
+
+    for factory in ("createTheme", "createPersonalization", "createAppShell", "createModal"):
+        calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
+        assert len(calls) == 1, (
+            f"합성 루트가 TS 셸 factory {factory} 를 {len(calls)}회 부릅니다 — 정확히 1회여야 합니다."
         )
 
     # R4-01에서 legacy factory 셋은 React controller/runtime/port 합성으로 교체됐다. 이들은
@@ -664,7 +659,7 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
     #: 있어 아무것도 매치하지 못하는 **공허한 단언**이었다 — 선언은 살고 결과는 죽어 있던 자리다.
     assert compat_source.count("window.Bridge") == 0
 
-    #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 값 캡처(`JobScreen.refreshList` 를
+    #: 교차 화면·Nav 콜백 테이블은 지연 호출이어야 한다 — 메서드를
     #: 프로퍼티로 뽑아 저장)로 되돌아가면 구성 순서에 따라 undefined 를 붙든다.
     for member in ("refreshList", "openBrowseNeedsAction"):
         assert re.search(
@@ -673,7 +668,7 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
         ), f"jobCallbacks.{member} 가 지연 호출 콜백이 아닙니다."
     assert "openPreview: (_event, options = {}) => screenPorts.jobRun.current().openPreview({" in compat_source
     assert re.search(
-        r"aimAt: \(\.\.\.args\) => EditorScreen\.aimAt\(\.\.\.args\),", compat_source
+        r"aimAt: \(\.\.\.args\) => EditorController\.aimAt\(\.\.\.args\),", compat_source
     ), "editorCallbacks.aimAt 가 지연 호출 콜백이 아닙니다."
     for member in ("go", "refresh"):
         assert re.search(
@@ -716,7 +711,7 @@ def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(scripts) == 13
+    assert len(scripts) == 9
     assert non_esm == ()
     assert LEGACY_JS_FILES == ()
     assert EXPECTED_LEGACY_GLOBALS == set()
@@ -885,9 +880,11 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/screens/segment_view.ts",  # R4-02 — 채움 표지 세그먼트 React 후계
         "src/screens/sheet_picker.ts",  # R4-02 — 시트 확정 게이트 React 구현
         "src/screens/workbench.ts",  # R4-02 — 작업대 React controller/producer
-        "src/screens/workbench_state.ts",  # R4-02 — 작업대 draft 투영
-        "src/shell/host.ts",  # R3-02 — React ShellHost: 셸 리스너·부팅 시퀀스 수명주기
-        "src/shell/nav.ts",  # R3-02 — 셸 상태기계(라우팅·ready·재당김 규약·닫기 직렬화 판정)
+            "src/screens/workbench_state.ts",  # R4-02 — 작업대 draft 투영
+            "src/shell/app.ts",  # R5-01 — React 셸 adapter·listener attachment 서술
+            "src/shell/host.ts",  # R3-02 — React ShellHost: 셸 리스너·부팅 시퀀스 수명주기
+            "src/shell/nav.ts",  # R3-02 — 셸 상태기계(라우팅·ready·재당김 규약·닫기 직렬화 판정)
+            "src/shell/preferences.ts",  # R5-01 — theme·personalization React 셸 서비스
         "src/state/store.ts",  # R2-03 — 전송-충실 스냅샷 store(값 해석 0)
     ], f"`.ts` 서브트리 전수가 어긋납니다: {ts_members}"
     assert len(sources) >= 40, (
@@ -1325,7 +1322,7 @@ def test_whole_frontend_graph_from_the_entry_has_no_cycles_and_no_bare_specifier
                     continue
                 elif path.suffix != ".js" and _ts_bare_allowed(spec):
                     #: 빌드가 해소하는 **핀된** 의존 — TS-가족(¬`.js` — 등재 필터와 같은
-                    #: 감산형)에만 열린 문이다. `.js` 는 여전히 bare 0 이라 legacy 25 가
+                    #: 감산형)에만 열린 문이다. `.js` 는 여전히 bare 0 이라 비 React JS가
                     #: React 를 직접 싣는 경로가 없다.
                     continue
                 else:

@@ -406,16 +406,15 @@ def _readable(path: Path) -> str:
 
 
 #: R3-02(#411) — 몰입 표면 목록(id·cls)의 정본이 셸 상태기계(`src/shell/nav.ts`)로 이사해
-#: app.js 의 `im.cls` sink 는 **다른 파일**의 속성 결속으로만 읽힌다. 「같은 파일 결속」
-#: 원칙의 명시 예외 하나이고 app.js 한정으로만 회수를 넓힌다 — `.ts` 전면 편입(ux_css
-#: 그물의 scope 재설계)은 R3-03(#412)이 진다.
+#: shell/app.ts의 소비는 **다른 파일**의 속성 결속으로만 읽힌다. 「같은 파일 결속」
+#: 원칙의 명시 예외 하나다.
 _SHELL_NAV_TS = SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts"
 
 
 def _bindings_for(path: Path, text: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
-    """파일 하나의 결속 — app.js 는 셸 상태기계 정본의 속성 결속을 함께 회수한다(위 주석)."""
+    """파일 하나의 결속 — shell/app.ts는 셸 상태기계 정본의 속성 결속을 함께 회수한다."""
     variables, properties = _bindings(text)
-    if path.name == "app.js":
+    if path == SOURCE_ROOT / "src" / "shell" / "app.ts":
         for prop, got in _bindings(_SHELL_NAV_TS.read_text(encoding="utf-8"))[1].items():
             properties.setdefault(prop, set()).update(got)
     return variables, properties

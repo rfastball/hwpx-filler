@@ -12,7 +12,7 @@ def _read(relative: str) -> str:
 
 def test_forgiveness_surface_contracts_are_wired() -> None:
     index = _read("index.html")
-    modal = _read("js/modal.js")
+    modal = _read("src/overlay/modal.js")
     editor = _read("src/screens/editor.ts")
     # R4-03 — 실행 표면이 React 로 이사했다. 묻는 것(관용의 문안·가드)은 그대로다.
     from _web_source import react_job_run_source

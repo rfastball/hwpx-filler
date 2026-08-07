@@ -376,11 +376,13 @@ function uninstall() {
 
 buildFixture();
 install();
-const { Modal } = await import("../../frontend/js/modal.js");
-const { SurfaceSheet } = await import("../../frontend/js/surface_sheet.js");
+const { createModal } = await import("../../frontend/src/overlay/modal.js");
+const { createSurfaceSheet } = await import("../../frontend/js/surface_sheet.js");
 const { Popover } = await import("../../frontend/js/popover.js");
+const Modal = createModal({ popover: Popover });
+const SurfaceSheet = createSurfaceSheet({ modal: Modal });
 const { createOverlayDialogController } = await import("../../frontend/src/overlay/host.ts");
-const { setOverlayDialogHost } = await import("../../frontend/src/overlay/instance.ts");
+const { overlayEngine, setOverlayDialogHost } = await import("../../frontend/src/overlay/instance.ts");
 uninstall();
 
 /* bootProduct 구성 몫의 재현 ① — dismissal 계열 문서 리스너는 구성 시 상시 부착이다
@@ -391,7 +393,7 @@ for (const attachment of Popover.documentAttachments) {
   else DOC.addEventListener(attachment.type, attachment.handler);
 }
 
-const MODAL_SRC = readFileSync(new URL("../../frontend/js/modal.js", import.meta.url), "utf8");
+const MODAL_SRC = readFileSync(new URL("../../frontend/src/overlay/modal.js", import.meta.url), "utf8");
 const SHEET_SRC = readFileSync(new URL("../../frontend/js/surface_sheet.js", import.meta.url), "utf8");
 
 /* bootProduct 구성 몫의 재현 ② — React host 가 마운트 effect 에서 세우는 다이얼로그·토스트
@@ -464,8 +466,8 @@ test("1. Modal 의 공개 표면은 계약 표와 정확히 같다", async () =>
     ["choose", "close", "confirm", "open", "prompt", "restoreFocus"],
   );
   for (const key of Object.keys(Modal)) assert.equal(typeof Modal[key], "function");
-  const ns = await import("../../frontend/js/modal.js");
-  assert.deepEqual(Object.keys(ns), ["Modal"]);
+  const ns = await import("../../frontend/src/overlay/modal.js");
+  assert.deepEqual(Object.keys(ns), ["createModal"]);
   assert.equal(ns.default, undefined);
 });
 
@@ -476,15 +478,15 @@ test("1. SurfaceSheet 의 공개 표면은 계약 표와 정확히 같다", asyn
   );
   for (const key of Object.keys(SurfaceSheet)) assert.equal(typeof SurfaceSheet[key], "function");
   const ns = await import("../../frontend/js/surface_sheet.js");
-  assert.deepEqual(Object.keys(ns), ["SurfaceSheet"]);
+  assert.deepEqual(Object.keys(ns), ["createSurfaceSheet"]);
   assert.equal(ns.default, undefined);
 });
 
 /* ────────────────────────── 2. 의존 간선 ────────────────────────── */
 
-test("2. 의존은 명시 import 간선이다 — 전역 조회·IIFE·자기 전역 write 가 0", () => {
-  assert.match(MODAL_SRC, /^import \{ Popover \} from "\.\/popover\.js";$/m);
-  assert.match(SHEET_SRC, /^import \{ Modal \} from "\.\/modal\.js";$/m);
+test("2. 의존은 factory 주입 간선이다 — 전역 조회·IIFE·자기 전역 write 가 0", () => {
+  assert.match(MODAL_SRC, /^import \{ overlayEngine, overlayDialogHost \} from "\.\/instance\.ts";$/m);
+  assert.equal(/^import /m.test(SHEET_SRC), false, "SurfaceSheet 의 modal 의존은 factory 주입");
   for (const [name, src] of [["modal.js", MODAL_SRC], ["surface_sheet.js", SHEET_SRC]]) {
     assert.equal(/^\(function \(\) \{/m.test(src), false, `${name}: top-level IIFE 잔존`);
     assert.equal(/^\s*(window|globalThis)\.[A-Za-z_$][\w$]*\s*=/m.test(src), false,
@@ -496,8 +498,8 @@ test("2. 의존은 명시 import 간선이다 — 전역 조회·IIFE·자기 �
   }
   // 별칭 금지 — `Modal.confirm(` 문자열을 세는 파괴 확인 라벨 감사(test_danger_confirm_contract)
   // 가 별칭에 침묵한다.
-  assert.equal(SHEET_SRC.includes("Modal.open("), true);
-  assert.equal(SHEET_SRC.includes("Modal.close(id)"), true);
+  assert.equal(SHEET_SRC.includes("modal.open("), true);
+  assert.equal(SHEET_SRC.includes("modal.close(id)"), true);
 });
 
 test("2. Modal.open 이 실제로 import 한 Popover 의 closeAll 을 통과한다", () => {
@@ -536,15 +538,15 @@ test("2. 열기 순서 — 복귀점 포착 → Popover.closeAll → 스택 → 
 
 /* ────────────────────────── 3. 싱글턴 ────────────────────────── */
 
-test("3. 두 번 import 해도 같은 Modal — 스택도 pendingDialog 도 한 벌이다", async () => {
-  const again = (await import("../../frontend/js/modal.js")).Modal;
-  assert.equal(again, Modal);
+test("3. factory 인스턴스가 달라도 엔진 스택·pendingDialog는 한 벌이다", async () => {
+  const again = createModal({ popover: Popover });
+  assert.notEqual(again, Modal, "factory 인스턴스는 명시적으로 구성된다");
 
   // 스택 공유: SurfaceSheet 가 연 모달을 이쪽 Modal.close 가 닫는다.
   DOC.getElementById("sheetOpen").focus();
   SurfaceSheet.open({ modalId: "sheetModal", moves: [{ id: "movable", slotId: "dataSheetSlot" }] });
   assert.equal(DOC.getElementById("sheetModal").classList.contains("hidden"), false);
-  again.close("sheetModal");
+  Modal.close("sheetModal");
   flushClose("sheetModal");
   assert.equal(DOC.getElementById("sheetModal").classList.contains("hidden"), true);
   assert.equal(SurfaceSheet.isOpen("sheetModal"), false);
@@ -731,6 +733,29 @@ test("6. Escape 로 해소된 promise 는 거절값이고 pending 이 풀린다"
   dispatch(DOC.getElementById("confirmModalCancel"), "click");
   flushClose("confirmModal");
   assert.equal(await next, false);
+});
+
+test("6. host dispose 는 열린 다이얼로그를 거절값으로 정산하고 수명을 전부 걷는다", async () => {
+  const keydownBefore = DOC.listenerCount("keydown");
+  const pending = Modal.confirm({ body: "열린 채 unmount" });
+  assert.equal(overlayEngine.depth(), 1);
+  assert.equal(overlayEngine.isDialogPending(), true);
+  assert.equal(DOC.listenerCount("keydown"), keydownBefore + 1);
+
+  hostSession.release();
+  hostSession.dispose();
+  hostSession = null;
+
+  assert.equal(await pending, false);
+  assert.equal(overlayEngine.depth(), 0);
+  assert.equal(overlayEngine.isDialogPending(), false);
+  assert.equal(DOC.listenerCount("keydown"), keydownBefore);
+  assert.equal(DOC.getElementById("confirmModal").classList.contains("hidden"), true);
+  assert.equal(DOC.getElementById("confirmModalOk").listeners.get("click").length, 0);
+  assert.equal(DOC.getElementById("confirmModalCancel").listeners.get("click").length, 0);
+
+  /* afterEach 의 대칭 cleanup 과 다음 테스트를 위해 신품 host 를 다시 세운다. */
+  standUpHost();
 });
 
 /* ────────────────────────── 7. loud rejection ────────────────────────── */

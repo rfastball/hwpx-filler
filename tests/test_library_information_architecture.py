@@ -10,7 +10,7 @@ from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, app_css
 
 
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
-APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
+APP = (SOURCE_JS_DIR.parent / "src" / "shell" / "app.ts").read_text(encoding="utf-8")
 # R3-02(#411) — 랜딩 기본값·ready 게이트 판정의 정본은 셸 상태기계로 이동했다.
 NAV_TS = (SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
 LIB = (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts").read_text(encoding="utf-8")
@@ -201,7 +201,7 @@ def test_group_merge_confirm_runs_after_the_prompt_settles() -> None:
     # 파사드는 엔진 관측면(isDialogPending)으로 같은 거절을 잇는다.
     engine = (SOURCE_JS_DIR.parent / "src" / "overlay" / "engine.ts").read_text(encoding="utf-8")
     assert "pendingDialog" in engine and "if (pendingDialog)" in engine
-    modal = (SOURCE_JS_DIR / "modal.js").read_text(encoding="utf-8")
+    modal = (SOURCE_JS_DIR.parent / "src/overlay/modal.js").read_text(encoding="utf-8")
     assert "overlayEngine.isDialogPending()" in modal
 
 

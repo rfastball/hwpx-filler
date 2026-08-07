@@ -110,7 +110,7 @@
          에디터·작업 두 화면이 공유하며, 취소·Escape 는 로드를 중단한다(첫 시트 강등 없음). -->
     <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
 
-    <!-- 「작업」 덮어쓰기 확인은 공용 modal.js Modal.confirm(수치 합성 본문)이 담당한다 —
+    <!-- 「작업」 덮어쓰기 확인은 공용 overlay modal adapter(수치 합성 본문)가 담당한다 —
          전용 모달 DOM 폐기(슬라이스 2, A-2-22: 총량·파괴분·신규분 종류별 재진술). -->
 
     <!-- 데이터 선택 다이얼로그(재작성 F1, v6 dataPickerDialog) — 「작업」·「기안」 공유.
@@ -166,7 +166,7 @@
     <!-- (promise 다이얼로그 3종 — #confirmModal·#chooseModal·#promptModal — 은 R3-01 에서
          React host(#reactOverlayHost)로 이전. 완전 데이터-구동 표면이라 정적 골격 없이
          host 렌더가 같은 id·클래스·ARIA·초기 문안을 소유한다. 기본 포커스=취소/머무르기·
-         Escape=머무르기·danger 재진술 계약(#86·F7·#219)은 파사드 modal.js 가 그대로 진다.
+         Escape=머무르기·danger 재진술 계약(#86·F7·#219)은 overlay modal adapter가 그대로 진다.
          index.html 재도입은 id 중복(정적 계약 빨강)이다.) -->
 </div>
 

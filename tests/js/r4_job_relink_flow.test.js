@@ -8,10 +8,10 @@ import { createServiceHandoffPorts } from "../../frontend/src/ports/service_hand
 test("비활성 작업 relink 성공 뒤에만 그 작업을 선택한다", async () => {
   const calls = [];
   const ports = createScreenPorts();
-  ports.jobRunCoordination.bindLegacy({ confirmDestructiveIfArmed: async () => true, log: (m) => calls.push(["log", m]) });
-  ports.editorEntry.bindLegacy({ openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard() {}, restoreEntryFocus() {} });
+  ports.jobRunCoordination.bind({ confirmDestructiveIfArmed: async () => true, log: (m) => calls.push(["log", m]) });
+  ports.editorEntry.bind({ openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard() {}, restoreEntryFocus() {} });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async (_screen, name) => { calls.push(["relink", name]); return true; } });
+  services.relink.bind({ relinkTemplate: async (_screen, name) => { calls.push(["relink", name]); return true; } });
   const controller = createJobReadController({
     runtime: { model: () => ({ getSnapshot: () => ({ full: { has_job: true, has_data: true, job_name: "작업A", filter: {} }, progress: null }), subscribe: () => () => {} }) },
     client: { dispatch: async (_screen, action, payload) => { calls.push([action, payload]); return { ok: true, value: {} }; } },
@@ -27,10 +27,10 @@ test("비활성 작업 relink 성공 뒤에만 그 작업을 선택한다", asyn
 test("활성 작업 relink는 파괴 가드 거절 시 service를 부르지 않는다", async () => {
   const calls = [];
   const ports = createScreenPorts();
-  ports.jobRunCoordination.bindLegacy({ confirmDestructiveIfArmed: async () => false, log() {} });
-  ports.editorEntry.bindLegacy({ openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard() {}, restoreEntryFocus() {} });
+  ports.jobRunCoordination.bind({ confirmDestructiveIfArmed: async () => false, log() {} });
+  ports.editorEntry.bind({ openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard() {}, restoreEntryFocus() {} });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async () => { calls.push("relink"); return true; } });
+  services.relink.bind({ relinkTemplate: async () => { calls.push("relink"); return true; } });
   const controller = createJobReadController({
     runtime: { model: () => ({ getSnapshot: () => ({ full: { has_job: true, has_data: true, job_name: "작업A", filter: {} }, progress: null }), subscribe: () => () => {} }) },
     client: { dispatch: async () => ({ ok: true, value: {} }) }, ports, services,

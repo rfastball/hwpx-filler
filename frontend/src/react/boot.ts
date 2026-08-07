@@ -1,7 +1,7 @@
 /* React root 의 제품 배선 — 실 `createRoot` 와 컨트롤러 단일 인스턴스가 여기 산다 (R2-01 · #405).
 
    `react-dom/client` 의 bare import 는 `.ts` 서브트리에만 허용된다 — `.js` 도달 그래프는
-   bare 0 을 유지해 legacy 25 가 React 를 직접 싣는 경로를 원천 차단한다(정적 게이트가 잰다).
+   bare 0 을 유지해 비 React JS가 React를 직접 싣는 경로를 원천 차단한다(정적 게이트가 잰다).
    그래서 합성 루트(`bootstrap.js`)는 이 모듈의 함수만 부르고 React 를 모른다.
 
    컨트롤러는 모듈 상태로 정확히 하나다: 같은 모듈 그래프에서 `bootProduct()` 가 다시 불려도

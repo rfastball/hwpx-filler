@@ -58,7 +58,7 @@ function harness(options = {}) {
   };
   const port = (impl) => {
     let bound = impl ?? null;
-    return { bindReact(v) { if (bound !== null) throw new Error("두 번째 결속"); bound = v; }, current: () => bound };
+    return { bind(v) { if (bound !== null) throw new Error("두 번째 결속"); bound = v; }, current: () => bound };
   };
   const ports = {
     jobRun: port(), jobRunCoordination: port(),
@@ -215,10 +215,10 @@ test("JobRunPort 는 정확히 한 번 attach 한다", async () => {
   h.runPort().attach({ onFull() {}, onProgress() {} });
 });
 
-test("port 는 bindReact 로 한 번만 결속된다 — dual-dispatch 창이 안 생긴다", () => {
+test("port 는 한 번만 결속된다 — dual-dispatch 창이 안 생긴다", () => {
   const h = harness({ full: snap() });
-  assert.throws(() => h.ports.jobRun.bindReact({}), /두 번째 결속/);
-  assert.throws(() => h.ports.jobRunCoordination.bindReact({}), /두 번째 결속/);
+  assert.throws(() => h.ports.jobRun.bind({}), /결속/);
+  assert.throws(() => h.ports.jobRunCoordination.bind({}), /결속/);
 });
 
 test("attach 한 콜백은 유입 순서대로 full·progress 를 받는다", async () => {

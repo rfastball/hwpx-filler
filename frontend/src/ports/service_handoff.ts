@@ -1,4 +1,4 @@
-import { createHandoffPort } from "../screens/ports.ts";
+import { createPort } from "../screens/ports.ts";
 
 export type NeedsSheetPayload = Record<string, unknown>;
 export type DataMountDescriptor = Record<string, unknown>;
@@ -17,8 +17,8 @@ export type RelinkPort = {
 
 export function createServiceHandoffPorts() {
   return {
-    sheetPicker: createHandoffPort<SheetPickerPort>("SheetPickerPort"),
-    relink: createHandoffPort<RelinkPort>("RelinkPort"),
+    sheetPicker: createPort<SheetPickerPort>("SheetPickerPort"),
+    relink: createPort<RelinkPort>("RelinkPort"),
   };
 }
 
