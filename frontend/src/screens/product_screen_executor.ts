@@ -1,6 +1,7 @@
 /* R4-04 화면 집행자 — shellNav 판정은 그대로 두고 React visibility 효과만 인수한다. */
 import { flushSync } from "react-dom";
 
+import { IMMERSIVE_SURFACES } from "../shell/nav.ts";
 import type { ShellExecutor } from "../shell/nav.ts";
 import { PRODUCT_SCREEN_IDS } from "./product_screens.ts";
 import type { ProductScreenId, ProductScreenVisibility } from "./product_screens.ts";
@@ -120,8 +121,17 @@ function applyShellMarkers(doc: Document, id: ProductScreenId): void {
   doc.querySelectorAll<HTMLElement>(".navbtn").forEach((button) => {
     button.setAttribute("aria-current", button.dataset.scr === id ? "true" : "false");
   });
-  doc.body.classList.toggle("editor-open", id === "editor");
-  doc.body.classList.toggle("workbench-open", id === "workbench");
+  IMMERSIVE_SURFACES.forEach((surface) => {
+    if (surface.id === "editor" && surface.cls === "editor-open") {
+      doc.body.classList.toggle("editor-open", id === surface.id);
+      return;
+    }
+    if (surface.id === "workbench" && surface.cls === "workbench-open") {
+      doc.body.classList.toggle("workbench-open", id === surface.id);
+      return;
+    }
+    throw new Error(`지원하지 않는 몰입 화면 표지입니다: ${surface.id}/${surface.cls}`);
+  });
 }
 
 export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): ShellExecutor {

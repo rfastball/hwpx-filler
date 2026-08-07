@@ -2044,7 +2044,10 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert '{ id: "editor", cls: "editor-open" }' in nav_ts and "body.editor-open .nav" in WEB_CSS, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
     )
-    assert "IMMERSIVE_SURFACES.forEach" in executor_ts and "classList.toggle(surface.cls" in executor_ts, (
+    assert "IMMERSIVE_SURFACES.forEach" in executor_ts
+    assert 'classList.toggle("editor-open", id === surface.id)' in executor_ts
+    assert 'classList.toggle("workbench-open", id === surface.id)' in executor_ts
+    assert "지원하지 않는 몰입 화면 표지입니다" in executor_ts, (
         "ProductScreens executor가 몰입 목록으로 셸 표지를 내리지 않습니다 — 판정만 있고 은닉이 죽습니다."
     )
     # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다
