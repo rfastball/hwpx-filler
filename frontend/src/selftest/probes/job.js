@@ -503,6 +503,7 @@ async function driveBrowseSheet(ctx, out, snap, setupReady = () => {}) {
   /* 모달 focus trap은 body로 빠진 `.blur()`를 첫 입력으로 되돌린다. "포커스가 떠남"을
      실제로 만들기 위해 같은 모달의 탭으로 옮긴다 — trap을 깨는 것이 이 대조의 목적이 아니다. */
   doc.getElementById("jobBrowseTab-available").focus();
+  out.browse_query_focus_left = doc.activeElement !== qi;
   await pushAndSettle(ctx, "job", snap);
   out.browse_query_settled = qi.value;
 
