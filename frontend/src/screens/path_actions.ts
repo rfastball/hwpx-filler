@@ -4,15 +4,15 @@ import type { ReactNode } from "react";
 import type { BridgeClient } from "../runtime/client.ts";
 import { expectHostValue } from "./runtime.ts";
 
-type Action = "open" | "reveal" | "copy";
+export type PathAction = "open" | "reveal" | "copy";
 
-const LABEL: Record<Action, string> = {
+const LABEL: Record<PathAction, string> = {
   open: "열기",
   reveal: "폴더에서 보기",
   copy: "경로 복사",
 };
 
-function icon(action: Action | "done"): ReactNode {
+function icon(action: PathAction | "done"): ReactNode {
   const common = { viewBox: "0 0 20 20", "aria-hidden": "true", focusable: "false" };
   if (action === "open") {
     return createElement("svg", common,
@@ -32,10 +32,29 @@ function icon(action: Action | "done"): ReactNode {
   return createElement("svg", common, createElement("path", { d: "M4 10l4 4 8-9" }));
 }
 
+export async function invokePathAction(args: {
+  client: BridgeClient;
+  path: string;
+  action: PathAction;
+  notify(message: string): void;
+  onCopied?(): void;
+}): Promise<boolean> {
+  try {
+    const method = args.action === "open" ? "open_path"
+      : args.action === "reveal" ? "reveal_path" : "copy_path";
+    expectHostValue(await args.client.invoke(method, args.path), `${LABEL[args.action]} 실패`);
+    if (args.action === "copy") args.onCopied?.();
+    return true;
+  } catch (error) {
+    args.notify(String((error as { message?: unknown } | null)?.message ?? error));
+    return false;
+  }
+}
+
 export function PathActions(props: {
   client: BridgeClient;
   path?: string | null;
-  only?: readonly Action[];
+  only?: readonly PathAction[];
   labels?: boolean;
   notify: (message: string) => void;
 }): ReactNode {
@@ -45,17 +64,14 @@ export function PathActions(props: {
   if (path === "") return null;
   const actions = props.only ?? ["open", "reveal"];
 
-  async function run(action: Action): Promise<void> {
-    try {
-      const method = action === "open" ? "open_path" : action === "reveal" ? "reveal_path" : "copy_path";
-      expectHostValue(await client.invoke(method, path), `${LABEL[action]} 실패`);
-      if (action === "copy") {
+  async function run(action: PathAction): Promise<void> {
+    await invokePathAction({
+      client, path, action, notify,
+      onCopied: () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
-      }
-    } catch (error) {
-      notify(String((error as { message?: unknown } | null)?.message ?? error));
-    }
+      },
+    });
   }
 
   return createElement(

@@ -67,134 +67,14 @@
          넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
          스크롤하지 않는다(library.css .library-browser). 이동은 주입된 Nav 로만 — 이 화면은 다른
          화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
-    <section class="scr" id="scr-library"></section>
-
-    <!-- ============ 「문서 만들기」 화면 (구 「작업」 · R-flow #90 · 재작성 R1 2열) ============ -->
-    <!-- 안정 DOM(id) + job.js 가 푸시('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
-         RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음(#87 가드). 좌 master
-         목록 클릭 = 우 패널 in-pane 세션(화면 전환 0). 4존 = 헤더·데이터·본문·완료(블록 1). -->
-    <section class="scr on" id="scr-job">
-      <header class="scr-head">
-        <div>
-          <!-- 화면 이름은 계약 어휘(§19 서문 `문서 만들기 | 문서 작업`)로 개명했고 화면 키는
-               `job` 그대로다 — Job 은 도메인 개체 이름이라 화면이 개명돼도 어휘가 갈리지
-               않는다(지도 §10.9 판정 A). 부제는 데이터-우선 순서를 그대로 말한다. -->
-          <h1>문서 만들기</h1>
-          <p class="sub">데이터를 고르고, 그 데이터로 쓸 문서 작업을 실행합니다.</p>
-        </div>
-        <div class="scr-head-actions">
-          <!-- 편집 모드의 두 출구(「편집 계속」·「실행으로 돌아가기」)는 편집기가 몰입
-               표면이 되며 사망했다(재작성 F7 판정 N): 나가는 경로가 back 하나이고 그때
-               patch 처분이 확정되므로 「처분 미확정으로 이탈」 상태 자체가 없다. -->
-          <div id="jobStatusHost"></div>
-        </div>
-      </header>
-
-      <!-- 좌 master 작업 목록은 F2 PR-B 에서 사망(지도 §10.9) — 이 화면은 이제 세션 패널
-           하나다. 승계: 작업 선택 = 데이터 준비 뒤 후보 side-card·문서 탐색 면 / 관리 6동사
-           (이름 변경·그룹 이동·그룹 이름 변경·해산·접힘·즐겨찾기) = 「문서 작업」 라이브러리의
-           행·그룹 헤더·상세 / ＋ 새 작업 = 라이브러리 화면 머리 / 데이터 없는 상태의 작업
-           찾기 = 아래 #jobNoDataExit 이 가리키는 라이브러리. -->
-      <div class="job-layout">
-        <!-- 세션 패널 — v6 `screen-data` 2열(재작성 R1). 좌=현재 데이터(카드·표·거울·결과),
-             우=side-card(이 데이터에 사용할 문서·생성 준비 — 구 「선택한 작업」 존은 U2 §4
-             판정 A 로 사망, 정체는 활성 카드·액션바 이름이 승계). 구 4존 znum 문법
-             (H-03)과 표|거울 duo(#272)는 이 형상으로 대체된다 — 데이터와 문서 선택이 가로로
-             마주 보는 것이 v6 의 성격이고, 표↔거울 같은 시야 요구는 세로 인접 + 펼침 면(⤢)이
-             승계한다. 정본: docs/archive/DATA_FIRST_INTEGRATION_MAP.md §10.5 R1. -->
-        <div class="job-panel" id="jobPanel">
-          <!-- 구 미선택 안내 패널은 데이터-우선 전환으로 은퇴 — 세션 표면이 작업 미선택에도
-               살아 있고(데이터 존=진입점), 다음 할 일 안내는 게이트 문안(prework_gate)이 승계. -->
-          <div class="job-zones" id="jobZones">
-            <div class="data-grid" id="jobDataGrid">
-            <!-- ── 좌: 현재 데이터 ─────────────────────────────────────────────── -->
-            <section class="dg-main">
-            <!-- 데이터 존 — 겨눔 + 행 선택 -->
-            <div class="zone job-data-zone">
-              <div id="jobDataHeaderReactHost"></div>
-              <div id="jobPreflight"></div>
-              <div id="jobDataBodyReactHost"></div>
-            </div>
-
-            <!-- 본문 존 — 표 없는 한 줄(U2 §2.13). 구 거울 테이블·필드축 ack(클릭=확인)는
-                 폐기됐다: 값을 말하는 표면은 확인 면(생성 값 미리보기) 하나다. 여기 남는
-                 것은 빈 값 표지 + 이름 건수 + 확인 면 출구, 그리고 danger 차단 배너
-                 (드리프트·미해소 토큰 — 같은 자리, 같은 형상)뿐이다. -->
-            <!-- TXT(검토·복사) 작업에선 이 존 전체가 숨는다: 값 확인은 작업대가 레코드마다
-                 눈으로 하는 일이고, 여기 남겨 두면 빈 상태 안내가 행을 다 고른
-                 뒤에도 영영 서 있는 이행 불가능한 지시가 된다(F6 PR-A 리뷰 6R). -->
-            <div class="zone job-mirror-zone" id="jobMirrorZone"></div>
-
-            <!-- 결과 존 — 세션 스코프(진행·3태 결과·실행 기록). 자리는 v6 상단 result-panel 과
-                 달리 좌 본문 하단을 유지한다(지도 §10.10 판정 H — 흐름 순서·스크롤 보존 계약).
-                 태는 문안이 아니라 [data-state] 가 소유한다: completed·partiallyCompleted·
-                 failed(3태, Python 판정) + running(진행) + rejected(실행 전 거절). -->
-            <div class="zone job-result-zone" id="jobResultZone" tabindex="-1"></div>
-            </section>
-
-            <!-- ── 우: side-card(이 데이터에 사용할 문서) ──────────────────────── -->
-            <aside class="dg-side" id="jobSideCard" aria-label="이 데이터에 사용할 문서">
-              <!-- 데이터·작업이 둘 다 없을 때만 서는 출구(지도 §10.9 판정 C) — 데이터 없이
-                   작업을 보는 경로는 「문서 작업」이 흡수했고(사용자 확정), 여기서는 그
-                   흡수처를 가리키기만 한다. 흡수했다고 적어 놓고 가는 길을 안 보여 주면
-                   그게 조용한 소실이다(막다른 화면 금지). -->
-              <div class="zone" id="jobNoDataExit"></div>
-              <!-- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 현재 데이터로 만들 수 있는
-                   저장 작업. 판정·순위·추천은 Python(work_candidates) 단일 출처, 여기는 카드
-                   렌더만. top=상위 5 순위(별 토글·추천 표지)·more=잘린 수 고지·
-                   needs=정직한 비활성(없는 열 병기). -->
-              <div class="zone job-cands-row" id="jobCandsRow"></div>
-
-              <!-- 구 「선택한 작업」 존은 사망했다(U2 §4 판정 A, #342) — 실측상 이 존의
-                   어포던스는 이관 대상이 아니라 **세 번째 사본**이었다. 승계처: 작업명 =
-                   활성 카드 하이라이트 + 액션바 이름(#jobActionName) · 템플릿 파일명 = 활성
-                   카드 확장 부제 · 열기/폴더에서 보기 = 활성 카드 ⋮(+라이브러리 상세 신설) ·
-                   「템플릿 다시 연결…」 = 경고 카드 기본 클릭 대체 · template_missing 경보 =
-                   카드 「연결 상태」 축 · 빈 상태 문안 = 후보 구획 빈 상태가 이미 소유. -->
-
-              <!-- 생성 준비 — 저장 폴더 + 게이트 재진술 블록(상시, 결정 36 D1-B). -->
-              <div class="zone">
-                <!-- 캡션·저장 폴더 행은 **매체 파생**이다: TXT 는 파일을 만들지 않으므로
-                     저장 폴더 축 자체가 없다(§3.2 의 파일 이름 축과 같은 부류). -->
-                <div class="zone-cap" id="jobRunCap"></div>
-                <div class="run-row" id="jobOutRow"></div>
-                <div class="defblk" id="jobRestate"></div>
-              </div>
-            </aside>
-            </div>
-          </div>
-
-          <!-- 하단 sticky 액션바(#179 슬라이스 5b) — 생성은 세션의 최종 행동이라 스크롤과 무관하게
-               항상 도달 가능해야 한다. 실행 모드(세션 4존)에서만 노출(job.js syncModeDisplay 가
-               jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
-          <div class="session-actionbar" id="jobActionBar"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ 문서 작업 편집기 (v6 screen-editor · 재작성 F7 PR-A) ============ -->
-    <!-- **몰입 표면**: 상단 2탭을 덮고 출구는 back 하나다(지도 §10.13 사용자 확정 2행).
-         편집을 「문서 만들기」 안의 한 모드로 두면 상단 탭·화면 내 컨트롤이 전부 처분
-         미확정 이탈구가 되고, 가드의 완전성이 표면 수에 비례한다(조용한 누락의 온상).
-         출구가 하나면 patch 3택(저장·버리기·머무르기)이 그 한 곳에서 끝난다.
-         구 `#jobEditHost`(「작업」 화면 편집 모드, 결정 39)는 여기로 흡수돼 사망 —
-         편집 진입은 EditorEntry.land 단일 정의가 이 화면으로 착지시킨다. -->
-    <!-- 안쪽 전부가 React 소유다(R4-02 · #415) — 이름 입력·탭 줄·본문·푸터의 id·ARIA·
-         「이름은 page-head 인라인」(§10.13.3) 계약은 `src/screens/editor.ts` 가 그대로 진다.
-         정적 골격을 여기 남기면 그 자리의 생산자가 둘이 되고 portal 이 mount 전에 거절한다. -->
-    <section class="scr" id="scr-editor"></section>
-
-
-    <!-- ====== TXT 검토·복사 작업대 (v6 S7 · 계약 §11 — 재작성 F6 PR-A) ============ -->
-    <!-- 「문서 만들기」에서 TXT 작업을 실행하면 오는 **몰입 화면**(편집기와 같은 부류):
-         상단 2탭을 덮고 back 하나로 나간다. 진입 시 고정 사본을 받으므로 데이터 존이 없다.
-         안쪽 전부가 React 소유다(R4-02 · #415) — 값은 푸시('workbench', snapshot) 로 온다. -->
-    <section class="scr" id="scr-workbench"></section>
+    <!-- R4-04: 네 제품 화면의 유일한 정적 portal target. wrapper와 내부 DOM은
+         ProductScreens가 한 React tree에서 mounted-hidden으로 소유한다. -->
+    <div id="reactScreenStage"></div>
 
 
     <!-- (「템플릿 관리」(scr-tpl)는 사망 — F8 §10.17: 목록·저작·변환·검토·그룹·삭제는 편집기
-         「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이 승계. #tplRowMenu·#tplMoveModal·
-         #txtEditModal(아래)은 셸 레벨 공용으로 생존하고 소유 JS 만 editor.js 로 옮겼다.) -->
+         「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이 승계. #tplMoveModal·#txtEditModal은
+         셸 레벨 공용 overlay target으로 생존한다.) -->
 
     <!-- ============ 데이터 관리 (등록 데이터 참조 · 수명, #26 #4) ============ -->
     <!-- 안정 DOM(id) + pool.js 가 푸시('pool', snapshot) 로 값만 채운다(tpl 패턴).
@@ -214,12 +94,8 @@
     <!-- (되돌리기 토스트 #undoToast 는 R3-01 에서 React host(#reactOverlayHost)로 이전 —
          id·클래스·ARIA·거동 동등, 정적 골격은 여기 두지 않는다.) -->
 
-    <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
-    <div id="libraryGroupMenu" class="ctx-menu" role="menu" style="display:none"></div>
-    <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
-    <!-- 활성 후보 카드 ⋮(U2 §4 판정 B, #342) — 열기·폴더에서 보기. 내용은 job.js 가 만들고
-         위치·표시는 GroupList.createMenu(=Popover.place)가 소유한다(그룹 ⋮ 동형). -->
-    <div id="jobCandMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <!-- H-15/H-16 경량 메뉴는 각 React 화면이 동적으로 만들고, 좌표·dismiss 기제만
+         Popover.place/wireDismiss를 공유한다. -->
     <div class="colpanel" id="jobColPanel" hidden></div>
 
     <!-- 데이터 고정·등록 모달(#26 #4 → 재작성 F1 승계) — 참조만(경로 포인터). 동명 재등록은

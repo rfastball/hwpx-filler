@@ -495,7 +495,7 @@ function dataSheetStage(conf) {
   const options = conf || {};
   const ids = ["jobRecsHead", "jobOrderBar", "jobFilterChips", "jobTableHost",
     "jobSelStrip", "jobRangeFoot"];
-  const screenHost = stage.mk("#jobDataBodyReactHost");
+  const screenHost = stage.mk("#scr-job");
   screenHost.holds = [];
   const slot = stage.mk("#dataSheetSlot");
   slot.holds = [];
@@ -1571,9 +1571,9 @@ function libStage(kind) {
   menu.computed = { display: "none" };
   const move = stage.mk("#tplMoveModal", { classes: ["hidden"] });
   stage.mk("#tplMoveModal .modal-card");
-  const menuItems = (names) => stage.set("button[data-menu]", names.map((n) => {
+  const menuItems = (names) => stage.set("button[data-context-menu-action]", names.map((n) => {
     const b = new El(stage, "button");
-    b.dataset.menu = n;
+    b.dataset.contextMenuAction = n;
     return b;
   }));
   const rowMore = (key, items) => {

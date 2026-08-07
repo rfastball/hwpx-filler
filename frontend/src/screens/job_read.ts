@@ -635,7 +635,9 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
   useEffect(() => {
     const input = queryRef.current;
     if (input !== null && props.controller.doc.activeElement !== input) input.value = snapshotQuery;
-  }, [props.controller, snapshotQuery]);
+    /* 같은 서버 query를 재전달해도 포커스 상태는 달라질 수 있다. 값 의존으로 줄이면
+       focused push 뒤 blur + 동일값 push가 빠지므로, model delivery가 만든 매 render에서 잰다. */
+  });
   if (snapshot === null) return h("div", { className: "sheet-card" }, "작업 목록을 읽는 중…");
   const browse = snapshot.browse || { tab: "available", query: "", rows: [], available_count: 0, needs_count: 0, filtered_out: 0 };
   const needs = browse.tab === "needs_action";

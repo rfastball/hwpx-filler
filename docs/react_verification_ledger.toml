@@ -52,7 +52,7 @@
 # 술어의 실물과 갈래는 여전히 게이트에만 있다. 이 문단은 **왜 그 갈래인가**만 적는다.
 
 schema = "react-verification-ledger/v1"
-baseline_sha = "931157b00f120e5be24a8caadeda251263f673a5"
+baseline_sha = "b6cb8f16b68256496da472d6c29269ce2103df2b"
 
 # 각 자산이 어느 단계에서 만져질지의 인계선. 값 공간은 게이트 리터럴이 정본이다.
 #
@@ -1044,3 +1044,32 @@ owner_stage = "R4-03"
 file = "tests/test_r4_job_run_static_to_js_successor_map.py"
 responsibility = "static→dom_js_site 승계 52 site 의 exact 대조"
 owner_stage = "R4-03"
+
+# R4-04 신규 자산 5 — 화면 소유권을 하나의 ProductScreens tree와
+# 동기 executor로 수렴한 뒤, 예전 host·PathTrack·GroupList가 다시 소비자로
+# 들어오지 못하게 경계와 실행 의미를 나눠 묻는다.
+
+[[asset]]
+file = "tests/js/r4_path_actions.test.js"
+responsibility = "PathActions typed client 위임·경로 제한·실패 통지와 legacy PathTrack 0 계약"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/js/r4_product_screen_executor.test.js"
+responsibility = "화면 전이의 leave→reclaim→flushSync→focus·scroll 복원 순서와 실패 경계"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/js/r4_product_screens.test.js"
+responsibility = "ProductScreens 단일 tree의 mounted-hidden·inert·ARIA·portal target fail-closed 계약"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_r4_final_screen_successor_map.py"
+responsibility = "R4 최종 18 screen·job ID 생산자와 제거 host 3종의 exact successor 지도"
+owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_r4_product_screens_inventory.py"
+responsibility = "단일 React root·ProductScreens 구성·executor 결속·legacy 소비자 0의 fail-closed 인벤토리"
+owner_stage = "R4-04"

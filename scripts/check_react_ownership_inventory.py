@@ -122,8 +122,8 @@ REACT_HOST_CODE_EXCLUDED = tuple(
 
 #: 재고정은 계약이다 — 기준선을 옮기는 것은 값 하나를 고치는 일이 아니라 중앙 판정이 붙는
 #: 사건이다. 40자리 hex 모양만 보면 `"0"*40` 도 통과하므로 좌표 자체를 든다.
-#: 재고정 v7 = #414 R4-01 화면 read surface 이관 — base 는 착수 시 감사한 master `3cabe7b`.
-EXPECTED_BASELINE_SHA = "3cabe7be79e8ef98d039c870c9644559777667e6"
+#: 재고정 v10 = #417 R4-04 제품 화면 통합 — base 는 착수 시 감사한 master `b6cb8f1`.
+EXPECTED_BASELINE_SHA = "b6cb8f16b68256496da472d6c29269ce2103df2b"
 
 #: **분모는 원장이 아니라 여기가 든다.** 원장에서 유도하면 축을 지우거나 scope 를 좁히고 그만큼
 #: 행을 정리하는 것으로 초록이 되고, 극단에는 **빈 원장이 통과**한다 — 「선언은 살고 결과는
@@ -142,7 +142,8 @@ AXIS_FLOORS: dict[str, int] = {
     # R4-03: 실행·결과 표면의 정적 골격 51이 React 생산으로 갔다. 남은 42는 portal target
     # 과 셸뿐이라 「이관이 끝나면 분모가 정당하게 준다」의 마지막 큰 걸음이다 — 안 내리면
     # 게이트가 이관 자체를 빨강으로 보고 legacy 잔재를 남기는 압력이 된다.
-    "dom_static": 42,
+    # R4-04에서 마지막 제품 화면 골격을 ProductScreens로 옮겨 정적 shell은 20개만 남았다.
+    "dom_static": 20,
     # R4-03: data-busy-lock·data-level·data-state 가 React 생산으로 갔다. 정적 HTML 에
     # 남은 data-* 이름은 셸 라우팅의 `data-scr` 하나다(생산자가 준 것이 아니라 옮겨 갔다 —
     # 같은 셋을 dom_js_data_attr 이 계속 든다).
@@ -156,7 +157,8 @@ AXIS_FLOORS: dict[str, int] = {
     # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
     # R4-03: 실행 표면의 위임 listener 18이 React element prop 으로 접혔다. 「구독한다」는
     # 사실은 model 구독 하나로 남아 subscription_push 가 든다 — 축이 준 것이 아니라 옮겼다.
-    "subscription_listener": 22,
+    # R4-04에서 화면별 legacy 부착을 executor/lifecycle 소유로 합쳐 실호출은 19개다.
+    "subscription_listener": 19,
     "subscription_release": 15,     # 오늘 17
     "subscription_push": 6,         # R4-02: 축 단위가 「화면 구독」에서 「기반 탭 + model 구독」으로
     "lifecycle_factory": 54,        # 오늘 83 — R4 controller/component/port factory 편입
@@ -194,6 +196,7 @@ EXPECTED_METRIC_IDS = frozenset({
     "js-generated-id-sites", "screen-action-pairs",
     "window-pywebview-references", "pywebview-api-references", "export-function-declarations",
     "react-direct-dom-mutations", "react-listener-cleanup-gaps",
+    "r4_product_screens_integration",
 })
 EXPECTED_REVIEW_ITEM_IDS = frozenset({
     "bridge/close-guard-state", "gate/architecture-bridge-one-way",

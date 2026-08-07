@@ -220,6 +220,13 @@ function makeDeps() {
       },
     },
   };
+  deps.initSequence = [
+    () => deps.screens.library.init(),
+    () => deps.screens.editor.init(),
+    () => deps.screens.job.init(),
+    () => deps.screens.workbench.init(),
+    () => deps.DataPicker.init(),
+  ];
   return { deps, bridgeLog, initLog, leaveLog, rerenders };
 }
 
@@ -227,6 +234,35 @@ function makeShell() {
   const bag = makeDeps();
   bag.shellNav = createShellNav();
   bag.deps.shellNav = bag.shellNav;
+  /* R4-04 뒤 app.js는 셸 서술만 만들고 executor는 ProductScreens 합성 루트가 먼저 묶는다.
+     이 파일은 셸 adapter 계약만 재므로 최소 기록 executor를 주입하고, 실제 flushSync·focus·
+     scroll 계약은 r4_product_screen_executor.test.js가 실물로 잰다. */
+  bag.shellNav.bindExecutor({
+    delegateLeave(from, to) {
+      const owner = bag.deps.screens[from];
+      if (typeof owner?.leaveTo !== "function") return false;
+      owner.leaveTo(to);
+      return true;
+    },
+    reclaimSurfaces() {},
+    applyScreen(id) {
+      for (const screen of SCRS) screen.classList.toggle("on", screen.id === `scr-${id}`);
+      for (const button of NAVS) {
+        button.setAttribute("aria-current", button.dataset.scr === id ? "true" : "false");
+      }
+      DOC.body.classList.toggle("editor-open", id === "editor");
+      DOC.body.classList.toggle("workbench-open", id === "workbench");
+    },
+    dispatchRefresh(id) {
+      if (!WIN.pywebview) return Promise.resolve(null);
+      return bag.deps.Bridge.call(id, "refresh", {}).then((result) => {
+        if (result?.notice) WIN.alert(result.notice);
+        return result;
+      });
+    },
+    notifyRefreshFailure(error) { WIN.alert(error?.message || error); },
+    rerenderEditor() { bag.deps.screens.editor.rerender(); },
+  });
   bag.shell = createAppShell(bag.deps);
   return bag;
 }
@@ -556,10 +592,10 @@ test("포트 교체 — Bridge.call = stub 프로퍼티 교체가 refresh 발신
 
 /* ══════════════ 11. 재초기화 — 구조 가드와 계측 ══════════════ */
 
-test("같은 상태기계로 factory 2회 구성 → bindExecutor 가 throw(두 번째 실행 경로 차단)", () => {
+test("app factory 재구성은 이미 결속된 ProductScreens executor를 다시 묶지 않는다", () => {
   const bag = makeShell();
-  assert.throws(() => createAppShell(bag.deps), /이미 결속/,
-    "종전 「가드 없음 — 호출자 유일성만」에 상태기계 결속의 구조 한 겹이 더해졌다");
+  assert.doesNotThrow(() => createAppShell(bag.deps));
+  assert.equal(bag.shellNav.currentScreen(), "job");
 });
 
 test("계측: 기계·factory 를 새로 2벌 구성 + 각각 mount → listener 가 한 벌씩 더 선다", () => {
@@ -602,12 +638,11 @@ test("음성 — IIFE 0·window[ 동적 조회 0·제품 전역 27종 조회 0(�
   assert.equal(/(?:window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(SRC), false, "자기 전역 생산 금지");
 });
 
-test("음성 — import 는 Modal·SurfaceSheet·상태기계 정본 셋뿐(화면 간 import 0), export 는 createAppShell 하나", () => {
+test("음성 — import 는 Modal·기본 화면 정본뿐(화면·executor import 0), export 는 createAppShell 하나", () => {
   const importLines = [...SRC.matchAll(/^import .*$/gm)].map((m) => m[0]);
   assert.deepEqual(importLines, [
     'import { Modal } from "./modal.js";',
-    'import { SurfaceSheet } from "./surface_sheet.js";',
-    'import { DEFAULT_SCREEN, IMMERSIVE_SURFACES } from "../src/shell/nav.ts";',
+    'import { DEFAULT_SCREEN } from "../src/shell/nav.ts";',
   ]);
   assert.equal(/from "\.{1,2}\/screens\//.test(SRC), false, "화면 파일 import 금지 — screens 는 주입");
   assert.equal(/export\s+default/.test(SRC), false);
@@ -624,14 +659,13 @@ test("음성 — 판정 재조립 잔존 0: adapter 에 화면 판정·목록 �
   assert.equal(/let\s+closePromptPending/.test(SRC), false, "닫기 직렬화 상태는 상태기계 소유");
 });
 
-test("Python 계약 앵커 — Nav 리터럴·go 시그니처·refresh 발신·기본 랜딩·잔존 계약 문자열", () => {
+test("Python 계약 앵커 — Nav 리터럴·go 시그니처·기본 랜딩·닫기 계약 문자열", () => {
   assert.ok(SRC.includes("const Nav = { go, refresh, currentScreen: () => shellNav.currentScreen() };"),
     "window.Nav 의 후계 리터럴 그대로(+R4-03 관측면 — 판정은 상태기계가 답한다)");
   assert.ok(SRC.includes("function go(id, opts) {"), "go 는 synchronous 시그니처 텍스트 보존");
-  assert.ok(SRC.includes('Bridge.call(id, "refresh", {})'), "재당김 발신 텍스트(대문자 Bridge)");
   assert.ok(SRC.includes("go(DEFAULT_SCREEN);"), "구성 즉시 랜딩(정본은 import)");
-  assert.ok(SRC.includes("owner && owner.leaveTo"), "이탈 위임 집행 형상 유지");
-  assert.ok(SRC.includes("SurfaceSheet.closeAllAndRestore()"), "펼침 면 회수(F7) — 잔존 계약");
+  assert.equal(SRC.includes("bindExecutor"), false, "app.js가 executor를 다시 묶지 않는다");
+  assert.equal(SRC.includes("applyScreen"), false, "화면 DOM 집행은 ProductScreens executor 소유");
   assert.ok(SRC.includes('confirmLabel: "종료"') && SRC.includes("danger: true"),
     "닫기 확인의 호출·문안·danger 잔존(패킷 rev3 개정 5 — danger 감사망의 소재 계약)");
 });

@@ -323,8 +323,8 @@ def test_editor_library_management_wiring_is_static():
 
     ①편집기가 tpl 채널 push 를 구독해 관리 동사의 결과를 재당김으로 되그린다(구독이 없으면
     가져오기·삭제·그룹 변경이 다음 진입까지 비가시) ②관리 동사는 tpl 채널을 **리터럴**로
-    부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③기제는 공용
-    팩토리·기존 DOM 재사용(F2 교훈 ④ — 옮기지 말고 공유).
+    부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③메뉴 내용은
+    공용 React ContextMenu 가, 위치·dismiss 는 주입된 Popover 가 맡는다.
     """
     src = EDITOR_TS
     # R4-02 — tpl 채널 구독은 `Bridge.onPush` 에서 store 채널 model 구독이 됐고, 그 push 는
@@ -335,11 +335,14 @@ def test_editor_library_management_wiring_is_static():
         assert f'dispatch("tpl", "{action}"' in src, (
             f"관리 동사 {action} 이 tpl 채널을 부르지 않습니다 — 채널 재구현 금지."
         )
-    # 기제 공유: 메뉴 팩토리와 그룹 이동 다이얼로그는 **주입**으로 받는다(재구현 금지).
+    # 기제 공유: React 메뉴와 그룹 이동 다이얼로그를 공유하고, 문자열 팩토리는 은퇴한다.
     bootstrap = (SOURCE_JS_DIR.parent / "src" / "bootstrap.js").read_text(encoding="utf-8")
-    assert 'rowMenu: GroupList.createMenu({ menuId: "tplRowMenu" }),' in bootstrap
+    assert "GroupList" not in bootstrap
+    assert 'from "./context_menu.ts"' in src
+    assert "const libContextMenu = createContextMenu();" in src
+    assert 'id: "tplRowMenu"' in src
     assert "groupMove: GroupMove," in bootstrap
-    for shared in ("deps.rowMenu.show(", "deps.groupMove.open(",
+    for shared in ("deps.groupMove.open(", "popover: controller.popover",
                    '"lib-assign"', '"lib-more"', '"lib-grp-more"'):
         assert shared in src, f"관리 기제 공유 배선 소실: {shared}"
 

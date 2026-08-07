@@ -88,6 +88,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 
 /* ---- 스테이지 · 화면 전환 ---- */
 .stage{overflow:auto;padding:var(--sp-24) var(--sp-24) var(--sp-24);display:flex;flex-direction:column;min-height:0}
+#reactScreenStage{display:contents}
 .scr{display:none;flex:1;min-height:0;flex-direction:column}
 .scr.on{display:flex}
 

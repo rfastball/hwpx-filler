@@ -138,21 +138,23 @@ test("음성 — aimAt 간선이 끊기면 결과에서 규칙 행을 겨눌 길
   assert.match(BOOTSTRAP, /aimAt: \(\.\.\.args\) => EditorController\.aimAt\(\.\.\.args\),/);
 });
 
-test("음성 — createMenu 소비자가 살아 있는 동안 grouplist.js 는 지울 수 없다(D4)", () => {
+test("R4-04 — ContextMenu 후계가 두 소비자를 받고 grouplist.js 는 파일째 은퇴한다(D4)", () => {
   const consumers = [...BOOTSTRAP.matchAll(/GroupList\.createMenu\(/g)].length;
-  assert.equal(consumers, 2, "libraryGroupMenu·tplRowMenu 두 소비자");
-  assert.ok(existsSync(new URL("../../frontend/js/grouplist.js", import.meta.url)),
-    "소비자가 남은 채 파일을 지우면 부팅이 죽는다 — 파일 은퇴는 #417 이 진다");
-  /* 절제의 실물 — 옮겨간 함수군과 죽은 export 가 되살아나지 않았다. **본문**으로 센다:
-     머리말이 「어디로 옮겼는가」를 이름으로 적고 있어, 파일 전체 부분열로 재면 산문이
-     코드의 부활을 가려 준다(반대 방향으로도 — 산문 한 줄이 영영 빨강을 만든다). */
-  const code = readFileSync(new URL("../../frontend/js/grouplist.js", import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(/function createMenu\(/.test(code), "절제가 남은 함수까지 지우지 않았다(양성 대조)");
-  for (const retired of ["createMoveDialog", "toggleGroup", "setGroupExpanded"]) {
-    assert.equal(code.includes(retired), false, `${retired} 는 R4-02 에서 절제됐다`);
+  assert.equal(consumers, 0, "문자열 메뉴 팩토리 소비자는 0이어야 한다");
+  assert.equal(existsSync(new URL("../../frontend/js/grouplist.js", import.meta.url)), false,
+    "마지막 소비자가 React로 옮겨간 뒤 grouplist.js 자체도 남기지 않는다");
+
+  const successor = readFileSync(
+    new URL("../../frontend/src/screens/context_menu.ts", import.meta.url), "utf8");
+  assert.match(successor, /export function createContextMenu\(/);
+  assert.match(successor, /export function ContextMenu\(/);
+  assert.ok(successor.includes("popover.place(menu, state.trigger)"));
+  assert.ok(successor.includes("popover.wireDismiss({"));
+  for (const consumer of ["library.ts", "editor.ts"]) {
+    const src = readFileSync(
+      new URL(`../../frontend/src/screens/${consumer}`, import.meta.url), "utf8");
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.ok(src.includes('from "./context_menu.ts"'), `${consumer} ContextMenu 후계 배선`);
+    assert.equal(code.includes("innerHTML"), false, `${consumer} 문자열 menu host 재도입 금지`);
   }
-  assert.match(code, /export const GroupList = \{ createMenu \};/,
-    "export 표면도 하나로 좁아졌다 — 죽은 이름이 표면에 남으면 은퇴가 초록불 뒤에 숨는다");
 });

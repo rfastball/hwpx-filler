@@ -21,6 +21,7 @@ function build(snapshot, dispatch) {
   const services = createServiceHandoffPorts();
   services.relink.bindLegacy({ relinkTemplate: async () => true });
   const navigation = [];
+  const notices = [];
   const controller = createLibraryController({
     doc: { getElementById: () => null },
     runtime: { model: () => model(snapshot), loadInitial: async () => snapshot },
@@ -30,10 +31,11 @@ function build(snapshot, dispatch) {
     },
     ports, services,
     modal: { confirm: async () => false, prompt: async () => null, open() {}, close() {} },
-    undo: { show() {} }, groupMenu: { show() {}, hide() {} },
-    navigation: { go: (name) => navigation.push(name) }, notify: assert.fail,
+    undo: { show() {} },
+    popover: { place() {}, wireDismiss: () => () => {} },
+    navigation: { go: (name) => navigation.push(name) }, notify: (message) => notices.push(message),
   });
-  return { controller, browse, drafts, navigation };
+  return { controller, browse, drafts, navigation, notices };
 }
 
 test("library 축 액션은 호출 순서를 직렬화한다", async () => {
@@ -63,4 +65,26 @@ test("incompatible 작업의 사용은 job 착지 뒤 확인 필요 탐색으로
   assert.deepEqual(calls[0], ["job", "prefer_work", { name: "작업A" }]);
   assert.deepEqual(navigation, ["job"]);
   assert.deepEqual(browse, ["작업A"]);
+});
+
+test("그룹 메뉴 내용·열림 정체는 React ContextMenu 상태가 소유한다", () => {
+  const { controller } = build({ detail: null }, async () => ({ ok: true, value: {} }));
+  const trigger = { contains: () => false };
+  controller.showGroupMenu("사업부", trigger);
+  const state = controller.groupContextMenu.model.getSnapshot();
+  assert.equal(state.trigger, trigger);
+  assert.deepEqual(state.items, [
+    { action: "rename", label: "그룹 이름 변경…" },
+    { action: "disband", label: "그룹 해산", danger: true, separatorBefore: true },
+  ]);
+  controller.closeGroupMenu();
+  assert.equal(controller.groupContextMenu.model.getSnapshot(), null);
+});
+
+test("음성 — 그룹 없음 관리 동작은 메뉴를 닫고 사유를 재진술한다", () => {
+  const { controller, notices } = build({ detail: null }, async () => ({ ok: true, value: {} }));
+  controller.showGroupMenu("", { contains: () => false });
+  controller.handleGroupMenu("disband");
+  assert.equal(controller.groupContextMenu.model.getSnapshot(), null);
+  assert.deepEqual(notices, ["「그룹 없음」은 이름을 바꾸거나 해산할 수 없습니다."]);
 });

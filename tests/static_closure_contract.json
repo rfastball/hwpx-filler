@@ -13,7 +13,6 @@
   "non_code_suffixes": [".css", ".html", ".svg", ".txt", ".woff2"],
   "reserved_globals": {
     "pywebview": [
-      "js/app.js",
       "js/bridge.js",
       "src/runtime/adapter.ts",
       "src/selftest/boot.js",

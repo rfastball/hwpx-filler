@@ -260,8 +260,12 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     defn = _segment(nav_ts, "function refresh(id: string)", "function go(id: string")
     assert "REFRESH_ON_NAV.includes(id)" in defn
     assert nav_ts.count("REFRESH_ON_NAV.includes") == 1, "화이트리스트 판정이 두 벌입니다(8R)."
-    src = _js("app.js")
-    assert src.count('Bridge.call(id, "refresh"') == 1, "재당김 refresh dispatch 는 정확히 한 자리(C6)."
+    executor = (WEB_JS.parent / "src" / "screens" / "product_screen_executor.ts").read_text(
+        encoding="utf-8"
+    )
+    assert executor.count('deps.bridge.call(id, "refresh"') == 1, (
+        "재당김 refresh dispatch 는 ProductScreens executor 정확히 한 자리(C6)."
+    )
     seg = _segment(nav_ts, "function go(id: string", "return {")
     assert re.search(r"refresh\(id\)\.catch", seg), (
         "전환 자동 refresh 실패가 조용히 삼켜집니다(C6·confirm-or-alarm)."

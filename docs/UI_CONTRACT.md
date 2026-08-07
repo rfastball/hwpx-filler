@@ -50,11 +50,10 @@
   앱 셸이 `window.pywebview.api`를 직접 부르던 자리를 브리지 표면
   `Bridge.confirmWindowClose()`/`cancelWindowClose()`로 옮겼다).
   전역 `pywebview`에 **닿는**(프로퍼티 접근 — 주입 별칭 `win.`·`ctx.win.` 포함) 파일의
-  실측 전수는 여섯이다: legacy 단일 백엔드 통로 `frontend/js/bridge.js`, 존재 판정 한 줄의
-  `js/app.js`(편집기 쪽 판정은 R4-02 에서 사라졌다 — React 후계는 그 전역을 안 만진다),
-  selftest 층 셋(`src/selftest/boot.js`·
+  실측 전수는 다섯이다: legacy 단일 백엔드 통로 `frontend/js/bridge.js`, selftest 층 셋(`src/selftest/boot.js`·
   `probes/boot_routing_overlay.js`·`probes/persistence_geometry.js`), 그리고 신규 통로의
-  유일한 소유자 `src/runtime/adapter.ts`(R2-02). 이 전수는
+  유일한 소유자 `src/runtime/adapter.ts`(R2-02). R4-04의 ProductScreens executor도 호스트
+  존재를 직접 판독하지 않고 주입된 `Bridge.hostReady()`에 묻는다. 이 전수는
   `tests/js/pywebview_allowlist.test.js`가 AST 술어 + 게이트 안 핀으로 양방향 대조한다 —
   여덟 번째 파일이 전역에 닿으면 빨갛다.
   이 경로는 action registry **밖**이므로, 새 직접 메서드를
@@ -205,10 +204,12 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   지나간 `hwpx:*` 라벨 동기 사건은 **부착 직후 따라잡기**(`catchUp` — 현재 상태 재판독)로
   놓침 창을 닫는다(#74 라벨 어긋남 결함류의 구조 폐쇄). 리스너는 once 가 아니다(재발화 시
   init 재주행 — 멱등은 각 화면 `wired` 가드 소유).
-- **집행 = app.js 집행 adapter**: 클래스·속성 토글(aria-current·`.scr.on`·몰입 body 클래스)·
-  `SurfaceSheet.closeAllAndRestore()` 회수·refresh 발신(`Bridge.call` + notice/실패 재진술)·
-  스플리터 제스처(제스처 단위 add/remove 대칭이라 잔존)·리스너 **서술**(attachments — 구성
-  시 캡처)이 남는다. **닫기 확인의 호출·문안(`앱 종료 확인`·`confirmLabel: "종료"`·`계속
+- **집행 = ProductScreenExecutor + app.js adapter**: `src/screens/product_screen_executor.ts`가
+  `flushSync` 안에서 visibility store와 aria-current·몰입 body 클래스를 함께 바꾸고,
+  `main.stage` 및 명명된 내부 스크롤·안정 focus를 화면별로 보존한다. 화면 전환 전
+  `SurfaceSheet.closeAllAndRestore()` 회수와 refresh 발신(`Bridge.call` + notice/실패 재진술)도
+  같은 executor 포트가 진다. app.js에는 스플리터 제스처와 전역 리스너 **서술**만 남는다.
+  **닫기 확인의 호출·문안(`앱 종료 확인`·`confirmLabel: "종료"`·`계속
   작업`)·`danger: true`·`Bridge.confirmWindowClose/cancelWindowClose` 발신도 app.js 잔존이
   계약이다** — 파괴 확정 감사망(danger 감사·dom-contract)이 legacy 층 원문 위에서 완전하기
   때문이고(#411 패킷 rev3 개정 5), 직렬화 판정만 상태기계를 지난다. adapter 가 판정을
@@ -219,9 +220,10 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   `tests/js/n06_app_shell.test.js`(attachShell 로 종전 거동 계측), 실창 증거는 기존 selftest
   부팅·라우팅 프로브(무변경 초록) + 신설 `tests/test_react_shell_live.py`(랜딩·실클릭 동기
   전환·닫기 취소/확정 왕복·reload 재초기화)가 진다.
-- **R4 인계**: 화면 init 본문·refresh 의 화면별 의미·화면 루트 DOM 실이관(adapter 집행
-  대상의 축소)과 파괴 확정 감사의 `.ts` 수집 확장(confirm 호출이 React 층으로 옮는 첫
-  슬라이스가 진다). **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
+- **R4-04 착지**: `reactScreenStage` 하나에 `ProductScreens`가 네 화면을 mounted-hidden으로
+  유지한다. visibility store 하나가 `.on`·`hidden`·`inert`·`aria-hidden`을 함께 내리고,
+  editor/workbench 이탈·rerender 수명주기는 registry의 단일 owner가 fail-closed한다.
+  **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
 
 ### React 패리티 검증 매트릭스 (R3-03 · #412)
 
@@ -345,14 +347,15 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 
 ## 현재 라우팅과 소유권
 
-상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `tpl` 세 개다
-(계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `tpl` 은
-승계처(F8)가 서면 죽는 과도기 임시 — 지도 §10.9). 「기안」(`draft`)은 F6 PR-B 에서
+상단 토바 탭은 `job` 「문서 만들기」와 `library` 「문서 작업」 두 개이고, 최상위 제품 화면은
+`library`, `job`, `editor`, `workbench` 네 개다. 「기안」(`draft`)은 F6 PR-B 에서
 사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
-`frontend/js/app.js`의 앱 셸이 내는 `Nav.go`가 표시 상태를 전환한다(주입으로 전달되는
+`frontend/js/app.js`의 앱 셸이 내는 `Nav.go`가 전환을 요청한다(주입으로 전달되는
 구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다. R3-02 부터 판정은 셸 상태기계
-`frontend/src/shell/nav.ts`, app.js 는 집행 adapter 다 — 위 「앱 셸·navigation 수명주기」).
+`frontend/src/shell/nav.ts`, 집행은 `product_screen_executor.ts`다 — 위 「앱 셸·navigation
+수명주기」). 정적 HTML에는 `#reactScreenStage` 하나만 있고 `ProductScreens`가 네 wrapper를
+같은 React root의 portal로 만들며, 숨은 화면도 unmount하지 않는다.
 `editor`(재작성 F7)와 `workbench`(재작성 F6)는
 **탭 없는 몰입 표면**이다: 상단 2탭을 덮으므로 nav 버튼이 없고, 나가는 모든 이동이 자기
 이탈 가드를 지난다(`{force:true}` 는 처분을 마친 재호출). 위임은 화면마다의 특례가 아니라
@@ -364,15 +367,15 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
 | `library` 문서 작업(전역 라이브러리) | `#scr-library`, `src/screens/library.ts` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
-| `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
+| `job` 문서 만들기(데이터·실행) | `#scr-job`, `src/screens/product_screens.ts`(+`job_read.ts`·`job_run.ts`·`job_result.ts`) | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `src/screens/editor.ts`(+`editor_state.ts`·`editor_entry.ts`·`group_move_dialog.ts`) | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `src/screens/workbench.ts`(+`workbench_state.ts`·`segment_view.ts`) | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
-| `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `src/screens/data_picker.ts` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 | 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
 
-화면을 추가·삭제·이름 변경할 때는 DOM 루트, 화면 JavaScript의 `SCREEN`, Python 컨트롤러
-`name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. 나가는 길에
+화면을 추가·삭제·이름 변경할 때는 `PRODUCT_SCREEN_IDS`, ProductScreens wrapper, visibility
+store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로
+갱신한다. 나가는 길에
 가드가 붙는 화면(편집기)은 `Nav.go` 위임까지 한 묶음이다 — 가드를 표면마다 따로 걸면
 완전성이 표면 수에 비례한다.
 
@@ -482,7 +485,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
   승계: 작업명 = 활성 카드 하이라이트 + **액션바 이름**(`#jobActionName` — 활성 카드는
   스크롤 위로 사라지므로 상수 높이 층이 정체를 겸한다, §4-A 상속 의무) · 템플릿 파일명 =
   활성 카드 확장 부제(`cand-tpl`) · 열기/폴더에서 보기 = **활성 카드 ⋮**(부유 `#jobCandMenu`,
-  그룹 ⋮ 동형 — PathTrack 위임 재사용) + 라이브러리 상세 신설(§2.20) · `template_missing`
+  그룹 ⋮ 동형 — React ContextMenu 재사용) + 라이브러리 상세 신설(§2.20) · `template_missing`
   경보 = 카드 **「연결 상태」**(`conn_label` — 텍스트가 정본, 경고색은 강조, 판정 C) ·
   「템플릿 다시 연결…」 = **경고 카드 기본 클릭 대체**(판정 D — 클릭이 선택 대신 안내
   다이얼로그 + 재연결 리다이렉트, 활성+경고면 경고가 이기고, 재연결 커밋이 성사된 **뒤에야**
@@ -741,7 +744,8 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 
 ### `library` 화면(전역 문서 작업 라이브러리) 계약 (§19.6·§19.7)
 
-`LibraryController`(`frontend/js/screens/library.js`)가 홈 화면을 대체한다(재작성 F2 PR-A). 링1
+`LibraryController`와 React producer(`frontend/src/screens/library.ts`)가 홈 화면을
+대체한다(재작성 F2 PR-A). 링1
 투영은 `HomeViewModel` 이 그대로 소유한다 — 모듈명 유지는 지도 §10.8 판정 A 의 기록된 어휘 빚.
 
 - 스냅샷 최상위가 곧 browser 상태다: `view`·`mode`·`query`·`counts`·`facets`·`sections`·
@@ -772,11 +776,11 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
   만들기」 세션 소유라 라이브러리가 원본 열 표시 이름을 쓰면 화면 간 결합이 생긴다(지도 §10.8
   판정 C — 되깎기 조건 기록됨). Template/Binding **판본** 열은 F7 신설분이라 오늘 만들지
   않는다(빈 자리·「준비 중」 표기도 두지 않는다 — 판정 D).
-- 상세 `<dt>템플릿</dt>` 행은 이름 곁에 **「열기」·「폴더에서 보기」**(PathTrack 아이콘,
+- 상세 `<dt>템플릿</dt>` 행은 이름 곁에 **「열기」·「폴더에서 보기」**(PathActions 아이콘,
   `detail.template_path` 겨눔)를 신설로 싣는다(U2 §2.20, #342) — 경보(템플릿 미연결 N건)는
-  이 화면이 내는데 조작이 여기 없었다(계기판의 짝). 어휘·아이콘은 PathTrack 기존 것 그대로,
-  자리는 템플릿 행 안(자리가 대상을 말한다). 경로 검증은 백엔드 화이트리스트, 클릭은 문서
-  레벨 위임 — 신설 배선은 payload 한 칸(`template_path`)뿐이다.
+  이 화면이 내는데 조작이 여기 없었다(계기판의 짝). 어휘·아이콘은 PathActions가 소유하고,
+  자리는 템플릿 행 안이다(자리가 대상을 말한다). 경로 검증은 백엔드 화이트리스트, 클릭은
+  React 핸들러 — 신설 배선은 payload 한 칸(`template_path`)뿐이다.
 - 2-pane 공간 배분은 목록 길이에 끌려다니지 않는다: 넓고(≥921px) 높은(≥760px) 창에서 두 pane 이
   뷰포트를 나눠 각자 스크롤하고 **페이지는 스크롤하지 않는다**. 상시 행동(`작업 편집`·`문서
   만들기에서 사용`)은 상세 스크롤과 분리해 pane 아래 고정한다(§19.6 마지막 문단).

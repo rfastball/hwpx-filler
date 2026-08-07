@@ -41,12 +41,9 @@ WEB_JS = SOURCE_JS_DIR
 #: React 후계는 이 목록에 **들어오지 않는다** — 요소 트리라 이스케이프의 소유자가 React 이고,
 #: 문자열이 남은 한 자리(편집기 행 메뉴)는 `dataset`·`textContent` 로 지어 규칙 자체를 안 든다.
 #: 그 자리의 계약은 `tests/js/r4_editor.test.js` 가 실행으로 잰다.
-#: R4-03 이 마지막 화면 소비자를 걷었다(`screens/job.js`·`relink.js` 삭제) — 실행·결과
-#: 표면은 React 요소 트리라 이스케이프의 소유자가 React 이고, 이 잎을 탈 문자열 조립이
-#: 없다. 남은 하나는 경로 어포던스의 `title` 속성 조립이다.
-ESC_ESM_CONSUMERS = (
-    "pathtrack.js",
-)
+#: R4-04가 마지막 문자열 조립 소비자 pathtrack.js를 PathActions 요소 트리로 옮겼다.
+#: 사용자·파일 유래 값은 이제 전부 React text/attribute 경계가 escape한다.
+ESC_ESM_CONSUMERS: tuple[str, ...] = ()
 
 
 def test_esc_helper_exists_and_escapes_superset():

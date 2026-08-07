@@ -14,6 +14,9 @@ APP = (SOURCE_JS_DIR / "app.js").read_text(encoding="utf-8")
 # R3-02(#411) — 랜딩 기본값·ready 게이트 판정의 정본은 셸 상태기계로 이동했다.
 NAV_TS = (SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")
 LIB = (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts").read_text(encoding="utf-8")
+PRODUCT_SCREENS = (
+    SOURCE_JS_DIR.parent / "src" / "screens" / "product_screens.ts"
+).read_text(encoding="utf-8")
 from _web_source import react_job_run_source
 
 JOB = react_job_run_source()
@@ -22,9 +25,11 @@ CSS = app_css()
 
 def test_cold_boot_lands_on_jobs() -> None:
     assert 'data-scr="job" aria-current="true"' in INDEX
-    assert '<section class="scr on" id="scr-job">' in INDEX
+    assert 'id="reactScreenStage"' in INDEX
+    assert 'screenProps("job", props.active)' in PRODUCT_SCREENS
     assert 'data-scr="library" aria-current="true"' not in INDEX
-    assert '<section class="scr on" id="scr-library">' not in INDEX
+    assert 'id="scr-library"' not in INDEX
+    assert 'createProductScreenVisibility(initial: ProductScreenId = "job")' in PRODUCT_SCREENS
     assert 'const DEFAULT_SCREEN = "job"' in NAV_TS, "랜딩 정본은 상태기계(R3-02)"
     assert "go(DEFAULT_SCREEN)" in APP, "구성=랜딩 호출은 집행 adapter 에 남는다"
     assert "if (!routingReady) return" in NAV_TS, "ready 게이트 판정은 상태기계 소유"

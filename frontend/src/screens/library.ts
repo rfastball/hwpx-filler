@@ -15,6 +15,11 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
+import {
+  ContextMenu,
+  createContextMenu,
+} from "./context_menu.ts";
+import type { ContextMenuPopoverPort } from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
 
 type Obj = Record<string, any>;
@@ -28,10 +33,6 @@ type ModalPort = {
 };
 
 type UndoPort = { show(message: string, action: () => unknown): void };
-type GroupMenuPort = {
-  show(html: string, trigger: HTMLElement): void;
-  hide(): void;
-};
 
 export type LibraryControllerDeps = {
   doc: Document;
@@ -41,7 +42,7 @@ export type LibraryControllerDeps = {
   services: ServiceHandoffPorts;
   modal: ModalPort;
   undo: UndoPort;
-  groupMenu: GroupMenuPort;
+  popover: ContextMenuPopoverPort;
   navigation: { go(screen: string): void };
   notify(message: string): void;
 };
@@ -60,6 +61,7 @@ export function createLibraryController(deps: LibraryControllerDeps) {
   const favoriteTail = new Map<string, Promise<void>>();
   const favoriteIntent = new Map<string, boolean>();
   const favoriteRevision = new Map<string, number>();
+  const groupContextMenu = createContextMenu();
   let menuFor: { group: string; trigger: HTMLElement } | null = null;
   let moveState: Obj | null = null;
   const moveListeners = new Set<Listener>();
@@ -317,15 +319,16 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     deleteCorrupt,
     showGroupMenu(group: string, trigger: HTMLElement): void {
       menuFor = { group, trigger };
-      deps.groupMenu.show(
-        `<button data-gmenu="rename">그룹 이름 변경…</button><div class="sep"></div>` +
-        `<button data-gmenu="disband" class="danger">그룹 해산</button>`, trigger);
+      groupContextMenu.open(trigger, [
+        { action: "rename", label: "그룹 이름 변경…" },
+        { action: "disband", label: "그룹 해산", danger: true, separatorBefore: true },
+      ]);
     },
-    closeGroupMenu(): void { menuFor = null; deps.groupMenu.hide(); },
+    closeGroupMenu(): void { menuFor = null; groupContextMenu.close(); },
     handleGroupMenu(action: string): void {
       const current = menuFor;
       menuFor = null;
-      deps.groupMenu.hide();
+      groupContextMenu.close();
       if (current === null || current.group === "") {
         if (current?.group === "") deps.notify("「그룹 없음」은 이름을 바꾸거나 해산할 수 없습니다.");
         return;
@@ -335,6 +338,8 @@ export function createLibraryController(deps: LibraryControllerDeps) {
     },
     doc: deps.doc,
     client: deps.client,
+    groupContextMenu,
+    popover: deps.popover,
     notify: deps.notify,
   };
 }
@@ -555,16 +560,6 @@ function LibraryToolbar(props: { snapshot: Obj; controller: LibraryController })
 export function LibraryScreen(props: { controller: LibraryController }): ReactNode {
   const { controller } = props;
   const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
-  useEffect(() => {
-    const menu = controller.doc.getElementById("libraryGroupMenu");
-    if (menu === null) return;
-    const onClick = (event: Event): void => {
-      const button = (event.target as Element | null)?.closest<HTMLElement>("button[data-gmenu]");
-      if (button != null) controller.handleGroupMenu(button.dataset.gmenu || "");
-    };
-    menu.addEventListener("click", onClick);
-    return () => menu.removeEventListener("click", onClick);
-  }, [controller]);
   if (snapshot === null) return h("p", { className: "note", role: "status" }, "문서 작업을 읽는 중…");
   const alerts = snapshot.alerts || {};
   return h("div", { className: "library-react-surface" },
@@ -585,7 +580,15 @@ export function LibraryScreen(props: { controller: LibraryController }): ReactNo
     h(LibraryToolbar as any, { snapshot, controller }),
     h("div", { className: "library-browser" },
       h(LibraryList as any, { snapshot, controller }),
-      h(LibraryDetail as any, { detail: snapshot.detail, controller })));
+      h(LibraryDetail as any, { detail: snapshot.detail, controller })),
+    h(ContextMenu as any, {
+      id: "libraryGroupMenu",
+      controller: controller.groupContextMenu,
+      popover: controller.popover,
+      triggerSelector: "#scr-library [data-group-more]",
+      onDismiss: controller.closeGroupMenu,
+      onSelect: (action: string) => controller.handleGroupMenu(action),
+    }));
 }
 
 export function LibraryMoveDialog(props: { controller: LibraryController }): ReactNode {

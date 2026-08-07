@@ -34,8 +34,10 @@ PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 #: 옮겼고, 그와 함께 정적 id 는 92 → 41 이 됐다. 그 이동에 딸린 정정 둘이 이 지문에 함께
 #: 들어 있다: ①`libraryMoveModal` portal target 복원(R4-01 소유 표면인데 overlay 구간
 #: 재작성에 딸려 지워졌다 — 그 상태의 앱은 resolvePortalTargets 가 던져 부팅에서 추락한다)
-#: ②`#scr-job` 을 조기 종료시키던 잉여 `</div>` 제거).
-VISIBLE_DOM_SHA256 = "0d25f86a256d4fcca863034ba3d3e0a188e2ad3068531257cc2455003cf111ef"
+#: ②`#scr-job` 을 조기 종료시키던 잉여 `</div>` 제거). R4-04(#417)는 네 화면 wrapper와
+#: inline job shell을 ProductScreens로 합쳐 정적 화면 host를 `reactScreenStage` 하나로
+#: 수렴했다. overlay target은 그대로 남고 렌더 결과는 Node/live 게이트가 별도로 잰다.
+VISIBLE_DOM_SHA256 = "6edbe1d3f6881779e2fb32100c9809ca2214b42830254b5cb06f52fe988e9381"
 
 # M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
 # 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을

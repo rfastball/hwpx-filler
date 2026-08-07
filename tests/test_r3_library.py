@@ -98,6 +98,7 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
 # --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)
 
 APP_JS = SOURCE_JS_DIR / "app.js"
+SCREEN_EXECUTOR_TS = SOURCE_JS_DIR.parent / "src" / "screens" / "product_screen_executor.ts"
 # R3-02(#411) — 화이트리스트·재당김 규약 판정의 정본은 셸 상태기계로 이동했다. 발신
 # (Bridge.call)과 실패 재진술(alert)은 집행 adapter(app.js)에 남는다.
 NAV_TS = SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts"
@@ -127,6 +128,7 @@ def test_nav_refresh_covers_library_and_surfaces_rejection():
     하는가를 본다(구현 형태를 못 박으면 다음 정리가 무고하게 붉어진다).
     """
     src = APP_JS.read_text(encoding="utf-8")
+    executor = SCREEN_EXECUTOR_TS.read_text(encoding="utf-8")
     nav_ts = NAV_TS.read_text(encoding="utf-8")
     m = re.search(r"REFRESH_ON_NAV[^=]*=\s*Object\.freeze\(\[[^\]]*\]\)", nav_ts)
     assert m and '"library"' in m.group(0), (
@@ -138,14 +140,14 @@ def test_nav_refresh_covers_library_and_surfaces_rejection():
     assert "REFRESH_ON_NAV.includes(id)" in wiring, (
         "재당김 정의가 REFRESH_ON_NAV 화이트리스트를 보지 않습니다 — 미지 액션 무차별 dispatch."
     )
-    assert re.search(r'Bridge\.call\(id, "refresh"', src), (
-        "집행 adapter 가 refresh 액션을 발신하지 않습니다 — 판정이 통과해도 재당김이 죽습니다."
+    assert re.search(r'deps\.bridge\.call\(id, "refresh"', executor), (
+        "ProductScreens executor가 refresh 액션을 발신하지 않습니다 — 판정이 통과해도 재당김이 죽습니다."
     )
     assert re.search(r"refresh\(id\)\.catch\([\s\S]*?notifyRefreshFailure", nav_ts), (
         "전환의 자동 새로고침이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
     )
-    assert re.search(r"notifyRefreshFailure\(err\) \{[\s\S]*?window\.alert", src), (
-        "실패 재진술 포트가 alert 로 착지하지 않습니다 — 재진술 없는 표면화는 침묵입니다(N1)."
+    assert re.search(r"notifyRefreshFailure\(error:[\s\S]*?deps\.notify\(message\)", executor), (
+        "실패 재진술 포트가 주입 notify로 착지하지 않습니다 — 재진술 없는 표면화는 침묵입니다(N1)."
     )
     # N-06 후계: Nav 는 앱 셸 factory 산물(`const Nav = { go, refresh }`)이고 전역 별칭은
     # 죽었다 — 여기서는 표면에 refresh 가 실려 반환되는가를 본다.

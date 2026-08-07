@@ -57,7 +57,7 @@ LEAF_ESM_FILES = (
     "guard.js",
 )
 
-#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4-03 뒤에도 ``frontend/js``에 남은 10개.
+#: N-05에서 true ESM으로 바뀐 공용 UI 서비스 가운데 R4-04 뒤에도 ``frontend/js``에 남은 8개.
 #: Data picker·DataZone·Relink는 ``frontend/src/screens/*.ts`` React producer/controller로 승계돼
 #: 이 legacy-JS 매니페스트에서는 빠진다. 잎과 같은 규칙을 따른다 — entry가 직접
 #: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
@@ -69,10 +69,8 @@ SERVICE_ESM_FILES = (
     "modal.js",
     "surface_sheet.js",
     "undo_toast.js",
-    "pathtrack.js",
     "popover.js",
     "intent.js",
-    "grouplist.js",
 )
 
 #: R4-03 뒤 legacy JS에 남은 화면 모듈은 **앱 셸 하나**다. 제품 화면 넷은 전부

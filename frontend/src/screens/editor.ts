@@ -21,6 +21,14 @@ import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
 import type { ScreenPorts } from "./ports.ts";
 import type { ScreenRuntime } from "./runtime.ts";
 import { expectHostValue } from "./runtime.ts";
+import {
+  ContextMenu,
+  createContextMenu,
+} from "./context_menu.ts";
+import type {
+  ContextMenuItem,
+  ContextMenuPopoverPort,
+} from "./context_menu.ts";
 import { PathActions } from "./path_actions.ts";
 import type { GroupMoveDialogController } from "./group_move_dialog.ts";
 import {
@@ -42,12 +50,6 @@ type ModalPort = {
 };
 
 type UndoPort = { show(message: string, action: () => unknown): void };
-type GroupMenuPort = { show(html: string, trigger: HTMLElement): void; hide(): void };
-type PopoverPort = {
-  wireDismiss(spec: {
-    isOpen(): boolean; contains(target: Element): boolean; close(): void;
-  }): () => void;
-};
 /** 발신 직렬화 — legacy `Intent` 를 그대로 주입받는다(기제를 두 벌 만들지 않는다). */
 type ChainPort = {
   chained<T>(key: string, send: () => Promise<T>): Promise<T>;
@@ -62,14 +64,10 @@ export type EditorControllerDeps = {
   services: ServiceHandoffPorts;
   modal: ModalPort;
   undo: UndoPort;
-  popover: PopoverPort;
-  rowMenu: GroupMenuPort;
+  popover: ContextMenuPopoverPort;
   groupMove: GroupMoveDialogController;
   chain: ChainPort;
   navigation: { go(screen: string, options?: Obj): void; refresh(screen: string): Promise<unknown> };
-  /** 공용 이스케이퍼(`js/esc.js`) — 지역 사본을 두지 않는다(K1). 주입인 이유는 이 파일이
-   *  모든 의존을 주입으로 받기 때문이고, `.js` 잎을 `.ts` 에서 직접 import 하지 않는다. */
-  escapeHtml(value: string): string;
   notify(message: string): void;
 };
 
@@ -156,6 +154,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     libMenu: null, folderImportInFlight: false, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, invalidField: "", aim: "",
   };
+  const libContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
   const viewListeners = new Set<Listener>();
 
@@ -201,8 +200,28 @@ export function createEditorController(deps: EditorControllerDeps) {
     return deps.chain.chained(EDIT_CHAIN, () => dispatch(SCREEN, action, payload));
   }
 
-  /** 줄이 비었음 — 커밋(이동·저장·이탈) 전에 부른다. */
-  function flushPendingEdits(): Promise<unknown> {
+  /** dirty draft를 발신열에 올리고 그 줄을 비운다 — 커밋(이동·저장·이탈) 전 관문이다.
+   *  버튼 행동이 먼저 온 경우에도 blur 이벤트의 발생 여부에 기대지 않는다. 이미 blur가 올린
+   *  field(`pendingToken > 0`)는 다시 보내지 않고 아래 sentinel이 그 발신만 기다린다. */
+  async function flushPendingEdits(): Promise<unknown> {
+    const commits: Promise<void>[] = [];
+    for (const [field, state] of Object.entries(draft.fields)) {
+      if (!state.dirty || state.pendingToken > 0 || state.composing) continue;
+      if (field === NAME_FIELD) {
+        commits.push(commit(field, "set_name", { name: state.draftValue }));
+        continue;
+      }
+      if (field === PATTERN_FIELD) {
+        commits.push(commit(field, "set_pattern", { pattern: state.draftValue }));
+        continue;
+      }
+      const match = /^row:(\d+):(source|type|fmt|const)$/.exec(field);
+      if (match === null) throw new Error(`알 수 없는 편집 draft field입니다: ${field}`);
+      const index = Number(match[1]);
+      const axis = match[2] as RowAxis;
+      commits.push(commit(field, `set_${axis}`, { index, [axis]: state.draftValue }));
+    }
+    await Promise.all(commits);
     return deps.chain.chained(EDIT_CHAIN, () => Promise.resolve());
   }
 
@@ -315,38 +334,37 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   function closeLibMenu(): void {
     patchView({ libMenu: null });
-    deps.rowMenu.hide();
-  }
-
-  /** 메뉴 조각 하나 — 이 화면에서 문자열 html 이 필요한 자리는 `rowMenu.show(html, …)`
-   *  하나뿐이고, 그 안에 Python 이 낸 값(수선 동사의 key·label)이 들어간다.
-   *
-   *  이스케이프는 **주입된 공용 잎**이 진다. 지역 사본을 두면 아홉을 한 곳으로 걷은 그 잎의
-   *  열 번째가 되고(K1), 요소를 지어 `outerHTML` 을 뽑는 우회는 React 트리 밖 DOM 생산이라
-   *  같은 파일의 다른 계약(직접 DOM 조작 0)을 깬다. */
-  function menuButton(action: string, label: string, danger?: boolean): string {
-    const cls = danger ? ' class="danger"' : "";
-    return `<button data-menu="${deps.escapeHtml(action)}"${cls}>${deps.escapeHtml(label)}</button>`;
+    libContextMenu.close();
   }
 
   function openLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {
-    let html: string;
+    let items: ContextMenuItem[];
     if (kind === "group") {
-      html = menuButton("grp-rename", "그룹 이름 변경") + menuButton("grp-disband", "그룹 해산");
+      items = [
+        { action: "grp-rename", label: "그룹 이름 변경" },
+        { action: "grp-disband", label: "그룹 해산" },
+      ];
       patchView({ libMenu: { media, kind, group: id, trigger } });
     } else {
       const item = findLibItem(media, id);
       /* 수선 동사의 목록·라벨은 링1 소유 — 스냅샷 actions 를 그대로 그린다(발명 금지). */
       const repairs = media === "hwpx"
         ? ((item && item.actions) || []).map((action: Obj) =>
-          menuButton(`act:${String(action.key)}`, String(action.label))).join("")
-        : (item && !item.error ? menuButton("edit", "내용 편집") : "");
-      html = repairs + (repairs ? `<div class="sep"></div>` : "") +
-        (item && item.group ? menuButton("move", "그룹으로 이동…") : "") +
-        menuButton("delete", "삭제", true);
+          ({ action: `act:${String(action.key)}`, label: String(action.label) }))
+        : (item && !item.error ? [{ action: "edit", label: "내용 편집" }] : []);
+      items = [...repairs];
+      if (item && item.group) {
+        items.push({ action: "move", label: "그룹으로 이동…", separatorBefore: repairs.length > 0 });
+      }
+      items.push({
+        action: "delete",
+        label: "삭제",
+        danger: true,
+        separatorBefore: repairs.length > 0 && !(item && item.group),
+      });
       patchView({ libMenu: { media, kind, key: id, item, trigger } });
     }
-    deps.rowMenu.show(html, trigger);
+    libContextMenu.open(trigger, items);
   }
 
   function toggleLibMenu(media: string, kind: "row" | "group", id: string, trigger: HTMLElement): void {
@@ -882,6 +900,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
     toggleLibMenu, closeLibMenu, handleLibMenu,
     isLibMenuOpen: (): boolean => view.libMenu !== null,
+    libContextMenu,
     openLibMoveDialog, findLibItem,
     openTxtEdit, patchTxtEdit, confirmDiscardTxtEdit, submitTxtEdit,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
@@ -1586,26 +1605,6 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
   const draft = useSyncExternalStore(controller.draftModel.subscribe, controller.draftModel.getSnapshot);
   const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot);
 
-  /* ⋮ 메뉴 내용은 문자열 html 이라(공용 팩토리 소유) 클릭은 위임으로 받는다 — library 동형. */
-  useEffect(() => {
-    const menu = controller.doc.getElementById("tplRowMenu");
-    if (menu === null) return;
-    const onClick = (event: Event): void => {
-      const button = (event.target as Element | null)?.closest<HTMLElement>("button[data-menu]");
-      if (button != null) void controller.handleLibMenu(button.dataset.menu || "");
-    };
-    menu.addEventListener("click", onClick);
-    return () => menu.removeEventListener("click", onClick);
-  }, [controller]);
-
-  /* 바깥 닫기는 공용 registry 에 등록한다 — 술어(무엇이 열렸는가)는 화면 소유. */
-  useEffect(() => controller.popover.wireDismiss({
-    isOpen: () => controller.isLibMenuOpen(),
-    contains: (target: Element) =>
-      !!(target.closest("#tplRowMenu") || target.closest("#scr-editor .job-more")),
-    close: () => controller.closeLibMenu(),
-  }), [controller]);
-
   /* 조준은 렌더 **뒤**에 — 커밋 전에는 겨눌 노드가 아직 없다. */
   useEffect(() => { controller.consumeAim(); });
 
@@ -1632,7 +1631,15 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
         style: { whiteSpace: "pre-line" },
       }, snapshot.notice.text) : null,
       body),
-    h(EditorFooter as any, { snapshot, draft, controller }));
+    h(EditorFooter as any, { snapshot, draft, controller }),
+    h(ContextMenu as any, {
+      id: "tplRowMenu",
+      controller: controller.libContextMenu,
+      popover: controller.popover,
+      triggerSelector: "#scr-editor .job-more",
+      onDismiss: controller.closeLibMenu,
+      onSelect: (action: string) => { void controller.handleLibMenu(action); },
+    }));
 }
 
 export function TxtEditDialog(props: { controller: EditorController }): ReactNode {

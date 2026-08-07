@@ -50,6 +50,8 @@ EXISTING_STATIC = {
     "dataPickerPin", "libraryClearFacets", "jobCandMenuBtn", "jobCandNewWork",
     "jobBrowseOpen",
 }
+# R4-04에서 문자열 메뉴가 ContextMenu 요소 트리로 옮겨 오며 새로 생긴 안정 ID.
+ADDED_BY_REACT = {"libraryGroupMenu"}
 
 
 def _axes() -> dict[str, list[str]]:
@@ -71,7 +73,6 @@ OWNED_FILES = (
     "frontend/src/screens/data_zone.ts",
     "frontend/src/screens/job_read.ts",
     "frontend/src/screens/path_actions.ts",
-    "frontend/src/screens/host.ts",
 )
 
 
@@ -95,17 +96,18 @@ def test_r4_static_to_js_successor_sets_are_exact_and_unique() -> None:
     assert all(counts[value] == 1 for value in expected), {
         value: counts[value] for value in expected if counts[value] != 1
     }
-    assert set(static) == expected | EXISTING_STATIC | {"reactScreenStage"}
+    assert set(static) == expected | EXISTING_STATIC | ADDED_BY_REACT
 
 
 def test_migrated_ids_left_static_html_and_portal_targets_remain() -> None:
     html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
     for migrated in LIBRARY | JOB_READ | OVERLAY:
         assert f'id="{migrated}"' not in html, migrated
+    # R4-04에서 화면과 inline job shell은 reactScreenStage 안의 ProductScreens가 만든다.
+    # 정적 HTML에는 stage 하나와 실제 overlay portal target만 남는다.
     for target in {
-        "scr-library", "poolRegModal", "dataPickerModal", "libraryMoveModal",
-        "jobBrowseSheet", "jobDataHeaderReactHost", "jobDataBodyReactHost",
-        "dataSheetSlot", "jobNoDataExit", "jobCandsRow",
+        "reactScreenStage", "poolRegModal", "dataPickerModal", "libraryMoveModal",
+        "jobBrowseSheet", "dataSheetSlot",
     }:
         assert html.count(f'id="{target}"') == 1, target
 
