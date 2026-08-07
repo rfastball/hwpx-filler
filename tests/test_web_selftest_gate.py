@@ -714,6 +714,9 @@ class TestWebSelftestGate:
                 "reject_log",
                 "reject_hidden",
                 "reject_pushes",
+                "reject_btn_disabled",
+                "reject_unhandled",
+                "reject_run_action",
                 "runlog_last",
             ):
                 print(f"  {k} = {j.get(k)!r}")

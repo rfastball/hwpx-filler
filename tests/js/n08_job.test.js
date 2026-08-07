@@ -632,6 +632,21 @@ function createJobBand(conf) {
   /* ── 주입 능력 ────────────────────────────────────────────── */
   const win = {
     Event: FakeEvent,
+    /* 창 수준 리스너 — 프로브가 `unhandledrejection` 을 창에서 받는다. 대역이 이 표면을
+       안 가지면 프로브가 실물에서만 도는 코드가 되어, 값싼 층이 그 경로를 영영 안 지난다.
+       실제로 사건을 나르게 두는 이유도 같다(등록만 받고 버리면 단언이 공허하다). */
+    listeners: new Map(),
+    addEventListener(type, fn) {
+      if (!win.listeners.has(type)) win.listeners.set(type, new Set());
+      win.listeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      const set = win.listeners.get(type);
+      if (set) set.delete(fn);
+    },
+    emit(type, event) {
+      for (const fn of [...(win.listeners.get(type) || [])]) fn(event);
+    },
     getComputedStyle(el) {
       const hiddenWins = el.hidden && !el.hiddenLoses;
       return {

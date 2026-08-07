@@ -1317,10 +1317,25 @@ async function runJobResult(ctx) {
     return realPush(screen, pushed);
   };
   ctx.state.rejectPushes = rejectPushes;
-  doc.getElementById("jobGenBtn").disabled = false;
-  doc.getElementById("jobGenBtn").click();
+  /* 「발신 전 정지」는 갈래가 하나가 아니다 — 핸들러가 안 걸린 것 / 걸렸는데 첫 await 에서
+     던진 것이 같은 침묵을 낸다. 클릭 자리가 `void controller.startGenerate()` 라 후자의
+     거절은 아무 데도 안 남으므로, 이 창에서만 그 소음을 받아 증거로 싣는다. */
+  const rejectUnhandled = [];
+  const onUnhandled = (event) => {
+    const reason = event && event.reason;
+    rejectUnhandled.push(String((reason && reason.message) || reason));
+  };
+  ctx.win.addEventListener("unhandledrejection", onUnhandled);
+  const genBtn = doc.getElementById("jobGenBtn");
+  const rejectBtnDisabled = genBtn.disabled;   // 눌리는 상태였는지 자체가 갈래를 가른다
+  genBtn.disabled = false;
+  genBtn.click();
 
   await ctx.sleep(60);
+  ctx.win.removeEventListener("unhandledrejection", onUnhandled);
+  out.reject_btn_disabled = !!rejectBtnDisabled;
+  out.reject_unhandled = rejectUnhandled;
+  out.reject_run_action = String((baseSnap.run_action && baseSnap.run_action.key) || "");
   const resultBox = doc.getElementById("jobResult");
   /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
      렌더 후 소거」 세 갈래를 가른다. 그래서 **이 자리의 읽기만은 던지지 않는다**: 자리가
