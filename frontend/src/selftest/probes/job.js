@@ -1323,13 +1323,21 @@ async function runJobResult(ctx) {
   await ctx.sleep(60);
   const resultBox = doc.getElementById("jobResult");
   /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
-     렌더 후 소거」 세 갈래를 가른다. */
-  const rejectState = resultBox.dataset.state;
-  const rejectText = textOf(doc, "jobResultSummary");
-  const rejectLog = textOf(doc, "jobGenLog");
-  const rejectHidden = resultBox.hidden;
+     렌더 후 소거」 세 갈래를 가른다. 그래서 **이 자리의 읽기만은 던지지 않는다**: 자리가
+     없다는 사실 자체가 세 갈래 중 하나를 가리키는 증거인데, 던지면 그 증거가 통째로
+     사라지고 "null 을 읽었다" 한 줄만 남는다 — 그 한 줄은 세 갈래를 구별하지 못한다.
+     대신 표식을 실어 게이트가 시끄럽게 떨어지게 한다(조용한 통과가 아니다). */
+  const ABSENT = "(자리 없음)";
+  const textOrAbsent = (id) => {
+    const el = doc.getElementById(id);
+    return el === null ? ABSENT : el.textContent;
+  };
+  const rejectState = resultBox === null ? ABSENT : resultBox.dataset.state;
+  const rejectText = textOrAbsent("jobResultSummary");
+  const rejectLog = textOrAbsent("jobGenLog");
+  const rejectHidden = resultBox === null ? true : resultBox.hidden;
   // 거절 사유는 로그도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
-  const runlogLast = textOf(doc, "jobRunLogLast");
+  const runlogLast = textOrAbsent("jobRunLogLast");
   ctx.push = realPush;
   genStub.restore();
 
