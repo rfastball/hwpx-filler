@@ -757,6 +757,45 @@ owner_stage = "R4-01"
 file = "tests/test_r4_data_attr_successors.py"
 responsibility = "R4 semantic data-* producer 그룹 6/22/2/13/17/5 exact 계약"
 owner_stage = "R4-01"
+
+# R4-02 신규 자산 7 — 편집·매핑 표면. 이관이 만든 새 질문(값의 소유·정산·이탈 거래)은
+# 기존 화면 파일에 흩지 않고 각각 한 자리에 세운다. 같은 규율을 두 파일이 나눠 재면
+# 「편집기는 지키는데 작업대는 안 지킨다」가 두 초록 사이에 숨는다.
+
+[[asset]]
+file = "tests/js/r4_editor_state.test.js"
+responsibility = "전송 스냅샷과 local draft 의 소유를 가르는 reducer 불변식 여섯"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/r4_editor.test.js"
+responsibility = "React 편집기 controller 의 커밋 정산·탭 3택·관리 동사·TXT 모달·그룹 이동"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/r4_workbench.test.js"
+responsibility = "React 작업대 controller 의 단일 체인·복사 사전확인 토큰·결속 확인 왕복"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/r4_editor_entry_handoff.test.js"
+responsibility = "편집 진입·시트 선택 port 의 빈 port 결속 1회와 aimAt 간선 음성 대조"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/r4_leave_transactions.test.js"
+responsibility = "편집기·작업대 이탈 거래의 순서와 「안 나간다」 갈림길 음성 대조"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/js/r4_sheet_picker.test.js"
+responsibility = "시트 선택 확정 게이트의 settle-once·취소 의미·이중 로드 금지"
+owner_stage = "R4-02"
+
+[[asset]]
+file = "tests/test_r4_editor_static_to_js_successor_map.py"
+responsibility = "R4-02 가 정적 DOM에서 React 생산자로 옮긴 46개 ID의 exact successor 지도"
+owner_stage = "R4-02"
 # ---------------------------------------------------------------------------
 # 제외 — React 이관이 검증 책임에 닿지 않는 파일
 #

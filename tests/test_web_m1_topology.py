@@ -27,8 +27,11 @@ PRODUCT_ENTRY = SOURCE_ROOT / "src" / "main.js"
 #: 3종 + 되돌리기 토스트의 정적 골격이 React host(#reactOverlayHost) 렌더로 이전 — R3-01
 #: #410. R4-01(#414)은 library·picker·job read의 visible subtree를 같은 단일 React root의
 #: portal producer로 옮겼다. 정적 index 지문은 그 소유권 이동만큼 의도적으로 바뀌며,
-#: 렌더 결과 동등성은 R4 Node 계약과 live WebView2 게이트가 재확인한다).
-VISIBLE_DOM_SHA256 = "01032b9238bfd1ca4e37d90735a4695c00119100de5a044c606c19bd2c85376c"
+#: 렌더 결과 동등성은 R4 Node 계약과 live WebView2 게이트가 재확인한다. R4-02(#415)는
+#: 편집기·작업대 두 몰입 화면과 TXT 저작·시트 선택·그룹 이동 세 모달의 정적 subtree 46을
+#: 같은 root의 portal producer로 옮겼다 — 정적 index 는 그 다섯 자리에서 **빈 컨테이너**만
+#: 남는다).
+VISIBLE_DOM_SHA256 = "034efabb04a0e87c8741024593494b7d6441e7be63cead0cb5f41a8af5e04b6f"
 
 # M1이 25개 IIFE를 기존 실행 순서대로 import했고, N-04~N-07이 잎·서비스·화면·브리지를
 # 차례로 ESM으로 빼내 합성 루트 뒤로 옮겼다. 남은 JS는 합성 루트 하나이고, N-10에서 그것을

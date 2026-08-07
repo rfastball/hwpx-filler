@@ -54,11 +54,24 @@ window.__cap = {
     b.click();
     return true;
   },
+  /* 사용자가 하는 그대로 — 겨누고, 치고, 떠난다.
+     R4-02 뒤 편집 입력은 React 제어 컴포넌트라 `el.value = …` 만으로는 아무 일도 없다:
+     React 가 자기가 쓴 값을 기억하고 있어 변경으로 안 보고 `onChange` 를 안 띄운다.
+     네이티브 setter 로 써야 그 추적기가 「바뀌었다」를 보고, 발신은 blur 에서 난다
+     (legacy 의 `change` 이벤트가 서 있던 자리를 실제 blur 가 잇는다). */
   setValue(sel, value) {
     const el = document.querySelector(sel);
     if (!el) return false;
-    el.value = value;
+    let setter = null;
+    for (let proto = Object.getPrototypeOf(el); proto; proto = Object.getPrototypeOf(proto)) {
+      const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (descriptor && typeof descriptor.set === 'function') { setter = descriptor.set; break; }
+    }
+    el.focus();
+    if (setter) setter.call(el, value); else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur();
     return true;
   },
 };

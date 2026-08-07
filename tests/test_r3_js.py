@@ -34,12 +34,16 @@ WEB_JS = SOURCE_JS_DIR
 # 소비자(구 ESC_CONSUMERS 화면 넷)가 0 이 되어 목록이 하나로 합쳐졌다 — draftsession.js·
 # screens/draft.js 는 「기안」 화면과 함께(F6 PR-B), screens/template.js 는 「템플릿 관리」
 # 화면과 함께(F8 §10.17) 사망.
+#: 아직 문자열을 조립하는 legacy 소비자 — 그 안에 사용자·파일 유래 값을 끼우면 이 잎을 탄다.
+#:
+#: R4-02 가 다섯을 걷었다(`segview.js`·`sheet_picker.js`·`screens/editor.js`·
+#: `screens/workbench.js` 삭제, `grouplist.js` 는 `createMoveDialog` 절제로 값 끼움이 0).
+#: React 후계는 이 목록에 **들어오지 않는다** — 요소 트리라 이스케이프의 소유자가 React 이고,
+#: 문자열이 남은 한 자리(편집기 행 메뉴)는 `dataset`·`textContent` 로 지어 규칙 자체를 안 든다.
+#: 그 자리의 계약은 `tests/js/r4_editor.test.js` 가 실행으로 잰다.
 ESC_ESM_CONSUMERS = (
-    "segview.js",
-    "sheet_picker.js",
-    "grouplist.js", "pathtrack.js",
-    "screens/editor.js", "screens/job.js",
-    "screens/workbench.js",
+    "pathtrack.js",
+    "screens/job.js",
 )
 
 

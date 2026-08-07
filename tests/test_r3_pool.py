@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from _web_source import SOURCE_INDEX, SOURCE_JS_DIR
+from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
@@ -308,4 +308,5 @@ def test_pool_rescan_rides_on_opening_the_dialog():
         "여는 경로의 재스캔이 사라졌습니다 — 수동 버튼도 없으므로 목록을 갱신할 길이 없습니다."
     )
     # tpl 수동 새로고침은 편집기 「템플릿」 탭 상단 행동 줄(lib-refresh)로 이주(F8) — 존속.
-    assert 'data-act="lib-refresh"' in _js("screens/editor.js")
+    editor = (SOURCE_ROOT / "src" / "screens" / "editor.ts").read_text(encoding="utf-8")
+    assert '"data-act": "lib-refresh"' in editor

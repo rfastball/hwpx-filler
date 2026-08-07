@@ -50,8 +50,9 @@
   앱 셸이 `window.pywebview.api`를 직접 부르던 자리를 브리지 표면
   `Bridge.confirmWindowClose()`/`cancelWindowClose()`로 옮겼다).
   전역 `pywebview`에 **닿는**(프로퍼티 접근 — 주입 별칭 `win.`·`ctx.win.` 포함) 파일의
-  실측 전수는 일곱이다: legacy 단일 백엔드 통로 `frontend/js/bridge.js`, 존재 판정 한 줄씩의
-  `js/app.js`·`js/screens/editor.js`, selftest 층 셋(`src/selftest/boot.js`·
+  실측 전수는 여섯이다: legacy 단일 백엔드 통로 `frontend/js/bridge.js`, 존재 판정 한 줄의
+  `js/app.js`(편집기 쪽 판정은 R4-02 에서 사라졌다 — React 후계는 그 전역을 안 만진다),
+  selftest 층 셋(`src/selftest/boot.js`·
   `probes/boot_routing_overlay.js`·`probes/persistence_geometry.js`), 그리고 신규 통로의
   유일한 소유자 `src/runtime/adapter.ts`(R2-02). 이 전수는
   `tests/js/pywebview_allowlist.test.js`가 AST 술어 + 게이트 안 핀으로 양방향 대조한다 —
@@ -362,12 +363,13 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
-| `library` 문서 작업(전역 라이브러리) | `#scr-library`, `screens/library.js` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
+| `library` 문서 작업(전역 라이브러리) | `#scr-library`, `src/screens/library.ts` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
 | `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
-| `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
-| `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `screens/workbench.js` | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
+| `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `src/screens/editor.ts`(+`editor_state.ts`·`editor_entry.ts`·`group_move_dialog.ts`) | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
+| `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `src/screens/workbench.ts`(+`workbench_state.ts`·`segment_view.ts`) | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
-| 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `data_picker.js` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
+| 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `src/screens/data_picker.ts` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
+| 시트 선택 확정 게이트(화면 아님) | `#sheetModal`, `src/screens/sheet_picker.ts` | 호스트 화면(`job`·`editor`) | — (확정 전 로드 금지는 표면 계약) |
 
 화면을 추가·삭제·이름 변경할 때는 DOM 루트, 화면 JavaScript의 `SCREEN`, Python 컨트롤러
 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. 나가는 길에

@@ -17,6 +17,11 @@ from hwpxfiller.gui.mapping_state import MappingModel, profile_source_vocabulary
 from hwpxfiller.webapp.screen_editor import EditorController
 
 REPO = REPO_ROOT
+#: R4-02 — 편집기 표면이 `frontend/js/screens/editor.js` 에서 React 로 옮겼다. 정적 계약이
+#: 겨누는 것은 파일이 아니라 **거처**라, 경로만 후계로 바꾸고 물음은 그대로 둔다.
+EDITOR_TS = (SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts").read_text(encoding="utf-8")
+ENTRY_TS = (SOURCE_JS_DIR.parent / "src" / "screens" / "editor_entry.ts").read_text(
+    encoding="utf-8")
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
@@ -102,7 +107,7 @@ def test_c1_apply_profile_confirm_false_carries_values_only():
 #  계약(doSave try/catch)은 아래 정적 가드가 계속 진다.)
 def test_c4_editor_js_dosave_guards_bridge_exception(tmp_path):
     """정적 계약: doSave 는 try/catch 로 감싸 브리지 예외 무반응을 막는다."""
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = EDITOR_TS
     start = src.index("async function doSave")
     body = src[start:start + 2000]
     assert "try {" in body and "catch" in body       # 브리지 예외 무반응 금지
@@ -120,15 +125,18 @@ def test_editor_js_gateway_guards_confirmed_mapping_reset():
     """PR#105 F1 정적 계약 — 관문 데이터 교체/비우기(pick-data·skip-data)는 사람 소유 매핑이
     있으면 파괴 전 확인한다(confirmMappingResetIfConfirmed — 수치는 Python stakes 질의).
     편집 복원 확정이 매핑 표 바로 위 관문의 1클릭으로 조용히 미확정 재초안되던 것을 막는다."""
-    from test_r3_pool import _segment
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    src = EDITOR_TS
     assert "async function confirmMappingResetIfConfirmed" in src, "확정 보호 가드 헬퍼 부재(F1)."
     assert "mapping_reset_stakes" in src, "가드 수치의 Python 즉시 질의 배선 부재(리뷰 F7)."
-    body = _segment(src, "async function onClick", "function onChange")
-    # pick-data·skip-data 두 파괴 경로 모두 가드를 통과한다(둘 다 _ensure_model 재초안 유발).
-    assert body.count("confirmMappingResetIfConfirmed(") >= 2, (
-        "관문 파괴 경로(pick-data·skip-data)에 확정 보호 가드가 둘 다 걸리지 않았습니다(F1)."
-    )
+    # R4-02 — 절단이 「onClick 디스패처 본문」에서 **두 행동 함수**로 바뀌었다. 물음은 그대로:
+    # pick-data·skip-data 두 파괴 경로가 **둘 다** 가드를 통과하는가(둘 다 재초안을 유발한다).
+    for fn in ("async function pickData", "async function skipData"):
+        body = src[src.index(fn):]
+        body = body[:body.index(chr(10) + "  }") + 4]
+        assert "confirmMappingResetIfConfirmed(" in body, (
+            f"{fn} 에 확정 보호 가드가 걸리지 않았습니다(F1)."
+        )
+    assert src.count("await confirmMappingResetIfConfirmed(") == 2
 
 
 def test_editor_js_click_dispatch_guards_bridge_rejection():
@@ -140,27 +148,41 @@ def test_editor_js_click_dispatch_guards_bridge_rejection():
     """
     import re
 
-    from test_r3_pool import _segment
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    body = _segment(src, "async function onClick", "function onChange")
-    assert "try {" in body and "catch" in body and "window.alert" in body, (
-        "onClick 디스패처가 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
+    src = EDITOR_TS
+    # R4-02 — 「하나의 자리」가 onClick 디스패처에서 `guarded` 로 옮겼다. 개별 핸들러를
+    # 각자 감싸는 처치는 다음 핸들러를 또 빠뜨린다는 것이 이 계약의 이유이고, 그 이유는
+    # 안 바뀐다: 재진술의 거처는 **하나**다.
+    body = src[src.index("function guarded("):]
+    body = body[:body.index(chr(10) + "  }") + 4]
+    assert "try {" in body and "catch" in body and "deps.notify(" in body, (
+        "guarded 가 rejection 을 재진술하지 않습니다 — 무반응 버튼(#45)."
     )
-    # awaited 여야 rejection 이 디스패처 가드로 올라온다 — fire-and-forget 강등 금지.
-    # 개별 이름 나열이 아니라 onClick 안의 **모든** Bridge.* 호출을 검사한다(PR #46 P2 —
-    # ack_gate·step_preview 등 직접 호출이 무대기라 가드 밖으로 새던 잔여 봉합).
-    # 편집기 왕복은 공용 체인(`sendEdit`)을 지난다(재작성 F7 5R P2) — 발신 이름이 바뀌어도
-    # **무대기 강등 금지**라는 계약은 그대로다. 둘 다 센다: 체인 밖 직행도, 체인 무대기도
-    # 같은 결함(rejection 이 디스패처 가드 밖으로 새고, 정산이 그 발신을 못 기다린다).
-    unawaited = re.findall(r"(?<!await )(?:Bridge\.\w+|sendEdit)\(", body)
-    assert not unawaited, (
-        f"onClick 안에 await 없는 브리지 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
-        f"{unawaited}"
+    assert "result.catch(" in body, (
+        "동기 throw 만 잡고 비동기 rejection 을 안 잡습니다 — 대부분의 행동이 async 입니다."
     )
-    for frag in ("await confirmAll()", "await doSave({})"):
-        assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
+    # 왕복하는 행동을 부르는 자리는 **전부** 그 하나를 지난다. 열거 대신 controller 의
+    # **async 표면**을 원천에서 읽어 대조한다 — 새 async 행동을 더하면서 핸들러를 맨손으로
+    # 달면 여기서 시끄럽다(fire-and-forget 강등 금지의 후계).
+    async_surface = set(re.findall(r"^  async function (\w+)\(", src, re.M))
+    async_surface |= {"sendEdit", "refreshLibrary"}   # 체인·채널 직행도 promise 다
+    assert {"leaveTo", "doSave", "confirmAll", "pickData"} <= async_surface, (
+        f"async 표면을 못 읽었습니다(계측 실패): {sorted(async_surface)}"
+    )
+    handlers = re.findall(r"on(?:Click|Change|Blur|Focus|Input|KeyDown): .*", src)
+    bare = [
+        line for line in handlers
+        if any(f"controller.{name}(" in line for name in async_surface)
+        and "controller.guarded(" not in line
+    ]
+    assert not bare, (
+        "가드를 안 지나는 행동 핸들러가 있습니다 — rejection 이 재진술 밖으로 샙니다(#45): "
+        f"{bare}"
+    )
+    # 양성 대조 — 위 술어가 실제로 무언가를 보고 있다(전부 통과가 「핸들러 0」이 아니다).
+    assert sum("controller.guarded(" in line for line in handlers) >= 20
     # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
-    confirm_body = _segment(src, "async function confirmAll", "async function doSave")
+    confirm_body = src[src.index("async function confirmAll"):]
+    confirm_body = confirm_body[:confirm_body.index(chr(10) + "  }") + 4]
     assert 'await sendEdit("confirm_blanks"' in confirm_body, (
         "confirmAll 의 confirm_blanks 호출이 awaited 가 아닙니다 — rejection 이 삼켜집니다(#45)."
     )
@@ -261,10 +283,10 @@ def test_editor_js_template_stage_is_library_first():
     """정적 계약(R-info 2부) — 신규 1단계는 라이브러리 피커가 정본: 생 파일 직접 로드
     (pick-template)는 소멸하고, 라이브러리 선택(use-library)과 가져오기=복사
     (import-template)만 남는다. 토큰 참조는 접힘(F27)."""
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert 'data-act="pick-template"' not in src, "생 파일 직접 로드 버튼이 부활했습니다(2부 위반)."
-    assert 'data-act="use-library"' in src, "라이브러리 선택 배선이 없습니다."
-    assert 'data-act="import-template"' in src, "가져오기=복사 배선이 없습니다."
+    src = EDITOR_TS
+    assert '"pick-template"' not in src, "생 파일 직접 로드 버튼이 부활했습니다(2부 위반)."
+    assert '"data-act": "use-library"' in src, "라이브러리 선택 배선이 없습니다."
+    assert '"data-act": "import-template"' in src, "가져오기=복사 배선이 없습니다."
     assert "pattern_preview" in src, "파일명 라이브 예시(F26) 소비가 없습니다."
 
 
@@ -279,22 +301,21 @@ def test_editor_shares_tpl_library_vm_wiring():
 def test_discard_confirm_has_single_source():
     """정적 계약(PR-4 리뷰 F9) — 미저장 정의 폐기 확인은 EditorEntry.confirmDiscard 단일
     출처(3중 복붙은 문구·판정 드리프트 표면). 소비처 셋 전부가 그 헬퍼를 부른다."""
-    entry = (SOURCE_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
-    assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
+    entry = ENTRY_TS
+    assert "async function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
     for path, rel, needle in (
         (SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts",
          "src/screens/library.ts", "deps.ports.editorEntry.current().newDraft"),
         # (template.js 는 화면과 함께 사망(F8) — 그 소비처였던 「이 서식으로 새 작업」의
         #  폐기 확인은 편집기 안 use-library 의 confirmNewSessionIfUnsaved 가 잇는다.)
-        (SOURCE_JS_DIR / "screens" / "editor.js",
-         "screens/editor.js", "EditorEntry.confirmDiscard"),
+        (SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts",
+         "src/screens/editor.ts", "deps.ports.editorEntry.current().confirmDiscard"),
     ):
         src = path.read_text(encoding="utf-8")
         assert needle in src, f"{rel} 가 폐기 확인 단일 출처({needle})를 쓰지 않습니다."
     # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
-    editor = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."
+    assert "편집을 닫고 새 작업 초안" in EDITOR_TS, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."
 
 
 def test_editor_library_management_wiring_is_static():
@@ -305,13 +326,20 @@ def test_editor_library_management_wiring_is_static():
     부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③기제는 공용
     팩토리·기존 DOM 재사용(F2 교훈 ④ — 옮기지 말고 공유).
     """
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert 'Bridge.onPush("tpl"' in src, "tpl push 구독 소실 — 관리 결과가 편집기에 비가시."
+    src = EDITOR_TS
+    # R4-02 — tpl 채널 구독은 `Bridge.onPush` 에서 store 채널 model 구독이 됐고, 그 push 는
+    # editor 스냅샷 **재당김**을 태운다(성형의 정본은 editor 스냅샷 하나).
+    assert "tplModel.subscribe(" in src, "tpl push 구독 소실 — 관리 결과가 편집기에 비가시."
+    assert "deps.runtime.refresh(SCREEN)" in src, "tpl push 뒤 재당김이 없습니다."
     for action in ("set_group", "rename_group", "disband_group", "delete", "undo_delete"):
-        assert f'Bridge.call("tpl", "{action}"' in src, (
+        assert f'dispatch("tpl", "{action}"' in src, (
             f"관리 동사 {action} 이 tpl 채널을 부르지 않습니다 — 채널 재구현 금지."
         )
-    for shared in ('createMenu({ menuId: "tplRowMenu" })', "createMoveDialog({",
+    # 기제 공유: 메뉴 팩토리와 그룹 이동 다이얼로그는 **주입**으로 받는다(재구현 금지).
+    bootstrap = (SOURCE_JS_DIR.parent / "src" / "bootstrap.js").read_text(encoding="utf-8")
+    assert 'rowMenu: GroupList.createMenu({ menuId: "tplRowMenu" }),' in bootstrap
+    assert "groupMove: GroupMove," in bootstrap
+    for shared in ("deps.rowMenu.show(", "deps.groupMove.open(",
                    '"lib-assign"', '"lib-more"', '"lib-grp-more"'):
         assert shared in src, f"관리 기제 공유 배선 소실: {shared}"
 
@@ -330,28 +358,36 @@ def test_bridge_push_supports_multiple_subscribers_per_screen():
 
 
 def test_every_editing_control_counts_toward_the_save_gate():
-    """`onChange` 가 발신하는 편집 컨트롤은 **전부** 저장 게이트의 대기 판정에 든다(U2 §2.4 R3).
+    """편집 컨트롤은 **전부** 저장 게이트의 대기 판정에 든다(U2 §2.4 R3).
 
-    「변경 저장」은 `s.dirty || pendingFieldEdit` 로 열린다. 앞엣것은 Python 이 `change`
-    (=blur) 뒤에야 아는 사실이고, 뒤엣것은 그 사이를 메우는 DOM 의 사실이다. 대상 목록이
-    발신 목록보다 좁으면 **빠진 컨트롤에서만** 첫 클릭이 삼켜진다 — 실제로 첫 판은 머리·꼬리
+    「변경 저장」은 `s.dirty || <아직 안 보낸 편집이 있는가>` 로 열린다. 앞엣것은 Python 이
+    blur 뒤에야 아는 사실이고, 뒤엣것은 그 사이를 메우는 웹의 사실이다. 대상 목록이 발신
+    목록보다 좁으면 **빠진 컨트롤에서만** 첫 클릭이 삼켜진다 — 실제로 첫 판은 머리·꼬리
     3입력만 세어 매핑 행의 상수 입력(`row-const`)이 그 상태였다(리뷰 R3).
 
-    그래서 열거를 늘리는 대신 **두 목록이 같은지**를 계약으로 건다: 새 편집 컨트롤을
-    `onChange` 에 더하면서 판정 목록에 안 넣으면 여기서 시끄럽다.
+    R4-02 가 그 두 목록을 **하나**로 만들었다. 「아직 안 보낸 편집」의 소유자가 draft
+    reducer 하나이고(`hasPendingEdits`), 그 정의역은 `editorServerValues` 가 낸 키 전수다.
+    그래서 물음이 「두 목록이 같은가」에서 「모든 컨트롤이 그 하나를 지나는가」로 좁아진다 —
+    reducer 를 우회해 값을 들고 있는 컨트롤이 생기면 그 값은 게이트에 안 든다.
     """
-    src = (SOURCE_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    body = re.search(r"function onChange\(e\) \{.*?\n  \}", src, re.S)
-    assert body, "onChange 를 찾지 못했습니다 — 계약이 겨눌 자리가 사라졌습니다."
-    dispatching = set(re.findall(r'case "([\w-]+)":\s*sendEdit\(', body.group(0)))
-    assert dispatching, "onChange 에서 발신 case 를 하나도 못 읽었습니다(계측 실패)."
-    covered = set()
-    for name in ("FIELD_EDIT_KEYS", "ROW_EDIT_KEYS"):
-        decl = re.search(rf"const {name} = \{{(.*?)\}};", src, re.S)
-        assert decl, f"{name} 선언이 없습니다 — 저장 게이트의 대기 판정 목록 소실."
-        covered |= set(re.findall(r'"?([\w-]+)"?\s*:', decl.group(1)))
-    missing = sorted(dispatching - covered)
-    assert not missing, (
-        f"저장 게이트의 대기 판정에서 빠진 편집 컨트롤: {', '.join(missing)} — 그 컨트롤을 "
-        "고치고 바로 저장을 누르면 첫 클릭이 삼켜집니다(비활성 버튼은 click 을 내지 않습니다)."
+    src = EDITOR_TS
+    gate = re.search(r"const armed = ([^;]+);", src)
+    assert gate, "저장 게이트 판정을 찾지 못했습니다 — 계약이 겨눌 자리가 사라졌습니다."
+    assert "hasPendingEdits(draft)" in gate.group(1), (
+        "게이트가 draft 의 대기 편집을 세지 않습니다 — blur 전 첫 클릭이 삼켜집니다."
     )
+    assert "snapshot.dirty" in gate.group(1), "게이트가 Python 의 dirty 를 안 봅니다."
+
+    # 값을 들고 있는 컨트롤 전수 = reducer 표시값(`valueOf`)을 읽는 자리. 그 각각은 변경을
+    # reducer 로 돌려줘야(`type`/`commitRow`) 대기가 세어진다 — 한쪽만 있으면 우회다.
+    controls = re.findall(r"valueOf\(draft, ([\w.]+(?:\(index, \"\w+\")?)", src)
+    assert len(controls) >= 6, f"reducer 표시값을 읽는 컨트롤이 너무 적습니다(계측 실패): {controls}"
+    # 이름·규칙 두 머리 입력과 행 축 넷 전부가 그 하나를 지난다.
+    axes = {axis for entry in controls for axis in re.findall(r'"(\w+)"', entry)}
+    assert axes == {"source", "type", "fmt", "const"}, axes
+    for handler in ("controller.type(", "controller.commitRow(", "controller.commitField(",
+                    "controller.commitRowOnBlur("):
+        assert handler in src, f"편집 반영 경로 {handler} 가 사라졌습니다."
+    # 우회 금지 — 컨트롤이 스냅샷 값을 직접 그리면 draft 가 그 칸의 주인이 아니게 된다.
+    stray = re.findall(r"value: snapshot\.\w+", src)
+    assert not stray, f"reducer 를 우회해 스냅샷 값을 직접 든 컨트롤: {stray}"

@@ -393,6 +393,11 @@ function createDom(options) {
   };
 
   buildModal("txtEditModal", ["txtEditName"]);
+  /* R4-02 — 프로브의 폼 모달 표적이 `promptModal` 로 옮겼다(txtEditModal 은 내용의 생산자가
+     편집기 React 표면이라 열어 두는 것만으로는 안이 빈다). 이 창은 R3-01 이 React host 렌더로
+     옮긴 뒤 골격이 **상주**라 그 자리를 이어받을 수 있다. */
+  buildModal("promptModal", ["promptModalInput", "promptModalCancel", "promptModalOk"],
+    reactOverlayHost);
   const confirmModal = buildModal(
     "confirmModal", ["confirmModalCancel", "confirmModalOk"], reactOverlayHost,
   );
@@ -408,6 +413,7 @@ function createDom(options) {
 
   doc._qa[".modal,.ctx-menu,.colpanel"] = [
     doc.getElementById("txtEditModal"),
+    doc.getElementById("promptModal"),
     doc.getElementById("confirmModal"),
     doc.getElementById("chooseModal"),
   ];
@@ -508,6 +514,7 @@ function createServices(dom, options) {
   const focusablesOf = (id) => ({
     confirmModal: ["confirmModalCancel", "confirmModalOk"],
     chooseModal: ["chooseModalCancel", "chooseModalAlt", "chooseModalOk"],
+    promptModal: ["promptModalInput", "promptModalCancel", "promptModalOk"],
     txtEditModal: ["txtEditName"],
   }[id] || []);
 
@@ -615,7 +622,7 @@ function createServices(dom, options) {
   });
 
   /* transitionend(opacity) 로 퇴장을 완료시키는 실 Modal 의 리스너와 동형. */
-  for (const id of ["txtEditModal", "confirmModal", "chooseModal"]) {
+  for (const id of ["txtEditModal", "promptModal", "confirmModal", "chooseModal"]) {
     const el = doc.getElementById(id);
     el._q[".modal-card"].addEventListener("transitionend", (ev) => {
       if (ev.propertyName !== "opacity") return;
@@ -1049,7 +1056,7 @@ test("modal_a11y — 기준 실행의 필드 순서와 값이 그대로 나온�
     "malformed_confirm_root_refused_loud", "confirm_after_malformed_opens",
   ]);
   assert.equal(m.opened, true);
-  assert.equal(m.focus_in, "txtEditName");
+  assert.equal(m.focus_in, "promptModalInput");
   assert.equal(m.escape_entered_closing, true);
   assert.equal(m.closed_by_escape, true);
   assert.equal(m.focus_restored, m.focus_before, "닫은 뒤 포커스가 트리거로 복귀해야 합니다.");
@@ -1371,7 +1378,7 @@ test("milestone_h_overlay — 모달 스택·IME Escape·짧은 viewport", async
   const { report } = await runFull();
   const h = report.results.milestone_h_overlay;
   assert.equal(h.modal_closed_popover, true);
-  assert.equal(h.modal_focus_in, "txtEditName");
+  assert.equal(h.modal_focus_in, "promptModalInput");
   assert.equal(h.z_order, true);
   /* 양성/음성 한 쌍: IME 조합 중 Escape 는 **열어 두고**, 맨 Escape 는 닫는다. */
   assert.equal(h.ime_escape_kept_open, true);

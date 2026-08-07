@@ -130,15 +130,17 @@ const { createPathTrack } = await import("../../frontend/js/pathtrack.js");
 const { createRelink } = await import("../../frontend/js/relink.js");
 const { createTheme } = await import("../../frontend/js/theme.js");
 const { createPersonalization } = await import("../../frontend/js/personalization.js");
-const { createSheetPicker } = await import("../../frontend/js/sheet_picker.js");
+/* R4-02 — 시트 선택은 이 파일의 범위를 떠났다. legacy `sheet_picker.js` 가 삭제되면서
+   "재사용 서비스 팩토리" 라는 이 파일의 주어에서 빠졌고, 후계 `src/screens/sheet_picker.ts`
+   의 계약(확정 게이트·settle-once·취소의 의미)은 `r4_sheet_picker.test.js` 가 통째로 진다.
+   여기 남기면 같은 성질을 두 곳이 재고, 한쪽만 늙는다. */
 const { createJobReadController } = await import("../../frontend/src/screens/job_read.ts");
 const { createScreenPorts } = await import("../../frontend/src/screens/ports.ts");
 const { createServiceHandoffPorts } = await import("../../frontend/src/ports/service_handoff.ts");
-const { Modal } = await import("../../frontend/js/modal.js");
 const { Popover } = await import("../../frontend/js/popover.js");
 const { Intent } = await import("../../frontend/js/intent.js");
 
-/* Modal·Popover 는 실 DOM 을 만지는 표면이라, 이 파일에서는 **같은 객체의 메서드만** 갈아
+/* Popover 는 실 DOM 을 만지는 표면이라, 이 파일에서는 **같은 객체의 메서드만** 갈아
    끼워 호출을 관측한다(살아 있는 export 객체 — 서비스가 보는 것과 동일 참조). */
 function patch(obj, keys, t) {
   const log = [];
@@ -151,7 +153,7 @@ function patch(obj, keys, t) {
   return log;
 }
 
-const FILES = ["grouplist", "pathtrack", "relink", "theme", "personalization", "sheet_picker"];
+const FILES = ["grouplist", "pathtrack", "relink", "theme", "personalization"];
 const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
 const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
 
@@ -198,8 +200,13 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   freshDom(t);
   const bridge = {};
 
+  /* R4-02 — GroupList 표면은 `createMenu` 하나로 좁아졌다. `createMoveDialog` 는 React
+     `screens/group_move_dialog.ts` 로 옮겨졌고(그 3 listener site 가 retirement 의 실물),
+     `toggleGroup`·`setGroupExpanded` 는 #414 가 마지막 소비자를 걷어 간 뒤 죽은 export 라
+     함께 절제됐다. 남은 이유는 소비자 둘(`libraryGroupMenu`·`tplRowMenu`)이고, 파일 자체의
+     은퇴는 그 둘을 걷는 #417 이 진다. */
   assert.equal(typeof GroupList, "object");
-  assert.deepEqual(Object.keys(GroupList).sort(), ["createMenu", "createMoveDialog", "toggleGroup"]);
+  assert.deepEqual(Object.keys(GroupList).sort(), ["createMenu"]);
 
   assert.equal(typeof createPathTrack, "function");
   assert.deepEqual(Object.keys(createPathTrack({ bridge })).sort(), ["affordances"]);
@@ -216,9 +223,6 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
     ["apply", "currentFontScale", "masterMax", "masterMin", "saveMasterWidth",
       "setFontScale", "setMasterWidth", "toggleFontScale"]);
 
-  assert.equal(typeof createSheetPicker, "function");
-  assert.deepEqual(Object.keys(createSheetPicker({ bridge })).sort(), ["choose"]);
-
   assert.equal(typeof createJobReadController, "function");
   const rz = reactZoneHarness();
   assert.equal(typeof rz.controller.zone, "function");
@@ -228,7 +232,6 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
 test("공개 표면 — GroupList 하위 팩토리 반환 키", (t) => {
   freshDom(t);
   assert.deepEqual(Object.keys(GroupList.createMenu({ menuId: "m" })).sort(), ["hide", "show"]);
-  assert.deepEqual(Object.keys(GroupList.createMoveDialog({ modalId: "d" })).sort(), ["open", "wire"]);
 });
 
 test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 낸다", (t) => {
@@ -242,7 +245,6 @@ test("파일당 export 는 하나 — export default 없음", () => {
   const EXPECTED = {
     grouplist: ["GroupList"], pathtrack: ["createPathTrack"],
     relink: ["createRelink"], theme: ["createTheme"], personalization: ["createPersonalization"],
-    sheet_picker: ["createSheetPicker"],
   };
   for (const f of FILES) {
     const src = read(f);
@@ -261,11 +263,12 @@ test("파일당 export 는 하나 — export default 없음", () => {
 
 test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", () => {
   const EXPECTED = {
-    grouplist: ['import { escHtml } from "./esc.js";', 'import { Popover } from "./popover.js";',
-      'import { Modal } from "./modal.js";'],
+    /* `createMoveDialog` 절제로 `modal.js`·`esc.js` 두 간선이 함께 죽었다 — 남은
+       `createMenu` 는 팝오버 배치만 쓴다(문안 이스케이프는 부르는 화면 몫). 간선이 줄어든
+       것 자체가 이관이 실물이라는 증거다. */
+    grouplist: ['import { Popover } from "./popover.js";'],
     pathtrack: ['import { escHtml } from "./esc.js";'],
     relink: ['import { Modal } from "./modal.js";'],
-    sheet_picker: ['import { escHtml } from "./esc.js";', 'import { Modal } from "./modal.js";'],
     theme: [], personalization: [],
   };
   for (const f of FILES) {
@@ -298,7 +301,7 @@ test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign
 test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
   const FACTORY = {
     pathtrack: "createPathTrack", relink: "createRelink",
-    theme: "createTheme", personalization: "createPersonalization", sheet_picker: "createSheetPicker",
+    theme: "createTheme", personalization: "createPersonalization",
   };
   for (const [f, name] of Object.entries(FACTORY)) {
     const src = read(f);
@@ -374,29 +377,8 @@ test("포트 교체 — Relink 는 갈아끼운 bridge.call/pickTemplatePath 를
   assert.deepEqual(seen.map((r) => r[0]), ["A", "B"]);
 });
 
-test("포트 교체 — SheetPicker 는 갈아끼운 bridge.loadDataSheet 를 본다", async (t) => {
-  const dom = freshDom(t);
-  const opened = patch(Modal, ["open", "close"], t);
-  dom.ensure("sheetList"); dom.ensure("sheetModalFile"); dom.ensure("sheetCancel");
-  const seen = [];
-  const bridge = { loadDataSheet: (...a) => { seen.push(["A", ...a]); return { label: "L" }; } };
-  const sp = createSheetPicker({ bridge });
-  const payload = { name: "d.xlsx", path: "D:\\d.xlsx", sheets: [{ name: "S1", rows: 1, cols: 1 }] };
-
-  const pick = (p) => {
-    const list = dom.get("sheetList");
-    const promise = sp.choose("job", p);
-    const btn = new FakeEl("opt");
-    btn.dataset.sheet = "S1";
-    list.fire("click", { target: { closest: () => btn } });
-    return promise;
-  };
-  assert.deepEqual(await pick(payload), { label: "L" });
-  bridge.loadDataSheet = (...a) => { seen.push(["B", ...a]); return { label: "L2" }; };
-  assert.deepEqual(await pick(payload), { label: "L2" });
-  assert.deepEqual(seen.map((r) => r[0]), ["A", "B"]);
-  assert.ok(opened.length >= 2);
-});
+/* SheetPicker 의 같은 성질(갈아끼운 통로를 본다)은 `r4_sheet_picker.test.js` 가 잰다 —
+   후계는 `bridge.loadDataSheet` 가 아니라 `client.invoke("load_data_sheet", …)` 를 지난다. */
 
 test("포트 교체 — React DataZone의 새 요청은 갈아끼운 client.dispatch를 본다", async (t) => {
   freshDom(t);
@@ -521,51 +503,11 @@ test("Personalization — apply 는 영속 없이 셸만(app.py loaded 경로)",
   assert.deepEqual(dom.events, ["hwpx:personalizationchange"]);
 });
 
-/* ================= 6. SheetPicker settle-once ================= */
+/* ================= 6. (은퇴) SheetPicker settle-once =================
 
-test("SheetPicker — 정산은 한 번뿐(선택 뒤 onClose 가 다시 와도 재해소 없음)", async (t) => {
-  const dom = freshDom(t);
-  const mlog = patch(Modal, ["open", "close"], t);
-  dom.ensure("sheetList"); dom.ensure("sheetModalFile"); dom.ensure("sheetCancel");
-  let loads = 0;
-  const sp = createSheetPicker({
-    bridge: { loadDataSheet: () => { loads += 1; return { label: "L" }; } },
-  });
-  const list = dom.get("sheetList");
-  const promise = sp.choose("job", {
-    name: "d.xlsx", path: "D:\\d.xlsx",
-    sheets: [{ name: "S1", rows: 1, cols: 1 }, { name: "S2", rows: 2, cols: 2 }],
-  });
-  assert.equal(list.listeners("click").length, 1);
-
-  const btn = new FakeEl("opt");
-  btn.dataset.sheet = "S1";
-  list.fire("click", { target: { closest: () => btn } });
-  assert.deepEqual(await promise, { label: "L" });
-
-  // 확정 즉시 클릭 통로가 걷혔다(이중 로드 방지) — 다시 때려도 로드가 안 늘어난다.
-  assert.equal(list.listeners("click").length, 0);
-  list.fire("click", { target: { closest: () => btn } });
-  assert.equal(loads, 1);
-
-  // Modal 의 onClose(=취소)가 뒤늦게 와도 settled 라 무시된다 — close 는 정산 때 1회뿐.
-  const onClose = mlog.find((r) => r[0] === "open")[2].onClose;
-  onClose(); onClose();
-  assert.equal(mlog.filter((r) => r[0] === "close").length, 1);
-  assert.deepEqual(await promise, { label: "L" });
-});
-
-test("SheetPicker — 취소(onClose)는 null 로 중단, 첫 시트 강등 없음", async (t) => {
-  const dom = freshDom(t);
-  const mlog = patch(Modal, ["open", "close"], t);
-  dom.ensure("sheetList"); dom.ensure("sheetModalFile"); dom.ensure("sheetCancel");
-  let loads = 0;
-  const sp = createSheetPicker({ bridge: { loadDataSheet: () => { loads += 1; return {}; } } });
-  const promise = sp.choose("job", { name: "d.xlsx", path: "p", sheets: [{ name: "S1", rows: 1, cols: 1 }] });
-  mlog.find((r) => r[0] === "open")[2].onClose();
-  assert.equal(await promise, null);
-  assert.equal(loads, 0);
-});
+   settle-once·취소의 의미·이중 로드 금지는 R4-02 에서 `r4_sheet_picker.test.js` 로 통째로
+   옮겨졌다. 후계에서 「클릭 통로를 걷는다」는 리스너 해제가 아니라 **버튼 disabled +
+   settled 플래그**로 서므로, 같은 성질을 재려면 관측점 자체가 달라야 한다. */
 
 /* ================= 7. PathTrack 위임 리스너 ================= */
 
@@ -611,34 +553,13 @@ test("GroupList — createMenu 를 표면마다 다시 불러도 서로 다른 �
   assert.deepEqual(plog.map((r) => r[0]), ["place", "place"]);
 });
 
-test("GroupList — createMoveDialog 인스턴스는 자기 confirm 상태만 든다", (t) => {
-  const dom = freshDom(t);
-  const mlog = patch(Modal, ["open", "close"], t);
-  for (const id of ["listA", "errA", "nameA", "newNameA", "listB", "errB", "nameB", "newNameB"]) dom.ensure(id);
-  const cfgA = { modalId: "mA", listId: "listA", radioName: "rA", newRadioId: "nrA", newNameId: "newNameA", errId: "errA", nameId: "nameA" };
-  const cfgB = { ...cfgA, modalId: "mB", listId: "listB", radioName: "rB", newRadioId: "nrB", newNameId: "newNameB", errId: "errB", nameId: "nameB" };
-  const dlgA = GroupList.createMoveDialog(cfgA);
-  const dlgB = GroupList.createMoveDialog(cfgB);
-  const seen = [];
-  dlgA.open({ groups: ["가"], current: "가", nameText: "작업A", onConfirm: (g) => seen.push(["A", g]) });
-  dlgB.open({ groups: ["나"], current: "", nameText: "작업B", onConfirm: (g) => seen.push(["B", g]) });
-  assert.ok(dom.get("listA").innerHTML.includes('name="rA"'));
-  assert.ok(dom.get("listB").innerHTML.includes('name="rB"'));
-  assert.equal(dom.get("nameA").textContent, "작업A");
-  assert.equal(dom.get("nameB").textContent, "작업B");
-  // 확정 없이 닫히면 onConfirm 은 안 나간다(H-16 순서 규약의 관측점).
-  for (const r of mlog.filter((x) => x[0] === "open")) r[2].onClose();
-  assert.deepEqual(seen, []);
-});
+/* `createMoveDialog` 인스턴스 격리(자기 confirm 상태만 든다)의 후계는 React
+   `GroupMoveDialog` 이고 `r4_editor.test.js` 가 잰다 — 그 dialog 는 이제 편집기 controller 가
+   주입받는 표면이라 이 파일의 "재사용 서비스" 주어에 들지 않는다.
 
-test("GroupList — toggleGroup 은 낙관 반영 뒤 실패에 되돌리고 loud 하다", (t) => {
-  const dom = freshDom(t);
-  const btn = new FakeEl("g");
-  btn.setAttribute("aria-expanded", "true");
-  GroupList.toggleGroup(btn, () => { throw new Error("동기 실패"); }, "접힘 저장 실패");
-  assert.equal(btn.getAttribute("aria-expanded"), "true", "동기 실패는 즉시 되돌린다");
-  assert.deepEqual(dom.alerts, ["접힘 저장 실패\nError: 동기 실패"]);
-});
+   `toggleGroup` 은 후계가 없다: #414 가 마지막 소비자(라이브러리 그룹 접힘)를 React 상태로
+   번역하면서 「낙관 반영 → 실패 되돌림 → loud」 가 그쪽 controller 판정으로 흡수됐다.
+   여기서 죽은 export 를 계속 재면 은퇴가 초록불 뒤에 숨는다. */
 
 /* ================= 9. 팩토리 2회 호출 = 독립 인스턴스 ================= */
 

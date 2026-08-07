@@ -279,103 +279,18 @@
          출구가 하나면 patch 3택(저장·버리기·머무르기)이 그 한 곳에서 끝난다.
          구 `#jobEditHost`(「작업」 화면 편집 모드, 결정 39)는 여기로 흡수돼 사망 —
          편집 진입은 EditorEntry.land 단일 정의가 이 화면으로 착지시킨다. -->
-    <section class="scr" id="scr-editor">
-      <div class="editor-shell">
-        <button class="btn sm back" id="editorBack" type="button">← 원래 업무로 돌아가기</button>
-        <header class="scr-head editor-head">
-          <div>
-            <p class="eyebrow">문서 작업 편집기</p>
-            <!-- 이름은 page-head 인라인(§10.13.3 승계) — 「저장」 분류가 죽으며 이 자리로
-                 옮겨왔다. 정체이지 규칙이 아니라 어느 탭에도 속하지 않는다(판정 L 계열).
-                 렌더가 innerHTML 로 다시 짓지 않는 **안정 요소**다: 매 push 마다 다시 지으면
-                 아직 change 로 확정되지 않은 타이핑이 스냅샷 값으로 조용히 덮인다. -->
-            <h1 id="editorTitle"><input class="field title-input" id="editorName" type="text"
-                   data-act="name" placeholder="작업 이름을 입력하세요"
-                   aria-label="작업 이름"></h1>
-            <p class="sub" id="editorSubtitle"></p>
-          </div>
-          <!-- 저장 상태 + 판본(판정 O 표시 자리 ①) — 백엔드만 세우고 아무도 안 읽는
-               durable 필드는 다음 슬라이스에서 조용히 틀려도 아무도 모른다. -->
-          <div class="status" id="editorSaveState" data-level="idle">새 작업</div>
-        </header>
-        <!-- 진입 문맥 배너(계약 §5.1) — 왜 왔고 무엇을 보고 왔는지, 그리고 돌아갈 자리. -->
-        <section class="note ctxbanner" id="editorContext" style="display:none"></section>
-        <!-- 탭 줄 — role="tablist" 를 쓰지 않는다: 신규 초안은 같은 자리를 **버튼이 아닌
-             단계 표지**로 그리므로(전진 게이트) tablist 의 자식 계약(role="tab")을 지킬 수
-             없고, 반만 맞는 ARIA 는 없느니만 못하다. 현재 자리는 aria-current 가 말한다. -->
-        <div class="wsteps" id="editor-steps" aria-label="문서 작업 편집 영역"></div>
-        <div class="wbody" id="editor-body" data-preserve-scroll></div>
-        <footer class="wfoot" id="editor-foot"></footer>
-      </div>
-    </section>
+    <!-- 안쪽 전부가 React 소유다(R4-02 · #415) — 이름 입력·탭 줄·본문·푸터의 id·ARIA·
+         「이름은 page-head 인라인」(§10.13.3) 계약은 `src/screens/editor.ts` 가 그대로 진다.
+         정적 골격을 여기 남기면 그 자리의 생산자가 둘이 되고 portal 이 mount 전에 거절한다. -->
+    <section class="scr" id="scr-editor"></section>
 
 
     <!-- ====== TXT 검토·복사 작업대 (v6 S7 · 계약 §11 — 재작성 F6 PR-A) ============ -->
     <!-- 「문서 만들기」에서 TXT 작업을 실행하면 오는 **몰입 화면**(편집기와 같은 부류):
          상단 2탭을 덮고 back 하나로 나간다. 진입 시 고정 사본을 받으므로 데이터 존이 없다.
-         안정 DOM + workbench.js 가 푸시('workbench', snapshot) 로 값만 채운다. -->
-    <section class="scr" id="scr-workbench">
-      <div class="wb-shell">
-        <button class="btn sm back" id="wbBack" type="button">← 문서 만들기로 돌아가기</button>
-        <header class="scr-head wb-head">
-          <div>
-            <p class="eyebrow" id="wbMode">온나라 기안 검토·복사</p>
-            <h1 id="wbTitle">검토·복사</h1>
-            <p class="sub">선택 당시 표시순서로 고정된 항목만 검토합니다.</p>
-          </div>
-          <div class="wb-stats">
-            <span>작업점 <strong id="wbPosition">0 / 0</strong></span>
-            <span>복사 완료 <strong id="wbCopied">0 / 0</strong></span>
-            <span class="status" id="wbRevision" data-level="idle"></span>
-          </div>
-        </header>
-        <div class="note" id="wbNotice" role="status" style="display:none"></div>
-        <div class="wb-body">
-          <!-- 좌: 필드 연결·표시(미저장 변경 — override 아님, 지도 §10.15 판정 H) -->
-          <section class="wb-left">
-            <div class="zone-head">
-              <div>
-                <h2 class="zone-cap">필드 연결·표시</h2>
-                <p class="muted" id="wbDirtyNote">저장하지 않은 변경 없음</p>
-              </div>
-              <button class="btn" id="wbSaveRules" type="button" disabled>기본 규칙으로 저장…</button>
-            </div>
-            <div id="wbMapPanel" data-preserve-scroll></div>
-          </section>
-          <!-- 우: 채운 모습 / 원문 -->
-          <section class="wb-right">
-            <div class="wb-toolbar" role="group" aria-label="본문 보기">
-              <button class="btn sm" type="button" data-wb-view="filled">채운 모습</button>
-              <button class="btn sm" type="button" data-wb-view="raw">원문</button>
-              <!-- 대상 글꼴 선언(결정 17) — 정렬 린트가 **이 선언**으로 비례폭을 판정하므로
-                   여기서 고칠 수 없으면 경고가 엉뚱한 글꼴 기준으로 뜨거나 숨는다. 값은 앱
-                   전역이라 「기안」과 같은 설정을 공유한다. -->
-              <label class="lbl" for="wbTargetFont">대상 글꼴</label>
-              <select class="field sm" id="wbTargetFont"
-                      title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다(전역 설정으로 저장).">
-                <option value="gulimche">굴림체</option>
-                <option value="dotumche">돋움체</option>
-                <option value="malgun">맑은고딕</option>
-              </select>
-              <span class="status" id="wbReview" data-level="idle">복사 전</span>
-            </div>
-            <!-- 큐 색인 — 순차 이동만 두면 아는 행으로 바로 갈 길이 없다(「기안」 점 승계). -->
-            <div class="wb-dots" id="wbDots" role="list" aria-label="큐 진행 표시"></div>
-            <article class="wb-preview" id="wbCard" data-preserve-scroll></article>
-            <p class="muted" id="wbLint" style="display:none"></p>
-          </section>
-        </div>
-        <footer class="wb-foot">
-          <label class="wb-adv"><input type="checkbox" id="wbAdvance"> 복사 후 다음 항목으로 이동</label>
-          <span class="muted" id="wbNote"></span>
-          <div class="wb-foot-nav">
-            <button class="btn" id="wbPrev" type="button">이전</button>
-            <button class="btn" id="wbNext" type="button">다음</button>
-            <button class="btn primary" id="wbCopy" type="button">복사</button>
-          </div>
-        </footer>
-      </div>
-    </section>
+         안쪽 전부가 React 소유다(R4-02 · #415) — 값은 푸시('workbench', snapshot) 로 온다. -->
+    <section class="scr" id="scr-workbench"></section>
+
 
     <!-- (「템플릿 관리」(scr-tpl)는 사망 — F8 §10.17: 목록·저작·변환·검토·그룹·삭제는 편집기
          「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이 승계. #tplRowMenu·#tplMoveModal·
@@ -413,33 +328,11 @@
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle"></div>
 
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
-    <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle">
-      <div class="modal-card">
-        <h3 id="txtEditTitle">새 TXT 템플릿</h3>
-        <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
-          <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
-        <p class="modal-sub">{{필드}} 토큰을 포함한 템플릿 내용</p>
-        <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
-        <p id="txtEditError" class="note dangerbox" role="alert" style="display:none"></p>
-        <div class="modal-actions">
-          <button class="btn" id="txtEditCancel">취소</button>
-          <button class="btn primary" id="txtEditOk">저장</button>
-        </div>
-      </div>
-    </div>
+    <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle"></div>
 
     <!-- 시트 선택 모달(#33) — 다중 시트 워크북 확정 게이트. 조용한 첫 시트 로드 금지:
          에디터·작업 두 화면이 공유하며, 취소·Escape 는 로드를 중단한다(첫 시트 강등 없음). -->
-    <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-      <div class="modal-card">
-        <h3 id="sheetTitle">시트 선택</h3>
-        <p class="modal-sub"><span class="mono" id="sheetModalFile"></span> 에 시트가 여러 개입니다. 채울 시트를 선택하세요.</p>
-        <div id="sheetList" class="sheet-list"></div>
-        <div class="modal-actions">
-          <button class="btn" id="sheetCancel">취소</button>
-        </div>
-      </div>
-    </div>
+    <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
 
     <!-- 「작업」 덮어쓰기 확인은 공용 modal.js Modal.confirm(수치 합성 본문)이 담당한다 —
          전용 모달 DOM 폐기(슬라이스 2, A-2-22: 총량·파괴분·신규분 종류별 재진술). -->
@@ -554,18 +447,7 @@
     <!-- 템플릿 그룹 이동 다이얼로그(#108, libraryMoveModal 동형·별도 요소) — 화면별 wiring 격리.
          기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 editor.js(F8 — tpl 화면 사망의 승계)가
          스냅샷 그룹명으로 채운다. -->
-    <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
-      <div class="modal-card">
-        <h3 id="tplMoveTitle">그룹으로 이동</h3>
-        <p class="modal-sub" id="tplMoveName"></p>
-        <div id="tplMoveList" class="sheet-list"></div>
-        <p id="tplMoveErr" class="note dangerbox" style="display:none"></p>
-        <div class="modal-actions">
-          <button class="btn" id="tplMoveCancel">취소</button>
-          <button class="btn primary" id="tplMoveOk">이동</button>
-        </div>
-      </div>
-    </div>
+    <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle"></div>
 
     <!-- (promise 다이얼로그 3종 — #confirmModal·#chooseModal·#promptModal — 은 R3-01 에서
          React host(#reactOverlayHost)로 이전. 완전 데이터-구동 표면이라 정적 골격 없이

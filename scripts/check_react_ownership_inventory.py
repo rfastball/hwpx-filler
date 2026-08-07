@@ -132,21 +132,27 @@ EXPECTED_BASELINE_SHA = "3cabe7be79e8ef98d039c870c9644559777667e6"
 #: 축별 하한은 **2차 백스톱**이다. 하한에는 슬랙이 있고 그 슬랙이 축마다 무음 삭감 예산이 되므로
 #: 1차 방벽은 전수 피복과 :data:`AXIS_DIGESTS` 다. 하한을 낮추는 변경은 사유와 함께여야 하고
 #: 테스트의 `EXPECTED_AXIS_CONTRACT` 도 함께 고쳐야 한다.
+#: R4-02 가 다섯 하한을 내렸다. 전부 **같은 사유**다: 이관이 완료된 축은 legacy 생산 자리가
+#: 사라지면서 분모가 줄고, 그 감소가 「술어가 좁아졌다」가 아니라 「셀 것이 실제로 줄었다」이다.
+#: 하한을 안 내리면 게이트가 이관 자체를 빨강으로 보고, 그 빨강을 피하려고 legacy 잔재를
+#: 남기는 압력이 생긴다 — 하한의 목적(술어가 조용히 좁아지는 것을 막는 것)과 반대 방향이다.
+#: 그래서 내린 값은 전부 **오늘의 실측**이고, 다음 슬라이스가 또 내리려면 같은 설명을 다시
+#: 써야 한다(조용한 감소는 여전히 막힌다).
 AXIS_FLOORS: dict[str, int] = {
-    "dom_static": 139,              # 오늘 139 — R4-01 정적 subtree를 React 생산자로 이관
-    "dom_data_attr": 7,              # 오늘 7
-    "dom_js_data_attr": 80,         # 오늘 86 — 제품 코드 생산자 이름×파일
-    "dom_js_site": 120,             # 오늘 124 — R4 화면의 안정 ID 생산자를 TS로 이관
-    "state_js_module": 65,          # 오늘 69 — 화면 controller 상태를 TS 폐포에 편입
+    "dom_static": 93,               # R4-02: 편집기·작업대·모달 셋의 정적 subtree 46이 React로
+    "dom_data_attr": 4,             # R4-02: data-act·data-preserve-scroll·data-wb-view가 JS 생산으로
+    "dom_js_data_attr": 80,         # 오늘 93 — 제품 코드 생산자 이름×파일
+    "dom_js_site": 120,             # 오늘 173 — R4 화면의 안정 ID 생산자를 TS로 이관
+    "state_js_module": 65,          # 오늘 68 — 화면 controller 상태를 TS 폐포에 편입
     "state_snapshot_channel": 6,    # 오늘 6 — 화면이 줄면 그 자체가 계약 변경이라 여유를 안 둔다
     "state_ring1": 10,              # 오늘 11
     # #491이 TS 사각을 닫아 R2 runtime 1 + R3 overlay 7 + shell 2 attach와 R3 release 9가
     # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
-    "subscription_listener": 62,    # 오늘 64 — R4 화면의 위임 listener를 React handler로 이관
-    "subscription_release": 15,     # 오늘 16
-    "subscription_push": 3,         # 오늘 3 — library/data-picker/job-read를 raw store 구독으로 이관
-    "lifecycle_factory": 54,        # 오늘 56 — R4 controller/component/port factory 편입
-    "lifecycle_hook": 8,            # 오늘 8
+    "subscription_listener": 40,    # R4-02: 편집기 8·작업대 13·시트 2의 위임 listener가 React props로
+    "subscription_release": 15,     # 오늘 17
+    "subscription_push": 6,         # R4-02: 축 단위가 「화면 구독」에서 「기반 탭 + model 구독」으로
+    "lifecycle_factory": 54,        # 오늘 83 — R4 controller/component/port factory 편입
+    "lifecycle_hook": 6,            # R4-02: Preserve.around 2가 React 소유로 사라졌다
 }
 
 #: 축의 **측정 계약** 해시 — 술어 · scope · scope_excluded · 사각/오검 프로브의 정규화 지문.
@@ -164,7 +170,8 @@ AXIS_DIGESTS: dict[str, str] = {
     "state_ring1": "9742c77daae0c11112e40c009a5b23c6",
     "state_snapshot_channel": "5891957f0ed54565587e17c150eed087",
     "subscription_listener": "8064cf796b67e47a094e61c7362e4b5b",
-    "subscription_push": "5201c1ab611d0f09a743bd1e6afced4a",
+    # R4-02 — 술어에 `.subscribe(` 를 더하고 scope 를 React 트리로 옮겼다(축 한계문 참조).
+    "subscription_push": "6b30b15e7ca10851763bd0ec96b48725",
     "subscription_release": "08fce41a56c1108632cb8bfd7364912c",
 }
 
@@ -184,11 +191,15 @@ EXPECTED_REVIEW_ITEM_IDS = frozenset({
     "doc/bridge-header-breakdown", "doc/screens-py-transport-comment",
 })
 #: 제품 트리보다 **좁은 scope** 를 든 축 → 그 한계의 소유자. scope 를 넓히는 것이 답이 아닌
-#: 자리가 있다(오늘의 6은 「화면 파일 + data_picker.js 안의 푸시 구독」이 맞는 단위다). 그때는
+#: 자리가 있다(오늘의 6은 「기반이 세운 탭 + 화면 model 구독」이 맞는 단위다). 그때는
 #: 기계를 넓히지 말고 **주장을 정확히 좁힌다** — 다만 그 좁힘이 산문 각주면 늙으므로,
 #: 게이트가 「이 축은 한계를 선언해야 한다」를 들고 그 선언의 소유자까지 대조한다.
+#:
+#: R4-02 가 이 축의 소유를 넘겨받았다. 종전 한계문이 「그 질문을 여는 슬라이스가 범위를
+#: 정해야 한다」를 예고했고, 편집기·작업대의 마지막 화면 소유 `Bridge.onPush` 를 걷는 이
+#: 슬라이스가 정확히 그 슬라이스다 — legacy scope 안 측정이 0 이 되는 순간이라 미룰 수 없다.
 NARROW_SCOPE_AXES: dict[str, str] = {
-    "subscription_push": "R2-04 #408",
+    "subscription_push": "R4-02 #415",
 }
 
 #: 제외 축 → 「크기 프로브를 요구하는가」. `size` 블록을 통째로 지우면 조용한 유예로

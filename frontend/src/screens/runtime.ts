@@ -111,9 +111,37 @@ export function createScreenRuntime(args: { client: BridgeClient; store: Snapsho
     return started;
   }
 
+  /* 재당김(R4-02) — `loadInitial` 은 화면당 **한 번**을 기억하는 부팅 당김이라 두 번째
+     호출이 다시 묻지 않는다. 편집기는 그것으로 부족하다: tpl 관리 동사가 목록을 바꾸면
+     Python 은 `tpl` 채널을 밀고, editor 스냅샷은 **다시 물어야** 최신이 된다(legacy
+     `Bridge.initial(SCREEN).then(render)` 의 후계). 같은 ingest 경로·같은 revision 가드를
+     쓰므로 늦게 도착한 당김이 그사이 온 push 를 덮지 않는다. */
+  function refresh(screen: ScreenName): Promise<unknown> {
+    ensure(screen);
+    const sinceRevision = store.revision(screen);
+    return client.initial(screen).then((result) => {
+      const value = expectHostValue(result, `${screen} initial`);
+      store.ingestPulled(screen, value, sinceRevision);
+      return value;
+    });
+  }
+
+  /** **no-push 동사의 반환 스냅샷** 착지 — 그 동사는 푸시를 내지 않으므로(`is_no_push`,
+   *  `mapping_verbs.py`) 이 반환이 화면의 **유일한** 갱신 경로다. 들이지 않으면 백엔드만
+   *  새 값을 알고 화면은 옛 판을 든 채로 남는다.
+   *
+   *  push 와 같은 last-delivery 로 넣는다(legacy 의 `.then(render)` 와 같은 의미).
+   *  `ingestPulled` 의 revision 가드를 쓰면 그사이 온 push 를 이유로 **우리가 방금 만든
+   *  값**을 버리게 되는데, 이 스냅샷은 그 push 보다 뒤에 만들어진 것이라 반대다. */
+  function land(screen: ScreenName, snapshot: unknown): void {
+    store.ingest(screen, snapshot);
+  }
+
   return {
     model,
     loadInitial,
+    refresh,
+    land,
     listenerCount(screen: ScreenName): number {
       return ensure(screen).listeners.size;
     },

@@ -1,24 +1,33 @@
-/* SegView 특성화 테스트(characterization) — ESM 전환의 안전망.
+/* SegmentView 특성화 테스트 — legacy `SegView` 페인터의 React 후계(R4-02 · #415).
  *
- * 기대값은 전부 **전환 이전** 소스(base 8c522fd 의 IIFE segview.js + window.escHtml)를
- * 실행해 얻은 실제 출력이다. 새 코드를 보고 쓴 게 아니라 옛 동작을 받아쓴 것이라,
- * 이 파일이 초록이면 "ESM 으로 옮기면서 마크업이 한 바이트도 안 변했다"가 참이다.
+ * 원본은 문자열 페인터(`frontend/js/segview.js`)의 특성화였다. 기대값은 전환 이전 소스를
+ * 실행해 얻은 실제 출력이었고, 그것이 `innerHTML` 로 들어갔으므로 클래스 이름·속성·이스케이프
+ * 넉 자가 전부 계약이었다.
  *
- * 이 페인터의 산출물은 innerHTML 로 들어간다 — 클래스 이름·속성 순서·앞 공백·이스케이프
- * 넉 자(& < > ")·구분자 없는 join 이 전부 계약이다. 그래서 "대충 같은 뜻"이 아니라
- * 문자열 동일성으로 못박는다.
+ * 후계는 요소 트리라 이스케이프의 소유자가 React 로 넘어갔다. 그래서 이 파일은 **같은 질문을
+ * 새 산출에 다시 묻는다** — 계약(클래스·`data-token` 신원·〈빈 값〉 글리프·title 문안·구분자
+ * 없는 이어붙임)은 그대로 재고, 이스케이프는 「React 가 태운다」를 산출로 확인한다.
  *
- * 잘못된 입력(text 없음 등)은 **오늘 하는 그대로** 단언한다 — 여기서 고치지 않는다.
- * 고쳐야 한다면 그건 별도 판정이고, 그때 이 기대값이 시끄럽게 깨지는 것이 목적이다.
+ * 잘못된 입력(text 없음 등)은 **오늘 하는 그대로** 단언한다 — 이 슬라이스는 이관이지 결함
+ * 수정이 아니다. 고쳐야 한다면 그건 별도 판정이고, 그때 이 기대값이 시끄럽게 깨지는 것이 목적이다.
+ *
+ * `plain()` 은 후계가 없다: 제품 소비자가 0이었다(클립보드 평문은 백엔드 `copy_clipboard` 가
+ * 진다). 죽은 export 를 React 로 옮기지 않는다 — 아래 마지막 테스트가 그것을 명시로 못박는다.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
 
-import { SegView } from "../../frontend/js/segview.js";
+import * as SegmentModule from "../../frontend/src/screens/segment_view.ts";
 
-const { paint, plain } = SegView;
+const { SegmentView, segmentNodes } = SegmentModule;
 
-test("paint: 세그먼트 목록 없음/빈 목록은 빈 문자열(널 관용)", () => {
+function paint(segments, owners) {
+  return renderToStaticMarkup(createElement(SegmentView, { segments, owners }));
+}
+
+test("paint: 세그먼트 목록 없음/빈 목록은 빈 산출(널 관용)", () => {
   assert.equal(paint(undefined), "");
   assert.equal(paint(null), "");
   assert.equal(paint([]), "");
@@ -72,7 +81,7 @@ test("paint: missing — seg-missing 에 원문 토큰 텍스트", () => {
   );
 });
 
-test("paint: literal — kind 부재/미상은 마크업 없이 이스케이프된 원문만", () => {
+test("paint: literal — kind 부재/미상은 마크업 없이 원문만", () => {
   assert.equal(paint([{ text: "안녕" }]), "안녕");
   // 이름이 있어도 literal 에는 data-token 을 붙이지 않는다(템플릿 원문엔 소유 규칙이 없다).
   assert.equal(paint([{ kind: "헛것", text: "안녕", name: "이름" }]), "안녕");
@@ -106,28 +115,23 @@ test("paint: 혼합 — 표시 순서대로, 구분자 없이 이어붙인다", 
   );
 });
 
-test("paint: 이스케이프 — 본문 텍스트의 & < > \" 넉 자", () => {
-  assert.equal(
-    paint([{ kind: "fill", name: "이름", text: 'a & b < c > d " e' }]),
-    '<span class="seg-fill" data-token="이름">a &amp; b &lt; c &gt; d &quot; e</span>',
-  );
-  assert.equal(paint([{ text: '<b>&"</b>' }]), "&lt;b&gt;&amp;&quot;&lt;/b&gt;");
+test("paint: 이스케이프 — 본문 텍스트는 React 가 태운다(마크업으로 새지 않는다)", () => {
+  const html = paint([{ kind: "fill", name: "이름", text: 'a & b < c > d " e' }]);
+  assert.ok(html.includes("a &amp; b &lt; c"), html);
+  assert.equal(html.includes("<b>"), false);
+  const literal = paint([{ text: '<b>&"</b>' }]);
+  assert.equal(literal.includes("<b>"), false, literal);
+  assert.ok(literal.includes("&lt;b&gt;"), literal);
 });
 
 test("paint: 이스케이프 — 이름은 속성 컨텍스트(data-token·title)에서도 태운다", () => {
-  assert.equal(
-    paint([{ kind: "fill", name: 'n&a<m>e"x', text: "값" }]),
-    '<span class="seg-fill" data-token="n&amp;a&lt;m&gt;e&quot;x">값</span>',
-  );
-  assert.equal(
-    paint([{ kind: "blank", name: 'n&a<m>e"x' }]),
-    '<span class="seg-blank" data-token="n&amp;a&lt;m&gt;e&quot;x"' +
-      ' title="{{n&amp;a&lt;m&gt;e&quot;x}}: 빈 값">〈빈 값〉</span>',
-  );
-  assert.equal(
-    paint([{ kind: "missing", name: 'n&"x', text: '{{n&"x}}' }]),
-    '<span class="seg-missing" data-token="n&amp;&quot;x">{{n&amp;&quot;x}}</span>',
-  );
+  const html = paint([{ kind: "fill", name: 'n&a<m>e"x', text: "값" }]);
+  assert.ok(html.includes('data-token="n&amp;a&lt;m&gt;e&quot;x"'), html);
+  const blank = paint([{ kind: "blank", name: 'n&a<m>e"x' }]);
+  assert.ok(blank.includes('data-token="n&amp;a&lt;m&gt;e&quot;x"'), blank);
+  assert.ok(blank.includes('title="{{n&amp;a&lt;m&gt;e&quot;x}}: 빈 값"'), blank);
+  const missing = paint([{ kind: "missing", name: 'n&"x', text: '{{n&"x}}' }]);
+  assert.ok(missing.includes('data-token="n&amp;&quot;x"'), missing);
 });
 
 test("paint: 신원 — data-token 은 이름 있는 조각에만, literal 에는 없다", () => {
@@ -146,7 +150,7 @@ test("paint: 신원 — data-token 은 이름 있는 조각에만, literal 에�
 });
 
 test("paint: 오늘의 잘못된 입력 처리 — 고치지 말고 받아쓴다", () => {
-  // text 없는 fill 은 String(undefined) 을 태워 문자열 "undefined" 가 새어나온다.
+  // text 없는 fill 은 String(undefined) 을 태워 문자열 "undefined" 가 그대로 보인다.
   assert.equal(
     paint([{ kind: "fill", name: "이름" }]),
     '<span class="seg-fill" data-token="이름">undefined</span>',
@@ -158,47 +162,17 @@ test("paint: 오늘의 잘못된 입력 처리 — 고치지 말고 받아쓴다
   );
 });
 
-test("plain: 세그먼트 목록 없음/빈 목록은 빈 문자열", () => {
-  assert.equal(plain(undefined), "");
-  assert.equal(plain(null), "");
-  assert.equal(plain([]), "");
+test("segmentNodes — 조각 배열은 소비 표면이 감쌀 수 있게 그대로 나온다", () => {
+  const nodes = segmentNodes([{ text: "가" }, { kind: "fill", name: "이름", text: "홍" }]);
+  assert.equal(nodes.length, 2);
+  assert.equal(nodes[0], "가");
+  assert.equal(nodes[1].props["data-token"], "이름");
+  assert.equal(segmentNodes(null).length, 0);
 });
 
-test("plain: 혼합 — text 만 이어붙이고 마크업도 이스케이프도 없다", () => {
-  assert.equal(
-    plain([
-      { text: "계약자 " },
-      { kind: "fill", name: "이름", text: "홍길동" },
-      { kind: "blank", name: "주소" },
-      { kind: "missing", name: "금액", text: "{{금액}}" },
-    ]),
-    "계약자 홍길동{{금액}}",
-  );
-  assert.equal(plain([{ kind: "fill", name: 'n&"', text: '<b>&"</b>' }]), '<b>&"</b>');
-});
-
-test("plain: 오늘의 잘못된 입력 처리 — text 부재는 join 이 빈칸으로 삼킨다", () => {
-  // paint 와 달리 "undefined" 가 아니라 빈 문자열로 사라진다(Array#join 의 널 처리).
-  assert.equal(plain([{ kind: "fill", name: "이름" }, { text: "뒤" }]), "뒤");
-  assert.equal(plain([{ kind: "blank", name: "주소" }]), "");
-  assert.equal(plain([{ text: null }, { text: "뒤" }]), "뒤");
-});
-
-test("공개면은 paint·plain 둘뿐 — 넓히지 않는다", () => {
-  assert.deepEqual(Object.keys(SegView).sort(), ["paint", "plain"]);
-  assert.equal(typeof SegView.paint, "function");
-  assert.equal(typeof SegView.plain, "function");
-});
-
-test("import 만으로 전역을 건드리지 않는다(전역 설치는 합성 루트의 __hwpx 하나뿐)", async (t) => {
-  const had = Object.hasOwn(globalThis, "window");
-  const prev = globalThis.window;
-  globalThis.window = {};
-  t.after(() => {
-    if (had) globalThis.window = prev;
-    else delete globalThis.window;
-  });
-
-  await import("../../frontend/js/segview.js?probe=global");
-  assert.equal(Object.keys(globalThis.window).length, 0);
+test("공개면은 SegmentView·segmentNodes 둘뿐 — 죽은 plain 은 승계하지 않는다", () => {
+  assert.deepEqual(Object.keys(SegmentModule).sort(), ["SegmentView", "segmentNodes"]);
+  assert.equal(typeof SegmentModule.SegmentView, "function");
+  assert.equal(typeof SegmentModule.plain, "undefined",
+    "제품 소비자가 0이던 plain 은 React 후계를 만들지 않는다(#415 처분)");
 });

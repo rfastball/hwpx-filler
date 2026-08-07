@@ -79,14 +79,14 @@ def test_durable_destructive_confirms_are_danger() -> None:
     # unlink·덮어쓰기·제자리 변환 도달 경로 전수. needle은 호출마다 유일한 사용자 문안/판정값.
     inventory = (
         ("js/app.js", 'confirmLabel: "종료"'),
-        ("js/screens/editor.js", "res.overwrite_text"),
+        ("src/screens/editor.ts", "result.overwrite_text"),
         # (editor 의 자동등록 확인(res.dataset_text)은 #347 에서 게이트째 사망 — U2 §5.3 D.)
         # (screens/draft.js 두 행 삭제 — 「기안」 화면 사망, F6 PR-B. 덮어쓰기 확인의
         #  생존 표면은 editor·job 행이 계속 진다.)
         ("js/screens/job.js", "body: overwriteBody(res)"),
         ("src/screens/library.ts", 'body: result.confirm_text, confirmLabel: "삭제"'),
         # 누름틀 제자리 변환 확인 — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8, tpl 화면 사망).
-        ("js/screens/editor.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
+        ("src/screens/editor.ts", "지금 변환할까요?"),
         # 등록 데이터 삭제·같은 데이터 라벨 갱신·다시 연결 — 거처는 데이터 선택 다이얼로그(F1).
         ("src/screens/data_picker.ts", 'first.confirm_text}\\n\\n삭제할까요?'),
         ("src/screens/data_picker.ts", "body: result.confirm_text"),
@@ -103,13 +103,13 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
     inventory = (
         # (draftsession.js 「데이터 변경 확인」·screens/draft.js 「기안 작업 삭제 확인」 행
         #  삭제 — 「기안」 화면 사망, F6 PR-B.)
-        ("js/screens/editor.js", "미확정으로 되돌리기"),
+        ("src/screens/editor.ts", "미확정으로 되돌리기"),
         # 좌 목록 사망(F2 PR-B)으로 두 문안의 거처가 라이브러리로 옮겼다 — 표면이 옮겨도
         # 「되돌릴 수 있는 조직 행위는 danger 로 물들이지 않는다」는 계약은 따라간다.
         ("src/screens/library.ts", 'title: "그룹 병합 확인"'),
         ("src/screens/library.ts", 'title: "작업 삭제 확인"'),
         # 그룹 해산 — 거처가 편집기 「템플릿」 탭 그룹 ⋮ 로 이주(F8, 문안 계약 불변).
-        ("js/screens/editor.js", "그룹을 해산하면"),
+        ("src/screens/editor.ts", "그룹을 해산하면"),
     )
     for relative, needle in inventory:
         assert "danger: true" not in _call_containing(relative, needle)

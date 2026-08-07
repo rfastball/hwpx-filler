@@ -1,21 +1,26 @@
-/* 그룹 목록 공용 팩토리 — 부유 ⋮ 메뉴 위치잡기 + 그룹 이동 다이얼로그.
-   job.js(원본)·template.js(이식본)가 이 두 기제를 손수 2벌 들고 있었고(＋#148 「기안」이
-   3번째 소비자로 합류), datazone.js·popover.js 선례처럼 **기제**를 단일 출처로 걷는다.
-   표면별로 정당하게 다른 것(행/카드 본문·메뉴 내용·인라인 이름변경·확인 문안·디스패치
-   페이로드·menuFor 정체)은 화면이 소유하고 주입한다. 여기가 걷는 건 손수 2벌일 때 좌표·
-   소구획이 조용히 갈라지던 기제뿐이다:
-   - 메뉴: 렌더 후 실측 위치 계산(Popover.place: flip·viewport clamp·transform-origin) + 표시/숨김.
-   - 이동 다이얼로그: 라디오 목록 조립(기존 그룹 + 「그룹 없음」 + 「새 그룹」 data-new) +
-     포커스=새 그룹 자동선택 + 빈 새 이름 인라인 재진술(모달 유지).
+/* 그룹 목록 공용 팩토리 — 부유 ⋮ 메뉴 위치잡기.
+
+   원래 이 파일은 기제 셋(메뉴 위치잡기 · 접힘 즉답 토글 · 그룹 이동 다이얼로그)을 들었다.
+   손수 2벌이던 것을 한 곳으로 걷은 자리였고, 소비 표면이 여럿이라 id 를 cfg 로 받았다.
+
+   R4-01(#414)이 라이브러리를, R4-02(#415)가 편집기를 React 로 옮기면서 그중 둘의 마지막
+   소비자가 사라졌다:
+
+   - `toggleGroup`/`setGroupExpanded`(접힘 즉답) → 라이브러리 React 표면이 같은 규율
+     (낙관 반영 → 실패 시 되돌림 + loud)을 자기 안에 진다.
+   - `createMoveDialog`(그룹 이동) → `src/screens/group_move_dialog.ts` 가 후계다. 라이브러리
+     쪽 짝은 #414 의 `LibraryMoveDialog` 다.
+
+   남은 것은 `createMenu` 하나다 — React 라이브러리·편집기 **둘 다** 이 위치잡기를 계속
+   소비한다(내용·정체는 화면이 만들고, 위치·표시/숨김만 여기가 소유). 그 마지막 소비자까지
+   걷는 것은 #417 의 몫이고, 그때 이 파일이 사라진다.
+
    바깥닫기(Popover.wireDismiss)는 화면이 자기 술어로 직접 배선한다 — menuFor 정체가 화면
    소유라 여기서 대신 들지 않는다(표면별 suppress 인스턴스 원칙 유지). */
 
-import { escHtml } from "./esc.js";
 import { Popover } from "./popover.js";
-import { Modal } from "./modal.js";
 
 const $ = (id) => document.getElementById(id);
-const esc = escHtml;  // 공유 이스케이퍼(esc.js)
 
 /* 부유 ⋮ 메뉴(.ctx-menu) — 내용·정체는 화면이 만들고, 위치·표시/숨김만 팩토리가 소유. */
 function createMenu(cfg) {
@@ -39,100 +44,4 @@ function createMenu(cfg) {
   return { show, hide };
 }
 
-/* 접힘은 보기 상태라 클릭한 프레임에 먼저 반영하고, 영속 요청은 뒤에서 보낸다.
-   판정 데이터는 건드리지 않는다. 실패하면 현 DOM 이 아직 살아 있을 때만 되돌리고 loud 하게
-   알린다 — 소비 화면들(library·tpl)이 같은 즉답·실패 규율을 공유한다(#217 R3). */
-function setGroupExpanded(button, expanded) {
-  button.setAttribute("aria-expanded", expanded ? "true" : "false");
-  const caret = button.querySelector(".grp-caret");
-  if (caret) caret.textContent = expanded ? "▾" : "▸";
-  const shell = button.closest(".job-grp");
-  const body = shell && shell.nextElementSibling;
-  if (body && body.matches(".job-grp-rows,.tpl-grp-rows")) body.hidden = !expanded;
-}
-
-function toggleGroup(button, persist, errorMessage) {
-  const wasExpanded = button.getAttribute("aria-expanded") === "true";
-  setGroupExpanded(button, !wasExpanded);
-  let request;
-  try {
-    request = persist();
-  } catch (err) {
-    setGroupExpanded(button, wasExpanded);
-    window.alert((errorMessage || "그룹 접힘 상태를 저장하지 못했습니다.") + "\n" + String(err));
-    return;
-  }
-  Promise.resolve(request).catch((err) => {
-    if (button.isConnected) setGroupExpanded(button, wasExpanded);
-    window.alert((errorMessage || "그룹 접힘 상태를 저장하지 못했습니다.") + "\n" + String(err));
-  });
-}
-
-/* 그룹 이동 다이얼로그 — 기존 그룹 라디오 + 「그룹 없음(해제)」 + 「새 그룹」(data-new 로 값
-   센티넬 충돌 봉쇄, 포커스하면 자동 선택). 빈 새 이름은 조용히 넘기지 않고 인라인 재진술
-   (모달 유지). 대상 이름 문안·확정 디스패치는 화면이 open() 인자로 주입한다. */
-function createMoveDialog(cfg) {
-  let onConfirm = null;  // open 시 주입되는 확정 콜백(group) — 닫히면 걷는다.
-  let confirmed = false;
-  let confirmedGroup = "";
-
-  function open(opts) {
-    onConfirm = opts.onConfirm;
-    confirmed = false;
-    confirmedGroup = "";
-    const groups = opts.groups || [];
-    const cur = opts.current || "";
-    $(cfg.listId).innerHTML =
-      groups.map((g) =>
-        `<label class="grp-opt"><input type="radio" name="${cfg.radioName}" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
-      ).join("") +
-      `<label class="grp-opt"><input type="radio" name="${cfg.radioName}" value=""${cur === "" ? " checked" : ""}> 그룹 없음(해제)</label>` +
-      `<label class="grp-opt"><input type="radio" name="${cfg.radioName}" value="" data-new="1" id="${cfg.newRadioId}"> 새 그룹:` +
-      ` <input class="field" id="${cfg.newNameId}" type="text" placeholder="새 그룹 이름"></label>`;
-    if (cfg.nameId && opts.nameText != null) $(cfg.nameId).textContent = opts.nameText;
-    const err = $(cfg.errId);
-    err.style.display = "none";
-    err.textContent = "";
-    // 새 그룹 이름을 만지면 새 그룹 라디오가 자동 선택된다(입력=의도).
-    const nn = $(cfg.newNameId);
-    if (nn) nn.addEventListener("focus", () => { const rr = $(cfg.newRadioId); if (rr) rr.checked = true; });
-    Modal.open(cfg.modalId, {
-      returnFocus: opts.returnFocus,
-      onClose: () => {
-        const cb = onConfirm;
-        onConfirm = null;
-        // Modal이 원 트리거로 포커스를 돌린 뒤에만 mutation을 보낸다. 먼저 보내면 push
-        // 재렌더가 트리거를 파괴해 메뉴발 「확인」 복귀가 body로 추락한다(H-16).
-        if (confirmed && cb) cb(confirmedGroup);
-      },
-    });
-  }
-
-  function confirm() {
-    if (!onConfirm) return;
-    const sel = document.querySelector(`input[name="${cfg.radioName}"]:checked`);
-    if (!sel) return;
-    let group = sel.value;
-    if (sel.dataset.new) {
-      group = ($(cfg.newNameId).value || "").trim();
-      if (!group) {
-        const err = $(cfg.errId);
-        err.textContent = "새 그룹 이름이 비어 있습니다. 이름을 넣거나 다른 항목을 고르세요.";
-        err.style.display = "";
-        return;  // 조용한 무동작 금지 — 열린 채 재진술
-      }
-    }
-    confirmed = true;
-    confirmedGroup = group;
-    Modal.close(cfg.modalId);
-  }
-
-  function wire(okId, cancelId) {
-    $(okId).addEventListener("click", confirm);
-    $(cancelId).addEventListener("click", () => Modal.close(cfg.modalId));
-  }
-
-  return { open, wire };
-}
-
-export const GroupList = { createMenu, createMoveDialog, toggleGroup };
+export const GroupList = { createMenu };

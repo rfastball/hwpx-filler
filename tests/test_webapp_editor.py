@@ -548,7 +548,7 @@ def test_discard_session_cancels_new_wizard_but_rejects_saved_edit(tmp_path):
 
 
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
-_EDITOR_JS = SOURCE_JS_DIR / "screens" / "editor.js"
+_EDITOR_JS = SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts"
 
 
 def test_editor_renders_structured_field_and_data_tables():
@@ -560,8 +560,8 @@ def test_editor_renders_structured_field_and_data_tables():
     """
     src = _EDITOR_JS.read_text(encoding="utf-8")
     assert "fields-line" not in src, "나열식 .fields-line 이 남아 있습니다 — 구조화 표로 교체(#16)."
-    assert 'class="schema-fields"' in src, "1단계 필드 구조화 표(schema-fields)가 없습니다(#16)."
-    assert 'class="data-preview"' in src, "2단계 데이터 미리보기 표(data-preview)가 없습니다(#16)."
+    assert 'className: "schema-fields"' in src, "1단계 필드 구조화 표(schema-fields)가 없습니다(#16)."
+    assert 'className: "data-preview"' in src, "2단계 데이터 미리보기 표(data-preview)가 없습니다(#16)."
     assert "(빈 값)" in src, "2단계 빈 셀의 시끄러운 표기가 없습니다 — ADR-B 위반(#16)."
 
 

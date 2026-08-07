@@ -86,6 +86,14 @@ EXPECTED_TEST_FILES = {
     "r4_library.test.js",
     "r4_screen_runtime.test.js",
     "r4_service_handoff.test.js",
+    # R4-02 — 편집·매핑 표면. reducer 불변식과 이탈 거래는 화면별 파일에 흩지 않고
+    # 각각 한 자리에 모은다(같은 규율을 두 초록 사이에 숨기지 않는다).
+    "r4_editor.test.js",
+    "r4_editor_entry_handoff.test.js",
+    "r4_editor_state.test.js",
+    "r4_leave_transactions.test.js",
+    "r4_sheet_picker.test.js",
+    "r4_workbench.test.js",
 }
 
 #: Node 24의 러너에 **디렉터리**를 넘기면 모듈 경로로 해석해 MODULE_NOT_FOUND로 죽는다.

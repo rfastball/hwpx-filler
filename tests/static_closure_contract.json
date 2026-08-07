@@ -15,7 +15,6 @@
     "pywebview": [
       "js/app.js",
       "js/bridge.js",
-      "js/screens/editor.js",
       "src/runtime/adapter.ts",
       "src/selftest/boot.js",
       "src/selftest/probes/boot_routing_overlay.js",

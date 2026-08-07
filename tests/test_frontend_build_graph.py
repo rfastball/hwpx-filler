@@ -91,7 +91,6 @@ EXPECTED_ESM_EXPORTS = {
     "copy.js": "Copy",
     "esc.js": "escHtml",
     "guard.js": "Guard",
-    "segview.js": "SegView",
     # N-05 서비스 — 포트가 필요 없어 모듈 평가가 곧 싱글턴인 일곱
     "popover.js": "Popover",
     "preserve.js": "Preserve",
@@ -103,15 +102,12 @@ EXPECTED_ESM_EXPORTS = {
     # N-05 서비스 — 포트를 받아 중앙에서 한 번 구성되는 여덟
     "theme.js": "createTheme",
     "personalization.js": "createPersonalization",
-    "sheet_picker.js": "createSheetPicker",
     "pathtrack.js": "createPathTrack",
     "relink.js": "createRelink",
-    "editor_entry.js": "createEditorEntry",
-    # N-06 화면 넷 + 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아
-    # 중앙에서 한 번 구성되는 다섯
-    "screens/editor.js": "createEditorScreen",
+    # N-06 화면 + 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아 중앙에서
+    # 한 번 구성된다. R4-01·R4-02 가 library·editor·workbench 를 React 로 옮기며
+    # 남은 legacy 화면은 job 하나다(#416 인계).
     "screens/job.js": "createJobScreen",
-    "screens/workbench.js": "createWorkbenchScreen",
     "app.js": "createAppShell",
     # N-07 브리지 — 마지막 IIFE. 산물 ``{bridge, push}`` 를 중앙이 한 번 구성해 나눠 준다.
     "bridge.js": "createBridge",
@@ -385,7 +381,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 22
+    assert len(ESM_FILES) == 17
 
     #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
     assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
@@ -438,23 +434,14 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         # js→ts 상대 import 는 bootstrap.js 선례의 합법 방향(역방향 ts→legacy 는 0 게이트).
         "modal.js": {"./popover.js", "../src/overlay/instance.ts"},
         "surface_sheet.js": {"./modal.js"},
-        "grouplist.js": {"./esc.js", "./popover.js", "./modal.js"},
+        # R4-02 — 이동 다이얼로그·접힘 토글이 React 후계로 떠나며 esc·modal 간선도 함께 죽었다.
+        "grouplist.js": {"./popover.js"},
         "pathtrack.js": {"./esc.js"},
         "relink.js": {"./modal.js"},
-        "sheet_picker.js": {"./esc.js", "./modal.js"},
-        "editor_entry.js": {"./modal.js"},
-        "segview.js": {"./esc.js"},
         # N-06 화면 넷 — named export 서비스·잎만 import 간선으로 적는다. factory 산물
         # (EditorEntry·PathTrack 등)과 교차 화면·Nav 는 주입이라 여기 없어야 한다.
-        "screens/editor.js": {
-            "../esc.js", "../grouplist.js", "../intent.js", "../modal.js",
-            "../popover.js", "../preserve.js", "../undo_toast.js",
-        },
         "screens/job.js": {
             "../esc.js", "../modal.js", "../preserve.js", "../guard.js",
-        },
-        "screens/workbench.js": {
-            "../esc.js", "../intent.js", "../modal.js", "../preserve.js", "../segview.js",
         },
         # R3-02(#411): 집행 adapter 가 판정 정본(DEFAULT_SCREEN·IMMERSIVE_SURFACES)을 상태
         # 기계 모듈에서 읽는다 — modal.js 와 같은 js→ts 합법 방향.
@@ -469,8 +456,7 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         )
 
     #: 화면 간 직접 import 0 — 교차 간선은 합성 루트의 late-bound 콜백 테이블만 진다.
-    for name in ("screens/editor.js", "screens/job.js",
-                 "screens/workbench.js", "app.js"):
+    for name in ("screens/job.js", "app.js"):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         crossing = [p for p in module_imports(source)
                     if "screens/" in p or p.endswith("/app.js") or p == "./app.js"]
@@ -525,12 +511,18 @@ def test_esm_module_graph_has_no_cycles() -> None:
 
 
 def test_segview_imports_the_escaper_instead_of_reading_a_global() -> None:
-    """SegView→esc 는 이제 그래프에 적힌 단방향 간선이다(로드 순서 암묵 계약의 후계)."""
-    source = (SOURCE_JS_DIR / "segview.js").read_text(encoding="utf-8")
+    """세그먼트 페인터는 R4-02 에서 React 로 옮겨졌다 — 이스케이프의 소유자가 바뀌었다.
 
-    assert re.search(
-        r'(?m)^import\s+\{\s*escHtml\s*\}\s+from\s+"\./esc\.js";', source
-    ), "segview.js 가 escHtml 을 ESM import 하지 않습니다."
+    legacy 는 `escHtml` 을 ESM import 해 문자열을 조립했다(로드 순서 암묵 계약의 후계).
+    후계는 요소 트리라 이스케이프를 React 가 태운다 — 그래서 이 가드가 지키는 것은 「로컬
+    이스케이퍼를 다시 만들지 않았는가」다. 산출 동등성은 `tests/js/segview.test.js` 가 잰다.
+    """
+    source = (SOURCE_ROOT / "src" / "screens" / "segment_view.ts").read_text(encoding="utf-8")
+
+    assert "createElement" in source, "세그먼트 후계가 요소 트리를 만들지 않습니다."
+    assert "escHtml" not in source and "replace(/[&<>" not in source, (
+        "React 후계가 로컬 이스케이퍼를 다시 들였습니다 — 이스케이프는 React 소유입니다."
+    )
 
 
 def test_retired_compat_aliases_have_no_producer_and_no_reader() -> None:
@@ -636,7 +628,7 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
         if export.startswith("create")
     )
 
-    assert len(factories) == 11
+    assert len(factories) == 7
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
@@ -728,7 +720,7 @@ def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(scripts) == 22
+    assert len(scripts) == 17
     assert non_esm == ()
     assert LEGACY_JS_FILES == ()
     assert EXPECTED_LEGACY_GLOBALS == set()
@@ -876,12 +868,20 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/runtime/client.ts",  # R2-02 — 생성 유니온으로 좁혀진 전송 표면
         "src/screens/data_picker.ts",  # R4-01 — 데이터 선택·등록 React producer/controller
         "src/screens/data_zone.ts",  # R4-01 — job 데이터 표 React producer
+        "src/screens/editor.ts",  # R4-02 — 편집기 React controller/producer
+        "src/screens/editor_entry.ts",  # R4-02 — 편집기 진입/복귀 초점 seam
+        "src/screens/editor_state.ts",  # R4-02 — 전송 스냅샷↔local draft reducer
+        "src/screens/group_move_dialog.ts",  # R4-02 — 템플릿 그룹 이동 다이얼로그
         "src/screens/host.ts",  # R4-01 — 단일 root 아래 화면 portal host
         "src/screens/job_read.ts",  # R4-01 — job read surface controller/producer
         "src/screens/library.ts",  # R4-01 — 문서 작업 React surface
         "src/screens/path_actions.ts",  # R4-01 — 경로 열기 React action
         "src/screens/ports.ts",  # R4-01 — 화면 경계 typed ports
         "src/screens/runtime.ts",  # R4-01 — raw snapshot fanout/runtime model
+        "src/screens/segment_view.ts",  # R4-02 — 채움 표지 세그먼트 React 후계
+        "src/screens/sheet_picker.ts",  # R4-02 — 시트 확정 게이트 React 구현
+        "src/screens/workbench.ts",  # R4-02 — 작업대 React controller/producer
+        "src/screens/workbench_state.ts",  # R4-02 — 작업대 draft 투영
         "src/shell/host.ts",  # R3-02 — React ShellHost: 셸 리스너·부팅 시퀀스 수명주기
         "src/shell/nav.ts",  # R3-02 — 셸 상태기계(라우팅·ready·재당김 규약·닫기 직렬화 판정)
         "src/state/store.ts",  # R2-03 — 전송-충실 스냅샷 store(값 해석 0)
@@ -1086,7 +1086,9 @@ def test_the_react_subtree_holds_no_edge_into_the_legacy_graph() -> None:
     legacy_surfaces = {
         f"{name}:{needle}"
         for name, text in ts_sources.items()
-        for needle in ("scr-library", "scr-job", "scr-editor", "scr-workbench", "overlayRoot")
+        #: R4-02 — `scr-editor`·`scr-workbench` 는 이제 React portal target 이라 이 목록에서
+        #: 빠진다(붙드는 것이 아니라 **소유**한다). 남은 둘은 여전히 legacy 소유다.
+        for needle in ("scr-job", "overlayRoot")
         if needle in text
     }
     assert legacy_surfaces == set(), (

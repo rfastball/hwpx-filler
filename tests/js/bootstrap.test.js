@@ -47,7 +47,10 @@ import { readFileSync } from "node:fs";
 
 const BOOTSTRAP = "../../frontend/src/bootstrap.js";
 
-const LEAVES = ["copy.js", "esc.js", "guard.js", "segview.js"];
+/* R4-02 에서 `segview.js` 가 사라졌다 — 그 잎의 후계는 `src/screens/segment_view.ts` 이고,
+   `.ts` 잎의 전역 청결은 이 목록이 아니라 `n10_global_hygiene.test.js` 의 AST 축이 진다.
+   여기 남는 것은 **legacy `.js` 잎**의 import 부작용 부재다. */
+const LEAVES = ["copy.js", "esc.js", "guard.js"];
 
 /* 합성 루트가 **모듈 export 와 같은 객체**로 배선해야 하는 이름들. 평범한 named export 라
    동일성으로 잰다 — 여기서 사본을 만들면 프로브의 프로퍼티 교체가 우회된다. */
@@ -55,7 +58,6 @@ const PLAIN_SERVICES = {
   Copy: ["copy.js", "Copy"],
   escHtml: ["esc.js", "escHtml"],
   Guard: ["guard.js", "Guard"],
-  SegView: ["segview.js", "SegView"],
   Popover: ["popover.js", "Popover"],
   Preserve: ["preserve.js", "Preserve"],
   Intent: ["intent.js", "Intent"],
@@ -91,7 +93,9 @@ const FACTORY_SERVICES = {
     "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDestructiveIfArmed", "log",
     "openPreview", "renderResult", "markResultStale",
   ],
-  WorkbenchScreen: ["init", "render", "leaveTo"],
+  /* R4-02 — 작업대 재렌더는 React 구독이 진다. 셸이 부르는 이름만 남아 표면이 하나 좁아졌다
+     (`render` 는 legacy 명령형 렌더러의 손잡이였고 후계 소비자가 없다). */
+  WorkbenchScreen: ["init", "leaveTo"],
   Nav: ["go", "refresh"],
   AppCloseGuard: ["prompt"],
   /* 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`. selftest 프로브가
@@ -107,7 +111,9 @@ const FACTORY_SERVICES = {
 };
 
 /* selftest 에 넘기는 구성 산물 전수 = 반환 `services` 의 키 전수. R4에서 DataZone은
-   React job-read controller로 흡수됐고, 남은 이름만 명시 주입 거처를 유지한다. */
+   React job-read controller로 흡수됐고, R4-02 에서 `SegView` 가 React `SegmentView` 로
+   흡수됐다(합성 루트가 배선할 잎이 아니라 작업대 트리 안의 요소가 됐다). 남은 이름만 명시
+   주입 거처를 유지한다. */
 const SERVICE_NAMES = [
   ...Object.keys(PLAIN_SERVICES),
   ...Object.keys(FACTORY_SERVICES),
@@ -278,8 +284,8 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 26,
-    "R4 구성 산물 이름 수가 바뀌었습니다 — typed Client를 포함한 서비스는 26개입니다.");
+  assert.equal(SERVICE_NAMES.length, 25,
+    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-02 의 SegView 은퇴 뒤 서비스는 25개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {

@@ -151,11 +151,27 @@ _LITERAL_BINDING = re.compile(
 _NOT_A_NAME_SOURCE = re.compile(r"\(|\bawait\b|\bnew\b")
 #: 객체 속성 결속 — `{ cls: "editor-open" }`. sink 가 `im.cls` 로 읽는 자리의 유일한 출처.
 _PROP_BINDING = re.compile(r"\b([A-Za-z_$][\w$]*)\s*:\s*(\"[^\"]*\"|'[^']*')")
+#: **닫힌 집합 조회표** — `const ROW_STATE_CLASS: Record<string, string> = { … };`.
+#: React 표면의 관례다: Python 이 내는 닫힌 상태값을 class 로 옮길 때 보간(`` `r-${state}` ``)
+#: 대신 표를 쓴다. 보간은 이름이 코드에 남지 않아 고아 검사가 그 자리를 통째로 건너뛰고,
+#: 표는 넷을 리터럴로 남긴다. 그 표를 **이름으로 읽는** 자리(`TABLE[key]`, 그리고 그 결과를
+#: 받은 const)까지 회수해야 이 관례가 검사에 든다.
+_TABLE_BINDING = re.compile(
+    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:[^=\n]+)?\s*=\s*\{([^{}]*)\};",
+    re.S,
+)
+#: 표를 조회해 받은 결속 — `const rowClass = ROW_STATE_CLASS[…]`.
+_TABLE_LOOKUP = re.compile(
+    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\["
+)
 _BARE_IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)")
 _MEMBER_PROP = re.compile(r"\.([A-Za-z_$][\w$]*)")
+#: 조각 앞에 **온전한 이름이 먼저 올 수 있다**: `` `wb-preview wc-render f-${font || "gulimche"}` ``.
+#: legacy 는 같은 것을 이어붙이기(`"wc-render f-" + (font || "gulimche")`)로 썼고 그쪽 규칙이
+#: 잡았다 — 보간으로 옮겨오면서 접두가 백틱 바로 뒤일 것을 요구한 첫 판이 눈을 감았다.
 _TEMPLATE_FALLBACK = re.compile(
-    rf"`(?P<prefix>[A-Za-z_][\w-]*-){_HOLE}[^`{_HOLE}]*\|\|\s*"
-    rf"(?:\"(?P<double>[A-Za-z_][\w-]*)\"|'(?P<single>[A-Za-z_][\w-]*)'){_HOLE}`"
+    rf"`[^`{_HOLE}]*?(?P<prefix>[A-Za-z_][\w-]*-){_HOLE}[^`{_HOLE}]*\|\|\s*"
+    rf"(?:\"(?P<double>[A-Za-z_][\w-]*)\"|'(?P<single>[A-Za-z_][\w-]*)'){_HOLE}"
 )
 
 
@@ -328,6 +344,17 @@ def _bindings(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         got = _literal_names(literal)
         if got:
             properties.setdefault(name, set()).update(got)
+    # 닫힌 집합 조회표 — 표 이름과, 그 표를 조회해 받은 이름 둘 다 표의 리터럴을 낸다.
+    tables: dict[str, set[str]] = {}
+    for name, body in _TABLE_BINDING.findall(text):
+        got = _literal_names(body)
+        if got:
+            tables.setdefault(name, set()).update(got)
+    for name, literals in tables.items():
+        variables.setdefault(name, set()).update(literals)
+    for name, table in _TABLE_LOOKUP.findall(text):
+        if table in tables:
+            variables.setdefault(name, set()).update(tables[table])
     return variables, properties
 
 
@@ -513,7 +540,9 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
     `class="job-cand-card${active ? " active" : ""}${...}"` 인데, 보간 안의 따옴표가 속성을
     끊어 **앞의 온전한 이름까지** 못 봤다 — `.job-cand-card` 를 지워도 게이트가 초록이었다.
     `workbench.js` 의 카드 글꼴은 `"wc-render f-" + (font || "gulimche")` 로 **코드에 그대로
-    적힌** `f-gulimche` 인데, 조각 규칙이 앞뒤를 둘 다 버려 못 봤다.
+    적힌** `f-gulimche` 인데, 조각 규칙이 앞뒤를 둘 다 버려 못 봤다. R4-02 에서 그 둘의
+    거처가 `.ts` 로 옮겼고(`` `wb-preview wc-render f-${… || "gulimche"}` ``·`seg-fill`),
+    합성 형태가 이어붙이기에서 보간 꼬리로 바뀌었다 — 회수가 그 형태도 보는지가 여기 산다.
     """
     emitted = _emitted_classes()
     for name, site in (
@@ -521,13 +550,13 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
         ("active", "frontend/src/screens/job_read.ts"),          # 보간 상태 class
         ("suggested", "frontend/src/screens/job_read.ts"),
         ("col-text", "frontend/src/screens/data_zone.ts"),  # 동적 열 kind의 유한 기본값
-        ("f-gulimche", "frontend/js/screens/workbench.js"),  # 조각 합성
+        ("f-gulimche", "frontend/src/screens/workbench.ts"),  # 조각 합성(보간 꼬리)
         # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
         # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
         ("muted", "frontend/js/screens/job.js"),
         # 속성 **전체**가 변수인 자리(리뷰 R4): `const cls = ... "seg-fill"` → `class="${cls}"`.
         # 붙어 있는 이웃이 없으므로 갈래 자체가 온전한 이름이다(앞 공백을 요구하면 못 본다).
-        ("seg-fill", "frontend/js/segview.js"),
+        ("seg-fill", "frontend/src/screens/segment_view.ts"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 보간·합성 회수가 깨졌습니다."
