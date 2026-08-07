@@ -143,7 +143,7 @@ function harness(initial = "library") {
   });
   return {
     doc, stage, roots, libraryInput, libraryInner, external, navs, visibility,
-    lifecycle, events, executor,
+    lifecycle, events, executor, byId,
   };
 }
 
@@ -154,6 +154,26 @@ test("applyScreen은 visibility.activate와 셸 marker를 한 flushSync 안에�
     apply[0],
     /flushSync\s*\(\s*\(\)\s*=>\s*{[\s\S]*?visibility\.activate\(id\)[\s\S]*?applyShellMarkers/,
   );
+});
+
+test("React 첫 commit 전 기본 화면 적용은 marker를 기록하고 focus 복원만 미룬다", () => {
+  const h = harness("library");
+  for (const id of ["library", "job", "editor", "workbench"]) {
+    h.byId.delete(`scr-${id}`);
+  }
+
+  assert.doesNotThrow(() => h.executor.applyScreen("job"));
+  assert.equal(h.visibility.getSnapshot(), "job");
+  assert.equal(
+    h.navs.find((button) => button.dataset.scr === "job").getAttribute("aria-current"),
+    "true",
+  );
+});
+
+test("첫 commit 뒤 목적 화면 root 하나만 없으면 부분 트리를 시끄럽게 거절한다", () => {
+  const h = harness("library");
+  h.byId.delete("scr-job");
+  assert.throws(() => h.executor.applyScreen("job"), /활성 제품 화면 root가 없습니다: job/);
 });
 
 test("main.stage 위치는 화면별로 500 → 짧은 화면 clamp → 500 왕복한다", () => {

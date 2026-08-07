@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 
 import { IMMERSIVE_SURFACES } from "../shell/nav.ts";
 import type { ShellExecutor } from "../shell/nav.ts";
+import { PRODUCT_SCREEN_IDS } from "./product_screens.ts";
 import type { ProductScreenId, ProductScreenVisibility } from "./product_screens.ts";
 import type { ScreenLifecycleRegistry } from "./screen_lifecycle_registry.ts";
 
@@ -87,7 +88,15 @@ function restoreMemory(
   }
 
   const root = screenRoot(doc, id);
-  if (root === null) throw new Error(`활성 제품 화면 root가 없습니다: ${id}`);
+  if (root === null) {
+    /* app shell은 React root에 ShellHost를 넘기기 위해 먼저 구성되고, 그 구성 중 기본 화면을
+       한 번 적용한다. 이때 stage는 아직 첫 commit 전이라 네 root가 모두 없는 것이 정상이다.
+       visibility/셸 marker는 위에서 기록해 첫 render가 같은 판정을 읽게 하고 focus만 미룬다.
+       하나라도 mounted된 뒤 목적 root만 없으면 부분 트리이므로 계속 fail-closed한다. */
+    const beforeFirstCommit = PRODUCT_SCREEN_IDS.every((screen) => screenRoot(doc, screen) === null);
+    if (beforeFirstCommit) return;
+    throw new Error(`활성 제품 화면 root가 없습니다: ${id}`);
+  }
   const active = doc.activeElement as HTMLElement | null;
   const focusInHiddenScreen = active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== null
     && active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== undefined;
