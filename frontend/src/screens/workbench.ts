@@ -12,7 +12,7 @@
      쓴 상태다.
    - 복사는 사전확인이 본 **그 카드**의 토큰을 실어 보낸다. 그사이 작업점이 옮겨졌으면 백엔드가
      stale 로 돌려주고, 확인하지 않은 카드가 클립보드로 나가지 않는다. */
-import { createElement, useEffect, useRef, useSyncExternalStore } from "react";
+import { createElement, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -342,7 +342,7 @@ function MapRow(props: {
   const { row, snapshot, draft, controller } = props;
   const name = String(row.name);
   const valueRef = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = valueRef.current;
     if (input === null) return;
     const commitValue = (): void => {

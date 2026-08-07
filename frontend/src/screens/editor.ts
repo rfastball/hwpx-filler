@@ -13,7 +13,9 @@
    - 판정·문안·수치는 Python 이다. 표면은 그리기와 발신만 한다.
    - 브리지 왕복은 **한 줄에 선다**(`EDIT_CHAIN`). 커밋(이동·저장·이탈)은 그 줄을 먼저 정산한다.
    - 확인 전에는 draft 를 파기하지 않는다. */
-import { createElement, Fragment, useEffect, useRef, useSyncExternalStore } from "react";
+import {
+  createElement, Fragment, useEffect, useLayoutEffect, useRef, useSyncExternalStore,
+} from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -920,7 +922,7 @@ function gateHint(snapshot: Obj): string {
 function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController }): ReactNode {
   const { snapshot, draft, view, controller } = props;
   const nameRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = nameRef.current;
     if (input === null) return;
     const commitName = (): void => {
@@ -1321,7 +1323,7 @@ function MapRow(props: {
   const constField = rowField(index, "const");
   const typeField = rowField(index, "type");
   const constMode = valueOf(draft, typeField) === "const";
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = constRef.current;
     if (input === null) return;
     const commitConst = (): void => {
@@ -1510,7 +1512,7 @@ function FilenameStage(props: {
 }): ReactNode {
   const { snapshot, draft, view, controller } = props;
   const patternRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = patternRef.current;
     if (input === null) return;
     const commitPattern = (): void => {

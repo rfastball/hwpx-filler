@@ -5,6 +5,7 @@ import {
   Fragment,
   createElement,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -641,7 +642,7 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
   /* ProductScreens는 정적 stage로 portal한다. WebView2의 프로그램적 `element.blur()`는 이
      경계에서 React 합성 onBlur를 빠뜨릴 수 있으므로 서버값 정산은 실제 DOM blur가 진다.
      최신값은 ref로 읽어, 입력 중 도착한 옛 snapshot은 보존하고 포커스가 떠난 뒤만 확정한다. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const input = queryRef.current;
     if (input === null) return;
     const settleQuery = (): void => { input.value = snapshotQueryRef.current; };
