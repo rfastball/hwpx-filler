@@ -157,6 +157,12 @@ function activeId(doc) {
   return doc.activeElement && doc.activeElement.id;
 }
 
+/** 컨트롤러 명령(renderResult·markResultStale 등) 뒤의 커밋 turn. push 와 같은 이유이고
+ *  같은 비용이다 — 이 층은 명령을 동기로 받고 DOM 은 다음 turn 에 세운다. */
+async function settle(ctx) {
+  await ctx.sleep(0);
+}
+
 /* ────────────────────────── 합성 스냅샷 ────────────────────────── */
 
 /* 스냅샷은 매 실행마다 새로 짓는다. 프로브가 자기 판을 **제자리에서 변조**하며 진행하기
@@ -1120,10 +1126,11 @@ async function runJobResult(ctx) {
 
   enterSyntheticJob(services);
   const baseSnap = resultSnapshot();
-  ctx.push("job", baseSnap);
+  await pushAndSettle(ctx, "job", baseSnap);
 
   const partial = partialResult();
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   const box = doc.getElementById("jobResult");
   out.state = box.dataset.state;
   out.level = box.dataset.level;
@@ -1140,6 +1147,7 @@ async function runJobResult(ctx) {
   out.evidence_shown = !evidence.hidden;
   evidence.open = true;
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   out.evidence_open_survives_rerender = doc.getElementById("jobResultEvidence").open;
 
   /* 배치 진입 전 실패(행 0개·전량 실패) — 복구 행동이 행 목록에서 파생되면 여기서 통째로
@@ -1153,13 +1161,16 @@ async function runJobResult(ctx) {
     known: true, out_dir: "D:\out", succeeded: 0, failed: 3, failed_selectable: 3, total: 3,
     failures: [], fill_notes: [], cancelled: false, attempted: 0, unstarted: 3,
   });
+  await settle(ctx);
   out.rowless_recovery_shown = !doc.getElementById("jobResultFailedSel").hidden;
   out.rowless_recovery_label = doc.getElementById("jobResultFailedSel").textContent;
   out.rowless_no_fake_rows = doc.getElementById("jobResultFails").children.length === 0;
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
 
   /* 지문 변화 = 강등이지 파기가 아니다(판정 G) — 결과가 남고 「직전 실행」이 붙는다. */
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.stale_shown = !doc.getElementById("jobResultStale").hidden;
   out.alive_after_stale = !doc.getElementById("jobResult").hidden;
 
@@ -1167,8 +1178,9 @@ async function runJobResult(ctx) {
      결과가 살고 행동이 그대로 남아야 한다. */
   const snapR = deepCopy(baseSnap);
   snapR.job_name = "공고서(수정)"; snapR.last_run_job = "공고서(수정)";
-  ctx.push("job", snapR);
+  await pushAndSettle(ctx, "job", snapR);
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.renamed_rename_shown = !doc.getElementById("jobResultRename").hidden;
   out.renamed_failedsel_shown = !doc.getElementById("jobResultFailedSel").hidden;
   out.renamed_keeps_result = !doc.getElementById("jobResult").hidden;
@@ -1176,7 +1188,7 @@ async function runJobResult(ctx) {
   /* ② 다른 작업으로 전환(§2.18) — 존이 닫히고 실행 기록에 퇴장 한 줄이 남는다. */
   const snapB = deepCopy(snapR);
   snapB.job_name = "둘째";
-  ctx.push("job", snapB);
+  await pushAndSettle(ctx, "job", snapB);
   out.switch_resets_result = doc.getElementById("jobResult").hidden;
   out.switch_exit_line = doc.getElementById("jobRunLogLast").textContent;
 
@@ -1184,17 +1196,19 @@ async function runJobResult(ctx) {
      남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다. 증거는 남는다. */
   services.JobScreen.renderResult(partial);
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.foreign_rename_hidden = doc.getElementById("jobResultRename").hidden;
   out.foreign_failedsel_hidden = doc.getElementById("jobResultFailedSel").hidden;
   out.foreign_evidence_alive = !!doc.getElementById("jobResultFail-7");
   out.foreign_stale_names_owner = doc.getElementById("jobResultStale").textContent.indexOf("공고서") >= 0;
 
   /* ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다. */
-  ctx.push("job", baseSnap);                        // 비교군 복귀(원 작업 문맥)
+  await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(원 작업 문맥)
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   const snapSel = deepCopy(baseSnap);
   snapSel.selection_key = "0,1";
-  ctx.push("job", snapSel);
+  await pushAndSettle(ctx, "job", snapSel);
   out.selection_change_keeps_result = !doc.getElementById("jobResult").hidden;
   out.selection_change_demotes = !doc.getElementById("jobResultStale").hidden;
 
@@ -1202,12 +1216,13 @@ async function runJobResult(ctx) {
      라벨이 아니다(#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올린다. */
   const snapData = deepCopy(snapSel);
   snapData.data_mount = 2;
-  ctx.push("job", snapData);
+  await pushAndSettle(ctx, "job", snapData);
   out.data_swap_resets_result = doc.getElementById("jobResult").hidden;
   out.data_swap_exit_line = doc.getElementById("jobRunLogLast").textContent;
   out.data_swap_label_unchanged = snapData.data_source_label === "파일: d.csv";
-  ctx.push("job", baseSnap);                        // 비교군 복귀(다음 단계는 같은 작업 문맥)
+  await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(다음 단계는 같은 작업 문맥)
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
 
   /* 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 붙는가. */
   out.busy_lock_declared = ["jobResultClose", "jobResultFailedSel", "jobResultRename"].every(
@@ -1216,16 +1231,19 @@ async function runJobResult(ctx) {
   /* 진행 태에서는 저장 폴더 줄이 숨는다 — display:flex 가 UA [hidden] 을 이기는 결함
      클래스라 계산 스타일로 확인한다(속성만 보면 통과해 버린다). 두 극을 한 쌍으로 잰다. */
   services.JobScreen.renderResult({ running: true, title: "생성 중… 1/3", summary: "" });
+  await settle(ctx);
   out.folder_hidden_while_running = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) === "none";
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   out.folder_shown_on_result = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) !== "none";
 
   /* 닫기 = 유일한 명시 파기 + 포커스는 다음 행동으로 착지(계약면 3). */
   doc.getElementById("jobResultClose").click();
+  await settle(ctx);
   out.closed = doc.getElementById("jobResult").hidden;
   out.close_focus = activeId(doc);
   /* 명시 파기는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 실행 기록이 기본 문안으로
