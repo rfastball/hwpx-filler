@@ -1053,6 +1053,51 @@ def test_generate_echoes_run_token_on_every_direct_branch(tmp_path):
     assert committed["ok"] is True and committed["run_token"] == "t-3"
 
 
+def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
+    """자물쇠에 **진** 호출이 이긴 런의 이름표를 갈아치우면 안 된다.
+
+    종전에는 토큰을 자물쇠 **앞** 공유 필드에 실었다. 그래서 첫 런이 도는 중에 둘째가
+    들어오면 둘째의 거절 응답이 나가기 **전에** 공유 필드가 둘째 것으로 바뀌고, 실제로
+    도는 런의 진행 델타와 최종 응답이 남의 이름표를 달았다 — 표면은 그것을 남의 것으로
+    폐기하므로 **문서는 만들어졌는데 사용자는 「이미 생성 중」만 본다**.
+
+    자물쇠를 실제로 쥐고(첫 런을 흉내) 둘째를 부르는 것으로 그 창을 재현한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    _approve_run(ctrl)
+
+    # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표가 서 있는 상태.
+    assert ctrl._generation_lock.acquire(blocking=False)
+    ctrl._run_token = "run-first"
+    try:
+        rejected = ctrl.generate(run_token="run-second")
+    finally:
+        ctrl._generation_lock.release()
+
+    # 거절 응답은 **자기** 토큰을 단다 — 그래야 둘째를 누른 표면이 자기 거절을 알아본다.
+    assert rejected["ok"] is False and "이미" in rejected["error"]
+    assert rejected["run_token"] == "run-second"
+    # 그리고 도는 런의 이름표는 **그대로다**. 이 한 줄이 이 테스트의 이유다.
+    assert ctrl._run_token == "run-first", (
+        "진 호출이 이긴 런의 이름표를 갈아치웠습니다 — 그 런의 결과가 남의 것으로 폐기됩니다."
+    )
+
+
+def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
+    """런이 끝나면 이름표를 비운다 — 남은 이름표는 어떤 런도 안 겨눈다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    _approve_run(ctrl)
+
+    assert ctrl.generate(run_token="run-9")["ok"] is True
+    assert ctrl._run_token == ""
+
+
 def test_progress_delta_carries_the_run_token(tmp_path):
     """진행 델타는 direct 반환과 다른 채널이라 payload 안에 주인이 있어야 한다."""
     ctrl, pushes = _controller(tmp_path)

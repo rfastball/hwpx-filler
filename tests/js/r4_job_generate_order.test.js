@@ -41,7 +41,10 @@ function harness(options = {}) {
   // `generate` 를 **붙잡아 둔다**. startGenerate 는 flush 를 await 한 뒤에야 토큰을 내므로,
   // 호출 직후 동기적으로 읽으면 늘 빈 문자열이다 — 실행 **중**을 관측하려면 반환을 우리가
   // 쥐고 있어야 한다. (그 사실을 모르고 쓴 첫 판이 빈 토큰으로 초록을 낼 뻔했다.)
-  let pending = null;
+  /* 붙잡힌 발신은 **여럿일 수 있다**. 슬롯 하나로 두면 둘째 발신이 첫째를 고아로
+     만들어, 「발신이 둘 났다」를 재는 음성 대조가 이름 있는 빨강 대신 **매달림**으로
+     끝난다(실제로 그랬다 — 매달림은 정보가 0 이고 재주행 비용만 남긴다). */
+  const pending = [];
   const client = {
     invoke(method, ...args) {
       if (method !== "generate") return Promise.resolve({ ok: true, value: null });
@@ -49,7 +52,7 @@ function harness(options = {}) {
       const next = generateQueue.shift() ?? { ok: true, status: "ok" };
       const value = { run_token: args[2], ...next };
       if (!options.defer) return Promise.resolve({ ok: true, value });
-      return new Promise((resolve) => { pending = () => resolve({ ok: true, value }); });
+      return new Promise((resolve) => { pending.push(() => resolve({ ok: true, value })); });
     },
     dispatch: () => Promise.resolve({ ok: true, value: {} }),
   };
@@ -59,7 +62,9 @@ function harness(options = {}) {
   };
   const ports = {
     jobRun: port(), jobRunCoordination: port(),
-    jobData: port({ flushPendingEdits: () => Promise.resolve() }),
+    /* 커밋 관문. 기본은 즉시 통과지만 **붙잡을 수** 있어야 한다 — 진입 직렬화를 재는
+       자리는 두 클릭이 같은 창 안에 서야 하고, 그 창은 이 관문이 연다. */
+    jobData: port({ flushPendingEdits: options.flush ?? (() => Promise.resolve()) }),
     jobRelinkFlow: port({ relinkTemplateFor: () => Promise.resolve() }),
     editorEntry: port({ openGuarded: () => true }),
   };
@@ -75,7 +80,7 @@ function harness(options = {}) {
   });
   const notify = () => { for (const listener of [...subscribers]) listener(); };
   return {
-    controller, ports, tokens,
+    controller, ports, tokens: () => tokens.slice(),
     runPort: () => ports.jobRun.current(),
     pushFull(value) { full = value; notify(); },
     pushProgress(value) { progress = value; notify(); },
@@ -83,11 +88,9 @@ function harness(options = {}) {
     renotify: notify,
     token: () => controller.getRun().active?.runToken ?? "",
     /** 붙잡아 둔 generate 반환을 놓아 준다. */
-    settle() {
-      assert.ok(pending, "붙잡힌 generate 가 없다 — 대역이 실행 중을 만들지 못했다");
-      const release = pending;
-      pending = null;
-      release();
+    settleGenerate() {
+      assert.ok(pending.length, "붙잡힌 generate 가 없다 — 대역이 실행 중을 만들지 못했다");
+      for (const release of pending.splice(0)) release();
     },
   };
 }
@@ -125,7 +128,7 @@ test("같은 progress 객체의 재통지도 한 번만 반영된다", async () 
   h.pushProgress(delta);
   assert.deepEqual(h.controller.getRun().progress, delta);
 
-  h.settle();
+  h.settleGenerate();
   await h.done;
   assert.equal(h.controller.getRun().progress, null, "완주가 진행을 비운다");
 
@@ -142,7 +145,7 @@ test("새 full 은 progress 기억을 함께 리셋한다 — 다음 실행의 �
   const t1 = h.token();
   const delta = { done: 1, total: 2, run_token: t1 };
   h.pushProgress(delta);
-  h.settle();
+  h.settleGenerate();
   await h.done;
 
   assert.deepEqual(h.controller.getRun().discarded, [],
@@ -168,14 +171,14 @@ test("진행 델타는 lastFull 을 덮지 않는다", async () => {
   const h = await running({ full: base });
   h.pushProgress({ done: 2, total: 5, run_token: h.token() });
   assert.equal(h.controller.getRun().lastFull, base, "세션 사실은 full 채널만 바꾼다");
-  h.settle();
+  h.settleGenerate();
   await h.done;
 });
 
 test("옛 토큰의 델타는 버려지되 사유와 함께 진단으로 남는다", async () => {
   const h = await running();
   h.pushProgress({ done: 9, total: 9, run_token: "옛-토큰" });
-  h.settle();
+  h.settleGenerate();
   await h.done;
 
   const discarded = h.controller.getRun().discarded;
@@ -231,7 +234,7 @@ test("attach 한 콜백은 유입 순서대로 full·progress 를 받는다", as
   const token = h.token();
   h.pushFull(snap({ selection_key: "s2" }));
   h.pushProgress({ done: 1, total: 2, run_token: token });
-  h.settle();
+  h.settleGenerate();
   await done;
   assert.deepEqual(seen, ["full", "progress"], "한 pump 안에서도 full 이 먼저다");
 });
@@ -242,10 +245,59 @@ test("dispose 는 세대를 올려 앞선 실행의 응답을 한 번에 남으�
   const h = await running();
   const token = h.token();
   h.controller.dispose();
-  h.settle();
+  h.settleGenerate();
   await h.done;
 
   h.pushProgress({ done: 1, total: 2, run_token: token });
   assert.equal(h.controller.getRun().progress, null, "폐기한 화면의 응답은 남이다");
   assert.equal(h.controller.getRun().screenEpoch, 1);
+});
+
+/* ================= ⑦ 진입 직렬화 — 커밋 관문 창의 둘째 클릭 ================= */
+
+test("커밋 관문이 도는 동안 들어온 둘째 실행은 첫 런의 정체를 못 덮는다", async () => {
+  /* legacy 는 `flushPendingEdits` **뒤에** `generating` 을 세웠고 그 창에 둘째 클릭이
+     들어올 수 있었다. 토큰이 없던 때는 백엔드 자물쇠가 둘째를 거절하고 첫 런의 결과가
+     그대로 그려져 무해했다 — **귀속이 생기면서 대가가 바뀐다**: 둘째의 `beginRun` 이
+     첫 런의 `active` 를 덮어써, 실제로 만들어진 문서의 결과가 남의 것으로 폐기되고
+     화면엔 「이미 생성 중」만 남는다. */
+  /* 붙잡는 자리는 **여럿**이다. 슬롯 하나로 두면 둘째 호출이 첫째의 resolve 를 덮어써
+     첫 실행이 고아가 되고, 이 대조는 이름 있는 빨강 대신 매달림으로 끝난다(하니스에서
+     같은 실수를 하고 여기서 한 번 더 했다 — 「붙잡는 대역은 큐다」가 규칙이다). */
+  const releases = [];
+  const h = harness({
+    full: snap(), defer: true,
+    // 커밋 관문을 붙잡아 두 클릭이 같은 창 안에 서게 한다(실물에서 이 관문은 대기 중인
+    // 존 변이가 있을 때 호스트 왕복이라 실제로 열린다).
+    flush: () => new Promise((resolve) => { releases.push(resolve); }),
+  });
+  await h.controller.init();
+
+  const first = h.controller.startGenerate();
+  const second = h.controller.startGenerate();   // 창 안의 둘째 클릭
+  // 둘째가 커밋 관문에 **닿지도 않는다**는 것이 잠금의 직접 관측이다 — 잠금이 없으면 2 다.
+  assert.equal(releases.length, 1,
+    "둘째 클릭이 커밋 관문까지 갔습니다 — 진입이 직렬화되지 않았습니다");
+  for (const release of releases.splice(0)) release();
+  await tick();
+
+  assert.equal(h.tokens().length, 1, `실행 발신이 둘 났습니다: ${JSON.stringify(h.tokens())}`);
+  assert.equal(h.controller.getRun().active.runToken, h.token(),
+    "둘째가 첫 런의 정체를 덮었습니다 — 첫 런의 결과가 남의 것으로 폐기됩니다");
+  h.settleGenerate();
+  await Promise.all([first, second]);
+});
+
+test("실행이 끝나면 다시 시작할 수 있다 — 잠금은 창이지 영구 봉인이 아니다", async () => {
+  const h = await running();
+  h.settleGenerate();
+  await h.done;
+
+  // 대역이 `defer` 라 둘째 실행도 붙잡힌다 — 여기서 그냥 await 하면 테스트가 매달린다
+  // (첫 판이 실제로 그랬다). 발신이 났는지를 보고 놓아 준다.
+  const again = h.controller.startGenerate();
+  await tick();
+  assert.equal(h.tokens().length, 2, "끝난 뒤에도 못 누르면 잠금이 상태를 놓친 것이다");
+  h.settleGenerate();
+  await again;
 });

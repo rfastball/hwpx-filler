@@ -248,14 +248,25 @@ export function createJobRunController(deps: JobRunControllerDeps) {
 
   async function startGenerate(): Promise<void> {
     const s = snapshot();
-    await deps.ports.jobData.current().flushPendingEdits();
+    // 방식 판정은 **첫 await 앞**에서 끝난다 — 이미 읽은 스냅샷만 쓰므로 미룰 이유가 없고,
+    // 미루면 아래 진입 잠금이 작업대 갈래까지 잠그게 된다(그쪽은 실행이 아니다).
     const key = (s && s.run_action && s.run_action.key) || "generate";
     if (key === "workbench") {
+      await deps.ports.jobData.current().flushPendingEdits();
       const res = await dispatch("open_workbench", {});
       if (res.ok) { deps.navigation.go("workbench"); return; }
       log(String(res.error || "작업대를 열지 못했습니다."));
       return;
     }
+    /* 진입 직렬화는 **첫 await 앞**에 선다. legacy 는 커밋 관문(`flushPendingEdits`) 뒤에
+       `generating` 을 세웠고 그 창에 둘째 클릭이 들어올 수 있었다 — 토큰이 없던 때는 둘째가
+       백엔드 자물쇠에 거절당하고 첫 런의 결과가 그대로 그려져 무해했다. **귀속이 생기면서
+       그 창의 대가가 바뀐다**: 둘째의 `beginRun` 이 첫 런의 정체를 덮어써, 실제로 만들어진
+       문서의 결과가 남의 것으로 폐기되고 화면엔 「이미 생성 중」만 남는다. 문서는 생겼는데
+       사용자는 그 사실을 못 듣는 경로다.
+       커밋 관문은 사라지지 않고 `doGenerate` 첫 줄이 그대로 진다 — 발신 앞에 서는 것이
+       계약이지 잠금 앞에 서는 것이 계약은 아니다. */
+    if (run.running) return;
     const token = nextToken();
     setRun(beginRun(run, token));
     log("생성 요청");
@@ -713,7 +724,12 @@ export function JobStatusPill(props: { controller: JobRunController }): ReactNod
       text = (s.gate && s.gate.reason) === "review_required" ? "승인 필요" : "확인 필요";
     }
   }
-  return h("span", { id: "jobStatus", className: "pill", "data-level": level }, text);
+  /* 클래스는 `status` 다 — `pill` 이 아니다. 색은 `data-level` **혼자** 내지 않는다:
+     `.status[data-level="ok"|"warn"]`(base.css)이 그 결속이고, `.pill` 계열은 `.pill.ok`
+     처럼 **클래스**로 태를 받는다. `pill` + `data-level` 조합은 어느 쪽에도 안 붙어 속성만
+     살고 색이 죽는다(배경 `--n-track` 과 본문 크기도 함께 잃는다). legacy 의 `div.status`
+     를 그대로 옮긴다 — 이 자리에서 바꿀 것은 생산자뿐이고 표현이 아니다. */
+  return h("div", { id: "jobStatus", className: "status", "data-level": level }, text);
 }
 
 /** 생성 준비 캡션 — 하는 일을 따라간다(TXT 는 파일을 만들지 않는다). */

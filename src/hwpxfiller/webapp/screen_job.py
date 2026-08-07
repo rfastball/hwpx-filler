@@ -2309,16 +2309,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         단일 출구가 찍는 이유는 갈래가 늘 때 형제를 빠뜨리는 결함류를 구조로 막기 위해서다.
         생략하면 ``""`` 라 종전 호출자의 동작은 그대로다.
         """
-        # 자물쇠 앞 거절도 이 런의 것이므로 토큰을 먼저 세운다 — 진행 델타는 자물쇠 안에서만
-        # 나가지만 direct 반환은 여기서부터 난다.
-        self._run_token = run_token if isinstance(run_token, str) else ""
-        result = self._generate_with_token(confirm_overwrite=confirm_overwrite)
+        # 토큰은 **이 호출의 지역값**이다. 공유 필드에 먼저 실으면 자물쇠에 거절당할 두 번째
+        # 호출이 **이긴 런의 이름표를 갈아치운다** — 그러면 실제로 도는 런의 진행 델타와 최종
+        # 응답이 남의 토큰을 달고 나가 표면이 그것을 「남의 것」으로 폐기한다(문서는 만들어졌는데
+        # 사용자는 「이미 생성 중」만 본다). 되돌림은 이 지역값이 지고, 공유 필드는 자물쇠를
+        # 쥔 런만 세운다.
+        token = run_token if isinstance(run_token, str) else ""
+        result = self._generate_with_token(confirm_overwrite=confirm_overwrite, run_token=token)
         # 되돌림은 마지막 한 자리다. 판정에 쓰지 않으므로 값이 무엇이든 그대로 싣는다.
-        result["run_token"] = self._run_token
+        result["run_token"] = token
         return result
 
-    def _generate_with_token(self, *, confirm_overwrite: bool = False) -> dict:
-        """``generate`` 의 판정 본체 — 토큰을 모르는 채 종전 계약 그대로 돈다."""
+    def _generate_with_token(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
+        """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
         if self.range_draft is not None:
@@ -2331,10 +2334,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             }
         if not self._generation_lock.acquire(blocking=False):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
+        # 진행 델타의 이름표는 **자물쇠를 쥔 런**만 세운다(위 docstring). 놓을 때 비우는 것도
+        # 같은 이유다 — 런이 끝난 뒤 남은 이름표는 어떤 런도 겨누지 않는다.
+        self._run_token = run_token
         self._cancel_generation.clear()
         try:
             result = self._generate_locked(confirm_overwrite=confirm_overwrite)
         finally:
+            self._run_token = ""
             self._generation_lock.release()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을

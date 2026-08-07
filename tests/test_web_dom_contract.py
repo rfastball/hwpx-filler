@@ -727,6 +727,37 @@ def test_job_generation_result_renders_partial_cancellation_honestly():
     assert '.result3[data-level="warn"]' in css and '.result3[data-level="danger"]' in css
 
 
+def test_job_status_pill_binds_its_class_to_the_level_selectors():
+    """`data-level` 은 **혼자서 색을 내지 않는다** — 클래스와 짝일 때만 규칙이 붙는다.
+
+    R4-03 이 `jobStatus` 를 React 생산으로 옮기며(D20) legacy 의 `div.status` 가
+    `span.pill` 이 됐다. 속성은 그대로 실렸고 정적 계약도 실 게이트도 초록이었지만,
+    `.status[data-level="ok"]`(base.css)에도 `.pill.ok`(overlay.css)에도 안 붙어 **색이
+    죽었다**. 선언은 살고 결과가 죽는 그 형태다.
+
+    그래서 클래스 이름을 **소스에서 유도**해 그 클래스의 level 선택자가 실재하는지 묻는다
+    — 이름을 손으로 적으면 다음 개명이 같은 자리를 다시 통과한다.
+    """
+    src = react_job_run_source()
+    match = re.search(
+        r'\{\s*id:\s*"jobStatus",\s*className:\s*"([^"]+)",\s*"data-level"', src
+    )
+    assert match, (
+        "`jobStatus` 의 클래스·level 속성을 한 자리에서 못 읽었습니다 — 겨눔을 다시 세워야 합니다."
+    )
+    classes = match.group(1).split()
+    css = "".join(WEB_CSS.split())
+    # 요소가 태를 **속성으로** 받으므로 속성 선택자만 붙는다. `.pill.ok` 같은 클래스 규칙이
+    # 저장소에 있어도 이 요소에는 영영 안 붙는다 — 「규칙이 실재하는가」가 아니라 「이 요소가
+    # 받는 채널로 붙는가」를 물어야 한다(첫 판이 전자를 물어 결함을 통과시켰다).
+    for level in ("ok", "warn"):
+        bound = any(f'.{cls}[data-level="{level}"]' in css for cls in classes)
+        assert bound, (
+            f"`jobStatus` 가 {classes} 클래스로 서는데 그 클래스의 "
+            f'`[data-level="{level}"]` 규칙이 CSS 에 없습니다 — 속성만 살고 색이 죽습니다.'
+        )
+
+
 def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
     """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다.
 
