@@ -598,15 +598,15 @@ members = [
   "frontend/src/screens/job_result.ts:155",
   "frontend/src/screens/job_result.ts:76",
   "frontend/src/screens/job_run.ts:103",
-  "frontend/src/screens/job_run.ts:493",
-  "frontend/src/screens/job_run.ts:499",
-  "frontend/src/screens/job_run.ts:505",
-  "frontend/src/screens/job_run.ts:514",
-  "frontend/src/screens/job_run.ts:572",
-  "frontend/src/screens/job_run.ts:597",
-  "frontend/src/screens/job_run.ts:631",
-  "frontend/src/screens/job_run.ts:682",
-  "frontend/src/screens/job_run.ts:700",
+  "frontend/src/screens/job_run.ts:513",
+  "frontend/src/screens/job_run.ts:519",
+  "frontend/src/screens/job_run.ts:525",
+  "frontend/src/screens/job_run.ts:534",
+  "frontend/src/screens/job_run.ts:592",
+  "frontend/src/screens/job_run.ts:617",
+  "frontend/src/screens/job_run.ts:651",
+  "frontend/src/screens/job_run.ts:702",
+  "frontend/src/screens/job_run.ts:720",
   "frontend/src/screens/job_run.ts:78",
   "frontend/src/screens/job_run.ts:87",
   "frontend/src/screens/job_run_state.ts:106",
@@ -766,10 +766,10 @@ scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. JS 98 + TS attach 10(R2 runtime 1 · R3 overlay 7 · shell 2)."
 [[metric.aliases]]
-value = 12
+value = 13
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
-unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102."
+unit = "selftest 축 +5. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102. R4-03: 거절 창의 unhandledrejection 계기 1 추가(12→13) — 이 별칭은 제품 축과 달리 selftest 를 걸러내지 않는다."
 
 [[metric]]
 id = "listener-release-sites"
@@ -1280,7 +1280,7 @@ id = "dom-js-data/job-run"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:data-act", "frontend/src/screens/job_preview.ts:data-busy-lock", "frontend/src/screens/job_preview.ts:data-field", "frontend/src/screens/job_result.ts:data-busy-lock", "frontend/src/screens/job_result.ts:data-level", "frontend/src/screens/job_result.ts:data-state", "frontend/src/screens/job_run.ts:data-act", "frontend/src/screens/job_run.ts:data-busy-lock", "frontend/src/screens/job_run.ts:data-level"] }
-evidence = [{ file = "frontend/src/screens/job_run.ts", line = 534, anchor = "className: \"btn sm\", \"data-act\": \"fix-mapping\", \"data-busy-lock\": true," }]
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 554, anchor = "className: \"btn sm\", \"data-act\": \"fix-mapping\", \"data-busy-lock\": true," }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1419,7 +1419,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js/job-run"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:100:static:previewEmpty", "frontend/src/screens/job_preview.ts:105:static:previewEvidence", "frontend/src/screens/job_preview.ts:108:static:previewEvidenceCap", "frontend/src/screens/job_preview.ts:110:static:previewEvidenceReason", "frontend/src/screens/job_preview.ts:113:static:previewEvidenceRows", "frontend/src/screens/job_preview.ts:116:static:previewEvidenceNote", "frontend/src/screens/job_preview.ts:121:static:previewValuesCap", "frontend/src/screens/job_preview.ts:122:static:previewRows", "frontend/src/screens/job_preview.ts:130:static:previewFilename", "frontend/src/screens/job_preview.ts:132:static:previewFixFilename", "frontend/src/screens/job_preview.ts:138:static:previewNamePlan", "frontend/src/screens/job_preview.ts:143:static:previewEdit", "frontend/src/screens/job_preview.ts:148:static:previewApprove", "frontend/src/screens/job_preview.ts:69:static:previewTitle", "frontend/src/screens/job_preview.ts:71:static:previewClose", "frontend/src/screens/job_preview.ts:80:static:previewPrev", "frontend/src/screens/job_preview.ts:84:static:previewPos", "frontend/src/screens/job_preview.ts:86:static:previewNext", "frontend/src/screens/job_preview.ts:93:static:previewBlankOnly", "frontend/src/screens/job_result.ts:107:static:jobGenBar", "frontend/src/screens/job_result.ts:109:static:jobResult", "frontend/src/screens/job_result.ts:114:static:jobResultTitle", "frontend/src/screens/job_result.ts:119:static:jobResultFailedSel", "frontend/src/screens/job_result.ts:123:static:jobResultRename", "frontend/src/screens/job_result.ts:128:static:jobResultClose", "frontend/src/screens/job_result.ts:131:static:jobResultSummary", "frontend/src/screens/job_result.ts:134:static:jobResultStale", "frontend/src/screens/job_result.ts:141:static:jobResultDir", "frontend/src/screens/job_result.ts:143:static:jobResultTrack", "frontend/src/screens/job_result.ts:147:static:jobResultFails", "frontend/src/screens/job_result.ts:158:static:jobRunLog", "frontend/src/screens/job_result.ts:161:static:jobRunLogLast", "frontend/src/screens/job_result.ts:163:static:jobGenLog", "frontend/src/screens/job_result.ts:28:dynamic:jobResultFail-", "frontend/src/screens/job_result.ts:70:static:jobResultEvidence", "frontend/src/screens/job_result.ts:71:static:jobResultEvidenceCap", "frontend/src/screens/job_result.ts:73:static:jobResultEvidenceBody", "frontend/src/screens/job_run.ts:560:static:jobMirror", "frontend/src/screens/job_run.ts:563:static:jobMirrorLine", "frontend/src/screens/job_run.ts:564:static:jobMirrorSummary", "frontend/src/screens/job_run.ts:566:static:jobMirrorPreviewOpen", "frontend/src/screens/job_run.ts:582:static:jobOutDir", "frontend/src/screens/job_run.ts:586:static:jobBtnPickFolder", "frontend/src/screens/job_run.ts:592:static:jobOutTrack", "frontend/src/screens/job_run.ts:644:static:jobActionName", "frontend/src/screens/job_run.ts:645:static:jobActionConn", "frontend/src/screens/job_run.ts:648:static:jobActionRelink", "frontend/src/screens/job_run.ts:652:static:jobPreviewOpen", "frontend/src/screens/job_run.ts:659:static:jobReviewFlag", "frontend/src/screens/job_run.ts:663:static:jobGenBtn", "frontend/src/screens/job_run.ts:668:static:jobGenCancel", "frontend/src/screens/job_run.ts:674:static:jobGate", "frontend/src/screens/job_run.ts:696:static:jobStatus"] }
+selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:100:static:previewEmpty", "frontend/src/screens/job_preview.ts:105:static:previewEvidence", "frontend/src/screens/job_preview.ts:108:static:previewEvidenceCap", "frontend/src/screens/job_preview.ts:110:static:previewEvidenceReason", "frontend/src/screens/job_preview.ts:113:static:previewEvidenceRows", "frontend/src/screens/job_preview.ts:116:static:previewEvidenceNote", "frontend/src/screens/job_preview.ts:121:static:previewValuesCap", "frontend/src/screens/job_preview.ts:122:static:previewRows", "frontend/src/screens/job_preview.ts:130:static:previewFilename", "frontend/src/screens/job_preview.ts:132:static:previewFixFilename", "frontend/src/screens/job_preview.ts:138:static:previewNamePlan", "frontend/src/screens/job_preview.ts:143:static:previewEdit", "frontend/src/screens/job_preview.ts:148:static:previewApprove", "frontend/src/screens/job_preview.ts:69:static:previewTitle", "frontend/src/screens/job_preview.ts:71:static:previewClose", "frontend/src/screens/job_preview.ts:80:static:previewPrev", "frontend/src/screens/job_preview.ts:84:static:previewPos", "frontend/src/screens/job_preview.ts:86:static:previewNext", "frontend/src/screens/job_preview.ts:93:static:previewBlankOnly", "frontend/src/screens/job_result.ts:107:static:jobGenBar", "frontend/src/screens/job_result.ts:109:static:jobResult", "frontend/src/screens/job_result.ts:114:static:jobResultTitle", "frontend/src/screens/job_result.ts:119:static:jobResultFailedSel", "frontend/src/screens/job_result.ts:123:static:jobResultRename", "frontend/src/screens/job_result.ts:128:static:jobResultClose", "frontend/src/screens/job_result.ts:131:static:jobResultSummary", "frontend/src/screens/job_result.ts:134:static:jobResultStale", "frontend/src/screens/job_result.ts:141:static:jobResultDir", "frontend/src/screens/job_result.ts:143:static:jobResultTrack", "frontend/src/screens/job_result.ts:147:static:jobResultFails", "frontend/src/screens/job_result.ts:158:static:jobRunLog", "frontend/src/screens/job_result.ts:161:static:jobRunLogLast", "frontend/src/screens/job_result.ts:163:static:jobGenLog", "frontend/src/screens/job_result.ts:28:dynamic:jobResultFail-", "frontend/src/screens/job_result.ts:70:static:jobResultEvidence", "frontend/src/screens/job_result.ts:71:static:jobResultEvidenceCap", "frontend/src/screens/job_result.ts:73:static:jobResultEvidenceBody", "frontend/src/screens/job_run.ts:580:static:jobMirror", "frontend/src/screens/job_run.ts:583:static:jobMirrorLine", "frontend/src/screens/job_run.ts:584:static:jobMirrorSummary", "frontend/src/screens/job_run.ts:586:static:jobMirrorPreviewOpen", "frontend/src/screens/job_run.ts:602:static:jobOutDir", "frontend/src/screens/job_run.ts:606:static:jobBtnPickFolder", "frontend/src/screens/job_run.ts:612:static:jobOutTrack", "frontend/src/screens/job_run.ts:664:static:jobActionName", "frontend/src/screens/job_run.ts:665:static:jobActionConn", "frontend/src/screens/job_run.ts:668:static:jobActionRelink", "frontend/src/screens/job_run.ts:672:static:jobPreviewOpen", "frontend/src/screens/job_run.ts:679:static:jobReviewFlag", "frontend/src/screens/job_run.ts:683:static:jobGenBtn", "frontend/src/screens/job_run.ts:688:static:jobGenCancel", "frontend/src/screens/job_run.ts:694:static:jobGate", "frontend/src/screens/job_run.ts:716:static:jobStatus"] }
 evidence = [{ file = "frontend/src/screens/job_result.ts", line = 28, anchor = "return h(\"div\", { className: \"result3-fail\", id: `jobResultFail-${String(f.index)}` }," }]
 classification = "react"
 handoff_slice = "R4-03 #416"
@@ -1449,7 +1449,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/job/run-result"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/screens/job_result.ts:84 pct", "frontend/src/screens/job_run.ts:131 run", "frontend/src/screens/job_run.ts:132 ui", "frontend/src/screens/job_run.ts:134 attached", "frontend/src/screens/job_run.ts:135 releaseModel", "frontend/src/screens/job_run.ts:136 lastFullSeen", "frontend/src/screens/job_run.ts:137 lastProgressSeen", "frontend/src/screens/job_run.ts:281 previewTrigger", "frontend/src/screens/job_run.ts:528 banner", "frontend/src/screens/job_run.ts:684 level", "frontend/src/screens/job_run.ts:685 text", "frontend/src/screens/job_run_state.ts:88 serial"] }
+selector = { kind = "exact", members = ["frontend/src/screens/job_result.ts:84 pct", "frontend/src/screens/job_run.ts:131 run", "frontend/src/screens/job_run.ts:132 ui", "frontend/src/screens/job_run.ts:134 attached", "frontend/src/screens/job_run.ts:135 releaseModel", "frontend/src/screens/job_run.ts:136 lastFullSeen", "frontend/src/screens/job_run.ts:137 lastProgressSeen", "frontend/src/screens/job_run.ts:296 previewTrigger", "frontend/src/screens/job_run.ts:548 banner", "frontend/src/screens/job_run.ts:704 level", "frontend/src/screens/job_run.ts:705 text", "frontend/src/screens/job_run_state.ts:88 serial"] }
 evidence = [{ file = "frontend/src/screens/job_run.ts", line = 131, anchor = "let run: JobRunState = initialRunState();" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
@@ -1659,8 +1659,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/job-run"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/screens/job_run.ts:461"] }
-evidence = [{ file = "frontend/src/screens/job_run.ts", line = 461, anchor = "releaseModel = model.subscribe(pump);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_run.ts:481"] }
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 481, anchor = "releaseModel = model.subscribe(pump);" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2044,7 +2044,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r4-03"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:57", "frontend/src/screens/job_result.ts:155", "frontend/src/screens/job_result.ts:76", "frontend/src/screens/job_run.ts:103", "frontend/src/screens/job_run.ts:127", "frontend/src/screens/job_run.ts:493", "frontend/src/screens/job_run.ts:499", "frontend/src/screens/job_run.ts:505", "frontend/src/screens/job_run.ts:514", "frontend/src/screens/job_run.ts:572", "frontend/src/screens/job_run.ts:597", "frontend/src/screens/job_run.ts:631", "frontend/src/screens/job_run.ts:682", "frontend/src/screens/job_run.ts:700", "frontend/src/screens/job_run.ts:78", "frontend/src/screens/job_run.ts:87", "frontend/src/screens/job_run_state.ts:106", "frontend/src/screens/job_run_state.ts:126", "frontend/src/screens/job_run_state.ts:141", "frontend/src/screens/job_run_state.ts:164", "frontend/src/screens/job_run_state.ts:182", "frontend/src/screens/job_run_state.ts:193", "frontend/src/screens/job_run_state.ts:210", "frontend/src/screens/job_run_state.ts:215", "frontend/src/screens/job_run_state.ts:223", "frontend/src/screens/job_run_state.ts:57", "frontend/src/screens/job_run_state.ts:68", "frontend/src/screens/job_run_state.ts:87"] }
+selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:57", "frontend/src/screens/job_result.ts:155", "frontend/src/screens/job_result.ts:76", "frontend/src/screens/job_run.ts:103", "frontend/src/screens/job_run.ts:127", "frontend/src/screens/job_run.ts:513", "frontend/src/screens/job_run.ts:519", "frontend/src/screens/job_run.ts:525", "frontend/src/screens/job_run.ts:534", "frontend/src/screens/job_run.ts:592", "frontend/src/screens/job_run.ts:617", "frontend/src/screens/job_run.ts:651", "frontend/src/screens/job_run.ts:702", "frontend/src/screens/job_run.ts:720", "frontend/src/screens/job_run.ts:78", "frontend/src/screens/job_run.ts:87", "frontend/src/screens/job_run_state.ts:106", "frontend/src/screens/job_run_state.ts:126", "frontend/src/screens/job_run_state.ts:141", "frontend/src/screens/job_run_state.ts:164", "frontend/src/screens/job_run_state.ts:182", "frontend/src/screens/job_run_state.ts:193", "frontend/src/screens/job_run_state.ts:210", "frontend/src/screens/job_run_state.ts:215", "frontend/src/screens/job_run_state.ts:223", "frontend/src/screens/job_run_state.ts:57", "frontend/src/screens/job_run_state.ts:68", "frontend/src/screens/job_run_state.ts:87"] }
 evidence = [{ file = "frontend/src/screens/job_run.ts", line = 127, anchor = "export function createJobRunController(deps: JobRunControllerDeps) {" }]
 classification = "react"
 handoff_slice = "R4-03 #416"

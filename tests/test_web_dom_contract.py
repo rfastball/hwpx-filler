@@ -1014,8 +1014,17 @@ def test_job_completion_zone_reset_gated_by_session_change():
     assert "resultExitLine(before.result," in ingest, (
         "퇴장 한 줄이 그 결과를 인자로 받지 않습니다 — 순수 합성기 계약(네 태 되읽기)."
     )
-    assert ingest.index("setRun(next);") < ingest.index("resultExitLine("), (
-        "퇴장 한 줄이 리셋 전에 적혀 함께 지워집니다."
+    # 재는 것은 **합성 위치가 아니라 기록 쓰기 위치**다. 합성은 `before` 사본에서 하므로
+    # 언제 해도 같은 값이고, 리셋에 지워지는 것은 쓰기다 — 합성 위치를 대용으로 쓰면 순서를
+    # 안 어긴 재배치가 빨갛고, 정작 쓰기가 앞서는 진짜 결함은 통과할 수 있다.
+    assert "setRun(next);" in ingest, "스냅샷 유입이 상태를 세우지 않습니다."
+    clear = "ui = { log: [], logOpen: false };"
+    assert clear in ingest, (
+        "초기화가 실행 기록을 비우지 않습니다 — 죽은 세션의 줄이 다음 세션 밑에 쌓여 "
+        "「이어지는 한 실행」으로 읽힙니다(legacy `resetGenResult` 동등성)."
+    )
+    assert ingest.index(clear) < ingest.index("log(line)"), (
+        "퇴장 한 줄이 기록을 비우기 전에 적혀 함께 지워집니다."
     )
     assert 'disposal.kind === "reset"' in ingest, (
         "퇴장 한 줄이 초기화 갈래에서만 나지 않습니다 — 강등에도 나면 그 줄이 거짓말이 됩니다."
