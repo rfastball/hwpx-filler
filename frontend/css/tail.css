@@ -67,11 +67,13 @@
    높이를 받으면 캡을 서로 맞춰 둘 필요 없이 끝단이 구조적으로 일치한다(수치 동기화 → 구조).
    min-height 는 스크롤이 의미를 갖는 최소치 — 그 아래로는 본체가 스크롤한다. */
 #wbMapPanel{flex:1;min-height:120px;overflow:auto}
-/* 결과 → 규칙 겨눔(계약 §11) — 카드 조각을 누르면 소유 행이 선다. 강조는 **포커스 파생**이라
-   JS 가 드는 상태가 없다: 포커스가 행에 있으면 서고 떠나면 사라진다(무효화할 것이 없다).
-   프로그램 포커스(tabindex=-1)는 :focus-visible 을 켜지 않으므로 표지는 여기서 낸다. */
-#wbMapPanel tbody tr:focus{outline:none;background:var(--fb-fill-bg)}
-#wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 var(--a-primary)}
+/* 결과 → 규칙 겨눔(계약 §11) — 카드 조각을 누르면 소유 행이 선다. 강조는 **포커스 파생**이다:
+   WebView2의 table-row :focus 계산 편차를 피해 성공한 focus 수명만 .wb-aimed로 거울한다.
+   별 앱 상태는 없고 blur와 함께 사라진다. 프로그램 포커스(tabindex=-1)는 :focus-visible을
+   켜지 않으므로 표지는 여기서 낸다. */
+#wbMapPanel tbody tr:focus,#wbMapPanel tbody tr.wb-aimed{outline:none;background:var(--fb-fill-bg)}
+#wbMapPanel tbody tr:focus>td:first-child,#wbMapPanel tbody tr.wb-aimed>td:first-child{
+  box-shadow:inset 3px 0 0 var(--a-primary)}
 .wb-toolbar{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
 /* 큐 색인은 「기안」 점 표시와 같은 판을 쓴다(.wc-dots/.wc-dot 재사용). */
 .wb-dots{display:flex;flex-wrap:wrap;gap:var(--sp-2)}

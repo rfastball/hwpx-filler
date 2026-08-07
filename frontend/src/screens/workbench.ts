@@ -12,7 +12,7 @@
      쓴 상태다.
    - 복사는 사전확인이 본 **그 카드**의 토큰을 실어 보낸다. 그사이 작업점이 옮겨졌으면 백엔드가
      stale 로 돌려주고, 확인하지 않은 카드가 클립보드로 나가지 않는다. */
-import { createElement, useEffect, useSyncExternalStore } from "react";
+import { createElement, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -236,6 +236,12 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
       : null;
     if (row === null) return;                  // 소유 행 없는 토큰 — 겨눌 곳이 없다
     try { row.focus({ preventScroll: true }); } catch { row.focus(); }
+    /* WebView2는 focus된 table row를 activeElement로 되읽으면서도 `tr:focus`의 셀 shadow를
+       계산하지 않는 경우가 있다. 표지는 별 상태가 아니라 성공한 focus 수명에만 붙는 class다. */
+    if (deps.doc.activeElement === row) {
+      row.classList.add("wb-aimed");
+      row.addEventListener("blur", () => row.classList.remove("wb-aimed"), { once: true });
+    }
     row.scrollIntoView({ block: "nearest" });
   }
 
@@ -335,6 +341,17 @@ function MapRow(props: {
 }): ReactNode {
   const { row, snapshot, draft, controller } = props;
   const name = String(row.name);
+  const valueRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const input = valueRef.current;
+    if (input === null) return;
+    const commitValue = (): void => {
+      controller.focus(mapField(name, "value"), false);
+      controller.commitValue(name);
+    };
+    input.addEventListener("blur", commitValue);
+    return () => input.removeEventListener("blur", commitValue);
+  }, [controller, name, !!row.blank_declared]);
   const key = encodeURIComponent(name);
   const sourceValue = valueOf(draft, mapField(name, "source"));
   const columns = ((snapshot.source_fields || []) as string[]).slice();
@@ -393,11 +410,11 @@ function MapRow(props: {
       /* 계산을 prop 자리에서 하면 class sink 회수가 첫 쉼표에서 잘려 이름을 못 읽는다 —
          값은 위에서 뽑고 여기엔 리터럴 둘만 남긴다. */
       className: `mapval-in${valueEmpty ? " empty" : ""}`,
+      ref: valueRef,
       rows: 1, id: `wbMap-val-${key}`, "data-name": name, placeholder: "직접 입력",
       "aria-label": `${name} 값`, value: valueOf(draft, mapField(name, "value")),
       onChange: (event: Obj) => controller.type(mapField(name, "value"), String(event.currentTarget.value)),
       onFocus: () => controller.focus(mapField(name, "value"), true),
-      onBlur: () => { controller.focus(mapField(name, "value"), false); controller.commitValue(name); },
       onCompositionStart: () => controller.compose(mapField(name, "value"), true),
       onCompositionEnd: () => controller.compose(mapField(name, "value"), false),
     })),

@@ -13,7 +13,7 @@
    - 판정·문안·수치는 Python 이다. 표면은 그리기와 발신만 한다.
    - 브리지 왕복은 **한 줄에 선다**(`EDIT_CHAIN`). 커밋(이동·저장·이탈)은 그 줄을 먼저 정산한다.
    - 확인 전에는 draft 를 파기하지 않는다. */
-import { createElement, Fragment, useEffect, useSyncExternalStore } from "react";
+import { createElement, Fragment, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -919,6 +919,17 @@ function gateHint(snapshot: Obj): string {
 
 function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController }): ReactNode {
   const { snapshot, draft, view, controller } = props;
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const input = nameRef.current;
+    if (input === null) return;
+    const commitName = (): void => {
+      controller.focus(NAME_FIELD, false);
+      controller.commitField(NAME_FIELD);
+    };
+    input.addEventListener("blur", commitName);
+    return () => input.removeEventListener("blur", commitName);
+  }, [controller]);
   const revisions = snapshot.revisions || {};
   const dirty = !!snapshot.dirty;
   const level = snapshot.is_draft ? "idle" : (dirty ? "warn" : "idle");
@@ -932,12 +943,12 @@ function EditorHead(props: { snapshot: Obj; draft: DraftState; view: ViewState; 
       h("h1", { id: "editorTitle" },
         h("input", {
           className: "field title-input", id: "editorName", type: "text", "data-act": "name",
+          ref: nameRef,
           placeholder: "작업 이름을 입력하세요", "aria-label": "작업 이름",
           value: valueOf(draft, NAME_FIELD),
           "aria-invalid": view.invalidField === NAME_FIELD ? "true" : undefined,
           onChange: (event: Obj) => controller.type(NAME_FIELD, String(event.currentTarget.value)),
           onFocus: () => controller.focus(NAME_FIELD, true),
-          onBlur: () => { controller.focus(NAME_FIELD, false); controller.commitField(NAME_FIELD); },
           onCompositionStart: () => controller.compose(NAME_FIELD, true),
           onCompositionEnd: () => controller.compose(NAME_FIELD, false),
         })),
@@ -1306,6 +1317,20 @@ function MapRow(props: {
 }): ReactNode {
   const { row, snapshot, draft, controller } = props;
   const index = Number(row.index);
+  const constRef = useRef<HTMLInputElement | null>(null);
+  const constField = rowField(index, "const");
+  const typeField = rowField(index, "type");
+  const constMode = valueOf(draft, typeField) === "const";
+  useEffect(() => {
+    const input = constRef.current;
+    if (input === null) return;
+    const commitConst = (): void => {
+      controller.focus(constField, false);
+      controller.commitRowOnBlur(index, "const");
+    };
+    input.addEventListener("blur", commitConst);
+    return () => input.removeEventListener("blur", commitConst);
+  }, [controller, constField, constMode, index]);
   const candidates = (snapshot.active_source_fields || snapshot.source_fields || []) as string[];
   const sourceValue = valueOf(draft, rowField(index, "source"));
   const known = candidates.includes(sourceValue);
@@ -1362,13 +1387,10 @@ function MapRow(props: {
       " ",
       typeValue === "const" ? h("input", {
         className: "sel", "data-act": "row-const", "data-index": index, placeholder: "고정값",
+        ref: constRef,
         value: valueOf(draft, rowField(index, "const")),
         onChange: (event: Obj) => controller.type(rowField(index, "const"), String(event.currentTarget.value)),
         onFocus: () => controller.focus(rowField(index, "const"), true),
-        onBlur: () => {
-          controller.focus(rowField(index, "const"), false);
-          controller.commitRowOnBlur(index, "const");
-        },
         onCompositionStart: () => controller.compose(rowField(index, "const"), true),
         onCompositionEnd: () => controller.compose(rowField(index, "const"), false),
       }) : null),
@@ -1487,6 +1509,17 @@ function FilenameStage(props: {
   snapshot: Obj; draft: DraftState; view: ViewState; controller: EditorController;
 }): ReactNode {
   const { snapshot, draft, view, controller } = props;
+  const patternRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const input = patternRef.current;
+    if (input === null) return;
+    const commitPattern = (): void => {
+      controller.focus(PATTERN_FIELD, false);
+      controller.commitField(PATTERN_FIELD);
+    };
+    input.addEventListener("blur", commitPattern);
+    return () => input.removeEventListener("blur", commitPattern);
+  }, [controller]);
   const rows = ((snapshot.rows || []) as Obj[]).filter((row) => row.has_content);
   const tokens: ReactNode[] = [];
   rows.forEach((row, index) => {
@@ -1503,10 +1536,10 @@ function FilenameStage(props: {
       h("span", { className: "lbl lbl-fixed" }, "파일명 패턴"),
       h("input", {
         className: "field mono", "data-act": "pattern", value: valueOf(draft, PATTERN_FIELD),
+        ref: patternRef,
         "aria-invalid": view.invalidField === PATTERN_FIELD ? "true" : undefined,
         onChange: (event: Obj) => controller.type(PATTERN_FIELD, String(event.currentTarget.value)),
         onFocus: () => controller.focus(PATTERN_FIELD, true),
-        onBlur: () => { controller.focus(PATTERN_FIELD, false); controller.commitField(PATTERN_FIELD); },
         onCompositionStart: () => controller.compose(PATTERN_FIELD, true),
         onCompositionEnd: () => controller.compose(PATTERN_FIELD, false),
       })),
