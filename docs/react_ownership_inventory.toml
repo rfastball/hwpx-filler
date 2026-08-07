@@ -58,7 +58,7 @@ axes = ["lifecycle_hook", "subscription_listener"]
 reason = "R2 typed runtime의 pywebviewready 부착은 리스너 사이트이자 ready 수명주기 훅이다."
 
 [[cross_axis_overlap]]
-member = "frontend/src/shell/host.ts:77"
+member = "frontend/src/shell/host.ts:74"
 axes = ["lifecycle_hook", "subscription_listener"]
 reason = "R3 ShellHost의 pywebviewready 부착은 리스너 사이트이자 셸 부팅 수명주기 훅이다."
 
@@ -345,9 +345,9 @@ scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/
 unit = "비-export 최상위 함수 body 최상위의 let/var 선언자 1개 = 1. 값 축과 **같은 범위**를 본다."
 current = 15
 members = [
-  "frontend/js/modal.js:74 closeTimer",
-  "frontend/js/modal.js:75 card",
-  "frontend/js/modal.js:76 onTransitionEnd",
+  "frontend/src/overlay/modal.js:73 closeTimer",
+  "frontend/src/overlay/modal.js:74 card",
+  "frontend/src/overlay/modal.js:75 onTransitionEnd",
   "frontend/js/popover.js:33 registered",
   "frontend/js/popover.js:68 closed",
   "frontend/js/preserve.js:24 act",
@@ -357,15 +357,15 @@ members = [
   "frontend/js/preserve.js:26 selStart",
   "frontend/js/preserve.js:34 scrolls",
   "frontend/js/preserve.js:35 marked",
-  "frontend/src/screens/editor.ts:1219 gate",
-  "frontend/src/screens/editor.ts:1501 display",
+  "frontend/src/screens/editor.ts:1215 gate",
+  "frontend/src/screens/editor.ts:1497 display",
   "frontend/src/screens/library.ts:378 content",
 ]
 judgment = """
 열다섯 전부 **다회 호출** 함수의 지역으로 판정한다 — around 는 렌더마다, toggleGroup·
 createMoveDialog 는 조작마다, legacyExecutor 의 셋(closeTimer·card·onTransitionEnd)은
 모달 개폐마다, register·onDocumentPointerDown 은 등록·제스처마다 돈다(R3-01 재고정:
-modal.js:157 found 는 close 판정이 엔진으로 이양되며 사라졌다). 새 항목이 생기면
+구 modal.js의 found 는 close 판정이 엔진으로 이양되며 사라졌다). 새 항목이 생기면
 게이트가 붉히고 사람이 판정한다. 굳는 것은 오늘의 열다섯뿐이다.
 """
 
@@ -508,15 +508,13 @@ probe = { kind = "regex", pattern = "^export const |^export async function |^exp
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "세 형태 중 하나의 export 선언 1건 = 1."
-current = 34
+current = 32
 members = [
   "frontend/js/copy.js:5",
   "frontend/js/guard.js:16",
   "frontend/js/intent.js:110",
-  "frontend/js/modal.js:253",
   "frontend/js/popover.js:160",
   "frontend/js/preserve.js:59",
-  "frontend/js/surface_sheet.js:82",
   "frontend/js/undo_toast.js:24",
   "frontend/src/contract/contract.gen.ts:10",
   "frontend/src/contract/contract.gen.ts:12",
@@ -528,7 +526,7 @@ members = [
   "frontend/src/contract/contract.gen.ts:55",
   "frontend/src/contract/contract.gen.ts:57",
   "frontend/src/contract/contract.gen.ts:60",
-  "frontend/src/overlay/instance.ts:23",
+  "frontend/src/overlay/instance.ts:21",
   "frontend/src/product_api.js:41",
   "frontend/src/react/boot.ts:18",
   "frontend/src/react/boot.ts:23",
@@ -545,7 +543,7 @@ members = [
   "frontend/src/shell/nav.ts:59",
   "frontend/src/state/store.ts:45",
 ]
-judgment = "legacy namespace와 생성 계약·React 상태/화면 상수 34건. 구성 함수와 다른 절취선을 별도 크기로 고정한다."
+judgment = "legacy namespace와 생성 계약·React 상태/화면 상수 32건. modal·surface sheet는 R5-01에서 명시 factory가 됐다."
 [axes.lifecycle_factory.false_positive]
 description = """
 이 술어가 **잘못 보는** 방향 — `export function` 이지만 「구성 1회 팩토리」가 아닌 것.
@@ -560,19 +558,19 @@ unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
 current = 80
 members = [
   "frontend/js/esc.js:10",
-  "frontend/src/bootstrap.js:121",
+  "frontend/src/bootstrap.js:120",
   "frontend/src/screens/context_menu.ts:76",
-  "frontend/src/overlay/host.ts:491",
-  "frontend/src/overlay/instance.ts:110",
-  "frontend/src/overlay/instance.ts:121",
+  "frontend/src/overlay/host.ts:516",
+  "frontend/src/overlay/instance.ts:108",
+  "frontend/src/overlay/instance.ts:119",
   "frontend/src/react/boot.ts:49",
   "frontend/src/react/use_screen_snapshot.ts:26",
   "frontend/src/react/use_screen_snapshot.ts:37",
   "frontend/src/screens/data_picker.ts:360",
   "frontend/src/screens/data_picker.ts:403",
   "frontend/src/screens/data_zone.ts:123",
-  "frontend/src/screens/editor.ts:1602",
-  "frontend/src/screens/editor.ts:1645",
+  "frontend/src/screens/editor.ts:1598",
+  "frontend/src/screens/editor.ts:1641",
   "frontend/src/screens/editor_state.ts:119",
   "frontend/src/screens/editor_state.ts:132",
   "frontend/src/screens/editor_state.ts:139",
@@ -637,8 +635,8 @@ members = [
   "frontend/src/screens/workbench_state.ts:38",
   "frontend/src/screens/workbench_state.ts:42",
   "frontend/src/screens/workbench_state.ts:48",
-  "frontend/src/shell/host.ts:66",
-  "frontend/src/shell/host.ts:89",
+  "frontend/src/shell/host.ts:63",
+  "frontend/src/shell/host.ts:86",
 ]
 judgment = "create*가 아닌 export function 80건은 합성 루트·잎·component·attach/bind/query API다. 정확한 이름을 오검 데이터로 든다."
 
@@ -659,19 +657,17 @@ probe = { kind = "regex", pattern = "\\.leaveTo\\b", flavor = "python-re", granu
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`.leaveTo` 참조 1건 = 1."
-current = 9
+current = 7
 members = [
-  "frontend/src/bootstrap.js:269",
   "frontend/src/bootstrap.js:274",
-  "frontend/src/bootstrap.js:300",
-  "frontend/src/bootstrap.js:304",
-  "frontend/src/screens/editor.ts:1622",
-  "frontend/src/screens/editor.ts:985",
+  "frontend/src/bootstrap.js:278",
+  "frontend/src/screens/editor.ts:1618",
+  "frontend/src/screens/editor.ts:981",
   "frontend/src/screens/screen_lifecycle_registry.ts:50",
   "frontend/src/screens/workbench.ts:443",
   "frontend/src/screens/workbench.ts:465",
 ]
-judgment = "bootstrap의 owner 등록·위임, 편집기/작업대 leaveTo 참조, lifecycle registry 위임 9건이다."
+judgment = "bootstrap의 owner 등록, 편집기/작업대 leaveTo 참조, lifecycle registry 위임 7건이다. R5-01에서 임시 Screen 파사드의 위임 참조 2건을 삭제했다."
 
 # ── 계측 항목 ────────────────────────────────────────────────────────────
 # 술어 3종은 예외 없이 필수다. `derived` 도 predicate.kind 의 한 값이므로 면제가 아니다.
@@ -723,16 +719,16 @@ note = "R3-99 F1 통제 변이 710459c(cleanup 없는 window listener)를 0 기�
 
 [[metric]]
 id = "mutable-module-state"
-value = 75
+value = 67
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. 제품 JS/TS의 모듈·구성 함수 최상위 가변 선언을 같은 감산형 분모에서 센다."
 [[metric.aliases]]
-value = 2
+value = 1
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js"]
-unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
+unit = "frontend/js 만. R5-01 뒤 legacy JS의 모듈 가변 상태는 popover 한 건뿐이다."
 [[metric.aliases]]
 value = 0
 status = "narrower-scope"
@@ -740,15 +736,15 @@ predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
 scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
 unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
 [[metric.aliases]]
-value = 11
+value = 7
 status = "wrong"
 predicate = { kind = "extractor", name = "js_module_state_convention" }
 scope = ["frontend/js/**/*.js"]
-unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거짓양성·거짓음성이 상쇄 없이 겹쳐 52 대 참값 39 — 관례 술어를 계약 밖에 재사용하면 안 되는 이유가 이 간극이다(R3-02 재고정: app.js 상태 2 이양으로 54→52·41→39, 간극 13 유지)."
+unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 오답 값 7. 참값은 모듈 상태 한 건이라 관례 술어를 계약 밖에 재사용하면 안 된다."
 
 [[metric]]
 id = "push-subscription-sites"
-value = 7
+value = 6
 predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(|\\.subscribe\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/src/bootstrap.js", "frontend/src/screens/*.ts"]
 unit = "코드 등록 사이트 1개 = 1. 축과 같은 술어·scope 를 쓴다(R4-02 에서 함께 이사했다)."
@@ -764,13 +760,13 @@ legacy 축 술어를 legacy 트리에 그대로 적용한 값. **1 은 bridge.js
 
 [[metric]]
 id = "listener-attach-sites"
-value = 19
+value = 17
 predicate = { kind = "derived", axis = "subscription_listener" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
-unit = "노드 폐포의 원소 수. 제품 JS/TS의 실 addEventListener 호출 19건."
+unit = "노드 폐포의 원소 수. 제품 JS/TS의 실 addEventListener 호출 17건. R5-01이 legacy 셸 부착 5건을 서술형 attachment로 합치고 동적 splitter 3건만 남겼다."
 [[metric.aliases]]
-value = 12
+value = 7
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
 unit = "selftest 축 +5. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102. R4-03: 거절 창의 unhandledrejection 계기 1 추가(12→13) — 이 별칭은 제품 축과 달리 selftest 를 걸러내지 않는다."
@@ -844,41 +840,41 @@ unit = "화면 1개 = 1. 노드 축은 이쪽이다."
 
 [[metric]]
 id = "window-pywebview-references"
-value = 32
+value = 30
 predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/js/**/*.js"]
 unit = "출현 1건 = 1."
-note = "app.js:82 와 editor.js:1508 은 bridge.js 의 hostReady() 술어가 있는데도 존재 판정을 직접 한다 — 오늘의 실재 규율 이탈 2건이고 R2 typed client 게이트를 물릴 천연 재료다."
+note = "R5-01에서 app.js를 삭제해 legacy JS 범위의 직접 존재 판정 2건이 줄었다."
 [[metric.aliases]]
-value = 30
+value = 28
 predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-matching-line" }
 scope = ["frontend/js/**/*.js"]
 unit = "**줄** 1개 = 1. `grep -rn … | wc -l` 이 내는 값이고 출현 34와 다르다 — unit 이 없으면 같은 술어가 두 값을 낸다."
 [[metric.aliases]]
-value = 34
+value = 32
 predicate = { kind = "regex", pattern = "window\\.pywebview", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*.js"]
 unit = "selftest 축 포함."
 
 [[metric]]
 id = "pywebview-api-references"
-value = 35
+value = 32
 predicate = { kind = "regex", pattern = "pywebview\\.api", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/js/**/*.js"]
 unit = "출현 1건 = 1. 제품 코드에서 `.api` 를 직접 조회하는 파일은 bridge.js 하나이고 나머지 3은 주석이다."
 [[metric.aliases]]
-value = 41
+value = 38
 predicate = { kind = "regex", pattern = "pywebview\\.api", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*.js"]
 unit = "selftest 축 포함."
 
 [[metric]]
 id = "export-function-declarations"
-value = 114
+value = 116
 predicate = { kind = "derived", axis = "lifecycle_factory" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
-unit = "노드 폐포의 원소 수. 제품 JS/TS의 최상위 export function 선언 114건."
+unit = "노드 폐포의 원소 수. 제품 JS/TS의 최상위 export function 선언 116건."
 
 # ── 판정 요구 항목 ───────────────────────────────────────────────────────
 [[metric]]
@@ -910,8 +906,8 @@ unit = "제품 합성 루트의 ShellExecutor 결속 호출 1건 = 1."
 [[metric.aliases]]
 value = 0
 predicate = { kind = "regex", pattern = "shellNav\\.bindExecutor\\s*\\(", flavor = "python-re", granularity = "per-line" }
-scope = ["frontend/js/app.js"]
-unit = "legacy app shell이 executor를 재결속하는 호출 1건 = 1; 완료 기준은 0."
+scope = ["frontend/src/shell/app.ts"]
+unit = "React app shell이 executor를 다시 결속하는 호출 1건 = 1; 완료 기준은 0."
 
 [[metric.aliases]]
 value = 1
@@ -1068,8 +1064,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/scr-editor"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1636:static:tplRowMenu"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 1636, anchor = "id: \"tplRowMenu\"," }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1632:static:tplRowMenu"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 1632, anchor = "id: \"tplRowMenu\"," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1078,8 +1074,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/scr-workbench"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:974:static:editorContext", "frontend/src/screens/editor.ts:981:static:editorContext"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 974, anchor = "return h(\"section\", { className: \"note ctxbanner\", id: \"editorContext\", style: { display: \"none\" } });" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:970:static:editorContext", "frontend/src/screens/editor.ts:977:static:editorContext"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 970, anchor = "return h(\"section\", { className: \"note ctxbanner\", id: \"editorContext\", style: { display: \"none\" } });" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1318,8 +1314,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js-data/personalization"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = ["frontend/js/personalization.js:data-font-scale"] }
-evidence = [{ file = "frontend/js/personalization.js", line = 18, anchor = "root.setAttribute(\"data-font-scale\", scale);" }]
+selector = { kind = "exact", members = ["frontend/src/shell/preferences.ts:data-font-scale"] }
+evidence = [{ file = "frontend/src/shell/preferences.ts", line = 79, anchor = "document.documentElement.setAttribute(\"data-font-scale\", scale);" }]
 classification = "react"
 handoff_slice = "R5-01 #419"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1339,7 +1335,7 @@ id = "dom-js-data/editor"
 kind = "dom"
 axis = "dom_js_data_attr"
 selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:data-act", "frontend/src/screens/editor.ts:data-field", "frontend/src/screens/editor.ts:data-group", "frontend/src/screens/editor.ts:data-index", "frontend/src/screens/editor.ts:data-key", "frontend/src/screens/editor.ts:data-level", "frontend/src/screens/editor.ts:data-media", "frontend/src/screens/editor.ts:data-path", "frontend/src/screens/editor.ts:data-preserve-scroll", "frontend/src/screens/editor.ts:data-section"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 302, anchor = "`#editor-body table.map tr[data-field=\"${CSS.escape(field)}\"]`);" }]
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 304, anchor = "`#editor-body table.map tr[data-field=\"${CSS.escape(field)}\"]`);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1398,8 +1394,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js-data/theme"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = ["frontend/js/theme.js:data-theme"] }
-evidence = [{ file = "frontend/js/theme.js", line = 3, anchor = "System → Light → Dark 3상태 순환. documentElement 의 data-theme 속성이 tokens.css 의" }]
+selector = { kind = "exact", members = ["frontend/src/shell/preferences.ts:data-theme"] }
+evidence = [{ file = "frontend/src/shell/preferences.ts", line = 24, anchor = "document.documentElement.setAttribute(\"data-theme\", mode);" }]
 classification = "react"
 handoff_slice = "R5-01 #419"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1458,8 +1454,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js/editor"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1089:dynamic:libgrp-", "frontend/src/screens/editor.ts:1550:static:save-msg", "frontend/src/screens/editor.ts:1565:static:editor-foot", "frontend/src/screens/editor.ts:1578:static:editor-foot", "frontend/src/screens/editor.ts:1621:static:editorBack", "frontend/src/screens/editor.ts:1627:static:editor-body", "frontend/src/screens/editor.ts:1659:static:txtEditTitle", "frontend/src/screens/editor.ts:1661:static:txtNameRow", "frontend/src/screens/editor.ts:1666:static:txtEditName", "frontend/src/screens/editor.ts:1672:static:txtEditContent", "frontend/src/screens/editor.ts:1677:static:txtEditError", "frontend/src/screens/editor.ts:1682:static:txtEditCancel", "frontend/src/screens/editor.ts:1686:static:txtEditOk", "frontend/src/screens/editor.ts:952:static:editorTitle", "frontend/src/screens/editor.ts:954:static:editorName", "frontend/src/screens/editor.ts:964:static:editorSubtitle", "frontend/src/screens/editor.ts:966:static:editorSaveState", "frontend/src/screens/editor.ts:1005:static:editor-steps"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 952, anchor = "h(\"h1\", { id: \"editorTitle\" }," }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:1085:dynamic:libgrp-", "frontend/src/screens/editor.ts:1546:static:save-msg", "frontend/src/screens/editor.ts:1561:static:editor-foot", "frontend/src/screens/editor.ts:1574:static:editor-foot", "frontend/src/screens/editor.ts:1617:static:editorBack", "frontend/src/screens/editor.ts:1623:static:editor-body", "frontend/src/screens/editor.ts:1655:static:txtEditTitle", "frontend/src/screens/editor.ts:1657:static:txtNameRow", "frontend/src/screens/editor.ts:1662:static:txtEditName", "frontend/src/screens/editor.ts:1668:static:txtEditContent", "frontend/src/screens/editor.ts:1673:static:txtEditError", "frontend/src/screens/editor.ts:1678:static:txtEditCancel", "frontend/src/screens/editor.ts:1682:static:txtEditOk", "frontend/src/screens/editor.ts:948:static:editorTitle", "frontend/src/screens/editor.ts:950:static:editorName", "frontend/src/screens/editor.ts:960:static:editorSubtitle", "frontend/src/screens/editor.ts:962:static:editorSaveState", "frontend/src/screens/editor.ts:1001:static:editor-steps"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 948, anchor = "h(\"h1\", { id: \"editorTitle\" }," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1508,8 +1504,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js/react-overlay-host"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:287:static:confirmModal", "frontend/src/overlay/host.ts:292:static:confirmModalTitle", "frontend/src/overlay/host.ts:293:static:confirmModalBody", "frontend/src/overlay/host.ts:295:static:confirmModalCancel", "frontend/src/overlay/host.ts:296:static:confirmModalOk", "frontend/src/overlay/host.ts:298:static:chooseModal", "frontend/src/overlay/host.ts:303:static:chooseModalTitle", "frontend/src/overlay/host.ts:304:static:chooseModalBody", "frontend/src/overlay/host.ts:306:static:chooseModalCancel", "frontend/src/overlay/host.ts:307:static:chooseModalAlt", "frontend/src/overlay/host.ts:308:static:chooseModalOk", "frontend/src/overlay/host.ts:310:static:promptModal", "frontend/src/overlay/host.ts:315:static:promptModalTitle", "frontend/src/overlay/host.ts:316:static:promptModalBody", "frontend/src/overlay/host.ts:317:static:promptModalInput", "frontend/src/overlay/host.ts:319:static:promptModalError", "frontend/src/overlay/host.ts:323:static:promptModalCancel", "frontend/src/overlay/host.ts:324:static:promptModalOk", "frontend/src/overlay/host.ts:326:static:undoToast", "frontend/src/overlay/host.ts:329:static:undoToastText", "frontend/src/overlay/host.ts:330:static:undoToastBtn", "frontend/src/overlay/host.ts:525:static:reactOverlayHost"] }
-evidence = [{ file = "frontend/src/overlay/host.ts", line = 287, anchor = "key: \"confirmModal\", id: \"confirmModal\", ref: refs.confirm," }]
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:303:static:confirmModal", "frontend/src/overlay/host.ts:308:static:confirmModalTitle", "frontend/src/overlay/host.ts:309:static:confirmModalBody", "frontend/src/overlay/host.ts:311:static:confirmModalCancel", "frontend/src/overlay/host.ts:312:static:confirmModalOk", "frontend/src/overlay/host.ts:314:static:chooseModal", "frontend/src/overlay/host.ts:319:static:chooseModalTitle", "frontend/src/overlay/host.ts:320:static:chooseModalBody", "frontend/src/overlay/host.ts:322:static:chooseModalCancel", "frontend/src/overlay/host.ts:323:static:chooseModalAlt", "frontend/src/overlay/host.ts:324:static:chooseModalOk", "frontend/src/overlay/host.ts:326:static:promptModal", "frontend/src/overlay/host.ts:331:static:promptModalTitle", "frontend/src/overlay/host.ts:332:static:promptModalBody", "frontend/src/overlay/host.ts:333:static:promptModalInput", "frontend/src/overlay/host.ts:335:static:promptModalError", "frontend/src/overlay/host.ts:339:static:promptModalCancel", "frontend/src/overlay/host.ts:340:static:promptModalOk", "frontend/src/overlay/host.ts:342:static:undoToast", "frontend/src/overlay/host.ts:345:static:undoToastText", "frontend/src/overlay/host.ts:346:static:undoToastBtn", "frontend/src/overlay/host.ts:550:static:reactOverlayHost"] }
+evidence = [{ file = "frontend/src/overlay/host.ts", line = 303, anchor = "key: \"confirmModal\", id: \"confirmModal\", ref: refs.confirm," }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1538,8 +1534,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/editor"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:150 draft", "frontend/src/screens/editor.ts:152 wired", "frontend/src/screens/editor.ts:153 view", "frontend/src/screens/editor.ts:1615 body", "frontend/src/screens/group_move_dialog.ts:41 state", "frontend/src/screens/group_move_dialog.ts:42 request", "frontend/src/screens/group_move_dialog.ts:43 confirmed"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 150, anchor = "let draft: DraftState = emptyDraft();" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:149 draft", "frontend/src/screens/editor.ts:150 view", "frontend/src/screens/editor.ts:1611 body", "frontend/src/screens/group_move_dialog.ts:41 state", "frontend/src/screens/group_move_dialog.ts:42 request", "frontend/src/screens/group_move_dialog.ts:43 confirmed"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 149, anchor = "let draft: DraftState = emptyDraft();" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1568,20 +1564,10 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/data-picker"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:71 state", "frontend/src/screens/data_picker.ts:72 reg", "frontend/src/screens/ports.ts:10 implementation", "frontend/src/screens/ports.ts:11 handedOff", "frontend/src/screens/ports.ts:9 owner"] }
+selector = { kind = "exact", members = ["frontend/src/screens/data_picker.ts:71 state", "frontend/src/screens/data_picker.ts:72 reg", "frontend/src/screens/ports.ts:7 implementation"] }
 evidence = [{ file = "frontend/src/screens/data_picker.ts", line = 71, anchor = "let state: PickerState = { session: null, loading: false, status: \"\", level: \"\" };" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-[[node]]
-id = "state/theme"
-kind = "state"
-axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/js/theme.js:17 ORDER"] }
-evidence = [{ file = "frontend/js/theme.js", line = 17, anchor = "var ORDER = [\"system\", \"light\", \"dark\"];" }]
-classification = "react"
-handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1598,7 +1584,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/overlay-services"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/js/popover.js:9 suppressNextClick", "frontend/src/overlay/engine.ts:79 pendingDialog", "frontend/src/overlay/engine.ts:80 nextTicket", "frontend/src/overlay/host.ts:363 undoAction", "frontend/src/overlay/host.ts:364 toastTimer", "frontend/src/overlay/instance.ts:107 dialogHost", "frontend/src/overlay/instance.ts:41 keydownDocument"] }
+selector = { kind = "exact", members = ["frontend/js/popover.js:9 suppressNextClick", "frontend/src/overlay/engine.ts:79 pendingDialog", "frontend/src/overlay/engine.ts:80 nextTicket", "frontend/src/overlay/host.ts:384 undoAction", "frontend/src/overlay/host.ts:385 toastTimer", "frontend/src/overlay/instance.ts:105 dialogHost", "frontend/src/overlay/instance.ts:39 keydownDocument"] }
 evidence = [{ file = "frontend/js/popover.js", line = 9, anchor = "let suppressNextClick = null;  // { target, pointerId } — 현재 primary 제스처 하나만" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
@@ -1608,8 +1594,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:166 LibraryScreen", "frontend/src/bootstrap.js:167 EditorScreen", "frontend/src/bootstrap.js:168 JobScreen", "frontend/src/bootstrap.js:169 WorkbenchScreen", "frontend/src/bootstrap.js:170 Nav", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 166, anchor = "let LibraryScreen;" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:165 Nav", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 165, anchor = "let Nav;" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1651,7 +1637,7 @@ axis = "state_snapshot_channel"
 selector = { kind = "exact", members = ["tpl"] }
 evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 231, anchor = "\"tpl\": {" }]
 classification = "p_review_required"
-p_review = { producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\"", consumer = "frontend/js/screens/editor.js — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비", call_path = "editor.js → bridge.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)", contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」", test = "tests/test_dispatch_wiring.py" }
+p_review = { producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\"", consumer = "frontend/src/screens/editor.ts — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비", call_path = "editor.ts → client.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)", contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」", test = "tests/test_dispatch_wiring.py" }
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1688,8 +1674,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:432"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 432, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:406"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 406, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1708,7 +1694,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/react-overlay-host"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:122", "frontend/src/overlay/host.ts:244", "frontend/src/overlay/host.ts:245", "frontend/src/overlay/host.ts:246", "frontend/src/overlay/host.ts:247", "frontend/src/overlay/host.ts:385", "frontend/src/overlay/instance.ts:66"] }
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:122", "frontend/src/overlay/host.ts:248", "frontend/src/overlay/host.ts:249", "frontend/src/overlay/host.ts:250", "frontend/src/overlay/host.ts:251", "frontend/src/overlay/host.ts:406", "frontend/src/overlay/instance.ts:64"] }
 evidence = [{ file = "frontend/src/overlay/host.ts", line = 122, anchor = "card.addEventListener(\"transitionend\", machinery.onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
@@ -1718,8 +1704,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/react-shell-host"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/shell/host.ts:68", "frontend/src/shell/host.ts:77"] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 68, anchor = "attachment.target.addEventListener(attachment.type, attachment.handler);" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:65", "frontend/src/shell/host.ts:74"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 65, anchor = "attachment.target.addEventListener(attachment.type, attachment.handler);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1808,8 +1794,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/app-shell"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/js/app.js:129", "frontend/js/app.js:146", "frontend/js/app.js:147", "frontend/js/app.js:148", "frontend/js/app.js:150"] }
-evidence = [{ file = "frontend/js/app.js", line = 129, anchor = "splitter.addEventListener(", occurrence = 1 }]
+selector = { kind = "exact", members = ["frontend/src/shell/app.ts:124", "frontend/src/shell/app.ts:125", "frontend/src/shell/app.ts:126"] }
+evidence = [{ file = "frontend/src/shell/app.ts", line = 124, anchor = "splitter.addEventListener(", occurrence = 1 }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1818,8 +1804,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/listener/modal"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/js/modal.js:100"] }
-evidence = [{ file = "frontend/js/modal.js", line = 100, anchor = "if (card) card.addEventListener(\"transitionend\", onTransitionEnd);" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/modal.js:99"] }
+evidence = [{ file = "frontend/src/overlay/modal.js", line = 99, anchor = "if (card) card.addEventListener(\"transitionend\", onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1838,8 +1824,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/release/app-splitter"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = ["frontend/js/app.js:138", "frontend/js/app.js:139", "frontend/js/app.js:140"] }
-evidence = [{ file = "frontend/js/app.js", line = 138, anchor = "splitter.removeEventListener(\"pointermove\", move);" }]
+selector = { kind = "exact", members = ["frontend/src/shell/app.ts:116", "frontend/src/shell/app.ts:117", "frontend/src/shell/app.ts:118"] }
+evidence = [{ file = "frontend/src/shell/app.ts", line = 116, anchor = "splitter.removeEventListener(\"pointermove\", move);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1848,8 +1834,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/release/modal"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = ["frontend/js/modal.js:106"] }
-evidence = [{ file = "frontend/js/modal.js", line = 106, anchor = "if (card && onTransitionEnd) card.removeEventListener(\"transitionend\", onTransitionEnd);" }]
+selector = { kind = "exact", members = ["frontend/src/overlay/modal.js:105"] }
+evidence = [{ file = "frontend/src/overlay/modal.js", line = 105, anchor = "if (card && onTransitionEnd) card.removeEventListener(\"transitionend\", onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1878,7 +1864,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/release/react-overlay-host"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:132", "frontend/src/overlay/host.ts:191", "frontend/src/overlay/host.ts:192", "frontend/src/overlay/host.ts:193", "frontend/src/overlay/host.ts:194", "frontend/src/overlay/host.ts:483", "frontend/src/overlay/instance.ts:68"] }
+selector = { kind = "exact", members = ["frontend/src/overlay/host.ts:132", "frontend/src/overlay/host.ts:193", "frontend/src/overlay/host.ts:194", "frontend/src/overlay/host.ts:195", "frontend/src/overlay/host.ts:196", "frontend/src/overlay/host.ts:508", "frontend/src/overlay/instance.ts:66"] }
 evidence = [{ file = "frontend/src/overlay/host.ts", line = 132, anchor = "card.removeEventListener(\"transitionend\", machinery.onTransitionEnd);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
@@ -1888,8 +1874,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/release/react-shell-host"
 kind = "subscription"
 axis = "subscription_release"
-selector = { kind = "exact", members = ["frontend/src/shell/host.ts:80", "frontend/src/shell/host.ts:82"] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 80, anchor = "ports.boot.win.removeEventListener(\"pywebviewready\", onHostReady);" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:77", "frontend/src/shell/host.ts:79"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 77, anchor = "ports.boot.win.removeEventListener(\"pywebviewready\", onHostReady);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1901,8 +1887,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/runtime-taps"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:155", "frontend/src/screens/job_read.ts:719", "frontend/src/screens/runtime.ts:80"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 155, anchor = "bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:154", "frontend/src/screens/job_read.ts:719", "frontend/src/screens/runtime.ts:80"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 154, anchor = "bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1911,22 +1897,10 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/editor"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:184"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 184, anchor = "model.subscribe(absorb);" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:181"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 181, anchor = "model.subscribe(absorb);" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-# tpl 채널 재당김 배선 — R4-02 가 생산 자리를 TS 로 옮겼고, **재당김 자체**를 store 병합으로
-# 걷는 것은 R5-01 몫이다(패킷 rev7 D7: 이 슬라이스는 두 채널 의미를 그대로 진다).
-[[node]]
-id = "subscription/push/editor-tpl"
-kind = "subscription"
-axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:874"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 874, anchor = "tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });" }]
-classification = "react"
-handoff_slice = "R5-01 #419"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1973,8 +1947,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:121"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 121, anchor = "export function bootProduct() {" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:120"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 120, anchor = "export function bootProduct() {" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2013,7 +1987,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r3-01-overlay"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/overlay/engine.ts:77", "frontend/src/overlay/host.ts:353", "frontend/src/overlay/host.ts:491", "frontend/src/overlay/instance.ts:110", "frontend/src/overlay/instance.ts:121"] }
+selector = { kind = "exact", members = ["frontend/js/surface_sheet.js:3", "frontend/src/overlay/engine.ts:77", "frontend/src/overlay/host.ts:369", "frontend/src/overlay/host.ts:516", "frontend/src/overlay/instance.ts:108", "frontend/src/overlay/instance.ts:119", "frontend/src/overlay/modal.js:252"] }
 evidence = [{ file = "frontend/src/overlay/engine.ts", line = 77, anchor = "export function createOverlayEngine() {" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
@@ -2023,8 +1997,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r3-02-shell"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/screen_lifecycle_registry.ts:15", "frontend/src/shell/host.ts:66", "frontend/src/shell/host.ts:89", "frontend/src/shell/nav.ts:97"] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 66, anchor = "export function attachShell(ports: ShellHostPorts): () => void {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/screen_lifecycle_registry.ts:15", "frontend/src/shell/host.ts:63", "frontend/src/shell/host.ts:86", "frontend/src/shell/nav.ts:97"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 63, anchor = "export function attachShell(ports: ShellHostPorts): () => void {" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2083,17 +2057,17 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r3-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/js/app.js:20", "frontend/js/personalization.js:5", "frontend/js/theme.js:16"] }
-evidence = [{ file = "frontend/js/app.js", line = 20, anchor = "export function createAppShell({ Bridge, Theme, Personalization, shellNav, initSequence }) {" }]
+selector = { kind = "exact", members = ["frontend/src/shell/app.ts:32", "frontend/src/shell/preferences.ts:13", "frontend/src/shell/preferences.ts:47"] }
+evidence = [{ file = "frontend/src/shell/app.ts", line = 32, anchor = "export function createAppShell(args: AppShellArgs) {" }]
 classification = "react"
-handoff_slice = "R3-02 #411"
+handoff_slice = "R5-01 #419"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
 id = "lifecycle/factory/r4-01"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/ports/service_handoff.ts:18", "frontend/src/screens/data_picker.ts:360", "frontend/src/screens/data_zone.ts:123", "frontend/src/screens/job_read.ts:475", "frontend/src/screens/library.ts:560", "frontend/src/screens/ports.ts:8", "frontend/src/screens/ports.ts:86", "frontend/src/screens/runtime.ts:39"] }
+selector = { kind = "exact", members = ["frontend/src/ports/service_handoff.ts:18", "frontend/src/screens/data_picker.ts:360", "frontend/src/screens/data_zone.ts:123", "frontend/src/screens/job_read.ts:475", "frontend/src/screens/library.ts:560", "frontend/src/screens/ports.ts:6", "frontend/src/screens/ports.ts:63", "frontend/src/screens/runtime.ts:39"] }
 evidence = [{ file = "frontend/src/ports/service_handoff.ts", line = 18, anchor = "export function createServiceHandoffPorts() {" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
@@ -2103,7 +2077,7 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r4-02"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:146", "frontend/src/screens/editor.ts:1602", "frontend/src/screens/editor.ts:1645", "frontend/src/screens/editor_entry.ts:34", "frontend/src/screens/editor_state.ts:119", "frontend/src/screens/editor_state.ts:132", "frontend/src/screens/editor_state.ts:139", "frontend/src/screens/editor_state.ts:158", "frontend/src/screens/editor_state.ts:194", "frontend/src/screens/editor_state.ts:199", "frontend/src/screens/editor_state.ts:204", "frontend/src/screens/editor_state.ts:210", "frontend/src/screens/editor_state.ts:215", "frontend/src/screens/editor_state.ts:231", "frontend/src/screens/editor_state.ts:235", "frontend/src/screens/editor_state.ts:57", "frontend/src/screens/editor_state.ts:74", "frontend/src/screens/editor_state.ts:82", "frontend/src/screens/group_move_dialog.ts:115", "frontend/src/screens/group_move_dialog.ts:40", "frontend/src/screens/segment_view.ts:52", "frontend/src/screens/segment_view.ts:60", "frontend/src/screens/workbench.ts:417", "frontend/src/screens/workbench.ts:65", "frontend/src/screens/workbench_state.ts:18", "frontend/src/screens/workbench_state.ts:22", "frontend/src/screens/workbench_state.ts:38", "frontend/src/screens/workbench_state.ts:42", "frontend/src/screens/workbench_state.ts:48"] }
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:146", "frontend/src/screens/editor.ts:1598", "frontend/src/screens/editor.ts:1641", "frontend/src/screens/editor_entry.ts:34", "frontend/src/screens/editor_state.ts:119", "frontend/src/screens/editor_state.ts:132", "frontend/src/screens/editor_state.ts:139", "frontend/src/screens/editor_state.ts:158", "frontend/src/screens/editor_state.ts:194", "frontend/src/screens/editor_state.ts:199", "frontend/src/screens/editor_state.ts:204", "frontend/src/screens/editor_state.ts:210", "frontend/src/screens/editor_state.ts:215", "frontend/src/screens/editor_state.ts:231", "frontend/src/screens/editor_state.ts:235", "frontend/src/screens/editor_state.ts:57", "frontend/src/screens/editor_state.ts:74", "frontend/src/screens/editor_state.ts:82", "frontend/src/screens/group_move_dialog.ts:115", "frontend/src/screens/group_move_dialog.ts:40", "frontend/src/screens/segment_view.ts:52", "frontend/src/screens/segment_view.ts:60", "frontend/src/screens/workbench.ts:417", "frontend/src/screens/workbench.ts:65", "frontend/src/screens/workbench_state.ts:18", "frontend/src/screens/workbench_state.ts:22", "frontend/src/screens/workbench_state.ts:38", "frontend/src/screens/workbench_state.ts:42", "frontend/src/screens/workbench_state.ts:48"] }
 evidence = [{ file = "frontend/src/screens/editor.ts", line = 146, anchor = "export function createEditorController(deps: EditorControllerDeps) {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
@@ -2143,8 +2117,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/shell-ready"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = ["frontend/src/shell/host.ts:77"] }
-evidence = [{ file = "frontend/src/shell/host.ts", line = 77, anchor = "ports.boot.win.addEventListener(\"pywebviewready\", onHostReady);" }]
+selector = { kind = "exact", members = ["frontend/src/shell/host.ts:74"] }
+evidence = [{ file = "frontend/src/shell/host.ts", line = 74, anchor = "ports.boot.win.addEventListener(\"pywebviewready\", onHostReady);" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2153,8 +2127,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/screen-leave-guard"
 kind = "lifecycle"
 axis = "lifecycle_hook"
-selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:690", "frontend/src/screens/workbench.ts:248"] }
-evidence = [{ file = "frontend/src/screens/editor.ts", line = 690, anchor = "async function leaveTo(target: string): Promise<void> {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/editor.ts:692", "frontend/src/screens/workbench.ts:248"] }
+evidence = [{ file = "frontend/src/screens/editor.ts", line = 692, anchor = "async function leaveTo(target: string): Promise<void> {" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

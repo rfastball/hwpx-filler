@@ -3,12 +3,9 @@
  *
  * 지키는 경계:
  *  ① 공개 표면 4키(init·rerender·leaveTo·aimAt) — 몰입 표면의 문 손잡이 수는 계약이다.
- *     그 넷은 이제 controller 표면의 부분집합이고, 셸이 뽑아 가는 facade 가 딱 그 넷이다
- *     (`bootstrap.js` 의 `EditorScreen`). 넷 중 하나가 사라지면 셸이 실엔진에서야 죽는다.
- *  ② init 멱등·재시도(§7) — 재호출 시 배선 delta 0 을 **실측**한다(소스 call-site 수를
- *     기대값으로 쓰지 않는다). 첫 initial reject 후 명시적 재-init 이 initial 만 다시 당기고
- *     배선은 중복 설치하지 않는다. legacy 는 `wired` 가드였고 후계도 같은 가드다 — 셸의
- *     ready 사건이 재발화하면 init 이 다시 불리기 때문이다(`app.js` 의 주석이 그 계약).
+ *     그 넷은 이제 controller 표면의 부분집합이고 셸이 controller를 직접 쓴다.
+ *  ② init 멱등·재시도(§7) — 첫 initial reject 후 명시적 재-init 이 다시 당기고, 성공 뒤
+ *     재호출은 같은 promise를 공유한다. legacy `wired`/교차 채널 구독은 R5-01에서 사망했다.
  *  ③ 교차 화면 소비가 **late-bound 포트**인가 — 구성 뒤에 bind 한 구현이 호출 시점에 잡혀야
  *     한다(셸이 화면들을 순서대로 조립하므로 값 캡처는 평가 순서 함정이다). legacy 는
  *     `JobScreen { refreshList, openPreview }` 콜백 테이블이었고, 후계는 `ScreenPorts` 다.
@@ -37,7 +34,7 @@ import { Intent } from "../../frontend/js/intent.js";
 const SRC_URL = new URL("../../frontend/src/screens/editor.ts", import.meta.url);
 const src = readFileSync(SRC_URL, "utf8");
 
-/** 셸이 뽑아 가는 facade 4키 — `bootstrap.js` 의 `EditorScreen` 과 같은 목록. */
+/** 셸이 직접 쓰는 controller 핵심 4키. */
 const SHELL_FACADE = ["init", "rerender", "leaveTo", "aimAt"];
 
 /* 렌더가 통과할 최소 스냅샷 — 신규 초안 1단계(라이브러리 빈 밴드). */
@@ -78,7 +75,7 @@ function harness(cfg) {
   const runtime = createScreenRuntime({ client, store });
   const ports = createScreenPorts();
   const services = createServiceHandoffPorts();
-  services.sheetPicker.bindReact({ choose: async () => null });
+  services.sheetPicker.bind({ choose: async () => null });
   const navigation = {
     refresh: async (target) => {
       trace.push(["navigation.refresh", target]);
@@ -111,7 +108,7 @@ function harness(cfg) {
 
 /* ---------------- ① 공개 표면 ---------------- */
 
-test("controller 는 셸 facade 4키(init·rerender·leaveTo·aimAt)를 전부 낸다", () => {
+test("controller 는 핵심 4키(init·rerender·leaveTo·aimAt)를 전부 낸다", () => {
   assert.equal(typeof createEditorController, "function");
   const { controller } = harness();
   for (const key of SHELL_FACADE) {
@@ -125,30 +122,30 @@ test("controller 는 셸 facade 4키(init·rerender·leaveTo·aimAt)를 전부 �
 
 /* ---------------- ② init 멱등 — 등록 delta 실측 ---------------- */
 
-test("init 2회 — tpl 재당김 배선·initial 추가 등록 0, 같은 promise 공유", async () => {
+test("init 2회 — initial 추가 등록 0, 같은 promise 공유", async () => {
   const h = harness();
   const first = h.controller.init();
   await first;
   assert.equal(h.counts.initial, 1, "initial 당김 1회");
-  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 채널 구독 1개(재당김 배선의 양성 대조)");
+  assert.equal(h.store.listenerCount("tpl"), 0, "migration용 tpl 교차 구독 0");
 
   const second = h.controller.init();
   assert.equal(second, first, "성공한 init 재호출은 같은 promise 를 공유한다");
   await second;
   await h.controller.init();
   assert.equal(h.counts.initial, 1, "initial 추가 당김 0");
-  assert.equal(h.store.listenerCount("tpl"), 1, "tpl 구독 추가 등록 0");
+  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 구독 재유입 0");
 });
 
-test("tpl push 하나가 editor 재당김을 **한 번만** 태운다(중복 배선 음성 대조)", async () => {
+test("tpl 관리 동사 완료가 editor 재당김을 정확히 한 번 태운다", async () => {
   const h = harness();
   await h.controller.init();
   await h.controller.init();               // 셸 ready 재발화 형상
   const before = h.counts.initial;
-  h.store.ingest("tpl", { groups: [] });
-  await new Promise((resolve) => setImmediate(resolve));
+  await h.controller.refreshLibrary();
   assert.equal(h.counts.initial - before, 1,
-    "tpl 구독이 겹치면 관리 동사 하나가 재당김을 여러 번 태운다");
+    "교차 push 구독 없이 원인 동사 완료가 재당김 하나를 소유한다");
+  assert.equal(h.store.listenerCount("tpl"), 0);
 });
 
 test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => {
@@ -158,7 +155,7 @@ test("동시 2회 init — 같은 초기화 promise, initial 1회", async () => 
   assert.equal(first, second);
   await Promise.all([first, second]);
   assert.equal(h.counts.initial, 1);
-  assert.equal(h.store.listenerCount("tpl"), 1);
+  assert.equal(h.store.listenerCount("tpl"), 0);
 });
 
 test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 initial 만 다시 당긴다", async () => {
@@ -180,12 +177,12 @@ test("첫 initial reject — 실패는 전파되고, 명시적 재-init 이 init
   assert.equal(h.store.listenerCount("tpl"), afterFail, "tpl 구독 중복 설치 0");
 });
 
-test("rerender — 재당김 하나를 태우고 tpl 배선을 다시 걸지 않는다", async () => {
+test("rerender — 재당김 하나를 태우고 tpl 구독을 만들지 않는다", async () => {
   const h = harness();
   await h.controller.init();
   await h.controller.rerender();
   assert.equal(h.counts.initial, 2, "rerender 는 스냅샷을 다시 묻는다");
-  assert.equal(h.store.listenerCount("tpl"), 1, "rerender 는 배선 자리가 아니다");
+  assert.equal(h.store.listenerCount("tpl"), 0, "rerender 는 교차 구독을 만들지 않는다");
 });
 
 /* ---------------- ③④ 교차 포트·landOn 순서 ---------------- */
@@ -206,15 +203,15 @@ test("저장하고 나가기 — refreshList 관측, refresh→go(refreshed:true
   await h.controller.init();
 
   /* late-binding: 구성·init **뒤에** 포트를 채운다 — 호출 시점에 잡혀야 한다. */
-  h.ports.jobRead.bindReact({
+  h.ports.jobRead.bind({
     refreshList: () => { h.trace.push(["ports.refreshList"]); },
     openBrowseNeedsAction: async () => {},
   });
-  h.ports.jobRun.bindReact({
+  h.ports.jobRun.bind({
     openPreview: async (request) => { h.trace.push(["ports.openPreview", request]); },
     attach: () => () => {},
   });
-  h.ports.editorEntry.bindReact({
+  h.ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {}, confirmDiscard: async () => true,
     restoreEntryFocus: () => { h.trace.push(["ports.restoreEntryFocus"]); },
   });
@@ -247,7 +244,7 @@ test("navigation.refresh 실패 — 나가지 않는다(loud 통지, go 0회)", 
     initial: async () => snap({ dirty: false, is_draft: false }),
     refreshFails: true,
   });
-  h.ports.editorEntry.bindReact({
+  h.ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     confirmDiscard: async () => true, restoreEntryFocus() {},
   });

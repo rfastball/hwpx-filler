@@ -67,7 +67,11 @@ def _call_containing(relative: str, needle: str) -> str:
 
 def test_every_confirm_has_a_concrete_action_label() -> None:
     offenders: list[str] = []
-    paths = [*WEB_JS.rglob("*.js"), *(SOURCE_ROOT / "src").rglob("*.ts")]
+    src_js = [
+        path for path in (SOURCE_ROOT / "src").rglob("*.js")
+        if "selftest" not in path.relative_to(SOURCE_ROOT / "src").parts
+    ]
+    paths = [*WEB_JS.rglob("*.js"), *src_js, *(SOURCE_ROOT / "src").rglob("*.ts")]
     for path in paths:
         for call in _confirm_calls(path.read_text(encoding="utf-8")):
             if "confirmLabel" not in call:
@@ -78,7 +82,7 @@ def test_every_confirm_has_a_concrete_action_label() -> None:
 def test_durable_destructive_confirms_are_danger() -> None:
     # unlink·덮어쓰기·제자리 변환 도달 경로 전수. needle은 호출마다 유일한 사용자 문안/판정값.
     inventory = (
-        ("js/app.js", 'confirmLabel: "종료"'),
+        ("src/shell/app.ts", 'confirmLabel: "종료"'),
         ("src/screens/editor.ts", "result.overwrite_text"),
         # (editor 의 자동등록 확인(res.dataset_text)은 #347 에서 게이트째 사망 — U2 §5.3 D.)
         # (screens/draft.js 두 행 삭제 — 「기안」 화면 사망, F6 PR-B. 덮어쓰기 확인의
@@ -119,7 +123,7 @@ def test_danger_button_has_light_dark_and_forced_color_contract() -> None:
     # R3-01(#410): danger 판정(불리언)은 파사드가 spec 으로 싣고, 같은 안정 버튼의 **양방향
     # 토글 집행**은 React host 컨트롤러가 진다 — 두 거처를 각각 겨눈다(단방향만 남으면
     # danger 뒤 중립 confirm 이 빨갛게 남는 상태 누수가 재발한다).
-    modal = (WEB_JS / "modal.js").read_text(encoding="utf-8")
+    modal = (SOURCE_ROOT / "src/overlay/modal.js").read_text(encoding="utf-8")
     host = (WEB_JS.parent / "src" / "overlay" / "host.ts").read_text(encoding="utf-8")
     # `.btn.danger{`(base.css)와 forced-colors 의 `Mark` 강등(forced-colors.css)이 서로 다른
     # 조각에 살지만, 이어붙인 문자열에서는 한 단언이 둘 다 본다.

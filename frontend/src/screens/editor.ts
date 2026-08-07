@@ -145,11 +145,8 @@ const isEditing = (snapshot: Obj): boolean => !!snapshot.editing_origin;
 
 export function createEditorController(deps: EditorControllerDeps) {
   const model = deps.runtime.model<Obj | null>(SCREEN);
-  const tplModel = deps.runtime.model<Obj | null>("tpl");
 
   let draft: DraftState = emptyDraft();
-  /** 배선 1회 가드 — 셸의 ready 사건은 재발화하고 그때 화면 init 이 다시 불린다(`app.js`). */
-  let wired = false;
   let view: ViewState = {
     libMenu: null, folderImportInFlight: false, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, invalidField: "", aim: "",
@@ -188,7 +185,12 @@ export function createEditorController(deps: EditorControllerDeps) {
     const call = deps.client.dispatch as unknown as (
       channel: string, name: string, body: Obj,
     ) => ReturnType<BridgeClient["dispatch"]>;
-    return (expectHostValue(await call(screen, action, payload), `${screen}/${action}`) ?? {}) as Obj;
+    const value = (expectHostValue(await call(screen, action, payload), `${screen}/${action}`) ?? {}) as Obj;
+    /* tpl 동사는 모두 snapshot push를 내지만 editor 목록의 정본은 editor snapshot이다.
+       교차 채널 구독으로 push를 다시 initial로 번역하지 않고, 원인 동사의 완료와 같은 줄에서
+       editor를 한 번 재당긴다. 호출이 실패하면 재당김도 실행하지 않는다. */
+    if (screen === "tpl") await deps.runtime.refresh(SCREEN);
+    return value;
   };
 
   const invoke = async (
@@ -740,7 +742,9 @@ export function createEditorController(deps: EditorControllerDeps) {
     const result = await invoke("import_template_file", SCREEN);
     if (typeof result === "string" && result.startsWith("ERROR:")) {
       noticeSave(result.slice(6).trim());
+      return;
     }
+    if (typeof result === "string" && result !== "") await deps.runtime.refresh(SCREEN);
   }
 
   /** 폴더 일괄 가져오기 — 어포던스 잠금은 클릭을 삼키는 문이고, 정본 거절은 Python 이다. */
@@ -760,6 +764,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       const done = await invoke(
         "import_templates_folder", scanned.folder, true, scanned.files) as Obj;
       if (done && done.error) noticeSave(String(done.error));
+      else if (done) await deps.runtime.refresh(SCREEN);
     } finally {
       patchView({ folderImportInFlight: false });              // 어느 출구든 해제
     }
@@ -862,17 +867,8 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   return {
     init(): Promise<unknown> {
-      /* tpl 채널의 관리 동사 결과는 editor 스냅샷 **재당김**으로 되그린다 — 목록·결과 렌더의
-         정본은 editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다).
-
-         구독은 **정확히 한 번**이다. init 은 재발화하는 ready 사건이 다시 부르는 자리라
-         가드가 없으면 tpl push 하나가 재당김을 두 번·세 번 태운다(legacy `wired` 가드의
-         후계). 첫 initial 이 실패한 뒤의 명시적 재-init 은 initial 만 다시 당긴다 —
-         `loadInitial` 이 실패에서 기억을 지우므로 그쪽은 저절로 재시도가 된다. */
-      if (!wired) {
-        wired = true;
-        tplModel.subscribe(() => { void deps.runtime.refresh(SCREEN); });
-      }
+      /* 첫 initial 이 실패한 뒤의 명시적 재-init 은 다시 당긴다. loadInitial이 실패에서
+         기억을 지우므로 별도 init/wired 호환 가드는 필요 없다. */
       return deps.runtime.loadInitial(SCREEN);
     },
     /** 현 스냅샷 재당김 — 편집 모드 복귀 때 공유 그룹 접힘을 반영한다(#138 F12). */

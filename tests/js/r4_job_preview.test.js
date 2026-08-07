@@ -54,7 +54,7 @@ function harness(options = {}) {
   };
   const port = (impl) => {
     let bound = impl ?? null;
-    return { bindReact(v) { if (bound !== null) throw new Error("두 번째 결속"); bound = v; }, current: () => bound };
+    return { bind(v) { if (bound !== null) throw new Error("두 번째 결속"); bound = v; }, current: () => bound };
   };
   const editor = {
     openGuarded(name, context) {

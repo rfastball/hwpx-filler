@@ -520,7 +520,7 @@ def test_every_react_portal_target_stands_in_the_static_shell() -> None:
 # 전부 `hidden` **속성**이다. 다른 앱 습관대로 `class="hidden"` 을 붙이면 아무 일도 안
 # 일어나 요소가 계속 보인다 — 테두리만 남은 빈 경고 상자·항상 서 있는 dead 버튼이 되는데,
 # 눈으로 안 보면 모르는 결함이라(실제로 리뷰에서 처음 잡혔다) 정적으로 막는다.
-_HIDDEN_OK_JS = {"modal.js"}  # 모달 개폐 헬퍼만 클래스 토글의 임자
+_HIDDEN_OK_JS = {"src/overlay/modal.js"}  # 모달 개폐 adapter만 클래스 토글의 임자
 _CLASS_ATTR_RE = re.compile(r"""class\s*=\s*\\?["']([^"']*)\\?["']""")
 _CLASSLIST_HIDDEN_RE = re.compile(r"""classList\s*\.\s*\w+\s*\(\s*["']hidden["']""")
 
@@ -564,8 +564,14 @@ def test_hidden_class_is_modal_only_elsewhere_use_the_attribute():
     )
 
     offenders: "list[str]" = []
-    for js in sorted(WEB_JS_DIR.rglob("*.js")):
-        if js.name in _HIDDEN_OK_JS:
+    src_js = [
+        path for path in (SOURCE_ROOT / "src").rglob("*.js")
+        if "selftest" not in path.relative_to(SOURCE_ROOT / "src").parts
+    ]
+    product_js = [*WEB_JS_DIR.rglob("*.js"), *src_js]
+    for js in sorted(product_js):
+        relative = js.relative_to(SOURCE_ROOT).as_posix()
+        if relative in _HIDDEN_OK_JS:
             continue
         text = js.read_text(encoding="utf-8")
         for m in _CLASSLIST_HIDDEN_RE.finditer(text):
@@ -706,7 +712,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
         "화면 전환이 펼침 면을 회수하지 않습니다 — 남의 화면 위에 실 DOM 이 남습니다."
     )
     assert "function closeAllAndRestore" in sheets
-    assert "Modal.close(id);\n  restore(id);" in sheets
+    assert "modal.close(id);\n  restore(id);" in sheets
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
     # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
     assert "trigger: trigger" in sheets
@@ -1127,12 +1133,12 @@ def test_modal_promise_dialog_serialization_guards_present():
       - 재진입 가드(pendingDialog): 판정은 엔진(engine.ts)이 소유하고 파사드는 관측면으로
         같은 거절을 잇는다(리뷰 #1). modal.js 의 자기 불리언 **잔존은 금지 계약**이다 —
         남으면 legacy 와 React 다이얼로그의 직렬화가 두 세계로 갈린다(#410 §4.3).
-      - 포커스 트랩(trapTab): legacy 집행은 modal.js, React 다이얼로그 집행은 host.ts —
+      - 포커스 트랩(trapTab): modal factory 집행은 modal.js, React 다이얼로그 집행은 host.ts —
         두 집행자가 같은 엔진 판정(최상위 소유) 아래 선다(리뷰 #1).
       - IME 조합 가드(isComposing): 문서 keydown 판정은 엔진, prompt Enter 는 host(리뷰 #3).
       - loud 거절(window.alert + console.error): 문안·거절 재진술은 파사드 소유 그대로(리뷰 #4).
     """
-    src = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
+    src = (SOURCE_ROOT / "src/overlay/modal.js").read_text(encoding="utf-8")
     engine = source_text("src", "overlay", "engine.ts")
     host = source_text("src", "overlay", "host.ts")
     assert "pendingDialog" in engine and "acquireDialog" in engine, (
@@ -1790,15 +1796,15 @@ def test_disabled_primary_uses_light_neutral_surface_globally():
 
 
 def test_theme_helper_loaded_and_toggle_present():
-    """다크모드 토글 배선 정적 가드 — theme.js 로드 + 레일 토글 버튼(접근 이름·툴팁).
+    """다크모드 토글 배선 정적 가드 — preferences.ts 로드 + 레일 토글 버튼(접근 이름·툴팁).
 
     토글이 사라지면 사용자는 OS 자동에만 묶여 앱 내 override 를 잃는다. 버튼은 navbtn 이
     아니어야 한다(라우터가 .navbtn 전부에 go(data-scr) 를 배선 → data-scr 없는 토글이 navbtn
     이면 클릭이 화면을 지운다) — id 존재 + a11y 속성만 정적으로 단언한다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    assert reaches_product_graph("theme.js"), (
-        "theme.js 가 제품 그래프에 닿지 않습니다(다크모드 토글)."
+    assert 'from "./shell/preferences.ts"' in SOURCE_BOOTSTRAP.read_text(encoding="utf-8"), (
+        "preferences.ts 가 제품 그래프에 닿지 않습니다(다크모드 토글)."
     )
     m = re.search(r'<button\b[^>]*\bid="themeToggle"[^>]*>', index)
     assert m, "테마 토글 버튼(id=themeToggle)이 없습니다."
@@ -1817,7 +1823,7 @@ def test_theme_persistence_is_origin_independent():
     리셋됐다. 영속을 오리진 비의존 Python 설정(app.py set_theme → settings.json)으로 옮기고
     (private_mode 기본 복원) FOUC 는 부팅 시 loaded 핸들러 주입으로 은닉한다. 그러므로:
       - index.html 은 테마용 localStorage 판독을 **가져선 안 된다**(원인 결합 재도입 금지).
-      - theme.js 는 브리지(Bridge.setTheme)로 영속해야 하고 localStorage 를 **일절 쓰지 않는다**.
+      - preferences.ts 는 브리지(Bridge.setTheme)로 영속해야 하고 localStorage 를 **일절 쓰지 않는다**.
     브라우저 단독 프리뷰의 새로고침 간 미영속은 의도된 트레이드오프다(#75 리뷰4 #4/#7): 프리뷰를
     영속하려면 오리진 결합 localStorage 판독이 되살아나므로, 개발 전용 프리뷰 편의보다 불변식을 택한다.
     """
@@ -1826,12 +1832,12 @@ def test_theme_persistence_is_origin_independent():
         "index.html 이 테마를 localStorage 로 다룬다 — 오리진 결합 영속 회귀(#74). "
         "영속은 브리지(set_theme)/Python 설정으로만."
     )
-    theme_js = (WEB_JS_DIR / "theme.js").read_text(encoding="utf-8")
+    theme_js = (SOURCE_ROOT / "src/shell/preferences.ts").read_text(encoding="utf-8")
     assert "bridge.setTheme" in theme_js, (
-        "theme.js 가 브리지로 영속하지 않습니다(Bridge.setTheme 부재) — #74 영속 경로."
+        "preferences.ts 가 브리지로 영속하지 않습니다(Bridge.setTheme 부재) — #74 영속 경로."
     )
     assert not re.search(r"localStorage\s*\.", theme_js), (
-        "theme.js 가 localStorage 를 실사용 — 오리진 비의존 영속(#74)과 상충. 프리뷰 미영속은 의도(#75 리뷰4)."
+        "preferences.ts 가 localStorage 를 실사용 — 오리진 비의존 영속(#74)과 상충. 프리뷰 미영속은 의도(#75 리뷰4)."
     )
 
 
@@ -1871,7 +1877,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
     app_py = (REPO_ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
-    app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
+    app_js = (SOURCE_ROOT / "src/shell/app.ts").read_text(encoding="utf-8")
     editor_js = R4_EDITOR.read_text(encoding="utf-8")
     job_js = react_job_run_source()
 
@@ -1964,8 +1970,8 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert "modal.restoreFocus(" in entry_js, (
         "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
     )
-    modal_js = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
-    assert re.search(r"export const Modal = \{[^}]*\brestoreFocus\b", modal_js), (
+    modal_js = (SOURCE_ROOT / "src/overlay/modal.js").read_text(encoding="utf-8")
+    assert re.search(r"return \{[^}]*\brestoreFocus\b", modal_js), (
         "Modal.restoreFocus 가 내보내지지 않았습니다 — 이탈이 그 규칙을 쓸 수 없습니다."
     )
     for guard in ("async function leaveTo(", "async function gotoSection("):
@@ -1995,11 +2001,11 @@ def test_unhandledrejection_backstop_present_in_shell():
     (diff 셸의 짝 백스톱은 hwpx-diff 저장소가 같은 단언으로 지킨다 — 분리 전에는 이
     루프가 두 셸을 함께 돌았다.)
     """
-    # R3-02(#411) — 부착/해제 수명주기는 React ShellHost 가 소유하고, app.js 는 핸들러
+    # R3-02(#411) — 부착/해제 수명주기는 React ShellHost 가 소유하고, shell/app.ts 는 핸들러
     # 본문(재진술 집행)을 서술(attachments)로 캡처한다. 백스톱의 실물은 그 서술 행이다.
-    app_js = WEB_JS_DIR / "app.js"
+    app_js = SOURCE_ROOT / "src/shell/app.ts"
     src = app_js.read_text(encoding="utf-8")
-    m = re.search(r'type: "unhandledrejection",[\s\S]*?\},\n  \}\);', src)
+    m = re.search(r'attach\(window, "unhandledrejection",[\s\S]*?\n  \}\);', src)
     assert m, f"{app_js} 에 unhandledrejection 백스톱 서술이 없습니다 — 조용한 무반응 결함류 재개방."
     block = m.group(0)
     assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
@@ -2037,7 +2043,7 @@ def test_editor_is_an_immersive_screen_with_one_exit():
         "구 편집 모드 출구·복귀 고지가 부활했습니다 — 그 소임은 patch 처분이 승계했습니다."
     )
     # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다. R3-02(#411)부터
-    # 몰입 목록의 정본은 셸 상태기계(nav.ts)이고 app.js 는 그 목록으로 body 클래스를 집행한다.
+    # 몰입 목록의 정본은 셸 상태기계(nav.ts)이고 ProductScreens executor가 body 클래스를 집행한다.
     executor_ts = R4_PRODUCT_EXECUTOR.read_text(encoding="utf-8")
     bootstrap = SOURCE_BOOTSTRAP.read_text(encoding="utf-8")
     nav_ts = (WEB_JS_DIR.parent / "src" / "shell" / "nav.ts").read_text(encoding="utf-8")

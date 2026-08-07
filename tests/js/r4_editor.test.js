@@ -67,14 +67,14 @@ function build(options = {}) {
   const store = createSnapshotStore({ alarm: assert.fail });
   const runtime = createScreenRuntime({ client, store });
   const ports = createScreenPorts();
-  ports.jobRead.bindReact({ refreshList() {}, openBrowseNeedsAction: async () => {} });
-  ports.editorEntry.bindReact({
+  ports.jobRead.bind({ refreshList() {}, openBrowseNeedsAction: async () => {} });
+  ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     confirmDiscard: async () => options.confirmDiscard ?? true,
     restoreEntryFocus() {},
   });
   const services = createServiceHandoffPorts();
-  services.sheetPicker.bindReact({
+  services.sheetPicker.bind({
     choose: async (screen, payload) => {
       trace.push(["sheetPicker.choose", screen, payload]);
       return options.sheetChoice ?? null;

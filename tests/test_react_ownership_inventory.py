@@ -152,7 +152,7 @@ EXPECTED_AXIS_CONTRACT: dict[str, tuple[int, str]] = {
     "state_ring1": (10, "9742c77daae0c11112e40c009a5b23c6"),
     "state_snapshot_channel": (6, "5891957f0ed54565587e17c150eed087"),
     # #491 재고정 — TS/TSX 감산형 scope로 R2 runtime·R3 overlay/shell attach/release가 편입됐다.
-    "subscription_listener": (19, "8064cf796b67e47a094e61c7362e4b5b"),
+    "subscription_listener": (17, "8064cf796b67e47a094e61c7362e4b5b"),
     # R4-02 — 축 단위가 「화면이 구독한다」에서 「기반이 탭을 세우고 화면은 model 을
     # 구독한다」로 바뀌었다. 술어에 `.subscribe(` 가 붙고 scope 가 React 트리로 갔다.
     "subscription_push": (6, "6b30b15e7ca10851763bd0ec96b48725"),
@@ -400,14 +400,14 @@ def test_n2_new_listener_site_is_unclassified(
     document: dict[str, Any], frontend_tree: Path, clone_source: Path
 ) -> None:
     """N2 — 구독 사이트가 하나 늘면 그 파일:줄 이 미분류로 나온다."""
-    target = clone_source / "js" / "theme.js"
+    target = clone_source / "src" / "shell" / "preferences.ts"
     target.write_text(
         target.read_text(encoding="utf-8") + '\ndocument.addEventListener("click", () => {});\n',
         encoding="utf-8",
     )
     report = gate.check(document, frontend_tree, axes=["subscription_listener"], metrics=[])
     assert not report.ok, "새 구독 사이트가 미분류로 안 잡혔습니다."
-    assert "frontend/js/theme.js:" in _failures(report), _failures(report)
+    assert "frontend/src/shell/preferences.ts:" in _failures(report), _failures(report)
 
 
 def test_n3_added_assignment_moves_the_metric_only(
@@ -420,7 +420,7 @@ def test_n3_added_assignment_moves_the_metric_only(
     """
     # R4-04가 제품 대입을 0으로 닫았다. 기존 행을 지우는 대조 대신 안전한 복제 트리에
     # 하나를 추가해 0 기준선이 실제로 재유입을 거절하는지 본다.
-    target = clone_source / "js" / "theme.js"
+    target = clone_source / "src" / "shell" / "preferences.ts"
     target.write_text(
         target.read_text(encoding="utf-8") + '\ndocument.body.innerHTML = "<main></main>";\n',
         encoding="utf-8",
@@ -460,7 +460,7 @@ def test_n5_zero_indent_module_state_is_seen(
     옛 2칸 들여쓰기 관례 술어였다면 이 변이는 영영 초록이다. AST 인구조사로 옮긴 이유가
     이것이고, 그 회귀를 여기서 막는다.
     """
-    target = clone_source / "js" / "modal.js"
+    target = clone_source / "src" / "overlay" / "modal.js"
     target.write_text(
         target.read_text(encoding="utf-8") + "\nlet __neg = null;\n", encoding="utf-8"
     )
@@ -472,13 +472,13 @@ def test_n5_zero_indent_module_state_is_seen(
 @pytest.mark.parametrize(
     ("relative", "source", "expected"),
     [
-        ("js/theme.js", '\nconst __r3Markup = `<i data-r3-markup="1"></i>`;\n', "data-r3-markup"),
+        ("src/shell/preferences.ts", '\nconst __r3Markup = `<i data-r3-markup="1"></i>`;\n', "data-r3-markup"),
         (
             "src/react/root.ts",
             '\nconst __R3_SET = "data-r3-set"; document.body.setAttribute(__R3_SET, "1");\n',
             "data-r3-set",
         ),
-        ("js/theme.js", "\ndocument.body.dataset.r3Dataset = \"1\";\n", "data-r3-dataset"),
+        ("src/shell/preferences.ts", "\ndocument.body.dataset.r3Dataset = \"1\";\n", "data-r3-dataset"),
         (
             "src/react/root.ts",
             '\nel("div", { "data-r3-prop": "1" });\n',
@@ -501,17 +501,17 @@ def test_js_data_attribute_producer_forms_are_seen(
     ("relative", "source", "form"),
     [
         (
-            "js/theme.js",
+            "src/shell/preferences.ts",
             '\nconst __r3Name = window.name; document.body.setAttribute(__r3Name, "1");\n',
             "dynamic-set-attribute",
         ),
         (
-            "js/theme.js",
+            "src/shell/preferences.ts",
             '\ndocument.body.dataset[window.name] = "1";\n',
             "computed-dataset",
         ),
         (
-            "js/theme.js",
+            "src/shell/preferences.ts",
             '\nconst __r3DynamicMarkup = `<i data-${window.name}="1"></i>`;\n',
             "dynamic-markup-name",
         ),
@@ -552,7 +552,7 @@ def test_js_data_attribute_axis_excludes_selftest(
 def test_js_data_attribute_selectors_and_reads_are_not_producers(
     document: dict[str, Any], clone_source: Path,
 ) -> None:
-    target = clone_source / "js" / "theme.js"
+    target = clone_source / "src" / "shell" / "preferences.ts"
     target.write_text(
         target.read_text(encoding="utf-8")
         + '\ndocument.querySelector("[data-r3-read]");\n'
@@ -757,7 +757,7 @@ def test_m7b_dom_api_id_planting_grows_the_blind_spot(
     「못 보는 네 형태」를 전수라고 선언했던 자리다. 다섯째·여섯째를 프로브에 편입했으므로
     이제 사각이 자라고 붉는다.
     """
-    target = clone_source / "js" / "theme.js"
+    target = clone_source / "src" / "shell" / "preferences.ts"
     target.write_text(
         target.read_text(encoding="utf-8")
         + '\nfunction __negHelper(el) { el.setAttribute("id", "sneakyB"); el.id = "sneakyC"; }\n',
@@ -1262,10 +1262,10 @@ def test_cross_axis_overlap_is_derived_not_declared(
         entry = {"member": "frontend/js/ghost.js:999",
                  "axes": ["subscription_listener", "lifecycle_hook"], "reason": "가짜 좌표"}
     elif mutation == "wrong-axes":
-        entry = {"member": "frontend/js/app.js:65",
+        entry = {"member": "frontend/src/shell/app.ts:65",
                  "axes": ["dom_static", "state_ring1"], "reason": "실재 좌표·가짜 축"}
     else:  # fabricated — 실재 좌표·실재 축이지만 그 좌표는 한 축에만 측정된다
-        entry = {"member": "frontend/js/app.js:65",
+        entry = {"member": "frontend/src/shell/app.ts:65",
                  "axes": ["subscription_listener", "lifecycle_hook"], "reason": "겹침 아님"}
     mutable_document["cross_axis_overlap"] = [entry]
     report = gate.check(mutable_document, REPO_ROOT, metrics=[])
@@ -1405,7 +1405,7 @@ def test_id_planting_forms_seven_to_nine_are_seen(
     못 넘던 자리다(줄 단위로 돌면 `\\s*` 가 개행을 못 넘는다). 선언과 결과가 어긋난 자리라
     미선언 형태 둘(계산 속성·대문자)과 등급이 다르다.
     """
-    target = clone_source / "js" / "theme.js"
+    target = clone_source / "src" / "shell" / "preferences.ts"
     target.write_text(
         target.read_text(encoding="utf-8") + "\n" + snippet + "\n", encoding="utf-8"
     )

@@ -97,10 +97,10 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
 
 # --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)
 
-APP_JS = SOURCE_JS_DIR / "app.js"
+APP_JS = SOURCE_JS_DIR.parent / "src" / "shell" / "app.ts"
 SCREEN_EXECUTOR_TS = SOURCE_JS_DIR.parent / "src" / "screens" / "product_screen_executor.ts"
 # R3-02(#411) — 화이트리스트·재당김 규약 판정의 정본은 셸 상태기계로 이동했다. 발신
-# (Bridge.call)과 실패 재진술(alert)은 집행 adapter(app.js)에 남는다.
+# (Bridge.call)과 실패 재진술(alert)은 집행 adapter(shell/app.ts)에 남는다.
 NAV_TS = SOURCE_JS_DIR.parent / "src" / "shell" / "nav.ts"
 WEB_INDEX = SOURCE_INDEX
 

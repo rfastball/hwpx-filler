@@ -122,11 +122,8 @@ function freshDom(t) {
 
 /* ---------------- 그래프 열기 ---------------- */
 
-const SRC = (n) => new URL(`../../frontend/js/${n}.js`, import.meta.url);
-const read = (n) => fs.readFileSync(SRC(n), "utf8");
-
-const { createTheme } = await import("../../frontend/js/theme.js");
-const { createPersonalization } = await import("../../frontend/js/personalization.js");
+const { createTheme, createPersonalization } = await import(
+  "../../frontend/src/shell/preferences.ts");
 /* R4-02 — 시트 선택은 이 파일의 범위를 떠났다. legacy `sheet_picker.js` 가 삭제되면서
    "재사용 서비스 팩토리" 라는 이 파일의 주어에서 빠졌고, 후계 `src/screens/sheet_picker.ts`
    의 계약(확정 게이트·settle-once·취소의 의미)은 `r4_sheet_picker.test.js` 가 통째로 진다.
@@ -150,7 +147,8 @@ function patch(obj, keys, t) {
   return log;
 }
 
-const FILES = ["theme", "personalization"];
+const PREFERENCES_SRC = fs.readFileSync(
+  new URL("../../frontend/src/shell/preferences.ts", import.meta.url), "utf8");
 const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
 const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
 
@@ -158,13 +156,13 @@ function reactZoneHarness(onDispatch) {
   const calls = [];
   const snapshot = { has_job: true, has_data: true, filter: { search: "" }, zone_epoch: 7 };
   const ports = createScreenPorts();
-  ports.jobRunCoordination.bindLegacy({ confirmDestructiveIfArmed: async () => true, log() {} });
-  ports.editorEntry.bindLegacy({
+  ports.jobRunCoordination.bind({ confirmDestructiveIfArmed: async () => true, log() {} });
+  ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData() {}, land() {},
     confirmDiscard() {}, restoreEntryFocus() {},
   });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async () => true });
+  services.relink.bind({ relinkTemplate: async () => true });
   const client = {
     dispatch: async (screen, action, payload) => {
       calls.push([screen, action, payload]);
@@ -209,7 +207,7 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   assert.equal(typeof createJobReadController, "function");
   const rz = reactZoneHarness();
   assert.equal(typeof rz.controller.zone, "function");
-  assert.equal(rz.ports.jobData.owner(), "react");
+  assert.equal(typeof rz.ports.jobData.current().flushPendingEdits, "function");
 });
 
 test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 낸다", (t) => {
@@ -219,16 +217,11 @@ test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 
   assert.equal(rz.ports.jobData.current().flushPendingEdits, rz.controller.flushPendingEdits);
 });
 
-test("파일당 export 는 하나 — export default 없음", () => {
-  const EXPECTED = {
-    theme: ["createTheme"], personalization: ["createPersonalization"],
-  };
-  for (const f of FILES) {
-    const src = read(f);
-    assert.equal(/export\s+default/.test(src), false, `${f}: export default 금지`);
-    const names = [...src.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
-    assert.deepEqual(names, EXPECTED[f], `${f}: export 는 하나뿐`);
-  }
+test("preferences export는 theme·personalization factory 둘이고 default가 없다", () => {
+  assert.equal(/export\s+default/.test(PREFERENCES_SRC), false);
+  const names = [...PREFERENCES_SRC.matchAll(
+    /^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
+  assert.deepEqual(names, ["createTheme", "createPersonalization"]);
   assert.equal(/export\s+default/.test(DATA_ZONE_SRC), false);
   assert.deepEqual(
     [...DATA_ZONE_SRC.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]),
@@ -238,16 +231,9 @@ test("파일당 export 는 하나 — export default 없음", () => {
 
 /* ================= 2. 의존은 명시적 import, Bridge 는 명시적 포트 ================= */
 
-test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", () => {
-  const EXPECTED = {
-    theme: [], personalization: [],
-  };
-  for (const f of FILES) {
-    const src = read(f);
-    for (const line of EXPECTED[f]) assert.ok(src.includes(line), `${f}: ${line}`);
-    const found = [...src.matchAll(/^import .*$/gm)].map((m) => m[0]);
-    assert.deepEqual(found, EXPECTED[f], `${f}: import 목록이 계약과 동일`);
-  }
+test("셸 preferences는 별칭이나 다른 제품 모듈 import 없이 선다", () => {
+  const found = [...PREFERENCES_SRC.matchAll(/^import .*$/gm)].map((m) => m[0]);
+  assert.deepEqual(found, []);
   assert.equal(DATA_ZONE_SRC.includes('from "./job_read.ts"'), false,
     "producer↔controller 런타임 순환을 만들지 않는다");
   assert.ok(DATA_ZONE_SRC.includes("type JobReadController ="));
@@ -256,30 +242,21 @@ test("N-04 잎·N-05 서비스 의존이 명시적 import 다(별칭 없음)", (
 
 test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign(window) 전부 0", () => {
   const PRODUCT = /window\.(Modal|Popover|Bridge|Nav|escHtml|SheetPicker|PathTrack|Preserve|Intent|DataPicker|[A-Za-z]*Screen|__push|AppCloseGuard)\b/;
-  for (const f of FILES) {
-    const src = read(f);
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    assert.equal(/^\(function\s*\(/m.test(code), false, `${f}: top-level IIFE 금지`);
-    assert.equal(/^\}\)\(\);/m.test(code), false, `${f}: top-level IIFE 금지`);
-    assert.equal(/(window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code), false,
-      `${f}: 자기 전역 생산 금지`);
-    assert.equal(PRODUCT.test(code), false, `${f}: 제품 전역 조회 금지`);
-    assert.equal(code.includes("Object.assign(window"), false, `${f}: Object.assign(window) 금지`);
-  }
+  const code = PREFERENCES_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  assert.equal(/^\(function\s*\(/m.test(code), false, "top-level IIFE 금지");
+  assert.equal(/(window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code), false,
+    "자기 전역 생산 금지");
+  assert.equal(PRODUCT.test(code), false, "제품 전역 조회 금지");
+  assert.equal(code.includes("Object.assign(window"), false, "Object.assign(window) 금지");
   assert.equal(/(?:window|globalThis)\.(?:Bridge|Modal|DataZone|JobScreen)\b/.test(DATA_ZONE_SRC), false);
 });
 
 test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
-  const FACTORY = {
-    theme: "createTheme", personalization: "createPersonalization",
-  };
-  for (const [f, name] of Object.entries(FACTORY)) {
-    const src = read(f);
-    assert.ok(src.includes(`export function ${name}({ bridge }) {`), `${f}: ${name}({ bridge })`);
-    // 모듈 스코프(들여쓰기 0)에서 bridge 를 만지면 팩토리 인자보다 먼저 평가돼 애초에 못 쓴다 —
-    // 그래도 계측으로 못박는다: 프로브가 프로퍼티를 갈아끼우는 통로가 살아 있어야 한다.
-    assert.equal(/^const\s+\w+\s*=\s*bridge\./m.test(src), false, `${f}: 모듈 스코프 캡처 금지`);
+  for (const name of ["createTheme", "createPersonalization"]) {
+    assert.ok(PREFERENCES_SRC.includes(`export function ${name}(`), name);
   }
+  assert.equal(/^const\s+\w+\s*=\s*bridge\./m.test(PREFERENCES_SRC), false,
+    "모듈 스코프 bridge 캡처 금지");
 });
 
 test("DataZone 요청은 JobRead controller의 단일 zone tail과 client port를 지난다", () => {

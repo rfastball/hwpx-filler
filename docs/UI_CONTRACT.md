@@ -151,7 +151,8 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   (`pendingDialog`)·Escape/Tab/복귀 승계·keydown 시점(`keydownWanted`)을 소유한다. DOM
   기입·판독 0 — 요소는 불투명 참조다. modal.js 의 자기 스택·자기 직렬화 불리언은 **잔존
   금지가 계약**이다(정적 게이트가 음성으로 든다).
-- **집행 = 두 집행자, 한 계약**(`OverlayExecutor`): legacy 9 모달은 `frontend/js/modal.js` 의
+- **집행 = 두 집행자, 한 계약**(`OverlayExecutor`): DOM-backed 9 모달은
+  `frontend/src/overlay/modal.js`의 명시 구성 adapter가
   legacy 집행자가, promise 다이얼로그·토스트는 React host(`frontend/src/overlay/host.ts`)의
   컨트롤러가 집행한다. host 는 골격을 **1회 렌더**하고 동적 전이(문안·클래스·포커스·퇴장)는
   ref 노드 위 **명령형 동기 집행**이다 — 상태 재렌더가 없어 ⑴파사드 호출과 같은 동기 턴에
@@ -183,7 +184,8 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   React 커밋 산물이라 마운트 전제조건 대기) + 신설 `tests/test_react_overlay_live.py`(host
   마커·직속 자식·닫힘 상시 렌더·id 유일의 reload 재초기화 되읽기)가 진다.
 - **R4 인계**: 9 모달·메뉴 3·콜패널·이동 다이얼로그 2 의 DOM 실이관(내용 생산자=화면과 한
-  몸). **R5 인계**: 파사드 모듈 자체의 은퇴와 release 비대칭의 최종 정산.
+  몸). **R5 정산**: 구 파사드 파일은 은퇴했고 adapter와 SurfaceSheet는 factory 주입으로
+  구성된다. React host 슬롯은 mount/unmount cleanup이 exact 대칭이다.
 
 ### 앱 셸·navigation 수명주기 (R3-02 · #411)
 
@@ -203,16 +205,16 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   부착이 비동기라 ready 사건은 **선판정 + 이벤트**(adapter `whenReady` 규약)로, 부착 전에
   지나간 `hwpx:*` 라벨 동기 사건은 **부착 직후 따라잡기**(`catchUp` — 현재 상태 재판독)로
   놓침 창을 닫는다(#74 라벨 어긋남 결함류의 구조 폐쇄). 리스너는 once 가 아니다(재발화 시
-  init 재주행 — 멱등은 각 화면 `wired` 가드 소유).
-- **집행 = ProductScreenExecutor + app.js adapter**: `src/screens/product_screen_executor.ts`가
+  init 재주행 — 각 controller의 `loadInitial` 멱등 계약이 중복 당김을 막는다).
+- **집행 = ProductScreenExecutor + shell/app.ts adapter**: `src/screens/product_screen_executor.ts`가
   `flushSync` 안에서 visibility store와 aria-current·몰입 body 클래스를 함께 바꾸고,
   `main.stage` 및 명명된 내부 스크롤·안정 focus를 화면별로 보존한다. 화면 전환 전
   `SurfaceSheet.closeAllAndRestore()` 회수와 refresh 발신(`Bridge.call` + notice/실패 재진술)도
-  같은 executor 포트가 진다. app.js에는 스플리터 제스처와 전역 리스너 **서술**만 남는다.
+  같은 executor 포트가 진다. `src/shell/app.ts`에는 스플리터 제스처와 전역 리스너
+  **서술**만 남는다.
   **닫기 확인의 호출·문안(`앱 종료 확인`·`confirmLabel: "종료"`·`계속
-  작업`)·`danger: true`·`Bridge.confirmWindowClose/cancelWindowClose` 발신도 app.js 잔존이
-  계약이다** — 파괴 확정 감사망(danger 감사·dom-contract)이 legacy 층 원문 위에서 완전하기
-  때문이고(#411 패킷 rev3 개정 5), 직렬화 판정만 상태기계를 지난다. adapter 가 판정을
+  작업`)·`danger: true`·`Bridge.confirmWindowClose/cancelWindowClose` 발신도 TS adapter
+  계약이다** — 직렬화 판정은 상태기계를 지나고 modal은 명시 포트로 주입된다. adapter 가 판정을
   재조립하면 그것이 경계 위반이다(음성 게이트가 든다).
 - **마운트 실패의 반경**: R3-01(확인 창)에 더해 탭·도구 응답·화면 init 이 React 마운트에
   선다 — 실패는 경보(alert)로 착지하고 Vanilla fallback 은 없다(#405 불변식).
@@ -341,7 +343,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 
 사용자 확인(파괴 전이의
 `needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**
-(`frontend/js/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
+(`frontend/src/overlay/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
 창 수명 같은 나머지 네이티브 동작도 링2 브리지가 소유한다. 링0·링1이 WebView2 또는 DOM을
 알게 해서는 안 된다.
 
@@ -351,7 +353,7 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 `library`, `job`, `editor`, `workbench` 네 개다. 「기안」(`draft`)은 F6 PR-B 에서
 사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
-`frontend/js/app.js`의 앱 셸이 내는 `Nav.go`가 전환을 요청한다(주입으로 전달되는
+`frontend/src/shell/app.ts`의 앱 셸이 내는 `Nav.go`가 전환을 요청한다(주입으로 전달되는
 구성 산물이다 — 전역 `window.Nav`는 N-10에서 사라졌다. R3-02 부터 판정은 셸 상태기계
 `frontend/src/shell/nav.ts`, 집행은 `product_screen_executor.ts`다 — 위 「앱 셸·navigation
 수명주기」). 정적 HTML에는 `#reactScreenStage` 하나만 있고 `ProductScreens`가 네 wrapper를

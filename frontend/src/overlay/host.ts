@@ -13,7 +13,7 @@
  *
  * ## 소유 경계
  *
- * 문안·기본 라벨·danger 판정·거절 재진술은 파사드(legacy modal.js)가 계속 소유한다 —
+ * 문안·기본 라벨·danger 판정·거절 재진술은 modal factory가 계속 소유한다 —
  * 이 파일은 **해석된 spec** 을 받아 그린다(파괴 확정 감사·문안 그물이 legacy 층 원문
  * 위에서 완전하다는 형제 패킷 판정과 정합). 스택·직렬화·Escape/Tab 판정은 엔진
  * (`engine.ts`) 소유이고 여기는 집행자다. 문서 리스너도 이 파일 소유가 아니다 —
@@ -171,6 +171,7 @@ function runDialog<T>(args: {
   altValue?: T;
   validate?: (value: T) => unknown;
   returnFocus: unknown;
+  track: (dispose: () => void) => () => void;
 }): Promise<T> {
   const { refs, doc } = args;
   return new Promise<T>((resolve) => {
@@ -186,6 +187,7 @@ function runDialog<T>(args: {
     let closing = false;
     let closeValue: T = args.refusal;
     let validating = false;
+    let untrack = (): void => {};
 
     const cleanup = (): void => {
       refs.ok.removeEventListener("click", onOk);
@@ -196,6 +198,7 @@ function runDialog<T>(args: {
     const settle = (value: T): void => {
       if (settled) return;
       settled = true;
+      untrack();
       overlayEngine.releaseDialog();
       resolve(value);
     };
@@ -214,6 +217,7 @@ function runDialog<T>(args: {
         refs.ok.disabled = true;
         try {
           const error = await args.validate(value);
+          if (settled) return;
           if (error) {
             if (refs.error !== null) {
               refs.error.textContent = String(error);
@@ -223,7 +227,7 @@ function runDialog<T>(args: {
           }
         } finally {
           validating = false;
-          refs.ok.disabled = false;
+          if (!settled) refs.ok.disabled = false;
         }
       }
       finish(value);
@@ -245,6 +249,18 @@ function runDialog<T>(args: {
     if (refs.alt !== null) refs.alt.addEventListener("click", onAlt);
     refs.cancel.addEventListener("click", onCancel);
     if (refs.input !== null) refs.input.addEventListener("keydown", onInputKey);
+
+    /* host unmount 는 열린 promise 다이얼로그도 거절값으로 즉시 정산한다. React 골격이
+       사라진 뒤 transition 안전망을 기다리면 listener·stack·pendingDialog 가 그래프 수명
+       밖으로 새므로, 같은 close/settle 경로를 동기로 완주한다. */
+    untrack = args.track(() => {
+      if (settled) return;
+      closing = true;
+      cleanup();
+      const requested = overlayEngine.requestClose(refs.root);
+      if (requested !== "ignored") overlayEngine.settleClose(refs.root);
+      if (!settled) settle(args.refusal);
+    });
 
     overlayEngine.open({
       host: refs.root,
@@ -356,6 +372,11 @@ export function createOverlayDialogController(args: {
   roots: { confirm: HTMLElement; choose: HTMLElement; prompt: HTMLElement; toast: HTMLElement };
 }): { controller: DialogHost; dispose: () => void } {
   const { doc, notify, roots } = args;
+  const activeDialogs = new Set<() => void>();
+  const trackDialog = (dispose: () => void): (() => void) => {
+    activeDialogs.add(dispose);
+    return () => { activeDialogs.delete(dispose); };
+  };
 
   /* ── 토스트 — 1슬롯·10초·실패 재진술(undo_toast.js 거동 이식) ── */
   const toastText = byId<HTMLElement>(roots.toast, "undoToastText");
@@ -412,6 +433,7 @@ export function createOverlayDialogController(args: {
         initialFocus: () => cancel,
         okValue: () => true,
         returnFocus: spec.returnFocus,
+        track: trackDialog,
       });
     },
     prompt(spec) {
@@ -441,6 +463,7 @@ export function createOverlayDialogController(args: {
         okValue: () => input.value,
         validate: spec.validate as ((value: string | null) => unknown) | undefined,
         returnFocus: spec.returnFocus,
+        track: trackDialog,
       });
     },
     choose(spec) {
@@ -465,6 +488,7 @@ export function createOverlayDialogController(args: {
         initialFocus: () => cancel,
         okValue: () => spec.primary.value,
         returnFocus: spec.returnFocus,
+        track: trackDialog,
       });
     },
     toastShow(message, undo) {
@@ -480,6 +504,7 @@ export function createOverlayDialogController(args: {
   return {
     controller,
     dispose: () => {
+      for (const disposeDialog of [...activeDialogs]) disposeDialog();
       toastButton.removeEventListener("click", onToastClick);
       toastHide();
     },

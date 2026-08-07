@@ -13,13 +13,13 @@ function build(snapshot, dispatch) {
   const ports = createScreenPorts();
   const browse = [];
   const drafts = [];
-  ports.jobRead.bindReact({ refreshList() {}, async openBrowseNeedsAction(name) { browse.push(name); } });
-  ports.editorEntry.bindLegacy({
+  ports.jobRead.bind({ refreshList() {}, async openBrowseNeedsAction(name) { browse.push(name); } });
+  ports.editorEntry.bind({
     openGuarded() {}, newDraft() { drafts.push("new"); }, newDraftFromData() {},
     land() {}, confirmDiscard() {}, restoreEntryFocus() {},
   });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async () => true });
+  services.relink.bind({ relinkTemplate: async () => true });
   const navigation = [];
   const notices = [];
   const controller = createLibraryController({

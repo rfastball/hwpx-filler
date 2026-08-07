@@ -10,13 +10,13 @@ function makeController(options = {}) {
   const calls = [];
   const entries = [];
   const ports = createScreenPorts();
-  ports.jobRunCoordination.bindLegacy({ confirmDestructiveIfArmed: async () => true, log() {} });
-  ports.editorEntry.bindLegacy({
+  ports.jobRunCoordination.bind({ confirmDestructiveIfArmed: async () => true, log() {} });
+  ports.editorEntry.bind({
     openGuarded() {}, newDraft() {}, newDraftFromData(context) { entries.push(context); }, land() {},
     confirmDiscard() {}, restoreEntryFocus() {},
   });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async () => true });
+  services.relink.bind({ relinkTemplate: async () => true });
   const timers = new Map();
   let timerId = 0;
   const doc = {
@@ -100,9 +100,9 @@ test("작업 전환 전에 예약 검색을 같은 zone 체인으로 정산한�
   await controller.selectJob("작업B");
   assert.deepEqual(calls.map((row) => row[1]), ["filter_search", "select_job"]);
   assert.deepEqual(calls[0][2], { text: "새 검색", epoch: 7 });
-  assert.equal(ports.jobRead.owner(), "react");
-  assert.equal(ports.jobData.owner(), "react");
-  assert.equal(ports.jobRelinkFlow.owner(), "react");
+  assert.equal(typeof ports.jobRead.current().refreshList, "function");
+  assert.equal(typeof ports.jobData.current().flushPendingEdits, "function");
+  assert.equal(typeof ports.jobRelinkFlow.current().relinkTemplateFor, "function");
 });
 
 test("job run adapter는 full/progress를 순서 보존 fan-out하고 preview 전에 flush한다", async () => {

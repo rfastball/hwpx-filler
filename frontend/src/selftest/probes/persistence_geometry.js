@@ -471,7 +471,7 @@ export function createPersistenceGeometryProbes() {
       deadlineMs: 25000,
       note:
         "실사용 경로 그대로 구동한다 — 토글 클릭이 지나는 Theme.set→Bridge.setTheme→"
-        + "api.set_theme 홉 전체. api 직접 호출로 바꾸면 theme.js 결함이 무커버가 된다.",
+        + "api.set_theme 홉 전체. api 직접 호출로 바꾸면 preferences.ts 결함이 무커버가 된다.",
       async run(ctx) {
         const theme = await ctx.host("input_select", { setting: "theme" });
         await ctx.waitFor(

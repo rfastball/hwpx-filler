@@ -385,8 +385,8 @@ owner_stage = "R3-01"
 
 [[asset]]
 file = "tests/test_frontend_build_graph.py"
-responsibility = "Vite build graph 와 물리 source 전이·잎 ESM 전이 계약"
-owner_stage = "R2-01"
+responsibility = "Vite build graph·물리 source 전이·R5 폐기 셸/선호/overlay 경로 재유입 금지"
+owner_stage = "R5-01"
 
 [[asset]]
 file = "tests/test_frontend_module_units.py"

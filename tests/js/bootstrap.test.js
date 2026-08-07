@@ -7,7 +7,7 @@
    그렇다고 파일째 지우면 함께 죽는 것이 있다:
 
    - 어떤 잎이 export 와 **동일 객체**로 배선됐는가 (`Copy` ≡ `copy.js` 의 export)
-   - 각 factory 산물의 **공개 표면 키**가 계약대로인가 (`JobScreen` 의 열두 메서드 등)
+   - 각 factory 산물의 **공개 표면 키**가 계약대로인가
    - 조립이 실제로 **돌았는가** (앱 셸이 부팅 랜딩을 찍었는가)
    - 제품 파사드와 푸시 통로가 **같은 하나**로 모이는가
 
@@ -62,13 +62,9 @@ const PLAIN_SERVICES = {
   Preserve: ["preserve.js", "Preserve"],
   Intent: ["intent.js", "Intent"],
   UndoToast: ["undo_toast.js", "UndoToast"],
-  Modal: ["modal.js", "Modal"],
-  SurfaceSheet: ["surface_sheet.js", "SurfaceSheet"],
 };
 
-/* factory 산물 — 합성 루트가 구성한 인스턴스라 동일성 비교가 안 된다. 표면(키)으로 센다.
-   이 키 목록은 **소비 계약**이다: 화면 넷의 공개 메서드를 selftest 프로브가 이름으로 부르므로
-   (`ctx.services[name]`), 표면이 좁아지면 프로브가 실엔진에서야 죽는다. */
+/* factory 산물 — 합성 루트가 구성한 인스턴스라 동일성 비교가 안 된다. 표면(키)으로 센다. */
 const FACTORY_SERVICES = {
   /* R4 React 화면이 실제로 부르는 typed 전송 객체. selftest는 이 참조의 dispatch/invoke를
      교체해 합성 snapshot과 백엔드 세계가 갈라지지 않게 한다. */
@@ -78,21 +74,24 @@ const FACTORY_SERVICES = {
     "apply", "currentFontScale", "toggleFontScale", "setFontScale",
     "setMasterWidth", "saveMasterWidth", "masterMin", "masterMax",
   ],
+  Modal: ["open", "close", "confirm", "prompt", "choose", "restoreFocus"],
+  SurfaceSheet: ["open", "close", "closeAndRestore", "closeAllAndRestore", "isOpen", "restore", "trigger"],
   SheetPicker: ["choose"],
   DataPicker: ["init", "open"],
   EditorEntry: [
     "openGuarded", "land", "confirmDiscard", "newDraft",
     "newDraftFromData", "restoreEntryFocus",
   ],
-  LibraryScreen: ["init"],
-  EditorScreen: ["init", "rerender", "leaveTo", "aimAt"],
-  JobScreen: [
-    "init", "overwriteBody", "guardBody", "resultExitLine", "confirmDestructiveIfArmed", "log",
-    "openPreview", "renderResult", "markResultStale",
+  /* selftest가 직접 겨누는 실행 controller. 별도 JobScreen facade는 R5-01에서 은퇴했다. */
+  JobRun: [
+    "model", "client", "notify", "subscribe", "getRun", "getUi",
+    "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
+    "confirmDestructiveIfArmed", "log", "renderResult", "markResultStale",
+    "startGenerate", "cancelGeneration", "closeResult", "selectFailed",
+    "openRenameRules", "pickOutputFolder", "relinkActive", "openPreviewFrom",
+    "closePreview", "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
+    "previewFixField", "previewFixFilename", "openRepair", "toggleLog", "init", "dispose",
   ],
-  /* R4-02 — 작업대 재렌더는 React 구독이 진다. 셸이 부르는 이름만 남아 표면이 하나 좁아졌다
-     (`render` 는 legacy 명령형 렌더러의 손잡이였고 후계 소비자가 없다). */
-  WorkbenchScreen: ["init", "leaveTo"],
   /* R4-03 — `currentScreen` 관측면이 늘었다. 화면이 「지금 어느 화면인가」를 상태기계에
      묻게 하는 자리이고, 그것을 DOM(`#scr-job.on`)으로 되물으면 판정이 두 곳에 산다. */
   Nav: ["go", "refresh", "currentScreen"],
@@ -286,8 +285,8 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 22,
-    "R4 구성 산물 이름 수가 바뀌었습니다 — R4-04의 GroupList·PathTrack 은퇴 뒤 22개입니다.");
+  assert.equal(SERVICE_NAMES.length, 19,
+    "R5 구성 산물 이름 수가 바뀌었습니다 — 화면 facade 은퇴 뒤 19개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {

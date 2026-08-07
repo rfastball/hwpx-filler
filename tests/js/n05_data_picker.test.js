@@ -28,7 +28,7 @@ function build(options = {}) {
   const notifications = [];
   const initialCalls = [];
   const services = createServiceHandoffPorts();
-  services.sheetPicker.bindLegacy({
+  services.sheetPicker.bind({
     async choose(screen, request) {
       sheetCalls.push([screen, request]);
       return options.choose ? options.choose(screen, request) : null;

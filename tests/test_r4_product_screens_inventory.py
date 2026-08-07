@@ -17,7 +17,7 @@ from _web_source import SOURCE_INDEX, SOURCE_ROOT, module_imports
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_SCREENS = SOURCE_ROOT / "src/screens/product_screens.ts"
 BOOTSTRAP = SOURCE_ROOT / "src/bootstrap.js"
-APP = SOURCE_ROOT / "js/app.js"
+APP = SOURCE_ROOT / "src/shell/app.ts"
 
 SCREEN_IDS = ("library", "job", "editor", "workbench")
 FINAL_SUCCESSORS = {

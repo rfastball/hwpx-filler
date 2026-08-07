@@ -451,12 +451,12 @@ export function createJobReadController(deps: JobReadControllerDeps) {
     patchUi,
   };
 
-  deps.ports.jobRead.bindReact({
+  deps.ports.jobRead.bind({
     refreshList: async () => { await call("job", "refresh", {}); },
     openBrowseNeedsAction,
   });
-  deps.ports.jobData.bindReact({ flushPendingEdits });
-  deps.ports.jobRelinkFlow.bindReact({ relinkTemplateFor });
+  deps.ports.jobData.bind({ flushPendingEdits });
+  deps.ports.jobRelinkFlow.bind({ relinkTemplateFor });
   return controller;
 }
 

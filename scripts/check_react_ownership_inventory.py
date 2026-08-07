@@ -157,8 +157,9 @@ AXIS_FLOORS: dict[str, int] = {
     # 분모에 편입됐다. 완료 host의 대칭은 별도 0-잔차 계측이 지킨다.
     # R4-03: 실행 표면의 위임 listener 18이 React element prop 으로 접혔다. 「구독한다」는
     # 사실은 model 구독 하나로 남아 subscription_push 가 든다 — 축이 준 것이 아니라 옮겼다.
-    # R4-04에서 화면별 legacy 부착을 executor/lifecycle 소유로 합쳐 실호출은 19개다.
-    "subscription_listener": 19,
+    # R5-01에서 app.js의 셸 listener 5개를 attachment 서술 하나로 접고 동적 splitter 3개만
+    # 남겨 실호출은 17개다. 줄어든 수는 React ShellHost의 단일 부착/대칭 해제가 승계한다.
+    "subscription_listener": 17,
     "subscription_release": 15,     # 오늘 17
     "subscription_push": 6,         # R4-02: 축 단위가 「화면 구독」에서 「기반 탭 + model 구독」으로
     "lifecycle_factory": 54,        # 오늘 83 — R4 controller/component/port factory 편입
@@ -229,7 +230,9 @@ EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
 # legacy 배선 멱등 가드 `wired`, 렌더 보존 래퍼. 앞의 둘은 dom_js_data_attr 이 같은 셋을
 # 계속 들고, 뒤의 둘은 겨눌 코드가 사라졌다. 「행이 줄었다」와 「행이 옮겨졌다」는 다르고
 # 이 인하는 앞엣것에만 대응한다.
-NODE_ROW_FLOOR = 119
+# R5-01에서 legacy theme 상태와 editor↔tpl migration 구독 노드 2행을 삭제했다. 측정 축의
+# state_js_module 분모도 75→67로 함께 줄었고 나머지 117행은 폐포로 검증된다.
+NODE_ROW_FLOOR = 117
 
 #: `repo_wide_metrics` 판정 — scope 의 첫 경로 조각이 리터럴이 아니면 저장소 전수로 본다.
 _REPO_WIDE_HEAD = re.compile(r"[*?\[]")

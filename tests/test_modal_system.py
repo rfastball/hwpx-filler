@@ -13,9 +13,9 @@ INDEX = SOURCE_INDEX
 # 분할된 앱 스타일시트를 링크 순서대로 이어붙인 **문자열**(구 app.css 등가) — 이 파일의
 # 단언은 119-128·838·894-900·932-933 이 한 문자열 안에 함께 있어야 성립한다.
 CSS = app_css()
-MODAL_JS = SOURCE_JS_DIR / "modal.js"
+MODAL_JS = SOURCE_JS_DIR.parent / "src" / "overlay" / "modal.js"
 # R3-01(#410) — 판정(스택·직렬화·Escape/Tab/복귀)의 거처는 트리-불가지 엔진이고, 문서
-# keydown 부착/해제는 엔진 배선이 진다. modal.js 는 파사드 + legacy 집행자로 남는다.
+# keydown 부착/해제는 엔진 배선이 진다. overlay/modal.js 는 명시 구성되는 집행 adapter다.
 ENGINE_TS = SOURCE_JS_DIR.parent / "src" / "overlay" / "engine.ts"
 INSTANCE_TS = SOURCE_JS_DIR.parent / "src" / "overlay" / "instance.ts"
 
@@ -74,10 +74,10 @@ def test_open_order_and_escape_contract_are_explicit() -> None:
     open_body = src[src.index("function open(") : src.index("function close(")]
     order = [
         open_body.index("const returnFocus ="),
-        open_body.index("Popover.closeAll()"),
+        open_body.index("popover.closeAll()"),
         open_body.index("overlayEngine.open("),
     ]
-    assert order == sorted(order), "returnFocus→Popover.closeAll→engine.open 순서가 깨졌습니다."
+    assert order == sorted(order), "returnFocus→popover.closeAll→engine.open 순서가 깨졌습니다."
 
     # Escape/IME 판정은 엔진이 소유한다(R3-01) — IME 조합 통과가 Escape 판정보다 먼저.
     engine = ENGINE_TS.read_text(encoding="utf-8")

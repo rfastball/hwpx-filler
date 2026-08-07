@@ -158,11 +158,13 @@ after(() => {
 /* ────────────────────── 실물 그래프 열기(전역 대역 설치 후) ────────────────────── */
 
 buildFixture();
-const SRC_URL = new URL("../../frontend/js/app.js", import.meta.url);
+const SRC_URL = new URL("../../frontend/src/shell/app.ts", import.meta.url);
 const SRC = readFileSync(SRC_URL, "utf8");
 
-const mod = await import("../../frontend/js/app.js");
-const { Modal } = await import("../../frontend/js/modal.js");
+const mod = await import("../../frontend/src/shell/app.ts");
+const { createModal } = await import("../../frontend/src/overlay/modal.js");
+const { Popover } = await import("../../frontend/js/popover.js");
+const Modal = createModal({ popover: Popover });
 const { createShellNav } = await import("../../frontend/src/shell/nav.ts");
 const { attachShell } = await import("../../frontend/src/shell/host.ts");
 const { createAppShell } = mod;
@@ -187,6 +189,7 @@ function makeDeps() {
       /* R3-02 — 부팅 시퀀서의 선판정도 브리지 술어를 거친다(bridge.js hostReady 계약). */
       hostReady() { return !!(window.pywebview && window.pywebview.api); },
     },
+    modal: Modal,
     Theme: {
       mode: "system",
       toggles: 0,
@@ -638,11 +641,10 @@ test("음성 — IIFE 0·window[ 동적 조회 0·제품 전역 27종 조회 0(�
   assert.equal(/(?:window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(SRC), false, "자기 전역 생산 금지");
 });
 
-test("음성 — import 는 Modal·기본 화면 정본뿐(화면·executor import 0), export 는 createAppShell 하나", () => {
-  const importLines = [...SRC.matchAll(/^import .*$/gm)].map((m) => m[0]);
+test("음성 — runtime import 는 기본 화면 정본뿐(화면·executor import 0), export 는 createAppShell 하나", () => {
+  const importLines = [...SRC.matchAll(/^import (?!type ).*$/gm)].map((m) => m[0]);
   assert.deepEqual(importLines, [
-    'import { Modal } from "./modal.js";',
-    'import { DEFAULT_SCREEN } from "../src/shell/nav.ts";',
+    'import { DEFAULT_SCREEN } from "./nav.ts";',
   ]);
   assert.equal(/from "\.{1,2}\/screens\//.test(SRC), false, "화면 파일 import 금지 — screens 는 주입");
   assert.equal(/export\s+default/.test(SRC), false);
@@ -660,11 +662,11 @@ test("음성 — 판정 재조립 잔존 0: adapter 에 화면 판정·목록 �
 });
 
 test("Python 계약 앵커 — Nav 리터럴·go 시그니처·기본 랜딩·닫기 계약 문자열", () => {
-  assert.ok(SRC.includes("const Nav = { go, refresh, currentScreen: () => shellNav.currentScreen() };"),
-    "window.Nav 의 후계 리터럴 그대로(+R4-03 관측면 — 판정은 상태기계가 답한다)");
-  assert.ok(SRC.includes("function go(id, opts) {"), "go 는 synchronous 시그니처 텍스트 보존");
+  assert.ok(SRC.includes("currentScreen: () => shellNav.currentScreen(),"),
+    "Nav 관측면은 상태기계가 답한다");
+  assert.ok(SRC.includes("const go = (id: string, options?:"), "go 는 synchronous 시그니처 텍스트 보존");
   assert.ok(SRC.includes("go(DEFAULT_SCREEN);"), "구성 즉시 랜딩(정본은 import)");
-  assert.equal(SRC.includes("bindExecutor"), false, "app.js가 executor를 다시 묶지 않는다");
+  assert.equal(SRC.includes("bindExecutor"), false, "app adapter가 executor를 다시 묶지 않는다");
   assert.equal(SRC.includes("applyScreen"), false, "화면 DOM 집행은 ProductScreens executor 소유");
   assert.ok(SRC.includes('confirmLabel: "종료"') && SRC.includes("danger: true"),
     "닫기 확인의 호출·문안·danger 잔존(패킷 rev3 개정 5 — danger 감사망의 소재 계약)");

@@ -7,7 +7,7 @@ import { createServiceHandoffPorts } from "../../frontend/src/ports/service_hand
 function build(overrides = {}) {
   const services = createServiceHandoffPorts();
   const chosen = [];
-  services.sheetPicker.bindLegacy({
+  services.sheetPicker.bind({
     async choose(screen, request) {
       chosen.push([screen, request]);
       return { label: "목록.xlsx / Sheet2", rows: 3, path: "C:/목록.xlsx", sheet: "Sheet2" };

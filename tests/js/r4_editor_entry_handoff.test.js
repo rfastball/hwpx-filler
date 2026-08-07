@@ -1,19 +1,10 @@
-/* R4-02 — 편집기 진입 seam 의 owner 교체 계약.
+/* R4-02 편집기 진입 seam의 단일 결속 계약 — R5-01에서 migration API를 걷은 후계.
  *
- * 패킷 rev2 §3 은 `bindLegacy` → `handoff("legacy","react")` 를 그렸다. 착지에서 그 그림은
- * 성립하지 않는다(구현 델타 D10): 이 슬라이스가 legacy `editor_entry.js` 를 **파일째**
- * 삭제하므로 handoff 할 상대가 없다. 빈 port 에 `bindReact` 로 한 번 결속한다.
- *
- * 불변식은 약해지지 않고 **강해진다**:
- *  - 「정확히 한 번」은 그대로다 — 둘째 결속은 throw.
- *  - 「중간 dual-dispatch 금지」는 창 자체가 생기지 않아 **구조적으로** 성립한다.
- *  - 호출자(라이브러리·작업 화면)는 port 하나만 알고, owner 가 바뀌어도 고치지 않는다.
- *
- * `handoff` API 는 죽지 않았다 — 남은 legacy 소비자가 있는 port(job run 계열)에서 #416·#417
- * 이 쓴다. 그래서 이 파일은 그 API 가 이 port 에서 **쓰이지 않았음**까지 함께 못박는다.
+ * legacy 구현은 이미 파일째 사라졌으므로 port는 owner 상태 없이 구현 하나만 정확히 한 번
+ * 받는다. 호출자는 port 하나만 알고 둘째 결속은 loud failure다.
  *
  * D5 — `aimAt` 은 이 port 의 7번째 키가 **아니다**. 이 port 의 정체는 진입/복귀 초점이고,
- * `EditorScreen.aimAt` 은 화면 콜백 표의 late-bound 간선이다. 그 간선이 끊기면 결과에서
+ * `EditorController.aimAt`은 화면 콜백 표의 late-bound 간선이다. 그 간선이 끊기면 결과에서
  * 규칙 행을 겨누는 길이 조용히 사라지므로 여기 음성 대조를 둔다.
  */
 import test from "node:test";
@@ -44,37 +35,29 @@ function reactEntry() {
   });
 }
 
-test("React 구현은 **빈 port** 에 정확히 한 번 결속한다(중간 dual-dispatch 창 없음)", () => {
+test("React 구현은 빈 port에 정확히 한 번 결속한다", () => {
   const ports = createScreenPorts();
-  assert.equal(ports.editorEntry.owner(), null);
   assert.throws(() => ports.editorEntry.current(), /결속되지/,
     "미결속 호출은 조용한 무동작이 아니라 loud 다");
 
   const entry = reactEntry();
-  ports.editorEntry.bindReact(entry);
-  assert.equal(ports.editorEntry.owner(), "react");
+  ports.editorEntry.bind(entry);
   assert.equal(ports.editorEntry.current(), entry);
 });
 
 test("음성 — 둘째 결속은 throw 하고 첫 구현이 그대로 남는다", () => {
   const ports = createScreenPorts();
   const first = reactEntry();
-  ports.editorEntry.bindReact(first);
-  assert.throws(() => ports.editorEntry.bindReact(reactEntry()), /빈 port에만/);
-  assert.throws(() => ports.editorEntry.bindLegacy(reactEntry()), /정확히 한 번/);
-  assert.equal(ports.editorEntry.current(), first, "실패한 둘째 결속이 owner 를 흔들지 않는다");
-});
-
-test("음성 — legacy 를 거치지 않았으므로 legacy→react handoff 는 성립하지 않는다", () => {
-  const ports = createScreenPorts();
-  ports.editorEntry.bindReact(reactEntry());
-  assert.throws(() => ports.editorEntry.handoff("legacy", "react", reactEntry()), /상태가 어긋/,
-    "owner 가 이미 react 인 port 에 legacy 출처를 주장할 수 없다");
+  ports.editorEntry.bind(first);
+  assert.throws(() => ports.editorEntry.bind(reactEntry()), /정확히 한 번/);
+  assert.equal(ports.editorEntry.current(), first, "실패한 둘째 결속이 구현을 흔들지 않는다");
+  assert.deepEqual(Object.keys(ports.editorEntry).sort(), ["bind", "current"],
+    "legacy owner/handoff API가 되살아나면 안 된다");
 });
 
 test("포트 형은 6키 그대로 — 진입 seam 에 aimAt 을 얹지 않는다(D5)", () => {
   const ports = createScreenPorts();
-  ports.editorEntry.bindReact(reactEntry());
+  ports.editorEntry.bind(reactEntry());
   assert.deepEqual(Object.keys(ports.editorEntry.current()).sort(), ENTRY_KEYS);
   assert.equal(Object.hasOwn(ports.editorEntry.current(), "aimAt"), false,
     "이 port 의 정체는 진입/복귀 초점이다 — 겨눔은 화면 콜백 표가 진다");
@@ -83,7 +66,7 @@ test("포트 형은 6키 그대로 — 진입 seam 에 aimAt 을 얹지 않는�
 test("호출자는 port 만 안다 — owner 가 React 여도 호출부가 그대로 왕복한다", async () => {
   const ports = createScreenPorts();
   const seen = [];
-  ports.editorEntry.bindReact(createEditorEntry({
+  ports.editorEntry.bind(createEditorEntry({
     doc: { activeElement: null },
     client: {
       async invoke(method, ...args) { seen.push([method, ...args]); return { ok: true, value: false }; },
@@ -105,27 +88,22 @@ test("호출자는 port 만 안다 — owner 가 React 여도 호출부가 그�
 
 /* ================= 시트 선택 port 도 같은 형태다(rev4 → D10) ================= */
 
-test("SheetPickerPort 도 빈 port 결속 한 번 — 둘째 결속·owner 주장이 전부 loud 다", () => {
+test("SheetPickerPort도 빈 port 결속 한 번 — 둘째 결속은 loud다", () => {
   const services = createServiceHandoffPorts();
   const picker = { choose: async () => null };
-  services.sheetPicker.bindReact(picker);
-  assert.equal(services.sheetPicker.owner(), "react");
-  assert.throws(() => services.sheetPicker.bindReact({ choose: async () => null }), /빈 port에만/);
-  assert.throws(
-    () => services.sheetPicker.handoff("legacy", "react", { choose: async () => null }), /상태가 어긋/);
+  services.sheetPicker.bind(picker);
+  assert.throws(() => services.sheetPicker.bind({ choose: async () => null }), /정확히 한 번/);
   assert.equal(services.sheetPicker.current(), picker);
 });
 
 /* ================= 합성 루트의 결속 자리(정적 핀) ================= */
 
-test("합성 루트는 두 port 를 bindReact 로 잇고 legacy 결속을 남기지 않는다", () => {
-  assert.match(BOOTSTRAP, /servicePorts\.sheetPicker\.bindReact\(SheetPicker\);/);
-  assert.match(BOOTSTRAP, /screenPorts\.editorEntry\.bindReact\(EditorEntry\);/);
-  assert.equal(/screenPorts\.editorEntry\.bind(Legacy|.*handoff)/.test(BOOTSTRAP), false);
-  assert.equal(/servicePorts\.sheetPicker\.bindLegacy/.test(BOOTSTRAP), false);
-  /* handoff API 는 살아 있다 — 다만 이 두 port 에서는 쓰이지 않는다. */
-  assert.equal(BOOTSTRAP.includes(".handoff("), false,
-    "R4-02 는 handoff 를 쓰지 않는다 — 쓰는 순간 legacy 구현이 어딘가 남아 있다는 뜻이다");
+test("합성 루트는 두 port를 단일 bind로 잇고 migration API를 남기지 않는다", () => {
+  assert.match(BOOTSTRAP, /servicePorts\.sheetPicker\.bind\(SheetPicker\);/);
+  assert.match(BOOTSTRAP, /screenPorts\.editorEntry\.bind\(EditorEntry\);/);
+  for (const retired of ["bindLegacy", "bindReact", ".handoff(", ".owner("]) {
+    assert.equal(BOOTSTRAP.includes(retired), false, `${retired} migration API 잔존`);
+  }
 });
 
 test("음성 — aimAt 간선이 끊기면 결과에서 규칙 행을 겨눌 길이 사라진다(D5)", () => {
@@ -134,7 +112,6 @@ test("음성 — aimAt 간선이 끊기면 결과에서 규칙 행을 겨눌 길
   const job = readFileSync(new URL("../../frontend/src/screens/job_run.ts", import.meta.url), "utf8");
   assert.ok(job.includes("editor.aimAt(target)"),
     "작업 실행 표면이 여전히 겨눔을 부른다(소비자 양성 대조)");
-  assert.match(BOOTSTRAP, /aimAt: \(\.\.\.args\) => EditorScreen\.aimAt\(\.\.\.args\),/);
   assert.match(BOOTSTRAP, /aimAt: \(\.\.\.args\) => EditorController\.aimAt\(\.\.\.args\),/);
 });
 

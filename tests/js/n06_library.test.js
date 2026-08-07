@@ -37,8 +37,8 @@ function build(options = {}) {
     refreshList() {},
     async openBrowseNeedsAction(name) { browse.push(name); },
   };
-  ports.jobRead.bindReact(jobReadImpl);
-  ports.editorEntry.bindLegacy({
+  ports.jobRead.bind(jobReadImpl);
+  ports.editorEntry.bind({
     openGuarded(...args) { editor.push(["openGuarded", ...args]); return true; },
     newDraft(...args) { editor.push(["newDraft", ...args]); return true; },
     newDraftFromData(...args) { editor.push(["newDraftFromData", ...args]); return true; },
@@ -47,7 +47,7 @@ function build(options = {}) {
     restoreEntryFocus(...args) { editor.push(["restoreEntryFocus", ...args]); },
   });
   const services = createServiceHandoffPorts();
-  services.relink.bindLegacy({ relinkTemplate: async (...args) => { menuCalls.push(["relink", ...args]); return true; } });
+  services.relink.bind({ relinkTemplate: async (...args) => { menuCalls.push(["relink", ...args]); return true; } });
   const runtime = {
     model: () => ({ getSnapshot: () => snapshot, subscribe: () => () => {} }),
     loadInitial: async (screen) => {

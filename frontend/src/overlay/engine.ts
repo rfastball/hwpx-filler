@@ -4,7 +4,7 @@
  * 합법 중첩(폼 모달 위 promise 다이얼로그 — pool 재등록)이 legacy DOM 모달과 React 렌더
  * 다이얼로그를 **한 스택**에 세우므로, 판정이 두 세계로 갈리면 같은 상태의 두 판정자가 된다
  * (제품 규칙 위반). 그래서 판정은 트리-불가지 엔진 하나이고, DOM **집행**만 집행자
- * (executor — legacy modal.js / React host)로 갈린다.
+ * (executor — modal factory / React host)로 갈린다.
  *
  * ## 이 파일에 없는 것
  *
