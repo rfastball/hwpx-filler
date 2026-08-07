@@ -555,9 +555,10 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
         # class 가 검사 밖이 된다. 종전 표본은 `job.js` 의 `${v ? esc(v) :
         # "<em class='muted'>(빈 값)</em>"}` 였는데 R4-03 이 그 파일을 절단했고, React 판은
         # 같은 자리를 `h("em", { className: "muted" }, …)` 로 쓴다 — **그 형태가 아니다**.
-        # 그래서 표본을 형태로 다시 고른다: 마크업 문자열이 살아 있는 두 자리가 그것이다.
-        ("sep", "frontend/src/screens/editor.ts"),
-        ("danger", "frontend/src/screens/library.ts"),
+        # R4-04에서 두 메뉴가 ContextMenu 요소 트리를 공유하므로 같은 표본의 후계도 그
+        # 공용 producer다.
+        ("sep", "frontend/src/screens/context_menu.ts"),
+        ("danger", "frontend/src/screens/context_menu.ts"),
         # 속성 **전체**가 변수인 자리(리뷰 R4): `const cls = ... "seg-fill"` → `class="${cls}"`.
         # 붙어 있는 이웃이 없으므로 갈래 자체가 온전한 이름이다(앞 공백을 요구하면 못 본다).
         ("seg-fill", "frontend/src/screens/segment_view.ts"),
@@ -585,15 +586,14 @@ def test_fragment_tails_do_not_become_names() -> None:
 def test_variable_backed_class_names_are_seen() -> None:
     """변수·속성을 거쳐 나가는 이름도 회수된다 — 회수 경로 자체의 회귀 방지(리뷰 R1).
 
-    실물 두 자리를 그대로 든다: `job.js` 의 `const MARK = "openingMark"` → `mark.className`,
-    `app.js` 의 `{ cls: "editor-open" }` → `classList.toggle(im.cls, ...)`. 이 둘이 목록에서
-    빠지면 그 CSS 를 지워도 게이트가 초록이던 상태로 되돌아간 것이다.
+    실물 두 자리를 그대로 든다: job read의 opening marker와 R4-04 화면 executor의 몰입
+    body class. 이 둘이 목록에서 빠지면 그 CSS 를 지워도 게이트가 초록이던 상태로 되돌아간다.
     """
     emitted = _emitted_classes()
     for name, site in (
         ("openingMark", "frontend/src/screens/job_read.ts"),
-        ("editor-open", "frontend/js/app.js"),
-        ("workbench-open", "frontend/js/app.js"),
+        ("editor-open", "frontend/src/screens/product_screen_executor.ts"),
+        ("workbench-open", "frontend/src/screens/product_screen_executor.ts"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 변수·속성 결속 회수가 깨졌습니다."

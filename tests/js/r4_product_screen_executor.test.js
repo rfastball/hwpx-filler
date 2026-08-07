@@ -57,7 +57,8 @@ class FakeElement {
   }
   querySelector(selector) {
     if (!selector.startsWith("#")) return null;
-    const id = selector.slice(1);
+    if (/(^|[^\\])%/.test(selector)) throw new SyntaxError(`invalid selector: ${selector}`);
+    const id = selector.slice(1).replaceAll("\\%", "%");
     return this.children.find((child) => child.id === id) ?? null;
   }
   querySelectorAll(selector) {
@@ -206,6 +207,16 @@ test("외부 포커스는 보존하고 숨은 outgoing 포커스는 destination 
 
   h.executor.applyScreen("library");
   assert.equal(h.doc.activeElement, h.libraryInput, "안전한 stable id 포커스는 화면별로 복원한다");
+});
+
+test("selector 문법과 무관한 동적 ID focus를 getElementById로 복원한다", () => {
+  const h = harness("library");
+  const dynamic = new FakeElement(h.doc, "jobFav-%EA%B3%84%EC%95%BD%EC%84%9C", h.roots.library);
+  h.byId.set(dynamic.id, dynamic);
+  dynamic.focus();
+  assert.doesNotThrow(() => h.executor.applyScreen("job"));
+  assert.doesNotThrow(() => h.executor.applyScreen("library"));
+  assert.equal(h.doc.activeElement, dynamic);
 });
 
 test("화면 적용은 on/hidden/inert/aria-hidden과 nav/body를 함께 바꾼다", () => {

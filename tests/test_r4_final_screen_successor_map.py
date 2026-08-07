@@ -12,9 +12,15 @@ from collections import Counter
 from pathlib import Path
 import subprocess
 
+from _web_source import SOURCE_ROOT
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_SCREENS = "frontend/src/screens/product_screens.ts"
+OWNED_FILES = (
+    PRODUCT_SCREENS,
+    "frontend/src/screens/context_menu.ts",
+)
 
 SCREEN_ROOTS = {"scr-library", "scr-job", "scr-editor", "scr-workbench"}
 JOB_SHELL = {
@@ -91,7 +97,7 @@ def test_static_stage_is_the_only_screen_host_left_in_html() -> None:
 
 def test_migration_hosts_have_zero_source_sites() -> None:
     offenders: set[str] = set()
-    for path in (ROOT / "frontend").rglob("*"):
+    for path in SOURCE_ROOT.rglob("*"):
         if not path.is_file() or path.suffix not in {".html", ".js", ".ts", ".tsx", ".mjs"}:
             continue
         source = path.read_text(encoding="utf-8")

@@ -1828,8 +1828,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/product-screen-executor"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/screens/product_screen_executor.ts:111"] }
-evidence = [{ file = "frontend/src/screens/product_screen_executor.ts", line = 111, anchor = "export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): ShellExecutor {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/product_screen_executor.ts:127"] }
+evidence = [{ file = "frontend/src/screens/product_screen_executor.ts", line = 127, anchor = "export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): ShellExecutor {" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

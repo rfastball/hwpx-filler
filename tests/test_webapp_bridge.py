@@ -20,6 +20,7 @@ from _web_source import (
     SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_ROOT,
+    source_text,
 )
 
 REPO = REPO_ROOT
@@ -343,7 +344,9 @@ def test_web_assets_present_and_wired():
     from test_web_dom_contract import NAV_SCREENS
     for scr in NAV_SCREENS:
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
-    assert 'id="scr-workbench"' in html
+    assert html.count('id="reactScreenStage"') == 1
+    product_screens = source_text("src/screens/product_screens.ts")
+    assert 'screenProps("workbench", active)' in product_screens
 
 
 # ============================================================ #26 #6 — 풀 겨눔(브리지 경로)

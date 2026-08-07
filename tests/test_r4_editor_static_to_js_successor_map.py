@@ -59,7 +59,9 @@ TPL_MOVE = {
 #: `save-msg` 는 legacy editor.js 가 만들던 자리라 정적 subtree 밖이었고,
 #: `wbLintAction` 도 같은 부류(legacy workbench.js 생산), `tplMoveNewRadio`·`tplMoveNewName`
 #: 는 legacy `GroupList.createMoveDialog` 의 동적 사이트 둘의 후계다.
-ADDED_BY_REACT = {"save-msg", "wbLintAction", "tplMoveNewRadio", "tplMoveNewName"}
+ADDED_BY_REACT = {
+    "save-msg", "wbLintAction", "tplMoveNewRadio", "tplMoveNewName", "tplRowMenu",
+}
 
 #: 동적 prefix — 값이 아니라 **접두**가 계약이다(신원은 인코딩된 키가 진다).
 DYNAMIC_PREFIXES = {
@@ -121,7 +123,7 @@ def test_migrated_ids_left_static_html_and_portal_targets_remain() -> None:
     html = (ROOT / "frontend/index.html").read_text(encoding="utf-8")
     for migrated in EDITOR | WORKBENCH | TXT_EDIT | SHEET | TPL_MOVE:
         assert f'id="{migrated}"' not in html, migrated
-    for target in {"scr-editor", "scr-workbench", "txtEditModal", "sheetModal", "tplMoveModal"}:
+    for target in {"reactScreenStage", "txtEditModal", "sheetModal", "tplMoveModal"}:
         assert html.count(f'id="{target}"') == 1, target
 
 
@@ -138,8 +140,14 @@ def test_the_successor_maps_partition_the_screens_tree() -> None:
     """
     from test_r4_static_to_js_successor_map import OWNED_FILES as R4_01_FILES
     from test_r4_job_run_static_to_js_successor_map import OWNED_FILES as R4_03_FILES
+    from test_r4_final_screen_successor_map import OWNED_FILES as R4_04_FILES
 
-    maps = {"R4-01": set(R4_01_FILES), "R4-02": set(OWNED_FILES), "R4-03": set(R4_03_FILES)}
+    maps = {
+        "R4-01": set(R4_01_FILES),
+        "R4-02": set(OWNED_FILES),
+        "R4-03": set(R4_03_FILES),
+        "R4-04": set(R4_04_FILES),
+    }
     producing = {
         member.rsplit(":", 2)[0].rsplit(":", 1)[0]
         for member in _axes()["js_template_ids"]

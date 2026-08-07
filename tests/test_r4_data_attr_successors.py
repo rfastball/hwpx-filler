@@ -11,7 +11,7 @@ ROOT = Path(__file__).parents[1]
 PICKER = {"act", "busy-lock", "dup-keep", "key", "name", "row"}
 LIBRARY = {
     "axis", "busy-lock", "clear-filters", "clone", "del-corrupt", "delete", "edit",
-    "fav", "gmenu", "group", "group-more", "label", "move", "new-work",
+    "fav", "group", "group-more", "label", "move", "new-work",
     "preserve-scroll", "relink", "rename", "reveal", "tags", "use", "val", "work",
 }
 LIBRARY_VIEW = {"library-mode", "library-view"}
@@ -63,7 +63,7 @@ def test_r4_data_attribute_successor_groups_are_exact() -> None:
     )
     assert picker == PICKER and len(picker) == 6
     assert library_all == LIBRARY | LIBRARY_VIEW
-    assert len(LIBRARY) == 22 and len(LIBRARY_VIEW) == 2
+    assert len(LIBRARY) == 21 and len(LIBRARY_VIEW) == 2
     assert data_zone == DATA_ZONE and len(data_zone) == 13
     assert job_support == JOB_READ and len(job_support) == 17
     assert job_run == JOB_RUN and len(job_run) == 5

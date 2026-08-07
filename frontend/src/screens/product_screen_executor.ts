@@ -1,17 +1,17 @@
 /* R4-04 화면 집행자 — shellNav 판정은 그대로 두고 React visibility 효과만 인수한다. */
 import { flushSync } from "react-dom";
 
-import { IMMERSIVE_SURFACES } from "../shell/nav.ts";
 import type { ShellExecutor } from "../shell/nav.ts";
 import { PRODUCT_SCREEN_IDS } from "./product_screens.ts";
 import type { ProductScreenId, ProductScreenVisibility } from "./product_screens.ts";
 import type { ScreenLifecycleRegistry } from "./screen_lifecycle_registry.ts";
 
 type ScrollPoint = { top: number; left: number };
+type FocusMemory = { kind: "id" | "data-focus-key"; value: string } | null;
 type ScreenMemory = {
   stage: ScrollPoint;
   internal: ReadonlyMap<string, ScrollPoint>;
-  focusKey: string;
+  focus: FocusMemory;
 };
 
 type BridgePort = {
@@ -32,10 +32,19 @@ function screenRoot(doc: Document, id: string): HTMLElement | null {
   return doc.getElementById(`scr-${id}`);
 }
 
-function focusKeyOf(element: Element): string {
-  if (element.id !== "") return `#${element.id}`;
+function focusMemoryOf(element: Element): FocusMemory {
+  if (element.id !== "") return { kind: "id", value: element.id };
   const key = (element as HTMLElement).dataset?.focusKey;
-  return key === undefined || key === "" ? "" : `[data-focus-key="${CSS.escape(key)}"]`;
+  return key === undefined || key === "" ? null : { kind: "data-focus-key", value: key };
+}
+
+function rememberedFocus(root: HTMLElement, doc: Document, focus: FocusMemory): HTMLElement | null {
+  if (focus === null) return null;
+  if (focus.kind === "id") return doc.getElementById(focus.value) as HTMLElement | null;
+  for (const element of root.querySelectorAll<HTMLElement>("[data-focus-key]")) {
+    if (element.dataset.focusKey === focus.value) return element;
+  }
+  return null;
 }
 
 function stageOf(doc: Document): HTMLElement {
@@ -49,7 +58,7 @@ function captureMemory(doc: Document, id: ProductScreenId): { memory: ScreenMemo
   const root = screenRoot(doc, id);
   const active = doc.activeElement;
   const ownedFocus = root !== null && active !== null && root.contains(active);
-  const focusKey = ownedFocus && active !== null ? focusKeyOf(active) : "";
+  const focus = ownedFocus && active !== null ? focusMemoryOf(active) : null;
   const internal = new Map<string, ScrollPoint>();
   root?.querySelectorAll<HTMLElement>("[id][data-preserve-scroll]").forEach((element) => {
     internal.set(element.id, { top: element.scrollTop, left: element.scrollLeft });
@@ -59,7 +68,7 @@ function captureMemory(doc: Document, id: ProductScreenId): { memory: ScreenMemo
     memory: {
       stage: { top: stage.scrollTop, left: stage.scrollLeft },
       internal,
-      focusKey,
+      focus,
     },
   };
 }
@@ -102,8 +111,7 @@ function restoreMemory(
     && active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== undefined;
   if (!outgoingOwnedFocus && !focusInHiddenScreen) return;
 
-  const remembered = memory?.focusKey === "" || memory?.focusKey === undefined
-    ? null : root.querySelector<HTMLElement>(memory.focusKey);
+  const remembered = rememberedFocus(root, doc, memory?.focus ?? null);
   const target = remembered !== null && isUsableFocusTarget(remembered, root) ? remembered : root;
   target.focus({ preventScroll: true });
 }
@@ -112,9 +120,8 @@ function applyShellMarkers(doc: Document, id: ProductScreenId): void {
   doc.querySelectorAll<HTMLElement>(".navbtn").forEach((button) => {
     button.setAttribute("aria-current", button.dataset.scr === id ? "true" : "false");
   });
-  IMMERSIVE_SURFACES.forEach((surface) => {
-    doc.body.classList.toggle(surface.cls, surface.id === id);
-  });
+  doc.body.classList.toggle("editor-open", id === "editor");
+  doc.body.classList.toggle("workbench-open", id === "workbench");
 }
 
 export function createProductScreenExecutor(deps: ProductScreenExecutorDeps): ShellExecutor {
