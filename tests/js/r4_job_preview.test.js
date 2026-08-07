@@ -32,6 +32,7 @@ function textNode(text) {
 
 function harness(options = {}) {
   const events = [];
+  const openIds = new Set();          // 열린 면 스택 — 닫기의 no-op 조건이 여기서 산다
   let snapshot = options.snapshot ?? snap();
   const subscribers = new Set();
   const notify = () => { for (const listener of [...subscribers]) listener(); };
@@ -79,14 +80,19 @@ function harness(options = {}) {
     services: { relink: port({ relinkTemplate: () => Promise.resolve(true) }) },
     modal: {
       confirm: () => Promise.resolve(true),
-      open(id, spec) { events.push({ kind: "modal.open", id, spec }); },
+      open(id, spec) { openIds.add(id); events.push({ kind: "modal.open", id, spec }); },
       close(id) {
+        /* 스택에 없는 면의 닫기는 **아무 일도 하지 않는다**. 상태 구동 닫힘
+           (`syncPreviewOpen`)이 무한루프를 안 도는 근거가 정확히 이 불변식이라, 대역이
+           이걸 모델링하지 않으면 제품이 실물에서 도는 것과 다른 세계에서 재게 된다. */
+        if (!openIds.has(id)) return;
+        openIds.delete(id);
         events.push({ kind: "modal.close", id });
         // 실물의 `Modal.close` 는 onClose 를 태워 `preview_close` 를 발화하고, Python 이
         // pos 0 인 새 full 을 **push** 한다. 대역도 거기까지 해야 한다: 지역 변수만 바꾸면
         // 컨트롤러가 읽는 `run.lastFull` 은 그대로라 순서를 뒤집어도 초록이다(첫 판이
         // 실제로 그랬고, 음성 대조가 안 물어서 잡혔다).
-        snapshot = { ...snapshot, preview: { ...snapshot.preview, pos: 0 } };
+        snapshot = { ...snapshot, preview: { ...snapshot.preview, open: false, pos: 0 } };
         notify();
       },
     },
@@ -115,7 +121,7 @@ function harness(options = {}) {
   };
 }
 
-async function opened(options = {}) {
+async function booted(options = {}) {
   const h = harness(options);
   await h.controller.init();
   h.events.length = 0;
@@ -125,10 +131,22 @@ async function opened(options = {}) {
 /** 이벤트 루프를 한 바퀴 — `openPreviewFrom` 은 void 라 완료를 기다릴 손잡이가 없다. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+/** 면이 **실제로 서 있는** 상태. `booted` 는 init 까지만 한다 — 실물의 `Modal.close` 는
+ *  스택에 없는 면에서 아무 일도 하지 않으므로, 안 열고 닫으면 「닫혔다」가 아니라 「아무 일도
+ *  없었다」를 재게 된다. 닫힘·복귀 좌표를 재는 자리는 전부 이걸 쓴다. */
+async function standing(options = {}) {
+  const h = await booted(options);
+  h.controller.openPreviewFrom(null);
+  await settle();
+  assert.equal(h.only("modal.open").length, 1, "면이 서지 않으면 이후 단언이 공허하다");
+  h.events.length = 0;
+  return h;
+}
+
 /* ================= ① 열기 순서 ================= */
 
 test("확인 면 열기는 flush → preview_open → modal.open 순서다", async () => {
-  const h = await opened();
+  const h = await booted();
   h.controller.openPreviewFrom(null);
   await settle();
 
@@ -137,7 +155,7 @@ test("확인 면 열기는 flush → preview_open → modal.open 순서다", asy
 });
 
 test("열기는 요청한 행 번호를 그대로 싣는다 — 표면이 다시 계산하지 않는다", async () => {
-  const h = await opened();
+  const h = await booted();
   h.controller.openPreviewFrom(null);
   await settle();
   const [open] = h.dispatched();
@@ -146,7 +164,7 @@ test("열기는 요청한 행 번호를 그대로 싣는다 — 표면이 다시
 });
 
 test("열기 왕복이 실패하면 면을 열지 않고 사유를 남긴다", async () => {
-  const h = await opened({ dispatch: { preview_open: new Error("브리지 끊김") } });
+  const h = await booted({ dispatch: { preview_open: new Error("브리지 끊김") } });
   h.controller.openPreviewFrom(null);
   await settle();
 
@@ -157,7 +175,7 @@ test("열기 왕복이 실패하면 면을 열지 않고 사유를 남긴다", a
 /* ================= ② 왕복 중 이탈 ================= */
 
 test("왕복 중 화면을 떠났으면 열지 않고 preview_close 로 상태를 되돌린다", async () => {
-  const h = await opened({ currentScreen: "library" });
+  const h = await booted({ currentScreen: "library" });
   h.controller.openPreviewFrom(null);
   await settle();
 
@@ -167,7 +185,7 @@ test("왕복 중 화면을 떠났으면 열지 않고 preview_close 로 상태�
 });
 
 test("화면을 아직 못 정했어도(null) 같은 갈래로 간다 — 부재를 「열려 있음」으로 읽지 않는다", async () => {
-  const h = await opened({ currentScreen: null });
+  const h = await booted({ currentScreen: null });
   h.controller.openPreviewFrom(null);
   await settle();
   assert.deepEqual(h.only("modal.open"), []);
@@ -177,7 +195,7 @@ test("화면을 아직 못 정했어도(null) 같은 갈래로 간다 — 부재
 /* ================= ③ 「수정」의 순서 계약 ================= */
 
 test("행 수정의 복귀 좌표는 modal.close **전에** 읽은 pos 다", async () => {
-  const h = await opened({
+  const h = await standing({
     elements: { previewPos: textNode("3 / 10") },
   });
   await h.controller.previewFixField("공고명");
@@ -194,7 +212,7 @@ test("행 수정의 복귀 좌표는 modal.close **전에** 읽은 pos 다", asy
 });
 
 test("행 수정은 본 값을 증거로 싣는다 — 편집기가 무엇을 보고 왔는지 안다", async () => {
-  const h = await opened({
+  const h = await booted({
     elements: { previewPos: textNode("3 / 10") },
   });
   await h.controller.previewFixField("공고명");
@@ -205,7 +223,7 @@ test("행 수정은 본 값을 증거로 싣는다 — 편집기가 무엇을 �
 });
 
 test("빈 값 행의 증거는 빈칸으로 새지 않고 표식으로 남는다", async () => {
-  const h = await opened({
+  const h = await booted({
     snapshot: snap({ preview: { pos: 0, rows: [{ name: "공고명", value: "" }] } }),
   });
   await h.controller.previewFixField("공고명");
@@ -213,7 +231,7 @@ test("빈 값 행의 증거는 빈칸으로 새지 않고 표식으로 남는다
 });
 
 test("파일 이름 수정도 같은 단일 경로를 지난다", async () => {
-  const h = await opened({
+  const h = await booted({
     elements: {
       previewPos: textNode("1 / 10"),
       previewFilename: textNode("공고서_가나다.hwpx"),
@@ -226,19 +244,19 @@ test("파일 이름 수정도 같은 단일 경로를 지난다", async () => {
 });
 
 test("진입이 성사돼야 겨눔이 나간다", async () => {
-  const h = await opened();
+  const h = await booted();
   await h.controller.previewFixField("공고명");
   assert.deepEqual(h.only("aimAt").map((e) => e.target), ["binding/공고명"]);
 });
 
 test("진입이 거절되면 겨눔은 나가지 않는다", async () => {
-  const h = await opened({ openGuardedResult: false });
+  const h = await booted({ openGuardedResult: false });
   await h.controller.previewFixField("공고명");
   assert.deepEqual(h.only("aimAt"), [], "안 열린 편집기를 겨누면 다음 진입이 엉뚱한 곳에 선다");
 });
 
 test("작업이 없으면 편집 진입 자체가 성립하지 않는다", async () => {
-  const h = await opened({ snapshot: { has_job: false } });
+  const h = await booted({ snapshot: { has_job: false } });
   await h.controller.previewFixField("공고명");
   assert.deepEqual(h.only("openGuarded"), []);
   assert.deepEqual(h.only("aimAt"), []);
@@ -247,7 +265,7 @@ test("작업이 없으면 편집 진입 자체가 성립하지 않는다", async
 /* ================= 나머지 발신 ================= */
 
 test("행 이동·빈 값 필터·승인은 판정을 안 하고 그대로 보낸다", async () => {
-  const h = await opened();
+  const h = await booted();
   h.controller.previewMove(-1);
   h.controller.previewBlankOnly(true);
   h.controller.previewApprove();
@@ -261,7 +279,7 @@ test("행 이동·빈 값 필터·승인은 판정을 안 하고 그대로 보�
 });
 
 test("승인·필터 실패는 조용히 사라지지 않는다", async () => {
-  const h = await opened({
+  const h = await booted({
     dispatch: { preview_approve: new Error("저장 실패"), preview_blank_only: new Error("필터 실패") },
   });
   h.controller.previewApprove();
@@ -274,7 +292,25 @@ test("승인·필터 실패는 조용히 사라지지 않는다", async () => {
 });
 
 test("닫기는 같은 면 id 하나만 겨눈다", async () => {
-  const h = await opened();
+  const h = await standing();
   h.controller.closePreview();
   assert.deepEqual(h.only("modal.close").map((e) => e.id), ["previewSheet"]);
+});
+
+/* ================= ⑥ 원격 닫힘 — 개폐 주인은 Python ================= */
+
+test("Python 이 닫았다고 말하면 면도 닫힌다", async () => {
+  const h = await standing();
+  h.push(snap({ preview: { ...snap().preview, open: false } }));
+  /* legacy `closePreviewIfOpen` 동등. 안 닫으면 그 면은 **남의 값**을 그린 채 남는다 —
+     작업 전환·데이터 교체를 백엔드가 닫는 원격 닫힘이 정확히 이 경로다. */
+  assert.deepEqual(h.only("modal.close").map((e) => e.id), ["previewSheet"]);
+});
+
+test("Python 이 열려 있다고 말하는 동안은 닫지 않는다", async () => {
+  const h = await standing();
+  h.push(snap({ preview: { ...snap().preview, open: true }, selection_key: "s9" }));
+  /* 음성 극 — 매 푸시마다 닫으면 위 단언은 **무엇을 해도 초록**이다(닫힘 계약이 아니라
+     「닫기를 부르는가」만 재게 된다). 두 값을 함께 세워야 개폐가 상태에 결속된다. */
+  assert.deepEqual(h.only("modal.close"), []);
 });

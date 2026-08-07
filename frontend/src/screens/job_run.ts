@@ -173,6 +173,18 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     if (resetting) ui = { log: [], logOpen: false };
     setRun(next);
     if (line) log(line);
+    syncPreviewOpen(next.lastFull);
+  }
+
+  /** 확인 면의 개폐를 상태에 맞춘다(legacy `closePreviewIfOpen` 동등). Python 이 닫았다고
+   *  말했는데 면이 떠 있으면 그 면은 **남의 값**을 그리고 있다 — 작업 전환·데이터 교체가
+   *  백엔드에서 닫는 원격 닫힘이 그 경로다. 개폐 주인은 Python 소유 `preview.open` 이고
+   *  이 층은 집행만 한다.
+   *
+   *  열려 있지 않은 대상의 `close` 는 스택에 없어 아무 일도 하지 않으므로 DOM 에 열림
+   *  여부를 되묻지 않는다 — 상태의 진실은 스냅샷이지 클래스가 아니다. */
+  function syncPreviewOpen(full: Obj | null): void {
+    if (!(full && full.preview && full.preview.open)) deps.modal.close("previewSheet");
   }
 
   function pump(): void {
