@@ -1326,6 +1326,14 @@ async function runJobResult(ctx) {
     rejectUnhandled.push(String((reason && reason.message) || reason));
   };
   ctx.win.addEventListener("unhandledrejection", onUnhandled);
+  /* 발신 앞에는 **커밋 관문**이 하나 더 있다(`flushPendingEdits`). 그 관문이 호스트를
+     부르면 이 합성 창에서 영영 안 돌아올 수 있고, 그때 침묵은 「핸들러 미배선」과
+     구별되지 않는다. 창을 닫아 두고 무엇을 요청했는지 이름으로 남긴다. */
+  const rejectDispatches = [];
+  const dispatchStub = stubDispatch(services, () => async (screen, action) => {
+    rejectDispatches.push(`${screen}/${action}`);
+    return {};
+  });
   const genBtn = doc.getElementById("jobGenBtn");
   const rejectBtnDisabled = genBtn.disabled;   // 눌리는 상태였는지 자체가 갈래를 가른다
   genBtn.disabled = false;
@@ -1333,8 +1341,12 @@ async function runJobResult(ctx) {
 
   await ctx.sleep(60);
   ctx.win.removeEventListener("unhandledrejection", onUnhandled);
+  dispatchStub.restore();
   out.reject_btn_disabled = !!rejectBtnDisabled;
   out.reject_unhandled = rejectUnhandled;
+  out.reject_dispatches = rejectDispatches;
+  // 잠금 전이가 섰는가 = `beginRun` 까지 갔는가. 라벨은 그 전이의 가시면이다.
+  out.reject_btn_label = String(genBtn.textContent || "");
   out.reject_run_action = String((baseSnap.run_action && baseSnap.run_action.key) || "");
   const resultBox = doc.getElementById("jobResult");
   /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /

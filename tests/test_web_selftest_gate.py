@@ -716,6 +716,8 @@ class TestWebSelftestGate:
                 "reject_pushes",
                 "reject_btn_disabled",
                 "reject_unhandled",
+                "reject_dispatches",
+                "reject_btn_label",
                 "reject_run_action",
                 "runlog_last",
             ):
