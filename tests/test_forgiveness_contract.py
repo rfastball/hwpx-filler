@@ -14,7 +14,9 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     index = _read("index.html")
     modal = _read("js/modal.js")
     editor = _read("src/screens/editor.ts")
-    job = _read("js/screens/job.js")
+    # R4-03 — 실행 표면이 React 로 이사했다. 묻는 것(관용의 문안·가드)은 그대로다.
+    from _web_source import react_job_run_source
+    job = react_job_run_source()
     home = _read("src/screens/library.ts")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
@@ -25,7 +27,9 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     host = source_text("src", "overlay", "host.ts")
     assert 'id="undoToast"' not in index and 'id: "undoToast"' in host
     assert reaches_product_graph("undo_toast.js")
-    assert 'id="jobGenCancel"' in index and '"cancel_generation"' in job
+    # R4-03 — 중단 버튼은 static shell 을 떠나 React 실행 표면이 만든다. 「어디서 그리나」가
+    # 아니라 「관용 출구가 실재하나」가 이 가드의 내용이라, 겨눔만 그 자리로 옮긴다.
+    assert 'id: "jobGenCancel"' in job and '"cancel_generation"' in job
     assert '"data-act": "restore-confirmed"' in editor and '"restore_confirmed"' in editor
     # TXT 저작 모달 dirty 가드 — 소유가 편집기로 이주(F8, tpl 화면 사망). R4-02 뒤에도
     # 「닫힘을 막고 묻는다」의 거처는 그대로 `beforeClose` 다.

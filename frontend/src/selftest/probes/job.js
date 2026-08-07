@@ -118,6 +118,40 @@ function stubDispatch(services, make) {
   };
 }
 
+/** 실행 발신의 통로는 R4-03 에서 **옮겨 앉았다** — legacy remainder 의 raw `Bridge.generate`
+ *  가 아니라 React owner 의 typed `Client.invoke("generate", …)` 다. 옛 자리를 갈아끼우면
+ *  스텁이 **죽은 seam** 에 붙어 실 generate 가 그대로 돈다: 프로브는 거절 결과를 기다리는데
+ *  호스트는 진짜 생성을 시도하고, 스텁 호출 수는 0 인 채 프로브가 null 을 읽는다.
+ *  `stubDispatch` 와 같은 이유·같은 수명 규약으로 **산 자리**를 잡는다.
+ *
+ *  make 는 호스트 **payload** 를 낸다 — 봉투(`{ok, value}`)의 것이 아니다. 두 `ok` 는 다른
+ *  층이라 겹쳐 읽으면 「Python 이 거절했다」와 「호출이 아예 성립하지 않았다」가 한 값으로
+ *  접힌다: 봉투는 통로의 성패, payload 는 판정이다. */
+function stubGenerate(services, make) {
+  const Client = services.Client;
+  const real = Client.invoke;
+  const mine = async function (method, ...args) {
+    if (method !== "generate") return real.call(Client, method, ...args);
+    return { ok: true, value: make(args) };
+  };
+  Client.invoke = mine;
+  return {
+    restore() {
+      if (Client.invoke === mine) Client.invoke = real;
+    },
+  };
+}
+
+/** id 로 글을 읽되 자리가 **없으면 이름을 말하고 죽는다**. 종전 이 자리들은
+ *  `getElementById(id).textContent` 라서 실패가 "Cannot read properties of null" 한 줄이었다 —
+ *  어느 자리가 아직 안 섰는지 말하지 못한다. React 이관처럼 「무엇이 사라졌나」가 곧 진단인
+ *  국면에서 그 한 줄은 진단 비용을 전부 사람에게 떠넘긴다. */
+function textOf(doc, id) {
+  const el = doc.getElementById(id);
+  if (el === null) throw new Error(`프로브가 읽을 자리가 DOM 에 없습니다: #${id}`);
+  return el.textContent;
+}
+
 function displayOf(ctx, el) {
   return ctx.win.getComputedStyle(el).display;
 }
@@ -155,6 +189,12 @@ async function pushUntil(ctx, screen, snapshot, ready, turns = 12) {
 
 function activeId(doc) {
   return doc.activeElement && doc.activeElement.id;
+}
+
+/** 컨트롤러 명령(renderResult·markResultStale 등) 뒤의 커밋 turn. push 와 같은 이유이고
+ *  같은 비용이다 — 이 층은 명령을 동기로 받고 DOM 은 다음 turn 에 세운다. */
+async function settle(ctx) {
+  await ctx.sleep(0);
 }
 
 /* ────────────────────────── 합성 스냅샷 ────────────────────────── */
@@ -1120,26 +1160,28 @@ async function runJobResult(ctx) {
 
   enterSyntheticJob(services);
   const baseSnap = resultSnapshot();
-  ctx.push("job", baseSnap);
+  await pushAndSettle(ctx, "job", baseSnap);
 
   const partial = partialResult();
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   const box = doc.getElementById("jobResult");
   out.state = box.dataset.state;
   out.level = box.dataset.level;
   out.shown = !box.hidden;
-  out.title = doc.getElementById("jobResultTitle").textContent;
+  out.title = textOf(doc, "jobResultTitle");
   out.fail_row = !!doc.getElementById("jobResultFail-7");
-  out.fail_identity = doc.getElementById("jobResultFails").textContent.indexOf("사무비품") >= 0;
-  out.undiagnosed = doc.getElementById("jobResultFails").textContent.indexOf("원인 진단 미연결") >= 0;
+  out.fail_identity = textOf(doc, "jobResultFails").indexOf("사무비품") >= 0;
+  out.undiagnosed = textOf(doc, "jobResultFails").indexOf("원인 진단 미연결") >= 0;
   out.failed_sel_shown = !doc.getElementById("jobResultFailedSel").hidden;
-  out.failed_sel_label = doc.getElementById("jobResultFailedSel").textContent;
+  out.failed_sel_label = textOf(doc, "jobResultFailedSel");
 
   /* 증거는 접혀서 서고, 사용자가 연 뒤에는 재렌더(스냅샷 푸시)를 건너 열린 채 남는다. */
   const evidence = doc.getElementById("jobResultEvidence");
   out.evidence_shown = !evidence.hidden;
   evidence.open = true;
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   out.evidence_open_survives_rerender = doc.getElementById("jobResultEvidence").open;
 
   /* 배치 진입 전 실패(행 0개·전량 실패) — 복구 행동이 행 목록에서 파생되면 여기서 통째로
@@ -1153,13 +1195,16 @@ async function runJobResult(ctx) {
     known: true, out_dir: "D:\out", succeeded: 0, failed: 3, failed_selectable: 3, total: 3,
     failures: [], fill_notes: [], cancelled: false, attempted: 0, unstarted: 3,
   });
+  await settle(ctx);
   out.rowless_recovery_shown = !doc.getElementById("jobResultFailedSel").hidden;
-  out.rowless_recovery_label = doc.getElementById("jobResultFailedSel").textContent;
+  out.rowless_recovery_label = textOf(doc, "jobResultFailedSel");
   out.rowless_no_fake_rows = doc.getElementById("jobResultFails").children.length === 0;
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
 
   /* 지문 변화 = 강등이지 파기가 아니다(판정 G) — 결과가 남고 「직전 실행」이 붙는다. */
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.stale_shown = !doc.getElementById("jobResultStale").hidden;
   out.alive_after_stale = !doc.getElementById("jobResult").hidden;
 
@@ -1167,8 +1212,9 @@ async function runJobResult(ctx) {
      결과가 살고 행동이 그대로 남아야 한다. */
   const snapR = deepCopy(baseSnap);
   snapR.job_name = "공고서(수정)"; snapR.last_run_job = "공고서(수정)";
-  ctx.push("job", snapR);
+  await pushAndSettle(ctx, "job", snapR);
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.renamed_rename_shown = !doc.getElementById("jobResultRename").hidden;
   out.renamed_failedsel_shown = !doc.getElementById("jobResultFailedSel").hidden;
   out.renamed_keeps_result = !doc.getElementById("jobResult").hidden;
@@ -1176,25 +1222,27 @@ async function runJobResult(ctx) {
   /* ② 다른 작업으로 전환(§2.18) — 존이 닫히고 실행 기록에 퇴장 한 줄이 남는다. */
   const snapB = deepCopy(snapR);
   snapB.job_name = "둘째";
-  ctx.push("job", snapB);
+  await pushAndSettle(ctx, "job", snapB);
   out.switch_resets_result = doc.getElementById("jobResult").hidden;
-  out.switch_exit_line = doc.getElementById("jobRunLogLast").textContent;
+  out.switch_exit_line = textOf(doc, "jobRunLogLast");
 
   /* 강등 렌더러의 주체 방어(3R P2) — 푸시를 거치지 않고 결과가 재수립되는 경로에서
      남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다. 증거는 남는다. */
   services.JobScreen.renderResult(partial);
   services.JobScreen.markResultStale();
+  await settle(ctx);
   out.foreign_rename_hidden = doc.getElementById("jobResultRename").hidden;
   out.foreign_failedsel_hidden = doc.getElementById("jobResultFailedSel").hidden;
   out.foreign_evidence_alive = !!doc.getElementById("jobResultFail-7");
-  out.foreign_stale_names_owner = doc.getElementById("jobResultStale").textContent.indexOf("공고서") >= 0;
+  out.foreign_stale_names_owner = textOf(doc, "jobResultStale").indexOf("공고서") >= 0;
 
   /* ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다. */
-  ctx.push("job", baseSnap);                        // 비교군 복귀(원 작업 문맥)
+  await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(원 작업 문맥)
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   const snapSel = deepCopy(baseSnap);
   snapSel.selection_key = "0,1";
-  ctx.push("job", snapSel);
+  await pushAndSettle(ctx, "job", snapSel);
   out.selection_change_keeps_result = !doc.getElementById("jobResult").hidden;
   out.selection_change_demotes = !doc.getElementById("jobResultStale").hidden;
 
@@ -1202,12 +1250,13 @@ async function runJobResult(ctx) {
      라벨이 아니다(#363 리뷰 P2) — 라벨을 그대로 두고 세대만 올린다. */
   const snapData = deepCopy(snapSel);
   snapData.data_mount = 2;
-  ctx.push("job", snapData);
+  await pushAndSettle(ctx, "job", snapData);
   out.data_swap_resets_result = doc.getElementById("jobResult").hidden;
-  out.data_swap_exit_line = doc.getElementById("jobRunLogLast").textContent;
+  out.data_swap_exit_line = textOf(doc, "jobRunLogLast");
   out.data_swap_label_unchanged = snapData.data_source_label === "파일: d.csv";
-  ctx.push("job", baseSnap);                        // 비교군 복귀(다음 단계는 같은 작업 문맥)
+  await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(다음 단계는 같은 작업 문맥)
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
 
   /* 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 붙는가. */
   out.busy_lock_declared = ["jobResultClose", "jobResultFailedSel", "jobResultRename"].every(
@@ -1216,35 +1265,50 @@ async function runJobResult(ctx) {
   /* 진행 태에서는 저장 폴더 줄이 숨는다 — display:flex 가 UA [hidden] 을 이기는 결함
      클래스라 계산 스타일로 확인한다(속성만 보면 통과해 버린다). 두 극을 한 쌍으로 잰다. */
   services.JobScreen.renderResult({ running: true, title: "생성 중… 1/3", summary: "" });
+  await settle(ctx);
   out.folder_hidden_while_running = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) === "none";
   services.JobScreen.renderResult(partial);
+  await settle(ctx);
   out.folder_shown_on_result = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) !== "none";
 
   /* 닫기 = 유일한 명시 파기 + 포커스는 다음 행동으로 착지(계약면 3). */
   doc.getElementById("jobResultClose").click();
+  await settle(ctx);
   out.closed = doc.getElementById("jobResult").hidden;
   out.close_focus = activeId(doc);
   /* 명시 파기는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 실행 기록이 기본 문안으로
      돌아왔는지 되읽는다. 이 필드는 **부재**를 단언하는 자리다(자동 초기화만 흔적을 남긴다). */
-  out.close_runlog_last = doc.getElementById("jobRunLogLast").textContent;
+  out.close_runlog_last = textOf(doc, "jobRunLogLast");
   out.runlog_collapsed = !doc.getElementById("jobRunLog").open;
   out.runlog_last_visible = isShown(ctx, doc.getElementById("jobRunLogLast"));
 
-  /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다. */
-  const realGenerate = services.Bridge.generate;
+  /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
+     누를 수 있는 상태는 **스냅샷으로** 만든다(세션 성분은 그대로라 강등·초기화가 아니다).
+     종전 이 자리는 DOM 프로퍼티를 직접 뒤집었다 — legacy 는 노드에 리스너를 달았으니 그것으로
+     충분했지만 React 는 `onClick` 을 부르기 전 **자기 props 의 `disabled`** 를 본다
+     (`shouldPreventMouseEvent`). 프로퍼티만 뒤집으면 핸들러가 영영 안 불리고, 그 침묵은
+     「거절이 안 그려졌다」와 똑같이 생겼다. 계측이 모델을 우회하면 그 계측은 아무것도 안 잰다. */
+  const genSnap = deepCopy(baseSnap);
+  genSnap.gate = { enabled: true, level: "", text: "" };
+  await pushAndSettle(ctx, "job", genSnap);
+
   let rejectGenCalls = 0;
-  services.Bridge.generate = function () {
+  const genStub = stubGenerate(services, (args) => {
     rejectGenCalls += 1;
     /* 문안은 살아 있는 blank_set 게이트 문형(U2 §2.13) — 죽은 ack 문형을 프로브가
        정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다. */
-    return Promise.resolve({
+    return {
       ok: false, error: "빈 값 필드가 표식으로 문서에 박힙니다: 추정가격.", level: "warn",
-    });
-  };
+      /* 상관 토큰은 **반향**이다(R4-03) — 컨트롤러는 이것이 없으면 거절을 그리기 전에
+         계약 위반으로 멈춘다. 대역이 자기 토큰을 지어내면 그 관문을 우회해, 귀속이 깨진
+         응답도 통과하는 세계에서 재게 된다. 받은 것을 그대로 돌려준다. */
+      run_token: args[2],
+    };
+  });
   /* 거절 창 격리(관측자 오염 리트머스) — 첫머리 `Nav.go('job')` 이 쏜 실 refresh 의 푸시가
      늦게 착지해 정확히 이 비동기 창에 들어오고, §2.18 처분이 그것을 「작업 없음 전환 =
      초기화」로 정확히 읽어 방금 세운 rejected 를 지운다. 창이 열린 동안 job 푸시는 기록만
@@ -1262,21 +1326,56 @@ async function runJobResult(ctx) {
     return realPush(screen, pushed);
   };
   ctx.state.rejectPushes = rejectPushes;
-  doc.getElementById("jobGenBtn").disabled = false;
-  doc.getElementById("jobGenBtn").click();
+  /* 「발신 전 정지」는 갈래가 하나가 아니다 — 핸들러가 안 걸린 것 / 걸렸는데 첫 await 에서
+     던진 것이 같은 침묵을 낸다. 클릭 자리가 `void controller.startGenerate()` 라 후자의
+     거절은 아무 데도 안 남으므로, 이 창에서만 그 소음을 받아 증거로 싣는다. */
+  const rejectUnhandled = [];
+  const onUnhandled = (event) => {
+    const reason = event && event.reason;
+    rejectUnhandled.push(String((reason && reason.message) || reason));
+  };
+  ctx.win.addEventListener("unhandledrejection", onUnhandled);
+  /* 발신 앞에는 **커밋 관문**이 하나 더 있다(`flushPendingEdits`). 그 관문이 호스트를
+     부르면 이 합성 창에서 영영 안 돌아올 수 있고, 그때 침묵은 「핸들러 미배선」과
+     구별되지 않는다. 창을 닫아 두고 무엇을 요청했는지 이름으로 남긴다. */
+  const rejectDispatches = [];
+  const dispatchStub = stubDispatch(services, () => async (screen, action) => {
+    rejectDispatches.push(`${screen}/${action}`);
+    return {};
+  });
+  const genBtn = doc.getElementById("jobGenBtn");
+  // React 가 **스스로** 연 상태여야 한다 — 여기가 참이면 이후 단언 전체가 공허하다.
+  const rejectBtnDisabled = genBtn.disabled;
+  genBtn.click();
 
   await ctx.sleep(60);
+  ctx.win.removeEventListener("unhandledrejection", onUnhandled);
+  dispatchStub.restore();
+  out.reject_btn_disabled = !!rejectBtnDisabled;
+  out.reject_unhandled = rejectUnhandled;
+  out.reject_dispatches = rejectDispatches;
+  // 잠금 전이가 섰는가 = `beginRun` 까지 갔는가. 라벨은 그 전이의 가시면이다.
+  out.reject_btn_label = String(genBtn.textContent || "");
+  out.reject_run_action = String((baseSnap.run_action && baseSnap.run_action.key) || "");
   const resultBox = doc.getElementById("jobResult");
   /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
-     렌더 후 소거」 세 갈래를 가른다. */
-  const rejectState = resultBox.dataset.state;
-  const rejectText = doc.getElementById("jobResultSummary").textContent;
-  const rejectLog = doc.getElementById("jobGenLog").textContent;
-  const rejectHidden = resultBox.hidden;
+     렌더 후 소거」 세 갈래를 가른다. 그래서 **이 자리의 읽기만은 던지지 않는다**: 자리가
+     없다는 사실 자체가 세 갈래 중 하나를 가리키는 증거인데, 던지면 그 증거가 통째로
+     사라지고 "null 을 읽었다" 한 줄만 남는다 — 그 한 줄은 세 갈래를 구별하지 못한다.
+     대신 표식을 실어 게이트가 시끄럽게 떨어지게 한다(조용한 통과가 아니다). */
+  const ABSENT = "(자리 없음)";
+  const textOrAbsent = (id) => {
+    const el = doc.getElementById(id);
+    return el === null ? ABSENT : el.textContent;
+  };
+  const rejectState = resultBox === null ? ABSENT : resultBox.dataset.state;
+  const rejectText = textOrAbsent("jobResultSummary");
+  const rejectLog = textOrAbsent("jobGenLog");
+  const rejectHidden = resultBox === null ? true : resultBox.hidden;
   // 거절 사유는 로그도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
-  const runlogLast = doc.getElementById("jobRunLogLast").textContent;
+  const runlogLast = textOrAbsent("jobRunLogLast");
   ctx.push = realPush;
-  services.Bridge.generate = realGenerate;
+  genStub.restore();
 
   out.reject_state = String(rejectState);
   out.reject_text = String(rejectText);

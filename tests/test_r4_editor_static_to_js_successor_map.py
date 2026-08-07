@@ -16,6 +16,7 @@ React 생산자는 정적 골격이 안 들던 ID 도 만든다(레이아웃 컨
 from __future__ import annotations
 
 from collections import Counter
+import itertools
 import json
 from pathlib import Path
 import subprocess
@@ -124,25 +125,34 @@ def test_migrated_ids_left_static_html_and_portal_targets_remain() -> None:
         assert html.count(f'id="{target}"') == 1, target
 
 
-def test_the_two_successor_maps_partition_the_screens_tree() -> None:
-    """두 지도의 정의역 합집합 = `screens/` 의 ID 생산 파일 전수.
+def test_the_successor_maps_partition_the_screens_tree() -> None:
+    """지도들의 정의역 합집합 = `screens/` 의 ID 생산 파일 전수.
 
-    형제 지도가 자기 슬라이스로 정의역을 좁혔으므로, 좁힘이 사각을 만들지 않는다는 사실을
-    여기서 센다 — 새 화면 파일이 어느 지도에도 안 들면 그 ID 들은 두 exact 집합 **밖**에서
+    각 지도가 자기 슬라이스로 정의역을 좁혔으므로, 좁힘이 사각을 만들지 않는다는 사실을
+    여기서 센다 — 새 화면 파일이 어느 지도에도 안 들면 그 ID 들은 exact 집합들 **밖**에서
     조용히 산다. 열거를 늘리는 대신 저장소가 답하게 한다.
+
+    R4-03 이 실행·결과 표면을 들이며 지도가 셋이 됐다. 여기서 세는 것은 **개수가 아니라
+    분할**이므로 지도가 몇이든 같은 두 문장(피복·비겹침)이면 된다 — 슬라이스마다 이 함수를
+    고쳐 쓰면 그 자체가 다음 드리프트다.
     """
     from test_r4_static_to_js_successor_map import OWNED_FILES as R4_01_FILES
+    from test_r4_job_run_static_to_js_successor_map import OWNED_FILES as R4_03_FILES
 
+    maps = {"R4-01": set(R4_01_FILES), "R4-02": set(OWNED_FILES), "R4-03": set(R4_03_FILES)}
     producing = {
         member.rsplit(":", 2)[0].rsplit(":", 1)[0]
         for member in _axes()["js_template_ids"]
         if member.startswith("frontend/src/screens/")
     }
-    claimed = set(R4_01_FILES) | set(OWNED_FILES)
+    claimed = set().union(*maps.values())
     assert producing - claimed == set(), (
         "어느 지도도 들지 않는 화면 파일이 ID 를 만듭니다: " f"{sorted(producing - claimed)}"
     )
-    assert set(R4_01_FILES).isdisjoint(OWNED_FILES), "두 지도가 같은 파일을 주장합니다."
+    # 비겹침은 쌍마다 본다 — 합집합 크기 비교로 접으면 어느 둘이 부딪혔는지를 못 말한다.
+    for left, right in itertools.combinations(sorted(maps), 2):
+        overlap = maps[left] & maps[right]
+        assert not overlap, f"{left}·{right} 지도가 같은 파일을 주장합니다: {sorted(overlap)}"
 
 
 def test_segment_view_carries_token_identity_as_a_literal() -> None:

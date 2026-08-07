@@ -402,6 +402,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_notice_text = ""
         self.data_notice_level = ""
         self._cancel_generation = threading.Event()
+        # 실행 상관 토큰(R4-03) — 표면이 낸 **불투명 문자열**이다. Python 은 이것으로 아무
+        # 판정도 하지 않고 direct 결과·진행 델타에 그대로 되돌린다: 표면이 "이 응답이 지금
+        # 내가 기다리는 그 실행의 것인가"를 물을 수 있게 하는 것이 전부다. 값을 해석하는
+        # 순간 실행 의미가 전송 계층으로 새므로 파생·검증·정규화를 하지 않는다.
+        self._run_token = ""
         # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠를 주입받을 수 있다(9R P1) —
         # 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·라이브러리 재연결) 그쪽이
         # 같은 자물쇠를 봐야 한다. 미주입은 자기 것을 세운다(단독 구성 테스트 호환).
@@ -2240,8 +2245,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:
-        """생성 진행 델타 — 전체 스냅샷 재계산(템플릿 재파싱) 없이 진행바만 갱신."""
-        self._push_sink(self.name, {"progress": {"done": done, "total": total}})
+        """생성 진행 델타 — 전체 스냅샷 재계산(템플릿 재파싱) 없이 진행바만 갱신.
+
+        ``run_token`` 을 함께 싣는다(R4-03): 진행 델타는 direct 반환과 **다른 채널**이라
+        어느 실행의 것인지가 payload 밖에 없었다. 표면이 "지금 진행 중인 실행"이라고
+        가정하면 새 실행이 시작된 뒤 도착한 앞선 런의 델타가 새 진행바를 뒤로 돌린다 —
+        토큰 대조가 그 창을 닫는다. 값은 이 컨트롤러가 만들지 않고 되돌리기만 한다.
+        """
+        self._push_sink(self.name, {
+            "progress": {"done": done, "total": total, "run_token": self._run_token},
+        })
 
     def _stamp_last_run(self, job_name: str, vm) -> str:
         """완주 런의 시각을 **그 런이 시작될 때 겨눴던 작업**에 영속 — 성공 시 ``""``, 실패 시 사유.
@@ -2285,12 +2298,30 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             vm.job.reviewed_rules = dict(job.reviewed_rules)
         return ""
 
-    def generate(self, *, confirm_overwrite: bool = False) -> dict:
+    def generate(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
         """게이트 통과 시 동기 생성 → 결과 dict. 덮어쓰기는 웹 재진술 후 재호출(RC-02).
 
         슬라이스 1은 실행 화면과 동일한 링1 계약을 배선한다 — 게이트 판정·덮어쓰기 재진술의
         표현(재진술 블록·modal.js)은 슬라이스 2(블록 6)가 광택한다.
+
+        ``run_token`` 은 표면이 낸 불투명 상관 문자열이고 **모든** 반환 갈래에 되돌아간다
+        (거절·덮어쓰기 필요·취소·성공·실패). 되돌림을 갈래마다 손으로 적지 않고 이 함수의
+        단일 출구가 찍는 이유는 갈래가 늘 때 형제를 빠뜨리는 결함류를 구조로 막기 위해서다.
+        생략하면 ``""`` 라 종전 호출자의 동작은 그대로다.
         """
+        # 토큰은 **이 호출의 지역값**이다. 공유 필드에 먼저 실으면 자물쇠에 거절당할 두 번째
+        # 호출이 **이긴 런의 이름표를 갈아치운다** — 그러면 실제로 도는 런의 진행 델타와 최종
+        # 응답이 남의 토큰을 달고 나가 표면이 그것을 「남의 것」으로 폐기한다(문서는 만들어졌는데
+        # 사용자는 「이미 생성 중」만 본다). 되돌림은 이 지역값이 지고, 공유 필드는 자물쇠를
+        # 쥔 런만 세운다.
+        token = run_token if isinstance(run_token, str) else ""
+        result = self._generate_with_token(confirm_overwrite=confirm_overwrite, run_token=token)
+        # 되돌림은 마지막 한 자리다. 판정에 쓰지 않으므로 값이 무엇이든 그대로 싣는다.
+        result["run_token"] = token
+        return result
+
+    def _generate_with_token(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
+        """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
         if self.range_draft is not None:
@@ -2303,10 +2334,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             }
         if not self._generation_lock.acquire(blocking=False):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
+        # 진행 델타의 이름표는 **자물쇠를 쥔 런**만 세운다(위 docstring). 놓을 때 비우는 것도
+        # 같은 이유다 — 런이 끝난 뒤 남은 이름표는 어떤 런도 겨누지 않는다.
+        self._run_token = run_token
         self._cancel_generation.clear()
         try:
             result = self._generate_locked(confirm_overwrite=confirm_overwrite)
         finally:
+            self._run_token = ""
             self._generation_lock.release()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을

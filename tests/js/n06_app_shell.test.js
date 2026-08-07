@@ -251,9 +251,15 @@ test("공개 표면 — createAppShell({…, shellNav}) → {Nav, AppCloseGuard,
   assert.equal(typeof createAppShell, "function");
   const { shell, shellNav } = makeShell();
   assert.deepEqual(Object.keys(shell), ["Nav", "AppCloseGuard", "shellHost"]);
-  assert.deepEqual(Object.keys(shell.Nav), ["go", "refresh"]);
+  // R4-03 — `currentScreen` 관측면이 늘었다. 화면이 「지금 어느 화면인가」를 DOM 으로
+  // 되물으면 같은 판정이 상태기계와 DOM 두 곳에 살고, React 서브트리가 legacy 화면 루트를
+  // 붙드는 간선이 된다. adapter 는 상태기계의 관측면을 **통과**시키기만 한다.
+  assert.deepEqual(Object.keys(shell.Nav), ["go", "refresh", "currentScreen"]);
   assert.equal(typeof shell.Nav.go, "function");
   assert.equal(typeof shell.Nav.refresh, "function");
+  assert.equal(typeof shell.Nav.currentScreen, "function");
+  assert.equal(shell.Nav.currentScreen(), shellNav.currentScreen(),
+    "adapter 가 관측값을 자기 사본에서 답하면 두 값이 갈립니다");
   assert.deepEqual(Object.keys(shell.AppCloseGuard), ["prompt"]);
   assert.equal(typeof shell.AppCloseGuard.prompt, "function");
   // ShellHost 주입 서술 — 수명주기(부착/해제·시퀀서)는 React 몫이라 여기는 형태만 계약한다.
@@ -619,7 +625,8 @@ test("음성 — 판정 재조립 잔존 0: adapter 에 화면 판정·목록 �
 });
 
 test("Python 계약 앵커 — Nav 리터럴·go 시그니처·refresh 발신·기본 랜딩·잔존 계약 문자열", () => {
-  assert.ok(SRC.includes("const Nav = { go, refresh };"), "window.Nav 의 후계 리터럴 그대로");
+  assert.ok(SRC.includes("const Nav = { go, refresh, currentScreen: () => shellNav.currentScreen() };"),
+    "window.Nav 의 후계 리터럴 그대로(+R4-03 관측면 — 판정은 상태기계가 답한다)");
   assert.ok(SRC.includes("function go(id, opts) {"), "go 는 synchronous 시그니처 텍스트 보존");
   assert.ok(SRC.includes('Bridge.call(id, "refresh", {})'), "재당김 발신 텍스트(대문자 Bridge)");
   assert.ok(SRC.includes("go(DEFAULT_SCREEN);"), "구성 즉시 랜딩(정본은 import)");

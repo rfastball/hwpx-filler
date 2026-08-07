@@ -520,8 +520,17 @@ function createJobBand(conf) {
     if (jobGenBtn.disabled) jobResultZone.focus(); else jobGenBtn.focus();
   };
   jobGenBtn.behavior = () => {
-    band.services.Bridge.generate().then((res) => {
-      if (res && res.ok === false) {
+    /* 발신 통로는 R4-03 에서 typed `Client.invoke` 로 옮겼다. 대역이 옛 `Bridge.generate` 를
+       계속 모델링하면 프로브가 **죽은 seam** 을 스텁해도 이 층은 초록이라, 값싼 층의 초록이
+       제품에 대해 거짓이 된다(실 WebView2 만 빨강 = 진단이 가장 비싼 곳으로 밀린다).
+       상관 토큰 반향까지 흉내 내는 이유도 같다 — 토큰을 안 돌려주는 스텁은 여기서 잡힌다. */
+    band.genCalls = (band.genCalls || 0) + 1;
+    const token = `band-run-${band.genCalls}`;
+    band.services.Client.invoke("generate", "job", false, token).then((env) => {
+      const res = (env && env.ok === true ? env.value : null) || {};
+      // 귀속이 깨진 응답은 그리지 않는다 — 남의 실행 결과를 자기 자리에 세우는 경로다.
+      if (res.run_token !== token) return;
+      if (res.ok === false) {
         jobResult.hidden = false;
         jobResult.dataset.state = "rejected";
         jobResultSummary.textContent = res.error;
@@ -623,6 +632,21 @@ function createJobBand(conf) {
   /* ── 주입 능력 ────────────────────────────────────────────── */
   const win = {
     Event: FakeEvent,
+    /* 창 수준 리스너 — 프로브가 `unhandledrejection` 을 창에서 받는다. 대역이 이 표면을
+       안 가지면 프로브가 실물에서만 도는 코드가 되어, 값싼 층이 그 경로를 영영 안 지난다.
+       실제로 사건을 나르게 두는 이유도 같다(등록만 받고 버리면 단언이 공허하다). */
+    listeners: new Map(),
+    addEventListener(type, fn) {
+      if (!win.listeners.has(type)) win.listeners.set(type, new Set());
+      win.listeners.get(type).add(fn);
+    },
+    removeEventListener(type, fn) {
+      const set = win.listeners.get(type);
+      if (set) set.delete(fn);
+    },
+    emit(type, event) {
+      for (const fn of [...(win.listeners.get(type) || [])]) fn(event);
+    },
     getComputedStyle(el) {
       const hiddenWins = el.hidden && !el.hiddenLoses;
       return {
@@ -710,13 +734,17 @@ function createJobBand(conf) {
         band.navLog.push({ bridge: action, payload });
         return Promise.resolve({});
       },
-      generate: () => Promise.resolve({ ok: true }),
     },
     Client: {
       dispatch: (screen, action, payload) => {
         band.navLog.push({ client: action, payload });
         return Promise.resolve({ ok: true, value: {} });
       },
+      /* 기본은 성사 — 봉투는 통로의 성패(`ok:true`), payload 는 판정이다. 토큰을 그대로
+         돌려주는 것이 실물의 계약이라 대역도 그렇게 한다. */
+      invoke: (method, ...args) => Promise.resolve(
+        { ok: true, value: { ok: true, run_token: args[2] } },
+      ),
     },
     Modal: { close: () => { previewCard.classList.add("is-closing"); } },
     Popover: { closeAll: () => {} },

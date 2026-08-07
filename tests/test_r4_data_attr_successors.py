@@ -1,4 +1,4 @@
-"""R4-01 semantic data-* producer successor exact sets."""
+"""R4-01~R4-03 semantic data-* producer successor exact sets."""
 
 from __future__ import annotations
 
@@ -52,7 +52,15 @@ def test_r4_data_attribute_successor_groups_are_exact() -> None:
     job_support = _names(
         rows, "frontend/src/screens/job_read.ts", "frontend/src/screens/path_actions.ts",
     )
-    job_run = _names(rows, "frontend/js/screens/job.js")
+    # R4-03 — 한 파일이 지던 다섯 이름이 React 세 장으로 갈렸다. **합집합이 계약**이다:
+    # 파일별로 쪼개면 이름 하나가 이웃 파일로 옮겨 앉는 것까지 계약이 되어, 렌더 구조를
+    # 바꿀 때마다 이 표가 붉는다(계약이 재려던 것은 「누가 심는가」이지 「어느 줄인가」가 아니다).
+    job_run = _names(
+        rows,
+        "frontend/src/screens/job_run.ts",
+        "frontend/src/screens/job_result.ts",
+        "frontend/src/screens/job_preview.ts",
+    )
     assert picker == PICKER and len(picker) == 6
     assert library_all == LIBRARY | LIBRARY_VIEW
     assert len(LIBRARY) == 22 and len(LIBRARY_VIEW) == 2

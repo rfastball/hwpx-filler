@@ -92,6 +92,14 @@ EXPECTED_TEST_FILES = {
     "r4_editor_entry_handoff.test.js",
     "r4_editor_state.test.js",
     "r4_leave_transactions.test.js",
+    "r4_job_relink.test.js",
+    "r4_job_run_state.test.js",
+    # R4-03 — 실행·결과 표면. reducer 위층 넷을 축별로 가른다: 컨트롤러 배선 · 결과 3태
+    # 수명 · 발신/유입 우선순위 · 확인 면. 같은 규율을 두 초록 사이에 숨기지 않는다.
+    "r4_job_run.test.js",
+    "r4_job_result_lifetime.test.js",
+    "r4_job_generate_order.test.js",
+    "r4_job_preview.test.js",
     "r4_sheet_picker.test.js",
     "r4_workbench.test.js",
 }

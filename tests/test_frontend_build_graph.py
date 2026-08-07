@@ -103,11 +103,9 @@ EXPECTED_ESM_EXPORTS = {
     "theme.js": "createTheme",
     "personalization.js": "createPersonalization",
     "pathtrack.js": "createPathTrack",
-    "relink.js": "createRelink",
-    # N-06 화면 + 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아 중앙에서
-    # 한 번 구성된다. R4-01·R4-02 가 library·editor·workbench 를 React 로 옮기며
-    # 남은 legacy 화면은 job 하나다(#416 인계).
-    "screens/job.js": "createJobScreen",
+    # N-06 앱 셸 — Bridge·Nav·교차 화면 콜백·factory 산물을 주입받아 중앙에서 한 번
+    # 구성된다. R4-03 이 실행·결과 표면을 React 로 옮기며 **legacy 화면은 0 이 됐고**,
+    # 저수준 재연결(`relink.js`)도 `screens/job_relink.ts` 로 함께 갔다. 남은 것은 셸뿐이다.
     "app.js": "createAppShell",
     # N-07 브리지 — 마지막 IIFE. 산물 ``{bridge, push}`` 를 중앙이 한 번 구성해 나눠 준다.
     "bridge.js": "createBridge",
@@ -381,7 +379,7 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 17
+    assert len(ESM_FILES) == 15
 
     #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
     assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
@@ -437,12 +435,6 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         # R4-02 — 이동 다이얼로그·접힘 토글이 React 후계로 떠나며 esc·modal 간선도 함께 죽었다.
         "grouplist.js": {"./popover.js"},
         "pathtrack.js": {"./esc.js"},
-        "relink.js": {"./modal.js"},
-        # N-06 화면 넷 — named export 서비스·잎만 import 간선으로 적는다. factory 산물
-        # (EditorEntry·PathTrack 등)과 교차 화면·Nav 는 주입이라 여기 없어야 한다.
-        "screens/job.js": {
-            "../esc.js", "../modal.js", "../preserve.js", "../guard.js",
-        },
         # R3-02(#411): 집행 adapter 가 판정 정본(DEFAULT_SCREEN·IMMERSIVE_SURFACES)을 상태
         # 기계 모듈에서 읽는다 — modal.js 와 같은 js→ts 합법 방향.
         "app.js": {"./modal.js", "./surface_sheet.js", "../src/shell/nav.ts"},
@@ -456,7 +448,9 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         )
 
     #: 화면 간 직접 import 0 — 교차 간선은 합성 루트의 late-bound 콜백 테이블만 진다.
-    for name in ("screens/job.js", "app.js"):
+    #: legacy 화면이 0 이 된 뒤로 이 질문의 남은 대상은 셸 하나다. 술어를 지우지 않는 이유는
+    #: **되살아나는 모양**을 계속 겨누기 위해서다(새 legacy 화면이 생기면 여기서 먼저 붉다).
+    for name in ("app.js",):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         crossing = [p for p in module_imports(source)
                     if "screens/" in p or p.endswith("/app.js") or p == "./app.js"]
@@ -628,7 +622,7 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
         if export.startswith("create")
     )
 
-    assert len(factories) == 7
+    assert len(factories) == 5
     for factory in factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
         assert len(calls) == 1, (
@@ -640,6 +634,9 @@ def test_each_service_is_constructed_exactly_once_in_the_composition_root() -> N
     r4_factories = (
         "createScreenRuntime", "createScreenPorts", "createServiceHandoffPorts",
         "createLibraryController", "createDataPickerController", "createJobReadController",
+        # R4-02·R4-03 — 편집·매핑과 실행·결과의 controller/port 도 같은 규율을 받는다.
+        "createEditorController", "createWorkbenchController", "createEditorEntry",
+        "createJobRunController", "createJobRelink",
     )
     for factory in r4_factories:
         calls = re.findall(rf"\b{re.escape(factory)}\s*\(", compat_source)
@@ -720,7 +717,7 @@ def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(scripts) == 17
+    assert len(scripts) == 15
     assert non_esm == ()
     assert LEGACY_JS_FILES == ()
     assert EXPECTED_LEGACY_GLOBALS == set()
@@ -873,7 +870,12 @@ def test_the_shared_scan_set_actually_collects_the_ts_subtree() -> None:
         "src/screens/editor_state.ts",  # R4-02 — 전송 스냅샷↔local draft reducer
         "src/screens/group_move_dialog.ts",  # R4-02 — 템플릿 그룹 이동 다이얼로그
         "src/screens/host.ts",  # R4-01 — 단일 root 아래 화면 portal host
+        "src/screens/job_preview.ts",  # R4-03 — 확인 면(생성 값 미리보기) React producer
         "src/screens/job_read.ts",  # R4-01 — job read surface controller/producer
+        "src/screens/job_relink.ts",  # R4-03 — 저수준 재연결 port 의 React 구현
+        "src/screens/job_result.ts",  # R4-03 — 결과 3태 구획·실행 기록 React producer
+        "src/screens/job_run.ts",  # R4-03 — 실행 표면 React controller/producer
+        "src/screens/job_run_state.ts",  # R4-03 — 실행 정체(세대·지문·토큰) reducer
         "src/screens/library.ts",  # R4-01 — 문서 작업 React surface
         "src/screens/path_actions.ts",  # R4-01 — 경로 열기 React action
         "src/screens/ports.ts",  # R4-01 — 화면 경계 typed ports

@@ -127,7 +127,6 @@ const read = (n) => fs.readFileSync(SRC(n), "utf8");
 
 const { GroupList } = await import("../../frontend/js/grouplist.js");
 const { createPathTrack } = await import("../../frontend/js/pathtrack.js");
-const { createRelink } = await import("../../frontend/js/relink.js");
 const { createTheme } = await import("../../frontend/js/theme.js");
 const { createPersonalization } = await import("../../frontend/js/personalization.js");
 /* R4-02 — 시트 선택은 이 파일의 범위를 떠났다. legacy `sheet_picker.js` 가 삭제되면서
@@ -153,7 +152,7 @@ function patch(obj, keys, t) {
   return log;
 }
 
-const FILES = ["grouplist", "pathtrack", "relink", "theme", "personalization"];
+const FILES = ["grouplist", "pathtrack", "theme", "personalization"];
 const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
 const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
 
@@ -211,9 +210,6 @@ test("공개 표면 — 팩토리/named export 와 반환 키가 계약 표 그�
   assert.equal(typeof createPathTrack, "function");
   assert.deepEqual(Object.keys(createPathTrack({ bridge })).sort(), ["affordances"]);
 
-  assert.equal(typeof createRelink, "function");
-  assert.deepEqual(Object.keys(createRelink({ bridge })).sort(), ["relinkTemplate"]);
-
   assert.equal(typeof createTheme, "function");
   assert.deepEqual(Object.keys(createTheme({ bridge })).sort(),
     ["apply", "current", "set", "toggle"]);
@@ -244,7 +240,7 @@ test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 
 test("파일당 export 는 하나 — export default 없음", () => {
   const EXPECTED = {
     grouplist: ["GroupList"], pathtrack: ["createPathTrack"],
-    relink: ["createRelink"], theme: ["createTheme"], personalization: ["createPersonalization"],
+    theme: ["createTheme"], personalization: ["createPersonalization"],
   };
   for (const f of FILES) {
     const src = read(f);
@@ -300,7 +296,7 @@ test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign
 
 test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
   const FACTORY = {
-    pathtrack: "createPathTrack", relink: "createRelink",
+    pathtrack: "createPathTrack",
     theme: "createTheme", personalization: "createPersonalization",
   };
   for (const [f, name] of Object.entries(FACTORY)) {
@@ -363,19 +359,10 @@ test("포트 교체 — PathTrack 위임 핸들러는 갈아끼운 bridge.openPa
   assert.deepEqual(seen, [["A", "P:\\a.hwpx"], ["B", "P:\\a.hwpx"]]);
 });
 
-test("포트 교체 — Relink 는 갈아끼운 bridge.call/pickTemplatePath 를 본다", async (t) => {
-  freshDom(t);
-  const seen = [];
-  const bridge = {
-    pickTemplatePath: () => "T:\\t.hwpx",
-    call: (s, a, p) => { seen.push(["A", s, a, p]); return { restated: "ok" }; },
-  };
-  const relink = createRelink({ bridge });
-  assert.equal(await relink.relinkTemplate("job", "작업", () => {}), true);
-  bridge.call = (s, a, p) => { seen.push(["B", s, a, p]); return { restated: "ok" }; };
-  await relink.relinkTemplate("job", "작업", () => {});
-  assert.deepEqual(seen.map((r) => r[0]), ["A", "B"]);
-});
+/* R4-03 — 저수준 재연결은 legacy `relink.js` 와 함께 이 파일의 주어(재사용 서비스 팩토리)를
+   떠났다. 후계 `src/screens/job_relink.ts` 의 계약(피커→needs-confirm→커밋 순서, boolean
+   단일 결과, notify 선택성)은 `r4_job_relink.test.js` 가 통째로 진다. 「갈아끼운 통로를
+   본다」는 같은 성질도 그쪽이 client 대역으로 잰다. */
 
 /* SheetPicker 의 같은 성질(갈아끼운 통로를 본다)은 `r4_sheet_picker.test.js` 가 잰다 —
    후계는 `bridge.loadDataSheet` 가 아니라 `client.invoke("load_data_sheet", …)` 를 지난다. */

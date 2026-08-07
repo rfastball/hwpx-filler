@@ -30,7 +30,7 @@ CONTROLLERS = {
 SCREEN_JS = {
     "library": "src/screens/library.ts",
     "editor": "src/screens/editor.ts",
-    "job": "js/screens/job.js",
+    "job": "src/screens/job_run.ts",
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
     "pool": "src/screens/data_picker.ts",

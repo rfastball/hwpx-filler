@@ -50,7 +50,7 @@ repo_wide_metrics = []
 
 # 분류 어휘 5종 중 오늘 점유자가 없는 값. 부재를 데이터로 적는 이 원장의 습관을 어휘에도 쓴다 —
 # 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
-unoccupied_classifications = ["host"]
+unoccupied_classifications = ["host", "retire"]
 
 [[cross_axis_overlap]]
 member = "frontend/src/runtime/adapter.ts:94"
@@ -108,7 +108,7 @@ covers = ["frontend/css/**/*.css"]
 probe = { kind = "regex", pattern = "^", flavor = "python-re", granularity = "per-matching-line" }
 scope = ["frontend/css/**/*.css"]
 unit = "스타일시트 1줄 = 1. 규칙 수가 아니라 **표면의 크기**를 잰다 — 이 층이 조용히 자라지 않는지만 본다."
-current = 1703
+current = 1711
 files = 10
 judgment = "오늘 10파일 1,703줄(R4-01 portal wrapper·후보 메뉴·열 조판 규칙 반영 뒤 순증 1줄). 정확한 규칙 계측은 이 원장의 일이 아니고, 자라는 것을 보는 것이 제외의 의무다."
 
@@ -265,9 +265,9 @@ description = """
 probe = { kind = "extractor", name = "html_data_attr_regex_delta" }
 scope = ["frontend/index.html"]
 unit = "정규식만 잡는 이름 1개 = 1. 전부 속성이 아니다."
-current = 6
-members = ["data-first", "data-grid", "data-react-mounted", "data-sheet-body", "data-theme", "data-zone"]
-judgment = "여섯 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). 참값은 파서가 낸 7종이다."
+current = 7
+members = ["data-first", "data-grid", "data-react-mounted", "data-sheet-body", "data-state", "data-theme", "data-zone"]
+judgment = "일곱 다 CSS 클래스 이름 또는 주석 산문이다(data-react-mounted 는 #reactRoot 곁 주석의 산문 — 속성 실물은 커밋 때 런타임이 심는다). R4-03 에서 data-state 가 이 목록에 들어왔다: 실물 속성은 React 생산자로 옮겨 갔고 index.html 에는 결과 3태를 설명하는 **주석 한 줄만** 남았다. 참값은 파서가 낸 1종이다."
 
 [axes.dom_js_data_attr]
 predicate = { kind = "node_extractor", name = "js_planted_data_attrs" }
@@ -554,10 +554,10 @@ probe = { kind = "regex", pattern = "^export function (?!create)", flavor = "pyt
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "`create` 로 시작하지 않는 export function 선언 1건 = 1."
-current = 53
+current = 79
 members = [
   "frontend/js/esc.js:10",
-  "frontend/src/bootstrap.js:130",
+  "frontend/src/bootstrap.js:135",
   "frontend/src/overlay/host.ts:491",
   "frontend/src/overlay/instance.ts:110",
   "frontend/src/overlay/instance.ts:121",
@@ -587,6 +587,7 @@ members = [
   "frontend/src/screens/host.ts:11",
   "frontend/src/screens/host.ts:24",
   "frontend/src/screens/host.ts:45",
+  "frontend/src/screens/job_preview.ts:57",
   "frontend/src/screens/job_read.ts:475",
   "frontend/src/screens/job_read.ts:492",
   "frontend/src/screens/job_read.ts:510",
@@ -594,6 +595,31 @@ members = [
   "frontend/src/screens/job_read.ts:572",
   "frontend/src/screens/job_read.ts:631",
   "frontend/src/screens/job_read.ts:670",
+  "frontend/src/screens/job_result.ts:155",
+  "frontend/src/screens/job_result.ts:76",
+  "frontend/src/screens/job_run.ts:103",
+  "frontend/src/screens/job_run.ts:524",
+  "frontend/src/screens/job_run.ts:530",
+  "frontend/src/screens/job_run.ts:536",
+  "frontend/src/screens/job_run.ts:545",
+  "frontend/src/screens/job_run.ts:603",
+  "frontend/src/screens/job_run.ts:628",
+  "frontend/src/screens/job_run.ts:662",
+  "frontend/src/screens/job_run.ts:713",
+  "frontend/src/screens/job_run.ts:736",
+  "frontend/src/screens/job_run.ts:78",
+  "frontend/src/screens/job_run.ts:87",
+  "frontend/src/screens/job_run_state.ts:106",
+  "frontend/src/screens/job_run_state.ts:126",
+  "frontend/src/screens/job_run_state.ts:141",
+  "frontend/src/screens/job_run_state.ts:164",
+  "frontend/src/screens/job_run_state.ts:182",
+  "frontend/src/screens/job_run_state.ts:193",
+  "frontend/src/screens/job_run_state.ts:210",
+  "frontend/src/screens/job_run_state.ts:215",
+  "frontend/src/screens/job_run_state.ts:223",
+  "frontend/src/screens/job_run_state.ts:57",
+  "frontend/src/screens/job_run_state.ts:68",
   "frontend/src/screens/library.ts:555",
   "frontend/src/screens/library.ts:591",
   "frontend/src/screens/path_actions.ts:35",
@@ -650,24 +676,24 @@ judgment = "둘 다 app.js:65 의 존재 확인 + 호출이다. 화면 쪽 객�
 
 [[metric]]
 id = "innerhtml-assignment"
-value = 15
+value = 4
 predicate = { kind = "regex", pattern = "innerHTML\\s*=(?!=)", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "대입 1건 = 1. 분모 = 정적 폐포 계약에서 non-code와 selftest를 감산한 제품 코드 전수(주석 포함)."
 note = "제품의 DOM 생성은 사실상 한 형태다 — $(\"안정 id\").innerHTML = 템플릿 문자열 전체 재구성. 이것이 preserve.js 의 존재 이유이자 React 이관의 주 절취선이다."
 [[metric.aliases]]
-value = 22
+value = 9
 predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/js/**/*.js", "frontend/index.html"]
 unit = "출현 1건 = 1. 대입·판독·주석을 구분하지 않는다."
 [[metric.aliases]]
-value = 36
+value = 23
 predicate = { kind = "regex", pattern = "innerHTML", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*"]
 unit = "위와 같음. selftest 축까지 포함한다(텍스트로 못 읽는 파일은 세지 않는다)."
 [[metric.aliases]]
-value = 15
+value = 4
 status = "wrong"
 predicate = { kind = "regex", pattern = "innerHTML\\s*=[^=]", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/js/**/*.js"]
@@ -693,24 +719,24 @@ note = "R3-99 F1 통제 변이 710459c(cleanup 없는 window listener)를 0 기�
 
 [[metric]]
 id = "mutable-module-state"
-value = 68
+value = 73
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. #491 재고정으로 JS 45 + TS 18을 같은 감산형 분모에서 센다."
 [[metric.aliases]]
-value = 8
+value = 2
 predicate = { kind = "derived", axis = "state_js_module" }
 scope = ["frontend/js/**/*.js"]
 unit = "frontend/js 만. 나머지 6은 frontend/src 제품분(bootstrap 5 · push_port 1)이다."
 [[metric.aliases]]
-value = 6
+value = 0
 status = "narrower-scope"
 predicate = { kind = "extractor", name = "js_module_state_convention_budget" }
 scope = ["frontend/js/screens/job.js", "frontend/js/screens/workbench.js", "frontend/js/screens/editor.js", "frontend/js/screens/library.js", "frontend/js/data_picker.js", "frontend/js/datazone.js"]
 unit = "MUTABLE_MODULE_STATE_BUDGET 6파일. 이 scope 에서는 관례 == AST(36 = 36)라 기존 예산 게이트는 무결하다."
 [[metric.aliases]]
-value = 17
+value = 11
 status = "wrong"
 predicate = { kind = "extractor", name = "js_module_state_convention" }
 scope = ["frontend/js/**/*.js"]
@@ -718,7 +744,7 @@ unit = "2칸 들여쓰기 관례를 frontend/js 전수에 재사용한 값. 거�
 
 [[metric]]
 id = "push-subscription-sites"
-value = 6
+value = 7
 predicate = { kind = "regex", pattern = "\\.onPush\\s*\\(|\\.subscribe\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/src/bootstrap.js", "frontend/src/screens/*.ts"]
 unit = "코드 등록 사이트 1개 = 1. 축과 같은 술어·scope 를 쓴다(R4-02 에서 함께 이사했다)."
@@ -734,16 +760,16 @@ legacy 축 술어를 legacy 트리에 그대로 적용한 값. **1 은 bridge.js
 
 [[metric]]
 id = "listener-attach-sites"
-value = 40
+value = 22
 predicate = { kind = "derived", axis = "subscription_listener" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "노드 폐포의 원소 수. JS 98 + TS attach 10(R2 runtime 1 · R3 overlay 7 · shell 2)."
 [[metric.aliases]]
-value = 30
+value = 13
 predicate = { kind = "regex", pattern = "\\.addEventListener\\s*\\(", flavor = "python-re", granularity = "per-line" }
 scope = ["frontend/**/*.js"]
-unit = "selftest 축 +4. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102."
+unit = "selftest 축 +5. 승계 수치의 107 대 111 은 둘 다 옳았고 둘 다 scope 를 안 들었다. R3-02 재고정: 셸 리스너 7 이양으로 109→102. R4-03: 거절 창의 unhandledrejection 계기 1 추가(12→13) — 이 별칭은 제품 축과 달리 selftest 를 걸러내지 않는다."
 
 [[metric]]
 id = "listener-release-sites"
@@ -755,19 +781,19 @@ unit = "노드 폐포의 원소 수. JS 7 + 완료 R3 host TS release 9."
 
 [[metric]]
 id = "dom-stable-ids"
-value = 93
+value = 42
 predicate = { kind = "derived", axis = "dom_static" }
 scope = ["frontend/index.html"]
 unit = "노드 폐포의 원소 수. 전부 유일하다(중복 0). R3-01 재고정: 골격 4(다이얼로그 3 + 토스트, 내부 id 포함 21)가 React host 렌더로 이전돼 233 → 212."
 
 [[metric]]
 id = "dom-data-attribute-kinds"
-value = 4
+value = 1
 predicate = { kind = "derived", axis = "dom_data_attr" }
 scope = ["frontend/index.html"]
 unit = "속성 이름 1개 = 1."
 [[metric.aliases]]
-value = 22
+value = 11
 status = "wrong"
 predicate = { kind = "regex", pattern = "data-[a-z-]+", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/index.html"]
@@ -775,7 +801,7 @@ unit = "무앵커 정규식의 출현 수. CSS 클래스 이름·산문을 함�
 
 [[metric]]
 id = "data-attribute-bearing-elements"
-value = 13
+value = 2
 predicate = { kind = "extractor", name = "html_data_attr_elements" }
 scope = ["frontend/index.html"]
 unit = "`data-*` 를 하나라도 든 요소 1개 = 1."
@@ -788,13 +814,13 @@ unit = "그중 id 가 없어 dom_static 232 **밖**인 요소 1개 = 1. 나머�
 
 [[metric]]
 id = "js-generated-id-sites"
-value = 173
+value = 225
 predicate = { kind = "derived", axis = "dom_js_site" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "사이트 1개 = 1. legacy 마크업 문자열 26 + React overlay object prop 22."
 [[metric.aliases]]
-value = 1
+value = 0
 predicate = { kind = "regex", pattern = "id=\"", flavor = "python-re", granularity = "per-occurrence" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
@@ -844,7 +870,7 @@ unit = "selftest 축 포함."
 
 [[metric]]
 id = "export-function-declarations"
-value = 83
+value = 110
 predicate = { kind = "derived", axis = "lifecycle_factory" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
@@ -862,7 +888,7 @@ id = "bridge/close-guard-state"
 subject = "close_guard_state 는 pywebview 반사로 js_api 에 노출되는데 문서에도 bridge.js 에도 없다 — JS 에서 도달 가능한 무계약 표면이다."
 requires_p_review = true
 resolved = false
-evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 481, anchor = "def close_guard_state" }]
+evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 490, anchor = "def close_guard_state" }]
 owner = "R2-02 #406"
 disposition = "#433"
 [review_item.p_review]
@@ -886,16 +912,16 @@ subject = "SCREEN_ROOTS 상수가 화면 루트 4개 전부를 든다 — R3-03�
 requires_p_review = false
 resolved = true
 disposition = "SCREEN_ROOTS를 scr-library·scr-job·scr-editor·scr-workbench 전수로 확장하고 test_screen_roots_present가 대조한다."
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 125, anchor = "SCREEN_ROOTS = (" }]
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 153, anchor = "SCREEN_ROOTS = (" }]
 owner = "R3-03 #412"
 
 [[review_item]]
 id = "gate/preserve-wrapped-files-partial"
-subject = "PRESERVE_WRAPPED_FILES가 Preserve.around 실호출 5파일 전부를 들고 docstring도 다섯 소유자로 맞췄다."
+subject = "PRESERVE_WRAPPED_FILES가 Preserve.around 실호출 파일 전부를 든다 — R4-03 뒤 그 수는 0이다."
 requires_p_review = false
 resolved = true
-disposition = "data_picker.js·library.js를 목록에 더해 실호출 5파일과 정확히 맞추고 정적 배선 게이트가 전수 대조한다."
-evidence = [{ file = "tests/test_web_dom_contract.py", line = 63, anchor = "PRESERVE_WRAPPED_FILES = (" }]
+disposition = "R4-03 이 legacy 렌더 층을 절단하며 제품 코드의 Preserve.around 가 0이 됐다(남은 둘은 축 밖 selftest 프로브). React 소유에서는 서브트리 재구성 자체가 없어 되찾을 포커스·캐럿이 생기지 않는다. 목록은 빈 튜플로 남겨 legacy 렌더 층 재유입의 표식으로 둔다."
+evidence = [{ file = "tests/test_web_dom_contract.py", line = 75, anchor = "PRESERVE_WRAPPED_FILES: tuple[str, ...] = ()" }]
 owner = "R3-03 #412"
 
 [[review_item]]
@@ -934,7 +960,7 @@ id = "dom/root/screen-roots"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["overlayRoot", "scr-editor", "scr-job", "scr-library", "scr-workbench"] }
-evidence = [{ file = "frontend/index.html", line = 312, anchor = "<div id=\"overlayRoot\">" }]
+evidence = [{ file = "frontend/index.html", line = 212, anchor = "<div id=\"overlayRoot\">" }]
 classification = "react"
 handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -944,7 +970,7 @@ id = "dom/root/react-root"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["reactRoot"] }
-evidence = [{ file = "frontend/index.html", line = 462, anchor = "<div id=\"reactRoot\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 300, anchor = "<div id=\"reactRoot\"></div>" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -974,7 +1000,7 @@ id = "dom/scr-editor"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "scr-editor", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 285, anchor = "<section class=\"scr\" id=\"scr-editor\"></section>" }]
+evidence = [{ file = "frontend/index.html", line = 185, anchor = "<section class=\"scr\" id=\"scr-editor\"></section>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -984,7 +1010,7 @@ id = "dom/scr-workbench"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "scr-workbench", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 292, anchor = "<section class=\"scr\" id=\"scr-workbench\"></section>" }]
+evidence = [{ file = "frontend/index.html", line = 192, anchor = "<section class=\"scr\" id=\"scr-workbench\"></section>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -994,7 +1020,7 @@ id = "dom/overlayRoot"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "overlayRoot", members_expected = 13 }
-evidence = [{ file = "frontend/index.html", line = 312, anchor = "<div id=\"overlayRoot\">" }]
+evidence = [{ file = "frontend/index.html", line = 212, anchor = "<div id=\"overlayRoot\">" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1013,8 +1039,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/job/jobMirrorZone"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobMirrorZone", members_expected = 4 }
-evidence = [{ file = "frontend/index.html", line = 126, anchor = "<div class=\"zone job-mirror-zone\" id=\"jobMirrorZone\">" }]
+selector = { kind = "subtree", root = "jobMirrorZone", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 126, anchor = "<div class=\"zone job-mirror-zone\" id=\"jobMirrorZone\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1023,8 +1049,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/job/jobResultZone"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobResultZone", members_expected = 17 }
-evidence = [{ file = "frontend/index.html", line = 145, anchor = "<div class=\"zone job-result-zone\" id=\"jobResultZone\" tabindex=\"-1\">" }]
+selector = { kind = "subtree", root = "jobResultZone", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 132, anchor = "<div class=\"zone job-result-zone\" id=\"jobResultZone\" tabindex=\"-1\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1034,7 +1060,7 @@ id = "dom/job/jobSideCard-read"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobSideCard", members_expected = 2 }
-evidence = [{ file = "frontend/index.html", line = 195, anchor = "<aside class=\"dg-side\" id=\"jobSideCard\" aria-label=\"이 데이터에 사용할 문서\">" }]
+evidence = [{ file = "frontend/index.html", line = 136, anchor = "<aside class=\"dg-side\" id=\"jobSideCard\" aria-label=\"이 데이터에 사용할 문서\">" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1043,8 +1069,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/job/jobActionBar"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobActionBar", members_expected = 8 }
-evidence = [{ file = "frontend/index.html", line = 233, anchor = "<div class=\"session-actionbar\" id=\"jobActionBar\" style=\"display:none\">" }]
+selector = { kind = "subtree", root = "jobActionBar", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 170, anchor = "<div class=\"session-actionbar\" id=\"jobActionBar\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1053,8 +1079,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/job/jobOutRow"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "jobOutRow", members_expected = 3 }
-evidence = [{ file = "frontend/index.html", line = 219, anchor = "<div class=\"run-row\" id=\"jobOutRow\"><span class=\"lbl\">저장 폴더</span>" }]
+selector = { kind = "subtree", root = "jobOutRow", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 160, anchor = "<div class=\"run-row\" id=\"jobOutRow\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1064,7 +1090,7 @@ id = "dom/overlay/poolRegModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "poolRegModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 328, anchor = "<div id=\"poolRegModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"poolRegTitle\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 228, anchor = "<div id=\"poolRegModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"poolRegTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1074,7 +1100,7 @@ id = "dom/overlay/txtEditModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "txtEditModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 331, anchor = "<div id=\"txtEditModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"txtEditTitle\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 231, anchor = "<div id=\"txtEditModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"txtEditTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1084,7 +1110,7 @@ id = "dom/overlay/sheetModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "sheetModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 335, anchor = "<div id=\"sheetModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheetTitle\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 235, anchor = "<div id=\"sheetModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sheetTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1094,7 +1120,7 @@ id = "dom/overlay/dataPickerModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "dataPickerModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 343, anchor = "<div id=\"dataPickerModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\"" }]
+evidence = [{ file = "frontend/index.html", line = 243, anchor = "<div id=\"dataPickerModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1103,8 +1129,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom/overlay/previewSheet"
 kind = "dom"
 axis = "dom_static"
-selector = { kind = "subtree", root = "previewSheet", members_expected = 19 }
-evidence = [{ file = "frontend/index.html", line = 352, anchor = "<div id=\"previewSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
+selector = { kind = "subtree", root = "previewSheet", members_expected = 0 }
+evidence = [{ file = "frontend/index.html", line = 252, anchor = "<div id=\"previewSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1114,7 +1140,7 @@ id = "dom/overlay/libraryMoveModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "libraryMoveModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 423, anchor = "<div id=\"libraryMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"libraryMoveTitle\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 261, anchor = "<div id=\"libraryMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"libraryMoveTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1124,7 +1150,7 @@ id = "dom/overlay/dataSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "dataSheet", members_expected = 3 }
-evidence = [{ file = "frontend/index.html", line = 426, anchor = "<div id=\"dataSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
+evidence = [{ file = "frontend/index.html", line = 264, anchor = "<div id=\"dataSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1134,7 +1160,7 @@ id = "dom/overlay/jobBrowseSheet"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "jobBrowseSheet", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 440, anchor = "<div id=\"jobBrowseSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
+evidence = [{ file = "frontend/index.html", line = 278, anchor = "<div id=\"jobBrowseSheet\" class=\"modal sheet hidden\" role=\"dialog\" aria-modal=\"true\"" }]
 classification = "react"
 handoff_slice = "R4-01 #414"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1144,19 +1170,9 @@ id = "dom/overlay/tplMoveModal"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "subtree", root = "tplMoveModal", members_expected = 0 }
-evidence = [{ file = "frontend/index.html", line = 450, anchor = "<div id=\"tplMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"tplMoveTitle\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 288, anchor = "<div id=\"tplMoveModal\" class=\"modal hidden\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"tplMoveTitle\"></div>" }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-[[node]]
-id = "dom/data-attr/render-preservation"
-kind = "dom"
-axis = "dom_data_attr"
-selector = { kind = "exact", members = ["data-busy-lock"] }
-evidence = [{ file = "frontend/index.html", line = 156, anchor = "data-busy-lock hidden>실패한 건만 선택</button>" }]
-classification = "react"
-handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1187,16 +1203,6 @@ selector = { kind = "exact", members = ["frontend/src/screens/workbench.ts:data-
 evidence = [{ file = "frontend/src/screens/workbench.ts", line = 498, anchor = "className: \"btn sm\", type: \"button\", \"data-wb-view\": view, key: view," }]
 classification = "react"
 handoff_slice = "R4-02 #415"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-[[node]]
-id = "dom/data-attr/overlay-state"
-kind = "dom"
-axis = "dom_data_attr"
-selector = { kind = "exact", members = ["data-level", "data-state"] }
-evidence = [{ file = "frontend/index.html", line = 148, anchor = "<section id=\"jobResult\" class=\"result3\" data-state=\"\" aria-live=\"polite\" hidden>" }]
-classification = "react"
-handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1273,8 +1279,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "dom-js-data/job-run"
 kind = "dom"
 axis = "dom_js_data_attr"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:data-act", "frontend/js/screens/job.js:data-busy-lock", "frontend/js/screens/job.js:data-field", "frontend/js/screens/job.js:data-level", "frontend/js/screens/job.js:data-state"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 269, anchor = "`<button class=\"btn sm\" data-act=\"fix-mapping\" data-busy-lock>편집에서 매핑 확정…</button>` +" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:data-act", "frontend/src/screens/job_preview.ts:data-busy-lock", "frontend/src/screens/job_preview.ts:data-field", "frontend/src/screens/job_result.ts:data-busy-lock", "frontend/src/screens/job_result.ts:data-level", "frontend/src/screens/job_result.ts:data-state", "frontend/src/screens/job_run.ts:data-act", "frontend/src/screens/job_run.ts:data-busy-lock", "frontend/src/screens/job_run.ts:data-level"] }
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 565, anchor = "className: \"btn sm\", \"data-act\": \"fix-mapping\", \"data-busy-lock\": true," }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1410,11 +1416,11 @@ handoff_slice = "R4-02 #415"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "dom-js/job-result"
+id = "dom-js/job-run"
 kind = "dom"
 axis = "dom_js_site"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:755:dynamic:jobResultFail-"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 755, anchor = "return `<div class=\"result3-fail\" id=\"jobResultFail-${esc(String(f.index))}\">" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:100:static:previewEmpty", "frontend/src/screens/job_preview.ts:105:static:previewEvidence", "frontend/src/screens/job_preview.ts:108:static:previewEvidenceCap", "frontend/src/screens/job_preview.ts:110:static:previewEvidenceReason", "frontend/src/screens/job_preview.ts:113:static:previewEvidenceRows", "frontend/src/screens/job_preview.ts:116:static:previewEvidenceNote", "frontend/src/screens/job_preview.ts:121:static:previewValuesCap", "frontend/src/screens/job_preview.ts:122:static:previewRows", "frontend/src/screens/job_preview.ts:130:static:previewFilename", "frontend/src/screens/job_preview.ts:132:static:previewFixFilename", "frontend/src/screens/job_preview.ts:138:static:previewNamePlan", "frontend/src/screens/job_preview.ts:143:static:previewEdit", "frontend/src/screens/job_preview.ts:148:static:previewApprove", "frontend/src/screens/job_preview.ts:69:static:previewTitle", "frontend/src/screens/job_preview.ts:71:static:previewClose", "frontend/src/screens/job_preview.ts:80:static:previewPrev", "frontend/src/screens/job_preview.ts:84:static:previewPos", "frontend/src/screens/job_preview.ts:86:static:previewNext", "frontend/src/screens/job_preview.ts:93:static:previewBlankOnly", "frontend/src/screens/job_result.ts:107:static:jobGenBar", "frontend/src/screens/job_result.ts:109:static:jobResult", "frontend/src/screens/job_result.ts:114:static:jobResultTitle", "frontend/src/screens/job_result.ts:119:static:jobResultFailedSel", "frontend/src/screens/job_result.ts:123:static:jobResultRename", "frontend/src/screens/job_result.ts:128:static:jobResultClose", "frontend/src/screens/job_result.ts:131:static:jobResultSummary", "frontend/src/screens/job_result.ts:134:static:jobResultStale", "frontend/src/screens/job_result.ts:141:static:jobResultDir", "frontend/src/screens/job_result.ts:143:static:jobResultTrack", "frontend/src/screens/job_result.ts:147:static:jobResultFails", "frontend/src/screens/job_result.ts:158:static:jobRunLog", "frontend/src/screens/job_result.ts:161:static:jobRunLogLast", "frontend/src/screens/job_result.ts:163:static:jobGenLog", "frontend/src/screens/job_result.ts:28:dynamic:jobResultFail-", "frontend/src/screens/job_result.ts:70:static:jobResultEvidence", "frontend/src/screens/job_result.ts:71:static:jobResultEvidenceCap", "frontend/src/screens/job_result.ts:73:static:jobResultEvidenceBody", "frontend/src/screens/job_run.ts:591:static:jobMirror", "frontend/src/screens/job_run.ts:594:static:jobMirrorLine", "frontend/src/screens/job_run.ts:595:static:jobMirrorSummary", "frontend/src/screens/job_run.ts:597:static:jobMirrorPreviewOpen", "frontend/src/screens/job_run.ts:613:static:jobOutDir", "frontend/src/screens/job_run.ts:617:static:jobBtnPickFolder", "frontend/src/screens/job_run.ts:623:static:jobOutTrack", "frontend/src/screens/job_run.ts:675:static:jobActionName", "frontend/src/screens/job_run.ts:676:static:jobActionConn", "frontend/src/screens/job_run.ts:679:static:jobActionRelink", "frontend/src/screens/job_run.ts:683:static:jobPreviewOpen", "frontend/src/screens/job_run.ts:690:static:jobReviewFlag", "frontend/src/screens/job_run.ts:694:static:jobGenBtn", "frontend/src/screens/job_run.ts:699:static:jobGenCancel", "frontend/src/screens/job_run.ts:705:static:jobGate", "frontend/src/screens/job_run.ts:732:static:jobStatus"] }
+evidence = [{ file = "frontend/src/screens/job_result.ts", line = 28, anchor = "return h(\"div\", { className: \"result3-fail\", id: `jobResultFail-${String(f.index)}` }," }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1440,22 +1446,11 @@ handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "state/idempotence-guards"
-kind = "state"
-axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:986 wired"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 986, anchor = "let wired = false;" }]
-classification = "retire"
-handoff_slice = "R5-01 #419"
-p_handoff = "no"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-[[node]]
 id = "state/job/run-result"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:24 LAST", "frontend/js/screens/job.js:25 generating", "frontend/js/screens/job.js:26 lastSessionKey", "frontend/js/screens/job.js:576 logStarted", "frontend/js/screens/job.js:696 RESULT"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 24, anchor = "let LAST = null;" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_result.ts:84 pct", "frontend/src/screens/job_run.ts:131 run", "frontend/src/screens/job_run.ts:132 ui", "frontend/src/screens/job_run.ts:134 attached", "frontend/src/screens/job_run.ts:135 releaseModel", "frontend/src/screens/job_run.ts:136 lastFullSeen", "frontend/src/screens/job_run.ts:137 lastProgressSeen", "frontend/src/screens/job_run.ts:307 previewTrigger", "frontend/src/screens/job_run.ts:559 banner", "frontend/src/screens/job_run.ts:715 level", "frontend/src/screens/job_run.ts:716 text", "frontend/src/screens/job_run_state.ts:88 serial"] }
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 131, anchor = "let run: JobRunState = initialRunState();" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1544,8 +1539,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "state/boot-composition"
 kind = "state"
 axis = "state_js_module"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:175 LibraryScreen", "frontend/src/bootstrap.js:176 EditorScreen", "frontend/src/bootstrap.js:177 JobScreen", "frontend/src/bootstrap.js:178 WorkbenchScreen", "frontend/src/bootstrap.js:179 Nav", "frontend/src/bootstrap.js:281 releaseJobRun", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 175, anchor = "let LibraryScreen;" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:180 LibraryScreen", "frontend/src/bootstrap.js:181 EditorScreen", "frontend/src/bootstrap.js:182 JobScreen", "frontend/src/bootstrap.js:183 WorkbenchScreen", "frontend/src/bootstrap.js:184 Nav", "frontend/src/react/boot.ts:34 controller", "frontend/src/react/boot.ts:41 currentStore", "frontend/src/react/boot.ts:42 currentTarget", "frontend/src/react/boot.ts:43 currentOverlay", "frontend/src/react/boot.ts:44 currentShell", "frontend/src/react/boot.ts:45 currentScreens", "frontend/src/react/root.ts:42 root", "frontend/src/react/root.ts:43 container", "frontend/src/react/root.ts:44 committed"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 180, anchor = "let LibraryScreen;" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1624,8 +1619,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/boot-attachments"
 kind = "subscription"
 axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:438"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 438, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:429"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 429, anchor = "target.addEventListener(attachment.type, attachment.handler, attachment.capture === true);" }]
 classification = "react"
 handoff_slice = "R3-01 #410"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1661,11 +1656,11 @@ handoff_slice = "R3-02 #411"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
-id = "subscription/listener/job-run"
+id = "subscription/push/job-run"
 kind = "subscription"
-axis = "subscription_listener"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:879", "frontend/js/screens/job.js:880", "frontend/js/screens/job.js:881", "frontend/js/screens/job.js:883", "frontend/js/screens/job.js:885", "frontend/js/screens/job.js:889", "frontend/js/screens/job.js:897", "frontend/js/screens/job.js:909", "frontend/js/screens/job.js:915", "frontend/js/screens/job.js:920", "frontend/js/screens/job.js:921", "frontend/js/screens/job.js:922", "frontend/js/screens/job.js:925", "frontend/js/screens/job.js:934", "frontend/js/screens/job.js:941", "frontend/js/screens/job.js:946", "frontend/js/screens/job.js:953", "frontend/js/screens/job.js:972"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 879, anchor = "$(\"jobPreviewOpen\").addEventListener(\"click\", openPreview);" }]
+axis = "subscription_push"
+selector = { kind = "exact", members = ["frontend/src/screens/job_run.ts:492"] }
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 492, anchor = "releaseModel = model.subscribe(pump);" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1837,8 +1832,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "subscription/push/runtime-taps"
 kind = "subscription"
 axis = "subscription_push"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:164", "frontend/src/screens/job_read.ts:717", "frontend/src/screens/runtime.ts:80"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 164, anchor = "bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:169", "frontend/src/screens/job_read.ts:717", "frontend/src/screens/runtime.ts:80"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 169, anchor = "bridge.onPush(screen, (snapshot) => store.ingest(screen, snapshot));" }]
 classification = "react"
 handoff_slice = "R2-03 #407"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -1909,8 +1904,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/composition-root"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/src/bootstrap.js:130"] }
-evidence = [{ file = "frontend/src/bootstrap.js", line = 130, anchor = "export function bootProduct() {" }]
+selector = { kind = "exact", members = ["frontend/src/bootstrap.js:135"] }
+evidence = [{ file = "frontend/src/bootstrap.js", line = 135, anchor = "export function bootProduct() {" }]
 classification = "react"
 handoff_slice = "R2-01 #405"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2049,21 +2044,10 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/r4-03"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:19"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 19, anchor = "export function createJobScreen({" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_preview.ts:57", "frontend/src/screens/job_result.ts:155", "frontend/src/screens/job_result.ts:76", "frontend/src/screens/job_run.ts:103", "frontend/src/screens/job_run.ts:127", "frontend/src/screens/job_run.ts:524", "frontend/src/screens/job_run.ts:530", "frontend/src/screens/job_run.ts:536", "frontend/src/screens/job_run.ts:545", "frontend/src/screens/job_run.ts:603", "frontend/src/screens/job_run.ts:628", "frontend/src/screens/job_run.ts:662", "frontend/src/screens/job_run.ts:713", "frontend/src/screens/job_run.ts:736", "frontend/src/screens/job_run.ts:78", "frontend/src/screens/job_run.ts:87", "frontend/src/screens/job_run_state.ts:106", "frontend/src/screens/job_run_state.ts:126", "frontend/src/screens/job_run_state.ts:141", "frontend/src/screens/job_run_state.ts:164", "frontend/src/screens/job_run_state.ts:182", "frontend/src/screens/job_run_state.ts:193", "frontend/src/screens/job_run_state.ts:210", "frontend/src/screens/job_run_state.ts:215", "frontend/src/screens/job_run_state.ts:223", "frontend/src/screens/job_run_state.ts:57", "frontend/src/screens/job_run_state.ts:68", "frontend/src/screens/job_run_state.ts:87"] }
+evidence = [{ file = "frontend/src/screens/job_run.ts", line = 127, anchor = "export function createJobRunController(deps: JobRunControllerDeps) {" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
-verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
-
-[[node]]
-id = "lifecycle/preserve-around"
-kind = "lifecycle"
-axis = "lifecycle_hook"
-selector = { kind = "exact", members = ["frontend/js/screens/job.js:36"] }
-evidence = [{ file = "frontend/js/screens/job.js", line = 36, anchor = "Preserve.around(() => {  // 매핑/레코드 포커스·스크롤 보존(#28)" }]
-classification = "retire"
-handoff_slice = "R5-01 #419"
-p_handoff = "no"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -2111,7 +2095,7 @@ id = "dom/job/jobPreflight"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["jobPreflight"] }
-evidence = [{ file = "frontend/index.html", line = 115, anchor = "<div class=\"preflight note\" id=\"jobPreflight\" style=\"display:none\"></div>" }]
+evidence = [{ file = "frontend/index.html", line = 115, anchor = "<div id=\"jobPreflight\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2121,7 +2105,7 @@ id = "dom/job/jobSideCard-run"
 kind = "dom"
 axis = "dom_static"
 selector = { kind = "exact", members = ["jobRunCap", "jobOutRow", "jobRestate"] }
-evidence = [{ file = "frontend/index.html", line = 218, anchor = "<div class=\"zone-cap\" id=\"jobRunCap\">생성 준비</div>" }]
+evidence = [{ file = "frontend/index.html", line = 159, anchor = "<div class=\"zone-cap\" id=\"jobRunCap\"></div>" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
@@ -2150,8 +2134,8 @@ verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_clos
 id = "lifecycle/factory/relink"
 kind = "lifecycle"
 axis = "lifecycle_factory"
-selector = { kind = "exact", members = ["frontend/js/relink.js:8"] }
-evidence = [{ file = "frontend/js/relink.js", line = 8, anchor = "export function createRelink({ bridge }) {" }]
+selector = { kind = "exact", members = ["frontend/src/screens/job_relink.ts:46"] }
+evidence = [{ file = "frontend/src/screens/job_relink.ts", line = 46, anchor = "export function createJobRelink(deps: JobRelinkDeps): RelinkPort {" }]
 classification = "react"
 handoff_slice = "R4-03 #416"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]

@@ -83,7 +83,7 @@ def test_durable_destructive_confirms_are_danger() -> None:
         # (editor 의 자동등록 확인(res.dataset_text)은 #347 에서 게이트째 사망 — U2 §5.3 D.)
         # (screens/draft.js 두 행 삭제 — 「기안」 화면 사망, F6 PR-B. 덮어쓰기 확인의
         #  생존 표면은 editor·job 행이 계속 진다.)
-        ("js/screens/job.js", "body: overwriteBody(res)"),
+        ("src/screens/job_run.ts", "body: overwriteBody(res)"),
         ("src/screens/library.ts", 'body: result.confirm_text, confirmLabel: "삭제"'),
         # 누름틀 제자리 변환 확인 — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8, tpl 화면 사망).
         ("src/screens/editor.ts", "지금 변환할까요?"),

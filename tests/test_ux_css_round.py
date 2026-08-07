@@ -15,7 +15,9 @@ from _web_source import REPO_ROOT, SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app
 
 ROOT = REPO_ROOT
 APP_CSS = app_css()  # 분할 조각을 링크 순서대로 이어붙인 문자열(구 app.css 등가)
-JOB_JS = SOURCE_JS_DIR / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
+# R4-03 — 생성 표면은 React 로 이사했다(legacy job.js 절단). 겨눔만 옮기고 질문은 그대로.
+from _web_source import REACT_JOB_RUN_FILES, react_job_run_source
+JOB_JS = SOURCE_ROOT / REACT_JOB_RUN_FILES[0]
 JOB_READ_TS = SOURCE_ROOT / "src" / "screens" / "job_read.ts"
 EDITOR_JS = SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts"
 PATHTRACK_JS = SOURCE_JS_DIR / "pathtrack.js"
@@ -149,8 +151,9 @@ def test_pathtrack_icon_style_is_visually_secondary_and_focusable():
 
 def test_pathtrack_keeps_text_primary_folder_picker():
     """보조 아이콘화가 찾아보기/지정 주동사를 삼키지 않는다."""
-    index = SOURCE_INDEX.read_text(encoding="utf-8")
-    assert re.search(r'id="jobBtnPickFolder"[^>]*>찾아보기…</button>', index)
+    # R4-03 — 저장 폴더 행은 React 가 만든다. 주동사 라벨이 살아 있는지를 그 자리에서 본다.
+    src = react_job_run_source()
+    assert 'id: "jobBtnPickFolder"' in src and '"찾아보기…"' in src
 
 
 # ------------------------------------------------------------------ F30: 복구 동선 조건부
@@ -170,12 +173,12 @@ def test_job_relink_entrance_gated_by_template_missing():
     assert '"data-missing": missing ? "1" : undefined' in body and gate < body.index('"data-missing"'), (
         "재연결 표식이 template_missing 조건 없이 상시 렌더됩니다(F30 승계)."
     )
-    legacy = JOB_JS.read_text(encoding="utf-8")
-    bar = _fn_body(legacy, "renderActiveIdentity", "renderPreflight")
-    assert "s.template_missing" in bar, (
+    run = react_job_run_source()
+    bar = _fn_body(run, "JobActionBar", "JobStatusPill")
+    assert "s?.template_missing" in bar, (
         "액션바 재연결이 template_missing 조건 없이 상시 노출됩니다(F30 승계)."
     )
-    assert '$("jobActionRelink").hidden = !missing' in bar
+    assert 'id: "jobActionRelink"' in bar and "hidden: !missing" in bar
     assert "relinkTemplateFor" in src, "재연결 리다이렉트 몸통이 사라졌습니다(#67 승계)."
 
 
@@ -188,14 +191,14 @@ def test_normal_state_restatements_are_quiet_not_green_boxes():
     결과(저장 완료 등)는 대상이 아니다 — 이 가드는 job.js 전체 무-okbox 와 editor 통지의
     quiet 분기만 본다. (run.js 사망(슬라이스 3) 후 job.js 가 생성 표면.)
     """
-    job_src = JOB_JS.read_text(encoding="utf-8")
+    job_src = react_job_run_source()
     job_read = JOB_READ_TS.read_text(encoding="utf-8")
     assert "okbox" not in job_src + job_read, (
         "job.js 에 okbox 가 재도입됐습니다 — 정상 상태 초록 배너는 노이즈입니다(F32)."
     )
     data = _fn_body(job_read, "JobDataHeader", "JobDataHeaderPortal")
     assert 'notice?.level === "ok" ? "quiet" : "warnbox"' in data
-    preflight = _fn_body(job_src, "renderPreflight", "renderMirror")
+    preflight = _fn_body(job_src, "JobPreflight", "JobMirrorZone")
     assert 'p.level === "ok" ? "quiet"' in preflight
     ed_src = EDITOR_JS.read_text(encoding="utf-8")
     assert re.search(r'notice\.level === "ok" \? "quiet"', ed_src), (

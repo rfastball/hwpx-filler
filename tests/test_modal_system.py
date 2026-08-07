@@ -140,7 +140,7 @@ def test_menu_spawned_modals_carry_original_trigger_through_close_all() -> None:
     #  관리」 사망(F8)으로 제외 — 메뉴발 모달의 새 소비자는 편집기 「템플릿」 탭이다.)
     sources = {
         "src/screens/library.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "library.ts",
-        "js/screens/job.js": SOURCE_JS_DIR / "screens" / "job.js",
+        "src/screens/job_run.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "job_run.ts",
         "src/screens/editor.ts": SOURCE_JS_DIR.parent / "src" / "screens" / "editor.ts",
     }
     for rel, path in sources.items():

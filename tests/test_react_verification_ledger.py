@@ -667,6 +667,10 @@ def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> No
 
     R4-02 가 10 → 17 로 자랐다. 산술은 패킷 rev5 §1 의 **10 + Node 5 + Python 1 + Node 1**
     이고, 아래 digest 가 그 17 이 정확히 어느 경로인지까지 든다.
+
+    R4-03 은 8 → 15. 한 파일(`screens/job.js`)이 지던 실행·결과 표면이 다섯으로 갈리면서
+    검증도 같은 축으로 갈렸다: 실행 정체 reducer · 컨트롤러 배선 · 결과 3태 수명 · 발신
+    우선순위 · 확인 면 · 재연결 port(Node 6) + 승계 52 site 의 exact 대조(Python 1).
     """
     actual = Counter(
         row["owner_stage"]
@@ -676,10 +680,10 @@ def test_r4_verification_asset_allocation_is_exact(ledger: dict[str, Any]) -> No
     assert actual == {
         "R4-01": 17,
         "R4-02": 17,
-        "R4-03": 8,
+        "R4-03": 15,
         "R4-04": 4,
     }
-    assert sum(actual.values()) == 46
+    assert sum(actual.values()) == 53
 
 
 #: R4-02 착지 경로 집합의 정본 지문 — 패킷 rev5 §1 이 구현 **전에** 고정했다.

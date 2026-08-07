@@ -466,9 +466,18 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return path
 
-    def generate(self, screen: str, confirm_overwrite: bool = False) -> dict:
-        """세션 패널(screen 파라미터) 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약 dict."""
-        return self._controller(screen).generate(confirm_overwrite=bool(confirm_overwrite))
+    def generate(
+        self, screen: str, confirm_overwrite: bool = False, run_token: str = "",
+    ) -> dict:
+        """세션 패널(screen 파라미터) 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약 dict.
+
+        ``run_token`` 은 호출자가 낸 불투명 상관 문자열이다 — 컨트롤러가 판정에 쓰지 않고
+        direct 반환·진행 델타에 그대로 되돌린다(R4-03). 생략하면 ``""``.
+        """
+        return self._controller(screen).generate(
+            confirm_overwrite=bool(confirm_overwrite),
+            run_token=run_token if isinstance(run_token, str) else "",
+        )
 
     # (import_library_template 브리지는 tpl 화면과 함께 사망(F8) — 소비자 0 인 통로는 남기지
     #  않는다(F2 PR-B set_rail_collapsed 선례). 유일 가져오기 = import_template_file(통일,

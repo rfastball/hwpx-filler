@@ -244,7 +244,7 @@ export interface HostApi {
   load_data_sheet(screen: unknown, path: unknown, sheet: unknown): unknown;
   copy_clipboard(screen: unknown, token?: unknown): unknown;
   pick_output_folder(screen: unknown): unknown;
-  generate(screen: unknown, confirm_overwrite?: unknown): unknown;
+  generate(screen: unknown, confirm_overwrite?: unknown, run_token?: unknown): unknown;
   editor_has_unsaved_work(): unknown;
   close_guard_state(): unknown;
   confirm_window_close(): unknown;
