@@ -118,7 +118,7 @@ export function createAppShell({ Bridge, Theme, Personalization, DataPicker, scr
   }
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
-  const Nav = { go, refresh };
+  const Nav = { go, refresh, currentScreen: () => shellNav.currentScreen() };
   go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·탭 기본 상태만 확정한다(구성=랜딩 의미 보존).
 
   // 글자 크기 라벨 — 셸 전역 개인화 표지. 라벨 동기는 hwpx:* 이벤트 단일 경로이고, 구성 시

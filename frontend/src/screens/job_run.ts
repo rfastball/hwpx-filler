@@ -45,7 +45,9 @@ export type JobRunControllerDeps = {
   ports: ScreenPorts;
   services: ServiceHandoffPorts;
   modal: ModalPort;
-  navigation: { go(screen: string): void };
+  /** 항행과 **관측**. `currentScreen` 은 셸 상태기계의 관측면을 그대로 통과한 값이라
+   *  「지금 어느 화면인가」의 판정이 여기서 다시 조립되지 않는다(랜딩 전에는 `null`). */
+  navigation: { go(screen: string): void; currentScreen(): string | null };
   doc: Document;
   notify(message: string): void;
   /** 선택 재진술 한 줄의 **공유 합성기**(`js/guard.js`) — 재진술 블록과 가드 모달이 같은
@@ -261,8 +263,10 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       return;
     }
     // 왕복 중 화면을 떠났으면 열지 않고 상태를 되돌린다 — 남는 「열림」 상태가 다음
-    // 복귀에서 아무 트리거 없이 면을 띄운다.
-    if (!deps.doc.getElementById("scr-job")?.classList.contains("on")) {
+    // 복귀에서 아무 트리거 없이 면을 띄운다. 「지금 어느 화면인가」는 셸 상태기계가 답한다:
+    // `#scr-job` 의 `.on` 을 직접 읽으면 같은 판정이 두 곳에 살고, React 서브트리가
+    // legacy 화면 루트를 붙드는 간선이 된다(정적 폐포가 그 자리를 문다).
+    if (deps.navigation.currentScreen() !== "job") {
       void dispatch("preview_close", {});
       return;
     }

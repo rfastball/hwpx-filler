@@ -95,7 +95,9 @@ const FACTORY_SERVICES = {
   /* R4-02 — 작업대 재렌더는 React 구독이 진다. 셸이 부르는 이름만 남아 표면이 하나 좁아졌다
      (`render` 는 legacy 명령형 렌더러의 손잡이였고 후계 소비자가 없다). */
   WorkbenchScreen: ["init", "leaveTo"],
-  Nav: ["go", "refresh"],
+  /* R4-03 — `currentScreen` 관측면이 늘었다. 화면이 「지금 어느 화면인가」를 상태기계에
+     묻게 하는 자리이고, 그것을 DOM(`#scr-job.on`)으로 되물으면 판정이 두 곳에 산다. */
+  Nav: ["go", "refresh", "currentScreen"],
   AppCloseGuard: ["prompt"],
   /* 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`. selftest 프로브가
      `Bridge.call = stub` 으로 프로퍼티를 교체하므로 **객체째**여야 한다. */

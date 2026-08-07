@@ -168,7 +168,6 @@
                항상 도달 가능해야 한다. 실행 모드(세션 4존)에서만 노출(job.js syncModeDisplay 가
                jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
           <div class="session-actionbar" id="jobActionBar"></div>
-          </div>
         </div>
       </div>
     </section>
@@ -252,6 +251,14 @@
          여기 하나뿐이 됐고(§2.13 C3 폐색), 렌더러가 올 자리다. -->
     <div id="previewSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
          aria-labelledby="previewTitle"></div>
+
+    <!-- 그룹 이동 다이얼로그(결정 43) — 기존 그룹 + 새 그룹 입력 동거 + 해제. 소속=생성이라
+         빈 그룹은 만들 수 없다(퇴화 불변식). 「문서 만들기」 몫(groupMoveModal)은 좌 목록과
+         함께 사망했고(F2 PR-B), 아래 둘이 화면별 wiring 격리로 남는다 — 라이브러리가 작업
+         그룹 이동의 승계처다(지도 §10.9 판정 F).
+         R4-01 뒤 내용 생산자는 React `screens/library.ts` 의 LibraryMoveDialog portal 이다.
+         이 자리는 그 portal 의 **target** 이라 비워 두되 지울 수는 없다. -->
+    <div id="libraryMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libraryMoveTitle"></div>
 
     <!-- 기안·작업이 한 벌을 쓰는 데이터 펼침 면(#271/#272). 소유 화면의 실 DOM을 이 슬롯으로 이동한다. -->
     <div id="dataSheet" class="modal sheet hidden" role="dialog" aria-modal="true"

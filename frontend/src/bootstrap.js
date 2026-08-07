@@ -187,6 +187,10 @@ export function bootProduct() {
   const navigation = {
     go: (...args) => Nav.go(...args),
     refresh: (...args) => Nav.refresh(...args),
+    /* 「지금 어느 화면인가」의 관측면. 화면이 이것을 **DOM 으로** 물으면(`#scr-job` 의
+       `.on` 판독) React 서브트리가 legacy 화면 루트를 붙들게 되고, 같은 판정이 상태기계와
+       DOM 두 곳에 산다 — R3-02 가 세운 「판정은 상태기계」의 직접 소비 자리다. */
+    currentScreen: () => Nav.currentScreen(),
   };
 
   /* editor·library→job 간선 — 소비 메서드만 좁게 싣는다(전 표면을 실으면 절단이 무의미). */
