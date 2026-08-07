@@ -245,3 +245,26 @@ def test_runtime_packages_are_collected_from_every_shipped_chunk(tmp_path: Path)
         "react",
         "scheduler",
     ]
+
+
+def test_the_two_region_scrapers_agree_on_crlf_and_nested_installs() -> None:
+    """Python 과 JS 두 수집기가 **같은 입력에 같은 답**을 내는가(L16 반증).
+
+    독립적으로 유도한다는 주장은 두 그물이 실제로 일치할 때만 값이 있다. 실측으로 갈렸던
+    두 자리를 고정한다: ``$`` 가 ``\r`` 앞에서 안 멈추던 CRLF 산출물과, 중첩 설치를 앞의
+    ``node_modules/`` 로 읽어 이름표를 잘못 달던 자리.
+    """
+    generator = _generator()
+
+    crlf = "//#region node_modules/react/index.js\r\n"
+    assert [
+        match.group("path") for match in generator._VENDOR_REGION_RE.finditer(crlf)
+    ] == ["react/index.js"], "CRLF 산출물에서 수집이 조용히 0건이 됩니다"
+
+    assert generator._vendor_package_name(
+        "react-dom/node_modules/scheduler/index.js"
+    ) == "scheduler"
+    assert generator._vendor_package_name("@scope/pkg/index.js") == "@scope/pkg"
+    assert generator._vendor_package_name(
+        "react-dom/node_modules/@scope/pkg/index.js"
+    ) == "@scope/pkg"

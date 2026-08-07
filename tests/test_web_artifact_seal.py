@@ -332,6 +332,14 @@ def test_producer_refuses_a_sourcemap_in_the_shipped_tree(
     ):
         seal_repository_web_artifact(unsealed_repo.root)
 
+    # **생산자 호출 자리가 실재하는지**를 여기서 센다. 봉인 함수는 마지막에
+    # ``_verify_artifact`` 를 다시 부르므로, 생산 쪽 호출을 지워도 위 ``raises`` 는 그대로
+    # 통과한다 — 다만 그때는 위반 트리의 seal 이 **이미 디스크에 쓰인 뒤** 실패한다.
+    # 그 차이를 단언하지 않으면 이 테스트는 이름이 가리키는 자리를 안 지킨다(L16 반증).
+    assert not unsealed_repo.seal_path.exists(), (
+        "위반 트리의 seal 이 디스크에 기록됐습니다 — 생산자가 쓰기 전에 거절해야 합니다"
+    )
+
 
 def test_resolver_refuses_a_dev_asset_that_was_sealed_with_the_tree(
     sealed_repo: ArtifactRepo,

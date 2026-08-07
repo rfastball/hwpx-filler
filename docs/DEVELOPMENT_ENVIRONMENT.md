@@ -133,10 +133,14 @@ loopback/offline selftest와 CLI selfcheck를 검증한다. Node-free 국면은 
 덮는다(`Set-NodeFreePath` 하나가 정의이고 filler·CLI 가 각각 그 안에서 돈다).
 루트 `build.ps1`은 GUI 제품을 canonical 스크립트로 위임하는 호환 러너다.
 
-Node-free selfcheck 는 종료코드만 보지 않는다 — frozen 제품이 **정상(비-selftest) 국면**에서
-스스로 말한 `artifact_id`·`tree_sha256` 을 읽어 번들 사본과 대조한다. 그래야 「정상 실행과
-selftest 는 동일 산출물이며 capability 만 다르다」가 두 국면의 증거로 성립한다(종전에는 실린
-것을 in-process 로 말한 값이 시험 capability 경로에만 있었다).
+Node-free selfcheck 는 종료코드만 보지 않는다 — 그 프로세스가 스스로 말한
+`artifact_id`·`tree_sha256` 을 읽어 번들 사본과 대조한다. **이 국면의 이름을 정확히 읽어야
+한다**: `--selfcheck` 는 제품 `main()` 을 부르지 않는다(엔트리 래퍼가 그 인자만 가로채 헤드리스
+스모크로 보낸다). 그래서 이것은 「정상 실행의 증거」가 아니라 **창을 열지 않는 별개 프로세스가
+같은 sealed 산출물을 fail-closed 로 해석했다**는 증거다. 제품 진입점이 해석한 identity 는
+`--selftest` 실행(이쪽이 `main()` 을 지난다)의 `runtime.artifact_id` 가 이미 대조하고, 정상/시험
+창의 capability 차는 source 실창 게이트가 진다. 세 국면은 겹치지 않고 이름으로 서로를 대신하지
+않는다.
 
 설치본까지 포함한 **네 사본 전수 대조**를 한 명령으로 재현하려면(감사·릴리스 전 점검):
 

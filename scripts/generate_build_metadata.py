@@ -88,11 +88,23 @@ def _file_sha256(path: Path) -> str:
 
 
 #: unminified 번들이 남기는 vendor 경계 주석. 값은 ``node_modules/`` 뒤의 경로다.
-_VENDOR_REGION_RE = re.compile(r"^//#region node_modules/(?P<path>[^\r\n]+)$", re.MULTILINE)
+#:
+#: ``$`` 는 ``\r`` **앞에서 멈추지 않으므로** CRLF 산출물에서 이 그물이 조용히 0건이 된다.
+#: JS 쪽 형제 그물(``tests/js/r5_boundary_gates.test.js``)은 ``m`` 플래그라 멈춘다 — 같은
+#: 입력에 두 수집기가 다른 답을 내지 않게 개행 앞 ``\r`` 을 명시로 문다(L16 반증).
+_VENDOR_REGION_RE = re.compile(
+    r"^//#region node_modules/(?P<path>[^\r\n]+?)\r?$", re.MULTILINE
+)
 
 
 def _vendor_package_name(region_path: str) -> str:
-    parts = region_path.split("/")
+    """중첩 설치는 **마지막** ``node_modules/`` 뒤가 진짜 패키지다.
+
+    ``react-dom/node_modules/scheduler/index.js`` 를 앞에서 읽으면 ``react-dom`` 으로
+    보고돼, 중복 사본이 정상 이름표를 달고 지나간다(L16 반증).
+    """
+    tail = region_path.rsplit("node_modules/", 1)[-1]
+    parts = tail.split("/")
     return f"{parts[0]}/{parts[1]}" if parts[0].startswith("@") else parts[0]
 
 

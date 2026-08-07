@@ -69,8 +69,8 @@ baseline_sha = "b6cb8f16b68256496da472d6c29269ce2103df2b"
 # ---------------------------------------------------------------------------
 
 [[asset]]
-file = "scripts/assert_normal_run_identity.py"
-responsibility = "frozen 제품의 정상(비-selftest) 국면이 말한 web artifact identity 대조 — 음성 대조가 붙는 자리"
+file = "scripts/assert_selfcheck_identity.py"
+responsibility = "frozen 번들의 --selfcheck 국면(제품 main() 을 부르지 않는 헤드리스 스모크)이 해석한 web artifact identity 대조"
 owner_stage = "R5-03"
 
 [[asset]]

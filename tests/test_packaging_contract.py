@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-import assert_normal_run_identity
+import assert_selfcheck_identity
 import reconcile_shipped_copies
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -302,10 +302,10 @@ def test_reconciler_passes_when_every_shipped_copy_is_the_same(tmp_path: Path) -
     identity = ("a" * 64, "b" * 64)
     evidence = reconcile_shipped_copies.reconcile(
         reconcile_shipped_copies.collect(
-            copies={
-                "dist": _identity_file(tmp_path / "dist.json", *identity),
-                "portable": _identity_file(tmp_path / "portable.json", *identity),
-            },
+            copies=[
+                ("dist", _identity_file(tmp_path / "dist.json", *identity)),
+                ("portable", _identity_file(tmp_path / "portable.json", *identity)),
+            ],
             build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
         ),
         expected=("source", "dist", "portable"),
@@ -320,10 +320,10 @@ def test_reconciler_names_the_copy_that_differs(tmp_path: Path) -> None:
     """사본마다 따로 통과시키는 것으로는 "하나만 다른" 경우가 안 드러난다."""
     identity = ("a" * 64, "b" * 64)
     collected = reconcile_shipped_copies.collect(
-        copies={
-            "dist": _identity_file(tmp_path / "dist.json", *identity),
-            "portable": _identity_file(tmp_path / "portable.json", "c" * 64, identity[1]),
-        },
+        copies=[
+            ("dist", _identity_file(tmp_path / "dist.json", *identity)),
+            ("portable", _identity_file(tmp_path / "portable.json", "c" * 64, identity[1])),
+        ],
         build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
     )
 
@@ -338,7 +338,7 @@ def test_a_silently_missing_copy_is_refused_not_ignored(tmp_path: Path) -> None:
     """
     identity = ("a" * 64, "b" * 64)
     collected = reconcile_shipped_copies.collect(
-        copies={"dist": _identity_file(tmp_path / "dist.json", *identity)},
+        copies=[("dist", _identity_file(tmp_path / "dist.json", *identity))],
         build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
     )
 
@@ -346,10 +346,48 @@ def test_a_silently_missing_copy_is_refused_not_ignored(tmp_path: Path) -> None:
         reconcile_shipped_copies.reconcile(collected, expected=("source", "dist", "portable"))
 
 
+def test_a_repeated_copy_name_cannot_silently_replace_the_first(tmp_path: Path) -> None:
+    """음성 대조 — 같은 이름의 둘째 ``--copy`` 가 첫째를 덮으면 대조가 공허해진다(L16 반증).
+
+    호출부가 ``dict(args.copy)`` 로 접으면 서로 다른 artifact 를 가리키는 증거가 **버려지고도**
+    선언 집합은 그대로 맞아 초록이 났다. 중복은 접는 것이 아니라 거절이다.
+    """
+    identity = ("a" * 64, "b" * 64)
+    rogue = _identity_file(tmp_path / "rogue.json", "c" * 64, identity[1])
+    good = _identity_file(tmp_path / "dist.json", *identity)
+
+    with pytest.raises(reconcile_shipped_copies.ReconcileError, match="중복됐습니다: dist"):
+        reconcile_shipped_copies.collect(
+            copies=[("dist", rogue), ("dist", good)],
+            build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
+        )
+
+    assert reconcile_shipped_copies.main(
+        [
+            "--copy", f"dist={rogue}",
+            "--copy", f"dist={good}",
+            "--build-metadata", str(tmp_path / "meta.json"),
+            "--expect", "source,dist",
+        ]
+    ) == 2
+
+
+def test_an_identity_that_is_not_a_sha256_is_refused(tmp_path: Path) -> None:
+    """음성 대조 — 형태를 안 보면 두 사본이 나란히 같은 쓰레기를 들고 "일치"가 된다."""
+    junk = tmp_path / "junk.json"
+    junk.write_text(
+        json.dumps({"artifact_id": "not-a-digest", "tree_sha256": "b" * 64}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(reconcile_shipped_copies.ReconcileError, match="sha256 이 아닙니다"):
+        reconcile_shipped_copies.collect(copies=[("dist", junk)], build_metadata=None)
+
+
 def test_metadata_without_a_sealed_frontend_cannot_stand_in_for_source(tmp_path: Path) -> None:
     with pytest.raises(reconcile_shipped_copies.ReconcileError, match="identity 가 없습니다"):
         reconcile_shipped_copies.collect(
-            copies={},
+            copies=[],
             build_metadata=_metadata_file(
                 tmp_path / "meta.json", "a" * 64, "b" * 64, present=False
             ),
@@ -384,13 +422,13 @@ def test_reconciler_cli_reports_failure_with_a_nonzero_exit(tmp_path: Path) -> N
     assert json.loads(out.read_text(encoding="utf-8"))["artifact_id"] == identity[0]
 
 
-# --- 정상 실행 국면의 identity 판별 (R5-03) ---------------------------------
+# --- --selfcheck 국면의 identity 판별 (R5-03) -------------------------------
 #
 # 판정을 PowerShell 인라인이 아니라 Python 에 둔 이유는 음성 대조가 붙을 자리를 만들기
 # 위해서다. 그래서 여기가 그 검출력을 세는 자리다 — 배선은 test_web_runtime_artifact 가 진다.
 
 
-def test_normal_run_identity_accepts_the_real_selfcheck_line() -> None:
+def test_selfcheck_identity_accepts_the_real_selfcheck_line() -> None:
     """양성 — 제품이 실제로 내는 형태를 읽는다.
 
     형태는 ``hwpx_filler_web_entry._selfcheck`` 의 print 문이 정본이라, 그 문자열이 바뀌면
@@ -402,14 +440,14 @@ def test_normal_run_identity_accepts_the_real_selfcheck_line() -> None:
         f"tree_sha256={tree} -> OK\n"
     )
 
-    assert assert_normal_run_identity.parse_identity(line) == {
+    assert assert_selfcheck_identity.parse_identity(line) == {
         "artifact_id": artifact_id,
         "tree_sha256": tree,
     }
-    assert assert_normal_run_identity.compare(
+    assert assert_selfcheck_identity.compare(
         {"artifact_id": artifact_id, "tree_sha256": tree},
         {"artifact_id": artifact_id, "tree_sha256": tree},
-    )["normal_matches_bundled"] is True
+    )["selfcheck_matches_bundled"] is True
 
 
 def test_silence_is_not_a_pass() -> None:
@@ -420,25 +458,25 @@ def test_silence_is_not_a_pass() -> None:
     """
     for empty in ("", "   \n", "selfcheck: txt_templates=['샘플'] fields=2 -> OK\n"):
         with pytest.raises(
-            assert_normal_run_identity.NormalRunIdentityError,
+            assert_selfcheck_identity.SelfcheckIdentityError,
             match="identity 를 말하지 않았습니다",
         ):
-            assert_normal_run_identity.parse_identity(empty)
+            assert_selfcheck_identity.parse_identity(empty)
 
 
-def test_a_different_artifact_in_the_normal_run_is_named(tmp_path: Path) -> None:
-    """음성 — 정상 국면이 다른 산출물을 해석했으면 무엇이 다른지 이름을 댄다."""
+def test_a_different_artifact_in_the_selfcheck_phase_is_named(tmp_path: Path) -> None:
+    """음성 — selfcheck 국면이 다른 산출물을 해석했으면 무엇이 다른지 이름을 댄다."""
     with pytest.raises(
-        assert_normal_run_identity.NormalRunIdentityError, match="artifact_id: normal="
+        assert_selfcheck_identity.SelfcheckIdentityError, match="artifact_id: selfcheck="
     ):
-        assert_normal_run_identity.compare(
+        assert_selfcheck_identity.compare(
             {"artifact_id": "a" * 64, "tree_sha256": "b" * 64},
             {"artifact_id": "c" * 64, "tree_sha256": "b" * 64},
         )
     with pytest.raises(
-        assert_normal_run_identity.NormalRunIdentityError, match="tree_sha256: normal="
+        assert_selfcheck_identity.SelfcheckIdentityError, match="tree_sha256: selfcheck="
     ):
-        assert_normal_run_identity.compare(
+        assert_selfcheck_identity.compare(
             {"artifact_id": "a" * 64, "tree_sha256": "b" * 64},
             {"artifact_id": "a" * 64, "tree_sha256": "d" * 64},
         )
@@ -454,12 +492,12 @@ def test_two_different_identities_in_one_output_are_refused() -> None:
     fresh = f"artifact_id={'c' * 64} tree_sha256={'d' * 64}\n"
 
     with pytest.raises(
-        assert_normal_run_identity.NormalRunIdentityError, match="서로 다른 identity"
+        assert_selfcheck_identity.SelfcheckIdentityError, match="서로 다른 identity"
     ):
-        assert_normal_run_identity.parse_identity(stale + fresh)
+        assert_selfcheck_identity.parse_identity(stale + fresh)
 
 
-def test_normal_run_identity_cli_exit_codes(tmp_path: Path) -> None:
+def test_selfcheck_identity_cli_exit_codes(tmp_path: Path) -> None:
     identity = ("a" * 64, "b" * 64)
     output = tmp_path / "selfcheck.txt"
     output.write_text(
@@ -473,16 +511,16 @@ def test_normal_run_identity_cli_exit_codes(tmp_path: Path) -> None:
     )
     evidence = tmp_path / "normal.json"
 
-    assert assert_normal_run_identity.main(
+    assert assert_selfcheck_identity.main(
         [
             "--selfcheck-output", str(output),
             "--expect-identity", str(expected),
             "--json-out", str(evidence),
         ]
     ) == 0
-    assert json.loads(evidence.read_text(encoding="utf-8"))["normal_run_artifact_id"] == identity[0]
+    assert json.loads(evidence.read_text(encoding="utf-8"))["selfcheck_artifact_id"] == identity[0]
 
-    assert assert_normal_run_identity.main(
+    assert assert_selfcheck_identity.main(
         [
             "--selfcheck-output", str(tmp_path / "absent.txt"),
             "--expect-identity", str(expected),

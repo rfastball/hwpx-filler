@@ -269,13 +269,17 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "resolve_web_artifact(frozen_root=args.bundle_root)" in verifier
 
 
-def test_the_packaged_gate_listens_to_the_normal_run_identity() -> None:
-    """정상(비-selftest) 국면이 **자기 입으로** 말한 identity 를 게이트가 듣는가(R5-03).
+def test_the_packaged_gate_listens_to_the_selfcheck_identity() -> None:
+    """``--selfcheck`` 국면이 **자기 입으로** 말한 identity 를 게이트가 듣는가(R5-03).
 
-    제품은 이 값을 이미 말한다 — ``web_artifact()`` 가 fail-closed 라 그 줄에 도달한 것
-    자체가 판정이다. 종전 게이트는 ``ExitCode`` 만 읽고 그 줄을 버렸고, 그래서 「정상 실행과
-    selftest 는 동일 산출물이며 capability 만 다르다」의 frozen 쪽 절반이 **시험 capability
-    경로가 낸 값만으로** 서 있었다. 창 앱이라 stdout 은 리디렉션해야 잡힌다.
+    이 국면의 이름을 정확히 적는다: ``--selfcheck`` 는 제품 ``main()`` 을 부르지 않는다 —
+    엔트리 래퍼가 그 인자만 가로채 헤드리스 스모크로 보낸다(아래에서 함께 못박는다). 그래서
+    여기서 얻는 것은 「정상 실행의 증거」가 아니라 **창을 열지 않는 별개 프로세스가 같은
+    sealed 산출물을 fail-closed 로 해석했다**는 증거다. 제품 진입점(``main()``)이 해석한
+    identity 는 ``--selftest`` 증거의 ``runtime.artifact_id`` 가 이미 대조한다.
+
+    종전 게이트는 ``ExitCode`` 만 읽어 이 프로세스가 무엇을 실었는지 아무도 묻지 않았다.
+    창 앱이라 stdout 은 리디렉션해야 잡힌다.
     """
     build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
     entry = (ROOT / "packaging" / "hwpx_filler_web_entry.py").read_text(encoding="utf-8")
@@ -287,12 +291,16 @@ def test_the_packaged_gate_listens_to_the_normal_run_identity() -> None:
     assert "-RedirectStandardOutput $selfcheckOut" in build
     # 판정은 Python 판별기가 진다 — 인라인 정규식으로 되돌아가면 음성 대조가 붙을 자리가
     # 사라진다(`classify_webview_evidence.py` 와 같은 규율).
-    assert r"scripts\assert_normal_run_identity.py" in build
+    assert r"scripts\assert_selfcheck_identity.py" in build
     assert "--selfcheck-output $selfcheckOut" in build
-    assert "normal_run_artifact_id" in build
+    assert "selfcheck_artifact_id" in build
+    # 이 국면이 제품 main() **밖**이라는 사실을 엔트리에서 직접 센다 — 그 사실이 바뀌면
+    # 위 docstring 의 주장도 증거 키 이름도 함께 틀린 것이 된다.
+    assert 'sys.argv[1] == "--selfcheck"' in entry
+    assert entry.index('sys.argv[1] == "--selfcheck"') < entry.index("import main")
     # 실행이 먼저, 판정이 나중 — 순서가 뒤집히면 앞 실행의 잔재를 읽는다.
     assert build.index("-RedirectStandardOutput $selfcheckOut") < build.index(
-        r"scripts\assert_normal_run_identity.py"
+        r"scripts\assert_selfcheck_identity.py"
     )
 
 
@@ -327,6 +335,15 @@ def test_shipped_copies_are_reconciled_by_one_owner_with_a_declared_set() -> Non
 
     assert r"scripts\reconcile_shipped_copies.py" in release
     assert "--expect source,dist,installed,portable" in release
+    # 설치본 사본은 두 곳에서 만들어진다(릴리스 태그 · `-IncludeInstaller`). 순서 계약
+    # 「제거 앞에 검증」은 릴리스 쪽만 못박혀 있었다 — 러너 쪽도 같은 강도로 센다.
+    installed = build[build.index("function Invoke-InstalledCopy"):]
+    installed = installed[: installed.index("function Test-BundleBoundary")]
+    assert installed.index("verify_packaged_web.py") < installed.index("unins000.exe"), (
+        "설치본 검증이 제거 뒤로 밀렸습니다"
+    )
+    assert "--selfcheck" in installed, "릴리스 쪽 설치본 스모크와 강도가 다릅니다"
+    assert "_is1" in installed, "출하 AppId 충돌 가드가 없습니다"
     # 인라인 재조립으로 되돌아가지 않는다 — 같은 판정이 두 곳에 살면 하나가 낡는다.
     assert "Sort-Object -Unique).Count -ne 1" not in release
 

@@ -12,11 +12,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 #: 사본 하나를 "같은 것"으로 판정하는 필드. 경로는 러너마다 다르니 정체성이 아니다.
 IDENTITY_FIELDS = ("artifact_id", "tree_sha256")
+
+#: 두 필드의 **형태**. 값이 있기만 하면 통과시키면 빈 문자열 아닌 무엇이든 identity 가 되고,
+#: 두 사본이 나란히 같은 쓰레기를 들면 "일치"가 나온다.
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ReconcileError(RuntimeError):
@@ -37,12 +43,19 @@ def _identity(document: dict, *, role: str) -> dict[str, str]:
     missing = [field for field in IDENTITY_FIELDS if not document.get(field)]
     if missing:
         raise ReconcileError(f"{role} 증거에 identity 필드가 없습니다: {', '.join(missing)}")
-    return {field: str(document[field]) for field in IDENTITY_FIELDS}
+    identity = {field: str(document[field]) for field in IDENTITY_FIELDS}
+    malformed = [field for field, value in identity.items() if not _DIGEST_RE.match(value)]
+    if malformed:
+        raise ReconcileError(
+            f"{role} 증거의 identity 형태가 sha256 이 아닙니다: "
+            + ", ".join(f"{field}={identity[field]!r}" for field in malformed)
+        )
+    return identity
 
 
 def collect(
     *,
-    copies: dict[str, Path],
+    copies: "Sequence[tuple[str, Path]]",
     build_metadata: Path | None,
 ) -> dict[str, dict[str, str]]:
     """이름 → identity. ``build_metadata`` 는 ``source`` 사본을 기여한다."""
@@ -56,7 +69,7 @@ def collect(
                 f"({build_metadata})"
             )
         collected["source"] = _identity(web, role="source")
-    for name, path in copies.items():
+    for name, path in copies:
         if name in collected:
             raise ReconcileError(f"사본 이름이 중복됐습니다: {name}")
         collected[name] = _identity(_load(path, role=name), role=name)
@@ -125,8 +138,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--expect 에는 사본 이름이 하나 이상 필요합니다")
 
     try:
+        # `dict(args.copy)` 로 접으면 같은 이름의 둘째 `--copy` 가 첫째를 **조용히
+        # 덮어써서** 중복 가드가 영영 안 문다(L16 반증: 다른 artifact 를 가리키는 증거가
+        # 버려지고도 초록이었다). 목록 그대로 넘겨 `collect` 가 세게 한다.
         collected = collect(
-            copies=dict(args.copy),
+            copies=args.copy,
             build_metadata=args.build_metadata,
         )
         evidence = reconcile(collected, expected=expected)

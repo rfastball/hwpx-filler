@@ -548,8 +548,11 @@ function vendorRegions(bundle) {
  * 안 그러면 `@scope` 가 이름이 되어 lock 조회가 영영 빈손이고, 그 침묵이 "설치가 하나다"와
  * 똑같이 생긴다. */
 function vendorPackageName(region) {
-  const parts = region.split("/");
-  return parts[1].startsWith("@") ? `${parts[1]}/${parts[2]}` : parts[1];
+  // 중첩 설치는 **마지막** `node_modules/` 뒤가 진짜 패키지다 —
+  // `react-dom/node_modules/scheduler/index.js` 를 앞에서 읽으면 `react-dom` 으로 보고돼
+  // 중복 사본이 정상 이름표를 달고 지나간다(L16 반증).
+  const parts = region.split("node_modules/").pop().split("/");
+  return parts[0].startsWith("@") ? `${parts[0]}/${parts[1]}` : parts[0];
 }
 
 /* 수집 대상도 넓힌다. 종전은 manifest 의 `isEntry` 청크 **하나**만 읽었다 — entry 수가 1 임은
@@ -756,6 +759,11 @@ test("검출력 — vendor 패키지 이름은 scope 두 성분을 한 이름으
   assert.equal(vendorPackageName("node_modules/react/index.js"), "react");
   assert.equal(vendorPackageName("node_modules/react-dom/cjs/react-dom.production.js"), "react-dom");
   assert.equal(vendorPackageName("node_modules/@scope/pkg/index.js"), "@scope/pkg");
+  assert.equal(
+    vendorPackageName("node_modules/react-dom/node_modules/scheduler/index.js"),
+    "scheduler",
+    "중첩 설치를 앞의 node_modules 로 읽으면 중복 사본이 정상 이름표를 답니다.",
+  );
 });
 
 test("검출력 — vendor region은 entry가 아닌 청크에 숨어도 수집된다", () => {

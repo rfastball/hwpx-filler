@@ -114,9 +114,25 @@ function Invoke-InstalledCopy([string]$EvidencePath) {
         )
     }
 
+    # 이 .iss 는 **출하 AppId** 를 쓴다. 같은 AppId 가 이미 등록돼 있으면 무인 설치가 그
+    # 등록을 이 임시 폴더로 갈아치우고, 뒤이은 제거가 사용자의 **진짜 설치**를 고아로 만든다.
+    # 감사·개발자 기기에서 문서나르미를 실제로 쓰고 있을 수 있으므로 먼저 거절한다.
+    $productKey = (
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+        '{A08D764C-A28D-4E7E-A8E9-E391E11A5A8C}_is1'
+    )
+    if (Test-Path -LiteralPath $productKey) {
+        throw (
+            '이 기기에 문서나르미가 이미 설치돼 있습니다 — -IncludeInstaller 는 같은 AppId 로 ' +
+            '설치·제거하므로 기존 등록을 망가뜨립니다. 먼저 제거하고 다시 실행하세요: ' +
+            $productKey
+        )
+    }
+
     & $isccPath (Join-Path $root 'packaging\installers\hwpx-filler.iss')
     if ($LASTEXITCODE -ne 0) { throw "설치본 컴파일 실패(exit $LASTEXITCODE)" }
-    $setup = Get-ChildItem (Join-Path $root 'installer-dist\HWPX-Filler-*-Setup.exe') |
+    $setup = Get-ChildItem (Join-Path $root 'installer-dist\HWPX-Filler-*-Setup.exe') `
+            -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $setup) { throw '설치본 산출물을 찾지 못했습니다: installer-dist' }
 
@@ -137,6 +153,13 @@ function Invoke-InstalledCopy([string]$EvidencePath) {
             --json-out $EvidencePath
         if ($LASTEXITCODE -ne 0) { throw 'installed web artifact identity 불일치' }
         Test-BundleBoundary $installDir
+        # 릴리스 태그 쪽 설치본 스모크와 **같은 것**을 묻는다 — 한쪽만 selfcheck 하고 다른
+        # 쪽만 번들 경계를 보면, 이름이 같고 강도가 다른 두 증거가 된다.
+        $installedCheck = Start-Process -Wait -PassThru -ArgumentList @('--selfcheck') `
+            -FilePath (Join-Path $installDir 'hwpx-filler-web.exe')
+        if ($installedCheck.ExitCode -ne 0) {
+            throw "설치본 selfcheck 실패(exit $($installedCheck.ExitCode))"
+        }
     }
     finally {
         # 정리 실패로 **앞선 실패를 덮지 않는다** — finally 에서 던지면 진짜 원인이 사라진다.
@@ -350,11 +373,13 @@ foreach ($key in $plan) {
                 Join-Path $evidenceDir 'artifact-parity.json'
             ) -Raw -Encoding UTF8 | ConvertFrom-Json
 
-            # 정상(비-selftest) 국면의 **in-process** identity 를 듣는다(R5-03). 제품은 이미
-            # 이 값을 말한다 — `web_artifact()` 가 fail-closed 라 그 줄에 도달한 것 자체가
-            # 판정이다. 종전에는 ExitCode 만 읽고 그 줄을 버렸고, 그래서 「정상 실행과 selftest
-            # 는 동일 산출물이며 capability 만 다르다」의 frozen 쪽 절반이 **시험 capability
-            # 경로가 낸 값만으로** 서 있었다. 창 앱이라 stdout 은 리디렉션해야 잡힌다.
+            # `--selfcheck` 국면의 **in-process** identity 를 듣는다(R5-03). 이 인자는 제품
+            # `main()` 을 부르지 않는다 — 엔트리 래퍼가 가로채 헤드리스 스모크로 보낸다. 그래서
+            # 여기서 얻는 것은 「정상 실행의 증거」가 아니라 **창을 열지 않는 별개 프로세스가
+            # 같은 sealed 산출물을 fail-closed 로 해석했다**는 증거다(제품 진입점이 해석한
+            # identity 는 아래 `--selftest` 증거의 runtime.artifact_id 가 이미 진다).
+            # 종전에는 ExitCode 만 읽어 이 프로세스가 무엇을 실었는지 아무도 묻지 않았다.
+            # 창 앱이라 stdout 은 리디렉션해야 잡힌다.
             $selfcheckOut = Join-Path $evidenceDir 'packaged-selfcheck.txt'
             $selfcheck = Start-Process -FilePath $exe -Wait -PassThru `
                 -ArgumentList @('--selfcheck') -RedirectStandardOutput $selfcheckOut
@@ -363,15 +388,15 @@ foreach ($key in $plan) {
             }
             # 판정은 Python 판별기가 소유한다 — 음성 대조가 붙는 유일한 자리다
             # (`classify_webview_evidence.py` 와 같은 이유). 러너는 호출과 배선만 진다.
-            $normalIdentityOut = Join-Path $evidenceDir 'packaged-normal-run-identity.json'
-            & $pythonExe (Join-Path $root 'scripts\assert_normal_run_identity.py') `
+            $selfcheckIdentityOut = Join-Path $evidenceDir 'packaged-selfcheck-identity.json'
+            & $pythonExe (Join-Path $root 'scripts\assert_selfcheck_identity.py') `
                 --selfcheck-output $selfcheckOut `
                 --expect-identity (Join-Path $evidenceDir 'artifact-parity.json') `
-                --json-out $normalIdentityOut
+                --json-out $selfcheckIdentityOut
             if ($LASTEXITCODE -ne 0) {
-                throw 'packaged 정상 실행 국면의 web artifact identity 대조에 실패했습니다.'
+                throw 'packaged --selfcheck 국면의 web artifact identity 대조에 실패했습니다.'
             }
-            $normalIdentity = Get-Content -LiteralPath $normalIdentityOut -Raw -Encoding UTF8 |
+            $selfcheckIdentity = Get-Content -LiteralPath $selfcheckIdentityOut -Raw -Encoding UTF8 |
                 ConvertFrom-Json
 
             # 유효한 외부 HTTP target을 deterministic loopback control proxy로 먼저 성공시킨다.
@@ -628,10 +653,10 @@ foreach ($key in $plan) {
                 artifact_id = $evidence.runtime.artifact_id
                 tree_sha256 = $evidence.runtime.tree_sha256
                 source_bundled_same_artifact = $true
-                # 정상 실행이 **자기 입으로** 말한 값. selftest 국면의 값과 같은 자리에 두어야
-                # "capability 만 다르다"가 두 국면의 증거로 성립한다.
-                normal_run_artifact_id = $normalIdentity.normal_run_artifact_id
-                normal_run_tree_sha256 = $normalIdentity.normal_run_tree_sha256
+                # 창을 열지 않는 `--selfcheck` 프로세스가 해석한 값. 아래 selftest 국면의
+                # runtime.artifact_id 와 **다른 프로세스**의 증거라 같은 자리에 나란히 둔다.
+                selfcheck_artifact_id = $selfcheckIdentity.selfcheck_artifact_id
+                selfcheck_tree_sha256 = $selfcheckIdentity.selfcheck_tree_sha256
                 node_available_on_runtime_path = $false
                 responsibility_count = $responsibilities.Count
                 false_count = $falseResponsibilities.Count
