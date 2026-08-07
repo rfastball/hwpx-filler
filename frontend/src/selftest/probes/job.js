@@ -142,6 +142,16 @@ function stubGenerate(services, make) {
   };
 }
 
+/** id 로 글을 읽되 자리가 **없으면 이름을 말하고 죽는다**. 종전 이 자리들은
+ *  `getElementById(id).textContent` 라서 실패가 "Cannot read properties of null" 한 줄이었다 —
+ *  어느 자리가 아직 안 섰는지 말하지 못한다. React 이관처럼 「무엇이 사라졌나」가 곧 진단인
+ *  국면에서 그 한 줄은 진단 비용을 전부 사람에게 떠넘긴다. */
+function textOf(doc, id) {
+  const el = doc.getElementById(id);
+  if (el === null) throw new Error(`프로브가 읽을 자리가 DOM 에 없습니다: #${id}`);
+  return el.textContent;
+}
+
 function displayOf(ctx, el) {
   return ctx.win.getComputedStyle(el).display;
 }
@@ -1159,12 +1169,12 @@ async function runJobResult(ctx) {
   out.state = box.dataset.state;
   out.level = box.dataset.level;
   out.shown = !box.hidden;
-  out.title = doc.getElementById("jobResultTitle").textContent;
+  out.title = textOf(doc, "jobResultTitle");
   out.fail_row = !!doc.getElementById("jobResultFail-7");
-  out.fail_identity = doc.getElementById("jobResultFails").textContent.indexOf("사무비품") >= 0;
-  out.undiagnosed = doc.getElementById("jobResultFails").textContent.indexOf("원인 진단 미연결") >= 0;
+  out.fail_identity = textOf(doc, "jobResultFails").indexOf("사무비품") >= 0;
+  out.undiagnosed = textOf(doc, "jobResultFails").indexOf("원인 진단 미연결") >= 0;
   out.failed_sel_shown = !doc.getElementById("jobResultFailedSel").hidden;
-  out.failed_sel_label = doc.getElementById("jobResultFailedSel").textContent;
+  out.failed_sel_label = textOf(doc, "jobResultFailedSel");
 
   /* 증거는 접혀서 서고, 사용자가 연 뒤에는 재렌더(스냅샷 푸시)를 건너 열린 채 남는다. */
   const evidence = doc.getElementById("jobResultEvidence");
@@ -1187,7 +1197,7 @@ async function runJobResult(ctx) {
   });
   await settle(ctx);
   out.rowless_recovery_shown = !doc.getElementById("jobResultFailedSel").hidden;
-  out.rowless_recovery_label = doc.getElementById("jobResultFailedSel").textContent;
+  out.rowless_recovery_label = textOf(doc, "jobResultFailedSel");
   out.rowless_no_fake_rows = doc.getElementById("jobResultFails").children.length === 0;
   services.JobScreen.renderResult(partial);
   await settle(ctx);
@@ -1214,7 +1224,7 @@ async function runJobResult(ctx) {
   snapB.job_name = "둘째";
   await pushAndSettle(ctx, "job", snapB);
   out.switch_resets_result = doc.getElementById("jobResult").hidden;
-  out.switch_exit_line = doc.getElementById("jobRunLogLast").textContent;
+  out.switch_exit_line = textOf(doc, "jobRunLogLast");
 
   /* 강등 렌더러의 주체 방어(3R P2) — 푸시를 거치지 않고 결과가 재수립되는 경로에서
      남의 작업을 겨누는 버튼이 서지 않는지 몸통을 직접 찌른다. 증거는 남는다. */
@@ -1224,7 +1234,7 @@ async function runJobResult(ctx) {
   out.foreign_rename_hidden = doc.getElementById("jobResultRename").hidden;
   out.foreign_failedsel_hidden = doc.getElementById("jobResultFailedSel").hidden;
   out.foreign_evidence_alive = !!doc.getElementById("jobResultFail-7");
-  out.foreign_stale_names_owner = doc.getElementById("jobResultStale").textContent.indexOf("공고서") >= 0;
+  out.foreign_stale_names_owner = textOf(doc, "jobResultStale").indexOf("공고서") >= 0;
 
   /* ③ 선택 변경 = 강등 유지(§2.18) — 「실패한 N건만 선택」이 자기 결과를 없애면 안 된다. */
   await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(원 작업 문맥)
@@ -1242,7 +1252,7 @@ async function runJobResult(ctx) {
   snapData.data_mount = 2;
   await pushAndSettle(ctx, "job", snapData);
   out.data_swap_resets_result = doc.getElementById("jobResult").hidden;
-  out.data_swap_exit_line = doc.getElementById("jobRunLogLast").textContent;
+  out.data_swap_exit_line = textOf(doc, "jobRunLogLast");
   out.data_swap_label_unchanged = snapData.data_source_label === "파일: d.csv";
   await pushAndSettle(ctx, "job", baseSnap);        // 비교군 복귀(다음 단계는 같은 작업 문맥)
   services.JobScreen.renderResult(partial);
@@ -1272,7 +1282,7 @@ async function runJobResult(ctx) {
   out.close_focus = activeId(doc);
   /* 명시 파기는 퇴장 한 줄을 남기지 않는다(§2.18 파기 대칭) — 실행 기록이 기본 문안으로
      돌아왔는지 되읽는다. 이 필드는 **부재**를 단언하는 자리다(자동 초기화만 흔적을 남긴다). */
-  out.close_runlog_last = doc.getElementById("jobRunLogLast").textContent;
+  out.close_runlog_last = textOf(doc, "jobRunLogLast");
   out.runlog_collapsed = !doc.getElementById("jobRunLog").open;
   out.runlog_last_visible = isShown(ctx, doc.getElementById("jobRunLogLast"));
 
@@ -1315,11 +1325,11 @@ async function runJobResult(ctx) {
   /* 판별 증거 — 스텁 호출 수·로그 원문·구획 은닉이 「발신 전 정지 / 발신 후 렌더 /
      렌더 후 소거」 세 갈래를 가른다. */
   const rejectState = resultBox.dataset.state;
-  const rejectText = doc.getElementById("jobResultSummary").textContent;
-  const rejectLog = doc.getElementById("jobGenLog").textContent;
+  const rejectText = textOf(doc, "jobResultSummary");
+  const rejectLog = textOf(doc, "jobGenLog");
   const rejectHidden = resultBox.hidden;
   // 거절 사유는 로그도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
-  const runlogLast = doc.getElementById("jobRunLogLast").textContent;
+  const runlogLast = textOf(doc, "jobRunLogLast");
   ctx.push = realPush;
   genStub.restore();
 
