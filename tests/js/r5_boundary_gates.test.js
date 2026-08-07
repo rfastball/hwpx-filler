@@ -143,20 +143,23 @@ function functionVarBinds(node, name) {
  */
 function topLevelBindingReferences(tree, name, owner) {
   let count = 0;
-  const walkBindingExtras = (pattern) => {
+  const walkBindingExtras = (pattern, includeDefaults = true) => {
     if (!pattern) return;
     walk(pattern.typeAnnotation);
     if (pattern.type === "AssignmentPattern") {
-      walkBindingExtras(pattern.left);
-      walk(pattern.right);
+      walkBindingExtras(pattern.left, includeDefaults);
+      if (includeDefaults) walk(pattern.right);
     } else if (pattern.type === "RestElement") {
-      walkBindingExtras(pattern.argument);
+      walkBindingExtras(pattern.argument, includeDefaults);
     } else if (pattern.type === "ObjectPattern") {
       for (const property of pattern.properties) {
-        walkBindingExtras(property.type === "RestElement" ? property.argument : property.value);
+        walkBindingExtras(
+          property.type === "RestElement" ? property.argument : property.value,
+          includeDefaults,
+        );
       }
     } else if (pattern.type === "ArrayPattern") {
-      for (const element of pattern.elements) walkBindingExtras(element);
+      for (const element of pattern.elements) walkBindingExtras(element, includeDefaults);
     }
   };
   const walk = (node) => {
@@ -182,11 +185,14 @@ function topLevelBindingReferences(tree, name, owner) {
       return;
     }
     if (["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) {
-      for (const param of node.params) walkBindingExtras(param);
+      const parameterShadows = node.params.some((param) => patternHasName(param, name));
+      /* default 식은 함수 바깥이 아니라 parameter environment에서 resolve된다. 같은 이름의
+         parameter가 하나라도 있으면 그 default들의 같은 철자는 top-level binding이 아니다. */
+      for (const param of node.params) walkBindingExtras(param, !parameterShadows);
       walk(node.typeParameters);
       walk(node.returnType);
       const shadowed = node.id?.name === name
-        || node.params.some((param) => patternHasName(param, name))
+        || parameterShadows
         || functionVarBinds(node, name);
       if (!shadowed) walk(node.body);
       return;
@@ -520,6 +526,10 @@ function deadExports(analysis, imported, publicModules = new Set()) {
   return dead.sort();
 }
 
+function productReachedTestOnly(analysis, testOnlyEntries) {
+  return testOnlyEntries.filter((name) => analysis.productReached.has(name)).sort();
+}
+
 function reactRegions(bundle) {
   return [...bundle.matchAll(
     /^\/\/#region (node_modules\/(?:react|react-dom)\/[^\r\n]+)$/gm,
@@ -565,6 +575,12 @@ test("검출력 — orphan·cycle을 문고 acyclic diamond와 exact test entry�
   const miss = analyzeModules(diamond, ["main.js"]);
   assert.deepEqual(miss.orphanFiles, []);
   assert.deepEqual(miss.cycles, []);
+
+  const leakedTestOnly = analyzeModules(new Map([
+    ["main.js", 'import "./schema.js";'],
+    ["schema.js", "export const schema = 1;"],
+  ]), ["main.js"], ["schema.js"]);
+  assert.deepEqual(productReachedTestOnly(leakedTestOnly, ["schema.js"]), ["schema.js"]);
 });
 
 test("검출력 — 동적 import도 모듈·runtime dependency 폐포에 들어가고 비리터럴은 거절한다", () => {
@@ -609,6 +625,21 @@ test("검출력 — 소비·내부참조 없는 export만 dead이고 내부 help
     deadExports(shadowedAnalysis, importedProductNames(shadowedAnalysis, shadowed)),
     ["lib.js:value"],
     "nested scope의 같은 철자를 top-level export 소비로 오인했습니다.",
+  );
+
+  const parameterDefault = new Map([
+    ["main.js", 'import "./lib.js";'],
+    ["lib.js", [
+      "export const value = 1;",
+      "function consume(value = 2, copy = value) { return copy; }",
+      "consume();",
+    ].join("\n")],
+  ]);
+  const parameterAnalysis = analyzeModules(parameterDefault, ["main.js"]);
+  assert.deepEqual(
+    deadExports(parameterAnalysis, importedProductNames(parameterAnalysis, parameterDefault)),
+    ["lib.js:value"],
+    "parameter default의 같은 철자를 top-level export 소비로 오인했습니다.",
   );
 });
 
@@ -713,6 +744,11 @@ test("실 source — 모든 모듈은 product 또는 exact test-only 폐포이�
   }
   assert.deepEqual(analysis.missingImports, [], "상대 import가 없는 파일을 가리킵니다.");
   assert.deepEqual(analysis.unknownDynamicImports, [], "정적으로 판독할 수 없는 dynamic import가 있습니다.");
+  assert.deepEqual(
+    productReachedTestOnly(analysis, testOnly),
+    [],
+    "test-only entry가 제품 entry에서도 도달됩니다 — 출하 그래프 격리가 깨졌습니다.",
+  );
   assert.deepEqual(analysis.cycles, [], `모듈 cycle: ${JSON.stringify(analysis.cycles)}`);
   assert.deepEqual(analysis.orphanFiles, [], `분류되지 않은 dead 파일: ${analysis.orphanFiles}`);
 
