@@ -240,7 +240,6 @@ export function createWorkbenchController(deps: WorkbenchControllerDeps) {
        계산하지 않는 경우가 있다. 표지는 별 상태가 아니라 성공한 focus 수명에만 붙는 class다. */
     if (deps.doc.activeElement === row) {
       row.classList.add("wb-aimed");
-      row.addEventListener("blur", () => row.classList.remove("wb-aimed"), { once: true });
     }
     row.scrollIntoView({ block: "nearest" });
   }
@@ -352,6 +351,7 @@ function MapRow(props: {
   const formats = ((snapshot.fmt_options || {})[typeValue] || []) as Obj[];
   return h("tr", {
     "data-name": name, id: `wbMap-row-${key}`, tabIndex: -1,
+    onBlur: (event: Obj) => event.currentTarget.classList.remove("wb-aimed"),
     className: declared ? "row-blank-declared" : undefined,
   },
   h("td", { className: "maptok", title: `{{${name}}}` }, name),
