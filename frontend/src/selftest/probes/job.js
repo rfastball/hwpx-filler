@@ -118,6 +118,30 @@ function stubDispatch(services, make) {
   };
 }
 
+/** 실행 발신의 통로는 R4-03 에서 **옮겨 앉았다** — legacy remainder 의 raw `Bridge.generate`
+ *  가 아니라 React owner 의 typed `Client.invoke("generate", …)` 다. 옛 자리를 갈아끼우면
+ *  스텁이 **죽은 seam** 에 붙어 실 generate 가 그대로 돈다: 프로브는 거절 결과를 기다리는데
+ *  호스트는 진짜 생성을 시도하고, 스텁 호출 수는 0 인 채 프로브가 null 을 읽는다.
+ *  `stubDispatch` 와 같은 이유·같은 수명 규약으로 **산 자리**를 잡는다.
+ *
+ *  make 는 호스트 **payload** 를 낸다 — 봉투(`{ok, value}`)의 것이 아니다. 두 `ok` 는 다른
+ *  층이라 겹쳐 읽으면 「Python 이 거절했다」와 「호출이 아예 성립하지 않았다」가 한 값으로
+ *  접힌다: 봉투는 통로의 성패, payload 는 판정이다. */
+function stubGenerate(services, make) {
+  const Client = services.Client;
+  const real = Client.invoke;
+  const mine = async function (method, ...args) {
+    if (method !== "generate") return real.call(Client, method, ...args);
+    return { ok: true, value: make(args) };
+  };
+  Client.invoke = mine;
+  return {
+    restore() {
+      if (Client.invoke === mine) Client.invoke = real;
+    },
+  };
+}
+
 function displayOf(ctx, el) {
   return ctx.win.getComputedStyle(el).display;
 }
@@ -1253,16 +1277,19 @@ async function runJobResult(ctx) {
   out.runlog_last_visible = isShown(ctx, doc.getElementById("jobRunLogLast"));
 
   /* 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다. */
-  const realGenerate = services.Bridge.generate;
   let rejectGenCalls = 0;
-  services.Bridge.generate = function () {
+  const genStub = stubGenerate(services, (args) => {
     rejectGenCalls += 1;
     /* 문안은 살아 있는 blank_set 게이트 문형(U2 §2.13) — 죽은 ack 문형을 프로브가
        정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다. */
-    return Promise.resolve({
+    return {
       ok: false, error: "빈 값 필드가 표식으로 문서에 박힙니다: 추정가격.", level: "warn",
-    });
-  };
+      /* 상관 토큰은 **반향**이다(R4-03) — 컨트롤러는 이것이 없으면 거절을 그리기 전에
+         계약 위반으로 멈춘다. 대역이 자기 토큰을 지어내면 그 관문을 우회해, 귀속이 깨진
+         응답도 통과하는 세계에서 재게 된다. 받은 것을 그대로 돌려준다. */
+      run_token: args[2],
+    };
+  });
   /* 거절 창 격리(관측자 오염 리트머스) — 첫머리 `Nav.go('job')` 이 쏜 실 refresh 의 푸시가
      늦게 착지해 정확히 이 비동기 창에 들어오고, §2.18 처분이 그것을 「작업 없음 전환 =
      초기화」로 정확히 읽어 방금 세운 rejected 를 지운다. 창이 열린 동안 job 푸시는 기록만
@@ -1294,7 +1321,7 @@ async function runJobResult(ctx) {
   // 거절 사유는 로그도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
   const runlogLast = doc.getElementById("jobRunLogLast").textContent;
   ctx.push = realPush;
-  services.Bridge.generate = realGenerate;
+  genStub.restore();
 
   out.reject_state = String(rejectState);
   out.reject_text = String(rejectText);
