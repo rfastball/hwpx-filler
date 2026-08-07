@@ -12,7 +12,7 @@
      쓴 상태다.
    - 복사는 사전확인이 본 **그 카드**의 토큰을 실어 보낸다. 그사이 작업점이 옮겨졌으면 백엔드가
      stale 로 돌려주고, 확인하지 않은 카드가 클립보드로 나가지 않는다. */
-import { createElement, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { createElement, useEffect, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -341,17 +341,6 @@ function MapRow(props: {
 }): ReactNode {
   const { row, snapshot, draft, controller } = props;
   const name = String(row.name);
-  const valueRef = useRef<HTMLTextAreaElement | null>(null);
-  useLayoutEffect(() => {
-    const input = valueRef.current;
-    if (input === null) return;
-    const commitValue = (): void => {
-      controller.focus(mapField(name, "value"), false);
-      controller.commitValue(name);
-    };
-    input.addEventListener("blur", commitValue);
-    return () => input.removeEventListener("blur", commitValue);
-  }, [controller, name, !!row.blank_declared]);
   const key = encodeURIComponent(name);
   const sourceValue = valueOf(draft, mapField(name, "source"));
   const columns = ((snapshot.source_fields || []) as string[]).slice();
@@ -410,11 +399,11 @@ function MapRow(props: {
       /* 계산을 prop 자리에서 하면 class sink 회수가 첫 쉼표에서 잘려 이름을 못 읽는다 —
          값은 위에서 뽑고 여기엔 리터럴 둘만 남긴다. */
       className: `mapval-in${valueEmpty ? " empty" : ""}`,
-      ref: valueRef,
       rows: 1, id: `wbMap-val-${key}`, "data-name": name, placeholder: "직접 입력",
       "aria-label": `${name} 값`, value: valueOf(draft, mapField(name, "value")),
       onChange: (event: Obj) => controller.type(mapField(name, "value"), String(event.currentTarget.value)),
       onFocus: () => controller.focus(mapField(name, "value"), true),
+      onBlur: () => { controller.focus(mapField(name, "value"), false); controller.commitValue(name); },
       onCompositionStart: () => controller.compose(mapField(name, "value"), true),
       onCompositionEnd: () => controller.compose(mapField(name, "value"), false),
     })),

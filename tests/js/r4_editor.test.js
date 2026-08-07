@@ -133,6 +133,27 @@ test("commitField — dirty 가 아니면 발신하지 않는다(무변경 왕�
   assert.deepEqual(h.actions(), [["editor", "set_name", { name: "새 이름" }]]);
 });
 
+test("flushPendingEdits — blur 없이 온 행동도 dirty draft를 먼저 발신한다", async () => {
+  const h = build();
+  await h.ready();
+  h.controller.type(NAME_FIELD, "버튼보다 먼저 친 이름");
+  await h.controller.flushPendingEdits();
+  assert.deepEqual(h.actions(), [
+    ["editor", "set_name", { name: "버튼보다 먼저 친 이름" }],
+  ]);
+});
+
+test("flushPendingEdits — blur가 이미 올린 field를 중복 발신하지 않는다", async () => {
+  const h = build();
+  await h.ready();
+  h.controller.type(NAME_FIELD, "한 번만 보낼 이름");
+  h.controller.commitField(NAME_FIELD);
+  await h.controller.flushPendingEdits();
+  assert.deepEqual(h.actions(), [
+    ["editor", "set_name", { name: "한 번만 보낼 이름" }],
+  ]);
+});
+
 test("commit 성공은 Python 확인 전까지 draft 를 clean 으로 올리지 않는다", async () => {
   const h = build();
   await h.ready();

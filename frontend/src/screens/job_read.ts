@@ -5,7 +5,6 @@ import {
   Fragment,
   createElement,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -633,22 +632,10 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
   const snapshot = useJob(props.controller);
   const queryRef = useRef<HTMLInputElement | null>(null);
   const snapshotQuery = String(snapshot?.browse?.query || "");
-  const snapshotQueryRef = useRef(snapshotQuery);
-  snapshotQueryRef.current = snapshotQuery;
   useEffect(() => {
     const input = queryRef.current;
     if (input !== null && props.controller.doc.activeElement !== input) input.value = snapshotQuery;
   }, [props.controller, snapshotQuery]);
-  /* ProductScreens는 정적 stage로 portal한다. WebView2의 프로그램적 `element.blur()`는 이
-     경계에서 React 합성 onBlur를 빠뜨릴 수 있으므로 서버값 정산은 실제 DOM blur가 진다.
-     최신값은 ref로 읽어, 입력 중 도착한 옛 snapshot은 보존하고 포커스가 떠난 뒤만 확정한다. */
-  useLayoutEffect(() => {
-    const input = queryRef.current;
-    if (input === null) return;
-    const settleQuery = (): void => { input.value = snapshotQueryRef.current; };
-    input.addEventListener("blur", settleQuery);
-    return () => input.removeEventListener("blur", settleQuery);
-  }, [snapshot !== null]);
   if (snapshot === null) return h("div", { className: "sheet-card" }, "작업 목록을 읽는 중…");
   const browse = snapshot.browse || { tab: "available", query: "", rows: [], available_count: 0, needs_count: 0, filtered_out: 0 };
   const needs = browse.tab === "needs_action";
@@ -671,7 +658,8 @@ export function JobBrowseDialog(props: { controller: JobReadController }): React
           onClick: () => { if (browse.tab !== key) void props.controller.browse("browse_tab", { tab: key }); } }, label))),
     h("input", { className: "field", id: "jobBrowseQuery", type: "search", ref: queryRef, defaultValue: browse.query || "",
       "data-busy-lock": true,
-      placeholder: "작업 이름 검색", onInput: (event: Obj) => props.controller.setBrowseQuery(event.currentTarget.value) }),
+      placeholder: "작업 이름 검색", onInput: (event: Obj) => props.controller.setBrowseQuery(event.currentTarget.value),
+      onBlur: (event: Obj) => { event.currentTarget.value = String(browse.query || ""); } }),
     h("p", { className: "muted capnote", id: "jobBrowseNote" }, browse.filtered_out > 0 ? `검색으로 ${browse.filtered_out}건이 목록에서 빠졌습니다.` : ""),
     h("div", { className: "browse-rows", id: "jobBrowseRows", "data-preserve-scroll": true },
       rows.length ? content : h("p", { className: "muted capnote" }, browse.query ? "이름이 일치하는 작업이 없습니다."
