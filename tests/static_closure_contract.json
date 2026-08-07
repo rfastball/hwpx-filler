@@ -11,7 +11,11 @@
     "  접촉은 allowlist 없이 무조건 위반이다(다음 전역에서 같은 결함이 재발하지 않게).",
     "module_closure — R5-02의 모듈 폐포 분류. product_entries에서 닿지 않는 코드는 exact test-only",
     "  entry여야 하고, 소비자 없는 export는 exact generated public contract에서만 허용한다.",
-    "  React runtime region은 핀된 Vite의 unminified sealed bundle에서 exact-once로 대조한다.",
+    "  vendor_bundle_regions — 출하되는 node_modules region 전수(R5-03). 이름을 열거하지 않고",
+    "  sealed 트리의 .js 전부에서 `node_modules/` region 을 모아 exact multiset 으로 대조한다:",
+    "  종전 react|react-dom 열거는 같은 바이트 안의 scheduler 2 region 을 못 봤고, entry 청크",
+    "  하나만 읽어 비-entry 청크의 vendor 를 못 봤다. 이 목록이 릴리스 metadata 의 출하 런타임",
+    "  패키지 이름을 유도하는 단일 출처이기도 하다(scripts/generate_build_metadata.py).",
     "dev_dependency_owners — 정적 import로 보이지 않는 빌드/형식 전용 의존의 exact 책임 분류."
   ],
   "non_code_suffixes": [".css", ".html", ".svg", ".txt", ".woff2"],
@@ -36,12 +40,14 @@
     "generated_public_modules": {
       "src/contract/contract.gen.ts": "Python 제품 계약에서 생성되는 TS 공개 표면. 미소비 export도 교차 언어 스키마 증거다."
     },
-    "react_bundle_regions": [
+    "vendor_bundle_regions": [
       "node_modules/react/cjs/react.production.js",
       "node_modules/react/index.js",
       "node_modules/react-dom/cjs/react-dom.production.js",
       "node_modules/react-dom/index.js",
-      "node_modules/react-dom/cjs/react-dom-client.production.js"
+      "node_modules/react-dom/cjs/react-dom-client.production.js",
+      "node_modules/scheduler/cjs/scheduler.production.js",
+      "node_modules/scheduler/index.js"
     ]
   },
   "dev_dependency_owners": {

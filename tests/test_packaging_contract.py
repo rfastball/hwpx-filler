@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
 
 import pytest
+
+import assert_normal_run_identity
+import reconcile_shipped_copies
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGING = ROOT / "packaging"
@@ -269,3 +273,240 @@ def test_the_build_runner_wires_the_classifier_before_retry() -> None:
     assert "boot_flake_attempts" in build
     assert "boot_flake_errors" in build
     assert build.index("classify_webview_evidence.py") < build.index("webview_boot_flake")
+
+
+# --- 출하 사본 대조 (R5-03) -------------------------------------------------
+#
+# 종전에 이 판정은 release.yml 안의 인라인 PowerShell 이었고 태그 push 에서만 돌았다. 같은
+# 판정이 패키징 게이트에도 필요해지면서 "같은 상태를 두 곳이 판정한다"가 될 자리였다 — 판정을
+# 스크립트 하나로 올리고, 워크플로·러너는 호출만 한다. 그래서 검출력은 여기서 센다.
+
+
+def _identity_file(path: Path, artifact_id: str, tree: str) -> Path:
+    path.write_text(
+        json.dumps({"artifact_id": artifact_id, "tree_sha256": tree, "same_artifact": True}),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _metadata_file(path: Path, artifact_id: str, tree: str, *, present: bool = True) -> Path:
+    web = {"present": present}
+    if present:
+        web |= {"artifact_id": artifact_id, "tree_sha256": tree}
+    path.write_text(json.dumps({"version": "0.0.0", "web": web}), encoding="utf-8")
+    return path
+
+
+def test_reconciler_passes_when_every_shipped_copy_is_the_same(tmp_path: Path) -> None:
+    identity = ("a" * 64, "b" * 64)
+    evidence = reconcile_shipped_copies.reconcile(
+        reconcile_shipped_copies.collect(
+            copies={
+                "dist": _identity_file(tmp_path / "dist.json", *identity),
+                "portable": _identity_file(tmp_path / "portable.json", *identity),
+            },
+            build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
+        ),
+        expected=("source", "dist", "portable"),
+    )
+
+    assert evidence["copies"] == ["dist", "portable", "source"]
+    assert evidence["artifact_id"] == identity[0]
+    assert evidence["same_artifact"] is True
+
+
+def test_reconciler_names_the_copy_that_differs(tmp_path: Path) -> None:
+    """사본마다 따로 통과시키는 것으로는 "하나만 다른" 경우가 안 드러난다."""
+    identity = ("a" * 64, "b" * 64)
+    collected = reconcile_shipped_copies.collect(
+        copies={
+            "dist": _identity_file(tmp_path / "dist.json", *identity),
+            "portable": _identity_file(tmp_path / "portable.json", "c" * 64, identity[1]),
+        },
+        build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
+    )
+
+    with pytest.raises(reconcile_shipped_copies.ReconcileError, match="artifact_id 가 다릅니다"):
+        reconcile_shipped_copies.reconcile(collected, expected=("source", "dist", "portable"))
+
+
+def test_a_silently_missing_copy_is_refused_not_ignored(tmp_path: Path) -> None:
+    """사본 하나가 사라지면 "남은 것끼리 같다"가 아니라 빨강이어야 한다.
+
+    이 자리가 이 스크립트의 존재 이유다 — 대조는 집합이 선언과 같을 때만 의미가 있다.
+    """
+    identity = ("a" * 64, "b" * 64)
+    collected = reconcile_shipped_copies.collect(
+        copies={"dist": _identity_file(tmp_path / "dist.json", *identity)},
+        build_metadata=_metadata_file(tmp_path / "meta.json", *identity),
+    )
+
+    with pytest.raises(reconcile_shipped_copies.ReconcileError, match="선언과 다릅니다"):
+        reconcile_shipped_copies.reconcile(collected, expected=("source", "dist", "portable"))
+
+
+def test_metadata_without_a_sealed_frontend_cannot_stand_in_for_source(tmp_path: Path) -> None:
+    with pytest.raises(reconcile_shipped_copies.ReconcileError, match="identity 가 없습니다"):
+        reconcile_shipped_copies.collect(
+            copies={},
+            build_metadata=_metadata_file(
+                tmp_path / "meta.json", "a" * 64, "b" * 64, present=False
+            ),
+        )
+
+
+def test_reconciler_cli_reports_failure_with_a_nonzero_exit(tmp_path: Path) -> None:
+    identity = ("a" * 64, "b" * 64)
+    _identity_file(tmp_path / "dist.json", *identity)
+    _identity_file(tmp_path / "portable.json", "c" * 64, identity[1])
+    _metadata_file(tmp_path / "meta.json", *identity)
+    out = tmp_path / "evidence.json"
+
+    def _run(*copies: str) -> int:
+        return reconcile_shipped_copies.main(
+            [
+                *[argument for copy in copies for argument in ("--copy", copy)],
+                "--build-metadata",
+                str(tmp_path / "meta.json"),
+                "--expect",
+                "source,dist,portable",
+                "--json-out",
+                str(out),
+            ]
+        )
+
+    assert _run(f"dist={tmp_path / 'dist.json'}", f"portable={tmp_path / 'portable.json'}") == 2
+    assert not out.exists(), "실패한 대조가 증거 파일을 남기면 다음 단계가 그것을 읽는다"
+
+    _identity_file(tmp_path / "portable.json", *identity)
+    assert _run(f"dist={tmp_path / 'dist.json'}", f"portable={tmp_path / 'portable.json'}") == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["artifact_id"] == identity[0]
+
+
+# --- 정상 실행 국면의 identity 판별 (R5-03) ---------------------------------
+#
+# 판정을 PowerShell 인라인이 아니라 Python 에 둔 이유는 음성 대조가 붙을 자리를 만들기
+# 위해서다. 그래서 여기가 그 검출력을 세는 자리다 — 배선은 test_web_runtime_artifact 가 진다.
+
+
+def test_normal_run_identity_accepts_the_real_selfcheck_line() -> None:
+    """양성 — 제품이 실제로 내는 형태를 읽는다.
+
+    형태는 ``hwpx_filler_web_entry._selfcheck`` 의 print 문이 정본이라, 그 문자열이 바뀌면
+    이 대조가 먼저 죽어야 한다.
+    """
+    artifact_id, tree = "a" * 64, "b" * 64
+    line = (
+        f"selfcheck: txt_templates=['샘플'] fields=2 artifact_id={artifact_id} "
+        f"tree_sha256={tree} -> OK\n"
+    )
+
+    assert assert_normal_run_identity.parse_identity(line) == {
+        "artifact_id": artifact_id,
+        "tree_sha256": tree,
+    }
+    assert assert_normal_run_identity.compare(
+        {"artifact_id": artifact_id, "tree_sha256": tree},
+        {"artifact_id": artifact_id, "tree_sha256": tree},
+    )["normal_matches_bundled"] is True
+
+
+def test_silence_is_not_a_pass() -> None:
+    """음성 — 값을 못 읽으면 통과가 아니라 실패다.
+
+    창 앱이라 리디렉션을 빠뜨리면 출력이 통째로 사라진다. 그 상태가 조용히 초록이면 이
+    게이트는 아무것도 재지 않으면서 "정상 실행을 확인했다"고 말하게 된다.
+    """
+    for empty in ("", "   \n", "selfcheck: txt_templates=['샘플'] fields=2 -> OK\n"):
+        with pytest.raises(
+            assert_normal_run_identity.NormalRunIdentityError,
+            match="identity 를 말하지 않았습니다",
+        ):
+            assert_normal_run_identity.parse_identity(empty)
+
+
+def test_a_different_artifact_in_the_normal_run_is_named(tmp_path: Path) -> None:
+    """음성 — 정상 국면이 다른 산출물을 해석했으면 무엇이 다른지 이름을 댄다."""
+    with pytest.raises(
+        assert_normal_run_identity.NormalRunIdentityError, match="artifact_id: normal="
+    ):
+        assert_normal_run_identity.compare(
+            {"artifact_id": "a" * 64, "tree_sha256": "b" * 64},
+            {"artifact_id": "c" * 64, "tree_sha256": "b" * 64},
+        )
+    with pytest.raises(
+        assert_normal_run_identity.NormalRunIdentityError, match="tree_sha256: normal="
+    ):
+        assert_normal_run_identity.compare(
+            {"artifact_id": "a" * 64, "tree_sha256": "b" * 64},
+            {"artifact_id": "a" * 64, "tree_sha256": "d" * 64},
+        )
+
+
+def test_two_different_identities_in_one_output_are_refused() -> None:
+    """음성 — 한 출력에 값이 둘이면 어느 실행의 값인지 말할 수 없다.
+
+    앞 시도의 잔재가 남은 파일에 이어 붙는 경우가 실제 형태다. 첫 매치를 조용히 택하면
+    이번 실행이 아닌 값이 대조를 통과한다.
+    """
+    stale = f"artifact_id={'a' * 64} tree_sha256={'b' * 64}\n"
+    fresh = f"artifact_id={'c' * 64} tree_sha256={'d' * 64}\n"
+
+    with pytest.raises(
+        assert_normal_run_identity.NormalRunIdentityError, match="서로 다른 identity"
+    ):
+        assert_normal_run_identity.parse_identity(stale + fresh)
+
+
+def test_normal_run_identity_cli_exit_codes(tmp_path: Path) -> None:
+    identity = ("a" * 64, "b" * 64)
+    output = tmp_path / "selfcheck.txt"
+    output.write_text(
+        f"selfcheck: artifact_id={identity[0]} tree_sha256={identity[1]} -> OK\n",
+        encoding="utf-8",
+    )
+    expected = tmp_path / "artifact-parity.json"
+    expected.write_text(
+        json.dumps({"artifact_id": identity[0], "tree_sha256": identity[1]}),
+        encoding="utf-8",
+    )
+    evidence = tmp_path / "normal.json"
+
+    assert assert_normal_run_identity.main(
+        [
+            "--selfcheck-output", str(output),
+            "--expect-identity", str(expected),
+            "--json-out", str(evidence),
+        ]
+    ) == 0
+    assert json.loads(evidence.read_text(encoding="utf-8"))["normal_run_artifact_id"] == identity[0]
+
+    assert assert_normal_run_identity.main(
+        [
+            "--selfcheck-output", str(tmp_path / "absent.txt"),
+            "--expect-identity", str(expected),
+        ]
+    ) == 2
+
+
+def test_the_inno_compiler_lookup_has_one_owner_and_sees_a_per_user_install() -> None:
+    r"""ISCC 탐색은 한 곳이고, 사용자 범위 설치를 본다(R5-03).
+
+    실측: ``winget install JRSoftware.InnoSetup`` 은 관리자 권한 없이
+    ``%LOCALAPPDATA%\Programs\Inno Setup 6\`` 에 설치하고 PATH 에도 올리지 않는다. 종전
+    탐색(PATH + ``Program Files (x86)``)은 그 기기에서 "도구가 없다"고 말했다 — 있는데 없다고
+    하는 실패는 조용한 스킵만큼 나쁘다. 두 러너가 각자 탐색하면 한쪽만 고쳐지므로 소유자를
+    하나로 둔다.
+    """
+    finder = PACKAGING / "Find-Iscc.ps1"
+    finder_text = finder.read_text(encoding="utf-8-sig")
+    installer = (ROOT / "package-installer.ps1").read_text(encoding="utf-8-sig")
+    build = (PACKAGING / "build.ps1").read_text(encoding="utf-8-sig")
+
+    assert "LOCALAPPDATA" in finder_text, "사용자 범위 설치 경로를 보지 않습니다"
+    assert "ProgramFiles(x86)" in finder_text
+    assert "Get-Command iscc.exe" in finder_text
+    for consumer in (installer, build):
+        assert "Find-Iscc.ps1" in consumer, "ISCC 탐색을 각자 재조립하고 있습니다"
+        assert "Get-Command iscc.exe" not in consumer

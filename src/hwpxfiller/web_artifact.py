@@ -48,6 +48,18 @@ _TEXT_OUTPUT_SUFFIXES = {
     ".map",
     ".mjs",
 }
+#: 출하 가능한 산출물 **구성**의 exact 폐포(R5-03).
+#:
+#: 봉인은 Vite 가 낸 것을 기록하고 그 기록에서의 이탈을 거절한다 — 정체성은 지키지만 **성질은
+#: 안 지킨다**. ``build.sourcemap`` 이 켜지거나 dev/test 자산이 산출물로 새면 봉인은 그것을
+#: 함께 기록하고, 네 사본(source·dist·installed·portable) 전부 같은 값을 들고 초록으로
+#: 출하된다. 그래서 "무엇이 실려도 되는가"를 여기서 따로 닫는다.
+#:
+#: 넓히는 것은 금지가 아니라 **의도된 편집**이다: 새 자산 형식이 정당하면 사유와 함께 이 집합에
+#: 올린다. 자동 감지로 넓히지 않는다 — 그러면 sourcemap 하나가 조용히 출하된다.
+_OUTPUT_EXACT_FILES = frozenset({"index.html", VITE_MANIFEST_PATH})
+_OUTPUT_ASSET_DIR = "assets"
+_OUTPUT_ASSET_SUFFIXES = frozenset({".css", ".js", ".svg", ".woff2"})
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -476,6 +488,29 @@ def _validate_vite_manifest(path: Path) -> None:
         raise WebArtifactViolation(f"Vite manifest is empty: {path}")
 
 
+def _validate_output_composition(records: Sequence[_FileRecord]) -> None:
+    """산출물이 **무엇으로 되어 있는가**를 exact 폐포로 판정한다(R5-03).
+
+    정체성 대조(네 사본이 같은가)는 이 판정을 대신하지 않는다 — 사본이 전부 같은 sourcemap 을
+    들고 있어도 정체성은 참이다. 여기서 거절하는 것은 그 참을 통과하는 성질 위반이다.
+    """
+    offenders = [
+        record.path
+        for record in records
+        if record.path not in _OUTPUT_EXACT_FILES
+        and (
+            PurePosixPath(record.path).parent.as_posix() != _OUTPUT_ASSET_DIR
+            or PurePosixPath(record.path).suffix.lower() not in _OUTPUT_ASSET_SUFFIXES
+        )
+    ]
+    if offenders:
+        raise WebArtifactViolation(
+            "web artifact ships a file outside the shipped-composition closure: "
+            + ", ".join(sorted(offenders))
+            + " (정당한 자산이면 사유와 함께 _OUTPUT_ASSET_SUFFIXES/_OUTPUT_EXACT_FILES 를 넓힙니다)"
+        )
+
+
 def _validate_output_references(
     artifact_root: Path,
     records: Sequence[_FileRecord],
@@ -693,6 +728,7 @@ def _verify_output_tree(artifact_root: Path, seal: _Seal) -> None:
         raise WebArtifactViolation("web artifact byte digest mismatch: " + ", ".join(mutated))
     if _record_digest(actual) != seal.tree_sha256:
         raise WebArtifactViolation("web artifact tree digest mismatch")
+    _validate_output_composition(actual)
     _validate_vite_manifest(manifest_path)
     _validate_output_references(artifact_root, actual)
 
@@ -817,6 +853,7 @@ def seal_repository_web_artifact(
     manifest_path = artifact_root / PurePosixPath(VITE_MANIFEST_PATH)
     if not manifest_path.is_file() or _is_link(manifest_path):
         raise WebArtifactViolation(f"Vite manifest missing: {manifest_path}")
+    _validate_output_composition(output_files)
     _validate_vite_manifest(manifest_path)
     _validate_output_references(artifact_root, output_files)
     vite_manifest = _find_record(

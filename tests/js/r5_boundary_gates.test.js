@@ -10,8 +10,11 @@
  * 결과로 센다. 파서는 이미 핀된 Vite(oxc)를 쓰며 새 lint 의존을 만들지 않는다. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, relative, resolve } from "node:path";
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { dirname as posixDirname, join as posixJoin, normalize as posixNormalize }
   from "node:path/posix";
 import { fileURLToPath } from "node:url";
@@ -530,10 +533,34 @@ function productReachedTestOnly(analysis, testOnlyEntries) {
   return testOnlyEntries.filter((name) => analysis.productReached.has(name)).sort();
 }
 
-function reactRegions(bundle) {
+/* vendor region 수집은 **이름을 열거하지 않는다**. 종전 술어는 `react|react-dom` 정규식이라
+ * 같은 출하 바이트 안의 `scheduler` 2 region 을 아무도 안 봤다(react-dom 의 전이 런타임 —
+ * 우리 source 가 import 하지 않으므로 dependency 축도 못 본다). 「집합 하나를 넓히고 형제를
+ * 안 넓힌다」(#490)의 표본이라, 겨눔을 `node_modules/` 전부로 바꾼다. 계약 목록에 없는
+ * 패키지가 출하에 들어오면 그 자체가 빨강이다. */
+function vendorRegions(bundle) {
   return [...bundle.matchAll(
-    /^\/\/#region (node_modules\/(?:react|react-dom)\/[^\r\n]+)$/gm,
-  )].map((match) => match[1]);
+    /^\/\/#region (node_modules\/[^\r\n]+)$/gm,
+  )].map((match) => match[1]).sort();
+}
+
+/* region 경로에서 패키지 이름을 뽑는다. scope 는 두 성분이 한 이름이라 `@` 를 따로 본다 —
+ * 안 그러면 `@scope` 가 이름이 되어 lock 조회가 영영 빈손이고, 그 침묵이 "설치가 하나다"와
+ * 똑같이 생긴다. */
+function vendorPackageName(region) {
+  const parts = region.split("/");
+  return parts[1].startsWith("@") ? `${parts[1]}/${parts[2]}` : parts[1];
+}
+
+/* 수집 대상도 넓힌다. 종전은 manifest 의 `isEntry` 청크 **하나**만 읽었다 — entry 수가 1 임은
+ * 단언돼 있지만, 비-entry JS 청크(동적 import 가 만드는 것)는 그 단언을 깨지 않은 채 vendor
+ * 코드를 실어 나를 수 있다. sealed 트리의 `.js` 전부를 모집단으로 삼으면 그 자리가 닫힌다. */
+function sealedVendorRegions(root) {
+  return walkFiles(root)
+    .filter((path) => path.endsWith(".js"))
+    .sort()
+    .flatMap((path) => vendorRegions(readFileSync(path, "utf8")))
+    .sort();
 }
 
 function dependencyFindings(bare, pkg, lock, devOwners) {
@@ -704,12 +731,62 @@ test("검출력 — 재귀·export-list 고립 표면은 dead이고 barrel 소�
   );
 });
 
-test("검출력 — React bundle region의 중복·누락이 exact cardinality를 깨뜨린다", () => {
-  const expected = CLOSURE.react_bundle_regions;
+test("검출력 — vendor bundle region의 중복·누락·미열거·development 유입을 exact multiset이 문다", () => {
+  const expected = [...CLOSURE.vendor_bundle_regions].sort();
   const clean = expected.map((name) => `//#region ${name}`).join("\n");
-  assert.deepEqual(reactRegions(clean), expected);
-  assert.notDeepEqual(reactRegions(`${clean}\n//#region ${expected[0]}`), expected);
-  assert.notDeepEqual(reactRegions(expected.slice(1).map((name) => `//#region ${name}`).join("\n")), expected);
+  assert.deepEqual(vendorRegions(clean), expected);
+  assert.notDeepEqual(vendorRegions(`${clean}\n//#region ${expected[0]}`), expected);
+  assert.notDeepEqual(
+    vendorRegions(expected.slice(1).map((name) => `//#region ${name}`).join("\n")),
+    expected,
+  );
+  // 이름 열거였다면 통과했을 둘. development 빌드 유입은 production region 을 그대로 둔 채
+  // **더해지는** 형태라 "누락" 술어로는 안 잡힌다.
+  assert.notDeepEqual(
+    vendorRegions(`${clean}\n//#region node_modules/react-dom/cjs/react-dom.development.js`),
+    expected,
+  );
+  assert.notDeepEqual(
+    vendorRegions(`${clean}\n//#region node_modules/some-other-lib/index.js`),
+    expected,
+  );
+});
+
+test("검출력 — vendor 패키지 이름은 scope 두 성분을 한 이름으로 읽는다", () => {
+  assert.equal(vendorPackageName("node_modules/react/index.js"), "react");
+  assert.equal(vendorPackageName("node_modules/react-dom/cjs/react-dom.production.js"), "react-dom");
+  assert.equal(vendorPackageName("node_modules/@scope/pkg/index.js"), "@scope/pkg");
+});
+
+test("검출력 — vendor region은 entry가 아닌 청크에 숨어도 수집된다", () => {
+  // 합성 트리를 **실제로 걸어** 수집한다. 「entry 하나만 읽는다」는 결함은 문자열 술어가
+  // 아니라 수집 범위의 문제라, 범위를 바꾼 함수를 그대로 돌려야 반증이 성립한다.
+  const root = mkdtempSync(join(tmpdir(), "r5-vendor-"));
+  try {
+    mkdirSync(resolve(root, "assets"), { recursive: true });
+    writeFileSync(
+      resolve(root, "assets/entry.js"),
+      "//#region node_modules/react/index.js\n",
+      "utf8",
+    );
+    writeFileSync(
+      resolve(root, "assets/lazy-chunk.js"),
+      "//#region node_modules/scheduler/index.js\n",
+      "utf8",
+    );
+    // 코드가 아닌 형식은 모집단 밖이다 — 넣어 두고 안 잡히는지 함께 본다.
+    writeFileSync(
+      resolve(root, "assets/style.css"),
+      "/*#region node_modules/not-code/index.js*/\n",
+      "utf8",
+    );
+    assert.deepEqual(sealedVendorRegions(root), [
+      "node_modules/react/index.js",
+      "node_modules/scheduler/index.js",
+    ], "entry 하나만 읽으면 lazy 청크의 vendor 코드가 무증상으로 출하됩니다.");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("검출력 — 미사용 runtime dependency와 중첩 React 설치를 함께 신고한다", () => {
@@ -784,16 +861,36 @@ test("실 dependency/lock — runtime 선언은 전부 사용되고 React 설치
     `ReactDOM 설치 위치가 하나가 아닙니다: ${findings.reactDomLocations}`);
 });
 
-test("실 sealed bundle — React/ReactDOM runtime module region이 각각 exact-once다", () => {
-  const manifestPath = resolve(REPO, "build/web/.vite/manifest.json");
+test("실 sealed bundle — 출하 vendor module region 전수가 계약과 exact multiset이다", () => {
+  const root = resolve(REPO, "build/web");
+  const manifestPath = resolve(root, ".vite/manifest.json");
   assert.ok(existsSync(manifestPath), "sealed bundle manifest가 없습니다 — 먼저 canonical web build를 실행하세요.");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const entries = Object.values(manifest).filter((item) => item.isEntry === true);
   assert.equal(entries.length, 1, "출하 bundle entry가 정확히 하나가 아닙니다.");
-  const bundle = readFileSync(resolve(REPO, "build/web", entries[0].file), "utf8");
+
+  const expected = [...CLOSURE.vendor_bundle_regions].sort();
+  assert.ok(expected.length > 0, "vendor 계약이 비면 대조가 공허합니다.");
   assert.deepEqual(
-    reactRegions(bundle),
-    CLOSURE.react_bundle_regions,
-    "sealed bundle의 React runtime module cardinality가 어긋났습니다.",
+    sealedVendorRegions(root),
+    expected,
+    "sealed bundle의 vendor runtime module cardinality가 계약과 어긋났습니다.",
   );
+});
+
+test("실 sealed bundle — vendor 계약의 패키지 이름이 lock의 설치 위치와 1:1이다", () => {
+  // 계약 목록(무엇이 실렸는가)과 lock(무엇이 설치됐는가)을 **한자리에서** 잇는다. 이름이
+  // 계약에만 있으면 유령이고, 설치가 둘 이상이면 중첩 사본이 출하에 들어올 길이 열린다.
+  const lock = JSON.parse(readFileSync(resolve(REPO, "package-lock.json"), "utf8"));
+  const names = [...new Set(
+    CLOSURE.vendor_bundle_regions.map((region) => vendorPackageName(region)),
+  )].sort();
+  assert.ok(names.length > 0);
+  for (const name of names) {
+    const locations = Object.keys(lock.packages).filter(
+      (path) => path === `node_modules/${name}` || path.endsWith(`/node_modules/${name}`),
+    );
+    assert.deepEqual(locations, [`node_modules/${name}`],
+      `${name}: 출하 vendor의 설치 위치가 정확히 하나가 아닙니다 — ${locations}`);
+  }
 });

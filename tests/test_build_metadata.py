@@ -167,3 +167,81 @@ def test_cli_build_path_states_absence_with_a_reason() -> None:
     assert "'--no-web', 'cli-only build" in build
     assert "'--require-web'" in build
     assert build.index("if ($Target -eq 'cli')") < build.index("'--no-web'")
+
+
+def test_metadata_names_the_runtime_it_shipped_not_only_the_tools(tmp_path: Path) -> None:
+    """빌드 도구가 아니라 **출하 런타임**을 이름으로 말하는가(R5-03).
+
+    ``toolchain`` 은 node·npm·vite — 만든 도구다. R5 이후 제품 UI 런타임은 React 이고,
+    그것을 이름으로 말하지 않으면 "무엇을 실었는지 말할 수 있어야 한다"가 반만 참이다
+    (해시 ``package_lock_sha256`` 는 결속하지만 이름을 말하지 않는다).
+
+    이름은 계약 파일이 아니라 **산출물에서 유도**돼야 한다 — 그래서 여기서도 lock 과 정적
+    폐포 계약 양쪽에 대조해, 셋이 어긋나면 어느 쪽이 낡았든 빨강이 되게 한다.
+    """
+    metadata = _generate(tmp_path / "version", "--require-web")
+    shipped = metadata["web"]["runtime_packages"]
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    contract = json.loads(
+        (ROOT / "tests" / "static_closure_contract.json").read_text(encoding="utf-8")
+    )
+    generator = _generator()
+    expected_names = sorted(
+        {
+            generator._vendor_package_name(region.split("node_modules/", 1)[1])
+            for region in contract["module_closure"]["vendor_bundle_regions"]
+        }
+    )
+
+    assert sorted(shipped) == expected_names, (
+        "메타데이터가 보고한 출하 런타임과 정적 폐포 계약이 다릅니다 — 둘 다 산출물에서 "
+        "유도되므로 어긋났다면 한쪽이 실물을 앞질렀습니다."
+    )
+    assert "react" in shipped, "React 가 제품 UI 런타임이라는 사실이 서술 자산에 없습니다."
+    for name, version in shipped.items():
+        assert lock["packages"][f"node_modules/{name}"]["version"] == version
+
+
+def test_a_shipped_runtime_package_missing_from_the_lock_is_loud(tmp_path: Path) -> None:
+    """음성 대조 — lock 에 없는 이름이 출하 바이트에 있으면 조용히 넘기지 않는다."""
+    generator = _generator()
+    artifact_root = tmp_path / "sealed-output"
+    (artifact_root / "assets").mkdir(parents=True)
+    (artifact_root / "assets" / "index.js").write_text(
+        "//#region node_modules/ghost-lib/index.js\n", encoding="utf-8"
+    )
+
+    with pytest.raises(SystemExit, match="lock 항목을 찾지 못했습니다: ghost-lib"):
+        generator._shipped_runtime_packages(ROOT, artifact_root)
+
+
+def test_a_bundle_without_any_runtime_boundary_is_loud(tmp_path: Path) -> None:
+    """음성 대조 — 경계 주석이 사라지면(minify 유입 등) 빈 보고 대신 빨강이다.
+
+    빈 dict 를 실어 보내면 "런타임을 안 실었다"와 "경계를 못 읽었다"가 같은 모양이 된다.
+    """
+    generator = _generator()
+    artifact_root = tmp_path / "sealed-output"
+    (artifact_root / "assets").mkdir(parents=True)
+    (artifact_root / "assets" / "index.js").write_text("const a=1;\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="런타임 패키지 경계를 하나도 찾지 못했습니다"):
+        generator._shipped_runtime_packages(ROOT, artifact_root)
+
+
+def test_runtime_packages_are_collected_from_every_shipped_chunk(tmp_path: Path) -> None:
+    """entry 하나만 읽으면 lazy 청크의 런타임이 보고에서 사라진다."""
+    generator = _generator()
+    artifact_root = tmp_path / "sealed-output"
+    (artifact_root / "assets").mkdir(parents=True)
+    (artifact_root / "assets" / "index.js").write_text(
+        "//#region node_modules/react/index.js\n", encoding="utf-8"
+    )
+    (artifact_root / "assets" / "lazy.js").write_text(
+        "//#region node_modules/scheduler/index.js\n", encoding="utf-8"
+    )
+
+    assert sorted(generator._shipped_runtime_packages(ROOT, artifact_root)) == [
+        "react",
+        "scheduler",
+    ]

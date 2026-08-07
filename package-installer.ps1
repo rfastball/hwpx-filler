@@ -16,12 +16,7 @@ if (-not $SkipExe) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-$iscc = Get-Command iscc.exe -CommandType Application -ErrorAction SilentlyContinue
-$isccPath = if ($iscc) { $iscc.Source } else { $null }
-if (-not $isccPath) {
-    $candidate = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-    if (Test-Path $candidate) { $isccPath = $candidate }
-}
+$isccPath = & (Join-Path $root 'packaging\Find-Iscc.ps1')
 if (-not $isccPath) {
     Write-Error 'Inno Setup 6 ISCC.exe를 찾지 못했습니다.'
     exit 1

@@ -313,6 +313,94 @@ def test_extra_stale_output_is_loud(sealed_repo: ArtifactRepo) -> None:
         resolve_web_artifact(repo_root=sealed_repo.root)
 
 
+def test_producer_refuses_a_sourcemap_in_the_shipped_tree(
+    unsealed_repo: ArtifactRepo,
+) -> None:
+    """봉인 **생산**이 먼저 거절한다 — 사본 넷이 같은 sourcemap 을 들면 정체성은 참이다.
+
+    이 결함류는 `build.sourcemap` 한 줄이 만든다. 정체성 축은 그것을 통과시키므로(네 사본이
+    똑같이 실어 나른다) 성질을 재는 술어가 따로 서지 않으면 조용히 출하된다(L12).
+    """
+    (unsealed_repo.artifact_root / "assets" / "main.js.map").write_text(
+        '{"version":3,"sources":["../frontend/src/main.js"]}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"shipped-composition closure: assets/main\.js\.map",
+    ):
+        seal_repository_web_artifact(unsealed_repo.root)
+
+
+def test_resolver_refuses_a_dev_asset_that_was_sealed_with_the_tree(
+    sealed_repo: ArtifactRepo,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """소비 쪽도 같은 술어를 진다 — 생산자만 물면 이미 봉인된 트리는 영영 통과한다.
+
+    봉인 기록째 위반을 담은 상태(다른 생산자·낡은 봉인)를 재현하려고 파일을 더한 뒤 **다시**
+    봉인한다. 생산 술어를 잠시 걷어 그 상태를 만든 다음, 소비 경로가 혼자서도 거절하는지 본다.
+    """
+    intruder = sealed_repo.artifact_root / "assets" / "main.ts"
+    intruder.write_text("export const boot = () => 'ready';\n", encoding="utf-8")
+    with monkeypatch.context() as sealing:
+        sealing.setattr(web_artifact, "_validate_output_composition", lambda _records: None)
+        seal_repository_web_artifact(sealed_repo.root)
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"shipped-composition closure: assets/main\.ts",
+    ):
+        resolve_web_artifact(repo_root=sealed_repo.root)
+
+
+def test_frozen_resolver_refuses_the_same_composition_violation(
+    sealed_repo: ArtifactRepo,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """frozen 사본도 같은 술어를 진다 — 정체성만 대조하면 실린 것을 못 묻는다."""
+    intruder = sealed_repo.artifact_root / "assets" / "vite.config.mjs"
+    intruder.write_text("export default {};\n", encoding="utf-8")
+    with monkeypatch.context() as sealing:
+        sealing.setattr(web_artifact, "_validate_output_composition", lambda _records: None)
+        seal_repository_web_artifact(sealed_repo.root)
+        frozen_root = _frozen_root(sealed_repo, tmp_path)
+
+    with pytest.raises(
+        WebArtifactViolation,
+        match=r"shipped-composition closure: assets/vite\.config\.mjs",
+    ):
+        resolve_web_artifact(frozen_root=frozen_root)
+
+
+def test_composition_closure_accepts_exactly_todays_shipped_kinds() -> None:
+    """음성 대조 — 정당한 산출물을 거절하지 않는가.
+
+    양성만 세우면 "전부 거절"도 초록이다. 오늘 실제로 출하되는 형식 넷과 루트 파일 둘을
+    직접 통과시켜, 이 폐포가 무엇을 **허용**하는지도 결과로 남긴다.
+    """
+    shipped = (
+        "index.html",
+        VITE_MANIFEST_PATH,
+        "assets/index-DMG.js",
+        "assets/style-30Od.css",
+        "assets/narmi-mark.svg",
+        "assets/PretendardGOVVariable.woff2",
+    )
+    records = tuple(
+        web_artifact._FileRecord(path=path, size=1, sha256="0" * 64) for path in shipped
+    )
+    web_artifact._validate_output_composition(records)
+
+    for offender in ("assets/main.js.map", "assets/deep/nested.js", "package.json"):
+        with pytest.raises(WebArtifactViolation, match="shipped-composition closure"):
+            web_artifact._validate_output_composition(
+                (*records, web_artifact._FileRecord(path=offender, size=1, sha256="0" * 64))
+            )
+
+
 def test_one_byte_output_mutation_is_loud(sealed_repo: ArtifactRepo) -> None:
     before = sealed_repo.entry_path.read_bytes()
     after = bytearray(before)

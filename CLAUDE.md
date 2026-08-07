@@ -51,7 +51,11 @@ CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `se
 본다 — 어느 쪽도 `packaging/` 은 안 보므로 spec·엔트리·빌드 스크립트를 고쳤으면
 `uv run ruff check packaging` 을 따로 돌린다. 릴리스는 `pyproject.toml` 버전과 같은 `vX.Y.Z`
 태그 push 로만 나가고, 네 사본(source·dist·installed·portable)의 web artifact identity 대조와
-`build-metadata.json` 의 프런트 identity 기재가 그 출하의 증거다(`docs/DEVELOPMENT_ENVIRONMENT.md` §5).
+`build-metadata.json` 의 프런트 identity·출하 런타임 기재가 그 출하의 증거다
+(`docs/DEVELOPMENT_ENVIRONMENT.md` §5). 대조 판정은 `scripts/reconcile_shipped_copies.py` 하나가
+지고 호출자가 `--expect` 로 사본 집합을 **선언**한다 — 매 병합 패키징 게이트는 셋
+(source·dist·portable), 릴리스 태그는 넷. 설치본 사본은 `packaging\build.ps1 -IncludeInstaller`
+로 로컬에서 재현한다.
 
 ## 아키텍처 — 3링 경계
 
