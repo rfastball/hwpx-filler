@@ -11,17 +11,19 @@ git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
 [digests]
 base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
 graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
-effect_facts = "b7125c2a0f94d608c8f4735feae5a325d14314d63981f414e7d172575ba14a04"
+effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
 
 [counts]
 modules = 85
 symbols = 1707
-effect_facts_confirmed = 137
+effect_facts_confirmed = 138
 effect_facts_inferred_fs = 94
 pure_records = 2641
-composes_edges = 239
+# composes 기준: 생성 대상 클래스 자신 또는 폐포 내 MRO 조상이 효과 사실을
+# 보유할 때만(모듈 동거 아님 — #527 P1). 순수 값·오류 클래스는 제외된다.
+composes_edges = 25
 effect_modules = 31
-local_import_closed = 16
+local_import_closed = 17
 local_import_open = 0
 dual_assembly_rows = 21
 uncovered_external_contacts = 0
@@ -29,7 +31,7 @@ uncovered_local_import_calls = 0
 
 [effect_by_class]
 "archive" = 2
-"clock" = 19
+"clock" = 20
 "entropy" = 4
 "env" = 16
 "excel" = 3
@@ -43,9 +45,9 @@ uncovered_local_import_calls = 0
 "stdio" = 52
 
 [effect_by_relation]
-"composes" = 239
+"composes" = 25
 "invokes_external" = 28
-"reads_external" = 120
+"reads_external" = 121
 "writes_external" = 83
 
 # 명시 순수 제외 — '파일을 다룬다' ≠ 효과 판정의 감사 기록.
@@ -182,7 +184,7 @@ consumers = [
 
 [[effect_module]]
 module = "hwpxfiller.core.fill_ledger"
-reads = 0
+reads = 1
 writes = 0
 invokes = 0
 inferred_fs = 1
@@ -721,6 +723,15 @@ verdict = "invokes_external"
 file = "src/hwpxfiller/cli.py"
 line = 160
 anchor = "c8-62:subprocess.run(cmd, input=text, text=True, check=True)"
+
+[[local_import]]
+src = "hwpxfiller.core.fill_ledger:export_batch_ledger#function"
+marker = "?:local:datetime.now"
+resolved = "ext:datetime.datetime.now"
+verdict = "reads_external"
+file = "src/hwpxfiller/core/fill_ledger.py"
+line = 441
+anchor = "c23-37:datetime.now()"
 
 [[local_import]]
 src = "hwpxfiller.core.job:_RegistryWriteState._claim_windows_mutex#method"

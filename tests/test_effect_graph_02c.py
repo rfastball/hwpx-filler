@@ -208,6 +208,72 @@ def test_local_import_call_closes_only_on_unique_binding(tmp_path: Path) -> None
     assert uncovered_local_import_calls(repo, result) == []
 
 
+def test_local_from_import_call_closes_with_module_and_name(tmp_path: Path) -> None:
+    """지역 ``from … import`` 도 (모듈, 이름) 결속을 보존해 경유 호출을 닫는다(#527 P1).
+
+    포괄 "from" 표기는 clock 효과(``datetime.now``)를 원장에서 조용히 뺐다 — 실물은
+    fill_ledger 의 sidecar 타임스탬프 좌표였다. 재결속 자리는 여전히 열린 행이다.
+    """
+    repo = _mini_repo(
+        tmp_path,
+        {
+            "src/alpha/__init__.py": "",
+            "src/alpha/mod.py": """
+                def stamp():
+                    from datetime import datetime
+
+                    return datetime.now().isoformat()
+
+                def rebound(fake):
+                    from datetime import datetime
+
+                    datetime = fake
+                    return datetime.now()
+            """,
+        },
+    )
+    result = build(repo)
+    closed = [s for s in result.local_sites if s.verdict != "open"]
+    opened = [s for s in result.local_sites if s.verdict == "open"]
+    assert [s.resolved for s in closed] == ["ext:datetime.datetime.now"]
+    assert any(
+        f.rel == "reads_external"
+        and f.dst == "ext:datetime.datetime.now"
+        and f.grade == "STATIC_CONFIRMED"
+        and f.provenance.rule == "local_effect_clock"
+        for f in result.effect_facts
+    )
+    assert len(opened) == 1
+    assert not any(
+        f.dst == "ext:datetime.datetime.now" and f.evidence.line == opened[0].line
+        for f in result.effect_facts
+    )
+    assert uncovered_local_import_calls(repo, result) == []
+
+
+def test_local_import_oracle_denominator_includes_from_form(tmp_path: Path) -> None:
+    """폐쇄 오러클의 분모가 from-형을 본다 — 같은 사각이 재발하면 게이트가 빨갛다."""
+    repo = _mini_repo(
+        tmp_path,
+        {
+            "src/alpha/__init__.py": "",
+            "src/alpha/mod.py": """
+                def stamp():
+                    from datetime import datetime
+
+                    return datetime.now()
+            """,
+        },
+    )
+    result = build(repo)
+    assert uncovered_local_import_calls(repo, result) == []
+    import dataclasses
+
+    hollowed = dataclasses.replace(result, local_sites=())
+    problems = uncovered_local_import_calls(repo, hollowed)
+    assert problems and any("datetime" in problem for problem in problems)
+
+
 def test_receiver_unknown_path_methods_stay_inferred_not_fact(tmp_path: Path) -> None:
     """수신자 미상 Path 판별 메서드는 INFERRED 로만 적는다 — str 과 겹치는 이름은 침묵."""
     repo = _mini_repo(
@@ -268,6 +334,70 @@ def test_composes_marks_only_effect_bearing_concrete_classes(tmp_path: Path) -> 
     assert "alpha.store:DiskStore#class" in composed
     assert "alpha.model:Row#class" not in composed  # 효과 없는 모듈의 클래스는 조립 증거 밖
     assert all(f.rel == "composes" for f in result.composes_facts)
+
+
+def test_composes_is_class_scoped_not_module_scoped(tmp_path: Path) -> None:
+    """composes 는 효과 보유 **클래스**에만 선다(#527 P1) — 같은 모듈의 순수 값/오류
+    클래스(BatchResult·LedgerRow 류)가 모듈 동거만으로 승격되지 않는다."""
+    repo = _mini_repo(
+        tmp_path,
+        {
+            "src/alpha/__init__.py": "",
+            "src/alpha/store.py": """
+                class DiskStore:
+                    def load(self, path):
+                        return open(path).read()
+
+                class Receipt:
+                    def label(self):
+                        return "receipt"
+
+                class LedgerError(Exception):
+                    pass
+            """,
+            "src/alpha/app.py": """
+                from alpha.store import DiskStore, LedgerError, Receipt
+
+                def wire():
+                    DiskStore()
+                    Receipt()
+                    return LedgerError("x")
+            """,
+        },
+    )
+    result = build(repo)
+    composed = {f.dst for f in result.composes_facts}
+    assert "alpha.store:DiskStore#class" in composed  # 양성 — 효과 보유 클래스는 여전히
+    assert "alpha.store:Receipt#class" not in composed  # 음성 — 순수 동거 클래스
+    assert "alpha.store:LedgerError#class" not in composed  # 음성 — 오류 값 클래스
+
+
+def test_composes_follows_inherited_effectful_methods_through_mro(tmp_path: Path) -> None:
+    """기준 명기: 클래스 자신 **또는 폐포 내 MRO 조상**이 효과를 보유하면 composes 다 —
+    효과 메서드를 상속만 하는 concrete 하위 store 도 조립 증거에서 빠지지 않는다."""
+    repo = _mini_repo(
+        tmp_path,
+        {
+            "src/alpha/__init__.py": "",
+            "src/alpha/store.py": """
+                class DiskStore:
+                    def load(self, path):
+                        return open(path).read()
+
+                class CachedStore(DiskStore):
+                    pass
+            """,
+            "src/alpha/app.py": """
+                from alpha.store import CachedStore
+
+                def wire():
+                    return CachedStore()
+            """,
+        },
+    )
+    result = build(repo)
+    composed = {f.dst for f in result.composes_facts}
+    assert "alpha.store:CachedStore#class" in composed
 
 
 def test_native_direct_call_mutation_flips_module_into_effect_profile(
@@ -404,8 +534,12 @@ def test_real_graph_ledger_and_02a_pins_match_exactly() -> None:
     assert counts["local_import_closed"] >= 10
     assert counts["effect_facts_confirmed"] >= 100
     assert counts["effect_facts_inferred_fs"] >= 50
-    assert counts["composes_edges"] >= 100
+    assert counts["composes_edges"] >= 20
     assert counts["effect_modules"] >= 20
+    # #527 P1 실물 회귀 핀 — 지역 from-import 의 clock 효과가 다시 빠지면 여기서 빨갛다.
+    assert any(
+        site.resolved == "ext:datetime.datetime.now" for site in result.local_sites
+    )
 
     by_class = document["effect_by_class"]
     for required in (

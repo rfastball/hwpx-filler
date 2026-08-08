@@ -389,13 +389,16 @@ def build(repo_root: Path) -> EffectGraphResult:
 
     effect_facts = tuple(sorted(set(effect), key=Fact.sort_key))
 
-    # ---- ④ composes: 효과를 품은 모듈의 concrete 클래스 조립 자리 -----------
-    effectful_modules = {parse_symbol_id(f.src)[0] for f in effect_facts}
+    # ---- ④ composes: 효과 보유 **클래스**의 조립 자리 -----------------------
+    # 기준(#527 P1): 모듈 동거가 아니라 클래스다 — 그 클래스 자신(본문·메서드·메서드 내부
+    # 함수) 또는 폐포 내 MRO 조상이 효과 사실을 보유할 때만 concrete 조립 증거다.
+    # 순수 값·오류 클래스는 효과 모듈에 살아도 composes 가 아니다.
+    effectful_classes = _effect_bearing_classes(static, effect_facts)
     composes: list[Fact] = []
     for f in graph_facts:
         if f.rel != "constructs" or not is_symbol_ref(f.dst):
             continue
-        if parse_symbol_id(f.dst)[0] not in effectful_modules:
+        if f.dst not in effectful_classes:
             continue
         composes.append(
             Fact(
@@ -423,6 +426,47 @@ def build(repo_root: Path) -> EffectGraphResult:
     )
 
 
+def _effect_bearing_classes(
+    static: StaticGraphResult, effect_facts: "tuple[Fact, ...]"
+) -> "set[str]":
+    """효과 사실을 보유한 클래스 SID 집합 — composes 판정의 단위(#527 P1).
+
+    직접 보유: 효과 사실의 src 가 그 클래스 자신이거나, qualname 이 그 클래스 안에 사는
+    심볼(메서드·메서드 내부 함수)이다 — 최장 클래스 접두로 **가장 안쪽** 소유 클래스에
+    귀속한다(바깥 클래스는 내부 클래스의 효과로 승격되지 않는다). 상속 보유: 폐포 내
+    MRO 조상이 직접 보유하면 하위 concrete 도 효과 보유다 — 효과 메서드를 상속만 하는
+    store 하위 클래스가 조립 증거에서 빠지지 않게 한다. 모듈 본문의 효과는 어느 클래스
+    소유도 아니다.
+    """
+    class_ids: dict[tuple[str, str], str] = {}
+    quals_by_module: dict[str, list[str]] = {}
+    for symbol in static.symbols:
+        if symbol.kind == "class":
+            class_ids[(symbol.module, symbol.qualname)] = symbol.id
+            quals_by_module.setdefault(symbol.module, []).append(symbol.qualname)
+    direct: set[str] = set()
+    for f in effect_facts:
+        module, qualname, kind = parse_symbol_id(f.src)
+        if kind == "class":
+            direct.add(f.src)
+            continue
+        if not qualname:
+            continue  # 모듈 본문 효과 — 클래스 소유가 아니다
+        owner = ""
+        for cls_qual in quals_by_module.get(module, ()):
+            if qualname.startswith(cls_qual + ".") and len(cls_qual) > len(owner):
+                owner = cls_qual
+        if owner:
+            direct.add(class_ids[(module, owner)])
+    out = set(direct)
+    for sid, chain in static.mro_map.items():
+        if sid in out:
+            continue
+        if any(ancestor in direct for ancestor in chain[1:] if is_symbol_ref(ancestor)):
+            out.add(sid)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 함수-지역 import 폐쇄
 # ---------------------------------------------------------------------------
@@ -431,12 +475,19 @@ def build(repo_root: Path) -> EffectGraphResult:
 def _local_import_candidates(
     repo_root: Path, closure: Closure
 ) -> "dict[tuple[str, int, str], tuple[str, str, bool]]":
-    """지역 plain ``import X`` 가 root 인 attribute 호출 좌표의 독립 전수.
+    """지역 ``import X`` **또는** ``from M import N`` 결속이 root 인 attribute 호출 좌표의
+    독립 전수.
 
-    반환: (file, line, anchor) → (모듈 dotted, 호출 tail, 유일 바인딩 여부).
+    반환: (file, line, anchor) → (외부 대상 dotted, 호출 tail, 유일 바인딩 여부).
+    plain import 는 대상이 모듈(``X``), from-import 는 (모듈, 이름) 결속을 보존한
+    ``M.N`` 이다 — 포괄 "from" 표기는 clock 효과를 원장에서 조용히 뺐다(#527 P1).
     유일성은 어휘 스코프 사슬로 판정한다 — 호출 지점에서 안쪽부터 그 이름을 묶는 첫
-    스코프를 찾고, 그 스코프에서 결속이 해당 import 하나뿐일 때만 참이다. 모듈 스코프에
-    닿으면 후보가 아니다(그건 기반 수집기가 이미 해석한다).
+    스코프를 찾고, 그 스코프에서 결속이 해당 import 하나뿐이며 별(star) import 가 그
+    스코프를 오염시키지 않을 때만 참이다. 모듈 스코프에 닿으면 후보가 아니다(그건 기반
+    수집기가 이미 해석한다). 폐포 내부 모듈로 가는 from-import 는 대상 없는 결속으로만
+    세어 유일성 거부권을 지키되 닫지 않는다(02B 데이터플로 소유). 직접 이름 호출
+    (``urlopen(u)`` 형)은 이 후보 정의역 밖이다 — 폐포 실측 0건이고, 나타나면 02A
+    미해결 원장의 followup 귀속으로 남는다(침묵이 아니다).
     """
     closure_modules = {mf.module for mf in closure.modules}
     out: dict[tuple[str, int, str], tuple[str, str, bool]] = {}
@@ -444,7 +495,11 @@ def _local_import_candidates(
     for mf in closure.modules:
         tree = ast.parse((repo_root / mf.path).read_text(encoding="utf-8"), filename=mf.path)
 
-        def bindings_of(fn: "ast.FunctionDef | ast.AsyncFunctionDef") -> "dict[str, list[str]]":
+        def bindings_of(
+            fn: "ast.FunctionDef | ast.AsyncFunctionDef",
+            module_name: str = mf.module,
+            module_path: str = mf.path,
+        ) -> "dict[str, list[str]]":
             """이 함수 스코프의 이름 → 결속 종류 목록. 중첩 def/class 내부는 내려가지 않는다.
 
             안쪽 스코프는 별도의 결속 표를 갖고 스택에 얹힌다 — 여기서 함께 세면
@@ -467,9 +522,19 @@ def _local_import_candidates(
                             target = alias.name if alias.asname else alias.name.split(".", 1)[0]
                             found.setdefault(bound, []).append(f"import:{target}")
                     elif isinstance(stmt, ast.ImportFrom):
+                        base = _from_import_base(stmt, module_name, module_path)
                         for alias in stmt.names:
-                            if alias.name != "*":
-                                found.setdefault(alias.asname or alias.name, []).append("from")
+                            if alias.name == "*":
+                                # 별 import 는 어떤 이름이든 묶을 수 있다 — 스코프 오염 표식.
+                                found.setdefault("__star__", []).append("star")
+                                continue
+                            bound = alias.asname or alias.name
+                            full = f"{base}.{alias.name}" if base else alias.name
+                            if not base or base in closure_modules or full in closure_modules:
+                                # 폐포 내부(또는 기저 미상) — 유일성 거부권만, 폐쇄 대상 아님.
+                                found.setdefault(bound, []).append("from")
+                            else:
+                                found.setdefault(bound, []).append(f"from:{full}")
                     elif isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
                         targets = (
                             stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
@@ -536,11 +601,21 @@ def _local_import_candidates(
                         for scope in reversed(scope_stack):
                             kinds = scope.get(root)
                             if kinds is None:
+                                if "__star__" in scope:
+                                    break  # 별 import 가 이름을 묶었을 수 있다 — 불투명
                                 continue
-                            imports = [k for k in kinds if k.startswith("import:")]
-                            unique = len(kinds) == 1 and len(imports) == 1
-                            if imports:
-                                target = imports[0].removeprefix("import:")
+                            targets = [
+                                k.split(":", 1)[1]
+                                for k in kinds
+                                if k.startswith(("import:", "from:"))
+                            ]
+                            unique = (
+                                len(kinds) == 1
+                                and len(targets) == 1
+                                and "__star__" not in scope
+                            )
+                            if targets:
+                                target = targets[0]
                                 if target not in closure_modules:
                                     key = (
                                         module_path,
@@ -553,6 +628,18 @@ def _local_import_candidates(
 
         descend(tree, [])
     return out
+
+
+def _from_import_base(node: ast.ImportFrom, module_name: str, module_path: str) -> str:
+    """상대 from-import 의 기저 모듈 해석 — 기반 수집기의 ``_from_base`` 와 같은 규칙."""
+    if node.level == 0:
+        return node.module or ""
+    parts = module_name.split(".")
+    if not module_path.endswith("__init__.py"):
+        parts = parts[:-1]
+    if node.level > 1:
+        parts = parts[: len(parts) - (node.level - 1)]
+    return ".".join(parts + ([node.module] if node.module else []))
 
 
 def _names_in_target(target: ast.expr) -> "set[str]":
@@ -585,7 +672,7 @@ def _blocks(node: ast.stmt) -> "list[list[ast.stmt]]":
 def _close_local_import_calls(
     repo_root: Path, static: StaticGraphResult
 ) -> tuple[LocalImportSite, ...]:
-    """``?:local:`` 마커 중 지역 plain import 경유 호출을 닫거나 열린 행으로 남긴다."""
+    """``?:local:`` 마커 중 지역 import(plain·from) 경유 호출을 닫거나 열린 행으로 남긴다."""
     candidates = _local_import_candidates(repo_root, static.closure)
     sites: list[LocalImportSite] = []
     for f in static.base_facts:
@@ -595,7 +682,7 @@ def _close_local_import_calls(
         candidate = candidates.get(key)
         if candidate is None:
             continue
-        module, tail, unique = candidate
+        target, tail, unique = candidate
         if not unique:
             sites.append(
                 LocalImportSite(
@@ -604,11 +691,11 @@ def _close_local_import_calls(
                 )
             )
             continue
-        resolved = f"ext:{module}.{tail}"
-        spec = classify_external(f"{module}.{tail}")
+        resolved = f"ext:{target}.{tail}"
+        spec = classify_external(f"{target}.{tail}")
         if spec is None:
             raise FactGraphError(
-                f"미등록 외부 이름: {module}.{tail} ({f.evidence.file}:{f.evidence.line}) — "
+                f"미등록 외부 이름: {target}.{tail} ({f.evidence.file}:{f.evidence.line}) — "
                 "CLASSIFICATION 에 효과 또는 명시 순수로 등록하라(조용한 세 번째 바구니 금지)"
             )
         kind, relation, label = spec
@@ -818,6 +905,8 @@ def render(repo_root: Path, *, _baseline_checked: bool = False) -> str:
     parts.append(f"effect_facts_confirmed = {len(confirmed)}\n")
     parts.append(f"effect_facts_inferred_fs = {len(inferred)}\n")
     parts.append(f"pure_records = {len(result.pure_records)}\n")
+    parts.append("# composes 기준: 생성 대상 클래스 자신 또는 폐포 내 MRO 조상이 효과 사실을\n")
+    parts.append("# 보유할 때만(모듈 동거 아님 — #527 P1). 순수 값·오류 클래스는 제외된다.\n")
     parts.append(f"composes_edges = {len(result.composes_facts)}\n")
     parts.append(f"effect_modules = {len(profiles)}\n")
     parts.append(f"local_import_closed = {len(local_closed)}\n")
