@@ -450,19 +450,27 @@ def test_release_reconciles_the_web_artifact_across_every_shipped_copy() -> None
 
     사본마다 따로 통과시키는 것으로는 "어느 하나만 다른" 경우가 드러나지 않는다. 그래서
     네 identity 를 모으는 단계가 있는지, 그리고 그 단계가 넷을 실제로 요구하는지를 센다.
+
+    판정 자체는 R5-03 에서 ``scripts/reconcile_shipped_copies.py`` 로 올라갔다(같은 판정이
+    패키징 게이트에도 필요해졌고, 인라인으로 두면 둘 중 하나가 낡는다). 그래서 여기서 세는
+    것은 **그 소유자를 이 순서로 부르는가**와 **넷을 선언하는가**로 바뀐다 — 계약의 대상이
+    바뀌는 것이지 계약이 사라지는 것이 아니다.
     """
     reconcile = _release_step("Reconcile web artifact identity")["run"]
 
-    assert "@('dist', 'installed', 'portable')" in reconcile, (
-        "대조 대상 사본 목록이 셋이 아닙니다"
+    assert "reconcile_shipped_copies.py" in reconcile, "사본 대조 소유자를 부르지 않습니다"
+    assert "--expect source,dist,installed,portable" in reconcile, (
+        "대조 대상 사본 집합을 넷으로 선언하지 않습니다"
     )
-    assert '"$name.json"' in reconcile, "사본 증거 파일을 읽지 않습니다"
-    assert "release evidence 누락" in reconcile, "증거 부재가 실패로 이어지지 않습니다"
-    assert "metadata.web.present" in reconcile, "source 사본은 검증된 seal 에서 온다"
-    assert "Sort-Object -Unique" in reconcile and "throw" in reconcile, (
-        "identity 불일치가 실패로 이어지지 않습니다"
+    assert "--build-metadata build\\version\\build-metadata.json" in reconcile, (
+        "source 사본은 검증된 seal 에서 온다"
     )
+    for name in ("dist", "installed", "portable"):
+        assert f"--copy ('{name}=" in reconcile, f"{name} 사본 증거를 넘기지 않습니다"
+    assert "throw" in reconcile, "identity 불일치가 실패로 이어지지 않습니다"
     assert "release-evidence.json" in reconcile
+    # 인라인 재조립으로 되돌아가면 판정이 둘이 된다.
+    assert "Sort-Object -Unique" not in reconcile
 
 
 def test_installed_copy_is_verified_before_it_is_uninstalled() -> None:
@@ -508,9 +516,21 @@ def test_build_metadata_carries_the_frontend_identity() -> None:
 
     assert "installer-dist/release-evidence.json" in release
     assert "installer-dist/build-metadata.json" in release
-    for key in ("uv_lock_sha256", '"web"', "artifact_id", "tree_sha256", "toolchain"):
+    for key in (
+        "uv_lock_sha256",
+        '"web"',
+        "artifact_id",
+        "tree_sha256",
+        "toolchain",
+        # 만든 도구(toolchain)와 **실은 런타임**(runtime_packages)은 다른 사실이다(R5-03).
+        # 후자가 없으면 받은 사람이 "이 릴리스가 어떤 React 를 실었나"를 물을 방법이 없다.
+        "runtime_packages",
+    ):
         assert key in generator, f"build metadata 에 {key} 가 없습니다"
     assert "--require-web" in generator
+    assert "runtime_packages" in release, (
+        "출하 런타임이 release-evidence 로 이어지지 않습니다"
+    )
 
 
 def test_release_ships_the_filler_only_and_says_so() -> None:

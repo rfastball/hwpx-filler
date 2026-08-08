@@ -267,3 +267,112 @@ def test_packaging_requires_artifact_parity_node_free_boot_and_offline_probe() -
     assert "artifact.artifact_id" in entry and "artifact.tree_sha256" in entry
     assert "resolve_web_artifact(repo_root=args.repo_root)" in verifier
     assert "resolve_web_artifact(frozen_root=args.bundle_root)" in verifier
+
+
+def test_the_packaged_gate_listens_to_the_selfcheck_identity() -> None:
+    """``--selfcheck`` 국면이 **자기 입으로** 말한 identity 를 게이트가 듣는가(R5-03).
+
+    이 국면의 이름을 정확히 적는다: ``--selfcheck`` 는 제품 ``main()`` 을 부르지 않는다 —
+    엔트리 래퍼가 그 인자만 가로채 헤드리스 스모크로 보낸다(아래에서 함께 못박는다). 그래서
+    여기서 얻는 것은 「정상 실행의 증거」가 아니라 **창을 열지 않는 별개 프로세스가 같은
+    sealed 산출물을 fail-closed 로 해석했다**는 증거다. 제품 진입점(``main()``)이 해석한
+    identity 는 ``--selftest`` 증거의 ``runtime.artifact_id`` 가 이미 대조한다.
+
+    종전 게이트는 ``ExitCode`` 만 읽어 이 프로세스가 무엇을 실었는지 아무도 묻지 않았다.
+    창 앱이라 stdout 은 리디렉션해야 잡힌다.
+    """
+    build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+    entry = (ROOT / "packaging" / "hwpx_filler_web_entry.py").read_text(encoding="utf-8")
+
+    # 제품이 그 줄을 실제로 낸다 — 게이트가 읽을 것이 없는데 읽는 척하지 않게.
+    assert "artifact_id={artifact.artifact_id}" in entry
+    assert "tree_sha256={artifact.tree_sha256}" in entry
+
+    # 증거는 **제품이 파일로 쓴다**. stdout 포획으로 되돌아가면 CI 에서 13분 매달렸던
+    # 그 자리가 그대로 돌아온다(run 31229199482) — 창 앱의 stdout 은 환경마다 다르게 붙는다.
+    assert "RedirectStandardOutput" not in build
+    assert "$env:HWPX_SELFCHECK_OUT" in build
+    assert "HWPX_SELFCHECK_OUT" in entry, "제품이 그 경로를 안 받습니다"
+    # 판정은 Python 판별기가 진다 — 인라인 정규식으로 되돌아가면 음성 대조가 붙을 자리가
+    # 사라진다(`classify_webview_evidence.py` 와 같은 규율).
+    assert r"scripts\assert_selfcheck_identity.py" in build
+    assert "--selfcheck-evidence $env:HWPX_SELFCHECK_OUT" in build
+    assert "selfcheck_artifact_id" in build
+    # 이 국면이 제품 main() **밖**이라는 사실을 엔트리에서 직접 센다 — 그 사실이 바뀌면
+    # 위 docstring 의 주장도 증거 키 이름도 함께 틀린 것이 된다.
+    assert 'sys.argv[1] == "--selfcheck"' in entry
+    assert entry.index('sys.argv[1] == "--selfcheck"') < entry.index("import main")
+    # 실행이 먼저, 판정이 나중 — 순서가 뒤집히면 앞 실행의 잔재를 읽는다. 그 잔재를 아예
+    # 없애는 것도 계약이다(앞 시도의 파일이 남아 있으면 이번 실행 없이도 초록이 난다).
+    #
+    # 구간을 **잘라서** 센다. `--selfcheck` 호출은 파일에 둘이다(패키징 게이트 · 설치본
+    # 사본) — 전체 문자열에 `.index` 를 쓰면 앞의 다른 호출을 재고서 순서를 말하게 된다.
+    phase = build[build.index("$env:HWPX_SELFCHECK_OUT = Join-Path"):]
+    assert phase.index("Remove-Item -LiteralPath $env:HWPX_SELFCHECK_OUT") < phase.index(
+        "-ArgumentList @('--selfcheck')"
+    )
+    assert phase.index("-ArgumentList @('--selfcheck')") < phase.index(
+        r"scripts\assert_selfcheck_identity.py"
+    )
+
+
+def test_the_packaged_gate_verifies_the_portable_copy_every_run() -> None:
+    r"""사용자가 여는 것은 dist\ 가 아니라 zip 을 푼 결과다(R5-03).
+
+    종전에 이 왕복은 태그 push 에서만 검증됐다 — 압축·해제가 트리를 바꿔도 병합 시점엔
+    아무도 몰랐다. 순서가 계약이다: 검증은 **왕복 뒤**에 선다.
+    """
+    build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+
+    assert "Compress-Archive" in build
+    assert "Expand-Archive" in build
+    assert "portable-parity.json" in build
+    assert build.index("Expand-Archive") < build.index("portable-parity.json")
+    assert build.index("Compress-Archive") < build.index("Expand-Archive")
+
+
+def test_shipped_copies_are_reconciled_by_one_owner_with_a_declared_set() -> None:
+    """사본 대조 판정은 스크립트 하나가 지고, 호출자는 **집합을 선언**한다(R5-03).
+
+    선언이 없으면 사본 하나가 조용히 빠진 채 "남은 것끼리 같다"로 초록이 난다. 릴리스는 넷,
+    패키징 게이트는 셋(설치본은 태그 소유) — 두 선언이 서로 다른 것이 이 계약의 요점이다.
+    """
+    build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+    release = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert r"scripts\reconcile_shipped_copies.py" in build
+    assert "'--expect', $expectedCopies" in build
+    assert "$expectedCopies = 'source,dist,portable'" in build
+    assert "$expectedCopies = 'source,dist,installed,portable'" in build
+
+    assert r"scripts\reconcile_shipped_copies.py" in release
+    assert "--expect source,dist,installed,portable" in release
+    # 설치본 사본은 두 곳에서 만들어진다(릴리스 태그 · `-IncludeInstaller`). 순서 계약
+    # 「제거 앞에 검증」은 릴리스 쪽만 못박혀 있었다 — 러너 쪽도 같은 강도로 센다.
+    installed = build[build.index("function Invoke-InstalledCopy"):]
+    installed = installed[: installed.index("function Test-BundleBoundary")]
+    assert installed.index("verify_packaged_web.py") < installed.index("unins000.exe"), (
+        "설치본 검증이 제거 뒤로 밀렸습니다"
+    )
+    assert "--selfcheck" in installed, "릴리스 쪽 설치본 스모크와 강도가 다릅니다"
+    assert "_is1" in installed, "출하 AppId 충돌 가드가 없습니다"
+    # 인라인 재조립으로 되돌아가지 않는다 — 같은 판정이 두 곳에 살면 하나가 낡는다.
+    assert "Sort-Object -Unique).Count -ne 1" not in release
+
+
+def test_the_node_free_phase_has_one_definition_and_both_targets_run_inside_it() -> None:
+    """Node-free 국면의 정의가 하나이고 filler·CLI 둘 다 그 안에서 도는가(R5-03).
+
+    종전에는 PATH 스크럽이 filler 분기 안에만 있었다. CI 에서 CLI 스모크가 Node 없이 돈 것은
+    그 잡이 ``setup-node`` 를 안 하기 때문이지 이 게이트가 그것을 세서가 아니었다 —
+    우연한 참은 계약이 아니다.
+    """
+    build = (ROOT / "packaging" / "build.ps1").read_text(encoding="utf-8")
+
+    assert build.count("function Set-NodeFreePath") == 1
+    assert build.count("Node-free packaged gate PATH에서 node.exe가 발견됐습니다.") == 1
+    # 정의 1 + 호출 2(filler·CLI). 호출이 하나면 한 타깃이 국면 밖에서 도는 것이다.
+    assert build.count("Set-NodeFreePath") == 3
+    # CLI 분기가 자기 PATH 를 저장·복원한다 — 국면이 그 분기를 넘어 새지 않게.
+    assert "$savedCliPath = $env:Path" in build
+    assert build.index("$savedCliPath = $env:Path") < build.index("$exe schema $template")

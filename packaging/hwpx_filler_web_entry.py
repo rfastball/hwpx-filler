@@ -11,6 +11,7 @@ import sys
 
 
 def _selfcheck() -> int:
+    import os
     import tempfile
     from pathlib import Path
 
@@ -48,6 +49,31 @@ def _selfcheck() -> int:
     # 선언만 살고 결과가 죽는다(#383: 종전 ``web_ok = True`` 는 아무것도 재지 않았다).
     # 검증된 identity 를 그대로 실어 무엇이 번들에 실렸는지 로그가 말하게 한다.
     artifact = web_artifact()
+
+    # 게이트가 읽는 것은 **파일**이지 stdout 이 아니다. 이 exe 는 `console=False` 라 stdout 이
+    # 붙는 자리가 환경마다 다르고, 실제로 CI 에서 `Start-Process -RedirectStandardOutput` 이
+    # 13분 매달렸다(로컬은 같은 호출이 즉시 끝났다 — 이 축은 기기마다 다르게 틀린다).
+    # selftest 가 `HWPX_SELFTEST_OUT` 으로 증거를 내는 것과 같은 형태로 맞춘다.
+    # print 는 사람이 읽는 자리로 남긴다 — 판정 입력이 아니다.
+    evidence_path = os.environ.get("HWPX_SELFCHECK_OUT")
+    if evidence_path:
+        import json
+
+        target = Path(evidence_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "tree_sha256": artifact.tree_sha256,
+                    "viewmodel_ok": vm_ok,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     print(
         f"selfcheck: txt_templates={txt_names} fields={len(snap['fields'])} "

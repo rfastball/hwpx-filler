@@ -161,6 +161,11 @@ jobs:
           # source / PyInstaller dist / installed / portable — 네 사본이 같은 프런트인가.
           # 각 사본을 따로 통과시키는 것만으로는 부족하다: 넷을 한자리에 놓고 대조해야
           # "어느 한 사본만 다른" 경우가 드러난다(설계 패킷 §5 four artifact IDs).
+          #
+          # 판정은 `scripts/reconcile_shipped_copies.py` 하나가 진다(R5-03). 같은 판정이
+          # 패키징 게이트에도 필요해졌고, 인라인으로 두면 같은 상태를 두 곳이 판정하게 된다.
+          # `--expect` 가 계약이다 — 사본 하나가 조용히 빠진 채 "남은 것끼리 같다"로 초록이
+          # 나는 길을 그 선언이 막는다.
           $ErrorActionPreference = 'Stop'
           $evidenceDir = Join-Path $env:RUNNER_TEMP 'release-evidence'
           uv run --no-sync python scripts\verify_packaged_web.py `
@@ -168,35 +173,27 @@ jobs:
             --json-out (Join-Path $evidenceDir 'dist.json')
           if ($LASTEXITCODE -ne 0) { throw 'dist web artifact identity mismatch' }
 
+          uv run --no-sync python scripts\reconcile_shipped_copies.py `
+            --build-metadata build\version\build-metadata.json `
+            --copy ('dist=' + (Join-Path $evidenceDir 'dist.json')) `
+            --copy ('installed=' + (Join-Path $evidenceDir 'installed.json')) `
+            --copy ('portable=' + (Join-Path $evidenceDir 'portable.json')) `
+            --expect source,dist,installed,portable `
+            --json-out (Join-Path $evidenceDir 'reconciled.json')
+          if ($LASTEXITCODE -ne 0) { throw '출하 사본들의 web artifact identity 가 다릅니다.' }
+
           $metadata = Get-Content build\version\build-metadata.json -Raw -Encoding UTF8 |
             ConvertFrom-Json
-          if (-not $metadata.web.present) {
-            throw 'build metadata 에 sealed web artifact identity 가 없습니다.'
-          }
-          $copies = [ordered]@{ source = $metadata.web }
-          foreach ($name in @('dist', 'installed', 'portable')) {
-            $path = Join-Path $evidenceDir "$name.json"
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              throw "release evidence 누락: $path"
-            }
-            $copies[$name] = Get-Content $path -Raw -Encoding UTF8 | ConvertFrom-Json
-          }
-          $ids = $copies.Values | ForEach-Object { $_.artifact_id }
-          $trees = $copies.Values | ForEach-Object { $_.tree_sha256 }
-          if (@($ids | Sort-Object -Unique).Count -ne 1 -or
-              @($trees | Sort-Object -Unique).Count -ne 1) {
-            throw (
-              '출하 사본들의 web artifact identity 가 다릅니다: ' +
-              ($copies | ConvertTo-Json -Depth 5 -Compress)
-            )
-          }
+          $reconciled = Get-Content (Join-Path $evidenceDir 'reconciled.json') -Raw -Encoding UTF8 |
+            ConvertFrom-Json
           [ordered]@{
             version = $metadata.version
             commit = $metadata.commit
-            artifact_id = $metadata.web.artifact_id
-            tree_sha256 = $metadata.web.tree_sha256
+            artifact_id = $reconciled.artifact_id
+            tree_sha256 = $reconciled.tree_sha256
             toolchain = $metadata.web.toolchain
-            copies = @($copies.Keys)
+            runtime_packages = $metadata.web.runtime_packages
+            copies = $reconciled.copies
           } | ConvertTo-Json -Depth 5 |
             Set-Content installer-dist\release-evidence.json -Encoding UTF8
       - name: Create checksums and collect metadata

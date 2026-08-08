@@ -10,10 +10,16 @@
 .PARAMETER ExpectWebIdentity
   생산자가 낸 identity JSON. 검증하는 산출물이 그것과 다르면 거절한다.
 
+.PARAMETER IncludeInstaller
+  설치본 사본까지 만들어 identity 를 대조한다(R5-03). 기본은 꺼짐 — 설치본은 릴리스 태그가
+  소유하는 사본이고, 이 스위치는 **감사·로컬이 같은 증거를 한 명령으로 재현**하는 자리다.
+  Inno Setup 6(`ISCC.exe`) 이 없으면 조용히 건너뛰지 않고 시끄럽게 실패한다.
+
 .EXAMPLE
   .\packaging\build.ps1
   .\packaging\build.ps1 -Target cli
   .\packaging\build.ps1 -WebMode VerifyExisting -ExpectWebIdentity web-artifact-identity.json
+  .\packaging\build.ps1 -Target filler -IncludeInstaller   # 네 사본 전수 대조
 #>
 [CmdletBinding()]
 param(
@@ -22,7 +28,8 @@ param(
     [switch]$SkipCheck,
     [ValidateSet('Build', 'VerifyExisting')]
     [string]$WebMode = 'Build',
-    [string]$ExpectWebIdentity
+    [string]$ExpectWebIdentity,
+    [switch]$IncludeInstaller
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +38,16 @@ $env:PYTHONIOENCODING = 'utf-8'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 & chcp.com 65001 *> $null
+
+# 설치본 사본은 filler 번들에서만 나온다. `-Target cli` 와 함께 받으면 스위치가 조용히
+# 무시된 채 exit 0 이 나고, 그 조합으로 감사를 돌린 사람은 **설치본을 세지 않은 초록**을
+# 증거로 들게 된다(Codex P2). 요청한 사본을 못 낼 조합은 일 시작 전에 거절한다.
+if ($IncludeInstaller -and $Target -eq 'cli') {
+    throw (
+        '-IncludeInstaller 는 filler 번들이 있어야 합니다 — `-Target cli` 와 함께 쓸 수 ' +
+        '없습니다. 설치본 사본을 세지 않은 채 초록을 내지 않습니다.'
+    )
+}
 
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
@@ -79,6 +96,100 @@ $targets = @{
 }
 $plan = if ($Target -eq 'all') { @('filler', 'cli') } else { @($Target) }
 
+function Set-NodeFreePath {
+    # Node-free 국면의 **단일 정의**. 종전에는 filler 분기 안에만 있어서 CLI 스모크는 러너의
+    # 앰비언트 PATH 로 돌았다 — CI 에서 우연히 Node 가 없었을 뿐 그것을 세는 단언이 없었다
+    # (「집합 하나를 넓히고 형제를 안 넓힌다」). 호출자가 자기 PATH 를 저장·복원한다.
+    $windowsRoot = $env:SystemRoot
+    $env:Path = @(
+        (Join-Path $windowsRoot 'System32'),
+        $windowsRoot,
+        (Join-Path $windowsRoot 'System32\Wbem'),
+        (Join-Path $windowsRoot 'System32\WindowsPowerShell\v1.0')
+    ) -join ';'
+    if (Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue) {
+        throw 'Node-free packaged gate PATH에서 node.exe가 발견됐습니다.'
+    }
+}
+
+function Invoke-InstalledCopy([string]$EvidencePath) {
+    # 설치본 사본(R5-03). 릴리스 태그가 소유하는 국면을 **감사·로컬이 한 명령으로 재현**하는
+    # 자리다. 부재는 조용한 스킵이 아니다 — 이 함수는 `-IncludeInstaller` 를 켠 호출자만
+    # 부르고, 그 선언이 곧 "설치본까지 세겠다"이므로 도구가 없으면 시끄럽게 죽는다.
+    $isccPath = & (Join-Path $PSScriptRoot 'Find-Iscc.ps1')
+    if (-not $isccPath) {
+        throw (
+            '-IncludeInstaller 를 켰지만 Inno Setup 6 ISCC.exe 를 찾지 못했습니다 — ' +
+            '설치본 사본을 세지 않은 채 통과시키지 않습니다.'
+        )
+    }
+
+    # 이 .iss 는 **출하 AppId** 를 쓴다. 같은 AppId 가 이미 등록돼 있으면 무인 설치가 그
+    # 등록을 이 임시 폴더로 갈아치우고, 뒤이은 제거가 사용자의 **진짜 설치**를 고아로 만든다.
+    # 감사·개발자 기기에서 문서나르미를 실제로 쓰고 있을 수 있으므로 먼저 거절한다.
+    $productKey = (
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' +
+        '{A08D764C-A28D-4E7E-A8E9-E391E11A5A8C}_is1'
+    )
+    if (Test-Path -LiteralPath $productKey) {
+        throw (
+            '이 기기에 문서나르미가 이미 설치돼 있습니다 — -IncludeInstaller 는 같은 AppId 로 ' +
+            '설치·제거하므로 기존 등록을 망가뜨립니다. 먼저 제거하고 다시 실행하세요: ' +
+            $productKey
+        )
+    }
+
+    & $isccPath (Join-Path $root 'packaging\installers\hwpx-filler.iss')
+    if ($LASTEXITCODE -ne 0) { throw "설치본 컴파일 실패(exit $LASTEXITCODE)" }
+    $setup = Get-ChildItem (Join-Path $root 'installer-dist\HWPX-Filler-*-Setup.exe') `
+            -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $setup) { throw '설치본 산출물을 찾지 못했습니다: installer-dist' }
+
+    $installDir = Join-Path $evidenceDir 'installed'
+    $installLog = Join-Path $evidenceDir 'installed-install.log'
+    # 경로에 공백이 있으면 배열 인자는 두 토큰으로 갈라진다 — 따옴표를 직접 싣는다.
+    $install = Start-Process -FilePath $setup.FullName -Wait -PassThru -ArgumentList @(
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+        "/LOG=`"$installLog`"", "/DIR=`"$installDir`""
+    )
+    if ($install.ExitCode -ne 0) {
+        throw "설치본 무인 설치 실패(exit $($install.ExitCode)) — 로그: $installLog"
+    }
+    try {
+        # 설치본이 무엇을 실었는지는 **제거하기 전에만** 물을 수 있다. 이 순서가 계약이다.
+        & uv run --no-sync python (Join-Path $root 'scripts\verify_packaged_web.py') `
+            --repo-root $root --bundle-root (Join-Path $installDir '_internal') `
+            --json-out $EvidencePath
+        if ($LASTEXITCODE -ne 0) { throw 'installed web artifact identity 불일치' }
+        Test-BundleBoundary $installDir
+        # 릴리스 태그 쪽 설치본 스모크와 **같은 것**을 묻는다 — 한쪽만 selfcheck 하고 다른
+        # 쪽만 번들 경계를 보면, 이름이 같고 강도가 다른 두 증거가 된다.
+        $installedCheck = Start-Process -Wait -PassThru -ArgumentList @('--selfcheck') `
+            -FilePath (Join-Path $installDir 'hwpx-filler-web.exe')
+        if ($installedCheck.ExitCode -ne 0) {
+            throw "설치본 selfcheck 실패(exit $($installedCheck.ExitCode))"
+        }
+    }
+    finally {
+        # 정리 실패로 **앞선 실패를 덮지 않는다** — finally 에서 던지면 진짜 원인이 사라진다.
+        # 대신 남은 것을 이름으로 말한다(사용자 기기에 등록된 앱이 남는 상태라 침묵은 금물).
+        $uninstaller = Join-Path $installDir 'unins000.exe'
+        if (Test-Path -LiteralPath $uninstaller -PathType Leaf) {
+            $uninstall = Start-Process -FilePath $uninstaller -Wait -PassThru `
+                -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+            if ($uninstall.ExitCode -ne 0) {
+                Write-Warning (
+                    "설치본 제거가 실패했습니다(exit $($uninstall.ExitCode)) — " +
+                    "직접 제거하세요: $uninstaller"
+                )
+            }
+        } else {
+            Write-Warning "설치본 제거기를 찾지 못했습니다 — 남은 설치: $installDir"
+        }
+    }
+}
+
 function Test-BundleBoundary([string]$BundleDir) {
     # 두 타깃 모두 웹 이관 완료(#20·#23)로 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도
     # 번들에 있으면 실패(재유입 차단).
@@ -114,6 +225,47 @@ foreach ($key in $plan) {
             --repo-root $root --bundle-root $bundleRoot `
             --json-out (Join-Path $evidenceDir 'artifact-parity.json')
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        # 사용자가 실제로 여는 것은 dist\ 가 아니라 portable zip 을 푼 결과다. 종전에 이
+        # 왕복은 **태그 push 에서만** 검증됐다 — 압축·해제가 트리를 바꿔도(포장 도구마다
+        # 제 hidden/dot 경로 정책이 있다) 병합 시점엔 아무도 몰랐다. 비용이 초 단위라
+        # 매 병합으로 당긴다.
+        # 왕복 작업물(zip·해제 트리)은 evidence 밖에 둔다 — 각 45MB 라 CI 증거 업로드에
+        # 들어가면 부피만 90MB 늘고, 판정에 쓰이는 것은 옆의 parity JSON 하나다.
+        $portableWork = Join-Path $root 'build\portable-roundtrip'
+        if (Test-Path -LiteralPath $portableWork) {
+            Remove-Item -LiteralPath $portableWork -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force $portableWork | Out-Null
+        New-Item -ItemType Directory -Force $evidenceDir | Out-Null
+        $portableZip = Join-Path $portableWork 'portable.zip'
+        $portableRoot = Join-Path $portableWork 'expanded'
+        Compress-Archive -Path (Join-Path $bundleDir '*') -DestinationPath $portableZip
+        Expand-Archive -Path $portableZip -DestinationPath $portableRoot -Force
+        & uv run --no-sync python (Join-Path $root 'scripts\verify_packaged_web.py') `
+            --repo-root $root --bundle-root (Join-Path $portableRoot '_internal') `
+            --json-out (Join-Path $evidenceDir 'portable-parity.json')
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+        $reconcileArgs = @(
+            (Join-Path $root 'scripts\reconcile_shipped_copies.py'),
+            '--build-metadata', (Join-Path $root 'build\version\build-metadata.json'),
+            '--copy', ('dist=' + (Join-Path $evidenceDir 'artifact-parity.json')),
+            '--copy', ('portable=' + (Join-Path $evidenceDir 'portable-parity.json'))
+        )
+        $expectedCopies = 'source,dist,portable'
+        if ($IncludeInstaller) {
+            $installedParity = Join-Path $evidenceDir 'installed-parity.json'
+            Invoke-InstalledCopy -EvidencePath $installedParity
+            $reconcileArgs += @('--copy', ('installed=' + $installedParity))
+            $expectedCopies = 'source,dist,installed,portable'
+        }
+        $reconcileArgs += @(
+            '--expect', $expectedCopies,
+            '--json-out', (Join-Path $evidenceDir 'shipped-copies.json')
+        )
+        & uv run --no-sync python @reconcileArgs
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
     if ($SkipCheck) { continue }
 
@@ -131,6 +283,7 @@ foreach ($key in $plan) {
         $savedProductHome = $env:HWPXFILLER_HOME
         $savedSelftestOut = $env:HWPX_SELFTEST_OUT
         $savedOfflineProbe = $env:HWPX_SELFTEST_OFFLINE_PROBE
+        $savedSelfcheckOut = $env:HWPX_SELFCHECK_OUT
         $savedBrowserArgs = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
         $webViewPolicyPath = (
             'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\' +
@@ -225,25 +378,44 @@ foreach ($key in $plan) {
                 throw "network control proxy endpoint가 잘못됐습니다: $($proxyInfo | ConvertTo-Json -Compress)"
             }
 
-            $windowsRoot = $env:SystemRoot
-            $env:Path = @(
-                (Join-Path $windowsRoot 'System32'),
-                $windowsRoot,
-                (Join-Path $windowsRoot 'System32\Wbem'),
-                (Join-Path $windowsRoot 'System32\WindowsPowerShell\v1.0')
-            ) -join ';'
-            if (Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue) {
-                throw 'Node-free packaged gate PATH에서 node.exe가 발견됐습니다.'
-            }
+            Set-NodeFreePath
 
+            $artifactParity = Get-Content -LiteralPath (
+                Join-Path $evidenceDir 'artifact-parity.json'
+            ) -Raw -Encoding UTF8 | ConvertFrom-Json
+
+            # `--selfcheck` 국면의 **in-process** identity 를 듣는다(R5-03). 이 인자는 제품
+            # `main()` 을 부르지 않는다 — 엔트리 래퍼가 가로채 헤드리스 스모크로 보낸다. 그래서
+            # 여기서 얻는 것은 「정상 실행의 증거」가 아니라 **창을 열지 않는 별개 프로세스가
+            # 같은 sealed 산출물을 fail-closed 로 해석했다**는 증거다(제품 진입점이 해석한
+            # identity 는 아래 `--selftest` 증거의 runtime.artifact_id 가 이미 진다).
+            # 종전에는 ExitCode 만 읽어 이 프로세스가 무엇을 실었는지 아무도 묻지 않았다.
+            # 창 앱이라 stdout 은 리디렉션해야 잡힌다.
+            # 증거는 **제품이 파일로 쓴다**. 초판은 stdout 을 리디렉션해 읽었는데, 이 exe 는
+            # `console=False` 라 stdout 이 붙는 자리가 환경마다 다르다 — 로컬에서 즉시 끝난
+            # 같은 호출이 CI 에서 13분 매달렸다(run 31229199482). selftest 가 이미
+            # `HWPX_SELFTEST_OUT` 으로 피해 가던 축이라 같은 형태로 맞춘다.
+            $env:HWPX_SELFCHECK_OUT = Join-Path $evidenceDir 'packaged-selfcheck.json'
+            if (Test-Path -LiteralPath $env:HWPX_SELFCHECK_OUT -PathType Leaf) {
+                Remove-Item -LiteralPath $env:HWPX_SELFCHECK_OUT -Force
+            }
             $selfcheck = Start-Process -FilePath $exe -Wait -PassThru `
                 -ArgumentList @('--selfcheck')
             if ($selfcheck.ExitCode -ne 0) {
                 throw "Node-free packaged selfcheck 실패(exit $($selfcheck.ExitCode))"
             }
-            $artifactParity = Get-Content -LiteralPath (
-                Join-Path $evidenceDir 'artifact-parity.json'
-            ) -Raw -Encoding UTF8 | ConvertFrom-Json
+            # 판정은 Python 판별기가 소유한다 — 음성 대조가 붙는 유일한 자리다
+            # (`classify_webview_evidence.py` 와 같은 이유). 러너는 호출과 배선만 진다.
+            $selfcheckIdentityOut = Join-Path $evidenceDir 'packaged-selfcheck-identity.json'
+            & $pythonExe (Join-Path $root 'scripts\assert_selfcheck_identity.py') `
+                --selfcheck-evidence $env:HWPX_SELFCHECK_OUT `
+                --expect-identity (Join-Path $evidenceDir 'artifact-parity.json') `
+                --json-out $selfcheckIdentityOut
+            if ($LASTEXITCODE -ne 0) {
+                throw 'packaged --selfcheck 국면의 web artifact identity 대조에 실패했습니다.'
+            }
+            $selfcheckIdentity = Get-Content -LiteralPath $selfcheckIdentityOut -Raw -Encoding UTF8 |
+                ConvertFrom-Json
 
             # 유효한 외부 HTTP target을 deterministic loopback control proxy로 먼저 성공시킨다.
             # proxy가 요청을 실제로 관측해야 뒤의 같은-target dead-proxy 실패가 DNS/CI egress
@@ -499,6 +671,10 @@ foreach ($key in $plan) {
                 artifact_id = $evidence.runtime.artifact_id
                 tree_sha256 = $evidence.runtime.tree_sha256
                 source_bundled_same_artifact = $true
+                # 창을 열지 않는 `--selfcheck` 프로세스가 해석한 값. 아래 selftest 국면의
+                # runtime.artifact_id 와 **다른 프로세스**의 증거라 같은 자리에 나란히 둔다.
+                selfcheck_artifact_id = $selfcheckIdentity.selfcheck_artifact_id
+                selfcheck_tree_sha256 = $selfcheckIdentity.selfcheck_tree_sha256
                 node_available_on_runtime_path = $false
                 responsibility_count = $responsibilities.Count
                 false_count = $falseResponsibilities.Count
@@ -577,6 +753,9 @@ foreach ($key in $plan) {
                         'HWPX_SELFTEST_OFFLINE_PROBE', $savedOfflineProbe, 'Process'
                     )
                     [Environment]::SetEnvironmentVariable(
+                        'HWPX_SELFCHECK_OUT', $savedSelfcheckOut, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
                         'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',
                         $savedBrowserArgs,
                         'Process'
@@ -587,15 +766,25 @@ foreach ($key in $plan) {
     } else {
         $template = Join-Path $corpus 'form_purchase_v1.hwpx'
         $template2 = Join-Path $corpus 'form_purchase_v2.hwpx'
-        # 동적 import 경계인 템플릿 관리 명령 4개를 실제 번들에서 실행.
-        & $exe schema $template --out (Join-Path $env:TEMP 'hwpx-k1-schema.json')
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $exe fieldize $template
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        & $exe lint $template
-        if ($LASTEXITCODE -notin @(0, 1)) { exit $LASTEXITCODE }
-        & $exe drift $template $template2
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        # CLI 스모크도 Node-free 국면 안에서 돈다. 종전에는 filler 분기가 PATH 를 복원한 뒤
+        # 앰비언트 PATH 로 돌았고, CI 에서 Node 가 없던 것은 그 잡이 setup-node 를 안 하기
+        # 때문이지 이 게이트가 그것을 세서가 아니었다 — 우연한 참은 계약이 아니다.
+        $savedCliPath = $env:Path
+        try {
+            Set-NodeFreePath
+            # 동적 import 경계인 템플릿 관리 명령 4개를 실제 번들에서 실행.
+            & $exe schema $template --out (Join-Path $env:TEMP 'hwpx-k1-schema.json')
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $exe fieldize $template
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $exe lint $template
+            if ($LASTEXITCODE -notin @(0, 1)) { exit $LASTEXITCODE }
+            & $exe drift $template $template2
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable('Path', $savedCliPath, 'Process')
+        }
     }
 }
 

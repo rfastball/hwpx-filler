@@ -206,6 +206,10 @@ console.log(JSON.stringify({
     assetsInlineLimit: config.build.assetsInlineLimit,
     modulePreload: config.build.modulePreload,
     minify: config.build.minify,
+    // sourcemap 은 **파일을 늘리지 않고도** 출하 바이트에 source 를 실을 수 있다
+    // ('inline'). 산출물 구성 폐포(web_artifact._validate_output_composition)는 파일
+    // 목록만 보므로 그 형태를 못 본다 — 그래서 형상 핀이 이 키를 든다(L16 반증, R5-03).
+    sourcemap: config.build.sourcemap ?? false,
     treeshake: config.build.rolldownOptions?.treeshake,
   },
 }));
@@ -270,6 +274,7 @@ def test_vite_production_graph_is_atomic_and_relative() -> None:
             "assetsInlineLimit": 0,
             "modulePreload": False,
             "minify": False,
+            "sourcemap": False,
             "treeshake": False,
         },
     }

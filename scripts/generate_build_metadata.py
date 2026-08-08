@@ -87,6 +87,64 @@ def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+#: unminified 번들이 남기는 vendor 경계 주석. 값은 ``node_modules/`` 뒤의 경로다.
+#:
+#: ``$`` 는 ``\r`` **앞에서 멈추지 않으므로** CRLF 산출물에서 이 그물이 조용히 0건이 된다.
+#: JS 쪽 형제 그물(``tests/js/r5_boundary_gates.test.js``)은 ``m`` 플래그라 멈춘다 — 같은
+#: 입력에 두 수집기가 다른 답을 내지 않게 개행 앞 ``\r`` 을 명시로 문다(L16 반증).
+_VENDOR_REGION_RE = re.compile(
+    r"^//#region node_modules/(?P<path>[^\r\n]+?)\r?$", re.MULTILINE
+)
+
+
+def _vendor_package_name(region_path: str) -> str:
+    """중첩 설치는 **마지막** ``node_modules/`` 뒤가 진짜 패키지다.
+
+    ``react-dom/node_modules/scheduler/index.js`` 를 앞에서 읽으면 ``react-dom`` 으로
+    보고돼, 중복 사본이 정상 이름표를 달고 지나간다(L16 반증).
+    """
+    tail = region_path.rsplit("node_modules/", 1)[-1]
+    parts = tail.split("/")
+    return f"{parts[0]}/{parts[1]}" if parts[0].startswith("@") else parts[0]
+
+
+def _shipped_runtime_packages(repo_root: Path, artifact_root: Path) -> dict[str, str]:
+    """출하 바이트가 실제로 담은 런타임 패키지 → 버전(R5-03).
+
+    이름은 **산출물에서 유도**한다 — 손으로 적은 목록은 실물과 어긋나는 날이 오고, 그때
+    메타데이터는 조용히 거짓을 말한다. 버전은 ``package-lock.json`` 에서 읽는다(이미 해시로
+    봉인에 결속돼 있는 단일 출처).
+
+    같은 사실을 ``tests/js/r5_boundary_gates.test.js`` 가 계약과 **대조**하지만, 그쪽은
+    판정이고 여기는 보고다 — 둘 다 산출물에서 독립적으로 유도하므로 한쪽이 낡을 수 없다.
+    """
+    names: set[str] = set()
+    for path in sorted(artifact_root.rglob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        names.update(
+            _vendor_package_name(match.group("path"))
+            for match in _VENDOR_REGION_RE.finditer(text)
+        )
+    if not names:
+        raise SystemExit(
+            "출하 번들에서 런타임 패키지 경계를 하나도 찾지 못했습니다 — "
+            "React 런타임이 실려 있어야 하고, 경계 주석은 unminified 빌드의 산출물입니다."
+        )
+
+    lock = json.loads((repo_root / "package-lock.json").read_text(encoding="utf-8"))
+    packages = lock.get("packages", {})
+    resolved: dict[str, str] = {}
+    for name in sorted(names):
+        entry = packages.get(f"node_modules/{name}")
+        version = entry.get("version") if isinstance(entry, dict) else None
+        if not version:
+            raise SystemExit(
+                f"출하 런타임 패키지의 lock 항목을 찾지 못했습니다: {name}"
+            )
+        resolved[name] = str(version)
+    return resolved
+
+
 def _web_metadata(repo_root: Path, *, skip_reason: str | None) -> dict[str, object]:
     """이 빌드가 실은 sealed web artifact 의 identity 를 릴리스 메타데이터에 싣는다.
 
@@ -121,7 +179,11 @@ def _web_metadata(repo_root: Path, *, skip_reason: str | None) -> dict[str, obje
         "tree_sha256": artifact.tree_sha256,
         "source_commit": seal["source"]["commit"],
         "package_lock_sha256": seal["package_lock"]["sha256"],
+        # toolchain 은 **만든 도구**(node·npm·vite)다. R5 이후 제품 UI 런타임은 React 이고,
+        # 그 사실이 릴리스 서술 자산에서 읽히지 않으면 "무엇을 실었는지 말할 수 있어야 한다"가
+        # 반만 참이다 — 해시(package_lock_sha256)는 결속하지만 이름을 말하지는 않는다.
         "toolchain": seal["toolchain"],
+        "runtime_packages": _shipped_runtime_packages(repo_root, artifact.root),
     }
 
 
