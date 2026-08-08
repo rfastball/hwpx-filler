@@ -25,13 +25,15 @@ _TOOL_NAME = "factgraph"
 
 @contextmanager
 def record_calls(
-    code_map: Mapping[str, str],
+    code_map: Mapping[str, tuple[str, str]],
     symbol_index: Mapping[tuple[str, str], str],
 ) -> Iterator[list[Fact]]:
     """관측 지도 안에서 일어나는 호출을 ``RUNTIME_CONFIRMED`` calls 사실로 기록한다.
 
-    - ``code_map``: ``co_filename`` **원문 그대로**의 키 → 모듈 이름. 정규화하지 않는다 —
-      콜백 안에서 경로 함수를 부르면 그 호출이 다시 이벤트를 낳는다.
+    - ``code_map``: ``co_filename`` **원문 그대로**의 키 → (모듈 이름, 저장소 상대 경로).
+      키를 정규화하지 않는 이유: 콜백 안에서 경로 함수를 부르면 그 호출이 다시 이벤트를
+      낳는다. 값이 경로를 함께 드는 이유: 증거 좌표(``Evidence.file``)는 정적 사실과 같은
+      저장소 상대 경로여야 두 증거가 한 좌표에서 만난다.
     - ``symbol_index``: (모듈, qualname) → symbol ID. 정적 심볼 패스의 산출을 그대로 받아
       실행 증거가 정적 심볼과 같은 좌표에 앉게 한다. 좌표 밖 코드(람다 등)는 버리지 않고
       ``?:runtime:`` 미해결로 남긴다.
@@ -42,12 +44,13 @@ def record_calls(
     facts: list[Fact] = []
     busy = False
 
-    def _symbol_of(code) -> "tuple[str, str] | None":  # (symbol_or_ref, module)
-        module = code_map.get(code.co_filename)
-        if module is None:
+    def _symbol_of(code) -> "tuple[str, str] | None":  # (symbol_or_ref, 저장소 상대 경로)
+        entry = code_map.get(code.co_filename)
+        if entry is None:
             return None
+        module, rel_path = entry
         sid = symbol_index.get((module, code.co_qualname))
-        return (sid if sid is not None else f"?:runtime:{module}.{code.co_qualname}", module)
+        return (sid if sid is not None else f"?:runtime:{module}.{code.co_qualname}", rel_path)
 
     def _on_start(code, _offset):  # noqa: ANN001 — sys.monitoring 콜백 시그니처
         nonlocal busy

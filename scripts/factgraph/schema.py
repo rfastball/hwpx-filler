@@ -83,8 +83,18 @@ def parse_symbol_id(sid: str) -> tuple[str, str, str]:
 
 
 def is_symbol_ref(dst: str) -> bool:
-    """dst 가 폐포 안 symbol ID 형태인가(ext:/?:/attr: 참조가 아닌가)."""
-    return not dst.startswith(_REF_PREFIXES) and "#" in dst
+    """dst 가 폐포 안 symbol ID 인가(ext:/?:/attr: 참조가 아닌가) — 실제 파싱으로 판정한다.
+
+    ``#`` 존재만 보면 ``garbage#junk`` 같은 오타가 shard 에 조용히 섞인다 — 형식 주장은
+    역함수(parse)가 실제로 받아들이는지로만 성립한다.
+    """
+    if dst.startswith(_REF_PREFIXES):
+        return False
+    try:
+        parse_symbol_id(dst)
+    except FactGraphError:
+        return False
+    return True
 
 
 @dataclass(frozen=True)
@@ -148,10 +158,10 @@ class Fact:
         if self.grade not in GRADES:
             raise FactGraphError(f"미등록 grade: {self.grade!r} (등록: {GRADES})")
         if not is_symbol_ref(self.src):
-            raise FactGraphError(f"fact.src 는 symbol ID 여야 한다: {self.src!r}")
+            raise FactGraphError(f"fact.src 는 유효한 symbol ID 여야 한다: {self.src!r}")
         if not self.dst:
             raise FactGraphError("fact.dst 가 비었다")
-        if not (is_symbol_ref(self.dst) or self.dst.startswith(_REF_PREFIXES)):
+        if not (self.dst.startswith(_REF_PREFIXES) or is_symbol_ref(self.dst)):
             raise FactGraphError(f"fact.dst 문법이 아니다: {self.dst!r}")
 
     def sort_key(self) -> tuple:

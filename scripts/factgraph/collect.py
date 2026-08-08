@@ -236,8 +236,14 @@ class _FactsWalker:
         self.fn_stack.append(scope)
         self.qual_prefix.extend([node.name, "<locals>"])
         in_class, self.class_stack = self.class_stack, []
+        # 함수 안 import 는 그 스코프의 바인딩이다 — 표를 복사해 두고 나갈 때 되돌리지
+        # 않으면 지역 별칭이 모듈 수준 해석을 오염시켜 거짓 STATIC_CONFIRMED 가 샌다.
+        bindings_before = dict(self.bindings)
+        aliases_before = dict(self.module_aliases)
         for stmt in node.body:
             self._walk(stmt)
+        self.bindings = bindings_before
+        self.module_aliases = aliases_before
         self.class_stack = in_class
         self.qual_prefix = self.qual_prefix[:-2]
         self.fn_stack.pop()
@@ -250,8 +256,12 @@ class _FactsWalker:
         qualname = ".".join([*self.qual_prefix, node.name])
         self.class_stack.append(qualname)
         self.qual_prefix.append(node.name)
+        bindings_before = dict(self.bindings)
+        aliases_before = dict(self.module_aliases)
         for stmt in node.body:
             self._walk(stmt)
+        self.bindings = bindings_before
+        self.module_aliases = aliases_before
         self.qual_prefix.pop()
         self.class_stack.pop()
 
@@ -290,12 +300,18 @@ class _FactsWalker:
             if base in self.modules:
                 sym = self.index.get((base, alias.name))
                 if sym is not None:
-                    dst = sym.id
-                    self.bindings[bound] = dst
+                    self.bindings[bound] = sym.id
+                    self._emit(
+                        "imports_symbol", sym.id, "STATIC_CONFIRMED", node,
+                        self._import_rule("from"),
+                    )
                 else:
-                    # 폐포 모듈에서 없는 이름을 가져온다 — 재수출/동적 이름일 수 있다. 미해결로 남긴다.
-                    dst = f"?:name:{full}"
-                self._emit("imports_symbol", dst, "STATIC_CONFIRMED", node, self._import_rule("from"))
+                    # 폐포 모듈에서 없는 이름을 가져온다 — 재수출/동적 이름일 수 있다.
+                    # 미해결 dst 는 등급도 미해결이다(해석 실패를 확정 증거로 적지 않는다).
+                    self._emit(
+                        "imports_symbol", f"?:name:{full}", "UNKNOWN", node,
+                        self._import_rule("from"),
+                    )
                 continue
             self._emit(
                 "imports_symbol", f"ext:{full}", "STATIC_CONFIRMED", node, self._import_rule("from"),

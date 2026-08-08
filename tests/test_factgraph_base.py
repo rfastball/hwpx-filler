@@ -185,23 +185,56 @@ def test_import_facts_exact_multiset(tmp_path: Path) -> None:
         },
     )
     rows = {
-        (f.src, f.rel, f.dst, f.provenance.rule)
+        (f.src, f.rel, f.dst, f.grade, f.provenance.rule)
         for f in _facts_of(repo, "alpha.mod")
         if f.rel.startswith("imports")
     }
     mod = symbol_id("alpha.mod", "", "module")
     helper_sid = "alpha.util:helper#function"
+    ok = "STATIC_CONFIRMED"
     assert rows == {
-        (mod, "imports_symbol", "ext:typing.TYPE_CHECKING", "import_from"),
-        (mod, "imports_module", "ext:json", "import_plain"),
-        (mod, "imports_module", "ext:os.path", "import_plain"),
-        (mod, "imports_symbol", helper_sid, "import_from"),
-        (mod, "imports_module", "alpha.sub:#module", "import_from"),
-        # 상대 import 도 같은 좌표로 해석된다 — 정확 다중집합이라 중복은 접힌다
-        (mod, "imports_symbol", "?:name:alpha.util.missing_name", "import_from"),
-        (mod, "imports_symbol", helper_sid, "import_from_type_checking"),
-        ("alpha.mod:scoped#function", "imports_module", "ext:csv", "import_plain"),
+        (mod, "imports_symbol", "ext:typing.TYPE_CHECKING", ok, "import_from"),
+        (mod, "imports_module", "ext:json", ok, "import_plain"),
+        (mod, "imports_module", "ext:os.path", ok, "import_plain"),
+        (mod, "imports_symbol", helper_sid, ok, "import_from"),
+        (mod, "imports_module", "alpha.sub:#module", ok, "import_from"),
+        # 상대 import 도 같은 좌표로 해석된다 — 정확 다중집합이라 중복은 접힌다.
+        # 미해결 dst 는 등급도 미해결이다 — 해석 실패를 확정 증거로 적지 않는다.
+        (mod, "imports_symbol", "?:name:alpha.util.missing_name", "UNKNOWN", "import_from"),
+        (mod, "imports_symbol", helper_sid, ok, "import_from_type_checking"),
+        ("alpha.mod:scoped#function", "imports_module", "ext:csv", ok, "import_plain"),
     }
+
+
+def test_scoped_import_does_not_leak_into_module_bindings(tmp_path: Path) -> None:
+    """함수 안 import 별칭이 모듈 수준 해석을 오염시키면 거짓 확정 edge 가 샌다(리뷰 P1)."""
+    repo = _mini_repo(
+        tmp_path,
+        {
+            "src/alpha/__init__.py": "",
+            "src/alpha/mod.py": """
+                def helper():
+                    from json import dumps as encode
+                    return encode({})
+
+                def encode():
+                    pass
+
+                def caller():
+                    encode()
+                """,
+        },
+    )
+    facts = _facts_of(repo, "alpha.mod")
+    caller_calls = {
+        (f.dst, f.grade) for f in facts if f.src == "alpha.mod:caller#function" and f.rel == "calls"
+    }
+    assert caller_calls == {("alpha.mod:encode#function", "STATIC_CONFIRMED")}
+    helper_calls = {
+        (f.dst, f.grade) for f in facts if f.src == "alpha.mod:helper#function" and f.rel == "calls"
+    }
+    # 함수 자신의 스코프 안에서는 지역 별칭이 유효하다 — encode 는 지역 바인딩으로 남는다
+    assert helper_calls == {("?:local:encode", "UNKNOWN")}
 
 
 def test_star_import_is_declared_dynamic(tmp_path: Path) -> None:
@@ -365,6 +398,13 @@ def test_schema_rejects_unregistered_vocabulary() -> None:
         symbol_id("alpha", "f", "widget")
     with pytest.raises(FactGraphError):
         parse_symbol_id("no-separator")
+    # 위조 symbol ID 형태는 # 이 있어도 거절된다 — 파싱이 실제로 받아야 참조다(리뷰 P2)
+    with pytest.raises(FactGraphError):
+        _fact("garbage#junk", "calls", sid, "UNKNOWN")
+    with pytest.raises(FactGraphError):
+        _fact(sid, "calls", "foo#function", "UNKNOWN")
+    with pytest.raises(FactGraphError):
+        _fact(sid, "calls", "foo:#bogus", "UNKNOWN")
 
 
 def test_shard_digest_is_order_free_and_content_sensitive() -> None:
@@ -432,7 +472,7 @@ def test_runtime_seam_confirms_dynamic_dispatch(tmp_path: Path) -> None:
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-        code_map = {module.dispatch.__code__.co_filename: "alpha.mod"}
+        code_map = {module.dispatch.__code__.co_filename: ("alpha.mod", "src/alpha/mod.py")}
         index = {(s.module, s.qualname): s.id for s in symbols}
         with record_calls(code_map, index) as runtime_facts:
             assert module.dispatch("jump") == "jump"
@@ -444,6 +484,8 @@ def test_runtime_seam_confirms_dynamic_dispatch(tmp_path: Path) -> None:
     assert (dispatch_sid, "alpha.mod:do_jump#function") in runtime_edges  # 문자열 디스패치 실측
     assert (dispatch_sid, "alpha.mod:direct#function") in runtime_edges
     assert all(f.grade == "RUNTIME_CONFIRMED" and f.rel == "calls" for f in runtime_facts)
+    # 실행 증거의 좌표는 정적 증거와 같은 저장소 상대 경로다 — 모듈 이름이 아니다(리뷰 P2)
+    assert {f.evidence.file for f in runtime_facts} == {"src/alpha/mod.py"}
 
     # 정적 쪽은 그 edge 를 모른 채 동적 자리만 loud 하게 남겼다 — merge 가 두 증거를 잇는다
     static_shard = make_shard("static", "p", "sha0", [s.id for s in symbols], list(static_facts))
