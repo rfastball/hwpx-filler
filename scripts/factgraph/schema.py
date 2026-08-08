@@ -31,8 +31,13 @@ SCHEMA_VERSION = "factgraph/v1"
 
 SYMBOL_KINDS: tuple[str, ...] = ("module", "class", "function", "method")
 
-#: 기반 수집기(P1-01)가 방출하는 relation 전부. P1-02B~E 의 축(상태·효과·전송 등)은
-#: 그 단계가 이 튜플을 **여기서** 확장한다 — shard 별 사설 어휘는 merge 가 거절한다.
+#: 기반 수집기(P1-01)가 방출하는 relation 전부 + 축 확장. P1-02B~E 의 축(상태·효과·전송
+#: 등)은 그 단계가 이 튜플을 **여기서** 확장한다 — shard 별 사설 어휘는 merge 가 거절한다.
+#:
+#: ``mutates_attribute`` (P1-02B #514): 좌표의 **결속을 갈아끼우지 않고** 그 좌표가 든
+#: 값의 내용을 바꾸는 변이(컬렉션 메서드 호출·subscript 저장/삭제/증감). 재결속은
+#: ``writes_attribute`` 가, 내용 변이는 이 relation 이 든다 — 같은 상태의 두 변이 축을
+#: 한 어휘로 뭉개면 P2 write set 산정이 재결속만 세는 거짓 초록이 된다.
 RELATIONS: tuple[str, ...] = (
     "imports_module",
     "imports_symbol",
@@ -41,6 +46,7 @@ RELATIONS: tuple[str, ...] = (
     "inherits",
     "writes_attribute",
     "reads_attribute",
+    "mutates_attribute",
     "dynamic_site",
 )
 

@@ -98,6 +98,11 @@ risk_surfaces = ["extract-fill-transform"]
 risk_surfaces = ["architecture-design-system"]
 layer = "contract"
 
+[files."tests/test_state_graph_02b.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
 [files."tests/test_static_graph_02a.py"]
 risk_surfaces = ["architecture-design-system"]
 layer = "contract"
