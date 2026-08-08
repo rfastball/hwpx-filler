@@ -694,7 +694,7 @@ predicate = { kind = "node_extractor", name = "react_direct_dom_mutations" }
 scope = ["frontend/**/*"]
 scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
 unit = "제품 코드 폐포 전체의 직접 DOM 생성/HTML 대입 사이트 1곳 = 1. bare React createElement는 DOM API 호출이 아니다."
-note = "R5-99 B1 — 종전 3-prefix 정의역 밖 출하 모듈 13(frontend/js 9 + src 루트 4)에서 실 위반 표본이 exit 0 으로 통과했다(bridge.js 주입 실증). React 전환 완료 뒤 제품 어디의 직접 DOM 생성도 위반이므로 정의역을 폐포로 넓혔다. R3-99 F2 통제 변이 계보는 유지."
+note = "R5-99 B1 — 종전 3-prefix 정의역 밖의 출하 제품 모듈(감사 시점 실측 13; #419 정리 뒤 frontend/js 전수 + src 루트·contract·ports·react·runtime·state)에서 실 위반 표본이 exit 0 으로 통과했다(bridge.js 주입 실증). React 전환 완료 뒤 제품 어디의 직접 DOM 생성도 위반이므로 정의역을 폐포로 넓혔다. R3-99 F2 통제 변이 계보는 유지."
 
 [[metric]]
 id = "react-listener-cleanup-gaps"
