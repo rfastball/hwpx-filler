@@ -382,7 +382,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.workbench = None
         # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
         # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
-        # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
+        # 프런트 소유(React reconciliation + 화면 전환 executor 의 보존)라 여기 두지 않는다.
         self.browse_tab = TAB_AVAILABLE
         self.browse_query = ""
         # preferredWorkId(§18.3 개정 1행) — 라이브러리 「문서 만들기에서 사용」이 낸 **명시

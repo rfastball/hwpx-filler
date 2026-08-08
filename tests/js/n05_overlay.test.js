@@ -474,7 +474,7 @@ test("1. Modal 의 공개 표면은 계약 표와 정확히 같다", async () =>
 test("1. SurfaceSheet 의 공개 표면은 계약 표와 정확히 같다", async () => {
   assert.deepEqual(
     Object.keys(SurfaceSheet).sort(),
-    ["close", "closeAllAndRestore", "closeAndRestore", "isOpen", "open", "restore", "trigger"],
+    ["close", "closeAllAndRestore", "closeAndRestore", "isOpen", "open", "restore"],
   );
   for (const key of Object.keys(SurfaceSheet)) assert.equal(typeof SurfaceSheet[key], "function");
   const ns = await import("../../frontend/js/surface_sheet.js");
@@ -544,7 +544,7 @@ test("3. factory 인스턴스가 달라도 엔진 스택·pendingDialog는 한 �
 
   // 스택 공유: SurfaceSheet 가 연 모달을 이쪽 Modal.close 가 닫는다.
   DOC.getElementById("sheetOpen").focus();
-  SurfaceSheet.open({ modalId: "sheetModal", moves: [{ id: "movable", slotId: "dataSheetSlot" }] });
+  SurfaceSheet.open({ modalId: "sheetModal" });
   assert.equal(DOC.getElementById("sheetModal").classList.contains("hidden"), false);
   Modal.close("sheetModal");
   flushClose("sheetModal");
@@ -855,86 +855,41 @@ test("8. beforeClose 가 false 면 닫기 요청을 소비한다", () => {
 
 /* ────────────────────────── 9. SurfaceSheet ────────────────────────── */
 
+/* R5-99 B2 — 실 DOM 이동/복귀 기계는 유일 제품 호출부의 이동 목록이 빈 채
+   (`moves: []`) 도달 불능이 되어 `trigger()` 와 함께 은퇴했다. 면 내용은 React 가
+   면 안에 직접 그린다(후계 = React reconciliation · r4 화면 계약군). 남는 계약은
+   열림/닫힘 정산 한 관문(afterRestore·onClose)·이중 open 무시·전량 회수다. */
+
 function openSheet(extra = {}) {
   const trigger = DOC.getElementById("sheetOpen");
   trigger.focus();
-  const movable = DOC.getElementById("movable");
-  const inner = DOC.getElementById("inner");
-  movable.scrollTop = 40;
-  movable.scrollLeft = 7;
-  inner.scrollTop = 12;
-  SurfaceSheet.open({
-    modalId: "sheetModal",
-    moves: [{ id: "movable", slotId: "dataSheetSlot" }],
-    returnFocus: trigger,
-    ...extra,
-  });
-  return { trigger, movable, inner };
+  SurfaceSheet.open({ modalId: "sheetModal", returnFocus: trigger, ...extra });
+  return { trigger };
 }
 
-test("9. 펼침은 실 DOM 을 슬롯으로 옮기고 복제하지 않는다", () => {
-  const { movable } = openSheet();
+test("9. 펼침은 모달을 열고 열림 상태를 기록한다", () => {
+  openSheet();
   assert.equal(SurfaceSheet.isOpen("sheetModal"), true);
-  assert.equal(movable.parentNode.id, "dataSheetSlot");
-  assert.equal(DOC.getElementById("movable"), movable, "같은 노드 — 사본이 아니다");
   assert.equal(DOC.getElementById("sheetModal").classList.contains("hidden"), false);
   assert.equal(DOC.activeElement.id, "sheetClose");
 });
 
-test("9. 복원은 원 위치 → scroll → trigger 초점 순서다", () => {
-  const { movable, inner } = openSheet();
-  // 펼친 면에서 오버플로가 사라져 Chromium 이 0 으로 클램프한 상황을 재현한다.
-  movable.scrollTop = 0;
-  movable.scrollLeft = 0;
-  inner.scrollTop = 0;
-  let raw = 0;
-  Object.defineProperty(movable, "scrollTop", {
-    configurable: true,
-    get: () => raw,
-    set: (v) => { raw = v; mark("scroll:" + v); },
-  });
-
-  trace.on = true;
+test("9. 닫힘 정산은 한 관문이다 — afterRestore 정확히 한 번, trigger 초점 복귀", () => {
+  const calls = [];
+  openSheet({ afterRestore: () => calls.push("after") });
   SurfaceSheet.closeAndRestore("sheetModal");
   flushClose("sheetModal");
-  trace.on = false;
-
-  assert.equal(movable.parentNode.id, "homeHost");
-  assert.deepEqual(
-    movable.parentNode.childNodes.map((n) => n.id),
-    ["before", "movable", "after"],
-    "nextSibling 기준으로 원 자리에 되꽂는다(끝으로 밀리지 않는다)",
-  );
-  assert.equal(movable.scrollTop, 40);
-  assert.equal(movable.scrollLeft, 7);
-  assert.equal(inner.scrollTop, 12, "[data-preserve-scroll] 하위도 되돌린다");
-  assert.equal(DOC.activeElement.id, "sheetOpen");
+  assert.deepEqual(calls, ["after"]);
   assert.equal(SurfaceSheet.isOpen("sheetModal"), false);
-
-  const place = trace.log.indexOf("place:movable");
-  const scroll = trace.log.indexOf("scroll:40");
-  const focus = trace.log.indexOf("focus:sheetOpen");
-  assert.ok(place !== -1 && scroll !== -1 && focus !== -1, trace.log.join(" | "));
-  assert.ok(place < scroll, "원 그릇으로 돌아온 뒤에 scroll 을 다시 적용한다");
-  assert.ok(scroll < focus, "초점 복귀는 복원이 끝난 뒤다");
+  assert.equal(DOC.activeElement.id, "sheetOpen");
 });
 
-test("9. 원 위치가 마지막 자식이었으면 append 로 되돌린다", () => {
-  const host = DOC.getElementById("homeHost");
-  const movable = DOC.getElementById("movable");
-  host.appendChild(movable); // before, after, movable
-  openSheet();
-  SurfaceSheet.closeAndRestore("sheetModal");
-  flushClose("sheetModal");
-  assert.deepEqual(host.childNodes.map((n) => n.id), ["before", "after", "movable"]);
-});
-
-test("9. Escape 로 닫아도 같은 복원이 걸린다(onClose 한 관문)", () => {
-  const { movable } = openSheet();
+test("9. Escape 로 닫아도 같은 정산이 걸린다(onClose 한 관문)", () => {
+  const calls = [];
+  openSheet({ afterRestore: () => calls.push("after") });
   pressKey("Escape");
   flushClose("sheetModal");
-  assert.equal(movable.parentNode.id, "homeHost");
-  assert.equal(movable.scrollTop, 40);
+  assert.deepEqual(calls, ["after"]);
   assert.equal(SurfaceSheet.isOpen("sheetModal"), false);
   assert.equal(DOC.activeElement.id, "sheetOpen");
 });
@@ -942,58 +897,37 @@ test("9. Escape 로 닫아도 같은 복원이 걸린다(onClose 한 관문)", (
 test("9. close 는 안 열린 면에 아무 일도 하지 않고, restore 는 멱등이다", () => {
   SurfaceSheet.close("sheetModal");
   assert.equal(DOC.getElementById("sheetModal").classList.contains("hidden"), true);
-  const { movable } = openSheet();
+  const calls = [];
+  openSheet({ afterRestore: () => calls.push("after") });
   SurfaceSheet.restore("sheetModal");
-  assert.equal(movable.parentNode.id, "homeHost");
   assert.equal(SurfaceSheet.isOpen("sheetModal"), false);
   SurfaceSheet.restore("sheetModal"); // 두 번째는 no-op
-  assert.equal(movable.parentNode.id, "homeHost");
+  assert.deepEqual(calls, ["after"], "정산은 정확히 한 번");
   Modal.close("sheetModal");
   flushClose("sheetModal");
 });
 
-test("9. 이중 open 은 두 번째를 무시한다(원 위치 기록을 덮어쓰지 않는다)", () => {
-  const { movable } = openSheet();
-  SurfaceSheet.open({
-    modalId: "sheetModal",
-    moves: [{ id: "movable", slotId: "sheet2Slot" }],
-  });
-  assert.equal(movable.parentNode.id, "dataSheetSlot");
+test("9. 이중 open 은 두 번째를 무시한다(열림 기록을 덮어쓰지 않는다)", () => {
+  const calls = [];
+  openSheet({ afterRestore: () => calls.push("first") });
+  SurfaceSheet.open({ modalId: "sheetModal", afterRestore: () => calls.push("second") });
   SurfaceSheet.closeAndRestore("sheetModal");
   flushClose("sheetModal");
-  assert.equal(movable.parentNode.id, "homeHost");
+  assert.deepEqual(calls, ["first"], "두 번째 open 의 정산이 끼어들지 않는다");
 });
 
 test("9. closeAllAndRestore 는 열린 면을 전부 회수한다", () => {
-  openSheet();
-  SurfaceSheet.open({
-    modalId: "sheet2Modal",
-    moves: [{ id: "before", slotId: "sheet2Slot" }],
-  });
+  const calls = [];
+  openSheet({ afterRestore: () => calls.push("one") });
+  SurfaceSheet.open({ modalId: "sheet2Modal", afterRestore: () => calls.push("two") });
   assert.equal(SurfaceSheet.isOpen("sheetModal"), true);
   assert.equal(SurfaceSheet.isOpen("sheet2Modal"), true);
   SurfaceSheet.closeAllAndRestore();
   assert.equal(SurfaceSheet.isOpen("sheetModal"), false);
   assert.equal(SurfaceSheet.isOpen("sheet2Modal"), false);
-  assert.equal(DOC.getElementById("movable").parentNode.id, "homeHost");
-  assert.equal(DOC.getElementById("before").parentNode.id, "homeHost");
+  assert.deepEqual(calls.sort(), ["one", "two"], "정산이 면마다 한 번씩 걸린다");
   flushClose("sheetModal");
   flushClose("sheet2Modal");
-});
-
-test("9. trigger — 실클릭 버튼 우선, 휘발 캡스트립은 안정 트리거로 고정", () => {
-  const btn = DOC.getElementById("pageTrigger");
-  const stable = DOC.getElementById("sheetOpen");
-  assert.equal(SurfaceSheet.trigger({ target: btn }, stable), btn);
-
-  const strip = createElement("div", { cls: ["capstrip"] });
-  const volatile = createElement("button", { id: "volatileBtn" });
-  strip.appendChild(volatile);
-  DOC.getElementById("screenRoot").appendChild(strip);
-  assert.equal(SurfaceSheet.trigger({ target: volatile }, stable), stable);
-
-  DOC.getElementById("pageTrigger").focus();
-  assert.equal(SurfaceSheet.trigger(null, null), DOC.activeElement);
 });
 
 /* ────────────────────────── 10. Escape 3층 순서 ────────────────────────── */

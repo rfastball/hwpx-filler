@@ -6,7 +6,7 @@
    걸리는가" 였다. N-10 이 임시 별칭 스물일곱을 지우면서 그 질문의 **주어**가 사라졌다.
    그렇다고 파일째 지우면 함께 죽는 것이 있다:
 
-   - 어떤 잎이 export 와 **동일 객체**로 배선됐는가 (`Copy` ≡ `copy.js` 의 export)
+   - 어떤 잎이 export 와 **동일 객체**로 배선됐는가 (`Guard` ≡ `guard.js` 의 export)
    - 각 factory 산물의 **공개 표면 키**가 계약대로인가
    - 조립이 실제로 **돌았는가** (앱 셸이 부팅 랜딩을 찍었는가)
    - 제품 파사드와 푸시 통로가 **같은 하나**로 모이는가
@@ -50,16 +50,16 @@ const BOOTSTRAP = "../../frontend/src/bootstrap.js";
 /* R4-02 에서 `segview.js` 가 사라졌다 — 그 잎의 후계는 `src/screens/segment_view.ts` 이고,
    `.ts` 잎의 전역 청결은 이 목록이 아니라 `n10_global_hygiene.test.js` 의 AST 축이 진다.
    여기 남는 것은 **legacy `.js` 잎**의 import 부작용 부재다. */
-const LEAVES = ["copy.js", "esc.js", "guard.js"];
+/* R5-99 B2 — `copy.js`·`esc.js` 는 소비자 0 실측으로 삭제됐고 `preserve.js` 는 selftest
+   소유(`src/selftest/preserve.js`)로 떠났다. legacy `.js` 잎의 import 부작용 부재 계약은
+   남은 잎에 그대로 산다. */
+const LEAVES = ["guard.js"];
 
 /* 합성 루트가 **모듈 export 와 같은 객체**로 배선해야 하는 이름들. 평범한 named export 라
    동일성으로 잰다 — 여기서 사본을 만들면 프로브의 프로퍼티 교체가 우회된다. */
 const PLAIN_SERVICES = {
-  Copy: ["copy.js", "Copy"],
-  escHtml: ["esc.js", "escHtml"],
   Guard: ["guard.js", "Guard"],
   Popover: ["popover.js", "Popover"],
-  Preserve: ["preserve.js", "Preserve"],
   Intent: ["intent.js", "Intent"],
   UndoToast: ["undo_toast.js", "UndoToast"],
 };
@@ -75,7 +75,7 @@ const FACTORY_SERVICES = {
     "setMasterWidth", "saveMasterWidth", "masterMin", "masterMax",
   ],
   Modal: ["open", "close", "confirm", "prompt", "choose", "restoreFocus"],
-  SurfaceSheet: ["open", "close", "closeAndRestore", "closeAllAndRestore", "isOpen", "restore", "trigger"],
+  SurfaceSheet: ["open", "close", "closeAndRestore", "closeAllAndRestore", "isOpen", "restore"],
   SheetPicker: ["choose"],
   DataPicker: ["init", "open"],
   EditorEntry: [
@@ -285,8 +285,8 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 19,
-    "R5 구성 산물 이름 수가 바뀌었습니다 — 화면 facade 은퇴 뒤 19개입니다.");
+  assert.equal(SERVICE_NAMES.length, 16,
+    "R5 구성 산물 이름 수가 바뀌었습니다 — R5-99 B2(Copy·escHtml·Preserve 퇴장) 뒤 16개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {

@@ -13,12 +13,9 @@ from pathlib import Path
 
 from _web_source import (
     REPO_ROOT,
-    SOURCE_BOOTSTRAP,
-    SOURCE_ENTRY,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
-    evaluated_modules,
-    evaluation_site,
+    source_path,
 )
 
 ROOT = REPO_ROOT
@@ -101,36 +98,35 @@ def test_web_surfaces_free_of_issue_numbers():
 
 
 # (test_txt_note_single_source_in_copy_js 삭제 — 대상(#draftNote·draftsession.js)이
-#  「기안」 화면과 함께 사망, F6 PR-B. copy.js 자체는 다른 공용 문안으로 생존 —
-#  단일 출처 계약은 살아 있는 소비자가 생기면 그 표면의 테스트가 다시 진다.)
-def test_copy_module_still_reaches_the_product_graph():
-    """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다.
+#  「기안」 화면과 함께 사망, F6 PR-B.
+#  test_copy_module_* 2건은 R5-99 감사 B2 로 대체 — copy.js 는 소비 **표면**이 0 인 채
+#  그래프 배선만 살아 있었다(TXT_NOTE 를 그리는 DOM 이 저장소에 없다). 문안을 실을 표면이
+#  다시 생기면 단일 출처 계약은 그 표면의 테스트가 새 거처와 함께 진다.)
+def test_copy_module_stays_retired_with_its_orphan_note():
+    """공용 문안 모듈은 소비 표면 0 실측으로 은퇴했다 — 모듈도 고아 문안도 되살아나지 않는다.
 
-    N-04 뒤 copy.js 는 entry 가 직접 싣지 않고 합성 루트가 끌어온다. 제품 JS 소비자가
-    0인 모듈이라 "그래프에서 빠졌다"가 아무 화면도 깨지 않고 통과할 수 있는 자리다 —
-    그래서 도달 경로를 명시적으로 센다.
+    되살아나는 두 모양을 각각 겨눈다: ①모듈이 경로째 돌아오는 것(RETIRED_R5_MODULES 와
+    이중 그물), ②죽은 문안이 단일 출처 없이 아무 표면에 재유입되는 것 — 후자가 더 나쁘다,
+    다음 사람이 그 문자열을 계약 없는 사본으로 알고 두 벌째를 만든다.
     """
-    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    provider = evaluation_site("copy.js")
-    assert provider in modules, f"{provider} 가 제품 entry 에 import되지 않았습니다."
-    assert 'from "../js/copy.js"' in SOURCE_BOOTSTRAP.read_text(encoding="utf-8"), (
-        "합성 루트가 copy.js 를 끌어오지 않습니다 — 공용 문안 모듈이 그래프에서 빠집니다."
+    assert not (SOURCE_JS_DIR / "copy.js").exists(), (
+        "copy.js 가 되살아났습니다 — 승격 대상(2곳 이상 공유 문안)이 생겼다면 새 모듈은"
+        " 소비 표면 테스트와 함께 세우세요(R5-99 B2)."
     )
-
-
-def test_copy_module_exports_the_shared_note_verbatim():
-    """공용 문안의 단일 출처 책임은 로드 배선이 아니라 named export 가 진다.
-
-    구 계약은 "copy.js 가 entry 에 실린다"만 봤다. 실려 있어도 문안이 바뀌면 조용히
-    통과하는 자리라, 전이하면서 문자열 자체를 계약에 넣는다.
-    """
-    src = (SOURCE_JS_DIR / "copy.js").read_text(encoding="utf-8")
-    assert re.search(r"(?m)^export const Copy = \{", src), (
-        "copy.js 가 Copy 를 named export 로 내지 않습니다."
+    orphan = "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다."
+    # L16 반증이 잡은 자리: `_surfaces()` 는 index.html + legacy js 만 본다 — R4/R5 뒤
+    # 사용자 문안이 실제로 생기는 자리는 React 화면(.ts/.tsx)과 Python 컨트롤러다.
+    # 고아 검사는 그 전부를 본다(주석 포함 — 문자열이 어디에 있든 두 벌째의 씨앗이다).
+    carriers = [name for name, body in _surfaces() if orphan in body]
+    react_files = sorted(source_path("src").rglob("*.ts")) + sorted(
+        source_path("src").rglob("*.tsx")
     )
-    assert (
-        'TXT_NOTE: "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다.",' in src
-    ), "Copy.TXT_NOTE 문안이 바뀌었습니다 — 공용 문안은 이 자리가 단일 출처입니다."
+    for p in react_files + PY_MESSAGE_SOURCES:
+        if orphan in p.read_text(encoding="utf-8"):
+            carriers.append(str(p.relative_to(ROOT)))
+    assert not carriers, (
+        f"고아 문안이 표면에 재유입됐습니다: {carriers} — 단일 출처를 먼저 세우세요."
+    )
 
 
 def test_status_pill_calls_the_rule_axis_approval():

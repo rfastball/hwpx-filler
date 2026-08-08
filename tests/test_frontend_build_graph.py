@@ -87,13 +87,11 @@ EXPECTED_CSS_FILES = {
 #: 있고, 그 갈림은 자의가 아니다: 의존이 다른 ESM 모듈뿐이면 named export, 아직 전역인
 #: ``Bridge``/``Nav``를 쓰거나 factory 산물을 주입받아야 하면 ``create*`` factory다.
 EXPECTED_ESM_EXPORTS = {
-    # N-04 잎 넷
-    "copy.js": "Copy",
-    "esc.js": "escHtml",
+    # N-04 잎 — R5-99 B2 에서 copy.js·esc.js 가 소비자 0 실측으로 퇴장, guard.js 만 남았다
     "guard.js": "Guard",
-    # N-05 서비스 — 포트가 필요 없어 모듈 평가가 곧 싱글턴인 일곱
+    # N-05 서비스 — 포트가 필요 없어 모듈 평가가 곧 싱글턴인 것들
+    # (preserve.js 는 같은 실측으로 selftest 소유 src/selftest/preserve.js 로 이동)
     "popover.js": "Popover",
-    "preserve.js": "Preserve",
     "intent.js": "Intent",
     "undo_toast.js": "UndoToast",
     "surface_sheet.js": "createSurfaceSheet",
@@ -122,6 +120,10 @@ RETIRED_R5_MODULES = (
     "js/theme.js",
     "js/personalization.js",
     "js/modal.js",
+    # R5-99 감사 B2 — 소비자 0 실측(copy·esc 는 삭제, preserve 는 selftest 소유로 이동).
+    "js/copy.js",
+    "js/esc.js",
+    "js/preserve.js",
 )
 
 
@@ -385,7 +387,8 @@ def test_converted_modules_are_esm_and_own_no_globals() -> None:
     모듈은 영영 `undefined` 를 읽고 조용히 아무것도 안 한다.
     """
     assert set(EXPECTED_ESM_EXPORTS) == set(ESM_FILES)
-    assert len(ESM_FILES) == 9
+    # R5-99 B2 — copy.js·esc.js 삭제, preserve.js selftest 이동으로 9 → 6.
+    assert len(ESM_FILES) == 6
 
     #: 양성 대조 — 금지 목록이 비면 아래 정규식이 무엇에도 맞지 않아 게이트가 조용히 통과한다.
     assert len(FORBIDDEN_PRODUCT_GLOBALS) == 27
@@ -452,8 +455,7 @@ def test_service_dependencies_are_written_edges_not_global_lookups() -> None:
         )
 
     #: 간선이 없어야 하는 모듈은 정말 없어야 한다(잎다움의 음성 대조).
-    for name in ("copy.js", "esc.js", "guard.js", "popover.js", "preserve.js",
-                 "intent.js", "undo_toast.js"):
+    for name in ("guard.js", "popover.js", "intent.js", "undo_toast.js"):
         source = (SOURCE_JS_DIR / name).read_text(encoding="utf-8")
         assert not [p for p in module_imports(source) if p.startswith("./")], (
             f"{name} 이 다른 제품 모듈을 import 합니다 — 잎이 아니게 됐습니다."
@@ -718,7 +720,7 @@ def test_no_legacy_iife_remains_and_temporary_global_surface_is_zero() -> None:
         if path.relative_to(SOURCE_JS_DIR).as_posix() not in ESM_FILES
     )
 
-    assert len(scripts) == 9
+    assert len(scripts) == 6
     assert non_esm == ()
     assert LEGACY_JS_FILES == ()
     assert EXPECTED_LEGACY_GLOBALS == set()

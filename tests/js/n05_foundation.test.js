@@ -17,7 +17,9 @@ import assert from "node:assert/strict";
 
 const MODULES = {
   Popover: new URL("../../frontend/js/popover.js", import.meta.url),
-  Preserve: new URL("../../frontend/js/preserve.js", import.meta.url),
+  /* R5-99 B2 — 제품 소비자 0 실측으로 selftest 소유로 이동. ESM 계약·보존 기제 검증은
+     소유가 옮겨져도 그대로 산다(기제 자체는 `preserve` 프로브가 계속 부른다). */
+  Preserve: new URL("../../frontend/src/selftest/preserve.js", import.meta.url),
   Intent: new URL("../../frontend/js/intent.js", import.meta.url),
   UndoToast: new URL("../../frontend/js/undo_toast.js", import.meta.url),
 };

@@ -169,16 +169,6 @@ responsibility = "제품 합성 루트 — 제품 전역은 정확히 하나, �
 owner_stage = "R2-01"
 
 [[asset]]
-file = "tests/js/copy.test.js"
-responsibility = "공유 카피 단일 출처 ESM 계약"
-owner_stage = "R3-01"
-
-[[asset]]
-file = "tests/js/esc.test.js"
-responsibility = "공유 HTML 이스케이퍼 ESM 계약"
-owner_stage = "R3-01"
-
-[[asset]]
 file = "tests/js/guard.test.js"
 responsibility = "세션 가드 재진술 합성기 ESM 계약"
 owner_stage = "R3-01"

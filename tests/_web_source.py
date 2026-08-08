@@ -51,9 +51,9 @@ ALL_CSS_FILES = ("tokens.css", *APP_CSS_FILES)
 #: 넷은 :data:`BOOTSTRAP_MODULE` 하나를 통해서만 제품 그래프에 닿는다. N-10 이전에는 그
 #: 자리가 임시 전역 별칭(``Copy``·``escHtml``·``Guard``·``SegView``)의 단일 생산자이기도
 #: 했으나, 별칭 스물일곱은 N-10에서 0이 됐고 남은 것은 합성 책임뿐이다.
+#: R5-99 감사 B2 — copy.js·esc.js 는 소비자 0 실측으로 삭제됐다(카피 단일 출처는 소비처가
+#: index.html 하나로 줄어 HTML 자체가 단일 출처, 이스케이프 소유는 React text/attribute 경계).
 LEAF_ESM_FILES = (
-    "copy.js",
-    "esc.js",
     "guard.js",
 )
 
@@ -62,8 +62,9 @@ LEAF_ESM_FILES = (
 #: 이 legacy-JS 매니페스트에서는 빠진다. 잎과 같은 규칙을 따른다 — entry가 직접
 #: 싣지 않고 합성 루트가 끌어온다. 순서는 N-04까지 entry가 싣던 실행 순서 그대로다(계약이
 #: 아니라 **기록**이다: 이제 평가 순서는 합성 루트의 import 그래프가 정한다).
+#: preserve.js 는 R5-99 B2 에서 selftest 소유(src/selftest/preserve.js)로 이동 — 제품
+#: 소비자 0(React 는 서브트리 재구성이 없어 되찾을 포커스·캐럿이 생기지 않는다).
 SERVICE_ESM_FILES = (
-    "preserve.js",
     "surface_sheet.js",
     "undo_toast.js",
     "popover.js",

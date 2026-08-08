@@ -35,6 +35,7 @@
 import { createSelftestRunner, HOST_OPS } from "./runner.js";
 import { registerAllProbes } from "./probes/index.js";
 import { installSelftestApi, SELFTEST_VERSION } from "./api.js";
+import { Preserve } from "./preserve.js";
 
 /** 부트 판정 — 던지지 않는다. 정상 실행에서 능력이 없는 것은 결함이 아니라 기대되는 상태이고,
  *  그때 부팅을 깨뜨리면 시험 훅이 제품 가용성을 쥐게 된다. */
@@ -171,7 +172,10 @@ function bootWithHost(deps) {
                `pushPort` 는 `ctx.push` 를 접근자로 만들어 **호출 시점 결속**을 준다. */
             push: pushPort.dispatch,
             pushPort,
-            services,
+            /* `Preserve` 는 selftest 소유 헬퍼다(R5-99 B2 — 제품 소비자 0). 제품 합성
+               루트의 services 자루에는 더 이상 없고, 그것을 쓰는 유일 소비자(`preserve`
+               프로브)가 있는 이쪽이 자루에 얹는다. 제품 산물은 객체째 그대로 지난다. */
+            services: { ...services, Preserve },
             host: {
               provides: claim.provides,
               request: (op, payload) => testHost.request(op, payload).then(
