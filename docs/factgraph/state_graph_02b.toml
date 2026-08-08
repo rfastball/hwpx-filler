@@ -14,13 +14,13 @@ base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
 graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
 
 [digests]
-state_facts = "d8367fe988f7efdfd5610a493100d3c5bcaaa7e678048f329ad1499f6a6ee030"
-full_graph = "eff29ef8fdbe6b0ea3dcee77891b944a9d10d7e912f359429ae78a8be78afd30"
+state_facts = "142b3b1904030c663510dc0f49ed58dac4a16d8978a5b3d99c83036ab7191caf"
+full_graph = "5f5df61c39f5ced4e7f53f2ca36a96640a7d12e045b5a71d03cf07028d22ed6a"
 
 [counts]
 modules = 85
 symbols = 1707
-facts_state = 3584
+facts_state = 3636
 states = 1119
 states_instance_field = 701
 states_class_attr = 36
@@ -33,9 +33,11 @@ sync_unbound = 12
 uncovered_state_sites = 0
 unresolved_state_open = 446
 inherited_02b_queue = 2006
-inherited_02b_queue_site_covered = 517
+inherited_02b_queue_site_covered = 546
 
 [state_rules]
+"attr_read_augassign" = 10
+"attr_read_called_field" = 42
 "attr_read_self" = 1715
 "attr_read_typed" = 300
 "class_attr_assign" = 252
@@ -803,6 +805,7 @@ writers = [
 mutators = []
 readers = [
   "hwpxfiller.batch:BatchResult.failed#method",
+  "hwpxfiller.batch:generate_batch#function",
 ]
 sync = []
 
@@ -6674,7 +6677,9 @@ writers = [
   "hwpxfiller.gui.nara_state:NaraAcquireViewModel#class",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.gui.nara_state:NaraAcquireViewModel._acquire#method",
+]
 sync = []
 
 [[state]]
@@ -9797,6 +9802,7 @@ writers = [
 ]
 mutators = []
 readers = [
+  "hwpxfiller.webapp.app:_selftest_drive#function",
   "hwpxfiller.webapp.live_run:entrypoint#function",
 ]
 sync = []
@@ -10355,7 +10361,10 @@ writers = [
   "hwpxfiller.webapp.product_api:ProductApiClient.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.product_api:ProductApiClient._deliver#method",
+  "hwpxfiller.webapp.product_api:ProductApiClient.describe#method",
+]
 sync = []
 
 [[state]]
@@ -10641,7 +10650,9 @@ writers = [
   "hwpxfiller.webapp.screen_editor:EditorController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_editor:EditorController._push#method",
+]
 sync = []
 
 [[state]]
@@ -11359,7 +11370,10 @@ writers = [
   "hwpxfiller.webapp.screen_job:JobController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_job:JobController._push#method",
+  "hwpxfiller.webapp.screen_job:JobController._push_progress#method",
+]
 sync = []
 
 [[state]]
@@ -11403,6 +11417,7 @@ mutators = []
 readers = [
   "hwpxfiller.webapp.screen_job:JobController._do_range_draft_apply#method",
   "hwpxfiller.webapp.screen_job:JobController._do_range_draft_open#method",
+  "hwpxfiller.webapp.screen_job:JobController._reset_range_for_snapshot#method",
   "hwpxfiller.webapp.screen_job:JobController._review_scope_key#method",
   "hwpxfiller.webapp.screen_job:JobController.snapshot#method",
 ]
@@ -11981,8 +11996,11 @@ writers = [
 ]
 mutators = []
 readers = [
+  "hwpxfiller.webapp.screen_job:JobController._do_range_draft_apply#method",
+  "hwpxfiller.webapp.screen_job:JobController._do_range_draft_cancel#method",
   "hwpxfiller.webapp.screen_job:JobController._do_range_draft_open#method",
   "hwpxfiller.webapp.screen_job:JobController._is_stale_zone_edit#method",
+  "hwpxfiller.webapp.screen_job:JobController._reset_range_for_snapshot#method",
   "hwpxfiller.webapp.screen_job:JobController.dispatch#method",
   "hwpxfiller.webapp.screen_job:JobController.snapshot#method",
 ]
@@ -12137,7 +12155,9 @@ writers = [
   "hwpxfiller.webapp.screen_library:LibraryController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_library:LibraryController._push#method",
+]
 sync = []
 
 [[state]]
@@ -12234,7 +12254,9 @@ writers = [
   "hwpxfiller.webapp.screen_pool:PoolController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_pool:PoolController._push#method",
+]
 sync = []
 
 [[state]]
@@ -12372,7 +12394,9 @@ writers = [
   "hwpxfiller.webapp.screen_template:TemplateController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_template:TemplateController._push#method",
+]
 sync = []
 
 [[state]]
@@ -12598,6 +12622,7 @@ writers = [
 ]
 mutators = []
 readers = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController.note_copied#method",
   "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method",
 ]
 sync = []
@@ -12658,7 +12683,9 @@ writers = [
   "hwpxfiller.webapp.screen_workbench:WorkbenchController.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._push#method",
+]
 sync = []
 
 [[state]]
@@ -13965,7 +13992,10 @@ writers = [
   "hwpxfiller.webapp.selftest_api:ProcessDeadline#class",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.selftest_api:ProcessDeadline.__post_init__#method",
+  "hwpxfiller.webapp.selftest_api:ProcessDeadline.elapsed_s#method",
+]
 sync = []
 
 [[state]]
@@ -14151,7 +14181,9 @@ writers = [
   "hwpxfiller.webapp.selftest_api:SelftestClient.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.selftest_api:SelftestClient._eval#method",
+]
 sync = []
 
 [[state]]
@@ -14202,7 +14234,10 @@ writers = [
   "hwpxfiller.webapp.selftest_api:SelftestClient.__init__#method",
 ]
 mutators = []
-readers = []
+readers = [
+  "hwpxfiller.webapp.selftest_api:SelftestClient.await_readiness#method",
+  "hwpxfiller.webapp.selftest_api:SelftestClient.drive#method",
+]
 sync = []
 
 [[state]]
@@ -14232,6 +14267,7 @@ writers = [
 mutators = []
 readers = [
   "hwpxfiller.webapp.selftest_api:SelftestHostFacade.claim_state#method",
+  "hwpxfiller.webapp.selftest_api:SelftestHostFacade.selftest_claim#method",
 ]
 sync = []
 
@@ -14272,6 +14308,7 @@ writers = [
 ]
 mutators = []
 readers = [
+  "hwpxfiller.webapp.selftest_api:SelftestHostFacade._note#method",
   "hwpxfiller.webapp.selftest_api:SelftestHostFacade.claim_state#method",
 ]
 sync = []

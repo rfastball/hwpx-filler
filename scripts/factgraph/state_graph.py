@@ -343,6 +343,33 @@ class _StateWalker:
                     syntax_site_anchor(stmt.target),
                 )
             return
+        if isinstance(stmt, ast.AugAssign) and isinstance(stmt.target, ast.Attribute):
+            # 증감 할당은 쓰기 전에 현재 값을 읽는다 — write 만 적으면 reader 집합이
+            # 불완전해진다(리뷰 P2). 타깃 ctx 가 Store 라 식 스캔이 못 보는 자리다.
+            target = stmt.target
+            first = self._first_param()
+            if isinstance(target.value, ast.Name) and target.value.id == first and first:
+                cls = self._cls_qual()
+                self._emit(
+                    "reads_attribute",
+                    f"attr:{self.mf.module}:{cls}.{target.attr}",
+                    "STATIC_CONFIRMED",
+                    stmt,
+                    "attr_read_augassign",
+                    syntax_site_anchor(target),
+                )
+            elif isinstance(target.value, ast.Name):
+                typed = self._root_type(target.value.id, frozenset())
+                if typed is not None:
+                    module, qual, _kind = parse_symbol_id(typed)
+                    self._emit(
+                        "reads_attribute",
+                        f"attr:{module}:{qual}.{target.attr}",
+                        "INFERRED",
+                        stmt,
+                        "attr_read_augassign",
+                        syntax_site_anchor(target),
+                    )
         targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
         for target in _flat_targets(targets):
             if isinstance(target, ast.Name):
@@ -471,7 +498,10 @@ class _StateWalker:
                         )
                 elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
                     if id(node) in call_funcs:
-                        continue  # 메서드 호출 수신 좌표는 call/mutates 사실이 든다
+                        # 정의된 메서드 호출이면 call 사실 몫이지만, 필드에 저장된 callable 의
+                        # 호출은 상태 읽기다 — 블랭킷 스킵은 주입 콜백을 조용히 삼킨다(리뷰 P1).
+                        self._handle_called_attribute(node, shadow)
+                        continue
                     self._handle_attribute_read(node, shadow)
                 elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                     if id(node) in call_funcs:
@@ -571,6 +601,48 @@ class _StateWalker:
                 return (f"?:local:{name}", "UNKNOWN", "subscript_mutation_local")
             return (f"?:name:{name}", "UNKNOWN", "subscript_mutation_opaque")
         return (f"?:expr:{_short(container)}", "UNKNOWN", "subscript_mutation_opaque")
+
+    def _handle_called_attribute(self, node: ast.Attribute, shadow: "frozenset[str]") -> None:
+        """호출된 속성의 read 보존 — 어휘 정의(메서드·중첩 클래스)가 없으면 callable 결속이다.
+
+        ``self._push_sink(...)`` 류 주입 콜백 호출은 기반 그래프가 ``call_self_unresolved``
+        로 남긴 자리이고, 그 필드 읽기를 잇는 것이 정확히 02B 몫이다. 정의 대조는 심볼
+        색인(조건부 정의 포함)으로 하고, 상속 메서드일 가능성이 남는 좌표라 grade 는
+        INFERRED 를 상한으로 한다.
+        """
+        first = self._first_param()
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == first
+            and first
+            and node.value.id not in shadow
+        ):
+            cls = self._cls_qual()
+            if self.index.get((self.mf.module, f"{cls}.{node.attr}")) is not None:
+                return  # 자기 클래스가 정의한 메서드/중첩 클래스 — call 사실이 든다
+            self._emit(
+                "reads_attribute",
+                f"attr:{self.mf.module}:{cls}.{node.attr}",
+                "INFERRED",
+                node,
+                "attr_read_called_field",
+                syntax_site_anchor(node),
+            )
+            return
+        if isinstance(node.value, ast.Name):
+            typed = self._root_type(node.value.id, shadow)
+            if typed is not None:
+                module, qual, _kind = parse_symbol_id(typed)
+                if self.index.get((module, f"{qual}.{node.attr}")) is not None:
+                    return
+                self._emit(
+                    "reads_attribute",
+                    f"attr:{module}:{qual}.{node.attr}",
+                    "INFERRED",
+                    node,
+                    "attr_read_called_field",
+                    syntax_site_anchor(node),
+                )
 
     def _handle_attribute_read(self, node: ast.Attribute, shadow: "frozenset[str]") -> None:
         first = self._first_param()
@@ -1118,6 +1190,8 @@ def build_state(repo_root: Path) -> StateGraphResult:
         read_rules = {
             "attr_read_self",
             "attr_read_typed",
+            "attr_read_called_field",
+            "attr_read_augassign",
             "global_read",
             "getattr_literal",
             "hasattr_literal",
@@ -1366,6 +1440,22 @@ class _OracleWalker:
                         "필드 선언",
                     )
                 return
+            if (
+                isinstance(stmt, ast.AugAssign)
+                and isinstance(stmt.target, ast.Attribute)
+                and isinstance(stmt.target.value, ast.Name)
+                and self.first_params
+                and self.first_params[-1]
+                and stmt.target.value.id == self.first_params[-1]
+            ):
+                expected = (
+                    f"attr:{self.mf.module}:{self._method_cls()}.{stmt.target.attr}"
+                )
+                if expected not in self.reads.get((self.mf.path, stmt.lineno), set()):
+                    self.problems.append(
+                        f"{self.mf.path}:{stmt.lineno} 증감 할당 읽기 "
+                        f"{stmt.target.attr!r} 에 reads 사실이 없다"
+                    )
             targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
             for target in _flat_targets(list(targets)):
                 if isinstance(target, ast.Attribute):
@@ -1471,6 +1561,26 @@ class _OracleWalker:
                         ):
                             continue  # 자기 클래스가 정의한 같은 이름 메서드 — 일반 호출
                         self._need_mutation(node, node, f"변이 메서드 {func.attr!r}")
+                    if (
+                        isinstance(func, ast.Attribute)
+                        and isinstance(func.value, ast.Name)
+                        and first
+                        and func.value.id == first
+                        and func.value.id not in shadow
+                        and func.attr
+                        not in self.class_methods.get(self._method_cls(), set())
+                    ):
+                        # 호출된 필드의 read 보존(리뷰 P1) — 정의 없는 self 호출은 결속 읽기다.
+                        expected = (
+                            f"attr:{self.mf.module}:{self._method_cls()}.{func.attr}"
+                        )
+                        if expected not in self.reads.get(
+                            (self.mf.path, func.lineno), set()
+                        ):
+                            self.problems.append(
+                                f"{self.mf.path}:{func.lineno} 호출된 필드 "
+                                f"{func.attr!r} 에 reads 사실이 없다"
+                            )
                 elif (
                     isinstance(node, ast.Attribute)
                     and isinstance(node.ctx, ast.Load)
@@ -1491,11 +1601,13 @@ def _lexical_class_methods(tree: ast.Module) -> "dict[str, set[str]]":
     out: dict[str, set[str]] = {}
 
     def direct_methods(body: "list[ast.stmt]", methods: "set[str]") -> None:
-        # 조건부 블록(if/try) 안 정의도 클래스 네임스페이스의 메서드다 — 심볼 수집기와 동형.
+        # 조건부 블록(if/try) 안 정의도 클래스 네임스페이스의 정의다 — 심볼 색인과 동형.
+        # 중첩 ClassDef 이름도 든다: 방출기의 정의 대조가 심볼 색인(클래스 포함)이라
+        # 여기서 빼면 self.중첩클래스(...) 호출에서 두 구현이 갈라진다.
         for sub in body:
-            if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 methods.add(sub.name)
-            elif not isinstance(sub, ast.ClassDef):
+            if not isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 for block in _statement_blocks(sub):
                     direct_methods(block, methods)
 

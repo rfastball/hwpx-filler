@@ -239,9 +239,16 @@ def test_reads_and_mutable_global_reads(tmp_path: Path) -> None:
             class Holder:
                 def __init__(self):
                     self.value = 1
+                    self.sink = print
 
                 def show(self):
                     return self.value
+
+                def tally(self):
+                    self.value += 1
+
+                def fire(self):
+                    return self.sink("x")
 
                 def poke(self):
                     return self.helper()
@@ -269,6 +276,16 @@ def test_reads_and_mutable_global_reads(tmp_path: Path) -> None:
     assert ("attr:alpha.reads:Holder.value", "STATIC_CONFIRMED") in reads_self
     # 음성: 메서드 호출의 수신 속성은 읽기 사실이 아니라 call 사실의 몫이다.
     assert not any(dst.endswith(".helper") for dst, _grade in reads_self)
+
+    # 필드에 저장된 callable 의 호출은 상태 읽기다(리뷰 P1) — 정의된 메서드는 아니다(음성).
+    called = _pairs(facts, "attr_read_called_field")
+    assert ("attr:alpha.reads:Holder.sink", "INFERRED") in called
+    assert not any(dst.endswith(".helper") for dst, _grade in called)
+
+    # 증감 할당은 write 이자 read 다(리뷰 P2).
+    assert ("attr:alpha.reads:Holder.value", "STATIC_CONFIRMED") in _pairs(
+        facts, "attr_read_augassign"
+    )
 
     assert ("attr:alpha.reads:Holder.value", "INFERRED") in _pairs(facts, "attr_read_typed")
 
@@ -368,9 +385,16 @@ def test_uncovered_state_oracle_positive_and_negative(tmp_path: Path) -> None:
             class P:
                 def __init__(self):
                     self.z = 1
+                    self.cb = len
 
                 def read(self):
                     return self.z
+
+                def bump(self):
+                    self.z += 1
+
+                def fire(self):
+                    return self.cb("ab")
 
                 def hit(self, a, b):
                     a.x.append(1); b.y.append(2)
@@ -404,6 +428,16 @@ def test_uncovered_state_oracle_positive_and_negative(tmp_path: Path) -> None:
     dropped = [f for f in everything if f.provenance.rule != "attr_read_self"]
     problems = uncovered_state_sites(repo, closure, dropped)
     assert any("self 읽기" in p for p in problems)
+
+    # 호출된 필드의 read 결손도 빨갛다(리뷰 P1) — 오러클이 그 측을 독립 검사한다.
+    dropped = [f for f in everything if f.provenance.rule != "attr_read_called_field"]
+    problems = uncovered_state_sites(repo, closure, dropped)
+    assert any("호출된 필드 'cb'" in p for p in problems)
+
+    # 증감 할당의 read 결손도 빨갛다(리뷰 P2).
+    dropped = [f for f in everything if f.provenance.rule != "attr_read_augassign"]
+    problems = uncovered_state_sites(repo, closure, dropped)
+    assert any("증감 할당 읽기 'z'" in p for p in problems)
 
 
 # ---------------------------------------------------------------------------
