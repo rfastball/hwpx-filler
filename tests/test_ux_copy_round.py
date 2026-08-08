@@ -15,6 +15,7 @@ from _web_source import (
     REPO_ROOT,
     SOURCE_INDEX,
     SOURCE_JS_DIR,
+    source_path,
 )
 
 ROOT = REPO_ROOT
@@ -117,8 +118,8 @@ def test_copy_module_stays_retired_with_its_orphan_note():
     # 사용자 문안이 실제로 생기는 자리는 React 화면(.ts/.tsx)과 Python 컨트롤러다.
     # 고아 검사는 그 전부를 본다(주석 포함 — 문자열이 어디에 있든 두 벌째의 씨앗이다).
     carriers = [name for name, body in _surfaces() if orphan in body]
-    react_files = sorted((ROOT / "frontend" / "src").rglob("*.ts")) + sorted(
-        (ROOT / "frontend" / "src").rglob("*.tsx")
+    react_files = sorted(source_path("src").rglob("*.ts")) + sorted(
+        source_path("src").rglob("*.tsx")
     )
     for p in react_files + PY_MESSAGE_SOURCES:
         if orphan in p.read_text(encoding="utf-8"):
