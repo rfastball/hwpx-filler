@@ -564,6 +564,50 @@ def test_the_product_writes_the_evidence_the_judge_reads() -> None:
     ), "판정이 창 앱 stdout 포획으로 되돌아갔습니다"
 
 
+def test_installer_switch_is_refused_when_no_filler_bundle_is_planned() -> None:
+    """요청한 사본을 못 낼 조합은 **일 시작 전에** 거절한다(Codex P2).
+
+    ``-Target cli -IncludeInstaller`` 는 설치본이 나올 수 없는 조합인데, 스위치의 유일한
+    소비 자리가 filler 분기 안이라 조용히 무시된 채 exit 0 이 났다. 그 조합으로 감사를 돌린
+    사람은 **설치본을 세지 않은 초록**을 증거로 들게 된다 — 이 저장소가 금지하는 조용한
+    스킵의 정확한 형태다.
+
+    문자열 핀이 아니라 **실제로 돌려서** 센다. 거절이 uv·번들 없이도 즉시 나야 그 거절이
+    "일 시작 전"이라는 주장이 성립한다.
+    """
+    import subprocess
+
+    result = subprocess.run(
+        [
+            "powershell.exe", "-NoProfile", "-NonInteractive",
+            "-File", str(PACKAGING / "build.ps1"),
+            "-Target", "cli", "-IncludeInstaller",
+        ],
+        capture_output=True,
+        cwd=ROOT,
+        timeout=120,
+    )
+    stderr = result.stderr.decode("utf-8", errors="replace")
+
+    assert result.returncode != 0, "설치본을 못 낼 조합이 성공으로 끝났습니다"
+    assert "-IncludeInstaller" in stderr, f"거절 사유가 스위치를 지목하지 않습니다: {stderr}"
+    assert not (ROOT / "dist" / "hwpx-cli" / "hwpx-cli.exe.tmp").exists()
+
+
+def test_the_installer_switch_still_reaches_the_filler_plan() -> None:
+    """음성 대조의 짝 — 거절이 **모든** 조합을 막아 스위치가 죽지는 않았는가.
+
+    거절만 세우면 "전부 거절"도 초록이다. filler 를 포함하는 계획에서는 스위치가 실제
+    설치본 단계로 이어지는지(그 호출이 filler 분기 안에 살아 있는지) 함께 센다.
+    """
+    build = (PACKAGING / "build.ps1").read_text(encoding="utf-8-sig")
+
+    guard = build.index("$IncludeInstaller -and $Target -eq 'cli'")
+    call = build.index("Invoke-InstalledCopy -EvidencePath")
+    assert guard < call, "거절이 사용 자리보다 뒤에 서면 일을 하고 나서 거절합니다"
+    assert "if ($IncludeInstaller) {" in build, "스위치가 사용되는 자리가 사라졌습니다"
+
+
 def test_the_inno_compiler_lookup_has_one_owner_and_sees_a_per_user_install() -> None:
     r"""ISCC 탐색은 한 곳이고, 사용자 범위 설치를 본다(R5-03).
 

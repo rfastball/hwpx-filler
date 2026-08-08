@@ -39,6 +39,16 @@ $env:PYTHONIOENCODING = 'utf-8'
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 & chcp.com 65001 *> $null
 
+# 설치본 사본은 filler 번들에서만 나온다. `-Target cli` 와 함께 받으면 스위치가 조용히
+# 무시된 채 exit 0 이 나고, 그 조합으로 감사를 돌린 사람은 **설치본을 세지 않은 초록**을
+# 증거로 들게 된다(Codex P2). 요청한 사본을 못 낼 조합은 일 시작 전에 거절한다.
+if ($IncludeInstaller -and $Target -eq 'cli') {
+    throw (
+        '-IncludeInstaller 는 filler 번들이 있어야 합니다 — `-Target cli` 와 함께 쓸 수 ' +
+        '없습니다. 설치본 사본을 세지 않은 채 초록을 내지 않습니다.'
+    )
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $corpus = Join-Path $root 'tests\corpus\real'
