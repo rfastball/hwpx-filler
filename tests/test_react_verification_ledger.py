@@ -131,8 +131,17 @@ WEB_SURFACE = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM
 SURFACE_WITHOUT_SEALED = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _SURFACE_DOM)))
 
 #: 인계선 어휘. 원장에서 유도하면 오타가 새 단계를 발명하므로 리터럴로 든다.
+#:
+#: R 단계 뒤에 P 로드맵 계측 단계가 선다(#516). P1 transport 계측 파일(수집기·생성기·게이트)은
+#: ``webapp``·``WebFrontend``·``bridge.js`` 를 **이름으로 재는 것이 일**이라 제외(G2)에 앉을 수
+#: 없고, R2-02 의 생성기·드리프트 게이트(``scripts/gen_bridge_contract.py``·
+#: ``tests/test_bridge_contract.py``)가 자산이 된 전례 그대로 **자산**으로 선다 — 웹 표면
+#: 계약의 드리프트를 실제로 무는 파일이므로 검증 책임 기재가 거짓이 아니다. 어휘는 **착지한
+#: 축만** 등록한다(지금은 P1-02D 하나): 미리 열어 두면 아직 없는 단계 이름이 오타를 삼킨다 —
+#: G5 가 태어난 이유와 같고, 그 좁힘이 살아 있다는 증거는 아래 n29 가 든다.
 KNOWN_STAGES = frozenset(
-    "R2-01 R2-02 R2-03 R2-04 R3-01 R3-02 R3-03 R4-01 R4-02 R4-03 R4-04 R5-01 R5-02 R5-03".split()
+    "R2-01 R2-02 R2-03 R2-04 R3-01 R3-02 R3-03 R4-01 R4-02 R4-03 R4-04 R5-01 R5-02 R5-03"
+    " P1-02D".split()
 )
 
 REQUIRED_ASSET_FIELDS = ("file", "responsibility", "owner_stage")
@@ -1220,3 +1229,42 @@ def test_n25_two_axes_claiming_the_same_file_are_caught(
     axis["match"]["value"] = [*axis["match"]["value"], ".npmrc"]
     problems = g7_axes_stay_outside_the_partition(mutable, tracked, tree)
     assert any(".npmrc" in problem and "두 축" in problem for problem in problems), problems
+
+
+#: P1-02D 계측 파일 중 게이트가 대조 표본으로 드는 실물 — transport 표면 어휘를 이름으로
+#: 재는 것이 이 파일의 일이라, 자산 밖(제외)으로는 옮길 수 없어야 한다.
+P1_02D_SURFACE_VICTIM = "scripts/factgraph/transport_graph.py"
+
+
+def test_n28_a_p1_instrumentation_asset_cannot_sit_in_exclusions(
+    mutable: dict[str, Any],
+) -> None:
+    """P1 계측 자산을 제외로 강등하는 길은 G2 가 문다 — 단계 어휘 확장(P1-02D)이 새 침묵
+    구멍을 열지 않았다는 실행 증거다.
+
+    첫 단언이 **피해자 자격**을 먼저 확인한다(n11 규약): transport 계측기는 정본 경로·전역을
+    이름으로 재므로 술어에 물려야 하고, 안 물리면 이 대조는 겨눈 것을 안 겨눈 채 초록이다 —
+    그때는 그 파일의 정직한 거처가 제외이고 자산 행이 옮겨져야 한다.
+    """
+    victim = P1_02D_SURFACE_VICTIM
+    text, unreadable = _read(victim)
+    assert unreadable is None and WEB_SURFACE.search(text), (
+        f"{victim} 이 웹 표면 어휘에 안 물린다 — 이 대조는 아무것도 안 지킨다"
+    )
+    mutable["asset"] = [row for row in mutable["asset"] if row["file"] != victim]
+    mutable["out_of_scope"]["files"] = sorted([*mutable["out_of_scope"]["files"], victim])
+    problems = g2_exclusion_purity(mutable)
+    assert any(victim in problem for problem in problems), problems
+
+
+def test_n29_an_unlanded_p1_stage_is_still_caught(mutable: dict[str, Any]) -> None:
+    """P1-02D 를 등록해도 **다른** P 단계는 여전히 어휘 밖이다 — 등록 단위는 착지다.
+
+    이 대조가 없으면 단계 어휘 확장이 「P 접두는 다 통과」로 읽히는 다음 편집을 조용히
+    받아 준다(집합 하나를 넓히고 형제 검사를 안 세우는 그 결함류). 새 P 축이 착지하면
+    그 축의 이름이 KNOWN_STAGES 에 오르고 이 표본은 아직-미착지 이름으로 교체된다
+    (n18 의 「실재하지 않는 동안만 대조다」와 같은 수명 규약).
+    """
+    mutable["asset"][0]["owner_stage"] = "P1-02E"
+    problems = g5_stage_vocabulary(mutable)
+    assert any("P1-02E" in problem for problem in problems), problems

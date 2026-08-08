@@ -39,6 +39,7 @@
 | `factgraph/static_graph_02a.toml` | import·call·construction 그래프의 digest·SCC·hotspot·미해결 전수 원장(P1-02A, #513) |
 | `factgraph/state_graph_02b.toml` | mutable state·변이·transaction cluster·동시성 결부·미해결 전수 원장(P1-02B, #514) |
 | `factgraph/effect_graph_02c.toml` | persistence·external effect·host 접촉의 효과/순수 분류·지역 import 폐쇄·이중 조립 전수 원장(P1-02C, #515) |
+| `factgraph/transport_graph_02d.toml` | transport endpoint·snapshot 필드·push/event 채널의 producer·소비자 증거 전수 원장(P1-02D, #516) |
 
 ## 결정 기록
 

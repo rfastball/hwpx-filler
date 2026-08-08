@@ -113,6 +113,11 @@ risk_surfaces = ["architecture-design-system"]
 layer = "contract"
 verification_method = "static-source"
 
+[files."tests/test_transport_graph_02d.py"]
+risk_surfaces = ["architecture-design-system", "web-runtime-bridge"]
+layer = "contract"
+verification_method = "static-source"
+
 [files."tests/test_fields.py"]
 risk_surfaces = ["extract-fill-transform"]
 

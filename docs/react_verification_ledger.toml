@@ -94,6 +94,11 @@ responsibility = "프런트 JS 소유권 두 축 + JS/TS data-* 생산자·동�
 owner_stage = "R5-02"
 
 [[asset]]
+file = "scripts/factgraph/transport_graph.py"
+responsibility = "P1-02D transport 계측 축 — screen/action·직접 host 메서드·snapshot·push/event 전수 추출과 소비자 증거 수집(#516)"
+owner_stage = "P1-02D"
+
+[[asset]]
 file = "scripts/gen_bridge_contract.py"
 responsibility = "Python↔TS 브리지 계약의 정본 추출·생성물 재생성·드리프트 검사"
 owner_stage = "R2-02"
@@ -102,6 +107,11 @@ owner_stage = "R2-02"
 file = "scripts/gen_design_tokens.py"
 responsibility = "디자인 토큰 단일 출처 → CSS 재생성·검증"
 owner_stage = "R3-03"
+
+[[asset]]
+file = "scripts/gen_transport_graph_02d.py"
+responsibility = "P1-02D transport 원장 재생성·드리프트 검사 CLI(#516)"
+owner_stage = "P1-02D"
 
 [[asset]]
 file = "scripts/generate_build_metadata.py"
@@ -592,6 +602,11 @@ owner_stage = "R4-02"
 file = "tests/test_tracking_locate.py"
 responsibility = "추적성 로케이트 — 백엔드 화이트리스트가 임의 경로를 막는다"
 owner_stage = "R4-04"
+
+[[asset]]
+file = "tests/test_transport_graph_02d.py"
+responsibility = "P1-02D transport 원장 게이트 — 독립 분모 재계산·02A digest 교차 앵커·mutation 판별력(#516)"
+owner_stage = "P1-02D"
 
 [[asset]]
 file = "tests/test_ux_copy_round.py"
