@@ -809,13 +809,20 @@ owner_stage = "R4-02"
 # ---------------------------------------------------------------------------
 
 [out_of_scope]
-reason = "React 이관이 이 파일의 검증 책임에 닿지 않는다 — 도메인·코어·CLI·패키징 전용"
+reason = "React 이관이 이 파일의 검증 책임에 닿지 않는다 — 도메인·코어·CLI·패키징·P 로드맵 계측 전용"
 files = [
   "conftest.py",
   "scripts/audit_test_portfolio.py",
   "scripts/build_nara_testset.py",
   "scripts/check_package_coverage.py",
   "scripts/check_release_version.py",
+  "scripts/factgraph/__init__.py",
+  "scripts/factgraph/closure.py",
+  "scripts/factgraph/collect.py",
+  "scripts/factgraph/inventory.py",
+  "scripts/factgraph/runtime_trace.py",
+  "scripts/factgraph/schema.py",
+  "scripts/gen_python_symbol_inventory.py",
   "scripts/gen_scenario_fixtures.py",
   "scripts/live101/__init__.py",
   "scripts/live101/capture.py",
@@ -838,6 +845,7 @@ files = [
   "tests/test_excel_contract.py",
   "tests/test_extract_invariants.py",
   "tests/test_extract_synthetic.py",
+  "tests/test_factgraph_base.py",
   "tests/test_fields.py",
   "tests/test_file_filters.py",
   "tests/test_fill_ledger.py",
@@ -862,6 +870,7 @@ files = [
   "tests/test_pipeline.py",
   "tests/test_pipeline_builder_state.py",
   "tests/test_powershell_encoding.py",
+  "tests/test_python_symbol_inventory.py",
   "tests/test_review_state.py",
   "tests/test_run_state.py",
   "tests/test_scenario_e2e.py",

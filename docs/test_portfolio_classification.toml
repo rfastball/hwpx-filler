@@ -94,6 +94,10 @@ correlation_group = "real-hwpx-corpus"
 [files."tests/test_extract_synthetic.py"]
 risk_surfaces = ["extract-fill-transform"]
 
+[files."tests/test_factgraph_base.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+
 [files."tests/test_fields.py"]
 risk_surfaces = ["extract-fill-transform"]
 
@@ -179,6 +183,11 @@ risk_surfaces = ["data-ingestion-boundaries"]
 [files."tests/test_pipeline_builder_state.py"]
 risk_surfaces = ["data-ingestion-boundaries", "application-workflows"]
 layer = "contract"
+
+[files."tests/test_python_symbol_inventory.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
 
 [files."tests/test_r3_editor.py"]
 risk_surfaces = ["application-workflows", "mapping-validation-drift"]
