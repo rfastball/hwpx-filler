@@ -123,6 +123,9 @@ const PRODUCT_SCOPE = ["frontend/**/*"];
 const OXC_SUFFIXES = new Set([".js", ".mjs"]);
 const SELFTEST_SCOPE = ["frontend/src/selftest/**/*.js", "frontend/src/selftest/**/*.mjs"];
 const SELFTEST_PREFIX = "frontend/src/selftest/";
+/* R5-99 B1·S1 뒤 이 목록이 가리는 것은 **리스너 대칭 잔차 하나**다 — DOM 생성 술어는
+   제품 폐포 전체를 보고, 여기는 React effect cleanup 계약의 정의역(overlay·shell·screens)만
+   남는다. 선언 scope(원장·게이트)와 이 목록은 같은 셋이어야 한다 — 어긋나면 S1 재발. */
 const REACT_HOST_PREFIXES = [
   "frontend/src/overlay/",
   "frontend/src/shell/",
@@ -751,7 +754,11 @@ function typescriptAxes(root) {
             }
           }
 
-          if (isReactHost && callee) {
+          /* R5-99 B1 — DOM 생성 술어는 **제품 폐포 전체**를 본다. 종전에는 REACT_HOST_PREFIXES
+             3-prefix 로 가려 출하 번들에 실리는 frontend/js·src 루트 모듈 13이 무방비였고,
+             실 위반 표본(bridge.js 의 createElement)이 exit 0 으로 통과했다. React 밖 제품
+             코드의 직접 DOM 생성도 R5 뒤에는 전부 위반이므로 가릴 이유 자체가 없다. */
+          if (callee) {
             const domFactory = invokedDomFactory(
               callee, domFactoryAliases, checker, sourceFile, bindings,
             );
@@ -760,8 +767,11 @@ function typescriptAxes(root) {
                 `${rel}:${lineOf(node.getStart(sourceFile))}:${domFactory}`,
               );
             }
+            /* 리스너 대칭 잔차는 계속 host 정의역이다 — React effect cleanup 계약이 겨누는
+               것이고, 제품 전역 attach 총량은 별도 계측(listener-attach-sites)이 든다. */
             if (
-              (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
+              isReactHost
+              && (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee))
               && (called === "addEventListener" || called === "removeEventListener")
             ) {
                 const signature = [
@@ -794,7 +804,8 @@ function typescriptAxes(root) {
           const name = datasetAttributeName(node.left, bindings);
           if (name === "<dynamic>") gap("computed-dataset", node.left);
           else add(name);
-          if (isReactHost) {
+          {
+            /* R5-99 B1 — innerHTML/outerHTML 대입도 제품 폐포 전체. */
             const targetName = propertyName(unwrapExpression(node.left), bindings);
             if (targetName === "innerHTML" || targetName === "outerHTML") {
               directDom.push(

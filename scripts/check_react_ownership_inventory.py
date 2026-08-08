@@ -110,13 +110,17 @@ PRODUCT_CODE_EXCLUDED = (
     *SELFTEST_EXCLUDED,
     *(f"frontend/**/*{suffix}" for suffix in NON_CODE_SUFFIXES),
 )
+# R5-99 S1 — 이 scope 는 리스너 대칭 잔차 **하나**의 정의역이고, 추출기의
+# REACT_HOST_PREFIXES 와 같은 셋이어야 한다(선언이 실측보다 좁았던 것이 S1 소견).
+# DOM 생성 술어는 B1 뒤 PRODUCT_CODE_SCOPE 를 쓴다 — 여기 남지 않는다.
 REACT_HOST_CODE_SCOPE = (
     "frontend/src/overlay/**/*",
     "frontend/src/shell/**/*",
+    "frontend/src/screens/**/*",
 )
 REACT_HOST_CODE_EXCLUDED = tuple(
     f"{prefix}**/*{suffix}"
-    for prefix in ("frontend/src/overlay/", "frontend/src/shell/")
+    for prefix in ("frontend/src/overlay/", "frontend/src/shell/", "frontend/src/screens/")
     for suffix in NON_CODE_SUFFIXES
 )
 
@@ -787,9 +791,10 @@ EXTRACTORS: dict[str, Extractor] = {
     "js_nonexported_fn_state": Extractor(
         "ast", PRODUCT_CODE_SCOPE, _js_nonexported_fn_state, PRODUCT_CODE_EXCLUDED
     ),
+    # R5-99 B1 — 정의역을 3-prefix 열거에서 제품 폐포로. 출하 모듈 13 무방비의 처방이다.
     "react_direct_dom_mutations": Extractor(
-        "ast", REACT_HOST_CODE_SCOPE, _react_direct_dom_mutations,
-        REACT_HOST_CODE_EXCLUDED,
+        "ast", PRODUCT_CODE_SCOPE, _react_direct_dom_mutations,
+        PRODUCT_CODE_EXCLUDED,
     ),
     "react_listener_cleanup_gaps": Extractor(
         "ast", REACT_HOST_CODE_SCOPE, _react_listener_cleanup_gaps,

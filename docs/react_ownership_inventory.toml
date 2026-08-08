@@ -222,11 +222,11 @@ implementation = "두 형태 — 주석 안 일치 · 대괄호 표기 호출. �
 
 [extractors.react_direct_dom_mutations]
 backing = "ast"
-implementation = "TypeScript 7 AST — 완료된 overlay/shell host의 property createElement·createElementNS·insertAdjacentHTML 호출과 innerHTML/outerHTML 대입"
+implementation = "TypeScript 7 AST — 제품 코드 폐포 전체(selftest·non-code 감산)의 property createElement·createElementNS·insertAdjacentHTML 호출과 innerHTML/outerHTML 대입"
 
 [extractors.react_listener_cleanup_gaps]
 backing = "ast"
-implementation = "TypeScript 7 AST — 완료된 overlay/shell host의 receiver·event·handler·options별 add/removeEventListener 다중집합 차"
+implementation = "TypeScript 7 AST — React host(overlay·shell·screens)의 receiver·event·handler·options별 add/removeEventListener 다중집합 차"
 
 # ── 축 선언 ──────────────────────────────────────────────────────────────
 
@@ -691,17 +691,19 @@ unit = "대입 후보를 좁히는 오답 술어. 현재 제품 legacy JS 대입
 id = "react-direct-dom-mutations"
 value = 0
 predicate = { kind = "node_extractor", name = "react_direct_dom_mutations" }
-scope = ["frontend/src/overlay/**/*", "frontend/src/shell/**/*"]
-scope_excluded = ["frontend/src/overlay/**/*.css", "frontend/src/overlay/**/*.html", "frontend/src/overlay/**/*.svg", "frontend/src/overlay/**/*.txt", "frontend/src/overlay/**/*.woff2", "frontend/src/shell/**/*.css", "frontend/src/shell/**/*.html", "frontend/src/shell/**/*.svg", "frontend/src/shell/**/*.txt", "frontend/src/shell/**/*.woff2"]
-unit = "완료된 R3 React host의 직접 DOM 생성/HTML 대입 사이트 1곳 = 1. bare React createElement는 DOM API 호출이 아니다."
-note = "R3-99 F2 통제 변이 cd74cdf(document.createElement)와 innerHTML 재유입을 0 기준선에서 거절한다."
+scope = ["frontend/**/*"]
+scope_excluded = ["frontend/src/selftest/**", "frontend/**/*.css", "frontend/**/*.html", "frontend/**/*.svg", "frontend/**/*.txt", "frontend/**/*.woff2"]
+unit = "제품 코드 폐포 전체의 직접 DOM 생성/HTML 대입 사이트 1곳 = 1. bare React createElement는 DOM API 호출이 아니다."
+note = "R5-99 B1 — 종전 3-prefix 정의역 밖 출하 모듈 13(frontend/js 9 + src 루트 4)에서 실 위반 표본이 exit 0 으로 통과했다(bridge.js 주입 실증). React 전환 완료 뒤 제품 어디의 직접 DOM 생성도 위반이므로 정의역을 폐포로 넓혔다. R3-99 F2 통제 변이 계보는 유지."
 
 [[metric]]
 id = "react-listener-cleanup-gaps"
 value = 0
 predicate = { kind = "node_extractor", name = "react_listener_cleanup_gaps" }
-scope = ["frontend/src/overlay/**/*", "frontend/src/shell/**/*"]
-scope_excluded = ["frontend/src/overlay/**/*.css", "frontend/src/overlay/**/*.html", "frontend/src/overlay/**/*.svg", "frontend/src/overlay/**/*.txt", "frontend/src/overlay/**/*.woff2", "frontend/src/shell/**/*.css", "frontend/src/shell/**/*.html", "frontend/src/shell/**/*.svg", "frontend/src/shell/**/*.txt", "frontend/src/shell/**/*.woff2"]
+# R5-99 S1 — 선언 scope 가 실측 정의역(screens 포함)보다 좁았다. 좁은 선언은 다음 사람이
+# 「screens 는 무방비」로 읽거나, 이 필드를 좁혀 효과가 있다고 믿게 만든다 — 실측과 정합.
+scope = ["frontend/src/overlay/**/*", "frontend/src/shell/**/*", "frontend/src/screens/**/*"]
+scope_excluded = ["frontend/src/overlay/**/*.css", "frontend/src/overlay/**/*.html", "frontend/src/overlay/**/*.svg", "frontend/src/overlay/**/*.txt", "frontend/src/overlay/**/*.woff2", "frontend/src/shell/**/*.css", "frontend/src/shell/**/*.html", "frontend/src/shell/**/*.svg", "frontend/src/shell/**/*.txt", "frontend/src/shell/**/*.woff2", "frontend/src/screens/**/*.css", "frontend/src/screens/**/*.html", "frontend/src/screens/**/*.svg", "frontend/src/screens/**/*.txt", "frontend/src/screens/**/*.woff2"]
 unit = "symbol/provenance가 같은 receiver·handler와 event·options의 attach/release 다중집합 잔차 1건 = 1. ephemeral callback과 증명 없는 once/signal은 면제하지 않는다."
 note = "R3-99 F1 통제 변이 710459c(cleanup 없는 window listener)를 0 기준선에서 거절한다."
 

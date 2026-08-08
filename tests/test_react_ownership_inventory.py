@@ -1248,6 +1248,54 @@ def test_completed_react_host_negative_gates_reject_audit_mutants(
     assert metric_id in text and needle in text, text
 
 
+@pytest.mark.parametrize(
+    "target_rel",
+    [
+        # R5-99 B1 의 GREEN 통과 표본 셋 그대로 — 이 테스트의 존재 이유다.
+        "js/bridge.js",
+        "js/popover.js",
+        "src/bootstrap.js",
+        # 종전 정의역 안(회귀 대조) — 넓히다 안쪽이 풀리면 여기서 붉는다.
+        "src/screens/library.ts",
+    ],
+)
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        'function __r5B1Probe() { const n = document.createElement("div"); return n; } void __r5B1Probe;',
+        'function __r5B1Html(host) { host.innerHTML = "<div></div>"; } void __r5B1Html;',
+    ],
+)
+def test_direct_dom_predicate_covers_the_whole_product_closure(
+    document: dict[str, Any], frontend_tree: Path, clone_source: Path,
+    target_rel: str, snippet: str,
+) -> None:
+    """R5-99 B1 통제 변이 — DOM 생성 술어의 정의역은 제품 폐포 **전체**다.
+
+    감사가 실행으로 보인 구멍: ``REACT_HOST_PREFIXES`` 3-prefix 밖의 출하 모듈 13
+    (frontend/js 9 + src 루트 4)에서 ``document.createElement``/``innerHTML`` 대입이
+    전 게이트를 exit 0 으로 통과했다. 수용 기준은 감사 보고서 그대로다 —
+    「bridge.js 에 넣었을 때 게이트가 좌표를 이름으로 대며 빨강이면 해소」.
+    """
+    target = clone_source.joinpath(*target_rel.split("/"))
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n" + snippet + "\n",
+        encoding="utf-8",
+    )
+    report = gate.check(
+        document, frontend_tree, axes=[], metrics=["react-direct-dom-mutations"],
+    )
+    assert not report.ok, (
+        f"frontend/{target_rel} 의 직접 DOM 변이가 조용히 통과했습니다 — B1 재발."
+    )
+    text = _failures(report)
+    assert "react-direct-dom-mutations" in text, text
+    assert f"frontend/{target_rel}" in text, (
+        "빨강은 났지만 좌표가 이름으로 나오지 않았습니다:\n" + text
+    )
+
+
+
 @pytest.mark.parametrize("mutation", ["ghost-member", "wrong-axes", "fabricated"])
 def test_cross_axis_overlap_is_derived_not_declared(
     mutable_document: dict[str, Any], mutation: str
