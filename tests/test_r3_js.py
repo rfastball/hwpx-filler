@@ -1,5 +1,9 @@
 """코드리뷰 3차(js-shared 클러스터) 회귀 가드 — 공유 이스케이퍼(K1)·pool.js 헤더(K11).
 
+R5-99 감사 B2 개정: `esc.js` 자체가 소비자 0 실측으로 삭제됐다 — 이스케이프 소유는
+React 의 text/attribute 경계다. K1 이 막던 결함(복붙 사본 9중복)은 이제 「사본·헬퍼
+재유입 금지」 음성 가드가 진다 — 주체가 죽어도 결함류를 막는 질문은 살아 있다.
+
 K1: 동일 3줄 HTML 이스케이퍼가 frontend/js 9곳(화면 7 + 피커 2)에 복붙돼 있었다.
 ``frontend/js/esc.js`` 하나로 통일하고, 사본이 조용히 재유입되거나 로드 순서(공유 파일이
 소비 화면보다 먼저)가 깨지는 회귀를 정적으로 차단한다.
@@ -22,7 +26,6 @@ from _web_source import (
     SOURCE_ENTRY,
     SOURCE_JS_DIR,
     evaluated_modules,
-    evaluation_site,
 )
 
 WEB_JS = SOURCE_JS_DIR
@@ -46,33 +49,17 @@ WEB_JS = SOURCE_JS_DIR
 ESC_ESM_CONSUMERS: tuple[str, ...] = ()
 
 
-def test_esc_helper_exists_and_escapes_superset():
-    """esc.js 가 escHtml 을 named export 로 내고 & < > " 넉 자를 전부 다룬다(txt.js 변종 봉합)."""
-    src = (WEB_JS / "esc.js").read_text(encoding="utf-8")
-    assert re.search(r"(?m)^export function escHtml\(", src), (
-        "esc.js 가 escHtml 을 named export 로 내지 않습니다(K1)."
-    )
-    assert "window." not in src, (
-        "esc.js 가 다시 전역을 만듭니다 — 별칭은 중앙 compat 한 곳만 만듭니다(K1·D-05)."
-    )
-    for ent in ("&amp;", "&lt;", "&gt;", "&quot;"):
-        assert ent in src, f"esc.js 이스케이프 맵에 {ent} 가 없습니다 — 속성 컨텍스트 안전 초집합 회귀(K1)."
+def test_esc_helper_retired_without_revival():
+    """esc.js 는 R5-99 B2 로 퇴장했다 — 파일도 import 도 되살아나지 않는다.
 
-
-def test_esc_provider_evaluated_before_all_consumers():
-    """이스케이퍼 공급이 제품 그래프에 닿고, 소비 순서는 import 간선이 진다(K1 후계).
-
-    구 형태는 공급 지점과 소비 IIFE 의 entry 위치를 비교했다. N-06 으로 소비자 전원이
-    ESM import 로 옮겨가 entry 에 소비자가 없으므로, 순서는 언어 규칙(import 가 본문보다
-    먼저 평가)이 담보하고 여기 남는 질문은 공급 자체다 — compat 경유로 그래프에 닿는가,
-    그리고 두 경로로 들어와 순서 추론을 무의미하게 만들지 않는가.
+    구 K1 계약(공급 존재·순서)은 소비자가 0 이 되며 질문 자체가 소멸했다. 남는 것은
+    「되살아나지 않는다」다 — RETIRED_R5_MODULES 가 경로를, 이 테스트가 그래프를 봉한다.
     """
-    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    provider = evaluation_site("esc.js")
-    assert provider in modules, f"{provider} 가 제품 entry 에 import되지 않았습니다(K1)."
-    assert "esc.js" not in modules, (
-        "esc.js 가 entry 에 직접 남아 있습니다 — 잎은 compat 한 경로로만 들어옵니다."
+    assert not (WEB_JS / "esc.js").exists(), (
+        "esc.js 가 되살아났습니다 — 이스케이프 소유는 React 입니다(R5-99 B2)."
     )
+    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
+    assert "esc.js" not in modules, "제품 entry 가 삭제된 esc.js 를 import 합니다."
 
 
 def test_no_local_escaper_copies_remain():
@@ -86,8 +73,6 @@ def test_no_local_escaper_copies_remain():
     paths = [*WEB_JS.rglob("*.js"), *(WEB_JS.parent / "src").rglob("*.ts")]
     for path in paths:
         src = path.read_text(encoding="utf-8")
-        if path.name == "esc.js":
-            continue
         assert not copy_def.search(src), (
             f"{path.name} 에 로컬 이스케이퍼 정의가 재유입됐습니다 — window.escHtml 을 쓰세요(K1)."
         )

@@ -232,7 +232,9 @@ EXPECTED_EXCLUDED_AXES: dict[str, bool] = {
 # 이 인하는 앞엣것에만 대응한다.
 # R5-01에서 legacy theme 상태와 editor↔tpl migration 구독 노드 2행을 삭제했다. 측정 축의
 # state_js_module 분모도 75→67로 함께 줄었고 나머지 117행은 폐포로 검증된다.
-NODE_ROW_FLOOR = 117
+# R5-99 B2 — esc.js 가 소비자 0 실측으로 삭제되며 lifecycle/factory/leaf-escaper 1행이
+# 소멸했다(승계 불요 — 이스케이프 소유는 React text/attribute 경계). 117 → 116.
+NODE_ROW_FLOOR = 116
 
 #: `repo_wide_metrics` 판정 — scope 의 첫 경로 조각이 리터럴이 아니면 저장소 전수로 본다.
 _REPO_WIDE_HEAD = re.compile(r"[*?\[]")

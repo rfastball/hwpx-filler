@@ -184,7 +184,8 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   현재 앱을 판단하지 않는다.
 - 제품 버전: `pyproject.toml` `project.version` 만. PyInstaller·Inno 버전은 빌드 시 생성.
 - 사용자 문구: 한 곳에서만 쓰는 정적 문구는 `frontend/index.html` 또는 그 산출자가 소유하고,
-  둘 이상이 공유하는 것만 `frontend/js/copy.js` 같은 공용 상수로 올린다. 문형·금지어는
+  둘 이상이 공유하는 것만 공용 상수 모듈로 올린다(승격 대상이 없으면 모듈도 없다 —
+  R5-99 B2 에서 `frontend/js/copy.js` 가 소비자 0 으로 삭제된 전례). 문형·금지어는
   `docs/COPY_STYLE_GUIDE.md`, 용어는 `docs/UI_VOCABULARY.md`.
 - 확장자 필터(`gui/file_filters.py`), 작업 방식 라벨(`gui/work_mode.py`), 식별 요약
   (`core/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.

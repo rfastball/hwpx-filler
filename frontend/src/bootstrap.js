@@ -66,12 +66,9 @@
    것 말고 물을 방법이 없었다. 전역을 없애면서 그 질문까지 잃으면 "별칭이 사라졌다"는
    사실만 남고 "조립이 여전히 옳다"는 사실이 죽는다 — 선언은 살고 결과가 죽는 그 결함류다.
    그래서 관측면을 전역에서 반환값으로 옮긴다. 넓히지 않는다. */
-import { Copy } from "../js/copy.js";
-import { escHtml } from "../js/esc.js";
 import { Guard } from "../js/guard.js";
 
 import { createTheme, createPersonalization } from "./shell/preferences.ts";
-import { Preserve } from "../js/preserve.js";
 import { createModal } from "./overlay/modal.js";
 import { createSurfaceSheet } from "../js/surface_sheet.js";
 import { UndoToast } from "../js/undo_toast.js";
@@ -307,7 +304,7 @@ export function bootProduct() {
      `bootSelftest` 호출부 주석에 있다. */
   const services = {
     Bridge: bridge, Client: client, Nav, AppCloseGuard,
-    Copy, escHtml, Guard, Popover, Preserve, Intent, UndoToast,
+    Guard, Popover, Intent, UndoToast,
     Modal, SurfaceSheet, Theme, Personalization, SheetPicker,
     DataPicker: DataPickerService, EditorEntry,
     JobRun: JobRunController,

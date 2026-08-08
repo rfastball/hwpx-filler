@@ -1,15 +1,15 @@
-/* 공유 상호작용 보존 헬퍼 — 전체 스냅샷 재렌더(innerHTML 재구성)가 사용자의 포커스·캐럿·
-   스크롤을 조용히 뭉개지 않도록 렌더 직전 캡처하고 직후 복원한다(#28).
+/* selftest 전용 상호작용 보존 헬퍼 — 종전 legacy 렌더러의 innerHTML 재구성이 포커스·캐럿·
+   스크롤을 뭉개지 않게 하던 제품 헬퍼(#28)였다. R4 가 렌더 소유를 React reconciliation 으로
+   옮기며 제품 소비자가 0 이 됐고(서브트리 재구성 자체가 없어 되찾을 포커스가 생기지 않는다),
+   R5-99 감사 B2 가 그 0 을 실측해 제품 트리(frontend/js/)에서 selftest 소유로 옮겼다.
 
-   설계 결정(전체 스냅샷+복원 vs 부분 패치)의 근거·재고경계는 docs/WEB_RENDER_PRESERVATION.md.
-   요지: 이 앱의 푸시는 이산 액션(coarse)이라 타이핑 중 재구성이 없어 복원으로 충분하며,
-   "멍청한 뷰·Python 상태 단일소유" 모델을 유지한다. 절차성(confirm-or-alarm)이 키스트로크
-   단위 라이브 편집을 구조적으로 배척하므로 부분 패치의 이득은 구조적으로 오지 않는다.
+   남은 소비자는 `probes/boot_routing_overlay.js` 의 `preserve` 프로브 하나다 — 합성 픽스처로
+   「innerHTML 재구성을 가로지르는 보존」 기제 자체를 검사한다. 실화면 보존 회귀는 이 헬퍼를
+   쓰지 않는 `preserve_real` 프로브(React 렌더 경로)가 진다. 설계 결정 원문·재고경계는
+   docs/WEB_RENDER_PRESERVATION.md.
 
-   스크롤은 옵트인(data-preserve-scroll) — 진행로그처럼 바닥고정 의도가 있는 컨테이너를
-   건드리지 않기 위함(무차별 보존 금지). 복원 대상은 재구성을 가로질러 같은 id 를 유지해야
-   하며, 없으면 no-op(조용한 실패가 아니라 '보존할 것이 사라짐'이라는 정상 귀결). 결과 수명주기
-   무효화는 컨트롤러(Python) 소유로 이 헬퍼 범위 밖 — 여기선 포커스·캐럿·스크롤 연속성만. */
+   스크롤은 옵트인(data-preserve-scroll). 복원 대상은 재구성을 가로질러 같은 id 를 유지해야
+   하며, 없으면 no-op(조용한 실패가 아니라 '보존할 것이 사라짐'이라는 정상 귀결). */
 function isTextField(el) {
   if (!el) return false;
   if (el.tagName === "TEXTAREA") return true;

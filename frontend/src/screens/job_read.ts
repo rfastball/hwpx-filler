@@ -248,7 +248,6 @@ export function createJobReadController(deps: JobReadControllerDeps) {
         const draft = snapshot()?.range_draft;
         if (!rangeApplied && draft?.open) void zone("range_draft_cancel", {});
       },
-      moves: [],
     });
   }
 

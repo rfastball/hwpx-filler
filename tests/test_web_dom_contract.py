@@ -628,9 +628,12 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert "DEFAULT_WINDOW_WIDTH = 1440" in app_py
     assert "DEFAULT_WINDOW_HEIGHT = 900" in app_py
     assert '<div id="dataSheet" class="modal sheet hidden"' in html
+    # R5-99 B2 — 실 DOM 이동/복귀 기계는 도달 불능 실측으로 은퇴했다(면 내용은 React 가
+    # 面 안에 직접 그린다). 복제 금지 규율과 이동 기계 부재를 함께 음성으로 고정한다.
     assert ".cloneNode(" not in sheets
-    assert "slot.appendChild(el)" in sheets
-    assert "m.parent.insertBefore(m.el, m.next)" in sheets
+    assert "insertBefore(" not in sheets and "appendChild(" not in sheets, (
+        "surface_sheet.js 에 DOM 이동 기계가 되살아났습니다 — 면 내용 렌더는 React 소유입니다."
+    )
     assert ".data-sheet-body.jobtbth:first-child" in css
     assert "position:sticky;left:0" in css
 
@@ -713,9 +716,10 @@ def test_milestone_l_job_density_and_expansion_sheets():
     )
     assert "function closeAllAndRestore" in sheets
     assert "modal.close(id);\n  restore(id);" in sheets
-    # 펼침 트리거 포커스 복귀(#279 리뷰) — 실클릭 버튼→상시 ⤢ 순으로 해석하는
-    # SurfaceSheet.trigger 만 쓴다(데이터 면 ⤢ 이 남은 소비자다).
-    assert "trigger: trigger" in sheets
+    # 펼침 트리거 포커스 복귀(#279 리뷰) — legacy 는 위임 클릭이라 SurfaceSheet.trigger 가
+    # 실클릭 버튼을 휴리스틱으로 되찾았지만, React onClick 은 실제 버튼(event.currentTarget)을
+    # 직접 넘긴다. 책임은 호출부가 지고 휴리스틱은 R5-99 B2 에서 기계와 함께 은퇴했다.
+    assert "openDataSheet(event.currentTarget)" in job_read
     assert "surfaceSheet.open({" in job_read
     assert "returnFocus: trigger" in job_read
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
@@ -887,14 +891,17 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
 
 
 def test_preserve_helper_loaded_and_wraps_screen_renders():
-    """legacy renderer는 Preserve를, R4 React renderer는 reconciliation·stable id를 쓴다.
+    """R4 React renderer 는 reconciliation·stable id 로 상호작용을 보존한다(#28 승계).
 
-    실 재구성 가로지르기 거동(포커스·캐럿·스크롤 유지)은 selftest 게이트가 되읽어 단언한다 —
-    여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해
-    어느 화면이 래핑을 조용히 떨구는 회귀를 막는다.
+    legacy 의 Preserve.around 래핑은 R4 에서 소비자 0 이 됐고, R5-99 감사 B2 가 그 0 을
+    실측해 preserve.js 를 제품 그래프에서 selftest 소유(src/selftest/preserve.js)로 옮겼다 —
+    보존 **기제** 검증은 selftest `preserve` 프로브가, 실화면 보존 회귀는 `preserve_real`
+    프로브가 진다. 여기서는 제품 그래프에 legacy 래핑이 되살아나지 않는 것과, React 화면이
+    보존을 값 소유·stable id 로 지는 배선을 정적으로 가드한다.
     """
-    assert reaches_product_graph("preserve.js"), (
-        "preserve.js 가 제품 그래프에 닿지 않습니다(#28)."
+    assert not reaches_product_graph("preserve.js"), (
+        "preserve.js 가 제품 그래프에 되살아났습니다 — R5-99 B2 가 selftest 소유로 옮긴 "
+        "모듈입니다(재유입은 RETIRED_R5_MODULES 게이트와 함께 이 단언이 막는다)."
     )
     for rel in PRESERVE_WRAPPED_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")

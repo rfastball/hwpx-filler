@@ -18,7 +18,11 @@ from _web_source import SOURCE_INDEX, SOURCE_JS_DIR, SOURCE_ROOT, app_css
 CSS = app_css()
 INDEX = SOURCE_INDEX.read_text(encoding="utf-8")
 WORKBENCH = (SOURCE_ROOT / "src" / "screens" / "workbench.ts").read_text(encoding="utf-8")
-PRESERVE = (SOURCE_JS_DIR / "preserve.js").read_text(encoding="utf-8")
+# R5-99 B2 — legacy preserve.js 는 selftest 소유로 떠났다. 화면 전환을 가로지르는 스크롤
+# 보존의 제품 승계자는 executor 다(`[id][data-preserve-scroll]` 전수를 전환 전 캡처·후 복원).
+PRESERVE = (SOURCE_ROOT / "src" / "screens" / "product_screen_executor.ts").read_text(
+    encoding="utf-8"
+)
 
 
 def _declarations(selector: str) -> str:
@@ -49,7 +53,9 @@ def test_workbench_card_is_a_bounded_preserved_scrollport():
     assert "flex:1" in rule, "2열에서 남는 높이를 안 받으면 캡 시절의 끝단 어긋남이 돌아온다."
     assert "max-height:320px" in rule, "1열 퇴화의 캡이 없으면 카드가 무한정 늘어난다."
     assert "overflow:auto" in rule
-    assert "scrollTop" in PRESERVE and "marked[i].scrollTop" in PRESERVE
+    assert "scrollTop" in PRESERVE and '[id][data-preserve-scroll]' in PRESERVE, (
+        "executor 가 보존 마크를 읽지 않습니다 — 카드가 단 data-preserve-scroll 이 사어가 됩니다."
+    )
 
 
 def test_workbench_card_wears_the_render_and_font_classes():
