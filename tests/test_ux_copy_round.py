@@ -113,9 +113,16 @@ def test_copy_module_stays_retired_with_its_orphan_note():
         " 소비 표면 테스트와 함께 세우세요(R5-99 B2)."
     )
     orphan = "복사하면 완료됩니다. 항목 없는 토큰은 그대로 남습니다."
-    carriers = [
-        name for name, body in _surfaces() if orphan in body
-    ]
+    # L16 반증이 잡은 자리: `_surfaces()` 는 index.html + legacy js 만 본다 — R4/R5 뒤
+    # 사용자 문안이 실제로 생기는 자리는 React 화면(.ts/.tsx)과 Python 컨트롤러다.
+    # 고아 검사는 그 전부를 본다(주석 포함 — 문자열이 어디에 있든 두 벌째의 씨앗이다).
+    carriers = [name for name, body in _surfaces() if orphan in body]
+    react_files = sorted((ROOT / "frontend" / "src").rglob("*.ts")) + sorted(
+        (ROOT / "frontend" / "src").rglob("*.tsx")
+    )
+    for p in react_files + PY_MESSAGE_SOURCES:
+        if orphan in p.read_text(encoding="utf-8"):
+            carriers.append(str(p.relative_to(ROOT)))
     assert not carriers, (
         f"고아 문안이 표면에 재유입됐습니다: {carriers} — 단일 출처를 먼저 세우세요."
     )

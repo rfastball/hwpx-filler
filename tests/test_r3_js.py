@@ -23,9 +23,8 @@ from __future__ import annotations
 import re
 
 from _web_source import (
-    SOURCE_ENTRY,
     SOURCE_JS_DIR,
-    evaluated_modules,
+    bootstrap_imports,
 )
 
 WEB_JS = SOURCE_JS_DIR
@@ -58,8 +57,11 @@ def test_esc_helper_retired_without_revival():
     assert not (WEB_JS / "esc.js").exists(), (
         "esc.js 가 되살아났습니다 — 이스케이프 소유는 React 입니다(R5-99 B2)."
     )
-    modules = evaluated_modules(SOURCE_ENTRY.read_text(encoding="utf-8"))
-    assert "esc.js" not in modules, "제품 entry 가 삭제된 esc.js 를 import 합니다."
+    # entry 는 ../js/* 를 직접 싣지 않으므로 entry 목록 검사는 공허하다(L16 반증) —
+    # 재유입의 실통로인 합성 루트 import 그래프를 직접 본다.
+    assert "esc.js" not in bootstrap_imports(), (
+        "합성 루트가 삭제된 esc.js 를 다시 끌어옵니다."
+    )
 
 
 def test_no_local_escaper_copies_remain():

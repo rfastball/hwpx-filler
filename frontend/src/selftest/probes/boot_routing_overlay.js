@@ -696,7 +696,7 @@ export function createBootRoutingOverlayProbes() {
         ["editor", "job"].forEach((scr) => {
           try {
             if (!snaps[scr]) { out[scr] = "no-snap"; return; }
-            ctx.push(scr, snaps[scr]);      // 실 render() (Preserve.around 래핑)
+            ctx.push(scr, snaps[scr]);      // 실 render() (React reconciliation — 래핑 없음)
             out[scr] = "ok";
           } catch (e) { out[scr] = "throw:" + (e && e.message); }
         });

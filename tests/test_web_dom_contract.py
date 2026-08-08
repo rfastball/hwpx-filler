@@ -27,7 +27,7 @@ from _web_source import (
     SOURCE_ROOT,
     app_css,
     react_job_run_source,
-    reaches_product_graph,
+    bootstrap_imports,
     linked_css,
     source_text,
 )
@@ -899,9 +899,12 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
     프로브가 진다. 여기서는 제품 그래프에 legacy 래핑이 되살아나지 않는 것과, React 화면이
     보존을 값 소유·stable id 로 지는 배선을 정적으로 가드한다.
     """
-    assert not reaches_product_graph("preserve.js"), (
-        "preserve.js 가 제품 그래프에 되살아났습니다 — R5-99 B2 가 selftest 소유로 옮긴 "
-        "모듈입니다(재유입은 RETIRED_R5_MODULES 게이트와 함께 이 단언이 막는다)."
+    # L16 반증이 잡은 자리: reaches_product_graph 는 ESM_FILES 밖 이름을 entry 직접 import
+    # 목록(항상 빈 튜플)으로 떨어뜨려 **어떤 재유입에도 초록**이었다. 재유입의 실통로는
+    # 합성 루트 import 라 그 그래프를 직접 본다(경로 부활은 RETIRED_R5_MODULES 가 짐).
+    assert "preserve.js" not in bootstrap_imports(), (
+        "합성 루트가 preserve.js 를 다시 끌어옵니다 — R5-99 B2 가 selftest 소유로 옮긴 "
+        "모듈입니다."
     )
     for rel in PRESERVE_WRAPPED_FILES:
         src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
