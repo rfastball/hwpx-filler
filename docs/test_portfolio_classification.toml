@@ -98,6 +98,11 @@ risk_surfaces = ["extract-fill-transform"]
 risk_surfaces = ["architecture-design-system"]
 layer = "contract"
 
+[files."tests/test_static_graph_02a.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
 [files."tests/test_fields.py"]
 risk_surfaces = ["extract-fill-transform"]
 
@@ -341,4 +346,3 @@ layer = "contract"
 [files."tests/test_webapp_template.py"]
 risk_surfaces = ["application-workflows", "mapping-validation-drift", "durable-registry-persistence"]
 layer = "contract"
-

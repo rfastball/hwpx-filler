@@ -289,7 +289,7 @@ def test_call_and_construct_resolution(tmp_path: Path) -> None:
     }
     assert rows == {
         ("alpha.mod:Runner.go#method", "calls", "alpha.mod:Runner.go2#method",
-         "STATIC_CONFIRMED", "call_self"),
+         "INFERRED", "call_self"),
         # 주입 콜백은 자기 클래스에 없다 — 추측하지 않고 미해결로 남는다(02A/B 몫)
         ("alpha.mod:Runner.go#method", "calls", "?:self:Runner.injected",
          "UNKNOWN", "call_self_unresolved"),
