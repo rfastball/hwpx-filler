@@ -81,6 +81,11 @@ risk_surfaces = ["architecture-design-system", "application-workflows"]
 layer = "contract"
 verification_method = "static-source"
 
+[files."tests/test_effect_graph_02c.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
 [files."tests/test_engine.py"]
 risk_surfaces = ["extract-fill-transform", "mapping-validation-drift", "document-package-integrity"]
 layer = "integration"

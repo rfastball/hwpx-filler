@@ -38,6 +38,7 @@
 | `factgraph/python_symbol_inventory.toml` | production Python 심볼 폐포의 생성 원장(P1 전수 계측 기반, #512) |
 | `factgraph/static_graph_02a.toml` | import·call·construction 그래프의 digest·SCC·hotspot·미해결 전수 원장(P1-02A, #513) |
 | `factgraph/state_graph_02b.toml` | mutable state·변이·transaction cluster·동시성 결부·미해결 전수 원장(P1-02B, #514) |
+| `factgraph/effect_graph_02c.toml` | persistence·external effect·host 접촉의 효과/순수 분류·지역 import 폐쇄·이중 조립 전수 원장(P1-02C, #515) |
 
 ## 결정 기록
 
