@@ -34,8 +34,9 @@ MODULE_TEST_DIR = Path(__file__).resolve().parent / "js"
 EXPECTED_TEST_FILES = {
     "bootstrap.test.js",
     "n10_global_hygiene.test.js",
-    "copy.test.js",
-    "esc.test.js",
+    # copy.test.js·esc.test.js 는 R5-99 감사 B2 에서 주체(copy.js·esc.js — 소비자 0)와 함께
+    # 은퇴했다. 이스케이프 책임의 후계 계약은 r4 화면 테스트군(React text/attribute 경계)이,
+    # 재유입 그물은 RETIRED_R5_MODULES + test_ux_copy_round 은퇴 음성이 진다.
     "guard.test.js",
     "segview.test.js",
     "n05_foundation.test.js",
