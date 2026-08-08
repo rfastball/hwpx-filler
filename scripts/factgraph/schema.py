@@ -48,6 +48,13 @@ RELATIONS: tuple[str, ...] = (
     "reads_attribute",
     "mutates_attribute",
     "dynamic_site",
+    # P1-02C(#515) 효과 축 — 방향이 이름에 들고, dst 는 ext:(외부 대상)·?:(수신자 미상
+    # INFERRED 렌즈)·symbol(composes 의 concrete 클래스)이다. 파생 수집기
+    # factgraph.effect_graph 만 방출한다.
+    "reads_external",
+    "writes_external",
+    "invokes_external",
+    "composes",
 )
 
 #: 증거 등급 6종(#512). 정적 그래프에 없는 edge 를 곧바로 '없음'으로 판정하지 않기 위한

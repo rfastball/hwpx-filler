@@ -1,0 +1,1605 @@
+# 생성 파일 — 직접 편집 금지. P1-02C 효과 그래프 원장(#515).
+# 원천: 고정 baseline src/ + scripts/factgraph 02A 정적 그래프 위의 효과 분류 파생
+# 재생성: uv run python scripts/gen_effect_graph_02c.py
+# 검사:   uv run python scripts/gen_effect_graph_02c.py --check
+schema = "effect-graph-02c/v1"
+
+[baseline]
+git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
+
+# base/graph 핀은 02A 원장과 같은 값이어야 한다 — 같은 측정 위의 shard.
+[digests]
+base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
+
+[counts]
+modules = 85
+symbols = 1707
+effect_facts_confirmed = 138
+effect_facts_inferred_fs = 94
+pure_records = 2641
+# composes 기준: 생성 대상 클래스 자신 또는 폐포 내 MRO 조상이 효과 사실을
+# 보유할 때만(모듈 동거 아님 — #527 P1). 순수 값·오류 클래스는 제외된다.
+composes_edges = 25
+effect_modules = 31
+local_import_closed = 17
+local_import_open = 0
+dual_assembly_rows = 21
+uncovered_external_contacts = 0
+uncovered_local_import_calls = 0
+
+[effect_by_class]
+"archive" = 2
+"clock" = 20
+"entropy" = 4
+"env" = 16
+"excel" = 3
+"fs" = 17
+"host_native" = 9
+"host_webview" = 3
+"lock" = 1
+"network" = 2
+"process" = 7
+"registry" = 2
+"stdio" = 52
+
+[effect_by_relation]
+"composes" = 25
+"invokes_external" = 28
+"reads_external" = 121
+"writes_external" = 83
+
+# 명시 순수 제외 — '파일을 다룬다' ≠ 효과 판정의 감사 기록.
+[pure_by_label]
+"computation" = 2093
+"import_binding" = 368
+"inherit_type" = 28
+"marshalling" = 18
+"path_value" = 104
+"xml_memory" = 30
+
+# 모듈별 효과 프로필 — 방향별 사이트 수 + 폐포 내 소비자(생산자/소비자 연결).
+
+[[effect_module]]
+module = "hwpxcore.atomic"
+reads = 0
+writes = 3
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxcore.package",
+  "hwpxfiller.cli",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.webapp.screen_template",
+  "hwpxfiller.webapp.settings",
+]
+
+[[effect_module]]
+module = "hwpxcore.motw"
+reads = 2
+writes = 1
+invokes = 0
+inferred_fs = 0
+consumers = []
+
+[[effect_module]]
+module = "hwpxcore.native._debug"
+reads = 2
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxcore.native.dialogs",
+  "hwpxcore.native.single_instance",
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxcore.native.clipboard"
+reads = 1
+writes = 0
+invokes = 2
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxcore.native.dialogs"
+reads = 0
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxcore.native.reveal"
+reads = 0
+writes = 0
+invokes = 2
+inferred_fs = 2
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxcore.native.single_instance"
+reads = 1
+writes = 0
+invokes = 1
+inferred_fs = 1
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxcore.package"
+reads = 0
+writes = 0
+invokes = 2
+inferred_fs = 0
+consumers = [
+  "hwpxcore.text_extract",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.gui.template_manager_state",
+]
+
+[[effect_module]]
+module = "hwpxfiller.batch"
+reads = 0
+writes = 0
+invokes = 0
+inferred_fs = 1
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[effect_module]]
+module = "hwpxfiller.cli"
+reads = 1
+writes = 51
+invokes = 4
+inferred_fs = 0
+consumers = []
+
+[[effect_module]]
+module = "hwpxfiller.core.dataset_pool"
+reads = 3
+writes = 0
+invokes = 0
+inferred_fs = 6
+consumers = [
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.gui.pipeline_builder_state",
+  "hwpxfiller.webapp.screen_pool",
+  "hwpxfiller.webapp.screens",
+]
+
+[[effect_module]]
+module = "hwpxfiller.core.fill_ledger"
+reads = 1
+writes = 0
+invokes = 0
+inferred_fs = 1
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.cli",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.screens",
+]
+
+[[effect_module]]
+module = "hwpxfiller.core.job"
+reads = 11
+writes = 0
+invokes = 3
+inferred_fs = 18
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.cli",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.gui.edit_session",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_editor",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_workbench",
+  "hwpxfiller.webapp.screens",
+  "hwpxfiller.webapp.template_groups",
+]
+
+[[effect_module]]
+module = "hwpxfiller.core.paths"
+reads = 2
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.settings",
+]
+
+[[effect_module]]
+module = "hwpxfiller.core.text_registry"
+reads = 0
+writes = 0
+invokes = 0
+inferred_fs = 4
+consumers = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_editor",
+]
+
+[[effect_module]]
+module = "hwpxfiller.data.excel"
+reads = 3
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_pool",
+  "hwpxfiller.webapp.screens",
+]
+
+[[effect_module]]
+module = "hwpxfiller.data.nara"
+reads = 0
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[effect_module]]
+module = "hwpxfiller.data.secret_store"
+reads = 0
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[effect_module]]
+module = "hwpxfiller.gui.nara_state"
+reads = 1
+writes = 0
+invokes = 1
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.gui.run_state",
+]
+
+[[effect_module]]
+module = "hwpxfiller.gui.template_manager_state"
+reads = 0
+writes = 0
+invokes = 0
+inferred_fs = 4
+consumers = [
+  "hwpxfiller.webapp.screen_editor",
+  "hwpxfiller.webapp.screen_template",
+]
+
+[[effect_module]]
+module = "hwpxfiller.naming"
+reads = 2
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.cli",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.screen_editor",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[effect_module]]
+module = "hwpxfiller.web_artifact"
+reads = 1
+writes = 1
+invokes = 2
+inferred_fs = 23
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.app"
+reads = 5
+writes = 2
+invokes = 3
+inferred_fs = 2
+consumers = [
+  "hwpxfiller.webapp.__main__",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.boot_budget"
+reads = 2
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.screen_editor"
+reads = 1
+writes = 0
+invokes = 0
+inferred_fs = 5
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.screen_job"
+reads = 4
+writes = 0
+invokes = 0
+inferred_fs = 3
+consumers = [
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.data_zone",
+  "hwpxfiller.webapp.screens",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.screen_template"
+reads = 3
+writes = 1
+invokes = 0
+inferred_fs = 20
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.screen_workbench"
+reads = 1
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.mapping_verbs",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.screens"
+reads = 1
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.data_zone",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_library",
+  "hwpxfiller.webapp.screen_pool",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.selftest_api"
+reads = 1
+writes = 0
+invokes = 0
+inferred_fs = 0
+consumers = [
+  "hwpxfiller.webapp.app",
+]
+
+[[effect_module]]
+module = "hwpxfiller.webapp.settings"
+reads = 1
+writes = 1
+invokes = 2
+inferred_fs = 4
+consumers = [
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_library",
+  "hwpxfiller.webapp.screen_workbench",
+]
+
+# 효과 모듈 심볼을 둘 이상의 패키지 표면이 소비하는 좌표 — GUI/CLI 조립 대조.
+
+[[dual_assembly]]
+dst = "hwpxcore.atomic:write_text_atomic#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.core",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.webapp.screen_template",
+  "hwpxfiller.webapp.settings",
+]
+
+[[dual_assembly]]
+dst = "hwpxcore.native._debug:log#function"
+packages = [
+  "hwpxcore.native",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxcore.native.dialogs",
+  "hwpxcore.native.single_instance",
+  "hwpxfiller.webapp.app",
+]
+
+[[dual_assembly]]
+dst = "hwpxcore.package:HwpxPackage.open#method"
+packages = [
+  "hwpxcore.text_extract",
+  "hwpxfiller.core",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxcore.text_extract",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.gui.template_manager_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.batch:generate_batch#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry#class"
+packages = [
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.webapp.screens",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.dataset_pool:default_dataset_pool_dir#function"
+packages = [
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.webapp.screens",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.dataset_pool:item_identity#function"
+packages = [
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.webapp.screen_pool",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.fill_ledger:export_batch_ledger#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.gui.run_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.fill_ledger:template_path_drift#function"
+packages = [
+  "hwpxfiller.batch",
+  "hwpxfiller.cli",
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.cli",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.screens",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.job:require_hwpx_template#function"
+packages = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui.home_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.job:rules_fingerprints#function"
+packages = [
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.paths:home_dir#function"
+packages = [
+  "hwpxfiller.core",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.settings",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.core.text_registry:default_text_templates_dir#function"
+packages = [
+  "hwpxfiller.core",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_editor",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.data.excel:ExcelDataSource#class"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data.factory",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.data.excel:ambiguous_sheets#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.webapp.app",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.data.nara:NaraStdDataSource#class"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.data.secret_store:default_secret_store#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.data.secret_store:redact#function"
+packages = [
+  "hwpxfiller.core",
+  "hwpxfiller.data",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.naming:existing_outputs#function"
+packages = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui",
+]
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui.run_state",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.naming:pattern_field_tokens#function"
+packages = [
+  "hwpxfiller.cli",
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.cli",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[dual_assembly]]
+dst = "hwpxfiller.naming:plan_output_names#function"
+packages = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui",
+  "hwpxfiller.webapp",
+]
+consumers = [
+  "hwpxfiller.batch",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.webapp.screen_job",
+]
+
+# 함수-지역 import 경유 외부 호출 — 닫힌 좌표 전수.
+
+[[local_import]]
+src = "hwpxcore.native.reveal:_start_file#function"
+marker = "?:local:os.startfile"
+resolved = "ext:os.startfile"
+verdict = "invokes_external"
+file = "src/hwpxcore/native/reveal.py"
+line = 25
+anchor = "c4-27:os.startfile(str(path))"
+
+[[local_import]]
+src = "hwpxfiller.cli:_schema_main#function"
+marker = "?:local:json.dumps"
+resolved = "ext:json.dumps"
+verdict = "computation"
+file = "src/hwpxfiller/cli.py"
+line = 50
+anchor = "c14-95:json.dumps(extract_schema(args.template).to_dict(), ensure_ascii=False, indent=2)"
+
+[[local_import]]
+src = "hwpxfiller.cli:_copy_to_clipboard#function"
+marker = "?:local:subprocess.run"
+resolved = "ext:subprocess.run"
+verdict = "invokes_external"
+file = "src/hwpxfiller/cli.py"
+line = 160
+anchor = "c8-62:subprocess.run(cmd, input=text, text=True, check=True)"
+
+[[local_import]]
+src = "hwpxfiller.core.fill_ledger:export_batch_ledger#function"
+marker = "?:local:datetime.now"
+resolved = "ext:datetime.datetime.now"
+verdict = "reads_external"
+file = "src/hwpxfiller/core/fill_ledger.py"
+line = 441
+anchor = "c23-37:datetime.now()"
+
+[[local_import]]
+src = "hwpxfiller.core.job:_RegistryWriteState._claim_windows_mutex#method"
+marker = "?:local:ctypes.WinDLL"
+resolved = "ext:ctypes.WinDLL"
+verdict = "invokes_external"
+file = "src/hwpxfiller/core/job.py"
+line = 887
+anchor = "c19-65:ctypes.WinDLL('kernel32', use_last_error=True)"
+
+[[local_import]]
+src = "hwpxfiller.core.job:_RegistryWriteState._claim_windows_mutex#method"
+marker = "?:local:ctypes.get_last_error"
+resolved = "ext:ctypes.get_last_error"
+verdict = "reads_external"
+file = "src/hwpxfiller/core/job.py"
+line = 894
+anchor = "c16-39:ctypes.get_last_error()"
+
+[[local_import]]
+src = "hwpxfiller.core.job:_RegistryWriteState._claim_posix_lock#method"
+marker = "?:local:fcntl.flock"
+resolved = "ext:fcntl.flock"
+verdict = "invokes_external"
+file = "src/hwpxfiller/core/job.py"
+line = 915
+anchor = "c12-71:fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)"
+
+[[local_import]]
+src = "hwpxfiller.core.job:_RegistryWriteState.__del__#method"
+marker = "?:local:ctypes.WinDLL"
+resolved = "ext:ctypes.WinDLL"
+verdict = "invokes_external"
+file = "src/hwpxfiller/core/job.py"
+line = 933
+anchor = "c24-49:ctypes.WinDLL('kernel32')"
+
+[[local_import]]
+src = "hwpxfiller.data.secret_store:WindowsCredentialStore._bindings#method"
+marker = "?:local:ctypes.WinDLL"
+resolved = "ext:ctypes.WinDLL"
+verdict = "invokes_external"
+file = "src/hwpxfiller/data/secret_store.py"
+line = 195
+anchor = "c19-65:ctypes.WinDLL('advapi32', use_last_error=True)"
+
+[[local_import]]
+src = "hwpxfiller.data.secret_store:WindowsCredentialStore._bindings#method"
+marker = "?:local:ctypes.POINTER"
+resolved = "ext:ctypes.POINTER"
+verdict = "marshalling"
+file = "src/hwpxfiller/data/secret_store.py"
+line = 211
+anchor = "c35-64:ctypes.POINTER(ctypes.c_char)"
+
+[[local_import]]
+src = "hwpxfiller.data.secret_store:WindowsCredentialStore._bindings#method"
+marker = "?:local:ctypes.POINTER"
+resolved = "ext:ctypes.POINTER"
+verdict = "marshalling"
+file = "src/hwpxfiller/data/secret_store.py"
+line = 219
+anchor = "c16-42:ctypes.POINTER(CREDENTIAL)"
+
+[[local_import]]
+src = "hwpxfiller.data.secret_store:WindowsCredentialStore._bindings#method"
+marker = "?:local:ctypes.POINTER"
+resolved = "ext:ctypes.POINTER"
+verdict = "marshalling"
+file = "src/hwpxfiller/data/secret_store.py"
+line = 223
+anchor = "c62-83:ctypes.POINTER(pcred)"
+
+[[local_import]]
+src = "hwpxfiller.webapp.app:main#function"
+marker = "?:local:webview.create_window"
+resolved = "ext:webview.create_window"
+verdict = "invokes_external"
+file = "src/hwpxfiller/webapp/app.py"
+line = 1255
+anchor = "c13-5:webview.create_window(WINDOW_TITLE, str(artifact.index_path), js_api=frontend, width=int(saved_geometry['width']) if sav"
+
+[[local_import]]
+src = "hwpxfiller.webapp.app:main#function"
+marker = "?:local:webview.start"
+resolved = "ext:webview.start"
+verdict = "invokes_external"
+file = "src/hwpxfiller/webapp/app.py"
+line = 1455
+anchor = "c12-72:webview.start(entry, gui=gui, storage_path=str(storage_dir))"
+
+[[local_import]]
+src = "hwpxfiller.webapp.app:main#function"
+marker = "?:local:webview.start"
+resolved = "ext:webview.start"
+verdict = "invokes_external"
+file = "src/hwpxfiller/webapp/app.py"
+line = 1457
+anchor = "c12-65:webview.start(gui=gui, storage_path=str(storage_dir))"
+
+[[local_import]]
+src = "hwpxfiller.webapp.boot_budget:detect_runtime_version#function"
+marker = "?:local:winreg.OpenKey"
+resolved = "ext:winreg.OpenKey"
+verdict = "reads_external"
+file = "src/hwpxfiller/webapp/boot_budget.py"
+line = 59
+anchor = "c17-54:winreg.OpenKey(roots[root_name], sub)"
+
+[[local_import]]
+src = "hwpxfiller.webapp.boot_budget:detect_runtime_version#function"
+marker = "?:local:winreg.QueryValueEx"
+resolved = "ext:winreg.QueryValueEx"
+verdict = "reads_external"
+file = "src/hwpxfiller/webapp/boot_budget.py"
+line = 60
+anchor = "c24-54:winreg.QueryValueEx(key, 'pv')"
+
+# 수신자 미상 Path 판별 메서드 — INFERRED 렌즈 전수(FACT 로 위조하지 않는다).
+
+[[inferred_fs]]
+src = "hwpxcore.native.reveal:open_path#function"
+rel = "reads_external"
+dst = "?:local:p.exists"
+file = "src/hwpxcore/native/reveal.py"
+line = 65
+anchor = "c11-21:p.exists()"
+
+[[inferred_fs]]
+src = "hwpxcore.native.reveal:reveal_in_explorer#function"
+rel = "reads_external"
+dst = "?:local:p.exists"
+file = "src/hwpxcore/native/reveal.py"
+line = 45
+anchor = "c11-21:p.exists()"
+
+[[inferred_fs]]
+src = "hwpxcore.native.single_instance:_mutex_name#function"
+rel = "reads_external"
+dst = "?:local:home.resolve"
+file = "src/hwpxcore/native/single_instance.py"
+line = 35
+anchor = "c18-32:home.resolve()"
+
+[[inferred_fs]]
+src = "hwpxfiller.batch:generate_batch#function"
+rel = "writes_external"
+dst = "?:local:out.mkdir"
+file = "src/hwpxfiller/batch.py"
+line = 97
+anchor = "c4-42:out.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry._files#method"
+rel = "reads_external"
+dst = "?:self:DatasetPoolRegistry.directory.exists"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 306
+anchor = "c15-38:self.directory.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry._files#method"
+rel = "reads_external"
+dst = "?:self:DatasetPoolRegistry.directory.glob"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 308
+anchor = "c22-60:self.directory.glob('*' + self.SUFFIX)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry.add#method"
+rel = "writes_external"
+dst = "?:self:DatasetPoolRegistry.directory.mkdir"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 260
+anchor = "c12-61:self.directory.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry.delete#method"
+rel = "reads_external"
+dst = "?:local:p.exists"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 302
+anchor = "c15-25:p.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry.delete#method"
+rel = "writes_external"
+dst = "?:local:p.unlink"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 303
+anchor = "c16-26:p.unlink()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.dataset_pool:DatasetPoolRegistry.save_at#method"
+rel = "writes_external"
+dst = "?:self:DatasetPoolRegistry.directory.mkdir"
+file = "src/hwpxfiller/core/dataset_pool.py"
+line = 268
+anchor = "c12-61:self.directory.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.fill_ledger:ledger_sidecar_path#function"
+rel = "reads_external"
+dst = "?:local:cand.exists"
+file = "src/hwpxfiller/core/fill_ledger.py"
+line = 480
+anchor = "c10-23:cand.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry._files#method"
+rel = "reads_external"
+dst = "?:self:JobRegistry.directory.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1307
+anchor = "c15-38:self.directory.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry._files#method"
+rel = "reads_external"
+dst = "?:self:JobRegistry.directory.glob"
+file = "src/hwpxfiller/core/job.py"
+line = 1309
+anchor = "c22-60:self.directory.glob('*' + self.SUFFIX)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry._purge_trash#method"
+rel = "reads_external"
+dst = "?:local:path.stat"
+file = "src/hwpxfiller/core/job.py"
+line = 1300
+anchor = "c19-30:path.stat()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry._purge_trash#method"
+rel = "reads_external"
+dst = "?:local:trash.glob"
+file = "src/hwpxfiller/core/job.py"
+line = 1298
+anchor = "c20-49:trash.glob('*' + self.SUFFIX)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry._purge_trash#method"
+rel = "writes_external"
+dst = "?:local:path.unlink"
+file = "src/hwpxfiller/core/job.py"
+line = 1301
+anchor = "c20-33:path.unlink()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.delete#method"
+rel = "reads_external"
+dst = "?:local:p.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1257
+anchor = "c15-25:p.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.delete#method"
+rel = "writes_external"
+dst = "?:local:p.unlink"
+file = "src/hwpxfiller/core/job.py"
+line = 1258
+anchor = "c16-26:p.unlink()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.rename#method"
+rel = "reads_external"
+dst = "?:local:dst.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1204
+anchor = "c30-42:dst.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.rename#method"
+rel = "writes_external"
+dst = "?:local:src.unlink"
+file = "src/hwpxfiller/core/job.py"
+line = 1209
+anchor = "c16-28:src.unlink()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.restore_soft_deleted#method"
+rel = "reads_external"
+dst = "?:local:src.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1290
+anchor = "c15-27:src.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.restore_soft_deleted#method"
+rel = "reads_external"
+dst = "?:local:trashed.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1286
+anchor = "c19-35:trashed.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.restore_soft_deleted#method"
+rel = "writes_external"
+dst = "?:self:JobRegistry.directory.mkdir"
+file = "src/hwpxfiller/core/job.py"
+line = 1292
+anchor = "c12-61:self.directory.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.save#method"
+rel = "writes_external"
+dst = "?:self:JobRegistry.directory.mkdir"
+file = "src/hwpxfiller/core/job.py"
+line = 1042
+anchor = "c12-61:self.directory.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.soft_delete#method"
+rel = "reads_external"
+dst = "?:local:src.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 1273
+anchor = "c19-31:src.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:JobRegistry.soft_delete#method"
+rel = "writes_external"
+dst = "?:local:trash.mkdir"
+file = "src/hwpxfiller/core/job.py"
+line = 1276
+anchor = "c12-52:trash.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:_RegistryWriteState._claim_posix_lock#method"
+rel = "writes_external"
+dst = "?:local:lock_root.mkdir"
+file = "src/hwpxfiller/core/job.py"
+line = 911
+anchor = "c8-52:lock_root.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:_directory_key#function"
+rel = "reads_external"
+dst = "?:local:directory.resolve"
+file = "src/hwpxfiller/core/job.py"
+line = 983
+anchor = "c20-39:directory.resolve()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.job:guard_slug_collision#function"
+rel = "reads_external"
+dst = "?:local:path.exists"
+file = "src/hwpxfiller/core/job.py"
+line = 118
+anchor = "c11-24:path.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.text_registry:TextTemplate.content#method"
+rel = "reads_external"
+dst = "?:self:TextTemplate.path.read_text"
+file = "src/hwpxfiller/core/text_registry.py"
+line = 41
+anchor = "c15-52:self.path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.text_registry:TextTemplateRegistry.list_templates#method"
+rel = "reads_external"
+dst = "?:local:p.is_file"
+file = "src/hwpxfiller/core/text_registry.py"
+line = 87
+anchor = "c23-34:p.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.text_registry:TextTemplateRegistry.list_templates#method"
+rel = "reads_external"
+dst = "?:self:TextTemplateRegistry.directory.exists"
+file = "src/hwpxfiller/core/text_registry.py"
+line = 79
+anchor = "c15-38:self.directory.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.core.text_registry:TextTemplateRegistry.list_templates#method"
+rel = "reads_external"
+dst = "?:self:TextTemplateRegistry.directory.rglob"
+file = "src/hwpxfiller/core/text_registry.py"
+line = 86
+anchor = "c29-68:self.directory.rglob('*' + self.SUFFIX)"
+
+[[inferred_fs]]
+src = "hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._discover#method"
+rel = "reads_external"
+dst = "?:local:p.is_file"
+file = "src/hwpxfiller/gui/template_manager_state.py"
+line = 248
+anchor = "c23-34:p.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._discover#method"
+rel = "reads_external"
+dst = "?:self:TemplateManagerViewModel.library_dir.is_dir"
+file = "src/hwpxfiller/gui/template_manager_state.py"
+line = 243
+anchor = "c44-69:self.library_dir.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._discover#method"
+rel = "reads_external"
+dst = "?:self:TemplateManagerViewModel.library_dir.rglob"
+file = "src/hwpxfiller/gui/template_manager_state.py"
+line = 247
+anchor = "c29-61:self.library_dir.rglob('*.hwpx')"
+
+[[inferred_fs]]
+src = "hwpxfiller.gui.template_manager_state:TemplateManagerViewModel.empty_hint#method"
+rel = "reads_external"
+dst = "?:self:TemplateManagerViewModel.library_dir.is_dir"
+file = "src/hwpxfiller/gui/template_manager_state.py"
+line = 268
+anchor = "c15-40:self.library_dir.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_file_sha256#function"
+rel = "reads_external"
+dst = "?:local:path.read_bytes"
+file = "src/hwpxfiller/web_artifact.py"
+line = 202
+anchor = "c29-46:path.read_bytes()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_json_object#function"
+rel = "reads_external"
+dst = "?:local:path.read_text"
+file = "src/hwpxfiller/web_artifact.py"
+line = 326
+anchor = "c27-59:path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_record#function"
+rel = "reads_external"
+dst = "?:local:path.stat"
+file = "src/hwpxfiller/web_artifact.py"
+line = 246
+anchor = "c15-26:path.stat()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_required_file_record#function"
+rel = "reads_external"
+dst = "?:local:path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 283
+anchor = "c11-25:path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_seal_candidates#function"
+rel = "reads_external"
+dst = "?:local:artifact_root.rglob"
+file = "src/hwpxfiller/web_artifact.py"
+line = 699
+anchor = "c24-58:artifact_root.rglob(SEAL_FILENAME)"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_seal_candidates#function"
+rel = "reads_external"
+dst = "?:local:path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 700
+anchor = "c15-29:path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_tree_records#function"
+rel = "reads_external"
+dst = "?:local:path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 271
+anchor = "c11-25:path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_tree_records#function"
+rel = "reads_external"
+dst = "?:local:root.is_dir"
+file = "src/hwpxfiller/web_artifact.py"
+line = 260
+anchor = "c11-24:root.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_tree_records#function"
+rel = "reads_external"
+dst = "?:local:root.rglob"
+file = "src/hwpxfiller/web_artifact.py"
+line = 265
+anchor = "c26-41:root.rglob('*')"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_validate_output_references#function"
+rel = "reads_external"
+dst = "?:local:path.read_text"
+file = "src/hwpxfiller/web_artifact.py"
+line = 528
+anchor = "c19-51:path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_verify_artifact#function"
+rel = "reads_external"
+dst = "?:local:artifact_root.is_dir"
+file = "src/hwpxfiller/web_artifact.py"
+line = 769
+anchor = "c11-33:artifact_root.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_verify_artifact#function"
+rel = "reads_external"
+dst = "?:local:expected_seal.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 773
+anchor = "c11-34:expected_seal.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_verify_artifact#function"
+rel = "reads_external"
+dst = "?:local:index_path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 785
+anchor = "c11-31:index_path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:_verify_output_tree#function"
+rel = "reads_external"
+dst = "?:local:manifest_path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 710
+anchor = "c11-34:manifest_path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:resolve_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:frozen_root.resolve"
+file = "src/hwpxfiller/web_artifact.py"
+line = 818
+anchor = "c9-30:frozen_root.resolve()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:resolve_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:repo_root.resolve"
+file = "src/hwpxfiller/web_artifact.py"
+line = 811
+anchor = "c24-43:repo_root.resolve()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:artifact_root.is_dir"
+file = "src/hwpxfiller/web_artifact.py"
+line = 833
+anchor = "c11-33:artifact_root.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:index_path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 851
+anchor = "c11-31:index_path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:manifest_path.is_file"
+file = "src/hwpxfiller/web_artifact.py"
+line = 854
+anchor = "c11-34:manifest_path.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:repo_root.resolve"
+file = "src/hwpxfiller/web_artifact.py"
+line = 831
+anchor = "c16-35:repo_root.resolve()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:seal_path.exists"
+file = "src/hwpxfiller/web_artifact.py"
+line = 887
+anchor = "c7-25:seal_path.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "reads_external"
+dst = "?:local:temporary.exists"
+file = "src/hwpxfiller/web_artifact.py"
+line = 890
+anchor = "c7-25:temporary.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.web_artifact:seal_repository_web_artifact#function"
+rel = "writes_external"
+dst = "?:local:temporary.write_text"
+file = "src/hwpxfiller/web_artifact.py"
+line = 893
+anchor = "c8-9:temporary.write_text(json.dumps(seal.document(), ensure_ascii=False, indent=2, sort_keys=True) + '\\n', encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.app:_prepare_webview_profile#function"
+rel = "writes_external"
+dst = "?:local:storage_dir.mkdir"
+file = "src/hwpxfiller/webapp/app.py"
+line = 1188
+anchor = "c4-50:storage_dir.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.app:_write_selftest_output#function"
+rel = "writes_external"
+dst = "?:local:out.write_text"
+file = "src/hwpxfiller/webapp/app.py"
+line = 725
+anchor = "c4-92:out.write_text(json.dumps(dict(result), ensure_ascii=False, indent=2), encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_editor:EditorController._cross_media_block#method"
+rel = "reads_external"
+dst = "?:self:EditorController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 1772
+anchor = "c15-50:self.registry.exists(self.job_name)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_editor:EditorController._editing_drift_text#method"
+rel = "reads_external"
+dst = "?:self:EditorController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 1717
+anchor = "c15-57:self.registry.exists(self._editing_origin)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_editor:EditorController._overwrite_gate#method"
+rel = "reads_external"
+dst = "?:self:EditorController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 1747
+anchor = "c60-95:self.registry.exists(self.job_name)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_editor:EditorController._preserved_for_target#method"
+rel = "reads_external"
+dst = "?:self:EditorController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 1811
+anchor = "c11-39:self.registry.exists(target)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_editor:EditorController.adopt_imported_template#method"
+rel = "reads_external"
+dst = "?:local:path.read_text"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 935
+anchor = "c16-48:path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_job:JobController._apply_preferred_work#method"
+rel = "reads_external"
+dst = "?:self:JobController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_job.py"
+line = 1948
+anchor = "c15-41:self.registry.exists(name)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_job:JobController._do_prefer_work#method"
+rel = "reads_external"
+dst = "?:self:JobController.registry.exists"
+file = "src/hwpxfiller/webapp/screen_job.py"
+line = 1923
+anchor = "c15-41:self.registry.exists(name)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_job:JobController._do_rename_job#method"
+rel = "writes_external"
+dst = "?:self:JobController.registry.rename"
+file = "src/hwpxfiller/webapp/screen_job.py"
+line = 2063
+anchor = "c12-43:self.registry.rename(name, new)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._copy_into_library#method"
+rel = "reads_external"
+dst = "?:local:dest.exists"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 326
+anchor = "c18-31:dest.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._copy_into_library#method"
+rel = "writes_external"
+dst = "?:local:dest.unlink"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 332
+anchor = "c16-44:dest.unlink(missing_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._copy_into_library#method"
+rel = "writes_external"
+dst = "?:local:root.mkdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 319
+anchor = "c8-47:root.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+rel = "reads_external"
+dst = "?:local:old.is_file"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 537
+anchor = "c19-32:old.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+rel = "reads_external"
+dst = "?:local:old.stat"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 537
+anchor = "c37-47:old.stat()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+rel = "reads_external"
+dst = "?:local:trash.iterdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 535
+anchor = "c19-34:trash.iterdir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+rel = "writes_external"
+dst = "?:local:old.unlink"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 538
+anchor = "c20-32:old.unlink()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+rel = "writes_external"
+dst = "?:local:trash.mkdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 533
+anchor = "c8-48:trash.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_txt_new#method"
+rel = "reads_external"
+dst = "?:local:path.exists"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 639
+anchor = "c15-28:path.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_txt_new#method"
+rel = "writes_external"
+dst = "?:self:TemplateController.text_registry.directory.mkdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 641
+anchor = "c12-75:self.text_registry.directory.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_undo_delete.<locals>.restore_and_regroup#function"
+rel = "reads_external"
+dst = "?:local:path.exists"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 592
+anchor = "c15-28:path.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_undo_delete.<locals>.restore_and_regroup#function"
+rel = "reads_external"
+dst = "?:local:trashed.exists"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 588
+anchor = "c19-35:trashed.exists()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._do_undo_delete.<locals>.restore_and_regroup#function"
+rel = "writes_external"
+dst = "?:local:path.parent.mkdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 594
+anchor = "c12-58:path.parent.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._folder_candidates#method"
+rel = "reads_external"
+dst = "?:local:folder.iterdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 220
+anchor = "c24-40:folder.iterdir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController._folder_candidates#method"
+rel = "reads_external"
+dst = "?:local:p.is_file"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 220
+anchor = "c44-55:p.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController.import_folder#method"
+rel = "reads_external"
+dst = "?:local:root.is_dir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 357
+anchor = "c19-32:root.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController.import_folder#method"
+rel = "reads_external"
+dst = "?:local:src.is_file"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 374
+anchor = "c23-36:src.is_file()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController.scan_import_folder#method"
+rel = "reads_external"
+dst = "?:local:p.is_dir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 243
+anchor = "c23-33:p.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController.scan_import_folder#method"
+rel = "reads_external"
+dst = "?:local:root.is_dir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 237
+anchor = "c15-28:root.is_dir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.screen_template:TemplateController.scan_import_folder#method"
+rel = "reads_external"
+dst = "?:local:root.iterdir"
+file = "src/hwpxfiller/webapp/screen_template.py"
+line = 243
+anchor = "c43-57:root.iterdir()"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.settings:_mutate#function"
+rel = "writes_external"
+dst = "?:local:path.parent.mkdir"
+file = "src/hwpxfiller/webapp/settings.py"
+line = 145
+anchor = "c4-50:path.parent.mkdir(parents=True, exist_ok=True)"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.settings:_read#function"
+rel = "reads_external"
+dst = "?:local:path.read_text"
+file = "src/hwpxfiller/webapp/settings.py"
+line = 104
+anchor = "c35-67:path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.settings:_read_for_update#function"
+rel = "reads_external"
+dst = "?:local:path.read_text"
+file = "src/hwpxfiller/webapp/settings.py"
+line = 120
+anchor = "c15-47:path.read_text(encoding='utf-8')"
+
+[[inferred_fs]]
+src = "hwpxfiller.webapp.settings:alert#function"
+rel = "writes_external"
+dst = "?:local:log_path.parent.mkdir"
+file = "src/hwpxfiller/webapp/settings.py"
+line = 71
+anchor = "c8-58:log_path.parent.mkdir(parents=True, exist_ok=True)"
