@@ -36,6 +36,7 @@
 | `react_ownership_inventory.toml` | React 이관 대상 소유권과 그 계측의 기계 판독 원장 |
 | `react_verification_ledger.toml` | 검증 자산의 old→new 책임과 인계 단계의 기계 판독 원장 |
 | `factgraph/python_symbol_inventory.toml` | production Python 심볼 폐포의 생성 원장(P1 전수 계측 기반, #512) |
+| `factgraph/static_graph_02a.toml` | import·call·construction 그래프의 digest·SCC·hotspot·미해결 전수 원장(P1-02A, #513) |
 
 ## 결정 기록
 

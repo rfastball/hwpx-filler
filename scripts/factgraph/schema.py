@@ -38,6 +38,7 @@ RELATIONS: tuple[str, ...] = (
     "imports_symbol",
     "calls",
     "constructs",
+    "inherits",
     "writes_attribute",
     "reads_attribute",
     "dynamic_site",
@@ -263,6 +264,23 @@ def edge_grades(facts: "tuple[Fact, ...] | list[Fact]") -> "dict[tuple[str, str,
             # 앞선 등급이 더 강하다 — GRADES 등록 순서가 곧 우선순위다.
             out[edge] = next(g for g in GRADES if g in grades)
     return out
+
+
+def facts_digest(symbols: "list[str] | tuple[str, ...]", facts: "tuple[Fact, ...] | list[Fact]") -> str:
+    """심볼·사실 집합의 내용 앵커 — baseline SHA 없이 「같은 측정인가」를 판정한다.
+
+    master 가 움직여도 폐포 내용이 같으면 같은 값이다 — 커밋 생성물이 SHA 대신 이 값을
+    핀으로 들어 무관한 커밋마다 드리프트가 나는 회로를 피한다.
+    """
+    ordered_symbols = sorted(set(symbols))
+    ordered_facts = sorted(set(facts), key=Fact.sort_key)
+    return _digest(
+        {
+            "schema": SCHEMA_VERSION,
+            "symbols": list(ordered_symbols),
+            "facts": [asdict(f) for f in ordered_facts],
+        }
+    )
 
 
 def _digest(payload: dict) -> str:
