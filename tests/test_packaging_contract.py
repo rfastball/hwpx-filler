@@ -426,21 +426,35 @@ def test_reconciler_cli_reports_failure_with_a_nonzero_exit(tmp_path: Path) -> N
 #
 # 판정을 PowerShell 인라인이 아니라 Python 에 둔 이유는 음성 대조가 붙을 자리를 만들기
 # 위해서다. 그래서 여기가 그 검출력을 세는 자리다 — 배선은 test_web_runtime_artifact 가 진다.
+#
+# 입력은 **제품이 쓴 파일**이다. 초판은 stdout 을 리디렉션해 읽었는데, `console=False` exe 의
+# stdout 이 붙는 자리는 환경마다 달라서 로컬에서 즉시 끝난 호출이 CI 에서 13분 매달렸다.
 
 
-def test_selfcheck_identity_accepts_the_real_selfcheck_line() -> None:
+def _selfcheck_evidence(path: Path, artifact_id: str, tree: str) -> Path:
+    path.write_text(
+        json.dumps(
+            {"artifact_id": artifact_id, "tree_sha256": tree, "viewmodel_ok": True}
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_selfcheck_identity_reads_what_the_product_writes(tmp_path: Path) -> None:
     """양성 — 제품이 실제로 내는 형태를 읽는다.
 
-    형태는 ``hwpx_filler_web_entry._selfcheck`` 의 print 문이 정본이라, 그 문자열이 바뀌면
-    이 대조가 먼저 죽어야 한다.
+    형태는 ``hwpx_filler_web_entry._selfcheck`` 가 정본이라, 그 키가 바뀌면 이 대조가
+    먼저 죽어야 한다.
     """
     artifact_id, tree = "a" * 64, "b" * 64
-    line = (
-        f"selfcheck: txt_templates=['샘플'] fields=2 artifact_id={artifact_id} "
-        f"tree_sha256={tree} -> OK\n"
+    document = json.loads(
+        _selfcheck_evidence(tmp_path / "selfcheck.json", artifact_id, tree).read_text(
+            encoding="utf-8"
+        )
     )
 
-    assert assert_selfcheck_identity.parse_identity(line) == {
+    assert assert_selfcheck_identity.read_identity(document, role="selfcheck") == {
         "artifact_id": artifact_id,
         "tree_sha256": tree,
     }
@@ -450,21 +464,37 @@ def test_selfcheck_identity_accepts_the_real_selfcheck_line() -> None:
     )["selfcheck_matches_bundled"] is True
 
 
-def test_silence_is_not_a_pass() -> None:
-    """음성 — 값을 못 읽으면 통과가 아니라 실패다.
+def test_a_missing_or_empty_evidence_file_is_not_a_pass(tmp_path: Path) -> None:
+    """음성 — 증거가 없거나 비면 통과가 아니라 실패다.
 
-    창 앱이라 리디렉션을 빠뜨리면 출력이 통째로 사라진다. 그 상태가 조용히 초록이면 이
-    게이트는 아무것도 재지 않으면서 "정상 실행을 확인했다"고 말하게 된다.
+    이 자리가 초판을 태운 곳이다: 창 앱의 stdout 이 안 잡히면 파일이 **0바이트로 존재**했고,
+    그 상태가 조용히 초록이면 게이트는 아무것도 재지 않으면서 확인했다고 말하게 된다.
     """
-    for empty in ("", "   \n", "selfcheck: txt_templates=['샘플'] fields=2 -> OK\n"):
+    empty = tmp_path / "empty.json"
+    empty.write_text("", encoding="utf-8")
+
+    assert assert_selfcheck_identity.main(
+        [
+            "--selfcheck-evidence", str(tmp_path / "absent.json"),
+            "--expect-identity", str(_identity_file(tmp_path / "p.json", "a" * 64, "b" * 64)),
+        ]
+    ) == 2
+    assert assert_selfcheck_identity.main(
+        [
+            "--selfcheck-evidence", str(empty),
+            "--expect-identity", str(tmp_path / "p.json"),
+        ]
+    ) == 2
+
+    for document in ({}, {"artifact_id": "a" * 64}):
         with pytest.raises(
             assert_selfcheck_identity.SelfcheckIdentityError,
-            match="identity 를 말하지 않았습니다",
+            match="identity 필드가 없습니다",
         ):
-            assert_selfcheck_identity.parse_identity(empty)
+            assert_selfcheck_identity.read_identity(document, role="selfcheck")
 
 
-def test_a_different_artifact_in_the_selfcheck_phase_is_named(tmp_path: Path) -> None:
+def test_a_different_artifact_in_the_selfcheck_phase_is_named() -> None:
     """음성 — selfcheck 국면이 다른 산출물을 해석했으면 무엇이 다른지 이름을 댄다."""
     with pytest.raises(
         assert_selfcheck_identity.SelfcheckIdentityError, match="artifact_id: selfcheck="
@@ -482,50 +512,56 @@ def test_a_different_artifact_in_the_selfcheck_phase_is_named(tmp_path: Path) ->
         )
 
 
-def test_two_different_identities_in_one_output_are_refused() -> None:
-    """음성 — 한 출력에 값이 둘이면 어느 실행의 값인지 말할 수 없다.
-
-    앞 시도의 잔재가 남은 파일에 이어 붙는 경우가 실제 형태다. 첫 매치를 조용히 택하면
-    이번 실행이 아닌 값이 대조를 통과한다.
-    """
-    stale = f"artifact_id={'a' * 64} tree_sha256={'b' * 64}\n"
-    fresh = f"artifact_id={'c' * 64} tree_sha256={'d' * 64}\n"
-
+def test_an_identity_that_is_not_a_sha256_is_refused_by_the_selfcheck_judge(
+    tmp_path: Path,
+) -> None:
+    """음성 — 형태를 안 보면 두 자리가 나란히 같은 쓰레기를 들고 "일치"가 된다."""
     with pytest.raises(
-        assert_selfcheck_identity.SelfcheckIdentityError, match="서로 다른 identity"
+        assert_selfcheck_identity.SelfcheckIdentityError, match="sha256 이 아닙니다"
     ):
-        assert_selfcheck_identity.parse_identity(stale + fresh)
+        assert_selfcheck_identity.read_identity(
+            {"artifact_id": "not-a-digest", "tree_sha256": "b" * 64}, role="selfcheck"
+        )
 
 
 def test_selfcheck_identity_cli_exit_codes(tmp_path: Path) -> None:
     identity = ("a" * 64, "b" * 64)
-    output = tmp_path / "selfcheck.txt"
-    output.write_text(
-        f"selfcheck: artifact_id={identity[0]} tree_sha256={identity[1]} -> OK\n",
-        encoding="utf-8",
-    )
-    expected = tmp_path / "artifact-parity.json"
-    expected.write_text(
-        json.dumps({"artifact_id": identity[0], "tree_sha256": identity[1]}),
-        encoding="utf-8",
-    )
-    evidence = tmp_path / "normal.json"
+    evidence = _selfcheck_evidence(tmp_path / "selfcheck.json", *identity)
+    expected = _identity_file(tmp_path / "artifact-parity.json", *identity)
+    out = tmp_path / "judged.json"
 
     assert assert_selfcheck_identity.main(
         [
-            "--selfcheck-output", str(output),
+            "--selfcheck-evidence", str(evidence),
             "--expect-identity", str(expected),
-            "--json-out", str(evidence),
+            "--json-out", str(out),
         ]
     ) == 0
-    assert json.loads(evidence.read_text(encoding="utf-8"))["selfcheck_artifact_id"] == identity[0]
+    assert json.loads(out.read_text(encoding="utf-8"))["selfcheck_artifact_id"] == identity[0]
 
+    _selfcheck_evidence(evidence, "c" * 64, identity[1])
     assert assert_selfcheck_identity.main(
         [
-            "--selfcheck-output", str(tmp_path / "absent.txt"),
+            "--selfcheck-evidence", str(evidence),
             "--expect-identity", str(expected),
         ]
     ) == 2
+
+
+def test_the_product_writes_the_evidence_the_judge_reads() -> None:
+    """두 끝을 함께 센다 — 제품이 쓰는 키와 판별기가 읽는 키가 같은가.
+
+    한쪽만 보면 "쓰는데 아무도 안 읽는" 또는 "읽는데 아무도 안 쓰는" 상태가 초록이다.
+    """
+    entry = WEB_ENTRY.read_text(encoding="utf-8")
+
+    assert "HWPX_SELFCHECK_OUT" in entry, "제품이 증거 경로를 안 받습니다"
+    for field in assert_selfcheck_identity.IDENTITY_FIELDS:
+        assert f'"{field}": artifact.' in entry, f"제품이 {field} 를 안 씁니다"
+    # stdout 은 사람이 읽는 자리로만 남는다 — 판정 입력으로 되돌아가면 같은 매달림이 돌아온다.
+    assert "RedirectStandardOutput" not in (PACKAGING / "build.ps1").read_text(
+        encoding="utf-8-sig"
+    ), "판정이 창 앱 stdout 포획으로 되돌아갔습니다"
 
 
 def test_the_inno_compiler_lookup_has_one_owner_and_sees_a_per_user_install() -> None:

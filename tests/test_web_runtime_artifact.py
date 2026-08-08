@@ -288,18 +288,30 @@ def test_the_packaged_gate_listens_to_the_selfcheck_identity() -> None:
     assert "artifact_id={artifact.artifact_id}" in entry
     assert "tree_sha256={artifact.tree_sha256}" in entry
 
-    assert "-RedirectStandardOutput $selfcheckOut" in build
+    # 증거는 **제품이 파일로 쓴다**. stdout 포획으로 되돌아가면 CI 에서 13분 매달렸던
+    # 그 자리가 그대로 돌아온다(run 31229199482) — 창 앱의 stdout 은 환경마다 다르게 붙는다.
+    assert "RedirectStandardOutput" not in build
+    assert "$env:HWPX_SELFCHECK_OUT" in build
+    assert "HWPX_SELFCHECK_OUT" in entry, "제품이 그 경로를 안 받습니다"
     # 판정은 Python 판별기가 진다 — 인라인 정규식으로 되돌아가면 음성 대조가 붙을 자리가
     # 사라진다(`classify_webview_evidence.py` 와 같은 규율).
     assert r"scripts\assert_selfcheck_identity.py" in build
-    assert "--selfcheck-output $selfcheckOut" in build
+    assert "--selfcheck-evidence $env:HWPX_SELFCHECK_OUT" in build
     assert "selfcheck_artifact_id" in build
     # 이 국면이 제품 main() **밖**이라는 사실을 엔트리에서 직접 센다 — 그 사실이 바뀌면
     # 위 docstring 의 주장도 증거 키 이름도 함께 틀린 것이 된다.
     assert 'sys.argv[1] == "--selfcheck"' in entry
     assert entry.index('sys.argv[1] == "--selfcheck"') < entry.index("import main")
-    # 실행이 먼저, 판정이 나중 — 순서가 뒤집히면 앞 실행의 잔재를 읽는다.
-    assert build.index("-RedirectStandardOutput $selfcheckOut") < build.index(
+    # 실행이 먼저, 판정이 나중 — 순서가 뒤집히면 앞 실행의 잔재를 읽는다. 그 잔재를 아예
+    # 없애는 것도 계약이다(앞 시도의 파일이 남아 있으면 이번 실행 없이도 초록이 난다).
+    #
+    # 구간을 **잘라서** 센다. `--selfcheck` 호출은 파일에 둘이다(패키징 게이트 · 설치본
+    # 사본) — 전체 문자열에 `.index` 를 쓰면 앞의 다른 호출을 재고서 순서를 말하게 된다.
+    phase = build[build.index("$env:HWPX_SELFCHECK_OUT = Join-Path"):]
+    assert phase.index("Remove-Item -LiteralPath $env:HWPX_SELFCHECK_OUT") < phase.index(
+        "-ArgumentList @('--selfcheck')"
+    )
+    assert phase.index("-ArgumentList @('--selfcheck')") < phase.index(
         r"scripts\assert_selfcheck_identity.py"
     )
 

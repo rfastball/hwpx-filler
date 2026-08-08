@@ -10,6 +10,11 @@
 정상/시험 창의 capability 차는 source 실창 게이트(``tests/test_web_selftest_gate.py``)가 진다.
 이 셋은 겹치지 않는 국면이고, 이름으로 서로를 대신하지 않는다.
 
+입력은 **제품이 쓴 파일**이지 stdout 이 아니다. 이 exe 는 ``console=False`` 라 stdout 이 붙는
+자리가 환경마다 다르고, 초판이 쓰던 ``Start-Process -RedirectStandardOutput`` 은 로컬에서 즉시
+끝나면서 CI 에서 13분 매달렸다 — 같은 축을 selftest 는 이미 파일(``HWPX_SELFTEST_OUT``)로
+피해 가고 있었다. 판별기가 stdout 을 안 읽으면 그 축이 통째로 사라진다.
+
 판정을 PowerShell 인라인이 아니라 여기 두는 이유는 **음성 대조가 붙을 자리를 만들기 위해서**다
 (``classify_webview_evidence.py`` 가 같은 이유로 Python 이다). 러너가 지는 것은 호출과 배선이고,
 "같은가"의 판정은 이 파일 하나가 진다.
@@ -23,37 +28,49 @@ import re
 import sys
 from pathlib import Path
 
-#: ``hwpx_filler_web_entry._selfcheck`` 가 내는 형태. 두 값이 **한 줄에 함께** 있어야 한다 —
-#: 따로 잡으면 서로 다른 실행의 값이 짝지어질 수 있다.
-IDENTITY_RE = re.compile(
-    r"artifact_id=(?P<artifact_id>[0-9a-f]{64}) tree_sha256=(?P<tree_sha256>[0-9a-f]{64})"
-)
+#: identity 두 필드의 형태. 있기만 하면 통과시키면 빈 문자열 아닌 무엇이든 identity 가 된다.
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+IDENTITY_FIELDS = ("artifact_id", "tree_sha256")
 
 
 class SelfcheckIdentityError(RuntimeError):
     """``--selfcheck`` 국면의 identity 를 확인하지 못했다."""
 
 
-def parse_identity(text: str) -> dict[str, str]:
-    """selfcheck stdout 에서 identity 를 읽는다. 없음은 통과가 아니라 실패다."""
-    matches = IDENTITY_RE.findall(text)
-    if not matches:
+def _load(path: Path, *, role: str) -> dict:
+    if not path.is_file():
+        raise SelfcheckIdentityError(f"{role} 증거가 없습니다: {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SelfcheckIdentityError(f"{role} 증거를 읽을 수 없습니다: {path} ({exc})") from exc
+    if not isinstance(value, dict):
+        raise SelfcheckIdentityError(f"{role} 증거가 JSON object 가 아닙니다: {path}")
+    return value
+
+
+def read_identity(document: dict, *, role: str) -> dict[str, str]:
+    """증거에서 identity 를 읽는다. 없음·형태 불일치는 통과가 아니라 실패다."""
+    missing = [field for field in IDENTITY_FIELDS if not document.get(field)]
+    if missing:
         raise SelfcheckIdentityError(
-            "selfcheck 가 자기 web artifact identity 를 말하지 않았습니다: "
-            + (text.strip() or "<빈 출력>")
+            f"{role} 증거에 identity 필드가 없습니다: {', '.join(missing)}"
         )
-    if len(set(matches)) != 1:
+    identity = {field: str(document[field]) for field in IDENTITY_FIELDS}
+    malformed = [field for field, value in identity.items() if not _DIGEST_RE.match(value)]
+    if malformed:
         raise SelfcheckIdentityError(
-            f"selfcheck 출력에 서로 다른 identity 가 {len(matches)}개 있습니다: {matches}"
+            f"{role} 증거의 identity 형태가 sha256 이 아닙니다: "
+            + ", ".join(f"{field}={identity[field]!r}" for field in malformed)
         )
-    artifact_id, tree_sha256 = matches[0]
-    return {"artifact_id": artifact_id, "tree_sha256": tree_sha256}
+    return identity
 
 
 def compare(actual: dict[str, str], expected: dict[str, str]) -> dict[str, object]:
     drift = [
         f"{field}: selfcheck={actual[field]!r} bundled={expected.get(field)!r}"
-        for field in ("artifact_id", "tree_sha256")
+        for field in IDENTITY_FIELDS
         if actual[field] != expected.get(field)
     ]
     if drift:
@@ -69,7 +86,12 @@ def compare(actual: dict[str, str], expected: dict[str, str]) -> dict[str, objec
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--selfcheck-output", type=Path, required=True)
+    parser.add_argument(
+        "--selfcheck-evidence",
+        type=Path,
+        required=True,
+        help="frozen --selfcheck 가 HWPX_SELFCHECK_OUT 으로 쓴 JSON",
+    )
     parser.add_argument(
         "--expect-identity",
         type=Path,
@@ -80,14 +102,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if not args.selfcheck_output.is_file():
-            raise SelfcheckIdentityError(
-                f"selfcheck 출력이 없습니다: {args.selfcheck_output}"
-            )
-        text = args.selfcheck_output.read_text(encoding="utf-8", errors="replace")
-        expected = json.loads(args.expect_identity.read_text(encoding="utf-8-sig"))
-        evidence = compare(parse_identity(text), expected)
-    except (OSError, json.JSONDecodeError, SelfcheckIdentityError) as exc:
+        actual = read_identity(
+            _load(args.selfcheck_evidence, role="selfcheck"), role="selfcheck"
+        )
+        expected = read_identity(
+            _load(args.expect_identity, role="bundled"), role="bundled"
+        )
+        evidence = compare(actual, expected)
+    except SelfcheckIdentityError as exc:
         print(f"selfcheck identity check failed: {exc}", file=sys.stderr)
         return 2
 

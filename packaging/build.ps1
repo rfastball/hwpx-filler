@@ -273,6 +273,7 @@ foreach ($key in $plan) {
         $savedProductHome = $env:HWPXFILLER_HOME
         $savedSelftestOut = $env:HWPX_SELFTEST_OUT
         $savedOfflineProbe = $env:HWPX_SELFTEST_OFFLINE_PROBE
+        $savedSelfcheckOut = $env:HWPX_SELFCHECK_OUT
         $savedBrowserArgs = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
         $webViewPolicyPath = (
             'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\' +
@@ -380,9 +381,16 @@ foreach ($key in $plan) {
             # identity 는 아래 `--selftest` 증거의 runtime.artifact_id 가 이미 진다).
             # 종전에는 ExitCode 만 읽어 이 프로세스가 무엇을 실었는지 아무도 묻지 않았다.
             # 창 앱이라 stdout 은 리디렉션해야 잡힌다.
-            $selfcheckOut = Join-Path $evidenceDir 'packaged-selfcheck.txt'
+            # 증거는 **제품이 파일로 쓴다**. 초판은 stdout 을 리디렉션해 읽었는데, 이 exe 는
+            # `console=False` 라 stdout 이 붙는 자리가 환경마다 다르다 — 로컬에서 즉시 끝난
+            # 같은 호출이 CI 에서 13분 매달렸다(run 31229199482). selftest 가 이미
+            # `HWPX_SELFTEST_OUT` 으로 피해 가던 축이라 같은 형태로 맞춘다.
+            $env:HWPX_SELFCHECK_OUT = Join-Path $evidenceDir 'packaged-selfcheck.json'
+            if (Test-Path -LiteralPath $env:HWPX_SELFCHECK_OUT -PathType Leaf) {
+                Remove-Item -LiteralPath $env:HWPX_SELFCHECK_OUT -Force
+            }
             $selfcheck = Start-Process -FilePath $exe -Wait -PassThru `
-                -ArgumentList @('--selfcheck') -RedirectStandardOutput $selfcheckOut
+                -ArgumentList @('--selfcheck')
             if ($selfcheck.ExitCode -ne 0) {
                 throw "Node-free packaged selfcheck 실패(exit $($selfcheck.ExitCode))"
             }
@@ -390,7 +398,7 @@ foreach ($key in $plan) {
             # (`classify_webview_evidence.py` 와 같은 이유). 러너는 호출과 배선만 진다.
             $selfcheckIdentityOut = Join-Path $evidenceDir 'packaged-selfcheck-identity.json'
             & $pythonExe (Join-Path $root 'scripts\assert_selfcheck_identity.py') `
-                --selfcheck-output $selfcheckOut `
+                --selfcheck-evidence $env:HWPX_SELFCHECK_OUT `
                 --expect-identity (Join-Path $evidenceDir 'artifact-parity.json') `
                 --json-out $selfcheckIdentityOut
             if ($LASTEXITCODE -ne 0) {
@@ -733,6 +741,9 @@ foreach ($key in $plan) {
                     )
                     [Environment]::SetEnvironmentVariable(
                         'HWPX_SELFTEST_OFFLINE_PROBE', $savedOfflineProbe, 'Process'
+                    )
+                    [Environment]::SetEnvironmentVariable(
+                        'HWPX_SELFCHECK_OUT', $savedSelfcheckOut, 'Process'
                     )
                     [Environment]::SetEnvironmentVariable(
                         'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS',
