@@ -60,6 +60,16 @@ def test_structure_and_value_axes_are_independent():
     assert ledger.source_structure_drift and not ledger.template_structure_drift
     assert ledger.value_state is ValueState.EMPTY
 
+    template_only = build_fill_ledger(
+        ["공고명", "신규필드"], _mapping(), source_fields=["name"]
+    )
+    assert template_only.structure_state is StructureState.TEMPLATE_DRIFT
+
+    both = build_fill_ledger(
+        ["공고명", "신규필드"], _mapping(), source_fields=[]
+    )
+    assert both.structure_state is StructureState.TEMPLATE_AND_SOURCE_DRIFT
+
 
 def test_mapping_blank_conflict_fails_closed():
     mapping = MappingProfile(mappings=[
