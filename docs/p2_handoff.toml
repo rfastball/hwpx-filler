@@ -77,10 +77,6 @@ src = "hwpxfiller.data"
 dst = "hwpxfiller.data.secret_store"
 
 [[allowed_direction_violation]]
-src = "hwpxfiller.gui.dataset_pool_state"
-dst = "hwpxfiller.core.dataset_pool"
-
-[[allowed_direction_violation]]
 src = "hwpxfiller.gui.nara_state"
 dst = "hwpxfiller.data.nara"
 
@@ -95,12 +91,6 @@ dst = "hwpxfiller.data.factory"
 [[allowed_direction_violation]]
 src = "hwpxfiller.gui.template_manager_state"
 dst = "hwpxcore.package"
-
-# 동결 시 최소 AST 재검사가 P1 factgraph의 상대 import 폐포에서 누락했던 기존 2건 중
-# 아직 남은 위반이다. 새 위반으로 숨기지 않고 같은 P2 제거 의무로 승격한다.
-[[allowed_direction_violation]]
-src = "hwpxfiller.gui.home_state"
-dst = "hwpxfiller.core.dataset_pool"
 
 [[unit]]
 module = "hwpxcore"
@@ -236,7 +226,6 @@ target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/core/dataset_pool.py"]
 remove_when = "hwpxfiller.core.dataset_pool: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
-obligations = ["데이터셋 참조 값·상태 전이 규칙을 Domain 값 객체로 추출"]
 
 [[unit]]
 module = "hwpxfiller.core.engine"
@@ -423,7 +412,6 @@ target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/dataset_pool_state.py"]
 remove_when = "hwpxfiller.gui.dataset_pool_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool_state.py::test_status_transitions_and_action_matrix"
-obligations = ["registry 조립을 외부 composition root로 이동"]
 
 [[unit]]
 module = "hwpxfiller.gui.edit_session"
@@ -452,7 +440,6 @@ target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/home_state.py"]
 remove_when = "hwpxfiller.gui.home_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool_state.py::test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero"
-obligations = ["데이터셋 상태 상수를 Domain 값으로 옮겨 concrete registry 역의존 제거"]
 
 [[unit]]
 module = "hwpxfiller.gui.job_editor_state"
