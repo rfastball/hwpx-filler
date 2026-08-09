@@ -1,7 +1,7 @@
 """식별 요약 휴리스틱 v2 회귀 — 결정 37 · 부록 B-4 의 4장면 정본.
 
 케이스 정본 = ``docs/r-flow-mockups/block6-d1-d2-compare-demo.html`` 부록 4장면(시연
-JS ``iPick`` 라이브 계산). 이 테스트는 그 4장면을 링1 :func:`identity_summary` 로 이식해
+JS ``iPick`` 라이브 계산). 이 테스트는 그 4장면을 Domain :func:`identity_summary` 로 이식해
 **결과 일치**를 못박는다:
 
 1. 나라장터 실수확 12행×53열 — 잉여 ID·차수·상수 무리를 뚫고 공고번호·공고명 도달.
@@ -19,7 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.identity_summary import (
+import hwpxfiller.core.identity_summary as legacy_identity_summary
+import hwpxfiller.domain.identity_summary as domain_identity_summary
+from hwpxfiller.domain.identity_summary import (
     BLANK_CELL_MARK,
     COGNITION_WIDTH,
     MAX_COLUMNS,
@@ -28,10 +30,30 @@ from hwpxfiller.core.identity_summary import (
     identity_summary,
 )
 
+_PUBLIC_API = (
+    "BLANK_CELL_MARK",
+    "COGNITION_WIDTH",
+    "MAX_COLUMNS",
+    "DisqualifierStats",
+    "SummaryStep",
+    "IdentitySummary",
+    "identity_summary",
+)
+
 _MOCKUP = (
     Path(__file__).resolve().parents[1]
     / "docs" / "r-flow-mockups" / "block6-d1-d2-compare-demo.html"
 )
+
+
+def test_legacy_facade_reexports_domain_public_api_by_identity() -> None:
+    """구 경로는 새 정의 없이 Domain의 일곱 객체를 그대로 가리킨다."""
+    assert tuple(domain_identity_summary.__all__) == _PUBLIC_API
+    assert tuple(legacy_identity_summary.__all__) == _PUBLIC_API
+    for name in _PUBLIC_API:
+        assert getattr(legacy_identity_summary, name) is getattr(
+            domain_identity_summary, name
+        )
 
 
 def _load_nara_rows() -> list[dict]:

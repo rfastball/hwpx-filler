@@ -22,6 +22,11 @@ path = "src/hwpxfiller/core"
 line = 96
 branch = 92
 
+[packages."hwpxfiller.domain"]
+path = "src/hwpxfiller/domain"
+line = 96
+branch = 92
+
 [packages."hwpxfiller.data"]
 path = "src/hwpxfiller/data"
 line = 93
