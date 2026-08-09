@@ -38,11 +38,11 @@ oracle_entry = 134
 oracle_core = 10
 oracle_none = 11
 characterization_gaps = 13
-test_files = 150
+test_files = 153
 
 [test_axis_counts]
 "browser" = 1
-"deterministic" = 142
+"deterministic" = 145
 "live" = 6
 "native" = 1
 
@@ -3364,6 +3364,12 @@ product_modules = [
 ]
 
 [[test_file]]
+path = "tests/test_effect_graph_02c.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
 path = "tests/test_engine.py"
 axis = "deterministic"
 product_modules = [
@@ -4021,6 +4027,12 @@ product_modules = [
 ]
 
 [[test_file]]
+path = "tests/test_state_graph_02b.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
 path = "tests/test_static_graph_02a.py"
 axis = "deterministic"
 product_modules = [
@@ -4094,6 +4106,12 @@ product_modules = [
   "hwpxfiller.core.mapping",
   "hwpxfiller.gui.dataset_pool_state",
   "hwpxfiller.webapp.screens",
+]
+
+[[test_file]]
+path = "tests/test_transport_graph_02d.py"
+axis = "deterministic"
+product_modules = [
 ]
 
 [[test_file]]
