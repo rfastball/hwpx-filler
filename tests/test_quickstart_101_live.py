@@ -660,6 +660,33 @@ class _BlindWindow:
         return False
 
 
+class _CommitMissingWindow:
+    """입력은 받지만 다음 host 왕복에서 노드가 사라진 창."""
+
+    def __init__(self) -> None:
+        self.calls: "list[str]" = []
+
+    def evaluate_js(self, expression: str) -> bool:
+        self.calls.append(expression)
+        return expression.startswith("window.__cap.setValue(")
+
+
+def test_set_value_commits_on_a_second_host_call_and_names_a_missing_control() -> None:
+    """React 입력 커밋은 한 JS 스택에 붙이지 않고, 2차 부재도 자리를 대며 죽는다."""
+    window = _CommitMissingWindow()
+    surface = Surface(window, Deadline(30.0))
+
+    with pytest.raises(MissingSurface) as excinfo:
+        surface.set_value("#editorName", "발주요청 기안")
+
+    assert window.calls == [
+        'window.__cap.setValue("#editorName", "발주요청 기안")',
+        'window.__cap.commitValue("#editorName")',
+    ]
+    assert excinfo.value.selector == "#editorName"
+    assert "커밋" in str(excinfo.value)
+
+
 def test_a_missing_selector_is_named_not_timed_out() -> None:
     """필수 selector 가 없으면 **그 이름을 대며** 죽는다 — timeout 으로 뭉개지 않는다."""
     surface = Surface(_BlindWindow(present={"#present"}), Deadline(30.0))

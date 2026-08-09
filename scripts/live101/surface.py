@@ -72,11 +72,12 @@ window.__cap = {
     b.click();
     return true;
   },
-  /* 사용자가 하는 그대로 — 겨누고, 치고, 떠난다.
+  /* 입력과 이탈은 host 왕복을 사이에 둔 2상이다.
      R4-02 뒤 편집 입력은 React 제어 컴포넌트라 `el.value = …` 만으로는 아무 일도 없다:
      React 가 자기가 쓴 값을 기억하고 있어 변경으로 안 보고 `onChange` 를 안 띄운다.
-     네이티브 setter 로 써야 그 추적기가 「바뀌었다」를 보고, 발신은 blur 에서 난다
-     (legacy 의 `change` 이벤트가 서 있던 자리를 실제 blur 가 잇는다). */
+     네이티브 setter 로 써야 그 추적기가 「바뀌었다」를 보고, 발신은 다음 host 왕복의
+     blur 에서 난다. 같은 JS 스택에 input·blur를 붙이면 concurrent React 커밋 전의
+     낡은 노드를 떠나거나 focusout 이 서지 않을 수 있다. */
   setValue(sel, value) {
     const el = document.querySelector(sel);
     if (!el) return false;
@@ -87,8 +88,17 @@ window.__cap = {
     }
     el.focus();
     if (setter) setter.call(el, value); else el.value = value;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
+    const view = el.ownerDocument.defaultView || window;
+    el.dispatchEvent(new view.Event('input', { bubbles: true }));
+    return true;
+  },
+  commitValue(sel) {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    /* set_value 의 기존 소비자인 #jobOrderSel 은 select 다. React 의 select
+       onChange 는 native change 를 소유하므로 이탈 상에서만 실제 이벤트를 재현한다. */
+    const view = el.ownerDocument.defaultView || window;
+    if (el.tagName === 'SELECT') el.dispatchEvent(new view.Event('change', { bubbles: true }));
     el.blur();
     return true;
   },
@@ -260,6 +270,8 @@ class Surface:
             f"window.__cap.setValue({js_literal(selector)}, {js_literal(value)})"
         ):
             raise MissingSurface(selector, f"값 {value!r} 을 넣을 입력")
+        if not self.js(f"window.__cap.commitValue({js_literal(selector)})"):
+            raise MissingSurface(selector, f"값 {value!r} 을 커밋할 입력")
 
     def scroll_to(self, selector: str) -> None:
         """대상을 뷰포트 중앙으로 — 폴드 아래 상태가 컷에서 잘리지 않게(즉시, 무모션)."""
