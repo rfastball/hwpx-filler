@@ -1,0 +1,2580 @@
+# 생성 파일 — 직접 편집 금지. P1-03 중앙 합성 원장 — Authority·migration DAG(#518).
+# 원천: P1-02A~E 여섯 원장의 content-anchor merge + effect_graph 재계측 교차검증
+# 재생성: uv run python scripts/gen_authority_ledger_03.py
+# 검사:   uv run python scripts/gen_authority_ledger_03.py --check
+schema = "authority-synthesis-03/v1"
+
+[anchor]
+# 여섯 shard 공통 기반 사실 — 같은 측정 위임의 증거.
+base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
+
+[inputs]
+# 소비한 원장과 각 원장의 기반-사실 핀(merge 일치 증거).
+"02a.base_facts" = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+"02a.graph_facts" = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+"02b.base_facts" = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+"02b.graph_facts" = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+"02c.base_facts" = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+"02c.effect_facts" = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
+"02c.graph_facts" = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+"02d.base_facts" = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+"02e.base_facts" = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+"02e.graph_facts" = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+
+[counts]
+modules = 85
+symbols = 1622
+sccs = 0
+dynamic_open = 11
+contradictions = 0
+migration_units = 85
+shared_seams = 0
+oracle_gaps = 20
+p_review_modules = 17
+p_review_units = 17
+
+[authority_by_target]
+DOMAIN = 23
+APPLICATION = 20
+FRONTEND_ADAPTER = 17
+EXTERNAL_ADAPTER = 2
+HOST = 6
+REACT = 0
+RETIRE = 0
+P_REVIEW_REQUIRED = 17
+
+[verdict]
+final = "BLOCKED"
+reasons = [
+  "소유 불명 unit 17건(P_REVIEW_REQUIRED)",
+  "oracle 공백 unit 7건",
+]
+
+# 원장 간 사실 충돌 — 없으면 merge 가 일치했다는 뜻이다.
+
+# 모듈 경계를 넘는 공유 상태 — central seam(원자 이관 강제).
+
+# 모듈별 목표 권위 판정과 사실 근거.
+
+[[module_authority]]
+module = "hwpxcore"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxcore.atomic"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 2
+effect_classes = ["fs"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['fs'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxcore.lineseg"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 2
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxcore.motw"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 1
+effect_classes = ["env", "fs"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['env', 'fs'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxcore.native"
+target = "EXTERNAL_ADAPTER"
+prior = "EXTERNAL_ADAPTER"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "외부 효과 수행(재수출·상수)"
+
+[[module_authority]]
+module = "hwpxcore.native._debug"
+target = "EXTERNAL_ADAPTER"
+prior = "EXTERNAL_ADAPTER"
+symbols = 1
+effect_classes = ["clock", "env", "fs"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "외부 효과 수행(['clock', 'env', 'fs'])"
+
+[[module_authority]]
+module = "hwpxcore.native.clipboard"
+target = "HOST"
+prior = "EXTERNAL_ADAPTER"
+symbols = 4
+effect_classes = ["clock", "host_native"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "native host 기능(['clock', 'host_native'])"
+
+[[module_authority]]
+module = "hwpxcore.native.dialogs"
+target = "HOST"
+prior = "EXTERNAL_ADAPTER"
+symbols = 15
+effect_classes = ["host_native"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "native host 기능(['host_native'])"
+
+[[module_authority]]
+module = "hwpxcore.native.reveal"
+target = "HOST"
+prior = "EXTERNAL_ADAPTER"
+symbols = 5
+effect_classes = ["process"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "native host 기능(['process'])"
+
+[[module_authority]]
+module = "hwpxcore.native.single_instance"
+target = "HOST"
+prior = "EXTERNAL_ADAPTER"
+symbols = 4
+effect_classes = ["host_native"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "native host 기능(['host_native'])"
+
+[[module_authority]]
+module = "hwpxcore.package"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 10
+effect_classes = ["archive"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['archive'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxcore.text_extract"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 32
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxcore.validate"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 3
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller"
+target = "P_REVIEW_REQUIRED"
+prior = "P_REVIEW_REQUIRED"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "패키지 prior 미상(hwpxfiller) — 소유 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.batch"
+target = "P_REVIEW_REQUIRED"
+prior = "P_REVIEW_REQUIRED"
+symbols = 5
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "패키지 prior 미상(hwpxfiller.batch) — 소유 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.cli"
+target = "HOST"
+prior = "HOST"
+symbols = 12
+effect_classes = ["env", "fs", "process", "stdio"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "host 외곽 링 진입/조립(효과 ['env', 'fs', 'process', 'stdio'])"
+
+[[module_authority]]
+module = "hwpxfiller.core"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.authoring"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 34
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.dataset_pool"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 32
+effect_classes = ["entropy", "env"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "DOMAIN prior 가 ambient 효과(['entropy', 'env'])를 직접 만진다 — clock/env/entropy port 주입 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.core.engine"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.fields"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 22
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.fill_ledger"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 30
+effect_classes = ["clock"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 ambient 효과(['clock'])를 직접 만진다 — clock/env/entropy port 주입 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.core.format_engine"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 18
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.identity_summary"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 15
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.jamo"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.job"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 84
+effect_classes = ["clock", "entropy", "env", "fs", "host_native", "lock", "process"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['clock', 'entropy', 'env', 'fs', 'host_native', 'lock', 'process'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.core.lint"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 13
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.mapping"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 20
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.paths"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 1
+effect_classes = ["env"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 ambient 효과(['env'])를 직접 만진다 — clock/env/entropy port 주입 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.core.schema"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 14
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.source_profile"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.template_status"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 8
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.text_registry"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 11
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.core.text_render"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 11
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data.base"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data.excel"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 14
+effect_classes = ["excel", "fs"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['excel', 'fs'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.data.factory"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data.inline"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 5
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data.nara"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 20
+effect_classes = ["network"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['network'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.data.pipeline"
+target = "DOMAIN"
+prior = "DOMAIN"
+symbols = 18
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, DOMAIN prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.data.secret_store"
+target = "P_REVIEW_REQUIRED"
+prior = "DOMAIN"
+symbols = 34
+effect_classes = ["host_native"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "DOMAIN prior 가 concrete 효과(['host_native'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.gui"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.compile_badge"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 2
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.dataset_pool_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 28
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.edit_session"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 13
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.file_filters"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.filter_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 50
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.home_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 51
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.job_editor_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 5
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.mapping_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 59
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.nara_state"
+target = "P_REVIEW_REQUIRED"
+prior = "APPLICATION"
+symbols = 28
+effect_classes = ["clock", "network"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "APPLICATION prior 가 concrete 효과(['clock', 'network'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.gui.pipeline_builder_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 15
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.record_range"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 5
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.result_errors"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 5
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.review_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 14
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.run_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 41
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.selection_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 10
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.template_manager_state"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 36
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.txt_card"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.txt_queue"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 16
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.work_candidates"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 11
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.gui.work_mode"
+target = "APPLICATION"
+prior = "APPLICATION"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "효과·transport 없음, APPLICATION prior 확정"
+
+[[module_authority]]
+module = "hwpxfiller.naming"
+target = "P_REVIEW_REQUIRED"
+prior = "P_REVIEW_REQUIRED"
+symbols = 17
+effect_classes = ["clock"]
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "P_REVIEW_REQUIRED prior 가 ambient 효과(['clock'])를 직접 만진다 — clock/env/entropy port 주입 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.web_artifact"
+target = "P_REVIEW_REQUIRED"
+prior = "P_REVIEW_REQUIRED"
+symbols = 45
+effect_classes = ["env", "fs", "process"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "P_REVIEW_REQUIRED prior 가 concrete 효과(['env', 'fs', 'process'])를 직접 호출 — port 추출·adapter 분리 결정 필요(헌장 금지선)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.__main__"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 0
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.action_registry"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 4
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.app"
+target = "HOST"
+prior = "FRONTEND_ADAPTER"
+symbols = 62
+effect_classes = ["env", "fs", "host_webview"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport facade(host_method·창 조립)를 공개한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.boot_budget"
+target = "P_REVIEW_REQUIRED"
+prior = "FRONTEND_ADAPTER"
+symbols = 2
+effect_classes = ["registry"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "표현 링 모듈이 concrete/ambient 효과(['registry'])를 직접 만진다 — external adapter 분리 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.data_zone"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 35
+effect_classes = []
+transport = true
+stateful_tx = false
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.job_list"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 1
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.live_run"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 9
+effect_classes = []
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.mapping_verbs"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 8
+effect_classes = []
+transport = true
+stateful_tx = false
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.product_api"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 47
+effect_classes = []
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['channel'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_editor"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 85
+effect_classes = ["clock"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_job"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 95
+effect_classes = ["clock"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['channel', 'endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_library"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 29
+effect_classes = []
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_pool"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 23
+effect_classes = []
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_template"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 34
+effect_classes = ["clock", "entropy", "fs"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screen_workbench"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 50
+effect_classes = ["clock"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.screens"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 20
+effect_classes = ["env"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['endpoint'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.selftest_api"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 92
+effect_classes = ["entropy"]
+transport = true
+stateful_tx = true
+shared_state = false
+reason = "transport surface(['channel'])를 소유한다"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.settings"
+target = "P_REVIEW_REQUIRED"
+prior = "FRONTEND_ADAPTER"
+symbols = 33
+effect_classes = ["clock", "stdio"]
+transport = false
+stateful_tx = false
+shared_state = false
+reason = "표현 링 모듈이 concrete/ambient 효과(['clock', 'stdio'])를 직접 만진다 — external adapter 분리 결정 필요"
+
+[[module_authority]]
+module = "hwpxfiller.webapp.template_groups"
+target = "FRONTEND_ADAPTER"
+prior = "FRONTEND_ADAPTER"
+symbols = 14
+effect_classes = []
+transport = false
+stateful_tx = true
+shared_state = false
+reason = "transport 없는 표현 링 헬퍼(효과 없음)"
+
+# P2 migration unit — source closure·write set·oracle·선후 DAG·제거 조건.
+
+[[migration_unit]]
+id = "unit-01"
+target = "DOMAIN"
+modules = ["hwpxcore"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-02"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxcore.atomic"]
+symbol_count = 2
+closure_digest = "9af0333e81317d3d01432da26e9f30b52b1c1f7a71007204432bc4b4432de126"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-03"
+target = "DOMAIN"
+modules = ["hwpxcore.lineseg"]
+symbol_count = 2
+closure_digest = "377f840e340aa89ae89046c04446daef4640b6cc942eaccddc1a8aa38a090ea3"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-04"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxcore.motw"]
+symbol_count = 1
+closure_digest = "00ea4e73eb5e0033e65d2d5e659a38ac10578da125078dc5bf47c139eb8c664a"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-05"
+target = "EXTERNAL_ADAPTER"
+modules = ["hwpxcore.native"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "in-memory 구현이 Application 이 요구하는 외부 효과 계약을 따른다"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-06"
+target = "EXTERNAL_ADAPTER"
+modules = ["hwpxcore.native._debug"]
+symbol_count = 1
+closure_digest = "663a02f4220e058cd37a0fb6e56cb5b71db4af110c274bac901a93af2f01c4d9"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = ["oracle-gap"]
+compat_seam = "in-memory 구현이 Application 이 요구하는 외부 효과 계약을 따른다"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-07"
+target = "HOST"
+modules = ["hwpxcore.native.clipboard"]
+symbol_count = 4
+closure_digest = "1b9a786fb7a067ec980b6ff62af05bbe67b2a9fac4f504c8ec004d3f661b8470"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-08"
+target = "HOST"
+modules = ["hwpxcore.native.dialogs"]
+symbol_count = 15
+closure_digest = "98d20c43cab50b15a2537af79d3bb31d4b023b3bf2c5b7579302a83e9bfc8b66"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 12
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-09"
+target = "HOST"
+modules = ["hwpxcore.native.reveal"]
+symbol_count = 5
+closure_digest = "fe336d118b8e1d8df8f7bdfa309a751a9ac7b4b5b1e7087895b553c4f7a6ac05"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-10"
+target = "HOST"
+modules = ["hwpxcore.native.single_instance"]
+symbol_count = 4
+closure_digest = "4460d0cbb81472d1bc468b24f6abab35210d914dc3beb6c1d5e36201ab8f9807"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 2
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-11"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxcore.package"]
+symbol_count = 10
+closure_digest = "746e1aba769eaa38fa877ccb6b71372b16871029e708d8930f84d5e999073a74"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-12"
+target = "DOMAIN"
+modules = ["hwpxcore.text_extract"]
+symbol_count = 32
+closure_digest = "37dd91f21168127814e926d7713d775f549a62b9f3db650e6155dab33ba3ec0a"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 30
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-13"
+target = "DOMAIN"
+modules = ["hwpxcore.validate"]
+symbol_count = 3
+closure_digest = "933466d0f25ddb476143332951f9424a9bba5d38e935499563f1d6292b7f1376"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 2
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-14"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-15"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.batch"]
+symbol_count = 5
+closure_digest = "59bd8cf66262dd16de5c5629b5903a0c0d54fec6f91fe7c09ef8798d00ad2053"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-16"
+target = "HOST"
+modules = ["hwpxfiller.cli"]
+symbol_count = 12
+closure_digest = "f261937659d1efafca2a1da3e0ad97467019f90c5953d9eabe985d78fdef651e"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+  "cli:drift",
+  "cli:fieldize",
+  "cli:lint",
+  "cli:render",
+  "cli:schema",
+]
+
+[[migration_unit]]
+id = "unit-17"
+target = "DOMAIN"
+modules = ["hwpxfiller.core"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-18"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.authoring"]
+symbol_count = 34
+closure_digest = "a05d164439d6e660163e1edbd803ce4c988ec2dea401c577628ae632dcd8e3f7"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 18
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-19"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.core.dataset_pool"]
+symbol_count = 32
+closure_digest = "f7774aa0fa72201b37cacdd5d38fa791a0e3da1b7cdc1874ab4f86f30a6857c7"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 17
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-20"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.engine"]
+symbol_count = 4
+closure_digest = "f6bc8ae4a8f7d9ec04d902c570cb9bfff882a5ecb3150475e28c959a452c45a2"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 6
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:--fields",
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-21"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.fields"]
+symbol_count = 22
+closure_digest = "2cff94ca7e728fe8278bebff5ecfa300bc6c99bfc422a9d8526932db60a05a48"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 14
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-22"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.core.fill_ledger"]
+symbol_count = 30
+closure_digest = "10a2e04e2d53d41c4aab9c77ccffdaa4a8ce357aed6d1fdd6e5a838027a7f3d4"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 30
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-23"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.format_engine"]
+symbol_count = 18
+closure_digest = "5494ed64875f2b33c0165d01bdae37b4aaef90c74fe06c93f7fcc24b0ecfca1a"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 3
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-24"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.identity_summary"]
+symbol_count = 15
+closure_digest = "8376c738263952f8d33b5a30751461a539c77064b2833413e118e4725e7908bb"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 18
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-25"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.jamo"]
+symbol_count = 4
+closure_digest = "c96cd283c1a2b37b79da5f128cdf6e29432a1e4f1f7d619fc71514803084fbc6"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 6
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-26"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.core.job"]
+symbol_count = 84
+closure_digest = "1bbdfa4a80f3be2ab144dc6a581c3edb6202d0ed51706d5b1cd125c1d85bab5d"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 40
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-27"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.lint"]
+symbol_count = 13
+closure_digest = "f79951934cbfb8ad1f2df1afdb93f135a75e6364c406a6a7cc1f073a235273e8"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 10
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-28"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.mapping"]
+symbol_count = 20
+closure_digest = "7186c538ef4912cda5592b20064e45677096390c2e3cddc0a7caab6ae8114665"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 10
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-29"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.core.paths"]
+symbol_count = 1
+closure_digest = "eedecd3788a46c0bdabb94c100b4c8375b50872f1b82547d517db9fd3a5540a5"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 2
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-30"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.schema"]
+symbol_count = 14
+closure_digest = "65ff6bd171ad13ef979e6f3dcf43bfb8c194fa233ec042fcdd322314d1471a4f"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 19
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-31"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.source_profile"]
+symbol_count = 4
+closure_digest = "95b03650c4eae76f75b519ddd221466bf8ec2728361942ad01bf9bf454023603"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 7
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-32"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.template_status"]
+symbol_count = 8
+closure_digest = "2142d295402fa4498254bd3edf87480dfa59a4878a1c4bd9aafdb1e8989ae31b"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 11
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-33"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.text_registry"]
+symbol_count = 11
+closure_digest = "f9d6c7b7919d528d88e4e2d3218e342d8136d8cbcc449b88a5985a0a9d7cdea9"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 5
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-34"
+target = "DOMAIN"
+modules = ["hwpxfiller.core.text_render"]
+symbol_count = 11
+closure_digest = "0d8a79e11f130e57c2f8802e60e13f19dbed495a8b1827abd923d36230d8b31a"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 12
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-35"
+target = "DOMAIN"
+modules = ["hwpxfiller.data"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-36"
+target = "DOMAIN"
+modules = ["hwpxfiller.data.base"]
+symbol_count = 4
+closure_digest = "7b1b29cd490e1f9e254aad085e33d2cc72dcb20e930676d4354fd6f459476153"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-37"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.data.excel"]
+symbol_count = 14
+closure_digest = "730d259f9ee58e62c3a58bcbe2aec7afd0849f3ff24d74cab17a8fba73b20a79"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 6
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-38"
+target = "DOMAIN"
+modules = ["hwpxfiller.data.factory"]
+symbol_count = 4
+closure_digest = "d1129cb95e85b604bd86557f7015bfece704f5fb51aef73d4ae113e7140f5e9b"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 2
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-39"
+target = "DOMAIN"
+modules = ["hwpxfiller.data.inline"]
+symbol_count = 5
+closure_digest = "bd78f4ec67c92c3fd23d986d31e2b8b7ef8a4211567396b73370003615e0021f"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = ["oracle-gap"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-40"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.data.nara"]
+symbol_count = 20
+closure_digest = "2e4207dfb2f9aed0406d5e5fbad557d0b447a326c391865b745056f1aacf4058"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 13
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-41"
+target = "DOMAIN"
+modules = ["hwpxfiller.data.pipeline"]
+symbol_count = 18
+closure_digest = "edfb27186029a25152d38c792db332a549ee55e9f86e44f0b65eefa1e68f6587"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 5
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-42"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.data.secret_store"]
+symbol_count = 34
+closure_digest = "3056b1b9191a0cf6771caa0c3780a4127912454742c50f9b1dc366cd63194984"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 11
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-43"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-44"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.compile_badge"]
+symbol_count = 2
+closure_digest = "a627aa57d5e10b71be85dfaeee36b683abfdc1165288380ee03675e5cfa3b9ec"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-45"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.dataset_pool_state"]
+symbol_count = 28
+closure_digest = "fdcf63b311a2df4ed569f38b2dbca0b0c953de8efa0e51eeed42e53436fe616d"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 22
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-46"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.edit_session"]
+symbol_count = 13
+closure_digest = "77b2f9390bca0d8f5553e76d170cb8222c4950fa3f509dcf307393e43964b0d6"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 19
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-47"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.file_filters"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 3
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-48"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.filter_state"]
+symbol_count = 50
+closure_digest = "29d55a4d33a2496d9bd1cd3706646075944223aaf6f98340b11e60139ddab0e3"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 27
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-49"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.home_state"]
+symbol_count = 51
+closure_digest = "307fe8a5c757d4a24a91332fa56e5d046129af6cf2337c24430afc647ec794c6"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 71
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-50"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.job_editor_state"]
+symbol_count = 5
+closure_digest = "2012ae129b7038bd71258a9cc6301c903aa642e4626cfc77916c675d858d2f4b"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 3
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-51"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.mapping_state"]
+symbol_count = 59
+closure_digest = "f40a329c46eb8b84ef94f6398809d84a2da1de006b7b3c4d8fe531ffa3f23432"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 17
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-52"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.gui.nara_state"]
+symbol_count = 28
+closure_digest = "904c6c016b0da9775622cdddbe606115a3ed24e80b84962456e0200b81769320"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 20
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-53"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.pipeline_builder_state"]
+symbol_count = 15
+closure_digest = "2745d5539a446eeed43f422e4d1f8876b4a279813e5348bde47d9433c98bf086"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 14
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-54"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.record_range"]
+symbol_count = 5
+closure_digest = "29a5b643cd84596a0276040317d21d42fff600d3a66407490c7265020749210e"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 7
+blocking = ["oracle-gap"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-55"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.result_errors"]
+symbol_count = 5
+closure_digest = "fa0f68af765e3eca982685c2dfa0bf2a8d686d6dd1c1a9ef2f81c9405caddb3d"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 6
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-56"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.review_state"]
+symbol_count = 14
+closure_digest = "a59e70e83fead33d514baaba62f6c465d0bd80ec2f1595a3196c378223e5cf98"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 14
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-57"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.run_state"]
+symbol_count = 41
+closure_digest = "f4bcd73a2aae0895db4d9bb9ec0ab25f5b46c8e15a6661d67dd586501e7ccfd4"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 39
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-58"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.selection_state"]
+symbol_count = 10
+closure_digest = "70833f696562879379062fdb072977951ca09e2be3168154a9fd07a45a73d061"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 1
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-59"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.template_manager_state"]
+symbol_count = 36
+closure_digest = "69a2ee701ad77a17c5306aec8afd5222bd9766b9cdffbf9acbf04a8a6223a21e"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 22
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-60"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.txt_card"]
+symbol_count = 4
+closure_digest = "1f17efbb606c4f4c16d9ca3b37f47ba3bce43b043439f0a9120f7cf0d367c61d"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 5
+blocking = ["oracle-gap"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-61"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.txt_queue"]
+symbol_count = 16
+closure_digest = "4ff945e332f6db39f3b9b2604767d3c3e08fabd6d2169b1feb93f396ae616b37"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-62"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.work_candidates"]
+symbol_count = 11
+closure_digest = "d7f14e35c4f8337cb805fa8340b4875df51f549da4035b1b565b1f9061082b19"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 28
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-63"
+target = "APPLICATION"
+modules = ["hwpxfiller.gui.work_mode"]
+symbol_count = 4
+closure_digest = "cdebbe2efa9f961f6caad3c993ca09f6b7e313d00235685b7068e140f09bf606"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 3
+blocking = []
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-64"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.naming"]
+symbol_count = 17
+closure_digest = "2f26f177bb4a32baed1620ab9dc27827ed2cdb5d58a633dcfd1be296a7bf1099"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 14
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "cli:default",
+]
+
+[[migration_unit]]
+id = "unit-65"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.web_artifact"]
+symbol_count = 45
+closure_digest = "565227fe108cc0c95cb41589463e2e298a0b12c631d6a51e265b960dc07b3024"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 37
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-66"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-67"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.__main__"]
+symbol_count = 0
+closure_digest = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+oracle_status = "STRUCTURAL"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-68"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.action_registry"]
+symbol_count = 4
+closure_digest = "bcdc461c54a8897ad09deff7f62199a96afa8f8bec247e9221c3814cd95da9c0"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 8
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-69"
+target = "HOST"
+modules = ["hwpxfiller.webapp.app"]
+symbol_count = 62
+closure_digest = "c0c9457d956c9b471707f75ce21b9886f675042bdc6cd92b7739200357107cd7"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 22
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:direct/cancel_window_close",
+  "gui:direct/close_guard_state",
+  "gui:direct/confirm_window_close",
+  "gui:direct/copy_clipboard",
+  "gui:direct/copy_path",
+  "gui:direct/editor_has_unsaved_work",
+  "gui:direct/generate",
+  "gui:direct/import_template_file",
+  "gui:direct/import_templates_folder",
+  "gui:direct/load_data_sheet",
+  "gui:direct/new_job_from_data",
+  "gui:direct/open_job_in_editor",
+  "gui:direct/open_path",
+  "gui:direct/pick_data_file",
+  "gui:direct/pick_output_folder",
+  "gui:direct/pick_pool_data_file",
+  "gui:direct/pick_template_path",
+  "gui:direct/reveal_corrupt_job",
+  "gui:direct/reveal_path",
+  "gui:direct/set_font_scale",
+  "gui:direct/set_master_width",
+  "gui:direct/set_theme",
+]
+
+[[migration_unit]]
+id = "unit-70"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.webapp.boot_budget"]
+symbol_count = 2
+closure_digest = "8d22845dd5b9e11a0ee6943e3d00e00585a0afec31147ffca474ba4aac58cbe9"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 4
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-71"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.data_zone"]
+symbol_count = 35
+closure_digest = "0c889b22e2f798ec0713dc2fa1dd5aea559c03defe3155029a9e59635d3cdf69"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 15
+blocking = ["oracle-gap"]
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:job/filter_clear",
+  "gui:job/filter_clear_col",
+  "gui:job/filter_col_range",
+  "gui:job/filter_col_text",
+  "gui:job/filter_col_values",
+  "gui:job/filter_panel",
+  "gui:job/filter_prune",
+  "gui:job/filter_reapply",
+  "gui:job/filter_search",
+  "gui:job/hide_column",
+  "gui:job/select_range",
+  "gui:job/set_all",
+  "gui:job/set_none",
+  "gui:job/toggle_record",
+  "gui:job/unhide_columns",
+]
+
+[[migration_unit]]
+id = "unit-72"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.job_list"]
+symbol_count = 1
+closure_digest = "ef63ef6d169befe387d7e6ce0eb1db9530052a990327ef4f5173e15204689442"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = ["oracle-gap"]
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-73"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.live_run"]
+symbol_count = 9
+closure_digest = "62c8f2bea45c496af870c3acebbe5c08f26040797def5787d366bba17414ae98"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 16
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-74"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.mapping_verbs"]
+symbol_count = 8
+closure_digest = "14e5185618f6c97e951ac468c4adacba493a795899558f421961655e3cb837d4"
+oracle_status = "NONE"
+predecessors = []
+shared_with = []
+write_set_count = 0
+blocking = ["oracle-gap"]
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:workbench/revert_map",
+  "gui:workbench/set_confirmed",
+  "gui:workbench/set_map_fmt",
+  "gui:workbench/set_map_type",
+  "gui:workbench/set_map_value",
+  "gui:workbench/set_source",
+]
+
+[[migration_unit]]
+id = "unit-75"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.product_api"]
+symbol_count = 47
+closure_digest = "601574e788fd4ea74b8e14f9cd606ba80fede0a105f7606874cf1806b77c9506"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 46
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-76"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_editor"]
+symbol_count = 85
+closure_digest = "975d70567c90f58f6ddc8db122e7d92a1c662c7092e435f176dd3f6113d3cbf6"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 43
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:editor/ack_gate",
+  "gui:editor/confirm_all",
+  "gui:editor/confirm_blanks",
+  "gui:editor/discard_patch",
+  "gui:editor/discard_session",
+  "gui:editor/goto_section",
+  "gui:editor/initial",
+  "gui:editor/mapping_reset_stakes",
+  "gui:editor/new_session",
+  "gui:editor/restore_confirmed",
+  "gui:editor/resuggest_all",
+  "gui:editor/revert_source",
+  "gui:editor/save",
+  "gui:editor/set_confirmed",
+  "gui:editor/set_const",
+  "gui:editor/set_fmt",
+  "gui:editor/set_name",
+  "gui:editor/set_pattern",
+  "gui:editor/set_source",
+  "gui:editor/set_type",
+  "gui:editor/skip_data",
+  "gui:editor/step_preview",
+  "gui:editor/toggle_library_group",
+  "gui:editor/toggle_source_active",
+  "gui:editor/unconfirm_all",
+  "gui:editor/use_all_headers",
+  "gui:editor/use_library_template",
+  "gui:editor/use_none",
+]
+
+[[migration_unit]]
+id = "unit-77"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_job"]
+symbol_count = 95
+closure_digest = "1898e905d1c5e37ef1daee9d29cd9706ca70d22930c31a60741cb299bb687016"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 54
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:job/browse_query",
+  "gui:job/browse_tab",
+  "gui:job/cancel_generation",
+  "gui:job/disband_group",
+  "gui:job/guard_state",
+  "gui:job/initial",
+  "gui:job/open_workbench",
+  "gui:job/prefer_work",
+  "gui:job/preview_approve",
+  "gui:job/preview_blank_only",
+  "gui:job/preview_close",
+  "gui:job/preview_move",
+  "gui:job/preview_open",
+  "gui:job/range_draft_apply",
+  "gui:job/range_draft_cancel",
+  "gui:job/range_draft_open",
+  "gui:job/refresh",
+  "gui:job/relink_template",
+  "gui:job/rename_group",
+  "gui:job/rename_job",
+  "gui:job/select_failed",
+  "gui:job/select_job",
+  "gui:job/set_group",
+  "gui:job/set_selected_only",
+  "gui:job/set_view_order",
+  "gui:job/toggle_favorite",
+]
+
+[[migration_unit]]
+id = "unit-78"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_library"]
+symbol_count = 29
+closure_digest = "da85ef18f1914e71fd5d59ae4d0b18c864a0568a03d730d881ea50172daa0519"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 9
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:library/clear_facets",
+  "gui:library/clear_filters",
+  "gui:library/clone_job",
+  "gui:library/delete_corrupt",
+  "gui:library/delete_job",
+  "gui:library/initial",
+  "gui:library/refresh",
+  "gui:library/relink_template",
+  "gui:library/select_work",
+  "gui:library/set_mode",
+  "gui:library/set_query",
+  "gui:library/set_tags",
+  "gui:library/set_view",
+  "gui:library/toggle_facet",
+  "gui:library/toggle_favorite",
+  "gui:library/toggle_group",
+  "gui:library/undo_delete_job",
+]
+
+[[migration_unit]]
+id = "unit-79"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_pool"]
+symbol_count = 23
+closure_digest = "27b7b57a120e1d32ce9a3f66a82de460a682e1f4cfd619300cc41987c57d5ede"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 6
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:pool/activate",
+  "gui:pool/archive",
+  "gui:pool/delete",
+  "gui:pool/initial",
+  "gui:pool/refresh",
+  "gui:pool/register_excel",
+  "gui:pool/relink",
+  "gui:pool/resolve_duplicate",
+]
+
+[[migration_unit]]
+id = "unit-80"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_template"]
+symbol_count = 34
+closure_digest = "51fe26d8198f10ccc1d833cddbc6921cd9af4c8df5af5d75e6390c8b95356f42"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 13
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:tpl/compile",
+  "gui:tpl/delete",
+  "gui:tpl/disband_group",
+  "gui:tpl/initial",
+  "gui:tpl/refresh",
+  "gui:tpl/rename_group",
+  "gui:tpl/review",
+  "gui:tpl/set_group",
+  "gui:tpl/toggle_group",
+  "gui:tpl/txt_content",
+  "gui:tpl/txt_edit",
+  "gui:tpl/txt_new",
+  "gui:tpl/undo_delete",
+]
+
+[[migration_unit]]
+id = "unit-81"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screen_workbench"]
+symbol_count = 50
+closure_digest = "7f9d8d141f50d0e0ee13d19e3be336ee3ae271d297e2a5aef6f335a95369e7c5"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 31
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:workbench/close",
+  "gui:workbench/copy_precheck",
+  "gui:workbench/initial",
+  "gui:workbench/leave_guard",
+  "gui:workbench/save_rules",
+  "gui:workbench/set_current",
+  "gui:workbench/set_fullwidth",
+  "gui:workbench/set_target_font",
+  "gui:workbench/set_view",
+  "gui:workbench/step",
+  "gui:workbench/toggle_advance",
+]
+
+[[migration_unit]]
+id = "unit-82"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.screens"]
+symbol_count = 20
+closure_digest = "424aeb2c639983836e074d0353f377edb72970381a089425aefd1f016e3148ce"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 12
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+  "gui:job/load_pool",
+]
+
+[[migration_unit]]
+id = "unit-83"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.selftest_api"]
+symbol_count = 92
+closure_digest = "67ef70dfc1b0306b428010dc9b78c735ba39dbf33fa90f339f278132f2aa5543"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 110
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-84"
+target = "P_REVIEW_REQUIRED"
+modules = ["hwpxfiller.webapp.settings"]
+symbol_count = 33
+closure_digest = "4e82891d5cdddd5ea7f011996c31066ff1c01a02b529f37f54c1e3e57dba9f71"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 12
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+[[migration_unit]]
+id = "unit-85"
+target = "FRONTEND_ADAPTER"
+modules = ["hwpxfiller.webapp.template_groups"]
+symbol_count = 14
+closure_digest = "8eb1b899ac5c6ec4883b2743884b00dfbbf8ea71bb4beaca96524d4d21172099"
+oracle_status = "ENTRY"
+predecessors = []
+shared_with = []
+write_set_count = 5
+blocking = []
+compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+oracle_entries = [
+]
+
+# oracle 공백 — behavior oracle 이 없어 안전 이관이 막히는 진입.
+
+[[oracle_gap]]
+entry = "gui:editor/initial (wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만))"
+
+[[oracle_gap]]
+entry = "gui:editor/set_fmt"
+
+[[oracle_gap]]
+entry = "gui:editor/set_fmt (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:editor/step_preview"
+
+[[oracle_gap]]
+entry = "gui:editor/step_preview (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:job/cancel_generation"
+
+[[oracle_gap]]
+entry = "gui:job/cancel_generation (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:job/filter_clear_col"
+
+[[oracle_gap]]
+entry = "gui:job/filter_clear_col (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:job/filter_col_text"
+
+[[oracle_gap]]
+entry = "gui:job/filter_col_text (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:tpl/txt_content"
+
+[[oracle_gap]]
+entry = "gui:tpl/txt_content (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:workbench/revert_map (wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만))"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_map_fmt"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_map_fmt (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_map_type"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_map_type (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_target_font"
+
+[[oracle_gap]]
+entry = "gui:workbench/set_target_font (core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다)"
