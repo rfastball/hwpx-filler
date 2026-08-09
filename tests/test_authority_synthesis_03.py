@@ -263,21 +263,28 @@ def test_every_unit_has_compat_seam_and_removal(result: A.SynthesisResult) -> No
         assert u.closure_digest
 
 
-def test_verdict_is_blocked_with_grounded_backlog(result: A.SynthesisResult) -> None:
-    """현재 master 는 소유 결정·oracle 공백이 남아 BLOCKED 다 — 조용한 초록이 아니라 backlog."""
-    assert result.verdict == "BLOCKED"
+def test_verdict_is_one_wave_ready_without_hidden_backlog(result: A.SynthesisResult) -> None:
+    """사람 판정·실재 oracle·R handoff·패킷 공백을 모두 닫아 한 wave로 실행 가능하다."""
+    assert result.verdict == "ONE_WAVE_READY"
     p_review = [m for m in result.modules if m.target == "P_REVIEW_REQUIRED"]
-    assert p_review, "P_REVIEW 가 0 이면 backlog 가 사라진 것 — 판정을 재검토"
-    # 판정 사유가 실제 backlog 규모를 재진술한다.
-    joined = " ".join(result.verdict_reasons)
-    assert str(len(p_review)) in joined
+    assert p_review == []
+    assert result.oracle_gaps == ()
+    assert result.oracle_pointer_gaps == ()
+    assert result.packet_gaps == ()
+    assert result.source_write_overlaps == ()
+    assert result.r_handoff_gaps == ()
 
 
 def test_core_job_is_the_effect_hotspot(result: A.SynthesisResult) -> None:
-    """core.job 이 다효과 god-module 로 드러난다 — 합성이 실제 경계 문제를 짚는다는 증거."""
+    """core.job의 Domain 귀속이 효과를 숨기지 않고 P2 port 추출 의무로 이어진다."""
     job = next(m for m in result.modules if m.module == "hwpxfiller.core.job")
-    assert job.target == "P_REVIEW_REQUIRED"
+    assert job.target == "DOMAIN"
     assert len(job.effect_classes) >= 3
+    unit = next(u for u in result.units if job.module in u.modules)
+    assert {f"port:{kind}" for kind in job.effect_classes} <= set(
+        unit.required_effect_contracts
+    )
+    assert unit.extraction_obligations
 
 
 # ---------------------------------------------------------------------------
@@ -305,15 +312,33 @@ def _unit(**over: object) -> A.MigrationUnit:
         target="DOMAIN",
         modules=("m",),
         symbol_count=1,
+        purpose="p",
+        current_responsibilities=("public-symbols:1",),
+        source_symbols=("m:f#function",),
         closure_digest="d",
+        source_write_set=("src/m.py",),
+        read_only_adjacent=(),
         write_set=(),
+        state_reads=(),
+        transaction_clusters=(),
+        effect_edges=(),
+        persistence_edges=(),
+        transport_edges=(),
+        target_inputs=(),
+        target_outputs=("m:f#function",),
+        required_effect_contracts=(),
+        extraction_obligations=(),
         shared_with=(),
         oracle_status="ENTRY",
-        oracle_entries=(),
+        oracle_entries=("tests/test_x.py::test_x",),
+        positive_gates=("tests/test_x.py::test_x",),
+        negative_gates=("tests/test_authority_gate_04.py::mutation",),
         predecessors=(),
         successors=(),
         compat_seam="c",
         removal_condition="r",
+        rollback_condition="rb",
+        stop_condition="s",
         blocking=(),
     )
     defaults.update(over)

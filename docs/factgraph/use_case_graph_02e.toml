@@ -5,12 +5,12 @@
 schema = "use-case-graph-02e/v1"
 
 [baseline]
-git_sha = "247333e0ae69776ebf9ed9f2e596abf427c63b56"
+git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
 
 # 02A call-axis 입력 핀 — 같은 기반 사실 위의 파생임을 P1-03 이 검증한다.
 [inputs]
-base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
-graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
+graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
 
 [surface]
 cli_modules = ["hwpxfiller.cli"]
@@ -34,15 +34,15 @@ host_only = 149
 duplicate = 0
 anchor_verbs = 9
 empty_route_entries = 62
-oracle_entry = 144
-oracle_core = 2
-oracle_none = 9
-characterization_gaps = 11
-test_files = 237
+oracle_entry = 155
+oracle_core = 0
+oracle_none = 0
+characterization_gaps = 0
+test_files = 239
 
 [test_axis_counts]
 "browser" = 1
-"deterministic" = 229
+"deterministic" = 231
 "live" = 6
 "native" = 1
 
@@ -882,11 +882,12 @@ seam_rules = ["attr_delegate"]
 roots = [
   "hwpxfiller.webapp.screen_editor:EditorController.initial#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_naming.py :: core-verb-import",
+  "tests/test_p1_entry_oracles.py :: boot-call",
   "tests/test_review_state.py :: core-verb-import",
   "tests/test_template_groups.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
@@ -1046,8 +1047,9 @@ unresolved_out = 1
 roots = [
   "hwpxfiller.webapp.screen_editor:EditorController._do_set_fmt#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1142,8 +1144,9 @@ unresolved_out = 0
 roots = [
   "hwpxfiller.webapp.screen_editor:EditorController._do_step_preview#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1293,8 +1296,9 @@ unresolved_out = 1
 roots = [
   "hwpxfiller.webapp.screen_job:JobController._do_cancel_generation#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1339,8 +1343,9 @@ unresolved_out = 2
 roots = [
   "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_clear_col#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1368,8 +1373,9 @@ unresolved_out = 3
 roots = [
   "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_text#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2365,7 +2371,7 @@ host = "gui"
 kind = "gui_action"
 classification = "HOST_ONLY"
 core_verb_count = 9
-unresolved_out = 26
+unresolved_out = 29
 seam_rules = ["attr_delegate"]
 roots = [
   "hwpxfiller.webapp.screen_pool:PoolController._do_activate#method",
@@ -2383,7 +2389,7 @@ host = "gui"
 kind = "gui_action"
 classification = "HOST_ONLY"
 core_verb_count = 9
-unresolved_out = 26
+unresolved_out = 29
 seam_rules = ["attr_delegate"]
 roots = [
   "hwpxfiller.webapp.screen_pool:PoolController._do_archive#method",
@@ -2717,8 +2723,9 @@ unresolved_out = 1
 roots = [
   "hwpxfiller.webapp.screen_template:TemplateController._do_txt_content#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2808,6 +2815,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_unit_oracles.py :: core-verb-import",
   "tests/test_text_render.py :: core-verb-import",
   "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
@@ -2827,6 +2835,7 @@ oracle_status = "ENTRY"
 oracles = [
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
+  "tests/test_p1_unit_oracles.py :: core-verb-import",
   "tests/test_review_state.py :: core-verb-import",
   "tests/test_text_render.py :: core-verb-import",
   "tests/test_webapp_job.py :: boot-call",
@@ -2863,9 +2872,10 @@ unresolved_out = 15
 roots = [
   "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_revert_map#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
   "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2943,8 +2953,9 @@ unresolved_out = 2
 roots = [
   "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_fmt#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2957,8 +2968,9 @@ unresolved_out = 2
 roots = [
   "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_type#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2976,6 +2988,7 @@ oracle_status = "ENTRY"
 oracles = [
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
+  "tests/test_p1_unit_oracles.py :: core-verb-import",
   "tests/test_review_state.py :: core-verb-import",
   "tests/test_text_render.py :: core-verb-import",
   "tests/test_webapp_workbench.py :: dispatch-literal",
@@ -3008,8 +3021,9 @@ unresolved_out = 2
 roots = [
   "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_target_font#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/test_p1_entry_oracles.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -3059,50 +3073,6 @@ oracles = [
 ]
 
 # 근거 없는 비어 있지 않은 경로 — characterization 필요 항목(loud).
-
-[[characterization_gap]]
-entry = "gui:editor/initial"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:editor/set_fmt"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:editor/step_preview"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:job/cancel_generation"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:job/filter_clear_col"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:job/filter_col_text"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:tpl/txt_content"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:workbench/revert_map"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:workbench/set_map_fmt"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:workbench/set_map_type"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
-
-[[characterization_gap]]
-entry = "gui:workbench/set_target_font"
-reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
 
 [[test_file]]
 path = "conftest.py"
@@ -4149,6 +4119,31 @@ product_modules = [
   "hwpxcore.native.dialogs",
   "hwpxcore.native.reveal",
   "hwpxcore.native.single_instance",
+]
+
+[[test_file]]
+path = "tests/test_p1_entry_oracles.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_editor",
+]
+
+[[test_file]]
+path = "tests/test_p1_unit_oracles.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.native",
+  "hwpxcore.native._debug",
+  "hwpxfiller.data.inline",
+  "hwpxfiller.gui.mapping_state",
+  "hwpxfiller.gui.record_range",
+  "hwpxfiller.gui.selection_state",
+  "hwpxfiller.gui.txt_card",
+  "hwpxfiller.webapp.data_zone",
+  "hwpxfiller.webapp.job_list",
+  "hwpxfiller.webapp.mapping_verbs",
 ]
 
 [[test_file]]

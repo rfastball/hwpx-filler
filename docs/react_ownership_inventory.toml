@@ -50,7 +50,7 @@ repo_wide_metrics = []
 
 # 분류 어휘 5종 중 오늘 점유자가 없는 값. 부재를 데이터로 적는 이 원장의 습관을 어휘에도 쓴다 —
 # 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
-unoccupied_classifications = ["host", "retire"]
+unoccupied_classifications = ["host", "p_review_required"]
 
 [[cross_axis_overlap]]
 member = "frontend/src/runtime/adapter.ts:94"

@@ -95,6 +95,14 @@ def test_status_transitions(tmp_path):
     assert vm.is_empty()
 
 
+def test_unknown_status_transition_fails_loudly(tmp_path):
+    vm = _vm(tmp_path)
+    vm.register_excel("D", "/d.xlsx")
+    key = vm.rows()[0].key
+    with pytest.raises(ValueError, match="지원하지 않는 데이터셋 전이"):
+        vm._transition(key, "typo")
+
+
 def test_stale_reference_update_does_not_resurrect_deleted_item(tmp_path):
     """확인 전에 읽은 항목이 삭제되면 갱신은 loud 실패하고 신규 항목으로 부활하지 않는다."""
     directory = tmp_path / "datasets"

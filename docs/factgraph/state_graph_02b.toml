@@ -5,22 +5,22 @@
 schema = "state-graph-02b/v1"
 
 [baseline]
-git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
+git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
 
 # 입력 앵커 — 02A 원장의 digest 와 같아야 render 가 선다(4슬라이스 공통 기준).
 [input]
 static_ledger = "docs/factgraph/static_graph_02a.toml"
-base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
-graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
+graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
 
 [digests]
-state_facts = "142b3b1904030c663510dc0f49ed58dac4a16d8978a5b3d99c83036ab7191caf"
-full_graph = "5f5df61c39f5ced4e7f53f2ca36a96640a7d12e045b5a71d03cf07028d22ed6a"
+state_facts = "3e562a54c39b038e8b2b32ab24cd5831c36fdbb62af2757377ec07a65ec2f0c5"
+full_graph = "dd604c930ae6bf7538bee34ba1207892bd8c5bc06091519021c754a52620df6e"
 
 [counts]
 modules = 85
 symbols = 1707
-facts_state = 3636
+facts_state = 3643
 states = 1119
 states_instance_field = 701
 states_class_attr = 36
@@ -31,21 +31,21 @@ shared_states = 9
 sync_sites = 22
 sync_unbound = 12
 uncovered_state_sites = 0
-unresolved_state_open = 446
-inherited_02b_queue = 2006
+unresolved_state_open = 447
+inherited_02b_queue = 2000
 inherited_02b_queue_site_covered = 546
 
 [state_rules]
 "attr_read_augassign" = 10
 "attr_read_called_field" = 42
-"attr_read_self" = 1715
-"attr_read_typed" = 300
+"attr_read_self" = 1719
+"attr_read_typed" = 302
 "class_attr_assign" = 252
 "class_field_declaration" = 431
 "global_read" = 5
 "module_global_assign" = 382
 "mutcall_attribute_opaque" = 2
-"mutcall_local_binding" = 339
+"mutcall_local_binding" = 340
 "mutcall_module_global" = 1
 "mutcall_opaque" = 10
 "mutcall_self_attribute" = 32
@@ -10478,7 +10478,6 @@ writers = [
 ]
 mutators = []
 readers = [
-  "hwpxfiller.webapp.screen_editor:EditorController._extras_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController.dirty_extras#method",
 ]
 sync = []
@@ -10781,6 +10780,7 @@ readers = [
   "hwpxfiller.webapp.screen_editor:EditorController._data_stash#method",
   "hwpxfiller.webapp.screen_editor:EditorController._do_discard_patch#method",
   "hwpxfiller.webapp.screen_editor:EditorController._do_skip_data#method",
+  "hwpxfiller.webapp.screen_editor:EditorController._extras_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController._model_key_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController._revert_binding#method",
   "hwpxfiller.webapp.screen_editor:EditorController.has_unsaved_work#method",
@@ -10802,6 +10802,7 @@ writers = [
 mutators = []
 readers = [
   "hwpxfiller.webapp.screen_editor:EditorController._data_stash#method",
+  "hwpxfiller.webapp.screen_editor:EditorController._extras_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController._model_key_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method",
 ]
@@ -10854,6 +10855,7 @@ readers = [
   "hwpxfiller.webapp.screen_editor:EditorController._cross_media_block#method",
   "hwpxfiller.webapp.screen_editor:EditorController._do_discard_patch#method",
   "hwpxfiller.webapp.screen_editor:EditorController._do_save#method",
+  "hwpxfiller.webapp.screen_editor:EditorController._extras_now#method",
   "hwpxfiller.webapp.screen_editor:EditorController._overwrite_gate#method",
   "hwpxfiller.webapp.screen_editor:EditorController._preserved_for_target#method",
   "hwpxfiller.webapp.screen_editor:EditorController._save_locked#method",
@@ -20234,7 +20236,7 @@ rel = "mutates_attribute"
 dst = "?:local:prov"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 705
+line = 709
 anchor = "c12-35:prov['template_fields']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20246,7 +20248,7 @@ rel = "mutates_attribute"
 dst = "?:local:prov"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 708
+line = 712
 anchor = "c12-31:prov['source_keys']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20258,7 +20260,7 @@ rel = "mutates_attribute"
 dst = "?:local:prov"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 715
+line = 719
 anchor = "c12-27:prov['dataset']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20270,7 +20272,7 @@ rel = "mutates_attribute"
 dst = "?:local:seen"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1431
+line = 1435
 anchor = "c24-47:seen.append(row.source)"
 collector = "factgraph.state_graph"
 rule = "mutcall_local_binding"
@@ -20282,7 +20284,7 @@ rel = "mutates_attribute"
 dst = "?:local:active"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1471
+line = 1475
 anchor = "c12-33:active.discard(field)"
 collector = "factgraph.state_graph"
 rule = "mutcall_local_binding"
@@ -20294,7 +20296,7 @@ rel = "mutates_attribute"
 dst = "?:local:active"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1473
+line = 1477
 anchor = "c12-29:active.add(field)"
 collector = "factgraph.state_graph"
 rule = "mutcall_local_binding"
@@ -20306,7 +20308,7 @@ rel = "mutates_attribute"
 dst = "?:local:occurrences"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 997
+line = 1001
 anchor = "c16-37:occurrences[seg.name]"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20318,7 +20320,7 @@ rel = "mutates_attribute"
 dst = "?:local:data"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 675
+line = 679
 anchor = "c20-44:data[row.template_field]"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20330,7 +20332,7 @@ rel = "mutates_attribute"
 dst = "?:local:data"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 677
+line = 681
 anchor = "c20-44:data[row.template_field]"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20342,7 +20344,7 @@ rel = "mutates_attribute"
 dst = "?:local:rows"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 647
+line = 651
 anchor = "c12-14:rows.append({'key': key, 'group': self.txt_groups.group_of(key), 'name': t.name, 'path': str(t.path), 'field_count': fie"
 collector = "factgraph.state_graph"
 rule = "mutcall_local_binding"
@@ -20354,7 +20356,7 @@ rel = "mutates_attribute"
 dst = "?:local:opts"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1025
+line = 1029
 anchor = "c12-30:opts['header_row']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -20366,56 +20368,8 @@ rel = "mutates_attribute"
 dst = "?:local:snap"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 543
+line = 547
 anchor = "c12-24:snap['rows']"
-collector = "factgraph.state_graph"
-rule = "subscript_mutation_local"
-followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
-
-[[unresolved]]
-src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
-rel = "mutates_attribute"
-dst = "?:local:snap"
-grade = "UNKNOWN"
-file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 548
-anchor = "c12-26:snap['counts']"
-collector = "factgraph.state_graph"
-rule = "subscript_mutation_local"
-followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
-
-[[unresolved]]
-src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
-rel = "mutates_attribute"
-dst = "?:local:snap"
-grade = "UNKNOWN"
-file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 549
-anchor = "c12-35:snap['preview_empties']"
-collector = "factgraph.state_graph"
-rule = "subscript_mutation_local"
-followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
-
-[[unresolved]]
-src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
-rel = "mutates_attribute"
-dst = "?:local:snap"
-grade = "UNKNOWN"
-file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 550
-anchor = "c12-33:snap['preview_index']"
-collector = "factgraph.state_graph"
-rule = "subscript_mutation_local"
-followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
-
-[[unresolved]]
-src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
-rel = "mutates_attribute"
-dst = "?:local:snap"
-grade = "UNKNOWN"
-file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 551
-anchor = "c12-33:snap['preview_count']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
 followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
@@ -20427,7 +20381,7 @@ dst = "?:local:snap"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
 line = 552
-anchor = "c12-31:snap['is_complete']"
+anchor = "c12-26:snap['counts']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
 followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
@@ -20439,7 +20393,19 @@ dst = "?:local:snap"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
 line = 553
-anchor = "c12-31:snap['schema_only']"
+anchor = "c12-35:snap['preview_empties']"
+collector = "factgraph.state_graph"
+rule = "subscript_mutation_local"
+followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
+
+[[unresolved]]
+src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+rel = "mutates_attribute"
+dst = "?:local:snap"
+grade = "UNKNOWN"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 554
+anchor = "c12-33:snap['preview_index']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
 followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
@@ -20451,7 +20417,7 @@ dst = "?:local:snap"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
 line = 555
-anchor = "c12-24:snap['rows']"
+anchor = "c12-33:snap['preview_count']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
 followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
@@ -20463,6 +20429,42 @@ dst = "?:local:snap"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/screen_editor.py"
 line = 556
+anchor = "c12-31:snap['is_complete']"
+collector = "factgraph.state_graph"
+rule = "subscript_mutation_local"
+followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
+
+[[unresolved]]
+src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+rel = "mutates_attribute"
+dst = "?:local:snap"
+grade = "UNKNOWN"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 557
+anchor = "c12-31:snap['schema_only']"
+collector = "factgraph.state_graph"
+rule = "subscript_mutation_local"
+followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
+
+[[unresolved]]
+src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+rel = "mutates_attribute"
+dst = "?:local:snap"
+grade = "UNKNOWN"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 559
+anchor = "c12-24:snap['rows']"
+collector = "factgraph.state_graph"
+rule = "subscript_mutation_local"
+followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
+
+[[unresolved]]
+src = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+rel = "mutates_attribute"
+dst = "?:local:snap"
+grade = "UNKNOWN"
+file = "src/hwpxfiller/webapp/screen_editor.py"
+line = 560
 anchor = "c12-31:snap['is_complete']"
 collector = "factgraph.state_graph"
 rule = "subscript_mutation_local"
@@ -21026,8 +21028,20 @@ rel = "mutates_attribute"
 dst = "?:local:removed"
 grade = "UNKNOWN"
 file = "src/hwpxfiller/webapp/selftest_api.py"
-line = 1090
-anchor = "c12-37:removed.append(attribute)"
+line = 1096
+anchor = "c8-40:removed.append('selftest_claim')"
+collector = "factgraph.state_graph"
+rule = "mutcall_local_binding"
+followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"
+
+[[unresolved]]
+src = "hwpxfiller.webapp.selftest_api:detach_selftest_facade#function"
+rel = "mutates_attribute"
+dst = "?:local:removed"
+grade = "UNKNOWN"
+file = "src/hwpxfiller/webapp/selftest_api.py"
+line = 1099
+anchor = "c8-42:removed.append('selftest_host_op')"
 collector = "factgraph.state_graph"
 rule = "mutcall_local_binding"
 followup = "함수-지역 수명 후보 — P1-03 lifetime 분류(탈출 여부는 02A call/construct 그래프·runtime trace 로 종결)"

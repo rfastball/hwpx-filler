@@ -41,8 +41,8 @@ REGEN_COMMAND = "uv run python scripts/gen_authority_ledger_03.py"
 SCHEMA = "authority-synthesis-03/v2"
 
 #: 여섯 shard 공통 기반 사실 앵커(P1-01 폐포). src/ 가 이 값과 다르면 원장이 stale 이다.
-ANCHOR_BASE_FACTS = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
-ANCHOR_GRAPH_FACTS = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+ANCHOR_BASE_FACTS = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
+ANCHOR_GRAPH_FACTS = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
 
 #: 소비하는 원장 경로. 각 원장의 기반-사실 핀 좌표는 _SHARD_ANCHORS 가 안다.
 INVENTORY_LEDGER = "docs/factgraph/python_symbol_inventory.toml"
@@ -463,7 +463,8 @@ def _oracle_pointers(use_case_toml: dict) -> "dict[str, set[str]]":
     for entry in use_case_toml.get("entry", []):
         for root in entry.get("roots", []):
             module = _module_of_symbol(root)
-            for oracle in entry.get("oracles", []):
+            # 실행 패킷은 entry당 대표 양성 포인터 둘이면 충분하다. 02E가 전수 센서스를 소유한다.
+            for oracle in sorted(entry.get("oracles", []))[:2]:
                 out.setdefault(module, set()).add(f"{entry['id']} <- {oracle}")
     return out
 
@@ -951,6 +952,15 @@ def _build_units(
             behavior_oracles |= oracle_pointers.get(m, set())
             if m in module_oracle:
                 entry_statuses.add(module_oracle[m])
+        # 포트폴리오는 한 모듈에 수백 nodeid를 연결할 수 있다. packet은 테스트 센서스가
+        # 아니라 실행 handoff이므로 entry별 포인터는 전부 보존하고, 그 밖의 대표 양성
+        # gate만 결정론적으로 제한한다(전수는 TEST_PORTFOLIO와 02E가 계속 소유한다).
+        entry_specific = sorted(p for p in behavior_oracles if " <- " in p)
+        exact_nodeids = sorted(
+            p for p in behavior_oracles if "::" in p and " :: module-contact" not in p
+        )
+        module_contacts = sorted(p for p in behavior_oracles if " :: module-contact" in p)
+        behavior_oracles = set(entry_specific + exact_nodeids[:6] + module_contacts[:2])
         closure = sorted(s for m in modules for s in module_symbols.get(m, ()))
         sym_count = len(closure)
         closure_digest = hashlib.sha256("\n".join(closure).encode("utf-8")).hexdigest()

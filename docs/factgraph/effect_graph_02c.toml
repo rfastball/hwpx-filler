@@ -5,13 +5,13 @@
 schema = "effect-graph-02c/v1"
 
 [baseline]
-git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
+git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
 
 # base/graph 핀은 02A 원장과 같은 값이어야 한다 — 같은 측정 위의 shard.
 [digests]
-base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
-graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
-effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
+base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
+graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+effect_facts = "0a25ad8983b08c9de59cfeeaf363d9b6935970b36530c02a94ea5eb20bcad65f"
 
 [counts]
 modules = 85
@@ -1353,7 +1353,7 @@ src = "hwpxfiller.webapp.screen_editor:EditorController._cross_media_block#metho
 rel = "reads_external"
 dst = "?:self:EditorController.registry.exists"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1772
+line = 1776
 anchor = "c15-50:self.registry.exists(self.job_name)"
 
 [[inferred_fs]]
@@ -1361,7 +1361,7 @@ src = "hwpxfiller.webapp.screen_editor:EditorController._editing_drift_text#meth
 rel = "reads_external"
 dst = "?:self:EditorController.registry.exists"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1717
+line = 1721
 anchor = "c15-57:self.registry.exists(self._editing_origin)"
 
 [[inferred_fs]]
@@ -1369,7 +1369,7 @@ src = "hwpxfiller.webapp.screen_editor:EditorController._overwrite_gate#method"
 rel = "reads_external"
 dst = "?:self:EditorController.registry.exists"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1747
+line = 1751
 anchor = "c60-95:self.registry.exists(self.job_name)"
 
 [[inferred_fs]]
@@ -1377,7 +1377,7 @@ src = "hwpxfiller.webapp.screen_editor:EditorController._preserved_for_target#me
 rel = "reads_external"
 dst = "?:self:EditorController.registry.exists"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 1811
+line = 1815
 anchor = "c11-39:self.registry.exists(target)"
 
 [[inferred_fs]]
@@ -1385,7 +1385,7 @@ src = "hwpxfiller.webapp.screen_editor:EditorController.adopt_imported_template#
 rel = "reads_external"
 dst = "?:local:path.read_text"
 file = "src/hwpxfiller/webapp/screen_editor.py"
-line = 935
+line = 939
 anchor = "c16-48:path.read_text(encoding='utf-8')"
 
 [[inferred_fs]]

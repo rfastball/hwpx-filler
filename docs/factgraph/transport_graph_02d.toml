@@ -5,10 +5,10 @@
 schema = "transport-graph-02d/v1"
 
 [baseline]
-git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
+git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
 
 [digests]
-base_facts_02a = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+base_facts_02a = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
 transport = "4e1a4e507579015d37e47ad28e16e83f76839e4e56bda5064b591d8e20fb07fd"
 
 [counts]
