@@ -609,6 +609,16 @@ responsibility = "P1-02D transport 원장 게이트 — 독립 분모 재계산�
 owner_stage = "P1-02D"
 
 [[asset]]
+file = "scripts/factgraph/authority_synthesis.py"
+responsibility = "P1-03 중앙 합성 판정 본문 — webapp/WebFrontend 권위 귀속·transport 방향 분석을 이름으로 겨눈다(#518)"
+owner_stage = "P1-03"
+
+[[asset]]
+file = "tests/test_authority_synthesis_03.py"
+responsibility = "P1-03 합성 원장 게이트 — webapp 모듈 권위 귀속의 판별력 mutation 을 이름으로 든다(#518)"
+owner_stage = "P1-03"
+
+[[asset]]
 file = "tests/test_ux_copy_round.py"
 responsibility = "개발 어휘의 UI 재유입 금지어 가드"
 owner_stage = "R3-03"
@@ -842,6 +852,7 @@ files = [
   "scripts/factgraph/static_graph.py",
   "scripts/gen_effect_graph_02c.py",
   "scripts/factgraph/use_case_graph.py",
+  "scripts/gen_authority_ledger_03.py",
   "scripts/gen_python_symbol_inventory.py",
   "scripts/gen_scenario_fixtures.py",
   "scripts/gen_state_graph_02b.py",
