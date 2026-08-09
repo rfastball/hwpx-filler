@@ -10,7 +10,7 @@ base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
 graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
 effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
 # 폐포 파일 바이트 digest — 사실을 안 바꾸는 리터럴 편집도 잡는 baseline 핀.
-source_digest = "c3a3262264ebb4aba0b8f55340e106d8aa93b6491721050076d2728c7d441fcb"
+source_digest = "a81f63cf102d5153dc7d5508ad85a8b311a7bdcd08903dd07bb89dd77ebc01d7"
 
 [inputs]
 # 소비한 원장과 각 원장의 기반-사실 핀(merge 일치 증거).

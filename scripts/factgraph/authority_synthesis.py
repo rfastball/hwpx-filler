@@ -835,7 +835,11 @@ def _source_digest(repo_root: Path, closure) -> str:
     for mf in sorted(closure.modules, key=lambda m: m.path):
         hasher.update(mf.path.encode("utf-8"))
         hasher.update(b"\0")
-        hasher.update((repo_root / mf.path).read_bytes())
+        # 줄바꿈을 정규화한다 — .gitattributes(eol=lf)로 CI 는 LF, 로컬 working tree 는
+        # CRLF 일 수 있어(예: core/__init__.py) 바이트 직해시는 환경마다 갈린다. 내용 편집만
+        # 잡고 줄바꿈 스타일은 무시한다.
+        raw = (repo_root / mf.path).read_bytes()
+        hasher.update(raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
         hasher.update(b"\0")
     return hasher.hexdigest()
 

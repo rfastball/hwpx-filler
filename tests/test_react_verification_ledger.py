@@ -141,7 +141,7 @@ SURFACE_WITHOUT_SEALED = re.compile("|".join((_SURFACE_NAMED, _SURFACE_HELPER, _
 #: G5 가 태어난 이유와 같고, 그 좁힘이 살아 있다는 증거는 아래 n29 가 든다.
 KNOWN_STAGES = frozenset(
     "R2-01 R2-02 R2-03 R2-04 R3-01 R3-02 R3-03 R4-01 R4-02 R4-03 R4-04 R5-01 R5-02 R5-03"
-    " P1-02D".split()
+    " P1-02D P1-03".split()
 )
 
 REQUIRED_ASSET_FIELDS = ("file", "responsibility", "owner_stage")
