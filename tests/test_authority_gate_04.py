@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import hashlib
 import sys
+import textwrap
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,6 +35,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from factgraph import authority_synthesis as A  # noqa: E402
+from factgraph.static_graph import build as build_static  # noqa: E402
+from factgraph.static_graph import open_unresolved  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -89,7 +93,7 @@ def test_dependency_direction_clean_on_master(result: A.SynthesisResult, ledger:
     assert result.dependency.violations == ()
     assert ledger["dependency"]["violations"] == 0
     assert ledger["dependency"]["internal_edges"] == result.dependency.internal_edges
-    # 유보(P_REVIEW 끝점)는 조용한 green 이 아니라 세어져 드러난다.
+    # RETIRE 끝점은 P2 제거 전 방향을 강제하지 않고 명시적으로 유보한다.
     assert result.dependency.deferred_edges > 0
 
 
@@ -112,16 +116,18 @@ def test_verdict_blocks_on_direction_violation() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_business_core_targets_are_effect_free(result: A.SynthesisResult) -> None:
-    """DOMAIN/APPLICATION 목표 모듈은 concrete/ambient 효과·조립·transport 를 안 진다.
-
-    지면(#433 금지선)이 P1-03 판정으로 이미 서 있다는 실증 — 위반은 P_REVIEW 로 갔어야 한다.
-    """
+def test_business_core_effects_have_explicit_p2_contracts(result: A.SynthesisResult) -> None:
+    """현재 효과를 숨기지 않고 해당 unit의 port·추출 의무로 모두 넘긴다."""
+    units = {module: unit for unit in result.units for module in unit.modules}
     for m in result.modules:
         if m.target in ("DOMAIN", "APPLICATION"):
-            assert m.effect_classes == (), f"{m.module} 이 DOMAIN/APP 인데 효과를 진다"
-            assert m.composes == (), f"{m.module} 이 DOMAIN/APP 인데 조립을 한다"
             assert not m.transport, f"{m.module} 이 DOMAIN/APP 인데 transport 를 진다"
+            unit = units[m.module]
+            expected = {f"port:{kind}" for kind in m.effect_classes}
+            expected |= {f"composition-port:{edge}" for edge in m.composes}
+            assert expected <= set(unit.required_effect_contracts)
+            if expected:
+                assert unit.extraction_obligations
 
 
 def test_effect_in_core_flips_authority() -> None:
@@ -201,12 +207,85 @@ def test_closure_digest_reds_on_symbol_mutation() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_dynamic_open_pinned_to_02a_and_blocks(result: A.SynthesisResult) -> None:
+def test_dynamic_open_is_zero_and_a_product_mutation_turns_red(
+    result: A.SynthesisResult, tmp_path: Path
+) -> None:
     static_02a = tomllib.loads((REPO_ROOT / A.STATIC_LEDGER).read_text(encoding="utf-8"))
     assert result.dynamic_open == static_02a["counts"]["dynamic_open"]
-    # 판정이 동적 edge 를 막는다(다른 backlog 를 다 지워도).
+    assert result.dynamic_open == 0
+
+    # mutation: 실제 제품 모듈에 비리터럴 getattr 호출을 다시 넣으면 02A가 dynamic_open을 낸다.
+    repo = tmp_path / "mutated-product"
+    target = repo / "src" / "hwpxfiller" / "gui" / "dataset_pool_state.py"
+    target.parent.mkdir(parents=True)
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname="mutation"\nversion="0"\n\n'
+        '[tool.hatch.build.targets.wheel]\npackages=["src/hwpxfiller"]\n',
+        encoding="utf-8",
+    )
+    product = (REPO_ROOT / "src/hwpxfiller/gui/dataset_pool_state.py").read_text(
+        encoding="utf-8"
+    )
+    target.write_text(
+        product
+        + textwrap.dedent(
+            """
+
+            def _p1_dynamic_mutation(item, action):
+                return getattr(item, action)()
+            """
+        ),
+        encoding="utf-8",
+    )
+    dynamic, _self_open, _noise = open_unresolved(build_static(repo))
+    assert dynamic
+
     clean = [_unit(target="DOMAIN", oracle_status="ENTRY")]
-    assert A._verdict([], clean, 0, result.dynamic_open)[0] == "BLOCKED"
+    assert A._verdict([], clean, 0, len(dynamic))[0] == "BLOCKED"
+
+
+# ---------------------------------------------------------------------------
+# v2 실행 패킷·R handoff 음성 변이 게이트
+# ---------------------------------------------------------------------------
+
+
+def test_migration_packet_mutations_turn_red(result: A.SynthesisResult) -> None:
+    clean = result.units[0]
+    assert A._packet_gaps([clean]) == ()
+    assert A._packet_gaps([replace(clean, purpose="")]) == (f"{clean.unit_id}.purpose",)
+
+    behavioral = next(u for u in result.units if u.oracle_status != "STRUCTURAL")
+    gaps = A._packet_gaps(
+        [replace(behavioral, oracle_entries=(), positive_gates=())]
+    )
+    assert f"{behavioral.unit_id}.oracle_entries" in gaps
+    assert f"{behavioral.unit_id}.positive_gates" in gaps
+
+
+def test_source_write_set_overlap_mutation_turns_red(result: A.SynthesisResult) -> None:
+    first, second = result.units[:2]
+    collision = replace(second, source_write_set=first.source_write_set)
+    overlaps = A._source_write_overlaps([first, collision])
+    assert overlaps == ((first.source_write_set[0], (first.unit_id, second.unit_id)),)
+
+
+def test_r_handoff_mutation_turns_red() -> None:
+    decisions, handoff, problems = A._load_decisions(
+        REPO_ROOT,
+        {
+            entry["name"]
+            for entry in tomllib.loads(
+                (REPO_ROOT / A.INVENTORY_LEDGER).read_text(encoding="utf-8")
+            )["module"]
+        },
+    )
+    assert problems == []
+    assert A._r_handoff_problems(REPO_ROOT, handoff, decisions) == []
+    mutated = dict(handoff, pipeline_builder_state="APPLICATION")
+    assert any(
+        "pipeline_builder_state" in gap
+        for gap in A._r_handoff_problems(REPO_ROOT, mutated, decisions)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -256,15 +335,33 @@ def _unit(**over: object) -> A.MigrationUnit:
         target="DOMAIN",
         modules=("m",),
         symbol_count=1,
+        purpose="p",
+        current_responsibilities=("public-symbols:1",),
+        source_symbols=("m:f#function",),
         closure_digest="d",
+        source_write_set=("src/m.py",),
+        read_only_adjacent=(),
         write_set=(),
+        state_reads=(),
+        transaction_clusters=(),
+        effect_edges=(),
+        persistence_edges=(),
+        transport_edges=(),
+        target_inputs=(),
+        target_outputs=("m:f#function",),
+        required_effect_contracts=(),
+        extraction_obligations=(),
         shared_with=(),
         oracle_status="ENTRY",
-        oracle_entries=(),
+        oracle_entries=("tests/test_x.py::test_x",),
+        positive_gates=("tests/test_x.py::test_x",),
+        negative_gates=("tests/test_authority_gate_04.py::mutation",),
         predecessors=(),
         successors=(),
         compat_seam="c",
         removal_condition="r",
+        rollback_condition="rb",
+        stop_condition="s",
         blocking=(),
     )
     defaults.update(over)

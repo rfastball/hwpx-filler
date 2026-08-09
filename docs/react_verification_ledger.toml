@@ -619,6 +619,16 @@ responsibility = "P1-03 합성 원장 게이트 — webapp 모듈 권위 귀속�
 owner_stage = "P1-03"
 
 [[asset]]
+file = "tests/test_p1_entry_oracles.py"
+responsibility = "P1-03 GUI entry 공백을 WebFrontend.initial/dispatch 공개 경계에서 특성화하는 실행 oracle(#518)"
+owner_stage = "P1-03"
+
+[[asset]]
+file = "tests/test_p1_unit_oracles.py"
+responsibility = "P1-03 migration unit의 webapp mixin·도메인 보조 모듈을 실제 동작으로 겨누는 특성화 oracle(#518)"
+owner_stage = "P1-03"
+
+[[asset]]
 file = "tests/test_ux_copy_round.py"
 responsibility = "개발 어휘의 UI 재유입 금지어 가드"
 owner_stage = "R3-03"

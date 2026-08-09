@@ -579,8 +579,8 @@ def test_real_packet_baseline_counts_hold(committed_ledger) -> None:
     assert counts["common"] == 6
     assert counts["host_only"] == 149
     assert counts["duplicate"] == 0
-    assert counts["test_files"] == 237  # Python 155 + tests/js/**/*.js 82 (P1-03·04 게이트 +2)
-    assert committed_ledger["test_axis_counts"]["deterministic"] == 229
+    assert counts["test_files"] == 239  # Python 157 + tests/js/**/*.js 82 (P1 oracle 2종 포함)
+    assert committed_ledger["test_axis_counts"]["deterministic"] == 231
     assert counts["entries_cli"] + counts["entries_gui"] == counts["entries_total"]
     assert (
         counts["common"] + counts["host_only"] + counts["duplicate"] == counts["entries_total"]
@@ -612,10 +612,11 @@ def test_real_anchor_rows_bind_common_pairs_symmetrically(committed_ledger) -> N
         assert anchor["verb"] in gui_row["anchor_verbs"]
 
 
-def test_real_characterization_gaps_are_loud_and_grounded(committed_ledger) -> None:
+def test_real_characterization_gaps_are_closed_or_grounded(committed_ledger) -> None:
     rows = {row["id"]: row for row in committed_ledger["entry"]}
     gaps = committed_ledger.get("characterization_gap", [])
-    assert gaps, "gap 0 은 실측과 어긋난다 — 스캐너 침묵을 의심하라"
+    assert gaps == []
+    assert all(row["oracle_status"] == "ENTRY" for row in rows.values())
     assert {gap["entry"] for gap in gaps} == {
         entry_id
         for entry_id, row in rows.items()

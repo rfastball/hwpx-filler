@@ -50,7 +50,7 @@ repo_wide_metrics = []
 
 # 분류 어휘 5종 중 오늘 점유자가 없는 값. 부재를 데이터로 적는 이 원장의 습관을 어휘에도 쓴다 —
 # 「host 가 안 보인다」와 「host 가 없다」는 다르고, 후자만 다음 사람에게 정보다.
-unoccupied_classifications = ["host", "retire"]
+unoccupied_classifications = ["host", "p_review_required"]
 
 [[cross_axis_overlap]]
 member = "frontend/src/runtime/adapter.ts:94"
@@ -942,10 +942,10 @@ unit = "R4-04가 신규 소유한 ledger 자산 행 1건 = 1; exact 5."
 id = "bridge/close-guard-state"
 subject = "close_guard_state 는 pywebview 반사로 js_api 에 노출되는데 문서에도 bridge.js 에도 없다 — JS 에서 도달 가능한 무계약 표면이다."
 requires_p_review = true
-resolved = false
+resolved = true
 evidence = [{ file = "src/hwpxfiller/webapp/app.py", line = 490, anchor = "def close_guard_state" }]
 owner = "R2-02 #406"
-disposition = "#433"
+disposition = "#433 P1-99: 공개 bridge 계약이 아니라 WebFrontend 내부 host probe로 유지한다. gen_bridge_contract.py의 HOST_INTERNAL_METHODS가 외부 공개 목록과 분리해 검증한다."
 [review_item.p_review]
 producer = "src/hwpxfiller/webapp/app.py:481 WebFrontend.close_guard_state"
 consumer = "unknown — bridge.js 에 이름이 없어 오늘 실제 JS 호출자가 있는지 확인하지 못했다."
@@ -1626,8 +1626,8 @@ kind = "state"
 axis = "state_snapshot_channel"
 selector = { kind = "exact", members = ["tpl"] }
 evidence = [{ file = "src/hwpxfiller/webapp/action_registry.py", line = 231, anchor = "\"tpl\": {" }]
-classification = "p_review_required"
-p_review = { producer = "src/hwpxfiller/webapp/screen_template.py:52 TemplateController.name = \"tpl\"", consumer = "frontend/src/screens/editor.ts — 편집기 「템플릿」 탭이 리터럴 tpl 액션으로 소비", call_path = "editor.ts → client.dispatch(\"tpl\", …) → ACTION_REGISTRY[\"tpl\"] (12 액션)", contract = "docs/UI_CONTRACT.md 의 화면 목록 · CLAUDE.md 「tpl 은 과도기 잔존」", test = "tests/test_dispatch_wiring.py" }
+classification = "python_product"
+p_handoff = "yes"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1646,8 +1646,8 @@ kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/nara_state.py"] }
 evidence = [{ file = "src/hwpxfiller/gui/nara_state.py", line = 1, anchor = "\"\"\"나라장터 취득 ViewModel — Qt 비의존(링1). 키 등록/취득 결정의 단일 진실원." }]
-classification = "p_review_required"
-p_review = { producer = "src/hwpxfiller/gui/nara_state.py (NaraAcquireViewModel)", consumer = "링1 내부 2(dataset_pool_state.py:27 · run_state.py:194). 링2 소비자 0.", call_path = "CLI --source nara 어댑터 접합부. 웹 dispatch 경로 없음.", contract = "CLAUDE.md 「나라장터 소스는 동결」 · docs/README.md 동결 결정", test = "tests/test_nara_state.py" }
+classification = "python_product"
+p_handoff = "yes"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]
@@ -1656,8 +1656,8 @@ kind = "state"
 axis = "state_ring1"
 selector = { kind = "exact", members = ["src/hwpxfiller/gui/pipeline_builder_state.py"] }
 evidence = [{ file = "src/hwpxfiller/gui/pipeline_builder_state.py", line = 1, anchor = "\"\"\"파이프라인 빌더 ViewModel — Qt 비의존(링1). 조립 파이프라인 저작·미리보기면." }]
-classification = "p_review_required"
-p_review = { producer = "src/hwpxfiller/gui/pipeline_builder_state.py (PipelineBuilderViewModel)", consumer = "unknown — 제품 소비자 0. 참조는 테스트 2건뿐이다.", call_path = "unknown — 웹·CLI 어느 경로에서도 도달하지 않는다.", contract = "tests/test_ux_copy_round.py:31 이 「파킹(F40)」으로 문구 게이트에서 명시 제외", test = "tests/test_pipeline_builder_state.py" }
+classification = "retire"
+p_handoff = "no"
 verification = ["tests/test_react_ownership_inventory.py::test_inventory_is_closed_over_the_repository"]
 
 [[node]]

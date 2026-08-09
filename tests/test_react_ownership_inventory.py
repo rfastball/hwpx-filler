@@ -318,7 +318,7 @@ def test_scope_statement_and_exclusions_are_data_not_prose(document: dict[str, A
     # R4-03: legacy `screens/job.js` 가 사라지며 `retire` 를 든 두 행(배선 멱등 가드 ·
     # 렌더 보존 래퍼)의 대상이 함께 없어졌다. 어휘가 죽은 것이 아니라 **오늘 점유자가 0**
     # 이고, 그 사실도 데이터로 적는다 — R5-01 이 걷을 잔재가 여기서 먼저 소진됐다는 뜻이다.
-    assert document.get("unoccupied_classifications") == ["host", "retire"], (
+    assert document.get("unoccupied_classifications") == ["host", "p_review_required"], (
         "어휘 5종 중 오늘 점유자가 없는 값의 선언이 사라졌습니다 — 부재도 데이터로 적는다."
     )
 
@@ -663,10 +663,11 @@ def test_n13_p_review_row_with_a_blank_evidence_field_is_rejected(
 ) -> None:
     """N13 — G15 의 기계 판독 형태. 5증거 중 **하나만** 공란이어도 붉는다."""
     victim = next(
-        node
-        for node in mutable_document["node"]
-        if node.get("classification") == "p_review_required"
+        node for node in mutable_document["node"]
+        if node.get("classification") == "python_product"
     )
+    victim["classification"] = "p_review_required"
+    victim["p_review"] = {field: "known" for field in gate.P_REVIEW_FIELDS}
     victim["p_review"]["call_path"] = ""
     report = gate.check(mutable_document, REPO_ROOT, axes=[], metrics=[])
     assert not report.ok, "공란 증거가 통과했습니다."

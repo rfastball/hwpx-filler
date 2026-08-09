@@ -370,7 +370,12 @@ class DatasetPoolViewModel:
 
     # ---------------------------------------------------------- 상태/삭제(슬롯 키)
     def _transition(self, key: str, action: str) -> None:
-        self.registry.mutate(key, lambda item: getattr(item, action)())
+        if action == "archive":
+            self.registry.mutate(key, lambda item: item.archive())
+        elif action == "activate":
+            self.registry.mutate(key, lambda item: item.activate())
+        else:
+            raise ValueError(f"지원하지 않는 데이터셋 전이: {action!r}")
         self.refresh()
 
     def archive(self, key: str) -> None:

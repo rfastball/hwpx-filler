@@ -45,7 +45,7 @@ from .static_graph import StaticGraphResult, build
 
 COLLECTOR = "factgraph.use_case_graph"
 
-BASELINE_SHA = "247333e0ae69776ebf9ed9f2e596abf427c63b56"
+BASELINE_SHA = "5c341aaea127cc8e9edb01f1d120057c156b4744"
 
 LEDGER_REL_PATH = "docs/factgraph/use_case_graph_02e.toml"
 REGEN_COMMAND = "uv run python scripts/gen_use_case_graph_02e.py"
