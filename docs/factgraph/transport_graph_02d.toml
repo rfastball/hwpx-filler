@@ -1,0 +1,3541 @@
+# 생성 파일 — 직접 편집 금지. P1-02D transport·snapshot·push/event 원장(#516).
+# 원천: 고정 baseline src/ + frontend 소비자 증거의 결정론 재계측
+# 재생성: uv run python scripts/gen_transport_graph_02d.py
+# 검사:   uv run python scripts/gen_transport_graph_02d.py --check
+schema = "transport-graph-02d/v1"
+
+[baseline]
+git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
+
+[digests]
+base_facts_02a = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+transport = "4e1a4e507579015d37e47ad28e16e83f76839e4e56bda5064b591d8e20fb07fd"
+
+[counts]
+screens = 6
+actions = 119
+payload_required_pairs = 91
+payload_optional_pairs = 76
+payload_unique_keys = 47
+host_methods_public = 24
+host_methods_product = 23
+host_methods_internal = 1
+bridge_consumed_product = 23
+bridge_consumed_selftest = 2
+snapshot_channels = 6
+snapshot_fields = 128
+snapshot_fields_runtime_observed = 118
+snapshot_fields_conditional = 10
+snapshot_fields_product = 111
+snapshot_fields_selftest_only = 1
+snapshot_fields_none_found = 16
+channels_product_event = 4
+channels_partial_push = 1
+channels_selftest_host_op = 11
+product_event_fields = 6
+product_event_fields_conditional = 1
+product_event_consumer_zero = 0
+consumer_zero_actions = 1
+selftest_only_actions = 0
+dead_handlers = 0
+actions_without_handler = 0
+
+[vocabulary]
+protocol = "hwpx-product"
+version = 1
+capabilities = [
+  "snapshot",
+  "close-request",
+  "preferences",
+  "notice",
+]
+python_error_codes = [
+  "adapter-internal",
+  "capability-missing",
+  "descriptor-malformed",
+  "evaluate-failed",
+  "facade-absent",
+  "payload-unserializable",
+  "protocol-mismatch",
+  "rejected",
+  "result-missing-ok",
+  "result-not-object",
+  "result-ok-not-bool",
+  "version-unsupported",
+]
+js_error_codes = [
+  "malformed_request",
+  "unsupported_version",
+  "unknown_event",
+  "malformed_payload",
+  "handler_unavailable",
+  "handler_failed",
+]
+rejection_key = "__hwpx_dispatch_rejection_v1__"
+rejection_fields = [
+  "name",
+  "message",
+]
+
+[bridge]
+consumed_product = [
+  "cancel_window_close",
+  "confirm_window_close",
+  "copy_clipboard",
+  "copy_path",
+  "dispatch",
+  "editor_has_unsaved_work",
+  "generate",
+  "import_template_file",
+  "import_templates_folder",
+  "initial",
+  "load_data_sheet",
+  "new_job_from_data",
+  "open_job_in_editor",
+  "open_path",
+  "pick_data_file",
+  "pick_output_folder",
+  "pick_pool_data_file",
+  "pick_template_path",
+  "reveal_corrupt_job",
+  "reveal_path",
+  "set_font_scale",
+  "set_master_width",
+  "set_theme",
+]
+consumed_selftest = [
+  "selftest_claim",
+  "selftest_host_op",
+]
+
+# 소비자 0 / 시험 전용 소비 endpoint — loud 분리(#516 완료 조건).
+[consumer_zero]
+actions = [
+  "tpl/toggle_group",
+]
+selftest_only_actions = []
+snapshot_fields = [
+  "editor.changes",
+  "editor.has_unsaved_work",
+  "job.data_label",
+  "job.filename_pattern",
+  "job.guard",
+  "job.template_name",
+  "job.template_path",
+  "pool.count",
+  "pool.empty",
+  "pool.result",
+  "tpl.hwpx",
+  "tpl.result",
+  "tpl.txt",
+  "workbench.fullwidth",
+  "workbench.guard",
+  "workbench.is_complete",
+]
+host_internal_methods = [
+  "close_guard_state",
+]
+
+# src/ 밖 입력의 정체 앵커 — baseline SHA 가 못 봉하는 절반.
+
+[[input]]
+file = "frontend/js/bridge.js"
+sha256 = "4d890bdab77ce4ff846f93afb58cf3c6dedd09590633ea557d44967066db4641"
+
+[[input]]
+file = "frontend/src/product_api.js"
+sha256 = "16a871412183cb15c635a21774064968c7448adb3ccdf22af66716c1583d134c"
+
+[[input]]
+file = "frontend/src/contract/contract.gen.ts"
+sha256 = "1ee499341473f516b04b4e04639fb64761ebde76e97d563a270996600ac0a6ed"
+
+# 02A 인계 — prefix dispatch 복원 폐포 중 registry 가 실제로 켜는 부분집합.
+
+[[dispatch_enablement]]
+screen = "editor"
+handlers = 27
+actions = 27
+enabled = 27
+dead_handlers = []
+actions_without_handler = []
+
+[[dispatch_enablement]]
+screen = "job"
+handlers = 41
+actions = 41
+enabled = 41
+dead_handlers = []
+actions_without_handler = []
+
+[[dispatch_enablement]]
+screen = "library"
+handlers = 16
+actions = 16
+enabled = 16
+dead_handlers = []
+actions_without_handler = []
+
+[[dispatch_enablement]]
+screen = "pool"
+handlers = 7
+actions = 7
+enabled = 7
+dead_handlers = []
+actions_without_handler = []
+
+[[dispatch_enablement]]
+screen = "tpl"
+handlers = 12
+actions = 12
+enabled = 12
+dead_handlers = []
+actions_without_handler = []
+
+[[dispatch_enablement]]
+screen = "workbench"
+handlers = 16
+actions = 16
+enabled = 16
+dead_handlers = []
+actions_without_handler = []
+
+[[endpoint]]
+screen = "editor"
+action = "ack_gate"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_ack_gate#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "confirm_all"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_confirm_all#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "confirm_blanks"
+required = []
+optional = [
+  "fields",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_confirm_blanks#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "discard_patch"
+required = []
+optional = [
+  "section",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_discard_patch#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "discard_session"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_discard_session#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "goto_section"
+required = [
+  "section",
+]
+optional = [
+  "disposition",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_goto_section#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "mapping_reset_stakes"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_mapping_reset_stakes#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "new_session"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_new_session#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_entry.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "restore_confirmed"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_restore_confirmed#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "resuggest_all"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_resuggest_all#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "revert_source"
+required = [
+  "index",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_revert_source#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "save"
+required = []
+optional = [
+  "confirm_overwrite",
+  "confirmed_overwrite_text",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_save#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_confirmed"
+required = [
+  "confirmed",
+  "index",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_confirmed#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_const"
+required = [
+  "const",
+  "index",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_const#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_fmt"
+required = [
+  "fmt",
+  "index",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_fmt#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_name"
+required = [
+  "name",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_name#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_pattern"
+required = [
+  "pattern",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_pattern#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_source"
+required = [
+  "index",
+  "source",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_source#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "set_type"
+required = [
+  "index",
+  "type",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_type#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "skip_data"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_skip_data#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "step_preview"
+required = [
+  "delta",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_step_preview#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "toggle_library_group"
+required = [
+  "group",
+  "media",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_toggle_library_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "toggle_source_active"
+required = [
+  "field",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_toggle_source_active#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "unconfirm_all"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_unconfirm_all#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "use_all_headers"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_use_all_headers#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "use_library_template"
+required = [
+  "path",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_use_library_template#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "editor"
+action = "use_none"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_editor:EditorController._do_use_none#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "browse_query"
+required = []
+optional = [
+  "text",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_browse_query#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "browse_tab"
+required = []
+optional = [
+  "tab",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_browse_tab#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "cancel_generation"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_cancel_generation#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "disband_group"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+  "seen",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_disband_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_clear"
+required = []
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_clear#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_clear_col"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_clear_col#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_col_range"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+  "first",
+  "joiner",
+  "second",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_range#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_col_text"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+  "text",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_text#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_col_values"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+  "values",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_values#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_panel"
+required = [
+  "column",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_panel#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_prune"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_prune#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_reapply"
+required = []
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_reapply#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "filter_search"
+required = []
+optional = [
+  "epoch",
+  "text",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_search#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "guard_state"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_guard_state#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "hide_column"
+required = [
+  "column",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_hide_column#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "load_pool"
+required = [
+  "key",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screens:PoolTargetingMixin._do_load_pool#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "open_workbench"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_open_workbench#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "prefer_work"
+required = [
+  "name",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_prefer_work#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "preview_approve"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_approve#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "preview_blank_only"
+required = [
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_blank_only#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "preview_close"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_close#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "preview_move"
+required = [
+  "delta",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_move#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "preview_open"
+required = []
+optional = [
+  "at",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_open#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
+
+[[endpoint]]
+screen = "job"
+action = "range_draft_apply"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_range_draft_apply#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "range_draft_cancel"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_range_draft_cancel#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "range_draft_open"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_range_draft_open#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
+
+[[endpoint]]
+screen = "job"
+action = "refresh"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_refresh#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "relink_template"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+  "path",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_relink_template#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_relink.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "rename_group"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+  "new",
+  "seen",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_rename_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "rename_job"
+required = [
+  "name",
+]
+optional = [
+  "new",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_rename_job#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "select_failed"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_select_failed#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "select_job"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_select_job#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "select_range"
+required = [
+  "indices",
+  "value",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_select_range#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "set_all"
+required = []
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_set_all#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "set_group"
+required = [
+  "name",
+]
+optional = [
+  "group",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_set_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "set_none"
+required = []
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_set_none#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "set_selected_only"
+required = [
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_set_selected_only#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "set_view_order"
+required = [
+  "value",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.screen_job:JobController._do_set_view_order#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
+
+[[endpoint]]
+screen = "job"
+action = "toggle_favorite"
+required = [
+  "name",
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_job:JobController._do_toggle_favorite#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "toggle_record"
+required = [
+  "index",
+  "value",
+]
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_toggle_record#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "job"
+action = "unhide_columns"
+required = []
+optional = [
+  "epoch",
+]
+zone_mutation = true
+handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_unhide_columns#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "clear_facets"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_clear_facets#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "clear_filters"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_clear_filters#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "clone_job"
+required = [
+  "name",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_clone_job#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "delete_corrupt"
+required = [
+  "path",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_delete_corrupt#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "delete_job"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_delete_job#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "refresh"
+required = []
+optional = [
+  "select",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_refresh#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "relink_template"
+required = [
+  "name",
+]
+optional = [
+  "confirm",
+  "path",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_relink_template#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_relink.ts",
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "select_work"
+required = []
+optional = [
+  "name",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_select_work#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "set_mode"
+required = []
+optional = [
+  "mode",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_set_mode#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "set_query"
+required = []
+optional = [
+  "text",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_set_query#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "set_tags"
+required = [
+  "name",
+]
+optional = [
+  "tags",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_set_tags#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "set_view"
+required = []
+optional = [
+  "view",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_set_view#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "toggle_facet"
+required = [
+  "axis",
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_facet#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "toggle_favorite"
+required = [
+  "name",
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_favorite#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "toggle_group"
+required = [
+  "group",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "library"
+action = "undo_delete_job"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_library:LibraryController._do_undo_delete_job#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "activate"
+required = [
+  "key",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_activate#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "archive"
+required = [
+  "key",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_archive#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "delete"
+required = [
+  "key",
+]
+optional = [
+  "basis",
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_delete#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "refresh"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_refresh#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "register_excel"
+required = [
+  "name",
+  "path",
+]
+optional = [
+  "basis",
+  "confirm",
+  "note",
+  "sheet",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_register_excel#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "relink"
+required = [
+  "key",
+  "path",
+]
+optional = [
+  "basis",
+  "confirm",
+  "name",
+  "note",
+  "sheet",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_relink#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "pool"
+action = "resolve_duplicate"
+required = [
+  "keep",
+]
+optional = [
+  "basis",
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_pool:PoolController._do_resolve_duplicate#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "compile"
+required = [
+  "path",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_compile#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "delete"
+required = [
+  "media",
+  "path",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "disband_group"
+required = [
+  "group",
+  "media",
+]
+optional = [
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_disband_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "refresh"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_refresh#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "rename_group"
+required = [
+  "group",
+  "media",
+]
+optional = [
+  "confirm",
+  "new",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_rename_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "review"
+required = [
+  "path",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_review#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "set_group"
+required = [
+  "key",
+  "media",
+]
+optional = [
+  "group",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_set_group#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "toggle_group"
+required = [
+  "group",
+  "media",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_toggle_group#method"
+consumer = "none_found"
+js_evidence = []
+
+[[endpoint]]
+screen = "tpl"
+action = "txt_content"
+required = [
+  "path",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_txt_content#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "txt_edit"
+required = [
+  "content",
+  "path",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_txt_edit#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "txt_new"
+required = [
+  "content",
+  "name",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_txt_new#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "tpl"
+action = "undo_delete"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_template:TemplateController._do_undo_delete#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "close"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_close#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "copy_precheck"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_copy_precheck#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "leave_guard"
+required = []
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_leave_guard#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "revert_map"
+required = [
+  "name",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_revert_map#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "save_rules"
+required = []
+optional = [
+  "confirm",
+  "confirmed_text",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_save_rules#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_confirmed"
+required = [
+  "name",
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_confirmed#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_current"
+required = [
+  "index",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_current#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_fullwidth"
+required = [
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_fullwidth#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_map_fmt"
+required = [
+  "name",
+]
+optional = [
+  "code",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_fmt#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_map_type"
+required = [
+  "name",
+  "type",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_type#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_map_value"
+required = [
+  "name",
+]
+optional = [
+  "text",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_value#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_source"
+required = [
+  "name",
+]
+optional = [
+  "col",
+  "confirm",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_source#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_target_font"
+required = []
+optional = [
+  "font",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_target_font#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "set_view"
+required = []
+optional = [
+  "view",
+]
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_view#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "step"
+required = [
+  "delta",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_step#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[endpoint]]
+screen = "workbench"
+action = "toggle_advance"
+required = [
+  "value",
+]
+optional = []
+zone_mutation = false
+handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_toggle_advance#method"
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[host_method]]
+name = "initial"
+params = [["screen", false]]
+bridge_alias = "initial"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "dispatch"
+params = [["screen", false], ["action", false], ["payload", true]]
+bridge_alias = "call"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "set_theme"
+params = [["mode", false]]
+bridge_alias = "setTheme"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "set_font_scale"
+params = [["scale", false]]
+bridge_alias = "setFontScale"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "set_master_width"
+params = [["width", false]]
+bridge_alias = "setMasterWidth"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "import_template_file"
+params = [["screen", false]]
+bridge_alias = "importTemplateFile"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "import_templates_folder"
+params = [["folder", true], ["confirm", true], ["files", true]]
+bridge_alias = "importTemplatesFolder"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "pick_data_file"
+params = [["screen", false]]
+bridge_alias = "pickDataFile"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "load_data_sheet"
+params = [["screen", false], ["path", false], ["sheet", false]]
+bridge_alias = "loadDataSheet"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "copy_clipboard"
+params = [["screen", false], ["token", true]]
+bridge_alias = "copyClipboard"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "pick_output_folder"
+params = [["screen", false]]
+bridge_alias = "pickOutputFolder"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "generate"
+params = [["screen", false], ["confirm_overwrite", true], ["run_token", true]]
+bridge_alias = "generate"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "editor_has_unsaved_work"
+params = []
+bridge_alias = "editorHasUnsavedWork"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "close_guard_state"
+params = []
+bridge_alias = ""
+consumer = "host_internal"
+python_consumer = "hwpxfiller.webapp.app:WebFrontend._handle_window_closing#method"
+
+[[host_method]]
+name = "confirm_window_close"
+params = []
+bridge_alias = "confirmWindowClose"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "cancel_window_close"
+params = []
+bridge_alias = "cancelWindowClose"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "pick_pool_data_file"
+params = []
+bridge_alias = "pickPoolDataFile"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "pick_template_path"
+params = []
+bridge_alias = "pickTemplatePath"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "reveal_corrupt_job"
+params = [["path", false]]
+bridge_alias = "revealCorruptJob"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "copy_path"
+params = [["path", false]]
+bridge_alias = "copyPath"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "reveal_path"
+params = [["path", false]]
+bridge_alias = "revealPath"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "open_path"
+params = [["path", false]]
+bridge_alias = "openPath"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "open_job_in_editor"
+params = [["name", false], ["context", true]]
+bridge_alias = "openJobInEditor"
+consumer = "product"
+python_consumer = ""
+
+[[host_method]]
+name = "new_job_from_data"
+params = [["context", true]]
+bridge_alias = "newJobFromData"
+consumer = "product"
+python_consumer = ""
+
+[[snapshot_field]]
+screen = "editor"
+field = "active_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "active_source_fields"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "changes"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "editor"
+field = "context"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "counts"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "data_name"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "data_path"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "data_sheet"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "dirty"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "dirty_sections"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "editing_origin"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "field_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "fields"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "fmt_options"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "gate"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "gate_error"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "has_unsaved_work"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "editor"
+field = "ignored_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "ignored_expanded"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "ignored_source_fields"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "is_complete"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "is_draft"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "library"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "name"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "notice"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "pattern"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "pattern_preview"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "preview_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "preview_empties"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "preview_index"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "provenance"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "raw_block"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "reachable"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "record_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "revisions"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "rows"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "sample_rows"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "schema_only"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "schema_summary"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "section"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "sections"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "source_fields"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "template_media"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "selftest_only"
+js_evidence = [
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "template_name"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "template_path"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "type_options"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "editor"
+field = "unconfirm_undo_count"
+producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "blank_fields"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "browse"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "candidates"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "conn_label"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "data_label"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "job"
+field = "data_mount"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "data_notice"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "data_source_label"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "data_target"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "drift"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "filename_pattern"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "job"
+field = "filter"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "gate"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "guard"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "job"
+field = "has_data"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "has_job"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "job_name"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_result.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "last_run_job"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_result.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "name_tokens"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "new_work"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "order_note"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "out_dir"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_preview.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "preflight"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "preview"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_preview.ts",
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "range_draft"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "record_count"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "records"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "restate"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "review"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "rules_key"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "run_action"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "selected_count"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "selection_key"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "table"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "template_missing"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "template_name"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "job"
+field = "template_path"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "job"
+field = "view_order"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "zone_epoch"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
+
+[[snapshot_field]]
+screen = "job"
+field = "zone_selected_count"
+producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "alerts"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "corrupt_rows"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "counts"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "detail"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "facets"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "group_names"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "is_empty"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "mode"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "query"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "sections"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "selected"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "library"
+field = "view"
+producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
+
+[[snapshot_field]]
+screen = "pool"
+field = "corrupted"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[snapshot_field]]
+screen = "pool"
+field = "count"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "pool"
+field = "duplicates"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[snapshot_field]]
+screen = "pool"
+field = "empty"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "pool"
+field = "result"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "pool"
+field = "rows"
+producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
+
+[[snapshot_field]]
+screen = "tpl"
+field = "hwpx"
+producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "tpl"
+field = "result"
+producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "tpl"
+field = "txt"
+producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "workbench"
+field = "can_save"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "card"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "copied_count"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "dirty"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "fmt_options"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "fullwidth"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = false
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "workbench"
+field = "guard"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "workbench"
+field = "is_complete"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = false
+consumer = "none_found"
+js_evidence = []
+
+[[snapshot_field]]
+screen = "workbench"
+field = "job_name"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "mode_label"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "notice"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "open"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "revision"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "rows"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "save_block"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "source_fields"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "target_font"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "total"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "type_options"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[snapshot_field]]
+screen = "workbench"
+field = "view"
+producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
+runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
+
+[[channel]]
+kind = "product_event"
+name = "snapshot"
+producer = "hwpxfiller.webapp.product_api:ProductApiClient.push#method"
+fields = [
+  "screen",
+  "snapshot",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
+
+[[channel]]
+kind = "product_event"
+name = "close-request"
+producer = "hwpxfiller.webapp.product_api:ProductApiClient.close_request#method"
+fields = [
+  "state",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
+
+[[channel]]
+kind = "product_event"
+name = "preferences"
+producer = "hwpxfiller.webapp.product_api:ProductApiClient.preferences#method"
+fields = [
+  "personalization",
+  "theme?",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
+
+[[channel]]
+kind = "product_event"
+name = "notice"
+producer = "hwpxfiller.webapp.product_api:ProductApiClient.notice#method"
+fields = [
+  "message",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
+
+[[channel]]
+kind = "partial_push"
+name = "job:_push_progress"
+producer = "hwpxfiller.webapp.screen_job:JobController._push_progress#method"
+fields = [
+  "progress.done",
+  "progress.run_token",
+  "progress.total",
+]
+consumer_evidence = []
+
+[[channel]]
+kind = "selftest_host_op"
+name = "artifact_identity"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_artifact_identity#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "current_url"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_current_url#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "global_deadline"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_global_deadline#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "input_select"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_input_select#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "mode_select"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_mode_select#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "output_write"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_output_write#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "packaged_process"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_packaged_process#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "settings_readback"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_settings_readback#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "window_destroy"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_window_destroy#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/runner.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "window_geometry"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_window_geometry#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+  "frontend/src/selftest/schema.js",
+]
+
+[[channel]]
+kind = "selftest_host_op"
+name = "window_resize"
+producer = "hwpxfiller.webapp.selftest_api:HostOperations._op_window_resize#method"
+fields = []
+consumer_evidence = [
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+  "frontend/src/selftest/probes/job.js",
+  "frontend/src/selftest/probes/persistence_geometry.js",
+  "frontend/src/selftest/runner.js",
+]
