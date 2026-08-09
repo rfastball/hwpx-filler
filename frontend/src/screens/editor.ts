@@ -592,6 +592,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   }
 
   async function doSave(flags: Obj = {}): Promise<boolean> {
+    await flushPendingEdits();
     let result: Obj;
     try {
       result = await sendEdit("save", flags);

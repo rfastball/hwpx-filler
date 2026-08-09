@@ -173,6 +173,29 @@ test("rerender — 재당김 하나를 태우고 tpl 구독을 만들지 않는�
   assert.equal(h.store.listenerCount("tpl"), 0, "rerender 는 교차 구독을 만들지 않는다");
 });
 
+test("저장은 blur 없는 이름 draft를 set_name 뒤에 정산한다", async () => {
+  const h = harness({
+    initial: async () => snap({
+      section: "binding", sections: ["template", "binding"], name: "", is_draft: true,
+    }),
+    call: async (_screen, action) => (
+      action === "save" ? { ok: false, block_reason: "저장 게이트 대역" } : {}
+    ),
+  });
+  await h.controller.init();
+
+  h.controller.type(NAME_FIELD, "발주요청 기안");
+  await h.controller.doSave({});
+
+  const edits = h.trace
+    .filter((row) => row[0] === "dispatch" && row[1] === "editor")
+    .map((row) => [row[2], row[3]]);
+  assert.deepEqual(edits, [
+    ["set_name", { name: "발주요청 기안" }],
+    ["save", {}],
+  ], "버튼이 blur보다 먼저 와도 이름 변경이 저장 판정보다 먼저 착지해야 한다");
+});
+
 /* ---------------- ③④ 교차 포트·landOn 순서 ---------------- */
 
 test("저장하고 나가기 — refreshList 관측, refresh→go(refreshed:true), openPreview 복귀, late-binding", async () => {
