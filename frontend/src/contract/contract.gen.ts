@@ -2,7 +2,7 @@
  *
  * 정본: webapp/action_registry.py · webapp/product_api.py · webapp/app.py(WebFrontend)
  * · frontend/src/product_api.js(PRODUCT_ERROR_CODES). 드리프트 게이트:
- * tests/test_bridge_contract.py (재생성 바이트 비교 + 생성기 비경유 독립 오러클).
+ * tests/repo_contract/test_bridge_contract.py (재생성 바이트 비교 + 생성기 비경유 독립 오러클).
  *
  * v1 계약의 payload 값 타입은 **키 집합**이다 — 값은 도메인 컨트롤러 소유라 unknown
  * 이 정직한 번역이고, 더 좁히면 그게 조용한 추측이다(action_registry.py:16). */

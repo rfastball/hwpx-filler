@@ -79,13 +79,19 @@ def _open(tmp_path: Path):
 
 
 # ------------------------------------------------------------------ 세션 수명
-def test_no_session_is_the_boot_default_and_the_screen_knows_it(tmp_path):
-    """세션 없음이 부팅 기본값이다 — 라우팅만으로 문맥 없는 작업대가 서지 않게(F7 선례)."""
-    ctrl, _, _ = _ctrl(tmp_path)
+def test_session_lifecycle_is_closed_at_boot_and_after_close(tmp_path):
+    ctrl, reg, _ = _ctrl(tmp_path)
     snap = ctrl.snapshot()
     assert snap["open"] is False and snap["card"] is None and snap["rows"] == []
     with pytest.raises(ValueError):
         _send(ctrl, "step", {"delta": 1})
+    with pytest.raises(ValueError):
+        ctrl.dispatch("없는액션", {})
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), _rows())
+    _send(ctrl, "close", {})
+    assert ctrl.snapshot()["open"] is False and ctrl.can_copy() is False
 
 
 def test_open_takes_a_frozen_copy_that_outside_changes_cannot_touch(tmp_path):
@@ -100,11 +106,6 @@ def test_open_takes_a_frozen_copy_that_outside_changes_cannot_touch(tmp_path):
     snap = ctrl.snapshot()
     assert snap["total"] == 2             # 사본이라 새 행이 들어오지 않는다
     assert "회계과" in "".join(s["text"] for s in snap["card"]["segments"])
-
-
-def test_entry_order_is_the_display_order_it_was_given(tmp_path):
-    """표시순 투영 그대로 — 작업대가 순서를 다시 정하지 않는다(§18.10 수용 7)."""
-    ctrl, _, _ = _open(tmp_path)
     assert ctrl.source_rows == [3, 1]     # 1-based 원본 행 번호(표시순 그대로)
     assert ctrl.snapshot()["card"]["source_row"] == 3
 
@@ -319,18 +320,6 @@ def test_all_copied_is_not_a_loss(tmp_path):
     ctrl.note_copied(ctrl.render()[1])
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.leave_guard()["armed"] is False
-
-
-def test_close_clears_the_session(tmp_path):
-    ctrl, _, _ = _open(tmp_path)
-    _send(ctrl, "close", {})
-    assert ctrl.snapshot()["open"] is False and ctrl.can_copy() is False
-
-
-def test_unknown_action_is_loud(tmp_path):
-    ctrl, _, _ = _open(tmp_path)
-    with pytest.raises(ValueError):
-        ctrl.dispatch("없는액션", {})
 
 
 # ---------------------------------------------- 복사 완료 = 최근 사용 (§19.4, 판정 I)

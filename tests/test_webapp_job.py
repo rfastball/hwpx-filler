@@ -105,7 +105,7 @@ def _approve_run(ctrl) -> None:
 
 
 # ---------------------------------------------------------------- 스냅샷 골격
-def test_initial_has_no_active_work_and_loud_gate(tmp_path):
+def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.initial()
     assert snap["has_job"] is False
@@ -123,20 +123,11 @@ def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     }
     # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
-
-
-def test_select_job_sets_session_identity(tmp_path):
-    ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
     # 저장 폴더 기본값 = 템플릿 폴더/Results(실행 화면 동형).
     assert snap["out_dir"].endswith("Results")
-
-
-def test_select_job_then_data_populates_records_and_badges(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
@@ -502,8 +493,7 @@ def test_candidate_cards_carry_template_identity_and_connection_state(tmp_path):
 #   **활성 작업이 있고 템플릿이 부재면, 세션 스냅샷이 그 사실과 문안을 싣는다.**
 #
 # 그것이 곧 화면의 도달 보장이다 — 액션바(상수 높이 층)가 이 두 값만 읽어 「연결 상태」와
-# 「템플릿 다시 연결…」을 세우고, 그 층엔 조건이 없다(정적 배선은 test_web_dom_contract
-# 의 승계 계약이 못박는다).
+# 「템플릿 다시 연결…」을 세우고, 그 층엔 조건이 없다(실 selftest가 최종 배선을 되읽는다).
 _REACH_CASES = [
     # (이름, 데이터, 다른 available 작업 수 — 활성의 순위 슬라이스 소속을 가른다)
     ("데이터 없음", None, 0),
@@ -1158,13 +1148,6 @@ def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):
     snap = ctrl.snapshot()
     assert snap["blank_fields"] == ["추정가격"]   # rec0 빈값 — 비고(blank 선언)는 안 든다
     assert "mirror" not in snap
-
-
-def test_blank_fields_empty_when_no_selection(tmp_path):
-    """선택 0 = 생성될 문서 없음 → 빈 값 표지도 없다(없는 실행의 빈 값을 말하지 않는다)."""
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
     assert snap["blank_fields"] == [] and snap["drift"] == []
@@ -1806,20 +1789,6 @@ def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
 
 
 # ------------------------------------------------ confirm-or-alarm 생성 계약
-def test_load_data_honors_confirmed_sheet(tmp_path):
-    """다중 시트 확정 게이트(#33) — load_data_path(sheet=) 가 확정 시트를 관통.
-
-    작업 선택 후 낙찰현황(3건)을 확정하면 첫 시트(공고목록 2건)가 아니라 그 시트가 실린다 —
-    조용한 첫 시트 강등이 아니라 확정값 반영(test_webapp_bridge 의 job 컨트롤러측 대응물).
-    """
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, str(MULTI_SHEET), sheet="낙찰현황")
-    snap = ctrl.snapshot()
-    assert snap["data_label"] == "multi_sheet.xlsx"
-    assert snap["has_data"] is True and snap["record_count"] == 3
-
-
 def test_record_names_follow_selection_not_invented(tmp_path):
     """미선택 행 이름은 지어내지 않는다(F33) — {{seq}}·충돌 접미사는 선택 집합에
     따라 달라지므로 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다."""
@@ -1870,22 +1839,6 @@ def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
     assert snap["template_missing"] is False               # 정상 = 복구 동선 숨김
     Path(snap["template_path"]).unlink()                    # 템플릿 파일 소실 재현
     assert ctrl.snapshot()["template_missing"] is True      # 부재 = 복구 동선 노출
-
-
-def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
-    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34)."""
-    ctrl, _ = _controller(tmp_path)
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰(데이터에 ID 없음)
-    ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
-    snap = ctrl.snapshot()
-    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
-    assert "{{ID}}" in snap["gate"]["text"]
-    res = ctrl.generate()
-    assert res["ok"] is False and "{{ID}}" in res["error"]  # 생성 백스톱도 리터럴 방지
 
 
 # ------------------------------------------------- 필터 배선

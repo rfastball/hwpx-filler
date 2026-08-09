@@ -15,6 +15,7 @@ import pytest
 
 from _web_source import (
     APP_CSS_FILES,
+    NAV_SCREENS,
     REPO_ROOT,
     SOURCE_CSS_DIR,
     SOURCE_ENTRY,
@@ -331,17 +332,15 @@ def test_web_assets_present_and_wired():
         "src/shell/app.ts",
     ):
         assert (WEB / rel).exists(), f"source/{rel} 없음"
-    # 앱 스타일시트는 분할됐다 — 목록 단일 출처는 매니페스트이고, 링크 순서·전수 등재는
-    # test_web_css_manifest 가 진다. 여기서는 골격 존재만 본다.
+    # 앱 스타일시트는 분할됐다 — 목록 단일 출처는 공유 매니페스트다. 여기서는 골격 존재만 본다.
     for name in APP_CSS_FILES:
         assert (SOURCE_CSS_DIR / name).exists(), f"source css/{name} 없음"
     html = SOURCE_INDEX.read_text(encoding="utf-8")
     assert '<script type="module" src="./src/main.js"></script>' in html
     assert SOURCE_ENTRY.exists()
     assert not re.search(r"<script\b(?![^>]*\btype=\"module\")", html)
-    # 레일 계약은 NAV_SCREENS 단일 출처(PR-5 리뷰 F7 — 3곳 하드코딩은 후속 레일 변경마다
-    # 어긋난 채 초록이 된다). 「기안」 실화면 심은 사망(F6 PR-B) — 승계 표면은 작업대.
-    from test_web_dom_contract import NAV_SCREENS
+    # 장기 셸 계약은 살아 있는 두 화면만 허용한다. 「기안」 실화면 심은 사망(F6 PR-B) —
+    # 승계 표면은 작업대다.
     for scr in NAV_SCREENS:
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
     assert html.count('id="reactScreenStage"') == 1

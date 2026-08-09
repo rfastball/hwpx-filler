@@ -36,8 +36,9 @@ master 실물 사이의 **소유권 대조표**만 소유한다. 인용의 `lab:
 
 ## 1. 8열 봉합 지도
 
-약어: 게이트열의 D=`test_web_dom_contract.py`, R=`action_registry.py`, U=`docs/UI_CONTRACT.md`,
-S=selftest 프로브, C=characterization(기존 테스트 개정/신규).
+약어: 게이트열의 R=`action_registry.py`, U=`docs/UI_CONTRACT.md`,
+S=selftest 프로브, C=characterization(기존 테스트 개정/신규). 당시 정적 DOM 게이트 D는
+전환 완료 뒤 TypeScript 단위 행동과 selftest 결과 계약으로 흡수되어 퇴역했다.
 
 | # | 행동/상태 | 현재 Python 소유자 | V6 JS 소유자 (lab) | 재사용 | 결정-미구현 (계약 §) | 폐기 v6 | 슬라이스1 | 갱신 게이트 |
 |---|---|---|---|---|---|---|---|---|
@@ -2413,7 +2414,7 @@ OrderedSelection 을 소비한다는 불변식(§18.11-24)이 여기서 참이 �
 복사한 레코드는 「다시 확인 필요」로 되돌림(§11 전문 그대로).
 
 **I. 복사 완료 = 최근 사용**(대조표 19행). `JobRegistry.stamp_last_run` 을 **재사용**한다 —
-같은 잠금 왕복, 새 writer 없음(`test_architecture.py` 가 지키는 「durable Job 쓰기는
+같은 잠금 왕복, 새 writer 없음(`tests/repo_contract/test_architecture.py` 가 지키는 「durable Job 쓰기는
 `mutate`·`stamp_last_run` 만」 규율). 세션의 **첫 복사 1건**에서 찍고 이후는 무동작(§19.4:
 "한 레코드라도 복사 완료", 작업대 진입만으로는 기록하지 않는다). HWPX 는 완주
 (`not cancelled and failed == 0`), TXT 는 복사 1건 — **두 술어가 다르다는 사실을 문안이
@@ -2522,7 +2523,7 @@ Job 은 **쓰는 순간** 읽는다. 「지금 열어 둔 작업인가」도 `vm
 착지 정산의 작업점 결함(*"산출과 기대가 같은 술어를 쓰면 나란히 틀린다"*)과 **같은 부류의
 2·3번째 발생**이다. 그래서 개별 수리가 아니라 관문을 옮겼다: ①이 스위트의 모든 발신은
 `validate_dispatch` 를 **먼저** 지나는 `_send()` 헬퍼를 쓴다 ②정적 가드
-`tests/test_dispatch_payload_contract.py` 신설 — 프런트 리터럴 호출의 **페이로드 키**를
+`tests/repo_contract/test_dispatch_payload_contract.py` 신설 — 프런트 리터럴 호출의 **페이로드 키**를
 전 화면에서 스키마와 대조한다(양성대조 확인: `confirm_drift` 를 되살리면 울고, 되돌리면
 통과) ③로컬 `call()` 래퍼 폐기 — 래퍼가 있으면 리터럴 추출이 그 화면을 **공허하게 통과**한다.
 
@@ -3219,7 +3220,7 @@ workbench `aim_marked` 는 완주 런에서 통과(간헐 — 창 포커스 조�
 
 - 계약: lab `docs/core-workflow.md` §2·§18.1-§18.11·§19.1-§19.11 (주의: 전역 건강 분리는
   §19.7이다 — 계획 문서의 "§20" 표기는 이 문서 기준으로 정정)
-- 시안 계약 테스트: lab `tests/test_core_workflow_v6_prototype.py` 26건(전부 정적 텍스트
-  단언 — 통합 브랜치로 가져오지 않고 계약 추출 원재료로만 소비)
+- 시안 계약 테스트: 별도 lab의 26건(전부 정적 텍스트 단언 — 현 저장소 경로가 아니며,
+  통합 브랜치로 가져오지 않고 계약 추출 원재료로만 소비)
 - master seam: `gui/run_state.py`·`gui/selection_state.py`·`webapp/screen_job.py`·
   `webapp/data_zone.py`·`webapp/action_registry.py`·`docs/UI_CONTRACT.md`

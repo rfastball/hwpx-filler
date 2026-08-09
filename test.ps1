@@ -1,9 +1,10 @@
 ﻿<#
 .SYNOPSIS
-  테스트 러너 — venv 의 pytest 로 tests/ 수집·실행.
+  테스트 러너 — 프런트 모듈과 Python 품질 게이트 실행.
 
 .DESCRIPTION
-  루트에서 `.\test.ps1` 한 줄. 추가 인자는 그대로 pytest 로 넘어간다.
+  루트에서 `.\test.ps1` 한 줄. web build → npm test → Ruff → Pyright → pytest 순서이며,
+  추가 인자는 그대로 pytest 로 넘어간다.
 
 .EXAMPLE
   .\test.ps1                 # 전체
@@ -24,6 +25,8 @@ $env:PYTHONIOENCODING = 'utf-8'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 & (Join-Path $PSScriptRoot 'build-web.ps1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& npm.cmd test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & uv run --no-sync --all-extras --group dev ruff check src tests scripts conftest.py

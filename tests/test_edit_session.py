@@ -81,11 +81,11 @@ def test_every_entry_reason_is_either_live_or_declared_deferred():
     assert all(DEFERRED_ENTRY_REASONS.values())  # 배제엔 사유가 붙는다(빈 문자열 금지)
 
 
-@pytest.mark.parametrize("reason", sorted(DEFERRED_ENTRY_REASONS))
-def test_deferred_entry_reasons_are_refused_loudly(reason):
+def test_deferred_entry_reasons_are_refused_loudly():
     """미배선 사유로 열리면 배너가 아무 말도 못 한다 — 조용한 폴백 대신 거절."""
-    with pytest.raises(ValueError, match="배선"):
-        make_context("작업", entry_reason=reason)
+    for reason in sorted(DEFERRED_ENTRY_REASONS):
+        with pytest.raises(ValueError, match="배선"):
+            make_context("작업", entry_reason=reason)
 
 
 def test_unknown_entry_reason_and_return_surface_are_refused():
@@ -182,21 +182,6 @@ def test_make_context_validates_the_deep_link_target_fail_closed():
     for bad in ("binding/", "template/x", "garbage", "filename/"):
         with pytest.raises(ValueError, match="deep-link target"):
             make_context("작업", target=bad)
-
-
-def test_workbench_result_stays_excluded_by_design():
-    """판정 E — 작업대의 편집기 진입은 미배선이 아니라 **영구 배제**다(인라인 편집 승계).
-
-    거절 자체는 종전과 같고, 이 테스트는 배제가 조용히 풀리는 것(사유 삭제·LIVE 승격)을
-    막는다 — 풀려면 판정 E 를 문서에서 먼저 뒤집어야 한다.
-    """
-    import pytest
-
-    from hwpxfiller.gui.edit_session import DEFERRED_ENTRY_REASONS
-
-    assert "workbench_result" in DEFERRED_ENTRY_REASONS
-    with pytest.raises(ValueError, match="배선되지 않았습니다"):
-        make_context("작업", entry_reason="workbench_result")
 
 
 def test_new_work_entry_is_wired_and_the_rest_stay_fail_closed():

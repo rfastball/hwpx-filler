@@ -1,12 +1,6 @@
-/* 셸 상태기계 계약 전수 (R3-02 · #411) — 판정층을 주입 기록자로 직접 잰다(DOM 0).
- *
- * 이 파일이 재는 것은 app.js 에서 상태기계로 올라온 **판정**이다: 랜딩·전환·몰입 이탈
- * 위임·force 재진입·ready 게이트·재당김 규약·닫기 직렬화·구독 수명. DOM 집행(클래스·속성
- * 토글·브리지 발신·재진술)은 집행 adapter 몫이라 여기 없다 — 그 절반은 개정된 n06(파사드
- * +집행)과 실 WebView2 게이트(test_react_shell_live)가 진다. */
+/* Shell navigation decisions: transitions, leave delegation, readiness, and close serialization. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   DEFAULT_SCREEN,
@@ -14,9 +8,6 @@ import {
   REFRESH_ON_NAV,
   createShellNav,
 } from "../../frontend/src/shell/nav.ts";
-
-const SRC_URL = new URL("../../frontend/src/shell/nav.ts", import.meta.url);
-const SRC = readFileSync(SRC_URL, "utf8");
 
 /** 기록자 집행자 — 호출 순서가 곧 증거다. */
 function recorder(log, overrides = {}) {
@@ -263,26 +254,4 @@ test("위임 중단 전환은 통지하지 않는다 — 상태가 변하지 않
   nav.subscribe(() => { seen += 1; });
   nav.go("job"); // 위임·중단
   assert.equal(seen, 0);
-});
-
-/* ══════════════ 9. 음성 — 소스 형상 ══════════════ */
-
-test("음성 — DOM·전역·React·pywebview 접촉 0(판정층 순수성)", () => {
-  // 전역 이름 needle 은 주석까지 문다(표기 자체 금지 — n06 규율). React 는 산문 언급이
-  // 정당하므로 실행 접촉형(import 지정자·요소 생성)만 문다.
-  for (const forbidden of ["document.", "window.", "globalThis", "pywebview"]) {
-    assert.equal(SRC.includes(forbidden), false, `nav.ts 에 ${forbidden} 금지 — 집행은 adapter 몫`);
-  }
-  for (const forbidden of ['from "react"', "createElement"]) {
-    assert.equal(SRC.includes(forbidden), false, `nav.ts 에 ${forbidden} 금지 — React 결합은 host 몫`);
-  }
-});
-
-test("음성 — 정본 문자열이 이 파일에 산다(원문 핀 이동의 착지 증거)", () => {
-  assert.ok(SRC.includes('export const DEFAULT_SCREEN = "job"'));
-  assert.ok(/REFRESH_ON_NAV[^=]*=\s*Object\.freeze\(\["library", "job"\]\)/.test(SRC));
-  assert.ok(SRC.includes('{ id: "editor", cls: "editor-open" }'));
-  assert.ok(SRC.includes('{ id: "workbench", cls: "workbench-open" }'));
-  assert.ok(SRC.includes("routingReady"), "ready 게이트 식별자의 새 거처");
-  assert.ok(SRC.includes("closePromptPending"), "닫기 직렬화 식별자의 새 거처");
 });

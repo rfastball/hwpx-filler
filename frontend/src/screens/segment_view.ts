@@ -9,7 +9,7 @@
 
    `text`·`name` 이 없는 잘못된 입력의 산출은 legacy 를 **그대로 받아쓴다**(`String(...)`).
    이 슬라이스는 이관이지 결함 수정이 아니다 — 고칠 값이면 그것은 별도 판정이고, 그때
-   `tests/js/r4_segment_view.test.js` 가 시끄럽게 깨지는 것이 목적이다. */
+   `tests/js/segview.test.js` 가 시끄럽게 깨지는 것이 목적이다. */
 import { createElement, Fragment } from "react";
 import type { ReactNode } from "react";
 

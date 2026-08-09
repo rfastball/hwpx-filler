@@ -33,11 +33,13 @@ def test_persist_failure_leaves_model_unchanged(home, monkeypatch):
     def boom(*a, **k):
         raise PermissionError("locked")
 
-    monkeypatch.setattr(m._settings, "save_template_group_state", boom)
-    with pytest.raises(PermissionError):
-        m.set_group("a.hwpx", "수의")
+    # 이 테스트의 실패 주입만 되돌린다. ``monkeypatch.undo()``는 ``home`` fixture의
+    # HWPXFILLER_HOME까지 풀어 다음 저장을 실 사용자 홈으로 새게 만든다.
+    with monkeypatch.context() as failure_patch:
+        failure_patch.setattr(m._settings, "save_template_group_state", boom)
+        with pytest.raises(PermissionError):
+            m.set_group("a.hwpx", "수의")
     assert m.group_of("a.hwpx") == "입찰"  # 라이브 미변경
-    monkeypatch.undo()
     # 다음 무관 저장이 실패분(수의)을 뒤늦게 영속하지 않는다.
     m.set_group("b.hwpx", "계약")
     fresh = TemplateGroupModel("hwpx")

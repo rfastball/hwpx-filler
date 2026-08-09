@@ -6,8 +6,9 @@ name: quality
 # 한 run 에 빌드가 4회였다. 같은 일을 네 번 하는 것도 문제지만 더 나쁜 것은 **네 개의 서로
 # 다른 산출물**을 검증하고 있었다는 사실이다 — 어느 job 이 무엇을 봤는지 말할 수 없었다.
 #
-# 이제 `sealed-web` 하나가 clean checkout 에서 install → build → seal → verify 를 완주해
-# 산출물과 그 정체성(artifact_id·tree_sha256·source commit)을 올리고, 소비자는 그것을
+# 이제 `sealed-web` 하나가 clean checkout 에서 install → build → seal → verify 를 완주하고
+# 같은 Node 설치로 JS 단위를, 같은 봉인 트리로 artifact 계약을 검사한다. 산출물과 그
+# 정체성(artifact_id·tree_sha256·source commit)을 올리고, 실제 산출물 소비자는 그것을
 # 내려받아 `VerifyExisting` 으로 되짚는다. 그 검증은 `setup-node` **앞에** 서서 빌드 도구
 # 없이 통과한다 — 순서가 곧 그 주장의 증거다.
 #
@@ -43,6 +44,9 @@ jobs:
     name: sealed-web (producer)
     runs-on: windows-latest
     timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -66,6 +70,13 @@ jobs:
         # Node/npm/Vite 핀 확인은 스크립트가 진다 — 워크플로가 같은 수치를 따로 들고 있으면
         # 둘이 어긋나는 날이 온다(단일 출처).
         run: .\build-web.ps1 -Mode Build -IdentityOut web-artifact-identity.json
+      - name: Frontend module suite
+        run: npm.cmd test
+      - name: Sealed artifact contract suite
+        shell: pwsh
+        run: >-
+          uv run --no-sync pytest -q tests/artifact_contract
+          --basetemp="$env:RUNNER_TEMP/artifact-contract"
       - name: Upload the sealed web artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -83,8 +94,11 @@ jobs:
     name: static
     runs-on: windows-latest
     timeout-minutes: 15
-    # 산출물을 읽지 않는다 — Ruff 대상은 src·tests·scripts 이고 Pyright 는 src 다.
+    # 산출물을 읽지 않는다 — 정적 검사와 저장소 형상 계약만 맡는다.
     # 그래서 생산자를 기다리지 않고 Node 도 설치하지 않는다.
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -103,24 +117,21 @@ jobs:
         run: uv run --no-sync ruff check src tests scripts
       - name: Pyright
         run: uv run --no-sync pyright
+      - name: Repository contract suite
+        shell: pwsh
+        run: >-
+          uv run --no-sync pytest -q tests/repo_contract
+          --basetemp="$env:RUNNER_TEMP/repo-contract"
 
   pytest-contract:
     name: pytest-contract (package coverage floor)
     runs-on: windows-latest
     timeout-minutes: 30
-    needs: sealed-web
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # 이 잡만 이력을 받는다. `tests/test_react_verification_ledger.py` 가 원장의
-          # `baseline_sha` 를 **HEAD 의 조상인가**로 검사하는데, 기본 depth-1 클론에는 그
-          # 커밋이 구조적으로 없다(기준선은 정의상 HEAD 보다 앞선 커밋이다). 답할 수 없는
-          # 것을 조용히 통과시키면 초록이 「조상임을 확인했다」로 읽힌다 — 단언을 깎는 대신
-          # 답할 수 있게 만든다.
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.28"
@@ -133,33 +144,13 @@ jobs:
           save-cache: ${{ github.job == 'distribution-webview2' }}
       - name: Install locked environment
         run: uv sync --locked --all-extras --group dev
-      - name: Download the sealed web artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: sealed-web
-          path: .
-          digest-mismatch: error
-      - name: Verify the downloaded artifact against this checkout
-        shell: pwsh
-        # **Node 가 이 job 에 존재하기 전에** 돈다. 순서가 계약이다 — 산출물 검증이 빌드
-        # 도구를 하나도 쓰지 않는다는 주장을 단계 순서가 그대로 증명한다.
-        run: .\build-web.ps1 -Mode VerifyExisting -ExpectIdentity web-artifact-identity.json
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-      - name: Install the locked frontend toolchain for the JS module gate
-        # 산출물을 만들려는 것이 아니다(`npm run build` 없음). `tests/js/*.test.js` 를 모는
-        # `node --test` 게이트가 vite(oxc) 파서를 실제로 불러 전역 위생을 검사한다 —
-        # 그 테스트는 부재를 조용히 스킵하지 않고 사유를 대며 죽게 쓰여 있다.
-        run: npm.cmd ci
       - name: Contract suite with Python coverage
         shell: pwsh
-        # 커버리지와 하한은 이 job 이 **혼자** 소유한다. 경계 suite 셋은 앱을 subprocess 로
-        # 띄우거나(실 WebView2) 하한 대상이 아닌 패키지를 겨누므로 부모 프로세스 커버리지에
-        # 애초에 기여하지 않는다 — 그래서 결합(coverage combine)이 필요 없다.
+        # 커버리지와 하한은 이 job 이 **혼자** 소유한다. 저장소 형상과 봉인 산출물 계약은
+        # 각각 static·sealed-web 에서 커버리지 없이 돌아 이 분모와 임계 경로를 흐리지 않는다.
         run: >-
-          uv run --no-sync pytest -q
+          uv run --no-sync pytest -q tests
+          --ignore=tests/repo_contract --ignore=tests/artifact_contract
           -m "not native and not browser and not live"
           --junitxml=pytest.xml
           --cov=hwpxcore --cov=hwpxfiller
@@ -403,7 +394,7 @@ jobs:
     runs-on: ubuntu-latest
     # 브랜치 보호가 겨눌 **하나의 이름**. 잡을 늘리거나 이름을 바꿔도 보호 설정을 따라
     # 고치지 않게 여기서 모은다. 대신 열거가 계약이다 — 필수 job 하나가 목록에서 빠지면
-    # `tests/test_quality_workflow.py` 가 멈춘다.
+    # `tests/repo_contract/test_quality_workflow.py` 가 멈춘다.
     if: always()
     needs:
       - sealed-web

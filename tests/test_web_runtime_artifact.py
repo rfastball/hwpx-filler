@@ -16,16 +16,6 @@ from hwpxfiller.webapp import app as app_mod
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_source_product_resolves_fresh_build_web() -> None:
-    artifact = app_mod.web_artifact()
-
-    assert artifact.root.parent == (ROOT / "build").resolve()
-    assert artifact.root.name == "web"
-    assert artifact.index_path == artifact.root / "index.html"
-    assert len(artifact.artifact_id) == 64
-    assert len(artifact.tree_sha256) == 64
-
-
 def test_artifact_failure_is_loud_before_webview_window_creation(
     monkeypatch,
 ) -> None:

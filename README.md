@@ -107,7 +107,7 @@ uv python install 3.13
 uv sync --locked --all-extras --group dev --group build
 
 .\run-filler.ps1        # 앱 실행 (= python -m hwpxfiller.webapp)
-.\test.ps1              # 품질·타입 검사 + 전체 테스트 + coverage
+.\test.ps1              # web build + Node/Python 품질·타입 검사 + coverage
 .\build.ps1             # PyInstaller onedir 포터블 빌드 + self-check
 .\package-installer.ps1 # Inno Setup 6 설치 후 설치 EXE 생성
 ```

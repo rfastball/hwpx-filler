@@ -8,8 +8,8 @@ N-03 M1부터 canonical source는 ``frontend/``이고 제품 entry는 ``frontend
 분할된 앱 CSS는 순서 보존 컷이다. entry의 side-effect import 순서는 정확히
 ``tokens, base, draftcard, editor, job, overlay, library, forced-colors, jobdata, tail``이다.
 ``forced-colors`` 뒤에도 ``jobdata``와 ``tail``이 오므로, 그 두 조각을 앞으로 당기는 과거
-설명으로 재정렬하면 안 된다. :data:`ALL_CSS_FILES`가 이 실제 캐스케이드 순서의 매니페스트고,
-``test_web_css_manifest.py``가 product entry의 import 순서와 디스크 전수를 함께 게이트한다.
+설명으로 재정렬하면 안 된다. :data:`ALL_CSS_FILES`가 이 실제 캐스케이드 순서의 공유
+매니페스트다.
 """
 
 from __future__ import annotations
@@ -26,6 +26,9 @@ SOURCE_ENTRY = SOURCE_ROOT / "src" / "main.js"
 SOURCE_BOOTSTRAP = SOURCE_ROOT / "src" / "bootstrap.js"
 SOURCE_CSS_DIR = SOURCE_ROOT / "css"
 SOURCE_JS_DIR = SOURCE_ROOT / "js"
+
+#: 최종 제품 셸의 장기 화면 집합. 정적 source와 실 WebView2가 같은 값을 소비한다.
+NAV_SCREENS = ("library", "job")
 
 #: 토큰 다음에 실리는 앱 스타일시트 — source index의 실제 ``<link>`` 순서 그대로.
 #: 이름이 소유권과 어긋나 보이는 둘은 의도다: ``draftcard``는 「기안」 사망(F6 PR-B) 뒤

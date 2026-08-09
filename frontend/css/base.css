@@ -1,7 +1,7 @@
 /* 웹 프론트엔드 레이아웃·컴포넌트 — 목업 앱윈도 CSS(docs/UI_PROTOTYPE_APPB.html)의 이식.
    색은 전부 css/tokens.css 의 변수(--a-*·--fb-*·--n-*) 참조 — 색 리터럴 하드코딩 금지(에픽 #20).
    여백·모서리·폰트크기도 스케일 변수(--sp-*·--rad-*·--fs-*) 참조 — font-size·border-radius px 리터럴 금지
-   (가드: test_design_tokens.test_app_css_free_of_metric_literals). 구조 치수(레일/패널 폭·브레이크포인트·
+   (완료된 전용 토큰 census 뒤에도 유지하는 작성 규율). 구조 치수(레일/패널 폭·브레이크포인트·
    line-height·1px 보더·50% 원형)만 리터럴 유지. */
 
 /* 본문 서체 = Pretendard GOV(#179 슬라이스 2, DESIGN_LANGUAGE.md 결정 착지). SIL OFL 1.1 로

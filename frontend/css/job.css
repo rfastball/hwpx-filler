@@ -253,7 +253,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 /* 이 네 규칙은 「기안」 사망(F6 PR-B, 67894b0)에서 .draft-duo 를 지울 때 **곁달려 함께**
    삭제됐다가 복구된 것이다 — 죽은 것은 draft 쪽이고 이 넷은 살아 있는 「문서 만들기」의
    것이었다. 소실이 조용했던 이유는 규칙 없는 class 에 브라우저가 아무 말도 하지 않기
-   때문이고, 그 침묵은 이제 tests/test_web_css_orphan_classes.py 가 깬다. */
+   때문이다. 전용 orphan census는 퇴역했고, 현재 실표면은 tests/test_web_selftest_gate.py가
+   계산 스타일과 캡션 렌더를 되읽는다. */
 .job-zones{display:flex;flex-direction:column;
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
 .zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}

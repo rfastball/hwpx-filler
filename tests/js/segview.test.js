@@ -1,19 +1,4 @@
-/* SegmentView 특성화 테스트 — legacy `SegView` 페인터의 React 후계(R4-02 · #415).
- *
- * 원본은 문자열 페인터(`frontend/js/segview.js`)의 특성화였다. 기대값은 전환 이전 소스를
- * 실행해 얻은 실제 출력이었고, 그것이 `innerHTML` 로 들어갔으므로 클래스 이름·속성·이스케이프
- * 넉 자가 전부 계약이었다.
- *
- * 후계는 요소 트리라 이스케이프의 소유자가 React 로 넘어갔다. 그래서 이 파일은 **같은 질문을
- * 새 산출에 다시 묻는다** — 계약(클래스·`data-token` 신원·〈빈 값〉 글리프·title 문안·구분자
- * 없는 이어붙임)은 그대로 재고, 이스케이프는 「React 가 태운다」를 산출로 확인한다.
- *
- * 잘못된 입력(text 없음 등)은 **오늘 하는 그대로** 단언한다 — 이 슬라이스는 이관이지 결함
- * 수정이 아니다. 고쳐야 한다면 그건 별도 판정이고, 그때 이 기대값이 시끄럽게 깨지는 것이 목적이다.
- *
- * `plain()` 은 후계가 없다: 제품 소비자가 0이었다(클립보드 평문은 백엔드 `copy_clipboard` 가
- * 진다). 죽은 export 를 React 로 옮기지 않는다 — 아래 마지막 테스트가 그것을 명시로 못박는다.
- */
+/* Segment rendering behavior: identity, markup, escaping, and malformed inputs. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { renderToStaticMarkup } from "react-dom/server";

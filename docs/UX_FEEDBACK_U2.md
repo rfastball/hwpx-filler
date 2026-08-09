@@ -206,10 +206,11 @@ broad 별건**으로 갈려 §5.2 → **§2.16**, 취소·저장 문법은 어�
 말없이 벗겨진다. 이슈 **#325**(CSS 소유권 재정렬 — 선행 = 시각 회귀 그물)가 이 사고를
 예언했고, 그물이 없어 **세 슬라이스**를 통과했다(사망 → 분할 → 착지).
 
-그래서 복구와 **같은 PR** 에 그물을 붙인다 — `tests/test_web_css_orphan_classes.py`:
-DOM 이 내는 class 중 CSS 규칙이 **한 줄도 없는 것**을 실패로 만든다. 기존
-`test_web_css_manifest.py` 는 *파일* 단위라(링크 순서·전수 등재·주석 균형) 등재된 파일 **안에서**
-규칙이 편집돼 사라지는 것은 못 본다 — 세 테스트 모두 `.zone` 이 없는 상태에서 초록이었다.
+그래서 복구와 **같은 PR** 에 당시 정적 고아-class 그물을 붙였다: DOM 이 내는 class 중 CSS
+규칙이 **한 줄도 없는 것**을 실패로 만들었다. 당시 파일 manifest 검사는 링크 순서·전수 등재·
+주석 균형만 보므로, 등재된 파일 **안에서** 규칙이 편집돼 사라지는 것은 못 봤다 — 세 검사가
+모두 `.zone` 이 없는 상태에서 초록이었다. 이 범용 census들은 장기 컴팩트화에서 퇴역했고,
+현재는 `frontend/src/main.js`의 import 정본과 위험별 JS·실렌더 소유자가 계약을 잇는다.
 
 그물은 **한 방향**이다(DOM → CSS). 반대 방향(CSS 에만 있고 생산자가 없는 죽은 선택자 —
 아래 2건)은 초기 오탐 정리가 별건 규모라 세우지 않았고, 그 사실을 게이트 docstring 에
@@ -527,7 +528,7 @@ DOM 이 내는 class 중 CSS 규칙이 **한 줄도 없는 것**을 실패로 �
 - **`badge.missing_press`** — `design_tokens.json` 에 **두 테마 다 손으로 지정**돼 있는데
   `gen_design_tokens.py` 매핑이 없어 `tokens.css` 에 **방출조차 안 됐다**. 사용처 0곳. 즉 눌림을
   배경 축으로 하는 설계가 **이미 있었고 버려졌다** — `scale` 이 그 빈자리를 대신 채웠다.
-- **토큰 게이트의 구멍** — `test_design_tokens.py` 는 라이트↔다크 패리티와 라이트→CSS 방출을
+- **당시 토큰 게이트의 구멍** — 전용 정적 검사는 라이트↔다크 패리티와 라이트→CSS 방출을
   보는데 **JSON 키 → 매핑 존재**는 아무도 안 본다. 그래서 위 고아가 조용히 살았다.
 
 **조치**(착지): 선택자 목록을 **「작은 조작 상자」**(`scale(.97)` 유지 10건)와 **「컨테이너를
@@ -551,8 +552,7 @@ DOM 이 내는 class 중 CSS 규칙이 **한 줄도 없는 것**을 실패로 �
 사라져 모션을 끈 사람에게 눌림 피드백이 **0** 이었다 — 그 강등이 이 결함의 로컬 미재현 원인
 이기도 했다(개발 기기가 거기 살았다). 색은 이동이 아니라 상태 표지이므로 즉시 남는다.
 
-**검사가 이 결함을 고정시켰다.** `test_interaction_responsiveness.py`
-`test_press_feedback_covers_round_trip_surfaces_and_reduced_motion` 이 8개 선택자 **전부**에
+**당시 검사가 이 결함을 고정시켰다.** 정적 눌림 존재 검사가 8개 선택자 **전부**에
 눌림 표지가 있어야 한다고 단언했다 — 규칙의 **존재**는 강제하는데 **기하 결과**는 못 본다.
 §2.1 의 그물이 「DOM 이 내는 class 에 규칙이 없다」를 잡았다면, 없던 그물은 **「규칙이 있는데 그
 결과가 틀렸다」** 쪽이다.
@@ -561,19 +561,19 @@ DOM 이 내는 class 중 CSS 규칙이 **한 줄도 없는 것**을 실패로 �
 
 | 층 | 파일 | 맡는 것 |
 |---|---|---|
-| 정적(존재) | `test_interaction_responsiveness` | 두 갈래 각각에 표지 + 강등이 있는지. `.job-item` 부활 금지 |
-| 정적(갈림) | `test_web_press_geometry` 앞부분 | `scale` 목록이 **선언과 정확히 같은지** — 새 표면이 결정 없이 평면으로 늘면 멈춘다. 죽은 선택자 산출자 0건 재확인 |
-| 실렌더(결과) | `test_web_press_geometry` + `_press_probe` | 실 CSS 를 링크한 최소 문서에서 `:active` **유지 중** 좌변 이탈 ≤ 1px. `reduced_motion` 두 값 강제로 양성·음성 대조 |
+| 정적(존재, 당시) | 퇴역한 눌림 존재 census | 두 갈래 각각에 표지 + 강등이 있는지. `.job-item` 부활 금지 |
+| 정적(갈림) | `tests/test_web_press_geometry.py` 앞부분 | `scale` 목록이 **선언과 정확히 같은지** — 새 표면이 결정 없이 평면으로 늘면 멈춘다. 죽은 선택자 산출자 0건 재확인 |
+| 실렌더(결과) | `tests/test_web_press_geometry.py` + `tests/_press_probe.py` | 실 CSS 를 링크한 최소 문서에서 `:active` **유지 중** 좌변 이탈 ≤ 1px. `reduced_motion` 두 값 강제로 양성·음성 대조 |
 
 곁들여 **주석이 규칙으로 세어지던 것을 고쳤다** — 계약 문서화를 위해 주석에 죽은 선택자 이름을
 일부러 남기므로, substring 단언 전에 산문을 걷는다(`_web_css.strip_comments`). 그리고
-`test_ux_css_round` 의 인접 검사(`:active:not(:disabled){transform:scale(`)를 **두 사실로
+당시 인접 정적 검사(`:active:not(:disabled){transform:scale(`)를 **두 사실로
 갈랐다** — 그 한 덩어리는 선택자 목록의 **꼬리가 무엇인가**에 검사를 묶어, 규칙이 그대로 있는데
 목록이 갈리자 빨간불이 났다.
 
 **전제를 시끄럽게 확인한다.** CI 에 `Press-geometry browser precondition` 단계를 세워 설치 Chrome
 부재를 테스트 안쪽 오류가 아니라 한 줄로 말하게 하고, 세 옵트아웃 변수를 CI 에서 **걷고** 돌린다
-(`test_quality_workflow` 가 그 형상을 진다).
+(`tests/repo_contract/test_quality_workflow.py` 가 그 형상을 진다).
 
 **후속 규칙 — 개발 기기가 모션을 꺼 두면 모션 층은 검사된 적이 없다.** 로컬 미재현은 우연이
 아니라 구조다: 이 기기는 `SPI_GETCLIENTAREAANIMATION=False` 라 Chromium 이
@@ -1021,8 +1021,9 @@ back·문맥 복귀·다른 화면의 프로그램적 이동이 전부 여기로
 **비활성 판정으로 승격**하고 `dirty`/clean **두 값으로 대조**한다 — 한 값만 재는 프로브는
 아무것도 못 재는 프로브다(§2.11 모션 층과 같은 계열). 이 항목에서 제일 조심할 자리다.
 
-**계약 영향**: DOM id 신설 0(푸터는 JS 생성이라 정적 DOM 계약 밖). `discard_patch` 액션·payload
-무변경 — `test_web_dom_contract.py:1371` 의 배선 단언은 그대로 참이다.
+**계약 영향**: DOM id 신설 0. `discard_patch` 액션·payload 무변경 — 현재 어휘·payload 경계는
+`tests/repo_contract/test_dispatch_payload_contract.py`, 화면 동작은
+`tests/js/n06_editor.test.js`가 잇는다.
 
 ### ~~2.18 결과 처분 — 지문 성분별로 가른다 (사용자 확정 2026-07-30)~~ — **조치완료**(#363 · `141fbf1`)
 

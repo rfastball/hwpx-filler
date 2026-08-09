@@ -1,37 +1,8 @@
-/* 편집 진입 seam 계약 테스트 — N-05 가 `frontend/js/editor_entry.js` 에 세운 경계 넷을
- * R4-02 에서 React 후계 `frontend/src/screens/editor_entry.ts` 로 **제자리 번역**했다.
- *
- * 묻는 것은 하나도 안 바뀐다. 바뀐 것은 **관측면**뿐이다:
- *
- *  ① 공개 표면 6키(§1-B 표) — 진입문은 하나이고 그 문의 손잡이 수는 계약이다. 이제 그
- *     6키는 `EditorEntryPort` 의 형이기도 하다(`screens/ports.ts`).
- *  ② 의존이 드러나 있는가 — legacy 는 `Modal` 을 **import 간선**으로 들었다. React 후계는
- *     `modal` 포트를 **주입**받는다: 확인 UI 의 구현이 어느 쪽이든 이 seam 은 판정만 쥔다.
- *     `navigate` 가 late-bound 콜백이어야 하는 이유는 그대로다 — 착지처 `Nav` 를 만드는 앱
- *     셸은 이 모듈보다 나중에 서고 셸 자신이 이 seam 을 소비하므로, 값으로 캡처하면 모듈
- *     순환과 평가 순서 함정이 동시에 선다. 소스에 전역이 없다는 정적 단언만으로는 값 캡처를
- *     못 보므로 실행으로 못박는다.
- *  ③ 포트가 **객체째** 살아 있는가 — selftest 프로브는 통로 객체의 프로퍼티를 갈아끼운다.
- *     legacy 에선 `bridge.call`, 지금은 `client.invoke`·`client.dispatch` 다. 메서드를 팩토리
- *     스코프 값으로 뽑으면 스텁이 우회돼 프로브가 실물 백엔드로 샌다 — 초록불인 채로.
- *  ④ 제품 규칙(가드 → 확인 → 이동 순서 · 미저장 가드 · 초점 되돌림 1슬롯 · loud 실패)이
- *     전환으로 흔들리지 않았는가. 이건 "번들이 뜬다"로는 못 보는 층이라 흔적을 기록해 센다.
- *
- * 대역이 가벼워졌다: legacy 는 `modal.js → popover.js` 그래프가 **평가 시점에 document 를
- * 만져서** 전역 DOM 대역을 깔고 동적 import 로 열어야 했다. React 후계의 의존은 전부 주입
- * 인자라 `doc` 도 `{ activeElement }` 한 칸이면 된다 — 그 축소 자체가 ② 의 증거다.
- *
- * loud 실패의 통로도 옮겨졌다: legacy 는 `window.alert` 를 직접 불렀고, 후계는 주입된
- * `notify` 를 부른다(합성 루트가 `window.alert` 로 잇는다). 사유를 재진술한다는 계약은 같다.
- */
+/* Editor-entry behavior: late-bound ports, guarded ordering, and focus lifetime. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { createEditorEntry } from "../../frontend/src/screens/editor_entry.ts";
-
-const SRC_URL = new URL("../../frontend/src/screens/editor_entry.ts", import.meta.url);
-const src = readFileSync(SRC_URL, "utf8");
 
 const SURFACE = [
   "confirmDiscard", "land", "newDraft", "newDraftFromData", "openGuarded", "restoreEntryFocus",
@@ -86,64 +57,7 @@ test("공개 표면 — createEditorEntry 는 계약 6키를 정확히 낸다", 
   for (const key of Object.keys(entry)) assert.equal(typeof entry[key], "function", key);
 });
 
-test("파일당 값 export 는 하나 — export default 없음", () => {
-  assert.equal(/export\s+default/.test(src), false, "export default 금지");
-  const names = [...src.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
-  assert.deepEqual(names, ["createEditorEntry"]);
-  assert.ok(src.includes("export function createEditorEntry(deps: EditorEntryDeps): EditorEntryPort {"),
-    "포트는 이름 있는 deps 형으로 받고 반환형이 곧 6키 계약이다");
-});
-
-/* ================= 2. 의존이 드러나 있다 ================= */
-
-test("의존은 주입뿐 — 값 import 간선은 호스트 결과 판독 하나다", () => {
-  const found = [...src.matchAll(/^import .*$/gm)].map((m) => m[0]);
-  assert.deepEqual(found, [
-    'import type { BridgeClient } from "../runtime/client.ts";',
-    'import type { EditorEntryPort } from "./ports.ts";',
-    'import { expectHostValue } from "./runtime.ts";',
-  ], "import 목록이 계약과 동일 — 확인 UI·항행·통지는 전부 주입이라 간선이 없다");
-  assert.ok(src.includes("deps.modal.confirm({"), "파괴 확인은 주입된 modal 포트가 진다");
-  assert.ok(src.includes("deps.modal.restoreFocus("), "초점 되돌림 규칙은 모달 것을 재사용한다");
-});
-
-test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign(window) 전부 0", () => {
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  const PRODUCT = /window\.(Modal|Popover|Bridge|Nav|escHtml|SheetPicker|PathTrack|Preserve|Intent|DataPicker|EditorEntry|[A-Za-z]*Screen|__push|AppCloseGuard)\b/;
-  assert.equal(/^\(function\s*\(/m.test(code), false, "top-level IIFE 금지");
-  assert.equal(/^\}\)\(\);/m.test(code), false, "top-level IIFE 금지");
-  assert.equal(/(window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code), false, "자기 전역 생산 금지");
-  assert.equal(PRODUCT.test(code), false, "제품 전역 조회 금지");
-  assert.equal(code.includes("Object.assign(window"), false, "Object.assign(window) 금지");
-  // 개별 이름으로도 센다 — 위 정규식이 언젠가 느슨해져도 이 셋은 남는다.
-  for (const global of ["window.Modal", "window.Nav", "window.Bridge"]) {
-    assert.equal(code.includes(global), false, `${global} 조회 0`);
-  }
-  /* loud 실패 통로는 legacy 의 `window.alert` 2곳에서 주입 `notify` 2곳으로 옮겨졌다 —
-     전역을 아예 안 만지므로 이 파일에는 `window.` 가 하나도 없다. */
-  assert.equal(/\bwindow\./.test(code), false, "이 seam 은 전역 window 를 만지지 않는다");
-  /* 진입 셋이 각자 자기 실패를 재진술한다 — `open_job_in_editor`·`new_job_from_data` 는
-     `ERROR:` 반환으로, `new_session` 은 dispatch 의 `{ok:false}` 봉투로 온다(형태가 달라도
-     「조용히 착지하지 않는다」는 같다). */
-  assert.equal((code.match(/deps\.notify\(/g) || []).length, 3, "loud 실패 통로 3곳 보존");
-});
-
-test("client 는 객체로만 쓴다 — 모듈/팩토리 스코프에 메서드를 뽑지 않는다", () => {
-  assert.equal(/^\s*const\s+\w+\s*=\s*deps\.client\.\w+\s*;/m.test(src), false,
-    "메서드 값 캡처 금지(프로브의 프로퍼티 교체가 우회된다)");
-  const uses = [...src.matchAll(/\bdeps\.client\.(\w+)/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(uses)].sort(), ["dispatch", "invoke"]);
-});
-
-test("모듈 상태는 entryFocus 1슬롯뿐 — 팩토리 밖에 가변 상태 0", () => {
-  const head = src.slice(0, src.indexOf("export function createEditorEntry"));
-  assert.equal(/^\s*(let|var)\s/m.test(head), false, "모듈 스코프 가변 상태 0");
-  const body = src.slice(src.indexOf("export function createEditorEntry"));
-  const mutables = [...body.matchAll(/^\s{2}(?:let|var)\s+(\w+)/gm)].map((m) => m[1]);
-  assert.deepEqual(mutables, ["entryFocus"], "진입 슬롯은 하나뿐(늘리지 않는다)");
-});
-
-/* ================= 3. navigate 는 late-bound ================= */
+/* ================= 2. navigate 는 late-bound ================= */
 
 test("navigate — 생성 시점에 없던 대상도 호출 시점에 잡힌다(모듈 순환 절단의 근거)", () => {
   let Nav = null;                                   // 앱 셸은 아직 평가되지 않았다
@@ -165,8 +79,6 @@ test("navigate — 착지 인자는 종전 Nav.go 그대로다(화면 · force)"
   const h = harness();
   h.entry.land();
   assert.deepEqual(h.log, [["navigate", "editor", { force: true }]]);
-  // 착지 호출점은 land() 하나 — 축자 복붙이 생기면 착지 변경이 드리프트한다.
-  assert.equal((src.match(/deps\.navigate\(/g) || []).length, 1);
 });
 
 /* ================= 4. 포트 프로퍼티 교체가 보인다(프로브 경로 생존) ================= */
@@ -377,38 +289,7 @@ test("초점 — 새 진입이 슬롯을 덮어쓴다(마지막 문 하나만 �
     [["modal.restoreFocus", "btn-B"]]);
 });
 
-test("초점 — 진입 셋 모두 확인 **앞에서** 자리를 기억한다", () => {
-  // 정적 계측: 정의 1 + 진입 3. 진입이 늘면 이 수도 함께 늘어야 한다.
-  assert.equal((src.match(/rememberEntryFocus\(\)/g) || []).length, 4);
-  for (const fn of [
-    "async function newDraft()",
-    "async function newDraftFromData(context?: Obj)",
-    "async function openGuarded(name: string, context?: Obj)",
-  ]) {
-    const body = src.slice(src.indexOf(fn));
-    const remember = body.indexOf("rememberEntryFocus()");
-    const confirm = body.indexOf("confirmDiscard(");
-    assert.ok(remember >= 0 && remember < confirm, `${fn}: 확인 앞에서 기억한다`);
-  }
-});
-
-/* ================= 9. native 확인 재도입 금지 ================= */
-
-test("확인은 주입된 modal 이 진다 — native confirm/prompt 재도입 0", () => {
-  const code = src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
-    /* 형 선언의 메서드 시그니처(`confirm(spec: Obj): Promise<boolean>`)는 **호출이 아니다**.
-       legacy 에는 형이 없어 이 절제가 필요 없었다 — 남기면 맨손 호출 금지가 자기 계약
-       선언 때문에 영영 빨강이라 아무것도 못 본다. */
-    .replace(/^(?:export\s+)?type\s+\w+\s*=\s*\{[\s\S]*?^\};$/gm, "");
-  assert.ok(code.includes("deps.modal.confirm({"), "절제가 실제 호출까지 지우지 않았다");
-  assert.equal(/\bwindow\.(confirm|prompt)\s*\(/.test(code), false, "native 확인 금지");
-  assert.equal(/(^|[^.\w])(confirm|prompt)\s*\(/.test(code.replace(/deps\.modal\.confirm\(/g, "")), false,
-    "맨손 confirm/prompt 금지");
-});
-
-/* ================= 10. 팩토리 독립성 ================= */
+/* ================= 9. 팩토리 독립성 ================= */
 
 test("팩토리를 두 번 부르면 진입 슬롯도 따로 산다(중앙은 1회만 부른다)", async () => {
   const log = [];

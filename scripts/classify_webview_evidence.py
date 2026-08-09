@@ -7,7 +7,7 @@
 
 판별을 prose 파싱이 아니라 **여기서** 하는 이유: PowerShell 인라인 술어는 음성 대조를 붙일
 자리가 없다. 제품 결함을 환경으로 오분류하면 진짜 회귀가 재시도로 지워지므로, 그 술어의
-판별력은 합성 표본으로 고정돼야 한다(`tests/test_packaging_contract.py`).
+판별력은 합성 표본으로 고정돼야 한다(`tests/repo_contract/test_packaging_contract.py`).
 
 판정 규칙 — **제품 증거가 언제나 이긴다**:
 

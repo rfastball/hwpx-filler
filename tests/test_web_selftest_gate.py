@@ -1,8 +1,7 @@
 """실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
 
-파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``frontend/index.html`` 의 *정적*
-구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
-실 :class:`~hwpxfiller.webapp.app.WebFrontend` + 실 컨트롤러 + 실 ``render()`` 를 pywebview 로
+Node의 정적·React 계약은 배포 자산의 구조를 보고 렌더 로직은 돌리지 않는다. 이 모듈은 그
+위층을 메운다: 실 :class:`~hwpxfiller.webapp.app.WebFrontend` + 실 컨트롤러 + 실 ``render()`` 를 pywebview 로
 구동하고 ``evaluate_js`` 로 DOM 을 되읽어 **렌더 거동**(창 부팅·작업 기본 화면·홈 경보·내비 실체)을
 CI 에서 가드한다.
 
@@ -27,6 +26,7 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+from _web_source import NAV_SCREENS
 from _web_source import source_text
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
 from hwpxfiller.webapp import app as app_mod
@@ -208,6 +208,21 @@ class TestWebSelftestGate:
         # evaluate_js 프로브가 예외 없이 전부 돌았는가(브리지/렌더 파이프 무결).
         assert "error" not in selftest_result, selftest_result.get("error")
 
+    def test_react_runtime_commits_one_root_with_a_live_store_marker(
+        self,
+        selftest_result: dict,
+    ) -> None:
+        """한 제품 창에서 React 커밋과 snapshot store 결속을 함께 증명한다.
+
+        과거에는 root·store 전용 WebView2 창을 따로 띄웠다. 제품 selftest가 이미 같은
+        sealed artifact에서 이 형상을 되읽으므로, 장기 계약은 이 모듈의 단일 부팅 결과가
+        소유한다. revision의 절댓값은 실행 순서에 따라 달라질 수 있어 형상만 단언한다.
+        """
+        runtime = probe(selftest_result, "react_runtime")
+        assert runtime["mounted"] == "1", runtime
+        assert runtime["roots"] == 1, runtime
+        assert re.fullmatch(r"[0-9]+", runtime["store_rev"]), runtime
+
     def test_sealed_artifact_runs_on_one_loopback_origin(self, selftest_result: dict) -> None:
         """제품/selftest가 같은 seal을 쓰며 file/dev/external resource를 하나도 싣지 않는다."""
         runtime = selftest_result["runtime"]
@@ -229,9 +244,7 @@ class TestWebSelftestGate:
         assert selftest_result["title_dom"]
 
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드. 기대 수는 NAV_SCREENS가 소유한다.
-        from test_web_dom_contract import NAV_SCREENS
-
+        # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드.
         assert selftest_result["nav_count"] == len(NAV_SCREENS)
 
     def test_job_is_default_screen(self, selftest_result: dict) -> None:
@@ -568,8 +581,6 @@ class TestWebSelftestGate:
         # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 3개(기안 탭
         # 사망 — F6 PR-B)는 전부 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에
         # 못 가는 것이 상단 셸의 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
-        from test_web_dom_contract import NAV_SCREENS
-
         narrow = selftest_result["grid_narrow"]
         assert narrow["tabs"] == len(NAV_SCREENS), f"최소폭에서 탭이 사라짐: {narrow!r}"
         assert narrow["brand_visible"] is False, f"최소폭에서 브랜드 워드마크가 안 접힘: {narrow!r}"
@@ -578,8 +589,6 @@ class TestWebSelftestGate:
     def test_responsive_shell_expands_topbar_when_wide(self, selftest_result: dict) -> None:
         # 넓힐 때(경계 위) 워드마크가 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
         # 축약이 눌러앉아 상시 접힘이 되는 회귀 가드(#27 승계).
-        from test_web_dom_contract import NAV_SCREENS
-
         wide = selftest_result["grid_wide"]
         assert wide["rows"] == 2, f"넓은 폭에서 .app 이 토바+스테이지 2행이 아님: {wide!r}"
         assert wide["brand_visible"] is True, f"넓은 폭에서 브랜드 워드마크가 안 펴짐: {wide!r}"
@@ -1760,8 +1769,6 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     assert p["body_overflow"] is False, f"{scale}에서 주요 가로 오버플로: {p!r}"
     full = json.loads(out_read.read_text(encoding="utf-8"))
     # 큰 배율에서도 좁은 창의 탭 도달성과 넓은 창의 토바 전개가 유지된다(배율×셸 교차 회귀).
-    from test_web_dom_contract import NAV_SCREENS
-
     assert full["grid_narrow"]["tabs"] == len(NAV_SCREENS)
     assert full["grid_narrow"]["overflow"] is False
     assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True

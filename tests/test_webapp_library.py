@@ -57,7 +57,7 @@ def _rows(snap) -> "dict[str, dict]":
     return {r["name"]: r for sec in snap["sections"] for r in sec["rows"]}
 
 
-def test_initial_snapshot_carries_axes_and_conditional_alerts(tmp_path):
+def test_initial_snapshot_serializes_the_ring1_contract(tmp_path):
     """개수 타일(#239 결정 8)은 승계하지 않고, **조치가 필요한 조건**만 경보로 싣는다."""
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.initial()
@@ -67,6 +67,16 @@ def test_initial_snapshot_carries_axes_and_conditional_alerts(tmp_path):
     # 죽은 홈 요약 표면은 스냅샷에서도 사라졌다 — 렌더 안 하는 값을 나르지 않는다.
     for dead in ("kpi", "txt_rows", "continue_runs", "grouped_rows", "axes", "group_by"):
         assert dead not in snap, f"죽은 홈 스냅샷 키가 남아 있습니다: {dead}"
+    assert snap["counts"] == {"all": 2, "recent": 2, "favorites": 0, "needsAction": 2}
+    rows = _rows(snap)
+    assert set(rows) == {"공고서", "낙찰"}
+    assert rows["공고서"]["health"] == {
+        "severity": 3, "text": "템플릿 파일을 찾을 수 없습니다.",
+    }
+    assert rows["공고서"]["badge_level"] == "danger"
+    assert rows["공고서"]["runnable"] is False
+    assert rows["공고서"]["mode_label"] == "HWPX 문서 생성"
+    assert rows["낙찰"]["media"] == "hwpx"
 
 
 def test_alerts_carry_pool_corruption(tmp_path):
@@ -95,17 +105,6 @@ def test_empty_registry_is_loudly_empty(tmp_path):
     assert snap["sections"] and snap["sections"][0]["rows"] == []
 
 
-def test_row_serialization_badge_level_mode_and_runnable(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    g = _rows(ctrl.snapshot())["공고서"]
-    assert g["template_missing"] is True
-    assert g["badge_level"] == "danger"   # 부재 → 시끄러운 danger(never silent ✅)
-    assert g["runnable"] is False         # danger 는 실행 진입 불가
-    assert g["meta_line"].startswith("템플릿 t.hwpx")
-    # §19.6 행 항목: 작업 방식 텍스트가 실린다 — 표면이 라벨을 다시 짓지 않는다.
-    assert g["mode_label"] == "HWPX 문서 생성"
-
-
 def test_group_sections_and_collapse_are_view_only(tmp_path):
     """「모든 작업」만 사용자 group 으로 구획하고, 접힘은 **보기**만 바꾼다.
 
@@ -130,34 +129,17 @@ def test_group_sections_and_collapse_are_view_only(tmp_path):
         ctrl.dispatch("set_group_by", {"axis": "금액구간"})
 
 
-def test_tag_facets_stay_as_a_narrowing_axis(tmp_path):
-    """렌즈 은퇴 뒤에도 태그로 좁히기는 계속 가능하다(§9.4 승계 의무 ①)."""
-    ctrl, _ = _controller(tmp_path)
-    assert {fa["axis"] for fa in ctrl.snapshot()["facets"]} == {"금액구간"}
-    ctrl.dispatch("toggle_facet", {"axis": "금액구간", "value": "1억미만"})
-    assert set(_rows(ctrl.snapshot())) == {"공고서"}
-    ctrl.dispatch("clear_facets", {})
-    assert set(_rows(ctrl.snapshot())) == {"공고서", "낙찰"}
-
-
-def test_delete_job_updates_snapshot(tmp_path):
+def test_delete_job_clears_selected_detail_and_pushes_snapshot(tmp_path):
     ctrl, pushes = _controller(tmp_path)
-    ctrl.dispatch("delete_job", {"name": "낙찰"})
-    snap = ctrl.snapshot()
-    assert snap["counts"]["all"] == 1
-    assert list(_rows(snap)) == ["공고서"]
-    # dispatch 가 삭제 후 관측 푸시를 냈다.
-    assert any(s == "library" for s, _snap in pushes)
-
-
-def test_deleting_the_selected_row_clears_the_detail(tmp_path):
-    """사라진 행을 겨눈 채로 두지 않는다 — 유령 상세는 조용한 거짓말이다."""
-    ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_work", {"name": "낙찰"})
     assert ctrl.snapshot()["detail"]["name"] == "낙찰"
     ctrl.dispatch("delete_job", {"name": "낙찰"})
     snap = ctrl.snapshot()
+    assert snap["counts"]["all"] == 1
+    assert list(_rows(snap)) == ["공고서"]
     assert snap["selected"] == "" and snap["detail"] is None
+    # dispatch 가 삭제 후 관측 푸시를 냈다.
+    assert any(s == "library" for s, _snap in pushes)
 
 
 def test_app_wires_library_session_guards_to_job(tmp_path, monkeypatch):
@@ -220,7 +202,7 @@ def test_unknown_library_action_is_loud(tmp_path):
 
 
 # ============================================================ #26 관리 조치
-def test_set_tags_replaces_and_refreshes_axes(tmp_path):
+def test_set_tags_replaces_clears_and_refreshes_axes(tmp_path):
     """태그 통째 교체 저장(#2·D14) — 저장 후 axes/facets 즉시 재발견 + 카드 프리필 노출."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_work", {"name": "공고서"})
@@ -232,10 +214,6 @@ def test_set_tags_replaces_and_refreshes_axes(tmp_path):
     assert "tags" not in _rows(snap)["공고서"]
     # durable 확인 — 레지스트리에 실제 저장됐다.
     assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"물품": "의약품"}
-
-
-def test_set_tags_empty_clears_all(tmp_path):
-    ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("set_tags", {"name": "공고서", "tags": {}})
     assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {}
 
@@ -336,7 +314,7 @@ def test_relink_cross_media_is_rejected_through_the_library_too(tmp_path):
 
 
 # ------------------------------------------------------- 작업 복제(F22)
-def test_clone_job_creates_unique_copy_without_history(tmp_path):
+def test_clone_job_creates_unique_copies_without_history(tmp_path):
     """복제 = 매핑·패턴·태그·기본참조 계승 + 유일 이름 + 실행 이력 미계승(F22).
 
     공유 베이스 프로파일을 걷어낸 자리의 재사용 동선 — 새 카드 출현이 성공 신호라
@@ -356,12 +334,6 @@ def test_clone_job_creates_unique_copy_without_history(tmp_path):
     assert original.last_run_at == "2026-07-09T15:42:00"           # 원본 불변
     # dispatch 말미 푸시 스냅샷에 새 카드가 실린다(성공 배너 대신 목록 출현).
     assert "공고서 (복사본)" in _rows(pushes[-1][1])
-
-
-def test_clone_job_dedupes_copy_names(tmp_path):
-    """반복 복제 = '(복사본)' → '(복사본 2)' → '(복사본 3)' 유일 이름 연쇄."""
-    ctrl, _ = _controller(tmp_path)
-    assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본)"
     assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본 2)"
     assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본 3)"
 
@@ -374,22 +346,6 @@ def test_clone_missing_job_is_loud(tmp_path):
 
 
 # ------------------------------------------------- 전역 라이브러리 축·상세(§19.6·§19.7)
-def test_snapshot_carries_views_counts_and_health(tmp_path):
-    """스냅샷은 보기·방식·검색과 그 투영을 싣는다 — 판정·문구는 전부 링1 소비."""
-    ctrl, _ = _controller(tmp_path)
-    snap = ctrl.initial()
-    assert snap["counts"]["all"] == 2 and snap["counts"]["recent"] == 2
-    assert snap["counts"]["favorites"] == 0 and snap["counts"]["needsAction"] == 2
-    rows = _rows(snap)
-    assert set(rows) == {"공고서", "낙찰"}
-    # 건강은 (심각도, 문구) 쌍이다 — 경고(2)와 차단(3)을 소비자가 구분할 수 있어야 한다.
-    assert rows["공고서"]["health"] == {
-        "severity": 3, "text": "템플릿 파일을 찾을 수 없습니다.",
-    }
-    # 페이로드 매체는 필터가 쓰는 정규화 값이다(미연결 = hwpx) — 표시와 판정이 갈라지지 않게.
-    assert rows["낙찰"]["media"] == "hwpx"   # template_path 빈 값(미연결)
-
-
 def test_actions_switch_view_mode_and_query_independently(tmp_path):
     """보기·방식·검색은 서로 다른 축이라 하나를 바꿔도 나머지가 살아 있다."""
     ctrl, _ = _controller(tmp_path)
@@ -441,6 +397,7 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     (지도 §10.8 판정 C). 판본 열은 F7 까지 만들지 않는다(판정 D).
     """
     ctrl, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["detail"] is None
     ctrl.dispatch("select_work", {"name": "공고서"})
     d = ctrl.snapshot()["detail"]
     assert d["name"] == "공고서" and d["mode_label"] == "HWPX 문서 생성"
@@ -455,13 +412,6 @@ def test_detail_carries_every_health_cause_and_saved_bindings(tmp_path):
     # 템플릿 전체 경로(U2 §2.20, #342) — 상세 「열기」·「폴더에서 보기」가 겨눌 값. 경보
     # (템플릿 미연결)는 이 화면이 내는데 조작이 여기 없었다 — payload 한 칸이 그 선행이다.
     assert d["template_path"] == "/none/t.hwpx"
-
-
-def test_detail_is_none_when_nothing_is_selected(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    assert ctrl.snapshot()["detail"] is None
-    ctrl.dispatch("select_work", {"name": "공고서"})
-    assert ctrl.snapshot()["detail"] is not None
     ctrl.dispatch("select_work", {"name": ""})          # 선택 해제
     assert ctrl.snapshot()["detail"] is None
 

@@ -2,7 +2,7 @@
 
 > **문서 상태:** 부분 대체
 > **권위 범위:** 보존 **책임**과 재고 술어의 틀은 유효하다. 결정 본문은 대체됐고, 근거 1·「현재 실효 범위」·검증 절의 사실 진술은 오늘 거짓이니 배경으로만 읽는다
-> **후속 정본:** 렌더 모델 결정은 [REACT_MIGRATION_DECISIONS.md](REACT_MIGRATION_DECISIONS.md), 계약은 웹 DOM·실창 테스트. 구현체는 R5-99 B2 에서 제품 소비자 0 실측으로 `frontend/src/selftest/preserve.js`(selftest 소유)로 이동 — React 는 서브트리 재구성이 없어 이 보존 책임 자체가 소멸했고, 기제 검증(`preserve` 프로브)·실화면 회귀(`preserve_real` 프로브)만 남았다
+> **후속 정본:** 전환 완료 기록은 [archive/REACT_MIGRATION_COMPLETION.md](archive/REACT_MIGRATION_COMPLETION.md), 계약은 웹 DOM·실창 테스트. 구현체는 R5-99 B2 에서 제품 소비자 0 실측으로 `frontend/src/selftest/preserve.js`(selftest 소유)로 이동 — React 는 서브트리 재구성이 없어 이 보존 책임 자체가 소멸했고, 기제 검증(`preserve` 프로브)·실화면 회귀(`preserve_real` 프로브)만 남았다
 > **편집 정책:** 유효 범위와 후속 정본만 정정 — 본문은 결정 배경으로 동결한다
 
 웹 프론트엔드가 Python→웹 푸시로 화면을 다시 그릴 때 사용자의 **포커스·캐럿·스크롤**을
@@ -97,9 +97,9 @@
 
 ## 검증
 
-- 정적(`tests/test_web_dom_contract.py`): `preserve.js` 로드 + 3개 화면(`txt`·`editor`·`run`)
-  `render()` 의 `Preserve.around` 래핑 존재 — 헤드리스 포함 전 플랫폼.
-- 동적(`tests/test_web_selftest_gate.py` + `--selftest` 프로브):
+R5 뒤 `preserve.js`는 selftest 전용으로 이동했고 제품 render 래핑의 범용 정적 census는
+퇴역했다. 현재 검증은 `tests/test_web_selftest_gate.py`와 `--selftest` 프로브가 맡는다:
+
   - **기제**: 합성 픽스처로 `innerHTML` 재구성을 가로질러 포커스·캐럿(선택 범위)·옵트인 스크롤이
     실제로 보존되는지 실 WebView2 에서 되읽어 단언.
   - **실화면 회귀**: shipped `window.__push` 경로로 3화면(`txt`·`editor`·`run`) 실

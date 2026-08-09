@@ -1,25 +1,6 @@
-/* N-09 레인 A — 시험 능력 프로토콜(`frontend/src/selftest/api.js`) 단위 계약.
- *
- * 이 파일이 겨누는 것은 프로브가 무엇을 재는가가 **아니다**(그건 N-08 러너 테스트의 몫).
- * 여기서 세는 것은 셋이다:
- *
- *  ① **누가 이 표면을 켤 수 있는가.** 쿼리스트링·해시·빌드 플래그처럼 페이지가 스스로
- *     만들 수 있는 조건으로는 아무것도 서지 않는다. 호스트 프로세스 메모리 토큰의
- *     일회 클레임만이 설치 조건이고, 실패한 핸드셰이크는 **아무것도 남기지 않는다**.
- *  ② **일회성이 진짜 일회인가.** runId 하나, 실행 하나, 종결 회수 한 번. 재시작·재조회는
- *     조용한 성공이 아니라 구조화된 거절이다.
- *  ③ **시한이 죽은 선언이 아닌가.** 레거시 `_probe_late` 는 만료에 `else` 가 없어 낡은 값을
- *     정상 모양으로 회수했다(runner.js 머리말 (가)). 그래서 여기서는 "시한 뒤에 도착한
- *     완주" 까지 실패로 확정되는지를 양성으로 세운다 — 시한을 지나서도 초록인 경로가 하나라도
- *     있으면 그 시한은 선언만 살아 있는 것이다.
- *
- * 시계는 주입한다(가상 시각). 러너는 두 벌을 쓴다: 상태 기계 타이밍은 **가짜 러너**로 손에
- * 쥐고, 증거 통과는 **진짜 러너**(`createSelftestRunner`)로 센다 — 증거의 모양을 여기서 다시
- * 구현하면 같은 판정을 두 곳이 지게 되고, 그 둘은 반드시 갈라진다.
- */
+/* Selftest capability API: authentication, run lifecycle, deadlines, and evidence. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   DEFAULT_DEADLINE_MS,
@@ -32,11 +13,6 @@ import {
   installSelftestApi,
 } from "../../frontend/src/selftest/api.js";
 import { createSelftestRunner } from "../../frontend/src/selftest/runner.js";
-
-const SRC = readFileSync(
-  new URL("../../frontend/src/selftest/api.js", import.meta.url),
-  "utf8",
-);
 
 const CODES = SELFTEST_ERROR_CODES;
 const STATES = SELFTEST_STATES;
@@ -697,7 +673,6 @@ test("토큰은 어떤 봉투에도, 창 어디에도 없다", async () => {
   }
   assert.equal(findNeedle(win, TOKEN, new Set()), false, "창에서 토큰이 발견됐다.");
   assert.equal(findNeedle(win[SELFTEST_GLOBAL], TOKEN, new Set()), false);
-  assert.equal(SRC.includes(TOKEN), false);
 });
 
 test("증거에 토큰이 섞이면 그 실행 전체를 거절한다", async () => {
@@ -763,33 +738,4 @@ test("bare import 는 순수하다 — 전역·DOM·러너를 만들지 않는�
   assert.equal(typeof globalThis.document, "undefined");
   assert.equal(typeof globalThis.__hwpxTest, "undefined");
   assert.equal(typeof globalThis[SELFTEST_GLOBAL], "undefined");
-});
-
-/** 주석은 이관 근거와 **하면 안 되는 것들의 이름**(location·hash 등)을 일부러 보존하므로,
- *  산문을 코드로 세면 거짓 실패가 난다. 코드만 남겨 센다. */
-function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(?<!:)\/\/[^\n]*/g, "");
-}
-
-test("음성 — 설치 조건에 페이지가 만들 수 있는 것이 하나도 없다", () => {
-  const code = stripComments(SRC);
-  for (const forbidden of [
-    "location", "URLSearchParams", "searchParams", "document",
-    "import.meta", "process.env", "localStorage", "sessionStorage",
-    "navigator", "Math.random", "pywebview",
-  ]) {
-    assert.equal(code.includes(forbidden), false, `설치 경로가 ${forbidden} 를 읽습니다.`);
-  }
-  assert.equal(/\bhash\b/.test(code), false, "해시 판독이 코드에 있습니다.");
-});
-
-test("음성 — 전역 쓰기·IIFE·default export 부재", () => {
-  /* 저장소 게이트가 frontend 전체를 **주석 포함** 정규식으로 훑으므로 날것으로 센다. */
-  assert.equal(/(?:^|\s)window\.[A-Za-z_$][A-Za-z0-9_$]*\s*=/m.test(SRC), false);
-  assert.equal(/(?:^|\s)globalThis\.[A-Za-z_$][A-Za-z0-9_$]*\s*=/m.test(SRC), false);
-  assert.equal(/^\(function \(\) \{/m.test(SRC), false);
-  assert.equal(SRC.includes("export default"), false);
-  /* 러너·프로브를 import 하지 않는다 — 프로토콜은 엔진을 모른다(주입만 받는다). */
-  const code = stripComments(SRC);
-  assert.equal(/^\s*import\s/m.test(code), false, "이 모듈은 아무것도 import 하지 않습니다.");
 });

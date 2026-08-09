@@ -83,7 +83,7 @@ def _item(band: dict, name: str) -> dict:
 
 
 # ============================================================ 목록·배지·액션
-def test_initial_lists_hwpx_and_txt(tmp_path, monkeypatch):
+def test_initial_serializes_bands_and_ring1_actions(tmp_path, monkeypatch):
     ctrl, _, _ = _controller(tmp_path, monkeypatch)
     snap = ctrl.initial()
     assert _names(snap["hwpx"]) == {"raw.hwpx", "comp.hwpx"}
@@ -95,11 +95,7 @@ def test_initial_lists_hwpx_and_txt(tmp_path, monkeypatch):
     assert snap["result"]["text"] == ""
     # 드리프트 UI 미노출(10F2FF98-D) — 스냅샷에 drift 표면이 없다.
     assert "drift" not in snap and not any("drift" in k for k in snap)
-
-
-def test_preview_action_is_hidden_but_make_job_shown(tmp_path, monkeypatch):
-    ctrl, _, _ = _controller(tmp_path, monkeypatch)
-    band = ctrl.initial()["hwpx"]
+    band = snap["hwpx"]
     comp_actions = [a["key"] for a in _item(band, "comp.hwpx")["actions"]]
     assert "preview" not in comp_actions and "make_job" in comp_actions
     assert [a["key"] for a in _item(band, "raw.hwpx")["actions"]] == ["compile"]
@@ -109,6 +105,8 @@ def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     raw = str(tp / "lib" / "raw.hwpx")
     before = (tp / "lib" / "raw.hwpx").read_bytes()
+    review = ctrl.dispatch("review", {"path": raw})
+    assert review["ok"] is True and "검토" in ctrl.snapshot()["result"]["text"]
     res1 = ctrl.dispatch("compile", {"path": raw})
     assert res1["needs_confirm"] is True and "변환 가능" in res1["confirm_text"]
     assert (tp / "lib" / "raw.hwpx").read_bytes() == before  # dry-run 무변형
@@ -116,19 +114,9 @@ def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):
     assert res2["applied"] is True
     assert ctrl.snapshot()["result"]["level"] == "ok"
     assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["state"] == "compiled"
-
-
-def test_compile_no_compilable_tokens_is_inline_not_confirm(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     res = ctrl.dispatch("compile", {"path": str(tp / "lib" / "comp.hwpx")})
     assert res.get("needs_confirm") is not True and res["applied"] is False
     assert "변환 가능한 토큰이 없습니다" in ctrl.snapshot()["result"]["text"]
-
-
-def test_review_lints_and_reports(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    res = ctrl.dispatch("review", {"path": str(tp / "lib" / "raw.hwpx")})
-    assert res["ok"] is True and "검토" in ctrl.snapshot()["result"]["text"]
 
 
 # ================================================================ TXT 저작
@@ -159,7 +147,7 @@ def test_txt_new_duplicate_and_bad_name_are_loud(tmp_path, monkeypatch):
 
 
 # =============================================== 매체 구획 + 그룹(결정 2·3)
-def test_set_group_partitions_and_persists(tmp_path, monkeypatch):
+def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
     band = ctrl.snapshot()["hwpx"]
@@ -167,29 +155,17 @@ def test_set_group_partitions_and_persists(tmp_path, monkeypatch):
     by = {s["group"]: s for s in band["sections"]}
     assert {it["name"] for it in by["입찰"]["items"]} == {"raw.hwpx"}
     assert {it["name"] for it in by[""]["items"]} == {"comp.hwpx"}  # 미지정 = 「그룹 없음」
+    assert _item(band, "raw.hwpx")["group"] == "입찰"
+    assert _item(band, "comp.hwpx")["group"] == ""
+    ctrl.dispatch("toggle_group", {"media": "hwpx", "group": "입찰"})
+    section = {s["group"]: s for s in ctrl.snapshot()["hwpx"]["sections"]}["입찰"]
+    assert section["collapsed"] is True
+    assert settings.load_template_collapsed_groups("hwpx") == ["입찰"]
     # 새 컨트롤러(설정에서 복원)도 같은 구획 — 영속 실증.
     ctrl2 = TemplateController(
         TextTemplateRegistry(tp / "txt"), lambda s, x: None, library_dir=tp / "lib"
     )
     assert "입찰" in ctrl2.snapshot()["hwpx"]["group_names"]
-
-
-def test_group_chip_shown_only_for_ungrouped(tmp_path, monkeypatch):
-    """＋그룹지정 어포던스는 「그룹 없음」에만(결정 2) — 스냅샷 group 값이 렌더 근거."""
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    band = ctrl.snapshot()["hwpx"]
-    assert _item(band, "raw.hwpx")["group"] == "입찰"      # 그룹 있음 → 칩 없음
-    assert _item(band, "comp.hwpx")["group"] == ""         # 무그룹 → 칩 노출
-
-
-def test_toggle_group_collapse_persists(tmp_path, monkeypatch):
-    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
-    ctrl.dispatch("toggle_group", {"media": "hwpx", "group": "입찰"})
-    sec = {s["group"]: s for s in ctrl.snapshot()["hwpx"]["sections"]}["입찰"]
-    assert sec["collapsed"] is True
-    assert settings.load_template_collapsed_groups("hwpx") == ["입찰"]  # 매체별 영속
 
 
 def test_rename_group_merge_needs_confirm(tmp_path, monkeypatch):

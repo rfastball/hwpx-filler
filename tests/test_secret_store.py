@@ -96,6 +96,87 @@ def test_blob_encoding_round_trip():
     assert _decode_blob(_encode_blob("한글키🔑")) == "한글키🔑"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ctypes binding 전용")
+def test_windows_binding_schema_loads_without_credential_io():
+    """ADVAPI 선언은 contract에서 검증하되 자격증명 I/O는 native job에 남긴다."""
+    from hwpxfiller.data.secret_store import WindowsCredentialStore
+
+    ctypes_mod, advapi32, credential_type, pointer_type = (
+        WindowsCredentialStore._bindings()
+    )
+    assert ctypes_mod and credential_type() is not None and pointer_type() is not None
+    assert all(
+        callable(getattr(advapi32, name))
+        for name in ("CredWriteW", "CredReadW", "CredDeleteW", "CredFree")
+    )
+
+
+def test_windows_store_binding_contract_is_hermetic(monkeypatch):
+    """Win32 분기 coverage는 가짜 바인딩이, 실제 OS 왕복은 native job이 소유한다."""
+    from hwpxfiller.data.secret_store import WindowsCredentialStore
+
+    class Credential:
+        pass
+
+    class Pointer:
+        contents: Credential
+
+    class Ctypes:
+        c_char = bytes
+        error = 0
+        byref = staticmethod(lambda value: value)
+        c_char_p = staticmethod(lambda value: value)
+        POINTER = staticmethod(lambda _type: object)
+        cast = staticmethod(lambda value, _type: value)
+        string_at = staticmethod(lambda value, size: value[:size])
+        get_last_error = classmethod(lambda cls: cls.error)
+
+    class Advapi:
+        values: dict[str, bytes] = {}
+
+        def CredWriteW(self, cred, _flags):
+            self.values[cred.TargetName] = cred.CredentialBlob
+            return True
+
+        def CredReadW(self, target, _type, _flags, ptr):
+            if target not in self.values:
+                Ctypes.error = 1168
+                return False
+            ptr.contents = Credential()
+            ptr.contents.CredentialBlob = self.values[target]
+            ptr.contents.CredentialBlobSize = len(self.values[target])
+            return True
+
+        def CredDeleteW(self, target, _type, _flags):
+            if target not in self.values:
+                Ctypes.error = 1168
+                return False
+            del self.values[target]
+            return True
+
+        @staticmethod
+        def CredFree(_ptr):
+            return None
+
+    api = Advapi()
+    monkeypatch.setattr(
+        WindowsCredentialStore,
+        "_bindings",
+        staticmethod(lambda: (Ctypes, api, Credential, Pointer)),
+    )
+    store = WindowsCredentialStore("pytest/")
+
+    assert store.get("key") is None
+    store.set("key", KEY)
+    assert store.get("key") == KEY and store.has("key")
+    store.set("empty", "")
+    assert store.get("empty") == ""
+    store.delete("key")
+    assert store.get("key") is None
+    store.delete("key")
+
+
+@pytest.mark.native
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Credential Manager 전용")
 def test_windows_credential_store_real_round_trip():
     """실 CredWrite/CredRead/CredDelete 왕복 — throwaway 타깃, finally 로 반드시 정리."""

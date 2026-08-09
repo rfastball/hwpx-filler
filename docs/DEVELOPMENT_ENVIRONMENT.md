@@ -63,7 +63,7 @@ uv sync --locked --all-extras --group dev --group build
 ## 3. 일상 개발 명령
 
 ```powershell
-# Ruff → Pyright → pytest → coverage
+# web build → npm test(4병렬) → Ruff → Pyright → pytest → coverage
 .\test.ps1
 
 # 특정 테스트 또는 pytest 옵션 전달
@@ -99,7 +99,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 - `hwpxcore.native`는 낮은 coverage 하한을 두지 않고 `tests/test_native_positive.py`의
   Windows 양성 시나리오를 별도 CI 단계로 필수 실행한다. JS/CSS, 별도 WebView2 프로세스,
   frozen 번들, installer/signing은 Python coverage 수치에 포함하지 않는다.
-- `tests/test_architecture.py`는 링 경계를 확인한다 — 특히 `hwpxcore`가 제품이나 Qt로
+- `tests/repo_contract/test_architecture.py`는 링 경계를 확인한다 — 특히 `hwpxcore`가 제품이나 Qt로
   역의존하지 않는지. 이 계층은 별도 저장소 `hwpx-diff`가 사본을 들고 있어, 제품 색이
   스며들면 두 사본의 대조가 불가능해진다.
 
@@ -169,30 +169,30 @@ Node-free selfcheck 는 종료코드만 보지 않는다 — 그 프로세스가
 돌린다. 프런트 산출물을 만드는 자리는 한 run 에 하나뿐이고, 나머지는 자원 축(pytest marker)으로
 갈려 실패 영역이 곧 원인을 가리킨다.
 
-1. `sealed-web (producer)`: `npm ci` → Vite 빌드 → seal → verify. 산출물(`build/web`)과 그
-   정체성(`web-artifact-identity.json` — artifact_id·tree_sha256·source commit)을 업로드한다.
-2. `static`: Ruff와 Pyright. 산출물을 읽지 않으므로 생산자를 기다리지 않는다.
-3. `pytest-contract (package coverage floor)`: 무표 집합(`-m "not native and not browser and
-   not live"`), 커버리지와 패키지별 line/branch floor.
+1. `sealed-web (producer)`: `npm ci` → Vite 빌드 → seal → verify → Node 4병렬 단위 테스트 →
+   `tests/artifact_contract`. 산출물(`build/web`)과 정체성(`web-artifact-identity.json` —
+   artifact_id·tree_sha256·source commit)을 업로드한다.
+2. `static`: Ruff·Pyright와 `tests/repo_contract`. 산출물을 읽지 않으므로 생산자를 기다리지 않는다.
+3. `pytest-contract (package coverage floor)`: repo/artifact 계약을 제외한 순수 Python 행동 집합
+   (`-m "not native and not browser and not live"`), 커버리지와 패키지별 line/branch floor.
 4. `windows-native (real Win32)`: `-m native`. 실 클립보드·실 최상위 창.
 5. `browser-render (installed Chrome)`: `-m browser`. 설치 Chrome 기반 CSS·기하·모션 판정.
 6. `live-webview2 (real WebView2 session)`: `-m live`. 실앱 selftest 와 Quickstart 101 `check`.
 7. `distribution-webview2 (frozen exe)`: portable onedir 2종 빌드와 selfcheck.
 
-산출물 소비자는 3·5·6·7 이다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …`
+산출물 소비자는 5·6·7 이다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …`
 로 **이 checkout 의 commit·frontend 바이트**와 대조한다. 그 검증은 `actions/setup-node`
 **앞에** 서고, 순서가 곧 계약이다: 검증이 Node 없이 통과한다는 것을 단계 순서가 증명한다.
 
 - `windows-native`(4)는 소비자가 아니다 — 실 Win32 자원만 쓰므로 생산자를 기다리지 않는다.
-- `pytest-contract`(3)만 검증을 마친 **뒤** 프런트 툴체인을 깐다. 산출물을 만들려는 것이
-  아니라 `tests/js/*.test.js` 를 모는 `node --test` 게이트가 vite 의 파서를 실제로 부르기
-  때문이다(그 게이트는 부재를 조용히 스킵하지 않는다).
+- `pytest-contract`(3)은 Node·sealed artifact·전체 Git 이력을 받지 않는다. 그 세 책임은 각각
+  `sealed-web`과 `static`으로 옮겨 Python coverage 임계 경로에 섞이지 않는다.
 
 Chrome 렌더링 증거와 실 WebView2 증거는 이름으로도 job 으로도 섞지 않는다.
 
 8. `quality-gate`: 위 일곱을 **명시 열거**해 `success` 만 통과시킨다. 브랜치 보호는 이 하나의
    이름을 겨눈다 — 잡을 늘려도 보호 설정을 따라 고칠 필요가 없고, 대신 열거에서 빠진 job 이
-   있으면 `tests/test_quality_workflow.py` 가 멈춘다.
+   있으면 `tests/repo_contract/test_quality_workflow.py` 가 멈춘다.
 
 증거는 **실패해도 회수된다**(`if: always()`). `live-webview2` 는 101 보고서·표준출력과 실패한
 실주행이 남긴 임시 홈의 진단 파일(`_live101_hang_stacks.txt`·`_live101_result.json`)을,
@@ -248,7 +248,7 @@ package_lock_sha256 · toolchain)을 담는다. 값은 전부 fail-closed 검증
 품질 CI 는 `packaging/build.ps1 -Target all` 로 CLI 번들까지 빌드해 검증하지만, 릴리스는
 **filler 만** 낸다(루트 `build.ps1` 과 `package-installer.ps1` 의 `-App` 이 둘 다 filler 뿐).
 코어 CLI 는 출하 제품이 아니라 Qt-free 코어의 형제 소비자이자 헤드리스 테스터·기반이기
-때문이다. 누락이 아니라 결정이고 `tests/test_quality_workflow.py` 가 그 비대칭을 이유와 함께
+때문이다. 누락이 아니라 결정이고 `tests/repo_contract/test_quality_workflow.py` 가 그 비대칭을 이유와 함께
 못박는다. CLI 를 출하 제품으로 승격하려면 서명·체크섬·설치본 범위를 함께 넓혀야 한다.
 
 ### 선택형 Windows 코드 서명

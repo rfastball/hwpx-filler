@@ -1,4 +1,4 @@
-"""N-03 M1: 제품 Vite 산출물 seal producer와 source/frozen resolver 계약."""
+"""tmp fixture에서 web artifact seal·manifest·tree·identity 판정을 검증한다."""
 
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ COMMIT = "a" * 40
 OTHER_COMMIT = "b" * 40
 TOOLCHAIN = ToolchainVersions(node="24.18.1", npm="11.16.0", vite="8.1.5")
 _ORIGINAL_DETECT_TOOLCHAIN = web_artifact._detect_toolchain
-
-
 @dataclass(frozen=True)
 class ArtifactRepo:
     root: Path
