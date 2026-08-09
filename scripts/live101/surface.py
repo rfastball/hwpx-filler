@@ -95,6 +95,9 @@ window.__cap = {
   commitValue(sel) {
     const el = document.querySelector(sel);
     if (!el) return false;
+    /* host 왕복 사이 concurrent commit 이 초점을 옮겼더라도, 최신 노드에서 실제
+       focus→blur 전이를 다시 만들어 React onBlur 커밋을 반드시 세운다. */
+    el.focus();
     /* set_value 의 기존 소비자인 #jobOrderSel 은 select 다. React 의 select
        onChange 는 native change 를 소유하므로 이탈 상에서만 실제 이벤트를 재현한다. */
     const view = el.ownerDocument.defaultView || window;
