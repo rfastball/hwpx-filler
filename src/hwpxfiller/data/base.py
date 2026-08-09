@@ -21,6 +21,10 @@ from typing import Protocol, runtime_checkable
 
 Record = "dict[str, str]"
 
+# 파일 겨눔 데이터 소스가 수용하는 확장자 정책의 Domain 정본.
+# concrete factory와 파일 다이얼로그는 이 튜플에서 함께 파생한다(RC-34).
+SUPPORTED_DATA_FILE_EXTENSIONS: "tuple[str, ...]" = (".xlsx", ".xlsm", ".csv")
+
 
 @runtime_checkable
 class DataSource(Protocol):
