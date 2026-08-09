@@ -23,6 +23,8 @@ P2 를 ``ONE_WAVE_READY / ORDERED_WAVES_READY / BLOCKED`` 중 하나로 판정�
 from __future__ import annotations
 
 import hashlib
+import ast
+import csv
 import json
 import subprocess
 import tomllib
@@ -36,7 +38,7 @@ from .schema import FactGraphError, parse_symbol_id
 COLLECTOR = "factgraph.authority_synthesis"
 LEDGER_REL_PATH = "docs/factgraph/authority_ledger_03.toml"
 REGEN_COMMAND = "uv run python scripts/gen_authority_ledger_03.py"
-SCHEMA = "authority-synthesis-03/v1"
+SCHEMA = "authority-synthesis-03/v2"
 
 #: 여섯 shard 공통 기반 사실 앵커(P1-01 폐포). src/ 가 이 값과 다르면 원장이 stale 이다.
 ANCHOR_BASE_FACTS = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
@@ -49,6 +51,10 @@ STATE_LEDGER = "docs/factgraph/state_graph_02b.toml"
 EFFECT_LEDGER = "docs/factgraph/effect_graph_02c.toml"
 TRANSPORT_LEDGER = "docs/factgraph/transport_graph_02d.toml"
 USE_CASE_LEDGER = "docs/factgraph/use_case_graph_02e.toml"
+DECISION_LEDGER = "docs/factgraph/authority_decisions_03.toml"
+R_OWNERSHIP_LEDGER = "docs/react_ownership_inventory.toml"
+R_VERIFICATION_LEDGER = "docs/react_verification_ledger.toml"
+TEST_PORTFOLIO = "docs/test_portfolio_inventory.csv"
 
 SHARD_LEDGERS: "tuple[tuple[str, str], ...]" = (
     ("01", INVENTORY_LEDGER),
@@ -155,25 +161,54 @@ class DependencyAnalysis:
     deferred_edges: int  # 끝점 하나 이상이 P_REVIEW — 권위 미결정이라 방향 판단 유보
     peer_edges: int  # 외곽 링 peer 간(방향 무관)
     violations: "tuple[DirectionEdge, ...]"
+    planned_violations: "tuple[DirectionEdge, ...]" = ()
+
+
+@dataclass(frozen=True)
+class AuthorityDecision:
+    """측정만으로 단일 귀속할 수 없던 모듈에 대한 사람 판정과 P2 추출 의무."""
+
+    module: str
+    target: str
+    reason: str
+    extractions: "tuple[str, ...]"
 
 
 @dataclass(frozen=True)
 class MigrationUnit:
-    """P2 병렬 절단 단위 하나 — source closure·write set·oracle·선후 DAG·제거 조건."""
+    """다른 에이전트가 추가 추론 없이 실행할 수 있는 P2 병렬 절단 패킷."""
 
     unit_id: str
     target: str
     modules: "tuple[str, ...]"
     symbol_count: int
+    purpose: str
+    current_responsibilities: "tuple[str, ...]"
+    source_symbols: "tuple[str, ...]"
     closure_digest: str
+    source_write_set: "tuple[str, ...]"
+    read_only_adjacent: "tuple[str, ...]"
     write_set: "tuple[str, ...]"
+    state_reads: "tuple[str, ...]"
+    transaction_clusters: "tuple[str, ...]"
+    effect_edges: "tuple[str, ...]"
+    persistence_edges: "tuple[str, ...]"
+    transport_edges: "tuple[str, ...]"
+    target_inputs: "tuple[str, ...]"
+    target_outputs: "tuple[str, ...]"
+    required_effect_contracts: "tuple[str, ...]"
+    extraction_obligations: "tuple[str, ...]"
     shared_with: "tuple[str, ...]"
     oracle_status: str
     oracle_entries: "tuple[str, ...]"
+    positive_gates: "tuple[str, ...]"
+    negative_gates: "tuple[str, ...]"
     predecessors: "tuple[str, ...]"
     successors: "tuple[str, ...]"
     compat_seam: str
     removal_condition: str
+    rollback_condition: str
+    stop_condition: str
     blocking: "tuple[str, ...]"
 
 
@@ -192,6 +227,10 @@ class SynthesisResult:
     units: "tuple[MigrationUnit, ...]"
     shared_seams: "tuple[tuple[str, tuple[str, ...]], ...]"
     oracle_gaps: "tuple[str, ...]"
+    oracle_pointer_gaps: "tuple[str, ...]"
+    packet_gaps: "tuple[str, ...]"
+    source_write_overlaps: "tuple[tuple[str, tuple[str, ...]], ...]"
+    r_handoff_gaps: "tuple[str, ...]"
     dependency: DependencyAnalysis
     unowned_surfaces: "tuple[str, ...]"  # effect/state/transport 을 지되 권위 원장 밖인 모듈
     verdict: str
@@ -333,6 +372,123 @@ def _inventory_modules(inv: dict) -> "dict[str, tuple[str, ...]]":
     return out
 
 
+def _inventory_paths(inv: dict) -> "dict[str, str]":
+    return {entry["name"]: entry["path"] for entry in inv.get("module", [])}
+
+
+def _load_decisions(
+    repo_root: Path, inventory_modules: "set[str]"
+) -> "tuple[dict[str, AuthorityDecision], dict[str, str], list[Contradiction]]":
+    """사람 판정을 읽고 중복·유령·어휘 오류를 contradiction으로 승격한다."""
+    raw = _load_toml(repo_root, DECISION_LEDGER)
+    problems: "list[Contradiction]" = []
+    if raw.get("schema") != "authority-decisions-03/v1":
+        problems.append(
+            Contradiction("decision_schema", f"{DECISION_LEDGER} schema가 v1이 아니다")
+        )
+    decisions: "dict[str, AuthorityDecision]" = {}
+    for row in raw.get("decision", []):
+        module = str(row.get("module", ""))
+        target = str(row.get("target", ""))
+        reason = str(row.get("reason", "")).strip()
+        extractions = tuple(str(v).strip() for v in row.get("extractions", []) if str(v).strip())
+        if not module or module in decisions:
+            problems.append(Contradiction("decision_duplicate", f"중복/공란 module: {module!r}"))
+            continue
+        if module not in inventory_modules:
+            problems.append(Contradiction("decision_ghost", f"인벤토리 밖 결정: {module}"))
+        if target not in AUTHORITIES or target in {"P_REVIEW_REQUIRED", "REACT"}:
+            problems.append(Contradiction("decision_target", f"{module}: 잘못된 target {target!r}"))
+        if not reason:
+            problems.append(Contradiction("decision_reason", f"{module}: 판정 사유 공란"))
+        decisions[module] = AuthorityDecision(module, target, reason, extractions)
+    return decisions, dict(raw.get("r_handoff", {})), problems
+
+
+def _content_digest(repo_root: Path, rel: str) -> str:
+    return hashlib.sha256((repo_root / rel).read_bytes()).hexdigest()
+
+
+def _r_handoff_problems(
+    repo_root: Path,
+    handoff: "dict[str, str]",
+    decisions: "dict[str, AuthorityDecision]",
+) -> "list[str]":
+    """R 원장의 네 미결정 항목이 P 판정과 같은 처분을 말하는지 교차검증한다."""
+    ownership = _load_toml(repo_root, R_OWNERSHIP_LEDGER)
+    _load_toml(repo_root, R_VERIFICATION_LEDGER)  # 입력 부재·파손도 fail-closed
+    nodes = {str(row.get("id")): row for row in ownership.get("node", [])}
+    reviews = {str(row.get("id")): row for row in ownership.get("review_item", [])}
+    expected_handoff = {
+        "close_guard_state": "host_internal",
+        "tpl": "FRONTEND_ADAPTER",
+        "nara_state": "APPLICATION",
+        "pipeline_builder_state": "RETIRE",
+    }
+    gaps = [
+        f"r_handoff.{key}: {handoff.get(key)!r} != {value!r}"
+        for key, value in expected_handoff.items()
+        if handoff.get(key) != value
+    ]
+    close = reviews.get("bridge/close-guard-state", {})
+    if close.get("resolved") is not True or "host" not in str(close.get("disposition", "")).lower():
+        gaps.append("R bridge/close-guard-state가 host_internal로 resolved되지 않았다")
+    node_expectations = {
+        "state/snapshot/tpl-channel": ("python_product", "hwpxfiller.webapp.screen_template"),
+        "state/ring1/nara": ("python_product", "hwpxfiller.gui.nara_state"),
+        "state/ring1/pipeline-builder": ("retire", "hwpxfiller.gui.pipeline_builder_state"),
+    }
+    for node_id, (classification, module) in node_expectations.items():
+        node = nodes.get(node_id, {})
+        if node.get("classification") != classification:
+            gaps.append(f"R {node_id} classification이 {classification}이 아니다")
+        if decisions.get(module) is None or decisions[module].target != expected_handoff[
+            "tpl" if module.endswith("screen_template") else
+            "nara_state" if module.endswith("nara_state") else
+            "pipeline_builder_state"
+        ]:
+            gaps.append(f"R {node_id}와 P 결정 {module}이 어긋난다")
+    return sorted(gaps)
+
+
+def _oracle_pointers(use_case_toml: dict) -> "dict[str, set[str]]":
+    """모듈별 실제 test/entry 포인터. 단순 boolean 접촉으로 oracle을 위조하지 않는다."""
+    out: "dict[str, set[str]]" = {}
+    for tf in use_case_toml.get("test_file", []):
+        path = str(tf.get("path", ""))
+        if not path:
+            continue
+        for module in tf.get("product_modules", []):
+            out.setdefault(module, set()).add(f"{path} :: module-contact")
+    for entry in use_case_toml.get("entry", []):
+        for root in entry.get("roots", []):
+            module = _module_of_symbol(root)
+            for oracle in entry.get("oracles", []):
+                out.setdefault(module, set()).add(f"{entry['id']} <- {oracle}")
+    return out
+
+
+def _portfolio_oracles(repo_root: Path) -> "dict[str, set[str]]":
+    """테스트 포트폴리오의 nodeid→covered module 관계를 실행 패킷 포인터로 재사용한다."""
+    path = repo_root / TEST_PORTFOLIO
+    if not path.is_file():
+        return {}
+    out: "dict[str, set[str]]" = {}
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh):
+            nodeid = row.get("nodeid") or row.get("id") or ""
+            for source in (row.get("covered_modules") or "").split(";"):
+                source = source.strip().replace("\\", "/")
+                if not source.startswith("src/") or not source.endswith(".py"):
+                    continue
+                module = source.removeprefix("src/").removesuffix(".py").replace("/", ".")
+                if module.endswith(".__init__"):
+                    module = module.removesuffix(".__init__")
+                if nodeid:
+                    out.setdefault(module, set()).add(nodeid)
+    return out
+
+
 def _effect_classes_by_module(effect_facts) -> "dict[str, set[str]]":
     """모듈 → 그 모듈 심볼이 접촉하는 effect class 집합(fs/host/clock…)."""
     out: "dict[str, set[str]]" = {}
@@ -388,7 +544,9 @@ def _import_edges(static) -> "tuple[tuple[str, str], ...]":
 
 
 def _direction_analysis(
-    module_targets: "dict[str, str]", edges: "tuple[tuple[str, str], ...]"
+    module_targets: "dict[str, str]",
+    edges: "tuple[tuple[str, str], ...]",
+    planned_sources: "set[str] | None" = None,
 ) -> DependencyAnalysis:
     """import 방향을 링 서열로 판정한다(#433). 안쪽이 바깥쪽을 import 하면 위반이다.
 
@@ -400,10 +558,17 @@ def _direction_analysis(
     deferred = 0
     peer = 0
     violations: "list[DirectionEdge]" = []
+    planned: "list[DirectionEdge]" = []
+    planned_sources = planned_sources or set()
     for src, dst in edges:
         ts = module_targets.get(src)
         td = module_targets.get(dst)
-        if ts == "P_REVIEW_REQUIRED" or td == "P_REVIEW_REQUIRED" or ts is None or td is None:
+        if (
+            ts == "P_REVIEW_REQUIRED"
+            or td == "P_REVIEW_REQUIRED"
+            or ts not in RING
+            or td not in RING
+        ):
             deferred += 1
             continue
         decided += 1
@@ -412,13 +577,18 @@ def _direction_analysis(
                 peer += 1
             continue
         if RING[ts] < RING[td]:  # 안쪽이 바깥쪽을 import — 위반
-            violations.append(DirectionEdge(src, ts, dst, td))
+            edge = DirectionEdge(src, ts, dst, td)
+            if src in planned_sources or dst in planned_sources:
+                planned.append(edge)
+            else:
+                violations.append(edge)
     return DependencyAnalysis(
         internal_edges=len(edges),
         decided_edges=decided,
         deferred_edges=deferred,
         peer_edges=peer,
         violations=tuple(sorted(violations, key=lambda v: (v.src, v.dst))),
+        planned_violations=tuple(sorted(planned, key=lambda v: (v.src, v.dst))),
     )
 
 
@@ -517,6 +687,94 @@ def _tested_modules(use_case_toml: dict) -> "set[str]":
     for tf in use_case_toml.get("test_file", []):
         out.update(tf.get("product_modules", []))
     return out
+
+
+def _transaction_clusters_by_module(state_toml: dict) -> "dict[str, tuple[str, ...]]":
+    out: "dict[str, list[str]]" = {}
+    for cluster in state_toml.get("transaction_cluster", []):
+        module = _module_of_symbol(cluster["src"])
+        members = ",".join(cluster.get("members", []))
+        out.setdefault(module, []).append(f"{cluster['src']} => {members}")
+    return {module: tuple(sorted(values)) for module, values in out.items()}
+
+
+def _effect_edges_by_module(effect) -> "dict[str, tuple[str, ...]]":
+    out: "dict[str, set[str]]" = {}
+    for fact in (*effect.effect_facts, *effect.composes_facts):
+        module = _module_of_symbol(fact.src)
+        out.setdefault(module, set()).add(f"{fact.rel}:{fact.src}->{fact.dst}")
+    return {module: tuple(sorted(values)) for module, values in out.items()}
+
+
+def _transport_edges_by_module(transport_toml: dict) -> "dict[str, tuple[str, ...]]":
+    out: "dict[str, set[str]]" = {}
+    for ep in transport_toml.get("endpoint", []):
+        if ep.get("handler"):
+            module = _module_of_symbol(ep["handler"])
+            out.setdefault(module, set()).add(f"endpoint:{ep['screen']}/{ep['action']}")
+    for channel in transport_toml.get("channel", []):
+        if channel.get("producer"):
+            module = _module_of_symbol(channel["producer"])
+            out.setdefault(module, set()).add(
+                f"channel:{channel.get('kind', 'unknown')}/{channel['name']}"
+            )
+    if transport_toml.get("host_method"):
+        out.setdefault("hwpxfiller.webapp.app", set()).update(
+            f"host_method:{method['name']}" for method in transport_toml["host_method"]
+        )
+    return {module: tuple(sorted(values)) for module, values in out.items()}
+
+
+def _module_purpose(repo_root: Path, source_path: str, module: str, target: str) -> str:
+    if target == "RETIRE":
+        return f"{module}의 소비자 0 잔재를 안전하게 제거한다."
+    try:
+        tree = ast.parse((repo_root / source_path).read_text(encoding="utf-8"))
+        doc = ast.get_docstring(tree, clean=True) or ""
+    except (OSError, SyntaxError, UnicodeError):
+        doc = ""
+    return doc.splitlines()[0].strip() if doc else f"{module} 구조적 패키지 셸"
+
+
+def _source_write_overlaps(
+    units: "list[MigrationUnit]",
+) -> "tuple[tuple[str, tuple[str, ...]], ...]":
+    owner: "dict[str, list[str]]" = {}
+    for unit in units:
+        for path in unit.source_write_set:
+            owner.setdefault(path, []).append(unit.unit_id)
+    return tuple(
+        (path, tuple(sorted(set(unit_ids))))
+        for path, unit_ids in sorted(owner.items())
+        if len(set(unit_ids)) > 1
+    )
+
+
+def _packet_gaps(units: "list[MigrationUnit]") -> "tuple[str, ...]":
+    """v2 실행 패킷의 필수 필드·실재 포인터를 fail-closed로 검사한다."""
+    gaps: "list[str]" = []
+    for unit in units:
+        scalar_fields = {
+            "purpose": unit.purpose,
+            "closure_digest": unit.closure_digest,
+            "compat_seam": unit.compat_seam,
+            "removal_condition": unit.removal_condition,
+            "rollback_condition": unit.rollback_condition,
+            "stop_condition": unit.stop_condition,
+        }
+        for name, value in scalar_fields.items():
+            if not value.strip():
+                gaps.append(f"{unit.unit_id}.{name}")
+        if not unit.source_write_set:
+            gaps.append(f"{unit.unit_id}.source_write_set")
+        if unit.oracle_status != "STRUCTURAL":
+            if not unit.oracle_entries:
+                gaps.append(f"{unit.unit_id}.oracle_entries")
+            if not unit.positive_gates:
+                gaps.append(f"{unit.unit_id}.positive_gates")
+        if not unit.negative_gates:
+            gaps.append(f"{unit.unit_id}.negative_gates")
+    return tuple(sorted(gaps))
 
 
 # ---------------------------------------------------------------------------
@@ -642,15 +900,22 @@ def _assign_authority(
 
 
 def _build_units(
+    repo_root: Path,
     module_auth: "dict[str, ModuleAuthority]",
     seams: "list[tuple[str, tuple[str, ...]]]",
     state_by_module: "dict[str, dict[str, set[str]]]",
     entries_by_module: "dict[str, list[str]]",
     module_oracle: "dict[str, str]",
     module_symbols: "dict[str, tuple[str, ...]]",
-    tested_modules: "set[str]",
+    module_paths: "dict[str, str]",
+    oracle_pointers: "dict[str, set[str]]",
+    decisions: "dict[str, AuthorityDecision]",
+    transaction_clusters: "dict[str, tuple[str, ...]]",
+    effect_edges: "dict[str, tuple[str, ...]]",
+    transport_edges: "dict[str, tuple[str, ...]]",
+    import_edges: "tuple[tuple[str, str], ...]",
 ) -> "list[MigrationUnit]":
-    """모듈을 migration unit 으로 절단한다. cross-module 공유 상태는 한 unit 으로 병합한다."""
+    """모듈을 self-contained P2 packet으로 절단한다. 공유 상태만 원자 unit으로 병합한다."""
     # 공유 상태로 묶인 모듈 그룹(union-find 없이 간단 병합).
     groups: "list[set[str]]" = []
     for _state, modules in seams:
@@ -674,17 +939,18 @@ def _build_units(
             target = next(iter(targets))
         else:
             target = "P_REVIEW_REQUIRED"
-        write_set: "set[str]" = set()
+        state_writes: "set[str]" = set()
+        state_reads: "set[str]" = set()
         for m in modules:
-            write_set |= state_by_module.get(m, {}).get("writes", set())
-            write_set |= state_by_module.get(m, {}).get("mutates", set())
-        oracle_entries: "list[str]" = []
+            state_writes |= state_by_module.get(m, {}).get("writes", set())
+            state_writes |= state_by_module.get(m, {}).get("mutates", set())
+            state_reads |= state_by_module.get(m, {}).get("reads", set())
+        behavior_oracles: "set[str]" = set()
         entry_statuses: "set[str]" = set()
         for m in modules:
-            oracle_entries.extend(entries_by_module.get(m, []))
+            behavior_oracles |= oracle_pointers.get(m, set())
             if m in module_oracle:
                 entry_statuses.add(module_oracle[m])
-        tested = any(m in tested_modules for m in modules)
         closure = sorted(s for m in modules for s in module_symbols.get(m, ()))
         sym_count = len(closure)
         closure_digest = hashlib.sha256("\n".join(closure).encode("utf-8")).hexdigest()
@@ -694,7 +960,7 @@ def _build_units(
             oracle_status = "STRUCTURAL"
         elif "CORE" in entry_statuses:
             oracle_status = "CORE"
-        elif "ENTRY" in entry_statuses or tested:
+        elif "ENTRY" in entry_statuses or behavior_oracles:
             oracle_status = "ENTRY"
         else:
             oracle_status = "NONE"
@@ -707,32 +973,108 @@ def _build_units(
             blocking.append("authority-unknown")
         if oracle_status == "NONE":
             blocking.append("oracle-gap")
-        compat = (
-            "legacy screen/action 계약을 adapter 로 유지하며 이관"
-            if target in ("FRONTEND_ADAPTER", "HOST")
-            else "in-memory 구현이 Application 이 요구하는 외부 효과 계약을 따른다"
-            if target == "EXTERNAL_ADAPTER"
-            else "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
+        source_write_set = tuple(sorted(module_paths[m] for m in modules))
+        adjacent = tuple(
+            sorted(
+                {dst for src, dst in import_edges if src in modules and dst not in modules}
+                | {src for src, dst in import_edges if dst in modules and src not in modules}
+            )
         )
+        module_effect_edges = tuple(
+            sorted(edge for m in modules for edge in effect_edges.get(m, ()))
+        )
+        module_transport_edges = tuple(
+            sorted(edge for m in modules for edge in transport_edges.get(m, ()))
+        )
+        module_transactions = tuple(
+            sorted(edge for m in modules for edge in transaction_clusters.get(m, ()))
+        )
+        persistence_classes = {"fs", "archive", "excel", "network", "registry", "lock"}
+        has_persistence = any(
+            persistence_classes & set(module_auth[m].effect_classes) for m in modules
+        )
+        persistence_edges = module_effect_edges if has_persistence else ()
+        outputs = tuple(
+            sorted(
+                [s for s in closure if not s.rpartition(":")[2].startswith("_")]
+                + [f"entry:{e}" for m in modules for e in entries_by_module.get(m, [])]
+            )
+        )
+        responsibilities: "list[str]" = [f"public-symbols:{len(outputs)}"]
+        if state_writes:
+            responsibilities.append(f"state-write:{len(state_writes)}")
+        if state_reads:
+            responsibilities.append(f"state-read:{len(state_reads)}")
+        if module_effect_edges:
+            responsibilities.append(f"effect-edge:{len(module_effect_edges)}")
+        if module_transport_edges:
+            responsibilities.append(f"transport-edge:{len(module_transport_edges)}")
+        if any(entries_by_module.get(m) for m in modules):
+            responsibilities.append(
+                f"entry:{sum(len(entries_by_module.get(m, [])) for m in modules)}"
+            )
+        contracts: "set[str]" = set()
+        if target in {"DOMAIN", "APPLICATION", "FRONTEND_ADAPTER"}:
+            for m in modules:
+                contracts.update(f"port:{kind}" for kind in module_auth[m].effect_classes)
+                contracts.update(f"composition-port:{edge}" for edge in module_auth[m].composes)
+        extraction_obligations = tuple(
+            sorted(item for m in modules for item in decisions.get(m, AuthorityDecision(m, target, "", ())).extractions)
+        )
+        module_label = ", ".join(modules)
+        compat = (
+            f"{module_label}: 기존 screen/action 및 snapshot 이름을 delegating facade로 유지"
+            if target == "FRONTEND_ADAPTER"
+            else f"{module_label}: 기존 import/public symbol을 새 {target} 구현으로 위임"
+        )
+        if target == "RETIRE":
+            compat = f"{module_label}: 제거 커밋 전 consumer-zero를 재확인하고 package shell은 보존"
         removal = (
-            "consumer-zero 도달 시 제거"
+            f"{module_label}: production consumer-zero 확인 뒤 모듈/잔재와 전용 테스트를 함께 제거"
             if target == "RETIRE"
-            else "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+            else f"{module_label}: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
         )
         return MigrationUnit(
             unit_id=uid,
             target=target,
             modules=tuple(sorted(modules)),
             symbol_count=sym_count,
+            purpose=" / ".join(
+                _module_purpose(repo_root, module_paths[m], m, target) for m in modules
+            ),
+            current_responsibilities=tuple(responsibilities),
+            source_symbols=tuple(closure),
             closure_digest=closure_digest,
-            write_set=tuple(sorted(write_set)),
+            source_write_set=source_write_set,
+            read_only_adjacent=adjacent,
+            write_set=tuple(sorted(state_writes)),
+            state_reads=tuple(sorted(state_reads)),
+            transaction_clusters=module_transactions,
+            effect_edges=module_effect_edges,
+            persistence_edges=persistence_edges,
+            transport_edges=module_transport_edges,
+            target_inputs=adjacent,
+            target_outputs=outputs,
+            required_effect_contracts=tuple(sorted(contracts)),
+            extraction_obligations=extraction_obligations,
             shared_with=tuple(sorted(shared_with)),
             oracle_status=oracle_status,
-            oracle_entries=tuple(sorted(set(oracle_entries))),
+            oracle_entries=tuple(sorted(behavior_oracles)),
+            positive_gates=tuple(sorted(behavior_oracles)),
+            negative_gates=(
+                "tests/test_authority_gate_04.py::test_migration_packet_mutations_turn_red",
+            ),
             predecessors=(),
             successors=(),
             compat_seam=compat,
             removal_condition=removal,
+            rollback_condition=(
+                f"{module_label}: unit 변경만 되돌리고 기존 facade/public surface를 권위로 복귀"
+            ),
+            stop_condition=(
+                f"{module_label}: behavior oracle, effect contract, source-write-set 중 하나라도 "
+                "드리프트하면 이관을 중단"
+            ),
             blocking=tuple(blocking),
         )
 
@@ -777,6 +1119,10 @@ def _verdict(
     oracle_gaps: "tuple[str, ...]" = (),
     dependency: "DependencyAnalysis | None" = None,
     unowned: "tuple[str, ...]" = (),
+    packet_gaps: "tuple[str, ...]" = (),
+    oracle_pointer_gaps: "tuple[str, ...]" = (),
+    source_write_overlaps: "tuple[tuple[str, tuple[str, ...]], ...]" = (),
+    r_handoff_gaps: "tuple[str, ...]" = (),
 ) -> "tuple[str, list[str]]":
     reasons: "list[str]" = []
     if contradictions:
@@ -787,6 +1133,14 @@ def _verdict(
         reasons.append(f"결정 권위 간 의존 방향 위반 {direction_violations}건(안쪽→바깥쪽)")
     if unowned:
         reasons.append(f"권위 원장 밖 effect/state/transport 표면 {len(unowned)}건(소유 불명)")
+    if packet_gaps:
+        reasons.append(f"P2 실행 패킷 필수 필드 공백 {len(packet_gaps)}건")
+    if oracle_pointer_gaps:
+        reasons.append(f"실재 behavior oracle 포인터 공백 {len(oracle_pointer_gaps)}건")
+    if source_write_overlaps:
+        reasons.append(f"P2 source write-set 충돌 {len(source_write_overlaps)}건")
+    if r_handoff_gaps:
+        reasons.append(f"R→P 권위 핸드오프 불일치 {len(r_handoff_gaps)}건")
     unknown = [u.unit_id for u in units if u.target == "P_REVIEW_REQUIRED"]
     unit_oracle_gap = [u.unit_id for u in units if u.oracle_status == "NONE"]
     if unknown:
@@ -810,6 +1164,10 @@ def _verdict(
         or sccs
         or direction_violations
         or unowned
+        or packet_gaps
+        or oracle_pointer_gaps
+        or source_write_overlaps
+        or r_handoff_gaps
     ):
         return "BLOCKED", reasons
     seam_units = [u for u in units if u.predecessors]
@@ -818,7 +1176,10 @@ def _verdict(
             f"central seam 선행 뒤 병렬화 가능 — 묶인 unit {len(seam_units)}건"
         )
         return "ORDERED_WAVES_READY", reasons
-    reasons.append("모든 unit 이 독립 write set·oracle 보유, central seam 외 선후 강제 없음")
+    reasons.append(
+        "모든 unit 이 독립 source/state write set·실재 oracle·효과 계약을 보유하고 "
+        "central seam 외 선후 강제가 없음"
+    )
     return "ONE_WAVE_READY", reasons
 
 
@@ -842,6 +1203,12 @@ def synthesize(repo_root: Path) -> SynthesisResult:
     )
 
     inv_modules = _inventory_modules(shards["01"])
+    inv_paths = _inventory_paths(shards["01"])
+    decisions, r_handoff, decision_problems = _load_decisions(repo_root, set(inv_modules))
+    contradictions.extend(decision_problems)
+    shard_digests["03.decisions"] = _content_digest(repo_root, DECISION_LEDGER)
+    shard_digests["R.ownership"] = _content_digest(repo_root, R_OWNERSHIP_LEDGER)
+    shard_digests["R.verification"] = _content_digest(repo_root, R_VERIFICATION_LEDGER)
     effect_by_module = _effect_classes_by_module(effect.effect_facts)
     composes_by_module = _composes_by_module(effect.composes_facts)
     state_by_module = _state_by_module(shards["02b"])
@@ -853,7 +1220,10 @@ def synthesize(repo_root: Path) -> SynthesisResult:
     if host_module:
         transport_by_module.setdefault(host_module, set()).add("host_method")
     entries_by_module, module_oracle, oracle_gaps = _entries_by_module(shards["02e"])
-    tested_modules = _tested_modules(shards["02e"])
+    oracle_pointers = _oracle_pointers(shards["02e"])
+    for module, pointers in _portfolio_oracles(repo_root).items():
+        oracle_pointers.setdefault(module, set()).update(pointers)
+    r_handoff_gaps = tuple(_r_handoff_problems(repo_root, r_handoff, decisions))
 
     modules: "list[ModuleAuthority]" = []
     module_auth: "dict[str, ModuleAuthority]" = {}
@@ -864,9 +1234,19 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         stateful_tx = module in tx_modules
         shared = module in shared_modules
         composes = composes_by_module.get(module, ())
-        target, reason = _assign_authority(
+        measured_target, measured_reason = _assign_authority(
             module, symbols, effect_classes, transport_kinds, stateful_tx, shared, composes
         )
+        decision = decisions.get(module)
+        if decision is not None:
+            target = decision.target
+            reason = f"사람 판정: {decision.reason} / 측정 신호: {measured_reason}"
+        else:
+            target, reason = measured_target, measured_reason
+        if measured_target == "P_REVIEW_REQUIRED" and decision is None:
+            contradictions.append(
+                Contradiction("decision_missing", f"{module}: P_REVIEW_REQUIRED 사람 판정 부재")
+            )
         ma = ModuleAuthority(
             module=module,
             target=target,
@@ -883,18 +1263,26 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         modules.append(ma)
         module_auth[module] = ma
 
+    internal_import_edges = _import_edges(static)
     units = _build_units(
+        repo_root,
         module_auth,
         seams,
         state_by_module,
         entries_by_module,
         module_oracle,
         inv_modules,
-        tested_modules,
+        inv_paths,
+        oracle_pointers,
+        decisions,
+        _transaction_clusters_by_module(shards["02b"]),
+        _effect_edges_by_module(effect),
+        _transport_edges_by_module(shards["02d"]),
+        internal_import_edges,
     )
 
     module_targets = {m.module: m.target for m in modules}
-    dependency = _direction_analysis(module_targets, _import_edges(static))
+    dependency = _direction_analysis(module_targets, internal_import_edges, set(decisions))
     # effect/state/transport 을 지는 모든 모듈이 권위 원장 안에 있는가 — UNKNOWN 을 green 으로
     # 넘기지 않는다. 신규 effectful/stateful/transport 모듈이 인벤토리 밖이면 여기서 걸린다.
     surface_modules = set(effect_by_module) | set(state_by_module) | set(transport_by_module)
@@ -902,6 +1290,11 @@ def synthesize(repo_root: Path) -> SynthesisResult:
 
     sccs = int(shards["02a"].get("counts", {}).get("sccs", 0))
     dynamic_open = int(shards["02a"].get("counts", {}).get("dynamic_open", 0))
+    packet_gaps = _packet_gaps(units)
+    oracle_pointer_gaps = tuple(
+        sorted(u.unit_id for u in units if u.oracle_status != "STRUCTURAL" and not u.oracle_entries)
+    )
+    source_write_overlaps = _source_write_overlaps(units)
     verdict, reasons = _verdict(
         contradictions,
         units,
@@ -910,6 +1303,10 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         tuple(oracle_gaps),
         dependency,
         unowned_surfaces,
+        packet_gaps,
+        oracle_pointer_gaps,
+        source_write_overlaps,
+        r_handoff_gaps,
     )
 
     return SynthesisResult(
@@ -926,6 +1323,10 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         units=tuple(units),
         shared_seams=tuple(seams),
         oracle_gaps=tuple(oracle_gaps),
+        oracle_pointer_gaps=oracle_pointer_gaps,
+        packet_gaps=packet_gaps,
+        source_write_overlaps=source_write_overlaps,
+        r_handoff_gaps=r_handoff_gaps,
         dependency=dependency,
         unowned_surfaces=unowned_surfaces,
         verdict=verdict,
@@ -1015,8 +1416,13 @@ def render(repo_root: Path) -> str:
     parts.append(f"migration_units = {len(result.units)}\n")
     parts.append(f"shared_seams = {len(result.shared_seams)}\n")
     parts.append(f"oracle_gaps = {len(result.oracle_gaps)}\n")
+    parts.append(f"oracle_pointer_gaps = {len(result.oracle_pointer_gaps)}\n")
+    parts.append(f"packet_gaps = {len(result.packet_gaps)}\n")
+    parts.append(f"source_write_overlaps = {len(result.source_write_overlaps)}\n")
+    parts.append(f"r_handoff_gaps = {len(result.r_handoff_gaps)}\n")
     parts.append(f"unowned_surfaces = {len(result.unowned_surfaces)}\n")
     parts.append(f"direction_violations = {len(result.dependency.violations)}\n")
+    parts.append(f"planned_direction_obligations = {len(result.dependency.planned_violations)}\n")
     parts.append(f"p_review_modules = {by_target['P_REVIEW_REQUIRED']}\n")
     parts.append(f"p_review_units = {unit_targets['P_REVIEW_REQUIRED']}\n")
 
@@ -1038,10 +1444,19 @@ def render(repo_root: Path) -> str:
     parts.append(f"deferred_edges = {dep.deferred_edges}\n")  # 끝점이 P_REVIEW — 방향 판단 유보
     parts.append(f"peer_edges = {dep.peer_edges}\n")  # 외곽 링 peer 간(방향 무관)
     parts.append(f"violations = {len(dep.violations)}\n")
+    parts.append(f"planned_obligations = {len(dep.planned_violations)}\n")
 
     parts.append("\n# 의존 방향 위반 — 안쪽 링이 바깥쪽을 import 한 자리(있으면 헌장 금지선).\n")
     for v in dep.violations:
         parts.append("\n[[direction_violation]]\n")
+        parts.append(f"src = {_q(v.src)}\n")
+        parts.append(f"src_target = {_q(v.src_target)}\n")
+        parts.append(f"dst = {_q(v.dst)}\n")
+        parts.append(f"dst_target = {_q(v.dst_target)}\n")
+
+    parts.append("\n# 현재 소스의 계획된 방향 위반 — 해당 unit의 extraction_obligations로 P2에서 제거.\n")
+    for v in dep.planned_violations:
+        parts.append("\n[[planned_direction_obligation]]\n")
         parts.append(f"src = {_q(v.src)}\n")
         parts.append(f"src_target = {_q(v.src_target)}\n")
         parts.append(f"dst = {_q(v.dst)}\n")
@@ -1080,14 +1495,39 @@ def render(repo_root: Path) -> str:
         parts.append(f"target = {_q(u.target)}\n")
         parts.append(f"modules = [{', '.join(_q(m) for m in u.modules)}]\n")
         parts.append(f"symbol_count = {u.symbol_count}\n")
+        parts.append(f"purpose = {_q(u.purpose)}\n")
         parts.append(f"closure_digest = {_q(u.closure_digest)}\n")
         parts.append(f"oracle_status = {_q(u.oracle_status)}\n")
         parts.append(f"predecessors = [{', '.join(_q(p) for p in u.predecessors)}]\n")
+        parts.append(f"successors = [{', '.join(_q(p) for p in u.successors)}]\n")
         parts.append(f"shared_with = [{', '.join(_q(s) for s in u.shared_with)}]\n")
         parts.append(f"write_set_count = {len(u.write_set)}\n")
+        parts.append(f"source_write_set_count = {len(u.source_write_set)}\n")
         parts.append(f"blocking = [{', '.join(_q(b) for b in u.blocking)}]\n")
         parts.append(f"compat_seam = {_q(u.compat_seam)}\n")
         parts.append(f"removal_condition = {_q(u.removal_condition)}\n")
+        parts.append(f"rollback_condition = {_q(u.rollback_condition)}\n")
+        parts.append(f"stop_condition = {_q(u.stop_condition)}\n")
+        for name, values in (
+            ("current_responsibilities", u.current_responsibilities),
+            ("source_symbols", u.source_symbols),
+            ("source_write_set", u.source_write_set),
+            ("read_only_adjacent", u.read_only_adjacent),
+            ("state_reads", u.state_reads),
+            ("transaction_clusters", u.transaction_clusters),
+            ("effect_edges", u.effect_edges),
+            ("persistence_edges", u.persistence_edges),
+            ("transport_edges", u.transport_edges),
+            ("target_inputs", u.target_inputs),
+            ("target_outputs", u.target_outputs),
+            ("required_effect_contracts", u.required_effect_contracts),
+            ("extraction_obligations", u.extraction_obligations),
+            ("positive_gates", u.positive_gates),
+            ("negative_gates", u.negative_gates),
+        ):
+            parts.append(f"{name} = [\n")
+            parts.extend(f"  {_q(value)},\n" for value in values)
+            parts.append("]\n")
         # 원자 이관 대상 상태 좌표를 그대로 남긴다 — count 만으로는 같은 크기의 다른 write set 을
         # 구분 못 하고, P2 가 무엇을 함께 옮겨야 하는지 알 수 없다(#532 리뷰).
         parts.append("write_set = [\n")
@@ -1096,6 +1536,19 @@ def render(repo_root: Path) -> str:
         parts.append("oracle_entries = [\n")
         parts.extend(f"  {_q(e)},\n" for e in u.oracle_entries)
         parts.append("]\n")
+
+    for path, unit_ids in result.source_write_overlaps:
+        parts.append("\n[[source_write_overlap]]\n")
+        parts.append(f"path = {_q(path)}\n")
+        parts.append(f"units = [{', '.join(_q(uid) for uid in unit_ids)}]\n")
+
+    for gap in result.packet_gaps:
+        parts.append("\n[[packet_gap]]\n")
+        parts.append(f"field = {_q(gap)}\n")
+
+    for gap in result.r_handoff_gaps:
+        parts.append("\n[[r_handoff_gap]]\n")
+        parts.append(f"detail = {_q(gap)}\n")
 
     parts.append("\n# oracle 공백 — behavior oracle 이 없어 안전 이관이 막히는 진입.\n")
     for gap in result.oracle_gaps:

@@ -1,0 +1,177 @@
+# P1-03 사람 판정 원장 — 측정만으로 단일 귀속할 수 없던 권위와 P2 추출 의무.
+# 이 파일은 생성물이 아니다. 변경에는 근거·추출 의무·P1-04 mutation gate가 함께 따라야 한다.
+schema = "authority-decisions-03/v1"
+
+[r_handoff]
+close_guard_state = "host_internal"
+tpl = "FRONTEND_ADAPTER"
+nara_state = "APPLICATION"
+pipeline_builder_state = "RETIRE"
+
+[[decision]]
+module = "hwpxcore.atomic"
+target = "EXTERNAL_ADAPTER"
+reason = "원자 파일 교체 자체가 파일시스템 어댑터 책임이다."
+extractions = []
+
+[[decision]]
+module = "hwpxcore.motw"
+target = "HOST"
+reason = "Windows MOTW 판정과 제거는 플랫폼 호스트 경계다."
+extractions = []
+
+[[decision]]
+module = "hwpxcore.package"
+target = "EXTERNAL_ADAPTER"
+reason = "ZIP 기반 HWPX 패키지 입출력을 소유하는 저장 어댑터다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller"
+target = "RETIRE"
+reason = "제품 소비자가 없는 __version__ 재수출만 제거하고 패키지 셸은 보존한다."
+extractions = ["stale __version__ 재수출 제거", "구조적 package __init__ 보존"]
+
+[[decision]]
+module = "hwpxfiller.batch"
+target = "APPLICATION"
+reason = "여러 작업의 생성 순서와 실패 집계를 조정하는 응용 유스케이스다."
+extractions = ["구체 파일 생성 호출을 effect contract 뒤로 이동"]
+
+[[decision]]
+module = "hwpxfiller.core.dataset_pool"
+target = "EXTERNAL_ADAPTER"
+reason = "durable 데이터 참조와 환경 기반 저장 위치를 구현하는 저장 어댑터다."
+extractions = ["데이터셋 참조 값·상태 전이 규칙을 Domain 값 객체로 추출"]
+
+[[decision]]
+module = "hwpxfiller.core.fill_ledger"
+target = "DOMAIN"
+reason = "채움 결과의 의미와 충돌 판정을 소유하는 도메인 원장이다."
+extractions = ["시각 공급을 Clock port로 추출", "내보내기 직렬화를 External Adapter로 추출"]
+
+[[decision]]
+module = "hwpxfiller.core.job"
+target = "DOMAIN"
+reason = "작업·검증·생성 입력의 핵심 불변식을 소유하는 도메인 집합체다."
+extractions = ["파일·잠금·프로세스·native 호출을 effect port로 추출", "저장 직렬화를 External Adapter로 추출", "시각·식별자 공급을 주입"]
+
+[[decision]]
+module = "hwpxfiller.core.paths"
+target = "HOST"
+reason = "환경과 설치 위치에서 런타임 경로를 해석하는 호스트 정책이다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.core.text_registry"
+target = "EXTERNAL_ADAPTER"
+reason = "텍스트 파일 저장소 구현을 조립하는 외부 저장 어댑터다."
+extractions = ["텍스트 항목의 정체와 검증 규칙을 Domain으로 추출"]
+
+[[decision]]
+module = "hwpxfiller.data.excel"
+target = "EXTERNAL_ADAPTER"
+reason = "Excel·CSV 파일을 DataSource 포트로 번역하는 어댑터다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.data.factory"
+target = "EXTERNAL_ADAPTER"
+reason = "구체 데이터 소스 어댑터를 선택·조립하는 composition root다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.data.nara"
+target = "EXTERNAL_ADAPTER"
+reason = "나라장터 네트워크 API를 DataSource 포트로 번역한다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.data.secret_store"
+target = "EXTERNAL_ADAPTER"
+reason = "운영체제 자격 증명 저장소를 감싸는 보안 어댑터다."
+extractions = ["redaction 규칙과 secret port를 순수 계약으로 추출"]
+
+[[decision]]
+module = "hwpxfiller.gui.dataset_pool_state"
+target = "APPLICATION"
+reason = "데이터셋 풀 사용자 동작과 전이를 조정하는 응용 ViewModel이다."
+extractions = ["registry 조립을 외부 composition root로 이동"]
+
+[[decision]]
+module = "hwpxfiller.gui.nara_state"
+target = "APPLICATION"
+reason = "나라장터 키 등록·취득 흐름을 조정하는 응용 ViewModel이다."
+extractions = ["네트워크와 시각 접근을 주입형 port로 추출"]
+
+[[decision]]
+module = "hwpxfiller.gui.pipeline_builder_state"
+target = "RETIRE"
+reason = "제품 소비자가 0이고 테스트만 남은 파킹된 파이프라인 빌더다."
+extractions = ["테스트와 모듈을 함께 제거", "consumer-zero를 제거 전 재확인"]
+
+[[decision]]
+module = "hwpxfiller.gui.run_state"
+target = "APPLICATION"
+reason = "실행 준비·진행·결과 수명주기를 조정하는 응용 ViewModel이다."
+extractions = ["구체 실행기 조립을 Host composition root로 이동"]
+
+[[decision]]
+module = "hwpxfiller.naming"
+target = "DOMAIN"
+reason = "출력 이름 충돌과 서식 규칙은 도메인 정책이다."
+extractions = ["현재 시각을 Clock port로 주입"]
+
+[[decision]]
+module = "hwpxfiller.web_artifact"
+target = "HOST"
+reason = "봉인 웹 산출물의 설치 위치·프로세스 검증을 소유하는 호스트 경계다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.webapp.boot_budget"
+target = "HOST"
+reason = "Windows registry의 WebView 부팅 예산을 읽는 호스트 정책이다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.webapp.screen_editor"
+target = "FRONTEND_ADAPTER"
+reason = "편집기 transport 동사와 화면 snapshot을 번역하는 프런트 어댑터다."
+extractions = ["시각 접근을 effect contract로 추출"]
+
+[[decision]]
+module = "hwpxfiller.webapp.screen_job"
+target = "FRONTEND_ADAPTER"
+reason = "작업 화면 transport 동사와 snapshot을 번역하는 프런트 어댑터다."
+extractions = ["시각 접근을 effect contract로 추출"]
+
+[[decision]]
+module = "hwpxfiller.webapp.screen_template"
+target = "FRONTEND_ADAPTER"
+reason = "과도기 tpl 채널을 편집기 화면 계약으로 번역하는 프런트 어댑터다."
+extractions = ["파일·시각·식별자 효과를 contract 뒤로 이동", "tpl 호환 채널 consumer-zero 뒤 제거"]
+
+[[decision]]
+module = "hwpxfiller.webapp.screen_workbench"
+target = "FRONTEND_ADAPTER"
+reason = "검토 작업대 transport 동사와 snapshot을 번역하는 프런트 어댑터다."
+extractions = ["시각 접근을 effect contract로 추출"]
+
+[[decision]]
+module = "hwpxfiller.webapp.screens"
+target = "FRONTEND_ADAPTER"
+reason = "공용 화면 controller와 데이터 겨눔 동사를 번역하는 프런트 어댑터다."
+extractions = ["환경 접근을 effect contract로 추출"]
+
+[[decision]]
+module = "hwpxfiller.webapp.selftest_api"
+target = "HOST"
+reason = "설치본 selftest와 pywebview facade 부착을 소유하는 호스트 진단 경계다."
+extractions = []
+
+[[decision]]
+module = "hwpxfiller.webapp.settings"
+target = "EXTERNAL_ADAPTER"
+reason = "사용자 설정의 파일·시각·진단 출력을 구현하는 저장 어댑터다."
+extractions = []

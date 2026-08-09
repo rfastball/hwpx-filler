@@ -126,8 +126,10 @@ def validate(run: object) -> LiveRun:
         # 형태만 보면 `FileDialogs(open_file=None, …)` 가 통과해 **첫 파일 선택에서** 죽는다.
         # 그 시점은 창이 이미 떠 있고 대본이 절반쯤 지난 뒤라, 이 seam 이 등록 시점 실패로
         # 옮겨 오려던 바로 그 늦은 진단이 된다(#425 리뷰 P2).
-        for member in ("open_file", "open_folder"):
-            answer = getattr(run.file_dialogs, member)
+        for member, answer in (
+            ("open_file", run.file_dialogs.open_file),
+            ("open_folder", run.file_dialogs.open_folder),
+        ):
             if not callable(answer):
                 raise LiveRunContractError(
                     f"file_dialogs.{member} 가 콜러블이 아닙니다: {answer!r}"

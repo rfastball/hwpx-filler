@@ -874,7 +874,11 @@ class HostOperations:
                 CODE_UNKNOWN_OP,
                 f"되읽을 수 없는 설정 키: {setting!r} (허용 {sorted(SETTINGS_READBACK_KEYS)})",
             )
-        reader = getattr(self._settings, SETTINGS_READBACK_KEYS[setting], None)
+        reader = (
+            getattr(self._settings, "load_theme", None)
+            if setting == "theme"
+            else getattr(self._settings, "load_font_scale", None)
+        )
         if not callable(reader):
             return _refuse(
                 op, CODE_UNAVAILABLE, f"설정 판독기 {SETTINGS_READBACK_KEYS[setting]} 가 없다"
@@ -1073,27 +1077,32 @@ def attach_selftest_facade(target: object, facade: SelftestHostFacade) -> "tuple
     """
     if not isinstance(facade, SelftestHostFacade):
         raise SelftestApiError(CODE_INTERNAL, f"파사드가 아니다: {facade!r}")
-    for attribute in FACADE_ATTRIBUTES:
-        if hasattr(target, attribute):
+    for attribute, occupied in (
+        ("selftest_claim", hasattr(target, "selftest_claim")),
+        ("selftest_host_op", hasattr(target, "selftest_host_op")),
+    ):
+        if occupied:
             raise SelftestApiError(CODE_INTERNAL, f"이미 점유된 js_api 이름: {attribute}")
-    for attribute, method in FACADE_METHODS:
-        setattr(target, attribute, getattr(facade, method))
+    setattr(target, "selftest_claim", facade.selftest_claim)
+    setattr(target, "selftest_host_op", facade.selftest_host_op)
     return FACADE_ATTRIBUTES
 
 
 def detach_selftest_facade(target: object) -> "tuple[str, ...]":
     """심었던 이름을 걷는다. 걷힌 이름을 돌려준다(없던 것은 조용히 지나간다 — 해제는 멱등)."""
     removed: "list[str]" = []
-    for attribute in FACADE_ATTRIBUTES:
-        if hasattr(target, attribute):
-            delattr(target, attribute)
-            removed.append(attribute)
+    if hasattr(target, "selftest_claim"):
+        delattr(target, "selftest_claim")
+        removed.append("selftest_claim")
+    if hasattr(target, "selftest_host_op"):
+        delattr(target, "selftest_host_op")
+        removed.append("selftest_host_op")
     return tuple(removed)
 
 
 def facade_attached(target: object) -> bool:
     """``js_api`` 표면에 테스트 메서드가 **하나라도** 있는가."""
-    return any(hasattr(target, attribute) for attribute in FACADE_ATTRIBUTES)
+    return hasattr(target, "selftest_claim") or hasattr(target, "selftest_host_op")
 
 
 # ------------------------------------------------------------------ 판정

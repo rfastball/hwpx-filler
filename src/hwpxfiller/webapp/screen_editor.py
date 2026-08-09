@@ -363,7 +363,11 @@ class EditorController:
     SESSION_EXTRAS = ("job_name", "data_path", "data_sheet")
 
     def _extras_now(self) -> "dict[str, str]":
-        return {k: getattr(self, k) for k in self.SESSION_EXTRAS}
+        return {
+            "job_name": self.job_name,
+            "data_path": self.data_path,
+            "data_sheet": self.data_sheet,
+        }
 
     def _extras_of(self, base: "Job") -> "dict[str, str]":
         """저장본이 함의하는 extras — 이름은 저장본의 것이고 **데이터 선택은 없음**이다.
