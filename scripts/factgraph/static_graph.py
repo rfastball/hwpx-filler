@@ -44,7 +44,7 @@ from .schema import (
 
 COLLECTOR = "factgraph.static_graph"
 
-BASELINE_SHA = "5c341aaea127cc8e9edb01f1d120057c156b4744"
+BASELINE_SHA = "81e02c2f893a5d0b83c7945448792fcf1cd3f234"
 
 LEDGER_REL_PATH = "docs/factgraph/static_graph_02a.toml"
 REGEN_COMMAND = "uv run python scripts/gen_static_graph_02a.py"

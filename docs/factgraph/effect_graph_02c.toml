@@ -5,7 +5,7 @@
 schema = "effect-graph-02c/v1"
 
 [baseline]
-git_sha = "5c341aaea127cc8e9edb01f1d120057c156b4744"
+git_sha = "81e02c2f893a5d0b83c7945448792fcf1cd3f234"
 
 # base/graph 핀은 02A 원장과 같은 값이어야 한다 — 같은 측정 위의 shard.
 [digests]
