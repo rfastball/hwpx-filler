@@ -1,16 +1,16 @@
 """파일 다이얼로그 필터 문자열 — 단일 출처(RC-34).
 
-지원 확장자의 실질 단일 출처는 :mod:`hwpxfiller.data.factory` 의 ``EXCEL_EXTS`` 다 —
-엑셀/CSV 필터는 거기서 **파생**한다. 확장자 정책이 바뀌면(예: ``.xls`` 추가) 모든
-파일 다이얼로그가 함께 움직인다 — 화면 단위 하드코딩 사본이 새 형식을 조용히
-숨기는 드리프트를 끊는다.
+지원 확장자의 단일 출처는 :mod:`hwpxfiller.data.base` 의
+``SUPPORTED_DATA_FILE_EXTENSIONS`` 다. 엑셀/CSV 필터와 concrete source factory가
+함께 파생하므로 확장자 정책이 바뀌면(예: ``.xls`` 추가) 모든 파일 다이얼로그가
+함께 움직인다 — 화면 단위 하드코딩 사본이 새 형식을 조용히 숨기는 드리프트를 끊는다.
 
 재유입(필터 리터럴 하드코딩)은 tests/test_file_filters.py 의 grep 게이트가 막는다.
 """
 
 from __future__ import annotations
 
-from ..data.factory import EXCEL_EXTS
+from ..data.base import SUPPORTED_DATA_FILE_EXTENSIONS as EXCEL_EXTS
 
 # 데이터 파일(엑셀/CSV) 선택 필터 — EXCEL_EXTS 파생(리터럴 확장자 금지).
 EXCEL_FILTER = "엑셀/CSV (" + " ".join(f"*{ext}" for ext in EXCEL_EXTS) + ")"

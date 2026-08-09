@@ -10,14 +10,12 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from .base import DataSource
+from .base import DataSource, SUPPORTED_DATA_FILE_EXTENSIONS
 from .excel import ExcelDataSource
 
-# 파일 겨눔으로 여는 소스의 확장자(현재 Excel 어댑터가 xlsx/xlsm/csv 를 함께 처리).
-# 공개 튜플 — 파일 다이얼로그 필터(gui/file_filters.py)가 여기서 파생한다(RC-34):
-# 확장자 정책이 바뀌면 모든 다이얼로그가 함께 움직인다(화면별 하드코딩 드리프트 금지).
-EXCEL_EXTS: "tuple[str, ...]" = (".xlsx", ".xlsm", ".csv")
-_EXCEL_EXTS = frozenset(EXCEL_EXTS)  # 내부 멤버십 검사용(하위호환 이름 유지)
+# 기존 공개 import를 보존하는 호환 alias. 수용 정책의 정본은 Domain 값이다.
+EXCEL_EXTS = SUPPORTED_DATA_FILE_EXTENSIONS
+_EXCEL_EXTS = frozenset(SUPPORTED_DATA_FILE_EXTENSIONS)
 
 
 def source_for_path(path: "str | Path", **opts) -> DataSource:

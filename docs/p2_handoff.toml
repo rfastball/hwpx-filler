@@ -96,12 +96,8 @@ dst = "hwpxfiller.data.factory"
 src = "hwpxfiller.gui.template_manager_state"
 dst = "hwpxcore.package"
 
-# 동결 시 최소 AST 재검사가 P1 factgraph의 상대 import 폐포에서 누락됐던 기존 2건을 드러냈다.
-# 새 위반으로 숨기지 않고 같은 P2 제거 의무로 승격한다.
-[[allowed_direction_violation]]
-src = "hwpxfiller.gui.file_filters"
-dst = "hwpxfiller.data.factory"
-
+# 동결 시 최소 AST 재검사가 P1 factgraph의 상대 import 폐포에서 누락했던 기존 2건 중
+# 아직 남은 위반이다. 새 위반으로 숨기지 않고 같은 P2 제거 의무로 승격한다.
 [[allowed_direction_violation]]
 src = "hwpxfiller.gui.home_state"
 dst = "hwpxfiller.core.dataset_pool"
@@ -442,7 +438,6 @@ target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/file_filters.py"]
 remove_when = "hwpxfiller.gui.file_filters: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_file_filters.py"
-obligations = ["지원 확장자 정책을 Domain 값으로 옮겨 data.factory 역의존 제거"]
 
 [[unit]]
 module = "hwpxfiller.gui.filter_state"
