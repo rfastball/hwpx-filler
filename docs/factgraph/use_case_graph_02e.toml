@@ -38,11 +38,11 @@ oracle_entry = 144
 oracle_core = 2
 oracle_none = 9
 characterization_gaps = 11
-test_files = 236
+test_files = 237
 
 [test_axis_counts]
 "browser" = 1
-"deterministic" = 228
+"deterministic" = 229
 "live" = 6
 "native" = 1
 
@@ -3667,6 +3667,12 @@ product_modules = [
   "hwpxfiller.core.authoring",
   "hwpxfiller.core.fields",
   "hwpxfiller.core.schema",
+]
+
+[[test_file]]
+path = "tests/test_authority_gate_04.py"
+axis = "deterministic"
+product_modules = [
 ]
 
 [[test_file]]

@@ -94,6 +94,17 @@ EFFECT_CLASS_AUTHORITY: "dict[str, str]" = {
 _PRIOR_DOMAIN = ("hwpxcore.atomic", "hwpxcore.lineseg", "hwpxcore.motw",
                  "hwpxcore.package", "hwpxcore.text_extract", "hwpxcore.validate")
 
+#: 의존 방향 링 서열(#433). 허용 import 는 바깥→안이다: 외곽(2)→Application(1)→Domain(0).
+#: 안쪽이 바깥쪽을 import 하면(RING[src] < RING[dst]) 방향 위반이다. 외곽 셋
+#: (FRONTEND_ADAPTER·EXTERNAL_ADAPTER·HOST)은 같은 서열의 peer 라 서로 조립 import 가능.
+RING: "dict[str, int]" = {
+    "DOMAIN": 0,
+    "APPLICATION": 1,
+    "FRONTEND_ADAPTER": 2,
+    "EXTERNAL_ADAPTER": 2,
+    "HOST": 2,
+}
+
 
 # ---------------------------------------------------------------------------
 # 결과 자료구조
@@ -123,6 +134,27 @@ class ModuleAuthority:
     stateful_tx: bool
     shared_state: bool
     entries: "tuple[str, ...]"
+
+
+@dataclass(frozen=True)
+class DirectionEdge:
+    """import 방향 위반 하나 — 안쪽 링이 바깥쪽을 import 한 좌표."""
+
+    src: str
+    src_target: str
+    dst: str
+    dst_target: str
+
+
+@dataclass(frozen=True)
+class DependencyAnalysis:
+    """모듈 import 그래프의 방향 판정. 결정 권위 간 위반은 0 이어야 한다(clean invariant)."""
+
+    internal_edges: int
+    decided_edges: int
+    deferred_edges: int  # 끝점 하나 이상이 P_REVIEW — 권위 미결정이라 방향 판단 유보
+    peer_edges: int  # 외곽 링 peer 간(방향 무관)
+    violations: "tuple[DirectionEdge, ...]"
 
 
 @dataclass(frozen=True)
@@ -160,6 +192,8 @@ class SynthesisResult:
     units: "tuple[MigrationUnit, ...]"
     shared_seams: "tuple[tuple[str, tuple[str, ...]], ...]"
     oracle_gaps: "tuple[str, ...]"
+    dependency: DependencyAnalysis
+    unowned_surfaces: "tuple[str, ...]"  # effect/state/transport 을 지되 권위 원장 밖인 모듈
     verdict: str
     verdict_reasons: "tuple[str, ...]"
 
@@ -328,6 +362,64 @@ def _composes_by_module(composes_facts) -> "dict[str, tuple[str, ...]]":
             continue
         out.setdefault(_module_of_symbol(fact.src), set()).add(fact.dst)
     return {m: tuple(sorted(v)) for m, v in out.items()}
+
+
+def _import_edges(static) -> "tuple[tuple[str, str], ...]":
+    """폐포 안 모듈 간 import 엣지(src module → dst module). 자기 자신·외부는 뺀다.
+
+    ``import x`` 는 imports_module, ``from x import y`` 는 imports_symbol 로 방출된다 —
+    방향 판정은 둘 다 봐야 한다(imports_module 만 보면 ``from`` 다수 코드베이스의 엣지
+    대부분을 놓친다).
+    """
+    edges: "set[tuple[str, str]]" = set()
+    for f in static.base_facts:
+        if f.rel not in ("imports_module", "imports_symbol"):
+            continue
+        if f.dst.startswith(("ext:", "?:", "attr:")):
+            continue
+        try:
+            src_mod, _q, _k = parse_symbol_id(f.src)
+            dst_mod, _q2, _k2 = parse_symbol_id(f.dst)
+        except FactGraphError:
+            continue
+        if src_mod != dst_mod:
+            edges.add((src_mod, dst_mod))
+    return tuple(sorted(edges))
+
+
+def _direction_analysis(
+    module_targets: "dict[str, str]", edges: "tuple[tuple[str, str], ...]"
+) -> DependencyAnalysis:
+    """import 방향을 링 서열로 판정한다(#433). 안쪽이 바깥쪽을 import 하면 위반이다.
+
+    끝점 하나라도 P_REVIEW(권위 미결정)면 방향을 판정하지 않고 유보한다 — UNKNOWN 을
+    조용히 통과시키지 않되, 결정 안 된 권위로 위반을 위조하지도 않는다. 외곽 링 peer 끼리
+    (FRONTEND_ADAPTER·EXTERNAL_ADAPTER·HOST)는 방향 무관이라 위반이 아니다.
+    """
+    decided = 0
+    deferred = 0
+    peer = 0
+    violations: "list[DirectionEdge]" = []
+    for src, dst in edges:
+        ts = module_targets.get(src)
+        td = module_targets.get(dst)
+        if ts == "P_REVIEW_REQUIRED" or td == "P_REVIEW_REQUIRED" or ts is None or td is None:
+            deferred += 1
+            continue
+        decided += 1
+        if RING[ts] == RING[td]:
+            if ts != td:
+                peer += 1
+            continue
+        if RING[ts] < RING[td]:  # 안쪽이 바깥쪽을 import — 위반
+            violations.append(DirectionEdge(src, ts, dst, td))
+    return DependencyAnalysis(
+        internal_edges=len(edges),
+        decided_edges=decided,
+        deferred_edges=deferred,
+        peer_edges=peer,
+        violations=tuple(sorted(violations, key=lambda v: (v.src, v.dst))),
+    )
 
 
 def _state_by_module(state_toml: dict) -> "dict[str, dict[str, set[str]]]":
@@ -683,11 +775,18 @@ def _verdict(
     sccs: int,
     dynamic_open: int,
     oracle_gaps: "tuple[str, ...]" = (),
+    dependency: "DependencyAnalysis | None" = None,
+    unowned: "tuple[str, ...]" = (),
 ) -> "tuple[str, list[str]]":
     reasons: "list[str]" = []
     if contradictions:
         reasons.append(f"원장 간 미해결 contradiction {len(contradictions)}건")
         return "BLOCKED", reasons
+    direction_violations = len(dependency.violations) if dependency else 0
+    if direction_violations:
+        reasons.append(f"결정 권위 간 의존 방향 위반 {direction_violations}건(안쪽→바깥쪽)")
+    if unowned:
+        reasons.append(f"권위 원장 밖 effect/state/transport 표면 {len(unowned)}건(소유 불명)")
     unknown = [u.unit_id for u in units if u.target == "P_REVIEW_REQUIRED"]
     unit_oracle_gap = [u.unit_id for u in units if u.oracle_status == "NONE"]
     if unknown:
@@ -703,7 +802,15 @@ def _verdict(
         reasons.append(f"미해결 동적 call edge {dynamic_open}건(정적 그래프 밖 의존 은닉)")
     if sccs:
         reasons.append(f"거대 원자 cluster(SCC) {sccs}건")
-    if unknown or unit_oracle_gap or oracle_gaps or dynamic_open or sccs:
+    if (
+        unknown
+        or unit_oracle_gap
+        or oracle_gaps
+        or dynamic_open
+        or sccs
+        or direction_violations
+        or unowned
+    ):
         return "BLOCKED", reasons
     seam_units = [u for u in units if u.predecessors]
     if seam_units:
@@ -786,10 +893,23 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         tested_modules,
     )
 
+    module_targets = {m.module: m.target for m in modules}
+    dependency = _direction_analysis(module_targets, _import_edges(static))
+    # effect/state/transport 을 지는 모든 모듈이 권위 원장 안에 있는가 — UNKNOWN 을 green 으로
+    # 넘기지 않는다. 신규 effectful/stateful/transport 모듈이 인벤토리 밖이면 여기서 걸린다.
+    surface_modules = set(effect_by_module) | set(state_by_module) | set(transport_by_module)
+    unowned_surfaces = tuple(sorted(m for m in surface_modules if m not in module_targets))
+
     sccs = int(shards["02a"].get("counts", {}).get("sccs", 0))
     dynamic_open = int(shards["02a"].get("counts", {}).get("dynamic_open", 0))
     verdict, reasons = _verdict(
-        contradictions, units, sccs, dynamic_open, tuple(oracle_gaps)
+        contradictions,
+        units,
+        sccs,
+        dynamic_open,
+        tuple(oracle_gaps),
+        dependency,
+        unowned_surfaces,
     )
 
     return SynthesisResult(
@@ -806,6 +926,8 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         units=tuple(units),
         shared_seams=tuple(seams),
         oracle_gaps=tuple(oracle_gaps),
+        dependency=dependency,
+        unowned_surfaces=unowned_surfaces,
         verdict=verdict,
         verdict_reasons=tuple(reasons),
     )
@@ -893,6 +1015,8 @@ def render(repo_root: Path) -> str:
     parts.append(f"migration_units = {len(result.units)}\n")
     parts.append(f"shared_seams = {len(result.shared_seams)}\n")
     parts.append(f"oracle_gaps = {len(result.oracle_gaps)}\n")
+    parts.append(f"unowned_surfaces = {len(result.unowned_surfaces)}\n")
+    parts.append(f"direction_violations = {len(result.dependency.violations)}\n")
     parts.append(f"p_review_modules = {by_target['P_REVIEW_REQUIRED']}\n")
     parts.append(f"p_review_units = {unit_targets['P_REVIEW_REQUIRED']}\n")
 
@@ -905,6 +1029,23 @@ def render(repo_root: Path) -> str:
     parts.append("reasons = [\n")
     parts.extend(f"  {_q(r)},\n" for r in result.verdict_reasons)
     parts.append("]\n")
+
+    dep = result.dependency
+    parts.append("\n[dependency]\n")
+    parts.append("# import 방향 판정(#433 링 서열). 결정 권위 간 위반은 0 이어야 한다.\n")
+    parts.append(f"internal_edges = {dep.internal_edges}\n")
+    parts.append(f"decided_edges = {dep.decided_edges}\n")
+    parts.append(f"deferred_edges = {dep.deferred_edges}\n")  # 끝점이 P_REVIEW — 방향 판단 유보
+    parts.append(f"peer_edges = {dep.peer_edges}\n")  # 외곽 링 peer 간(방향 무관)
+    parts.append(f"violations = {len(dep.violations)}\n")
+
+    parts.append("\n# 의존 방향 위반 — 안쪽 링이 바깥쪽을 import 한 자리(있으면 헌장 금지선).\n")
+    for v in dep.violations:
+        parts.append("\n[[direction_violation]]\n")
+        parts.append(f"src = {_q(v.src)}\n")
+        parts.append(f"src_target = {_q(v.src_target)}\n")
+        parts.append(f"dst = {_q(v.dst)}\n")
+        parts.append(f"dst_target = {_q(v.dst_target)}\n")
 
     parts.append("\n# 원장 간 사실 충돌 — 없으면 merge 가 일치했다는 뜻이다.\n")
     for c in result.contradictions:
@@ -979,7 +1120,7 @@ def check(repo_root: Path) -> "list[str]":
     try:
         actual = tomllib.loads(target.read_text(encoding="utf-8"))
         fresh = tomllib.loads(expected)
-        for section in ("anchor", "counts", "verdict"):
+        for section in ("anchor", "counts", "verdict", "dependency"):
             left = actual.get(section, {})
             right = fresh.get(section, {})
             for key in sorted(set(left) | set(right)):

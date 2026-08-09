@@ -34,6 +34,8 @@ contradictions = 0
 migration_units = 85
 shared_seams = 0
 oracle_gaps = 20
+unowned_surfaces = 0
+direction_violations = 0
 p_review_modules = 27
 p_review_units = 27
 
@@ -55,6 +57,16 @@ reasons = [
   "entry-level oracle 공백 20건(특성화 미보유 진입)",
   "미해결 동적 call edge 11건(정적 그래프 밖 의존 은닉)",
 ]
+
+[dependency]
+# import 방향 판정(#433 링 서열). 결정 권위 간 위반은 0 이어야 한다.
+internal_edges = 235
+decided_edges = 78
+deferred_edges = 157
+peer_edges = 13
+violations = 0
+
+# 의존 방향 위반 — 안쪽 링이 바깥쪽을 import 한 자리(있으면 헌장 금지선).
 
 # 원장 간 사실 충돌 — 없으면 merge 가 일치했다는 뜻이다.
 
