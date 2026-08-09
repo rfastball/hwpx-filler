@@ -119,6 +119,7 @@ def test_registry_add_load_list_delete(tmp_path):
     assert reg.exists(ka)
     assert reg.load(ka).opts["path"] == "/a.xlsx"
     reg.delete(ka)
+    reg.delete(ka)  # 이미 없는 슬롯 삭제도 조용한 no-op — 멱등 계약
     assert not reg.exists(ka)
     assert reg.names() == ["B"]
 
