@@ -9,7 +9,7 @@ git_sha = "22c93227a47a986fc90e9ea5312ba297dfd30706"
 
 [digests]
 base_facts_02a = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
-transport = "07be0e6325d62bf79c370d6669b1676a215120ae7730e32210500c247c659b5a"
+transport = "4e1a4e507579015d37e47ad28e16e83f76839e4e56bda5064b591d8e20fb07fd"
 
 [counts]
 screens = 6
@@ -26,11 +26,17 @@ snapshot_channels = 6
 snapshot_fields = 128
 snapshot_fields_runtime_observed = 118
 snapshot_fields_conditional = 10
+snapshot_fields_product = 111
+snapshot_fields_selftest_only = 1
+snapshot_fields_none_found = 16
 channels_product_event = 4
 channels_partial_push = 1
 channels_selftest_host_op = 11
-consumer_zero_actions = 0
-selftest_only_actions = 2
+product_event_fields = 6
+product_event_fields_conditional = 1
+product_event_consumer_zero = 0
+consumer_zero_actions = 1
+selftest_only_actions = 0
 dead_handlers = 0
 actions_without_handler = 0
 
@@ -104,10 +110,27 @@ consumed_selftest = [
 
 # 소비자 0 / 시험 전용 소비 endpoint — loud 분리(#516 완료 조건).
 [consumer_zero]
-actions = []
-selftest_only_actions = [
-  "pool/activate",
-  "pool/archive",
+actions = [
+  "tpl/toggle_group",
+]
+selftest_only_actions = []
+snapshot_fields = [
+  "editor.changes",
+  "editor.has_unsaved_work",
+  "job.data_label",
+  "job.filename_pattern",
+  "job.guard",
+  "job.template_name",
+  "job.template_path",
+  "pool.count",
+  "pool.empty",
+  "pool.result",
+  "tpl.hwpx",
+  "tpl.result",
+  "tpl.txt",
+  "workbench.fullwidth",
+  "workbench.guard",
+  "workbench.is_complete",
 ]
 host_internal_methods = [
   "close_guard_state",
@@ -227,7 +250,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_discard_patch#me
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -256,7 +278,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_goto_section#met
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -282,7 +303,6 @@ consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
   "frontend/src/screens/editor_entry.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
 ]
 
 [[endpoint]]
@@ -336,9 +356,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_save#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/workbench.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -354,7 +371,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_confirmed#me
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/workbench.ts",
 ]
 
 [[endpoint]]
@@ -399,7 +415,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_name#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -429,7 +444,6 @@ handler = "hwpxfiller.webapp.screen_editor:EditorController._do_set_source#metho
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/workbench.ts",
 ]
 
 [[endpoint]]
@@ -606,7 +620,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_job:JobController._do_disband_group#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/library.ts",
 ]
 
@@ -705,7 +718,6 @@ handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_panel#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_zone.ts",
-  "frontend/src/selftest/probes/job.js",
 ]
 
 [[endpoint]]
@@ -793,6 +805,7 @@ handler = "hwpxfiller.webapp.screens:PoolTargetingMixin._do_load_pool#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_picker.ts",
+  "frontend/src/screens/job_read.ts",
 ]
 
 [[endpoint]]
@@ -857,7 +870,6 @@ handler = "hwpxfiller.webapp.screen_job:JobController._do_preview_close#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/job_run.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -911,7 +923,6 @@ handler = "hwpxfiller.webapp.screen_job:JobController._do_range_draft_cancel#met
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/job_read.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -936,13 +947,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_job:JobController._do_refresh#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/data_picker.ts",
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/job_read.ts",
-  "frontend/src/screens/library.ts",
-  "frontend/src/screens/product_screen_executor.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -959,6 +964,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_job:JobController._do_relink_template#method"
 consumer = "product"
 js_evidence = [
+  "frontend/src/screens/job_read.ts",
   "frontend/src/screens/job_relink.ts",
 ]
 
@@ -977,7 +983,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_job:JobController._do_rename_group#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/library.ts",
 ]
 
@@ -1023,7 +1028,6 @@ handler = "hwpxfiller.webapp.screen_job:JobController._do_select_job#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/job_read.ts",
-  "frontend/src/selftest/probes/job.js",
 ]
 
 [[endpoint]]
@@ -1070,7 +1074,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_job:JobController._do_set_group#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/library.ts",
 ]
 
@@ -1132,8 +1135,6 @@ handler = "hwpxfiller.webapp.screen_job:JobController._do_toggle_favorite#method
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/job_read.ts",
-  "frontend/src/screens/library.ts",
-  "frontend/src/selftest/probes/job.js",
 ]
 
 [[endpoint]]
@@ -1151,7 +1152,6 @@ handler = "hwpxfiller.webapp.data_zone:DataZoneMixin._do_toggle_record#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_zone.ts",
-  "frontend/src/selftest/probes/job.js",
 ]
 
 [[endpoint]]
@@ -1249,13 +1249,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_library:LibraryController._do_refresh#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/data_picker.ts",
-  "frontend/src/screens/editor.ts",
-  "frontend/src/screens/job_read.ts",
   "frontend/src/screens/library.ts",
-  "frontend/src/screens/product_screen_executor.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1273,6 +1267,7 @@ handler = "hwpxfiller.webapp.screen_library:LibraryController._do_relink_templat
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/job_relink.ts",
+  "frontend/src/screens/library.ts",
 ]
 
 [[endpoint]]
@@ -1345,7 +1340,6 @@ handler = "hwpxfiller.webapp.screen_library:LibraryController._do_set_view#metho
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/library.ts",
-  "frontend/src/screens/workbench.ts",
 ]
 
 [[endpoint]]
@@ -1375,9 +1369,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_favorite#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/job_read.ts",
   "frontend/src/screens/library.ts",
-  "frontend/src/selftest/probes/job.js",
 ]
 
 [[endpoint]]
@@ -1415,9 +1407,9 @@ required = [
 optional = []
 zone_mutation = false
 handler = "hwpxfiller.webapp.screen_pool:PoolController._do_activate#method"
-consumer = "selftest_only"
+consumer = "product"
 js_evidence = [
-  "frontend/src/selftest/probes/editor_workbench_data.js",
+  "frontend/src/screens/data_picker.ts",
 ]
 
 [[endpoint]]
@@ -1429,9 +1421,9 @@ required = [
 optional = []
 zone_mutation = false
 handler = "hwpxfiller.webapp.screen_pool:PoolController._do_archive#method"
-consumer = "selftest_only"
+consumer = "product"
 js_evidence = [
-  "frontend/src/selftest/probes/editor_workbench_data.js",
+  "frontend/src/screens/data_picker.ts",
 ]
 
 [[endpoint]]
@@ -1449,8 +1441,6 @@ handler = "hwpxfiller.webapp.screen_pool:PoolController._do_delete#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_picker.ts",
-  "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1463,12 +1453,6 @@ handler = "hwpxfiller.webapp.screen_pool:PoolController._do_refresh#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_picker.ts",
-  "frontend/src/screens/editor.ts",
-  "frontend/src/screens/job_read.ts",
-  "frontend/src/screens/library.ts",
-  "frontend/src/screens/product_screen_executor.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1510,7 +1494,6 @@ handler = "hwpxfiller.webapp.screen_pool:PoolController._do_relink#method"
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/data_picker.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1544,7 +1527,6 @@ handler = "hwpxfiller.webapp.screen_template:TemplateController._do_compile#meth
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1561,9 +1543,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/data_picker.ts",
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1581,7 +1561,6 @@ handler = "hwpxfiller.webapp.screen_template:TemplateController._do_disband_grou
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/library.ts",
 ]
 
 [[endpoint]]
@@ -1593,13 +1572,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_template:TemplateController._do_refresh#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/data_picker.ts",
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/job_read.ts",
-  "frontend/src/screens/library.ts",
-  "frontend/src/screens/product_screen_executor.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1618,7 +1591,6 @@ handler = "hwpxfiller.webapp.screen_template:TemplateController._do_rename_group
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/library.ts",
 ]
 
 [[endpoint]]
@@ -1633,7 +1605,6 @@ handler = "hwpxfiller.webapp.screen_template:TemplateController._do_review#metho
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1651,7 +1622,6 @@ handler = "hwpxfiller.webapp.screen_template:TemplateController._do_set_group#me
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/editor.ts",
-  "frontend/src/screens/library.ts",
 ]
 
 [[endpoint]]
@@ -1664,10 +1634,8 @@ required = [
 optional = []
 zone_mutation = false
 handler = "hwpxfiller.webapp.screen_template:TemplateController._do_toggle_group#method"
-consumer = "product"
-js_evidence = [
-  "frontend/src/screens/library.ts",
-]
+consumer = "none_found"
+js_evidence = []
 
 [[endpoint]]
 screen = "tpl"
@@ -1734,9 +1702,7 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_close#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/overlay/modal.js",
   "frontend/src/screens/workbench.ts",
-  "frontend/src/selftest/probes/boot_routing_overlay.js",
 ]
 
 [[endpoint]]
@@ -1761,7 +1727,6 @@ handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_leave_guar
 consumer = "product"
 js_evidence = [
   "frontend/src/screens/workbench.ts",
-  "frontend/src/selftest/probes/editor_workbench_data.js",
 ]
 
 [[endpoint]]
@@ -1805,7 +1770,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_confirmed#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/workbench.ts",
 ]
 
@@ -1898,7 +1862,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_source#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/editor.ts",
   "frontend/src/screens/workbench.ts",
 ]
 
@@ -1927,7 +1890,6 @@ zone_mutation = false
 handler = "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_view#method"
 consumer = "product"
 js_evidence = [
-  "frontend/src/screens/library.ts",
   "frontend/src/screens/workbench.ts",
 ]
 
@@ -2132,775 +2094,1293 @@ screen = "editor"
 field = "active_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "active_source_fields"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "changes"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "editor"
 field = "context"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "counts"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "data_name"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "data_path"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "data_sheet"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "dirty"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "dirty_sections"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "editing_origin"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "field_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "fields"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "fmt_options"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "gate"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "gate_error"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "has_unsaved_work"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "editor"
 field = "ignored_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "ignored_expanded"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "ignored_source_fields"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "is_complete"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "is_draft"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "library"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "name"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "notice"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "pattern"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "pattern_preview"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "preview_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "preview_empties"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "preview_index"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "provenance"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "raw_block"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "reachable"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "record_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "revisions"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "rows"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/screens/editor_state.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "sample_rows"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "schema_only"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "schema_summary"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "section"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "sections"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "source_fields"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "template_media"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "selftest_only"
+js_evidence = [
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "template_name"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "template_path"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+  "frontend/src/selftest/probes/boot_routing_overlay.js",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "type_options"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "editor"
 field = "unconfirm_undo_count"
 producer = "hwpxfiller.webapp.screen_editor:EditorController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/editor.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "blank_fields"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "browse"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "candidates"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "conn_label"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "data_label"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "job"
 field = "data_mount"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "data_notice"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "data_source_label"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "data_target"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "drift"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "filename_pattern"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "job"
 field = "filter"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "gate"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "guard"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "job"
 field = "has_data"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "has_job"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "job_name"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/screens/job_result.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "last_run_job"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_result.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "name_tokens"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "new_work"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "order_note"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "out_dir"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_preview.ts",
+  "frontend/src/screens/job_run.ts",
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "preflight"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "preview"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_preview.ts",
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "range_draft"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "record_count"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "records"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "restate"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "review"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "rules_key"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "run_action"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "selected_count"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "selection_key"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run_state.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "table"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "template_missing"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_run.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "template_name"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "job"
 field = "template_path"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "job"
 field = "view_order"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+  "frontend/src/selftest/probes/editor_workbench_data.js",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "zone_epoch"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/job_read.ts",
+]
 
 [[snapshot_field]]
 screen = "job"
 field = "zone_selected_count"
 producer = "hwpxfiller.webapp.screen_job:JobController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_zone.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "alerts"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "corrupt_rows"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "counts"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "detail"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "facets"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "group_names"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "is_empty"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "mode"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "query"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "sections"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "selected"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "library"
 field = "view"
 producer = "hwpxfiller.webapp.screen_library:LibraryController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/library.ts",
+]
 
 [[snapshot_field]]
 screen = "pool"
 field = "corrupted"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
 
 [[snapshot_field]]
 screen = "pool"
 field = "count"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "pool"
 field = "duplicates"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
 
 [[snapshot_field]]
 screen = "pool"
 field = "empty"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "pool"
 field = "result"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "pool"
 field = "rows"
 producer = "hwpxfiller.webapp.screen_pool:PoolController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/data_picker.ts",
+]
 
 [[snapshot_field]]
 screen = "tpl"
 field = "hwpx"
 producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "tpl"
 field = "result"
 producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "tpl"
 field = "txt"
 producer = "hwpxfiller.webapp.screen_template:TemplateController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "workbench"
 field = "can_save"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "card"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "copied_count"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "dirty"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "fmt_options"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "fullwidth"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = false
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "workbench"
 field = "guard"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "workbench"
 field = "is_complete"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = false
+consumer = "none_found"
+js_evidence = []
 
 [[snapshot_field]]
 screen = "workbench"
 field = "job_name"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "mode_label"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "notice"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "open"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "revision"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "rows"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "save_block"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "source_fields"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "target_font"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+  "frontend/src/screens/workbench_state.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "total"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "type_options"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = false
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[snapshot_field]]
 screen = "workbench"
 field = "view"
 producer = "hwpxfiller.webapp.screen_workbench:WorkbenchController.snapshot#method"
 runtime_observed = true
+consumer = "product"
+js_evidence = [
+  "frontend/src/screens/workbench.ts",
+]
 
 [[channel]]
 kind = "product_event"
 name = "snapshot"
 producer = "hwpxfiller.webapp.product_api:ProductApiClient.push#method"
-fields = []
+fields = [
+  "screen",
+  "snapshot",
+]
 consumer_evidence = [
+  "frontend/src/bootstrap.js",
   "frontend/src/product_api.js",
 ]
 
@@ -2908,8 +3388,11 @@ consumer_evidence = [
 kind = "product_event"
 name = "close-request"
 producer = "hwpxfiller.webapp.product_api:ProductApiClient.close_request#method"
-fields = []
+fields = [
+  "state",
+]
 consumer_evidence = [
+  "frontend/src/bootstrap.js",
   "frontend/src/product_api.js",
 ]
 
@@ -2917,15 +3400,26 @@ consumer_evidence = [
 kind = "product_event"
 name = "preferences"
 producer = "hwpxfiller.webapp.product_api:ProductApiClient.preferences#method"
-fields = []
-consumer_evidence = []
+fields = [
+  "personalization",
+  "theme?",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
 
 [[channel]]
 kind = "product_event"
 name = "notice"
 producer = "hwpxfiller.webapp.product_api:ProductApiClient.notice#method"
-fields = []
-consumer_evidence = []
+fields = [
+  "message",
+]
+consumer_evidence = [
+  "frontend/src/bootstrap.js",
+  "frontend/src/product_api.js",
+]
 
 [[channel]]
 kind = "partial_push"

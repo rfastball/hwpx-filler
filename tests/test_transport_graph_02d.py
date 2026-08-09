@@ -15,6 +15,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from _web_source import SOURCE_ROOT
 from factgraph.static_graph import LEDGER_REL_PATH as STATIC_LEDGER_REL_PATH
 from factgraph.transport_graph import (
     LEDGER_REL_PATH,
@@ -23,9 +24,11 @@ from factgraph.transport_graph import (
     PushChannel,
     SnapshotField,
     _controller_classes,
+    _dispatch_pair_oracle,
     _runtime_snapshot_fields,
     channel_problems,
     check,
+    dispatch_pair_evidence,
     endpoint_problems,
     host_method_problems,
     parse_ledger,
@@ -34,6 +37,7 @@ from factgraph.transport_graph import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_RELATIVE = SOURCE_ROOT.relative_to(ROOT)
 
 
 @pytest.fixture(scope="module")
@@ -151,8 +155,24 @@ def test_counts_section_restates_the_rows(inventory, document: "dict[str, object
     assert counts["snapshot_fields_conditional"] == sum(
         1 for f in inventory.snapshot_fields if not f.runtime_observed
     )
+    for consumer in ("product", "selftest_only", "none_found"):
+        assert counts[f"snapshot_fields_{consumer}"] == sum(
+            1 for field in inventory.snapshot_fields if field.consumer == consumer
+        )
+    assert sum(
+        counts[f"snapshot_fields_{consumer}"]
+        for consumer in ("product", "selftest_only", "none_found")
+    ) == counts["snapshot_fields"]
     for kind in ("product_event", "partial_push", "selftest_host_op"):
         assert counts[f"channels_{kind}"] == sum(1 for c in inventory.channels if c.kind == kind)
+    product_events = [c for c in inventory.channels if c.kind == "product_event"]
+    assert counts["product_event_fields"] == sum(len(c.fields) for c in product_events)
+    assert counts["product_event_fields_conditional"] == sum(
+        field.endswith("?") for c in product_events for field in c.fields
+    )
+    assert counts["product_event_consumer_zero"] == sum(
+        not c.consumer_evidence for c in product_events
+    )
     assert counts["consumer_zero_actions"] == sum(
         1 for e in inventory.endpoints if e.consumer == "none_found"
     )
@@ -163,6 +183,11 @@ def test_counts_section_restates_the_rows(inventory, document: "dict[str, object
     assert isinstance(zero, dict)
     assert list(zero["actions"]) == [
         f"{e.screen}/{e.action}" for e in inventory.endpoints if e.consumer == "none_found"
+    ]
+    assert list(zero["snapshot_fields"]) == [
+        f"{f.screen}.{f.field}"
+        for f in inventory.snapshot_fields
+        if f.consumer == "none_found"
     ]
     assert list(zero["host_internal_methods"]) == [m.name for m in internal]
 
@@ -179,6 +204,332 @@ def test_conditional_emission_is_captured_not_silently_dropped(inventory) -> Non
     assert sample is not None and not sample.runtime_observed
     always = rows.get(("workbench", "open"))
     assert always is not None and always.runtime_observed
+
+
+def test_dispatch_consumer_evidence_is_bound_to_the_screen_action_pair(inventory) -> None:
+    """동명 action 토큰은 다른 화면 endpoint 의 소비 증거가 될 수 없다(#528 P1)."""
+    rows = {(row.screen, row.action): row for row in inventory.endpoints}
+
+    library = rows[("library", "toggle_group")]
+    assert library.consumer == "product", library
+    assert "frontend/src/screens/library.ts" in library.js_evidence, library
+
+    transitional = rows[("tpl", "toggle_group")]
+    assert transitional.consumer == "none_found", transitional
+    assert transitional.js_evidence == (), transitional
+
+    dynamic_product = {
+        ("job", "load_pool"),
+        ("job", "relink_template"),
+        ("library", "relink_template"),
+        ("pool", "activate"),
+        ("pool", "archive"),
+        ("pool", "register_excel"),
+    }
+    for pair in dynamic_product:
+        assert rows[pair].consumer == "product", rows[pair]
+        assert rows[pair].js_evidence, rows[pair]
+    assert {
+        pair for pair, row in rows.items() if row.consumer == "none_found"
+    } == {("tpl", "toggle_group")}
+
+
+@pytest.mark.parametrize(
+    "enumerate_pairs", [dispatch_pair_evidence, _dispatch_pair_oracle], ids=["collector", "oracle"]
+)
+def test_restricted_dynamic_dispatch_domains_recover_product_pairs(enumerate_pairs) -> None:
+    """제품 port와 producer가 제한한 값-domain만 동적 dispatch 양성으로 복원한다."""
+    evidence = enumerate_pairs(ROOT)
+    expected = {
+        ("job", "load_pool"): "frontend/src/screens/data_picker.ts",
+        ("job", "relink_template"): "frontend/src/screens/job_relink.ts",
+        ("library", "relink_template"): "frontend/src/screens/job_relink.ts",
+        ("pool", "activate"): "frontend/src/screens/data_picker.ts",
+        ("pool", "archive"): "frontend/src/screens/data_picker.ts",
+        ("pool", "register_excel"): "frontend/src/screens/data_picker.ts",
+    }
+    for pair, sender in expected.items():
+        assert sender in evidence[pair], (pair, evidence.get(pair))
+    assert ("tpl", "toggle_group") not in evidence
+
+
+@pytest.mark.parametrize(
+    "enumerate_pairs", [dispatch_pair_evidence, _dispatch_pair_oracle], ids=["collector", "oracle"]
+)
+def test_dynamic_dispatch_does_not_inherit_lexical_noise(enumerate_pairs) -> None:
+    """파일 문자열과 주석·문자열 속 call-shaped 산문은 값-domain이 아니다(#528 음성)."""
+    rel = "frontend/src/screens/synthetic.ts"
+    corpus = {
+        rel: """
+        function axis(action: string): void { dispatch("tpl", action, {}); }
+        const screen = "tpl";
+        const unrelated = "toggle_group";
+        const prose = 'dispatch("tpl", "toggle_group", {})';
+        const templateProse = `dispatch("tpl", "toggle_group", {})`;
+        const pattern = /dispatch("tpl", "toggle_group", {})/;
+        function patternFactory() { return /dispatch("tpl", "toggle_group", {})/; }
+        const arrowPattern = () => /dispatch("tpl", "toggle_group", {})/;
+        // dispatch("tpl", "toggle_group", {});
+        /* axis("toggle_group"); */
+        const liveTemplate = `${axis("refresh")}`;
+        """
+    }
+    evidence = enumerate_pairs(ROOT, corpus)
+    assert evidence[("tpl", "refresh")] == (rel,)
+    assert ("tpl", "toggle_group") not in evidence
+
+
+def test_snapshot_fields_record_screen_bound_consumer_evidence(inventory) -> None:
+    """snapshot 128필드는 producer뿐 아니라 화면별 consumer 절반도 모두 기록한다(#528 P1)."""
+    rows = {(row.screen, row.field): row for row in inventory.snapshot_fields}
+    for row in rows.values():
+        assert row.consumer in {"product", "selftest_only", "none_found"}, row
+        assert isinstance(row.js_evidence, tuple), row
+
+    assert rows[("editor", "name")].consumer == "product"
+    assert "frontend/src/screens/editor_state.ts" in rows[("editor", "name")].js_evidence
+    assert rows[("job", "rules_key")].consumer == "product"
+    assert "frontend/src/screens/job_run_state.ts" in rows[("job", "rules_key")].js_evidence
+    assert "frontend/src/screens/job_preview.ts" in rows[("job", "preview")].js_evidence
+    assert "frontend/src/screens/job_result.ts" in rows[("job", "last_run_job")].js_evidence
+    assert rows[("pool", "rows")].consumer == "product"
+    assert "frontend/src/screens/data_picker.ts" in rows[("pool", "rows")].js_evidence
+    assert rows[("editor", "template_media")].consumer == "selftest_only"
+    assert rows[("editor", "template_media")].js_evidence == (
+        "frontend/src/selftest/probes/boot_routing_overlay.js",
+    )
+    assert "frontend/src/screens/runtime.ts" not in rows[("workbench", "revision")].js_evidence
+    assert "frontend/src/screens/editor_state.ts" not in rows[("workbench", "rows")].js_evidence
+    assert rows[("job", "template_name")].consumer == "none_found"
+    assert rows[("job", "template_name")].js_evidence == ()
+    assert rows[("tpl", "hwpx")].consumer == "none_found"
+    assert rows[("tpl", "hwpx")].js_evidence == ()
+
+
+def test_snapshot_gate_has_an_independent_destructuring_denominator(tmp_path: Path) -> None:
+    """수집기가 새 access 형식을 놓쳐도 별 구조 오라클은 함께 눈멀지 않는다."""
+    from factgraph.transport_graph import (
+        _frontend_corpus,
+        _screen_consumer_modules,
+        _snapshot_selftest_evidence,
+        _snapshot_field_evidence,
+        _snapshot_oracle_evidence,
+    )
+
+    frontend_root = tmp_path / SOURCE_RELATIVE
+    js_root = frontend_root / "js"
+    src_root = frontend_root / "src"
+    js_root.mkdir(parents=True)
+    src_root.mkdir(parents=True)
+    (src_root / "root.ts").write_text(
+        'const model = runtime.model("job");\n'
+        "const snapshot = model.getSnapshot();\n"
+        'const prose = "snapshot.preview";\n'
+        'const moduleLikeProse = "./snapshot.preview";\n'
+        'const templateProse = `snapshot.preview`;\n'
+        'const liveTemplate = `${snapshot.rules_key}`;\n'
+        'function pattern() { return /snapshot.preview/; }\n'
+        'function guarded(ok) { if (ok) /snapshot.preview/.test("x"); }\n'
+        "export function useJobSnapshot() { return model.getSnapshot(); }\n",
+        encoding="utf-8",
+    )
+    (src_root / "view.ts").write_text(
+        'import { useJobSnapshot as useAlias } from "./root.ts";\n'
+        "const { preview } = useAlias();\n",
+        encoding="utf-8",
+    )
+    (src_root / "noise.ts").write_text(
+        'const prose = \'runtime.model("job"); snapshot.preview\';\n',
+        encoding="utf-8",
+    )
+    corpus = _frontend_corpus(tmp_path)
+    closures = _screen_consumer_modules(corpus, {"job"})
+    assert _snapshot_field_evidence(corpus, closures, "job", "preview") == ()
+    assert _snapshot_field_evidence(corpus, closures, "job", "rules_key") == (
+        "frontend/src/root.ts",
+    )
+    assert _snapshot_oracle_evidence(tmp_path, "job", "preview") == (
+        "frontend/src/view.ts",
+    )
+    assert _snapshot_oracle_evidence(tmp_path, "job", "rules_key") == (
+        "frontend/src/root.ts",
+    )
+
+    selftest_root = src_root / "selftest"
+    selftest_root.mkdir()
+    (selftest_root / "probe.js").write_text(
+        'const snap = await bridge.initial("job");\nvoid snap.preview;\n',
+        encoding="utf-8",
+    )
+    corpus = _frontend_corpus(tmp_path)
+    assert _snapshot_selftest_evidence(corpus, "job", "preview") == (
+        "frontend/src/selftest/probe.js",
+    )
+    assert _snapshot_oracle_evidence(tmp_path, "job", "preview") == (
+        "frontend/src/selftest/probe.js",
+        "frontend/src/view.ts",
+    )
+
+
+def test_product_snapshot_alias_does_not_escape_its_lexical_scope(tmp_path: Path) -> None:
+    """한 함수의 snapshot alias는 다른 함수의 동명 인자를 소비자로 만들 수 없다."""
+    from factgraph.transport_graph import (
+        _frontend_corpus,
+        _screen_consumer_modules,
+        _snapshot_field_evidence,
+        _snapshot_oracle_evidence,
+    )
+
+    frontend_root = tmp_path / SOURCE_RELATIVE
+    (frontend_root / "js").mkdir(parents=True)
+    src_root = frontend_root / "src"
+    src_root.mkdir(parents=True)
+    (src_root / "root.ts").write_text(
+        'const model = runtime.model("job");\n'
+        "function bind() { const snap = model.getSnapshot(); return 1; }\n"
+        "function unrelated(snap) { return snap.preview; }\n",
+        encoding="utf-8",
+    )
+
+    corpus = _frontend_corpus(tmp_path)
+    closures = _screen_consumer_modules(corpus, {"job"})
+    assert _snapshot_field_evidence(corpus, closures, "job", "preview") == ()
+    assert _snapshot_oracle_evidence(tmp_path, "job", "preview") == ()
+
+
+def test_selftest_finite_domain_snapshot_store_is_screen_bound(inventory) -> None:
+    """``initial(scr) -> snaps[scr] -> snaps.editor``가 editor 필드에만 귀속된다."""
+    from factgraph.transport_graph import (
+        _frontend_corpus,
+        _snapshot_oracle_evidence,
+        _snapshot_selftest_evidence,
+    )
+
+    expected = ("frontend/src/selftest/probes/boot_routing_overlay.js",)
+    corpus = _frontend_corpus(ROOT)
+    assert _snapshot_selftest_evidence(corpus, "editor", "template_media") == expected
+    assert _snapshot_oracle_evidence(ROOT, "editor", "template_media") == expected
+    row = next(
+        field
+        for field in inventory.snapshot_fields
+        if (field.screen, field.field) == ("editor", "template_media")
+    )
+    assert row.consumer == "selftest_only"
+    assert row.js_evidence == expected
+
+
+def test_selftest_snapshot_aliases_do_not_cross_function_scope(tmp_path: Path) -> None:
+    """다른 함수의 동명 ``snap`` access는 editor binding을 빌려 쓸 수 없다."""
+    from factgraph.transport_graph import (
+        _frontend_corpus,
+        _snapshot_oracle_evidence,
+        _snapshot_selftest_evidence,
+    )
+
+    frontend_root = tmp_path / SOURCE_RELATIVE
+    (frontend_root / "js").mkdir(parents=True)
+    selftest = frontend_root / "src" / "selftest"
+    selftest.mkdir(parents=True)
+    (selftest / "scope.js").write_text(
+        "async function bindEditor() {\n"
+        '  const snap = await bridge.initial("editor");\n'
+        "  return snap.name;\n"
+        "}\n"
+        "async function readJob() {\n"
+        '  const snap = await bridge.initial("job");\n'
+        "  return snap.template_media;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    corpus = _frontend_corpus(tmp_path)
+    rel = ("frontend/src/selftest/scope.js",)
+    assert _snapshot_selftest_evidence(corpus, "editor", "name") == rel
+    assert _snapshot_oracle_evidence(tmp_path, "editor", "name") == rel
+    assert _snapshot_selftest_evidence(corpus, "job", "template_media") == rel
+    assert _snapshot_oracle_evidence(tmp_path, "job", "template_media") == rel
+    assert _snapshot_selftest_evidence(corpus, "editor", "template_media") == ()
+    assert _snapshot_oracle_evidence(tmp_path, "editor", "template_media") == ()
+
+
+def test_snapshot_graph_uses_lexical_imports_and_helper_calls(tmp_path: Path) -> None:
+    """template/comment fake import와 문자열 helper call은 graph edge가 아니다."""
+    from factgraph.transport_graph import (
+        _frontend_corpus,
+        _screen_consumer_modules,
+        _snapshot_field_evidence,
+        _snapshot_oracle_evidence,
+    )
+
+    frontend_root = tmp_path / SOURCE_RELATIVE
+    (frontend_root / "js").mkdir(parents=True)
+    src = frontend_root / "src"
+    src.mkdir(parents=True)
+    (src / "root.ts").write_text(
+        'import { live } from "./helper.ts";\n'
+        "const fakeImport = `\n"
+        'import { ghost } from "./ghost.ts";\n'
+        "`;\n"
+        "/*\n"
+        'import { ghost } from "./ghost.ts";\n'
+        "*/\n"
+        'const model = runtime.model("job");\n'
+        "const snapshot = model.getSnapshot();\n"
+        "export function consume() { return live(snapshot); }\n"
+        'export function guarded(ok) { if (ok) /snapshot.preview/.test("x"); }\n',
+        encoding="utf-8",
+    )
+    (src / "helper.ts").write_text(
+        "export function live(snapshot) {\n"
+        '  const fakeCall = "dead(snapshot)";\n'
+        "  // dead(snapshot);\n"
+        "  return `${snapshot.rules_key}`;\n"
+        "}\n"
+        "export function dead(snapshot) { return snapshot.preview; }\n",
+        encoding="utf-8",
+    )
+    (src / "ghost.ts").write_text(
+        "export function ghost(snapshot) { return snapshot.preview; }\n",
+        encoding="utf-8",
+    )
+    corpus = _frontend_corpus(tmp_path)
+    closures = _screen_consumer_modules(corpus, {"job"})
+    assert closures["job"] == (
+        "frontend/src/helper.ts",
+        "frontend/src/root.ts",
+    )
+    assert _snapshot_field_evidence(corpus, closures, "job", "rules_key") == (
+        "frontend/src/helper.ts",
+    )
+    assert _snapshot_oracle_evidence(tmp_path, "job", "rules_key") == (
+        "frontend/src/helper.ts",
+    )
+    assert _snapshot_field_evidence(corpus, closures, "job", "preview") == ()
+    assert _snapshot_oracle_evidence(tmp_path, "job", "preview") == ()
+
+
+def test_product_event_payload_fields_are_derived_from_python_builders(inventory) -> None:
+    """product event DTO를 빈 튜플로 접지 않고 조건부 키까지 실형상으로 보존한다(#528 P1)."""
+    fields = {
+        row.name: row.fields for row in inventory.channels if row.kind == "product_event"
+    }
+    assert fields == {
+        "snapshot": ("screen", "snapshot"),
+        "close-request": ("state",),
+        "preferences": ("personalization", "theme?"),
+        "notice": ("message",),
+    }
+
+
+def test_product_event_consumers_include_unquoted_handler_keys(inventory) -> None:
+    """bootstrap의 ``preferences:``·``notice:`` 무따옴표 키도 활성 소비 증거다(#528 P2)."""
+    rows = {row.name: row for row in inventory.channels if row.kind == "product_event"}
+    for name in ("snapshot", "close-request", "preferences", "notice"):
+        assert "frontend/src/product_api.js" in rows[name].consumer_evidence, rows[name]
+        assert "frontend/src/bootstrap.js" in rows[name].consumer_evidence, rows[name]
+
+    from factgraph.transport_graph import event_route_problems
+
+    assert event_route_problems(ROOT, inventory.channels) == []
 
 
 # ------------------------------------------------- 음성 — 변형 사본의 판별력
@@ -269,6 +620,25 @@ def test_n6_a_consumer_ghost_is_caught_in_both_directions(inventory, controllers
     assert any("consumer 분류가 증거와 어긋난다" in p for p in problems), problems
 
 
+def test_n6b_same_action_evidence_from_another_screen_is_caught(
+    inventory, controllers
+) -> None:
+    """실재 파일이어도 다른 화면의 동명 action 발신이면 증거 위조다(#528 P1 음성)."""
+    index = next(
+        i
+        for i, row in enumerate(inventory.endpoints)
+        if (row.screen, row.action) == ("tpl", "toggle_group")
+    )
+    tampered = _replace_endpoint(
+        inventory,
+        index,
+        consumer="product",
+        js_evidence=("frontend/src/screens/library.ts",),
+    )
+    problems = endpoint_problems(ROOT, tampered, controllers=controllers)
+    assert any("소비자 증거 드리프트" in p and "tpl/toggle_group" in p for p in problems), problems
+
+
 def test_n7_host_method_consumer_ghost_is_caught(inventory) -> None:
     """host-internal 표면을 「제품이 소비한다」로 위조하면 bridge.js 실측이 문다."""
     methods = list(inventory.host_methods)
@@ -313,6 +683,8 @@ def test_n10_a_ghost_snapshot_field_is_caught(inventory, controllers, runtime_fi
         field="ghost_field",
         producer="hwpxfiller.webapp.screen_job:JobController.snapshot#method",
         runtime_observed=False,
+        consumer="none_found",
+        js_evidence=(),
     )
     problems = snapshot_problems(
         ROOT,
@@ -335,6 +707,25 @@ def test_n11_a_flipped_runtime_observation_is_caught(
     assert any("실측 표지가 실측과 다르다" in p for p in problems), problems
 
 
+def test_n11b_snapshot_consumer_evidence_from_another_screen_is_caught(
+    inventory, controllers, runtime_fields
+) -> None:
+    """tpl 필드를 editor 토큰으로 소비됨 처리하면 화면 결속 오라클이 문다(#528 P1 음성)."""
+    fields = list(inventory.snapshot_fields)
+    index = next(
+        i for i, row in enumerate(fields) if (row.screen, row.field) == ("tpl", "hwpx")
+    )
+    fields[index] = dataclasses.replace(
+        fields[index],
+        consumer="product",
+        js_evidence=("frontend/src/screens/editor.ts",),
+    )
+    problems = snapshot_problems(
+        ROOT, tuple(fields), controllers=controllers, runtime_fields=runtime_fields
+    )
+    assert any("소비자 증거 드리프트" in p and "tpl.hwpx" in p for p in problems), problems
+
+
 def test_n12_a_dropped_channel_is_caught(inventory, controllers) -> None:
     """progress delta 채널 행을 빼면 부분 push 전수 스캔이 문다 — 채널이 조용히 못 는다의 짝."""
     remaining = tuple(c for c in inventory.channels if c.kind != "partial_push")
@@ -352,6 +743,30 @@ def test_n13_a_ghost_channel_is_caught(inventory, controllers) -> None:
     )
     problems = channel_problems(ROOT, (*inventory.channels, ghost), controllers=controllers)
     assert any("유령 채널" in p and "ghost-event" in p for p in problems), problems
+
+
+def test_n13b_product_event_payload_omission_is_caught(inventory, controllers) -> None:
+    """payload 빌더에 실키가 있는데 원장을 빈 DTO로 위조하면 문다(#528 P1 음성)."""
+    channels = list(inventory.channels)
+    index = next(i for i, row in enumerate(channels) if row.name == "preferences")
+    assert channels[index].fields == ("personalization", "theme?")
+    channels[index] = dataclasses.replace(channels[index], fields=())
+    problems = channel_problems(ROOT, tuple(channels), controllers=controllers)
+    assert any("채널 내용 드리프트" in p and "preferences" in p for p in problems), problems
+
+
+def test_n13c_independent_route_oracle_catches_a_blind_consumer_collector(inventory) -> None:
+    """수집기가 무따옴표 키를 놓쳐도 ROUTES 독립 분모가 활성 채널의 빈 증거를 문다."""
+    from factgraph.transport_graph import event_route_problems
+
+    channels = tuple(
+        dataclasses.replace(row, consumer_evidence=())
+        if row.kind == "product_event" and row.name == "preferences"
+        else row
+        for row in inventory.channels
+    )
+    problems = event_route_problems(ROOT, channels)
+    assert any("활성 라우트인데 원장 소비 증거가 비었다" in p and "preferences" in p for p in problems), problems
 
 
 def test_n14_vocabulary_and_anchor_drift_are_caught(inventory) -> None:
