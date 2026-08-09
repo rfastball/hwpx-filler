@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.domain import dataset_reference as dataset_domain
 from hwpxfiller.core.dataset_pool import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
@@ -35,6 +36,10 @@ def _fixture_bytes() -> bytes:
 
 # ------------------------------------------------------------------ 모델
 def test_item_roundtrip_to_from_dict():
+    # Core는 파일 I/O 호환 타입만 더하고 값·정체성 권위는 Domain 객체를 그대로 승계한다.
+    assert issubclass(DatasetPoolItem, dataset_domain.DatasetReference)
+    assert item_identity is dataset_domain.reference_identity
+    assert STATUS_ACTIVE is dataset_domain.STATUS_ACTIVE
     it = DatasetPoolItem(
         name="6월 공고", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359", "num_rows": 100},
@@ -114,6 +119,7 @@ def test_registry_add_load_list_delete(tmp_path):
     assert reg.exists(ka)
     assert reg.load(ka).opts["path"] == "/a.xlsx"
     reg.delete(ka)
+    reg.delete(ka)  # 이미 없는 슬롯 삭제도 조용한 no-op — 멱등 계약
     assert not reg.exists(ka)
     assert reg.names() == ["B"]
 

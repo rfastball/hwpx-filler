@@ -20,6 +20,7 @@ from pathlib import Path
 from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
+from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
 from .work_mode import last_use_label
@@ -507,7 +508,6 @@ class HomeViewModel:
         """
         if self.pool_registry is None:
             return (0, 0)
-        from ..core.dataset_pool import STATUS_ACTIVE
 
         corrupted: "list" = []
         active = self.pool_registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)

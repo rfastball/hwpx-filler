@@ -32,28 +32,23 @@ import json
 import os
 import threading
 import uuid
-from dataclasses import dataclass, field
 from pathlib import Path
 
-from .job import load_isolated
-from .paths import home_dir
 from hwpxcore.atomic import write_text_atomic
 
-# 항목 상태(2상태, #5) — active(실행 대상) / archived(지난 것: 실행 후보 제외, 참조 보존·복구 가능).
-# add/delete 가 아니라 archive 로 수명 종료를 표현한다(참조는 남기되 실행 후보에서 제외).
-#
-# **왜 2상태인가**: 한때 archived 위에 retired("은퇴, 숨김") 3번째 상태가 있었으나, 행동 차이가
-# 없었다 — 둘 다 실행 후보에서 빠지고(status=ACTIVE 로만 겨눔) 둘 다 풀 목록에 muted 로 표시됐다
-# ("숨김"은 구현된 적 없는 허구). 명목만 다른 상태가 라벨↔버튼 desync 를 낳아(#5) archived 로
-# 정준 병합했다. STATUS_RETIRED 는 **디스크 마이그레이션 별칭으로만** 남는다(아래 from_dict).
-STATUS_ACTIVE = "active"
-STATUS_ARCHIVED = "archived"
-_STATUSES = (STATUS_ACTIVE, STATUS_ARCHIVED)
+from ..domain.dataset_reference import (
+    STATUS_ACTIVE,
+    STATUS_ARCHIVED,
+    STATUS_RETIRED,
+    DatasetReference,
+    excel_identity,
+    reference_identity,
+)
+from .job import load_isolated
+from .paths import home_dir
 
-# 폐기된 상태(구 .dataset.json 호환). 읽기 시 archived 로 정규화 — 무손실(retired 와 archived 는
-# 실행 후보 여부가 동일해 사용자 결정·데이터 소실 없음). 새로 이 값을 저장하지는 않는다.
-STATUS_RETIRED = "retired"
-_LEGACY_STATUS_ALIASES = {STATUS_RETIRED: STATUS_ARCHIVED}
+# 기존 공개 이름은 Domain 정본의 동일 함수다.
+item_identity = reference_identity
 
 
 # 같은 데이터셋 디렉터리를 보는 컨트롤러·레지스트리 인스턴스는 하나의 쓰기 경계를 공유한다.
@@ -70,32 +65,6 @@ def _shared_write_lock(directory: Path) -> "threading.RLock":
         return _WRITE_LOCKS.setdefault(key, threading.RLock())
 
 
-def excel_identity(path: "str | Path", sheet: "str | None" = "") -> str:
-    """엑셀/CSV 데이터 축 정체성 — ``normcase(abspath(path))`` + 시트(U2 §5.3 판정 C).
-
-    시트가 축에 드는 것은 새 발명이 아니다(#33) — 같은 워크북의 다른 시트는 다른
-    데이터다. 대소문자·표기 변형(Windows)은 같은 실파일이므로 정규화로 흡수한다.
-    구분자는 경로에 못 들어가는 제어문자(``\\x1f``)라 합성 충돌이 없다.
-    """
-    return os.path.normcase(os.path.abspath(os.fspath(path))) + "\x1f" + (sheet or "")
-
-
-def item_identity(item: "DatasetPoolItem") -> "str | None":
-    """풀 항목의 데이터 축 정체성 — 경로 있는 엑셀 참조만, 나머지는 ``None``.
-
-    나라·파이프라인 참조는 파일이 아니라 이 축의 대상이 아니다(§5.3 의 판정은 데이터
-    **파일** 축이다). 경로가 없거나 형이 깨진 opts 는 정체 불명 = ``None``(추측 금지).
-    """
-    if item.kind != "excel" or not isinstance(item.opts, dict):
-        return None
-    raw = item.opts.get("path")
-    if not isinstance(raw, str) or not raw:
-        return None
-    raw_sheet = item.opts.get("sheet")
-    sheet = raw_sheet if isinstance(raw_sheet, str) else ""
-    return excel_identity(raw, sheet)
-
-
 def default_dataset_pool_dir() -> Path:
     """GUI 기본 데이터셋 풀 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/datasets``).
 
@@ -107,69 +76,13 @@ def default_dataset_pool_dir() -> Path:
     return home_dir() / "datasets"
 
 
-# ------------------------------------------------------------------ 모델
-@dataclass
-class DatasetPoolItem:
-    """데이터셋 풀 1항목 — 소스를 다시 여는 **참조**(kind + opts) + 수명 상태.
+# ------------------------------------------------------------------ 영속 호환 모델
+class DatasetPoolItem(DatasetReference):
+    """기존 Core API를 보존하는 파일 영속 adapter.
 
-    스키마 진화 규율: 가산 필드는 version 무증가(``from_dict`` 의 ``.get`` 하위호환).
-
-    **``opts`` 규약(참조만, 데이터·비밀 없음):**
-    - ``kind="excel"``: ``{"path": ..., ["sheet": ...], ["header_row": ...]}``.
-    - ``kind="nara"``:  ``{"bgn_dt": ..., "end_dt": ..., ["num_rows": ...], ["page_no": ...]}``.
-      **``service_key`` 는 절대 담지 않는다**(복원 시 OS 저장소에서 주입).
+    값·상태·정체성 규칙은 :class:`~hwpxfiller.domain.dataset_reference.DatasetReference`
+    가 소유한다. ``save``/``load`` byte I/O만 이 호환 클래스에 남는다.
     """
-
-    name: str
-    kind: str  # "excel" | "nara"
-    opts: "dict[str, object]" = field(default_factory=dict)
-    status: str = STATUS_ACTIVE
-    created_at: str = ""
-    note: str = ""
-    version: int = 1
-
-    def __post_init__(self) -> None:
-        if self.status not in _STATUSES:
-            raise ValueError(f"알 수 없는 데이터셋 상태입니다: {self.status!r}")
-
-    # ----------------------------------------------------------- 상태 전이(순수)
-    def archive(self) -> None:
-        self.status = STATUS_ARCHIVED
-
-    def activate(self) -> None:
-        self.status = STATUS_ACTIVE
-
-    @property
-    def is_active(self) -> bool:
-        return self.status == STATUS_ACTIVE
-
-    # ------------------------------------------------------------ 직렬화
-    def to_dict(self) -> dict:
-        return {
-            "version": self.version,
-            "name": self.name,
-            "kind": self.kind,
-            "opts": dict(self.opts),
-            "status": self.status,
-            "created_at": self.created_at,
-            "note": self.note,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "DatasetPoolItem":
-        # 폐기된 상태(retired) 는 읽기 시 정준 상태로 접는다(migrate-on-read, #5) — 구 파일이
-        # loud raise("알 수 없는 상태") 로 죽지 않고 조용히 forward-정규화된다(무손실이라 정당).
-        status = d.get("status", STATUS_ACTIVE)
-        status = _LEGACY_STATUS_ALIASES.get(status, status)
-        return cls(
-            name=d.get("name", ""),
-            kind=d.get("kind", ""),
-            opts=dict(d.get("opts", {})),
-            status=status,
-            created_at=d.get("created_at", ""),
-            note=d.get("note", ""),
-            version=d.get("version", 1),
-        )
 
     def save(self, path: "str | Path") -> None:
         # 원자 쓰기(RC-01) — 저장 중 실패가 기존 풀 항목 JSON 을 파괴하지 않는다.
@@ -178,6 +91,13 @@ class DatasetPoolItem:
     @classmethod
     def load(cls, path: "str | Path") -> "DatasetPoolItem":
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+def _persistent_item(item: DatasetReference) -> DatasetPoolItem:
+    """Domain 참조를 기존 byte-I/O 호환 타입으로 무손실 승격한다."""
+    if isinstance(item, DatasetPoolItem):
+        return item
+    return DatasetPoolItem.from_dict(item.to_dict())
 
 
 # ------------------------------------------------------------------ 레지스트리
@@ -240,7 +160,7 @@ class DatasetPoolRegistry:
         raise RuntimeError("빈 등록 데이터 슬롯 키를 발급하지 못했습니다.")  # 사실상 불가
 
     # ------------------------------------------------------------- 쓰기
-    def add(self, item: DatasetPoolItem) -> str:
+    def add(self, item: DatasetReference) -> str:
         """새 항목 추가 → 슬롯 키 반환. 같은 정체성이 이미 있으면 loud 거절.
 
         중복 확인·병합은 호출측(등록 게이트)이 :meth:`find_identity` 로 먼저 판정해
@@ -259,14 +179,14 @@ class DatasetPoolRegistry:
                     )
             self.directory.mkdir(parents=True, exist_ok=True)
             key = self.new_slot_key()
-            item.save(self.slot_path(key))
+            _persistent_item(item).save(self.slot_path(key))
             return key
 
-    def save_at(self, key: str, item: DatasetPoolItem) -> None:
+    def save_at(self, key: str, item: DatasetReference) -> None:
         """슬롯에 항목을 원자 저장 — 갱신은 :meth:`mutate` 를 쓰고 이건 그 몸통이다."""
         with self._write_lock:
             self.directory.mkdir(parents=True, exist_ok=True)
-            item.save(self.slot_path(key))
+            _persistent_item(item).save(self.slot_path(key))
 
     def write_lock(self) -> "threading.RLock":
         """이 디렉터리의 모든 레지스트리 인스턴스가 공유하는 쓰기 잠금.

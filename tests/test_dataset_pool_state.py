@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.application.dataset_pool import (
+    DatasetPoolViewModel,
+    available_actions,
+    reference_summary,
+)
 from hwpxfiller.core.dataset_pool import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     DatasetPoolRegistry,
-)
-from hwpxfiller.gui.dataset_pool_state import (
-    DatasetPoolViewModel,
-    available_actions,
-    reference_summary,
 )
 
 
@@ -71,6 +71,13 @@ def test_register_validation_is_fail_closed(tmp_path):
 
 def test_status_transitions_and_action_matrix(tmp_path):
     """상태 전이와 허용 액션은 하나의 수명주기 표를 따른다."""
+    import hwpxfiller.application.dataset_pool as canonical
+    import hwpxfiller.gui.dataset_pool_state as legacy
+
+    assert all(
+        getattr(legacy, name) is getattr(canonical, name)
+        for name in canonical.__all__
+    )
     vm = _vm(tmp_path)
     vm.register_excel("D", "/d.xlsx")
     key = vm.rows()[0].key
