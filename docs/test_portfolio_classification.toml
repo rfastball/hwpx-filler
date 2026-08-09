@@ -296,6 +296,11 @@ risk_surfaces = ["architecture-design-system", "web-runtime-bridge"]
 layer = "contract"
 verification_method = "static-source"
 
+[files."tests/test_use_case_graph_02e.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
 [files."tests/test_ux_copy_round.py"]
 risk_surfaces = ["architecture-design-system"]
 layer = "contract"

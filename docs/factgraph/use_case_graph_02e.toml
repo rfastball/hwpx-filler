@@ -1,0 +1,4859 @@
+# 생성 파일 — 직접 편집 금지. P1-02E use-case·test responsibility 원장(#517).
+# 원천: 고정 baseline src/ 의 02A 정적 그래프(read-only 입력) + tests/ 참조 스캔
+# 재생성: uv run python scripts/gen_use_case_graph_02e.py
+# 검사:   uv run python scripts/gen_use_case_graph_02e.py --check
+schema = "use-case-graph-02e/v1"
+
+[baseline]
+git_sha = "247333e0ae69776ebf9ed9f2e596abf427c63b56"
+
+# 02A call-axis 입력 핀 — 같은 기반 사실 위의 파생임을 P1-03 이 검증한다.
+[inputs]
+base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
+graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
+
+[surface]
+cli_modules = ["hwpxfiller.cli"]
+cli_trunks = ["hwpxfiller.cli:_run#function"]
+cli_required_flags = ["--template"]
+cli_flag_literals = ["--fields"]
+gui_modules = ["hwpxfiller.webapp.app"]
+screens = ["editor", "job", "library", "pool", "tpl", "workbench"]
+routers = ["dispatch", "initial"]
+boot_routers = ["initial"]
+action_router_names = ["dispatch"]
+transport = "hwpxfiller.webapp.app:WebFrontend#class"
+controllers = 6
+
+[counts]
+entries_total = 155
+entries_cli = 8
+entries_gui = 147
+common = 6
+host_only = 149
+duplicate = 0
+anchor_verbs = 9
+empty_route_entries = 62
+oracle_entry = 144
+oracle_core = 2
+oracle_none = 9
+characterization_gaps = 11
+test_files = 235
+
+[test_axis_counts]
+"browser" = 1
+"deterministic" = 227
+"live" = 6
+"native" = 1
+
+# 교차-host fan(1,1) 공유 core 동사 — COMMON 판정의 사실 근거.
+
+[[anchor]]
+verb = "hwpxcore.lineseg:serialize_modified_section#function"
+cli_entry = "cli:fieldize"
+gui_entry = "gui:tpl/compile"
+
+[[anchor]]
+verb = "hwpxcore.lineseg:strip_line_layout#function"
+cli_entry = "cli:fieldize"
+gui_entry = "gui:tpl/compile"
+
+[[anchor]]
+verb = "hwpxfiller.batch:generate_batch#function"
+cli_entry = "cli:default"
+gui_entry = "gui:direct/generate"
+
+[[anchor]]
+verb = "hwpxfiller.core.authoring:_make_id_allocator#function"
+cli_entry = "cli:fieldize"
+gui_entry = "gui:tpl/compile"
+
+[[anchor]]
+verb = "hwpxfiller.core.authoring:compile_document#function"
+cli_entry = "cli:fieldize"
+gui_entry = "gui:tpl/compile"
+
+[[anchor]]
+verb = "hwpxfiller.core.lint:_near_duplicate_pairs#function"
+cli_entry = "cli:lint"
+gui_entry = "gui:tpl/review"
+
+[[anchor]]
+verb = "hwpxfiller.core.lint:lint_template#function"
+cli_entry = "cli:lint"
+gui_entry = "gui:tpl/review"
+
+[[anchor]]
+verb = "hwpxfiller.gui.result_errors:describe_fill_note#function"
+cli_entry = "cli:default"
+gui_entry = "gui:direct/generate"
+
+[[anchor]]
+verb = "hwpxfiller.naming:existing_outputs#function"
+cli_entry = "cli:default"
+gui_entry = "gui:direct/generate"
+
+[[entry]]
+id = "cli:--fields"
+host = "cli"
+kind = "cli_flag"
+classification = "HOST_ONLY"
+core_verb_count = 6
+unresolved_out = 21
+roots = [
+  "hwpxfiller.core.engine:HwpxEngine.required_fields#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_cli.py :: flag-literal",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:default"
+host = "cli"
+kind = "cli_default"
+classification = "COMMON"
+counterpart = "gui:direct/generate"
+anchor_verbs = ["hwpxfiller.batch:generate_batch#function", "hwpxfiller.gui.result_errors:describe_fill_note#function", "hwpxfiller.naming:existing_outputs#function"]
+core_verb_count = 67
+unresolved_out = 171
+seam_rules = ["local_construct"]
+roots = [
+  "hwpxcore.validate:validate#function",
+  "hwpxfiller.batch:generate_batch#function",
+  "hwpxfiller.cli:_export_ledger#function",
+  "hwpxfiller.cli:_load_records#function",
+  "hwpxfiller.core.engine:HwpxEngine#class",
+  "hwpxfiller.core.engine:HwpxEngine.required_fields#method",
+  "hwpxfiller.core.fill_ledger:template_path_drift#function",
+  "hwpxfiller.core.job:mark_missing_values#function",
+  "hwpxfiller.core.mapping:FieldMapping#class",
+  "hwpxfiller.core.mapping:MappingProfile#class",
+  "hwpxfiller.gui.result_errors:describe_fill_note#function",
+  "hwpxfiller.naming:pattern_field_tokens#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_batch_gate.py :: core-verb-import",
+  "tests/test_cli.py :: trunk-flag",
+  "tests/test_engine.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_nara_mulpum.py :: core-verb-import",
+  "tests/test_nara_state.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_scenario_e2e.py :: core-verb-import",
+  "tests/test_secret_store.py :: core-verb-import",
+  "tests/test_source_profile.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:diff"
+host = "cli"
+kind = "cli_subcommand"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_cli.py :: argv-literal",
+]
+
+[[entry]]
+id = "cli:drift"
+host = "cli"
+kind = "cli_subcommand"
+classification = "HOST_ONLY"
+core_verb_count = 23
+unresolved_out = 92
+roots = [
+  "hwpxfiller.cli:_drift_main#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_cli.py :: argv-literal",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_lint.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:fieldize"
+host = "cli"
+kind = "cli_subcommand"
+classification = "COMMON"
+counterpart = "gui:tpl/compile"
+anchor_verbs = ["hwpxcore.lineseg:serialize_modified_section#function", "hwpxcore.lineseg:strip_line_layout#function", "hwpxfiller.core.authoring:_make_id_allocator#function", "hwpxfiller.core.authoring:compile_document#function"]
+core_verb_count = 35
+unresolved_out = 128
+roots = [
+  "hwpxfiller.cli:_fieldize_main#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_cli.py :: argv-literal",
+  "tests/test_home_state.py :: core-verb-import",
+  "tests/test_lineseg.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_template.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:lint"
+host = "cli"
+kind = "cli_subcommand"
+classification = "COMMON"
+counterpart = "gui:tpl/review"
+anchor_verbs = ["hwpxfiller.core.lint:_near_duplicate_pairs#function", "hwpxfiller.core.lint:lint_template#function"]
+core_verb_count = 49
+unresolved_out = 203
+roots = [
+  "hwpxfiller.cli:_lint_main#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_cli.py :: argv-literal",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_lint.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:render"
+host = "cli"
+kind = "cli_subcommand"
+classification = "HOST_ONLY"
+core_verb_count = 7
+unresolved_out = 37
+roots = [
+  "hwpxfiller.cli:_render_main#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_cli.py :: argv-literal",
+  "tests/test_scenario_e2e.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+]
+
+[[entry]]
+id = "cli:schema"
+host = "cli"
+kind = "cli_subcommand"
+classification = "HOST_ONLY"
+core_verb_count = 22
+unresolved_out = 90
+roots = [
+  "hwpxfiller.cli:_schema_main#function",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_cli.py :: argv-literal",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/cancel_window_close"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.cancel_window_close#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_webapp_bridge.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/close_guard_state"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.close_guard_state#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_bridge.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/confirm_window_close"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.confirm_window_close#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_webapp_bridge.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/copy_clipboard"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.copy_clipboard#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_webapp_bridge.py :: direct-call",
+  "tests/test_webapp_workbench.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/copy_path"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 15
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.copy_path#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/editor_has_unsaved_work"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 6
+seam_rules = ["attr_delegate", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.editor_has_unsaved_work#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/generate"
+host = "gui"
+kind = "gui_direct"
+classification = "COMMON"
+counterpart = "cli:default"
+anchor_verbs = ["hwpxfiller.batch:generate_batch#function", "hwpxfiller.gui.result_errors:describe_fill_note#function", "hwpxfiller.naming:existing_outputs#function"]
+core_verb_count = 63
+unresolved_out = 224
+seam_rules = ["attr_delegate", "local_construct", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.generate#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_batch_gate.py :: core-verb-import",
+  "tests/test_engine.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_identity_summary.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_nara_mulpum.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_scenario_e2e.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: core-verb-import",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/import_template_file"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 89
+unresolved_out = 356
+seam_rules = ["attr_delegate", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.import_template_file#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/import_templates_folder"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 8
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.import_templates_folder#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_webapp_template.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/load_data_sheet"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 85
+unresolved_out = 288
+seam_rules = ["attr_delegate", "local_construct", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.load_data_sheet#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_file_filters.py :: core-verb-import",
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_identity_summary.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_bridge.py :: direct-call",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: core-verb-import",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/new_job_from_data"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 25
+unresolved_out = 94
+seam_rules = ["attr_delegate", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.new_job_from_data#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_file_filters.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_bridge.py :: direct-call",
+  "tests/test_webapp_editor.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/open_job_in_editor"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 79
+unresolved_out = 335
+seam_rules = ["attr_delegate", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.open_job_in_editor#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_r3_editor.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/open_path"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 8
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.open_path#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_tracking_locate.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/pick_data_file"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 90
+unresolved_out = 293
+seam_rules = ["attr_delegate", "local_construct", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.pick_data_file#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_file_filters.py :: core-verb-import",
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_identity_summary.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_bridge.py :: direct-call",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: core-verb-import",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/pick_output_folder"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 58
+unresolved_out = 193
+seam_rules = ["attr_delegate", "local_construct", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.pick_output_folder#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_identity_summary.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: core-verb-import",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/pick_pool_data_file"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 5
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.pick_pool_data_file#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/pick_template_path"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 5
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.pick_template_path#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/reveal_corrupt_job"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 3
+seam_rules = ["attr_delegate", "transport_delegate"]
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.reveal_corrupt_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_tracking_locate.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/reveal_path"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 7
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.reveal_path#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_tracking_locate.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:direct/set_font_scale"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 6
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.set_font_scale#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_personalization_contract.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/set_master_width"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 6
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.set_master_width#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_personalization_contract.py :: direct-call",
+]
+
+[[entry]]
+id = "gui:direct/set_theme"
+host = "gui"
+kind = "gui_direct"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 6
+roots = [
+  "hwpxfiller.webapp.app:WebFrontend.set_theme#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:editor/ack_gate"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_ack_gate#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/confirm_all"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_confirm_all#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/confirm_blanks"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_confirm_blanks#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/discard_patch"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 79
+unresolved_out = 328
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_discard_patch#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_r3_editor.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/discard_session"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_discard_session#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/goto_section"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 12
+unresolved_out = 29
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_goto_section#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 15
+unresolved_out = 63
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController.initial#method",
+]
+oracle_status = "CORE"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:editor/mapping_reset_stakes"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_mapping_reset_stakes#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/new_session"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_new_session#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/restore_confirmed"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_restore_confirmed#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/resuggest_all"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_resuggest_all#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/revert_source"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_revert_source#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/save"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 84
+unresolved_out = 352
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_save#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_job_editor_state.py :: core-verb-import",
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:editor/set_confirmed"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_confirmed#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/set_const"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_const#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/set_fmt"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_fmt#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:editor/set_name"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_name#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/set_pattern"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_pattern#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/set_source"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_source#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/set_type"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_set_type#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/skip_data"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 15
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_skip_data#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_mapping.py :: core-verb-import",
+  "tests/test_r3_editor.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/step_preview"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_step_preview#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:editor/toggle_library_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_toggle_library_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/toggle_source_active"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 4
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_toggle_source_active#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/unconfirm_all"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_unconfirm_all#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/use_all_headers"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_use_all_headers#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/use_library_template"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 72
+unresolved_out = 301
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_use_library_template#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:editor/use_none"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_editor:EditorController._do_use_none#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_editor.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/browse_query"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_browse_query#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/browse_tab"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_browse_tab#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/cancel_generation"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_cancel_generation#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:job/disband_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 18
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_disband_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_clear"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_clear#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_clear_col"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_clear_col#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:job/filter_col_range"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 12
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_range#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_col_text"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_text#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:job/filter_col_values"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_col_values#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_panel"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 7
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_panel#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_prune"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_prune#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_reapply"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 20
+unresolved_out = 51
+seam_rules = ["local_construct"]
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_reapply#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/filter_search"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_filter_search#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/guard_state"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 12
+unresolved_out = 24
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_guard_state#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/hide_column"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_hide_column#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 54
+unresolved_out = 186
+seam_rules = ["attr_delegate", "local_construct"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController.initial#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_identity_summary.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: boot-call",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:job/load_pool"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 24
+unresolved_out = 50
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screens:PoolTargetingMixin._do_load_pool#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_r3_py_core.py :: core-verb-import",
+  "tests/test_r3_runmx.py :: dispatch-literal",
+  "tests/test_webapp_bridge.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:job/open_workbench"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 8
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_open_workbench#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/prefer_work"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 15
+unresolved_out = 32
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_prefer_work#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+  "tests/test_webapp_library.py :: core-verb-import",
+  "tests/test_work_candidates.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:job/preview_approve"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 9
+unresolved_out = 33
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_preview_approve#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_run_state.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/preview_blank_only"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 1
+unresolved_out = 5
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_preview_blank_only#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/preview_close"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_preview_close#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/preview_move"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 1
+unresolved_out = 4
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_preview_move#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/preview_open"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 1
+unresolved_out = 3
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_preview_open#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/range_draft_apply"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_range_draft_apply#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/range_draft_cancel"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_range_draft_cancel#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/range_draft_open"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_range_draft_open#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/refresh"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 13
+unresolved_out = 34
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_refresh#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n07_bridge.test.js :: dispatch-literal",
+  "tests/js/runtime_client.test.js :: dispatch-literal",
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/relink_template"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 16
+unresolved_out = 40
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_relink_template#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:job/rename_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 21
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_rename_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/rename_job"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_rename_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/select_failed"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 2
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_select_failed#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/select_job"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 12
+unresolved_out = 22
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_select_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_r3_runmx.py :: dispatch-literal",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/select_range"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_select_range#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/set_all"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 9
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_set_all#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/set_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_set_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/set_none"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_set_none#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/set_selected_only"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_set_selected_only#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/set_view_order"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_set_view_order#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/toggle_favorite"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_job:JobController._do_toggle_favorite#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/toggle_record"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_toggle_record#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/runtime_client.test.js :: dispatch-literal",
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:job/unhide_columns"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.data_zone:DataZoneMixin._do_unhide_columns#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_job.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/clear_facets"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 2
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_clear_facets#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/clear_filters"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 5
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_clear_filters#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/clone_job"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 226
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_clone_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/delete_corrupt"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 63
+unresolved_out = 229
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_delete_corrupt#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/delete_job"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 228
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_delete_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 24
+unresolved_out = 70
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController.initial#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_format_engine.py :: core-verb-import",
+  "tests/test_home_state.py :: core-verb-import",
+  "tests/test_jamo.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_webapp_job.py :: boot-call",
+  "tests/test_webapp_library.py :: boot-call",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/refresh"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 63
+unresolved_out = 233
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_refresh#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/relink_template"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 64
+unresolved_out = 238
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_relink_template#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_job.py :: dispatch-literal",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/select_work"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_select_work#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_r3_library.py :: dispatch-literal",
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/set_mode"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 3
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_set_mode#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/set_query"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 3
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_set_query#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/set_tags"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 62
+unresolved_out = 234
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_set_tags#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_r3_library.py :: dispatch-literal",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/set_view"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 3
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_set_view#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/toggle_facet"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 6
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_facet#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/toggle_favorite"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 226
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_favorite#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:library/toggle_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 3
+unresolved_out = 8
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_toggle_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_core_paths.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:library/undo_delete_job"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 226
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_library:LibraryController._do_undo_delete_job#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fill_ledger.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_naming.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_editor.py :: core-verb-import",
+  "tests/test_webapp_library.py :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: core-verb-import",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:pool/activate"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 9
+unresolved_out = 26
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_activate#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/archive"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 9
+unresolved_out = 26
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_archive#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_r3_pool.py :: dispatch-literal",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/delete"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 8
+unresolved_out = 34
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_delete#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_r3_pool.py :: dispatch-literal",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 7
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController.initial#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_pool.py :: boot-call",
+]
+
+[[entry]]
+id = "gui:pool/refresh"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 6
+unresolved_out = 23
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_refresh#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_dispatch_wiring.py :: dispatch-literal",
+  "tests/test_r3_pool.py :: dispatch-literal",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/register_excel"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 12
+unresolved_out = 46
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_register_excel#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_r3_pool.py :: dispatch-literal",
+  "tests/test_r3_py_core.py :: dispatch-literal",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/relink"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 11
+unresolved_out = 43
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_relink#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_r3_pool.py :: dispatch-literal",
+  "tests/test_r3_py_core.py :: core-verb-import",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:pool/resolve_duplicate"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 8
+unresolved_out = 35
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_pool:PoolController._do_resolve_duplicate#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_dataset_pool.py :: core-verb-import",
+  "tests/test_dataset_pool_state.py :: core-verb-import",
+  "tests/test_webapp_pool.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/compile"
+host = "gui"
+kind = "gui_action"
+classification = "COMMON"
+counterpart = "cli:fieldize"
+anchor_verbs = ["hwpxcore.lineseg:serialize_modified_section#function", "hwpxcore.lineseg:strip_line_layout#function", "hwpxfiller.core.authoring:_make_id_allocator#function", "hwpxfiller.core.authoring:compile_document#function"]
+core_verb_count = 69
+unresolved_out = 250
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_compile#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_home_state.py :: core-verb-import",
+  "tests/test_lineseg.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/delete"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 66
+unresolved_out = 246
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_delete#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/disband_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 7
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_disband_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 14
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController.initial#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_template.py :: boot-call",
+]
+
+[[entry]]
+id = "gui:tpl/refresh"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 234
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_refresh#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/rename_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 10
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_rename_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_template_groups.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/review"
+host = "gui"
+kind = "gui_action"
+classification = "COMMON"
+counterpart = "cli:lint"
+anchor_verbs = ["hwpxfiller.core.lint:_near_duplicate_pairs#function", "hwpxfiller.core.lint:lint_template#function"]
+core_verb_count = 51
+unresolved_out = 202
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_review#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_lint.py :: core-verb-import",
+  "tests/test_quickstart_101_assets.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/set_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_set_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/toggle_group"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_toggle_group#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/txt_content"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_txt_content#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:tpl/txt_edit"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 5
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_txt_edit#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/txt_new"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 2
+unresolved_out = 12
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_txt_new#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_atomic.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:tpl/undo_delete"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 61
+unresolved_out = 237
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_template:TemplateController._do_undo_delete#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_authoring.py :: core-verb-import",
+  "tests/test_compile_badge.py :: core-verb-import",
+  "tests/test_corpus_golden.py :: core-verb-import",
+  "tests/test_extract_invariants.py :: core-verb-import",
+  "tests/test_extract_synthetic.py :: core-verb-import",
+  "tests/test_fields.py :: core-verb-import",
+  "tests/test_header_footer_fields.py :: core-verb-import",
+  "tests/test_partial_gate.py :: core-verb-import",
+  "tests/test_schema.py :: core-verb-import",
+  "tests/test_template_manager.py :: core-verb-import",
+  "tests/test_template_status.py :: core-verb-import",
+  "tests/test_webapp_template.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/close"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 6
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_close#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/copy_precheck"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 7
+unresolved_out = 21
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_copy_precheck#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/initial"
+host = "gui"
+kind = "gui_screen_boot"
+classification = "HOST_ONLY"
+core_verb_count = 17
+unresolved_out = 53
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController.initial#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_job.py :: boot-call",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:workbench/leave_guard"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 12
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_leave_guard#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/revert_map"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 15
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_revert_map#method",
+]
+oracle_status = "CORE"
+oracles = [
+  "tests/test_filter_state.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:workbench/save_rules"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 24
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_save_rules#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/set_confirmed"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 3
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_confirmed#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/set_current"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 1
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_current#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/set_fullwidth"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_fullwidth#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/set_map_fmt"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_fmt#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:workbench/set_map_type"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_type#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:workbench/set_map_value"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 17
+unresolved_out = 57
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_map_value#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_edit_session.py :: core-verb-import",
+  "tests/test_job.py :: core-verb-import",
+  "tests/test_review_state.py :: core-verb-import",
+  "tests/test_text_render.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+  "tests/test_work_mode.py :: core-verb-import",
+]
+
+[[entry]]
+id = "gui:workbench/set_source"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 5
+unresolved_out = 21
+roots = [
+  "hwpxfiller.webapp.mapping_verbs:MappingVerbsMixin._do_set_source#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_filter_state.py :: core-verb-import",
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/set_target_font"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 2
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_target_font#method",
+]
+oracle_status = "NONE"
+oracles = [
+]
+
+[[entry]]
+id = "gui:workbench/set_view"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 1
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_set_view#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/step"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 4
+unresolved_out = 3
+seam_rules = ["attr_delegate"]
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_step#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+[[entry]]
+id = "gui:workbench/toggle_advance"
+host = "gui"
+kind = "gui_action"
+classification = "HOST_ONLY"
+core_verb_count = 0
+unresolved_out = 0
+roots = [
+  "hwpxfiller.webapp.screen_workbench:WorkbenchController._do_toggle_advance#method",
+]
+oracle_status = "ENTRY"
+oracles = [
+  "tests/test_webapp_workbench.py :: dispatch-literal",
+]
+
+# 근거 없는 비어 있지 않은 경로 — characterization 필요 항목(loud).
+
+[[characterization_gap]]
+entry = "gui:editor/initial"
+reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
+
+[[characterization_gap]]
+entry = "gui:editor/set_fmt"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:editor/step_preview"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/cancel_generation"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/filter_clear_col"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/filter_col_text"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:tpl/txt_content"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:workbench/revert_map"
+reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_map_fmt"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_map_type"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_target_font"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[test_file]]
+path = "conftest.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/_live_gate.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/_press_probe.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.web_artifact",
+]
+
+[[test_file]]
+path = "tests/_suite_probe.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/_web_artifact_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/_web_source.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/conftest.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/bootstrap.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_a.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_b.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_c.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/alias_passing.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/assign_other_target.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/comment_and_string.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/compat_mention_import.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/compatibility.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/define_property_other.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/local_window.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/nested_iife.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/window_read.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/bracket_computed.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/bracket_literal.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/compat.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/compat_import.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/cycle_a.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/cycle_b.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/define_property.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/global_alias.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/global_this.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/object_assign.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/reserved_key_indirect.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/top_iife.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/top_iife_arrow.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/window_dot.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/window_update.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/guard.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_data_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_editor_entry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_foundation.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_overlay.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_services.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_app_shell.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_editor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_job.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_library.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_workbench.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n07_bridge.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n07_product_api.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_boot_routing_overlay.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_editor_workbench_data.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_job.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_persistence_geometry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_react_runtime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_registry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_runner.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_schema.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n09_push_port.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n09_selftest_api.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n10_global_hygiene.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/overlay_engine.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/overlay_host.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/pywebview_allowlist.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_data_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor_entry_handoff.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor_state.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_generate_order.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_preview.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_read.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_relink.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_relink_flow.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_result_lifetime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_run.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_run_state.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_leave_transactions.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_library.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_path_actions.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_product_screen_executor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_product_screens.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_screen_runtime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_service_handoff.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_sheet_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_workbench.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r5_boundary_gates.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/react_root.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/runtime_client.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/segview.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/shell_nav.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/state_store.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_architecture.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_atomic.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.atomic",
+]
+
+[[test_file]]
+path = "tests/test_audit_test_portfolio.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_authoring.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxcore.text_extract",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.schema",
+]
+
+[[test_file]]
+path = "tests/test_batch_gate.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.batch",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+]
+
+[[test_file]]
+path = "tests/test_boot_budget.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.boot_budget",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_branding.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_bridge_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.action_registry",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.product_api",
+]
+
+[[test_file]]
+path = "tests/test_build_metadata.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.web_artifact",
+]
+
+[[test_file]]
+path = "tests/test_cli.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.cli",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.data.secret_store",
+]
+
+[[test_file]]
+path = "tests/test_compile_badge.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.gui.compile_badge",
+  "hwpxfiller.gui.template_manager_state",
+]
+
+[[test_file]]
+path = "tests/test_contrast_wcag.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_core_paths.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.paths",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_corpus_golden.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.text_extract",
+]
+
+[[test_file]]
+path = "tests/test_danger_confirm_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_data_factory.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.data",
+  "hwpxfiller.data.pipeline",
+]
+
+[[test_file]]
+path = "tests/test_dataset_pool.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.excel",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.data.secret_store",
+  "hwpxfiller.gui.nara_state",
+  "hwpxfiller.gui.run_state",
+]
+
+[[test_file]]
+path = "tests/test_dataset_pool_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.gui.home_state",
+]
+
+[[test_file]]
+path = "tests/test_design_tokens.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_dispatch_payload_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp.action_registry",
+]
+
+[[test_file]]
+path = "tests/test_dispatch_wiring.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp.action_registry",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_editor",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_library",
+  "hwpxfiller.webapp.screen_pool",
+  "hwpxfiller.webapp.screen_template",
+  "hwpxfiller.webapp.screen_workbench",
+]
+
+[[test_file]]
+path = "tests/test_edit_session.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.edit_session",
+]
+
+[[test_file]]
+path = "tests/test_effect_graph_02c.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_engine.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.batch",
+  "hwpxfiller.core",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fields",
+]
+
+[[test_file]]
+path = "tests/test_excel_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.data.excel",
+]
+
+[[test_file]]
+path = "tests/test_extract_invariants.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxcore.text_extract",
+]
+
+[[test_file]]
+path = "tests/test_extract_synthetic.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxcore.text_extract",
+]
+
+[[test_file]]
+path = "tests/test_factgraph_base.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_fields.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.fields",
+]
+
+[[test_file]]
+path = "tests/test_file_filters.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.file_filters",
+]
+
+[[test_file]]
+path = "tests/test_fill_ledger.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fill_ledger",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.source_profile",
+]
+
+[[test_file]]
+path = "tests/test_filter_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.gui.filter_state",
+]
+
+[[test_file]]
+path = "tests/test_forgiveness_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_format_engine.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.format_engine",
+]
+
+[[test_file]]
+path = "tests/test_frontend_build_graph.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_frontend_module_units.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_header_footer_fields.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxcore.text_extract",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fields",
+]
+
+[[test_file]]
+path = "tests/test_home_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.gui.home_state",
+]
+
+[[test_file]]
+path = "tests/test_identity_summary.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.identity_summary",
+]
+
+[[test_file]]
+path = "tests/test_interaction_responsiveness.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_jamo.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.jamo",
+]
+
+[[test_file]]
+path = "tests/test_job.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.validate",
+  "hwpxfiller.batch",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.naming",
+]
+
+[[test_file]]
+path = "tests/test_job_editor_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.gui.job_editor_state",
+  "hwpxfiller.gui.mapping_state",
+  "hwpxfiller.webapp.screen_editor",
+]
+
+[[test_file]]
+path = "tests/test_job_process_topology.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+]
+
+[[test_file]]
+path = "tests/test_legacy_path_zero.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_library_information_architecture.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_lineseg.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.lineseg",
+]
+
+[[test_file]]
+path = "tests/test_lint.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.lint",
+]
+
+[[test_file]]
+path = "tests/test_live_gate_shape.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_live_run_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.live_run",
+]
+
+[[test_file]]
+path = "tests/test_mapping.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.nara",
+]
+
+[[test_file]]
+path = "tests/test_mapping_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.schema",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.gui.mapping_state",
+]
+
+[[test_file]]
+path = "tests/test_modal_system.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_motw.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.motw",
+]
+
+[[test_file]]
+path = "tests/test_naming.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller",
+  "hwpxfiller.naming",
+]
+
+[[test_file]]
+path = "tests/test_nara.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.data.base",
+  "hwpxfiller.data.nara",
+]
+
+[[test_file]]
+path = "tests/test_nara_mulpum.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.batch",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.nara",
+]
+
+[[test_file]]
+path = "tests/test_nara_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.data.nara",
+  "hwpxfiller.data.secret_store",
+  "hwpxfiller.gui.nara_state",
+]
+
+[[test_file]]
+path = "tests/test_native_positive.py"
+axis = "native"
+product_modules = [
+  "hwpxcore.native",
+  "hwpxcore.native.clipboard",
+  "hwpxcore.native.dialogs",
+  "hwpxcore.native.reveal",
+  "hwpxcore.native.single_instance",
+]
+
+[[test_file]]
+path = "tests/test_package.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+]
+
+[[test_file]]
+path = "tests/test_package_coverage_gate.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_packaging_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_parity_matrix.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_partial_gate.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.gui.mapping_state",
+]
+
+[[test_file]]
+path = "tests/test_personalization_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.live_run",
+]
+
+[[test_file]]
+path = "tests/test_pipeline.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.data",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.data.pipeline",
+  "hwpxfiller.data.secret_store",
+]
+
+[[test_file]]
+path = "tests/test_pipeline_builder_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.data.pipeline",
+  "hwpxfiller.data.secret_store",
+  "hwpxfiller.gui.pipeline_builder_state",
+]
+
+[[test_file]]
+path = "tests/test_popover_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_powershell_encoding.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_python_symbol_inventory.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_quality_workflow.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_quickstart_101_assets.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.lint",
+  "hwpxfiller.core.text_render",
+]
+
+[[test_file]]
+path = "tests/test_quickstart_101_live.py"
+axis = "live"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.boot_budget",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_r3_editor.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.gui.mapping_state",
+  "hwpxfiller.webapp.screen_editor",
+]
+
+[[test_file]]
+path = "tests/test_r3_js.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r3_library.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.webapp.screen_library",
+]
+
+[[test_file]]
+path = "tests/test_r3_picker.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r3_pool.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_library",
+  "hwpxfiller.webapp.screen_pool",
+  "hwpxfiller.webapp.screen_template",
+]
+
+[[test_file]]
+path = "tests/test_r3_py_core.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.data.excel",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.pipeline_builder_state",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_pool",
+  "hwpxfiller.webapp.screens",
+]
+
+[[test_file]]
+path = "tests/test_r3_runmx.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screens",
+]
+
+[[test_file]]
+path = "tests/test_r4_data_attr_successors.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_editor_static_to_js_successor_map.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_existing_js_id_successors.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_final_screen_successor_map.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_job_run_static_to_js_successor_map.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_product_screens_inventory.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_r4_static_to_js_successor_map.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_overlay_live.py"
+axis = "live"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_ownership_inventory.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_root_live.py"
+axis = "live"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_shell_live.py"
+axis = "live"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_store_live.py"
+axis = "live"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_react_verification_ledger.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_review_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.review_state",
+]
+
+[[test_file]]
+path = "tests/test_run_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.batch",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.nara_state",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.run_state",
+]
+
+[[test_file]]
+path = "tests/test_scenario_e2e.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.batch",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.core.text_render",
+  "hwpxfiller.data",
+  "hwpxfiller.data.nara",
+]
+
+[[test_file]]
+path = "tests/test_schema.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.engine",
+  "hwpxfiller.core.schema",
+]
+
+[[test_file]]
+path = "tests/test_scroll_topology.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_scrollbar_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_secret_store.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.nara",
+  "hwpxfiller.data.secret_store",
+]
+
+[[test_file]]
+path = "tests/test_selection_state.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.gui.selection_state",
+]
+
+[[test_file]]
+path = "tests/test_selftest_api.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.selftest_api",
+]
+
+[[test_file]]
+path = "tests/test_selftest_http_proxy.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_single_instance.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.native",
+  "hwpxcore.native.single_instance",
+]
+
+[[test_file]]
+path = "tests/test_source_profile.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.source_profile",
+]
+
+[[test_file]]
+path = "tests/test_state_graph_02b.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_static_graph_02a.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_sticky_material.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_suite_partition.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_template_groups.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.settings",
+  "hwpxfiller.webapp.template_groups",
+]
+
+[[test_file]]
+path = "tests/test_template_manager.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.gui.template_manager_state",
+]
+
+[[test_file]]
+path = "tests/test_template_status.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.template_status",
+]
+
+[[test_file]]
+path = "tests/test_text_registry.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.text_registry",
+]
+
+[[test_file]]
+path = "tests/test_text_render.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_render",
+]
+
+[[test_file]]
+path = "tests/test_tracking_locate.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.native.reveal",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.webapp.screens",
+]
+
+[[test_file]]
+path = "tests/test_transport_graph_02d.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_txt_queue.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.gui.selection_state",
+  "hwpxfiller.gui.txt_queue",
+]
+
+[[test_file]]
+path = "tests/test_ui_contract.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.mapping_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.gui.selection_state",
+  "hwpxfiller.gui.template_manager_state",
+]
+
+[[test_file]]
+path = "tests/test_use_case_graph_02e.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_ux_copy_round.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_ux_css_round.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_artifact_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_artifact_seal.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.web_artifact",
+]
+
+[[test_file]]
+path = "tests/test_web_css_manifest.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_css_orphan_classes.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_datazone.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_dom_contract.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_m1_topology.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_native_dialog_guard.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_press_geometry.py"
+axis = "browser"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_web_product_api.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.product_api",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_web_runtime_artifact.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.web_artifact",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+]
+
+[[test_file]]
+path = "tests/test_web_selftest_gate.py"
+axis = "live"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.boot_budget",
+]
+
+[[test_file]]
+path = "tests/test_web_source_role.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/test_webapp_bridge.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.native.dialogs",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.data.factory",
+  "hwpxfiller.gui.file_filters",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_job",
+]
+
+[[test_file]]
+path = "tests/test_webapp_editor.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.template_manager_state",
+  "hwpxfiller.webapp.screen_editor",
+  "hwpxfiller.webapp.screen_template",
+  "hwpxfiller.webapp.template_groups",
+]
+
+[[test_file]]
+path = "tests/test_webapp_job.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.fields",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.data",
+  "hwpxfiller.gui.home_state",
+  "hwpxfiller.gui.result_errors",
+  "hwpxfiller.gui.review_state",
+  "hwpxfiller.gui.run_state",
+  "hwpxfiller.gui.selection_state",
+  "hwpxfiller.gui.work_candidates",
+  "hwpxfiller.webapp.screen_job",
+  "hwpxfiller.webapp.screen_library",
+  "hwpxfiller.webapp.screen_workbench",
+  "hwpxfiller.webapp.screens",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_webapp_library.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.gui.work_candidates",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_library",
+]
+
+[[test_file]]
+path = "tests/test_webapp_pool.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.dataset_pool",
+  "hwpxfiller.gui.dataset_pool_state",
+  "hwpxfiller.webapp.screen_pool",
+]
+
+[[test_file]]
+path = "tests/test_webapp_profile.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+]
+
+[[test_file]]
+path = "tests/test_webapp_settings.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_webapp_template.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxcore.package",
+  "hwpxfiller.core.authoring",
+  "hwpxfiller.core.template_status",
+  "hwpxfiller.core.text_registry",
+  "hwpxfiller.webapp",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_template",
+  "hwpxfiller.webapp.settings",
+]
+
+[[test_file]]
+path = "tests/test_webapp_workbench.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.work_mode",
+  "hwpxfiller.webapp.action_registry",
+  "hwpxfiller.webapp.app",
+  "hwpxfiller.webapp.screen_workbench",
+]
+
+[[test_file]]
+path = "tests/test_work_candidates.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.core.mapping",
+  "hwpxfiller.gui.work_candidates",
+]
+
+[[test_file]]
+path = "tests/test_work_mode.py"
+axis = "deterministic"
+product_modules = [
+  "hwpxfiller.core.job",
+  "hwpxfiller.gui.work_mode",
+]
+
+[[test_file]]
+path = "tests/test_workcard_contract.py"
+axis = "deterministic"
+product_modules = [
+]
