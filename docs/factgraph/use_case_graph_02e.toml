@@ -34,15 +34,15 @@ host_only = 149
 duplicate = 0
 anchor_verbs = 9
 empty_route_entries = 62
-oracle_entry = 134
-oracle_core = 10
-oracle_none = 11
-characterization_gaps = 13
-test_files = 153
+oracle_entry = 144
+oracle_core = 2
+oracle_none = 9
+characterization_gaps = 11
+test_files = 235
 
 [test_axis_counts]
 "browser" = 1
-"deterministic" = 145
+"deterministic" = 227
 "live" = 6
 "native" = 1
 
@@ -292,6 +292,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_webapp_bridge.py :: direct-call",
 ]
 
@@ -322,6 +323,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_webapp_bridge.py :: direct-call",
 ]
 
@@ -337,6 +339,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_webapp_bridge.py :: direct-call",
   "tests/test_webapp_workbench.py :: direct-call",
 ]
@@ -351,8 +354,9 @@ unresolved_out = 15
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.copy_path#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
 ]
 
 [[entry]]
@@ -366,8 +370,9 @@ seam_rules = ["attr_delegate", "transport_delegate"]
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.editor_has_unsaved_work#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_review_state.py :: core-verb-import",
@@ -388,6 +393,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_batch_gate.py :: core-verb-import",
   "tests/test_engine.py :: core-verb-import",
   "tests/test_fill_ledger.py :: core-verb-import",
@@ -400,7 +406,7 @@ oracles = [
   "tests/test_run_state.py :: core-verb-import",
   "tests/test_scenario_e2e.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
-  "tests/test_webapp_job.py :: direct-call",
+  "tests/test_webapp_job.py :: core-verb-import",
   "tests/test_webapp_library.py :: core-verb-import",
   "tests/test_webapp_workbench.py :: core-verb-import",
   "tests/test_work_candidates.py :: core-verb-import",
@@ -418,8 +424,9 @@ seam_rules = ["attr_delegate", "transport_delegate"]
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.import_template_file#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_authoring.py :: core-verb-import",
   "tests/test_compile_badge.py :: core-verb-import",
   "tests/test_corpus_golden.py :: core-verb-import",
@@ -453,6 +460,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_webapp_template.py :: direct-call",
 ]
 
@@ -469,6 +477,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_file_filters.py :: core-verb-import",
   "tests/test_filter_state.py :: core-verb-import",
@@ -502,6 +511,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_file_filters.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
@@ -524,8 +534,9 @@ seam_rules = ["attr_delegate", "transport_delegate"]
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.open_job_in_editor#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_authoring.py :: core-verb-import",
   "tests/test_corpus_golden.py :: core-verb-import",
   "tests/test_edit_session.py :: core-verb-import",
@@ -557,8 +568,9 @@ unresolved_out = 8
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.open_path#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_tracking_locate.py :: core-verb-import",
 ]
 
@@ -575,6 +587,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_file_filters.py :: core-verb-import",
   "tests/test_filter_state.py :: core-verb-import",
@@ -606,8 +619,9 @@ seam_rules = ["attr_delegate", "local_construct", "transport_delegate"]
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.pick_output_folder#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_identity_summary.py :: core-verb-import",
   "tests/test_jamo.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
@@ -632,8 +646,9 @@ unresolved_out = 5
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.pick_pool_data_file#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
 ]
 
 [[entry]]
@@ -646,8 +661,9 @@ unresolved_out = 5
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.pick_template_path#method",
 ]
-oracle_status = "NONE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
 ]
 
 [[entry]]
@@ -661,8 +677,9 @@ seam_rules = ["attr_delegate", "transport_delegate"]
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.reveal_corrupt_job#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_tracking_locate.py :: core-verb-import",
 ]
 
@@ -676,8 +693,9 @@ unresolved_out = 7
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.reveal_path#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_tracking_locate.py :: core-verb-import",
 ]
 
@@ -693,6 +711,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_personalization_contract.py :: direct-call",
@@ -710,6 +729,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_personalization_contract.py :: direct-call",
@@ -725,8 +745,9 @@ unresolved_out = 6
 roots = [
   "hwpxfiller.webapp.app:WebFrontend.set_theme#method",
 ]
-oracle_status = "CORE"
+oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n07_bridge.test.js :: direct-call",
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
 ]
@@ -841,6 +862,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_mapping.py :: core-verb-import",
@@ -959,6 +981,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_authoring.py :: core-verb-import",
   "tests/test_corpus_golden.py :: core-verb-import",
   "tests/test_edit_session.py :: core-verb-import",
@@ -979,7 +1002,6 @@ oracles = [
   "tests/test_template_status.py :: core-verb-import",
   "tests/test_text_render.py :: core-verb-import",
   "tests/test_webapp_editor.py :: dispatch-literal",
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_work_mode.py :: core-verb-import",
 ]
 
@@ -996,7 +1018,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_webapp_editor.py :: dispatch-literal",
-  "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1041,6 +1062,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_r3_editor.py :: dispatch-literal",
   "tests/test_webapp_editor.py :: dispatch-literal",
 ]
@@ -1075,7 +1097,6 @@ oracle_status = "ENTRY"
 oracles = [
   "tests/test_r3_editor.py :: dispatch-literal",
   "tests/test_webapp_editor.py :: dispatch-literal",
-  "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1109,7 +1130,6 @@ oracles = [
   "tests/test_mapping.py :: core-verb-import",
   "tests/test_r3_editor.py :: dispatch-literal",
   "tests/test_webapp_editor.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1273,9 +1293,8 @@ unresolved_out = 1
 roots = [
   "hwpxfiller.webapp.screen_job:JobController._do_cancel_generation#method",
 ]
-oracle_status = "ENTRY"
+oracle_status = "NONE"
 oracles = [
-  "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1293,7 +1312,6 @@ oracles = [
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1381,6 +1399,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -1445,7 +1464,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_jamo.py :: core-verb-import",
-  "tests/test_webapp_bridge.py :: handler-ref",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -1635,6 +1653,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -1665,6 +1684,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -1680,6 +1700,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -1696,16 +1717,13 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_dispatch_wiring.py :: dispatch-literal",
+  "tests/js/n07_bridge.test.js :: dispatch-literal",
+  "tests/js/runtime_client.test.js :: dispatch-literal",
   "tests/test_filter_state.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
-  "tests/test_r3_pool.py :: dispatch-literal",
   "tests/test_review_state.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_library.py :: dispatch-literal",
-  "tests/test_webapp_pool.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1728,7 +1746,6 @@ oracles = [
   "tests/test_text_render.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_library.py :: dispatch-literal",
   "tests/test_work_mode.py :: core-verb-import",
 ]
 
@@ -1747,7 +1764,6 @@ oracles = [
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1794,6 +1810,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_job.test.js :: dispatch-literal",
   "tests/test_filter_state.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_r3_runmx.py :: dispatch-literal",
@@ -1844,7 +1861,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1905,7 +1921,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_library.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -1920,7 +1935,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_webapp_bridge.py :: dispatch-literal",
+  "tests/js/runtime_client.test.js :: dispatch-literal",
   "tests/test_webapp_job.py :: dispatch-literal",
 ]
 
@@ -2103,7 +2118,6 @@ oracles = [
   "tests/test_authoring.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_corpus_golden.py :: core-verb-import",
-  "tests/test_dispatch_wiring.py :: dispatch-literal",
   "tests/test_extract_invariants.py :: core-verb-import",
   "tests/test_extract_synthetic.py :: core-verb-import",
   "tests/test_fill_ledger.py :: core-verb-import",
@@ -2111,15 +2125,11 @@ oracles = [
   "tests/test_job.py :: core-verb-import",
   "tests/test_naming.py :: core-verb-import",
   "tests/test_partial_gate.py :: core-verb-import",
-  "tests/test_r3_pool.py :: dispatch-literal",
   "tests/test_schema.py :: core-verb-import",
   "tests/test_template_manager.py :: core-verb-import",
   "tests/test_template_status.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_webapp_library.py :: dispatch-literal",
-  "tests/test_webapp_pool.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
   "tests/test_webapp_workbench.py :: core-verb-import",
   "tests/test_work_mode.py :: core-verb-import",
 ]
@@ -2252,7 +2262,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_webapp_library.py :: dispatch-literal",
-  "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2297,7 +2306,6 @@ oracles = [
   "tests/test_template_manager.py :: core-verb-import",
   "tests/test_template_status.py :: core-verb-import",
   "tests/test_webapp_editor.py :: core-verb-import",
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_webapp_library.py :: dispatch-literal",
   "tests/test_webapp_workbench.py :: core-verb-import",
   "tests/test_work_mode.py :: core-verb-import",
@@ -2318,7 +2326,6 @@ oracles = [
   "tests/test_atomic.py :: core-verb-import",
   "tests/test_core_paths.py :: core-verb-import",
   "tests/test_webapp_library.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2406,7 +2413,6 @@ oracles = [
   "tests/test_dataset_pool_state.py :: core-verb-import",
   "tests/test_r3_pool.py :: dispatch-literal",
   "tests/test_webapp_pool.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2438,14 +2444,12 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_dataset_pool.py :: core-verb-import",
   "tests/test_dataset_pool_state.py :: core-verb-import",
   "tests/test_dispatch_wiring.py :: dispatch-literal",
   "tests/test_r3_pool.py :: dispatch-literal",
-  "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_library.py :: dispatch-literal",
   "tests/test_webapp_pool.py :: dispatch-literal",
-  "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
 [[entry]]
@@ -2559,12 +2563,10 @@ oracles = [
   "tests/test_header_footer_fields.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_partial_gate.py :: core-verb-import",
-  "tests/test_r3_pool.py :: dispatch-literal",
   "tests/test_schema.py :: core-verb-import",
   "tests/test_template_groups.py :: core-verb-import",
   "tests/test_template_manager.py :: core-verb-import",
   "tests/test_template_status.py :: core-verb-import",
-  "tests/test_webapp_pool.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2583,7 +2585,6 @@ oracle_status = "ENTRY"
 oracles = [
   "tests/test_job.py :: core-verb-import",
   "tests/test_template_groups.py :: core-verb-import",
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2621,19 +2622,14 @@ oracles = [
   "tests/test_authoring.py :: core-verb-import",
   "tests/test_compile_badge.py :: core-verb-import",
   "tests/test_corpus_golden.py :: core-verb-import",
-  "tests/test_dispatch_wiring.py :: dispatch-literal",
   "tests/test_extract_invariants.py :: core-verb-import",
   "tests/test_extract_synthetic.py :: core-verb-import",
   "tests/test_fields.py :: core-verb-import",
   "tests/test_header_footer_fields.py :: core-verb-import",
   "tests/test_partial_gate.py :: core-verb-import",
-  "tests/test_r3_pool.py :: dispatch-literal",
   "tests/test_schema.py :: core-verb-import",
   "tests/test_template_manager.py :: core-verb-import",
   "tests/test_template_status.py :: core-verb-import",
-  "tests/test_webapp_job.py :: dispatch-literal",
-  "tests/test_webapp_library.py :: dispatch-literal",
-  "tests/test_webapp_pool.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2652,7 +2648,6 @@ oracle_status = "ENTRY"
 oracles = [
   "tests/test_job.py :: core-verb-import",
   "tests/test_template_groups.py :: core-verb-import",
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2694,7 +2689,6 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_webapp_job.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2710,7 +2704,6 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_webapp_library.py :: dispatch-literal",
   "tests/test_webapp_template.py :: dispatch-literal",
 ]
 
@@ -2799,6 +2792,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
@@ -2852,6 +2846,7 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
+  "tests/js/n08_editor_workbench_data.test.js :: dispatch-literal",
   "tests/test_edit_session.py :: core-verb-import",
   "tests/test_job.py :: core-verb-import",
   "tests/test_review_state.py :: core-verb-import",
@@ -2904,7 +2899,6 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_webapp_editor.py :: dispatch-literal",
   "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
@@ -3001,8 +2995,6 @@ roots = [
 oracle_status = "ENTRY"
 oracles = [
   "tests/test_filter_state.py :: core-verb-import",
-  "tests/test_r3_editor.py :: dispatch-literal",
-  "tests/test_webapp_editor.py :: dispatch-literal",
   "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
@@ -3032,7 +3024,6 @@ roots = [
 ]
 oracle_status = "ENTRY"
 oracles = [
-  "tests/test_webapp_library.py :: dispatch-literal",
   "tests/test_webapp_workbench.py :: dispatch-literal",
 ]
 
@@ -3070,56 +3061,48 @@ oracles = [
 # 근거 없는 비어 있지 않은 경로 — characterization 필요 항목(loud).
 
 [[characterization_gap]]
-entry = "gui:direct/copy_path"
-reason = "core 경로가 비어 있지 않은데 어느 근거로도 겨누는 테스트가 없다"
-
-[[characterization_gap]]
-entry = "gui:direct/editor_has_unsaved_work"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/import_template_file"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/open_job_in_editor"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/open_path"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/pick_output_folder"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/pick_pool_data_file"
-reason = "core 경로가 비어 있지 않은데 어느 근거로도 겨누는 테스트가 없다"
-
-[[characterization_gap]]
-entry = "gui:direct/pick_template_path"
-reason = "core 경로가 비어 있지 않은데 어느 근거로도 겨누는 테스트가 없다"
-
-[[characterization_gap]]
-entry = "gui:direct/reveal_corrupt_job"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/reveal_path"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
-entry = "gui:direct/set_theme"
-reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
-
-[[characterization_gap]]
 entry = "gui:editor/initial"
 reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
 
 [[characterization_gap]]
+entry = "gui:editor/set_fmt"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:editor/step_preview"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/cancel_generation"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/filter_clear_col"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:job/filter_col_text"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:tpl/txt_content"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
 entry = "gui:workbench/revert_map"
 reason = "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_map_fmt"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_map_type"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
+
+[[characterization_gap]]
+entry = "gui:workbench/set_target_font"
+reason = "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
 
 [[test_file]]
 path = "conftest.py"
@@ -3160,6 +3143,498 @@ product_modules = [
 
 [[test_file]]
 path = "tests/conftest.py"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/bootstrap.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_a.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_b.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/acyclic_c.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/alias_passing.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/assign_other_target.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/comment_and_string.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/compat_mention_import.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/compatibility.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/define_property_other.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/local_window.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/nested_iife.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/neg/window_read.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/bracket_computed.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/bracket_literal.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/compat.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/compat_import.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/cycle_a.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/cycle_b.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/define_property.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/global_alias.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/global_this.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/object_assign.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/reserved_key_indirect.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/top_iife.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/top_iife_arrow.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/window_dot.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/fixtures/n10/pos/window_update.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/guard.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_data_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_editor_entry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_foundation.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_overlay.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n05_services.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_app_shell.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_editor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_job.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_library.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n06_workbench.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n07_bridge.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n07_product_api.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_boot_routing_overlay.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_editor_workbench_data.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_job.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_persistence_geometry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_react_runtime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_registry.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_runner.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n08_schema.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n09_push_port.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n09_selftest_api.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/n10_global_hygiene.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/overlay_engine.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/overlay_host.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/pywebview_allowlist.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_data_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor_entry_handoff.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_editor_state.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_generate_order.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_preview.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_read.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_relink.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_relink_flow.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_result_lifetime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_run.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_job_run_state.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_leave_transactions.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_library.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_path_actions.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_product_screen_executor.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_product_screens.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_screen_runtime.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_service_handoff.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_sheet_picker.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r4_workbench.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/r5_boundary_gates.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/react_root.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/runtime_client.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/segview.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/shell_nav.test.js"
+axis = "deterministic"
+product_modules = [
+]
+
+[[test_file]]
+path = "tests/js/state_store.test.js"
 axis = "deterministic"
 product_modules = [
 ]

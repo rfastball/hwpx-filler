@@ -340,8 +340,37 @@ def test_common_anchor_and_duplicate_are_separated_by_shared_implementation(
     assert result.classification["cli:default"] == "HOST_ONLY"
 
 
+def test_duplicate_candidate_with_multiple_counterparts_is_loud(tmp_path: Path) -> None:
+    """같은 CLI entry에 GUI 후보 둘이 매달리면 첫 후보를 임의 선택하지 않는다."""
+    panels = _PANELS.replace(
+        "        def _op_drain(self, payload):\n",
+        "        def _op_mix(self, payload):\n"
+        "            drain()\n"
+        "            return {}\n\n"
+        "        def _op_drain(self, payload):\n",
+    )
+    assert panels != _PANELS
+    repo = _mini_repo(
+        tmp_path,
+        {
+            **_FIXTURE_SRC,
+            "src/alpha/ui/panels.py": panels,
+            "tests/test_stub.py": "def test_ok():\n    pass\n",
+        },
+    )
+    with pytest.raises(FactGraphError, match="DUPLICATE 상대가 유일하지 않다"):
+        build_use_cases(repo)
+
+
 def test_oracle_bases_and_characterization_gap(tmp_path: Path) -> None:
     """entry/CORE 근거의 양성과, 근거가 사라졌을 때 gap 이 서는 음성을 함께 센다."""
+    panels = _PANELS.replace(
+        "        def _op_drain(self, payload):\n",
+        "        def _op_steep(self, payload):\n"
+        "            steep()\n"
+        "            return {}\n\n"
+        "        def _op_drain(self, payload):\n",
+    )
     tests_files = {
         "tests/test_alpha_actions.py": """
             from alpha.ui.panels import JobPanel
@@ -353,6 +382,30 @@ def test_oracle_bases_and_characterization_gap(tmp_path: Path) -> None:
 
             def test_steep_roundtrip():
                 assert _send(JobPanel(), "steep", {}) == {}
+        """,
+        "tests/test_controller_direct.py": """
+            from alpha.ui.panels import JobPanel
+
+
+            def test_same_name_is_not_transport():
+                assert JobPanel().ship() == "boil"
+        """,
+        "tests/test_handler_ref.py": """
+            from alpha.ui.panels import JobPanel, PoolPanel
+
+
+            def test_only_job_handler():
+                assert callable(JobPanel._op_steep)
+                assert PoolPanel is not None
+        """,
+        "tests/test_transport_direct.py": """
+            from alpha.ui.win import Gateway as Frontend
+
+
+            def test_transport_alias():
+                frontend = Frontend()
+                alias = frontend
+                assert alias.ship("job") == "boil"
         """,
         "tests/test_alpha_core.py": """
             from alpha.core import stir
@@ -382,7 +435,10 @@ def test_oracle_bases_and_characterization_gap(tmp_path: Path) -> None:
                 pass
         """,
     }
-    repo = _mini_repo(tmp_path, {**_FIXTURE_SRC, **tests_files})
+    repo = _mini_repo(
+        tmp_path,
+        {**_FIXTURE_SRC, "src/alpha/ui/panels.py": panels, **tests_files},
+    )
     result = build_use_cases(repo)
 
     def bases(entry_id: str) -> "set[tuple[str, str]]":
@@ -390,6 +446,11 @@ def test_oracle_bases_and_characterization_gap(tmp_path: Path) -> None:
 
     # 지역 헬퍼 경유 액션 dispatch 도 호출-인자 리터럴로 문다(실측 결함류의 재현 방지).
     assert ("tests/test_alpha_actions.py", "dispatch-literal") in bases("gui:job/steep")
+    assert ("tests/test_alpha_actions.py", "dispatch-literal") not in bases("gui:pool/steep")
+    assert ("tests/test_handler_ref.py", "handler-ref") in bases("gui:job/steep")
+    assert ("tests/test_handler_ref.py", "handler-ref") not in bases("gui:pool/steep")
+    assert ("tests/test_transport_direct.py", "direct-call") in bases("gui:direct/ship")
+    assert ("tests/test_controller_direct.py", "direct-call") not in bases("gui:direct/ship")
     assert ("tests/test_alpha_cli.py", "argv-literal") in bases("cli:brew")
     assert ("tests/test_alpha_cli.py", "trunk-flag") in bases("cli:default")
     # core 동사 import 는 모듈-한정으로만 문다 — CORE 수준(간접) 근거.
@@ -402,6 +463,12 @@ def test_oracle_bases_and_characterization_gap(tmp_path: Path) -> None:
     gap_ids = {entry_id for entry_id, _ in result.gaps}
     assert "gui:pool/drain" in gap_ids  # 비어 있지 않은 경로 + 근거 없음 → loud
     assert "cli:mix" in gap_ids  # CORE 만 → wrapper 무증인으로 loud
+    assert "gui:job/fog" in gap_ids  # 빈 core 투영도 entry 무증인이면 characterization 대상
+    assert gap_ids == {
+        entry_id for entry_id, status in result.oracle_status.items() if status in ("CORE", "NONE")
+    }
+    reasons = dict(result.gaps)
+    assert "core 투영 경로가 비어" in reasons["gui:job/fog"]
 
     # 축 표식은 별칭 import 로도 읽힌다.
     marked = next(tf for tf in result.test_files if tf.path == "tests/test_alpha_marked.py")
@@ -420,6 +487,53 @@ def test_scan_accepts_bom_and_rejects_unparsable_loudly(tmp_path: Path) -> None:
     (repo / "tests/test_broken.py").write_text("def broken(:\n", encoding="utf-8")
     with pytest.raises(FactGraphError, match="test_broken"):
         scan_test_files(repo, closure)
+
+    broken_js = repo / "tests/js/test_broken.js"
+    broken_js.parent.mkdir(parents=True)
+    broken_js.write_text("/* 닫히지 않은 주석", encoding="utf-8")
+    with pytest.raises(FactGraphError, match="test_broken.js"):
+        scan_test_files(repo, closure)
+
+
+def test_javascript_denominator_and_oracles_are_structural(tmp_path: Path) -> None:
+    """Node 파일 전수와 DELEGATIONS/direct·화면 결속 dispatch의 양·음성을 함께 고정한다."""
+    panels = _PANELS.replace(
+        "        def _op_drain(self, payload):\n",
+        "        def _op_steep(self, payload):\n"
+        "            steep()\n"
+        "            return {}\n\n"
+        "        def _op_drain(self, payload):\n",
+    )
+    repo = _mini_repo(
+        tmp_path,
+        {
+            **_FIXTURE_SRC,
+            "src/alpha/ui/panels.py": panels,
+            "tests/test_stub.py": "def test_ok():\n    pass\n",
+            "tests/js/direct.test.js": """
+                const DELEGATIONS = [
+                  ["ship", "ship", ["job"], ["job"]],
+                  ["call", "dispatch", ["job", "steep", {}], ["job", "steep", {}]],
+                ];
+                const prose = 'client.dispatch("pool", "steep", {})';
+                // client.dispatch("pool", "steep", {});
+                client.dispatch("job", "steep", {});
+            """,
+            "tests/js/helper.js": "export const helper = true;\n",
+        },
+    )
+    result = build_use_cases(repo)
+    rows = {row.path: row for row in result.test_files}
+    assert set(rows) == {"tests/test_stub.py", "tests/js/direct.test.js", "tests/js/helper.js"}
+    assert rows["tests/js/helper.js"].axes == ()
+    assert rows["tests/js/direct.test.js"].dispatch_pairs == frozenset({("job", "steep")})
+
+    def bases(entry_id: str) -> "set[tuple[str, str]]":
+        return {(link.test_path, link.basis) for link in result.oracles[entry_id]}
+
+    assert ("tests/js/direct.test.js", "direct-call") in bases("gui:direct/ship")
+    assert ("tests/js/direct.test.js", "dispatch-literal") in bases("gui:job/steep")
+    assert ("tests/js/direct.test.js", "dispatch-literal") not in bases("gui:pool/steep")
 
 
 def test_oracle_basis_vocabulary_is_locked() -> None:
@@ -465,6 +579,8 @@ def test_real_packet_baseline_counts_hold(committed_ledger) -> None:
     assert counts["common"] == 6
     assert counts["host_only"] == 149
     assert counts["duplicate"] == 0
+    assert counts["test_files"] == 235  # Python 153 + tests/js/**/*.js 82
+    assert committed_ledger["test_axis_counts"]["deterministic"] == 227
     assert counts["entries_cli"] + counts["entries_gui"] == counts["entries_total"]
     assert (
         counts["common"] + counts["host_only"] + counts["duplicate"] == counts["entries_total"]
@@ -500,11 +616,30 @@ def test_real_characterization_gaps_are_loud_and_grounded(committed_ledger) -> N
     rows = {row["id"]: row for row in committed_ledger["entry"]}
     gaps = committed_ledger.get("characterization_gap", [])
     assert gaps, "gap 0 은 실측과 어긋난다 — 스캐너 침묵을 의심하라"
+    assert {gap["entry"] for gap in gaps} == {
+        entry_id
+        for entry_id, row in rows.items()
+        if row["oracle_status"] in ("CORE", "NONE")
+    }
     for gap in gaps:
         row = rows[gap["entry"]]
         assert row["oracle_status"] in ("CORE", "NONE")
-        assert row["core_verb_count"] > 0  # 비어 있지 않은 경로만 characterization 대상
         assert gap["reason"]
+
+
+def test_real_oracles_restate_receiver_and_dispatch_pairs(real_result) -> None:
+    facts = {row.path: row for row in real_result.test_files}
+    for entry_id, links in real_result.oracles.items():
+        tail = entry_id.rsplit("/", 1)[-1]
+        if entry_id.startswith("gui:direct/"):
+            for link in links:
+                if link.basis == "direct-call":
+                    assert tail in facts[link.test_path].direct_calls
+        elif entry_id.startswith("gui:") and "/" in entry_id:
+            screen = entry_id.partition(":")[2].partition("/")[0]
+            for link in links:
+                if link.basis == "dispatch-literal":
+                    assert (screen, tail) in facts[link.test_path].dispatch_pairs
 
 
 def test_real_self_row_exists_with_zero_product_refs(committed_ledger) -> None:

@@ -68,6 +68,7 @@ CORE_BASES: tuple[str, ...] = (
 )
 
 _ORACLE_STATUS = ("ENTRY", "CORE", "NONE")
+_TypeSummary = tuple[frozenset[str], ...]
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,12 @@ class TestFileFacts:
     #: 보면 헬퍼 경유 소비에 눈이 먼다(검증 원장 G2 의 같은 결함류 — 술어는 「무엇을
     #: 부르는가」가 아니라 「무엇에 닿는가」를 본다).
     call_arg_strings: frozenset[str] = field(repr=False)
+    #: 수송 인스턴스에 결속된 공개 메서드 호출. 동명 컨트롤러 메서드는 제외한다.
+    direct_calls: frozenset[str] = field(default_factory=frozenset, repr=False)
+    #: 수송/컨트롤러 호출에서 함께 증명된 ``(screen, action)`` 쌍.
+    dispatch_pairs: frozenset[tuple[str, str]] = field(default_factory=frozenset, repr=False)
+    #: 화면 컨트롤러에 결속된 ``_do_<action>`` 직접 참조.
+    handler_pairs: frozenset[tuple[str, str]] = field(default_factory=frozenset, repr=False)
 
 
 @dataclass(frozen=True)
@@ -784,6 +791,7 @@ def _classify(
     by_stem: dict[str, list[str]] = {}
     for eid in routes:
         by_stem.setdefault(_stem(eid), []).append(eid)
+    duplicate_candidates: dict[str, set[str]] = {}
     for stem_ids in by_stem.values():
         for left in stem_ids:
             for right in stem_ids:
@@ -796,10 +804,20 @@ def _classify(
                     and routes[right].core_verbs
                     and not (set(routes[left].core_verbs) & set(routes[right].core_verbs))
                 ):
-                    classification[left] = "DUPLICATE"
-                    classification[right] = "DUPLICATE"
-                    counterpart[left] = right
-                    counterpart[right] = left
+                    duplicate_candidates.setdefault(left, set()).add(right)
+                    duplicate_candidates.setdefault(right, set()).add(left)
+    ambiguous = {
+        eid: sorted(partners)
+        for eid, partners in duplicate_candidates.items()
+        if len(partners) > 1
+    }
+    if ambiguous:
+        detail = "; ".join(f"{eid} ↔ {partners}" for eid, partners in sorted(ambiguous.items()))
+        raise FactGraphError(f"DUPLICATE 상대가 유일하지 않다: {detail}")
+    for left, partners in sorted(duplicate_candidates.items()):
+        right = next(iter(partners))
+        classification[left] = "DUPLICATE"
+        counterpart[left] = right
     for eid in routes:
         classification.setdefault(eid, "HOST_ONLY")
     return classification, counterpart, anchor_verbs
@@ -818,6 +836,478 @@ def _axis_vocabulary(repo_root: Path) -> "tuple[str, ...]":
     return axes
 
 
+def _dotted_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _dotted_name(node.value)
+        if parent:
+            return f"{parent}.{node.attr}"
+    return None
+
+
+def _scope_nodes(root: ast.Module | ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.AST, ...]:
+    """한 lexical scope의 노드만 걷는다(중첩 함수·클래스의 동명 지역값은 제외)."""
+
+    class Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.nodes: list[ast.AST] = []
+
+        def visit(self, node: ast.AST) -> None:
+            self.nodes.append(node)
+            super().visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+    visitor = Visitor()
+    for statement in root.body:
+        visitor.visit(statement)
+    return tuple(visitor.nodes)
+
+
+def _python_oracle_facts(
+    tree: ast.Module,
+    type_symbols: "dict[str, str]",
+    handler_prefix: str,
+) -> "tuple[frozenset[str], frozenset[tuple[str, str]], frozenset[tuple[str, str]]]":
+    """Python 테스트의 호출을 수송/화면 receiver에 결속해 구조 사실로 만든다."""
+
+    type_modules = {symbol.rsplit(".", 1)[0] for symbol in type_symbols}
+    class_aliases: dict[str, str] = {}
+    module_aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.partition(".")[0]
+                module_aliases[local] = alias.name if alias.asname else local
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            for alias in node.names:
+                imported = f"{node.module}.{alias.name}"
+                local = alias.asname or alias.name
+                if imported in type_symbols:
+                    class_aliases[local] = type_symbols[imported]
+                elif imported in type_modules:
+                    module_aliases[local] = imported
+
+    def type_reference(expr: ast.AST) -> str | None:
+        if isinstance(expr, ast.Name) and expr.id in class_aliases:
+            return class_aliases[expr.id]
+        dotted = _dotted_name(expr)
+        if not dotted:
+            return None
+        if dotted in type_symbols:
+            return type_symbols[dotted]
+        head, dot, tail = dotted.partition(".")
+        if dot and head in module_aliases:
+            return type_symbols.get(f"{module_aliases[head]}.{tail}")
+        return None
+
+    def expression_summary(
+        expr: ast.AST,
+        env: "dict[str, frozenset[str]]",
+        function_returns: "dict[str, _TypeSummary]",
+    ) -> _TypeSummary:
+        if isinstance(expr, ast.Name):
+            if expr.id in env:
+                return (env[expr.id],)
+            tag = type_reference(expr)
+            return (frozenset((tag,)),) if tag else ()
+        tag = type_reference(expr)
+        if tag:
+            return (frozenset((tag,)),)
+        if isinstance(expr, ast.Call):
+            constructor = type_reference(expr.func)
+            if constructor:
+                return (frozenset((constructor,)),)
+            if isinstance(expr.func, ast.Name) and expr.func.id in function_returns:
+                return function_returns[expr.func.id]
+            if isinstance(expr.func, ast.Attribute) and expr.func.attr == "__new__":
+                candidates: set[str] = set()
+                owner = type_reference(expr.func.value)
+                if owner:
+                    candidates.add(owner)
+                for arg in expr.args:
+                    arg_type = type_reference(arg)
+                    if arg_type:
+                        candidates.add(arg_type)
+                if candidates:
+                    return (frozenset(candidates),)
+        if isinstance(expr, (ast.Tuple, ast.List)):
+            parts: list[frozenset[str]] = []
+            for item in expr.elts:
+                summary = expression_summary(item, env, function_returns)
+                parts.append(summary[0] if len(summary) == 1 else frozenset())
+            return tuple(parts)
+        if isinstance(expr, ast.IfExp):
+            left = expression_summary(expr.body, env, function_returns)
+            right = expression_summary(expr.orelse, env, function_returns)
+            if len(left) == len(right):
+                return tuple(a | b for a, b in zip(left, right, strict=True))
+        return ()
+
+    def bind_target(
+        target: ast.AST,
+        summary: _TypeSummary,
+        env: "dict[str, frozenset[str]]",
+    ) -> bool:
+        changed = False
+        if isinstance(target, ast.Name) and len(summary) == 1 and summary[0]:
+            merged = env.get(target.id, frozenset()) | summary[0]
+            changed = merged != env.get(target.id)
+            env[target.id] = merged
+        elif isinstance(target, (ast.Tuple, ast.List)) and len(target.elts) == len(summary):
+            for item, part in zip(target.elts, summary, strict=True):
+                changed |= bind_target(item, (part,), env)
+        return changed
+
+    def populate_env(
+        nodes: "tuple[ast.AST, ...]",
+        env: "dict[str, frozenset[str]]",
+        function_returns: "dict[str, _TypeSummary]",
+    ) -> None:
+        for _ in range(6):
+            changed = False
+            for node in nodes:
+                if isinstance(node, ast.Assign):
+                    summary = expression_summary(node.value, env, function_returns)
+                    for target in node.targets:
+                        changed |= bind_target(target, summary, env)
+                elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                    summary = expression_summary(node.value, env, function_returns)
+                    changed |= bind_target(node.target, summary, env)
+            if not changed:
+                break
+
+    functions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    module_nodes = _scope_nodes(tree)
+    module_env: dict[str, frozenset[str]] = {}
+    function_returns: dict[str, _TypeSummary] = {}
+    function_envs: dict[str, dict[str, frozenset[str]]] = {}
+    for _ in range(8):
+        populate_env(module_nodes, module_env, function_returns)
+        changed = False
+        for name, function in functions.items():
+            env = dict(module_env)
+            for arg in (*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs):
+                if arg.annotation is not None:
+                    tag = type_reference(arg.annotation)
+                    if tag:
+                        env[arg.arg] = frozenset((tag,))
+            nodes = _scope_nodes(function)
+            populate_env(nodes, env, function_returns)
+            parts = [
+                expression_summary(node.value, env, function_returns)
+                for node in nodes
+                if isinstance(node, ast.Return) and node.value is not None
+            ]
+            parts = [part for part in parts if part]
+            if parts and len({len(part) for part in parts}) == 1:
+                merged = tuple(
+                    frozenset().union(*(part[index] for part in parts))
+                    for index in range(len(parts[0]))
+                )
+                if function_returns.get(name) != merged:
+                    function_returns[name] = merged
+                    changed = True
+            function_envs[name] = env
+        if not changed:
+            break
+
+    wrapper_specs: dict[str, list[tuple[int, tuple[int, ...]]]] = {}
+    for name, function in functions.items():
+        params = [
+            arg.arg
+            for arg in (*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs)
+        ]
+        for node in _scope_nodes(function):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "dispatch"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in params
+            ):
+                continue
+            argument_params = tuple(
+                params.index(arg.id)
+                for arg in node.args
+                if isinstance(arg, ast.Name) and arg.id in params
+            )
+            if argument_params:
+                wrapper_specs.setdefault(name, []).append(
+                    (params.index(node.func.value.id), argument_params)
+                )
+
+    direct_calls: set[str] = set()
+    dispatch_pairs: set[tuple[str, str]] = set()
+    handler_pairs: set[tuple[str, str]] = set()
+
+    def scalar_types(
+        expr: ast.AST,
+        env: "dict[str, frozenset[str]]",
+    ) -> frozenset[str]:
+        summary = expression_summary(expr, env, function_returns)
+        return summary[0] if len(summary) == 1 else frozenset()
+
+    def one_screen(tags: frozenset[str]) -> str | None:
+        if len(tags) != 1:
+            return None
+        tag = next(iter(tags))
+        return tag.partition(":")[2] if tag.startswith("screen:") else None
+
+    def string_arg(call: ast.Call, index: int) -> str | None:
+        if index >= len(call.args):
+            return None
+        arg = call.args[index]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+        return None
+
+    def collect(nodes: "tuple[ast.AST, ...]", env: "dict[str, frozenset[str]]") -> None:
+        for node in nodes:
+            if handler_prefix and isinstance(node, ast.Attribute) and node.attr.startswith(handler_prefix):
+                screen = one_screen(scalar_types(node.value, env))
+                if screen:
+                    handler_pairs.add((screen, node.attr.removeprefix(handler_prefix)))
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute):
+                tags = scalar_types(node.func.value, env)
+                if tags == frozenset(("transport",)):
+                    if node.func.attr == "dispatch":
+                        screen, action = string_arg(node, 0), string_arg(node, 1)
+                        if screen is not None and action is not None:
+                            dispatch_pairs.add((screen, action))
+                    else:
+                        direct_calls.add(node.func.attr)
+                screen = one_screen(tags)
+                if screen and node.func.attr == "dispatch":
+                    action = string_arg(node, 0)
+                    if action is not None:
+                        dispatch_pairs.add((screen, action))
+            elif isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                if len(node.args) >= 2:
+                    screen = one_screen(scalar_types(node.args[0], env))
+                    attr = node.args[1]
+                    if (
+                        screen
+                        and isinstance(attr, ast.Constant)
+                        and isinstance(attr.value, str)
+                        and handler_prefix
+                        and attr.value.startswith(handler_prefix)
+                    ):
+                        handler_pairs.add((screen, attr.value.removeprefix(handler_prefix)))
+            if isinstance(node.func, ast.Name):
+                for receiver_index, argument_indices in wrapper_specs.get(node.func.id, []):
+                    if receiver_index >= len(node.args):
+                        continue
+                    if not argument_indices:
+                        continue
+                    tags = scalar_types(node.args[receiver_index], env)
+                    if tags == frozenset(("transport",)) and len(argument_indices) >= 2:
+                        screen_index, action_index = argument_indices[:2]
+                        screen = string_arg(node, screen_index)
+                        action = string_arg(node, action_index)
+                        if screen is not None and action is not None:
+                            dispatch_pairs.add((screen, action))
+                    else:
+                        screen = one_screen(tags)
+                        action_index = next(iter(argument_indices))
+                        action = string_arg(node, action_index)
+                        if screen and action is not None:
+                            dispatch_pairs.add((screen, action))
+
+    collect(module_nodes, module_env)
+    for name, function in functions.items():
+        collect(_scope_nodes(function), function_envs.get(name, dict(module_env)))
+    return frozenset(direct_calls), frozenset(dispatch_pairs), frozenset(handler_pairs)
+
+
+def _js_tokens(source: str, rel: str) -> tuple[tuple[str, str], ...]:
+    """주석·산문·정규식을 코드로 세지 않는 최소 JavaScript lexical token 열거."""
+
+    tokens: list[tuple[str, str]] = []
+    i = 0
+    previous = ""
+    regex_starts = {"", "(", "[", "{", "=", ",", ":", ";", "!", "?", "=>"}
+    regex_words = {"return", "case", "throw", "delete", "void", "typeof", "yield"}
+    while i < len(source):
+        char = source[i]
+        if char.isspace():
+            i += 1
+            continue
+        if source.startswith("//", i):
+            end = source.find("\n", i + 2)
+            i = len(source) if end < 0 else end + 1
+            continue
+        if source.startswith("/*", i):
+            end = source.find("*/", i + 2)
+            if end < 0:
+                raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 주석): {rel}")
+            i = end + 2
+            continue
+        if char in "'\"":
+            quote = char
+            i += 1
+            value: list[str] = []
+            while i < len(source) and source[i] != quote:
+                if source[i] in "\r\n":
+                    raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 문자열): {rel}")
+                if source[i] == "\\":
+                    i += 1
+                    if i >= len(source):
+                        break
+                    escapes = {"n": "\n", "r": "\r", "t": "\t", "b": "\b", "f": "\f"}
+                    value.append(escapes.get(source[i], source[i]))
+                else:
+                    value.append(source[i])
+                i += 1
+            if i >= len(source):
+                raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 문자열): {rel}")
+            i += 1
+            tokens.append(("string", "".join(value)))
+            previous = "string"
+            continue
+        if char == "`":
+            i += 1
+            while i < len(source):
+                if source[i] == "\\":
+                    i += 2
+                    continue
+                if source[i] == "`":
+                    i += 1
+                    break
+                i += 1
+            else:
+                raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 template): {rel}")
+            tokens.append(("template", ""))
+            previous = "template"
+            continue
+        if char == "/" and (previous in regex_starts or previous in regex_words):
+            i += 1
+            in_class = False
+            while i < len(source):
+                if source[i] == "\\":
+                    i += 2
+                    continue
+                if source[i] == "[":
+                    in_class = True
+                elif source[i] == "]":
+                    in_class = False
+                elif source[i] == "/" and not in_class:
+                    i += 1
+                    while i < len(source) and source[i].isalpha():
+                        i += 1
+                    break
+                elif source[i] in "\r\n":
+                    raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 정규식): {rel}")
+                i += 1
+            else:
+                raise FactGraphError(f"JavaScript 테스트 파싱 실패(닫히지 않은 정규식): {rel}")
+            tokens.append(("regex", ""))
+            previous = "regex"
+            continue
+        if char.isalpha() or char in "_$":
+            end = i + 1
+            while end < len(source) and (source[end].isalnum() or source[end] in "_$"):
+                end += 1
+            word = source[i:end]
+            tokens.append(("ident", word))
+            previous = word
+            i = end
+            continue
+        punct = "=>" if source.startswith("=>", i) else char
+        tokens.append(("punct", punct))
+        previous = punct
+        i += len(punct)
+    return tuple(tokens)
+
+
+def _js_oracle_facts(
+    source: str,
+    rel: str,
+) -> "tuple[frozenset[str], frozenset[tuple[str, str]]]":
+    tokens = _js_tokens(source, rel)
+    direct_calls: set[str] = set()
+    dispatch_pairs: set[tuple[str, str]] = set()
+
+    for index, (kind, value) in enumerate(tokens):
+        if kind != "ident" or value not in ("dispatch", "call"):
+            continue
+        if index == 0 or tokens[index - 1][1] != ".":
+            continue
+        tail = tokens[index + 1 : index + 6]
+        if (
+            len(tail) == 5
+            and tail[0][1] == "("
+            and tail[1][0] == "string"
+            and tail[2][1] == ","
+            and tail[3][0] == "string"
+        ):
+            dispatch_pairs.add((tail[1][1], tail[3][1]))
+
+    start = next(
+        (
+            index + 3
+            for index in range(len(tokens) - 3)
+            if tokens[index : index + 3]
+            == (("ident", "const"), ("ident", "DELEGATIONS"), ("punct", "="))
+            and tokens[index + 3] == ("punct", "[")
+        ),
+        None,
+    )
+    if start is not None:
+        depth = 0
+        end = start
+        for end in range(start, len(tokens)):
+            if tokens[end] == ("punct", "["):
+                depth += 1
+            elif tokens[end] == ("punct", "]"):
+                depth -= 1
+                if depth == 0:
+                    break
+        else:
+            raise FactGraphError(f"JavaScript 테스트 파싱 실패(DELEGATIONS 미종결): {rel}")
+        for index in range(start + 1, end - 5):
+            row = tokens[index : index + 6]
+            if not (
+                row[0] == ("punct", "[")
+                and row[1][0] == "string"
+                and row[2] == ("punct", ",")
+                and row[3][0] == "string"
+                and row[4] == ("punct", ",")
+                and row[5] == ("punct", "[")
+            ):
+                continue
+            backend_method = row[3][1]
+            if backend_method == "dispatch":
+                args = tokens[index + 6 : index + 10]
+                if (
+                    len(args) == 4
+                    and args[0][0] == "string"
+                    and args[1] == ("punct", ",")
+                    and args[2][0] == "string"
+                ):
+                    dispatch_pairs.add((args[0][1], args[2][1]))
+            else:
+                direct_calls.add(backend_method)
+    return frozenset(direct_calls), frozenset(dispatch_pairs)
+
+
 def scan_test_files(
     repo_root: Path,
     closure: Closure,
@@ -825,6 +1315,8 @@ def scan_test_files(
     tests_rel: str = "tests",
     extra_files: "tuple[str, ...]" = ("conftest.py",),
     axes: "tuple[str, ...] | None" = None,
+    type_symbols: "dict[str, str] | None" = None,
+    handler_prefix: str = "_do_",
 ) -> tuple[TestFileFacts, ...]:
     """테스트 파일의 참조 사실 스캔 — 존재가 아니라 **참조 구조**에서 사실을 뽑는다.
 
@@ -840,15 +1332,34 @@ def scan_test_files(
     tests_dir = repo_root / tests_rel
     if not tests_dir.is_dir():
         raise FactGraphError(f"테스트 트리가 없다: {tests_dir}")
-    paths.extend(
-        p.relative_to(repo_root).as_posix() for p in sorted(tests_dir.rglob("*.py"))
-    )
+    paths.extend(p.relative_to(repo_root).as_posix() for p in sorted(tests_dir.rglob("*.py")))
+    js_dir = tests_dir / "js"
+    if js_dir.is_dir():
+        paths.extend(p.relative_to(repo_root).as_posix() for p in sorted(js_dir.rglob("*.js")))
     for extra in extra_files:
         if (repo_root / extra).is_file():
             paths.append(extra)
 
     out: list[TestFileFacts] = []
+    type_symbols = type_symbols or {}
     for rel in sorted(set(paths)):
+        if rel.endswith(".js"):
+            source = (repo_root / rel).read_text(encoding="utf-8-sig")
+            direct_calls, dispatch_pairs = _js_oracle_facts(source, rel)
+            out.append(
+                TestFileFacts(
+                    path=rel,
+                    axes=(),
+                    product_modules=(),
+                    imported_symbols=(),
+                    attr_calls=frozenset(),
+                    str_literals=frozenset(),
+                    call_arg_strings=frozenset(),
+                    direct_calls=direct_calls,
+                    dispatch_pairs=dispatch_pairs,
+                )
+            )
+            continue
         try:
             # utf-8-sig: BOM 을 든 테스트 파일이 실재한다(실측) — CPython 소스 디코딩과 같은
             # 처리다. BOM 을 구문 오류로 만들면 실파일이 분모에서 시끄럽게가 아니라 잘못 죽는다.
@@ -896,6 +1407,9 @@ def scan_test_files(
                     for arg in node.args
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
                 )
+        direct_calls, dispatch_pairs, handler_pairs = _python_oracle_facts(
+            tree, type_symbols, handler_prefix
+        )
         out.append(
             TestFileFacts(
                 path=rel,
@@ -905,6 +1419,9 @@ def scan_test_files(
                 attr_calls=frozenset(attr_calls),
                 str_literals=frozenset(str_literals),
                 call_arg_strings=frozenset(call_arg_strings),
+                direct_calls=direct_calls,
+                dispatch_pairs=dispatch_pairs,
+                handler_pairs=handler_pairs,
             )
         )
     return tuple(out)
@@ -916,25 +1433,15 @@ def _link_oracles(
     test_files: tuple[TestFileFacts, ...],
 ) -> "tuple[dict[str, tuple[OracleLink, ...]], dict[str, str], tuple[tuple[str, str], ...]]":
     cli_modules = set(surface.get("cli_modules", []))  # type: ignore[arg-type]
-    gui_prefixes = tuple(
-        str(m).rsplit(".", 1)[0] + "." for m in surface.get("gui_modules", [])  # type: ignore[union-attr]
-    )
     required_flags = set(surface.get("cli_required_flags", []))  # type: ignore[arg-type]
     boot_routers = set(surface.get("boot_routers", []))  # type: ignore[arg-type]
-    prefix_key = str(surface.get("prefix_key", ""))
     controller_module_of_screen = dict(surface.get("controller_module_of_screen", {}))  # type: ignore[arg-type]
 
     def references_cli(tf: TestFileFacts) -> bool:
         return any(m in cli_modules for m in tf.product_modules)
 
-    def references_gui(tf: TestFileFacts) -> bool:
-        return any(m.startswith(gui_prefixes) for m in tf.product_modules)
-
     links: dict[str, list[OracleLink]] = {eid: [] for eid in routes}
     for tf in test_files:
-        # 액션 이름이 **호출 인자**로 등장했는가 — 호출 형태 불문(지역 헬퍼 경유 실측).
-        # GUI entry 패키지 참조가 같은 파일에 서야 액션 이름 충돌(범용 단어)을 거른다.
-        dispatch_literals = tf.call_arg_strings if references_gui(tf) else frozenset()
         for eid, route in routes.items():
             entry = route.entry
             bases: list[str] = []
@@ -950,12 +1457,12 @@ def _link_oracles(
                 tail = entry.entry_id.rsplit("/", 1)[-1]
                 screen = entry.entry_id.partition(":")[2].partition("/")[0]
                 if entry.kind == "gui_action":
-                    if tail in dispatch_literals:
+                    if (screen, tail) in tf.dispatch_pairs:
                         bases.append("dispatch-literal")
-                    if (prefix_key + tail) in tf.attr_calls:
+                    if (screen, tail) in tf.handler_pairs:
                         bases.append("handler-ref")
                 elif entry.kind == "gui_direct":
-                    if tail in tf.attr_calls and references_gui(tf):
+                    if tail in tf.direct_calls:
                         bases.append("direct-call")
                 elif entry.kind == "gui_screen_boot":
                     controller_module = controller_module_of_screen.get(screen, "")
@@ -994,10 +1501,13 @@ def _link_oracles(
 
     gaps: list[tuple[str, str]] = []
     for eid, route in sorted(routes.items()):
-        if route.core_verbs and status[eid] == "NONE":
-            gaps.append(
-                (eid, "core 경로가 비어 있지 않은데 어느 근거로도 겨누는 테스트가 없다")
+        if status[eid] == "NONE":
+            reason = (
+                "core 경로가 비어 있지 않은데 어느 근거로도 겨누는 테스트가 없다"
+                if route.core_verbs
+                else "core 투영 경로가 비어 있고 entry 수준에서 겨누는 테스트도 없다"
             )
+            gaps.append((eid, reason))
         elif status[eid] == "CORE":
             gaps.append(
                 (eid, "wrapper 를 entry 수준에서 겨누는 테스트가 없다(core 동사 import 만)")
@@ -1043,7 +1553,18 @@ def build_use_cases(repo_root: Path) -> UseCaseResult:
         for entry in entries
     }
     classification, counterpart, anchor_verbs = _classify(routes)
-    test_files = scan_test_files(repo_root, graph.closure)
+    type_symbols = {
+        f"{parse_symbol_id(cls)[0]}.{parse_symbol_id(cls)[1]}": f"screen:{screen}"
+        for cls, screen in screen_of.items()
+    }
+    transport_module, transport_name, _ = parse_symbol_id(str(surface["transport"]))
+    type_symbols[f"{transport_module}.{transport_name}"] = "transport"
+    test_files = scan_test_files(
+        repo_root,
+        graph.closure,
+        type_symbols=type_symbols,
+        handler_prefix=str(surface["prefix_key"]),
+    )
     oracles, oracle_status, gaps = _link_oracles(routes, surface, test_files)
     return UseCaseResult(
         graph=graph,
