@@ -20,6 +20,13 @@
 종전에는 걸음마다의 시한(기본 20s)만 있었다. 40여 걸음이 각자 20초씩 매달릴 수 있으니 실행
 하나의 상한이 사실상 없었고, 그래서 "언제 포기하는가"를 아무도 몰랐다. :class:`Deadline` 이
 실행 전체의 예산을 들고, 걸음의 시한은 **남은 예산과의 최솟값**으로 잘린다.
+
+## 왜 실창 경보를 포획하는가
+
+``window.alert`` 는 WebView2 의 native modal 이라 사람이 닫기 전까지 JavaScript 실행을 막는다.
+그 상태에서는 폴링의 ``evaluate_js`` 자체가 돌아오지 않아 걸음 시한을 다시 볼 수 없다. 101
+실행에서만 경보를 문자열 queue 로 바꾸고, 같은 폴링 평가가 그 queue 를 함께 읽어 경보 문안을
+즉시 실패로 남긴다. 정상 제품 실행의 경보 채널은 바꾸지 않는다.
 """
 from __future__ import annotations
 
@@ -42,6 +49,17 @@ def js_literal(value: "str | None") -> str:
 #: 때문이다 — id 로만 겨누면 문안이 바뀌어도 대본이 초록으로 남는다.
 JS_HELPERS = """
 window.__cap = {
+  alerts: [],
+  takeAlert() {
+    return this.alerts.length ? this.alerts.shift() : null;
+  },
+  poll(check) {
+    const before = this.takeAlert();
+    if (before !== null) return { ready: false, alert: before };
+    const ready = Boolean(check());
+    const after = this.takeAlert();
+    return { ready: after === null && ready, alert: after };
+  },
   btn(scopeSel, text) {
     const scope = scopeSel ? document.querySelector(scopeSel) : document;
     if (!scope) return null;
@@ -75,6 +93,9 @@ window.__cap = {
     return true;
   },
 };
+/* 실창 하니스에서만 native modal 을 만들지 않는다. 문안은 poll 한 번의 JSON-safe 결과로
+   Python 에 건너가므로 경보가 timeout이나 bridge hang으로 둔갑하지 않는다. */
+window.alert = (message) => { window.__cap.alerts.push(String(message)); };
 true;
 """
 
@@ -105,6 +126,15 @@ class StepTimeout(ScenarioFailure):
 
 class RunDeadlineExceeded(ScenarioFailure):
     """실행 **전체**의 예산이 끝났다 — 어느 걸음에서 끝났는지를 이름으로 남긴다."""
+
+
+class UnexpectedNativeAlert(ScenarioFailure):
+    """실창의 native 경보가 열릴 자리였다 — 문안을 잃지 않고 즉시 실패한다."""
+
+    def __init__(self, message: str, what: str) -> None:
+        super().__init__(f"실창 경보가 대기를 중단했습니다: {message!r} (기다리던 것: {what})")
+        self.message = message
+        self.what = what
 
 
 @dataclass
@@ -168,6 +198,10 @@ class Surface:
         넘기는 것"이다. 그때 :class:`StepTimeout` 을 내면 전체 예산 소진이 특정 걸음의 결함으로
         둔갑한다 — 도입한 구분이 정작 가장 흔한 경우에서 무력해진다(#426 리뷰 라운드 4).
         그래서 만료 뒤 **먼저** 전체 시한을 묻는다.
+
+        실창 경보는 네 번째 사건이다. native ``alert`` 를 그대로 열면 이 폴링 왕복이 반환하지
+        않아 위 셋을 판정할 기회가 사라진다. helper 가 포획한 문안을 **같은 평가 결과**에서
+        먼저 읽어, 사람의 확인이나 전체 하드 스톱을 기다리지 않고 실패시킨다.
         """
         budget = self.STEP_TIMEOUT_S if timeout is None else timeout
         budget = min(budget, max(self._deadline.remaining_s(), 0.0))
@@ -177,7 +211,11 @@ class Surface:
             )
         started = time.monotonic()
         while time.monotonic() - started < budget:
-            if self.js(expression):
+            polled = self.js(f"window.__cap.poll(() => Boolean({expression}))")
+            alert = polled.get("alert")
+            if alert is not None:
+                raise UnexpectedNativeAlert(str(alert), what)
+            if polled.get("ready"):
                 return
             time.sleep(self.POLL_S)
         if self._deadline.expired():

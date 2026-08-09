@@ -32,7 +32,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from live101 import driver, report as report_mod  # noqa: E402
 from live101.scenario import CAPTURE_POINTS, EXPECTED_HWPX  # noqa: E402
-from live101.surface import Deadline, MissingSurface, StepTimeout, Surface  # noqa: E402
+from live101.surface import (  # noqa: E402
+    Deadline,
+    MissingSurface,
+    StepTimeout,
+    Surface,
+    UnexpectedNativeAlert,
+)
 
 from hwpxfiller.webapp import boot_budget  # noqa: E402
 
@@ -638,10 +644,16 @@ def test_a_context_without_a_budget_is_named_not_silently_generous() -> None:
 class _BlindWindow:
     """모든 술어가 거짓인 창 — 무엇이 없는지는 ``present`` 가 정한다."""
 
-    def __init__(self, present: "set[str]") -> None:
+    def __init__(self, present: "set[str]", alerts: "tuple[str, ...]" = ()) -> None:
         self.present = present
+        self.alerts = list(alerts)
+        self.poll_count = 0
 
     def evaluate_js(self, expression: str):
+        if expression.startswith("window.__cap.poll("):
+            self.poll_count += 1
+            alert = self.alerts.pop(0) if self.alerts else None
+            return {"ready": False, "alert": alert}
         match = re.search(r"document\.querySelector\(\"(.+?)\"\) !== null", expression)
         if match:
             return match.group(1) in self.present
@@ -665,6 +677,19 @@ def test_a_present_but_unsatisfied_predicate_stays_a_step_timeout() -> None:
 
     with pytest.raises(StepTimeout):
         surface.wait("false", "어떤 화면", timeout=0.3, requires=["#present"])
+
+
+def test_a_native_alert_fails_the_current_wait_on_its_first_poll() -> None:
+    """native modal 대신 포획한 경보는 전체 예산이 아니라 **첫 폴링**에서 문안째 실패한다."""
+    window = _BlindWindow(present={"#present"}, alerts=("작업 이름을 입력하세요.",))
+    surface = Surface(window, Deadline(600.0))
+
+    with pytest.raises(UnexpectedNativeAlert) as excinfo:
+        surface.wait("false", "TXT 작업 저장 착지", timeout=30.0, requires=["#present"])
+
+    assert window.poll_count == 1, "경보를 본 뒤 timeout 폴링을 계속했습니다"
+    assert excinfo.value.message == "작업 이름을 입력하세요."
+    assert "TXT 작업 저장 착지" in str(excinfo.value)
 
 
 # ─────────────────────── 실습 홈 보호(게이트 밖) ───────────────────────
