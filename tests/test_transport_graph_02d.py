@@ -32,6 +32,7 @@ from factgraph.transport_graph import (
     endpoint_problems,
     host_method_problems,
     parse_ledger,
+    snapshot_oracle_inventory,
     snapshot_problems,
     vocabulary_problems,
 )
@@ -58,6 +59,12 @@ def controllers() -> "dict[str, type]":
 @pytest.fixture(scope="module")
 def runtime_fields() -> "dict[str, tuple[str, ...]]":
     return _runtime_snapshot_fields(ROOT)
+
+
+@pytest.fixture(scope="module")
+def snapshot_oracle(controllers):
+    """같은 source checkout 을 겨누는 원장 mutation들이 독립 분모 측정을 공유한다."""
+    return snapshot_oracle_inventory(ROOT, controllers=controllers)
 
 
 # ---------------------------------------------------------------- 양성 — 실물
@@ -98,7 +105,7 @@ def test_host_method_rows_close_against_webfrontend_and_bridge(inventory) -> Non
 
 
 def test_snapshot_rows_close_with_zero_unattributed_fields(
-    inventory, controllers, runtime_fields
+    inventory, controllers, runtime_fields, snapshot_oracle
 ) -> None:
     assert (
         snapshot_problems(
@@ -106,6 +113,7 @@ def test_snapshot_rows_close_with_zero_unattributed_fields(
             inventory.snapshot_fields,
             controllers=controllers,
             runtime_fields=runtime_fields,
+            oracle_inventory=snapshot_oracle,
         )
         == []
     )
@@ -664,7 +672,7 @@ def test_n8_bridge_consumption_drift_is_caught(inventory) -> None:
 
 
 def test_n9_an_unattributed_snapshot_field_is_caught(
-    inventory, controllers, runtime_fields
+    inventory, controllers, runtime_fields, snapshot_oracle
 ) -> None:
     """필드 행 하나를 빼면 「producer 미분류」가 정확히 그 필드 이름으로 운다."""
     dropped = inventory.snapshot_fields[0]
@@ -673,11 +681,14 @@ def test_n9_an_unattributed_snapshot_field_is_caught(
         inventory.snapshot_fields[1:],
         controllers=controllers,
         runtime_fields=runtime_fields,
+        oracle_inventory=snapshot_oracle,
     )
     assert any("producer 미분류" in p and dropped.field in p for p in problems), problems
 
 
-def test_n10_a_ghost_snapshot_field_is_caught(inventory, controllers, runtime_fields) -> None:
+def test_n10_a_ghost_snapshot_field_is_caught(
+    inventory, controllers, runtime_fields, snapshot_oracle
+) -> None:
     ghost = SnapshotField(
         screen="job",
         field="ghost_field",
@@ -691,24 +702,29 @@ def test_n10_a_ghost_snapshot_field_is_caught(inventory, controllers, runtime_fi
         (*inventory.snapshot_fields, ghost),
         controllers=controllers,
         runtime_fields=runtime_fields,
+        oracle_inventory=snapshot_oracle,
     )
     assert any("유령 필드" in p and "ghost_field" in p for p in problems), problems
 
 
 def test_n11_a_flipped_runtime_observation_is_caught(
-    inventory, controllers, runtime_fields
+    inventory, controllers, runtime_fields, snapshot_oracle
 ) -> None:
     fields = list(inventory.snapshot_fields)
     index = next(i for i, f in enumerate(fields) if f.runtime_observed)
     fields[index] = dataclasses.replace(fields[index], runtime_observed=False)
     problems = snapshot_problems(
-        ROOT, tuple(fields), controllers=controllers, runtime_fields=runtime_fields
+        ROOT,
+        tuple(fields),
+        controllers=controllers,
+        runtime_fields=runtime_fields,
+        oracle_inventory=snapshot_oracle,
     )
     assert any("실측 표지가 실측과 다르다" in p for p in problems), problems
 
 
 def test_n11b_snapshot_consumer_evidence_from_another_screen_is_caught(
-    inventory, controllers, runtime_fields
+    inventory, controllers, runtime_fields, snapshot_oracle
 ) -> None:
     """tpl 필드를 editor 토큰으로 소비됨 처리하면 화면 결속 오라클이 문다(#528 P1 음성)."""
     fields = list(inventory.snapshot_fields)
@@ -721,9 +737,32 @@ def test_n11b_snapshot_consumer_evidence_from_another_screen_is_caught(
         js_evidence=("frontend/src/screens/editor.ts",),
     )
     problems = snapshot_problems(
-        ROOT, tuple(fields), controllers=controllers, runtime_fields=runtime_fields
+        ROOT,
+        tuple(fields),
+        controllers=controllers,
+        runtime_fields=runtime_fields,
+        oracle_inventory=snapshot_oracle,
     )
     assert any("소비자 증거 드리프트" in p and "tpl.hwpx" in p for p in problems), problems
+
+
+def test_n11c_an_incomplete_reused_snapshot_oracle_is_caught(
+    inventory, controllers, runtime_fields, snapshot_oracle
+) -> None:
+    """재사용 seam 이 source 측정을 조용히 누락하면 빈 증거로 오인하지 않고 문다."""
+    screen, field, _evidence = snapshot_oracle.rows[0]
+    incomplete = dataclasses.replace(snapshot_oracle, rows=snapshot_oracle.rows[1:])
+    problems = snapshot_problems(
+        ROOT,
+        inventory.snapshot_fields,
+        controllers=controllers,
+        runtime_fields=runtime_fields,
+        oracle_inventory=incomplete,
+    )
+    assert any(
+        "독립 분모에 없다" in problem and f"{screen}.{field}" in problem
+        for problem in problems
+    ), problems
 
 
 def test_n12_a_dropped_channel_is_caught(inventory, controllers) -> None:

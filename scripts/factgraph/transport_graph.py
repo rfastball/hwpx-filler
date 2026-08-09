@@ -108,6 +108,20 @@ class SnapshotField:
 
 
 @dataclass(frozen=True)
+class SnapshotOracleInventory:
+    """독립 snapshot consumer 분모의 불변 측정값.
+
+    원장 행 mutation 여러 개를 같은 source checkout 에 대조할 때 source 측정은 한 번만 한다.
+    행을 바꾸는 시험은 이 값을 공유할 수 있지만, source 를 바꾸는 시험은 반드시 다시 잰다.
+    """
+
+    rows: tuple[tuple[str, str, tuple[str, ...]], ...]
+
+    def as_dict(self) -> "dict[tuple[str, str], tuple[str, ...]]":
+        return {(screen, field): evidence for screen, field, evidence in self.rows}
+
+
+@dataclass(frozen=True)
 class PushChannel:
     """Python→웹 push/event 채널 하나."""
 
@@ -2013,6 +2027,34 @@ def _snapshot_oracle_evidence(
     return tuple(sorted(set(evidence)))
 
 
+def snapshot_oracle_inventory(
+    repo_root: Path,
+    *,
+    controllers: "dict[str, type] | None" = None,
+) -> SnapshotOracleInventory:
+    """현재 source 의 독립 snapshot consumer 분모를 정확히 한 번 측정한다."""
+    controllers = _controller_classes(repo_root) if controllers is None else controllers
+    oracle_raw = _frontend_corpus(repo_root)
+    oracle_selftest = _snapshot_oracle_selftest_inventory(oracle_raw)
+    rows: list[tuple[str, str, tuple[str, ...]]] = []
+    for screen in sorted(controllers):
+        for field in sorted(_static_snapshot_keys(repo_root, controllers[screen])):
+            rows.append(
+                (
+                    screen,
+                    field,
+                    _snapshot_oracle_evidence(
+                        repo_root,
+                        screen,
+                        field,
+                        raw_corpus=oracle_raw,
+                        selftest_inventory=oracle_selftest,
+                    ),
+                )
+            )
+    return SnapshotOracleInventory(tuple(rows))
+
+
 def collect_snapshot_fields(
     repo_root: Path,
     *,
@@ -2557,14 +2599,35 @@ def snapshot_problems(
     *,
     controllers: "dict[str, type] | None" = None,
     runtime_fields: "dict[str, tuple[str, ...]] | None" = None,
+    oracle_inventory: "SnapshotOracleInventory | None" = None,
 ) -> "list[str]":
     controllers = _controller_classes(repo_root) if controllers is None else controllers
     runtime_fields = (
         _runtime_snapshot_fields(repo_root) if runtime_fields is None else runtime_fields
     )
-    oracle_raw = _frontend_corpus(repo_root)
-    oracle_selftest = _snapshot_oracle_selftest_inventory(oracle_raw)
+    oracle_inventory = (
+        snapshot_oracle_inventory(repo_root, controllers=controllers)
+        if oracle_inventory is None
+        else oracle_inventory
+    )
+    evidence_by_field = oracle_inventory.as_dict()
     problems: list[str] = []
+    if len(evidence_by_field) != len(oracle_inventory.rows):
+        problems.append("snapshot consumer 독립 분모에 중복 (screen, field) 행이 있다")
+    declared_by_screen = {
+        screen: set(_static_snapshot_keys(repo_root, cls))
+        for screen, cls in controllers.items()
+    }
+    declared_keys = {
+        (screen, field)
+        for screen, fields in declared_by_screen.items()
+        for field in fields
+    }
+    oracle_keys = set(evidence_by_field)
+    for screen, field in sorted(declared_keys - oracle_keys):
+        problems.append(f"snapshot consumer 독립 분모에 없다: {screen}.{field}")
+    for screen, field in sorted(oracle_keys - declared_keys):
+        problems.append(f"snapshot consumer 독립 분모에만 있는 유령 필드: {screen}.{field}")
     by_screen: dict[str, dict[str, SnapshotField]] = {}
     for row in snapshot_fields:
         if row.field in by_screen.setdefault(row.screen, {}):
@@ -2576,7 +2639,7 @@ def snapshot_problems(
         )
     for screen in sorted(set(by_screen) & set(controllers)):
         cls = controllers[screen]
-        declared = set(_static_snapshot_keys(repo_root, cls))
+        declared = declared_by_screen[screen]
         observed = set(runtime_fields.get(screen, ()))
         rows = by_screen[screen]
         for field in sorted(declared - set(rows)):
@@ -2586,13 +2649,7 @@ def snapshot_problems(
         producer = _method_symbol(cls, "snapshot")
         for field in sorted(set(rows) & declared):
             row = rows[field]
-            actual_evidence = _snapshot_oracle_evidence(
-                repo_root,
-                screen,
-                field,
-                raw_corpus=oracle_raw,
-                selftest_inventory=oracle_selftest,
-            )
+            actual_evidence = evidence_by_field.get((screen, field), ())
             if row.producer != producer:
                 problems.append(
                     f"{screen}.{field}: producer 귀속 불일치 — {row.producer!r} ≠ {producer!r}"
