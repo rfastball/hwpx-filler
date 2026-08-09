@@ -27,7 +27,8 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from . import boot_budget, live_run, product_api, selftest_api, settings
+from ..host import boot_budget
+from . import live_run, product_api, selftest_api, settings
 from .action_registry import validate_dispatch
 from ..web_artifact import (
     VerifiedWebArtifact,

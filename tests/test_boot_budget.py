@@ -7,15 +7,28 @@ loaded 미발화(응답 없는 서버)와 정상 부팅의 프로필 쓰기가 �
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
 import pytest
 
-from hwpxfiller.webapp import settings
-from hwpxfiller.webapp.boot_budget import (
+from hwpxfiller.host import boot_budget
+from hwpxfiller.host.boot_budget import (
     COLD_BUDGET_SECONDS,
     WARM_BUDGET_SECONDS,
     decide,
     detect_runtime_version,
 )
+from hwpxfiller.webapp import boot_budget as legacy_boot_budget
+from hwpxfiller.webapp import settings
+
+
+def test_legacy_facade_reexports_the_four_host_objects_by_identity() -> None:
+    """호환 경로는 새 정의를 만들지 않고 Host 정본 객체 네 개를 그대로 내보낸다."""
+    assert legacy_boot_budget.WARM_BUDGET_SECONDS is boot_budget.WARM_BUDGET_SECONDS
+    assert legacy_boot_budget.COLD_BUDGET_SECONDS is boot_budget.COLD_BUDGET_SECONDS
+    assert legacy_boot_budget.detect_runtime_version is boot_budget.detect_runtime_version
+    assert legacy_boot_budget.decide is boot_budget.decide
 
 
 def test_no_completed_boot_gets_the_wide_budget() -> None:
@@ -48,6 +61,65 @@ def test_undetectable_version_after_a_completed_boot_stays_narrow() -> None:
 def test_detect_runtime_version_never_raises() -> None:
     """예산 힌트 취득이 부팅을 죽이면 안 된다 — 못 읽으면 ``""``."""
     assert isinstance(detect_runtime_version(), str)
+
+
+def test_detect_runtime_version_is_unknown_outside_windows(monkeypatch) -> None:
+    """Windows Host 효과는 다른 플랫폼에서 구체 구현을 추측하지 않는다."""
+    monkeypatch.setattr(boot_budget.sys, "platform", "linux")
+    assert detect_runtime_version() == ""
+
+
+def test_detect_runtime_version_searches_all_locations_and_strips_value(monkeypatch) -> None:
+    """앞 registry 위치가 비어도 다음 위치를 읽고 ``pv`` 주변 공백을 제거한다."""
+    attempts: list[tuple[object, str]] = []
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    def open_key(root: object, sub: str) -> Key:
+        attempts.append((root, sub))
+        if len(attempts) < 3:
+            raise OSError("missing")
+        return Key()
+
+    fake = SimpleNamespace(
+        HKEY_LOCAL_MACHINE=object(),
+        HKEY_CURRENT_USER=object(),
+        OpenKey=open_key,
+        QueryValueEx=lambda _key, _name: (" 150.0.4078.83 ", 1),
+    )
+    monkeypatch.setattr(boot_budget.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+
+    assert detect_runtime_version() == "150.0.4078.83"
+    assert len(attempts) == 3
+
+
+@pytest.mark.parametrize("value", [None, "   "])
+def test_detect_runtime_version_rejects_non_version_values(monkeypatch, value) -> None:
+    """비문자열·빈 문자열 ``pv`` 는 설치 버전으로 위장하지 못한다."""
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    fake = SimpleNamespace(
+        HKEY_LOCAL_MACHINE=object(),
+        HKEY_CURRENT_USER=object(),
+        OpenKey=lambda _root, _sub: Key(),
+        QueryValueEx=lambda _key, _name: (value, 1),
+    )
+    monkeypatch.setattr(boot_budget.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+
+    assert detect_runtime_version() == ""
 
 
 def test_boot_stamp_roundtrip_and_unknown_sentinel(tmp_path, monkeypatch) -> None:

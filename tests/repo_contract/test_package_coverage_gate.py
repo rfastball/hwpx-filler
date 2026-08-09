@@ -130,6 +130,7 @@ def test_repository_policy_has_audited_packages_only() -> None:
         "hwpxfiller.data",
         "hwpxfiller.domain",
         "hwpxfiller.gui",
+        "hwpxfiller.host",
         "hwpxfiller.webapp",
     }
     # 미설정-실패 게이트의 저장소 allowlist 는 native 하나뿐(#255 리뷰) — 새 서브패키지를

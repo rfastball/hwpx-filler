@@ -37,6 +37,11 @@ path = "src/hwpxfiller/gui"
 line = 96
 branch = 89
 
+[packages."hwpxfiller.host"]
+path = "src/hwpxfiller/host"
+line = 100
+branch = 100
+
 [packages."hwpxfiller.webapp"]
 path = "src/hwpxfiller/webapp"
 line = 86
