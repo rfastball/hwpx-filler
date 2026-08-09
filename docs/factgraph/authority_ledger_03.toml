@@ -9,6 +9,8 @@ schema = "authority-synthesis-03/v1"
 base_facts = "44f6e783fea3d6a88a4f0fd55d794a2d6a318a95109b1512a4c0a13ff784a6c8"
 graph_facts = "cae41aa86a63fa35c8aa085eba03b8b3fbf0ca14d2631325540760e1d5b4d9f9"
 effect_facts = "293269e390f24310705e043e3eb1791013b197b445a6ac8503977258d3260e60"
+# 폐포 파일 바이트 digest — 사실을 안 바꾸는 리터럴 편집도 잡는 baseline 핀.
+source_digest = "c3a3262264ebb4aba0b8f55340e106d8aa93b6491721050076d2728c7d441fcb"
 
 [inputs]
 # 소비한 원장과 각 원장의 기반-사실 핀(merge 일치 증거).
@@ -32,24 +34,26 @@ contradictions = 0
 migration_units = 85
 shared_seams = 0
 oracle_gaps = 20
-p_review_modules = 17
-p_review_units = 17
+p_review_modules = 27
+p_review_units = 27
 
 [authority_by_target]
-DOMAIN = 23
-APPLICATION = 20
-FRONTEND_ADAPTER = 17
+DOMAIN = 21
+APPLICATION = 18
+FRONTEND_ADAPTER = 11
 EXTERNAL_ADAPTER = 2
 HOST = 6
 REACT = 0
 RETIRE = 0
-P_REVIEW_REQUIRED = 17
+P_REVIEW_REQUIRED = 27
 
 [verdict]
 final = "BLOCKED"
 reasons = [
-  "소유 불명 unit 17건(P_REVIEW_REQUIRED)",
+  "소유 불명 unit 27건(P_REVIEW_REQUIRED)",
   "oracle 공백 unit 7건",
+  "entry-level oracle 공백 20건(특성화 미보유 진입)",
+  "미해결 동적 call edge 11건(정적 그래프 밖 의존 은닉)",
 ]
 
 # 원장 간 사실 충돌 — 없으면 merge 가 일치했다는 뜻이다.
@@ -64,10 +68,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxcore.atomic"
@@ -75,6 +80,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 2
 effect_classes = ["fs"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -86,10 +92,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 2
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxcore.motw"
@@ -97,6 +104,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 1
 effect_classes = ["env", "fs"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -108,6 +116,7 @@ target = "EXTERNAL_ADAPTER"
 prior = "EXTERNAL_ADAPTER"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -119,6 +128,7 @@ target = "EXTERNAL_ADAPTER"
 prior = "EXTERNAL_ADAPTER"
 symbols = 1
 effect_classes = ["clock", "env", "fs"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -130,6 +140,7 @@ target = "HOST"
 prior = "EXTERNAL_ADAPTER"
 symbols = 4
 effect_classes = ["clock", "host_native"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -141,6 +152,7 @@ target = "HOST"
 prior = "EXTERNAL_ADAPTER"
 symbols = 15
 effect_classes = ["host_native"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -152,6 +164,7 @@ target = "HOST"
 prior = "EXTERNAL_ADAPTER"
 symbols = 5
 effect_classes = ["process"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -163,6 +176,7 @@ target = "HOST"
 prior = "EXTERNAL_ADAPTER"
 symbols = 4
 effect_classes = ["host_native"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -174,6 +188,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 10
 effect_classes = ["archive"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -185,10 +200,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 32
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxcore.validate"
@@ -196,10 +212,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 3
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller"
@@ -207,6 +224,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "P_REVIEW_REQUIRED"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -218,6 +236,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "P_REVIEW_REQUIRED"
 symbols = 5
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -229,6 +248,7 @@ target = "HOST"
 prior = "HOST"
 symbols = 12
 effect_classes = ["env", "fs", "process", "stdio"]
+composes = ["hwpxfiller.data.excel:ExcelDataSource#class", "hwpxfiller.data.nara:NaraStdDataSource#class"]
 transport = false
 stateful_tx = false
 shared_state = false
@@ -240,10 +260,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.authoring"
@@ -251,10 +272,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 34
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.dataset_pool"
@@ -262,6 +284,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 32
 effect_classes = ["entropy", "env"]
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
@@ -273,10 +296,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.fields"
@@ -284,10 +308,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 22
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.fill_ledger"
@@ -295,6 +320,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 30
 effect_classes = ["clock"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -306,10 +332,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 18
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.identity_summary"
@@ -317,10 +344,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 15
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.jamo"
@@ -328,10 +356,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.job"
@@ -339,6 +368,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 84
 effect_classes = ["clock", "entropy", "env", "fs", "host_native", "lock", "process"]
+composes = ["hwpxfiller.core.job:_RegistryWriteState#class"]
 transport = false
 stateful_tx = true
 shared_state = false
@@ -350,10 +380,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 13
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.mapping"
@@ -361,10 +392,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 20
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.paths"
@@ -372,6 +404,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 1
 effect_classes = ["env"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -383,10 +416,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 14
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.source_profile"
@@ -394,10 +428,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.template_status"
@@ -405,21 +440,23 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 8
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.core.text_registry"
-target = "DOMAIN"
+target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 11
 effect_classes = []
+composes = ["hwpxfiller.core.text_registry:TextTemplate#class"]
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "DOMAIN prior 가 effect-bearing 클래스(1개)를 조립한다 — adapter composition root, 소유 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.core.text_render"
@@ -427,10 +464,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 11
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.data"
@@ -438,10 +476,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.data.base"
@@ -449,10 +488,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.data.excel"
@@ -460,6 +500,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 14
 effect_classes = ["excel", "fs"]
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
@@ -467,14 +508,15 @@ reason = "DOMAIN prior 가 concrete 효과(['excel', 'fs'])를 직접 호출 —
 
 [[module_authority]]
 module = "hwpxfiller.data.factory"
-target = "DOMAIN"
+target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 4
 effect_classes = []
+composes = ["hwpxfiller.data.excel:ExcelDataSource#class", "hwpxfiller.data.nara:NaraStdDataSource#class"]
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "DOMAIN prior 가 effect-bearing 클래스(2개)를 조립한다 — adapter composition root, 소유 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.data.inline"
@@ -482,10 +524,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 5
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.data.nara"
@@ -493,6 +536,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 20
 effect_classes = ["network"]
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
@@ -504,10 +548,11 @@ target = "DOMAIN"
 prior = "DOMAIN"
 symbols = 18
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, DOMAIN prior 확정"
+reason = "효과·transport·조립 없음, DOMAIN prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.data.secret_store"
@@ -515,6 +560,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "DOMAIN"
 symbols = 34
 effect_classes = ["host_native"]
+composes = ["hwpxfiller.data.secret_store:WindowsCredentialStore#class"]
 transport = false
 stateful_tx = false
 shared_state = false
@@ -526,10 +572,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.compile_badge"
@@ -537,21 +584,23 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 2
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.dataset_pool_state"
-target = "APPLICATION"
+target = "P_REVIEW_REQUIRED"
 prior = "APPLICATION"
 symbols = 28
 effect_classes = []
+composes = ["hwpxfiller.core.dataset_pool:DatasetPoolRegistry#class"]
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "APPLICATION prior 가 effect-bearing 클래스(1개)를 조립한다 — adapter composition root, 소유 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.gui.edit_session"
@@ -559,10 +608,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 13
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.file_filters"
@@ -570,10 +620,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.filter_state"
@@ -581,10 +632,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 50
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.home_state"
@@ -592,10 +644,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 51
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.job_editor_state"
@@ -603,10 +656,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 5
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.mapping_state"
@@ -614,10 +668,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 59
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.nara_state"
@@ -625,6 +680,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "APPLICATION"
 symbols = 28
 effect_classes = ["clock", "network"]
+composes = ["hwpxfiller.data.nara:NaraStdDataSource#class"]
 transport = false
 stateful_tx = true
 shared_state = false
@@ -636,10 +692,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 15
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.record_range"
@@ -647,10 +704,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 5
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.result_errors"
@@ -658,10 +716,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 5
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.review_state"
@@ -669,21 +728,23 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 14
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.run_state"
-target = "APPLICATION"
+target = "P_REVIEW_REQUIRED"
 prior = "APPLICATION"
 symbols = 41
 effect_classes = []
+composes = ["hwpxfiller.gui.nara_state:NaraAcquireViewModel#class"]
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "APPLICATION prior 가 effect-bearing 클래스(1개)를 조립한다 — adapter composition root, 소유 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.gui.selection_state"
@@ -691,10 +752,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 10
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.template_manager_state"
@@ -702,10 +764,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 36
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.txt_card"
@@ -713,10 +776,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.txt_queue"
@@ -724,10 +788,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 16
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.work_candidates"
@@ -735,10 +800,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 11
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.gui.work_mode"
@@ -746,10 +812,11 @@ target = "APPLICATION"
 prior = "APPLICATION"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
-reason = "효과·transport 없음, APPLICATION prior 확정"
+reason = "효과·transport·조립 없음, APPLICATION prior 확정"
 
 [[module_authority]]
 module = "hwpxfiller.naming"
@@ -757,6 +824,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "P_REVIEW_REQUIRED"
 symbols = 17
 effect_classes = ["clock"]
+composes = ["hwpxfiller.naming:OutputNamer#class"]
 transport = false
 stateful_tx = true
 shared_state = false
@@ -768,6 +836,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "P_REVIEW_REQUIRED"
 symbols = 45
 effect_classes = ["env", "fs", "process"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -779,6 +848,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -790,6 +860,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 0
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -801,6 +872,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 4
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -812,6 +884,7 @@ target = "HOST"
 prior = "FRONTEND_ADAPTER"
 symbols = 62
 effect_classes = ["env", "fs", "host_webview"]
+composes = ["hwpxfiller.core.job:JobRegistry#class", "hwpxfiller.core.text_registry:TextTemplateRegistry#class", "hwpxfiller.webapp.screen_editor:EditorController#class", "hwpxfiller.webapp.screen_job:JobController#class", "hwpxfiller.webapp.screen_template:TemplateController#class", "hwpxfiller.webapp.screen_workbench:WorkbenchController#class"]
 transport = true
 stateful_tx = true
 shared_state = false
@@ -823,6 +896,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 2
 effect_classes = ["registry"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -834,6 +908,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 35
 effect_classes = []
+composes = []
 transport = true
 stateful_tx = false
 shared_state = false
@@ -845,6 +920,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 1
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -856,6 +932,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 9
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -867,6 +944,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 8
 effect_classes = []
+composes = []
 transport = true
 stateful_tx = false
 shared_state = false
@@ -878,6 +956,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 47
 effect_classes = []
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
@@ -885,25 +964,27 @@ reason = "transport surface(['channel'])를 소유한다"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screen_editor"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 85
 effect_classes = ["clock"]
+composes = ["hwpxfiller.core.text_registry:TextTemplateRegistry#class", "hwpxfiller.gui.template_manager_state:TemplateManagerViewModel#class"]
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['endpoint'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['clock'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screen_job"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 95
 effect_classes = ["clock"]
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['channel', 'endpoint'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['clock'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screen_library"
@@ -911,6 +992,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 29
 effect_classes = []
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
@@ -922,6 +1004,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 23
 effect_classes = []
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
@@ -929,47 +1012,51 @@ reason = "transport surface(['endpoint'])를 소유한다"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screen_template"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 34
 effect_classes = ["clock", "entropy", "fs"]
+composes = ["hwpxfiller.gui.template_manager_state:TemplateManagerViewModel#class"]
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['endpoint'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['clock', 'entropy', 'fs'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screen_workbench"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 50
 effect_classes = ["clock"]
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['endpoint'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['clock'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.screens"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 20
 effect_classes = ["env"]
+composes = ["hwpxfiller.core.dataset_pool:DatasetPoolRegistry#class"]
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['endpoint'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['env'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.selftest_api"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 92
 effect_classes = ["entropy"]
+composes = []
 transport = true
 stateful_tx = true
 shared_state = false
-reason = "transport surface(['channel'])를 소유한다"
+reason = "표현 controller 가 transport 와 concrete/ambient 효과(['entropy'])를 겸한다 — external adapter 분리 결정 필요"
 
 [[module_authority]]
 module = "hwpxfiller.webapp.settings"
@@ -977,6 +1064,7 @@ target = "P_REVIEW_REQUIRED"
 prior = "FRONTEND_ADAPTER"
 symbols = 33
 effect_classes = ["clock", "stdio"]
+composes = []
 transport = false
 stateful_tx = false
 shared_state = false
@@ -988,6 +1076,7 @@ target = "FRONTEND_ADAPTER"
 prior = "FRONTEND_ADAPTER"
 symbols = 14
 effect_classes = []
+composes = []
 transport = false
 stateful_tx = true
 shared_state = false
@@ -1008,6 +1097,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1024,6 +1116,8 @@ write_set_count = 0
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -1040,6 +1134,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.lineseg:LINESEG_LOCAL",
+]
 oracle_entries = [
 ]
 
@@ -1056,6 +1153,8 @@ write_set_count = 0
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -1072,6 +1171,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "in-memory 구현이 Application 이 요구하는 외부 효과 계약을 따른다"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.native:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1088,6 +1190,9 @@ write_set_count = 1
 blocking = ["oracle-gap"]
 compat_seam = "in-memory 구현이 Application 이 요구하는 외부 효과 계약을 따른다"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.native._debug:_PATH",
+]
 oracle_entries = [
 ]
 
@@ -1104,6 +1209,12 @@ write_set_count = 4
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.native.clipboard:CF_UNICODETEXT",
+  "attr:hwpxcore.native.clipboard:GMEM_MOVEABLE",
+  "attr:hwpxcore.native.clipboard:_OPEN_RETRIES",
+  "attr:hwpxcore.native.clipboard:_OPEN_RETRY_SECONDS",
+]
 oracle_entries = [
 ]
 
@@ -1120,6 +1231,20 @@ write_set_count = 12
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.native.dialogs:BIF_EDITBOX",
+  "attr:hwpxcore.native.dialogs:BIF_NEWDIALOGSTYLE",
+  "attr:hwpxcore.native.dialogs:BIF_RETURNONLYFSDIRS",
+  "attr:hwpxcore.native.dialogs:OFN_EXPLORER",
+  "attr:hwpxcore.native.dialogs:OFN_FILEMUSTEXIST",
+  "attr:hwpxcore.native.dialogs:OFN_HIDEREADONLY",
+  "attr:hwpxcore.native.dialogs:OFN_NOCHANGEDIR",
+  "attr:hwpxcore.native.dialogs:OFN_OVERWRITEPROMPT",
+  "attr:hwpxcore.native.dialogs:OFN_PATHMUSTEXIST",
+  "attr:hwpxcore.native.dialogs:_BROWSEINFOW._fields_",
+  "attr:hwpxcore.native.dialogs:_MAX",
+  "attr:hwpxcore.native.dialogs:_OPENFILENAMEW._fields_",
+]
 oracle_entries = [
 ]
 
@@ -1136,6 +1261,8 @@ write_set_count = 0
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -1152,6 +1279,10 @@ write_set_count = 2
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.native.single_instance:_ERROR_ALREADY_EXISTS",
+  "attr:hwpxcore.native.single_instance:_SW_RESTORE",
+]
 oracle_entries = [
 ]
 
@@ -1168,6 +1299,12 @@ write_set_count = 4
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.package:HwpxPackage.entries",
+  "attr:hwpxcore.package:HwpxPackage.stored",
+  "attr:hwpxcore.package:MIMETYPE_NAME",
+  "attr:hwpxcore.package:MIMETYPE_VALUE",
+]
 oracle_entries = [
 ]
 
@@ -1184,6 +1321,38 @@ write_set_count = 30
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.text_extract:Cell.addr",
+  "attr:hwpxcore.text_extract:Cell.blocks",
+  "attr:hwpxcore.text_extract:Cell.span",
+  "attr:hwpxcore.text_extract:CoverageLedger.counts",
+  "attr:hwpxcore.text_extract:CoverageLedger.examples",
+  "attr:hwpxcore.text_extract:Document.footers",
+  "attr:hwpxcore.text_extract:Document.headers",
+  "attr:hwpxcore.text_extract:Document.sections",
+  "attr:hwpxcore.text_extract:Document.unhandled",
+  "attr:hwpxcore.text_extract:Document.unhandled_examples",
+  "attr:hwpxcore.text_extract:HP_NS",
+  "attr:hwpxcore.text_extract:Paragraph.fields",
+  "attr:hwpxcore.text_extract:Paragraph.text",
+  "attr:hwpxcore.text_extract:Section.blocks",
+  "attr:hwpxcore.text_extract:Table.rows",
+  "attr:hwpxcore.text_extract:_HANDLED_CAPTION",
+  "attr:hwpxcore.text_extract:_HANDLED_CONTAINER",
+  "attr:hwpxcore.text_extract:_HANDLED_P",
+  "attr:hwpxcore.text_extract:_HANDLED_RUN",
+  "attr:hwpxcore.text_extract:_HANDLED_TBL",
+  "attr:hwpxcore.text_extract:_HANDLED_TC",
+  "attr:hwpxcore.text_extract:_HANDLED_TR",
+  "attr:hwpxcore.text_extract:_IGNORE_CAPTION",
+  "attr:hwpxcore.text_extract:_IGNORE_CONTAINER",
+  "attr:hwpxcore.text_extract:_IGNORE_P",
+  "attr:hwpxcore.text_extract:_IGNORE_RUN",
+  "attr:hwpxcore.text_extract:_IGNORE_TBL",
+  "attr:hwpxcore.text_extract:_IGNORE_TC",
+  "attr:hwpxcore.text_extract:_IGNORE_TR",
+  "attr:hwpxcore.text_extract:_SECTION_RE",
+]
 oracle_entries = [
 ]
 
@@ -1200,6 +1369,10 @@ write_set_count = 2
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxcore.validate:ValidationReport.empty_valued",
+  "attr:hwpxcore.validate:ValidationReport.missing_columns",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1217,6 +1390,9 @@ write_set_count = 1
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller:__version__",
+]
 oracle_entries = [
 ]
 
@@ -1233,6 +1409,12 @@ write_set_count = 4
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.batch:BatchResult.cancelled",
+  "attr:hwpxfiller.batch:BatchResult.results",
+  "attr:hwpxfiller.batch:BatchResult.succeeded",
+  "attr:hwpxfiller.batch:BatchResult.total",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1250,6 +1432,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.cli:_SUBCOMMANDS_EPILOG",
+]
 oracle_entries = [
   "cli:default",
   "cli:drift",
@@ -1272,6 +1457,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1288,6 +1476,26 @@ write_set_count = 18
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.authoring:CompileReport.compilable",
+  "attr:hwpxfiller.core.authoring:CompileReport.compiled",
+  "attr:hwpxfiller.core.authoring:CompileReport.modified",
+  "attr:hwpxfiller.core.authoring:CompileReport.skipped",
+  "attr:hwpxfiller.core.authoring:TokenSite.compilable",
+  "attr:hwpxfiller.core.authoring:TokenSite.context",
+  "attr:hwpxfiller.core.authoring:TokenSite.name",
+  "attr:hwpxfiller.core.authoring:TokenSite.reason",
+  "attr:hwpxfiller.core.authoring:_CONTEXT_MAX",
+  "attr:hwpxfiller.core.authoring:_ID_ATTRS",
+  "attr:hwpxfiller.core.authoring:_TOKEN_RE",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.all_simple",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.clean",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.covered",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.match",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.name",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.reason",
+  "attr:hwpxfiller.core.authoring:_TokenSpan.run_base",
+]
 oracle_entries = [
 ]
 
@@ -1304,6 +1512,25 @@ write_set_count = 17
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.created_at",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.kind",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.name",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.note",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.opts",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.status",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolItem.version",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolRegistry.SUFFIX",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolRegistry._write_lock",
+  "attr:hwpxfiller.core.dataset_pool:DatasetPoolRegistry.directory",
+  "attr:hwpxfiller.core.dataset_pool:STATUS_ACTIVE",
+  "attr:hwpxfiller.core.dataset_pool:STATUS_ARCHIVED",
+  "attr:hwpxfiller.core.dataset_pool:STATUS_RETIRED",
+  "attr:hwpxfiller.core.dataset_pool:_LEGACY_STATUS_ALIASES",
+  "attr:hwpxfiller.core.dataset_pool:_STATUSES",
+  "attr:hwpxfiller.core.dataset_pool:_WRITE_LOCKS",
+  "attr:hwpxfiller.core.dataset_pool:_WRITE_LOCKS_GUARD",
+]
 oracle_entries = [
 ]
 
@@ -1320,6 +1547,14 @@ write_set_count = 6
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.engine:GenerateResult.applied",
+  "attr:hwpxfiller.core.engine:GenerateResult.error",
+  "attr:hwpxfiller.core.engine:GenerateResult.notes",
+  "attr:hwpxfiller.core.engine:GenerateResult.ok",
+  "attr:hwpxfiller.core.engine:GenerateResult.output_path",
+  "attr:hwpxfiller.core.engine:GenerateResult.unmatched",
+]
 oracle_entries = [
   "cli:--fields",
   "cli:default",
@@ -1338,6 +1573,22 @@ write_set_count = 14
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.fields:FieldDocument._modified",
+  "attr:hwpxfiller.core.fields:FieldDocument._notes",
+  "attr:hwpxfiller.core.fields:FieldDocument._tree",
+  "attr:hwpxfiller.core.fields:FillNote.detail",
+  "attr:hwpxfiller.core.fields:FillNote.field",
+  "attr:hwpxfiller.core.fields:FillNote.kind",
+  "attr:hwpxfiller.core.fields:HP_NS",
+  "attr:hwpxfiller.core.fields:_FIELD_PART_PATTERNS",
+  "attr:hwpxfiller.core.fields:_FieldSpan.ctrl",
+  "attr:hwpxfiller.core.fields:_FieldSpan.end_ctrl",
+  "attr:hwpxfiller.core.fields:_FieldSpan.end_run",
+  "attr:hwpxfiller.core.fields:_FieldSpan.run",
+  "attr:hwpxfiller.core.fields:_FieldSpan.ts",
+  "attr:hwpxfiller.core.fields:_NSMAP",
+]
 oracle_entries = [
 ]
 
@@ -1354,6 +1605,38 @@ write_set_count = 30
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.fill_ledger:FillLedger.empty_values",
+  "attr:hwpxfiller.core.fill_ledger:FillLedger.missing_sources",
+  "attr:hwpxfiller.core.fill_ledger:FillLedger.template_drift",
+  "attr:hwpxfiller.core.fill_ledger:LEDGER_PREVIEW_NOTE",
+  "attr:hwpxfiller.core.fill_ledger:LEDGER_SIDECAR_NAME",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.field",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.fmt",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.injected",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.preview_text",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.read_back",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.source",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.status",
+  "attr:hwpxfiller.core.fill_ledger:LedgerRow.type",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.error",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.notes",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.ok",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.output",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.rows",
+  "attr:hwpxfiller.core.fill_ledger:OutputLedger.verify_error",
+  "attr:hwpxfiller.core.fill_ledger:StructureState.OK",
+  "attr:hwpxfiller.core.fill_ledger:StructureState.SOURCE_DRIFT",
+  "attr:hwpxfiller.core.fill_ledger:StructureState.TEMPLATE_AND_SOURCE_DRIFT",
+  "attr:hwpxfiller.core.fill_ledger:StructureState.TEMPLATE_DRIFT",
+  "attr:hwpxfiller.core.fill_ledger:TemplateStructureDrift.conflicting",
+  "attr:hwpxfiller.core.fill_ledger:TemplateStructureDrift.mapping_only",
+  "attr:hwpxfiller.core.fill_ledger:TemplateStructureDrift.read_error",
+  "attr:hwpxfiller.core.fill_ledger:TemplateStructureDrift.template_only",
+  "attr:hwpxfiller.core.fill_ledger:ValueState.EMPTY",
+  "attr:hwpxfiller.core.fill_ledger:ValueState.OK",
+  "attr:hwpxfiller.core.fill_ledger:mapping_drift",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1371,6 +1654,11 @@ write_set_count = 3
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.format_engine:ENGINE",
+  "attr:hwpxfiller.core.format_engine:StdlibFormatEngine._PRESETS",
+  "attr:hwpxfiller.core.format_engine:_MASKS",
+]
 oracle_entries = [
 ]
 
@@ -1387,6 +1675,26 @@ write_set_count = 18
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.identity_summary:BLANK_CELL_MARK",
+  "attr:hwpxfiller.core.identity_summary:COGNITION_WIDTH",
+  "attr:hwpxfiller.core.identity_summary:DisqualifierStats.constant",
+  "attr:hwpxfiller.core.identity_summary:DisqualifierStats.duplicate",
+  "attr:hwpxfiller.core.identity_summary:DisqualifierStats.empty",
+  "attr:hwpxfiller.core.identity_summary:DisqualifierStats.ordinal",
+  "attr:hwpxfiller.core.identity_summary:IdentitySummary.columns",
+  "attr:hwpxfiller.core.identity_summary:IdentitySummary.disqualified",
+  "attr:hwpxfiller.core.identity_summary:IdentitySummary.residual_collisions",
+  "attr:hwpxfiller.core.identity_summary:IdentitySummary.steps",
+  "attr:hwpxfiller.core.identity_summary:IdentitySummary.token_mode",
+  "attr:hwpxfiller.core.identity_summary:MAX_COLUMNS",
+  "attr:hwpxfiller.core.identity_summary:SummaryStep.column",
+  "attr:hwpxfiller.core.identity_summary:SummaryStep.layer",
+  "attr:hwpxfiller.core.identity_summary:SummaryStep.residual",
+  "attr:hwpxfiller.core.identity_summary:_DIGITS",
+  "attr:hwpxfiller.core.identity_summary:_KEY_SEP",
+  "attr:hwpxfiller.core.identity_summary:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1403,6 +1711,14 @@ write_set_count = 6
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.jamo:CHOSEONG",
+  "attr:hwpxfiller.core.jamo:JONGSEONG",
+  "attr:hwpxfiller.core.jamo:JUNGSEONG",
+  "attr:hwpxfiller.core.jamo:_SYL_BASE",
+  "attr:hwpxfiller.core.jamo:_SYL_LAST",
+  "attr:hwpxfiller.core.jamo:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1419,6 +1735,48 @@ write_set_count = 40
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.job:DEFAULT_FILENAME_PATTERN",
+  "attr:hwpxfiller.core.job:HWPX_SUFFIX",
+  "attr:hwpxfiller.core.job:Job.binding_revision",
+  "attr:hwpxfiller.core.job:Job.favorited_at",
+  "attr:hwpxfiller.core.job:Job.filename_pattern",
+  "attr:hwpxfiller.core.job:Job.group",
+  "attr:hwpxfiller.core.job:Job.last_run_at",
+  "attr:hwpxfiller.core.job:Job.mapping",
+  "attr:hwpxfiller.core.job:Job.name",
+  "attr:hwpxfiller.core.job:Job.previous_rules",
+  "attr:hwpxfiller.core.job:Job.reviewed_rules",
+  "attr:hwpxfiller.core.job:Job.tags",
+  "attr:hwpxfiller.core.job:Job.template_path",
+  "attr:hwpxfiller.core.job:Job.template_revision",
+  "attr:hwpxfiller.core.job:Job.version",
+  "attr:hwpxfiller.core.job:JobRegistry.SUFFIX",
+  "attr:hwpxfiller.core.job:JobRegistry.TRASH_RETENTION_DAYS",
+  "attr:hwpxfiller.core.job:JobRegistry._write_lock",
+  "attr:hwpxfiller.core.job:JobRegistry._write_state",
+  "attr:hwpxfiller.core.job:JobRegistry.directory",
+  "attr:hwpxfiller.core.job:JobSlugCollisionError",
+  "attr:hwpxfiller.core.job:MISSING_MARKER",
+  "attr:hwpxfiller.core.job:RULE_AXES",
+  "attr:hwpxfiller.core.job:RunRequest.datasource",
+  "attr:hwpxfiller.core.job:RunRequest.job",
+  "attr:hwpxfiller.core.job:RunRequest.selected_indices",
+  "attr:hwpxfiller.core.job:TXT_SUFFIX",
+  "attr:hwpxfiller.core.job:WORK_MODE_HWPX",
+  "attr:hwpxfiller.core.job:WORK_MODE_TEXT",
+  "attr:hwpxfiller.core.job:WORK_MODE_UNSUPPORTED",
+  "attr:hwpxfiller.core.job:_FP_FILENAME",
+  "attr:hwpxfiller.core.job:_FP_TEMPLATE",
+  "attr:hwpxfiller.core.job:_INVALID",
+  "attr:hwpxfiller.core.job:_JOB_WRITE_STATES",
+  "attr:hwpxfiller.core.job:_JOB_WRITE_STATES_GUARD",
+  "attr:hwpxfiller.core.job:_OwnedWriteLock._state",
+  "attr:hwpxfiller.core.job:_RegistryWriteState._owner",
+  "attr:hwpxfiller.core.job:_RegistryWriteState._owner_pid",
+  "attr:hwpxfiller.core.job:_RegistryWriteState.key",
+  "attr:hwpxfiller.core.job:_RegistryWriteState.lock",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1436,6 +1794,18 @@ write_set_count = 10
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.lint:LintFinding.fields",
+  "attr:hwpxfiller.core.lint:LintFinding.kind",
+  "attr:hwpxfiller.core.lint:LintFinding.message",
+  "attr:hwpxfiller.core.lint:LintFinding.severity",
+  "attr:hwpxfiller.core.lint:LintReport.findings",
+  "attr:hwpxfiller.core.lint:SchemaDrift.added",
+  "attr:hwpxfiller.core.lint:SchemaDrift.removed",
+  "attr:hwpxfiller.core.lint:SchemaDrift.renamed",
+  "attr:hwpxfiller.core.lint:_SIMILARITY_THRESHOLD",
+  "attr:hwpxfiller.core.lint:_WS_RE",
+]
 oracle_entries = [
 ]
 
@@ -1452,6 +1822,18 @@ write_set_count = 10
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.mapping:FieldMapping.const",
+  "attr:hwpxfiller.core.mapping:FieldMapping.fmt",
+  "attr:hwpxfiller.core.mapping:FieldMapping.source",
+  "attr:hwpxfiller.core.mapping:FieldMapping.template_field",
+  "attr:hwpxfiller.core.mapping:FieldMapping.type",
+  "attr:hwpxfiller.core.mapping:MappingProfile.mappings",
+  "attr:hwpxfiller.core.mapping:MappingProfile.name",
+  "attr:hwpxfiller.core.mapping:MappingProfile.provenance",
+  "attr:hwpxfiller.core.mapping:SOURCE_CARRIER_TYPES",
+  "attr:hwpxfiller.core.mapping:TYPES",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1469,6 +1851,10 @@ write_set_count = 2
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.paths:DEFAULT_HOME_NAME",
+  "attr:hwpxfiller.core.paths:HOME_ENV_VAR",
+]
 oracle_entries = [
 ]
 
@@ -1485,6 +1871,27 @@ write_set_count = 19
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.schema:FieldSpec.context",
+  "attr:hwpxfiller.core.schema:FieldSpec.in_table",
+  "attr:hwpxfiller.core.schema:FieldSpec.inferred_type",
+  "attr:hwpxfiller.core.schema:FieldSpec.name",
+  "attr:hwpxfiller.core.schema:FieldSpec.occurrences",
+  "attr:hwpxfiller.core.schema:TableRegion.cols",
+  "attr:hwpxfiller.core.schema:TableRegion.field_names",
+  "attr:hwpxfiller.core.schema:TableRegion.rows",
+  "attr:hwpxfiller.core.schema:TemplateSchema.fields",
+  "attr:hwpxfiller.core.schema:TemplateSchema.stray_tokens",
+  "attr:hwpxfiller.core.schema:TemplateSchema.table_regions",
+  "attr:hwpxfiller.core.schema:TemplateSchema.unhandled",
+  "attr:hwpxfiller.core.schema:_CONTEXT_MAX",
+  "attr:hwpxfiller.core.schema:_Occ.context",
+  "attr:hwpxfiller.core.schema:_Occ.name",
+  "attr:hwpxfiller.core.schema:_Occ.table_id",
+  "attr:hwpxfiller.core.schema:_TOKEN_RE",
+  "attr:hwpxfiller.core.schema:_TYPE_RULES",
+  "attr:hwpxfiller.core.schema:_infer_type",
+]
 oracle_entries = [
 ]
 
@@ -1501,6 +1908,15 @@ write_set_count = 7
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.source_profile:FieldProfile.key",
+  "attr:hwpxfiller.core.source_profile:FieldProfile.label",
+  "attr:hwpxfiller.core.source_profile:FieldProfile.samples",
+  "attr:hwpxfiller.core.source_profile:FieldProfile.tentative_type",
+  "attr:hwpxfiller.core.source_profile:SAMPLE_N",
+  "attr:hwpxfiller.core.source_profile:_MMDD",
+  "attr:hwpxfiller.core.source_profile:_PATTERNS",
+]
 oracle_entries = [
 ]
 
@@ -1517,12 +1933,25 @@ write_set_count = 11
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.template_status:CompileState.COMPILED",
+  "attr:hwpxfiller.core.template_status:CompileState.FILLED",
+  "attr:hwpxfiller.core.template_status:CompileState.PARTIAL",
+  "attr:hwpxfiller.core.template_status:CompileState.RAW",
+  "attr:hwpxfiller.core.template_status:OUTPUT_SUBDIR_NAME",
+  "attr:hwpxfiller.core.template_status:TRASH_DIR_NAME",
+  "attr:hwpxfiller.core.template_status:TemplateStatus.compilable_n",
+  "attr:hwpxfiller.core.template_status:TemplateStatus.field_n",
+  "attr:hwpxfiller.core.template_status:TemplateStatus.skipped_n",
+  "attr:hwpxfiller.core.template_status:TemplateStatus.state",
+  "attr:hwpxfiller.core.template_status:TemplateStatus.stray_n",
+]
 oracle_entries = [
 ]
 
 [[migration_unit]]
 id = "unit-33"
-target = "DOMAIN"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.core.text_registry"]
 symbol_count = 11
 closure_digest = "f9d6c7b7919d528d88e4e2d3218e342d8136d8cbcc449b88a5985a0a9d7cdea9"
@@ -1530,9 +1959,16 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 5
-blocking = []
+blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.text_registry:TextTemplate.name",
+  "attr:hwpxfiller.core.text_registry:TextTemplate.path",
+  "attr:hwpxfiller.core.text_registry:TextTemplateRegistry.SUFFIX",
+  "attr:hwpxfiller.core.text_registry:TextTemplateRegistry._write_lock",
+  "attr:hwpxfiller.core.text_registry:TextTemplateRegistry.directory",
+]
 oracle_entries = [
 ]
 
@@ -1549,6 +1985,20 @@ write_set_count = 12
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.core.text_render:FULLWIDTH_SPACE",
+  "attr:hwpxfiller.core.text_render:RenderReport.empty_fields",
+  "attr:hwpxfiller.core.text_render:RenderReport.missing_fields",
+  "attr:hwpxfiller.core.text_render:RenderSegment.kind",
+  "attr:hwpxfiller.core.text_render:RenderSegment.name",
+  "attr:hwpxfiller.core.text_render:RenderSegment.text",
+  "attr:hwpxfiller.core.text_render:SEG_BLANK",
+  "attr:hwpxfiller.core.text_render:SEG_FILL",
+  "attr:hwpxfiller.core.text_render:SEG_LITERAL",
+  "attr:hwpxfiller.core.text_render:SEG_MISSING",
+  "attr:hwpxfiller.core.text_render:_SPACE_RUN",
+  "attr:hwpxfiller.core.text_render:_TOKEN",
+]
 oracle_entries = [
 ]
 
@@ -1565,6 +2015,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1581,6 +2034,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.base:Record",
+]
 oracle_entries = [
 ]
 
@@ -1597,12 +2053,20 @@ write_set_count = 6
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.excel:ExcelDataSource._headers",
+  "attr:hwpxfiller.data.excel:ExcelDataSource._loaded",
+  "attr:hwpxfiller.data.excel:ExcelDataSource._records",
+  "attr:hwpxfiller.data.excel:ExcelDataSource.header_row",
+  "attr:hwpxfiller.data.excel:ExcelDataSource.path",
+  "attr:hwpxfiller.data.excel:ExcelDataSource.sheet",
+]
 oracle_entries = [
 ]
 
 [[migration_unit]]
 id = "unit-38"
-target = "DOMAIN"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.data.factory"]
 symbol_count = 4
 closure_digest = "d1129cb95e85b604bd86557f7015bfece704f5fb51aef73d4ae113e7140f5e9b"
@@ -1610,9 +2074,13 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 2
-blocking = []
+blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.factory:EXCEL_EXTS",
+  "attr:hwpxfiller.data.factory:_EXCEL_EXTS",
+]
 oracle_entries = [
 ]
 
@@ -1629,6 +2097,9 @@ write_set_count = 1
 blocking = ["oracle-gap"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.inline:InlineDataSource._records",
+]
 oracle_entries = [
 ]
 
@@ -1645,6 +2116,21 @@ write_set_count = 13
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.nara:BASE",
+  "attr:hwpxfiller.data.nara:DT_FMT",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource._fetcher",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.bgn_dt",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.end_dt",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.num_rows",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.page_no",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.service_key",
+  "attr:hwpxfiller.data.nara:NaraStdDataSource.timeout",
+  "attr:hwpxfiller.data.nara:OK_RESULT_CODE",
+  "attr:hwpxfiller.data.nara:_FIELD_LABELS",
+  "attr:hwpxfiller.data.nara:_XML_AUTH_MSG",
+  "attr:hwpxfiller.data.nara:_XML_REASON_CODE",
+]
 oracle_entries = [
 ]
 
@@ -1661,6 +2147,13 @@ write_set_count = 5
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.pipeline:ENGINE",
+  "attr:hwpxfiller.data.pipeline:PipelineSource._records",
+  "attr:hwpxfiller.data.pipeline:PipelineSource.engine",
+  "attr:hwpxfiller.data.pipeline:PipelineSource.sources",
+  "attr:hwpxfiller.data.pipeline:PipelineSource.steps",
+]
 oracle_entries = [
 ]
 
@@ -1677,6 +2170,19 @@ write_set_count = 11
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.data.secret_store:MemorySecretStore._data",
+  "attr:hwpxfiller.data.secret_store:NARA_SERVICE_KEY_NAME",
+  "attr:hwpxfiller.data.secret_store:REDACTED",
+  "attr:hwpxfiller.data.secret_store:UnsupportedSecretStore._reason",
+  "attr:hwpxfiller.data.secret_store:WINDOWS_NARA_TARGET",
+  "attr:hwpxfiller.data.secret_store:WINDOWS_TARGET_PREFIX",
+  "attr:hwpxfiller.data.secret_store:WindowsCredentialStore._CRED_PERSIST_LOCAL_MACHINE",
+  "attr:hwpxfiller.data.secret_store:WindowsCredentialStore._CRED_TYPE_GENERIC",
+  "attr:hwpxfiller.data.secret_store:WindowsCredentialStore._ERROR_NOT_FOUND",
+  "attr:hwpxfiller.data.secret_store:WindowsCredentialStore._prefix",
+  "attr:hwpxfiller.data.secret_store:_PARAM_RE",
+]
 oracle_entries = [
 ]
 
@@ -1693,6 +2199,8 @@ write_set_count = 0
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -1709,12 +2217,18 @@ write_set_count = 4
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.compile_badge:BADGE_LABELS",
+  "attr:hwpxfiller.gui.compile_badge:BADGE_LEVELS",
+  "attr:hwpxfiller.gui.compile_badge:ERROR_BADGE_LABEL",
+  "attr:hwpxfiller.gui.compile_badge:ERROR_BADGE_LEVEL",
+]
 oracle_entries = [
 ]
 
 [[migration_unit]]
 id = "unit-45"
-target = "APPLICATION"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.gui.dataset_pool_state"]
 symbol_count = 28
 closure_digest = "fdcf63b311a2df4ed569f38b2dbca0b0c953de8efa0e51eeed42e53436fe616d"
@@ -1722,9 +2236,33 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 22
-blocking = []
+blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.badge_label",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.badge_level",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.key",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.kind",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.kind_label",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.locate_path",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.name",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.note",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.reference",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.sheet",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolRow.status",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolViewModel._corrupted",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolViewModel._duplicates",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolViewModel._rows",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolViewModel._subs",
+  "attr:hwpxfiller.gui.dataset_pool_state:DatasetPoolViewModel.registry",
+  "attr:hwpxfiller.gui.dataset_pool_state:PoolAction.key",
+  "attr:hwpxfiller.gui.dataset_pool_state:PoolAction.label",
+  "attr:hwpxfiller.gui.dataset_pool_state:_BADGE_LABELS",
+  "attr:hwpxfiller.gui.dataset_pool_state:_BADGE_LEVELS",
+  "attr:hwpxfiller.gui.dataset_pool_state:_KIND_LABELS",
+  "attr:hwpxfiller.gui.dataset_pool_state:_STATE_ACTIONS",
+]
 oracle_entries = [
 ]
 
@@ -1741,6 +2279,27 @@ write_set_count = 19
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.edit_session:DEFERRED_ENTRY_REASONS",
+  "attr:hwpxfiller.gui.edit_session:ENTRY_REASONS",
+  "attr:hwpxfiller.gui.edit_session:EditContext.entry_reason",
+  "attr:hwpxfiller.gui.edit_session:EditContext.evidence",
+  "attr:hwpxfiller.gui.edit_session:EditContext.return_context",
+  "attr:hwpxfiller.gui.edit_session:EditContext.target",
+  "attr:hwpxfiller.gui.edit_session:EditContext.work",
+  "attr:hwpxfiller.gui.edit_session:EditSession.base",
+  "attr:hwpxfiller.gui.edit_session:EditSession.context",
+  "attr:hwpxfiller.gui.edit_session:EditSession.section",
+  "attr:hwpxfiller.gui.edit_session:LIVE_ENTRY_REASONS",
+  "attr:hwpxfiller.gui.edit_session:LIVE_RETURN_SURFACES",
+  "attr:hwpxfiller.gui.edit_session:RETURN_SURFACES",
+  "attr:hwpxfiller.gui.edit_session:SECTION_BINDING",
+  "attr:hwpxfiller.gui.edit_session:SECTION_FILENAME",
+  "attr:hwpxfiller.gui.edit_session:SECTION_TEMPLATE",
+  "attr:hwpxfiller.gui.edit_session:TARGET_FILENAME",
+  "attr:hwpxfiller.gui.edit_session:_SECTIONS_BY_MEDIA",
+  "attr:hwpxfiller.gui.edit_session:_TARGET_BINDING_PREFIX",
+]
 oracle_entries = [
 ]
 
@@ -1757,6 +2316,11 @@ write_set_count = 3
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.file_filters:EXCEL_FILTER",
+  "attr:hwpxfiller.gui.file_filters:EXCEL_FILTER_PATTERN",
+  "attr:hwpxfiller.gui.file_filters:HWPX_FILTER",
+]
 oracle_entries = [
 ]
 
@@ -1773,6 +2337,35 @@ write_set_count = 27
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.filter_state:FilterModel._cols",
+  "attr:hwpxfiller.gui.filter_state:FilterModel._columns",
+  "attr:hwpxfiller.gui.filter_state:FilterModel._kinds",
+  "attr:hwpxfiller.gui.filter_state:FilterModel._pruned",
+  "attr:hwpxfiller.gui.filter_state:FilterModel._search",
+  "attr:hwpxfiller.gui.filter_state:FilterView._m",
+  "attr:hwpxfiller.gui.filter_state:FilterView._records",
+  "attr:hwpxfiller.gui.filter_state:FilterView.branches",
+  "attr:hwpxfiller.gui.filter_state:KIND_AMOUNT",
+  "attr:hwpxfiller.gui.filter_state:KIND_DATE",
+  "attr:hwpxfiller.gui.filter_state:KIND_TEXT",
+  "attr:hwpxfiller.gui.filter_state:RANGE_OP_LABELS",
+  "attr:hwpxfiller.gui.filter_state:RangeClause.op",
+  "attr:hwpxfiller.gui.filter_state:RangeClause.operand",
+  "attr:hwpxfiller.gui.filter_state:RangeCondition.first",
+  "attr:hwpxfiller.gui.filter_state:RangeCondition.joiner",
+  "attr:hwpxfiller.gui.filter_state:RangeCondition.second",
+  "attr:hwpxfiller.gui.filter_state:_AMOUNTISH_RE",
+  "attr:hwpxfiller.gui.filter_state:_ColumnCondition.__slots__",
+  "attr:hwpxfiller.gui.filter_state:_ColumnCondition.range_",
+  "attr:hwpxfiller.gui.filter_state:_ColumnCondition.text",
+  "attr:hwpxfiller.gui.filter_state:_ColumnCondition.values",
+  "attr:hwpxfiller.gui.filter_state:_DATE_FORMS",
+  "attr:hwpxfiller.gui.filter_state:_JOINER_LABELS",
+  "attr:hwpxfiller.gui.filter_state:_RANGE_OPS",
+  "attr:hwpxfiller.gui.filter_state:_TIME_RE",
+  "attr:hwpxfiller.gui.filter_state:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1789,6 +2382,79 @@ write_set_count = 71
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.home_state:BADGE_CORRUPT",
+  "attr:hwpxfiller.gui.home_state:BADGE_ERROR",
+  "attr:hwpxfiller.gui.home_state:BADGE_MISSING",
+  "attr:hwpxfiller.gui.home_state:BADGE_RAW",
+  "attr:hwpxfiller.gui.home_state:BADGE_READY",
+  "attr:hwpxfiller.gui.home_state:CORRUPT_PATH_REJECT",
+  "attr:hwpxfiller.gui.home_state:CorruptJobRow.error",
+  "attr:hwpxfiller.gui.home_state:CorruptJobRow.file_name",
+  "attr:hwpxfiller.gui.home_state:CorruptJobRow.path",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.job_count",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.missing_template_count",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.pool_corrupted",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.pool_count",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.recent_run",
+  "attr:hwpxfiller.gui.home_state:DashboardKpi.txt_template_count",
+  "attr:hwpxfiller.gui.home_state:FacetAxis.axis",
+  "attr:hwpxfiller.gui.home_state:FacetAxis.values",
+  "attr:hwpxfiller.gui.home_state:FacetValue.active",
+  "attr:hwpxfiller.gui.home_state:FacetValue.count",
+  "attr:hwpxfiller.gui.home_state:FacetValue.value",
+  "attr:hwpxfiller.gui.home_state:FieldBindingRow.blank",
+  "attr:hwpxfiller.gui.home_state:FieldBindingRow.format_label",
+  "attr:hwpxfiller.gui.home_state:FieldBindingRow.source_label",
+  "attr:hwpxfiller.gui.home_state:FieldBindingRow.template_field",
+  "attr:hwpxfiller.gui.home_state:GroupSection.count",
+  "attr:hwpxfiller.gui.home_state:GroupSection.is_untagged",
+  "attr:hwpxfiller.gui.home_state:GroupSection.rows",
+  "attr:hwpxfiller.gui.home_state:GroupSection.value",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel._corrupt_rows",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel._rows",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel._selected",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel._subs",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.active_facets",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.library_mode",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.library_query",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.library_view",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.pool_registry",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.registry",
+  "attr:hwpxfiller.gui.home_state:HomeViewModel.text_registry",
+  "attr:hwpxfiller.gui.home_state:JobRow.compile_badge",
+  "attr:hwpxfiller.gui.home_state:JobRow.compile_state",
+  "attr:hwpxfiller.gui.home_state:JobRow.favorited_at",
+  "attr:hwpxfiller.gui.home_state:JobRow.field_count",
+  "attr:hwpxfiller.gui.home_state:JobRow.filename_pattern",
+  "attr:hwpxfiller.gui.home_state:JobRow.group",
+  "attr:hwpxfiller.gui.home_state:JobRow.last_run_at",
+  "attr:hwpxfiller.gui.home_state:JobRow.last_run_display",
+  "attr:hwpxfiller.gui.home_state:JobRow.mapping_empty",
+  "attr:hwpxfiller.gui.home_state:JobRow.media",
+  "attr:hwpxfiller.gui.home_state:JobRow.name",
+  "attr:hwpxfiller.gui.home_state:JobRow.structure_drift",
+  "attr:hwpxfiller.gui.home_state:JobRow.tags",
+  "attr:hwpxfiller.gui.home_state:JobRow.template_linked",
+  "attr:hwpxfiller.gui.home_state:JobRow.template_missing",
+  "attr:hwpxfiller.gui.home_state:JobRow.template_name",
+  "attr:hwpxfiller.gui.home_state:JobRow.txt_readable",
+  "attr:hwpxfiller.gui.home_state:JobRow.unresolved_name_tokens",
+  "attr:hwpxfiller.gui.home_state:MAPPING_TYPE_LABELS",
+  "attr:hwpxfiller.gui.home_state:MODE_ALL",
+  "attr:hwpxfiller.gui.home_state:MODE_HWPX",
+  "attr:hwpxfiller.gui.home_state:MODE_TXT",
+  "attr:hwpxfiller.gui.home_state:NO_GROUP_LABEL",
+  "attr:hwpxfiller.gui.home_state:NO_SOURCE_LABEL",
+  "attr:hwpxfiller.gui.home_state:TxtRow.field_count",
+  "attr:hwpxfiller.gui.home_state:TxtRow.name",
+  "attr:hwpxfiller.gui.home_state:VIEW_ALL",
+  "attr:hwpxfiller.gui.home_state:VIEW_FAVORITES",
+  "attr:hwpxfiller.gui.home_state:VIEW_NEEDS",
+  "attr:hwpxfiller.gui.home_state:VIEW_RECENT",
+  "attr:hwpxfiller.gui.home_state:_MODES",
+  "attr:hwpxfiller.gui.home_state:_VIEWS",
+]
 oracle_entries = [
 ]
 
@@ -1805,6 +2471,11 @@ write_set_count = 3
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.job_editor_state:SaveVerdict.block_reason",
+  "attr:hwpxfiller.gui.job_editor_state:SaveVerdict.blocked_field",
+  "attr:hwpxfiller.gui.job_editor_state:SaveVerdict.profile",
+]
 oracle_entries = [
 ]
 
@@ -1821,6 +2492,25 @@ write_set_count = 17
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.mapping_state:MappingModel.aliases",
+  "attr:hwpxfiller.gui.mapping_state:MappingModel.rows",
+  "attr:hwpxfiller.gui.mapping_state:MappingModel.source_fields",
+  "attr:hwpxfiller.gui.mapping_state:PartialGate._acked",
+  "attr:hwpxfiller.gui.mapping_state:PartialGate.status",
+  "attr:hwpxfiller.gui.mapping_state:PartialGate.unmet_tokens",
+  "attr:hwpxfiller.gui.mapping_state:RAW_BLOCK_MESSAGE",
+  "attr:hwpxfiller.gui.mapping_state:RowState.confirmed",
+  "attr:hwpxfiller.gui.mapping_state:RowState.const",
+  "attr:hwpxfiller.gui.mapping_state:RowState.fmt",
+  "attr:hwpxfiller.gui.mapping_state:RowState.source",
+  "attr:hwpxfiller.gui.mapping_state:RowState.spec",
+  "attr:hwpxfiller.gui.mapping_state:RowState.suggestion_score",
+  "attr:hwpxfiller.gui.mapping_state:RowState.template_field",
+  "attr:hwpxfiller.gui.mapping_state:RowState.touched",
+  "attr:hwpxfiller.gui.mapping_state:RowState.type",
+  "attr:hwpxfiller.gui.mapping_state:_DEFAULT_TYPE",
+]
 oracle_entries = [
 ]
 
@@ -1837,6 +2527,28 @@ write_set_count = 20
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.bgn_dt",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.end_dt",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.error",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.fields",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.num_rows",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.ok",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.page_no",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.records",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.result_code",
+  "attr:hwpxfiller.gui.nara_state:AcquireResult.result_msg",
+  "attr:hwpxfiller.gui.nara_state:AcquiredNaraData._fields",
+  "attr:hwpxfiller.gui.nara_state:AcquiredNaraData._records",
+  "attr:hwpxfiller.gui.nara_state:ConnResult.message",
+  "attr:hwpxfiller.gui.nara_state:ConnResult.ok",
+  "attr:hwpxfiller.gui.nara_state:NaraAcquireViewModel._fetcher",
+  "attr:hwpxfiller.gui.nara_state:NaraAcquireViewModel._store",
+  "attr:hwpxfiller.gui.nara_state:NaraAcquireViewModel._timeout",
+  "attr:hwpxfiller.gui.nara_state:NaraAcquireViewModel.last_result",
+  "attr:hwpxfiller.gui.nara_state:NaraAcquireViewModel.validate_range",
+  "attr:hwpxfiller.gui.nara_state:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1853,6 +2565,22 @@ write_set_count = 14
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.pipeline_builder_state:PipelineBuilderViewModel._fetcher",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PipelineBuilderViewModel._secret_store",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PipelineBuilderViewModel.registry",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PipelineBuilderViewModel.sources",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PipelineBuilderViewModel.steps",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PreviewResult.error",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PreviewResult.fields",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PreviewResult.rows",
+  "attr:hwpxfiller.gui.pipeline_builder_state:PreviewResult.total",
+  "attr:hwpxfiller.gui.pipeline_builder_state:SourceSlot.kind",
+  "attr:hwpxfiller.gui.pipeline_builder_state:SourceSlot.name",
+  "attr:hwpxfiller.gui.pipeline_builder_state:SourceSlot.opts",
+  "attr:hwpxfiller.gui.pipeline_builder_state:_MERGE_HOWS",
+  "attr:hwpxfiller.gui.pipeline_builder_state:_V1_OPS",
+]
 oracle_entries = [
 ]
 
@@ -1869,6 +2597,15 @@ write_set_count = 7
 blocking = ["oracle-gap"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.record_range:RecordRange.filter",
+  "attr:hwpxfiller.gui.record_range:RecordRange.selection",
+  "attr:hwpxfiller.gui.record_range:RecordRange.view_order",
+  "attr:hwpxfiller.gui.record_range:RecordRangeDraft.base_fingerprint",
+  "attr:hwpxfiller.gui.record_range:RecordRangeDraft.range",
+  "attr:hwpxfiller.gui.record_range:RecordRangeDraft.selected_only",
+  "attr:hwpxfiller.gui.record_range:RecordRangeDraft.snapshot_gen",
+]
 oracle_entries = [
 ]
 
@@ -1885,6 +2622,14 @@ write_set_count = 6
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.result_errors:_ERROR_HINTS",
+  "attr:hwpxfiller.gui.result_errors:_FILL_NOTE_WORDING",
+  "attr:hwpxfiller.gui.result_errors:_HINT_ACCESS",
+  "attr:hwpxfiller.gui.result_errors:_HINT_DISK",
+  "attr:hwpxfiller.gui.result_errors:_HINT_IN_USE",
+  "attr:hwpxfiller.gui.result_errors:_HINT_MISSING",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -1902,12 +2647,28 @@ write_set_count = 14
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.review_state:EVIDENCE_POLICY",
+  "attr:hwpxfiller.gui.review_state:RISK_ORDER",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.changed_fields",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.changed_targets",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.evidence_policy",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.first_run",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.risk_class",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.rules_key",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.selection_bound",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.structure_changed",
+  "attr:hwpxfiller.gui.review_state:ReviewRequirement.unknown_baseline",
+  "attr:hwpxfiller.gui.review_state:ReviewState.approved",
+  "attr:hwpxfiller.gui.review_state:_AXIS_LABEL",
+  "attr:hwpxfiller.gui.review_state:_SOURCE_BACKED",
+]
 oracle_entries = [
 ]
 
 [[migration_unit]]
 id = "unit-57"
-target = "APPLICATION"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.gui.run_state"]
 symbol_count = 41
 closure_digest = "f4bcd73a2aae0895db4d9bb9ec0ab25f5b46c8e15a6661d67dd586501e7ccfd4"
@@ -1915,9 +2676,50 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 39
-blocking = []
+blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.run_state:FieldState.name",
+  "attr:hwpxfiller.gui.run_state:FieldState.state",
+  "attr:hwpxfiller.gui.run_state:GateError.level",
+  "attr:hwpxfiller.gui.run_state:GateError.message",
+  "attr:hwpxfiller.gui.run_state:GateState.enabled",
+  "attr:hwpxfiller.gui.run_state:GateState.level",
+  "attr:hwpxfiller.gui.run_state:GateState.reason",
+  "attr:hwpxfiller.gui.run_state:GateState.text",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.indices",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.job_name",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.labels",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.ledger",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.mapping",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.marker",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.now",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.out_dir",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.overwrite",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.pattern",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.records",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.source_keys",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.source_pointer",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.source_records",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.template",
+  "attr:hwpxfiller.gui.run_state:GenerationPlan.template_fields",
+  "attr:hwpxfiller.gui.run_state:PreflightResult.empty_valued",
+  "attr:hwpxfiller.gui.run_state:PreflightResult.level",
+  "attr:hwpxfiller.gui.run_state:PreflightResult.missing_columns",
+  "attr:hwpxfiller.gui.run_state:PreflightResult.text",
+  "attr:hwpxfiller.gui.run_state:PrevNote.level",
+  "attr:hwpxfiller.gui.run_state:PrevNote.text",
+  "attr:hwpxfiller.gui.run_state:RunStatus.audit",
+  "attr:hwpxfiller.gui.run_state:RunStatus.field_states",
+  "attr:hwpxfiller.gui.run_state:RunStatus.gate",
+  "attr:hwpxfiller.gui.run_state:RunStatus.preflight",
+  "attr:hwpxfiller.gui.run_state:RunViewModel.datasource",
+  "attr:hwpxfiller.gui.run_state:RunViewModel.job",
+  "attr:hwpxfiller.gui.run_state:RunViewModel.records",
+  "attr:hwpxfiller.gui.run_state:RunViewModel.target_mode",
+  "attr:hwpxfiller.gui.run_state:RunViewModel.template_override",
+]
 oracle_entries = [
 ]
 
@@ -1934,6 +2736,9 @@ write_set_count = 1
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.selection_state:SelectionModel._selected",
+]
 oracle_entries = [
 ]
 
@@ -1950,6 +2755,30 @@ write_set_count = 22
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.template_manager_state:ResultLine.level",
+  "attr:hwpxfiller.gui.template_manager_state:ScanPreview.compilable",
+  "attr:hwpxfiller.gui.template_manager_state:ScanPreview.skipped",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateAction.key",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateAction.label",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._explicit_paths",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._rows",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateManagerViewModel._subs",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateManagerViewModel.library_dir",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.badge_label",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.badge_level",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.compilable_n",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.error",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.field_count",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.fill_warns",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.name",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.path",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.skipped_n",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.state",
+  "attr:hwpxfiller.gui.template_manager_state:TemplateRow.stray_n",
+  "attr:hwpxfiller.gui.template_manager_state:_SEVERITY_KO",
+  "attr:hwpxfiller.gui.template_manager_state:_STATE_ACTIONS",
+]
 oracle_entries = [
 ]
 
@@ -1966,6 +2795,13 @@ write_set_count = 5
 blocking = ["oracle-gap"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.txt_card:CardRender.fullwidth",
+  "attr:hwpxfiller.gui.txt_card:CardRender.report",
+  "attr:hwpxfiller.gui.txt_card:CardRender.segments",
+  "attr:hwpxfiller.gui.txt_card:CardRender.space_run",
+  "attr:hwpxfiller.gui.txt_card:__all__",
+]
 oracle_entries = [
 ]
 
@@ -1982,6 +2818,12 @@ write_set_count = 4
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.txt_queue:TxtQueueModel._copied_order",
+  "attr:hwpxfiller.gui.txt_queue:TxtQueueModel._current",
+  "attr:hwpxfiller.gui.txt_queue:TxtQueueModel._display_order",
+  "attr:hwpxfiller.gui.txt_queue:TxtQueueModel._sel",
+]
 oracle_entries = [
 ]
 
@@ -1998,6 +2840,36 @@ write_set_count = 28
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.work_candidates:BrowseResult.available_count",
+  "attr:hwpxfiller.gui.work_candidates:BrowseResult.filtered_out",
+  "attr:hwpxfiller.gui.work_candidates:BrowseResult.needs_count",
+  "attr:hwpxfiller.gui.work_candidates:BrowseResult.rows",
+  "attr:hwpxfiller.gui.work_candidates:BrowseResult.tab",
+  "attr:hwpxfiller.gui.work_candidates:GATE_REASON_NO_CANDIDATES",
+  "attr:hwpxfiller.gui.work_candidates:GATE_REASON_NO_DATA",
+  "attr:hwpxfiller.gui.work_candidates:GATE_REASON_NO_JOB",
+  "attr:hwpxfiller.gui.work_candidates:GATE_REASON_NO_ROWS",
+  "attr:hwpxfiller.gui.work_candidates:GATE_REASON_TEMPLATE_MISSING",
+  "attr:hwpxfiller.gui.work_candidates:KIND_AVAILABLE",
+  "attr:hwpxfiller.gui.work_candidates:KIND_EXCLUDED",
+  "attr:hwpxfiller.gui.work_candidates:KIND_NEEDS_ACTION",
+  "attr:hwpxfiller.gui.work_candidates:MAIN_TOP_N",
+  "attr:hwpxfiller.gui.work_candidates:RankedWork.at",
+  "attr:hwpxfiller.gui.work_candidates:RankedWork.mode",
+  "attr:hwpxfiller.gui.work_candidates:RankedWork.name",
+  "attr:hwpxfiller.gui.work_candidates:RankedWork.tier",
+  "attr:hwpxfiller.gui.work_candidates:TAB_AVAILABLE",
+  "attr:hwpxfiller.gui.work_candidates:TAB_NEEDS_ACTION",
+  "attr:hwpxfiller.gui.work_candidates:TIER_FAVORITE",
+  "attr:hwpxfiller.gui.work_candidates:TIER_RECENT",
+  "attr:hwpxfiller.gui.work_candidates:TIER_UNUSED",
+  "attr:hwpxfiller.gui.work_candidates:WorkCompatibility.kind",
+  "attr:hwpxfiller.gui.work_candidates:WorkCompatibility.missing",
+  "attr:hwpxfiller.gui.work_candidates:WorkCompatibility.mode",
+  "attr:hwpxfiller.gui.work_candidates:WorkCompatibility.reason",
+  "attr:hwpxfiller.gui.work_candidates:_TIER_ORDER",
+]
 oracle_entries = [
 ]
 
@@ -2014,6 +2886,11 @@ write_set_count = 3
 blocking = []
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.gui.work_mode:WORK_MODE_ORDER",
+  "attr:hwpxfiller.gui.work_mode:_LABELS",
+  "attr:hwpxfiller.gui.work_mode:__all__",
+]
 oracle_entries = [
 ]
 
@@ -2030,6 +2907,22 @@ write_set_count = 14
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.naming:MAX_PATH_CHARS",
+  "attr:hwpxfiller.naming:OutputNameAudit.converged",
+  "attr:hwpxfiller.naming:OutputNameAudit.names",
+  "attr:hwpxfiller.naming:OutputNameAudit.too_long",
+  "attr:hwpxfiller.naming:OutputNamer._seen",
+  "attr:hwpxfiller.naming:OutputNamer._seq",
+  "attr:hwpxfiller.naming:OutputNamer.now",
+  "attr:hwpxfiller.naming:OutputNamer.pattern",
+  "attr:hwpxfiller.naming:_DATE_MAP",
+  "attr:hwpxfiller.naming:_DATE_TOKEN",
+  "attr:hwpxfiller.naming:_FIELD_TOKEN",
+  "attr:hwpxfiller.naming:_INVALID",
+  "attr:hwpxfiller.naming:_RESERVED_TOKENS",
+  "attr:hwpxfiller.naming:_SEQ_TOKEN",
+]
 oracle_entries = [
   "cli:default",
 ]
@@ -2047,6 +2940,45 @@ write_set_count = 37
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.web_artifact:SEAL_FILENAME",
+  "attr:hwpxfiller.web_artifact:SEAL_SCHEMA",
+  "attr:hwpxfiller.web_artifact:ToolchainVersions.node",
+  "attr:hwpxfiller.web_artifact:ToolchainVersions.npm",
+  "attr:hwpxfiller.web_artifact:ToolchainVersions.vite",
+  "attr:hwpxfiller.web_artifact:VITE_MANIFEST_PATH",
+  "attr:hwpxfiller.web_artifact:VerifiedWebArtifact.artifact_id",
+  "attr:hwpxfiller.web_artifact:VerifiedWebArtifact.index_path",
+  "attr:hwpxfiller.web_artifact:VerifiedWebArtifact.root",
+  "attr:hwpxfiller.web_artifact:VerifiedWebArtifact.tree_sha256",
+  "attr:hwpxfiller.web_artifact:_ABSOLUTE_ASSET_RE",
+  "attr:hwpxfiller.web_artifact:_COMMIT_RE",
+  "attr:hwpxfiller.web_artifact:_DIGEST_RE",
+  "attr:hwpxfiller.web_artifact:_EXTERNAL_URL_RE",
+  "attr:hwpxfiller.web_artifact:_FILE_URL_RE",
+  "attr:hwpxfiller.web_artifact:_FileRecord.path",
+  "attr:hwpxfiller.web_artifact:_FileRecord.sha256",
+  "attr:hwpxfiller.web_artifact:_FileRecord.size",
+  "attr:hwpxfiller.web_artifact:_INERT_OUTPUT_URLS",
+  "attr:hwpxfiller.web_artifact:_INERT_OUTPUT_URL_PREFIX",
+  "attr:hwpxfiller.web_artifact:_OUTPUT_ASSET_DIR",
+  "attr:hwpxfiller.web_artifact:_OUTPUT_ASSET_SUFFIXES",
+  "attr:hwpxfiller.web_artifact:_OUTPUT_EXACT_FILES",
+  "attr:hwpxfiller.web_artifact:_SEMVER_IN_OUTPUT_RE",
+  "attr:hwpxfiller.web_artifact:_SEMVER_RE",
+  "attr:hwpxfiller.web_artifact:_SOURCE_CONFIG_PATHS",
+  "attr:hwpxfiller.web_artifact:_Seal.artifact_id",
+  "attr:hwpxfiller.web_artifact:_Seal.output_files",
+  "attr:hwpxfiller.web_artifact:_Seal.package_lock",
+  "attr:hwpxfiller.web_artifact:_Seal.source_commit",
+  "attr:hwpxfiller.web_artifact:_Seal.source_files",
+  "attr:hwpxfiller.web_artifact:_Seal.source_input_sha256",
+  "attr:hwpxfiller.web_artifact:_Seal.toolchain",
+  "attr:hwpxfiller.web_artifact:_Seal.tree_sha256",
+  "attr:hwpxfiller.web_artifact:_Seal.vite_manifest",
+  "attr:hwpxfiller.web_artifact:_TEXT_OUTPUT_SUFFIXES",
+  "attr:hwpxfiller.web_artifact:_VITE_CLIENT_RE",
+]
 oracle_entries = [
 ]
 
@@ -2063,6 +2995,8 @@ write_set_count = 0
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -2079,6 +3013,8 @@ write_set_count = 0
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -2095,6 +3031,16 @@ write_set_count = 8
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.action_registry:ACTION_REGISTRY",
+  "attr:hwpxfiller.webapp.action_registry:PayloadSchema.optional",
+  "attr:hwpxfiller.webapp.action_registry:PayloadSchema.required",
+  "attr:hwpxfiller.webapp.action_registry:ZONE_MUTATIONS",
+  "attr:hwpxfiller.webapp.action_registry:_DATA_ZONE",
+  "attr:hwpxfiller.webapp.action_registry:_POOL_TARGETING",
+  "attr:hwpxfiller.webapp.action_registry:_REGISTRY",
+  "attr:hwpxfiller.webapp.action_registry:_ZONE_MUTATIONS",
+]
 oracle_entries = [
 ]
 
@@ -2111,6 +3057,30 @@ write_set_count = 22
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.app:DEFAULT_WINDOW_HEIGHT",
+  "attr:hwpxfiller.webapp.app:DEFAULT_WINDOW_WIDTH",
+  "attr:hwpxfiller.webapp.app:WINDOW_TITLE",
+  "attr:hwpxfiller.webapp.app:WebFrontend._close_confirmed",
+  "attr:hwpxfiller.webapp.app:WebFrontend._close_prompt_open",
+  "attr:hwpxfiller.webapp.app:WebFrontend._job_registry",
+  "attr:hwpxfiller.webapp.app:WebFrontend._pool_registry",
+  "attr:hwpxfiller.webapp.app:WebFrontend._window",
+  "attr:hwpxfiller.webapp.app:WebFrontend.controllers",
+  "attr:hwpxfiller.webapp.app:_DISPATCH_REJECTION_KEY",
+  "attr:hwpxfiller.webapp.app:_EXCEL_OR_ANY_FILTERS",
+  "attr:hwpxfiller.webapp.app:_GLOBAL_DELTA_FN",
+  "attr:hwpxfiller.webapp.app:_GLOBAL_DELTA_JS",
+  "attr:hwpxfiller.webapp.app:_LIBRARY_IMPORT_FILTERS",
+  "attr:hwpxfiller.webapp.app:_MODE_GLOBAL_DELTA",
+  "attr:hwpxfiller.webapp.app:_MODE_NO_CAPABILITY",
+  "attr:hwpxfiller.webapp.app:_NON_EXPOSURE_JS",
+  "attr:hwpxfiller.webapp.app:_SELFTEST_BUDGET_S",
+  "attr:hwpxfiller.webapp.app:_SELFTEST_ECHO_KEYS",
+  "attr:hwpxfiller.webapp.app:_TEMPLATE_FILTERS",
+  "attr:hwpxfiller.webapp.app:_WINDOW_GEOMETRY_JS",
+  "attr:hwpxfiller.webapp.app:_live_file_dialogs",
+]
 oracle_entries = [
   "gui:direct/cancel_window_close",
   "gui:direct/close_guard_state",
@@ -2149,6 +3119,12 @@ write_set_count = 4
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.boot_budget:COLD_BUDGET_SECONDS",
+  "attr:hwpxfiller.webapp.boot_budget:WARM_BUDGET_SECONDS",
+  "attr:hwpxfiller.webapp.boot_budget:_RUNTIME_GUID",
+  "attr:hwpxfiller.webapp.boot_budget:_RUNTIME_KEYS",
+]
 oracle_entries = [
 ]
 
@@ -2165,6 +3141,23 @@ write_set_count = 15
 blocking = ["oracle-gap"]
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin._data_key",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin._filter_desc",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin._last_filter",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_header_row",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_label",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_path",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_pool_key",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_sheet",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.data_source",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.filter",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.hidden_columns",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.pool_registry",
+  "attr:hwpxfiller.webapp.data_zone:DataZoneMixin.selection",
+  "attr:hwpxfiller.webapp.data_zone:EMPTY_FILTER",
+  "attr:hwpxfiller.webapp.data_zone:EMPTY_TABLE",
+]
 oracle_entries = [
   "gui:job/filter_clear",
   "gui:job/filter_clear_col",
@@ -2196,6 +3189,8 @@ write_set_count = 0
 blocking = ["oracle-gap"]
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
 ]
 
@@ -2212,6 +3207,24 @@ write_set_count = 16
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.live_run:FileDialogs.open_file",
+  "attr:hwpxfiller.webapp.live_run:FileDialogs.open_folder",
+  "attr:hwpxfiller.webapp.live_run:LIVE_RUN_VERSION",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.artifact",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.boot_budget_reason",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.boot_budget_s",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.finish",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.run_name",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.version",
+  "attr:hwpxfiller.webapp.live_run:LiveContext.window",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.capability",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.drive",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.file_dialogs",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.name",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.version",
+  "attr:hwpxfiller.webapp.live_run:LiveRun.write_output",
+]
 oracle_entries = [
 ]
 
@@ -2228,6 +3241,8 @@ write_set_count = 0
 blocking = ["oracle-gap"]
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+]
 oracle_entries = [
   "gui:workbench/revert_map",
   "gui:workbench/set_confirmed",
@@ -2250,12 +3265,60 @@ write_set_count = 46
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.product_api:CAPABILITIES",
+  "attr:hwpxfiller.webapp.product_api:CODE_CAPABILITY_MISSING",
+  "attr:hwpxfiller.webapp.product_api:CODE_DESCRIPTOR_MALFORMED",
+  "attr:hwpxfiller.webapp.product_api:CODE_EVALUATE_FAILED",
+  "attr:hwpxfiller.webapp.product_api:CODE_FACADE_ABSENT",
+  "attr:hwpxfiller.webapp.product_api:CODE_INTERNAL",
+  "attr:hwpxfiller.webapp.product_api:CODE_PAYLOAD_UNSERIALIZABLE",
+  "attr:hwpxfiller.webapp.product_api:CODE_PROTOCOL_MISMATCH",
+  "attr:hwpxfiller.webapp.product_api:CODE_REJECTED",
+  "attr:hwpxfiller.webapp.product_api:CODE_RESULT_MISSING_OK",
+  "attr:hwpxfiller.webapp.product_api:CODE_RESULT_NOT_OBJECT",
+  "attr:hwpxfiller.webapp.product_api:CODE_RESULT_OK_NOT_BOOL",
+  "attr:hwpxfiller.webapp.product_api:CODE_VERSION_UNSUPPORTED",
+  "attr:hwpxfiller.webapp.product_api:DeliveryOutcome.code",
+  "attr:hwpxfiller.webapp.product_api:DeliveryOutcome.detail",
+  "attr:hwpxfiller.webapp.product_api:DeliveryOutcome.event",
+  "attr:hwpxfiller.webapp.product_api:DeliveryOutcome.ok",
+  "attr:hwpxfiller.webapp.product_api:DeliveryOutcome.result",
+  "attr:hwpxfiller.webapp.product_api:Descriptor.capabilities",
+  "attr:hwpxfiller.webapp.product_api:Descriptor.protocol",
+  "attr:hwpxfiller.webapp.product_api:Descriptor.version",
+  "attr:hwpxfiller.webapp.product_api:EVENTS",
+  "attr:hwpxfiller.webapp.product_api:EVENT_CLOSE_REQUEST",
+  "attr:hwpxfiller.webapp.product_api:EVENT_NOTICE",
+  "attr:hwpxfiller.webapp.product_api:EVENT_PREFERENCES",
+  "attr:hwpxfiller.webapp.product_api:EVENT_SNAPSHOT",
+  "attr:hwpxfiller.webapp.product_api:NOTICE_PREFIX",
+  "attr:hwpxfiller.webapp.product_api:PART_PERSONALIZATION",
+  "attr:hwpxfiller.webapp.product_api:PART_THEME",
+  "attr:hwpxfiller.webapp.product_api:PROTOCOL",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.applied",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.attributed",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.delivery",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.expected",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.failed",
+  "attr:hwpxfiller.webapp.product_api:PreferencesOutcome.notes",
+  "attr:hwpxfiller.webapp.product_api:ProductApiClient._durable_alert",
+  "attr:hwpxfiller.webapp.product_api:ProductApiClient._evaluate",
+  "attr:hwpxfiller.webapp.product_api:ProductApiError.code",
+  "attr:hwpxfiller.webapp.product_api:ProductApiError.detail",
+  "attr:hwpxfiller.webapp.product_api:ProductApiError.event",
+  "attr:hwpxfiller.webapp.product_api:ROOT",
+  "attr:hwpxfiller.webapp.product_api:THEME_VALUES",
+  "attr:hwpxfiller.webapp.product_api:VERSION",
+  "attr:hwpxfiller.webapp.product_api:_METHODS",
+  "attr:hwpxfiller.webapp.product_api:_PART_LABELS",
+]
 oracle_entries = [
 ]
 
 [[migration_unit]]
 id = "unit-76"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.screen_editor"]
 symbol_count = 85
 closure_digest = "975d70567c90f58f6ddc8db122e7d92a1c662c7092e435f176dd3f6113d3cbf6"
@@ -2263,9 +3326,54 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 43
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.SECTION_LABELS",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.SESSION_EXTRAS",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._ANCHOR_ENTRY_REASON",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._NONMUTATING_ACTIONS",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._editing_fingerprint",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._editing_origin",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._ignored_expanded",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._ignored_sources",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._library_result",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._loaded_provenance",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._model_key",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._preserved_meta",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._push_sink",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._session_clean",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._template_groups",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._template_library",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._text_registry",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._txt_groups",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController._unconfirm_undo",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.data_header_row",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.data_path",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.data_sheet",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.gate",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.gate_error",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.job_name",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.model",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.name",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.notice_level",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.notice_text",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.pattern",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.preview_index",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.raw_block",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.records",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.registry",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.schema",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.section",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.session",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.source_fields",
+  "attr:hwpxfiller.webapp.screen_editor:EditorController.template_path",
+  "attr:hwpxfiller.webapp.screen_editor:_EMPTY_PRESERVED",
+  "attr:hwpxfiller.webapp.screen_editor:_FMT_OPTIONS",
+  "attr:hwpxfiller.webapp.screen_editor:_PICKER_HIDDEN_ACTIONS",
+  "attr:hwpxfiller.webapp.screen_editor:_SAMPLE_ROWS",
+]
 oracle_entries = [
   "gui:editor/ack_gate",
   "gui:editor/confirm_all",
@@ -2299,7 +3407,7 @@ oracle_entries = [
 
 [[migration_unit]]
 id = "unit-77"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.screen_job"]
 symbol_count = 95
 closure_digest = "1898e905d1c5e37ef1daee9d29cd9706ca70d22930c31a60741cb299bb687016"
@@ -2307,9 +3415,65 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 54
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_job:JobController._cancel_generation",
+  "attr:hwpxfiller.webapp.screen_job:JobController._data_key",
+  "attr:hwpxfiller.webapp.screen_job:JobController._generation_lock",
+  "attr:hwpxfiller.webapp.screen_job:JobController._last_failed",
+  "attr:hwpxfiller.webapp.screen_job:JobController._last_filter",
+  "attr:hwpxfiller.webapp.screen_job:JobController._last_generated",
+  "attr:hwpxfiller.webapp.screen_job:JobController._last_run_job",
+  "attr:hwpxfiller.webapp.screen_job:JobController._marked_fields",
+  "attr:hwpxfiller.webapp.screen_job:JobController._names_now",
+  "attr:hwpxfiller.webapp.screen_job:JobController._names_pin",
+  "attr:hwpxfiller.webapp.screen_job:JobController._push_sink",
+  "attr:hwpxfiller.webapp.screen_job:JobController._run_revisions",
+  "attr:hwpxfiller.webapp.screen_job:JobController._run_token",
+  "attr:hwpxfiller.webapp.screen_job:JobController._snapshot_gen",
+  "attr:hwpxfiller.webapp.screen_job:JobController.browse_query",
+  "attr:hwpxfiller.webapp.screen_job:JobController.browse_tab",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_header_row",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_label",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_notice_level",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_notice_text",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_path",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_pool_key",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_sheet",
+  "attr:hwpxfiller.webapp.screen_job:JobController.data_source",
+  "attr:hwpxfiller.webapp.screen_job:JobController.datasource",
+  "attr:hwpxfiller.webapp.screen_job:JobController.filter",
+  "attr:hwpxfiller.webapp.screen_job:JobController.hidden_columns",
+  "attr:hwpxfiller.webapp.screen_job:JobController.job_is_txt",
+  "attr:hwpxfiller.webapp.screen_job:JobController.job_name",
+  "attr:hwpxfiller.webapp.screen_job:JobController.job_unsupported",
+  "attr:hwpxfiller.webapp.screen_job:JobController.name",
+  "attr:hwpxfiller.webapp.screen_job:JobController.out_dir",
+  "attr:hwpxfiller.webapp.screen_job:JobController.pool_registry",
+  "attr:hwpxfiller.webapp.screen_job:JobController.preferred_work",
+  "attr:hwpxfiller.webapp.screen_job:JobController.preview_blank_only",
+  "attr:hwpxfiller.webapp.screen_job:JobController.preview_open",
+  "attr:hwpxfiller.webapp.screen_job:JobController.preview_pos",
+  "attr:hwpxfiller.webapp.screen_job:JobController.range_draft",
+  "attr:hwpxfiller.webapp.screen_job:JobController.records",
+  "attr:hwpxfiller.webapp.screen_job:JobController.registry",
+  "attr:hwpxfiller.webapp.screen_job:JobController.review",
+  "attr:hwpxfiller.webapp.screen_job:JobController.selection",
+  "attr:hwpxfiller.webapp.screen_job:JobController.text_registry",
+  "attr:hwpxfiller.webapp.screen_job:JobController.view_order",
+  "attr:hwpxfiller.webapp.screen_job:JobController.vm",
+  "attr:hwpxfiller.webapp.screen_job:JobController.workbench",
+  "attr:hwpxfiller.webapp.screen_job:JobController.zone_epoch",
+  "attr:hwpxfiller.webapp.screen_job:VIEW_ORDERS",
+  "attr:hwpxfiller.webapp.screen_job:VIEW_ORDER_ASC",
+  "attr:hwpxfiller.webapp.screen_job:VIEW_ORDER_DESC",
+  "attr:hwpxfiller.webapp.screen_job:_CONN_MISSING_LABEL",
+  "attr:hwpxfiller.webapp.screen_job:_EMPTY_RESTATE",
+  "attr:hwpxfiller.webapp.screen_job:_PREFLIGHT_OK_TEXT",
+  "attr:hwpxfiller.webapp.screen_job:_RESTATE_SAMPLE",
+]
 oracle_entries = [
   "gui:job/browse_query",
   "gui:job/browse_tab",
@@ -2352,6 +3516,17 @@ write_set_count = 9
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_library:LibraryController._collapsed",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController._deleted_job_slot",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController._generation_lock",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController._job_registry",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController._push_sink",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController.name",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController.selected_work",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController.session_guards",
+  "attr:hwpxfiller.webapp.screen_library:LibraryController.vm",
+]
 oracle_entries = [
   "gui:library/clear_facets",
   "gui:library/clear_filters",
@@ -2385,6 +3560,14 @@ write_set_count = 6
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_pool:BOUND_FIELDS",
+  "attr:hwpxfiller.webapp.screen_pool:PoolController._push_sink",
+  "attr:hwpxfiller.webapp.screen_pool:PoolController.name",
+  "attr:hwpxfiller.webapp.screen_pool:PoolController.result_level",
+  "attr:hwpxfiller.webapp.screen_pool:PoolController.result_text",
+  "attr:hwpxfiller.webapp.screen_pool:PoolController.vm",
+]
 oracle_entries = [
   "gui:pool/activate",
   "gui:pool/archive",
@@ -2398,7 +3581,7 @@ oracle_entries = [
 
 [[migration_unit]]
 id = "unit-80"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.screen_template"]
 symbol_count = 34
 closure_digest = "51fe26d8198f10ccc1d833cddbc6921cd9af4c8df5af5d75e6390c8b95356f42"
@@ -2406,9 +3589,24 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 13
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_template:TemplateController._deleted_template_slot",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController._folder_import_lock",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController._hwpx_write_lock",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController._import_lock",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController._push_sink",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.hwpx_groups",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.name",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.result_level",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.result_text",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.text_registry",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.txt_groups",
+  "attr:hwpxfiller.webapp.screen_template:TemplateController.vm",
+  "attr:hwpxfiller.webapp.screen_template:_HIDDEN_ACTIONS",
+]
 oracle_entries = [
   "gui:tpl/compile",
   "gui:tpl/delete",
@@ -2427,7 +3625,7 @@ oracle_entries = [
 
 [[migration_unit]]
 id = "unit-81"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.screen_workbench"]
 symbol_count = 50
 closure_digest = "7f9d8d141f50d0e0ee13d19e3be336ee3ae271d297e2a5aef6f335a95369e7c5"
@@ -2435,9 +3633,42 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 31
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screen_workbench:REVIEW_COPIED",
+  "attr:hwpxfiller.webapp.screen_workbench:REVIEW_RECHECK",
+  "attr:hwpxfiller.webapp.screen_workbench:REVIEW_TODO",
+  "attr:hwpxfiller.webapp.screen_workbench:TargetFontSetting._value",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._advance_after",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._copied_rules",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._copied_total",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._font",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._fullwidth",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._last_copy",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._push_sink",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._stamped",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController._state_lock",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.base_job",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.job_name",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.mapping",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.name",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.notice_level",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.notice_text",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.queue",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.records",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.registry",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.selection",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.session",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.source_rows",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.template_text",
+  "attr:hwpxfiller.webapp.screen_workbench:WorkbenchController.view",
+  "attr:hwpxfiller.webapp.screen_workbench:_FMT_OPTIONS",
+  "attr:hwpxfiller.webapp.screen_workbench:_TYPE_LABEL",
+  "attr:hwpxfiller.webapp.screen_workbench:_TYPE_OPTIONS",
+  "attr:hwpxfiller.webapp.screen_workbench:_VIEWS",
+]
 oracle_entries = [
   "gui:workbench/close",
   "gui:workbench/copy_precheck",
@@ -2454,7 +3685,7 @@ oracle_entries = [
 
 [[migration_unit]]
 id = "unit-82"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.screens"]
 symbol_count = 20
 closure_digest = "424aeb2c639983836e074d0353f377edb72970381a089425aefd1f016e3148ce"
@@ -2462,16 +3693,30 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 12
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.screens:NARA_FROZEN_TEXT",
+  "attr:hwpxfiller.webapp.screens:NO_ROWS_TEXT",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_header_row",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_label",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_path",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_pool_key",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_sheet",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.data_source",
+  "attr:hwpxfiller.webapp.screens:PoolTargetingMixin.pool_registry",
+  "attr:hwpxfiller.webapp.screens:PushSink",
+  "attr:hwpxfiller.webapp.screens:ScreenController.name",
+  "attr:hwpxfiller.webapp.screens:TXT_RAW_BLOCK",
+]
 oracle_entries = [
   "gui:job/load_pool",
 ]
 
 [[migration_unit]]
 id = "unit-83"
-target = "FRONTEND_ADAPTER"
+target = "P_REVIEW_REQUIRED"
 modules = ["hwpxfiller.webapp.selftest_api"]
 symbol_count = 92
 closure_digest = "67ef70dfc1b0306b428010dc9b78c735ba39dbf33fa90f339f278132f2aa5543"
@@ -2479,9 +3724,121 @@ oracle_status = "ENTRY"
 predecessors = []
 shared_with = []
 write_set_count = 110
-blocking = []
-compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
+blocking = ["authority-unknown"]
+compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.selftest_api:ACTIONS",
+  "attr:hwpxfiller.webapp.selftest_api:ACTION_POLL",
+  "attr:hwpxfiller.webapp.selftest_api:ACTION_START",
+  "attr:hwpxfiller.webapp.selftest_api:CLASS_DECLARED_UNUSED",
+  "attr:hwpxfiller.webapp.selftest_api:CLASS_DRIVER_OWNED",
+  "attr:hwpxfiller.webapp.selftest_api:CLASS_PACKAGING",
+  "attr:hwpxfiller.webapp.selftest_api:CLASS_RUNTIME_REQUEST",
+  "attr:hwpxfiller.webapp.selftest_api:CODES",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_ALREADY_CLAIMED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_ALREADY_CONSUMED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_ALREADY_RUNNING",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_DEADLINE_EXCEEDED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_EVALUATE_FAILED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_FACADE_ABSENT",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_INTERNAL",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_MALFORMED_PAYLOAD",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_MALFORMED_RESULT",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_NOT_CLAIMED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_OK",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_OUT_OF_PROCESS",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_PAYLOAD_UNSERIALIZABLE",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_REJECTED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_RUN_FAILED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNAUTHORIZED",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNAVAILABLE",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNKNOWN_ACTION",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNKNOWN_INPUT",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNKNOWN_OP",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_UNKNOWN_RUN",
+  "attr:hwpxfiller.webapp.selftest_api:CODE_VERSION_UNSUPPORTED",
+  "attr:hwpxfiller.webapp.selftest_api:FACADE_ATTRIBUTES",
+  "attr:hwpxfiller.webapp.selftest_api:FACADE_METHODS",
+  "attr:hwpxfiller.webapp.selftest_api:GEOMETRY_EDGE_SLACK",
+  "attr:hwpxfiller.webapp.selftest_api:GEOMETRY_FIELDS",
+  "attr:hwpxfiller.webapp.selftest_api:GEOMETRY_SPAN_SLACK",
+  "attr:hwpxfiller.webapp.selftest_api:HOST_OPS",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpResult.code",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpResult.detail",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpResult.ok",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpResult.op",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpResult.value",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpSpec.name",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpSpec.op_class",
+  "attr:hwpxfiller.webapp.selftest_api:HostOpSpec.reason",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._HANDLERS",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._artifact_identity",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._current_url",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._deadline",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._destroy",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._destroyed",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._geometry",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._inputs",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._mode",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._resize",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._settings",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._write_output",
+  "attr:hwpxfiller.webapp.selftest_api:HostOperations._written",
+  "attr:hwpxfiller.webapp.selftest_api:JS_CODES",
+  "attr:hwpxfiller.webapp.selftest_api:JS_CODE_MAP",
+  "attr:hwpxfiller.webapp.selftest_api:KEY_RUN_ID",
+  "attr:hwpxfiller.webapp.selftest_api:OPS_BY_CLASS",
+  "attr:hwpxfiller.webapp.selftest_api:OP_CLASSES",
+  "attr:hwpxfiller.webapp.selftest_api:OP_CLASSIFICATION",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.code",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.detail",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.evidence",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.ok",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.result",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.run_id",
+  "attr:hwpxfiller.webapp.selftest_api:PollOutcome.state",
+  "attr:hwpxfiller.webapp.selftest_api:ProcessDeadline.budget_s",
+  "attr:hwpxfiller.webapp.selftest_api:ProcessDeadline.now",
+  "attr:hwpxfiller.webapp.selftest_api:ProcessDeadline.started_at",
+  "attr:hwpxfiller.webapp.selftest_api:READINESS_MEMBER",
+  "attr:hwpxfiller.webapp.selftest_api:RESIZE_MAX",
+  "attr:hwpxfiller.webapp.selftest_api:RESIZE_MIN",
+  "attr:hwpxfiller.webapp.selftest_api:ROOT",
+  "attr:hwpxfiller.webapp.selftest_api:SETTINGS_READBACK_KEYS",
+  "attr:hwpxfiller.webapp.selftest_api:STATES",
+  "attr:hwpxfiller.webapp.selftest_api:STATE_FAILED",
+  "attr:hwpxfiller.webapp.selftest_api:STATE_RUNNING",
+  "attr:hwpxfiller.webapp.selftest_api:STATE_SUCCEEDED",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestApiError.action",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestApiError.code",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestApiError.detail",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._budget_s",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._consumed",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._evaluate",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._log",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._now",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._poll_interval_s",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestClient._sleep",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._claimed",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._claims",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._log",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._operations",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._refusals",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestHostFacade._token",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.code",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.detail",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.elapsed_ms",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.evidence",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.mode",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.ok",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.result",
+  "attr:hwpxfiller.webapp.selftest_api:SelftestOutcome.run_id",
+  "attr:hwpxfiller.webapp.selftest_api:TERMINAL_STATES",
+  "attr:hwpxfiller.webapp.selftest_api:UNPROVIDABLE_OPS",
+  "attr:hwpxfiller.webapp.selftest_api:VERSION",
+  "attr:hwpxfiller.webapp.selftest_api:_METHODS",
+]
 oracle_entries = [
 ]
 
@@ -2498,6 +3855,20 @@ write_set_count = 12
 blocking = ["authority-unknown"]
 compat_seam = "공개 이음새(입력·결과·요구 효과)를 타입계약으로 드러낸 뒤 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.settings:BOOT_STAMP_UNKNOWN_VERSION",
+  "attr:hwpxfiller.webapp.settings:DEFAULT_MASTER_WIDTH",
+  "attr:hwpxfiller.webapp.settings:MAX_MASTER_WIDTH",
+  "attr:hwpxfiller.webapp.settings:MIN_MASTER_WIDTH",
+  "attr:hwpxfiller.webapp.settings:PROPORTIONAL_DRAFT_FONTS",
+  "attr:hwpxfiller.webapp.settings:VALID_DRAFT_FONTS",
+  "attr:hwpxfiller.webapp.settings:VALID_FONT_SCALES",
+  "attr:hwpxfiller.webapp.settings:VALID_TEMPLATE_MEDIA",
+  "attr:hwpxfiller.webapp.settings:VALID_THEMES",
+  "attr:hwpxfiller.webapp.settings:_MUTATE_LOCK",
+  "attr:hwpxfiller.webapp.settings:_READ_RETRIES",
+  "attr:hwpxfiller.webapp.settings:_REPLACE_RETRIES",
+]
 oracle_entries = [
 ]
 
@@ -2514,6 +3885,13 @@ write_set_count = 5
 blocking = []
 compat_seam = "legacy screen/action 계약을 adapter 로 유지하며 이관"
 removal_condition = "old→new 책임 승계 후 legacy 심볼 consumer-zero 확인"
+write_set = [
+  "attr:hwpxfiller.webapp.template_groups:TemplateGroupModel._assign",
+  "attr:hwpxfiller.webapp.template_groups:TemplateGroupModel._collapsed",
+  "attr:hwpxfiller.webapp.template_groups:TemplateGroupModel._settings",
+  "attr:hwpxfiller.webapp.template_groups:TemplateGroupModel.media",
+  "attr:hwpxfiller.webapp.template_groups:_BAD_NAME",
+]
 oracle_entries = [
 ]
 

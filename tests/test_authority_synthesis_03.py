@@ -78,6 +78,34 @@ def test_transport_surface_placement_discriminates() -> None:
     assert "transport" in reason
 
 
+def test_transport_ownership_does_not_suppress_effect_evidence() -> None:
+    """transport 소유가 concrete/ambient 효과 증거를 조용히 억제하지 않는다(#532 리뷰)."""
+    clean, _ = A._assign_authority(
+        "hwpxfiller.webapp.screen_x", ("x",), set(), {"endpoint"}, False, False
+    )
+    assert clean == "FRONTEND_ADAPTER"
+    # mutation: 같은 transport 모듈에 fs 효과를 더하면 P_REVIEW 로 뒤집힌다.
+    flagged, reason = A._assign_authority(
+        "hwpxfiller.webapp.screen_x", ("x",), {"fs", "clock"}, {"endpoint"}, False, False
+    )
+    assert flagged == "P_REVIEW_REQUIRED"
+    assert "transport" in reason
+
+
+def test_composition_root_in_core_is_flagged() -> None:
+    """직접 외부 호출이 없어도 effect-bearing 클래스를 조립하면 adapter root(#532 리뷰)."""
+    clean, _ = A._assign_authority(
+        "hwpxfiller.data.factory", ("x",), set(), set(), False, False, composes=()
+    )
+    assert clean == "DOMAIN"
+    flagged, reason = A._assign_authority(
+        "hwpxfiller.data.factory", ("x",), set(), set(), False, False,
+        composes=("hwpxfiller.data.excel:ExcelDataSource#class",),
+    )
+    assert flagged == "P_REVIEW_REQUIRED"
+    assert "조립" in reason
+
+
 def test_presentation_helper_with_effect_is_flagged() -> None:
     clean, _ = A._assign_authority(
         "hwpxfiller.webapp.screens", ("x",), set(), set(), False, False
@@ -169,6 +197,10 @@ def test_verdict_reflects_blockers() -> None:
     assert A._verdict([], ordered, 0, 0)[0] == "ORDERED_WAVES_READY"
     # SCC(거대 원자 cluster) 존재 → BLOCKED
     assert A._verdict([], clean, sccs=3, dynamic_open=0)[0] == "BLOCKED"
+    # 미해결 동적 call edge → BLOCKED(정적 그래프 밖 의존 은닉, #532 리뷰)
+    assert A._verdict([], clean, sccs=0, dynamic_open=11)[0] == "BLOCKED"
+    # entry-level oracle 공백(unit 집계가 ENTRY 여도) → BLOCKED(#532 리뷰)
+    assert A._verdict([], clean, 0, 0, oracle_gaps=("cli:foo",))[0] == "BLOCKED"
 
 
 def test_state_and_symbol_module_parsing() -> None:
@@ -195,6 +227,14 @@ def test_committed_ledger_matches_regeneration() -> None:
 def test_anchor_matches_pinned_constants(result: A.SynthesisResult) -> None:
     assert result.base_facts == A.ANCHOR_BASE_FACTS
     assert result.graph_facts == A.ANCHOR_GRAPH_FACTS
+
+
+def test_source_digest_pins_actual_bytes(result: A.SynthesisResult) -> None:
+    """facts_digest 가 못 보는 리터럴 편집을 잡는 바이트 digest 가 서 있다(#532 리뷰)."""
+    assert len(result.source_digest) == 64
+    assert all(c in "0123456789abcdef" for c in result.source_digest)
+    # 재계산이 결정론적이다(같은 소스 → 같은 digest).
+    assert A.synthesize(REPO_ROOT).source_digest == result.source_digest
 
 
 def test_merge_consistency_zero_contradictions(result: A.SynthesisResult) -> None:

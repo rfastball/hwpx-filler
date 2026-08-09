@@ -41,6 +41,7 @@
 | `factgraph/effect_graph_02c.toml` | persistence·external effect·host 접촉의 효과/순수 분류·지역 import 폐쇄·이중 조립 전수 원장(P1-02C, #515) |
 | `factgraph/transport_graph_02d.toml` | transport endpoint·snapshot 필드·push/event 채널의 producer·소비자 증거 전수 원장(P1-02D, #516) |
 | `factgraph/use_case_graph_02e.toml` | GUI·CLI logical entry 전수·use-case 분류·test responsibility·characterization gap 원장(P1-02E, #517) |
+| `factgraph/authority_ledger_03.toml` | 02A~E 여섯 shard 를 content-anchor merge 로 합성한 목표 권위·migration unit·선후 DAG·최종 판정(P1-03, #518) |
 
 ## 결정 기록
 

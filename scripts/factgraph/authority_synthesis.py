@@ -118,6 +118,7 @@ class ModuleAuthority:
     reason: str
     symbol_count: int
     effect_classes: "tuple[str, ...]"
+    composes: "tuple[str, ...]"  # 조립하는 effect-bearing 클래스 id(직접 호출 아닌 효과 증거)
     transport: bool
     stateful_tx: bool
     shared_state: bool
@@ -147,6 +148,7 @@ class MigrationUnit:
 @dataclass
 class SynthesisResult:
     baseline_sha: str
+    source_digest: str
     base_facts: str
     graph_facts: str
     effect_facts: str
@@ -313,6 +315,21 @@ def _effect_classes_by_module(effect_facts) -> "dict[str, set[str]]":
     return out
 
 
+def _composes_by_module(composes_facts) -> "dict[str, tuple[str, ...]]":
+    """모듈 → 그 모듈이 조립(construct)하는 effect-bearing 클래스 id 목록.
+
+    02C 는 효과 보유 클래스의 조립 자리만 ``composes`` 로 잇는다(순수·오류 클래스 제외).
+    직접 외부 호출이 없어도 adapter 를 생성하는 모듈은 composition root 다 — 효과 증거를
+    직접 호출로만 좁히면 그 root 를 effect-free 로 오판한다(#532 리뷰).
+    """
+    out: "dict[str, set[str]]" = {}
+    for fact in composes_facts:
+        if fact.rel != "composes":
+            continue
+        out.setdefault(_module_of_symbol(fact.src), set()).add(fact.dst)
+    return {m: tuple(sorted(v)) for m, v in out.items()}
+
+
 def _state_by_module(state_toml: dict) -> "dict[str, dict[str, set[str]]]":
     """모듈 → {writes, mutates, reads} state 좌표 집합."""
     out: "dict[str, dict[str, set[str]]]" = {}
@@ -442,6 +459,7 @@ def _assign_authority(
     transport_kinds: "set[str]",
     stateful_tx: bool,
     shared_state: bool,
+    composes: "tuple[str, ...]" = (),
 ) -> "tuple[str, str]":
     """한 모듈의 목표 권위와 사유. 애매하거나 헌장을 위반하면 P_REVIEW 로 시끄럽게 남긴다."""
     prior = _package_prior(module)
@@ -451,6 +469,7 @@ def _assign_authority(
     has_host = "HOST" in effect_authorities
     has_adapter = "EXTERNAL_ADAPTER" in effect_authorities
     has_ambient = "AMBIENT" in effect_authorities
+    has_effect = has_host or has_adapter or has_ambient
     ambient = sorted(
         c for c in effect_classes if EFFECT_CLASS_AUTHORITY.get(c) == "AMBIENT"
     )
@@ -459,11 +478,19 @@ def _assign_authority(
     if prior == "HOST":
         return "HOST", f"host 외곽 링 진입/조립(효과 {sorted(effect_classes) or '없음'})"
 
-    # ② transport surface 는 표현 링이다 — 업무 코어에 있으면 안 된다.
+    # ② transport surface 는 표현 링이다 — 업무 코어에 있으면 안 된다. transport 소유가
+    #    concrete/ambient 효과 증거를 조용히 억제하지 않는다(#532 리뷰): 효과를 겸하면
+    #    표현/adapter 분리 결정이 필요하므로 P_REVIEW.
     if transport_kinds:
         if module == "hwpxfiller.webapp.app":
             return "HOST", "transport facade(host_method·창 조립)를 공개한다"
         if prior == "FRONTEND_ADAPTER":
+            if has_effect:
+                return (
+                    "P_REVIEW_REQUIRED",
+                    f"표현 controller 가 transport 와 concrete/ambient 효과"
+                    f"({sorted(effect_classes)})를 겸한다 — external adapter 분리 결정 필요",
+                )
             return "FRONTEND_ADAPTER", f"transport surface({sorted(transport_kinds)})를 소유한다"
         return (
             "P_REVIEW_REQUIRED",
@@ -479,7 +506,7 @@ def _assign_authority(
 
     # ④ 표현 링(FRONTEND_ADAPTER prior)의 비-transport 헬퍼.
     if prior == "FRONTEND_ADAPTER":
-        if has_host or has_adapter or has_ambient:
+        if has_effect:
             return (
                 "P_REVIEW_REQUIRED",
                 f"표현 링 모듈이 concrete/ambient 효과({sorted(effect_classes)})를 직접 만진다 "
@@ -500,10 +527,18 @@ def _assign_authority(
             f"{prior} prior 가 ambient 효과({ambient})를 직접 만진다 "
             "— clock/env/entropy port 주입 결정 필요",
         )
+    # composes: 직접 외부 호출이 없어도 effect-bearing 클래스를 생성하면 adapter
+    #           composition root 다 — 업무 코어에 두면 리뷰 없이 adapter 를 심는다(#532 리뷰).
+    if composes:
+        return (
+            "P_REVIEW_REQUIRED",
+            f"{prior} prior 가 effect-bearing 클래스({len(composes)}개)를 조립한다 "
+            "— adapter composition root, 소유 결정 필요",
+        )
 
-    # ⑥ 효과 없는 업무 코어 — prior 를 그대로 목표 권위로 확정.
+    # ⑥ 효과·조립 없는 업무 코어 — prior 를 그대로 목표 권위로 확정.
     if prior in ("DOMAIN", "APPLICATION"):
-        return prior, f"효과·transport 없음, {prior} prior 확정"
+        return prior, f"효과·transport·조립 없음, {prior} prior 확정"
 
     # ⑦ prior 자체가 미상(batch/naming/web_artifact/root).
     return "P_REVIEW_REQUIRED", f"패키지 prior 미상({module}) — 소유 결정 필요"
@@ -647,20 +682,28 @@ def _verdict(
     units: "list[MigrationUnit]",
     sccs: int,
     dynamic_open: int,
+    oracle_gaps: "tuple[str, ...]" = (),
 ) -> "tuple[str, list[str]]":
     reasons: "list[str]" = []
     if contradictions:
         reasons.append(f"원장 간 미해결 contradiction {len(contradictions)}건")
         return "BLOCKED", reasons
     unknown = [u.unit_id for u in units if u.target == "P_REVIEW_REQUIRED"]
-    oracle_gap = [u.unit_id for u in units if u.oracle_status == "NONE"]
+    unit_oracle_gap = [u.unit_id for u in units if u.oracle_status == "NONE"]
     if unknown:
         reasons.append(f"소유 불명 unit {len(unknown)}건(P_REVIEW_REQUIRED)")
-    if oracle_gap:
-        reasons.append(f"oracle 공백 unit {len(oracle_gap)}건")
+    if unit_oracle_gap:
+        reasons.append(f"oracle 공백 unit {len(unit_oracle_gap)}건")
+    # entry-level oracle 공백은 unit 집계로 뭉개지면 안 된다(#532 리뷰): 한 모듈의 한 진입만
+    # 특성화돼도 unit 은 ENTRY 로 서지만, 미특성화 진입은 여전히 안전 이관을 막는다.
+    if oracle_gaps:
+        reasons.append(f"entry-level oracle 공백 {len(oracle_gaps)}건(특성화 미보유 진입)")
+    # 미해결 동적 call edge 는 정적 그래프가 못 본 이관 의존을 숨긴다 — ready 로 넘기지 않는다.
+    if dynamic_open:
+        reasons.append(f"미해결 동적 call edge {dynamic_open}건(정적 그래프 밖 의존 은닉)")
     if sccs:
         reasons.append(f"거대 원자 cluster(SCC) {sccs}건")
-    if unknown or oracle_gap or sccs:
+    if unknown or unit_oracle_gap or oracle_gaps or dynamic_open or sccs:
         return "BLOCKED", reasons
     seam_units = [u for u in units if u.predecessors]
     if seam_units:
@@ -693,6 +736,7 @@ def synthesize(repo_root: Path) -> SynthesisResult:
 
     inv_modules = _inventory_modules(shards["01"])
     effect_by_module = _effect_classes_by_module(effect.effect_facts)
+    composes_by_module = _composes_by_module(effect.composes_facts)
     state_by_module = _state_by_module(shards["02b"])
     tx_modules = _tx_modules(shards["02b"])
     seams = _shared_state_seams(shards["02b"])
@@ -712,8 +756,9 @@ def synthesize(repo_root: Path) -> SynthesisResult:
         transport_kinds = transport_by_module.get(module, set())
         stateful_tx = module in tx_modules
         shared = module in shared_modules
+        composes = composes_by_module.get(module, ())
         target, reason = _assign_authority(
-            module, symbols, effect_classes, transport_kinds, stateful_tx, shared
+            module, symbols, effect_classes, transport_kinds, stateful_tx, shared, composes
         )
         ma = ModuleAuthority(
             module=module,
@@ -722,6 +767,7 @@ def synthesize(repo_root: Path) -> SynthesisResult:
             reason=reason,
             symbol_count=len(symbols),
             effect_classes=tuple(sorted(effect_classes)),
+            composes=composes,
             transport=bool(transport_kinds),
             stateful_tx=stateful_tx,
             shared_state=shared,
@@ -742,10 +788,13 @@ def synthesize(repo_root: Path) -> SynthesisResult:
 
     sccs = int(shards["02a"].get("counts", {}).get("sccs", 0))
     dynamic_open = int(shards["02a"].get("counts", {}).get("dynamic_open", 0))
-    verdict, reasons = _verdict(contradictions, units, sccs, dynamic_open)
+    verdict, reasons = _verdict(
+        contradictions, units, sccs, dynamic_open, tuple(oracle_gaps)
+    )
 
     return SynthesisResult(
         baseline_sha=_current_sha(repo_root),
+        source_digest=_source_digest(repo_root, static.closure),
         base_facts=live_base,
         graph_facts=live_graph,
         effect_facts=live_effect,
@@ -775,6 +824,22 @@ def _current_sha(repo_root: Path) -> str:
     return out.stdout.strip() or "0" * 40
 
 
+def _source_digest(repo_root: Path, closure) -> str:
+    """production 폐포 파일의 **바이트** 내용 digest.
+
+    ``facts_digest`` 는 심볼·사실 record 를 해시한다 — 순수 계산·리터럴만 바꾼 편집은 사실
+    그래프를 안 움직여 그 digest 가 그대로다(#532 리뷰). 이 digest 는 파일 바이트를 직접
+    해시하므로 그런 편집도 잡는다. 합성이 「어떤 소스를 baseline 으로 분석했는가」의 정직한 핀.
+    """
+    hasher = hashlib.sha256()
+    for mf in sorted(closure.modules, key=lambda m: m.path):
+        hasher.update(mf.path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update((repo_root / mf.path).read_bytes())
+        hasher.update(b"\0")
+    return hasher.hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # 렌더·검사·재생성
 # ---------------------------------------------------------------------------
@@ -800,6 +865,8 @@ def render(repo_root: Path) -> str:
     parts.append(f"base_facts = {_q(result.base_facts)}\n")
     parts.append(f"graph_facts = {_q(result.graph_facts)}\n")
     parts.append(f"effect_facts = {_q(result.effect_facts)}\n")
+    parts.append("# 폐포 파일 바이트 digest — 사실을 안 바꾸는 리터럴 편집도 잡는 baseline 핀.\n")
+    parts.append(f"source_digest = {_q(result.source_digest)}\n")
 
     parts.append("\n[inputs]\n")
     parts.append("# 소비한 원장과 각 원장의 기반-사실 핀(merge 일치 증거).\n")
@@ -855,6 +922,7 @@ def render(repo_root: Path) -> str:
         parts.append(f"prior = {_q(m.prior)}\n")
         parts.append(f"symbols = {m.symbol_count}\n")
         parts.append(f"effect_classes = [{', '.join(_q(c) for c in m.effect_classes)}]\n")
+        parts.append(f"composes = [{', '.join(_q(c) for c in m.composes)}]\n")
         parts.append(f"transport = {str(m.transport).lower()}\n")
         parts.append(f"stateful_tx = {str(m.stateful_tx).lower()}\n")
         parts.append(f"shared_state = {str(m.shared_state).lower()}\n")
@@ -875,6 +943,11 @@ def render(repo_root: Path) -> str:
         parts.append(f"blocking = [{', '.join(_q(b) for b in u.blocking)}]\n")
         parts.append(f"compat_seam = {_q(u.compat_seam)}\n")
         parts.append(f"removal_condition = {_q(u.removal_condition)}\n")
+        # 원자 이관 대상 상태 좌표를 그대로 남긴다 — count 만으로는 같은 크기의 다른 write set 을
+        # 구분 못 하고, P2 가 무엇을 함께 옮겨야 하는지 알 수 없다(#532 리뷰).
+        parts.append("write_set = [\n")
+        parts.extend(f"  {_q(s)},\n" for s in u.write_set)
+        parts.append("]\n")
         parts.append("oracle_entries = [\n")
         parts.extend(f"  {_q(e)},\n" for e in u.oracle_entries)
         parts.append("]\n")
