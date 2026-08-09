@@ -41,8 +41,8 @@ REGEN_COMMAND = "uv run python scripts/gen_authority_ledger_03.py"
 SCHEMA = "authority-synthesis-03/v2"
 
 #: 여섯 shard 공통 기반 사실 앵커(P1-01 폐포). src/ 가 이 값과 다르면 원장이 stale 이다.
-ANCHOR_BASE_FACTS = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-ANCHOR_GRAPH_FACTS = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+ANCHOR_BASE_FACTS = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+ANCHOR_GRAPH_FACTS = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 
 #: 소비하는 원장 경로. 각 원장의 기반-사실 핀 좌표는 _SHARD_ANCHORS 가 안다.
 INVENTORY_LEDGER = "docs/factgraph/python_symbol_inventory.toml"

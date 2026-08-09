@@ -6,27 +6,27 @@ schema = "authority-synthesis-03/v2"
 
 [anchor]
 # 여섯 shard 공통 기반 사실 — 같은 측정 위임의 증거.
-base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+base_facts = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+graph_facts = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 effect_facts = "0a25ad8983b08c9de59cfeeaf363d9b6935970b36530c02a94ea5eb20bcad65f"
 # 폐포 파일 바이트 digest — 사실을 안 바꾸는 리터럴 편집도 잡는 baseline 핀.
-source_digest = "22b9a40ea78498b84be6e09d14b199b0aafdbc427f01541b55f7a296abbf7ebb"
+source_digest = "22e3c5af1ccaff9740be515f9eb67dec0ff06dbf61efb41e73a5d289d624ad1a"
 
 [inputs]
 # 소비한 원장과 각 원장의 기반-사실 핀(merge 일치 증거).
-"02a.base_facts" = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-"02a.graph_facts" = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
-"02b.base_facts" = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-"02b.graph_facts" = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
-"02c.base_facts" = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
+"02a.base_facts" = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+"02a.graph_facts" = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
+"02b.base_facts" = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+"02b.graph_facts" = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
+"02c.base_facts" = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
 "02c.effect_facts" = "0a25ad8983b08c9de59cfeeaf363d9b6935970b36530c02a94ea5eb20bcad65f"
-"02c.graph_facts" = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
-"02d.base_facts" = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-"02e.base_facts" = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-"02e.graph_facts" = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+"02c.graph_facts" = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
+"02d.base_facts" = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+"02e.base_facts" = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+"02e.graph_facts" = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 "03.decisions" = "70edb65c2fb62932337182084a24a866d480f16dda64ae4734909cc880accfec"
 "R.ownership" = "6fc10b8b172bfc64895a641a5c4654189adcb026d0223ee635ae76463e34399e"
-"R.verification" = "d63411c6282d7ff81d06ce35bf23cb1b30eae3b982dda8c52ae75336147bcda8"
+"R.verification" = "9b07e73ec463b8110c90e6bd558c8223dfd5337f0b7d1e74a222b98378390be9"
 
 [counts]
 modules = 85

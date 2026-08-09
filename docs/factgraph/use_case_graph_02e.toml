@@ -5,12 +5,12 @@
 schema = "use-case-graph-02e/v1"
 
 [baseline]
-git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
+git_sha = "5c341aaea127cc8e9edb01f1d120057c156b4744"
 
 # 02A call-axis 입력 핀 — 같은 기반 사실 위의 파생임을 P1-03 이 검증한다.
 [inputs]
-base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+base_facts = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+graph_facts = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 
 [surface]
 cli_modules = ["hwpxfiller.cli"]

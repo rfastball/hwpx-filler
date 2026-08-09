@@ -5,12 +5,12 @@
 schema = "effect-graph-02c/v1"
 
 [baseline]
-git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
+git_sha = "5c341aaea127cc8e9edb01f1d120057c156b4744"
 
 # base/graph 핀은 02A 원장과 같은 값이어야 한다 — 같은 측정 위의 shard.
 [digests]
-base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+base_facts = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+graph_facts = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 effect_facts = "0a25ad8983b08c9de59cfeeaf363d9b6935970b36530c02a94ea5eb20bcad65f"
 
 [counts]

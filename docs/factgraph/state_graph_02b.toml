@@ -5,17 +5,17 @@
 schema = "state-graph-02b/v1"
 
 [baseline]
-git_sha = "a5e1f784f9f0142adf7d04f29023cc805f60f968"
+git_sha = "5c341aaea127cc8e9edb01f1d120057c156b4744"
 
 # 입력 앵커 — 02A 원장의 digest 와 같아야 render 가 선다(4슬라이스 공통 기준).
 [input]
 static_ledger = "docs/factgraph/static_graph_02a.toml"
-base_facts = "340ac8f5be9c2d38d64dd9367740f08a04ede46db14e00cff689a574b255864b"
-graph_facts = "cf0c4aa91443c2c276d12f074e2fc2a56c8cbaa600e0cdc745921f730c2b5969"
+base_facts = "cd2b9da60d0e912c7bacb553652c81ab622c3bb6101c27181ecbf967e1dbbe6e"
+graph_facts = "eff759f3ad0e60504b9bafe3c34cbc3921b2474983534875674e5e118f8cf1a0"
 
 [digests]
-state_facts = "3e562a54c39b038e8b2b32ab24cd5831c36fdbb62af2757377ec07a65ec2f0c5"
-full_graph = "dd604c930ae6bf7538bee34ba1207892bd8c5bc06091519021c754a52620df6e"
+state_facts = "d9476700ec4bcc26d22502afe06531d173f9837185b01ebea077773855758056"
+full_graph = "8a1c37d39990a07c5085dfbb0f66957b3d23fe351088f4c65371bf7462d60031"
 
 [counts]
 modules = 85
