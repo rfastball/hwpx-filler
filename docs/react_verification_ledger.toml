@@ -866,6 +866,7 @@ files = [
   "tests/test_atomic.py",
   "tests/test_audit_test_portfolio.py",
   "tests/test_authoring.py",
+  "tests/test_authority_gate_04.py",
   "tests/test_batch_gate.py",
   "tests/test_cli.py",
   "tests/test_compile_badge.py",

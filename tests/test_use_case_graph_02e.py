@@ -579,8 +579,8 @@ def test_real_packet_baseline_counts_hold(committed_ledger) -> None:
     assert counts["common"] == 6
     assert counts["host_only"] == 149
     assert counts["duplicate"] == 0
-    assert counts["test_files"] == 236  # Python 154 + tests/js/**/*.js 82 (P1-03 게이트 +1)
-    assert committed_ledger["test_axis_counts"]["deterministic"] == 228
+    assert counts["test_files"] == 237  # Python 155 + tests/js/**/*.js 82 (P1-03·04 게이트 +2)
+    assert committed_ledger["test_axis_counts"]["deterministic"] == 229
     assert counts["entries_cli"] + counts["entries_gui"] == counts["entries_total"]
     assert (
         counts["common"] + counts["host_only"] + counts["duplicate"] == counts["entries_total"]
