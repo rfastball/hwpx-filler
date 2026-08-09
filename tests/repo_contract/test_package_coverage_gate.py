@@ -128,6 +128,7 @@ def test_repository_policy_has_audited_packages_only() -> None:
         "hwpxfiller",
         "hwpxfiller.core",
         "hwpxfiller.data",
+        "hwpxfiller.domain",
         "hwpxfiller.gui",
         "hwpxfiller.webapp",
     }
