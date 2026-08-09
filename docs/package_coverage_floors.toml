@@ -32,6 +32,11 @@ path = "src/hwpxfiller/domain"
 line = 96
 branch = 92
 
+[packages."hwpxfiller.external"]
+path = "src/hwpxfiller/external"
+line = 98
+branch = 98
+
 [packages."hwpxfiller.data"]
 path = "src/hwpxfiller/data"
 line = 93
