@@ -5,7 +5,7 @@
 schema = "state-graph-02b/v1"
 
 [baseline]
-git_sha = "5c341aaea127cc8e9edb01f1d120057c156b4744"
+git_sha = "81e02c2f893a5d0b83c7945448792fcf1cd3f234"
 
 # 입력 앵커 — 02A 원장의 digest 와 같아야 render 가 선다(4슬라이스 공통 기준).
 [input]
