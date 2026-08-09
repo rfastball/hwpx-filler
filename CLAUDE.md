@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 이 저장소가 담은 것
 
 파서 `hwpxcore` 위에 제품 `hwpxfiller` 가 서는 저장소다. 의존은 아래로만 흐른다:
-`hwpxfiller → hwpxcore`. 코어에 제품 로직을 두지 않는다(`tests/test_architecture.py` 가 강제).
+`hwpxfiller → hwpxcore`. 코어에 제품 로직을 두지 않는다(`tests/repo_contract/test_architecture.py` 가 강제).
 
 - `hwpxfiller` — 누름틀 HWPX 템플릿 + 엑셀/CSV 데이터로 문서 일괄 생성. 사용자 대면
   제품명은 **문서나르미**, 기술 식별자는 `hwpx-filler`/`hwpxfiller` 계열.
@@ -25,7 +25,7 @@ Windows 전용(pywebview 6.x + WebView2). Python 은 `.python-version` 의 3.13 
 uv python install 3.13
 uv sync --locked --all-extras --group dev --group build   # 최초 1회
 
-.\test.ps1                        # Ruff → Pyright → pytest + coverage (전체 게이트)
+.\test.ps1                        # web build → npm test → Ruff → Pyright → pytest + coverage
 .\test.ps1 tests\test_engine.py -x   # 인자는 그대로 pytest 로 전달
 .\test.ps1 -k library -q
 
@@ -41,10 +41,11 @@ uv sync --locked --all-extras --group dev --group build   # 최초 1회
 `uv sync --locked` 라 선언과 잠금이 다르면 실패한다.
 
 CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `sealed-web` 하나가 프런트를
-만들어 봉인·업로드하고, 소비자는 그것을 내려받아 `build-web.ps1 -Mode VerifyExisting` 으로
-되짚는다 — 그 검증은 `setup-node` **앞에** 서서 빌드 도구 없이 통과한다(순서가 계약이다).
-나머지는 자원 축이 가른다 — `static`
-(Ruff·Pyright) / `pytest-contract`(무표 집합 + 커버리지 하한) / `windows-native` /
+만들어 봉인하고, 같은 설치로 Node 단위 테스트와 sealed artifact 계약까지 마친 뒤 업로드한다.
+실 산출물 소비자는 그것을 내려받아 `build-web.ps1 -Mode VerifyExisting` 으로 되짚는다 — 그
+검증은 `setup-node` **앞에** 서서 빌드 도구 없이 통과한다(순서가 계약이다). 나머지는 자원 축이
+가른다 — `static`(Ruff·Pyright·`tests/repo_contract`) /
+`pytest-contract`(순수 Python 행동 집합 + 커버리지 하한) / `windows-native` /
 `browser-render` / `live-webview2` / `distribution-webview2`. 그 일곱을 명시 열거해 `success`
 만 통과시키는 `quality-gate` 가 브랜치 보호가 겨눌 단 하나의 이름이고, 실주행·패키징 증거는
 `if: always()` 로 실패해도 회수된다. CI 와 `test.ps1` 의 Ruff 는 둘 다 `src tests scripts` 를
@@ -130,25 +131,25 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 
 | 계층 | 파일 | 맡는 것 |
 |---|---|---|
-| 정적 DOM 계약 | `tests/test_web_dom_contract.py` | canonical `frontend/`의 id 유일성·화면 루트·제품 module graph |
+| 저장소 형상 계약 | `tests/repo_contract/` | 계층·공개 경계·legacy 부재·CI/릴리스 형상 |
+| 봉인 산출물 계약 | `tests/artifact_contract/` | sealed web identity·manifest·출하 메타데이터 |
 | 실앱 게이트 | `tests/test_web_selftest_gate.py`, `python -m hwpxfiller.webapp --selftest` | 실 WebView2 부팅·렌더·클릭·브리지 왕복 되읽기 |
 | 실렌더 기하 | `tests/test_web_press_geometry.py`(+`_press_probe.py`) | sealed `build/web/` CSS를 loopback으로 제공한 최소 문서에서 `:active` 유지 중 기준면 이탈. `prefers-reduced-motion` 을 **명시 강제**(Playwright + 설치 Chrome) |
 | 헤드리스 컨트롤러 | `tests/test_webapp_*.py` | 링2 컨트롤러 dispatch·스냅샷 |
 | 링1 | `tests/test_*_state.py` | ViewModel 판정 |
-| 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI·릴리스 형상, coverage 하한 |
-| 패키징·출하 | `test_packaging_contract.py`, `test_build_metadata.py`, `test_legacy_path_zero.py` | spec hidden import 해소, 릴리스 메타데이터↔seal 대조, 폐기 source 경로 저장소 전역 0 |
+| 아키텍처·품질 | `tests/repo_contract/test_architecture.py`, `tests/repo_contract/test_quality_workflow.py`, `tests/repo_contract/test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI·릴리스 형상, coverage 하한 |
+| 패키징·출하 | `tests/repo_contract/test_packaging_contract.py`, `tests/artifact_contract/test_build_metadata.py`, `tests/repo_contract/test_legacy_path_zero.py` | spec hidden import 해소, 릴리스 메타데이터↔seal 대조, 폐기 source 경로 저장소 전역 0 |
 
 이 게이트들은 대체 관계가 아니다 — 구조적 누락은 정적 계약이, 브라우저 런타임에서만 드러나는
 결함은 selftest 가 잡는다. selftest 프로브의 `click` 은 hidden 요소도 통과하므로 가시성 단언을
 따로 걸지 않으면 눈으로 본 것과 다른 결론이 나온다.
 
-**실 창 게이트는 콜드 부팅을 늘리지 않는다**(정책 본문·예산 정본: `tests/_live_gate.py`,
-폐포: `tests/test_live_gate_shape.py`). WebView2 콜드 부팅 하나는 러너에서 플레이크 주사위
-하나다 — 저장소가 이미 아는 결함류이고 패키징 쪽은 `webview_boot_flake` 유한 재시도로
-흡수한다(#477). 그래서 새 실런타임 단언은 **기존 게이트의 창에 얹는 것이 기본**이다:
-되읽기 표현식에 필드를 더하거나 이미 서 있는 창에 단계를 붙인다(`test_web_selftest_gate` 가
-창 둘로 단언 80 개를 뽑는 형태). 굳이 창을 늘려야 하면 폐포 목록을 사유와 함께 고친다 —
-막는 것은 증가가 아니라 **조용한 증가**다. 예산은 파일마다 들지 않고 공용 상수를 받는다:
+**실 창 게이트는 콜드 부팅을 늘리지 않는다.** WebView2 콜드 부팅 하나는 러너에서 플레이크
+주사위 하나다 — 저장소가 이미 아는 결함류이고 패키징 쪽은 `webview_boot_flake` 유한 재시도로
+흡수한다(#477). 그래서 새 실런타임 단언은 기존 session/module fixture의 `selftest_result`에
+필드를 더하거나 이미 서 있는 창에 단계를 붙인다. 완료된 migration의 파일 census를 되살려
+창 수를 간접 관리하지 않는다. 새 창이 불가피하면 해당 fixture와 CI job에서 비용·사유를 함께
+드러낸다. 예산은 파일마다 들지 않고 공용 상수를 받는다:
 예산이 하는 일은 매달림을 유한 시간에 빨강으로 만드는 것이지 느린 러너를 탈락시키는 것이
 아니다(느림으로 난 빨강은 정보가 0 이고 재주행 비용만 남긴다).
 
@@ -170,16 +171,19 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 같은 세 자원이 pytest marker 축이기도 하다 — `live`(실 WebView2) · `native`(실 Win32) ·
 `browser`(설치 Chrome). marker 는 옵트아웃을 대체하지 않고 그 위에 얹혀 **CI 가 잡을 가르는
 선택자**로 산다(무표 집합 = 결정론적 contract suite). 계약은 두 가지다: 게이트 `skipif` 와 축
-marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다. `tests/test_suite_partition.py` 가
-수집 결과로 그것을 세고, `--strict-markers` 라 새 marker 는 `pyproject.toml` 의 `markers` 에
-**먼저 등록**해야 한다.
+marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다. 완료된 수집 메타테스트는
+퇴역했고, CI 의 자원 축·contract 라우팅은 `tests/repo_contract/test_quality_workflow.py` 가
+워크플로 실형상으로 검증한다. `--strict-markers` 라 새 marker 는 `pyproject.toml` 의
+`markers` 에 **먼저 등록**해야 한다.
 
 ## 단일 출처 목록
 
 바꿀 때 원천을 고치고 생성물을 커밋한다 — 생성물을 직접 고치면 드리프트 게이트가 잡는다.
 
 - 디자인 토큰: `src/hwpxfiller/gui/design_tokens.json` → `scripts/gen_design_tokens.py` →
-  `frontend/css/tokens.css`(+ 동결 목업 구간), 게이트 `tests/test_design_tokens.py`.
+  `frontend/css/tokens.css`(+ 동결 목업 구간). 생성 드리프트는
+  `scripts/gen_design_tokens.py --check`, 사용자 안전 대비 하한은
+  `tests/repo_contract/test_contrast_wcag.py`가 각각 확인한다.
 - 레이아웃·컴포넌트 CSS: `frontend/css/`의 ordered product graph. 동결 목업의 인라인 CSS 로
   현재 앱을 판단하지 않는다.
 - 제품 버전: `pyproject.toml` `project.version` 만. PyInstaller·Inno 버전은 빌드 시 생성.

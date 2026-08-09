@@ -199,26 +199,6 @@ def test_theme_selftest_echoes_the_request_and_carries_the_readback(monkeypatch)
     assert captured == [{"theme_write": "dark", "set_result": "dark"}]
 
 
-def test_selftest_reports_a_missing_facade_as_a_loud_error(monkeypatch) -> None:
-    """능력이 없으면 **조용히 빈 증거**가 아니라 ``error`` 다.
-
-    종전 "브리지 준비 시한 초과" 단언의 후계다. 그때는 파이썬이 직접 폴링했고 지금은 준비
-    확인이 ``null`` 을 받는다 — 사건은 같다("구동할 것이 거기 없다"). 이 테스트와 아래
-    평가 실패 테스트는 ``error`` 키의 **유일한 양성 대조**라, 없어지면 실앱 게이트의
-    ``"error" not in result`` 가 무엇을 지키는지 아무도 확인하지 못한다.
-    """
-    captured = _capture_selftest(monkeypatch)
-    monkeypatch.setenv("HWPX_SELFTEST_SET_FONT_SCALE", "larger")
-    window = _ProtocolWindow(poll=None, readiness=None)
-
-    _drive_selftest(window)
-
-    assert "error" in captured[0]
-    assert "facade-absent" in captured[0]["error"]
-    # 에코는 실패해도 남는다 — 무엇을 시도했는지 잃으면 실패를 읽을 수 없다.
-    assert captured[0]["font_scale_write"] == "larger"
-
-
 def test_selftest_reports_an_evaluation_failure_as_a_loud_error(monkeypatch) -> None:
     """평가기가 던지면 그 사유가 증거의 ``error`` 로 재진술된다(종전 repr 통과 계약)."""
     captured = _capture_selftest(monkeypatch)

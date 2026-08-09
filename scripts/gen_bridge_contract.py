@@ -10,7 +10,7 @@
 - ``frontend/src/product_api.js`` JS snake 오류 어휘 6 (**독립 판독** — HOST_OPS 선례)
 
 생성물 ``frontend/src/contract/contract.gen.ts`` 는 커밋되는 소스이고 손으로 고치지 않는다
-(드리프트 게이트 ``tests/test_bridge_contract.py`` 가 재생성 바이트 비교 + 생성기와 코드를
+(드리프트 게이트 ``tests/repo_contract/test_bridge_contract.py`` 가 재생성 바이트 비교 + 생성기와 코드를
 공유하지 않는 독립 내용 오러클로 지킨다 — 패킷 rev3 §4.1).
 
     python scripts/gen_bridge_contract.py           # 재생성
@@ -169,7 +169,7 @@ def render_contract(
         " *",
         " * 정본: webapp/action_registry.py · webapp/product_api.py · webapp/app.py(WebFrontend)",
         " * · frontend/src/product_api.js(PRODUCT_ERROR_CODES). 드리프트 게이트:",
-        " * tests/test_bridge_contract.py (재생성 바이트 비교 + 생성기 비경유 독립 오러클).",
+        " * tests/repo_contract/test_bridge_contract.py (재생성 바이트 비교 + 생성기 비경유 독립 오러클).",
         " *",
         " * v1 계약의 payload 값 타입은 **키 집합**이다 — 값은 도메인 컨트롤러 소유라 unknown",
         " * 이 정직한 번역이고, 더 좁히면 그게 조용한 추측이다(action_registry.py:16). */",

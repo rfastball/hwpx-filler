@@ -197,7 +197,7 @@ function jsTemplateIds(root, patterns, options) {
  *
  * 스코프 = Program 최상위 ∪ **export 된 최상위 함수**(= 구성 1회 팩토리)의 body 최상위.
  * 구조분해는 바인딩 이름을 전부 편다. `const` 는 세지 않는다 — 가변성이 병이라는 기존 판단을
- * 승계한다(`tests/test_web_dom_contract.py` 의 예산 계약과 같은 전제).
+ * 승계한다(완료된 범용 DOM census가 쓰던 가변 상태 예산과 같은 전제).
  *
  * 사각: 「비-export 최상위 함수」를 지역으로 보는 판단. 그 함수가 사실 1회 호출 팩토리면 놓친다.
  * `exported` 조건을 뒤집으면 그 사각의 **오늘 크기**가 나온다 — 그것이 `js_nonexported_fn_state`.

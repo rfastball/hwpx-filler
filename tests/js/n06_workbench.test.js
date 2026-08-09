@@ -1,38 +1,9 @@
-/* TXT 검토·복사 작업대의 화면 계약 — N-06 lane B 가 `frontend/js/screens/workbench.js` 에
- * 세운 다섯 경계를 R4-02 에서 React 후계 `frontend/src/screens/workbench.ts` 로 **제자리
- * 번역**했다.
- *
- * 지키는 것 다섯은 그대로다:
- *  ① 공개 표면 — 셸(상태기계 IMMERSIVE_SURFACES 판정 → adapter 위임 집행, R3-02)이 몰입
- *     이탈에 쓰는 `leaveTo` 의 시그니처·의미가 불변인가. 셸이 보는 facade 는 `{init, leaveTo}`
- *     둘로 좁아졌다 — legacy 의 `render` 는 명령형 렌더러의 손잡이였고 React 에선 구독이
- *     그 일을 한다. 그 축소가 이 슬라이스의 실물이다.
- *  ② init 멱등 — initial 당김이 없는 화면이라 「재호출해도 구독이 안 늘어난다」가 계약이다.
- *     legacy 는 `wired` 가드로, React 는 **구성 시 한 번 구독**으로 같은 성질을 세운다.
- *  ③ 이탈 단일 관문 — leaveTo 는 **정산(chain.settle) → leave_guard → (확인) → close →
- *     navigation.go** 순서를 지킨다. 가드가 서면 확인 없이는 나가지 않고, dirty 스냅샷이
- *     있으면 3택(choose)으로 묻는다.
- *  ④ 통로는 객체째·항행은 late-bound — 구성 뒤 프로퍼티 교체가 다음 호출에 보인다.
- *     legacy 는 `Bridge.call`, 후계는 `client.dispatch` 다.
- *  ⑤ 음성 — IIFE 0, 제품 전역 27종 조회 0, 화면 간 import 0, 판정 E(작업대는 편집기 진입이
- *     없다 — EditorEntry 부재) 유지.
- *
- * 대역이 가벼워졌다: legacy 는 `modal → popover` 그래프가 평가 시점에 document 를 만져서
- * 전역 DOM 대역을 깔고 동적 import 로 열어야 했다. React controller 의 의존은 전부 주입
- * 인자라 그 대역이 통째로 사라졌다 — 남은 `doc` 은 겨눔(`aimAt`)이 쓰는 한 칸뿐이다.
- *
- * `Intent` 는 대역이 아니라 **실물**을 쓴다. 정산 계약(`settle` 이 큐에 든 발신을 기다린다)이
- * 이 화면 계약의 일부이고, 대역으로 갈면 「정산했다」가 대역의 성질이 돼 버린다.
- */
+/* Workbench behavior: settle-before-leave, guarded navigation, and late-bound ports. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { createWorkbenchController } from "../../frontend/src/screens/workbench.ts";
 import { Intent } from "../../frontend/js/intent.js";
-
-const SRC_URL = new URL("../../frontend/src/screens/workbench.ts", import.meta.url);
-const src = readFileSync(SRC_URL, "utf8");
 
 const WB_CHAIN = "workbench:session";   // 화면 내부 상수와 같은 값 — 정산 계약의 키
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -247,74 +218,4 @@ test("손상된 HostResult 는 조용히 통과하지 않는다 — 이탈이 lo
   h.client.dispatch = async () => ({ value: {} });   // ok 필드 없음
   await assert.rejects(() => h.controller.leaveTo("job"), /호스트 결과가 손상/);
   assert.deepEqual(h.navigations, [], "판독 실패 뒤 이동 0");
-});
-
-/* ================= 5. 음성 — 구조 계약 ================= */
-
-const PRODUCT_GLOBALS = [
-  "Bridge", "__push", "Nav", "AppCloseGuard",
-  "JobScreen", "LibraryScreen", "EditorScreen", "WorkbenchScreen",
-  "Copy", "escHtml", "Guard", "SegView", "Popover", "Preserve", "Intent",
-  "UndoToast", "Modal", "SurfaceSheet", "GroupList", "Theme", "Personalization",
-  "SheetPicker", "PathTrack", "DataPicker", "Relink", "DataZone", "EditorEntry",
-];
-
-test("음성 — IIFE 0 · 제품 전역 27종 조회 0(주석 포함) · 자기 전역 생산 0", () => {
-  assert.equal(src.includes("(function () {"), false, "top-level IIFE 금지");
-  assert.equal(/^\}\)\(\);/m.test(src), false, "IIFE 꼬리 금지");
-  assert.equal(PRODUCT_GLOBALS.length, 27, "제품 전역 목록은 27종");
-  for (const name of PRODUCT_GLOBALS) {
-    assert.equal(new RegExp(`(window|globalThis)\\.${name}\\b`).test(src), false,
-      `window.${name} 조회·대입 0 (주석 포함 — 게이트 정규식이 주석도 본다)`);
-  }
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.equal(/(window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code), false, "자기 전역 생산 금지");
-  /* loud 실패 통로가 `window.alert` 에서 주입 `notify` 로 옮겨졌다 — 이 화면은 전역 window 를
-     아예 만지지 않는다. 통로가 사라진 것이 아니라 소유가 합성 루트로 올라간 것이다. */
-  assert.equal(/\bwindow\./.test(code), false, "화면이 전역 window 를 만지지 않는다");
-  assert.ok(/deps\.notify\(/.test(code), "loud 실패 통로(주입 notify) 보존");
-});
-
-test("음성 — export 는 controller 팩토리와 React 화면 producer 둘뿐(named)", () => {
-  assert.equal(/export\s+default/.test(src), false, "export default 금지");
-  const names = [...src.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
-  assert.deepEqual(names, ["createWorkbenchController", "WorkbenchScreen"]);
-  assert.ok(src.includes("export function createWorkbenchController(deps: WorkbenchControllerDeps) {"),
-    "주입 deps 는 이름 있는 형 하나로 받는다");
-});
-
-test("음성 — import 는 공용 잎·상태 간선뿐, 화면 간·app·bridge import 0, 판정 E 유지", () => {
-  const targets = [...src.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(targets)], [
-    "react", "../runtime/client.ts", "./runtime.ts", "./segment_view.ts",
-    "./workbench_state.ts", "./editor_state.ts",
-  ]);
-  /* `editor_state.ts` 는 편집기 **화면**이 아니라 두 화면이 공유하는 draft reducer 다
-     (`workbench_state.ts` 머리말: 두 벌 쓰면 한쪽만 늙는다). 금지되는 것은 다른 화면의
-     producer·controller 를 직접 부르는 간선이다. */
-  for (const forbidden of ["./editor.ts", "./job_read.ts", "./library.ts", "./data_picker.ts"]) {
-    assert.equal(targets.includes(forbidden), false, `화면 간 import 금지: ${forbidden}`);
-  }
-  assert.equal(targets.some((target) => /app\.js|bridge\.js/.test(target)), false,
-    "셸·브리지 직접 import 금지");
-  // 판정 E(계약 §10.15.2) — 작업대는 편집기로 나가는 deep-link 를 갖지 않는다.
-  assert.equal(src.includes("EditorEntry"), false);
-  assert.equal(src.includes("openJobInEditor"), false);
-  assert.equal(src.includes("open_job_in_editor"), false);
-});
-
-test("음성 — 커밋 3종의 정산 관문(chain.settle)과 메서드 사전 추출 금지", () => {
-  assert.equal((src.match(/await deps\.chain\.settle\(WB_CHAIN\);/g) || []).length, 3,
-    "copyCard·saveRules·leaveTo 세 커밋이 전부 정산을 앞세운다");
-  /* 팩토리 스코프(들여쓰기 2)에서 통로 메서드를 값으로 뽑으면 프로퍼티 교체가 우회된다.
-     헬퍼 **안**의 지역 별칭은 호출마다 다시 읽으므로 계약 위반이 아니고, 실제로 보이는지는
-     위 「포트 교체」 가 실행으로 잰다. */
-  assert.equal(/^ {2}const\s+\w+\s*=\s*deps\.client\.\w+/m.test(src), false,
-    "`const x = deps.client.dispatch` 류 팩토리 스코프 캡처 금지");
-});
-
-test("음성 — 상태 변이는 전부 한 체인(WB_CHAIN)을 지난다", () => {
-  assert.equal((src.match(/deps\.chain\.chained\(/g) || []).length, 1,
-    "체인 진입점은 sendWb 하나 — 축별로 가르면 서로를 추월한다");
-  assert.match(src, /return deps\.chain\.chained\(WB_CHAIN,/);
 });

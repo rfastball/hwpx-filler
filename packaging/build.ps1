@@ -621,8 +621,8 @@ foreach ($key in $plan) {
                 )
             }
             # React 실런타임 마커(R2-04 · #408) — 동결 exe 오프라인 국면에서 React 가 실제로
-            # 커밋했고 store 신호가 서 있다는 형상 단언. 값의 크기(0/양수)는 4국면 live
-            # 게이트 소유라 여기서 겸하지 않는다.
+            # 커밋했고 store 신호가 서 있다는 형상 단언. 값의 크기(0/양수)는 module selftest
+            # result 소유라 여기서 겸하지 않는다.
             $reactRuntime = $evidence.react_runtime
             if ($null -eq $reactRuntime) {
                 throw 'packaged selftest 에 react_runtime 증거가 없습니다.'

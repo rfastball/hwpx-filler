@@ -47,7 +47,7 @@ def _refuse_identity_drift(actual: dict[str, object], expected_path: Path) -> No
 
     반대로 **잡지 못하는 것**도 적어 둔다: Vite 빌드는 같은 commit 에서 바이트 재현되므로,
     소비자가 내려받는 대신 자기가 다시 만들어도 같은 값이 나와 여기서는 통과한다. 그 축은
-    수치가 아니라 구조가 닫는다 — 워크플로 계약(`tests/test_quality_workflow.py`)이 소비자
+    수치가 아니라 구조가 닫는다 — 워크플로 계약(`tests/repo_contract/test_quality_workflow.py`)이 소비자
     job 에 빌드 흔적이 없음을 센다.
     """
     # `utf-8-sig` — 이 파일은 PowerShell 손을 거쳐 올 수 있고 PS 5.1 의 `Set-Content -Encoding

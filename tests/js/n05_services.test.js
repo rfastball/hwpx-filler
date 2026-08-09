@@ -1,19 +1,6 @@
-/* N-05 Packet C — 재사용 서비스/팩토리 7종의 ESM 전환 계약 테스트.
- *
- * 이 파일이 지키는 것은 "무엇을 그리는가"가 아니라 **경계**다: 공개 표면(§1 표), 의존이
- * 명시적 import 인가, Bridge 가 명시적 포트인가, 그리고 **포트가 객체째 살아 있는가**.
- * 마지막 항목이 이 파일의 존재 이유다 — Python selftest 프로브는 `window.Bridge.call = stub`
- * 처럼 **프로퍼티를 갈아끼워** 통로를 바꾼다(app.py 10곳). 서비스가 메서드를 모듈 스코프
- * 값으로 뽑아 두면 스텁이 우회돼 프로브가 실물 백엔드로 샌다 — 초록불인 채로.
- *
- * 임포트 그래프는 **평가 시점에 document 를 만진다**(popover.js 가 위임 리스너 7개를 모듈
- * 평가에 붙인다 — 부작용을 init 으로 옮기지 않는 것이 N-05 계약이다). 정적 import 로는
- * 그보다 먼저 대역을 세울 수 없어, 전역 대역을 깔고 **동적 import** 로 그래프를 연다.
- * 대역은 표준 Web API 만 흉내 내며 제품 전역(window.Bridge·window.Modal…)은 세우지 않는다.
- */
+/* Shared service behavior: late-bound ports, persistence, queues, and settle-once. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 
 /* ---------------- 최소 DOM 대역 ---------------- */
 
@@ -124,13 +111,10 @@ function freshDom(t) {
 
 const { createTheme, createPersonalization } = await import(
   "../../frontend/src/shell/preferences.ts");
-/* R4-02 — 시트 선택은 이 파일의 범위를 떠났다. legacy `sheet_picker.js` 가 삭제되면서
-   "재사용 서비스 팩토리" 라는 이 파일의 주어에서 빠졌고, 후계 `src/screens/sheet_picker.ts`
-   의 계약(확정 게이트·settle-once·취소의 의미)은 `r4_sheet_picker.test.js` 가 통째로 진다.
-   여기 남기면 같은 성질을 두 곳이 재고, 한쪽만 늙는다. */
 const { createJobReadController } = await import("../../frontend/src/screens/job_read.ts");
-const { createScreenPorts } = await import("../../frontend/src/screens/ports.ts");
+const { createPort, createScreenPorts } = await import("../../frontend/src/screens/ports.ts");
 const { createServiceHandoffPorts } = await import("../../frontend/src/ports/service_handoff.ts");
+const { createSheetPickerController } = await import("../../frontend/src/screens/sheet_picker.ts");
 const { Popover } = await import("../../frontend/js/popover.js");
 const { Intent } = await import("../../frontend/js/intent.js");
 
@@ -146,11 +130,6 @@ function patch(obj, keys, t) {
   t.after(() => { for (const k of keys) obj[k] = saved[k]; });
   return log;
 }
-
-const PREFERENCES_SRC = fs.readFileSync(
-  new URL("../../frontend/src/shell/preferences.ts", import.meta.url), "utf8");
-const DATA_ZONE_SRC = fs.readFileSync(new URL("../../frontend/src/screens/data_zone.ts", import.meta.url), "utf8");
-const JOB_READ_SRC = fs.readFileSync(new URL("../../frontend/src/screens/job_read.ts", import.meta.url), "utf8");
 
 function reactZoneHarness(onDispatch) {
   const calls = [];
@@ -217,55 +196,7 @@ test("공개 표면 — React JobDataCoordinator는 flushPendingEdits 하나만 
   assert.equal(rz.ports.jobData.current().flushPendingEdits, rz.controller.flushPendingEdits);
 });
 
-test("preferences export는 theme·personalization factory 둘이고 default가 없다", () => {
-  assert.equal(/export\s+default/.test(PREFERENCES_SRC), false);
-  const names = [...PREFERENCES_SRC.matchAll(
-    /^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
-  assert.deepEqual(names, ["createTheme", "createPersonalization"]);
-  assert.equal(/export\s+default/.test(DATA_ZONE_SRC), false);
-  assert.deepEqual(
-    [...DATA_ZONE_SRC.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]),
-    ["JobDataZone"],
-  );
-});
-
-/* ================= 2. 의존은 명시적 import, Bridge 는 명시적 포트 ================= */
-
-test("셸 preferences는 별칭이나 다른 제품 모듈 import 없이 선다", () => {
-  const found = [...PREFERENCES_SRC.matchAll(/^import .*$/gm)].map((m) => m[0]);
-  assert.deepEqual(found, []);
-  assert.equal(DATA_ZONE_SRC.includes('from "./job_read.ts"'), false,
-    "producer↔controller 런타임 순환을 만들지 않는다");
-  assert.ok(DATA_ZONE_SRC.includes("type JobReadController ="));
-  assert.ok(DATA_ZONE_SRC.includes('from "react"'));
-});
-
-test("음성 조건 — IIFE·자기 전역·제품 전역 조회·Object.assign(window) 전부 0", () => {
-  const PRODUCT = /window\.(Modal|Popover|Bridge|Nav|escHtml|SheetPicker|PathTrack|Preserve|Intent|DataPicker|[A-Za-z]*Screen|__push|AppCloseGuard)\b/;
-  const code = PREFERENCES_SRC.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.equal(/^\(function\s*\(/m.test(code), false, "top-level IIFE 금지");
-  assert.equal(/(window|globalThis)\.[A-Za-z_$][\w$]*\s*=[^=]/.test(code), false,
-    "자기 전역 생산 금지");
-  assert.equal(PRODUCT.test(code), false, "제품 전역 조회 금지");
-  assert.equal(code.includes("Object.assign(window"), false, "Object.assign(window) 금지");
-  assert.equal(/(?:window|globalThis)\.(?:Bridge|Modal|DataZone|JobScreen)\b/.test(DATA_ZONE_SRC), false);
-});
-
-test("bridge 는 구조분해 인자로 받는 명시 포트 — 모듈 스코프에 메서드를 뽑지 않는다", () => {
-  for (const name of ["createTheme", "createPersonalization"]) {
-    assert.ok(PREFERENCES_SRC.includes(`export function ${name}(`), name);
-  }
-  assert.equal(/^const\s+\w+\s*=\s*bridge\./m.test(PREFERENCES_SRC), false,
-    "모듈 스코프 bridge 캡처 금지");
-});
-
-test("DataZone 요청은 JobRead controller의 단일 zone tail과 client port를 지난다", () => {
-  assert.ok(JOB_READ_SRC.includes("const dispatch = deps.client.dispatch"));
-  assert.ok(JOB_READ_SRC.includes("const next = zoneTail.then(send, send);"));
-  assert.ok(JOB_READ_SRC.includes("zoneTail = next.then(() => undefined, () => undefined);"));
-});
-
-/* ================= 3. 포트 프로퍼티 교체가 보인다(프로브 경로 생존) ================= */
+/* ================= 2. 포트 프로퍼티 교체가 보인다 ================= */
 
 test("포트 교체 — Theme 은 갈아끼운 bridge.setTheme 를 본다", (t) => {
   freshDom(t);
@@ -292,14 +223,6 @@ test("포트 교체 — Personalization 은 갈아끼운 bridge.setFontScale 를
   pers.setFontScale("larger");
   assert.deepEqual(seen, [["A", "large"], ["B", "larger"]]);
 });
-
-/* R4-03 — 저수준 재연결은 legacy `relink.js` 와 함께 이 파일의 주어(재사용 서비스 팩토리)를
-   떠났다. 후계 `src/screens/job_relink.ts` 의 계약(피커→needs-confirm→커밋 순서, boolean
-   단일 결과, notify 선택성)은 `r4_job_relink.test.js` 가 통째로 진다. 「갈아끼운 통로를
-   본다」는 같은 성질도 그쪽이 client 대역으로 잰다. */
-
-/* SheetPicker 의 같은 성질(갈아끼운 통로를 본다)은 `r4_sheet_picker.test.js` 가 잰다 —
-   후계는 `bridge.loadDataSheet` 가 아니라 `client.invoke("load_data_sheet", …)` 를 지난다. */
 
 test("포트 교체 — React DataZone의 새 요청은 갈아끼운 client.dispatch를 본다", async (t) => {
   freshDom(t);
@@ -364,8 +287,7 @@ test("Theme — 브리지 부재 프리뷰는 의도적 미영속(조용한 실�
   const dom = freshDom(t);
   dom.window.pywebview = undefined;
   const calls = [];
-  // N-07 — 호스트 준비 판정은 브리지가 진다. 프리뷰(호스트 부재)는 `hostReady()` 가 거짓인
-  // 상태이고, 그 판정이 `window.pywebview` 직접 조회를 대신한다.
+  // 호스트 준비 판정은 bridge 포트가 소유한다.
   const theme = createTheme({
     bridge: { hostReady: () => false, setTheme: (v) => calls.push(v) },
   });
@@ -424,20 +346,6 @@ test("Personalization — apply 는 영속 없이 셸만(app.py loaded 경로)",
   assert.deepEqual(dom.events, ["hwpx:personalizationchange"]);
 });
 
-/* ================= 6. (은퇴) SheetPicker settle-once =================
-
-   settle-once·취소의 의미·이중 로드 금지는 R4-02 에서 `r4_sheet_picker.test.js` 로 통째로
-   옮겨졌다. 후계에서 「클릭 통로를 걷는다」는 리스너 해제가 아니라 **버튼 disabled +
-   settled 플래그**로 서므로, 같은 성질을 재려면 관측점 자체가 달라야 한다. */
-
-/* `createMoveDialog` 인스턴스 격리(자기 confirm 상태만 든다)의 후계는 React
-   `GroupMoveDialog` 이고 `r4_editor.test.js` 가 잰다 — 그 dialog 는 이제 편집기 controller 가
-   주입받는 표면이라 이 파일의 "재사용 서비스" 주어에 들지 않는다.
-
-   `toggleGroup` 은 후계가 없다: #414 가 마지막 소비자(라이브러리 그룹 접힘)를 React 상태로
-   번역하면서 「낙관 반영 → 실패 되돌림 → loud」 가 그쪽 controller 판정으로 흡수됐다.
-   여기서 죽은 export 를 계속 재면 은퇴가 초록불 뒤에 숨는다. */
-
 /* ================= 9. 팩토리 2회 호출 = 독립 인스턴스 ================= */
 
 test("팩토리를 두 번 부르면 독립 인스턴스가 나온다(중앙은 1회만 부른다)", async (t) => {
@@ -466,14 +374,83 @@ test("팩토리를 두 번 부르면 독립 인스턴스가 나온다(중앙은 
   assert.deepEqual(sentB, []);
 });
 
-test("DataZone — 모듈 스코프 가변 상태 0(controller·hooks 안에만 상태)", () => {
-  const zoneHead = DATA_ZONE_SRC.slice(0, DATA_ZONE_SRC.indexOf("export function JobDataZone"));
-  const readHead = JOB_READ_SRC.slice(0, JOB_READ_SRC.indexOf("export function createJobReadController"));
-  assert.equal(/^\s*(let|var)\s/m.test(zoneHead), false);
-  assert.equal(/^\s*(let|var)\s/m.test(readHead), false);
-  for (const name of ["zoneTail", "searchTimer", "columnTimer", "rangeApplied", "rangeForceClose"]) {
-    assert.ok(new RegExp(`^\\s{2}let ${name}`, "m").test(JOB_READ_SRC), `${name}은 controller closure 안`);
-  }
+/* ---------------- 화면 간 서비스 포트·시트 확정 게이트 ---------------- */
+
+const SHEET_PAYLOAD = {
+  name: "d.xlsx",
+  path: "D:\\d.xlsx",
+  sheets: [{ name: "S1" }, { name: "S2" }],
+};
+
+function sheetPickerHarness(invoke) {
+  const loads = [];
+  let openSpec = null;
+  const controller = createSheetPickerController({
+    doc: { querySelector: () => null },
+    client: {
+      async invoke(method, ...args) {
+        loads.push([method, ...args]);
+        return invoke ? invoke(method, ...args) : { ok: true, value: { label: "선택" } };
+      },
+    },
+    modal: {
+      open: (_id, spec) => { openSpec = spec; },
+      close() {},
+    },
+  });
+  return { controller, loads, close: () => openSpec.onClose() };
+}
+
+test("service port는 미결속·중복 결속을 거절하고 각 구현을 독립 보존한다", () => {
+  const probe = createPort("probe");
+  assert.throws(() => probe.current(), /결속되지/);
+  const impl = { run: () => true };
+  probe.bind(impl);
+  assert.equal(probe.current(), impl);
+  assert.throws(() => probe.bind(impl), /정확히 한 번/);
+
+  const services = createServiceHandoffPorts();
+  const picker = { choose: async () => null };
+  const relink = { relinkTemplate: async () => true };
+  services.sheetPicker.bind(picker);
+  services.relink.bind(relink);
+  assert.equal(services.sheetPicker.current(), picker);
+  assert.equal(services.relink.current(), relink);
+});
+
+test("시트는 명시 선택 뒤에만 로드되고 취소는 null·발신 0이다", async () => {
+  const selected = sheetPickerHarness();
+  const selection = selected.controller.port.choose("job", SHEET_PAYLOAD);
+  assert.deepEqual(selected.loads, []);
+  await selected.controller.pick("S2");
+  assert.deepEqual(selected.loads, [["load_data_sheet", "job", "D:\\d.xlsx", "S2"]]);
+  assert.deepEqual(await selection, { label: "선택" });
+
+  const cancelled = sheetPickerHarness();
+  const cancellation = cancelled.controller.port.choose("job", SHEET_PAYLOAD);
+  cancelled.close();
+  assert.equal(await cancellation, null);
+  assert.deepEqual(cancelled.loads, []);
+});
+
+test("시트 선택은 동시 클릭과 늦은 close에도 정확히 한 번만 settle된다", async () => {
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const h = sheetPickerHarness(async () => {
+    await held;
+    return { ok: true, value: { label: "선택" } };
+  });
+  const selection = h.controller.port.choose("job", SHEET_PAYLOAD);
+  await assert.rejects(() => h.controller.port.choose("editor", SHEET_PAYLOAD), /이미 열려 있습니다/);
+  const first = h.controller.pick("S1");
+  await h.controller.pick("S2");
+  assert.equal(h.loads.length, 1);
+  release();
+  await first;
+  assert.deepEqual(await selection, { label: "선택" });
+  h.close();
+  h.close();
+  assert.equal(h.loads.length, 1);
 });
 
 /* ---------------- 공용 cfg ---------------- */

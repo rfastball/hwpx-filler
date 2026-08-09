@@ -1,8 +1,8 @@
 """pytest 루트 설정 — dev 스크립트(scripts/)를 import 경로에 얹고, 임시 베이스를 안전한 곳으로 옮긴다.
 
 ``scripts/`` 는 배포 패키지에 들어가지 않는 dev/CI 도구다(pyproject wheel packages 밖).
-토큰 동기화 가드 테스트(tests/test_design_tokens.py)가 ``import gen_design_tokens`` 로
-생성기 함수를 직접 부를 수 있도록 여기서 sys.path 에 추가한다.
+토큰 대비·실렌더 테스트가 ``import gen_design_tokens`` 로 생성기 함수를 직접 부를 수
+있도록 여기서 sys.path 에 추가한다.
 
 또한 게이트(test.ps1)가 넘기는 ``--basetemp=.pytest-tmp`` 는 저장소 안(= OneDrive 동기화·
 Windows 검색 인덱서가 감시하는 Desktop 하위)에 만들어진다. 그 서비스들이 tmp 파일에

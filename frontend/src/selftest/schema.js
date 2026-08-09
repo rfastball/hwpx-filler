@@ -249,7 +249,7 @@ export const SELFTEST_KEYS = Object.freeze({
     note:
       "React 마운트 커밋 마커·store 사건 마커의 존재 증명(문서 안 3판독). 위반은 프로브"
       + " throw 라 source 게이트는 error 부재 단언이 문다. 값의 크기 단언은"
-      + " tests/test_react_store_live.py(4국면)의 소유.",
+      + " tests/test_web_selftest_gate.py의 module selftest result 소유.",
   }),
 
   // ── 아직 레인 미할당(B·C·D 가 각자 cluster 를 채운다) ─────────────

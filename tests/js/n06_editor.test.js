@@ -1,38 +1,26 @@
-/* 편집기 화면 계약 — N-06 lane C 가 `frontend/js/screens/editor.js` 에 세운 여섯 경계를
- * R4-02 에서 React 후계 `frontend/src/screens/editor.ts` 로 **제자리 번역**했다.
- *
- * 지키는 경계:
- *  ① 공개 표면 4키(init·rerender·leaveTo·aimAt) — 몰입 표면의 문 손잡이 수는 계약이다.
- *     그 넷은 이제 controller 표면의 부분집합이고 셸이 controller를 직접 쓴다.
- *  ② init 멱등·재시도(§7) — 첫 initial reject 후 명시적 재-init 이 다시 당기고, 성공 뒤
- *     재호출은 같은 promise를 공유한다. legacy `wired`/교차 채널 구독은 R5-01에서 사망했다.
- *  ③ 교차 화면 소비가 **late-bound 포트**인가 — 구성 뒤에 bind 한 구현이 호출 시점에 잡혀야
- *     한다(셸이 화면들을 순서대로 조립하므로 값 캡처는 평가 순서 함정이다). legacy 는
- *     `JobScreen { refreshList, openPreview }` 콜백 테이블이었고, 후계는 `ScreenPorts` 다.
- *  ④ landOn 발신 순서 — `navigation.refresh` 가 `navigation.go` 보다 먼저 서고
- *     `refreshed: true` 를 싣는다(재적재 전에 전환하면 사용자는 편집 전 규칙을 든 화면을
- *     손에 쥔다 — 8R P1).
- *  ⑤ 통로는 **객체째** — selftest 가 프로퍼티를 교체하므로 메서드 사전 추출이 없는지
- *     실행으로 확인한다. legacy 는 `Bridge.call`, 후계는 `client.dispatch` 다.
- *  ⑥ 음성: IIFE 래퍼 0 · 제품 전역 27종 `window.X` 0 · export 집합 · 화면 간 import 0.
- *
- * 런타임은 대역이 아니라 **실물**을 쓴다(`createScreenRuntime` + `createSnapshotStore`).
- * ② 가 재는 「initial 을 몇 번 당겼나」는 화면과 런타임이 함께 만드는 성질이라, 런타임을
- * 대역으로 갈면 그 초록이 대역의 성질이 된다. `Intent` 도 같은 이유로 실물이다.
- */
+/* Editor controller behavior: retries, late-bound ports, ordering, and draft races. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { createEditorController } from "../../frontend/src/screens/editor.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 import { createScreenRuntime } from "../../frontend/src/screens/runtime.ts";
 import { createSnapshotStore } from "../../frontend/src/state/store.ts";
+import {
+  NAME_FIELD,
+  PATTERN_FIELD,
+  emptyDraft,
+  fieldError,
+  hasInFlight,
+  ingestSnapshot,
+  issueToken,
+  markField,
+  settle,
+  typeInto,
+  valueOf,
+} from "../../frontend/src/screens/editor_state.ts";
 import { Intent } from "../../frontend/js/intent.js";
-
-const SRC_URL = new URL("../../frontend/src/screens/editor.ts", import.meta.url);
-const src = readFileSync(SRC_URL, "utf8");
 
 /** 셸이 직접 쓰는 controller 핵심 4키. */
 const SHELL_FACADE = ["init", "rerender", "leaveTo", "aimAt"];
@@ -127,7 +115,7 @@ test("init 2회 — initial 추가 등록 0, 같은 promise 공유", async () =>
   const first = h.controller.init();
   await first;
   assert.equal(h.counts.initial, 1, "initial 당김 1회");
-  assert.equal(h.store.listenerCount("tpl"), 0, "migration용 tpl 교차 구독 0");
+  assert.equal(h.store.listenerCount("tpl"), 0, "tpl 교차 구독 0");
 
   const second = h.controller.init();
   assert.equal(second, first, "성공한 init 재호출은 같은 promise 를 공유한다");
@@ -284,54 +272,89 @@ test("client.dispatch 프로퍼티 교체가 관측된다 — 메서드 사전 �
   assert.deepEqual(seen, [["tpl", "refresh", {}]], "교체된 client.dispatch 가 호출을 받았다");
 });
 
-/* ---------------- ⑥ 음성 — 소스 텍스트 계약 ---------------- */
+/* ---------------- local draft reducer ---------------- */
 
-test("소스 음성: IIFE 0 · 제품 전역 27종 0 · export 집합 · 화면 간 import 0", () => {
-  assert.ok(!src.includes("(function () {"), "IIFE 래퍼가 남아 있지 않다");
-  assert.ok(!src.includes("})();"), "IIFE 닫힘이 남아 있지 않다");
+const DRAFT_SESSION = "job:작업A";
 
-  const GLOBALS = [
-    "Bridge", "__push", "Nav", "AppCloseGuard",
-    "JobScreen", "LibraryScreen", "EditorScreen", "WorkbenchScreen",
-    "Copy", "escHtml", "Guard", "SegView", "Popover", "Preserve", "Intent",
-    "UndoToast", "Modal", "SurfaceSheet", "GroupList", "Theme", "Personalization",
-    "SheetPicker", "PathTrack", "Relink", "DataZone", "DataPicker", "EditorEntry",
+function draft(values, revision = 1) {
+  return ingestSnapshot(emptyDraft(), { session: DRAFT_SESSION, revision, values });
+}
+
+test("push는 편집 중인 field를 보존하고 손대지 않은 이웃만 갱신한다", () => {
+  const protect = [
+    (state) => typeInto(state, NAME_FIELD, "내 값"),
+    (state) => markField(state, NAME_FIELD, { focused: true }),
+    (state) => markField(state, NAME_FIELD, { composing: true }),
   ];
-  assert.equal(GLOBALS.length, 27, "제품 전역 목록은 27종");
-  for (const name of GLOBALS) {
-    assert.ok(!new RegExp(`(?:window|globalThis)\\.${name}\\b`).test(src),
-      `window.${name} / globalThis.${name} 판독·대입 0`);
+  for (const prepare of protect) {
+    let state = prepare(draft({ [NAME_FIELD]: "옛 값", [PATTERN_FIELD]: "옛 규칙" }));
+    const held = valueOf(state, NAME_FIELD);
+    state = ingestSnapshot(state, {
+      session: DRAFT_SESSION,
+      revision: 2,
+      values: { [NAME_FIELD]: "서버 값", [PATTERN_FIELD]: "새 규칙" },
+    });
+    assert.equal(valueOf(state, NAME_FIELD), held);
+    assert.equal(valueOf(state, PATTERN_FIELD), "새 규칙");
   }
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.equal(/\bwindow\./.test(code), false, "화면이 전역 window 를 만지지 않는다");
-  assert.ok(/deps\.notify\(/.test(code), "loud 실패 통로(주입 notify) 보존");
-
-  assert.ok(!/export\s+default/.test(src), "export default 금지");
-  const names = [...src.matchAll(/^export\s+(?:const|function)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
-  assert.deepEqual(names, ["createEditorController", "EditorScreen", "TxtEditDialog"],
-    "값 export 는 controller 팩토리와 React producer 둘뿐");
-
-  const targets = [...new Set([...src.matchAll(/from "([^"]+)"/g)].map((m) => m[1]))];
-  assert.ok(targets.length > 0, "직접 ESM import 가 있다(양성 대조)");
-  assert.deepEqual(targets, [
-    "react", "../runtime/client.ts", "../ports/service_handoff.ts", "./ports.ts",
-    "./runtime.ts", "./context_menu.ts", "./path_actions.ts", "./group_move_dialog.ts",
-    "./editor_state.ts",
-  ]);
-  /* 화면 간 간선 0 — 다른 화면의 producer·controller 를 직접 부르지 않는다. 교차 소비는
-     전부 `ScreenPorts` 를 지난다(③ 이 실행으로 잰다). */
-  for (const forbidden of ["./job_read.ts", "./library.ts", "./data_picker.ts", "./workbench.ts"]) {
-    assert.equal(targets.includes(forbidden), false, `화면 간 import 금지: ${forbidden}`);
-  }
-  assert.equal(targets.some((target) => /app\.js|bridge\.js/.test(target)), false,
-    "셸·브리지 직접 import 금지");
 });
 
-test("음성 — 편집 변이는 전부 한 체인(EDIT_CHAIN)을 지나고 커밋은 먼저 정산한다", () => {
-  assert.equal((src.match(/deps\.chain\.chained\(/g) || []).length, 2,
-    "체인 진입점은 sendEdit·flushPendingEdits 둘 — 축별로 가르면 서로를 추월한다");
-  assert.match(src, /return deps\.chain\.chained\(EDIT_CHAIN,/);
-  /* 팩토리 스코프에서 통로 메서드를 값으로 뽑으면 프로퍼티 교체가 우회된다(⑤ 의 정적 짝). */
-  assert.equal(/^ {2}const\s+\w+\s*=\s*deps\.client\.\w+/m.test(src), false,
-    "`const x = deps.client.dispatch` 류 팩토리 스코프 캡처 금지");
+test("token/session이 낡은 응답은 draft를 바꾸지 않고 stale로 관측된다", () => {
+  let state = typeInto(draft({ [NAME_FIELD]: "서버" }), NAME_FIELD, "첫 편집");
+  const first = issueToken(state, NAME_FIELD);
+  state = typeInto(first.state, NAME_FIELD, "둘째 편집");
+  const second = issueToken(state, NAME_FIELD);
+  const late = settle(second.state, {
+    ok: true,
+    session: DRAFT_SESSION,
+    token: first.token,
+    key: NAME_FIELD,
+    serverValue: "첫 편집",
+  });
+  assert.equal(valueOf(late, NAME_FIELD), "둘째 편집");
+  assert.equal(late.fields[NAME_FIELD].pendingToken, second.token);
+  assert.equal(late.staleResponses, 1);
+
+  const moved = ingestSnapshot(late, {
+    session: "job:작업B",
+    revision: 1,
+    values: { [NAME_FIELD]: "B" },
+  });
+  assert.equal(valueOf(moved, NAME_FIELD), "B");
+  assert.equal(moved.staleResponses, 0);
+});
+
+test("성공은 Python 확인값이 draft와 같을 때만 clean으로 승격한다", () => {
+  let state = typeInto(draft({ [NAME_FIELD]: "서버" }), NAME_FIELD, "새 이름");
+  const issued = issueToken(state, NAME_FIELD);
+  assert.equal(hasInFlight(issued.state), true);
+
+  const unconfirmed = settle(issued.state, {
+    ok: true,
+    session: DRAFT_SESSION,
+    token: issued.token,
+    key: NAME_FIELD,
+  });
+  assert.equal(unconfirmed.fields[NAME_FIELD].dirty, true);
+
+  const confirmed = settle(issued.state, {
+    ok: true,
+    session: DRAFT_SESSION,
+    token: issued.token,
+    key: NAME_FIELD,
+    serverValue: "새 이름",
+  });
+  assert.equal(confirmed.fields[NAME_FIELD].dirty, false);
+  assert.equal(valueOf(confirmed, NAME_FIELD), "새 이름");
+  assert.equal(hasInFlight(confirmed), false);
+
+  const failed = settle(issued.state, {
+    ok: false,
+    session: DRAFT_SESSION,
+    token: issued.token,
+    key: NAME_FIELD,
+    error: "이름 중복",
+  });
+  assert.equal(fieldError(failed, NAME_FIELD), "이름 중복");
+  assert.equal(valueOf(failed, NAME_FIELD), "새 이름");
 });

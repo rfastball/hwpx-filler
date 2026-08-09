@@ -36,18 +36,21 @@ Qt 위젯을 링2로 두었던 최초 구현은 **대체됨**이다. 현재 화�
 
 - 링1 공개 API와 상태 모델은 Python 헤드리스 테스트가 검증한다.
 - 웹 화면/action/payload는 `webapp/action_registry.py`와 컨트롤러 테스트가 검증한다.
-- 실제 배포 DOM의 구조·배선은 `tests/test_web_dom_contract.py`가 정적으로 검증한다.
+- source entry·import 폐포는 `tests/artifact_contract/test_frontend_build_graph.py`, 공개
+  브리지·payload는 `tests/repo_contract/test_bridge_contract.py`와
+  `tests/repo_contract/test_dispatch_payload_contract.py`가 정적으로 검증한다.
 - 브라우저 런타임 동작은 `tests/test_web_selftest_gate.py`가 실 WebView2에서 검증한다.
-- `tests/test_ui_contract.py`는 동결 목업의 `data-vm`과 생존 링1 API 사이의 역사적 seam만
-  지킨다. 현재 배포 화면의 계약 게이트가 아니다.
+- 동결 목업의 `data-vm`은 역사적 seam 기록이며 현재 배포 화면의 실행 게이트가 아니다.
 
 ## 토큰 파이프라인
 
 색 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
 `scripts/gen_design_tokens.py`가 `frontend/css/tokens.css`와 동결 목업의 `<gen:tokens>` 영역을
-생성하며 `tests/test_design_tokens.py`가 드리프트를 차단한다. 생성물은 패키징 입력이므로
+생성한다. `scripts/gen_design_tokens.py --check`가 생성 드리프트를 확인하고,
+`tests/repo_contract/test_contrast_wcag.py`가 사용자 안전 대비 하한을 맡는다. 생성물은 패키징 입력이므로
 저장소에 커밋한다. 실제 웹 레이아웃과 컴포넌트 CSS는 `frontend/css/`의 9개 스타일시트가 나눠
-소유한다(구 `app.css`의 순서 보존 컷 — 목록·순서는 `tests/_web_css.py`가 단일 출처).
+소유한다(구 `app.css`의 순서 보존 컷 — 캐스케이드 순서의 정본은 `frontend/src/main.js`,
+공유 테스트 판독자는 `tests/_web_source.py`).
 
 ## 불변식
 
@@ -55,7 +58,8 @@ Qt 위젯을 링2로 두었던 최초 구현은 **대체됨**이다. 현재 화�
 - 링2는 링1의 정책을 복제하지 않고, 확정된 입력을 전달하고 결과를 표현한다.
 - 기존 ViewModel과 상태 모델을 웹 컨트롤러나 JavaScript에서 재구현하지 않는다.
 - 명시성 게이트, 누락값의 시끄러운 표식, 실행 직전 재검증 같은 정책은 링1/링0 소유로 둔다.
-- 화면 구조 변경은 정적 DOM 계약과 필요한 실 WebView2 시나리오를 함께 갱신한다.
+- 화면 구조 변경은 해당 JS 장기 소유자·artifact 폐포 계약과 필요한 실 WebView2 시나리오를
+  함께 갱신한다.
 
 ## 결과
 

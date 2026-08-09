@@ -90,8 +90,8 @@ def _file_sha256(path: Path) -> str:
 #: unminified 번들이 남기는 vendor 경계 주석. 값은 ``node_modules/`` 뒤의 경로다.
 #:
 #: ``$`` 는 ``\r`` **앞에서 멈추지 않으므로** CRLF 산출물에서 이 그물이 조용히 0건이 된다.
-#: JS 쪽 형제 그물(``tests/js/r5_boundary_gates.test.js``)은 ``m`` 플래그라 멈춘다 — 같은
-#: 입력에 두 수집기가 다른 답을 내지 않게 개행 앞 ``\r`` 을 명시로 문다(L16 반증).
+#: 산출물 계약(``tests/artifact_contract/test_build_metadata.py``)이 CRLF 입력을 직접 대조한다 —
+#: 개행 형식 때문에 수집이 조용히 0건이 되지 않도록 개행 앞 ``\r`` 을 명시로 문다(L16 반증).
 _VENDOR_REGION_RE = re.compile(
     r"^//#region node_modules/(?P<path>[^\r\n]+?)\r?$", re.MULTILINE
 )
@@ -115,8 +115,8 @@ def _shipped_runtime_packages(repo_root: Path, artifact_root: Path) -> dict[str,
     메타데이터는 조용히 거짓을 말한다. 버전은 ``package-lock.json`` 에서 읽는다(이미 해시로
     봉인에 결속돼 있는 단일 출처).
 
-    같은 사실을 ``tests/js/r5_boundary_gates.test.js`` 가 계약과 **대조**하지만, 그쪽은
-    판정이고 여기는 보고다 — 둘 다 산출물에서 독립적으로 유도하므로 한쪽이 낡을 수 없다.
+    같은 사실은 ``tests/artifact_contract/test_build_metadata.py`` 가 정적 폐포 계약·lock과
+    **대조**하고, 여기는 산출물에서 보고를 유도한다.
     """
     names: set[str] = set()
     for path in sorted(artifact_root.rglob("*.js")):

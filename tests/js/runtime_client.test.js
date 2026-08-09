@@ -21,6 +21,7 @@ import assert from "node:assert/strict";
 
 import { createRuntimeAdapter } from "../../frontend/src/runtime/adapter.ts";
 import { createBridgeClient } from "../../frontend/src/runtime/client.ts";
+import { invokePathAction } from "../../frontend/src/screens/path_actions.ts";
 import {
   DISPATCH_REJECTION_KEY,
   HOST_INTERNAL_METHODS,
@@ -247,4 +248,46 @@ test("invoke — host-internal 은 client 표면이 아니다(웹 소비자 0 �
 
   assert.throws(() => client.invoke("close_guard_state"), /host-internal/);
   assert.equal(calls.length, 0, "거절 전에 호스트가 불렸습니다");
+});
+
+test("path action은 공개 동사를 정확한 typed invoke로 옮긴다", async () => {
+  const calls = [];
+  let copied = 0;
+  const client = {
+    async invoke(method, path) {
+      calls.push([method, path]);
+      return { ok: true, value: null };
+    },
+  };
+  for (const [action, method] of [
+    ["open", "open_path"],
+    ["reveal", "reveal_path"],
+    ["copy", "copy_path"],
+  ]) {
+    assert.equal(await invokePathAction({
+      client,
+      path: "C:\\owned",
+      action,
+      notify: assert.fail,
+      onCopied: () => { copied += 1; },
+    }), true);
+    assert.equal(calls.at(-1)[0], method);
+  }
+  assert.equal(copied, 1, "copy 성공만 완료 callback을 부릅니다");
+});
+
+test("path action의 host 거절·transport 예외는 false와 이유로 끝난다", async () => {
+  const notices = [];
+  for (const [client, action] of [
+    [{ invoke: async () => ({ ok: false, failure: { message: "소유 경로가 아닙니다" } }) }, "open"],
+    [{ invoke: async () => { throw new Error("브리지 끊김"); } }, "reveal"],
+  ]) {
+    assert.equal(await invokePathAction({
+      client,
+      path: "C:\\outside",
+      action,
+      notify: (message) => notices.push(message),
+    }), false);
+  }
+  assert.deepEqual(notices, ["열기 실패: 소유 경로가 아닙니다", "브리지 끊김"]);
 });

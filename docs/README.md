@@ -30,19 +30,7 @@
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
-| `test_portfolio_classification.toml` | 테스트 사례의 위험·계층·속도 분류 원장 |
-| [테스트 포트폴리오 매트릭스](TEST_PORTFOLIO_MATRIX.md) | 생성기로 갱신하는 현재 테스트 위험 지도 |
-| `test_portfolio_inventory.csv`, `test_portfolio_metadata.json` | 포트폴리오 감사의 생성 원장·메타데이터 |
-| `react_ownership_inventory.toml` | React 이관 대상 소유권과 그 계측의 기계 판독 원장 |
-| `react_verification_ledger.toml` | 검증 자산의 old→new 책임과 인계 단계의 기계 판독 원장 |
-| `factgraph/python_symbol_inventory.toml` | production Python 심볼 폐포의 생성 원장(P1 전수 계측 기반, #512) |
-| `factgraph/static_graph_02a.toml` | import·call·construction 그래프의 digest·SCC·hotspot·미해결 전수 원장(P1-02A, #513) |
-| `factgraph/state_graph_02b.toml` | mutable state·변이·transaction cluster·동시성 결부·미해결 전수 원장(P1-02B, #514) |
-| `factgraph/effect_graph_02c.toml` | persistence·external effect·host 접촉의 효과/순수 분류·지역 import 폐쇄·이중 조립 전수 원장(P1-02C, #515) |
-| `factgraph/transport_graph_02d.toml` | transport endpoint·snapshot 필드·push/event 채널의 producer·소비자 증거 전수 원장(P1-02D, #516) |
-| `factgraph/use_case_graph_02e.toml` | GUI·CLI logical entry 전수·use-case 분류·test responsibility·characterization gap 원장(P1-02E, #517) |
-| `factgraph/authority_decisions_03.toml` | 측정만으로 단일 귀속할 수 없던 목표 권위·R 핸드오프·P2 추출 의무의 사람 판정 원장(P1-03, #518) |
-| `factgraph/authority_ledger_03.toml` | 02A~E 여섯 shard와 사람 판정을 합성한 목표 권위·실행 가능 migration packet v2·선후 DAG·최종 판정(P1-03, #518) |
+| `p2_handoff.toml` | 완료된 P1 계측에서 동결한 P2 목표 권위·source write set·oracle·역의존 제거 의무. 상세 계측은 Git 이력이 소유하며 P2 완료 때 이 원장도 폐기 |
 
 ## 결정 기록
 
@@ -52,8 +40,7 @@
 | [UI/백엔드 분리](ARCH_UI_SEPARATION.md) | 부분 대체 | 링0·링1 분리는 유효, Qt 링2는 [UI 계약](UI_CONTRACT.md)이 대체 |
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
-| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 | 결정 본문(전체 스냅샷 유지·부분 패치 금지)은 [React 전환 ADR](REACT_MIGRATION_DECISIONS.md)이 대체. 포커스·캐럿·스크롤 보존 **책임**과 재고 술어의 틀은 유효하다. 근거 1·「현재 실효 범위」·검증 절은 오늘 거짓이니 배경으로만 읽는다 |
-| [React 전환 아키텍처 ADR](REACT_MIGRATION_DECISIONS.md) | 유효 결정 | React/TS 이관의 목표 구조와 계층별 권위 경계. 계측값·검증 책임은 위 원장 2종이 소유한다 |
+| [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 | 전체 스냅샷·서브트리 재구성 결정은 완료된 React 전환이 대체. 포커스·캐럿·스크롤 보존 **책임**과 재고 술어의 틀은 유효하다. 근거 1·「현재 실효 범위」·검증 절은 오늘 거짓이니 배경으로만 읽는다 |
 | [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
 | [문서 표현과 변경 권위 계층 이론](DOCUMENT_AUTHORITY_LAYERS.md) | 유효 결정 | 저작·구성 투영·산출물 관찰 계층과 그 사이 경계 사건의 판정 기준. **미래 제품 모델이라 P 로드맵(#433·#511)의 입력이 아니다**(§0.0). 명사·불변식의 구체 적용은 [핵심 워크플로 계약](core-workflow.md)이, 현재 표면은 UI 계약이 소유. 적용 우산 = #530 |
 
@@ -61,11 +48,11 @@
 
 | 문서군 | 상태 | 보존 이유 |
 |---|---|---|
-| [테스트 포트폴리오 전수조사](TEST_PORTFOLIO_AUDIT.md) | 역사 기록 | #168 기준점·방법·해석 |
 | `design_language_*.html` | 동결 시안 | 시각 언어 결정 당시 비교안 |
 | `r-flow-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
 | `archive/UI_CONTRACT_QT.md` (#225에서 분리) | 역사 기록 | 웹 이관 전 목업↔ViewModel↔Qt 계약 |
 | [`archive/DATA_FIRST_INTEGRATION_MAP.md`](archive/DATA_FIRST_INTEGRATION_MAP.md) | 역사 기록 | v6 표면 전면 재작성(R1·F1~F8) 완주로 동결(2026-07-29). 대조표·슬라이싱은 정산됐고 **왜 그런 표면이 됐는지**의 근거 원장으로 남는다 — §7·§8.2·§10.x 판정은 계속 인용 대상 |
+| [`archive/REACT_MIGRATION_COMPLETION.md`](archive/REACT_MIGRATION_COMPLETION.md) | 역사 기록 | React/TypeScript 전환 완료 범위와 장기 계약 소유자. 단계별 계측·좌표는 Git 이력이 보존 |
 
 ## 유지·아카이브·폐기 기준
 
@@ -78,9 +65,8 @@
 | 높음 | 낮음 | 정본에 병합한 뒤 원문 폐기 |
 | 낮음 | 낮음 | 참조를 확인한 뒤 폐기 |
 
-이 라운드에서 즉시 폐기하는 문서는 없다. 최상위 문서는 현재 정본이거나 고유 결정·감사
-근거를 담고 있고, HTML·스크린샷은 결정 기록이 직접 참조한다. 이후 폐기하려면 다음을 모두
-충족해야 한다.
+완료된 React 전환과 P1의 임시 계측 원장, 시점 고정 테스트 포트폴리오 생성물은 장기 계약과
+P2 handoff로 필요한 내용만 옮긴 뒤 폐기했다. 그 밖의 문서를 폐기하려면 다음을 모두 충족해야 한다.
 
 1. 저장소의 코드·테스트·문서에서 참조가 없다.
 2. 후속 정본에 없는 고유 결정·근거·원관측이 없다.

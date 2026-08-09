@@ -63,25 +63,20 @@ def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Pat
 
 
 # =============================================== 수용기준 1 — 상태별 게이트 액션
-def test_available_actions_per_state_exact_sets():
-    """각 상태가 정확히 합의된 액션 키 집합을 제공한다(순수 리졸버)."""
-    assert [a.key for a in available_actions(CompileState.RAW)] == ["compile"]
-    assert [a.key for a in available_actions(CompileState.PARTIAL)] == ["compile", "review"]
-    assert [a.key for a in available_actions(CompileState.COMPILED)] == ["preview", "make_job"]
-    assert [a.key for a in available_actions(CompileState.FILLED)] == ["preview"]
-
-
-def test_action_labels_are_state_contextual():
-    """같은 key='compile' 라도 RAW='누름틀 변환' / PARTIAL='마저 변환' 으로 문맥화된다."""
-    assert available_actions(CompileState.RAW)[0].label == "누름틀 변환"
-    assert available_actions(CompileState.PARTIAL)[0].label == "마저 변환"
-
-
-def test_error_or_none_state_offers_no_actions():
-    assert available_actions(None) == []
-
-
-def test_vm_actions_for_delegates_to_resolver(tmp_path):
+def test_action_matrix_and_vm_delegation():
+    """상태 판정은 순수 리졸버 하나가 소유하고 VM은 그 결과를 그대로 낸다."""
+    expected = {
+        CompileState.RAW: ["compile"],
+        CompileState.PARTIAL: ["compile", "review"],
+        CompileState.COMPILED: ["preview", "make_job"],
+        CompileState.FILLED: ["preview"],
+        None: [],
+    }
+    for state, keys in expected.items():
+        assert [a.key for a in available_actions(state)] == keys
+    assert [available_actions(state)[0].label for state in (CompileState.RAW, CompileState.PARTIAL)] == [
+        "누름틀 변환", "마저 변환",
+    ]
     vm = TemplateManagerViewModel(paths=[])
     assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
 
@@ -138,32 +133,21 @@ def test_rows_expose_gated_actions_matching_state(tmp_path):
 
 
 # ================================ 수용기준 2 — dry-run 무변형 → 적용 시 상태 진행
-def test_scan_preview_is_readonly_and_previews_sites(tmp_path):
-    """scan_preview 는 컴파일 가능/건너뜀을 미리 보여주되 파일을 만지지 않는다."""
+def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
+    """scan은 무변형이고 apply만 RAW → COMPILED 상태 전이를 소유한다."""
     path = _write_raw(tmp_path / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
     before = path.read_bytes()
 
     vm = TemplateManagerViewModel(paths=[path])
     preview = vm.scan_preview(str(path))
-
     assert preview.has_compilable
     assert [s.name for s in preview.compilable] == ["계약명"]
-    assert path.read_bytes() == before  # 무변형(dry-run)
-    assert compile_status(str(path)).state == CompileState.RAW  # 여전히 RAW
-
-
-def test_apply_fieldize_compiles_and_advances_status(tmp_path):
-    """적용은 컴파일·저장하고 그 파일 상태가 RAW → COMPILED 로 진행한다."""
-    path = _write_raw(tmp_path / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    assert path.read_bytes() == before
     assert compile_status(str(path)).state == CompileState.RAW
-
-    vm = TemplateManagerViewModel(paths=[path])
     report = vm.apply_fieldize(str(path))
-
     assert report.compiled == ["계약명"]
     assert report.modified
-    assert compile_status(str(path)).state == CompileState.COMPILED  # 진행
-    # VM 행도 재산출돼 COMPILED 로 갱신(그리고 액션 집합도 전이).
+    assert compile_status(str(path)).state == CompileState.COMPILED
     row = vm.row_for(str(path))
     assert row.state == CompileState.COMPILED
     assert [a.key for a in row.actions()] == ["preview", "make_job"]

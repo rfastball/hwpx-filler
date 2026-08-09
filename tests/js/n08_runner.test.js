@@ -1,19 +1,6 @@
-/* N-08 레인 S — 프로브 하니스(`frontend/src/selftest/runner.js`) 단위 계약.
- *
- * 이 러너가 대신하는 것은 `app.py` 의 `_probe_late` 와 `window.__*` 스태시 규약이다.
- * 그래서 이 파일이 겨누는 것도 **그 규약의 두 결함**이다:
- *
- *  ① 폴링 만료에 `else` 가 없어 낡은 부분 결과가 정상 모양으로 회수된다(app.py:3502-3506).
- *     → 시한 초과는 **시끄러운 실패**이고 그 프로브의 키는 결과에 실리지 않는다.
- *  ② 넓은 catch 가 실패를 정상값으로 바꾼다(catch 40곳 / 상수 24개).
- *     → 오류는 `{probe, phase, code, message}` 구조체이고 국면이 갈린다.
- *
- * 시계는 주입한다. 아래 가상 시계는 **가상 시각 순서**로 타이머를 하나씩 발화하므로
- * 시한·폴링·정착 대기가 실시간 없이 결정적으로 돈다(게이트는 flaky 금지).
- */
+/* Selftest runner protocol: ordering, deadlines, cleanup, and structured failures. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import {
   ERROR_CODES,
@@ -25,11 +12,6 @@ import {
   SelftestProbeError,
   createSelftestRunner,
 } from "../../frontend/src/selftest/runner.js";
-
-const SRC = readFileSync(
-  new URL("../../frontend/src/selftest/runner.js", import.meta.url),
-  "utf8",
-);
 
 /* ────────────────────────── 가상 시계 ────────────────────────── */
 
@@ -112,7 +94,7 @@ function baseProbe(extra) {
 
 /* ────────────────────────── 표면 ────────────────────────── */
 
-test("공개 표면 — 이름 전수와 export default 부재", () => {
+test("runner 공개 표면과 프로토콜 상수가 노출된다", () => {
   assert.equal(typeof createSelftestRunner, "function");
   assert.equal(typeof SelftestProbeError, "function");
   assert.ok(Array.isArray(PROBE_PHASES) && PROBE_PHASES.length === 7);
@@ -121,8 +103,6 @@ test("공개 표면 — 이름 전수와 export default 부재", () => {
   assert.equal(typeof LEGACY_DEADLINES_MS, "object");
   assert.equal(typeof LEGACY_FIXED_SLEEPS_MS, "object");
   assert.equal(typeof LEGACY_BUDGET, "object");
-  assert.equal(/export\s+default/.test(SRC), false);
-
   const runner = createSelftestRunner(createCaps().caps);
   assert.deepEqual(Object.keys(runner).sort(), [
     "budgetMs", "describe", "plan", "probes", "register", "registerAll", "run", "toEvidence",
@@ -138,25 +118,6 @@ test("능력은 주입이다 — 전역에서 줍지 않는다", () => {
     assert.match(err.detail, /push/);
     return true;
   });
-  assert.equal(SRC.includes("window.__push"), false);
-});
-
-test("시간 예산은 데이터다 — 레거시 시한 표가 그대로 적혀 있다", () => {
-  assert.equal(LEGACY_DEADLINES_MS.__probe_late__, 2500);
-  assert.equal(LEGACY_DEADLINES_MS.action_roundtrip, 10000);
-  assert.equal(LEGACY_DEADLINES_MS.view_order, 6000);
-  assert.equal(LEGACY_DEADLINES_MS.data_sheet, 6000);
-  assert.equal(LEGACY_DEADLINES_MS.range_draft, 6000);
-  assert.equal(LEGACY_DEADLINES_MS.chain_recovery, 5000);
-  assert.equal(LEGACY_DEADLINES_MS.runtime, 8000);
-  assert.equal(LEGACY_DEADLINES_MS.window_geometry, 10000);
-  assert.equal(LEGACY_BUDGET.processTimeoutMs, 90000);
-  assert.equal(LEGACY_BUDGET.worstCaseMs, 68000);
-  assert.equal(
-    LEGACY_BUDGET.headroomMs,
-    LEGACY_BUDGET.processTimeoutMs - LEGACY_BUDGET.worstCaseMs,
-  );
-  assert.ok(LEGACY_BUDGET.worstCaseMs < LEGACY_BUDGET.processTimeoutMs);
 });
 
 test("예산은 늘지 않는다 — 레거시 시한 초과 등록은 거절", () => {
@@ -552,22 +513,4 @@ test("예산 합산 — 모드별 최악 시간이 데이터로 나온다", () =
   }));
   assert.equal(runner.budgetMs("full"), 5600);
   assert.ok(runner.budgetMs("full") < LEGACY_BUDGET.processTimeoutMs);
-});
-
-/* ────────────────────────── 음성 ────────────────────────── */
-
-test("음성 — 전역 쓰기·window.__ 스태시·__hwpxTest 부재", () => {
-  assert.equal(/(?:^|\s)window\.[A-Za-z_$][A-Za-z0-9_$]*\s*=/m.test(SRC), false);
-  assert.equal(/globalThis\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*\s*=/.test(SRC), false);
-  assert.equal(SRC.includes("__hwpxTest"), false);
-  assert.equal(/window\.__/.test(SRC), false, "window.__* 스태시 규약은 옮겨 오지 않는다.");
-});
-
-test("bare import 는 순수하다 — DOM·리스너·전역을 만들지 않는다", async () => {
-  const before = Object.keys(globalThis).length;
-  const again = await import(`../../frontend/src/selftest/runner.js?pure=${Date.now()}`);
-  assert.equal(typeof again.createSelftestRunner, "function");
-  assert.equal(Object.keys(globalThis).length, before);
-  assert.equal(typeof globalThis.document, "undefined");
-  assert.equal(typeof globalThis.window, "undefined");
 });

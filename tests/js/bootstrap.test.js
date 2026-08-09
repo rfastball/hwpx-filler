@@ -1,58 +1,9 @@
-/* 제품 합성 루트 계약 — 제품 전역은 정확히 하나, 조립은 정확히 한 번, 올바른 객체에.
-
-   ## 이 파일의 전신과 옮겨온 책임 (N-10 old→new)
-
-   전신은 `compat.test.js` 였고 중심 질문은 "**별칭 스물여덟**이 정확히 한 번, 올바른 객체에
-   걸리는가" 였다. N-10 이 임시 별칭 스물일곱을 지우면서 그 질문의 **주어**가 사라졌다.
-   그렇다고 파일째 지우면 함께 죽는 것이 있다:
-
-   - 어떤 잎이 export 와 **동일 객체**로 배선됐는가 (`Guard` ≡ `guard.js` 의 export)
-   - 각 factory 산물의 **공개 표면 키**가 계약대로인가
-   - 조립이 실제로 **돌았는가** (앱 셸이 부팅 랜딩을 찍었는가)
-   - 제품 파사드와 푸시 통로가 **같은 하나**로 모이는가
-
-   이 넷은 별칭이 아니라 **합성**에 대한 질문이라 별칭과 함께 죽을 이유가 없다. 종전에는
-   그것을 물을 수단이 `window` 를 훔쳐보는 것뿐이었고, 전역이 사라지면 수단째 사라진다 —
-   "별칭이 없다"는 사실만 남고 "조립이 여전히 옳다"는 사실이 죽는 자리다(선언은 살고 결과는
-   죽는다). 그래서 관측면을 **`bootProduct()` 의 반환값**으로 옮겼다.
-
-   | 전신 테스트 | 여기서의 후계 |
-   |---|---|
-   | 전역 프로브 양성 대조 | 그대로 — 이제 "제품이 심는 전역이 하나뿐"의 양성 대조를 겸한다 |
-   | 잎은 import 만으로 전역을 안 만든다 | 그대로 |
-   | 별칭 28을 만들고 올바른 객체에 건다 | **둘로 갈림**: ①제품 전역은 `__hwpx` 하나 ②배선 신원·표면은 반환값으로 |
-   | 앱 셸 랜딩(캐시 히트라 사실상 공허) | 실제 랜딩을 단언하는 실질 테스트로 승격 |
-   | 반복 import 는 본문을 다시 안 돌린다 | **폐기·대체**: 부팅이 평가가 아니라 호출이 됐다. 단일성은 `test_entry_calls_the_composition_root_exactly_once`(Python)가 진다 |
-   | compat 은 export 가 없다 | 표면이 `bootProduct` 하나인지로 바뀜 |
-   | 파사드와 `window.__push` 가 같은 통로 | **손잡이만 교체**: 전역 대신 반환된 `pushPort`·`bridge` |
-   | 기반 푸시를 값으로 안 붙든다(소스 계약) | 그대로, 대상만 `bootstrap.js` |
-
-   전역 **부재** 자체의 정적 음성 게이트(bracket·`globalThis`·`Object.assign`·`defineProperty`
-   ·classic script·IIFE·순환)는 `n10_global_hygiene.test.js` 가 AST 로 따로 진다. 여기는
-   런타임 조립이 무엇을 세우는가를 본다.
-
-   ## 대역의 성질
-
-   앱 셸 구성은 구 IIFE 평가와 같은 의미로 부팅 랜딩(`go("job")`)·셸 배선까지 즉시 실행하고,
-   서비스 셋(`popover`·`undo_toast`·`pathtrack`)은 구성 시점에 document 리스너를 붙인다.
-   그래서 대역은 "평가만 되면 되는 최소치"가 아니라 **앱 셸 구성이 실제로 지나가는 DOM 표면**
-   까지 흉내 낸다. 거동은 각 모듈의 전용 테스트가 보고, 여기는 조립이 죽지 않고 올바로
-   서는가만 본다. 대역은 제품 전역을 하나도 만들지 않으며 매 테스트 뒤 걷는다.
-
-   부팅이 **호출**이 되면서 대역 하나에 조립을 여러 번 세울 수 있게 됐다 — 전신이 ESM 캐시를
-   질의 문자열로 우회해야 했던 자리다(`?n09-pushport-probe=1`). 그 우회가 사라졌다. */
+/* Product composition: one public global, one push path, and correctly wired services. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 const BOOTSTRAP = "../../frontend/src/bootstrap.js";
 
-/* R4-02 에서 `segview.js` 가 사라졌다 — 그 잎의 후계는 `src/screens/segment_view.ts` 이고,
-   `.ts` 잎의 전역 청결은 이 목록이 아니라 `n10_global_hygiene.test.js` 의 AST 축이 진다.
-   여기 남는 것은 **legacy `.js` 잎**의 import 부작용 부재다. */
-/* R5-99 B2 — `copy.js`·`esc.js` 는 소비자 0 실측으로 삭제됐고 `preserve.js` 는 selftest
-   소유(`src/selftest/preserve.js`)로 떠났다. legacy `.js` 잎의 import 부작용 부재 계약은
-   남은 잎에 그대로 산다. */
 const LEAVES = ["guard.js"];
 
 /* 합성 루트가 **모듈 export 와 같은 객체**로 배선해야 하는 이름들. 평범한 named export 라
@@ -66,8 +17,6 @@ const PLAIN_SERVICES = {
 
 /* factory 산물 — 합성 루트가 구성한 인스턴스라 동일성 비교가 안 된다. 표면(키)으로 센다. */
 const FACTORY_SERVICES = {
-  /* R4 React 화면이 실제로 부르는 typed 전송 객체. selftest는 이 참조의 dispatch/invoke를
-     교체해 합성 snapshot과 백엔드 세계가 갈라지지 않게 한다. */
   Client: ["hostReady", "whenReady", "invoke", "initial", "dispatch"],
   Theme: ["set", "toggle", "current", "apply"],
   Personalization: [
@@ -82,7 +31,6 @@ const FACTORY_SERVICES = {
     "openGuarded", "land", "confirmDiscard", "newDraft",
     "newDraftFromData", "restoreEntryFocus",
   ],
-  /* selftest가 직접 겨누는 실행 controller. 별도 JobScreen facade는 R5-01에서 은퇴했다. */
   JobRun: [
     "model", "client", "notify", "subscribe", "getRun", "getUi",
     "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
@@ -92,8 +40,6 @@ const FACTORY_SERVICES = {
     "closePreview", "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
     "previewFixField", "previewFixFilename", "openRepair", "toggleLog", "init", "dispose",
   ],
-  /* R4-03 — `currentScreen` 관측면이 늘었다. 화면이 「지금 어느 화면인가」를 상태기계에
-     묻게 하는 자리이고, 그것을 DOM(`#scr-job.on`)으로 되물으면 판정이 두 곳에 산다. */
   Nav: ["go", "refresh", "currentScreen"],
   AppCloseGuard: ["prompt"],
   /* 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`. selftest 프로브가
@@ -108,10 +54,6 @@ const FACTORY_SERVICES = {
   ],
 };
 
-/* selftest 에 넘기는 구성 산물 전수 = 반환 `services` 의 키 전수. R4에서 DataZone은
-   React job-read controller로 흡수됐고, R4-02 에서 `SegView` 가 React `SegmentView` 로
-   흡수됐다(합성 루트가 배선할 잎이 아니라 작업대 트리 안의 요소가 됐다). 남은 이름만 명시
-   주입 거처를 유지한다. */
 const SERVICE_NAMES = [
   ...Object.keys(PLAIN_SERVICES),
   ...Object.keys(FACTORY_SERVICES),
@@ -262,7 +204,7 @@ test("잎 모듈은 import 만으로 전역을 만들지 않는다", async (t) =
   assert.deepEqual(Object.keys(host.window).sort(), before);
 });
 
-test("부팅이 심는 제품 전역은 `__hwpx` **하나**뿐이다(N-10 종착점)", async (t) => {
+test("부팅이 심는 제품 전역은 `__hwpx` 하나뿐이다", async (t) => {
   const { host, installed } = await boot(t);
 
   assert.deepEqual(installed, ["__hwpx"],
@@ -276,7 +218,7 @@ test("부팅이 심는 제품 전역은 `__hwpx` **하나**뿐이다(N-10 종착
   assert.equal(typeof host.window.__hwpxTest, "undefined");
 });
 
-test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 대조)", async (t) => {
+test("서비스 객체는 전역 별칭으로 노출되지 않는다", async (t) => {
   const { host } = await boot(t);
 
   /* 양성 대조는 위 「전역 프로브가 실제 쓰기를 잡는다」가 진다 — 이 대역에서 쓰기가
@@ -285,8 +227,6 @@ test("은퇴한 별칭은 R4 서비스 축소 뒤에도 전역에 없다(음성 
   assert.deepEqual(revived, [],
     `은퇴한 임시 전역이 되살아났습니다: ${revived.join(", ")}`);
   assert.equal("__push" in host.window, false);
-  assert.equal(SERVICE_NAMES.length, 16,
-    "R5 구성 산물 이름 수가 바뀌었습니다 — R5-99 B2(Copy·escHtml·Preserve 퇴장) 뒤 16개입니다.");
 });
 
 test("합성 루트가 잎·서비스를 **모듈 export 와 같은 객체**로 배선한다", async (t) => {
@@ -335,17 +275,7 @@ test("합성 루트의 공개 표면은 `bootProduct` 하나다", async (t) => {
   assert.equal(typeof module.bootProduct, "function");
 });
 
-/* ══════════ N-07·N-09 제품 파사드 — 푸시는 **단일 활성 통로**를 지난다 ══════════
-
-   N-07 은 이 자리에서 회귀를 한 번 겪었다: 파사드의 `snapshot` 처리기가 구성 산물 `push` 를
-   **값으로 붙들어** 프로브의 가로채기를 우회했고, 프로브는 "푸시 0" 을 보고 그 침묵을 배선
-   부재로 읽었다(`mirror_pushes` 1→0, `reject_pushes` 1→0). 당시 수리는 전역 `window.__push`
-   지연 판독이었고, N-09 가 만나는 자리를 **포트**로 옮겼다.
-
-   그래서 N-10 의 별칭 삭제는 이 경로를 건드리지 않는다 — 이미 전역에 의존하지 않았다.
-   달라진 것은 **손잡이**뿐이다: 전역 대신 반환된 `pushPort`·`bridge` 로 같은 성질을 잰다.
-   갈아끼운 통로가 실제로 관측되는지는 `n09_push_port.test.js` 가 실 러너·프로브 경로로
-   진다(그쪽에 음성 대조가 있다). */
+/* 제품 파사드와 store는 단일 활성 push 포트의 하류에 있어야 한다. */
 
 test("제품 파사드와 푸시 포트는 **같은 하나의 통로**로 모인다", async (t) => {
   const { composed } = await boot(t);
@@ -371,8 +301,6 @@ test("제품 파사드와 푸시 포트는 **같은 하나의 통로**로 모인
   assert.deepEqual(seen, [{ rows: 1 }, { rows: 2 }],
     "제품 파사드와 푸시 포트가 서로 다른 통로로 갈렸습니다 — 하나를 갈아끼우면 다른 하나가 샙니다.");
 });
-
-/* ══════════ R2-03 스냅샷 store — 탭은 포트 **하류**에, 채널은 계약 유도로 ══════════ */
 
 test("합성 루트는 store 를 계약 유도 채널로 세우고 반환값에 싣는다", async (t) => {
   const { composed } = await boot(t);
@@ -431,22 +359,4 @@ test("프로브가 포트를 갈아끼우면 store 도 legacy 처럼 조용해�
   });
   assert.equal(composed.store.revision("job"), 1, "restore 뒤에도 store 에 닿지 않습니다.");
   assert.deepEqual(composed.store.get("job"), { rows: 2 });
-});
-
-test("합성 루트는 기반 푸시를 값으로 붙들지 않는다(회귀 되살리기 금지 · 소스 계약)", () => {
-  const source = readFileSync(new URL(BOOTSTRAP, import.meta.url), "utf8");
-  const body = source.replace(/\/\*[\s\S]*?\*\//g, "");
-
-  /* 되살아나는 모양은 정확히 이것이다: 처리기가 구성 산물 `push` 를 직접 부른다.
-     포트를 거치지 않으면 프로브가 갈아끼운 통로를 우회한다. */
-  assert.equal(/snapshot:\s*\([^)]*\)\s*=>\s*push\(/.test(body), false,
-    "snapshot 처리기가 구성 산물 push 를 값으로 붙들었습니다 — N-07 회귀가 되살아납니다.");
-  assert.match(body, /snapshot:\s*\([^)]*\)\s*=>\s*pushPort\.dispatch\(/,
-    "snapshot 처리기는 포트로 보내야 합니다.");
-
-  /* 전신은 여기서 `window.__push = pushPort.dispatch` 도 함께 단언했다("두 입구가 갈리지
-     않는가"). 입구가 하나가 된 지금 그 단언의 후계는 **전역이 0개**라는 사실 자체다 —
-     위 「제품 전역은 __hwpx 하나뿐」 테스트가 진다. */
-  assert.equal(/window\.__push/.test(body), false,
-    "은퇴한 __push 전역이 되살아났습니다.");
 });

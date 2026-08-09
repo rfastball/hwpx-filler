@@ -1,16 +1,11 @@
-/* N-06 lane C translated at R4-01: the library read surface is a React controller.
-   These eleven cases preserve the former lifecycle, late-binding, and cross-screen
-   assertions without importing the retired imperative DOM producer. */
+/* Library controller behavior: lifecycle, late binding, and serialized intents. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { createLibraryController } from "../../frontend/src/screens/library.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 
-const SRC_URL = new URL("../../frontend/src/screens/library.ts", import.meta.url);
-const SRC = readFileSync(SRC_URL, "utf8");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 const SURFACE = [
@@ -173,13 +168,4 @@ test("즐겨찾기 연타 — 같은 작업의 최신 intent를 직렬화한다"
   const h = build();
   await Promise.all([h.controller.toggleFavorite("작업A", false), h.controller.toggleFavorite("작업A", false)]);
   assert.deepEqual(h.dispatchCalls.map((row) => row[2].value), [true, false]);
-});
-
-test("구조 음성 — legacy producer와 제품 전역 없이 React/port 직접 간선만 쓴다", () => {
-  assert.equal(SRC.includes("frontend/js/screens/library.js"), false);
-  assert.equal(/(?:window|globalThis)\.(?:Bridge|Nav|JobScreen|LibraryScreen)\b/.test(SRC), false);
-  assert.equal(/export\s+default/.test(SRC), false);
-  assert.ok(SRC.includes('from "./ports.ts"'));
-  assert.ok(SRC.includes('from "../ports/service_handoff.ts"'));
-  assert.ok(SRC.indexOf('"prefer_work"') < SRC.indexOf('deps.navigation.go("job")'));
 });

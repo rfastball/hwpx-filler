@@ -57,14 +57,17 @@ def test_make_source_inline_kind_wraps_records():
     assert src.records() == [rec]
 
 
-def test_make_source_pipeline_kind(tmp_path):
+def test_make_source_pipeline_kind():
     from hwpxfiller.data.pipeline import PipelineSource
 
-    src = make_source(
-        "pipeline", sources=[source_for_path(tmp_path / "d.csv")], steps=[]
+    # 풀의 재귀 복원은 JSON dict뿐 아니라 이미 정규화된 참조 객체도 받아야 한다.
+    sub = SimpleNamespace(kind="inline", opts={"records": [{"공고명": "장비"}]})
+    src = source_from_pool_item(
+        SimpleNamespace(kind="pipeline", opts={"sources": [sub]})
     )
     assert isinstance(src, PipelineSource)
     assert isinstance(src, DataSource)  # 파이프라인도 동일 포트로 다운스트림에 보임
+    assert src.records() == [{"공고명": "장비"}]
 
 
 def test_csv_roundtrip_through_factory(tmp_path):

@@ -457,12 +457,6 @@ def test_slug_collision_different_name_restates_victim_then_saves(tmp_path):
     assert JobRegistry(tmp_path / "jobs").exists("예산_2026")
 
 
-def test_unknown_editor_action_is_loud(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
-        ctrl.dispatch("frobnicate", {})
-
-
 # ------------------------------------------------------------ #25 세션 혼합 방지
 def _build_complete_session(ctrl, name: str) -> None:
     """COMPILED 템플릿으로 저장 가능한 완결 세션 구성(저장 직전까지) — 혼합 테스트 준비."""
@@ -487,7 +481,7 @@ def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
     assert ctrl.snapshot()["has_unsaved_work"] is True   # 스냅샷에도 노출(웹 확인 판단용)
 
 
-def test_new_job_session_atomically_clears_prior_session(tmp_path):
+def test_new_job_session_atomically_clears_prior_session_and_blocks_mixed_save(tmp_path):
     """템플릿 A 진행 세션 → new_job_session(B) 는 이름·데이터·매핑·단계를 원자 초기화(#25)."""
     ctrl, _ = _controller(tmp_path)
     _build_complete_session(ctrl, "작업A")
@@ -499,13 +493,6 @@ def test_new_job_session_atomically_clears_prior_session(tmp_path):
     assert snap["name"] == ""                            # 이름 소거(A 잔존 없음)
     assert snap["rows"] == [] and snap["is_complete"] is False  # 구 매핑 모델 폐기
     assert snap["data_path"] == ""                       # 데이터 소거
-
-
-def test_new_job_session_prevents_mixed_save(tmp_path):
-    """A 완결 세션 후 저장 전 B 진입 → 저장 시 구 모델이 없어 시끄럽게 차단(혼합 오저장 불가)."""
-    ctrl, _ = _controller(tmp_path)
-    _build_complete_session(ctrl, "작업A")
-    ctrl.new_job_session(str(TPL_COMPILED))              # 저장 없이 새 세션(같은 템플릿이어도 초기화)
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "확정" in res["block_reason"]  # 모델 리셋 → 미확정 차단
 
@@ -792,22 +779,18 @@ def test_save_with_data_registers_nothing_anywhere(tmp_path, monkeypatch):
     assert DatasetPoolRegistry(tmp_path / "home" / "datasets").list_items() == []
 
 
-def test_dataset_actions_are_gone_loudly(tmp_path):
-    """구 자동등록 표면(set_dataset_name)은 미지 액션으로 시끄럽게 거절된다(#347)."""
-    ctrl, _ = _controller26(tmp_path)
-    with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
-        ctrl.dispatch("set_dataset_name", {"name": "x"})
-
-
 # ------------------------------------------------------- 매핑 프로파일 제거(F22)
-def test_profile_actions_are_gone_loudly(tmp_path):
-    """구 매핑 프로파일 액션(_do_profile_*)은 미지 액션으로 시끄럽게 거절된다(F22).
+def test_removed_dataset_and_profile_actions_are_gone_loudly(tmp_path):
+    """폐기한 자동등록·매핑 프로파일 액션은 미지 액션으로 loud 거절된다.
 
     작업이 매핑을 자족 저장·복원하므로 별도 프로파일 저장 개념은 제거 — 재사용은
     「작업 복제」(홈 clone_job)로 수렴한다. 조용한 no-op 잔존이 아니라 표면째 소멸.
     """
     ctrl, _ = _controller26(tmp_path)
-    for action in ("profile_list", "profile_apply", "profile_save", "profile_delete"):
+    for action in (
+        "frobnicate", "set_dataset_name", "profile_list", "profile_apply", "profile_save",
+        "profile_delete",
+    ):
         with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
             ctrl.dispatch(action, {"name": "x"})
 
@@ -940,8 +923,8 @@ def test_legacy_default_dataset_ref_key_is_discarded_not_migrated(tmp_path):
 
 
 # ------------------------------------------------- 사용할 헤더 선택(#49)
-def test_header_selection_defaults_all_active_then_narrows(tmp_path):
-    """데이터 로드 = 전원 활성. 칩을 하나씩 끄면(즉시 토글) 나머지만 활성, 카운트 재진술(결정 13)."""
+def test_header_selection_lifecycle_defaults_narrows_and_resets(tmp_path):
+    """헤더는 전원 활성으로 시작해 개별·일괄 복원되고 새 데이터에서 초기화된다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
@@ -957,6 +940,16 @@ def test_header_selection_defaults_all_active_then_narrows(tmp_path):
     assert snap["ignored_source_fields"] == ["낙찰금액", "계약일"]
     assert snap["active_count"] == 1 and snap["ignored_count"] == 2
     assert snap["notice"] and "사용 데이터 열 1개 · 미사용 2개" in snap["notice"]["text"]
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+    assert "낙찰금액" in ctrl.snapshot()["active_source_fields"]
+    ctrl.dispatch("use_all_headers", {})
+    assert ctrl.snapshot()["ignored_count"] == 0
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
+    ctrl.load_data_path(str(MULTI_SHEET))
+    snap = ctrl.snapshot()
+    assert snap["source_fields"] == ["공고명", "추정가격"]
+    assert snap["ignored_count"] == 0 and snap["active_source_fields"] == snap["source_fields"]
 
 
 def test_ignoring_mapped_header_r4_demotes_human_owned_and_restates(tmp_path):
@@ -980,38 +973,6 @@ def test_ignoring_mapped_header_r4_demotes_human_owned_and_restates(tmp_path):
     assert snap["rows"][1]["source"] == "업체명" and snap["rows"][1]["confirmed"] is True
     assert "낙찰금액" not in snap["active_source_fields"]
     assert snap["notice"]["level"] == "warn" and "재확정" in snap["notice"]["text"]
-
-
-def test_reactivate_and_use_all_headers(tmp_path):
-    """미사용 헤더 개별 재활성 + 전체 사용 일괄 복원(즉시 토글)."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
-    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
-    assert ctrl.snapshot()["ignored_source_fields"] == ["낙찰금액", "계약일"]
-
-    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})       # 개별 재활성
-    snap = ctrl.snapshot()
-    assert "낙찰금액" in snap["active_source_fields"]
-    assert "낙찰금액" not in snap["ignored_source_fields"]
-
-    ctrl.dispatch("use_all_headers", {})                              # 일괄 복원
-    assert ctrl.snapshot()["ignored_count"] == 0
-
-
-def test_new_data_resets_ignored_headers(tmp_path):
-    """새 데이터 로드 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않는다."""
-    ctrl, _ = _controller(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
-    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
-    assert ctrl.snapshot()["ignored_count"] == 2
-    ctrl.load_data_path(str(MULTI_SHEET))                             # 첫 시트(공고목록)=새 헤더
-    snap = ctrl.snapshot()
-    assert snap["source_fields"] == ["공고명", "추정가격"]
-    assert snap["ignored_count"] == 0 and snap["active_source_fields"] == ["공고명", "추정가격"]
 
 
 def test_use_none_blocks_on_confirmed_but_allows_when_clean(tmp_path):

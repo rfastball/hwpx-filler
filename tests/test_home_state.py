@@ -129,7 +129,7 @@ def test_only_corrupt_files_is_not_empty_state(tmp_path):
     assert not vm.is_empty()  # 빈 상태 패널 대신 손상 행이 노출돼야 한다
 
 
-def test_dashboard_kpi_from_real_data(tmp_path):
+def test_dashboard_kpi_from_real_data_and_empty_defaults(tmp_path):
     from hwpxfiller.core.text_registry import TextTemplateRegistry
 
     td = tmp_path / "tt"
@@ -141,16 +141,10 @@ def test_dashboard_kpi_from_real_data(tmp_path):
     assert k.missing_template_count == 1        # '/none/t.hwpx' 부재
     assert k.txt_template_count == 1
     assert k.recent_run.startswith("07-09") and "공고서" in k.recent_run  # 최신 실행
-
-
-def test_dashboard_kpi_no_runs_no_txt(tmp_path):
-    from hwpxfiller.core.job import Job, JobRegistry
-
-    reg = JobRegistry(tmp_path / "j")
+    reg = JobRegistry(tmp_path / "no-runs")
     reg.save(Job(name="미실행", template_path=""))
-    vm = HomeViewModel(reg)  # txt 레지스트리 없음
-    k = vm.kpi()
-    assert k.recent_run == "—" and k.txt_template_count == 0
+    empty = HomeViewModel(reg).kpi()  # txt 레지스트리 없음
+    assert empty.recent_run == "—" and empty.txt_template_count == 0
 
 
 def test_txt_rows(tmp_path):
@@ -226,68 +220,24 @@ def _row(template_path: str) -> JobRow:
     return JobRow.from_job(Job(name="작업", template_path=template_path))
 
 
-def test_badge_raw(tmp_path):
-    row = _row(_raw_hwpx(tmp_path))
-    assert row.compile_state == CompileState.RAW
-    assert row.compile_badge == BADGE_RAW
-
-
-def test_badge_partial_counts_leftover_tokens(tmp_path):
-    row = _row(_partial_hwpx(tmp_path))
-    assert row.compile_state == CompileState.PARTIAL
-    # N = skipped_n + stray_n + compilable_n; 이 픽스처는 stray 1개.
-    assert row.compile_badge == "⚠ 미확인 토큰 1개"
-
-
-def test_badge_compiled_is_ready(tmp_path):
-    row = _row(_compiled_hwpx(tmp_path))
-    assert row.compile_state == CompileState.COMPILED
-    assert row.compile_badge == BADGE_READY
-
-
-def test_badge_filled_is_ready(tmp_path):
-    row = _row(_filled_hwpx(tmp_path))
-    assert row.compile_state == CompileState.FILLED
-    assert row.compile_badge == BADGE_READY
-
-
-def test_badge_missing_template_does_not_call_compile_status(tmp_path):
-    # 존재하지 않는 경로 → 부재 배지, compile_state None(compile_status 미호출).
-    row = _row(str(tmp_path / "does_not_exist.hwpx"))
-    assert row.template_missing is True
-    assert row.compile_state is None
-    assert row.compile_badge == BADGE_MISSING
-
-
-def test_badge_empty_path_has_no_badge():
-    row = _row("")
-    assert row.template_missing is False
-    assert row.compile_state is None
-    assert row.compile_badge == ""
-
-
-def test_badge_corrupt_template_degrades_loudly(tmp_path):
-    # 손상 .hwpx(zip 아님) → 조용한 ✅ 금지, 시끄러운 오류 배지로 강등.
+def test_badge_matrix_also_owns_the_runnable_decision(tmp_path):
+    """컴파일 상태 → 배지·실행 가능 판정은 하나의 표로 같이 검증한다."""
     bad = tmp_path / "corrupt.hwpx"
     bad.write_bytes(b"not a real hwpx zip")
-    row = _row(str(bad))
-    assert row.compile_state is None
-    assert row.compile_badge == BADGE_ERROR
-
-
-def test_is_runnable_gates_on_badge_level(tmp_path):
-    """UD-03 — 실행 진입 판정은 badge_level 단일 술어: danger(부재·손상·오류·미설정)만
-    차단하고 RAW·PARTIAL·COMPILED·FILLED 는 진입 가능(카드 CTA·더블클릭 공유 술어)."""
-    assert _row(_raw_hwpx(tmp_path)).is_runnable() is True          # RAW(muted)
-    assert _row(_partial_hwpx(tmp_path)).is_runnable() is True      # PARTIAL(warn)
-    assert _row(_compiled_hwpx(tmp_path)).is_runnable() is True     # COMPILED(ok)
-    assert _row(_filled_hwpx(tmp_path)).is_runnable() is True       # FILLED(ok)
-    # 실행 불가(danger) — 세 경로 모두 compile_state None → 차단.
-    assert _row(str(tmp_path / "does_not_exist.hwpx")).is_runnable() is False  # 부재
-    assert _row("").is_runnable() is False                          # 템플릿 미설정
-    bad = tmp_path / "corrupt.hwpx"
-    bad.write_bytes(b"not a real hwpx zip")
-    assert _row(str(bad)).is_runnable() is False                    # 손상/컴파일 오류
+    cases = [
+        (_raw_hwpx(tmp_path), CompileState.RAW, BADGE_RAW, False, True),
+        (_partial_hwpx(tmp_path), CompileState.PARTIAL, "⚠ 미확인 토큰 1개", False, True),
+        (_compiled_hwpx(tmp_path), CompileState.COMPILED, BADGE_READY, False, True),
+        (_filled_hwpx(tmp_path), CompileState.FILLED, BADGE_READY, False, True),
+        (str(tmp_path / "does_not_exist.hwpx"), None, BADGE_MISSING, True, False),
+        ("", None, "", False, False),
+        (str(bad), None, BADGE_ERROR, False, False),
+    ]
+    for path, state, badge, missing, runnable in cases:
+        row = _row(path)
+        assert (row.compile_state, row.compile_badge) == (state, badge)
+        assert row.template_missing is missing
+        assert row.is_runnable() is runnable
 
 
 def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):

@@ -72,7 +72,7 @@
 - **생성 사슬:** `scripts/gen_bridge_contract.py` 가 정본(`action_registry`·`product_api`·
   `app.py` WebFrontend·`frontend/src/product_api.js` snake 어휘)을 추출해
   `frontend/src/contract/contract.gen.ts` 를 찍는다. 생성물은 커밋되는 소스이고 손으로
-  고치지 않는다 — `tests/test_bridge_contract.py` 가 재생성 바이트 비교(드리프트)에 더해
+  고치지 않는다 — `tests/repo_contract/test_bridge_contract.py` 가 재생성 바이트 비교(드리프트)에 더해
   **생성기와 코드를 공유하지 않는 독립 오러클**(Python 직접 import · `webapp.app` 런타임
   리플렉션 · 독립 JS 판독)로 지키므로, 생성기가 정본을 오독하면 바이트 비교가 초록이어도
   오러클이 빨갛다.
@@ -113,9 +113,9 @@
   부팅은 initial 당김이 정본」의 store 판 번역).
 - **실물 증거**: React 트리의 StoreSignal 이 수신 총 revision 을 `#reactRoot` 의
   `data-react-store-rev` 로 반영하고(기입 주체는 target 을 닫은 `boot.ts` 클로저 — 신호는
-  DOM 을 모른다), `tests/test_react_store_live.py` 가 실 WebView2 에서 push 수신과 reload
-  재초기화 신품성을 되읽는다. 화면 selector 의 실물과 legacy 구독(`wired`/`seated`)의 후계
-  지정은 R3+ 가 이 경계 위에 세운다 — 이 단계의 소비자는 StoreSignal 뿐이다.
+  DOM 을 모른다), `tests/test_web_selftest_gate.py`의 단일 실 WebView2 부팅이 React 커밋·
+  store marker 형상을 함께 되읽는다. push 수신의 순수 인과는 store Node 계약이, 실제 push 뒤
+  화면 재렌더는 같은 selftest 결과의 화면별 행동 계약이 잇는다.
 
 ### 검증·동일 산출물·패키징 기반 접속 (R2-04 · #408)
 
@@ -128,17 +128,17 @@ R2 가 세운 React 기반(root·계약·store)의 검증이 기존 행렬 — �
   경로가 root.ts 하나뿐임의 재확인이지, 마커를 안 심는 날 `createRoot` 둘째 root 의 방어가
   아니다). 위반은 프로브 throw 라 source 게이트(프로브 무오류 단언)와 packaged 판정
   (`packaging/build.ps1` — 책임 수 43 + `react_runtime` 형상 단언, 오프라인 국면 소유)이
-  각자의 기존 경로로 붉는다. 값의 크기(0/양수) 단언은 4국면 live 게이트의 소유로 남는다.
+  각자의 기존 경로로 붉는다. revision 절댓값은 프로브 순서에 결합하지 않고 형상만 단언한다.
 - **다중 root 의 실방어는 정적 층이다**: `react-dom/*` 결속은 `react/boot.ts` 하나로 핀,
   날 `createRoot(` 호출 census 1(멤버-접근·정의는 세지 않는다), 합성 루트 factory
   (`bootReactRoot`·`createSnapshotStore`) 착좌 census 각 1 — R2-00 불변식(다중 island 금지)의
-  기계 검사(`tests/test_frontend_build_graph.py`).
+  기계 검사(`tests/artifact_contract/test_frontend_build_graph.py`).
 - **봉인 입력에 tsconfig.json 이 편입됐다**(`web_artifact.py` `_SOURCE_CONFIG_PATHS`) — Vite 의
   `.ts` 변환이 읽는 실빌드 입력이라 dirty 거부·source 레코드 양쪽에 닿는다. 봉인 외부 URL
   술어의 불활성 열거(정확 4 + 접두 1, `.js` 한정 면제)는 R2-01 경계 개정 형상 그대로
   **존치**한다 — 어느 URL 도 소비하는 로더가 산출물 안에 없다(재판정 완료, #408 패킷 §2.3).
 - **Vitest/jsdom·범용 JS/TS lint 는 이 단계에서 기각됐다** — DOM 수명주기의 실증은 실
-  WebView2 층이 이미 지고(마운트 커밋·reload 재초기화·store 4국면), jsdom 은 그보다 약한
+  WebView2 module selftest가 이미 지고(마운트 커밋·reload 재초기화·store marker), jsdom 은 그보다 약한
   둘째 오러클이다. 요구가 증명되는 시점(R3+ 화면 이관)의 재개방 사유는 #408 패킷 §4.5.
 
 ### 공용 상호작용·overlay 수명주기 (R3-01 · #410)
@@ -179,11 +179,10 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   `#reactOverlayHost`)이고, live 소유 술어(`overlay_children_owned`)가 그 두-포털 형상을
   document 전역에서 재측정한다.
 - **검증 배치**: 엔진 순수층은 `tests/js/overlay_engine.test.js`, host 렌더 요소 계약(실 서버
-  렌더)·집행 계약은 `tests/js/overlay_host.test.js`, 파사드~엔진~집행자 실물 사슬은
-  `tests/js/n05_overlay.test.js`(하니스가 bootProduct 구성 몫을 재현), 실창 증거는 기존
-  selftest 게이트(`modal_a11y`·`modal_confirm_serial` — React 표면 위 무변경 초록, 골격은
-  React 커밋 산물이라 마운트 전제조건 대기) + 신설 `tests/test_react_overlay_live.py`(host
-  마커·직속 자식·닫힘 상시 렌더·id 유일의 reload 재초기화 되읽기)가 진다.
+  렌더)·집행 계약은 `tests/js/overlay_host.test.js`, `bootProduct` 합성 경계는
+  `tests/js/bootstrap.test.js`가 진다. 파사드~엔진~집행자 실물 사슬은 기존 selftest 게이트의
+  `modal_a11y`·`modal_confirm_serial`·`milestone_h_overlay`가 React 표면의 개폐·포커스·직속
+  portal 소유를 한 부팅에서 되읽는다.
 - **R4 인계**: 9 모달·메뉴 3·콜패널·이동 다이얼로그 2 의 DOM 실이관(내용 생산자=화면과 한
   몸). **R5 정산**: 구 파사드 파일은 은퇴했고 adapter와 SurfaceSheet는 factory 주입으로
   구성된다. React host 슬롯은 mount/unmount cleanup이 exact 대칭이다.
@@ -219,32 +218,23 @@ React 렌더 다이얼로그를 **한 스택**에 세우므로, 판정이 두 �
   재조립하면 그것이 경계 위반이다(음성 게이트가 든다).
 - **마운트 실패의 반경**: R3-01(확인 창)에 더해 탭·도구 응답·화면 init 이 React 마운트에
   선다 — 실패는 경보(alert)로 착지하고 Vanilla fallback 은 없다(#405 불변식).
-- **검증 배치**: 상태기계 순수층은 `tests/js/shell_nav.test.js`, adapter 결합·부착 실물은
-  `tests/js/n06_app_shell.test.js`(attachShell 로 종전 거동 계측), 실창 증거는 기존 selftest
-  부팅·라우팅 프로브(무변경 초록) + 신설 `tests/test_react_shell_live.py`(랜딩·실클릭 동기
-  전환·닫기 취소/확정 왕복·reload 재초기화)가 진다.
+- **검증 배치**: 상태기계 순수층은 `tests/js/shell_nav.test.js`, React 트리 결속과 합성 착지는
+  `tests/js/react_root.test.js`·`tests/js/bootstrap.test.js`가 진다. 실창 증거는
+  `tests/test_web_selftest_gate.py`의 부팅·기본 랜딩·탭 렌더·화면 action 왕복·확인창 계약이
+  같은 모듈 부팅 결과를 공유한다.
 - **R4-04 착지**: `reactScreenStage` 하나에 `ProductScreens`가 네 화면을 mounted-hidden으로
   유지한다. visibility store 하나가 `.on`·`hidden`·`inert`·`aria-hidden`을 함께 내리고,
   editor/workbench 이탈·rerender 수명주기는 registry의 단일 owner가 fail-closed한다.
   **R5 인계**: 테마·개인화 배선의 정리와 adapter 잔존 0.
 
-### React 패리티 검증 매트릭스 (R3-03 · #412)
+### 장기 렌더 검증 배치
 
-이 표는 검증 종류를 “테스트가 많다”는 산문으로 뭉개지 않는다. 각 동등성 축마다 정적·브라우저·
-실창 증거를 따로 들고, 아직 증거가 없는 칸은 공란 대신 **왜 비어 있는지**를 적는다. 아래 마커와
-표 형식은 `tests/test_parity_matrix.py`가 파싱하므로 이름을 바꾸거나 행을 줄이는 것도 계약 변경이다.
-
-<!-- R3-03-PARITY-MATRIX:START -->
-| 축 | 정적 | 브라우저 | 실창 |
-|---|---|---|---|
-| css-cascade | `tests/test_web_css_manifest.py::test_app_css_manifest_matches_product_entry_import_order` | 비어 있음 — 링크 순서와 파일 전수는 실렌더 상태가 아니라 빌드 그래프 계약이다. | 비어 있음 — R4 화면 이관 전에는 CSS 순서를 다시 재는 별도 WebView2 부팅을 늘리지 않는다. |
-| dom-aria | `tests/test_web_dom_contract.py::test_custom_modals_have_dialog_semantics`, `tests/js/overlay_host.test.js` | 비어 있음 — ReactDOMServer 정적 렌더는 정적 열로 분류하고 실제 WebView2 동작은 실창 열이 소유한다. | `tests/test_react_overlay_live.py::test_overlay_host_commits_skeletons_and_survives_reinit_in_a_real_window` |
-| keyboard-focus | `tests/test_web_dom_contract.py::test_card_families_keep_keyboard_focus_outline`, `tests/js/n05_overlay.test.js` | 비어 있음 — StubElement 단위 검사는 정적 열로 분류하고 실제 WebView2 초점 왕복은 실창 열이 소유한다. | `tests/test_web_selftest_gate.py::TestWebSelftestGate::test_modal_escape_closes_and_restores_focus` |
-| geometry | `tests/test_scroll_topology.py::test_capped_scrollport_inventory_matches_dom_and_behavior_contract` | `tests/test_web_press_geometry.py::test_row_surface_left_edge_does_not_move_while_held` | `tests/test_web_selftest_gate.py::test_window_geometry_restores_or_falls_back_in_real_webview` |
-| motion | `tests/test_interaction_responsiveness.py::test_press_feedback_covers_round_trip_surfaces_and_reduced_motion` | `tests/test_web_press_geometry.py::test_press_marker_actually_fires_on_a_box_surface` | 비어 있음 — 실제 OS 모션 설정을 변이하지 않는 정책이라 강제 대조는 Playwright가 소유한다. |
-| forced-colors | `tests/test_personalization_contract.py::test_forced_colors_preserves_three_owner_signals` | `tests/test_web_press_geometry.py::test_forced_colors_ownership_markers_render_only_in_active_media` | 비어 있음 — WebView2에서 사용자 Windows 고대비 설정을 시험이 바꾸지 않으며 Playwright 양면 렌더가 후계다. |
-| ts-copy | `tests/test_web_css_orphan_classes.py::test_typescript_class_name_properties_are_seen` | 비어 있음 — TS 생산자 편입 여부는 소스 폐포 술어의 책임이고 렌더 결과는 해당 DOM 축에서 본다. | 비어 있음 — R4 화면 실이관 전에는 TS 복제만 위한 별도 콜드 부팅을 만들지 않는다. |
-<!-- R3-03-PARITY-MATRIX:END -->
+R3/R4 이관 패리티 원장은 완료와 함께 퇴역했다. 장기 계약은 실제 위험 경계가 소유한다:
+React 요소·ARIA는 `tests/js/overlay_host.test.js`, 셸 상태는 `tests/js/shell_nav.test.js`,
+개인화·기하는 `tests/js/n08_persistence_geometry.test.js`와
+`tests/test_web_press_geometry.py`, 강제 색상은 `tests/test_personalization_contract.py`, 최종
+WebView2 렌더·초점·스크롤은 `tests/test_web_selftest_gate.py`가 확인한다. 테스트 경로를 다시
+파싱하는 별도 메타테스트는 두지 않는다.
 
 ### Python→웹 제품 경계 — `window.__hwpx` 하나 (N-07 · #372 D-06)
 
@@ -340,7 +330,8 @@ Python 쪽 어댑터는 `webapp/selftest_api.py`이고, 표현식 조립·호스
 부른다. 프로브가 `ctx.push`를 갈아끼우면 뒤이어 도착하는 **호스트 푸시**도 그 통로를 지나야
 `mirror_pushes`·`reject_pushes`가 실물을 잰다. 처리기가 푸시를 값으로 붙들면 제품 푸시가
 가로채기를 우회하고, 프로브는 "푸시 0"을 보고 그 침묵을 **배선 부재**로 읽는다 — N-07에서
-실제로 난 회귀이고(#379 §5), `tests/js/n09_push_port.test.js`가 음성 대조까지 지고 있다.
+실제로 난 회귀이고(#379 §5), 현재는 `tests/js/state_store.test.js`의 포트 계약과
+`tests/js/bootstrap.test.js`의 합성·음성 대조가 지고 있다.
 
 사용자 확인(파괴 전이의
 `needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**
@@ -791,29 +782,32 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 
 ## DOM과 런타임 게이트
 
-- `tests/test_web_dom_contract.py`는 **실제 배포 자산**을 읽는 정적 계약이다. 전역 `id` 유일성,
-  화면 루트, script/style 배선, 접근성 참조, 렌더 보존 래핑과 주요 JS/브리지 seam을 검사한다.
+- source entry·import 폐포·React root 결속은
+  `tests/artifact_contract/test_frontend_build_graph.py`가 정적으로 확인한다.
+- 공개 브리지·payload 경계는 `tests/repo_contract/test_bridge_contract.py`와
+  `tests/repo_contract/test_dispatch_payload_contract.py`, React 요소·ARIA는 각
+  `tests/js/*.test.js` 장기 소유자가 확인한다. 완료 이관기의 범용 DOM 문자열 census는 퇴역했다.
 - `tests/test_web_selftest_gate.py`와 `python -m hwpxfiller.webapp --selftest`는 **실 WebView2**에서
-  부팅·렌더·상호작용·브리지 왕복을 되읽는 동적 게이트다. 정적 문자열 검사만으로 증명할 수 없는
-  실제 가시성, 포커스, 클릭, 상태 갱신을 맡는다.
-- `tests/test_ui_contract.py`는 동결 목업의 `data-vm` 주석과 아직 살아 있는 링1 ViewModel 표면의
-  정합성만 검사한다. 배포 DOM이나 현재 라우팅의 정본이 아니다.
+  부팅·렌더·상호작용·브리지 왕복을 되읽는다. 실제 가시성, 포커스, 클릭, 상태 갱신은 이 층의
+  책임이다.
+- 동결 목업의 `data-vm`은 역사적 설계 참조일 뿐 현재 배포 DOM이나 라우팅의 실행 게이트가 아니다.
 
-정적 DOM 게이트와 실 WebView2 게이트는 대체 관계가 아니다. 구조적 누락은 전자가 빠르게 잡고,
-브라우저 런타임에서만 드러나는 결함은 후자가 잡는다.
+구조·공개 경계·실렌더는 서로 대체하지 않는다. 다만 모든 관심사를 다시 한 파일의 문자열
+목록으로 모으지 않고, 실제 위험 경계의 장기 소유자에 둔다.
 
 ## 디자인 토큰, CSS와 문구의 단일 출처
 
 - 원시 디자인 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
   `scripts/gen_design_tokens.py`가 커밋되는 `frontend/css/tokens.css`와 동결 목업의 생성 구간을 만든다.
-  `tests/test_design_tokens.py`가 생성물 드리프트를 막는다.
+  생성 드리프트는 `scripts/gen_design_tokens.py --check`, 사용자 안전 대비 하한은
+  `tests/repo_contract/test_contrast_wcag.py`로 나눠 확인한다.
 - 실제 레이아웃·컴포넌트 스타일의 단일 출처는 `frontend/css/` 아래 **9개 스타일시트**다
   (`base`·`draftcard`·`editor`·`job`·`overlay`·`library`·`forced-colors`·`jobdata`·`tail`).
-  구 `app.css`를 **순서 보존 컷**으로 자른 것이라 링크 순서대로 이어붙이면 옛 파일과 바이트
-  동일하고, 그래서 **`<link>` 순서가 캐스케이드 계약**이다 — 목록·순서의 단일 출처는
-  `tests/_web_css.py`의 `APP_CSS_FILES`이고 `tests/test_web_css_manifest.py`가 셸 링크 순서와
-  `frontend/css/*.css` 전수 등재를 게이트한다. 현재 앱을 판단할 때 동결 목업의 인라인 CSS를
-  사용하지 않는다.
+  구 `app.css`의 순서 보존 컷이며 **캐스케이드 정본은 `frontend/src/main.js`의 CSS import
+  순서**다. `tests/_web_source.py`의 `ALL_CSS_FILES`는 테스트용 공유 판독자이고,
+  `tests/artifact_contract/test_frontend_build_graph.py`가 entry import의 해소·폐포를 확인한다.
+  완료 이관기의 별도 파일·orphan census는 퇴역했다. 현재 앱을 판단할 때 동결 목업의 인라인
+  CSS를 사용하지 않는다.
 - 한 번만 쓰이는 정적 문구는 `frontend/index.html` 또는 해당 화면 JavaScript/Python 산출자가
   소유한다. 둘 이상에서 공유하는 사용자 문구만 명시적 공용 상수 모듈로 올린다(승격 대상이
   없으면 모듈도 두지 않는다 — 구 `frontend/js/copy.js` 는 R5-99 B2 에서 소비자 0 으로 삭제).
@@ -822,8 +816,8 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 ## 변경 규율
 
 - 링1 공개 API를 바꾸면 이를 소비하는 컨트롤러와 관련 헤드리스 테스트를 함께 갱신한다.
-- DOM `id`, `data-*`, script 순서 또는 화면 루트를 바꾸면 정적 DOM 계약을 먼저 갱신하고,
-  실제 동작이 관여하면 WebView2 selftest 시나리오도 갱신한다.
+- DOM `id`, `data-*`, entry 또는 화면 루트를 바꾸면 해당 JS 장기 소유자와 artifact 폐포 계약을
+  갱신하고, 실제 동작이 관여하면 WebView2 selftest 시나리오도 갱신한다.
 - 목업은 [동결 시안](UI_PROTOTYPE_APPB.html)이다. 현재 기능을 설계하거나 검증하기 위해 목업을
   먼저 고치지 않는다. 보존된 `data-vm` seam이 더는 유효하지 않을 때에만 역사 계약과 함께
   명시적으로 정리한다.

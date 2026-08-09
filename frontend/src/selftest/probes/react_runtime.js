@@ -10,12 +10,12 @@
  *   · mounted   : `#reactRoot` 의 `data-react-mounted` == "1" (커밋 마커 — root.ts 가 커밋
  *                 시점에 심는다).
  *   · store_rev : `data-react-store-rev` 가 십진 문자열(`/^[0-9]+$/`). 값의 크기(0/양수)는
- *                 묻지 않는다 — 그것은 4국면 live 게이트(tests/test_react_store_live.py)의
- *                 소유이고, 여기서 겸하면 프로브가 클러스터 실행 순서에 결합된다.
+ *                 묻지 않는다 — 값보다 마커 형상을 보는 module selftest result의 소유이고,
+ *                 여기서 겸하면 프로브가 클러스터 실행 순서에 결합된다.
  *   · roots     : `[data-react-mounted]` 전수 == 1. **마커 규율 census** 다 — 마커의 생산자는
  *                 root.ts 컨트롤러 경로 하나이므로, 이 판독은 「마커를 심는 경로가 하나뿐」을
  *                 실창에서 재확인할 뿐 날 `createRoot` 둘째 root(마커를 안 심는다)는 잡지
- *                 못한다. 다중 island 의 실방어는 정적 census(test_frontend_build_graph.py)가
+ *                 못한다. 다중 island 의 실방어는 정적 census(tests/artifact_contract/test_frontend_build_graph.py)가
  *                 진다.
  *
  * 위반은 **throw** 다(ctx.fail) — 러너가 `report.errors` 로 재진술하고 실패한 키는 증거에서

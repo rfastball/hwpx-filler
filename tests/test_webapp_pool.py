@@ -30,19 +30,17 @@ def _controller(tmp_path: Path) -> "tuple[PoolController, DatasetPoolRegistry, l
     return ctrl, reg, pushes
 
 
-def test_initial_empty_pool(tmp_path):
-    ctrl, _, _ = _controller(tmp_path)
+def test_initial_then_registration_serializes_and_pushes(tmp_path):
+    ctrl, reg, pushes = _controller(tmp_path)
     snap = ctrl.initial()
     assert snap["rows"] == []
     assert snap["empty"] is True
     assert snap["count"] == ""
     assert snap["result"]["text"] == ""
-
-
-def test_register_excel_reflects_in_rows_and_pushes(tmp_path):
-    ctrl, _, pushes = _controller(tmp_path)
     res = ctrl.dispatch(
-        "register_excel", {"name": "발주 7월", "path": "C:/data/발주.xlsx"})
+        "register_excel",
+        {"name": "발주 7월", "path": "C:/data/발주.xlsx", "sheet": "낙찰현황"},
+    )
     assert res["ok"] is True and res["name"] == "발주 7월"
     assert pushes and pushes[-1][0] == "pool"  # 액션 후 관측 푸시
     row = pushes[-1][1]["rows"][0]
@@ -50,19 +48,11 @@ def test_register_excel_reflects_in_rows_and_pushes(tmp_path):
     assert row["kind_label"] == "엑셀/CSV"
     assert row["status"] == "active" and row["badge_label"] == "활성"
     assert "발주.xlsx" in row["reference"]
+    assert row["sheet"] == "낙찰현황"
+    assert reg.load(row["key"]).opts["sheet"] == "낙찰현황"
     # 상태 게이트: 활성 → [보관][삭제].
     assert [a["key"] for a in row["actions"]] == ["archive", "delete"]
     assert ctrl.snapshot()["result"]["level"] == "ok"
-
-
-def test_register_excel_with_sheet_keeps_sheet_pointer(tmp_path):
-    """확정 시트는 참조 포인터에 남는다 — 다중시트 파일의 죽은/모호 참조 방지(RC-13 동종)."""
-    ctrl, reg, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel",
-                  {"name": "낙찰", "path": "C:/d/멀티.xlsx", "sheet": "낙찰현황"})
-    row = ctrl.snapshot()["rows"][0]
-    assert reg.load(row["key"]).opts["sheet"] == "낙찰현황"
-    assert "시트 낙찰현황" in row["reference"]
 
 
 def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
@@ -74,6 +64,10 @@ def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
     assert "추가했습니다" in ctrl.snapshot()["result"]["text"]  # 신규 = 추가
+
+    noop = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    assert noop["ok"] is True and "needs_confirm" not in noop
+    assert "이미 고정돼 있습니다" in ctrl.snapshot()["result"]["text"]
 
     res1 = ctrl.dispatch("register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx"})
     assert res1["needs_confirm"] is True
@@ -92,16 +86,6 @@ def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
     assert rows[0]["name"] == "발주 최신"
     assert reg.load(rows[0]["key"]).opts["path"] == "C:/data/a.xlsx"  # 참조 불변
     assert "갱신했습니다" in ctrl.snapshot()["result"]["text"]
-
-
-def test_same_data_same_name_reregister_is_noop_restated(tmp_path):
-    """바뀌는 게 없는 재등록(같은 이름·빈 메모)은 확인 소음 없이 「이미 고정됨」으로 접힌다."""
-    ctrl, _, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
-    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
-    assert res["ok"] is True and "needs_confirm" not in res
-    assert "이미 고정돼 있습니다" in ctrl.snapshot()["result"]["text"]
-    assert len(ctrl.snapshot()["rows"]) == 1
 
 
 def test_same_name_different_data_are_two_entries(tmp_path):
@@ -142,14 +126,6 @@ def test_state_transitions_gate_actions(tmp_path):
     assert ctrl.snapshot()["rows"][0]["status"] == "active"
 
 
-def test_retire_action_is_rejected_loudly(tmp_path):
-    """폐기된 retire 액션(#5)은 웹 경계에서 loud ValueError — 조용한 무반응 금지."""
-    ctrl, _, _ = _controller(tmp_path)
-    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
-    with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
-        ctrl.dispatch("retire", {"key": ctrl.snapshot()["rows"][0]["key"]})
-
-
 def test_delete_two_phase_confirm_roundtrip(tmp_path):
     """1차=needs_confirm(무변형·원본 미삭제 재진술), 2차 confirm=삭제. 조용한 파괴 금지."""
     ctrl, reg, _ = _controller(tmp_path)
@@ -185,10 +161,11 @@ def test_confirmed_relabel_does_not_resurrect_concurrently_deleted_item(tmp_path
     assert ctrl.snapshot()["rows"] == []  # 신규 생성으로 부활하지 않았다
 
 
-def test_unknown_action_is_loud(tmp_path):
+def test_removed_and_unknown_actions_are_loud(tmp_path):
     ctrl, _, _ = _controller(tmp_path)
-    with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
-        ctrl.dispatch("drop_all", {})
+    for action in ("retire", "drop_all"):
+        with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
+            ctrl.dispatch(action, {})
 
 
 MULTI_SHEET = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
@@ -248,7 +225,7 @@ def test_existing_nara_item_is_shown_not_hidden(tmp_path):
 # ------------------------------------------------- 다시 연결 표면(#67)
 def test_rows_expose_sheet_and_missing_for_relink(tmp_path):
     """행이 시트(프리필)와 참조 끊김(missing)을 노출한다 — 죽은 참조를 조용히 두지 않는다(#67)."""
-    ctrl, _, _ = _controller(tmp_path)
+    ctrl, reg, _ = _controller(tmp_path)
     live = tmp_path / "살아있는.csv"
     live.write_text("a,b\n1,2\n", encoding="utf-8")
     ctrl.dispatch("register_excel", {"name": "살아있음", "path": str(live)})
@@ -259,19 +236,12 @@ def test_rows_expose_sheet_and_missing_for_relink(tmp_path):
     assert rows["살아있음"]["sheet"] == ""
     assert rows["끊김"]["missing"] is True                 # 파일 부재 → 배지 대상
     assert rows["끊김"]["sheet"] == "낙찰현황"              # 다시 연결 모달 프리필
-
-
-def test_nara_row_has_no_missing_badge(tmp_path):
-    """비파일 참조(nara)는 locate_path 가 없어 missing 판정 대상이 아니다(#67)."""
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
-
-    ctrl, reg, _ = _controller(tmp_path)
     reg.add(DatasetPoolItem(
         name="나라7월", kind="nara",
         opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     ctrl.dispatch("refresh", {})
-    row = ctrl.snapshot()["rows"][0]
-    assert row["missing"] is False and row["locate_path"] == ""
+    nara = next(row for row in ctrl.snapshot()["rows"] if row["name"] == "나라7월")
+    assert nara["missing"] is False and nara["locate_path"] == ""
 
 
 # ------------------------------------------------- 다시 연결 액션(#67 → §5.3 키 재편)

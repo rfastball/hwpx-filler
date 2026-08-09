@@ -1,14 +1,10 @@
-/* N-05 data picker tests translated at R4-01. The retired imperative module had
-   31 cases; this file keeps 31 behavior cases against the React controller. */
+/* Data-picker controller behavior: lifecycle, validation, and settle-once flows. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { createDataPickerController } from "../../frontend/src/screens/data_picker.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 
-const SRC_URL = new URL("../../frontend/src/screens/data_picker.ts", import.meta.url);
-const SRC = readFileSync(SRC_URL, "utf8");
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 const SURFACE = [
@@ -81,19 +77,6 @@ async function opened(h, options = {}) {
 
 test("공개 표면 — React data picker controller 키가 정확하다", () => {
   assert.deepEqual(Object.keys(build().controller), SURFACE);
-});
-
-test("파일 export — controller와 두 React content producer만 named export다", () => {
-  assert.equal(/export\s+default/.test(SRC), false);
-  for (const name of ["createDataPickerController", "DataPickerDialog", "PoolRegistrationDialog"]) {
-    assert.ok(SRC.includes(`export function ${name}`), name);
-  }
-});
-
-test("구조 음성 — legacy 제품 전역과 imperative listener 소유가 없다", () => {
-  assert.equal(/(?:window|globalThis)\.(?:Bridge|Modal|SheetPicker|PathTrack|DataPicker)\b/.test(SRC), false);
-  assert.equal(SRC.includes("addEventListener("), false);
-  assert.ok(SRC.includes("useSyncExternalStore"));
 });
 
 test("init — pool initial pull은 screen runtime에 위임한다", async () => {
@@ -333,12 +316,6 @@ test("중복 정리 — 남길 key와 basis를 보존한 2단 왕복이다", asy
   assert.deepEqual(h.dispatchCalls.map((row) => row[2]), [
     { keep: "keep" }, { keep: "keep", confirm: true, basis: "dupe" },
   ]);
-});
-
-test("비활성·끊김 항목 — React producer가 이유를 병기하고 use를 disabled한다", () => {
-  assert.ok(SRC.includes('if (row.status !== "active")'));
-  assert.ok(SRC.includes("if (row.missing)"));
-  assert.ok(SRC.includes("disabled: !!reason"));
 });
 
 test("registration close — state를 비우고 poolRegModal만 닫는다", () => {

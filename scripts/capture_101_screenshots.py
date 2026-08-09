@@ -129,7 +129,7 @@ def main(argv: "list[str] | None" = None) -> int:
             return driver.ExitCode.DIRTY_HOME
 
     # 산출물 빌드가 **파괴보다 먼저**다 — 빌드가 실패한 뒤 스크린샷 폴더를 비우면 문서가
-    # 그림 없이 남는다. 이 순서는 tests/test_web_m1_topology.py 가 AST 로 못박는다.
+    # 그림 없이 남는다. 현재 장기 하니스 계약은 tests/test_quickstart_101_live.py 가 진다.
     #
     # 다만 불변식의 본체는 「빌드가 먼저」가 아니라 **「파괴 전에 산출물이 유효하다」** 다.
     # 빌드는 그것을 *만들어서* 지키고, `--no-build` 는 *검증해서* 지킨다 — 검증까지 건너뛰면

@@ -1,13 +1,13 @@
 """Excel/CSV 행 성형 계약(#183)."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pytest
 from openpyxl import Workbook
 
-from hwpxfiller.data.excel import ExcelDataSource
+from hwpxfiller.data.excel import ExcelDataSource, _cell_text
 
 
 def _xlsx(path: Path, rows: list[list[object]]) -> Path:
@@ -94,6 +94,11 @@ def test_nonblank_cells_beyond_header_fail_loudly(tmp_path: Path, suffix: str) -
 
 
 def test_xlsx_scalar_conversion_is_deterministic(tmp_path: Path) -> None:
+    # openpyxl은 날짜 셀을 datetime으로 읽는다. 공용 scalar 정책의 순수 date/time
+    # 입력은 어댑터 단위에서 직접 고정한다.
+    assert _cell_text(date(2026, 7, 22)) == "2026-07-22"
+    assert _cell_text(time(9, 5, 6)) == "09:05:06"
+
     path = _xlsx(
         tmp_path / "scalars.xlsx",
         [

@@ -17,8 +17,8 @@
 ## 최소한 이것만은
 
 - 환경은 전부 `uv` 가 소유한다. 시스템 Python·수동 venv 를 만들지 않는다.
-- 게이트는 `.\test.ps1`(Ruff → Pyright → pytest). CI 의 Ruff 는 `scripts/` 까지 보는데
-  `test.ps1` 은 안 본다 — `scripts/` 를 고쳤으면 `uv run ruff check scripts` 를 따로 돌린다.
+- 게이트는 `.\test.ps1`(web build → npm test → Ruff → Pyright → pytest). `scripts/` 를
+  고쳤으면 전체 게이트와 별개로 `uv run ruff check scripts` 도 명시 실행한다.
 - 커밋 메시지는 한국어 Conventional Commits + PR 번호.
 - **머지를 막는 것은 `quality-gate` 하나다.** 봇 리뷰는 자문이라 게이트가 아니다 — 읽고
   판단해서 고칠 것은 고치고, 나머지는 이슈로 남긴다. 머지 뒤 도착한 지적은 스윕 PR 로 회수한다.

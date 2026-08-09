@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "vite build && uv run python scripts/seal_web_artifact.py",
+    "test": "node --test --test-concurrency=4 --test-reporter=tap \"tests/js/*.test.js\"",
     "verify:web": "uv run python scripts/seal_web_artifact.py --verify"
   },
   "devDependencies": {

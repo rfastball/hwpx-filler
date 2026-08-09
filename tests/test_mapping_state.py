@@ -47,7 +47,7 @@ def _model() -> MappingModel:
 
 
 # ------------------------------------------------------------ from_suggestions
-def test_from_suggestions_creates_row_for_every_field_in_document_order():
+def test_from_suggestions_shapes_every_row_but_confirms_nothing():
     """미매칭 필드 포함 전 필드에 행 생성 — 문서 순서 유지."""
     model = _model()
     assert [r.template_field for r in model.rows] == [
@@ -62,20 +62,10 @@ def test_from_suggestions_creates_row_for_every_field_in_document_order():
     assert rows["존재하지않는들판xyz"].suggestion_score == 0.0
     # 제안 행은 신뢰도 점수를 갖는다(뷰 툴팁용).
     assert rows["입찰공고번호"].suggestion_score > 0.6
-
-
-def test_from_suggestions_default_type_follows_inferred_type():
-    """date→date, amount→amount, 그 외→text."""
-    rows = {r.template_field: r for r in _model().rows}
     assert rows["개찰일시"].type == "date"
     assert rows["추정가격"].type == "amount"
     assert rows["공고명"].type == "text"
-    assert rows["입찰공고번호"].type == "text"  # number 도 text
-
-
-def test_from_suggestions_all_rows_start_unconfirmed():
-    """초안이 채워져 있어도 확정은 사람 몫 — 전 행 confirmed=False 시작."""
-    model = _model()
+    assert rows["입찰공고번호"].type == "text"
     assert all(not r.confirmed for r in model.rows)
     assert not model.is_complete()
 
@@ -89,9 +79,6 @@ def test_is_complete_requires_every_single_row_confirmed():
     assert not model.is_complete()  # 마지막 1행이 미확정
     model.set_confirmed(len(model.rows) - 1)  # 비움 확정도 확정이다
     assert model.is_complete()
-
-
-def test_is_complete_false_on_empty_model():
     assert not MappingModel().is_complete()
 
 
@@ -145,7 +132,7 @@ def test_apply_active_sources_r4_loud_demotes_human_owned_to_empty():
     assert model.rows[0].source == ""                      # **비운 채**(재제안 치환 아님, R3)
 
 
-def test_r4_demotion_fully_resets_type_and_const():
+def test_demotion_fully_resets_type_and_const():
     """R4 강등 = 완전 리셋(리뷰 반영) — 유형·상수가 남으면 강등 행이 시스템 소유가 된 뒤
     다음 재제안이 소스를 얹어 '제안 표시 ≠ 옛 상수 방출' 하이브리드가 된다(revert_to_auto
     R1 과 같은 근거 — 강등 경로만 부분 리셋일 이유가 없다)."""
@@ -253,32 +240,23 @@ def test_confirm_all_via_apply_active_sources_still_clears_matching():
     assert rows["추정가격"].source == "presmptPrce" and rows["추정가격"].confirmed is True
 
 
-def test_emits_any_value_false_when_all_rows_blank_confirmed():
-    """RC-08 회귀: 전부 비움 확정은 is_complete 통과 + mappings 비지 않음 — 그래도
-    실제 값은 하나도 방출하지 않으므로 '전부 비움' 저장 가드 질의는 False 다."""
-    model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
-    model.confirm_all()
-    assert model.is_complete()
-    assert model.to_profile().mappings          # blank 도 영속화(L1) — 옛 술어의 함정
-    assert not model.to_profile().template_fields()
-    assert not model.emits_any_value()
+def test_emits_any_value_counts_only_confirmed_content():
+    """비움 확정·미확정 내용은 빼고 확정된 소스·상수만 방출로 센다."""
+    blank = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    blank.confirm_all()
+    assert blank.is_complete() and blank.to_profile().mappings
+    assert not blank.to_profile().template_fields()
+    assert not blank.emits_any_value()
 
-
-def test_emits_any_value_true_when_any_confirmed_row_has_content():
-    """소스 행 또는 상수 행이 하나라도 확정되면 값이 방출된다 — 가드 통과."""
-    model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
-    model.set_source(0, "bidNtceNm")
-    model.confirm_all()
-    assert model.emits_any_value()
+    source = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    source.set_source(0, "bidNtceNm")
+    source.confirm_all()
+    assert source.emits_any_value()
     const_model = MappingModel(rows=[RowState("계약방법", type="const", const="수의계약")])
     const_model.set_confirmed(0)
     assert const_model.emits_any_value()
-
-
-def test_emits_any_value_ignores_unconfirmed_content():
-    """미확정 행은 to_profile 에서 제외되므로 내용이 있어도 방출로 세지 않는다."""
-    model = MappingModel(rows=[RowState("공고명", source="bidNtceNm")])
-    assert not model.emits_any_value()
+    unconfirmed = MappingModel(rows=[RowState("공고명", source="bidNtceNm")])
+    assert not unconfirmed.emits_any_value()
 
 
 def test_confirm_all_and_unconfirm_all():
@@ -291,7 +269,7 @@ def test_confirm_all_and_unconfirm_all():
 
 
 # --------------------------------------------------- 대량 확정 게이트(UD-05, 링1)
-def test_confirm_content_rows_leaves_unmatched_blank_rows_unconfirmed():
+def test_bulk_confirmation_restates_and_promotes_only_named_blanks():
     """'모두 확정'의 내용-행 단계: 내용 있는 행만 확정, 미매칭 빈 행은 미확정 유지."""
     model = _model()  # 4 매칭(내용) + 1 미매칭(빈) 행
     n = model.confirm_content_rows()
@@ -302,32 +280,13 @@ def test_confirm_content_rows_leaves_unmatched_blank_rows_unconfirmed():
     assert not rows["존재하지않는들판xyz"].confirmed
     # 재호출은 이미 확정된 행을 다시 세지 않는다(증분 반환).
     assert model.confirm_content_rows() == 0
-
-
-def test_unconfirmed_blank_fields_lists_only_empty_unconfirmed_rows():
-    model = _model()
     assert model.unconfirmed_blank_fields() == ["존재하지않는들판xyz"]
-    # 내용 있는 행을 비움 확정 후보로 오해하지 않는다.
-    model.confirm_content_rows()
-    assert model.unconfirmed_blank_fields() == ["존재하지않는들판xyz"]
-
-
-def test_confirm_fields_promotes_named_blanks_and_completes_gate():
-    """이름으로 재진술·확인된 미매칭 빈 필드만 확정 → 전 행 확정 시 게이트 개방."""
-    model = _model()
-    model.confirm_content_rows()
     blanks = model.unconfirmed_blank_fields()
     assert model.confirm_fields(blanks) == 1
     assert model.is_complete()
     # 존재하지 않는 이름은 무시(우발 확정 없음).
     assert model.confirm_fields(["없는필드"]) == 0
-
-
-def test_confirmed_count_tracks_confirmations():
-    model = _model()
-    assert model.confirmed_count() == 0
-    model.confirm_content_rows()
-    assert model.confirmed_count() == 4
+    assert model.confirmed_count() == len(model.rows)
 
 
 # ------------------------------------------------------------------ to_profile
@@ -391,12 +350,19 @@ def test_preview_amount_and_date_match_apply_transform():
         rows=[
             RowState("추정가격", source="presmptPrce", type="amount"),
             RowState("개찰시각", source="opengTm", type="date", fmt="%H:%M"),
+            RowState("개찰일", source="date", type="date", fmt="%Y-%m-%d"),
+            RowState("연락처", source="tel", type="text", fmt="phone"),
         ]
     )
-    record = {"presmptPrce": "21326800", "opengTm": "18:00"}
+    record = {
+        "presmptPrce": "21326800", "opengTm": "18:00",
+        "date": "2026-6-5", "tel": "01012345678",
+    }
     out = model.preview(record)
     assert out["추정가격"] == apply_transform("amount", "21326800") == "21,326,800원"
     assert out["개찰시각"] == apply_transform("date", "18:00", fmt="%H:%M") == "18:00"
+    assert out["개찰일"] == "2026-06-05"
+    assert out["연락처"] == "010-1234-5678"
 
 
 def test_display_format_choice_changes_preview():
@@ -410,22 +376,7 @@ def test_display_format_choice_changes_preview():
     model.set_confirmed(0)
     model.set_fmt(0, "")
     assert not model.rows[0].confirmed
-
-
-def test_date_custom_code_format():
-    model = MappingModel(rows=[RowState("개찰일시", source="d", type="date", fmt="%Y-%m-%d")])
-    assert model.preview({"d": "2026-6-5"})["개찰일시"] == "2026-06-05"
-
-
-def test_phone_mask_via_text_type():
-    """평문(text) 유형 + 마스크 표시형 — 전화번호 자릿수 그룹."""
-    model = MappingModel(rows=[RowState("연락처", source="tel", type="text", fmt="phone")])
-    assert model.preview({"tel": "01012345678"})["연락처"] == "010-1234-5678"
-
-
-def test_changing_type_resets_format_code():
-    """유형을 바꾸면 이전 표시형 코드는 무효 → 기본으로 리셋."""
-    model = MappingModel(rows=[RowState("x", source="a", type="amount", fmt="{:,}")])
+    model.set_fmt(0, "{:,}")
     model.set_type(0, "date")
     assert model.rows[0].fmt == ""
 
@@ -449,40 +400,18 @@ def test_preview_covers_unmapped_rows_as_empty():
 
 
 # --------------------------------------------------------------- preview_empties
-def test_preview_empties_flags_content_mapped_but_empty_for_record():
-    """소스는 매핑됐으나 이 레코드에 그 키의 값이 없으면 빈값으로 신고."""
+def test_preview_counts_partition_filled_empty_and_unmapped_rows():
     model = MappingModel(
         rows=[
-            RowState("공고명", source="bidNtceNm"),      # 값 있음
-            RowState("추정가격", source="presmptPrce"),  # 이 레코드엔 값 없음
+            RowState("공고명", source="bidNtceNm"),
+            RowState("추정가격", source="presmptPrce"),
+            RowState("여백"),
+            RowState("비고"),
         ]
     )
-    empties = model.preview_empties({"bidNtceNm": "테스트 공고"})
-    assert empties == ["추정가격"]
-
-
-def test_preview_empties_excludes_intentionally_empty_rows():
-    """내용 없는 행(의도적 비움)은 빈값 신고 대상이 아니다."""
-    model = MappingModel(
-        rows=[
-            RowState("공고명", source="bidNtceNm"),  # 값 없음 → 신고
-            RowState("여백"),                          # 내용 자체 없음 → 제외
-        ]
-    )
-    assert model.preview_empties({}) == ["공고명"]
-
-
-def test_preview_counts_three_states_sum_to_total():
-    """UD-27 — (채움, 빈 값, 미매핑)의 합이 언제나 전체 행 수와 일치."""
-    model = MappingModel(
-        rows=[
-            RowState("공고명", source="bidNtceNm"),     # 값 있음 → 채움
-            RowState("추정가격", source="presmptPrce"),  # 이 레코드엔 값 없음 → 빈 값
-            RowState("여백"),                            # 내용 없음 → 미매핑
-            RowState("비고"),                            # 내용 없음 → 미매핑
-        ]
-    )
-    filled, empty_n, unmapped = model.preview_counts({"bidNtceNm": "테스트 공고"})
+    record = {"bidNtceNm": "테스트 공고"}
+    assert model.preview_empties(record) == ["추정가격"]
+    filled, empty_n, unmapped = model.preview_counts(record)
     assert (filled, empty_n, unmapped) == (1, 1, 2)
     assert filled + empty_n + unmapped == len(model.rows)  # 어떤 필드도 무집계 아님
 
