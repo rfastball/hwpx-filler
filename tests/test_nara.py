@@ -12,7 +12,14 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.data.base import DataSource
-from hwpxfiller.data.nara import NaraFetchError, NaraStdDataSource
+from hwpxfiller.application.nara_acquire import NaraGatewayError
+from hwpxfiller.data.nara import (
+    NaraFetchError,
+    NaraStdDataSource,
+    NaraStdGateway,
+    make_nara_acquirer,
+)
+from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -118,6 +125,46 @@ def test_records_and_fields_via_injected_fetcher():
     assert "bidNtceNo" in fields and "presmptPrce" in fields
     # 등장 순서 보존(첫 필드는 bidNtceNo).
     assert fields[0] == "bidNtceNo"
+
+    gateway_calls: "list[str]" = []
+    first_page_records = [{"bidNtceNo": "N1", "bidNtceNm": "첫 페이지"}]
+
+    def fetch_first_page(url: str) -> bytes:
+        gateway_calls.append(url)
+        return _page(1, 2, first_page_records, num_rows=1)
+
+    response = NaraStdGateway(fetcher=fetch_first_page).fetch(
+        "DUMMY",
+        "202606010000",
+        "202606302359",
+        num_rows=1,
+        page_no=1,
+    )
+    assert response.records == first_page_records
+    assert len(gateway_calls) == 1
+    assert response.result_code == "00"
+    assert response.field_labels["bidNtceNm"] == "공고명"
+
+    malformed = (
+        b'{"response":{"header":{"resultCode":"00","resultMsg":"OK"},'
+        b'"body":{"items":42}}}'
+    )
+    malformed_gateway = NaraStdGateway(fetcher=lambda _url: malformed)
+    assert malformed_gateway.probe(
+        "DUMMY",
+        "202606010000",
+        "202606302359",
+        num_rows=1,
+        page_no=1,
+    ).result_code == "00"
+    with pytest.raises(NaraGatewayError):
+        malformed_gateway.fetch(
+            "DUMMY",
+            "202606010000",
+            "202606302359",
+            num_rows=1,
+            page_no=1,
+        )
 
 
 def test_records_fetches_all_pages_until_total_count():
@@ -318,11 +365,17 @@ def test_timeout_error_redacted():
     assert _LIVE_KEY not in str(ei.value)
 
 
-def test_empty_response_fails_loudly_without_leak():
-    """빈/불량 응답도 파싱 마스킹 경계 안에서 시끄럽게 실패하고 키를 흘리지 않는다."""
-    src = _live_src(lambda url: b"")
-    with pytest.raises(NaraFetchError) as ei:
-        src.records()
+def test_gateway_empty_response_fails_loudly_without_leak():
+    """빈/불량 gateway 응답도 시끄럽게 실패하고 키를 흘리지 않는다."""
+    gateway = NaraStdGateway(fetcher=lambda _url: b"")
+    with pytest.raises(NaraGatewayError) as ei:
+        gateway.fetch(
+            _LIVE_KEY,
+            "202606010000",
+            "202606302359",
+            num_rows=100,
+            page_no=1,
+        )
     assert _LIVE_KEY not in str(ei.value)
 
 
@@ -376,13 +429,16 @@ def test_auth_failure_with_items_still_raises():
 
 
 def test_api_result_message_echoing_service_key_is_redacted():
-    """게이트웨이 resultMsg가 요청 키를 되비춰도 생성한 NaraFetchError를 재마스킹한다."""
+    """resultMsg가 요청 키를 되비춰도 DataSource·gateway·Application이 재마스킹한다."""
 
+    encoded_key = urllib.parse.quote_plus(_LIVE_KEY)
     poisoned = json.dumps({
         "response": {
             "header": {
-                "resultCode": "07",
-                "resultMsg": f"rejected ServiceKey={_LIVE_KEY}",
+                "resultCode": f"07-{_LIVE_KEY}-{encoded_key}",
+                "resultMsg": (
+                    f"rejected ServiceKey={_LIVE_KEY}; encoded={encoded_key}"
+                ),
             },
             "body": {},
         },
@@ -392,8 +448,36 @@ def test_api_result_message_echoing_service_key_is_redacted():
         src.records()
     message = str(ei.value)
     assert _LIVE_KEY not in message
+    assert encoded_key not in message
     assert "ServiceKey=[REDACTED]" in message
     assert ei.value.__cause__ is None
+
+    response = NaraStdGateway(fetcher=lambda _url: poisoned).fetch(
+        _LIVE_KEY,
+        "202606010000",
+        "202606302359",
+        num_rows=100,
+        page_no=1,
+    )
+    assert _LIVE_KEY not in response.result_code
+    assert encoded_key not in response.result_code
+    assert _LIVE_KEY not in response.result_msg
+    assert encoded_key not in response.result_msg
+    assert "ServiceKey=[REDACTED]" in response.result_msg
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
+    result = make_nara_acquirer(store=store, fetcher=lambda _url: poisoned).acquire(
+        "202606010000", "202606302359"
+    )
+    assert not result.ok
+    assert _LIVE_KEY not in result.result_code
+    assert encoded_key not in result.result_code
+    assert _LIVE_KEY not in result.error
+    assert encoded_key not in result.error
+    surface = repr(result)
+    assert _LIVE_KEY not in surface
+    assert encoded_key not in surface
+    assert "ServiceKey=[REDACTED]" in surface
 
 
 def test_missing_result_code_fails_closed():

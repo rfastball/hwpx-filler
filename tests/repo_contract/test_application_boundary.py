@@ -3,28 +3,66 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
 APPLICATION_PACKAGE = ROOT / "src" / "hwpxfiller" / "application"
-LEGACY_FACADE = ROOT / "src" / "hwpxfiller" / "gui" / "dataset_pool_state.py"
-PUBLIC_API = (
-    "DatasetPoolPort",
-    "PoolAction",
-    "DatasetPoolRow",
-    "DatasetPoolViewModel",
-    "available_actions",
-    "kind_transition_clause",
-    "reference_summary",
+LEGACY_FACADES = (
+    (
+        ROOT / "src" / "hwpxfiller" / "gui" / "dataset_pool_state.py",
+        "hwpxfiller.application.dataset_pool",
+        (
+            "DatasetPoolPort",
+            "PoolAction",
+            "DatasetPoolRow",
+            "DatasetPoolViewModel",
+            "available_actions",
+            "kind_transition_clause",
+            "reference_summary",
+        ),
+    ),
+    (
+        ROOT / "src" / "hwpxfiller" / "gui" / "nara_state.py",
+        "hwpxfiller.application.nara_acquire",
+        (
+            "DT_FMT",
+            "AcquiredNaraData",
+            "AcquireResult",
+            "ConnResult",
+            "NaraAcquireViewModel",
+        ),
+    ),
 )
 ALLOWED_INTERNAL_PREFIXES = (
     "hwpxfiller.application",
     "hwpxfiller.domain",
-    # 아직 Application으로 물리 이관되지 않은 같은 링의 기간 검증 권위.
-    "hwpxfiller.gui.nara_state",
 )
-CONCRETE_ADAPTER_ROOTS = {"lxml", "openpyxl", "webview"}
+CONCRETE_ADAPTER_ROOTS = {
+    "aiohttp",
+    "http",
+    "httpx",
+    "keyring",
+    "lxml",
+    "openpyxl",
+    "requests",
+    "socket",
+    "ssl",
+    "urllib",
+    "webview",
+    "win32cred",
+    "win32crypt",
+}
+CLOCK_CALLS = {
+    "datetime.date.today",
+    "datetime.datetime.now",
+    "datetime.datetime.today",
+    "datetime.datetime.utcnow",
+    "time.monotonic",
+    "time.perf_counter",
+    "time.time",
+}
 
 
 def _module_for_path(path: Path) -> str:
@@ -79,57 +117,108 @@ def _is_outward(module: str) -> bool:
     )
 
 
+def _import_aliases(tree: ast.AST) -> "dict[str, str]":
+    aliases: "dict[str, str]" = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                local = alias.asname or alias.name.split(".", 1)[0]
+                aliases[local] = alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module in {"datetime", "time"}:
+            for alias in node.names:
+                if alias.name != "*":
+                    aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+    return aliases
+
+
+def _qualified_name(node: ast.expr, aliases: "dict[str, str]") -> str:
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id, node.id)
+    if isinstance(node, ast.Attribute):
+        base = _qualified_name(node.value, aliases)
+        return f"{base}.{node.attr}" if base else node.attr
+    return ""
+
+
 def test_hwpxfiller_application_imports_point_inward() -> None:
-    """Application은 Domain·같은 Application 협력자만 알고 adapter/host를 모른다."""
+    """Application은 inward 계약만 알고 network·wall clock 구현을 직접 고르지 않는다."""
+    paths = sorted(APPLICATION_PACKAGE.rglob("*.py"))
     offenders = [
         f"{path.relative_to(ROOT).as_posix()}:{lineno}: {module}"
-        for path in sorted(APPLICATION_PACKAGE.rglob("*.py"))
+        for path in paths
         for module, lineno in _imports(path)
         if _is_outward(module)
     ]
     assert not offenders, "Application의 바깥 방향 import:\n" + "\n".join(offenders)
 
-
-def test_dataset_pool_legacy_facade_only_reexports_application_objects() -> None:
-    """구 GUI 경로는 정의·wrapper 없이 Application 공개 객체만 다시 노출한다."""
-    tree = ast.parse(
-        LEGACY_FACADE.read_text(encoding="utf-8"), filename=str(LEGACY_FACADE)
+    clock_references = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        aliases = _import_aliases(tree)
+        clock_references.extend(
+            f"{path.relative_to(ROOT).as_posix()}:{node.lineno}: "
+            f"{_qualified_name(node, aliases)}"
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Attribute, ast.Name))
+            and _qualified_name(node, aliases) in CLOCK_CALLS
+        )
+    assert not clock_references, "Application의 직접 wall-clock 선택:\n" + "\n".join(
+        clock_references
     )
-    definitions = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
-    assert not definitions, f"legacy facade에 새 정의가 있습니다: {definitions}"
 
-    application_imports = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-        and node.module == "hwpxfiller.application.dataset_pool"
-        and node.level == 0
-    ]
-    assert len(application_imports) == 1
-    imported = [(alias.name, alias.asname) for alias in application_imports[0].names]
-    assert imported == [(name, None) for name in PUBLIC_API]
 
-    assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
-    assert len(assignments) == 1
-    assignment = assignments[0]
-    assert [target.id for target in assignment.targets if isinstance(target, ast.Name)] == [
-        "__all__"
-    ]
-    assert tuple(ast.literal_eval(assignment.value)) == PUBLIC_API
+def test_application_legacy_facades_only_reexport_same_objects() -> None:
+    """구 GUI 경로는 정의·wrapper 없이 canonical 객체를 그대로 다시 노출한다."""
+    for legacy_facade, application_module, public_api in LEGACY_FACADES:
+        tree = ast.parse(
+            legacy_facade.read_text(encoding="utf-8"), filename=str(legacy_facade)
+        )
+        definitions = [
+            node.lineno
+            for node in ast.walk(tree)
+            if isinstance(
+                node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+            )
+        ]
+        assert not definitions, (
+            f"{legacy_facade.relative_to(ROOT)}에 새 정의가 있습니다: {definitions}"
+        )
 
-    allowed_nodes = []
-    for node in tree.body:
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            allowed_nodes.append(node)
-        elif isinstance(node, ast.ImportFrom) and node.module in {
-            "__future__",
-            "hwpxfiller.application.dataset_pool",
-        }:
-            allowed_nodes.append(node)
-        elif node is assignment:
-            allowed_nodes.append(node)
-    assert allowed_nodes == tree.body
+        application_imports = [
+            node
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom)
+            and node.module == application_module
+            and node.level == 0
+        ]
+        assert len(application_imports) == 1, legacy_facade.relative_to(ROOT)
+        imported = [(alias.name, alias.asname) for alias in application_imports[0].names]
+        assert imported == [(name, None) for name in public_api]
+
+        assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
+        assert len(assignments) == 1, legacy_facade.relative_to(ROOT)
+        assignment = assignments[0]
+        assert [
+            target.id for target in assignment.targets if isinstance(target, ast.Name)
+        ] == ["__all__"]
+        assert tuple(ast.literal_eval(assignment.value)) == public_api
+
+        allowed_nodes = []
+        for node in tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+                allowed_nodes.append(node)
+            elif isinstance(node, ast.ImportFrom) and node.module in {
+                "__future__",
+                application_module,
+            }:
+                allowed_nodes.append(node)
+            elif node is assignment:
+                allowed_nodes.append(node)
+        assert allowed_nodes == tree.body
+
+        legacy_module = importlib.import_module(_module_for_path(legacy_facade))
+        canonical_module = importlib.import_module(application_module)
+        assert all(
+            getattr(legacy_module, name) is getattr(canonical_module, name)
+            for name in public_api
+        )

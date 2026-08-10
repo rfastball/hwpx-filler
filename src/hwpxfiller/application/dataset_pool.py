@@ -24,7 +24,7 @@ from ..domain.dataset_reference import (
     DatasetReference,
     reference_identity,
 )
-from ..gui.nara_state import NaraAcquireViewModel  # 기간 검증 단일 출처(Application→Application)
+from .nara_acquire import validate_range
 
 
 class DatasetPoolPort(Protocol):
@@ -375,7 +375,7 @@ class DatasetPoolViewModel:
             raise ValueError("데이터셋 이름을 입력하세요.")
         if not bgn_dt or not end_dt:
             raise ValueError("조회 기간(시작·종료)을 입력하세요.")
-        rng_err = NaraAcquireViewModel.validate_range(bgn_dt, end_dt)
+        rng_err = validate_range(bgn_dt, end_dt)
         if rng_err:
             raise ValueError(rng_err)
         opts: "dict[str, object]" = {"bgn_dt": bgn_dt, "end_dt": end_dt}

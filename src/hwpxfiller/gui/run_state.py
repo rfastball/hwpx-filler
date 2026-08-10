@@ -182,19 +182,22 @@ def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[obje
     return source, source.records()
 
 
-def resolve_pool_source(item, *, secret_store=None, fetcher=None) -> "tuple[object, list[dict]]":
+def resolve_pool_source(
+    item, *, secret_store=None, fetcher=None, nara_factory=None
+) -> "tuple[object, list[dict]]":
     """데이터셋 풀 항목(참조) → (DataSource, records). 실행 시점 재읽기="싱크".
 
-    나라장터는 N2 취득 경로(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)를 재사용
+    나라장터는 주입된 N2 취득 factory를 재사용
     — resultCode '00' 정합·기간 재검증·키 마스킹 관통, 만료·인증실패는 조용한 "0건"이 아니라
     **시끄러운** ``RuntimeError``. 성공은 **키 없는 스냅샷**이라 반복 조회가 재-fetch·키 재사용을
     하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크).
     """
     if getattr(item, "kind", None) == "nara":
-        from .nara_state import NaraAcquireViewModel
+        if nara_factory is None:
+            raise RuntimeError("나라장터 취득 어댑터가 주입되지 않았습니다.")
 
         opts = dict(item.opts)
-        avm = NaraAcquireViewModel(secret_store, fetcher=fetcher)
+        avm = nara_factory(store=secret_store, fetcher=fetcher)
         res = avm.acquire(
             str(opts.get("bgn_dt", "")), str(opts.get("end_dt", "")),
             num_rows=int(opts.get("num_rows", 100)),
@@ -283,10 +286,12 @@ class RunViewModel:
         self.records = records
         return records
 
-    def load_pool_item(self, item, *, secret_store=None, fetcher=None) -> "list[dict]":
+    def load_pool_item(
+        self, item, *, secret_store=None, fetcher=None, nara_factory=None
+    ) -> "list[dict]":
         """데이터셋 풀 항목(참조)을 복원해 겨눈다 — 실행 시점 재읽기가 곧 "싱크".
 
-        - **나라장터**: N2 :class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel` 취득 경로를
+        - **나라장터**: 주입된 N2 취득 factory 경로를
           재사용한다 — 기간(1개월) 재검증·``resultCode`` 정합('00'만 성공)·키 마스킹을 그대로
           관통시켜, 만료·인증실패 키가 조용한 "0건"이 아니라 **시끄러운 API 오류**로 실패하게
           한다(acquire 경로와 동일 엄격도). 성공 결과는 **키 없는 스냅샷**(``as_datasource``)이라
@@ -298,7 +303,10 @@ class RunViewModel:
         **마스킹된 채** raise(표현 계층이 시끄럽게 표시), 레코드 0건이면 상태 불변(표현 계층이 경고).
         실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source` 가 한다."""
         source, records = resolve_pool_source(
-            item, secret_store=secret_store, fetcher=fetcher
+            item,
+            secret_store=secret_store,
+            fetcher=fetcher,
+            nara_factory=nara_factory,
         )
         if not records:
             return []

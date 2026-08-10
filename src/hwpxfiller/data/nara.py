@@ -20,13 +20,22 @@ envelope 는 ``response.body.items[]`` 와 실제 게이트웨이 변형 ``items
 
 from __future__ import annotations
 
-import calendar
 import json
 import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
 
+from ..application.nara_acquire import (
+    DT_FMT,
+    OK_RESULT_CODE,
+    NaraAcquireViewModel,
+    NaraGatewayError,
+    NaraGatewayResponse,
+    _FIELD_LABELS,
+    _add_one_month,
+    validate_range,
+)
 from .secret_store import redact
 
 BASE = (
@@ -34,83 +43,8 @@ BASE = (
     "getDataSetOpnStdBidPblancInfo"
 )
 
-#: 나라 API 일시 포맷(``bidNtceBgnDt``/``bidNtceEndDt``) — YYYYMMDDHHMM.
-DT_FMT = "%Y%m%d%H%M"
-
-#: 정상 응답 헤더 코드 — 그 외(인증/파라미터 오류, 부재)는 시끄럽게 실패한다.
-OK_RESULT_CODE = "00"
-
-
-def _add_one_month(dt: datetime) -> datetime:
-    """``dt`` 에 한 달을 더한다(말일 클램프: 1/31 + 1달 = 2/28·29)."""
-    month = dt.month + 1
-    year = dt.year + (month - 1) // 12
-    month = (month - 1) % 12 + 1
-    last_day = calendar.monthrange(year, month)[1]
-    return dt.replace(year=year, month=month, day=min(dt.day, last_day))
-
-
-def validate_range(bgn: str, end: str) -> "str | None":
-    """시작~종료 일시 검증(YYYYMMDDHHMM·1개월 제한). 통과면 ``None``, 아니면 사유 문자열.
-
-    검증의 단일 출처(RC-03) — 취득 경계(:meth:`NaraStdDataSource.records`)와 GUI
-    뷰모델(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)이 공유한다.
-    """
-    for label, val in (("시작", bgn), ("종료", end)):
-        if not val or len(val) != 12 or not val.isdigit():
-            return f"{label} 일시 형식이 올바르지 않습니다(YYYYMMDDHHMM 12자리)."
-    try:
-        b = datetime.strptime(bgn, DT_FMT)
-        e = datetime.strptime(end, DT_FMT)
-    except ValueError:
-        return "일시를 해석할 수 없습니다(YYYYMMDDHHMM)."
-    if e < b:
-        return "종료 일시가 시작 일시보다 빠릅니다."
-    if e > _add_one_month(b):
-        return "조회 기간은 최대 1개월입니다(시작~종료 간격을 1개월 이내로)."
-    return None
-
-# 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
-# 영문 코드 키를 한글 템플릿 필드에 퍼지 매칭하려면 이 사전이 퍼지 타겟이 된다.
-# 근거: 공공데이터개방표준서비스(15058815) getDataSetOpnStdBidPblancInfo 실 라이브 응답.
-# 이 어휘는 **소스가 소유한다**(코어 아님) — ``field_labels()`` 로 GUI 에 노출된다.
-_FIELD_LABELS: "dict[str, str]" = {
-    "bidNtceNo": "입찰공고번호",
-    "bidNtceOrd": "입찰공고차수",
-    "bidNtceNm": "공고명",
-    "bidNtceSttusNm": "공고상태",
-    "bidNtceDate": "공고일자",
-    "bidNtceBgn": "공고시각",
-    "bsnsDivNm": "업무구분",
-    "cntrctCnclsMthdNm": "계약방법",
-    "cntrctCnclsSttusNm": "계약체결형태",
-    "bidwinrDcsnMthdNm": "낙찰자결정방법",
-    "ntceInsttNm": "공고기관",
-    "ntceInsttCd": "공고기관코드",
-    "ntceInsttOfclDeptNm": "공고기관담당부서",
-    "ntceInsttOfclNm": "공고기관담당자",
-    "ntceInsttOfclTel": "공고기관담당자전화번호",
-    "dmndInsttNm": "수요기관",
-    "dmndInsttOfclDeptNm": "수요기관담당부서",
-    "dmndInsttOfclNm": "수요기관담당자",
-    "dmndInsttOfclTel": "수요기관담당자전화번호",
-    "bidBeginDate": "입찰개시일자",
-    "bidBeginTm": "입찰개시시각",
-    "bidClseDate": "입찰마감일자",
-    "bidClseTm": "입찰마감시각",
-    "bidPrtcptQlfctRgstClseDate": "입찰참가자격등록마감일자",
-    "bidPrtcptQlfctRgstClseTm": "입찰참가자격등록마감시각",
-    "opengDate": "개찰일자",
-    "opengTm": "개찰시각",
-    "opengPlce": "개찰장소",
-    "asignBdgtAmt": "배정예산",
-    "presmptPrce": "추정가격",
-    "rgnLmtYn": "지역제한여부",
-    "prtcptPsblRgnNm": "참가가능지역",
-    "indstrytyLmtYn": "업종제한여부",
-    "bidprcPsblIndstrytyNm": "투찰가능업종",
-    "bidNtceUrl": "공고URL",
-}
+# 나라장터 어휘 정본은 Application 취득 결정과 함께 있고, concrete adapter는 inward 소비해
+# ``field_labels()``로 노출한다(코어는 어휘-불가지).
 
 
 class NaraFetchError(RuntimeError):
@@ -421,3 +355,119 @@ class NaraStdDataSource:
         data = json.loads(raw)
         header = (data.get("response") or {}).get("header") or {}
         return header.get("resultCode", ""), header.get("resultMsg", "")
+
+
+class NaraStdGateway:
+    """Application port를 기존 표준 API 소스로 구현하는 concrete adapter.
+
+    취득 ViewModel의 의미를 보존해 설정된 한 페이지만 가져온다. 다중 페이지 일괄
+    DataSource 계약은 :meth:`NaraStdDataSource.records`가 계속 별도로 소유한다.
+    """
+
+    def __init__(self, *, fetcher=None, timeout: float = 20.0):
+        self._fetcher = fetcher
+        self._timeout = timeout
+
+    def _header(
+        self,
+        service_key: str,
+        bgn: str,
+        end: str,
+        *,
+        num_rows: int,
+        page_no: int,
+    ) -> "tuple[NaraStdDataSource, bytes | str, str, str]":
+        source = NaraStdDataSource(
+            service_key,
+            bgn,
+            end,
+            num_rows=num_rows,
+            page_no=page_no,
+            timeout=self._timeout,
+            fetcher=self._fetcher,
+        )
+        raw: "bytes | str" = b""
+        try:
+            raw = source._fetch()
+            code, message = source.result(raw)
+        except Exception as exc:
+            detail = _auth_failure_detail(raw) or str(exc)
+            raise NaraGatewayError(redact(detail, service_key)) from None
+        return (
+            source,
+            raw,
+            redact(str(code or ""), service_key),
+            redact(str(message or ""), service_key),
+        )
+
+    def fetch(
+        self,
+        service_key: str,
+        bgn: str,
+        end: str,
+        *,
+        num_rows: int,
+        page_no: int,
+    ) -> NaraGatewayResponse:
+        source, raw, code, message = self._header(
+            service_key,
+            bgn,
+            end,
+            num_rows=num_rows,
+            page_no=page_no,
+        )
+        try:
+            records = source.parse(raw)
+        except Exception as exc:
+            detail = _auth_failure_detail(raw) or str(exc)
+            raise NaraGatewayError(redact(detail, service_key)) from None
+        return NaraGatewayResponse(
+            records=records,
+            result_code=code,
+            result_msg=message,
+            field_labels=source.field_labels(),
+        )
+
+    def probe(
+        self,
+        service_key: str,
+        bgn: str,
+        end: str,
+        *,
+        num_rows: int,
+        page_no: int,
+    ) -> NaraGatewayResponse:
+        source, _raw, code, message = self._header(
+            service_key,
+            bgn,
+            end,
+            num_rows=num_rows,
+            page_no=page_no,
+        )
+        return NaraGatewayResponse(
+            result_code=code,
+            result_msg=message,
+            field_labels=source.field_labels(),
+        )
+
+
+def make_nara_acquirer(
+    store=None,
+    *,
+    fetcher=None,
+    timeout: float = 20.0,
+    clock=None,
+) -> NaraAcquireViewModel:
+    """기본 credential·HTTP·clock을 조립해 Application ViewModel을 만든다.
+
+    테스트와 상위 composition root는 세 효과를 모두 주입할 수 있다. 기본 선택은 concrete
+    adapter인 이 모듈에서만 일어나며 Application은 어느 구현도 알지 못한다.
+    """
+    from .secret_store import NARA_SERVICE_KEY_NAME, default_secret_store
+
+    return NaraAcquireViewModel(
+        store if store is not None else default_secret_store(),
+        NaraStdGateway(fetcher=fetcher, timeout=timeout),
+        secret_name=NARA_SERVICE_KEY_NAME,
+        clock=clock if clock is not None else datetime.now,
+    )
