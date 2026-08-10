@@ -7,12 +7,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Iterable
 
 from .engine import HwpxEngine
-from .fields import FillNote, read_fields
+from .fields import FillNote
 from .mapping import FieldMapping, MappingProfile
 
 
@@ -184,16 +184,18 @@ def build_fill_ledger(
 
 
 # ==================================================================== L2 원장 행 구성
-# 원장 payload 조립·마스킹·사이드카 경로 발급·원자 저장은 P2-18(#566)에서 External 로
-# 승계됐다(:mod:`hwpxfiller.external.ledger_export`). 이 모듈은 행·산출 원장의 순수
-# 파생(manifest_rows·ledger_outputs)과 되읽기 검증(verify_output)만 소유한다.
+# 원장 payload 조립·마스킹·사이드카 경로 발급·원자 저장은 P2-18(#566)에서, 산출물
+# 되읽기 검증(verify_output — 파일 read 효과)은 P2-19R(#576)에서 External 로 승계됐다
+# (:mod:`hwpxfiller.external.ledger_export`). 이 모듈은 행·산출 원장의 순수 파생
+# (manifest_rows·ledger_outputs)만 소유한다.
 
 
 @dataclass(frozen=True)
 class LedgerRow:
     """생성 원장의 필드당 1행 — dry-run 매니페스트와 사후 증거가 같은 형태를 쓴다.
 
-    ``injected`` 는 생성 후 :func:`verify_output` 이 문서를 **되읽어** 채우는 증거값이다
+    ``injected`` 는 생성 후 되읽기 검증
+    (:func:`hwpxfiller.external.ledger_export.verify_output`)이 문서를 **되읽어** 채우는 증거값이다
     (``GenerateResult.applied`` 는 엔진의 주장, 이 값은 산출물의 관측). ``None`` 은
     "검증 대상 아님/미검증"(공란 선언·빈값 스킵·생성 실패)이지 성공 추정이 아니다.
     """
@@ -264,29 +266,6 @@ def manifest_rows(
     return tuple(rows)
 
 
-def verify_output(
-    output_path: str, rows: "tuple[LedgerRow, ...]"
-) -> "tuple[LedgerRow, ...]":
-    """생성물 실값 되읽기(C1 ``read_fields``) — 주입 주장 위에 관측 증거를 얹는다.
-
-    비어 있지 않은 값이 주입됐어야 하는 행(``preview_text`` 有)만 판정한다. 빈값은
-    엔진이 주입 자체를 건너뛰고(공란 선언은 키가 아예 안 넘어가고) 누름틀이 남으므로
-    ``None`` 유지. 문서를 읽지 못하면 raise — 증거 없음을 조용한 통과로 바꾸지 않는다.
-    """
-    actual = read_fields(output_path)
-    verified: "list[LedgerRow]" = []
-    for row in rows:
-        if row.status in ("filled", "missing") and row.preview_text.strip():
-            got = actual.get(row.field)
-            ok = got == row.preview_text
-            verified.append(replace(
-                row, injected=ok, read_back="" if ok else str(got),
-            ))
-        else:
-            verified.append(row)
-    return tuple(verified)
-
-
 @dataclass(frozen=True)
 class OutputLedger:
     """산출물 1건의 원장 — 생성 결과 + 필드행(검증 여부 포함)."""
@@ -321,10 +300,13 @@ def ledger_outputs(
     template_fields: "Iterable[str]",
     *,
     missing_marker: str = "",
-    verify: bool = True,
 ) -> "tuple[OutputLedger, ...]":
     """배치 결과(:class:`~hwpxfiller.core.engine.GenerateResult` 순서열)와 매핑된
-    레코드를 합쳐 산출별 원장을 만든다. 성공 산출물은 되읽기 검증까지.
+    레코드를 합쳐 산출별 원장을 만든다(순수 행 구성).
+
+    성공 산출물의 되읽기 검증(파일 read 효과)은 P2-19R(#576)에서 External 로 이사했다 —
+    :func:`hwpxfiller.external.ledger_export.verified_outputs` 가 이 결과 위에 관측
+    증거를 얹는다.
     """
     template_order = list(template_fields)
     entries: "list[OutputLedger]" = []
@@ -332,15 +314,9 @@ def ledger_outputs(
         rows = manifest_rows(
             mapping, template_order, record, missing_marker=missing_marker
         )
-        verify_error = ""
-        if verify and res.ok:
-            try:
-                rows = verify_output(res.output_path, rows)
-            except Exception as exc:  # noqa: BLE001 - 증거 부재를 조용히 넘기지 않는다
-                verify_error = f"되읽기 실패: {exc}"
         entries.append(
             OutputLedger(
-                res.output_path, res.ok, rows, res.error, verify_error,
+                res.output_path, res.ok, rows, res.error,
                 notes=tuple(res.notes),
             )
         )

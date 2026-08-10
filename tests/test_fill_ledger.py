@@ -9,9 +9,13 @@ from hwpxfiller.core.fill_ledger import (
     manifest_rows,
     template_structure_drift,
     template_path_drift,
+)
+from hwpxfiller.external.ledger_export import (
+    LEDGER_SIDECAR_NAME,
+    export_run_ledger,
+    verified_outputs,
     verify_output,
 )
-from hwpxfiller.external.ledger_export import LEDGER_SIDECAR_NAME, export_run_ledger
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.source_profile import profile_fields
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -135,23 +139,39 @@ def test_verify_output_reads_back_evidence(tmp_path):
     assert bad["공고명"].read_back == "실제값"
 
 
-def test_ledger_outputs_verifies_success_and_keeps_failure_loud(tmp_path):
+def test_ledger_outputs_stay_pure_and_verified_outputs_add_evidence(tmp_path):
+    """순수 행 구성(Domain)과 되읽기 증거 얹기(External)의 분업 — 의미는 종전
+    ``ledger_outputs(verify=True)`` 그대로다(P2-19R #576)."""
     template = tmp_path / "t.hwpx"
     _template(template, ["공고명", "비고"])
     out = tmp_path / "doc.hwpx"
     res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
-    entries = ledger_outputs(
+    pure = ledger_outputs(
         [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
     )
+    # Domain 산출은 파일을 되읽지 않는다 — 전 행 미검증(injected=None).
+    assert all(r.injected is None for r in pure[0].rows)
+
+    entries = verified_outputs(pure)
     assert entries[0].ok and entries[0].verify_error == ""
     assert {r.field: r.injected for r in entries[0].rows}["공고명"] is True
 
     # 산출물이 사라지면 되읽기 실패가 조용한 통과가 아니라 verify_error 로 남는다.
     out.unlink()
-    (entry,) = ledger_outputs(
+    (entry,) = verified_outputs(ledger_outputs(
         [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
-    )
+    ))
     assert entry.verify_error.startswith("되읽기 실패")
+
+    # 실패 산출물은 되읽지 않는다 — 실패 사유를 그대로 나르고 미검증으로 남긴다.
+    from hwpxfiller.core.engine import GenerateResult
+
+    failed = GenerateResult(ok=False, output_path=str(out), error="생성 실패")
+    (kept,) = verified_outputs(ledger_outputs(
+        [failed], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
+    ))
+    assert not kept.ok and kept.error == "생성 실패" and kept.verify_error == ""
+    assert all(r.injected is None for r in kept.rows)
 
 
 def test_export_redacts_service_key_and_notes_no_render(tmp_path):
@@ -160,7 +180,7 @@ def test_export_redacts_service_key_and_notes_no_render(tmp_path):
     out = tmp_path / "doc.hwpx"
     leaky = "https://apis.example/x?ServiceKey=TOPSECRET&y=1"
     res = make_hwpx_engine().generate(str(template), {"공고명": leaky}, str(out))
-    entries = ledger_outputs([res], [{"공고명": leaky}], _mapping(), ["공고명", "비고"])
+    entries = verified_outputs(ledger_outputs([res], [{"공고명": leaky}], _mapping(), ["공고명", "비고"]))
     sidecar = tmp_path / LEDGER_SIDECAR_NAME
     payload = export_run_ledger(
         sidecar,
@@ -235,7 +255,7 @@ def test_ledger_records_fill_notes_as_evidence(tmp_path):
     res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
     assert res.notes  # 선조건: 완화가 실제 발생
 
-    (entry,) = ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"])
+    (entry,) = verified_outputs(ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"]))
     payload = entry.to_dict()
     assert payload["notes"] == [
         {"field": "공고명", "kind": "inline_stripped", "detail": ["markpenBegin"]}

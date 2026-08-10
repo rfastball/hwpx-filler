@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from hwpxcore.package import HwpxPackage
+from hwpxcore.package import HwpxPackage, to_package
 from hwpxcore.text_extract import (
     extract_document,
     full_text,
@@ -58,7 +58,7 @@ def test_coverage_ledger_empty(path: Path):
 
     새 HWPX 요소가 등장하면 침묵 누락이 아니라 여기서 실패한다 — 의식적 결정 강제.
     """
-    doc = extract_document(str(path))
+    doc = extract_document(to_package(str(path)))
     assert doc.unhandled == {}, (
         f"미처리 구조 발견 {path.name}: {doc.unhandled} "
         f"(예: {doc.unhandled_examples}). 처리 브랜치 추가 또는 KNOWN_IGNORED 허용목록에 "
@@ -69,8 +69,8 @@ def test_coverage_ledger_empty(path: Path):
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
 def test_deterministic(path: Path):
     """같은 파일을 두 번 추출하면 to_dict() 가 완전히 동일하다."""
-    first = extract_document(str(path)).to_dict()
-    second = extract_document(str(path)).to_dict()
+    first = extract_document(to_package(str(path))).to_dict()
+    second = extract_document(to_package(str(path))).to_dict()
     assert first == second
 
 

@@ -13,7 +13,10 @@ import pytest
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.external.job_store import JobRegistry, encode_job
 from hwpxfiller.core.text_registry import TextTemplateRegistry
-from hwpxfiller.external.template_inspection import inspect_hwpx_template
+from hwpxfiller.external.template_inspection import (
+    HWPX_TEMPLATE_OPS,
+    inspect_hwpx_template,
+)
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.template_groups import TemplateGroupModel
@@ -34,6 +37,7 @@ def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -583,6 +587,7 @@ def _controller26(tmp_path: Path):
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -1675,11 +1680,13 @@ def _controller_lib(tmp_path, paths=None, lib_dir=None):
         TemplateManagerViewModel(
             lib_dir,
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         )
         if lib_dir is not None
         else TemplateManagerViewModel(
             paths=paths or [],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         )
     )
     ctrl = EditorController(
@@ -1731,6 +1738,7 @@ def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED, TPL_PARTIAL],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         template_groups=groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
@@ -1757,6 +1765,7 @@ def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
     vm = TemplateManagerViewModel(
         library_dir=lib,
         inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
     )  # 빈 라이브러리로 시작
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm,
@@ -1778,6 +1787,7 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),  # 그 파일 없음
         template_groups=groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
@@ -1803,6 +1813,7 @@ def test_library_snapshot_carries_management_surface(tmp_path):
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED, TPL_PARTIAL],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         template_groups=groups,
         text_registry=TextTemplateRegistry(txt_dir),
@@ -1836,6 +1847,7 @@ def test_library_result_line_reads_injected_source_live(tmp_path):
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
         library_result=lambda: result,
@@ -2356,6 +2368,7 @@ def test_toggle_library_group_routes_by_media(tmp_path):
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
+            file_ops=HWPX_TEMPLATE_OPS,
         ),
         template_groups=hwpx_groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),

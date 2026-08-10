@@ -5,6 +5,12 @@ p1_baseline = "4c422654125df627f9f4fcd3a7f111f2bc8b9eb9"
 p1_verdict = "ONE_WAVE_READY"
 sunset = "P2 완료 및 allowed_direction_violation 0건에서 이 파일과 게이트를 함께 제거"
 
+# P2-19R(#576)에서 마지막 예외(hwpxcore.text_extract → hwpxcore.package)가 제거돼 0 에
+# 도달했다 — `_to_package` 경로 수용 뒷문은 hwpxcore.package.to_package(EXTERNAL)로
+# 이사했고 파서 의미론 층은 열린 package 전용 덕타이핑이다. 키는 게이트가 양방향
+# exact-match 로 직접 인덱싱하므로 빈 배열로 남긴다. sunset 판정은 P2-99(#542).
+allowed_direction_violation = []
+
 [ring]
 DOMAIN = 0
 APPLICATION = 1
@@ -14,19 +20,13 @@ HOST = 2
 
 # core.engine → hwpxcore.package 는 P2-19(#567)에서 required opener 포트로 역전됐고
 # (concrete 결속 = external/hwpx_engine), core.fields → hwpxcore.package 는 타입 주석
-# 결합뿐이라 덕타이핑으로 소거됐다. 아래 text_extract → package 1건은 #567 축소 착지의
-# 잔여다 — `_to_package` 경로 수용 뒷문의 소비자가 Domain 4모듈(authoring·schema·
-# template_status·lint)과 Application 표면에 걸쳐 있어, 제거는 재발행 lane #576 이
-# 소유한다. 임시 완료로 세지 않는다.
+# 결합뿐이라 덕타이핑으로 소거됐다. text_extract → package 1건(#567 축소 착지의 잔여)은
+# P2-19R(#576)에서 제거됐다 — 위 allowed_direction_violation = [] 주석 참조.
 #
 # core.job → hwpxcore.atomic·core.job → core.text_registry·core.template_status →
 # core.paths 3건은 P2-21(#569)에서 Job 영속 경계(external/job_store)·writer lease
 # (host/job_writer_lease)·기본 루트 해석(host/locations 의 default_templates_dir·
 # library_root_for) 이관으로 제거됐다.
-[[allowed_direction_violation]]
-src = "hwpxcore.text_extract"
-dst = "hwpxcore.package"
-
 [[unit]]
 module = "hwpxcore"
 target = "DOMAIN"

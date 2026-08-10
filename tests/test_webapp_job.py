@@ -1446,6 +1446,7 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.template_inspection import template_compile_status
 
 
 def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
@@ -2605,7 +2606,10 @@ def _pause_stamp(monkeypatch):
 def _home_vm(registry):
     from hwpxfiller.gui.home_state import HomeViewModel
 
-    return HomeViewModel(registry, None, None, engine=make_hwpx_engine())
+    return HomeViewModel(
+        registry, None, None,
+        engine=make_hwpx_engine(), inspect_status=template_compile_status,
+    )
 
 
 def test_public_delete_during_stamp_does_not_resurrect_the_job(tmp_path, monkeypatch):

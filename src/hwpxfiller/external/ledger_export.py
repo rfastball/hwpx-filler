@@ -1,8 +1,9 @@
-"""생성 원장 사이드카의 영속 어댑터 — 원장 payload 조립과 원자 저장(P2-18, #566).
+"""생성 원장 사이드카의 영속 어댑터 — 원장 payload 조립·원자 저장 + 산출물 되읽기.
 
 원장의 **판정·행 구성은 Domain**(:mod:`hwpxfiller.core.fill_ledger`)이 소유하고, 이 모듈은
-그 순수 산출을 durable JSON 사이드카로 **기록하는 효과**(경로 발급·마스킹 관통·원자 쓰기)만
-소유한다. Domain 이 filesystem write 를 개시하던 형태의 승계다 — payload 는 영속 record/codec
+그 순수 산출을 durable JSON 사이드카로 **기록하는 효과**(경로 발급·마스킹 관통·원자 쓰기)와
+산출물 실값 **되읽기 효과**(:func:`verify_output` — P2-19R #576 에서 Domain 이월)를
+소유한다. Domain 이 filesystem IO 를 개시하던 형태의 승계다 — payload 는 영속 record/codec
 이라 External Adapter 책임이고, concrete 원자 교체는 :func:`hwpxcore.atomic.write_text_atomic`
 그대로다(RC-01·bytes 불변).
 """
@@ -11,12 +12,15 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
 from hwpxcore.atomic import write_text_atomic
+from hwpxcore.package import to_package
 
-from hwpxfiller.core.fill_ledger import OutputLedger, ledger_outputs
+from hwpxfiller.core.fields import read_fields
+from hwpxfiller.core.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
 from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.core.source_profile import FieldProfile, profile_fields
 from hwpxfiller.domain.secret_redaction import redact
@@ -33,6 +37,51 @@ LEDGER_PREVIEW_NOTE = (
     "preview_text/read_back 은 주입될·주입된 텍스트 값이다. "
     "HWPX 렌더(서식·레이아웃)가 아니다."
 )
+
+
+def verify_output(
+    output_path: str, rows: "tuple[LedgerRow, ...]"
+) -> "tuple[LedgerRow, ...]":
+    """생성물 실값 되읽기(C1 ``read_fields``) — 주입 주장 위에 관측 증거를 얹는다.
+
+    비어 있지 않은 값이 주입됐어야 하는 행(``preview_text`` 有)만 판정한다. 빈값은
+    엔진이 주입 자체를 건너뛰고(공란 선언은 키가 아예 안 넘어가고) 누름틀이 남으므로
+    ``None`` 유지. 문서를 읽지 못하면 raise — 증거 없음을 조용한 통과로 바꾸지 않는다.
+
+    (P2-19R #576 에서 ``core.fill_ledger`` 이월 — 산출물 경로를 다시 여는 read 효과라
+    Domain 에 둘 수 없다. 판정 의미 불변.)
+    """
+    actual = read_fields(to_package(output_path))
+    verified: "list[LedgerRow]" = []
+    for row in rows:
+        if row.status in ("filled", "missing") and row.preview_text.strip():
+            got = actual.get(row.field)
+            ok = got == row.preview_text
+            verified.append(replace(
+                row, injected=ok, read_back="" if ok else str(got),
+            ))
+        else:
+            verified.append(row)
+    return tuple(verified)
+
+
+def verified_outputs(
+    outputs: "tuple[OutputLedger, ...]",
+) -> "tuple[OutputLedger, ...]":
+    """순수 원장(:func:`~hwpxfiller.core.fill_ledger.ledger_outputs`) 위에 되읽기 증거를 얹는다.
+
+    성공 산출물만 되읽고, 되읽기 실패는 ``verify_error`` 로 시끄럽게 남긴다 — 종전
+    Domain ``ledger_outputs(verify=True)`` 의 관측 의미 그대로다.
+    """
+    entries: "list[OutputLedger]" = []
+    for entry in outputs:
+        if entry.ok:
+            try:
+                entry = replace(entry, rows=verify_output(entry.output, entry.rows))
+            except Exception as exc:  # noqa: BLE001 - 증거 부재를 조용히 넘기지 않는다
+                entry = replace(entry, verify_error=f"되읽기 실패: {exc}")
+        entries.append(entry)
+    return tuple(entries)
 
 
 def _redacted(payload: dict) -> dict:
@@ -117,10 +166,10 @@ def export_batch_ledger(
     if not generated_at:
         generated_at = datetime.now().isoformat(timespec="seconds")
     results = list(results)
-    outputs = ledger_outputs(
+    outputs = verified_outputs(ledger_outputs(
         results, list(mapped_records)[: len(results)], mapping, template_fields,
         missing_marker=missing_marker,
-    )
+    ))
     profiles = profile_fields(
         list(source_records),
         list(source_keys) if source_keys is not None else None,

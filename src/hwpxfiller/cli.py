@@ -40,6 +40,8 @@ def _schema_main(argv: "list[str]") -> int:
     """``schema`` 하위명령 — 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 출력/저장."""
     import json
 
+    from hwpxcore.package import to_package
+
     from .core.schema import extract_schema
 
     ap = argparse.ArgumentParser(prog="hwpxfiller schema")
@@ -47,7 +49,9 @@ def _schema_main(argv: "list[str]") -> int:
     ap.add_argument("--out", default=None, help="JSON 저장 경로(생략 시 표준출력)")
     args = ap.parse_args(argv)
 
-    payload = json.dumps(extract_schema(args.template).to_dict(), ensure_ascii=False, indent=2)
+    payload = json.dumps(
+        extract_schema(to_package(args.template)).to_dict(), ensure_ascii=False, indent=2
+    )
     if args.out:
         write_text_atomic(args.out, payload)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
         print(f"스키마 저장: {args.out}", file=sys.stderr)
@@ -62,6 +66,8 @@ def _fieldize_main(argv: "list[str]") -> int:
     명시성 원칙: ``--out`` 없으면 dry-run(무엇을 바꿀지 미리보기만), ``--out`` 지정 시에만
     실제 컴파일 후 저장.
     """
+    from hwpxcore.package import to_package
+
     from .core.authoring import compile_document, scan_tokens
 
     ap = argparse.ArgumentParser(
@@ -73,7 +79,7 @@ def _fieldize_main(argv: "list[str]") -> int:
     args = ap.parse_args(argv)
 
     if not args.out:
-        sites = scan_tokens(args.template)
+        sites = scan_tokens(to_package(args.template))
         compilable = [s for s in sites if s.compilable]
         skipped = [s for s in sites if not s.compilable]
         print(f"[미리보기] 변환 가능 {len(compilable)}개 / 건너뜀 {len(skipped)}개")
@@ -84,7 +90,7 @@ def _fieldize_main(argv: "list[str]") -> int:
         print("실제 변환하려면 --out <경로> 를 지정하세요.")
         return 0
 
-    pkg, report = compile_document(args.template)
+    pkg, report = compile_document(to_package(args.template))
     for s in report.skipped:
         print(f"  [건너뜀] {s.name} — {s.reason}", file=sys.stderr)
     if not report.modified:
@@ -100,7 +106,7 @@ def _lint_main(argv: "list[str]") -> int:
 
     이슈가 있으면 종료코드 1(자동화에서 게이트로 쓰기 위함).
     """
-    from .core.lint import lint_template
+    from .external.template_inspection import lint_template_file
 
     ap = argparse.ArgumentParser(prog="hwpxfiller lint")
     ap.add_argument("template", help="HWPX 템플릿 경로")
@@ -114,7 +120,7 @@ def _lint_main(argv: "list[str]") -> int:
         with open(args.vocab, encoding="utf-8-sig") as fh:
             vocabulary = [ln.strip() for ln in fh if ln.strip()]
 
-    report = lint_template(args.template, vocabulary=vocabulary)
+    report = lint_template_file(args.template, vocabulary=vocabulary)
     if not report.findings:
         print("이슈 없음.")
         return 0
@@ -125,14 +131,14 @@ def _lint_main(argv: "list[str]") -> int:
 
 def _drift_main(argv: "list[str]") -> int:
     """``drift`` 하위명령 — 두 템플릿의 필드셋 변화(추가/삭제/개명)."""
-    from .core.lint import diff_schema
+    from .external.template_inspection import diff_template_schemas
 
     ap = argparse.ArgumentParser(prog="hwpxfiller drift")
     ap.add_argument("old", help="구판 HWPX")
     ap.add_argument("new", help="신판 HWPX")
     args = ap.parse_args(argv)
 
-    drift = diff_schema(args.old, args.new)
+    drift = diff_template_schemas(args.old, args.new)
     if not drift.has_changes:
         print("필드셋 변화 없음.")
         return 0

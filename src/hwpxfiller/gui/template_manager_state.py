@@ -24,9 +24,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..core.authoring import TokenSite, compile_document, scan_tokens
-from ..core.fields import FillNote, read_fields
-from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
+from ..core.authoring import CompileReport, TokenSite
+from ..core.fields import FillNote
+from ..core.lint import LintReport, SchemaDrift
 from ..core.template_status import (
     OUTPUT_SUBDIR_NAME,
     TRASH_DIR_NAME,
@@ -53,6 +53,22 @@ class TemplateInspection:
 
 
 TemplateInspectPort = Callable[[str], TemplateInspection]
+
+
+@dataclass(frozen=True)
+class TemplateFileOps:
+    """템플릿 **경로** 를 받는 파일 효과 포트 묶음(P2-19R, #576).
+
+    Domain 프리미티브(scan_tokens·compile_document·lint_template·diff_schema·
+    read_fields)는 열린 package 전용이 되어, 경로 열기/저장은 ring 2 가 결속해 주입한
+    이 포트가 진다(concrete = external/template_inspection.HWPX_TEMPLATE_OPS).
+    """
+
+    scan_tokens: "Callable[[str], list[TokenSite]]"
+    compile_file: "Callable[[str], CompileReport]"   # 같은 경로에 컴파일·저장(변경 시만)
+    lint: "Callable[..., LintReport]"                # (path, vocabulary=None)
+    diff: "Callable[[str, str], SchemaDrift]"
+    read_fields: "Callable[[str], dict[str, str]]"
 
 
 class ResultLine(str):
@@ -222,10 +238,13 @@ class TemplateManagerViewModel:
         paths=None,
         *,
         inspect_template: TemplateInspectPort,
+        file_ops: TemplateFileOps,
     ):
         self.library_dir = Path(library_dir) if library_dir is not None else None
         self._explicit_paths = [Path(p) for p in paths] if paths is not None else None
         self._inspect_template = inspect_template
+        # 경로 기반 파일 효과(스캔·컴파일 저장·lint·드리프트·값 읽기)의 결속 포트(P2-19R).
+        self._file_ops = file_ops
         self._rows: "list[TemplateRow]" = []
         self._subs: "list" = []
         self.refresh()
@@ -325,7 +344,7 @@ class TemplateManagerViewModel:
     # ------------------------------------------------ fieldize 2단계(스캔→적용)
     def scan_preview(self, path: str) -> ScanPreview:
         """dry-run — 컴파일 가능/건너뜀 토큰을 미리 보여준다. **파일 무변형**(읽기 전용)."""
-        sites = scan_tokens(str(path))
+        sites = self._file_ops.scan_tokens(str(path))
         return ScanPreview(
             compilable=[s for s in sites if s.compilable],
             skipped=[s for s in sites if not s.compilable],
@@ -335,11 +354,11 @@ class TemplateManagerViewModel:
         """명시적 적용 — 토큰을 누름틀로 컴파일하고 **같은 경로에 저장**, 행 갱신.
 
         저장 후 그 파일의 compile_status 는 진행한다(RAW/PARTIAL → COMPILED). 바뀐 게
-        없으면(``modified=False``) 저장하지 않는다. 리포트를 반환한다.
+        없으면(``modified=False``) 저장하지 않는다(저장 판정은 포트 concrete 소유).
+        리포트를 반환한다.
         """
-        pkg, report = compile_document(str(path))
+        report = self._file_ops.compile_file(str(path))
         if report.modified:
-            pkg.save(str(path))
             self.refresh()
         return report
 
@@ -350,11 +369,11 @@ class TemplateManagerViewModel:
         ``vocabulary`` 는 코어 :func:`~hwpxfiller.core.lint.lint_template` 의 통제 어휘
         그대로 전달한다(RC-14 시그니처 정렬 — CLI ``--vocab`` 과 위생 점검 범위 동등).
         """
-        return lint_template(str(path), vocabulary=vocabulary)
+        return self._file_ops.lint(str(path), vocabulary=vocabulary)
 
     def drift(self, old_path: str, new_path: str) -> SchemaDrift:
         """두 판본의 필드셋 드리프트(추가/삭제/개명 추정). 읽기 전용."""
-        return diff_schema(str(old_path), str(new_path))
+        return self._file_ops.diff(str(old_path), str(new_path))
 
     # ------------------------------------------------------ 결과 문구 성형(링1)
     # 단일 결과 라벨이 lint/미리보기/드리프트/컴파일을 무맥락으로 덮어쓰던 것을(RC-14)
@@ -430,5 +449,5 @@ class TemplateManagerViewModel:
 
     # ----------------------------------------------------- FILLED 값 미리보기
     def filled_values(self, path: str) -> "dict[str, str]":
-        """FILLED(또는 임의) 템플릿의 현재 누름틀 값 — C1 read_fields 위임."""
-        return read_fields(str(path))
+        """FILLED(또는 임의) 템플릿의 현재 누름틀 값 — C1 read_fields 포트 위임."""
+        return self._file_ops.read_fields(str(path))

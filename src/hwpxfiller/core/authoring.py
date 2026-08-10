@@ -33,12 +33,11 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.text_extract import HP_NS, _local, _to_package
+from hwpxcore.text_extract import HP_NS, _local, _require_package
 
 _TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 _ID_ATTRS = ("id", "fieldid", "beginIDRef", "instId", "endIDRef")
@@ -721,12 +720,13 @@ def _process_paragraph(
 
 
 # ------------------------------------------------------------------ 공개 API
-def scan_tokens(pkg_or_path: object) -> "list[TokenSite]":
+def scan_tokens(pkg: object) -> "list[TokenSite]":
     """읽기 전용 미리보기 — 컴파일 가능한 토큰과 못 바꾸는 토큰을 모두 나열.
 
+    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
     이미 누름틀 안에 든 토큰(field 값)은 제외한다. 워크북을 전혀 변형하지 않는다.
     """
-    pkg = _to_package(pkg_or_path)
+    pkg = _require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     sites: "list[TokenSite]" = []
     for name in pkg.content_xml_names():
@@ -739,13 +739,14 @@ def scan_tokens(pkg_or_path: object) -> "list[TokenSite]":
     return sites
 
 
-def compile_document(pkg_or_path: object) -> "tuple[object, CompileReport]":
-    """토큰을 누름틀로 컴파일. (변형된 HwpxPackage, 리포트) 반환.
+def compile_document(pkg: object) -> "tuple[object, CompileReport]":
+    """토큰을 누름틀로 컴파일. (변형된 package, 리포트) 반환.
 
+    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
     ``apply`` 는 항상 참 — 미리보기는 ``scan_tokens`` 를 쓴다. 컴파일된 XML 만 교체하고,
     바뀐 게 없으면 ``modified=False``.
     """
-    pkg = _to_package(pkg_or_path)
+    pkg = _require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     report = CompileReport()
     for name in pkg.content_xml_names():
@@ -762,23 +763,6 @@ def compile_document(pkg_or_path: object) -> "tuple[object, CompileReport]":
     return pkg, report
 
 
-def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | None, CompileReport]":
-    """토큰을 컴파일해 **원본 옆** ``<이름>.compiled.hwpx`` 로 저장(원본 무변형).
-
-    저작 화면의 [여기서 누름틀 변환] 경로가 쓰는 코어 프리미티브 — 출력 경로 파생·저장·충돌
-    정책을 뷰가 하드코딩하지 않는다(RC-28). 정책:
-
-    - 바꿀 토큰이 없으면(``modified=False``) 아무것도 쓰지 않고 ``(None, report)``.
-    - 컴파일본이 이미 있으면 ``overwrite=True`` 없이는 :class:`FileExistsError`
-      (메시지 = 충돌 경로)로 시끄럽게 차단 — 조용한 덮어쓰기 금지(RC-02). 호출측이
-      사용자 확정을 받은 뒤 ``overwrite=True`` 로 재호출한다.
-    - 컴파일·저장 실패는 그대로 raise(호출측이 시끄럽게 표시).
-    """
-    pkg, report = compile_document(path)
-    if not report.modified:
-        return None, report
-    compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
-    if Path(compiled_path).exists() and not overwrite:
-        raise FileExistsError(compiled_path)
-    pkg.save(compiled_path)  # _to_package 가 HwpxPackage 를 반환한다(save 보유)
-    return compiled_path, report
+# 컴파일본 옆저장(compile_to_sibling)은 파일 IO 개시(경로 열기·충돌 검사·저장)라
+# P2-19R(#576)에서 External 로 이사했다:
+# :func:`hwpxfiller.external.template_inspection.compile_to_sibling`.

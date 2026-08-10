@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +22,7 @@ from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
 from ..core.engine import HwpxEngine
 from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, require_hwpx_template
-from ..core.template_status import CompileState, compile_status
+from ..core.template_status import CompileState, TemplateStatus
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
@@ -45,8 +46,16 @@ def _partial_badge(n: int) -> str:
     return f"⚠ 미확인 토큰 {n}개"
 
 
-def _derive_compile(tpath: str, template_missing: bool) -> "tuple[CompileState | None, str]":
-    """(compile_state, compile_badge) 를 C2 ``compile_status`` 에서 파생한다.
+#: 경로 → 컴파일 상태 판정 포트(P2-19R, #576). Domain 판정(compile_status)은 열린
+#: package 전용이 되어, 경로 열기는 ring 2 가 결속한 이 포트가 진다(concrete =
+#: external/template_inspection.template_compile_status).
+TemplateStatusPort = Callable[[str], TemplateStatus]
+
+
+def _derive_compile(
+    tpath: str, template_missing: bool, inspect_status: TemplateStatusPort
+) -> "tuple[CompileState | None, str]":
+    """(compile_state, compile_badge) 를 C2 ``compile_status`` 파생 포트에서 파생한다.
 
     비용 주의: 템플릿이 존재하면 매 refresh 마다 .hwpx 를 파싱해 상태를 **재계산**한다
     (한글 재편집으로 COMPILED→PARTIAL 드리프트가 나므로 저장·캐시하지 않는다 — C2 의
@@ -62,7 +71,7 @@ def _derive_compile(tpath: str, template_missing: bool) -> "tuple[CompileState |
     if template_missing:
         return None, BADGE_MISSING            # 부재 경로엔 compile_status 를 부르지 않는다
     try:
-        st = compile_status(tpath)
+        st = inspect_status(tpath)
     except Exception:
         return None, BADGE_ERROR              # 손상/파싱 실패 → 시끄럽게 강등(never silent ✅)
     if st.state == CompileState.RAW:
@@ -122,14 +131,18 @@ class JobRow:
     mapping_empty: bool = False
 
     @classmethod
-    def from_job(cls, job: Job, *, engine: HwpxEngine) -> "JobRow":
+    def from_job(
+        cls, job: Job, *, engine: HwpxEngine, inspect_status: TemplateStatusPort
+    ) -> "JobRow":
         tpath = job.template_path
         # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
         template_missing = bool(tpath) and not Path(tpath).exists()
         # 매체 선분기(3부 결정 13 · 1층 조회 경계): hwpx 작업만 컴파일 수명주기를 갖는다.
         # txt 기안·미상 매체는 hwpx 배지 개념이 없어 배지 없음(txt 를 hwpx 로 파싱하지 않는다).
         if job.media == "hwpx":
-            compile_state, compile_badge = _derive_compile(tpath, template_missing)
+            compile_state, compile_badge = _derive_compile(
+                tpath, template_missing, inspect_status
+            )
         else:
             compile_state, compile_badge = None, ""
         txt_readable = True
@@ -426,12 +439,14 @@ class HomeViewModel:
         # registry 는 JobRegistry 형상(external/job_store) — APPLICATION 층은 External 을
         # import 할 수 없어 타입 주석 없이 덕타이핑으로 받는다(P2-21, #569).
         self, registry, text_registry=None, pool_registry=None,
-        *, engine: HwpxEngine,
+        *, engine: HwpxEngine, inspect_status: TemplateStatusPort,
     ):
         self.registry = registry
         # zip IO 가 결속된 엔진은 ring 2 가 주입한다(P2-19) — 건강 보기의 드리프트
         # 재계산(:meth:`JobRow.from_job`)이 concrete opener 를 직접 만들지 않는다.
         self._engine = engine
+        # 경로 → 컴파일 상태 판정도 같은 이유로 ring 2 가 결속한다(P2-19R, #576).
+        self._inspect_status = inspect_status
         self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
         # 데이터 풀 KPI 원천 — external DatasetPoolRegistry 형상 | None. APPLICATION 층은
         # External 을 import 할 수 없어 타입 주석 없이 덕타이핑으로 받는다(P2-22, #570).
@@ -466,7 +481,10 @@ class HomeViewModel:
         정상 작업은 계속 표시하되 손상 파일을 조용히 감추지 않는다.
         """
         jobs, corrupt = self.registry.list_jobs_with_corruption()
-        self._rows = [JobRow.from_job(j, engine=self._engine) for j in jobs]
+        self._rows = [
+            JobRow.from_job(j, engine=self._engine, inspect_status=self._inspect_status)
+            for j in jobs
+        ]
         # 손상은 레지스트리가 값 객체(file_name·token·error)로 준다(P2-21 #569) — 이 VM 은
         # 더는 파일 좌표(Path)를 만지지 않고, 표시 문자열(token = 종전 str(path))은 불변이다.
         self._corrupt_rows = [

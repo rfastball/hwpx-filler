@@ -22,7 +22,7 @@ from difflib import SequenceMatcher
 
 from .authoring import scan_tokens
 from .schema import extract_schema
-from hwpxcore.text_extract import _to_package
+from hwpxcore.text_extract import _require_package
 
 _WS_RE = re.compile(r"\s+")
 # 유사도 임계값 — 이 이상이면 near-duplicate/개명 후보로 본다.
@@ -92,12 +92,15 @@ def _near_duplicate_pairs(names: "list[str]") -> "list[tuple[str, str]]":
 
 
 def lint_template(
-    pkg_or_path: object,
+    pkg: object,
     vocabulary: "list[str] | set[str] | None" = None,
     threshold: float = _SIMILARITY_THRESHOLD,
 ) -> LintReport:
-    """단일 템플릿 위생 점검. 워크북을 변형하지 않는다(읽기 전용)."""
-    pkg = _to_package(pkg_or_path)  # 한 번만 열어 schema/scan 에 공유
+    """단일 템플릿 위생 점검. 워크북을 변형하지 않는다(읽기 전용).
+
+    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    """
+    pkg = _require_package(pkg)  # 한 package 를 schema/scan 에 공유
     schema = extract_schema(pkg)
     names = schema.field_names()
     findings: "list[LintFinding]" = []
@@ -179,13 +182,13 @@ class SchemaDrift:
 
 
 def diff_schema(
-    old_pkg_or_path: object,
-    new_pkg_or_path: object,
+    old_pkg: object,
+    new_pkg: object,
     threshold: float = _SIMILARITY_THRESHOLD,
 ) -> SchemaDrift:
-    """두 템플릿의 필드셋을 비교해 추가/삭제/개명(추정)을 낸다."""
-    old_names = extract_schema(old_pkg_or_path).field_names()
-    new_names = extract_schema(new_pkg_or_path).field_names()
+    """두 템플릿(열린 package)의 필드셋을 비교해 추가/삭제/개명(추정)을 낸다."""
+    old_names = extract_schema(old_pkg).field_names()
+    new_names = extract_schema(new_pkg).field_names()
     old_set, new_set = set(old_names), set(new_names)
 
     added = [n for n in new_names if n not in old_set]
