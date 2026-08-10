@@ -65,18 +65,6 @@ src = "hwpxfiller.core.template_status"
 dst = "hwpxfiller.core.paths"
 
 [[allowed_direction_violation]]
-src = "hwpxfiller.data"
-dst = "hwpxfiller.data.excel"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.data"
-dst = "hwpxfiller.data.factory"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.data"
-dst = "hwpxfiller.data.secret_store"
-
-[[allowed_direction_violation]]
 src = "hwpxfiller.gui.run_state"
 dst = "hwpxfiller.data.factory"
 

@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
-from hwpxfiller.data import DataSource, make_source
-from hwpxfiller.data.factory import source_from_pool_item
+from hwpxfiller.data import DataSource
+from hwpxfiller.data.factory import make_source, source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.data.pipeline import (
     AssemblyError,

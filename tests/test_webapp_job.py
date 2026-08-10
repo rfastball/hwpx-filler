@@ -1511,7 +1511,7 @@ def test_new_work_handoff_is_captured_at_mount_not_reread_from_the_slot(tmp_path
     지금 마운트된 레코드의 열과 같아야 한다. 그래야 성분이 하나 더 늘어도(옵션 추가) 이
     테스트가 계속 진짜 질문을 묻는다.
     """
-    from hwpxfiller.data import source_for_path
+    from hwpxfiller.data.factory import source_for_path
 
     ctrl, pool = _pool_controller(tmp_path)
     a, b = tmp_path / "a.csv", tmp_path / "b.csv"

@@ -10,16 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from hwpxfiller.data import (
-    DataSource,
-    ExcelDataSource,
-    InlineDataSource,
-    ambiguous_sheets,
-    make_source,
-    sheet_overview,
-    source_for_path,
-    source_from_pool_item,
-)
+from hwpxfiller.data import DataSource, InlineDataSource
+from hwpxfiller.data.excel import ExcelDataSource, ambiguous_sheets, sheet_overview
+from hwpxfiller.data.factory import make_source, source_for_path, source_from_pool_item
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MULTI_SHEET = FIXTURES / "multi_sheet.xlsx"
