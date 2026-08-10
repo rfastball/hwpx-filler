@@ -1,6 +1,6 @@
 """파일 다이얼로그 필터 단일 출처(RC-34) — 파생 검증 + 하드코딩 재유입 grep 게이트.
 
-지원 확장자의 단일 출처는 data/base.py(``SUPPORTED_DATA_FILE_EXTENSIONS``)다.
+지원 확장자의 단일 출처는 domain/data_source.py(``SUPPORTED_DATA_FILE_EXTENSIONS``)다.
 factory와 gui/file_filters.py가 함께 파생하고, 그 지점 밖의 필터 리터럴 하드코딩은
 확장자 정책 변경 시 화면별 드리프트로 이어진다(재유입 금지).
 """
@@ -29,12 +29,23 @@ def _filter_literal_pattern() -> "re.Pattern[str]":
 
 
 def test_factory_alias_is_domain_canonical_tuple():
-    from hwpxfiller.data.base import SUPPORTED_DATA_FILE_EXTENSIONS
+    import hwpxfiller.data as data_package
+    import hwpxfiller.data.base as legacy_data_source
+    import hwpxfiller.domain.data_source as domain_data_source
     from hwpxfiller.data.factory import EXCEL_EXTS
     from hwpxfiller.gui.file_filters import EXCEL_EXTS as FILTER_EXTS
 
-    assert EXCEL_EXTS is SUPPORTED_DATA_FILE_EXTENSIONS
-    assert FILTER_EXTS is SUPPORTED_DATA_FILE_EXTENSIONS
+    public_api = ("Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "DataSource")
+    assert tuple(domain_data_source.__all__) == public_api
+    assert tuple(legacy_data_source.__all__) == public_api
+    for name in public_api:
+        assert getattr(legacy_data_source, name) is getattr(domain_data_source, name)
+    assert domain_data_source.DataSource.field_labels(object()) == {}
+
+    assert data_package.Record is domain_data_source.Record
+    assert data_package.DataSource is domain_data_source.DataSource
+    assert EXCEL_EXTS is domain_data_source.SUPPORTED_DATA_FILE_EXTENSIONS
+    assert FILTER_EXTS is domain_data_source.SUPPORTED_DATA_FILE_EXTENSIONS
 
 
 def test_excel_filter_derives_from_domain_exts():
