@@ -81,9 +81,14 @@ _FACTORIES = {
 }
 
 
-def _deps(tmp_path):
-    """구성 공통 주입 한 벌 — pool_registry 는 #570 에서 폴백이 제거돼 **명시 주입**한다."""
-    return {**_FACTORIES, "pool_registry": DatasetPoolRegistry(tmp_path / "pool")}
+def _deps(tmp_path, lock: "threading.Lock | None" = None):
+    """구성 공통 주입 한 벌 — pool_registry(#570)·generation_lock(P2-24)은 폴백이
+    제거돼 **명시 주입**한다. ``lock`` 은 화면 간 공유를 재는 테스트의 관통용."""
+    return {
+        **_FACTORIES,
+        "pool_registry": DatasetPoolRegistry(tmp_path / "pool"),
+        "generation_lock": lock if lock is not None else threading.Lock(),
+    }
 
 
 def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_for_path):
@@ -91,6 +96,7 @@ def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_f
     ctrl = JobController(
         _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=threading.Lock(),
         file_source_factory=file_source_factory,
         pool_source_factory=source_from_pool_item,
     )
@@ -338,7 +344,7 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
     """
     lock = threading.Lock()
     reg = JobRegistry(tmp_path / "jobs")
-    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock, **_deps(tmp_path))
+    job_ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path, lock))
     lib_ctrl = LibraryController(
         reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
@@ -1457,6 +1463,7 @@ def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
     ctrl = JobController(
         _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
         pool_registry=pool,
+        generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
         pool_source_factory=pool_source_factory,
     )
@@ -4270,7 +4277,7 @@ def test_workbench_entry_hands_over_the_display_ordered_selection(tmp_path):
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     wb = WorkbenchController(
         ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
-    ctrl.workbench = wb
+    ctrl.workbench_open = wb.open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] and res["count"] == 2
     # 표시순서 기본값은 sourceDesc(최신 행 먼저) — 작업대가 그 순서를 그대로 받는다.
@@ -4369,7 +4376,7 @@ def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
     assert ctrl.job_name == "발주요청_기안 v2" and ctrl.job_is_txt is True
     wb = WorkbenchController(
         ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
-    ctrl.workbench = wb
+    ctrl.workbench_open = wb.open
     assert ctrl.dispatch("open_workbench", {})["ok"] is True
     assert wb.job_name == "발주요청_기안 v2"
 
@@ -4387,7 +4394,7 @@ def test_txt_session_sees_rules_saved_elsewhere_on_re_entry(tmp_path):
     )
     wb = WorkbenchController(
         ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
-    ctrl.workbench = wb
+    ctrl.workbench_open = wb.open
     ctrl.dispatch("open_workbench", {})
     assert wb.base_job is not None
     assert wb.base_job.mapping.mappings[0].source == "presmptPrce"
@@ -4400,8 +4407,8 @@ def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     ctrl.registry.delete("발주요청_기안")
-    ctrl.workbench = WorkbenchController(
-        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench_open = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
 
@@ -4444,8 +4451,8 @@ def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     (tmp_path / "발주요청_기안.txt").write_bytes("공고: {{공고명}}".encode("cp949"))
     assert ctrl.snapshot()["gate"]["enabled"] is True   # 파일은 실재한다
-    ctrl.workbench = WorkbenchController(
-        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    ctrl.workbench_open = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "템플릿을 읽을 수 없습니다" in res["error"]
 
@@ -4526,8 +4533,8 @@ def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path
     (tmp_path / "발주요청_기안.txt").unlink()          # 다른 곳에서 템플릿이 사라졌다
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is False and "템플릿" in snap["gate"]["text"]
-    ctrl.workbench = WorkbenchController(
-        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    ctrl.workbench_open = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "템플릿" in res["error"]
 

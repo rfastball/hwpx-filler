@@ -101,6 +101,79 @@ def test_web_controllers_use_ring1_public_seams() -> None:
     )
 
 
+def test_screen_controllers_stay_transport_thin() -> None:
+    """P2-24 음성 게이트 — 화면 컨트롤러는 transport/presentation 층에 머문다.
+
+    ① ``webapp/screen_*.py`` 상호 직접 import 0 — 화면 간 위임은 조립부(``webapp.app``)가
+       결선하는 callable 하나뿐이다(controller-to-controller 결합 재유입 금지).
+    ② ``screen_job.py`` 는 concrete 저장·배치 모듈(``hwpxfiller.batch``·
+       ``external.job_store``·``external.dataset_store``)을 import 하지 않는다 —
+       Presentation 은 Application(use case·port)을 경유한다.
+    ③ generation run 자물쇠·취소 Event 를 화면이 자체 생성하지 않는다 — 정본은
+       ``webapp.app`` 의 앱 전역 Lock 하나와 ``application.generation.GenerationRun`` 의
+       Event 다. 판정은 파일명 allowlist 가 아니라 AST 의미다: ``threading.Event`` 생성은
+       전 화면 금지, ``threading.Lock`` 생성은 ``generation_lock`` 을 아는(주입받는) 화면
+       금지(화면-국소 직렬화 자물쇠는 그 심볼을 모른다).
+    """
+    webapp = ROOT / "src" / "hwpxfiller" / "webapp"
+    forbidden_for_job = (
+        "hwpxfiller.batch",
+        "hwpxfiller.external.job_store",
+        "hwpxfiller.external.dataset_store",
+    )
+    failures: list[str] = []
+    for path in sorted(webapp.glob("screen_*.py")):
+        rel = path.relative_to(ROOT).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        refs_generation_lock = any(
+            (isinstance(n, ast.arg) and n.arg == "generation_lock")
+            or (isinstance(n, ast.Name) and n.id == "generation_lock")
+            for n in ast.walk(tree)
+        )
+        for node in ast.walk(tree):
+            modules: list[tuple[str, int]] = []
+            if isinstance(node, ast.Import):
+                modules = [(alias.name, node.lineno) for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                base = "hwpxfiller.webapp" if node.level == 1 else (
+                    "hwpxfiller" if node.level == 2 else (node.module or "")
+                )
+                full = (
+                    f"{base}.{node.module}" if node.level and node.module
+                    else (base if node.level else (node.module or ""))
+                )
+                # alias 도 정규화한다(코덱스 #581 P2) — `from . import screen_workbench`·
+                # `from ..external import job_store` 같은 패키지+멤버 형이 base 로만
+                # 접혀 두 금지선을 모두 통과하는 사각을 막는다(기존 boundary 게이트 관용구).
+                modules = [(full, node.lineno)] + [
+                    (f"{full}.{alias.name}" if full else alias.name, node.lineno)
+                    for alias in node.names
+                    if alias.name != "*"
+                ]
+            for module, lineno in modules:
+                if module.rsplit(".", 1)[-1].startswith("screen_"):
+                    failures.append(f"{rel}:{lineno}: 화면 간 직접 import {module}")
+                if path.name == "screen_job.py" and any(
+                    module == f or module.startswith(f + ".") for f in forbidden_for_job
+                ):
+                    failures.append(f"{rel}:{lineno}: concrete 모듈 import {module}")
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "threading"
+                and (
+                    node.func.attr == "Event"
+                    or (node.func.attr == "Lock" and refs_generation_lock)
+                )
+            ):
+                failures.append(
+                    f"{rel}:{node.lineno}: run transaction 프리미티브 자체 생성 "
+                    f"threading.{node.func.attr}()"
+                )
+    assert not failures, "\n".join(failures)
+
+
 def test_native_file_dialogs_have_one_app_entry() -> None:
     path = ROOT / "src" / "hwpxfiller" / "webapp" / "app.py"
     pattern = re.compile(r"^\s*(?:.*[=(\s])?(open_file_dialog|open_folder_dialog)\(")

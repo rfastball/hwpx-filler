@@ -51,6 +51,7 @@ __all__ = (
     "load_boot_completed",
     "save_boot_completed",
     "load_job_collapsed_groups",
+    "recollapse_job_group",
     "save_job_collapsed_groups",
     "load_template_group_map",
     "save_template_group_map",
@@ -347,6 +348,21 @@ def save_job_collapsed_groups(groups: "list[str]") -> None:
     if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
         raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
     _save_key("job_collapsed_groups", sorted(set(groups)))
+
+
+def recollapse_job_group(old: str, new: str = "") -> None:
+    """사라진 그룹 이름의 접힘 영속 정리 — ``new`` 가 있으면 그 이름으로 승계.
+
+    그룹 개명·해산 동사의 곁들이 semantic op(P2-24): 읽기-수정-쓰기가 컨트롤러에 남으면
+    설정 영속의 두 번째 조립자가 생긴다. 메모리 사본을 들지 않고 영속 키를 그때그때 읽고
+    쓴다 — 표면(라이브러리 접힘)과 키를 계속 공유하되 제2 정본을 만들지 않는다."""
+    collapsed = set(load_job_collapsed_groups())
+    if old not in collapsed:
+        return
+    collapsed.discard(old)
+    if new:
+        collapsed.add(new)
+    save_job_collapsed_groups(sorted(collapsed))
 
 
 # (구 「기안」 좌 목록 접힘 키 `draft_collapsed_groups` 는 화면 사망(F6 PR-B)과 함께 걷혔다.

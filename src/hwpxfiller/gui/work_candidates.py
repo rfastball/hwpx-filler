@@ -347,3 +347,21 @@ def workbench_entry_gate(
             reason=GATE_REASON_TEMPLATE_MISSING,
         )
     return GateState(True, "ok", "선택한 항목을 작업대에서 검토하고 복사합니다.")
+
+
+def unsupported_media_gate() -> GateState:
+    """미상 매체 작업이 선택된 상태의 게이트 — 실행 표면이 **없다**(§19.1 fail-closed).
+
+    「작업 미선택」이 아니다: 작업은 골라져 있고 실행 표면만 없다. prework 문안("먼저 문서
+    작업을 선택하세요")을 그대로 쓰면 이미 고른 사람에게 이행 불가능한 지시를 주고, 화면은
+    「작업 있음」과 「없음」을 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
+    막는 축은 템플릿이다 — 구획 지목이 아니라 곁의 재연결이 답이라 ``reason`` 도 그 축이다.
+    다른 게이트(prework·workbench 진입)와 같은 층이 소유해야 링2 가 ``GateState`` 를 직접
+    조립하지 않는다(P2-24 — RC-23 링2 문안 재조립 금지의 게이트판).
+    """
+    return GateState(
+        False, "danger",
+        "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
+        "템플릿을 다시 연결한 뒤 진행하세요.",
+        reason=GATE_REASON_TEMPLATE_MISSING,
+    )

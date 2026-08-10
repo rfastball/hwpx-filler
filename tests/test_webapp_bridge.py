@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -386,6 +387,7 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
                          pool_registry=pool,
+                         generation_lock=threading.Lock(),
                          file_source_factory=source_for_path,
                          pool_source_factory=source_from_pool_item)
     res = ctrl.dispatch("load_pool", {"key": excel_key})
