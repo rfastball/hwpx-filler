@@ -27,6 +27,18 @@ LEGACY_FACADES = (
         ("SAMPLE_N", "FieldProfile", "tentative_type", "profile_fields"),
     ),
     (
+        ROOT / "src" / "hwpxfiller" / "core" / "jamo.py",
+        "hwpxfiller.domain.jamo",
+        (
+            "CHOSEONG",
+            "JUNGSEONG",
+            "JONGSEONG",
+            "decompose",
+            "jamo_find",
+            "jamo_contains",
+        ),
+    ),
+    (
         ROOT / "src" / "hwpxfiller" / "data" / "inline.py",
         "hwpxfiller.domain.inline",
         ("InlineDataSource",),
