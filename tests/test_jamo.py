@@ -14,7 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.jamo import (
+import hwpxfiller.core.jamo as legacy_jamo
+import hwpxfiller.domain.jamo as domain_jamo
+from hwpxfiller.domain.jamo import (
     CHOSEONG,
     JONGSEONG,
     JUNGSEONG,
@@ -54,6 +56,19 @@ def test_tables_match_mockup_spec(name: str, ours: "tuple[str, ...]") -> None:
 
 def test_table_shapes() -> None:
     """산술 분해 전제 — 초 19 · 중 21 · 종 28(= 588/28/1 나눗셈의 성립 조건)."""
+    public_api = (
+        "CHOSEONG",
+        "JUNGSEONG",
+        "JONGSEONG",
+        "decompose",
+        "jamo_find",
+        "jamo_contains",
+    )
+    assert tuple(domain_jamo.__all__) == public_api
+    assert tuple(legacy_jamo.__all__) == public_api
+    for name in public_api:
+        assert getattr(legacy_jamo, name) is getattr(domain_jamo, name)
+
     assert len(CHOSEONG) == 19
     assert len(JUNGSEONG) == 21
     assert len(JONGSEONG) == 28
