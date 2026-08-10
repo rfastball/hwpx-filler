@@ -55,7 +55,7 @@ from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..core.template_status import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..core.text_render import SEG_MISSING, render_segments, template_fields
-from ..data import source_for_path
+from ..data.factory import source_for_path
 from ..gui.edit_session import (
     SECTION_BINDING,
     SECTION_FILENAME,

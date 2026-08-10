@@ -36,7 +36,7 @@ from hwpxfiller.core.job import Job, RunRequest
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.core.text_render import render_record
-from hwpxfiller.data import source_for_path
+from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.data.nara import NaraStdDataSource
 
 SCENARIO = Path(__file__).parent / "corpus" / "scenario"

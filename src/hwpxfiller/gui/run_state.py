@@ -24,7 +24,7 @@ from ..core.fill_ledger import (
 )
 from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
-from ..data import source_for_path
+from ..data.factory import source_for_path
 from ..naming import (
     OutputNameAudit,
     audit_output_names,
