@@ -26,6 +26,11 @@ LEGACY_FACADES = (
         "hwpxfiller.domain.source_profile",
         ("SAMPLE_N", "FieldProfile", "tentative_type", "profile_fields"),
     ),
+    (
+        ROOT / "src" / "hwpxfiller" / "data" / "inline.py",
+        "hwpxfiller.domain.inline",
+        ("InlineDataSource",),
+    ),
 )
 ALLOWED_INTERNAL_PREFIXES = ("hwpxfiller.domain", "hwpxcore.domain")
 CONCRETE_ADAPTER_ROOTS = {"lxml", "openpyxl", "webview"}
