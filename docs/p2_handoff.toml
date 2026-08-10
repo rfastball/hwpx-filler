@@ -29,10 +29,6 @@ src = "hwpxfiller.core.fill_ledger"
 dst = "hwpxcore.atomic"
 
 [[allowed_direction_violation]]
-src = "hwpxfiller.core.fill_ledger"
-dst = "hwpxfiller.data.secret_store"
-
-[[allowed_direction_violation]]
 src = "hwpxfiller.core.job"
 dst = "hwpxcore.atomic"
 

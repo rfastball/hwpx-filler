@@ -1,8 +1,8 @@
-"""비밀 저장소 포트 + ServiceKey 마스킹(redaction) 코어 — 나라장터 키의 안전 보관/누출 차단.
+"""비밀 저장소 포트와 concrete adapter — 나라장터 키의 안전 보관.
 
 data.go.kr ServiceKey 는 **사용자별 비밀**이다. 하드코딩·프로파일/작업 JSON 직렬화·로그
 어디에도 남지 않아야 하며, 저장이 필요하면 **OS 자격증명 저장소**(Windows Credential
-Manager)에 사용자 스코프로 둔다. 이 모듈이 그 두 축을 제공한다:
+Manager)에 사용자 스코프로 둔다. 이 모듈은 그 저장 축을 제공한다:
 
 1. :class:`SecretStore` 포트 — ``get/set/delete/has`` 4메서드의 최소 인터페이스.
    - :class:`WindowsCredentialStore` — Win32 Credential Manager(``ctypes`` 만, 새 의존성 0).
@@ -11,25 +11,19 @@ Manager)에 사용자 스코프로 둔다. 이 모듈이 그 두 축을 제공�
      ``delete`` 를 시끄럽게 실패시키는 폴백(``get``/``has`` 는 "저장된 키 없음"= None/False).
    - :func:`default_secret_store` — 플랫폼 선택기(win32 → 자격증명 저장소, 그 외 → Unsupported).
 
-2. :func:`redact` / :func:`redact_url` — URL·예외·로그 문자열에서 ServiceKey 를
-   ``[REDACTED]`` 로 **전면 치환**. 값(raw + 퍼센트인코딩)으로도, **파라미터명**(``ServiceKey=``)
-   으로도 지운다 — 키 값을 모르는 예외(stdlib ``HTTPError`` 등)도 안전.
-
-원칙([[confirm-or-alarm-principle]]): "묻고 확정하게 하라, 아니면 시끄럽게 알려라." 마스킹은
-**과삭제(over-redact)** 를 택한다 — 조용히 새는 것보다 넉넉히 지우는 게 항상 낫다. 텔레메트리
-규칙: 값·부분문자열·해시 **무엇도** 방출하지 않는다(마스킹은 전면적).
+순수 마스킹 정책은 :mod:`hwpxfiller.domain.secret_redaction` 이 소유한다. 기존
+``data.secret_store`` 소비자를 위해 ``REDACTED``·``redact``·``redact_url`` 은
+그 정본 객체를 그대로 재수출한다.
 """
 
 from __future__ import annotations
 
-import re
 import sys
-import urllib.parse
 from typing import Protocol, runtime_checkable
 
-# --------------------------------------------------------------------- 상수
-REDACTED = "[REDACTED]"
+from hwpxfiller.domain.secret_redaction import REDACTED, redact, redact_url
 
+# --------------------------------------------------------------------- 상수
 #: 논리적 비밀 이름(포트에 넘기는 키). Windows 타깃명·CLI 폴백이 공유하는 단일 출처.
 NARA_SERVICE_KEY_NAME = "nara-service-key"
 
@@ -43,42 +37,6 @@ WINDOWS_NARA_TARGET = WINDOWS_TARGET_PREFIX + NARA_SERVICE_KEY_NAME
 def windows_target_name(name: str) -> str:
     """논리 이름 → Windows 자격증명 타깃명(``hwpx-tools/<name>``)."""
     return WINDOWS_TARGET_PREFIX + name
-
-
-# ------------------------------------------------------------------ 마스킹
-# ``ServiceKey=<값>`` / ``serviceKey=`` / ``service_key=`` 를 파라미터명으로 인식.
-# 값을 몰라도(예: 우리가 만들지 않은 HTTPError 의 URL) 파라미터명만으로 지운다.
-_PARAM_RE = re.compile(r"(?i)(service[_-]?key=)([^&\s#\"'<>]*)")
-
-
-def redact(text: str, secret: "str | None" = None) -> str:
-    """``text`` 에서 ServiceKey 흔적을 ``[REDACTED]`` 로 전면 치환.
-
-    - ``secret`` 이 주어지면 **원문·퍼센트인코딩**(``quote``/``quote_plus``) 변형 모두 삭제.
-    - ``secret`` 유무와 무관하게 **파라미터명**(``ServiceKey=...``)의 값을 삭제 —
-      키 값을 모르는 URL/예외도 안전하게 마스킹된다.
-
-    과삭제 원칙: 애매하면 지운다. 값의 해시조차 남기지 않는다.
-    """
-    if not text:
-        return text
-    out = text
-    if secret:
-        # 긴 변형부터 치환해 부분 겹침으로 인한 누락을 막는다.
-        variants = {
-            secret,
-            urllib.parse.quote(secret, safe=""),
-            urllib.parse.quote_plus(secret),
-        }
-        for variant in sorted((v for v in variants if v), key=len, reverse=True):
-            out = out.replace(variant, REDACTED)
-    out = _PARAM_RE.sub(lambda m: m.group(1) + REDACTED, out)
-    return out
-
-
-def redact_url(url: str, secret: "str | None" = None) -> str:
-    """URL 전용 편의 래퍼 — 값 미상이어도 ``ServiceKey=`` 파라미터를 마스킹."""
-    return redact(url, secret)
 
 
 # --------------------------------------------------------------------- 포트
