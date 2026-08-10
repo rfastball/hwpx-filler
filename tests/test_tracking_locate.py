@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
-from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.gui.dataset_pool_state import DatasetPoolRow
 from hwpxfiller.webapp.screens import (

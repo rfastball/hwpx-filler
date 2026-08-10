@@ -17,6 +17,7 @@ import pytest
 
 import hwpxfiller.domain.secret_redaction as canonical_redaction
 from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import encode_job, save_job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.mapping_store import save_mapping_profile
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -297,10 +298,10 @@ def test_service_key_never_serialized_in_profile_and_job(tmp_path):
     job = Job(name="공고작업", template_path="T.hwpx", mapping=profile,
               filename_pattern="n-{{입찰공고번호}}")
     jf = tmp_path / "job.json"
-    job.save(jf)
+    save_job(jf, job)
     job_text = jf.read_text(encoding="utf-8")
     assert KEY not in job_text
-    assert KEY not in repr(job.to_dict())
+    assert KEY not in repr(encode_job(job))
 
     # SecretStore 에 넣어도 그 값은 위 직렬화 산출물과 무관(별개 표면).
     store = MemorySecretStore()

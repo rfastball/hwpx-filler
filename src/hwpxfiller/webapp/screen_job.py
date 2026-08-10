@@ -47,17 +47,24 @@ from datetime import datetime
 from pathlib import Path
 import threading
 
+from ..application.jobs import (
+    assign_group,
+    disband_group,
+    rename_group,
+    rename_job,
+    set_favorite,
+    stamp_run_completion,
+)
 from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
     MISSING_MARKER,
     Job,
-    JobRegistry,
-    content_fingerprint,
     rules_fingerprints,
     work_mode,
 )
+from ..external.job_store import JobRegistry, content_fingerprint
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..external.hwpx_engine import make_hwpx_engine
@@ -2007,7 +2014,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         name = p["name"]
         try:
-            self.registry.set_favorite(name, bool(p["value"]))
+            set_favorite(self.registry, name, bool(p["value"]))
         except (FileNotFoundError, ValueError) as exc:
             return {"ok": False,
                     "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
@@ -2076,7 +2083,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         name, new = p["name"], p.get("new", "")
         try:
-            self.registry.rename(name, new)
+            rename_job(self.registry, name, new)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         new_clean = new.strip()
@@ -2144,7 +2151,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         새 그룹 = 다이얼로그의 새 이름 입력이 이 액션으로 그대로 들어온다(소속=생성,
         빈 그룹 불가 불변식은 모델 구조가 담보).
         """
-        self.registry.set_group(p["name"], p.get("group", ""))
+        assign_group(self.registry, p["name"], p.get("group", ""))
 
     def _drift_note(self, seen, count: int) -> str:
         """확인 시점 건수와 실제 이동 건수 어긋남 고지(#149) — 공용 job_list.drift_note 위임."""
@@ -2186,7 +2193,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             count = sum(1 for j in self.registry.list_jobs() if j.group == old)
             return {"needs_confirm": True, "kind": "merge_group", "name": old,
                     "new": new, "count": count, "target_count": target_members}
-        count = self.registry.rename_group(old, new)
+        count = rename_group(self.registry, old, new)
         self._recollapse(old, new if not target_members else "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
@@ -2199,7 +2206,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not p.get("confirm"):
             count = sum(1 for j in self.registry.list_jobs() if j.group == name)
             return {"needs_confirm": True, "name": name, "count": count}
-        count = self.registry.disband_group(name)
+        count = disband_group(self.registry, name)
         self._recollapse(name, "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
@@ -2296,8 +2303,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         아무 말 없이 이번 실행을 잃는다 — 그래서 **사유를 완료 요약에 병기**한다.
         """
         try:
-            job = self.registry.stamp_last_run(
-                job_name, datetime.now().isoformat(timespec="seconds"),
+            job = stamp_run_completion(
+                self.registry, job_name, datetime.now().isoformat(timespec="seconds"),
                 # 기준선은 **이 런이 쓴 규칙**이다(1R P1) — 디스크의 지금 규칙으로 찍으면
                 # 배치 중 착지한 에디터 저장이 한 번도 실행된 적 없는 규칙을 검토받은
                 # 것으로 만든다. `vm` 이 없으면(정체 소실) 찍지 않는다: 무엇을 실행했는지

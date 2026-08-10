@@ -28,7 +28,6 @@ from lxml import etree
 
 from hwpxcore.text_extract import HP_NS, _local, _text_of_t, _to_package
 from hwpxfiller.core.authoring import scan_tokens
-from hwpxfiller.core.paths import home_dir
 from hwpxfiller.core.schema import extract_schema
 
 
@@ -45,16 +44,9 @@ OUTPUT_SUBDIR_NAME = "Results"
 TRASH_DIR_NAME = ".trash"
 
 
-def default_templates_dir() -> Path:
-    """GUI 기본 템플릿 라이브러리 위치 — 사용자 홈(``~/.hwpxfiller/templates``).
-
-    작업·베이스·txt·데이터셋 기본 루트 4종(:func:`~hwpxfiller.host.locations.default_jobs_dir`
-    미러)과 동일 홈 관례 — 템플릿 라이브러리만 기본 루트가 없어 관리 워크숍이 백지로
-    떴다(RC-14). ``HWPXFILLER_HOME`` 로 재지정 가능(테스트·CI·이식성 — 해석은
-    :func:`~hwpxfiller.core.paths.home_dir`). 관리 뷰모델 *클래스* 자체는 위치-불가지
-    (생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
-    """
-    return home_dir() / "templates"
+# (default_templates_dir 는 P2-21(#569)에서 Host 로 승격 —
+#  :func:`hwpxfiller.host.locations.default_templates_dir`. 홈 해석은 실행 환경을 읽는
+#  Host 책임이라 이 Domain 모듈엔 기본값 해석이 남지 않는다.)
 
 
 class CompileState(str, enum.Enum):

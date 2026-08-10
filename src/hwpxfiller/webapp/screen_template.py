@@ -36,7 +36,8 @@ from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
 
-from ..core.template_status import TRASH_DIR_NAME, default_templates_dir
+from ..core.template_status import TRASH_DIR_NAME
+from ..host.locations import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry
 from ..external.template_inspection import inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel

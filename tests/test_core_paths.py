@@ -10,8 +10,7 @@ from pathlib import Path
 
 from hwpxfiller.core.dataset_pool import default_dataset_pool_dir
 from hwpxfiller.core.paths import home_dir
-from hwpxfiller.host.locations import default_jobs_dir
-from hwpxfiller.core.template_status import default_templates_dir
+from hwpxfiller.host.locations import default_jobs_dir, default_templates_dir
 from hwpxfiller.core.text_registry import default_text_templates_dir
 from hwpxfiller.webapp import settings
 

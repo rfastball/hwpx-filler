@@ -16,7 +16,8 @@ import sys
 import threading
 from pathlib import Path
 
-from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import JobRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,7 +73,9 @@ def test_second_process_writer_fails_before_touching_job_files(tmp_path) -> None
     code = r"""
 import sys
 from pathlib import Path
-from hwpxfiller.core.job import Job, JobRegistry, JobRegistryOwnershipError
+from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.host.job_writer_lease import JobRegistryOwnershipError
 
 registry = JobRegistry(Path(sys.argv[1]))
 try:
@@ -101,7 +104,7 @@ def test_write_state_ownership_is_per_process_not_inherited(monkeypatch) -> None
     """#234 리뷰 — POSIX fork 자식은 ``_owner``(핸들/스트림)를 그대로 상속하는데, 조기
     반환이 그걸 신뢰하면 부모·자식이 무경보 동시 writer 가 된다(RLock 은 프로세스-로컬).
     소유권 판정은 획득 PID 와 묶여야 하고, PID 가 다르면 재획득을 시도해야 한다."""
-    from hwpxfiller.core.job import _RegistryWriteState
+    from hwpxfiller.host.job_writer_lease import _RegistryWriteState
 
     state = _RegistryWriteState("test-key")
     claims: list[str] = []

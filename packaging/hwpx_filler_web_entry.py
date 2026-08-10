@@ -15,8 +15,8 @@ def _selfcheck() -> int:
     import tempfile
     from pathlib import Path
 
-    from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.external.job_store import JobRegistry
     from hwpxfiller.external.template_inspection import inspect_hwpx_template
     from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
     from hwpxfiller.webapp.app import web_artifact

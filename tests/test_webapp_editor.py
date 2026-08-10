@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
-from hwpxfiller.core.job import JobRegistry
+from hwpxfiller.external.job_store import JobRegistry, encode_job
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_inspection import inspect_hwpx_template
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
@@ -814,7 +814,7 @@ def test_old_job_json_with_base_mapping_name_still_loads(tmp_path):
     path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     job = reg.load("구식작업")                              # loud raise 없이 로드
     assert job.name == "구식작업"
-    assert "base_mapping_name" not in job.to_dict()         # 재저장 시 키 소멸
+    assert "base_mapping_name" not in encode_job(job)         # 재저장 시 키 소멸
 
 
 def test_edit_save_preserves_concurrent_home_tag_edit(tmp_path):
@@ -907,7 +907,7 @@ def test_saved_job_carries_no_dataset_binding(tmp_path):
     assert ctrl.dispatch("save", {})["ok"] is True
     job = JobRegistry(tmp_path / "jobs").load("연결작업")
     assert not hasattr(job, "default_dataset_ref")
-    assert "default_dataset_ref" not in job.to_dict()
+    assert "default_dataset_ref" not in encode_job(job)
 
 
 def test_legacy_default_dataset_ref_key_is_discarded_not_migrated(tmp_path):
@@ -926,7 +926,7 @@ def test_legacy_default_dataset_ref_key_is_discarded_not_migrated(tmp_path):
     path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     job = reg.load("구식결속")                          # loud raise 없이 로드
     assert job.name == "구식결속"
-    assert "default_dataset_ref" not in job.to_dict()   # 재저장 시 키 소멸(폐기)
+    assert "default_dataset_ref" not in encode_job(job)   # 재저장 시 키 소멸(폐기)
 
 
 # ------------------------------------------------- 사용할 헤더 선택(#49)

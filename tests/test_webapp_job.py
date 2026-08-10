@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
+from hwpxfiller.core.job import Job, rules_fingerprints
+from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
@@ -2576,18 +2577,20 @@ def _pause_stamp(monkeypatch):
     """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
     import threading
 
+    import hwpxfiller.external.job_store as job_store
+
     entered, release = threading.Event(), threading.Event()
-    real_save = Job.save
+    real_save = job_store.save_job
     fired = {"once": False}
 
-    def slow_save(self, path):
-        if not fired["once"] and self.last_run_at:   # 스탬프 저장만 붙잡는다
+    def slow_save(path, job):
+        if not fired["once"] and job.last_run_at:    # 스탬프 저장만 붙잡는다
             fired["once"] = True
             entered.set()
             release.wait(3)
-        return real_save(self, path)
+        return real_save(path, job)
 
-    monkeypatch.setattr(Job, "save", slow_save)
+    monkeypatch.setattr(job_store, "save_job", slow_save)
     return entered, release
 
 

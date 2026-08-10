@@ -300,7 +300,7 @@ def test_filled_values_preview_reads_c1_fields(tmp_path):
 # ============================================ RC-14 — 기본 라이브러리·빈상태·성형
 def test_default_templates_dir_honors_env_override(monkeypatch, tmp_path):
     """링0 기본 템플릿 라이브러리 루트 — HWPXFILLER_HOME 재지정(기존 루트 4종 미러)."""
-    from hwpxfiller.core.template_status import default_templates_dir
+    from hwpxfiller.host.locations import default_templates_dir
 
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     assert default_templates_dir() == tmp_path / "templates"
