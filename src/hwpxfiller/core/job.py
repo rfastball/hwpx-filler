@@ -33,7 +33,6 @@ from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
-from .paths import home_dir
 from .template_status import default_templates_dir
 from .text_registry import default_text_templates_dir
 from hwpxcore.atomic import write_text_atomic
@@ -163,16 +162,8 @@ def load_isolated(paths, loader, corrupted):
 #  작업 축 slug 가드(:func:`guard_slug_collision`)는 그대로다.)
 
 
-def default_jobs_dir() -> Path:
-    """GUI 기본 작업 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/jobs``).
-
-    작업은 작업 디렉터리·repo 체크아웃을 가로질러 살아남아야 하는 개인 durable 자산이라
-    프로젝트-로컬이 아니라 홈에 둔다(패키징된 exe 엔 쓰기 가능한 프로젝트 폴더도 없다).
-    ``HWPXFILLER_HOME`` 환경변수로 재지정 가능(테스트·CI·이식성 — 해석은
-    :func:`~hwpxfiller.core.paths.home_dir`). 레지스트리 *클래스* 자체는 위치-불가지(생성자가
-    디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
-    """
-    return home_dir() / "jobs"
+# (default_jobs_dir 는 P2-17(#565)에서 Host 로 승격 — :func:`hwpxfiller.host.locations.default_jobs_dir`.
+#  레지스트리 *클래스* 는 위치-불가지라 이 모듈엔 기본값 해석이 남지 않는다.)
 
 
 # ------------------------------------------------------------------ 매체 유도·가드
@@ -999,7 +990,8 @@ def _shared_write_state(directory: Path) -> _RegistryWriteState:
 class JobRegistry:
     """작업 레지스트리 — 디렉터리에 작업당 JSON 1개. 홈 화면의 데이터 원천.
 
-    위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는 :func:`default_jobs_dir`).
+    위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는
+    :func:`hwpxfiller.host.locations.default_jobs_dir`).
     파일명은 작업 이름의 slug + ``.job.json``. slug 이 비단사라 서로 다른 이름이 같은 파일로
     매핑될 수 있다(예: ``a/b`` 와 ``a_b``). :meth:`save` 는 이 충돌을 조용히 덮지 않고
     :class:`JobSlugCollisionError` 로 loud raise 하며, 명시적 ``allow_overwrite=True`` 로만

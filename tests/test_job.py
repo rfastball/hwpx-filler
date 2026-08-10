@@ -22,9 +22,9 @@ from hwpxfiller.core.job import (
     SlugCollisionError,
     _reject_unsafe_key,
     content_fingerprint,
-    default_jobs_dir,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.host.locations import default_jobs_dir
 
 
 class _FakeSource:

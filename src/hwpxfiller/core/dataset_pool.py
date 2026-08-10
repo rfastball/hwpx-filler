@@ -68,7 +68,7 @@ def _shared_write_lock(directory: Path) -> "threading.RLock":
 def default_dataset_pool_dir() -> Path:
     """GUI 기본 데이터셋 풀 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/datasets``).
 
-    작업·txt 템플릿과 동일 홈 관례(:func:`~hwpxfiller.core.job.default_jobs_dir` 미러).
+    작업·txt 템플릿과 동일 홈 관례(:func:`~hwpxfiller.host.locations.default_jobs_dir` 미러).
     ``HWPXFILLER_HOME`` 로 재지정 가능(해석은 :func:`~hwpxfiller.core.paths.home_dir`).
     레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값
     해석기일 뿐이다.
