@@ -1025,11 +1025,13 @@ def test_soft_delete_retains_trash_30_days_and_undo_error_names_no_trash(tmp_pat
 # 아니라 **표면 전체를 분류하게** 만든다 — 새 공개 메서드가 생기면 아래 둘 중 하나에 이름을
 # 올리기 전까지 테스트가 실패한다(미분류 = 실패).
 _READERS = {
-    "exists", "load", "list_jobs", "names", "groups", "path_for", "write_lock",
+    "exists", "load", "list_jobs", "list_jobs_with_corruption", "names", "groups",
+    "path_for", "write_lock",
 }
 _WRITERS = {
     "save", "delete", "rename", "clone", "mutate", "stamp_last_run", "set_favorite",
     "set_group", "rename_group", "disband_group", "soft_delete", "restore_soft_deleted",
+    "remove_corrupt_entry",
 }
 
 
@@ -1110,6 +1112,11 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
     def restore_soft_deleted():
         reg.restore_soft_deleted(deleted_slot[0])
 
+    def remove_corrupt_entry():
+        bad = tmp_path / "jobs" / f"깨진{JobRegistry.SUFFIX}"
+        bad.write_text("{ 이건 json 아님", encoding="utf-8")
+        reg.remove_corrupt_entry(str(bad))
+
     exercised = {
         "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
         "mutate": lambda: reg.mutate("A", lambda j: setattr(j, "filename_pattern", "p")),
@@ -1123,6 +1130,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         "soft_delete": soft_delete,
         "restore_soft_deleted": restore_soft_deleted,
         "delete": lambda: reg.delete("B2"),
+        "remove_corrupt_entry": remove_corrupt_entry,
     }
     assert set(exercised) == _WRITERS, "writer 목록과 실행 목록이 어긋납니다(새 writer 미실행)."
     for run in exercised.values():
@@ -1639,3 +1647,32 @@ def test_shared_write_state_falls_back_to_lexical_key_for_unresolvable_paths(tmp
     a = shared_write_state(_Unresolvable(tmp_path / "jobs"))
     b = shared_write_state(tmp_path / "jobs")
     assert a is b                                    # 해석 실패 = 어휘 키 폴백(같은 키)
+
+
+def test_corruption_surface_gives_values_and_removal_rejudges_membership(tmp_path):
+    """손상 표면(P2-21 #569) — 값 객체(file_name·token·error)와 잠금 안 재판정 삭제.
+
+    구 :meth:`HomeViewModel.delete_corrupt` 임계구역의 하강분 owner: ①한 스캔이 (정상,
+    손상 값 객체)를 함께 주고 token 은 종전 표시 문자열(str(path))과 동일하다(표시 의미
+    불변), ②목록 밖 token 은 CORRUPT_PATH_REJECT 로 loud 거절돼 임의 경로 삭제 통로가
+    없다(#137 F10 시간 축), ③목록 안 token 만 실제로 지워진다.
+    """
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="정상", template_path="", mapping=MappingProfile()))
+    bad = tmp_path / "깨진.job.json"
+    bad.write_text("{ 이건 json 아님", encoding="utf-8")
+
+    jobs, corrupt = reg.list_jobs_with_corruption()
+    assert [j.name for j in jobs] == ["정상"]
+    assert [(e.file_name, e.token) for e in corrupt] == [("깨진.job.json", str(bad))]
+    assert corrupt[0].error                          # 사유를 빈칸으로 나르지 않는다
+
+    victim = tmp_path / "무관파일.txt"
+    victim.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="목록에 없는"):
+        reg.remove_corrupt_entry(str(victim))
+    assert victim.exists() and bad.exists()          # 거절 = 무손상
+
+    reg.remove_corrupt_entry(str(bad))
+    assert not bad.exists()
+    assert reg.list_jobs_with_corruption()[1] == []  # 해소가 다음 스캔에 보인다

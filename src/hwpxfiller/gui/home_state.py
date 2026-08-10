@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
 from ..core.engine import HwpxEngine
 from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, require_hwpx_template
@@ -26,9 +27,9 @@ from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
 from .work_mode import last_use_label
 
-#: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정과 VM 재판정이 **같은 말**을
-#: 하도록 단일 출처로 둔다(두 곳이 다른 문구면 같은 거절이 두 얼굴로 보인다).
-CORRUPT_PATH_REJECT = "손상 작업 목록에 없는 경로입니다. 새로고침 후 다시 시도하세요."
+# (손상 조치 거절 문구 CORRUPT_PATH_REJECT 는 P2-21 #569 에서 Application 포트 계약
+#  (:mod:`~hwpxfiller.application.jobs`)으로 이사 — 잠금 안 재판정이 External semantic op
+#  로 내려가면서 그 문구의 발화 주체가 이 모듈이 아니게 됐다.)
 
 # 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
@@ -462,14 +463,13 @@ class HomeViewModel:
         손상 ``.job.json`` 은 격리 수집(RC-05)해 :meth:`corrupt_rows` 로 노출한다 —
         정상 작업은 계속 표시하되 손상 파일을 조용히 감추지 않는다.
         """
-        corrupted: "list" = []
-        self._rows = [
-            JobRow.from_job(j, engine=self._engine)
-            for j in self.registry.list_jobs(corrupted=corrupted)
-        ]
+        jobs, corrupt = self.registry.list_jobs_with_corruption()
+        self._rows = [JobRow.from_job(j, engine=self._engine) for j in jobs]
+        # 손상은 레지스트리가 값 객체(file_name·token·error)로 준다(P2-21 #569) — 이 VM 은
+        # 더는 파일 좌표(Path)를 만지지 않고, 표시 문자열(token = 종전 str(path))은 불변이다.
         self._corrupt_rows = [
-            CorruptJobRow(file_name=p.name, path=str(p), error=err)
-            for p, err in corrupted
+            CorruptJobRow(file_name=e.file_name, path=e.token, error=e.error)
+            for e in corrupt
         ]
         if self._selected not in {r.name for r in self._rows}:
             self._selected = None
@@ -545,29 +545,27 @@ class HomeViewModel:
 
     def delete(self, name: str) -> None:
         """작업 삭제 후 목록 갱신(확인 UI 는 컨트롤러 몫)."""
-        self.registry.delete(name)
+        delete_job(self.registry, name)
         if self._selected == name:
             self._selected = None
         self.refresh()
 
     def delete_corrupt(self, path: str) -> None:
-        """손상 ``.job.json`` 삭제 — **쓰기 잠금 안**에서 화이트리스트를 재판정한 뒤 지운다.
+        """손상 ``.job.json`` 삭제 — 잠금 참여·시간 축 재판정·unlink 는 포트 뒤로 하강했다.
 
-        레지스트리 API 를 우회하는 유일한 삭제라 잠금에 직접 참여한다(#129 리뷰 3R P1 의
-        유사 범위 조사 결과): 잠금 밖이면 다른 writer 의 읽기-수정-쓰기 한가운데서 파일이
-        사라져, 지운 작업이 그 writer 의 저장으로 되살아난다.
+        구판은 이 VM 이 ``write_lock()`` 을 직접 잡고 ``Path.unlink`` 를 불렀다(레지스트리
+        API 를 우회하는 유일한 삭제). P2-21 #569 에서 그 임계구역이 External semantic op
+        (:meth:`~hwpxfiller.external.job_store.JobRegistry.remove_corrupt_entry`)로 원문
+        이동해, 여기는 use case 를 부르고 목록을 갱신할 뿐이다. 목록 밖 token 거절
+        (``CORRUPT_PATH_REJECT`` ``ValueError``)의 의미는 그대로다.
 
-        재판정이 필요한 이유는 시간 축이다 — 확인 모달을 사람이 보는 사이 rename/clone 이
-        같은 slug 자리를 재사용하면, 확인 **전** 스냅샷으로 만든 화이트리스트는 이미 남의
-        파일을 가리킨다(#137 F10 "삭제 경로검증"의 시간 축 판). 그래서 잠금 안에서 목록을
-        다시 만들고 다시 대조한다. 그 사이 이미 사라졌으면 목적은 달성이라 경보하지 않는다.
+        거절이어도 ``finally`` 로 refresh 한다 — 구판이 잠금 안 재판정 **전에** 목록을 새로
+        만들어 통지했으므로, 거절 경로에서도 화면이 최신 손상 목록을 보던 관측 행동을 지킨다.
         """
-        with self.registry.write_lock():
-            self.refresh()  # 화이트리스트를 **지금** 다시 만든다
-            if path not in {str(c.path) for c in self._corrupt_rows}:
-                raise ValueError(CORRUPT_PATH_REJECT)
-            Path(path).unlink(missing_ok=True)
-        self.refresh()
+        try:
+            remove_corrupt_entry(self.registry, path)
+        finally:
+            self.refresh()
 
     def set_tags(self, name: str, raw) -> None:
         """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제(#26 D14).
@@ -587,13 +585,11 @@ class HomeViewModel:
             if k.strip() in tags:  # 공백 변형 중복 축 — 조용한 last-wins 소실 금지(loud)
                 raise ValueError(f"중복된 태그 축입니다: {k.strip()!r}")
             tags[k.strip()] = v.strip()
-        # 읽기-수정-쓰기는 레지스트리의 잠긴 경로로(#129 리뷰 3R P1) — 손으로 load→save 를
-        # 엮으면 생성 스레드의 스탬프·에디터 저장과 겹쳐 늦게 착지한 쪽이 상대 변경을 통째로
-        # 되돌린다(태그가 방금 찍힌 실행 시각을 지우거나 그 반대). 부재·손상은 여전히 loud.
-        def _set(job) -> None:
-            job.tags = tags
-
-        self.registry.mutate(name, _set)
+        # 읽기-수정-쓰기는 use case 의 잠긴 원자 왕복으로(#129 리뷰 3R P1, P2-21 #569) —
+        # 손으로 load→save 를 엮으면 생성 스레드의 스탬프·에디터 저장과 겹쳐 늦게 착지한
+        # 쪽이 상대 변경을 통째로 되돌린다(태그가 방금 찍힌 실행 시각을 지우거나 그 반대).
+        # 부재·손상은 여전히 loud.
+        update_tags(self.registry, name, tags)
         self.refresh()
 
     # ------------------------------------------------- 작업 브라우저(group/facet)

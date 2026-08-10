@@ -38,6 +38,10 @@ LEGACY_FACADES = (
 ALLOWED_INTERNAL_PREFIXES = (
     "hwpxfiller.application",
     "hwpxfiller.domain",
+    # core/job.py 는 P2-21 1단계에서 저장·잠금 물리를 external/host 로 내리고 Domain 순수로
+    # 남았다(handoff unit target=DOMAIN). 물리 domain/ 이관 전까지 Application 이 이 모듈의
+    # 값 계약(Job)을 아는 것은 inward 다 — core 전체가 아니라 이 모듈만 허용한다.
+    "hwpxfiller.core.job",
 )
 CONCRETE_ADAPTER_ROOTS = {
     "aiohttp",

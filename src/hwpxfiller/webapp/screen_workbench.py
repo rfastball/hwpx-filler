@@ -28,6 +28,7 @@ from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
+from ..application.jobs import stamp_run_completion
 from ..core.format_engine import presets as format_presets
 from ..core.job import Job, work_mode
 from ..external.job_store import JobRegistry, content_fingerprint
@@ -835,8 +836,11 @@ class WorkbenchController(MappingVerbsMixin):
         if self._stamped or not self.job_name:
             return ""
         try:
-            job = self.registry.stamp_last_run(
-                self.job_name, datetime.now().isoformat(timespec="seconds"),
+            # rules=None 명시 = 검토 기준선 불변(위 docstring) — use case 가 기본값을 두지
+            # 않아 이 선택이 호출부에 보인다(P2-21 #569).
+            job = stamp_run_completion(
+                self.registry, self.job_name,
+                datetime.now().isoformat(timespec="seconds"), rules=None,
             )
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__

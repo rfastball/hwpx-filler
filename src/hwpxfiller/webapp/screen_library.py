@@ -35,13 +35,19 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from ..application.jobs import (
+    CORRUPT_PATH_REJECT,
+    clone_job,
+    restore_job,
+    set_favorite,
+    soft_delete_job,
+)
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..external.hwpx_engine import make_hwpx_engine
 from ..gui.compile_badge import badge_level
 from ..gui.home_state import (
-    CORRUPT_PATH_REJECT,
     NO_GROUP_LABEL,
     HomeViewModel,
     JobRow,
@@ -349,7 +355,7 @@ class LibraryController:
         """
         name = p["name"]
         try:
-            self._job_registry.set_favorite(name, bool(p["value"]))
+            set_favorite(self._job_registry, name, bool(p["value"]))
         except (FileNotFoundError, ValueError) as exc:
             return {"ok": False,
                     "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
@@ -372,7 +378,7 @@ class LibraryController:
                 g = guard_of(name)
                 if g is not None:
                     return {"needs_confirm": True, "name": name, "open_session": True, **g}
-        self._deleted_job_slot = self._job_registry.soft_delete(name)
+        self._deleted_job_slot = soft_delete_job(self._job_registry, name)
         if name == self.selected_work:
             self.selected_work = ""  # 유령 상세 금지 — 사라진 행을 겨눈 채로 두지 않는다.
         self.vm.refresh()
@@ -381,7 +387,7 @@ class LibraryController:
     def _do_undo_delete_job(self, p: dict) -> dict:
         if self._deleted_job_slot is None:
             return {"ok": False, "error": "복원할 최근 작업이 없습니다."}
-        name = self._job_registry.restore_soft_deleted(self._deleted_job_slot)
+        name = restore_job(self._job_registry, self._deleted_job_slot)
         self._deleted_job_slot = None
         self.vm.refresh()
         return {"ok": True, "name": name}
@@ -394,7 +400,7 @@ class LibraryController:
         시끄럽게 재진술한다(웹이 alert).
         """
         try:
-            new_name = self._job_registry.clone(p["name"])
+            new_name = clone_job(self._job_registry, p["name"])
         except Exception as exc:  # noqa: BLE001 — 부재·손상·slug 백스톱: 문구로 loud
             return {"ok": False, "error": f"작업을 복제할 수 없습니다: {exc}"}
         self.vm.refresh()

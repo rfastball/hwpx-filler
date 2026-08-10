@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
+from hwpxfiller.application.jobs import CORRUPT_PATH_REJECT, CorruptJobEntry
 from hwpxfiller.core.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
@@ -580,6 +581,45 @@ class JobRegistry:
             self._files(), load_job, corrupted if corrupted is not None else []
         )
         return sorted(jobs, key=lambda j: j.name)
+
+    def list_jobs_with_corruption(
+        self,
+    ) -> "tuple[list[Job], list[CorruptJobEntry]]":
+        """한 스캔으로 (정상 작업, 손상 값 객체) — 홈 refresh 의 단일 왕복(P2-21 #569).
+
+        손상은 ``(Path, str)`` 좌표가 아니라 값 객체
+        (:class:`~hwpxfiller.application.jobs.CorruptJobEntry`)로 준다 — ``token`` 은
+        불투명 문자열(``str(path)``)이라 APPLICATION 소비자(홈 VM)가 ``Path``·suffix 를
+        알 필요가 없다. 기존 ``list_jobs(corrupted=)`` 시그니처는 부속 소비자(피커·
+        참조수 집계)를 위해 그대로 남는다.
+        """
+        corrupted: "list[tuple[Path, str]]" = []
+        jobs = self.list_jobs(corrupted=corrupted)
+        return jobs, [
+            CorruptJobEntry(file_name=p.name, token=str(p), error=err)
+            for p, err in corrupted
+        ]
+
+    def remove_corrupt_entry(self, token: str) -> None:
+        """손상 ``.job.json`` 삭제 — **쓰기 잠금 안**에서 화이트리스트를 재판정한 뒤 지운다.
+
+        구 :meth:`HomeViewModel.delete_corrupt` 임계구역의 원문 하강(P2-21 #569): 레지스트리
+        API 를 우회하는 유일한 삭제라 잠금에 직접 참여한다(#129 리뷰 3R P1 의 유사 범위 조사
+        결과) — 잠금 밖이면 다른 writer 의 읽기-수정-쓰기 한가운데서 파일이 사라져, 지운
+        작업이 그 writer 의 저장으로 되살아난다.
+
+        재판정이 필요한 이유는 시간 축이다(#137 F10 "삭제 경로검증"의 시간 축 판) — 확인
+        모달을 사람이 보는 사이 rename/clone 이 같은 slug 자리를 재사용하면, 확인 **전**
+        스냅샷의 token 은 이미 남의 파일을 가리킨다. 그래서 잠금 안에서 손상 목록을 다시
+        만들어 대조하고, 불일치는 :data:`~hwpxfiller.application.jobs.CORRUPT_PATH_REJECT`
+        로 loud 거절한다. 그 사이 이미 사라진 파일은 목적 달성이라 경보하지 않는다
+        (``missing_ok``).
+        """
+        with self._write_lock:
+            _, corrupt = self.list_jobs_with_corruption()
+            if token not in {entry.token for entry in corrupt}:
+                raise ValueError(CORRUPT_PATH_REJECT)
+            Path(token).unlink(missing_ok=True)
 
     def names(self) -> "list[str]":
         return [j.name for j in self.list_jobs()]
