@@ -77,14 +77,6 @@ src = "hwpxfiller.data"
 dst = "hwpxfiller.data.secret_store"
 
 [[allowed_direction_violation]]
-src = "hwpxfiller.gui.nara_state"
-dst = "hwpxfiller.data.nara"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.gui.nara_state"
-dst = "hwpxfiller.data.secret_store"
-
-[[allowed_direction_violation]]
 src = "hwpxfiller.gui.run_state"
 dst = "hwpxfiller.data.factory"
 
@@ -461,7 +453,6 @@ target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/nara_state.py"]
 remove_when = "hwpxfiller.gui.nara_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_nara_auth_failure_is_loud"
-obligations = ["네트워크와 시각 접근을 주입형 port로 추출"]
 
 [[unit]]
 module = "hwpxfiller.gui.pipeline_builder_state"

@@ -23,7 +23,7 @@ from hwpxfiller.core.dataset_pool import (
 )
 from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
-from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.data.nara import NaraStdDataSource, make_nara_acquirer
 from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -491,7 +491,7 @@ def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
 
 def test_run_load_pool_item_nara_snapshots_once(tmp_path):
     """나라 풀 항목 겨눔 = 1회 취득 후 키 없는 스냅샷 — 반복 records() 가 재-fetch 안 함."""
-    from hwpxfiller.gui.nara_state import AcquiredNaraData
+    from hwpxfiller.application.nara_acquire import AcquiredNaraData
     from hwpxfiller.gui.run_state import RunViewModel
 
     calls = {"n": 0}
@@ -506,7 +506,12 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
     )
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
     vm = RunViewModel(_job())
-    recs = vm.load_pool_item(it, secret_store=store, fetcher=counting_fetch)
+    recs = vm.load_pool_item(
+        it,
+        secret_store=store,
+        fetcher=counting_fetch,
+        nara_factory=make_nara_acquirer,
+    )
     assert len(recs) == 2
     assert isinstance(vm.datasource, AcquiredNaraData)  # 스냅샷으로 고정
     # 실행뷰의 반복 조회를 흉내내도 fetcher 는 최초 1회만 불린다(스냅샷 캐시).
@@ -532,7 +537,12 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
     vm = RunViewModel(_job())
     with pytest.raises(RuntimeError) as ei:
-        vm.load_pool_item(it, secret_store=store, fetcher=lambda url: auth_fail)
+        vm.load_pool_item(
+            it,
+            secret_store=store,
+            fetcher=lambda _url: auth_fail,
+            nara_factory=make_nara_acquirer,
+        )
     assert "07" in str(ei.value)
     assert _LIVE_KEY not in str(ei.value)
     assert vm.datasource is None  # 실패면 datasource 미할당(조용한 진행 금지)
@@ -547,4 +557,8 @@ def test_run_load_pool_item_nara_no_key_is_loud(tmp_path):
     )
     vm = RunViewModel(_job())
     with pytest.raises(RuntimeError, match="서비스키"):
-        vm.load_pool_item(it, secret_store=MemorySecretStore())  # 키 미등록
+        vm.load_pool_item(
+            it,
+            secret_store=MemorySecretStore(),
+            nara_factory=make_nara_acquirer,
+        )
