@@ -289,3 +289,32 @@ def test_resolve_duplicates_contract_holds_for_both_ports(registry):
     # 그룹이 사라진 뒤의 낡은 확정은 실행되지 않는다.
     with pytest.raises(FileNotFoundError):
         vm.resolve_duplicates(keep, basis=fresh)
+
+
+def test_relink_and_relabel_carry_sheet_note_name_for_both_ports(registry):
+    """재연결·재라벨의 조건 갱신 축 — 시트 명시·비고 진술·라벨 동반 갱신이 보존된다.
+
+    비어 있으면 기존 값 보존(조용한 소거 금지), 있으면 그 확정에 함께 착지한다 —
+    kind/opts 정합(하이브리드 손상 금지)까지 두 구현이 같은 계약이다.
+    """
+    vm = DatasetPoolViewModel(registry)
+    vm.register_excel("발주", "/a.xlsx")
+    key = vm.rows()[0].key
+    _item, basis = vm.inspect(key)
+    updated = vm.relink_confirmed(
+        key, "/b.xlsx", sheet="7월", note="월분 교체", name="발주 7월", basis=basis
+    )
+    assert updated.kind == "excel"
+    assert updated.opts == {"path": "/b.xlsx", "sheet": "7월"}
+    assert updated.note == "월분 교체" and updated.name == "발주 7월"
+
+    same = registry.find_identity("/b.xlsx", "7월")
+    assert same is not None and same[0] == key
+    relabeled = registry.relabel(key, "발주 8월", note="차월 재사용")
+    assert relabeled.name == "발주 8월" and relabeled.note == "차월 재사용"
+
+    # 확인 사이 삭제된 슬롯의 확정은 부활이 아니라 loud 부재로 접힌다(손상 키 포함).
+    _item2, fresh = vm.inspect(key)
+    vm.delete_confirmed(key, basis=fresh)
+    with pytest.raises(FileNotFoundError):
+        vm.delete_confirmed(key, basis=fresh)
