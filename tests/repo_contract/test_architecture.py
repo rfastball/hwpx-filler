@@ -142,7 +142,14 @@ def test_screen_controllers_stay_transport_thin() -> None:
                     f"{base}.{node.module}" if node.level and node.module
                     else (base if node.level else (node.module or ""))
                 )
-                modules = [(full, node.lineno)]
+                # alias 도 정규화한다(코덱스 #581 P2) — `from . import screen_workbench`·
+                # `from ..external import job_store` 같은 패키지+멤버 형이 base 로만
+                # 접혀 두 금지선을 모두 통과하는 사각을 막는다(기존 boundary 게이트 관용구).
+                modules = [(full, node.lineno)] + [
+                    (f"{full}.{alias.name}" if full else alias.name, node.lineno)
+                    for alias in node.names
+                    if alias.name != "*"
+                ]
             for module, lineno in modules:
                 if module.rsplit(".", 1)[-1].startswith("screen_"):
                     failures.append(f"{rel}:{lineno}: 화면 간 직접 import {module}")
