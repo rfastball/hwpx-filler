@@ -35,7 +35,8 @@ from ..web_artifact import (
     WebArtifactViolation,
     resolve_web_artifact,
 )
-from ..core.job import JobRegistry, default_jobs_dir
+from ..core.job import JobRegistry
+from ..host.locations import default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.

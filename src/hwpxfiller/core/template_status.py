@@ -48,7 +48,7 @@ TRASH_DIR_NAME = ".trash"
 def default_templates_dir() -> Path:
     """GUI 기본 템플릿 라이브러리 위치 — 사용자 홈(``~/.hwpxfiller/templates``).
 
-    작업·베이스·txt·데이터셋 기본 루트 4종(:func:`~hwpxfiller.core.job.default_jobs_dir`
+    작업·베이스·txt·데이터셋 기본 루트 4종(:func:`~hwpxfiller.host.locations.default_jobs_dir`
     미러)과 동일 홈 관례 — 템플릿 라이브러리만 기본 루트가 없어 관리 워크숍이 백지로
     떴다(RC-14). ``HWPXFILLER_HOME`` 로 재지정 가능(테스트·CI·이식성 — 해석은
     :func:`~hwpxfiller.core.paths.home_dir`). 관리 뷰모델 *클래스* 자체는 위치-불가지

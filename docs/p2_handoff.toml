@@ -32,10 +32,10 @@ dst = "hwpxcore.atomic"
 src = "hwpxfiller.core.job"
 dst = "hwpxcore.atomic"
 
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.job"
-dst = "hwpxfiller.core.paths"
-
+# core.job → core.paths 는 P2-17(#565)에서 default_jobs_dir 의 Host 승격으로 제거됐다.
+# 아래 core.job → core.text_registry 와 core.template_status → core.paths 는 #565 재실측에서
+# library_root_for 의 ring 0 소비자(Job.template_key·Job.from_dict — 직렬화의 「이식성의 경첩」)가
+# 확인돼 축소 착지했다 — 잔여 2건의 owner 는 #569(Job 영속 경계 이관)다.
 [[allowed_direction_violation]]
 src = "hwpxfiller.core.job"
 dst = "hwpxfiller.core.text_registry"
