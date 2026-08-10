@@ -352,8 +352,8 @@ def test_web_assets_present_and_wired():
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 
 
-def test_job_load_pool_and_nara_frozen(tmp_path):
-    """풀 겨눔(UD-25 비대칭 해소) — 엑셀 참조 성공(라벨 서버 소유), 나라 동결 거절.
+def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
+    """풀 겨눔 — 정상 참조는 읽되 직접·조립 속 나라 소스는 loader 전에 동결 거절.
 
     (구 「기안」 표본의 이식 — F6 PR-B) 믹스인 계약(PoolTargetingMixin._do_load_pool)의
     생존 소비자는 「문서 만들기」 하나 — 실 사용자 풀을 건드리지 않게 tmp 레지스트리로
@@ -361,13 +361,27 @@ def test_job_load_pool_and_nara_frozen(tmp_path):
     """
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.webapp.screen_job import JobController
+    from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT
 
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,담당자\n전산장비,김주무\n", encoding="utf-8")
     pool = DatasetPoolRegistry(tmp_path / "pool")
+
+    def pipeline_opts(*sources):
+        return {"sources": list(sources), "steps": []}
+
     excel_key = pool.add(DatasetPoolItem(name="기안데이터", kind="excel", opts={"path": str(csv)}))
     nara_key = pool.add(DatasetPoolItem(name="나라쿼리", kind="nara",
                                         opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    nested_ref: dict = {
+        "kind": "nara",
+        "opts": {"bgn_dt": "202607010000", "end_dt": "202607080000"},
+    }
+    for _ in range(3):
+        nested_ref = {"kind": "pipeline", "opts": pipeline_opts(nested_ref)}
+    nested_nara_key = pool.add(DatasetPoolItem(
+        name="중첩 나라 조립", kind="pipeline", opts=pipeline_opts(nested_ref)
+    ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
                          pool_registry=pool)
     res = ctrl.dispatch("load_pool", {"key": excel_key})
@@ -375,8 +389,20 @@ def test_job_load_pool_and_nara_frozen(tmp_path):
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 기안데이터"
     assert snap["record_count"] == 1   # 참조 재읽기로 실 레코드 도착
-    res2 = ctrl.dispatch("load_pool", {"key": nara_key})
-    assert res2["ok"] is False and "지원되지 않습니다" in res2["error"]
+
+    load_calls = []
+
+    def forbidden_loader(item):
+        load_calls.append(item)
+        raise AssertionError("나라 동결 관문 뒤 loader가 호출됐습니다.")
+
+    monkeypatch.setattr(ctrl, "_load_pool_records", forbidden_loader)
+
+    direct = ctrl.dispatch("load_pool", {"key": nara_key})
+    nested = ctrl.dispatch("load_pool", {"key": nested_nara_key})
+    assert direct == {"ok": False, "error": NARA_FROZEN_TEXT}
+    assert nested == direct
+    assert load_calls == []
 
 
 def test_copy_clipboard_is_atomic_transaction_only(tmp_path, monkeypatch):

@@ -41,6 +41,48 @@ NARA_FROZEN_TEXT = (
     "파일 또는 엑셀 참조 등록 데이터를 사용하세요."
 )
 
+
+def _pipeline_has_nara_source(opts: object) -> bool:
+    """조립 참조 그래프 안의 나라 소스를 찾는다(손상 shape는 기존 loader에 맡김).
+
+    ``inline`` 레코드 같은 일반 데이터 안의 ``{"kind": "nara"}``는 소스 참조가 아니다.
+    따라서 각 ``sources`` 슬롯의 ``kind``만 보고, ``pipeline`` 슬롯의
+    ``opts.sources``만 반복해서 내려간다. 타입이 다른 손상 조각은 변환하거나 여기서 새로
+    실패시키지 않아 기존 복원 경로가 원래 오류를 그대로 재진술하게 한다.
+    """
+    if not isinstance(opts, dict):
+        return False
+    sources = dict.get(opts, "sources")
+    if not isinstance(sources, list):
+        return False
+
+    pending: "list[object]" = list(sources)
+    seen: "set[int]" = set()
+    while pending:
+        reference = pending.pop()
+        if not isinstance(reference, dict):
+            continue
+        identity = id(reference)
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        kind = dict.get(reference, "kind")
+        if not isinstance(kind, str):
+            continue
+        if kind == "nara":
+            return True
+        if kind != "pipeline":
+            continue
+
+        nested_opts = dict.get(reference, "opts")
+        if not isinstance(nested_opts, dict):
+            continue
+        nested_sources = dict.get(nested_opts, "sources")
+        if isinstance(nested_sources, list):
+            pending.extend(nested_sources)
+    return False
+
 # TXT 판 RAW 차단(F6 PR-B) — hwpx 의 RAW_BLOCK_MESSAGE 는 누름틀·변환(fieldize)을 말하므로
 # 그대로 쓰면 조치 안내가 거짓이 된다. TXT 의 채울 대상은 {{토큰}}이고 처방은 원문 편집이다
 # (거처는 편집기 「템플릿」 탭 행 ⋮ — tpl 화면 사망(F8)으로 문안 재지정, 없는 곳 지시 금지).
@@ -114,7 +156,9 @@ def load_pool_item_checked(
         item = pool_registry.load(key)
     except (FileNotFoundError, ValueError):
         raise ValueError("등록 데이터를 찾을 수 없습니다(이미 삭제된 항목).") from None
-    if item.kind == "nara":
+    if item.kind == "nara" or (
+        item.kind == "pipeline" and _pipeline_has_nara_source(item.opts)
+    ):
         raise ValueError(NARA_FROZEN_TEXT)
     if item.kind == "excel" and not item.opts.get("sheet"):
         err = ambiguous_sheet_error(
