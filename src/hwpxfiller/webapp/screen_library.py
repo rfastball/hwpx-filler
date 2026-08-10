@@ -38,6 +38,7 @@ from pathlib import Path
 from ..application.jobs import (
     CORRUPT_PATH_REJECT,
     clone_job,
+    load_job,
     restore_job,
     set_favorite,
     soft_delete_job,
@@ -143,7 +144,7 @@ class LibraryController:
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
                  push: PushSink,
                  pool_registry: DatasetPoolRegistry,
-                 generation_lock: "threading.Lock | None" = None) -> None:
+                 generation_lock: "threading.Lock") -> None:
         # pool_registry 는 손상 등록 데이터 경보(#45) 용 — composition root(webapp.app)가
         # 주입한다(자기 생성 폴백은 #570 에서 제거 — locator 뒷문 금지).
         # text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다.
@@ -158,11 +159,9 @@ class LibraryController:
         # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
         self._job_registry = registry
         # 「문서 만들기」와 **같은** 생성 자물쇠(9R P1) — 이 화면의 재연결도 durable 규칙을
-        # 쓰므로 진행 중 런과 겹치면 안 된다. 미주입이면 잠기지 않는 자기 것을 세운다
-        # (단독 구성 테스트 호환 — 그 구성엔 런을 돌리는 표면 자체가 없다).
-        self._generation_lock = (
-            generation_lock if generation_lock is not None else threading.Lock()
-        )
+        # 쓰므로 진행 중 런과 겹치면 안 된다. **필수 주입**이다(P2-24 폴백 제거): 화면이
+        # 자기 것을 세우면 run transaction 상태의 제2 정본이 된다(#570 pool_registry 동형).
+        self._generation_lock = generation_lock
         self._push_sink = push
         self._deleted_job_slot = None
         # 「모든 작업」 보기의 그룹 접힘(§19.6 ``collapsedGroups``) — 보기만 바꾸고 행을
@@ -226,7 +225,7 @@ class LibraryController:
         if row is None:  # 다른 화면에서 삭제·개명됐다 — 유령 상세를 그리지 않는다.
             return None
         try:
-            job = self._job_registry.load(row.name)
+            job = load_job(self._job_registry, row.name)
         except Exception:  # noqa: BLE001 — 목록 성형과 상세 적재 사이의 파일 소실·잠김
             return None
         mode = library_mode_of(row)

@@ -19,6 +19,7 @@ from ..core.job import (
     WORK_MODE_HWPX,
     WORK_MODE_TEXT,
     WORK_MODE_UNSUPPORTED,
+    work_mode,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "WORK_MODE_ORDER",
     "last_use_label",
     "mode_sections",
+    "seat_kinds",
     "work_mode_label",
     "work_mode_of_filter_value",
 ]
@@ -53,6 +55,21 @@ def work_mode_label(mode: str, *, short: bool = False) -> str:
     """
     pair = _LABELS.get(mode) or _LABELS[WORK_MODE_UNSUPPORTED]
     return pair[0] if short else pair[1]
+
+
+def seat_kinds(template_path: str) -> "tuple[bool, bool]":
+    """작업의 착석 분류 ``(TXT 인가, 미상 매체인가)`` — 세 값짜리 축의 단일 판정(링1, P2-24).
+
+    실행 표면은 셋이다: hwpx 실행뷰 · TXT 작업대 · **어느 쪽도 아님**. 앞의 둘만 세면 세
+    번째가 hwpx 로 접혀 ``RunViewModel`` 이 ``require_hwpx`` 에서 loud raise 하고, 그 예외는
+    재적재·재연결처럼 **사용자가 실행을 시작하지도 않은** 경로에서 튄다.
+
+    빈 경로는 미상이지만 **저작 중인 hwpx 작업**이라 실행뷰를 세운다 — ``require_hwpx`` 도
+    빈 경로만 관용하고, 라이브러리 ``library_mode_of`` 도 같은 귀속을 쓴다.
+    """
+    mode = work_mode(template_path)
+    unsupported = bool(template_path) and mode not in (WORK_MODE_HWPX, WORK_MODE_TEXT)
+    return mode == WORK_MODE_TEXT, unsupported
 
 
 def work_mode_of_filter_value(value: str) -> str:

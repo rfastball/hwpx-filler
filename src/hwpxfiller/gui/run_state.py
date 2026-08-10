@@ -205,6 +205,16 @@ def resolve_pool_source(
     return source, source.records()
 
 
+def template_missing(template_path: str) -> bool:
+    """템플릿 「연결 상태」의 단일 술어 — 빈 경로와 파일 부재를 **한 축**으로 센다.
+
+    #342 리뷰 3라운드가 세운 규율의 링1 승격(P2-24): 같은 질문을 표면마다 각자 답하면
+    술어가 갈린다(빈 경로를 정상으로 보고한 스냅샷 vm-None 가지 전례). 둘 다 "이 작업으로는
+    문서를 만들 수 없다"이고 복구 동선도 같은 재연결이다. 문안(「템플릿 없음」)은 표면 몫.
+    """
+    return not template_path or not Path(template_path).exists()
+
+
 def unresolved_name_tokens_for(job: "Job") -> "list[str]":
     """파일명 패턴이 요구하는데 이 작업이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
 
@@ -347,7 +357,7 @@ class RunViewModel:
     def _template_fields(self) -> "list[str]":
         """현재 대상 문서의 누름틀 집합. 드리프트 감지를 위해 매 호출 재읽기한다."""
         template = self.effective_template()
-        if not template or not Path(template).exists():
+        if template_missing(template):
             return []
         return list(self._engine.required_fields(template))
 
@@ -616,6 +626,23 @@ class RunViewModel:
     def mapped_records(self, indices: "list[int]", mark_missing: str = "") -> "list[dict]":
         """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입."""
         return self.request(indices).mapped_records(mark_missing=mark_missing)
+
+    def blank_record_positions(
+        self, indices: "list[int]", mapped: "list[dict] | None" = None
+    ) -> "list[int]":
+        """빈 값이 있는 건의 **표시순 자리** 목록 — 「빈 값 있는 건만 보기」의 판정 원천.
+
+        :meth:`blank_fields`(필드축)와 같은 층이 소유하는 **레코드축** 판정이다(P2-24 —
+        두 축이 다른 층에 살면 「빈 값」의 술어가 갈린다). 판정은 표식 **없는** 매핑
+        출력에서 한다(표식을 채우면 언제나 0건). 의도적 빈칸(blank 선언)은 매핑이 키
+        자체를 제외하므로 자동으로 세지 않는다. ``mapped`` 는 호출측이 이미 계산한 같은
+        출력의 관통(이중 적용 방지)이다.
+        """
+        recs = self.mapped_records(indices) if mapped is None else mapped
+        return [
+            i for i, rec in enumerate(recs)
+            if any(not str(v).strip() for v in rec.values())
+        ]
 
     def output_conflicts(
         self, indices: "list[int]", out_dir: str, *, mark_missing: str = "",

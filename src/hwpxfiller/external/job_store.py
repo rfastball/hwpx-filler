@@ -396,6 +396,11 @@ class JobRegistry:
     def load(self, name: str) -> Job:
         return load_job(self.path_for(name))
 
+    def content_fingerprint(self, job: Job) -> str:
+        """모듈 함수 :func:`content_fingerprint` 의 포트 표면(P2-24) — 지문의 정의역이
+        「저장이 덮어쓰는 것」이라 codec 소유자(저장소)가 계약으로 낸다."""
+        return content_fingerprint(job)
+
     def clone(self, name: str) -> str:
         """작업 복제 — '<이름> (복사본[ N])' 유일 이름으로 저장하고 새 이름을 반환(F22).
 

@@ -54,6 +54,16 @@ class JobStorePort(Protocol):
     잡을 방법도 없다. 각 메서드의 의미 계약은 아래 같은 이름의 use case 문서가 진다.
     """
 
+    # ---- 읽기 표면(P2-24) — 잠금 없는 스냅샷 조회. read-modify-write 에 쓰지 않는다
+    # (그건 mutate 소관). Presentation 은 concrete 레지스트리 대신 아래 query use case 를
+    # 지난다 — 물리(디렉터리 스캔·파일 존재)는 계약 밖이다.
+    def list_jobs(self) -> "list[Job]": ...
+    def names(self) -> "list[str]": ...
+    def load(self, name: str) -> Job: ...
+    def exists(self, name: str) -> bool: ...
+    # 저장이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지의 단일 술어. 직렬화 codec 과
+    # 같은 소유자(저장소)가 낸다: 지문의 정의역이 곧 「저장이 덮어쓰는 것」이기 때문이다.
+    def content_fingerprint(self, job: Job) -> str: ...
     # 잠긴 단일 항목 읽기-수정-쓰기 — change(job) 반영·저장까지 원자적(semantic atomic op).
     def mutate(self, name: str, change: Callable[[Job], None]) -> Job: ...
     # 완주 스탬프 — 시각·검토 기준선을 같은 원자 왕복으로. rules=None 은 기준선 불변.
@@ -78,6 +88,43 @@ class JobStorePort(Protocol):
 # 각 함수는 포트를 첫 인자로 받는 **얇은 트랜잭션 진입점**이다: 판정·문안은 호출자
 # (링1·컨트롤러)가, 원자성·물리는 포트 구현이 소유하고, 여기는 「어떤 durable 변이가
 # 제품의 동사인가」를 한 곳에 열거한다(#569 완료 조건 2).
+#
+# 아래 query 군(P2-24)은 같은 규율의 읽기판이다: Presentation 이 concrete 레지스트리를
+# 직접 부르지 않고 지나는 자리이며, 얇음이 곧 계약이다(판정을 여기 들이지 않는다).
+
+
+def list_jobs(store: JobStorePort) -> "list[Job]":
+    """저장된 전 작업 스냅샷(이름순) — 후보·탐색·그룹 집계가 소비하는 읽기 표면."""
+    return list(store.list_jobs())
+
+
+def job_names(store: JobStorePort) -> "list[str]":
+    """저장된 작업 이름 목록 — 존재 대조(stale 세션 무효화)용 가벼운 조회."""
+    return list(store.names())
+
+
+def load_job(store: JobStorePort, name: str) -> Job:
+    """작업 1건 적재 — 부재·손상은 포트가 loud raise 한다(조용한 폴백 없음)."""
+    return store.load(name)
+
+
+def job_exists(store: JobStorePort, name: str) -> bool:
+    """작업 존재 여부 — 유령 지목 방지용 선판정(잠금 없는 스냅샷)."""
+    return store.exists(name)
+
+
+def job_content_fingerprint(store: JobStorePort, job: Job) -> str:
+    """작업 내용 지문 — 외부 변경 감지(재적재·자기-갱신 게이트)의 단일 술어."""
+    return store.content_fingerprint(job)
+
+
+def group_member_count(store: JobStorePort, group: str) -> int:
+    """그룹 소속 수 — 병합·해산 확인 문안의 관측치(약속이 아니라 그 시점의 관측, #149).
+
+    잠금 밖 집계다: 실제 이동 건수는 잠금 안 일괄 갱신이 세어 돌려주고, 어긋나면
+    ``drift_note`` 가 함께 말한다 — 그 계약이 이 조회의 TOCTOU 창을 이미 진다.
+    """
+    return sum(1 for j in store.list_jobs() if j.group == group)
 
 
 def stamp_run_completion(

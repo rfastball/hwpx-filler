@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
@@ -50,7 +52,8 @@ def _controller(tmp_path) -> "tuple[LibraryController, list]":
     pushes: list = []
     ctrl = LibraryController(_reg(tmp_path), _text_reg(tmp_path),
                           lambda s, snap: pushes.append((s, snap)),
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     return ctrl, pushes
 
 
@@ -99,7 +102,8 @@ def test_empty_registry_is_loudly_empty(tmp_path):
     pushes: list = []
     ctrl = LibraryController(JobRegistry(tmp_path / "j"), TextTemplateRegistry(tmp_path / "t"),
                           lambda s, snap: pushes.append((s, snap)),
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     snap = ctrl.initial()
     assert snap["is_empty"] is True
     assert snap["counts"]["all"] == 0
@@ -115,7 +119,8 @@ def test_group_sections_and_collapse_are_view_only(tmp_path):
     reg.save(Job(name="가", template_path="", group="조달"))
     reg.save(Job(name="나", template_path=""))
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     secs = ctrl.snapshot()["sections"]
     assert [(s["label"], s["count"], s["headed"]) for s in secs] == [
         ("조달", 1, True), ("그룹 없음", 1, True),
@@ -239,7 +244,8 @@ def _corrupt_file(tmp_path) -> "tuple[LibraryController, str]":
     pushes: list = []
     ctrl = LibraryController(JobRegistry(tmp_path / "jobs"), _text_reg(tmp_path),
                           lambda s, snap: pushes.append((s, snap)),
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     rows = ctrl.snapshot()["corrupt_rows"]
     assert len(rows) == 1 and rows[0]["path"]            # 경로가 조치용으로 노출된다(#8)
     return ctrl, rows[0]["path"]
@@ -428,7 +434,8 @@ def test_group_names_are_registry_wide_not_a_projection(tmp_path):
     reg.save(Job(name="나", template_path="", group="계약"))
     reg.save(Job(name="다", template_path=""))
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     assert ctrl.snapshot()["group_names"] == ["계약", "조달"]
     # 평면 보기 + 아무것도 안 맞는 검색 → 구획은 비지만 도착지는 불변.
     ctrl.dispatch("set_view", {"view": "favorites"})
@@ -495,7 +502,8 @@ def test_txt_work_joins_the_document_picker(tmp_path):
 
     # 라이브러리는 그 작업을 **보여준다**(방식 필터의 존재 이유).
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
 
 
@@ -519,7 +527,8 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
     reg.save(Job(name="기안문", template_path=str(txt)))               # TXT
     reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 지원 안 하는 확장자
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
-                          pool_registry=_pool(tmp_path))
+                          pool_registry=_pool(tmp_path),
+                          generation_lock=threading.Lock())
     rows = {r.name: r for r in ctrl.vm.rows()}
     targets = {n: primary_action(r)["target"] for n, r in rows.items()}
     assert targets == {"미연결": "editor", "기안문": "job", "미상": "editor"}

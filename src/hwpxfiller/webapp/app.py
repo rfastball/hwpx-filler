@@ -250,7 +250,9 @@ class WebFrontend:
         # (「기안」 가드는 화면 사망(F6 PR-B)과 함께 걷혔다 — 작업대는 몰입 표면이라
         # 라이브러리와 동시에 보이지 않고, 진입 자체가 「문서 만들기」 세션을 지난다.)
         # 작업대 배선(F6) — 「문서 만들기」가 진입 판정을 내고 세션 개시만 위임한다.
-        self.controllers["job"].workbench = self.controllers["workbench"]
+        # 컨트롤러 객체가 아니라 **handoff callable** 을 결선한다(P2-24): 화면 간 결합은
+        # 이 조립부의 한 줄뿐이고, 「문서 만들기」는 작업대의 형체를 모른다.
+        self.controllers["job"].workbench_open = self.controllers["workbench"].open
         self.controllers["library"].session_guards = [
             self.controllers["job"].session_guard_for,
         ]

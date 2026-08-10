@@ -38,6 +38,7 @@ PUBLIC_API = (
     "load_boot_completed",
     "save_boot_completed",
     "load_job_collapsed_groups",
+    "recollapse_job_group",
     "save_job_collapsed_groups",
     "load_template_group_map",
     "save_template_group_map",

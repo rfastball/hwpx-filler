@@ -42,6 +42,7 @@ seam 은 존치하나 이 패널이 노출하지 않는다. "없는 기능을 �
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -55,19 +56,24 @@ from ..application.generation import (
     start_run,
 )
 from ..application.jobs import (
+    JobStorePort,
     assign_group,
     disband_group,
+    group_member_count,
+    job_content_fingerprint,
+    job_exists,
+    job_names,
+    list_jobs,
+    load_job,
     rename_group,
     rename_job,
     set_favorite,
 )
-from ..external.dataset_store import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
     Job,
     work_mode,
 )
-from ..external.job_store import JobRegistry, content_fingerprint
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..external.hwpx_engine import make_hwpx_engine
@@ -90,22 +96,21 @@ from ..gui.review_state import (
 )
 from ..gui.run_state import (
     FileSourceFactoryPort,
-    GateState,
     PoolSourceFactoryPort,
     RunViewModel,
     resolve_file_source,
     resolve_pool_source,
+    template_missing,
 )
 from ..gui.selection_state import SelectionModel
 from ..gui.work_mode import (
-    WORK_MODE_HWPX,
     WORK_MODE_TEXT,
     last_use_label,
     mode_sections,
+    seat_kinds,
     work_mode_label,
 )
 from ..gui.work_candidates import (
-    GATE_REASON_TEMPLATE_MISSING,
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     TAB_AVAILABLE,
@@ -113,6 +118,7 @@ from ..gui.work_candidates import (
     browse_candidates,
     candidate_rows,
     prework_gate,
+    unsupported_media_gate,
     workbench_entry_gate,
     preferred_promotion,
     rank_available,
@@ -120,8 +126,7 @@ from ..gui.work_candidates import (
 )
 from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
-from .screen_workbench import WorkbenchController
-from .settings import load_job_collapsed_groups, save_job_collapsed_groups
+from .settings import recollapse_job_group
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
     EMPTY_TABLE as _EMPTY_TABLE,
@@ -151,27 +156,13 @@ def _template_conn(path: str) -> "tuple[bool, str]":
     보고했는데, 후보 카드는 ``not path or not exists`` 라 같은 작업을 「템플릿 없음」으로
     그렸다. 사망 점검표는 「찾을 수 없음」과 「경로가 비어 있음」을 **한 축**(연결 상태)에
     승계시켰으므로 술어도 하나여야 한다: 둘 다 "이 작업으로는 문서를 만들 수 없다"이고
-    복구 동선도 같은 재연결이다.
+    복구 동선도 같은 재연결이다. 술어 몸통은 링1
+    (:func:`~hwpxfiller.gui.run_state.template_missing`)이 소유하고(P2-24), 여기는 문안만.
 
     호출측이 ``has_job`` 을 이미 알고 있다(작업이 없으면 물을 대상 자체가 없다).
     """
-    missing = not path or not Path(path).exists()
+    missing = template_missing(path)
     return missing, (_CONN_MISSING_LABEL if missing else "")
-
-
-def _seat_kinds(job: Job) -> "tuple[bool, bool]":
-    """활성 작업의 착석 분류 ``(TXT 인가, 미상 매체인가)`` — 세 값짜리 축의 단일 판정.
-
-    이 화면의 실행 표면은 셋이다: hwpx 실행뷰 · TXT 작업대 · **어느 쪽도 아님**. 앞의 둘만
-    세면 세 번째가 hwpx 로 접혀 `RunViewModel` 이 `require_hwpx` 에서 loud raise 하고, 그
-    예외는 재적재·재연결처럼 **사용자가 실행을 시작하지도 않은** 경로에서 튄다.
-
-    빈 경로는 미상이지만 **저작 중인 hwpx 작업**이라 실행뷰를 세운다 — `require_hwpx` 도 빈
-    경로만 관용하고, 라이브러리 `library_mode_of` 도 같은 귀속을 쓴다.
-    """
-    mode = work_mode(job.template_path)
-    unsupported = bool(job.template_path) and mode not in (WORK_MODE_HWPX, WORK_MODE_TEXT)
-    return mode == WORK_MODE_TEXT, unsupported
 
 
 # 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
@@ -263,11 +254,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def __init__(
         self,
-        registry: JobRegistry,
+        registry: JobStorePort,
         push: PushSink,
         *,
-        pool_registry: DatasetPoolRegistry,
-        generation_lock: "threading.Lock | None" = None,
+        pool_registry,
+        generation_lock: "threading.Lock",
         text_registry=None,
         file_source_factory: FileSourceFactoryPort,
         pool_source_factory: PoolSourceFactoryPort,
@@ -354,16 +345,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # **Job 사본을 들지 않는다**(1R P2 근본 조치). 첫 판은 여기에 `txt_job: Job` 을 들었고,
         # 그 순간 durable 사실의 **제2 정본**이 생겨 이름 변경·재연결·재적재가 전부 조용한
         # 구멍이 됐다(그 경로들은 `vm.job` 만 유지한다). 이 저장소가 이미 적어 둔 규율과
-        # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`_recollapse`).
+        # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`recollapse_job_group`).
         # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
         # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
         self.job_is_txt = False
         # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
-        # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(`_seat_kinds`).
+        # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(링1 `seat_kinds`).
         self.job_unsupported = False
-        # 작업대 컨트롤러(사후 주입 — 라이브러리 `session_guards` 선례). 진입 판정은 이
-        # 컨트롤러가 내고 세션 개시만 위임한다.
-        self.workbench = None
+        # 작업대 세션 개시 handoff(사후 주입 — 라이브러리 `session_guards` 선례). 진입
+        # 판정은 이 컨트롤러가 내고 세션 개시만 위임한다. **컨트롤러 객체가 아니라
+        # callable** 이다(P2-24): 화면 간 결합은 조립부(webapp.app)가 결선하는 이 한
+        # 이음새뿐이고, 이 화면은 상대 화면의 형체(클래스·메서드 표면)를 모른다.
+        self.workbench_open: "Callable[[Job, list], None] | None" = None
         # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
         # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
         # 프런트 소유(React reconciliation + 화면 전환 executor 의 보존)라 여기 두지 않는다.
@@ -378,7 +371,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.data_pool_key = ""  # 겨눈 풀 슬롯 키(§5.3 — 라벨은 개명 자유라 정체가 못 된다)
         self.out_dir = ""
-        self._marked_fields: "list[str]" = []
         # 레코드 미리보기의 날짜 토큰 기준 시각(F33) — 스냅샷마다 갱신되고 generate 가 재사용
         # (미리보기=실파일명, RC-02 확장). None=미리보기 전(헤드리스 직행).
         self._names_now: "datetime | None" = None
@@ -390,12 +382,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 이 소유하고, 컨트롤러는 취소 요청·진행 델타 이름표 조회(transport)만 한다.
         # 토큰(R4-03)은 표면이 낸 불투명 문자열이라 여기서 파생·검증·정규화하지 않는다.
         self._run: "GenerationRun | None" = None
-        # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠를 주입받을 수 있다(9R P1) —
-        # 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·라이브러리 재연결) 그쪽이
-        # 같은 자물쇠를 봐야 한다. 미주입은 자기 것을 세운다(단독 구성 테스트 호환).
-        self._generation_lock = (
-            generation_lock if generation_lock is not None else threading.Lock()
-        )
+        # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠는 **필수 주입**이다(9R P1 →
+        # P2-24 폴백 제거) — 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·
+        # 라이브러리 재연결) 그쪽이 같은 자물쇠를 봐야 하고, 화면이 자기 것을 세우면
+        # run transaction 상태의 제2 정본이 된다(#570 pool_registry 폴백 제거와 같은 규율).
+        self._generation_lock = generation_lock
         # 등록 데이터(풀) 겨눔(#26/#6) — composition root(webapp.app)가 주입한다.
         # 자기 생성 폴백은 #570 에서 제거됐다(주석 304-305 의 금지 선언과 자기모순이던
         # locator 뒷문 — 기본값이 있으면 링2 가 구체 저장을 조용히 재선택한다).
@@ -576,19 +567,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.preview_blank_only = False  # 면의 보기 상태 — 열림과 같은 수명(U2 §2.13)
 
     def _preview_blank_positions(self, mapped: "list[dict] | None" = None) -> "list[int]":
-        """빈 값이 있는 건의 **표시순 자리** 목록 — 「빈 값 있는 건만 보기」의 판정 원천.
-
-        판정은 표식 **없는** 매핑 출력에서 한다(거울이 그랬듯 빈 값을 세는 진술이라
-        표식을 채우면 언제나 0건이 된다). 의도적 빈칸(blank 선언)은 매핑이 키 자체를
-        제외하므로 자동으로 세지 않는다.
-        """
+        """빈 값이 있는 건의 표시순 자리 — 판정은 링1
+        (:meth:`~hwpxfiller.gui.run_state.RunViewModel.blank_record_positions`)이 소유한다
+        (P2-24: 필드축 ``blank_fields`` 와 같은 층·같은 술어). 여기는 세션 상태(vm 유무·
+        실행 입력)를 대는 관통이다."""
         if self.vm is None:
             return []
-        recs = self.vm.mapped_records(self._indices()) if mapped is None else mapped
-        return [
-            i for i, rec in enumerate(recs)
-            if any(not str(v).strip() for v in rec.values())
-        ]
+        return self.vm.blank_record_positions(self._indices(), mapped)
 
     def _do_preview_blank_only(self, p: dict) -> None:
         """「빈 값 있는 건만 보기」 토글(U2 §2.13) — ‹ › 이동을 그 건들로 한정한다.
@@ -1264,7 +1249,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
         # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
         # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
-        jobs = self.registry.list_jobs()
+        jobs = list_jobs(self.registry)
         base = {
             "job_name": self.job_name,
             # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
@@ -1411,13 +1396,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             )
             utpath = unsup_job.template_path if unsup_job is not None else ""
             if self.job_unsupported:
-                g = GateState(
-                    False, "danger",
-                    "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
-                    "템플릿을 다시 연결한 뒤 진행하세요.",
-                    # 막는 축은 템플릿이다 — 구획 지목이 아니라 곁의 재연결이 답이다.
-                    reason=GATE_REASON_TEMPLATE_MISSING,
-                )
+                # 막는 축은 템플릿이다 — 게이트 문안·사유는 링1 단일 산출(P2-24).
+                g = unsupported_media_gate()
             # 연결 상태는 **작업이 있을 때만** 참·거짓을 말한다(#342 3R): 미선택 상태에서
             # 빈 경로를 「템플릿 없음」으로 부르면 화면이 없는 작업의 부재를 경보한다.
             umissing, uconn = _template_conn(utpath) if self.job_name else (False, "")
@@ -1665,7 +1645,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
-        if self.job_name and self.job_name in self.registry.names():
+        names = job_names(self.registry)
+        if self.job_name and self.job_name in names:
             # **열린 작업의 규칙이 밖에서 바뀌었으면 다시 읽는다**(4R P1). 편집기가 자기
             # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.vm` 은 선택 시점의
             # 인메모리 사본이라 그대로 두면 **저장한 사람이 옛 규칙으로 미리보고 옛 규칙으로
@@ -1673,7 +1654,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 필터·저장 폴더)은 그대로 두고 규칙만 갈아 끼운다.
             self._reload_active_job()
             return None
-        if self.job_name and self.job_name not in self.registry.names():
+        if self.job_name and self.job_name not in names:
             lost = self.job_name
             # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
             # 레지스트리에서 사라져 가드로 잡아둘 대상이 없다(잡으면 유령 세션 좌초).
@@ -1697,7 +1678,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self.job_name:
             return False
         try:
-            job = self.registry.load(self.job_name)
+            job = load_job(self.registry, self.job_name)
         except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
             return False
         # **자리가 갈렸으면 다시 앉힌다**(2R P2 → §10.16 판정 E 정정, 리뷰 1R P2). 매체
@@ -1706,7 +1687,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 갈고, 그 변화는 이 화면 밖에서 일어난다 — 여기서 안 받으면 화면이 유효해진 템플릿을
         # 재선택 전까지 unsupported 라고 계속 주장한다. 지문 대조는 unsupported 세션(vm 없음)
         # 을 못 보므로 대체가 아니다.
-        if _seat_kinds(job) != (self.job_is_txt, self.job_unsupported):
+        if seat_kinds(job.template_path) != (self.job_is_txt, self.job_unsupported):
             self._seat_active_job(job)
             self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
             self._do_preview_close({})
@@ -1720,7 +1701,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 답할 수 없다: 규칙이 A→B→A 로 돌아온 저장은 내용 지문이 같지만 세대는 앞서 있고,
         # 그 상태로 실행하면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
         # 직전 판본 값도 같은 이유로 센다 — before/after 증거의 원천이다.
-        same_rules = content_fingerprint(job) == content_fingerprint(self.vm.job)
+        same_rules = job_content_fingerprint(self.registry, job) == job_content_fingerprint(
+            self.registry, self.vm.job
+        )
         same_generation = (
             job.template_revision == self.vm.job.template_revision
             and job.binding_revision == self.vm.job.binding_revision
@@ -1750,7 +1733,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         터지는 형태로 나타났다. 두 값을 **한 자리에서만** 세우면 갈라질 수가 없고, 갱신이
         필요한 곳은 이 함수를 부르면 된다.
         """
-        self.job_is_txt, self.job_unsupported = _seat_kinds(job)
+        self.job_is_txt, self.job_unsupported = seat_kinds(job.template_path)
         self.vm = (
             None
             if (self.job_is_txt or self.job_unsupported)
@@ -1790,20 +1773,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if not gate.enabled:
             return {"ok": False, "error": gate.text}
-        if self.workbench is None:  # confirm-or-alarm: 미배선은 시끄럽게(조용한 무동작 금지)
+        if self.workbench_open is None:  # confirm-or-alarm: 미배선은 시끄럽게(조용한 무동작 금지)
             raise ValueError("작업대 컨트롤러가 배선되지 않았습니다.")
         # Job 은 **쓰는 순간** 읽는다(1R P2) — 세션이 사본을 들고 있으면 그사이 이름이
         # 바뀌거나 규칙이 저장된 것을 못 본다. 여기가 유일한 소비처라 I/O 도 1회다.
         try:
-            job = self.registry.load(self.job_name)
+            job = load_job(self.registry, self.job_name)
         except (FileNotFoundError, ValueError) as exc:
             return {"ok": False, "error": (
                 f"작업 '{self.job_name}' 을(를) 읽을 수 없습니다: {exc}")}
-        if not WorkbenchController.accepts(job):  # fail-closed 재확인(매체가 갈렸다면)
+        # fail-closed 재확인(매체가 갈렸다면) — 판정은 링1 착석 분류(`seat_kinds`)와 같은
+        # 술어다: 작업대의 진입 자격을 상대 화면에 물으면 화면 간 결합이 되살아난다(P2-24).
+        if not seat_kinds(job.template_path)[0]:
             return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
         indices = self._indices()
         try:
-            self.workbench.open(job, [(i, self.records[i]) for i in indices])
+            self.workbench_open(job, [(i, self.records[i]) for i in indices])
         except (OSError, UnicodeDecodeError) as exc:
             # 템플릿이 그사이 사라졌거나 읽을 수 없다 — **화면 안에서** 사유를 말한다(5R P2).
             # 날것 예외로 올리면 호출부(.then)가 못 받아 아무 설명 없이 아무 일도 안 난 것처럼
@@ -1855,7 +1840,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.out_dir = ""
             self._last_failed = []
             return
-        job = self.registry.load(name)
+        job = load_job(self.registry, name)
         # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
         # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
@@ -1882,7 +1867,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.datasource is None or not self.records:
             return []
         fields = list(self.records[0].keys())
-        return rank_available(list(self.registry.list_jobs()), fields)
+        return rank_available(list_jobs(self.registry), fields)
 
     def _do_prefer_work(self, p: dict) -> dict:
         """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 분기를 **Python 이 가른다**.
@@ -1909,7 +1894,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         name = str(p.get("name", "")).strip()
         if not name:
             raise ValueError("겨눌 작업 이름이 비어 있습니다.")
-        if not self.registry.exists(name):
+        if not job_exists(self.registry, name):
             raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
         self.preferred_work = name
         if self.datasource is None or not self.records:
@@ -1934,7 +1919,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         name, self.preferred_work = self.preferred_work, ""
         if not name:
             return
-        if not self.registry.exists(name):  # 그사이 삭제·개명 — 유령을 겨누지 않는다
+        if not job_exists(self.registry, name):  # 그사이 삭제·개명 — 유령을 겨누지 않는다
             self.data_notice_text = (
                 f"「문서 작업」에서 고른 '{name}' 작업이 더는 없습니다."
             )
@@ -2125,21 +2110,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """확인 시점 건수와 실제 이동 건수 어긋남 고지(#149) — 공용 job_list.drift_note 위임."""
         return drift_note(seen, count)
 
-    def _recollapse(self, old: str, new: str) -> None:
-        """사라진 그룹 이름의 접힘 영속을 정리한다(``new`` 가 있으면 그 이름으로 승계).
-
-        접힘의 **표면**은 라이브러리로 넘어갔지만(지도 §10.8 판정 F) 그룹을 개명·해산하는
-        동사는 여기가 소유하므로, 남는 유령 이름을 치우는 것도 여기다. 메모리 사본을 들지
-        않고 영속 키를 그때그때 읽고 쓴다 — 표면 없는 두 번째 인메모리 소유자가 남으면
-        라이브러리의 접힘과 갈라지고, 그게 제2 정본이다(키는 계속 공유).
-        """
-        collapsed = set(load_job_collapsed_groups())
-        if old not in collapsed:
-            return
-        collapsed.discard(old)
-        if new:
-            collapsed.add(new)
-        save_job_collapsed_groups(sorted(collapsed))
+    # (접힘 영속 정리는 :func:`~hwpxfiller.external.settings.recollapse_job_group` 이
+    #  소유한다 — P2-24: 읽기-수정-쓰기가 컨트롤러에 남으면 설정 영속의 제2 조립자가 된다.
+    #  그룹을 개명·해산하는 동사는 여기가 소유하므로 호출도 여기서 한다.)
 
     def _do_rename_group(self, p: dict) -> dict:
         """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
@@ -2156,13 +2129,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"ok": False, "error": "그룹 이름이 비어 있습니다."}
         if new == old:
             return {"ok": True, "count": 0, "drift_note": ""}
-        target_members = sum(1 for j in self.registry.list_jobs() if j.group == new)
+        target_members = group_member_count(self.registry, new)
         if target_members and not p.get("confirm"):
-            count = sum(1 for j in self.registry.list_jobs() if j.group == old)
+            count = group_member_count(self.registry, old)
             return {"needs_confirm": True, "kind": "merge_group", "name": old,
                     "new": new, "count": count, "target_count": target_members}
         count = rename_group(self.registry, old, new)
-        self._recollapse(old, new if not target_members else "")
+        recollapse_job_group(old, new if not target_members else "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     def _do_disband_group(self, p: dict) -> dict:
@@ -2172,10 +2145,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         name = p["name"]
         if not p.get("confirm"):
-            count = sum(1 for j in self.registry.list_jobs() if j.group == name)
+            count = group_member_count(self.registry, name)
             return {"needs_confirm": True, "name": name, "count": count}
         count = disband_group(self.registry, name)
-        self._recollapse(name, "")
+        recollapse_job_group(name, "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     # (행 선택 4액션·필터 12액션·직전 필터 슬롯·소스 키는 DataZoneMixin 으로 이동 —
@@ -2351,7 +2324,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "error": review_gate_text(decision.review_unmet),
             }
         blanks = list(decision.blanks)
-        self._marked_fields = blanks
         if decision.needs_overwrite:
             # 수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다.
             # 표면(job.js)이 이 수치로 modal.js 본문을 합성한다 — 문안은 웹 소유(RC-02).

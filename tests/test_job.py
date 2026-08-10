@@ -1028,7 +1028,7 @@ def test_soft_delete_retains_trash_30_days_and_undo_error_names_no_trash(tmp_pat
 # 올리기 전까지 테스트가 실패한다(미분류 = 실패).
 _READERS = {
     "exists", "load", "list_jobs", "list_jobs_with_corruption", "names", "groups",
-    "path_for", "write_lock",
+    "path_for", "write_lock", "content_fingerprint",
 }
 _WRITERS = {
     "save", "delete", "rename", "clone", "mutate", "stamp_last_run", "set_favorite",
