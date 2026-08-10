@@ -18,6 +18,7 @@ import pytest
 import hwpxfiller.domain.secret_redaction as canonical_redaction
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.mapping_store import save_mapping_profile
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.data.secret_store import (
     NARA_SERVICE_KEY_NAME,
@@ -287,7 +288,7 @@ def test_service_key_never_serialized_in_profile_and_job(tmp_path):
         FieldMapping("추정가격", "presmptPrce", type="amount"),
     ])
     pf = tmp_path / "map.json"
-    profile.save(pf)
+    save_mapping_profile(profile, pf)
     profile_text = pf.read_text(encoding="utf-8")
     assert KEY not in profile_text
     # to_dict 자체에도 없음.

@@ -15,6 +15,7 @@ from openpyxl import Workbook
 from hwpxfiller.cli import main
 from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.mapping_store import save_mapping_profile
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -147,7 +148,7 @@ def test_profile_maps_source_keys_to_template_fields(tmp_path):
         FieldMapping("추정가격", "presmptPrce", type="amount"),
     )
     pf = tmp_path / "map.json"
-    profile.save(pf)
+    save_mapping_profile(profile, pf)
 
     out = tmp_path / "out"
     rc = main(["--template", TEMPLATE, "--data", str(data), "--profile", str(pf),
@@ -323,7 +324,7 @@ def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):
         name="나라",
     )
     pf = tmp_path / "nara.json"
-    profile.save(pf)
+    save_mapping_profile(profile, pf)
     out = tmp_path / "out"
 
     rc = main(["--template", TEMPLATE, "--source", "nara",
@@ -378,7 +379,7 @@ def test_profile_template_drift_is_cli_hard_gate(tmp_path, capsys):
                  [["1", "공고", "일반", "100", "2026-01-01 10:00"]])
     profile = MappingProfile(mappings=[FieldMapping("입찰공고번호", "입찰공고번호")])
     pf = tmp_path / "partial.json"
-    profile.save(pf)
+    save_mapping_profile(profile, pf)
     out = tmp_path / "out"
     rc = main(["--template", TEMPLATE, "--data", data, "--profile", str(pf), "--out", str(out)])
     assert rc == 1 and not out.exists()

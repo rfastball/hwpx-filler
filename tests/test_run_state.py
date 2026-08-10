@@ -321,7 +321,7 @@ def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
 
     from hwpxfiller.batch import generate_batch
     from hwpxfiller.core.job import MISSING_MARKER
-    from hwpxfiller.gui.run_state import export_plan_ledger
+    from hwpxfiller.external.ledger_export import export_plan_ledger
 
     vm = _vm(tmp_path)
     out = tmp_path / "outA"
@@ -344,12 +344,21 @@ def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
     first = {r["field"]: r for r in payload["outputs"][0]["rows"]}
     assert first["공고명"]["preview_text"] == "가"       # 생성물과 같은 데이터의 증거
     assert first["공고명"]["injected"] is True
+    # 표식 주입도 미충족으로 분류하되, 실제 들어간 값(표식)의 증거는 남는다.
+    assert first["추정가격"]["status"] == "missing"
+    assert first["추정가격"]["injected"] is True
+    second = {r["field"]: r for r in payload["outputs"][1]["rows"]}
+    assert second["추정가격"]["status"] == "filled" and second["추정가격"]["injected"] is True
+
+    profs = {p["key"]: p for p in payload["profiles"]}
+    assert set(profs) == {"bidNtceNm", "presmptPrce"}   # 매핑이 읽는 소스 키만 관측
+    assert profs["presmptPrce"]["samples"] == ["2000"]
 
 
 def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
     """취소된 부분 배치(RC-06)도 처리된 산출물만큼 증거를 남긴다 — strict zip 붕괴 금지."""
     from hwpxfiller.batch import generate_batch
-    from hwpxfiller.gui.run_state import export_plan_ledger
+    from hwpxfiller.external.ledger_export import export_plan_ledger
 
     vm = _vm(tmp_path)
     out = tmp_path / "out"
@@ -372,41 +381,17 @@ def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
     assert len(payload["outputs"]) == 1  # 처리된 1건만 — 예외 없이 부분 증거
 
 
-# ------------------------------------------------------------------ 생성 원장(L2)
-def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
-    import json
-    from pathlib import Path
+def test_export_plan_ledger_without_mapping_snapshot_is_loud():
+    """계획에 매핑 스냅샷이 없으면 증거를 추정으로 조립하지 않고 시끄럽게 거절한다."""
+    from hwpxfiller.external.ledger_export import export_plan_ledger
+    from hwpxfiller.gui.run_state import GenerationPlan
 
-    from hwpxfiller.batch import generate_batch
-    from hwpxfiller.core.job import MISSING_MARKER
-
-    vm = _vm(tmp_path)
-    indices = [0, 1]
-    mapped = vm.mapped_records(indices, MISSING_MARKER)  # 위젯의 생성 경로와 동일 표식
-    out = tmp_path / "out"
-    batch = generate_batch(
-        vm.job.template_path, mapped, str(out), vm.job.filename_pattern
+    plan = GenerationPlan(
+        template="t.hwpx", records=(), out_dir="out", pattern="p-{{seq}}",
+        marker="", indices=(), source_pointer="",
     )
-    assert batch.failed == 0
-
-    sidecar = vm.export_run_ledger(
-        str(out), indices, batch, mark_missing=MISSING_MARKER
-    )
-    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
-    assert payload["job"] == "실행"
-    assert payload["source"] == "_Src"                  # 포인터-온리(값·쿼리 박제 없음)
-
-    first = {r["field"]: r for r in payload["outputs"][0]["rows"]}
-    assert first["공고명"]["status"] == "filled" and first["공고명"]["injected"] is True
-    # 표식 주입도 미충족으로 분류하되, 실제 들어간 값(표식)의 증거는 남는다.
-    assert first["추정가격"]["status"] == "missing"
-    assert first["추정가격"]["injected"] is True
-    second = {r["field"]: r for r in payload["outputs"][1]["rows"]}
-    assert second["추정가격"]["status"] == "filled" and second["추정가격"]["injected"] is True
-
-    profs = {p["key"]: p for p in payload["profiles"]}
-    assert set(profs) == {"bidNtceNm", "presmptPrce"}   # 매핑이 읽는 소스 키만 관측
-    assert profs["presmptPrce"]["samples"] == ["2000"]
+    with pytest.raises(ValueError, match="매핑 스냅샷"):
+        export_plan_ledger(plan, batch=None)
 
 
 # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)

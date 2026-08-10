@@ -142,32 +142,9 @@ class GenerationPlan:
     labels: "dict[str, str]" = field(default_factory=dict)
 
 
-def export_plan_ledger(plan: GenerationPlan, batch) -> str:
-    """계획 스냅샷 + 배치 결과만으로 원장 사이드카 저장(RC-07) — 라이브 상태 재독 0.
-
-    조립·저장은 GUI/CLI 공유 단일 함수
-    :func:`~hwpxfiller.core.fill_ledger.export_batch_ledger`(RC-03). 저장 경로 반환,
-    실패는 raise(호출측 워커/뷰가 시끄럽게 표면화).
-    """
-    from ..core.fill_ledger import export_batch_ledger
-
-    if plan.mapping is None:
-        raise ValueError("원장 export 에는 계획의 매핑 스냅샷이 필요합니다.")
-    sidecar = export_batch_ledger(
-        plan.out_dir,
-        template=plan.template,
-        source=plan.source_pointer,
-        mapping=plan.mapping,
-        template_fields=list(plan.template_fields),
-        results=batch.results,
-        mapped_records=list(plan.records),
-        source_records=list(plan.source_records),
-        source_keys=list(plan.source_keys),
-        labels=dict(plan.labels),
-        job_name=plan.job_name,
-        missing_marker=plan.marker,
-    )
-    return str(sidecar)
+# (계획 스냅샷의 원장 사이드카 저장은 P2-18(#566)에서 External 로 승계 —
+#  :func:`hwpxfiller.external.ledger_export.export_plan_ledger`. Application 은 계획
+#  (:class:`GenerationPlan`)을 소유하고, durable 기록 효과는 adapter 가 소유한다.)
 
 
 # ------------------------------------------------------------ 데이터 겨눔 리졸버
@@ -727,19 +704,6 @@ class RunViewModel:
             return f"file:{path}"
         return type(src).__name__
 
-    def export_run_ledger(
-        self, out_dir: str, indices: "list[int]", batch, *, mark_missing: str = ""
-    ) -> str:
-        """생성 원장 JSON 사이드카 저장(**opt-in**) — 저장 경로 반환, 실패는 raise.
-
-        지금 상태를 계획으로 캡처해 :func:`export_plan_ledger` 에 위임한다 — 정상
-        표현 계층은 생성 시점 계획을 실행기 꼬리에서 그대로 export 하므로(RC-07)
-        이 메서드는 헤드리스/사후 export 용 보조 표면이다. ``mark_missing`` 은 생성에
-        실제 쓴 표식과 동일해야 dry-run 행이 주입값과 일치한다. 되읽기 검증·마스킹은
-        :func:`~hwpxfiller.core.fill_ledger.export_run_ledger` 계열이 관통시킨다.
-        파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 증거를 덮지 않는다.
-        """
-        plan = self.build_generation_plan(
-            list(indices), out_dir, marker=mark_missing, ledger=True
-        )
-        return export_plan_ledger(plan, batch)
+    # (사후 export 보조 표면 export_run_ledger 는 P2-18(#566)에서 제거 — production
+    #  소비자 0 이었고, 같은 일은 :meth:`build_generation_plan` + External
+    #  :func:`~hwpxfiller.external.ledger_export.export_plan_ledger` 조합이 한다.)

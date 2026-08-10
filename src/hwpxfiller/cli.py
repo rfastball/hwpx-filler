@@ -550,7 +550,7 @@ def _export_ledger(
     """``--ledger`` opt-in — 원장 사이드카를 out 폴더에 저장(생성 성패와 독립).
 
     문맥 조립·행 구성·프로파일링·저장은 GUI 와 공유하는 단일 함수
-    :func:`~hwpxfiller.core.fill_ledger.export_batch_ledger` 가 한다(RC-03 —
+    :func:`~hwpxfiller.external.ledger_export.export_batch_ledger` 가 한다(RC-03 —
     표면별 병렬 구현으로 원장 사실이 갈라지는 결함 봉합). ``marker`` 는 생성에
     실제 쓴 표식과 동일해야 원장이 문서 실상(표식 잔존)을 증거한다.
 
@@ -559,7 +559,7 @@ def _export_ledger(
     소스 표기는 포인터-온리(경로·기간) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
     파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 실행의 증거를 덮지 않는다.
     """
-    from .core.fill_ledger import export_batch_ledger
+    from .external.ledger_export import export_batch_ledger
 
     labels: "dict[str, str]" = {}
     if args.source == "nara":

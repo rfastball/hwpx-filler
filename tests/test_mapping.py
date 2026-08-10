@@ -20,6 +20,7 @@ from hwpxfiller.core.mapping import (
     suggest_mappings,
 )
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.external.mapping_store import save_mapping_profile
 from hwpxcore.package import HwpxPackage
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -151,7 +152,7 @@ def test_profile_save_load_roundtrip(tmp_path):
         mappings=[FieldMapping("추정가격", "presmptPrce", type="amount", fmt="{:,}")],
     )
     path = tmp_path / "profile.json"
-    profile.save(path)
+    save_mapping_profile(profile, path)
     loaded = MappingProfile.load(path)
     assert loaded.name == "p"
     m = loaded.mappings[0]
@@ -173,7 +174,7 @@ def test_explicit_blank_is_covered_but_not_emitted_and_roundtrips(tmp_path):
     assert profile.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
 
     path = tmp_path / "blank.json"
-    profile.save(path)
+    save_mapping_profile(profile, path)
     loaded = MappingProfile.load(path)
     assert loaded.blank_fields() == ["비고"]
     assert loaded.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
