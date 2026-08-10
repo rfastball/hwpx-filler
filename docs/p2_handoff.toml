@@ -48,10 +48,6 @@ dst = "hwpxcore.atomic"
 src = "hwpxfiller.core.template_status"
 dst = "hwpxfiller.core.paths"
 
-[[allowed_direction_violation]]
-src = "hwpxfiller.gui.run_state"
-dst = "hwpxfiller.data.factory"
-
 [[unit]]
 module = "hwpxcore"
 target = "DOMAIN"

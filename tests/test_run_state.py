@@ -10,6 +10,7 @@ import pytest
 
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -97,20 +98,35 @@ def test_preflight_empty_when_no_datasource(tmp_path):
 
 # ------------------------------------------------------------ T2 시트 옵션 관통(링1)
 def test_load_data_targets_confirmed_sheet(tmp_path):
-    """sheet= 관통 — 확정 시트의 레코드가 겨눠진다(확정은 링2, 여기는 관통만)."""
+    """sheet= 관통 — 확정 시트의 레코드가 겨눠진다(확정은 링2, 여기는 관통만).
+
+    factory 는 **주입 seam 을 실제로 탔는지**까지 봉인한다(P2-16) — concrete 만 넣으면
+    링1 안 잔존 import 로의 우회를 놓친다(호출 1회 + kwargs 관통을 기록으로 확인).
+    """
+    calls: list = []
+
+    def recording_factory(path, *, sheet=None):
+        calls.append((path, sheet))
+        return source_for_path(path, sheet=sheet)
+
     vm = RunViewModel(_job(tmp_path))
-    recs = vm.load_data(str(MULTI_SHEET), sheet="낙찰현황")
+    recs = vm.load_data(str(MULTI_SHEET), sheet="낙찰현황", source_factory=recording_factory)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
+    assert calls == [(str(MULTI_SHEET), "낙찰현황")]  # 주입 factory 경유 1회·sheet 관통
     # 대조군: 미지정(기본 첫 시트)은 다른 시트 내용 — 조용한 동치 금지.
     vm2 = RunViewModel(_job(tmp_path))
-    assert vm2.load_data(str(MULTI_SHEET))[0] == {"공고명": "전산장비", "추정가격": "1000"}
+    assert vm2.load_data(str(MULTI_SHEET), source_factory=source_for_path)[0] == {
+        "공고명": "전산장비", "추정가격": "1000"
+    }
 
 
 def test_resolve_file_source_passes_sheet(tmp_path):
     """공용 리졸버도 같은 관통 — VM 경로와 갈라지는 드리프트 방지."""
     from hwpxfiller.gui.run_state import resolve_file_source
 
-    _source, recs = resolve_file_source(str(MULTI_SHEET), sheet="낙찰현황")
+    _source, recs = resolve_file_source(
+        str(MULTI_SHEET), sheet="낙찰현황", source_factory=source_for_path
+    )
     assert recs[0]["업체명"] == "가나상사"
 
 
@@ -241,7 +257,7 @@ def test_load_data_empty_returns_empty_without_committing(tmp_path):
     vm = RunViewModel(_job(tmp_path))
     csv = tmp_path / "empty.csv"
     csv.write_text("공고명,추정가격\n", encoding="utf-8-sig")  # 헤더만
-    assert vm.load_data(str(csv)) == []
+    assert vm.load_data(str(csv), source_factory=source_for_path) == []
     assert vm.datasource is None  # 빈 데이터는 상태 미변경
 
 

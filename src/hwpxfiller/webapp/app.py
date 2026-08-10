@@ -38,6 +38,9 @@ from ..web_artifact import (
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
+# 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
+# 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
+from ..data.factory import source_for_path, source_from_pool_item
 from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from hwpxcore.native import single_instance
@@ -205,7 +208,9 @@ class WebFrontend:
             # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
             # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
             JobController(job_registry, self._push, pool_registry=pool_registry,
-                          generation_lock=generation_lock, text_registry=registry),
+                          generation_lock=generation_lock, text_registry=registry,
+                          file_source_factory=source_for_path,
+                          pool_source_factory=source_from_pool_item),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).

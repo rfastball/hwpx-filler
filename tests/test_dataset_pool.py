@@ -464,6 +464,11 @@ def _job():
     )
 
 
+def _forbidden_pool_factory(item, *, secret_store=None, fetcher=None):
+    """나라 항목 겨눔은 풀 소스 factory 를 타면 안 된다(P2-16 — nara 분기가 선점)."""
+    raise AssertionError("나라 항목이 pool source factory 로 샜다")
+
+
 def test_run_load_pool_item_excel_live(tmp_path):
     from hwpxfiller.gui.run_state import RunViewModel
 
@@ -471,9 +476,18 @@ def test_run_load_pool_item_excel_live(tmp_path):
     csv.write_text("ID,공고명\n1,전산장비\n", encoding="utf-8")
     it = DatasetPoolItem(name="엑셀", kind="excel", opts={"path": str(csv)})
     vm = RunViewModel(_job())
-    recs = vm.load_pool_item(it)
+    # 주입 seam 봉인(P2-16): concrete 만 넣으면 잔존 내부 import 우회를 놓친다 —
+    # 주입 factory 경유 1회 + item/kwargs 관통을 기록으로 확인한다.
+    calls: list = []
+
+    def recording_factory(item, *, secret_store=None, fetcher=None):
+        calls.append((item, secret_store, fetcher))
+        return source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+
+    recs = vm.load_pool_item(it, source_factory=recording_factory)
     assert len(recs) == 1 and recs[0]["공고명"] == "전산장비"
     assert vm.datasource is not None
+    assert calls == [(it, None, None)]
 
 
 def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
@@ -485,7 +499,7 @@ def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
         opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
     )
     vm = RunViewModel(_job())
-    recs = vm.load_pool_item(it)
+    recs = vm.load_pool_item(it, source_factory=source_from_pool_item)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
 
 
@@ -511,6 +525,7 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
         secret_store=store,
         fetcher=counting_fetch,
         nara_factory=make_nara_acquirer,
+        source_factory=_forbidden_pool_factory,  # 나라 = 풀 factory 미호출 계약(P2-16)
     )
     assert len(recs) == 2
     assert isinstance(vm.datasource, AcquiredNaraData)  # 스냅샷으로 고정
@@ -542,6 +557,7 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
             secret_store=store,
             fetcher=lambda _url: auth_fail,
             nara_factory=make_nara_acquirer,
+            source_factory=_forbidden_pool_factory,
         )
     assert "07" in str(ei.value)
     assert _LIVE_KEY not in str(ei.value)
@@ -561,4 +577,5 @@ def test_run_load_pool_item_nara_no_key_is_loud(tmp_path):
             it,
             secret_store=MemorySecretStore(),
             nara_factory=make_nara_acquirer,
+            source_factory=_forbidden_pool_factory,
         )
