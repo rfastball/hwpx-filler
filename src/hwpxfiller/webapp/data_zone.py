@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
-from ..core.dataset_pool import DatasetPoolRegistry
+from ..external.dataset_store import DatasetPoolRegistry
 from ..gui.filter_state import (
     FilterModel,
     FilterView,

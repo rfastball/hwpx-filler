@@ -56,7 +56,7 @@ from ..application.jobs import (
     stamp_run_completion,
 )
 from ..batch import generate_batch
-from ..core.dataset_pool import DatasetPoolRegistry
+from ..external.dataset_store import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
     MISSING_MARKER,
@@ -128,7 +128,6 @@ from .screens import (
     NO_ROWS_TEXT,
     PoolTargetingMixin,
     PushSink,
-    default_pool_registry,
     relink_job_template,
     source_label,
 )
@@ -299,7 +298,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         registry: JobRegistry,
         push: PushSink,
         *,
-        pool_registry: "DatasetPoolRegistry | None" = None,
+        pool_registry: DatasetPoolRegistry,
         generation_lock: "threading.Lock | None" = None,
         text_registry=None,
         file_source_factory: FileSourceFactoryPort,
@@ -430,10 +429,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._generation_lock = (
             generation_lock if generation_lock is not None else threading.Lock()
         )
-        # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
-        self.pool_registry = (
-            pool_registry if pool_registry is not None else default_pool_registry()
-        )
+        # 등록 데이터(풀) 겨눔(#26/#6) — composition root(webapp.app)가 주입한다.
+        # 자기 생성 폴백은 #570 에서 제거됐다(주석 304-305 의 금지 선언과 자기모순이던
+        # locator 뒷문 — 기본값이 있으면 링2 가 구체 저장을 조용히 재선택한다).
+        self.pool_registry = pool_registry
 
     # --------------------------------------------- 진행 중인 런과의 경합 거절(9R P1)
     def raise_if_generating(self, then_do: str) -> None:

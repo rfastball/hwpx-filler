@@ -7,16 +7,32 @@
 테스트된다(template_manager_state 분리를 미러링). *(구 Qt ``DatasetPoolPanel`` 은
 PySide6 철거로 제거됨 — 이제 소비자는 웹 컨트롤러다.)*
 
-레지스트리는 :class:`DatasetPoolPort`로 주입한다. 참조 값·수명·정체성은
-:mod:`hwpxfiller.domain.dataset_reference`가 소유하고 JSON·잠금·atomic write는
-External Adapter가 소유한다. 등록은 **참조만** 저장한다(레코드·ServiceKey 없음).
+레지스트리는 :class:`DatasetPoolPort` 로 주입한다. 참조 값·수명·정체성은
+:mod:`hwpxfiller.domain.dataset_reference` 가 소유하고 JSON·잠금·atomic write 는
+External Adapter(:mod:`hwpxfiller.external.dataset_store`)가 소유한다. 등록은
+**참조만** 저장한다(레코드·ServiceKey 없음).
+
+**P2-22(#570) port 규율**: 포트에 물리(raw ``write_lock``·콜백 ``mutate``·``Path``
+out-parameter)를 올리지 않는다. 잠긴 읽기-수정-쓰기가 필요한 업무 전이는 전부 포트의
+**semantic atomic op**(``relabel``·``relink_excel``·``archive``·``activate``·확정 결속판
+``*_confirmed``·``resolve_duplicates``) 하나로 완결된다 — 물리 잠금은 어댑터 내부
+구현이고 Application 은 잠금을 잡지 않는다.
+
+**확정 결속(코덱스 2R·3R 근본 조치)**: 파괴·덮어쓰기 확정 왕복 넷(삭제 · 같은 데이터
+재등록의 라벨 갱신 · 다시 연결 · 중복 병합)은 전부 **1차가 보여준 상태의 지문**
+(:func:`confirm_basis`)에 결속된다. 1차 응답이 ``basis`` 를 발행하고 확정이 그대로
+되실어 보내면, 어댑터가 쓰기 잠금 안에서 지금 상태의 지문을 다시 지어 대조한다 —
+다르거나 미동봉이면 **삭제·덮어쓰기 0건 + :class:`StaleConfirmError`**(fail-closed,
+문안 재진술은 컨트롤러 몫).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from ..domain.dataset_reference import (
     STATUS_ACTIVE,
@@ -27,27 +43,126 @@ from ..domain.dataset_reference import (
 from .nara_acquire import validate_range
 
 
-class DatasetPoolPort(Protocol):
-    """Application이 요구하는 데이터셋 레지스트리 효과의 최소 port."""
+class StaleConfirmError(Exception):
+    """확정이 실은 지문과 지금 상태의 지문이 다르다(또는 근거 미동봉) — 파괴·갱신 0건.
 
-    def list_entries(
-        self,
-        status: "str | None" = None,
-        *,
-        corrupted: "list[tuple[Path, str]] | None" = None,
-    ) -> Any: ...
+    승인의 대상은 「그때 읽은 값」이다. 근거 미동봉(구식 호출)도 같은 거절이다 —
+    무엇을 승인했는지 모르는 확정으로는 지우거나 덮을 수 없다(fail-closed).
+    """
+
+
+@dataclass(frozen=True)
+class CorruptDatasetEntry:
+    """파싱 실패한 풀 파일 1건의 사실 — 저장소가 주는 값 객체(RC-05 표면화의 원료).
+
+    ``file_name`` 은 표시용(종전 ``path.name`` 과 동일 문자열)이고, Application·표현
+    계층은 파일 좌표(``Path``)를 만지지 않는다(#569 ``CorruptJobEntry`` 동형).
+    """
+
+    file_name: str
+    error: str
+
+
+#: 확정 왕복이 결속하는 항목 상태의 성분(:func:`bound_state` 의 열쇠).
+#:
+#: **표시 요약에서 파생하지 않는다**(코덱스 3R 근본 조치): ``reference_summary`` 는 사람이
+#: 읽으라고 정보를 **버리는** 함수라(경로를 basename 으로 줄인다) 결속의 재료로 부적합하다 —
+#: ``/a/report.xlsx`` → ``/b/report.xlsx`` 재연결이 요약에서 같아 보이는 자리가 그 증거다.
+#: 결속은 정체를 정하는 **전체 값**(정규화 정체성 + opts 원본)에서 짓고, 표시 문안만 요약을
+#: 쓴다. 방향은 늘 「지문 ⊇ 표시」다: 표시에 드러나는 변화는 반드시 지문에도 드러난다.
+BOUND_FIELDS = ("key", "name", "kind", "identity", "reference", "note", "status")
+
+
+def bound_state(key: str, item: DatasetReference) -> "dict[str, str]":
+    """확정이 결속할 항목 상태 한 벌 — **디스크 항목 하나**가 유일 소재다.
+
+    소재를 항목으로 통일한 이유(3R): 종전엔 병합이 VM 행(표시 성형)을, 다시 연결이
+    디스크 항목을 재료로 써서 같은 지문이 두 경로에서 다른 정보량을 담았다. 행에는
+    ``opts`` 가 없어 표시 요약이 최선이었고, 그 손실이 곧 P2-1 이다.
+    """
+    opts = item.opts if isinstance(item.opts, dict) else {}
+    values = (
+        str(key),
+        item.name,
+        item.kind,
+        # 정규화 정체성(경로+시트) — 표기 변형을 흡수한 「같은 데이터인가」의 축.
+        reference_identity(item) or "",
+        # 참조 **원본 전체** — 정체성 밖 opts(헤더 행·나라 쿼리·파이프라인 레시피)까지
+        # 든다. 정체성만 들면 같은 파일의 다른 읽기 규칙 교체가 지문을 통과한다.
+        json.dumps(opts, ensure_ascii=False, sort_keys=True, default=str),
+        item.note,
+        item.status,
+    )
+    return dict(zip(BOUND_FIELDS, values, strict=True))
+
+
+def confirm_basis(states: "list[dict[str, str]]") -> str:
+    """1차가 보여준 상태의 지문 — 확정이 되실어 대조하는 **단일 결속 기제**.
+
+    키 순 정렬 + 정렬된 JSON 이라 같은 상태면 같은 값이 나온다(발신 순서·사전 순서
+    무관). 값 하나라도 갈리면 지문이 갈리므로, 「무엇이 바뀌었는지」를 열거로 관리하지
+    않는다 — 열거로 푼 문제는 다음 라운드에서 다시 샌다(1R→2R→3R 이 그 증거다).
+    """
+    payload = json.dumps(
+        sorted(states, key=lambda s: s["key"]), ensure_ascii=False, sort_keys=True
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
+
+
+class DatasetPoolPort(Protocol):
+    """Application 이 요구하는 데이터셋 레지스트리 효과의 semantic port(#570).
+
+    구조적(덕타이핑) 계약이다: concrete 는
+    :class:`hwpxfiller.external.dataset_store.DatasetPoolRegistry`, 테스트는 in-memory
+    구현이 선다. 모든 쓰기 연산은 저장 매체 안에서 **원자적으로** 완결된다 — 호출자가
+    잠금을 알 필요도, 잡을 방법도 없다. ``expected_basis`` 를 받는 연산은 지금 상태의
+    지문(:func:`confirm_basis` × :func:`bound_state`)과 대조해 다르거나 미동봉이면
+    :class:`StaleConfirmError` 로 fail-closed 한다.
+    """
+
+    def load(self, key: str) -> DatasetReference: ...
+
+    def list_references(
+        self, status: "str | None" = None
+    ) -> "tuple[list[tuple[str, DatasetReference]], list[CorruptDatasetEntry]]": ...
 
     def find_identity(
         self, path: "str | Path", sheet: "str | None" = ""
-    ) -> Any: ...
+    ) -> "tuple[str, DatasetReference] | None": ...
 
     def add(self, item: DatasetReference) -> str: ...
 
-    def mutate(self, key: str, change: Any) -> Any: ...
-
-    def write_lock(self) -> Any: ...
-
     def delete(self, key: str) -> None: ...
+
+    def archive(self, key: str) -> DatasetReference: ...
+
+    def activate(self, key: str) -> DatasetReference: ...
+
+    def relabel(self, key: str, name: str, *, note: str = "") -> DatasetReference: ...
+
+    def relink_excel(
+        self, key: str, path: str, *,
+        sheet: "str | None" = None, note: str = "", name: str = "",
+    ) -> DatasetReference: ...
+
+    def relabel_confirmed(
+        self, path: str, sheet: "str | None", name: str, *,
+        note: str = "", expected_basis: "str | None",
+    ) -> "tuple[str, DatasetReference]": ...
+
+    def relink_confirmed(
+        self, key: str, path: str, *,
+        sheet: "str | None" = None, note: str = "", name: str = "",
+        expected_basis: "str | None",
+    ) -> DatasetReference: ...
+
+    def delete_confirmed(
+        self, key: str, *, expected_basis: "str | None"
+    ) -> DatasetReference: ...
+
+    def resolve_duplicates(
+        self, keep: str, *, expected_basis: "str | None"
+    ) -> "tuple[str, int]": ...
 
 # 상태 → 사람이 읽는 배지 라벨/레벨(style.py QLabel[level=...] 팔레트와 통일).
 # 2상태(#5): '활성'(지금 실행에 쓰는 것)만 prominent(ok), '보관'(지난 것)은 muted.
@@ -120,10 +235,10 @@ def reference_summary(item: DatasetReference) -> str:
 def kind_transition_clause(item: DatasetReference) -> str:
     """동명 **비-excel** 항목에 엑셀 재등록을 확정할 때 확인 문구에 병기할 전이 재진술.
 
-    확정 경로(:meth:`DatasetPoolViewModel.update_excel_reference` · 에디터 ``_do_save``)는
-    kind 를 excel 로 정규화하고 기존 opts(나라 기간·파이프라인 스텝)를 대체한다 — 확인
-    문구가 이 전이를 함께 재진술하지 않으면 사용자가 승인한 내용과 디스크 착지 상태가
-    어긋난다(confirm-or-alarm: 확인 문구=실제 전이). excel 항목이면 전이가 없으므로
+    확정 경로(:meth:`DatasetPoolViewModel.update_excel_reference`)는 kind 를 excel 로
+    정규화하고 기존 opts(나라 기간·파이프라인 스텝)를 대체한다 — 확인 문구가 이 전이를
+    함께 재진술하지 않으면 사용자가 승인한 내용과 디스크 착지 상태가 어긋난다
+    (confirm-or-alarm: 확인 문구=실제 전이). excel 항목이면 전이가 없으므로
     ``""`` (불필요한 소음 금지 — 활성 재등록의 상태 문구 생략과 같은 결).
     """
     if item.kind == "excel":
@@ -184,15 +299,20 @@ class DatasetPoolRow:
 class DatasetPoolViewModel:
     """데이터셋 풀 상태 + 오케스트레이션. 웹 컨트롤러는 결과를 읽어 렌더한다(Qt 비의존).
 
-    ``registry``는 외부 composition root가 주입한다. Application은 구체 저장 구현을 모른다.
+    ``registry`` 는 외부 composition root 가 주입한다. Application 은 구체 저장 구현을
+    모르고, 잠금도 잡지 않는다 — 원자성이 필요한 전이는 포트의 semantic op 하나로
+    완결된다(#570).
     """
 
     def __init__(self, registry: DatasetPoolPort):
         self.registry = registry
         self._rows: "list[DatasetPoolRow]" = []
         # 손상 파일 격리 목록(RC-05) — refresh 가 채우고 표현 계층이 시끄럽게 표면화한다.
-        self._corrupted: "list[tuple[Path, str]]" = []
-        # 같은 정체성 슬롯 그룹(§5.3 병합 대상) — refresh 가 채운다.
+        self._corrupted: "list[CorruptDatasetEntry]" = []
+        # 같은 정체성 슬롯 그룹(§5.3 병합 대상) — refresh 가 채운다. `_ident_groups` 는
+        # 항목 원본(확정 결속·재진술 소재), `_duplicates` 는 그 행 투영이다 — 같은 스캔
+        # 하나에서 파생한다(별도 재스캔 금지).
+        self._ident_groups: "list[list[tuple[str, DatasetReference]]]" = []
         self._duplicates: "list[list[DatasetPoolRow]]" = []
         self._subs: list = []
         self.refresh()
@@ -207,25 +327,28 @@ class DatasetPoolViewModel:
 
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
-        corrupted: "list[tuple[Path, str]]" = []
-        entries = self.registry.list_entries(corrupted=corrupted)
+        entries, corrupted = self.registry.list_references()
         self._rows = [DatasetPoolRow.from_item(key, it) for key, it in entries]
         self._corrupted = corrupted
         # 같은 정체성 슬롯 2+개(구판 마이그레이션의 병합 대상, §5.3) — 목록과 같은 스캔에서
         # 파생한다(별도 재스캔 금지). 표면이 loud 재진술하고 사용자 확정으로만 정리한다.
-        by_ident: "dict[str, list[DatasetPoolRow]]" = {}
-        for (_key, it), row in zip(entries, self._rows, strict=True):
+        by_ident: "dict[str, list[tuple[str, DatasetReference]]]" = {}
+        for key, it in entries:
             ident = reference_identity(it)
             if ident is not None:
-                by_ident.setdefault(ident, []).append(row)
-        self._duplicates = [g for g in by_ident.values() if len(g) > 1]
+                by_ident.setdefault(ident, []).append((key, it))
+        self._ident_groups = [g for g in by_ident.values() if len(g) > 1]
+        row_by_key = {r.key: r for r in self._rows}
+        self._duplicates = [
+            [row_by_key[key] for key, _it in g] for g in self._ident_groups
+        ]
         self._notify()
 
     def rows(self) -> "list[DatasetPoolRow]":
         return list(self._rows)
 
-    def corrupted(self) -> "list[tuple[Path, str]]":
-        """격리된 손상 파일 목록 ``(경로, 오류)`` — 표현 계층이 '손상됨' 항목으로 재진술한다."""
+    def corrupted(self) -> "list[CorruptDatasetEntry]":
+        """격리된 손상 파일 값 객체 목록 — 표현 계층이 '손상됨' 항목으로 재진술한다."""
         return list(self._corrupted)
 
     def duplicates(self) -> "list[list[DatasetPoolRow]]":
@@ -236,6 +359,17 @@ class DatasetPoolViewModel:
         1건을 사용자가 고르게 한다 — 무손실 병합이 아니므로 조용한 자동 정리는 금지다.
         """
         return [list(g) for g in self._duplicates]
+
+    def duplicate_group(self, keep: str) -> "list[tuple[str, DatasetReference]] | None":
+        """``keep`` 이 속한 중복 그룹의 (키, 항목) 원본 — 확정 재진술·결속의 소재.
+
+        :meth:`refresh` 가 목록을 만든 **같은 스캔**의 항목이라 화면 행과 어긋나지 않는다.
+        VM 행은 표시 성형이라 opts 를 잃으므로(3R P2-1 의 뿌리) 결속 재료가 될 수 없다.
+        """
+        for g in self._ident_groups:
+            if any(key == keep for key, _it in g):
+                return list(g)
+        return None
 
     def is_empty(self) -> bool:
         return not self._rows
@@ -286,13 +420,25 @@ class DatasetPoolViewModel:
         name = (name or "").strip()
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
+        item = self.registry.relabel(key, name, note=note)
+        self.refresh()
+        return item
 
-        def update(current: DatasetReference) -> None:
-            current.name = name
-            if note:
-                current.note = note
+    def relabel_confirmed(
+        self, path: str, sheet: "str | None", name: str, *,
+        note: str = "", basis: "str | None",
+    ) -> DatasetReference:
+        """라벨 갱신 확정(같은 데이터 재등록의 2차) — 결속 대조·갱신은 어댑터가 한 잠금 안에서.
 
-        item = self.registry.mutate(key, update)
+        확인 모달이 열린 사이 같은 등록의 이름·비고가 바뀌면 :class:`StaleConfirmError`,
+        삭제됐으면 ``FileNotFoundError`` (신규 등록 승인으로 부활 금지 — 코덱스 3R P2-2).
+        """
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("데이터셋 이름을 입력하세요.")
+        _key, item = self.registry.relabel_confirmed(
+            path, sheet or "", name, note=note, expected_basis=basis
+        )
         self.refresh()
         return item
 
@@ -307,51 +453,28 @@ class DatasetPoolViewModel:
     ) -> DatasetReference:
         """다시 연결 확정 — 기존 슬롯의 **참조(kind+opts)만** 갱신한다(수명 보존, C3).
 
-        새 항목으로 통째 교체하면 보관 상태가 조용히 active 로 복귀해 실행 후보에
-        재등장하고 note·created_at 이 소실된다 — 확인 문구는 '참조가 새 파일로 바뀐다'만
-        재진술하므로 상태·생성시각은 건드리지 않는 것이 문구와 일치한다. 내용물 교체가
-        이 개체의 **정상 수명 사건**이라(월별 파일 갈아끼우기) 정체성이 바뀌어도 슬롯은
-        산다 — §5.3 이 id 축을 기각한 바로 그 근거다. 단 새 참조가 **다른 슬롯의
-        정체성**과 겹치면 같은 데이터가 2건이 되므로 loud 거절한다. 메모는 입력이 있을
+        정체성 검사·kind 정규화·변이의 원자성은 어댑터 semantic op
+        (:meth:`DatasetPoolPort.relink_excel`)가 진다 — 새 참조가 **다른 슬롯의
+        정체성**과 겹치면 같은 데이터가 2건이 되므로 loud 거절된다. 메모는 입력이 있을
         때만 교체한다(빈 입력 = 진술 없음, 조용한 소거 금지).
-
-        **kind 정규화(r4)**: opts 만 갈아끼우고 kind 를 방치하면 nara/pipeline 항목이
-        ``kind="nara" + opts={"path": …}`` 하이브리드로 손상된다 — 겨눔 시 나라 동결
-        문구로 거절되고, reference_summary 는 "기간 ?~?" 를 찍는다. 엑셀 참조 확정은
-        kind 도 excel 로 착지한다(cross-kind 전이는 :func:`kind_transition_clause` 재진술).
-
-        **정체성 검사는 변이와 한 잠금 안이다**(코덱스 1R P2): pywebview 는 호출마다 다른
-        스레드로 들어오므로, 잠금 밖 선검사는 서로 다른 슬롯 둘을 같은 경로+시트로 동시
-        재연결할 때 둘 다 통과시키고 mutate 만 직렬화돼 **같은 정체성의 슬롯 2개**가 남는다
-        — 레지스트리 불변식(같은 데이터 = 슬롯 1개)이 조용히 깨진다. 공유 쓰기 잠금
-        (:meth:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry.write_lock`, 재진입 RLock)
-        안에서 검사하고 그대로 mutate 까지 간다 — ``add`` 가 자기 잠금 안에서 검사하는 것과
-        같은 규율이다.
         """
         if not path:
             raise ValueError("파일 경로가 비어 있습니다.")
-        opts: "dict[str, object]" = {"path": path}
-        if sheet:
-            opts["sheet"] = sheet
+        item = self.registry.relink_excel(key, path, sheet=sheet, note=note, name=name)
+        self.refresh()
+        return item
 
-        def update(current: DatasetReference) -> None:
-            # 호출자가 본 행은 확인 모달 전 스냅샷일 수 있다. 현재 디스크 항목을 잠금 안에서
-            # 다시 읽어 참조 필드만 바꿔야 동시 보관 상태·메모를 되돌리거나 삭제를 부활시키지 않는다.
-            current.kind = "excel"  # kind/opts 정합 — 하이브리드 손상 항목 금지(r4)
-            current.opts = opts
-            if note:
-                current.note = note
-            if name:  # 라벨은 정체성이 아니라(§5.3 C) 같은 확정에 함께 갱신해도 안전하다
-                current.name = name
-
-        with self.registry.write_lock():
-            taken = self.registry.find_identity(path, sheet or "")
-            if taken is not None and taken[0] != key:
-                raise ValueError(
-                    f"그 파일·시트는 이미 '{taken[1].name}' 으로 고정돼 있습니다. "
-                    "그 항목을 쓰거나 먼저 정리하세요."
-                )
-            item = self.registry.mutate(key, update)
+    def relink_confirmed(
+        self, key: str, path: str, *,
+        sheet: "str | None" = None, note: str = "", name: str = "",
+        basis: "str | None",
+    ) -> DatasetReference:
+        """다시 연결 확정(2차) — 1차가 보여준 슬롯 상태의 지문에 결속된 원자 갱신(2R P2)."""
+        if not path:
+            raise ValueError("파일 경로가 비어 있습니다.")
+        item = self.registry.relink_confirmed(
+            key, path, sheet=sheet, note=note, name=name, expected_basis=basis
+        )
         self.refresh()
         return item
 
@@ -391,9 +514,9 @@ class DatasetPoolViewModel:
     # ---------------------------------------------------------- 상태/삭제(슬롯 키)
     def _transition(self, key: str, action: str) -> None:
         if action == "archive":
-            self.registry.mutate(key, lambda item: item.archive())
+            self.registry.archive(key)
         elif action == "activate":
-            self.registry.mutate(key, lambda item: item.activate())
+            self.registry.activate(key)
         else:
             raise ValueError(f"지원하지 않는 데이터셋 전이: {action!r}")
         self.refresh()
@@ -408,13 +531,36 @@ class DatasetPoolViewModel:
         self.registry.delete(key)
         self.refresh()
 
+    # ---------------------------------------------------------- 확정 결속 use case(#570)
+    def inspect(self, key: str) -> "tuple[DatasetReference, str]":
+        """확정 1차의 소재 — (지금 디스크 항목, 그 상태의 지문). 문안은 컨트롤러가 짓는다."""
+        item = self.registry.load(key)
+        return item, confirm_basis([bound_state(key, item)])
+
+    def delete_confirmed(self, key: str, *, basis: "str | None") -> DatasetReference:
+        """결속 삭제(2차) — 지워진 항목을 돌려준다(결과 문구 소재). 어긋나면 삭제 0건."""
+        item = self.registry.delete_confirmed(key, expected_basis=basis)
+        self.refresh()
+        return item
+
+    def resolve_duplicates(self, keep: str, *, basis: "str | None") -> "tuple[str, int]":
+        """중복 병합 확정(2차) — ``(남은 이름, 삭제 건수)``. 그룹 변동은 fail-closed."""
+        kept, removed = self.registry.resolve_duplicates(keep, expected_basis=basis)
+        self.refresh()
+        return kept, removed
+
 
 __all__ = [
+    "BOUND_FIELDS",
+    "CorruptDatasetEntry",
     "DatasetPoolPort",
     "PoolAction",
     "DatasetPoolRow",
     "DatasetPoolViewModel",
+    "StaleConfirmError",
     "available_actions",
+    "bound_state",
+    "confirm_basis",
     "kind_transition_clause",
     "reference_summary",
 ]

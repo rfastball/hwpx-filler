@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.core.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile

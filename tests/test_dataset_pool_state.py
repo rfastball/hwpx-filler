@@ -12,11 +12,12 @@ from hwpxfiller.application.dataset_pool import (
     available_actions,
     reference_summary,
 )
-from hwpxfiller.core.dataset_pool import (
+from hwpxfiller.domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
-    DatasetPoolRegistry,
+    DatasetReference,
 )
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
@@ -75,9 +76,11 @@ def test_status_transitions_and_action_matrix(tmp_path):
     import hwpxfiller.application.dataset_pool as canonical
     import hwpxfiller.gui.dataset_pool_state as legacy
 
+    # facade 는 자기 표면(legacy.__all__)만 재수출한다 — #570 이 canonical 에 더한 새
+    # 심볼(포트 semantic op 계약)은 gui 경로에 존재한 적이 없어 facade 로 자라지 않는다.
     assert all(
         getattr(legacy, name) is getattr(canonical, name)
-        for name in canonical.__all__
+        for name in legacy.__all__
     )
     vm = _vm(tmp_path)
     vm.register_excel("D", "/d.xlsx")
@@ -154,7 +157,7 @@ def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
     """
     import threading
 
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+    from hwpxfiller.external import dataset_store
 
     directory = tmp_path / "datasets"
     vm_a = DatasetPoolViewModel(DatasetPoolRegistry(directory))
@@ -165,14 +168,14 @@ def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
 
     entered = threading.Event()
     release = threading.Event()
-    real_save = DatasetPoolItem.save
+    real_save = dataset_store.save_reference
 
-    def slow_save(item, path):
+    def slow_save(path, item):
         entered.set()
         assert release.wait(2)
-        return real_save(item, path)
+        return real_save(path, item)
 
-    monkeypatch.setattr(DatasetPoolItem, "save", slow_save)
+    monkeypatch.setattr(dataset_store, "save_reference", slow_save)
     errors: "list[Exception]" = []
 
     def relink(vm, key):
@@ -200,18 +203,16 @@ def test_concurrent_relink_to_same_identity_loses_loudly(tmp_path, monkeypatch):
         if it.opts.get("path") == "/target.xlsx"
     ]
     assert [k for k, _ in winners] == [rows["A"].key]       # 같은 정체성 슬롯은 1개뿐
-    assert reg.duplicate_identity_groups(corrupted=[]) == []  # 불변식 유지
+    assert DatasetPoolViewModel(reg).duplicates() == []      # 불변식 유지(중복 그룹 0)
 
 
 def test_duplicates_surface_from_legacy_files(tmp_path):
     """구판(이름=키)이 남긴 같은 경로 2건이 VM duplicates 로 표면화된다(§5.3 병합 loud)."""
     import json as _json
 
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
-
     tmp_path.mkdir(parents=True, exist_ok=True)
     for name in ("7월 공고", "공고 최신"):
-        item = DatasetPoolItem(name=name, kind="excel", opts={"path": "/same.xlsx"})
+        item = DatasetReference(name=name, kind="excel", opts={"path": "/same.xlsx"})
         (tmp_path / f"{name}.dataset.json").write_text(
             _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
         )
@@ -223,17 +224,13 @@ def test_duplicates_surface_from_legacy_files(tmp_path):
 
 
 def test_reference_summary_unknown_kind():
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
-
-    it = DatasetPoolItem(name="x", kind="excel", opts={})
+    it = DatasetReference(name="x", kind="excel", opts={})
     assert "경로 없음" in reference_summary(it)
 
 
 def test_pipeline_row_renders_kind_label_and_summary(tmp_path):
     """파이프라인 풀 항목(KB)이 풀 목록에서 종류 라벨·조립 요약으로 성형된다."""
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
-
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="6월 조립", kind="pipeline",
         opts={
             "sources": [{"kind": "excel", "opts": {"path": "/a.csv"}},

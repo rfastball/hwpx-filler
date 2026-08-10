@@ -10,17 +10,21 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.domain import dataset_reference as dataset_domain
-from hwpxfiller.core.dataset_pool import (
+from hwpxfiller.domain.dataset_reference import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
     STATUS_RETIRED,
-    DatasetPoolItem,
-    DatasetPoolRegistry,
-    default_dataset_pool_dir,
+    DatasetReference,
     excel_identity,
-    item_identity,
+    reference_identity,
 )
+from hwpxfiller.external import dataset_store
+from hwpxfiller.external.dataset_store import (
+    DatasetPoolRegistry,
+    load_reference,
+    save_reference,
+)
+from hwpxfiller.host.locations import default_dataset_pool_dir
 from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource, make_nara_acquirer
@@ -36,28 +40,39 @@ def _fixture_bytes() -> bytes:
 
 
 # ------------------------------------------------------------------ 모델
-def test_item_roundtrip_to_from_dict():
-    # Core는 파일 I/O 호환 타입만 더하고 값·정체성 권위는 Domain 객체를 그대로 승계한다.
-    assert issubclass(DatasetPoolItem, dataset_domain.DatasetReference)
-    assert item_identity is dataset_domain.reference_identity
-    assert STATUS_ACTIVE is dataset_domain.STATUS_ACTIVE
-    it = DatasetPoolItem(
+def test_item_roundtrip_to_from_dict(tmp_path):
+    """persistence codec = Domain 값 + 모듈 함수 — 저장 bytes 는 구판과 완전 동일(#570).
+
+    구 ``DatasetPoolItem(DatasetReference)`` subclass 는 폐기됐다: 값·정체성 권위는
+    Domain 객체 그대로이고, byte I/O 는 :func:`save_reference`/:func:`load_reference`
+    (``json.dumps(to_dict, ensure_ascii=False, indent=2)`` — 구 ``save`` 원문)가 진다.
+    """
+    it = DatasetReference(
         name="6월 공고", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359", "num_rows": 100},
         created_at="2026-07-12T09:00:00", note="6월분",
     )
-    back = DatasetPoolItem.from_dict(it.to_dict())
+    back = DatasetReference.from_dict(it.to_dict())
     assert back == it
     assert back.status == STATUS_ACTIVE  # 기본 active
+    # 슬롯 JSON bytes 불변 증명 — 구 DatasetPoolItem.save 와 같은 직렬화 공식.
+    import json as _json
+
+    slot = tmp_path / "slot.dataset.json"
+    save_reference(slot, it)
+    assert slot.read_text(encoding="utf-8") == _json.dumps(
+        it.to_dict(), ensure_ascii=False, indent=2
+    )
+    assert load_reference(slot) == it
 
 
 def test_unknown_status_rejected():
     with pytest.raises(ValueError):
-        DatasetPoolItem(name="x", kind="excel", status="bogus")
+        DatasetReference(name="x", kind="excel", status="bogus")
 
 
 def test_status_transitions():
-    it = DatasetPoolItem(name="x", kind="excel", opts={"path": "/d.xlsx"})
+    it = DatasetReference(name="x", kind="excel", opts={"path": "/d.xlsx"})
     assert it.is_active
     it.archive()
     assert it.status == STATUS_ARCHIVED and not it.is_active
@@ -71,7 +86,7 @@ def test_retired_status_migrates_to_archived_on_read():
     무손실 forward-마이그레이션 — retired 와 archived 는 실행 후보 여부가 동일했다.
     loud raise 로 죽지 않고 조용히 접어, durable 참조가 보존된다.
     """
-    it = DatasetPoolItem.from_dict(
+    it = DatasetReference.from_dict(
         {"name": "구은퇴", "kind": "excel", "opts": {"path": "/d.xlsx"}, "status": STATUS_RETIRED}
     )
     assert it.status == STATUS_ARCHIVED and not it.is_active
@@ -80,11 +95,11 @@ def test_retired_status_migrates_to_archived_on_read():
 def test_retired_not_a_valid_constructed_status():
     """retired 는 이제 직접 생성할 수 없다(마이그레이션 별칭 전용, #5) — 새 저장 금지."""
     with pytest.raises(ValueError):
-        DatasetPoolItem(name="x", kind="excel", status=STATUS_RETIRED)
+        DatasetReference(name="x", kind="excel", status=STATUS_RETIRED)
 
 
 def test_from_dict_backward_compatible_defaults():
-    it = DatasetPoolItem.from_dict({"name": "구", "kind": "excel"})
+    it = DatasetReference.from_dict({"name": "구", "kind": "excel"})
     assert it.opts == {} and it.status == STATUS_ACTIVE and it.note == ""
 
 
@@ -99,13 +114,13 @@ def test_excel_identity_normalizes_path_and_carries_sheet(tmp_path):
 
 def test_item_identity_only_for_pathful_excel():
     """정체성은 경로 있는 엑셀 참조만 — 나라·파이프라인·경로 없는 opts 는 None(추측 금지)."""
-    assert item_identity(
-        DatasetPoolItem(name="a", kind="excel", opts={"path": "/d.xlsx"})
+    assert reference_identity(
+        DatasetReference(name="a", kind="excel", opts={"path": "/d.xlsx"})
     ) == excel_identity("/d.xlsx")
-    assert item_identity(DatasetPoolItem(name="b", kind="nara", opts={})) is None
-    assert item_identity(DatasetPoolItem(name="c", kind="excel", opts={})) is None
-    assert item_identity(
-        DatasetPoolItem(name="d", kind="excel", opts={"path": 3})  # 훼손 opts
+    assert reference_identity(DatasetReference(name="b", kind="nara", opts={})) is None
+    assert reference_identity(DatasetReference(name="c", kind="excel", opts={})) is None
+    assert reference_identity(
+        DatasetReference(name="d", kind="excel", opts={"path": 3})  # 훼손 opts
     ) is None
 
 
@@ -113,8 +128,8 @@ def test_item_identity_only_for_pathful_excel():
 def test_registry_add_load_list_delete(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
     assert reg.list_items() == []
-    kb = reg.add(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
-    ka = reg.add(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+    kb = reg.add(DatasetReference(name="B", kind="excel", opts={"path": "/b.xlsx"}))
+    ka = reg.add(DatasetReference(name="A", kind="excel", opts={"path": "/a.xlsx"}))
     assert reg.names() == ["A", "B"]  # 이름순
     assert [k for k, _ in reg.list_entries()] == [ka, kb]
     assert reg.exists(ka)
@@ -127,9 +142,9 @@ def test_registry_add_load_list_delete(tmp_path):
 
 def test_registry_filters_by_status(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
-    archived = DatasetPoolItem(name="보관됨", kind="excel", opts={"path": "/y.xlsx"})
+    archived = DatasetReference(name="보관됨", kind="excel", opts={"path": "/y.xlsx"})
     archived.archive()
-    reg.add(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "/x.xlsx"}))
+    reg.add(DatasetReference(name="살아있음", kind="excel", opts={"path": "/x.xlsx"}))
     reg.add(archived)
     assert [it.name for it in reg.list_items(status=STATUS_ACTIVE)] == ["살아있음"]
     assert len(reg.list_items()) == 2
@@ -138,8 +153,8 @@ def test_registry_filters_by_status(tmp_path):
 def test_names_are_labels_duplicates_allowed(tmp_path):
     """이름은 순수 라벨(§5.3 C) — 같은 이름·다른 데이터가 서로 다른 슬롯으로 공존한다."""
     reg = DatasetPoolRegistry(tmp_path)
-    k1 = reg.add(DatasetPoolItem(name="매출", kind="excel", opts={"path": "/1월.xlsx"}))
-    k2 = reg.add(DatasetPoolItem(name="매출", kind="excel", opts={"path": "/2월.xlsx"}))
+    k1 = reg.add(DatasetReference(name="매출", kind="excel", opts={"path": "/1월.xlsx"}))
+    k2 = reg.add(DatasetReference(name="매출", kind="excel", opts={"path": "/2월.xlsx"}))
     assert k1 != k2
     assert reg.names() == ["매출", "매출"]
     assert {reg.load(k1).opts["path"], reg.load(k2).opts["path"]} == {"/1월.xlsx", "/2월.xlsx"}
@@ -148,11 +163,11 @@ def test_names_are_labels_duplicates_allowed(tmp_path):
 def test_registry_add_rejects_same_identity_loudly(tmp_path):
     """같은 데이터(경로+시트)의 재추가는 이름이 달라도 loud 거절 — 조용한 2건 등록 봉쇄."""
     reg = DatasetPoolRegistry(tmp_path)
-    reg.add(DatasetPoolItem(name="7월", kind="excel", opts={"path": "/a.xlsx"}))
+    reg.add(DatasetReference(name="7월", kind="excel", opts={"path": "/a.xlsx"}))
     with pytest.raises(ValueError, match="이미"):
-        reg.add(DatasetPoolItem(name="다른이름", kind="excel", opts={"path": "/a.xlsx"}))
+        reg.add(DatasetReference(name="다른이름", kind="excel", opts={"path": "/a.xlsx"}))
     # 다른 시트는 다른 데이터라 통과한다(#33 — 시트가 축에 든다).
-    reg.add(DatasetPoolItem(name="다른시트", kind="excel", opts={"path": "/a.xlsx", "sheet": "2월"}))
+    reg.add(DatasetReference(name="다른시트", kind="excel", opts={"path": "/a.xlsx", "sheet": "2월"}))
     assert len(reg.list_items()) == 2
 
 
@@ -165,8 +180,8 @@ def test_slot_key_is_not_derived_from_content(tmp_path):
     reg_a = DatasetPoolRegistry(tmp_path / "a")
     reg_b = DatasetPoolRegistry(tmp_path / "b")
     same = {"path": "/same.xlsx", "sheet": "물품"}
-    key_a = reg_a.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
-    key_b = reg_b.add(DatasetPoolItem(name="갑", kind="excel", opts=dict(same)))
+    key_a = reg_a.add(DatasetReference(name="갑", kind="excel", opts=dict(same)))
+    key_b = reg_b.add(DatasetReference(name="갑", kind="excel", opts=dict(same)))
     assert key_a != key_b, "슬롯 키가 내용(정체성)에서 파생됩니다."
 
 
@@ -178,23 +193,25 @@ def test_relinked_slot_releases_its_old_identity_key(tmp_path):
     「없는 것과 충돌」로 보이는 자리였다.
     """
     reg = DatasetPoolRegistry(tmp_path)
-    key = reg.add(DatasetPoolItem(name="보고", kind="excel", opts={"path": "/A.xlsx"}))
+    key = reg.add(DatasetReference(name="보고", kind="excel", opts={"path": "/A.xlsx"}))
     reg.mutate(key, lambda it: it.opts.update({"path": "/B.xlsx"}))  # 다시 연결
     assert reg.find_identity("/A.xlsx") is None          # A 를 참조하는 항목은 0건
 
-    again = reg.add(DatasetPoolItem(name="A 재고정", kind="excel", opts={"path": "/A.xlsx"}))
+    again = reg.add(DatasetReference(name="A 재고정", kind="excel", opts={"path": "/A.xlsx"}))
     assert again != key
     assert reg.load(again).opts["path"] == "/A.xlsx"
     assert reg.load(key).opts["path"] == "/B.xlsx"        # 재연결한 슬롯은 그대로 산다
-    assert reg.duplicate_identity_groups(corrupted=[]) == []
+    # 같은 정체성 슬롯은 1개뿐(중복 그룹 파생의 실사용 owner 는 Application refresh —
+    # test_dataset_pool_state 의 duplicates 테스트가 진다. #570 에서 External 표면 제거).
+    assert reg.find_identity("/A.xlsx")[0] == again
     # 대조군 — **실제** 중복(현재 B 를 가리키는 항목이 있는데 또 B)은 여전히 loud 거절.
     with pytest.raises(ValueError, match="이미"):
-        reg.add(DatasetPoolItem(name="B 재고정", kind="excel", opts={"path": "/B.xlsx"}))
+        reg.add(DatasetReference(name="B 재고정", kind="excel", opts={"path": "/B.xlsx"}))
 
 
 def test_find_identity_matches_normalized_path(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
-    key = reg.add(DatasetPoolItem(name="7월", kind="excel", opts={"path": "C:/d/a.xlsx"}))
+    key = reg.add(DatasetReference(name="7월", kind="excel", opts={"path": "C:/d/a.xlsx"}))
     found = reg.find_identity("C:\\d\\A.XLSX")  # 구분자·대소문자 변형 = 같은 실파일
     assert found is not None and found[0] == key
     assert reg.find_identity("C:/d/a.xlsx", "물품") is None  # 시트가 다르면 다른 데이터
@@ -208,11 +225,24 @@ def test_slot_path_rejects_traversal_keys(tmp_path):
             reg.slot_path(bad)
 
 
+def test_new_slot_key_exhaustion_is_loud(tmp_path, monkeypatch):
+    """키 발급이 8회 연속 충돌하면 조용한 무한 루프가 아니라 loud RuntimeError 다."""
+    reg = DatasetPoolRegistry(tmp_path)
+    key = reg.add(DatasetReference(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+
+    class _Collide:
+        hex = key + "0" * 16  # [:16] 이 기존 슬롯 키와 항상 충돌
+
+    monkeypatch.setattr(dataset_store.uuid, "uuid4", lambda: _Collide)
+    with pytest.raises(RuntimeError, match="발급하지"):
+        reg.new_slot_key()
+
+
 def test_legacy_slug_filename_is_a_valid_slot(tmp_path):
     """구판(이름 slug 파일명) 파일은 그 stem 그대로 유효한 슬롯 — 디스크 마이그레이션 없음."""
     reg = DatasetPoolRegistry(tmp_path)
     tmp_path.mkdir(parents=True, exist_ok=True)
-    legacy = DatasetPoolItem(name="7월 공고", kind="excel", opts={"path": "/a.xlsx"})
+    legacy = DatasetReference(name="7월 공고", kind="excel", opts={"path": "/a.xlsx"})
     (tmp_path / "7월 공고.dataset.json").write_text(
         __import__("json").dumps(legacy.to_dict(), ensure_ascii=False), encoding="utf-8"
     )
@@ -224,28 +254,29 @@ def test_legacy_slug_filename_is_a_valid_slot(tmp_path):
     assert reg.load(key).status == STATUS_ARCHIVED
 
 
-def test_duplicate_identity_groups_surface_legacy_merge_targets(tmp_path):
-    """구판이 남긴 다른 이름·같은 경로 2건은 조용히 접히지 않고 병합 그룹으로 표면화된다(§5.3)."""
+def test_legacy_same_identity_slots_both_stay_listed(tmp_path):
+    """구판이 남긴 다른 이름·같은 경로 2건은 저장층이 조용히 접지 않는다(§5.3).
+
+    병합 그룹 **표면화**의 owner 는 Application 파생이다(#570 —
+    ``test_dataset_pool_state.test_duplicates_surface_from_legacy_files``); 저장층 사실은
+    「둘 다 목록에 산다(숨김·자동 병합 금지)」다.
+    """
     import json as _json
 
     reg = DatasetPoolRegistry(tmp_path)
     tmp_path.mkdir(parents=True, exist_ok=True)
     for name in ("7월 공고", "공고 최신"):
-        item = DatasetPoolItem(name=name, kind="excel", opts={"path": "/same.xlsx"})
+        item = DatasetReference(name=name, kind="excel", opts={"path": "/same.xlsx"})
         (tmp_path / f"{name}.dataset.json").write_text(
             _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
         )
-    groups = reg.duplicate_identity_groups(corrupted=[])
-    assert len(groups) == 1
-    assert {it.name for _k, it in groups[0]} == {"7월 공고", "공고 최신"}
-    # 두 항목 모두 목록에 그대로 산다(숨김 금지 — 병합 전에도 쓸 수 있다).
     assert len(reg.list_items()) == 2
 
 
 def test_mutate_failure_preserves_json_and_cleans_temp(tmp_path, monkeypatch):
     """원자 교체 실패는 기존 JSON과 디렉터리 청결을 함께 보존한다(#182)."""
     reg = DatasetPoolRegistry(tmp_path)
-    key = reg.add(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+    key = reg.add(DatasetReference(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
     path = reg.slot_path(key)
     before = path.read_bytes()
 
@@ -265,7 +296,7 @@ def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
     directory = tmp_path / "datasets"
     updater = DatasetPoolRegistry(directory)
     transitioner = DatasetPoolRegistry(directory)
-    key = updater.add(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+    key = updater.add(DatasetReference(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
 
     update_entered = threading.Event()
     release_update = threading.Event()
@@ -273,7 +304,7 @@ def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
     transition_finished = threading.Event()
 
     def update_reference() -> None:
-        def change(item: DatasetPoolItem) -> None:
+        def change(item: DatasetReference) -> None:
             update_entered.set()
             assert release_update.wait(2)
             item.opts = {"path": "/new.xlsx"}
@@ -309,7 +340,7 @@ def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
     transitioner = DatasetPoolRegistry(directory)
     deleter = DatasetPoolRegistry(directory)
     key = transitioner.add(
-        DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"})
+        DatasetReference(name="공고", kind="excel", opts={"path": "/a.xlsx"})
     )
 
     transition_entered = threading.Event()
@@ -318,7 +349,7 @@ def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
     delete_finished = threading.Event()
 
     def archive() -> None:
-        def change(item: DatasetPoolItem) -> None:
+        def change(item: DatasetReference) -> None:
             transition_entered.set()
             assert release_transition.wait(2)
             item.archive()
@@ -351,7 +382,7 @@ def test_every_registry_writer_uses_shared_path_lock(tmp_path, monkeypatch):
     directory = tmp_path / "datasets"
     reg = DatasetPoolRegistry(directory)
     peer = DatasetPoolRegistry(directory)
-    key_a = reg.add(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+    key_a = reg.add(DatasetReference(name="A", kind="excel", opts={"path": "/a.xlsx"}))
     probes: "list[bool]" = []
 
     def probe_lock() -> None:
@@ -370,20 +401,20 @@ def test_every_registry_writer_uses_shared_path_lock(tmp_path, monkeypatch):
         assert not thread.is_alive()
         probes.append(acquired == [False])
 
-    real_save = DatasetPoolItem.save
+    real_save = dataset_store.save_reference
     real_unlink = Path.unlink
 
-    def spy_save(item, path):
+    def spy_save(path, item):
         probe_lock()
-        return real_save(item, path)
+        return real_save(path, item)
 
     def spy_unlink(path, *args, **kwargs):
         probe_lock()
         return real_unlink(path, *args, **kwargs)
 
-    monkeypatch.setattr(DatasetPoolItem, "save", spy_save)
+    monkeypatch.setattr(dataset_store, "save_reference", spy_save)
     monkeypatch.setattr(Path, "unlink", spy_unlink)
-    key_b = reg.add(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
+    key_b = reg.add(DatasetReference(name="B", kind="excel", opts={"path": "/b.xlsx"}))
     reg.mutate(key_a, lambda item: item.archive())
     reg.delete(key_b)
 
@@ -399,7 +430,7 @@ def test_default_pool_dir_uses_home_env(monkeypatch, tmp_path):
 def test_nara_item_never_serializes_service_key(tmp_path):
     """나라 풀 항목 opts 에 키가 없고, 저장 JSON 에도 키 흔적이 0이다."""
     reg = DatasetPoolRegistry(tmp_path)
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="공고쿼리", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
@@ -411,7 +442,7 @@ def test_nara_item_never_serializes_service_key(tmp_path):
 
 # ------------------------------------------------------------ 복원(factory)
 def test_restore_excel_item_returns_live_source_without_reading():
-    it = DatasetPoolItem(name="엑셀", kind="excel", opts={"path": "/nope.xlsx"})
+    it = DatasetReference(name="엑셀", kind="excel", opts={"path": "/nope.xlsx"})
     src = source_from_pool_item(it)
     # ExcelDataSource 는 지연 로드라 파일 없이도 인스턴스화된다(실행 때 재읽기=싱크).
     assert isinstance(src, ExcelDataSource)
@@ -419,7 +450,7 @@ def test_restore_excel_item_returns_live_source_without_reading():
 
 def test_restore_excel_item_with_sheet_targets_that_sheet():
     """T2 — opts 의 sheet 임베딩이 복원에 그대로 관통(지정 시트 레코드)."""
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="다중", kind="excel",
         opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
     )
@@ -429,7 +460,7 @@ def test_restore_excel_item_with_sheet_targets_that_sheet():
 
 
 def test_restore_nara_item_injects_key_from_store():
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359", "num_rows": 50},
     )
@@ -443,7 +474,7 @@ def test_restore_nara_item_injects_key_from_store():
 
 
 def test_restore_nara_item_without_key_fails_loudly():
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
@@ -475,7 +506,7 @@ def test_run_load_pool_item_excel_live(tmp_path):
 
     csv = tmp_path / "d.csv"
     csv.write_text("ID,공고명\n1,전산장비\n", encoding="utf-8")
-    it = DatasetPoolItem(name="엑셀", kind="excel", opts={"path": str(csv)})
+    it = DatasetReference(name="엑셀", kind="excel", opts={"path": str(csv)})
     vm = RunViewModel(_job(), engine=make_hwpx_engine())
     # 주입 seam 봉인(P2-16): concrete 만 넣으면 잔존 내부 import 우회를 놓친다 —
     # 주입 factory 경유 1회 + item/kwargs 관통을 기록으로 확인한다.
@@ -495,7 +526,7 @@ def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
     """T2 — sheet 임베딩 풀 항목의 run 겨눔이 지정 시트 레코드를 반환한다."""
     from hwpxfiller.gui.run_state import RunViewModel
 
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="다중", kind="excel",
         opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
     )
@@ -515,7 +546,7 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
         calls["n"] += 1
         return _fixture_bytes()
 
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
@@ -546,7 +577,7 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
         b'{"response":{"header":{"resultCode":"07",'
         b'"resultMsg":"INVALID_REQUEST_PARAMETER_ERROR"},"body":{}}}'
     )
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
@@ -568,7 +599,7 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
 def test_run_load_pool_item_nara_no_key_is_loud(tmp_path):
     from hwpxfiller.gui.run_state import RunViewModel
 
-    it = DatasetPoolItem(
+    it = DatasetReference(
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )

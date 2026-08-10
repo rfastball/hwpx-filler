@@ -75,8 +75,8 @@ def mark_missing_values(
 def load_isolated(paths, loader, corrupted):
     """손상 격리 로드 루프 — 세 레지스트리 목록 메서드의 공용 몸통(RC-05 단일 출처).
 
-    예전엔 이 try/except-수집 루프가 :meth:`JobRegistry.list_jobs`·:meth:`~hwpxfiller.core.
-    dataset_pool.DatasetPoolRegistry.list_items` 등에 바이트 단위로 복붙돼 있었다 —
+    예전엔 이 try/except-수집 루프가 :meth:`JobRegistry.list_jobs`·:meth:`~hwpxfiller.external.
+    dataset_store.DatasetPoolRegistry.list_items` 등에 바이트 단위로 복붙돼 있었다 —
     여기로 수렴해 락스텝 편집 부담과 정책 표류를 없앤다.
 
     - ``corrupted`` 가 **리스트**면: ``loader(path)`` 실패를 파일별로 잡아
@@ -100,7 +100,7 @@ def load_isolated(paths, loader, corrupted):
 
 # (classify_existing 은 #347 에서 제거 — 소비자가 데이터셋 게이트 둘(pool 수동 등록·에디터
 #  자동등록)뿐이었고, U2 §5.3 재편으로 데이터 축 중복 판정이 이름이 아니라 **정체성**
-#  (:func:`~hwpxfiller.core.dataset_pool.excel_identity`)으로 바뀌며 둘 다 죽었다.
+#  (:func:`~hwpxfiller.domain.dataset_reference.excel_identity`)으로 바뀌며 둘 다 죽었다.
 #  작업 축 slug 가드(:func:`guard_slug_collision`)는 그대로다.)
 
 
