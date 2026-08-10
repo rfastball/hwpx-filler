@@ -76,6 +76,7 @@ from ..gui.mapping_state import (
     gate_for_template,
     profile_source_vocabulary,
 )
+from ..external.template_inspection import inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
@@ -234,7 +235,10 @@ class EditorController:
     def template_library(self) -> TemplateManagerViewModel:
         """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 표준 라이브러리로 지연 생성(리뷰 F5)."""
         if self._template_library is None:
-            self._template_library = TemplateManagerViewModel(default_templates_dir())
+            self._template_library = TemplateManagerViewModel(
+                default_templates_dir(),
+                inspect_template=inspect_hwpx_template,
+            )
         return self._template_library
 
     @property

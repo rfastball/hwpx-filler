@@ -12,10 +12,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from zipfile import BadZipFile
+
+import pytest
 
 from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.fields import FieldDocument
 from hwpxfiller.core.template_status import CompileState, compile_status
+from hwpxfiller.external.template_inspection import inspect_hwpx_template
 from hwpxfiller.gui.template_manager_state import (
     TemplateManagerViewModel,
     available_actions,
@@ -77,7 +81,7 @@ def test_action_matrix_and_vm_delegation():
     assert [available_actions(state)[0].label for state in (CompileState.RAW, CompileState.PARTIAL)] == [
         "누름틀 변환", "마저 변환",
     ]
-    vm = TemplateManagerViewModel(paths=[])
+    vm = TemplateManagerViewModel(paths=[], inspect_template=inspect_hwpx_template)
     assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
 
 
@@ -87,7 +91,10 @@ def test_library_scan_is_recursive(tmp_path):
     sub = tmp_path / "탐색기묶음"
     sub.mkdir()
     _write_raw(sub / "하위.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
-    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    vm = TemplateManagerViewModel(
+        library_dir=tmp_path,
+        inspect_template=inspect_hwpx_template,
+    )
     names = {r.name for r in vm.rows()}
     assert names == {"루트.hwpx", "하위.hwpx"}  # 하위폴더 파일도 평평하게 올라온다
 
@@ -105,11 +112,14 @@ def test_library_scan_excludes_results_output_subtree(tmp_path):
     nested = tmp_path / "입찰" / "Results"
     nested.mkdir(parents=True)
     _write_compiled(nested / "생성물2.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
-    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    vm = TemplateManagerViewModel(
+        library_dir=tmp_path,
+        inspect_template=inspect_hwpx_template,
+    )
     assert {r.name for r in vm.rows()} == {"서식.hwpx"}  # 산출물은 목록에 없다
 
 
-def test_rows_expose_gated_actions_matching_state(tmp_path):
+def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     """VM 행이 실제 파일 상태에서 계산한 액션 집합을 노출한다(라이브러리 전 상태)."""
     raw = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
     comp = _write_compiled(tmp_path / "comp.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
@@ -118,8 +128,28 @@ def test_rows_expose_gated_actions_matching_state(tmp_path):
         "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
         "계약명", "정보시스템 구축",
     )
-    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    inspected: "list[str]" = []
+    opened: "list[str]" = []
+    original_open = HwpxPackage.open
+
+    def recording_inspect(path: str):
+        inspected.append(path)
+        return inspect_hwpx_template(path)
+
+    def counting_open(cls, path: str) -> HwpxPackage:
+        opened.append(path)
+        return original_open(path)
+
+    monkeypatch.setattr(HwpxPackage, "open", classmethod(counting_open))
+    vm = TemplateManagerViewModel(
+        library_dir=tmp_path,
+        inspect_template=recording_inspect,
+    )
     by_name = {r.name: r for r in vm.rows()}
+
+    expected_paths = sorted(str(path) for path in (raw, comp, filled))
+    assert sorted(inspected) == expected_paths
+    assert sorted(opened) == expected_paths
 
     assert by_name["raw.hwpx"].state == CompileState.RAW
     assert [a.key for a in by_name["raw.hwpx"].actions()] == ["compile"]
@@ -138,7 +168,10 @@ def test_scan_then_apply_is_readonly_until_the_state_transition(tmp_path):
     path = _write_raw(tmp_path / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
     before = path.read_bytes()
 
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     preview = vm.scan_preview(str(path))
     assert preview.has_compilable
     assert [s.name for s in preview.compilable] == ["계약명"]
@@ -168,7 +201,10 @@ def test_apply_fieldize_advances_partial_to_compiled(tmp_path):
     _pkg(inner).save(str(path))
     assert compile_status(str(path)).state == CompileState.PARTIAL
 
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     vm.apply_fieldize(str(path))
     assert compile_status(str(path)).state == CompileState.COMPILED
 
@@ -180,7 +216,10 @@ def test_lint_reports_near_duplicate_fields(tmp_path):
         tmp_path / "dup.hwpx",
         "<hp:p><hp:run><hp:t>계약명: {{계약명}} / 상대: {{계약 명}}</hp:t></hp:run></hp:p>",
     )
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     report = vm.lint(str(path))
     kinds = {f.kind for f in report.findings}
     assert "near_duplicate" in kinds
@@ -190,7 +229,10 @@ def test_lint_reports_near_duplicate_fields(tmp_path):
 def test_lint_reports_stray_compilable_token(tmp_path):
     """미컴파일 평문 토큰이 남으면 lint 가 stray_token(fieldize 권장)으로 신고."""
     path = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     report = vm.lint(str(path))
     kinds = {f.kind for f in report.findings}
     assert "stray_token" in kinds  # authoring.scan_tokens 가 단일 진실원
@@ -206,7 +248,7 @@ def test_drift_reports_added_and_removed_fields(tmp_path):
         tmp_path / "v2.hwpx",
         "<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{사업예산}}</hp:t></hp:run></hp:p>",
     )
-    vm = TemplateManagerViewModel(paths=[])
+    vm = TemplateManagerViewModel(paths=[], inspect_template=inspect_hwpx_template)
     drift = vm.drift(str(old), str(new))
     assert drift.has_changes
     assert "사업예산" in drift.added
@@ -215,7 +257,10 @@ def test_drift_reports_added_and_removed_fields(tmp_path):
 
 # ==================================================== 라이브러리/오류 노출
 def test_empty_library_is_empty(tmp_path):
-    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    vm = TemplateManagerViewModel(
+        library_dir=tmp_path,
+        inspect_template=inspect_hwpx_template,
+    )
     assert vm.is_empty()
     assert vm.count_label() == ""
 
@@ -224,12 +269,18 @@ def test_unreadable_file_surfaced_as_error_row_not_hidden(tmp_path):
     """읽기 실패 파일은 조용히 감추지 않고 error 행으로 시끄럽게 노출한다."""
     bad = tmp_path / "broken.hwpx"
     bad.write_bytes(b"not a zip at all")
-    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    with pytest.raises(BadZipFile) as raised:
+        inspect_hwpx_template(str(bad))
+    vm = TemplateManagerViewModel(
+        library_dir=tmp_path,
+        inspect_template=inspect_hwpx_template,
+    )
     rows = vm.rows()
     assert len(rows) == 1
     assert rows[0].is_error
     assert rows[0].state is None
     assert rows[0].actions() == []
+    assert rows[0].error == str(raised.value)
 
 
 def test_filled_values_preview_reads_c1_fields(tmp_path):
@@ -239,7 +290,10 @@ def test_filled_values_preview_reads_c1_fields(tmp_path):
         "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
         "계약명", "정보시스템 구축",
     )
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     assert vm.filled_values(str(path)) == {"계약명": "정보시스템 구축"}
 
 
@@ -262,7 +316,10 @@ def test_vm_lint_accepts_vocabulary(tmp_path):
         tmp_path / "v.hwpx",
         "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
     )
-    vm = TemplateManagerViewModel(paths=[path])
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+    )
     assert "off_vocabulary" not in {f.kind for f in vm.lint(str(path)).findings}  # 기본: 어휘 검사 없음
     report = vm.lint(str(path), vocabulary=["표준필드명"])
     assert "off_vocabulary" in {f.kind for f in report.findings}
@@ -271,7 +328,10 @@ def test_vm_lint_accepts_vocabulary(tmp_path):
 def test_vm_set_library_dir_and_empty_hint_distinguish_missing_vs_empty(tmp_path):
     """'폴더 없음'과 '빈 폴더'를 구분 안내하고, 폴더 재지정이 재스캔한다(RC-14 W6)."""
     missing = tmp_path / "없는폴더"
-    vm = TemplateManagerViewModel(library_dir=missing)
+    vm = TemplateManagerViewModel(
+        library_dir=missing,
+        inspect_template=inspect_hwpx_template,
+    )
     assert vm.is_empty()
     assert "폴더가 없습니다" in vm.empty_hint()
     assert str(missing) in vm.empty_hint()  # 어느 폴더인지 지목
@@ -295,7 +355,10 @@ def test_vm_result_formatting_lives_in_ring1_and_names_target(tmp_path):
         tmp_path / "raw.hwpx",
         "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
     )
-    vm = TemplateManagerViewModel(paths=[raw])
+    vm = TemplateManagerViewModel(
+        paths=[raw],
+        inspect_template=inspect_hwpx_template,
+    )
 
     lint_text = vm.format_lint_result(str(raw), vm.lint(str(raw)))
     assert "raw.hwpx" in lint_text
@@ -334,7 +397,10 @@ def test_format_scan_empty_result_is_inline_warn(tmp_path):
         tmp_path / "onlymanual.hwpx",
         "<hp:p><hp:run><hp:t>계약: {{계약명}}</hp:t></hp:run></hp:p>",
     )
-    vm = TemplateManagerViewModel(paths=[raw])
+    vm = TemplateManagerViewModel(
+        paths=[raw],
+        inspect_template=inspect_hwpx_template,
+    )
     line = vm.format_scan_empty_result(str(raw), ScanPreview(compilable=[], skipped=[]))
     assert "onlymanual.hwpx" in line and "변환 가능한 토큰이 없습니다" in line
     assert line.level == "warn"
@@ -356,7 +422,10 @@ def test_rows_carry_fill_precheck_warns(tmp_path):
         "<hp:run><hp:t>값</hp:t></hp:run>"
         '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>',
     )
-    vm = TemplateManagerViewModel(paths=[marker, clean])
+    vm = TemplateManagerViewModel(
+        paths=[marker, clean],
+        inspect_template=inspect_hwpx_template,
+    )
     vm.refresh()
     by_name = {r.name: r for r in vm.rows()}
     assert len(by_name["marker.hwpx"].fill_warns) == 1

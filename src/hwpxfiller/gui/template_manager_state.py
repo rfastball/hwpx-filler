@@ -20,20 +20,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from hwpxcore.package import HwpxPackage
-
 from ..core.authoring import TokenSite, compile_document, scan_tokens
-from ..core.fields import fill_precheck, read_fields
+from ..core.fields import FillNote, read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..core.template_status import (
     OUTPUT_SUBDIR_NAME,
     TRASH_DIR_NAME,
     CompileState,
     TemplateStatus,
-    compile_status,
 )
 
 # 상태 → 배지 (라벨, 레벨)은 :mod:`compile_badge` 가 단일 출처 — 홈 카드 배지와
@@ -44,6 +42,17 @@ from .result_errors import describe_precheck_note
 
 # lint 심각도 → 사용자 대면 한국어(뷰가 영문 원시값을 노출하지 않게 링1이 성형).
 _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
+
+
+@dataclass(frozen=True)
+class TemplateInspection:
+    """한 번 연 템플릿 스냅샷에서 계산한 판독 결과."""
+
+    status: TemplateStatus
+    precheck_notes: "tuple[FillNote, ...]"
+
+
+TemplateInspectPort = Callable[[str], TemplateInspection]
 
 
 class ResultLine(str):
@@ -207,9 +216,16 @@ class TemplateManagerViewModel:
     (scan_preview→apply_fieldize)로 명시적이다.
     """
 
-    def __init__(self, library_dir: "str | Path | None" = None, paths=None):
+    def __init__(
+        self,
+        library_dir: "str | Path | None" = None,
+        paths=None,
+        *,
+        inspect_template: TemplateInspectPort,
+    ):
         self.library_dir = Path(library_dir) if library_dir is not None else None
         self._explicit_paths = [Path(p) for p in paths] if paths is not None else None
+        self._inspect_template = inspect_template
         self._rows: "list[TemplateRow]" = []
         self._subs: "list" = []
         self.refresh()
@@ -274,19 +290,15 @@ class TemplateManagerViewModel:
         rows: "list[TemplateRow]" = []
         for path in self._discover():
             try:
-                # 패키지를 한 번만 열어 상태·사전 판정이 같은 스냅샷을 본다 —
-                # 경로 재열기는 I/O 2배 + 두 열기 사이 파일 교체 시 멀쩡한 행이
-                # from_error 로 강등되는 TOCTOU 를 만든다(2라운드 리뷰 F5).
-                pkg = HwpxPackage.open(str(path))
-                status = compile_status(pkg)
+                inspection = self._inspect_template(str(path))
                 # 채움 완화 사전 판정(#154) — 점검 표면의 "사전에 알고" 쪽.
                 warns = tuple(
-                    describe_precheck_note(n) for n in fill_precheck(pkg)
+                    describe_precheck_note(n) for n in inspection.precheck_notes
                 )
             except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게 노출(감추지 않음)
                 rows.append(TemplateRow.from_error(path, str(exc)))
                 continue
-            rows.append(TemplateRow.from_status(path, status, fill_warns=warns))
+            rows.append(TemplateRow.from_status(path, inspection.status, fill_warns=warns))
         self._rows = rows
         self._notify()
 

@@ -17,6 +17,7 @@ def _selfcheck() -> int:
 
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.external.template_inspection import inspect_hwpx_template
     from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
     from hwpxfiller.webapp.app import web_artifact
     from hwpxfiller.webapp.screen_editor import EditorController
@@ -30,7 +31,10 @@ def _selfcheck() -> int:
     ctrl = EditorController(
         JobRegistry(tmp / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        template_library=TemplateManagerViewModel(paths=[]),
+        template_library=TemplateManagerViewModel(
+            paths=[],
+            inspect_template=inspect_hwpx_template,
+        ),
         text_registry=TextTemplateRegistry(tmp),
     )
     ctrl.dispatch("use_library_template", {"path": str(tmp / "샘플.txt")})
