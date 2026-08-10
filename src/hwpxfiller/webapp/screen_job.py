@@ -78,7 +78,9 @@ from ..gui.review_state import (
     review_requirement,
 )
 from ..gui.run_state import (
+    FileSourceFactoryPort,
     GateState,
+    PoolSourceFactoryPort,
     RunViewModel,
     resolve_file_source,
     resolve_pool_source,
@@ -292,9 +294,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         pool_registry: "DatasetPoolRegistry | None" = None,
         generation_lock: "threading.Lock | None" = None,
         text_registry=None,
+        file_source_factory: FileSourceFactoryPort,
+        pool_source_factory: PoolSourceFactoryPort,
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
+        # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
+        # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
+        self._file_source_factory = file_source_factory
+        self._pool_source_factory = pool_source_factory
         # TXT 템플릿 레지스트리(F6 PR-B 고지 ①) — 후보 TXT 구획 빈 상태의 술어에만 쓴다
         # (txt 템플릿 有 ∧ txt 작업 0건). 앱 조립에선 tpl·편집기와 같은 인스턴스를 주입한다.
         # 미주입(None)이면 술어가 항상 거짓 — 테스트·CLI 소비자에 실 홈 스캔을 물리지 않는다.
@@ -1608,7 +1617,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
-        source, records = resolve_file_source(path, sheet=sheet)  # 실패는 raise(§18.2 원자)
+        source, records = resolve_file_source(
+            path, sheet=sheet, source_factory=self._file_source_factory
+        )  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
@@ -2224,7 +2235,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         있으면 같은 데이터를 ``set_acquired`` 로 주입(데이터 귀속 원자 진입점, RC-22).
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
-        source, records = resolve_pool_source(item)
+        source, records = resolve_pool_source(
+            item, source_factory=self._pool_source_factory
+        )
         if not records:
             return []
         self.datasource = source

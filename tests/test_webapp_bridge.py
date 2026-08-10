@@ -360,6 +360,7 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     직접 조립한다(브리지 dispatch 검증은 registry 완결성 테스트가 별도로 진다).
     """
     from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.data.factory import source_for_path, source_from_pool_item
     from hwpxfiller.webapp.screen_job import JobController
     from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT
 
@@ -383,7 +384,9 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
         name="중첩 나라 조립", kind="pipeline", opts=pipeline_opts(nested_ref)
     ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-                         pool_registry=pool)
+                         pool_registry=pool,
+                         file_source_factory=source_for_path,
+                         pool_source_factory=source_from_pool_item)
     res = ctrl.dispatch("load_pool", {"key": excel_key})
     assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
     snap = ctrl.snapshot()

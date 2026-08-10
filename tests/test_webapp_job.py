@@ -14,6 +14,7 @@ import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
@@ -71,10 +72,20 @@ def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
     return reg
 
 
-def _controller(tmp_path, *, reviewed: bool = True):
+# JobController 는 factory 포트가 **필수 주입**(P2-16 — 조립은 Host 한 곳)이라
+# 테스트 생성 지점마다 canonical concrete 한 벌을 명시로 관통시킨다.
+_FACTORIES = {
+    "file_source_factory": source_for_path,
+    "pool_source_factory": source_from_pool_item,
+}
+
+
+def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_for_path):
     pushes: list = []
     ctrl = JobController(
-        _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap))
+        _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
+        file_source_factory=file_source_factory,
+        pool_source_factory=source_from_pool_item,
     )
     return ctrl, pushes
 
@@ -106,7 +117,15 @@ def _approve_run(ctrl) -> None:
 
 # ---------------------------------------------------------------- 스냅샷 골격
 def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
-    ctrl, _ = _controller(tmp_path)
+    # 파일 마운트가 **주입된** factory 를 타는지 기록으로 봉인(P2-16) — concrete 만 넣으면
+    # 컨트롤러가 다른 경로로 구체를 재선택하는 우회를 놓친다.
+    factory_calls: list = []
+
+    def recording_factory(path, *, sheet=None):
+        factory_calls.append((path, sheet))
+        return source_for_path(path, sheet=sheet)
+
+    ctrl, _ = _controller(tmp_path, file_source_factory=recording_factory)
     snap = ctrl.initial()
     assert snap["has_job"] is False
     # 좌 목록 4키는 표면과 함께 사망했다(F2 PR-B, 지도 §10.9 판정 F) — 아무도 그리지 않는
@@ -129,6 +148,7 @@ def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     # 저장 폴더 기본값 = 템플릿 폴더/Results(실행 화면 동형).
     assert snap["out_dir"].endswith("Results")
     ctrl.load_data_path(_data_csv(tmp_path))
+    assert factory_calls == [(_data_csv(tmp_path), None)]  # 주입 factory 경유 1회
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 0  # 마운트 직후 선택 0건(§18.2 — 구 전체선택 개정)
@@ -311,7 +331,7 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
     """
     lock = threading.Lock()
     reg = JobRegistry(tmp_path / "jobs")
-    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock)
+    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock, **_FACTORIES)
     lib_ctrl = LibraryController(
         reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
         generation_lock=lock,
@@ -755,7 +775,7 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
         "bidNtceNm,presmptPrce,dmndInsttNm,ntceInsttNm\n전산장비,,조달청,조달청\n사무비품,2000000,경찰청,경찰청\n",
         encoding="utf-8",
     )
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, str(csv))
     # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
@@ -1142,7 +1162,7 @@ def _mirror_job(tmp_path) -> JobRegistry:
 def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):
     """본문 존 재료(U2 §2.13) — 빈 값 필드 **이름**만 싣는다: 값 집계(표본·행수 재진술)는
     표와 함께 죽었고, 의도적 빈칸(blank 선언)은 빈 값이 아니다(매핑이 키를 제외한다)."""
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1163,7 +1183,7 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{seq:001}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1186,7 +1206,7 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{미해소}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1213,7 +1233,7 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{미해소}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
@@ -1251,7 +1271,7 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     refresh 가 세션을 무효화한다 — 존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께
     남아 유령 작업에서 생성되는 것을 막는다."""
     reg = _registry(tmp_path)
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["has_job"] is True
@@ -1418,12 +1438,14 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 
 
-def _pool_controller(tmp_path):
+def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
     pool = DatasetPoolRegistry(tmp_path / "pool")
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
         pool_registry=pool,
+        file_source_factory=source_for_path,
+        pool_source_factory=pool_source_factory,
     )
     return ctrl, pool
 
@@ -1435,11 +1457,19 @@ def _pool_add(pool, name, opts, kind="excel"):
 
 def test_load_pool_targets_excel_reference(tmp_path):
     """등록 데이터 겨눔 성공 — 실행 시점 재읽기(싱크) + 소스 병기 라벨 + 선택 초기화."""
-    ctrl, pool = _pool_controller(tmp_path)
+    # 풀 겨눔이 **주입된** factory 를 타는지 기록으로 봉인(P2-16 — 파일 마운트와 짝).
+    factory_calls: list = []
+
+    def recording_factory(item, *, secret_store=None, fetcher=None):
+        factory_calls.append(item.kind)
+        return source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+
+    ctrl, pool = _pool_controller(tmp_path, pool_source_factory=recording_factory)
     key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
     ctrl.dispatch("select_job", {"name": "공고서"})
     res = ctrl.dispatch("load_pool", {"key": key})
     assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
+    assert factory_calls == ["excel"]  # 주입 factory 경유 1회
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 7월공고"
     assert snap["record_count"] == 2
@@ -1942,7 +1972,7 @@ def test_filter_range_on_amount_column_and_inline_error(tmp_path):
         ]),
         filename_pattern="doc-{{seq:001}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
     ctrl.dispatch("select_job", {"name": "금액작업"})
     _mount_all(ctrl, _data_csv(tmp_path))
     kinds = {c["name"]: c["kind"] for c in ctrl.snapshot()["filter"]["columns"]}
@@ -2839,7 +2869,9 @@ def test_prefer_work_does_not_activate_an_incompatible_work(tmp_path):
     표면은 반환 사유로 「확인 필요」 탭에 데려간다 — 판정은 여기(Python)가 낸다.
     """
     pushes: list = []
-    ctrl = JobController(_incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = JobController(
+        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_FACTORIES
+    )
     _mount_all(ctrl, _data_csv(tmp_path))
     res = ctrl.dispatch("prefer_work", {"name": "계약서"})
     assert res == {"stored": True, "reason": "incompatible", "name": "계약서"}
@@ -2853,7 +2885,9 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     들고 있으면 사용자가 잊은 의도가 다음 마운트에서 조용히 발화한다(지연된 조용한 추측).
     """
     pushes: list = []
-    ctrl = JobController(_incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = JobController(
+        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_FACTORIES
+    )
     ctrl.dispatch("prefer_work", {"name": "계약서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -3183,7 +3217,7 @@ def test_view_order_is_not_persisted_across_sessions(tmp_path):
     """
     ctrl, _ = _order_session(tmp_path)
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    fresh = JobController(_registry(tmp_path), lambda s, snap: None)
+    fresh = JobController(_registry(tmp_path), lambda s, snap: None, **_FACTORIES)
     assert fresh.initial()["view_order"] == "sourceDesc"
 
 
@@ -4486,7 +4520,7 @@ def test_candidates_txt_note_speaks_only_to_the_volatile_draft_audience(tmp_path
     reg = _registry(tmp_path)                       # hwpx 작업 1개(공고서)
     txt_dir = tmp_path / "text_templates"
     ctrl = JobController(
-        reg, lambda s, snap: None, text_registry=TextTemplateRegistry(txt_dir)
+        reg, lambda s, snap: None, text_registry=TextTemplateRegistry(txt_dir), **_FACTORIES
     )
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ① 템플릿 0 = 침묵

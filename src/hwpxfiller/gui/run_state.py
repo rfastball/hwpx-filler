@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from ..core.engine import HwpxEngine
 
@@ -24,7 +24,6 @@ from ..core.fill_ledger import (
 )
 from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
-from ..data.factory import source_for_path
 from ..naming import (
     OutputNameAudit,
     audit_output_names,
@@ -172,18 +171,36 @@ def export_plan_ledger(plan: GenerationPlan, batch) -> str:
 
 
 # ------------------------------------------------------------ 데이터 겨눔 리졸버
-def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[object, list[dict]]":
-    """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise.
+class FileSourceFactoryPort(Protocol):
+    """파일 경로 → DataSource 포트 — 구체 종류 선택(엑셀/CSV)은 Host(``webapp.app``)가
+    주입하는 factory 의 몫이다. 링1 은 포트만 안다(P2-16, `gui → data.factory` 역간선 제거)."""
+
+    def __call__(self, path: str, *, sheet: "str | None" = None) -> object: ...
+
+
+class PoolSourceFactoryPort(Protocol):
+    """풀 항목(참조) → DataSource 포트 — 복원·키 주입·pipeline 재귀는 Host 가 주입하는
+    factory 의 몫이다. 나라장터 항목은 이 포트에 **오지 않는다**(아래 nara 분기가 선점)."""
+
+    def __call__(self, item, *, secret_store=None, fetcher=None) -> object: ...
+
+
+def resolve_file_source(
+    path: str, *, sheet: "str | None" = None, source_factory: FileSourceFactoryPort
+) -> "tuple[object, list[dict]]":
+    """파일 경로 → (DataSource, records). 종류 선택은 주입된 factory. 로드 실패는 raise.
 
     ``sheet`` 는 사용자가 **확정한** 시트명(T2) — None 이면 기본(첫/유일 시트).
     확정은 표현 계층의 시트 선택 UI가 하고 여기는 옵션 관통만 한다(링1: PySide6 금지).
+    ``source_factory`` 는 **필수 주입**(기본값·service locator 금지) — 조립은 Host 한 곳.
     """
-    source = source_for_path(path, sheet=sheet)
+    source = source_factory(path, sheet=sheet)
     return source, source.records()
 
 
 def resolve_pool_source(
-    item, *, secret_store=None, fetcher=None, nara_factory=None
+    item, *, secret_store=None, fetcher=None, nara_factory=None,
+    source_factory: PoolSourceFactoryPort,
 ) -> "tuple[object, list[dict]]":
     """데이터셋 풀 항목(참조) → (DataSource, records). 실행 시점 재읽기="싱크".
 
@@ -207,9 +224,7 @@ def resolve_pool_source(
             raise RuntimeError(f"나라장터 데이터 취득 실패: {res.error}")
         return res.as_datasource(), res.records
 
-    from ..data.factory import source_from_pool_item
-
-    source = source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+    source = source_factory(item, secret_store=secret_store, fetcher=fetcher)
     return source, source.records()
 
 
@@ -275,11 +290,14 @@ class RunViewModel:
         )
 
     # ------------------------------------------------------------ 데이터
-    def load_data(self, path: str, *, sheet: "str | None" = None) -> "list[dict]":
-        """겨눈 경로에서 레코드를 읽는다(팩토리가 종류 선택). 로드 실패는 raise,
+    def load_data(
+        self, path: str, *, sheet: "str | None" = None,
+        source_factory: FileSourceFactoryPort,
+    ) -> "list[dict]":
+        """겨눈 경로에서 레코드를 읽는다(주입된 factory 가 종류 선택). 로드 실패는 raise,
         레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(표현 계층이 경고).
         ``sheet`` 는 사용자가 확정한 시트명(T2) — None 이면 기본(첫/유일 시트)."""
-        source, records = resolve_file_source(path, sheet=sheet)
+        source, records = resolve_file_source(path, sheet=sheet, source_factory=source_factory)
         if not records:
             return []
         self.datasource = source
@@ -287,7 +305,8 @@ class RunViewModel:
         return records
 
     def load_pool_item(
-        self, item, *, secret_store=None, fetcher=None, nara_factory=None
+        self, item, *, secret_store=None, fetcher=None, nara_factory=None,
+        source_factory: PoolSourceFactoryPort,
     ) -> "list[dict]":
         """데이터셋 풀 항목(참조)을 복원해 겨눈다 — 실행 시점 재읽기가 곧 "싱크".
 
@@ -296,8 +315,8 @@ class RunViewModel:
           관통시켜, 만료·인증실패 키가 조용한 "0건"이 아니라 **시끄러운 API 오류**로 실패하게
           한다(acquire 경로와 동일 엄격도). 성공 결과는 **키 없는 스냅샷**(``as_datasource``)이라
           실행뷰의 반복 조회가 재-fetch·키 재사용을 하지 않는다("싱크 = 의도적 1회 재읽기").
-        - **엑셀 등 파일 소스**: :func:`~hwpxfiller.data.factory.source_from_pool_item` 로 라이브
-          소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
+        - **엑셀 등 파일 소스**: 주입된 ``source_factory``(Host 가 조립한 풀 복원 factory)로
+          라이브 소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
 
         키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
         **마스킹된 채** raise(표현 계층이 시끄럽게 표시), 레코드 0건이면 상태 불변(표현 계층이 경고).
@@ -307,6 +326,7 @@ class RunViewModel:
             secret_store=secret_store,
             fetcher=fetcher,
             nara_factory=nara_factory,
+            source_factory=source_factory,
         )
         if not records:
             return []
