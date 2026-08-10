@@ -28,7 +28,8 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from ..host import boot_budget
-from . import live_run, product_api, selftest_api, settings
+from . import live_run, product_api, selftest_api
+from ..external import settings
 from .action_registry import validate_dispatch
 from ..web_artifact import (
     VerifiedWebArtifact,

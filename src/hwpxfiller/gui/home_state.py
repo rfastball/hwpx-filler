@@ -658,7 +658,7 @@ class HomeViewModel:
         facet 은 보기 4종 전부와 AND 로 묶인다(§19.6 명문) — 사용자가 켜 둔 칩이 보기를
         바꿨다고 조용히 풀리면 화면이 자기 필터를 배신한다(리뷰 P2).
         """
-        from ..core.jamo import jamo_contains
+        from ..domain.jamo import jamo_contains
 
         rows = [r for r in self._rows if self._passes_facets(r, exclude_axis="")]
         if self.library_mode != MODE_ALL:

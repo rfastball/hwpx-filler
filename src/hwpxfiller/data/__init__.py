@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .base import DataSource, Record
-from .inline import InlineDataSource
+from ..domain.data_source import DataSource, Record
+from ..domain.inline import InlineDataSource
 from .pipeline import AssemblyEngine, AssemblyError, PipelineSource
 
 __all__ = [

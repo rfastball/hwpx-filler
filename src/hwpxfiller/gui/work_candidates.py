@@ -249,7 +249,7 @@ def browse_candidates(
       primary classification 이라 방식을 탭으로 올리지 않고, 구획 여부는 표면이 실제
       방식 수로 판단한다(한 방식이면 평면 퇴화).
     """
-    from ..core.jamo import jamo_contains
+    from ..domain.jamo import jamo_contains
 
     rows = candidate_rows(jobs, fields)
     avail = sorted(

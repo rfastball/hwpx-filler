@@ -69,7 +69,7 @@ from ..application.jobs import (
     rename_job,
     set_favorite,
 )
-from ..core.identity_summary import identity_summary
+from ..domain.identity_summary import identity_summary
 from ..core.job import (
     Job,
     work_mode,
@@ -126,7 +126,7 @@ from ..gui.work_candidates import (
 )
 from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
-from .settings import recollapse_job_group
+from ..external.settings import recollapse_job_group
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
     EMPTY_TABLE as _EMPTY_TABLE,

@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.webapp import product_api, settings
+from hwpxfiller.external import settings
+from hwpxfiller.webapp import product_api
 from hwpxfiller.webapp.product_api import (
     CAPABILITIES,
     PROTOCOL,

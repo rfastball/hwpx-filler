@@ -83,7 +83,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from ..core.format_engine import parse_dt, parse_number
-from ..core.jamo import jamo_contains, jamo_find
+from ..domain.jamo import jamo_contains, jamo_find
 
 __all__ = [
     "KIND_TEXT",

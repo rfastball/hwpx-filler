@@ -9,8 +9,8 @@ use case 를 **각자의 게이트 선언**으로 부른다 — 게이트 판정
 **의도된 제품 계약**이라 CLI 는 그 부재를 인자 생략이 아니라 선언(``store=None``·
 ``review_check=None``)으로 말한다.
 
-:mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.gui.run_state` 는 handoff 원장
-(`docs/p2_handoff.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
+:mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.gui.run_state` 는 ring 계약
+(`docs/module_rings.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
 엔진(zip IO 결속)은 Host/ring 2 가 인자로 관통시킨다 — Application 은 concrete
 opener 를 모른다(P2-19 와 같은 seam). 시각도 같다: 이 모듈은 wall clock 을 직접
 고르지 않고 ``now``/``completed_at`` 을 호출자가 선언한다(boundary 게이트).

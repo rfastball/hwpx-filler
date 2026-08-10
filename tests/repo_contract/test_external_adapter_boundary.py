@@ -147,6 +147,16 @@ def test_external_package_is_no_reexport_shell_and_avoids_frontend_runtime() -> 
     assert not offenders, "External Adapter→Frontend runtime 의존:\n" + "\n".join(offenders)
 
 
+def test_settings_legacy_facade_has_no_production_consumers() -> None:
+    """구 ``webapp.settings`` 경로를 부르는 제품 코드 0(#542 H-1)."""
+    from test_domain_boundary import facade_consumers
+
+    offenders = facade_consumers(((LEGACY_FACADE, "hwpxfiller.external.settings", PUBLIC_API),))
+    assert not offenders, (
+        "구 경로 소비자가 남아 새 정본으로 옮기세요(퇴역 차단):\n" + "\n".join(offenders)
+    )
+
+
 def test_settings_legacy_facade_only_reexports_external_objects() -> None:
     assert _all_assignment(CANONICAL_SETTINGS) == PUBLIC_API
     assert _all_assignment(LEGACY_FACADE) == PUBLIC_API

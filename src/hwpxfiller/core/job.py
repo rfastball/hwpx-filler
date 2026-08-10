@@ -28,7 +28,7 @@ from .mapping import MappingProfile
 from hwpxcore.validate import ValidationReport, validate
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
-    from ..data.base import DataSource
+    from ..domain.data_source import DataSource
 
 # 미충족 공란 표식 — grep 가능 표적의 단일 출처(로드맵 ⑤ 출력검증 = 이 표식 grep).
 # "누락은 시끄럽게"의 출력 짝: 있어야 할 값이 빈 필드에만 주입되고(의도적 공란은 매핑이

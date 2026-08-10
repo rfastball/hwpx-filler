@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from ..data.base import SUPPORTED_DATA_FILE_EXTENSIONS as EXCEL_EXTS
+from ..domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS as EXCEL_EXTS
 
 # 데이터 파일(엑셀/CSV) 선택 필터 — EXCEL_EXTS 파생(리터럴 확장자 금지).
 EXCEL_FILTER = "엑셀/CSV (" + " ".join(f"*{ext}" for ext in EXCEL_EXTS) + ")"

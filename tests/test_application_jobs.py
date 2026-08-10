@@ -20,10 +20,12 @@ import pytest
 from hwpxfiller.application.jobs import (
     CORRUPT_PATH_REJECT,
     CorruptJobEntry,
+    CrossMediaRelinkError,
     assign_group,
     clone_job,
     delete_job,
     disband_group,
+    relink_template,
     remove_corrupt_entry,
     rename_group,
     rename_job,
@@ -33,7 +35,7 @@ from hwpxfiller.application.jobs import (
     stamp_run_completion,
     update_tags,
 )
-from hwpxfiller.core.job import Job
+from hwpxfiller.core.job import Job, template_media
 
 
 class InMemoryJobStore:
@@ -49,11 +51,30 @@ class InMemoryJobStore:
         self._slot_seq = 0
         self.corrupt: "dict[str, str]" = {}  # token → error
 
-    # ------------------------------------------------------------ port 구현
-    def mutate(self, name, change):
+    # ---- 내부 헬퍼(**포트 표면 아님**) — 콜백 read-modify-write 는 P2-99(#542 D-1)에서
+    # 포트에서 빠졌다. 이름을 private 으로 둬 이 대역이 옛 `mutate` 모양의 포트를 구조적으로
+    # 만족하지 못하게 한다(구멍이 남았으면 여기서 초록이 안 난다).
+    def _apply(self, name, change):
         job = self.jobs[name]  # 부재는 KeyError 로 loud(테스트 스토어)
         change(job)
         return job
+
+    # ------------------------------------------------------------ port 구현
+    def set_tags(self, name, tags):
+        return self._apply(name, lambda job: setattr(job, "tags", dict(tags)))
+
+    def relink_template(self, name, path):
+        new_media = template_media(path)
+
+        def _relink(job):
+            current = template_media(job.template_path)
+            if current in ("hwpx", "txt") and current != new_media:
+                raise CrossMediaRelinkError(job.template_path, new_media)
+            if current not in ("hwpx", "txt"):
+                job.last_run_at = ""
+            job.template_path = path
+
+        return self._apply(name, _relink)
 
     def stamp_last_run(self, name, when, *, rules=None):
         def _stamp(job):
@@ -61,7 +82,7 @@ class InMemoryJobStore:
             if rules is not None:
                 job.reviewed_rules = dict(rules)
 
-        return self.mutate(name, _stamp)
+        return self._apply(name,_stamp)
 
     def set_favorite(self, name, favorited, when=None):
         def _set(job):
@@ -71,7 +92,7 @@ class InMemoryJobStore:
             else:
                 job.favorited_at = ""
 
-        return self.mutate(name, _set)
+        return self._apply(name,_set)
 
     def rename(self, name, new_name):
         new_name = new_name.strip()
@@ -110,7 +131,7 @@ class InMemoryJobStore:
         def _set(job):
             job.group = group.strip()
 
-        self.mutate(name, _set)
+        self._apply(name, _set)
 
     def rename_group(self, name, new_name):
         members = [j for j in self.jobs.values() if j.group == name]
@@ -165,6 +186,28 @@ def test_use_cases_complete_against_in_memory_port():
 
     delete_job(store, cloned)
     assert cloned not in store.jobs
+
+
+def test_relink_is_one_atomic_op_and_cross_media_changes_nothing():
+    """재연결 use case 는 **잠금 안 재판정까지** 포트 한 왕복이다(#542 F-1).
+
+    호출자는 콜백을 넘기지 않고, 교차 거절은 **변경 0건**이며, 예외는 문안이 아니라 사실
+    (그때의 경로·새 매체)만 싣는다 — 문안은 링2 가 재진술한다.
+    """
+    store = InMemoryJobStore()
+    store.jobs["미상"] = Job(name="미상", template_path="구.docx")
+    store.jobs["미상"].last_run_at = "2026-08-01T09:00:00"
+
+    # 구 매체 미상 → 첫 연결 허용 + 읽을 수 없는 이력은 승계하지 않는다.
+    job = relink_template(store, "미상", "새.hwpx")
+    assert (job.template_path, job.last_run_at) == ("새.hwpx", "")
+
+    with pytest.raises(CrossMediaRelinkError) as caught:
+        relink_template(store, "미상", "기안.txt")
+    assert (caught.value.old_path, caught.value.new_media) == ("새.hwpx", "txt")
+    assert store.jobs["미상"].template_path == "새.hwpx"   # 거절은 durable 을 안 건드린다
+
+    assert relink_template(store, "미상", "다른.hwpx").template_path == "다른.hwpx"  # 동일 매체
 
 
 def test_remove_corrupt_entry_round_trips_opaque_tokens():

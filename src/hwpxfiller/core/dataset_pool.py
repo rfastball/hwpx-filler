@@ -13,7 +13,7 @@
   ``bound_state``/``confirm_basis``): :mod:`hwpxfiller.application.dataset_pool`
 
 core(안쪽)는 external 을 import 할 수 없으므로 재수출 facade 를 두지 않는다 — 소비자는
-전부 새 정본으로 전환됐고, 이 파일은 handoff 유닛 좌표(``docs/p2_handoff.toml`` 의
+전부 새 정본으로 전환됐고, 이 파일은 ring 유닛 좌표(``docs/module_rings.toml`` 의
 ``hwpxfiller.core.dataset_pool``)를 보존하기 위해 남는다. 구
 ``DatasetPoolItem(DatasetReference)`` persistence subclass 는 최종형이 아니라서 승계
 없이 폐기됐다(#570 persistence model 규율) — 저장 bytes·JSON schema·슬롯 키·legacy

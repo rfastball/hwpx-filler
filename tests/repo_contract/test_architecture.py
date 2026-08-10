@@ -187,13 +187,20 @@ def test_native_file_dialogs_have_one_app_entry() -> None:
 
 
 def test_job_registry_writes_go_through_locked_boundaries() -> None:
-    """통째 저장이 필요한 두 표면 외에는 잠금 소유 API를 우회할 수 없다."""
+    """통째 저장이 필요한 두 표면 외에는 잠금 소유 API를 우회할 수 없다.
+
+    ``mutate`` 도 같은 선으로 본다(P2-99 #542 F-1): 통째 저장만 막고 잠긴
+    읽기-수정-쓰기를 열어 두면, 링2 가 콜백 안에서 업무 규칙을 **재판정**하며 durable
+    트랜잭션을 소유하는 경로가 그대로 남는다(``webapp/screens.py`` 의 재연결 커밋이 그
+    모양이었고 이 게이트는 ``.save(`` 만 봐서 초록이었다). 링2 는 Application use case
+    (:mod:`hwpxfiller.application.jobs`)를 지난다.
+    """
     allowed = {
         "webapp/screen_editor.py",
         "webapp/screen_workbench.py",
     }
     other_registries = ("pool", "dataset", "pipeline", "template")
-    pattern = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)\.save\(")
+    pattern = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)\.(?:save|mutate)\(")
     base = ROOT / "src" / "hwpxfiller"
     offenders: list[str] = []
     for subdir in ("webapp", "gui", "cli"):
@@ -210,7 +217,7 @@ def test_job_registry_writes_go_through_locked_boundaries() -> None:
                     ):
                         offenders.append(f"{relative}:{lineno}: {line.strip()}")
     assert not offenders, (
-        "잠금 밖 Job 저장 재유입; JobRegistry.mutate/stamp_last_run을 사용하세요:\n"
+        "잠금 밖·잠금 안 Job durable 변이 재유입; application.jobs use case를 지나세요:\n"
         + "\n".join(offenders)
     )
 

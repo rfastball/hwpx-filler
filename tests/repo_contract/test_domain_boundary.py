@@ -51,6 +51,33 @@ LEGACY_FACADES = (
 )
 ALLOWED_INTERNAL_PREFIXES = ("hwpxfiller.domain", "hwpxcore.domain")
 CONCRETE_ADAPTER_ROOTS = {"lxml", "openpyxl", "webview"}
+SRC = ROOT / "src"
+
+
+def facade_consumers(
+    facades: "tuple[tuple[Path, str, tuple[str, ...]], ...]",
+) -> "list[str]":
+    """구 경로를 지목하는 **제품** import 를 모은다 — 퇴역 가능성의 실측(#542 H-1).
+
+    형상 검사(정의 0·동일 객체 재수출)는 facade 가 **정직한지**만 본다. 그것이 초록인
+    채로 제품이 옛 주소를 계속 부르면 「이관 완료」 보고와 달리 파일을 지울 수 없다 —
+    감사 PASS 조건(퇴역 승인)이 무는 것은 이쪽이다. 소비자가 0 이어야 #538 이 삭제를
+    집행할 수 있고, 그때까지 이 단언이 재유입을 막는다.
+
+    모집단에서 빼는 것은 facade 자신뿐이다(canonical 모듈은 구 경로를 부르지 않는다).
+    """
+    offenders: "list[str]" = []
+    for legacy_facade, _canonical, _public_api in facades:
+        legacy_module = _module_for_path(legacy_facade)
+        for path in sorted(SRC.rglob("*.py")):
+            if path == legacy_facade:
+                continue
+            offenders.extend(
+                f"{path.relative_to(ROOT).as_posix()}:{lineno}: {module}"
+                for module, lineno in _imports(path)
+                if module == legacy_module or module.startswith(f"{legacy_module}.")
+            )
+    return offenders
 
 
 def _module_for_path(path: Path) -> str:
@@ -84,12 +111,14 @@ def _imports(path: Path) -> list[tuple[str, int]]:
             base = _resolve_from(package, level=node.level, module=node.module)
             if base:
                 result.append((base, node.lineno))
-            if node.level and node.module is None:
-                result.extend(
-                    (f"{base}.{alias.name}" if base else alias.name, node.lineno)
-                    for alias in node.names
-                    if alias.name != "*"
-                )
+            # 멤버까지 편다 — `from ..data import base` 처럼 패키지+멤버로 쪼갠 형이 base 로만
+            # 접히면 모듈 단위 금지선(방향·facade 소비자)을 그대로 통과한다(기존 External
+            # 경계 게이트의 관용구를 여기에도 맞춘다).
+            result.extend(
+                (f"{base}.{alias.name}" if base else alias.name, node.lineno)
+                for alias in node.names
+                if alias.name != "*"
+            )
     return result
 
 
@@ -114,6 +143,14 @@ def test_hwpxfiller_domain_imports_point_inward() -> None:
         if _is_outward(module)
     ]
     assert not offenders, "Domain의 바깥 방향 import:\n" + "\n".join(offenders)
+
+
+def test_domain_legacy_facades_have_no_production_consumers() -> None:
+    """구 Domain 경로를 부르는 제품 코드 0 — 형상이 정직해도 소비자가 있으면 못 지운다."""
+    offenders = facade_consumers(LEGACY_FACADES)
+    assert not offenders, (
+        "구 경로 소비자가 남아 새 정본으로 옮기세요(퇴역 차단):\n" + "\n".join(offenders)
+    )
 
 
 def test_legacy_facades_only_reexport_domain_objects() -> None:

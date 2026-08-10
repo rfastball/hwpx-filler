@@ -1,9 +1,11 @@
 """Job durable mutation 의 Application 경계 — semantic port + use case(P2-21 #569 2단계).
 
 :class:`JobStorePort` 는 작업 저장의 **의미 계약**이다: 표면에 물리(파일 ``Path``·suffix·
-JSON text·raw lock·``write_lock``·OS 타입)를 올리지 않는다. 잠긴 읽기-수정-쓰기는
-:meth:`JobStorePort.mutate` 하나의 semantic atomic op 로 제공된다(#569 불변식은 콜백을
-금지하지 않는다 — 그 금지는 #570 소관).
+JSON text·raw lock·``write_lock``·OS 타입)도, 콜백 ``mutate`` 도 올리지 않는다 — 잠긴
+읽기-수정-쓰기가 필요한 업무 전이는 전부 **semantic atomic op** 하나로 완결된다
+(:mod:`~hwpxfiller.application.dataset_pool` 이 #570 에서 세운 규율을 P2-99(#542) D-1 에서
+이 포트에도 적용했다: 콜백은 「무엇을 바꿀 수 있는가」를 열어 둬 호출자가 잠금 안에서
+업무 규칙을 재판정하는 뒷문이 된다).
 
 아래 use case 함수들이 **durable mutation transaction 의 진입점**이다. ring 2 컨트롤러는
 concrete 레지스트리 메서드를 직접 부르지 않고 여기를 지나며, concrete 결속
@@ -16,7 +18,6 @@ Application 은 External 을 import 하지 않고, 기본 구현·service locato
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -30,6 +31,27 @@ CORRUPT_PATH_REJECT = "손상 작업 목록에 없는 경로입니다. 새로고
 #: 소프트 삭제가 돌려주는 **불투명 복원 슬롯** — 구조는 External 이 소유하고 Application 은
 #: 받은 값을 그대로 :func:`restore_job` 에 되돌려줄 뿐이다(물리 좌표를 계약으로 만들지 않는다).
 DeletedJobSlot = Any
+
+
+class CrossMediaRelinkError(Exception):
+    """잠금 안 재판정이 잡은 매체 교차(§10.16 판정 C) — **사실만** 나르고 문안은 안 짓는다.
+
+    작업 방식은 생성 시점에 정해져 바뀌지 않는다(링0 불변식 1). 확인 왕복은 사람 시간이라
+    그 사이 다른 재연결이 매체를 정했으면 이 커밋이 사전 게이트를 우회하므로, 어댑터가
+    쓰기 잠금 안에서 한 번 더 판정해 fail-closed 한다
+    (:class:`~hwpxfiller.application.dataset_pool.StaleConfirmError` 동형).
+
+    문안은 표면이 :func:`~hwpxfiller.webapp.screens._cross_media_refusal` 로 재진술한다 —
+    거절 사유의 어휘(작업 방식 라벨)는 링2 소유라 여기서 조립하지 않는다.
+
+    ``old_path`` 는 **잠금 안에서 본** 그때의 템플릿 경로다 — 사전 게이트가 읽은 사본이
+    아니라 이 값으로 문안을 지어야 경합에서 진 쪽이 실제로 무엇과 부딪혔는지 말한다.
+    """
+
+    def __init__(self, old_path: str, new_media: str) -> None:
+        super().__init__(f"매체 교차 재연결 거절: {old_path!r} → {new_media!r}")
+        self.old_path = old_path
+        self.new_media = new_media
 
 
 @dataclass(frozen=True)
@@ -64,8 +86,11 @@ class JobStorePort(Protocol):
     # 저장이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지의 단일 술어. 직렬화 codec 과
     # 같은 소유자(저장소)가 낸다: 지문의 정의역이 곧 「저장이 덮어쓰는 것」이기 때문이다.
     def content_fingerprint(self, job: Job) -> str: ...
-    # 잠긴 단일 항목 읽기-수정-쓰기 — change(job) 반영·저장까지 원자적(semantic atomic op).
-    def mutate(self, name: str, change: Callable[[Job], None]) -> Job: ...
+    # 분류 태그 통째 교체 — 검증된 값을 받아 원자 왕복으로 저장한다.
+    def set_tags(self, name: str, tags: "dict[str, str]") -> Job: ...
+    # 템플릿 참조 재지정 — 잠금 안에서 매체 교차를 재판정하고 커밋까지 원자적.
+    # 교차면 CrossMediaRelinkError(변경 0건), 구 매체 미상이면 사용 이력 미승계.
+    def relink_template(self, name: str, path: str) -> Job: ...
     # 완주 스탬프 — 시각·검토 기준선을 같은 원자 왕복으로. rules=None 은 기준선 불변.
     def stamp_last_run(
         self, name: str, when: str, *, rules: "dict[str, str] | None" = None
@@ -191,11 +216,18 @@ def update_tags(store: JobStorePort, name: str, tags: "dict[str, str]") -> Job:
     축·값 검증(비어 있지 않은 문자열·중복 축 loud)은 호출 seam
     (:meth:`~hwpxfiller.gui.home_state.HomeViewModel.set_tags`)이 계속 소유한다.
     """
+    return store.set_tags(name, tags)
 
-    def _set(job: Job) -> None:
-        job.tags = dict(tags)
 
-    return store.mutate(name, _set)
+def relink_template(store: JobStorePort, name: str, path: str) -> Job:
+    """작업 템플릿 참조 재지정의 **durable 커밋** — 매체 교차 재판정까지 한 왕복(#542 F-1).
+
+    사전 게이트(경로 유효성·읽기 가능·구조 드리프트 재진술·확인 왕복)는 호출 표면이
+    소유하고, 여기는 그 확정을 **잠긴 원자 전이 하나**로 낸다. 사전 게이트는 잠금 밖
+    사본을 봤고 확인 왕복은 사람 시간이라, 같은 금지를 잠금 안에서 다시 묻는 것은
+    포트 구현 몫이다 — 교차면 :class:`CrossMediaRelinkError` 로 **변경 0건**.
+    """
+    return store.relink_template(name, path)
 
 
 def remove_corrupt_entry(store: JobStorePort, token: str) -> None:
