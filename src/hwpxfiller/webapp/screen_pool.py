@@ -289,12 +289,25 @@ class PoolController:
                 changes_name = bool(name) and name != existing.name
                 changes_note = bool(note) and note != existing.note
                 if not changes_name and not changes_note:
-                    # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접는다.
+                    # 결정이 남지 않은 재등록 — 사실만 재진술하고 성사로 접되, 보고도
+                    # 잠금 안 재검증을 지난다(코덱스 #578 P2): find 스냅샷만으로 성사를
+                    # 말하면 확인 사이 다른 스레드의 삭제가 거짓 「이미 고정」을 만든다.
+                    # 같은 값 재라벨은 무변경 멱등 확정이라 관측 의미가 같고, 동시
+                    # 삭제는 FileNotFoundError(아래 stale 접기)로, 동시 메타 변경은
+                    # StaleConfirmError 로 정직하게 갈린다.
+                    try:
+                        item = self.vm.relabel_confirmed(
+                            path, sheet, existing.name, note="",
+                            basis=confirm_basis([bound_state(key, existing)]),
+                        )
+                    except StaleConfirmError:
+                        self.vm.refresh()
+                        return self._stale_basis_result()
                     self._set_result(
-                        f"이미 고정돼 있습니다: {existing.name} "
-                        f"({display_reference(existing)})"
+                        f"이미 고정돼 있습니다: {item.name} "
+                        f"({display_reference(item)})"
                     )
-                    return {"ok": True, "key": key, "name": existing.name}
+                    return {"ok": True, "key": key, "name": item.name}
                 if not p.get("confirm"):
                     return {
                         "ok": True, "needs_confirm": True, "key": key, "name": name,

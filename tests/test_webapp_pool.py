@@ -72,6 +72,8 @@ def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
 
     res1 = ctrl.dispatch("register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx"})
     assert res1["needs_confirm"] is True
+
+
     assert "'발주'" in res1["confirm_text"]      # 기존 이름 재진술
     assert "a.xlsx" in res1["confirm_text"]      # 기존 참조 요약 재진술
     assert res1["basis"]                         # 승인 대상 = 그 등록의 지금 상태
@@ -689,3 +691,23 @@ def test_resolve_duplicate_confirm_without_basis_is_refused(tmp_path):
     res = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
     assert res["ok"] is False and "다시 확인" in res["error"]
     assert len(ctrl.snapshot()["rows"]) == 2              # 삭제 0건
+
+
+def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
+    """무변경 재등록의 「이미 고정」 보고는 잠금 안 재검증을 지난다(코덱스 #578 P2).
+
+    find 스냅샷과 보고 사이에 다른 스레드가 슬롯을 지우면 — 거짓 성사 대신
+    기존 stale 접기(부활 없음·loud)로 갈린다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    stale = (key, reg.load(key))
+
+    reg.delete(key)  # 확인 사이 다른 화면의 삭제 모사
+    ctrl.vm.find_same_data = lambda path, sheet=None: stale  # find 시점 스냅샷 고정
+
+    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    assert res["ok"] is False
+    assert "이미 고정돼 있습니다" not in ctrl.snapshot()["result"]["text"]
+    assert reg.list_references()[0] == []  # 부활 0건
