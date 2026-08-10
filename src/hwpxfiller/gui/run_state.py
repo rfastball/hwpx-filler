@@ -720,7 +720,7 @@ class RunViewModel:
     def source_pointer(self) -> str:
         """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다.
 
-        소스가 자기 표기를 선언하면(``source_pointer()`` — :mod:`hwpxfiller.data.base`
+        소스가 자기 표기를 선언하면(``source_pointer()`` — :mod:`hwpxfiller.domain.data_source`
         의 선택 프로토콜) 그것이 우선한다. 문자열 타입명 비교로 소스 종류를 식별하지
         않는다 — 클래스 개명이 원장 침묵 오기록이 되지 않게(RC-25). 미선언 소스는
         ``path`` 속성(``file:<경로>``) → 타입명 순으로 강등 표기.

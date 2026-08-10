@@ -156,7 +156,7 @@ def export_batch_ledger(
     표면별 병렬 구현(cli._export_ledger vs RunViewModel.export_run_ledger)이
     job명/missing_marker/profiles 축에서 이미 갈라졌던 결함의 봉합: 행 구성
     (:func:`~hwpxfiller.core.fill_ledger.ledger_outputs`)·프로파일링
-    (:func:`~hwpxfiller.core.source_profile.profile_fields`)·사이드카 경로
+    (:func:`~hwpxfiller.domain.source_profile.profile_fields`)·사이드카 경로
     (:func:`ledger_sidecar_path`)·저장을 여기서만 한다.
     취소된 배치(부분 결과)도 증거를 남긴다 — 처리된 산출물만큼만 행을 만든다.
     저장한 사이드카 경로를 반환, 실패는 raise(증거 저장 실패는 조용히 넘기지 않는다).

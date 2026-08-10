@@ -3,7 +3,7 @@
 txt 즉시 기안의 '수기 1건' 경로(UD-25)가 소비한다: 값 몇 개만 넣고 바로 복사한다는
 즉시 기안의 핵심 가치를 위해 엑셀 파일 제작을 강제하지 않는다. 파일 소스
 (:class:`~hwpxfiller.data.excel.ExcelDataSource`)와 동일한
-:class:`~hwpxfiller.data.base.DataSource` 포트를 지켜 다운스트림(렌더·검수)이 소스
+:class:`~hwpxfiller.domain.data_source.DataSource` 포트를 지켜 다운스트림(렌더·검수)이 소스
 *종류*를 구별하지 않는다 — 종류 선택은 :func:`~hwpxfiller.data.factory.make_source`
 (``kind="inline"``)에만 모인다.
 """

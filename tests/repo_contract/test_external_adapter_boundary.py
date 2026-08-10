@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 EXTERNAL_PACKAGE = "hwpxfiller.external"
 EXTERNAL_ROOT = SRC / "hwpxfiller" / "external"
-LEGACY_FACADE = SRC / "hwpxfiller" / "webapp" / "settings.py"
 CANONICAL_SETTINGS = EXTERNAL_ROOT / "settings.py"
 PUBLIC_API = (
     "VALID_THEMES",
@@ -147,59 +146,10 @@ def test_external_package_is_no_reexport_shell_and_avoids_frontend_runtime() -> 
     assert not offenders, "External Adapter→Frontend runtime 의존:\n" + "\n".join(offenders)
 
 
-def test_settings_legacy_facade_has_no_production_consumers() -> None:
-    """구 ``webapp.settings`` 경로를 부르는 제품 코드 0(#542 H-1)."""
-    from test_domain_boundary import facade_consumers
+def test_settings_public_api_is_the_declared_surface() -> None:
+    """정본 설정 모듈의 공개 표면 — 우발적 수출 변화를 막는다.
 
-    offenders = facade_consumers(((LEGACY_FACADE, "hwpxfiller.external.settings", PUBLIC_API),))
-    assert not offenders, (
-        "구 경로 소비자가 남아 새 정본으로 옮기세요(퇴역 차단):\n" + "\n".join(offenders)
-    )
-
-
-def test_settings_legacy_facade_only_reexports_external_objects() -> None:
+    #538 에서 구 ``webapp/settings.py`` facade 가 소멸해 동일 객체 대조는 소비자를 잃었고,
+    남는 계약은 「이 모듈이 무엇을 내보내는가」 하나다.
+    """
     assert _all_assignment(CANONICAL_SETTINGS) == PUBLIC_API
-    assert _all_assignment(LEGACY_FACADE) == PUBLIC_API
-
-    tree = ast.parse(
-        LEGACY_FACADE.read_text(encoding="utf-8"), filename=str(LEGACY_FACADE)
-    )
-    definitions = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
-    ]
-    assert not definitions, f"legacy facade에 새 정의가 있습니다: {definitions}"
-
-    canonical_imports = [
-        node
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-        and node.module == "hwpxfiller.external.settings"
-        and node.level == 0
-    ]
-    assert len(canonical_imports) == 1
-    imported = {(alias.name, alias.asname) for alias in canonical_imports[0].names}
-    assert imported == {
-        (name, None) for name in (*PUBLIC_API, "_check_media", "_settings_path")
-    }
-
-    assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
-    assert len(assignments) == 1
-    assignment = assignments[0]
-    assert len(assignment.targets) == 1
-    assert isinstance(assignment.targets[0], ast.Name)
-    assert assignment.targets[0].id == "__all__"
-
-    allowed_nodes = []
-    for node in tree.body:
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            allowed_nodes.append(node)
-        elif isinstance(node, ast.ImportFrom) and node.module in {
-            "__future__",
-            "hwpxfiller.external.settings",
-        }:
-            allowed_nodes.append(node)
-        elif node is assignment:
-            allowed_nodes.append(node)
-    assert allowed_nodes == tree.body

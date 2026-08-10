@@ -17,7 +17,7 @@ from hwpxfiller.external.ledger_export import (
     verify_output,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.source_profile import profile_fields
+from hwpxfiller.domain.source_profile import profile_fields
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 

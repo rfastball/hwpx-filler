@@ -16,7 +16,7 @@ import pytest
 
 from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.text_registry import TextTemplateRegistry
-from hwpxfiller.webapp import settings
+from hwpxfiller.external import settings
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 

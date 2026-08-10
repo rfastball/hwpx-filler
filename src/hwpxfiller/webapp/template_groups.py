@@ -60,7 +60,7 @@ def rel_key(path: "str | Path", root: "Path | None") -> str:
 class TemplateGroupModel:
     """한 매체의 템플릿 그룹 지정 + 접힘 상태. 설정에서 로드하고 변경 시 즉시 영속한다.
 
-    ``settings_module`` 은 테스트 주입점(기본 = 실 :mod:`~hwpxfiller.webapp.settings`) — 실
+    ``settings_module`` 은 테스트 주입점(기본 = 실 :mod:`~hwpxfiller.external.settings`) — 실
     모듈은 ``HWPXFILLER_HOME`` 을 존중하므로 헤드리스 테스트는 임시 홈만 가리키면 된다.
     """
 

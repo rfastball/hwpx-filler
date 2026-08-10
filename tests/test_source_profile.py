@@ -1,6 +1,5 @@
 """소스 프로파일링 — 샘플 관측 + 잠정 타입 라벨(주장 아닌 제안, 모르면 degrade)."""
 
-import hwpxfiller.core.source_profile as legacy_source_profile
 import hwpxfiller.domain.source_profile as domain_source_profile
 from hwpxfiller.domain.source_profile import profile_fields, tentative_type
 
@@ -13,14 +12,9 @@ _PUBLIC_API = (
 )
 
 
-def test_legacy_facade_reexports_domain_public_api_by_identity() -> None:
-    """구 경로는 wrapper 없이 Domain의 네 객체를 그대로 가리킨다."""
+def test_public_api_is_the_declared_four() -> None:
+    """Domain 정본의 공개 표면은 선언된 네 이름이다(우발적 수출 변화 차단)."""
     assert tuple(domain_source_profile.__all__) == _PUBLIC_API
-    assert tuple(legacy_source_profile.__all__) == _PUBLIC_API
-    for name in _PUBLIC_API:
-        assert getattr(legacy_source_profile, name) is getattr(
-            domain_source_profile, name
-        )
 
 
 def test_samples_dedupe_and_cap():

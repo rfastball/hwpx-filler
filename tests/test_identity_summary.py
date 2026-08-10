@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pytest
 
-import hwpxfiller.core.identity_summary as legacy_identity_summary
 import hwpxfiller.domain.identity_summary as domain_identity_summary
 from hwpxfiller.domain.identity_summary import (
     BLANK_CELL_MARK,
@@ -46,14 +45,9 @@ _MOCKUP = (
 )
 
 
-def test_legacy_facade_reexports_domain_public_api_by_identity() -> None:
-    """구 경로는 새 정의 없이 Domain의 일곱 객체를 그대로 가리킨다."""
+def test_public_api_is_the_declared_seven() -> None:
+    """Domain 정본의 공개 표면은 선언된 일곱 이름이다(우발적 수출 변화 차단)."""
     assert tuple(domain_identity_summary.__all__) == _PUBLIC_API
-    assert tuple(legacy_identity_summary.__all__) == _PUBLIC_API
-    for name in _PUBLIC_API:
-        assert getattr(legacy_identity_summary, name) is getattr(
-            domain_identity_summary, name
-        )
 
 
 def _load_nara_rows() -> list[dict]:

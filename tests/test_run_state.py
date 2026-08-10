@@ -475,7 +475,7 @@ def test_set_acquired_swaps_data_atomically(tmp_path):
 # ------------------------------------------------ 소스 포인터 선언 프로토콜(RC-25)
 def test_source_pointer_uses_declared_protocol_not_type_name(tmp_path):
     """소스가 선언한 source_pointer() 가 우선 — 타입명 검사 아님(개명 내성, RC-25)."""
-    from hwpxfiller.gui.nara_state import AcquiredNaraData
+    from hwpxfiller.application.nara_acquire import AcquiredNaraData
 
     vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     vm.datasource = AcquiredNaraData([{"bidNtceNm": "가"}], ["bidNtceNm"])

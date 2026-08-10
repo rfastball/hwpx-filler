@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 
 from hwpxcore.native import _debug
-import hwpxfiller.data.inline as legacy_inline
 import hwpxfiller.domain.inline as domain_inline
 from hwpxfiller.domain.inline import InlineDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
@@ -98,11 +97,9 @@ def test_inline_source_preserves_field_order_and_defensively_copies() -> None:
     assert source.field_labels() == {}
 
 
-def test_inline_legacy_facade_reexports_domain_class_by_identity() -> None:
-    """구 경로는 wrapper 없이 Domain의 InlineDataSource를 그대로 가리킨다."""
+def test_inline_public_api_is_the_single_class() -> None:
+    """Domain 정본의 공개 표면은 그 한 클래스다(우발적 수출 변화 차단)."""
     assert domain_inline.__all__ == ["InlineDataSource"]
-    assert legacy_inline.__all__ == ["InlineDataSource"]
-    assert legacy_inline.InlineDataSource is domain_inline.InlineDataSource
 
 
 def test_record_range_draft_is_isolated_and_detects_dirty_changes() -> None:

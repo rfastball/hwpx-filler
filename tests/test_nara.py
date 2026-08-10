@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.data.base import DataSource
+from hwpxfiller.domain.data_source import DataSource
 from hwpxfiller.application.nara_acquire import NaraGatewayError
 from hwpxfiller.data.nara import (
     NaraFetchError,

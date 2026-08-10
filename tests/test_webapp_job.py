@@ -2565,7 +2565,7 @@ def test_rename_group_carries_collapse_state(tmp_path):
     """접힘의 **표면**은 라이브러리로 갔지만(§10.8 판정 F) 그룹을 개명하는 동사는 여기가
     소유하므로 영속 키의 승계도 여기가 진다 — 이름만 바뀐 같은 그룹은 접힌 채로 남는다.
     관측 지점이 스냅샷에서 영속 키로 내려온 것은 좌 목록 사망의 정산분이다(F2 PR-B)."""
-    from hwpxfiller.webapp.settings import load_job_collapsed_groups, save_job_collapsed_groups
+    from hwpxfiller.external.settings import load_job_collapsed_groups, save_job_collapsed_groups
 
     ctrl, _ = _controller(tmp_path)
     ctrl.registry.set_group("공고서", "입찰")
@@ -2575,7 +2575,7 @@ def test_rename_group_carries_collapse_state(tmp_path):
 
 
 def test_disband_group_confirm_roundtrip(tmp_path):
-    from hwpxfiller.webapp.settings import save_job_collapsed_groups
+    from hwpxfiller.external.settings import save_job_collapsed_groups
 
     ctrl, _ = _controller(tmp_path)
     ctrl.registry.set_group("공고서", "입찰")
@@ -2586,7 +2586,7 @@ def test_disband_group_confirm_roundtrip(tmp_path):
     res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True})
     assert res2["ok"] is True and ctrl.registry.groups() == []
     # 사라진 그룹의 접힘 잔재는 걷는다 — 같은 이름 재생성 시 유령 접힘 방지.
-    from hwpxfiller.webapp.settings import load_job_collapsed_groups
+    from hwpxfiller.external.settings import load_job_collapsed_groups
     assert "입찰" not in load_job_collapsed_groups()
 
 
