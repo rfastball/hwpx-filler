@@ -13,19 +13,7 @@ EXTERNAL_ADAPTER = 2
 HOST = 2
 
 [[allowed_direction_violation]]
-src = "hwpxcore"
-dst = "hwpxcore.atomic"
-
-[[allowed_direction_violation]]
-src = "hwpxcore"
-dst = "hwpxcore.package"
-
-[[allowed_direction_violation]]
 src = "hwpxcore.text_extract"
-dst = "hwpxcore.package"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.core"
 dst = "hwpxcore.package"
 
 [[allowed_direction_violation]]
