@@ -179,6 +179,21 @@ def test_export_redacts_service_key_and_notes_no_render(tmp_path):
     assert json.loads(text) == payload
 
 
+def test_export_batch_ledger_honors_caller_timestamp(tmp_path):
+    """호출자가 고정한 generated_at 이 그대로 쓰인다 — 시계 폴백(RC-07 계획 시점 고정)과의 분기."""
+    from hwpxfiller.external.ledger_export import export_batch_ledger
+
+    sidecar = export_batch_ledger(
+        tmp_path, template="t.hwpx", source="file:d.xlsx", mapping=_mapping(),
+        template_fields=["공고명"], results=[], mapped_records=[],
+        generated_at="2026-07-12T14:05:03",
+    )
+    assert sidecar == tmp_path / "fill-ledger-20260712-140503.json"
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["generated_at"] == "2026-07-12T14:05:03"
+    assert payload["outputs"] == []  # 빈 배치도 예외 없이 증거 형태를 지킨다
+
+
 # ------------------------------------------------- 실행별 사이드카 경로(RC-02)
 def test_ledger_sidecar_path_is_timestamped(tmp_path):
     from hwpxfiller.external.ledger_export import ledger_sidecar_path
