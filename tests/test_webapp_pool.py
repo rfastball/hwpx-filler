@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.domain.dataset_reference import DatasetReference
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.webapp.screen_pool import PoolController
 
 
@@ -71,6 +72,8 @@ def test_same_data_reregister_is_relabel_not_second_entry(tmp_path):
 
     res1 = ctrl.dispatch("register_excel", {"name": "발주 최신", "path": "C:/data/a.xlsx"})
     assert res1["needs_confirm"] is True
+
+
     assert "'발주'" in res1["confirm_text"]      # 기존 이름 재진술
     assert "a.xlsx" in res1["confirm_text"]      # 기존 참조 요약 재진술
     assert res1["basis"]                         # 승인 대상 = 그 등록의 지금 상태
@@ -178,7 +181,7 @@ def test_corrupt_pool_file_is_quarantined_not_boot_crash(tmp_path):
     경로, 7화면 전부)이 손상 파일 하나로 무너졌다. 지금은 정상 항목이 살고 손상은 재진술된다.
     """
     reg = DatasetPoolRegistry(tmp_path / "datasets")
-    reg.add(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
+    reg.add(DatasetReference(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
     # 손상 파일 투입(잘린 JSON) — 손편집·크래시 잔여 시뮬레이션.
     (reg.directory / ("깨진" + reg.SUFFIX)).write_text("{ not json", encoding="utf-8")
 
@@ -210,7 +213,7 @@ def test_register_excel_multi_sheet_without_sheet_is_blocked(tmp_path):
 def test_existing_nara_item_is_shown_not_hidden(tmp_path):
     """나라 등록은 동결로 미노출이지만, 기존 nara 항목은 숨기지 않고 표시한다(조용한 은닉 금지)."""
     ctrl, reg, _ = _controller(tmp_path)
-    reg.add(DatasetPoolItem(
+    reg.add(DatasetReference(
         name="나라 7월", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607310000"}))
     ctrl.dispatch("refresh", {})
 
@@ -236,7 +239,7 @@ def test_rows_expose_sheet_and_missing_for_relink(tmp_path):
     assert rows["살아있음"]["sheet"] == ""
     assert rows["끊김"]["missing"] is True                 # 파일 부재 → 배지 대상
     assert rows["끊김"]["sheet"] == "낙찰현황"              # 다시 연결 모달 프리필
-    reg.add(DatasetPoolItem(
+    reg.add(DatasetReference(
         name="나라7월", kind="nara",
         opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     ctrl.dispatch("refresh", {})
@@ -468,7 +471,7 @@ def _legacy_write(reg: DatasetPoolRegistry, name: str, path: str) -> None:
     import json as _json
 
     reg.directory.mkdir(parents=True, exist_ok=True)
-    item = DatasetPoolItem(name=name, kind="excel", opts={"path": path})
+    item = DatasetReference(name=name, kind="excel", opts={"path": path})
     (reg.directory / f"{name}{reg.SUFFIX}").write_text(
         _json.dumps(item.to_dict(), ensure_ascii=False), encoding="utf-8"
     )
@@ -617,18 +620,17 @@ def test_confirm_basis_is_not_derived_from_the_display_summary(tmp_path):
     ``/b/report.xlsx`` 가 같은 문자열이 된다. 결속 재료가 그 요약이면 경로만 다른
     재연결이 지문을 통과한다 — 지문은 표시보다 **정보를 덜 잃어야** 한다.
     """
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
     from hwpxfiller.gui.dataset_pool_state import reference_summary
     from hwpxfiller.webapp.screen_pool import bound_state, confirm_basis, display_reference
 
-    a = DatasetPoolItem(name="발주", kind="excel", opts={"path": "/a/report.xlsx"})
-    b = DatasetPoolItem(name="발주", kind="excel", opts={"path": "/b/report.xlsx"})
+    a = DatasetReference(name="발주", kind="excel", opts={"path": "/a/report.xlsx"})
+    b = DatasetReference(name="발주", kind="excel", opts={"path": "/b/report.xlsx"})
     # 표시 요약은 둘을 구별하지 못한다(그래서 결속 재료가 될 수 없다).
     assert display_reference(a) == display_reference(b) == reference_summary(a)
     # 지문은 구별한다.
     assert confirm_basis([bound_state("k", a)]) != confirm_basis([bound_state("k", b)])
     # 정체성 밖 opts(읽기 규칙 등)도 결속에 든다 — 정체성만 들면 통과하던 자리.
-    c = DatasetPoolItem(name="발주", kind="excel", opts={"path": "/a/report.xlsx", "header_row": 3})
+    c = DatasetReference(name="발주", kind="excel", opts={"path": "/a/report.xlsx", "header_row": 3})
     assert confirm_basis([bound_state("k", a)]) != confirm_basis([bound_state("k", c)])
 
 
@@ -689,3 +691,23 @@ def test_resolve_duplicate_confirm_without_basis_is_refused(tmp_path):
     res = ctrl.dispatch("resolve_duplicate", {"keep": keep, "confirm": True})
     assert res["ok"] is False and "다시 확인" in res["error"]
     assert len(ctrl.snapshot()["rows"]) == 2              # 삭제 0건
+
+
+def test_noop_reregister_report_survives_concurrent_delete(tmp_path):
+    """무변경 재등록의 「이미 고정」 보고는 잠금 안 재검증을 지난다(코덱스 #578 P2).
+
+    find 스냅샷과 보고 사이에 다른 스레드가 슬롯을 지우면 — 거짓 성사 대신
+    기존 stale 접기(부활 없음·loud)로 갈린다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    key = ctrl.snapshot()["rows"][0]["key"]
+    stale = (key, reg.load(key))
+
+    reg.delete(key)  # 확인 사이 다른 화면의 삭제 모사
+    ctrl.vm.find_same_data = lambda path, sheet=None: stale  # find 시점 스냅샷 고정
+
+    res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    assert res["ok"] is False
+    assert "이미 고정돼 있습니다" not in ctrl.snapshot()["result"]["text"]
+    assert reg.list_references()[0] == []  # 부활 0건

@@ -81,10 +81,16 @@ _FACTORIES = {
 }
 
 
+def _deps(tmp_path):
+    """구성 공통 주입 한 벌 — pool_registry 는 #570 에서 폴백이 제거돼 **명시 주입**한다."""
+    return {**_FACTORIES, "pool_registry": DatasetPoolRegistry(tmp_path / "pool")}
+
+
 def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_for_path):
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         file_source_factory=file_source_factory,
         pool_source_factory=source_from_pool_item,
     )
@@ -332,9 +338,10 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
     """
     lock = threading.Lock()
     reg = JobRegistry(tmp_path / "jobs")
-    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock, **_FACTORIES)
+    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock, **_deps(tmp_path))
     lib_ctrl = LibraryController(
         reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=lock,
     )
     assert lock.acquire(blocking=False)
@@ -776,7 +783,7 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
         "bidNtceNm,presmptPrce,dmndInsttNm,ntceInsttNm\n전산장비,,조달청,조달청\n사무비품,2000000,경찰청,경찰청\n",
         encoding="utf-8",
     )
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, str(csv))
     # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
@@ -1163,7 +1170,7 @@ def _mirror_job(tmp_path) -> JobRegistry:
 def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):
     """본문 존 재료(U2 §2.13) — 빈 값 필드 **이름**만 싣는다: 값 집계(표본·행수 재진술)는
     표와 함께 죽었고, 의도적 빈칸(blank 선언)은 빈 값이 아니다(매핑이 키를 제외한다)."""
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1184,7 +1191,7 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{seq:001}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1207,7 +1214,7 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{미해소}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
@@ -1234,7 +1241,7 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
         mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="doc-{{미해소}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
@@ -1272,7 +1279,7 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     refresh 가 세션을 무효화한다 — 존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께
     남아 유령 작업에서 생성되는 것을 막는다."""
     reg = _registry(tmp_path)
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["has_job"] is True
@@ -1436,7 +1443,8 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
 
 
 # ---------------------------------------------------------------- #26 #6 — 2소스(등록 데이터)
-from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.domain.dataset_reference import DatasetReference
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
@@ -1454,7 +1462,7 @@ def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
 
 def _pool_add(pool, name, opts, kind="excel"):
     """풀 항목 추가 → 슬롯 키 반환(§5.3 — 겨눔의 정체)."""
-    return pool.add(DatasetPoolItem(name=name, kind=kind, opts=opts))
+    return pool.add(DatasetReference(name=name, kind=kind, opts=opts))
 
 
 def test_load_pool_targets_excel_reference(tmp_path):
@@ -1974,7 +1982,7 @@ def test_filter_range_on_amount_column_and_inline_error(tmp_path):
         ]),
         filename_pattern="doc-{{seq:001}}",
     ))
-    ctrl = JobController(reg, lambda s, snap: None, **_FACTORIES)
+    ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
     ctrl.dispatch("select_job", {"name": "금액작업"})
     _mount_all(ctrl, _data_csv(tmp_path))
     kinds = {c["name"]: c["kind"] for c in ctrl.snapshot()["filter"]["columns"]}
@@ -2460,7 +2468,7 @@ def test_reapply_source_key_normalizes_path_spelling(tmp_path):
 def test_reapply_pool_key_includes_reference_identity(tmp_path):
     """풀 소스 키 = 슬롯 키+참조 정체(리뷰 #6 · §5.3) — 다시 연결(다른 파일)은 다른 소스."""
     ctrl, pool = _pool_controller(tmp_path)
-    key = pool.add(DatasetPoolItem(
+    key = pool.add(DatasetReference(
         name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.dispatch("load_pool", {"key": key})
@@ -2874,7 +2882,7 @@ def test_prefer_work_does_not_activate_an_incompatible_work(tmp_path):
     """
     pushes: list = []
     ctrl = JobController(
-        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_FACTORIES
+        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_deps(tmp_path)
     )
     _mount_all(ctrl, _data_csv(tmp_path))
     res = ctrl.dispatch("prefer_work", {"name": "계약서"})
@@ -2890,7 +2898,7 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     """
     pushes: list = []
     ctrl = JobController(
-        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_FACTORIES
+        _incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)), **_deps(tmp_path)
     )
     ctrl.dispatch("prefer_work", {"name": "계약서"})
     ctrl.load_data_path(_data_csv(tmp_path))
@@ -3221,7 +3229,7 @@ def test_view_order_is_not_persisted_across_sessions(tmp_path):
     """
     ctrl, _ = _order_session(tmp_path)
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
-    fresh = JobController(_registry(tmp_path), lambda s, snap: None, **_FACTORIES)
+    fresh = JobController(_registry(tmp_path), lambda s, snap: None, **_deps(tmp_path))
     assert fresh.initial()["view_order"] == "sourceDesc"
 
 
@@ -4524,7 +4532,7 @@ def test_candidates_txt_note_speaks_only_to_the_volatile_draft_audience(tmp_path
     reg = _registry(tmp_path)                       # hwpx 작업 1개(공고서)
     txt_dir = tmp_path / "text_templates"
     ctrl = JobController(
-        reg, lambda s, snap: None, text_registry=TextTemplateRegistry(txt_dir), **_FACTORIES
+        reg, lambda s, snap: None, text_registry=TextTemplateRegistry(txt_dir), **_deps(tmp_path)
     )
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ① 템플릿 0 = 침묵

@@ -42,7 +42,7 @@ from ..application.jobs import (
     set_favorite,
     soft_delete_job,
 )
-from ..core.dataset_pool import DatasetPoolRegistry
+from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..external.hwpx_engine import make_hwpx_engine
@@ -57,7 +57,7 @@ from ..gui.home_state import (
     library_mode_of,
 )
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
-from .screens import PushSink, default_pool_registry, relink_job_template
+from .screens import PushSink, relink_job_template
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 def mode_label(filter_value: str) -> str:
@@ -141,13 +141,14 @@ class LibraryController:
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
                  push: PushSink,
-                 pool_registry: "DatasetPoolRegistry | None" = None,
+                 pool_registry: DatasetPoolRegistry,
                  generation_lock: "threading.Lock | None" = None) -> None:
-        # pool_registry 는 손상 등록 데이터 경보(#45) 용. 미주입 시 다른 컨트롤러들과 같은
-        # 단일 출처 팩토리(text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다).
+        # pool_registry 는 손상 등록 데이터 경보(#45) 용 — composition root(webapp.app)가
+        # 주입한다(자기 생성 폴백은 #570 에서 제거 — locator 뒷문 금지).
+        # text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다.
         self.vm = HomeViewModel(
             registry, text_registry,
-            pool_registry if pool_registry is not None else default_pool_registry(),
+            pool_registry,
             engine=make_hwpx_engine(),
         )
         # 템플릿 다시 연결(#67)용 주입 레지스트리 — vm.registry 우회 금지 가드(#44,

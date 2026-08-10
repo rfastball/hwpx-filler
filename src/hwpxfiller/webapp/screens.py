@@ -16,12 +16,10 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
-from ..core.dataset_pool import (
-    DatasetPoolItem,
-    DatasetPoolRegistry,
-    default_dataset_pool_dir,
-)
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
+from ..domain.dataset_reference import DatasetReference
+from ..external.dataset_store import DatasetPoolRegistry
+from ..host.locations import default_dataset_pool_dir
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..external.hwpx_engine import make_hwpx_engine
 from ..core.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
@@ -139,7 +137,7 @@ def default_pool_registry() -> DatasetPoolRegistry:
 
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
-) -> DatasetPoolItem:
+) -> DatasetReference:
     """슬롯 키로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
 
     겨눔의 정체는 슬롯 ``key`` 다(U2 §5.3 — 이름은 중복 허용 라벨). 거절 문구는 사람이
@@ -177,7 +175,7 @@ NO_ROWS_TEXT = "데이터에 행이 없습니다."
 
 
 def load_pool_into(
-    pool_registry: DatasetPoolRegistry, key: str, loader: "Callable[[DatasetPoolItem], list]"
+    pool_registry: DatasetPoolRegistry, key: str, loader: "Callable[[DatasetReference], list]"
 ) -> dict:
     """등록 데이터 겨눔의 공유 실행부 — 나라 동결·모호 시트·죽은 참조·레코드 0건을 단일
     문구 체계로 재진술한다(run/txt 화면 동형).

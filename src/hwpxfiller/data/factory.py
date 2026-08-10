@@ -102,7 +102,8 @@ def _as_ref(ref):
 
     풀 항목이 JSON 이라 sub-ref 는 보통 평범한 dict(``{"kind":..., "opts":...}``)로 온다 —
     이를 ``source_from_pool_item`` 이 읽는 덕타입 형태로 감싼다. 이미 ``.kind``/``.opts`` 를
-    가진 객체(:class:`DatasetPoolItem` 등)는 그대로 통과시킨다.
+    가진 객체(:class:`~hwpxfiller.domain.dataset_reference.DatasetReference` 등)는 그대로
+    통과시킨다.
     """
     if hasattr(ref, "kind") and hasattr(ref, "opts"):
         return ref

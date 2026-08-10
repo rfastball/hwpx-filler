@@ -1,8 +1,8 @@
 """데이터셋 참조의 순수 값·수명·정체성 규칙.
 
 파일 레지스트리와 JSON byte I/O는 External Adapter인
-``hwpxfiller.core.dataset_pool``이 소유한다. 이 모듈은 레코드나 비밀값이 아닌
-소스 재연결 정보와 active/archived 수명만 표현한다.
+``hwpxfiller.external.dataset_store``가 소유한다(P2-22 #570). 이 모듈은 레코드나
+비밀값이 아닌 소스 재연결 정보와 active/archived 수명만 표현한다.
 """
 
 from __future__ import annotations

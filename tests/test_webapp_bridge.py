@@ -349,7 +349,8 @@ def test_web_assets_present_and_wired():
 
 
 # ============================================================ #26 #6 — 풀 겨눔(브리지 경로)
-from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.domain.dataset_reference import DatasetReference
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 
 
 def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
@@ -371,8 +372,8 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     def pipeline_opts(*sources):
         return {"sources": list(sources), "steps": []}
 
-    excel_key = pool.add(DatasetPoolItem(name="기안데이터", kind="excel", opts={"path": str(csv)}))
-    nara_key = pool.add(DatasetPoolItem(name="나라쿼리", kind="nara",
+    excel_key = pool.add(DatasetReference(name="기안데이터", kind="excel", opts={"path": str(csv)}))
+    nara_key = pool.add(DatasetReference(name="나라쿼리", kind="nara",
                                         opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     nested_ref: dict = {
         "kind": "nara",
@@ -380,7 +381,7 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     }
     for _ in range(3):
         nested_ref = {"kind": "pipeline", "opts": pipeline_opts(nested_ref)}
-    nested_nara_key = pool.add(DatasetPoolItem(
+    nested_nara_key = pool.add(DatasetReference(
         name="중첩 나라 조립", kind="pipeline", opts=pipeline_opts(nested_ref)
     ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
@@ -562,7 +563,7 @@ def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path
     서 있었다 — 화면은 「누를 수 있다」, 백엔드는 「데이터가 없다」로 갈리던 자리다. 이제
     판정이 하나이므로 스냅샷의 사유와 진입 거절 문구가 **같은 문자열**이어야 한다.
     """
-    from hwpxfiller.core.dataset_pool import DatasetPoolItem
+    from hwpxfiller.domain.dataset_reference import DatasetReference
 
     frontend = _frontend(tmp_path, monkeypatch)
     job = frontend.controllers["job"]
@@ -570,7 +571,7 @@ def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path
     a, b = tmp_path / "a.csv", tmp_path / "b.csv"
     a.write_text("id,부서\n1,총무과\n", encoding="utf-8")
     b.write_text("id,사업명\n1,책상\n", encoding="utf-8")
-    key = job.pool_registry.add(DatasetPoolItem(name="6월 조립", kind="pipeline", opts={
+    key = job.pool_registry.add(DatasetReference(name="6월 조립", kind="pipeline", opts={
         "sources": [
             {"kind": "excel", "opts": {"path": str(a)}},
             {"kind": "excel", "opts": {"path": str(b)}},

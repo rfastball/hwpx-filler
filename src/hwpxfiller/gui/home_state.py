@@ -433,7 +433,9 @@ class HomeViewModel:
         # 재계산(:meth:`JobRow.from_job`)이 concrete opener 를 직접 만들지 않는다.
         self._engine = engine
         self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
-        self.pool_registry = pool_registry  # DatasetPoolRegistry | None (데이터 풀 KPI)
+        # 데이터 풀 KPI 원천 — external DatasetPoolRegistry 형상 | None. APPLICATION 층은
+        # External 을 import 할 수 없어 타입 주석 없이 덕타이핑으로 받는다(P2-22, #570).
+        self.pool_registry = pool_registry
         self._rows: "list[JobRow]" = []
         self._corrupt_rows: "list[CorruptJobRow]" = []
         self._selected: "str | None" = None
@@ -519,8 +521,9 @@ class HomeViewModel:
         if self.pool_registry is None:
             return (0, 0)
 
-        corrupted: "list" = []
-        active = self.pool_registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)
+        # 손상은 (Path, str) out-param 이 아니라 값 객체 목록으로 받는다(P2-22 #570 —
+        # CorruptDatasetEntry). 이 VM 은 건수만 나르므로 파일 좌표를 만지지 않는다.
+        active, corrupted = self.pool_registry.list_references(status=STATUS_ACTIVE)
         return (len(active), len(corrupted))
 
     def txt_rows(self) -> "list[TxtRow]":

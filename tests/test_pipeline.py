@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.domain.dataset_reference import DatasetReference
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.data import DataSource
 from hwpxfiller.data.factory import make_source, source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -231,7 +232,7 @@ def test_pipeline_pool_item_roundtrip_references_only(tmp_path):
     _write_csv(a, "id,name\n1,A\n2,B\n")
     _write_csv(b, "id,city\n1,서울\n2,부산\n")
 
-    item = DatasetPoolItem(
+    item = DatasetReference(
         name="6월 조립",
         kind="pipeline",
         opts={
@@ -267,8 +268,8 @@ def test_pipeline_pool_items_coexist_under_label_names(tmp_path):
     소실 경로 자체가 없다.
     """
     reg = DatasetPoolRegistry(tmp_path)
-    k1 = reg.add(DatasetPoolItem(name="6월/조립", kind="pipeline", opts={"sources": [], "steps": []}))
-    k2 = reg.add(DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    k1 = reg.add(DatasetReference(name="6월/조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    k2 = reg.add(DatasetReference(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}))
     assert k1 != k2
     assert sorted(reg.names()) == sorted(["6월/조립", "6월_조립"])
 
@@ -276,7 +277,7 @@ def test_pipeline_pool_items_coexist_under_label_names(tmp_path):
 # ------------------------------------------------------------ 나라 sub-source 키 주입 재귀
 def test_pipeline_restore_injects_nara_key_recursively():
     """파이프라인 sub-source 가 나라면 재귀 복원이 기존 SecretStore 키 주입을 상속한다."""
-    item = DatasetPoolItem(
+    item = DatasetReference(
         name="나라 조립",
         kind="pipeline",
         opts={
@@ -306,7 +307,7 @@ def test_pipeline_restore_injects_nara_key_recursively():
 
 
 def test_pipeline_restore_nara_subsource_without_key_fails_loudly():
-    item = DatasetPoolItem(
+    item = DatasetReference(
         name="나라 조립",
         kind="pipeline",
         opts={

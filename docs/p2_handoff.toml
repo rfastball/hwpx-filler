@@ -398,14 +398,6 @@ remove_when = "hwpxfiller.gui.nara_state: old→new 승계 뒤 legacy symbol con
 oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_nara_auth_failure_is_loud"
 
 [[unit]]
-module = "hwpxfiller.gui.pipeline_builder_state"
-target = "RETIRE"
-source_write_set = ["src/hwpxfiller/gui/pipeline_builder_state.py"]
-remove_when = "hwpxfiller.gui.pipeline_builder_state: production consumer-zero 확인 뒤 모듈/잔재와 전용 테스트를 함께 제거"
-oracle_nodeid = "tests/test_pipeline_builder_state.py::test_add_source_rejects_pipeline_kind"
-obligations = ["consumer-zero를 제거 전 재확인", "테스트와 모듈을 함께 제거"]
-
-[[unit]]
 module = "hwpxfiller.gui.record_range"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/record_range.py"]

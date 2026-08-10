@@ -568,7 +568,8 @@ def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
 
 # ============================================================ #26 패리티 회수
 # 편집 모드(#1)·선언 데이터 자동등록(#3)의 헤드리스 계약.
-from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.domain.dataset_reference import DatasetReference
+from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 
@@ -842,7 +843,7 @@ def test_save_does_not_touch_existing_pool_entries(tmp_path):
     인플레이션이었고, 폐기 뒤에는 저장이 풀을 읽지도 쓰지도 않는다.
     """
     pool = DatasetPoolRegistry(tmp_path / "pool")
-    prior = DatasetPoolItem(
+    prior = DatasetReference(
         name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="계약 종료분")
     prior.archive()
     key = pool.add(prior)

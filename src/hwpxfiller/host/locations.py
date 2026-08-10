@@ -41,6 +41,17 @@ def default_templates_dir() -> Path:
     return home_dir() / "templates"
 
 
+def default_dataset_pool_dir() -> Path:
+    """GUI 기본 데이터셋 풀 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/datasets``).
+
+    작업·txt 템플릿과 동일 홈 관례(:func:`default_jobs_dir` 미러).
+    ``HWPXFILLER_HOME`` 로 재지정 가능(해석은 :func:`~hwpxfiller.core.paths.home_dir`).
+    레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값
+    해석기일 뿐이다(P2-22 #570 에서 core/dataset_pool 로부터 원문 이동, P2-17 동형).
+    """
+    return home_dir() / "datasets"
+
+
 def library_root_for(template_path: str) -> "Path | None":
     """매체별 라이브러리 루트(hwpx=``templates``/txt=``text_templates``) — 확장자에서만 고른다.
 
