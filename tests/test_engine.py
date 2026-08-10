@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.batch import generate_batch
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
@@ -17,7 +17,7 @@ def _required(engine):
 
 
 def test_generate_injects_and_output_is_valid_hwpx(tmp_path):
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     fields = _required(engine)
     assert fields, "템플릿에 요구 필드가 있어야 함"
 
@@ -40,7 +40,7 @@ def test_generate_injects_and_output_is_valid_hwpx(tmp_path):
 def test_generate_reports_template_open_failure(tmp_path):
     """정직-실패 계약(engine.py:38) — 손상 템플릿(zip 아님)은 ok=True 로 위장하지 못하고
     ok=False + "템플릿 열기 실패" 로 강등한다. 실패를 산출물로 문서화하지 않는다."""
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     bad = tmp_path / "corrupt.hwpx"
     bad.write_bytes(b"not a real hwpx zip")
     out = tmp_path / "gen.hwpx"
@@ -60,7 +60,7 @@ def test_generate_reports_xml_processing_failure(tmp_path, monkeypatch):
             raise RuntimeError("XML 파싱 폭발 주입")
 
     monkeypatch.setattr(engine_mod, "FieldDocument", _Boom)
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     out = tmp_path / "gen.hwpx"
     res = engine.generate(str(FIXTURE), {"입찰공고번호": "A1"}, str(out))
     assert not res.ok
@@ -76,7 +76,7 @@ def test_generate_reports_save_failure(tmp_path, monkeypatch):
     def _boom(self):  # save 가 페이로드를 선평가하는 to_bytes 에서 폭발
         raise RuntimeError("직렬화 실패 주입")
 
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     fields = _required(engine)
     data = {f: f"VAL_{i}" for i, f in enumerate(fields)}
     monkeypatch.setattr(HwpxPackage, "to_bytes", _boom)
@@ -88,7 +88,7 @@ def test_generate_reports_save_failure(tmp_path, monkeypatch):
 
 
 def test_batch_generates_multiple_files(tmp_path):
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     fields = _required(engine)
     key = fields[0]
     records = [
@@ -104,7 +104,7 @@ def test_batch_generates_multiple_files(tmp_path):
 
 def test_batch_collision_suffixes_dedupe(tmp_path):
     # 두 레코드가 같은 파일명을 만들면 덮어쓰지 않고 _1 접미사로 유일화.
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     key = _required(engine)[0]
     records = [{key: "가", "ID": "A1"}, {key: "나", "ID": "A1"}]
     batch = generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
@@ -114,7 +114,7 @@ def test_batch_collision_suffixes_dedupe(tmp_path):
 
 
 def test_batch_seq_and_date_tokens(tmp_path):
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     key = _required(engine)[0]
     records = [{key: "가"}, {key: "나"}]
     now = datetime(2026, 7, 9, 0, 0, 0)
@@ -132,7 +132,7 @@ def test_batch_blocks_existing_outputs_without_overwrite(tmp_path):
     같은 폴더 재실행(기본 동선)이 사용자 수기 보정본을 무경고 교체하던 결함의 회귀 방어:
     하나라도 충돌이면 전건 차단(부분 생성 없음), 기존 파일 바이트는 그대로다.
     """
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     key = _required(engine)[0]
     records = [{key: "가", "ID": "A1"}, {key: "나", "ID": "A2"}]
     generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
@@ -150,7 +150,7 @@ def test_batch_blocks_existing_outputs_without_overwrite(tmp_path):
 
 def test_batch_overwrite_optin_replaces_existing(tmp_path):
     """--overwrite 계약 — 명시 옵트인 시에만 기존 파일을 교체한다."""
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     key = _required(engine)[0]
     records = [{key: "가", "ID": "A1"}]
     generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
@@ -164,7 +164,7 @@ def test_batch_overwrite_optin_replaces_existing(tmp_path):
 
 
 def test_batch_progress_callback(tmp_path):
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     key = _required(engine)[0]
     records = [{key: "가"}, {key: "나"}, {key: "다"}]
     seen: list[tuple[int, int]] = []
@@ -184,7 +184,7 @@ def test_generate_strips_stale_lineseg_from_modified_sections(tmp_path):
     변경된 XML 의 stale 줄배치 캐시가 전량 제거되고, 미변경 XML 은 바이트 그대로다."""
     from hwpxcore.package import HwpxPackage
 
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     fields = engine.required_fields(str(CORPUS_NOTICE))
     assert fields  # 템플릿에 누름틀 실재(양성 대조 1)
 
@@ -213,7 +213,7 @@ def test_regenerate_same_values_is_byte_stable(tmp_path):
     """
     from hwpxcore.package import HwpxPackage
 
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
     data = {f: "값" for f in engine.required_fields(str(CORPUS_NOTICE))}
     out1 = tmp_path / "a.hwpx"
     out2 = tmp_path / "b.hwpx"
@@ -256,7 +256,7 @@ def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path)
 
     tpl = _mini_template(tmp_path, "")  # 값 hp:t 없는 빈 누름틀
     out = tmp_path / "out.hwpx"
-    res = HwpxEngine().generate(str(tpl), {"계약명": "새값"}, str(out))
+    res = make_hwpx_engine().generate(str(tpl), {"계약명": "새값"}, str(out))
     assert res.ok
     assert res.applied == {"계약명"}
     assert res.unmatched == set()  # 과거: 매칭 실패 오보
@@ -270,7 +270,7 @@ def test_generate_notes_inline_stripped(tmp_path):
         tmp_path, "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
     )
     out = tmp_path / "out.hwpx"
-    res = HwpxEngine().generate(str(tpl), {"계약명": "NEW"}, str(out))
+    res = make_hwpx_engine().generate(str(tpl), {"계약명": "NEW"}, str(out))
     assert res.ok
     assert [(n.field, n.kind, n.detail) for n in res.notes] == [
         ("계약명", "inline_stripped", ("markpenBegin",))
@@ -310,7 +310,7 @@ def test_cross_section_unfillable_occurrence_still_warns(tmp_path):
     tpl = tmp_path / "tpl.hwpx"
     pkg.save(str(tpl))
 
-    res = HwpxEngine().generate(str(tpl), {"계약명": "새값"}, str(tmp_path / "o.hwpx"))
+    res = make_hwpx_engine().generate(str(tpl), {"계약명": "새값"}, str(tmp_path / "o.hwpx"))
     assert res.ok
     assert res.applied == {"계약명"}   # 섹션0 이 채움
     assert res.unmatched == set()      # 그래서 unmatched 는 침묵

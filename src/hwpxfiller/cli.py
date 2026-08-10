@@ -26,7 +26,7 @@ from .batch import OutputCollisionError, generate_batch
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
-from .core.engine import HwpxEngine
+from .external.hwpx_engine import make_hwpx_engine
 from hwpxcore.atomic import write_text_atomic
 from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
@@ -426,7 +426,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--page", type=int, default=1, help="나라장터 페이지 번호(기본 1)")
     args = ap.parse_args(argv)
 
-    engine = HwpxEngine()
+    engine = make_hwpx_engine()
 
     if args.fields:
         for f in engine.required_fields(args.template):
@@ -449,7 +449,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     if args.profile:
         from .core.fill_ledger import template_path_drift
         profile = MappingProfile.load(args.profile)
-        drift = template_path_drift(args.template, profile)
+        drift = template_path_drift(args.template, profile, engine=engine)
         if drift.has_drift:
             # 문구는 describe() 단일화(RC-03) — GUI/배치 경계와 같은 문장.
             print("[오류] 템플릿 구조 드리프트 — " + drift.describe(sep="; "),

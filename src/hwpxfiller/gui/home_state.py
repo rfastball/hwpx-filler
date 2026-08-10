@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from ..core.engine import HwpxEngine
 from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
@@ -120,7 +121,7 @@ class JobRow:
     mapping_empty: bool = False
 
     @classmethod
-    def from_job(cls, job: Job) -> "JobRow":
+    def from_job(cls, job: Job, *, engine: HwpxEngine) -> "JobRow":
         tpath = job.template_path
         # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
         template_missing = bool(tpath) and not Path(tpath).exists()
@@ -146,7 +147,7 @@ class JobRow:
             # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
             # 건강 보기가 침묵하면 숨은 차단이 된다. 다만 **부르는 이름은 다르다** — 아직 안
             # 맞춘 것은 "달라졌다"가 아니다(사유는 library_health 가 가른다).
-            drift = template_path_drift(tpath, job.mapping).has_drift
+            drift = template_path_drift(tpath, job.mapping, engine=engine).has_drift
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
@@ -420,8 +421,14 @@ def field_binding_rows(job: Job) -> "list[FieldBindingRow]":
 class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 표현 계층은 구독해서 렌더한다."""
 
-    def __init__(self, registry: JobRegistry, text_registry=None, pool_registry=None):
+    def __init__(
+        self, registry: JobRegistry, text_registry=None, pool_registry=None,
+        *, engine: HwpxEngine,
+    ):
         self.registry = registry
+        # zip IO 가 결속된 엔진은 ring 2 가 주입한다(P2-19) — 건강 보기의 드리프트
+        # 재계산(:meth:`JobRow.from_job`)이 concrete opener 를 직접 만들지 않는다.
+        self._engine = engine
         self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
         self.pool_registry = pool_registry  # DatasetPoolRegistry | None (데이터 풀 KPI)
         self._rows: "list[JobRow]" = []
@@ -455,7 +462,8 @@ class HomeViewModel:
         """
         corrupted: "list" = []
         self._rows = [
-            JobRow.from_job(j) for j in self.registry.list_jobs(corrupted=corrupted)
+            JobRow.from_job(j, engine=self._engine)
+            for j in self.registry.list_jobs(corrupted=corrupted)
         ]
         self._corrupt_rows = [
             CorruptJobRow(file_name=p.name, path=str(p), error=err)

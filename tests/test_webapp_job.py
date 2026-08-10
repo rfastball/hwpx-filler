@@ -1436,6 +1436,7 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
 
 # ---------------------------------------------------------------- #26 #6 — 2소스(등록 데이터)
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
 def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
@@ -2593,7 +2594,7 @@ def _pause_stamp(monkeypatch):
 def _home_vm(registry):
     from hwpxfiller.gui.home_state import HomeViewModel
 
-    return HomeViewModel(registry, None, None)
+    return HomeViewModel(registry, None, None, engine=make_hwpx_engine())
 
 
 def test_public_delete_during_stamp_does_not_resurrect_the_job(tmp_path, monkeypatch):

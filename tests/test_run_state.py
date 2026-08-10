@@ -13,6 +13,7 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
@@ -63,7 +64,7 @@ def _write_template(path, fields):
 
 
 def _vm(tmp_path) -> RunViewModel:
-    vm = RunViewModel(_job(tmp_path))
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     return vm
@@ -92,7 +93,7 @@ def test_preflight_and_blank_fields(tmp_path):
 
 
 def test_preflight_empty_when_no_datasource(tmp_path):
-    vm = RunViewModel(_job(tmp_path))          # 데이터 미겨눔
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())          # 데이터 미겨눔
     assert vm.preflight([0]).level == "" and vm.blank_fields([0]) == []
 
 
@@ -109,12 +110,12 @@ def test_load_data_targets_confirmed_sheet(tmp_path):
         calls.append((path, sheet))
         return source_for_path(path, sheet=sheet)
 
-    vm = RunViewModel(_job(tmp_path))
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     recs = vm.load_data(str(MULTI_SHEET), sheet="낙찰현황", source_factory=recording_factory)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
     assert calls == [(str(MULTI_SHEET), "낙찰현황")]  # 주입 factory 경유 1회·sheet 관통
     # 대조군: 미지정(기본 첫 시트)은 다른 시트 내용 — 조용한 동치 금지.
-    vm2 = RunViewModel(_job(tmp_path))
+    vm2 = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     assert vm2.load_data(str(MULTI_SHEET), source_factory=source_for_path)[0] == {
         "공고명": "전산장비", "추정가격": "1000"
     }
@@ -145,7 +146,7 @@ def test_validate_generate_gate_order(tmp_path):
     _write_template(prev, ["공고명", "추정가격"])
 
     # 데이터 없음 = 첫 차단.
-    vm0 = RunViewModel(_job(tmp_path))
+    vm0 = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     assert "데이터" in vm0.validate_generate([0], "out")[0].message
 
     vm = _vm(tmp_path)
@@ -192,7 +193,7 @@ def test_gate_absorbs_preconditions_inline(tmp_path):
     이전에는 활성 primary + 클릭 후 차단 모달로 이원화됐다(초기 상태 침묵).
     """
     # 데이터 미겨눔 → 닫힌 인라인 게이트('먼저 데이터를 선택하세요').
-    vm_nodata = RunViewModel(_job(tmp_path))
+    vm_nodata = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     gate = vm_nodata.gate_state([0])
     assert gate.enabled is False and gate.level == "warn" and "데이터" in gate.text
 
@@ -210,7 +211,7 @@ def test_gate_absorbs_preconditions_inline(tmp_path):
 
 
 def test_field_states_empty_without_data(tmp_path):
-    vm = RunViewModel(_job(tmp_path))                    # 데이터 미겨눔
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())                    # 데이터 미겨눔
     assert vm.field_states([0]) == []
     assert vm.blank_fields([0]) == []
 
@@ -218,7 +219,7 @@ def test_field_states_empty_without_data(tmp_path):
 def test_declared_blank_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
     job = _job(tmp_path)
     job.mapping.mappings[1] = FieldMapping("추정가격", type="blank")
-    vm = RunViewModel(job)
+    vm = RunViewModel(job, engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     states = {s.name: s.state for s in vm.field_states([0])}
@@ -254,7 +255,7 @@ def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
 
 
 def test_load_data_empty_returns_empty_without_committing(tmp_path):
-    vm = RunViewModel(_job(tmp_path))
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     csv = tmp_path / "empty.csv"
     csv.write_text("공고명,추정가격\n", encoding="utf-8-sig")  # 헤더만
     assert vm.load_data(str(csv), source_factory=source_for_path) == []
@@ -330,7 +331,7 @@ def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
     )
     batch = generate_batch(
         plan.template, list(plan.records), plan.out_dir, plan.pattern,
-        mapping=plan.mapping,
+        make_hwpx_engine(), mapping=plan.mapping,
     )
     assert batch.failed == 0
 
@@ -370,6 +371,7 @@ def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
 
     batch = generate_batch(
         plan.template, list(plan.records), plan.out_dir, plan.pattern,
+        make_hwpx_engine(),
         progress=progress, cancelled=lambda: flag["stop"],
     )
     assert batch.cancelled and batch.attempted == 1
@@ -475,7 +477,7 @@ def test_source_pointer_uses_declared_protocol_not_type_name(tmp_path):
     """소스가 선언한 source_pointer() 가 우선 — 타입명 검사 아님(개명 내성, RC-25)."""
     from hwpxfiller.gui.nara_state import AcquiredNaraData
 
-    vm = RunViewModel(_job(tmp_path))
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
     vm.datasource = AcquiredNaraData([{"bidNtceNm": "가"}], ["bidNtceNm"])
     assert vm.source_pointer() == "nara:취득 스냅샷(키 미포함)"
 
@@ -490,7 +492,7 @@ def test_source_pointer_uses_declared_protocol_not_type_name(tmp_path):
 
 def test_source_pointer_falls_back_to_path_then_type_name(tmp_path):
     """미선언 소스 강등 순서: path 속성(file:) → 타입명(포트 명세의 폴백 계약)."""
-    vm = RunViewModel(_job(tmp_path))
+    vm = RunViewModel(_job(tmp_path), engine=make_hwpx_engine())
 
     class _PathSrc(_Src):
         path = "C:/data/d.xlsx"
@@ -522,7 +524,7 @@ def test_unresolved_name_token_closes_gate_danger(tmp_path):
     101 워크스루 실증 결함: '공고서-{{ID}}' 패턴이 무경고 통과해 미해소 {{ID}} 가
     실파일명으로 출하됐다(CLI 엔 게이트 있음 — 표면 비대칭).
     """
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     status = vm.refresh([0, 1], str(tmp_path / "out"))
@@ -536,7 +538,7 @@ def test_unresolved_name_token_fires_before_data_selection(tmp_path):
     """토큰 계약은 작업 정의 수준 — 데이터 미겨눔에서도 danger 로 먼저 발화한다(F34).
 
     고칠 수 없는 작업에 데이터부터 고르게 하지 않는다(경고 순서의 정직성)."""
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))  # 데이터 없음
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())  # 데이터 없음
     status = vm.refresh([])
     assert status.gate.enabled is False and status.gate.level == "danger"
     assert "{{ID}}" in status.gate.text
@@ -544,7 +546,7 @@ def test_unresolved_name_token_fires_before_data_selection(tmp_path):
 
 def test_unresolved_name_token_blocks_generate_backstop(tmp_path):
     """validate_generate 백스톱 — 게이트 우회(워커/API 직접 호출)도 danger 차단(F34)."""
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     errors = vm.validate_generate([0, 1], str(tmp_path / "out"))
@@ -553,7 +555,7 @@ def test_unresolved_name_token_blocks_generate_backstop(tmp_path):
 
 def test_blank_declared_field_token_is_unresolved(tmp_path):
     """'비움' 선언 필드의 토큰도 미해소다 — 매핑 출력 dict 에서 빠져 리터럴로 남는다(F34)."""
-    vm = RunViewModel(_job_with_pattern(tmp_path, "doc-{{추정가격}}", blank_price=True))
+    vm = RunViewModel(_job_with_pattern(tmp_path, "doc-{{추정가격}}", blank_price=True), engine=make_hwpx_engine())
     assert vm.unresolved_name_tokens() == ["추정가격"]
 
 
@@ -563,7 +565,7 @@ def test_name_token_gate_points_at_a_screen_that_exists(tmp_path):
     같은 자리 드리프트 배너는 이미 "편집에서…"로 개정돼 있었다. 두 danger 가 같은 목적지를
     다르게 부르면 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
     """
-    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"), engine=make_hwpx_engine())
     vm.datasource = _Src()
     vm.records = vm.datasource.records()
     text = vm.refresh([0, 1], str(tmp_path / "out")).gate.text
@@ -576,7 +578,7 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
     from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
 
     for pattern in ("doc-{{공고명}}", "doc-{{date}}-{{seq:001}}", DEFAULT_FILENAME_PATTERN):
-        vm = RunViewModel(_job_with_pattern(tmp_path, pattern))
+        vm = RunViewModel(_job_with_pattern(tmp_path, pattern), engine=make_hwpx_engine())
         vm.datasource = _Src()
         vm.records = vm.datasource.records()
         assert vm.unresolved_name_tokens() == []

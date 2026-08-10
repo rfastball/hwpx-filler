@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.core.mapping import (
     TYPES,
     FieldMapping,
@@ -272,7 +272,7 @@ def test_end_to_end_api_record_fills_real_template(tmp_path):
     )
     data = profile.apply(rec)
     out = tmp_path / "generated.hwpx"
-    result = HwpxEngine().generate(template, data, str(out))
+    result = make_hwpx_engine().generate(template, data, str(out))
 
     assert result.ok
     assert {"입찰공고번호", "공고명", "추정가격", "개찰일시"} <= result.applied

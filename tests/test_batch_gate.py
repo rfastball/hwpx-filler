@@ -16,16 +16,25 @@ from hwpxfiller.core.engine import GenerateResult
 from hwpxfiller.core.fill_ledger import TemplateStructureDrift
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
 class _FakeEngine:
-    """엔진 계약 흉내 — 대상 파일에 주입 데이터 기록(실 HWPX 무접촉)."""
+    """엔진 계약 흉내 — 대상 파일에 주입 데이터 기록(생성만 가짜, 구조 판독은 실물).
+
+    P2-19 이후 생성 경계의 드리프트 재검사(:func:`template_path_drift`)가 주입된
+    엔진의 ``required_fields`` 를 쓰므로, 엔진 계약의 판독 절반은 실 엔진에 위임한다
+    — 이 테스트의 템플릿은 실 HWPX 라 판독까지 흉내낼 이유가 없다.
+    """
 
     def generate(self, template_path, data, output_path) -> GenerateResult:
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).write_text(repr(dict(data)), encoding="utf-8")
         return GenerateResult(True, output_path, applied=set(data))
+
+    def required_fields(self, template_path):
+        return make_hwpx_engine().required_fields(template_path)
 
 
 class _Src:

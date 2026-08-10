@@ -60,6 +60,7 @@ from ..core.job import (
 )
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
+from ..external.hwpx_engine import make_hwpx_engine
 from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
@@ -1777,7 +1778,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         필요한 곳은 이 함수를 부르면 된다.
         """
         self.job_is_txt, self.job_unsupported = _seat_kinds(job)
-        self.vm = None if (self.job_is_txt or self.job_unsupported) else RunViewModel(job)
+        self.vm = (
+            None
+            if (self.job_is_txt or self.job_unsupported)
+            else RunViewModel(job, engine=make_hwpx_engine())
+        )
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
         # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
@@ -2433,6 +2438,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         try:
             batch = generate_batch(
                 plan.template, list(plan.records), plan.out_dir, plan.pattern,
+                make_hwpx_engine(),
                 now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
                 progress=self._push_progress,
                 cancelled=self._cancel_generation.is_set,

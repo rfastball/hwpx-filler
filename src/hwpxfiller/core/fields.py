@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.package import HwpxPackage
 from hwpxcore.text_extract import _to_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -366,8 +365,11 @@ class FieldDocument:
         )
 
 
-def field_xml_names(pkg: HwpxPackage) -> "list[str]":
+def field_xml_names(pkg) -> "list[str]":
     """필드 대상 XML을 본문→머리말→꼬리말, 각 번호순으로 반환한다.
+
+    ``pkg`` 는 ``content_xml_names()``/``entries`` 를 가진 package-like 객체다(P2-19 —
+    concrete :class:`hwpxcore.package.HwpxPackage` 타입 결합 없이 덕타이핑으로 받는다).
 
     동일 필드명이 여러 파트에 있어도 이 목록의 모든 파트를 채운다. 읽기에서 중복
     이름의 첫 값을 고를 때도 같은 순서를 사용해 package ZIP 엔트리 순서에 의미가

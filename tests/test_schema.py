@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.core.schema import FieldSpec, _infer_type, extract_schema
 
@@ -219,7 +219,7 @@ def test_corpus_schema_matches_required_fields():
     """실제 입찰공고 템플릿: 스키마 필드 집합이 엔진 required_fields 와 일치한다."""
     path = CORPUS / "bid_notice_limited_under100m.hwpx"
     schema = extract_schema(str(path))
-    required = HwpxEngine().required_fields(str(path))
+    required = make_hwpx_engine().required_fields(str(path))
     assert set(schema.field_names()) == set(required)
     assert schema.unhandled == {}  # 미처리 구조 없음
 

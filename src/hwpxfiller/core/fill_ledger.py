@@ -106,16 +106,19 @@ def template_structure_drift(
 mapping_drift = template_structure_drift
 
 
-def template_path_drift(path: "str", mapping: MappingProfile) -> TemplateStructureDrift:
+def template_path_drift(
+    path: "str", mapping: MappingProfile, *, engine: HwpxEngine
+) -> TemplateStructureDrift:
     """HWPX 경로를 매 호출 다시 읽어 구조 드리프트를 fail-closed로 계산한다.
 
     GUI 실행·CLI가 공유하는 경계다. 파일 부재/손상/파싱 실패를 정상
-    빈 템플릿으로 오인하지 않고 ``read_error`` 로 반환한다.
+    빈 템플릿으로 오인하지 않고 ``read_error`` 로 반환한다. 재읽기의 zip IO 는
+    호출자가 결속해 준 ``engine``(opener 포트 뒤)이 진다(P2-19, #567).
     """
     if not path:
         return TemplateStructureDrift(read_error="템플릿 경로가 비어 있습니다.")
     try:
-        fields = HwpxEngine().required_fields(path)
+        fields = engine.required_fields(path)
     except Exception as exc:  # noqa: BLE001 - 구조를 증명 못 하면 fail-closed
         return TemplateStructureDrift(read_error=str(exc))
     return template_structure_drift(fields, mapping)

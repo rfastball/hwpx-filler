@@ -13,7 +13,7 @@ import pytest
 from openpyxl import Workbook
 
 from hwpxfiller.cli import main
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.mapping_store import save_mapping_profile
 
@@ -42,7 +42,7 @@ def _covered_profile(*mappings: FieldMapping, name: str = "p") -> MappingProfile
     covered = {m.template_field for m in mappings}
     blanks = [
         FieldMapping(field, type="blank")
-        for field in HwpxEngine().required_fields(TEMPLATE)
+        for field in make_hwpx_engine().required_fields(TEMPLATE)
         if field not in covered
     ]
     return MappingProfile(name=name, mappings=[*mappings, *blanks])

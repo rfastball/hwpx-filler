@@ -6,7 +6,7 @@ from lxml import etree
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import extract_document
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.core.fields import FieldDocument, field_xml_names, read_fields
 
 BODY = "Contents/section0.xml"
@@ -68,7 +68,7 @@ def test_field_part_order_and_same_name_first_value_are_explicit(tmp_path):
     pkg = HwpxPackage.open(str(path))
 
     assert field_xml_names(pkg) == [BODY, UNTOUCHED_BODY, HEADER, FOOTER]
-    assert HwpxEngine().required_fields(str(path)) == ["공통", "유지필드"]
+    assert make_hwpx_engine().required_fields(str(path)) == ["공통", "유지필드"]
     assert read_fields(str(path)) == {"공통": "본문 구값", "유지필드": "유지값"}
 
 
@@ -79,7 +79,7 @@ def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_part
     before = HwpxPackage.open(str(template))
     output = tmp_path / "filled.hwpx"
 
-    result = HwpxEngine().generate(str(template), {"공통": "새 계약값"}, str(output))
+    result = make_hwpx_engine().generate(str(template), {"공통": "새 계약값"}, str(output))
 
     assert result.ok, result.error
     assert result.applied == {"공통"}
@@ -127,7 +127,7 @@ def test_field_bearing_unsupported_header_part_fails_loudly(tmp_path):
     output = tmp_path / "must-not-exist.hwpx"
     pkg.save(str(template))
 
-    result = HwpxEngine().generate(str(template), {"공통": "새값"}, str(output))
+    result = make_hwpx_engine().generate(str(template), {"공통": "새값"}, str(output))
 
     assert not result.ok
     assert "지원하지 않는 필드 XML 파트" in result.error
