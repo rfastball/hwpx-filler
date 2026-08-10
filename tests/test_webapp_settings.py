@@ -14,24 +14,12 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.external import settings
-from hwpxfiller.webapp import settings as legacy_settings
 
 
 @pytest.fixture()
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     return tmp_path
-
-
-def test_legacy_settings_facade_reexports_canonical_objects():
-    """구 경로의 공개 API와 홈 경로 seam은 wrapper 없이 정본 객체와 동일하다."""
-    assert legacy_settings.__all__ == settings.__all__
-    assert all(
-        getattr(legacy_settings, name) is getattr(settings, name)
-        for name in settings.__all__
-    )
-    assert legacy_settings._check_media is settings._check_media
-    assert legacy_settings._settings_path is settings._settings_path
 
 
 def test_load_theme_defaults_to_system(home):

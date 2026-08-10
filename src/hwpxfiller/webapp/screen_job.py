@@ -24,7 +24,7 @@ R-flow 구현 라운드(에픽 #90). R-info 1부가 확정한 「작업」 화�
   구 기안 세션 공용 본체의 승계처). 술어 몸통은 이 화면과
   공유(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin._selection_guard`).
 (슬라이스 2 착지분 — 게이트 재진술 블록·거울 채움 테이블·덮어쓰기 modal.js 수치 합성·식별
-요약 링1 :func:`~hwpxfiller.core.identity_summary.identity_summary`(#88, A-1-15) — 과
+요약 링1 :func:`~hwpxfiller.domain.identity_summary.identity_summary`(#88, A-1-15) — 과
 슬라이스 4 착지분 — 필터 선언 표면(결정 23~25)·세션 가드 T1+데이터 재겨눔(결정 26·27,
 T4=가드 불요·T5=수용 손실) — 은 본문에 배선돼 있다.)
 
@@ -1099,7 +1099,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``indices``·``mapped`` 는 :meth:`snapshot` 가 1회 계산해 넘긴다(``_mirror`` 와 공유 —
         매핑 이중 적용 방지, 리뷰 반영).
 
-        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.core.identity_summary.identity_summary`,
+        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.domain.identity_summary.identity_summary`,
         결정 37·A-1-15)가 **전체 레코드 집합 위에서 1회** 판정한다 — 어느 열로 요약할지는
         집합 의존(중복 해소·토큰 모드)이라 선택과 무관하게 안정적이어야 한다. 표면은 표현만
         입히고 '어느 열'은 재구현하지 않는다(부록 A-1-15).
@@ -2454,7 +2454,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _failure_rows(self, indices: "list[int]", results: list) -> "list[dict]":
         """실패 레코드 = 원본 index + 식별 요약 + 실파일명 + 사유(+원인 확정 여부).
 
-        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.core.identity_summary.identity_summary`,
+        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.domain.identity_summary.identity_summary`,
         결정 37)를 재사용한다 — 표 「문서」 열과 **같은 판정**이라 사용자가 결과에서 본
         이름으로 표에서 그 행을 찾는다(§10.10 판정 E: 어느 열로 부를지 재구현 금지).
         ``results`` 는 취소 런에서 ``indices`` 보다 짧다 — zip 이 짧은 쪽에서 멈추는 것이

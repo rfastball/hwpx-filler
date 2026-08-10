@@ -15,7 +15,7 @@ from hwpxfiller.host.locations import (
     default_templates_dir,
 )
 from hwpxfiller.core.text_registry import default_text_templates_dir
-from hwpxfiller.webapp import settings
+from hwpxfiller.external import settings
 
 
 def test_env_override_wins(monkeypatch, tmp_path: Path) -> None:

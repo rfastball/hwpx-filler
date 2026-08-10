@@ -598,7 +598,7 @@ def test_a_cold_armed_boot_is_never_measured_with_the_warm_budget() -> None:
     """
     armed = boot_budget.COLD_BUDGET_SECONDS
     # 스탬프가 이미 쓰인 홈을 흉내 낸다 — 재계산했다면 여기서 웜으로 접혔을 것이다.
-    from hwpxfiller.webapp import settings
+    from hwpxfiller.external import settings
 
     settings.save_boot_completed(boot_budget.detect_runtime_version())
 

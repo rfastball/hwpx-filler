@@ -14,7 +14,6 @@ from pathlib import Path
 
 import pytest
 
-import hwpxfiller.core.jamo as legacy_jamo
 import hwpxfiller.domain.jamo as domain_jamo
 from hwpxfiller.domain.jamo import (
     CHOSEONG,
@@ -65,9 +64,6 @@ def test_table_shapes() -> None:
         "jamo_contains",
     )
     assert tuple(domain_jamo.__all__) == public_api
-    assert tuple(legacy_jamo.__all__) == public_api
-    for name in public_api:
-        assert getattr(legacy_jamo, name) is getattr(domain_jamo, name)
 
     assert len(CHOSEONG) == 19
     assert len(JUNGSEONG) == 21

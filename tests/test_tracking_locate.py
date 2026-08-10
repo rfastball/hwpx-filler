@@ -15,7 +15,7 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.core.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.mapping import MappingProfile
-from hwpxfiller.gui.dataset_pool_state import DatasetPoolRow
+from hwpxfiller.application.dataset_pool import DatasetPoolRow
 from hwpxfiller.webapp.screens import (
     collect_owned_paths,
     norm_path,

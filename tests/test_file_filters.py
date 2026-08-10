@@ -22,7 +22,7 @@ def _filter_literal_pattern() -> "re.Pattern[str]":
     (txt 저장·매핑 json 등)는 RC-34 스코프 밖이라 게이트하지 않는다.
     Domain 정본에서 파생하므로 확장자가 늘어나면 게이트도 자동으로 따라온다.
     """
-    from hwpxfiller.data.base import SUPPORTED_DATA_FILE_EXTENSIONS
+    from hwpxfiller.domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS
 
     exts = [ext.lstrip(".") for ext in SUPPORTED_DATA_FILE_EXTENSIONS] + ["hwpx"]
     return re.compile(r"\(\*\.(?:" + "|".join(map(re.escape, exts)) + r")\b")
@@ -30,16 +30,12 @@ def _filter_literal_pattern() -> "re.Pattern[str]":
 
 def test_factory_alias_is_domain_canonical_tuple():
     import hwpxfiller.data as data_package
-    import hwpxfiller.data.base as legacy_data_source
     import hwpxfiller.domain.data_source as domain_data_source
     from hwpxfiller.data.factory import EXCEL_EXTS
     from hwpxfiller.gui.file_filters import EXCEL_EXTS as FILTER_EXTS
 
     public_api = ("Record", "SUPPORTED_DATA_FILE_EXTENSIONS", "DataSource")
     assert tuple(domain_data_source.__all__) == public_api
-    assert tuple(legacy_data_source.__all__) == public_api
-    for name in public_api:
-        assert getattr(legacy_data_source, name) is getattr(domain_data_source, name)
     assert domain_data_source.DataSource.field_labels(object()) == {}
 
     assert data_package.Record is domain_data_source.Record
@@ -49,7 +45,7 @@ def test_factory_alias_is_domain_canonical_tuple():
 
 
 def test_excel_filter_derives_from_domain_exts():
-    from hwpxfiller.data.base import SUPPORTED_DATA_FILE_EXTENSIONS
+    from hwpxfiller.domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS
     from hwpxfiller.gui.file_filters import (
         EXCEL_FILTER,
         EXCEL_FILTER_PATTERN,
@@ -65,7 +61,7 @@ def test_excel_filter_derives_from_domain_exts():
 
 def test_factory_accepts_exactly_the_public_exts(tmp_path):
     """source_for_path 의 판정도 같은 공개 튜플을 쓴다 — 필터와 실제 수용이 일치."""
-    from hwpxfiller.data.base import SUPPORTED_DATA_FILE_EXTENSIONS
+    from hwpxfiller.domain.data_source import SUPPORTED_DATA_FILE_EXTENSIONS
     from hwpxfiller.data.factory import source_for_path
 
     for ext in SUPPORTED_DATA_FILE_EXTENSIONS:

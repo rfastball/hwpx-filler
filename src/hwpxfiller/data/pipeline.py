@@ -3,7 +3,7 @@
 ADR K(조립 소스/데이터 파이프라인): "여러 데이터 → 한 순간 한 문서"(동시 결합)를 사용자가
 저작·미리보기하는 **Power-Query식 파이프라인**으로 착지 — ``DataSource`` 를 *생산*하는 층
 (이음새 아래)이지 추론 엔진이 아니다. 조립 결과는 ``DataSource`` 프로토콜(``records()``/
-``fields()`` — :mod:`~hwpxfiller.data.base`)을 만족해 **다운스트림(매핑·엔진·작업·실행)엔
+``fields()`` — :mod:`~hwpxfiller.domain.data_source`)을 만족해 **다운스트림(매핑·엔진·작업·실행)엔
 단일 소스로 보인다**. 필드 *값* 가공(``mapping.apply_transform``)과는 **다른 층** — 저건
 레코드 *내부* 값, 이건 레코드 *집합* 조립이다(혼동 금지).
 
@@ -36,7 +36,7 @@ class AssemblyError(RuntimeError):
 class AssemblyEngine(Protocol):
     """테이블 조립 해석기. petl/DuckDB 로 교체하려면 이 프로토콜을 구현해 ``ENGINE`` 에 꽂는다.
 
-    레코드 = ``dict[str, str]``, 테이블 = ``list[dict[str, str]]``(:mod:`~hwpxfiller.data.base`
+    레코드 = ``dict[str, str]``, 테이블 = ``list[dict[str, str]]``(:mod:`~hwpxfiller.domain.data_source`
     ``Record`` 규약). 실패는 :class:`AssemblyError` 로 시끄럽게.
     """
 

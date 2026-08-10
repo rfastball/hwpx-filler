@@ -1,40 +1,13 @@
-"""P2가 세운 물리 Application 경계와 legacy facade 형상을 검증한다."""
+"""P2가 세운 물리 Application 경계를 검증한다 — legacy facade 는 #538 에서 소멸했다."""
 
 from __future__ import annotations
 
 import ast
-import importlib
 from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
 APPLICATION_PACKAGE = ROOT / "src" / "hwpxfiller" / "application"
-LEGACY_FACADES = (
-    (
-        ROOT / "src" / "hwpxfiller" / "gui" / "dataset_pool_state.py",
-        "hwpxfiller.application.dataset_pool",
-        (
-            "DatasetPoolPort",
-            "PoolAction",
-            "DatasetPoolRow",
-            "DatasetPoolViewModel",
-            "available_actions",
-            "kind_transition_clause",
-            "reference_summary",
-        ),
-    ),
-    (
-        ROOT / "src" / "hwpxfiller" / "gui" / "nara_state.py",
-        "hwpxfiller.application.nara_acquire",
-        (
-            "DT_FMT",
-            "AcquiredNaraData",
-            "AcquireResult",
-            "ConnResult",
-            "NaraAcquireViewModel",
-        ),
-    ),
-)
 ALLOWED_INTERNAL_PREFIXES = (
     "hwpxfiller.application",
     "hwpxfiller.domain",
@@ -174,70 +147,3 @@ def test_hwpxfiller_application_imports_point_inward() -> None:
     assert not clock_references, "Application의 직접 wall-clock 선택:\n" + "\n".join(
         clock_references
     )
-
-
-def test_application_legacy_facades_have_no_production_consumers() -> None:
-    """구 GUI 경로를 부르는 제품 코드 0(#542 H-1) — 형상 정직성과 별개의 퇴역 조건이다."""
-    from test_domain_boundary import facade_consumers
-
-    offenders = facade_consumers(LEGACY_FACADES)
-    assert not offenders, (
-        "구 경로 소비자가 남아 새 정본으로 옮기세요(퇴역 차단):\n" + "\n".join(offenders)
-    )
-
-
-def test_application_legacy_facades_only_reexport_same_objects() -> None:
-    """구 GUI 경로는 정의·wrapper 없이 canonical 객체를 그대로 다시 노출한다."""
-    for legacy_facade, application_module, public_api in LEGACY_FACADES:
-        tree = ast.parse(
-            legacy_facade.read_text(encoding="utf-8"), filename=str(legacy_facade)
-        )
-        definitions = [
-            node.lineno
-            for node in ast.walk(tree)
-            if isinstance(
-                node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
-            )
-        ]
-        assert not definitions, (
-            f"{legacy_facade.relative_to(ROOT)}에 새 정의가 있습니다: {definitions}"
-        )
-
-        application_imports = [
-            node
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom)
-            and node.module == application_module
-            and node.level == 0
-        ]
-        assert len(application_imports) == 1, legacy_facade.relative_to(ROOT)
-        imported = [(alias.name, alias.asname) for alias in application_imports[0].names]
-        assert imported == [(name, None) for name in public_api]
-
-        assignments = [node for node in tree.body if isinstance(node, ast.Assign)]
-        assert len(assignments) == 1, legacy_facade.relative_to(ROOT)
-        assignment = assignments[0]
-        assert [
-            target.id for target in assignment.targets if isinstance(target, ast.Name)
-        ] == ["__all__"]
-        assert tuple(ast.literal_eval(assignment.value)) == public_api
-
-        allowed_nodes = []
-        for node in tree.body:
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-                allowed_nodes.append(node)
-            elif isinstance(node, ast.ImportFrom) and node.module in {
-                "__future__",
-                application_module,
-            }:
-                allowed_nodes.append(node)
-            elif node is assignment:
-                allowed_nodes.append(node)
-        assert allowed_nodes == tree.body
-
-        legacy_module = importlib.import_module(_module_for_path(legacy_facade))
-        canonical_module = importlib.import_module(application_module)
-        assert all(
-            getattr(legacy_module, name) is getattr(canonical_module, name)
-            for name in public_api
-        )

@@ -620,7 +620,7 @@ def test_confirm_basis_is_not_derived_from_the_display_summary(tmp_path):
     ``/b/report.xlsx`` 가 같은 문자열이 된다. 결속 재료가 그 요약이면 경로만 다른
     재연결이 지문을 통과한다 — 지문은 표시보다 **정보를 덜 잃어야** 한다.
     """
-    from hwpxfiller.gui.dataset_pool_state import reference_summary
+    from hwpxfiller.application.dataset_pool import reference_summary
     from hwpxfiller.webapp.screen_pool import bound_state, confirm_basis, display_reference
 
     a = DatasetReference(name="발주", kind="excel", opts={"path": "/a/report.xlsx"})

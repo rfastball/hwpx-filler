@@ -120,7 +120,7 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 앱 홈은 `HWPXFILLER_HOME` 또는 `~/.hwpxfiller` 이고 해석기는 `core/paths.py` 단일 출처다.
 그 아래 작업 레지스트리(`core/job.py`), TXT 템플릿(`core/text_registry.py`), 데이터 참조 풀
 (`core/dataset_pool.py`, 경로만 저장하고 실행 때 다시 읽음), 생성 원장(`core/fill_ledger.py`),
-설정(`webapp/settings.py`)이 산다.
+설정(`external/settings.py`)이 산다.
 
 테스트 seam 은 `HWPXFILLER_HOME`(홈 격리)이다. 웹 자산 경로 override는 없다. source 제품은
 현재 commit의 sealed `build/web/`, frozen 제품은 번들된 sealed `web/`만 검증해 사용한다. 루트
@@ -192,7 +192,7 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
   R5-99 B2 에서 `frontend/js/copy.js` 가 소비자 0 으로 삭제된 전례). 문형·금지어는
   `docs/COPY_STYLE_GUIDE.md`, 용어는 `docs/UI_VOCABULARY.md`.
 - 확장자 필터(`gui/file_filters.py`), 작업 방식 라벨(`gui/work_mode.py`), 식별 요약
-  (`core/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.
+  (`domain/identity_summary.py`) 처럼 여러 표면이 같은 문자열을 써야 하는 것들도 각자 단일 출처다.
 
 ## 문서
 

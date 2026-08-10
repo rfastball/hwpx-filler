@@ -80,7 +80,38 @@ def _internal_import_edges(units: list[dict[str, object]]) -> set[tuple[str, str
     return edges
 
 
+#: 물리 경계 게이트가 ``rglob`` 으로 **범위째** 소유하는 패키지 — 새 파일이 자동으로 그
+#: 게이트 모집단에 들어오므로 ring 인벤토리에 이름을 올릴 필요가 없다.
+#: `domain/`=test_domain_boundary · `application/`=test_application_boundary ·
+#: `external/`=test_external_adapter_boundary · `host/`=test_host_boundary.
+PHYSICALLY_GATED = (
+    "src/hwpxfiller/domain",
+    "src/hwpxfiller/application",
+    "src/hwpxfiller/external",
+    "src/hwpxfiller/host",
+)
+
+
+def _governed_sources() -> "set[str]":
+    return {
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "src").rglob("*.py")
+        if "__pycache__" not in path.parts
+    }
+
+
+def _is_physically_gated(source: str) -> bool:
+    return any(source.startswith(f"{root}/") for root in PHYSICALLY_GATED)
+
+
 def test_ring_contract_is_a_closed_minimal_inventory() -> None:
+    """인벤토리는 **양방향**으로 닫힌다 — 등재된 파일이 있고, 있는 파일이 등재된다.
+
+    한쪽(등재→존재)만 세면 등재되지 않은 새 모듈이 :func:`_internal_import_edges` 의
+    정의역 밖에 앉아 방향 게이트를 **조용히** 통과한다(#542 감사가 지목한 「게이트 정의역이
+    열거」의 이 파일판, 코덱스 #584 P2). 물리 경계 게이트가 ``rglob`` 으로 범위째 소유하는
+    네 패키지만 예외이고, 그 밖의 새 파일은 등재 전까지 여기서 빨강이다.
+    """
     document = _document()
     assert document["schema"] == "module-rings/v1"
     units = document["unit"]
@@ -88,7 +119,15 @@ def test_ring_contract_is_a_closed_minimal_inventory() -> None:
     sources = [str(path) for unit in units for path in unit["source_write_set"]]
     assert len(modules) == len(set(modules))
     assert len(sources) == len(set(sources))
-    assert all((ROOT / source).is_file() for source in sources)
+
+    census = _governed_sources()
+    listed = set(sources)
+    assert not listed - census, f"인벤토리가 없는 파일을 가리킵니다: {sorted(listed - census)}"
+    unregistered = {s for s in census - listed if not _is_physically_gated(s)}
+    assert not unregistered, (
+        "ring 인벤토리에 없는 모듈입니다 — docs/module_rings.toml 에 등재하거나 물리 경계 "
+        f"패키지로 옮기세요(방향 게이트가 못 봅니다): {sorted(unregistered)}"
+    )
 
 
 def test_no_inward_module_depends_outward() -> None:

@@ -74,15 +74,6 @@ def test_register_validation_is_fail_closed(tmp_path):
 
 def test_status_transitions_and_action_matrix(tmp_path):
     """상태 전이와 허용 액션은 하나의 수명주기 표를 따른다."""
-    import hwpxfiller.application.dataset_pool as canonical
-    import hwpxfiller.gui.dataset_pool_state as legacy
-
-    # facade 는 자기 표면(legacy.__all__)만 재수출한다 — #570 이 canonical 에 더한 새
-    # 심볼(포트 semantic op 계약)은 gui 경로에 존재한 적이 없어 facade 로 자라지 않는다.
-    assert all(
-        getattr(legacy, name) is getattr(canonical, name)
-        for name in legacy.__all__
-    )
     vm = _vm(tmp_path)
     vm.register_excel("D", "/d.xlsx")
     key = vm.rows()[0].key

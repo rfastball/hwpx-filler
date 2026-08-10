@@ -290,7 +290,7 @@ def test_browse_tabs_split_by_availability_with_stable_counts():
 
 
 def test_browse_search_matches_display_name_by_jamo_only():
-    """검색 대상은 표시 이름만(§18.6) — 일치는 앱 전역과 같은 자모 부분일치(core.jamo)."""
+    """검색 대상은 표시 이름만(§18.6) — 일치는 앱 전역과 같은 자모 부분일치(domain.jamo)."""
     jobs = _browse_jobs()
     res = browse_candidates(jobs, ["bidNtceNm"], tab=TAB_AVAILABLE, query="계약")
     assert [r["name"] for r in res.rows] == ["계약서"]

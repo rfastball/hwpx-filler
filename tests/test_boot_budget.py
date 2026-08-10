@@ -20,7 +20,7 @@ from hwpxfiller.host.boot_budget import (
     detect_runtime_version,
 )
 from hwpxfiller.webapp import boot_budget as legacy_boot_budget
-from hwpxfiller.webapp import settings
+from hwpxfiller.external import settings
 
 
 def test_legacy_facade_reexports_the_four_host_objects_by_identity() -> None:

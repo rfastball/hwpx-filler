@@ -160,18 +160,6 @@ source_write_set = ["src/hwpxfiller/core/format_engine.py"]
 oracle_nodeid = "tests/test_cli.py::test_nara_source_with_profile_fills_template"
 
 [[unit]]
-module = "hwpxfiller.core.identity_summary"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/identity_summary.py"]
-oracle_nodeid = "tests/test_identity_summary.py::test_all_disqualified_yields_no_columns"
-
-[[unit]]
-module = "hwpxfiller.core.jamo"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/jamo.py"]
-oracle_nodeid = "tests/test_filter_state.py::test_apply_state_prunes_only_existing_columns"
-
-[[unit]]
 module = "hwpxfiller.core.job"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/job.py"]
@@ -202,12 +190,6 @@ source_write_set = ["src/hwpxfiller/core/schema.py"]
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
-module = "hwpxfiller.core.source_profile"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/source_profile.py"]
-oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_ledger_records_marker_evidence"
-
-[[unit]]
 module = "hwpxfiller.core.template_status"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/template_status.py"]
@@ -232,12 +214,6 @@ source_write_set = ["src/hwpxfiller/data/__init__.py"]
 oracle_nodeid = "tests/test_data_factory.py"
 
 [[unit]]
-module = "hwpxfiller.data.base"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/data/base.py"]
-oracle_nodeid = "tests/test_nara.py"
-
-[[unit]]
 module = "hwpxfiller.data.excel"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/excel.py"]
@@ -248,12 +224,6 @@ module = "hwpxfiller.data.factory"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/factory.py"]
 oracle_nodeid = "tests/test_data_factory.py::test_csv_roundtrip_through_factory"
-
-[[unit]]
-module = "hwpxfiller.data.inline"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/data/inline.py"]
-oracle_nodeid = "tests/test_data_factory.py::test_make_source_inline_kind_wraps_records"
 
 [[unit]]
 module = "hwpxfiller.data.nara"
@@ -284,12 +254,6 @@ module = "hwpxfiller.gui.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/compile_badge.py"]
 oracle_nodeid = "tests/test_compile_badge.py::test_every_compile_state_has_label_and_level"
-
-[[unit]]
-module = "hwpxfiller.gui.dataset_pool_state"
-target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/dataset_pool_state.py"]
-oracle_nodeid = "tests/test_dataset_pool_state.py::test_status_transitions_and_action_matrix"
 
 [[unit]]
 module = "hwpxfiller.gui.edit_session"
@@ -326,12 +290,6 @@ module = "hwpxfiller.gui.mapping_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/mapping_state.py"]
 oracle_nodeid = "tests/test_job_editor_state.py::test_validate_save_blocks_all_blank_job"
-
-[[unit]]
-module = "hwpxfiller.gui.nara_state"
-target = "APPLICATION"
-source_write_set = ["src/hwpxfiller/gui/nara_state.py"]
-oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_nara_auth_failure_is_loud"
 
 [[unit]]
 module = "hwpxfiller.gui.record_range"
@@ -512,12 +470,6 @@ module = "hwpxfiller.webapp.selftest_api"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
 oracle_nodeid = "tests/test_selftest_api.py"
-
-[[unit]]
-module = "hwpxfiller.webapp.settings"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxfiller/webapp/settings.py"]
-oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
 module = "hwpxfiller.webapp.template_groups"
