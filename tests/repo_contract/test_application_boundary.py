@@ -42,6 +42,11 @@ ALLOWED_INTERNAL_PREFIXES = (
     # 남았다(handoff unit target=DOMAIN). 물리 domain/ 이관 전까지 Application 이 이 모듈의
     # 값 계약(Job)을 아는 것은 inward 다 — core 전체가 아니라 이 모듈만 허용한다.
     "hwpxfiller.core.job",
+    # batch.py 와 gui/run_state.py 는 handoff unit target=APPLICATION(물리 이관 전) —
+    # 생성 use case(application/generation.py)의 동륜이라 직접 소비가 inward 다.
+    # core.job 과 같은 과도기 허용이며 물리 application/ 이관 시 이 두 줄도 옮겨 없앤다.
+    "hwpxfiller.batch",
+    "hwpxfiller.gui.run_state",
 )
 CONCRETE_ADAPTER_ROOTS = {
     "aiohttp",

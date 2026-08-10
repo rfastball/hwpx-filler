@@ -47,21 +47,24 @@ from datetime import datetime
 from pathlib import Path
 import threading
 
+from ..application.generation import (
+    GenerationRun,
+    blank_marker,
+    plan_generation,
+    run_generation,
+    start_run,
+)
 from ..application.jobs import (
     assign_group,
     disband_group,
     rename_group,
     rename_job,
     set_favorite,
-    stamp_run_completion,
 )
-from ..batch import generate_batch
 from ..external.dataset_store import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
-    MISSING_MARKER,
     Job,
-    rules_fingerprints,
     work_mode,
 )
 from ..external.job_store import JobRegistry, content_fingerprint
@@ -188,30 +191,8 @@ VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
 
-def _run_status(succeeded: int, total: int, cancelled: bool = False) -> str:
-    """결과 3태(계약 §10 · 지도 §10.10 판정 A) — 성공/전체 + 중단 여부의 함수다.
-
-    불변식 §13-10("일부 성공을 전체 성공으로 표시하지 않는다")이 경계를 정한다: 전건
-    성공만 ``completed``, 1건이라도 성공했고 남은 게 있으면 ``partiallyCompleted``,
-    성공 0건은 ``failed``. **취소는 네 번째 태가 아니라** ``partiallyCompleted`` 의
-    변종이다(``cancelled`` 플래그 + 미착수 재진술 + warn 채널) — 태를 늘리면 "중단"이
-    성공·실패와 같은 층위인 것처럼 읽힌다. 표면은 이 판정을 재계산하지 않는다.
-
-    그래서 **중단은 성공 수와 무관하게** 부분이다(1R P2): 첫 레코드 전에 멈춘 런은
-    성공 0·실패 0인데 성공 수만 보면 ``failed`` 가 되어, "중단했습니다 · 0개 완료"라고
-    말하는 제목 옆에서 태가 "실패"라고 다른 얘기를 한다. 실패한 시도가 없는데 실패
-    태를 다는 것은 없던 실패를 지어내는 쪽이다 — 중단은 완주하지 않은 **중간 상태**이고
-    그것이 부분 태의 뜻이다(실패분이 있으면 실패 행이 그 사실을 따로 나른다).
-    """
-    if cancelled:
-        return "partiallyCompleted"
-    if total > 0 and succeeded >= total:
-        return "completed"
-    if succeeded > 0:
-        return "partiallyCompleted"
-    return "failed"
-
-
+# (결과 3태 판정은 :func:`hwpxfiller.application.generation.run_status` 가 소유한다 —
+#  P2-23. 여기는 그 태 facts 를 받아 문안만 조립한다.)
 def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str:
     """3태 제목 — 취소는 태를 바꾸지 않고 제목이 그 사실을 **먼저** 말한다.
 
@@ -264,19 +245,6 @@ def _run_exit_summary(
     if failed:
         parts.append(f"{failed}개 실패")
     return " · ".join(parts)
-
-
-def _revisions_of(vm) -> "dict[str, int]":
-    """이 런이 쓰는 Template·Binding 판본(§13-7, 재작성 F7 판정 I).
-
-    ``vm`` 이 없으면(작업 미선택 방어 경로) 빈 사전 — 판본을 **모르면 모른다고 한다**.
-    기본값 ``r1`` 을 채우면 결과 증거가 확인되지 않은 세대를 단정하게 된다(F5 판정 N 이
-    「기준선 없음」을 조용히 채우지 않은 것과 같은 규율).
-    """
-    job = getattr(vm, "job", None)
-    if job is None:
-        return {}
-    return {"template": job.template_revision, "binding": job.binding_revision}
 
 
 class JobController(DataZoneMixin, PoolTargetingMixin):
@@ -417,12 +385,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 성공(ok)/실패(warn)를 스냅샷에 노출.
         self.data_notice_text = ""
         self.data_notice_level = ""
-        self._cancel_generation = threading.Event()
-        # 실행 상관 토큰(R4-03) — 표면이 낸 **불투명 문자열**이다. Python 은 이것으로 아무
-        # 판정도 하지 않고 direct 결과·진행 델타에 그대로 되돌린다: 표면이 "이 응답이 지금
-        # 내가 기다리는 그 실행의 것인가"를 물을 수 있게 하는 것이 전부다. 값을 해석하는
-        # 순간 실행 의미가 전송 계층으로 새므로 파생·검증·정규화를 하지 않는다.
-        self._run_token = ""
+        # 진행 중인 run 의 **핸들**(P2-23) — 정본(주체·판본·규칙 지문·cancel Event·상관
+        # 토큰)은 Application :class:`~hwpxfiller.application.generation.GenerationRun`
+        # 이 소유하고, 컨트롤러는 취소 요청·진행 델타 이름표 조회(transport)만 한다.
+        # 토큰(R4-03)은 표면이 낸 불투명 문자열이라 여기서 파생·검증·정규화하지 않는다.
+        self._run: "GenerationRun | None" = None
         # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠를 주입받을 수 있다(9R P1) —
         # 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·라이브러리 재연결) 그쪽이
         # 같은 자물쇠를 봐야 한다. 미주입은 자기 것을 세운다(단독 구성 테스트 호환).
@@ -800,7 +767,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self.vm is None or not indices:
             return ""
-        return MISSING_MARKER if self.vm.blank_fields(indices) else ""
+        return blank_marker(self.vm.blank_fields(indices))
 
     def _review_scope_key(
         self, indices: "list[int] | None" = None,
@@ -847,8 +814,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         ``vm``·``indices`` 를 받는 이유(1R P1): 생성 백스톱은 **그 런의 주체**로 물어야
         한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재 상태를
-        읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — `_stamp_last_run` 이
-        정체를 인자로 받는 것과 같은 근거다. ``blanks`` 도 같은 이유로 **그 런의 주체**
+        읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — 완주 스탬프가 run 이
+        고정한 정체로만 적히는 것과 같은 근거다. ``blanks`` 도 같은 이유로 **그 런의 주체**
         (`target`)에서 센다 — 요구 판정(blank_set)과 승인 결속(scope key)이 같은 집합을
         보게 호출측이 이미 센 값을 관통시킬 수 있다.
         """
@@ -1486,7 +1453,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 표식이 붙으면 파일명 패턴이 그 필드를 참조할 때 이름·수렴·경로 길이가 전부
         # 달라진다(1R P2 · 4R P2) — 생성·미리보기·승인이 같은 술어를 공유해야 하는 이유.
         blanks = self.vm.blank_fields(indices) if indices else []
-        marker = MISSING_MARKER if blanks else ""
+        marker = blank_marker(blanks)
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
         req, req_unmet = self._review(indices=indices, blanks=blanks)
         # 파일명 날짜 토큰의 기준 시각(2R·3R·5R P2) — 이 값은 **사용자가 본 것**의 일부다.
@@ -2114,7 +2081,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _do_cancel_generation(self, p: dict) -> dict:
         """진행 중인 문서를 완결한 뒤 다음 레코드부터 중단하도록 요청한다."""
-        self._cancel_generation.set()
+        run = self._run
+        if run is not None:
+            run.request_cancel()
         return {"ok": True}
 
     def _do_select_failed(self, p: dict) -> dict:
@@ -2276,51 +2245,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         가정하면 새 실행이 시작된 뒤 도착한 앞선 런의 델타가 새 진행바를 뒤로 돌린다 —
         토큰 대조가 그 창을 닫는다. 값은 이 컨트롤러가 만들지 않고 되돌리기만 한다.
         """
+        run = self._run
         self._push_sink(self.name, {
-            "progress": {"done": done, "total": total, "run_token": self._run_token},
+            "progress": {
+                "done": done, "total": total,
+                "run_token": run.token if run is not None else "",
+            },
         })
-
-    def _stamp_last_run(self, job_name: str, vm) -> str:
-        """완주 런의 시각을 **그 런이 시작될 때 겨눴던 작업**에 영속 — 성공 시 ``""``, 실패 시 사유.
-
-        디스크 재읽기 후 단일 필드 뮤테이션이다 — ``vm.job`` 은 작업 선택 시점의 인메모리
-        사본이라 그것만 고쳐서는 아무 데도 남지 않고, 통째 저장은 세션이 들고 있던 옛 매핑으로
-        디스크의 최신 편집을 되돌린다. 읽기-수정-쓰기는 레지스트리의 잠금된 경로
-        (:meth:`~hwpxfiller.core.job.JobRegistry.stamp_last_run`)가 진다(리뷰 2R P1) —
-        브리지 호출이 스레드별이라 에디터 저장과 **진짜로 겹치고**, 잠금 없이는 늦게 착지한
-        저장이 상대의 변경을 통째로 되돌린다(스탬프가 매핑 편집을 지우거나 그 반대).
-
-        **정체를 인자로 받는 이유**(Codex 리뷰 P1): 생성 중에도 후보 카드는 눌린다
-        (busy 잠금은 ``[data-busy-lock]`` 선언 요소만 잠그는데 ``.job-item`` 엔 없다). 기본
-        전체 선택 세션은 무장 상태가 아니라 전환이 확인도 거치지 않는다 — 브리지 호출이
-        별도 스레드라 배치가 도는 사이 ``self.job_name``/``self.vm`` 이 B 로 바뀔 수 있고,
-        그때 현재 상태를 읽어 스탬프하면 **A 의 완주가 B 의 역사로 기록되고 A 는 이력을
-        잃는다**(없던 실행을 지어내는 쪽이라 조용한 누락보다 나쁘다).
-
-        스탬프 실패를 삼키지 않는 이유(confirm-or-alarm): 문서는 이미 만들어졌으므로 예외로
-        완료 서사(요약·실패 목록)를 날리는 건 더 큰 손실이고, 조용히 넘기면 홈 이력이
-        아무 말 없이 이번 실행을 잃는다 — 그래서 **사유를 완료 요약에 병기**한다.
-        """
-        try:
-            job = stamp_run_completion(
-                self.registry, job_name, datetime.now().isoformat(timespec="seconds"),
-                # 기준선은 **이 런이 쓴 규칙**이다(1R P1) — 디스크의 지금 규칙으로 찍으면
-                # 배치 중 착지한 에디터 저장이 한 번도 실행된 적 없는 규칙을 검토받은
-                # 것으로 만든다. `vm` 이 없으면(정체 소실) 찍지 않는다: 무엇을 실행했는지
-                # 모르는 채 기준선을 세우는 것이 곧 조용한 승인이다.
-                rules=rules_fingerprints(vm.job) if vm is not None else None,
-            )
-        except (OSError, ValueError) as exc:
-            return str(exc) or exc.__class__.__name__
-        # 인메모리 사본은 **그 런의 VM 이 아직 현 세션일 때만** 동기화한다(디스크와 갈라지지
-        # 않게). 세션이 이미 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
-        if vm is not None and vm is self.vm:
-            vm.job.last_run_at = job.last_run_at
-            # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
-            # 방금 완주한 규칙을 여전히 「미검토」로 읽어, 같은 규칙으로 한 번 더 만들려는
-            # 사용자에게 §13-2 가 선택이라고 한 미리보기를 다시 요구한다.
-            vm.job.reviewed_rules = dict(job.reviewed_rules)
-        return ""
 
     def generate(self, *, confirm_overwrite: bool = False, run_token: str = "") -> dict:
         """게이트 통과 시 동기 생성 → 결과 dict. 덮어쓰기는 웹 재진술 후 재호출(RC-02).
@@ -2358,14 +2289,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             }
         if not self._generation_lock.acquire(blocking=False):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
-        # 진행 델타의 이름표는 **자물쇠를 쥔 런**만 세운다(위 docstring). 놓을 때 비우는 것도
-        # 같은 이유다 — 런이 끝난 뒤 남은 이름표는 어떤 런도 겨누지 않는다.
-        self._run_token = run_token
-        self._cancel_generation.clear()
+        # 이 런의 주체를 **자물쇠를 쥔 직후에 붙들고 이후 라이브 세션을 다시 읽지 않는다**
+        # (#302 P1): 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로
+        # 새고, 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다. 주체·판본·규칙 지문·
+        # cancel Event·상관 토큰의 정본은 Application run 객체다(P2-23) — 진행 델타의
+        # 이름표는 자물쇠를 쥔 런만 세우고, 끝나면 핸들을 비운다(남은 이름표는 어떤 런도
+        # 겨누지 않는다).
+        run_vm = self.vm
+        run = start_run(
+            getattr(run_vm, "job", None), job_name=self.job_name, token=run_token
+        )
+        self._run = run
         try:
-            result = self._generate_locked(confirm_overwrite=confirm_overwrite)
+            result = self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
         finally:
-            self._run_token = ""
+            self._run = None
             self._generation_lock.release()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
@@ -2378,124 +2316,115 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._push()
         return result
 
-    def _generate_locked(self, *, confirm_overwrite: bool = False) -> dict:
-        """단일 생성 실행의 본체. ``generate``가 재진입 잠금과 취소 토큰을 소유한다."""
-        # 이 런의 주체를 **시작 시점에 붙들고 이후 self.vm 을 다시 읽지 않는다**(#302 P1):
-        # 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로 새고,
-        # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
-        run_job_name, run_vm = self.job_name, self.vm
-        self._last_run_job = run_job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
-        # §13-7 「Run 은 사용한 Template·Binding 판본을 고정한다」(재작성 F7 판정 I).
-        # **시작 시점에** 붙든다: 배치가 도는 사이 에디터 저장이 착지하면 디스크 판본은
-        # 이미 다음 세대이고, 완주 뒤 그것을 읽어 말하면 결과가 **만들지 않은 규칙**을
-        # 자기 근거로 대게 된다(정체 고정과 같은 뿌리 — `_stamp_last_run` docstring).
-        self._run_revisions = _revisions_of(run_vm)
+    def _generate_locked(self, run, run_vm, *, confirm_overwrite: bool = False) -> dict:
+        """단일 생성 실행의 링2 결선 — 판정·척추는 Application use case 가 소유한다(P2-23).
+
+        ``run`` 은 :func:`~hwpxfiller.application.generation.start_run` 이 시작 시점에
+        고정한 주체·판본·규칙 지문의 정본, ``run_vm`` 은 같은 시점에 붙든 실행뷰다 —
+        이후 라이브 세션(self.vm)을 판정 입력으로 다시 읽지 않는다(#302 P1). 여기 남는
+        것은 게이트 선언(검토 판정기·확정 여부)과 facts→payload/문안 투영뿐이다.
+        """
+        self._last_run_job = run.job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
+        self._run_revisions = dict(run.revisions)  # §13-7 시작 시점 고정(F7 판정 I)
         indices = self._indices()
         out_dir = self.out_dir
 
-        # 1) 기본 가드(데이터·폴더·레코드·구조 드리프트) — 링1 단일 판정.
-        errors = run_vm.validate_generate(indices, out_dir)
-        if errors:
-            return {"ok": False, "error": errors[0].message, "level": errors[0].level}
-
-        # 2) 빈 값 집합 — 표식·승인 백스톱이 같은 집합을 소비한다(§2.13 단일 술어).
-        # 구 미입력 강제 확인 게이트(ADR-E ack)는 폐기됐다: 빈 값이 있으면 blank_set
-        # 검토 요구가 서고(승인 지문에 빈 값 집합이 든다), 아래 백스톱이 그것을 재확인한다.
-        blanks = run_vm.blank_fields(indices)
-
-        # 2-b) 검토 요구 방어적 재확인(1R P1) — 버튼이 이미 비활성이어도 다시 묻는다.
-        # 게이트는 **스냅샷을 만들 때** 판정한다. 그 사이 규칙이 바뀌거나(에디터 저장),
-        # 스냅샷을 안 거치는 경로(브리지 `generate` 직접 호출·stale 프론트)가 들어오면
-        # 승인 없이 생성이 난다 — 빈 값 표식(blank_set)도 같은 백스톱을 지난다.
-        # 주체는 **이 런의 것**(`run_vm`·`indices`·그 입력의 빈 값)이지 지금 세션의 것이 아니다.
-        _, review_unmet = self._review(run_vm, indices, blanks)
-        if review_unmet is not None:
-            return {
-                "ok": False, "level": "warn", "error": review_gate_text(review_unmet),
-            }
-
-        # 3) 미입력 표식(승인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
-        self._marked_fields = list(blanks)
-        marker = MISSING_MARKER if blanks else ""
-
-        # 4) 덮어쓰기 확인(RC-02) — 미리보기가 캡처한 날짜 토큰 시각을 재사용(표시=확인=생성 일치).
-        #    수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다(블록 4 가드
-        #    형식 "종류별 수치 재진술" 승계). 모달은 파괴 지점=덮어쓰기에만 선다. 표면(job.js)이
-        #    이 수치로 modal.js 본문을 합성한다 — 별도 재진술 모달을 만들지 않는다.
+        # 게이트 판정 순서(①가드 ②빈 값 ③검토 백스톱 ④표식 ⑤덮어쓰기 ⑥불변 계획)는
+        # Application 이 소유한다. 검토 판정기는 **이 런의 주체**(run_vm·indices·그 입력의
+        # 빈 값)로 묻는 게이트 선언이다 — 세션은 배치가 도는 사이에도 움직인다(1R P1).
+        # 날짜 토큰 시각은 미리보기가 캡처한 값을 재사용한다(표시=확인=생성 일치, RC-02).
         now = self._names_now or datetime.now()
-        conflicts = run_vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
-        if conflicts and not confirm_overwrite:
-            names = [Path(p).name for p in conflicts]
+        decision = plan_generation(
+            run_vm, indices, out_dir, now=now,
+            review_check=lambda bl: self._review(run_vm, indices, bl)[1],
+            confirm_overwrite=confirm_overwrite,
+        )
+        if decision.rejection is not None:
+            return {
+                "ok": False,
+                "error": decision.rejection.message,
+                "level": decision.rejection.level,
+            }
+        if decision.review_unmet is not None:
+            return {
+                "ok": False, "level": "warn",
+                "error": review_gate_text(decision.review_unmet),
+            }
+        blanks = list(decision.blanks)
+        self._marked_fields = blanks
+        if decision.needs_overwrite:
+            # 수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다.
+            # 표면(job.js)이 이 수치로 modal.js 본문을 합성한다 — 문안은 웹 소유(RC-02).
+            names = [Path(p).name for p in decision.conflicts]
             return {
                 "ok": False, "needs_overwrite": True,
                 "total": len(indices),                      # 총량
-                "overwrite_count": len(conflicts),          # 파괴분(기존 덮어씀)
-                "new_count": len(indices) - len(conflicts),  # 신규분(새 파일)
+                "overwrite_count": len(names),              # 파괴분(기존 덮어씀)
+                "new_count": len(indices) - len(names),     # 신규분(새 파일)
                 "conflict_names": names[:10],               # 파괴분 표본
                 "conflict_more": max(0, len(names) - 10),
             }
-        overwrite = bool(conflicts)
+        plan = decision.plan
+        assert plan is not None  # PlanDecision 4태의 잔여 갈래 — 위 세 갈래가 소진했다
 
-        # 5) 불변 생성 계획(RC-07) → 동기 생성(진행 델타 푸시).
-        plan = run_vm.build_generation_plan(
-            indices, out_dir, marker=marker, overwrite=overwrite, now=now
+        # materialize → 완주 판정 → durable 기록 요청 → facts (Application 척추).
+        # 엔진(zip IO)은 Host 가 여기서 조립해 관통시키고, 완주 기록은 use case 가
+        # `application.jobs.stamp_run_completion` 으로 요청한다(controller 직접 쓰기 0).
+        outcome = run_generation(
+            run, plan,
+            engine=make_hwpx_engine(),
+            progress=self._push_progress,
+            capture=(ValueError, OSError),
+            store=self.registry,
+            completed_at=lambda: datetime.now().isoformat(timespec="seconds"),
         )
-        self._push_progress(0, len(plan.records))
-        try:
-            batch = generate_batch(
-                plan.template, list(plan.records), plan.out_dir, plan.pattern,
-                make_hwpx_engine(),
-                now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
-                progress=self._push_progress,
-                cancelled=self._cancel_generation.is_set,
-            )
-        except (ValueError, OSError) as exc:
+        if outcome.error is not None:
             # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
-            # 지도 §10.10 판정 C. 여기서 잡지 않으면 브리지 rejection 이 되고 결과 자리는
-            # 빈 채로 남아 사용자는 "아무 일도 안 일어났다"로 읽는다. 전역 백스톱은
-            # 최후 방어로 그대로 두고, 알려진 실패류만 앞에서 결과 구획으로 회수한다.
+            # 지도 §10.10 판정 C. 결과 구획으로 회수한다(브리지 rejection 으로 새지 않게).
             self._last_failed = list(indices)
             return self._failed_result(
-                indices, plan.out_dir, str(exc) or exc.__class__.__name__,
+                indices, plan.out_dir,
+                str(outcome.error) or outcome.error.__class__.__name__,
             )
-        cancelled = bool(getattr(batch, "cancelled", False))
-        attempted = int(getattr(batch, "attempted", len(batch.results)))
 
-        # 완료 이벤트 = 가드 무장 해제(결정 27) — 단 **완주**(전건 성공)만이다(고효율 리뷰
-        # #1): 부분 실패 런에서 해제하면 실패분 재시도에 필요한 수작업 선택이 무확인
-        # 파괴 가능해지고, 전환이 세션 지문을 바꿔 실패 목록(완료 존)까지 지워져 "내역은
-        # 완료 존이 담보"의 전제가 깨진다.
-        if not cancelled and batch.failed == 0:
+        # 완료 이벤트 = 가드 무장 해제(결정 27) — **완주**(전건 성공)만이다(고효율 리뷰
+        # #1). 완주 술어는 스탬프와 한 곳(:func:`run_completed`)을 공유한다(#129) —
+        # 둘로 갈라지면 홈 이력과 가드가 서로 다른 실행을 완료로 부른다.
+        if outcome.completed:
             self._last_generated = set(indices)
+        # 인메모리 사본은 **그 런의 VM 이 아직 현 세션일 때만** 동기화한다(디스크와
+        # 갈라지지 않게) — 세션이 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
+        # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
+        # 방금 완주한 규칙을 여전히 「미검토」로 읽는다.
+        if outcome.stamped_job is not None and run_vm is self.vm:
+            run_vm.job.last_run_at = outcome.stamped_job.last_run_at
+            run_vm.job.reviewed_rules = dict(outcome.stamped_job.reviewed_rules)
 
-        # 완주 = 역사(결정 7·부록 A-2-23) — 완주 런만 `last_run_at` 을 찍는다. 완주 술어를
-        # 위 무장 해제와 공유하는 건 의도다: "완료 이벤트"가 둘로 갈라지면 홈 이력과 가드가
-        # 서로 다른 실행을 완료로 부르게 된다(#129).
-        stamp_error = (
-            self._stamp_last_run(run_job_name, run_vm)
-            if not cancelled and batch.failed == 0 else ""
-        )
-
+        cancelled = outcome.cancelled
         if cancelled:
-            unstarted = batch.total - attempted
             summary = (
-                f"중단했습니다. 완료 {attempted}/{batch.total}건"
-                f"(성공 {batch.succeeded}, 실패 {attempted - batch.succeeded}), "
-                f"미착수 {unstarted}건. 완료된 문서는 그대로 유지됩니다."
+                f"중단했습니다. 완료 {outcome.attempted}/{outcome.total}건"
+                f"(성공 {outcome.succeeded}, 실패 {outcome.failed}), "
+                f"미착수 {outcome.unstarted}건. 완료된 문서는 그대로 유지됩니다."
             )
         else:
-            summary = f"완료. 성공 {batch.succeeded}/{batch.total}, 실패 {batch.failed}."
+            summary = (
+                f"완료. 성공 {outcome.succeeded}/{outcome.total}, 실패 {outcome.failed}."
+            )
         if blanks:
             summary += f" 빈 값 표시 필드 {len(blanks)}개({', '.join(blanks)})."
-        if stamp_error:
+        if outcome.stamp_error:
+            # 기록 실패의 loud surface(confirm-or-alarm) — 문서는 이미 만들어졌으므로
+            # 완료 서사를 날리지 않고 사유를 완료 요약에 병기한다.
             summary += (
-                f" 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다({stamp_error})."
+                " 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다"
+                f"({outcome.stamp_error})."
             )
         # 실패 항목은 **구조화**해 넘긴다(§10.10 판정 E) — 파일명만으로 부르면 "어느
         # 행인가"를 사용자가 표에서 되찾아야 한다. 원본 index 는 「실패한 N건만 선택」의
-        # 입력이기도 하다(판정 F). ``batch.results`` 는 ``plan.records`` 와 같은 순서이고
+        # 입력이기도 하다(판정 F). ``outcome.results`` 는 ``plan.records`` 와 같은 순서이고
         # 그 순서는 ``indices`` 다(build_generation_plan 이 같은 리스트로 짓는다).
-        failures = self._failure_rows(indices, batch.results)
+        failures = self._failure_rows(indices, list(outcome.results))
         self._last_failed = [f["index"] for f in failures]
         # 채움 완화 사실(#154)은 완료 표면에 시끄럽게 — 파괴적 의미론(인라인 요소
         # 제거·값 런 합성)이 무경고면 조용한 데이터 손실이다(confirm-or-alarm).
@@ -2503,22 +2432,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         fill_notes = [
             describe_fill_note(n)
             for n in dict.fromkeys(
-                n for r in batch.results if r.ok for n in r.notes
+                n for r in outcome.results if r.ok for n in r.notes
             )
         ]
         if fill_notes:
             summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
-        failed_n = attempted - batch.succeeded if cancelled else batch.failed
-        status = _run_status(batch.succeeded, batch.total, cancelled)
         return {
             "ok": True,
-            "status": status,
-            "title": _run_title(status, cancelled, batch.succeeded, failed_n),
+            "status": outcome.status,
+            "title": _run_title(
+                outcome.status, cancelled, outcome.succeeded, outcome.failed
+            ),
             # 퇴장 요약(§2.18) — 결과가 물러난 뒤 남는 유일한 흔적이라 **수치를 하나도
             # 흘리지 않는다**. 제목과 목적이 달라 합성기가 따로다(둘 다 Python 소유).
             "exit_summary": _run_exit_summary(
-                status, cancelled, batch.succeeded, failed_n,
-                batch.total - attempted, attempted, batch.total,
+                outcome.status, cancelled, outcome.succeeded, outcome.failed,
+                outcome.unstarted, outcome.attempted, outcome.total,
             ),
             # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
             # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
@@ -2528,22 +2457,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "summary": summary,
             "level": (
                 "warn" if cancelled
-                else ("ok" if batch.failed == 0 and not stamp_error else "danger")
+                else (
+                    "ok" if outcome.failed == 0 and not outcome.stamp_error
+                    else "danger"
+                )
             ),
             "out_dir": plan.out_dir,
-            "succeeded": batch.succeeded,
-            "failed": failed_n,
+            "succeeded": outcome.succeeded,
+            "failed": outcome.failed,
             # 「실패한 N건만 선택」의 노출·라벨은 **이 수치**가 정한다(1R P2): 실패 행
             # 목록에서 파생하면, 행 없이 전량이 실패하는 런(배치 진입 전 실패)에서 복구
             # 행동이 통째로 숨는다 — 뒤에 선택을 바꾸면 대상 집합을 되찾을 길이 없다.
             # index 를 Python 이 소유하기로 한 이상(판정 F) 그 개수도 Python 이 낸다.
             "failed_selectable": len(self._last_failed),
-            "total": batch.total,
+            "total": outcome.total,
             "failures": failures,
             "fill_notes": fill_notes,
             "cancelled": cancelled,
-            "attempted": attempted,
-            "unstarted": batch.total - attempted,
+            "attempted": outcome.attempted,
+            "unstarted": outcome.unstarted,
             "revisions": dict(self._run_revisions),
         }
 
