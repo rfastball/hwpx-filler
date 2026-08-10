@@ -33,14 +33,28 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from typing import Protocol
 
 from lxml import etree
 
 from .lineseg import LINESEG_LOCAL
-from .package import HwpxPackage
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+
+
+class PackageLike(Protocol):
+    """파서 의미론 층이 아는 열린 package 의 형상 — 타입 지식만, IO 개시 없음(P2-19R).
+
+    concrete 열기(:class:`hwpxcore.package.HwpxPackage`)는 EXTERNAL 이 소유하고,
+    이 층은 ``entries`` 를 읽고(필요 시 갱신) 결과 package 의 ``save`` 를 호출자에게
+    되돌려줄 뿐이다.
+    """
+
+    entries: "dict[str, bytes]"
+
+    def content_xml_names(self) -> "list[str]": ...
+
+    def save(self, path: str) -> None: ...
 
 
 def _local(tag: object) -> str:
@@ -227,7 +241,7 @@ class Document:
 _SECTION_RE = re.compile(r"section(\d+)\.xml$", re.IGNORECASE)
 
 
-def section_xml_names(pkg: HwpxPackage) -> "list[str]":
+def section_xml_names(pkg: PackageLike) -> "list[str]":
     """패키지에서 본문 섹션 XML 이름을 번호 오름차순으로 반환.
 
     ``Contents/header.xml``(스타일 정의 head)·footer 는 본문 텍스트가 아니므로 제외.
@@ -243,7 +257,7 @@ def section_xml_names(pkg: HwpxPackage) -> "list[str]":
     return [name for _, name in hits]
 
 
-def _headerfooter_xml_names(pkg: HwpxPackage, prefix: str) -> "list[str]":
+def _headerfooter_xml_names(pkg: PackageLike, prefix: str) -> "list[str]":
     """basename 이 ``prefix`` 로 시작하는 ``.xml`` 엔트리를 이름 정렬로 반환."""
     out = []
     for name in pkg.entries:
@@ -435,24 +449,29 @@ def _table_from_el(
 
 
 # ------------------------------------------------------------------ 공개 API
-def _to_package(pkg_or_path: object) -> HwpxPackage:
-    if isinstance(pkg_or_path, HwpxPackage):
-        return pkg_or_path
-    if isinstance(pkg_or_path, (bytes, bytearray)):
-        return HwpxPackage.from_bytes(bytes(pkg_or_path))
-    if isinstance(pkg_or_path, (str, Path)):
-        return HwpxPackage.open(str(pkg_or_path))
-    raise TypeError(f"지원하지 않는 입력 타입: {type(pkg_or_path)!r}")
+def _require_package(obj: object) -> PackageLike:
+    """열린 package 만 통과하는 덕타이핑 관문 — 경로/바이트 수용 뒷문 없음(P2-19R, #576).
 
-
-def extract_document(pkg_or_path: object) -> Document:
-    """HWPX(경로/바이트/HwpxPackage)에서 본문·머리말·꼬리말을 추출해 Document 반환.
-
-    섹션은 section0, section1, ... 순으로 결정적이다. 머리말/꼬리말은 본문 문단을 실제로
-    담은 ``header*``/``footer*`` XML 만 별도 영역으로 포함하며, 스타일 전용 ``hp:head``
-    (``Contents/header.xml``)는 제외한다. 미처리 구조는 원장에 남는다.
+    파서 의미론 층은 파일 IO 를 개시하지 않는다. isinstance(HwpxPackage) 검사는
+    import 자체가 EXTERNAL edge 라 쓰지 않고, ``entries`` 보유 여부로만 판별한다.
     """
-    pkg = _to_package(pkg_or_path)
+    if hasattr(obj, "entries"):
+        return obj  # type: ignore[return-value] — 덕타이핑 관문(구조 검사는 entries 하나)
+    raise TypeError(
+        "열린 HWPX package 가 필요합니다 — 경로/바이트는 "
+        f"hwpxcore.package.to_package 로 먼저 여세요: {type(obj)!r}"
+    )
+
+
+def extract_document(pkg: object) -> Document:
+    """열린 HWPX package 에서 본문·머리말·꼬리말을 추출해 Document 반환.
+
+    **package-only**(P2-19R): 경로/바이트는 :func:`hwpxcore.package.to_package` 로 열어
+    넘긴다. 섹션은 section0, section1, ... 순으로 결정적이다. 머리말/꼬리말은 본문 문단을
+    실제로 담은 ``header*``/``footer*`` XML 만 별도 영역으로 포함하며, 스타일 전용
+    ``hp:head`` (``Contents/header.xml``)는 제외한다. 미처리 구조는 원장에 남는다.
+    """
+    pkg = _require_package(pkg)
     doc = Document()
     ledger = CoverageLedger()
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)

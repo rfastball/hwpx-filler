@@ -12,7 +12,7 @@ from lxml import etree
 
 from hwpxfiller.core.authoring import compile_document, scan_tokens
 from hwpxfiller.core.fields import FieldDocument
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
 from hwpxfiller.core.schema import extract_schema
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -523,14 +523,14 @@ def test_empty_attr_run_preserved_through_merge():
 def test_corpus_already_compiled_yields_no_new_fields():
     """실제 입찰공고(이미 누름틀 완비)를 스캔하면 새로 컴파일할 토큰이 없다."""
     path = CORPUS / "bid_notice_limited_under100m.hwpx"
-    compilable = [s for s in scan_tokens(str(path)) if s.compilable]
+    compilable = [s for s in scan_tokens(to_package(str(path))) if s.compilable]
     assert compilable == []
 
 
 # ---------------------------------------------------- 컴파일본 옆저장(compile_to_sibling)
 def test_compile_to_sibling_saves_next_to_original_and_keeps_original(tmp_path):
     """컴파일본을 <이름>.compiled.hwpx 로 저장하고 원본은 무변형(RC-28 코어 이관)."""
-    from hwpxfiller.core.authoring import compile_to_sibling
+    from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "tpl.hwpx"
     _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>').save(str(src))
@@ -542,12 +542,12 @@ def test_compile_to_sibling_saves_next_to_original_and_keeps_original(tmp_path):
     assert Path(compiled_path).exists()
     assert report.modified and report.compiled == ["계약명"]
     assert src.read_bytes() == before                        # 원본 무변형
-    assert extract_schema(compiled_path).field_names() == ["계약명"]  # 진짜 누름틀
+    assert extract_schema(to_package(compiled_path)).field_names() == ["계약명"]  # 진짜 누름틀
 
 
 def test_compile_to_sibling_noop_writes_nothing(tmp_path):
     """바꿀 토큰이 없으면 (None, report) — 어떤 파일도 쓰지 않는다(조용한 산출물 금지)."""
-    from hwpxfiller.core.authoring import compile_to_sibling
+    from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "plain.hwpx"
     _pkg('<hp:p><hp:run><hp:t>토큰 없음</hp:t></hp:run></hp:p>').save(str(src))
@@ -563,7 +563,7 @@ def test_compile_to_sibling_collision_is_loud_until_overwrite(tmp_path):
     """기존 컴파일본이 있으면 FileExistsError(경로 재진술) — overwrite 확정 시에만 덮는다(RC-02)."""
     import pytest
 
-    from hwpxfiller.core.authoring import compile_to_sibling
+    from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "tpl.hwpx"
     _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>').save(str(src))

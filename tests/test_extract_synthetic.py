@@ -347,3 +347,17 @@ def test_style_only_header_not_treated_as_body():
         ('<hp:head xmlns:hp="' + HP + '"><hp:refList/></hp:head>').encode("utf-8")
     )
     assert _has_body_text(head) is False
+
+
+def test_extract_document_rejects_path_input_loudly():
+    """파서 의미론 층은 파일 IO 를 개시하지 않는다(P2-19R #576 음성 oracle).
+
+    경로/바이트 수용 뒷문이 되살아나면 이 단언이 RED 다 — 경로는
+    ``hwpxcore.package.to_package`` 로 열어 넘겨야 한다(loud 재진술 포함).
+    """
+    import pytest
+
+    with pytest.raises(TypeError, match="to_package"):
+        extract_document("some/template.hwpx")
+    with pytest.raises(TypeError, match="to_package"):
+        extract_document(b"PK\x03\x04")

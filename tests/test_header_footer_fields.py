@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
 from hwpxcore.text_extract import extract_document
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.core.fields import FieldDocument, field_xml_names, read_fields
@@ -69,7 +69,7 @@ def test_field_part_order_and_same_name_first_value_are_explicit(tmp_path):
 
     assert field_xml_names(pkg) == [BODY, UNTOUCHED_BODY, HEADER, FOOTER]
     assert make_hwpx_engine().required_fields(str(path)) == ["공통", "유지필드"]
-    assert read_fields(str(path)) == {"공통": "본문 구값", "유지필드": "유지값"}
+    assert read_fields(to_package(str(path))) == {"공통": "본문 구값", "유지필드": "유지값"}
 
 
 def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_parts(
@@ -107,7 +107,7 @@ def test_unknown_header_structure_is_recorded_in_coverage_ledger(tmp_path):
     unknown = '<hp:futureHeader data-contract="unsupported"/>'
     path = _package_path(tmp_path, unknown=unknown)
 
-    doc = extract_document(str(path))
+    doc = extract_document(to_package(str(path)))
 
     assert doc.unhandled == {"futureHeader": 1}
     assert "header0" in doc.unhandled_examples["futureHeader"]

@@ -21,6 +21,7 @@ from hwpxfiller.core.job import (
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.template_inspection import template_compile_status
 from hwpxfiller.external.job_store import (
     JobRegistry,
     JobSlugCollisionError,
@@ -444,6 +445,7 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     from pathlib import Path
 
     from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import read_fields
     from hwpxfiller.core.job import MISSING_MARKER
 
@@ -463,11 +465,11 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     marked = req.mapped_records(mark_missing=MISSING_MARKER)[0]
     assert marked == {"공고명": "〘미입력·공고명〙"}
 
-    before = read_fields(str(template))
+    before = read_fields(to_package(str(template)))
     out = tmp_path / "marked.hwpx"
     result = make_hwpx_engine().generate(str(template), marked, str(out))
     assert result.ok
-    after = read_fields(str(out))
+    after = read_fields(to_package(str(out)))
     assert after["공고명"] == "〘미입력·공고명〙"
     for blank in ["입찰공고번호", "계약방법", "추정가격", "개찰일시"]:
         assert after[blank] == before[blank]
@@ -1204,7 +1206,9 @@ def test_work_mode_and_media_stay_two_axes():
 
     unlinked = Job(name="저작중", template_path="")
     assert unlinked.media == "" and unlinked.work_mode == WORK_MODE_UNSUPPORTED
-    assert library_mode_of(JobRow.from_job(unlinked, engine=make_hwpx_engine())) == MODE_HWPX
+    assert library_mode_of(JobRow.from_job(
+        unlinked, engine=make_hwpx_engine(), inspect_status=template_compile_status,
+    )) == MODE_HWPX
     assert "work_mode" not in encode_job(unlinked)  # 파생이지 저장 아님
 
 

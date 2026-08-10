@@ -22,11 +22,10 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from pathlib import Path
 
 from lxml import etree
 
-from hwpxcore.text_extract import HP_NS, _local, _text_of_t, _to_package
+from hwpxcore.text_extract import HP_NS, _local, _require_package, _text_of_t
 from hwpxfiller.core.authoring import scan_tokens
 from hwpxfiller.core.schema import extract_schema
 
@@ -144,7 +143,7 @@ def _is_placeholder(value: str, name: str) -> bool:
 
 def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     """주입 대상 XML 전체에서 (필드명, 값) 목록을 읽는다(파싱 사본 — 무변형)."""
-    pkg2 = _to_package(pkg)
+    pkg2 = _require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     out: "list[tuple[str, str]]" = []
     for name in pkg2.content_xml_names():
@@ -158,13 +157,14 @@ def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
 
 
 # ------------------------------------------------------------------ 공개 API
-def compile_status(pkg_or_path: object) -> TemplateStatus:
-    """HWPX(경로/바이트/HwpxPackage)의 컴파일 수명주기 상태를 **계산**해 반환.
+def compile_status(pkg: object) -> TemplateStatus:
+    """열린 HWPX package 의 컴파일 수명주기 상태를 **계산**해 반환.
 
+    **package-only**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
     저장된 값을 읽지 않고 매 호출 재산출한다 — 재편집 드리프트에도 항상 진실.
     입력을 전혀 변형하지 않는다(읽기 전용).
     """
-    pkg = _to_package(pkg_or_path)  # 1회 정규화(경로/바이트도 한 번만 읽음)
+    pkg = _require_package(pkg)  # 덕타이핑 관문(경로/바이트는 loud 거절)
 
     schema = extract_schema(pkg)
     field_n = len(schema.field_names())

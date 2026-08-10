@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
@@ -167,3 +167,21 @@ def test_content_xml_names_targets_only_sections_headers_footers():
         base = t.lower().rsplit("/", 1)[-1]
         assert base.startswith(("section", "header", "footer"))
         assert base.endswith(".xml")
+
+
+def test_to_package_is_the_single_normalization_entrance(tmp_path):
+    """경로→열린 package 의 유일 정규화 입구(P2-19R #576) — 네 분기 전부.
+
+    package 통과·bytes·경로(str/Path)를 각각 열고, 그 외 입력은 TypeError 로
+    loud 거절한다(경로 소비자 전부가 이 함수 하나를 지난다).
+    """
+    pkg = HwpxPackage.open(str(FIXTURE))
+    assert to_package(pkg) is pkg                      # 이미 열린 package 는 통과
+    from_bytes = to_package(pkg.to_bytes())            # bytes → from_bytes
+    assert from_bytes.entries.keys() == pkg.entries.keys()
+    out = tmp_path / "doc.hwpx"
+    pkg.save(str(out))
+    assert to_package(out).entries.keys() == pkg.entries.keys()       # pathlib.Path
+    assert to_package(str(out)).entries.keys() == pkg.entries.keys()  # str
+    with pytest.raises(TypeError, match="지원하지 않는 입력"):
+        to_package(1234)

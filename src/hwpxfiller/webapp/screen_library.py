@@ -46,6 +46,7 @@ from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..external.hwpx_engine import make_hwpx_engine
+from ..external.template_inspection import template_compile_status
 from ..gui.compile_badge import badge_level
 from ..gui.home_state import (
     NO_GROUP_LABEL,
@@ -150,6 +151,7 @@ class LibraryController:
             registry, text_registry,
             pool_registry,
             engine=make_hwpx_engine(),
+            inspect_status=template_compile_status,
         )
         # 템플릿 다시 연결(#67)용 주입 레지스트리 — vm.registry 우회 금지 가드(#44,
         # test_architecture)와 정합: seam 밖 durable 뮤테이션은 공유 게이트

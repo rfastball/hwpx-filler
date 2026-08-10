@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .atomic import write_bytes_atomic
 
@@ -142,3 +143,19 @@ class HwpxPackage:
         # HWPX 내부는 UTF-8 파일명; 외부 속성/시간은 기본값으로 둔다(재현성 위해 고정).
         info.date_time = (1980, 1, 1, 0, 0, 0)
         zf.writestr(info, data)
+
+
+def to_package(pkg_or_path: object) -> HwpxPackage:
+    """경로/바이트 → 열린 package 의 **유일한 정규화 입구**(P2-19R, #576).
+
+    ``HwpxPackage`` 는 그대로 통과, bytes 는 ``from_bytes``, str/``Path`` 는 ``open``.
+    파서 의미론 층(text_extract·schema·authoring 등)은 열린 package 만 받으므로,
+    경로를 든 호출자는 여기서 한 번 열어 넘긴다. 그 외 입력은 TypeError(loud).
+    """
+    if isinstance(pkg_or_path, HwpxPackage):
+        return pkg_or_path
+    if isinstance(pkg_or_path, (bytes, bytearray)):
+        return HwpxPackage.from_bytes(bytes(pkg_or_path))
+    if isinstance(pkg_or_path, (str, Path)):
+        return HwpxPackage.open(str(pkg_or_path))
+    raise TypeError(f"지원하지 않는 입력 타입: {type(pkg_or_path)!r}")

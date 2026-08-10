@@ -252,6 +252,7 @@ def _mini_template(tmp_path, region: str):
 
 def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path):
     """빈 누름틀 채움 = applied(오보 소멸) + notes 로 시끄럽게(#154)."""
+    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import FillNote, read_fields
 
     tpl = _mini_template(tmp_path, "")  # 값 hp:t 없는 빈 누름틀
@@ -261,7 +262,7 @@ def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path)
     assert res.applied == {"계약명"}
     assert res.unmatched == set()  # 과거: 매칭 실패 오보
     assert res.notes == [FillNote("계약명", "slot_synthesized")]
-    assert read_fields(str(out))["계약명"] == "새값"  # 되읽기 관측으로 확정
+    assert read_fields(to_package(str(out)))["계약명"] == "새값"  # 되읽기 관측으로 확정
 
 
 def test_generate_notes_inline_stripped(tmp_path):
@@ -275,9 +276,10 @@ def test_generate_notes_inline_stripped(tmp_path):
     assert [(n.field, n.kind, n.detail) for n in res.notes] == [
         ("계약명", "inline_stripped", ("markpenBegin",))
     ]
+    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import read_fields
 
-    assert read_fields(str(out))["계약명"] == "NEW"
+    assert read_fields(to_package(str(out)))["계약명"] == "NEW"
 
 
 def test_cross_section_unfillable_occurrence_still_warns(tmp_path):

@@ -258,6 +258,7 @@ def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
 
 def test_cli_ack_empty_injects_marker(tmp_path):
     """--ack-empty 옵트인 — GUI 와 같은 미입력 표식을 넣고 진행(조용한 누름틀 잔존 금지)."""
+    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import read_fields
 
     data = _xlsx(tmp_path / "d.xlsx",
@@ -267,7 +268,7 @@ def test_cli_ack_empty_injects_marker(tmp_path):
                "--pattern", "공고-{{공고명}}", "--ack-empty"])
     assert rc == 0
     (doc,) = list(out.glob("*.hwpx"))
-    fields = read_fields(str(doc))
+    fields = read_fields(to_package(str(doc)))
     assert fields["입찰공고번호"] == "〘미입력·입찰공고번호〙"  # GUI 와 동일 표식(단일 출처)
     assert fields["공고명"] == "관급자재 구매"
 
