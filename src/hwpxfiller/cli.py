@@ -22,7 +22,8 @@ import sys
 import zipfile
 from typing import TYPE_CHECKING
 
-from .batch import OutputCollisionError, generate_batch
+from .application.generation import direct_plan, run_generation, start_run
+from .batch import OutputCollisionError
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
@@ -507,23 +508,28 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
             print("[경고] 일부 레코드에 파일명 토큰 키가 없어 해당 파일명에 토큰이 남습니다: "
                   + ", ".join("{{" + t + "}}" for t in partial), file=sys.stderr)
 
-    try:
-        batch = generate_batch(args.template, records, args.out, args.pattern, engine,
-                               overwrite=args.overwrite, mapping=gate_mapping)
-    except OutputCollisionError as exc:
+    # 생성 척추는 GUI 와 같은 Application use case 다(P2-23). CLI 의 게이트 부재(검토
+    # 게이트 없음·완주 스탬프 없음(store=None)·취소 없음)는 인자 생략이 아니라 **의도된
+    # 제품 계약의 선언**이고, capture 는 exit 1 로 다룰 실패류의 선언이다 — 환경성
+    # OSError 는 최상위 번역 경계의 exit 2 로 흘린다(RC-16).
+    plan = direct_plan(args.template, records, args.out, args.pattern,
+                       marker=marker, overwrite=args.overwrite, mapping=gate_mapping)
+    outcome = run_generation(start_run(None), plan, engine=engine,
+                             capture=(OutputCollisionError, ValueError), store=None)
+    if isinstance(outcome.error, OutputCollisionError):
         # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
         # 환경성 FileExistsError(--out 자리에 파일 등)는 최상위 경계의 exit 2 로 —
         # 그 경우 '--overwrite' 안내는 거짓이라 붙이지 않는다(RC-16).
-        print(f"[오류] {exc}", file=sys.stderr)
+        print(f"[오류] {outcome.error}", file=sys.stderr)
         print("덮어쓰려면 --overwrite 를 지정하세요.", file=sys.stderr)
         return 1
-    except ValueError as exc:
+    if outcome.error is not None:
         # 생성 경계 드리프트 재검사(RC-03) — 검증 이후 템플릿 교체도 성공으로 못 섞인다.
-        print(f"[오류] {exc}", file=sys.stderr)
+        print(f"[오류] {outcome.error}", file=sys.stderr)
         return 1
-    print(f"완료: {batch.succeeded}/{batch.total} 성공 -> {args.out}")
+    print(f"완료: {outcome.succeeded}/{outcome.total} 성공 -> {args.out}")
     seen_notes = set()
-    for res in batch.results:
+    for res in outcome.results:
         if not res.ok:
             print(f"  [실패] {res.output_path}: {res.error}", file=sys.stderr)
             continue
@@ -541,17 +547,17 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
 
     if args.ledger:
         try:
-            _export_ledger(args, gate_mapping, required, source_records, records, batch,
+            _export_ledger(args, gate_mapping, required, source_records, records, outcome,
                            marker)
         except Exception as exc:  # noqa: BLE001 - 증거 저장 실패는 조용히 넘기지 않는다
             # 원장은 사이드카 — 실패해도 '생성 실패'로 위장하지 않는다(RC-16, GUI 와 동형).
             print(f"[원장 실패] 사이드카를 저장하지 못했습니다: {exc} — "
-                  f"생성물({batch.succeeded}건)은 저장돼 있습니다.", file=sys.stderr)
-    return 0 if batch.failed == 0 else 1
+                  f"생성물({outcome.succeeded}건)은 저장돼 있습니다.", file=sys.stderr)
+    return 0 if outcome.failed == 0 else 1
 
 
 def _export_ledger(
-    args, mapping, required, source_records, mapped_records, batch, marker: str = "",
+    args, mapping, required, source_records, mapped_records, outcome, marker: str = "",
 ) -> None:
     """``--ledger`` opt-in — 원장 사이드카를 out 폴더에 저장(생성 성패와 독립).
 
@@ -580,7 +586,7 @@ def _export_ledger(
         source=source,
         mapping=mapping,
         template_fields=required,
-        results=batch.results,
+        results=outcome.results,
         mapped_records=mapped_records,
         source_records=source_records,
         labels=labels,

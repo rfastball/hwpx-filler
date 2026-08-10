@@ -834,7 +834,7 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
 
 
 def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkeypatch):
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -861,7 +861,7 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
         assert kwargs["cancelled"]() is True
         return _Cancelled()
 
-    monkeypatch.setattr(sj, "generate_batch", fake_batch)
+    monkeypatch.setattr(appgen, "generate_batch", fake_batch)
     result = ctrl.generate()
     assert result["cancelled"] is True
     assert result["attempted"] == 1 and result["unstarted"] == 1
@@ -933,7 +933,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     허용하고 캡처로 스탬프만 방어했지만, 검증·계획도 라이브 vm 을 볼 수 있어 남의 작업
     생성으로 샐 수 있었다. 이제 가드(시끄러운 거부)+캡처(이중 방어)를 함께 고정한다.
     """
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -942,7 +942,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     ctrl.set_output_folder(str(tmp_path / "out"))
     _approve_run(ctrl)
 
-    real_batch = sj.generate_batch
+    real_batch = appgen.generate_batch
 
     def _switch_midflight(*a, **k):
         result = real_batch(*a, **k)
@@ -950,7 +950,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
             ctrl.dispatch("select_job", {"name": "공고서2"})
         return result
 
-    monkeypatch.setattr(sj, "generate_batch", _switch_midflight)
+    monkeypatch.setattr(appgen, "generate_batch", _switch_midflight)
     assert ctrl.generate()["ok"] is True
     assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
     assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
@@ -1005,7 +1005,7 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
 
 def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     """부분 실패는 완주가 아니다 — 무장 해제와 스탬프가 같은 술어를 공유한다(#129)."""
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     class _FakeResult:
         ok = False
@@ -1016,7 +1016,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
         succeeded, failed, total = 1, 1, 2
         results = [_FakeResult()]
 
-    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: _FakeBatch())
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
@@ -1087,9 +1087,11 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
     ctrl.set_output_folder(str(tmp_path / "out"))
     _approve_run(ctrl)
 
-    # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표가 서 있는 상태.
+    # 첫 런이 자물쇠를 쥔 상태 = 그 런이 세운 이름표(run 핸들)가 서 있는 상태.
+    from hwpxfiller.application.generation import GenerationRun
+
     assert ctrl._generation_lock.acquire(blocking=False)
-    ctrl._run_token = "run-first"
+    ctrl._run = GenerationRun(token="run-first")
     try:
         rejected = ctrl.generate(run_token="run-second")
     finally:
@@ -1099,7 +1101,7 @@ def test_a_rejected_second_call_does_not_relabel_the_running_one(tmp_path):
     assert rejected["ok"] is False and "이미" in rejected["error"]
     assert rejected["run_token"] == "run-second"
     # 그리고 도는 런의 이름표는 **그대로다**. 이 한 줄이 이 테스트의 이유다.
-    assert ctrl._run_token == "run-first", (
+    assert ctrl._run is not None and ctrl._run.token == "run-first", (
         "진 호출이 이긴 런의 이름표를 갈아치웠습니다 — 그 런의 결과가 남의 것으로 폐기됩니다."
     )
 
@@ -1113,7 +1115,7 @@ def test_the_run_label_is_cleared_when_the_lock_is_released(tmp_path):
     _approve_run(ctrl)
 
     assert ctrl.generate(run_token="run-9")["ok"] is True
-    assert ctrl._run_token == ""
+    assert ctrl._run is None
 
 
 def test_progress_delta_carries_the_run_token(tmp_path):
@@ -2304,7 +2306,7 @@ def test_needs_confirm_does_not_push(tmp_path):
 
 def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
     """부분 실패 런은 완주가 아니다(리뷰 #1) — 실패분 재시도 선택을 무확인 파괴에서 지킨다."""
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     class _FakeResult:
         def __init__(self):
@@ -2316,7 +2318,7 @@ def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
         succeeded, failed, total = 0, 1, 1
         results = [_FakeResult()]
 
-    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: _FakeBatch())
     ctrl, _ = _session(tmp_path)
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("set_none", {})
@@ -2957,8 +2959,8 @@ def _fake_batch(oks, *, errors=(), cancelled=False, total=None):
 
 
 def _run_with(monkeypatch, ctrl, batch):
-    import hwpxfiller.webapp.screen_job as sj
-    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: batch)
+    import hwpxfiller.application.generation as appgen
+    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: batch)
     return ctrl.generate()
 
 
@@ -2972,18 +2974,23 @@ def _result_session(tmp_path):
 
 
 def test_result_three_states_are_python_judged(tmp_path, monkeypatch):
-    """3태는 성공/전체의 함수다(§10.10 판정 A) — 불변식 §13-10(일부 성공≠전체 성공)."""
-    from hwpxfiller.webapp.screen_job import _run_status, _run_title
+    """3태는 성공/전체의 함수다(§10.10 판정 A) — 불변식 §13-10(일부 성공≠전체 성공).
 
-    assert _run_status(2, 2) == "completed"
-    assert _run_status(1, 2) == "partiallyCompleted"
-    assert _run_status(0, 2) == "failed"
+    판정은 Application(:func:`~hwpxfiller.application.generation.run_status`)이 소유하고
+    (P2-23) 문안(제목)은 종전대로 링2 가 조립한다 — old→new 책임 승계.
+    """
+    from hwpxfiller.application.generation import run_status
+    from hwpxfiller.webapp.screen_job import _run_title
+
+    assert run_status(2, 2) == "completed"
+    assert run_status(1, 2) == "partiallyCompleted"
+    assert run_status(0, 2) == "failed"
     # 취소는 네 번째 태가 아니라 부분의 변종 — 태는 그대로, 제목이 중단을 먼저 말한다.
     assert _run_title("partiallyCompleted", True, 1, 0).startswith("생성을 중단했습니다")
     assert "1개 성공" in _run_title("partiallyCompleted", False, 1, 1)
     # 첫 레코드 전에 멈춘 런: 성공 0·실패 0이다. 성공 수만 보면 failed 가 되어 "중단
     # 했습니다"라는 제목 옆에서 태가 없던 실패를 지어낸다(1R P2).
-    assert _run_status(0, 3, True) == "partiallyCompleted"
+    assert run_status(0, 3, True) == "partiallyCompleted"
 
 
 def test_partial_run_reports_partial_state_and_failed_rows(tmp_path, monkeypatch):
@@ -3018,12 +3025,12 @@ def test_unknown_cause_keeps_the_undiagnosed_boundary(tmp_path, monkeypatch):
 
 def test_batch_exception_lands_in_the_result_zone(tmp_path, monkeypatch):
     """배치가 시작조차 못 한 실패도 결과 구획에 선다(§10.10 판정 C) — 백스톱으로 새지 않는다."""
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     def _boom(*a, **k):
         raise ValueError("템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — 필드 없음")
 
-    monkeypatch.setattr(sj, "generate_batch", _boom)
+    monkeypatch.setattr(appgen, "generate_batch", _boom)
     ctrl, _ = _result_session(tmp_path)
     res = ctrl.generate()
     assert res["ok"] is True and res["status"] == "failed"   # 거절이 아니라 실패
@@ -3038,8 +3045,8 @@ def test_select_failed_replaces_selection_and_does_not_generate(tmp_path, monkey
     res = _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
     failed_index = res["failures"][0]["index"]
     calls: list = []
-    import hwpxfiller.webapp.screen_job as sj
-    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: calls.append(1))
+    import hwpxfiller.application.generation as appgen
+    monkeypatch.setattr(appgen, "generate_batch", lambda *a, **k: calls.append(1))
 
     out = ctrl.dispatch("select_failed", {})
     assert out == {"selected": 1}
@@ -3076,12 +3083,12 @@ def test_cancel_before_first_record_is_not_a_failure(tmp_path, monkeypatch):
 
 def test_batch_exception_keeps_the_recovery_action_reachable(tmp_path, monkeypatch):
     """행이 0개라도 복구 대상은 전량이다(1R P2) — 표면이 「실패한 N건만 선택」을 숨기지 않게."""
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     def _boom(*a, **k):
         raise OSError("[WinError 5] 액세스가 거부되었습니다")
 
-    monkeypatch.setattr(sj, "generate_batch", _boom)
+    monkeypatch.setattr(appgen, "generate_batch", _boom)
     ctrl, _ = _result_session(tmp_path)
     res = ctrl.generate()
     assert res["failures"] == []                   # 시도가 없었으므로 행별 사유를 지어내지 않는다
@@ -3126,12 +3133,12 @@ def test_run_owner_lives_in_session_state_and_follows_renames(tmp_path, monkeypa
     assert snap["last_run_job"] == snap["job_name"] == "공고서(수정)"  # 같은 전이에서 추종
     assert ctrl.dispatch("select_failed", {})["selected"] == 1        # 복구 대상도 유효
 
-    import hwpxfiller.webapp.screen_job as sj
+    import hwpxfiller.application.generation as appgen
 
     def _boom(*a, **k):
         raise OSError("[WinError 5] 액세스가 거부되었습니다")
 
-    monkeypatch.setattr(sj, "generate_batch", _boom)
+    monkeypatch.setattr(appgen, "generate_batch", _boom)
     ctrl.generate()
     assert ctrl.snapshot()["last_run_job"] == "공고서(수정)"          # 실패 경로도 같은 모양
 
