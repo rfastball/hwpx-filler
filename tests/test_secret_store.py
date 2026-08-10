@@ -15,6 +15,7 @@ import uuid
 
 import pytest
 
+import hwpxfiller.domain.secret_redaction as canonical_redaction
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -237,6 +238,9 @@ def test_redact_case_insensitive_param_variants():
 
 
 def test_redact_url_helper_and_empty_inputs():
+    assert REDACTED is canonical_redaction.REDACTED
+    assert redact is canonical_redaction.redact
+    assert redact_url is canonical_redaction.redact_url
     assert redact_url("http://h/x?ServiceKey=zzz").endswith(f"ServiceKey={REDACTED}")
     assert redact("") == ""
     assert redact("아무 비밀 없음") == "아무 비밀 없음"

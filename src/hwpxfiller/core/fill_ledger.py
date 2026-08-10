@@ -362,7 +362,7 @@ def _redacted(payload: dict) -> dict:
     원장의 소스 표기는 포인터-온리라 정상 경로엔 비밀이 없지만, 소스 값·오류 메시지가
     URL(ServiceKey 포함)을 품고 흘러들 수 있다 — 과삭제 원칙으로 전면 방어한다.
     """
-    from ..data.secret_store import redact
+    from ..domain.secret_redaction import redact
 
     def walk(v):
         if isinstance(v, str):
