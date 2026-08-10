@@ -22,7 +22,7 @@ import re
 from pathlib import Path
 
 from ..core.job import library_rel_key
-from . import settings
+from ..external import settings
 
 _BAD_NAME = re.compile(r'[\\/:*?"<>|]')
 

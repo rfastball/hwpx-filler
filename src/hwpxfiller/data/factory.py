@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from .base import DataSource, SUPPORTED_DATA_FILE_EXTENSIONS
+from ..domain.data_source import DataSource, SUPPORTED_DATA_FILE_EXTENSIONS
 from .excel import ExcelDataSource
 
 # 기존 공개 import를 보존하는 호환 alias. 수용 정책의 정본은 Domain 값이다.
@@ -45,7 +45,7 @@ def make_source(kind: str, **opts) -> DataSource:
     if kind == "excel":
         return ExcelDataSource(**opts)
     if kind == "inline":
-        from .inline import InlineDataSource
+        from ..domain.inline import InlineDataSource
 
         return InlineDataSource(**opts)
     if kind == "nara":

@@ -1,3 +1,14 @@
+"""모듈 ring 좌표 계약(`docs/module_rings.toml`)의 게이트 — 안쪽→바깥쪽 의존을 막는다.
+
+물리 패키지 경계 게이트 4종(`test_domain_boundary`·`test_application_boundary`·
+`test_external_adapter_boundary`·`test_host_boundary`)의 정의역은 각자 새 패키지뿐이라,
+아직 옛 폴더(`core/`·`data/`·`gui/`·`webapp/`)에 사는 유닛의 방향은 **여기만** 본다.
+#542 H-2 실측: `core.lint → webapp.screens` 를 심으면 repo_contract 92 노드 중 이 파일만
+빨강이고 나머지 91 은 초록이다 — 물리 이관이 끝나기 전에 이 게이트를 지우면 순손실이다.
+
+유래는 P1 계측의 P2 handoff(#512~#520)이고, P2 완주 뒤 P1 부기는 걷어내 계약만 남겼다.
+"""
+
 from __future__ import annotations
 
 import ast
@@ -8,11 +19,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[2]
-HANDOFF = ROOT / "docs" / "p2_handoff.toml"
+RINGS = ROOT / "docs" / "module_rings.toml"
 
 
 def _document() -> dict[str, object]:
-    return tomllib.loads(HANDOFF.read_text(encoding="utf-8"))
+    return tomllib.loads(RINGS.read_text(encoding="utf-8"))
 
 
 def _module_for_path(relative: str) -> str:
@@ -69,10 +80,9 @@ def _internal_import_edges(units: list[dict[str, object]]) -> set[tuple[str, str
     return edges
 
 
-def test_handoff_is_a_closed_minimal_inventory() -> None:
+def test_ring_contract_is_a_closed_minimal_inventory() -> None:
     document = _document()
-    assert document["schema"] == "p2-handoff/v1"
-    assert document["p1_verdict"] == "ONE_WAVE_READY"
+    assert document["schema"] == "module-rings/v1"
     units = document["unit"]
     modules = [str(unit["module"]) for unit in units]
     sources = [str(path) for unit in units for path in unit["source_write_set"]]
@@ -81,7 +91,7 @@ def test_handoff_is_a_closed_minimal_inventory() -> None:
     assert all((ROOT / source).is_file() for source in sources)
 
 
-def test_no_new_outward_dependency_is_hidden_by_the_p1_allowlist() -> None:
+def test_no_inward_module_depends_outward() -> None:
     document = _document()
     units = document["unit"]
     targets = {str(unit["module"]): str(unit["target"]) for unit in units}
@@ -97,8 +107,8 @@ def test_no_new_outward_dependency_is_hidden_by_the_p1_allowlist() -> None:
         and targets[destination] in ring
         and ring[targets[source]] < ring[targets[destination]]
     }
-    assert outward <= allowed, f"P1 이후 새 안쪽→바깥쪽 의존: {sorted(outward - allowed)}"
-    assert allowed <= outward, f"이미 제거된 P2 예외를 handoff에서 지우세요: {sorted(allowed - outward)}"
+    assert outward <= allowed, f"새 안쪽→바깥쪽 의존: {sorted(outward - allowed)}"
+    assert allowed <= outward, f"이미 제거된 예외를 계약에서 지우세요: {sorted(allowed - outward)}"
 
 
 def test_required_pytest_oracles_still_collect() -> None:

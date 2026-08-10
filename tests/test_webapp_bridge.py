@@ -142,7 +142,7 @@ def test_native_close_prompt_without_facade_is_loud_and_fails_closed(tmp_path, m
         def destroy(self):  # pragma: no cover — 여기 오면 fail-open 이다
             raise AssertionError("파사드 부재인데 창이 닫혔습니다 — fail-open 회귀입니다.")
 
-    monkeypatch.setattr("hwpxfiller.webapp.settings.alert", alerts.append)
+    monkeypatch.setattr("hwpxfiller.external.settings.alert", alerts.append)
 
     class ImmediateTimer:
         daemon = False

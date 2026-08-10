@@ -30,7 +30,7 @@
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
-| `p2_handoff.toml` | 완료된 P1 계측에서 동결한 P2 목표 권위·source write set·oracle·역의존 제거 의무. 상세 계측은 Git 이력이 소유하며 P2 완료 때 이 원장도 폐기 |
+| `module_rings.toml` | 모듈별 ring 좌표(목표 권위)·source write set·behavior oracle. 안쪽→바깥쪽 의존 금지선의 **유일한** 정본이라 물리 이관 완료까지 영속(#542 H-2). 유래한 P1 계측 서사는 Git 이력이, 미이행 obligation 은 이슈 #582 가 소유 |
 
 ## 결정 기록
 

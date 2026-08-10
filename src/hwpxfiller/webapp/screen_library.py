@@ -60,7 +60,7 @@ from ..gui.home_state import (
 )
 from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
 from .screens import PushSink, relink_job_template
-from .settings import load_job_collapsed_groups, save_job_collapsed_groups
+from ..external.settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 def mode_label(filter_value: str) -> str:
     """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.gui.work_mode`) 위임.

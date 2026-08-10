@@ -22,7 +22,7 @@ from hwpxcore.package import to_package
 from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
 from hwpxfiller.core.mapping import MappingProfile
-from hwpxfiller.core.source_profile import FieldProfile, profile_fields
+from hwpxfiller.domain.source_profile import FieldProfile, profile_fields
 from hwpxfiller.domain.secret_redaction import redact
 
 if TYPE_CHECKING:

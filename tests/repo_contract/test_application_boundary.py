@@ -176,6 +176,16 @@ def test_hwpxfiller_application_imports_point_inward() -> None:
     )
 
 
+def test_application_legacy_facades_have_no_production_consumers() -> None:
+    """구 GUI 경로를 부르는 제품 코드 0(#542 H-1) — 형상 정직성과 별개의 퇴역 조건이다."""
+    from test_domain_boundary import facade_consumers
+
+    offenders = facade_consumers(LEGACY_FACADES)
+    assert not offenders, (
+        "구 경로 소비자가 남아 새 정본으로 옮기세요(퇴역 차단):\n" + "\n".join(offenders)
+    )
+
+
 def test_application_legacy_facades_only_reexport_same_objects() -> None:
     """구 GUI 경로는 정의·wrapper 없이 canonical 객체를 그대로 다시 노출한다."""
     for legacy_facade, application_module, public_api in LEGACY_FACADES:

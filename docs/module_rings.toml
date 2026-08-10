@@ -1,14 +1,17 @@
-# P1 전수 계측을 P2 실행에 필요한 최소 계약으로 동결한 handoff다.
-# 상세 근거는 Git 이력(#512~#520)이 소유하며 이 파일은 재생성하지 않는다.
-schema = "p2-handoff/v1"
-p1_baseline = "4c422654125df627f9f4fcd3a7f111f2bc8b9eb9"
-p1_verdict = "ONE_WAVE_READY"
-sunset = "P2 완료 및 allowed_direction_violation 0건에서 이 파일과 게이트를 함께 제거"
+# 제품 모듈의 **ring 좌표 계약**이다 — 모듈 하나가 어느 층의 권위를 지는지와, 그 좌표가
+# 강제하는 안쪽→바깥쪽 의존 금지선을 짝 게이트(tests/repo_contract/test_module_rings.py)가
+# 판정한다. 물리 패키지 경계 게이트 4종(domain/application/external/host)의 정의역은 그 네
+# 패키지뿐이라, 아직 옛 폴더에 사는 유닛의 방향을 지키는 것은 이 파일이 유일하다(#542 H-2
+# 실측: core→webapp 을 심으면 repo_contract 92 노드 중 이 게이트만 빨강).
+#
+# 유래는 P1 전수 계측(#512~#520)의 P2 handoff 였고 상세 근거는 Git 이력이 소유한다. P2 완주
+# 뒤 P1 부기(baseline·verdict·sunset·remove_when·obligations)는 걷어냈다 — 미이행 obligation
+# 원장은 이슈 #582 가, 나머지 계측 서사는 이력이 진다. 이 파일은 재생성하지 않는다.
+schema = "module-rings/v1"
 
-# P2-19R(#576)에서 마지막 예외(hwpxcore.text_extract → hwpxcore.package)가 제거돼 0 에
-# 도달했다 — `_to_package` 경로 수용 뒷문은 hwpxcore.package.to_package(EXTERNAL)로
-# 이사했고 파서 의미론 층은 열린 package 전용 덕타이핑이다. 키는 게이트가 양방향
-# exact-match 로 직접 인덱싱하므로 빈 배열로 남긴다. sunset 판정은 P2-99(#542).
+# 안쪽→바깥쪽 예외는 P2-19R(#576)에서 0 에 도달했다. 게이트가 양방향 exact-match 로 직접
+# 인덱싱하므로 키는 빈 배열로 남긴다 — 새 예외를 여기 적지 않으면 게이트가 빨강이고,
+# 이미 없어진 예외를 남겨 둬도 빨강이다.
 allowed_direction_violation = []
 
 [ring]
@@ -18,612 +21,506 @@ FRONTEND_ADAPTER = 2
 EXTERNAL_ADAPTER = 2
 HOST = 2
 
-# core.engine → hwpxcore.package 는 P2-19(#567)에서 required opener 포트로 역전됐고
-# (concrete 결속 = external/hwpx_engine), core.fields → hwpxcore.package 는 타입 주석
-# 결합뿐이라 덕타이핑으로 소거됐다. text_extract → package 1건(#567 축소 착지의 잔여)은
-# P2-19R(#576)에서 제거됐다 — 위 allowed_direction_violation = [] 주석 참조.
-#
-# core.job → hwpxcore.atomic·core.job → core.text_registry·core.template_status →
-# core.paths 3건은 P2-21(#569)에서 Job 영속 경계(external/job_store)·writer lease
-# (host/job_writer_lease)·기본 루트 해석(host/locations 의 default_templates_dir·
-# library_root_for) 이관으로 제거됐다.
 [[unit]]
 module = "hwpxcore"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/__init__.py"]
-remove_when = "hwpxcore: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxcore.atomic"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxcore/atomic.py"]
-remove_when = "hwpxcore.atomic: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp"
 
 [[unit]]
 module = "hwpxcore.lineseg"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/lineseg.py"]
-remove_when = "hwpxcore.lineseg: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.motw"
 target = "HOST"
 source_write_set = ["src/hwpxcore/motw.py"]
-remove_when = "hwpxcore.motw: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_motw.py::test_frozen_without_ads_is_safe"
 
 [[unit]]
 module = "hwpxcore.native"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxcore/native/__init__.py"]
-remove_when = "hwpxcore.native: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_native_positive.py"
 
 [[unit]]
 module = "hwpxcore.native._debug"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxcore/native/_debug.py"]
-remove_when = "hwpxcore.native._debug: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_webapp_bridge.py::test_pick_data_file_corrupt_workbook_returns_error_not_raise"
 
 [[unit]]
 module = "hwpxcore.native.clipboard"
 target = "HOST"
 source_write_set = ["src/hwpxcore/native/clipboard.py"]
-remove_when = "hwpxcore.native.clipboard: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_native_positive.py"
 
 [[unit]]
 module = "hwpxcore.native.dialogs"
 target = "HOST"
 source_write_set = ["src/hwpxcore/native/dialogs.py"]
-remove_when = "hwpxcore.native.dialogs: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated"
 
 [[unit]]
 module = "hwpxcore.native.reveal"
 target = "HOST"
 source_write_set = ["src/hwpxcore/native/reveal.py"]
-remove_when = "hwpxcore.native.reveal: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_tracking_locate.py::test_reveal_and_open_missing_path_is_loud"
 
 [[unit]]
 module = "hwpxcore.native.single_instance"
 target = "HOST"
 source_write_set = ["src/hwpxcore/native/single_instance.py"]
-remove_when = "hwpxcore.native.single_instance: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_single_instance.py::test_mutex_name_is_stable_and_home_scoped"
 
 [[unit]]
 module = "hwpxcore.package"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxcore/package.py"]
-remove_when = "hwpxcore.package: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.text_extract"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/text_extract.py"]
-remove_when = "hwpxcore.text_extract: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxcore.validate"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/validate.py"]
-remove_when = "hwpxcore.validate: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_injects_marker"
 
 [[unit]]
 module = "hwpxfiller"
 target = "RETIRE"
 source_write_set = ["src/hwpxfiller/__init__.py"]
-remove_when = "hwpxfiller: production consumer-zero 확인 뒤 모듈/잔재와 전용 테스트를 함께 제거"
 oracle_nodeid = "tests/test_naming.py"
-obligations = ["stale __version__ 재수출 제거", "구조적 package __init__ 보존"]
 
 [[unit]]
 module = "hwpxfiller.batch"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/batch.py"]
-remove_when = "hwpxfiller.batch: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-obligations = ["구체 파일 생성 호출을 effect contract 뒤로 이동"]
 
 [[unit]]
 module = "hwpxfiller.cli"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/cli.py"]
-remove_when = "hwpxfiller.cli: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py"
 
 [[unit]]
 module = "hwpxfiller.core"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/__init__.py"]
-remove_when = "hwpxfiller.core: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_engine.py"
 
 [[unit]]
 module = "hwpxfiller.core.authoring"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/authoring.py"]
-remove_when = "hwpxfiller.core.authoring: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxfiller.core.dataset_pool"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/core/dataset_pool.py"]
-remove_when = "hwpxfiller.core.dataset_pool: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
 
 [[unit]]
 module = "hwpxfiller.core.engine"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/engine.py"]
-remove_when = "hwpxfiller.core.engine: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
 
 [[unit]]
 module = "hwpxfiller.core.fields"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/fields.py"]
-remove_when = "hwpxfiller.core.fields: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_strips_stale_lineseg_only_in_compiled_sections"
 
 [[unit]]
 module = "hwpxfiller.core.fill_ledger"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/fill_ledger.py"]
-remove_when = "hwpxfiller.core.fill_ledger: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_drift_describe_is_single_source_of_message"
-obligations = ["내보내기 직렬화를 External Adapter로 추출", "시각 공급을 Clock port로 추출"]
 
 [[unit]]
 module = "hwpxfiller.core.format_engine"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/format_engine.py"]
-remove_when = "hwpxfiller.core.format_engine: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_nara_source_with_profile_fills_template"
 
 [[unit]]
 module = "hwpxfiller.core.identity_summary"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/identity_summary.py"]
-remove_when = "hwpxfiller.core.identity_summary: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_identity_summary.py::test_all_disqualified_yields_no_columns"
 
 [[unit]]
 module = "hwpxfiller.core.jamo"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/jamo.py"]
-remove_when = "hwpxfiller.core.jamo: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_filter_state.py::test_apply_state_prunes_only_existing_columns"
 
 [[unit]]
 module = "hwpxfiller.core.job"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/job.py"]
-remove_when = "hwpxfiller.core.job: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-obligations = ["시각·식별자 공급을 주입", "저장 직렬화를 External Adapter로 추출", "파일·잠금·프로세스·native 호출을 effect port로 추출"]
 
 [[unit]]
 module = "hwpxfiller.core.lint"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/lint.py"]
-remove_when = "hwpxfiller.core.lint: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_lint_crash_exit_2_distinct_from_issue_gate_exit_1"
 
 [[unit]]
 module = "hwpxfiller.core.mapping"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/mapping.py"]
-remove_when = "hwpxfiller.core.mapping: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
 
 [[unit]]
 module = "hwpxfiller.core.paths"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/core/paths.py"]
-remove_when = "hwpxfiller.core.paths: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
 module = "hwpxfiller.core.schema"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/schema.py"]
-remove_when = "hwpxfiller.core.schema: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 
 [[unit]]
 module = "hwpxfiller.core.source_profile"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/source_profile.py"]
-remove_when = "hwpxfiller.core.source_profile: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_ledger_records_marker_evidence"
 
 [[unit]]
 module = "hwpxfiller.core.template_status"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/template_status.py"]
-remove_when = "hwpxfiller.core.template_status: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
 
 [[unit]]
 module = "hwpxfiller.core.text_registry"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/core/text_registry.py"]
-remove_when = "hwpxfiller.core.text_registry: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
-obligations = ["텍스트 항목의 정체와 검증 규칙을 Domain으로 추출"]
 
 [[unit]]
 module = "hwpxfiller.core.text_render"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/core/text_render.py"]
-remove_when = "hwpxfiller.core.text_render: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_home_state.py::test_txt_rows"
 
 [[unit]]
 module = "hwpxfiller.data"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/__init__.py"]
-remove_when = "hwpxfiller.data: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_data_factory.py"
 
 [[unit]]
 module = "hwpxfiller.data.base"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/base.py"]
-remove_when = "hwpxfiller.data.base: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_nara.py"
 
 [[unit]]
 module = "hwpxfiller.data.excel"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/excel.py"]
-remove_when = "hwpxfiller.data.excel: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_injects_marker"
 
 [[unit]]
 module = "hwpxfiller.data.factory"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/factory.py"]
-remove_when = "hwpxfiller.data.factory: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_data_factory.py::test_csv_roundtrip_through_factory"
 
 [[unit]]
 module = "hwpxfiller.data.inline"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/inline.py"]
-remove_when = "hwpxfiller.data.inline: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_data_factory.py::test_make_source_inline_kind_wraps_records"
 
 [[unit]]
 module = "hwpxfiller.data.nara"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/nara.py"]
-remove_when = "hwpxfiller.data.nara: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_nara_auth_failure_is_loud_exit_1"
 
 [[unit]]
 module = "hwpxfiller.data.pipeline"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/data/pipeline.py"]
-remove_when = "hwpxfiller.data.pipeline: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_data_factory.py::test_make_source_pipeline_kind"
 
 [[unit]]
 module = "hwpxfiller.data.secret_store"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/data/secret_store.py"]
-remove_when = "hwpxfiller.data.secret_store: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_ledger_records_marker_evidence"
-obligations = ["redaction 규칙과 secret port를 순수 계약으로 추출"]
 
 [[unit]]
 module = "hwpxfiller.gui"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/__init__.py"]
-remove_when = "hwpxfiller.gui: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.gui.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/compile_badge.py"]
-remove_when = "hwpxfiller.gui.compile_badge: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_compile_badge.py::test_every_compile_state_has_label_and_level"
 
 [[unit]]
 module = "hwpxfiller.gui.dataset_pool_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/dataset_pool_state.py"]
-remove_when = "hwpxfiller.gui.dataset_pool_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool_state.py::test_status_transitions_and_action_matrix"
 
 [[unit]]
 module = "hwpxfiller.gui.edit_session"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/edit_session.py"]
-remove_when = "hwpxfiller.gui.edit_session: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_edit_session.py"
 
 [[unit]]
 module = "hwpxfiller.gui.file_filters"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/file_filters.py"]
-remove_when = "hwpxfiller.gui.file_filters: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_file_filters.py"
 
 [[unit]]
 module = "hwpxfiller.gui.filter_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/filter_state.py"]
-remove_when = "hwpxfiller.gui.filter_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_filter_state.py::test_apply_state_partial_column_loss"
 
 [[unit]]
 module = "hwpxfiller.gui.home_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/home_state.py"]
-remove_when = "hwpxfiller.gui.home_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool_state.py::test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero"
 
 [[unit]]
 module = "hwpxfiller.gui.job_editor_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/job_editor_state.py"]
-remove_when = "hwpxfiller.gui.job_editor_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_job_editor_state.py::test_overwrite_confirm_only_when_covering_another_job"
 
 [[unit]]
 module = "hwpxfiller.gui.mapping_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/mapping_state.py"]
-remove_when = "hwpxfiller.gui.mapping_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_job_editor_state.py::test_validate_save_blocks_all_blank_job"
 
 [[unit]]
 module = "hwpxfiller.gui.nara_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/nara_state.py"]
-remove_when = "hwpxfiller.gui.nara_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_nara_auth_failure_is_loud"
 
 [[unit]]
 module = "hwpxfiller.gui.record_range"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/record_range.py"]
-remove_when = "hwpxfiller.gui.record_range: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.gui.result_errors"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/result_errors.py"]
-remove_when = "hwpxfiller.gui.result_errors: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_cli.py::test_fill_notes_surface_on_stderr_once_per_batch"
 
 [[unit]]
 module = "hwpxfiller.gui.review_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/review_state.py"]
-remove_when = "hwpxfiller.gui.review_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_review_state.py"
 
 [[unit]]
 module = "hwpxfiller.gui.run_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/run_state.py"]
-remove_when = "hwpxfiller.gui.run_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dataset_pool.py::test_run_load_pool_item_excel_live"
-obligations = ["구체 실행기 조립을 Host composition root로 이동"]
 
 [[unit]]
 module = "hwpxfiller.gui.selection_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/selection_state.py"]
-remove_when = "hwpxfiller.gui.selection_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_selection_state.py"
 
 [[unit]]
 module = "hwpxfiller.gui.template_manager_state"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/template_manager_state.py"]
-remove_when = "hwpxfiller.gui.template_manager_state: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_compile_badge.py::test_template_manager_rows_derive_from_single_source"
 
 [[unit]]
 module = "hwpxfiller.gui.txt_card"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/txt_card.py"]
-remove_when = "hwpxfiller.gui.txt_card: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.gui.txt_queue"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/txt_queue.py"]
-remove_when = "hwpxfiller.gui.txt_queue: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_txt_queue.py::test_advance_to_next_uncopied_is_opt_in"
 
 [[unit]]
 module = "hwpxfiller.gui.work_candidates"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/work_candidates.py"]
-remove_when = "hwpxfiller.gui.work_candidates: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_webapp_job.py"
 
 [[unit]]
 module = "hwpxfiller.gui.work_mode"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/work_mode.py"]
-remove_when = "hwpxfiller.gui.work_mode: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_webapp_workbench.py"
 
 [[unit]]
 module = "hwpxfiller.naming"
 target = "DOMAIN"
 source_write_set = ["src/hwpxfiller/naming.py"]
-remove_when = "hwpxfiller.naming: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-obligations = ["현재 시각을 Clock port로 주입"]
 
 [[unit]]
 module = "hwpxfiller.web_artifact"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/web_artifact.py"]
-remove_when = "hwpxfiller.web_artifact: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/_press_probe.py"
 
 [[unit]]
 module = "hwpxfiller.webapp"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/__init__.py"]
-remove_when = "hwpxfiller.webapp: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_boot_budget.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.__main__"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/__main__.py"]
-remove_when = "hwpxfiller.webapp.__main__: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.action_registry"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/action_registry.py"]
-remove_when = "hwpxfiller.webapp.action_registry: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py::test_unknown_screen_action_and_payload_are_rejected_loudly"
 
 [[unit]]
 module = "hwpxfiller.webapp.app"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/app.py"]
-remove_when = "hwpxfiller.webapp.app: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_webapp_bridge.py::test_native_close_guard_allows_clean_and_blocks_armed_session"
 
 [[unit]]
 module = "hwpxfiller.webapp.boot_budget"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/boot_budget.py"]
-remove_when = "hwpxfiller.webapp.boot_budget: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
 module = "hwpxfiller.webapp.data_zone"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/data_zone.py"]
-remove_when = "hwpxfiller.webapp.data_zone: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.job_list"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/job_list.py"]
-remove_when = "hwpxfiller.webapp.job_list: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.live_run"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/live_run.py"]
-remove_when = "hwpxfiller.webapp.live_run: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_live_run_contract.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.mapping_verbs"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/mapping_verbs.py"]
-remove_when = "hwpxfiller.webapp.mapping_verbs: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
 
 [[unit]]
 module = "hwpxfiller.webapp.product_api"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/product_api.py"]
-remove_when = "hwpxfiller.webapp.product_api: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_web_product_api.py::test_facade_absent_is_its_own_type_and_not_a_descriptor_error"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_editor"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_editor.py"]
-remove_when = "hwpxfiller.webapp.screen_editor: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
-obligations = ["시각 접근을 effect contract로 추출"]
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_job"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_job.py"]
-remove_when = "hwpxfiller.webapp.screen_job: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
-obligations = ["시각 접근을 effect contract로 추출"]
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_library"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_library.py"]
-remove_when = "hwpxfiller.webapp.screen_library: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_pool"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_pool.py"]
-remove_when = "hwpxfiller.webapp.screen_pool: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_template"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_template.py"]
-remove_when = "hwpxfiller.webapp.screen_template: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
-obligations = ["tpl 호환 채널 consumer-zero 뒤 제거", "파일·시각·식별자 효과를 contract 뒤로 이동"]
 
 [[unit]]
 module = "hwpxfiller.webapp.screen_workbench"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_workbench.py"]
-remove_when = "hwpxfiller.webapp.screen_workbench: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_dispatch_wiring.py"
-obligations = ["시각 접근을 effect contract로 추출"]
 
 [[unit]]
 module = "hwpxfiller.webapp.screens"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screens.py"]
-remove_when = "hwpxfiller.webapp.screens: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_kind = "structural"
-obligations = ["환경 접근을 effect contract로 추출"]
 
 [[unit]]
 module = "hwpxfiller.webapp.selftest_api"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
-remove_when = "hwpxfiller.webapp.selftest_api: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_selftest_api.py"
 
 [[unit]]
 module = "hwpxfiller.webapp.settings"
 target = "EXTERNAL_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/settings.py"]
-remove_when = "hwpxfiller.webapp.settings: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
 
 [[unit]]
 module = "hwpxfiller.webapp.template_groups"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/template_groups.py"]
-remove_when = "hwpxfiller.webapp.template_groups: old→new 승계 뒤 legacy symbol consumer-zero와 oracle 통과 시 제거"
 oracle_nodeid = "tests/test_template_groups.py"

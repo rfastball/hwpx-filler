@@ -43,7 +43,7 @@ from ..gui.txt_queue import TxtQueueModel
 from ..gui.work_mode import WORK_MODE_TEXT, work_mode_label
 from .mapping_verbs import MappingVerbsMixin
 from .screens import PushSink
-from .settings import is_proportional_font, load_draft_target_font, save_draft_target_font
+from ..external.settings import is_proportional_font, load_draft_target_font, save_draft_target_font
 
 #: 표시형 프리셋·유형 선택지 — 「기안」·편집기와 **같은 표**(format_engine)에서 뽑는다.
 #: 세 표면이 표시형을 달리 부르면 저장 왕복에서 어휘가 갈린다.

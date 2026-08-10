@@ -1805,8 +1805,9 @@ def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
 
     게이트는 잠금 밖 사본을 보고, 확인 왕복은 사람 시간이다 — 미연결 작업에 HWPX·TXT 첫
     연결이 동시에 확인되면 둘 다 게이트를 지나고 두 번째 커밋이 교차 금지를 우회한다.
-    stale 사본을 돌려주는 load 로 그 창을 재현해, 커밋 콜백의 재판정이 같은 문안으로
-    거절하고 durable 이 불변임을 가드한다.
+    stale 사본을 돌려주는 load 로 그 창을 재현해, 커밋의 재판정이 같은 문안으로 거절하고
+    durable 이 불변임을 가드한다. 재판정의 거처는 P2-99(#542 F-1)에서 링2 콜백이 아니라
+    포트의 semantic atomic op(``relink_template``)으로 옮겼다 — 재현 창과 판정 결과는 같다.
     """
     from hwpxfiller.webapp.screens import relink_job_template
 
@@ -1827,8 +1828,8 @@ def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
         def load(self, name):
             return self._stale
 
-        def mutate(self, name, fn):
-            return self._real.mutate(name, fn)
+        def relink_template(self, name, path):
+            return self._real.relink_template(name, path)
 
     txt = tmp_path / "경합.txt"
     txt.write_text("공고: {{공고명}}", encoding="utf-8")

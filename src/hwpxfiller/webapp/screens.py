@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
+from ..application.jobs import CrossMediaRelinkError, relink_template
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference
 from ..external.dataset_store import DatasetPoolRegistry
@@ -226,10 +227,6 @@ def _cross_media_refusal(name: str, old_path: str, new_media: str) -> str:
     )
 
 
-class _RelinkMediaRace(Exception):
-    """잠금 안 재판정이 잡은 매체 교차(리뷰 5R P2) — 사용자 문안을 그대로 실어 나른다."""
-
-
 def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = False) -> dict:
     """작업 템플릿 참조 재지정 — run/home 공유 확정 게이트(교차-단위 계약 단일 출처).
 
@@ -316,25 +313,18 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
             ),
         }
     old = job.template_path
-    # 확정 커밋 — 단일 필드 뮤테이션(매핑·태그·기본 데이터 참조 보존)을 레지스트리의 **잠긴
-    # 경로**로 낸다(#129 리뷰 3R P1). 위에서 읽은 사본으로 통째 저장하면, 확인 왕복 사이에
-    # 다른 writer(생성 스탬프·에디터 저장·태그 편집)가 남긴 변경을 낡은 값으로 되돌린다 —
-    # 확인 게이트가 있어 그 창이 사람 시간만큼 길다는 점이 이 경로를 특히 위험하게 만든다.
-    def _relink(j) -> None:
-        # 매체 재판정을 **잠금 안에서** 한 번 더(리뷰 5R P2): 게이트는 잠금 밖 사본을 봤고
-        # 확인 왕복은 사람 시간이다 — 그 사이 다른 relink(첫 연결·복구)가 매체를 정했으면
-        # 이 커밋이 교차 금지를 우회한다. 같은 문안으로 거절한다.
-        current = template_media(j.template_path)
-        if current in ("hwpx", "txt") and current != new_media:
-            raise _RelinkMediaRace(_cross_media_refusal(name, j.template_path, new_media))
-        if current not in ("hwpx", "txt"):
-            j.last_run_at = ""   # 미상 이력 미승계 — 위 history_clause 가 고지한 그 삭제
-        j.template_path = path
-
+    # 확정 커밋 — durable 트랜잭션은 Application use case 가 소유한다(P2-99 #542 F-1). 위에서
+    # 읽은 사본으로 통째 저장하면, 확인 왕복 사이에 다른 writer(생성 스탬프·에디터 저장·태그
+    # 편집)가 남긴 변경을 낡은 값으로 되돌린다 — 확인 게이트가 있어 그 창이 사람 시간만큼
+    # 길다는 점이 이 경로를 특히 위험하게 만든다. 잠금 안 매체 재판정(그 사이 다른 relink 가
+    # 매체를 정했으면 이 커밋이 교차 금지를 우회한다)과 미상 이력 미승계도 그 원자 전이
+    # 안이다 — 여기 남는 것은 **거절 문안 재진술**뿐이다.
     try:
-        job_registry.mutate(name, _relink)
-    except _RelinkMediaRace as exc:
-        return {"ok": False, "error": str(exc)}
+        relink_template(job_registry, name, path)
+    except CrossMediaRelinkError as exc:
+        # 문안은 **잠금 안에서 본** 경로로 짓는다(exc.old_path) — 위 `old` 는 확인 왕복 전
+        # 사본이라 경합에 진 경우 실제로 부딪힌 상대와 다르다.
+        return {"ok": False, "error": _cross_media_refusal(name, exc.old_path, exc.new_media)}
     return {"ok": True, "relinked": True, "name": name, "old": old, "path": path}
 
 

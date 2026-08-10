@@ -21,7 +21,11 @@ from datetime import datetime
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
-from hwpxfiller.application.jobs import CORRUPT_PATH_REJECT, CorruptJobEntry
+from hwpxfiller.application.jobs import (
+    CORRUPT_PATH_REJECT,
+    CorruptJobEntry,
+    CrossMediaRelinkError,
+)
 from hwpxfiller.core.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
@@ -31,6 +35,7 @@ from hwpxfiller.core.job import (
     advance_revisions,
     library_rel_key,
     load_isolated,
+    template_media,
 )
 from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.host.job_writer_lease import _OwnedWriteLock, shared_write_state
@@ -389,6 +394,38 @@ class JobRegistry:
                 job.favorited_at = ""
 
         return self.mutate(name, _set)
+
+    def set_tags(self, name: str, tags: "dict[str, str]") -> Job:
+        """분류 태그 통째 교체 — 포트의 semantic atomic op(#542 D-1).
+
+        축·값 검증은 호출 seam 이 소유하고 여기는 검증된 값을 한 왕복으로 반영한다.
+        """
+        return self.mutate(name, lambda job: setattr(job, "tags", dict(tags)))
+
+    def relink_template(self, name: str, path: str) -> Job:
+        """템플릿 참조 재지정 — **잠금 안 매체 재판정 + 커밋**의 semantic atomic op(#542 F-1).
+
+        사전 게이트는 잠금 밖 사본을 봤고 확인 왕복은 사람 시간이다. 그 사이 다른 재연결
+        (첫 연결·복구)이 매체를 정했으면 이 커밋이 교차 금지를 우회하므로 여기서 한 번 더
+        묻는다 — 교차면 :class:`~hwpxfiller.application.jobs.CrossMediaRelinkError` 로 저장
+        **0건**(fail-closed). 거절 문안은 표면이 재진술한다(여기는 사실만 낸다).
+
+        구 매체 미상(빈 경로·``.docx``)의 사용 이력은 승계하지 않는다: ``last_run_at`` 의
+        뜻은 매체가 정하는데(§19.4) 미상 작업의 스탬프는 어느 술어로도 읽을 수 없다 —
+        새 매체의 사건으로 재해석되면 그것이 곧 위조다. 즐겨찾기는 방식 무관 사용자
+        선호라 남고, 검토 기준선은 규칙 지문에 결속돼 스스로 무효화된다.
+        """
+        new_media = template_media(path)
+
+        def _relink(job: Job) -> None:
+            current = template_media(job.template_path)
+            if current in ("hwpx", "txt") and current != new_media:
+                raise CrossMediaRelinkError(job.template_path, new_media)
+            if current not in ("hwpx", "txt"):
+                job.last_run_at = ""
+            job.template_path = path
+
+        return self.mutate(name, _relink)
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
