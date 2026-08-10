@@ -2,17 +2,16 @@ import json
 
 from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.fill_ledger import (
-    LEDGER_SIDECAR_NAME,
     StructureState,
     ValueState,
     build_fill_ledger,
-    export_run_ledger,
     ledger_outputs,
     manifest_rows,
     template_structure_drift,
     template_path_drift,
     verify_output,
 )
+from hwpxfiller.external.ledger_export import LEDGER_SIDECAR_NAME, export_run_ledger
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.source_profile import profile_fields
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -180,17 +179,34 @@ def test_export_redacts_service_key_and_notes_no_render(tmp_path):
     assert json.loads(text) == payload
 
 
+def test_export_batch_ledger_honors_caller_timestamp(tmp_path):
+    """호출자가 고정한 generated_at 이 그대로 쓰인다 — 시계 폴백(RC-07 계획 시점 고정)과의 분기."""
+    from hwpxfiller.external.ledger_export import export_batch_ledger
+
+    sidecar = export_batch_ledger(
+        tmp_path, template="t.hwpx", source="file:d.xlsx", mapping=_mapping(),
+        template_fields=["공고명"], results=[], mapped_records=[],
+        generated_at="2026-07-12T14:05:03",
+    )
+    assert sidecar == tmp_path / "fill-ledger-20260712-140503.json"
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert payload["generated_at"] == "2026-07-12T14:05:03"
+    assert payload["outputs"] == []  # 빈 배치도 예외 없이 증거 형태를 지킨다
+
+
 # ------------------------------------------------- 실행별 사이드카 경로(RC-02)
 def test_ledger_sidecar_path_is_timestamped(tmp_path):
-    from hwpxfiller.core.fill_ledger import ledger_sidecar_path
+    from hwpxfiller.external.ledger_export import ledger_sidecar_path
 
     p = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
     assert p == tmp_path / "fill-ledger-20260712-140503.json"
+    # 비정상(초 해상도 미만) 입력도 조용히 덮지 않는다 — 접미사 루프를 같은 이름으로 탄다.
+    assert ledger_sidecar_path(tmp_path, "") == tmp_path / "fill-ledger.json"
 
 
 def test_ledger_sidecar_path_same_second_accumulates(tmp_path):
     """같은 초 재실행 — 기존 증거를 덮지 않고 접미사로 비켜 간다(증거는 축적)."""
-    from hwpxfiller.core.fill_ledger import ledger_sidecar_path
+    from hwpxfiller.external.ledger_export import ledger_sidecar_path
 
     first = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
     first.write_text("{}", encoding="utf-8")

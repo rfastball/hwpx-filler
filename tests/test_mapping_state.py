@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile, apply_transform
+from hwpxfiller.external.mapping_store import save_mapping_profile
 from hwpxfiller.core.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
@@ -386,7 +387,7 @@ def test_profile_roundtrip_preserves_format(tmp_path):
     model = MappingModel(rows=[RowState("추정가격", source="presmptPrce", type="amount", fmt="{:,}")])
     model.set_confirmed(0)
     path = tmp_path / "p.json"
-    model.to_profile().save(path)
+    save_mapping_profile(model.to_profile(), path)
     loaded = MappingProfile.load(path)
     assert loaded.mappings[0].fmt == "{:,}"
     assert loaded.apply({"presmptPrce": "21326800"})["추정가격"] == "21,326,800"
@@ -443,7 +444,7 @@ def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     model.set_confirmed(rows["개찰일시"])
     model.set_confirmed(rows["추정가격"])
     path = tmp_path / "profile.json"
-    model.to_profile("나라장터표준").save(path)
+    save_mapping_profile(model.to_profile("나라장터표준"), path)
 
     fresh = _model()
     assert not fresh.is_complete()

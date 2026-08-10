@@ -24,10 +24,10 @@ dst = "hwpxcore.package"
 src = "hwpxfiller.core.fields"
 dst = "hwpxcore.package"
 
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.fill_ledger"
-dst = "hwpxcore.atomic"
-
+# core.fill_ledger·core.mapping → hwpxcore.atomic 은 P2-18(#566)에서 durable write 개시가
+# External(external/ledger_export·external/mapping_store)로 승계되며 제거됐다.
+# 아래 core.job → hwpxcore.atomic 최종 1건의 owner 는 #569 다 — 얇은 writer 주입으로
+# 봉합하지 않고 Job 영속 경계 이관(책임 이동)으로 제거한다. 임시 완료로 세지 않는다.
 [[allowed_direction_violation]]
 src = "hwpxfiller.core.job"
 dst = "hwpxcore.atomic"
@@ -39,10 +39,6 @@ dst = "hwpxcore.atomic"
 [[allowed_direction_violation]]
 src = "hwpxfiller.core.job"
 dst = "hwpxfiller.core.text_registry"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.mapping"
-dst = "hwpxcore.atomic"
 
 [[allowed_direction_violation]]
 src = "hwpxfiller.core.template_status"
