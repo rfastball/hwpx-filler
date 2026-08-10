@@ -38,6 +38,7 @@ from hwpxcore.atomic import write_text_atomic
 
 from ..core.template_status import TRASH_DIR_NAME, default_templates_dir
 from ..core.text_registry import TextTemplateRegistry
+from ..external.template_inspection import inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel
 from .screens import PushSink
 from .template_groups import TemplateGroupModel, rel_key, validate_template_name
@@ -64,7 +65,8 @@ class TemplateController:
         self.text_registry = text_registry
         # 라이브러리 폴더 미지정이면 표준 라이브러리(~/.hwpxfiller/templates)를 겨눈다(고정 루트).
         self.vm = TemplateManagerViewModel(
-            library_dir if library_dir is not None else default_templates_dir()
+            library_dir if library_dir is not None else default_templates_dir(),
+            inspect_template=inspect_hwpx_template,
         )
         # 매체별 그룹+접힘 모델(결정 2·3) — 설정 영속의 단일 소유자. 주입은 테스트 편의.
         self.hwpx_groups = hwpx_groups if hwpx_groups is not None else TemplateGroupModel("hwpx")

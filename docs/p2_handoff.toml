@@ -56,10 +56,6 @@ dst = "hwpxfiller.core.paths"
 src = "hwpxfiller.gui.run_state"
 dst = "hwpxfiller.data.factory"
 
-[[allowed_direction_violation]]
-src = "hwpxfiller.gui.template_manager_state"
-dst = "hwpxcore.package"
-
 [[unit]]
 module = "hwpxcore"
 target = "DOMAIN"

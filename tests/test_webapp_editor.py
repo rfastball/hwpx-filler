@@ -13,6 +13,7 @@ import pytest
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.core.job import JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.external.template_inspection import inspect_hwpx_template
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.template_groups import TemplateGroupModel
@@ -30,7 +31,10 @@ def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
     # 사용자 폴더를 스캔하면 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
     ctrl = EditorController(
         reg, lambda s, snap: pushes.append((s, snap)),
-        template_library=TemplateManagerViewModel(paths=[]),
+        template_library=TemplateManagerViewModel(
+            paths=[],
+            inspect_template=inspect_hwpx_template,
+        ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     return ctrl, pushes
@@ -575,7 +579,10 @@ def _controller26(tmp_path: Path):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        template_library=TemplateManagerViewModel(paths=[]),
+        template_library=TemplateManagerViewModel(
+            paths=[],
+            inspect_template=inspect_hwpx_template,
+        ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     return ctrl, pushes
@@ -1663,8 +1670,17 @@ def test_toggle_clears_ignored_expanded_hint(tmp_path):
 # ---------------------------------- 신규 1단계 = 템플릿 라이브러리(R-info 2부 접합, PR-4)
 def _controller_lib(tmp_path, paths=None, lib_dir=None):
     pushes: list = []
-    vm = (TemplateManagerViewModel(lib_dir) if lib_dir is not None
-          else TemplateManagerViewModel(paths=paths or []))
+    vm = (
+        TemplateManagerViewModel(
+            lib_dir,
+            inspect_template=inspect_hwpx_template,
+        )
+        if lib_dir is not None
+        else TemplateManagerViewModel(
+            paths=paths or [],
+            inspect_template=inspect_hwpx_template,
+        )
+    )
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
@@ -1711,7 +1727,10 @@ def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
+        template_library=TemplateManagerViewModel(
+            paths=[TPL_COMPILED, TPL_PARTIAL],
+            inspect_template=inspect_hwpx_template,
+        ),
         template_groups=groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -1734,7 +1753,10 @@ def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
 
     lib = tmp_path / "lib"
     lib.mkdir()
-    vm = TemplateManagerViewModel(library_dir=lib)  # 빈 라이브러리로 시작
+    vm = TemplateManagerViewModel(
+        library_dir=lib,
+        inspect_template=inspect_hwpx_template,
+    )  # 빈 라이브러리로 시작
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
@@ -1752,7 +1774,10 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
     groups.set_group("아직없는.hwpx", "입찰")  # 에디터 VM 밖 파일
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED]),  # 그 파일 없음
+        template_library=TemplateManagerViewModel(
+            paths=[TPL_COMPILED],
+            inspect_template=inspect_hwpx_template,
+        ),  # 그 파일 없음
         template_groups=groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -1774,7 +1799,10 @@ def test_library_snapshot_carries_management_surface(tmp_path):
     txt_groups.set_group("공문.txt", "기안")
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
+        template_library=TemplateManagerViewModel(
+            paths=[TPL_COMPILED, TPL_PARTIAL],
+            inspect_template=inspect_hwpx_template,
+        ),
         template_groups=groups,
         text_registry=TextTemplateRegistry(txt_dir),
         txt_groups=txt_groups,
@@ -1804,7 +1832,10 @@ def test_library_result_line_reads_injected_source_live(tmp_path):
     result = {"text": "", "level": "muted"}
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-        template_library=TemplateManagerViewModel(paths=[]),
+        template_library=TemplateManagerViewModel(
+            paths=[],
+            inspect_template=inspect_hwpx_template,
+        ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
         library_result=lambda: result,
     )
@@ -2321,7 +2352,10 @@ def test_toggle_library_group_routes_by_media(tmp_path):
     txt_groups.set_group("기안.txt", "온나라")
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
-        template_library=TemplateManagerViewModel(paths=[]),
+        template_library=TemplateManagerViewModel(
+            paths=[],
+            inspect_template=inspect_hwpx_template,
+        ),
         template_groups=hwpx_groups,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
         txt_groups=txt_groups,
