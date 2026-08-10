@@ -8,7 +8,8 @@ from lxml import etree
 
 from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.template_status import CompileState
 from hwpxfiller.gui.home_state import (

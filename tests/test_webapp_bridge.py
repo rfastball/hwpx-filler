@@ -359,7 +359,7 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     생존 소비자는 「문서 만들기」 하나 — 실 사용자 풀을 건드리지 않게 tmp 레지스트리로
     직접 조립한다(브리지 dispatch 검증은 registry 완결성 테스트가 별도로 진다).
     """
-    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.external.job_store import JobRegistry
     from hwpxfiller.data.factory import source_for_path, source_from_pool_item
     from hwpxfiller.webapp.screen_job import JobController
     from hwpxfiller.webapp.screens import NARA_FROZEN_TEXT

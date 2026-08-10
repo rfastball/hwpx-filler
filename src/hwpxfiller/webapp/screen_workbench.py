@@ -29,7 +29,8 @@ from datetime import datetime
 from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
-from ..core.job import Job, JobRegistry, content_fingerprint, work_mode
+from ..core.job import Job, work_mode
+from ..external.job_store import JobRegistry, content_fingerprint
 from ..core.mapping import TYPES, MappingProfile
 from ..core.text_render import template_fields
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession

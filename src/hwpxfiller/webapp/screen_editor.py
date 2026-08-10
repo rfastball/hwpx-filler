@@ -46,16 +46,15 @@ from ..core.format_engine import presets as format_presets
 from ..core.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
-    JobRegistry,
-    content_fingerprint,
     template_media,
 )
 from ..core.mapping import TYPES, MappingProfile
 from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
-from ..core.template_status import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..core.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path
+from ..external.job_store import JobRegistry, content_fingerprint
+from ..host.locations import default_templates_dir
 from ..gui.edit_session import (
     SECTION_BINDING,
     SECTION_FILENAME,

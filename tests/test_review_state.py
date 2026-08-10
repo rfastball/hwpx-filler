@@ -11,9 +11,14 @@ import shutil
 
 from hwpxfiller.core.job import (
     Job,
+    rules_fingerprints,
+)
+from hwpxfiller.external.job_store import (
     JobRegistry,
     content_fingerprint,
-    rules_fingerprints,
+    decode_job,
+    encode_job,
+    library_key_for,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import (
@@ -93,7 +98,7 @@ def test_reviewed_rules_is_excluded_from_content_fingerprint():
 
 def test_reviewed_rules_round_trips_through_durable_json():
     job = _reviewed(_job())
-    assert Job.from_dict(job.to_dict()).reviewed_rules == job.reviewed_rules
+    assert decode_job(encode_job(job)).reviewed_rules == job.reviewed_rules
 
 
 # ------------------------------------------------------------------ 요구 판정
@@ -310,7 +315,7 @@ def test_approval_is_not_persisted_so_restart_reinstates_the_requirement():
     req = review_requirement(job)
     st = ReviewState()
     st.approve(req, "0,1")
-    reloaded = Job.from_dict(job.to_dict())  # durable 왕복 = 재시작
+    reloaded = decode_job(encode_job(job))  # durable 왕복 = 재시작
     assert review_requirement(reloaded).required
     assert not ReviewState().is_approved(review_requirement(reloaded), "0,1")
 
@@ -578,7 +583,7 @@ def test_home_move_keeps_the_link_and_costs_only_the_structure_flag(tmp_path, mo
 
     # ① 링크는 살아 있다 — 새 홈의 실제 파일로 해석된다(#348 의 이득은 그대로).
     assert moved.template_path == str(home_b / "templates" / "조달" / "공고서.hwpx")
-    assert moved.template_key == "조달/공고서.hwpx"
+    assert library_key_for(moved.template_path) == "조달/공고서.hwpx"
 
     # ② 게이트는 서지 않는다 — 지적이 든 "매 이사마다 재검토 강제"는 일어나지 않는다.
     req = review_requirement(moved)

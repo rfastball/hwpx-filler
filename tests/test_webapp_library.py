@@ -10,7 +10,8 @@ from __future__ import annotations
 import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
-from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.job import Job
+from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_library import LibraryController

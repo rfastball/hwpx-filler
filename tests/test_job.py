@@ -16,15 +16,22 @@ import pytest
 
 from hwpxfiller.core.job import (
     Job,
-    JobRegistry,
-    JobSlugCollisionError,
     RunRequest,
-    SlugCollisionError,
     _reject_unsafe_key,
-    content_fingerprint,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.job_store import (
+    JobRegistry,
+    JobSlugCollisionError,
+    SlugCollisionError,
+    content_fingerprint,
+    decode_job,
+    encode_job,
+    library_key_for,
+    load_job,
+    save_job,
+)
 from hwpxfiller.host.locations import default_jobs_dir
 
 
@@ -75,12 +82,12 @@ def test_default_filename_pattern_is_single_source():
     assert DEFAULT_FILENAME_PATTERN == "공고서-{{date}}-{{seq:001}}"
     assert pattern_field_tokens(DEFAULT_FILENAME_PATTERN) == []  # 데이터 토큰 0 = 항상 해소
     assert Job().filename_pattern == DEFAULT_FILENAME_PATTERN
-    assert Job.from_dict({}).filename_pattern == DEFAULT_FILENAME_PATTERN
+    assert decode_job({}).filename_pattern == DEFAULT_FILENAME_PATTERN
 
 
 def test_to_dict_from_dict_roundtrip_preserves_embedded_mapping():
     """작업 dict 왕복이 임베드된 매핑의 소스·표시형까지 보존한다."""
-    loaded = Job.from_dict(_job().to_dict())
+    loaded = decode_job(encode_job(_job()))
     assert loaded.name == "입찰공고서"
     assert loaded.template_path == "/tmp/template.hwpx"
     assert loaded.filename_pattern == "공고서-{{공고명}}"
@@ -92,8 +99,8 @@ def test_to_dict_from_dict_roundtrip_preserves_embedded_mapping():
 def test_save_load_roundtrip_preserves_mapping_behavior(tmp_path):
     """저장→로드된 작업의 매핑이 같은 값을 낸다(표시형 서식 포함) — 행위 재검증."""
     path = tmp_path / "job.json"
-    _job().save(path)
-    loaded = Job.load(path)
+    save_job(path, _job())
+    loaded = load_job(path)
     assert loaded.mapping.apply({"bidNtceNm": "테스트", "presmptPrce": "21326800"}) == {
         "공고명": "테스트",
         "추정가격": "21,326,800",
@@ -104,13 +111,13 @@ def test_last_run_at_roundtrip_and_backward_compat():
     """가산 필드 last_run_at — 왕복 보존 + 구 JSON(키 부재)은 기본값 ""(version 1 유지)."""
     job = _job()
     job.last_run_at = "2026-07-10T12:34:56"
-    loaded = Job.from_dict(job.to_dict())
+    loaded = decode_job(encode_job(job))
     assert loaded.last_run_at == "2026-07-10T12:34:56"
     assert loaded.version == 1
 
-    old_dict = _job().to_dict()
+    old_dict = encode_job(_job())
     del old_dict["last_run_at"]  # 구 버전이 저장한 JSON
-    assert Job.from_dict(old_dict).last_run_at == ""
+    assert decode_job(old_dict).last_run_at == ""
 
 
 def test_tags_roundtrip_and_backward_compat():
@@ -118,13 +125,13 @@ def test_tags_roundtrip_and_backward_compat():
     구 JSON(키 부재)은 기본값 {}(version 1 유지). 축·값은 이름 문자열 그대로."""
     job = _job()
     job.tags = {"금액구간": "1억미만", "목적물": "물품"}
-    loaded = Job.from_dict(job.to_dict())
+    loaded = decode_job(encode_job(job))
     assert loaded.tags == {"금액구간": "1억미만", "목적물": "물품"}
     assert loaded.version == 1
 
-    old_dict = _job().to_dict()
+    old_dict = encode_job(_job())
     del old_dict["tags"]  # tags 필드 도입 전 저장된 JSON
-    from_old = Job.from_dict(old_dict)
+    from_old = decode_job(old_dict)
     assert from_old.tags == {}
     assert from_old.version == 1
 
@@ -132,7 +139,7 @@ def test_tags_roundtrip_and_backward_compat():
     assert Job().tags == {}
     # from_dict 는 방어적 복사 — 원 dict 변형이 로드된 작업에 새지 않는다(opts 선례).
     src = {"tags": {"목적물": "용역"}}
-    loaded2 = Job.from_dict(src)
+    loaded2 = decode_job(src)
     src["tags"]["목적물"] = "공사"
     assert loaded2.tags == {"목적물": "용역"}
 
@@ -144,13 +151,13 @@ def test_default_dataset_ref_is_dead_and_legacy_key_is_ignored():
     없음, 타입이 깨져 있어도 읽지 않는 키는 검증 대상이 아니다) 재저장 시 소멸한다.
     """
     assert not hasattr(Job(), "default_dataset_ref")
-    assert "default_dataset_ref" not in _job().to_dict()
+    assert "default_dataset_ref" not in encode_job(_job())
 
-    old_dict = {**_job().to_dict(), "default_dataset_ref": "월별_낙찰현황"}
-    from_old = Job.from_dict(old_dict)          # 구버전이 남긴 결속 키 — 조용히 무시
+    old_dict = {**encode_job(_job()), "default_dataset_ref": "월별_낙찰현황"}
+    from_old = decode_job(old_dict)          # 구버전이 남긴 결속 키 — 조용히 무시
     assert from_old.version == 1
-    assert "default_dataset_ref" not in from_old.to_dict()
-    assert Job.from_dict({**_job().to_dict(), "default_dataset_ref": 7}).name == _job().name
+    assert "default_dataset_ref" not in encode_job(from_old)
+    assert decode_job({**encode_job(_job()), "default_dataset_ref": 7}).name == _job().name
 
 
 def test_from_dict_rejects_type_corrupt_durable_values():
@@ -159,7 +166,7 @@ def test_from_dict_rejects_type_corrupt_durable_values():
     앱은 늘 str 값만 쓰므로 int/list/null 은 외부 훼손 신호다. 조용히 통과하면 나중에 홈
     렌더(혼합타입 sorted·_fmt_iso TypeError)에서 무관한 작업까지 죽이거나 계보 비교를 무성
     무효화한다 — 경계에서 격리해 RC-05 손상 행으로 표면화(confirm-or-alarm)."""
-    base = _job().to_dict()
+    base = encode_job(_job())
     corrupt_variants = [
         {**base, "tags": {"금액구간": 123}},   # 비문자열 tags 값 → group-by/facet 혼합 sorted 지뢰
         {**base, "tags": None},                # dict(None) 크래시 대신 loud
@@ -170,7 +177,7 @@ def test_from_dict_rejects_type_corrupt_durable_values():
     ]
     for d in corrupt_variants:
         with pytest.raises(ValueError):
-            Job.from_dict(d)
+            decode_job(d)
 
 
 def test_from_dict_backward_compat_survives_boundary():
@@ -180,11 +187,11 @@ def test_from_dict_backward_compat_survives_boundary():
     무시된다(타입이 깨져 있어도 — 읽지 않는 키는 검증 대상이 아니다).
     """
     old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·last_run·version 전무
-    job = Job.from_dict(old)
+    job = decode_job(old)
     assert job.name == "구작업" and job.tags == {} and job.last_run_at == ""
     assert job.version == 1
-    assert Job.from_dict({"name": "잔재", "base_mapping_name": "베이스"}).name == "잔재"
-    assert Job.from_dict({}).name == ""  # 완전 빈 dict 도 기본값 작업
+    assert decode_job({"name": "잔재", "base_mapping_name": "베이스"}).name == "잔재"
+    assert decode_job({}).name == ""  # 완전 빈 dict 도 기본값 작업
 
 
 def test_default_mapping_is_empty_profile():
@@ -479,7 +486,7 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
     job = Job(name="계약", template_path="/t.hwpx",
               mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]))
     path = tmp_path / "j.job.json"
-    job.save(path)
+    save_job(path, job)
     existing = path.read_text(encoding="utf-8")
 
     def _boom(src, dst):
@@ -487,9 +494,9 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
 
     monkeypatch.setattr("hwpxcore.atomic.os.replace", _boom)
     with pytest.raises(OSError):
-        job.save(path)
+        save_job(path, job)
     assert path.read_text(encoding="utf-8") == existing  # 무손상
-    assert Job.load(path).name == "계약"                  # 여전히 로드 가능
+    assert load_job(path).name == "계약"                  # 여전히 로드 가능
 
 
 def test_clone_concurrent_calls_get_unique_names(tmp_path):
@@ -514,11 +521,11 @@ def test_clone_concurrent_calls_get_unique_names(tmp_path):
 def test_group_roundtrip_and_backward_compat():
     job = _job()
     job.group = "2026 상반기"
-    d = job.to_dict()
+    d = encode_job(job)
     assert d["group"] == "2026 상반기"
-    assert Job.from_dict(d).group == "2026 상반기"
+    assert decode_job(d).group == "2026 상반기"
     d.pop("group")  # 구 JSON(가산 스키마) — migrate-on-read 관용으로 기본값
-    assert Job.from_dict(d).group == ""
+    assert decode_job(d).group == ""
 
 
 # ---------------------------------------------- 즐겨찾기(v6 §18.5, data-first 슬라이스 2)
@@ -526,19 +533,19 @@ def test_favorited_at_roundtrip_and_backward_compat():
     """즐겨찾기는 가산 필드 — 구 JSON 은 기본값 ""(미즐겨찾기)로 관용 로드된다."""
     job = _job()
     job.favorited_at = "2026-07-26T09:00:00"
-    d = job.to_dict()
+    d = encode_job(job)
     assert d["favorited_at"] == "2026-07-26T09:00:00"
-    assert Job.from_dict(d).favorited_at == "2026-07-26T09:00:00"
-    assert Job.from_dict(d).version == 1  # 가산 필드는 version 을 올리지 않는다
+    assert decode_job(d).favorited_at == "2026-07-26T09:00:00"
+    assert decode_job(d).version == 1  # 가산 필드는 version 을 올리지 않는다
     d.pop("favorited_at")
-    assert Job.from_dict(d).favorited_at == ""
+    assert decode_job(d).favorited_at == ""
 
 
 def test_favorited_at_type_corruption_is_loud():
-    d = _job().to_dict()
+    d = encode_job(_job())
     d["favorited_at"] = True
     with pytest.raises(ValueError):
-        Job.from_dict(d)
+        decode_job(d)
 
 
 def test_preserved_metadata_is_outside_the_content_fingerprint():
@@ -563,12 +570,12 @@ def test_revisions_roundtrip_and_backward_compat():
     """판본도 가산 필드 — 구 JSON 은 r1·직전 판본 없음으로 관용 로드된다."""
     job = _job()
     job.template_revision, job.binding_revision = 3, 7
-    d = job.to_dict()
+    d = encode_job(job)
     assert (d["template_revision"], d["binding_revision"]) == (3, 7)
-    assert Job.from_dict(d).binding_revision == 7
-    assert Job.from_dict(d).version == 1  # 가산 필드는 version 을 올리지 않는다
+    assert decode_job(d).binding_revision == 7
+    assert decode_job(d).version == 1  # 가산 필드는 version 을 올리지 않는다
     d.pop("template_revision"), d.pop("binding_revision"), d.pop("previous_rules")
-    restored = Job.from_dict(d)
+    restored = decode_job(d)
     assert (restored.template_revision, restored.binding_revision) == (1, 1)
     assert restored.previous_rules == {}
 
@@ -576,25 +583,25 @@ def test_revisions_roundtrip_and_backward_compat():
 @pytest.mark.parametrize("bad", [0, -1, "2", 1.0, True, None])
 def test_revision_corruption_is_loud(bad):
     """판본은 1 이상의 정수 — ``True`` 도 거른다(파이썬에서 bool 은 int 라 조용히 r1 이 된다)."""
-    d = _job().to_dict()
+    d = encode_job(_job())
     d["binding_revision"] = bad
     with pytest.raises(ValueError):
-        Job.from_dict(d)
+        decode_job(d)
 
 
 def test_previous_rules_shape_corruption_is_loud():
     """직전 판본은 축이 온전한 값 사전이어야 한다 — 증거를 짓는 자리의 조용한 결손 금지."""
     from hwpxfiller.core.job import rules_values
 
-    d = _job().to_dict()
+    d = encode_job(_job())
     d["previous_rules"] = rules_values(_job())
-    Job.from_dict(d)                                    # 온전한 형상은 통과
+    decode_job(d)                                    # 온전한 형상은 통과
     d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": {"source": "x"}}}
     with pytest.raises(ValueError):                     # 축 누락
-        Job.from_dict(d)
+        decode_job(d)
     d["previous_rules"] = {"fields": []}
     with pytest.raises(ValueError):                     # fields 가 사전이 아님
-        Job.from_dict(d)
+        decode_job(d)
 
 
 def test_revisions_are_outside_the_content_fingerprint():
@@ -744,10 +751,10 @@ def test_clone_does_not_inherit_favorite(tmp_path):
 
 
 def test_group_type_corruption_is_loud():
-    d = _job().to_dict()
+    d = encode_job(_job())
     d["group"] = 3
     with pytest.raises(ValueError):
-        Job.from_dict(d)
+        decode_job(d)
 
 
 def test_registry_rename_moves_file_and_updates_name(tmp_path):
@@ -916,6 +923,75 @@ def test_stamp_last_run_is_a_single_field_mutation(tmp_path):
     assert after.mapping.cover_fields() == _profile().cover_fields()
 
 
+def test_corrupt_reviewed_rules_is_loud():
+    """검토 기준선도 다른 durable 필드와 같은 규율 — 사전 아님·비문자열 항목은 loud 격리.
+
+    조용히 통과하면 검토 요구 판정(rules_key 대조)이 훼손 값 위에서 조용히 틀린다 —
+    승인 축이라 조용한 오판이 가장 비싼 자리다.
+    """
+    base = encode_job(_job())
+    with pytest.raises(ValueError):
+        decode_job({**base, "reviewed_rules": ["template"]})       # 사전이 아님
+    with pytest.raises(ValueError):
+        decode_job({**base, "reviewed_rules": {"template": 7}})    # 비문자열 지문
+    with pytest.raises(ValueError):
+        decode_job({**base, "reviewed_rules": {3: "fp"}})          # 비문자열 대상
+
+
+def test_unknown_media_template_key_falls_back_to_the_stored_path():
+    """탈출 방어는 통과하지만 매체 미상인 키(``x.docx``)는 해석하지 않는다 — 경로 폴백.
+
+    루트를 확장자로 고르므로 미상 매체 키는 해석할 루트가 없다. 추측 해석 대신 저장된
+    절대경로를 그대로 쓴다(모르는 것을 추측하지 않는다 — fail-closed).
+    """
+    d = {"name": "a", "template_path": "/legacy/절대경로.docx", "template_key": "조달/공고서.docx"}
+    assert decode_job(d).template_path == "/legacy/절대경로.docx"
+
+
+def test_registry_delete_missing_name_is_a_quiet_noop(tmp_path):
+    """이미 없는 작업의 삭제는 조용한 no-op — 삭제의 목적 상태(부재)가 이미 성립해 있다."""
+    reg = JobRegistry(tmp_path)
+    reg.delete("없는작업")                                  # raise 없음
+    assert not reg.exists("없는작업")
+
+
+def test_soft_delete_missing_job_is_loud(tmp_path):
+    """없는 작업의 소프트 삭제는 loud — "지웠다"고 말할 대상이 없으면 성공을 위조하지 않는다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    with pytest.raises(ValueError, match="작업을 찾을 수 없습니다"):
+        reg.soft_delete("없는작업")
+
+
+def test_restore_refuses_when_the_name_was_recreated(tmp_path):
+    """복원 자리에 같은 이름의 작업이 새로 생겼으면 loud 거절 — 새 작업을 조용히 덮지 않는다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx"))
+    slot = reg.soft_delete("공고서")
+    reg.save(Job(name="공고서", template_path="new.hwpx"))   # 같은 이름 재작성
+    with pytest.raises(ValueError, match="같은 이름의 작업이 이미 있어"):
+        reg.restore_soft_deleted(slot)
+    assert reg.load("공고서").template_path == "new.hwpx"    # 새 작업 무손상
+
+
+def test_purge_failure_of_one_stale_file_does_not_block_the_deletion(tmp_path):
+    """오래된 휴지통 항목 하나의 정리 실패(잠긴 파일)가 지금 삭제를 막지 않는다."""
+    import os as _os
+    import time as _time
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx"))
+    trash = tmp_path / "jobs" / ".trash"
+    trash.mkdir(parents=True)
+    stale = trash / f"0-locked-옛작업{JobRegistry.SUFFIX}"
+    stale.write_text("{}", encoding="utf-8")
+    old = _time.time() - (JobRegistry.TRASH_RETENTION_DAYS + 1) * 24 * 60 * 60
+    _os.utime(stale, (old, old))
+
+    with open(stale, encoding="utf-8"):                      # Windows: 열린 파일은 unlink 불가
+        src, dst = reg.soft_delete("공고서")                 # 정리 실패에도 삭제는 완주
+    assert dst.exists() and stale.exists()                   # 잠긴 항목은 다음 기회로 미뤄진다
+
+
 def test_soft_delete_retains_trash_30_days_and_undo_error_names_no_trash(tmp_path):
     """U2 §2.12(#345) — 「휴지통」 어휘는 사용자 문안에서 내렸지만(도달 표면 없음 · 표면은
     별건 #350) 보존 의무는 삭제가 상속한다: ①soft_delete 는 ``.trash`` 로 이동(파일 실재 =
@@ -1002,13 +1078,15 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         if got[0]:
             held_outside.append(tag)
 
-    real_write = Job.save
+    import hwpxfiller.external.job_store as job_store
+
+    real_write = job_store.save_job
     real_unlink = Path.unlink
     real_replace = Path.replace
 
-    def spy_write(self, path):
-        _probe(f"save:{self.name}")
-        return real_write(self, path)
+    def spy_write(path, job):
+        _probe(f"save:{job.name}")
+        return real_write(path, job)
 
     def spy_unlink(self, *a, **kw):
         if str(self).endswith(JobRegistry.SUFFIX):
@@ -1020,7 +1098,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
             _probe(f"replace:{self.name}")
         return real_replace(self, target)
 
-    monkeypatch.setattr(Job, "save", spy_write)
+    monkeypatch.setattr(job_store, "save_job", spy_write)
     monkeypatch.setattr(Path, "unlink", spy_unlink)
     monkeypatch.setattr(Path, "replace", spy_replace)
 
@@ -1087,7 +1165,7 @@ def test_job_media_is_derived_not_stored():
     assert Job(template_path="/x/t.hwpx").media == "hwpx"
     assert Job(template_path="/x/d.txt").media == "txt"
     assert Job(template_path="").media == ""
-    assert "media" not in Job(template_path="/x/t.hwpx").to_dict()  # 유도지 저장 아님
+    assert "media" not in encode_job(Job(template_path="/x/t.hwpx"))  # 유도지 저장 아님
 
 
 def test_work_mode_derives_three_values_from_the_suffix_only():
@@ -1119,7 +1197,7 @@ def test_work_mode_and_media_stay_two_axes():
     unlinked = Job(name="저작중", template_path="")
     assert unlinked.media == "" and unlinked.work_mode == WORK_MODE_UNSUPPORTED
     assert library_mode_of(JobRow.from_job(unlinked, engine=make_hwpx_engine())) == MODE_HWPX
-    assert "work_mode" not in unlinked.to_dict()  # 파생이지 저장 아님
+    assert "work_mode" not in encode_job(unlinked)  # 파생이지 저장 아님
 
 
 def test_require_hwpx_template_passes_hwpx_and_rejects_others():
@@ -1177,12 +1255,12 @@ def test_falsy_previous_rules_corruption_is_loud(bad):
     작업만 이력 증거를 잃는다 — 다른 durable 필드는 전부 loud 인데 여기만 조용해진다.
     빈 사전만이 「없음」이다.
     """
-    d = _job().to_dict()
+    d = encode_job(_job())
     d["previous_rules"] = bad
     with pytest.raises(ValueError):
-        Job.from_dict(d)
+        decode_job(d)
     d["previous_rules"] = {}                       # 빈 사전 = 정상(직전 판본 없음)
-    assert Job.from_dict(d).previous_rules == {}
+    assert decode_job(d).previous_rules == {}
 
 
 def test_previous_revision_snapshot_advances_per_axis(tmp_path):
@@ -1234,16 +1312,16 @@ def test_template_link_is_stored_as_a_library_relative_key(library_home):
     txt = library_home / "text_templates" / "안내문.txt"
 
     job = Job(name="a", template_path=str(hwpx))
-    assert job.template_key == "조달/공고서.hwpx"          # 하위폴더까지 POSIX 한 값
-    assert job.to_dict()["template_key"] == "조달/공고서.hwpx"
-    assert job.to_dict()["template_path"] == str(hwpx)     # 절대경로는 **가산으로 유지**
+    assert library_key_for(job.template_path) == "조달/공고서.hwpx"          # 하위폴더까지 POSIX 한 값
+    assert encode_job(job)["template_key"] == "조달/공고서.hwpx"
+    assert encode_job(job)["template_path"] == str(hwpx)     # 절대경로는 **가산으로 유지**
 
     # 루트가 확장자로 갈린다 — txt 는 text_templates 기준.
-    assert Job(name="b", template_path=str(txt)).template_key == "안내문.txt"
+    assert library_key_for(str(txt)) == "안내문.txt"
     # 매체 미상은 승격하지 않는다(모르는 것을 추측하지 않는다).
     docx = library_home / "templates" / "x.docx"
-    assert Job(name="c", template_path=str(docx)).template_key == ""
-    assert Job(name="d").template_key == ""
+    assert library_key_for(str(docx)) == ""
+    assert library_key_for("") == ""
 
 
 def test_moving_the_home_keeps_the_keyed_template_resolved(library_home, tmp_path, monkeypatch):
@@ -1280,8 +1358,8 @@ def test_template_outside_the_root_fails_promotion_without_a_filename_fallback(
     decoy.write_bytes(b"")
 
     job = Job(name="a", template_path=str(outside))
-    assert job.template_key == ""                          # 파일명 폴백 없음
-    d = job.to_dict()
+    assert library_key_for(job.template_path) == ""                          # 파일명 폴백 없음
+    d = encode_job(job)
     assert d["template_key"] == "" and d["template_path"] == str(outside)
 
     JobRegistry(library_home / "jobs").save(job)
@@ -1326,9 +1404,9 @@ def test_corrupt_template_key_is_loud(library_home):
     escapes = ["C:/훔친/x.hwpx", "/x.hwpx", "../../x.hwpx", "조달/../../x.hwpx", r"\\srv\x.hwpx"]
     for bad in escapes:
         with pytest.raises(ValueError):
-            Job.from_dict({**base, "template_key": bad})
+            decode_job({**base, "template_key": bad})
     with pytest.raises(ValueError):
-        Job.from_dict({**base, "template_key": 7})         # 비문자열도 loud(문자열 계약)
+        decode_job({**base, "template_key": 7})         # 비문자열도 loud(문자열 계약)
 
 
 def test_lexical_path_components_are_normalized_before_promotion(library_home):
@@ -1342,8 +1420,8 @@ def test_lexical_path_components_are_normalized_before_promotion(library_home):
     noisy = library_home / "templates" / "조달" / "sub" / ".." / "공고서.hwpx"
 
     job = Job(name="a", template_path=str(noisy))
-    assert job.template_key == "조달/공고서.hwpx"          # `..` 가 걷힌 키
-    _reject_unsafe_key(job.template_key)                    # 읽기 방어를 통과하는 값이다
+    assert library_key_for(job.template_path) == "조달/공고서.hwpx"          # `..` 가 걷힌 키
+    _reject_unsafe_key(library_key_for(job.template_path))                    # 읽기 방어를 통과하는 값이다
 
     reg = JobRegistry(library_home / "jobs")
     reg.save(job)
@@ -1359,9 +1437,9 @@ def test_normalization_does_not_loosen_the_outside_the_root_judgment(library_hom
     됐다. 어휘 정규화 뒤 그 경로는 정직하게 루트 밖으로 판정돼 승격되지 않는다.
     """
     escaping = library_home / "templates" / ".." / "바깥" / "공고서.hwpx"
-    assert Job(name="a", template_path=str(escaping)).template_key == ""
+    assert library_key_for(str(escaping)) == ""
     # 루트 밖 판정은 그대로 절대경로 유지로 이어진다(폴백 없음).
-    assert Job(name="a", template_path=str(escaping)).to_dict()["template_path"] == str(escaping)
+    assert encode_job(Job(name="a", template_path=str(escaping)))["template_path"] == str(escaping)
 
 
 def test_promotion_is_abandoned_when_normalization_would_name_another_file(
@@ -1374,7 +1452,7 @@ def test_promotion_is_abandoned_when_normalization_would_name_another_file(
     좌우되므로 그 실측 지점(``realpath``)을 대신 못박는다 — 조용한 재결속이 없다는 것이 계약이다.
     """
     noisy = library_home / "templates" / "조달" / "link" / ".." / "공고서.hwpx"
-    assert Job(name="a", template_path=str(noisy)).template_key == "조달/공고서.hwpx"
+    assert library_key_for(str(noisy)) == "조달/공고서.hwpx"
 
     real = os.path.realpath
 
@@ -1385,7 +1463,7 @@ def test_promotion_is_abandoned_when_normalization_would_name_another_file(
         return real(p)
 
     monkeypatch.setattr(os.path, "realpath", _as_if_link_were_a_symlink)
-    assert Job(name="a", template_path=str(noisy)).template_key == "", (
+    assert library_key_for(str(noisy)) == "", (
         "정규화가 다른 파일을 이름하는데 승격했습니다 — 조용한 재결속입니다."
     )
 
@@ -1397,5 +1475,167 @@ def test_template_key_wins_over_a_stale_absolute_path(library_home):
         "template_path": r"D:\옛PC\templates\조달\공고서.hwpx",
         "template_key": "조달/공고서.hwpx",
     }
-    job = Job.from_dict(stale)
+    job = decode_job(stale)
     assert job.template_path == str(library_home / "templates" / "조달" / "공고서.hwpx")
+
+
+# ---------------------------------------- 프로세스 writer lease(#192, P2-21 #569 host 이관)
+# 물리 거처는 :mod:`hwpxfiller.host.job_writer_lease` 로 옮겨졌지만 계약의 주 소비자는
+# JobRegistry 라 characterization 도 이 파일이 소유한다(새 테스트 파일 금지).
+from pathlib import Path  # noqa: E402 — lease 테스트 그룹(파일 하단 응집)
+
+from hwpxfiller.host.job_writer_lease import (  # noqa: E402 — lease 테스트 그룹(파일 하단 응집)
+    JobRegistryOwnershipError,
+    _OwnedWriteLock,
+    _RegistryWriteState,
+    shared_write_state,
+)
+
+
+def test_second_writer_state_is_refused_and_lease_frees_on_owner_death(tmp_path):
+    """같은 디렉터리 키의 두 번째 소유권 주장은 loud 거절(ERROR_ALREADY_EXISTS 경로) —
+    파일을 만지기 전에 막힌다. 소유자가 죽으면(mutex 해제) 재획득이 가능해야 한다:
+    거절이 영구 잠김이면 앱 재시작 후에도 저장이 불가능해진다."""
+    import gc
+
+    first = _RegistryWriteState(str(tmp_path / "jobs"))
+    first.claim_process_ownership()
+    second = _RegistryWriteState(str(tmp_path / "jobs"))
+    with pytest.raises(JobRegistryOwnershipError) as exc:
+        second.claim_process_ownership()
+    assert "다른 문서나르미 프로세스" in str(exc.value)
+    assert second._owner is None                     # 실패는 소유 흔적을 남기지 않는다
+
+    del first                                        # 소유자 소멸 = __del__ 이 mutex 를 닫는다
+    gc.collect()
+    second.claim_process_ownership()                 # 이제 같은 키를 새로 잡을 수 있다
+    assert second._owner is not None
+    del second
+    gc.collect()
+
+
+def test_mutex_creation_failure_is_loud(monkeypatch):
+    """CreateMutexW 자체가 실패하면(핸들 0) 조용히 무소유로 진행하지 않고 WinError 를 재진술한다."""
+    import ctypes
+
+    class _Fn:
+        def __init__(self, result):
+            self._result = result
+
+        def __call__(self, *args):
+            return self._result
+
+    class _Dll:
+        def __init__(self):
+            self.CreateMutexW = _Fn(0)               # 핸들 0 = 생성 실패
+            self.CloseHandle = _Fn(1)
+
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **k: _Dll())
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 5)
+    state = _RegistryWriteState("lease-create-fail")
+    with pytest.raises(JobRegistryOwnershipError) as exc:
+        state.claim_process_ownership()
+    assert "WinError 5" in str(exc.value)
+    assert state._owner is None
+
+
+def test_posix_flock_claims_blocks_and_releases(tmp_path, monkeypatch):
+    """POSIX 경로 — flock 성공은 스트림 소유, 실패는 스트림을 닫고 loud, 해제는 close.
+
+    이 저장소는 Windows 전용이라 실 flock 을 돌릴 수 없다 — fake fcntl 주입으로 분기
+    계약(성공/차단/해제/해제 실패 삼킴)을 결정론으로 못박는다.
+    """
+    import sys as _sys
+    import tempfile as _tempfile
+
+    calls: "list[tuple]" = []
+
+    class _FakeFcntl:
+        LOCK_EX, LOCK_NB = 2, 4
+
+        @staticmethod
+        def flock(fd, flags):
+            calls.append((fd, flags))
+
+    monkeypatch.setattr(_sys, "platform", "linux")
+    monkeypatch.setitem(_sys.modules, "fcntl", _FakeFcntl)
+    monkeypatch.setattr(_tempfile, "gettempdir", lambda: str(tmp_path))
+
+    state = _RegistryWriteState("posix-key")
+    state.claim_process_ownership()
+    stream = state._owner
+    assert stream is not None and calls == [(stream.fileno(), 2 | 4)]
+    state.__del__()                                  # posix 해제 = 스트림 close
+    assert stream.closed
+    state._owner = None                              # GC 재호출이 닫힌 스트림을 다시 안 만지게
+
+    class _BlockedFcntl:
+        LOCK_EX, LOCK_NB = 2, 4
+
+        @staticmethod
+        def flock(fd, flags):
+            raise OSError(11, "would block")         # 다른 프로세스가 쥐고 있다
+
+    monkeypatch.setitem(_sys.modules, "fcntl", _BlockedFcntl)
+    blocked = _RegistryWriteState("posix-key")
+    with pytest.raises(JobRegistryOwnershipError):
+        blocked.claim_process_ownership()
+    assert blocked._owner is None                    # 실패 시 스트림이 남지 않는다
+
+    class _ExplodingStream:
+        def close(self):
+            raise OSError("boom")
+
+    exploding = _RegistryWriteState("posix-close-fail")
+    exploding._owner = _ExplodingStream()
+    exploding.__del__()                              # 해제 실패는 삼킨다(GC 경로 예외 금지)
+    exploding._owner = None
+
+
+def test_lease_del_without_ownership_is_a_noop():
+    _RegistryWriteState("never-claimed").__del__()   # 소유 전 소멸 — 닫을 자원이 없다
+
+
+def test_write_lock_rolls_back_the_thread_lock_when_ownership_fails(monkeypatch):
+    """소유권 실패는 스레드 잠금을 쥔 채 남지 않는다 — 아니면 이 프로세스의 모든 registry
+    가 영구 교착한다(첫 실패가 잠금을 삼키는 조용한 결함)."""
+    import threading
+
+    state = _RegistryWriteState("rollback-key")
+    lock = _OwnedWriteLock(state)
+
+    def _refuse():
+        raise JobRegistryOwnershipError("소유권 거절")
+
+    monkeypatch.setattr(state, "claim_process_ownership", _refuse)
+    with pytest.raises(JobRegistryOwnershipError):
+        lock.acquire()
+
+    # 판정은 다른 스레드의 비차단 획득으로(RLock 은 같은 스레드에선 재획득되므로 무판별).
+    acquired_elsewhere: "list[bool]" = []
+
+    def _try():
+        ok = state.lock.acquire(blocking=False)
+        acquired_elsewhere.append(ok)
+        if ok:
+            state.lock.release()
+
+    t = threading.Thread(target=_try)
+    t.start()
+    t.join(3)
+    assert acquired_elsewhere == [True], "실패한 acquire 가 스레드 잠금을 되돌리지 않았습니다."
+
+    monkeypatch.setattr(state, "claim_process_ownership", lambda: None)
+    assert lock.acquire(True, 1) is True             # timeout 경로 포함 재획득 가능
+    lock.release()
+
+
+def test_shared_write_state_falls_back_to_lexical_key_for_unresolvable_paths(tmp_path):
+    """resolve 가 실패하는 경로(오프라인 드라이브류)도 같은 디렉터리는 같은 상태를 공유한다."""
+    class _Unresolvable(type(Path())):
+        def resolve(self, *a, **kw):
+            raise OSError("unresolvable")
+
+    a = shared_write_state(_Unresolvable(tmp_path / "jobs"))
+    b = shared_write_state(tmp_path / "jobs")
+    assert a is b                                    # 해석 실패 = 어휘 키 폴백(같은 키)

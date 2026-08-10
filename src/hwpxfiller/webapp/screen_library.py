@@ -36,7 +36,7 @@ import threading
 from pathlib import Path
 
 from ..core.dataset_pool import DatasetPoolRegistry
-from ..core.job import JobRegistry
+from ..external.job_store import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..external.hwpx_engine import make_hwpx_engine
 from ..gui.compile_badge import badge_level

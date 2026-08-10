@@ -53,11 +53,10 @@ from ..core.identity_summary import identity_summary
 from ..core.job import (
     MISSING_MARKER,
     Job,
-    JobRegistry,
-    content_fingerprint,
     rules_fingerprints,
     work_mode,
 )
+from ..external.job_store import JobRegistry, content_fingerprint
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..external.hwpx_engine import make_hwpx_engine

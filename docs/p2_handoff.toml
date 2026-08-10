@@ -16,31 +16,16 @@ HOST = 2
 # (concrete 결속 = external/hwpx_engine), core.fields → hwpxcore.package 는 타입 주석
 # 결합뿐이라 덕타이핑으로 소거됐다. 아래 text_extract → package 1건은 #567 축소 착지의
 # 잔여다 — `_to_package` 경로 수용 뒷문의 소비자가 Domain 4모듈(authoring·schema·
-# template_status·lint)과 Application 표면에 걸쳐 있어, 제거는 #568 계측이 pkg_or_path
-# 표면 전략을 확정한 뒤의 재발행 lane 이 소유한다. 임시 완료로 세지 않는다.
+# template_status·lint)과 Application 표면에 걸쳐 있어, 제거는 재발행 lane #576 이
+# 소유한다. 임시 완료로 세지 않는다.
+#
+# core.job → hwpxcore.atomic·core.job → core.text_registry·core.template_status →
+# core.paths 3건은 P2-21(#569)에서 Job 영속 경계(external/job_store)·writer lease
+# (host/job_writer_lease)·기본 루트 해석(host/locations 의 default_templates_dir·
+# library_root_for) 이관으로 제거됐다.
 [[allowed_direction_violation]]
 src = "hwpxcore.text_extract"
 dst = "hwpxcore.package"
-
-# core.fill_ledger·core.mapping → hwpxcore.atomic 은 P2-18(#566)에서 durable write 개시가
-# External(external/ledger_export·external/mapping_store)로 승계되며 제거됐다.
-# 아래 core.job → hwpxcore.atomic 최종 1건의 owner 는 #569 다 — 얇은 writer 주입으로
-# 봉합하지 않고 Job 영속 경계 이관(책임 이동)으로 제거한다. 임시 완료로 세지 않는다.
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.job"
-dst = "hwpxcore.atomic"
-
-# core.job → core.paths 는 P2-17(#565)에서 default_jobs_dir 의 Host 승격으로 제거됐다.
-# 아래 core.job → core.text_registry 와 core.template_status → core.paths 는 #565 재실측에서
-# library_root_for 의 ring 0 소비자(Job.template_key·Job.from_dict — 직렬화의 「이식성의 경첩」)가
-# 확인돼 축소 착지했다 — 잔여 2건의 owner 는 #569(Job 영속 경계 이관)다.
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.job"
-dst = "hwpxfiller.core.text_registry"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.template_status"
-dst = "hwpxfiller.core.paths"
 
 [[unit]]
 module = "hwpxcore"

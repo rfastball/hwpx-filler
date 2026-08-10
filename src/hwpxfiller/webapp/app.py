@@ -35,7 +35,7 @@ from ..web_artifact import (
     WebArtifactViolation,
     resolve_web_artifact,
 )
-from ..core.job import JobRegistry
+from ..external.job_store import JobRegistry
 from ..host.locations import default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)

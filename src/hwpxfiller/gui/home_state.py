@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ..core.engine import HwpxEngine
 from ..core.fill_ledger import template_path_drift
-from ..core.job import Job, JobRegistry, require_hwpx_template
+from ..core.job import Job, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
@@ -422,7 +422,9 @@ class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 표현 계층은 구독해서 렌더한다."""
 
     def __init__(
-        self, registry: JobRegistry, text_registry=None, pool_registry=None,
+        # registry 는 JobRegistry 형상(external/job_store) — APPLICATION 층은 External 을
+        # import 할 수 없어 타입 주석 없이 덕타이핑으로 받는다(P2-21, #569).
+        self, registry, text_registry=None, pool_registry=None,
         *, engine: HwpxEngine,
     ):
         self.registry = registry
@@ -570,7 +572,7 @@ class HomeViewModel:
     def set_tags(self, name: str, raw) -> None:
         """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제(#26 D14).
 
-        축·값은 모두 비어 있지 않은 문자열이어야 한다(loud — Job.from_dict 의 타입 계약
+        축·값은 모두 비어 있지 않은 문자열이어야 한다(loud — job_store.decode_job 의 타입 계약
         미러). 같은 이름 재저장은 자기-갱신이라 slug 가드를 자연 통과한다. 저장 후
         refresh 로 axes/facets 가 즉시 재발견된다(퇴화-코퍼스 불변식 유지). 검증까지
         여기 사는 이유: 이 뷰모델의 공개 표면이 seam 계약이다(#44) — 컨트롤러가
