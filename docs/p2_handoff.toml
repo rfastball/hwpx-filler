@@ -12,16 +12,14 @@ FRONTEND_ADAPTER = 2
 EXTERNAL_ADAPTER = 2
 HOST = 2
 
+# core.engine → hwpxcore.package 는 P2-19(#567)에서 required opener 포트로 역전됐고
+# (concrete 결속 = external/hwpx_engine), core.fields → hwpxcore.package 는 타입 주석
+# 결합뿐이라 덕타이핑으로 소거됐다. 아래 text_extract → package 1건은 #567 축소 착지의
+# 잔여다 — `_to_package` 경로 수용 뒷문의 소비자가 Domain 4모듈(authoring·schema·
+# template_status·lint)과 Application 표면에 걸쳐 있어, 제거는 #568 계측이 pkg_or_path
+# 표면 전략을 확정한 뒤의 재발행 lane 이 소유한다. 임시 완료로 세지 않는다.
 [[allowed_direction_violation]]
 src = "hwpxcore.text_extract"
-dst = "hwpxcore.package"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.engine"
-dst = "hwpxcore.package"
-
-[[allowed_direction_violation]]
-src = "hwpxfiller.core.fields"
 dst = "hwpxcore.package"
 
 # core.fill_ledger·core.mapping → hwpxcore.atomic 은 P2-18(#566)에서 durable write 개시가

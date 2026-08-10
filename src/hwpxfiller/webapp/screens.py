@@ -23,6 +23,7 @@ from ..core.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
+from ..external.hwpx_engine import make_hwpx_engine
 from ..core.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
 from ..core.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
@@ -280,7 +281,7 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
         return {"ok": False, "error": _cross_media_refusal(name, job.template_path, new_media)}
     drift_clause = ""
     if new_media == "hwpx":
-        drift = template_path_drift(path, job.mapping)
+        drift = template_path_drift(path, job.mapping, engine=make_hwpx_engine())
         if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
             return {
                 "ok": False,

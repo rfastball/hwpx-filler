@@ -24,6 +24,7 @@ from hwpxfiller.core.job import (
     content_fingerprint,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.host.locations import default_jobs_dir
 
 
@@ -435,7 +436,7 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     """blank는 RunRequest 표식 대상에도 엔진 입력에도 없고 실제 누름틀 값이 보존된다."""
     from pathlib import Path
 
-    from hwpxfiller.core.engine import HwpxEngine
+    from hwpxfiller.external.hwpx_engine import make_hwpx_engine
     from hwpxfiller.core.fields import read_fields
     from hwpxfiller.core.job import MISSING_MARKER
 
@@ -457,7 +458,7 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
 
     before = read_fields(str(template))
     out = tmp_path / "marked.hwpx"
-    result = HwpxEngine().generate(str(template), marked, str(out))
+    result = make_hwpx_engine().generate(str(template), marked, str(out))
     assert result.ok
     after = read_fields(str(out))
     assert after["공고명"] == "〘미입력·공고명〙"
@@ -1117,7 +1118,7 @@ def test_work_mode_and_media_stay_two_axes():
 
     unlinked = Job(name="저작중", template_path="")
     assert unlinked.media == "" and unlinked.work_mode == WORK_MODE_UNSUPPORTED
-    assert library_mode_of(JobRow.from_job(unlinked)) == MODE_HWPX
+    assert library_mode_of(JobRow.from_job(unlinked, engine=make_hwpx_engine())) == MODE_HWPX
     assert "work_mode" not in unlinked.to_dict()  # 파생이지 저장 아님
 
 
@@ -1154,18 +1155,18 @@ def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
     """실행뷰: txt·비-hwpx 는 생성 시점 loud 거부(결정 13), hwpx·빈 템플릿(저작 중)은 관용."""
     from hwpxfiller.gui.run_state import RunViewModel
 
-    RunViewModel(Job(name="공고", template_path="/x/t.hwpx"))  # hwpx 통과
-    RunViewModel(Job(name="저작중", template_path=""))          # 빈 템플릿(저작 중) 통과
+    RunViewModel(Job(name="공고", template_path="/x/t.hwpx"), engine=make_hwpx_engine())  # hwpx 통과
+    RunViewModel(Job(name="저작중", template_path=""), engine=make_hwpx_engine())          # 빈 템플릿(저작 중) 통과
     with pytest.raises(MediaMismatchError):
-        RunViewModel(Job(name="기안", template_path="/x/d.txt"))
+        RunViewModel(Job(name="기안", template_path="/x/d.txt"), engine=make_hwpx_engine())
 
 
 def test_generate_batch_rejects_non_hwpx_template():
-    """generate_batch(산출물=hwpx 파일)는 hwpx 아닌 템플릿 경로를 첫머리에서 loud 거부(결정 9·13)."""
+    """generate_batch(산출물=hwpx 파일, engine=make_hwpx_engine())는 hwpx 아닌 템플릿 경로를 첫머리에서 loud 거부(결정 9·13)."""
     from hwpxfiller.batch import generate_batch
 
     with pytest.raises(MediaMismatchError):
-        generate_batch("/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}")
+        generate_batch("/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}", engine=make_hwpx_engine())
 
 
 @pytest.mark.parametrize("bad", [None, [], "", 0, 3])

@@ -19,6 +19,7 @@ import pytest
 from hwpxfiller.batch import OutputCollisionError, generate_batch
 from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 SCENARIO = Path(__file__).parent / "corpus" / "scenario"
 BID_NOTICE = str(SCENARIO / "templates" / "입찰공고서.hwpx")  # 25필드(담당부서·입찰개시일자 등 포함)
@@ -44,7 +45,7 @@ def test_empty_date_record_fills_without_crash_and_keeps_placeholder(tmp_path):
     assert mapped["입찰개시일자"] == ""
     assert mapped["입찰개시시각"] == ""
 
-    batch = generate_batch(BID_NOTICE, [mapped], str(tmp_path), "f1-{{입찰공고번호}}")
+    batch = generate_batch(BID_NOTICE, [mapped], str(tmp_path), "f1-{{입찰공고번호}}", engine=make_hwpx_engine())
     res = batch.results[0]
     assert res.ok and res.error == ""          # 생성 자체가 성공(무크래시)
     # 빈 날짜는 엔진 active 에서 제외 → 누름틀 잔존(applied 에 없음).
@@ -60,7 +61,7 @@ def test_duplicate_notice_names_yield_distinct_files_no_loss(tmp_path):
     recs = [PROFILE.apply(by_no[n]) for n in DUP_NAME_NOS]
     assert recs[0]["공고명"] == recs[1]["공고명"]  # 전제: 동명
 
-    batch = generate_batch(BID_NOTICE, recs, str(tmp_path), "공고서-{{공고명}}")
+    batch = generate_batch(BID_NOTICE, recs, str(tmp_path), "공고서-{{공고명}}", engine=make_hwpx_engine())
     assert batch.succeeded == 2
     files = sorted(p.name for p in tmp_path.glob("*.hwpx"))
     assert len(files) == 2                       # 2건 → 2파일(손실 0)
@@ -68,4 +69,4 @@ def test_duplicate_notice_names_yield_distinct_files_no_loss(tmp_path):
 
     # 같은 폴더 재실행 → 기존 파일 덮어쓰기 확정 없이는 착수 전 차단(RC-02).
     with pytest.raises(OutputCollisionError):
-        generate_batch(BID_NOTICE, recs, str(tmp_path), "공고서-{{공고명}}")
+        generate_batch(BID_NOTICE, recs, str(tmp_path), "공고서-{{공고명}}", engine=make_hwpx_engine())

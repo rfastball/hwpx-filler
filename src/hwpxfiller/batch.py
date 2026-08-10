@@ -47,7 +47,7 @@ def generate_batch(
     records: "list[dict[str, str]]",
     out_dir: str,
     name_pattern: str,
-    engine: "HwpxEngine | None" = None,
+    engine: HwpxEngine,
     *,
     progress: "Callable[[int, int], None] | None" = None,
     now: "datetime | None" = None,
@@ -79,12 +79,11 @@ def generate_batch(
     if mapping is not None:
         from .core.fill_ledger import template_path_drift
 
-        drift = template_path_drift(template_path, mapping)
+        drift = template_path_drift(template_path, mapping, engine=engine)
         if drift.has_drift:
             raise ValueError(
                 "템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — " + drift.describe(sep="; ")
             )
-    engine = engine or HwpxEngine()
     out = Path(out_dir)
     names = plan_output_names(name_pattern, records, now=now)
     clobbered = existing_outputs(out, names)

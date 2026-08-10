@@ -47,7 +47,7 @@ def _reg(tmp_path) -> JobRegistry:
 
 
 def test_rows_shape_meta_and_missing_template(tmp_path):
-    vm = HomeViewModel(_reg(tmp_path))
+    vm = HomeViewModel(_reg(tmp_path), engine=make_hwpx_engine())
     rows = {r.name: r for r in vm.rows()}
     assert vm.count_label() == "2건"
     assert not vm.is_empty()
@@ -68,12 +68,12 @@ def test_rows_shape_meta_and_missing_template(tmp_path):
 
 
 def test_empty_registry(tmp_path):
-    vm = HomeViewModel(JobRegistry(tmp_path))
+    vm = HomeViewModel(JobRegistry(tmp_path), engine=make_hwpx_engine())
     assert vm.is_empty() and vm.count_label() == "" and vm.rows() == []
 
 
 def test_selection_and_delete_notify(tmp_path):
-    vm = HomeViewModel(_reg(tmp_path))
+    vm = HomeViewModel(_reg(tmp_path), engine=make_hwpx_engine())
     beats = []
     vm.subscribe(lambda: beats.append(1))
 
@@ -91,7 +91,7 @@ def test_selection_and_delete_notify(tmp_path):
 
 def test_refresh_preserves_live_selection(tmp_path):
     reg = _reg(tmp_path)
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     vm.select("공고서")
     reg.save(Job(name="추가작업", template_path=""))
     vm.refresh()
@@ -100,7 +100,7 @@ def test_refresh_preserves_live_selection(tmp_path):
 
 
 def test_jobrow_from_job_direct():
-    row = JobRow.from_job(Job(name="x", template_path="", filename_pattern="p-{{ID}}"))
+    row = JobRow.from_job(Job(name="x", template_path="", filename_pattern="p-{{ID}}"), engine=make_hwpx_engine())
     assert row.name == "x" and row.template_name == "—" and row.field_count == 0
 
 
@@ -109,7 +109,7 @@ def test_corrupt_job_file_surfaces_as_corrupt_row_not_crash(tmp_path):
     reg = _reg(tmp_path)
     (tmp_path / "깨진작업.job.json").write_text('{"name": "깨진', encoding="utf-8")
 
-    vm = HomeViewModel(reg)  # 생성자 refresh 가 JSONDecodeError 로 죽지 않는다
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())  # 생성자 refresh 가 JSONDecodeError 로 죽지 않는다
     assert {r.name for r in vm.rows()} == {"공고서", "낙찰"}  # 정상 작업은 계속 표시
     crows = vm.corrupt_rows()
     assert len(crows) == 1
@@ -123,7 +123,7 @@ def test_only_corrupt_files_is_not_empty_state(tmp_path):
     jobs_dir = tmp_path / "jobs"
     jobs_dir.mkdir()
     (jobs_dir / "부서진.job.json").write_text("[1, 2, 3]", encoding="utf-8")
-    vm = HomeViewModel(JobRegistry(jobs_dir))
+    vm = HomeViewModel(JobRegistry(jobs_dir), engine=make_hwpx_engine())
     assert vm.rows() == []
     assert vm.corrupt_rows()
     assert not vm.is_empty()  # 빈 상태 패널 대신 손상 행이 노출돼야 한다
@@ -135,7 +135,7 @@ def test_dashboard_kpi_from_real_data_and_empty_defaults(tmp_path):
     td = tmp_path / "tt"
     td.mkdir()
     (td / "온나라.txt").write_text("{{a}}", encoding="utf-8")
-    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td))
+    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td), engine=make_hwpx_engine())
     k = vm.kpi()
     assert k.job_count == 2
     assert k.missing_template_count == 1        # '/none/t.hwpx' 부재
@@ -143,7 +143,7 @@ def test_dashboard_kpi_from_real_data_and_empty_defaults(tmp_path):
     assert k.recent_run.startswith("07-09") and "공고서" in k.recent_run  # 최신 실행
     reg = JobRegistry(tmp_path / "no-runs")
     reg.save(Job(name="미실행", template_path=""))
-    empty = HomeViewModel(reg).kpi()  # txt 레지스트리 없음
+    empty = HomeViewModel(reg, engine=make_hwpx_engine()).kpi()  # txt 레지스트리 없음
     assert empty.recent_run == "—" and empty.txt_template_count == 0
 
 
@@ -153,7 +153,7 @@ def test_txt_rows(tmp_path):
     td = tmp_path / "tt"
     td.mkdir()
     (td / "기안.txt").write_text("{{공고명}} {{담당자}}", encoding="utf-8")
-    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td))
+    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td), engine=make_hwpx_engine())
     rows = vm.txt_rows()
     assert len(rows) == 1 and rows[0].name == "기안" and rows[0].field_count == 2
 
@@ -217,7 +217,7 @@ def _filled_hwpx(tmp_path) -> str:
 
 
 def _row(template_path: str) -> JobRow:
-    return JobRow.from_job(Job(name="작업", template_path=template_path))
+    return JobRow.from_job(Job(name="작업", template_path=template_path), engine=make_hwpx_engine())
 
 
 def test_badge_matrix_also_owns_the_runnable_decision(tmp_path):
@@ -248,7 +248,7 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
     path = _compiled_hwpx(tmp_path, name="drift.hwpx")
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="드리프트", template_path=path))
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     assert vm.rows()[0].compile_badge == BADGE_READY  # 처음엔 실행 준비
 
     # 사용자가 한글에서 새 평문 토큰을 타이핑(파일 밖에서 드리프트).
@@ -275,6 +275,7 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
 # 은 사용자 group 하나뿐이고, 태그는 좁히는 축으로만 남는다. 그래서 facet 의미론은 이제
 # ``library_sections()`` 결과로 관찰한다. 위젯 없이 링1 VM 에서 회귀를 잡는다.
 from hwpxfiller.gui.home_state import discover_tag_axes  # noqa: E402
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
 def _tagged_reg(tmp_path) -> JobRegistry:
@@ -294,7 +295,7 @@ def _shown(vm) -> "set[str]":
 
 def test_axes_discovered_from_tags_union(tmp_path):
     """축은 authored 레지스트리가 아니라 붙은 태그 키의 합집합에서 발견(D3), 정렬."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     assert vm.axes() == ["금액구간", "낙찰방법"]
 
 
@@ -304,7 +305,7 @@ def test_group_by_lens_is_retired_and_every_axis_is_a_facet(tmp_path):
     씨앗 축 상수·`active_group_by`·`grouped_rows`·`set_group_by` 는 함께 죽었다. 남겨 두면
     아무도 보지 않는 제2 구획 축이 되어 다음 세션이 되살린다.
     """
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     for dead in ("active_group_by", "effective_group_by", "grouped_rows", "set_group_by"):
         assert not hasattr(vm, dead), f"은퇴한 group-by 표면이 남아 있습니다: {dead}"
     # 승계 의무 ①: facet 칩은 그대로 살아 **모든 축**으로 좁히기가 계속 가능하다.
@@ -313,7 +314,7 @@ def test_group_by_lens_is_retired_and_every_axis_is_a_facet(tmp_path):
 
 def test_untagged_corpus_is_degenerate_flat(tmp_path):
     """태그 0 → 축 0 → facet UI 전무 + 헤더 없는 평면(퇴화-코퍼스 불변식, 승계 의무 ③)."""
-    vm = HomeViewModel(_reg(tmp_path))  # 태그도 그룹도 없는 기존 픽스처
+    vm = HomeViewModel(_reg(tmp_path), engine=make_hwpx_engine())  # 태그도 그룹도 없는 기존 픽스처
     assert vm.axes() == []
     assert vm.facets() == []
     secs = vm.library_sections()
@@ -332,7 +333,7 @@ def test_library_renders_despite_type_corrupt_job(tmp_path):
     (tmp_path / "정수태그.job.json").write_text(
         _json.dumps({"name": "정수태그", "tags": {"금액구간": 123}}), encoding="utf-8"
     )
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     assert [r.name for r in vm.rows()] == ["정상"]  # 정상만 rows
     assert len(vm.corrupt_rows()) == 1              # 손상은 loud 격리
     assert vm.library_sections()                    # 혼합타입 크래시 없이 구획 반환
@@ -341,7 +342,7 @@ def test_library_renders_despite_type_corrupt_job(tmp_path):
 
 def test_facets_carry_every_axis_with_counts(tmp_path):
     """발견된 모든 축이 facet 으로, 값별 건수 동반(D10)."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
     assert set(facets) == {"금액구간", "낙찰방법"}
     assert facets["낙찰방법"] == {"적격심사": 2, "협상": 1}
@@ -350,7 +351,7 @@ def test_facets_carry_every_axis_with_counts(tmp_path):
 
 def test_facet_filter_narrows_list_and_notifies(tmp_path):
     """facet 토글 → 목록이 좁혀지고 재렌더 통지(select 와 달리 표시가 바뀌므로)."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     beats = []
     vm.subscribe(lambda: beats.append(1))
     vm.toggle_facet("낙찰방법", "적격심사")
@@ -366,7 +367,7 @@ def test_facet_internal_or_cross_and(tmp_path):
     reg.save(Job(name="a", template_path="", tags={"목적물": "물품", "낙찰방법": "적격심사"}))
     reg.save(Job(name="b", template_path="", tags={"목적물": "용역", "낙찰방법": "적격심사"}))
     reg.save(Job(name="c", template_path="", tags={"목적물": "물품", "낙찰방법": "협상"}))
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     vm.toggle_facet("목적물", "물품")
     vm.toggle_facet("목적물", "용역")  # 목적물 내 OR → 물품 or 용역
     assert _shown(vm) == {"a", "b", "c"}
@@ -376,7 +377,7 @@ def test_facet_internal_or_cross_and(tmp_path):
 
 def test_facet_own_selection_does_not_narrow_own_counts(tmp_path):
     """표준 패싯 의미론 — 한 facet 의 선택은 그 facet 자신의 카운트를 좁히지 않는다."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     vm.toggle_facet("낙찰방법", "적격심사")
     facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
     # 낙찰방법 자신의 카운트는 자기 선택에 안 좁혀짐 — 여전히 전체 기준.
@@ -387,7 +388,7 @@ def test_facet_own_selection_does_not_narrow_own_counts(tmp_path):
 
 def test_clear_and_set_facets_bulk(tmp_path):
     """clear_facets 일괄 해제 · set_facets 일괄 지정(INI 복원, 통지 1회)."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     vm.toggle_facet("낙찰방법", "적격심사")
     vm.clear_facets()
     assert vm.active_facets == {}
@@ -409,7 +410,7 @@ def test_orphaned_active_facet_surfaces_as_on_chip_count_zero(tmp_path):
     """
     reg = JobRegistry(tmp_path)
     reg.save(Job(name="적격", template_path="", tags={"금액구간": "1억미만"}))
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     # 어떤 행도 '낙찰방법' 축을 지니지 않는다 → axes() 에 없다.
     assert "낙찰방법" not in vm.axes()
     # 그런데 렌즈가 그 축/값을 복원했다(삭제된 작업의 잔재).
@@ -425,7 +426,7 @@ def test_orphaned_active_facet_surfaces_as_on_chip_count_zero(tmp_path):
 def test_facet_counts_unchanged_by_single_pass_rewrite(tmp_path):
     """단일 패스 재작성이 카운트 의미론을 바꾸지 않음(자기 축 제외 보존) — 다축 코퍼스에서
     옛 중첩 스캔과 동일한 결과. 카운트 0 값도 유지된다."""
-    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm = HomeViewModel(_tagged_reg(tmp_path), engine=make_hwpx_engine())
     vm.toggle_facet("낙찰방법", "협상")  # 협상: 협상-소액(1억미만)만
     facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
     # 낙찰방법 자신은 자기 선택에 안 좁혀짐(자기 축 제외) — 전체 기준.
@@ -466,7 +467,7 @@ def _library_reg(tmp_path) -> JobRegistry:
 
 def test_library_views_project_without_new_state(tmp_path):
     """보기 4종은 저장 상태가 아니라 투영이다 — 정렬 근거도 이미 있는 필드뿐."""
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     counts = vm.library_counts()
     assert counts[VIEW_ALL] == 5 and counts[VIEW_RECENT] == 1
     assert counts[VIEW_FAVORITES] == 1 and counts[VIEW_NEEDS] == 2  # 깨진연결 + txt 아닌 미상
@@ -483,7 +484,7 @@ def test_library_views_project_without_new_state(tmp_path):
 
 def test_library_all_view_sections_by_group_and_degenerates(tmp_path):
     """모든 작업만 사용자 group 으로 구획하고, 이름 있는 group 이 없으면 평면으로 퇴화한다."""
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     vm.set_library_view(VIEW_ALL)
     secs = vm.library_sections()
     assert [s.value for s in secs] == ["조달", ""]          # 「그룹 없음」 마지막
@@ -491,14 +492,14 @@ def test_library_all_view_sections_by_group_and_degenerates(tmp_path):
 
     plain = JobRegistry(tmp_path / "plain")
     plain.save(Job(name="가", template_path=""))
-    flat = HomeViewModel(plain)
+    flat = HomeViewModel(plain, engine=make_hwpx_engine())
     flat.set_library_view(VIEW_ALL)
     assert [s.value for s in flat.library_sections()] == [""]   # 헤더 없는 평면
 
 
 def test_library_mode_filter_and_search_are_anded(tmp_path):
     """작업 방식 필터는 모든 보기와 AND, 검색은 이름·그룹·태그 값만(§19.6)."""
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     vm.set_library_mode(MODE_TXT)
     assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"기안문"}
     assert vm.library_counts()[VIEW_ALL] == 1                  # 탭 건수도 방식은 반영
@@ -523,13 +524,13 @@ def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
     reg = JobRegistry(tmp_path / "unlinked")
     reg.save(Job(name="저작중", template_path=""))                 # 미연결(정상 상태)
     reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 실제 미상 확장자
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
     assert library_health(rows["저작중"]) == (3, "템플릿을 아직 연결하지 않았습니다.")
     assert library_health(rows["미상"])[1] == "템플릿 파일을 찾을 수 없습니다."
 
     # 미연결은 HWPX 필터에 **남는다**(리뷰 P2): 진단만 내고 사용자가 고치러 오는 필터에서
     # 빼면 손 닿는 곳이 없어진다. 실제 미상 확장자는 그대로 미상이다.
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     vm.set_library_mode(MODE_HWPX)
     assert "저작중" in {r.name for sec in vm.library_sections() for r in sec.rows}
     assert vm.library_counts()[VIEW_NEEDS] >= 1
@@ -548,7 +549,7 @@ def test_partial_template_lands_in_needs_action(tmp_path):
     # 가려진다(둘 다 참일 땐 실행이 막히는 쪽이 먼저 말한다).
     reg.save(Job(name="부분컴파일", template_path=_partial_hwpx(tmp_path),
                  mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
-    vm = HomeViewModel(reg)
+    vm = HomeViewModel(reg, engine=make_hwpx_engine())
     row = vm.rows()[0]
     sev, text = library_health(row)
     assert sev == 2 and text == row.compile_badge
@@ -571,7 +572,7 @@ def test_structure_drift_surfaces_in_needs_action(tmp_path):
     reg.save(Job(name="맞춘작업", template_path=tpl,
                  mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
     reg.save(Job(name="매핑없음", template_path=tpl))       # 확정 매핑 0 = 드리프트 아님
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
     assert library_health(rows["어긋난작업"]) == (2, "템플릿 구조가 확정 매핑과 달라졌습니다.")
     assert library_health(rows["맞춘작업"])[0] == 0
     # 매핑이 아직 없는 작업은 드리프트가 **아니지만 건강도 아니다**(리뷰 P2): 실행 게이트는
@@ -590,7 +591,7 @@ def test_unreadable_txt_template_is_not_healthy(tmp_path):
     ok.write_text("제목: {{공고명}}", encoding="utf-8")
     for name, path in (("깨짐", bad), ("폴더", as_dir), ("정상", ok)):
         reg.save(Job(name=name, template_path=str(path)))
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
     assert library_health(rows["깨짐"]) == (3, "템플릿을 읽을 수 없습니다.")
     assert library_health(rows["폴더"]) == (3, "템플릿을 읽을 수 없습니다.")
     assert library_health(rows["정상"])[0] == 0
@@ -609,7 +610,7 @@ def test_unresolved_filename_tokens_surface_in_health(tmp_path):
                  filename_pattern="계약-{{추정가격}}"))     # 매핑이 못 채우는 토큰
     reg.save(Job(name="토큰정상", template_path=tpl, mapping=mapping,
                  filename_pattern="계약-{{계약명}}"))
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
     assert library_health(rows["토큰불일치"]) == (3, "파일명 패턴의 토큰을 채우지 못합니다.")
     assert library_health(rows["토큰정상"])[0] == 0
 
@@ -655,7 +656,7 @@ def test_health_translation_covers_every_data_independent_gate_reason():
 
 def test_library_projection_ands_active_tag_facets(tmp_path):
     """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     vm.toggle_facet("물품", "의약품")
     assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"미사용문서"}
     assert vm.library_counts()[VIEW_ALL] == 1        # 탭 건수도 켜진 칩 안에서 센다
@@ -669,14 +670,14 @@ def test_library_ungrouped_section_is_identified_apart_from_flat_degenerate(tmp_
     「그룹 없음」 구획과 "나눌 group 이 없어 퇴화한 평면"은 둘 다 빈 값이라, 표면이 값으로만
     키잉하면 퇴화 평면에 헤더가 붙거나 「그룹 없음」이 헤더를 잃는다.
     """
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     vm.set_library_view(VIEW_ALL)
     secs = vm.library_sections()
     assert [(s.value, s.is_untagged) for s in secs] == [("조달", False), ("", True)]
 
     plain = JobRegistry(tmp_path / "flatgrp")
     plain.save(Job(name="가", template_path=""))
-    flat = HomeViewModel(plain).library_sections()
+    flat = HomeViewModel(plain, engine=make_hwpx_engine()).library_sections()
     assert [(s.value, s.is_untagged) for s in flat] == [("", False)]  # 퇴화 평면 ≠ 그룹 없음
 
 
@@ -694,7 +695,7 @@ def test_health_causes_are_the_source_and_list_badge_is_derived(tmp_path):
     reg.save(Job(name="건강", template_path=tpl,
                  mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")]),
                  filename_pattern="계약-{{계약명}}"))
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
 
     # 원인 열거가 정본이고, 목록 1건은 그 최댓값이다 — 같은 상태에 두 판정을 두지 않는다.
     for name in ("두원인", "한원인", "건강"):
@@ -721,7 +722,7 @@ def test_health_causes_do_not_misdiagnose_unlinked_as_unsupported(tmp_path):
     """
     reg = JobRegistry(tmp_path / "misdiag")
     reg.save(Job(name="저작중", template_path=""))
-    row = next(r for r in HomeViewModel(reg).rows() if r.name == "저작중")
+    row = next(r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows() if r.name == "저작중")
     texts = [t for _, t in library_health_causes(row)]
     assert texts == ["템플릿을 아직 연결하지 않았습니다."]
     assert "지원하지 않는 작업 방식입니다." not in texts
@@ -761,7 +762,7 @@ def test_field_binding_rows_keep_unknown_format_code_verbatim():
 
 
 def test_unknown_library_view_and_mode_degenerate(tmp_path):
-    vm = HomeViewModel(_library_reg(tmp_path))
+    vm = HomeViewModel(_library_reg(tmp_path), engine=make_hwpx_engine())
     vm.set_library_view("엉뚱")
     vm.set_library_mode("엉뚱")
     assert vm.library_view == VIEW_ALL and vm.library_mode == "all"
@@ -779,6 +780,6 @@ def test_last_use_wording_follows_the_work_mode(tmp_path):
     reg.save(Job(name="기안", template_path=str(tpl),
                  last_run_at="2026-07-28T09:10:00"))
     reg.save(Job(name="빈기안", template_path=str(tpl)))
-    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine()).rows()}
     assert rows["기안"].last_run_display == "마지막 복사 2026-07-28"
     assert rows["빈기안"].last_run_display == "복사한 적 없음"

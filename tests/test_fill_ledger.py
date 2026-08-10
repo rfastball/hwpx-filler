@@ -1,6 +1,6 @@
 import json
 
-from hwpxfiller.core.engine import HwpxEngine
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.core.fill_ledger import (
     StructureState,
     ValueState,
@@ -82,11 +82,11 @@ def test_mapping_blank_conflict_fails_closed():
 def test_template_path_seam_reloads_and_fails_closed(tmp_path):
     path = tmp_path / "t.hwpx"
     _template(path, ["공고명", "비고"])
-    assert not template_path_drift(str(path), _mapping()).has_drift
+    assert not template_path_drift(str(path), _mapping(), engine=make_hwpx_engine()).has_drift
     _template(path, ["공고명", "비고", "신규"])
-    assert template_path_drift(str(path), _mapping()).template_uncovered == ("신규",)
+    assert template_path_drift(str(path), _mapping(), engine=make_hwpx_engine()).template_uncovered == ("신규",)
     path.write_bytes(b"broken")
-    assert template_path_drift(str(path), _mapping()).read_error
+    assert template_path_drift(str(path), _mapping(), engine=make_hwpx_engine()).read_error
 
 
 # ==================================================================== L2 원장 export
@@ -120,7 +120,7 @@ def test_verify_output_reads_back_evidence(tmp_path):
     template = tmp_path / "t.hwpx"
     _template(template, ["공고명", "비고"])
     out = tmp_path / "doc.hwpx"
-    res = HwpxEngine().generate(str(template), {"공고명": "실제값"}, str(out))
+    res = make_hwpx_engine().generate(str(template), {"공고명": "실제값"}, str(out))
     assert res.ok
 
     rows = manifest_rows(_mapping(), ["공고명", "비고"], {"공고명": "실제값"})
@@ -139,7 +139,7 @@ def test_ledger_outputs_verifies_success_and_keeps_failure_loud(tmp_path):
     template = tmp_path / "t.hwpx"
     _template(template, ["공고명", "비고"])
     out = tmp_path / "doc.hwpx"
-    res = HwpxEngine().generate(str(template), {"공고명": "가"}, str(out))
+    res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
     entries = ledger_outputs(
         [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
     )
@@ -159,7 +159,7 @@ def test_export_redacts_service_key_and_notes_no_render(tmp_path):
     _template(template, ["공고명", "비고"])
     out = tmp_path / "doc.hwpx"
     leaky = "https://apis.example/x?ServiceKey=TOPSECRET&y=1"
-    res = HwpxEngine().generate(str(template), {"공고명": leaky}, str(out))
+    res = make_hwpx_engine().generate(str(template), {"공고명": leaky}, str(out))
     entries = ledger_outputs([res], [{"공고명": leaky}], _mapping(), ["공고명", "비고"])
     sidecar = tmp_path / LEDGER_SIDECAR_NAME
     payload = export_run_ledger(
@@ -232,7 +232,7 @@ def test_ledger_records_fill_notes_as_evidence(tmp_path):
         entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
     ).save(str(template))
     out = tmp_path / "doc.hwpx"
-    res = HwpxEngine().generate(str(template), {"공고명": "가"}, str(out))
+    res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
     assert res.notes  # 선조건: 완화가 실제 발생
 
     (entry,) = ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"])

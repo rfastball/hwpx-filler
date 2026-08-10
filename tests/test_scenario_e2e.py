@@ -38,6 +38,7 @@ from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.core.text_render import render_record
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 SCENARIO = Path(__file__).parent / "corpus" / "scenario"
 TEMPLATES = SCENARIO / "templates"
@@ -113,7 +114,7 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
 
     out = tmp_path / "out"
     batch = generate_batch(job.template_path, req.mapped_records(),
-                           str(out), job.filename_pattern)
+                           str(out), job.filename_pattern, engine=make_hwpx_engine())
     assert batch.succeeded == 3
     assert _outputs(out) == [
         "입찰공고서-2026-001.hwpx",
@@ -132,7 +133,7 @@ def test_same_data_fills_subset_template_ignoring_extra_keys(tmp_path):
     out = tmp_path / "req"
     # 부분집합 템플릿은 직접 채우기(원본 한글 키). 템플릿에 없는 키는 unmatched 로.
     batch = generate_batch(PURCHASE_REQ, src.records(), str(out),
-                           "구매요청서-{{입찰공고번호}}")
+                           "구매요청서-{{입찰공고번호}}", engine=make_hwpx_engine())
     assert batch.succeeded == 3
     res0 = batch.results[0]
     # 템플릿에 있는 필드만 주입되고, 나머지 소스 키(예: 계약방법)는 매칭 실패로 신고.
@@ -158,7 +159,7 @@ def test_nara_mapping_fills_bid_notice_with_formatting(tmp_path):
 
     out = tmp_path / "out"
     batch = generate_batch(job.template_path, req.mapped_records(),
-                           str(out), job.filename_pattern)
+                           str(out), job.filename_pattern, engine=make_hwpx_engine())
     assert batch.succeeded == 2
     blob = _xml_blob(out / "공고서-R26BK00450011.hwpx")
     assert "친환경 선박용 소화장비 구매" in blob
@@ -188,14 +189,14 @@ def test_thin_source_leaves_unmapped_fields_unfilled(tmp_path):
     assert "세부품명" not in nara_req.mapped_records()[0]
 
     out = tmp_path / "out"
-    generate_batch(BID_NOTICE, nara_req.mapped_records(), str(out), "n-{{입찰공고번호}}")
+    generate_batch(BID_NOTICE, nara_req.mapped_records(), str(out), "n-{{입찰공고번호}}", engine=make_hwpx_engine())
     nara_blob = _xml_blob(next(out.glob("*.hwpx")))
     assert "선박용 소화기" not in nara_blob  # 세부품명 미충족(나라장터)
 
     # 반면 한글 CSV 는 세부품명을 채운다.
     csv_src = source_for_path(DATA / "조달_한글.csv")
     out2 = tmp_path / "out2"
-    generate_batch(BID_NOTICE, csv_src.records(), str(out2), "c-{{입찰공고번호}}")
+    generate_batch(BID_NOTICE, csv_src.records(), str(out2), "c-{{입찰공고번호}}", engine=make_hwpx_engine())
     csv_blob = _xml_blob(out2 / "c-2026-001.hwpx")
     assert "선박용 소화기" in csv_blob
 

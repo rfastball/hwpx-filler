@@ -25,6 +25,7 @@ from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource, make_nara_acquirer
 from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 FIXTURES = Path(__file__).parent / "fixtures"
 _LIVE_KEY = "aB3+xY/z9Q==pLm4Kn7"
@@ -475,7 +476,7 @@ def test_run_load_pool_item_excel_live(tmp_path):
     csv = tmp_path / "d.csv"
     csv.write_text("ID,공고명\n1,전산장비\n", encoding="utf-8")
     it = DatasetPoolItem(name="엑셀", kind="excel", opts={"path": str(csv)})
-    vm = RunViewModel(_job())
+    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     # 주입 seam 봉인(P2-16): concrete 만 넣으면 잔존 내부 import 우회를 놓친다 —
     # 주입 factory 경유 1회 + item/kwargs 관통을 기록으로 확인한다.
     calls: list = []
@@ -498,7 +499,7 @@ def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
         name="다중", kind="excel",
         opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
     )
-    vm = RunViewModel(_job())
+    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     recs = vm.load_pool_item(it, source_factory=source_from_pool_item)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
 
@@ -519,7 +520,7 @@ def test_run_load_pool_item_nara_snapshots_once(tmp_path):
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
-    vm = RunViewModel(_job())
+    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     recs = vm.load_pool_item(
         it,
         secret_store=store,
@@ -550,7 +551,7 @@ def test_run_load_pool_item_nara_auth_failure_is_loud(tmp_path):
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
-    vm = RunViewModel(_job())
+    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     with pytest.raises(RuntimeError) as ei:
         vm.load_pool_item(
             it,
@@ -571,7 +572,7 @@ def test_run_load_pool_item_nara_no_key_is_loud(tmp_path):
         name="나라", kind="nara",
         opts={"bgn_dt": "202606010000", "end_dt": "202606302359"},
     )
-    vm = RunViewModel(_job())
+    vm = RunViewModel(_job(), engine=make_hwpx_engine())
     with pytest.raises(RuntimeError, match="서비스키"):
         vm.load_pool_item(
             it,

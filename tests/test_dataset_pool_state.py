@@ -17,6 +17,7 @@ from hwpxfiller.core.dataset_pool import (
     STATUS_ARCHIVED,
     DatasetPoolRegistry,
 )
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 
 
 def _vm(tmp_path):
@@ -260,6 +261,6 @@ def test_home_kpi_counts_only_active_pool_items_and_defaults_to_zero(tmp_path):
     key_b = next(r.key for r in pvm.rows() if r.name == "B")
     pvm.archive(key_b)  # 보관은 활성 카운트에서 제외
 
-    home = HomeViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=pool)
+    home = HomeViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=pool, engine=make_hwpx_engine())
     assert home.kpi().pool_count == 1  # A 만 활성
-    assert HomeViewModel(JobRegistry(tmp_path / "jobs-without-pool")).kpi().pool_count == 0
+    assert HomeViewModel(JobRegistry(tmp_path / "jobs-without-pool"), engine=make_hwpx_engine()).kpi().pool_count == 0

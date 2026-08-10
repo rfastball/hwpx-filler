@@ -222,12 +222,15 @@ def unresolved_name_tokens_for(job: "Job") -> "list[str]":
 class RunViewModel:
     """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
-    def __init__(self, job: Job):
+    def __init__(self, job: Job, *, engine: HwpxEngine):
         # 진입 가드(3부 결정 13 · 2층): 실행뷰는 hwpx 생성 경로다 — HwpxEngine.required_fields·
         # template_path_drift 가 이 job 의 템플릿을 hwpx 로 파싱한다. txt 기안 작업은 「기안」
         # 화면이 자기 경로로 소비하므로 여기 오면 조회 경계가 샌 것 → loud 거부(조용한 오파싱 금지).
         require_hwpx(job)
         self.job = job
+        # zip IO 가 결속된 엔진은 Host/ring 2 가 주입한다(P2-19 — 링1 은 concrete opener 를
+        # 모른다. P2-16 source factory 주입과 같은 seam).
+        self._engine = engine
         self.datasource = None                 # DataSource 포트(팩토리가 생성)
         self.records: "list[dict]" = []
         # 이어채우기: 기존 문서가 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
@@ -253,7 +256,7 @@ class RunViewModel:
         """
         self.template_override = path
         try:
-            doc_fields = set(HwpxEngine().required_fields(path))
+            doc_fields = set(self._engine.required_fields(path))
         except Exception as exc:  # noqa: BLE001
             return PrevNote(f"기존 문서를 읽을 수 없습니다: {exc}", "danger")
         ours = set(self.job.template_fields())
@@ -346,11 +349,13 @@ class RunViewModel:
         template = self.effective_template()
         if not template or not Path(template).exists():
             return []
-        return list(HwpxEngine().required_fields(template))
+        return list(self._engine.required_fields(template))
 
     def structure_drift(self) -> TemplateStructureDrift:
         """현재 템플릿과 확정 매핑 커버의 대칭차(스냅샷 없는 구조 계약)."""
-        return template_path_drift(self.effective_template(), self.job.mapping)
+        return template_path_drift(
+            self.effective_template(), self.job.mapping, engine=self._engine
+        )
 
     def field_states(self, indices: "list[int]") -> "list[FieldState]":
         """필드별 3상태(채움/의도적 빈칸/미입력) — 상시 인라인 배지의 원천.
@@ -452,7 +457,7 @@ class RunViewModel:
         if not template:
             return TemplateStructureDrift(read_error="템플릿 경로가 비어 있습니다."), set()
         try:
-            fields = HwpxEngine().required_fields(template)
+            fields = self._engine.required_fields(template)
         except Exception as exc:  # noqa: BLE001 - 구조를 증명 못 하면 fail-closed
             return TemplateStructureDrift(read_error=str(exc)), set()
         return template_structure_drift(fields, self.job.mapping), set(fields)
