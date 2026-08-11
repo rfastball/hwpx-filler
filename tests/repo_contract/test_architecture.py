@@ -110,7 +110,7 @@ def test_screen_controllers_stay_transport_thin() -> None:
     )
     forbidden_engine = "hwpxfiller.external.hwpx_engine"
     failures: list[str] = []
-    for path in sorted(webapp.glob("screen_*.py")):
+    for path in sorted(webapp.glob("screen*.py")):
         rel = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         refs_generation_lock = any(
