@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.domain.job import Job, rules_fingerprints
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.text_registry import TextTemplateRegistry
@@ -86,10 +87,12 @@ _FACTORIES = {
 
 
 def _deps(tmp_path, lock: "threading.Lock | None" = None):
-    """구성 공통 주입 한 벌 — pool_registry(#570)·generation_lock(P2-24)은 폴백이
-    제거돼 **명시 주입**한다. ``lock`` 은 화면 간 공유를 재는 테스트의 관통용."""
+    """구성 공통 주입 한 벌 — engine(P2-25)·pool_registry(#570)·
+    generation_lock(P2-24)은 폴백 없이 **명시 주입**한다. ``lock`` 은 화면 간
+    공유를 재는 테스트의 관통용."""
     return {
         **_FACTORIES,
+        "engine": make_hwpx_engine(),
         "pool_registry": DatasetPoolRegistry(tmp_path / "pool"),
         "generation_lock": lock if lock is not None else threading.Lock(),
     }
@@ -99,6 +102,7 @@ def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_f
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
+        engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
         file_source_factory=file_source_factory,
@@ -351,6 +355,7 @@ def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
     job_ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path, lock))
     lib_ctrl = LibraryController(
         reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
+        engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=lock,
     )
@@ -1457,7 +1462,6 @@ def test_panel_delegates_to_ring1_view_models(tmp_path):
 # ---------------------------------------------------------------- #26 #6 — 2소스(등록 데이터)
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.template_inspection import template_compile_status
 
 
@@ -1466,6 +1470,7 @@ def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+        engine=make_hwpx_engine(),
         pool_registry=pool,
         generation_lock=threading.Lock(),
         file_source_factory=source_for_path,
@@ -1838,7 +1843,8 @@ def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
     txt = tmp_path / "경합.txt"
     txt.write_text("공고: {{공고명}}", encoding="utf-8")
     res = relink_job_template(
-        _StaleLoad(ctrl.registry, stale), "경합작업", str(txt), confirm=True)
+        _StaleLoad(ctrl.registry, stale), "경합작업", str(txt),
+        engine=make_hwpx_engine(), confirm=True)
     assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
     assert ctrl.registry.load("경합작업").template_path == str(hwpx)  # durable 불변
 
@@ -2697,7 +2703,9 @@ def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
     stamper.start()
     assert entered.wait(3)
     linker = threading.Thread(
-        target=lambda: relink_job_template(reg, "공고서", str(new_template), confirm=True)
+        target=lambda: relink_job_template(
+            reg, "공고서", str(new_template), engine=make_hwpx_engine(), confirm=True
+        )
     )
     linker.start()
     release.set()

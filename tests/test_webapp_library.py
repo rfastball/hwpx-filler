@@ -13,6 +13,7 @@ import pytest
 
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.domain.job import Job
+from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.text_registry import TextTemplateRegistry
@@ -52,6 +53,7 @@ def _controller(tmp_path) -> "tuple[LibraryController, list]":
     pushes: list = []
     ctrl = LibraryController(_reg(tmp_path), _text_reg(tmp_path),
                           lambda s, snap: pushes.append((s, snap)),
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     return ctrl, pushes
@@ -102,6 +104,7 @@ def test_empty_registry_is_loudly_empty(tmp_path):
     pushes: list = []
     ctrl = LibraryController(JobRegistry(tmp_path / "j"), TextTemplateRegistry(tmp_path / "t"),
                           lambda s, snap: pushes.append((s, snap)),
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     snap = ctrl.initial()
@@ -119,6 +122,7 @@ def test_group_sections_and_collapse_are_view_only(tmp_path):
     reg.save(Job(name="가", template_path="", group="조달"))
     reg.save(Job(name="나", template_path=""))
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     secs = ctrl.snapshot()["sections"]
@@ -244,6 +248,7 @@ def _corrupt_file(tmp_path) -> "tuple[LibraryController, str]":
     pushes: list = []
     ctrl = LibraryController(JobRegistry(tmp_path / "jobs"), _text_reg(tmp_path),
                           lambda s, snap: pushes.append((s, snap)),
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     rows = ctrl.snapshot()["corrupt_rows"]
@@ -437,6 +442,7 @@ def test_group_names_are_registry_wide_not_a_projection(tmp_path):
     reg.save(Job(name="나", template_path="", group="계약"))
     reg.save(Job(name="다", template_path=""))
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     assert ctrl.snapshot()["group_names"] == ["계약", "조달"]
@@ -505,6 +511,7 @@ def test_txt_work_joins_the_document_picker(tmp_path):
 
     # 라이브러리는 그 작업을 **보여준다**(방식 필터의 존재 이유).
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
@@ -530,6 +537,7 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
     reg.save(Job(name="기안문", template_path=str(txt)))               # TXT
     reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 지원 안 하는 확장자
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          engine=make_hwpx_engine(),
                           pool_registry=_pool(tmp_path),
                           generation_lock=threading.Lock())
     rows = {r.name: r for r in ctrl.vm.rows()}

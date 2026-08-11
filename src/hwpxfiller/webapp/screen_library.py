@@ -43,10 +43,10 @@ from ..application.jobs import (
     set_favorite,
     soft_delete_job,
 )
+from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.text_registry import TextTemplateRegistry
-from ..external.hwpx_engine import make_hwpx_engine
 from ..external.template_inspection import template_compile_status
 from ..gui.compile_badge import badge_level
 from ..gui.home_state import (
@@ -142,7 +142,7 @@ class LibraryController:
     name = "library"
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
-                 push: PushSink,
+                 push: PushSink, *, engine: HwpxEngine,
                  pool_registry: DatasetPoolRegistry,
                  generation_lock: "threading.Lock") -> None:
         # pool_registry 는 손상 등록 데이터 경보(#45) 용 — composition root(webapp.app)가
@@ -151,13 +151,14 @@ class LibraryController:
         self.vm = HomeViewModel(
             registry, text_registry,
             pool_registry,
-            engine=make_hwpx_engine(),
+            engine=engine,
             inspect_status=template_compile_status,
         )
         # 템플릿 다시 연결(#67)용 주입 레지스트리 — vm.registry 우회 금지 가드(#44,
         # test_architecture)와 정합: seam 밖 durable 뮤테이션은 공유 게이트
         # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
         self._job_registry = registry
+        self._engine = engine
         # 「문서 만들기」와 **같은** 생성 자물쇠(9R P1) — 이 화면의 재연결도 durable 규칙을
         # 쓰므로 진행 중 런과 겹치면 안 된다. **필수 주입**이다(P2-24 폴백 제거): 화면이
         # 자기 것을 세우면 run transaction 상태의 제2 정본이 된다(#570 pool_registry 동형).
@@ -422,7 +423,8 @@ class LibraryController:
         if self._generation_lock.locked():
             raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요.")
         res = relink_job_template(
-            self._job_registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
+            self._job_registry, p["name"], p.get("path", ""),
+            engine=self._engine, confirm=bool(p.get("confirm")),
         )
         if res.get("relinked"):
             self.vm.refresh()
