@@ -322,7 +322,7 @@ class TemplateController:
         if not self._folder_import_lock.acquire(blocking=False):
             raise ValueError("폴더 가져오기가 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
         try:
-            root, _candidates, _skipped, _subdirs = self._files.folder_candidates(folder)
+            root = self._files.require_folder(folder)
             if not files or not isinstance(files, list):
                 raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
             for name in files:

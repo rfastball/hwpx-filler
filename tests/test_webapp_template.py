@@ -162,6 +162,22 @@ def test_txt_edit_and_read_reject_paths_outside_the_live_library(tmp_path, monke
         ctrl.dispatch("txt_content", {"path": str(foreign)})
     assert foreign.read_text(encoding="utf-8") == "do not touch"
 
+    alias = tp / "txt" / "별칭.txt"
+    alias.write_text("link placeholder", encoding="utf-8")
+    real_resolve = Path.resolve
+    real_is_symlink = Path.is_symlink
+
+    def resolve_link(path, *args, **kwargs):
+        return foreign if path == alias else real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve_link)
+    monkeypatch.setattr(
+        Path, "is_symlink", lambda path: path == alias or real_is_symlink(path)
+    )
+    with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
+        ctrl.dispatch("txt_edit", {"path": str(alias), "content": "changed"})
+    assert foreign.read_text(encoding="utf-8") == "do not touch"
+
 
 # =============================================== 매체 구획 + 그룹(결정 2·3)
 def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
@@ -489,6 +505,11 @@ def test_import_folder_is_bound_to_confirmed_manifest_not_a_rescan(tmp_path, mon
 
     (ext / "확정뒤추가.txt").write_text("{{몰래}}", encoding="utf-8")   # ① 스캔 뒤 등장
     (ext / "협조전.txt").unlink()                                       # ② 스캔 뒤 소실
+
+    def unexpected_rescan(_folder):
+        raise AssertionError("확정 import가 폴더를 다시 스캔했습니다")
+
+    monkeypatch.setattr(ctrl._files, "folder_candidates", unexpected_rescan)
 
     res = ctrl.import_folder(str(ext), manifest)
     assert res["imported"] == 2 and res["total"] == 3

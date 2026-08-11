@@ -35,10 +35,15 @@ class TemplateFileStore:
             return self.text_registry.directory
         raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
 
-    def folder_candidates(self, folder: "str | Path") -> "tuple[Path, list[Path], int, bool]":
+    @staticmethod
+    def require_folder(folder: "str | Path") -> Path:
         root = Path(folder)
         if not root.is_dir():
             raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
+        return root
+
+    def folder_candidates(self, folder: "str | Path") -> "tuple[Path, list[Path], int, bool]":
+        root = self.require_folder(folder)
         entries = list(root.iterdir())
         files = sorted((p for p in entries if p.is_file()), key=lambda p: p.name.casefold())
         candidates = [p for p in files if p.suffix.lower() in (".hwpx", ".txt")]
@@ -112,11 +117,16 @@ class TemplateFileStore:
         return None
 
     def _require_live_txt(self, path: "str | Path") -> Path:
+        root = self.text_registry.directory.resolve()
         target = Path(path).resolve()
-        live = {template.path.resolve() for template in self.text_registry.list_templates()}
-        if target not in live:
-            raise ValueError("현재 TXT 라이브러리 목록에 없는 경로입니다.")
-        return target
+        for template in self.text_registry.list_templates():
+            candidate = template.path
+            if candidate.is_symlink():
+                continue
+            resolved = candidate.resolve()
+            if resolved.is_relative_to(root) and resolved == target:
+                return candidate
+        raise ValueError("현재 TXT 라이브러리 목록에 없는 경로입니다.")
 
     def create_text(self, name: str, content: str) -> Path:
         path = self.text_registry.directory / f"{name}.txt"
