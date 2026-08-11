@@ -28,16 +28,11 @@ TXT 관리는 코어 :class:`~hwpxfiller.external.text_registry.TextTemplateRegi
 """
 from __future__ import annotations
 
-import shutil
 import threading
-import time
-import uuid
 from pathlib import Path
 
-from ..external.atomic import write_text_atomic
-
-from ..domain.template_status import TRASH_DIR_NAME
 from ..host.locations import default_templates_dir
+from ..external.template_files import TemplateFileStore
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel
@@ -58,12 +53,14 @@ class TemplateController:
         text_registry: TextTemplateRegistry,
         push: PushSink,
         *,
+        file_store: TemplateFileStore,
         library_dir=None,
         hwpx_groups: "TemplateGroupModel | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
     ) -> None:
         self._push_sink = push
         self.text_registry = text_registry
+        self._files = file_store
         # 라이브러리 폴더 미지정이면 표준 라이브러리(~/.hwpxfiller/templates)를 겨눈다(고정 루트).
         self.vm = TemplateManagerViewModel(
             library_dir if library_dir is not None else default_templates_dir(),
@@ -76,7 +73,7 @@ class TemplateController:
         # 가져오기 직렬화 잠금(#137 리뷰 F9) — pywebview 네이티브 호출은 별도 스레드라 같은
         # basename 동시 가져오기가 이름 선점~복사 사이 무경계로 겹쳐 두 호출이 같은 목적지를
         # 골라 내용 하나만 남는다. 후보 선택~복사를 이 잠금으로 직렬화한다(JobRegistry.clone 동형).
-        self._import_lock = threading.Lock()
+        self._import_lock = file_store.import_lock
         # 폴더 배치 가져오기의 동시 실행 거절 잠금(PR #355 2R) — _import_lock 은 개별 복사만
         # 직렬화해 두 배치가 교차하면 같은 목록이 번호 접미로 재반입된다. 배치 중복의 판정은
         # 여기 **한 곳**(비차단 획득 실패 = loud 거절)이고, JS 는 어포던스만 잠근다.
@@ -87,7 +84,7 @@ class TemplateController:
         # 「이 basename 이 비었는가」를 보고 파일을 놓으므로, 잠금을 공유하지 않으면 복원이
         # 원본을 되돌린 직후 배치의 ``copy2`` 가 그 위를 덮어 **복원은 성공을 보고하는데
         # 지운 문서는 사라진다**. TXT 와 같은 축·같은 항목 단위 범위로 세운다. RLock.
-        self._hwpx_write_lock = threading.RLock()
+        self._hwpx_write_lock = file_store.hwpx_write_lock
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
@@ -220,12 +217,8 @@ class TemplateController:
 
         하위 폴더는 훑지 않는다(§2.16 narrow) — 재귀는 트리→그룹 유도·중복 병합 정책을
         먼저 정해야 하는 별건이다. 이름순 정렬 = 재진술과 실행이 같은 결정적 순서."""
-        files = sorted(
-            (p for p in folder.iterdir() if p.is_file()),
-            key=lambda p: p.name.casefold(),
-        )
-        candidates = [p for p in files if p.suffix.lower() in (".hwpx", ".txt")]
-        return candidates, len(files) - len(candidates)
+        _root, candidates, skipped, _has_subdirs = self._files.folder_candidates(folder)
+        return candidates, skipped
 
     def scan_import_folder(self, folder: str) -> dict:
         """가져오기 재진술 스캔(읽기 전용) — **확정 전에는 홈에 아무것도 쓰지 않는다**.
@@ -237,14 +230,11 @@ class TemplateController:
         ``files`` = 확정 대상 후보 목록(이름) — 실행(:meth:`import_folder`)은 재스캔이 아니라
         **이 목록에 결속**된다(PR #355 리뷰): 스캔~확정 사이 폴더가 바뀌어도 확인 안 된
         파일이 따라 들어오지 않는다(재진술이 참이 되게)."""
-        root = Path(folder)
-        if not root.is_dir():
-            raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
-        candidates, skipped = self._folder_candidates(root)
+        root, candidates, skipped, has_subdirs = self._files.folder_candidates(folder)
         if not candidates:
             note = (
                 " 하위 폴더는 살펴보지 않습니다."
-                if any(p.is_dir() for p in root.iterdir()) else ""
+                if has_subdirs else ""
             )
             return {
                 "ok": False,
@@ -274,8 +264,7 @@ class TemplateController:
 
     def _import_dest_taken(self, src: Path) -> bool:
         """가져오기 목적지(매체 루트/원래 이름)가 이미 있는가 — 충돌 수 재진술용(무변이)."""
-        root = self.vm.library_dir if src.suffix.lower() == ".hwpx" else self.text_registry.directory
-        return root is not None and (Path(root) / src.name).exists()
+        return self._files.import_dest_taken(src)
 
     def _copy_into_library(self, src: Path) -> Path:
         """복사 권위 **몸통** — 매체 라우팅·잠금·충돌 번호 접미·무잔재. refresh/결과/push 없음.
@@ -311,31 +300,7 @@ class TemplateController:
         (``_do_delete`` 는 이 축에 세우지 않는다: 삭제는 **있는** 파일을 치우는 이동이라
         가져오기와 같은 이름을 두고 다투지 않는다 — 최악이 「방금 비워진 이름 대신 접미가
         붙는다」이고 그건 내용 소실이 아니라 예고 정확도 축이다(별건 #365).)"""
-        suffix = src.suffix.lower()
-        if suffix == ".hwpx":
-            root = self.vm.library_dir
-        elif suffix == ".txt":
-            root = self.text_registry.directory
-        else:
-            raise ValueError("가져올 수 있는 형식은 .hwpx 또는 .txt 입니다.")
-        if root is None:
-            raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
-        root.mkdir(parents=True, exist_ok=True)
-        media_writer = (
-            self.text_registry.write_lock() if suffix == ".txt" else self._hwpx_write_lock
-        )
-        with self._import_lock, media_writer:
-            dest = root / src.name
-            n = 2
-            while dest.exists():
-                dest = root / f"{src.stem} ({n}){src.suffix}"
-                n += 1
-            try:
-                shutil.copy2(src, dest)
-            except Exception:
-                dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거
-                raise
-        return dest
+        return self._files.copy_into_library(src)
 
     def import_folder(self, folder: str, files: "list[str]") -> dict:
         """확정 후 실행 — **확정 시점 후보 목록**(``files``)을 복사 몸통으로 반복한다.
@@ -357,9 +322,7 @@ class TemplateController:
         if not self._folder_import_lock.acquire(blocking=False):
             raise ValueError("폴더 가져오기가 이미 진행 중입니다. 끝난 뒤 다시 시도하세요.")
         try:
-            root = Path(folder)
-            if not root.is_dir():
-                raise ValueError(f"폴더를 찾을 수 없습니다: {folder}")
+            root, _candidates, _skipped, _subdirs = self._files.folder_candidates(folder)
             if not files or not isinstance(files, list):
                 raise ValueError("확정된 가져오기 목록이 비어 있습니다.")
             for name in files:
@@ -375,7 +338,7 @@ class TemplateController:
             failed: "list[tuple[str, str]]" = []
             for name in sorted(files, key=str.casefold):     # 재진술과 같은 결정적 순서
                 src = root / name
-                if not src.is_file():
+                if not self._files.source_file_exists(src):
                     failed.append((name, "확정 뒤 폴더에서 사라졌습니다"))
                     continue
                 try:
@@ -533,17 +496,7 @@ class TemplateController:
         root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
         # 그룹은 이동 전에 떠 둔다 — 이동 직후 reconcile 이 이 키의 지정을 영구 제거한다.
         group = model.group_of(rel_key(path, Path(root)))
-        trash = Path(root) / TRASH_DIR_NAME
-        trash.mkdir(parents=True, exist_ok=True)
-        cutoff = time.time() - 30 * 24 * 60 * 60
-        for old in trash.iterdir():
-            try:
-                if old.is_file() and old.stat().st_mtime < cutoff:
-                    old.unlink()
-            except OSError:
-                continue
-        trashed = trash / f"{int(time.time())}-{uuid.uuid4().hex}-{path.name}"
-        path.replace(trashed)
+        trashed = self._files.trash(media, path)
         self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
@@ -581,7 +534,7 @@ class TemplateController:
             return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
         media, path, trashed, group = self._deleted_template_slot
 
-        def restore_and_regroup() -> "dict | None":
+        def regroup() -> None:
             """복원의 **모든 durable 변이**(존재 검사~이동~그룹 복원~실패 롤백) 한 몸통.
 
             TXT 는 이 전체가 writer 락 임계구역 안이어야 한다(#280 리뷰 3R) — 이동만 락으로
@@ -589,39 +542,19 @@ class TemplateController:
             뒤 설정 쓰기가 실패했을 때 롤백 ``replace`` 가 그 새 내용을 무락으로 휴지통에
             쓸어 넣는다(재시도 Undo = 엉뚱한 내용 복원 + 동시 편집 소실).
             """
-            if not trashed.exists():
-                # 「휴지통」 없이 말한다(#345) — 사용자에게 그 장소는 도달 불가라 이름만 있는
-                # 공간이다. 실패 사실(파일 부재)만 재진술한다.
-                return {"ok": False, "error": "되돌릴 템플릿 파일을 찾을 수 없습니다."}
-            if path.exists():
-                return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
-            path.parent.mkdir(parents=True, exist_ok=True)
-            trashed.replace(path)
             if group:
                 # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
                 # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
                 # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
                 # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
-                try:
-                    root = (
-                        self.vm.library_dir if media == "hwpx"
-                        else self.text_registry.directory
-                    )
-                    self._model(media).set_group(rel_key(path, Path(root)), group)
-                except Exception:
-                    path.replace(trashed)  # 이동 롤백 — 슬롯은 그대로, Undo 재시도 가능
-                    raise
-            return None
+                root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
+                self._model(media).set_group(rel_key(path, Path(root)), group)
 
         # 매체 writer 잠금 — 가져오기 복사 몸통(_copy_into_library)과 **같은 축**이라
         # 배치가 겨눈 이름과 복원이 겨눈 이름이 겹쳐도 한쪽이 먼저 끝난 뒤에 다른 쪽이 본다.
-        writer = (
-            self.text_registry.write_lock() if media == "txt" else self._hwpx_write_lock
-        )
-        with writer:
-            error = restore_and_regroup()
+        error = self._files.restore(media, path, trashed, regroup)
         if error is not None:
-            return error
+            return {"ok": False, "error": error}
         self._deleted_template_slot = None
         if media == "hwpx":
             self.vm.refresh()
@@ -638,26 +571,19 @@ class TemplateController:
         """
         name = validate_template_name(p.get("name", ""))
         content = p.get("content", "")
-        path = self.text_registry.directory / f"{name}.txt"
-        with self.text_registry.write_lock():
-            if path.exists():  # confirm-or-alarm: 조용한 덮어쓰기 금지 — 시끄럽게 거부.
-                raise ValueError(f"이미 같은 이름의 템플릿이 있습니다: {name}")
-            self.text_registry.directory.mkdir(parents=True, exist_ok=True)
-            write_text_atomic(str(path), content)
+        self._files.create_text(name, content)
         self._set_result(_ok(f"TXT 템플릿을 만들었습니다: {name}"))
         return {"ok": True, "name": name}
 
     def _do_txt_edit(self, p: dict) -> dict:
         """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5)."""
-        path = Path(p["path"])
-        with self.text_registry.write_lock():
-            write_text_atomic(str(path), p.get("content", ""))
+        path = self._files.edit_text(p["path"], p.get("content", ""))
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
         return {"ok": True}
 
     def _do_txt_content(self, p: dict) -> dict:
         """편집 모달용 현재 내용 반환(읽기 전용). 읽기 실패는 loud raise."""
-        return {"content": Path(p["path"]).read_text(encoding="utf-8")}
+        return {"content": self._files.read_text(p["path"])}
 
 
 def _ok(text: str):
