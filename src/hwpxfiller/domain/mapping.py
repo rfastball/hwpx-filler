@@ -22,9 +22,7 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from . import format_engine as _fe
 from .lint import similarity
@@ -35,7 +33,7 @@ from .lint import similarity
 # 코어는 어휘-불가지: ``aliases`` 는 아래 서명에서 순수 범용 인자다.
 
 # 지원 값 유형. text/date/amount 는 단일 소스 값의 표시형 서식을 교체 가능한
-# core/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다.
+# domain/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다.
 # ``blank`` 는 empty-confirmed 행의 내부 영속 마커라 공용 UI 목록에 노출하지 않는다.
 TYPES = ("text", "date", "amount", "const")
 
@@ -203,11 +201,6 @@ class MappingProfile:
 
     # (save 는 P2-18(#566)에서 External 로 승계 —
     #  :func:`hwpxfiller.external.mapping_store.save_mapping_profile`.)
-
-    @classmethod
-    def load(cls, path: "str | Path") -> "MappingProfile":
-        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
-
 
 # ------------------------------------------------------------------ 자동 제안
 def suggest_mappings(

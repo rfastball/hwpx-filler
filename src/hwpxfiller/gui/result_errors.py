@@ -97,7 +97,7 @@ def _fill_note_text(note, *, pre: bool) -> str:
 
 
 def describe_fill_note(note) -> str:
-    """채움 완화 처리(:class:`~hwpxfiller.core.fields.FillNote`) → 사후 문안(#154).
+    """채움 완화 처리(:class:`~hwpxfiller.domain.fields.FillNote`) → 사후 문안(#154).
 
     코어는 사실(필드·종류·제거 요소)만 담고 문안은 여기서 성형한다 — CLI 와 webview
     컨트롤러가 같은 문장을 공유한다. 미지 종류는 원문 관통(조용한 누락 금지).
@@ -106,7 +106,7 @@ def describe_fill_note(note) -> str:
 
 
 def describe_precheck_note(note) -> str:
-    """사전 판정(:func:`~hwpxfiller.core.fields.fill_precheck`) → 점검 문안(#154).
+    """사전 판정(:func:`~hwpxfiller.domain.fields.fill_precheck`) → 점검 문안(#154).
 
     사후(:func:`describe_fill_note`)와 같은 사실의 시제 변환판 — 짝은
     :data:`_FILL_NOTE_WORDING` 한 표가 강제한다.

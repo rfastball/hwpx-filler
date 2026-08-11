@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.authoring import compile_document
-from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external import settings
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -281,7 +281,7 @@ def test_delete_speaks_once_via_toast_while_trash_retention_survives_without_sur
     import os
     import time as time_mod
 
-    from hwpxfiller.core.template_status import TRASH_DIR_NAME
+    from hwpxfiller.domain.template_status import TRASH_DIR_NAME
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     trash = tp / "txt" / TRASH_DIR_NAME

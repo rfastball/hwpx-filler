@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.text_render import (
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.text_render import (
     FULLWIDTH_SPACE,
     SEG_BLANK,
     SEG_FILL,

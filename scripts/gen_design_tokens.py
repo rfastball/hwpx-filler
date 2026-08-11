@@ -4,7 +4,7 @@
 색·상태색은 ``src/hwpxfiller/gui/design_tokens.json`` 한 곳에만 손으로 둔다. 이 스크립트가
 그 값을 웹 프론트엔드 CSS(``frontend/css/tokens.css``)와 목업 HTML
 (``docs/UI_PROTOTYPE_APPB.html``)의 ``<gen:tokens>`` 영역(앱윈도 ``--a-*`` CSS 변수)에 찍는다.
-디자인 색 변경 = JSON 1곳 편집 + regen. 백엔드(core/data)는 손대지 않는다.
+디자인 색 변경 = JSON 1곳 편집 + regen. 백엔드(domain/data)는 손대지 않는다.
 
 Qt ``style.py`` 생성 타깃은 PySide6 제거(#23)로 폐기됐다 — pywebview 웹이라 팔레트는
 CSS 변수로만 소비된다. ``web-diff/css/tokens.css`` 타깃은 hwpxdiff 저장소 분리(2026-07-29)로

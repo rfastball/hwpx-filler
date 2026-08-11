@@ -21,10 +21,10 @@ from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트
 from ..domain.dataset_reference import DatasetReference
 from ..external.dataset_store import DatasetPoolRegistry
 from ..host.locations import default_dataset_pool_dir
-from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
+from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..external.hwpx_engine import make_hwpx_engine
-from ..core.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
-from ..core.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
+from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.

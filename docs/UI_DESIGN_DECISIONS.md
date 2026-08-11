@@ -37,7 +37,7 @@
 | 현재 표면 | GUI(home/editor/run) | GUI(홈 기안 카드 → `gui/txt_view`·`txt_state`, ADR H 착지) + CLI(`render --clip`) |
 
 **공유 엔진.** 매핑 + 표시형 서식(`profile.apply`)은 두 트랙 공통 — txt 트랙도 표시형까지 적용된
-값을 받는다(`core/text_render.py`는 서식하지 않고 값만 꽂음). 따라서 **엔진을 건드리는
+값을 받는다(`domain/text_render.py`는 서식하지 않고 값만 꽂음). 따라서 **엔진을 건드리는
 결정(B·D·F·서식)은 트랙 무관 통일**, **출력 표면을 건드리는 결정(C·E의 형태)은 트랙별로
 갈라진다.**
 
@@ -67,7 +67,7 @@
 ## B — 채움/미채움 필드의 시각 구별
 
 **결정.** 필드는 모든 표면에서 본문과 시각적으로 구별된다. 미충족 빈칸은 어디서도 "그냥 빈
-공간"으로 보여선 안 된다. 출력물에선 현행 `〘미입력·{field}〙` 누름틀 표식(`core/job.py`
+공간"으로 보여선 안 된다. 출력물에선 현행 `〘미입력·{field}〙` 누름틀 표식(`domain/job.py`
 `MISSING_MARKER`)을 유지하고, 앱 내 필드 목록에선 `채움 / 빈칸 / 미입력` 3상태를 각기 다른
 배지로 표시한다.
 
@@ -96,7 +96,7 @@
 **결정.** 소스 열은 실제 데이터소스의 열 목록에서 선택(드롭다운/콤보박스)한다. 필드명 자유
 타이핑 경로를 UI에서 제거한다. **엄격 1:1**: 한 누름틀(템플릿 필드)은 정확히 한 데이터 항목을
 **단일선택**하고 한 값 유형(**텍스트 / 날짜 / 금액 / 고정값**)으로 서식한다 — N→1 결합·구분자
-(sep)·다중소스는 모델에서 제거됐다(코어 미러 `core/mapping.py`). `고정값`(옛 ‘상수’)은 소스 무관
+(sep)·다중소스는 모델에서 제거됐다(코어 미러 `domain/mapping.py`). `고정값`(옛 ‘상수’)은 소스 무관
 리터럴이고, 날짜 유형 표시형 프리셋은 **시각·날짜+시각**을 포함해 예전 두 키 합치기를 대체한다.
 
 **근거.** 4계보 전부 필드 참조를 자유 타이핑이 아닌 팔레트 선택으로 주입. 결정적으로 이건
@@ -174,7 +174,7 @@ Baymard)"의 교차점엔 직접 실험이 없음 — 원칙 추론.
 **트레이드오프.** 상시 패널은 `QMessageBox` 하나보다 구현이 큼. 그러나 모달은 증거상 스스로
 무용해지므로 값싼 게 아니라 거짓 절약.
 
-**트랙 분기.** txt 트랙(`core/text_render.py`)은 이 결정의 **레퍼런스 구현**이다 — 누락 필드는
+**트랙 분기.** txt 트랙(`domain/text_render.py`)은 이 결정의 **레퍼런스 구현**이다 — 누락 필드는
 `{{토큰}}`을 눈에 보이게 남기고(`RenderReport.missing_fields`) 시끄럽게 신고하며 조용한 빈칸
 처리를 하지 않는다. HWPX 트랙은 상시 인라인 패널 + 표식으로 이 txt 트랙과 **동등한 표면에
 도달**하는 것이 목표다.
@@ -217,7 +217,7 @@ txt 트랙에 자연스럽게 들어맞는다. txt에 GUI를 붙일 때의 진�
   저작을 거친 파일이라 즉석 생성이 성립하지 않는다(R-info 3부 결정 2).
 
 정본: `docs/R_INFO_JOB_HOME.md` 3부. 코드 주석 중 이 철회를 아직 현재형으로 말하는 곳
-(`core/text_registry.py` 모듈 독스트링의 "txt 트랙은 저장 Job 이 없다")은 구현 라운드에서 정정.
+(`external/text_registry.py` 모듈 독스트링의 "txt 트랙은 저장 Job 이 없다")은 구현 라운드에서 정정.
 
 **개정(ADR J).** A의 "진입 = 자산 목록"은 유지하되, ADR J(축 1 착지)가 durable 자산을 **3종으로
 확장**한다 — 잡(T+M) · 데이터셋(참조) · 매핑 베이스. 조합은 **한 겹**(일회 실행·저장 안 함).
@@ -245,7 +245,7 @@ txt 트랙에 자연스럽게 들어맞는다. txt에 GUI를 붙일 때의 진�
 
 **정직한 단서 / 격차.** 값 수준 겹침 감지(대상 필드가 *이미* 채워졌는지)는 종전 field-value
 read API 부재로 파킹됐다(`run_view` 파킹). 전제였던 API는 C1 `read_field`/`read_fields`
-(`core/fields.py`, 커밋 `b76e247`)로 확보됨 — 단 **격상 구현 자체는 미착**이라 현 단계 loud
+(`domain/fields.py`, 커밋 `b76e247`)로 확보됨 — 단 **격상 구현 자체는 미착**이라 현 단계 loud
 신호는 여전히 필드명 수준까지만 정확하다(`run_state.set_prev_output` 교집합 고지).
 batch-cumulative(이전출력↔레코드 file-key 매칭)는 실데이터 확보 시 착수.
 
@@ -271,7 +271,7 @@ batch-cumulative(이전출력↔레코드 file-key 매칭)는 실데이터 확�
 늘었다.
 
 **트레이드오프.** 새 개념(txt 템플릿 레지스트리·루트)이 는다. 데이터 파일이 있어야 값이 채워짐
-(수동 타이핑 입력은 현 범위 밖 — 필요 시 후속). 구현: `core/text_registry`·`gui/txt_state`·
+(수동 타이핑 입력은 현 범위 밖 — 필요 시 후속). 구현: `external/text_registry`·`gui/txt_state`·
 `gui/txt_view`, 홈 대시보드에서 라우팅.
 
 **템플릿 관리 정비(2026-07-14, #13).** 기존 HWPX 전용 관리면을 HWPX·TXT 두 트랙의
@@ -317,7 +317,7 @@ KPI 는 두 매체를 합산한다. 파급으로 **홈은 두 매체를 함께 �
 넣자고 스프레드시트 파일을 강제한다(`txt_view._pick_data`, H 후속).
 
 **핵심 관찰 — 1:1은 UI 표면 인공물이지 코어 제약이 아니다.** `Job` 은 durable `{템플릿·매핑·
-파일명}`이고 **데이터·행을 담지 않는다**(`core/job.py`); 실행은 `RunRequest` 가 그때그때 소스를
+파일명}`이고 **데이터·행을 담지 않는다**(`domain/job.py`); 실행은 `RunRequest` 가 그때그때 소스를
 겨눈다. 즉 "템플릿과 데이터의 분리"는 **데이터모델에선 이미 참**이다. 1:1로 *느껴지는* 원인은
 오직 (i) 선형 마법사가 매핑 저작을 데이터 파일에 결박하고, (ii) 실행 화면이 잡 1개 × 데이터
 1개만 다루는 **표면 형태**일 뿐이다. 따라서 이 ADR은 새 엔진이 아니라 **다대다 오케스트레이션
@@ -384,7 +384,7 @@ KPI 는 두 매체를 합산한다. 파급으로 **홈은 두 매체를 함께 �
 …)`)하는 **저작 표면뿐**이다. → "1:1은 UI 표면 인공물"의 코드 확증. 축 2의 작업 범위가 좁혀진다:
 `apply`/`engine` 무변경, **위저드의 시드 소스를 "한 템플릿 스키마" → "공유 어휘"로 교체**.
 
-**하위결정(① 착지 — V1 `4eb6ad0`) — 소스 어휘 소유권(NARA_ALIASES 탈하드코딩).** 종전 `core/mapping.py` 의
+**하위결정(① 착지 — V1 `4eb6ad0`) — 소스 어휘 소유권(NARA_ALIASES 탈하드코딩).** 종전 `domain/mapping.py` 의
 `NARA_ALIASES`(36쌍)는 두 냄새를 겹쳤다: (1) 범용 코어가 특정 API 어휘를 품음(README
 "core = 제품 로직 없음" 위반), (2) GUI 가 **전 소스에** nara 어휘를 기본 퍼지 타겟으로 깖
 (`from_suggestions` 기본 인자) — alias 는 전역 기본이 아니라 *선택된 소스*가 소유해야 한다.
@@ -440,7 +440,7 @@ field_labels()`), **코어는 어휘-불가지**(`suggest_mappings` 는 이미 `
 ## L — 생성 원장(프로버넌스) + 워크플로 드리프트 감지 · **착지(2026-07-12·L1·L2 병합)**
 
 **상태.** **착지** — L1(공란 선언·전건 커버·드리프트 게이트, `2188d4d`)·L2(원장 export·소스
-프로파일링·되읽기 증거, `367e949`) 전부 master 병합(`core/fill_ledger.py`·`core/source_profile.py`).
+프로파일링·되읽기 증거, `367e949`) 전부 master 병합(`domain/fill_ledger.py`·`domain/source_profile.py`).
 축 3(드리프트 기전·트리거)·축 1(원장 척추)·축 4(산출) 닫힘, 축 2(프로파일링 깊이)는 방향 닫힘 후
 수치도 구현으로 확정 — 아래 "축 확정"·"잔여" 블록. J와 **직교**(풀 유무 무관, 파이프라인에 흐름)하되 J가 증폭한다(다템플릿·공유매핑
 에서 드리프트 원천이 셋으로 늘어 원장의 필요가 커짐). 지난 논의의 "생성 전 드리프트 리포트"
@@ -466,8 +466,8 @@ field_labels()`), **코어는 어휘-불가지**(`suggest_mappings` 는 이미 `
 `required_fields`/`job.template_fields`(run_state가 이미 diff, 라벨만 뭉갬), 사후 `GenerateResult`,
 표시형 `format_engine`. **새것 셋 — 전부 착지**: (1) **소스-측 프로파일링**(샘플+잠정 타입) =
 **D-8의 소스 측**, 파킹 사유가 "책상 위 추정"이었고 실데이터 확보로 해동 →
-`core/source_profile.py`(`FieldProfile`·`profile_fields`, 서술적·degrade·주장 아님);
-(2) 통합 원장 dataclass(추출 ledger의 생성 짝) → `core/fill_ledger.py` 의 `FillLedger`·`LedgerRow`;
+`domain/source_profile.py`(`FieldProfile`·`profile_fields`, 서술적·degrade·주장 아님);
+(2) 통합 원장 dataclass(추출 ledger의 생성 짝) → `domain/fill_ledger.py` 의 `FillLedger`·`LedgerRow`;
 (3) 이음새 드리프트 상태 라벨링 → `TemplateStructureDrift`(L1 `2188d4d`·L2 `367e949`).
 
 **경계(원칙 보존).**
@@ -523,14 +523,14 @@ loud하나 **템플릿측엔 대칭 계약이 없었다**(`output_report`가 `jo
 - **사후 검증 실화(C1 착지).** `set_prev_output`(`run_state.py:218`)가 "값 읽기 API 부재"로 파킹했던
   값 수준 검사가 **C1 `read_field` 착지(커밋 `b76e247`)로 해동** → 원장 사후 닫음이
   `GenerateResult.applied`(엔진의 주장)를 넘어 **생성물 실값 되읽기(증거)**로 검증한다 — L2
-  `verify_output`(`core/fill_ledger.py`)이 구현. ADR G 값겹침 격상은 같은 API를 공유하되 **미착**
+  `verify_output`(`domain/fill_ledger.py`)이 구현. ADR G 값겹침 격상은 같은 API를 공유하되 **미착**
   (openQuestions G 후속).
 
 **잔여(L 축) — 구현으로 전부 확정(L2 `367e949`).** (축1) 원장 export **열 집합** = `LedgerRow.to_dict`
 의 8필드 {field·status·sources·transform·fmt·preview_text·injected·read_back}, `export_run_ledger`
-가 opt-in JSON 사이드카로 직렬화(포인터-온리·N1 redaction 관통 — `core/fill_ledger.py`; 새 포맷
+가 opt-in JSON 사이드카로 직렬화(포인터-온리·N1 redaction 관통 — `domain/fill_ledger.py`; 새 포맷
 발명 없이 `to_dict`→JSON 관례 재사용). (축2) 소스 **프로파일링 깊이** = 샘플 3건(`SAMPLE_N`,
-`core/source_profile.py`)·잠정 타입은 전 샘플이 단일 패턴일 때만 라벨(혼재·빈 입력은 `""` degrade
+`domain/source_profile.py`)·잠정 타입은 전 샘플이 단일 패턴일 때만 라벨(혼재·빈 입력은 `""` degrade
 — 서술적·주장 아님 방향 그대로). 트리거(축3, = `field_states` 계산 시점)·산출형태(축4, = opt-in
 사이드카 JSON)는 설계대로 착지.
 
@@ -560,7 +560,7 @@ Power-Query*식* 파이프라인**으로 착지한다 — `DataSource`를 *생�
    마찰 0. **`AssemblyEngine` 프로토콜 + 교체점**이 후일 "고급 편집=raw SQL" 실수요 시 DuckDB
    교체를 값싸게 보장(`format_engine.ENGINE` 선례).
 2. **자산 종류 = 데이터셋 풀 하위종류(`kind="pipeline"`), 제4 durable 자산 아님.** J1 구현
-   (`core/dataset_pool.py`)이 이미 `DatasetPoolItem{kind,opts}`를 kind-불가지로 저장 → 파이프라인은
+   (`external/dataset_store.py`)이 이미 `DatasetPoolItem{kind,opts}`를 kind-불가지로 저장 → 파이프라인은
    4번째 상자 없이 흡수. 홈 레지스트리 자산 3종 유지(잡·데이터셋참조·매핑베이스), A 경첩(재사용률)
    인지부하 최소화. 종전 본문의 "제4 durable 자산" 서술을 **철회**한다.
 3. **v1 스텝 집합 = merge(키 조인) + append(union)** 두 코어 위젯 + WYSIWYG 미리보기.
@@ -569,7 +569,7 @@ Power-Query*식* 파이프라인**으로 착지한다 — `DataSource`를 *생�
    필요 + 범용 ETL 문). **falsifiable 가드: 스텝 집합이 이 넷을 넘어 자라면 = 슬롯 발명 위험
    실현 신호 → 정지.**
 4. **구현 = 2유닛 분할(이음새가 분할선).**
-   - **K-코어(격리 리프, 자율 에이전트 후보).** 신규 `core/assembly.py`(or `data/pipeline.py`):
+   - **K-코어(격리 리프, 자율 에이전트 후보).** 신규 `domain/assembly.py`(or `data/pipeline.py`):
      `AssemblyEngine` 프로토콜 + petl/agate 구현 + `PipelineSource(DataSource)`. `data/factory.py`:
      `make_source`에 `kind=="pipeline"` 분기 + `source_from_pool_item` **재귀 복원**. `dataset_pool.py`
      **무접촉**(kind 불가지). 파일 서로소 → P1/K1/C1 몰드로 병렬·게이트 병합. 나라 코어가 CLI로
@@ -598,7 +598,7 @@ Power-Query*식* 파이프라인**으로 착지한다 — `DataSource`를 *생�
   `data/factory.py`의 새 `kind`("pipeline")로 노출(현 factory의 미래 `"cumulative"` 확장점과
   같은 자리). **필드 변환(`mapping.apply_transform`)과 다른 층** — 저건 레코드 *내부* 값, 이건
   레코드 *집합* 조립. 혼동 금지.
-- **재발명 금지 = 외부 엔진 래핑, 어댑터 이음새 뒤.** `core/format_engine.py`의 `FormatEngine`
+- **재발명 금지 = 외부 엔진 래핑, 어댑터 이음새 뒤.** `domain/format_engine.py`의 `FormatEngine`
   프로토콜 + `ENGINE` 교체점 선례 그대로 `AssemblyEngine` 프로토콜 + 교체점을 둔다 — 코어는
   이음새에만 의존, 무거운 라이브러리는 착지 시에만·교체 가능하게. Power Query M 엔진은 임베드
   불가라 *철학만* 차용하고 엔진은 기존 테이블 라이브러리. 후보(결정1로 v1 확정, 교체점 뒤):
@@ -700,7 +700,7 @@ falsify하지 못했을 뿐, **수요 자체는 이미 운용 관측으로 성�
 ## 미결 (openQuestions)
 
 - **G 후속.** 값 수준 겹침 감지(대상 필드가 이미 채워졌는지)의 전제였던 field-value read API는
-  **C1 `read_field`/`read_fields`(`core/fields.py`, `b76e247`)로 확보됨** — 단 격상 구현 자체는
+  **C1 `read_field`/`read_fields`(`domain/fields.py`, `b76e247`)로 확보됨** — 단 격상 구현 자체는
   **미착**(`run_state.set_prev_output`은 여전히 필드명 교집합 고지까지); batch-cumulative는
   실데이터 확보 시 착수.
 - **E 교차점.** 강제 상호작용과 상시 인라인 패널의 결합 형태 — 직접 실험 부재, 프로토타입으로
@@ -724,8 +724,8 @@ falsify하지 못했을 뿐, **수요 자체는 이미 운용 관측으로 성�
   분리(값=ADR E ack 유지), "무시 없음"은 **템플릿-구조 한정**(소스-구조=포인터 교정, J1 휘발성 참조
   정합); 원장 export=포인터-온리+N1 redaction; 커버/드리프트는 effective mapping 평가(J3 대비).
   **종전 잔여도 구현으로 확정**: (축1) export 열 = `LedgerRow.to_dict` 8필드·`export_run_ledger`
-  JSON 사이드카(`core/fill_ledger.py`). (축2) 프로파일링 깊이 = 샘플 3건(`SAMPLE_N`)·단일 패턴일
-  때만 잠정 타입 라벨(`core/source_profile.py`) — D-8 소스 측 해동, C1 `read_field`로 사후
+  JSON 사이드카(`domain/fill_ledger.py`). (축2) 프로파일링 깊이 = 샘플 3건(`SAMPLE_N`)·단일 패턴일
+  때만 잠정 타입 라벨(`domain/source_profile.py`) — D-8 소스 측 해동, C1 `read_field`로 사후
   실화(L2 `verify_output` 구현).
 - **C 도메인 실증.** 미리보기 부재가 고위험 단건에서 실제 오류를 늘리는지 — 현 증거는 원칙 수준.
 - **H 후속.** txt 값 입력에 수동 인라인 채움(데이터 파일 없이 타이핑) 병행 여부·표시형 매핑
@@ -754,7 +754,7 @@ falsify하지 못했을 뿐, **수요 자체는 이미 운용 관측으로 성�
 > 불변식/non-goal은 각각 착지 완료거나 [ARCH_UI_SEPARATION.md]·[UI_CONTRACT.md]·`SHELL_DESIGN.md`와
 > 중복이라 제외했다. 전문은 `git log -p --follow docs/UI_DESIGN_HANDOFF.md`.
 
-### 가산 필드 version-불변 규칙 (`core/job.py`)
+### 가산 필드 version-불변 규칙 (`domain/job.py`)
 `Job` 의 사용 메타 가산 필드(`last_run_at` 마지막 성공 실행 ISO·`tags` 작업 브라우저 축)는
 **`version` 을 올리지 않는다** — `from_dict` 가 `.get` 기본값으로 하위호환을 지킨다. 엔진은
 합성된 `mapping` 만 소비하고, 이 메타들은 "데이터·행 미포함" 불변식과 무관한 순수 메타다.

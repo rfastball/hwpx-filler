@@ -2,7 +2,7 @@ import json
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
-from hwpxfiller.core.fill_ledger import (
+from hwpxfiller.domain.fill_ledger import (
     StructureState,
     ValueState,
     build_fill_ledger,
@@ -17,7 +17,7 @@ from hwpxfiller.external.ledger_export import (
     verified_outputs,
     verify_output,
 )
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.domain.source_profile import profile_fields
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -168,7 +168,7 @@ def test_ledger_outputs_stay_pure_and_verified_outputs_add_evidence(tmp_path):
     assert entry.verify_error.startswith("되읽기 실패")
 
     # 실패 산출물은 되읽지 않는다 — 실패 사유를 그대로 나르고 미검증으로 남긴다.
-    from hwpxfiller.core.engine import GenerateResult
+    from hwpxfiller.domain.engine import GenerateResult
 
     failed = GenerateResult(ok=False, output_path=str(out), error="생성 실패")
     (kept,) = verified_outputs(ledger_outputs(

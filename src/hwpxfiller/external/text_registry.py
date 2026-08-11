@@ -1,13 +1,13 @@
 """텍스트 기안 템플릿 레지스트리 — 정해진 루트의 ``.txt`` 템플릿 목록/로드.
 
-**템플릿** 레지스트리다 — 저장되는 기안 **작업**(:class:`~hwpxfiller.core.job.JobRegistry`)과는
+**템플릿** 레지스트리다 — 저장되는 기안 **작업**(:class:`~hwpxfiller.external.job_store.JobRegistry`)과는
 다른 층이다. (R-info 3부 결정 4 로 뒤집힘: 이전 주석의 "txt 트랙은 저장 Job 이 없다"는 낡았다 —
-기안 작업도 이제 ``JobRegistry``·:class:`~hwpxfiller.core.job.Job` 을 쓰고 매체는 ``template_path``
-접미사에서 유도한다[:func:`~hwpxfiller.core.job.template_media`]. 저장 기계는 hwpx 와 하나로 공유하고
+기안 작업도 이제 ``JobRegistry``·:class:`~hwpxfiller.domain.job.Job` 을 쓰고 매체는 ``template_path``
+접미사에서 유도한다[:func:`~hwpxfiller.domain.job.template_media`]. 저장 기계는 hwpx 와 하나로 공유하고
 화면만 둘이다.) 이 레지스트리는 그 작업들이 **재사용할 평문 템플릿**(``.txt``, ``{{필드}}`` 토큰)을
 한 곳(루트)에 모아 고르게 한다 — hwpx 의 템플릿 라이브러리에 대응하는 txt 쪽이다.
 
-Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfiller.core.text_render.template_fields`.
+Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfiller.domain.text_render.template_fields`.
 """
 from __future__ import annotations
 
@@ -15,19 +15,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from .paths import home_dir
-from .template_status import TRASH_DIR_NAME
-from .text_render import template_fields
-
-
-def default_text_templates_dir() -> Path:
-    """txt 기안 템플릿 기본 루트 — ``~/.hwpxfiller/text_templates``.
-
-    작업 레지스트리(``jobs/``)와 같은 홈 아래 별도 폴더. ``HWPXFILLER_HOME`` 로 재지정 가능
-    (테스트·이식성 — 해석은 :func:`~hwpxfiller.core.paths.home_dir`). 레지스트리 *클래스* 는
-    위치-불가지(생성자가 디렉터리를 받는다).
-    """
-    return home_dir() / "text_templates"
+from hwpxfiller.domain.template_status import TRASH_DIR_NAME
+from hwpxfiller.domain.text_render import template_fields
 
 
 @dataclass

@@ -1,6 +1,6 @@
 """데이터셋 풀 영속 경계 — JSON 파일 레지스트리·원자 쓰기·공유 잠금(External Adapter, P2-22 #570).
 
-:mod:`hwpxfiller.core.dataset_pool` 이 들고 있던 persistence codec·슬롯 키·파일 레지스트리·
+옛 dataset pool이 들고 있던 persistence codec·슬롯 키·파일 레지스트리·
 프로세스 내 공유 쓰기 잠금을 원문 이동으로 승계한다. 값·수명·정체성 규칙은
 :mod:`hwpxfiller.domain.dataset_reference` 가 소유하고, 여기는 그 값을 디스크와 오가게 하는
 어댑터다. 기본 위치 해석(``~/.hwpxfiller/datasets``)은
@@ -34,7 +34,7 @@ ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일
 않는다**. opts 는 쿼리(기간·건수·페이지)뿐이고, 키는 실행 복원 시점에만 OS 자격증명 저장소
 (N1 SecretStore)에서 주입한다(복원 로직은 :func:`~hwpxfiller.data.factory.source_from_pool_item`).
 
-직렬화는 :class:`~hwpxfiller.core.job.Job` 의 JSON 관례(UTF-8·``ensure_ascii=False``·``indent=2``·
+직렬화는 :class:`~hwpxfiller.domain.job.Job` 의 JSON 관례(UTF-8·``ensure_ascii=False``·``indent=2``·
 ``to_dict``/``from_dict``·가산 필드 하위호환)를 그대로 미러한다.
 """
 
@@ -53,7 +53,7 @@ from hwpxfiller.application.dataset_pool import (
     bound_state,
     confirm_basis,
 )
-from hwpxfiller.core.job import load_isolated
+from hwpxfiller.domain.job import load_isolated
 from hwpxfiller.domain.dataset_reference import (
     DatasetReference,
     excel_identity,
@@ -243,7 +243,7 @@ class DatasetPoolRegistry:
     ) -> "list[DatasetReference]":
         """항목 목록(이름순). ``status`` 지정 시 그 상태만(예: 실행 후보=``STATUS_ACTIVE``).
 
-        **파일 단위 격리(RC-05, :func:`~hwpxfiller.core.job.load_isolated` 공유):**
+        **파일 단위 격리(RC-05, :func:`~hwpxfiller.domain.job.load_isolated` 공유):**
         손상된 ``.dataset.json`` 1개(손편집·구버전·잘림)가 목록 전체(→풀 뷰모델·앱 부팅·
         실행 겨눔 피커)를 죽이지 않도록, ``corrupted`` 리스트를 넘긴 호출측에는 파싱 실패를
         파일별로 잡아 ``(경로, 오류 문자열)`` 로 수집해 준다 — 호출측이 시끄럽게 표면화할

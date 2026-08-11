@@ -29,11 +29,11 @@ from datetime import datetime
 from pathlib import Path
 
 from ..application.jobs import stamp_run_completion
-from ..core.format_engine import presets as format_presets
-from ..core.job import Job, work_mode
+from ..domain.format_engine import presets as format_presets
+from ..domain.job import Job, work_mode
 from ..external.job_store import JobRegistry, content_fingerprint
-from ..core.mapping import TYPES, MappingProfile
-from ..core.text_render import template_fields
+from ..domain.mapping import TYPES, MappingProfile
+from ..domain.text_render import template_fields
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..gui.filter_state import sniff_column_kinds
 from ..gui.mapping_state import MappingModel
@@ -437,7 +437,7 @@ class WorkbenchController(MappingVerbsMixin):
 
     def _raw_segments(self) -> "list[dict]":
         """원문 보기 — 토큰을 채우지 않고 ``{{이름}}`` 그대로 보여준다(§11 원문/채운 모습)."""
-        from ..core.text_render import render_segments
+        from ..domain.text_render import render_segments
 
         segments, _ = render_segments(self.template_text, {})
         return [{"text": s.text, "kind": s.kind, "name": s.name} for s in segments]

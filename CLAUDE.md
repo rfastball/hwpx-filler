@@ -57,8 +57,8 @@ CI(`.github/workflows/quality.yml`)는 **생산자 1 + 소비자 N** 이다. `se
 
 정본: `docs/UI_CONTRACT.md`. 요약하면 의존은 바깥에서 안으로만 흐른다.
 
-1. **링0 도메인** `src/hwpxfiller/core/`, `src/hwpxfiller/data/` — 문서 생성·저장 모델·데이터
-   소스. UI 런타임을 모른다.
+1. **링0 도메인** `src/hwpxcore/`, `src/hwpxfiller/domain/`, `src/hwpxfiller/data/` — 형식
+   kernel·제품 모델·데이터 소스. UI 런타임을 모른다.
 2. **링1 ViewModel** `src/hwpxfiller/gui/*_state.py` — Qt-free·DOM-free 상태 모델. 판정·게이트·
    문안을 소유하고 직렬화 가능한 값을 낸다. 이름이 `gui` 지만 위젯이 아니다.
 3. **링2 프레젠테이션** `src/hwpxfiller/webapp/`(컨트롤러·브리지) +
@@ -112,9 +112,9 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 
 ## 상태·영속
 
-앱 홈은 `HWPXFILLER_HOME` 또는 `~/.hwpxfiller` 이고 해석기는 `core/paths.py` 단일 출처다.
-그 아래 작업 레지스트리(`core/job.py`), TXT 템플릿(`core/text_registry.py`), 데이터 참조 풀
-(`core/dataset_pool.py`, 경로만 저장하고 실행 때 다시 읽음), 생성 원장(`core/fill_ledger.py`),
+앱 홈은 `HWPXFILLER_HOME` 또는 `~/.hwpxfiller` 이고 해석기는 `host/locations.py` 단일 출처다.
+그 아래 작업 레지스트리(`external/job_store.py`), TXT 템플릿(`external/text_registry.py`), 데이터 참조 풀
+(`external/dataset_store.py`, 경로만 저장하고 실행 때 다시 읽음), 생성 원장(`domain/fill_ledger.py`),
 설정(`external/settings.py`)이 산다.
 
 테스트 seam 은 `HWPXFILLER_HOME`(홈 격리)이다. 웹 자산 경로 override는 없다. source 제품은

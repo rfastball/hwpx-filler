@@ -5,7 +5,7 @@
 
 import pytest
 
-from hwpxfiller.core.job import (
+from hwpxfiller.domain.job import (
     WORK_MODE_HWPX,
     WORK_MODE_TEXT,
     WORK_MODE_UNSUPPORTED,

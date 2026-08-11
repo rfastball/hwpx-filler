@@ -146,7 +146,7 @@ _EDITOR_REBUILDS = {
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {"tags", "last_run_at", "group", "favorited_at", "reviewed_rules"}
 #: 레지스트리가 **계산해 쓰는** 파생 메타(재작성 F7) — 어느 편집 표면도 값을 싣지 않고
-#: :func:`~hwpxfiller.core.job.advance_revisions` 가 저장 잠금 안에서 정산한다. 세 번째
+#: :func:`~hwpxfiller.domain.job.advance_revisions` 가 저장 잠금 안에서 정산한다. 세 번째
 #: 갈래를 만든 이유: 이 셋을 '보존'으로 선언하면 편집 세션이 든 옛 판본이 디스크의 최신
 #: 세대를 되돌리고, '다시 짓는다'로 선언하면 편집기가 판본을 발명하게 된다.
 _REGISTRY_DERIVES = {"template_revision", "binding_revision", "previous_rules"}
@@ -162,7 +162,7 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     """
     from dataclasses import fields as dataclass_fields
 
-    from hwpxfiller.core.job import Job
+    from hwpxfiller.domain.job import Job
     from hwpxfiller.webapp.screen_editor import _EMPTY_PRESERVED, _preserved_meta
 
     durable = {f.name for f in dataclass_fields(Job)}

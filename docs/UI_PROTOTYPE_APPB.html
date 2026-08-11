@@ -680,7 +680,7 @@
                  <span class="fb blank" style="font-size:10px">◦ 빈칸(의도)</span>
                  <span class="fb missing" style="font-size:10px;cursor:default">● 미입력</span>.
                  출력물엔 <span class="mono">〘미입력·{field}〙</span> 표식이 남습니다.</p>
-              <div class="src">core/job.py MISSING_MARKER · ADR B</div></div>
+              <div class="src">domain/job.py MISSING_MARKER · ADR B</div></div>
             <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">실행 = 가이드 흐름</span></div>
               <p>개별 실행은 저빈도·고위험 → 데이터 겨눔 → 행 선택 → 사전검증 → 생성의
                  가이드형. <b>매핑 재확정은 없음</b>(에디터에서 1회).</p>
@@ -744,7 +744,7 @@
             <div class="dcard"><div class="dh"><span class="dchip">H</span><span class="dt">txt 트랙 GUI (파킹 해제)</span></div>
               <p>정해진 루트 템플릿 목록 + 데이터 결합 → 실시간 view → 복사. ADR A가 별도 설계로
                  파킹한 txt 진입을 별도 레지스트리로 닫음.</p>
-              <div class="src">core/text_registry · ADR A·H</div></div>
+              <div class="src">external/text_registry · ADR A·H</div></div>
             <div class="dcard"><div class="dh"><span class="dchip">C</span><span class="dt">권위 렌더러 흉내 없음 — 반대 표면</span></div>
               <p>HWPX는 한글이 진실이라 인앱 미리보기 금지. <b>txt엔 외부 렌더러가 없어</b> 실시간
                  view가 곧 진실이자 산출물 — 같은 원리의 반대 표면.</p>
@@ -752,7 +752,7 @@
             <div class="dcard"><div class="dh"><span class="dchip E">E</span><span class="dt">누락 표면화 레퍼런스</span></div>
               <p><code>render_record</code>는 미충족 토큰을 <span class="mono">{{}}</span>로 남기고
                  시끄럽게 신고. HWPX 표식(<span class="mono">〘미입력〙</span>)의 평문 짝.</p>
-              <div class="src">core/text_render.py · ADR E</div></div>
+              <div class="src">domain/text_render.py · ADR E</div></div>
           </aside>
         </div>
       </section>

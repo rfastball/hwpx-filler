@@ -7,10 +7,10 @@
 없이 창 없이 테스트된다.
 
 **새 코어 없음.** 전부 기존 코어 재사용:
-- ``core.template_status.compile_status`` — RAW/PARTIAL/COMPILED/FILLED 4-상태(호출마다 재산출).
-- ``core.authoring.scan_tokens``/``compile_document`` — 읽기 전용 스캔 미리보기 → 명시적 적용.
-- ``core.lint.lint_template``/``diff_schema`` — 위생 점검 + 판본 드리프트.
-- ``core.fields.read_fields`` — FILLED 값 미리보기.
+- ``domain.template_status.compile_status`` — RAW/PARTIAL/COMPILED/FILLED 4-상태(호출마다 재산출).
+- ``domain.authoring.scan_tokens``/``compile_document`` — 읽기 전용 스캔 미리보기 → 명시적 적용.
+- ``domain.lint.lint_template``/``diff_schema`` — 위생 점검 + 판본 드리프트.
+- ``domain.fields.read_fields`` — FILLED 값 미리보기.
 
 **설계 원칙**("묻고 확정하게 하라, 아니면 시끄럽게 알려라"):
 - fieldize 는 CLI 와 동일하게 **dry-run 기본**(scan_preview 는 파일을 만지지 않는다) →
@@ -24,10 +24,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..core.authoring import CompileReport, TokenSite
-from ..core.fields import FillNote
-from ..core.lint import LintReport, SchemaDrift
-from ..core.template_status import (
+from ..domain.authoring import CompileReport, TokenSite
+from ..domain.fields import FillNote
+from ..domain.lint import LintReport, SchemaDrift
+from ..domain.template_status import (
     OUTPUT_SUBDIR_NAME,
     TRASH_DIR_NAME,
     CompileState,
@@ -366,7 +366,7 @@ class TemplateManagerViewModel:
     def lint(self, path: str, vocabulary=None) -> LintReport:
         """단일 템플릿 위생 점검(유사 필드명·미치환 토큰·어휘). 읽기 전용.
 
-        ``vocabulary`` 는 코어 :func:`~hwpxfiller.core.lint.lint_template` 의 통제 어휘
+        ``vocabulary`` 는 코어 :func:`~hwpxfiller.domain.lint.lint_template` 의 통제 어휘
         그대로 전달한다(RC-14 시그니처 정렬 — CLI ``--vocab`` 과 위생 점검 범위 동등).
         """
         return self._file_ops.lint(str(path), vocabulary=vocabulary)

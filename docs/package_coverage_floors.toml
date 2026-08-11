@@ -22,11 +22,6 @@ path = "src/hwpxfiller/application"
 line = 92
 branch = 72
 
-[packages."hwpxfiller.core"]
-path = "src/hwpxfiller/core"
-line = 96
-branch = 92
-
 [packages."hwpxfiller.domain"]
 path = "src/hwpxfiller/domain"
 line = 96

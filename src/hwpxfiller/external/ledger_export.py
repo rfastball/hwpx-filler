@@ -1,6 +1,6 @@
 """생성 원장 사이드카의 영속 어댑터 — 원장 payload 조립·원자 저장 + 산출물 되읽기.
 
-원장의 **판정·행 구성은 Domain**(:mod:`hwpxfiller.core.fill_ledger`)이 소유하고, 이 모듈은
+원장의 **판정·행 구성은 Domain**(:mod:`hwpxfiller.domain.fill_ledger`)이 소유하고, 이 모듈은
 그 순수 산출을 durable JSON 사이드카로 **기록하는 효과**(경로 발급·마스킹 관통·원자 쓰기)와
 산출물 실값 **되읽기 효과**(:func:`verify_output` — P2-19R #576 에서 Domain 이월)를
 소유한다. Domain 이 filesystem IO 를 개시하던 형태의 승계다 — payload 는 영속 record/codec
@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
 from .atomic import write_text_atomic
-from hwpxfiller.core.fields import read_fields
-from hwpxfiller.core.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
-from hwpxfiller.core.mapping import MappingProfile
+from hwpxfiller.domain.fields import read_fields
+from hwpxfiller.domain.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
+from hwpxfiller.domain.mapping import MappingProfile
 from hwpxfiller.domain.source_profile import FieldProfile, profile_fields
 from hwpxfiller.domain.secret_redaction import redact
 
@@ -48,7 +48,7 @@ def verify_output(
     엔진이 주입 자체를 건너뛰고(공란 선언은 키가 아예 안 넘어가고) 누름틀이 남으므로
     ``None`` 유지. 문서를 읽지 못하면 raise — 증거 없음을 조용한 통과로 바꾸지 않는다.
 
-    (P2-19R #576 에서 ``core.fill_ledger`` 이월 — 산출물 경로를 다시 여는 read 효과라
+    (P2-19R #576 에서 ``domain.fill_ledger`` 와 분리 — 산출물 경로를 다시 여는 read 효과라
     Domain 에 둘 수 없다. 판정 의미 불변.)
     """
     actual = read_fields(read_hwpx_package(output_path))
@@ -68,7 +68,7 @@ def verify_output(
 def verified_outputs(
     outputs: "tuple[OutputLedger, ...]",
 ) -> "tuple[OutputLedger, ...]":
-    """순수 원장(:func:`~hwpxfiller.core.fill_ledger.ledger_outputs`) 위에 되읽기 증거를 얹는다.
+    """순수 원장(:func:`~hwpxfiller.domain.fill_ledger.ledger_outputs`) 위에 되읽기 증거를 얹는다.
 
     성공 산출물만 되읽고, 되읽기 실패는 ``verify_error`` 로 시끄럽게 남긴다 — 종전
     Domain ``ledger_outputs(verify=True)`` 의 관측 의미 그대로다.
@@ -155,7 +155,7 @@ def export_batch_ledger(
 
     표면별 병렬 구현(cli._export_ledger vs RunViewModel.export_run_ledger)이
     job명/missing_marker/profiles 축에서 이미 갈라졌던 결함의 봉합: 행 구성
-    (:func:`~hwpxfiller.core.fill_ledger.ledger_outputs`)·프로파일링
+    (:func:`~hwpxfiller.domain.fill_ledger.ledger_outputs`)·프로파일링
     (:func:`~hwpxfiller.domain.source_profile.profile_fields`)·사이드카 경로
     (:func:`ledger_sidecar_path`)·저장을 여기서만 한다.
     취소된 배치(부분 결과)도 증거를 남긴다 — 처리된 산출물만큼만 행을 만든다.

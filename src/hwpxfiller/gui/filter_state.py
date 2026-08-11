@@ -30,7 +30,7 @@
 
 ## 값 해석 — 표시 파서 재사용 + 선언 지점만 엄격(고효율 리뷰 반영)
 
-셀 해석은 표시형과 같은 관대 파서(:func:`~hwpxfiller.core.format_engine.parse_number`/
+셀 해석은 표시형과 같은 관대 파서(:func:`~hwpxfiller.domain.format_engine.parse_number`/
 ``parse_dt``) — 표시가 읽는 대로 비교한다(값 해석 단일 출처, 파싱 불가 셀=불매치=엑셀
 동형). 단 **사용자 선언 지점은 관대하면 안 된다** — 관대 파서는 「1억」을 1로, 「제2026-15호」
 를 날짜로 조용히 오독한다(정의줄은 원문을 재진술하므로 선언과 술어의 어긋남이 안 보인다):
@@ -82,7 +82,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable
 
-from ..core.format_engine import parse_dt, parse_number
+from ..domain.format_engine import parse_dt, parse_number
 from ..domain.jamo import jamo_contains, jamo_find
 
 __all__ = [

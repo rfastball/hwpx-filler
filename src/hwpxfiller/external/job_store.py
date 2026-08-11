@@ -1,10 +1,10 @@
 """Job 영속 경계 — durable JSON 직렬화·저장 개시·레지스트리(External Adapter, P2-21 #569).
 
-:mod:`hwpxfiller.core.job` 이 들고 있던 저장 개시(원자 쓰기)·durable encode/decode·
-디렉터리 레지스트리를 원문 이동으로 승계한다. 판정·모델(:class:`~hwpxfiller.core.job.Job`·
+:mod:`hwpxfiller.domain.job` 이 들고 있던 저장 개시(원자 쓰기)·durable encode/decode·
+디렉터리 레지스트리를 원문 이동으로 승계한다. 판정·모델(:class:`~hwpxfiller.domain.job.Job`·
 rules 계열·매체 가드)은 Domain 에 남고, 여기는 그 값을 디스크와 오가게 하는 어댑터다.
 
-직렬화는 :class:`~hwpxfiller.core.mapping.MappingProfile` 의 JSON 관례(UTF-8·
+직렬화는 :class:`~hwpxfiller.domain.mapping.MappingProfile` 의 JSON 관례(UTF-8·
 ``ensure_ascii=False``·``indent=2``·``to_dict``/``from_dict``)를 그대로 미러한다.
 구 ``Job.to_dict``/``from_dict``/``save``/``load`` 는 :func:`encode_job`/
 :func:`decode_job`/:func:`save_job`/:func:`load_job` 이 됐다 — dict 키 순서·값·저장
@@ -14,11 +14,12 @@ bytes 는 완전 동일하다.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from .atomic import write_text_atomic
 from hwpxfiller.application.jobs import (
@@ -26,19 +27,17 @@ from hwpxfiller.application.jobs import (
     CorruptJobEntry,
     CrossMediaRelinkError,
 )
-from hwpxfiller.core.job import (
+from hwpxfiller.domain.job import (
     DEFAULT_FILENAME_PATTERN,
+    RULE_AXES,
     Job,
-    _copy_rules_values,
-    _reject_unsafe_key,
-    _rules_values_or_raise,
     advance_revisions,
-    library_rel_key,
+    copy_rules_values,
     load_isolated,
     template_media,
 )
-from hwpxfiller.core.mapping import MappingProfile
-from hwpxfiller.host.job_writer_lease import _OwnedWriteLock, shared_write_state
+from hwpxfiller.domain.mapping import MappingProfile
+from hwpxfiller.host.job_writer_lease import job_write_lock
 from hwpxfiller.host.locations import library_root_for
 
 # 레지스트리 파일명 slug — 파일시스템 금지문자만 정리(naming.clean_filename 과 동일 규칙).
@@ -92,6 +91,50 @@ def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None
         )
 
 
+def _lexically_normal(path: "str | Path") -> Path:
+    """``.``·``..`` 성분만 걷는 어휘 정규화. I/O·심볼릭 링크 해석은 하지 않는다."""
+    return Path(os.path.normpath(os.fspath(path)))
+
+
+def _key_names_the_same_file(resolved: Path, original: "str | Path") -> bool:
+    """정규화가 같은 파일을 이름하는지 실측. 증명하지 못하면 승격하지 않는다."""
+    try:
+        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
+            os.path.realpath(original)
+        )
+    except OSError:
+        return False
+
+
+def _reject_unsafe_key(key: str) -> None:
+    """durable 상대키의 드라이브·루트·``..`` 탈출을 loud 거절한다."""
+    path = PureWindowsPath(key)
+    if path.drive or path.root or ".." in path.parts:
+        raise ValueError(
+            f"작업 필드 'template_key' 는 라이브러리 루트 상대경로여야 하는데 {key!r} 입니다"
+        )
+
+
+def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
+    """루트 상대 POSIX durable 키. 루트 밖이거나 안전성을 증명하지 못하면 ``None``."""
+    if root is None:
+        return None
+    root_n, path_n = _lexically_normal(root), _lexically_normal(path)
+    try:
+        key = path_n.relative_to(root_n).as_posix()
+    except ValueError:
+        return None
+    try:
+        _reject_unsafe_key(key)
+    except ValueError:
+        return None
+    if (path_n != Path(path) or root_n != Path(root)) and not _key_names_the_same_file(
+        root_n / key, path
+    ):
+        return None
+    return key
+
+
 def library_key_for(template_path: str) -> str:
     """템플릿 경로 → 라이브러리 루트 상대키. 루트 밖·미상 매체는 ``""``(승격 실패 = 절대경로 유지)."""
     return library_rel_key(template_path, library_root_for(template_path)) or ""
@@ -133,8 +176,34 @@ def encode_job(job: Job) -> dict:
         "reviewed_rules": dict(job.reviewed_rules),
         "template_revision": job.template_revision,
         "binding_revision": job.binding_revision,
-        "previous_rules": _copy_rules_values(job.previous_rules),
+        "previous_rules": copy_rules_values(job.previous_rules),
     }
+
+
+def _rules_values_or_raise(raw: object) -> dict:
+    """durable ``previous_rules`` 형상을 검증한다. 빈 사전만 「직전 판본 없음」이다."""
+    if not isinstance(raw, dict):
+        raise ValueError(f"'previous_rules' 는 사전이어야 하는데 {type(raw).__name__} 입니다")
+    if not raw:
+        return {}
+    fields = raw.get("fields", {})
+    if not isinstance(fields, dict):
+        raise ValueError("'previous_rules.fields' 는 사전이어야 합니다")
+    out_fields: dict[str, dict[str, str]] = {}
+    for name, axes in fields.items():
+        if not isinstance(name, str) or not isinstance(axes, dict):
+            raise ValueError("'previous_rules.fields' 의 항목은 필드이름→축사전이어야 합니다")
+        if set(axes) != set(RULE_AXES) or not all(
+            isinstance(value, str) for value in axes.values()
+        ):
+            raise ValueError(
+                f"'previous_rules.fields[{name}]' 의 축은 {list(RULE_AXES)} 문자열이어야 합니다"
+            )
+        out_fields[name] = dict(axes)
+    template, filename = raw.get("template", ""), raw.get("filename", "")
+    if not isinstance(template, str) or not isinstance(filename, str):
+        raise ValueError("'previous_rules' 의 template·filename 은 문자열이어야 합니다")
+    return {"template": template, "filename": filename, "fields": out_fields}
 
 
 def decode_job(d: dict) -> Job:
@@ -279,8 +348,7 @@ class JobRegistry:
         # :meth:`write_lock` 으로 자기 임계구역을 이 잠금 안에 넣는다. 재진입 가능(RLock)이라
         # 잠금 안에서 :meth:`save` 를 불러도 자기 교착이 없다. 첫 writer 는 프로세스 소유권도
         # 함께 잡아 지원하지 않는 두 번째 프로세스의 쓰기를 파일 변경 전에 loud 거절한다(#192).
-        self._write_state = shared_write_state(self.directory)
-        self._write_lock = _OwnedWriteLock(self._write_state)
+        self._write_lock = job_write_lock(self.directory)
 
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
@@ -294,7 +362,7 @@ class JobRegistry:
 
         **판본 정산의 유일한 자리**(재작성 F7, §10.13 판정 G): 저장 표면이 각자 올리면 한
         표면만 빠뜨려도 그 작업의 세대가 조용히 멈춘다 — 여기 한 곳에서 디스크의 직전 판본과
-        대조해 :func:`~hwpxfiller.core.job.advance_revisions` 가 오른 축만 올린다. 쓰기 잠금
+        대조해 :func:`~hwpxfiller.domain.job.advance_revisions` 가 오른 축만 올린다. 쓰기 잠금
         안이라 대조와 쓰기 사이에 다른 writer 가 끼지 않는다(같은 잠금이 ``last_run_at``
         스탬프도 직렬화한다).
         """
@@ -320,7 +388,7 @@ class JobRegistry:
         except Exception:  # noqa: BLE001 — 부재·손상·권한: 잇지 않는다(위 docstring)
             return None
 
-    def write_lock(self) -> "_OwnedWriteLock":
+    def write_lock(self):
         """읽기-수정-쓰기 임계구역을 감쌀 디렉터리 공유 잠금.
 
         레지스트리 밖에서 "디스크를 읽고 → 그 값을 반영한 Job 을 만들어 → 저장"하는 표면
@@ -475,7 +543,7 @@ class JobRegistry:
             # 판본도 미계승(재작성 F7 판정 H 의 짝): 복사본의 규칙은 이 identity 에서 처음
             # 저장되는 것이라 「연결 r7」이라고 말하면 겪지 않은 여섯 세대를 지어내는 것이고,
             # 직전 판본 값을 물려받으면 **이 작업에서 일어난 적 없는 변경**을 before/after
-            # 증거가 보여준다. 새 자리 저장이라 :func:`~hwpxfiller.core.job.advance_revisions`
+            # 증거가 보여준다. 새 자리 저장이라 :func:`~hwpxfiller.domain.job.advance_revisions`
             # 는 손대지 않는다.
             job.template_revision = 1
             job.binding_revision = 1
@@ -611,7 +679,7 @@ class JobRegistry:
     ) -> "list[Job]":
         """저장된 전 작업을 이름순으로. 빈/없는 디렉터리면 빈 리스트.
 
-        **파일 단위 격리(RC-05, :func:`~hwpxfiller.core.job.load_isolated` 공유):** 손상된
+        **파일 단위 격리(RC-05, :func:`~hwpxfiller.domain.job.load_isolated` 공유):** 손상된
         ``.job.json`` 1개가 목록 전체(→홈·앱 시작)를 죽이지 않도록 파싱 실패를 파일별로
         잡는다. ``corrupted`` 리스트를 넘기면 ``(경로, 오류 문자열)`` 로 수집되며, 홈이 이를
         '손상됨' 행으로 시끄럽게 표면화한다(확인-또는-경보). **미전달 시 손상 파일은 목록에서

@@ -10,11 +10,11 @@ from pathlib import Path
 
 from lxml import etree
 
-from hwpxfiller.core.authoring import compile_document, scan_tokens
-from hwpxfiller.core.fields import FieldDocument
+from hwpxfiller.domain.authoring import compile_document, scan_tokens
+from hwpxfiller.domain.fields import FieldDocument
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
-from hwpxfiller.core.schema import extract_schema
+from hwpxfiller.domain.schema import extract_schema
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"

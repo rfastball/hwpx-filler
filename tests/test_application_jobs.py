@@ -35,7 +35,7 @@ from hwpxfiller.application.jobs import (
     stamp_run_completion,
     update_tags,
 )
-from hwpxfiller.core.job import Job, template_media
+from hwpxfiller.domain.job import Job, template_media
 
 
 class InMemoryJobStore:

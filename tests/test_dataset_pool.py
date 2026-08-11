@@ -484,8 +484,8 @@ def test_restore_nara_item_without_key_fails_loudly():
 
 # --------------------------------------------- 실행 시점 겨눔(RunViewModel, Qt 무관)
 def _job():
-    from hwpxfiller.core.job import Job
-    from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 
     return Job(
         name="실행", template_path="/t.hwpx",

@@ -12,7 +12,7 @@ concrete 레지스트리 메서드를 직접 부르지 않고 여기를 지나�
 (:class:`hwpxfiller.external.job_store.JobRegistry`)은 호출자가 첫 인자로 **주입**한다 —
 Application 은 External 을 import 하지 않고, 기본 구현·service locator 도 없다.
 
-이 모듈은 Domain(:mod:`hwpxfiller.core.job`)만 안다. 잠금·재시도·slug·휴지통 보존 같은
+이 모듈은 Domain(:mod:`hwpxfiller.domain.job`)만 안다. 잠금·재시도·slug·휴지통 보존 같은
 물리 의미는 전부 포트 뒤(External)에 산다.
 """
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from ..core.job import Job
+from ..domain.job import Job
 
 #: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정(:mod:`~hwpxfiller.webapp.
 #: screen_library`)과 저장소의 잠금 안 재판정이 **같은 말**을 하도록 포트 계약이 소유한다

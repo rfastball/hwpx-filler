@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 
-from hwpxfiller.core.job import (
+from hwpxfiller.domain.job import (
     Job,
     rules_fingerprints,
 )
@@ -20,7 +20,7 @@ from hwpxfiller.external.job_store import (
     encode_job,
     library_key_for,
 )
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import (
     ReviewState,
     review_gate_text,
@@ -415,7 +415,7 @@ def test_before_values_render_the_same_record_with_the_previous_rules():
     지어낸 값이다(§10.3 계열). 같은 행에 두 규칙을 적용해야 사용자가 보는 두 값이 비교
     가능해진다.
     """
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
     from hwpxfiller.gui.review_state import previous_values
 
     job = _reviewed(_job())
@@ -444,7 +444,7 @@ def test_before_is_absent_not_empty_when_there_is_no_previous_revision():
 
 def test_before_is_absent_for_fields_the_previous_revision_did_not_have():
     """그 판본에 없던 필드도 before 가 없다 — 필드 추가는 「이전엔 이랬다」가 성립하지 않는다."""
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
     from hwpxfiller.gui.review_state import previous_values
 
     job = _reviewed(_job())
@@ -454,7 +454,7 @@ def test_before_is_absent_for_fields_the_previous_revision_did_not_have():
 
 def test_evidence_carries_before_when_the_previous_revision_exists():
     """증거 행이 두 규칙의 값을 함께 말한다(F5 가 되깎기 조건으로 박제한 자리의 이행)."""
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
     from hwpxfiller.gui.review_state import build_evidence, previous_values
 
     job = _reviewed(_job())
@@ -477,7 +477,7 @@ def test_before_omits_fields_whose_source_column_is_gone(tmp_path):
     `value_for` 는 `record.get(source, "")` 라 소스 열이 사라져도 조용히 ``""`` 를 낸다.
     그대로 실으면 증거가 "이전엔 비어 있었습니다"라고 **단정**한다.
     """
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
     from hwpxfiller.gui.review_state import previous_values
 
     job = _reviewed(_job())
@@ -491,7 +491,7 @@ def test_before_omits_fields_whose_source_column_is_gone(tmp_path):
 
 def test_before_keeps_fields_that_were_genuinely_unconnected():
     """소스가 **애초에 없던** 필드는 그때도 빈 값이 참이라 남긴다 — 연결 신설의 before 다."""
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
     from hwpxfiller.gui.review_state import previous_values
 
     job = _reviewed(_job())

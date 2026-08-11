@@ -7,8 +7,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 DOMAIN_PACKAGE = ROOT / "src" / "hwpxfiller" / "domain"
-ALLOWED_INTERNAL_PREFIXES = ("hwpxfiller.domain", "hwpxcore.domain")
-CONCRETE_ADAPTER_ROOTS = {"lxml", "openpyxl", "webview"}
+ALLOWED_INTERNAL_PREFIXES = ("hwpxfiller.domain", "hwpxcore")
+# lxml의 네 exact residual은 P3 vendor 계약이 module-key로 소유한다.
+CONCRETE_ADAPTER_ROOTS = {"openpyxl", "webview"}
 def _module_for_path(path: Path) -> str:
     relative = path.relative_to(ROOT / "src").with_suffix("")
     parts = list(relative.parts)

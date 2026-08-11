@@ -131,15 +131,15 @@ Authenticode 서명까지 합니다.
 | `hwpxcore/text_extract.py` | 본문 텍스트 추출 + 커버리지 원장 |
 | `external/hwpx_package_io.py` | HWPX 경로 읽기/원자 저장 |
 | `domain/validation.py` | 제품 사전검증(누락/빈값) |
-| `core/fields.py` | 누름틀 XML DOM 주입 |
-| `core/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) |
-| `core/authoring.py` | 평문 `{{토큰}}` → 누름틀 컴파일 |
-| `core/lint.py` | 템플릿 위생 lint + 판본 간 필드 드리프트 |
-| `core/mapping.py` | 소스 레코드 → 템플릿 필드 매핑 |
-| `core/engine.py` / `batch.py` | 단일/일괄 문서 생성 |
-| `core/job.py` | 작업(Job) 앵커 + 레지스트리 |
-| `core/dataset_pool.py` | 데이터 참조 레지스트리(실행 시 재읽기) |
-| `core/fill_ledger.py` | 생성 원장 |
+| `domain/fields.py` | 누름틀 XML DOM 주입 |
+| `domain/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) |
+| `domain/authoring.py` | 평문 `{{토큰}}` → 누름틀 컴파일 |
+| `domain/lint.py` | 템플릿 위생 lint + 판본 간 필드 드리프트 |
+| `domain/mapping.py` | 소스 레코드 → 템플릿 필드 매핑 |
+| `domain/engine.py` / `batch.py` | 단일/일괄 문서 생성 |
+| `domain/job.py` / `external/job_store.py` | 작업(Job) 앵커 / 영속 레지스트리 |
+| `external/dataset_store.py` | 데이터 참조 레지스트리(실행 시 재읽기) |
+| `domain/fill_ledger.py` | 생성 원장 |
 | `data/excel.py` | 엑셀·CSV 데이터 소스 |
 | `data/nara.py` | 나라장터 API 소스 (동결, 앱 미노출) |
 | `webapp/` · `gui/` | pywebview 웹 UI |

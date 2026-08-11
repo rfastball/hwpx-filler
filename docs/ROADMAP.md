@@ -35,7 +35,7 @@
 |---|---|---|---|
 | 문서 생성(메일머지) | `batch`/`engine` | 앱 B: 작업 홈·에디터·실행 | 기본 |
 | 나라장터 공고 취득 | `data/nara.py` | 소스 선택·키 등록·취득 화면(`gui/nara_view.py`) | `--source nara` |
-| 템플릿 관리(schema/fieldize/lint/drift) | `core/*` | 관리 패널(`gui/template_manager.py`) | 4개 서브커맨드 |
+| 템플릿 관리(schema/fieldize/lint/drift) | `domain/*` | 관리 패널(`gui/template_manager.py`) | 4개 서브커맨드 |
 
 **완료 트랙(상세 = git):** 생성기(B-1~4)·표시형/서식 아크(D-1~7)·매핑+나라장터 취득(B-3·B-3b)·
 제품 셸/작업 앵커 데이터모델·exe 패키징(C-1~3)·작업 앵커 다대다 오케스트레이션(ADR J)·

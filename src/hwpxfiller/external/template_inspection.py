@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.authoring import CompileReport, TokenSite, compile_document, scan_tokens
-from ..core.fields import fill_precheck, read_fields
-from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
-from ..core.template_status import TemplateStatus, compile_status
+from ..domain.authoring import CompileReport, TokenSite, compile_document, scan_tokens
+from ..domain.fields import fill_precheck, read_fields
+from ..domain.lint import LintReport, SchemaDrift, diff_schema, lint_template
+from ..domain.template_status import TemplateStatus, compile_status
 from ..gui.template_manager_state import TemplateFileOps, TemplateInspection
 from .hwpx_package_io import read_hwpx_package, write_hwpx_package
 
@@ -61,7 +61,7 @@ def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | No
       사용자 확정을 받은 뒤 ``overwrite=True`` 로 재호출한다.
     - 컴파일·저장 실패는 그대로 raise(호출측이 시끄럽게 표시).
 
-    (P2-19R 에서 ``core.authoring`` 이월 — 경로 열기·충돌 검사·저장이 파일 IO 개시라
+    (P2-19R 에서 ``domain.authoring`` 과 분리 — 경로 열기·충돌 검사·저장이 파일 IO 개시라
     Domain 에 둘 수 없다. 의미 불변.)
     """
     pkg, report = compile_document(read_hwpx_package(path))

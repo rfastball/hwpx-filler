@@ -4,7 +4,8 @@ HWPX Job 레지스트리와 별도 루트(ADR A) — 저장 Job 없는 경량 �
 """
 from __future__ import annotations
 
-from hwpxfiller.core.text_registry import TextTemplateRegistry, default_text_templates_dir
+from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.host.locations import default_text_templates_dir
 
 
 def _seed(tmp_path):

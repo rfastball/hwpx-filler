@@ -19,7 +19,7 @@ UI를 바꿀 때 문서 생성·데이터 처리 정책까지 흔들리고, 색�
 
 의존은 바깥쪽에서 안쪽으로만 흐르며 안쪽 링은 UI runtime을 포함하지 않는다.
 
-- **링0 — 도메인/코어** (`core/*`, `data/*`): `Job`, `RunRequest`, `MappingProfile`,
+- **링0 — 도메인/코어** (`domain/*`, `data/*`, `hwpxcore/*`): `Job`, `RunRequest`, `MappingProfile`,
   `HwpxEngine`, 데이터 소스와 영속 규칙을 소유한다. UI 이유로 정책을 바꾸지 않는다.
 - **링1 — 앱/ViewModel** (`gui/*_state.py`): `HomeViewModel`, `RunViewModel`,
   `MappingModel`, `SelectionModel`, `TxtDraftViewModel`, `TemplateManagerViewModel`,

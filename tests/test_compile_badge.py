@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.core.template_status import CompileState, TemplateStatus
+from hwpxfiller.domain.template_status import CompileState, TemplateStatus
 from hwpxfiller.gui.compile_badge import (
     BADGE_LABELS,
     BADGE_LEVELS,

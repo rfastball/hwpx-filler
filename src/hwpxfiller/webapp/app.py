@@ -37,8 +37,8 @@ from ..web_artifact import (
     resolve_web_artifact,
 )
 from ..external.job_store import JobRegistry
-from ..host.locations import default_jobs_dir
-from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
+from ..host.locations import default_jobs_dir, default_text_templates_dir
+from ..external.text_registry import TextTemplateRegistry
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).

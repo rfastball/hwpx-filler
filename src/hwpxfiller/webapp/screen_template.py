@@ -8,7 +8,7 @@ push 스냅샷의 생존 소비자 = 편집기 결과 줄(result) + 재당김 �
 링1 VM 을 **그대로 임포트**해 구동한다: HWPX 라이브러리 상태·상태별 게이트 액션·2단계
 fieldize(스캔→적용)·lint 는
 :class:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel`(Qt-free)가 소유한다.
-TXT 관리는 코어 :class:`~hwpxfiller.core.text_registry.TextTemplateRegistry`(Qt-free)를 그대로
+TXT 관리는 코어 :class:`~hwpxfiller.external.text_registry.TextTemplateRegistry`(Qt-free)를 그대로
 쓴다. 표현 계층(행 렌더·확인 라운드트립)은 편집기 「템플릿」 탭(editor.js)이 소유한다.
 
 **R-info 2부 개편(정본 `docs/R_INFO_JOB_HOME.md` 2부)**:
@@ -36,9 +36,9 @@ from pathlib import Path
 
 from ..external.atomic import write_text_atomic
 
-from ..core.template_status import TRASH_DIR_NAME
+from ..domain.template_status import TRASH_DIR_NAME
 from ..host.locations import default_templates_dir
-from ..core.text_registry import TextTemplateRegistry
+from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel
 from .screens import PushSink
@@ -297,7 +297,7 @@ class TemplateController:
         「공유 writer 가 없는 단일 표면」이라는 전제는 틀렸고, :meth:`_do_undo_delete` 의
         hwpx 갈래가 그 공유 writer 다(복원이 원본을 되돌린 직후 배치가 덮으면 복원은 성공을
         보고하는데 지운 문서는 사라진다). 그래서 목적지 선택~복사를 **매체별 writer 잠금**
-        (TXT=:meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`,
+        (TXT=:meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`,
         HWPX=``_hwpx_write_lock``) 안에서 한다. 획득은 **항목 단위**라 배치가 도는 내내
         그 매체 조작이 통째로 막히지 않는다.
 
@@ -565,7 +565,7 @@ class TemplateController:
 
         TXT 는 존재 검사와 ``replace`` 사이에 다른 pywebview 호출(새 템플릿·템플릿으로 저장)이
         같은 이름을 새로 쓸 수 있다 — 무락이면 복원이 그 새 파일을 조용히 덮거나, 동시 writer 가
-        복원본을 즉시 덮는다. :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
+        복원본을 즉시 덮는다. :meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`
         을 존재 검사~교체~그룹 복원~실패 롤백까지 한 임계구역으로 잡는다(부분만 덮으면 롤백
         ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R).
 
@@ -632,7 +632,7 @@ class TemplateController:
     def _do_txt_new(self, p: dict) -> dict:
         """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기.
 
-        존재 검사~쓰기는 공유 :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
+        존재 검사~쓰기는 공유 :meth:`~hwpxfiller.external.text_registry.TextTemplateRegistry.write_lock`
         임계구역 안에서 한다(리뷰 F5) — 「템플릿으로 저장」의 덮어쓰기 재검증과 같은 락을 잡아,
         두 writer 가 같은 대상을 두고 check/write 를 교차하지 못하게 한다.
         """

@@ -26,11 +26,11 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``docs/core-workflow.md``; 봉�
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..core.job import WORK_MODE_HWPX, WORK_MODE_UNSUPPORTED
+from ..domain.job import WORK_MODE_HWPX, WORK_MODE_UNSUPPORTED
 from .run_state import GateState
 
 if TYPE_CHECKING:
-    from ..core.job import Job
+    from ..domain.job import Job
 
 #: 현재 데이터로 바로 선택 가능(최소 호환) — 실행 보장은 아니다.
 KIND_AVAILABLE = "available"

@@ -24,7 +24,7 @@ def _imports(path: Path) -> list[tuple[str, int]]:
 
 
 def test_python_package_dependencies_point_inward() -> None:
-    """src 전체는 Qt-free이고 data는 core로, hwpxcore는 hwpxdiff로 역의존하지 않는다."""
+    """src 전체는 Qt-free이고 hwpxcore는 hwpxdiff로 역의존하지 않는다."""
     failures: list[str] = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         relative = path.relative_to(ROOT).as_posix()
@@ -34,21 +34,6 @@ def test_python_package_dependencies_point_inward() -> None:
                 failures.append(f"{relative}:{lineno}: {module}")
             if "src/hwpxcore/" in f"{relative}/" and root == "hwpxdiff":
                 failures.append(f"{relative}:{lineno}: core 역의존 {module}")
-            if relative.startswith("src/hwpxfiller/data/") and module.startswith(
-                "hwpxfiller.core"
-            ):
-                failures.append(f"{relative}:{lineno}: data→core 역의존 {module}")
-
-        if relative.startswith("src/hwpxfiller/data/"):
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            for node in ast.walk(tree):
-                if (
-                    isinstance(node, ast.ImportFrom)
-                    and node.level >= 2
-                    and node.module
-                    and node.module.split(".", 1)[0] == "core"
-                ):
-                    failures.append(f"{relative}:{node.lineno}: data→core 상대 역의존")
     assert not failures, "\n".join(failures)
 
 
@@ -224,7 +209,7 @@ def test_job_registry_writes_go_through_locked_boundaries() -> None:
 
 def test_home_directory_resolution_has_one_source() -> None:
     pattern = re.compile(r"""environ(?:\.get)?[\[(]\s*["']HWPXFILLER_HOME["']""")
-    owner = ROOT / "src" / "hwpxfiller" / "core" / "paths.py"
+    owner = ROOT / "src" / "hwpxfiller" / "host" / "locations.py"
     offenders: list[str] = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         if path == owner:

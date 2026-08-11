@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hwpxfiller.core.format_engine import StdlibFormatEngine, presets, render
+from hwpxfiller.domain.format_engine import StdlibFormatEngine, presets, render
 
 
 def test_amount_default_and_custom_codes():
@@ -97,7 +97,7 @@ def test_engine_is_swappable_via_protocol():
         def presets(self, kind):
             return []
 
-    import hwpxfiller.core.format_engine as fe
+    import hwpxfiller.domain.format_engine as fe
 
     original = fe.ENGINE
     try:

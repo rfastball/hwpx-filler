@@ -21,8 +21,8 @@ from hwpxfiller.application.generation import (
     start_run,
 )
 from hwpxfiller.batch import OutputCollisionError
-from hwpxfiller.core.engine import GenerateResult
-from hwpxfiller.core.job import MISSING_MARKER, Job, rules_fingerprints
+from hwpxfiller.domain.engine import GenerateResult
+from hwpxfiller.domain.job import MISSING_MARKER, Job, rules_fingerprints
 from hwpxfiller.gui.run_state import GateError
 
 

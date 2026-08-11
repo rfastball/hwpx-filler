@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-from hwpxfiller.core.mapping import (
+from hwpxfiller.domain.mapping import (
     TYPES,
     FieldMapping,
     MappingProfile,
@@ -21,7 +21,7 @@ from hwpxfiller.core.mapping import (
 )
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
-from hwpxfiller.external.mapping_store import save_mapping_profile
+from hwpxfiller.external.mapping_store import load_mapping_profile, save_mapping_profile
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CORPUS = Path(__file__).parent / "corpus" / "real"
@@ -153,7 +153,7 @@ def test_profile_save_load_roundtrip(tmp_path):
     )
     path = tmp_path / "profile.json"
     save_mapping_profile(profile, path)
-    loaded = MappingProfile.load(path)
+    loaded = load_mapping_profile(path)
     assert loaded.name == "p"
     m = loaded.mappings[0]
     assert m.template_field == "추정가격"
@@ -175,7 +175,7 @@ def test_explicit_blank_is_covered_but_not_emitted_and_roundtrips(tmp_path):
 
     path = tmp_path / "blank.json"
     save_mapping_profile(profile, path)
-    loaded = MappingProfile.load(path)
+    loaded = load_mapping_profile(path)
     assert loaded.blank_fields() == ["비고"]
     assert loaded.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
 
@@ -215,7 +215,7 @@ def test_profile_load_rejects_unknown_type(tmp_path):
         "template_field": "추정가격", "source": "presmptPrce", "type": "amonut",
     }]}, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(ValueError, match="지원하지 않는 유형"):
-        MappingProfile.load(path)
+        load_mapping_profile(path)
 
 
 def test_provenance_roundtrip_and_backward_compat():

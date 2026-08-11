@@ -12,10 +12,10 @@ import threading
 import pytest
 
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_library import LibraryController
 
 

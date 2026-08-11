@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.core.job import Job
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.edit_session import (
     DEFERRED_ENTRY_REASONS,
     ENTRY_REASONS,

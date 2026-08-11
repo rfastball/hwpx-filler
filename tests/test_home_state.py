@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxfiller.core.authoring import compile_document
-from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.domain.fields import FieldDocument
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.template_inspection import template_compile_status
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.template_status import CompileState
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.template_status import CompileState
 from hwpxfiller.gui.home_state import (
     BADGE_ERROR,
     BADGE_MISSING,
@@ -133,7 +133,7 @@ def test_only_corrupt_files_is_not_empty_state(tmp_path):
 
 
 def test_dashboard_kpi_from_real_data_and_empty_defaults(tmp_path):
-    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.external.text_registry import TextTemplateRegistry
 
     td = tmp_path / "tt"
     td.mkdir()
@@ -151,7 +151,7 @@ def test_dashboard_kpi_from_real_data_and_empty_defaults(tmp_path):
 
 
 def test_txt_rows(tmp_path):
-    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.external.text_registry import TextTemplateRegistry
 
     td = tmp_path / "tt"
     td.mkdir()

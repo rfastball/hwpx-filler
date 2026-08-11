@@ -54,7 +54,7 @@ def test_generate_reports_template_open_failure(tmp_path):
 def test_generate_reports_xml_processing_failure(tmp_path, monkeypatch):
     """정직-실패 계약(engine.py:55) — XML 처리 단계 예외는 삼키지 않고
     ok=False + "XML 처리 실패" 로 전파한다."""
-    from hwpxfiller.core import engine as engine_mod
+    from hwpxfiller.domain import engine as engine_mod
 
     class _Boom:  # FieldDocument 생성 시점에 폭발 — 처리 루프 진입 즉시 예외
         def __init__(self, *args, **kwargs):
@@ -253,7 +253,7 @@ def _mini_template(tmp_path, region: str):
 
 def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path):
     """빈 누름틀 채움 = applied(오보 소멸) + notes 로 시끄럽게(#154)."""
-    from hwpxfiller.core.fields import FillNote, read_fields
+    from hwpxfiller.domain.fields import FillNote, read_fields
 
     tpl = _mini_template(tmp_path, "")  # 값 hp:t 없는 빈 누름틀
     out = tmp_path / "out.hwpx"
@@ -276,7 +276,7 @@ def test_generate_notes_inline_stripped(tmp_path):
     assert [(n.field, n.kind, n.detail) for n in res.notes] == [
         ("계약명", "inline_stripped", ("markpenBegin",))
     ]
-    from hwpxfiller.core.fields import read_fields
+    from hwpxfiller.domain.fields import read_fields
 
     assert read_fields(read_hwpx_package(out))["계약명"] == "NEW"
 
@@ -287,7 +287,7 @@ def test_cross_section_unfillable_occurrence_still_warns(tmp_path):
     applied·unmatched 만으론 이 빈 자리가 어디에도 안 나온다 — 노트가 유일 신호.
     """
     from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
-    from hwpxfiller.core.fields import FillNote
+    from hwpxfiller.domain.fields import FillNote
 
     normal = (
         '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'

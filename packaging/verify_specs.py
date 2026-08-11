@@ -11,9 +11,9 @@ HERE = Path(__file__).resolve().parent
 SPEC_NAMES = ("hwpx_filler_web.spec", "hwpx_cli.spec")
 
 REQUIRED_HIDDEN = {
-    "hwpxfiller.core.schema",
-    "hwpxfiller.core.authoring",
-    "hwpxfiller.core.lint",
+    "hwpxfiller.domain.schema",
+    "hwpxfiller.domain.authoring",
+    "hwpxfiller.domain.lint",
     "hwpxfiller.data.nara",
 }
 

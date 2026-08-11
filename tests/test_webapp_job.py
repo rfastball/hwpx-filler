@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.job import Job, rules_fingerprints
+from hwpxfiller.domain.job import Job, rules_fingerprints
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
-from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
@@ -2754,7 +2754,7 @@ def test_rename_group_merge_restates_actual_count_when_it_drifted(tmp_path):
 
 def test_describe_fill_note_names_field_and_kinds():
     """완화 노트 문안(#154) — 필드·제거 종류를 명명하고 미지 종류는 원문 관통."""
-    from hwpxfiller.core.fields import FillNote
+    from hwpxfiller.domain.fields import FillNote
     from hwpxfiller.gui.result_errors import describe_fill_note
 
     stripped = describe_fill_note(

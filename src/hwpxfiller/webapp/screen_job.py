@@ -70,12 +70,12 @@ from ..application.jobs import (
     set_favorite,
 )
 from ..domain.identity_summary import identity_summary
-from ..core.job import (
+from ..domain.job import (
     Job,
     work_mode,
 )
-from ..core.mapping import SOURCE_CARRIER_TYPES
-from ..core.template_status import OUTPUT_SUBDIR_NAME
+from ..domain.mapping import SOURCE_CARRIER_TYPES
+from ..domain.template_status import OUTPUT_SUBDIR_NAME
 from ..external.hwpx_engine import make_hwpx_engine
 from ..gui.filter_state import (
     KIND_AMOUNT,
@@ -1073,7 +1073,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         템플릿 필드를 매핑의 ``source`` 로 역해소해 원본 열로 돌려준다 — 그렇지 않으면 토큰
         모드가 엉뚱한 네임스페이스로 오발한다(confirm-or-alarm).
 
-        **원본 열을 실제로 나르는 유형만** 대상이다(:data:`~hwpxfiller.core.mapping.
+        **원본 열을 실제로 나르는 유형만** 대상이다(:data:`~hwpxfiller.domain.mapping.
         SOURCE_CARRIER_TYPES`). ``const`` 은 리터럴을 방출해 ``source`` 값과 무관하고(옛 매핑에서
         ``source`` 가 남아 있어도 파일명은 그 열을 나르지 않는다), ``blank`` 은 빈 값이다 — 둘을
         나르는 열로 오인하면 구별 열이 토큰 모드로 침묵 배제된다(리뷰 반영). 원본 레코드에

@@ -8,7 +8,7 @@ from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import extract_document
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
-from hwpxfiller.core.fields import FieldDocument, field_xml_names, read_fields
+from hwpxfiller.domain.fields import FieldDocument, field_xml_names, read_fields
 
 BODY = "Contents/section0.xml"
 UNTOUCHED_BODY = "Contents/section1.xml"

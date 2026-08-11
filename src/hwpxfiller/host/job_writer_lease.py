@@ -4,7 +4,7 @@
 OS 자원 획득·해제(named mutex·flock 파일·PID 판정)를 지는 Host 조립부이고,
 :class:`~hwpxfiller.external.job_store.JobRegistry` 가 디렉터리별 공유 상태를
 :func:`shared_write_state` 로 받아 첫 writer 진입 때 소유권을 확인한다.
-:mod:`hwpxfiller.core.job` 에서 P2-21(#569)로 원문 이동했다.
+:mod:`hwpxfiller.domain.job` 에서 P2-21(#569)로 원문 이동했다.
 """
 
 from __future__ import annotations
@@ -160,3 +160,8 @@ def shared_write_state(directory: Path) -> _RegistryWriteState:
             state = _RegistryWriteState(key)
             _JOB_WRITE_STATES[key] = state
         return state
+
+
+def job_write_lock(directory: Path) -> _OwnedWriteLock:
+    """디렉터리 공유 writer lease를 External 경계에 공개한다."""
+    return _OwnedWriteLock(shared_write_state(directory))

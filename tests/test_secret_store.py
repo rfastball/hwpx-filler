@@ -16,9 +16,9 @@ import uuid
 import pytest
 
 import hwpxfiller.domain.secret_redaction as canonical_redaction
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import encode_job, save_job
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.mapping_store import save_mapping_profile
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.data.secret_store import (

@@ -45,7 +45,7 @@ from ..application.jobs import (
 )
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
-from ..core.text_registry import TextTemplateRegistry
+from ..external.text_registry import TextTemplateRegistry
 from ..external.hwpx_engine import make_hwpx_engine
 from ..external.template_inspection import template_compile_status
 from ..gui.compile_badge import badge_level

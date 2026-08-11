@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.webapp.action_registry import validate_dispatch
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
