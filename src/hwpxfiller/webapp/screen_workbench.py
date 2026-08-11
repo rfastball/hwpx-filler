@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -102,10 +103,12 @@ class WorkbenchController(MappingVerbsMixin):
         registry: JobRegistry,
         push: PushSink,
         *,
+        clock: Callable[[], datetime],
         target_font,
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        self._clock = clock
         # 대상 글꼴은 앱 전역 영속 선언(TargetFontSetting — 「기안」 사망으로 이 화면이
         # 유일 소비자, §10.15.15 판정 E). 앱 조립이 단일 인스턴스를 주입한다.
         self._font = target_font
@@ -840,7 +843,7 @@ class WorkbenchController(MappingVerbsMixin):
             # 않아 이 선택이 호출부에 보인다(P2-21 #569).
             job = stamp_run_completion(
                 self.registry, self.job_name,
-                datetime.now().isoformat(timespec="seconds"), rules=None,
+                self._clock().isoformat(timespec="seconds"), rules=None,
             )
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__
