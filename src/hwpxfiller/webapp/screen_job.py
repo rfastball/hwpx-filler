@@ -258,6 +258,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         registry: JobStorePort,
         push: PushSink,
         *,
+        clock: Callable[[], datetime],
         engine: HwpxEngine,
         pool_registry,
         generation_lock: "threading.Lock",
@@ -267,6 +268,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        self._clock = clock
         self._engine = engine
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
@@ -1125,7 +1127,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 이름과 생성물이 갈린다(덮어쓰기 대상 집합까지 함께 바뀐다). 캡처는
             # :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접 호출(테스트) 경로용이다.
             if self._names_now is None:
-                self._names_now = datetime.now()
+                self._names_now = self._clock()
             planned = plan_output_names(
                 self.vm.job.filename_pattern, mapped, now=self._names_now,
             )
@@ -1460,7 +1462,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self._names_now is None or not (
             self.preview_open or (req.required and req_unmet is None) or pinned
         ):
-            self._names_now = datetime.now()
+            self._names_now = self._clock()
             self._names_pin = None
         # 선택분 매핑 적용은 표식 유/무 각 1회 — 표식 없는 판(빈 값 자리 판정)과 생성
         # 입력 판(_record_rows·확인 면)이 공유한다(이중 적용 방지).
@@ -2310,7 +2312,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # Application 이 소유한다. 검토 판정기는 **이 런의 주체**(run_vm·indices·그 입력의
         # 빈 값)로 묻는 게이트 선언이다 — 세션은 배치가 도는 사이에도 움직인다(1R P1).
         # 날짜 토큰 시각은 미리보기가 캡처한 값을 재사용한다(표시=확인=생성 일치, RC-02).
-        now = self._names_now or datetime.now()
+        now = self._names_now or self._clock()
         decision = plan_generation(
             run_vm, indices, out_dir, now=now,
             review_check=lambda bl: self._review(run_vm, indices, bl)[1],
@@ -2352,7 +2354,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             progress=self._push_progress,
             capture=(ValueError, OSError),
             store=self.registry,
-            completed_at=lambda: datetime.now().isoformat(timespec="seconds"),
+            completed_at=lambda: self._clock().isoformat(timespec="seconds"),
         )
         if outcome.error is not None:
             # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
