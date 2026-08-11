@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from hwpxfiller.naming import (
     MAX_PATH_CHARS,
     OutputNamer,
@@ -52,6 +54,11 @@ def test_prefformatted_value_substituted_plainly():
 # ------------------------------------------------------------------- 날짜 토큰
 def test_date_default_is_yyyymmdd():
     assert make_output_filename("{{date}}", {}, now=_NOW) == "20260709.hwpx"
+
+
+def test_date_requires_declared_time():
+    with pytest.raises(ValueError, match="기준 시각"):
+        make_output_filename("{{date}}", {})
 
 
 def test_date_custom_format():
