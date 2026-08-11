@@ -92,8 +92,9 @@ def make_output_filename(
     ``{{date}}``·``{{seq}}`` 예약 토큰을 데이터-키 치환 **前에** 해석한다. ``seq``/``now``
     를 주입하면 결정적(테스트용). 특수 토큰이 없는 패턴은 이전과 동일하게 동작한다.
     """
-    now = now or datetime.now()
-    out = _DATE_TOKEN.sub(lambda m: _fmt_date(m.group(1), now), pattern)
+    if _DATE_TOKEN.search(pattern) and now is None:
+        raise ValueError("날짜 토큰에는 기준 시각이 필요합니다.")
+    out = _DATE_TOKEN.sub(lambda m: _fmt_date(m.group(1), now), pattern)  # type: ignore[arg-type]
     out = _SEQ_TOKEN.sub(lambda m: _fmt_seq(m.group(1), seq if seq is not None else 1), out)
     # 데이터 필드 토큰 — 평문 치환(표시형은 여기서 안 함; 값은 이미 프로파일이 서식했음).
     for key, val in data.items():
@@ -115,7 +116,7 @@ class OutputNamer:
 
     def __init__(self, pattern: str, now: "datetime | None" = None):
         self.pattern = pattern
-        self.now = now or datetime.now()
+        self.now = now
         self._seq = 0
         self._seen: "set[str]" = set()
 

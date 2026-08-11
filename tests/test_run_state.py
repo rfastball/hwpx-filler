@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from pathlib import Path
 
 import pytest
@@ -586,7 +588,7 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
         vm.datasource = _Src()
         vm.records = vm.datasource.records()
         assert vm.unresolved_name_tokens() == []
-        status = vm.refresh([0, 1], str(tmp_path / "out"))
+        status = vm.refresh([0, 1], str(tmp_path / "out"), now=datetime(2026, 7, 21))
         assert "파일명 패턴" not in status.gate.text
 
 

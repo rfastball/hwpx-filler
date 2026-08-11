@@ -20,6 +20,7 @@ import argparse
 import os
 import sys
 import zipfile
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .application.generation import direct_plan, run_generation, start_run
@@ -522,7 +523,8 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     # 제품 계약의 선언**이고, capture 는 exit 1 로 다룰 실패류의 선언이다 — 환경성
     # OSError 는 최상위 번역 경계의 exit 2 로 흘린다(RC-16).
     plan = direct_plan(args.template, records, args.out, args.pattern,
-                       marker=marker, overwrite=args.overwrite, mapping=gate_mapping)
+                       marker=marker, overwrite=args.overwrite, mapping=gate_mapping,
+                       now=datetime.now())
     outcome = run_generation(start_run(None), plan, engine=engine,
                              capture=(OutputCollisionError, ValueError), store=None)
     if isinstance(outcome.error, OutputCollisionError):

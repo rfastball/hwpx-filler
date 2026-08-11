@@ -188,6 +188,7 @@ def direct_plan(
     marker: str = "",
     overwrite: bool = False,
     mapping: Any = None,
+    now: "datetime | None" = None,
 ) -> "GenerationPlan":
     """VM 없는 호출자(CLI)의 불변 생성 계획 — 게이트는 호출자가 이미 스스로 선언·판정했다.
 
@@ -206,6 +207,7 @@ def direct_plan(
         source_pointer="",
         overwrite=overwrite,
         mapping=mapping,
+        now=now,
     )
 
 
