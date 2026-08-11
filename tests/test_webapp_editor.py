@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,11 @@ REPO = REPO_ROOT
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
 TPL_PARTIAL = REPO / "tests" / "fixtures" / "template_v1.hwpx"
 MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
+_NOW = datetime(2026, 8, 11, 12, 34, 56)
+
+
+def _clock() -> datetime:
+    return _NOW
 
 
 def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
@@ -34,6 +40,7 @@ def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
     # 사용자 폴더를 스캔하면 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
     ctrl = EditorController(
         reg, lambda s, snap: pushes.append((s, snap)),
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
@@ -584,6 +591,7 @@ def _controller26(tmp_path: Path):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
@@ -873,7 +881,7 @@ def test_save_stamps_provenance_on_mapping(tmp_path):
     assert prov["template"].endswith(".hwpx")
     assert prov["dataset"] == "multi_sheet"
     assert prov["template_fields"]                    # 템플릿 스키마 지문
-    assert prov["authored_at"] and prov["updated_at"]  # 작성/갱신 시각
+    assert prov["authored_at"] == prov["updated_at"] == _NOW.isoformat(timespec="seconds")
     # 순수 메타 — 실행 계약(source_keys)과 별개 축.
     assert isinstance(prov, dict)
 
@@ -1692,6 +1700,7 @@ def _controller_lib(tmp_path, paths=None, lib_dir=None):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
+        clock=_clock,
         template_library=vm,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
@@ -1735,6 +1744,7 @@ def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED, TPL_PARTIAL],
             inspect_template=inspect_hwpx_template,
@@ -1769,6 +1779,7 @@ def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
     )  # 빈 라이브러리로 시작
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm,
+        clock=_clock,
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     assert _lib_items(ctrl.snapshot()) == []
@@ -1784,6 +1795,7 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
     groups.set_group("아직없는.hwpx", "입찰")  # 에디터 VM 밖 파일
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED],
             inspect_template=inspect_hwpx_template,
@@ -1810,6 +1822,7 @@ def test_library_snapshot_carries_management_surface(tmp_path):
     txt_groups.set_group("공문.txt", "기안")
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[TPL_COMPILED, TPL_PARTIAL],
             inspect_template=inspect_hwpx_template,
@@ -1844,6 +1857,7 @@ def test_library_result_line_reads_injected_source_live(tmp_path):
     result = {"text": "", "level": "muted"}
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
@@ -1882,6 +1896,7 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
     tpl = TemplateController(txt_reg, lambda s, snap: None, library_dir=lib)
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        clock=_clock,
         template_library=tpl.vm,          # 앱 조립과 같은 단일 실체 공유
         text_registry=txt_reg,
     )
@@ -2365,6 +2380,7 @@ def test_toggle_library_group_routes_by_media(tmp_path):
     txt_groups.set_group("기안.txt", "온나라")
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        clock=_clock,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
