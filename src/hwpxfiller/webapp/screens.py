@@ -21,7 +21,7 @@ from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트
 from ..domain.dataset_reference import DatasetReference
 from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
-from ..host.locations import default_dataset_pool_dir
+from ..external.text_registry import read_text_utf8
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
@@ -96,13 +96,16 @@ TXT_RAW_BLOCK = (
 
 
 # -------------------------------------------- 추적성 로케이트 화이트리스트(#53-B)
-def norm_path(p: "str | Path") -> str:
+def norm_path(p: "str | Path", base_dir: "str | Path") -> str:
     """경로 비교 정규화 — 대소문자·구분자·상대경로 차이를 흡수(Windows 대소문자 무시)."""
-    return os.path.normcase(os.path.abspath(str(p)))
+    path = Path(p)
+    if not path.is_absolute():
+        path = Path(base_dir) / path
+    return os.path.normcase(os.path.abspath(str(path)))
 
 
 def collect_owned_paths(
-    job_registry, pool_registry, session_paths: "Iterable[str]" = ()
+    job_registry, pool_registry, session_paths: "Iterable[str]" = (), *, base_dir: "str | Path"
 ) -> "set[str]":
     """열기/보기/복사 대상 화이트리스트 — 웹 페이로드로 임의 경로를 실행하는 통로를 봉쇄
     (``reveal_corrupt_job`` 화이트리스트 선례). 사용자 소유 참조만 통과: 작업 템플릿·등록
@@ -111,29 +114,24 @@ def collect_owned_paths(
     paths: "set[str]" = set()
     for j in job_registry.list_jobs():                    # 손상 제외가 기본
         if getattr(j, "template_path", ""):
-            paths.add(norm_path(j.template_path))
+            paths.add(norm_path(j.template_path, base_dir))
     for it in pool_registry.list_items(corrupted=[]):     # 손상 흡수(raise 방지)
         p = it.opts.get("path") if isinstance(it.opts, dict) else None
         if isinstance(p, str) and p:
-            paths.add(norm_path(p))
+            paths.add(norm_path(p, base_dir))
     for p in session_paths:
         if p:
-            paths.add(norm_path(p))
+            paths.add(norm_path(p, base_dir))
     return paths
 
 
-def validate_owned_path(path: str, owned: "set[str]") -> str:
+def validate_owned_path(path: str, owned: "set[str]", *, base_dir: "str | Path") -> str:
     """``path`` 가 소유 화이트리스트에 있으면 그대로 반환, 아니면 시끄럽게 거부."""
     if not path:
         raise ValueError("경로가 비어 있습니다.")
-    if norm_path(path) not in owned:
+    if norm_path(path, base_dir) not in owned:
         raise ValueError("이 경로는 앱이 추적하는 참조가 아니라 열 수 없습니다.")
     return path
-
-
-def default_pool_registry() -> DatasetPoolRegistry:
-    """웹 컨트롤러 기본 풀 레지스트리 — 홈 레지스트리(ADR J). 테스트는 생성자 주입."""
-    return DatasetPoolRegistry(default_dataset_pool_dir())
 
 
 def load_pool_item_checked(
@@ -292,7 +290,7 @@ def relink_job_template(
             )
     else:  # txt — 여는 계약과 같은 방식(UTF-8)으로 읽고, 토큰 0 이면 에디터 픽과 같은 차단.
         try:
-            text = Path(path).read_text(encoding="utf-8")
+            text = read_text_utf8(path)
         except Exception as exc:  # noqa: BLE001 — 못 읽으면 이유 불문 하드 차단(알람)
             return {"ok": False, "error": f"새 템플릿을 읽을 수 없습니다: {exc}"}
         if not template_fields(text):  # 채울 대상 0 = hwpx RAW 동형(리뷰 2R P1) — 하드 차단
@@ -409,4 +407,3 @@ class ScreenController(Protocol):
     def initial(self) -> dict: ...
     def snapshot(self) -> dict: ...
     def dispatch(self, action: str, payload: dict) -> object: ...  # 값 반환 가능(예: 확인 게이트)
-
