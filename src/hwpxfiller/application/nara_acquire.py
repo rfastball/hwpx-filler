@@ -30,7 +30,7 @@ _GATEWAY_FAILURE = "나라장터 서비스 응답을 가져오지 못했습니�
 
 # 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
 # 키 없는 스냅샷과 concrete DataSource가 같은 어휘를 쓰도록 canonical decision과 함께 둔다.
-_FIELD_LABELS: "dict[str, str]" = {
+DEFAULT_FIELD_LABELS: "dict[str, str]" = {
     "bidNtceNo": "입찰공고번호",
     "bidNtceOrd": "입찰공고차수",
     "bidNtceNm": "공고명",
@@ -175,7 +175,7 @@ class AcquiredNaraData:
         self._records = list(records)
         self._fields = list(fields)
         self._field_labels = dict(
-            _FIELD_LABELS if field_labels is None else field_labels
+            DEFAULT_FIELD_LABELS if field_labels is None else field_labels
         )
 
     def records(self) -> "list[dict[str, str]]":

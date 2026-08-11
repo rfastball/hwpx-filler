@@ -35,7 +35,7 @@ callback을 제품 command로, vendor 결과를 제품 result 또는 직렬화 �
 표현 계층 type을 알 수 없다.
 
 runtime dependency를 추가하는 변경은
-`tests/kernel_boundary_contract.toml`의 `[vendor_integration.*]`에 package, 허용 배치 경계,
+`tests/architecture_contract.toml`의 `[vendor_integration.*]`에 package, 허용 배치 경계,
 `mount_owner`·`update_owner`·`dispose_owner`를 함께 등록한다. 기존 P3 repo-contract 게이트는
 등록되지 않은 dependency, 경계 밖 import(type-only 포함), 사라진 lifecycle owner를 거절한다.
 owner는 구독·listener·worker·WASM instance 등 자신이 세운 자원을 dispose까지 정산하며,

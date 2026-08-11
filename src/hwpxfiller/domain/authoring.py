@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.text_extract import HP_NS, _local, _require_package
+from hwpxcore.text_extract import HP_NS, local_name, require_package
 
 _TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 _ID_ATTRS = ("id", "fieldid", "beginIDRef", "instId", "endIDRef")
@@ -103,10 +103,10 @@ def _paragraph_text(p_el: etree._Element) -> str:
     """문단의 직속 텍스트(라벨 힌트) — 중첩 표는 내려가지 않는다."""
     parts: "list[str]" = []
     for run in p_el:
-        if _local(run.tag) != "run":
+        if local_name(run.tag) != "run":
             continue
         for ch in run:
-            ln = _local(ch.tag)
+            ln = local_name(ch.tag)
             if ln == "t":
                 if ch.text:
                     parts.append(ch.text)
@@ -126,10 +126,10 @@ def _run_shape(run: etree._Element):
     (컴파일로 통째 치환 가능한 모양). 코퍼스처럼 누름틀이 한 런에 인라인(t·ctrl·t·
     ctrl·t)인 경우는 simple 이 아니다.
     """
-    ts = [c for c in run if _local(c.tag) == "t"]
-    ctrls = [c for c in run if _local(c.tag) == "ctrl"]
+    ts = [c for c in run if local_name(c.tag) == "t"]
+    ctrls = [c for c in run if local_name(c.tag) == "ctrl"]
     others = [
-        c for c in run if isinstance(c.tag, str) and _local(c.tag) not in ("t", "ctrl")
+        c for c in run if isinstance(c.tag, str) and local_name(c.tag) not in ("t", "ctrl")
     ]
     simple = len(ts) == 1 and not ctrls and not others and len(ts[0]) == 0
     return simple, ts
@@ -197,7 +197,7 @@ def _text_slices(
     out: "list[etree._Element]" = []
     offset = 0
     for run in runs:
-        t = next(c for c in run if _local(c.tag) == "t")
+        t = next(c for c in run if local_name(c.tag) == "t")
         text = t.text or ""
         lo = max(start - offset, 0)
         hi = min(end - offset, len(text))
@@ -215,7 +215,7 @@ def _compile_simple_group(
     report: CompileReport,
 ) -> None:
     """동일 서식 단순 런 묶음을 원본 오프셋/속성을 보존하며 누름틀로 치환."""
-    text = "".join(next(c for c in run if _local(c.tag) == "t").text or "" for run in runs)
+    text = "".join(next(c for c in run if local_name(c.tag) == "t").text or "" for run in runs)
     new_runs: "list[etree._Element]" = []
     pos = 0
     for match in matches:
@@ -246,7 +246,7 @@ def _run_end(runs: "list[etree._Element]", target: etree._Element) -> int:
     """논리 런 묶음에서 ``target`` 런의 끝 오프셋."""
     end = 0
     for run in runs:
-        t = next(c for c in run if _local(c.tag) == "t")
+        t = next(c for c in run if local_name(c.tag) == "t")
         end += len(t.text or "")
         if run is target:
             return end
@@ -259,7 +259,7 @@ def _text_with_inline_events(t_el: etree._Element) -> "tuple[str, list[tuple[int
     events: "list[tuple[int, str]]" = []
     length = len(parts[0])
     for child in t_el:
-        local = _local(child.tag)
+        local = local_name(child.tag)
         if local == "tab":
             events.append((length, "tab"))
             parts.append("\t")
@@ -333,7 +333,7 @@ def _clip_t(
         items.append((pos, "char", ch, 1))
         pos += 1
     for child in t_el:
-        width = 1 if _local(child.tag) in ("tab", "lineBreak") else 0
+        width = 1 if local_name(child.tag) in ("tab", "lineBreak") else 0
         items.append((pos, "elem", child, width))
         pos += width
         for ch in child.tail or "":
@@ -386,7 +386,7 @@ def _clip_run(
     new_run = etree.Element(run.tag, dict(run.attrib))
     pos = base
     for child in run:
-        local = _local(child.tag)
+        local = local_name(child.tag)
         if local == "t":
             clipped = _clip_t(
                 child, pos, lo, hi, keep_zero_lo=keep_zero_lo, keep_zero_hi=keep_zero_hi
@@ -431,7 +431,7 @@ def _build_paragraph_model(p_el: etree._Element):
     length = 0
 
     for child_index, run in enumerate(p_el):
-        if _local(run.tag) != "run":
+        if local_name(run.tag) != "run":
             continue
         simple, _ = _run_shape(run)
         # _clip_run 은 이 런의 자식을 처음부터 순회하며 pos=base 로 시작하므로,
@@ -439,11 +439,11 @@ def _build_paragraph_model(p_el: etree._Element):
         # 잡으면 선행 런-레벨 탭/줄바꿈이 이중 계산돼 오프셋이 밀린다.
         run_base.setdefault(run, length)
         for child in run:
-            local = _local(child.tag)
+            local = local_name(child.tag)
             if local == "ctrl":
                 field_boundary = False
                 for ctrl_child in child:
-                    ctrl_local = _local(ctrl_child.tag)
+                    ctrl_local = local_name(ctrl_child.tag)
                     if ctrl_local == "fieldBegin":
                         depth += 1
                         field_boundary = True
@@ -639,10 +639,10 @@ def _depth0_texts(run: etree._Element, start_depth: int) -> "tuple[list[str], in
     texts: "list[str]" = []
     d = start_depth
     for ch in run:
-        ln = _local(ch.tag)
+        ln = local_name(ch.tag)
         if ln == "ctrl":
             for c in ch:
-                cl = _local(c.tag)
+                cl = local_name(c.tag)
                 if cl == "fieldBegin":
                     d += 1
                 elif cl == "fieldEnd":
@@ -667,7 +667,7 @@ def _process_paragraph(
     index = 0
     while index < len(children):
         run = children[index]
-        if _local(run.tag) != "run":
+        if local_name(run.tag) != "run":
             index += 1
             continue
         start_depth = depth
@@ -683,7 +683,7 @@ def _process_paragraph(
                 candidate = children[next_index]
                 candidate_simple, candidate_ts = _run_shape(candidate)
                 if (
-                    _local(candidate.tag) != "run"
+                    local_name(candidate.tag) != "run"
                     or not candidate_simple
                     or not (candidate_ts[0].text or "")  # 빈 런은 그룹 종료(원위치 보존)
                     or candidate.get("charPrIDRef") != run.get("charPrIDRef")
@@ -692,7 +692,7 @@ def _process_paragraph(
                 group.append(candidate)
                 next_index += 1
             text = "".join(
-                next(c for c in grouped if _local(c.tag) == "t").text or ""
+                next(c for c in grouped if local_name(c.tag) == "t").text or ""
                 for grouped in group
             )
             matches = list(_TOKEN_RE.finditer(text))
@@ -726,7 +726,7 @@ def scan_tokens(pkg: object) -> "list[TokenSite]":
     **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     이미 누름틀 안에 든 토큰(field 값)은 제외한다. 워크북을 전혀 변형하지 않는다.
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     sites: "list[TokenSite]" = []
     for name in pkg.content_xml_names():
@@ -746,7 +746,7 @@ def compile_document(pkg: object) -> "tuple[object, CompileReport]":
     ``apply`` 는 항상 참 — 미리보기는 ``scan_tokens`` 를 쓴다. 컴파일된 XML 만 교체하고,
     바뀐 게 없으면 ``modified=False``.
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     report = CompileReport()
     for name in pkg.content_xml_names():

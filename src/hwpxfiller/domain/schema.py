@@ -22,9 +22,9 @@ from lxml import etree
 
 from hwpxcore.text_extract import (
     HP_NS,
-    _local,
-    _require_package,
-    _text_of_t,
+    local_name,
+    require_package,
+    text_of_t,
     extract_document,
     iter_paragraph_texts,
 )
@@ -156,15 +156,15 @@ def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
     names: "list[str]" = []
     seen: "set[str]" = set()
     for run in p_el:
-        if _local(run.tag) != "run":
+        if local_name(run.tag) != "run":
             continue
         for ch in run:
-            ln = _local(ch.tag)
+            ln = local_name(ch.tag)
             if ln == "t":
-                parts.append(_text_of_t(ch))
+                parts.append(text_of_t(ch))
             elif ln == "ctrl":
                 for c in ch:
-                    if _local(c.tag) == "fieldBegin":
+                    if local_name(c.tag) == "fieldBegin":
                         nm = _clean_field_name(c.get("name"))
                         if nm and nm not in seen:
                             seen.add(nm)
@@ -197,7 +197,7 @@ def _walk_content(root: etree._Element) -> "tuple[list[_Occ], dict[int, TableReg
     counter = [0]
 
     def walk(el: etree._Element, table_id: "int | None") -> None:
-        local = _local(el.tag)
+        local = local_name(el.tag)
         if local == "p":
             text, fnames = _paragraph_direct(el)
             label = text.strip()[:_CONTEXT_MAX]
@@ -212,9 +212,9 @@ def _walk_content(root: etree._Element) -> "tuple[list[_Occ], dict[int, TableReg
         if local == "tbl":
             counter[0] += 1
             current = counter[0]
-            trs = [c for c in el if _local(c.tag) == "tr"]
+            trs = [c for c in el if local_name(c.tag) == "tr"]
             cols = max(
-                (sum(1 for tc in tr if _local(tc.tag) == "tc") for tr in trs),
+                (sum(1 for tc in tr if local_name(tc.tag) == "tc") for tr in trs),
                 default=0,
             )
             regions[current] = TableRegion(rows=len(trs), cols=cols)
@@ -236,7 +236,7 @@ def extract_schema(pkg: object) -> TemplateSchema:
     등장 횟수·표 소속·라벨 문맥을 병합한다. ``stray_tokens``·``unhandled`` 는
     text_extract 문서 모델에서 파생한다(본문 평문 스캔 + 커버리지 원장).
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
 
     order: "list[str]" = []

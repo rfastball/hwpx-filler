@@ -381,8 +381,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distribution-webview2-evidence
-          # 패키징이 내는 증거 6종(산출물 동일성·packaged selftest·외부망 양성/음성 대조·
-          # 검증 요약). 제품 홈 두 개는 뺀다 — 실행 잔재라 증거가 아니고 부피만 크다.
+          # 패키징이 내는 증거 13파일(산출물 동일성·packaged selftest·외부망 양성/음성 대조·
+          # 검증 요약·wheel·두 PYZ archive). 제품 홈 두 개는 뺀다 — 실행 잔재라 증거가 아니다.
           path: |
             build/n03-package-evidence-*/**
             !build/n03-package-evidence-*/home-network-control/**

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 from lxml import etree
 
-from hwpxcore.text_extract import HP_NS, _local, _require_package, _text_of_t
+from hwpxcore.text_extract import HP_NS, local_name, require_package, text_of_t
 from hwpxfiller.domain.authoring import scan_tokens
 from hwpxfiller.domain.schema import extract_schema
 
@@ -101,25 +101,25 @@ def _region_value(begin: etree._Element) -> str:
     ctrl 에서 종료한다.
     """
     ctrl = begin.getparent()  # hp:ctrl
-    run = ctrl.getparent() if ctrl is not None and _local(ctrl.tag) == "ctrl" else ctrl
-    if run is None or _local(run.tag) != "run":
+    run = ctrl.getparent() if ctrl is not None and local_name(ctrl.tag) == "ctrl" else ctrl
+    if run is None or local_name(run.tag) != "run":
         return ""
 
     parts: "list[str]" = []
     found_begin = False
     current = run
-    while current is not None and _local(current.tag) == "run":
+    while current is not None and local_name(current.tag) == "run":
         stop = False
         for inner in current:
             if not found_begin:
                 if inner is ctrl or inner is begin:
                     found_begin = True
                 continue
-            ln = _local(inner.tag)
+            ln = local_name(inner.tag)
             if ln == "t":
-                parts.append(_text_of_t(inner))
+                parts.append(text_of_t(inner))
             elif ln == "ctrl":
-                if any(_local(c.tag) == "fieldEnd" for c in inner):
+                if any(local_name(c.tag) == "fieldEnd" for c in inner):
                     stop = True
                     break
         if stop:
@@ -143,7 +143,7 @@ def _is_placeholder(value: str, name: str) -> bool:
 
 def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     """주입 대상 XML 전체에서 (필드명, 값) 목록을 읽는다(파싱 사본 — 무변형)."""
-    pkg2 = _require_package(pkg)
+    pkg2 = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     out: "list[tuple[str, str]]" = []
     for name in pkg2.content_xml_names():
@@ -164,7 +164,7 @@ def compile_status(pkg: object) -> TemplateStatus:
     저장된 값을 읽지 않고 매 호출 재산출한다 — 재편집 드리프트에도 항상 진실.
     입력을 전혀 변형하지 않는다(읽기 전용).
     """
-    pkg = _require_package(pkg)  # 덕타이핑 관문(경로/바이트는 loud 거절)
+    pkg = require_package(pkg)  # 덕타이핑 관문(경로/바이트는 loud 거절)
 
     schema = extract_schema(pkg)
     field_n = len(schema.field_names())

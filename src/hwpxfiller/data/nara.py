@@ -32,8 +32,7 @@ from ..application.nara_acquire import (
     NaraAcquireViewModel,
     NaraGatewayError,
     NaraGatewayResponse,
-    _FIELD_LABELS,
-    _add_one_month,
+    DEFAULT_FIELD_LABELS,
     validate_range,
 )
 from .secret_store import redact
@@ -269,7 +268,7 @@ class NaraStdDataSource:
         ``suggest_mappings(..., aliases=...)`` 로 주입한다(코어는 어휘-불가지).
         호출측 변형으로부터 보호하려 사본을 반환한다.
         """
-        return dict(_FIELD_LABELS)
+        return dict(DEFAULT_FIELD_LABELS)
 
     def fields(self) -> "list[str]":
         """레코드가 제공하는 필드 키를 등장 순서(중복 제거)로 반환."""

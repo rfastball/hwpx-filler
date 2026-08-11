@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.text_extract import _require_package
+from hwpxcore.text_extract import require_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _NSMAP = {"hp": HP_NS}
@@ -405,7 +405,7 @@ def fill_precheck(pkg: object) -> "list[FillNote]":
     템플릿 점검 표면(라이브러리 등)이 "채우면 무슨 일이 생기는가"를 실행 전에
     고지하는 데 쓴다. 사후 노트(:attr:`FieldDocument.notes`)와 같은 어휘.
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     notes: "list[FillNote]" = []
     for xml_name in field_xml_names(pkg):
         notes.extend(FieldDocument(pkg.entries[xml_name]).precheck())
@@ -419,7 +419,7 @@ def read_fields(pkg: object) -> "dict[str, str]":
     같은 이름이 여러 번 등장하면 문서 순서상 첫 값을 사용한다. ``set_field`` 는 같은
     이름의 모든 누름틀을 함께 갱신하므로 정상 템플릿에서는 값이 동일하다.
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     values: "dict[str, str]" = {}
     for xml_name in field_xml_names(pkg):
         doc = FieldDocument(pkg.entries[xml_name])

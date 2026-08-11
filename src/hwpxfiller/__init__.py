@@ -7,3 +7,5 @@ PyInstaller·Inno 버전은 빌드가 거기서 생성한다 — 종전의 ``__v
 """
 
 from __future__ import annotations
+
+__all__: list[str] = []
