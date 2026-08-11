@@ -14,6 +14,7 @@ import pytest
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.external.job_store import JobRegistry, encode_job
 from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external.template_inspection import (
     HWPX_TEMPLATE_OPS,
     inspect_hwpx_template,
@@ -1893,7 +1894,12 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
     lib = tmp_path / "lib"
     lib.mkdir()
     txt_reg = TxtReg(tmp_path / "text_templates")
-    tpl = TemplateController(txt_reg, lambda s, snap: None, library_dir=lib)
+    tpl = TemplateController(
+        txt_reg, lambda s, snap: None,
+        file_store=TemplateFileStore(
+            lib, txt_reg, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
+        ), library_dir=lib,
+    )
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
         clock=_clock,

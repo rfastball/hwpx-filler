@@ -24,6 +24,8 @@ import os
 import shutil
 import sys
 import threading
+import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -42,9 +44,11 @@ from ..external.job_store import JobRegistry
 from ..host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
+    default_templates_dir,
     default_text_templates_dir,
 )
 from ..external.dataset_store import DatasetPoolRegistry
+from ..external.template_files import TemplateFileStore
 from ..external.output_files import ensure_output_directory, existing_output_paths
 from ..external.text_registry import TextTemplateRegistry
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
@@ -202,6 +206,10 @@ class WebFrontend:
         # 대상 글꼴 선언(결정 17)은 **앱 전역 영속** — 단일 실체 주입 규율은 소비자가
         # 작업대 하나가 된 지금도 유지한다(사본 캐시 = 선언≠실제 결함류, 코덱스 P2).
         target_font = TargetFontSetting()
+        template_files = TemplateFileStore(
+            default_templates_dir(), registry,
+            clock=time.time, new_id=lambda: uuid.uuid4().hex,
+        )
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
@@ -227,7 +235,9 @@ class WebFrontend:
                           existing_outputs=existing_output_paths,
                           ensure_output_dir=ensure_output_directory),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
-            TemplateController(registry, self._push, txt_groups=txt_groups),
+            TemplateController(
+                registry, self._push, file_store=template_files, txt_groups=txt_groups
+            ),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
             # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면

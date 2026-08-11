@@ -16,6 +16,7 @@ import pytest
 
 from hwpxfiller.domain.authoring import compile_document
 from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.external.template_files import TemplateFileStore
 from hwpxfiller.external import settings
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -63,9 +64,13 @@ def _controller(tmp_path: Path, monkeypatch) -> "tuple[TemplateController, Path,
     txt_dir.mkdir()
     (txt_dir / "온나라_기안.txt").write_text("제목: {{공고명}}", encoding="utf-8")
     pushes: list = []
+    registry = TextTemplateRegistry(txt_dir)
     ctrl = TemplateController(
-        TextTemplateRegistry(txt_dir),
+        registry,
         lambda s, snap: pushes.append((s, snap)),
+        file_store=TemplateFileStore(
+            lib, registry, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
+        ),
         library_dir=lib,
     )
     return ctrl, tmp_path, pushes
@@ -147,6 +152,17 @@ def test_txt_new_duplicate_and_bad_name_are_loud(tmp_path, monkeypatch):
         ctrl.dispatch("txt_new", {"name": "  ", "content": "x"})
 
 
+def test_txt_edit_and_read_reject_paths_outside_the_live_library(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    foreign = tp / "foreign.txt"
+    foreign.write_text("do not touch", encoding="utf-8")
+    with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
+        ctrl.dispatch("txt_edit", {"path": str(foreign), "content": "changed"})
+    with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
+        ctrl.dispatch("txt_content", {"path": str(foreign)})
+    assert foreign.read_text(encoding="utf-8") == "do not touch"
+
+
 # =============================================== 매체 구획 + 그룹(결정 2·3)
 def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
@@ -163,8 +179,12 @@ def test_group_partition_chip_collapse_and_persistence(tmp_path, monkeypatch):
     assert section["collapsed"] is True
     assert settings.load_template_collapsed_groups("hwpx") == ["입찰"]
     # 새 컨트롤러(설정에서 복원)도 같은 구획 — 영속 실증.
+    registry = TextTemplateRegistry(tp / "txt")
     ctrl2 = TemplateController(
-        TextTemplateRegistry(tp / "txt"), lambda s, x: None, library_dir=tp / "lib"
+        registry, lambda s, x: None,
+        file_store=TemplateFileStore(
+            tp / "lib", registry, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
+        ), library_dir=tp / "lib"
     )
     assert "입찰" in ctrl2.snapshot()["hwpx"]["group_names"]
 
@@ -303,6 +323,7 @@ def test_delete_speaks_once_via_toast_while_trash_retention_survives_without_sur
     assert "직전행동" not in after["text"]                 # 남의 말이 삭제의 결과로 읽히지 않는다
     _media, _path, trashed, _group = ctrl._deleted_template_slot
     assert trashed.exists() and trashed.parent == trash    # 보존은 실재(의무 상속)
+    assert trashed.name == "2000000000-fixed-id-온나라_기안.txt"
     assert not stale.exists()                              # 30일 컷오프 정리 생존
 
 
@@ -333,7 +354,7 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
 def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
     """#137 리뷰 F6 — 복사 중 실패하면 부분 파일을 걷어내고 재던진다(잘린 사본이 목록에
     남아 충돌 접미가 재시도를 막는 것을 방지)."""
-    import hwpxfiller.webapp.screen_template as st
+    import hwpxfiller.external.template_files as st
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ext = tp / "ext"
@@ -430,7 +451,7 @@ def test_import_folder_partial_failure_keeps_successes_and_restates_reasons(
 ):
     """중간 1건 실패 주입 — 앞선 성공분은 남고 실패분 부분 파일은 사라지며(단건 무잔재
     상속), 결과 줄이 건수·사유를 말한다(#339: 걷어내고 계속 + 사유 병기)."""
-    import hwpxfiller.webapp.screen_template as st
+    import hwpxfiller.external.template_files as st
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ext = _import_folder_fixture(tp)
@@ -501,7 +522,7 @@ def test_batch_txt_copy_joins_the_registry_writer_lock(tmp_path, monkeypatch):
     하다: 역순 획득이 있으면 이 테스트가 join 시간초과로 멈춘다."""
     import threading
 
-    import hwpxfiller.webapp.screen_template as st
+    import hwpxfiller.external.template_files as st
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ext = tp / "ext"
@@ -561,7 +582,7 @@ def test_batch_hwpx_copy_is_serialized_with_undo_restore(tmp_path, monkeypatch):
     남은 원본 = 복원 재시도 재료) ④교착이면 join 시간초과로 시끄럽게 멈춘다."""
     import threading
 
-    import hwpxfiller.webapp.screen_template as st
+    import hwpxfiller.external.template_files as st
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     original_bytes = (tp / "lib" / "raw.hwpx").read_bytes()
@@ -619,7 +640,7 @@ def test_import_folder_rejects_concurrent_batch_loudly(tmp_path, monkeypatch):
     배치는 같은 목록을 번호 접미로 재반입하지 못하고 loud 거절된다. 복사 도중(첫 건의
     copy2 안에서) 같은 배치를 다시 부르는 재진입으로 결정적으로 잰다. 끝난 뒤에는 잠금이
     풀려 다음 배치가 정상 실행된다(거절이 영구 잠금이 되지 않는다)."""
-    import hwpxfiller.webapp.screen_template as st
+    import hwpxfiller.external.template_files as st
 
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ext = _import_folder_fixture(tp)
