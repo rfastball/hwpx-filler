@@ -15,8 +15,17 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from hwpxfiller.domain.template_status import TRASH_DIR_NAME
+from hwpxfiller.domain.text_template import (
+    TEXT_TEMPLATE_SUFFIX,
+    is_live_text_template,
+    text_template_name,
+    text_template_path,
+)
 from hwpxfiller.domain.text_render import template_fields
+
+
+def read_text_utf8(path: "str | Path") -> str:
+    return Path(path).read_text(encoding="utf-8")
 
 
 @dataclass
@@ -37,7 +46,7 @@ class TextTemplate:
 class TextTemplateRegistry:
     """루트 디렉터리의 ``*.txt`` 를 기안 템플릿으로 나열/로드한다."""
 
-    SUFFIX = ".txt"
+    SUFFIX = TEXT_TEMPLATE_SUFFIX
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
@@ -68,13 +77,12 @@ class TextTemplateRegistry:
         if not self.directory.exists():
             return []
         return [
-            TextTemplate(p.relative_to(self.directory).with_suffix("").as_posix(), p)
+            TextTemplate(text_template_name(self.directory, p), p)
             for p in sorted(
                 (
                     p
                     for p in self.directory.rglob("*" + self.SUFFIX)
-                    if p.is_file()
-                    and TRASH_DIR_NAME not in p.relative_to(self.directory).parts
+                    if p.is_file() and is_live_text_template(self.directory, p)
                 ),
                 key=lambda p: (p.name, str(p)),
             )
@@ -93,4 +101,4 @@ class TextTemplateRegistry:
         for t in self.list_templates():
             if t.name == name:
                 return t
-        return TextTemplate(name, self.directory / (name + self.SUFFIX))
+        return TextTemplate(name, text_template_path(self.directory, name))
