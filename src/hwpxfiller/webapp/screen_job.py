@@ -69,6 +69,7 @@ from ..application.jobs import (
     rename_job,
     set_favorite,
 )
+from ..domain.engine import HwpxEngine
 from ..domain.identity_summary import identity_summary
 from ..domain.job import (
     Job,
@@ -76,7 +77,6 @@ from ..domain.job import (
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
 from ..domain.template_status import OUTPUT_SUBDIR_NAME
-from ..external.hwpx_engine import make_hwpx_engine
 from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
@@ -257,6 +257,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         registry: JobStorePort,
         push: PushSink,
         *,
+        engine: HwpxEngine,
         pool_registry,
         generation_lock: "threading.Lock",
         text_registry=None,
@@ -265,6 +266,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        self._engine = engine
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
@@ -1737,7 +1739,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.vm = (
             None
             if (self.job_is_txt or self.job_unsupported)
-            else RunViewModel(job, engine=make_hwpx_engine())
+            else RunViewModel(job, engine=self._engine)
         )
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
@@ -2004,7 +2006,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         self.raise_if_generating("템플릿을 다시 연결하세요")
         res = relink_job_template(
-            self.registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
+            self.registry, p["name"], p.get("path", ""),
+            engine=self._engine, confirm=bool(p.get("confirm")),
         )
         # 「지금 열어 둔 작업인가」는 **이름**으로 묻는다(1R P2) — `self.vm.job.name` 은 hwpx
         # 세션에서만 참이라 TXT 를 재연결하면 세션이 옛 템플릿을 그대로 그린다. 같은 질문에
@@ -2340,11 +2343,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         assert plan is not None  # PlanDecision 4태의 잔여 갈래 — 위 세 갈래가 소진했다
 
         # materialize → 완주 판정 → durable 기록 요청 → facts (Application 척추).
-        # 엔진(zip IO)은 Host 가 여기서 조립해 관통시키고, 완주 기록은 use case 가
+        # 엔진(zip IO)은 Host 가 조립해 여기로 관통시키고, 완주 기록은 use case 가
         # `application.jobs.stamp_run_completion` 으로 요청한다(controller 직접 쓰기 0).
         outcome = run_generation(
             run, plan,
-            engine=make_hwpx_engine(),
+            engine=self._engine,
             progress=self._push_progress,
             capture=(ValueError, OSError),
             store=self.registry,

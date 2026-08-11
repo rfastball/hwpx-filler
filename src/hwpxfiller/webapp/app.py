@@ -36,6 +36,7 @@ from ..web_artifact import (
     WebArtifactViolation,
     resolve_web_artifact,
 )
+from ..external.hwpx_engine import make_hwpx_engine
 from ..external.job_store import JobRegistry
 from ..host.locations import default_jobs_dir, default_text_templates_dir
 from ..external.text_registry import TextTemplateRegistry
@@ -188,6 +189,7 @@ class WebFrontend:
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
         # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
         pool_registry = default_pool_registry()
+        hwpx_engine = make_hwpx_engine()
         # txt 템플릿 그룹 모델 — 관리 화면과 편집기 TXT 밴드가 공유하는 단일 실체(#135).
         txt_groups = TemplateGroupModel("txt")
         # 대상 글꼴 선언(결정 17)은 **앱 전역 영속** — 단일 실체 주입 규율은 소비자가
@@ -205,12 +207,13 @@ class WebFrontend:
             # 레지스트리는 편집기·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
             LibraryController(job_registry, registry, self._push, pool_registry=pool_registry,
-                              generation_lock=generation_lock),
+                              generation_lock=generation_lock, engine=hwpx_engine),
             # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
             # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
             JobController(job_registry, self._push, pool_registry=pool_registry,
-                          generation_lock=generation_lock, text_registry=registry,
+                          generation_lock=generation_lock, engine=hwpx_engine,
+                          text_registry=registry,
                           file_source_factory=source_for_path,
                           pool_source_factory=source_from_pool_item),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).

@@ -87,7 +87,7 @@ def test_web_controllers_use_ring1_public_seams() -> None:
 
 
 def test_screen_controllers_stay_transport_thin() -> None:
-    """P2-24 음성 게이트 — 화면 컨트롤러는 transport/presentation 층에 머문다.
+    """P2-24/P2-25 음성 게이트 — 화면 컨트롤러는 transport/presentation 층에 머문다.
 
     ① ``webapp/screen_*.py`` 상호 직접 import 0 — 화면 간 위임은 조립부(``webapp.app``)가
        결선하는 callable 하나뿐이다(controller-to-controller 결합 재유입 금지).
@@ -99,6 +99,8 @@ def test_screen_controllers_stay_transport_thin() -> None:
        Event 다. 판정은 파일명 allowlist 가 아니라 AST 의미다: ``threading.Event`` 생성은
        전 화면 금지, ``threading.Lock`` 생성은 ``generation_lock`` 을 아는(주입받는) 화면
        금지(화면-국소 직렬화 자물쇠는 그 심볼을 모른다).
+    ④ concrete HWPX engine 조립은 ``webapp.app`` 만 소유하고 화면은 주입분을
+       관통한다(``external.hwpx_engine`` 재유입 금지).
     """
     webapp = ROOT / "src" / "hwpxfiller" / "webapp"
     forbidden_for_job = (
@@ -106,8 +108,9 @@ def test_screen_controllers_stay_transport_thin() -> None:
         "hwpxfiller.external.job_store",
         "hwpxfiller.external.dataset_store",
     )
+    forbidden_engine = "hwpxfiller.external.hwpx_engine"
     failures: list[str] = []
-    for path in sorted(webapp.glob("screen_*.py")):
+    for path in sorted(webapp.glob("screen*.py")):
         rel = path.relative_to(ROOT).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         refs_generation_lock = any(
@@ -138,6 +141,8 @@ def test_screen_controllers_stay_transport_thin() -> None:
             for module, lineno in modules:
                 if module.rsplit(".", 1)[-1].startswith("screen_"):
                     failures.append(f"{rel}:{lineno}: 화면 간 직접 import {module}")
+                if module == forbidden_engine or module.startswith(forbidden_engine + "."):
+                    failures.append(f"{rel}:{lineno}: concrete engine 조립 import {module}")
                 if path.name == "screen_job.py" and any(
                     module == f or module.startswith(f + ".") for f in forbidden_for_job
                 ):

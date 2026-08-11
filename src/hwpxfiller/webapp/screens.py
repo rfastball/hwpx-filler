@@ -19,10 +19,10 @@ from typing import Callable, Iterable, Protocol
 from ..application.jobs import CrossMediaRelinkError, relink_template
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference
+from ..domain.engine import HwpxEngine
 from ..external.dataset_store import DatasetPoolRegistry
 from ..host.locations import default_dataset_pool_dir
 from ..domain.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
-from ..external.hwpx_engine import make_hwpx_engine
 from ..domain.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
 from ..domain.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
@@ -227,7 +227,9 @@ def _cross_media_refusal(name: str, old_path: str, new_media: str) -> str:
     )
 
 
-def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = False) -> dict:
+def relink_job_template(
+    job_registry, name: str, path: str, *, engine: HwpxEngine, confirm: bool = False
+) -> dict:
     """작업 템플릿 참조 재지정 — run/home 공유 확정 게이트(교차-단위 계약 단일 출처).
 
     파일 이동/삭제로 끊긴 ``Job.template_path`` 를 새 파일로 갱신하는 유일한 durable
@@ -276,7 +278,7 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
         return {"ok": False, "error": _cross_media_refusal(name, job.template_path, new_media)}
     drift_clause = ""
     if new_media == "hwpx":
-        drift = template_path_drift(path, job.mapping, engine=make_hwpx_engine())
+        drift = template_path_drift(path, job.mapping, engine=engine)
         if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
             return {
                 "ok": False,
