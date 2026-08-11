@@ -15,7 +15,7 @@ from ctypes import wintypes
 
 import pytest
 
-from hwpxcore.native import clipboard, dialogs, reveal, single_instance
+from hwpxfiller.host.native import clipboard, dialogs, reveal, single_instance
 
 _NATIVE_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_NATIVE_TESTS"))
 _NATIVE_REASON = (

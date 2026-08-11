@@ -1,7 +1,7 @@
 """Enforce exact-package line and branch floors from coverage.py XML.
 
 Each configured path covers files directly inside that directory.  Subpackages
-are intentionally excluded so a weak surface (notably ``hwpxcore.native``)
+are intentionally excluded so a weak surface (notably ``hwpxfiller.host.native``)
 cannot be hidden inside an aggregate parent percentage.
 """
 from __future__ import annotations
@@ -83,8 +83,10 @@ def load_floors(path: Path) -> list[Floor]:
             raise CoverageGateError(f"duplicate or empty package path: {package_path!r}")
         if not 0 <= line <= 100 or not 0 <= branch <= 100:
             raise CoverageGateError(f"floor outside 0..100: {name}")
-        if name == "hwpxcore.native" or package_path == "hwpxcore/native":
-            raise CoverageGateError("hwpxcore.native must use the separate native scenario gate")
+        if name == "hwpxfiller.host.native" or package_path == "hwpxfiller/host/native":
+            raise CoverageGateError(
+                "hwpxfiller.host.native must use the separate native scenario gate"
+            )
         seen_paths.add(package_path)
         floors.append(Floor(str(name), package_path, line, branch))
     return floors

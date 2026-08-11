@@ -34,7 +34,7 @@ import time
 import uuid
 from pathlib import Path
 
-from hwpxcore.atomic import write_text_atomic
+from ..external.atomic import write_text_atomic
 
 from ..core.template_status import TRASH_DIR_NAME
 from ..host.locations import default_templates_dir

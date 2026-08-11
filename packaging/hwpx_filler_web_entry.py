@@ -93,7 +93,7 @@ def _selfcheck() -> int:
 
 if __name__ == "__main__":
     # 포터블 zip self-unblock — webview(pythonnet/.NET) 임포트 전에 번들 MOTW 를 지운다.
-    from hwpxcore.motw import unblock_bundle
+    from hwpxfiller.host.motw import unblock_bundle
 
     unblock_bundle()
 

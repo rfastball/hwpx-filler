@@ -42,12 +42,12 @@ EXPECTED_SCHEMA = [
 #: 세면 FC-08 을 남기고 FC-09(BLOCKED realpath cluster)를 지워도 초록(코덱스 #595).
 #: 원장 entry 를 넣고 빼는 변경은 이 목록과 한 변경이어야 한다(module_rings 양방향 전례).
 EXPECTED_ENTRY_IDS = {
-    *(f"KC-{i:02d}" for i in range(1, 15) if i != 3),
+    *(f"KC-{i:02d}" for i in (1, 2, 7, 8)),
     *(f"FC-{i:02d}" for i in range(1, 18)),
 }
 
-#: DOMAIN 의 P3 정제는 패키지가 정한다 — hwpxcore 는 FORMAT_KERNEL 로만, hwpxfiller.core 는
-#: PRODUCT_DOMAIN 로만(#585 결정 2). 전역 튜플로 두면 교차 재분류가 통과한다(코덱스 #595).
+#: DOMAIN 의 P3 정제는 패키지가 정한다 — 제품 의미를 모르는 hwpxcore 만 FORMAT_KERNEL,
+#: hwpxfiller.core 는 PRODUCT_DOMAIN 이다(#585 결정 2).
 REFINEMENT_BY_PREFIX = {
     "hwpxcore": ("DOMAIN", "FORMAT_KERNEL"),
     "hwpxfiller.core": ("DOMAIN", "PRODUCT_DOMAIN"),
@@ -84,7 +84,14 @@ BEHAVIOR_ORACLES = {
     ),
     "motw-native-platform": (
         "semantic-equivalent",
-        ("tests/test_motw.py", "tests/test_native_positive.py", "tests/test_single_instance.py"),
+        (
+            "tests/test_motw.py",
+            "tests/test_native_positive.py",
+            "tests/test_single_instance.py",
+            "tests/test_tracking_locate.py::test_reveal_and_open_missing_path_is_loud",
+            "tests/test_webapp_bridge.py::test_pick_data_file_corrupt_workbook_returns_error_not_raise",
+            "tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated",
+        ),
     ),
     "package-bytes-parse-validation": (
         "semantic-equivalent",
@@ -98,6 +105,7 @@ BEHAVIOR_ORACLES = {
         (
             "tests/test_job.py::test_run_request_source_report_flags_missing_source_key",
             "tests/test_job.py::test_run_request_output_report_flags_empty_value",
+            "tests/test_cli.py::test_cli_ack_empty_injects_marker",
         ),
     ),
     "text-extraction": (
@@ -185,6 +193,20 @@ def test_census_covers_both_packages_completely() -> None:
 
 def test_census_p2_authority_matches_module_rings() -> None:
     """P2 가 이미 결정한 owner 를 P3 가 재분류하지 않는다(#593 판정 규칙)."""
+    def allows_refinement(
+        prefix: str,
+        recorded: str,
+        disposition: str,
+        product_semantics_awareness: bool,
+    ) -> bool:
+        return (
+            (recorded, disposition) == REFINEMENT_BY_PREFIX[prefix]
+            and (prefix != "hwpxcore" or not product_semantics_awareness)
+        )
+
+    # KC-06 오분류 회귀 음성 대조: 제품 의미를 아는 Domain은 format kernel로 정제할 수 없다.
+    assert not allows_refinement("hwpxcore", "DOMAIN", "FORMAT_KERNEL", True)
+
     rings = tomllib.loads(RINGS.read_text(encoding="utf-8"))
     targets = {str(unit["module"]): str(unit["target"]) for unit in rings["unit"]}
     entries = _entries()
@@ -214,7 +236,12 @@ def test_census_p2_authority_matches_module_rings() -> None:
             and disposition == "EXTERNAL_ADAPTER"
             and "PRODUCT_DOMAIN" in siblings
         )
-        refinement_ok = (recorded, disposition) == REFINEMENT_BY_PREFIX[prefix]
+        refinement_ok = allows_refinement(
+            prefix,
+            recorded,
+            disposition,
+            bool(entry["product_semantics_awareness"]),
+        )
         assert disposition == recorded or refinement_ok or split_ok, (
             f"{entry['id']}: disposition {disposition!r} 이 P2 판정 {recorded!r} 의 "
             "허용 정제가 아닙니다 — 재분류는 #538/#542/#582/#583 상향 대상"

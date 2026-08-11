@@ -25,7 +25,7 @@ from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
-from hwpxcore.validate import ValidationReport, validate
+from ..domain.validation import ValidationReport, validate
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
     from ..domain.data_source import DataSource

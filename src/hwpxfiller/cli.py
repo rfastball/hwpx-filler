@@ -29,12 +29,12 @@ if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로
     from .data.secret_store import SecretStore
 from .external.hwpx_engine import make_hwpx_engine
 from .external.hwpx_package_io import read_hwpx_package, write_hwpx_package
-from hwpxcore.atomic import write_text_atomic
+from .external.atomic import write_text_atomic
 from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .gui.result_errors import describe_fill_note
 from .naming import pattern_field_tokens
-from hwpxcore.validate import validate
+from .domain.validation import validate
 from .data.excel import ExcelDataSource, ambiguous_sheets
 
 

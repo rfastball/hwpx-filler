@@ -283,7 +283,7 @@ def test_mutate_failure_preserves_json_and_cleans_temp(tmp_path, monkeypatch):
     def fail_replace(src, dst):
         raise OSError("replace failed")
 
-    monkeypatch.setattr("hwpxcore.atomic.os.replace", fail_replace)
+    monkeypatch.setattr("hwpxfiller.external.atomic.os.replace", fail_replace)
     with pytest.raises(OSError, match="replace failed"):
         reg.mutate(key, lambda it: it.archive())
 

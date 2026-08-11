@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""hwpxcore.motw self-unblock 계약."""
+"""hwpxfiller.host.motw self-unblock 계약."""
 from __future__ import annotations
 
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxcore.motw import unblock_bundle
+from hwpxfiller.host.motw import unblock_bundle
 
 
 def test_noop_when_not_frozen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -51,4 +51,10 @@ def test_frozen_without_ads_is_safe(
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "app.exe"))
+    assert unblock_bundle() == 0
+
+    exe_dir = tmp_path / "exe"
+    exe_dir.mkdir()
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe_dir / "app.exe"))
     assert unblock_bundle() == 0

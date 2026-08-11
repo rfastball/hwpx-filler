@@ -96,12 +96,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 - coverage는 XML과 터미널 보고서를 만들고 `docs/package_coverage_floors.toml`의
   패키지별 line/branch 하한을 차단 조건으로 적용한다. 각 경로의 직접 소속 Python 파일만
   집계하므로 하위 runtime 패키지의 낮은 수치가 상위 평균에 숨지 않는다.
-- `hwpxcore.native`는 낮은 coverage 하한을 두지 않고 `tests/test_native_positive.py`의
+- `hwpxfiller.host.native`는 낮은 coverage 하한을 두지 않고 `tests/test_native_positive.py`의
   Windows 양성 시나리오를 별도 CI 단계로 필수 실행한다. JS/CSS, 별도 WebView2 프로세스,
   frozen 번들, installer/signing은 Python coverage 수치에 포함하지 않는다.
 - `tests/repo_contract/test_architecture.py`는 링 경계를 확인한다 — 특히 `hwpxcore`가 제품이나 Qt로
-  역의존하지 않는지. 이 계층은 별도 저장소 `hwpx-diff`가 사본을 들고 있어, 제품 색이
-  스며들면 두 사본의 대조가 불가능해진다.
+  역의존하지 않는지. 제품 사전검증은 `hwpxfiller.domain.validation`이 소유한다.
 
 pre-commit을 사용할 개발자는 한 번만 다음을 실행한다.
 

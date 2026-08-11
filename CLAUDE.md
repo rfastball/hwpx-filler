@@ -11,11 +11,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   제품명은 **문서나르미**, 기술 식별자는 `hwpx-filler`/`hwpxfiller` 계열.
 - HWP 프로그램·COM 자동화를 쓰지 않는다. `zipfile` + `lxml` 로 OCF ZIP 을 직접 읽고 쓴다.
 
-자매 제품 `hwpxdiff`(두 판본 HWPX 의 의미 기반 비교)는 2026-07-29 에 별도 저장소
-[rfastball/hwpx-diff](https://github.com/rfastball/hwpx-diff) 로 분리됐다. 그쪽이 `hwpxcore`
-**사본**을 들고 있어 자동 동기화되지 않는다 — 파서를 고칠 때 저쪽에도 필요한 변경인지
-판단하고, 필요하면 각각 반영한다.
-
 Windows 전용(pywebview 6.x + WebView2). Python 은 `.python-version` 의 3.13 고정이고
 환경은 전부 `uv` 가 소유한다 — 시스템 Python·수동 venv 를 만들지 않는다.
 
@@ -162,7 +157,7 @@ React ShellHost). 화면을 추가·삭제·개명하면 DOM 루트, 화면 JS �
 
 커버리지는 `docs/package_coverage_floors.toml` 의 **패키지별** line/branch 하한이 차단 조건이다.
 비재귀 경로라 새 서브패키지는 하한을 등록하지 않으면 게이트가 실패한다(조용한 스킵 금지).
-`hwpxcore.native` 는 하한 대신 `tests/test_native_positive.py` 를 별도 CI 단계로 강제한다.
+`hwpxfiller.host.native` 는 하한 대신 `tests/test_native_positive.py` 를 별도 CI 단계로 강제한다.
 
 옵트아웃 환경변수: `HWPX_SKIP_GUI_TESTS=1`(WebView2 실창), `HWPX_SKIP_NATIVE_TESTS=1`,
 `HWPX_SKIP_MOTION_TESTS=1`(눌림 기하 — 설치 Chrome 부재). 화면·브라우저 없는 환경에서만 명시로

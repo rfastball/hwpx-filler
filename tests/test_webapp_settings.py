@@ -58,7 +58,7 @@ def test_save_theme_propagates_unreadable_file(home):
 
 
 def test_save_theme_routes_through_canonical_atomic_write(home, monkeypatch):
-    """durable 쓰기는 정본 hwpxcore.atomic 을 지나야 한다(#75 리뷰) — 수제 tmp+replace 는
+    """durable 쓰기는 정본 hwpxfiller.external.atomic 을 지나야 한다(#75 리뷰) — 수제 tmp+replace 는
     실패 시 고아 tmp 를 영구히 남기고, 같은 pid 의 두 스레드가 같은 tmp 를 겹쳐 쓴다."""
     calls: list[str] = []
     real = settings.write_text_atomic

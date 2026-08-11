@@ -18,7 +18,7 @@ import sys
 from ctypes import wintypes
 from pathlib import Path
 
-from ._debug import log
+from .debug import log
 
 _ERROR_ALREADY_EXISTS = 183
 _SW_RESTORE = 9

@@ -4,7 +4,7 @@
 그 순수 산출을 durable JSON 사이드카로 **기록하는 효과**(경로 발급·마스킹 관통·원자 쓰기)와
 산출물 실값 **되읽기 효과**(:func:`verify_output` — P2-19R #576 에서 Domain 이월)를
 소유한다. Domain 이 filesystem IO 를 개시하던 형태의 승계다 — payload 는 영속 record/codec
-이라 External Adapter 책임이고, concrete 원자 교체는 :func:`hwpxcore.atomic.write_text_atomic`
+이라 External Adapter 책임이고, concrete 원자 교체는 :func:`.atomic.write_text_atomic`
 그대로다(RC-01·bytes 불변).
 """
 
@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
-from hwpxcore.atomic import write_text_atomic
+from .atomic import write_text_atomic
 from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
 from hwpxfiller.core.mapping import MappingProfile

@@ -630,14 +630,10 @@ FC-01 = [
   "FieldDocument",
   "GenerateResult",
   "HwpxEngine",
-  "ValidationReport",
-  "validate",
 ]
 KC-01 = [
   "Document",
-  "ValidationReport",
   "extract_document",
-  "validate",
 ]
 
 [allowlist.legacy_symbol_use]

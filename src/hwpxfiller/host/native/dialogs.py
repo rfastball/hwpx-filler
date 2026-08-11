@@ -20,7 +20,7 @@ import threading
 from ctypes import wintypes
 from typing import Callable
 
-from ._debug import log
+from .debug import log
 
 # comdlg32 OFN 플래그.
 OFN_HIDEREADONLY = 0x00000004
