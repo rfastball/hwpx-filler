@@ -234,6 +234,7 @@ class WebFrontend:
             2,
             EditorController(
                 job_registry, self._push,
+                clock=datetime.now,
                 # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 재진술 사망.)
                 template_library=tpl_ctrl.vm,
                 # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**:

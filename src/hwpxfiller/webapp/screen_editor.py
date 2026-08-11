@@ -140,6 +140,7 @@ class EditorController:
         registry: JobRegistry,
         push: PushSink,
         *,
+        clock: Callable[[], datetime],
         template_library: "TemplateManagerViewModel | None" = None,
         template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
@@ -148,6 +149,7 @@ class EditorController:
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        self._clock = clock
         # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 연결 재진술이 죽어
         #  이 화면은 풀을 읽지도 쓰지도 않는다. 소비자 0 인 seam 은 남기지 않는다.)
         # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
@@ -685,7 +687,7 @@ class EditorController:
                 except ValueError:
                     data[row.template_field] = ""
         try:
-            return make_output_filename(self.pattern, data)
+            return make_output_filename(self.pattern, data, now=self._clock())
         except Exception:  # noqa: BLE001 — 표시 전용(저장 게이트가 검증 소관)
             return ""
 
@@ -703,7 +705,7 @@ class EditorController:
         """작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향, 실행 게이트는 여전히
         라이브 검증). 최초 작성시각(authored_at)은 편집 재저장에도 보존하고 updated_at 만
         갱신한다(태그·이력 보존 선례). 템플릿/데이터 스키마 지문은 ' · ' 결합 필드명."""
-        now = datetime.now().isoformat(timespec="seconds")
+        now = self._clock().isoformat(timespec="seconds")
         created = self._loaded_provenance.get("authored_at") or now
         prov: "dict[str, str]" = {
             "template": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],

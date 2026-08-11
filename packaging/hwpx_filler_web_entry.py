@@ -13,6 +13,7 @@ import sys
 def _selfcheck() -> int:
     import os
     import tempfile
+    from datetime import datetime
     from pathlib import Path
 
     from hwpxfiller.external.text_registry import TextTemplateRegistry
@@ -34,6 +35,7 @@ def _selfcheck() -> int:
     ctrl = EditorController(
         JobRegistry(tmp / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
+        clock=datetime.now,
         template_library=TemplateManagerViewModel(
             paths=[],
             inspect_template=inspect_hwpx_template,
