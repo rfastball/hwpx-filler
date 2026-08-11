@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
@@ -63,21 +64,19 @@ DANGEROUS_NAMES = [
 
 
 def test_open_reads_entries():
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = read_hwpx_package(FIXTURE)
     assert MIMETYPE_NAME in pkg.entries
     assert pkg.entries[MIMETYPE_NAME] == b"application/hwp+zip"
     assert any(n.startswith("Contents/") for n in pkg.entries)
 
 
-def test_roundtrip_preserves_ocf_rules(tmp_path):
-    pkg = HwpxPackage.open(str(FIXTURE))
+def test_roundtrip_preserves_ocf_rules():
+    pkg = HwpxPackage.from_bytes(FIXTURE.read_bytes())
     serialized = pkg.to_bytes()
     assert pkg.to_bytes() == serialized
     assert HwpxPackage.from_bytes(serialized).to_bytes() == serialized
-    out = tmp_path / "rt.hwpx"
-    pkg.save(str(out))
 
-    with zipfile.ZipFile(out) as zf:
+    with zipfile.ZipFile(io.BytesIO(serialized)) as zf:
         infos = zf.infolist()
         # mimetype 은 반드시 첫 엔트리 + 무압축
         assert infos[0].filename == MIMETYPE_NAME
@@ -117,45 +116,15 @@ def test_open_rejects_dangerous_zip_entry_names(name):
         HwpxPackage.from_bytes(_zip_blob(entries))
 
 
-@pytest.mark.parametrize(("entries", "message"), INVALID_ARCHIVES)
-def test_rejection_leaves_source_and_existing_output_unchanged(
-    tmp_path, entries, message
-):
-    _assert_rejection_preserves_files(tmp_path, _zip_blob(entries), message)
-
-
-@pytest.mark.parametrize("name", DANGEROUS_NAMES)
-def test_dangerous_path_rejection_leaves_files_unchanged(tmp_path, name):
-    blob = _zip_blob(
-        [VALID_MIMETYPE, (name, b"payload", zipfile.ZIP_DEFLATED)]
-    )
-    _assert_rejection_preserves_files(tmp_path, blob)
-
-
-def _assert_rejection_preserves_files(tmp_path, source_before, message=None):
-    source = tmp_path / "hostile.hwpx"
-    output = tmp_path / "existing.hwpx"
-    output_before = b"existing output must survive"
-    source.write_bytes(source_before)
-    output.write_bytes(output_before)
-
-    with pytest.raises(ValueError, match=message):
-        HwpxPackage.open(str(source)).save(str(output))
-
-    assert source.read_bytes() == source_before
-    assert output.read_bytes() == output_before
-    assert {path.name for path in tmp_path.iterdir()} == {source.name, output.name}
-
-
 def test_save_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
     """RC-01 — 직렬화(to_bytes) 실패가 기존 산출물을 truncate 로 파괴하지 않는다.
 
-    save 는 페이로드를 open 전에 선평가 + 임시 파일 원자 교체이므로, 어떤 단계가
+    path adapter는 페이로드를 선평가 + 임시 파일 원자 교체하므로, 어떤 단계가
     실패해도 기존 파일 바이트가 그대로 남는다(잔해 임시 파일도 없음).
     """
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = read_hwpx_package(FIXTURE)
     out = tmp_path / "doc.hwpx"
-    pkg.save(str(out))
+    write_hwpx_package(out, pkg)
     existing = out.read_bytes()
     assert existing[:2] == b"PK"
 
@@ -164,13 +133,13 @@ def test_save_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
 
     monkeypatch.setattr(HwpxPackage, "to_bytes", _boom)
     with pytest.raises(RuntimeError):
-        pkg.save(str(out))
+        write_hwpx_package(out, pkg)
     assert out.read_bytes() == existing                       # 기존 파일 무손상
     assert [p.name for p in tmp_path.iterdir()] == ["doc.hwpx"]  # 임시 파일 잔해 없음
 
 
 def test_content_xml_names_targets_only_sections_headers_footers():
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = HwpxPackage.from_bytes(FIXTURE.read_bytes())
     targets = pkg.content_xml_names()
     assert any("section" in t.lower() for t in targets)
     for t in targets:
@@ -179,19 +148,15 @@ def test_content_xml_names_targets_only_sections_headers_footers():
         assert base.endswith(".xml")
 
 
-def test_to_package_is_the_single_normalization_entrance(tmp_path):
-    """경로→열린 package 의 유일 정규화 입구(P2-19R #576) — 네 분기 전부.
+def test_to_package_is_the_single_normalization_entrance():
+    """kernel 정규화는 package/bytes만 받고 path는 loud 거절한다(P3-03 #591).
 
-    package 통과·bytes·경로(str/Path)를 각각 열고, 그 외 입력은 TypeError 로
-    loud 거절한다(경로 소비자 전부가 이 함수 하나를 지난다).
+    path는 External adapter만 열어야 하므로 str/Path 수용 뒷문을 함께 막는다.
     """
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = HwpxPackage.from_bytes(FIXTURE.read_bytes())
     assert to_package(pkg) is pkg                      # 이미 열린 package 는 통과
     from_bytes = to_package(pkg.to_bytes())            # bytes → from_bytes
     assert from_bytes.entries.keys() == pkg.entries.keys()
-    out = tmp_path / "doc.hwpx"
-    pkg.save(str(out))
-    assert to_package(out).entries.keys() == pkg.entries.keys()       # pathlib.Path
-    assert to_package(str(out)).entries.keys() == pkg.entries.keys()  # str
-    with pytest.raises(TypeError, match="지원하지 않는 입력"):
-        to_package(1234)
+    for unsupported in (FIXTURE, str(FIXTURE), 1234):
+        with pytest.raises(TypeError, match="지원하지 않는 입력"):
+            to_package(unsupported)

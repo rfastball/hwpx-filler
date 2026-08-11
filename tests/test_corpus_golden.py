@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxcore.package import to_package
 from hwpxcore.text_extract import extract_document
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 GOLDEN = Path(__file__).parent / "corpus" / "golden"
@@ -21,7 +21,7 @@ REAL_FILES = sorted(CORPUS.glob("*.hwpx"))
 
 def _serialize(path: Path) -> str:
     """추출 결과를 결정적 JSON 문자열로 직렬화(키 정렬, 한글 원문 유지)."""
-    doc = extract_document(to_package(str(path)))
+    doc = extract_document(read_hwpx_package(path))
     return json.dumps(doc.to_dict(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 

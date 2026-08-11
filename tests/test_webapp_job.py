@@ -14,6 +14,7 @@ import pytest
 
 from hwpxfiller.core.job import Job, rules_fingerprints
 from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
@@ -43,7 +44,10 @@ def _write_template(path, fields) -> None:
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         + body + '</hp:p></hs:sec>'
     ).encode()
-    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
 
 
 def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
@@ -2063,7 +2067,7 @@ def test_hidden_column_still_reaches_the_generated_document(tmp_path):
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 2
     sections = [
-        HwpxPackage.open(str(p)).entries["Contents/section0.xml"]
+        read_hwpx_package(p).entries["Contents/section0.xml"]
         for p in sorted(out.glob("*.hwpx"))
     ]
     assert any(b"2000000" in xml for xml in sections), (
@@ -2783,9 +2787,10 @@ def test_generate_surfaces_fill_notes(tmp_path):
         '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
         "</hp:p></hs:sec>"
     ).encode()
-    HwpxPackage(
-        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
-    ).save(str(tmp_path / "t.hwpx"))
+    write_hwpx_package(
+        tmp_path / "t.hwpx",
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}),
+    )
 
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))

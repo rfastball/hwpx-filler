@@ -10,8 +10,9 @@ import json
 from pathlib import Path
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.core.schema import FieldSpec, _infer_type, extract_schema
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
@@ -218,7 +219,7 @@ def test_no_random_ids_in_output():
 def test_corpus_schema_matches_required_fields():
     """실제 입찰공고 템플릿: 스키마 필드 집합이 엔진 required_fields 와 일치한다."""
     path = CORPUS / "bid_notice_limited_under100m.hwpx"
-    schema = extract_schema(to_package(str(path)))
+    schema = extract_schema(read_hwpx_package(path))
     required = make_hwpx_engine().required_fields(str(path))
     assert set(schema.field_names()) == set(required)
     assert schema.unhandled == {}  # 미처리 구조 없음
@@ -227,7 +228,7 @@ def test_corpus_schema_matches_required_fields():
 def test_corpus_type_inference_and_table_region():
     """실제 코퍼스에서 대표 필드 타입과 표 영역(담당자 그룹)이 기대대로 잡힌다."""
     path = CORPUS / "bid_notice_limited_under100m.hwpx"
-    schema = extract_schema(to_package(str(path)))
+    schema = extract_schema(read_hwpx_package(path))
     by_name = {f.name: f for f in schema.fields}
     assert by_name["사업예산"].inferred_type == "amount"
     assert by_name["납품기한"].inferred_type == "date"

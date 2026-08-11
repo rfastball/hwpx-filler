@@ -1,12 +1,12 @@
-"""HWPX 컨테이너(OCF ZIP) 열기/저장.
+"""HWPX 컨테이너(OCF ZIP)의 메모리 모델과 결정적 bytes codec.
 
 HWPX 는 EPUB/ODF 계열 OCF 패키지다. 규칙:
   - `mimetype` 엔트리는 반드시 아카이브의 첫 항목이며 무압축(STORED)으로 저장된다.
   - 나머지 엔트리는 DEFLATE 로 압축한다.
   - 이미 압축된 바이너리(png 등)는 원본 압축 방식을 유지하는 편이 안전하다.
 
-읽기에서는 실제 한컴 산출물과의 호환성을 위해 첫 `mimetype`의 DEFLATED만 허용하되,
-다시 저장할 때는 반드시 STORED로 정규화한다. 값과 순서는 완화하지 않는다.
+파싱에서는 실제 한컴 산출물과의 호환성을 위해 첫 `mimetype`의 DEFLATED만 허용하되,
+직렬화할 때는 반드시 STORED로 정규화한다. 값과 순서는 완화하지 않는다.
 
 기존 VBA 구현은 PowerShell 경유 .NET ``ZipFile.CreateFromDirectory`` 를 써서 이
 순서·무압축 규칙을 보장하지 못했다(한컴 뷰어가 관대해 통과했을 뿐). 여기서는
@@ -18,9 +18,6 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
-
-from .atomic import write_bytes_atomic
 
 MIMETYPE_NAME = "mimetype"
 MIMETYPE_VALUE = b"application/hwp+zip"
@@ -37,10 +34,10 @@ class HwpxPackage:
     # 원본에서 STORED(무압축)였던 엔트리 이름 집합 — 저장 시 그대로 재현.
     stored: "set[str]" = field(default_factory=set)
 
-    # ------------------------------------------------------------------ load
+    # ----------------------------------------------------------------- parse
     @classmethod
-    def open(cls, path: str) -> "HwpxPackage":
-        with zipfile.ZipFile(path, "r") as zf:
+    def from_bytes(cls, blob: bytes) -> "HwpxPackage":
+        with zipfile.ZipFile(io.BytesIO(blob), "r") as zf:
             infos = zf.infolist()
             cls._validate_archive_infos(infos)
 
@@ -58,10 +55,6 @@ class HwpxPackage:
         pkg = cls(entries=entries, stored=stored)
         pkg._validate()
         return pkg
-
-    @classmethod
-    def from_bytes(cls, blob: bytes) -> "HwpxPackage":
-        return cls.open(io.BytesIO(blob))  # type: ignore[arg-type]
 
     @classmethod
     def _validate_archive_infos(cls, infos: "list[zipfile.ZipInfo]") -> None:
@@ -118,12 +111,6 @@ class HwpxPackage:
                 out.append(name)
         return out
 
-    # ------------------------------------------------------------------ save
-    def save(self, path: str) -> None:
-        # 페이로드를 **먼저** 완성한다 — 직렬화 실패·쓰기 중단이 기존 파일을 파괴하지
-        # 않도록(선평가 + 임시 파일 원자 교체, RC-01).
-        write_bytes_atomic(path, self.to_bytes())
-
     def to_bytes(self) -> bytes:
         self._validate()
         buf = io.BytesIO()
@@ -147,17 +134,14 @@ class HwpxPackage:
         zf.writestr(info, data)
 
 
-def to_package(pkg_or_path: object) -> HwpxPackage:
-    """경로/바이트 → 열린 package 의 **유일한 정규화 입구**(P2-19R, #576).
+def to_package(pkg_or_blob: object) -> HwpxPackage:
+    """package/bytes → 열린 package 의 메모리 정규화 입구(P3-03, #591).
 
-    ``HwpxPackage`` 는 그대로 통과, bytes 는 ``from_bytes``, str/``Path`` 는 ``open``.
-    파서 의미론 층(text_extract·schema·authoring 등)은 열린 package 만 받으므로,
-    경로를 든 호출자는 여기서 한 번 열어 넘긴다. 그 외 입력은 TypeError(loud).
+    ``HwpxPackage`` 는 그대로 통과하고 bytes 는 ``from_bytes`` 로 파싱한다. 경로 I/O는
+    External adapter 소유이므로 str/Path를 포함한 그 외 입력은 TypeError(loud).
     """
-    if isinstance(pkg_or_path, HwpxPackage):
-        return pkg_or_path
-    if isinstance(pkg_or_path, (bytes, bytearray)):
-        return HwpxPackage.from_bytes(bytes(pkg_or_path))
-    if isinstance(pkg_or_path, (str, Path)):
-        return HwpxPackage.open(str(pkg_or_path))
-    raise TypeError(f"지원하지 않는 입력 타입: {type(pkg_or_path)!r}")
+    if isinstance(pkg_or_blob, HwpxPackage):
+        return pkg_or_blob
+    if isinstance(pkg_or_blob, (bytes, bytearray)):
+        return HwpxPackage.from_bytes(bytes(pkg_or_blob))
+    raise TypeError(f"지원하지 않는 입력 타입: {type(pkg_or_blob)!r}")

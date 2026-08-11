@@ -98,7 +98,7 @@ def lint_template(
 ) -> LintReport:
     """단일 템플릿 위생 점검. 워크북을 변형하지 않는다(읽기 전용).
 
-    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     """
     pkg = _require_package(pkg)  # 한 package 를 schema/scan 에 공유
     schema = extract_schema(pkg)

@@ -50,30 +50,15 @@ id = "KC-02"
 current_module = "hwpxcore.package"
 symbol = "cluster: HwpxPackage 모델 + from_bytes/to_bytes + content_xml_names + MIMETYPE_* + to_package(bytes/package 분기)"
 visibility = "public"
-consumers = { production = 5, test = 24, scripts = 2, build = 0 }
+consumers = { production = 1, test = 20, scripts = 0, build = 0 }
 consumer_kind = "module_import"
 product_semantics_awareness = false
 environment_or_effect = ["zip(in-memory)"]
-p2_target_authority = "EXTERNAL_ADAPTER"
+p2_target_authority = "DOMAIN"
 target_canonical_import = "hwpxcore.package"
 behavior_oracle = "tests/test_package.py::test_roundtrip_preserves_ocf_rules"
 compatibility_evidence = "저장 bytes 재현성: info.date_time 고정 + mimetype STORED 첫 항목 — to_bytes 라운드트립·OCF 정규화는 tests/test_package.py 소유"
 disposition = "FORMAT_KERNEL"
-
-[[entry]]
-id = "KC-03"
-current_module = "hwpxcore.package"
-symbol = "cluster: HwpxPackage.open(path) + save(path) + to_package(str|Path 분기) — path IO"
-visibility = "public"
-consumers = { production = 5, test = 24, scripts = 2, build = 0 }  # KC-02 와 소비자 공유(같은 모듈) — 분리는 P3-03 몫
-consumer_kind = "module_import"
-product_semantics_awareness = false
-environment_or_effect = ["fs-open", "fs-replace(atomic 경유)"]
-p2_target_authority = "EXTERNAL_ADAPTER"
-target_canonical_import = "hwpxfiller.external.hwpx_package_io"  # P3-03 이 확정 — kernel 은 bytes/stream 만 남긴다(#585 결정 2)
-behavior_oracle = "tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp"
-compatibility_evidence = "to_package 는 P2-19R(#576)의 유일한 정규화 입구 — 경로 소비자가 이 경계로 수렴돼 있어 분리 지점이 이미 한 곳"
-disposition = "EXTERNAL_ADAPTER"
 
 [[entry]]
 id = "KC-04"
@@ -299,7 +284,7 @@ environment_or_effect = []
 p2_target_authority = "DOMAIN"
 target_canonical_import = "hwpxfiller.domain.engine"
 behavior_oracle = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-compatibility_evidence = "open_package 주입(P2-19 #567) — concrete IO 무개시. pkg.save(output_path) 호출은 주입된 package-like 의 계약"
+compatibility_evidence = "read_package/write_package callable 주입(P3-03 #591) — concrete path IO와 package method 쓰기 무개시"
 disposition = "PRODUCT_DOMAIN"
 
 [[entry]]

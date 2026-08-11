@@ -3,14 +3,6 @@
 schema = "kernel-boundary/v1"
 
 [allowlist.kernel_effect]
-KC-03 = [
-  "<module>|import:hwpxcore.atomic.write_bytes_atomic",
-  "<module>|import:pathlib.Path",
-  "HwpxPackage.open|filesystem:zipfile.ZipFile",
-  "HwpxPackage.save|durable-filesystem:hwpxcore.atomic.write_bytes_atomic",
-  "to_package|filesystem:HwpxPackage.open",
-  "to_package|pathlib",
-]
 
 [allowlist.kernel_product_import]
 

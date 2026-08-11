@@ -19,6 +19,8 @@ import pytest
 from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.fields import FieldDocument
 from hwpxfiller.core.template_status import CompileState
+from hwpxfiller.external import template_inspection
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.template_inspection import (
     HWPX_TEMPLATE_OPS,
     inspect_hwpx_template,
@@ -49,14 +51,14 @@ def _pkg(section_inner: str) -> HwpxPackage:
 
 def _write_raw(path: Path, section_inner: str) -> Path:
     """평문 토큰만 든 템플릿을 파일로 저장(RAW/미컴파일 원문)."""
-    _pkg(section_inner).save(str(path))
+    write_hwpx_package(path, _pkg(section_inner))
     return path
 
 
 def _write_compiled(path: Path, section_inner: str) -> Path:
     """평문 토큰을 컴파일한 템플릿을 파일로 저장(COMPILED)."""
     pkg, _ = compile_document(_pkg(section_inner))
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return path
 
 
@@ -66,7 +68,7 @@ def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Pat
     doc = FieldDocument(pkg.entries[SECTION])
     assert doc.set_field(field, value) is True
     pkg.entries[SECTION] = doc.to_bytes()
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return path
 
 
@@ -138,17 +140,17 @@ def test_rows_expose_gated_actions_matching_state(tmp_path, monkeypatch):
     )
     inspected: "list[str]" = []
     opened: "list[str]" = []
-    original_open = HwpxPackage.open
+    original_read = template_inspection.read_hwpx_package
 
     def recording_inspect(path: str):
         inspected.append(path)
         return inspect_hwpx_template(path)
 
-    def counting_open(cls, path: str) -> HwpxPackage:
+    def counting_read(path: str) -> HwpxPackage:
         opened.append(path)
-        return original_open(path)
+        return original_read(path)
 
-    monkeypatch.setattr(HwpxPackage, "open", classmethod(counting_open))
+    monkeypatch.setattr(template_inspection, "read_hwpx_package", counting_read)
     vm = TemplateManagerViewModel(
         library_dir=tmp_path,
         inspect_template=recording_inspect,
@@ -208,7 +210,7 @@ def test_apply_fieldize_advances_partial_to_compiled(tmp_path):
         "<hp:p><hp:run><hp:t>다시: {{계약명}}</hp:t></hp:run></hp:p>"
     )
     path = tmp_path / "partial.hwpx"
-    _pkg(inner).save(str(path))
+    write_hwpx_package(path, _pkg(inner))
     assert template_compile_status(str(path)).state == CompileState.PARTIAL
 
     vm = TemplateManagerViewModel(

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import extract_document
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.core.fields import FieldDocument, field_xml_names, read_fields
 
 BODY = "Contents/section0.xml"
@@ -59,24 +60,24 @@ def _package_path(tmp_path, name: str = "template.hwpx", *, unknown=""):
         stored={MIMETYPE_NAME},
     )
     path = tmp_path / name
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return path
 
 
 def test_field_part_order_and_same_name_first_value_are_explicit(tmp_path):
     path = _package_path(tmp_path)
-    pkg = HwpxPackage.open(str(path))
+    pkg = read_hwpx_package(path)
 
     assert field_xml_names(pkg) == [BODY, UNTOUCHED_BODY, HEADER, FOOTER]
     assert make_hwpx_engine().required_fields(str(path)) == ["공통", "유지필드"]
-    assert read_fields(to_package(str(path))) == {"공통": "본문 구값", "유지필드": "유지값"}
+    assert read_fields(read_hwpx_package(path)) == {"공통": "본문 구값", "유지필드": "유지값"}
 
 
 def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_parts(
     tmp_path,
 ):
     template = _package_path(tmp_path)
-    before = HwpxPackage.open(str(template))
+    before = read_hwpx_package(template)
     output = tmp_path / "filled.hwpx"
 
     result = make_hwpx_engine().generate(str(template), {"공통": "새 계약값"}, str(output))
@@ -84,7 +85,7 @@ def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_part
     assert result.ok, result.error
     assert result.applied == {"공통"}
     assert result.unmatched == set()
-    after = HwpxPackage.open(str(output))
+    after = read_hwpx_package(output)
     for part in (BODY, HEADER, FOOTER):
         doc = FieldDocument(after.entries[part])
         assert doc.read_field("공통") == "새 계약값"
@@ -107,7 +108,7 @@ def test_unknown_header_structure_is_recorded_in_coverage_ledger(tmp_path):
     unknown = '<hp:futureHeader data-contract="unsupported"/>'
     path = _package_path(tmp_path, unknown=unknown)
 
-    doc = extract_document(to_package(str(path)))
+    doc = extract_document(read_hwpx_package(path))
 
     assert doc.unhandled == {"futureHeader": 1}
     assert "header0" in doc.unhandled_examples["futureHeader"]
@@ -125,7 +126,7 @@ def test_field_bearing_unsupported_header_part_fails_loudly(tmp_path):
     )
     template = tmp_path / "unsupported.hwpx"
     output = tmp_path / "must-not-exist.hwpx"
-    pkg.save(str(template))
+    write_hwpx_package(template, pkg)
 
     result = make_hwpx_engine().generate(str(template), {"공통": "새값"}, str(output))
 

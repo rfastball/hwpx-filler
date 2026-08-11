@@ -36,7 +36,7 @@ from pathlib import Path
 from lxml import etree
 
 from hwpxfiller.core.authoring import compile_document
-from hwpxcore.package import HwpxPackage
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 
@@ -155,7 +155,7 @@ def _text_para(root: etree._Element, text: str, para_id: "str | None" = None) ->
 
 def _build_section(title: str, lines: "list[str]") -> bytes:
     """스켈레톤 header/secPr 를 물려받아 제목+토큰 본문 문단으로 section0.xml 을 짓는다."""
-    skel = HwpxPackage.open(str(SKELETON))
+    skel = read_hwpx_package(SKELETON)
     root = etree.fromstring(skel.entries["Contents/section0.xml"])
     sec_pr = root.find(".//" + _hp("secPr"))
     if sec_pr is None:  # 방어: 스켈레톤이 바뀌면 시끄럽게(조용한 추측 금지).
@@ -185,7 +185,7 @@ def _build_section(title: str, lines: "list[str]") -> bytes:
 
 def build_template(filename: str, title: str, lines: "list[str]") -> None:
     """토큰 본문을 컴파일해 시나리오 템플릿을 저장. 모든 줄의 토큰이 누름틀이 되어야 한다."""
-    pkg = HwpxPackage.open(str(SKELETON))
+    pkg = read_hwpx_package(SKELETON)
     pkg.entries["Contents/section0.xml"] = _build_section(title, lines)
 
     compiled, report = compile_document(pkg)
@@ -193,7 +193,7 @@ def build_template(filename: str, title: str, lines: "list[str]") -> None:
         raise RuntimeError(f"{filename}: 컴파일 못한 토큰 {[s.name for s in report.skipped]}")
 
     out = SCENARIO / "templates" / filename
-    compiled.save(str(out))
+    write_hwpx_package(out, compiled)
     print(f"  templates/{filename}: 누름틀 {len(report.compiled)}개")
 
 

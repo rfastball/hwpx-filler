@@ -1,6 +1,7 @@
 import json
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.core.fill_ledger import (
     StructureState,
     ValueState,
@@ -33,7 +34,10 @@ def _template(path, fields):
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         + body + '</hp:p></hs:sec>'
     ).encode()
-    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
 
 
 def _mapping():
@@ -248,9 +252,10 @@ def test_ledger_records_fill_notes_as_evidence(tmp_path):
         "</hp:p></hs:sec>"
     ).encode("utf-8")
     template = tmp_path / "t.hwpx"
-    HwpxPackage(
-        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
-    ).save(str(template))
+    write_hwpx_package(
+        template,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}),
+    )
     out = tmp_path / "doc.hwpx"
     res = make_hwpx_engine().generate(str(template), {"공고명": "가"}, str(out))
     assert res.notes  # 선조건: 완화가 실제 발생

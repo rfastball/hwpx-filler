@@ -33,7 +33,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from hwpxcore.package import HwpxPackage
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.core.authoring import compile_document
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -123,7 +123,7 @@ def _text_para(root: etree._Element, text: str) -> None:
 
 def _build_section(title: str, body_lines: "list[str]") -> bytes:
     """스켈레톤 header/secPr 를 물려받아 제목+토큰 본문으로 section0.xml 을 짓는다."""
-    skel = HwpxPackage.open(str(SKELETON))
+    skel = read_hwpx_package(SKELETON)
     root = etree.fromstring(skel.entries["Contents/section0.xml"])
     sec_pr = root.find(".//" + _hp("secPr"))
     if sec_pr is None:  # 방어: 스켈레톤이 바뀌면 시끄럽게(조용한 추측 금지).
@@ -151,7 +151,7 @@ def _build_section(title: str, body_lines: "list[str]") -> bytes:
 
 
 def build_template(filename: str, title: str, body_lines: "list[str]") -> None:
-    pkg = HwpxPackage.open(str(SKELETON))
+    pkg = read_hwpx_package(SKELETON)
     pkg.entries["Contents/section0.xml"] = _build_section(title, body_lines)
 
     compiled, report = compile_document(pkg)
@@ -160,7 +160,7 @@ def build_template(filename: str, title: str, body_lines: "list[str]") -> None:
 
     out = HERE / "templates" / filename
     out.parent.mkdir(parents=True, exist_ok=True)
-    compiled.save(str(out))
+    write_hwpx_package(out, compiled)
     print(f"  templates/{filename}: 누름틀 {len(report.compiled)}개")
 
 

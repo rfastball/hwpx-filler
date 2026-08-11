@@ -12,7 +12,8 @@ from lxml import etree
 
 from hwpxfiller.core.authoring import compile_document, scan_tokens
 from hwpxfiller.core.fields import FieldDocument
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.core.schema import extract_schema
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -523,7 +524,7 @@ def test_empty_attr_run_preserved_through_merge():
 def test_corpus_already_compiled_yields_no_new_fields():
     """실제 입찰공고(이미 누름틀 완비)를 스캔하면 새로 컴파일할 토큰이 없다."""
     path = CORPUS / "bid_notice_limited_under100m.hwpx"
-    compilable = [s for s in scan_tokens(to_package(str(path))) if s.compilable]
+    compilable = [s for s in scan_tokens(read_hwpx_package(path)) if s.compilable]
     assert compilable == []
 
 
@@ -533,7 +534,7 @@ def test_compile_to_sibling_saves_next_to_original_and_keeps_original(tmp_path):
     from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "tpl.hwpx"
-    _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>').save(str(src))
+    write_hwpx_package(src, _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>'))
     before = src.read_bytes()
 
     compiled_path, report = compile_to_sibling(str(src))
@@ -542,7 +543,7 @@ def test_compile_to_sibling_saves_next_to_original_and_keeps_original(tmp_path):
     assert Path(compiled_path).exists()
     assert report.modified and report.compiled == ["계약명"]
     assert src.read_bytes() == before                        # 원본 무변형
-    assert extract_schema(to_package(compiled_path)).field_names() == ["계약명"]  # 진짜 누름틀
+    assert extract_schema(read_hwpx_package(compiled_path)).field_names() == ["계약명"]
 
 
 def test_compile_to_sibling_noop_writes_nothing(tmp_path):
@@ -550,7 +551,7 @@ def test_compile_to_sibling_noop_writes_nothing(tmp_path):
     from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "plain.hwpx"
-    _pkg('<hp:p><hp:run><hp:t>토큰 없음</hp:t></hp:run></hp:p>').save(str(src))
+    write_hwpx_package(src, _pkg('<hp:p><hp:run><hp:t>토큰 없음</hp:t></hp:run></hp:p>'))
 
     compiled_path, report = compile_to_sibling(str(src))
 
@@ -566,7 +567,7 @@ def test_compile_to_sibling_collision_is_loud_until_overwrite(tmp_path):
     from hwpxfiller.external.template_inspection import compile_to_sibling
 
     src = tmp_path / "tpl.hwpx"
-    _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>').save(str(src))
+    write_hwpx_package(src, _pkg('<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>'))
     sibling = tmp_path / "tpl.compiled.hwpx"
     sibling.write_bytes(b"human-edited")
     before = sibling.read_bytes()

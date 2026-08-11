@@ -28,6 +28,7 @@ from .batch import OutputCollisionError
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
 from .external.hwpx_engine import make_hwpx_engine
+from .external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxcore.atomic import write_text_atomic
 from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
@@ -41,8 +42,6 @@ def _schema_main(argv: "list[str]") -> int:
     """``schema`` 하위명령 — 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 출력/저장."""
     import json
 
-    from hwpxcore.package import to_package
-
     from .core.schema import extract_schema
 
     ap = argparse.ArgumentParser(prog="hwpxfiller schema")
@@ -51,7 +50,7 @@ def _schema_main(argv: "list[str]") -> int:
     args = ap.parse_args(argv)
 
     payload = json.dumps(
-        extract_schema(to_package(args.template)).to_dict(), ensure_ascii=False, indent=2
+        extract_schema(read_hwpx_package(args.template)).to_dict(), ensure_ascii=False, indent=2
     )
     if args.out:
         write_text_atomic(args.out, payload)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
@@ -67,8 +66,6 @@ def _fieldize_main(argv: "list[str]") -> int:
     명시성 원칙: ``--out`` 없으면 dry-run(무엇을 바꿀지 미리보기만), ``--out`` 지정 시에만
     실제 컴파일 후 저장.
     """
-    from hwpxcore.package import to_package
-
     from .core.authoring import compile_document, scan_tokens
 
     ap = argparse.ArgumentParser(
@@ -80,7 +77,7 @@ def _fieldize_main(argv: "list[str]") -> int:
     args = ap.parse_args(argv)
 
     if not args.out:
-        sites = scan_tokens(to_package(args.template))
+        sites = scan_tokens(read_hwpx_package(args.template))
         compilable = [s for s in sites if s.compilable]
         skipped = [s for s in sites if not s.compilable]
         print(f"[미리보기] 변환 가능 {len(compilable)}개 / 건너뜀 {len(skipped)}개")
@@ -91,13 +88,13 @@ def _fieldize_main(argv: "list[str]") -> int:
         print("실제 변환하려면 --out <경로> 를 지정하세요.")
         return 0
 
-    pkg, report = compile_document(to_package(args.template))
+    pkg, report = compile_document(read_hwpx_package(args.template))
     for s in report.skipped:
         print(f"  [건너뜀] {s.name} — {s.reason}", file=sys.stderr)
     if not report.modified:
         print("변환할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).")
         return 0
-    pkg.save(args.out)
+    write_hwpx_package(args.out, pkg)
     print(f"누름틀 변환 완료: 필드 {len(report.compiled)}개 -> {args.out}")
     return 0
 

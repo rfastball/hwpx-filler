@@ -25,17 +25,21 @@ class GenerateResult:
     error: str = ""
 
 
-class HwpxEngine:
+class HwpxEngine[PackageT]:
     """단일 템플릿 + 데이터 → 단일 HWPX 파일.
 
-    경로→열린 package 의 zip IO 는 주입된 ``open_package`` 가 소유한다(P2-19, #567 —
+    경로 읽기·쓰기는 주입된 ``read_package``/``write_package``가 소유한다(P3-03, #591 —
     의미론 층은 concrete IO 를 개시하지 않는다). concrete 결속은
-    :func:`hwpxfiller.external.hwpx_engine.make_hwpx_engine` 이 조립한다. 반환된
-    package 는 ``entries``/``save`` 를 가진 package-like 객체다(덕타이핑 — 타입 결합 없음).
+    :func:`hwpxfiller.external.hwpx_engine.make_hwpx_engine` 이 조립한다.
     """
 
-    def __init__(self, open_package: "Callable[[str], object]"):
-        self._open_package = open_package
+    def __init__(
+        self,
+        read_package: "Callable[[str], PackageT]",
+        write_package: "Callable[[str, PackageT], None]",
+    ):
+        self._read_package = read_package
+        self._write_package = write_package
 
     def generate(
         self,
@@ -44,7 +48,7 @@ class HwpxEngine:
         output_path: str,
     ) -> GenerateResult:
         try:
-            pkg = self._open_package(template_path)
+            pkg = self._read_package(template_path)
         except Exception as exc:  # noqa: BLE001 - 상위에서 결과로 보고
             return GenerateResult(False, output_path, error=f"템플릿 열기 실패: {exc}")
 
@@ -69,7 +73,7 @@ class HwpxEngine:
             return GenerateResult(False, output_path, error=f"XML 처리 실패: {exc}")
 
         try:
-            pkg.save(output_path)
+            self._write_package(output_path, pkg)
         except Exception as exc:  # noqa: BLE001
             return GenerateResult(False, output_path, error=f"저장 실패: {exc}")
 
@@ -85,7 +89,7 @@ class HwpxEngine:
 
     def required_fields(self, template_path: str) -> "list[str]":
         """템플릿이 요구하는 누름틀 이름 전체(사전검증용)."""
-        pkg = self._open_package(template_path)
+        pkg = self._read_package(template_path)
         seen: dict[str, None] = {}
         for name in field_xml_names(pkg):
             for f in FieldDocument(pkg.entries[name]).required_fields():

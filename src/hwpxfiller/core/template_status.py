@@ -160,7 +160,7 @@ def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
 def compile_status(pkg: object) -> TemplateStatus:
     """열린 HWPX package 의 컴파일 수명주기 상태를 **계산**해 반환.
 
-    **package-only**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **package-only**(P2-19R) — 경로는 호출측 External adapter가 연다.
     저장된 값을 읽지 않고 매 호출 재산출한다 — 재편집 드리프트에도 항상 진실.
     입력을 전혀 변형하지 않는다(읽기 전용).
     """

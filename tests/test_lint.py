@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from hwpxfiller.core.lint import diff_schema, lint_template
-from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage, to_package
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
@@ -108,7 +109,7 @@ def test_lint_is_readonly():
 # ------------------------------------------------------------- 실제 코퍼스 clean
 def test_corpus_lints_clean():
     """실제 입찰공고 템플릿은 lint 이슈가 없다(오탐 없음 확인)."""
-    report = lint_template(to_package(str(CORPUS / "bid_notice_limited_under100m.hwpx")))
+    report = lint_template(read_hwpx_package(CORPUS / "bid_notice_limited_under100m.hwpx"))
     assert report.findings == []
 
 

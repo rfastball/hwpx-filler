@@ -723,7 +723,7 @@ def _process_paragraph(
 def scan_tokens(pkg: object) -> "list[TokenSite]":
     """읽기 전용 미리보기 — 컴파일 가능한 토큰과 못 바꾸는 토큰을 모두 나열.
 
-    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     이미 누름틀 안에 든 토큰(field 값)은 제외한다. 워크북을 전혀 변형하지 않는다.
     """
     pkg = _require_package(pkg)
@@ -742,7 +742,7 @@ def scan_tokens(pkg: object) -> "list[TokenSite]":
 def compile_document(pkg: object) -> "tuple[object, CompileReport]":
     """토큰을 누름틀로 컴파일. (변형된 package, 리포트) 반환.
 
-    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     ``apply`` 는 항상 참 — 미리보기는 ``scan_tokens`` 를 쓴다. 컴파일된 XML 만 교체하고,
     바뀐 게 없으면 ``modified=False``.
     """
