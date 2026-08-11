@@ -1,0 +1,38 @@
+# P3-07 permanent public-surface and vendor-containment contract.
+schema = "architecture-contract/v1"
+
+[product_vendor_import]
+"hwpxfiller.domain.authoring" = [
+  "lxml.etree",
+]
+"hwpxfiller.domain.fields" = [
+  "lxml.etree",
+]
+"hwpxfiller.domain.schema" = [
+  "lxml.etree",
+]
+"hwpxfiller.domain.template_status" = [
+  "lxml.etree",
+]
+
+[public_surface]
+hwpxcore = [
+  "Document",
+  "extract_document",
+]
+hwpxfiller = []
+
+[vendor_integration.react]
+packages = [
+  "react",
+  "react-dom",
+]
+allowed_source_roots = [
+  "frontend/src/overlay/host.ts",
+  "frontend/src/react",
+  "frontend/src/screens",
+  "frontend/src/shell/host.ts",
+]
+mount_owner = "frontend/src/react/root.ts|boot"
+update_owner = "frontend/src/react/boundary.ts|StoreSignal"
+dispose_owner = "frontend/src/react/root.ts|unmount"

@@ -25,8 +25,11 @@ GUI 아이콘은 커밋된 `packaging/hwpx-filler.ico`를 사용한다. frontend
 `build.ps1`은 fresh frontend build와 seal 검증, spec 계약 검사 후 실제 번들에서 다음을
 스모크한다.
 
+- wheel: 격리 설치 뒤 canonical import·entrypoint·cp949 초기 CLI `--help`,
+  퇴역 core package 부재와 이동한 Domain/External/Host module 포함
 - GUI 앱: source/bundled artifact ID·tree 일치, Node 없는 PATH의 full-seal selfcheck,
-  실제 WebView2 42책임 selftest, loopback same-origin, dead-proxy 외부망 차단
+  실제 WebView2 43책임 selftest, loopback same-origin, dead-proxy 외부망 차단
+- 두 onedir: PYZ archive의 legacy module 0과 canonical runtime module 포함
 - CLI: `schema`, `fieldize`, `lint`, `drift` 네 하위명령
 
 `lint`는 이슈를 찾으면 정상적으로 exit 1을 내므로 빌드 스크립트가 0과 1을

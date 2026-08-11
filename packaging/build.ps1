@@ -207,6 +207,143 @@ function Test-BundleBoundary([string]$BundleDir) {
     }
 }
 
+function Test-WheelDistribution {
+    $work = Join-Path $root "build\wheel-smoke-$PID"
+    New-Item -ItemType Directory -Force $work | Out-Null
+    New-Item -ItemType Directory -Force $evidenceDir | Out-Null
+    try {
+        & uv build --wheel --out-dir $work
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $wheels = @(Get-ChildItem -LiteralPath $work -Filter '*.whl')
+        if ($wheels.Count -ne 1) {
+            throw "wheel 산출물은 정확히 하나여야 합니다: $($wheels.Count)"
+        }
+        $wheel = $wheels[0]
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($wheel.FullName)
+        try {
+            $entries = @($archive.Entries | ForEach-Object FullName)
+        }
+        finally {
+            $archive.Dispose()
+        }
+        $legacy = @($entries | Where-Object { $_ -like 'hwpxfiller/core/*' })
+        if ($legacy.Count -ne 0) {
+            throw "wheel에 퇴역 hwpxfiller/core 경로가 있습니다: $($legacy -join ', ')"
+        }
+        $required = @(
+            'hwpxcore/package.py',
+            'hwpxfiller/domain/validation.py',
+            'hwpxfiller/external/atomic.py',
+            'hwpxfiller/external/hwpx_package_io.py',
+            'hwpxfiller/external/text_registry.py',
+            'hwpxfiller/host/motw.py',
+            'hwpxfiller/host/native/single_instance.py'
+        )
+        $missing = @($required | Where-Object { $_ -notin $entries })
+        if ($missing.Count -ne 0) {
+            throw "wheel에 canonical runtime module이 없습니다: $($missing -join ', ')"
+        }
+
+        $savedPythonUtf8 = $env:PYTHONUTF8
+        $savedPythonIoEncoding = $env:PYTHONIOENCODING
+        try {
+            # wheel console script는 frozen wrapper 없이도 cp949 초기 stream을 UTF-8로 바꿔야 한다.
+            $env:PYTHONUTF8 = '0'
+            $env:PYTHONIOENCODING = 'cp949'
+            & uv run --quiet --isolated --no-project --with $wheel.FullName -- hwpxfiller --help
+            if ($LASTEXITCODE -ne 0) { throw "clean wheel CLI --help 실패(exit $LASTEXITCODE)" }
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable('PYTHONUTF8', $savedPythonUtf8, 'Process')
+            [Environment]::SetEnvironmentVariable(
+                'PYTHONIOENCODING', $savedPythonIoEncoding, 'Process'
+            )
+        }
+
+        $smoke = (
+            "import importlib, importlib.metadata, importlib.util; " +
+            "mods=('hwpxcore','hwpxcore.package','hwpxfiller','hwpxfiller.domain.job'," +
+            "'hwpxfiller.domain.validation','hwpxfiller.external.atomic'," +
+            "'hwpxfiller.external.hwpx_package_io','hwpxfiller.external.job_store'," +
+            "'hwpxfiller.external.text_registry','hwpxfiller.host.locations'," +
+            "'hwpxfiller.host.motw','hwpxfiller.host.native.dialogs'); " +
+            "[importlib.import_module(m) for m in mods]; " +
+            "eps={(e.group,e.name,e.value) for e in importlib.metadata.entry_points() " +
+            "if e.name in {'hwpxfiller','hwpx-filler-web'}}; " +
+            "assert ('console_scripts','hwpxfiller','hwpxfiller.cli:main') in eps; " +
+            "assert ('gui_scripts','hwpx-filler-web','hwpxfiller.webapp.app:main') in eps; " +
+            "assert importlib.util.find_spec('hwpxfiller.core') is None"
+        )
+        & uv run --quiet --isolated --no-project --with $wheel.FullName -- python -I -c $smoke
+        if ($LASTEXITCODE -ne 0) { throw "clean wheel canonical import smoke 실패(exit $LASTEXITCODE)" }
+
+        [ordered]@{
+            wheel = $wheel.Name
+            entry_count = $entries.Count
+            legacy_core_count = $legacy.Count
+            required_modules = $required
+            cli_help = $true
+            canonical_import_smoke = $true
+        } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (
+            Join-Path $evidenceDir 'wheel-summary.json'
+        ) -Encoding UTF8
+    }
+    finally {
+        if (Test-Path -LiteralPath $work) {
+            Remove-Item -LiteralPath $work -Recurse -Force
+        }
+    }
+}
+
+function Test-PyInstallerArchive([string]$ExePath, [string]$Key) {
+    $lines = @(
+        & uv run --no-sync --group build pyi-archive_viewer -r -b $ExePath 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "PyInstaller archive inspection 실패($Key, exit $LASTEXITCODE)"
+    }
+    $legacy = @($lines | Where-Object { $_ -match 'hwpxfiller\.core(?:\.|$)' })
+    if ($legacy.Count -ne 0) {
+        throw "$Key bundle에 퇴역 hwpxfiller.core module이 있습니다: $($legacy -join ', ')"
+    }
+    $required = @(
+        'hwpxfiller.domain.validation',
+        'hwpxfiller.external.atomic',
+        'hwpxfiller.external.hwpx_package_io'
+    )
+    if ($Key -eq 'filler') {
+        $required += @(
+            'hwpxfiller.external.job_store',
+            'hwpxfiller.external.text_registry',
+            'hwpxfiller.host.locations',
+            'hwpxfiller.host.motw',
+            'hwpxfiller.host.native.dialogs',
+            'hwpxfiller.host.native.single_instance'
+        )
+    }
+    $missing = @(
+        $required | Where-Object {
+            $module = [regex]::Escape($_)
+            -not ($lines -match "(^|\s)$module($|\s)")
+        }
+    )
+    if ($missing.Count -ne 0) {
+        throw "$Key bundle에 canonical runtime module이 없습니다: $($missing -join ', ')"
+    }
+    [ordered]@{
+        target = $Key
+        archive_line_count = $lines.Count
+        legacy_core_count = $legacy.Count
+        required_modules = $required
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (
+        Join-Path $evidenceDir "archive-$Key-summary.json"
+    ) -Encoding UTF8
+}
+
+if (-not $SkipCheck) { Test-WheelDistribution }
+
 foreach ($key in $plan) {
     $item = $targets[$key]
     Write-Host "`n=== onedir 빌드: $key ===" -ForegroundColor Cyan
@@ -219,6 +356,7 @@ foreach ($key in $plan) {
     if (-not (Test-Path $exe)) { throw "onedir exe 누락: $exe" }
     $bundleDir = Split-Path -Parent $exe
     Test-BundleBoundary $bundleDir
+    if (-not $SkipCheck) { Test-PyInstallerArchive $exe $key }
     if ($key -eq 'filler') {
         $bundleRoot = Join-Path $bundleDir '_internal'
         & uv run --no-sync python (Join-Path $root 'scripts\verify_packaged_web.py') `

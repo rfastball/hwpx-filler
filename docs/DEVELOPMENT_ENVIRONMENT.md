@@ -128,7 +128,9 @@ PyInstaller를 실행한다.
 `dist\hwpx-cli\hwpx-cli.exe`(onedir 폴더)이며 canonical
 `packaging/build.ps1 -Target all`이 exact frontend build/seal, 두 번들, source/bundled
 artifact identity, portable zip 왕복 사본, Node-free GUI selfcheck, 실제 WebView2
-loopback/offline selftest와 CLI selfcheck를 검증한다. Node-free 국면은 두 타깃을 모두
+loopback/offline selftest와 CLI selfcheck를 검증한다. 같은 명령이 wheel 격리 설치 뒤
+canonical import·entrypoint·cp949 초기 CLI를 실행하고, wheel/PYZ의 legacy module 0과 이동한
+runtime module 포함도 센다. Node-free 국면은 두 타깃을 모두
 덮는다(`Set-NodeFreePath` 하나가 정의이고 filler·CLI 가 각각 그 안에서 돈다).
 루트 `build.ps1`은 GUI 제품을 canonical 스크립트로 위임하는 호환 러너다.
 
@@ -177,7 +179,7 @@ Node-free selfcheck 는 종료코드만 보지 않는다 — 그 프로세스가
 4. `windows-native (real Win32)`: `-m native`. 실 클립보드·실 최상위 창.
 5. `browser-render (installed Chrome)`: `-m browser`. 설치 Chrome 기반 CSS·기하·모션 판정.
 6. `live-webview2 (real WebView2 session)`: `-m live`. 실앱 selftest 와 Quickstart 101 `check`.
-7. `distribution-webview2 (frozen exe)`: portable onedir 2종 빌드와 selfcheck.
+7. `distribution-webview2 (frozen exe)`: clean wheel smoke, portable onedir 2종 빌드와 selfcheck.
 
 산출물 소비자는 5·6·7 이다 — 내려받아 `build-web.ps1 -Mode VerifyExisting -ExpectIdentity …`
 로 **이 checkout 의 commit·frontend 바이트**와 대조한다. 그 검증은 `actions/setup-node`
@@ -195,8 +197,8 @@ Chrome 렌더링 증거와 실 WebView2 증거는 이름으로도 job 으로도 
 
 증거는 **실패해도 회수된다**(`if: always()`). `live-webview2` 는 101 보고서·표준출력과 실패한
 실주행이 남긴 임시 홈의 진단 파일(`_live101_hang_stacks.txt`·`_live101_result.json`)을,
-`distribution-webview2` 는 패키징 증거 6종(산출물 동일성·packaged selftest·외부망 양성/음성
-대조·검증 요약)을 올린다. 제품 단언에는 재시도를 걸지 않는다 — 두 번째 초록이 첫 번째 빨강을
+`distribution-webview2` 는 패키징 증거 13파일(산출물 동일성·packaged selftest·외부망 양성/음성
+대조·검증 요약·wheel·두 PYZ archive)을 올린다. 제품 단언에는 재시도를 걸지 않는다 — 두 번째 초록이 첫 번째 빨강을
 지우기 때문이다.
 
 연속 push 는 **앞선 PR run 만** 취소한다(`master` push 와 merge queue 이력은 남긴다). action 은

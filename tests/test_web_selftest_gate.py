@@ -1998,7 +1998,7 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
     한다.
 
     측정은 ``full`` 실행이 아니라 전용 측정 모드가 낸다. ``full``·쓰기 모드 증거의 최상위 키
-    수는 ``packaging/build.ps1`` 의 책임 게이트(42)가 못박은 값이라, 재는 것을 재어지는 것의
+    수는 ``packaging/build.ps1`` 의 책임 게이트(43)가 못박은 값이라, 재는 것을 재어지는 것의
     자루에 넣으면 릴리스 빌드가 터진다.
     """
     # 능력 없는 쪽은 위 픽스처가 띄운 **같은 창**의 측정을 재사용한다(부팅을 늘리지 않는다).

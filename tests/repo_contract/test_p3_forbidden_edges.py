@@ -1,9 +1,8 @@
-"""P3 namespace/kernel 이동 전 금지 edge와 vendor integration 게이트(#592, #588).
+"""P3 이후 영속 public surface·forbidden edge·vendor integration 게이트.
 
-정의역은 P2 ring 좌표, P3 census, frontend runtime dependency다. 현재 잔존 위반은
-``tests/kernel_boundary_contract.toml``의 exact allowlist와 양방향 대조한다. P3-99에서
-임시 allowlist를 제거하더라도 영속 ``vendor_integration`` 규율은 이 게이트에 남기거나
-이름 붙은 후속 정본과 게이트로 같은 변경에서 승계한다.
+정의역은 P2 ring 좌표, 실제 source tree, frontend runtime dependency다. 영속 예외와 공개
+표면은 ``tests/architecture_contract.toml``과 양방향 대조하고, 퇴역 namespace·kernel
+effect·vendor public type은 예외 없이 0을 요구한다.
 """
 
 from __future__ import annotations
@@ -23,20 +22,15 @@ from _web_source import SOURCE_ROOT, module_imports
 
 
 ROOT = Path(__file__).parents[2]
-CENSUS = ROOT / "docs" / "p3_kernel_census.toml"
 RINGS = ROOT / "docs" / "module_rings.toml"
-POLICY = ROOT / "tests" / "kernel_boundary_contract.toml"
+CONTRACT = ROOT / "tests" / "architecture_contract.toml"
 
-EXPECTED_SCHEMA = "kernel-boundary/v2"
-EXPECTED_ALLOWLISTS = {
-    "kernel_product_import",
-    "kernel_effect",
-    "legacy_consumer",
-    "legacy_definition",
-    "legacy_export",
-    "legacy_symbol_use",
+EXPECTED_SCHEMA = "architecture-contract/v1"
+EXPECTED_CONTRACT_KEYS = {
+    "schema",
     "product_vendor_import",
-    "vendor_public_type",
+    "public_surface",
+    "vendor_integration",
 }
 EXPECTED_VENDOR_INTEGRATION_KEYS = {
     "allowed_source_roots",
@@ -45,20 +39,7 @@ EXPECTED_VENDOR_INTEGRATION_KEYS = {
     "packages",
     "update_owner",
 }
-VALUE_WIDTH = {
-    "kernel_product_import": 1,
-    "kernel_effect": 2,
-    "legacy_consumer": 1,
-    "legacy_definition": 1,
-    "legacy_export": 1,
-    "legacy_symbol_use": 1,
-    "product_vendor_import": 1,
-    "vendor_public_type": 2,
-}
-DEFINITION_CLUSTER_ID: dict[str, str] = {}
-SYMBOL_USE: dict[str, str] = {}
 RETIRED_MODULE_ROOTS = {"hwpxfiller.core"}
-MODULE_KEYED_POLICIES = {"product_vendor_import"}
 FORBIDDEN_KERNEL_ROOTS = {
     "ctypes",
     "datetime",
@@ -107,15 +88,7 @@ TS_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 
 
 class ContractError(ValueError):
-    """정책을 exact allowlist로 해석할 수 없을 때의 fail-closed 오류."""
-
-
-def _census() -> dict[str, object]:
-    return tomllib.loads(CENSUS.read_text(encoding="utf-8-sig"))
-
-
-def _entries() -> "list[dict[str, object]]":
-    return _census()["entry"]  # type: ignore[return-value]
+    """영속 architecture 계약을 exact하게 해석할 수 없을 때의 fail-closed 오류."""
 
 
 def _rings() -> "list[dict[str, object]]":
@@ -123,76 +96,52 @@ def _rings() -> "list[dict[str, object]]":
     return document["unit"]  # type: ignore[return-value]
 
 
-def _known_modules() -> set[str]:
-    return {str(entry["current_module"]) for entry in _entries()}
+def _architecture_contract() -> dict[str, object]:
+    document = tomllib.loads(CONTRACT.read_text(encoding="utf-8-sig"))
+    if document.get("schema") != EXPECTED_SCHEMA or set(document) != EXPECTED_CONTRACT_KEYS:
+        raise ContractError(f"architecture contract schema는 {EXPECTED_SCHEMA!r} 이어야 합니다")
+    return document
 
 
-def _validate_policy(document: dict[str, object]) -> dict[str, set[str]]:
-    if document.get("schema") != EXPECTED_SCHEMA:
-        raise ContractError(f"policy schema는 {EXPECTED_SCHEMA!r} 이어야 합니다")
-    raw = document.get("allowlist")
-    if not isinstance(raw, dict) or set(raw) != EXPECTED_ALLOWLISTS:
-        raise ContractError(f"allowlist 키가 고정 기대와 다릅니다: {set(raw or {})}")
-
-    entries = {str(entry["id"]): entry for entry in _entries()}
+def _public_surface() -> dict[str, set[str]]:
+    raw = _architecture_contract()["public_surface"]
+    if not isinstance(raw, dict) or list(raw) != ["hwpxcore", "hwpxfiller"]:
+        raise ContractError("public_surface는 hwpxcore·hwpxfiller 두 root만 가져야 합니다")
     out: dict[str, set[str]] = {}
-    for name in sorted(EXPECTED_ALLOWLISTS):
-        grouped = raw[name]
-        if not isinstance(grouped, dict) or list(grouped) != sorted(grouped):
-            raise ContractError(f"{name}은 owner 순으로 정렬된 table이어야 합니다")
-        facts: set[str] = set()
-        for owner, values in grouped.items():
-            module_keyed = name in MODULE_KEYED_POLICIES
-            if module_keyed:
-                if owner not in _product_modules():
-                    raise ContractError(f"{name}: Product Domain 밖 모듈 {owner!r}")
-                module = owner
-            else:
-                if owner not in entries:
-                    raise ContractError(f"{name}: 알 수 없는 census ID {owner!r}")
-                module = str(entries[owner]["current_module"])
-            if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
-                raise ContractError(f"{name}.{owner}은 문자열 배열이어야 합니다")
-            if values != sorted(values) or len(values) != len(set(values)):
-                raise ContractError(f"{name}.{owner}은 중복 없는 정렬 목록이어야 합니다")
-            for value in values:
-                if any(token in value for token in ("*", "?", "[", "]")):
-                    raise ContractError(f"{name} wildcard 금지: {value!r}")
-                if len(value.split("|")) != VALUE_WIDTH[name]:
-                    raise ContractError(f"{name} record 형식 오류: {value!r}")
-                fact = (
-                    f"{value}|{module}"
-                    if name in {"legacy_consumer", "legacy_symbol_use"}
-                    else f"{module}|{value}"
-                )
-                if fact in facts:
-                    raise ContractError(f"{name}: 여러 census ID가 같은 residual을 가리킵니다: {fact}")
-                if module_keyed:
-                    facts.add(fact)
-                    continue
-                entry = entries[owner]
-                if name == "legacy_consumer" and entry.get("consumer_kind") == "symbol_use":
-                    raise ContractError(f"{name}: symbol-use cluster는 module consumer를 소유할 수 없습니다")
-                if name == "legacy_symbol_use" and entry.get("consumer_kind") != "symbol_use":
-                    raise ContractError(f"{name}: symbol-use census cluster만 소유할 수 있습니다")
-                if name == "kernel_effect" and (
-                    entry["disposition"] == "FORMAT_KERNEL"
-                    or not entry["environment_or_effect"]
-                ):
-                    raise ContractError(f"{name}: effect 소유 census cluster가 아닙니다: {owner}")
-                if name == "legacy_definition":
-                    expected = DEFINITION_CLUSTER_ID.get(fact)
-                    if expected and owner != expected:
-                        raise ContractError(f"{fact}의 census cluster는 {expected}입니다")
-                    if not expected and owner in DEFINITION_CLUSTER_ID.values():
-                        raise ContractError(f"{owner}에는 그 cluster의 exact symbol만 허용됩니다")
-                facts.add(fact)
-        out[name] = facts
+    for module, names in raw.items():
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise ContractError(f"public_surface.{module}은 문자열 배열이어야 합니다")
+        if names != sorted(names) or len(names) != len(set(names)):
+            raise ContractError(f"public_surface.{module}은 중복 없는 정렬 목록이어야 합니다")
+        if any(not name or name.startswith("_") for name in names):
+            raise ContractError(f"public_surface.{module}에 private 이름이 있습니다")
+        out[str(module)] = set(names)
     return out
 
 
-def _policy() -> dict[str, set[str]]:
-    return _validate_policy(tomllib.loads(POLICY.read_text(encoding="utf-8-sig")))
+def _validate_product_vendor_import(raw: object) -> set[str]:
+    if not isinstance(raw, dict) or list(raw) != sorted(raw):
+        raise ContractError("product_vendor_import는 module 순의 table이어야 합니다")
+    facts: set[str] = set()
+    product_modules = _product_modules()
+    for module, names in raw.items():
+        if module not in product_modules:
+            raise ContractError(f"product_vendor_import: Product Domain 밖 모듈 {module!r}")
+        if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+            raise ContractError(f"product_vendor_import.{module}은 문자열 배열이어야 합니다")
+        if names != sorted(names) or len(names) != len(set(names)):
+            raise ContractError(
+                f"product_vendor_import.{module}은 중복 없는 정렬 목록이어야 합니다"
+            )
+        for name in names:
+            if any(token in name for token in ("*", "?", "[", "]", "|")):
+                raise ContractError(f"product_vendor_import wildcard 금지: {name!r}")
+            facts.add(f"{module}|{name}")
+    return facts
+
+
+def _product_vendor_policy() -> set[str]:
+    return _validate_product_vendor_import(_architecture_contract()["product_vendor_import"])
 
 
 def _js_masks(source: str) -> tuple[str, str]:
@@ -285,7 +234,11 @@ def _has_ts_declaration(source: str, symbol: str) -> bool:
     if TS_IDENTIFIER.fullmatch(symbol) is None:
         raise ContractError(f"lifecycle owner symbol은 TS identifier여야 합니다: {symbol!r}")
     name = re.escape(symbol)
-    declaration = rf"(?m)^\s*(?:(?:(?:export|default|declare|async)\s+)*(?:function|class|const|let|var)\s+{name}(?![A-Za-z0-9_$])|{name}\s*\()"
+    declaration = (
+        rf"(?m)^\s*(?:(?:(?:export|default|declare|async)\s+)*"
+        rf"(?:function|class|const|let|var)\s+{name}(?![A-Za-z0-9_$])|"
+        rf"(?:async\s+)?{name}\s*\([^;\n]*\)\s*(?::[^{{;\n]+)?\s*{{)"
+    )
     return re.search(declaration, _js_code_mask(source)) is not None
 
 
@@ -294,8 +247,7 @@ def _in_source_roots(relative: str, roots: tuple[str, ...] | list[str]) -> bool:
 
 
 def _vendor_integrations() -> dict[str, tuple[set[str], tuple[str, ...]]]:
-    document = tomllib.loads(POLICY.read_text(encoding="utf-8-sig"))
-    raw = document.get("vendor_integration")
+    raw = _architecture_contract()["vendor_integration"]
     if not isinstance(raw, dict) or not raw or list(raw) != sorted(raw):
         raise ContractError("vendor_integration은 이름순의 비어 있지 않은 table이어야 합니다")
 
@@ -377,6 +329,12 @@ def _frontend_specifiers(relative: str, source: str) -> tuple[str, ...]:
                 f"{relative}: dynamic import() specifier는 문자열 literal이어야 합니다"
             )
         dynamic.append(literal.group(2))
+    required: list[str] = []
+    for call in re.finditer(r"(?<![\w$])(?:module\s*\.\s*)?require\s*\(", code):
+        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
+        if literal is None:
+            raise ContractError(f"{relative}: require() specifier는 문자 literal이어야 합니다")
+        required.append(literal.group(2))
     return (
         *references,
         *module_imports(source),
@@ -389,6 +347,7 @@ def _frontend_specifiers(relative: str, source: str) -> tuple[str, ...]:
             source,
         ),
         *dynamic,
+        *required,
     )
 
 
@@ -401,11 +360,12 @@ def _resolve_frontend_module(
         if clean.startswith("/")
         else posixpath.normpath(posixpath.join(posixpath.dirname(relative), clean))
     )
-    suffixes = (".js", ".jsx", ".mjs", ".ts", ".tsx", ".d.ts")
-    candidates = (target, *(f"{target}{suffix}" for suffix in suffixes))
-    candidates += tuple(
-        f"{target}/index{suffix}" for suffix in suffixes
+    suffixes = (
+        ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
+        ".d.ts", ".d.mts", ".d.cts",
     )
+    candidates = (target, *(f"{target}{suffix}" for suffix in suffixes))
+    candidates += tuple(f"{target}/index{suffix}" for suffix in suffixes)
     return next((candidate for candidate in candidates if candidate in sources), None)
 
 
@@ -422,9 +382,7 @@ def _frontend_vendor_import_violations(sources: dict[str, str]) -> set[str]:
         edges: list[tuple[str, str]] = []
         for specifier in _frontend_specifiers(relative, source):
             if specifier.startswith(".") or specifier.startswith(("/src/", "/js/")):
-                if (
-                    target := _resolve_frontend_module(relative, specifier, sources)
-                ):
+                if target := _resolve_frontend_module(relative, specifier, sources):
                     edges.append((specifier, target))
                 continue
             package = specifier.split("/", 1)[0]
@@ -454,12 +412,12 @@ def _frontend_vendor_import_violations(sources: dict[str, str]) -> set[str]:
     return violations
 
 
-def _frontend_sources() -> dict[str, str]:
+def _frontend_sources(source_root: Path = SOURCE_ROOT) -> dict[str, str]:
     return {
-        path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+        f"frontend/{path.relative_to(source_root).as_posix()}": path.read_text(encoding="utf-8")
         for directory in ("src", "js")
-        for path in SOURCE_ROOT.joinpath(directory).rglob("*")
-        if path.suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx"}
+        for path in source_root.joinpath(directory).rglob("*")
+        if path.suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
     }
 
 
@@ -553,6 +511,17 @@ def _import_targets(
     return targets
 
 
+def _literal_string(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _literal_string(node.left)
+        right = _literal_string(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
 def _dynamic_import_names(tree: ast.AST) -> set[str]:
     aliases = _aliases(tree)
     parents = _parents(tree)
@@ -590,17 +559,13 @@ def _dynamic_import_names(tree: ast.AST) -> set[str]:
         pairs = zip(positional_with_defaults, owner.args.defaults, strict=True)
         keyword_pairs = zip(owner.args.kwonlyargs, owner.args.kw_defaults, strict=True)
         for argument, default in (*pairs, *keyword_pairs):
-            if isinstance(default, ast.Constant) and isinstance(default.value, str):
-                defaults[argument] = default.value
+            if (value := _literal_string(default)) is not None:
+                defaults[argument] = value
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            value = (
-                node.value.value
-                if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-                else None
-            )
+            value = _literal_string(node.value)
             for target in targets:
                 bind(node, target, value)
         elif isinstance(node, (ast.AugAssign, ast.NamedExpr)):
@@ -618,8 +583,8 @@ def _dynamic_import_names(tree: ast.AST) -> set[str]:
                 values.add(defaults[node])
 
     def constants(node: ast.AST) -> set[str]:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return {node.value}
+        if (value := _literal_string(node)) is not None:
+            return {value}
         if not isinstance(node, ast.Name):
             return set()
         for candidate in scope_chain(node):
@@ -647,15 +612,27 @@ def _dynamic_targets(tree: ast.AST, known: set[str]) -> set[str]:
         if (match := _match_module(value, known))
     }
     aliases = _aliases(tree)
+    bindings: dict[str, list[ast.AST]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+            targets_to_bind = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets_to_bind:
+                if isinstance(target, ast.Name):
+                    bindings.setdefault(target.id, []).append(node.value)
 
     def add_literal(node: ast.AST) -> None:
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            if match := _match_module(node.value, known):
+        if (value := _literal_string(node)) is not None:
+            if match := _match_module(value, known):
                 targets.add(match)
 
-    def add_literals(node: ast.AST) -> None:
-        for item in ast.walk(node):
-            add_literal(item)
+    def add_literals(node: ast.AST, resolving: frozenset[str] = frozenset()) -> None:
+        add_literal(node)
+        if isinstance(node, ast.Name) and node.id not in resolving:
+            for value in bindings.get(node.id, ()):
+                add_literals(value, resolving | {node.id})
+            return
+        for child in ast.iter_child_nodes(node):
+            add_literals(child, resolving)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
@@ -743,35 +720,20 @@ def _consumer_edges(known: set[str]) -> set[str]:
     return edges
 
 
-def _symbol_use_sources(module: str, symbol: str) -> set[str]:
-    expected = f"{module}.{symbol}"
-    sources: set[str] = set()
-    for path in _source_paths():
-        relative = path.relative_to(ROOT).as_posix()
-        tree = _tree(path.read_bytes(), relative)
-        aliases = _aliases(
-            tree,
-            _module_for_path(path),
-            source_is_package=path.name == "__init__.py",
+RETIRED_DOCUMENT_REFERENCE = re.compile(
+    r"\bhwpxfiller(?:\.|[\\/])core\b|\bhwpxfiller\s+import\s+core\b"
+)
+
+
+def _active_document_paths() -> list[Path]:
+    paths = {ROOT / "README.md", ROOT / "CLAUDE.md"}
+    for root in ("docs", "packaging", "examples"):
+        paths.update(
+            path
+            for path in (ROOT / root).rglob("*")
+            if path.suffix.lower() in {".md", ".html"} and "archive" not in path.parts
         )
-        if any(
-            isinstance(node, ast.Attribute)
-            and _qualified_name(node, aliases) == expected
-            for node in ast.walk(tree)
-        ):
-            sources.add(relative)
-    return sources
-
-
-def _category(relative: str) -> str:
-    root = relative.split("/", 1)[0]
-    if relative == "conftest.py" or root == "tests":
-        return "test"
-    if root == "src":
-        return "production"
-    if root in {"scripts", "examples"}:
-        return "scripts"
-    return "build"
+    return sorted(path for path in paths if path.is_file())
 
 
 def _bound_names(target: ast.AST) -> set[str]:
@@ -837,36 +799,62 @@ def _public_definitions(source: "str | bytes", module: str) -> set[str]:
     return definitions
 
 
-def _legacy_definitions() -> set[str]:
-    sources = {str(unit["module"]): unit["source_write_set"] for unit in _rings()}
-    out: set[str] = set()
-    for module in sorted(m for m in _known_modules() if m.startswith("hwpxfiller.core")):
-        for relative in sources[module]:
-            out |= _public_definitions((ROOT / str(relative)).read_bytes(), module)
-    return out
-
-
 def _facade_exports(source: "str | bytes", module: str) -> tuple[set[str], set[str]]:
     tree = _tree(source, module)
+    parents = _parents(tree)
+    assignments: list[ast.Assign | ast.AnnAssign] = []
+
+    def mentions_all(node: ast.AST) -> bool:
+        return any(isinstance(item, ast.Name) and item.id == "__all__" for item in ast.walk(node))
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(mentions_all(target) for target in targets):
+                assignments.append(node)
+        elif isinstance(node, (ast.AugAssign, ast.NamedExpr, ast.Delete)):
+            targets = node.targets if isinstance(node, ast.Delete) else [node.target]
+            if any(mentions_all(target) for target in targets):
+                raise ContractError(f"{module}: __all__ mutation은 허용하지 않습니다")
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and mentions_all(node.func.value)
+        ):
+            raise ContractError(f"{module}: __all__ mutation은 허용하지 않습니다")
+    if len(assignments) != 1 or parents.get(assignments[0]) is not tree:
+        raise ContractError(f"{module}: top-level explicit __all__ 은 정확히 하나여야 합니다")
+    if sum(
+        isinstance(node, ast.Name) and node.id == "__all__"
+        for node in ast.walk(tree)
+    ) != 1:
+        raise ContractError(f"{module}: __all__ mutation은 허용하지 않습니다")
+
     imported: set[str] = set()
     declared: set[str] = set()
+    has_all = False
 
     def visit(body: list[ast.stmt]) -> None:
+        nonlocal has_all
         for node in body:
             names: set[str] = set()
             if isinstance(node, ast.Import):
                 names.update(alias.asname or alias.name.split(".", 1)[0] for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module != "__future__":
                 names.update(alias.asname or alias.name for alias in node.names)
-            elif isinstance(node, ast.Assign) and "__all__" in {
-                name for target in node.targets for name in _bound_names(target)
-            }:
-                declared.update(ast.literal_eval(node.value))
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                names.add(node.name)
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-                names.update(name for target in targets for name in _bound_names(target))
+                if "__all__" in {
+                    name for target in targets for name in _bound_names(target)
+                }:
+                    if node.value is None:
+                        raise ContractError(f"{module}: __all__ 값이 없습니다")
+                    declared.update(ast.literal_eval(node.value))
+                    has_all = True
+                else:
+                    names.update(name for target in targets for name in _bound_names(target))
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
             elif isinstance(node, ast.TypeAlias):
                 names.update(_bound_names(node.name))
             imported.update(name for name in names if not name.startswith("_"))
@@ -874,6 +862,8 @@ def _facade_exports(source: "str | bytes", module: str) -> tuple[set[str], set[s
                 visit(_same_scope_body(node))
 
     visit(tree.body)
+    if not has_all:
+        raise ContractError(f"{module}: explicit __all__ 이 없습니다")
     prefix = f"{module}|"
     return ({prefix + name for name in imported}, {prefix + name for name in declared})
 
@@ -1084,6 +1074,61 @@ def _product_modules() -> set[str]:
     return modules
 
 
+def _kernel_modules() -> set[str]:
+    return {
+        _module_for_path(path)
+        for path in (ROOT / "src" / "hwpxcore").rglob("*.py")
+    }
+
+
+def _private_import_edges(
+    source: "str | bytes", *, relative: str, module: str, source_is_package: bool
+) -> set[str]:
+    edges: set[str] = set()
+    package = module if source_is_package else module.rpartition(".")[0]
+    tree = _tree(source, relative)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            edges.update(
+                f"{relative}|{alias.name}"
+                for alias in node.names
+                if any(part.startswith("_") for part in alias.name.split("."))
+            )
+        elif isinstance(node, ast.ImportFrom):
+            base = _resolve_from(package, node.level, node.module)
+            if base != "__future__" and any(
+                part.startswith("_") for part in base.split(".")
+            ):
+                edges.add(f"{relative}|{base}")
+            edges.update(
+                f"{relative}|{base}.{alias.name}"
+                for alias in node.names
+                if alias.name.startswith("_")
+            )
+    edges.update(
+        f"{relative}|{name}"
+        for name in _dynamic_import_names(tree)
+        if name != "__future__" and any(part.startswith("_") for part in name.split("."))
+    )
+    return edges
+
+
+def _production_private_imports() -> set[str]:
+    edges: set[str] = set()
+    for path in (ROOT / "src").rglob("*.py"):
+        relative = path.relative_to(ROOT).as_posix()
+        module = _module_for_path(path)
+        edges.update(
+            _private_import_edges(
+                path.read_bytes(),
+                relative=relative,
+                module=module,
+                source_is_package=path.name == "__init__.py",
+            )
+        )
+    return edges
+
+
 def _source_for_module(module: str) -> bytes:
     for unit in _rings():
         if unit["module"] == module:
@@ -1189,9 +1234,16 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
     def public(name: str) -> bool:
         return not name.startswith("_") or name.startswith("__") and name.endswith("__")
 
+    def record_type_params(owner: str, node: ast.AST) -> None:
+        for parameter in getattr(node, "type_params", ()):
+            for field in ("bound", "default_value"):
+                if (value := getattr(parameter, field, None)) is not None:
+                    record(owner, value)
+
     def visit(body: list[ast.stmt], owner: str = "") -> None:
         for node in body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and public(node.name):
+                record_type_params(f"{owner}{node.name}", node)
                 for name in _function_annotations(node, aliases):
                     if _is_vendor_name(name):
                         edges.add(f"{module}|{owner}{node.name}|{name}")
@@ -1225,8 +1277,10 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
                         record(binding, node.value)
             elif isinstance(node, ast.TypeAlias) and isinstance(node.name, ast.Name):
                 if public(node.name.id):
+                    record_type_params(f"{owner}{node.name.id}", node)
                     record(f"{owner}{node.name.id}", node.value)
             elif isinstance(node, ast.ClassDef) and public(node.name):
+                record_type_params(f"{owner}{node.name}", node)
                 for base in node.bases:
                     record(f"{owner}{node.name}", base)
                 visit(node.body, f"{owner}{node.name}.")
@@ -1237,91 +1291,47 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
     return edges
 
 
-def test_policy_is_exact_sorted_and_wildcard_free() -> None:
-    _policy()
-    _vendor_integrations()
-
-
-def test_census_consumer_counts_match_executable_import_graph() -> None:
-    assert ROOT / "conftest.py" in _source_paths()
-    assert _category("conftest.py") == "test"
-    known = _known_modules()
-    edges = _consumer_edges(known)
-    by_module: dict[str, set[str]] = {module: set() for module in known}
-    for edge in edges:
-        relative, target = edge.split("|", 1)
-        if not target.endswith(".*"):
-            by_module[target].add(relative)
-    entries = _entries()
-    assert {
-        str(entry["id"])
-        for entry in entries
-        if entry["consumer_kind"] == "symbol_use"
-    } == set(SYMBOL_USE)
-    symbol_facts: set[str] = set()
-    for entry in entries:
-        module = str(entry["current_module"])
-        if entry["consumer_kind"] == "symbol_use":
-            sources = _symbol_use_sources(module, SYMBOL_USE[str(entry["id"])])
-            symbol_facts.update(f"{source}|{module}" for source in sources)
-        else:
-            assert entry["consumer_kind"] == "module_import"
-            sources = by_module[module]
-        actual = {name: 0 for name in ("production", "test", "scripts", "build")}
-        for relative in sources:
-            actual[_category(relative)] += 1
-        assert actual == entry["consumers"], f"{entry['id']}: consumer census drift {actual}"
-    assert symbol_facts == _policy()["legacy_symbol_use"]
-
-
-def test_legacy_consumers_are_the_exact_shrinking_allowlist() -> None:
+def test_retired_namespace_has_no_consumer() -> None:
     self_edge = f"{Path(__file__).relative_to(ROOT).as_posix()}|"
     actual = {
         edge
         for edge in _consumer_edges(RETIRED_MODULE_ROOTS)
         if not edge.startswith(self_edge)  # 이 owner의 의도적 import-failure probe
     }
-    assert actual == _policy()["legacy_consumer"], (
-        f"legacy consumer added={sorted(actual - _policy()['legacy_consumer'])}, "
-        f"stale={sorted(_policy()['legacy_consumer'] - actual)}"
-    )
+    assert not actual, f"retired namespace consumer: {sorted(actual)}"
+    stale_docs = [
+        path.relative_to(ROOT).as_posix()
+        for path in _active_document_paths()
+        if RETIRED_DOCUMENT_REFERENCE.search(path.read_text(encoding="utf-8"))
+    ]
+    assert not stale_docs, f"retired namespace docs: {stale_docs}"
 
 
-def test_legacy_namespace_has_no_new_definition_or_export() -> None:
-    policy = _policy()
+def test_public_surface_is_exact_and_private_imports_are_zero() -> None:
     legacy_root = ROOT / "src" / "hwpxfiller" / "core"
     assert not legacy_root.exists(), "retired src/hwpxfiller/core 디렉터리가 다시 생겼습니다"
-    with pytest.raises(ModuleNotFoundError):
+    assert importlib.util.find_spec("hwpxfiller.core") is None
+    with pytest.raises(ModuleNotFoundError) as stopped:
         importlib.import_module("hwpxfiller.core")
-    assert _legacy_definitions() == policy["legacy_definition"]
-    actual: set[str] = set()
-    for module in ("hwpxcore", "hwpxfiller"):
+    assert stopped.value.name == "hwpxfiller.core"
+    for module, names in _public_surface().items():
         imported, declared = _facade_exports(_source_for_module(module), module)
-        assert imported == declared
-        actual |= imported
-    assert actual == policy["legacy_export"]
+        expected = {f"{module}|{name}" for name in names}
+        assert imported == declared == expected
+        runtime = getattr(importlib.import_module(module), "__all__", None)
+        assert isinstance(runtime, list) and len(runtime) == len(names) and set(runtime) == names
+    assert not _production_private_imports()
 
 
-def test_hwpxcore_has_no_new_product_import_or_environment_effect() -> None:
+def test_hwpxcore_has_no_product_import_or_environment_effect() -> None:
     product_imports: set[str] = set()
     effects: set[str] = set()
-    format_modules = {
-        str(entry["current_module"])
-        for entry in _entries()
-        if entry["disposition"] == "FORMAT_KERNEL"
-    }
-    for module in sorted(m for m in _known_modules() if m.startswith("hwpxcore")):
+    for module in sorted(_kernel_modules()):
         source = _source_for_module(module)
         product_imports |= _kernel_product_import_edges(source, module)
-    for module in sorted(format_modules):
-        source = _source_for_module(module)
         effects |= _kernel_effect_edges(source, module)
-    policy = _policy()
-    assert product_imports == policy["kernel_product_import"]
-    assert effects == policy["kernel_effect"], (
-        f"kernel effect added={sorted(effects - policy['kernel_effect'])}, "
-        f"stale={sorted(policy['kernel_effect'] - effects)}"
-    )
+    assert not product_imports, f"kernel product import: {sorted(product_imports)}"
+    assert not effects, f"kernel environment effect: {sorted(effects)}"
 
 
 def test_product_contract_has_no_new_vendor_import_or_public_type() -> None:
@@ -1331,9 +1341,8 @@ def test_product_contract_has_no_new_vendor_import_or_public_type() -> None:
         source = _source_for_module(module)
         imports |= _vendor_import_edges(source, module)
         public_types |= _vendor_public_type_edges(source, module)
-    policy = _policy()
-    assert imports == policy["product_vendor_import"]
-    assert public_types == policy["vendor_public_type"]
+    assert imports == _product_vendor_policy()
+    assert not public_types, f"Product public vendor type: {sorted(public_types)}"
     assert not _frontend_vendor_import_violations(_frontend_sources())
 
 
@@ -1378,7 +1387,13 @@ def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> Non
         "import importlib\nimportlib.import_module('hwpxfiller.core.job')\n",
         "from importlib import import_module as load\nload('hwpxfiller.core.job')\n",
         "from importlib import import_module\nMODULE = 'hwpxfiller.core.job'\nimport_module(MODULE)\n",
+        "from importlib import import_module\nimport_module('hwpxfiller.' + 'core')\n",
+        "from importlib import import_module\nMODULE = 'hwpxfiller.' + 'core'\nimport_module(MODULE)\n",
+        "from importlib import import_module\ndef load(MODULE='hwpxfiller.' + 'core'):\n return import_module(MODULE)\n",
         "Analysis([], hiddenimports=['hwpxfiller.core.job'])\n",
+        "Analysis([], hiddenimports=['hwpxfiller.' + 'core'])\n",
+        "HIDDEN = ['hwpxfiller.core.job']\nAnalysis([], hiddenimports=HIDDEN)\n",
+        "REQUIRED_HIDDEN = ['hwpxfiller.' + 'core']\n",
         "import hwpxfiller\ndef f(x: 'hwpxfiller.core.job.Job') -> None: ...\n",
         "def f[T: 'hwpxfiller.core.job.Job'](x: T) -> None: ...\n",
         "type A[**P = 'hwpxfiller.core.job.Job'] = tuple[P.args]\n",
@@ -1401,13 +1416,15 @@ def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> Non
         },
         known,
     ) == {"hwpxfiller.core"}
+    assert RETIRED_DOCUMENT_REFERENCE.search(
+        "```python\nfrom hwpxfiller import core\n```\n"
+    )
+    assert RETIRED_DOCUMENT_REFERENCE.search("`hwpxfiller/core/job.py`\n")
 
 
-def test_negative_probe_rejects_wildcard_allowlist() -> None:
-    allowlist = {name: {} for name in EXPECTED_ALLOWLISTS}
-    allowlist["legacy_consumer"] = {"KC-01": ["src/**"]}
+def test_negative_probe_rejects_wildcard_vendor_policy() -> None:
     with pytest.raises(ContractError, match="wildcard"):
-        _validate_policy({"schema": EXPECTED_SCHEMA, "allowlist": allowlist})
+        _validate_product_vendor_import({"hwpxfiller.domain.authoring": ["lxml.*"]})
 
 
 def test_negative_probe_finds_kernel_path_save() -> None:
@@ -1436,7 +1453,7 @@ def parse(buf):
     }
 
 
-def test_negative_probe_finds_vendor_type_contract_exposure() -> None:
+def test_negative_probe_finds_vendor_type_contract_exposure(tmp_path: Path) -> None:
     source = """import lxml
 import zipfile
 from importlib import import_module as load
@@ -1445,6 +1462,8 @@ if TYPE_CHECKING:
     from lxml.etree import _Element
 load('lxml.etree')
 type ElementList = list['_Element']
+def generic[T: '_Element'](value: T) -> T: ...
+class Generic[T: '_Element']: ...
 class Contract(Protocol):
     def __init__(this):
         this.root: '_Element'
@@ -1464,6 +1483,8 @@ class Contract(Protocol):
         "hwpxfiller.application.contract|Contract.__iter__|lxml.etree._Element",
         "hwpxfiller.application.contract|Contract.root|lxml.etree._Element",
         "hwpxfiller.application.contract|ElementList|lxml.etree._Element",
+        "hwpxfiller.application.contract|Generic|lxml.etree._Element",
+        "hwpxfiller.application.contract|generic|lxml.etree._Element",
     }
     for symbol in ("", "dispose()"):
         with pytest.raises(ContractError, match="TS identifier"):
@@ -1475,7 +1496,19 @@ class Contract(Protocol):
         ),
         "dispose",
     )
+    assert not _has_ts_declaration("boot();\n", "boot")
     assert "frontend/js/bridge.js" in _frontend_sources()
+    source_root = tmp_path / "frontend"
+    expected_sources = {
+        "frontend/src/probe.cjs",
+        "frontend/src/probe.cts",
+        "frontend/src/probe.mts",
+    }
+    for relative in expected_sources:
+        path = source_root / relative.removeprefix("frontend/")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("module.exports = {};\n", encoding="utf-8")
+    assert set(_frontend_sources(source_root)) == expected_sources
     assert not _frontend_vendor_import_violations(
         {
             "frontend/src/screens/comment_probe.ts": (
@@ -1496,6 +1529,10 @@ class Contract(Protocol):
                 )
             }
         )
+    with pytest.raises(ContractError, match="require\\(\\) specifier"):
+        _frontend_vendor_import_violations(
+            {"frontend/src/screens/require_probe.cjs": "require(vendorName);\n"}
+        )
     assert _frontend_vendor_import_violations(
         {
             "frontend/js/vendor_probe.js": 'import "react"\n',
@@ -1506,6 +1543,7 @@ class Contract(Protocol):
                 'import "react"\n'
                 'import type { Root } from "react-dom/client"\n'
             ),
+            "frontend/src/contract/common.cjs": 'require("react")\n',
             "frontend/src/contract/import_equals.ts": (
                 'import type ReactTypes = require("react")\n'
             ),
@@ -1515,6 +1553,7 @@ class Contract(Protocol):
             "frontend/src/contract/reference.d.ts": (
                 '/// <reference types="react" />\n'
             ),
+            "frontend/src/contract/module.mts": 'module.require("react-dom/client")\n',
             "frontend/src/react/vendor.ts": (
                 'import type { ReactNode } from "react"\n'
                 "export type VendorNode = ReactNode\n"
@@ -1532,9 +1571,11 @@ class Contract(Protocol):
         "frontend/src/contract/absolute.ts|/src/react/vendor-types",
         "frontend/src/contract/direct.ts|react",
         "frontend/src/contract/direct.ts|react-dom/client",
+        "frontend/src/contract/common.cjs|react",
         "frontend/src/contract/import_equals.ts|react",
         "frontend/src/contract/probe.ts|../react/vendor.ts",
         "frontend/src/contract/reference.d.ts|react",
+        "frontend/src/contract/module.mts|react-dom/client",
         "frontend/src/screens/probe.ts|vendor-sdk",
     }
 
@@ -1565,3 +1606,28 @@ __all__ = ['Job', 'NewExport', 'PublicAlias']
         "hwpxfiller.core|NewExport",
         "hwpxfiller.core|PublicAlias",
     }
+    imported, declared = _facade_exports(
+        "__all__: list[str] = ['Ghost']\n", "hwpxfiller"
+    )
+    assert imported == set()
+    assert declared == {"hwpxfiller|Ghost"}
+    with pytest.raises(ContractError, match="explicit __all__"):
+        _facade_exports("pass\n", "hwpxfiller")
+    with pytest.raises(ContractError, match="mutation"):
+        _facade_exports("__all__ = []\n__all__.append('Ghost')\n", "hwpxfiller")
+    with pytest.raises(ContractError, match="mutation"):
+        _facade_exports(
+            "__all__ = []\n_alias = __all__\n_alias.append('Ghost')\n", "hwpxfiller"
+        )
+    assert _private_import_edges(
+        "from hwpxcore._private import Public\n",
+        relative="src/hwpxfiller/domain/probe.py",
+        module="hwpxfiller.domain.probe",
+        source_is_package=False,
+    ) == {"src/hwpxfiller/domain/probe.py|hwpxcore._private"}
+    assert _private_import_edges(
+        "from importlib import import_module\nimport_module('hwpxcore._private')\n",
+        relative="src/hwpxfiller/domain/probe.py",
+        module="hwpxfiller.domain.probe",
+        source_is_package=False,
+    ) == {"src/hwpxfiller/domain/probe.py|hwpxcore._private"}

@@ -331,6 +331,14 @@ _SUBCOMMANDS_EPILOG = """\
 """
 
 
+def _force_utf8_output() -> None:
+    """Windows redirected consoles에서도 한국어 CLI 출력을 손실 없이 쓴다."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:
     """CLI 진입점 — 최상위 오류 번역 경계(RC-16).
 
@@ -339,6 +347,7 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     (문서화된 계약)·생성 부분실패 exit 1 과 크래시를 종료코드로 구분해 자동화의
     실패 종류 오분류(성공 배치 재실행 유발 등)를 막는다.
     """
+    _force_utf8_output()
     try:
         return _run(argv, secret_store=secret_store)
     except NaraFetchError as exc:

@@ -22,7 +22,7 @@ from difflib import SequenceMatcher
 
 from .authoring import scan_tokens
 from .schema import extract_schema
-from hwpxcore.text_extract import _require_package
+from hwpxcore.text_extract import require_package
 
 _WS_RE = re.compile(r"\s+")
 # 유사도 임계값 — 이 이상이면 near-duplicate/개명 후보로 본다.
@@ -100,7 +100,7 @@ def lint_template(
 
     **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     """
-    pkg = _require_package(pkg)  # 한 package 를 schema/scan 에 공유
+    pkg = require_package(pkg)  # 한 package 를 schema/scan 에 공유
     schema = extract_schema(pkg)
     names = schema.field_names()
     findings: "list[LintFinding]" = []

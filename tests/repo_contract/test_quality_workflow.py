@@ -9,17 +9,17 @@
 """
 from __future__ import annotations
 
-import importlib.util
+import io
 import json
 import re
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 QUALITY = ROOT / ".github" / "workflows" / "quality.yml"
-CLI_ENTRY = ROOT / "packaging" / "hwpx_cli_entry.py"
 AXES = {
     "native": "HWPX_SKIP_NATIVE_TESTS",
     "browser": "HWPX_SKIP_MOTION_TESTS",
@@ -583,13 +583,10 @@ def test_installer_and_signing_remain_release_only() -> None:
         assert release_only in release
 
 
-def test_frozen_cli_forces_utf8_for_redirected_windows_output(monkeypatch) -> None:
-    spec = importlib.util.spec_from_file_location("hwpx_cli_entry_contract", CLI_ENTRY)
-    assert spec is not None and spec.loader is not None
-    entry = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(entry)
+def test_cli_forces_utf8_for_redirected_windows_output(monkeypatch) -> None:
+    from hwpxfiller import cli
 
-    class RedirectedStream:
+    class RedirectedStream(io.StringIO):
         options: dict[str, str] | None = None
 
         def reconfigure(self, **kwargs: str) -> None:
@@ -600,8 +597,10 @@ def test_frozen_cli_forces_utf8_for_redirected_windows_output(monkeypatch) -> No
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
 
-    entry._force_utf8_output()
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["--help"])
 
     expected = {"encoding": "utf-8", "errors": "backslashreplace"}
+    assert stopped.value.code == 0
     assert stdout.options == expected
     assert stderr.options == expected

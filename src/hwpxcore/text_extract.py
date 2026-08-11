@@ -53,7 +53,7 @@ class PackageLike(Protocol):
     def content_xml_names(self) -> "list[str]": ...
 
 
-def _local(tag: object) -> str:
+def local_name(tag: object) -> str:
     """요소의 로컬 태그명(네임스페이스 제거). 주석/PI 등 비문자 태그는 빈 문자열."""
     if not isinstance(tag, str):
         return ""
@@ -95,7 +95,7 @@ class CoverageLedger:
         tag = child.tag
         if not isinstance(tag, str):  # 주석/PI 등
             return ""
-        local = _local(tag)
+        local = local_name(tag)
         ns = _ns(tag)
         if ns and ns != HP_NS:
             # 본문 결정 지점에 나타난 비-hp 요소도 침묵 누락 방지 위해 기록.
@@ -265,7 +265,7 @@ def _headerfooter_xml_names(pkg: PackageLike, prefix: str) -> "list[str]":
 
 def _has_body_text(root: etree._Element) -> bool:
     """루트가 본문 문단(텍스트 있는 ``hp:t``)을 실제로 담는지."""
-    if _local(root.tag) == "head":
+    if local_name(root.tag) == "head":
         # hp:head 는 스타일/정의 컨테이너 — 본문 아님.
         return False
     for t in root.iter(f"{{{HP_NS}}}t"):
@@ -278,13 +278,13 @@ def _has_body_text(root: etree._Element) -> bool:
 
 
 # ------------------------------------------------------------- 텍스트 복원
-def _text_of_t(t_el: etree._Element) -> str:
+def text_of_t(t_el: etree._Element) -> str:
     """``hp:t`` 혼합 콘텐츠를 문자열로 복원. ``hp:tab`` -> \\t, ``hp:lineBreak`` -> \\n."""
     parts: "list[str]" = []
     if t_el.text:
         parts.append(t_el.text)
     for ch in t_el:
-        ln = _local(ch.tag)
+        ln = local_name(ch.tag)
         if ln == "tab":
             parts.append("\t")
         elif ln == "lineBreak":
@@ -321,7 +321,7 @@ def _blocks_from_paragraph(
         for ch in run:
             ln = ledger.classify(ch, _HANDLED_RUN, _IGNORE_RUN, run_path)
             if ln == "t":
-                txt = _text_of_t(ch)
+                txt = text_of_t(ch)
                 if txt:
                     buf.append(txt)
                     if field_stack and txt.strip():
@@ -332,7 +332,7 @@ def _blocks_from_paragraph(
                 # ctrl 내부는 별도 결정 지점으로 원장에 넣지 않는다(제어 객체 세부).
                 # 누름틀 경계만 관찰한다.
                 for c in ch:
-                    cl = _local(c.tag)
+                    cl = local_name(c.tag)
                     if cl == "fieldBegin":
                         field_stack.append((c.get("name") or "").strip())
                     elif cl == "fieldEnd":
@@ -375,7 +375,7 @@ def _cell_span_addr(tc: etree._Element) -> "tuple[dict, dict]":
     span: "dict[str, int]" = {}
     addr: "dict[str, int]" = {}
     for c in tc:
-        ln = _local(c.tag)
+        ln = local_name(c.tag)
         if ln == "cellSpan":
             for k in ("colSpan", "rowSpan"):
                 v = c.get(k)
@@ -445,7 +445,7 @@ def _table_from_el(
 
 
 # ------------------------------------------------------------------ 공개 API
-def _require_package(obj: object) -> PackageLike:
+def require_package(obj: object) -> PackageLike:
     """열린 package 만 통과하는 덕타이핑 관문 — 경로/바이트 수용 뒷문 없음(P2-19R, #576).
 
     파서 의미론 층은 파일 IO 를 개시하지 않는다. isinstance(HwpxPackage) 검사는
@@ -467,7 +467,7 @@ def extract_document(pkg: object) -> Document:
     실제로 담은 ``header*``/``footer*`` XML 만 별도 영역으로 포함하며, 스타일 전용
     ``hp:head`` (``Contents/header.xml``)는 제외한다. 미처리 구조는 원장에 남는다.
     """
-    pkg = _require_package(pkg)
+    pkg = require_package(pkg)
     doc = Document()
     ledger = CoverageLedger()
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)

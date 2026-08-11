@@ -31,8 +31,7 @@
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
 | `module_rings.toml` | 모듈별 ring 좌표(목표 권위)·source write set·behavior oracle. 안쪽→바깥쪽 의존 금지선의 **유일한** 정본이라 물리 이관 완료까지 영속(#542 H-2). 유래한 P1 계측 서사는 Git 이력이, 미이행 obligation 은 이슈 #582 가 소유 |
-| `p3_kernel_census.toml` | **임시 실행 원장**(P3-01 #593) — 남은 `hwpxcore` format-kernel cluster의 전수 계측. P3-03~P3-05가 제품/효과 항목을 처분했고 P3-99(#586)에서 제거되거나 영구 계약으로 승격된다(#585 완료 조건 13). 짝 게이트 `tests/repo_contract/test_p3_kernel_census.py` 와 같은 변경으로 처분 |
-| `tests/kernel_boundary_contract.toml` | **혼합 생명주기 계약** — `[allowlist.*]`는 P3-02(#592)의 임시 축소 원장으로 이동과 함께 줄여 P3-99에서 census와 처분한다. `[vendor_integration.*]`는 P3-06(#588)의 영속 배치·lifecycle 규율이므로 P3-99에서 유지하거나 이름 붙은 후속 정본과 게이트로 원자적 승계한 뒤에만 이 파일을 처분한다 |
+| `tests/architecture_contract.toml` | P3-07(#587)의 **영속 architecture 계약** — root 공개 표면, module-key 제품 vendor 정책, frontend vendor 배치·lifecycle owner를 정본화한다. 짝 게이트는 `tests/repo_contract/test_p3_forbidden_edges.py` |
 
 ## 결정 기록
 
