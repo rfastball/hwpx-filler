@@ -4316,7 +4316,8 @@ def test_workbench_entry_hands_over_the_display_ordered_selection(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     wb = WorkbenchController(
-        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+        ctrl.registry, lambda s, snap: None, clock=datetime.now,
+        target_font=TargetFontSetting())
     ctrl.workbench_open = wb.open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] and res["count"] == 2
@@ -4415,7 +4416,8 @@ def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
     ctrl.dispatch("rename_job", {"name": "발주요청_기안", "new": "발주요청_기안 v2"})
     assert ctrl.job_name == "발주요청_기안 v2" and ctrl.job_is_txt is True
     wb = WorkbenchController(
-        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+        ctrl.registry, lambda s, snap: None, clock=datetime.now,
+        target_font=TargetFontSetting())
     ctrl.workbench_open = wb.open
     assert ctrl.dispatch("open_workbench", {})["ok"] is True
     assert wb.job_name == "발주요청_기안 v2"
@@ -4433,7 +4435,8 @@ def test_txt_session_sees_rules_saved_elsewhere_on_re_entry(tmp_path):
             FieldMapping(template_field="공고명", source="presmptPrce")])),
     )
     wb = WorkbenchController(
-        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+        ctrl.registry, lambda s, snap: None, clock=datetime.now,
+        target_font=TargetFontSetting())
     ctrl.workbench_open = wb.open
     ctrl.dispatch("open_workbench", {})
     assert wb.base_job is not None
@@ -4448,7 +4451,8 @@ def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     ctrl.registry.delete("발주요청_기안")
     ctrl.workbench_open = WorkbenchController(
-        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting()).open
+        ctrl.registry, lambda s, snap: None, clock=datetime.now,
+        target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
 
@@ -4492,7 +4496,8 @@ def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
     (tmp_path / "발주요청_기안.txt").write_bytes("공고: {{공고명}}".encode("cp949"))
     assert ctrl.snapshot()["gate"]["enabled"] is True   # 파일은 실재한다
     ctrl.workbench_open = WorkbenchController(
-        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting()).open
+        ctrl.registry, lambda s, n: None, clock=datetime.now,
+        target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "템플릿을 읽을 수 없습니다" in res["error"]
 
@@ -4574,7 +4579,8 @@ def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is False and "템플릿" in snap["gate"]["text"]
     ctrl.workbench_open = WorkbenchController(
-        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting()).open
+        ctrl.registry, lambda s, n: None, clock=datetime.now,
+        target_font=TargetFontSetting()).open
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "템플릿" in res["error"]
 

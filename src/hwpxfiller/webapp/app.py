@@ -25,6 +25,7 @@ import shutil
 import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 
 from ..host import boot_budget
@@ -222,7 +223,8 @@ class WebFrontend:
             PoolController(pool_registry, self._push),
             # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면
             # 여기로 온다. 대상 글꼴(TargetFontSetting)은 앱 전역 영속 선언의 단일 실체다.
-            WorkbenchController(job_registry, self._push, target_font=target_font),
+            WorkbenchController(job_registry, self._push, clock=datetime.now,
+                                target_font=target_font),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규

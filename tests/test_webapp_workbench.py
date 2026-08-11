@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,7 @@ def _ctrl(tmp_path: Path) -> "tuple[WorkbenchController, JobRegistry, list]":
     pushes: list = []
     ctrl = WorkbenchController(
         reg, lambda s, snap: pushes.append((s, snap)),
+        clock=lambda: datetime(2026, 8, 11, 12, 34, 56),
         target_font=TargetFontSetting(),
     )
     return ctrl, reg, pushes
@@ -330,7 +332,7 @@ def test_first_copy_records_recent_use_once_per_session(tmp_path):
     assert reg.load("발주요청_기안").last_run_at == ""      # 진입만으로는 기록하지 않는다
     ctrl.note_copied(ctrl.render()[1])
     first = reg.load("발주요청_기안").last_run_at
-    assert first, "복사 완료가 최근 사용을 기록하지 않았습니다."
+    assert first == "2026-08-11T12:34:56"
     # 세션당 1회 — 두 번째 복사는 같은 사실을 다시 쓰지 않는다(durable 쓰기 증식 금지).
     _send(ctrl, "toggle_advance", {"value": True})
     ctrl.note_copied(ctrl.render()[1])
