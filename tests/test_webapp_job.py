@@ -899,9 +899,17 @@ def test_generate_rejects_concurrent_entry(tmp_path):
     }
 
 
-def test_generation_stamps_last_run_at(tmp_path):
-    """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
+def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
+    """완주 = 역사(#129) — 영속된 최신 Job 전체가 세션 사본도 갱신한다."""
     ctrl, _ = _controller(tmp_path)
+    stamped_jobs = []
+    stamp_last_run = ctrl.registry.stamp_last_run
+
+    def capture_stamp(*args, **kwargs):
+        stamped_jobs.append(stamp_last_run(*args, **kwargs))
+        return stamped_jobs[-1]
+
+    monkeypatch.setattr(ctrl.registry, "stamp_last_run", capture_stamp)
     assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
@@ -914,7 +922,7 @@ def test_generation_stamps_last_run_at(tmp_path):
     # 소비처(home_state·screen_library)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
     assert datetime.fromisoformat(stamped)
     assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
-    assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행
+    assert ctrl.vm.job is stamped_jobs[0]                       # 필드 목록 없이 최신 사본 전체 승계
 
 
 def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):

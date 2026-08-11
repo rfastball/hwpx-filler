@@ -2369,8 +2369,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
         # 방금 완주한 규칙을 여전히 「미검토」로 읽는다.
         if outcome.stamped_job is not None and run_vm is self.vm:
-            run_vm.job.last_run_at = outcome.stamped_job.last_run_at
-            run_vm.job.reviewed_rules = dict(outcome.stamped_job.reviewed_rules)
+            run_vm.job = outcome.stamped_job
 
         cancelled = outcome.cancelled
         if cancelled:
