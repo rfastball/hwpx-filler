@@ -72,6 +72,7 @@ from ..application.jobs import (
 from ..domain.identity_summary import identity_summary
 from ..domain.job import (
     Job,
+    rules_fingerprints,
     work_mode,
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
@@ -2369,6 +2370,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
         # 방금 완주한 규칙을 여전히 「미검토」로 읽는다.
         if outcome.stamped_job is not None and run_vm is self.vm:
+            if rules_fingerprints(outcome.stamped_job) != run.rules:
+                self._last_generated = None
+                self._do_preview_close({})
             run_vm.job = outcome.stamped_job
 
         cancelled = outcome.cancelled
