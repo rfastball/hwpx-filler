@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="680" viewBox="0 0 720 680" role="img" aria-labelledby="title desc">
+  <title id="title">문서나르미 — 엑셀·CSV 데이터를 HWPX 문서로 일괄 생성</title>
+  <desc id="desc">엑셀이나 CSV 데이터를 확인한 뒤 HWPX 문서 세 건으로 만드는 모바일용 흐름</desc>
+
+  <rect width="720" height="680" rx="16" fill="#f6f7f9"/>
+
+  <g transform="translate(40 34) scale(.8)">
+    <path d="M3.5 14 22.5 10.5 29 16.5 29.6 22.5 16 25.5 17.5 36 9 40.2Z" fill="#0e3fae"/>
+    <path d="M20 27.5 40 23.2 46.7 29.3 47.3 34 29.5 38 31.8 49.5 25.5 53.4Z" fill="#1857d8"/>
+    <path d="M34 38.5 53 34.3 60 40.5 61.5 58 39.5 62Z" fill="#43c9a8"/>
+    <path d="M46 43H54V55H46Z" fill="#0e3fae"/>
+  </g>
+  <text x="104" y="66" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="22" letter-spacing="1">WINDOWS · HWPX AUTOMATION</text>
+
+  <text x="40" y="156" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="66" font-weight="800" letter-spacing="-2">문서나르미</text>
+  <text x="42" y="216" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="36" font-weight="700">엑셀·CSV를 HWPX 문서로,</text>
+  <text x="42" y="262" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="36" font-weight="700">값을 확인하고 한꺼번에.</text>
+  <text x="42" y="308" fill="#274fa0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="28" font-weight="700">한글 프로그램 없이 HWPX를 직접 읽고 씁니다</text>
+
+  <rect x="24" y="344" width="672" height="308" rx="12" fill="#ffffff" stroke="#e2e4e8"/>
+
+  <g aria-label="엑셀 또는 CSV 데이터">
+    <rect x="48" y="386" width="160" height="138" rx="9" fill="#f6f7f9" stroke="#cbd0d6"/>
+    <rect x="48" y="386" width="160" height="38" rx="9" fill="#e6e9ee"/>
+    <path d="M70 444H186M70 472H186M112 424V506" stroke="#cbd0d6" stroke-width="2"/>
+    <rect x="70" y="434" width="30" height="18" rx="3" fill="#dfe6fb"/>
+    <rect x="70" y="462" width="30" height="18" rx="3" fill="#dfe6fb"/>
+    <rect x="70" y="490" width="30" height="16" rx="3" fill="#dfe6fb"/>
+    <text x="128" y="568" text-anchor="middle" fill="#1c2126" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="34" font-weight="800">XLSX · CSV</text>
+  </g>
+
+  <path d="M222 456H254" stroke="#98a0ab" stroke-width="4" stroke-linecap="round"/>
+  <path d="m244 446 10 10-10 10" fill="none" stroke="#98a0ab" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g aria-label="필드 연결 여섯 개 모두 확인">
+    <rect x="270" y="386" width="176" height="138" rx="9" fill="#dfe6fb" stroke="#2f5fbf" stroke-width="2"/>
+    <circle cx="358" cy="432" r="27" fill="#2f5fbf"/>
+    <path d="m345 432 9 9 18-21" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="358" y="492" text-anchor="middle" fill="#274fa0" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="32" font-weight="800">6 / 6</text>
+    <text x="358" y="568" text-anchor="middle" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="34" font-weight="800">값 확인</text>
+  </g>
+
+  <path d="M460 456H492" stroke="#98a0ab" stroke-width="4" stroke-linecap="round"/>
+  <path d="m482 446 10 10-10 10" fill="none" stroke="#98a0ab" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g aria-label="HWPX 문서 세 건">
+    <path d="M510 412H590L610 432V526H510Z" fill="#eef1f4" stroke="#cbd0d6"/>
+    <path d="M526 398H606L626 418V512H526Z" fill="#dfe6fb" stroke="#2f5fbf"/>
+    <path d="M542 384H622L642 404V498H542Z" fill="#ffffff" stroke="#43c9a8" stroke-width="2"/>
+    <path d="M622 384V404H642" fill="#e5f2ea" stroke="#43c9a8" stroke-width="2" stroke-linejoin="round"/>
+    <text x="592" y="448" text-anchor="middle" fill="#0e3fae" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="26" font-weight="800">HWPX</text>
+    <path d="M562 468H622M562 482H610" stroke="#cbd0d6" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="640" cy="396" r="24" fill="#43c9a8"/>
+    <text x="640" y="404" text-anchor="middle" fill="#0f3b32" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="22" font-weight="800">×3</text>
+    <text x="592" y="568" text-anchor="middle" fill="#1c2126" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="34" font-weight="800">HWPX ×3</text>
+  </g>
+
+  <circle cx="54" cy="620" r="7" fill="#1e8449"/>
+  <text x="74" y="629" fill="#5c626b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="28">빈 값과 덮어쓰기는 먼저 알립니다</text>
+</svg>

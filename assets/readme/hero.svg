@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">문서나르미 — 엑셀·CSV 데이터를 HWPX 문서로 일괄 생성</title>
+  <desc id="desc">엑셀이나 CSV 데이터를 사람이 확인한 작업 규칙에 따라 여러 HWPX 문서로 만드는 흐름</desc>
+
+  <rect width="1200" height="420" rx="16" fill="#f6f7f9"/>
+
+  <g transform="translate(56 42) scale(.72)">
+    <path d="M3.5 14 22.5 10.5 29 16.5 29.6 22.5 16 25.5 17.5 36 9 40.2Z" fill="#0e3fae"/>
+    <path d="M20 27.5 40 23.2 46.7 29.3 47.3 34 29.5 38 31.8 49.5 25.5 53.4Z" fill="#1857d8"/>
+    <path d="M34 38.5 53 34.3 60 40.5 61.5 58 39.5 62Z" fill="#43c9a8"/>
+    <path d="M46 43H54V55H46Z" fill="#0e3fae"/>
+  </g>
+  <text x="112" y="65" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20" font-weight="800">문서나르미</text>
+  <text x="112" y="88" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="15" letter-spacing="1.2">WINDOWS · HWPX AUTOMATION</text>
+
+  <text x="56" y="170" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="58" font-weight="800" letter-spacing="-2">문서나르미</text>
+  <text x="58" y="222" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="29" font-weight="700">엑셀·CSV 데이터를 HWPX 문서로,</text>
+  <text x="58" y="260" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="29" font-weight="700">값을 확인하고 한꺼번에 만듭니다.</text>
+  <text x="58" y="296" fill="#274fa0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="21" font-weight="700">한글 프로그램 없이 HWPX를 직접 읽고 씁니다</text>
+
+  <line x1="56" y1="318" x2="564" y2="318" stroke="#cbd0d6"/>
+  <circle cx="64" cy="352" r="5" fill="#43c9a8"/>
+  <text x="79" y="359" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="18" font-weight="600">값 확인 후 실행</text>
+  <circle cx="251" cy="352" r="5" fill="#43c9a8"/>
+  <text x="266" y="359" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="18" font-weight="600">행별 파일 생성</text>
+  <circle cx="429" cy="352" r="5" fill="#43c9a8"/>
+  <text x="444" y="359" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="18" font-weight="600">작업 규칙 재사용</text>
+
+  <rect x="612" y="32" width="556" height="356" rx="12" fill="#ffffff" stroke="#e2e4e8"/>
+  <text x="648" y="72" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="21" font-weight="800">작업 한 번, 데이터만 바꿔 반복</text>
+  <text x="648" y="98" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="15" letter-spacing=".5">TEMPLATE + MAPPING + FILE NAME</text>
+
+  <g aria-label="엑셀 또는 CSV 데이터">
+    <rect x="648" y="126" width="132" height="164" rx="9" fill="#f6f7f9" stroke="#cbd0d6"/>
+    <rect x="648" y="126" width="132" height="38" rx="9" fill="#e6e9ee"/>
+    <path d="M648 152H780" stroke="#e6e9ee" stroke-width="24"/>
+    <text x="664" y="151" fill="#4a505a" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="18" font-weight="700">XLSX · CSV</text>
+    <path d="M664 181H764M664 213H764M664 245H764M700 164V274" stroke="#cbd0d6"/>
+    <rect x="664" y="174" width="28" height="16" rx="3" fill="#dfe6fb"/>
+    <rect x="664" y="206" width="28" height="16" rx="3" fill="#dfe6fb"/>
+    <rect x="664" y="238" width="28" height="16" rx="3" fill="#dfe6fb"/>
+    <text x="708" y="187" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="15">001</text>
+    <text x="708" y="219" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="15">002</text>
+    <text x="708" y="251" fill="#656a72" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="15">003</text>
+  </g>
+
+  <path d="M796 208H828" stroke="#98a0ab" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="m820 200 8 8-8 8" fill="none" stroke="#98a0ab" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g aria-label="필드 연결 확인">
+    <rect x="844" y="144" width="126" height="128" rx="9" fill="#dfe6fb" stroke="#2f5fbf"/>
+    <circle cx="907" cy="181" r="18" fill="#2f5fbf"/>
+    <path d="m898 181 6 6 12-14" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="907" y="226" text-anchor="middle" fill="#1c2126" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20" font-weight="800">필드 확인</text>
+    <text x="907" y="252" text-anchor="middle" fill="#274fa0" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="18" font-weight="700">6 / 6 확정</text>
+  </g>
+
+  <path d="M986 208H1012" stroke="#98a0ab" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="m1004 200 8 8-8 8" fill="none" stroke="#98a0ab" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g aria-label="HWPX 문서 세 건">
+    <path d="M1000 158H1080L1100 178V286H1000Z" fill="#eef1f4" stroke="#cbd0d6"/>
+    <path d="M1016 143H1096L1116 163V271H1016Z" fill="#dfe6fb" stroke="#2f5fbf"/>
+    <path d="M1032 128H1112L1132 148V256H1032Z" fill="#ffffff" stroke="#43c9a8" stroke-width="2"/>
+    <path d="M1112 128V148H1132" fill="#e5f2ea" stroke="#43c9a8" stroke-width="2" stroke-linejoin="round"/>
+    <text x="1082" y="190" text-anchor="middle" fill="#0e3fae" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="20" font-weight="800">HWPX</text>
+    <path d="M1052 211H1111M1052 226H1098" stroke="#cbd0d6" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="1122" cy="137" r="21" fill="#43c9a8"/>
+    <text x="1122" y="144" text-anchor="middle" fill="#0f3b32" font-family="ui-monospace, 'SFMono-Regular', Consolas, monospace" font-size="18" font-weight="800">×3</text>
+  </g>
+
+  <text x="714" y="326" text-anchor="middle" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">1 · 데이터 선택</text>
+  <text x="907" y="326" text-anchor="middle" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">2 · 값 확인</text>
+  <text x="1076" y="326" text-anchor="middle" fill="#4a505a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">3 · 문서 생성</text>
+  <circle cx="650" cy="358" r="5" fill="#1e8449"/>
+  <text x="665" y="365" fill="#5c626b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif" font-size="20">빈 값·덮어쓰기·미확정 매핑은 먼저 알립니다</text>
+</svg>
