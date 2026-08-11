@@ -1,0 +1,465 @@
+# P3-01 kernel census — hwpxfiller.core · hwpxcore symbol/consumer/effect 전수 원장 (#593)
+#
+# 임시 실행 원장이다: P3-03~P3-05 가 소비하고, P3-99 종료 시 제거되거나 영구 계약으로
+# 승격된다(#585 완료 조건 13). 짝 게이트: tests/repo_contract/test_p3_kernel_census.py
+#
+# 기준선: master da50c48 (#594 facade 8 퇴역 반영 — #585 보정 코멘트 참조)
+# 계측기: AST import 그래프(상대 import 해석 포함) + 문자열 dynamic 참조 + spec hidden import.
+#   consumers 수치는 "모듈을 import 하는 파일 수"(중복 import 문 제거).
+#   production=src/**, test=tests/**, scripts=scripts/**, build=packaging/**(+.spec hidden import).
+#
+# disposition 어휘 (#593):
+#   FORMAT_KERNEL | PRODUCT_DOMAIN | APPLICATION | EXTERNAL_ADAPTER | HOST
+#   | TEMP_SAME_OBJECT_FACADE | REMOVE | BLOCKED_NEEDS_P2_DECISION
+#
+# 규칙: p2_target_authority 는 docs/module_rings.toml 의 target 을 그대로 옮긴 것(P3 재분류
+# 금지). hwpxcore 의 DOMAIN 은 P3 어휘로 FORMAT_KERNEL, hwpxfiller.core 의 DOMAIN 은
+# PRODUCT_DOMAIN 으로 사상한다 — 정제이지 재분류가 아니다(#585 결정 2).
+# 한 파일에 성질이 섞인 곳은 symbol cluster 로 갈랐다(package path IO · job realpath ·
+# mapping load).
+
+schema = [
+  "id", "current_module", "symbol", "visibility", "consumers",
+  "product_semantics_awareness", "environment_or_effect", "p2_target_authority",
+  "target_canonical_import", "behavior_oracle", "compatibility_evidence", "disposition",
+]
+
+baseline_master = "da50c48b54f5eae25f274f69011789ecf211334f"
+
+# ========================================================================= hwpxcore
+
+[[entry]]
+id = "KC-01"
+current_module = "hwpxcore"
+symbol = "__init__ 재수출: Document, extract_document, ValidationReport, validate"
+visibility = "public"
+consumers = { production = 0, test = 0, scripts = 0, build = 0 }  # 소비자는 전부 하위 모듈 직접 import
+product_semantics_awareness = false
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxcore"
+behavior_oracle = "tests/test_extract_invariants.py"
+compatibility_evidence = "재수출 4심벌 전부 정본이 같은 패키지 안 — same-object 자명"
+disposition = "FORMAT_KERNEL"
+
+[[entry]]
+id = "KC-02"
+current_module = "hwpxcore.package"
+symbol = "cluster: HwpxPackage 모델 + from_bytes/to_bytes + content_xml_names + MIMETYPE_* + to_package(bytes/package 분기)"
+visibility = "public"
+consumers = { production = 5, test = 23, scripts = 1, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = ["zip(in-memory)"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = "hwpxcore.package"
+behavior_oracle = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
+compatibility_evidence = "저장 bytes 재현성: info.date_time 고정 + mimetype STORED 첫 항목 — to_bytes 라운드트립이 test_hwpx_package.py 소유"
+disposition = "FORMAT_KERNEL"
+
+[[entry]]
+id = "KC-03"
+current_module = "hwpxcore.package"
+symbol = "cluster: HwpxPackage.open(path) + save(path) + to_package(str|Path 분기) — path IO"
+visibility = "public"
+consumers = { production = 5, test = 23, scripts = 1, build = 0 }  # KC-02 와 소비자 공유(같은 모듈) — 분리는 P3-03 몫
+product_semantics_awareness = false
+environment_or_effect = ["fs-open", "fs-replace(atomic 경유)"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = "hwpxfiller.external.hwpx_package_io"  # P3-03 이 확정 — kernel 은 bytes/stream 만 남긴다(#585 결정 2)
+behavior_oracle = "tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp"
+compatibility_evidence = "to_package 는 P2-19R(#576)의 유일한 정규화 입구 — 경로 소비자가 이 경계로 수렴돼 있어 분리 지점이 이미 한 곳"
+disposition = "EXTERNAL_ADAPTER"
+
+[[entry]]
+id = "KC-04"
+current_module = "hwpxcore.atomic"
+symbol = "write_bytes_atomic, write_text_atomic"
+visibility = "public"
+consumers = { production = 8, test = 1, scripts = 0, build = 1 }  # build = hwpx_filler_web.spec hidden import
+product_semantics_awareness = false
+environment_or_effect = ["fs-tmp", "fs-replace", "fs"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = "hwpxfiller.external.atomic"
+behavior_oracle = "tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp"
+compatibility_evidence = "durable atomic replace — kernel 금지 효과(#585 결정 2). 소비자 8 전부 hwpxfiller 쪽"
+disposition = "EXTERNAL_ADAPTER"
+
+[[entry]]
+id = "KC-05"
+current_module = "hwpxcore.motw"
+symbol = "unblock_bundle"
+visibility = "public"
+consumers = { production = 0, test = 1, scripts = 0, build = 1 }  # 소비자는 frozen 엔트리(조건부 import, spec hidden import 보증)
+product_semantics_awareness = false
+environment_or_effect = ["fs(ADS Zone.Identifier)", "frozen-bundle"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.motw"
+behavior_oracle = "tests/test_motw.py::test_frozen_without_ads_is_safe"
+compatibility_evidence = "포터블 zip MOTW self-unblock — 런타임 환경 효과라 kernel 잔류 불가"
+disposition = "HOST"
+
+[[entry]]
+id = "KC-06"
+current_module = "hwpxcore.validate"
+symbol = "ValidationReport, validate"
+visibility = "public"
+consumers = { production = 4, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxcore.validate"
+behavior_oracle = "tests/test_cli.py::test_cli_ack_empty_injects_marker"
+compatibility_evidence = "형식 불변식 진단 — kernel 허용 표면(#585 결정 2)"
+disposition = "FORMAT_KERNEL"
+
+[[entry]]
+id = "KC-07"
+current_module = "hwpxcore.text_extract"
+symbol = "Document/Section/Table/Cell/Paragraph 모델 + extract_document + PackageLike + iter/full_text"
+visibility = "public"
+consumers = { production = 6, test = 5, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxcore.text_extract"
+behavior_oracle = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
+compatibility_evidence = "P2-19R(#576)에서 package-only 로 역전 완료 — path 를 받지 않는다. PackageLike 덕타이핑이 공개 계약"
+disposition = "FORMAT_KERNEL"
+
+[[entry]]
+id = "KC-08"
+current_module = "hwpxcore.lineseg"
+symbol = "LINESEG_LOCAL, strip_line_layout, serialize_modified_section"
+visibility = "public"
+consumers = { production = 3, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxcore.lineseg"
+behavior_oracle = "tests/test_authoring.py::test_compile_strips_stale_lineseg_only_in_compiled_sections"
+compatibility_evidence = "결정론 transform — kernel 허용 표면"
+disposition = "FORMAT_KERNEL"
+
+[[entry]]
+id = "KC-09"
+current_module = "hwpxcore.native"
+symbol = "__init__ 재수출: clipboard/dialogs/reveal 6심벌"
+visibility = "public"
+consumers = { production = 1, test = 3, scripts = 1, build = 0 }  # scripts = coverage 게이트의 문자열 참조
+product_semantics_awareness = false
+environment_or_effect = ["win32"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = ""
+behavior_oracle = "tests/test_native_positive.py"
+compatibility_evidence = "ring 이 패키지 표면(EXTERNAL_ADAPTER)과 하위 4모듈(HOST)을 다르게 적는다 — 표면은 하위와 함께 움직일 수밖에 없으므로 어느 쪽이 정본인지 P2 판정 필요, #582 상향. hwpx-diff 사본은 census 범위 밖(#593)"
+disposition = "BLOCKED_NEEDS_P2_DECISION"
+
+[[entry]]
+id = "KC-10"
+current_module = "hwpxcore.native.clipboard"
+symbol = "get_clipboard_text, set_clipboard_text"
+visibility = "public"
+consumers = { production = 2, test = 0, scripts = 0, build = 1 }
+product_semantics_awareness = false
+environment_or_effect = ["win32"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.native.clipboard"
+behavior_oracle = "tests/test_native_positive.py"
+compatibility_evidence = "Win32 공용 API 직접 호출 — kernel 금지 효과"
+disposition = "HOST"
+
+[[entry]]
+id = "KC-11"
+current_module = "hwpxcore.native.dialogs"
+symbol = "open_file_dialog, save_file_dialog, open_folder_dialog (+_filter_block 등 내부)"
+visibility = "public"
+consumers = { production = 2, test = 1, scripts = 0, build = 1 }
+product_semantics_awareness = false
+environment_or_effect = ["win32", "sta-thread"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.native.dialogs"
+behavior_oracle = "tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated"
+compatibility_evidence = "comdlg32/shell32 — kernel 금지 효과"
+disposition = "HOST"
+
+[[entry]]
+id = "KC-12"
+current_module = "hwpxcore.native.reveal"
+symbol = "reveal_in_explorer, open_path"
+visibility = "public"
+consumers = { production = 2, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = ["process(explorer)", "fs-probe"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.native.reveal"
+behavior_oracle = "tests/test_tracking_locate.py::test_reveal_and_open_missing_path_is_loud"
+compatibility_evidence = "Explorer 실행 — kernel 금지 효과"
+disposition = "HOST"
+
+[[entry]]
+id = "KC-13"
+current_module = "hwpxcore.native.single_instance"
+symbol = "acquire, focus_existing, _mutex_name"
+visibility = "public"
+consumers = { production = 1, test = 2, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = ["win32(mutex)"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.native.single_instance"
+behavior_oracle = "tests/test_single_instance.py::test_mutex_name_is_stable_and_home_scoped"
+compatibility_evidence = "홈 스코프 mutex — kernel 금지 효과"
+disposition = "HOST"
+
+[[entry]]
+id = "KC-14"
+current_module = "hwpxcore.native._debug"
+symbol = "log"
+visibility = "private"
+consumers = { production = 3, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = ["clock", "env", "fs-append"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = ""
+behavior_oracle = "tests/test_webapp_bridge.py::test_pick_data_file_corrupt_workbook_returns_error_not_raise"
+compatibility_evidence = "opt-in 파일 로그(env 게이트) — 소비자 3 이 전부 HOST 판정 모듈(dialogs·single_instance·webapp.app)이라 native 층과 함께 움직인다. KC-09 와 같은 ring 표면/하위 불일치, #582 상향"
+disposition = "BLOCKED_NEEDS_P2_DECISION"
+
+# =================================================================== hwpxfiller.core
+
+[[entry]]
+id = "FC-01"
+current_module = "hwpxfiller.core"
+symbol = "__init__ 재수출: HwpxEngine, GenerateResult, FieldDocument, ValidationReport, validate"
+visibility = "public"
+consumers = { production = 0, test = 0, scripts = 0, build = 0 }  # 재수출 이름의 소비자 0 — 전부 하위 모듈 직접 import
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = ""
+behavior_oracle = "tests/test_engine.py"
+compatibility_evidence = "재수출 5심벌 전부 정본 직접 import 로 대체 가능 — 소비자 실측 0"
+disposition = "REMOVE"
+
+[[entry]]
+id = "FC-02"
+current_module = "hwpxfiller.core.authoring"
+symbol = "scan_tokens, compile_document, TokenSite, CompileReport (+컴파일 내부 일체)"
+visibility = "public"
+consumers = { production = 6, test = 6, scripts = 1, build = 2 }  # build = 양 spec hidden import + verify_specs 문자열
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.authoring"
+behavior_oracle = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
+compatibility_evidence = "package-only 입력(#576) — path 무접촉 순수 transform"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-03"
+current_module = "hwpxfiller.core.dataset_pool"
+symbol = "(정의 0 stub — P2-22 #570 이관 완료 자리)"
+visibility = "private"
+consumers = { production = 0, test = 0, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = []
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = ""
+behavior_oracle = "tests/test_dataset_pool.py"
+compatibility_evidence = "ring 유닛 좌표 보존용 docstring 만 — namespace 퇴역(P3-05)과 함께 소멸, module_rings 유닛도 같은 변경에서 정리"
+disposition = "REMOVE"
+
+[[entry]]
+id = "FC-04"
+current_module = "hwpxfiller.core.engine"
+symbol = "HwpxEngine, GenerateResult"
+visibility = "public"
+consumers = { production = 6, test = 4, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.engine"
+behavior_oracle = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
+compatibility_evidence = "open_package 주입(P2-19 #567) — concrete IO 무개시. pkg.save(output_path) 호출은 주입된 package-like 의 계약"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-05"
+current_module = "hwpxfiller.core.fields"
+symbol = "FieldDocument, FillNote, field_xml_names, fill_precheck, read_fields"
+visibility = "public"
+consumers = { production = 6, test = 11, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.fields"
+behavior_oracle = "tests/test_authoring.py::test_compile_strips_stale_lineseg_only_in_compiled_sections"
+compatibility_evidence = "bytes 입출력 순수"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-06"
+current_module = "hwpxfiller.core.fill_ledger"
+symbol = "FillLedger, build_fill_ledger, drift 판정 3종, manifest_rows, OutputLedger, ledger_outputs"
+visibility = "public"
+consumers = { production = 6, test = 2, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.fill_ledger"
+behavior_oracle = "tests/test_batch_gate.py::test_drift_describe_is_single_source_of_message"
+compatibility_evidence = "내보내기 직렬화는 #566 에서 external/ledger_export 로 이미 분리. 모듈 내 clock 접근 실측 0 — #582 의 「시각 공급 Clock port 추출」 obligation 은 현행과 불일치(#582 에 보정 기재)"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-07"
+current_module = "hwpxfiller.core.format_engine"
+symbol = "FormatEngine, StdlibFormatEngine, ENGINE, render, presets, parse_*"
+visibility = "public"
+consumers = { production = 4, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.format_engine"
+behavior_oracle = "tests/test_cli.py::test_nara_source_with_profile_fills_template"
+compatibility_evidence = "순수 서식"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-08"
+current_module = "hwpxfiller.core.job"
+symbol = "Job, RunRequest, rules_values/rules_fingerprints, work_mode, mark_missing_values, advance_revisions 등 (realpath cluster 제외)"
+visibility = "public"
+consumers = { production = 18, test = 23, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.job"
+behavior_oracle = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
+compatibility_evidence = "저장 직렬화는 #569 에서 external/job_store 로 분리(bytes sha256 대조 불변). 단 external/job_store 가 _copy_rules_values 등 private 3심벌 의존 — #583 A-1 미해소"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-09"
+current_module = "hwpxfiller.core.job"
+symbol = "cluster: _key_names_the_same_file (os.path.realpath 2회 — library_rel_key 승격 판정)"
+visibility = "private"
+consumers = { production = 18, test = 23, scripts = 0, build = 0 }  # FC-08 과 모듈 공유
+product_semantics_awareness = true
+environment_or_effect = ["fs-realpath"]
+p2_target_authority = "DOMAIN"
+target_canonical_import = ""
+behavior_oracle = "tests/test_job.py"
+compatibility_evidence = "의도적·fail-closed·문서화(#368 2R)이나 #542 감사 C 축 금지선 위 — effect port 주입 vs 키 승격 External 상향의 택일이 #583 C-1 에 계류. 동작 변경 금지 조건 부기됨"
+disposition = "BLOCKED_NEEDS_P2_DECISION"
+
+[[entry]]
+id = "FC-10"
+current_module = "hwpxfiller.core.lint"
+symbol = "lint_template, LintReport, LintFinding, diff_schema, SchemaDrift, similarity"
+visibility = "public"
+consumers = { production = 4, test = 1, scripts = 0, build = 2 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.lint"
+behavior_oracle = "tests/test_cli.py::test_lint_crash_exit_2_distinct_from_issue_gate_exit_1"
+compatibility_evidence = "순수 판정"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-11"
+current_module = "hwpxfiller.core.mapping"
+symbol = "FieldMapping, MappingProfile(from_dict/to_dict/apply), apply_transform, suggest_mappings, TYPES (load 제외)"
+visibility = "public"
+consumers = { production = 13, test = 22, scripts = 0, build = 2 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.mapping"
+behavior_oracle = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
+compatibility_evidence = "save 는 #566 에서 external/mapping_store 로 승계 완료"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-12"
+current_module = "hwpxfiller.core.mapping"
+symbol = "cluster: MappingProfile.load(path) — Path.read_text 직접"
+visibility = "public"
+consumers = { production = 2, test = 0, scripts = 0, build = 0 }  # cli.py 2곳
+product_semantics_awareness = true
+environment_or_effect = ["fs-read"]
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.external.mapping_store"
+behavior_oracle = "tests/test_cli.py::test_nara_source_with_profile_fills_template"
+compatibility_evidence = "#566 이 save 를 external/mapping_store 로 옮기며 결정한 소유(mapping persistence=External)의 읽기 반쪽 — 같은 권위라 BLOCKED 아님. #582 원장에 등재"
+disposition = "EXTERNAL_ADAPTER"
+
+[[entry]]
+id = "FC-13"
+current_module = "hwpxfiller.core.paths"
+symbol = "home_dir, HOME_ENV_VAR, DEFAULT_HOME_NAME"
+visibility = "public"
+consumers = { production = 3, test = 1, scripts = 0, build = 0 }
+product_semantics_awareness = false
+environment_or_effect = ["env"]
+p2_target_authority = "HOST"
+target_canonical_import = "hwpxfiller.host.locations"
+behavior_oracle = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
+compatibility_evidence = "host/locations 가 이미 기본 위치 권위(P2-17 #573) — 홈 해석기만 여기 남았다. 병합 이동"
+disposition = "HOST"
+
+[[entry]]
+id = "FC-14"
+current_module = "hwpxfiller.core.schema"
+symbol = "TemplateSchema, FieldSpec, TableRegion, extract_schema, infer_type"
+visibility = "public"
+consumers = { production = 5, test = 3, scripts = 0, build = 2 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.schema"
+behavior_oracle = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
+compatibility_evidence = "package-only 입력(#576)"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-15"
+current_module = "hwpxfiller.core.template_status"
+symbol = "TemplateStatus, CompileState, compile_status, OUTPUT_SUBDIR_NAME, TRASH_DIR_NAME"
+visibility = "public"
+consumers = { production = 8, test = 6, scripts = 0, build = 0 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.template_status"
+behavior_oracle = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
+compatibility_evidence = "순수 판정 — 디렉터리 이름 상수는 값이지 효과가 아님"
+disposition = "PRODUCT_DOMAIN"
+
+[[entry]]
+id = "FC-16"
+current_module = "hwpxfiller.core.text_registry"
+symbol = "TextTemplateRegistry, TextTemplate, default_text_templates_dir"
+visibility = "public"
+consumers = { production = 5, test = 8, scripts = 0, build = 2 }
+product_semantics_awareness = true
+environment_or_effect = ["fs-read", "fs-probe"]
+p2_target_authority = "EXTERNAL_ADAPTER"
+target_canonical_import = "hwpxfiller.external.text_registry"
+behavior_oracle = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
+compatibility_evidence = "#582 obligation: 텍스트 항목 정체·검증 규칙의 Domain 추출은 미착수 — 이동 시 같은 변경에서 가를지 P3-05 lane 이 판단"
+disposition = "EXTERNAL_ADAPTER"
+
+[[entry]]
+id = "FC-17"
+current_module = "hwpxfiller.core.text_render"
+symbol = "render_record, render_segments, RenderReport, SEG_*, align_* 등"
+visibility = "public"
+consumers = { production = 6, test = 2, scripts = 0, build = 2 }
+product_semantics_awareness = true
+environment_or_effect = []
+p2_target_authority = "DOMAIN"
+target_canonical_import = "hwpxfiller.domain.text_render"
+behavior_oracle = "tests/test_home_state.py::test_txt_rows"
+compatibility_evidence = "순수 렌더 — 빈값·미치환은 표식(SEG_MISSING)으로 남는다(confirm-or-alarm)"
+disposition = "PRODUCT_DOMAIN"
