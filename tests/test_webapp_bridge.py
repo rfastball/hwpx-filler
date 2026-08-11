@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
 from _web_source import (
     APP_CSS_FILES,
@@ -389,6 +390,8 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
     ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
                          clock=lambda: datetime(2026, 7, 21, 9, 0, 0),
+                         existing_outputs=existing_output_paths,
+                         ensure_output_dir=ensure_output_directory,
                          engine=make_hwpx_engine(),
                          pool_registry=pool,
                          generation_lock=threading.Lock(),

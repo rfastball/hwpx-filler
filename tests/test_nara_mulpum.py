@@ -16,7 +16,16 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.batch import OutputCollisionError, generate_batch
+from functools import partial
+
+from hwpxfiller.batch import OutputCollisionError, generate_batch as _generate_batch
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+
+generate_batch = partial(
+    _generate_batch,
+    existing_outputs=existing_output_paths,
+    ensure_output_dir=ensure_output_directory,
+)
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.mapping_store import load_mapping_profile

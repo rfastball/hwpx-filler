@@ -1257,9 +1257,14 @@ def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
 def test_generate_batch_rejects_non_hwpx_template():
     """generate_batch(산출물=hwpx 파일, engine=make_hwpx_engine())는 hwpx 아닌 템플릿 경로를 첫머리에서 loud 거부(결정 9·13)."""
     from hwpxfiller.batch import generate_batch
+    from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
     with pytest.raises(MediaMismatchError):
-        generate_batch("/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}", engine=make_hwpx_engine())
+        generate_batch(
+            "/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}",
+            engine=make_hwpx_engine(), existing_outputs=existing_output_paths,
+            ensure_output_dir=ensure_output_directory,
+        )
 
 
 @pytest.mark.parametrize("bad", [None, [], "", 0, 3])

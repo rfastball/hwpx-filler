@@ -142,6 +142,7 @@ def plan_generation(
     now: "datetime",
     review_check: "Callable[[list[str]], Any] | None" = None,
     confirm_overwrite: bool = False,
+    existing_outputs: "Callable[[str, list[str]], list[str]]",
 ) -> PlanDecision:
     """실행 요청의 유효성 판정 **순서**와 게이트 facts — confirm-or-alarm 순서 보존.
 
@@ -165,7 +166,9 @@ def plan_generation(
         return PlanDecision(review_unmet=unmet, blanks=tuple(blanks))
 
     marker = blank_marker(blanks)
-    conflicts = vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
+    conflicts = vm.output_conflicts(
+        indices, out_dir, mark_missing=marker, now=now, existing_outputs=existing_outputs
+    )
     if conflicts and not confirm_overwrite:
         return PlanDecision(
             blanks=tuple(blanks), marker=marker,
@@ -246,6 +249,8 @@ def run_generation(
     capture: "tuple[type[BaseException], ...]" = (),
     store: "JobStorePort | None" = None,
     completed_at: "Callable[[], str] | None" = None,
+    existing_outputs: "Callable[[str, list[str]], list[str]]",
+    ensure_output_dir: "Callable[[str], None]",
 ) -> GenerationOutcome:
     """확정된 plan 의 materialize → 완주 판정 → durable completion 기록 → facts.
 
@@ -269,6 +274,7 @@ def run_generation(
             plan.template, list(plan.records), plan.out_dir, plan.pattern, engine,
             now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
             progress=progress, cancelled=run.cancel.is_set,
+            existing_outputs=existing_outputs, ensure_output_dir=ensure_output_dir,
         )
     except capture as exc:
         return GenerationOutcome(

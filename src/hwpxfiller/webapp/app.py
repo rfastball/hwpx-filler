@@ -45,6 +45,7 @@ from ..host.locations import (
     default_text_templates_dir,
 )
 from ..external.dataset_store import DatasetPoolRegistry
+from ..external.output_files import ensure_output_directory, existing_output_paths
 from ..external.text_registry import TextTemplateRegistry
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
@@ -222,7 +223,9 @@ class WebFrontend:
                           generation_lock=generation_lock, engine=hwpx_engine,
                           text_registry=registry,
                           file_source_factory=source_for_path,
-                          pool_source_factory=source_from_pool_item),
+                          pool_source_factory=source_from_pool_item,
+                          existing_outputs=existing_output_paths,
+                          ensure_output_dir=ensure_output_directory),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).

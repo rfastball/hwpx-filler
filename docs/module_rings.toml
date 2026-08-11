@@ -111,6 +111,12 @@ source_write_set = ["src/hwpxfiller/domain/text_template.py"]
 oracle_nodeid = "tests/test_text_registry.py"
 
 [[unit]]
+module = "hwpxfiller.external.output_files"
+target = "EXTERNAL_ADAPTER"
+source_write_set = ["src/hwpxfiller/external/output_files.py"]
+oracle_nodeid = "tests/test_batch_gate.py"
+
+[[unit]]
 module = "hwpxfiller.gui.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/compile_badge.py"]

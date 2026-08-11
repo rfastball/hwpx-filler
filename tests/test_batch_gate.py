@@ -7,11 +7,20 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 
 import pytest
 
-from hwpxfiller.batch import generate_batch
+from hwpxfiller.batch import generate_batch as _generate_batch
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+
+generate_batch = partial(
+    _generate_batch,
+    existing_outputs=existing_output_paths,
+    ensure_output_dir=ensure_output_directory,
+)
+
 from hwpxfiller.domain.engine import GenerateResult
 from hwpxfiller.domain.fill_ledger import TemplateStructureDrift
 from hwpxfiller.domain.job import Job
@@ -47,6 +56,23 @@ class _Src:
 
     def fields(self):
         return list(self._records[0]) if self._records else []
+
+
+def test_output_effects_follow_probe_mkdir_engine_order():
+    trace = []
+
+    class Engine:
+        def generate(self, template, record, target):
+            trace.append("engine")
+            return GenerateResult(True, target)
+
+    result = _generate_batch(
+        "t.hwpx", [{"n": "1"}], "out", "doc-{{n}}", Engine(),
+        existing_outputs=lambda out, names: trace.append("probe") or [],
+        ensure_output_dir=lambda out: trace.append("mkdir"),
+    )
+    assert result.succeeded == 1
+    assert trace == ["probe", "mkdir", "engine"]
 
 
 def _write_template(path: Path, fields) -> None:

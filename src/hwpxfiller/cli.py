@@ -31,6 +31,7 @@ if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로
 from .external.hwpx_engine import make_hwpx_engine
 from .external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from .external.atomic import write_text_atomic
+from .external.output_files import ensure_output_directory, existing_output_paths
 from .domain.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .gui.result_errors import describe_fill_note
@@ -526,7 +527,9 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                        marker=marker, overwrite=args.overwrite, mapping=gate_mapping,
                        now=datetime.now())
     outcome = run_generation(start_run(None), plan, engine=engine,
-                             capture=(OutputCollisionError, ValueError), store=None)
+                             capture=(OutputCollisionError, ValueError), store=None,
+                             existing_outputs=existing_output_paths,
+                             ensure_output_dir=ensure_output_directory)
     if isinstance(outcome.error, OutputCollisionError):
         # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
         # 환경성 FileExistsError(--out 자리에 파일 등)는 최상위 경계의 exit 2 로 —

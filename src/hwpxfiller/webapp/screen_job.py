@@ -265,6 +265,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         text_registry=None,
         file_source_factory: FileSourceFactoryPort,
         pool_source_factory: PoolSourceFactoryPort,
+        existing_outputs: Callable[[str, list[str]], list[str]],
+        ensure_output_dir: Callable[[str], None],
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -275,6 +277,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
         self._file_source_factory = file_source_factory
         self._pool_source_factory = pool_source_factory
+        self._existing_outputs = existing_outputs
+        self._ensure_output_dir = ensure_output_dir
         # TXT 템플릿 레지스트리(F6 PR-B 고지 ①) — 후보 TXT 구획 빈 상태의 술어에만 쓴다
         # (txt 템플릿 有 ∧ txt 작업 0건). 앱 조립에선 tpl·편집기와 같은 인스턴스를 주입한다.
         # 미주입(None)이면 술어가 항상 거짓 — 테스트·CLI 소비자에 실 홈 스캔을 물리지 않는다.
@@ -2317,6 +2321,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             run_vm, indices, out_dir, now=now,
             review_check=lambda bl: self._review(run_vm, indices, bl)[1],
             confirm_overwrite=confirm_overwrite,
+            existing_outputs=self._existing_outputs,
         )
         if decision.rejection is not None:
             return {
@@ -2355,6 +2360,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             capture=(ValueError, OSError),
             store=self.registry,
             completed_at=lambda: self._clock().isoformat(timespec="seconds"),
+            existing_outputs=self._existing_outputs,
+            ensure_output_dir=self._ensure_output_dir,
         )
         if outcome.error is not None:
             # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
