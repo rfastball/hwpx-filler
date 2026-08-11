@@ -1,19 +1,25 @@
-"""P3 namespace/kernel 이동 전 금지 edge 게이트와 합성 음성 대조(#592).
+"""P3 namespace/kernel 이동 전 금지 edge와 vendor integration 게이트(#592, #588).
 
-정의역은 P2 ring 좌표와 P3 census 다. 현재 잔존 위반은
+정의역은 P2 ring 좌표, P3 census, frontend runtime dependency다. 현재 잔존 위반은
 ``tests/kernel_boundary_contract.toml``의 exact allowlist와 양방향 대조한다. P3-99에서
-그 원장을 제거하거나 영구 계약으로 승격할 때 이 게이트도 같은 변경으로 처분한다.
+임시 allowlist를 제거하더라도 영속 ``vendor_integration`` 규율은 이 게이트에 남기거나
+이름 붙은 후속 정본과 게이트로 같은 변경에서 승계한다.
 """
 
 from __future__ import annotations
 
 import ast
 import importlib
+import json
+import posixpath
+import re
 import sys
 import tomllib
 from pathlib import Path
 
 import pytest
+
+from _web_source import SOURCE_ROOT, module_imports
 
 
 ROOT = Path(__file__).parents[2]
@@ -21,7 +27,7 @@ CENSUS = ROOT / "docs" / "p3_kernel_census.toml"
 RINGS = ROOT / "docs" / "module_rings.toml"
 POLICY = ROOT / "tests" / "kernel_boundary_contract.toml"
 
-EXPECTED_SCHEMA = "kernel-boundary/v1"
+EXPECTED_SCHEMA = "kernel-boundary/v2"
 EXPECTED_ALLOWLISTS = {
     "kernel_product_import",
     "kernel_effect",
@@ -31,6 +37,13 @@ EXPECTED_ALLOWLISTS = {
     "legacy_symbol_use",
     "product_vendor_import",
     "vendor_public_type",
+}
+EXPECTED_VENDOR_INTEGRATION_KEYS = {
+    "allowed_source_roots",
+    "dispose_owner",
+    "mount_owner",
+    "packages",
+    "update_owner",
 }
 VALUE_WIDTH = {
     "kernel_product_import": 1,
@@ -90,6 +103,7 @@ FILESYSTEM_METHODS = {
     "write_text",
 }
 VENDOR_ROOTS = {"ctypes", "lxml", "openpyxl", "webview", "xml", "zipfile"}
+TS_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 
 
 class ContractError(ValueError):
@@ -179,6 +193,274 @@ def _validate_policy(document: dict[str, object]) -> dict[str, set[str]]:
 
 def _policy() -> dict[str, set[str]]:
     return _validate_policy(tomllib.loads(POLICY.read_text(encoding="utf-8-sig")))
+
+
+def _js_masks(source: str) -> tuple[str, str]:
+    """주석만 지운 소스와 문자열/template raw까지 지운 동길이 code mask를 만든다."""
+    commentless = list(source)
+    code = list(source)
+    size = len(source)
+
+    def blank(buffer: list[str], start: int, end: int) -> None:
+        for index in range(start, end):
+            if source[index] not in "\r\n":
+                buffer[index] = " "
+
+    def quoted(start: int, quote: str) -> int:
+        index = start + 1
+        while index < size:
+            if source[index] == "\\":
+                index += 2
+            elif source[index] == quote:
+                return index + 1
+            else:
+                index += 1
+        return size
+
+    def template(start: int) -> int:
+        blank(code, start, start + 1)
+        index = start + 1
+        while index < size:
+            if source[index] == "\\":
+                end = min(index + 2, size)
+                blank(code, index, end)
+                index = end
+            elif source[index] == "`":
+                blank(code, index, index + 1)
+                return index + 1
+            elif source.startswith("${", index):
+                blank(code, index, index + 2)
+                end = javascript(index + 2, stop_at_brace=True)
+                if end and source[end - 1] == "}":
+                    blank(code, end - 1, end)
+                index = end
+            else:
+                blank(code, index, index + 1)
+                index += 1
+        return size
+
+    def javascript(start: int, *, stop_at_brace: bool = False) -> int:
+        index = start
+        braces = 0
+        while index < size:
+            if source.startswith("//", index):
+                end = index + 2
+                while end < size and source[end] not in "\r\n":
+                    end += 1
+                blank(commentless, index, end)
+                blank(code, index, end)
+                index = end
+            elif source.startswith("/*", index):
+                closing = source.find("*/", index + 2)
+                end = size if closing < 0 else closing + 2
+                blank(commentless, index, end)
+                blank(code, index, end)
+                index = end
+            elif source[index] in "\"'":
+                end = quoted(index, source[index])
+                blank(code, index, end)
+                index = end
+            elif source[index] == "`":
+                index = template(index)
+            elif stop_at_brace and source[index] == "}":
+                if braces == 0:
+                    return index + 1
+                braces -= 1
+                index += 1
+            else:
+                if stop_at_brace and source[index] == "{":
+                    braces += 1
+                index += 1
+        return size
+
+    javascript(0)
+    return "".join(commentless), "".join(code)
+
+
+def _js_code_mask(source: str) -> str:
+    return _js_masks(source)[1]
+
+
+def _has_ts_declaration(source: str, symbol: str) -> bool:
+    if TS_IDENTIFIER.fullmatch(symbol) is None:
+        raise ContractError(f"lifecycle owner symbol은 TS identifier여야 합니다: {symbol!r}")
+    name = re.escape(symbol)
+    declaration = rf"(?m)^\s*(?:(?:(?:export|default|declare|async)\s+)*(?:function|class|const|let|var)\s+{name}(?![A-Za-z0-9_$])|{name}\s*\()"
+    return re.search(declaration, _js_code_mask(source)) is not None
+
+
+def _in_source_roots(relative: str, roots: tuple[str, ...] | list[str]) -> bool:
+    return any(relative == root or relative.startswith(f"{root}/") for root in roots)
+
+
+def _vendor_integrations() -> dict[str, tuple[set[str], tuple[str, ...]]]:
+    document = tomllib.loads(POLICY.read_text(encoding="utf-8-sig"))
+    raw = document.get("vendor_integration")
+    if not isinstance(raw, dict) or not raw or list(raw) != sorted(raw):
+        raise ContractError("vendor_integration은 이름순의 비어 있지 않은 table이어야 합니다")
+
+    package_document = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    dependencies = set(package_document.get("dependencies", {}))
+    registered: list[str] = []
+    out: dict[str, tuple[set[str], tuple[str, ...]]] = {}
+    for name, record in raw.items():
+        if not isinstance(record, dict) or set(record) != EXPECTED_VENDOR_INTEGRATION_KEYS:
+            raise ContractError(f"vendor_integration.{name} 키가 고정 기대와 다릅니다")
+        packages = record["packages"]
+        roots = record["allowed_source_roots"]
+        for key, values in (("packages", packages), ("allowed_source_roots", roots)):
+            if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+                raise ContractError(f"vendor_integration.{name}.{key}는 문자열 배열이어야 합니다")
+            if values != sorted(values) or len(values) != len(set(values)):
+                raise ContractError(
+                    f"vendor_integration.{name}.{key}는 중복 없는 정렬 목록이어야 합니다"
+                )
+            if any(any(token in value for token in ("*", "?", "[", "]")) for value in values):
+                raise ContractError(
+                    f"vendor_integration.{name}.{key}에는 wildcard를 쓸 수 없습니다"
+                )
+        for root in roots:
+            if (
+                not root.startswith("frontend/src/")
+                or "\\" in root
+                or ".." in Path(root).parts
+                or not (ROOT / root).exists()
+            ):
+                raise ContractError(
+                    f"vendor_integration.{name} 배치 경로가 유효하지 않습니다: {root!r}"
+                )
+        for lifecycle in ("mount_owner", "update_owner", "dispose_owner"):
+            owner = record[lifecycle]
+            if not isinstance(owner, str) or owner.count("|") != 1:
+                raise ContractError(
+                    f"vendor_integration.{name}.{lifecycle}는 source|symbol 형식이어야 합니다"
+                )
+            source, symbol = owner.split("|", 1)
+            path = ROOT / source
+            if (
+                not source.startswith("frontend/src/")
+                or "\\" in source
+                or ".." in Path(source).parts
+                or not path.is_file()
+                or not _in_source_roots(source, roots)
+                or not _has_ts_declaration(path.read_text(encoding="utf-8"), symbol)
+            ):
+                raise ContractError(
+                    f"vendor_integration.{name}.{lifecycle} owner가 유효하지 않습니다: {owner!r}"
+                )
+        registered.extend(packages)
+        out[str(name)] = (set(packages), tuple(roots))
+
+    if len(registered) != len(set(registered)) or set(registered) != dependencies:
+        raise ContractError(
+            "package.json runtime dependency와 vendor_integration package가 정확히 일치해야 합니다"
+        )
+    return out
+
+
+def _frontend_specifiers(relative: str, source: str) -> tuple[str, ...]:
+    raw = source
+    source, code = _js_masks(raw)
+    references = tuple(
+        match.group(1)
+        for match in re.finditer(
+            r'''(?m)^\s*///\s*<reference\s+types\s*=\s*["']([^"']+)["']\s*/>''',
+            raw,
+        )
+        if not source[match.start() : match.end()].strip()
+    )
+    dynamic: list[str] = []
+    for call in re.finditer(r"(?<![\w$.])import\s*\(", code):
+        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
+        if literal is None:
+            raise ContractError(
+                f"{relative}: dynamic import() specifier는 문자열 literal이어야 합니다"
+            )
+        dynamic.append(literal.group(2))
+    return (
+        *references,
+        *module_imports(source),
+        *re.findall(
+            r'''(?m)^\s*import\s+(?:type\s+)?[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)''',
+            source,
+        ),
+        *re.findall(
+            r'''(?m)^\s*export\s+(?:type\s+)?[^"\';]*?\s+from\s+["']([^"']+)["']''',
+            source,
+        ),
+        *dynamic,
+    )
+
+
+def _resolve_frontend_module(
+    relative: str, specifier: str, sources: dict[str, str]
+) -> str | None:
+    clean = specifier.split("?", 1)[0].split("#", 1)[0]
+    target = (
+        posixpath.normpath(f"frontend{clean}")
+        if clean.startswith("/")
+        else posixpath.normpath(posixpath.join(posixpath.dirname(relative), clean))
+    )
+    suffixes = (".js", ".jsx", ".mjs", ".ts", ".tsx", ".d.ts")
+    candidates = (target, *(f"{target}{suffix}" for suffix in suffixes))
+    candidates += tuple(
+        f"{target}/index{suffix}" for suffix in suffixes
+    )
+    return next((candidate for candidate in candidates if candidate in sources), None)
+
+
+def _frontend_vendor_import_violations(sources: dict[str, str]) -> set[str]:
+    allowed: dict[str, tuple[str, ...]] = {}
+    vendor_roots: list[str] = []
+    for packages, roots in _vendor_integrations().values():
+        allowed.update({package: roots for package in packages})
+        vendor_roots.extend(roots)
+
+    violations: set[str] = set()
+    relative_edges: dict[str, list[tuple[str, str]]] = {}
+    for relative, source in sources.items():
+        edges: list[tuple[str, str]] = []
+        for specifier in _frontend_specifiers(relative, source):
+            if specifier.startswith(".") or specifier.startswith(("/src/", "/js/")):
+                if (
+                    target := _resolve_frontend_module(relative, specifier, sources)
+                ):
+                    edges.append((specifier, target))
+                continue
+            package = specifier.split("/", 1)[0]
+            if specifier.startswith("@"):
+                package = "/".join(specifier.split("/", 2)[:2])
+            roots = allowed.get(package)
+            if roots is None or not _in_source_roots(relative, roots):
+                violations.add(f"{relative}|{specifier}")
+        relative_edges[relative] = edges
+
+    provenance = {
+        relative for relative in sources if _in_source_roots(relative, vendor_roots)
+    }
+    while additions := {
+        relative
+        for relative, edges in relative_edges.items()
+        if any(target in provenance for _, target in edges)
+    } - provenance:
+        provenance.update(additions)
+    for relative, edges in relative_edges.items():
+        if relative.startswith("frontend/src/contract/"):
+            violations.update(
+                f"{relative}|{specifier}"
+                for specifier, target in edges
+                if target in provenance
+            )
+    return violations
+
+
+def _frontend_sources() -> dict[str, str]:
+    return {
+        path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for directory in ("src", "js")
+        for path in SOURCE_ROOT.joinpath(directory).rglob("*")
+        if path.suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx"}
+    }
 
 
 def _tree(source: "str | bytes", filename: str = "<memory>") -> ast.Module:
@@ -957,6 +1239,7 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
 
 def test_policy_is_exact_sorted_and_wildcard_free() -> None:
     _policy()
+    _vendor_integrations()
 
 
 def test_census_consumer_counts_match_executable_import_graph() -> None:
@@ -1051,6 +1334,7 @@ def test_product_contract_has_no_new_vendor_import_or_public_type() -> None:
     policy = _policy()
     assert imports == policy["product_vendor_import"]
     assert public_types == policy["vendor_public_type"]
+    assert not _frontend_vendor_import_violations(_frontend_sources())
 
 
 def test_negative_probe_rejects_hwpxcore_product_import() -> None:
@@ -1180,6 +1464,78 @@ class Contract(Protocol):
         "hwpxfiller.application.contract|Contract.__iter__|lxml.etree._Element",
         "hwpxfiller.application.contract|Contract.root|lxml.etree._Element",
         "hwpxfiller.application.contract|ElementList|lxml.etree._Element",
+    }
+    for symbol in ("", "dispose()"):
+        with pytest.raises(ContractError, match="TS identifier"):
+            _has_ts_declaration("", symbol)
+    assert not _has_ts_declaration(
+        (
+            '// function dispose() {}\nconst note = "function dispose() {}";\n'
+            "const pattern = /function dispose/;\n"
+        ),
+        "dispose",
+    )
+    assert "frontend/js/bridge.js" in _frontend_sources()
+    assert not _frontend_vendor_import_violations(
+        {
+            "frontend/src/screens/comment_probe.ts": (
+                "// import(vendorName)\n"
+                "const text = 'import(vendorName)';\n"
+                "/* import(otherName) */\n"
+                "const raw = `raw import(vendorName)`;\n"
+                'const nested = `${"import(vendorName)"}`;\n'
+                'const rawReference = `\n/// <reference types="vendor-types" />\n`;\n'
+            )
+        }
+    )
+    with pytest.raises(ContractError, match="문자열 literal"):
+        _frontend_vendor_import_violations(
+            {
+                "frontend/src/screens/dynamic_probe.ts": (
+                    "const sdk = `${import(vendorName)}`;\n"
+                )
+            }
+        )
+    assert _frontend_vendor_import_violations(
+        {
+            "frontend/js/vendor_probe.js": 'import "react"\n',
+            "frontend/src/contract/absolute.ts": (
+                'export type { VendorNode } from "/src/react/vendor-types"\n'
+            ),
+            "frontend/src/contract/direct.ts": (
+                'import "react"\n'
+                'import type { Root } from "react-dom/client"\n'
+            ),
+            "frontend/src/contract/import_equals.ts": (
+                'import type ReactTypes = require("react")\n'
+            ),
+            "frontend/src/contract/probe.ts": (
+                'export type { VendorNode } from "../react/vendor.ts"\n'
+            ),
+            "frontend/src/contract/reference.d.ts": (
+                '/// <reference types="react" />\n'
+            ),
+            "frontend/src/react/vendor.ts": (
+                'import type { ReactNode } from "react"\n'
+                "export type VendorNode = ReactNode\n"
+            ),
+            "frontend/src/react/vendor-types.d.ts": (
+                'import type { ReactNode } from "react"\n'
+                "export type VendorNode = ReactNode\n"
+            ),
+            "frontend/src/screens/probe.ts": (
+                'const sdk = `${import("vendor-sdk")}`;\n'
+            ),
+        }
+    ) == {
+        "frontend/js/vendor_probe.js|react",
+        "frontend/src/contract/absolute.ts|/src/react/vendor-types",
+        "frontend/src/contract/direct.ts|react",
+        "frontend/src/contract/direct.ts|react-dom/client",
+        "frontend/src/contract/import_equals.ts|react",
+        "frontend/src/contract/probe.ts|../react/vendor.ts",
+        "frontend/src/contract/reference.d.ts|react",
+        "frontend/src/screens/probe.ts|vendor-sdk",
     }
 
 

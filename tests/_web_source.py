@@ -256,11 +256,12 @@ def module_imports(source: str) -> tuple[str, ...]:
     :func:`side_effect_imports`는 ``import "x";`` 형태만 센다. ESM 전환이 진행되면서 모듈은
     ``import { X } from "x";``로 옮겨가는데, 그 둘을 같은 눈으로 보지 않으면 "entry 목록에서
     사라졌다"는 사실을 아무도 말하지 않는 창이 생긴다 — ``in`` 단언만 깨지고 ``not in``
-    단언은 애초에 없기 때문이다. 도달성을 묻는 계약은 이 함수로 물어야 한다.
+    단언은 애초에 없기 때문이다. 세미콜론은 ASI 때문에 선택 사항이다. 도달성을 묻는 계약은
+    이 함수로 물어야 한다.
     """
     return tuple(
         re.findall(
-            r'(?m)^\s*import\s+(?:[^"\';]*?\s+from\s+)?["\']([^"\']+)["\'];',
+            r'(?m)^\s*import\s+(?:[^"\';]*?\s+from\s+)?["\']([^"\']+)["\']',
             source,
         )
     )

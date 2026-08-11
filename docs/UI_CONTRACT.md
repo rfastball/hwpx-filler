@@ -25,6 +25,29 @@
 3. **링2 — 웹 프레젠테이션:** `src/hwpxfiller/webapp/`의 컨트롤러·브리지와 `web/`의
    HTML/CSS/JavaScript. 링1을 호출해 JSON-safe snapshot으로 바꾸고 DOM에 렌더한다.
 
+### 외부 mechanism 착지 규율 (P3-06 · #588)
+
+외부 package가 제품 의미를 모른다는 사실은 그 package를 전역 core에 둘 근거가 아니다.
+import는 **그 기능을 실제로 조립하는 integration 경계**에 두고, Product Domain과 Product
+Contract에는 vendor type·instance·상태를 노출하지 않는다. integration은 vendor 입력과
+callback을 제품 command로, vendor 결과를 제품 result 또는 직렬화 가능한 값으로 번역한다.
+따라서 `frontend/src/contract/contract.gen.ts`와 Python domain/application 계약은 React 같은
+표현 계층 type을 알 수 없다.
+
+runtime dependency를 추가하는 변경은
+`tests/kernel_boundary_contract.toml`의 `[vendor_integration.*]`에 package, 허용 배치 경계,
+`mount_owner`·`update_owner`·`dispose_owner`를 함께 등록한다. 기존 P3 repo-contract 게이트는
+등록되지 않은 dependency, 경계 밖 import(type-only 포함), 사라진 lifecycle owner를 거절한다.
+owner는 구독·listener·worker·WASM instance 등 자신이 세운 자원을 dispose까지 정산하며,
+제품 상태를 vendor 내부 상태에만 보관하지 않는다.
+
+현재 React integration의 허용 착지는 `frontend/src/react/`, `frontend/src/screens/`,
+`frontend/src/overlay/host.ts`, `frontend/src/shell/host.ts`다. 단일 root의 mount는
+`react/root.ts`의 `boot`, store update 연결은 `react/boundary.ts`의 `StoreSignal`, dispose는
+`react/root.ts`의 `unmount`가 소유한다. 여러 기능이 같은 vendor를 서로 다르게 해석하기
+시작할 때만 project-owned seam을 둔다. 작은 단일 소비자는 그 기능 경계에서 직접 통합하며,
+미래 교체 가능성만을 위한 범용 wrapper는 만들지 않는다.
+
 웹→Python 경로는 두 갈래다(#257 리뷰 — 전 경로를 여기서 계약한다).
 
 - **디스패치 경로:** 순수 데이터 액션은 `WebFrontend.initial(screen)`과

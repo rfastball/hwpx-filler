@@ -1,6 +1,9 @@
 # #592 shrinking kernel/legacy allowlist. P3-05 retired every hwpxfiller.core residual.
 # Product Domain vendor imports are durable, exact module-keyed policy rather than census ghosts.
-schema = "kernel-boundary/v1"
+# [vendor_integration.*] is the long-lived #588 placement/lifecycle contract.
+# P3-99 may remove temporary allowlists, but must retain this section or atomically move
+# it and its repo-contract gate to a named successor.
+schema = "kernel-boundary/v2"
 
 [allowlist.kernel_effect]
 
@@ -33,3 +36,21 @@ KC-01 = [
 ]
 
 [allowlist.vendor_public_type]
+
+# Runtime vendor는 기능 통합 경계에서만 import한다. Product Contract/Domain은 아래
+# 경계 밖이므로 vendor type/state도 함께 봉쇄된다. lifecycle owner는 package를 실제로
+# mount/update/dispose하는 단일 책임점이다(#588).
+[vendor_integration.react]
+packages = [
+  "react",
+  "react-dom",
+]
+allowed_source_roots = [
+  "frontend/src/overlay/host.ts",
+  "frontend/src/react",
+  "frontend/src/screens",
+  "frontend/src/shell/host.ts",
+]
+mount_owner = "frontend/src/react/root.ts|boot"
+update_owner = "frontend/src/react/boundary.ts|StoreSignal"
+dispose_owner = "frontend/src/react/root.ts|unmount"
