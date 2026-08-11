@@ -71,6 +71,8 @@ class HwpxPackage:
             raise ValueError("유효한 HWPX 가 아닙니다: mimetype 엔트리 없음")
         if names[0] != MIMETYPE_NAME:
             raise ValueError("유효한 HWPX 가 아닙니다: mimetype 엔트리가 첫 항목이 아님")
+        if infos[0].compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+            raise ValueError("유효한 HWPX 가 아닙니다: 지원하지 않는 mimetype 압축 방식")
 
         seen: "set[str]" = set()
         for info in infos:

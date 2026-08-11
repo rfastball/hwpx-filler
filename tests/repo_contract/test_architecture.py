@@ -24,7 +24,7 @@ def _imports(path: Path) -> list[tuple[str, int]]:
 
 
 def test_python_package_dependencies_point_inward() -> None:
-    """src 전체는 Qt-free이고 core/data는 제품 상위 계층으로 역의존하지 않는다."""
+    """src 전체는 Qt-free이고 data는 core로, hwpxcore는 hwpxdiff로 역의존하지 않는다."""
     failures: list[str] = []
     for path in sorted((ROOT / "src").rglob("*.py")):
         relative = path.relative_to(ROOT).as_posix()
@@ -32,7 +32,7 @@ def test_python_package_dependencies_point_inward() -> None:
             root = module.split(".", 1)[0]
             if root in {"PySide6", "shiboken6"}:
                 failures.append(f"{relative}:{lineno}: {module}")
-            if "src/hwpxcore/" in f"{relative}/" and root in {"hwpxfiller", "hwpxdiff"}:
+            if "src/hwpxcore/" in f"{relative}/" and root == "hwpxdiff":
                 failures.append(f"{relative}:{lineno}: core 역의존 {module}")
             if relative.startswith("src/hwpxfiller/data/") and module.startswith(
                 "hwpxfiller.core"

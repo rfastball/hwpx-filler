@@ -399,15 +399,16 @@ def test_run_request_source_report_flags_missing_source_key():
     """겨눈 소스에 매핑이 읽는 소스키가 없으면 소스 수준 missing_columns 로 뜬다."""
     src = _FakeSource([{"bidNtceNm": "가"}])  # presmptPrce 부재
     report = RunRequest(_job(), src, [0]).source_report()
-    assert "presmptPrce" in report.missing_columns
-    assert "bidNtceNm" not in report.missing_columns
+    assert report.missing_columns == ["presmptPrce"]
+    assert report.empty_valued == []
 
 
 def test_run_request_output_report_flags_empty_value():
     """매핑된 출력에 빈 값이 있으면 template_field 이름으로 empty_valued."""
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])  # 공고명 빈값
     report = RunRequest(_job(), src, [0]).output_report()
-    assert "공고명" in report.empty_valued
+    assert report.missing_columns == []
+    assert report.empty_valued == ["공고명"]
 
 
 def test_mapped_records_mark_missing_only_empty_values():

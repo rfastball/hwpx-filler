@@ -31,7 +31,9 @@ from pathlib import Path
 
 import pytest
 
+from hwpxcore.package import to_package
 from hwpxfiller.batch import generate_batch
+from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.job import Job, RunRequest
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
@@ -121,9 +123,8 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
         "입찰공고서-2026-002.hwpx",
         "입찰공고서-2026-003.hwpx",
     ]
-    blob = _xml_blob(out / "입찰공고서-2026-001.hwpx")
-    for v in ("해양수산부", "친환경 선박용 소화장비 구매", "선박용 소화기", "김담당"):
-        assert v in blob
+    generated = to_package(out / "입찰공고서-2026-001.hwpx")
+    assert read_fields(generated) == req.mapped_records()[0]
 
 
 # ----------------------------------------- 부분집합 템플릿(같은 데이터 → 10필드)
