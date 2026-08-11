@@ -19,10 +19,10 @@ from datetime import datetime
 from pathlib import Path
 
 from ..application.jobs import delete_job, remove_corrupt_entry, update_tags
-from ..core.engine import HwpxEngine
-from ..core.fill_ledger import template_path_drift
-from ..core.job import Job, require_hwpx_template
-from ..core.template_status import CompileState, TemplateStatus
+from ..domain.engine import HwpxEngine
+from ..domain.fill_ledger import template_path_drift
+from ..domain.job import Job, require_hwpx_template
+from ..domain.template_status import CompileState, TemplateStatus
 from ..domain.dataset_reference import STATUS_ACTIVE
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
@@ -408,7 +408,7 @@ def field_binding_rows(job: Job) -> "list[FieldBindingRow]":
       되깎기 조건 = 전역 ``dataState`` 가 실제로 서는 시점.
     - **값을 계산하지 않는다.** 미리보기는 데이터를 요구하고(F5 소관) 여기는 정의만 본다.
     """
-    from ..core.format_engine import presets
+    from ..domain.format_engine import presets
 
     rows: "list[FieldBindingRow]" = []
     for m in job.mapping.mappings:

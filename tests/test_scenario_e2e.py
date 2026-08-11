@@ -33,14 +33,15 @@ import pytest
 
 from hwpxfiller.batch import generate_batch
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
-from hwpxfiller.core.fields import read_fields
-from hwpxfiller.core.job import Job, RunRequest
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.text_registry import TextTemplateRegistry
-from hwpxfiller.core.text_render import render_record
+from hwpxfiller.domain.fields import read_fields
+from hwpxfiller.domain.job import Job, RunRequest
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.domain.text_render import render_record
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.mapping_store import load_mapping_profile
 
 SCENARIO = Path(__file__).parent / "corpus" / "scenario"
 TEMPLATES = SCENARIO / "templates"
@@ -86,7 +87,7 @@ def _nara_source():
 
 
 def _nara_profile() -> MappingProfile:
-    return MappingProfile.load(DATA / "나라장터_매핑.json")
+    return load_mapping_profile(DATA / "나라장터_매핑.json")
 
 
 # ---------------------------------------------------- 소스 형식 무관(여러 자료)

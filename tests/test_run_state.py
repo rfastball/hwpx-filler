@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.job import Job
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
@@ -290,7 +290,7 @@ def test_generation_plan_is_immutable_snapshot(tmp_path):
     """계획은 클릭 시점 스냅샷 — 이후 VM/데이터가 바뀌어도 불변(라이브 재독 금지)."""
     import dataclasses
 
-    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.domain.job import MISSING_MARKER
 
     vm = _vm(tmp_path)
     plan = vm.build_generation_plan(
@@ -325,7 +325,7 @@ def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
     from pathlib import Path
 
     from hwpxfiller.batch import generate_batch
-    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.domain.job import MISSING_MARKER
     from hwpxfiller.external.ledger_export import export_plan_ledger
 
     vm = _vm(tmp_path)
@@ -443,7 +443,7 @@ def test_refresh_is_single_snapshot_and_parses_template_once(tmp_path, monkeypat
 
     스냅샷의 세 표시면(사전검증·필드 상태·게이트)이 같은 계산에서 나온다.
     """
-    from hwpxfiller.core.engine import HwpxEngine
+    from hwpxfiller.domain.engine import HwpxEngine
 
     vm = _vm(tmp_path)
     calls = {"n": 0}
@@ -579,7 +579,7 @@ def test_name_token_gate_points_at_a_screen_that_exists(tmp_path):
 
 def test_mapped_and_reserved_tokens_open_gate(tmp_path):
     """매핑 커버 토큰·예약 토큰({{date}}/{{seq}})·기본 패턴은 게이트를 닫지 않는다(F34b)."""
-    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN
 
     for pattern in ("doc-{{공고명}}", "doc-{{date}}-{{seq:001}}", DEFAULT_FILENAME_PATTERN):
         vm = RunViewModel(_job_with_pattern(tmp_path, pattern), engine=make_hwpx_engine())

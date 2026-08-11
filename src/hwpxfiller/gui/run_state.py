@@ -13,17 +13,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from ..core.engine import HwpxEngine
+from ..domain.engine import HwpxEngine
 
 if TYPE_CHECKING:
     from datetime import datetime
-from ..core.fill_ledger import (
+from ..domain.fill_ledger import (
     TemplateStructureDrift,
     template_path_drift,
     template_structure_drift,
 )
-from ..core.job import Job, RunRequest, require_hwpx
-from ..core.mapping import MappingProfile
+from ..domain.job import Job, RunRequest, require_hwpx
+from ..domain.mapping import MappingProfile
 from ..naming import (
     OutputNameAudit,
     audit_output_names,

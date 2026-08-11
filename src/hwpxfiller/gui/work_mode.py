@@ -1,6 +1,6 @@
 """시스템 작업 방식의 **표시 어휘**(링1) — 계약 §19.1 표의 단일 출처.
 
-값 자체(3값)와 파생은 링0 :mod:`hwpxfiller.core.job` 이 소유하고, 여기는 그 값을 사람이
+값 자체(3값)와 파생은 링0 :mod:`hwpxfiller.domain.job` 이 소유하고, 여기는 그 값을 사람이
 읽는 문자열로 옮기는 층만 진다. 두 층을 가르는 이유는 소비자가 다르기 때문이다 — 판정은
 후보·게이트·편집기 탭이 쓰고, 문자열은 표면 셋(후보 카드·문서 탐색·라이브러리)이 쓴다.
 
@@ -15,7 +15,7 @@
 자리다. 색만으로 방식을 구별하지 않는다(§19.3 마지막 문장) — 텍스트가 늘 함께 선다.
 """
 
-from ..core.job import (
+from ..domain.job import (
     WORK_MODE_HWPX,
     WORK_MODE_TEXT,
     WORK_MODE_UNSUPPORTED,

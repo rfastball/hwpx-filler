@@ -35,7 +35,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from hwpxfiller.core.authoring import compile_document
+from hwpxfiller.domain.authoring import compile_document
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"

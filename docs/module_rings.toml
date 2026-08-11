@@ -1,8 +1,7 @@
 # 제품 모듈의 **ring 좌표 계약**이다 — 모듈 하나가 어느 층의 권위를 지는지와, 그 좌표가
 # 강제하는 안쪽→바깥쪽 의존 금지선을 짝 게이트(tests/repo_contract/test_module_rings.py)가
-# 판정한다. 물리 패키지 경계 게이트 4종(domain/application/external/host)의 정의역은 그 네
-# 패키지뿐이라, 아직 옛 폴더에 사는 유닛의 방향을 지키는 것은 이 파일이 유일하다(#542 H-2
-# 실측: core→webapp 을 심으면 repo_contract 92 노드 중 이 게이트만 빨강).
+# 판정한다. 물리 패키지 경계 게이트 4종(domain/application/external/host)이 각 패키지의
+# 방향을 지키고, 이 파일은 그 밖의 모듈 좌표를 소유한다.
 #
 # 유래는 P1 전수 계측(#512~#520)의 P2 handoff 였고 상세 근거는 Git 이력이 소유한다. P2 완주
 # 뒤 P1 부기(baseline·verdict·sunset·remove_when·obligations)는 걷어냈다 — 미이행 obligation
@@ -62,96 +61,6 @@ module = "hwpxfiller.cli"
 target = "HOST"
 source_write_set = ["src/hwpxfiller/cli.py"]
 oracle_nodeid = "tests/test_cli.py"
-
-[[unit]]
-module = "hwpxfiller.core"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/__init__.py"]
-oracle_nodeid = "tests/test_engine.py"
-
-[[unit]]
-module = "hwpxfiller.core.authoring"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/authoring.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
-
-[[unit]]
-module = "hwpxfiller.core.dataset_pool"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxfiller/core/dataset_pool.py"]
-oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
-
-[[unit]]
-module = "hwpxfiller.core.engine"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/engine.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-
-[[unit]]
-module = "hwpxfiller.core.fields"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/fields.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_strips_stale_lineseg_only_in_compiled_sections"
-
-[[unit]]
-module = "hwpxfiller.core.fill_ledger"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/fill_ledger.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_drift_describe_is_single_source_of_message"
-
-[[unit]]
-module = "hwpxfiller.core.format_engine"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/format_engine.py"]
-oracle_nodeid = "tests/test_cli.py::test_nara_source_with_profile_fills_template"
-
-[[unit]]
-module = "hwpxfiller.core.job"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/job.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-
-[[unit]]
-module = "hwpxfiller.core.lint"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/lint.py"]
-oracle_nodeid = "tests/test_cli.py::test_lint_crash_exit_2_distinct_from_issue_gate_exit_1"
-
-[[unit]]
-module = "hwpxfiller.core.mapping"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/mapping.py"]
-oracle_nodeid = "tests/test_batch_gate.py::test_generate_batch_between_batches_template_swap_is_blocked"
-
-[[unit]]
-module = "hwpxfiller.core.paths"
-target = "HOST"
-source_write_set = ["src/hwpxfiller/core/paths.py"]
-oracle_nodeid = "tests/test_boot_budget.py::test_boot_stamp_roundtrip_and_unknown_sentinel"
-
-[[unit]]
-module = "hwpxfiller.core.schema"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/schema.py"]
-oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
-
-[[unit]]
-module = "hwpxfiller.core.template_status"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/template_status.py"]
-oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
-
-[[unit]]
-module = "hwpxfiller.core.text_registry"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxfiller/core/text_registry.py"]
-oracle_nodeid = "tests/test_core_paths.py::test_all_default_roots_share_one_home"
-
-[[unit]]
-module = "hwpxfiller.core.text_render"
-target = "DOMAIN"
-source_write_set = ["src/hwpxfiller/core/text_render.py"]
-oracle_nodeid = "tests/test_home_state.py::test_txt_rows"
 
 [[unit]]
 module = "hwpxfiller.data"

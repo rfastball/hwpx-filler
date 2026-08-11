@@ -44,8 +44,8 @@ def _armed_workbench(frontend, tmp_path):
     「기안」 사망(F6 PR-B)으로 가드 무장의 헤드리스 표본이 작업대로 승계됐다
     (붙여넣기 원문 대신 복사 진행 = 잃을 것).
     """
-    from hwpxfiller.core.job import Job
-    from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 
     tpl = tmp_path / "기안.txt"
     tpl.write_text("수신: {{수신}}", encoding="utf-8")
@@ -493,8 +493,8 @@ def test_workbench_session_blocks_the_window_close(tmp_path, monkeypatch):
     「문서 만들기」의 선택이 1클릭으로 재현 가능해 job 가드가 무장하지 않는 상태에서도
     작업대 세션은 잃을 것이 있다 — 그 소실을 아무도 말하지 않는 것이 결함이었다.
     """
-    from hwpxfiller.core.job import Job
-    from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 
     frontend = _frontend(tmp_path, monkeypatch)
     assert frontend.close_guard_state()["armed"] is False

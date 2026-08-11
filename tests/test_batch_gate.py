@@ -12,10 +12,10 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.batch import generate_batch
-from hwpxfiller.core.engine import GenerateResult
-from hwpxfiller.core.fill_ledger import TemplateStructureDrift
-from hwpxfiller.core.job import Job
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.engine import GenerateResult
+from hwpxfiller.domain.fill_ledger import TemplateStructureDrift
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package

@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from .core.engine import GenerateResult, HwpxEngine
-from .core.job import require_hwpx_template
+from .domain.engine import GenerateResult, HwpxEngine
+from .domain.job import require_hwpx_template
 from .naming import existing_outputs, plan_output_names
 
 
@@ -57,11 +57,11 @@ def generate_batch(
 ) -> BatchResult:
     """레코드 목록을 순회하며 문서를 일괄 생성한다.
 
-    ``mapping``(:class:`~hwpxfiller.core.mapping.MappingProfile`)이 주어지면 **생성
+    ``mapping``(:class:`~hwpxfiller.domain.mapping.MappingProfile`)이 주어지면 **생성
     경계에서** 템플릿 구조 드리프트를 재검사한다(RC-03). 호출측
     validate 이후 템플릿이 교체돼도(TOCTOU) 다른 문서종이 '성공'으로 섞여 나가지
     않도록 첫 파일을 쓰기 전에 :class:`ValueError` 로 원자 차단한다. 문구는
-    :meth:`~hwpxfiller.core.fill_ledger.TemplateStructureDrift.describe` 단일화.
+    :meth:`~hwpxfiller.domain.fill_ledger.TemplateStructureDrift.describe` 단일화.
 
     파일명은 :func:`~hwpxfiller.naming.plan_output_names` 로 **먼저 전부** 계산한다
     (연번·날짜 토큰·배치 내 충돌 접미사 — :class:`~hwpxfiller.naming.OutputNamer` 규칙).
@@ -77,7 +77,7 @@ def generate_batch(
     # txt 기안은 산출물을 소유하지 않으므로(결정 9) 이 경로에 오지 않는다 — 새면 loud 거부.
     require_hwpx_template(template_path)
     if mapping is not None:
-        from .core.fill_ledger import template_path_drift
+        from .domain.fill_ledger import template_path_drift
 
         drift = template_path_drift(template_path, mapping, engine=engine)
         if drift.has_drift:

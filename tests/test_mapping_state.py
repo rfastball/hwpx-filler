@@ -12,9 +12,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile, apply_transform
-from hwpxfiller.external.mapping_store import save_mapping_profile
-from hwpxfiller.core.schema import FieldSpec, TemplateSchema
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile, apply_transform
+from hwpxfiller.external.mapping_store import load_mapping_profile, save_mapping_profile
+from hwpxfiller.domain.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 
@@ -328,7 +328,7 @@ def test_apply_profile_restores_explicit_blank_and_roundtrips():
 
 
 def test_blank_is_internal_marker_not_selectable_type():
-    from hwpxfiller.core.mapping import TYPES
+    from hwpxfiller.domain.mapping import TYPES
 
     assert "blank" not in TYPES
 
@@ -388,7 +388,7 @@ def test_profile_roundtrip_preserves_format(tmp_path):
     model.set_confirmed(0)
     path = tmp_path / "p.json"
     save_mapping_profile(model.to_profile(), path)
-    loaded = MappingProfile.load(path)
+    loaded = load_mapping_profile(path)
     assert loaded.mappings[0].fmt == "{:,}"
     assert loaded.apply({"presmptPrce": "21326800"})["추정가격"] == "21,326,800"
 
@@ -448,7 +448,7 @@ def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
 
     fresh = _model()
     assert not fresh.is_complete()
-    applied = fresh.apply_profile(MappingProfile.load(path))
+    applied = fresh.apply_profile(load_mapping_profile(path))
     assert applied == 2
     frows = {r.template_field: r for r in fresh.rows}
     assert frows["개찰일시"].confirmed

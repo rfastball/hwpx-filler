@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import sys
 import tomllib
 from pathlib import Path
@@ -41,11 +42,10 @@ VALUE_WIDTH = {
     "product_vendor_import": 1,
     "vendor_public_type": 2,
 }
-DEFINITION_CLUSTER_ID = {
-    "hwpxfiller.core.job|_key_names_the_same_file": "FC-09",
-    "hwpxfiller.core.mapping|MappingProfile.load": "FC-12",
-}
-SYMBOL_USE = {"FC-12": "MappingProfile.load"}
+DEFINITION_CLUSTER_ID: dict[str, str] = {}
+SYMBOL_USE: dict[str, str] = {}
+RETIRED_MODULE_ROOTS = {"hwpxfiller.core"}
+MODULE_KEYED_POLICIES = {"product_vendor_import"}
 FORBIDDEN_KERNEL_ROOTS = {
     "ctypes",
     "datetime",
@@ -125,16 +125,22 @@ def _validate_policy(document: dict[str, object]) -> dict[str, set[str]]:
     for name in sorted(EXPECTED_ALLOWLISTS):
         grouped = raw[name]
         if not isinstance(grouped, dict) or list(grouped) != sorted(grouped):
-            raise ContractError(f"{name}은 census ID 순으로 정렬된 table이어야 합니다")
+            raise ContractError(f"{name}은 owner 순으로 정렬된 table이어야 합니다")
         facts: set[str] = set()
-        for census_id, values in grouped.items():
-            if census_id not in entries:
-                raise ContractError(f"{name}: 알 수 없는 census ID {census_id!r}")
+        for owner, values in grouped.items():
+            module_keyed = name in MODULE_KEYED_POLICIES
+            if module_keyed:
+                if owner not in _product_modules():
+                    raise ContractError(f"{name}: Product Domain 밖 모듈 {owner!r}")
+                module = owner
+            else:
+                if owner not in entries:
+                    raise ContractError(f"{name}: 알 수 없는 census ID {owner!r}")
+                module = str(entries[owner]["current_module"])
             if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
-                raise ContractError(f"{name}.{census_id}은 문자열 배열이어야 합니다")
+                raise ContractError(f"{name}.{owner}은 문자열 배열이어야 합니다")
             if values != sorted(values) or len(values) != len(set(values)):
-                raise ContractError(f"{name}.{census_id}은 중복 없는 정렬 목록이어야 합니다")
-            module = str(entries[census_id]["current_module"])
+                raise ContractError(f"{name}.{owner}은 중복 없는 정렬 목록이어야 합니다")
             for value in values:
                 if any(token in value for token in ("*", "?", "[", "]")):
                     raise ContractError(f"{name} wildcard 금지: {value!r}")
@@ -147,7 +153,10 @@ def _validate_policy(document: dict[str, object]) -> dict[str, set[str]]:
                 )
                 if fact in facts:
                     raise ContractError(f"{name}: 여러 census ID가 같은 residual을 가리킵니다: {fact}")
-                entry = entries[census_id]
+                if module_keyed:
+                    facts.add(fact)
+                    continue
+                entry = entries[owner]
                 if name == "legacy_consumer" and entry.get("consumer_kind") == "symbol_use":
                     raise ContractError(f"{name}: symbol-use cluster는 module consumer를 소유할 수 없습니다")
                 if name == "legacy_symbol_use" and entry.get("consumer_kind") != "symbol_use":
@@ -156,13 +165,13 @@ def _validate_policy(document: dict[str, object]) -> dict[str, set[str]]:
                     entry["disposition"] == "FORMAT_KERNEL"
                     or not entry["environment_or_effect"]
                 ):
-                    raise ContractError(f"{name}: effect 소유 census cluster가 아닙니다: {census_id}")
+                    raise ContractError(f"{name}: effect 소유 census cluster가 아닙니다: {owner}")
                 if name == "legacy_definition":
                     expected = DEFINITION_CLUSTER_ID.get(fact)
-                    if expected and census_id != expected:
+                    if expected and owner != expected:
                         raise ContractError(f"{fact}의 census cluster는 {expected}입니다")
-                    if not expected and census_id in DEFINITION_CLUSTER_ID.values():
-                        raise ContractError(f"{census_id}에는 그 cluster의 exact symbol만 허용됩니다")
+                    if not expected and owner in DEFINITION_CLUSTER_ID.values():
+                        raise ContractError(f"{owner}에는 그 cluster의 exact symbol만 허용됩니다")
                 facts.add(fact)
         out[name] = facts
     return out
@@ -263,18 +272,90 @@ def _import_targets(
 
 
 def _dynamic_import_names(tree: ast.AST) -> set[str]:
-    # ponytail: 계산형 모듈명은 현행에 없으므로 도입될 때 constant propagation을 추가한다.
     aliases = _aliases(tree)
-    return {
-        node.args[0].value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and node.args
-        and _qualified_name(node.func, aliases).rsplit(".", 1)[-1]
-        in {"__import__", "find_spec", "import_module"}
-        and isinstance(node.args[0], ast.Constant)
-        and isinstance(node.args[0].value, str)
-    }
+    parents = _parents(tree)
+    bindings: dict[tuple[ast.AST, str], set[str | None]] = {}
+    scope_types = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+    def lexical_scope(node: ast.AST) -> ast.AST:
+        while not isinstance(node, scope_types):
+            node = parents[node]
+        return node
+
+    def scope_chain(node: ast.AST) -> list[ast.AST]:
+        scopes = [lexical_scope(node)]
+        while not isinstance(scopes[-1], ast.Module):
+            parent = parents[scopes[-1]]
+            while not isinstance(
+                parent, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+            ):
+                parent = parents[parent]
+            scopes.append(parent)
+        return scopes
+
+    def bind(node: ast.AST, target: ast.AST, value: "str | None") -> None:
+        for name in _bound_names(target):
+            bindings.setdefault((lexical_scope(node), name), set()).add(value)
+
+    defaults: dict[ast.arg, str] = {}
+    for owner in ast.walk(tree):
+        if not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        positional = (*owner.args.posonlyargs, *owner.args.args)
+        positional_with_defaults = (
+            positional[-len(owner.args.defaults) :] if owner.args.defaults else ()
+        )
+        pairs = zip(positional_with_defaults, owner.args.defaults, strict=True)
+        keyword_pairs = zip(owner.args.kwonlyargs, owner.args.kw_defaults, strict=True)
+        for argument, default in (*pairs, *keyword_pairs):
+            if isinstance(default, ast.Constant) and isinstance(default.value, str):
+                defaults[argument] = default.value
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = (
+                node.value.value
+                if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+                else None
+            )
+            for target in targets:
+                bind(node, target, value)
+        elif isinstance(node, (ast.AugAssign, ast.NamedExpr)):
+            bind(node, node.target, None)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            bind(node, node.target, None)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    bind(node, item.optional_vars, None)
+        elif isinstance(node, ast.arg):
+            values = bindings.setdefault((lexical_scope(node), node.arg), set())
+            values.add(None)
+            if node in defaults:
+                values.add(defaults[node])
+
+    def constants(node: ast.AST) -> set[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return {node.value}
+        if not isinstance(node, ast.Name):
+            return set()
+        for candidate in scope_chain(node):
+            key = (candidate, node.id)
+            if key in bindings:
+                return {value for value in bindings[key] if isinstance(value, str)}
+        return set()
+
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and node.args
+            and _qualified_name(node.func, aliases).rsplit(".", 1)[-1]
+            in {"__import__", "find_spec", "import_module"}
+        ):
+            names.update(constants(node.args[0]))
+    return names
 
 
 def _dynamic_targets(tree: ast.AST, known: set[str]) -> set[str]:
@@ -325,16 +406,17 @@ def _consumer_targets(
     source_is_package: bool = False,
 ) -> set[str]:
     tree = _tree(source, filename)
+    aliases = _aliases(tree, source_module, source_is_package=source_is_package)
     return _import_targets(
         tree,
         source_module=source_module,
         source_is_package=source_is_package,
         known=known,
-    ) | _dynamic_targets(tree, known)
+    ) | _dynamic_targets(tree, known) | _annotation_targets(tree, aliases, known)
 
 
 def _source_paths() -> list[Path]:
-    paths: set[Path] = set()
+    paths = {ROOT / "conftest.py"}
     for root in ("src", "tests", "scripts", "examples", "packaging"):
         base = ROOT / root
         if base.is_dir():
@@ -401,10 +483,10 @@ def _symbol_use_sources(module: str, symbol: str) -> set[str]:
 
 def _category(relative: str) -> str:
     root = relative.split("/", 1)[0]
+    if relative == "conftest.py" or root == "tests":
+        return "test"
     if root == "src":
         return "production"
-    if root == "tests":
-        return "test"
     if root in {"scripts", "examples"}:
         return "scripts"
     return "build"
@@ -439,12 +521,25 @@ def _same_scope_body(node: ast.stmt) -> list[ast.stmt]:
 
 def _public_definitions(source: "str | bytes", module: str) -> set[str]:
     definitions: set[str] = set()
+    is_package = _is_package_module(module)
 
     def visit(body: list[ast.stmt], owner: str) -> None:
         for node in body:
             names: list[str] = []
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 names = [node.name]
+            elif isinstance(node, ast.Import) and not is_package:
+                names = [alias.asname or alias.name.split(".", 1)[0] for alias in node.names]
+                names = [name for name in names if not name.startswith("_")]
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module != "__future__"
+                and not is_package
+            ):
+                if any(alias.name == "*" for alias in node.names):
+                    raise ContractError(f"{module}: legacy leaf star import는 허용하지 않습니다")
+                names = [alias.asname or alias.name for alias in node.names if alias.name != "*"]
+                names = [name for name in names if not name.startswith("_")]
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 names = [name for target in targets for name in _bound_names(target)]
@@ -606,8 +701,12 @@ def _kernel_effect_edges(source: "str | bytes", module: str) -> set[str]:
                 effect = f"filesystem:{qualified}"
             elif root in FORBIDDEN_KERNEL_ROOTS:
                 effect = root
-            elif qualified == "zipfile.ZipFile" and node.args:
-                if not memoryish(node.args[0]):
+            elif qualified == "zipfile.ZipFile":
+                source = node.args[0] if node.args else next(
+                    (keyword.value for keyword in node.keywords if keyword.arg == "file"),
+                    None,
+                )
+                if source is not None and not memoryish(source):
                     effect = "filesystem:zipfile.ZipFile"
             elif isinstance(node.func, ast.Attribute) and node.func.attr == "open":
                 if any(pathish(value) for value in (node.func.value, *node.args)):
@@ -750,6 +849,33 @@ def _annotation_names(node: ast.AST, aliases: dict[str, str]) -> set[str]:
     return names
 
 
+def _annotation_targets(
+    tree: ast.AST, aliases: dict[str, str], known: set[str]
+) -> set[str]:
+    annotations: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            annotations.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns:
+            annotations.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            annotations.append(node.annotation)
+        elif isinstance(node, ast.TypeAlias):
+            annotations.append(node.value)
+        elif isinstance(node, (ast.TypeVar, ast.ParamSpec, ast.TypeVarTuple)):
+            annotations.extend(
+                value
+                for field in ("bound", "default_value")
+                if (value := getattr(node, field, None)) is not None
+            )
+    return {
+        match
+        for annotation in annotations
+        for name in _annotation_names(annotation, aliases)
+        if (match := _match_module(name, known))
+    }
+
+
 def _function_annotations(
     node: "ast.FunctionDef | ast.AsyncFunctionDef", aliases: dict[str, str]
 ) -> set[str]:
@@ -787,6 +913,25 @@ def _vendor_public_type_edges(source: "str | bytes", module: str) -> set[str]:
                 for name in _function_annotations(node, aliases):
                     if _is_vendor_name(name):
                         edges.add(f"{module}|{owner}{node.name}|{name}")
+                if node.name == "__init__" and owner:
+                    positional = (*node.args.posonlyargs, *node.args.args)
+                    receiver = positional[0].arg if positional else None
+
+                    def visit_initializer(
+                        statements: list[ast.stmt], receiver_name: "str | None"
+                    ) -> None:
+                        for statement in statements:
+                            if (
+                                isinstance(statement, ast.AnnAssign)
+                                and isinstance(statement.target, ast.Attribute)
+                                and isinstance(statement.target.value, ast.Name)
+                                and statement.target.value.id == receiver_name
+                                and public(statement.target.attr)
+                            ):
+                                record(f"{owner}{statement.target.attr}", statement.annotation)
+                            visit_initializer(_same_scope_body(statement), receiver_name)
+
+                    visit_initializer(node.body, receiver)
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 if public(node.target.id):
                     binding = f"{owner}{node.target.id}"
@@ -815,6 +960,8 @@ def test_policy_is_exact_sorted_and_wildcard_free() -> None:
 
 
 def test_census_consumer_counts_match_executable_import_graph() -> None:
+    assert ROOT / "conftest.py" in _source_paths()
+    assert _category("conftest.py") == "test"
     known = _known_modules()
     edges = _consumer_edges(known)
     by_module: dict[str, set[str]] = {module: set() for module in known}
@@ -845,10 +992,11 @@ def test_census_consumer_counts_match_executable_import_graph() -> None:
 
 
 def test_legacy_consumers_are_the_exact_shrinking_allowlist() -> None:
+    self_edge = f"{Path(__file__).relative_to(ROOT).as_posix()}|"
     actual = {
         edge
-        for edge in _consumer_edges(_known_modules())
-        if edge.split("|", 1)[1].startswith("hwpxfiller.core")
+        for edge in _consumer_edges(RETIRED_MODULE_ROOTS)
+        if not edge.startswith(self_edge)  # 이 owner의 의도적 import-failure probe
     }
     assert actual == _policy()["legacy_consumer"], (
         f"legacy consumer added={sorted(actual - _policy()['legacy_consumer'])}, "
@@ -858,9 +1006,13 @@ def test_legacy_consumers_are_the_exact_shrinking_allowlist() -> None:
 
 def test_legacy_namespace_has_no_new_definition_or_export() -> None:
     policy = _policy()
+    legacy_root = ROOT / "src" / "hwpxfiller" / "core"
+    assert not legacy_root.exists(), "retired src/hwpxfiller/core 디렉터리가 다시 생겼습니다"
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("hwpxfiller.core")
     assert _legacy_definitions() == policy["legacy_definition"]
     actual: set[str] = set()
-    for module in ("hwpxcore", "hwpxfiller.core"):
+    for module in ("hwpxcore", "hwpxfiller"):
         imported, declared = _facade_exports(_source_for_module(module), module)
         assert imported == declared
         actual |= imported
@@ -904,21 +1056,49 @@ def test_product_contract_has_no_new_vendor_import_or_public_type() -> None:
 def test_negative_probe_rejects_hwpxcore_product_import() -> None:
     source = """from importlib import import_module as load
 from hwpxfiller.domain.job import Job
-load('hwpxfiller.core.job')
+MODULE = 'hwpxfiller.core.job'
+load(MODULE)
 """
     assert _kernel_product_import_edges(source, "hwpxcore.package") == {
         "hwpxcore.package|hwpxfiller.core.job",
         "hwpxcore.package|hwpxfiller.domain.job",
     }
+    source = """from importlib import import_module
+MODULE = 'hwpxfiller.core.job'
+CLASS_MODULE = 'hwpxfiller.core.mapping'
+if False:
+    MODULE = 'json'
+def outer():
+    def inner():
+        return import_module(MODULE)
+class Probe:
+    CLASS_MODULE = 'json'
+    def load(self):
+        return import_module(CLASS_MODULE)
+def load_default(module='hwpxfiller.core.schema'):
+    return import_module(module)
+load_lambda = lambda module='hwpxfiller.core.template_status': import_module(module)
+"""
+    assert _kernel_product_import_edges(source, "hwpxcore.package") == {
+        "hwpxcore.package|hwpxfiller.core.job",
+        "hwpxcore.package|hwpxfiller.core.mapping",
+        "hwpxcore.package|hwpxfiller.core.schema",
+        "hwpxcore.package|hwpxfiller.core.template_status",
+    }
 
 
 def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> None:
-    known = _known_modules()
+    known = RETIRED_MODULE_ROOTS
     cases = (
         "from hwpxfiller.core.job import Job\n",
         "import importlib\nimportlib.import_module('hwpxfiller.core.job')\n",
         "from importlib import import_module as load\nload('hwpxfiller.core.job')\n",
+        "from importlib import import_module\nMODULE = 'hwpxfiller.core.job'\nimport_module(MODULE)\n",
         "Analysis([], hiddenimports=['hwpxfiller.core.job'])\n",
+        "import hwpxfiller\ndef f(x: 'hwpxfiller.core.job.Job') -> None: ...\n",
+        "def f[T: 'hwpxfiller.core.job.Job'](x: T) -> None: ...\n",
+        "type A[**P = 'hwpxfiller.core.job.Job'] = tuple[P.args]\n",
+        "type A[*Ts = *tuple['hwpxfiller.core.job.Job']] = tuple[*Ts]\n",
     )
     for source in cases:
         assert _consumer_targets(
@@ -926,7 +1106,7 @@ def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> Non
             source_module="hwpxfiller.application.probe",
             known=known,
             filename="<probe>",
-        ) == {"hwpxfiller.core.job"}
+        ) == {"hwpxfiller.core"}
     assert _entry_point_targets(
         {
             "project": {
@@ -936,12 +1116,12 @@ def test_negative_probe_finds_direct_dynamic_and_build_legacy_consumers() -> Non
             }
         },
         known,
-    ) == {"hwpxfiller.core.job"}
+    ) == {"hwpxfiller.core"}
 
 
 def test_negative_probe_rejects_wildcard_allowlist() -> None:
     allowlist = {name: {} for name in EXPECTED_ALLOWLISTS}
-    allowlist["legacy_consumer"] = {"FC-08": ["src/**"]}
+    allowlist["legacy_consumer"] = {"KC-01": ["src/**"]}
     with pytest.raises(ContractError, match="wildcard"):
         _validate_policy({"schema": EXPECTED_SCHEMA, "allowlist": allowlist})
 
@@ -955,6 +1135,8 @@ def to_bytes(path: str) -> bytes:
     return b'x'
 def open_zip(source):
     return zipfile.ZipFile(source)
+def open_zip_keyword(path):
+    return zipfile.ZipFile(file=path)
 def memory():
     buf = io.BytesIO()
 def parse(buf):
@@ -963,6 +1145,7 @@ def parse(buf):
     assert _kernel_effect_edges(source, "hwpxcore.codec") == {
         "hwpxcore.codec|<module>|import:pathlib.Path",
         "hwpxcore.codec|open_zip|filesystem:zipfile.ZipFile",
+        "hwpxcore.codec|open_zip_keyword|filesystem:zipfile.ZipFile",
         "hwpxcore.codec|parse|filesystem:zipfile.ZipFile",
         "hwpxcore.codec|to_bytes|filesystem:write_bytes",
         "hwpxcore.codec|to_bytes|pathlib",
@@ -979,6 +1162,10 @@ if TYPE_CHECKING:
 load('lxml.etree')
 type ElementList = list['_Element']
 class Contract(Protocol):
+    def __init__(this):
+        this.root: '_Element'
+        def nested(self):
+            self.not_contract: '_Element'
     def __call__(self, root: '_Element') -> str: ...
     def __iter__(self) -> "list['_Element']": ...
 """
@@ -991,19 +1178,24 @@ class Contract(Protocol):
     assert _vendor_public_type_edges(source, "hwpxfiller.application.contract") == {
         "hwpxfiller.application.contract|Contract.__call__|lxml.etree._Element",
         "hwpxfiller.application.contract|Contract.__iter__|lxml.etree._Element",
+        "hwpxfiller.application.contract|Contract.root|lxml.etree._Element",
         "hwpxfiller.application.contract|ElementList|lxml.etree._Element",
     }
 
 
 def test_negative_probe_finds_new_legacy_definition_and_export() -> None:
     assert _public_definitions(
+        "from hwpxfiller.domain.job import Job as ImportedJob, _private\n"
         "if True:\n def NewCanonical(): ...\n Alias, _Private = (1, 2)\n",
         "hwpxfiller.core.probe",
     ) == {
         "hwpxfiller.core.probe|Alias",
+        "hwpxfiller.core.probe|ImportedJob",
         "hwpxfiller.core.probe|NewCanonical",
         "hwpxfiller.core.probe|_Private",
     }
+    with pytest.raises(ContractError, match="star import"):
+        _public_definitions("from hwpxfiller.domain.job import *\n", "hwpxfiller.core.probe")
     imported, declared = _facade_exports(
         """from .job import Job, NewExport
 if True:

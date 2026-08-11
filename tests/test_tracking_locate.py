@@ -12,9 +12,9 @@ import pytest
 
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
-from hwpxfiller.core.mapping import MappingProfile
+from hwpxfiller.domain.mapping import MappingProfile
 from hwpxfiller.application.dataset_pool import DatasetPoolRow
 from hwpxfiller.webapp.screens import (
     collect_owned_paths,

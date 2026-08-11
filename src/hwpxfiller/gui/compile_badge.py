@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from ..core.template_status import CompileState
+from ..domain.template_status import CompileState
 
 # 상태 → 사람이 읽는 배지 라벨(단일 출처).
 BADGE_LABELS: "dict[CompileState, str]" = {

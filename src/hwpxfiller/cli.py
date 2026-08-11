@@ -30,7 +30,7 @@ if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로
 from .external.hwpx_engine import make_hwpx_engine
 from .external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from .external.atomic import write_text_atomic
-from .core.job import DEFAULT_FILENAME_PATTERN
+from .domain.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .gui.result_errors import describe_fill_note
 from .naming import pattern_field_tokens
@@ -42,7 +42,7 @@ def _schema_main(argv: "list[str]") -> int:
     """``schema`` 하위명령 — 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 출력/저장."""
     import json
 
-    from .core.schema import extract_schema
+    from .domain.schema import extract_schema
 
     ap = argparse.ArgumentParser(prog="hwpxfiller schema")
     ap.add_argument("template", help="HWPX 템플릿 경로")
@@ -66,7 +66,7 @@ def _fieldize_main(argv: "list[str]") -> int:
     명시성 원칙: ``--out`` 없으면 dry-run(무엇을 바꿀지 미리보기만), ``--out`` 지정 시에만
     실제 컴파일 후 저장.
     """
-    from .core.authoring import compile_document, scan_tokens
+    from .domain.authoring import compile_document, scan_tokens
 
     ap = argparse.ArgumentParser(
         prog="hwpxfiller fieldize",
@@ -174,7 +174,7 @@ def _render_main(argv: "list[str]") -> int:
     **표시형까지 서식된 값**(예: `150,000,000원`)으로 채운다(HWPX 생성 경로와 동일 모델).
     없으면 원본 값 그대로. 데이터에 없는 필드는 토큰을 남기고 stderr 로 시끄럽게 신고한다.
     """
-    from .core.text_render import render_record
+    from .domain.text_render import render_record
 
     ap = argparse.ArgumentParser(prog="hwpxfiller render")
     ap.add_argument("template", help="텍스트 템플릿 경로(.txt 등, {{필드}} 토큰)")
@@ -202,8 +202,9 @@ def _render_main(argv: "list[str]") -> int:
 
     record = records[idx]
     if args.profile:
-        from .core.mapping import MappingProfile
-        record = MappingProfile.load(args.profile).apply(record)  # 표시형까지 서식된 값
+        from .external.mapping_store import load_mapping_profile
+
+        record = load_mapping_profile(args.profile).apply(record)  # 표시형까지 서식된 값
 
     text, report = render_record(template, record)
     if report.missing_fields:
@@ -447,12 +448,14 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         return 1
     source_records = records  # 원장 프로파일링용 — 매핑 적용 전 실제형 관측 대상.
 
-    from .core.mapping import FieldMapping, MappingProfile
+    from .domain.mapping import FieldMapping, MappingProfile
 
     profile = None
     if args.profile:
-        from .core.fill_ledger import template_path_drift
-        profile = MappingProfile.load(args.profile)
+        from .domain.fill_ledger import template_path_drift
+        from .external.mapping_store import load_mapping_profile
+
+        profile = load_mapping_profile(args.profile)
         drift = template_path_drift(args.template, profile, engine=engine)
         if drift.has_drift:
             # 문구는 describe() 단일화(RC-03) — GUI/배치 경계와 같은 문장.
@@ -476,7 +479,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     if report.empty_valued:
         # ADR-E 빈값 게이트의 CLI 이식(RC-03) — 기본 차단, --ack-empty 옵트인 시
         # GUI 와 동일한 표식을 주입하고 진행(동일 입력 → 두 표면 동일 문서 내용).
-        from .core.job import MISSING_MARKER, mark_missing_values
+        from .domain.job import MISSING_MARKER, mark_missing_values
 
         if not args.ack_empty:
             print("[오류] 값이 비어 있는 필드가 있습니다 — 표식 없이 조용히 생성하지 "

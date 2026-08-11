@@ -12,7 +12,7 @@ import pytest
 
 from _web_source import REPO_ROOT, SOURCE_JS_DIR
 from hwpxfiller.external.job_store import JobRegistry, encode_job
-from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.template_inspection import (
     HWPX_TEMPLATE_OPS,
     inspect_hwpx_template,
@@ -512,7 +512,7 @@ def test_new_session_action_resets_prior_session(tmp_path):
     라벨 '새'가 사실상 '이전 작성 계속'이었다. 초기화 뒤엔 미저장 판정도 소거된다
     (방금 저장 직후처럼 — 다음 「새 작업」이 불필요한 확인을 띄우지 않게).
     """
-    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN
 
     ctrl, pushes = _controller(tmp_path)
     _build_complete_session(ctrl, "작업A")
@@ -574,8 +574,8 @@ def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
 # 편집 모드(#1)·선언 데이터 자동등록(#3)의 헤드리스 계약.
 from hwpxfiller.domain.dataset_reference import DatasetReference
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
-from hwpxfiller.core.job import Job
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.job import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 
 
 def _controller26(tmp_path: Path):
@@ -1873,7 +1873,7 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
     """가져오기 통일(F8 — §10.17.2 판정 C): 복사 권위는 tpl 컨트롤러 하나(잠금·충돌 접미),
     편집기는 사본 채택만 판정한다. 유효 hwpx = 즉시 새 세션(F7 거동 보존), 충돌 접미도
     tpl 권위가 정한 정확한 목적지로 세션이 선다(반환이 이름이 아니라 경로인 이유)."""
-    from hwpxfiller.core.text_registry import TextTemplateRegistry as TxtReg
+    from hwpxfiller.external.text_registry import TextTemplateRegistry as TxtReg
     from hwpxfiller.webapp.screen_template import TemplateController
 
     lib = tmp_path / "lib"
@@ -2218,7 +2218,7 @@ def test_edit_save_preserves_the_review_baseline(tmp_path):
     에디터가 소유하는 것은 **규칙**(템플릿·매핑·파일명)이고 "마지막 완주가 그중 무엇을
     썼는가"는 실행 이력의 일이다 — 그룹·태그·이력과 같은 부류의 비-편집 메타다.
     """
-    from hwpxfiller.core.job import rules_fingerprints
+    from hwpxfiller.domain.job import rules_fingerprints
     from hwpxfiller.gui.review_state import review_requirement
 
     ctrl, _ = _controller26(tmp_path)
@@ -2240,7 +2240,7 @@ def test_edit_save_preserves_the_review_baseline(tmp_path):
 def test_changing_the_rules_keeps_the_old_baseline_so_review_stands(tmp_path):
     """보존은 **무효화를 막지 않는다**: 기준선은 「마지막 완주가 쓴 것」 그대로 남고,
     바뀐 규칙과 어긋나 검토 요구가 선다(보존이 곧 승인은 아니다)."""
-    from hwpxfiller.core.job import rules_fingerprints
+    from hwpxfiller.domain.job import rules_fingerprints
     from hwpxfiller.gui.review_state import review_requirement
 
     ctrl, _ = _controller26(tmp_path)
@@ -2333,7 +2333,7 @@ def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path
     """TXT 초안 저장 — 파일명 패턴 게이트가 서지 않고(매체 인지, §10.15.15 판정), 저장
     Job 형상은 구 「기안」 저장과 같다(pattern 미편집 = 기본값 그대로). 재편집 왕복도
     같은 2탭 구성으로 돌아온다(사망 점검표 5행)."""
-    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN, template_media
+    from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN, template_media
 
     ctrl, _ = _controller(tmp_path)
     path = _txt_template(tmp_path)

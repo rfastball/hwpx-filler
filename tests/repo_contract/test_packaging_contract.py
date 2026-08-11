@@ -69,12 +69,12 @@ def test_every_declared_hidden_import_resolves() -> None:
 
 def test_retired_ring1_module_is_not_declared_anywhere() -> None:
     """삭제된 링1 모듈 이름이 spec 에도 없고 임포트 그래프에도 없다(양쪽을 함께 센다)."""
-    retired = "hwpxfiller.gui." + "txt_state"
-    assert importlib.util.find_spec(retired) is None, (
-        "이 단언의 전제가 깨졌습니다 — 모듈이 되살아났다면 spec 계약을 다시 정합니다"
-    )
-    for name in _verify_specs().SPEC_NAMES:
-        assert retired not in (PACKAGING / name).read_text(encoding="utf-8")
+    for retired in ("hwpxfiller.gui." + "txt_state", "hwpxfiller.core"):
+        assert importlib.util.find_spec(retired) is None, (
+            "이 단언의 전제가 깨졌습니다 — 모듈이 되살아났다면 spec 계약을 다시 정합니다"
+        )
+        for name in _verify_specs().SPEC_NAMES:
+            assert retired not in (PACKAGING / name).read_text(encoding="utf-8")
 
 
 def test_ghost_hidden_import_is_rejected(tmp_path: Path) -> None:

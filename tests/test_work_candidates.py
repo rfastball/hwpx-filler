@@ -4,13 +4,13 @@
 판정의 단일 출처 = compatibility_for, 후보 열거 = candidate_rows.
 """
 
-from hwpxfiller.core.job import (
+from hwpxfiller.domain.job import (
     WORK_MODE_HWPX,
     WORK_MODE_TEXT,
     WORK_MODE_UNSUPPORTED,
     Job,
 )
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.work_candidates import (
     KIND_AVAILABLE,
     KIND_EXCLUDED,

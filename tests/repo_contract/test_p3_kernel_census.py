@@ -3,7 +3,7 @@
 원장은 **임시 실행 원장**이다 — P3-03~P3-05 가 소비하고, P3-99(#586)에서 원장이 제거되거나
 영구 계약으로 승격될 때 이 게이트도 **같은 변경에서** 처분한다(#585 완료 조건 13).
 
-지키는 것: 후속 lane 이 소비하기 전에 원장이 (a) 대상 두 패키지의 모듈을 빠뜨리지 않고
+지키는 것: 원장이 (a) 남은 format kernel 모듈을 빠뜨리지 않고
 (b) 스키마·disposition 어휘를 지키고 (c) P2 ring 판정(`docs/module_rings.toml`)과 어긋나지
 않고 (d) behavior oracle 이 실제로 수집되는 상태.
 """
@@ -43,14 +43,11 @@ EXPECTED_SCHEMA = [
 #: 원장 entry 를 넣고 빼는 변경은 이 목록과 한 변경이어야 한다(module_rings 양방향 전례).
 EXPECTED_ENTRY_IDS = {
     *(f"KC-{i:02d}" for i in (1, 2, 7, 8)),
-    *(f"FC-{i:02d}" for i in range(1, 18)),
 }
 
-#: DOMAIN 의 P3 정제는 패키지가 정한다 — 제품 의미를 모르는 hwpxcore 만 FORMAT_KERNEL,
-#: hwpxfiller.core 는 PRODUCT_DOMAIN 이다(#585 결정 2).
+#: 제품 의미를 모르는 hwpxcore DOMAIN 만 FORMAT_KERNEL 로 정제한다.
 REFINEMENT_BY_PREFIX = {
     "hwpxcore": ("DOMAIN", "FORMAT_KERNEL"),
-    "hwpxfiller.core": ("DOMAIN", "PRODUCT_DOMAIN"),
 }
 
 #: #592 이동 전 최소 동작 폐포. 비교 강도도 함께 고정해 byte 계약이 semantic 비교로
@@ -131,10 +128,6 @@ EXPECTED_BEHAVIOR_RISKS = {
 }
 
 
-def _package_prefix(module: str) -> str:
-    return "hwpxfiller.core" if module.startswith("hwpxfiller.core") else "hwpxcore"
-
-
 def _census() -> dict[str, object]:
     return tomllib.loads(CENSUS.read_text(encoding="utf-8"))
 
@@ -144,14 +137,16 @@ def _entries() -> "list[dict[str, object]]":
 
 
 def _governed_modules() -> "set[str]":
-    """census 정의역 — 두 대상 패키지의 실재 모듈 전부(__init__ 는 패키지명으로)."""
+    """census 정의역 — hwpxcore의 실재 모듈 전부(__init__ 는 패키지명으로)."""
     out: set[str] = set()
-    for base_dir, pkg in (("src/hwpxcore", "hwpxcore"), ("src/hwpxfiller/core", "hwpxfiller.core")):
-        for path in (ROOT / base_dir).rglob("*.py"):
-            if "__pycache__" in path.parts:
-                continue
-            parts = [p for p in path.relative_to(ROOT / base_dir).with_suffix("").parts if p != "__init__"]
-            out.add(".".join([pkg, *parts]) if parts else pkg)
+    base_dir, package = ROOT / "src" / "hwpxcore", "hwpxcore"
+    for path in base_dir.rglob("*.py"):
+        parts = [
+            part
+            for part in path.relative_to(base_dir).with_suffix("").parts
+            if part != "__init__"
+        ]
+        out.add(".".join([package, *parts]) if parts else package)
     return out
 
 
@@ -174,7 +169,7 @@ def test_census_schema_and_disposition_vocabulary() -> None:
             )
 
 
-def test_census_covers_both_packages_completely() -> None:
+def test_census_covers_kernel_package_completely() -> None:
     """양방향 닫힘 — 등재 모듈이 실재하고, 실재 모듈이 등재된다(#542 「정의역이 열거」 방지)."""
     entries = _entries()
     ids = [str(entry["id"]) for entry in entries]
@@ -194,27 +189,19 @@ def test_census_covers_both_packages_completely() -> None:
 def test_census_p2_authority_matches_module_rings() -> None:
     """P2 가 이미 결정한 owner 를 P3 가 재분류하지 않는다(#593 판정 규칙)."""
     def allows_refinement(
-        prefix: str,
-        recorded: str,
-        disposition: str,
-        product_semantics_awareness: bool,
+        recorded: str, disposition: str, product_semantics_awareness: bool
     ) -> bool:
         return (
-            (recorded, disposition) == REFINEMENT_BY_PREFIX[prefix]
-            and (prefix != "hwpxcore" or not product_semantics_awareness)
+            (recorded, disposition) == REFINEMENT_BY_PREFIX["hwpxcore"]
+            and not product_semantics_awareness
         )
 
     # KC-06 오분류 회귀 음성 대조: 제품 의미를 아는 Domain은 format kernel로 정제할 수 없다.
-    assert not allows_refinement("hwpxcore", "DOMAIN", "FORMAT_KERNEL", True)
+    assert not allows_refinement("DOMAIN", "FORMAT_KERNEL", True)
 
     rings = tomllib.loads(RINGS.read_text(encoding="utf-8"))
     targets = {str(unit["module"]): str(unit["target"]) for unit in rings["unit"]}
     entries = _entries()
-    dispositions_by_module: "dict[str, set[str]]" = {}
-    for entry in entries:
-        dispositions_by_module.setdefault(str(entry["current_module"]), set()).add(
-            str(entry["disposition"])
-        )
     for entry in entries:
         module = str(entry["current_module"])
         recorded = str(entry["p2_target_authority"])
@@ -225,24 +212,12 @@ def test_census_p2_authority_matches_module_rings() -> None:
         disposition = str(entry["disposition"])
         if disposition in {"REMOVE", "TEMP_SAME_OBJECT_FACADE", "BLOCKED_NEEDS_P2_DECISION"}:
             continue
-        # cluster 분할(#585 결정 2): Domain 모듈의 effect cluster 만 External 로 갈 수 있고,
-        # 그때도 product cluster 가 같은 모듈의 형제 entry 로 **살아 있어야** 한다.
-        siblings = dispositions_by_module[module]
-        prefix = _package_prefix(module)
-        split_ok = (
-            # hwpxfiller.core: DOMAIN 모듈의 effect cluster → External (FC-11/FC-12 꼴, #566 소유 승계)
-            prefix == "hwpxfiller.core"
-            and recorded == "DOMAIN"
-            and disposition == "EXTERNAL_ADAPTER"
-            and "PRODUCT_DOMAIN" in siblings
-        )
         refinement_ok = allows_refinement(
-            prefix,
             recorded,
             disposition,
             bool(entry["product_semantics_awareness"]),
         )
-        assert disposition == recorded or refinement_ok or split_ok, (
+        assert disposition == recorded or refinement_ok, (
             f"{entry['id']}: disposition {disposition!r} 이 P2 판정 {recorded!r} 의 "
             "허용 정제가 아닙니다 — 재분류는 #538/#542/#582/#583 상향 대상"
         )

@@ -13,7 +13,7 @@ export const meta = {
 // ── 실측 영역 지도 (2026-07-13 기준; tests/는 파일명 관례 매핑) ──────────────
 const AREAS = {
   core:     { paths: ['src/hwpxcore/'] },
-  fillcore: { paths: ['src/hwpxfiller/core/'] },
+  fillcore: { paths: ['src/hwpxfiller/domain/', 'src/hwpxfiller/external/', 'src/hwpxfiller/host/'] },
   data:     { paths: ['src/hwpxfiller/data/'] },
   gui:      { paths: ['src/hwpxfiller/gui/'] },
   cli:      { paths: ['src/hwpxfiller/cli.py', 'src/hwpxfiller/batch.py', 'src/hwpxfiller/naming.py'] },
@@ -25,7 +25,7 @@ const AREAS = {
 // 직교성 규칙 — planner가 병렬 인증할 때 반드시 지킬 제약.
 const ORTHOGONALITY_RULES = `
 - src/hwpxfiller/gui/style.py 는 단일 소유자다. 이 파일을 건드리는 task는 절대 둘 이상 병렬 금지 — 직렬화하거나 한 task로 묶어라.
-- fillcore(engine/schema/mapping) 변경은 gui/*_state.py 로 파문된다. 같은 기능이면 한 워커에 묶어라.
+- domain(engine/schema/mapping) 변경은 gui/*_state.py 로 파문된다. 같은 기능이면 한 워커에 묶어라.
 - src/hwpxcore/ 는 형식 kernel 토대라 변경이 저장소 전역으로 파문된다.
   core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
 - 확신이 없으면 병렬로 인증하지 마라. 직렬이 기본값이다.`

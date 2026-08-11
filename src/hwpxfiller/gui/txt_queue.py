@@ -27,7 +27,7 @@ txt 기안 세션의 데이터 존 선택은 **전-선언**이다(결정 16): �
   자동 전진은 명시 opt-in(표면 소관, 결정 16). 전진 대상은 **표시 순서상 가장 이른
   미처리**(:meth:`advance_to_next_uncopied`)다.
 - **레코드 비소유**: 이 모델은 인덱스만 다룬다 — 빈칸 게이트 술어(카드에 빈 값이 있나)는
-  레코드를 아는 컨트롤러가 :func:`~hwpxfiller.core.text_render.render_segments` 로 판정한다.
+  레코드를 아는 컨트롤러가 :func:`~hwpxfiller.domain.text_render.render_segments` 로 판정한다.
 
 회귀 = ``tests/test_txt_queue.py``. 표면 배선(데이터 존 테이블·작업점 카드·상태 색인)은 PR-2·3.
 """

@@ -15,7 +15,7 @@ from openpyxl import Workbook
 from hwpxfiller.cli import main
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.mapping_store import save_mapping_profile
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
@@ -259,7 +259,7 @@ def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
 
 def test_cli_ack_empty_injects_marker(tmp_path):
     """--ack-empty 옵트인 — GUI 와 같은 미입력 표식을 넣고 진행(조용한 누름틀 잔존 금지)."""
-    from hwpxfiller.core.fields import read_fields
+    from hwpxfiller.domain.fields import read_fields
 
     data = _xlsx(tmp_path / "d.xlsx",
                  [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
@@ -494,7 +494,7 @@ def test_pattern_token_missing_from_data_fails_loud(tmp_path, monkeypatch, capsy
 
 def test_cli_pattern_default_is_single_source():
     from hwpxfiller.cli import DEFAULT_FILENAME_PATTERN as CLI_DEFAULT
-    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN
     assert CLI_DEFAULT is DEFAULT_FILENAME_PATTERN
 
 

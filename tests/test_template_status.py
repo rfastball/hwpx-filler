@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxfiller.core.authoring import compile_document
-from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.template_status import CompileState, compile_status
+from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.domain.fields import FieldDocument
+from hwpxfiller.domain.template_status import CompileState, compile_status
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"

@@ -18,8 +18,8 @@
 
 의존은 바깥쪽에서 안쪽으로만 흐른다.
 
-1. **링0 — 도메인/데이터:** `src/hwpxfiller/core/`, `src/hwpxfiller/data/`. 문서 생성,
-   저장 모델, 데이터 소스를 소유하며 UI 런타임을 모른다.
+1. **링0 — kernel/도메인/데이터:** `src/hwpxcore/`, `src/hwpxfiller/domain/`,
+   `src/hwpxfiller/data/`. 문서 형식, 제품 모델, 데이터 소스를 소유하며 UI 런타임을 모른다.
 2. **링1 — ViewModel/상태:** `src/hwpxfiller/gui/*_state.py`의 Qt-free 모델. 링0을 호출하고
    상태·게이트·직렬화 가능한 값을 제공한다. DOM이나 pywebview를 임포트하지 않는다.
 3. **링2 — 웹 프레젠테이션:** `src/hwpxfiller/webapp/`의 컨트롤러·브리지와 `web/`의

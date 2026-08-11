@@ -14,11 +14,11 @@ a = Analysis(
     # cli.py의 하위명령·소스 분기가 함수 내 import를 쓴다. 정적 분석에
     # 우연히 기대지 않고 번들 계약으로 명시한다.
     hiddenimports=[
-        "hwpxfiller.core.schema",
-        "hwpxfiller.core.authoring",
-        "hwpxfiller.core.lint",
-        "hwpxfiller.core.mapping",
-        "hwpxfiller.core.text_render",
+        "hwpxfiller.domain.schema",
+        "hwpxfiller.domain.authoring",
+        "hwpxfiller.domain.lint",
+        "hwpxfiller.domain.mapping",
+        "hwpxfiller.domain.text_render",
         "hwpxfiller.data.excel",
         "hwpxfiller.data.nara",
         "openpyxl",

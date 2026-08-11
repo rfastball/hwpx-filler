@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.core.paths import home_dir
+from hwpxfiller.host.locations import home_dir
 from hwpxfiller.host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
+    default_text_templates_dir,
     default_templates_dir,
 )
-from hwpxfiller.core.text_registry import default_text_templates_dir
 from hwpxfiller.external import settings
 
 

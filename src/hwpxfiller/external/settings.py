@@ -23,7 +23,7 @@ from .atomic import write_text_atomic
 # (app.py: 단일 인스턴스 뮤텍스 키·webview 루트) — 이름을 그대로 재노출해 호출 계약은 두고
 # 해석만 위임한다. 관용구를 여기 다시 적으면 settings.json 과 레지스트리가 다른 홈으로
 # 갈라질 수 있고, 그 조용한 갈라짐이 #76 이 없애려는 결함류다.
-from hwpxfiller.core.paths import home_dir
+from hwpxfiller.host.locations import home_dir
 
 __all__ = (
     "VALID_THEMES",

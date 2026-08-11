@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from lxml import etree
 
 from hwpxcore.text_extract import HP_NS, _local, _require_package, _text_of_t
-from hwpxfiller.core.authoring import scan_tokens
-from hwpxfiller.core.schema import extract_schema
+from hwpxfiller.domain.authoring import scan_tokens
+from hwpxfiller.domain.schema import extract_schema
 
 
 # 작업 실행의 기본 저장 하위폴더 이름(screen_job: 템플릿/Results). 라이브러리 루트 밑에 산출물이

@@ -2,9 +2,8 @@
 
 물리 패키지 경계 게이트 4종(`test_domain_boundary`·`test_application_boundary`·
 `test_external_adapter_boundary`·`test_host_boundary`)의 정의역은 각자 새 패키지뿐이라,
-아직 옛 폴더(`core/`·`data/`·`gui/`·`webapp/`)에 사는 유닛의 방향은 **여기만** 본다.
-#542 H-2 실측: `core.lint → webapp.screens` 를 심으면 repo_contract 92 노드 중 이 파일만
-빨강이고 나머지 91 은 초록이다 — 물리 이관이 끝나기 전에 이 게이트를 지우면 순손실이다.
+아직 옛 폴더(`data/`·`gui/`·`webapp/`)에 사는 유닛의 방향은 **여기만** 본다.
+물리 이관이 끝나기 전에 이 게이트를 지우면 순손실이다.
 
 유래는 P1 계측의 P2 handoff(#512~#520)이고, P2 완주 뒤 P1 부기는 걷어내 계약만 남겼다.
 """

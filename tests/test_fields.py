@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.core.fields import FieldDocument, FillNote, read_fields
+from hwpxfiller.domain.fields import FieldDocument, FillNote, read_fields
 from hwpxcore.package import HwpxPackage
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
@@ -363,7 +363,7 @@ def test_precheck_covers_empty_and_degenerate_shapes():
 
 def test_fill_precheck_walks_package_and_dedupes():
     from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
-    from hwpxfiller.core.fields import fill_precheck
+    from hwpxfiller.domain.fields import fill_precheck
 
     pkg = HwpxPackage()
     pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE

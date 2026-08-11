@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..core.job import library_rel_key
+from ..external.job_store import library_rel_key
 from ..external import settings
 
 _BAD_NAME = re.compile(r'[\\/:*?"<>|]')
@@ -49,7 +49,7 @@ def rel_key(path: "str | Path", root: "Path | None") -> str:
     관리 화면·에디터 1단계 피커가 **같은 키 규칙**으로 같은 그룹 지정을 소비하는 단일 출처
     (한쪽만 basename, 다른쪽 상대경로면 같은 파일이 두 키로 갈라져 그룹이 어긋난다).
 
-    키 **계산**은 링0 :func:`~hwpxfiller.core.job.library_rel_key` 가 소유한다(#348 — 작업의
+    키 **계산**은 :func:`~hwpxfiller.external.job_store.library_rel_key` 가 소유한다(#348 — 작업의
     템플릿 링크가 같은 값을 durable 로 쓰게 되면서 관례가 둘로 갈라질 자리가 생겼다). 여기
     남는 것은 **폴백 정책**뿐이다: 그룹 지정은 루트 밖 파일도 어떤 키든 있어야 묶이고 오연결의
     대가가 없어 파일명으로 폴백하지만, 작업 링크는 폴백이 곧 다른 폴더 동명 파일 오연결이라

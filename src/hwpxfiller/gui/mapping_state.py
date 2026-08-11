@@ -19,16 +19,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from ..core.authoring import scan_tokens
-from ..core.lint import similarity
-from ..core.mapping import (
+from ..domain.authoring import scan_tokens
+from ..domain.lint import similarity
+from ..domain.mapping import (
     TYPES,
     FieldMapping,
     MappingProfile,
     suggest_mappings,
 )
-from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
-from ..core.template_status import CompileState, TemplateStatus, compile_status
+from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
+from ..domain.template_status import CompileState, TemplateStatus, compile_status
 
 # inferred_type → 기본 값 유형. 명시 없는 타입은 text(그대로).
 _DEFAULT_TYPE = {"date": "date", "amount": "amount"}
@@ -207,7 +207,7 @@ class MappingModel:
         적용」은 저장 세션의 지속성 스위치(슬라이스 5)라 휘발 기본은 꺼져 있다.
 
         **유형 = 결정 5 우선순위**: 자동 결속 열은 값 스니핑(``col_kinds``)이 이름 추론을
-        이긴다. 무결속·스니핑 부재는 이름 휴리스틱(:func:`~hwpxfiller.core.schema.infer_type`),
+        이긴다. 무결속·스니핑 부재는 이름 휴리스틱(:func:`~hwpxfiller.domain.schema.infer_type`),
         그마저 없으면 text. 전 행 미확정(``confirmed=False``)·미접촉으로 시작한다(초안은 초안).
         """
         source_fields = list(source_fields or [])

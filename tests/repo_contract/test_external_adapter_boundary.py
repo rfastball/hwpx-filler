@@ -51,7 +51,6 @@ INWARD_ROOTS = (
     SRC / "hwpxcore",
     SRC / "hwpxfiller" / "domain",
     SRC / "hwpxfiller" / "application",
-    SRC / "hwpxfiller" / "core",
     SRC / "hwpxfiller" / "data",
     SRC / "hwpxfiller" / "gui",
 )

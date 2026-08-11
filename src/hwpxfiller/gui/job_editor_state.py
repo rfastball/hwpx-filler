@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.mapping import MappingProfile
+from ..domain.mapping import MappingProfile
 
 
 @dataclass(frozen=True)

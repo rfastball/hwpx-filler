@@ -1,7 +1,7 @@
 """작업 정의 컨트롤러 — 템플릿·필드 매핑·저장 오케스트레이션(webview 비의존).
 
 **매체 2종**(F6 PR-B): 「템플릿」 탭이 HWPX·TXT 두 밴드를 보이고, 선택 확장자가 세션
-매체를 정한다(:func:`~hwpxfiller.core.job.template_media` 파생 — 탭 구성·저장 게이트가
+매체를 정한다(:func:`~hwpxfiller.domain.job.template_media` 파생 — 탭 구성·저장 게이트가
 따라온다). TXT 작업 생성은 구 「기안」 화면의 승계처가 여기다(지도 §10.15.15 점검표 1행).
 
 **에디터 흡수(R-flow 블록 2 개정, 결정 39~41)**: 이 컨트롤러의 표면은 별도 화면이 아니라
@@ -42,19 +42,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-from ..core.format_engine import presets as format_presets
-from ..core.job import (
+from ..domain.format_engine import presets as format_presets
+from ..domain.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
     template_media,
 )
-from ..core.mapping import TYPES, MappingProfile
-from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
-from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
-from ..core.text_render import SEG_MISSING, render_segments, template_fields
+from ..domain.mapping import TYPES, MappingProfile
+from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
+from ..external.text_registry import TextTemplateRegistry
+from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path
 from ..external.job_store import JobRegistry, content_fingerprint
-from ..host.locations import default_templates_dir
+from ..host.locations import default_templates_dir, default_text_templates_dir
 from ..gui.edit_session import (
     SECTION_BINDING,
     SECTION_FILENAME,

@@ -14,7 +14,7 @@
 저장 단위는 화면이 보여주는 유효 초안 전체가 아니라 **한 section 의 patch** 다(§5.2).
 이 모듈은 patch 를 따로 기록하지 않고 **진입 시점 스냅샷과의 차이로 유도**한다 — 이중
 장부(모델을 고치면서 patch 도 적기)를 두면 둘이 갈리는 날 저장이 사용자가 본 것과 다른
-것을 쓴다. 차이의 원재료는 :func:`~hwpxfiller.core.job.rules_values` 하나이고, 그것은
+것을 쓴다. 차이의 원재료는 :func:`~hwpxfiller.domain.job.rules_values` 하나이고, 그것은
 판본 정산·검토 요구가 쓰는 바로 그 값이다(판정 주체 단일화).
 
 ## 3. 나가도 되는가 (dirty)
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ..core.job import Job, rules_values
+from ..domain.job import Job, rules_values
 
 #: 편집기 section — 계약 §5.1 의 값 그대로다. 정수 단계 어휘는 F7 에서 사망했다(§10.13
 #: 판정 B): patch 의 키와 화면의 탭이 같은 문자열을 써야 "같은 상태를 두 표면이 다르게

@@ -301,7 +301,7 @@ def ledger_outputs(
     *,
     missing_marker: str = "",
 ) -> "tuple[OutputLedger, ...]":
-    """배치 결과(:class:`~hwpxfiller.core.engine.GenerateResult` 순서열)와 매핑된
+    """배치 결과(:class:`~hwpxfiller.domain.engine.GenerateResult` 순서열)와 매핑된
     레코드를 합쳐 산출별 원장을 만든다(순수 행 구성).
 
     성공 산출물의 되읽기 검증(파일 read 효과)은 P2-19R(#576)에서 External 로 이사했다 —

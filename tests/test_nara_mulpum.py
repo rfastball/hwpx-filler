@@ -17,13 +17,13 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.batch import OutputCollisionError, generate_batch
-from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.mapping_store import load_mapping_profile
 
 SCENARIO = Path(__file__).parent / "corpus" / "scenario"
 BID_NOTICE = str(SCENARIO / "templates" / "입찰공고서.hwpx")  # 25필드(담당부서·입찰개시일자 등 포함)
-PROFILE = MappingProfile.load(SCENARIO / "data" / "나라장터_매핑.json")
+PROFILE = load_mapping_profile(SCENARIO / "data" / "나라장터_매핑.json")
 
 MULPUM = Path(__file__).parent / "corpus" / "nara_mulpum" / "mulpum.json"
 

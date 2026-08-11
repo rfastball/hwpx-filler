@@ -11,7 +11,7 @@ from pathlib import Path
 
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
-from hwpxfiller.core.schema import FieldSpec, _infer_type, extract_schema
+from hwpxfiller.domain.schema import FieldSpec, _infer_type, extract_schema
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"

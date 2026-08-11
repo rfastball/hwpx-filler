@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.core.lint import diff_schema, lint_template
+from hwpxfiller.domain.lint import diff_schema, lint_template
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 

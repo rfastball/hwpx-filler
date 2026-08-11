@@ -14,12 +14,11 @@ import shutil
 
 import pytest
 
-from hwpxfiller.core.job import (
+from hwpxfiller.domain.job import (
     Job,
     RunRequest,
-    _reject_unsafe_key,
 )
-from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.external.template_inspection import template_compile_status
@@ -27,6 +26,7 @@ from hwpxfiller.external.job_store import (
     JobRegistry,
     JobSlugCollisionError,
     SlugCollisionError,
+    _reject_unsafe_key,
     content_fingerprint,
     decode_job,
     encode_job,
@@ -78,7 +78,7 @@ def test_default_filename_pattern_is_single_source():
     """기본 패턴 단일 출처(RC-20) — dataclass·from_dict 하위호환이 같은 상수를 참조하고,
     값은 **예약 토큰만** 쓴다(F34b) — 데이터 필드 토큰이 섞이면 그 열이 없는 데이터에서
     기본값이 곧 보장된 미해소 파일명 + 전 레코드 동일명이 된다."""
-    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    from hwpxfiller.domain.job import DEFAULT_FILENAME_PATTERN
     from hwpxfiller.naming import pattern_field_tokens
 
     assert DEFAULT_FILENAME_PATTERN == "공고서-{{date}}-{{seq:001}}"
@@ -414,7 +414,7 @@ def test_run_request_output_report_flags_empty_value():
 
 def test_mapped_records_mark_missing_only_empty_values():
     """표식 주입 — 값이 빈 키만 치환, 비빈 값 불변, 의도적 공란(키 부재)은 그대로."""
-    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.domain.job import MISSING_MARKER
 
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
     req = RunRequest(_job(), src, [0])
@@ -428,7 +428,7 @@ def test_mapped_records_mark_missing_only_empty_values():
 
 def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
     """기본 인자 = 기존 동작 회귀 + 표식 주입 후 empty_valued 무경보(주입 확인의 거울)."""
-    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.domain.job import MISSING_MARKER
     from hwpxfiller.domain.validation import validate
 
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
@@ -447,8 +447,8 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
     from pathlib import Path
 
     from hwpxfiller.external.hwpx_engine import make_hwpx_engine
-    from hwpxfiller.core.fields import read_fields
-    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.domain.fields import read_fields
+    from hwpxfiller.domain.job import MISSING_MARKER
 
     template = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_under100m.hwpx"
     mapping = MappingProfile(mappings=[
@@ -594,7 +594,7 @@ def test_revision_corruption_is_loud(bad):
 
 def test_previous_rules_shape_corruption_is_loud():
     """직전 판본은 축이 온전한 값 사전이어야 한다 — 증거를 짓는 자리의 조용한 결손 금지."""
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
 
     d = encode_job(_job())
     d["previous_rules"] = rules_values(_job())
@@ -612,7 +612,7 @@ def test_revisions_are_outside_the_content_fingerprint():
 
     남기면 다른 표면의 저장·스탬프가 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
     """
-    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.domain.job import rules_values
 
     job = _job()
     before = content_fingerprint(job)
@@ -625,7 +625,7 @@ def test_rules_fingerprints_are_assembled_from_rules_values(tmp_path):
     """지문과 직전 판본 값은 **같은 원재료**를 쓴다 — 한쪽만 고쳐지면 "무엇이 바뀌었나"와
     "무엇이었나"가 서로 다른 규칙을 말한다(§10.13 판정 H).
     """
-    from hwpxfiller.core.job import rules_fingerprints, rules_values
+    from hwpxfiller.domain.job import rules_fingerprints, rules_values
 
     job = _job()
     values, fp = rules_values(job), rules_fingerprints(job)
@@ -666,7 +666,7 @@ def test_save_advances_only_the_axis_whose_rules_changed(tmp_path):
 
 def test_stamping_a_run_does_not_advance_revisions(tmp_path):
     """완주 스탬프·즐겨찾기·그룹은 규칙이 아니다 — 세대를 올리지 않는다(§19.10 표)."""
-    from hwpxfiller.core.job import rules_fingerprints
+    from hwpxfiller.domain.job import rules_fingerprints
 
     reg = JobRegistry(tmp_path)
     reg.save(_job())
@@ -1147,7 +1147,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
 
 
 # ------------------------------------------------------------------ 매체 유도·가드 (3부 결정 4·13)
-from hwpxfiller.core.job import (  # noqa: E402 — 매체 헬퍼 테스트 그룹(파일 하단 응집)
+from hwpxfiller.domain.job import (  # noqa: E402 — 매체 헬퍼 테스트 그룹(파일 하단 응집)
     MediaMismatchError,
     require_hwpx,
     require_hwpx_template,
@@ -1183,7 +1183,7 @@ def test_job_media_is_derived_not_stored():
 
 def test_work_mode_derives_three_values_from_the_suffix_only():
     """§19.1 — 작업 방식은 확장자에서**만** 파생하고 v5 fallback(그 외 = hwpx)은 없다."""
-    from hwpxfiller.core.job import (
+    from hwpxfiller.domain.job import (
         WORK_MODE_HWPX,
         WORK_MODE_TEXT,
         WORK_MODE_UNSUPPORTED,
@@ -1204,7 +1204,7 @@ def test_work_mode_and_media_stay_two_axes():
     라이브러리 **필터**는 같은 행을 hwpx 칸에 놓는데(고치러 오는 자리에 남기려고),
     그 귀속을 방식 파생이 흉내 내면 세 축이 서로를 덮어쓴다.
     """
-    from hwpxfiller.core.job import WORK_MODE_UNSUPPORTED
+    from hwpxfiller.domain.job import WORK_MODE_UNSUPPORTED
     from hwpxfiller.gui.home_state import MODE_HWPX, JobRow, library_mode_of
 
     unlinked = Job(name="저작중", template_path="")

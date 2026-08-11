@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from ..batch import generate_batch
-from ..core.job import MISSING_MARKER, Job, rules_fingerprints
+from ..domain.job import MISSING_MARKER, Job, rules_fingerprints
 from ..gui.run_state import GenerationPlan
 from .jobs import JobStorePort, stamp_run_completion
 

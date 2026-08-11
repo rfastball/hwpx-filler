@@ -14,7 +14,7 @@ source 의 값이 우연히 같으면 일반 미리보기는 의미 변경을 �
 
 ## 이 모듈의 답
 
-규칙의 지문을 **대상별로** 뜨고(:func:`~hwpxfiller.core.job.rules_fingerprints`) 기준선과
+규칙의 지문을 **대상별로** 뜨고(:func:`~hwpxfiller.domain.job.rules_fingerprints`) 기준선과
 비교해 무엇이 바뀌었는지 센 뒤, 위험 등급에 따라 **다른 증거**를 요구한다. 승인은 그
 지문에 결속되므로 "무엇을 승인했는가"가 값으로 남는다.
 
@@ -31,8 +31,8 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 
-from ..core.job import MISSING_MARKER, Job, rules_fingerprints
-from ..core.mapping import FieldMapping
+from ..domain.job import MISSING_MARKER, Job, rules_fingerprints
+from ..domain.mapping import FieldMapping
 from ..naming import pattern_field_tokens
 
 #: 승인을 요구하는 위험 축 — **무거운 순**. 여러 축이 동시에 바뀌면 앞선 것이 이긴다

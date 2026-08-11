@@ -16,7 +16,7 @@ import sys
 import threading
 from pathlib import Path
 
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +73,7 @@ def test_second_process_writer_fails_before_touching_job_files(tmp_path) -> None
     code = r"""
 import sys
 from pathlib import Path
-from hwpxfiller.core.job import Job
+from hwpxfiller.domain.job import Job
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.host.job_writer_lease import JobRegistryOwnershipError
 

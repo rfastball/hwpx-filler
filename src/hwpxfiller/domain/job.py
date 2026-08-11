@@ -19,9 +19,7 @@ Qt·엔진·디스크에 의존하지 않는다.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
@@ -75,7 +73,7 @@ def mark_missing_values(
 def load_isolated(paths, loader, corrupted):
     """손상 격리 로드 루프 — 세 레지스트리 목록 메서드의 공용 몸통(RC-05 단일 출처).
 
-    예전엔 이 try/except-수집 루프가 :meth:`JobRegistry.list_jobs`·:meth:`~hwpxfiller.external.
+    예전엔 이 try/except-수집 루프가 :meth:`~hwpxfiller.external.job_store.JobRegistry.list_jobs`·:meth:`~hwpxfiller.external.
     dataset_store.DatasetPoolRegistry.list_items` 등에 바이트 단위로 복붙돼 있었다 —
     여기로 수렴해 락스텝 편집 부담과 정책 표류를 없앤다.
 
@@ -215,130 +213,6 @@ def require_hwpx(job: "Job") -> "Job":
     return job
 
 
-# ------------------------------------------------------------------ 라이브러리 상대키(#348)
-# U2 §5.3 판정 B: 레지스트리는 위치-불가지인데(생성자가 디렉터리를 받는다) **내용물이 절대경로로
-# 위치에 묶여 있었다** — 홈을 옮기면 모든 작업의 ``template_path`` 가 한꺼번에 끊기고, 라이브러리는
-# 그 사실을 「템플릿이 연결되지 않은 **작업 N건**」이라고 작업 수로 셌다(간접층이 있었다면
-# 데이터 축처럼 「참조 1건」이었다). 웹 표준의 처방과 같다: 경로를 **버리는** 것이 아니라 경로에서
-# **기계 고유 부분만 이름으로 치환**한다(named root + root-relative).
-#
-# **새 관례를 만들지 않는다** — 라이브러리 루트 상대 POSIX 키는 템플릿 그룹 지정(결정 8)이 이미
-# 쓰는 값이고 에디터 피커도 이미 그 키로 말한다. 저장만 경로였다. 그래서 키 계산의 몸통은 여기
-# 링0 에 두고 :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이것을 감싼다.
-#
-# **폴백 정책만 다르다**(이 이슈의 유일한 새 규칙): 그룹 키는 루트 밖이면 파일명으로 폴백하지만,
-# 작업 링크에서 그 폴백은 **다른 폴더의 동명 파일에 조용히 붙는다** — 끊긴 참조를 파일명으로
-# 자동 매칭하는 것은 영상 편집 도구들이 대가를 치른 결함류다. 여기서는 폴백 없이 승격에
-# **실패**하고 기존 절대경로를 유지한다("이 작업은 이식 대상이 아니다"를 정직하게 남긴다).
-#
-# **루트 선택도 확장자로** 한다 — 매체 파생이 이미 계약(:func:`template_media`)이라 매체를
-# 선언하는 새 필드가 필요 없다. 신규 durable 필드는 상대키 하나뿐이다.
-#
-# **검토 지문(:func:`rules_values`)은 이 키를 쓰지 않는다** — 이식성을 여기서 멈추는 것은 누락이
-# 아니라 판정이다(PR #368 P2). 근거는 그 함수의 선언에 있다: 지문을 키로 바꾸면 홈·사람을 건너온
-# 작업이 한 번도 본 적 없는 템플릿에 대해 **구조 변경 병기까지 지운 채** 도착하고, 반대로 지금
-# 판정이 무는 대가는 병기 1비트뿐이다(템플릿은 승인 축이 아니라 게이트가 서지 않는다).
-
-
-# (library_root_for — 「이식성의 경첩」 — 는 P2-21(#569)에서 홈 해석과 함께
-#  :func:`hwpxfiller.host.locations.library_root_for` 로 승계.)
-
-
-def _lexically_normal(path: "str | Path") -> Path:
-    """``.``·``..`` 성분을 걷은 경로 — **어휘** 정규화이고 I/O 도 심볼릭 링크 해석도 없다.
-
-    ``resolve()`` 를 쓰지 않는 근거가 셋이다(#368 2R):
-
-    1. **관례가 갈라진다.** 라이브러리 표면은 ``rglob`` 로 훑고 그 결과를 그대로 키로 쓴다
-       (:func:`~hwpxfiller.webapp.template_groups.rel_key`) — 링크를 해석하지 않는다. 작업 쪽만
-       해석하면 **같은 파일이 두 키로 갈라져** 그룹 지정과 작업 링크가 어긋난다. 이 함수를 공유하는
-       이유 자체가 그 갈라짐을 구조적으로 없애려는 것이라 여기서 되살릴 수 없다.
-    2. **durable 정체성이 디스크 상태에 좌우된다.** 키는 :meth:`Job.to_dict` 가 저장할 때마다 다시
-       뜬다. ``resolve()`` 는 파일이 있을 때와 없을 때(네트워크 드라이브 오프라인·일시 삭제) 다른
-       값을 내므로, **템플릿이 잠깐 안 보이는 사이의 저장이 키를 조용히 바꿔** 링크를 끊는다.
-    3. **대소문자·UNC 를 건드리지 않는다.** ``normcase`` 는 하지 않는다 — 그룹 키가 사용자 표기를
-       보존하는데 여기서만 접으면 다시 두 키가 된다(윈도우 ``relative_to`` 는 이미 대소문자
-       무시라 표기가 달라도 승격은 성립한다). UNC 루트(``\\\\srv\\share``)는 ``normpath`` 가
-       보존한다(실측) — 별도 처리가 필요 없고, 루트와 경로가 서로 다른 볼륨이면 ``relative_to``
-       가 실패해 정직하게 승격되지 않는다.
-
-    링크의 대가는 하나 남는다: 심볼릭 링크 디렉터리를 ``..`` 로 거슬러 오르는 경로는 어휘 정규화가
-    **다른 파일**을 이름한다. 그 경우는 :func:`library_rel_key` 가 왕복을 실측해 승격을 포기한다.
-    """
-    return Path(os.path.normpath(os.fspath(path)))
-
-
-def _key_names_the_same_file(resolved: Path, original: "str | Path") -> bool:
-    """정규화가 **같은 파일**을 이름하는지 실측 — 심볼릭 링크 경유 ``..`` 만 이 검사를 탄다.
-
-    ``realpath`` 는 존재하지 않는 경로에 대해선 순수 어휘 계산이라(실측) 미설치 템플릿에서도
-    결정적이다. 실패(OSError)는 ``False`` = 승격 포기 — 증명 못 하면 이식하지 않는다(fail-closed).
-    """
-    try:
-        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
-            os.path.realpath(original)
-        )
-    except OSError:
-        return False
-
-
-def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
-    """루트 상대 POSIX 키 — **폴백 없이** 루트 밖·루트 미지정이면 ``None``(위 절 참조).
-
-    :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이 위에 파일명 폴백을 얹는다(그룹
-    지정은 오연결의 대가가 없다).
-
-    **쓰기는 읽기 방어에 걸릴 키를 만들지 않는다**(#368 2R): ``relative_to`` 는 ``.``·``..`` 를
-    **보존**하므로 ``…/templates/sub/../x.hwpx`` 가 ``sub/../x.hwpx`` 라는 키가 됐고, 그 키는
-    :func:`_reject_unsafe_key` 가 로드에서 loud 거절한다 — 앱이 **자기가 저장한 작업을 스스로
-    손상됨으로 읽는** 구조였다. 양쪽을 같은 함수로 정규화해 그 키가 애초에 생기지 않게 하고,
-    그래도 방어에 걸리는 값이 나오면(상대 루트 등 잔여 경로) 승격을 포기한다. 읽기 방어는
-    **그대로 둔다** — 외부에서 손댄 JSON 은 여전히 loud 여야 하고, 쓰기 정규화가 그 의무를
-    대신하지 않는다(두 방어는 서로 다른 위협을 본다).
-    """
-    if root is None:
-        return None
-    root_n, path_n = _lexically_normal(root), _lexically_normal(path)
-    try:
-        key = path_n.relative_to(root_n).as_posix()
-    except ValueError:
-        return None
-    try:
-        _reject_unsafe_key(key)
-    except ValueError:
-        return None  # 자기가 만든 키가 자기 방어에 걸리면 승격하지 않는다(절대경로 유지)
-    if path_n != Path(path) or root_n != Path(root):
-        # 정규화가 실제로 성분을 걷었다 — 걷힌 것이 심볼릭 링크 디렉터리였다면 키는 다른 파일을
-        # 이름한다. **해석이 지나갈 그 길 그대로**(root/key) 왕복을 실측해 아니면 포기한다.
-        if not _key_names_the_same_file(root_n / key, path):
-            return None
-    return key
-
-
-# (library_key_for 는 P2-21(#569)에서 직렬화와 함께 :func:`hwpxfiller.external.job_store.
-#  library_key_for` 로 승계.)
-
-
-def _reject_unsafe_key(key: str) -> None:
-    """durable 키의 탈출 방어 — 드라이브·루트·``..`` 는 loud raise.
-
-    상대키는 루트에 이어 붙여 해석되므로 ``C:/x.hwpx``·``../../x.hwpx`` 같은 값이 들어오면
-    **루트 밖으로 조용히 새어나간다**(``root / 절대경로`` 는 절대경로를 그대로 돌려준다).
-    다른 durable 필드와 같은 규율으로 경계에서 막는다 — 격리는 :meth:`JobRegistry.list_jobs`
-    의 파일 단위 격리가 '손상됨' 행으로 표면화한다. ``PureWindowsPath`` 로 판정하는 이유는
-    두 구분자(``/``·``\\``)와 드라이브를 **모두** 인식하는 가장 엄격한 해석이기 때문이다.
-    """
-    p = PureWindowsPath(key)
-    if p.drive or p.root or ".." in p.parts:
-        raise ValueError(
-            f"작업 필드 'template_key' 는 라이브러리 루트 상대경로여야 하는데 {key!r} 입니다"
-        )
-
-
-# (resolve_library_key 는 P2-21(#569)에서 로드 경계와 함께 :func:`hwpxfiller.external.
-#  job_store.resolve_library_key` 로 승계.)
-
-
 # ------------------------------------------------------------------ 모델
 @dataclass
 class Job:
@@ -389,7 +263,7 @@ class Job:
     # (§13-6·7) — 파일 이름 규칙은 문서 구조가 아니라 산출물 규칙이라 Binding 쪽이 진다.
     # 저장 **횟수**가 아니라 **규칙이 갈린 횟수**다: 판본이 저장 횟수면 아무것도 안 바뀐
     # 저장에도 §13-6(판본 변경 = validation·approval 폐기)이 걸려 §13-2 의 조용한 반복이
-    # 깨진다. 정산 주체는 :func:`JobRegistry.save` 하나다(판정 G).
+    # 깨진다. 정산 주체는 :meth:`~hwpxfiller.external.job_store.JobRegistry.save` 하나다(판정 G).
     template_revision: int = 1
     binding_revision: int = 1
     # **직전 판본의 규칙 값**(1세대만, 지도 §10.13 판정 H). 지문이 아니라 값인 이유:
@@ -505,12 +379,12 @@ def rules_values(job: "Job") -> "dict":
     - **홈을 옮겨도 미리보기·검토가 강제되지 않는다.** 템플릿은 **승인 축이 아니다**(§10.12 판정 E
       — :data:`~hwpxfiller.gui.review_state.EVIDENCE_POLICY` 서열에 없다). 지문이 갈리면
       ``review_requirement`` 는 ``risk_class=""`` 로 ``required=False`` 를 내고 ``structure_changed``
-      **병기 1비트**만 붙는다. 실제 구조 게이트(:func:`~hwpxfiller.core.fill_ledger.template_path_drift`)
+      **병기 1비트**만 붙는다. 실제 구조 게이트(:func:`~hwpxfiller.domain.fill_ledger.template_path_drift`)
       는 경로 문자열이 아니라 **템플릿 파일을 다시 읽어** 판정하므로, 같은 파일이 새 루트에 있는
       이사에는 조용하다. 즉 이 판정의 비용은 "1회 검토 요구"조차 아니다.
     - **키로 바꾸면 조용한 승인 통로가 열린다.** 기준선은 작업 JSON 에 실려 다니므로(#351 패키지
       부트스트래핑이 정확히 그 동선이다) 남에게서 받은 작업이 **한 번도 본 적 없는 템플릿에 대해
-      구조 변경 병기까지 지운 채** 도착한다. :meth:`JobRegistry.stamp_last_run` 이 금지한 바로 그
+      구조 변경 병기까지 지운 채** 도착한다. :meth:`~hwpxfiller.external.job_store.JobRegistry.stamp_last_run` 이 금지한 바로 그
       방향이다("한 번도 실행·확인된 적 없는 새 규칙을 검토받은 것으로 기록" — 되돌릴 수 없다).
     - **비용이 대칭이 아니다.** 지금 판정은 옮긴 사람에게 병기 1비트(과표시 = fail-safe), 키 판정은
       **전원 기준선 1회 무효 + 이후 영구 면제**(과소표시 = fail-open)다. 무효화는 게다가 조용하다 —
@@ -541,7 +415,7 @@ def rules_values(job: "Job") -> "dict":
     }
 
 
-def _copy_rules_values(values: "dict") -> "dict":
+def copy_rules_values(values: "dict") -> "dict":
     """:func:`rules_values` 형상의 깊은 사본 — 보관·직렬화가 원본과 사전을 공유하지 않게."""
     fields = values.get("fields", {}) if isinstance(values, dict) else {}
     return {
@@ -551,44 +425,13 @@ def _copy_rules_values(values: "dict") -> "dict":
     } if values else {}
 
 
-def _rules_values_or_raise(raw: "object") -> "dict":
-    """durable 로드 경계의 ``previous_rules`` 검증 — 빈 사전은 「직전 판본 없음」.
-
-    ``from_dict`` 의 다른 필드와 같은 규율(조기 loud 격리 > 지연 크래시): 형상이 깨진 값을
-    통과시키면 증거 렌더가 뒤늦게 터지고, 그 자리는 사용자가 **변경을 확인하는** 자리라
-    조용한 결손이 가장 비싸다."""
-    # **형상을 먼저 본다**(3R P2): `not raw` 를 앞에 두면 ``null``·``[]``·``""``·``0`` 같은
-    # 훼손 값이 「직전 판본 없음」이라는 **정상 상태로 위장**해 통과한다 — 다른 durable
-    # 필드는 전부 loud 인데 여기만 조용히 이력을 잃는다. 빈 사전만이 「없음」이다.
-    if not isinstance(raw, dict):
-        raise ValueError(f"'previous_rules' 는 사전이어야 하는데 {type(raw).__name__} 입니다")
-    if not raw:
-        return {}
-    fields = raw.get("fields", {})
-    if not isinstance(fields, dict):
-        raise ValueError("'previous_rules.fields' 는 사전이어야 합니다")
-    out_fields: "dict[str, dict[str, str]]" = {}
-    for name, axes in fields.items():
-        if not isinstance(name, str) or not isinstance(axes, dict):
-            raise ValueError("'previous_rules.fields' 의 항목은 필드이름→축사전이어야 합니다")
-        if set(axes) != set(RULE_AXES) or not all(isinstance(v, str) for v in axes.values()):
-            raise ValueError(
-                f"'previous_rules.fields[{name}]' 의 축은 {list(RULE_AXES)} 문자열이어야 합니다"
-            )
-        out_fields[name] = dict(axes)
-    template, filename = raw.get("template", ""), raw.get("filename", "")
-    if not isinstance(template, str) or not isinstance(filename, str):
-        raise ValueError("'previous_rules' 의 template·filename 은 문자열이어야 합니다")
-    return {"template": template, "filename": filename, "fields": out_fields}
-
-
 def advance_revisions(job: "Job", previous: "Job | None") -> None:
     """저장 직전 판본 정산 — **오른 축만** 올리고 직전 판본 값을 갈무리한다(§10.13 판정 G·H).
 
     판정 주체를 이 함수 하나로 두는 이유: 판본을 올리는 자리가 저장 표면마다 흩어지면
     (에디터·기안·재연결·복제) 한 표면만 빠뜨려도 **아무 테스트도 울지 않고** 그 작업의
     세대가 조용히 멈춘다 — 그 뒤 §13-7(Run 은 사용 판본을 고정)이 말하는 판본이 거짓이 된다.
-    :meth:`JobRegistry.save` 가 쓰기 잠금 안에서 부른다.
+    :meth:`~hwpxfiller.external.job_store.JobRegistry.save` 가 쓰기 잠금 안에서 부른다.
 
     **잇는 기준은 이름이 아니라 파일 슬롯**이다: 같은 자리를 덮어쓰는 저장은 그 자리의 다음
     세대가 된다. `_preserved_for_target`(태그·이력·즐겨찾기·검토 기준선이 **대상 파일**의
@@ -597,7 +440,7 @@ def advance_revisions(job: "Job", previous: "Job | None") -> None:
 
     ``previous`` 가 없으면(새 자리·읽을 수 없는 자리) 인메모리 값을 그대로 둔다 — 이름
     변경으로 새 파일에 착지하는 저장이 세대를 잃지 않게. 계승하지 **않아야** 하는 경로
-    (복제)는 :meth:`JobRegistry.clone` 이 이력·즐겨찾기와 같은 줄에서 명시적으로 지운다.
+    (복제)는 :meth:`~hwpxfiller.external.job_store.JobRegistry.clone` 이 이력·즐겨찾기와 같은 줄에서 명시적으로 지운다.
     """
     if previous is None:
         return
@@ -611,9 +454,9 @@ def advance_revisions(job: "Job", previous: "Job | None") -> None:
     # 그 축의 증거가 「B → B」가 된다(연결을 A→B 로 바꿔 두고 템플릿만 저장한 경우가 실물).
     # 규칙이 그대로면 직전 판본도 그대로다 — 변경이 없다는 사실을 변경으로 재진술하지 않는다.
     if not (template_changed or binding_changed):
-        job.previous_rules = _copy_rules_values(previous.previous_rules)
+        job.previous_rules = copy_rules_values(previous.previous_rules)
         return
-    kept = _copy_rules_values(previous.previous_rules) or {
+    kept = copy_rules_values(previous.previous_rules) or {
         "template": "", "filename": "", "fields": {},
     }
     if template_changed:

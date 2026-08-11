@@ -16,9 +16,9 @@ from zipfile import BadZipFile
 
 import pytest
 
-from hwpxfiller.core.authoring import compile_document
-from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.template_status import CompileState
+from hwpxfiller.domain.authoring import compile_document
+from hwpxfiller.domain.fields import FieldDocument
+from hwpxfiller.domain.template_status import CompileState
 from hwpxfiller.external import template_inspection
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.template_inspection import (

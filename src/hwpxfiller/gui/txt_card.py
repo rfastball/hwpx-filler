@@ -13,7 +13,7 @@
 
 from dataclasses import dataclass
 
-from ..core.text_render import (
+from ..domain.text_render import (
     RenderReport,
     align_segments,
     render_segments,
