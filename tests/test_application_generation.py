@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from functools import partial
 
 import pytest
 
@@ -15,15 +16,23 @@ from hwpxfiller.application.generation import (
     GenerationRun,
     blank_marker,
     direct_plan,
-    plan_generation,
+    plan_generation as _plan_generation,
     run_completed,
-    run_generation,
+    run_generation as _run_generation,
     start_run,
 )
 from hwpxfiller.batch import OutputCollisionError
 from hwpxfiller.domain.engine import GenerateResult
 from hwpxfiller.domain.job import MISSING_MARKER, Job, rules_fingerprints
 from hwpxfiller.gui.run_state import GateError
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+
+plan_generation = partial(_plan_generation, existing_outputs=existing_output_paths)
+run_generation = partial(
+    _run_generation,
+    existing_outputs=existing_output_paths,
+    ensure_output_dir=ensure_output_directory,
+)
 
 
 # ------------------------------------------------------------------ in-memory 대역
@@ -76,7 +85,9 @@ class _VM:
         self.trace.append("blanks")
         return list(self.blanks)
 
-    def output_conflicts(self, indices, out_dir, *, mark_missing="", now=None):
+    def output_conflicts(
+        self, indices, out_dir, *, mark_missing="", now=None, existing_outputs=None
+    ):
         self.trace.append(("conflicts", mark_missing, now))
         return list(self.conflicts)
 

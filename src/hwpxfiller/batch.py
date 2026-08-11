@@ -13,7 +13,7 @@ from typing import Callable
 
 from .domain.engine import GenerateResult, HwpxEngine
 from .domain.job import require_hwpx_template
-from .naming import existing_outputs, plan_output_names
+from .naming import plan_output_names
 
 
 class OutputCollisionError(FileExistsError):
@@ -54,6 +54,8 @@ def generate_batch(
     overwrite: bool = False,
     mapping=None,
     cancelled: "Callable[[], bool] | None" = None,
+    existing_outputs: "Callable[[str, list[str]], list[str]]",
+    ensure_output_dir: "Callable[[str], None]",
 ) -> BatchResult:
     """레코드 목록을 순회하며 문서를 일괄 생성한다.
 
@@ -84,23 +86,22 @@ def generate_batch(
             raise ValueError(
                 "템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — " + drift.describe(sep="; ")
             )
-    out = Path(out_dir)
     names = plan_output_names(name_pattern, records, now=now)
-    clobbered = existing_outputs(out, names)
+    clobbered = existing_outputs(out_dir, names)
     if clobbered and not overwrite:
         raise OutputCollisionError(
             f"이미 존재하는 파일 {len(clobbered)}개를 덮어쓰게 됩니다 — 덮어쓰기 확정 "
             "없이는 생성하지 않습니다: "
             + ", ".join(Path(p).name for p in clobbered)
         )
-    out.mkdir(parents=True, exist_ok=True)
+    ensure_output_dir(out_dir)
 
     batch = BatchResult(total=len(records))
     for i, (rec, name) in enumerate(zip(records, names, strict=True), 1):
         if cancelled is not None and cancelled():
             batch.cancelled = True
             break
-        target = str(out / name)
+        target = str(Path(out_dir) / name)
         res = engine.generate(template_path, rec, target)
         batch.results.append(res)
         if res.ok:

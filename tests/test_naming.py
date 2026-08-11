@@ -15,7 +15,6 @@ from hwpxfiller.naming import (
     OutputNamer,
     audit_output_names,
     clean_filename,
-    existing_outputs,
     make_output_filename,
     pattern_field_tokens,
     pattern_uses_seq,
@@ -146,14 +145,6 @@ def test_plan_output_names_matches_namer_rules():
     assert plan_output_names("{{date:YYYYMMDD}}-{{ID}}", recs, now=_NOW) == [
         namer.next(r) for r in recs
     ]
-
-
-def test_existing_outputs_reports_only_disk_hits(tmp_path):
-    """배치 내 유일성(_seen)과 별개로 **디스크**의 기존 파일만 보고한다."""
-    (tmp_path / "doc-A.hwpx").write_text("수기 보정본", encoding="utf-8")
-    names = ["doc-A.hwpx", "doc-B.hwpx"]
-    assert existing_outputs(tmp_path, names) == [str(tmp_path / "doc-A.hwpx")]
-    assert existing_outputs(tmp_path / "없는폴더", names) == []
 
 
 # --------------------------------------------- 패턴 요구 토큰 조회(RC-20)

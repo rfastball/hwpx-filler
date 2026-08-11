@@ -17,6 +17,7 @@ from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.text_registry import TextTemplateRegistry
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -106,6 +107,8 @@ def _deps(tmp_path, lock: "threading.Lock | None" = None):
     return {
         **_FACTORIES,
         "clock": _clock(),
+        "existing_outputs": existing_output_paths,
+        "ensure_output_dir": ensure_output_directory,
         "engine": make_hwpx_engine(),
         "pool_registry": DatasetPoolRegistry(tmp_path / "pool"),
         "generation_lock": lock if lock is not None else threading.Lock(),
@@ -117,6 +120,8 @@ def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_f
     ctrl = JobController(
         _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
@@ -1512,6 +1517,8 @@ def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
     ctrl = JobController(
         _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=pool,
         generation_lock=threading.Lock(),

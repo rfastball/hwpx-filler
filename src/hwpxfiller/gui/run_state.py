@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from ..domain.engine import HwpxEngine
 
@@ -27,7 +27,6 @@ from ..domain.mapping import MappingProfile
 from ..naming import (
     OutputNameAudit,
     audit_output_names,
-    existing_outputs,
     pattern_field_tokens,
     plan_output_names,
 )
@@ -647,6 +646,7 @@ class RunViewModel:
     def output_conflicts(
         self, indices: "list[int]", out_dir: str, *, mark_missing: str = "",
         now: "datetime | None" = None,
+        existing_outputs: "Callable[[str, list[str]], list[str]]",
     ) -> "list[str]":
         """생성이 덮어쓸 **기존** 파일 경로 목록 — 실행 전 덮어쓰기 확인의 원천(RC-02).
 

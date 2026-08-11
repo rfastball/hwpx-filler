@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 
 from hwpxfiller.domain.job import Job
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -277,12 +278,16 @@ def test_output_conflicts_lists_existing_targets_only(tmp_path):
     """
     vm = _vm(tmp_path)
     out = tmp_path / "out"
-    assert vm.output_conflicts([0, 1], str(out)) == []  # 폴더 자체가 없음 → 무충돌
+    assert vm.output_conflicts(
+        [0, 1], str(out), existing_outputs=existing_output_paths
+    ) == []
 
     out.mkdir()
     sentinel = out / "doc-가.hwpx"  # 패턴 doc-{{공고명}} × 레코드0(공고명=가)의 대상
     sentinel.write_bytes(b"user-edited")
-    conflicts = vm.output_conflicts([0, 1], str(out))
+    conflicts = vm.output_conflicts(
+        [0, 1], str(out), existing_outputs=existing_output_paths
+    )
     assert conflicts == [str(sentinel)]
     assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형
 
@@ -338,6 +343,7 @@ def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
     batch = generate_batch(
         plan.template, list(plan.records), plan.out_dir, plan.pattern,
         make_hwpx_engine(), mapping=plan.mapping,
+        existing_outputs=existing_output_paths, ensure_output_dir=ensure_output_directory,
     )
     assert batch.failed == 0
 
@@ -379,6 +385,7 @@ def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
         plan.template, list(plan.records), plan.out_dir, plan.pattern,
         make_hwpx_engine(),
         progress=progress, cancelled=lambda: flag["stop"],
+        existing_outputs=existing_output_paths, ensure_output_dir=ensure_output_directory,
     )
     assert batch.cancelled and batch.attempted == 1
 

@@ -31,7 +31,16 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.batch import generate_batch
+from functools import partial
+
+from hwpxfiller.batch import generate_batch as _generate_batch
+from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+
+generate_batch = partial(
+    _generate_batch,
+    existing_outputs=existing_output_paths,
+    ensure_output_dir=ensure_output_directory,
+)
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.domain.fields import read_fields
 from hwpxfiller.domain.job import Job, RunRequest
