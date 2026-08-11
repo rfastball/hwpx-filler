@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -387,6 +388,7 @@ def test_job_load_pool_and_nara_frozen(tmp_path, monkeypatch):
         name="중첩 나라 조립", kind="pipeline", opts=pipeline_opts(nested_ref)
     ))
     ctrl = JobController(JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+                         clock=lambda: datetime(2026, 7, 21, 9, 0, 0),
                          engine=make_hwpx_engine(),
                          pool_registry=pool,
                          generation_lock=threading.Lock(),

@@ -213,6 +213,7 @@ class WebFrontend:
             # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
             # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
             JobController(job_registry, self._push, pool_registry=pool_registry,
+                          clock=datetime.now,
                           generation_lock=generation_lock, engine=hwpx_engine,
                           text_registry=registry,
                           file_source_factory=source_for_path,

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -30,6 +30,19 @@ from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchContr
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
+_NOW = datetime(2026, 7, 21, 9, 0, 0)
+
+
+def _clock():
+    current = _NOW
+
+    def tick():
+        nonlocal current
+        value = current
+        current += timedelta(seconds=1)
+        return value
+
+    return tick
 
 
 def _write_template(path, fields) -> None:
@@ -92,6 +105,7 @@ def _deps(tmp_path, lock: "threading.Lock | None" = None):
     공유를 재는 테스트의 관통용."""
     return {
         **_FACTORIES,
+        "clock": _clock(),
         "engine": make_hwpx_engine(),
         "pool_registry": DatasetPoolRegistry(tmp_path / "pool"),
         "generation_lock": lock if lock is not None else threading.Lock(),
@@ -102,6 +116,7 @@ def _controller(tmp_path, *, reviewed: bool = True, file_source_factory=source_f
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap)),
+        clock=_clock(),
         engine=make_hwpx_engine(),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         generation_lock=threading.Lock(),
@@ -1496,6 +1511,7 @@ def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
     pushes: list = []
     ctrl = JobController(
         _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+        clock=_clock(),
         engine=make_hwpx_engine(),
         pool_registry=pool,
         generation_lock=threading.Lock(),
