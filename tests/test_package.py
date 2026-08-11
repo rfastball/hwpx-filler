@@ -40,6 +40,11 @@ INVALID_ARCHIVES = [
         id="mimetype-not-first",
     ),
     pytest.param(
+        [(MIMETYPE_NAME, MIMETYPE_VALUE, zipfile.ZIP_BZIP2), VALID_SECTION],
+        "압축 방식",
+        id="unsupported-mimetype-compression",
+    ),
+    pytest.param(
         [VALID_MIMETYPE, VALID_SECTION, VALID_SECTION],
         "중복 ZIP 엔트리",
         id="duplicate-entry",
@@ -47,6 +52,7 @@ INVALID_ARCHIVES = [
 ]
 
 DANGEROUS_NAMES = [
+    pytest.param("", id="empty"),
     pytest.param("/absolute.xml", id="posix-absolute"),
     pytest.param("C:/absolute.xml", id="windows-drive-absolute"),
     pytest.param("C:drive-relative.xml", id="windows-drive-relative"),
@@ -65,6 +71,9 @@ def test_open_reads_entries():
 
 def test_roundtrip_preserves_ocf_rules(tmp_path):
     pkg = HwpxPackage.open(str(FIXTURE))
+    serialized = pkg.to_bytes()
+    assert pkg.to_bytes() == serialized
+    assert HwpxPackage.from_bytes(serialized).to_bytes() == serialized
     out = tmp_path / "rt.hwpx"
     pkg.save(str(out))
 
@@ -73,6 +82,7 @@ def test_roundtrip_preserves_ocf_rules(tmp_path):
         # mimetype 은 반드시 첫 엔트리 + 무압축
         assert infos[0].filename == MIMETYPE_NAME
         assert infos[0].compress_type == zipfile.ZIP_STORED
+        assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in infos)
         # 엔트리 집합 보존
         names = {i.filename for i in infos}
         assert names == set(pkg.entries)

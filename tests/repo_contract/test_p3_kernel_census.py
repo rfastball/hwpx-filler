@@ -33,7 +33,7 @@ DISPOSITIONS = {
 #: 스키마는 원장 자신의 선언이 아니라 **여기 고정된 기대**와 대조한다 — 원장과 선언을
 #: 함께 지우면 초록이 되는 자기참조 검증을 막는다(코덱스 #595).
 EXPECTED_SCHEMA = [
-    "id", "current_module", "symbol", "visibility", "consumers",
+    "id", "current_module", "symbol", "visibility", "consumers", "consumer_kind",
     "product_semantics_awareness", "environment_or_effect", "p2_target_authority",
     "target_canonical_import", "behavior_oracle", "compatibility_evidence", "disposition",
 ]
@@ -51,6 +51,75 @@ EXPECTED_ENTRY_IDS = {
 REFINEMENT_BY_PREFIX = {
     "hwpxcore": ("DOMAIN", "FORMAT_KERNEL"),
     "hwpxfiller.core": ("DOMAIN", "PRODUCT_DOMAIN"),
+}
+
+#: #592 이동 전 최소 동작 폐포. 비교 강도도 함께 고정해 byte 계약이 semantic 비교로
+#: 조용히 약화되는 것을 막는다. 기존 owner nodeid만 재사용하며 별도 resource 실행은 없다.
+BEHAVIOR_ORACLES = {
+    "atomic-write-preservation": (
+        "byte-exact",
+        ("tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp",),
+    ),
+    "deterministic-package-serialization": (
+        "byte-exact",
+        ("tests/test_package.py::test_roundtrip_preserves_ocf_rules",),
+    ),
+    "duplicate-unsafe-member": (
+        "semantic-equivalent",
+        (
+            "tests/test_package.py::test_open_rejects_invalid_ocf_contract",
+            "tests/test_package.py::test_open_rejects_dangerous_zip_entry_names",
+        ),
+    ),
+    "major-product-generation": (
+        "semantic-equivalent",
+        ("tests/test_scenario_e2e.py::test_direct_match_batch_fills_bid_notice",),
+    ),
+    "mimetype-ocf": (
+        "semantic-equivalent",
+        (
+            "tests/test_package.py::test_roundtrip_preserves_ocf_rules",
+            "tests/test_package.py::test_compressed_mimetype_is_accepted_then_normalized_to_stored",
+        ),
+    ),
+    "motw-native-platform": (
+        "semantic-equivalent",
+        ("tests/test_motw.py", "tests/test_native_positive.py", "tests/test_single_instance.py"),
+    ),
+    "package-bytes-parse-validation": (
+        "semantic-equivalent",
+        (
+            "tests/test_package.py::test_open_reads_entries",
+            "tests/test_package.py::test_open_rejects_invalid_ocf_contract",
+        ),
+    ),
+    "product-prevalidation": (
+        "semantic-equivalent",
+        (
+            "tests/test_job.py::test_run_request_source_report_flags_missing_source_key",
+            "tests/test_job.py::test_run_request_output_report_flags_empty_value",
+        ),
+    ),
+    "text-extraction": (
+        "byte-exact",
+        ("tests/test_corpus_golden.py::test_golden_matches",),
+    ),
+    "text-lineseg": (
+        "semantic-equivalent",
+        ("tests/test_lineseg.py",),
+    ),
+}
+EXPECTED_BEHAVIOR_RISKS = {
+    "atomic-write-preservation",
+    "deterministic-package-serialization",
+    "duplicate-unsafe-member",
+    "major-product-generation",
+    "mimetype-ocf",
+    "motw-native-platform",
+    "package-bytes-parse-validation",
+    "product-prevalidation",
+    "text-extraction",
+    "text-lineseg",
 }
 
 
@@ -161,10 +230,24 @@ def test_census_p2_authority_matches_module_rings() -> None:
 
 def test_census_behavior_oracles_still_collect() -> None:
     """이동 대상의 oracle 실재 — module_rings 게이트가 이미 수집을 보증하는 nodeid 는 제외."""
+    assert set(BEHAVIOR_ORACLES) == EXPECTED_BEHAVIOR_RISKS
+    assert {comparison for comparison, _ in BEHAVIOR_ORACLES.values()} == {
+        "byte-exact",
+        "semantic-equivalent",
+    }
     rings = tomllib.loads(RINGS.read_text(encoding="utf-8"))
     already = {str(u["oracle_nodeid"]) for u in rings["unit"] if "oracle_nodeid" in u}
+    required = {
+        nodeid
+        for _, nodeids in BEHAVIOR_ORACLES.values()
+        for nodeid in nodeids
+    }
     nodeids = sorted(
-        {str(e["behavior_oracle"]) for e in _entries() if e["behavior_oracle"]} - already
+        (
+            {str(e["behavior_oracle"]) for e in _entries() if e["behavior_oracle"]}
+            | required
+        )
+        - already
     )
     if not nodeids:
         return
