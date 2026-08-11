@@ -39,7 +39,12 @@ from ..web_artifact import (
 )
 from ..external.hwpx_engine import make_hwpx_engine
 from ..external.job_store import JobRegistry
-from ..host.locations import default_jobs_dir, default_text_templates_dir
+from ..host.locations import (
+    default_dataset_pool_dir,
+    default_jobs_dir,
+    default_text_templates_dir,
+)
+from ..external.dataset_store import DatasetPoolRegistry
 from ..external.text_registry import TextTemplateRegistry
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 # 데이터 소스 factory 조립(P2-16) — concrete 선택은 Host 인 이 파일 한 곳만 한다.
@@ -62,7 +67,6 @@ from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
     collect_owned_paths,
-    default_pool_registry,
     source_label,
     validate_owned_path,
 )
@@ -185,11 +189,12 @@ class WebFrontend:
         # 통과하므로 1회 통과 표지와 중복 모달 억제 표지를 브리지가 소유한다.
         self._close_confirmed = False
         self._close_prompt_open = False
+        self._owned_path_base = Path.cwd()
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
         # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
-        pool_registry = default_pool_registry()
+        pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
         hwpx_engine = make_hwpx_engine()
         # txt 템플릿 그룹 모델 — 관리 화면과 편집기 TXT 밴드가 공유하는 단일 실체(#135).
         txt_groups = TemplateGroupModel("txt")
@@ -634,8 +639,10 @@ class WebFrontend:
         job = self._controller("job")
         session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
                    getattr(job, "out_dir", "")]
-        owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
-        return validate_owned_path(path, owned)
+        owned = collect_owned_paths(
+            self._job_registry, self._pool_registry, session, base_dir=self._owned_path_base
+        )
+        return validate_owned_path(path, owned, base_dir=self._owned_path_base)
 
     def open_job_in_editor(self, name: str, context: "dict | None" = None) -> "str | None":
         """저장된 작업을 **진입 문맥과 함께** 편집 세션으로 연다(계약 §5.1, 재작성 F7).

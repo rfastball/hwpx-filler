@@ -39,37 +39,47 @@ def _setup(tmp_path: Path):
 def test_collect_owned_gathers_templates_pool_and_session(tmp_path):
     jobs, pool, tpl, data = _setup(tmp_path)
     sess = tmp_path / "sess.csv"
-    owned = collect_owned_paths(jobs, pool, [str(sess), ""])  # 빈 세션 경로는 무시
-    assert norm_path(tpl) in owned            # 작업 템플릿
-    assert norm_path(data) in owned           # 엑셀 등록 데이터
-    assert norm_path(sess) in owned           # 현재 세션 경로
+    owned = collect_owned_paths(jobs, pool, [str(sess), ""], base_dir=tmp_path)
+    assert norm_path(tpl, tmp_path) in owned            # 작업 템플릿
+    assert norm_path(data, tmp_path) in owned           # 엑셀 등록 데이터
+    assert norm_path(sess, tmp_path) in owned           # 현재 세션 경로
     assert len(owned) == 3                    # nara 는 파일 경로 없음 → 미포함
 
 
 def test_validate_owned_accepts_owned_rejects_foreign_and_empty(tmp_path):
     jobs, pool, tpl, _data = _setup(tmp_path)
-    owned = collect_owned_paths(jobs, pool)
-    assert validate_owned_path(str(tpl), owned) == str(tpl)   # 소유 → 통과
+    owned = collect_owned_paths(jobs, pool, base_dir=tmp_path)
+    assert validate_owned_path(str(tpl), owned, base_dir=tmp_path) == str(tpl)
     with pytest.raises(ValueError, match="추적하는 참조"):     # 남의 경로 → 거부
-        validate_owned_path(str(tmp_path / "남의파일.exe"), owned)
+        validate_owned_path(str(tmp_path / "남의파일.exe"), owned, base_dir=tmp_path)
     with pytest.raises(ValueError, match="비어"):              # 빈 경로 → 거부
-        validate_owned_path("", owned)
+        validate_owned_path("", owned, base_dir=tmp_path)
 
 
 def test_validate_owned_is_case_and_separator_insensitive(tmp_path):
     """Windows 대소문자·구분자 차이를 흡수 — 같은 파일을 같게 본다(경로 표기 우회 방지)."""
     jobs, pool, tpl, _data = _setup(tmp_path)
-    owned = collect_owned_paths(jobs, pool)
+    owned = collect_owned_paths(jobs, pool, base_dir=tmp_path)
     variant = str(tpl).upper().replace("/", "\\")
-    assert validate_owned_path(variant, owned) == variant     # 정규화 후 동일 → 통과
+    assert validate_owned_path(variant, owned, base_dir=tmp_path) == variant
 
 
 def test_collect_owned_survives_corrupt_pool(tmp_path):
     """손상 데이터셋 파일이 있어도 화이트리스트 수집이 raise 하지 않는다(로케이트 가용성)."""
     jobs, pool, tpl, _data = _setup(tmp_path)
     (tmp_path / "pool" / "깨진.dataset.json").write_text("{bad json", encoding="utf-8")
-    owned = collect_owned_paths(jobs, pool)                   # raise 없이 수집
-    assert norm_path(tpl) in owned
+    owned = collect_owned_paths(jobs, pool, base_dir=tmp_path)
+    assert norm_path(tpl, tmp_path) in owned
+
+
+def test_relative_owned_path_keeps_the_captured_base(tmp_path, monkeypatch):
+    jobs, pool, _tpl, _data = _setup(tmp_path)
+    jobs.save(Job(name="상대", template_path="relative.hwpx", mapping=MappingProfile()))
+    owned = collect_owned_paths(jobs, pool, base_dir=tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert validate_owned_path("relative.hwpx", owned, base_dir=tmp_path) == "relative.hwpx"
 
 
 # ------------------------------------------------ 네이티브 헬퍼(존재하지 않는 경로)
