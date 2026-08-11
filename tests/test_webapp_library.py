@@ -278,6 +278,7 @@ def test_corrupt_actions_reject_foreign_paths(tmp_path):
 def test_relink_template_commits_and_refreshes(tmp_path):
     """상세 재연결 — 「문서 만들기」와 공유하는 게이트로 커밋 후 경보·행이 최신화된다(#67)."""
     from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+    from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 
     ctrl, _ = _controller(tmp_path)
     assert ctrl.snapshot()["alerts"]["missing_template_count"] == 1  # /none/t.hwpx 부재
@@ -293,8 +294,10 @@ def test_relink_template_commits_and_refreshes(tmp_path):
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         + body + '</hp:p></hs:sec>'
     ).encode()
-    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE,
-                         "Contents/section0.xml": xml}).save(str(tpl))
+    write_hwpx_package(
+        tpl,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
 
     res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(tpl)})
     assert res["needs_confirm"] is True                    # 1차 = 재진술 확인

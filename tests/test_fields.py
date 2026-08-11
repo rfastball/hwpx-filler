@@ -4,12 +4,13 @@ from pathlib import Path
 
 from hwpxfiller.core.fields import FieldDocument, FillNote, read_fields
 from hwpxcore.package import HwpxPackage
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
 
 def _first_doc_with_fields():
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = read_hwpx_package(FIXTURE)
     for name in pkg.content_xml_names():
         doc = FieldDocument(pkg.entries[name])
         fields = doc.required_fields()
@@ -71,7 +72,7 @@ def test_set_then_read_roundtrip():
 
 
 def test_read_fields_collects_values_from_package():
-    pkg = HwpxPackage.open(str(FIXTURE))
+    pkg = read_hwpx_package(FIXTURE)
     for xml_name in pkg.content_xml_names():
         doc = FieldDocument(pkg.entries[xml_name])
         names = doc.required_fields()

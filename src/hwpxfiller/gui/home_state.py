@@ -443,7 +443,7 @@ class HomeViewModel:
     ):
         self.registry = registry
         # zip IO 가 결속된 엔진은 ring 2 가 주입한다(P2-19) — 건강 보기의 드리프트
-        # 재계산(:meth:`JobRow.from_job`)이 concrete opener 를 직접 만들지 않는다.
+        # 재계산(:meth:`JobRow.from_job`)이 concrete package IO adapter를 직접 만들지 않는다.
         self._engine = engine
         # 경로 → 컴파일 상태 판정도 같은 이유로 ring 2 가 결속한다(P2-19R, #576).
         self._inspect_status = inspect_status

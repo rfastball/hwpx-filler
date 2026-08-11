@@ -818,8 +818,8 @@ class PartialGate:
 def gate_for_template(pkg: object) -> PartialGate:
     """열린 package 에서 컴파일 상태 + 미해결 토큰 이름을 읽어 게이트를 만든다.
 
-    **package-only**(P2-19R) — 경로를 든 호출자(ring 2)가
-    :func:`hwpxcore.package.to_package` 로 한 번 열어 넘긴다(세 판정이 같은 스냅샷 공유).
+    **package-only**(P2-19R) — 경로를 든 호출자(ring 2)가 External adapter로 한 번 열어
+    넘긴다(세 판정이 같은 스냅샷 공유).
     전부 읽기 전용(``compile_status``/``extract_schema``/``scan_tokens`` 는 무변형). 위저드와
     테스트가 공유하는 진입점 — PARTIAL 게이트가 겨누는 실제 파생을 한자리에 모은다.
     """

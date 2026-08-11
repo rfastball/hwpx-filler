@@ -18,6 +18,7 @@ from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 
 
 class _FakeEngine:
@@ -60,9 +61,10 @@ def _write_template(path: Path, fields) -> None:
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         + body + '</hp:p></hs:sec>'
     ).encode()
-    HwpxPackage(
-        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}
-    ).save(str(path))
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
 
 
 def _mapping(*fields: str) -> MappingProfile:

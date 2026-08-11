@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxcore.package import to_package
 from hwpxfiller.batch import generate_batch
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.job import Job, RunRequest
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
@@ -123,7 +123,7 @@ def test_direct_match_batch_fills_bid_notice(tmp_path):
         "입찰공고서-2026-002.hwpx",
         "입찰공고서-2026-003.hwpx",
     ]
-    generated = to_package(out / "입찰공고서-2026-001.hwpx")
+    generated = read_hwpx_package(out / "입찰공고서-2026-001.hwpx")
     assert read_fields(generated) == req.mapped_records()[0]
 
 

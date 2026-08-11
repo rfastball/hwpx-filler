@@ -10,6 +10,7 @@ from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.fields import FieldDocument
 from hwpxfiller.core.job import Job
 from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.template_inspection import template_compile_status
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.template_status import CompileState
@@ -181,7 +182,7 @@ def _pkg(section_inner: str) -> HwpxPackage:
 
 
 def _save(pkg: HwpxPackage, path) -> str:
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return str(path)
 
 
@@ -254,7 +255,7 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
     assert vm.rows()[0].compile_badge == BADGE_READY  # 처음엔 실행 준비
 
     # 사용자가 한글에서 새 평문 토큰을 타이핑(파일 밖에서 드리프트).
-    pkg = HwpxPackage.open(path)
+    pkg = read_hwpx_package(path)
     root = etree.fromstring(pkg.entries[SECTION])
     newp = etree.SubElement(root, f"{{{HP}}}p")
     run = etree.SubElement(newp, f"{{{HP}}}run")
@@ -263,7 +264,7 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
     pkg.entries[SECTION] = etree.tostring(
         root, xml_declaration=True, encoding="UTF-8", standalone=True
     )
-    pkg.save(path)
+    write_hwpx_package(path, pkg)
 
     vm.refresh()  # 재적재 → JobRow.from_job → compile_status 재산출
     row = vm.rows()[0]

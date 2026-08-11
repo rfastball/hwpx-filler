@@ -352,12 +352,12 @@ def test_style_only_header_not_treated_as_body():
 def test_extract_document_rejects_path_input_loudly():
     """파서 의미론 층은 파일 IO 를 개시하지 않는다(P2-19R #576 음성 oracle).
 
-    경로/바이트 수용 뒷문이 되살아나면 이 단언이 RED 다 — 경로는
-    ``hwpxcore.package.to_package`` 로 열어 넘겨야 한다(loud 재진술 포함).
+    경로/바이트 수용 뒷문이 되살아나면 이 단언이 RED 다 — 경로는 External adapter로
+    읽고 bytes는 format kernel에서 package로 변환해 넘겨야 한다(loud 재진술 포함).
     """
     import pytest
 
-    with pytest.raises(TypeError, match="to_package"):
+    with pytest.raises(TypeError, match="열린 HWPX package"):
         extract_document("some/template.hwpx")
-    with pytest.raises(TypeError, match="to_package"):
+    with pytest.raises(TypeError, match="열린 HWPX package"):
         extract_document(b"PK\x03\x04")

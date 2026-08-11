@@ -20,8 +20,8 @@ from hwpxfiller.core.mapping import (
     suggest_mappings,
 )
 from hwpxfiller.data.nara import NaraStdDataSource
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 from hwpxfiller.external.mapping_store import save_mapping_profile
-from hwpxcore.package import HwpxPackage
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CORPUS = Path(__file__).parent / "corpus" / "real"
@@ -277,7 +277,7 @@ def test_end_to_end_api_record_fills_real_template(tmp_path):
     assert result.ok
     assert {"입찰공고번호", "공고명", "추정가격", "개찰일시"} <= result.applied
     # 생성물에 변환된 값이 실제로 들어갔는지 바이트로 확인.
-    pkg = HwpxPackage.open(str(out))
+    pkg = read_hwpx_package(out)
     text = b"".join(pkg.entries[n] for n in pkg.content_xml_names()).decode("utf-8")
     assert "R26BK01561738" in text
     assert "65,454,545원" in text

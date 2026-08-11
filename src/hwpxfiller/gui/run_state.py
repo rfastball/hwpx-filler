@@ -238,8 +238,8 @@ class RunViewModel:
         # 화면이 자기 경로로 소비하므로 여기 오면 조회 경계가 샌 것 → loud 거부(조용한 오파싱 금지).
         require_hwpx(job)
         self.job = job
-        # zip IO 가 결속된 엔진은 Host/ring 2 가 주입한다(P2-19 — 링1 은 concrete opener 를
-        # 모른다. P2-16 source factory 주입과 같은 seam).
+        # zip IO 가 결속된 엔진은 Host/ring 2 가 주입한다(P3-03 — 링1 은 concrete package
+        # read/write adapter를 모른다. P2-16 source factory 주입과 같은 seam).
         self._engine = engine
         self.datasource = None                 # DataSource 포트(팩토리가 생성)
         self.records: "list[dict]" = []

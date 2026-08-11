@@ -14,6 +14,7 @@ from hwpxfiller.data.factory import source_for_path
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
@@ -60,7 +61,10 @@ def _write_template(path, fields):
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         + "".join(body) + '</hp:p></hs:sec>'
     ).encode()
-    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
 
 
 def _vm(tmp_path) -> RunViewModel:

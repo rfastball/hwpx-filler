@@ -231,7 +231,7 @@ def _walk_content(root: etree._Element) -> "tuple[list[_Occ], dict[int, TableReg
 def extract_schema(pkg: object) -> TemplateSchema:
     """열린 HWPX package 에서 템플릿 스키마를 추출.
 
-    **package-only**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **package-only**(P2-19R) — 경로는 호출측 External adapter가 연다.
     필드는 주입 대상(``content_xml_names``)을 직접 순회해 빈 누름틀까지 잡고, 이름별로
     등장 횟수·표 소속·라벨 문맥을 병합한다. ``stray_tokens``·``unhandled`` 는
     text_extract 문서 모델에서 파생한다(본문 평문 스캔 + 커버리지 원장).

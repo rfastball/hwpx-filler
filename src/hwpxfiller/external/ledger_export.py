@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
 from hwpxcore.atomic import write_text_atomic
-from hwpxcore.package import to_package
-
 from hwpxfiller.core.fields import read_fields
 from hwpxfiller.core.fill_ledger import LedgerRow, OutputLedger, ledger_outputs
 from hwpxfiller.core.mapping import MappingProfile
 from hwpxfiller.domain.source_profile import FieldProfile, profile_fields
 from hwpxfiller.domain.secret_redaction import redact
+
+from .hwpx_package_io import read_hwpx_package
 
 if TYPE_CHECKING:
     from hwpxfiller.gui.run_state import GenerationPlan
@@ -51,7 +51,7 @@ def verify_output(
     (P2-19R #576 에서 ``core.fill_ledger`` 이월 — 산출물 경로를 다시 여는 read 효과라
     Domain 에 둘 수 없다. 판정 의미 불변.)
     """
-    actual = read_fields(to_package(output_path))
+    actual = read_fields(read_hwpx_package(output_path))
     verified: "list[LedgerRow]" = []
     for row in rows:
         if row.status in ("filled", "missing") and row.preview_text.strip():

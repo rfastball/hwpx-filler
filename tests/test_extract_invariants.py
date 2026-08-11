@@ -10,12 +10,13 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from hwpxcore.package import HwpxPackage, to_package
+from hwpxcore.package import HwpxPackage
 from hwpxcore.text_extract import (
     extract_document,
     full_text,
     section_xml_names,
 )
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 CORPUS = Path(__file__).parent / "corpus" / "real"
@@ -43,7 +44,7 @@ def test_corpus_not_empty():
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
 def test_no_silent_text_drop(path: Path):
     """모든 비공백 ``hp:t`` 조각이 추출 결과 어딘가에 나타나야 한다(무결성 핵심)."""
-    pkg = HwpxPackage.open(str(path))
+    pkg = read_hwpx_package(path)
     doc = extract_document(pkg)
     haystack = full_text(doc)
     for seg in _raw_text_segments(pkg):
@@ -58,7 +59,7 @@ def test_coverage_ledger_empty(path: Path):
 
     새 HWPX 요소가 등장하면 침묵 누락이 아니라 여기서 실패한다 — 의식적 결정 강제.
     """
-    doc = extract_document(to_package(str(path)))
+    doc = extract_document(read_hwpx_package(path))
     assert doc.unhandled == {}, (
         f"미처리 구조 발견 {path.name}: {doc.unhandled} "
         f"(예: {doc.unhandled_examples}). 처리 브랜치 추가 또는 KNOWN_IGNORED 허용목록에 "
@@ -69,8 +70,8 @@ def test_coverage_ledger_empty(path: Path):
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
 def test_deterministic(path: Path):
     """같은 파일을 두 번 추출하면 to_dict() 가 완전히 동일하다."""
-    first = extract_document(to_package(str(path))).to_dict()
-    second = extract_document(to_package(str(path))).to_dict()
+    first = extract_document(read_hwpx_package(path)).to_dict()
+    second = extract_document(read_hwpx_package(path)).to_dict()
     assert first == second
 
 
@@ -80,7 +81,7 @@ def test_container_round_trip(path: Path):
     import io
     import zipfile
 
-    pkg = HwpxPackage.open(str(path))
+    pkg = read_hwpx_package(path)
     blob = pkg.to_bytes()
     reopened = HwpxPackage.from_bytes(blob)
 
@@ -101,7 +102,7 @@ def test_paragraph_order_matches_document_order(path: Path):
     원문에서 (누름틀 파라미터 등 ``hp:ctrl`` 하위를 제외한) ``hp:t`` 텍스트를 문서
     순서대로 뽑아, 추출 전체 텍스트에서 각 조각이 단조 증가 위치에 나타나는지 본다.
     """
-    pkg = HwpxPackage.open(str(path))
+    pkg = read_hwpx_package(path)
     doc = extract_document(pkg)
     haystack = full_text(doc)
 

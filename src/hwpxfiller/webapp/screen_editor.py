@@ -75,9 +75,8 @@ from ..gui.mapping_state import (
     gate_for_template,
     profile_source_vocabulary,
 )
-from hwpxcore.package import to_package
-
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
+from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
@@ -923,7 +922,7 @@ class EditorController:
         self._refresh_library()
         if path.suffix.lower() == ".hwpx":
             try:
-                schema = extract_schema(to_package(str(path)))
+                schema = extract_schema(read_hwpx_package(path))
             except Exception:
                 self._set_notice(
                     f"'{path.name}' 을 가져왔지만 읽을 수 없습니다. "
@@ -977,7 +976,7 @@ class EditorController:
                 self._push()
             return
         # 경로 열기는 ring 2 몫(P2-19R) — 한 번 열어 스키마·게이트가 같은 스냅샷을 본다.
-        pkg = to_package(path)
+        pkg = read_hwpx_package(path)
         self.schema = extract_schema(pkg)
         if not self.schema.fields:  # RAW: 채울 대상 없음 — 시끄럽게 차단.
             self.raw_block = RAW_BLOCK_MESSAGE

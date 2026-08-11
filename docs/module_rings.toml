@@ -83,7 +83,7 @@ oracle_nodeid = "tests/test_single_instance.py::test_mutex_name_is_stable_and_ho
 
 [[unit]]
 module = "hwpxcore.package"
-target = "EXTERNAL_ADAPTER"
+target = "DOMAIN"
 source_write_set = ["src/hwpxcore/package.py"]
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
 

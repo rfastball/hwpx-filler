@@ -17,6 +17,7 @@ import pytest
 from hwpxfiller.core.authoring import compile_document
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.external import settings
+from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.webapp.screen_template import TemplateController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -37,14 +38,14 @@ def _pkg(section_inner: str) -> HwpxPackage:
 
 def _write_raw(path: Path) -> Path:
     """평문 토큰만 든 미컴파일 템플릿(RAW) — scan/compile 대상."""
-    _pkg(_TOKEN_BODY).save(str(path))
+    write_hwpx_package(path, _pkg(_TOKEN_BODY))
     return path
 
 
 def _write_compiled(path: Path) -> Path:
     """평문 토큰을 누름틀로 컴파일한 템플릿(COMPILED) — make_job 노출·preview 은닉 대상."""
     pkg, _ = compile_document(_pkg(_TOKEN_BODY))
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return path
 
 
@@ -822,11 +823,11 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
     """채움 완화 사전 고지(#154)가 카드 데이터로 흐른다 — 정상 카드엔 없음."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     marker = tp / "lib" / "marker.hwpx"
-    _pkg(
+    write_hwpx_package(marker, _pkg(
         '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
         "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
-    ).save(str(marker))
+    ))
     ctrl.dispatch("refresh", {})
 
     snap = ctrl.snapshot()

@@ -42,7 +42,7 @@ EXPECTED_SCHEMA = [
 #: 세면 FC-08 을 남기고 FC-09(BLOCKED realpath cluster)를 지워도 초록(코덱스 #595).
 #: 원장 entry 를 넣고 빼는 변경은 이 목록과 한 변경이어야 한다(module_rings 양방향 전례).
 EXPECTED_ENTRY_IDS = {
-    *(f"KC-{i:02d}" for i in range(1, 15)),
+    *(f"KC-{i:02d}" for i in range(1, 15) if i != 3),
     *(f"FC-{i:02d}" for i in range(1, 18)),
 }
 
@@ -203,18 +203,11 @@ def test_census_p2_authority_matches_module_rings() -> None:
         disposition = str(entry["disposition"])
         if disposition in {"REMOVE", "TEMP_SAME_OBJECT_FACADE", "BLOCKED_NEEDS_P2_DECISION"}:
             continue
-        # cluster 분할(#585 결정 2): EXTERNAL_ADAPTER 모듈의 in-memory codec cluster 만
-        # FORMAT_KERNEL 로 갈 수 있고, 그때도 effect 소유 cluster(EXTERNAL_ADAPTER)가
-        # 같은 모듈의 형제 entry 로 **살아 있어야** 한다 — 효과 소유자가 사라지는 정제는 재분류다.
+        # cluster 분할(#585 결정 2): Domain 모듈의 effect cluster 만 External 로 갈 수 있고,
+        # 그때도 product cluster 가 같은 모듈의 형제 entry 로 **살아 있어야** 한다.
         siblings = dispositions_by_module[module]
         prefix = _package_prefix(module)
         split_ok = (
-            # hwpxcore: EXTERNAL_ADAPTER 모듈의 in-memory codec cluster → kernel (KC-02/KC-03 꼴)
-            prefix == "hwpxcore"
-            and recorded == "EXTERNAL_ADAPTER"
-            and disposition == "FORMAT_KERNEL"
-            and "EXTERNAL_ADAPTER" in siblings
-        ) or (
             # hwpxfiller.core: DOMAIN 모듈의 effect cluster → External (FC-11/FC-12 꼴, #566 소유 승계)
             prefix == "hwpxfiller.core"
             and recorded == "DOMAIN"

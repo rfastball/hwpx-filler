@@ -11,8 +11,8 @@ use case 를 **각자의 게이트 선언**으로 부른다 — 게이트 판정
 
 :mod:`hwpxfiller.batch` 와 :mod:`hwpxfiller.gui.run_state` 는 ring 계약
 (`docs/module_rings.toml`)이 APPLICATION 으로 판정한 동륜이라 직접 소비가 합법이다.
-엔진(zip IO 결속)은 Host/ring 2 가 인자로 관통시킨다 — Application 은 concrete
-opener 를 모른다(P2-19 와 같은 seam). 시각도 같다: 이 모듈은 wall clock 을 직접
+엔진(zip IO 결속)은 Host/ring 2 가 인자로 관통시킨다 — Application 은 concrete package
+read/write adapter를 모른다(P3-03 과 같은 seam). 시각도 같다: 이 모듈은 wall clock 을 직접
 고르지 않고 ``now``/``completed_at`` 을 호출자가 선언한다(boundary 게이트).
 
 한국어 요약 문장·버튼 문구·모달 구성은 Presentation 잔류다 — 여기는 수치·상태

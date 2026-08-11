@@ -113,7 +113,7 @@ def template_path_drift(
 
     GUI 실행·CLI가 공유하는 경계다. 파일 부재/손상/파싱 실패를 정상
     빈 템플릿으로 오인하지 않고 ``read_error`` 로 반환한다. 재읽기의 zip IO 는
-    호출자가 결속해 준 ``engine``(opener 포트 뒤)이 진다(P2-19, #567).
+    호출자가 결속해 준 ``engine``(package read/write 포트 뒤)이 진다(P3-03, #591).
     """
     if not path:
         return TemplateStructureDrift(read_error="템플릿 경로가 비어 있습니다.")
@@ -321,5 +321,4 @@ def ledger_outputs(
             )
         )
     return tuple(entries)
-
 

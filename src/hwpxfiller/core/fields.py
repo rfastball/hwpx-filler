@@ -401,7 +401,7 @@ def field_xml_names(pkg) -> "list[str]":
 def fill_precheck(pkg: object) -> "list[FillNote]":
     """HWPX 패키지 전체의 채움 완화 사전 판정(#154) — 변형 없음, 중복 없이.
 
-    **열린 package 전용**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **열린 package 전용**(P2-19R) — 경로는 호출측 External adapter가 연다.
     템플릿 점검 표면(라이브러리 등)이 "채우면 무슨 일이 생기는가"를 실행 전에
     고지하는 데 쓴다. 사후 노트(:attr:`FieldDocument.notes`)와 같은 어휘.
     """
@@ -415,7 +415,7 @@ def fill_precheck(pkg: object) -> "list[FillNote]":
 def read_fields(pkg: object) -> "dict[str, str]":
     """열린 HWPX package 의 모든 누름틀 현재 값을 반환한다.
 
-    **package-only**(P2-19R) — 경로는 :func:`hwpxcore.package.to_package` 로 연다.
+    **package-only**(P2-19R) — 경로는 호출측 External adapter가 연다.
     같은 이름이 여러 번 등장하면 문서 순서상 첫 값을 사용한다. ``set_field`` 는 같은
     이름의 모든 누름틀을 함께 갱신하므로 정상 템플릿에서는 값이 동일하다.
     """

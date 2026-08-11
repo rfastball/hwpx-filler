@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 from hwpxfiller.cli import main
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.mapping_store import save_mapping_profile
 
@@ -258,7 +259,6 @@ def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
 
 def test_cli_ack_empty_injects_marker(tmp_path):
     """--ack-empty 옵트인 — GUI 와 같은 미입력 표식을 넣고 진행(조용한 누름틀 잔존 금지)."""
-    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import read_fields
 
     data = _xlsx(tmp_path / "d.xlsx",
@@ -268,7 +268,7 @@ def test_cli_ack_empty_injects_marker(tmp_path):
                "--pattern", "공고-{{공고명}}", "--ack-empty"])
     assert rc == 0
     (doc,) = list(out.glob("*.hwpx"))
-    fields = read_fields(to_package(str(doc)))
+    fields = read_fields(read_hwpx_package(doc))
     assert fields["입찰공고번호"] == "〘미입력·입찰공고번호〙"  # GUI 와 동일 표식(단일 출처)
     assert fields["공고명"] == "관급자재 구매"
 
@@ -622,9 +622,10 @@ def test_fill_notes_surface_on_stderr_once_per_batch(tmp_path, capsys):
         "</hp:p></hs:sec>"
     ).encode("utf-8")
     tpl = tmp_path / "tpl.hwpx"
-    HwpxPackage(
-        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
-    ).save(str(tpl))
+    write_hwpx_package(
+        tpl,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}),
+    )
 
     wb = Workbook()
     ws = wb.active

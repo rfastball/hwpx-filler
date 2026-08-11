@@ -8,6 +8,7 @@ import pytest
 
 from hwpxfiller.batch import generate_batch
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
@@ -192,8 +193,8 @@ def test_generate_strips_stale_lineseg_from_modified_sections(tmp_path):
     res = engine.generate(str(CORPUS_NOTICE), {f: "값" for f in fields}, str(out))
     assert res.ok
 
-    src = HwpxPackage.open(str(CORPUS_NOTICE))
-    dst = HwpxPackage.open(str(out))
+    src = read_hwpx_package(CORPUS_NOTICE)
+    dst = read_hwpx_package(out)
     changed = [
         n for n in dst.content_xml_names() if dst.entries[n] != src.entries[n]
     ]
@@ -222,8 +223,8 @@ def test_regenerate_same_values_is_byte_stable(tmp_path):
     assert res2.ok
     assert res2.unmatched == set()  # 동일 값 재채움도 매칭 보고는 정직
 
-    p1 = HwpxPackage.open(str(out1))
-    p2 = HwpxPackage.open(str(out2))
+    p1 = read_hwpx_package(out1)
+    p2 = read_hwpx_package(out2)
     for name in p1.content_xml_names():
         assert p2.entries[name] == p1.entries[name]
 
@@ -246,13 +247,12 @@ def _mini_template(tmp_path, region: str):
     pkg.stored.add(MIMETYPE_NAME)
     pkg.entries["Contents/section0.xml"] = sec
     path = tmp_path / "tpl.hwpx"
-    pkg.save(str(path))
+    write_hwpx_package(path, pkg)
     return path
 
 
 def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path):
     """빈 누름틀 채움 = applied(오보 소멸) + notes 로 시끄럽게(#154)."""
-    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import FillNote, read_fields
 
     tpl = _mini_template(tmp_path, "")  # 값 hp:t 없는 빈 누름틀
@@ -262,7 +262,7 @@ def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path)
     assert res.applied == {"계약명"}
     assert res.unmatched == set()  # 과거: 매칭 실패 오보
     assert res.notes == [FillNote("계약명", "slot_synthesized")]
-    assert read_fields(to_package(str(out)))["계약명"] == "새값"  # 되읽기 관측으로 확정
+    assert read_fields(read_hwpx_package(out))["계약명"] == "새값"  # 되읽기 관측으로 확정
 
 
 def test_generate_notes_inline_stripped(tmp_path):
@@ -276,10 +276,9 @@ def test_generate_notes_inline_stripped(tmp_path):
     assert [(n.field, n.kind, n.detail) for n in res.notes] == [
         ("계약명", "inline_stripped", ("markpenBegin",))
     ]
-    from hwpxcore.package import to_package
     from hwpxfiller.core.fields import read_fields
 
-    assert read_fields(to_package(str(out)))["계약명"] == "NEW"
+    assert read_fields(read_hwpx_package(out))["계약명"] == "NEW"
 
 
 def test_cross_section_unfillable_occurrence_still_warns(tmp_path):
@@ -310,7 +309,7 @@ def test_cross_section_unfillable_occurrence_still_warns(tmp_path):
     pkg.entries["Contents/section0.xml"] = normal
     pkg.entries["Contents/section1.xml"] = degenerate
     tpl = tmp_path / "tpl.hwpx"
-    pkg.save(str(tpl))
+    write_hwpx_package(tpl, pkg)
 
     res = make_hwpx_engine().generate(str(tpl), {"계약명": "새값"}, str(tmp_path / "o.hwpx"))
     assert res.ok
