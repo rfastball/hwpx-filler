@@ -904,9 +904,17 @@ def test_generate_rejects_concurrent_entry(tmp_path):
     }
 
 
-def test_generation_stamps_last_run_at(tmp_path):
-    """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
+def test_generation_stamps_last_run_at(tmp_path, monkeypatch):
+    """완주 = 역사(#129) — 영속된 최신 Job 전체가 세션 사본도 갱신한다."""
     ctrl, _ = _controller(tmp_path)
+    stamped_jobs = []
+    stamp_last_run = ctrl.registry.stamp_last_run
+
+    def capture_stamp(*args, **kwargs):
+        stamped_jobs.append(stamp_last_run(*args, **kwargs))
+        return stamped_jobs[-1]
+
+    monkeypatch.setattr(ctrl.registry, "stamp_last_run", capture_stamp)
     assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
@@ -919,25 +927,43 @@ def test_generation_stamps_last_run_at(tmp_path):
     # 소비처(home_state·screen_library)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
     assert datetime.fromisoformat(stamped)
     assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
-    assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행
+    assert ctrl.vm.job is stamped_jobs[0]                       # 필드 목록 없이 최신 사본 전체 승계
 
 
-def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
-    """스탬프는 단일 필드 뮤테이션 — 세션이 든 옛 사본으로 디스크 최신 편집을 되돌리지 않는다."""
+def test_generation_stamp_does_not_clobber_disk_edits(tmp_path, monkeypatch):
+    """생성 중 최신 규칙을 보존하되 옛 규칙의 완주·미리보기 증거는 버린다."""
+    import hwpxfiller.application.generation as appgen
+
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     ctrl.set_output_folder(str(tmp_path / "out"))
     _approve_run(ctrl)
-    # 세션이 열린 사이 다른 표면(에디터)이 같은 작업을 편집·저장했다.
-    edited = ctrl.registry.load("공고서")
-    edited.filename_pattern = "edited-{{seq:001}}"
-    ctrl.registry.save(edited, allow_overwrite=True)
+    ctrl.dispatch("preview_open", {})
+    before = ctrl.snapshot()
+    assert before["preview"]["open"] is True and before["guard"]["armed"] is True
+
+    generate_batch = appgen.generate_batch
+
+    def edit_midflight(*args, **kwargs):
+        edited = ctrl.registry.load("공고서")
+        edited.filename_pattern = "edited-{{seq:001}}"
+        ctrl.registry.save(edited, allow_overwrite=True)
+        return generate_batch(*args, **kwargs)
+
+    monkeypatch.setattr(appgen, "generate_batch", edit_midflight)
 
     assert ctrl.generate()["ok"] is True
     after = ctrl.registry.load("공고서")
     assert after.filename_pattern == "edited-{{seq:001}}"       # 디스크 편집 보존
     assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
+    assert ctrl.vm.job.filename_pattern == after.filename_pattern  # 최신 Job 전체 승계
+    assert ctrl._last_generated is None                          # 새 규칙은 실행되지 않았다
+    snap = ctrl.snapshot()
+    assert snap["preview"]["open"] is False                     # 옛 규칙의 상 폐기
+    assert snap["guard"]["armed"] is True                       # 수작업 선택 보호 복구
 
 
 def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
