@@ -31,6 +31,7 @@
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
 | `module_rings.toml` | 모듈별 ring 좌표(목표 권위)·source write set·behavior oracle. 안쪽→바깥쪽 의존 금지선의 **유일한** 정본이라 물리 이관 완료까지 영속(#542 H-2). 유래한 P1 계측 서사는 Git 이력이, 미이행 obligation 은 이슈 #582 가 소유 |
+| `p3_kernel_census.toml` | **임시 실행 원장**(P3-01 #593) — `hwpxfiller.core`·`hwpxcore` 의 symbol cluster/consumer/effect/disposition 전수 계측. P3-03~P3-05 의 실행 입력이고 P3-99(#586)에서 제거되거나 영구 계약으로 승격된다(#585 완료 조건 13). 짝 게이트 `tests/repo_contract/test_p3_kernel_census.py` 와 같은 변경으로 처분 |
 
 ## 결정 기록
 

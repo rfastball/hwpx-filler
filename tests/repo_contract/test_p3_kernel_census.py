@@ -30,12 +30,32 @@ DISPOSITIONS = {
     "BLOCKED_NEEDS_P2_DECISION",
 }
 
-#: hwpxcore 의 DOMAIN 은 P3 어휘로 FORMAT_KERNEL, hwpxfiller.core 의 DOMAIN 은
-#: PRODUCT_DOMAIN — 정제이지 재분류가 아니다(#585 결정 2). 그 밖의 어긋남은 전부 위반.
-ALLOWED_REFINEMENT = {
-    ("DOMAIN", "FORMAT_KERNEL"),
-    ("DOMAIN", "PRODUCT_DOMAIN"),
+#: 스키마는 원장 자신의 선언이 아니라 **여기 고정된 기대**와 대조한다 — 원장과 선언을
+#: 함께 지우면 초록이 되는 자기참조 검증을 막는다(코덱스 #595).
+EXPECTED_SCHEMA = [
+    "id", "current_module", "symbol", "visibility", "consumers",
+    "product_semantics_awareness", "environment_or_effect", "p2_target_authority",
+    "target_canonical_import", "behavior_oracle", "compatibility_evidence", "disposition",
+]
+
+#: entry ID 폐포 — census 는 module 단위가 아니라 **cluster 단위**가 정본이다. 모듈 폐포만
+#: 세면 FC-08 을 남기고 FC-09(BLOCKED realpath cluster)를 지워도 초록(코덱스 #595).
+#: 원장 entry 를 넣고 빼는 변경은 이 목록과 한 변경이어야 한다(module_rings 양방향 전례).
+EXPECTED_ENTRY_IDS = {
+    *(f"KC-{i:02d}" for i in range(1, 15)),
+    *(f"FC-{i:02d}" for i in range(1, 18)),
 }
+
+#: DOMAIN 의 P3 정제는 패키지가 정한다 — hwpxcore 는 FORMAT_KERNEL 로만, hwpxfiller.core 는
+#: PRODUCT_DOMAIN 로만(#585 결정 2). 전역 튜플로 두면 교차 재분류가 통과한다(코덱스 #595).
+REFINEMENT_BY_PREFIX = {
+    "hwpxcore": ("DOMAIN", "FORMAT_KERNEL"),
+    "hwpxfiller.core": ("DOMAIN", "PRODUCT_DOMAIN"),
+}
+
+
+def _package_prefix(module: str) -> str:
+    return "hwpxfiller.core" if module.startswith("hwpxfiller.core") else "hwpxcore"
 
 
 def _census() -> dict[str, object]:
@@ -60,7 +80,8 @@ def _governed_modules() -> "set[str]":
 
 def test_census_schema_and_disposition_vocabulary() -> None:
     document = _census()
-    fields = set(document["schema"])  # type: ignore[arg-type]
+    assert document["schema"] == EXPECTED_SCHEMA, "원장 schema 선언이 게이트의 고정 기대와 다릅니다"
+    fields = set(EXPECTED_SCHEMA)
     for entry in _entries():
         missing = fields - set(entry)
         assert not missing, f"{entry.get('id')}: 스키마 필드 누락 {sorted(missing)}"
@@ -78,7 +99,14 @@ def test_census_schema_and_disposition_vocabulary() -> None:
 
 def test_census_covers_both_packages_completely() -> None:
     """양방향 닫힘 — 등재 모듈이 실재하고, 실재 모듈이 등재된다(#542 「정의역이 열거」 방지)."""
-    listed = {str(entry["current_module"]) for entry in _entries()}
+    entries = _entries()
+    ids = [str(entry["id"]) for entry in entries]
+    assert len(ids) == len(set(ids)), "entry id 중복"
+    assert set(ids) == EXPECTED_ENTRY_IDS, (
+        f"entry ID 폐포 어긋남 — cluster 를 넣고 빼는 변경은 게이트 목록과 한 변경이어야 "
+        f"합니다: {sorted(set(ids) ^ EXPECTED_ENTRY_IDS)}"
+    )
+    listed = {str(entry["current_module"]) for entry in entries}
     census = _governed_modules()
     assert not listed - census, f"원장이 없는 모듈을 가리킵니다: {sorted(listed - census)}"
     assert not census - listed, (
@@ -110,18 +138,22 @@ def test_census_p2_authority_matches_module_rings() -> None:
         # FORMAT_KERNEL 로 갈 수 있고, 그때도 effect 소유 cluster(EXTERNAL_ADAPTER)가
         # 같은 모듈의 형제 entry 로 **살아 있어야** 한다 — 효과 소유자가 사라지는 정제는 재분류다.
         siblings = dispositions_by_module[module]
+        prefix = _package_prefix(module)
         split_ok = (
-            # EXTERNAL_ADAPTER 모듈의 in-memory codec cluster → kernel (KC-02/KC-03 꼴)
-            recorded == "EXTERNAL_ADAPTER"
+            # hwpxcore: EXTERNAL_ADAPTER 모듈의 in-memory codec cluster → kernel (KC-02/KC-03 꼴)
+            prefix == "hwpxcore"
+            and recorded == "EXTERNAL_ADAPTER"
             and disposition == "FORMAT_KERNEL"
             and "EXTERNAL_ADAPTER" in siblings
         ) or (
-            # DOMAIN 모듈의 effect cluster → External (FC-11/FC-12 꼴, #566 소유 승계)
-            recorded == "DOMAIN"
+            # hwpxfiller.core: DOMAIN 모듈의 effect cluster → External (FC-11/FC-12 꼴, #566 소유 승계)
+            prefix == "hwpxfiller.core"
+            and recorded == "DOMAIN"
             and disposition == "EXTERNAL_ADAPTER"
             and "PRODUCT_DOMAIN" in siblings
         )
-        assert disposition == recorded or (recorded, disposition) in ALLOWED_REFINEMENT or split_ok, (
+        refinement_ok = (recorded, disposition) == REFINEMENT_BY_PREFIX[prefix]
+        assert disposition == recorded or refinement_ok or split_ok, (
             f"{entry['id']}: disposition {disposition!r} 이 P2 판정 {recorded!r} 의 "
             "허용 정제가 아닙니다 — 재분류는 #538/#542/#582/#583 상향 대상"
         )

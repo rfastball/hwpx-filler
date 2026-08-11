@@ -52,8 +52,8 @@ product_semantics_awareness = false
 environment_or_effect = ["zip(in-memory)"]
 p2_target_authority = "EXTERNAL_ADAPTER"
 target_canonical_import = "hwpxcore.package"
-behavior_oracle = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
-compatibility_evidence = "저장 bytes 재현성: info.date_time 고정 + mimetype STORED 첫 항목 — to_bytes 라운드트립이 test_hwpx_package.py 소유"
+behavior_oracle = "tests/test_package.py::test_roundtrip_preserves_ocf_rules"
+compatibility_evidence = "저장 bytes 재현성: info.date_time 고정 + mimetype STORED 첫 항목 — to_bytes 라운드트립·OCF 정규화는 tests/test_package.py 소유"
 disposition = "FORMAT_KERNEL"
 
 [[entry]]
@@ -202,12 +202,12 @@ current_module = "hwpxcore.native.single_instance"
 symbol = "acquire, focus_existing, _mutex_name"
 visibility = "public"
 consumers = { production = 1, test = 2, scripts = 0, build = 0 }
-product_semantics_awareness = false
+product_semantics_awareness = true
 environment_or_effect = ["win32(mutex)"]
 p2_target_authority = "HOST"
 target_canonical_import = "hwpxfiller.host.native.single_instance"
 behavior_oracle = "tests/test_single_instance.py::test_mutex_name_is_stable_and_home_scoped"
-compatibility_evidence = "홈 스코프 mutex — kernel 금지 효과"
+compatibility_evidence = "홈 스코프 mutex — kernel 금지 효과. _mutex_name 이 제품 namespace 'hwpx-filler-single-instance-' 를 하드코딩(제품 결합) — 이동 시 이름 안정성을 oracle 이 지키므로 값 보존, 파라미터화 여부는 P3-04 판단"
 disposition = "HOST"
 
 [[entry]]
@@ -385,7 +385,7 @@ id = "FC-12"
 current_module = "hwpxfiller.core.mapping"
 symbol = "cluster: MappingProfile.load(path) — Path.read_text 직접"
 visibility = "public"
-consumers = { production = 2, test = 0, scripts = 0, build = 0 }  # cli.py 2곳
+consumers = { production = 1, test = 4, scripts = 0, build = 0 }  # 파일 단위: cli.py / test_mapping·test_mapping_state·test_nara_mulpum·test_scenario_e2e
 product_semantics_awareness = true
 environment_or_effect = ["fs-read"]
 p2_target_authority = "DOMAIN"
