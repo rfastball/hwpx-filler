@@ -45,12 +45,12 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 from ..data.factory import source_for_path, source_from_pool_item
 from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
-from hwpxcore.native import single_instance
-from hwpxcore.native._debug import log
-from hwpxcore.native.clipboard import set_clipboard_text
-from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog
-from hwpxcore.native.reveal import open_path as _native_open_path
-from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
+from ..host.native import single_instance
+from ..host.native.clipboard import set_clipboard_text
+from ..host.native.debug import log
+from ..host.native.dialogs import open_file_dialog, open_folder_dialog
+from ..host.native.reveal import open_path as _native_open_path
+from ..host.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_library import LibraryController
 from .screen_job import JobController
@@ -753,7 +753,7 @@ def _live_terminator(
     확정하는 사건이라 그 결론은 **처음 것**이다.
 
     실패를 삼키지 않는다 — 그리고 **내구성 채널**로 삼키지 않는다. 종전 두 실패는
-    :func:`~hwpxcore.native._debug.log` 로 갔는데 그것은 ``HWPX_WEBAPP_LOG`` 가 없으면 no-op
+    :func:`~hwpxfiller.host.native.debug.log` 로 갔는데 그것은 ``HWPX_WEBAPP_LOG`` 가 없으면 no-op
     이라, "사유를 stderr 로라도 남긴다"고 적힌 주석이 실제로는 아무 데도 안 남기고 있었다.
     종결의 실패는 하니스가 **파일 부재로만** 만나는 사건이라 사유가 없으면 원인이 한 겹
     가려진다. 그래서 :func:`.settings.alert`(stderr + 홈 로그)를 쓴다.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxcore.atomic import write_bytes_atomic
+from .atomic import write_bytes_atomic
 from hwpxcore.package import HwpxPackage
 
 

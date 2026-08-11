@@ -28,58 +28,10 @@ source_write_set = ["src/hwpxcore/__init__.py"]
 oracle_kind = "structural"
 
 [[unit]]
-module = "hwpxcore.atomic"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxcore/atomic.py"]
-oracle_nodeid = "tests/test_atomic.py::test_failed_replace_preserves_existing_and_cleans_tmp"
-
-[[unit]]
 module = "hwpxcore.lineseg"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/lineseg.py"]
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
-
-[[unit]]
-module = "hwpxcore.motw"
-target = "HOST"
-source_write_set = ["src/hwpxcore/motw.py"]
-oracle_nodeid = "tests/test_motw.py::test_frozen_without_ads_is_safe"
-
-[[unit]]
-module = "hwpxcore.native"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxcore/native/__init__.py"]
-oracle_nodeid = "tests/test_native_positive.py"
-
-[[unit]]
-module = "hwpxcore.native._debug"
-target = "EXTERNAL_ADAPTER"
-source_write_set = ["src/hwpxcore/native/_debug.py"]
-oracle_nodeid = "tests/test_webapp_bridge.py::test_pick_data_file_corrupt_workbook_returns_error_not_raise"
-
-[[unit]]
-module = "hwpxcore.native.clipboard"
-target = "HOST"
-source_write_set = ["src/hwpxcore/native/clipboard.py"]
-oracle_nodeid = "tests/test_native_positive.py"
-
-[[unit]]
-module = "hwpxcore.native.dialogs"
-target = "HOST"
-source_write_set = ["src/hwpxcore/native/dialogs.py"]
-oracle_nodeid = "tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated"
-
-[[unit]]
-module = "hwpxcore.native.reveal"
-target = "HOST"
-source_write_set = ["src/hwpxcore/native/reveal.py"]
-oracle_nodeid = "tests/test_tracking_locate.py::test_reveal_and_open_missing_path_is_loud"
-
-[[unit]]
-module = "hwpxcore.native.single_instance"
-target = "HOST"
-source_write_set = ["src/hwpxcore/native/single_instance.py"]
-oracle_nodeid = "tests/test_single_instance.py::test_mutex_name_is_stable_and_home_scoped"
 
 [[unit]]
 module = "hwpxcore.package"
@@ -92,12 +44,6 @@ module = "hwpxcore.text_extract"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/text_extract.py"]
 oracle_nodeid = "tests/test_authoring.py::test_compile_makes_token_a_real_field"
-
-[[unit]]
-module = "hwpxcore.validate"
-target = "DOMAIN"
-source_write_set = ["src/hwpxcore/validate.py"]
-oracle_nodeid = "tests/test_cli.py::test_cli_ack_empty_injects_marker"
 
 [[unit]]
 module = "hwpxfiller"

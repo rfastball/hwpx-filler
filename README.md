@@ -122,15 +122,15 @@ Authenticode 서명까지 합니다.
 사용자에게 보이는 제품명은 **문서나르미**, 저장소·패키지·실행 파일 등 기술
 식별자는 `hwpx-filler`(`hwpxfiller`) 계열입니다.
 
-파서 `hwpxcore` 위에 제품 `hwpxfiller` 가 서고, 의존은 아래로만 흐릅니다
-(`hwpxfiller → hwpxcore`). 코어는 제품 로직을 담지 않습니다 — 파싱·패키징·검증뿐이고,
-[hwpxdiff](https://github.com/rfastball/hwpx-diff) 저장소가 같은 계층의 사본을 들고 있습니다.
+형식 kernel `hwpxcore` 위에 제품 `hwpxfiller` 가 서고, 의존은 아래로만 흐릅니다
+(`hwpxfiller → hwpxcore`). kernel은 제품 로직이나 환경 효과 없이 HWPX bytes만 다룹니다.
 
 | 모듈 | 역할 |
 |------|------|
-| `hwpxcore/package.py` | HWPX OCF ZIP 열기/저장 |
+| `hwpxcore/package.py` | HWPX OCF ZIP bytes 파싱/직렬화 |
 | `hwpxcore/text_extract.py` | 본문 텍스트 추출 + 커버리지 원장 |
-| `hwpxcore/validate.py` | 사전검증(누락/빈값) |
+| `external/hwpx_package_io.py` | HWPX 경로 읽기/원자 저장 |
+| `domain/validation.py` | 제품 사전검증(누락/빈값) |
 | `core/fields.py` | 누름틀 XML DOM 주입 |
 | `core/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) |
 | `core/authoring.py` | 평문 `{{토큰}}` → 누름틀 컴파일 |

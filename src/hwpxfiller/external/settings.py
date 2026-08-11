@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from hwpxcore.atomic import write_text_atomic
+from .atomic import write_text_atomic
 
 # 앱 홈 해석은 core 단일 출처(#76). 이 모듈은 ``settings.home_dir()`` 로도 계속 불린다
 # (app.py: 단일 인스턴스 뮤텍스 키·webview 루트) — 이름을 그대로 재노출해 호출 계약은 두고

@@ -22,7 +22,7 @@ def _write_policy(path: Path, *, line: int = 50, branch: int = 50, allow_native:
             [
                 # 미설정 서브패키지는 조용히 skip 되지 않는다(#255 리뷰) — 의도적 별도
                 # 표면만 명시 allowlist 로 통과시킨다.
-                'unmatched_allow = ["src/hwpxcore/native"]' if allow_native else "",
+                'unmatched_allow = ["src/hwpxfiller/host/native"]' if allow_native else "",
                 "[packages.hwpxcore]",
                 'path = "src/hwpxcore"',
                 f"line = {line}",
@@ -42,7 +42,7 @@ def _write_xml(path: Path) -> None:
       <line number="10" hits="1" branch="true" condition-coverage="50% (1/2)"/>
       <line number="11" hits="0"/>
     </lines></class>
-    <class filename="src/hwpxcore/native/motw.py"><lines>
+    <class filename="src/hwpxfiller/host/native/dialogs.py"><lines>
       <line number="20" hits="0" branch="true" condition-coverage="0% (0/8)"/>
     </lines></class>
   </classes></package></packages>
@@ -94,7 +94,7 @@ def test_missing_package_evidence_fails_loudly(tmp_path: Path) -> None:
 def test_native_floor_is_rejected(tmp_path: Path) -> None:
     policy = tmp_path / "floors.toml"
     policy.write_text(
-        '[packages."hwpxcore.native"]\npath="src/hwpxcore/native"\nline=40\nbranch=32\n',
+        '[packages."hwpxfiller.host.native"]\npath="src/hwpxfiller/host/native"\nline=40\nbranch=32\n',
         encoding="utf-8",
     )
 
@@ -138,5 +138,5 @@ def test_repository_policy_has_audited_packages_only() -> None:
     # 미설정-실패 게이트의 저장소 allowlist 는 native 하나뿐(#255 리뷰) — 새 서브패키지를
     # 여기 늘리려면 별도 게이트 소유를 함께 증명해야 한다.
     assert gate.load_unmatched_allow(ROOT / "docs" / "package_coverage_floors.toml") == {
-        "hwpxcore/native"
+        "hwpxfiller/host/native"
     }

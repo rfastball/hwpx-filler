@@ -9,8 +9,7 @@
   링1 VM 을 소유·위임하는 얇은 어댑터. VM 로직 재구현 금지.
 - :mod:`~hwpxfiller.webapp.app` — pywebview 창·브리지·엔트리(``main``). webview 를 여기서만 임포트.
 
-네이티브 표면(파일 다이얼로그·클립보드)은 :mod:`hwpxcore.native` 공용 계층에서 온다 —
-diff 웹과 공유(제품 간 250줄 STA/OLE ctypes 복제 회피).
+네이티브 표면(파일 다이얼로그·클립보드)은 :mod:`hwpxfiller.host.native` Host 계층이 소유한다.
 
 정적 source는 저장소 루트 ``frontend/`` 하나다. source 제품은 fresh sealed
 ``build/web/``, 동결(PyInstaller) 제품은 ``sys._MEIPASS/web``의 같은 seal/tree만 검증해

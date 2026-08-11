@@ -46,7 +46,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from hwpxcore.atomic import write_text_atomic
+from .atomic import write_text_atomic
 from hwpxfiller.application.dataset_pool import (
     CorruptDatasetEntry,
     StaleConfirmError,

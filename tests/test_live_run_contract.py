@@ -243,7 +243,7 @@ def test_a_refused_second_finish_names_what_it_dropped(capsys) -> None:
     """두 번째 종결 요청은 조용한 no-op 이 아니다 — 무엇을 버렸는지 이름을 댄다.
 
     채널은 **내구성 경보**(stderr + 홈 로그)여야 한다. 종전 두 실패가 쓰던
-    ``hwpxcore.native._debug.log`` 는 ``HWPX_WEBAPP_LOG`` 없이는 no-op 이라, 사유를 남긴다고
+    ``hwpxfiller.host.native.debug.log`` 는 ``HWPX_WEBAPP_LOG`` 없이는 no-op 이라, 사유를 남긴다고
     적힌 주석이 실제로는 아무 데도 남기지 않았다(선언은 살고 결과는 죽는다).
     """
     finish = app_mod._live_terminator(_FakeWindow(), lambda _result: None)

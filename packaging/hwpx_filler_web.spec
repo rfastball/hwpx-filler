@@ -40,15 +40,15 @@ a = Analysis(
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[
-        "hwpxcore.motw",   # 엔트리 self-unblock(포터블 MOTW) — 조건부 임포트 보증
+        "hwpxfiller.host.motw",   # 엔트리 self-unblock(포터블 MOTW) — 조건부 임포트 보증
         "hwpxfiller.webapp",
         "hwpxfiller.webapp.app",
         "hwpxfiller.webapp.screens",
-        "hwpxcore.native.clipboard",
-        "hwpxcore.native.dialogs",
+        "hwpxfiller.host.native.clipboard",
+        "hwpxfiller.host.native.dialogs",
         "hwpxfiller.core.text_registry",
         "hwpxfiller.core.text_render",
-        "hwpxcore.atomic",
+        "hwpxfiller.external.atomic",
         "openpyxl",
         "hwpxfiller.data.excel",
         "hwpxfiller.data.nara",

@@ -2,7 +2,6 @@
 
 프로덕션에선 무비용(환경변수 없으면 no-op). 파일 다이얼로그 멈춤 같은 스레드/네이티브 경계
 문제를 실기기에서 좁히기 위한 훅 — GUI 앱은 stdout 이 안 보여 파일 로그가 필요하다.
-제품 중립 이름(``HWPX_WEBAPP_LOG``)으로 filler·diff 웹 양쪽이 같은 로거를 공유한다.
 """
 from __future__ import annotations
 

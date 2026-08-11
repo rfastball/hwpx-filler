@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hwpxcore.atomic import write_text_atomic
+from .atomic import write_text_atomic
 
 from hwpxfiller.core.mapping import MappingProfile
 

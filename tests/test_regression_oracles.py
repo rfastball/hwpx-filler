@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hwpxcore.native import _debug
+from hwpxfiller.host.native import debug
 import hwpxfiller.domain.inline as domain_inline
 from hwpxfiller.domain.inline import InlineDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
@@ -76,12 +76,12 @@ def test_gui_actions_cross_public_dispatch_and_validate_payload(tmp_path) -> Non
 
 def test_debug_log_is_gated_and_appends_a_diagnostic_line(tmp_path, monkeypatch) -> None:
     path = tmp_path / "native.log"
-    monkeypatch.setattr(_debug, "_PATH", None)
-    _debug.log("silent")
+    monkeypatch.setattr(debug, "_PATH", None)
+    debug.log("silent")
     assert not path.exists()
 
-    monkeypatch.setattr(_debug, "_PATH", str(path))
-    _debug.log("dialog-open")
+    monkeypatch.setattr(debug, "_PATH", str(path))
+    debug.log("dialog-open")
     assert "dialog-open" in path.read_text(encoding="utf-8")
 
 

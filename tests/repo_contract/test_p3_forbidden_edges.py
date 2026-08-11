@@ -906,9 +906,9 @@ def test_negative_probe_rejects_hwpxcore_product_import() -> None:
 from hwpxfiller.domain.job import Job
 load('hwpxfiller.core.job')
 """
-    assert _kernel_product_import_edges(source, "hwpxcore.validate") == {
-        "hwpxcore.validate|hwpxfiller.core.job",
-        "hwpxcore.validate|hwpxfiller.domain.job",
+    assert _kernel_product_import_edges(source, "hwpxcore.package") == {
+        "hwpxcore.package|hwpxfiller.core.job",
+        "hwpxcore.package|hwpxfiller.domain.job",
     }
 
 

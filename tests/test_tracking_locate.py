@@ -21,7 +21,7 @@ from hwpxfiller.webapp.screens import (
     norm_path,
     validate_owned_path,
 )
-from hwpxcore.native.reveal import open_path, reveal_in_explorer
+from hwpxfiller.host.native.reveal import open_path, reveal_in_explorer
 
 
 def _setup(tmp_path: Path):

@@ -26,8 +26,8 @@ const AREAS = {
 const ORTHOGONALITY_RULES = `
 - src/hwpxfiller/gui/style.py 는 단일 소유자다. 이 파일을 건드리는 task는 절대 둘 이상 병렬 금지 — 직렬화하거나 한 task로 묶어라.
 - fillcore(engine/schema/mapping) 변경은 gui/*_state.py 로 파문된다. 같은 기능이면 한 워커에 묶어라.
-- src/hwpxcore/ 는 파서 토대라 변경이 저장소 전역으로 파문된다(별도 저장소 hwpx-diff 가 이
-  계층의 사본을 들고 있다는 점도 같이 본다). core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
+- src/hwpxcore/ 는 형식 kernel 토대라 변경이 저장소 전역으로 파문된다.
+  core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
 - 확신이 없으면 병렬로 인증하지 마라. 직렬이 기본값이다.`
 
 // 교차-단위 계약 점검 — #26 웹 패리티 회수(4개 독립 "단위" A/B/C/D 커밋)에서

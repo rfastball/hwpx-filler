@@ -1,4 +1,4 @@
-"""원자 쓰기(hwpxcore.atomic) — 쓰기 실패가 기존 파일을 파괴하지 않는 계약(RC-01).
+"""원자 쓰기(hwpxfiller.external.atomic) — 쓰기 실패가 기존 파일을 파괴하지 않는 계약(RC-01).
 
 truncate-then-write 는 실패가 기존 내용을 선파괴했다. 헬퍼는 임시 파일에 완성 후
 ``os.replace`` 원자 교체이므로: 성공 시 내용 일치, 실패 시 기존 파일 무손상 + 임시
@@ -11,7 +11,7 @@ import os
 
 import pytest
 
-from hwpxcore.atomic import write_bytes_atomic, write_text_atomic
+from hwpxfiller.external.atomic import write_bytes_atomic, write_text_atomic
 
 
 def _tmp_leftovers(directory) -> "list[str]":
@@ -61,7 +61,7 @@ def test_failed_write_preserves_existing_and_cleans_tmp(tmp_path, monkeypatch):
         def write(self, data):
             raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr("hwpxcore.atomic.os.fdopen", lambda fd, mode: _EnospcFile(fd))
+    monkeypatch.setattr("hwpxfiller.external.atomic.os.fdopen", lambda fd, mode: _EnospcFile(fd))
     with pytest.raises(OSError):
         write_text_atomic(target, "새 내용" * 100)
     assert target.read_text(encoding="utf-8") == "기존 durable 내용"  # 무손상
@@ -76,7 +76,7 @@ def test_failed_replace_preserves_existing_and_cleans_tmp(tmp_path, monkeypatch)
     def _boom(src, dst):
         raise OSError(5, "I/O error")
 
-    monkeypatch.setattr("hwpxcore.atomic.os.replace", _boom)
+    monkeypatch.setattr("hwpxfiller.external.atomic.os.replace", _boom)
     with pytest.raises(OSError):
         write_bytes_atomic(target, b"NEW")
     assert target.read_text(encoding="utf-8") == "기존"

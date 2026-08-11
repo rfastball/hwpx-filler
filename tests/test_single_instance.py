@@ -1,4 +1,4 @@
-"""단일 인스턴스 가드 — ``hwpxcore.native.single_instance`` (#74 리뷰3).
+"""단일 인스턴스 가드 — ``hwpxfiller.host.native.single_instance`` (#74 리뷰3).
 
 홈당 하나만 뜨게 못박는 Win32 네임드 뮤텍스. 뮤텍스 이름이 홈 경로로 키되는지(다른 홈은
 독립·같은 홈은 충돌)와, 같은 홈 두 번째 취득이 차단되는지를 가드한다.
@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from hwpxcore.native import single_instance
+from hwpxfiller.host.native import single_instance
 
 
 def test_mutex_name_is_stable_and_home_scoped(tmp_path):
