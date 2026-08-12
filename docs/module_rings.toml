@@ -27,6 +27,12 @@ source_write_set = ["src/hwpxcore/__init__.py"]
 oracle_kind = "structural"
 
 [[unit]]
+module = "hwpxcore.bookmark_region"
+target = "DOMAIN"
+source_write_set = ["src/hwpxcore/bookmark_region.py"]
+oracle_nodeid = "tests/test_bookmark_regions.py"
+
+[[unit]]
 module = "hwpxcore.lineseg"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/lineseg.py"]
