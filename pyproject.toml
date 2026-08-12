@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hwpx-filler"
-version = "0.3.0rc2"
+version = "0.3.0"
 description = "문서나르미 — 엑셀/CSV 데이터로 HWPX 누름틀 문서를 일괄 생성한다(파서 hwpxcore 위)"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
