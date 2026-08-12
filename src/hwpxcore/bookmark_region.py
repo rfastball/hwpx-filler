@@ -8,7 +8,21 @@ from hashlib import sha256
 from lxml import etree
 
 from .lineseg import serialize_modified_section
-from .text_extract import PackageLike, local_name, require_package, section_xml_names
+from .text_extract import (
+    PackageLike,
+    HP_NS as _HP_NS,
+    local_name,
+    require_package,
+    section_xml_names,
+)
+
+_HS_NS = "http://www.hancom.co.kr/hwpml/2011/section"
+_HP = f"{{{_HP_NS}}}"
+_NON_FIELD_RANGE_MARKERS = (
+    ("markpenBegin", "markpenEnd"),
+    ("insertBegin", "insertEnd"),
+    ("deleteBegin", "deleteEnd"),
+)
 
 
 @dataclass(frozen=True)
@@ -54,12 +68,11 @@ class _ResolvedRegion:
 
 
 def _has_payload(node: etree._Element) -> bool:
-    name = local_name(node.tag)
-    if name == "linesegarray":
+    if node.tag == f"{_HP}linesegarray":
         return False
-    if name == "t":
+    if node.tag == f"{_HP}t":
         return bool("".join(node.itertext()) or len(node))
-    if name == "run":
+    if node.tag == f"{_HP}run":
         return bool((node.text or "").strip()) or any(
             _has_payload(child) or bool((child.tail or "").strip()) for child in node
         )
@@ -96,9 +109,9 @@ def _boundary_paragraph(
         ctrl is None
         or run is None
         or paragraph is None
-        or local_name(ctrl.tag) != "ctrl"
-        or local_name(run.tag) != "run"
-        or local_name(paragraph.tag) != "p"
+        or ctrl.tag != f"{_HP}ctrl"
+        or run.tag != f"{_HP}run"
+        or paragraph.tag != f"{_HP}p"
         or paragraph.getparent() is not root
     ):
         raise ValueError(
@@ -113,13 +126,22 @@ def _parse_sections(pkg: PackageLike) -> list[_Section]:
     for entry in section_xml_names(pkg):
         source = pkg.entries[entry]
         root = etree.fromstring(source, parser)
+        if root.tag != f"{{{_HS_NS}}}sec":
+            raise ValueError(f"{entry}: section root is not native hs:sec")
         nodes = list(root.iter())
         begins: dict[str, list[etree._Element]] = {}
         ends: dict[str, list[etree._Element]] = {}
         bookmark_begins: list[etree._Element] = []
         for node in nodes:
-            tag = local_name(node.tag)
-            if tag == "fieldBegin":
+            if (
+                local_name(node.tag) == "fieldBegin"
+                and node.get("type") == "BOOKMARK"
+                and node.tag != f"{_HP}fieldBegin"
+            ):
+                raise ValueError(
+                    f"{entry}: BOOKMARK fieldBegin uses a non-native namespace"
+                )
+            if node.tag == f"{_HP}fieldBegin":
                 begin_id = node.get("id")
                 if node.get("type") == "BOOKMARK":
                     bookmark_begins.append(node)
@@ -127,7 +149,9 @@ def _parse_sections(pkg: PackageLike) -> list[_Section]:
                         raise ValueError(f"{entry}: BOOKMARK fieldBegin has no id")
                 if begin_id:
                     begins.setdefault(begin_id, []).append(node)
-            elif tag == "fieldEnd" and (begin_ref := node.get("beginIDRef")):
+            elif node.tag == f"{_HP}fieldEnd" and (
+                begin_ref := node.get("beginIDRef")
+            ):
                 ends.setdefault(begin_ref, []).append(node)
         sections.append(
             _Section(
@@ -138,7 +162,7 @@ def _parse_sections(pkg: PackageLike) -> list[_Section]:
                 paragraphs={
                     node: index
                     for index, node in enumerate(
-                        child for child in root if local_name(child.tag) == "p"
+                        child for child in root if child.tag == f"{_HP}p"
                     )
                 },
                 begins=begins,
@@ -219,13 +243,36 @@ def _reject_intersecting_fields(
             raise ValueError(f"{section.entry}: field pair encloses BOOKMARK extent")
 
 
+def _reject_intersecting_non_field_ranges(region: _ResolvedRegion) -> None:
+    section = region.section
+    extent_orders = [
+        section.order[node] for node in section.nodes if _is_inside(region, node)
+    ]
+    extent_start, extent_end = min(extent_orders), max(extent_orders)
+
+    for begin_name, end_name in _NON_FIELD_RANGE_MARKERS:
+        begins = [
+            section.order[node]
+            for node in section.nodes
+            if node.tag == f"{_HP}{begin_name}"
+        ]
+        ends = [
+            section.order[node]
+            for node in section.nodes
+            if node.tag == f"{_HP}{end_name}"
+        ]
+        endpoint_inside = any(extent_start <= order <= extent_end for order in begins + ends)
+        possible_enclosure = any(order < extent_start for order in begins) and any(
+            order > extent_end for order in ends
+        )
+        if endpoint_inside or possible_enclosure:
+            raise ValueError(
+                f"{section.entry}: {begin_name}/{end_name} range intersects BOOKMARK extent"
+            )
+
+
 def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
     sections = _parse_sections(pkg)
-    end_sections: dict[str, set[str]] = {}
-    for section in sections:
-        for begin_ref in section.ends:
-            end_sections.setdefault(begin_ref, set()).add(section.entry)
-
     resolved: list[_ResolvedRegion] = []
     for section in sections:
         section_regions: list[_ResolvedRegion] = []
@@ -238,13 +285,23 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
                     f"{section.entry}: duplicate fieldBegin id {begin_id!r} "
                     f"({len(begin_matches)})"
                 )
+            remote_end_collisions = [
+                other.entry
+                for other in sections
+                if other is not section
+                and begin_id in other.ends
+                and (
+                    len(other.begins.get(begin_id, [])) != 1
+                    or len(other.ends[begin_id]) != 1
+                )
+            ]
+            if remote_end_collisions:
+                raise ValueError(
+                    f"{section.entry}: cross-section BOOKMARK end collision "
+                    f"{begin_id!r} in {remote_end_collisions}"
+                )
             end_matches = section.ends.get(begin_id, [])
             if not end_matches:
-                if begin_id in end_sections:
-                    raise ValueError(
-                        f"{section.entry}: cross-section BOOKMARK pair "
-                        f"{begin_id!r} is unsupported"
-                    )
                 raise ValueError(
                     f"{section.entry}: BOOKMARK begin id {begin_id!r} has no fieldEnd"
                 )
@@ -273,7 +330,7 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
 
             first, last = section.root.index(start), section.root.index(stop)
             if any(
-                local_name(child.tag) != "p"
+                child.tag != f"{_HP}p"
                 for child in list(section.root)[first : last + 1]
             ):
                 raise ValueError(
@@ -310,6 +367,7 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
         bookmark_ids = {item.region._pairing_id for item in section_regions}
         for item in section_regions:
             _reject_intersecting_fields(item, bookmark_ids)
+            _reject_intersecting_non_field_ranges(item)
         resolved.extend(section_regions)
     return resolved
 

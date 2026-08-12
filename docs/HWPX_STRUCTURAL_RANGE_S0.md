@@ -573,7 +573,9 @@ partial-paragraph, cross-section, crossing/nesting BOOKMARK, 비-native containm
 paragraph 제거, malformed/ambiguous pair는 명시적으로 거부한다. 다른 Field의 의미를
 `FieldDocument._field_span()`과 합치거나 검증하지 않는다. 단, 제거 extent가 다른 field pair의
 한쪽 marker만 자르거나 그 pair 안에 중첩되면 orphan/collateral damage를 막기 위해 제거 전에
-거부한다.
+거부한다. section/boundary marker는 공식 `hs`/`hp` namespace만 수용하며, `markpen` 또는
+change-tracking begin/end가 extent 안에 있거나 extent를 감쌀 가능성이 있으면 별도의 generic
+pairing 의미를 추정하지 않고 제거를 거부한다.
 
 ### 17.3 실험 코드 정리와 owner
 

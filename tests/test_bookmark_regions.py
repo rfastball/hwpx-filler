@@ -224,6 +224,14 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     )
     assert resolve_bookmark_regions(ordinary) == []
 
+    reused_id = _package(
+        _paragraph(_begin("7", "A") + "<hp:t>A</hp:t>" + _end("7"))
+        + _paragraph("<hp:t>OUT</hp:t>"),
+        _paragraph(_begin("7", "B") + "<hp:t>B</hp:t>" + _end("7"))
+        + _paragraph("<hp:t>OUT</hp:t>"),
+    )
+    assert [region.name for region in resolve_bookmark_regions(reused_id)] == ["A", "B"]
+
     nested_boundary = (
         "<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>"
         + _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
@@ -262,6 +270,24 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         + _paragraph(_begin() + "<hp:t>IN</hp:t>")
         + _paragraph("<hp:t>IN2</hp:t>" + _end())
         + _paragraph("<hp:t>OUT2</hp:t>" + _end("9"))
+    )
+    markpen_crosses = (
+        _paragraph('<hp:t><hp:markpenBegin color="#ffff00"/>OUT</hp:t>')
+        + _paragraph(_begin() + "<hp:t>IN<hp:markpenEnd/></hp:t>")
+        + _paragraph("<hp:t>IN2</hp:t>" + _end())
+        + _paragraph("<hp:t>OUT2</hp:t>")
+    )
+    insert_crosses = (
+        _paragraph("<hp:t>OUT</hp:t>")
+        + _paragraph(_begin() + '<hp:t>IN<hp:insertBegin Id="2" TcId="3"/></hp:t>')
+        + _paragraph("<hp:t>IN2</hp:t>" + _end())
+        + _paragraph('<hp:t>OUT2<hp:insertEnd Id="2" TcId="3"/></hp:t>')
+    )
+    delete_encloses = (
+        _paragraph('<hp:t><hp:deleteBegin Id="4" TcId="5"/>OUT</hp:t>')
+        + _paragraph(_begin() + "<hp:t>IN</hp:t>")
+        + _paragraph("<hp:t>IN2</hp:t>" + _end())
+        + _paragraph('<hp:t>OUT2<hp:deleteEnd Id="4" TcId="5"/></hp:t>')
     )
     cases = (
         (
@@ -325,11 +351,52 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
                 _paragraph(_begin() + "<hp:t>A</hp:t>"),
                 _paragraph("<hp:t>B</hp:t>" + _end()),
             ),
-            "cross-section BOOKMARK pair",
+            "cross-section BOOKMARK",
+        ),
+        (
+            _package(
+                _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
+                + _paragraph("<hp:t>OUT</hp:t>"),
+                _paragraph(_end()) + _paragraph("<hp:t>OUT</hp:t>"),
+            ),
+            "cross-section BOOKMARK end collision",
         ),
         (_package(field_end_inside), "field pair intersects BOOKMARK extent"),
         (_package(field_begin_inside), "field pair intersects BOOKMARK extent"),
         (_package(field_encloses), "field pair encloses BOOKMARK extent"),
+        (_package(markpen_crosses), "markpenBegin/markpenEnd range intersects"),
+        (_package(insert_crosses), "insertBegin/insertEnd range intersects"),
+        (_package(delete_encloses), "deleteBegin/deleteEnd range intersects"),
+        (
+            _package(
+                '<x:p xmlns:x="urn:s0-foreign"><x:run><x:ctrl>'
+                '<x:fieldBegin id="1" type="BOOKMARK" name="A"/>'
+                "</x:ctrl><x:t>A</x:t><x:ctrl>"
+                '<x:fieldEnd beginIDRef="1"/></x:ctrl></x:run></x:p>'
+                + _paragraph("<hp:t>OUT</hp:t>")
+            ),
+            "non-native namespace",
+        ),
+        (
+            _package(
+                '<hp:p xmlns:x="urn:s0-foreign"><hp:run><x:ctrl>'
+                + _begin()
+                + "</x:ctrl><hp:t>A</hp:t>"
+                + _end()
+                + "</hp:run></hp:p>"
+                + _paragraph("<hp:t>OUT</hp:t>")
+            ),
+            "not native ctrl/run/top-level-p",
+        ),
+        (
+            _package(
+                _paragraph(_begin() + "<hp:t>A</hp:t>")
+                + '<x:p xmlns:x="urn:s0-foreign"><x:run><x:t>X</x:t></x:run></x:p>'
+                + _paragraph("<hp:t>B</hp:t>" + _end())
+                + _paragraph("<hp:t>OUT</hp:t>")
+            ),
+            "non-paragraph section child",
+        ),
         (
             _package(
                 _paragraph(_begin() + "<hp:t>A</hp:t>")
