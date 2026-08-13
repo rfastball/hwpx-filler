@@ -109,9 +109,15 @@ real 6파일의 `fieldBegin` 61개는 모두 빈 `metaTag=""` attribute를 가�
 
 ### S0 native bookmark corpus
 
-사용자가 한글 UI로 만들고 HWPX로 저장한 R0~R4와 T0~T7을
-`tests/corpus/structural_range_s0/`에 원본 그대로 보존했다. `version.xml`은 모두
-`application="Hancom Office Hangul"`, `appVersion="12, 0, 0, 4426 WIN32LEWindows_10"`이다.
+사용자가 한글 UI로 만들고 HWPX로 저장한 표본을 `tests/corpus/structural_range_s0/`에 원본
+그대로 보존했다. `version.xml`의 `application`은 모두 `Hancom Office Hangul`이지만
+**`appVersion`은 두 갈래**다.
+
+- R0~R4와 T0~T7: `12, 0, 0, 4426 WIN32LEWindows_10`
+- R5 두 파일(§19에서 추가): `12, 0, 0, 4547 WIN32LEWindows_10`
+
+두 버전이 같은 encoding을 쓴다는 것 자체는 이 corpus가 보이는 사실이지만, 버전 간 차이를
+따로 조사하지는 않았다.
 
 | 파일 | SHA-256 | native marker | probe 위치 |
 |---|---|---|---|
