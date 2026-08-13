@@ -828,9 +828,9 @@ marker 단위로 일치한다는 것이 확인됐다.
 |---|---|---|
 | S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | **완료 — §22.** 제거 잠금 해제 |
 | S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | **완료 — §23.** 경계 규칙 완화 |
-| S0-H | 한글이 **crossing**을 허용하는가 | 미착수. 겹치되 중첩이 아닌 두 책갈피 필요 |
+| S0-H | 한글이 **crossing**을 허용하는가 | **완료 — §24.** 만들지 못한다. 거부 유지 |
 
-S0-H는 여전히 열려 있다. crossing 거부는 native 증거 없이 풀지 않는다.
+세 후속이 모두 닫혔다. 남은 확장은 native 관찰이 아니라 제품 설계의 몫이다.
 
 ## 22. S0-F nested BOOKMARK 제거 native 관찰
 
@@ -977,3 +977,81 @@ pair가 끼어드는 경우는 기존 extent 검사가 계속 잡는다.
 
 겹친 경계에서 안쪽만 제거하려면 문단 shell 삭제가 아니라 **marker만 제거하는 조작**이 필요하다.
 그 조작은 §22.5가 적었듯 우리 API에 없고 F5·F6의 관찰이 그것을 승인하지도 않는다.
+
+## 24. S0-H crossing native 관찰
+
+### 24.1 방법과 표본
+
+`R0-plain.hwpx`에서 시작해 서로 걸치는 두 책갈피를 지정했다. 한글 `12, 0, 0, 4547`.
+
+```text
+지정   S0_LEFT  = BBB 시작 ~ DDD 끝   (p1~p3)
+       S0_RIGHT = CCC 시작 ~ EEE 끝   (p2~p4)
+의도   LEFT begin > RIGHT begin > LEFT end > RIGHT end   = crossing
+```
+
+| 파일 | 변형 | SHA-256 |
+|---|---|---|
+| `H1-crossing.hwpx` | LEFT 먼저 생성 | `0493C6B9A8FAFEE9589C7E128D31C46A18D4E519A64E63CE50BC9B488EBC3B95` |
+| `H1-resaved.hwpx` | H1 을 열어 `AAA`→`AAX` 만 고치고 저장 | `03B80FC1E2A931EE4FF9C37B3C46880FB20E1713A0BC825E40C3AE3E2723E3DC` |
+| `H2-reverse-order.hwpx` | 같은 지정을 RIGHT 먼저 생성 | `B4689D03B27E8A36374129F350E7AAC0D452521A0F649201AC5E06368E039E81` |
+| `H3-overlap-deleted.hwpx` | H1 에서 겹치던 `CCC`·`DDD` 삭제 | `DE8E2224E04E7B93642EC89BFEFC5996E978A7EF38215968E0F61EAD8E1E58A6` |
+
+### 24.2 관찰 — crossing 은 저장되지 않는다
+
+저장된 것은 crossing 이 아니라 **proper nesting** 이다.
+
+| | 지정한 범위 | 저장된 범위 |
+|---|---|---|
+| `S0_LEFT` | BBB~DDD = p[1..3] | **p[1..4]** — EEE 를 삼켰다 |
+| `S0_RIGHT` | CCC~EEE = p[2..4] | **p[2..3]** — EEE 를 내놓았다 |
+
+바꾼 방식이 구체적이다. end marker 의 **물리적 위치는 순진하게** 찍혔다 — DDD 뒤(p[3])와 EEE
+뒤(p[4]). 그대로 짝지으면 crossing 이 된다. 그런데 실제 XML 은 **짝을 뒤집었다**.
+
+```xml
+<hp:p><hp:run><hp:t>DDD</hp:t>
+  <hp:ctrl><hp:fieldEnd beginIDRef="…800"/></hp:ctrl>   <!-- S0_RIGHT. LEFT 자리였다 -->
+</hp:run></hp:p>
+<hp:p><hp:run><hp:t>EEE</hp:t>
+  <hp:ctrl><hp:fieldEnd beginIDRef="…799"/></hp:ctrl>   <!-- S0_LEFT. RIGHT 자리였다 -->
+</hp:run></hp:p>
+```
+
+`beginIDRef` 를 바꿔 끼워 중첩이 되게 만들었고, 그 결과 **두 책갈피의 범위가 사용자 지정과
+달라졌다.**
+
+확정된 부수 사실:
+
+- **생성 순서와 무관하다.** H2(RIGHT 먼저)도 결과가 같다. 항상 먼저 시작하는 쪽이 바깥이 된다.
+- **재저장이 아니라 생성 시점의 일이다.** H1 과 H1-resaved 의 `section0`은 본문 수정과 layout 을
+  빼면 완전히 동일하다.
+- **경고 문구는 없었다.** 사용자가 UI 를 다시 확인해 범위를 정확히 지정했음을 확인했고, 어떤
+  대화상자도 뜨지 않았다.
+- H3 에서 겹치던 두 문단을 지우니 안쪽이 통째로 사라지고 바깥만 p[1..2]로 남았다. orphan 은
+  여기서도 0 이다.
+
+### 24.3 판정
+
+- 한글이 crossing 을 저장하는가: **DISPROVEN**. 지정해도 nesting 으로 정규화된다.
+- 정규화가 사용자 지정 범위를 바꾸는가: **PROVEN**, 그리고 **조용하다**.
+- 우리 `crossing BOOKMARK regions are unsupported` 거부: **유지**. 완화 근거가 없을 뿐 아니라
+  완화할 대상 자체가 native 로는 생기지 않는다. 남는 발생원은 깨진 도구가 만든 파일뿐이고
+  그것은 계속 시끄럽게 거부하는 것이 맞다.
+
+### 24.4 제품 설계에 남기는 함의
+
+이 관찰의 값어치는 resolver 가 아니라 **저작 표면**에 있다. 사용자가 겹치는 범위를 지정하면
+한글은 묻지도 알리지도 않고 범위를 고쳐 저장한다. Slot 저작이 한글 UI 를 경유하는 한, 사용자가
+의도한 것과 다른 Slot 구조가 저장될 수 있다.
+
+이 저장소의 confirm-or-alarm 원칙은 우리 코드에 적용되는 것이지 한글을 바꿀 수는 없다. 대신
+**우리가 읽을 때 그 차이를 드러낼 수 있다** — 저작 의도를 따로 기록해 두면(예: MetaTag 의 Slot
+descriptor) 저장된 구조와 대조해 "한글이 범위를 바꿨다"를 사용자에게 알릴 수 있다. S1 이 증명한
+carrier 가 그 자리에 쓰일 수 있다는 뜻이며, 구체 설계는 이 문서 밖이다.
+
+### 24.5 검증
+
+- owner `tests/test_bookmark_regions.py` 에 S0-H test 1건 추가(8 → 9 passed). H1·H1-resaved·H2 가
+  같은 nesting 으로 resolve 되는 것, H3 의 결과, 네 파일 전부의 orphan 부재를 고정한다.
+- production 변경 없음. crossing 거부 경로는 그대로이고 합성 표본이 계속 그것을 지킨다.
