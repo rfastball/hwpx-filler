@@ -403,24 +403,21 @@ def resolve_bookmark_regions(pkg: object) -> list[BookmarkRegion]:
 
 
 def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
-    """Remove a freshly resolved region from its open package, in place."""
+    """Remove a freshly resolved region from its open package, in place.
+
+    The whole paragraph range goes, so removing a container removes everything it
+    contains — regions nested inside it disappear with their paragraphs. Hancom's
+    own deletion of the same range behaves identically (S0-F), and a region whose
+    container is removed separately is promoted to the top level rather than
+    orphaned.
+    """
     package = require_package(pkg)
-    current = _resolve(package)
-    matches = [resolved for resolved in current if resolved.region == region]
+    matches = [resolved for resolved in _resolve(package) if resolved.region == region]
     if len(matches) != 1:
         raise ValueError(
             "BOOKMARK region is not present in the current package snapshot; resolve again"
         )
     resolved = matches[0]
-    # Resolution understands containment, but S0 only proved removal for regions
-    # that neither contain nor sit inside another one.
-    if region.parent is not None or any(
-        other.region.parent == region for other in current
-    ):
-        raise ValueError(
-            f"{region.section}: removing a nested BOOKMARK region is unsupported: "
-            f"{region.name!r}"
-        )
     for child in list(resolved.section.root)[
         resolved.start_child : resolved.end_child + 1
     ]:
