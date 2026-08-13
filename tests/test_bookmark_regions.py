@@ -9,8 +9,10 @@ from lxml import etree
 from _hwpx_structure_probe import dump_structure
 from hwpxcore.bookmark_region import (
     BookmarkRegion,
+    append_bookmark_metatag,
     remove_bookmark_region,
     resolve_bookmark_regions,
+    resolve_bookmark_topology,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import local_name
@@ -140,6 +142,34 @@ def test_resolves_native_r2_r3_r4_regions_in_document_order() -> None:
         ("S0_RIGHT", 2, 2),
     ]
     assert resolve_bookmark_regions(HwpxPackage.from_bytes(r4_pkg.to_bytes())) == r4
+
+
+def test_bookmark_metatags_are_opaque_ordered_and_append_only() -> None:
+    pkg = _package(
+        _paragraph(
+            '<hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="A" '
+            'metaTag="legacy"><hp:parameters/><hp:metaTag>{"future": [1, 2]}</hp:metaTag>'
+            "<hp:metaTag>not-json</hp:metaTag></hp:fieldBegin></hp:ctrl>"
+            "<hp:t>A</hp:t>"
+            + _end()
+        )
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+    region = resolve_bookmark_regions(pkg)[0]
+    assert region.meta_tags == ('{"future": [1, 2]}', "not-json")
+    assert region.meta_tag_attribute == "legacy"
+
+    appended = '{"한글": "그대로"}'
+    append_bookmark_metatag(pkg, region, appended)
+    with pytest.raises(ValueError, match="current package snapshot"):
+        append_bookmark_metatag(pkg, region, "stale")
+
+    reparsed = HwpxPackage.from_bytes(pkg.to_bytes())
+    current = resolve_bookmark_regions(reparsed)[0]
+    assert current.meta_tags == (*region.meta_tags, appended)
+    assert current.meta_tag_attribute == "legacy"
+    with pytest.raises(TypeError, match="payload must be str"):
+        append_bookmark_metatag(reparsed, current, 1)  # type: ignore[arg-type]
 
 
 def test_removes_native_r2_and_table_crossing_r3_without_collateral_damage() -> None:
@@ -397,6 +427,10 @@ def test_resolves_nested_regions_with_containment() -> None:
         )
         + _paragraph("<hp:t>OUT</hp:t>")
     )
+    assert [region.name for region in resolve_bookmark_topology(partial)] == [
+        "OUTER",
+        "INNER",
+    ]
     with pytest.raises(ValueError, match="partial-paragraph BOOKMARK begin"):
         resolve_bookmark_regions(partial)
 
@@ -569,6 +603,28 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
                 + _paragraph("<hp:t>OUT</hp:t>")
             ),
             "non-native namespace",
+        ),
+        (
+            _package(
+                _paragraph(
+                    '<hp:ctrl xmlns:x="urn:s0-foreign"><hp:fieldBegin id="1" '
+                    'type="BOOKMARK" name="A"><x:metaTag>{}</x:metaTag>'
+                    "</hp:fieldBegin></hp:ctrl><hp:t>A</hp:t>" + _end()
+                )
+                + _paragraph("<hp:t>OUT</hp:t>")
+            ),
+            "metaTag uses a non-native namespace",
+        ),
+        (
+            _package(
+                _paragraph(
+                    '<hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="A">'
+                    "<hp:metaTag><hp:t>nested</hp:t></hp:metaTag>"
+                    "</hp:fieldBegin></hp:ctrl><hp:t>A</hp:t>" + _end()
+                )
+                + _paragraph("<hp:t>OUT</hp:t>")
+            ),
+            "hp:metaTag must contain text only",
         ),
         (
             _package(

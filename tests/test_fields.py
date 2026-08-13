@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.domain.fields import FieldDocument, FillNote, read_fields
+from hwpxfiller.domain.fields import HP_NS, FieldDocument, FillNote, read_fields
 from hwpxcore.package import HwpxPackage
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
@@ -86,6 +86,24 @@ def test_read_fields_collects_values_from_package():
         raise AssertionError("픽스처에 누름틀이 없습니다")
 
     assert read_fields(pkg)[target] == "PACKAGE_VALUE"
+
+
+def test_bookmark_regions_are_not_fillable_fields():
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+    <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+            xmlns:hp="{HP_NS}">
+      <hp:p><hp:run>
+        <hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="STRUCT"/></hp:ctrl>
+        <hp:t>structural content</hp:t>
+        <hp:ctrl><hp:fieldEnd beginIDRef="1"/></hp:ctrl>
+      </hp:run></hp:p>
+    </hs:sec>'''.encode()
+    doc = FieldDocument(xml)
+
+    assert doc.required_fields() == []
+    assert doc.read_field("STRUCT") is None
+    assert doc.set_field("STRUCT", "overwritten") is False
+    assert b"structural content" in doc.to_bytes()
 
 
 def test_set_field_unknown_returns_false():

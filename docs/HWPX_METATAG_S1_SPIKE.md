@@ -641,3 +641,18 @@ Slot semantic 의 왕복 복원(§9.3).
 - **metatag-ex 의 slice 는 방어가 없다.** `#` 없는 payload 를 넣으면 한컴 sample 도구가 비정상
   동작한다. 우리가 규약을 지키는 한 문제되지 않지만, 규약을 어기는 payload 를 만들지 않는 것이
   정책이라면 그 정책을 강제하는 자리가 필요하다.
+
+## 16. Canonical Slot 실물 왕복 (#621 S1)
+
+2026-08-13에 `tests/corpus/slots/canonical.hwpx`를 한글 12.0.0.4426에서 열어 본문
+`AAA`를 `AAX`로 한 곳만 수정하고 `canonical-resaved.hwpx`로 저장했다.
+
+| 파일 | SHA-256 |
+|---|---|
+| `canonical.hwpx` | `E67BA4461FE98A3E9E0EBCB61F4903441BDF6D8B1184159BB9AC55D3B38127A1` |
+| `canonical-resaved.hwpx` | `2AF0DA5323D48E506D9BF65F69BF1999DDE3C31F7784E27629A3096BE19376B9` |
+
+두 파일은 byte 단위로 다르지만 `tests/test_slot_inspection.py`의 동일 판독 경로에서 Slot 1개와
+Option 2개를 같은 순서·값으로 복원하고 진단은 비어 있다. 이로써 #621이 정본으로 고른
+BOOKMARK별 object-local `hp:metaTag` payload가 실제 한글 open/edit/save 뒤에도 의미 단위로
+보존됨을 고정한다. 구형 document-level catalog는 제품 권위로 사용하지 않는다.

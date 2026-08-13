@@ -16,9 +16,15 @@ from pathlib import Path
 from lxml import etree
 
 from _hwpx_structure_probe import _path
+from hwpxcore.bookmark_region import append_bookmark_metatag, resolve_bookmark_regions
 from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.package import HwpxPackage
 from hwpxcore.text_extract import HP_NS, local_name, require_package
+from hwpxfiller.domain.slot import Slot, SlotOption
+from hwpxfiller.external.template_inspection import (
+    serialize_slot_metatag,
+    serialize_slot_option_metatag,
+)
 
 SECTION = "Contents/section0.xml"
 HEADER = "Contents/header.xml"
@@ -217,10 +223,35 @@ def build_package_probe(pkg: object) -> None:
     _write(package, MANIFEST, manifest)
 
 
+def build_slot_probe(pkg: object) -> None:
+    """Author canonical Slot/Option payloads on S0's nested BOOKMARK corpus."""
+    package = require_package(pkg)
+    options = (
+        SlotOption("bonus", "성과급 안내", 0),
+        SlotOption("special", "특별수당 안내", 1),
+    )
+    payloads = (
+        (
+            "S0_SLOT",
+            serialize_slot_metatag(
+                Slot("extra_notice", "추가 지급 안내", "exactly_one", 2, options)
+            ),
+        ),
+        ("S0_OPT_A", serialize_slot_option_metatag(options[0])),
+        ("S0_OPT_B", serialize_slot_option_metatag(options[1])),
+    )
+    for name, payload in payloads:
+        matches = [region for region in resolve_bookmark_regions(package) if region.name == name]
+        if len(matches) != 1:
+            raise ValueError(f"expected one BOOKMARK named {name!r}; found {len(matches)}")
+        append_bookmark_metatag(package, matches[0], payload)
+
+
 BUILDERS = {
     "build-element": build_element_probe,
     "build-attribute": build_attribute_probe,
     "build-package": build_package_probe,
+    "build-slot": build_slot_probe,
 }
 
 

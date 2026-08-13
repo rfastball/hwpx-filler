@@ -27,6 +27,7 @@ from pathlib import Path
 from ..domain.authoring import CompileReport, TokenSite
 from ..domain.fields import FillNote
 from ..domain.lint import LintReport, SchemaDrift
+from ..domain.slot import Slot
 from ..domain.template_status import (
     OUTPUT_SUBDIR_NAME,
     TRASH_DIR_NAME,
@@ -45,11 +46,22 @@ _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error"
 
 
 @dataclass(frozen=True)
+class TemplateDiagnostic:
+    """Blocking template inspection finding; qualification is a later concern."""
+
+    kind: str
+    message: str
+
+
+@dataclass(frozen=True)
 class TemplateInspection:
     """한 번 연 템플릿 스냅샷에서 계산한 판독 결과."""
 
     status: TemplateStatus
     precheck_notes: "tuple[FillNote, ...]"
+    fields: "tuple[str, ...]" = ()
+    slots: "tuple[Slot, ...]" = ()
+    diagnostics: "tuple[TemplateDiagnostic, ...]" = ()
 
 
 TemplateInspectPort = Callable[[str], TemplateInspection]
