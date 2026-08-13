@@ -7,12 +7,17 @@ import pytest
 from lxml import etree
 
 from _hwpx_structure_probe import dump_structure
+import hwpxcore.bookmark_region as bookmark_region
 from hwpxcore.bookmark_region import (
     BookmarkRegion,
     append_bookmark_metatag,
+    create_bookmark_region,
     remove_bookmark_region,
+    remove_bookmark_metatag,
+    replace_bookmark_metatag,
     resolve_bookmark_regions,
     resolve_bookmark_topology,
+    unwrap_bookmark_region,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import local_name
@@ -144,7 +149,164 @@ def test_resolves_native_r2_r3_r4_regions_in_document_order() -> None:
     assert resolve_bookmark_regions(HwpxPackage.from_bytes(r4_pkg.to_bytes())) == r4
 
 
-def test_bookmark_metatags_are_opaque_ordered_and_append_only() -> None:
+def test_creates_d6_native_bookmark_and_reparses_deterministically() -> None:
+    pkg = _native("R0-plain.hwpx")
+    content = _paragraph_texts(pkg)
+    created = create_bookmark_region(
+        pkg, SECTION, 1, 3, name="S0_GENERATED"
+    )
+
+    assert (
+        created.name,
+        created.start_paragraph,
+        created.end_paragraph,
+        created.parent,
+    ) == ("S0_GENERATED", 1, 3, None)
+    assert _paragraph_texts(pkg) == content
+    assert pkg.to_bytes() == (CORPUS / "D6-generated-minimal.hwpx").read_bytes()
+    reparsed = HwpxPackage.from_bytes(pkg.to_bytes())
+    assert resolve_bookmark_regions(reparsed) == [created]
+
+    create_bookmark_region(reparsed, SECTION, 4, 4, name="SECOND")
+    assert _pairing_ids(reparsed) == (
+        {"1600000001", "1600000002"},
+        {"1600000001", "1600000002"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    ((2, 2), (1, 1), (3, 3), (1, 3)),
+    ids=("ordinary", "coincident-start", "coincident-end", "same-span"),
+)
+def test_creates_nested_and_coincident_bookmarks(
+    start: int, end: int
+) -> None:
+    pkg = _native("R0-plain.hwpx")
+    content = _paragraph_texts(pkg)
+    outer = create_bookmark_region(pkg, SECTION, 1, 3, name="OUTER")
+    inner = create_bookmark_region(
+        pkg, SECTION, start, end, name="INNER", parent=outer
+    )
+
+    regions = resolve_bookmark_regions(pkg)
+    assert [(item.name, item.start_paragraph, item.end_paragraph) for item in regions] == [
+        ("OUTER", 1, 3),
+        ("INNER", start, end),
+    ]
+    assert regions[1].parent == regions[0]
+    assert inner == regions[1]
+    assert _paragraph_texts(pkg) == content
+    assert resolve_bookmark_regions(HwpxPackage.from_bytes(pkg.to_bytes())) == regions
+
+
+def test_create_bookmark_failures_leave_the_package_unchanged() -> None:
+    pkg = _native("R0-plain.hwpx")
+    outer = create_bookmark_region(pkg, SECTION, 1, 3, name="OUTER")
+    before = dict(pkg.entries)
+    with pytest.raises(ValueError, match="crossing BOOKMARK regions"):
+        create_bookmark_region(pkg, SECTION, 2, 4, name="CROSSING")
+    assert pkg.entries == before
+
+    append_bookmark_metatag(pkg, outer, "changed")
+    before = dict(pkg.entries)
+    with pytest.raises(ValueError, match="current package snapshot"):
+        create_bookmark_region(
+            pkg, SECTION, 2, 2, name="STALE_PARENT", parent=outer
+        )
+    assert pkg.entries == before
+
+    with pytest.raises(ValueError, match="invalid BOOKMARK paragraph range"):
+        create_bookmark_region(pkg, SECTION, -1, 2, name="INVALID")
+    assert pkg.entries == before
+
+    fresh = _region(pkg, "OUTER")
+    invalid_calls = (
+        lambda: create_bookmark_region(pkg, 1, 1, 1, name="X"),
+        lambda: create_bookmark_region(pkg, SECTION, True, 1, name="X"),
+        lambda: create_bookmark_region(pkg, SECTION, 1, 1, name=1),
+        lambda: create_bookmark_region(pkg, SECTION, 1, 1, name=" "),
+        lambda: create_bookmark_region(
+            pkg, SECTION, 1, 1, name="X", parent=object()
+        ),
+        lambda: create_bookmark_region(
+            pkg, "Contents/section1.xml", 1, 1, name="X", parent=fresh
+        ),
+        lambda: create_bookmark_region(
+            pkg, SECTION, 0, 0, name="X", parent=fresh
+        ),
+        lambda: create_bookmark_region(pkg, "missing.xml", 0, 0, name="X"),
+    )
+    for call in invalid_calls:
+        with pytest.raises((TypeError, ValueError)):
+            call()
+        assert pkg.entries == before
+
+    no_run = _package(
+        "<hp:p><hp:t>not in a run</hp:t></hp:p>"
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+    no_run_before = dict(no_run.entries)
+    with pytest.raises(ValueError, match="must contain a direct native hp:run"):
+        create_bookmark_region(no_run, SECTION, 0, 0, name="X")
+    assert no_run.entries == no_run_before
+
+    reparent = _native("R0-plain.hwpx")
+    create_bookmark_region(reparent, SECTION, 1, 1, name="EXISTING")
+    reparent_before = dict(reparent.entries)
+    with pytest.raises(ValueError, match="changed existing native topology"):
+        create_bookmark_region(reparent, SECTION, 1, 3, name="NEW_TOP")
+    assert reparent.entries == reparent_before
+
+
+def test_mutation_postcondition_failures_never_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = bookmark_region._candidate_resolution
+
+    def lose_topology(*args, **kwargs):
+        data, _after = original(*args, **kwargs)
+        return data, []
+
+    monkeypatch.setattr(bookmark_region, "_candidate_resolution", lose_topology)
+    created = _native("R0-plain.hwpx")
+    tagged = _native("R2-block-bookmark.hwpx")
+    unwrapped = _native("R5-nested.hwpx")
+    removed = _native("R4-adjacent.hwpx")
+    cases = (
+        (
+            created,
+            lambda: create_bookmark_region(
+                created, SECTION, 1, 3, name="POSTCONDITION"
+            ),
+        ),
+        (
+            tagged,
+            lambda: append_bookmark_metatag(
+                tagged, _region(tagged, "S0_BLOCK"), "payload"
+            ),
+        ),
+        (
+            unwrapped,
+            lambda: unwrap_bookmark_region(
+                unwrapped, _region(unwrapped, "S0_OPT_A")
+            ),
+        ),
+        (
+            removed,
+            lambda: remove_bookmark_region(
+                removed, _region(removed, "S0_LEFT")
+            ),
+        ),
+    )
+    for package, mutate in cases:
+        before = dict(package.entries)
+        with pytest.raises(ValueError):
+            mutate()
+        assert package.entries == before
+
+
+def test_bookmark_metatags_are_opaque_ordered_and_mutable() -> None:
     pkg = _package(
         _paragraph(
             '<hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="A" '
@@ -168,8 +330,104 @@ def test_bookmark_metatags_are_opaque_ordered_and_append_only() -> None:
     current = resolve_bookmark_regions(reparsed)[0]
     assert current.meta_tags == (*region.meta_tags, appended)
     assert current.meta_tag_attribute == "legacy"
+
+    replace_bookmark_metatag(reparsed, current, 1, "replacement")
+    with pytest.raises(ValueError, match="current package snapshot"):
+        remove_bookmark_metatag(reparsed, current, 0)
+    current = resolve_bookmark_regions(reparsed)[0]
+    assert current.meta_tags == ('{"future": [1, 2]}', "replacement", appended)
+    remove_bookmark_metatag(reparsed, current, 0)
+    current = resolve_bookmark_regions(reparsed)[0]
+    assert current.meta_tags == ("replacement", appended)
+    assert current.meta_tag_attribute == "legacy"
+    assert resolve_bookmark_regions(HwpxPackage.from_bytes(reparsed.to_bytes())) == [
+        current
+    ]
+
+    before = dict(reparsed.entries)
+    with pytest.raises(ValueError, match="out of range"):
+        replace_bookmark_metatag(reparsed, current, 9, "missing")
+    with pytest.raises(ValueError, match="non-negative"):
+        remove_bookmark_metatag(reparsed, current, -1)
+    with pytest.raises(ValueError, match="out of range"):
+        remove_bookmark_metatag(reparsed, current, 9)
+    with pytest.raises(TypeError, match="index must be int"):
+        remove_bookmark_metatag(reparsed, current, True)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="payload must be str"):
+        replace_bookmark_metatag(reparsed, current, 0, 1)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="must be BookmarkRegion"):
+        unwrap_bookmark_region(reparsed, object())  # type: ignore[arg-type]
+    assert reparsed.entries == before
     with pytest.raises(TypeError, match="payload must be str"):
         append_bookmark_metatag(reparsed, current, 1)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("filename", "target", "remaining", "parents"),
+    (
+        (
+            "R5-nested.hwpx",
+            "S0_OPT_A",
+            ("S0_SLOT", "S0_OPT_B"),
+            (None, "S0_SLOT"),
+        ),
+        (
+            "R5-nested.hwpx",
+            "S0_SLOT",
+            ("S0_OPT_A", "S0_OPT_B"),
+            (None, None),
+        ),
+        (
+            "G/G1-coincident-start.hwpx",
+            "S0_SLOT",
+            ("S0_OPT_A",),
+            (None,),
+        ),
+        (
+            "G/G2-coincident-end.hwpx",
+            "S0_OPT_B",
+            ("S0_SLOT",),
+            (None,),
+        ),
+        (
+            "G/G3-same-range.hwpx",
+            "S0_OPT_X",
+            ("S0_SLOT",),
+            (None,),
+        ),
+    ),
+)
+def test_unwrap_preserves_content_and_non_target_topology(
+    filename: str,
+    target: str,
+    remaining: tuple[str, ...],
+    parents: tuple[str | None, ...],
+) -> None:
+    pkg = _native(filename)
+    content = _paragraph_texts(pkg)
+    stale = _region(pkg, target)
+    unwrap_bookmark_region(pkg, stale)
+
+    regions = resolve_bookmark_topology(pkg)
+    assert tuple(item.name for item in regions) == remaining
+    assert tuple(item.parent.name if item.parent else None for item in regions) == parents
+    assert _paragraph_texts(pkg) == content
+    assert resolve_bookmark_topology(HwpxPackage.from_bytes(pkg.to_bytes())) == regions
+
+    before = dict(pkg.entries)
+    with pytest.raises(ValueError, match="current package snapshot"):
+        unwrap_bookmark_region(pkg, stale)
+    assert pkg.entries == before
+
+
+def test_unwrap_matches_hancom_marker_removal_structure() -> None:
+    for target, native in (
+        ("S0_OPT_A", "F/F5-remove-inner-bookmark.hwpx"),
+        ("S0_SLOT", "F/F6-remove-outer-bookmark.hwpx"),
+    ):
+        pkg = _native("R5-nested.hwpx")
+        unwrap_bookmark_region(pkg, _region(pkg, target))
+        assert dump_structure(pkg) == dump_structure(_native(native))
 
 
 def test_removes_native_r2_and_table_crossing_r3_without_collateral_damage() -> None:
@@ -316,7 +574,7 @@ def test_removes_nested_regions_exactly_as_hancom_deletes_the_same_range() -> No
         ] == [("S0_OPT_A", None), ("S0_OPT_B", None)], name
 
 
-def test_resolves_coincident_boundaries_and_refuses_removals_that_cut_outsiders() -> None:
+def test_resolves_and_removes_coincident_inner_regions_without_cutting_parent() -> None:
     """S0-G: a region may share boundary paragraphs with the one containing it."""
     shape = lambda items: [  # noqa: E731 - local projection, not an API
         (region.name, region.start_paragraph, region.end_paragraph,
@@ -343,20 +601,72 @@ def test_resolves_coincident_boundaries_and_refuses_removals_that_cut_outsiders(
         ("S0_OPT_X", 1, 4, "S0_SLOT"),
     ]
 
-    # Deleting the inner range would cut the container's own marker in half.
-    for name, inner, outer in (
-        ("G/G1-coincident-start.hwpx", "S0_SLOT", "S0_OPT_A"),
-        ("G/G2-coincident-end.hwpx", "S0_OPT_B", "S0_SLOT"),
-        ("G/G3-same-range.hwpx", "S0_OPT_X", "S0_SLOT"),
+    for name, inner, outer, texts in (
+        (
+            "G/G1-coincident-start.hwpx",
+            "S0_SLOT",
+            "S0_OPT_A",
+            ["AAA", "", "CCC", "DDD", "EEE"],
+        ),
+        (
+            "G/G2-coincident-end.hwpx",
+            "S0_OPT_B",
+            "S0_SLOT",
+            ["AAA", "BBB", "CCC", "DDD", ""],
+        ),
+        (
+            "G/G3-same-range.hwpx",
+            "S0_OPT_X",
+            "S0_SLOT",
+            ["AAA", "", ""],
+        ),
     ):
         pkg = _native(name)
-        with pytest.raises(ValueError, match="would cut BOOKMARK markers outside it"):
-            remove_bookmark_region(pkg, _region(pkg, inner))
-        # The container still goes, taking what it contains with it.
-        remove_bookmark_region(pkg, _region(pkg, outer))
-        assert _paragraph_texts(pkg) == ["AAA"]
+        remove_bookmark_region(pkg, _region(pkg, inner))
+        assert _paragraph_texts(pkg) == texts
+        assert [item.name for item in resolve_bookmark_regions(pkg)] == [outer]
         begins, ends = _pairing_ids(pkg)
-        assert begins == ends == set()
+        assert begins == ends and len(begins) == 1
+        reparsed = HwpxPackage.from_bytes(pkg.to_bytes())
+        assert [item.name for item in resolve_bookmark_regions(reparsed)] == [outer]
+
+        complete = _native(name)
+        remove_bookmark_region(complete, _region(complete, outer))
+        assert _paragraph_texts(complete) == ["AAA"]
+        assert _pairing_ids(complete) == (set(), set())
+
+
+def test_content_removal_still_refuses_unrelated_boundary_markers_atomically() -> None:
+    pkg = _package(
+        _paragraph("<hp:t>OUT</hp:t>")
+        + _paragraph(_begin("1", "A") + "<hp:t>A</hp:t>")
+        + _paragraph(_end("1") + _begin("2", "B"))
+        + _paragraph("<hp:t>B</hp:t>" + _end("2"))
+        + _paragraph("<hp:t>OUT2</hp:t>")
+    )
+    before = dict(pkg.entries)
+    with pytest.raises(ValueError, match="would cut BOOKMARK markers outside it"):
+        remove_bookmark_region(pkg, _region(pkg, "A"))
+    assert pkg.entries == before
+
+    section_definition = _native("R0-plain.hwpx")
+    outer = create_bookmark_region(
+        section_definition, SECTION, 0, 1, name="OUTER"
+    )
+    inner = create_bookmark_region(
+        section_definition, SECTION, 0, 1, name="INNER", parent=outer
+    )
+    before = dict(section_definition.entries)
+    with pytest.raises(ValueError, match="would delete section definition"):
+        remove_bookmark_region(section_definition, inner)
+    assert section_definition.entries == before
+
+    ordinary = _native("R0-plain.hwpx")
+    top = create_bookmark_region(ordinary, SECTION, 0, 0, name="TOP")
+    before = dict(ordinary.entries)
+    with pytest.raises(ValueError, match="would delete section definition"):
+        remove_bookmark_region(ordinary, top)
+    assert ordinary.entries == before
 
 
 def test_hancom_never_stores_crossing_so_only_authored_files_can_carry_it() -> None:
