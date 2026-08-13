@@ -31,13 +31,11 @@ class BookmarkRegion:
 
     Paragraph indices are zero-based section-direct ``hp:p`` positions and both
     bounds are inclusive. ``parent`` is the immediately enclosing region, or
-    ``None`` at the top level, and containment follows document order rather than
-    those indices. Today the two agree — the full-paragraph boundary rule rejects
-    a nested region that opens or closes in the same paragraph as its container,
-    so every child spans strictly fewer paragraphs — but document order is what
-    the format actually encodes. Re-resolve after any section mutation; the
-    private pairing reference and snapshot digest are deliberately not durable
-    identity.
+    ``None`` at the top level, and containment follows document order, never the
+    paragraph indices: Hancom lets a region open and close in the same paragraphs
+    as the one containing it, so two nested regions can report an identical span
+    (S0-G). Re-resolve after any section mutation; the private pairing reference
+    and snapshot digest are deliberately not durable identity.
     """
 
     name: str | None
@@ -74,6 +72,21 @@ class _ResolvedRegion:
     end_order: int
 
 
+def _is_bookmark_boundary_ctrl(node: etree._Element) -> bool:
+    """True for a ``ctrl`` holding nothing but BOOKMARK range markers.
+
+    Hancom writes a sibling boundary like this when one region opens or closes in
+    the same paragraph as the region containing it (S0-G). Such a marker is not
+    paragraph content, so it must not make the neighbouring boundary look partial.
+    A pair belonging to some other field is still caught by the extent checks.
+    """
+    return node.tag == f"{_HP}ctrl" and len(node) > 0 and all(
+        child.tag == f"{_HP}fieldEnd"
+        or (child.tag == f"{_HP}fieldBegin" and child.get("type") == "BOOKMARK")
+        for child in node
+    )
+
+
 def _has_payload(node: etree._Element) -> bool:
     if node.tag == f"{_HP}linesegarray":
         return False
@@ -83,7 +96,7 @@ def _has_payload(node: etree._Element) -> bool:
         return bool((node.text or "").strip()) or any(
             _has_payload(child) or bool((child.tail or "").strip()) for child in node
         )
-    return True
+    return not _is_bookmark_boundary_ctrl(node)
 
 
 def _payload_outside_boundary(
@@ -412,12 +425,43 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     orphaned.
     """
     package = require_package(pkg)
-    matches = [resolved for resolved in _resolve(package) if resolved.region == region]
+    current = _resolve(package)
+    matches = [resolved for resolved in current if resolved.region == region]
     if len(matches) != 1:
         raise ValueError(
             "BOOKMARK region is not present in the current package snapshot; resolve again"
         )
     resolved = matches[0]
+
+    def contained_in_target(candidate: BookmarkRegion) -> bool:
+        ancestor = candidate.parent
+        while ancestor is not None:
+            if ancestor == region:
+                return True
+            ancestor = ancestor.parent
+        return False
+
+    # A region may share a boundary paragraph with the one it contains (S0-G), so
+    # deleting that paragraph can cut a marker belonging to a region we were not
+    # asked to remove and leave its partner orphaned.
+    collateral = sorted(
+        {
+            repr(other.region.name)
+            for other in current
+            if other.region != region
+            and not contained_in_target(other.region)
+            and (
+                resolved.start_child <= other.start_child <= resolved.end_child
+                or resolved.start_child <= other.end_child <= resolved.end_child
+            )
+        }
+    )
+    if collateral:
+        raise ValueError(
+            f"{region.section}: removing {region.name!r} would cut BOOKMARK markers "
+            f"outside it: {', '.join(collateral)}"
+        )
+
     for child in list(resolved.section.root)[
         resolved.start_child : resolved.end_child + 1
     ]:

@@ -286,6 +286,49 @@ def test_removes_nested_regions_exactly_as_hancom_deletes_the_same_range() -> No
         ] == [("S0_OPT_A", None), ("S0_OPT_B", None)], name
 
 
+def test_resolves_coincident_boundaries_and_refuses_removals_that_cut_outsiders() -> None:
+    """S0-G: a region may share boundary paragraphs with the one containing it."""
+    shape = lambda items: [  # noqa: E731 - local projection, not an API
+        (region.name, region.start_paragraph, region.end_paragraph,
+         region.parent.name if region.parent else None)
+        for region in items
+    ]
+    # In G1 the outer bookmark is the one named S0_OPT_A; names are labels, not
+    # identity, and the sample was authored with them the other way round.
+    assert shape(resolve_bookmark_regions(_native("G/G1-coincident-start.hwpx"))) == [
+        ("S0_OPT_A", 1, 4, None),
+        ("S0_SLOT", 1, 1, "S0_OPT_A"),
+    ]
+    assert shape(resolve_bookmark_regions(_native("G/G1-resaved.hwpx"))) == [
+        ("S0_OPT_A", 1, 4, None),
+        ("S0_SLOT", 1, 1, "S0_OPT_A"),
+    ]
+    assert shape(resolve_bookmark_regions(_native("G/G2-coincident-end.hwpx"))) == [
+        ("S0_SLOT", 1, 4, None),
+        ("S0_OPT_B", 4, 4, "S0_SLOT"),
+    ]
+    # Identical paragraph spans: only document order says which one contains which.
+    assert shape(resolve_bookmark_regions(_native("G/G3-same-range.hwpx"))) == [
+        ("S0_SLOT", 1, 4, None),
+        ("S0_OPT_X", 1, 4, "S0_SLOT"),
+    ]
+
+    # Deleting the inner range would cut the container's own marker in half.
+    for name, inner, outer in (
+        ("G/G1-coincident-start.hwpx", "S0_SLOT", "S0_OPT_A"),
+        ("G/G2-coincident-end.hwpx", "S0_OPT_B", "S0_SLOT"),
+        ("G/G3-same-range.hwpx", "S0_OPT_X", "S0_SLOT"),
+    ):
+        pkg = _native(name)
+        with pytest.raises(ValueError, match="would cut BOOKMARK markers outside it"):
+            remove_bookmark_region(pkg, _region(pkg, inner))
+        # The container still goes, taking what it contains with it.
+        remove_bookmark_region(pkg, _region(pkg, outer))
+        assert _paragraph_texts(pkg) == ["AAA"]
+        begins, ends = _pairing_ids(pkg)
+        assert begins == ends == set()
+
+
 def test_resolves_nested_regions_with_containment() -> None:
     pkg = _native("R5-nested.hwpx")
     regions = resolve_bookmark_regions(pkg)
@@ -317,13 +360,12 @@ def test_resolves_nested_regions_with_containment() -> None:
         ("INNER", 3, 3, "MID"),
     ]
 
-    # Nesting stays inside the full-paragraph boundary rule: a child that opens
-    # in its container's own paragraph is still refused as partial-paragraph.
-    # Whether Hancom ever writes that shape is an open S0 question, so widening
-    # it needs native evidence first, not just a resolver change.
-    coincident = _package(
+    # Only BOOKMARK markers are exempt from the boundary payload rule: real text
+    # beside a boundary still makes the range partial.
+    partial = _package(
         _paragraph(
             _begin("1", "OUTER")
+            + "<hp:t>prefix</hp:t>"
             + _begin("2", "INNER")
             + "<hp:t>A</hp:t>"
             + _end("2")
@@ -332,7 +374,7 @@ def test_resolves_nested_regions_with_containment() -> None:
         + _paragraph("<hp:t>OUT</hp:t>")
     )
     with pytest.raises(ValueError, match="partial-paragraph BOOKMARK begin"):
-        resolve_bookmark_regions(coincident)
+        resolve_bookmark_regions(partial)
 
     # A region that opens after its predecessor closed is a sibling, not a child.
     siblings = _package(

@@ -800,18 +800,15 @@ marker 단위로 일치한다는 것이 확인됐다.
 같은 이유로 `parent`가 표현하는 것은 **포함 관계뿐**이고 Slot·Option 같은 제품 의미는 아니다.
 `hwpxcore`는 여전히 제품 의미를 모른다.
 
-### 20.2-1 알려진 한계 — 경계가 같은 문단에서 겹치는 중첩
+### 20.2-1 경계가 같은 문단에서 겹치는 중첩 (S0-G에서 해제)
 
-full-paragraph 경계 규칙이 그대로 살아 있으므로, 안쪽 region이 바깥과 **같은 문단에서 시작하거나
-끝나면** 여전히 `partial-paragraph BOOKMARK begin/end is unsupported`로 거부된다. 경계 marker
-사이에 본문이 없어도 그렇다 — 검사가 이웃한 BOOKMARK `hp:ctrl`을 payload로 세기 때문이다.
+이 절을 쓸 당시에는 full-paragraph 경계 규칙이 그대로 살아 있어, 안쪽 region이 바깥과 **같은
+문단에서 시작하거나 끝나면** `partial-paragraph BOOKMARK begin/end is unsupported`로 거부됐다.
+경계 marker 사이에 본문이 없어도 그랬다 — 검사가 이웃한 BOOKMARK `hp:ctrl`을 payload로 셌기
+때문이다.
 
-이것은 사고가 아니라 **현재의 선택**이고 owner test가 그 사실을 고정한다. R5는 slot이 option보다
-한 문단 먼저 시작하는 모양이라 이 경우를 밟지 않았고, 따라서 한글이 경계가 겹치는 중첩을
-만들어 내는지는 **관찰된 바 없다**.
-
-실무적으로는 걸릴 만한 모양이다 — Slot의 첫 Option이 Slot과 같은 문단에서 시작하는 저작은
-자연스럽다. 그러므로 완화 여부는 코드 판단이 아니라 **다음 native 실험의 입력**이다(§21).
+**§23(S0-G)에서 한글이 그 모양을 실제로 만든다는 것이 확인돼 규칙을 완화했다.** 아울러 그
+완화가 제거 쪽에 만드는 위험도 §23.4에서 함께 막았다.
 
 ### 20.3 검증
 
@@ -830,11 +827,10 @@ full-paragraph 경계 규칙이 그대로 살아 있으므로, 안쪽 region이 
 | ID | 질문 | 상태 |
 |---|---|---|
 | S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | **완료 — §22.** 제거 잠금 해제 |
-| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | 미착수. slot과 첫 option이 같은 문단에서 시작하는 표본 필요 |
+| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | **완료 — §23.** 경계 규칙 완화 |
 | S0-H | 한글이 **crossing**을 허용하는가 | 미착수. 겹치되 중첩이 아닌 두 책갈피 필요 |
 
-S0-G가 풀리기 전에는 `_payload_outside_boundary()`를 완화하지 않는다. 잠금의 이유는 §20.2와
-같다 — 읽기를 넓힌 것이 경계 규칙까지 넓혀도 된다는 뜻은 아니다.
+S0-H는 여전히 열려 있다. crossing 거부는 native 증거 없이 풀지 않는다.
 
 ## 22. S0-F nested BOOKMARK 제거 native 관찰
 
@@ -908,3 +904,76 @@ region도 제거하며, **container를 제거하면 그 안의 region이 함께 
   F1·F2 일치, 여섯 파일 전부의 orphan 부재, F3·F4·F6의 승격을 함께 고정한다.
 - owner 7 passed. 정적 게이트와 인접 owner 114 passed.
 - production 변경은 `remove_bookmark_region()`의 잠금 제거와 docstring뿐이다.
+
+## 23. S0-G 경계가 겹치는 중첩 native 관찰
+
+### 23.1 방법과 표본
+
+`R0-plain.hwpx`(책갈피 없는 5문단)에서 매번 새로 시작해 바깥을 먼저, 안쪽을 나중에 만들었다.
+한글 `12, 0, 0, 4547`. **세 경우 모두 한글이 거절하지 않았다.**
+
+| 파일 | 구조 | SHA-256 |
+|---|---|---|
+| `G1-coincident-start.hwpx` | `S0_OPT_A`(p1~p4)와 `S0_SLOT`(p1)이 **같은 문단에서 시작** | `AFED1D94A2B53F29A3EC8DCD84D6ACB0A741BF50F40C2CA3E9D66BCBFFC45E7A` |
+| `G1-resaved.hwpx` | G1 을 열어 `AAA`→`AAX` 만 고치고 저장 | `07D6CBA2364B2B17B9083348033114642F808F6F5340347022953EF0C4292A79` |
+| `G2-coincident-end.hwpx` | `S0_SLOT`(p1~p4)와 `S0_OPT_B`(p4)가 **같은 문단에서 종료** | `1CB7772772CF9FAE0066315EC5B85EA680338349C3B0B24DB94D8C1452BF6153` |
+| `G3-same-range.hwpx` | `S0_SLOT`과 `S0_OPT_X`가 **완전히 같은 범위**(p1~p4) | `20C83C8D66C490AE7BF544F750946912E8AF2808C6821B496EB7C025B485BEF6` |
+
+**G1의 이름은 레시피 의도와 반대다.** 바깥이 `S0_OPT_A`(p1~p4), 안쪽이 `S0_SLOT`(p1)이다.
+S0에서 bookmark name은 identity가 아니므로 구조 증거로서는 영향이 없으나, 이 파일을 인용할 때
+이름으로 안팎을 판단하면 안 된다. G2·G3는 의도와 일치한다.
+
+### 23.2 관찰한 wire 형상
+
+경계가 겹치는 지점에서 한글은 두 marker를 **같은 run 안에 본문 없이 나란히** 쓴다.
+
+```text
+G1  p[1]  BEGIN S0_OPT_A | BEGIN S0_SLOT | TEXT 'BBB' | END→S0_SLOT | TEXT ''
+    p[4]  TEXT 'EEE' | END→S0_OPT_A | TEXT ''
+
+G3  p[1]  BEGIN S0_SLOT | BEGIN S0_OPT_X | TEXT 'BBB'
+    p[4]  TEXT 'EEE' | END→S0_OPT_X | END→S0_SLOT | TEXT ''
+```
+
+G3에서 **두 region의 문단 범위가 (1,4)로 완전히 같다.** 문단 색인만으로는 어느 쪽이 바깥인지
+결정할 수 없고, 오직 문서 순서가 그것을 정한다. `BookmarkRegion.parent`가 파생 정보가 아니라
+**필요한 정보**라는 직접 증거다.
+
+`G1-resaved`의 marker는 G1과 완전히 동일하다. 경계 겹침 중첩도 한글 open/save를 견딘다.
+
+### 23.3 경계 규칙 완화
+
+`_payload_outside_boundary()`가 이웃 marker를 본문으로 세던 것을 고쳤다. `hp:ctrl`이 **BOOKMARK
+range marker만** 담고 있으면 payload로 세지 않는다(`_is_bookmark_boundary_ctrl`). 다른 필드의
+pair가 끼어드는 경우는 기존 extent 검사가 계속 잡는다.
+
+완화 뒤 네 표본이 모두 resolve되고 R2·R3·R4·R5의 기존 판정은 그대로다. 본문이 경계 옆에 있으면
+여전히 `partial-paragraph`로 거부한다 — 면제 대상은 BOOKMARK marker뿐이다.
+
+### 23.4 완화가 만든 제거 위험과 그 차단
+
+읽기를 넓히자 제거 쪽에 새 위험이 생겼다. 경계를 공유하면 **안쪽을 지우는 것이 바깥의 marker를
+함께 잘라낸다.** 실측으로 확인했다 — G1에서 안쪽 `S0_SLOT`(p1)을 지우면 p[1]에 있던
+`S0_OPT_A`의 begin이 함께 사라지고 p[4]의 end만 남아 **orphan이 생겼다**.
+
+그래서 `remove_bookmark_region()`에 가드를 넣었다. 지울 문단 범위가 **대상도 아니고 대상의
+자손도 아닌** region의 marker를 건드리면 거부한다.
+
+| 조작 | 결과 |
+|---|---|
+| G1·G2·G3의 **안쪽** 제거 | 거부 — `removing … would cut BOOKMARK markers outside it: …` |
+| G1·G2·G3의 **바깥** 제거 | 성공, 남는 문단 `AAA`, orphan 0 |
+| R5의 안쪽·바깥 제거(겹침 없음) | §22 판정 그대로 |
+
+이것은 보수적 선택이 아니라 **손상 방지**다. 가드가 없으면 orphan을 만드는 경로가 실재한다.
+
+### 23.5 판정
+
+- 한글의 경계 겹침 중첩 생성: **PROVEN**(시작·끝·완전 동일 세 경우 모두).
+- 재저장 보존: **PROVEN**(G1).
+- 중첩된 두 region의 문단 범위 동일 가능성: **PROVEN**(G3) — 포함 판정은 문서 순서가 진다.
+- 경계 규칙 완화: 적용. 면제는 BOOKMARK marker만.
+- 겹친 경계에서 안쪽 제거: **거부**. 손상 없이 수행할 방법을 아직 모른다.
+
+겹친 경계에서 안쪽만 제거하려면 문단 shell 삭제가 아니라 **marker만 제거하는 조작**이 필요하다.
+그 조작은 §22.5가 적었듯 우리 API에 없고 F5·F6의 관찰이 그것을 승인하지도 않는다.

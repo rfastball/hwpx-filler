@@ -44,7 +44,7 @@
 | [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 | 전체 스냅샷·서브트리 재구성 결정은 완료된 React 전환이 대체. 포커스·캐럿·스크롤 보존 **책임**과 재고 술어의 틀은 유효하다. 근거 1·「현재 실효 범위」·검증 절은 오늘 거짓이니 배경으로만 읽는다 |
 | [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
 | [문서 표현과 변경 권위 계층 이론](DOCUMENT_AUTHORITY_LAYERS.md) | 유효 결정 | 저작·구성 투영·산출물 관찰 계층과 그 사이 경계 사건의 판정 기준. **미래 제품 모델이라 P 로드맵(#433·#511)의 입력이 아니다**(§0.0). 명사·불변식의 구체 적용은 [핵심 워크플로 계약](core-workflow.md)이, 현재 표면은 UI 계약이 소유. 적용 우산 = #530 |
-| [HWPX structural range S0 관찰](HWPX_STRUCTURAL_RANGE_S0.md) | 유효 결정 | native R0~R5·T0~T7 증거와 `hwpxcore.bookmark_region` production 계약. R5(§19)가 proper nesting 을, F계열(§22)이 그 제거 의미를 증명했고 §20·§22 에서 resolve 의 containment 와 nested 제거를 승격했다 — crossing 거부와 경계 겹침 금지는 유지 |
+| [HWPX structural range S0 관찰](HWPX_STRUCTURAL_RANGE_S0.md) | 유효 결정 | native R0~R5·T0~T7 증거와 `hwpxcore.bookmark_region` production 계약. R5(§19)·F계열(§22)·G계열(§23)이 proper nesting 의 표현·제거·경계 겹침을 증명했고 resolve 의 containment, nested 제거, 겹친 경계를 차례로 승격했다 — crossing 거부와 겹친 경계에서의 안쪽 제거 금지는 유지 |
 | [HWPX native MetaTag S1 spike](HWPX_METATAG_S1_SPIKE.md) | 유효 결정 | metadata carrier 3종의 wire format 과 한글 round-trip 보존성. 판정 **PASS-A (semantic)** — 모델이 아는 carrier 만 미지 payload 를 보존하고, 한글이 compact 로 재직렬화하므로 동등성은 byte 가 아니라 파싱 결과로 판정한다(§12.1 편차 기재) |
 
 ## 역사·동결 자료
