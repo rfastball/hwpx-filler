@@ -29,18 +29,14 @@ from ..gui.template_manager_state import (
 )
 from .hwpx_package_io import read_hwpx_package, write_hwpx_package
 
-_CARDINALITIES = frozenset({"zero_or_one", "exactly_one", "many"})
-_NATIVE_NAMES = {"slot": "#hf_slot", "slot_option": "#hf_slot_option"}
+_PRODUCT_KINDS = frozenset({"slot", "slot_option"})
+_NATIVE_NAME = "#hf"
 
 
 class _ProductTag(NamedTuple):
     region: BookmarkRegion
     kind: str
     id: str
-    label: str
-    cardinality: str | None = None
-    min_options: int | None = None
-    ordering: str | None = None
 
 
 def _diagnostic(kind: str, region: BookmarkRegion, detail: str) -> TemplateDiagnostic:
@@ -56,9 +52,9 @@ def _ancestors(region: BookmarkRegion) -> list[BookmarkRegion]:
     return ancestors
 
 
-def _serialize_product_metatag(body: dict[str, object], name: str) -> str:
+def _serialize_product_metatag(kind: str, identifier: str) -> str:
     return json.dumps(
-        {"hwpxFiller": body, "name": name},
+        {"hwpxFiller": {"kind": kind, "id": identifier}, "name": _NATIVE_NAME},
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -73,35 +69,13 @@ def _require_text(value: object, field: str) -> str:
 def serialize_slot_metatag(slot: Slot) -> str:
     """Serialize one canonical object-local Slot payload; native ``name`` is last."""
     _require_text(slot.id, "Slot id")
-    _require_text(slot.label, "Slot label")
-    if not isinstance(slot.cardinality, str) or slot.cardinality not in _CARDINALITIES:
-        raise ValueError(f"unknown Slot cardinality {slot.cardinality!r}")
-    if type(slot.min_options) is not int or slot.min_options < 0:
-        raise ValueError("Slot min_options must be a non-negative integer")
-    if slot.ordering != "template_order":
-        raise ValueError("Slot ordering must be 'template_order'")
-    return _serialize_product_metatag(
-        {
-            "v": 1,
-            "kind": "slot",
-            "id": slot.id,
-            "label": slot.label,
-            "cardinality": slot.cardinality,
-            "minOptions": slot.min_options,
-            "ordering": slot.ordering,
-        },
-        _NATIVE_NAMES["slot"],
-    )
+    return _serialize_product_metatag("slot", slot.id)
 
 
 def serialize_slot_option_metatag(option: SlotOption) -> str:
     """Serialize one canonical object-local Slot Option payload."""
     _require_text(option.id, "Slot Option id")
-    _require_text(option.label, "Slot Option label")
-    return _serialize_product_metatag(
-        {"v": 1, "kind": "slot_option", "id": option.id, "label": option.label},
-        _NATIVE_NAMES["slot_option"],
-    )
+    return _serialize_product_metatag("slot_option", option.id)
 
 
 def _product_tag(
@@ -119,7 +93,7 @@ def _product_tag(
         if not isinstance(value, dict):
             continue
         if "hwpxFiller" not in value:
-            if value.get("name") in _NATIVE_NAMES.values():
+            if value.get("name") == _NATIVE_NAME:
                 diagnostics.append(
                     _diagnostic(
                         "invalid-product-payload",
@@ -140,7 +114,7 @@ def _product_tag(
             attribute = None
         if isinstance(attribute, dict) and (
             "hwpxFiller" in attribute
-            or attribute.get("name") in _NATIVE_NAMES.values()
+            or attribute.get("name") == _NATIVE_NAME
         ):
             diagnostics.append(
                 _diagnostic(
@@ -151,7 +125,7 @@ def _product_tag(
             )
         if (
             isinstance(attribute, dict)
-            and attribute.get("name") in _NATIVE_NAMES.values()
+            and attribute.get("name") == _NATIVE_NAME
             and "hwpxFiller" not in attribute
         ):
             diagnostics.append(
@@ -177,74 +151,27 @@ def _product_tag(
             _diagnostic("invalid-product-payload", region, "hwpxFiller must be an object")
         )
         return None
-    version = body.get("v")
-    if not isinstance(version, int) or isinstance(version, bool):
-        diagnostics.append(
-            _diagnostic("invalid-product-payload", region, "v must be an integer")
-        )
-        return None
-    if version != 1:
-        diagnostics.append(
-            _diagnostic("unsupported-version", region, f"unsupported hwpxFiller.v {version!r}")
-        )
-        return None
     kind = body.get("kind")
-    if not isinstance(kind, str) or kind not in _NATIVE_NAMES:
+    if not isinstance(kind, str) or kind not in _PRODUCT_KINDS:
         diagnostics.append(_diagnostic("unknown-kind", region, f"unknown kind {kind!r}"))
         return None
     recognised[region] = kind
 
-    identifier, label = body.get("id"), body.get("label")
+    identifier = body.get("id")
     if not isinstance(identifier, str) or not identifier.strip():
         diagnostics.append(_diagnostic("invalid-id", region, "id must be a non-empty string"))
         return None
-    if not isinstance(label, str) or not label.strip():
-        diagnostics.append(
-            _diagnostic("invalid-label", region, "label must be a non-empty string")
-        )
-        return None
     native_name = root.get("name")
-    if native_name != _NATIVE_NAMES[kind]:
+    if native_name != _NATIVE_NAME:
         diagnostics.append(
             _diagnostic(
                 "native-name-mismatch",
                 region,
-                f"name must be {_NATIVE_NAMES[kind]!r}, got {native_name!r}",
+                f"name must be {_NATIVE_NAME!r}, got {native_name!r}",
             )
         )
 
-    if kind == "slot_option":
-        return _ProductTag(region, kind, identifier, label)
-
-    cardinality = body.get("cardinality")
-    if not isinstance(cardinality, str) or cardinality not in _CARDINALITIES:
-        diagnostics.append(
-            _diagnostic("unknown-cardinality", region, f"unknown cardinality {cardinality!r}")
-        )
-        return None
-    min_options = body.get("minOptions")
-    if (
-        not isinstance(min_options, int)
-        or isinstance(min_options, bool)
-        or min_options < 0
-    ):
-        diagnostics.append(
-            _diagnostic(
-                "invalid-min-options", region, "minOptions must be a non-negative integer"
-            )
-        )
-        return None
-    ordering = body.get("ordering")
-    if ordering != "template_order":
-        diagnostics.append(
-            _diagnostic(
-                "unsupported-ordering", region, "ordering must be 'template_order'"
-            )
-        )
-        return None
-    return _ProductTag(
-        region, kind, identifier, label, cardinality, min_options, ordering
-    )
+    return _ProductTag(region, kind, identifier)
 
 
 def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnostic, ...]]:
@@ -327,25 +254,11 @@ def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnost
                     )
                 )
             seen_options.add(option_tag.id)
-            options.append(SlotOption(option_tag.id, option_tag.label, len(options)))
-        assert slot_tag.min_options is not None
-        if slot_tag.min_options > len(options):
-            diagnostics.append(
-                _diagnostic(
-                    "min-options-unsatisfied",
-                    slot_tag.region,
-                    f"minOptions {slot_tag.min_options} exceeds {len(options)} Options",
-                )
-            )
-        assert slot_tag.cardinality is not None and slot_tag.ordering is not None
+            options.append(SlotOption(option_tag.id, len(options)))
         slots.append(
             Slot(
                 id=slot_tag.id,
-                label=slot_tag.label,
-                cardinality=slot_tag.cardinality,
-                min_options=slot_tag.min_options,
                 options=tuple(options),
-                ordering=slot_tag.ordering,
             )
         )
     return tuple(slots), tuple(diagnostics)
