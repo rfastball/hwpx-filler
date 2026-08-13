@@ -45,6 +45,7 @@
 | [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
 | [문서 표현과 변경 권위 계층 이론](DOCUMENT_AUTHORITY_LAYERS.md) | 유효 결정 | 저작·구성 투영·산출물 관찰 계층과 그 사이 경계 사건의 판정 기준. **미래 제품 모델이라 P 로드맵(#433·#511)의 입력이 아니다**(§0.0). 명사·불변식의 구체 적용은 [핵심 워크플로 계약](core-workflow.md)이, 현재 표면은 UI 계약이 소유. 적용 우산 = #530 |
 | [HWPX structural range S0 관찰](HWPX_STRUCTURAL_RANGE_S0.md) | 유효 결정 | native R0~R4·T0~T7 증거와 제약된 `hwpxcore.bookmark_region` production 계약 |
+| [HWPX native MetaTag S1 spike](HWPX_METATAG_S1_SPIKE.md) | 유효 결정 | metadata carrier 3종의 wire format 과 한글 round-trip 보존성. 판정 **PASS-A** — 모델이 아는 carrier 만 미지 payload 를 보존한다 |
 
 ## 역사·동결 자료
 
