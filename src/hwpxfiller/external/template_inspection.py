@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-from hwpxcore.bookmark_region import BookmarkRegion, resolve_bookmark_regions
+from hwpxcore.bookmark_region import BookmarkRegion, resolve_bookmark_topology
 from lxml import etree
 
 from ..domain.authoring import CompileReport, TokenSite, compile_document, scan_tokens
@@ -251,7 +251,7 @@ def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnost
     """Inspect one open package; diagnostics are blocking but do not hide valid Slots."""
     diagnostics: list[TemplateDiagnostic] = []
     try:
-        regions = resolve_bookmark_regions(pkg)
+        regions = resolve_bookmark_topology(pkg)
     except (ValueError, etree.XMLSyntaxError) as exc:
         kind = (
             "crossing-range"

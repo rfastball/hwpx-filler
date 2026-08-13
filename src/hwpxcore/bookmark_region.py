@@ -324,7 +324,9 @@ def _reject_intersecting_non_field_ranges(region: _ResolvedRegion) -> None:
             )
 
 
-def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
+def _resolve(
+    pkg: PackageLike, *, require_removable: bool = True
+) -> list[_ResolvedRegion]:
     sections = _parse_sections(pkg)
     resolved: list[_ResolvedRegion] = []
     for section in sections:
@@ -372,17 +374,21 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
 
             start = _boundary_paragraph(begin, section.root, section.entry)
             stop = _boundary_paragraph(end, section.root, section.entry)
-            if _payload_outside_boundary(begin, start, preceding=True):
+            if require_removable and _payload_outside_boundary(
+                begin, start, preceding=True
+            ):
                 raise ValueError(
                     f"{section.entry}: partial-paragraph BOOKMARK begin is unsupported"
                 )
-            if _payload_outside_boundary(end, stop, preceding=False):
+            if require_removable and _payload_outside_boundary(
+                end, stop, preceding=False
+            ):
                 raise ValueError(
                     f"{section.entry}: partial-paragraph BOOKMARK end is unsupported"
                 )
 
             first, last = section.root.index(start), section.root.index(stop)
-            if any(
+            if require_removable and any(
                 child.tag != f"{_HP}p"
                 for child in list(section.root)[first : last + 1]
             ):
@@ -392,7 +398,9 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
                 )
             start_paragraph = section.paragraphs[start]
             end_paragraph = section.paragraphs[stop]
-            if end_paragraph - start_paragraph + 1 == len(section.paragraphs):
+            if require_removable and (
+                end_paragraph - start_paragraph + 1 == len(section.paragraphs)
+            ):
                 raise ValueError(
                     f"{section.entry}: removing BOOKMARK would leave no paragraph"
                 )
@@ -420,10 +428,11 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
             )
 
         section_regions = _link_containment(section_regions)
-        bookmark_ids = {item.region._pairing_id for item in section_regions}
-        for item in section_regions:
-            _reject_intersecting_fields(item, bookmark_ids)
-            _reject_intersecting_non_field_ranges(item)
+        if require_removable:
+            bookmark_ids = {item.region._pairing_id for item in section_regions}
+            for item in section_regions:
+                _reject_intersecting_fields(item, bookmark_ids)
+                _reject_intersecting_non_field_ranges(item)
         resolved.extend(section_regions)
     return resolved
 
@@ -431,6 +440,14 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
 def resolve_bookmark_regions(pkg: object) -> list[BookmarkRegion]:
     """List supported native BOOKMARK regions, containers before their contents."""
     return [resolved.region for resolved in _resolve(require_package(pkg))]
+
+
+def resolve_bookmark_topology(pkg: object) -> list[BookmarkRegion]:
+    """Resolve native BOOKMARK containment without paragraph-removal constraints."""
+    return [
+        resolved.region
+        for resolved in _resolve(require_package(pkg), require_removable=False)
+    ]
 
 
 def append_bookmark_metatag(pkg: object, region: BookmarkRegion, payload: str) -> None:

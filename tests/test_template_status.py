@@ -52,6 +52,20 @@ def test_raw_when_no_fields_and_no_tokens():
     assert st.stray_n == 0
 
 
+def test_bookmark_content_does_not_mark_a_placeholder_field_filled():
+    xml = (
+        "<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" '
+        'name="STRUCT"/></hp:ctrl><hp:t>structural content</hp:t>'
+        '<hp:ctrl><hp:fieldEnd beginIDRef="1"/></hp:ctrl></hp:run></hp:p>'
+    )
+    pkg, _report = compile_document(_pkg(xml))
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.COMPILED
+    assert st.field_n == 1
+
+
 # ------------------------------------------------------------------- PARTIAL
 def test_partial_skipped_channel_only():
     """진짜 필드 1개 + 파편에 걸친 토큰(재조립하면 실필드명) → skipped 채널만 PARTIAL.

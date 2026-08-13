@@ -12,6 +12,7 @@ from hwpxcore.bookmark_region import (
     append_bookmark_metatag,
     remove_bookmark_region,
     resolve_bookmark_regions,
+    resolve_bookmark_topology,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import local_name
@@ -426,6 +427,10 @@ def test_resolves_nested_regions_with_containment() -> None:
         )
         + _paragraph("<hp:t>OUT</hp:t>")
     )
+    assert [region.name for region in resolve_bookmark_topology(partial)] == [
+        "OUTER",
+        "INNER",
+    ]
     with pytest.raises(ValueError, match="partial-paragraph BOOKMARK begin"):
         resolve_bookmark_regions(partial)
 

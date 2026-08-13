@@ -138,7 +138,7 @@ class FieldDocument:
     def required_fields(self) -> "list[str]":
         """문서 내 모든 누름틀 이름을 중복 없이 반환. ``{{..}}`` 는 벗겨서."""
         seen: dict[str, None] = {}
-        for node in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+        for node in self._field_begins():
             name = _clean_field_name(node.get("name"))
             if name and name not in seen:
                 seen[name] = None
@@ -153,7 +153,7 @@ class FieldDocument:
         동일하게 취급하며, 해당 필드가 없을 때만 ``None`` 을 반환한다.
         """
         clean = _clean_field_name(field_name)
-        for begin in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+        for begin in self._field_begins():
             if _clean_field_name(begin.get("name")) == clean:
                 return self._read_one(begin)
         return None
@@ -206,6 +206,13 @@ class FieldDocument:
             current = current.getnext()
         return _FieldSpan(run, ctrl, ts, end_ctrl, end_run)
 
+    def _field_begins(self):
+        return (
+            node
+            for node in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin")
+            if node.get("type") != "BOOKMARK"
+        )
+
     # ----------------------------------------------------------- precheck
     def precheck(self) -> "list[FillNote]":
         """채움이 완화 처리(#154)를 일으킬 자리를 **변형 없이** 사전 열거한다.
@@ -216,7 +223,7 @@ class FieldDocument:
         채우면 제거된다"는 조건부 사실이다.
         """
         notes: "list[FillNote]" = []
-        for begin in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+        for begin in self._field_begins():
             name = _clean_field_name(begin.get("name"))
             if not name:
                 continue
@@ -262,8 +269,9 @@ class FieldDocument:
         # normalize-space + {{}} 대응 XPath (원본과 동일 의미)
         xpath = (
             f".//hp:fieldBegin["
+            f"not(@type='BOOKMARK') and ("
             f"normalize-space(@name)='{clean}' or "
-            f"normalize-space(@name)='{{{{{clean}}}}}']"
+            f"normalize-space(@name)='{{{{{clean}}}}}')]"
         )
         begins = self._tree.xpath(xpath, namespaces=_NSMAP)
         if not begins:

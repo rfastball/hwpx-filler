@@ -164,7 +164,10 @@ def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
                 parts.append(text_of_t(ch))
             elif ln == "ctrl":
                 for c in ch:
-                    if local_name(c.tag) == "fieldBegin":
+                    if (
+                        local_name(c.tag) == "fieldBegin"
+                        and c.get("type") != "BOOKMARK"
+                    ):
                         nm = _clean_field_name(c.get("name"))
                         if nm and nm not in seen:
                             seen.add(nm)

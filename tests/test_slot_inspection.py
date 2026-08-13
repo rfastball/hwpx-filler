@@ -155,6 +155,12 @@ def _two_slot_package() -> HwpxPackage:
         + _p(_begin("3", "A_SLOT") + "<hp:t>D</hp:t>")
         + _p(_begin("4", "A_OPT") + "<hp:t>E</hp:t>" + _end("4"))
         + _p("<hp:t>F</hp:t>" + _end("3"))
+        + _p(
+            "<hp:t>ordinary prefix</hp:t>"
+            + _begin("5", "PLAIN_PARTIAL")
+            + "<hp:t>ordinary bookmark</hp:t>"
+            + _end("5")
+        )
         + _p("<hp:t>OUT</hp:t>")
     )
     return _write_tags(
@@ -497,3 +503,5 @@ def test_canonical_fixture_is_reproducible_and_path_adapter_restores_slots(
     path.write_bytes(resaved.to_bytes())
     inspection = inspect_hwpx_template(str(path))
     assert (inspection.slots, inspection.diagnostics) == expected
+    assert inspection.fields == ()
+    assert inspection.status.field_n == 0

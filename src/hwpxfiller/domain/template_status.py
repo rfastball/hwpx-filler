@@ -149,6 +149,8 @@ def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     for name in pkg2.content_xml_names():
         root = etree.fromstring(pkg2.entries[name], parser=parser)
         for begin in root.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+            if begin.get("type") == "BOOKMARK":
+                continue
             fname = (begin.get("name") or "").strip().replace("{{", "").replace("}}", "")
             if not fname:
                 continue
