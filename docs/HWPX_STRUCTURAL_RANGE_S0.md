@@ -120,6 +120,8 @@ real 6파일의 `fieldBegin` 61개는 모두 빈 `metaTag=""` attribute를 가�
 | R2-block-bookmark.hwpx | `1ABCFD6810636E9EEC00E1A14252AC46571B34AC7198F8EA38824EA5B759D55C` | `fieldBegin type="BOOKMARK"` + `fieldEnd` 1쌍 | section0 / p[1] / run[0]의 `BBB` 앞부터 p[3] / run[0]의 `DDD` 뒤까지 |
 | R3-table-crossing.hwpx | `A0921B67AFDEAC1194DFC09ACBD7F89F1785078280E4D0754C1DB58599FA4B7A` | `fieldBegin type="BOOKMARK" name="S0_TABLE"` + `fieldEnd` 1쌍 | BBB 앞부터 DDD 뒤까지; 사이에 table paragraph와 cell paragraph 포함 |
 | R4-adjacent.hwpx | `DAD403351011A11CF19F84809EC98BB60583ED4357ABB8AAF6279915CA512F2B` | `S0_LEFT`, `S0_RIGHT` BOOKMARK pair 각 1쌍 | 연속된 LEFT p[1], RIGHT p[2]에 begin→text→matching end 순서 |
+| R5-nested.hwpx | `3212AF6CA24355CD8D400434713B22E554FE4A94A54A4E4808803E5B1F198EA1` | `S0_SLOT` 안에 `S0_OPT_A`, `S0_OPT_B`가 중첩된 BOOKMARK 3쌍 | slot=p[1]~p[4], option=p[2], p[3] (§19) |
+| R5-nested-resaved.hwpx | `D0AB9A1DC820108387C303A5F7E9E1B88CC016773D08FED5783D6AE68A25EF0D` | 위와 동일 | `AAA`→`AAX` 편집 후 한글 재저장 (§19) |
 
 R1 원본 XML의 point bookmark는 다음과 같다.
 
@@ -235,6 +237,8 @@ probe/authoring 경계 테스트용이다. 나머지 fragment에는 조사 대�
 | R2 native | `fieldBegin type="BOOKMARK" name="S0_BLOCK"`이 `BBB` 앞, 이를 참조하는 `fieldEnd`가 `DDD` 뒤에 존재 | block bookmark는 cross-paragraph explicit field range |
 | R3 native | 같은 field pair가 top-level paragraph → table/cell paragraph → top-level paragraph를 감쌈 | block bookmark는 table/container를 넘는 document-order structural range |
 | R4 native | LEFT begin/end 뒤 RIGHT begin/end가 이어지고 각 end ref가 서로 다른 자기 begin id를 참조 | 인접 block bookmark 두 개는 ambiguity 없는 독립 pair |
+| R5 native | 한글 UI가 중첩 생성을 거절하지 않았고 문서 순서가 `SLOT > A > A' > B > B' > SLOT'` | proper nesting은 native로 생성·표현되며 crossing 과 결정적으로 구분된다(§19) |
+| R5 재저장 | marker record 6개와 begin id가 전부 불변 | nesting 은 한글 open/save 를 견딘다. 다만 nested region 의 **제거** 의미는 미검증 |
 | T0~T3 native | 재저장, 범위 앞/안 문단 삽입, 내부 문구 수정 뒤 begin/end attrs 불변 | 이 편집들에서는 pair identity와 경계가 보존됨 |
 | T4/T5 native | 시작 또는 끝 경계 문단 하나를 삭제하면 begin/end가 모두 사라짐 | 한글이 orphan marker를 남기지 않고 block bookmark 전체를 제거함 |
 | T6 native | 복사된 BBB~DDD에는 marker가 없고 원본 pair만 남음 | copy는 block bookmark를 복제하지 않아 identity 충돌이 없음 |
@@ -289,10 +293,14 @@ P5  EEE
 
 5. `R4-adjacent.hwpx`: 연속된 LEFT/RIGHT 문단에 `S0_LEFT`, `S0_RIGHT` 생성.
 
-다음 표본은 nesting 설계 판단이 필요해질 때만 추가한다.
+nesting 표본도 완료됐다(S0-E, §19).
 
-6. `R5-overlap.hwpx`: UI가 허용할 때만 겹치거나 중첩된 `S0_OUTER`, `S0_INNER` 생성. 거절되면
-   거절 사실과 문안을 기록하고 파일을 합성하지 않는다.
+6. `R5-nested.hwpx`: `BBB`~`EEE`에 `S0_SLOT`을 만든 뒤 그 안의 `CCC`, `DDD` 문단에 각각
+   `S0_OPT_A`, `S0_OPT_B` 생성. 한글 UI가 거절하지 않았다.
+7. `R5-nested-resaved.hwpx`: 6을 다시 열어 `AAA`→`AAX`만 고치고 저장.
+
+겹침(crossing) 표본은 아직 없다. nesting과 crossing은 다른 질문이므로 §19의 판정을 crossing에
+적용하지 않는다.
 
 ## 9. S0-C 편집 내구성 matrix
 
@@ -316,8 +324,11 @@ T6의 복사 문단 id는 `0`, `2147483648`, `2147483648`이고 T7에서 이동�
 ## 10. 다음 단계
 
 S0-D5는 R4 adjacent region의 양방향 순차 제거 판정에서 멈췄다. 이 증거 범위만 이후 §17의
-제약된 production primitive로 승격했다. R5, partial paragraph, cross-section, overlap/nesting,
-Slot은 구현하거나 판정하지 않았다.
+제약된 production primitive로 승격했다. partial paragraph, cross-section, crossing, Slot은
+구현하거나 판정하지 않았다.
+
+nesting은 이후 §19(S0-E)에서 **관찰만** 했다. production resolver는 여전히 거부하며 이 spike는
+그것을 바꾸지 않았다.
 
 ## 11. S0 관찰 단계 검증
 
@@ -662,3 +673,95 @@ production `create_*` API, Slot, Authoring Anchor, 기존 resolve/remove 계약�
 - Pyright: D6 spike/helper owner 0 errors
 - heavy-resource launch delta: 저장소 자동 test lane 0; 사용자 한글 UI 확인/재저장 1회
 - production source·coverage floor 영향 없음
+
+## 19. S0-E nested BOOKMARK native 관찰
+
+### 19.1 방법과 표본
+
+한글 `12, 0, 0, 4547 WIN32LEWindows_10`에서 5문단 `AAA`~`EEE`를 만들고 다음 순서로 책갈피 3개를
+생성한 뒤 HWPX로 저장했다. 바깥을 먼저 만들고 안쪽 둘을 나중에 넣었다.
+
+| 이름 | 범위 |
+|---|---|
+| `S0_SLOT` | `BBB` 시작 ~ `EEE` 끝 (4문단) |
+| `S0_OPT_A` | `CCC` 문단 전체 |
+| `S0_OPT_B` | `DDD` 문단 전체 |
+
+**한글 UI는 중첩 책갈피 생성을 거절하지 않았다.** 이는 §8 항목 6이 열어 둔 조건("UI가 허용할
+때만")에 대한 답이다. 재저장본은 `AAA`→`AAX` 한 곳만 고쳐 저장했다.
+
+| 파일 | SHA-256 |
+|---|---|
+| `R5-nested.hwpx` | `3212AF6CA24355CD8D400434713B22E554FE4A94A54A4E4808803E5B1F198EA1` |
+| `R5-nested-resaved.hwpx` | `D0AB9A1DC820108387C303A5F7E9E1B88CC016773D08FED5783D6AE68A25EF0D` |
+
+### 19.2 native document order
+
+probe가 낸 marker 순서는 정확히 다음이다. 문단 색인은 section 직계 `hp:p` 기준이다.
+
+```text
+0  fieldBegin S0_SLOT    id=1166752276  p[1] (BBB)
+1  fieldBegin S0_OPT_A   id=1166752277  p[2] (CCC)
+2  fieldEnd   beginIDRef=1166752277     p[2]
+3  fieldBegin S0_OPT_B   id=1166752278  p[3] (DDD)
+4  fieldEnd   beginIDRef=1166752278     p[3]
+5  fieldEnd   beginIDRef=1166752276     p[4] (EEE)
+```
+
+세 begin은 서로 다른 id를 갖고 각 end는 자기 begin만 참조한다. `fieldid`는 셋 모두
+`627207531`로 같아 pair 구분에 기여하지 않는다 — R4에서 확인한 것과 같다. 여섯 marker 모두
+native `ctrl → run → section 직계 hp:p` 아래에 있고, 경계 marker 바깥에 같은 문단의 텍스트가
+없다(full-paragraph boundary).
+
+### 19.3 판정
+
+| 확인 항목 | 결과 |
+|---|---|
+| 한글 UI의 nested BOOKMARK 생성 | **가능**. 거절 문구 없음 |
+| 세 pair의 독립 결합(`begin id ↔ end beginIDRef`) | **PROVEN**. begin id 3개가 서로 다르고 end가 각자 자기 begin만 참조 |
+| Option이 Slot range에 완전 포함 | **PROVEN**. slot(0..5) 안에 A(1..2), B(3..4) |
+| 두 Option의 관계 | **disjoint 형제**. A end(2) < B begin(3) |
+| proper nesting vs crossing | **결정적으로 nesting**. 열린 순서의 역순으로 닫힌다(`SLOT > A > A' > B > B' > SLOT'`) |
+| 한글 재저장 뒤 보존 | **PROVEN**. marker record 6개가 완전히 동일. begin id 재발급 없음 |
+
+재저장본에서 `Contents/section0.xml`의 비-layout 차이는 `AAA`→`AAX` 한 줄뿐이다. 다른 package
+entry 중 내용이 바뀐 것은 `content.hpf`(수정 시각), `settings.xml`(캐럿), `Preview/*`(본문 변경
+반영)이고 `header.xml`은 byte 동일하다.
+
+판정 범위를 좁게 적는다. 이 표본이 **증명하지 않는 것**은 다음이다.
+
+- **제거 의미.** S0-D 계열과 달리 제거 실험은 하지 않았다. 안쪽만 지울 때 바깥이 어떻게 되는지,
+  바깥을 지울 때 안쪽이 어떻게 되는지는 미검증이다.
+- **범위 안쪽 편집의 내구성.** 재저장본의 편집 지점 `AAA`는 p[0]이라 slot(p[1]~p[4]) **바깥**이다.
+  S0-C의 T1~T7이 R2에 대해 한 것처럼 범위 안 문단 삽입·삭제·수정을 nested 구조에 대해 반복하지
+  않았다. 따라서 "한글이 nesting을 보존한다"는 판정은 **범위 밖 편집 1회**에 한정된다.
+- **crossing.** 겹치는 표본을 만들지 않았으므로 한글이 crossing을 허용하는지는 여전히 UNKNOWN이다.
+- **더 깊은 중첩과 복수 Slot.** 2단 1개 표본이다.
+
+### 19.4 현재 production resolver와의 차이
+
+`resolve_bookmark_regions()`는 이 native 파일을 **의도적으로 거부**한다.
+
+```text
+ValueError: Contents/section0.xml: nested BOOKMARK regions are unsupported: 'S0_SLOT', 'S0_OPT_A'
+```
+
+`_reject_bookmark_overlap()`은 region별 검증이 **모두 끝난 뒤에** 호출되므로, 이 메시지가 났다는
+것은 세 region이 boundary 형상·partial-paragraph·비-paragraph child·cross-section 검사를 전부
+통과했다는 뜻이다. 즉 **읽지 못하는 것이 아니라 읽지 않기로 한 것**이고, 막는 규칙은 §17.2의
+nesting 금지 하나뿐이다.
+
+이 spike는 그 규칙을 바꾸지 않았다. nesting을 지원하려면 최소한 다음이 추가로 필요하다.
+
+- 포함 관계의 정본 판정(문서 순서 기반 tree 구성)
+- nested region의 제거·편집 의미(S0-D에 해당하는 실험)
+- crossing과 nesting을 가르는 진단 문안의 유지
+
+### 19.5 S0-E 검증
+
+- owner: `tests/test_hwpx_structure_probe.py`에 native R5 관찰 test 1건 추가(4 → 5 passed)
+- 거부 계약: `tests/test_bookmark_regions.py`의 기존 거부 표에 native R5 case 1건 추가
+  (합성 nested case와 실패 원인이 다르다 — 전자는 규칙의 존재, 후자는 실물 적용)
+- 두 owner 합계 10 passed, 0.21s
+- Ruff·Pyright 통과, heavy-resource launch delta 0
+- production source 변경 없음

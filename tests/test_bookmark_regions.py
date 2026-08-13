@@ -346,6 +346,9 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         ),
         (_package(crossing), "crossing BOOKMARK regions"),
         (_package(nested), "nested BOOKMARK regions"),
+        # Native S0-E evidence: Hancom really produces this shape, and every
+        # per-region check passes — only the nesting rule refuses it.
+        (_native("R5-nested.hwpx"), "nested BOOKMARK regions"),
         (
             _package(
                 _paragraph(_begin() + "<hp:t>A</hp:t>"),
