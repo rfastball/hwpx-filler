@@ -131,6 +131,23 @@ def test_hancom_authored_metatags_land_in_three_distinct_native_carriers() -> No
     ] == ""
 
 
+def test_hancom_normalizes_a_missing_sharp_prefix_onto_the_stored_tag_name() -> None:
+    """M3: names typed without ``#`` come back with it, so storage always has one."""
+    authored = _hancom("M1-hancom-authored.hwpx")
+    no_sharp = _hancom("M3-no-sharp.hwpx")
+    tags = {key: value for key, value in authored.items() if value.startswith("{")}
+
+    assert {json.loads(value)["name"] for value in tags.values()} == {
+        "#hf_test_doc",
+        "#hf_test_table",
+        "#hf_test_cell",
+        "#hf_test_field",
+        "#hf_test_shape",
+    }
+    # Re-entering every name without "#" leaves the stored payloads untouched.
+    assert {key: no_sharp[key] for key in tags} == tags
+
+
 def test_hancom_round_trip_preserves_tags_and_renames_only_the_edited_one() -> None:
     authored = _hancom("M1-hancom-authored.hwpx")
     volatile = {"#entries", f"{MANIFEST}|opf:meta[@name=ModifiedDate]"}

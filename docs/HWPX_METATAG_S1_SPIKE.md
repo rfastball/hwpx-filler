@@ -1,6 +1,6 @@
 # HWPX native MetaTag S1 spike 관찰 기록
 
-> **문서 상태:** 유효 결정 (판정 **PASS-A**)
+> **문서 상태:** 유효 결정 (판정 **PASS-A (semantic)** — §12.1 의 편차 기재를 함께 읽는다)
 > **권위 범위:** 한컴 native metadata carrier 의 wire format 관찰과 보존성 실험 설계
 > **후속 정본:** 우리 코드의 동작은 `tests/_hwpx_metatag_spike.py` 와 `tests/test_metatag_s1.py`,
 > 구조 범위 primitive 는 `docs/HWPX_STRUCTURAL_RANGE_S0.md`
@@ -349,14 +349,19 @@ production 계약 안에 머문다.
 | package entry (manifest 선언함) | **소실** | ZIP 에서 제거 |
 | package entry (manifest 미선언) | **소실** | ZIP 에서 제거 |
 
-**모델이 아는 carrier 는 전부 살고, 모델 밖은 전부 죽는다.** 예외가 없다. §4.5 에서 OWPML
-소스로 세운 추론 — unknown element 보존 경로는 있고 unknown attribute 보존 경로는 없다 — 이
+**모델이 아는 carrier 는 전부 살고, 모델 밖은 전부 죽는다.** 예외가 없다. 세는 단위를 분명히
+하면 — 살아남은 **wire 형태는 3종**(`hp:metaTag` element / `hh:metaTag` element /
+`subList@metatag` attribute)이고, 그 위에 실린 **payload 실체는 6개**다. owner test 의
+`survived` 집합이 그 6개를 열거한다.
+
+§4.5 에서 OWPML 소스로 세운 추론 — unknown element 보존 경로는 있고 unknown attribute 보존 경로는 없다 — 이
 실물에서 그대로 확인됐다. 선언한 package entry 조차 살아남지 못한 것은 한글이 자기가 아는 part
 집합만 다시 쓴다는 뜻이다.
 
 ### 9.2 보존의 정확한 의미 — 정규화는 있고 손실은 없다
 
-살아남은 5개는 **byte 동일이 아니다.** 한글이 JSON 을 자기 방식으로 다시 쓴다.
+살아남은 payload 6개(`hh:metaTag` 1 + BOOKMARK `fieldBegin` 의 `hp:metaTag` 3 + `tbl` 의
+`hp:metaTag` 1 + 셀 `subList@metatag` 1)는 **byte 동일이 아니다.** 한글이 JSON 을 자기 방식으로 다시 쓴다.
 
 ```text
 before  {"hwpxFiller": {"v": 1, "label": "추가 지급 안내", …}, "name": "#hf_s1_anchor"}   742자
@@ -484,16 +489,34 @@ carrier 별로 셋 중 하나를 기록한다: **보존 / 정규화(값이 바�
 carrier 마다 판정이 다를 수 있으므로 **carrier 별로** 적고, 종합 판정은 가장 좋은 carrier 를
 기준으로 내리되 그 carrier 이름을 함께 적는다.
 
-## 12. 최종 판정 — **PASS-A**
+## 12. 최종 판정 — **PASS-A (semantic)**, 사전 등록 규칙 대비 편차 있음
 
 | 주장 | 상태 |
 |---|---|
 | our round-trip | **PASS** (§8) |
 | Hancom open | **PASS** — G1~G3 세 파일 모두 경고 없이 열림 (§9) |
-| Hancom save preserve | **PASS** — 모델이 아는 carrier 5개 전부, 미지 property 포함 (§9.1) |
+| Hancom save preserve | **PASS(semantic)** — 모델이 아는 wire 형태 3종에 실린 payload 6개 전부, 미지 property 포함. 단 byte 는 아니다 (§9.1·§9.2) |
 
-§11 의 사전 등록 규칙에 따라 **PASS-A: rich native carrier** 다. 한컴 MetaTag 는 임의의 rich
-payload 를 보존하며, 우리가 넣은 unknown property 가 한글 open/save 를 살아남는다.
+### 12.1 사전 등록 규칙과 어긋난 지점
+
+먼저 이것부터 적는다. **관찰 결과는 §11 의 두 label 중 어느 쪽에도 정확히 들어맞지 않는다.**
+
+- **PASS-A 의 문구는 "payload 를 문자 단위로 그대로 되돌려준다" 였고, 그 조건은 실패했다.**
+  한글은 살아남은 payload 6개를 전부 compact JSON 으로 재직렬화한다(§9.2).
+- **PASS-B 의 문구도 맞지 않는다.** PASS-B 는 정규화를 "arbitrary rich payload 에는 부적합"
+  과 묶어 두었는데, 관찰은 그 반대다 — 정규화가 일어나면서도 unknown property 를 포함한
+  rich payload 가 **의미 단위로 온전히** 살아남았다.
+
+원인은 결과가 아니라 **규칙에 있다.** §11 을 쓸 때 byte 충실도와 의미 충실도를 하나의 축으로
+묶어, "정규화 = 손실"을 암묵 전제로 깔았다. 실제 format 은 그 둘을 분리한다. 사전 등록의 값어치는
+편차를 숨기지 않는 데 있으므로, label 을 조용히 갈아끼우는 대신 **어긋났다는 사실과 어긋난
+방향을 함께 남긴다.**
+
+### 12.2 판정
+
+그 위에서 판정은 **PASS-A (semantic)** 이다. 즉 §11 PASS-A 의 설계 결론 — 한컴 MetaTag 를 rich
+native carrier 로 쓸 수 있다 — 은 성립하고, 그 근거는 byte 동일성이 아니라 **파싱된 payload 의
+동등성**이다. 동등성 판정 기준이 바뀌었으므로 §12.3 의 경계 2를 계약에 반드시 담아야 한다.
 
 따라서 canonical 후보는 다음과 같다.
 
@@ -505,7 +528,9 @@ native BOOKMARK region        (structural identity, S0)
 native metaTag element payload (semantic identity, S1)
 ```
 
-**단, PASS-A 는 세 개의 경계를 달고 있다.**
+### 12.3 경계
+
+**PASS-A (semantic) 은 세 개의 경계를 달고 있다.**
 
 1. **carrier 를 골라야 한다.** 「MetaTag」 전체가 통과한 것이 아니다. 통과한 것은 공식 모델이
    아는 셋(`hp:metaTag` element / `hh:metaTag` element / `subList@metatag`)뿐이고,
