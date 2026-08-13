@@ -524,7 +524,12 @@ def _validate_mutable_extent(
     ):
         raise ValueError("BOOKMARK content removal would delete section definition")
     _reject_intersecting_fields(
-        resolved, {item.region._pairing_id for item in current}
+        resolved,
+        {
+            item.region._pairing_id
+            for item in current
+            if item.region.section == resolved.region.section
+        },
     )
     _reject_intersecting_non_field_ranges(resolved)
 

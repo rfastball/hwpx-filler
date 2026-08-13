@@ -778,6 +778,25 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     )
     assert [region.name for region in resolve_bookmark_regions(reused_id)] == ["A", "B"]
 
+    cross_section_id_collision = _package(
+        _paragraph(_begin("7", "FIELD", kind="CLICK_HERE") + "<hp:t>OUT</hp:t>")
+        + _paragraph(_begin("1", "TARGET") + "<hp:t>IN</hp:t>")
+        + _paragraph("<hp:t>IN2</hp:t>" + _end("1"))
+        + _paragraph("<hp:t>OUT2</hp:t>" + _end("7"))
+        + _paragraph("<hp:t>TAIL</hp:t>"),
+        _paragraph(_begin("7", "OTHER") + "<hp:t>OTHER</hp:t>" + _end("7"))
+        + _paragraph("<hp:t>TAIL</hp:t>"),
+    )
+    before = dict(cross_section_id_collision.entries)
+    target = next(
+        region
+        for region in resolve_bookmark_topology(cross_section_id_collision)
+        if region.name == "TARGET"
+    )
+    with pytest.raises(ValueError, match="field pair encloses BOOKMARK extent"):
+        remove_bookmark_region(cross_section_id_collision, target)
+    assert cross_section_id_collision.entries == before
+
     nested_boundary = (
         "<hp:p><hp:run><hp:tbl><hp:tr><hp:tc><hp:subList>"
         + _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
