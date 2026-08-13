@@ -29,27 +29,17 @@ def _native(name: str) -> HwpxPackage:
 
 
 def _slot(
-    identifier: str = "extra_notice",
+    identifier: object = "추가 지급 안내",
     *,
-    label: object = "추가 지급 안내",
-    v: object = 1,
     kind: object = "slot",
-    cardinality: object = "exactly_one",
-    min_options: object = 1,
-    ordering: object = "template_order",
-    name: object = "#hf_slot",
+    name: object = "#hf",
     **extra: object,
 ) -> str:
     return json.dumps(
         {
             "hwpxFiller": {
-                "v": v,
                 "kind": kind,
                 "id": identifier,
-                "label": label,
-                "cardinality": cardinality,
-                "minOptions": min_options,
-                "ordering": ordering,
                 **extra,
             },
             "name": name,
@@ -59,21 +49,17 @@ def _slot(
 
 
 def _option(
-    identifier: str = "bonus",
+    identifier: object = "성과급 안내",
     *,
-    label: object = "성과급 안내",
-    v: object = 1,
     kind: object = "slot_option",
-    name: object = "#hf_slot_option",
+    name: object = "#hf",
     **extra: object,
 ) -> str:
     return json.dumps(
         {
             "hwpxFiller": {
-                "v": v,
                 "kind": kind,
                 "id": identifier,
-                "label": label,
                 **extra,
             },
             "name": name,
@@ -166,9 +152,9 @@ def _two_slot_package() -> HwpxPackage:
     return _write_tags(
         package,
         {
-            "Z_SLOT": _slot("z_slot", cardinality="zero_or_one"),
+            "Z_SLOT": _slot("z_slot"),
             "Z_OPT": _option("same"),
-            "A_SLOT": _slot("a_slot", cardinality="many"),
+            "A_SLOT": _slot("a_slot"),
             "A_OPT": _option("same"),
         },
     )
@@ -183,19 +169,16 @@ def _two_slot_package() -> HwpxPackage:
                 "S0_SLOT": (
                     json.dumps(["vendor"]),
                     json.dumps({"vendor": {"future": True}}),
-                    _slot(min_options=2, future={"kept": True}),
+                    _slot(),
                 ),
-                "S0_OPT_A": _option("bonus"),
-                "S0_OPT_B": _option("special", label="특별수당 안내"),
+                "S0_OPT_A": _option("성과급 안내"),
+                "S0_OPT_B": _option("특별수당 안내"),
             },
             Slot(
-                id="extra_notice",
-                label="추가 지급 안내",
-                cardinality="exactly_one",
-                min_options=2,
+                id="추가 지급 안내",
                 options=(
-                    SlotOption("bonus", "성과급 안내", 0),
-                    SlotOption("special", "특별수당 안내", 1),
+                    SlotOption("성과급 안내", 0),
+                    SlotOption("특별수당 안내", 1),
                 ),
             ),
         ),
@@ -203,44 +186,32 @@ def _two_slot_package() -> HwpxPackage:
             lambda: _native("G/G1-coincident-start.hwpx"),
             {"S0_OPT_A": _slot(), "S0_SLOT": _option()},
             Slot(
-                id="extra_notice",
-                label="추가 지급 안내",
-                cardinality="exactly_one",
-                min_options=1,
-                options=(SlotOption("bonus", "성과급 안내", 0),),
+                id="추가 지급 안내",
+                options=(SlotOption("성과급 안내", 0),),
             ),
         ),
         (
             lambda: _native("G/G2-coincident-end.hwpx"),
             {"S0_SLOT": _slot(), "S0_OPT_B": _option()},
             Slot(
-                id="extra_notice",
-                label="추가 지급 안내",
-                cardinality="exactly_one",
-                min_options=1,
-                options=(SlotOption("bonus", "성과급 안내", 0),),
+                id="추가 지급 안내",
+                options=(SlotOption("성과급 안내", 0),),
             ),
         ),
         (
             lambda: _native("G/G3-same-range.hwpx"),
             {"S0_SLOT": _slot(), "S0_OPT_X": _option()},
             Slot(
-                id="extra_notice",
-                label="추가 지급 안내",
-                cardinality="exactly_one",
-                min_options=1,
-                options=(SlotOption("bonus", "성과급 안내", 0),),
+                id="추가 지급 안내",
+                options=(SlotOption("성과급 안내", 0),),
             ),
         ),
         (
             _plain_ancestor_package,
             {"SLOT": _slot(), "OPTION": _option()},
             Slot(
-                id="extra_notice",
-                label="추가 지급 안내",
-                cardinality="exactly_one",
-                min_options=1,
-                options=(SlotOption("bonus", "성과급 안내", 0),),
+                id="추가 지급 안내",
+                options=(SlotOption("성과급 안내", 0),),
             ),
         ),
     ),
@@ -265,17 +236,11 @@ def test_slot_order_and_option_identity_are_native_and_slot_local() -> None:
         (
             Slot(
                 id="z_slot",
-                label="추가 지급 안내",
-                cardinality="zero_or_one",
-                min_options=1,
-                options=(SlotOption("same", "성과급 안내", 0),),
+                options=(SlotOption("same", 0),),
             ),
             Slot(
                 id="a_slot",
-                label="추가 지급 안내",
-                cardinality="many",
-                min_options=1,
-                options=(SlotOption("same", "성과급 안내", 0),),
+                options=(SlotOption("same", 0),),
             ),
         ),
         (),
@@ -287,30 +252,19 @@ def test_slot_order_and_option_identity_are_native_and_slot_local() -> None:
     (
         ({"S0_SLOT": "{"}, None, {"malformed-json"}),
         ({"S0_SLOT": json.dumps({"hwpxFiller": []})}, None, {"invalid-product-payload"}),
-        ({"S0_SLOT": json.dumps({"name": "#hf_slot"})}, None, {"invalid-product-payload"}),
-        ({"S0_SLOT": _slot(v=[])}, None, {"invalid-product-payload"}),
-        ({"S0_SLOT": _slot(v=True)}, None, {"invalid-product-payload"}),
-        ({"S0_SLOT": _slot(v=2)}, None, {"unsupported-version"}),
+        ({"S0_SLOT": json.dumps({"name": "#hf"})}, None, {"invalid-product-payload"}),
         ({"S0_SLOT": _slot(kind=[])}, None, {"unknown-kind"}),
         ({"S0_SLOT": _slot("")}, None, {"invalid-id"}),
-        ({"S0_SLOT": _slot(label=3)}, None, {"invalid-label"}),
+        ({"S0_SLOT": _slot(3)}, None, {"invalid-id"}),
         (
-            {"S0_SLOT": _slot(label=3), "S0_OPT_A": _option()},
-            None,
-            {"invalid-label"},
-        ),
-        ({"S0_SLOT": _slot(cardinality=[])}, None, {"unknown-cardinality"}),
-        ({"S0_SLOT": _slot(min_options=-1)}, None, {"invalid-min-options"}),
-        ({"S0_SLOT": _slot(ordering="id")}, None, {"unsupported-ordering"}),
-        (
-            {"S0_SLOT": _slot(name="#wrong", min_options=0)},
+            {"S0_SLOT": _slot(name="#hf_slot")},
             None,
             {"native-name-mismatch"},
         ),
         ({}, {"S0_SLOT": _slot()}, {"unsupported-carrier"}),
         (
             {},
-            {"S0_SLOT": json.dumps({"name": "#hf_slot"})},
+            {"S0_SLOT": json.dumps({"name": "#hf"})},
             {"unsupported-carrier", "invalid-product-payload"},
         ),
         ({}, {"S0_SLOT": json.dumps({"vendor": 1})}, set()),
@@ -345,7 +299,7 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
                 _p(_begin("1", "A") + "<hp:t>A</hp:t>" + _end("1"))
                 + _p(_begin("2", "B") + "<hp:t>B</hp:t>" + _end("2"))
                 + _p("<hp:t>OUT</hp:t>"),
-                {"A": _slot("same", min_options=0), "B": _slot("same", min_options=0)},
+                {"A": _slot("same"), "B": _slot("same")},
             ),
             {"duplicate-slot-id"},
         ),
@@ -376,7 +330,7 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
                 + _p("<hp:t>D</hp:t>" + _end("2"))
                 + _p("<hp:t>E</hp:t>" + _end("1"))
                 + _p("<hp:t>OUT</hp:t>"),
-                {"A": _slot("a", min_options=0), "B": _slot("b", min_options=0), "O": _option()},
+                {"A": _slot("a"), "B": _slot("b"), "O": _option()},
             ),
             {"nested-slot", "ambiguous-membership"},
         ),
@@ -388,13 +342,9 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
                 + _p("<hp:t>D</hp:t>" + _end("2"))
                 + _p("<hp:t>E</hp:t>" + _end("1"))
                 + _p("<hp:t>OUT</hp:t>"),
-                {"S": _slot(min_options=0), "A": _option("a"), "B": _option("b")},
+                {"S": _slot(), "A": _option("a"), "B": _option("b")},
             ),
             {"nested-option"},
-        ),
-        (
-            _write_tags(_native("R5-nested.hwpx"), {"S0_SLOT": _slot(min_options=3)}),
-            {"min-options-unsatisfied"},
         ),
         (
             _xml_package(
@@ -424,7 +374,6 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
         "orphan",
         "nested-slot",
         "nested-option",
-        "min-options",
         "crossing",
         "malformed-pair",
         "malformed-xml",
@@ -438,48 +387,32 @@ def test_topology_failures_have_stable_diagnostics(
 
 
 def test_canonical_serializers_fix_schema_and_native_name_last() -> None:
-    slot = Slot(
-        id="extra_notice",
-        label="추가 지급 안내",
-        cardinality="exactly_one",
-        min_options=2,
-        options=(),
-    )
-    option = SlotOption("bonus", "성과급 안내", 0)
+    slot = Slot("추가 지급 안내", ())
+    option = SlotOption("성과급 안내", 0)
     slot_raw = serialize_slot_metatag(slot)
     option_raw = serialize_slot_option_metatag(option)
-    assert slot_raw.endswith('"name":"#hf_slot"}')
-    assert option_raw.endswith('"name":"#hf_slot_option"}')
+    assert slot_raw.endswith('"name":"#hf"}')
+    assert option_raw.endswith('"name":"#hf"}')
     assert json.loads(slot_raw) == {
         "hwpxFiller": {
-            "v": 1,
             "kind": "slot",
-            "id": "extra_notice",
-            "label": "추가 지급 안내",
-            "cardinality": "exactly_one",
-            "minOptions": 2,
-            "ordering": "template_order",
+            "id": "추가 지급 안내",
         },
-        "name": "#hf_slot",
+        "name": "#hf",
     }
-    assert json.loads(option_raw)["hwpxFiller"]["kind"] == "slot_option"
+    assert json.loads(option_raw) == {
+        "hwpxFiller": {"kind": "slot_option", "id": "성과급 안내"},
+        "name": "#hf",
+    }
 
 
-@pytest.mark.parametrize(
-    "slot",
-    (
-        Slot("", "label", "exactly_one", 0, ()),
-        Slot(1, "label", "exactly_one", 0, ()),  # type: ignore[arg-type]
-        Slot("id", "label", [], 0, ()),  # type: ignore[arg-type]
-        Slot("id", "label", "future", 0, ()),
-        Slot("id", "label", "exactly_one", True, ()),
-        Slot("id", "label", "exactly_one", -1, ()),
-        Slot("id", "label", "exactly_one", 0, (), "id_order"),
-    ),
-)
-def test_canonical_slot_serializer_rejects_invalid_values(slot: Slot) -> None:
-    with pytest.raises(ValueError):
-        serialize_slot_metatag(slot)
+def test_canonical_serializers_reject_invalid_ids() -> None:
+    for value, serialize in (
+        (Slot("", ()), serialize_slot_metatag),
+        (SlotOption("", 0), serialize_slot_option_metatag),
+    ):
+        with pytest.raises(ValueError):
+            serialize(value)  # type: ignore[arg-type]
 
 
 def test_canonical_fixture_is_reproducible_and_path_adapter_restores_slots(

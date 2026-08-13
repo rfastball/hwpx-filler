@@ -227,15 +227,13 @@ def build_slot_probe(pkg: object) -> None:
     """Author canonical Slot/Option payloads on S0's nested BOOKMARK corpus."""
     package = require_package(pkg)
     options = (
-        SlotOption("bonus", "성과급 안내", 0),
-        SlotOption("special", "특별수당 안내", 1),
+        SlotOption("성과급 안내", 0),
+        SlotOption("특별수당 안내", 1),
     )
     payloads = (
         (
             "S0_SLOT",
-            serialize_slot_metatag(
-                Slot("extra_notice", "추가 지급 안내", "exactly_one", 2, options)
-            ),
+            serialize_slot_metatag(Slot("추가 지급 안내", options)),
         ),
         ("S0_OPT_A", serialize_slot_option_metatag(options[0])),
         ("S0_OPT_B", serialize_slot_option_metatag(options[1])),
