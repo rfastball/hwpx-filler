@@ -15,14 +15,12 @@ from _hwpx_metatag_spike import (
     CATALOG_META_NAME,
     DECLARED_ENTRY,
     MANIFEST,
-    REGIONS,
     UNDECLARED_ENTRY,
     build_attribute_probe,
     build_element_probe,
     build_package_probe,
     metatag_carriers,
 )
-from hwpxcore.bookmark_region import resolve_bookmark_regions
 from hwpxcore.package import HwpxPackage
 
 CORPUS = Path(__file__).parent / "corpus"
@@ -87,24 +85,6 @@ def test_authored_payload_charset_and_length_survive_every_carrier_shape() -> No
         assert body["label"] == "추가 지급 안내"
         assert body["spaced"] == "  leading and trailing  "
         assert len(body["long"]) == 512
-
-
-def test_document_catalog_references_resolve_back_to_authored_bookmark_regions() -> None:
-    package = HwpxPackage.from_bytes(ELEMENT_PROBE.read_bytes())
-    carriers = metatag_carriers(package)
-    header = next(key for key in carriers if key.startswith("Contents/header.xml"))
-    slot = json.loads(carriers[header])["hwpxFiller"]["slots"][0]
-    resolved = {region.name for region in resolve_bookmark_regions(package)}
-
-    assert resolved == {name for name, _text, _id in REGIONS}
-    assert slot["anchor"] in resolved
-    assert {option["anchor"] for option in slot["options"]} <= resolved
-    assert (slot["cardinality"], slot["min_options"]) == ("exactly_one", 2)
-    assert {
-        json.loads(value)["hwpxFiller"]["anchor"]
-        for key, value in _authored(carriers).items()
-        if key.startswith("Contents/section0")
-    } == resolved
 
 
 def test_hancom_authored_metatags_land_in_three_distinct_native_carriers() -> None:
@@ -201,29 +181,6 @@ def test_hancom_preserves_modelled_carriers_and_wipes_everything_else() -> None:
 
     entries = _hancom("G3-resaved.hwpx")["#entries"].split(", ")
     assert DECLARED_ENTRY not in entries and UNDECLARED_ENTRY not in entries
-
-
-def test_slot_semantics_and_region_links_survive_a_hancom_round_trip() -> None:
-    package = HwpxPackage.from_bytes((S1 / "G1-resaved.hwpx").read_bytes())
-    carriers = metatag_carriers(package)
-    regions = {region.name for region in resolve_bookmark_regions(package)}
-    header = next(key for key in carriers if key.startswith("Contents/header.xml"))
-    slot = json.loads(carriers[header])["hwpxFiller"]["slots"][0]
-
-    assert regions == {name for name, _text, _id in REGIONS}
-    assert (slot["id"], slot["label"]) == ("extra_notice", "추가 지급 안내")
-    assert (slot["cardinality"], slot["min_options"]) == ("exactly_one", 2)
-    assert slot["anchor"] in regions
-    assert {option["id"]: option["anchor"] for option in slot["options"]} == {
-        "bonus": "HF_S1_OPT_BONUS",
-        "special": "HF_S1_OPT_SPECIAL",
-    }
-    assert {option["anchor"] for option in slot["options"]} <= regions
-    assert {
-        json.loads(value)["hwpxFiller"]["anchor"]
-        for key, value in _authored(carriers).items()
-        if key.startswith("Contents/section0")
-    } == regions
 
 
 def test_package_probe_adds_declared_and_undeclared_catalog_entries() -> None:

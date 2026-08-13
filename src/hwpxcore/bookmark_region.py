@@ -25,6 +25,20 @@ _NON_FIELD_RANGE_MARKERS = (
 )
 
 
+def _object_metatags(node: etree._Element, entry: str) -> tuple[str, ...]:
+    """Read direct native ``hp:metaTag`` values as opaque ordered strings."""
+    values: list[str] = []
+    for child in node:
+        if local_name(child.tag) != "metaTag":
+            continue
+        if child.tag != f"{_HP}metaTag":
+            raise ValueError(f"{entry}: object-local metaTag uses a non-native namespace")
+        if len(child):
+            raise ValueError(f"{entry}: object-local hp:metaTag must contain text only")
+        values.append(child.text or "")
+    return tuple(values)
+
+
 @dataclass(frozen=True)
 class BookmarkRegion:
     """A current-snapshot handle for one supported native BOOKMARK region.
@@ -43,6 +57,8 @@ class BookmarkRegion:
     start_paragraph: int
     end_paragraph: int
     parent: BookmarkRegion | None
+    meta_tags: tuple[str, ...]
+    meta_tag_attribute: str | None
     _pairing_id: str = field(repr=False)
     _section_sha256: bytes = field(repr=False)
 
@@ -388,6 +404,8 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
                         start_paragraph=start_paragraph,
                         end_paragraph=end_paragraph,
                         parent=None,  # filled in by _link_containment
+                        meta_tags=_object_metatags(begin, section.entry),
+                        meta_tag_attribute=begin.get("metaTag"),
                         _pairing_id=begin_id,
                         _section_sha256=section.snapshot,
                     ),
@@ -413,6 +431,22 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
 def resolve_bookmark_regions(pkg: object) -> list[BookmarkRegion]:
     """List supported native BOOKMARK regions, containers before their contents."""
     return [resolved.region for resolved in _resolve(require_package(pkg))]
+
+
+def append_bookmark_metatag(pkg: object, region: BookmarkRegion, payload: str) -> None:
+    """Append one opaque object-local MetaTag to a freshly resolved BOOKMARK begin."""
+    if not isinstance(payload, str):
+        raise TypeError(f"hp:metaTag payload must be str: {type(payload)!r}")
+    package = require_package(pkg)
+    matches = [item for item in _resolve(package) if item.region == region]
+    if len(matches) != 1:
+        raise ValueError(
+            "BOOKMARK region is not present in the current package snapshot; resolve again"
+        )
+    resolved = matches[0]
+    child = etree.SubElement(resolved.begin, f"{_HP}metaTag")
+    child.text = payload
+    package.entries[region.section] = serialize_modified_section(resolved.section.root)
 
 
 def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
