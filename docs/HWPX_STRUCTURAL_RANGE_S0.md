@@ -109,9 +109,15 @@ real 6파일의 `fieldBegin` 61개는 모두 빈 `metaTag=""` attribute를 가�
 
 ### S0 native bookmark corpus
 
-사용자가 한글 UI로 만들고 HWPX로 저장한 R0~R4와 T0~T7을
-`tests/corpus/structural_range_s0/`에 원본 그대로 보존했다. `version.xml`은 모두
-`application="Hancom Office Hangul"`, `appVersion="12, 0, 0, 4426 WIN32LEWindows_10"`이다.
+사용자가 한글 UI로 만들고 HWPX로 저장한 표본을 `tests/corpus/structural_range_s0/`에 원본
+그대로 보존했다. `version.xml`의 `application`은 모두 `Hancom Office Hangul`이지만
+**`appVersion`은 두 갈래**다.
+
+- R0~R4와 T0~T7: `12, 0, 0, 4426 WIN32LEWindows_10`
+- R5 두 파일(§19에서 추가): `12, 0, 0, 4547 WIN32LEWindows_10`
+
+두 버전이 같은 encoding을 쓴다는 것 자체는 이 corpus가 보이는 사실이지만, 버전 간 차이를
+따로 조사하지는 않았다.
 
 | 파일 | SHA-256 | native marker | probe 위치 |
 |---|---|---|---|
@@ -561,7 +567,9 @@ production 구현은 `src/hwpxcore/bookmark_region.py` 한 모듈에 둔다. 제
 structural range 계층을 만들지 않고 다음 세 이름만 공개한다.
 
 - `BookmarkRegion`: 현재 section snapshot에만 유효한 opaque handle. `start_paragraph`와
-  `end_paragraph`는 section 직계 `hp:p`의 0-based inclusive 위치다.
+  `end_paragraph`는 section 직계 `hp:p`의 0-based inclusive 위치다. `parent`는 바로 바깥의
+  region이고 최상위면 `None`이다(§20). 중첩된 두 region이 같은 문단 범위를 가질 수 있으므로
+  포함 관계는 문단 색인이 아니라 **문서 순서**가 정한다.
 - `resolve_bookmark_regions(pkg)`: 문서 순서로 지원 가능한 native BOOKMARK region을 검증·반환한다.
 - `remove_bookmark_region(pkg, region)`: 같은 snapshot에서 다시 resolve한 정확한 region의
   top-level paragraph shell을 제거하고 기존 `serialize_modified_section()`으로 직렬화한다.
@@ -580,8 +588,10 @@ bookmark name을 durable identity로 쓰지 않으며 section이 변하면 handl
 - 범위 밖 paragraph의 non-layout XML과 다른 package entry 보존
 - 변형 section의 `linesegarray` 전량 제거와 deterministic serialize/reparse
 
-partial-paragraph, cross-section, crossing/nesting BOOKMARK, 비-native containment, section의 모든
-paragraph 제거, malformed/ambiguous pair는 명시적으로 거부한다. 다른 Field의 의미를
+partial-paragraph, cross-section, **crossing** BOOKMARK, 비-native containment, section의 모든
+paragraph 제거, malformed/ambiguous pair는 명시적으로 거부한다. proper nesting은 §20에서 resolve
+대상으로 승격했고, **중첩에 참여하는 region의 제거는 여전히 거부한다** — S0가 증명한 제거 범위는
+서로 겹치지 않는 region뿐이다. 다른 Field의 의미를
 `FieldDocument._field_span()`과 합치거나 검증하지 않는다. 단, 제거 extent가 다른 field pair의
 한쪽 marker만 자르거나 그 pair 안에 중첩되면 orphan/collateral damage를 막기 위해 제거 전에
 거부한다. section/boundary marker는 공식 `hs`/`hp` namespace만 수용하며, `markpen` 또는
@@ -751,11 +761,8 @@ ValueError: Contents/section0.xml: nested BOOKMARK regions are unsupported: 'S0_
 통과했다는 뜻이다. 즉 **읽지 못하는 것이 아니라 읽지 않기로 한 것**이고, 막는 규칙은 §17.2의
 nesting 금지 하나뿐이다.
 
-이 spike는 그 규칙을 바꾸지 않았다. nesting을 지원하려면 최소한 다음이 추가로 필요하다.
-
-- 포함 관계의 정본 판정(문서 순서 기반 tree 구성)
-- nested region의 제거·편집 의미(S0-D에 해당하는 실험)
-- crossing과 nesting을 가르는 진단 문안의 유지
+**이 절은 S0-E 관찰 시점의 기록이다.** 여기서 지목한 규칙은 이후 §20에서 바뀌었다 — resolve는
+proper nesting을 받아들이고 containment를 표현하며, crossing 거부와 nested 제거 금지는 유지한다.
 
 ### 19.5 S0-E 검증
 
@@ -765,3 +772,65 @@ nesting 금지 하나뿐이다.
 - 두 owner 합계 10 passed, 0.21s
 - Ruff·Pyright 통과, heavy-resource launch delta 0
 - production source 변경 없음
+
+## 20. proper nesting resolution 승격
+
+§19가 native 증거를 세웠으므로 resolve 계약을 그 증거 범위만큼 넓혔다. crossing 거부는 그대로다.
+
+### 20.1 바뀐 것
+
+- `_reject_bookmark_overlap()`을 `_link_containment()`로 바꿨다. 문서 순서로 정렬된 region을
+  훑으며 아직 닫히지 않은 region을 스택으로 들고, 바로 위 항목을 그 region의 `parent`로 기록한다.
+- **crossing 판정은 그대로 거부**한다. 열린 역순으로 닫히지 않으면 — 즉 안쪽이 바깥보다 늦게
+  끝나면 — `crossing BOOKMARK regions are unsupported`로 실패한다. 진단 문안과 실패 지점은
+  바뀌지 않았다.
+- `BookmarkRegion`에 `parent` 필드가 생겼다. 최상위는 `None`이고 중첩 깊이는 제한하지 않는다.
+- `remove_bookmark_region()`은 **중첩에 참여하는 region을 거부**한다. 자신이 `parent`를 갖거나
+  다른 region의 `parent`이면 `removing a nested BOOKMARK region is unsupported`로 실패한다.
+
+### 20.2 왜 제거는 넓히지 않았는가
+
+§19.3이 적었듯 S0-E는 nested 구조의 **제거 의미를 증명하지 않았다.** 바깥을 지우면 안쪽 문단이
+함께 사라지고, 안쪽만 지우면 바깥의 extent가 줄어든다 — 어느 쪽도 한글 실물과 대조한 적이 없다.
+resolve를 넓혔다고 제거까지 따라 넓히면 증명되지 않은 변형을 조용히 수행하게 된다. 그래서
+읽기는 넓히고 쓰기는 잠갔다. 제거를 열려면 R5에 대한 S0-D 계열 실험이 먼저다.
+
+같은 이유로 `parent`가 표현하는 것은 **포함 관계뿐**이고 Slot·Option 같은 제품 의미는 아니다.
+`hwpxcore`는 여전히 제품 의미를 모른다.
+
+### 20.2-1 알려진 한계 — 경계가 같은 문단에서 겹치는 중첩
+
+full-paragraph 경계 규칙이 그대로 살아 있으므로, 안쪽 region이 바깥과 **같은 문단에서 시작하거나
+끝나면** 여전히 `partial-paragraph BOOKMARK begin/end is unsupported`로 거부된다. 경계 marker
+사이에 본문이 없어도 그렇다 — 검사가 이웃한 BOOKMARK `hp:ctrl`을 payload로 세기 때문이다.
+
+이것은 사고가 아니라 **현재의 선택**이고 owner test가 그 사실을 고정한다. R5는 slot이 option보다
+한 문단 먼저 시작하는 모양이라 이 경우를 밟지 않았고, 따라서 한글이 경계가 겹치는 중첩을
+만들어 내는지는 **관찰된 바 없다**.
+
+실무적으로는 걸릴 만한 모양이다 — Slot의 첫 Option이 Slot과 같은 문단에서 시작하는 저작은
+자연스럽다. 그러므로 완화 여부는 코드 판단이 아니라 **다음 native 실험의 입력**이다(§21).
+
+### 20.3 검증
+
+- resolve: native `R5-nested.hwpx`가 3 region으로 resolve되고 `S0_OPT_A`·`S0_OPT_B`의 `parent`가
+  `S0_SLOT`이다. 재저장본도 같은 topology를 낸다.
+- 스택 pop: 앞 region이 닫힌 뒤 열리는 region은 형제로 잡힌다(자식으로 오인하지 않는다).
+- 깊이 2 이상: `OUTER > MID > INNER` 합성 표본으로 부모 사슬을 확인한다.
+- crossing: 기존 거부 표본이 그대로 실패한다.
+- 제거: R5의 세 region 전부 거부되고, 형제 관계인 region은 기존대로 제거된다.
+- owner `tests/test_bookmark_regions.py` + `tests/test_hwpx_structure_probe.py` 11 passed.
+
+## 21. 후속 native 실험 후보
+
+§20까지의 판정이 남긴 미검증 지점이고, 각각 한글 실물 표본이 먼저다.
+
+| ID | 질문 | 필요한 표본 |
+|---|---|---|
+| S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | R5에 대한 T계열 — 안쪽만 삭제, 바깥만 삭제, 둘 다 삭제 |
+| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | slot과 첫 option이 같은 문단에서 시작하는 표본 |
+| S0-H | 한글이 **crossing**을 허용하는가 | 겹치되 중첩이 아닌 두 책갈피 |
+
+S0-F가 풀리기 전에는 `remove_bookmark_region()`의 중첩 거부를 풀지 않는다. S0-G가 풀리기
+전에는 `_payload_outside_boundary()`를 완화하지 않는다. 두 잠금 모두 §20.2의 같은 이유를 진다 —
+읽기를 넓힌 것이 쓰기와 경계 규칙까지 넓혀도 된다는 뜻은 아니다.

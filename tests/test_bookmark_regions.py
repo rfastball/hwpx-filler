@@ -215,6 +215,76 @@ def test_native_r4_removal_is_composable_after_reparse_in_both_orders() -> None:
     assert final_structures[0] == final_structures[1]
 
 
+def test_resolves_nested_regions_with_containment_but_refuses_their_removal() -> None:
+    pkg = _native("R5-nested.hwpx")
+    regions = resolve_bookmark_regions(pkg)
+    shape = lambda items: [  # noqa: E731 - local projection, not an API
+        (region.name, region.start_paragraph, region.end_paragraph,
+         region.parent.name if region.parent else None)
+        for region in items
+    ]
+    assert shape(regions) == [
+        ("S0_SLOT", 1, 4, None),
+        ("S0_OPT_A", 2, 2, "S0_SLOT"),
+        ("S0_OPT_B", 3, 3, "S0_SLOT"),
+    ]
+    assert regions[1].parent == regions[0] and regions[2].parent == regions[0]
+    assert shape(resolve_bookmark_regions(_native("R5-nested-resaved.hwpx"))) == shape(regions)
+
+    # S0 proved removal only for disjoint regions, so every participant refuses.
+    for region in regions:
+        with pytest.raises(ValueError, match="removing a nested BOOKMARK region"):
+            remove_bookmark_region(pkg, region)
+
+    depth = _package(
+        _paragraph("<hp:t>OUT</hp:t>")
+        + _paragraph(_begin("1", "OUTER") + "<hp:t>A</hp:t>")
+        + _paragraph(_begin("2", "MID") + "<hp:t>B</hp:t>")
+        + _paragraph(_begin("3", "INNER") + "<hp:t>C</hp:t>" + _end("3"))
+        + _paragraph("<hp:t>D</hp:t>" + _end("2"))
+        + _paragraph("<hp:t>E</hp:t>" + _end("1"))
+        + _paragraph("<hp:t>OUT2</hp:t>")
+    )
+    assert shape(resolve_bookmark_regions(depth)) == [
+        ("OUTER", 1, 5, None),
+        ("MID", 2, 4, "OUTER"),
+        ("INNER", 3, 3, "MID"),
+    ]
+
+    # Nesting stays inside the full-paragraph boundary rule: a child that opens
+    # in its container's own paragraph is still refused as partial-paragraph.
+    # Whether Hancom ever writes that shape is an open S0 question, so widening
+    # it needs native evidence first, not just a resolver change.
+    coincident = _package(
+        _paragraph(
+            _begin("1", "OUTER")
+            + _begin("2", "INNER")
+            + "<hp:t>A</hp:t>"
+            + _end("2")
+            + _end("1")
+        )
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+    with pytest.raises(ValueError, match="partial-paragraph BOOKMARK begin"):
+        resolve_bookmark_regions(coincident)
+
+    # A region that opens after its predecessor closed is a sibling, not a child.
+    siblings = _package(
+        _paragraph(_begin("1", "A") + "<hp:t>A</hp:t>")
+        + _paragraph(_begin("2", "A1") + "<hp:t>B</hp:t>" + _end("2"))
+        + _paragraph("<hp:t>C</hp:t>" + _end("1"))
+        + _paragraph(_begin("3", "B") + "<hp:t>D</hp:t>" + _end("3"))
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+    assert shape(resolve_bookmark_regions(siblings)) == [
+        ("A", 0, 2, None),
+        ("A1", 1, 1, "A"),
+        ("B", 3, 3, None),
+    ]
+    remove_bookmark_region(siblings, _region(siblings, "B"))
+    assert _paragraph_texts(siblings) == ["A", "B", "C", "OUT"]
+
+
 def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     ordinary = _package(
         _paragraph(
@@ -243,14 +313,6 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         + _paragraph(_begin("2", "B") + "<hp:t>B1</hp:t>")
         + _paragraph("<hp:t>A2</hp:t>" + _end("1"))
         + _paragraph("<hp:t>B2</hp:t>" + _end("2"))
-        + _paragraph("<hp:t>OUT2</hp:t>")
-    )
-    nested = (
-        _paragraph("<hp:t>OUT</hp:t>")
-        + _paragraph(_begin("1", "A") + "<hp:t>A1</hp:t>")
-        + _paragraph(_begin("2", "B") + "<hp:t>B1</hp:t>")
-        + _paragraph("<hp:t>B2</hp:t>" + _end("2"))
-        + _paragraph("<hp:t>A2</hp:t>" + _end("1"))
         + _paragraph("<hp:t>OUT2</hp:t>")
     )
     field_end_inside = (
@@ -345,10 +407,6 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
             "non-paragraph section child",
         ),
         (_package(crossing), "crossing BOOKMARK regions"),
-        (_package(nested), "nested BOOKMARK regions"),
-        # Native S0-E evidence: Hancom really produces this shape, and every
-        # per-region check passes — only the nesting rule refuses it.
-        (_native("R5-nested.hwpx"), "nested BOOKMARK regions"),
         (
             _package(
                 _paragraph(_begin() + "<hp:t>A</hp:t>"),
