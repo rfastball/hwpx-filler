@@ -788,12 +788,14 @@ proper nesting을 받아들이고 containment를 표현하며, crossing 거부�
 - `remove_bookmark_region()`은 **중첩에 참여하는 region을 거부**한다. 자신이 `parent`를 갖거나
   다른 region의 `parent`이면 `removing a nested BOOKMARK region is unsupported`로 실패한다.
 
-### 20.2 왜 제거는 넓히지 않았는가
+### 20.2 제거는 한때 잠겨 있었다 (S0-F에서 해제)
 
-§19.3이 적었듯 S0-E는 nested 구조의 **제거 의미를 증명하지 않았다.** 바깥을 지우면 안쪽 문단이
-함께 사라지고, 안쪽만 지우면 바깥의 extent가 줄어든다 — 어느 쪽도 한글 실물과 대조한 적이 없다.
-resolve를 넓혔다고 제거까지 따라 넓히면 증명되지 않은 변형을 조용히 수행하게 된다. 그래서
-읽기는 넓히고 쓰기는 잠갔다. 제거를 열려면 R5에 대한 S0-D 계열 실험이 먼저다.
+§19.3이 적었듯 S0-E는 nested 구조의 **제거 의미를 증명하지 않았다.** 그래서 resolve를 넓히면서도
+`remove_bookmark_region()`은 중첩에 참여하는 region을 거부하도록 잠갔다 — 읽기를 넓혔다고 쓰기까지
+따라 넓히면 증명되지 않은 변형을 조용히 수행하게 되기 때문이다.
+
+**그 잠금은 §22(S0-F)에서 근거를 얻어 풀렸다.** 한글이 같은 범위를 지운 결과와 우리 제거가 문단·
+marker 단위로 일치한다는 것이 확인됐다.
 
 같은 이유로 `parent`가 표현하는 것은 **포함 관계뿐**이고 Slot·Option 같은 제품 의미는 아니다.
 `hwpxcore`는 여전히 제품 의미를 모른다.
@@ -825,12 +827,84 @@ full-paragraph 경계 규칙이 그대로 살아 있으므로, 안쪽 region이 
 
 §20까지의 판정이 남긴 미검증 지점이고, 각각 한글 실물 표본이 먼저다.
 
-| ID | 질문 | 필요한 표본 |
+| ID | 질문 | 상태 |
 |---|---|---|
-| S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | R5에 대한 T계열 — 안쪽만 삭제, 바깥만 삭제, 둘 다 삭제 |
-| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | slot과 첫 option이 같은 문단에서 시작하는 표본 |
-| S0-H | 한글이 **crossing**을 허용하는가 | 겹치되 중첩이 아닌 두 책갈피 |
+| S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | **완료 — §22.** 제거 잠금 해제 |
+| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | 미착수. slot과 첫 option이 같은 문단에서 시작하는 표본 필요 |
+| S0-H | 한글이 **crossing**을 허용하는가 | 미착수. 겹치되 중첩이 아닌 두 책갈피 필요 |
 
-S0-F가 풀리기 전에는 `remove_bookmark_region()`의 중첩 거부를 풀지 않는다. S0-G가 풀리기
-전에는 `_payload_outside_boundary()`를 완화하지 않는다. 두 잠금 모두 §20.2의 같은 이유를 진다 —
-읽기를 넓힌 것이 쓰기와 경계 규칙까지 넓혀도 된다는 뜻은 아니다.
+S0-G가 풀리기 전에는 `_payload_outside_boundary()`를 완화하지 않는다. 잠금의 이유는 §20.2와
+같다 — 읽기를 넓힌 것이 경계 규칙까지 넓혀도 된다는 뜻은 아니다.
+
+## 22. S0-F nested BOOKMARK 제거 native 관찰
+
+### 22.1 방법과 표본
+
+매번 원본 `R5-nested.hwpx`를 새로 복제해 한글 `12, 0, 0, 4547`에서 변형 하나만 수행하고 HWPX로
+저장했다. 변형을 누적하지 않았다(S0-C와 같은 규율). 원본은 `tests/corpus/structural_range_s0/F/`에
+보존했다. 기준 구조는 `S0_SLOT`이 p[1]~p[4](BBB~EEE), `S0_OPT_A`가 p[2](CCC), `S0_OPT_B`가
+p[3](DDD)다.
+
+| 파일 | 변형 | SHA-256 |
+|---|---|---|
+| `F1-delete-inner-paragraph.hwpx` | `CCC` 문단 삭제 = `S0_OPT_A` range 전체 | `35185E329D43237277E748092E526A4E5060A75EF16F7F6E4C098B059B213A5E` |
+| `F2-delete-outer-range.hwpx` | `BBB`~`EEE` 삭제 = `S0_SLOT` range 전체 | `8E5558E676DA9884A2A4BE05CEC39037C0750B12EA4D30E5D2BFE1E09C3FD2E1` |
+| `F3-delete-outer-start.hwpx` | `BBB` 문단만 삭제 = SLOT 시작 경계 | `7C2B2510871FA75AFCE398B3EB3CFAEA460C654A7FF2E4863924ECBBEC414809` |
+| `F4-delete-outer-end.hwpx` | `EEE` 문단만 삭제 = SLOT 끝 경계 | `EBA0067E5DCD598C2C778A6DBC195852B304DE28EFE4540922BA0E499260CB33` |
+| `F5-remove-inner-bookmark.hwpx` | 책갈피 `S0_OPT_A` 만 지우기(본문 유지) | `19CB956ED83E9F4B0429E42798293AE9CD90B581AFAF8F06C172A0A75DE72BD4` |
+| `F6-remove-outer-bookmark.hwpx` | 책갈피 `S0_SLOT` 만 지우기(본문 유지) | `6CAEAE4B3D18AEAAC3C277C93B3A6CFB8FC0A738DB2593D469A92D88457D8C36` |
+
+### 22.2 관찰
+
+| ID | 남은 본문 | 남은 marker | 판정 |
+|---|---|---|---|
+| F1 | AAA·BBB·DDD·EEE | `S0_SLOT` p[1]~p[3], `S0_OPT_B` p[2] | 안쪽 하나가 사라지고 **바깥은 살아남되 extent가 줄었다**. 형제도 온전 |
+| F2 | AAA | 없음 | 바깥 range 전체 삭제가 **안쪽 둘까지 함께** 없앴다 |
+| F3 | AAA·CCC·DDD·EEE | `S0_OPT_A` p[1], `S0_OPT_B` p[2] | 시작 경계 문단 삭제가 **`S0_SLOT` pair 전체**를 지웠고, **안쪽 둘은 최상위로 승격** |
+| F4 | AAA·BBB·CCC·DDD | `S0_OPT_A` p[2], `S0_OPT_B` p[3] | 끝 경계에서도 대칭으로 같은 결과 |
+| F5 | 5문단 전부 | `S0_SLOT`, `S0_OPT_B` | 본문을 남기고 표식만 제거 가능. 나머지 둘 온전 |
+| F6 | 5문단 전부 | `S0_OPT_A`, `S0_OPT_B` | 바깥 표식만 제거해도 **안쪽 identity가 살아 최상위로 승격** |
+
+**여섯 경우 모두 orphan이 없다.** 짝 없는 `fieldBegin`이나 `fieldEnd`가 하나도 남지 않았다.
+R2의 T4/T5에서 확인한 "한글은 경계 문단을 지울 때 pair 전체를 함께 지운다"가 중첩에서도 같고,
+그때 **자식은 고아가 되지 않고 최상위 region이 된다**는 것이 새로 확인된 사실이다.
+
+### 22.3 우리 구현과의 대조
+
+`remove_bookmark_region()`이 하는 일은 region의 문단 shell 삭제다. 그 결과를 한글의 같은 범위
+삭제와 대조했다.
+
+| 우리 호출 | 한글 대응 | 문단 | marker | 남은 region |
+|---|---|---|---|---|
+| `remove(S0_OPT_A)` | F1 | 일치 | 일치 | `S0_SLOT`(1~3) + `S0_OPT_B`(2) |
+| `remove(S0_SLOT)` | F2 | 일치 | 일치 | 없음 |
+
+문단 텍스트 순서와 marker의 (문단, 종류, 이름) 순서가 모두 같다. `hp:p@id`와 layout은 한글이
+따로 재계산하므로 byte 대조는 하지 않았다 — S0-D 계열과 같은 기준이다.
+
+### 22.4 판정
+
+- nested 구조에서 한글의 제거 결과: **orphan 없음**, PROVEN.
+- 안쪽 제거 시 바깥 생존과 extent 축소: **PROVEN**(F1).
+- 바깥 제거 시 안쪽 동반 삭제: **PROVEN**(F2).
+- 경계 문단만 삭제할 때 자식의 최상위 승격: **PROVEN**(F3·F4·F6).
+- 우리 문단-shell 삭제와 한글 결과의 일치: **PROVEN**, 위 두 방향에 한정.
+
+따라서 §20.2의 제거 잠금을 **해제**한다. `remove_bookmark_region()`은 이제 중첩에 참여하는
+region도 제거하며, **container를 제거하면 그 안의 region이 함께 사라진다**는 사실을 docstring에
+명시한다. 한글이 같은 결과를 내므로 이것은 놀라운 동작이 아니라 native 의미와의 일치다.
+
+### 22.5 이 판정이 포함하지 않는 것
+
+- **표식만 제거하는 조작.** F5·F6이 보인 "본문을 남기고 책갈피만 지우기"는 우리 API에 없다.
+  필요해지면 별도 primitive이며 이 판정이 그것을 승인하지 않는다.
+- **경계 문단만 삭제하는 조작.** F3·F4도 우리 API가 제공하지 않는다. 다만 그 결과로 생긴
+  "승격된 최상위 region" 상태는 resolve가 그대로 읽는다.
+- 깊이 3 이상, 복수 Slot, crossing은 여전히 범위 밖이다.
+
+### 22.6 검증
+
+- owner `tests/test_bookmark_regions.py`: 제거 잠금 test를 native 대조 test로 **대체**했다.
+  F1·F2 일치, 여섯 파일 전부의 orphan 부재, F3·F4·F6의 승격을 함께 고정한다.
+- owner 7 passed. 정적 게이트와 인접 owner 114 passed.
+- production 변경은 `remove_bookmark_region()`의 잠금 제거와 docstring뿐이다.

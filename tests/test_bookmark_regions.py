@@ -85,6 +85,32 @@ def _region(pkg: HwpxPackage, name: str) -> BookmarkRegion:
     return next(region for region in resolve_bookmark_regions(pkg) if region.name == name)
 
 
+def _markers(pkg: HwpxPackage) -> list[tuple[int, str, str | None]]:
+    root = etree.fromstring(pkg.entries[SECTION])
+    found = []
+    for index, paragraph in enumerate(
+        child for child in root if local_name(child.tag) == "p"
+    ):
+        for node in paragraph.iter():
+            tag = local_name(node.tag)
+            if tag in {"fieldBegin", "fieldEnd"}:
+                found.append((index, tag, node.get("name")))
+    return found
+
+
+def _pairing_ids(pkg: HwpxPackage) -> tuple[set[str], set[str]]:
+    root = etree.fromstring(pkg.entries[SECTION])
+    begins = {
+        node.get("id") for node in root.iter() if local_name(node.tag) == "fieldBegin"
+    }
+    ends = {
+        node.get("beginIDRef")
+        for node in root.iter()
+        if local_name(node.tag) == "fieldEnd"
+    }
+    return begins, ends
+
+
 def _assert_clean(pkg: HwpxPackage) -> None:
     root = etree.fromstring(pkg.entries[SECTION])
     assert not any(
@@ -215,7 +241,52 @@ def test_native_r4_removal_is_composable_after_reparse_in_both_orders() -> None:
     assert final_structures[0] == final_structures[1]
 
 
-def test_resolves_nested_regions_with_containment_but_refuses_their_removal() -> None:
+def test_removes_nested_regions_exactly_as_hancom_deletes_the_same_range() -> None:
+    """S0-F: our paragraph-range removal reproduces Hancom's own deletion."""
+    cases = (
+        ("S0_OPT_A", "F/F1-delete-inner-paragraph.hwpx"),
+        ("S0_SLOT", "F/F2-delete-outer-range.hwpx"),
+    )
+    for target, native in cases:
+        pkg = _native("R5-nested.hwpx")
+        remove_bookmark_region(pkg, _region(pkg, target))
+        hancom = _native(native)
+
+        assert _paragraph_texts(pkg) == _paragraph_texts(hancom)
+        assert _markers(pkg) == _markers(hancom)
+        assert [
+            (region.name, region.start_paragraph, region.end_paragraph,
+             region.parent.name if region.parent else None)
+            for region in resolve_bookmark_regions(pkg)
+        ] == [
+            (region.name, region.start_paragraph, region.end_paragraph,
+             region.parent.name if region.parent else None)
+            for region in resolve_bookmark_regions(hancom)
+        ]
+        _assert_clean(pkg)
+        assert dump_structure(HwpxPackage.from_bytes(pkg.to_bytes())) == dump_structure(pkg)
+
+    # Hancom never leaves a half pair behind, whichever paragraph is deleted.
+    for name in (
+        "F/F1-delete-inner-paragraph.hwpx",
+        "F/F2-delete-outer-range.hwpx",
+        "F/F3-delete-outer-start.hwpx",
+        "F/F4-delete-outer-end.hwpx",
+        "F/F5-remove-inner-bookmark.hwpx",
+        "F/F6-remove-outer-bookmark.hwpx",
+    ):
+        begins, ends = _pairing_ids(_native(name))
+        assert begins == ends, name
+
+    # Deleting only the container's boundary paragraph promotes its contents.
+    for name in ("F/F3-delete-outer-start.hwpx", "F/F4-delete-outer-end.hwpx",
+                 "F/F6-remove-outer-bookmark.hwpx"):
+        assert [
+            (region.name, region.parent) for region in resolve_bookmark_regions(_native(name))
+        ] == [("S0_OPT_A", None), ("S0_OPT_B", None)], name
+
+
+def test_resolves_nested_regions_with_containment() -> None:
     pkg = _native("R5-nested.hwpx")
     regions = resolve_bookmark_regions(pkg)
     shape = lambda items: [  # noqa: E731 - local projection, not an API
@@ -230,11 +301,6 @@ def test_resolves_nested_regions_with_containment_but_refuses_their_removal() ->
     ]
     assert regions[1].parent == regions[0] and regions[2].parent == regions[0]
     assert shape(resolve_bookmark_regions(_native("R5-nested-resaved.hwpx"))) == shape(regions)
-
-    # S0 proved removal only for disjoint regions, so every participant refuses.
-    for region in regions:
-        with pytest.raises(ValueError, match="removing a nested BOOKMARK region"):
-            remove_bookmark_region(pkg, region)
 
     depth = _package(
         _paragraph("<hp:t>OUT</hp:t>")
