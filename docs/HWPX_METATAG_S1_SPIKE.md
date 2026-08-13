@@ -349,14 +349,19 @@ production 계약 안에 머문다.
 | package entry (manifest 선언함) | **소실** | ZIP 에서 제거 |
 | package entry (manifest 미선언) | **소실** | ZIP 에서 제거 |
 
-**모델이 아는 carrier 는 전부 살고, 모델 밖은 전부 죽는다.** 예외가 없다. §4.5 에서 OWPML
-소스로 세운 추론 — unknown element 보존 경로는 있고 unknown attribute 보존 경로는 없다 — 이
+**모델이 아는 carrier 는 전부 살고, 모델 밖은 전부 죽는다.** 예외가 없다. 세는 단위를 분명히
+하면 — 살아남은 **wire 형태는 3종**(`hp:metaTag` element / `hh:metaTag` element /
+`subList@metatag` attribute)이고, 그 위에 실린 **payload 실체는 6개**다. owner test 의
+`survived` 집합이 그 6개를 열거한다.
+
+§4.5 에서 OWPML 소스로 세운 추론 — unknown element 보존 경로는 있고 unknown attribute 보존 경로는 없다 — 이
 실물에서 그대로 확인됐다. 선언한 package entry 조차 살아남지 못한 것은 한글이 자기가 아는 part
 집합만 다시 쓴다는 뜻이다.
 
 ### 9.2 보존의 정확한 의미 — 정규화는 있고 손실은 없다
 
-살아남은 5개는 **byte 동일이 아니다.** 한글이 JSON 을 자기 방식으로 다시 쓴다.
+살아남은 payload 6개(`hh:metaTag` 1 + BOOKMARK `fieldBegin` 의 `hp:metaTag` 3 + `tbl` 의
+`hp:metaTag` 1 + 셀 `subList@metatag` 1)는 **byte 동일이 아니다.** 한글이 JSON 을 자기 방식으로 다시 쓴다.
 
 ```text
 before  {"hwpxFiller": {"v": 1, "label": "추가 지급 안내", …}, "name": "#hf_s1_anchor"}   742자
@@ -490,14 +495,14 @@ carrier 마다 판정이 다를 수 있으므로 **carrier 별로** 적고, 종�
 |---|---|
 | our round-trip | **PASS** (§8) |
 | Hancom open | **PASS** — G1~G3 세 파일 모두 경고 없이 열림 (§9) |
-| Hancom save preserve | **PASS(semantic)** — 모델이 아는 carrier 5개 전부, 미지 property 포함. 단 byte 는 아니다 (§9.1·§9.2) |
+| Hancom save preserve | **PASS(semantic)** — 모델이 아는 wire 형태 3종에 실린 payload 6개 전부, 미지 property 포함. 단 byte 는 아니다 (§9.1·§9.2) |
 
 ### 12.1 사전 등록 규칙과 어긋난 지점
 
 먼저 이것부터 적는다. **관찰 결과는 §11 의 두 label 중 어느 쪽에도 정확히 들어맞지 않는다.**
 
 - **PASS-A 의 문구는 "payload 를 문자 단위로 그대로 되돌려준다" 였고, 그 조건은 실패했다.**
-  한글은 살아남은 5개 carrier 를 전부 compact JSON 으로 재직렬화한다(§9.2).
+  한글은 살아남은 payload 6개를 전부 compact JSON 으로 재직렬화한다(§9.2).
 - **PASS-B 의 문구도 맞지 않는다.** PASS-B 는 정규화를 "arbitrary rich payload 에는 부적합"
   과 묶어 두었는데, 관찰은 그 반대다 — 정규화가 일어나면서도 unknown property 를 포함한
   rich payload 가 **의미 단위로 온전히** 살아남았다.
