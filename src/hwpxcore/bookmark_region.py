@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 
 from lxml import etree
@@ -30,14 +30,18 @@ class BookmarkRegion:
     """A current-snapshot handle for one supported native BOOKMARK region.
 
     Paragraph indices are zero-based section-direct ``hp:p`` positions and both
-    bounds are inclusive. Re-resolve after any section mutation; the private
-    pairing reference and snapshot digest are deliberately not durable identity.
+    bounds are inclusive. ``parent`` is the immediately enclosing region, or
+    ``None`` at the top level; document order alone decides containment, because
+    two nested regions may share a paragraph span. Re-resolve after any section
+    mutation; the private pairing reference and snapshot digest are deliberately
+    not durable identity.
     """
 
     name: str | None
     section: str
     start_paragraph: int
     end_paragraph: int
+    parent: BookmarkRegion | None
     _pairing_id: str = field(repr=False)
     _section_sha256: bytes = field(repr=False)
 
@@ -185,16 +189,33 @@ def _is_inside(region: _ResolvedRegion, node: etree._Element) -> bool:
     return region.start_child <= child <= region.end_child
 
 
-def _reject_bookmark_overlap(regions: list[_ResolvedRegion]) -> None:
-    for index, left in enumerate(regions):
-        for right in regions[index + 1 :]:
-            if right.begin_order >= left.end_order:
-                break
-            relation = "nested" if right.end_order < left.end_order else "crossing"
+def _link_containment(regions: list[_ResolvedRegion]) -> list[_ResolvedRegion]:
+    """Record each region's immediate container, rejecting crossing ranges.
+
+    ``regions`` arrives in begin order, so a stack of still-open regions gives
+    the enclosing one directly. Proper nesting closes in the reverse of the
+    order it opened; anything else crosses and stays unsupported.
+    """
+    linked: list[_ResolvedRegion] = []
+    open_regions: list[_ResolvedRegion] = []
+    for item in regions:
+        while open_regions and open_regions[-1].end_order < item.begin_order:
+            open_regions.pop()
+        container = open_regions[-1] if open_regions else None
+        if container is not None and item.end_order > container.end_order:
             raise ValueError(
-                f"{left.region.section}: {relation} BOOKMARK regions are unsupported: "
-                f"{left.region.name!r}, {right.region.name!r}"
+                f"{item.region.section}: crossing BOOKMARK regions are unsupported: "
+                f"{container.region.name!r}, {item.region.name!r}"
             )
+        nested = replace(
+            item,
+            region=replace(
+                item.region, parent=container.region if container is not None else None
+            ),
+        )
+        linked.append(nested)
+        open_regions.append(nested)
+    return linked
 
 
 def _reject_intersecting_fields(
@@ -350,6 +371,7 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
                         section=section.entry,
                         start_paragraph=start_paragraph,
                         end_paragraph=end_paragraph,
+                        parent=None,  # filled in by _link_containment
                         _pairing_id=begin_id,
                         _section_sha256=section.snapshot,
                     ),
@@ -363,7 +385,7 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
                 )
             )
 
-        _reject_bookmark_overlap(section_regions)
+        section_regions = _link_containment(section_regions)
         bookmark_ids = {item.region._pairing_id for item in section_regions}
         for item in section_regions:
             _reject_intersecting_fields(item, bookmark_ids)
@@ -373,19 +395,29 @@ def _resolve(pkg: PackageLike) -> list[_ResolvedRegion]:
 
 
 def resolve_bookmark_regions(pkg: object) -> list[BookmarkRegion]:
-    """Validate and list supported native BOOKMARK regions in document order."""
+    """List supported native BOOKMARK regions, containers before their contents."""
     return [resolved.region for resolved in _resolve(require_package(pkg))]
 
 
 def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     """Remove a freshly resolved region from its open package, in place."""
     package = require_package(pkg)
-    matches = [resolved for resolved in _resolve(package) if resolved.region == region]
+    current = _resolve(package)
+    matches = [resolved for resolved in current if resolved.region == region]
     if len(matches) != 1:
         raise ValueError(
             "BOOKMARK region is not present in the current package snapshot; resolve again"
         )
     resolved = matches[0]
+    # Resolution understands containment, but S0 only proved removal for regions
+    # that neither contain nor sit inside another one.
+    if region.parent is not None or any(
+        other.region.parent == region for other in current
+    ):
+        raise ValueError(
+            f"{region.section}: removing a nested BOOKMARK region is unsupported: "
+            f"{region.name!r}"
+        )
     for child in list(resolved.section.root)[
         resolved.start_child : resolved.end_child + 1
     ]:
