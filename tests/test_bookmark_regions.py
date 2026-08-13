@@ -329,6 +329,30 @@ def test_resolves_coincident_boundaries_and_refuses_removals_that_cut_outsiders(
         assert begins == ends == set()
 
 
+def test_hancom_never_stores_crossing_so_only_authored_files_can_carry_it() -> None:
+    """S0-H: asking Hancom for crossing ranges silently yields nesting instead."""
+    shape = lambda items: [  # noqa: E731 - local projection, not an API
+        (region.name, region.start_paragraph, region.end_paragraph,
+         region.parent.name if region.parent else None)
+        for region in items
+    ]
+    # Authored as S0_LEFT=BBB..DDD and S0_RIGHT=CCC..EEE, which would cross.
+    # Hancom kept the end markers where they fell but swapped which begin they
+    # reference, so LEFT swallowed EEE and RIGHT gave it up. No warning was shown.
+    nested_instead = [("S0_LEFT", 1, 4, None), ("S0_RIGHT", 2, 3, "S0_LEFT")]
+    for name in ("H/H1-crossing.hwpx", "H/H1-resaved.hwpx", "H/H2-reverse-order.hwpx"):
+        assert shape(resolve_bookmark_regions(_native(name))) == nested_instead, name
+
+    # Deleting the shared paragraphs drops the inner range whole, never a half pair.
+    assert shape(resolve_bookmark_regions(_native("H/H3-overlap-deleted.hwpx"))) == [
+        ("S0_LEFT", 1, 2, None)
+    ]
+    for name in ("H/H1-crossing.hwpx", "H/H2-reverse-order.hwpx",
+                 "H/H3-overlap-deleted.hwpx"):
+        begins, ends = _pairing_ids(_native(name))
+        assert begins == ends, name
+
+
 def test_resolves_nested_regions_with_containment() -> None:
     pkg = _native("R5-nested.hwpx")
     regions = resolve_bookmark_regions(pkg)
