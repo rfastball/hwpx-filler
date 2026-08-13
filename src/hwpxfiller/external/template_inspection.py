@@ -13,7 +13,12 @@ import json
 from pathlib import Path
 from typing import NamedTuple
 
-from hwpxcore.bookmark_region import BookmarkRegion, resolve_bookmark_topology
+from hwpxcore.bookmark_region import (
+    BookmarkRegion,
+    remove_bookmark_region,
+    resolve_bookmark_topology,
+)
+from hwpxcore.text_extract import require_package
 from lxml import etree
 
 from ..domain.authoring import CompileReport, TokenSite, compile_document, scan_tokens
@@ -37,6 +42,13 @@ class _ProductTag(NamedTuple):
     region: BookmarkRegion
     kind: str
     id: str
+
+
+class _SlotSnapshot(NamedTuple):
+    slots: tuple[Slot, ...]
+    diagnostics: tuple[TemplateDiagnostic, ...]
+    slot_regions: dict[str, BookmarkRegion]
+    option_regions: dict[tuple[str, str], BookmarkRegion]
 
 
 def _diagnostic(kind: str, region: BookmarkRegion, detail: str) -> TemplateDiagnostic:
@@ -174,8 +186,7 @@ def _product_tag(
     return _ProductTag(region, kind, identifier)
 
 
-def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnostic, ...]]:
-    """Inspect one open package; diagnostics are blocking but do not hide valid Slots."""
+def _inspect_slot_snapshot(pkg: object) -> _SlotSnapshot:
     diagnostics: list[TemplateDiagnostic] = []
     try:
         regions = resolve_bookmark_topology(pkg)
@@ -185,7 +196,9 @@ def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnost
             if "crossing BOOKMARK regions" in str(exc)
             else "bookmark-resolve-failed"
         )
-        return (), (TemplateDiagnostic(kind, str(exc)),)
+        return _SlotSnapshot(
+            (), (TemplateDiagnostic(kind, str(exc)),), {}, {}
+        )
 
     recognised: dict[BookmarkRegion, str] = {}
     tags = {
@@ -261,7 +274,92 @@ def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnost
                 options=tuple(options),
             )
         )
-    return tuple(slots), tuple(diagnostics)
+    return _SlotSnapshot(
+        tuple(slots),
+        tuple(diagnostics),
+        {tag.id: tag.region for tag in slot_tags},
+        {
+            (owner.id, tag.id): tag.region
+            for tag in option_tags
+            if (owner := membership.get(tag.region)) is not None
+        },
+    )
+
+
+def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnostic, ...]]:
+    """Inspect one open package; diagnostics are blocking but do not hide valid Slots."""
+    snapshot = _inspect_slot_snapshot(pkg)
+    return snapshot.slots, snapshot.diagnostics
+
+
+def _require_mutable_snapshot(pkg: object) -> tuple[object, _SlotSnapshot]:
+    package = require_package(pkg)
+    snapshot = _inspect_slot_snapshot(package)
+    if snapshot.diagnostics:
+        details = "; ".join(
+            f"{item.kind}: {item.message}" for item in snapshot.diagnostics
+        )
+        raise ValueError(f"Slot mutation blocked by diagnostics: {details}")
+    return package, snapshot
+
+
+def _remove_product_region(
+    package: object,
+    region: BookmarkRegion,
+    expected: tuple[Slot, ...],
+) -> None:
+    entries = package.entries  # type: ignore[attr-defined]
+    original = dict(entries)
+    try:
+        remove_bookmark_region(package, region)
+        actual, diagnostics = inspect_slots(package)
+        if diagnostics or actual != expected:
+            raise ValueError(
+                "Slot removal postcondition failed: "
+                f"expected {expected!r}, got {actual!r} with {diagnostics!r}"
+            )
+    except Exception:
+        entries.clear()
+        entries.update(original)
+        raise
+
+
+def remove_slot(pkg: object, slot_id: str) -> None:
+    """Remove one canonical Slot region selected by its product id."""
+    identifier = _require_text(slot_id, "Slot id")
+    package, snapshot = _require_mutable_snapshot(pkg)
+    region = snapshot.slot_regions.get(identifier)
+    if region is None:
+        raise ValueError(f"Slot {identifier!r} was not found")
+    expected = tuple(slot for slot in snapshot.slots if slot.id != identifier)
+    _remove_product_region(package, region, expected)
+
+
+def remove_slot_option(pkg: object, slot_id: str, option_id: str) -> None:
+    """Remove one canonical Slot Option selected by its Slot-local product id."""
+    owner_id = _require_text(slot_id, "Slot id")
+    target_id = _require_text(option_id, "Slot Option id")
+    package, snapshot = _require_mutable_snapshot(pkg)
+    region = snapshot.option_regions.get((owner_id, target_id))
+    if region is None:
+        raise ValueError(
+            f"Option {target_id!r} was not found in Slot {owner_id!r}"
+        )
+    expected = tuple(
+        slot
+        if slot.id != owner_id
+        else Slot(
+            slot.id,
+            tuple(
+                SlotOption(option.id, order)
+                for order, option in enumerate(
+                    item for item in slot.options if item.id != target_id
+                )
+            ),
+        )
+        for slot in snapshot.slots
+    )
+    _remove_product_region(package, region, expected)
 
 
 def inspect_hwpx_template(path: str) -> TemplateInspection:

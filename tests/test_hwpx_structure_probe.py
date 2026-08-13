@@ -6,11 +6,6 @@ from typing import Any
 
 from lxml import etree
 
-from _hwpx_bookmark_creation_spike import (
-    BOOKMARK_NAME,
-    PAIRING_ID,
-    add_minimal_bookmark,
-)
 from _hwpx_structure_probe import dump_structure
 from hwpxcore.bookmark_region import resolve_bookmark_regions
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -19,6 +14,8 @@ from hwpxcore.text_extract import local_name
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
 NATIVE_CORPUS = Path(__file__).parent / "corpus" / "structural_range_s0"
+PAIRING_ID = "1600000001"
+BOOKMARK_NAME = "S0_GENERATED"
 
 
 def _package() -> HwpxPackage:
@@ -249,24 +246,17 @@ def test_native_r5_nested_bookmarks_pair_independently_and_survive_resave() -> N
     assert markers("R5-nested-resaved.hwpx") == nested
 
 
-def test_d6_minimal_generated_bookmark_resolves_and_reparses_deterministically() -> None:
-    source = (NATIVE_CORPUS / "R0-plain.hwpx").read_bytes()
-    package = HwpxPackage.from_bytes(source)
-    add_minimal_bookmark(package)
-
-    regions = resolve_bookmark_regions(package)
+def test_d6_minimal_and_hancom_resaved_bookmark_shapes() -> None:
+    generated = HwpxPackage.from_bytes(
+        (NATIVE_CORPUS / "D6-generated-minimal.hwpx").read_bytes()
+    )
+    regions = resolve_bookmark_regions(generated)
     assert [
         (region.name, region.start_paragraph, region.end_paragraph)
         for region in regions
     ] == [(BOOKMARK_NAME, 1, 3)]
 
-    generated = package.to_bytes()
-    assert generated == (NATIVE_CORPUS / "D6-generated-minimal.hwpx").read_bytes()
-    reparsed = HwpxPackage.from_bytes(generated)
-    assert resolve_bookmark_regions(reparsed) == regions
-    assert dump_structure(reparsed) == dump_structure(package)
-
-    records = [json.loads(line) for line in dump_structure(reparsed).splitlines()]
+    records = [json.loads(line) for line in dump_structure(generated).splitlines()]
     controls = [record for record in records if record["kind"] == "control"]
     begin = next(record for record in controls if record["tag"] == "fieldBegin")
     end = next(record for record in controls if record["tag"] == "fieldEnd")
@@ -276,10 +266,6 @@ def test_d6_minimal_generated_bookmark_resolves_and_reparses_deterministically()
         "type": "BOOKMARK",
     }
     assert end["attrs"] == {"beginIDRef": PAIRING_ID}
-
-    repeated = HwpxPackage.from_bytes(source)
-    add_minimal_bookmark(repeated)
-    assert repeated.to_bytes() == generated
 
     resaved = HwpxPackage.from_bytes(
         (NATIVE_CORPUS / "D6-generated-resaved.hwpx").read_bytes()

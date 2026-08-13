@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from hashlib import sha256
+from types import SimpleNamespace
 
 from lxml import etree
 
@@ -23,6 +24,7 @@ _NON_FIELD_RANGE_MARKERS = (
     ("insertBegin", "insertEnd"),
     ("deleteBegin", "deleteEnd"),
 )
+_PAIRING_ID_START = 1_600_000_001
 
 
 def _object_metatags(node: etree._Element, entry: str) -> tuple[str, ...]:
@@ -374,36 +376,9 @@ def _resolve(
 
             start = _boundary_paragraph(begin, section.root, section.entry)
             stop = _boundary_paragraph(end, section.root, section.entry)
-            if require_removable and _payload_outside_boundary(
-                begin, start, preceding=True
-            ):
-                raise ValueError(
-                    f"{section.entry}: partial-paragraph BOOKMARK begin is unsupported"
-                )
-            if require_removable and _payload_outside_boundary(
-                end, stop, preceding=False
-            ):
-                raise ValueError(
-                    f"{section.entry}: partial-paragraph BOOKMARK end is unsupported"
-                )
-
             first, last = section.root.index(start), section.root.index(stop)
-            if require_removable and any(
-                child.tag != f"{_HP}p"
-                for child in list(section.root)[first : last + 1]
-            ):
-                raise ValueError(
-                    f"{section.entry}: non-paragraph section child in BOOKMARK extent "
-                    "is unsupported"
-                )
             start_paragraph = section.paragraphs[start]
             end_paragraph = section.paragraphs[stop]
-            if require_removable and (
-                end_paragraph - start_paragraph + 1 == len(section.paragraphs)
-            ):
-                raise ValueError(
-                    f"{section.entry}: removing BOOKMARK would leave no paragraph"
-                )
             section_regions.append(
                 _ResolvedRegion(
                     region=BookmarkRegion(
@@ -429,10 +404,10 @@ def _resolve(
 
         section_regions = _link_containment(section_regions)
         if require_removable:
-            bookmark_ids = {item.region._pairing_id for item in section_regions}
             for item in section_regions:
-                _reject_intersecting_fields(item, bookmark_ids)
-                _reject_intersecting_non_field_ranges(item)
+                _validate_mutable_extent(
+                    item, section_regions, reject_whole_section=True
+                )
         resolved.extend(section_regions)
     return resolved
 
@@ -450,20 +425,427 @@ def resolve_bookmark_topology(pkg: object) -> list[BookmarkRegion]:
     ]
 
 
+def _fresh_region(
+    package: PackageLike,
+    region: BookmarkRegion,
+    *,
+    require_removable: bool,
+) -> tuple[_ResolvedRegion, list[_ResolvedRegion]]:
+    if not isinstance(region, BookmarkRegion):
+        raise TypeError(f"BOOKMARK region must be BookmarkRegion: {type(region)!r}")
+    current = _resolve(package, require_removable=require_removable)
+    matches = [item for item in current if item.region == region]
+    if len(matches) != 1:
+        raise ValueError(
+            "BOOKMARK region is not present in the current package snapshot; resolve again"
+        )
+    return matches[0], current
+
+
+def _candidate_resolution(
+    package: PackageLike,
+    entry: str,
+    root: etree._Element,
+    *,
+    require_removable: bool,
+) -> tuple[bytes, list[_ResolvedRegion]]:
+    data = serialize_modified_section(root)
+    candidate = SimpleNamespace(entries={**package.entries, entry: data})
+    return data, _resolve(candidate, require_removable=require_removable)
+
+
+def _region_key(item: _ResolvedRegion) -> tuple[str, str]:
+    return item.region.section, item.region._pairing_id
+
+
+def _parent_key(region: BookmarkRegion) -> tuple[str, str] | None:
+    if region.parent is None:
+        return None
+    return region.parent.section, region.parent._pairing_id
+
+
+def _topology_shape(
+    items: list[_ResolvedRegion], *, include_positions: bool
+) -> dict[tuple[str, str], tuple[object, ...]]:
+    shaped: dict[tuple[str, str], tuple[object, ...]] = {}
+    for item in items:
+        region = item.region
+        value: tuple[object, ...] = (
+            region.name,
+            _parent_key(region),
+            region.meta_tags,
+            region.meta_tag_attribute,
+        )
+        if include_positions:
+            value += (region.start_paragraph, region.end_paragraph)
+        shaped[_region_key(item)] = value
+    return shaped
+
+
+def _validate_mutable_extent(
+    resolved: _ResolvedRegion,
+    current: list[_ResolvedRegion],
+    *,
+    reject_whole_section: bool,
+    reject_section_definition: bool = False,
+) -> None:
+    section = resolved.section
+    start = _boundary_paragraph(resolved.begin, section.root, section.entry)
+    stop = _boundary_paragraph(resolved.end, section.root, section.entry)
+    if _payload_outside_boundary(resolved.begin, start, preceding=True):
+        raise ValueError(
+            f"{section.entry}: partial-paragraph BOOKMARK begin is unsupported"
+        )
+    if _payload_outside_boundary(resolved.end, stop, preceding=False):
+        raise ValueError(
+            f"{section.entry}: partial-paragraph BOOKMARK end is unsupported"
+        )
+    if any(
+        child.tag != f"{_HP}p"
+        for child in list(section.root)[
+            resolved.start_child : resolved.end_child + 1
+        ]
+    ):
+        raise ValueError(
+            f"{section.entry}: non-paragraph section child in BOOKMARK extent "
+            "is unsupported"
+        )
+    if reject_whole_section and (
+        resolved.region.end_paragraph - resolved.region.start_paragraph + 1
+        == len(section.paragraphs)
+    ):
+        raise ValueError(f"{section.entry}: removing BOOKMARK would leave no paragraph")
+    if reject_section_definition and any(
+        node.tag in {f"{_HP}secPr", f"{_HP}colPr"}
+        for child in list(section.root)[
+            resolved.start_child : resolved.end_child + 1
+        ]
+        for node in child.iter()
+    ):
+        raise ValueError("BOOKMARK content removal would delete section definition")
+    _reject_intersecting_fields(
+        resolved,
+        {
+            item.region._pairing_id
+            for item in current
+            if item.region.section == resolved.region.section
+        },
+    )
+    _reject_intersecting_non_field_ranges(resolved)
+
+
+def _next_pairing_id(sections: list[_Section]) -> str:
+    used = {
+        pairing_id
+        for section in sections
+        for pairing_id in set(section.begins) | set(section.ends)
+    }
+    value = _PAIRING_ID_START
+    while str(value) in used:
+        value += 1
+    return str(value)
+
+
+def create_bookmark_region(
+    pkg: object,
+    section: str,
+    start_paragraph: int,
+    end_paragraph: int,
+    *,
+    name: str,
+    parent: BookmarkRegion | None = None,
+) -> BookmarkRegion:
+    """Wrap an inclusive top-level paragraph range in a native BOOKMARK pair."""
+    if not isinstance(section, str):
+        raise TypeError(f"section must be str: {type(section)!r}")
+    for label, value in (
+        ("start_paragraph", start_paragraph),
+        ("end_paragraph", end_paragraph),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{label} must be int: {type(value)!r}")
+    if not isinstance(name, str):
+        raise TypeError(f"BOOKMARK name must be str: {type(name)!r}")
+    if not name.strip():
+        raise ValueError("BOOKMARK name must be a non-empty string")
+    if parent is not None and not isinstance(parent, BookmarkRegion):
+        raise TypeError(f"parent must be BookmarkRegion or None: {type(parent)!r}")
+
+    package = require_package(pkg)
+    current = _resolve(package, require_removable=False)
+    resolved_parent: _ResolvedRegion | None = None
+    if parent is not None:
+        matches = [item for item in current if item.region == parent]
+        if len(matches) != 1:
+            raise ValueError(
+                "parent BOOKMARK is not present in the current package snapshot; "
+                "resolve again"
+            )
+        resolved_parent = matches[0]
+        if parent.section != section:
+            raise ValueError("BOOKMARK range and parent must be in the same section")
+        if not (
+            parent.start_paragraph <= start_paragraph <= end_paragraph
+            <= parent.end_paragraph
+        ):
+            raise ValueError("BOOKMARK range must be contained by its requested parent")
+
+    sections = _parse_sections(package)
+    matches = [item for item in sections if item.entry == section]
+    if len(matches) != 1:
+        raise ValueError(f"HWPX section was not found: {section!r}")
+    parsed = matches[0]
+    paragraphs = [child for child in parsed.root if child.tag == f"{_HP}p"]
+    if (
+        start_paragraph < 0
+        or end_paragraph < start_paragraph
+        or end_paragraph >= len(paragraphs)
+    ):
+        raise ValueError(
+            f"invalid BOOKMARK paragraph range {start_paragraph}..{end_paragraph} "
+            f"for {len(paragraphs)} paragraphs"
+        )
+    start, stop = paragraphs[start_paragraph], paragraphs[end_paragraph]
+    start_runs = [child for child in start if child.tag == f"{_HP}run"]
+    end_runs = [child for child in stop if child.tag == f"{_HP}run"]
+    if not start_runs or not end_runs:
+        raise ValueError("BOOKMARK boundary paragraphs must contain a direct native hp:run")
+
+    pairing_id = _next_pairing_id(sections)
+    begin_ctrl = etree.Element(f"{_HP}ctrl")
+    etree.SubElement(
+        begin_ctrl,
+        f"{_HP}fieldBegin",
+        id=pairing_id,
+        type="BOOKMARK",
+        name=name,
+    )
+    end_ctrl = etree.Element(f"{_HP}ctrl")
+    etree.SubElement(end_ctrl, f"{_HP}fieldEnd", beginIDRef=pairing_id)
+
+    if resolved_parent is not None and parent.start_paragraph == start_paragraph:
+        parent_begin = next(
+            node
+            for node in parsed.root.iter(f"{_HP}fieldBegin")
+            if node.get("id") == parent._pairing_id
+        )
+        parent_ctrl = parent_begin.getparent()
+        assert parent_ctrl is not None
+        parent_run = parent_ctrl.getparent()
+        assert parent_run is not None
+        parent_run.insert(parent_run.index(parent_ctrl) + 1, begin_ctrl)
+    else:
+        start_runs[0].insert(0, begin_ctrl)
+
+    if resolved_parent is not None and parent.end_paragraph == end_paragraph:
+        parent_end = next(
+            node
+            for node in parsed.root.iter(f"{_HP}fieldEnd")
+            if node.get("beginIDRef") == parent._pairing_id
+        )
+        parent_ctrl = parent_end.getparent()
+        assert parent_ctrl is not None
+        parent_run = parent_ctrl.getparent()
+        assert parent_run is not None
+        parent_run.insert(parent_run.index(parent_ctrl), end_ctrl)
+    else:
+        end_runs[-1].append(end_ctrl)
+
+    data, after = _candidate_resolution(
+        package, section, parsed.root, require_removable=False
+    )
+    created = [item for item in after if item.region._pairing_id == pairing_id]
+    expected_parent = (
+        (parent.section, parent._pairing_id) if parent is not None else None
+    )
+    if len(created) != 1 or (
+        created[0].region.section,
+        created[0].region.start_paragraph,
+        created[0].region.end_paragraph,
+        _parent_key(created[0].region),
+    ) != (section, start_paragraph, end_paragraph, expected_parent):
+        raise ValueError("created BOOKMARK does not match the requested native topology")
+    _validate_mutable_extent(
+        created[0], after, reject_whole_section=False
+    )
+    before_shape = _topology_shape(current, include_positions=True)
+    after_shape = _topology_shape(after, include_positions=True)
+    if {
+        key: value for key, value in after_shape.items() if key != (section, pairing_id)
+    } != before_shape:
+        raise ValueError("creating BOOKMARK changed existing native topology")
+    package.entries[section] = data
+    return created[0].region
+
+
+def _commit_metatag_mutation(
+    package: PackageLike,
+    resolved: _ResolvedRegion,
+    current: list[_ResolvedRegion],
+    expected: tuple[str, ...],
+) -> None:
+    data, after = _candidate_resolution(
+        package,
+        resolved.section.entry,
+        resolved.section.root,
+        require_removable=False,
+    )
+    wanted = _topology_shape(current, include_positions=True)
+    key = _region_key(resolved)
+    value = list(wanted[key])
+    value[2] = expected
+    wanted[key] = tuple(value)
+    if _topology_shape(after, include_positions=True) != wanted:
+        raise ValueError("BOOKMARK MetaTag mutation postcondition failed")
+    package.entries[resolved.section.entry] = data
+
+
 def append_bookmark_metatag(pkg: object, region: BookmarkRegion, payload: str) -> None:
     """Append one opaque object-local MetaTag to a freshly resolved BOOKMARK begin."""
     if not isinstance(payload, str):
         raise TypeError(f"hp:metaTag payload must be str: {type(payload)!r}")
     package = require_package(pkg)
-    matches = [item for item in _resolve(package) if item.region == region]
-    if len(matches) != 1:
-        raise ValueError(
-            "BOOKMARK region is not present in the current package snapshot; resolve again"
-        )
-    resolved = matches[0]
+    resolved, current = _fresh_region(
+        package, region, require_removable=False
+    )
     child = etree.SubElement(resolved.begin, f"{_HP}metaTag")
     child.text = payload
-    package.entries[region.section] = serialize_modified_section(resolved.section.root)
+    _commit_metatag_mutation(
+        package, resolved, current, (*region.meta_tags, payload)
+    )
+
+
+def _require_metatag_index(index: int) -> None:
+    if isinstance(index, bool) or not isinstance(index, int):
+        raise TypeError(f"hp:metaTag index must be int: {type(index)!r}")
+    if index < 0:
+        raise ValueError("hp:metaTag index must be non-negative")
+
+
+def replace_bookmark_metatag(
+    pkg: object, region: BookmarkRegion, index: int, payload: str
+) -> None:
+    """Replace one direct object-local MetaTag payload by ordered index."""
+    _require_metatag_index(index)
+    if not isinstance(payload, str):
+        raise TypeError(f"hp:metaTag payload must be str: {type(payload)!r}")
+    package = require_package(pkg)
+    resolved, current = _fresh_region(
+        package, region, require_removable=False
+    )
+    children = [child for child in resolved.begin if child.tag == f"{_HP}metaTag"]
+    if index >= len(children):
+        raise ValueError(f"hp:metaTag index out of range: {index}")
+    children[index].text = payload
+    expected = list(region.meta_tags)
+    expected[index] = payload
+    _commit_metatag_mutation(package, resolved, current, tuple(expected))
+
+
+def remove_bookmark_metatag(
+    pkg: object, region: BookmarkRegion, index: int
+) -> None:
+    """Remove one direct object-local MetaTag by ordered index."""
+    _require_metatag_index(index)
+    package = require_package(pkg)
+    resolved, current = _fresh_region(
+        package, region, require_removable=False
+    )
+    children = [child for child in resolved.begin if child.tag == f"{_HP}metaTag"]
+    if index >= len(children):
+        raise ValueError(f"hp:metaTag index out of range: {index}")
+    resolved.begin.remove(children[index])
+    expected = list(region.meta_tags)
+    expected.pop(index)
+    _commit_metatag_mutation(package, resolved, current, tuple(expected))
+
+
+def _remove_marker(node: etree._Element) -> None:
+    ctrl = node.getparent()
+    assert ctrl is not None
+    previous = node.getprevious()
+    tail = node.tail or ""
+    ctrl.remove(node)
+    if tail:
+        if previous is None:
+            ctrl.text = (ctrl.text or "") + tail
+        else:
+            previous.tail = (previous.tail or "") + tail
+    if len(ctrl) or (ctrl.text or "").strip():
+        return
+    run = ctrl.getparent()
+    assert run is not None
+    previous = ctrl.getprevious()
+    trailing = (ctrl.text or "") + (ctrl.tail or "")
+    run.remove(ctrl)
+    if trailing:
+        if previous is None:
+            run.text = (run.text or "") + trailing
+        else:
+            previous.tail = (previous.tail or "") + trailing
+
+
+def unwrap_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
+    """Remove one fresh BOOKMARK pair while preserving its content and children."""
+    package = require_package(pkg)
+    resolved, current = _fresh_region(
+        package, region, require_removable=False
+    )
+    target_key = _region_key(resolved)
+    promoted_parent = _parent_key(region)
+    wanted = _topology_shape(current, include_positions=True)
+    del wanted[target_key]
+    for item in current:
+        key = _region_key(item)
+        if key not in wanted or _parent_key(item.region) != target_key:
+            continue
+        value = list(wanted[key])
+        value[1] = promoted_parent
+        wanted[key] = tuple(value)
+
+    _remove_marker(resolved.begin)
+    _remove_marker(resolved.end)
+    data, after = _candidate_resolution(
+        package,
+        resolved.section.entry,
+        resolved.section.root,
+        require_removable=False,
+    )
+    if _topology_shape(after, include_positions=True) != wanted:
+        raise ValueError("BOOKMARK unwrap postcondition failed")
+    package.entries[resolved.section.entry] = data
+
+
+def _is_descendant(candidate: BookmarkRegion, target: BookmarkRegion) -> bool:
+    ancestor = candidate.parent
+    while ancestor is not None:
+        if ancestor == target:
+            return True
+        ancestor = ancestor.parent
+    return False
+
+
+def _prune_to_markers(
+    paragraph: etree._Element, markers: set[etree._Element]
+) -> None:
+    keep: set[etree._Element] = set(markers)
+    for marker in markers:
+        current = marker.getparent()
+        while current is not None and current is not paragraph:
+            keep.add(current)
+            current = current.getparent()
+
+    def prune(node: etree._Element) -> None:
+        node.text = None
+        for child in list(node):
+            if child not in keep:
+                node.remove(child)
+                continue
+            if child not in markers:
+                prune(child)
+            child.tail = None
+
+    prune(paragraph)
 
 
 def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
@@ -476,21 +858,17 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     orphaned.
     """
     package = require_package(pkg)
-    current = _resolve(package)
-    matches = [resolved for resolved in current if resolved.region == region]
-    if len(matches) != 1:
-        raise ValueError(
-            "BOOKMARK region is not present in the current package snapshot; resolve again"
-        )
-    resolved = matches[0]
-
-    def contained_in_target(candidate: BookmarkRegion) -> bool:
-        ancestor = candidate.parent
-        while ancestor is not None:
-            if ancestor == region:
-                return True
-            ancestor = ancestor.parent
-        return False
+    resolved, current = _fresh_region(package, region, require_removable=False)
+    removed = {
+        _region_key(item)
+        for item in current
+        if item.region == region or _is_descendant(item.region, region)
+    }
+    ancestors: set[tuple[str, str]] = set()
+    ancestor = region.parent
+    while ancestor is not None:
+        ancestors.add((ancestor.section, ancestor._pairing_id))
+        ancestor = ancestor.parent
 
     # A region may share a boundary paragraph with the one it contains (S0-G), so
     # deleting that paragraph can cut a marker belonging to a region we were not
@@ -499,12 +877,8 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
         {
             repr(other.region.name)
             for other in current
-            if other.region != region
-            and not contained_in_target(other.region)
-            and (
-                resolved.start_child <= other.start_child <= resolved.end_child
-                or resolved.start_child <= other.end_child <= resolved.end_child
-            )
+            if _region_key(other) not in removed | ancestors
+            and (_is_inside(resolved, other.begin) or _is_inside(resolved, other.end))
         }
     )
     if collateral:
@@ -513,8 +887,45 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
             f"outside it: {', '.join(collateral)}"
         )
 
+    protected = {
+        marker
+        for item in current
+        if _region_key(item) in ancestors
+        for marker in (item.begin, item.end)
+        if _is_inside(resolved, marker)
+    }
+    _validate_mutable_extent(
+        resolved,
+        current,
+        reject_whole_section=not protected,
+        reject_section_definition=True,
+    )
     for child in list(resolved.section.root)[
         resolved.start_child : resolved.end_child + 1
     ]:
-        resolved.section.root.remove(child)
-    package.entries[region.section] = serialize_modified_section(resolved.section.root)
+        markers = {
+            marker
+            for marker in protected
+            if _boundary_paragraph(marker, resolved.section.root, region.section) is child
+        }
+        if markers:
+            _prune_to_markers(child, markers)
+        else:
+            resolved.section.root.remove(child)
+
+    wanted = {
+        key: value
+        for key, value in _topology_shape(
+            current, include_positions=False
+        ).items()
+        if key not in removed
+    }
+    data, after = _candidate_resolution(
+        package,
+        resolved.section.entry,
+        resolved.section.root,
+        require_removable=False,
+    )
+    if _topology_shape(after, include_positions=False) != wanted:
+        raise ValueError("BOOKMARK content removal postcondition failed")
+    package.entries[region.section] = data

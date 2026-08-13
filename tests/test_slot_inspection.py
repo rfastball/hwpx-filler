@@ -7,12 +7,16 @@ import pytest
 from lxml import etree
 
 from _hwpx_metatag_spike import build_slot_probe
+from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+import hwpxfiller.external.template_inspection as template_inspection
 from hwpxfiller.domain.slot import Slot, SlotOption
 from hwpxfiller.external.template_inspection import (
     inspect_hwpx_template,
     inspect_slots,
+    remove_slot,
+    remove_slot_option,
     serialize_slot_metatag,
     serialize_slot_option_metatag,
 )
@@ -160,6 +164,27 @@ def _two_slot_package() -> HwpxPackage:
     )
 
 
+def _three_option_package() -> HwpxPackage:
+    package = _xml_package(
+        _p("<hp:t>OUT</hp:t>")
+        + _p(_begin("1", "SLOT") + "<hp:t>S</hp:t>")
+        + _p(_begin("2", "A") + "<hp:t>A</hp:t>" + _end("2"))
+        + _p(_begin("3", "B") + "<hp:t>B</hp:t>" + _end("3"))
+        + _p(_begin("4", "C") + "<hp:t>C</hp:t>" + _end("4"))
+        + _p("<hp:t>Z</hp:t>" + _end("1"))
+        + _p("<hp:t>OUT2</hp:t>")
+    )
+    return _write_tags(
+        package,
+        {
+            "SLOT": _slot("slot"),
+            "A": _option("a"),
+            "B": _option("b"),
+            "C": _option("c"),
+        },
+    )
+
+
 @pytest.mark.parametrize(
     ("source", "payloads", "expected"),
     (
@@ -245,6 +270,121 @@ def test_slot_order_and_option_identity_are_native_and_slot_local() -> None:
         ),
         (),
     )
+
+
+@pytest.mark.parametrize(
+    ("target", "remaining"),
+    (("a", ("b", "c")), ("b", ("a", "c")), ("c", ("a", "b"))),
+    ids=("first", "middle", "last"),
+)
+def test_remove_slot_option_preserves_siblings_and_rebuilds_native_order(
+    target: str, remaining: tuple[str, ...]
+) -> None:
+    package = _three_option_package()
+    remove_slot_option(package, "slot", target)
+
+    expected = (
+        Slot(
+            "slot",
+            tuple(SlotOption(identifier, order) for order, identifier in enumerate(remaining)),
+        ),
+    )
+    assert inspect_slots(package) == (expected, ())
+    assert inspect_slots(HwpxPackage.from_bytes(package.to_bytes())) == (expected, ())
+
+
+def test_product_removal_uses_slot_local_ids_and_preserves_plain_bookmarks() -> None:
+    package = _two_slot_package()
+    remove_slot_option(package, "z_slot", "same")
+    assert inspect_slots(package) == (
+        (
+            Slot("z_slot", ()),
+            Slot("a_slot", (SlotOption("same", 0),)),
+        ),
+        (),
+    )
+    assert "PLAIN_PARTIAL" in {
+        region.name for region in resolve_bookmark_topology(package)
+    }
+
+    current = HwpxPackage.from_bytes(package.to_bytes())
+    remove_slot(current, "z_slot")
+    assert inspect_slots(current) == (
+        (Slot("a_slot", (SlotOption("same", 0),)),),
+        (),
+    )
+    assert "PLAIN_PARTIAL" in {
+        region.name for region in resolve_bookmark_topology(current)
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "payloads"),
+    (
+        (
+            lambda: _native("G/G1-coincident-start.hwpx"),
+            {"S0_OPT_A": _slot("slot"), "S0_SLOT": _option("option")},
+        ),
+        (
+            lambda: _native("G/G2-coincident-end.hwpx"),
+            {"S0_SLOT": _slot("slot"), "S0_OPT_B": _option("option")},
+        ),
+        (
+            lambda: _native("G/G3-same-range.hwpx"),
+            {"S0_SLOT": _slot("slot"), "S0_OPT_X": _option("option")},
+        ),
+        (
+            _plain_ancestor_package,
+            {"SLOT": _slot("slot"), "OPTION": _option("option")},
+        ),
+    ),
+    ids=("coincident-start", "coincident-end", "same-span", "plain-ancestor"),
+)
+def test_remove_slot_option_supports_every_canonical_parent_topology(
+    source, payloads: dict[str, str]
+) -> None:
+    package = _write_tags(source(), payloads)
+    remove_slot_option(package, "slot", "option")
+    assert inspect_slots(package) == ((Slot("slot", ()),), ())
+    assert inspect_slots(HwpxPackage.from_bytes(package.to_bytes())) == (
+        (Slot("slot", ()),),
+        (),
+    )
+
+
+def test_product_removal_failures_are_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
+    package = _three_option_package()
+    for action in (
+        lambda: remove_slot(package, "missing"),
+        lambda: remove_slot_option(package, "slot", "missing"),
+    ):
+        before = dict(package.entries)
+        with pytest.raises(ValueError, match="was not found"):
+            action()
+        assert package.entries == before
+
+    duplicate = _write_tags(
+        _native("R5-nested.hwpx"),
+        {
+            "S0_SLOT": _slot("slot"),
+            "S0_OPT_A": _option("same"),
+            "S0_OPT_B": _option("same"),
+        },
+    )
+    before = dict(duplicate.entries)
+    with pytest.raises(ValueError, match="blocked by diagnostics"):
+        remove_slot_option(duplicate, "slot", "same")
+    assert duplicate.entries == before
+
+    def corrupt(pkg: HwpxPackage, _region) -> None:
+        pkg.entries["partial-write"] = b"leak"
+
+    monkeypatch.setattr(template_inspection, "remove_bookmark_region", corrupt)
+    rollback = _three_option_package()
+    before = dict(rollback.entries)
+    with pytest.raises(ValueError, match="postcondition failed"):
+        remove_slot_option(rollback, "slot", "b")
+    assert rollback.entries == before
 
 
 @pytest.mark.parametrize(

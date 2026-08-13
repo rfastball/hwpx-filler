@@ -621,8 +621,9 @@ Slot, application/UI wiring, 기존 Field 구현은 변경하지 않았다.
 
 ### 18.1 생성 방법
 
-`tests/_hwpx_bookmark_creation_spike.py`는 production API가 아닌 test-only generator다. native R0의
-top-level BBB run 시작과 DDD run 끝에 다음 최소 pair만 삽입했다.
+S0-D6 당시 test-only generator는 native R0의 top-level BBB run 시작과 DDD run 끝에 다음 최소
+pair만 삽입했다. S1.6 #633에서 같은 생성 의미는 production `create_bookmark_region()`으로
+승격됐고, 이 generator는 제거했다.
 
 ```xml
 <hp:ctrl>
@@ -672,7 +673,8 @@ ZIP entry 11개의 이름과 순서는 유지됐다. byte가 달라진 entry는 
 - 생성 capability: **PROVEN**, 단 R0 shape, same-section, top-level BBB~DDD full-paragraph,
   Hancom Office Hangul 12.0.0.4426에 한정한다.
 
-production `create_*` API, Slot, Authoring Anchor, 기존 resolve/remove 계약은 변경하지 않았다.
+S0-D6 시점에는 production `create_*` API, Slot, Authoring Anchor, 기존 resolve/remove 계약을
+변경하지 않았다. production 승격과 mutation 대칭성은 후속 S1.6 #633이 소유한다.
 
 ### 18.4 검증
 
@@ -977,6 +979,19 @@ pair가 끼어드는 경우는 기존 extent 검사가 계속 잡는다.
 
 겹친 경계에서 안쪽만 제거하려면 문단 shell 삭제가 아니라 **marker만 제거하는 조작**이 필요하다.
 그 조작은 §22.5가 적었듯 우리 API에 없고 F5·F6의 관찰이 그것을 승인하지도 않는다.
+
+### 23.6 S1.6 후속 승격 (#633)
+
+§23.4~23.5의 거부는 당시 문단-shell 구현의 계약이다. S1.6은 경계 문단에서 살아남아야 할
+바깥 BOOKMARK marker와 그 조상 shell만 보존하는 제거를 추가해 G1·G2·G3의 안쪽 제거를
+승격했다. 관계없는 marker를 자르는 범위, crossing, section 정의(`secPr`/`colPr`)를 지우는
+범위는 계속 원자적으로 거부한다. 후보 XML을 직렬화·재해석해 남은 topology를 검증한 뒤에만
+원본 entry를 한 번 교체한다.
+
+같은 변경에서 최소 native pair 생성, 본문 보존 unwrap, ordered MetaTag replace/remove도 production
+API로 승격했다. 생성은 기존 topology와 요청한 parent를 보존하며 pairing id 충돌을 피하고,
+unwrap은 F5·F6의 한글 구조와 일치한다. Slot/Option id 해석은 core가 아니라 External adapter가
+소유한다.
 
 ## 24. S0-H crossing native 관찰
 
