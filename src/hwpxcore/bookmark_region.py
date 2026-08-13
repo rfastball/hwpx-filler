@@ -31,10 +31,13 @@ class BookmarkRegion:
 
     Paragraph indices are zero-based section-direct ``hp:p`` positions and both
     bounds are inclusive. ``parent`` is the immediately enclosing region, or
-    ``None`` at the top level; document order alone decides containment, because
-    two nested regions may share a paragraph span. Re-resolve after any section
-    mutation; the private pairing reference and snapshot digest are deliberately
-    not durable identity.
+    ``None`` at the top level, and containment follows document order rather than
+    those indices. Today the two agree — the full-paragraph boundary rule rejects
+    a nested region that opens or closes in the same paragraph as its container,
+    so every child spans strictly fewer paragraphs — but document order is what
+    the format actually encodes. Re-resolve after any section mutation; the
+    private pairing reference and snapshot digest are deliberately not durable
+    identity.
     """
 
     name: str | None

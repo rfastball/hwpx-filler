@@ -792,6 +792,19 @@ resolve를 넓혔다고 제거까지 따라 넓히면 증명되지 않은 변형
 같은 이유로 `parent`가 표현하는 것은 **포함 관계뿐**이고 Slot·Option 같은 제품 의미는 아니다.
 `hwpxcore`는 여전히 제품 의미를 모른다.
 
+### 20.2-1 알려진 한계 — 경계가 같은 문단에서 겹치는 중첩
+
+full-paragraph 경계 규칙이 그대로 살아 있으므로, 안쪽 region이 바깥과 **같은 문단에서 시작하거나
+끝나면** 여전히 `partial-paragraph BOOKMARK begin/end is unsupported`로 거부된다. 경계 marker
+사이에 본문이 없어도 그렇다 — 검사가 이웃한 BOOKMARK `hp:ctrl`을 payload로 세기 때문이다.
+
+이것은 사고가 아니라 **현재의 선택**이고 owner test가 그 사실을 고정한다. R5는 slot이 option보다
+한 문단 먼저 시작하는 모양이라 이 경우를 밟지 않았고, 따라서 한글이 경계가 겹치는 중첩을
+만들어 내는지는 **관찰된 바 없다**.
+
+실무적으로는 걸릴 만한 모양이다 — Slot의 첫 Option이 Slot과 같은 문단에서 시작하는 저작은
+자연스럽다. 그러므로 완화 여부는 코드 판단이 아니라 **다음 native 실험의 입력**이다(§21).
+
 ### 20.3 검증
 
 - resolve: native `R5-nested.hwpx`가 3 region으로 resolve되고 `S0_OPT_A`·`S0_OPT_B`의 `parent`가
@@ -801,3 +814,17 @@ resolve를 넓혔다고 제거까지 따라 넓히면 증명되지 않은 변형
 - crossing: 기존 거부 표본이 그대로 실패한다.
 - 제거: R5의 세 region 전부 거부되고, 형제 관계인 region은 기존대로 제거된다.
 - owner `tests/test_bookmark_regions.py` + `tests/test_hwpx_structure_probe.py` 11 passed.
+
+## 21. 후속 native 실험 후보
+
+§20까지의 판정이 남긴 미검증 지점이고, 각각 한글 실물 표본이 먼저다.
+
+| ID | 질문 | 필요한 표본 |
+|---|---|---|
+| S0-F | nested 구조에서 **제거**가 무엇을 남기는가 | R5에 대한 T계열 — 안쪽만 삭제, 바깥만 삭제, 둘 다 삭제 |
+| S0-G | 한글이 **경계가 겹치는 중첩**을 만드는가(§20.2-1) | slot과 첫 option이 같은 문단에서 시작하는 표본 |
+| S0-H | 한글이 **crossing**을 허용하는가 | 겹치되 중첩이 아닌 두 책갈피 |
+
+S0-F가 풀리기 전에는 `remove_bookmark_region()`의 중첩 거부를 풀지 않는다. S0-G가 풀리기
+전에는 `_payload_outside_boundary()`를 완화하지 않는다. 두 잠금 모두 §20.2의 같은 이유를 진다 —
+읽기를 넓힌 것이 쓰기와 경계 규칙까지 넓혀도 된다는 뜻은 아니다.

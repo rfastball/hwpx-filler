@@ -251,6 +251,23 @@ def test_resolves_nested_regions_with_containment_but_refuses_their_removal() ->
         ("INNER", 3, 3, "MID"),
     ]
 
+    # Nesting stays inside the full-paragraph boundary rule: a child that opens
+    # in its container's own paragraph is still refused as partial-paragraph.
+    # Whether Hancom ever writes that shape is an open S0 question, so widening
+    # it needs native evidence first, not just a resolver change.
+    coincident = _package(
+        _paragraph(
+            _begin("1", "OUTER")
+            + _begin("2", "INNER")
+            + "<hp:t>A</hp:t>"
+            + _end("2")
+            + _end("1")
+        )
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+    with pytest.raises(ValueError, match="partial-paragraph BOOKMARK begin"):
+        resolve_bookmark_regions(coincident)
+
     # A region that opens after its predecessor closed is a sibling, not a child.
     siblings = _package(
         _paragraph(_begin("1", "A") + "<hp:t>A</hp:t>")
