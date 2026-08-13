@@ -210,6 +210,45 @@ def test_native_bookmark_encodings_and_durability_observations() -> None:
     assert [adjacent_paragraphs[index]["id"] for index in (1, 2)] == ["0", "0"]
 
 
+def test_native_r5_nested_bookmarks_pair_independently_and_survive_resave() -> None:
+    """S0-E: Hancom itself writes proper nesting, and open/save keeps it intact."""
+
+    def markers(name: str) -> list[dict[str, Any]]:
+        pkg = HwpxPackage.from_bytes((NATIVE_CORPUS / name).read_bytes())
+        return [
+            record
+            for record in (json.loads(line) for line in dump_structure(pkg).splitlines())
+            if record.get("tag") in {"fieldBegin", "fieldEnd"}
+        ]
+
+    nested = markers("R5-nested.hwpx")
+    # Document order alone decides nesting: every option opens and closes strictly
+    # between the slot's own boundaries, so this is not a crossing sequence.
+    assert [(record["tag"], record["paragraph"]) for record in nested] == [
+        ("fieldBegin", 1),
+        ("fieldBegin", 2),
+        ("fieldEnd", 2),
+        ("fieldBegin", 3),
+        ("fieldEnd", 3),
+        ("fieldEnd", 4),
+    ]
+    slot_begin, a_begin, a_end, b_begin, b_end, slot_end = nested
+    assert [record["attrs"]["name"] for record in (slot_begin, a_begin, b_begin)] == [
+        "S0_SLOT",
+        "S0_OPT_A",
+        "S0_OPT_B",
+    ]
+    assert all(record["attrs"]["type"] == "BOOKMARK" for record in (slot_begin, a_begin, b_begin))
+    ids = [record["attrs"]["id"] for record in (slot_begin, a_begin, b_begin)]
+    assert len(set(ids)) == 3
+    assert [a_end["attrs"]["beginIDRef"], b_end["attrs"]["beginIDRef"]] == ids[1:]
+    assert slot_end["attrs"]["beginIDRef"] == ids[0]
+    # fieldid is shared by all three, so it cannot distinguish the pairs.
+    assert {record["attrs"]["fieldid"] for record in nested} == {"627207531"}
+
+    assert markers("R5-nested-resaved.hwpx") == nested
+
+
 def test_d6_minimal_generated_bookmark_resolves_and_reparses_deterministically() -> None:
     source = (NATIVE_CORPUS / "R0-plain.hwpx").read_bytes()
     package = HwpxPackage.from_bytes(source)
