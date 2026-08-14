@@ -10,10 +10,27 @@ from _hwpx_metatag_spike import build_slot_probe
 from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.structural_boundary import (
+    BookmarkBegin,
+    BookmarkEnd,
+    BoundaryPairRef,
+    ContentEntryKind,
+    FieldBegin,
+    FieldEnd,
+    StructuralBoundaryScan,
+    StructuralDiagnostic,
+    StructuralDiagnosticKind,
+    StructuralEntryScan,
+    scan_structural_boundaries,
+)
 import hwpxfiller.external.template_inspection as template_inspection
 from hwpxfiller.domain.slot import Slot, SlotOption
 from hwpxfiller.external.template_inspection import (
+    ProductClassification,
+    ProductInspectionContractError,
+    ProductScopeRole,
     inspect_hwpx_template,
+    inspect_product_bookmarks,
     inspect_slots,
     remove_slot,
     remove_slot_option,
@@ -376,6 +393,19 @@ def test_product_removal_failures_are_atomic(monkeypatch: pytest.MonkeyPatch) ->
         remove_slot_option(duplicate, "slot", "same")
     assert duplicate.entries == before
 
+    resolver = template_inspection.resolve_bookmark_topology
+    monkeypatch.setattr(
+        template_inspection,
+        "resolve_bookmark_topology",
+        lambda pkg: tuple(reversed(resolver(pkg))),
+    )
+    mismatched = _three_option_package()
+    before = dict(mismatched.entries)
+    with pytest.raises(ProductInspectionContractError, match="order disagree"):
+        remove_slot_option(mismatched, "slot", "b")
+    assert mismatched.entries == before
+    monkeypatch.setattr(template_inspection, "resolve_bookmark_topology", resolver)
+
     def corrupt(pkg: HwpxPackage, _region) -> None:
         pkg.entries["partial-write"] = b"leak"
 
@@ -429,6 +459,287 @@ def test_payload_failures_have_stable_diagnostics(
 
 def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
     return _write_tags(_xml_package(events), payloads)
+
+
+def test_product_inspection_preserves_exact_scan_pairs_and_pair_local_membership() -> None:
+    scan = scan_structural_boundaries(_two_slot_package())
+    inspection = inspect_product_bookmarks(scan)
+    begins = [
+        event
+        for entry in scan.entries
+        for event in entry.events
+        if isinstance(event, BookmarkBegin)
+    ]
+
+    assert inspection.diagnostics == ()
+    assert [item.pair for item in inspection.observations] == [event.pair for event in begins]
+    z_slot, z_option, a_slot, a_option, plain = inspection.observations
+    assert (
+        z_slot.classification,
+        z_slot.scope_role,
+        z_slot.scope_usable,
+        z_slot.kind,
+        z_slot.product_id,
+    ) == (
+        ProductClassification.KNOWN_PRODUCT,
+        ProductScopeRole.SLOT,
+        True,
+        "slot",
+        "z_slot",
+    )
+    assert z_option.owning_slot_pair is z_slot.pair
+    assert a_option.owning_slot_pair is a_slot.pair
+    assert z_option.owning_slot_pair is not a_option.owning_slot_pair
+    assert plain.classification is ProductClassification.NON_PRODUCT
+    assert plain.scope_role is ProductScopeRole.NONE
+    assert plain.owning_slot_pair is None
+
+
+def test_known_noncanonical_products_keep_role_without_inventing_identity() -> None:
+    cases = (
+        ("invalid-id", {"S0_SLOT": _slot("")}, None, {"invalid-id"}, None, ()),
+        (
+            "native-name",
+            {"S0_SLOT": _slot("slot", name="#wrong")},
+            None,
+            {"native-name-mismatch"},
+            "slot",
+            (Slot("slot", ()),),
+        ),
+        (
+            "attribute",
+            {},
+            {"S0_SLOT": _slot("slot")},
+            {"unsupported-carrier"},
+            None,
+            (),
+        ),
+        (
+            "malformed-extra",
+            {"S0_SLOT": ("{", _slot("slot"))},
+            None,
+            {"malformed-json"},
+            "slot",
+            (Slot("slot", ()),),
+        ),
+        (
+            "canonical-over-attribute",
+            {"S0_SLOT": _slot("slot")},
+            {"S0_SLOT": _slot("unsupported")},
+            {"unsupported-carrier"},
+            "slot",
+            (Slot("slot", ()),),
+        ),
+    )
+    for name, payloads, attributes, expected_kinds, expected_id, expected_slots in cases:
+        package = _write_tags(_native("R5-nested.hwpx"), payloads, attributes=attributes)
+        inspection = inspect_product_bookmarks(scan_structural_boundaries(package))
+        observation = next(item for item in inspection.observations if item.kind == "slot")
+
+        assert observation.classification is ProductClassification.KNOWN_PRODUCT, name
+        assert observation.scope_role is ProductScopeRole.SLOT, name
+        assert observation.scope_usable, name
+        assert observation.product_id == expected_id, name
+        assert {item.kind for item in inspection.diagnostics} == expected_kinds, name
+        assert inspect_slots(package)[0] == expected_slots, name
+
+
+def test_invalid_inner_scope_restores_outer_and_only_options_store_membership() -> None:
+    package = _tag_events(
+        _p(_begin("1", "SLOT") + "<hp:t>A</hp:t>")
+        + _p(_begin("2", "PLAIN") + "<hp:t>B</hp:t>" + _end("2"))
+        + _p(_begin("3", "BAD") + "<hp:t>C</hp:t>")
+        + _p(_begin("4", "BLOCKED") + "<hp:t>D</hp:t>" + _end("4"))
+        + _p("<hp:t>E</hp:t>" + _end("3"))
+        + _p(_begin("5", "OPTION") + "<hp:t>F</hp:t>" + _end("5"))
+        + _p("<hp:t>E</hp:t>" + _end("1")),
+        {
+            "SLOT": _slot("outer"),
+            "BAD": _slot("bad", kind="future"),
+            "BLOCKED": _option("blocked"),
+            "OPTION": _option("after"),
+        },
+    )
+
+    inspection = inspect_product_bookmarks(scan_structural_boundaries(package))
+    slot, plain, invalid, blocked, option = inspection.observations
+
+    assert {item.kind for item in inspection.diagnostics} == {"unknown-kind"}
+    assert slot.scope_role is ProductScopeRole.SLOT
+    assert plain.owning_slot_pair is None
+    assert invalid.scope_role is ProductScopeRole.INVALID_PRODUCT
+    assert not invalid.scope_usable
+    assert blocked.scope_role is ProductScopeRole.INVALID_PRODUCT
+    assert not blocked.scope_usable
+    assert blocked.owning_slot_pair is None
+    assert option.scope_role is ProductScopeRole.OPTION
+    assert option.owning_slot_pair is slot.pair
+    assert inspect_slots(package)[0] == (Slot("outer", (SlotOption("after", 0),)),)
+
+
+def test_header_and_footer_products_are_unusable_and_never_projected() -> None:
+    tagged = _tag_events(
+        _p(_begin("1", "PRODUCT") + "<hp:t>A</hp:t>" + _end("1")),
+        {"PRODUCT": _slot("unsupported")},
+    ).entries[SECTION]
+    for kind in (ContentEntryKind.HEADER, ContentEntryKind.FOOTER):
+        package = _xml_package(_p(""))
+        entry = f"Contents/{kind.value}0.xml"
+        package.entries[entry] = tagged
+
+        inspection = inspect_product_bookmarks(scan_structural_boundaries(package))
+        observation = next(item for item in inspection.observations if item.entry == entry)
+
+        assert observation.classification is ProductClassification.KNOWN_PRODUCT
+        assert observation.scope_role is ProductScopeRole.INVALID_PRODUCT
+        assert not observation.scope_usable
+        assert {item.kind for item in inspection.diagnostics} == {"unsupported-product-entry"}
+        assert inspect_slots(package)[0] == ()
+
+
+def test_unattributed_native_metatag_failure_closes_every_pair_in_entry() -> None:
+    package = _write_tags(
+        _native("R5-nested.hwpx"),
+        {
+            "S0_SLOT": _slot("slot"),
+            "S0_OPT_A": _option("a"),
+            "S0_OPT_B": _option("b"),
+        },
+    )
+    root = etree.fromstring(package.entries[SECTION])
+    begin = next(node for node in root.iter(f"{{{HP}}}fieldBegin") if node.get("name") == "S0_SLOT")
+    etree.SubElement(begin, "{urn:foreign}metaTag").text = _slot("hidden")
+    package.entries[SECTION] = serialize_modified_section(root)
+
+    inspection = inspect_product_bookmarks(scan_structural_boundaries(package))
+
+    assert inspection.observations
+    assert all(
+        item.scope_role is ProductScopeRole.INVALID_PRODUCT
+        and not item.scope_usable
+        and item.owning_slot_pair is None
+        for item in inspection.observations
+    )
+    assert {item.kind for item in inspection.diagnostics} == {"bookmark-resolve-failed"}
+    assert inspect_slots(package)[0] == ()
+
+
+def test_unusable_topology_stays_core_owned_and_usable_contract_breaks_loudly() -> None:
+    pair = BoundaryPairRef()
+    begin = BookmarkBegin(pair, "OPTION", (_option("option"),), None)
+    field_ambiguous = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (begin, BookmarkEnd(pair)),
+                False,
+                False,
+            ),
+        ),
+        (StructuralDiagnostic(SECTION, StructuralDiagnosticKind.FIELD_ORPHAN_END),),
+    )
+
+    inspection = inspect_product_bookmarks(field_ambiguous)
+
+    assert {item.kind for item in inspection.diagnostics} == {"bookmark-resolve-failed"}
+    assert inspection.observations[0].scope_role is ProductScopeRole.INVALID_PRODUCT
+    assert not inspection.observations[0].scope_usable
+    assert inspection.observations[0].owning_slot_pair is None
+
+    broken_contract = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (begin,),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="open pairs"):
+        inspect_product_bookmarks(broken_contract)
+
+    shared_pair = BoundaryPairRef()
+    cross_kind_reuse = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (
+                    FieldBegin(shared_pair, "FIELD"),
+                    BookmarkBegin(shared_pair, "OPTION", (_option("option"),), None),
+                    BookmarkEnd(shared_pair),
+                    FieldEnd(shared_pair),
+                ),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="pair reused"):
+        inspect_product_bookmarks(cross_kind_reuse)
+
+    with pytest.raises(TypeError, match="StructuralBoundaryScan"):
+        inspect_product_bookmarks(object())  # type: ignore[arg-type]
+
+    unsupported_event = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (None,),  # type: ignore[arg-type]
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="unsupported boundary event"):
+        inspect_product_bookmarks(unsupported_event)
+
+    wrong_end_pair = BoundaryPairRef()
+    wrong_end = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (
+                    BookmarkBegin(wrong_end_pair, "OPTION", (_option("option"),), None),
+                    FieldEnd(wrong_end_pair),
+                ),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="end contradicts begin"):
+        inspect_product_bookmarks(wrong_end)
+
+    outer_pair, inner_pair = BoundaryPairRef(), BoundaryPairRef()
+    non_lifo = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (
+                    BookmarkBegin(outer_pair, "OUTER", (), None),
+                    BookmarkBegin(inner_pair, "INNER", (), None),
+                    BookmarkEnd(outer_pair),
+                    BookmarkEnd(inner_pair),
+                ),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="end contradicts usable topology"):
+        inspect_product_bookmarks(non_lifo)
 
 
 @pytest.mark.parametrize(
@@ -507,6 +818,17 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
             ),
             {"bookmark-resolve-failed"},
         ),
+        (
+            _tag_events(
+                _p(
+                    "<hp:tbl><hp:tr><hp:tc><hp:subList>"
+                    + _p(_begin("1", "S") + "<hp:t>A</hp:t>" + _end("1"))
+                    + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+                ),
+                {"S": _slot("nested")},
+            ),
+            {"bookmark-resolve-failed"},
+        ),
     ),
     ids=(
         "duplicate-slot",
@@ -517,6 +839,7 @@ def _tag_events(events: str, payloads: dict[str, str]) -> HwpxPackage:
         "crossing",
         "malformed-pair",
         "malformed-xml",
+        "nested-boundary",
     ),
 )
 def test_topology_failures_have_stable_diagnostics(
@@ -524,6 +847,22 @@ def test_topology_failures_have_stable_diagnostics(
 ) -> None:
     _slots, diagnostics = inspect_slots(package)
     assert {diagnostic.kind for diagnostic in diagnostics} == expected
+    if expected == {"nested-slot", "ambiguous-membership"}:
+        assert _slots == (Slot("a", ()), Slot("b", ()))
+    elif expected == {"nested-option"}:
+        assert _slots == (
+            Slot(
+                "추가 지급 안내",
+                (SlotOption("a", 0), SlotOption("b", 1)),
+            ),
+        )
+    if expected in ({"duplicate-slot-id"}, {"duplicate-option-id"}):
+        observations = inspect_product_bookmarks(scan_structural_boundaries(package)).observations
+        duplicate_kind = "slot" if "duplicate-slot-id" in expected else "slot_option"
+        duplicates = [item for item in observations if item.kind == duplicate_kind]
+        assert len(duplicates) == 2
+        assert duplicates[0].product_id == duplicates[1].product_id
+        assert duplicates[0].pair is not duplicates[1].pair
 
 
 def test_canonical_serializers_fix_schema_and_native_name_last() -> None:
