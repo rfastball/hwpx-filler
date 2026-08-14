@@ -97,6 +97,7 @@ class _ParsedProduct(NamedTuple):
 class _OpenBookmark(NamedTuple):
     pair: BoundaryPairRef
     kind: str | None
+    scope_usable: bool
 
 
 class _SlotSnapshot(NamedTuple):
@@ -404,15 +405,18 @@ def inspect_product_bookmarks(
                             None,
                         )
                     )
-                    open_bookmarks.append(_OpenBookmark(event.pair, None))
+                    open_bookmarks.append(_OpenBookmark(event.pair, None, False))
                     continue
+                scope_blocked = any(not item.scope_usable for item in open_bookmarks)
                 slot_ancestors = [item.pair for item in open_bookmarks if item.kind == "slot"]
                 option_ancestors = [
                     item.pair for item in open_bookmarks if item.kind == "slot_option"
                 ]
                 owning_slot = (
                     slot_ancestors[0]
-                    if product.kind == "slot_option" and len(slot_ancestors) == 1
+                    if not scope_blocked
+                    and product.kind == "slot_option"
+                    and len(slot_ancestors) == 1
                     else None
                 )
                 role = ProductScopeRole.NONE
@@ -482,6 +486,11 @@ def inspect_product_bookmarks(
                             ProductScopeRole.OPTION if usable else ProductScopeRole.INVALID_PRODUCT
                         )
 
+                if scope_blocked:
+                    role = ProductScopeRole.INVALID_PRODUCT
+                    usable = False
+                    owning_slot = None
+
                 observations.append(
                     ProductScopeObservation(
                         event.pair,
@@ -494,7 +503,7 @@ def inspect_product_bookmarks(
                         owning_slot,
                     )
                 )
-                open_bookmarks.append(_OpenBookmark(event.pair, product.kind))
+                open_bookmarks.append(_OpenBookmark(event.pair, product.kind, usable))
                 continue
 
             if not isinstance(event, BookmarkEnd) or not entry.bookmark_topology_usable:
@@ -504,11 +513,6 @@ def inspect_product_bookmarks(
                     f"{entry.entry}: BOOKMARK end contradicts usable topology"
                 )
             open_bookmarks.pop()
-
-        if entry.bookmark_topology_usable and open_bookmarks:
-            raise ProductInspectionContractError(
-                f"{entry.entry}: usable BOOKMARK topology ended with open pairs"
-            )
 
     by_pair = {item.pair: item for item in observations}
     seen_slot_ids: set[str] = set()
@@ -594,7 +598,15 @@ def _inspect_slot_snapshot(pkg: object) -> _SlotSnapshot:
         for event in entry.events
         if isinstance(event, BookmarkBegin)
     ]
-    regions = resolve_bookmark_topology(package)
+    try:
+        regions = resolve_bookmark_topology(package)
+    except ValueError as exc:
+        return _SlotSnapshot(
+            slots,
+            (TemplateDiagnostic("bookmark-resolve-failed", str(exc)),),
+            {},
+            {},
+        )
     try:
         aligned = list(zip(section_begins, regions, strict=True))
     except ValueError as exc:
@@ -643,8 +655,8 @@ def _inspect_slot_snapshot(pkg: object) -> _SlotSnapshot:
 
 def inspect_slots(pkg: object) -> tuple[tuple[Slot, ...], tuple[TemplateDiagnostic, ...]]:
     """Inspect one open package; diagnostics are blocking but do not hide valid Slots."""
-    inspection = inspect_product_bookmarks(scan_structural_boundaries(pkg))
-    return _project_slots(inspection), inspection.diagnostics
+    snapshot = _inspect_slot_snapshot(pkg)
+    return snapshot.slots, snapshot.diagnostics
 
 
 def _require_mutable_snapshot(pkg: object) -> tuple[object, _SlotSnapshot]:

@@ -548,24 +548,30 @@ def test_invalid_inner_scope_restores_outer_and_only_options_store_membership() 
     package = _tag_events(
         _p(_begin("1", "SLOT") + "<hp:t>A</hp:t>")
         + _p(_begin("2", "PLAIN") + "<hp:t>B</hp:t>" + _end("2"))
-        + _p(_begin("3", "BAD") + "<hp:t>C</hp:t>" + _end("3"))
-        + _p(_begin("4", "OPTION") + "<hp:t>D</hp:t>" + _end("4"))
+        + _p(_begin("3", "BAD") + "<hp:t>C</hp:t>")
+        + _p(_begin("4", "BLOCKED") + "<hp:t>D</hp:t>" + _end("4"))
+        + _p("<hp:t>E</hp:t>" + _end("3"))
+        + _p(_begin("5", "OPTION") + "<hp:t>F</hp:t>" + _end("5"))
         + _p("<hp:t>E</hp:t>" + _end("1")),
         {
             "SLOT": _slot("outer"),
             "BAD": _slot("bad", kind="future"),
+            "BLOCKED": _option("blocked"),
             "OPTION": _option("after"),
         },
     )
 
     inspection = inspect_product_bookmarks(scan_structural_boundaries(package))
-    slot, plain, invalid, option = inspection.observations
+    slot, plain, invalid, blocked, option = inspection.observations
 
     assert {item.kind for item in inspection.diagnostics} == {"unknown-kind"}
     assert slot.scope_role is ProductScopeRole.SLOT
     assert plain.owning_slot_pair is None
     assert invalid.scope_role is ProductScopeRole.INVALID_PRODUCT
     assert not invalid.scope_usable
+    assert blocked.scope_role is ProductScopeRole.INVALID_PRODUCT
+    assert not blocked.scope_usable
+    assert blocked.owning_slot_pair is None
     assert option.scope_role is ProductScopeRole.OPTION
     assert option.owning_slot_pair is slot.pair
     assert inspect_slots(package)[0] == (Slot("outer", (SlotOption("after", 0),)),)
@@ -677,6 +683,64 @@ def test_unusable_topology_stays_core_owned_and_usable_contract_breaks_loudly() 
     with pytest.raises(ProductInspectionContractError, match="pair reused"):
         inspect_product_bookmarks(cross_kind_reuse)
 
+    with pytest.raises(TypeError, match="StructuralBoundaryScan"):
+        inspect_product_bookmarks(object())  # type: ignore[arg-type]
+
+    unsupported_event = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (None,),  # type: ignore[arg-type]
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="unsupported boundary event"):
+        inspect_product_bookmarks(unsupported_event)
+
+    wrong_end_pair = BoundaryPairRef()
+    wrong_end = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (
+                    BookmarkBegin(wrong_end_pair, "OPTION", (_option("option"),), None),
+                    FieldEnd(wrong_end_pair),
+                ),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="end contradicts begin"):
+        inspect_product_bookmarks(wrong_end)
+
+    outer_pair, inner_pair = BoundaryPairRef(), BoundaryPairRef()
+    non_lifo = StructuralBoundaryScan(
+        (
+            StructuralEntryScan(
+                SECTION,
+                ContentEntryKind.SECTION,
+                (
+                    BookmarkBegin(outer_pair, "OUTER", (), None),
+                    BookmarkBegin(inner_pair, "INNER", (), None),
+                    BookmarkEnd(outer_pair),
+                    BookmarkEnd(inner_pair),
+                ),
+                True,
+                True,
+            ),
+        ),
+        (),
+    )
+    with pytest.raises(ProductInspectionContractError, match="end contradicts usable topology"):
+        inspect_product_bookmarks(non_lifo)
+
 
 @pytest.mark.parametrize(
     ("package", "expected"),
@@ -754,6 +818,17 @@ def test_unusable_topology_stays_core_owned_and_usable_contract_breaks_loudly() 
             ),
             {"bookmark-resolve-failed"},
         ),
+        (
+            _tag_events(
+                _p(
+                    "<hp:tbl><hp:tr><hp:tc><hp:subList>"
+                    + _p(_begin("1", "S") + "<hp:t>A</hp:t>" + _end("1"))
+                    + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+                ),
+                {"S": _slot("nested")},
+            ),
+            {"bookmark-resolve-failed"},
+        ),
     ),
     ids=(
         "duplicate-slot",
@@ -764,6 +839,7 @@ def test_unusable_topology_stays_core_owned_and_usable_contract_breaks_loudly() 
         "crossing",
         "malformed-pair",
         "malformed-xml",
+        "nested-boundary",
     ),
 )
 def test_topology_failures_have_stable_diagnostics(
