@@ -809,6 +809,13 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     )
     assert [region.name for region in resolve_bookmark_regions(reused_id)] == ["A", "B"]
 
+    remote_orphan = _package(
+        _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
+        + _paragraph("<hp:t>OUT</hp:t>"),
+        _paragraph(_end()) + _paragraph("<hp:t>OUT</hp:t>"),
+    )
+    assert [region.name for region in resolve_bookmark_regions(remote_orphan)] == ["A"]
+
     cross_section_id_collision = _package(
         _paragraph(_begin("7", "FIELD", kind="CLICK_HERE") + "<hp:t>OUT</hp:t>")
         + _paragraph(_begin("1", "TARGET") + "<hp:t>IN</hp:t>")
@@ -920,15 +927,7 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
                 _paragraph(_begin() + "<hp:t>A</hp:t>"),
                 _paragraph("<hp:t>B</hp:t>" + _end()),
             ),
-            "cross-section BOOKMARK",
-        ),
-        (
-            _package(
-                _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
-                + _paragraph("<hp:t>OUT</hp:t>"),
-                _paragraph(_end()) + _paragraph("<hp:t>OUT</hp:t>"),
-            ),
-            "cross-section BOOKMARK end collision",
+            "has no fieldEnd",
         ),
         (_package(markpen_crosses), "markpenBegin/markpenEnd range intersects"),
         (_package(insert_crosses), "insertBegin/insertEnd range intersects"),

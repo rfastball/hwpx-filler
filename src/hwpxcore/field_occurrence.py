@@ -90,7 +90,7 @@ class _Position:
     container: etree._Element
 
 
-def _paragraph_container(
+def paragraph_container(
     paragraph: etree._Element, root: etree._Element
 ) -> "etree._Element | None":
     parent = paragraph.getparent()
@@ -121,7 +121,7 @@ def _paragraph_container(
         or table.tag != f"{_HP}tbl"
         or owner_run.tag != f"{_HP}run"
         or owner_paragraph.tag != f"{_HP}p"
-        or _paragraph_container(owner_paragraph, root) is None
+        or paragraph_container(owner_paragraph, root) is None
     ):
         return None
     return parent
@@ -143,7 +143,7 @@ def _position(
     ):
         return None, FieldDiagnosticKind.UNSUPPORTED_CONTROL_SHAPE
 
-    container = _paragraph_container(paragraph, root)
+    container = paragraph_container(paragraph, root)
     if container is None:
         return None, FieldDiagnosticKind.UNSUPPORTED_TRAVERSAL_LANE
     return _Position(ctrl, run, paragraph, container), None

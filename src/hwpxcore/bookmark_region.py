@@ -320,21 +320,6 @@ def _resolve(
                     f"{section.entry}: duplicate fieldBegin id {begin_id!r} "
                     f"({len(begin_matches)})"
                 )
-            remote_end_collisions = [
-                other.entry
-                for other in sections
-                if other is not section
-                and begin_id in other.ends
-                and (
-                    len(other.begins.get(begin_id, [])) != 1
-                    or len(other.ends[begin_id]) != 1
-                )
-            ]
-            if remote_end_collisions:
-                raise ValueError(
-                    f"{section.entry}: cross-section BOOKMARK end collision "
-                    f"{begin_id!r} in {remote_end_collisions}"
-                )
             end_matches = section.ends.get(begin_id, [])
             if not end_matches:
                 raise ValueError(
