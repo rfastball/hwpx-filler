@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -24,12 +25,21 @@ from hwpxcore.structural_boundary import (
     scan_structural_boundaries,
 )
 import hwpxfiller.external.template_inspection as template_inspection
+from hwpxfiller.application.template_qualification import (
+    QualificationInspection,
+    TemplateDiagnostic,
+    TemplateOption,
+    TemplateInspectionContractError,
+    TemplateSlot,
+    TemplateStructure,
+)
 from hwpxfiller.domain.slot import Slot, SlotOption
 from hwpxfiller.external.template_inspection import (
     ProductClassification,
     ProductInspectionContractError,
     ProductScopeRole,
     inspect_hwpx_template,
+    inspect_hwpx_qualification,
     inspect_product_bookmarks,
     inspect_slots,
     remove_slot,
@@ -141,6 +151,18 @@ def _begin(identifier: str, name: str) -> str:
 
 def _end(identifier: str) -> str:
     return f'<hp:ctrl><hp:fieldEnd beginIDRef="{identifier}"/></hp:ctrl>'
+
+
+def _field_begin(name: str) -> str:
+    return f'<hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl>'
+
+
+def _field_end() -> str:
+    return "<hp:ctrl><hp:fieldEnd/></hp:ctrl>"
+
+
+def _field(name: str, value: str = "값") -> str:
+    return _field_begin(name) + f"<hp:t>{value}</hp:t>" + _field_end()
 
 
 def _plain_ancestor_package() -> HwpxPackage:
@@ -917,3 +939,498 @@ def test_canonical_fixture_is_reproducible_and_path_adapter_restores_slots(
     assert (inspection.slots, inspection.diagnostics) == expected
     assert inspection.fields == ()
     assert inspection.status.field_n == 0
+
+
+def test_qualification_projects_complete_native_free_field_ownership() -> None:
+    package = _tag_events(
+        _p(_field("duplicate"))
+        + _p(_begin("1", "SLOT") + "<hp:t>S</hp:t>")
+        + _p(_field("shared_before"))
+        + _p(_begin("9", "PLAIN") + "<hp:t>P</hp:t>")
+        + _p(_field("shared_plain"))
+        + _p("<hp:t>PE</hp:t>" + _end("9"))
+        + _p(_begin("2", "OPTION_A") + "<hp:t>A</hp:t>")
+        + _p(_field("option_a"))
+        + _p("<hp:t>AE</hp:t>" + _end("2"))
+        + _p(_field("shared_between"))
+        + _p(_begin("3", "OPTION_B") + "<hp:t>B</hp:t>")
+        + _p(_field("option_b"))
+        + _p("<hp:t>BE</hp:t>" + _end("3"))
+        + _p(_field("shared_after"))
+        + _p("<hp:t>SE</hp:t>" + _end("1"))
+        + _p(_begin("4", "SLOT_2") + "<hp:t>S2</hp:t>")
+        + _p(_field("second_shared"))
+        + _p("<hp:t>S2E</hp:t>" + _end("4"))
+        + _p(_field("duplicate"))
+        + _p("<hp:t>TAIL</hp:t>"),
+        {
+            "SLOT": _slot("slot"),
+            "SLOT_2": _slot("slot_2"),
+            "OPTION_A": _option("a"),
+            "OPTION_B": _option("b"),
+        },
+    )
+
+    inspection = inspect_hwpx_qualification(package.to_bytes())
+    assert inspection == QualificationInspection(
+        TemplateStructure(
+            ("duplicate", "duplicate"),
+            (
+                TemplateSlot(
+                    "slot",
+                    (
+                        "shared_before",
+                        "shared_plain",
+                        "shared_between",
+                        "shared_after",
+                    ),
+                    (
+                        TemplateOption("a", ("option_a",)),
+                        TemplateOption("b", ("option_b",)),
+                    ),
+                ),
+                TemplateSlot("slot_2", ("second_shared",), ()),
+            ),
+        ),
+        (),
+    )
+    payload = json.dumps(asdict(inspection), ensure_ascii=False)
+    assert "BoundaryPairRef" not in payload
+    assert "Contents/" not in payload
+    assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+
+def test_qualification_rejects_ambiguous_field_ownership_without_partial_structure() -> None:
+    cases: tuple[tuple[HwpxPackage | bytes, str], ...] = (
+        (
+            _tag_events(
+                _p(
+                    _field_begin("contains")
+                    + "<hp:t>OLD</hp:t>"
+                    + _begin("1", "SLOT")
+                    + "<hp:t>IN</hp:t>"
+                    + _end("1")
+                    + _field_end()
+                )
+                + _p("<hp:t>TAIL</hp:t>"),
+                {"SLOT": _slot("slot")},
+            ),
+            "field-contains-selection-boundary",
+        ),
+        (
+            _tag_events(
+                _p(
+                    _field_begin("crosses")
+                    + "<hp:t>OLD</hp:t>"
+                    + _begin("1", "SLOT")
+                    + "<hp:t>IN</hp:t>"
+                    + _field_end()
+                )
+                + _p("<hp:t>END</hp:t>" + _end("1"))
+                + _p("<hp:t>TAIL</hp:t>"),
+                {"SLOT": _slot("slot")},
+            ),
+            "field-crosses-selection-boundary",
+        ),
+        (
+            _xml_package(
+                _p(_begin("1", "A") + _begin("2", "B") + _end("1") + _end("2"))
+                + _p(_field("looks_root"))
+                + _p("<hp:t>TAIL</hp:t>")
+            ),
+            "unresolved-field-owner",
+        ),
+        (
+            _tag_events(
+                _p(_begin("1", "BAD") + "<hp:t>B</hp:t>")
+                + _p(_field("inside_bad"))
+                + _p("<hp:t>E</hp:t>" + _end("1"))
+                + _p("<hp:t>TAIL</hp:t>"),
+                {"BAD": _slot("bad", kind="future")},
+            ),
+            "unresolved-field-owner",
+        ),
+        (
+            _tag_events(
+                _p(_begin("1", "BAD_ID") + "<hp:t>B</hp:t>")
+                + _p("<hp:t>E</hp:t>" + _end("1"))
+                + _p("<hp:t>TAIL</hp:t>"),
+                {"BAD_ID": _slot("")},
+            ),
+            "invalid-id",
+        ),
+        (
+            _xml_package(_p(_field("")) + _p("<hp:t>TAIL</hp:t>")),
+            "invalid-field-id",
+        ),
+        (
+            _xml_package(
+                _p(_field_begin("broken") + "<hp:t>X</hp:t>")
+                + _p("<hp:t>TAIL</hp:t>")
+            ),
+            "field-unmatched-begin",
+        ),
+        (b"not a zip", "invalid-hwpx-package"),
+    )
+
+    for package, expected_kind in cases:
+        canonical_bytes = package if isinstance(package, bytes) else package.to_bytes()
+        inspection = inspect_hwpx_qualification(canonical_bytes)
+        assert expected_kind in {item.kind for item in inspection.diagnostics}
+        assert inspection.structure is None
+        assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+
+def test_qualification_combines_native_capability_blockers_without_partial_structure() -> None:
+    cases = (
+        (
+            _xml_package(
+                _p(_field("blocked", "OLD<hp:outer><hp:inner/></hp:outer>"))
+                + _p("<hp:t>TAIL</hp:t>")
+            ),
+            "field-not-fillable",
+        ),
+        (
+            _tag_events(
+                _p(_begin("1", "SLOT") + "<hp:t>IN<hp:markpenBegin/></hp:t>")
+                + _p("<hp:t>END</hp:t>" + _end("1"))
+                + _p("<hp:t>TAIL</hp:t>"),
+                {"SLOT": _slot("slot")},
+            ),
+            "product-selection-not-removable",
+        ),
+    )
+
+    for package, expected_kind in cases:
+        inspection = inspect_hwpx_qualification(package.to_bytes())
+        assert expected_kind in {item.kind for item in inspection.diagnostics}
+        assert inspection.structure is None
+        assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+
+def test_qualification_rejects_missing_duplicate_and_conflicting_observations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = _tag_events(
+        _p(_begin("1", "SLOT") + "<hp:t>S</hp:t>")
+        + _p(_field("shared"))
+        + _p(_begin("2", "OPTION") + "<hp:t>O</hp:t>")
+        + _p(_field("option"))
+        + _p("<hp:t>OE</hp:t>" + _end("2"))
+        + _p("<hp:t>SE</hp:t>" + _end("1"))
+        + _p("<hp:t>TAIL</hp:t>"),
+        {"SLOT": _slot("slot"), "OPTION": _option("option")},
+    )
+    detail = template_inspection._inspect_hwpx_detail(package)
+    option_index = next(
+        index
+        for index, item in enumerate(detail.products.observations)
+        if item.scope_role is ProductScopeRole.OPTION
+    )
+    conflicting = replace(
+        detail.products.observations[option_index],
+        owning_slot_pair=BoundaryPairRef(),
+    )
+    conflicting_products = replace(
+        detail.products,
+        observations=(
+            *detail.products.observations[:option_index],
+            conflicting,
+            *detail.products.observations[option_index + 1 :],
+        ),
+    )
+    invalid_scope = replace(
+        detail.products.observations[0],
+        classification=ProductClassification.INVALID_PRODUCT,
+        scope_role=ProductScopeRole.INVALID_PRODUCT,
+        scope_usable=False,
+        kind=None,
+        product_id=None,
+    )
+    invalid_products = replace(
+        detail.products,
+        observations=(invalid_scope, *detail.products.observations[1:]),
+    )
+    entry = detail.structural.entries[0]
+    slot_pair = detail.products.observations[0].pair
+    option = detail.products.observations[option_index]
+    option_pair = option.pair
+    mismatched_entry = replace(detail.products.observations[0], entry="Contents/other.xml")
+    mismatched_entry_products = replace(
+        detail.products,
+        observations=(mismatched_entry, *detail.products.observations[1:]),
+    )
+    masked_slot = replace(
+        detail.products.observations[0],
+        classification=ProductClassification.NON_PRODUCT,
+    )
+    masked_products = replace(
+        detail.products,
+        observations=(masked_slot, *detail.products.observations[1:]),
+        diagnostics=(TemplateDiagnostic("existing-candidate-error", "blocked"),),
+    )
+    nested_slot = replace(
+        option,
+        scope_role=ProductScopeRole.SLOT,
+        kind="slot",
+        owning_slot_pair=None,
+    )
+    nested_slot_products = replace(
+        detail.products,
+        observations=(
+            *detail.products.observations[:option_index],
+            nested_slot,
+            *detail.products.observations[option_index + 1 :],
+        ),
+    )
+    blocked_outer = replace(
+        detail.products.observations[0],
+        scope_role=ProductScopeRole.INVALID_PRODUCT,
+        scope_usable=False,
+    )
+    blocked_outer_products = replace(
+        detail.products,
+        observations=(blocked_outer, *detail.products.observations[1:]),
+        diagnostics=(TemplateDiagnostic("invalid-outer", "blocked"),),
+    )
+    future_invalid = replace(
+        detail.products.observations[0],
+        scope_role=ProductScopeRole.INVALID_PRODUCT,
+        scope_usable=False,
+        kind="future",
+    )
+    future_invalid_products = replace(
+        detail.products,
+        observations=(future_invalid, *detail.products.observations[1:]),
+        diagnostics=(TemplateDiagnostic("unknown-kind", "blocked"),),
+    )
+    invalid_owner = replace(
+        option,
+        scope_role=ProductScopeRole.INVALID_PRODUCT,
+        scope_usable=False,
+        owning_slot_pair=BoundaryPairRef(),
+    )
+    invalid_owner_products = replace(
+        detail.products,
+        observations=(
+            *detail.products.observations[:option_index],
+            invalid_owner,
+            *detail.products.observations[option_index + 1 :],
+        ),
+        diagnostics=(TemplateDiagnostic("invalid-option", "blocked"),),
+    )
+    field_end_index = next(
+        index for index, event in enumerate(entry.events) if isinstance(event, FieldEnd)
+    )
+    field_begin_index = next(
+        index for index, event in enumerate(entry.events) if isinstance(event, FieldBegin)
+    )
+    nested_field_pair = BoundaryPairRef()
+    nested_field_events = (
+        *entry.events[: field_begin_index + 1],
+        FieldBegin(nested_field_pair, "nested"),
+        *entry.events[field_begin_index + 1 :],
+    )
+    nested_field_fills = (
+        detail.capabilities.field_fills[0],
+        replace(detail.capabilities.field_fills[0], pair=nested_field_pair),
+        *detail.capabilities.field_fills[1:],
+    )
+    mismatched_field_events = (
+        *entry.events[:field_end_index],
+        replace(entry.events[field_end_index], pair=BoundaryPairRef()),
+        *entry.events[field_end_index + 1 :],
+    )
+    option_end_index = next(
+        index
+        for index, event in enumerate(entry.events)
+        if isinstance(event, BookmarkEnd) and event.pair is option_pair
+    )
+    slot_end_index = next(
+        index
+        for index, event in enumerate(entry.events)
+        if isinstance(event, BookmarkEnd) and event.pair is slot_pair
+    )
+    swapped_end_events = list(entry.events)
+    swapped_end_events[option_end_index] = BookmarkEnd(slot_pair)
+    swapped_end_events[slot_end_index] = BookmarkEnd(option_pair)
+    impossible_events = tuple(
+        event
+        for event in entry.events
+        if not (isinstance(event, BookmarkEnd) and event.pair is slot_pair)
+    )
+    cases = (
+        (
+            replace(
+                detail,
+                capabilities=replace(detail.capabilities, field_fills=()),
+            ),
+            "Field fill observation order mismatch",
+        ),
+        (
+            replace(
+                detail,
+                capabilities=replace(
+                    detail.capabilities,
+                    field_fills=(
+                        *detail.capabilities.field_fills,
+                        detail.capabilities.field_fills[-1],
+                    ),
+                ),
+            ),
+            "extra Field fill observation",
+        ),
+        (
+            replace(
+                detail,
+                capabilities=replace(detail.capabilities, bookmark_removals=()),
+            ),
+            "BOOKMARK removal observation order mismatch",
+        ),
+        (
+            replace(
+                detail,
+                capabilities=replace(
+                    detail.capabilities,
+                    bookmark_removals=(
+                        *detail.capabilities.bookmark_removals,
+                        detail.capabilities.bookmark_removals[-1],
+                    ),
+                ),
+            ),
+            "extra BOOKMARK removal observation",
+        ),
+        (
+            replace(
+                detail,
+                products=replace(
+                    detail.products,
+                    observations=(
+                        *detail.products.observations,
+                        detail.products.observations[-1],
+                    ),
+                ),
+            ),
+            "extra product scope observation",
+        ),
+        (
+            replace(detail, products=conflicting_products),
+            "Option owning Slot contradicts current Slot",
+        ),
+        (
+            replace(detail, products=mismatched_entry_products),
+            "product scope entry mismatch",
+        ),
+        (
+            replace(detail, products=masked_products),
+            "product scope observation conflicts",
+        ),
+        (
+            replace(detail, products=invalid_products),
+            "product scope observation conflicts",
+        ),
+        (
+            replace(detail, products=future_invalid_products),
+            "product scope observation conflicts",
+        ),
+        (
+            replace(detail, products=invalid_owner_products),
+            "invalid product owning Slot contradicts current Slot",
+        ),
+        (
+            replace(detail, products=nested_slot_products),
+            "Slot begin contradicts current scope",
+        ),
+        (
+            replace(detail, products=blocked_outer_products),
+            "usable product scope inside invalid scope",
+        ),
+        (
+            replace(
+                detail,
+                structural=replace(
+                    detail.structural,
+                    entries=(replace(entry, events=mismatched_field_events),),
+                ),
+            ),
+            "Field end contradicts open Field",
+        ),
+        (
+            replace(
+                detail,
+                structural=replace(
+                    detail.structural,
+                    entries=(replace(entry, events=nested_field_events),),
+                ),
+                capabilities=replace(
+                    detail.capabilities,
+                    field_fills=nested_field_fills,
+                ),
+            ),
+            "Field began while another Field was open",
+        ),
+        (
+            replace(
+                detail,
+                structural=replace(
+                    detail.structural,
+                    entries=(
+                        replace(
+                            entry,
+                            events=(FieldEnd(BoundaryPairRef()), *entry.events),
+                        ),
+                    ),
+                ),
+            ),
+            "Field end contradicts open Field",
+        ),
+        (
+            replace(
+                detail,
+                structural=replace(
+                    detail.structural,
+                    entries=(replace(entry, events=tuple(swapped_end_events)),),
+                ),
+            ),
+            "Slot end contradicts current scope",
+        ),
+        (
+            replace(
+                detail,
+                structural=replace(
+                    detail.structural,
+                    entries=(replace(entry, events=impossible_events),),
+                ),
+            ),
+            "analyzer ended with impossible state",
+        ),
+    )
+
+    for broken, message in cases:
+        with pytest.raises(TemplateInspectionContractError, match=message):
+            template_inspection._analyze_hwpx_detail(broken)
+
+    with pytest.raises(TypeError, match="canonical_bytes must be bytes"):
+        inspect_hwpx_qualification(bytearray())  # type: ignore[arg-type]
+
+    def parse_error(error: Exception):
+        def raise_error(_canonical_bytes: bytes) -> HwpxPackage:
+            raise error
+
+        return raise_error
+
+    for error in (
+        NotImplementedError("unsupported ZIP feature"),
+        RuntimeError("File 'section.xml' is encrypted, password required for extraction"),
+    ):
+        with monkeypatch.context() as patch:
+            patch.setattr(HwpxPackage, "from_bytes", parse_error(error))
+            inspection = inspect_hwpx_qualification(b"candidate")
+            assert {item.kind for item in inspection.diagnostics} == {
+                "invalid-hwpx-package"
+            }
+
+    with monkeypatch.context() as patch:
+        patch.setattr(HwpxPackage, "from_bytes", parse_error(RuntimeError("parser bug")))
+        with pytest.raises(RuntimeError, match="parser bug"):
+            inspect_hwpx_qualification(b"candidate")

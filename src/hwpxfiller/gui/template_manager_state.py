@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..application.template_qualification import TemplateDiagnostic
 from ..domain.authoring import CompileReport, TokenSite
 from ..domain.fields import FillNote
 from ..domain.lint import LintReport, SchemaDrift
@@ -43,14 +44,6 @@ from .result_errors import describe_precheck_note
 
 # lint 심각도 → 사용자 대면 한국어(뷰가 영문 원시값을 노출하지 않게 링1이 성형).
 _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
-
-
-@dataclass(frozen=True)
-class TemplateDiagnostic:
-    """Blocking template inspection finding; qualification is a later concern."""
-
-    kind: str
-    message: str
 
 
 @dataclass(frozen=True)
