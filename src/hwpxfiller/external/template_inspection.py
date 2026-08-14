@@ -10,16 +10,26 @@
 from __future__ import annotations
 
 import json
+import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, TypeVar, cast
 
 from hwpxcore.bookmark_region import (
     BookmarkRegion,
     remove_bookmark_region,
     resolve_bookmark_topology,
 )
+from hwpxcore.native_admission import (
+    BookmarkRemovalBlocker,
+    FieldFillBlocker,
+    FieldFillObservation,
+    NativeCapabilityInspection,
+    inspect_native_capabilities,
+)
+from hwpxcore.package import HwpxPackage
 from hwpxcore.structural_boundary import (
     BookmarkBegin,
     BookmarkEnd,
@@ -33,14 +43,21 @@ from hwpxcore.structural_boundary import (
 )
 from hwpxcore.text_extract import require_package
 
+from ..application.template_qualification import (
+    QualificationInspection,
+    TemplateDiagnostic,
+    TemplateInspectionContractError,
+    TemplateOption,
+    TemplateSlot,
+    TemplateStructure,
+)
 from ..domain.authoring import CompileReport, TokenSite, compile_document, scan_tokens
-from ..domain.fields import fill_precheck, read_fields
+from ..domain.fields import fill_precheck, normalize_field_id, read_fields
 from ..domain.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..domain.schema import extract_schema
 from ..domain.slot import Slot, SlotOption
 from ..domain.template_status import TemplateStatus, compile_status
 from ..gui.template_manager_state import (
-    TemplateDiagnostic,
     TemplateFileOps,
     TemplateInspection,
 )
@@ -86,6 +103,36 @@ class ProductBookmarkInspection:
     _projection_pairs: frozenset[BoundaryPairRef] = field(
         default_factory=frozenset, repr=False, compare=False
     )
+
+
+@dataclass(frozen=True)
+class _HwpxInspectionDetail:
+    """External-only native evidence used to build a qualification result."""
+
+    structural: StructuralBoundaryScan
+    products: ProductBookmarkInspection
+    capabilities: NativeCapabilityInspection
+
+
+class _FieldOwnerTag(StrEnum):
+    ROOT = "root"
+    SLOT_SHARED = "slot_shared"
+    OPTION = "option"
+    UNRESOLVED = "unresolved"
+
+
+_FieldOwner = tuple[_FieldOwnerTag, BoundaryPairRef | None]
+_ObservationT = TypeVar("_ObservationT")
+
+
+@dataclass
+class _OpenField:
+    pair: BoundaryPairRef
+    raw_name: str | None
+    field_id: str | None
+    owner: _FieldOwner
+    fill: FieldFillObservation
+    product_boundary_opened: bool = False
 
 
 class _ParsedProduct(NamedTuple):
@@ -554,6 +601,383 @@ def inspect_product_bookmarks(
         tuple(diagnostics),
         projection_pairs,
     )
+
+
+def _blocker_summary(
+    blockers: tuple[FieldFillBlocker | BookmarkRemovalBlocker, ...],
+) -> str:
+    return "; ".join(
+        item.kind.value + (f": {', '.join(item.detail)}" if item.detail else "")
+        for item in blockers
+    )
+
+
+def _consume_observation(
+    cursor: Iterator[_ObservationT],
+    pair: BoundaryPairRef,
+    label: str,
+    entry: str,
+) -> _ObservationT:
+    observation = next(cursor, None)
+    if observation is None or getattr(observation, "pair", None) is not pair:
+        raise TemplateInspectionContractError(f"{entry}: {label} observation order mismatch")
+    return observation
+
+
+def _product_observation_consistent(
+    item: ProductScopeObservation,
+    *,
+    diagnostics_present: bool,
+) -> bool:
+    if item.scope_role is ProductScopeRole.INVALID_PRODUCT:
+        return (
+            not item.scope_usable
+            and diagnostics_present
+            and (
+                (
+                    item.classification is ProductClassification.KNOWN_PRODUCT
+                    and item.kind in _PRODUCT_KINDS
+                )
+                or (
+                    item.classification is not ProductClassification.KNOWN_PRODUCT
+                    and item.kind is None
+                    and item.product_id is None
+                )
+            )
+            and (
+                item.owning_slot_pair is None
+                or (
+                    item.classification is ProductClassification.KNOWN_PRODUCT
+                    and item.kind == "slot_option"
+                )
+            )
+        )
+    if item.scope_role is ProductScopeRole.NONE:
+        return (
+            item.scope_usable
+            and item.classification is ProductClassification.NON_PRODUCT
+            and item.kind is None
+            and item.product_id is None
+            and item.owning_slot_pair is None
+        )
+    expected = {
+        ProductScopeRole.SLOT: ("slot", False),
+        ProductScopeRole.OPTION: ("slot_option", True),
+    }.get(item.scope_role)
+    return (
+        item.scope_usable
+        and item.classification is ProductClassification.KNOWN_PRODUCT
+        and expected is not None
+        and item.kind == expected[0]
+        and (item.owning_slot_pair is not None) is expected[1]
+        and (item.product_id is not None or diagnostics_present)
+    )
+
+
+def _current_owner(
+    *,
+    bookmark_topology_usable: bool,
+    invalid_product_depth: int,
+    current_slot_pair: BoundaryPairRef | None,
+    current_option_pair: BoundaryPairRef | None,
+) -> _FieldOwner:
+    if not bookmark_topology_usable or invalid_product_depth:
+        return (_FieldOwnerTag.UNRESOLVED, None)
+    if current_option_pair is not None:
+        return (_FieldOwnerTag.OPTION, current_option_pair)
+    if current_slot_pair is not None:
+        return (_FieldOwnerTag.SLOT_SHARED, current_slot_pair)
+    return (_FieldOwnerTag.ROOT, None)
+
+
+def _field_structural_diagnostics(
+    scan: StructuralBoundaryScan,
+) -> list[TemplateDiagnostic]:
+    return [
+        TemplateDiagnostic(item.kind.value, f"{item.entry}: {item.kind.value}")
+        for item in scan.diagnostics
+        if item.kind.name.startswith("FIELD_")
+    ]
+
+
+def _inspect_hwpx_detail(pkg: object) -> _HwpxInspectionDetail:
+    package = require_package(pkg)
+    scan = scan_structural_boundaries(package)
+    return _HwpxInspectionDetail(
+        scan,
+        inspect_product_bookmarks(scan),
+        inspect_native_capabilities(package, scan),
+    )
+
+
+def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspection:
+    scan, products, capabilities = (
+        detail.structural,
+        detail.products,
+        detail.capabilities,
+    )
+    if any(
+        not _product_observation_consistent(
+            item, diagnostics_present=bool(products.diagnostics)
+        )
+        for item in products.observations
+    ):
+        raise TemplateInspectionContractError("product scope observation conflicts")
+    field_fill_cursor = iter(capabilities.field_fills)
+    bookmark_removal_cursor = iter(capabilities.bookmark_removals)
+    product_cursor = iter(products.observations)
+    slot_observations: list[ProductScopeObservation] = []
+    option_observations: dict[BoundaryPairRef, list[ProductScopeObservation]] = {}
+    shared_fields: dict[BoundaryPairRef, list[str]] = {}
+    option_fields: dict[BoundaryPairRef, list[str]] = {}
+
+    diagnostics = list(products.diagnostics)
+    diagnostics.extend(_field_structural_diagnostics(scan))
+    root_fields: list[str] = []
+
+    for entry in scan.entries:
+        current_slot_pair: BoundaryPairRef | None = None
+        current_option_pair: BoundaryPairRef | None = None
+        invalid_product_depth = 0
+        open_field: _OpenField | None = None
+
+        for event in entry.events:
+            if isinstance(event, FieldBegin):
+                fill = _consume_observation(
+                    field_fill_cursor, event.pair, "Field fill", entry.entry
+                )
+                if open_field is not None:
+                    raise TemplateInspectionContractError(
+                        f"{entry.entry}: Field began while another Field was open"
+                    )
+                open_field = _OpenField(
+                    event.pair,
+                    event.raw_name,
+                    normalize_field_id(event.raw_name),
+                    _current_owner(
+                        bookmark_topology_usable=entry.bookmark_topology_usable,
+                        invalid_product_depth=invalid_product_depth,
+                        current_slot_pair=current_slot_pair,
+                        current_option_pair=current_option_pair,
+                    ),
+                    fill,
+                )
+                continue
+
+            if isinstance(event, FieldEnd):
+                if open_field is None or open_field.pair is not event.pair:
+                    raise TemplateInspectionContractError(
+                        f"{entry.entry}: Field end contradicts open Field"
+                    )
+                current_owner = _current_owner(
+                    bookmark_topology_usable=entry.bookmark_topology_usable,
+                    invalid_product_depth=invalid_product_depth,
+                    current_slot_pair=current_slot_pair,
+                    current_option_pair=current_option_pair,
+                )
+                field_label = repr(
+                    open_field.field_id if open_field.field_id is not None else open_field.raw_name
+                )
+                if (
+                    open_field.owner[0] is _FieldOwnerTag.UNRESOLVED
+                    or current_owner[0] is _FieldOwnerTag.UNRESOLVED
+                ):
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "unresolved-field-owner",
+                            f"{entry.entry}: Field {field_label} owner is unresolved",
+                        )
+                    )
+                elif open_field.owner != current_owner:
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "field-crosses-selection-boundary",
+                            f"{entry.entry}: Field {field_label} crosses a selection boundary",
+                        )
+                    )
+                elif open_field.product_boundary_opened:
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "field-contains-selection-boundary",
+                            f"{entry.entry}: Field {field_label} contains a selection boundary",
+                        )
+                    )
+                elif open_field.field_id is None:
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "invalid-field-id",
+                            f"{entry.entry}: Field {field_label} has no valid ID",
+                        )
+                    )
+                elif not open_field.fill.fillable:
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "field-not-fillable",
+                            f"{entry.entry}: Field {field_label}: "
+                            f"{_blocker_summary(open_field.fill.blockers)}",
+                        )
+                    )
+                else:
+                    owner_tag, owner_pair = open_field.owner
+                    if owner_tag is _FieldOwnerTag.ROOT:
+                        root_fields.append(open_field.field_id)
+                    elif owner_tag is _FieldOwnerTag.SLOT_SHARED:
+                        shared_fields[cast(BoundaryPairRef, owner_pair)].append(
+                            open_field.field_id
+                        )
+                    else:
+                        option_fields[cast(BoundaryPairRef, owner_pair)].append(
+                            open_field.field_id
+                        )
+                open_field = None
+                continue
+
+            if isinstance(event, BookmarkBegin):
+                observation = _consume_observation(
+                    product_cursor, event.pair, "product scope", entry.entry
+                )
+                removal = _consume_observation(
+                    bookmark_removal_cursor,
+                    event.pair,
+                    "BOOKMARK removal",
+                    entry.entry,
+                )
+                if observation.entry != entry.entry:
+                    raise TemplateInspectionContractError("product scope entry mismatch")
+                role = observation.scope_role
+
+                if (
+                    observation.classification is ProductClassification.KNOWN_PRODUCT
+                    and observation.kind in _PRODUCT_KINDS
+                    and not removal.removable
+                ):
+                    diagnostics.append(
+                        TemplateDiagnostic(
+                            "product-selection-not-removable",
+                            f"{entry.entry}: {observation.kind} "
+                            f"{observation.product_id!r}: "
+                            f"{_blocker_summary(removal.blockers)}",
+                        )
+                    )
+                if not entry.bookmark_topology_usable:
+                    continue
+                if open_field is not None and role is not ProductScopeRole.NONE:
+                    open_field.product_boundary_opened = True
+                if invalid_product_depth and role is not ProductScopeRole.INVALID_PRODUCT:
+                    raise TemplateInspectionContractError(
+                        f"{entry.entry}: usable product scope inside invalid scope"
+                    )
+                if role is ProductScopeRole.NONE:
+                    continue
+                if role is ProductScopeRole.INVALID_PRODUCT:
+                    if (
+                        observation.owning_slot_pair is not None
+                        and observation.owning_slot_pair is not current_slot_pair
+                    ):
+                        raise TemplateInspectionContractError(
+                            f"{entry.entry}: invalid product owning Slot "
+                            "contradicts current Slot"
+                        )
+                    invalid_product_depth += 1
+                    continue
+                if role is ProductScopeRole.SLOT:
+                    if current_slot_pair is not None or current_option_pair is not None:
+                        raise TemplateInspectionContractError(
+                            f"{entry.entry}: Slot begin contradicts current scope"
+                        )
+                    current_slot_pair = event.pair
+                    slot_observations.append(observation)
+                    shared_fields[event.pair] = []
+                    continue
+                if (
+                    current_slot_pair is not observation.owning_slot_pair
+                    or current_option_pair is not None
+                ):
+                    raise TemplateInspectionContractError(
+                        f"{entry.entry}: Option owning Slot contradicts current Slot"
+                    )
+                current_option_pair = event.pair
+                owner = cast(BoundaryPairRef, observation.owning_slot_pair)
+                option_observations.setdefault(owner, []).append(observation)
+                option_fields[event.pair] = []
+                continue
+
+            if not entry.bookmark_topology_usable:
+                continue
+            if invalid_product_depth:
+                invalid_product_depth -= 1
+                continue
+            if current_option_pair is event.pair:
+                current_option_pair = None
+                continue
+            if current_slot_pair is event.pair:
+                if current_option_pair is not None:
+                    raise TemplateInspectionContractError(
+                        f"{entry.entry}: Slot end contradicts current scope"
+                    )
+                current_slot_pair = None
+
+        if (
+            open_field is not None
+            or current_slot_pair is not None
+            or current_option_pair is not None
+            or invalid_product_depth
+        ):
+            raise TemplateInspectionContractError(
+                f"{entry.entry}: analyzer ended with impossible state"
+            )
+
+    for label, cursor in (
+        ("Field fill", field_fill_cursor),
+        ("BOOKMARK removal", bookmark_removal_cursor),
+        ("product scope", product_cursor),
+    ):
+        if next(cursor, None) is not None:
+            raise TemplateInspectionContractError(f"extra {label} observation")
+
+    if diagnostics:
+        return QualificationInspection(None, tuple(diagnostics))
+
+    slots: list[TemplateSlot] = []
+    for slot in slot_observations:
+        options: list[TemplateOption] = []
+        for option in option_observations.get(slot.pair, ()):
+            options.append(
+                TemplateOption(
+                    cast(str, option.product_id), tuple(option_fields[option.pair])
+                )
+            )
+        slots.append(
+            TemplateSlot(
+                cast(str, slot.product_id),
+                tuple(shared_fields[slot.pair]),
+                tuple(options),
+            )
+        )
+    return QualificationInspection(
+        TemplateStructure(tuple(root_fields), tuple(slots)),
+        (),
+    )
+
+
+def inspect_hwpx_qualification(canonical_bytes: bytes) -> QualificationInspection:
+    """Inspect immutable canonical HWPX bytes without exposing native objects."""
+    if not isinstance(canonical_bytes, bytes):
+        raise TypeError("canonical_bytes must be bytes")
+    try:
+        package = HwpxPackage.from_bytes(canonical_bytes)
+    except (ValueError, zipfile.BadZipFile, NotImplementedError, RuntimeError) as exc:
+        if (
+            isinstance(exc, RuntimeError)
+            and not isinstance(exc, NotImplementedError)
+            and not str(exc).endswith(" is encrypted, password required for extraction")
+        ):
+            raise
+        return QualificationInspection(
+            None,
+            (TemplateDiagnostic("invalid-hwpx-package", str(exc)),),
+        )
+    return _analyze_hwpx_detail(_inspect_hwpx_detail(package))
 
 
 def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
