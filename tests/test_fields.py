@@ -9,6 +9,11 @@ from _ordinary_field_grammar import (
     SUPPORTED_FIELD_GRAMMAR,
     UNSUPPORTED_FIELD_GRAMMAR,
 )
+from hwpxcore.field_occurrence import (
+    FieldDiagnosticKind,
+    FieldPairingError,
+    resolve_field_occurrences,
+)
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.domain.fields import (
     HP_NS,
@@ -72,70 +77,37 @@ def test_set_field_injects_value_and_reparse_confirms():
     assert sentinel in xml_text
 
 
-def test_ordinary_field_grammar_catalog():
-    assert set(SUPPORTED_FIELD_GRAMMAR) == {
-        "top_level_paragraph",
-        "header_body_paragraph",
-        "footer_body_paragraph",
-        "table_cell_sublist_paragraph",
-        "multiple_runs_and_value_fragments",
-        "multiple_fields_in_one_paragraph",
-        "begin_end_in_same_run",
-        "empty_field",
-    }
-    expected_unsupported = {
-        "paragraph_crossing": "paragraph-crossing",
-        "container_crossing": "unsupported-container-crossing",
-        "nested_fields": "nested-field",
-        "ambiguous_end": "ambiguous-end",
-        "foreign_namespace": "non-native-field-control",
-        "marker_outside_control": "unsupported-control-shape",
-    }
-    assert set(UNSUPPORTED_FIELD_GRAMMAR) == set(expected_unsupported)
+@pytest.mark.parametrize("case_name", UNSUPPORTED_FIELD_GRAMMAR)
+def test_unsupported_ordinary_field_grammar_is_typed_and_fail_closed(
+    case_name: str,
+):
+    case = UNSUPPORTED_FIELD_GRAMMAR[case_name]
+    resolution = resolve_field_occurrences(case.entry, etree.fromstring(case.xml))
 
-    for case_name, case in UNSUPPORTED_FIELD_GRAMMAR.items():
-        root = etree.fromstring(case.xml)
-        markers = root.xpath(
-            ".//*[local-name()='fieldBegin' or local-name()='fieldEnd']"
-        )
-        names = tuple(
-            node.get("name") or ""
-            for node in markers
-            if etree.QName(node).localname == "fieldBegin"
-        )
-        assert names == case.raw_names
-        assert case.unsupported_kind == expected_unsupported[case_name]
-
-        begin, end = markers[0], markers[-1]
-        if case_name == "paragraph_crossing":
-            assert begin.xpath("ancestor::*[local-name()='p'][1]")[0] is not end.xpath(
-                "ancestor::*[local-name()='p'][1]"
-            )[0]
-        elif case_name == "container_crossing":
-            assert begin.xpath("ancestor::*[local-name()='tc']")
-            assert not end.xpath("ancestor::*[local-name()='tc']")
-        elif case_name == "nested_fields":
-            assert tuple(etree.QName(node).localname for node in markers) == (
-                "fieldBegin",
-                "fieldBegin",
-                "fieldEnd",
-                "fieldEnd",
-            )
-        elif case_name == "ambiguous_end":
-            assert [node.get("id") for node in markers[:-1]] == ["24", "24"]
-            assert end.get("beginIDRef") == "24"
-        elif case_name == "foreign_namespace":
-            assert etree.QName(begin).namespace != HP_NS
-        else:
-            parent = begin.getparent()
-            assert parent is not None
-            assert etree.QName(parent).localname == "p"
+    assert resolution.pairing_usable is False
+    assert resolution.occurrences == ()  # malformed 뒤 임의 resynchronization 금지
+    assert case.unsupported_kind in {
+        diagnostic.kind.value for diagnostic in resolution.diagnostics
+    }
+    with pytest.raises(FieldPairingError) as error:
+        resolution.require_usable()
+    assert error.value.diagnostics == resolution.diagnostics
 
 
 @pytest.mark.parametrize("case_name", SUPPORTED_FIELD_GRAMMAR)
 def test_supported_ordinary_field_grammar(case_name: str):
     case = SUPPORTED_FIELD_GRAMMAR[case_name]
-    doc = FieldDocument(case.xml)
+    resolution = resolve_field_occurrences(case.entry, etree.fromstring(case.xml))
+    assert resolution.pairing_usable is True
+    assert [occurrence.raw_name for occurrence in resolution.occurrences] == list(
+        case.raw_names
+    )
+    assert all(
+        occurrence.begin_order < occurrence.end_order
+        for occurrence in resolution.occurrences
+    )
+
+    doc = FieldDocument(case.xml, entry=case.entry)
     field_ids: "list[str]" = []
     for raw_name in case.raw_names:
         field_id = normalize_field_id(raw_name)
@@ -159,6 +131,42 @@ def test_supported_ordinary_field_grammar(case_name: str):
         stored={MIMETYPE_NAME},
     )
     assert read_fields(pkg) == written
+
+
+def test_field_document_and_schema_reject_unusable_pairing():
+    case = UNSUPPORTED_FIELD_GRAMMAR["nested_fields"]
+    with pytest.raises(FieldPairingError) as error:
+        FieldDocument(case.xml, entry=case.entry)
+    assert error.value.diagnostics[0].kind is FieldDiagnosticKind.NESTED_FIELD
+
+    pkg = HwpxPackage(
+        entries={MIMETYPE_NAME: MIMETYPE_VALUE, case.entry: case.xml},
+        stored={MIMETYPE_NAME},
+    )
+    with pytest.raises(FieldPairingError):
+        extract_schema(pkg)
+
+
+def test_field_uses_its_matching_end_past_a_bookmark_end():
+    xml = f"""
+    <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+            xmlns:hp="{HP_NS}">
+      <hp:p><hp:run>
+        <hp:ctrl><hp:fieldBegin id="9" type="CLICK_HERE" name="계약명"/></hp:ctrl>
+        <hp:t>앞</hp:t>
+        <hp:ctrl><hp:fieldBegin id="1" type="BOOKMARK" name="구조"/></hp:ctrl>
+        <hp:t>중간</hp:t>
+        <hp:ctrl><hp:fieldEnd beginIDRef="1"/></hp:ctrl>
+        <hp:t>뒤</hp:t>
+        <hp:ctrl><hp:fieldEnd beginIDRef="9"/></hp:ctrl>
+      </hp:run></hp:p>
+    </hs:sec>
+    """.encode()
+    doc = FieldDocument(xml)
+
+    assert doc.read_field("계약명") == "앞중간뒤"
+    assert doc.set_field("계약명", "새값") is True
+    assert doc.read_field("계약명") == "새값"
 
 
 def test_read_field_returns_placeholder_literal_and_none_for_unknown():
@@ -404,25 +412,6 @@ def test_fragmented_equal_value_is_noop():
     assert doc.to_bytes() == FieldDocument(xml).to_bytes()
 
 
-def test_unclosed_field_without_slot_stays_loud():
-    """짝(fieldEnd) 미확인 + 슬롯 부재면 합성하지 않는다 — 걸음 밖 구값과 중복 방지.
-
-    (문단 경계를 걸친 필드 등) 조용한 성공 대신 기입 불가 → 호출측 unmatched.
-    """
-    xml = (
-        f"{_HDR}<hp:p>"
-        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
-        "</hp:p><hp:p>"
-        "<hp:run><hp:t>다음 문단의 구값</hp:t></hp:run>"
-        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
-        "</hp:p></hs:sec>"
-    ).encode("utf-8")
-    doc = FieldDocument(xml)
-    assert doc.set_field("계약명", "값") is False
-    assert doc.modified is False
-    assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
-
-
 def test_partial_fill_emits_occurrence_note():
     """같은 이름 자리 일부만 기입 가능하면 True + occurrence_unfillable 노트 —
     False 가 집계에 삼켜져 조용한 부분 기입이 되지 않는다."""
@@ -557,7 +546,8 @@ def test_field_id_normalization_is_shared_by_read_write_required_and_schema():
 def test_precheck_matches_post_notes_on_divergent_shapes():
     """패리티 핀 — 사전 판정과 사후 노트가 어긋남 후보 형상 전부에서 같은 결론.
 
-    형상: 정상+퇴화 동명(부분 기입) · run 밖 begin · 빈 누름틀 · 인라인 마커.
+    형상: 정상+퇴화 동명(부분 기입) · 빈 누름틀 · 인라인 마커.
+    malformed control은 entry trust를 깨므로 위 resolver 음성 fixture가 따로 소유한다.
     """
     normal_and_degenerate = (
         '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
@@ -565,7 +555,6 @@ def test_precheck_matches_post_notes_on_divergent_shapes():
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
         '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/><hp:fieldEnd/></hp:ctrl></hp:run>'
     )
-    outside_run = '<hp:ctrl><hp:fieldBegin name="밖"/></hp:ctrl>'
     empty = (
         '<hp:run><hp:ctrl><hp:fieldBegin name="빈필드"/></hp:ctrl></hp:run>'
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
@@ -576,7 +565,7 @@ def test_precheck_matches_post_notes_on_divergent_shapes():
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
     )
     xml = (
-        f"{_HDR}<hp:p>{normal_and_degenerate}</hp:p><hp:p>{outside_run}</hp:p>"
+        f"{_HDR}<hp:p>{normal_and_degenerate}</hp:p>"
         f"<hp:p>{empty}</hp:p><hp:p>{marker}</hp:p></hs:sec>"
     ).encode("utf-8")
 

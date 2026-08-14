@@ -15,7 +15,8 @@ CORPUS = Path(__file__).parent / "corpus" / "real"
 
 def _field_p(name: str) -> str:
     return (
-        f'<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run></hp:p>'
+        f'<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>'
     )
 
 

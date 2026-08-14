@@ -1,10 +1,10 @@
 """템플릿 스키마 추출 — 얕은 ``required_fields()`` 를 필드·타입·위치·라벨·표 영역까지
 담은 구조화 스키마로 확장한다. 트랙 B(매핑 UI·위저드·반복 표)의 공용 토대.
 
-**왜 별도 순회인가.** ``text_extract`` 의 ``Paragraph.fields`` 는 *값이 있는* 누름틀만
+**왜 별도 투영인가.** ``text_extract`` 의 ``Paragraph.fields`` 는 *값이 있는* 누름틀만
 남긴다(값 없는 빈 placeholder 는 누락). 하지만 템플릿은 대개 빈 누름틀이다 —
-``required_fields()`` 가 진실이다. 그래서 스키마 추출은 ``fieldBegin`` 경계를 직접
-순회해 빈 누름틀까지 빠짐없이 잡되, 문단/셀 텍스트를 라벨 힌트로 함께 수집한다.
+공용 ordinary Field resolver의 occurrence가 진실이다. 스키마는 그 occurrence를
+문단·표 문맥에 투영해 빈 누름틀까지 빠짐없이 잡는다.
 
 주입 대상과 정확히 일치시키려고 순회 표면은 ``pkg.content_xml_names()``
 (section*/header*/footer*)로 고정한다 — 엔진이 실제로 값을 넣는 XML 집합.
@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
+from hwpxcore.field_occurrence import FieldOccurrence, resolve_field_occurrences
 from hwpxcore.text_extract import (
     HP_NS,
     extract_document,
@@ -30,7 +31,11 @@ from hwpxcore.text_extract import (
     text_of_t,
 )
 from hwpxfiller.domain.authoring import scan_tokens
-from hwpxfiller.domain.fields import FieldDocument, normalize_field_id
+from hwpxfiller.domain.fields import (
+    FieldDocument,
+    field_xml_names,
+    normalize_field_id,
+)
 
 # -------------------------------------------------------------- 타입 추론 규칙
 # 필드 *이름* 의 부분 문자열로 의미 타입을 추정한다(한글 업무 문서 관용어 기반).
@@ -142,15 +147,13 @@ class TemplateSchema:
 
 
 # ------------------------------------------------------------- 필드 직속 추출
-def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
-    """``hp:p`` 의 *직속* 텍스트와 필드명을 반환(중첩 ``hp:tbl`` 로 내려가지 않음).
+def _paragraph_direct_text(p_el: etree._Element) -> str:
+    """``hp:p`` 의 *직속* 텍스트를 반환(중첩 ``hp:tbl`` 로 내려가지 않음).
 
-    중첩 표 셀의 텍스트·필드는 셀 자신의 ``hp:p`` 소관이므로 여기서 제외한다 —
-    바깥 문단 라벨이 셀 내용을 삼키지 않고, 필드가 이중 집계되지 않게 한다.
+    중첩 표 셀의 텍스트는 셀 자신의 ``hp:p`` 소관이므로 여기서 제외한다 — 바깥
+    문단 라벨이 셀 내용을 삼키지 않게 한다. Field occurrence는 공용 resolver가 준다.
     """
     parts: "list[str]" = []
-    names: "list[str]" = []
-    seen: "set[str]" = set()
     for run in p_el:
         if local_name(run.tag) != "run":
             continue
@@ -158,22 +161,12 @@ def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
             ln = local_name(ch.tag)
             if ln == "t":
                 parts.append(text_of_t(ch))
-            elif ln == "ctrl":
-                for c in ch:
-                    if (
-                        local_name(c.tag) == "fieldBegin"
-                        and c.get("type") != "BOOKMARK"
-                    ):
-                        nm = normalize_field_id(c.get("name"))
-                        if nm is not None and nm not in seen:
-                            seen.add(nm)
-                            names.append(nm)
             elif ln == "tab":
                 parts.append("\t")
             elif ln == "lineBreak":
                 parts.append("\n")
             # tbl: 중첩 표는 건너뛴다(바깥 재귀가 셀 문단을 따로 방문).
-    return "".join(parts), names
+    return "".join(parts)
 
 
 @dataclass
@@ -185,7 +178,9 @@ class _Occ:
     table_id: "int | None"
 
 
-def _walk_content(root: etree._Element) -> "tuple[list[_Occ], dict[int, TableRegion]]":
+def _walk_content(
+    root: etree._Element, occurrences: "tuple[FieldOccurrence, ...]"
+) -> "tuple[list[_Occ], dict[int, TableRegion]]":
     """단일 content XML 을 순회해 (필드 등장 목록, 표 id->TableRegion) 반환.
 
     표에 들어가면 ``table_id`` 가 갱신돼 필드가 *가장 가까운* 표에 귀속된다. 중첩 표는
@@ -194,13 +189,17 @@ def _walk_content(root: etree._Element) -> "tuple[list[_Occ], dict[int, TableReg
     occ: "list[_Occ]" = []
     regions: "dict[int, TableRegion]" = {}
     counter = [0]
+    fields_by_paragraph: "dict[etree._Element, list[str]]" = {}
+    for occurrence in occurrences:
+        field_id = normalize_field_id(occurrence.raw_name)
+        if field_id is not None:
+            fields_by_paragraph.setdefault(occurrence.paragraph, []).append(field_id)
 
     def walk(el: etree._Element, table_id: "int | None") -> None:
         local = local_name(el.tag)
         if local == "p":
-            text, fnames = _paragraph_direct(el)
-            label = text.strip()[:_CONTEXT_MAX]
-            for fn in fnames:
+            label = _paragraph_direct_text(el).strip()[:_CONTEXT_MAX]
+            for fn in fields_by_paragraph.get(el, ()):
                 occ.append(_Occ(fn, label, table_id))
                 if table_id is not None:
                     reg = regions[table_id]
@@ -237,14 +236,16 @@ def extract_schema(pkg: object) -> TemplateSchema:
     """
     pkg = require_package(pkg)
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
+    xml_names = field_xml_names(pkg)
 
     order: "list[str]" = []
     merged: "dict[str, FieldSpec]" = {}
     table_regions: "list[TableRegion]" = []
 
-    for name in pkg.content_xml_names():
+    for name in xml_names:
         root = etree.fromstring(pkg.entries[name], parser=parser)
-        occ, regions = _walk_content(root)
+        occurrences = resolve_field_occurrences(name, root).require_usable()
+        occ, regions = _walk_content(root, occurrences)
         for o in occ:
             spec = merged.get(o.name)
             if spec is None:
@@ -285,7 +286,6 @@ def extract_schema(pkg: object) -> TemplateSchema:
             stray_seen.add(token)
             stray.append(token)
 
-    # ponytail: 이름별 occurrence 원장; 위치 pairing은 #637 Boundary resolver가 소유한다.
     outside_tokens: "Counter[str]" = Counter()
     field_tokens: "Counter[str]" = Counter()
     field_strays: "Counter[str]" = Counter()
@@ -295,8 +295,10 @@ def extract_schema(pkg: object) -> TemplateSchema:
             outside_tokens[token] += 1
             append_stray(token)
 
-    for name in pkg.content_xml_names():
-        for field_id, value in FieldDocument(pkg.entries[name]).field_values():
+    for name in xml_names:
+        for field_id, value in FieldDocument(
+            pkg.entries[name], entry=name
+        ).field_values():
             wrapped = value.strip()
             self_placeholder = (
                 wrapped.startswith("{{")

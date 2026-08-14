@@ -59,7 +59,7 @@ class HwpxEngine[PackageT]:
 
         try:
             for name in field_xml_names(pkg):
-                doc = FieldDocument(pkg.entries[name])
+                doc = FieldDocument(pkg.entries[name], entry=name)
                 for key, val in active.items():
                     if doc.set_field(key, val):
                         applied.add(key)
@@ -92,6 +92,6 @@ class HwpxEngine[PackageT]:
         pkg = self._read_package(template_path)
         seen: dict[str, None] = {}
         for name in field_xml_names(pkg):
-            for f in FieldDocument(pkg.entries[name]).required_fields():
+            for f in FieldDocument(pkg.entries[name], entry=name).required_fields():
                 seen.setdefault(f, None)
         return list(seen)

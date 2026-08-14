@@ -105,7 +105,7 @@ def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     pkg2 = require_package(pkg)
     out: "list[tuple[str, str]]" = []
     for name in pkg2.content_xml_names():
-        out.extend(FieldDocument(pkg2.entries[name]).field_values())
+        out.extend(FieldDocument(pkg2.entries[name], entry=name).field_values())
     return out
 
 

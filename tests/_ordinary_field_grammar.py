@@ -99,6 +99,22 @@ SUPPORTED_FIELD_GRAMMAR = {
         ),
         ("표셀",),
     ),
+    "table_caption_sublist_paragraph": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            _paragraph(
+                _run(
+                    "<hp:tbl><hp:caption><hp:subList>"
+                    + _paragraph(_field(34, "표캡션"))
+                    + "</hp:subList></hp:caption>"
+                    "<hp:tr><hp:tc><hp:subList>"
+                    + _paragraph(_run("<hp:t>셀</hp:t>"))
+                    + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+                )
+            )
+        ),
+        ("표캡션",),
+    ),
     "multiple_runs_and_value_fragments": FieldGrammarCase(
         "Contents/section0.xml",
         _entry(
@@ -168,6 +184,22 @@ UNSUPPORTED_FIELD_GRAMMAR = {
         ("바깥", "안쪽"),
         "nested-field",
     ),
+    "nested_fields_across_lanes": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            _paragraph(
+                _run(_begin(31, "바깥"))
+                + _run(
+                    "<hp:tbl><hp:tr><hp:tc><hp:subList>"
+                    + _paragraph(_field(32, "안쪽"))
+                    + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+                )
+                + _run(_end(31))
+            )
+        ),
+        ("바깥", "안쪽"),
+        "nested-field",
+    ),
     "ambiguous_end": FieldGrammarCase(
         "Contents/section0.xml",
         _entry(
@@ -197,5 +229,61 @@ UNSUPPORTED_FIELD_GRAMMAR = {
         ),
         ("제어밖",),
         "unsupported-control-shape",
+    ),
+    "mixed_pair_identity": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            _paragraph(
+                _run(_begin(27, "혼합ID"))
+                + _run(
+                    f'<hp:ctrl><hp:fieldEnd fieldid="{_FIELD_ID}"/></hp:ctrl>'
+                )
+            )
+        ),
+        ("혼합ID",),
+        "orphan-end",
+    ),
+    "unmatched_begin": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(_paragraph(_run(_begin(30, "미종료")))),
+        ("미종료",),
+        "unmatched-begin",
+    ),
+    "bookmark_id_collision": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            _paragraph(
+                _run(_begin(28, "일반"))
+                + _run(
+                    '<hp:ctrl><hp:fieldBegin id="28" type="BOOKMARK" '
+                    'name="구조"/></hp:ctrl>'
+                )
+                + _run(_end(28))
+            )
+        ),
+        ("일반",),
+        "ambiguous-end",
+    ),
+    "non_run_lane_gap": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            _paragraph(
+                _run(_begin(29, "런간격"))
+                + "<hp:linesegarray/>"
+                + _run(_end(29))
+            )
+        ),
+        ("런간격",),
+        "unsupported-traversal-lane",
+    ),
+    "detached_cell_shape": FieldGrammarCase(
+        "Contents/section0.xml",
+        _entry(
+            "<hp:tc><hp:subList>"
+            + _paragraph(_field(33, "가짜 셀"))
+            + "</hp:subList></hp:tc>"
+        ),
+        ("가짜 셀",),
+        "unsupported-traversal-lane",
     ),
 }

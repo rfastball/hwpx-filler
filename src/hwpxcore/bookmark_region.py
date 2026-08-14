@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from lxml import etree
 
+from .field_occurrence import FieldResolution, resolve_field_occurrences
 from .lineseg import serialize_modified_section
 from .text_extract import (
     PackageLike,
@@ -75,6 +76,7 @@ class _Section:
     begins: dict[str, list[etree._Element]]
     ends: dict[str, list[etree._Element]]
     bookmark_begins: list[etree._Element]
+    ordinary_fields: FieldResolution
     snapshot: bytes
 
 
@@ -206,6 +208,7 @@ def _parse_sections(pkg: PackageLike) -> list[_Section]:
                 begins=begins,
                 ends=ends,
                 bookmark_begins=bookmark_begins,
+                ordinary_fields=resolve_field_occurrences(entry, root),
                 snapshot=sha256(source).digest(),
             )
         )
@@ -252,48 +255,23 @@ def _link_containment(regions: list[_ResolvedRegion]) -> list[_ResolvedRegion]:
     return linked
 
 
-def _reject_intersecting_fields(
-    region: _ResolvedRegion, bookmark_ids: set[str]
-) -> None:
+def _reject_intersecting_fields(region: _ResolvedRegion) -> None:
     section = region.section
     extent_orders = [
         section.order[node] for node in section.nodes if _is_inside(region, node)
     ]
     extent_start, extent_end = min(extent_orders), max(extent_orders)
 
-    for node in section.nodes:
-        if not _is_inside(region, node) or node in {region.begin, region.end}:
-            continue
-        tag = local_name(node.tag)
-        if tag == "fieldBegin" and not node.get("id"):
-            raise ValueError(
-                f"{section.entry}: unpaired field marker intersects BOOKMARK extent"
-            )
-        if tag == "fieldEnd" and not node.get("beginIDRef"):
-            raise ValueError(
-                f"{section.entry}: unpaired field marker intersects BOOKMARK extent"
-            )
-
-    for pairing_id in set(section.begins) | set(section.ends):
-        if pairing_id in bookmark_ids:
-            continue
-        begins = section.begins.get(pairing_id, [])
-        ends = section.ends.get(pairing_id, [])
-        begin_inside = [node for node in begins if _is_inside(region, node)]
-        end_inside = [node for node in ends if _is_inside(region, node)]
-        if begin_inside or end_inside:
-            if len(begins) != 1 or len(ends) != 1 or not (
-                begin_inside and end_inside
-            ):
-                raise ValueError(
-                    f"{section.entry}: field pair intersects BOOKMARK extent"
-                )
+    for occurrence in section.ordinary_fields.require_usable():
+        begin_inside = _is_inside(region, occurrence.begin)
+        end_inside = _is_inside(region, occurrence.end)
+        if begin_inside != end_inside:
+            raise ValueError(f"{section.entry}: field pair intersects BOOKMARK extent")
+        if begin_inside:
             continue
         if (
-            len(begins) == 1
-            and len(ends) == 1
-            and section.order[begins[0]] < extent_start
-            and section.order[ends[0]] > extent_end
+            section.order[occurrence.begin] < extent_start
+            and section.order[occurrence.end] > extent_end
         ):
             raise ValueError(f"{section.entry}: field pair encloses BOOKMARK extent")
 
@@ -405,9 +383,7 @@ def _resolve(
         section_regions = _link_containment(section_regions)
         if require_removable:
             for item in section_regions:
-                _validate_mutable_extent(
-                    item, section_regions, reject_whole_section=True
-                )
+                _validate_mutable_extent(item, reject_whole_section=True)
         resolved.extend(section_regions)
     return resolved
 
@@ -484,7 +460,6 @@ def _topology_shape(
 
 def _validate_mutable_extent(
     resolved: _ResolvedRegion,
-    current: list[_ResolvedRegion],
     *,
     reject_whole_section: bool,
     reject_section_definition: bool = False,
@@ -523,14 +498,7 @@ def _validate_mutable_extent(
         for node in child.iter()
     ):
         raise ValueError("BOOKMARK content removal would delete section definition")
-    _reject_intersecting_fields(
-        resolved,
-        {
-            item.region._pairing_id
-            for item in current
-            if item.region.section == resolved.region.section
-        },
-    )
+    _reject_intersecting_fields(resolved)
     _reject_intersecting_non_field_ranges(resolved)
 
 
@@ -665,9 +633,7 @@ def create_bookmark_region(
         _parent_key(created[0].region),
     ) != (section, start_paragraph, end_paragraph, expected_parent):
         raise ValueError("created BOOKMARK does not match the requested native topology")
-    _validate_mutable_extent(
-        created[0], after, reject_whole_section=False
-    )
+    _validate_mutable_extent(created[0], reject_whole_section=False)
     before_shape = _topology_shape(current, include_positions=True)
     after_shape = _topology_shape(after, include_positions=True)
     if {
@@ -896,7 +862,6 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     }
     _validate_mutable_extent(
         resolved,
-        current,
         reject_whole_section=not protected,
         reject_section_definition=True,
     )

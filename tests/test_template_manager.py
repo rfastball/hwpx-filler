@@ -449,16 +449,16 @@ def test_rows_carry_fill_precheck_warns(tmp_path):
     marker = tmp_path / "marker.hwpx"
     _write_raw(
         marker,
-        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
         "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
-        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>',
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>',
     )
     clean = tmp_path / "clean.hwpx"
     _write_raw(
         clean,
-        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
         "<hp:run><hp:t>값</hp:t></hp:run>"
-        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>',
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>',
     )
     vm = TemplateManagerViewModel(
         paths=[marker, clean],

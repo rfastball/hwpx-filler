@@ -74,7 +74,10 @@ def test_infer_type_unit():
 
 
 def test_inferred_type_flows_into_spec():
-    xml = '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="사업예산"/></hp:ctrl></hp:run></hp:p>'
+    xml = (
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="사업예산"/></hp:ctrl></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>'
+    )
     spec = _field(xml, "사업예산")
     assert spec is not None and spec.inferred_type == "amount"
 
@@ -96,15 +99,23 @@ def test_context_label_captured():
 
 
 # --------------------------------------------------------- 등장 횟수 병합
-def test_occurrences_merged_across_paragraphs():
-    """같은 필드가 여러 번 등장하면 FieldSpec 하나로 병합되고 occurrences 가 센다."""
+def test_occurrences_merged_across_and_within_paragraphs():
+    """같은 필드 occurrence를 문단 경계와 무관하게 전부 센다."""
     xml = """
-    <hp:p><hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run></hp:p>
-    <hp:p><hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run></hp:p>
+    <hp:p>
+      <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
+      <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
+      <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
+      <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
+    </hp:p>
+    <hp:p>
+      <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
+      <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
+    </hp:p>
     """
     schema = extract_schema(_pkg(xml))
     assert schema.field_names() == ["계약명"]
-    assert schema.fields[0].occurrences == 2
+    assert schema.fields[0].occurrences == 3
 
 
 # --------------------------------------------------------- 표 영역 / in_table
@@ -160,7 +171,10 @@ def test_nested_table_field_attributed_to_inner_table():
             <hp:tbl>
               <hp:tr>
                 <hp:tc><hp:subList>
-                  <hp:p><hp:run><hp:ctrl><hp:fieldBegin name="단가"/></hp:ctrl></hp:run></hp:p>
+                  <hp:p>
+                    <hp:run><hp:ctrl><hp:fieldBegin name="단가"/></hp:ctrl></hp:run>
+                    <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
+                  </hp:p>
                 </hp:subList></hp:tc>
               </hp:tr>
             </hp:tbl>
@@ -200,7 +214,7 @@ def test_no_random_ids_in_output():
         <hp:ctrl><hp:fieldBegin id="2073595120" fieldid="627272811" name="금액"/></hp:ctrl>
       </hp:run>
       <hp:run><hp:t>1,000,000원</hp:t></hp:run>
-      <hp:run><hp:ctrl><hp:fieldEnd instId="55"/></hp:ctrl></hp:run>
+      <hp:run><hp:ctrl><hp:fieldEnd beginIDRef="2073595120" instId="55"/></hp:ctrl></hp:run>
     </hp:p>
     """
     dumped = json.dumps(extract_schema(_pkg(xml)).to_dict(), ensure_ascii=False)
