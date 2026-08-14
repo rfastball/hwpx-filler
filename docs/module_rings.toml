@@ -39,6 +39,12 @@ source_write_set = ["src/hwpxcore/field_occurrence.py"]
 oracle_nodeid = "tests/test_fields.py::test_supported_ordinary_field_grammar"
 
 [[unit]]
+module = "hwpxcore.structural_boundary"
+target = "DOMAIN"
+source_write_set = ["src/hwpxcore/structural_boundary.py"]
+oracle_nodeid = "tests/test_structural_boundary_scan.py"
+
+[[unit]]
 module = "hwpxcore.lineseg"
 target = "DOMAIN"
 source_write_set = ["src/hwpxcore/lineseg.py"]
