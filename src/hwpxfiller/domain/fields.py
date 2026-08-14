@@ -20,8 +20,9 @@ from dataclasses import dataclass
 
 from lxml import etree
 
+from hwpxcore.field_occurrence import FieldOccurrence, resolve_field_occurrences
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.text_extract import require_package
+from hwpxcore.text_extract import local_name, require_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _FIELD_PART_PATTERNS = (
@@ -49,24 +50,6 @@ class FillNote:
     detail: "tuple[str, ...]" = ()
 
 
-@dataclass
-class _FieldSpan:
-    """누름틀 한 자리의 걸음 결과 — 읽기·쓰기가 공유하는 구간 사실."""
-
-    run: etree._Element                       # begin 이 속한 런
-    ctrl: "etree._Element | None"             # begin 을 품은 hp:ctrl
-    ts: "list[etree._Element]"                # begin~end 사이 값 hp:t 들(문서 순서)
-    end_ctrl: "etree._Element | None"         # fieldEnd 를 품은 ctrl(미확인이면 None)
-    end_run: "etree._Element | None"          # end_ctrl 이 속한 런
-
-
-def _local(tag: object) -> str:
-    """요소의 로컬 태그명(네임스페이스 제거). 주석/PI 등은 빈 문자열."""
-    if not isinstance(tag, str):
-        return ""
-    return tag.rsplit("}", 1)[-1]
-
-
 def _subtree_names(child: etree._Element) -> "set[str]":
     """제거 대상 하위트리의 노드 이름 전체 — 최상위만 대면 손실 집합 과소 고지."""
     names: "set[str]" = set()
@@ -76,7 +59,7 @@ def _subtree_names(child: etree._Element) -> "set[str]":
         elif isinstance(node, etree._ProcessingInstruction):
             names.add("#pi")
         else:
-            names.add(_local(node.tag) or "#node")
+            names.add(local_name(node.tag) or "#node")
     return names
 
 
@@ -113,12 +96,26 @@ def normalize_field_id(raw: object) -> "str | None":
 class FieldDocument:
     """단일 XML(section/header/footer) 문서에 대한 누름틀 편집기."""
 
-    def __init__(self, xml_bytes: bytes):
+    def __init__(self, xml_bytes: bytes, *, entry: str = "<content XML>"):
         # 공백 보존(remove_blank_text=False 기본). 원본 선언/인코딩 정보 확보.
         parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
         self._tree = etree.fromstring(xml_bytes, parser=parser)
+        self._entry = entry
+        self._occurrences = resolve_field_occurrences(
+            self._entry, self._tree
+        ).require_usable()
+        self._occurrences_dirty = False
         self._modified = False
         self._notes: "list[FillNote]" = []
+
+    def _field_occurrences(self) -> "tuple[FieldOccurrence, ...]":
+        """현재 트리의 신뢰 가능한 ordinary Field occurrence를 공용 seam에서 얻는다."""
+        if self._occurrences_dirty:
+            self._occurrences = resolve_field_occurrences(
+                self._entry, self._tree
+            ).require_usable()
+            self._occurrences_dirty = False
+        return self._occurrences
 
     @property
     def modified(self) -> bool:
@@ -143,8 +140,8 @@ class FieldDocument:
     def required_fields(self) -> "list[str]":
         """문서 내 모든 누름틀 이름을 중복 없이 반환. ``{{..}}`` 는 벗겨서."""
         seen: dict[str, None] = {}
-        for node in self._field_begins():
-            name = normalize_field_id(node.get("name"))
+        for occurrence in self._field_occurrences():
+            name = normalize_field_id(occurrence.raw_name)
             if name is not None and name not in seen:
                 seen[name] = None
         return list(seen)
@@ -157,76 +154,27 @@ class FieldDocument:
         파편을 문서 순서대로 이어 붙인다. 이름은 ``NAME`` 과 ``{{NAME}}`` 표기를
         동일하게 취급하며, 해당 필드가 없을 때만 ``None`` 을 반환한다.
         """
-        begins = self._matching_field_begins(field_name)
-        if begins:
-            return self._read_one(begins[0])
+        occurrences = self._matching_field_occurrences(field_name)
+        if occurrences:
+            return self._read_one(occurrences[0])
         return None
 
     def field_values(self) -> "list[tuple[str, str]]":
         """유효한 ordinary Field의 ``(정규 ID, 현재 값)`` 등장 목록."""
         values: "list[tuple[str, str]]" = []
-        for begin in self._field_begins():
-            field_id = normalize_field_id(begin.get("name"))
+        for occurrence in self._field_occurrences():
+            field_id = normalize_field_id(occurrence.raw_name)
             if field_id is not None:
-                values.append((field_id, self._read_one(begin)))
+                values.append((field_id, self._read_one(occurrence)))
         return values
 
-    def _read_one(self, begin: etree._Element) -> str:
+    def _read_one(self, occurrence: FieldOccurrence) -> str:
         """단일 ``fieldBegin`` 과 짝을 이루는 종료 지점 사이의 텍스트를 읽는다."""
-        span = self._field_span(begin)
-        if span is None:
-            return ""
-        return "".join("".join(t.itertext()) for t in span.ts)
+        return "".join("".join(t.itertext()) for t in occurrence.texts)
 
-    # ---------------------------------------------------------------- span
-    def _field_span(self, begin: etree._Element) -> "_FieldSpan | None":
-        """begin 이 속한 런부터 짝 ``fieldEnd`` 까지 걷는 단일 걸음.
-
-        읽기(:meth:`_read_one`)와 쓰기(:meth:`_fill_one`)가 이 걸음 하나를 공유한다 —
-        두 순회가 갈라지면 읽기-쓰기 대칭 계약이 조용히 깨진다. ``begin`` 이 run 구조
-        밖이면 None. ``end_ctrl`` 이 None 이면 걸음이 닫힘(fieldEnd)을 확인하지 못한
-        구간이다(문단 경계 걸침 등).
-        """
-        ctrl = begin.getparent()
-        run = ctrl.getparent() if ctrl is not None and _local(ctrl.tag) == "ctrl" else ctrl
-        if run is None or _local(run.tag) != "run":
-            return None
-
-        ts: "list[etree._Element]" = []
-        end_ctrl: "etree._Element | None" = None
-        end_run: "etree._Element | None" = None
-        found_begin = False
-        current = run
-        while current is not None and _local(current.tag) == "run":
-            stop = False
-            for inner in current:
-                if not found_begin and (inner is ctrl or inner is begin):
-                    found_begin = True
-                if not found_begin:
-                    continue
-                name = _local(inner.tag)
-                if name == "t":
-                    ts.append(inner)
-                elif name == "ctrl" and any(
-                    _local(child.tag) == "fieldEnd" for child in inner
-                ):
-                    end_ctrl = inner
-                    end_run = current
-                    stop = True
-                    break
-            if stop:
-                break
-            current = current.getnext()
-        return _FieldSpan(run, ctrl, ts, end_ctrl, end_run)
-
-    def _field_begins(self):
-        return (
-            node
-            for node in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin")
-            if node.get("type") != "BOOKMARK"
-        )
-
-    def _matching_field_begins(self, requested: object) -> "list[etree._Element]":
+    def _matching_field_occurrences(
+        self, requested: object
+    ) -> "list[FieldOccurrence]":
         """canonical ID를 우선하고, 없을 때만 ``{{ID}}`` raw alias를 허용한다.
 
         한 겹 제거는 의도적으로 비멱등이다. 예를 들어 raw ``{{{{X}}}}``의
@@ -237,8 +185,8 @@ class FieldDocument:
         if requested_text is None:
             return []
         identified = [
-            (begin, normalize_field_id(begin.get("name")))
-            for begin in self._field_begins()
+            (occurrence, normalize_field_id(occurrence.raw_name))
+            for occurrence in self._field_occurrences()
         ]
         target = (
             requested_text
@@ -247,35 +195,29 @@ class FieldDocument:
         )
         if target is None:
             return []
-        return [begin for begin, field_id in identified if field_id == target]
+        return [occurrence for occurrence, field_id in identified if field_id == target]
 
     # ----------------------------------------------------------- precheck
     def precheck(self) -> "list[FillNote]":
         """채움이 완화 처리(#154)를 일으킬 자리를 **변형 없이** 사전 열거한다.
 
-        :meth:`set_field` 와 같은 걸음(:meth:`_field_span`)·같은 어휘(FillNote)로
-        판정한다 — 사전 고지와 사후 노트가 같은 사실을 가리키게(표면 문안만 시제가
-        다르다). 값 비교가 없는 사전 판정이라 ``inline_stripped`` 는 "다른 값을
-        채우면 제거된다"는 조건부 사실이다.
+        :meth:`set_field` 와 같은 occurrence·같은 어휘(FillNote)로 판정한다 — 사전
+        고지와 사후 노트가 같은 사실을 가리키게(표면 문안만 시제가 다르다). 값
+        비교가 없는 사전 판정이라 ``inline_stripped`` 는 "다른 값을 채우면
+        제거된다"는 조건부 사실이다.
         """
         notes: "list[FillNote]" = []
-        for begin in self._field_begins():
-            name = normalize_field_id(begin.get("name"))
+        for occurrence in self._field_occurrences():
+            name = normalize_field_id(occurrence.raw_name)
             if name is None:
                 continue
-            span = self._field_span(begin)
-            if span is None:
-                # run 구조 밖 begin — set_field 도 기입 불가로 세는 자리.
-                # 사전이 침묵하면 사후 노트와 어긋난다(2라운드 리뷰 F2).
-                notes.append(FillNote(name, "occurrence_unfillable"))
-                continue
-            if span.ts:
-                stripped = _strip_candidates(span.ts)
+            if occurrence.texts:
+                stripped = _strip_candidates(list(occurrence.texts))
                 if stripped:
                     notes.append(
                         FillNote(name, "inline_stripped", tuple(sorted(stripped)))
                     )
-            elif span.end_ctrl is None or span.end_ctrl is span.ctrl:
+            elif occurrence.end_ctrl is occurrence.begin_ctrl:
                 notes.append(FillNote(name, "occurrence_unfillable"))
             else:
                 notes.append(FillNote(name, "slot_synthesized"))
@@ -287,10 +229,10 @@ class FieldDocument:
 
         반환값은 매칭 보고용(값이 기존과 같아도 True — 호출측 unmatched 판정이
         거짓말하지 않게). 빈 누름틀(값 ``hp:t`` 부재)은 짝 ``fieldEnd`` 로 닫힘이
-        확인된 경우에만 값 런을 합성해 기입한다(#154). False = 기입 가능한 자리가
-        전무할 때(begin 이 run 구조 밖·짝 미확인·퇴화 형상) — 호출측 unmatched 로
-        시끄럽게. 일부 자리만 기입되면 True 이되 ``occurrence_unfillable`` 노트를
-        남긴다(조용한 부분 기입 금지).
+        확인된 경우에만 값 런을 합성해 기입한다(#154). malformed pairing은 공용
+        resolver가 예외로 거절한다. False = 매칭된 자리가 없거나 모든 자리가 한
+        ctrl 안의 퇴화 형상이라 기입 불가 — 호출측 unmatched 로 시끄럽게. 일부
+        자리만 기입되면 True 이되 ``occurrence_unfillable`` 노트를 남긴다.
 
         **읽기-쓰기 대칭 계약**: 성공한 ``set_field(f, V)`` 뒤 ``read_field(f) == V``.
         이미 그 상태면 무연산(자식 요소·바이트 불변 — #95 동일 값 재채움 안정).
@@ -299,16 +241,16 @@ class FieldDocument:
         ``modified`` 가 추적한다. VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는
         ``{{NAME}}`` 인 모든 누름틀을 처리한다.
         """
-        begins = self._matching_field_begins(field_name)
-        if not begins:
+        occurrences = self._matching_field_occurrences(field_name)
+        if not occurrences:
             return False
-        clean = normalize_field_id(begins[0].get("name"))
+        clean = normalize_field_id(occurrences[0].raw_name)
         assert clean is not None
 
         updated = 0
         skipped = 0
-        for begin in begins:
-            if self._fill_one(begin, new_value, clean):
+        for occurrence in occurrences:
+            if self._fill_one(occurrence, new_value, clean):
                 updated += 1
             else:
                 skipped += 1
@@ -321,18 +263,17 @@ class FieldDocument:
             self._note(clean, "occurrence_unfillable")
         return updated > 0
 
-    def _fill_one(self, begin: etree._Element, new_value: str, note_name: str) -> bool:
+    def _fill_one(
+        self, occurrence: FieldOccurrence, new_value: str, note_name: str
+    ) -> bool:
         """단일 fieldBegin 에 대해 fieldEnd 까지 텍스트를 채운다.
 
-        1) 공유 걸음(:meth:`_field_span`)으로 구간을 수집하고, 2) 이미 목표 상태면
-        무연산, 3) 슬롯이 없으면 닫힘 확인된 구간에 한해 값 런을 합성하며(#154),
-        4) 슬롯들의 인라인 자식을 제거한 뒤 첫 슬롯에 값을 기입, 파편 슬롯은
-        비운다. 완화 처리(합성·자식 제거)는 ``_note`` 로 기록한다.
+        1) 공용 resolver occurrence에서 구간을 받고, 2) 이미 목표 상태면 무연산,
+        3) 슬롯이 없으면 닫힌 구간에 값 런을 합성하며(#154), 4) 슬롯들의 인라인
+        자식을 제거한 뒤 첫 슬롯에 값을 기입, 파편 슬롯은 비운다. 완화 처리
+        (합성·자식 제거)는 ``_note`` 로 기록한다.
         """
-        span = self._field_span(begin)
-        if span is None:
-            return False
-        ts = span.ts
+        ts = list(occurrence.texts)
 
         # ---- 2) 목표 상태 선판정 — 이미 read_field == new_value 면 아무것도 안
         # 건드린다(#95 동일 값 재채움 바이트 안정: 무해한 자식 요소·캐시 보존).
@@ -341,24 +282,26 @@ class FieldDocument:
 
         # ---- 3) 빈 누름틀: 값 런 합성(#154 — 기입 불가 대신 경고 후 진행)
         if not ts:
-            if span.end_ctrl is None or span.end_ctrl is span.ctrl:
-                # 닫힘(fieldEnd) 미확인 구간(문단 경계 걸침 등)엔 합성하지 않는다 —
-                # 걸음 밖에 남은 구값과 중복 출력된다(리뷰 F3). begin·end 가 한
-                # ctrl 안인 퇴화 형상은 슬롯 자리가 없다. 둘 다 기입 불가로 시끄럽게.
+            if occurrence.end_ctrl is occurrence.begin_ctrl:
+                # begin·end가 한 ctrl 안인 퇴화 형상은 슬롯 자리가 없다.
                 return False
             slot = etree.Element(f"{{{HP_NS}}}t")
-            if span.end_run is span.run:
+            if occurrence.end_run is occurrence.begin_run:
                 # begin 과 end 가 같은 런 — end ctrl 바로 앞에 슬롯 삽입
-                span.run.insert(span.run.index(span.end_ctrl), slot)
+                occurrence.begin_run.insert(
+                    occurrence.begin_run.index(occurrence.end_ctrl), slot
+                )
             else:
                 # begin 런의 속성(charPrIDRef 등)을 통째로 승계 — authoring 의
                 # 런 팩토리 관례(dict(run.attrib) 승계)와 동일.
-                new_run = etree.Element(f"{{{HP_NS}}}run", dict(span.run.attrib))
+                new_run = etree.Element(
+                    f"{{{HP_NS}}}run", dict(occurrence.begin_run.attrib)
+                )
                 new_run.append(slot)
-                assert span.end_run is not None  # end_ctrl 확인됨 → end_run 존재
-                span.end_run.addprevious(new_run)
+                occurrence.end_run.addprevious(new_run)
             ts = [slot]
             self._modified = True  # 요소 삽입 자체가 변형
+            self._occurrences_dirty = True
             self._note(note_name, "slot_synthesized")
 
         # ---- 4) 인라인 자식 제거 + 기입
@@ -422,7 +365,7 @@ def field_xml_names(pkg) -> "list[str]":
                 supported.append((region_order, int(match.group(1)), name))
                 break
         else:
-            if FieldDocument(pkg.entries[name]).required_fields():
+            if FieldDocument(pkg.entries[name], entry=name).required_fields():
                 unsupported.append(name)
 
     if unsupported:
@@ -443,7 +386,7 @@ def fill_precheck(pkg: object) -> "list[FillNote]":
     pkg = require_package(pkg)
     notes: "list[FillNote]" = []
     for xml_name in field_xml_names(pkg):
-        notes.extend(FieldDocument(pkg.entries[xml_name]).precheck())
+        notes.extend(FieldDocument(pkg.entries[xml_name], entry=xml_name).precheck())
     return list(dict.fromkeys(notes))
 
 
@@ -457,7 +400,7 @@ def read_fields(pkg: object) -> "dict[str, str]":
     pkg = require_package(pkg)
     values: "dict[str, str]" = {}
     for xml_name in field_xml_names(pkg):
-        doc = FieldDocument(pkg.entries[xml_name])
+        doc = FieldDocument(pkg.entries[xml_name], entry=xml_name)
         for field_name, value in doc.field_values():
             values.setdefault(field_name, value)
     return values

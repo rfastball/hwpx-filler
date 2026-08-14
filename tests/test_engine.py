@@ -239,7 +239,7 @@ def test_regenerate_same_values_is_byte_stable(tmp_path):
 
 
 # ------------------------------------------------------- 채움 완화 노트(#154)
-def _mini_template(tmp_path, region: str):
+def _mini_template(tmp_path, region: str, *, with_end: bool = True):
     """단일 누름틀 섹션을 가진 최소 HWPX 템플릿을 tmp 에 저장."""
     from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -248,8 +248,12 @@ def _mini_template(tmp_path, region: str):
         ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
         f"{region}"
-        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
-        "</hp:p></hs:sec>"
+        + (
+            "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+            if with_end
+            else ""
+        )
+        + "</hp:p></hs:sec>"
     ).encode("utf-8")
     pkg = HwpxPackage()
     pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
@@ -258,6 +262,17 @@ def _mini_template(tmp_path, region: str):
     path = tmp_path / "tpl.hwpx"
     write_hwpx_package(path, pkg)
     return path
+
+
+def test_generate_rejects_unmatched_field_even_without_active_data(tmp_path):
+    tpl = _mini_template(tmp_path, "", with_end=False)
+    out = tmp_path / "out.hwpx"
+
+    res = make_hwpx_engine().generate(str(tpl), {}, str(out))
+
+    assert not res.ok
+    assert "unmatched-begin" in res.error
+    assert not out.exists()
 
 
 def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path):

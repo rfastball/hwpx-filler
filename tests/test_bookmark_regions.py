@@ -761,6 +761,37 @@ def test_resolves_nested_regions_with_containment() -> None:
     assert _paragraph_texts(siblings) == ["A", "B", "C", "OUT"]
 
 
+def test_bookmark_removal_accepts_idless_field_wholly_inside_target() -> None:
+    ordinary = (
+        '<hp:ctrl><hp:fieldBegin type="CLICK_HERE" name="ordinary"/></hp:ctrl>'
+        "<hp:t>FIELD</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl>"
+    )
+    pkg = _package(
+        _paragraph(_begin() + ordinary + _end())
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+
+    target = _region(pkg, "A")
+    remove_bookmark_region(pkg, target)
+
+    assert _paragraph_texts(pkg) == ["OUT"]
+
+
+def test_bookmark_removal_rejects_unusable_field_pairing_without_mutation() -> None:
+    pkg = _package(
+        _paragraph(_begin() + "<hp:t>IN</hp:t>" + _end())
+        + _paragraph("<hp:ctrl><hp:fieldEnd/></hp:ctrl><hp:t>OUT</hp:t>")
+    )
+    before = dict(pkg.entries)
+
+    with pytest.raises(ValueError, match="orphan-end"):
+        resolve_bookmark_regions(pkg)
+    target = next(region for region in resolve_bookmark_topology(pkg) if region.name == "A")
+    with pytest.raises(ValueError, match="orphan-end"):
+        remove_bookmark_region(pkg, target)
+    assert pkg.entries == before
+
+
 def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     ordinary = _package(
         _paragraph(
@@ -793,7 +824,7 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         for region in resolve_bookmark_topology(cross_section_id_collision)
         if region.name == "TARGET"
     )
-    with pytest.raises(ValueError, match="field pair encloses BOOKMARK extent"):
+    with pytest.raises(ValueError, match="paragraph-crossing"):
         remove_bookmark_region(cross_section_id_collision, target)
     assert cross_section_id_collision.entries == before
 
@@ -809,24 +840,6 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         + _paragraph("<hp:t>A2</hp:t>" + _end("1"))
         + _paragraph("<hp:t>B2</hp:t>" + _end("2"))
         + _paragraph("<hp:t>OUT2</hp:t>")
-    )
-    field_end_inside = (
-        _paragraph(_begin("9", "F", kind="CLICK_HERE") + "<hp:t>OUT</hp:t>")
-        + _paragraph(_begin() + "<hp:t>IN</hp:t>" + _end("9"))
-        + _paragraph("<hp:t>IN2</hp:t>" + _end())
-        + _paragraph("<hp:t>OUT2</hp:t>")
-    )
-    field_begin_inside = (
-        _paragraph("<hp:t>OUT</hp:t>")
-        + _paragraph(_begin() + _begin("9", "F", kind="CLICK_HERE") + "<hp:t>IN</hp:t>")
-        + _paragraph("<hp:t>IN2</hp:t>" + _end())
-        + _paragraph("<hp:t>OUT2</hp:t>" + _end("9"))
-    )
-    field_encloses = (
-        _paragraph(_begin("9", "F", kind="CLICK_HERE") + "<hp:t>OUT</hp:t>")
-        + _paragraph(_begin() + "<hp:t>IN</hp:t>")
-        + _paragraph("<hp:t>IN2</hp:t>" + _end())
-        + _paragraph("<hp:t>OUT2</hp:t>" + _end("9"))
     )
     markpen_crosses = (
         _paragraph('<hp:t><hp:markpenBegin color="#ffff00"/>OUT</hp:t>')
@@ -917,9 +930,6 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
             ),
             "cross-section BOOKMARK end collision",
         ),
-        (_package(field_end_inside), "field pair intersects BOOKMARK extent"),
-        (_package(field_begin_inside), "field pair intersects BOOKMARK extent"),
-        (_package(field_encloses), "field pair encloses BOOKMARK extent"),
         (_package(markpen_crosses), "markpenBegin/markpenEnd range intersects"),
         (_package(insert_crosses), "insertBegin/insertEnd range intersects"),
         (_package(delete_encloses), "deleteBegin/deleteEnd range intersects"),
