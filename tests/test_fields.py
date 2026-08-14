@@ -2,8 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hwpxfiller.domain.fields import HP_NS, FieldDocument, FillNote, read_fields
-from hwpxcore.package import HwpxPackage
+import pytest
+from lxml import etree
+
+from _ordinary_field_grammar import (
+    SUPPORTED_FIELD_GRAMMAR,
+    UNSUPPORTED_FIELD_GRAMMAR,
+)
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxfiller.domain.fields import (
+    HP_NS,
+    FieldDocument,
+    FillNote,
+    normalize_field_id,
+    read_fields,
+)
+from hwpxfiller.domain.schema import extract_schema
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
@@ -26,6 +40,24 @@ def test_required_fields_nonempty_and_unbraced():
         assert "{{" not in f and "}}" not in f
 
 
+def test_normalize_field_id_contract():
+    cases = (
+        ("  계약명  ", "계약명"),
+        ("담당자\t이름", "담당자 이름"),
+        ("\u00a0계약명\u2003", "계약명"),
+        (" {{ 계약명 }} ", "계약명"),
+        ("x{{계약명}}", "x{{계약명}}"),
+        ("{{{{계약명}}}}", "{{계약명}}"),
+        ("{{ }}", None),
+        ("\u2003\t", None),
+        (None, None),
+        (7, None),
+    )
+    assert [normalize_field_id(raw) for raw, _ in cases] == [
+        expected for _, expected in cases
+    ]
+
+
 def test_set_field_injects_value_and_reparse_confirms():
     doc, fields = _first_doc_with_fields()
     target = fields[0]
@@ -40,18 +72,93 @@ def test_set_field_injects_value_and_reparse_confirms():
     assert sentinel in xml_text
 
 
-def test_read_field_reassembles_text_fragments():
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
-    <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
-            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
-      <hp:p>
-        <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
-        <hp:run><hp:t>정보</hp:t></hp:run>
-        <hp:run><hp:t>시스템</hp:t><hp:t> 구축</hp:t></hp:run>
-        <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
-      </hp:p>
-    </hs:sec>""".encode()
-    assert FieldDocument(xml).read_field("계약명") == "정보시스템 구축"
+def test_ordinary_field_grammar_catalog():
+    assert set(SUPPORTED_FIELD_GRAMMAR) == {
+        "top_level_paragraph",
+        "header_body_paragraph",
+        "footer_body_paragraph",
+        "table_cell_sublist_paragraph",
+        "multiple_runs_and_value_fragments",
+        "multiple_fields_in_one_paragraph",
+        "begin_end_in_same_run",
+        "empty_field",
+    }
+    expected_unsupported = {
+        "paragraph_crossing": "paragraph-crossing",
+        "container_crossing": "unsupported-container-crossing",
+        "nested_fields": "nested-field",
+        "ambiguous_end": "ambiguous-end",
+        "foreign_namespace": "non-native-field-control",
+        "marker_outside_control": "unsupported-control-shape",
+    }
+    assert set(UNSUPPORTED_FIELD_GRAMMAR) == set(expected_unsupported)
+
+    for case_name, case in UNSUPPORTED_FIELD_GRAMMAR.items():
+        root = etree.fromstring(case.xml)
+        markers = root.xpath(
+            ".//*[local-name()='fieldBegin' or local-name()='fieldEnd']"
+        )
+        names = tuple(
+            node.get("name") or ""
+            for node in markers
+            if etree.QName(node).localname == "fieldBegin"
+        )
+        assert names == case.raw_names
+        assert case.unsupported_kind == expected_unsupported[case_name]
+
+        begin, end = markers[0], markers[-1]
+        if case_name == "paragraph_crossing":
+            assert begin.xpath("ancestor::*[local-name()='p'][1]")[0] is not end.xpath(
+                "ancestor::*[local-name()='p'][1]"
+            )[0]
+        elif case_name == "container_crossing":
+            assert begin.xpath("ancestor::*[local-name()='tc']")
+            assert not end.xpath("ancestor::*[local-name()='tc']")
+        elif case_name == "nested_fields":
+            assert tuple(etree.QName(node).localname for node in markers) == (
+                "fieldBegin",
+                "fieldBegin",
+                "fieldEnd",
+                "fieldEnd",
+            )
+        elif case_name == "ambiguous_end":
+            assert [node.get("id") for node in markers[:-1]] == ["24", "24"]
+            assert end.get("beginIDRef") == "24"
+        elif case_name == "foreign_namespace":
+            assert etree.QName(begin).namespace != HP_NS
+        else:
+            parent = begin.getparent()
+            assert parent is not None
+            assert etree.QName(parent).localname == "p"
+
+
+@pytest.mark.parametrize("case_name", SUPPORTED_FIELD_GRAMMAR)
+def test_supported_ordinary_field_grammar(case_name: str):
+    case = SUPPORTED_FIELD_GRAMMAR[case_name]
+    doc = FieldDocument(case.xml)
+    field_ids: "list[str]" = []
+    for raw_name in case.raw_names:
+        field_id = normalize_field_id(raw_name)
+        assert field_id is not None
+        field_ids.append(field_id)
+    assert doc.required_fields() == list(dict.fromkeys(field_ids))
+
+    written: "dict[str, str]" = {}
+    for index, field_id in enumerate(field_ids):
+        current = doc.read_field(field_id)
+        assert current is not None
+        if case_name == "multiple_runs_and_value_fragments":
+            assert current == "정보시스템 구축"
+        value = f"fixture-{case_name}-{index}"
+        assert doc.set_field(field_id, value) is True
+        assert doc.read_field(field_id) == value
+        written[field_id] = value
+
+    pkg = HwpxPackage(
+        entries={MIMETYPE_NAME: MIMETYPE_VALUE, case.entry: doc.to_bytes()},
+        stored={MIMETYPE_NAME},
+    )
+    assert read_fields(pkg) == written
 
 
 def test_read_field_returns_placeholder_literal_and_none_for_unknown():
@@ -399,24 +506,52 @@ def test_fill_precheck_walks_package_and_dedupes():
     ]
 
 
-def test_whitespace_run_names_are_fillable_after_normalization():
-    """내부 연속 공백 이름 — 나열·읽기·기입이 같은 정규화를 쓴다(2라운드 리뷰 F4).
-
-    과거: required_fields 는 나열하는데 set_field XPath(normalize-space)만 접어
-    영원히 unmatched 인 이름이 존재했다.
-    """
+def test_field_id_normalization_is_shared_by_read_write_required_and_schema():
+    """Unicode 공백·외곽 표기·따옴표 ID를 모든 제품 경로가 같게 해석한다."""
+    expected = 'x{{계약명}} "A" \'B\''
+    nested = "{{중첩}}"
     xml = (
-        f"{_HDR}<hp:p>"
-        '<hp:run><hp:ctrl><hp:fieldBegin name="계약  명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>구값</hp:t></hp:run>"
-        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
-        "</hp:p></hs:sec>"
+        f"{_HDR}"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin '
+        'name="  {{ x{{계약명}}\u00a0&quot;A&quot;&#x9;\'B\' }}  "/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>구값1</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin '
+        'name="x{{계약명}}\u2003&quot;A&quot; \'B\'"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>구값2</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{{\u2003}}"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>무효</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{{{{중첩}}}}"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>중첩구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        "</hs:sec>"
     ).encode("utf-8")
     doc = FieldDocument(xml)
-    (name,) = doc.required_fields()
-    assert name == "계약 명"  # normalize-space 와 동일 규칙
-    assert doc.set_field(name, "새값") is True  # 나열된 이름은 기입 가능해야 한다
-    assert doc.read_field(name) == "새값"
+    requested = "\u2003{{ x{{계약명}}\t\"A\"\u00a0'B' }}\u2003"
+
+    assert doc.required_fields() == [expected, nested]
+    assert doc.read_field(requested) == "구값1"
+    assert doc.set_field(requested, "새값") is True
+    assert doc.to_bytes().decode("utf-8").count("새값") == 2
+    assert doc.read_field(nested) == "중첩구값"
+    assert doc.set_field(nested, "중첩새값") is True
+    assert doc.read_field(nested) == "중첩새값"
+    assert doc.read_field("{{ }}") is None
+    assert doc.set_field("{{ }}", "쓰면 안 됨") is False
+
+    pkg = HwpxPackage(
+        entries={
+            MIMETYPE_NAME: MIMETYPE_VALUE,
+            "Contents/section0.xml": doc.to_bytes(),
+        },
+        stored={MIMETYPE_NAME},
+    )
+    assert read_fields(pkg) == {expected: "새값", nested: "중첩새값"}
+    schema = extract_schema(pkg)
+    assert schema.field_names() == [expected, nested]
+    assert schema.fields[0].occurrences == 2
 
 
 def test_precheck_matches_post_notes_on_divergent_shapes():

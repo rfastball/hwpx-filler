@@ -23,10 +23,9 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-from lxml import etree
-
-from hwpxcore.text_extract import HP_NS, local_name, require_package, text_of_t
+from hwpxcore.text_extract import require_package
 from hwpxfiller.domain.authoring import scan_tokens
+from hwpxfiller.domain.fields import FieldDocument, normalize_field_id
 from hwpxfiller.domain.schema import extract_schema
 
 
@@ -88,46 +87,6 @@ class TemplateStatus:
         }
 
 
-# --------------------------------------------------------------- 로컬 값 리더
-# TODO: when C1 fields.read_field lands, replace this local reader (dedupe).
-# C1(값 읽기)이 병렬 저작 중이라 아직 미착지 → C2 자체 수용(4-상태 채워짐 판별)을
-# 만족시키기 위해, fields.py 의 fieldBegin→fieldEnd 구조를 미러링한 최소 리더를
-# 여기 자체적으로 둔다. 실제 문서 값을 결정적으로 읽는 것이지 추측이 아니다.
-def _region_value(begin: etree._Element) -> str:
-    """``fieldBegin`` 한 개의 값 = begin~fieldEnd 사이 ``hp:t`` 텍스트 이어붙임.
-
-    ``fields._fill_one`` 의 런-형제 순회 의미를 그대로 읽기용으로 미러링한다. 값 런이
-    begin 과 같은 런에 인라인이든 뒤 형제 런이든 동일하게 처리하고, fieldEnd 를 품은
-    ctrl 에서 종료한다.
-    """
-    ctrl = begin.getparent()  # hp:ctrl
-    run = ctrl.getparent() if ctrl is not None and local_name(ctrl.tag) == "ctrl" else ctrl
-    if run is None or local_name(run.tag) != "run":
-        return ""
-
-    parts: "list[str]" = []
-    found_begin = False
-    current = run
-    while current is not None and local_name(current.tag) == "run":
-        stop = False
-        for inner in current:
-            if not found_begin:
-                if inner is ctrl or inner is begin:
-                    found_begin = True
-                continue
-            ln = local_name(inner.tag)
-            if ln == "t":
-                parts.append(text_of_t(inner))
-            elif ln == "ctrl":
-                if any(local_name(c.tag) == "fieldEnd" for c in inner):
-                    stop = True
-                    break
-        if stop:
-            break
-        current = current.getnext()
-    return "".join(parts)
-
-
 def _is_placeholder(value: str, name: str) -> bool:
     """값이 아직 미충전 placeholder 인가 — ``{{ ... }}`` 껍질을 벗겨 안쪽을 필드명과 비교.
 
@@ -137,24 +96,16 @@ def _is_placeholder(value: str, name: str) -> bool:
     """
     v = value.strip()
     if v.startswith("{{") and v.endswith("}}"):
-        return v[2:-2].strip() == name
+        return normalize_field_id(v) == name
     return False
 
 
 def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     """주입 대상 XML 전체에서 (필드명, 값) 목록을 읽는다(파싱 사본 — 무변형)."""
     pkg2 = require_package(pkg)
-    parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     out: "list[tuple[str, str]]" = []
     for name in pkg2.content_xml_names():
-        root = etree.fromstring(pkg2.entries[name], parser=parser)
-        for begin in root.iterfind(f".//{{{HP_NS}}}fieldBegin"):
-            if begin.get("type") == "BOOKMARK":
-                continue
-            fname = (begin.get("name") or "").strip().replace("{{", "").replace("}}", "")
-            if not fname:
-                continue
-            out.append((fname, _region_value(begin)))
+        out.extend(FieldDocument(pkg2.entries[name]).field_values())
     return out
 
 

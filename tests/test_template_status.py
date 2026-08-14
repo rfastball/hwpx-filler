@@ -65,6 +65,27 @@ def test_bookmark_content_does_not_mark_a_placeholder_field_filled():
     assert st.state == CompileState.COMPILED
     assert st.field_n == 1
 
+    root = etree.fromstring(pkg.entries[SECTION])
+    bookmark = next(
+        node
+        for node in root.iterfind(f".//{{{HP}}}fieldBegin")
+        if node.get("type") == "BOOKMARK"
+    )
+    bookmark_ctrl = bookmark.getparent()
+    assert bookmark_ctrl is not None
+    bookmark_run = bookmark_ctrl.getparent()
+    assert bookmark_run is not None
+    bookmark_text = bookmark_run.find(f"{{{HP}}}t")
+    assert bookmark_text is not None
+    bookmark_text.text = "{{계약명}}"
+    pkg.entries[SECTION] = etree.tostring(root, encoding="UTF-8")
+
+    bookmark_status = compile_status(pkg)
+    assert bookmark_status.state == CompileState.PARTIAL
+    assert bookmark_status.stray_n == 1
+    assert bookmark_status.compilable_n == 0
+    assert bookmark_status.skipped_n == 0
+
 
 # ------------------------------------------------------------------- PARTIAL
 def test_partial_skipped_channel_only():
@@ -160,6 +181,38 @@ def test_compiled_spaced_token_is_compiled():
     assert st.field_n == 1
     assert st.stray_n == 0
     assert st.compilable_n == 0
+
+    # Field name과 placeholder가 서로 다른 Unicode 공백·외곽 표기를 써도 같은 ID다.
+    manual = _pkg(
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{{ 계약&#x9;명 }}"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>{{계약\u2003명}}</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+    )
+    manual_status = compile_status(manual)
+    assert manual_status.state == CompileState.COMPILED
+    assert manual_status.field_n == 1
+    assert manual_status.stray_n == 0
+
+    inner_braces = _pkg(
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="x{{계약명}}"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>{{x{{계약명}}}}</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+    )
+    inner_status = compile_status(inner_braces)
+    assert inner_status.state == CompileState.COMPILED
+    assert inner_status.stray_n == 0
+
+    wrong_owner = _pkg(
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="x{{계약명}}"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>{{x{{계약명}}}}</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="다른필드"/>'
+        "</hp:ctrl></hp:run><hp:run><hp:t>{{x{{계약명}}}}</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+    )
+    wrong_status = compile_status(wrong_owner)
+    assert wrong_status.state == CompileState.PARTIAL
+    assert wrong_status.stray_n == 1
 
 
 # -------------------------------------------------------------------- FILLED

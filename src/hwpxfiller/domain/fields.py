@@ -24,7 +24,6 @@ from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.text_extract import require_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
-_NSMAP = {"hp": HP_NS}
 _FIELD_PART_PATTERNS = (
     (0, re.compile(r"section(\d+)\.xml$", re.IGNORECASE)),
     (1, re.compile(r"header(\d+)\.xml$", re.IGNORECASE)),
@@ -90,18 +89,24 @@ def _strip_candidates(ts: "list[etree._Element]") -> "set[str]":
     return names
 
 
-def _clean_field_name(raw: object) -> str:
-    """누름틀 이름의 공백과 선택적 ``{{..}}`` 표기를 정규화한다.
-
-    내부 연속 공백(탭·개행 포함)은 한 칸으로 접는다 — :meth:`FieldDocument.set_field`
-    의 XPath 가 ``normalize-space(@name)`` 로 비교하므로, 읽기·나열·사전 판정이 다른
-    정규화를 쓰면 "나열은 되는데 기입은 안 되는" 이름이 생긴다(리뷰 F4).
-    """
+def _collapse_field_id(raw: object) -> "str | None":
     if not isinstance(raw, str):
-        return ""
-    name = " ".join(raw.split())
+        return None
+    value = " ".join(raw.split())
+    return value or None
+
+
+def normalize_field_id(raw: object) -> "str | None":
+    """제품 Field ID를 정규화하고 빈 값·비문자열은 거절한다.
+
+    앞뒤와 내부의 Unicode 공백을 접고, 전체를 감싼 ``{{...}}`` 표기 한 겹만
+    벗긴 뒤 다시 공백을 접는다. 문자열 안쪽의 중괄호는 Field ID의 일부다.
+    """
+    name = _collapse_field_id(raw)
+    if name is None:
+        return None
     if name.startswith("{{") and name.endswith("}}"):
-        name = " ".join(name[2:-2].split())
+        return _collapse_field_id(name[2:-2])
     return name
 
 
@@ -139,8 +144,8 @@ class FieldDocument:
         """문서 내 모든 누름틀 이름을 중복 없이 반환. ``{{..}}`` 는 벗겨서."""
         seen: dict[str, None] = {}
         for node in self._field_begins():
-            name = _clean_field_name(node.get("name"))
-            if name and name not in seen:
+            name = normalize_field_id(node.get("name"))
+            if name is not None and name not in seen:
                 seen[name] = None
         return list(seen)
 
@@ -152,11 +157,19 @@ class FieldDocument:
         파편을 문서 순서대로 이어 붙인다. 이름은 ``NAME`` 과 ``{{NAME}}`` 표기를
         동일하게 취급하며, 해당 필드가 없을 때만 ``None`` 을 반환한다.
         """
-        clean = _clean_field_name(field_name)
-        for begin in self._field_begins():
-            if _clean_field_name(begin.get("name")) == clean:
-                return self._read_one(begin)
+        begins = self._matching_field_begins(field_name)
+        if begins:
+            return self._read_one(begins[0])
         return None
+
+    def field_values(self) -> "list[tuple[str, str]]":
+        """유효한 ordinary Field의 ``(정규 ID, 현재 값)`` 등장 목록."""
+        values: "list[tuple[str, str]]" = []
+        for begin in self._field_begins():
+            field_id = normalize_field_id(begin.get("name"))
+            if field_id is not None:
+                values.append((field_id, self._read_one(begin)))
+        return values
 
     def _read_one(self, begin: etree._Element) -> str:
         """단일 ``fieldBegin`` 과 짝을 이루는 종료 지점 사이의 텍스트를 읽는다."""
@@ -213,6 +226,29 @@ class FieldDocument:
             if node.get("type") != "BOOKMARK"
         )
 
+    def _matching_field_begins(self, requested: object) -> "list[etree._Element]":
+        """canonical ID를 우선하고, 없을 때만 ``{{ID}}`` raw alias를 허용한다.
+
+        한 겹 제거는 의도적으로 비멱등이다. 예를 들어 raw ``{{{{X}}}}``의
+        canonical ID는 ``{{X}}``이므로 required_fields가 돌려준 값을 다시
+        정규화하지 않고 먼저 찾아야 read/write 왕복이 보존된다.
+        """
+        requested_text = _collapse_field_id(requested)
+        if requested_text is None:
+            return []
+        identified = [
+            (begin, normalize_field_id(begin.get("name")))
+            for begin in self._field_begins()
+        ]
+        target = (
+            requested_text
+            if any(field_id == requested_text for _, field_id in identified)
+            else normalize_field_id(requested)
+        )
+        if target is None:
+            return []
+        return [begin for begin, field_id in identified if field_id == target]
+
     # ----------------------------------------------------------- precheck
     def precheck(self) -> "list[FillNote]":
         """채움이 완화 처리(#154)를 일으킬 자리를 **변형 없이** 사전 열거한다.
@@ -224,8 +260,8 @@ class FieldDocument:
         """
         notes: "list[FillNote]" = []
         for begin in self._field_begins():
-            name = _clean_field_name(begin.get("name"))
-            if not name:
+            name = normalize_field_id(begin.get("name"))
+            if name is None:
                 continue
             span = self._field_span(begin)
             if span is None:
@@ -263,25 +299,16 @@ class FieldDocument:
         ``modified`` 가 추적한다. VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는
         ``{{NAME}}`` 인 모든 누름틀을 처리한다.
         """
-        # 내부 공백까지 normalize-space 와 같은 규칙으로 접는다 — @name 쪽만 접고
-        # 리터럴 쪽을 안 접으면 공백 변주 이름이 영원히 못 맞는다(리뷰 F4).
-        clean = " ".join(field_name.split())
-        # normalize-space + {{}} 대응 XPath (원본과 동일 의미)
-        xpath = (
-            f".//hp:fieldBegin["
-            f"not(@type='BOOKMARK') and ("
-            f"normalize-space(@name)='{clean}' or "
-            f"normalize-space(@name)='{{{{{clean}}}}}')]"
-        )
-        begins = self._tree.xpath(xpath, namespaces=_NSMAP)
+        begins = self._matching_field_begins(field_name)
         if not begins:
             return False
+        clean = normalize_field_id(begins[0].get("name"))
+        assert clean is not None
 
-        note_name = _clean_field_name(field_name)
         updated = 0
         skipped = 0
         for begin in begins:
-            if self._fill_one(begin, new_value, note_name):
+            if self._fill_one(begin, new_value, clean):
                 updated += 1
             else:
                 skipped += 1
@@ -291,7 +318,7 @@ class FieldDocument:
             # 자리가 어디에도 안 나오는 조용한 소실이 된다(2라운드 리뷰 F1).
             # 전 자리 불가(updated=0)면 unmatched 와 겹치지만, unmatched 의 "매칭
             # 실패" 오진을 이 노트가 바로잡는다 — 과경고가 조용한 소실보다 낫다.
-            self._note(note_name, "occurrence_unfillable")
+            self._note(clean, "occurrence_unfillable")
         return updated > 0
 
     def _fill_one(self, begin: etree._Element, new_value: str, note_name: str) -> bool:
@@ -431,8 +458,6 @@ def read_fields(pkg: object) -> "dict[str, str]":
     values: "dict[str, str]" = {}
     for xml_name in field_xml_names(pkg):
         doc = FieldDocument(pkg.entries[xml_name])
-        for field_name in doc.required_fields():
-            value = doc.read_field(field_name)
-            if value is not None:
-                values.setdefault(field_name, value)
+        for field_name, value in doc.field_values():
+            values.setdefault(field_name, value)
     return values
