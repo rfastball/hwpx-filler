@@ -153,6 +153,16 @@ def test_keeps_entry_trust_independent_without_cross_entry_repair() -> None:
                 )
             ),
             "Contents/footer0.xml": _entry(_paragraph(_end(7))),
+            "Contents/footer1.xml": _entry(
+                _paragraph(_bookmark(8, "LOCAL_VALID") + _end(99, prefix="x")),
+                namespaces='xmlns:x="urn:foreign"',
+            ),
+            "Contents/footer2.xml": _entry(
+                _paragraph(
+                    _bookmark(9, "LOCAL_VALID")
+                    + '<hp:fieldEnd beginIDRef="100"/>'
+                )
+            ),
         }
     )
 
@@ -180,15 +190,44 @@ def test_keeps_entry_trust_independent_without_cross_entry_repair() -> None:
         by_entry["Contents/footer0.xml"].field_pairing_usable,
         by_entry["Contents/footer0.xml"].bookmark_topology_usable,
     ) == (False, False)
+    assert (
+        by_entry["Contents/footer1.xml"].field_pairing_usable,
+        by_entry["Contents/footer1.xml"].bookmark_topology_usable,
+    ) == (False, False)
+    assert [type(event) for event in by_entry["Contents/footer1.xml"].events] == [
+        BookmarkBegin,
+        BookmarkEnd,
+    ]
+    assert (
+        by_entry["Contents/footer2.xml"].field_pairing_usable,
+        by_entry["Contents/footer2.xml"].bookmark_topology_usable,
+    ) == (False, False)
+    assert [type(event) for event in by_entry["Contents/footer2.xml"].events] == [
+        BookmarkBegin,
+        BookmarkEnd,
+    ]
     assert {(item.entry, item.kind) for item in scan.diagnostics} >= {
         (SECTION, StructuralDiagnosticKind.BOOKMARK_MISSING_END),
         ("Contents/section1.xml", StructuralDiagnosticKind.BOOKMARK_CROSSING),
         ("Contents/header0.xml", StructuralDiagnosticKind.FIELD_UNMATCHED_BEGIN),
         ("Contents/footer0.xml", StructuralDiagnosticKind.FIELD_ORPHAN_END),
+        ("Contents/footer1.xml", StructuralDiagnosticKind.FIELD_NON_NATIVE_CONTROL),
+        (
+            "Contents/footer2.xml",
+            StructuralDiagnosticKind.FIELD_UNSUPPORTED_CONTROL_SHAPE,
+        ),
     }
 
 
 def test_reports_typed_format_diagnostics() -> None:
+    malformed_unsupported = (
+        _entry(_paragraph(_bookmark(2, "MALFORMED"))).decode()[:-1].encode("utf-16")
+    )
+    entity_entry = (
+        '<!DOCTYPE hs:sec [<!ENTITY hidden \''
+        '<hp:ctrl><hp:fieldBegin id="77" type="BOOKMARK" name="HIDDEN"/>'
+        '<hp:fieldEnd beginIDRef="77"/></hp:ctrl>\'>]>'
+    ).encode() + _entry(_paragraph("&hidden;"))
     format_cases = {
         "package": (
             _package(
@@ -205,6 +244,19 @@ def test_reports_typed_format_diagnostics() -> None:
         ),
         "xml": (
             _package({SECTION: b"<hs:sec"}),
+            {StructuralDiagnosticKind.MALFORMED_XML},
+        ),
+        "malformed-unsupported": (
+            _package(
+                {
+                    SECTION: _entry(_paragraph()),
+                    "Contents/headerCustom.xml": malformed_unsupported,
+                }
+            ),
+            {StructuralDiagnosticKind.UNSUPPORTED_CONTENT_ENTRY},
+        ),
+        "entity": (
+            _package({SECTION: entity_entry}),
             {StructuralDiagnosticKind.MALFORMED_XML},
         ),
         "root": (
@@ -354,6 +406,13 @@ def test_reports_typed_format_diagnostics() -> None:
                 BookmarkEnd,
             ]
             assert entry.events[0].meta_tags == ("valid",)
+        elif name == "entity":
+            entry = result.entries[0]
+            assert (
+                entry.field_pairing_usable,
+                entry.bookmark_topology_usable,
+                entry.events,
+            ) == (False, False, ())
 
     field_kinds = {
         "unmatched-begin": StructuralDiagnosticKind.FIELD_UNMATCHED_BEGIN,

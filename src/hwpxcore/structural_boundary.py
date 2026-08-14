@@ -172,6 +172,10 @@ def _entry_match(name: str) -> tuple[ContentEntryKind, int, int] | None:
     return None
 
 
+def _contains_unresolved_entity(root: etree._Element) -> bool:
+    return any(node.tag is etree.Entity for node in root.iter())
+
+
 def _looks_boundary_bearing(source: bytes) -> bool:
     try:
         root = etree.fromstring(
@@ -179,8 +183,8 @@ def _looks_boundary_bearing(source: bytes) -> bool:
             etree.XMLParser(remove_blank_text=False, resolve_entities=False),
         )
     except (etree.XMLSyntaxError, TypeError, ValueError):
-        return b"fieldBegin" in source or b"fieldEnd" in source
-    return any(
+        return True
+    return _contains_unresolved_entity(root) or any(
         local_name(node.tag) in {"fieldBegin", "fieldEnd"}
         for node in root.iter()
         if isinstance(node.tag, str)
@@ -394,6 +398,16 @@ def _scan_entry(
                 entry, StructuralDiagnosticKind.MALFORMED_XML, detail=str(exc)
             ),
         )
+    if _contains_unresolved_entity(root):
+        return _failed_entry(
+            entry,
+            kind,
+            StructuralDiagnostic(
+                entry,
+                StructuralDiagnosticKind.MALFORMED_XML,
+                detail="unresolved XML entity",
+            ),
+        )
     if root.tag != _ENTRY_ROOT[kind]:
         return _failed_entry(
             entry,
@@ -432,11 +446,20 @@ def _scan_entry(
     bookmark_pairs, bookmark_diagnostics, bookmark_usable = _bookmark_pairs(
         entry, root, nodes, order
     )
-    # A fieldEnd has no type of its own. Without a local begin it cannot be
-    # classified as ordinary Field or BOOKMARK, so both trust axes fail closed.
+    ordinary_ends = {occurrence.end for occurrence in field_resolution.occurrences}
+    local_begin_ids = {
+        pair_id
+        for node in nodes
+        if local_name(node.tag) == "fieldBegin"
+        and (pair_id := node.get("id")) is not None
+    }
+    # fieldEnd has no type. If neither a resolved ordinary pair nor a local
+    # typed begin classifies it, BOOKMARK trust must fail closed too.
     if any(
-        item.kind is FieldDiagnosticKind.ORPHAN_END
-        for item in field_resolution.diagnostics
+        local_name(node.tag) == "fieldEnd"
+        and node not in ordinary_ends
+        and node.get("beginIDRef") not in local_begin_ids
+        for node in nodes
     ):
         bookmark_usable = False
     diagnostics.extend(bookmark_diagnostics)
