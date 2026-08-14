@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from hashlib import sha256
 
 from lxml import etree
 
 from .field_occurrence import (
     FieldDiagnosticKind,
+    FieldOccurrence,
     paragraph_container,
     resolve_field_occurrences,
 )
@@ -112,6 +114,21 @@ class StructuralEntryScan:
 class StructuralBoundaryScan:
     entries: tuple[StructuralEntryScan, ...]
     diagnostics: tuple[StructuralDiagnostic, ...]
+    _native_entries: tuple[_StructuralEntryDetail, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    _source_manifest: tuple[tuple[str, bytes], ...] = field(
+        default=(), repr=False, compare=False
+    )
+    _package_entry_names: frozenset[str] = field(
+        default_factory=frozenset, repr=False, compare=False
+    )
+    _expected_entries: tuple[StructuralEntryScan, ...] = field(
+        default=(), repr=False, compare=False
+    )
+    _expected_diagnostics: tuple[StructuralDiagnostic, ...] = field(
+        default=(), repr=False, compare=False
+    )
 
 
 _ENTRY_PATTERNS = (
@@ -162,6 +179,24 @@ class _BookmarkPair:
     name: str | None
     meta_tags: tuple[str, ...]
     meta_tag_attribute: str | None
+
+
+@dataclass(frozen=True)
+class _StructuralEntryDetail:
+    """Private native evidence retained only for scan-local adapters."""
+
+    entry: str
+    kind: ContentEntryKind
+    source_sha256: bytes
+    root: etree._Element = field(repr=False, compare=False)
+    nodes: tuple[etree._Element, ...] = field(repr=False, compare=False)
+    order: dict[etree._Element, int] = field(repr=False, compare=False)
+    fields: tuple[tuple[BoundaryPairRef, FieldOccurrence], ...] = field(
+        repr=False, compare=False
+    )
+    bookmarks: tuple[tuple[BoundaryPairRef, _BookmarkPair], ...] = field(
+        repr=False, compare=False
+    )
 
 
 def _entry_match(name: str) -> tuple[ContentEntryKind, int, int] | None:
@@ -380,13 +415,17 @@ def _bookmark_pairs(
 
 def _failed_entry(
     entry: str, kind: ContentEntryKind, diagnostic: StructuralDiagnostic
-) -> tuple[StructuralEntryScan, list[StructuralDiagnostic]]:
-    return StructuralEntryScan(entry, kind, (), False, False), [diagnostic]
+) -> tuple[StructuralEntryScan, list[StructuralDiagnostic], None]:
+    return StructuralEntryScan(entry, kind, (), False, False), [diagnostic], None
 
 
 def _scan_entry(
     entry: str, kind: ContentEntryKind, source: bytes
-) -> tuple[StructuralEntryScan, list[StructuralDiagnostic]]:
+) -> tuple[
+    StructuralEntryScan,
+    list[StructuralDiagnostic],
+    _StructuralEntryDetail | None,
+]:
     parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
     try:
         root = etree.fromstring(source, parser)
@@ -465,12 +504,16 @@ def _scan_entry(
     diagnostics.extend(bookmark_diagnostics)
 
     events: list[tuple[int, BoundaryEvent]] = []
+    native_fields: list[tuple[BoundaryPairRef, FieldOccurrence]] = []
     for occurrence in field_resolution.occurrences:
         pair = BoundaryPairRef()
+        native_fields.append((pair, occurrence))
         events.append((occurrence.begin_order, FieldBegin(pair, occurrence.raw_name)))
         events.append((occurrence.end_order, FieldEnd(pair)))
+    native_bookmarks: list[tuple[BoundaryPairRef, _BookmarkPair]] = []
     for bookmark in bookmark_pairs:
         pair = BoundaryPairRef()
+        native_bookmarks.append((pair, bookmark))
         events.append(
             (
                 order[bookmark.begin],
@@ -501,6 +544,16 @@ def _scan_entry(
             bookmark_usable,
         ),
         diagnostics,
+        _StructuralEntryDetail(
+            entry,
+            kind,
+            sha256(source).digest(),
+            root,
+            tuple(nodes),
+            order,
+            tuple(native_fields),
+            tuple(native_bookmarks),
+        ),
     )
 
 
@@ -509,10 +562,30 @@ def scan_structural_boundaries(pkg: object) -> StructuralBoundaryScan:
     package = require_package(pkg)
     content_entries, diagnostics = _content_entries(package)
     entries: list[StructuralEntryScan] = []
+    native_entries: list[_StructuralEntryDetail] = []
     for kind, entry in content_entries:
-        scanned, entry_diagnostics = _scan_entry(
+        scanned, entry_diagnostics, native = _scan_entry(
             entry, kind, package.entries[entry]
         )
         entries.append(scanned)
         diagnostics.extend(entry_diagnostics)
-    return StructuralBoundaryScan(tuple(entries), tuple(diagnostics))
+        if native is not None:
+            native_entries.append(native)
+    scanned_entries = tuple(entries)
+    scanned_diagnostics = tuple(diagnostics)
+    return StructuralBoundaryScan(
+        scanned_entries,
+        scanned_diagnostics,
+        tuple(native_entries),
+        tuple(
+            (entry, sha256(package.entries[entry]).digest())
+            for entry in sorted(
+                name
+                for name in package.entries
+                if _CONTENT_LIKE.fullmatch(name.rsplit("/", 1)[-1])
+            )
+        ),
+        frozenset(package.entries),
+        scanned_entries,
+        scanned_diagnostics,
+    )

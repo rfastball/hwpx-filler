@@ -247,7 +247,7 @@ def test_ledger_records_fill_notes_as_evidence(tmp_path):
         '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
         ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
+        "<hp:run><hp:t>OLD<hp:markpenBegin/>X<hp:markpenEnd/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
         "</hp:p></hs:sec>"
     ).encode("utf-8")
@@ -263,5 +263,9 @@ def test_ledger_records_fill_notes_as_evidence(tmp_path):
     (entry,) = verified_outputs(ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"]))
     payload = entry.to_dict()
     assert payload["notes"] == [
-        {"field": "공고명", "kind": "inline_stripped", "detail": ["markpenBegin"]}
+        {
+            "field": "공고명",
+            "kind": "inline_stripped",
+            "detail": ["markpenBegin", "markpenEnd"],
+        }
     ]

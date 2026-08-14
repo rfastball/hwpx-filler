@@ -22,7 +22,13 @@ from lxml import etree
 
 from hwpxcore.field_occurrence import FieldOccurrence, resolve_field_occurrences
 from hwpxcore.lineseg import serialize_modified_section
-from hwpxcore.text_extract import local_name, require_package
+from hwpxcore.native_admission import (
+    FieldFillEffectKind,
+    apply_field_fill,
+    build_native_admission_index,
+    plan_field_fill,
+)
+from hwpxcore.text_extract import require_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _FIELD_PART_PATTERNS = (
@@ -38,9 +44,9 @@ class FillNote:
 
     문안은 표면(CLI·웹) 소관 — 코어는 사실만 담는다.
 
-    - ``kind="inline_stripped"``: 값 런의 인라인 자식 요소(형광펜 마커 등)를 제거하고
-      기입했다. ``detail`` = 제거된 요소 로컬명(정렬·중복 제거). 짝 요소가 필드 경계를
-      걸치면 한쪽만 제거될 수 있다 — 종류 명명이 그 검토 신호다.
+    - ``kind="inline_stripped"``: 값 런 안에 완전히 든 지원 range pair 등을 제거하고
+      기입했다. ``detail`` = 제거된 요소 로컬명(정렬·중복 제거). 짝이 없거나 필드
+      경계를 걸친 range와 미지원 인라인 객체는 admission에서 기입을 막는다.
     - ``kind="slot_synthesized"``: 값 ``hp:t`` 가 전혀 없는 빈 누름틀에 값 런을
       합성해 기입했다(과거엔 조용히 기입 불가 → unmatched 오보).
     """
@@ -48,28 +54,6 @@ class FillNote:
     field: str
     kind: str
     detail: "tuple[str, ...]" = ()
-
-
-def _subtree_names(child: etree._Element) -> "set[str]":
-    """제거 대상 하위트리의 노드 이름 전체 — 최상위만 대면 손실 집합 과소 고지."""
-    names: "set[str]" = set()
-    for node in child.iter():
-        if isinstance(node, etree._Comment):
-            names.add("#comment")
-        elif isinstance(node, etree._ProcessingInstruction):
-            names.add("#pi")
-        else:
-            names.add(local_name(node.tag) or "#node")
-    return names
-
-
-def _strip_candidates(ts: "list[etree._Element]") -> "set[str]":
-    """값 슬롯들의 인라인 자식 이름 집합 — 사전 판정과 사후 제거가 같은 집계를 쓴다."""
-    names: "set[str]" = set()
-    for t in ts:
-        for child in t:
-            names |= _subtree_names(child)
-    return names
 
 
 def _collapse_field_id(raw: object) -> "str | None":
@@ -104,6 +88,7 @@ class FieldDocument:
         self._occurrences = resolve_field_occurrences(
             self._entry, self._tree
         ).require_usable()
+        self._admission_index = build_native_admission_index(self._tree)
         self._occurrences_dirty = False
         self._modified = False
         self._notes: "list[FillNote]" = []
@@ -211,16 +196,15 @@ class FieldDocument:
             name = normalize_field_id(occurrence.raw_name)
             if name is None:
                 continue
-            if occurrence.texts:
-                stripped = _strip_candidates(list(occurrence.texts))
-                if stripped:
-                    notes.append(
-                        FillNote(name, "inline_stripped", tuple(sorted(stripped)))
-                    )
-            elif occurrence.end_ctrl is occurrence.begin_ctrl:
+            plan = plan_field_fill(self._admission_index, occurrence)
+            if plan.blockers:
                 notes.append(FillNote(name, "occurrence_unfillable"))
-            else:
-                notes.append(FillNote(name, "slot_synthesized"))
+                continue
+            for effect in plan.effects:
+                if effect.kind is FieldFillEffectKind.REMOVE_INLINE:
+                    notes.append(FillNote(name, "inline_stripped", effect.detail))
+                elif effect.kind is FieldFillEffectKind.SYNTHESIZE_SLOT:
+                    notes.append(FillNote(name, "slot_synthesized"))
         return list(dict.fromkeys(notes))
 
     # ------------------------------------------------------------- inject
@@ -273,60 +257,16 @@ class FieldDocument:
         자식을 제거한 뒤 첫 슬롯에 값을 기입, 파편 슬롯은 비운다. 완화 처리
         (합성·자식 제거)는 ``_note`` 로 기록한다.
         """
-        ts = list(occurrence.texts)
-
-        # ---- 2) 목표 상태 선판정 — 이미 read_field == new_value 면 아무것도 안
-        # 건드린다(#95 동일 값 재채움 바이트 안정: 무해한 자식 요소·캐시 보존).
-        if ts and "".join("".join(t.itertext()) for t in ts) == new_value:
-            return True
-
-        # ---- 3) 빈 누름틀: 값 런 합성(#154 — 기입 불가 대신 경고 후 진행)
-        if not ts:
-            if occurrence.end_ctrl is occurrence.begin_ctrl:
-                # begin·end가 한 ctrl 안인 퇴화 형상은 슬롯 자리가 없다.
-                return False
-            slot = etree.Element(f"{{{HP_NS}}}t")
-            if occurrence.end_run is occurrence.begin_run:
-                # begin 과 end 가 같은 런 — end ctrl 바로 앞에 슬롯 삽입
-                occurrence.begin_run.insert(
-                    occurrence.begin_run.index(occurrence.end_ctrl), slot
-                )
-            else:
-                # begin 런의 속성(charPrIDRef 등)을 통째로 승계 — authoring 의
-                # 런 팩토리 관례(dict(run.attrib) 승계)와 동일.
-                new_run = etree.Element(
-                    f"{{{HP_NS}}}run", dict(occurrence.begin_run.attrib)
-                )
-                new_run.append(slot)
-                occurrence.end_run.addprevious(new_run)
-            ts = [slot]
-            self._modified = True  # 요소 삽입 자체가 변형
-            self._occurrences_dirty = True
-            self._note(note_name, "slot_synthesized")
-
-        # ---- 4) 인라인 자식 제거 + 기입
-        # 자식 요소(형광펜 마커 등)와 그 tail 텍스트는 구값 소속 — 값 교체와 함께
-        # 제거한다(#154 확정: 읽기-쓰기 대칭이 계약. read_field 는 itertext 로 읽으므로
-        # 자식 tail 이 남으면 기입값 ≠ 읽은값). detail 은 하위트리 전체를 열거한다 —
-        # 최상위 이름만 대면 실제 손실 집합을 과소 고지한다(문안 정직성).
-        stripped = _strip_candidates(ts)
-        for t in ts:
-            for child in list(t):
-                t.remove(child)
-                self._modified = True
-        if stripped:
-            self._note(note_name, "inline_stripped", tuple(sorted(stripped)))
-
-        first = ts[0]
-        if (first.text or "") != new_value:
-            first.text = new_value
-            self._modified = True  # 실제 변경만 변형으로 계상
-        for frag in ts[1:]:
-            if frag.text:
-                # 파편 텍스트 제거 — 실제로 지울 텍스트가 있을 때만 대입한다
-                # (무조건 "" 대입은 <hp:t/> 를 무플래그로 바이트 변이시킴)
-                frag.text = ""
-                self._modified = True
+        mutation = apply_field_fill(self._admission_index, occurrence, new_value)
+        if not mutation.filled:
+            return False
+        self._modified |= mutation.modified
+        self._occurrences_dirty |= mutation.structure_changed
+        for effect in mutation.effects:
+            if effect.kind is FieldFillEffectKind.REMOVE_INLINE:
+                self._note(note_name, "inline_stripped", effect.detail)
+            elif effect.kind is FieldFillEffectKind.SYNTHESIZE_SLOT:
+                self._note(note_name, "slot_synthesized")
         return True
 
     # -------------------------------------------------------------- output

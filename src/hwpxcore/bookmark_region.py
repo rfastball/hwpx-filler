@@ -10,6 +10,14 @@ from lxml import etree
 
 from .field_occurrence import FieldResolution, resolve_field_occurrences
 from .lineseg import serialize_modified_section
+from .native_admission import (
+    BookmarkRemovalCandidate,
+    BookmarkRemovalPlan,
+    NativeAdmissionIndex,
+    build_native_admission_index,
+    plan_bookmark_removal,
+)
+from .structural_boundary import ContentEntryKind
 from .text_extract import (
     PackageLike,
     HP_NS as _HP_NS,
@@ -20,11 +28,6 @@ from .text_extract import (
 
 _HS_NS = "http://www.hancom.co.kr/hwpml/2011/section"
 _HP = f"{{{_HP_NS}}}"
-_NON_FIELD_RANGE_MARKERS = (
-    ("markpenBegin", "markpenEnd"),
-    ("insertBegin", "insertEnd"),
-    ("deleteBegin", "deleteEnd"),
-)
 _PAIRING_ID_START = 1_600_000_001
 
 
@@ -90,53 +93,6 @@ class _ResolvedRegion:
     end_child: int
     begin_order: int
     end_order: int
-
-
-def _is_bookmark_boundary_ctrl(node: etree._Element) -> bool:
-    """True for a ``ctrl`` holding nothing but BOOKMARK range markers.
-
-    Hancom writes a sibling boundary like this when one region opens or closes in
-    the same paragraph as the region containing it (S0-G). Such a marker is not
-    paragraph content, so it must not make the neighbouring boundary look partial.
-    A pair belonging to some other field is still caught by the extent checks.
-    """
-    return node.tag == f"{_HP}ctrl" and len(node) > 0 and all(
-        child.tag == f"{_HP}fieldEnd"
-        or (child.tag == f"{_HP}fieldBegin" and child.get("type") == "BOOKMARK")
-        for child in node
-    )
-
-
-def _has_payload(node: etree._Element) -> bool:
-    if node.tag == f"{_HP}linesegarray":
-        return False
-    if node.tag == f"{_HP}t":
-        return bool("".join(node.itertext()) or len(node))
-    if node.tag == f"{_HP}run":
-        return bool((node.text or "").strip()) or any(
-            _has_payload(child) or bool((child.tail or "").strip()) for child in node
-        )
-    return not _is_bookmark_boundary_ctrl(node)
-
-
-def _payload_outside_boundary(
-    node: etree._Element, paragraph: etree._Element, *, preceding: bool
-) -> bool:
-    current = node
-    while current is not paragraph:
-        parent = current.getparent()
-        assert parent is not None  # native containment was checked first
-        if preceding and (parent.text or "").strip():
-            return True
-        if not preceding and (current.tail or "").strip():
-            return True
-        if any(
-            _has_payload(sibling) or bool((sibling.tail or "").strip())
-            for sibling in current.itersiblings(preceding=preceding)
-        ):
-            return True
-        current = parent
-    return False
 
 
 def _boundary_paragraph(
@@ -215,17 +171,6 @@ def _parse_sections(pkg: PackageLike) -> list[_Section]:
     return sections
 
 
-def _is_inside(region: _ResolvedRegion, node: etree._Element) -> bool:
-    current = node
-    while current.getparent() is not region.section.root:
-        parent = current.getparent()
-        if parent is None:
-            return False
-        current = parent
-    child = region.section.root.index(current)
-    return region.start_child <= child <= region.end_child
-
-
 def _link_containment(regions: list[_ResolvedRegion]) -> list[_ResolvedRegion]:
     """Record each region's immediate container, rejecting crossing ranges.
 
@@ -253,55 +198,6 @@ def _link_containment(regions: list[_ResolvedRegion]) -> list[_ResolvedRegion]:
         linked.append(nested)
         open_regions.append(nested)
     return linked
-
-
-def _reject_intersecting_fields(region: _ResolvedRegion) -> None:
-    section = region.section
-    extent_orders = [
-        section.order[node] for node in section.nodes if _is_inside(region, node)
-    ]
-    extent_start, extent_end = min(extent_orders), max(extent_orders)
-
-    for occurrence in section.ordinary_fields.require_usable():
-        begin_inside = _is_inside(region, occurrence.begin)
-        end_inside = _is_inside(region, occurrence.end)
-        if begin_inside != end_inside:
-            raise ValueError(f"{section.entry}: field pair intersects BOOKMARK extent")
-        if begin_inside:
-            continue
-        if (
-            section.order[occurrence.begin] < extent_start
-            and section.order[occurrence.end] > extent_end
-        ):
-            raise ValueError(f"{section.entry}: field pair encloses BOOKMARK extent")
-
-
-def _reject_intersecting_non_field_ranges(region: _ResolvedRegion) -> None:
-    section = region.section
-    extent_orders = [
-        section.order[node] for node in section.nodes if _is_inside(region, node)
-    ]
-    extent_start, extent_end = min(extent_orders), max(extent_orders)
-
-    for begin_name, end_name in _NON_FIELD_RANGE_MARKERS:
-        begins = [
-            section.order[node]
-            for node in section.nodes
-            if node.tag == f"{_HP}{begin_name}"
-        ]
-        ends = [
-            section.order[node]
-            for node in section.nodes
-            if node.tag == f"{_HP}{end_name}"
-        ]
-        endpoint_inside = any(extent_start <= order <= extent_end for order in begins + ends)
-        possible_enclosure = any(order < extent_start for order in begins) and any(
-            order > extent_end for order in ends
-        )
-        if endpoint_inside or possible_enclosure:
-            raise ValueError(
-                f"{section.entry}: {begin_name}/{end_name} range intersects BOOKMARK extent"
-            )
 
 
 def _resolve(
@@ -367,8 +263,21 @@ def _resolve(
 
         section_regions = _link_containment(section_regions)
         if require_removable:
+            admission_index = build_native_admission_index(
+                section.root, tuple(section.nodes), section.order
+            )
+            candidates = tuple(
+                BookmarkRemovalCandidate(item.begin, item.end, item.region.name)
+                for item in section_regions
+            )
             for item in section_regions:
-                _validate_mutable_extent(item, reject_whole_section=True)
+                _validate_mutable_extent(
+                    item,
+                    reject_whole_section=True,
+                    reject_section_definition=True,
+                    admission_index=admission_index,
+                    candidates=candidates,
+                )
         resolved.extend(section_regions)
     return resolved
 
@@ -448,43 +357,47 @@ def _validate_mutable_extent(
     *,
     reject_whole_section: bool,
     reject_section_definition: bool = False,
-) -> None:
+    admission_index: NativeAdmissionIndex | None = None,
+    candidates: tuple[BookmarkRemovalCandidate, ...] | None = None,
+) -> BookmarkRemovalPlan:
     section = resolved.section
-    start = _boundary_paragraph(resolved.begin, section.root, section.entry)
-    stop = _boundary_paragraph(resolved.end, section.root, section.entry)
-    if _payload_outside_boundary(resolved.begin, start, preceding=True):
-        raise ValueError(
-            f"{section.entry}: partial-paragraph BOOKMARK begin is unsupported"
+    native_candidates = (
+        candidates
+        if candidates is not None
+        else tuple(
+            BookmarkRemovalCandidate(
+                begin, section.ends[begin_id][0], begin.get("name")
+            )
+            for begin in section.bookmark_begins
+            if (begin_id := begin.get("id")) is not None
+            and len(section.begins.get(begin_id, ())) == 1
+            and len(section.ends.get(begin_id, ())) == 1
         )
-    if _payload_outside_boundary(resolved.end, stop, preceding=False):
-        raise ValueError(
-            f"{section.entry}: partial-paragraph BOOKMARK end is unsupported"
-        )
-    if any(
-        child.tag != f"{_HP}p"
-        for child in list(section.root)[
-            resolved.start_child : resolved.end_child + 1
-        ]
-    ):
-        raise ValueError(
-            f"{section.entry}: non-paragraph section child in BOOKMARK extent "
-            "is unsupported"
-        )
-    if reject_whole_section and (
-        resolved.region.end_paragraph - resolved.region.start_paragraph + 1
-        == len(section.paragraphs)
-    ):
-        raise ValueError(f"{section.entry}: removing BOOKMARK would leave no paragraph")
-    if reject_section_definition and any(
-        node.tag in {f"{_HP}secPr", f"{_HP}colPr"}
-        for child in list(section.root)[
-            resolved.start_child : resolved.end_child + 1
-        ]
-        for node in child.iter()
-    ):
-        raise ValueError("BOOKMARK content removal would delete section definition")
-    _reject_intersecting_fields(resolved)
-    _reject_intersecting_non_field_ranges(resolved)
+    )
+    native_index = admission_index or build_native_admission_index(
+        section.root,
+        tuple(section.nodes),
+        section.order,
+    )
+    diagnostics = section.ordinary_fields.diagnostics
+    plan = plan_bookmark_removal(
+        entry=section.entry,
+        kind=ContentEntryKind.SECTION,
+        index=native_index,
+        target_begin=resolved.begin,
+        target_end=resolved.end,
+        bookmarks=native_candidates,
+        fields=section.ordinary_fields.occurrences,
+        field_pairing_error=(
+            "; ".join(map(str, diagnostics)) if diagnostics else None
+        ),
+        bookmark_topology_usable=True,
+        reject_whole_section=reject_whole_section,
+        reject_section_definition=reject_section_definition,
+    )
+    if plan.blockers:
+        raise ValueError("; ".join(blocker.detail[0] for blocker in plan.blockers))
+    return plan
 
 
 def _next_pairing_id(sections: list[_Section]) -> str:
@@ -767,15 +680,6 @@ def unwrap_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     package.entries[resolved.section.entry] = data
 
 
-def _is_descendant(candidate: BookmarkRegion, target: BookmarkRegion) -> bool:
-    ancestor = candidate.parent
-    while ancestor is not None:
-        if ancestor == target:
-            return True
-        ancestor = ancestor.parent
-    return False
-
-
 def _prune_to_markers(
     paragraph: etree._Element, markers: set[etree._Element]
 ) -> None:
@@ -810,46 +714,18 @@ def remove_bookmark_region(pkg: object, region: BookmarkRegion) -> None:
     """
     package = require_package(pkg)
     resolved, current = _fresh_region(package, region, require_removable=False)
+    plan = _validate_mutable_extent(
+        resolved,
+        reject_whole_section=True,
+        reject_section_definition=True,
+    )
+    removed_begins = set(plan.removed_begins)
     removed = {
         _region_key(item)
         for item in current
-        if item.region == region or _is_descendant(item.region, region)
+        if item.begin in removed_begins
     }
-    ancestors: set[tuple[str, str]] = set()
-    ancestor = region.parent
-    while ancestor is not None:
-        ancestors.add((ancestor.section, ancestor._pairing_id))
-        ancestor = ancestor.parent
-
-    # A region may share a boundary paragraph with the one it contains (S0-G), so
-    # deleting that paragraph can cut a marker belonging to a region we were not
-    # asked to remove and leave its partner orphaned.
-    collateral = sorted(
-        {
-            repr(other.region.name)
-            for other in current
-            if _region_key(other) not in removed | ancestors
-            and (_is_inside(resolved, other.begin) or _is_inside(resolved, other.end))
-        }
-    )
-    if collateral:
-        raise ValueError(
-            f"{region.section}: removing {region.name!r} would cut BOOKMARK markers "
-            f"outside it: {', '.join(collateral)}"
-        )
-
-    protected = {
-        marker
-        for item in current
-        if _region_key(item) in ancestors
-        for marker in (item.begin, item.end)
-        if _is_inside(resolved, marker)
-    }
-    _validate_mutable_extent(
-        resolved,
-        reject_whole_section=not protected,
-        reject_section_definition=True,
-    )
+    protected = set(plan.protected_markers)
     for child in list(resolved.section.root)[
         resolved.start_child : resolved.end_child + 1
     ]:

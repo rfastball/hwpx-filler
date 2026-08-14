@@ -2837,7 +2837,7 @@ def test_generate_surfaces_fill_notes(tmp_path):
         '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
         'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
         '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>{{공고명}}<hp:markpenBegin/>X</hp:t></hp:run>"
+        "<hp:run><hp:t>{{공고명}}<hp:markpenBegin/>X<hp:markpenEnd/></hp:t></hp:run>"
         '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
         '<hp:run><hp:ctrl><hp:fieldBegin name="추정가격"/></hp:ctrl></hp:run>'
         "<hp:run><hp:t>{{추정가격}}</hp:t></hp:run>"

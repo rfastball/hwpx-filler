@@ -450,7 +450,7 @@ def test_rows_carry_fill_precheck_warns(tmp_path):
     _write_raw(
         marker,
         '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:t>V<hp:markpenBegin/><hp:markpenEnd/></hp:t></hp:run>"
         '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>',
     )
     clean = tmp_path / "clean.hwpx"

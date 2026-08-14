@@ -867,7 +867,7 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
     marker = tp / "lib" / "marker.hwpx"
     write_hwpx_package(marker, _pkg(
         '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:t>V<hp:markpenBegin/><hp:markpenEnd/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
     ))
     ctrl.dispatch("refresh", {})
