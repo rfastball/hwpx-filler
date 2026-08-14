@@ -446,6 +446,12 @@ def test_unsupported_inline_object_blocks_fill_atomically():
     assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
     assert doc.to_bytes() == before
 
+    noop = FieldDocument(xml)
+    assert noop.set_field("계약명", "OLD") is True
+    assert noop.modified is False
+    assert noop.notes == []
+    assert noop.to_bytes() == before
+
 
 # ------------------------------------------------------- 사전 판정(#154 PR-2)
 def test_precheck_lists_mitigations_without_mutating():

@@ -1006,7 +1006,8 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         ),
         (
             _package(
-                _paragraph(_begin() + "<hp:t>A</hp:t>")
+                "<!--keep-->"
+                + _paragraph(_begin() + "<hp:t>A</hp:t>")
                 + _paragraph("<hp:t>B</hp:t>" + _end())
             ),
             "would leave no paragraph",

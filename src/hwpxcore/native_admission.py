@@ -358,12 +358,12 @@ def apply_field_fill(
     new_value: str,
 ) -> FieldFillMutation:
     """Apply exactly the plan used by inspection; never mutate a blocked pair."""
-    plan = plan_field_fill(index, occurrence)
-    if plan.blockers:
-        return FieldFillMutation(False, False, False, (), plan.blockers)
     texts = list(occurrence.texts)
     if texts and "".join("".join(text.itertext()) for text in texts) == new_value:
         return FieldFillMutation(True, False, False, (), ())
+    plan = plan_field_fill(index, occurrence)
+    if plan.blockers:
+        return FieldFillMutation(False, False, False, (), plan.blockers)
 
     modified = False
     structure_changed = False
@@ -604,7 +604,12 @@ def plan_bookmark_removal(
             BookmarkRemovalBlockerKind.NON_PARAGRAPH_EXTENT,
             f"{entry}: non-paragraph section child in BOOKMARK extent is unsupported",
         )
-    if reject_whole_section and start == 0 and stop + 1 == len(index.root) and not protected:
+    paragraph_count = len(index.root) - index.top_level_nonparagraph_prefix[-1]
+    removed_paragraphs = stop - start + 1 - (
+        index.top_level_nonparagraph_prefix[stop + 1]
+        - index.top_level_nonparagraph_prefix[start]
+    )
+    if reject_whole_section and paragraph_count == removed_paragraphs and not protected:
         block(
             BookmarkRemovalBlockerKind.WHOLE_SECTION,
             f"{entry}: removing BOOKMARK would leave no paragraph",
