@@ -777,6 +777,26 @@ def test_bookmark_removal_accepts_idless_field_wholly_inside_target() -> None:
     assert _paragraph_texts(pkg) == ["OUT"]
 
 
+@pytest.mark.parametrize(
+    "inline",
+    (
+        '<hp:insertBegin Id="2" TcId="3"/>IN<hp:insertEnd Id="2" TcId="3"/>',
+        '<hp:deleteBegin Id="4" TcId="5"/>IN<hp:deleteEnd Id="4" TcId="5"/>',
+    ),
+)
+def test_bookmark_removal_accepts_complete_protected_range_wholly_inside_target(
+    inline: str,
+) -> None:
+    pkg = _package(
+        _paragraph(_begin() + f"<hp:t>{inline}</hp:t>" + _end())
+        + _paragraph("<hp:t>OUT</hp:t>")
+    )
+
+    remove_bookmark_region(pkg, _region(pkg, "A"))
+
+    assert _paragraph_texts(pkg) == ["OUT"]
+
+
 def test_bookmark_removal_rejects_unusable_field_pairing_without_mutation() -> None:
     pkg = _package(
         _paragraph(_begin() + "<hp:t>IN</hp:t>" + _end())
@@ -986,7 +1006,8 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
         ),
         (
             _package(
-                _paragraph(_begin() + "<hp:t>A</hp:t>")
+                "<!--keep-->"
+                + _paragraph(_begin() + "<hp:t>A</hp:t>")
                 + _paragraph("<hp:t>B</hp:t>" + _end())
             ),
             "would leave no paragraph",

@@ -292,13 +292,14 @@ def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path)
 def test_generate_notes_inline_stripped(tmp_path):
     """인라인 요소 제거 채움 — 결과에 종류 명명 노트가 실린다(#154)."""
     tpl = _mini_template(
-        tmp_path, "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
+        tmp_path,
+        "<hp:run><hp:t>OLD<hp:markpenBegin/>X<hp:markpenEnd/></hp:t></hp:run>",
     )
     out = tmp_path / "out.hwpx"
     res = make_hwpx_engine().generate(str(tpl), {"계약명": "NEW"}, str(out))
     assert res.ok
     assert [(n.field, n.kind, n.detail) for n in res.notes] == [
-        ("계약명", "inline_stripped", ("markpenBegin",))
+        ("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
     ]
     from hwpxfiller.domain.fields import read_fields
 

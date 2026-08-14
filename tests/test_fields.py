@@ -316,7 +316,7 @@ def test_fragment_child_tail_is_erased_with_old_value():
     """파편 hp:t 의 자식 tail 도 구값 — 동일 값 재채움에서도 잔존하지 않는다(#154)."""
     xml = _field_xml(
         "<hp:run><hp:t>V</hp:t></hp:run>"
-        "<hp:run><hp:t><hp:markpenBegin/>FRAG</hp:t></hp:run>"
+        "<hp:run><hp:t><hp:markpenBegin/>FRAG<hp:markpenEnd/></hp:t></hp:run>"
     )
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "V") is True
@@ -381,18 +381,22 @@ def test_notes_dedupe_across_same_name_fields():
     """같은 이름 누름틀 여럿이 같은 완화를 받으면 노트는 한 건."""
     one = (
         '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>A<hp:markpenBegin/>B</hp:t></hp:run>"
+        "<hp:run><hp:t>A<hp:markpenBegin/>B<hp:markpenEnd/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
     )
     xml = (f"{_HDR}<hp:p>{one}</hp:p><hp:p>{one}</hp:p></hs:sec>").encode("utf-8")
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "값") is True
-    assert doc.notes == [FillNote("계약명", "inline_stripped", ("markpenBegin",))]
+    assert doc.notes == [
+        FillNote("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
+    ]
 
 
 def test_same_value_refill_with_harmless_child_is_noop():
     """이미 read_field == V 면 무연산(#95 바이트 안정) — 무해한 자식은 보존된다."""
-    xml = _field_xml('<hp:run><hp:t>계약A<hp:markpenBegin/></hp:t></hp:run>')
+    xml = _field_xml(
+        '<hp:run><hp:t>계약A<hp:markpenBegin/><hp:markpenEnd/></hp:t></hp:run>'
+    )
     doc = FieldDocument(xml)
     assert doc.read_field("계약명") == "계약A"
     assert doc.set_field("계약명", "계약A") is True  # 목표 상태 선판정
@@ -430,24 +434,35 @@ def test_partial_fill_emits_occurrence_note():
     assert doc.read_field("계약명") == "새값"
 
 
-def test_inline_stripped_detail_enumerates_subtree():
-    """detail 은 제거 하위트리 전체를 열거한다 — 최상위만 대면 손실 집합 과소 고지."""
+def test_unsupported_inline_object_blocks_fill_atomically():
+    """미지원 inline subtree는 추측해 지우지 않고 기입 전체를 막는다."""
     xml = _field_xml(
         "<hp:run><hp:t>OLD<hp:outer><hp:inner/></hp:outer></hp:t></hp:run>"
     )
     doc = FieldDocument(xml)
-    assert doc.set_field("계약명", "NEW") is True
-    assert doc.notes == [FillNote("계약명", "inline_stripped", ("inner", "outer"))]
+    before = doc.to_bytes()
+    assert doc.set_field("계약명", "NEW") is False
+    assert doc.modified is False
+    assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
+    assert doc.to_bytes() == before
+
+    noop = FieldDocument(xml)
+    assert noop.set_field("계약명", "OLD") is True
+    assert noop.modified is False
+    assert noop.notes == []
+    assert noop.to_bytes() == before
 
 
 # ------------------------------------------------------- 사전 판정(#154 PR-2)
 def test_precheck_lists_mitigations_without_mutating():
     """precheck 는 채움 완화를 사전 열거하되 문서를 일절 변형하지 않는다."""
-    xml = _field_xml("<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>")
+    xml = _field_xml(
+        "<hp:run><hp:t>OLD<hp:markpenBegin/>X<hp:markpenEnd/></hp:t></hp:run>"
+    )
     doc = FieldDocument(xml)
     before = doc.to_bytes()
     assert doc.precheck() == [
-        FillNote("계약명", "inline_stripped", ("markpenBegin",))
+        FillNote("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
     ]
     assert doc.to_bytes() == before  # 무변형
     assert doc.modified is False
@@ -484,14 +499,14 @@ def test_fill_precheck_walks_package_and_dedupes():
     pkg.stored.add(MIMETYPE_NAME)
     region = (
         '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>A<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:t>A<hp:markpenBegin/><hp:markpenEnd/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
     )
     sec = (f"{_HDR}<hp:p>{region}</hp:p></hs:sec>").encode("utf-8")
     pkg.entries["Contents/section0.xml"] = sec
     pkg.entries["Contents/section1.xml"] = sec  # 같은 사실 두 섹션 → 1회
     assert fill_precheck(pkg) == [
-        FillNote("계약명", "inline_stripped", ("markpenBegin",))
+        FillNote("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
     ]
 
 
@@ -561,7 +576,7 @@ def test_precheck_matches_post_notes_on_divergent_shapes():
     )
     marker = (
         '<hp:run><hp:ctrl><hp:fieldBegin name="마커"/></hp:ctrl></hp:run>'
-        "<hp:run><hp:t>A<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:t>A<hp:markpenBegin/><hp:markpenEnd/></hp:t></hp:run>"
         "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
     )
     xml = (
