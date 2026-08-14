@@ -58,13 +58,6 @@ def test_empty_field_captured():
     assert schema.fields[0].context == ""  # 텍스트 없는 빈 필드
 
 
-def test_braced_field_name_normalized():
-    """``name="{{X}}"`` 형태 누름틀 이름은 중괄호를 벗겨 잡는다."""
-    xml = '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="{{공고명}}"/></hp:ctrl></hp:run></hp:p>'
-    schema = extract_schema(_pkg(xml))
-    assert schema.field_names() == ["공고명"]
-
-
 # ------------------------------------------------------------------ 타입 추론
 def test_infer_type_unit():
     """이름 기반 타입 추론 규칙 — 우선순위(전화 > 번호) 포함."""

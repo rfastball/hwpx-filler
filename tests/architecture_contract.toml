@@ -11,9 +11,6 @@ schema = "architecture-contract/v1"
 "hwpxfiller.domain.schema" = [
   "lxml.etree",
 ]
-"hwpxfiller.domain.template_status" = [
-  "lxml.etree",
-]
 
 [public_surface]
 hwpxcore = [

@@ -16,18 +16,21 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from lxml import etree
 
 from hwpxcore.text_extract import (
     HP_NS,
+    extract_document,
+    iter_paragraph_texts,
     local_name,
     require_package,
     text_of_t,
-    extract_document,
-    iter_paragraph_texts,
 )
+from hwpxfiller.domain.authoring import scan_tokens
+from hwpxfiller.domain.fields import FieldDocument, normalize_field_id
 
 # -------------------------------------------------------------- 타입 추론 규칙
 # 필드 *이름* 의 부분 문자열로 의미 타입을 추정한다(한글 업무 문서 관용어 기반).
@@ -139,13 +142,6 @@ class TemplateSchema:
 
 
 # ------------------------------------------------------------- 필드 직속 추출
-def _clean_field_name(raw: object) -> str:
-    """``fieldBegin@name`` 정규화 — 공백 제거 + ``{{ }}`` 벗기기."""
-    if not isinstance(raw, str):
-        return ""
-    return raw.strip().replace("{{", "").replace("}}", "")
-
-
 def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
     """``hp:p`` 의 *직속* 텍스트와 필드명을 반환(중첩 ``hp:tbl`` 로 내려가지 않음).
 
@@ -168,8 +164,8 @@ def _paragraph_direct(p_el: etree._Element) -> "tuple[str, list[str]]":
                         local_name(c.tag) == "fieldBegin"
                         and c.get("type") != "BOOKMARK"
                     ):
-                        nm = _clean_field_name(c.get("name"))
-                        if nm and nm not in seen:
+                        nm = normalize_field_id(c.get("name"))
+                        if nm is not None and nm not in seen:
                             seen.add(nm)
                             names.append(nm)
             elif ln == "tab":
@@ -272,17 +268,67 @@ def extract_schema(pkg: object) -> TemplateSchema:
             if reg.field_names:
                 table_regions.append(reg)
 
-    # 미치환 {{}} 잔존 + 커버리지 원장은 문서 모델에서 파생.
+    # 미치환 {{}} 잔존: 평문 원장에서 ordinary Field 값 occurrence만 따로 분류한다.
+    # BOOKMARK/Slot 안의 평문은 Field 값으로 빼지 않아 계속 loud하게 남는다.
     doc = extract_document(pkg)
     real_names = set(order)
     stray: "list[str]" = []
     stray_seen: "set[str]" = set()
+
+    def append_stray(raw: object, *, include_real: bool = False) -> None:
+        token = normalize_field_id(raw)
+        if (
+            token is not None
+            and (include_real or token not in real_names)
+            and token not in stray_seen
+        ):
+            stray_seen.add(token)
+            stray.append(token)
+
+    # ponytail: 이름별 occurrence 원장; 위치 pairing은 #637 Boundary resolver가 소유한다.
+    outside_tokens: "Counter[str]" = Counter()
+    field_tokens: "Counter[str]" = Counter()
+    field_strays: "Counter[str]" = Counter()
+    for site in scan_tokens(pkg):
+        token = normalize_field_id(site.name)
+        if token is not None and not site.name.startswith("{{"):
+            outside_tokens[token] += 1
+            append_stray(token)
+
+    for name in pkg.content_xml_names():
+        for field_id, value in FieldDocument(pkg.entries[name]).field_values():
+            wrapped = value.strip()
+            self_placeholder = (
+                wrapped.startswith("{{")
+                and wrapped.endswith("}}")
+                and normalize_field_id(wrapped) == field_id
+            )
+            for match in _TOKEN_RE.finditer(value):
+                token = normalize_field_id(match.group(0))
+                if token is not None:
+                    field_tokens[token] += 1
+                    if not self_placeholder:
+                        field_strays[token] += 1
+
     for text in iter_paragraph_texts(doc):
-        for m in _TOKEN_RE.finditer(text):
-            tok = m.group(1).strip()
-            if tok and tok not in real_names and tok not in stray_seen:
-                stray_seen.add(tok)
-                stray.append(tok)
+        for match in _TOKEN_RE.finditer(text):
+            token = normalize_field_id(match.group(0))
+            if token is None:
+                continue
+            if outside_tokens[token]:
+                outside_tokens[token] -= 1
+            elif field_tokens[token]:
+                field_tokens[token] -= 1
+                if field_strays[token]:
+                    field_strays[token] -= 1
+                    append_stray(token, include_real=True)
+            else:
+                # 저작 스캐너도 ordinary 값 원장도 소유하지 않으면 BOOKMARK/Slot 평문.
+                append_stray(token, include_real=True)
+
+    for token, remaining in field_strays.items():
+        if remaining:
+            append_stray(token, include_real=True)
 
     return TemplateSchema(
         fields=[merged[n] for n in order],
