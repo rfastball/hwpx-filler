@@ -121,10 +121,15 @@ _PREP_STATES = frozenset(
     }
 )
 
-# PreparedChange 상태 — S3-04 는 PREPARED 를 읽고 SUPERSEDED 를 쓴다(나머지 전이는 S3-06 소유).
+# PreparedChange 상태 — S3-04 SUPERSEDED, S3-06 PREPARED, S3-07 apply 가 APPLIED/CONFLICTED/REJECTED.
 CHANGE_PREPARED = "PREPARED"
 CHANGE_SUPERSEDED = "SUPERSEDED"
-_CHANGE_STATES = frozenset({CHANGE_PREPARED, CHANGE_SUPERSEDED})
+CHANGE_APPLIED = "APPLIED"
+CHANGE_CONFLICTED = "CONFLICTED"
+CHANGE_REJECTED = "REJECTED"
+_CHANGE_STATES = frozenset(
+    {CHANGE_PREPARED, CHANGE_SUPERSEDED, CHANGE_APPLIED, CHANGE_CONFLICTED, CHANGE_REJECTED}
+)
 
 
 @dataclass(frozen=True)
@@ -187,11 +192,19 @@ class PreparedTemplateChange:
 
 @dataclass(frozen=True)
 class ApplyProvenance:
-    """apply transition 이 남기는 provenance 의 aggregate seam."""
+    """apply transition 의 audit 상세(S3-07). Application history 가 정본, 이건 감사용 부기다."""
 
     provenance_id: str
-    application_id: str
-    payload: Mapping[str, Any]
+    work_id: str
+    from_application_id: str
+    to_application_id: str
+    from_pass_evidence_id: str
+    to_pass_evidence_id: str
+    prepared_change_id: str
+    epoch_before: int
+    epoch_after: int
+    actor: str
+    applied_at: str
 
 
 @dataclass(frozen=True)
@@ -295,11 +308,21 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
     current_prep = aggregate.work.current_template_preparation_id
     if current_prep is not None and current_prep not in prep_ids:
         raise WorkTemplateStateError("current preparation pointer 가 dangling")
+    provenance_ids: set[str] = set()
     for prov in aggregate.apply_provenance:
-        if prov.application_id not in app_ids:
+        if prov.from_application_id not in app_ids or prov.to_application_id not in app_ids:
             raise WorkTemplateStateError(
                 f"provenance {prov.provenance_id} 가 없는 application 을 가리킨다"
             )
+        if prov.provenance_id in provenance_ids:
+            raise WorkTemplateStateError(f"provenance_id 중복 {prov.provenance_id}")
+        provenance_ids.add(prov.provenance_id)
+    # outbox event_id 유일성 — dispatcher 가 event_id 로 dedup 하므로 중복은 전달 유실을 부른다.
+    event_ids: set[str] = set()
+    for event in aggregate.outbox_events:
+        if event.event_id in event_ids:
+            raise WorkTemplateStateError(f"outbox event_id 중복 {event.event_id}")
+        event_ids.add(event.event_id)
 
 
 # ─── codec: 저장 어댑터가 쓰는 native-free dict ↔ 값 ──────────────────────────
@@ -422,8 +445,16 @@ def encode_aggregate(aggregate: WorkTemplateStateAggregate) -> dict[str, Any]:
         "apply_provenance": [
             {
                 "provenance_id": pr.provenance_id,
-                "application_id": pr.application_id,
-                "payload": dict(pr.payload),
+                "work_id": pr.work_id,
+                "from_application_id": pr.from_application_id,
+                "to_application_id": pr.to_application_id,
+                "from_pass_evidence_id": pr.from_pass_evidence_id,
+                "to_pass_evidence_id": pr.to_pass_evidence_id,
+                "prepared_change_id": pr.prepared_change_id,
+                "epoch_before": pr.epoch_before,
+                "epoch_after": pr.epoch_after,
+                "actor": pr.actor,
+                "applied_at": pr.applied_at,
             }
             for pr in aggregate.apply_provenance
         ],
@@ -463,8 +494,16 @@ def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
         apply_provenance=tuple(
             ApplyProvenance(
                 provenance_id=pr["provenance_id"],
-                application_id=pr["application_id"],
-                payload=copy.deepcopy(pr["payload"]),
+                work_id=pr["work_id"],
+                from_application_id=pr["from_application_id"],
+                to_application_id=pr["to_application_id"],
+                from_pass_evidence_id=pr["from_pass_evidence_id"],
+                to_pass_evidence_id=pr["to_pass_evidence_id"],
+                prepared_change_id=pr["prepared_change_id"],
+                epoch_before=pr["epoch_before"],
+                epoch_after=pr["epoch_after"],
+                actor=pr["actor"],
+                applied_at=pr["applied_at"],
             )
             for pr in data["apply_provenance"]
         ),

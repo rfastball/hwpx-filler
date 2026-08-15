@@ -491,6 +491,30 @@ def test_unknown_prepared_change_status_rejected():
         PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", "WAT", "t3")
 
 
+def test_duplicate_provenance_id_rejected():
+    p = ApplyProvenance("PR1", "W1", "A1", "A1", "EV", "EV", "C1", 1, 1, "a", "t")
+    with pytest.raises(WorkTemplateStateError, match="provenance_id 중복"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION, aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0), applications=(_app(),),
+            preparations=(), prepared_changes=(),
+            apply_provenance=(p, p), outbox_events=(),
+        )
+
+
+def test_duplicate_outbox_event_id_rejected():
+    from hwpxfiller.application.work_template_state import OutboxEvent
+
+    e = OutboxEvent("OB1", "template.change_applied", {})
+    with pytest.raises(WorkTemplateStateError, match="outbox event_id 중복"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION, aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0), applications=(_app(),),
+            preparations=(), prepared_changes=(), apply_provenance=(),
+            outbox_events=(e, e),
+        )
+
+
 def test_duplicate_prepared_change_id_rejected():
     from hwpxfiller.application.work_template_state import (
         CHANGE_PREPARED,
@@ -572,7 +596,9 @@ def test_dangling_provenance_reference_rejected():
             applications=(_app(),),
             preparations=(),
             prepared_changes=(),
-            apply_provenance=(ApplyProvenance("PR1", "GONE", {}),),
+            apply_provenance=(
+                ApplyProvenance("PR1", "W1", "GONE", "GONE", "EV", "EV", "C1", 1, 2, "a", "t"),
+            ),
             outbox_events=(),
         )
 
