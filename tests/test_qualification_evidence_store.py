@@ -26,6 +26,7 @@ from hwpxfiller.application.template_qualification import (
     TemplateStructure,
 )
 from hwpxfiller.external.qualification_store import (
+    InvalidObjectId,
     ObjectAlreadyExists,
     ObjectCorrupt,
     ObjectNotFound,
@@ -163,6 +164,43 @@ def test_read_detects_corrupted_evidence(tmp_path) -> None:
     path.write_text(json.dumps(tampered), "utf-8")
     with pytest.raises(ObjectCorrupt):
         store.get_evidence("EV1")
+
+
+def test_put_attempt_rejects_unstorable_evidence_id(tmp_path) -> None:
+    # PASS/FAIL attempt 가 저장 불가한 evidence_id 를 달면 put_attempt 에서 막는다 —
+    # 안 그러면 put_evidence 가 거절할 id 를 단 attempt 가 영구 dangling 으로 남는다.
+    store = QualificationObjectStore(tmp_path)
+    bad, _ = build_records(
+        TemplateQualificationPassed("R8", "prof-v1", STRUCTURE), **_record_args(evidence_id="ev/1")
+    )
+    with pytest.raises(InvalidObjectId):
+        store.put_attempt(bad)
+    assert not (tmp_path / "attempts").exists()
+
+
+def test_mutating_caller_payload_after_build_cannot_stale_stored_digest(tmp_path) -> None:
+    payload = {"rules": ["x"]}
+    manifest = build_manifest(
+        qualification_profile_id="prof-v1", media="hwpx", adapter_contract_version="a1",
+        product_rule_version="r1", operation_alphabet_version="o1",
+        projection_schema_version="proj-v1", manifest_payload=payload, created_at="t0",
+    )
+    payload["rules"].append("y")  # build 이후 caller 가 원본을 변이
+    store = QualificationObjectStore(tmp_path)
+    store.put_manifest(manifest)
+    assert store.get_manifest("prof-v1").manifest_payload == {"rules": ["x"]}  # 사본이 지킨다
+
+
+def test_idempotent_reput_over_corruption_is_loud(tmp_path) -> None:
+    store = QualificationObjectStore(tmp_path)
+    manifest = _manifest()
+    store.put_manifest(manifest)
+    path = tmp_path / "manifests" / "prof-v1.json"
+    env = json.loads(path.read_text("utf-8"))
+    env["content"]["media"] = "tampered"  # 봉투 digest 와 어긋나게
+    path.write_text(json.dumps(env), "utf-8")
+    with pytest.raises(ObjectCorrupt):  # 같은 identity 재저장이 손상을 조용히 통과시키지 않는다
+        store.put_manifest(manifest)
 
 
 def test_verify_runtime_profile_mismatch_is_loud() -> None:

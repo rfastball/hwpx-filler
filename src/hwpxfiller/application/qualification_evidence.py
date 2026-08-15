@@ -17,6 +17,7 @@ S2 의 :func:`~hwpxfiller.application.template_qualification.qualify_template` �
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from collections.abc import Mapping
@@ -111,6 +112,10 @@ def build_manifest(
     manifest_payload: Mapping[str, Any],
     created_at: str,
 ) -> QualificationProfileManifest:
+    # caller-owned payload 를 deep-copy 해 alias 를 끊는다 — frozen dataclass 는 attribute
+    # 재바인딩만 막고 nested mapping/list 는 못 막는다. 사본 위에서 digest 를 계산·보존해야
+    # build 이후 원본을 고쳐도 저장 digest 가 stale 해지지 않는다.
+    manifest_payload = copy.deepcopy(dict(manifest_payload))
     return QualificationProfileManifest(
         qualification_profile_id=qualification_profile_id,
         media=media,
@@ -225,6 +230,7 @@ def build_records(
 
     ATTEMPT ERROR 는 Evidence 없이 Attempt 만 낸다.
     """
+    engine_metadata = copy.deepcopy(dict(engine_metadata))  # caller alias 차단(build_manifest 동형)
     if isinstance(result, TemplateQualificationAttemptErrored):
         attempt = QualificationAttempt(
             attempt_id=attempt_id,

@@ -80,7 +80,7 @@ class QualificationObjectStore:
     def _put(self, kind: str, identity: str, content: dict) -> None:
         path = self._path(kind, identity)
         if path.exists():
-            existing = json.loads(path.read_text("utf-8")).get("content")
+            existing = self._get(kind, identity)  # 봉투 digest 검증을 지나 손상도 loud
             if existing != content:
                 raise ObjectAlreadyExists(
                     f"{kind}/{identity} 에 다른 payload 를 쓸 수 없다(create-once)"
@@ -132,6 +132,10 @@ class QualificationObjectStore:
 
     # ── Attempt ──────────────────────────────────────────────────────────
     def put_attempt(self, attempt: QualificationAttempt) -> None:
+        # evidence_id 도 파일명이 되므로 attempt 를 영속하기 전에 저장 가능성을 확인한다 —
+        # 안 그러면 put_evidence 가 거절할 id 를 단 attempt 가 dangling 으로 남는다.
+        if attempt.evidence_id is not None:
+            _require_id(attempt.evidence_id)
         self._put("attempts", attempt.attempt_id, encode_attempt(attempt))
 
     def get_attempt(self, attempt_id: str) -> QualificationAttempt:
