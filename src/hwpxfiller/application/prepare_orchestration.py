@@ -44,13 +44,16 @@ class DerivedStageIds:
     evidence_id: str
 
 
-def derive_stage_ids(preparation_id: str) -> DerivedStageIds:
-    # 접미사는 _SAFE_ID([A-Za-z0-9._-]) 안이라 store 파일명으로 쓸 수 있다.
+def derive_stage_ids(work_id: str, preparation_id: str) -> DerivedStageIds:
+    # preparation_id 는 Work aggregate 안에서만 유일하나 object store 는 전역이다 — 다른 Work 의
+    # 같은 preparation_id 가 서로의 stage object 를 덮지 않도록 work_id 로 namespace 한다.
+    # 접미사·구분자는 _SAFE_ID([A-Za-z0-9._-]) 안이라 store 파일명으로 쓸 수 있다.
+    prefix = f"{work_id}.{preparation_id}"
     return DerivedStageIds(
-        observation_id=f"{preparation_id}.obs",
-        revision_id=f"{preparation_id}.rev",
-        attempt_id=f"{preparation_id}.att",
-        evidence_id=f"{preparation_id}.ev",
+        observation_id=f"{prefix}.obs",
+        revision_id=f"{prefix}.rev",
+        attempt_id=f"{prefix}.att",
+        evidence_id=f"{prefix}.ev",
     )
 
 
@@ -96,6 +99,7 @@ def plan_capture_checkpoint(
     observation_id: str,
     revision_id: str,
     capture_failed: bool,
+    capture_error_reason: str | None,
     binding_changed: bool,
     completed_at: str,
 ) -> WorkTemplateStateAggregate:
@@ -109,9 +113,12 @@ def plan_capture_checkpoint(
             status=PREP_SOURCE_BINDING_CHANGED, completed_at=completed_at,
         )
     if capture_failed:
+        # 실패 사유를 diagnostics 로 durable 하게 남긴다 — 조용히 버리지 않고 재진술 가능하게.
         return _set_preparation(
             aggregate, preparation_id,
-            status=PREP_CAPTURE_ERROR, completed_at=completed_at,
+            status=PREP_CAPTURE_ERROR,
+            diagnostics=({"stage": "capture", "reason": capture_error_reason or "UNKNOWN"},),
+            completed_at=completed_at,
         )
     return _set_preparation(
         aggregate, preparation_id,

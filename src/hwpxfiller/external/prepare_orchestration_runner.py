@@ -7,9 +7,12 @@ durable 하게 쓰고, (2) exact bytes 를 S2 qualification 에 넘겨 Attempt/E
 :mod:`hwpxfiller.application.prepare_orchestration` 이 소유하고, 여기는 엔진(S3-02 capture·S2
 qualify)과 store 를 결선하는 어댑터다.
 
-stage object id 는 preparation_id 에서 결정론적으로 파생하므로 create-once store 가 stage 를
-최대 한 번 실행하고(중복 worker 차단), restart 뒤 recovery 는 같은 id 를 재계산해 durable 결과를
-찾는다 — capture·qualification 을 자동 재호출하지 않는다(S3 v1).
+이 어댑터는 **신뢰 경계**다 — caller 가 넘긴 binding·lineage·profile 을 실행 전에 Preparation 이
+서버에서 고정한 pin 과 대조하고, stage object id 는 (work_id, preparation_id)에서 결정론적으로
+파생한다. 그래서 create-once store 가 stage 를 최대 한 번 실행하고(중복 worker 차단), restart 뒤
+recovery 는 같은 id 를 재계산해 durable 결과를 찾는다 — capture·qualification 을 자동 재호출하지
+않는다(S3 v1). 비-CAPTURING/이미 attempt 붙은 Preparation 은 reader/inspector 를 **부르기 전에**
+short-circuit 한다.
 """
 
 from __future__ import annotations
@@ -17,11 +20,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from hwpxfiller.application.candidate_revision import (
-    SOURCE_BINDING_CHANGED,
     MutableSourceBinding,
     SourceCaptureError,
     TemplateLineage,
     TemplateSourceReader,
+    capture_candidate_revision,
 )
 from hwpxfiller.application.prepare_orchestration import (
     derive_stage_ids,
@@ -31,22 +34,22 @@ from hwpxfiller.application.prepare_orchestration import (
     plan_qualification_checkpoint,
     plan_recovery,
 )
-from hwpxfiller.application.candidate_revision import capture_candidate_revision
-from hwpxfiller.application.qualification_evidence import build_records
+from hwpxfiller.application.qualification_evidence import ERROR, build_records
 from hwpxfiller.application.template_qualification import (
     CandidateRevisionSnapshot,
     QualificationProfile,
     qualify_template,
 )
 from hwpxfiller.application.work_template_state import (
+    PREP_CAPTURING,
     PREP_QUALIFYING,
     DocumentWork,
     TemplateChangePreparation,
 )
 from .candidate_store import CandidateObjectStore
-from .qualification_store import ObjectNotFound as AttemptNotFound
+from .qualification_store import ObjectNotFound as QualObjectNotFound
 from .qualification_store import QualificationObjectStore
-from .work_template_store import AtomicWorkTemplateStateStore
+from .work_template_store import AtomicWorkTemplateStateStore, WorkTemplateStoreError
 
 
 def run_capture_stage(
@@ -63,7 +66,22 @@ def run_capture_stage(
     created_at: str,
 ) -> TemplateChangePreparation:
     """pinned binding 을 capture 해 Candidate 를 durable 하게 쓰고 capture checkpoint 를 전진시킨다."""
-    ids = derive_stage_ids(preparation_id)
+    aggregate = work_store.load(work_id)
+    prep = find_preparation(aggregate, preparation_id)
+    if prep.status != PREP_CAPTURING:
+        return prep  # 이미 전진했거나 terminal — reader 를 부르지 않는다(at-most-once)
+    # 신뢰 경계: caller 가 넘긴 source 를 Preparation 의 서버 pin 과 대조한다. 서로 정합해도
+    # pin 과 다르면 다른 source 를 이 Preparation 의 revision 으로 붙이는 것이라 거절한다.
+    if (
+        binding.source_binding_id != prep.source_binding_id
+        or binding.generation != prep.source_binding_generation
+        or lineage.template_lineage_id != aggregate.work.template_lineage_id
+    ):
+        raise WorkTemplateStoreError(
+            f"capture 입력이 Preparation {preparation_id} 의 pin 과 불일치"
+        )
+
+    ids = derive_stage_ids(work_id, preparation_id)
     result = capture_candidate_revision(
         lineage=lineage,
         binding=binding,
@@ -75,10 +93,8 @@ def run_capture_stage(
         captured_at=captured_at,
         created_at=created_at,
     )
-    binding_changed = (
-        isinstance(result, SourceCaptureError) and result.reason == SOURCE_BINDING_CHANGED
-    )
-    capture_failed = isinstance(result, SourceCaptureError) and not binding_changed
+    capture_failed = isinstance(result, SourceCaptureError)
+    reason = result.reason if isinstance(result, SourceCaptureError) else None
     with work_store.update(work_id) as txn:
         prep = find_preparation(txn.aggregate, preparation_id)
         # commit 시점 current binding 재확인 — capture window 동안 source 가 움직였으면 terminal.
@@ -89,8 +105,8 @@ def run_capture_stage(
             observation_id=ids.observation_id,
             revision_id=ids.revision_id,
             capture_failed=capture_failed,
-            binding_changed=binding_changed
-            or current_generation != prep.source_binding_generation,
+            capture_error_reason=reason,
+            binding_changed=current_generation != prep.source_binding_generation,
             completed_at=captured_at,
         )
     return find_preparation(work_store.load(work_id), preparation_id)
@@ -104,7 +120,6 @@ def run_qualification_stage(
     work_id: str,
     preparation_id: str,
     profile: QualificationProfile,
-    projection_schema_version: str,
     engine_metadata: dict,
     started_at: str,
     completed_at: str,
@@ -112,21 +127,28 @@ def run_qualification_stage(
 ) -> TemplateChangePreparation:
     """QUALIFYING Preparation 의 exact bytes 를 qualify 하고 Attempt/Evidence 를 durable 하게 쓴다."""
     prep = find_preparation(work_store.load(work_id), preparation_id)
-    if prep.status != PREP_QUALIFYING:
-        return prep  # capture 가 terminal/미완 → qualification 호출 0
+    # QUALIFYING 아니거나 이미 attempt 가 붙었으면(PASS checkpoint 뒤 중복 delivery 포함) 호출 0.
+    if prep.status != PREP_QUALIFYING or prep.attempt_id is not None:
+        return prep
+    # 신뢰 경계: runtime profile 과 그 projection schema 를 Preparation·Manifest pin 에 못박는다.
+    if profile.id != prep.qualification_profile_id:
+        raise WorkTemplateStoreError(
+            f"qualification profile 이 Preparation {preparation_id} 의 pin 과 불일치"
+        )
+    manifest = qualification_store.get_manifest(prep.qualification_profile_id)
 
     revision = candidate_store.get_revision(prep.revision_id)
     blob = candidate_store.get_blob(revision.exact_content_digest)
     result = qualify_template(
         CandidateRevisionSnapshot(prep.revision_id, blob.exact_bytes), profile
     )
-    ids = derive_stage_ids(preparation_id)
+    ids = derive_stage_ids(work_id, preparation_id)
     attempt, evidence = build_records(
         result,
         attempt_id=ids.attempt_id,
         preparation_id=preparation_id,
         evidence_id=ids.evidence_id,
-        projection_schema_version=projection_schema_version,
+        projection_schema_version=manifest.projection_schema_version,  # caller 값 대신 pin
         engine_metadata=engine_metadata,
         started_at=started_at,
         completed_at=completed_at,
@@ -156,21 +178,38 @@ def recover_preparation(
     completed_at: str,
 ) -> TemplateChangePreparation:
     """in-flight Preparation 을 durable Attempt 로 reconcile(없으면 INTERRUPTED). 재호출 없음."""
-    ids = derive_stage_ids(preparation_id)
-    try:
-        attempt = qualification_store.get_attempt(ids.attempt_id)
-    except AttemptNotFound:
-        attempt = None
+    ids = derive_stage_ids(work_id, preparation_id)
+    outcome, attempt_id, evidence_id = _durable_attempt_result(qualification_store, ids)
     with work_store.update(work_id) as txn:
         txn.aggregate = plan_recovery(
             txn.aggregate,
             preparation_id,
-            attempt_outcome=attempt.outcome if attempt is not None else None,
-            attempt_id=attempt.attempt_id if attempt is not None else None,
-            evidence_id=attempt.evidence_id if attempt is not None else None,
+            attempt_outcome=outcome,
+            attempt_id=attempt_id,
+            evidence_id=evidence_id,
             completed_at=completed_at,
         )
     return find_preparation(work_store.load(work_id), preparation_id)
+
+
+def _durable_attempt_result(qualification_store, ids):
+    """durable Attempt 를 읽되, PASS/FAIL 은 그 Evidence 가 실재할 때만 완료로 친다.
+
+    put_attempt 뒤 put_evidence 전에 죽으면 Attempt 만 있고 Evidence 가 없다 — 그때 evidence_id 를
+    checkpoint 에 복사하면 dangling reference 가 durable 해진다. 그래서 Evidence 미실재면 미완으로
+    보고(INTERRUPTED) 자동 재호출은 하지 않는다.
+    """
+    try:
+        attempt = qualification_store.get_attempt(ids.attempt_id)
+    except QualObjectNotFound:
+        return None, None, None
+    if attempt.outcome == ERROR:
+        return attempt.outcome, attempt.attempt_id, None
+    try:
+        qualification_store.get_evidence(attempt.evidence_id)
+    except QualObjectNotFound:
+        return None, None, None  # write window 미완 — 복원하지 않는다
+    return attempt.outcome, attempt.attempt_id, attempt.evidence_id
 
 
 def recover_session(

@@ -19,6 +19,7 @@ from .work_template_state import (
     CHANGE_PREPARED,
     CHANGE_SUPERSEDED,
     PREP_CAPTURING,
+    PREP_QUALIFYING,
     PREP_READY,
     PREP_SUPERSEDED,
     OutboxEvent,
@@ -27,7 +28,10 @@ from .work_template_state import (
     WorkTemplateStateAggregate,
 )
 
-_SUPERSEDABLE = frozenset({PREP_CAPTURING, PREP_READY})
+# 새 prepare intent 가 낮추는 pending 상태 — capture(CAPTURING)·qualify(QUALIFYING) in-flight 와
+# READY 를 supersede 한다. QUALIFYING 을 빠뜨리면 replaced intent 가 recovery 에서 계속 active 로
+# 취급된다(S3-05 가 QUALIFYING 을 in-flight 로 추가하며 함께 갱신).
+_SUPERSEDABLE = frozenset({PREP_CAPTURING, PREP_QUALIFYING, PREP_READY})
 
 # capture worker 를 부르는 durable 신호 — commit 과 원자적으로 outbox 에 남는다. post-commit
 # 콜백이 실패해도 이 record 가 생존해 dispatcher(후속 stage)가 재시도할 수 있다.

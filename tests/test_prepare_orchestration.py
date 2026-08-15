@@ -54,6 +54,7 @@ from hwpxfiller.external.qualification_store import (
 )
 from hwpxfiller.external.work_template_store import (
     AtomicWorkTemplateStateStore,
+    WorkTemplateStoreError,
     initialize_work,
     start_prepare,
 )
@@ -66,6 +67,7 @@ EXACT = b"HWPX exact bytes"
 DIGEST = blob_digest(EXACT)
 LINEAGE = TemplateLineage("LIN1", "hwpx", "SB1", GEN, "t0")
 BINDING = MutableSourceBinding("SB1", "hwpx", "C:/tpl.hwpx", {}, GEN)
+IDS = derive_stage_ids("W1", "P1")  # work-namespaced stage object id
 
 
 # ─── stub 엔진 port ───────────────────────────────────────────────────────────
@@ -160,10 +162,11 @@ def _capture(wstore, cstore, reader=_good_reader, gen=_gen):
     )
 
 
-def _qualify(wstore, cstore, qstore, outcome):
+def _qualify(wstore, cstore, qstore, outcome, profile=None):
     return run_qualification_stage(
-        wstore, cstore, qstore, work_id="W1", preparation_id="P1", profile=_profile(outcome),
-        projection_schema_version="proj-v1", engine_metadata={"engine": "hwpx"},
+        wstore, cstore, qstore, work_id="W1", preparation_id="P1",
+        profile=profile if profile is not None else _profile(outcome),
+        engine_metadata={"engine": "hwpx"},
         started_at="t5", completed_at="t6", qualified_at="t6",
     )
 
@@ -176,15 +179,14 @@ def _durable_attempt(qstore, outcome):
         TemplateQualificationPassed,
     )
 
-    ids = derive_stage_ids("P1")
     if outcome == "PASS":
-        res = TemplateQualificationPassed("P1.rev", PROF, TemplateStructure(("title",), ()))
+        res = TemplateQualificationPassed(IDS.revision_id, PROF, TemplateStructure(("title",), ()))
     elif outcome == "FAIL":
-        res = TemplateQualificationFailed("P1.rev", PROF, (TemplateDiagnostic("x", "y"),))
+        res = TemplateQualificationFailed(IDS.revision_id, PROF, (TemplateDiagnostic("x", "y"),))
     else:
-        res = TemplateQualificationAttemptErrored("P1.rev", PROF, "INSPECTION_ERROR")
+        res = TemplateQualificationAttemptErrored(IDS.revision_id, PROF, "INSPECTION_ERROR")
     attempt, evidence = build_records(
-        res, attempt_id=ids.attempt_id, preparation_id="P1", evidence_id=ids.evidence_id,
+        res, attempt_id=IDS.attempt_id, preparation_id="P1", evidence_id=IDS.evidence_id,
         projection_schema_version="proj-v1", engine_metadata={"e": "1"},
         started_at="t5", completed_at="t6", qualified_at="t6",
     )
@@ -199,13 +201,13 @@ def test_capture_success_then_pass_checkpoint(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path)
     cap = _capture(wstore, cstore)
     assert cap.status == PREP_QUALIFYING
-    assert cap.revision_id == "P1.rev" and cap.observation_id == "P1.obs"
+    assert cap.revision_id == IDS.revision_id and cap.observation_id == IDS.observation_id
     # object-first: aggregate 가 참조하는 revision 은 이미 durable
     cstore.get_revision(cap.revision_id)
     prep = _qualify(wstore, cstore, qstore, "PASS")
     assert prep.status == PREP_QUALIFYING  # PASS 는 admission 전까지 QUALIFYING checkpoint
-    assert prep.attempt_id == "P1.att" and prep.evidence_id == "P1.ev"
-    assert qstore.get_evidence("P1.ev").structure_projection is not None
+    assert prep.attempt_id == IDS.attempt_id and prep.evidence_id == IDS.evidence_id
+    assert qstore.get_evidence(IDS.evidence_id).structure_projection is not None
 
 
 def test_capture_success_then_fail_terminal(tmp_path):
@@ -213,7 +215,7 @@ def test_capture_success_then_fail_terminal(tmp_path):
     _capture(wstore, cstore)
     prep = _qualify(wstore, cstore, qstore, "FAIL")
     assert prep.status == PREP_QUALIFICATION_FAILED
-    assert qstore.get_evidence("P1.ev").result == "FAIL"
+    assert qstore.get_evidence(IDS.evidence_id).result == "FAIL"
 
 
 def test_capture_success_then_error_terminal_no_evidence(tmp_path):
@@ -223,7 +225,7 @@ def test_capture_success_then_error_terminal_no_evidence(tmp_path):
     assert prep.status == PREP_QUALIFICATION_ERROR
     assert prep.evidence_id is None
     with pytest.raises(QualObjectNotFound):
-        qstore.get_evidence("P1.ev")  # ERROR 는 Evidence 없음
+        qstore.get_evidence(IDS.evidence_id)  # ERROR 는 Evidence 없음
 
 
 def test_capture_error_skips_qualification(tmp_path):
@@ -233,7 +235,7 @@ def test_capture_error_skips_qualification(tmp_path):
     prep = _qualify(wstore, cstore, qstore, "PASS")  # QUALIFYING 아님 → 호출 0
     assert prep.status == PREP_CAPTURE_ERROR
     with pytest.raises(QualObjectNotFound):
-        qstore.get_attempt("P1.att")  # attempt 자체가 안 만들어짐
+        qstore.get_attempt(IDS.attempt_id)  # attempt 자체가 안 만들어짐
 
 
 # ─── crash window ─────────────────────────────────────────────────────────────
@@ -249,10 +251,9 @@ def test_revision_durable_before_attach_then_exit(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path)
     from hwpxfiller.application.candidate_revision import capture_candidate_revision
 
-    ids = derive_stage_ids("P1")
     capture_candidate_revision(
         lineage=LINEAGE, binding=BINDING, preparation_id="P1", reader=_good_reader,
-        store=cstore, observation_id=ids.observation_id, revision_id=ids.revision_id,
+        store=cstore, observation_id=IDS.observation_id, revision_id=IDS.revision_id,
         captured_at="t4", created_at="t4",
     )  # object durable, checkpoint 미commit → prep 여전히 CAPTURING
     assert find_preparation(wstore.load("W1"), "P1").status == PREP_CAPTURING
@@ -266,7 +267,7 @@ def test_pass_evidence_durable_before_admission_recovers_without_requalify(tmp_p
     _durable_attempt(qstore, "PASS")  # Attempt/Evidence durable, checkpoint 미commit
     prep = recover_preparation(wstore, qstore, work_id="W1", preparation_id="P1", completed_at="t9")
     assert prep.status == PREP_QUALIFYING  # PASS checkpoint 복원(재qualify 없음)
-    assert prep.attempt_id == "P1.att" and prep.evidence_id == "P1.ev"
+    assert prep.attempt_id == IDS.attempt_id and prep.evidence_id == IDS.evidence_id
 
 
 def test_fail_evidence_durable_before_commit_reconciles_fail(tmp_path):
@@ -312,7 +313,7 @@ def test_duplicate_capture_worker_runs_stage_at_most_once(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path)
     first = _capture(wstore, cstore)
     second = _capture(wstore, cstore)  # 중복 worker
-    assert first.revision_id == second.revision_id == "P1.rev"
+    assert first.revision_id == second.revision_id == IDS.revision_id
     assert second.status == PREP_QUALIFYING  # 두 번째는 no-op(create-once + CAPTURING 아님)
 
 
@@ -333,10 +334,21 @@ def test_capture_checkpoint_binding_change_beats_capture_success(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path)
     agg = wstore.load("W1")
     out = plan_capture_checkpoint(
-        agg, "P1", observation_id="P1.obs", revision_id="P1.rev",
-        capture_failed=False, binding_changed=True, completed_at="t4",
+        agg, "P1", observation_id=IDS.observation_id, revision_id=IDS.revision_id,
+        capture_failed=False, capture_error_reason=None, binding_changed=True, completed_at="t4",
     )
     assert find_preparation(out, "P1").status == PREP_SOURCE_BINDING_CHANGED
+
+
+def test_capture_checkpoint_noop_when_not_capturing(tmp_path):
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)  # P1 → QUALIFYING (더는 CAPTURING 아님)
+    agg = wstore.load("W1")
+    out = plan_capture_checkpoint(
+        agg, "P1", observation_id=IDS.observation_id, revision_id=IDS.revision_id,
+        capture_failed=False, capture_error_reason=None, binding_changed=False, completed_at="t4",
+    )
+    assert out is agg  # 중복 capture checkpoint 금지(no-op)
 
 
 def test_recovery_noop_on_terminal_preparation(tmp_path):
@@ -363,7 +375,7 @@ def test_qualification_checkpoint_noop_when_not_qualifying(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path)  # P1 은 CAPTURING(아직 QUALIFYING 아님)
     agg = wstore.load("W1")
     out = plan_qualification_checkpoint(
-        agg, "P1", outcome="PASS", attempt_id="P1.att", evidence_id="P1.ev", completed_at="t6"
+        agg, "P1", outcome="PASS", attempt_id=IDS.attempt_id, evidence_id=IDS.evidence_id, completed_at="t6"
     )
     assert out is agg  # QUALIFYING 아니면 no-op
 
@@ -374,3 +386,98 @@ def test_in_flight_excludes_same_session(tmp_path):
     wstore, cstore, qstore = _capturing_work(tmp_path, session="CUR")  # CAPTURING in-flight
     assert in_flight_preparations(wstore.load("W1"), "CUR") == ()  # 같은 session 제외
     assert len(in_flight_preparations(wstore.load("W1"), "OTHER")) == 1
+
+
+# ─── Codex 라운드1 반영: 신뢰 경계·무결성 ─────────────────────────────────────
+
+def test_capture_input_not_matching_pin_is_rejected(tmp_path):
+    # 서로 정합하지만 Preparation pin 과 다른 binding → 거절(다른 source 를 revision 으로 붙이지 않음).
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    other = MutableSourceBinding("SB-OTHER", "hwpx", "C:/x.hwpx", {}, GEN)
+    other_lineage = TemplateLineage("LIN1", "hwpx", "SB-OTHER", GEN, "t0")
+    with pytest.raises(WorkTemplateStoreError, match="pin 과 불일치"):
+        run_capture_stage(
+            wstore, cstore, work_id="W1", preparation_id="P1", lineage=other_lineage,
+            binding=other, reader=_good_reader, resolve_current_generation=_gen,
+            captured_at="t4", created_at="t4",
+        )
+
+
+def test_qualification_profile_not_matching_pin_is_rejected(tmp_path):
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)
+    wrong = QualificationProfile("prof-OTHER", lambda _b: QualificationInspection(TemplateStructure(), ()))
+    with pytest.raises(WorkTemplateStoreError, match="pin 과 불일치"):
+        _qualify(wstore, cstore, qstore, "PASS", profile=wrong)
+
+
+def test_projection_schema_version_comes_from_manifest(tmp_path):
+    # caller 는 projection_schema_version 을 넣지 못한다 — Manifest pin(proj-v1)이 Evidence 에 실린다.
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)
+    _qualify(wstore, cstore, qstore, "PASS")
+    ev = qstore.get_evidence(IDS.evidence_id)
+    assert ev.structure_projection.projection_schema_version == "proj-v1"
+
+
+def test_duplicate_qualify_after_pass_does_not_rerun(tmp_path):
+    # PASS checkpoint 뒤(status QUALIFYING·attempt_id 붙음) 중복 delivery 는 inspector 를 다시 안 돈다.
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)
+    calls = []
+
+    def counting(_bytes):
+        calls.append(1)
+        return QualificationInspection(TemplateStructure(("title",), ()), ())
+
+    prof = QualificationProfile(PROF, counting)
+    _qualify(wstore, cstore, qstore, "PASS", profile=prof)
+    again = _qualify(wstore, cstore, qstore, "PASS", profile=prof)  # 중복
+    assert len(calls) == 1  # inspector 최대 1회
+    assert again.attempt_id == IDS.attempt_id
+
+
+def test_capture_error_reason_is_preserved(tmp_path):
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    cap = _capture(wstore, cstore, reader=_failing_reader)  # READER_BOOM
+    assert cap.status == PREP_CAPTURE_ERROR
+    assert cap.diagnostics and cap.diagnostics[0]["reason"] == "READER_BOOM"
+
+
+def test_recovery_interrupted_when_evidence_not_durable(tmp_path):
+    # put_attempt 뒤 put_evidence 전 crash → PASS Attempt 만 durable. dangling evidence 복원 금지.
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)
+    from hwpxfiller.application.template_qualification import TemplateQualificationPassed
+
+    res = TemplateQualificationPassed(IDS.revision_id, PROF, TemplateStructure(("title",), ()))
+    attempt, _ = build_records(
+        res, attempt_id=IDS.attempt_id, preparation_id="P1", evidence_id=IDS.evidence_id,
+        projection_schema_version="proj-v1", engine_metadata={"e": "1"},
+        started_at="t5", completed_at="t6", qualified_at="t6",
+    )
+    qstore.put_attempt(attempt)  # Evidence 는 일부러 저장하지 않음
+    prep = recover_preparation(wstore, qstore, work_id="W1", preparation_id="P1", completed_at="t9")
+    assert prep.status == PREP_INTERRUPTED  # dangling evidence 를 복원하지 않는다
+    assert prep.evidence_id is None
+
+
+def test_two_works_same_preparation_id_do_not_collide(tmp_path):
+    # 서로 다른 Work 가 같은 preparation_id "P1" 을 써도 stage object 가 충돌하지 않는다(work namespace).
+    ids_w1 = derive_stage_ids("W1", "P1")
+    ids_w2 = derive_stage_ids("W2", "P1")
+    assert ids_w1.revision_id != ids_w2.revision_id
+    assert ids_w1.attempt_id != ids_w2.attempt_id
+
+
+def test_qualifying_preparation_is_superseded_by_new_prepare(tmp_path):
+    # capture 뒤(QUALIFYING) 새 prepare 가 오면 이전 intent 는 SUPERSEDED 여야 한다(_SUPERSEDABLE).
+    wstore, cstore, qstore = _capturing_work(tmp_path)
+    _capture(wstore, cstore)  # P1 → QUALIFYING
+    assert find_preparation(wstore.load("W1"), "P1").status == PREP_QUALIFYING
+    start_prepare(
+        wstore, work_id="W1", prepare_request_id="RQ2", actor="t",
+        resolve_pins=lambda _w: PreparePins("SB1", GEN, PROF),
+        preparation_id="P2", execution_session_id="SESS1", started_at="t7",
+    )
+    assert find_preparation(wstore.load("W1"), "P1").status == PREP_SUPERSEDED
