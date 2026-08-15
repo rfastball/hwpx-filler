@@ -83,16 +83,36 @@ class WorkTemplateApplication:
                 raise WorkTemplateStateError("PREPARED_CHANGE 는 previous 가 필수다")
 
 
-# ─── Preparation 상태 어휘 (S3-04) ────────────────────────────────────────────
-# in-flight/READY 는 새 prepare intent 가 supersede 하고, terminal history 는 보존한다.
+# ─── Preparation 상태 어휘 (S3-04·S3-05) ──────────────────────────────────────
+# in-flight(CAPTURING/QUALIFYING)/READY 는 새 prepare intent 가 supersede 하고, terminal 은 보존.
 PREP_CAPTURING = "CAPTURING"
+PREP_QUALIFYING = "QUALIFYING"  # S3-05: capture 성공 후 qualification 진행
 PREP_READY = "READY"
 PREP_SUPERSEDED = "SUPERSEDED"
 PREP_APPLIED = "APPLIED"
 PREP_CONFLICTED = "CONFLICTED"
 PREP_REJECTED = "REJECTED"
+# S3-05 terminal 결과(더는 진행하지 않는다):
+PREP_CAPTURE_ERROR = "CAPTURE_ERROR"
+PREP_SOURCE_BINDING_CHANGED = "SOURCE_BINDING_CHANGED"
+PREP_QUALIFICATION_FAILED = "QUALIFICATION_FAILED"
+PREP_QUALIFICATION_ERROR = "QUALIFICATION_ERROR"
+PREP_INTERRUPTED = "INTERRUPTED"  # process 종료로 stage 가 미완 — 자동 재호출 안 함
 _PREP_STATES = frozenset(
-    {PREP_CAPTURING, PREP_READY, PREP_SUPERSEDED, PREP_APPLIED, PREP_CONFLICTED, PREP_REJECTED}
+    {
+        PREP_CAPTURING,
+        PREP_QUALIFYING,
+        PREP_READY,
+        PREP_SUPERSEDED,
+        PREP_APPLIED,
+        PREP_CONFLICTED,
+        PREP_REJECTED,
+        PREP_CAPTURE_ERROR,
+        PREP_SOURCE_BINDING_CHANGED,
+        PREP_QUALIFICATION_FAILED,
+        PREP_QUALIFICATION_ERROR,
+        PREP_INTERRUPTED,
+    }
 )
 
 # PreparedChange 상태 — S3-04 는 PREPARED 를 읽고 SUPERSEDED 를 쓴다(나머지 전이는 S3-06 소유).
