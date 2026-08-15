@@ -26,6 +26,7 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp.screen_job import JobController
+from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -4652,3 +4653,55 @@ def test_preview_open_at_restores_the_same_position_with_clamp(tmp_path):
     ctrl.dispatch("preview_close", {})
     ctrl.dispatch("preview_open", {})
     assert ctrl.snapshot()["preview"]["pos"] == 0               # 무인자 = 종전 거동(첫 행)
+
+
+# ─── 템플릿 변경 확인·적용 배선(S3-09 #659) — 판정은 코디네이터 테스트가 소유 ───
+
+
+def _template_change_controller(tmp_path):
+    """공용 `_controller` + 실 코디네이터 주입 — 존·동사의 **배선**만 잰다."""
+    reg = _registry(tmp_path)
+    coordinator = TemplateChangeCoordinator(
+        reg, root=tmp_path / "authority", clock=_clock()
+    )
+    pushes: list = []
+    ctrl = JobController(
+        reg, lambda s, snap: pushes.append((s, snap)),
+        clock=_clock(),
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
+        engine=make_hwpx_engine(),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=threading.Lock(),
+        file_source_factory=source_for_path,
+        pool_source_factory=source_from_pool_item,
+        template_change=coordinator,
+    )
+    return ctrl, pushes
+
+
+def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
+    ctrl, pushes = _template_change_controller(tmp_path)
+    # 작업 미선택 — 존은 부재가 아니라 명시적 unsupported 다(분기별 키 동형).
+    assert ctrl.snapshot()["template_change"]["supported"] is False
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    zone = ctrl.snapshot()["template_change"]
+    assert zone["supported"] is True and zone["checkable"] is True
+    result = ctrl.dispatch("template_check", {"request_id": "k1"})
+    assert result["ok"] is True
+    assert result["preparation"]["status"] == "no_change"
+    # 비-query 동사라 push 가 일어나 존이 최신 Preparation 을 실었다.
+    assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
+    # 개명이 권위 인덱스를 추종한다 — epoch 이 살아 있으면 재-bootstrap 이 아니다.
+    ctrl.dispatch("rename_job", {"name": "공고서", "new": "공고서갱신"})
+    assert ctrl.snapshot()["template_change"]["epoch"] == 1
+
+
+def test_template_change_without_assembly_is_loud_not_silent(tmp_path):
+    ctrl, _ = _controller(tmp_path)  # 미주입(테스트·CLI 소비자 기본)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["template_change"]["supported"] is False
+    with pytest.raises(ValueError):
+        ctrl.dispatch("template_check", {"request_id": "k1"})
+    with pytest.raises(ValueError):
+        ctrl.dispatch("template_apply", {"change_token": "tok"})

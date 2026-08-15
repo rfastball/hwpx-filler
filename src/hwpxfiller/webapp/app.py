@@ -44,6 +44,7 @@ from ..external.job_store import JobRegistry
 from ..host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
+    default_template_authority_dir,
     default_templates_dir,
     default_text_templates_dir,
 )
@@ -66,6 +67,7 @@ from ..host.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_library import LibraryController
 from .screen_job import JobController
+from .template_change import TemplateChangeCoordinator
 from .screen_pool import PoolController
 from .screen_template import TemplateController
 from .screen_workbench import TargetFontSetting, WorkbenchController
@@ -233,7 +235,12 @@ class WebFrontend:
                           file_source_factory=source_for_path,
                           pool_source_factory=source_from_pool_item,
                           existing_outputs=existing_output_paths,
-                          ensure_output_dir=ensure_output_directory),
+                          ensure_output_dir=ensure_output_directory,
+                          template_change=TemplateChangeCoordinator(
+                              job_registry,
+                              root=default_template_authority_dir(),
+                              clock=datetime.now,
+                          )),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups

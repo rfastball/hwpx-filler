@@ -126,6 +126,7 @@ from ..gui.work_candidates import (
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
+from .template_change import unsupported_zone
 from .job_list import drift_note
 from ..external.settings import recollapse_job_group
 from .data_zone import (
@@ -267,11 +268,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         pool_source_factory: PoolSourceFactoryPort,
         existing_outputs: Callable[[str, list[str]], list[str]],
         ensure_output_dir: Callable[[str], None],
+        template_change=None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
         self._engine = engine
+        # 템플릿 변경 확인·적용 코디네이터(S3-09 #659) — 조립은 webapp.app 이 한다.
+        # opaque token·bootstrap·S3 스토어 소유는 전부 저쪽이고 이 컨트롤러는 세션의
+        # 현재 작업 이름을 붙여 관통만 한다(판정을 링2 에서 재조립하지 않는다).
+        # 미주입(None)이면 존은 unsupported·동사는 loud 거절 — text_registry 선례(위)와
+        # 같은 이유로 무관 테스트·CLI 소비자에 S3 스토어 조립을 물리지 않는다.
+        self._template_change = template_change
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
@@ -1327,6 +1335,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["browse"] = self._browse_payload(jobs)
         # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
         base["range_draft"] = self._range_draft_payload()
+        # 템플릿 변경 존(S3-09) 기본값 — TXT·미상·미선택은 명시적 unsupported(키 부재 분기
+        # 금지). hwpx 분기가 실제 capability·현재 Preparation 으로 덮어쓴다.
+        base["template_change"] = unsupported_zone()
         if self.job_is_txt:
             # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
             # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
@@ -1504,6 +1515,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 문안은 `_template_conn` 단일 출처이고, 이 축이 **재연결 도달 보장**을 진다
         # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
         tmissing, tconn = _template_conn(job.template_path)
+        # 템플릿 변경 존(S3-09) — 판정·token·epoch 전부 코디네이터 소유(링2 재조립 금지).
+        if self._template_change is not None:
+            base["template_change"] = self._template_change.zone(self.job_name, "hwpx", tmissing)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -2029,6 +2043,33 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             res["restated"] = "템플릿을 다시 연결했습니다."
         return res
 
+    def _do_template_check(self, p: dict) -> dict:
+        """[변경사항 확인](S3-09) — 현재 작업 템플릿 원본을 capture·검사해 종결 상태로 닫는다.
+
+        요청 키(``request_id``)는 사용자 prepare intent 의 재전송 단위다 — 같은 키 재전송은
+        같은 Preparation 을 돌려주고(중복 클릭), 새로 확인하려는 명시적 행동만 새 키를 만든다
+        (웹 소유). work 식별·bootstrap·token 발급은 전부 코디네이터가 소유한다.
+        """
+        if self._template_change is None:
+            raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
+        if not self.job_name:
+            raise ValueError("먼저 작업을 선택하세요")
+        return self._template_change.check(self.job_name, str(p.get("request_id", "")))
+
+    def _do_template_apply(self, p: dict) -> dict:
+        """[변경사항 적용](S3-09) — opaque change token 하나로 원자 적용을 요청한다.
+
+        진행 중 런과 겹치면 거절한다(재연결과 같은 부류) — 적용은 durable 권위 전환이고
+        결과 재진술이 진행 중 배치와 섞이면 안 된다. cross-Work token·stale token 은
+        코디네이터가 Work 무변경으로 거절한다.
+        """
+        if self._template_change is None:
+            raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
+        if not self.job_name:
+            raise ValueError("먼저 작업을 선택하세요")
+        self.raise_if_generating("템플릿 변경사항을 적용하세요")
+        return self._template_change.apply(self.job_name, str(p.get("change_token", "")))
+
     # ----------------------------------- 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
     # 좌 목록이 죽어도(F2 PR-B) 아래 넷은 남는다: 열린 세션의 정체(``job_name``·VM)와 결속돼
     # 있어 여기가 계속 소유하고, 「문서 작업」 상세·그룹 헤더가 **교차 화면 dispatch** 로
@@ -2056,6 +2097,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 결과가 남의 것으로 판정돼 복구 행동이 사라지고 강등 문구가 거짓말을 한다.
         if self._last_run_job == name:
             self._last_run_job = new_clean
+        # 템플릿 권위 인덱스(S3-09)도 같은 전이에서 추종한다 — 안 따라가면 개명 뒤 첫
+        # 확인이 새 Work 로 조용히 재-bootstrap 되어 적용 이력(epoch)이 소실된다.
+        if self._template_change is not None:
+            self._template_change.on_job_renamed(name, new_clean)
         return {"ok": True}
 
     # (close_guard_reason 은 U2 §2.9(#344)에서 사망 — 창 닫기는 명시적 종료 선언이고 진행

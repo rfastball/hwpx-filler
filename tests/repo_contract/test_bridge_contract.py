@@ -6,6 +6,7 @@ import re
 
 import gen_bridge_contract as gen
 from _web_source import source_text
+from hwpxfiller.application import template_change_product
 from hwpxfiller.webapp import product_api
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
 from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY, WebFrontend
@@ -91,6 +92,12 @@ def test_generated_bridge_contract_matches_independent_public_boundaries() -> No
             if name.startswith("CODE_") and isinstance(value, str)
         ],
         "JS_PRODUCT_ERROR_CODES": _js_error_codes(),
+        # 템플릿 변경 status 어휘(S3-09) — 정본 튜플과의 동치. 웹이 내부 어휘를 직접 보지
+        # 않는 opaque 계약이라, 이 배열이 곧 웹에 허용된 status 전집이다.
+        "TEMPLATE_PREPARATION_STATUSES": list(
+            template_change_product.PRODUCT_PREPARATION_STATUSES
+        ),
+        "TEMPLATE_APPLY_STATUSES": list(template_change_product.PRODUCT_APPLY_STATUSES),
         "HOST_METHODS": [
             name
             for name, value in vars(WebFrontend).items()

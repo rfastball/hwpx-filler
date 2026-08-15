@@ -124,12 +124,18 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
 
 type UiState = { log: readonly string[]; logOpen: boolean };
 
+type TemplateChangeUi = { inFlight: boolean; requestId: string | null; notice: string };
+
 export function createJobRunController(deps: JobRunControllerDeps) {
   const model = deps.runtime.model<JobScreenModel>("job");
   const nextToken = createTokenFactory();
 
   let run: JobRunState = initialRunState();
   let ui: UiState = { log: [], logOpen: false };
+  /* 템플릿 변경 확인·적용(S3-09)의 화면 local 상태 — 진행 여부·요청 키·적용 재진술.
+     요청 키는 prepare intent 의 재전송 단위다: 진행 중 중복 클릭은 무시(한 요청으로 수렴),
+     전송 실패로 남은 키는 다음 클릭이 **같은 키로 재전송**, 성공 뒤 클릭만 새 키(=새 intent). */
+  let tpl: TemplateChangeUi = { inFlight: false, requestId: null, notice: "" };
   const listeners = new Set<Listener>();
   let attached: { onFull(s: unknown): void; onProgress(p: unknown): void } | null = null;
   let releaseModel: (() => void) | null = null;
@@ -138,6 +144,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
 
   function emit(): void { for (const listener of [...listeners]) listener(); }
   function setRun(next: JobRunState): void { run = next; emit(); }
+  function setTpl(next: TemplateChangeUi): void { tpl = next; emit(); }
 
   /** 실행 기록 — 이 화면의 유일한 비모달 사건 채널이라 실패가 여기로 착지한다. */
   function log(message: string): void {
@@ -369,6 +376,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     },
     getRun: (): JobRunState => run,
     getUi: (): UiState => ui,
+    getTemplateChange: (): TemplateChangeUi => tpl,
 
     /* 순수 합성기 — 실앱 게이트가 산출을 되읽는다(이름째 표면에 남는 이유). */
     overwriteBody, guardBody, resultExitLine,
@@ -440,6 +448,30 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     relinkActive(): void {
       const s = snapshot();
       if (s && s.job_name) void deps.ports.jobRelinkFlow.current().relinkTemplateFor(String(s.job_name));
+    },
+    /* ---- 템플릿 변경 확인·적용(S3-09) — 판정·token 발급은 Python, 여기는 재전송 규율만 ---- */
+    async templateCheck(): Promise<void> {
+      if (tpl.inFlight) return; // 중복 클릭 = 진행 중인 같은 요청으로 수렴(새 intent 아님)
+      const requestId = tpl.requestId ?? newTplRequestId();
+      setTpl({ inFlight: true, requestId, notice: "" });
+      try {
+        await dispatch("template_check", { request_id: requestId });
+        setTpl({ inFlight: false, requestId: null, notice: "" }); // 성공 — 다음 클릭은 새 intent
+      } catch (error) {
+        setTpl({ ...tpl, inFlight: false }); // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송
+        log(`변경사항 확인에 실패했습니다: ${String(error)}`);
+      }
+    },
+    async templateApply(token: string): Promise<void> {
+      if (tpl.inFlight) return;
+      setTpl({ ...tpl, inFlight: true });
+      try {
+        const res = await dispatch("template_apply", { change_token: token });
+        setTpl({ inFlight: false, requestId: null, notice: applyNotice(res) });
+      } catch (error) {
+        setTpl({ ...tpl, inFlight: false });
+        log(`변경사항 적용에 실패했습니다: ${String(error)}`);
+      }
     },
     openPreviewFrom(trigger: HTMLElement | null): void {
       previewTrigger = trigger;
@@ -742,4 +774,104 @@ export function JobStatusPill(props: { controller: JobRunController }): ReactNod
 /** 생성 준비 캡션 — 하는 일을 따라간다(TXT 는 파일을 만들지 않는다). */
 export function JobRunCap(props: { controller: JobRunController }): ReactNode {
   return isCopyWork(useRunSnapshot(props.controller)) ? "복사 준비" : "생성 준비";
+}
+
+/* ------------------------------------------------------------------ 템플릿 변경(S3-09) */
+
+/** prepare intent 재전송 키 — Python 이 `[A-Za-z0-9._-]{1,64}` 로 fail-closed 검증한다. */
+function newTplRequestId(): string {
+  return `r${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** 제품 status → 상태 문안. 정본 어휘는 contract.gen.ts 의 TEMPLATE_PREPARATION_STATUSES —
+ *  표에 없는 status 는 조용히 비우지 않고 원문을 그대로 보인다(조용한 폴백 금지). */
+const TPL_STATUS_COPY: Record<string, string> = {
+  checking: "변경사항을 확인하는 중입니다…",
+  ready: "적용할 수 있는 변경사항이 있습니다.",
+  no_change: "변경사항이 없습니다 — 지금 템플릿이 이미 적용된 상태입니다.",
+  invalid: "변경된 템플릿이 검사를 통과하지 못했습니다. 기존 템플릿이 계속 사용됩니다.",
+  error: "확인 중 오류가 났습니다. 다시 확인해 주세요.",
+  interrupted: "확인이 끝나기 전에 중단되었습니다. 다시 확인해 주세요.",
+  source_changed: "확인하는 동안 템플릿 연결이 바뀌었습니다.",
+  changed_while_checking: "확인하는 동안 작업의 템플릿 상태가 바뀌었습니다.",
+  superseded: "새 확인이 시작되어 이 결과는 대체되었습니다.",
+  applied: "확인한 변경사항이 현재 작업에 적용되어 있습니다.",
+  conflict: "확인 이후 작업 상태가 바뀌어 이 변경사항은 적용할 수 없습니다.",
+  rejected: "이 변경사항은 더 이상 적용할 수 없습니다.",
+};
+
+/** FAIL(invalid)과 오류·중단·대체를 다른 행동 문구로 가른다 — 재확인 라벨이 그 분리다. */
+const TPL_RECHECK_LABEL: Record<string, string> = {
+  error: "다시 확인",
+  interrupted: "다시 확인",
+  conflict: "현재 상태로 다시 확인",
+  superseded: "현재 상태로 다시 확인",
+  source_changed: "현재 상태로 다시 확인",
+  changed_while_checking: "현재 상태로 다시 확인",
+};
+
+/** 적용 결과 한 줄 재진술 — TemplateApplyStatus 전집. rollback 경로는 없다(#659). */
+export function applyNotice(res: Obj): string {
+  switch (String(res.status || "")) {
+    case "applied": return "변경사항을 적용했습니다.";
+    case "already_applied": return "이미 적용되어 있는 변경사항입니다.";
+    case "applied_then_advanced":
+      return "이 변경사항은 적용된 뒤 다른 적용이 이어졌습니다. 현재 상태로 다시 확인하세요.";
+    case "conflict": return "확인 이후 작업 상태가 바뀌어 적용하지 못했습니다. 현재 상태로 다시 확인하세요.";
+    case "superseded": return "새 확인이 시작되어 이 변경사항은 대체되었습니다.";
+    case "rejected": return "이 변경사항은 더 이상 적용할 수 없습니다.";
+    default: return `적용 결과: ${String(res.status || "미상")}`;
+  }
+}
+
+export function useTemplateChangeUi(controller: JobRunController): TemplateChangeUi {
+  return useSyncExternalStore(controller.subscribe, controller.getTemplateChange);
+}
+
+/** 템플릿 변경사항 구획 — revision 번호·목록·선택기는 없다(#659 계약). token 은 스냅샷의
+ *  opaque 문자열을 버튼에 관통시킬 뿐 화면이 해석하지 않는다. */
+export function JobTemplateChange(props: { controller: JobRunController }): ReactNode {
+  const s = useRunSnapshot(props.controller);
+  const running = useRun(props.controller).running;
+  const tpl = useTemplateChangeUi(props.controller);
+  const z = (s?.template_change || null) as Obj | null;
+  if (!s?.has_job || !z || !z.supported) return null; // HWPX 아닌 작업 — capability 비노출
+  const prep = (z.preparation || null) as Obj | null;
+  const status = prep ? String(prep.status || "") : "";
+  const needsInit = z.reason === "initialization_required";
+  const busy = tpl.inFlight || running;
+  const diagnostics = ((needsInit ? z.diagnostics : prep?.diagnostics) || []) as Obj[];
+  const statusText = needsInit
+    ? "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다. 템플릿을 수정하거나 다시 연결한 뒤 확인하세요."
+    : status
+      ? (TPL_STATUS_COPY[status] ?? `확인 상태: ${status}`)
+      : "템플릿 원본을 고쳤다면 변경사항을 확인한 뒤 이 작업에 적용할 수 있습니다.";
+  return h("div", { id: "jobTplChange" },
+    h("div", { className: "zone-cap" }, "템플릿 변경사항"),
+    h("div", {
+      className: needsInit || status === "invalid" ? "note warnbox" : "muted capnote",
+      id: "jobTplStatus",
+      style: { whiteSpace: "pre-line" },
+    }, statusText),
+    diagnostics.length
+      ? h("ul", { id: "jobTplDiag", className: "muted capnote" },
+          diagnostics.map((d, index) =>
+            h("li", { key: index }, String(d.message || d.kind || ""))))
+      : null,
+    h("div", { className: "run-row" },
+      h("button", {
+        className: "btn sm", id: "jobTplCheck", type: "button",
+        disabled: busy || !z.checkable,
+        onClick: () => { void props.controller.templateCheck(); },
+      }, TPL_RECHECK_LABEL[status] || "변경사항 확인"),
+      status === "ready" && prep?.change_token
+        ? h("button", {
+            className: "btn sm primary", id: "jobTplApply", type: "button",
+            disabled: busy,
+            onClick: () => { void props.controller.templateApply(String(prep.change_token)); },
+          }, "변경사항 적용")
+        : null),
+    tpl.notice
+      ? h("div", { className: "muted capnote", id: "jobTplNotice" }, tpl.notice)
+      : null);
 }

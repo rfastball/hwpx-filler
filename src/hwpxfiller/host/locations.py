@@ -62,6 +62,16 @@ def default_dataset_pool_dir() -> Path:
     return home_dir() / "datasets"
 
 
+def default_template_authority_dir() -> Path:
+    """S3 template 권위 영속 루트 — 사용자 홈(``~/.hwpxfiller/template_authority``).
+
+    Work aggregate·Candidate object·Qualification object 스토어(S3-09 #659)가 이 아래
+    ``works``/``candidates``/``qualification`` 을 각자 받는다. 다른 durable 자산과 동일 홈
+    관례이고 ``HWPXFILLER_HOME`` 을 존중한다(해석은 :func:`home_dir`).
+    """
+    return home_dir() / "template_authority"
+
+
 def default_text_templates_dir() -> Path:
     """txt 기안 템플릿 기본 루트 — 사용자 홈 아래 ``text_templates``."""
     return home_dir() / "text_templates"

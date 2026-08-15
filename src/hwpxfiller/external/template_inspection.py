@@ -43,6 +43,10 @@ from hwpxcore.structural_boundary import (
 )
 from hwpxcore.text_extract import require_package
 
+from ..application.qualification_evidence import (
+    QualificationProfileManifest,
+    build_manifest,
+)
 from ..application.template_qualification import (
     QualificationProfile,
     QualificationInspection,
@@ -986,6 +990,25 @@ HWPX_QUALIFICATION_PROFILE = QualificationProfile(
     "hwpx-template-qualification-v1",
     inspect_hwpx_qualification,
 )
+
+
+def hwpx_qualification_manifest(created_at: str) -> "QualificationProfileManifest":
+    """제품 HWPX profile 의 durable semantic manifest — profile identity 와 같은 곳에서 소유.
+
+    S3-09 코디네이터가 최초 사용 시 qualification store 에 create-once 로 시딩한다. 버전
+    문자열들은 profile id 처럼 **규칙이 바뀌면 함께 올린다** — manifest 는 immutable 이라
+    같은 id 로 다른 의미를 다시 쓰는 경로가 없다.
+    """
+    return build_manifest(
+        qualification_profile_id=HWPX_QUALIFICATION_PROFILE.id,
+        media="hwpx",
+        adapter_contract_version="hwpx-inspection-v1",
+        product_rule_version="hwpx-qualification-rules-v1",
+        operation_alphabet_version="hwpx-operations-v1",
+        projection_schema_version="hwpx-structure-projection-v1",
+        manifest_payload={},
+        created_at=created_at,
+    )
 
 
 def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
