@@ -92,12 +92,15 @@ PREP_SUPERSEDED = "SUPERSEDED"
 PREP_APPLIED = "APPLIED"
 PREP_CONFLICTED = "CONFLICTED"
 PREP_REJECTED = "REJECTED"
-# S3-05 terminal 결과(더는 진행하지 않는다):
+# S3-05·S3-06 terminal 결과(더는 진행하지 않는다):
 PREP_CAPTURE_ERROR = "CAPTURE_ERROR"
 PREP_SOURCE_BINDING_CHANGED = "SOURCE_BINDING_CHANGED"
 PREP_QUALIFICATION_FAILED = "QUALIFICATION_FAILED"
 PREP_QUALIFICATION_ERROR = "QUALIFICATION_ERROR"
 PREP_INTERRUPTED = "INTERRUPTED"  # process 종료로 stage 가 미완 — 자동 재호출 안 함
+PREP_BASE_CHANGED = "BASE_CHANGED"  # S3-06: admission 시 current base 가 pinned base 와 다름
+PREP_PROFILE_REVOKED = "PROFILE_REVOKED"
+PREP_NO_CHANGE = "NO_CHANGE"  # 현재 target 과 operational 동치 — Work 변경 아님
 _PREP_STATES = frozenset(
     {
         PREP_CAPTURING,
@@ -112,6 +115,9 @@ _PREP_STATES = frozenset(
         PREP_QUALIFICATION_FAILED,
         PREP_QUALIFICATION_ERROR,
         PREP_INTERRUPTED,
+        PREP_BASE_CHANGED,
+        PREP_PROFILE_REVOKED,
+        PREP_NO_CHANGE,
     }
 )
 
@@ -157,13 +163,22 @@ class TemplateChangePreparation:
 
 @dataclass(frozen=True)
 class PreparedTemplateChange:
-    """apply 가능한 준비 완료 변경(S3-06 이 나머지 필드 소유). S3-04 는 status·결속만 본다."""
+    """current base 에서 적용 가능한 exact 변경(S3-06 admission 이 발행). apply(S3-07)가 소비한다.
+
+    Prepared target 은 PASS Evidence 하나(``target_pass_evidence_id``)이고, base 는 그 시점
+    ``current_template_application_id``. status PREPARED 로 태어나 apply 시 ``resulting_application_id``·
+    ``applied_at`` 이 채워지거나 새 prepare 가 SUPERSEDED 로 낮춘다.
+    """
 
     prepared_change_id: str
     preparation_id: str
     work_id: str
+    base_application_id: str
+    target_pass_evidence_id: str
     status: str
-    payload: Mapping[str, Any]
+    prepared_at: str
+    resulting_application_id: str | None = None
+    applied_at: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in _CHANGE_STATES:
@@ -266,6 +281,13 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
         if prep.preparation_id in prep_ids:
             raise WorkTemplateStateError(f"preparation_id 중복 {prep.preparation_id}")
         prep_ids.add(prep.preparation_id)
+    change_ids: set[str] = set()
+    for change in aggregate.prepared_changes:
+        if change.prepared_change_id in change_ids:
+            raise WorkTemplateStateError(
+                f"prepared_change_id 중복 {change.prepared_change_id}"
+            )
+        change_ids.add(change.prepared_change_id)
     # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
     # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
     # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
@@ -388,8 +410,12 @@ def encode_aggregate(aggregate: WorkTemplateStateAggregate) -> dict[str, Any]:
                 "prepared_change_id": c.prepared_change_id,
                 "preparation_id": c.preparation_id,
                 "work_id": c.work_id,
+                "base_application_id": c.base_application_id,
+                "target_pass_evidence_id": c.target_pass_evidence_id,
                 "status": c.status,
-                "payload": dict(c.payload),
+                "prepared_at": c.prepared_at,
+                "resulting_application_id": c.resulting_application_id,
+                "applied_at": c.applied_at,
             }
             for c in aggregate.prepared_changes
         ],
@@ -425,8 +451,12 @@ def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
                 prepared_change_id=c["prepared_change_id"],
                 preparation_id=c["preparation_id"],
                 work_id=c["work_id"],
+                base_application_id=c["base_application_id"],
+                target_pass_evidence_id=c["target_pass_evidence_id"],
                 status=c["status"],
-                payload=copy.deepcopy(c["payload"]),
+                prepared_at=c["prepared_at"],
+                resulting_application_id=c["resulting_application_id"],
+                applied_at=c["applied_at"],
             )
             for c in data["prepared_changes"]
         ),

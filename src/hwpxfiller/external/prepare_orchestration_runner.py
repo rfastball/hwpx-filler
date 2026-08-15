@@ -28,22 +28,33 @@ from hwpxfiller.application.candidate_revision import (
 )
 from hwpxfiller.application.prepare_orchestration import (
     derive_stage_ids,
+    find_application,
+    find_change,
     find_preparation,
     in_flight_preparations,
+    plan_admission_ready,
+    plan_admission_terminal,
     plan_capture_checkpoint,
     plan_qualification_checkpoint,
     plan_recovery,
 )
-from hwpxfiller.application.qualification_evidence import ERROR, build_records
+from hwpxfiller.application.qualification_evidence import ERROR, PASS, build_records
 from hwpxfiller.application.template_qualification import (
     CandidateRevisionSnapshot,
     QualificationProfile,
     qualify_template,
 )
 from hwpxfiller.application.work_template_state import (
+    PREP_BASE_CHANGED,
     PREP_CAPTURING,
+    PREP_NO_CHANGE,
+    PREP_PROFILE_REVOKED,
     PREP_QUALIFYING,
+    PREP_READY,
+    PREP_SOURCE_BINDING_CHANGED,
+    PREP_SUPERSEDED,
     DocumentWork,
+    PreparedTemplateChange,
     TemplateChangePreparation,
 )
 from .candidate_store import CandidateObjectStore
@@ -210,6 +221,99 @@ def _durable_attempt_result(qualification_store, ids):
     except QualObjectNotFound:
         return None, None, None  # write window 미완 — 복원하지 않는다
     return attempt.outcome, attempt.attempt_id, attempt.evidence_id
+
+
+def admit_preparation(
+    work_store: AtomicWorkTemplateStateStore,
+    candidate_store: CandidateObjectStore,
+    qualification_store: QualificationObjectStore,
+    *,
+    work_id: str,
+    preparation_id: str,
+    resolve_current_binding: "Callable[[DocumentWork], tuple[str, int]]",
+    prepared_change_id: str,
+    prepared_at: str,
+) -> PreparedTemplateChange | None:
+    """durable PASS checkpoint 를 ordered gate 로 admission 한다 — READY+Change 또는 fail-closed.
+
+    idempotent: 이미 READY 면 기존 Change 를, terminal 이면 무변경으로 닫는다. current intent·exact
+    base·source binding·Profile revocation·exact PASS Evidence 를 완료 시점 값으로 rebase 하지 않고
+    **재검사**하고, current target 과 operational 동치면 NO_CHANGE 로 닫는다(Work 변경 없음).
+    """
+    holder: dict = {"change": None}
+    with work_store.update(work_id) as txn:
+        aggregate = txn.aggregate
+        prep = find_preparation(aggregate, preparation_id)
+        if prep.status == PREP_READY:  # idempotent — 기존 Change 반환, 무변경
+            holder["change"] = find_change(aggregate, prep.prepared_change_id)
+            return holder["change"]
+        if prep.status != PREP_QUALIFYING or prep.attempt_id is None:
+            return None  # admission 대상 아님(terminal 이거나 아직 PASS checkpoint 없음)
+
+        terminal = _admission_gate(
+            aggregate, prep, candidate_store, qualification_store, resolve_current_binding
+        )
+        if terminal is not None:
+            txn.aggregate = plan_admission_terminal(
+                aggregate, preparation_id, terminal, completed_at=prepared_at
+            )
+            return None
+        txn.aggregate = plan_admission_ready(
+            aggregate, preparation_id,
+            prepared_change_id=prepared_change_id,
+            target_pass_evidence_id=prep.evidence_id,
+            prepared_at=prepared_at,
+        )
+        holder["change"] = find_change(txn.aggregate, prepared_change_id)
+    return holder["change"]
+
+
+def _admission_gate(
+    aggregate, prep, candidate_store, qualification_store, resolve_current_binding
+) -> str | None:
+    """ordered admission gate — 실패면 terminal status, 통과면 None. Evidence 무결성 위반은 loud."""
+    if aggregate.work.current_template_preparation_id != prep.preparation_id:
+        return PREP_SUPERSEDED  # current intent 아님
+    if aggregate.work.current_template_application_id != prep.base_application_id:
+        return PREP_BASE_CHANGED  # current base 를 완료 시점 값으로 rebase 하지 않는다
+    if resolve_current_binding(aggregate.work) != (
+        prep.source_binding_id,
+        prep.source_binding_generation,
+    ):
+        return PREP_SOURCE_BINDING_CHANGED
+    if qualification_store.is_revoked(prep.qualification_profile_id):
+        return PREP_PROFILE_REVOKED
+
+    evidence = qualification_store.get_evidence(prep.evidence_id)
+    if (
+        evidence.result != PASS
+        or evidence.attempt_id != prep.attempt_id  # 이 Preparation 의 attempt 에서 나온 evidence 인가
+        or evidence.revision_id != prep.revision_id
+        or evidence.qualification_profile_id != prep.qualification_profile_id
+        or evidence.structure_projection is None
+    ):
+        raise WorkTemplateStoreError(
+            f"admission: PASS Evidence 가 Preparation {prep.preparation_id} pin 과 불일치"
+        )
+
+    current_app = find_application(aggregate, aggregate.work.current_template_application_id)
+    current_evidence = qualification_store.get_evidence(current_app.pass_evidence_id)
+    if _operational_target(candidate_store, evidence) == _operational_target(
+        candidate_store, current_evidence
+    ):
+        return PREP_NO_CHANGE  # lineage·media·digest·profile 동치 — Work 변경 아님
+    return None
+
+
+def _operational_target(candidate_store, evidence):
+    """v1 operational equivalence key — (lineage, media, exact digest, profile)."""
+    revision = candidate_store.get_revision(evidence.revision_id)
+    return (
+        revision.template_lineage_id,
+        revision.media,
+        revision.exact_content_digest,
+        evidence.qualification_profile_id,
+    )
 
 
 def recover_session(

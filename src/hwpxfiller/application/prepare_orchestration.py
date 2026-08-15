@@ -19,13 +19,16 @@ from dataclasses import dataclass, replace
 
 from .qualification_evidence import ERROR, FAIL, PASS
 from .work_template_state import (
+    CHANGE_PREPARED,
     PREP_CAPTURE_ERROR,
     PREP_CAPTURING,
     PREP_INTERRUPTED,
     PREP_QUALIFICATION_ERROR,
     PREP_QUALIFICATION_FAILED,
     PREP_QUALIFYING,
+    PREP_READY,
     PREP_SOURCE_BINDING_CHANGED,
+    PreparedTemplateChange,
     TemplateChangePreparation,
     WorkTemplateStateAggregate,
     WorkTemplateStateError,
@@ -203,4 +206,68 @@ def _apply_attempt_outcome(
         )
     raise WorkTemplateStateError(  # pragma: no cover - build_records 가 PASS|FAIL|ERROR 로 소진
         f"미상 attempt outcome {outcome!r}"
+    )
+
+
+# ─── admission(S3-06): PASS checkpoint → Prepared Change 승격 또는 fail-closed ────
+
+def find_application(aggregate: WorkTemplateStateAggregate, application_id: str):
+    for app in aggregate.applications:
+        if app.application_id == application_id:
+            return app
+    raise WorkTemplateStateError(f"application {application_id} 없음")
+
+
+def find_change(
+    aggregate: WorkTemplateStateAggregate, prepared_change_id: str
+) -> PreparedTemplateChange:
+    for change in aggregate.prepared_changes:
+        if change.prepared_change_id == prepared_change_id:
+            return change
+    raise WorkTemplateStateError(f"prepared change {prepared_change_id} 없음")
+
+
+def plan_admission_terminal(
+    aggregate: WorkTemplateStateAggregate,
+    preparation_id: str,
+    status: str,
+    *,
+    completed_at: str,
+) -> WorkTemplateStateAggregate:
+    """admission gate 실패를 명시 terminal 로 닫는다(Prepared Change 없음)."""
+    return _set_preparation(
+        aggregate, preparation_id, status=status, completed_at=completed_at
+    )
+
+
+def plan_admission_ready(
+    aggregate: WorkTemplateStateAggregate,
+    preparation_id: str,
+    *,
+    prepared_change_id: str,
+    target_pass_evidence_id: str,
+    prepared_at: str,
+) -> WorkTemplateStateAggregate:
+    """durable PASS checkpoint 를 current base 에서 적용 가능한 Prepared Change 로 승격한다."""
+    prep = find_preparation(aggregate, preparation_id)
+    change = PreparedTemplateChange(
+        prepared_change_id=prepared_change_id,
+        preparation_id=preparation_id,
+        work_id=prep.work_id,
+        base_application_id=aggregate.work.current_template_application_id,
+        target_pass_evidence_id=target_pass_evidence_id,
+        status=CHANGE_PREPARED,
+        prepared_at=prepared_at,
+    )
+    preparations = tuple(
+        replace(p, status=PREP_READY, prepared_change_id=prepared_change_id, completed_at=prepared_at)
+        if p.preparation_id == preparation_id
+        else p
+        for p in aggregate.preparations
+    )
+    return replace(
+        aggregate,
+        aggregate_version=aggregate.aggregate_version + 1,
+        preparations=preparations,
+        prepared_changes=(*aggregate.prepared_changes, change),
     )

@@ -169,7 +169,7 @@ def test_new_prepare_supersedes_ready_prep_and_prepared_change(tmp_path):
             work=_with(agg.work, current_template_preparation_id="P1"),
             applications=agg.applications,
             preparations=(ready,),
-            prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", CHANGE_PREPARED, {}),),
+            prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", CHANGE_PREPARED, "t3"),),
             apply_provenance=(),
             outbox_events=(),
         )
@@ -233,7 +233,7 @@ def test_prior_applied_change_not_superseded(tmp_path):
             work=_with(agg.work, current_template_preparation_id="P1"),
             applications=agg.applications,
             preparations=(applied,),
-            prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", CHANGE_PREPARED, {}),),
+            prepared_changes=(PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", CHANGE_PREPARED, "t3"),),
             apply_provenance=(),
             outbox_events=(),
         )
