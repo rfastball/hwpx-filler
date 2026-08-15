@@ -129,11 +129,18 @@ class AtomicWorkTemplateStateStore:
         """writer lease 아래 read→검증→(caller mutate)→atomic commit 을 한 번 수행한다."""
         with _work_lock(self._lock_key(work_id)):
             current = self.load(work_id)
+            # object identity 가 아니라 값으로 변경을 판정한다. 스냅샷은 **직렬화 문자열**이라야
+            # 한다 — encode 의 dict(payload) 는 얕은 사본이라 nested list/dict 를 원본과 공유해,
+            # dict 비교로는 in-place 변경이 스냅샷에도 반영돼 안 잡힌다.
+            before = json.dumps(encode_aggregate(current), ensure_ascii=False, sort_keys=True)
             txn = _Transaction(current)
             yield txn  # caller 예외는 여기서 전파돼 아래 write 를 건너뛴다(기존 파일 유지)
             new = txn.aggregate
-            if new is current:
+            encoded_new = encode_aggregate(new)
+            if json.dumps(encoded_new, ensure_ascii=False, sort_keys=True) == before:
                 return  # 변경 없음 — commit 하지 않는다
+            # payload nested dict/list 를 in-place 로 고쳐도(new is current, version 그대로) 값
+            # 비교가 잡아 아래 version 문지기가 시끄럽게 거절한다 — 조용한 유실을 막는다.
             if new.work.work_id != work_id:
                 raise WorkTemplateStoreError("update 안에서 다른 Work 로 바꿀 수 없다")
             if new.aggregate_version != current.aggregate_version + 1:
@@ -142,7 +149,7 @@ class AtomicWorkTemplateStateStore:
                 )
             write_text_atomic(
                 self._path(work_id),
-                json.dumps(encode_aggregate(new), ensure_ascii=False, indent=2),
+                json.dumps(encoded_new, ensure_ascii=False, indent=2),
             )
 
 
@@ -150,14 +157,25 @@ def _require_pass_evidence(
     qualification_store: QualificationObjectStore,
     candidate_store: CandidateObjectStore,
     pass_evidence_id: str,
+    expected_lineage_id: str,
 ) -> None:
-    """Evidence(PASS)·그 Revision·Profile Manifest 실재를 확인한다(latest 보완 금지)."""
+    """Evidence(PASS)·그 Revision·Profile Manifest 실재를 확인한다(latest 보완 금지).
+
+    Revision 의 lineage 가 요청한 ``expected_lineage_id`` 와 다르면 거절한다 — 안 그러면
+    DocumentWork 가 한 lineage 를 주장하면서 current application 은 다른 lineage 의 Evidence 를
+    가리키는 모순 identity 로 영속된다(확인-또는-경보).
+    """
     evidence = qualification_store.get_evidence(pass_evidence_id)  # 부재·손상은 loud
     if evidence.result != PASS:
         raise WorkTemplateReferenceError(
             f"evidence {pass_evidence_id} 는 PASS 가 아니다 ({evidence.result})"
         )
-    candidate_store.get_revision(evidence.revision_id)  # 부재는 ObjectNotFound
+    revision = candidate_store.get_revision(evidence.revision_id)  # 부재는 ObjectNotFound
+    if revision.template_lineage_id != expected_lineage_id:
+        raise WorkTemplateReferenceError(
+            f"evidence revision lineage {revision.template_lineage_id!r} 가 요청 "
+            f"{expected_lineage_id!r} 와 불일치"
+        )
     qualification_store.get_manifest(evidence.qualification_profile_id)
 
 
@@ -174,7 +192,9 @@ def initialize_work(
     applied_at: str,
 ) -> WorkTemplateStateAggregate:
     """exact PASS Evidence 로 새 Work 를 하나의 aggregate 최초 commit 으로 만든다."""
-    _require_pass_evidence(qualification_store, candidate_store, pass_evidence_id)
+    _require_pass_evidence(
+        qualification_store, candidate_store, pass_evidence_id, template_lineage_id
+    )
     application = WorkTemplateApplication(
         application_id=application_id,
         work_id=work_id,

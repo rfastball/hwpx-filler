@@ -29,6 +29,7 @@ from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     PREPARED_CHANGE,
     SCHEMA_VERSION,
+    ApplyProvenance,
     DocumentWork,
     TemplateChangePreparation,
     WorkTemplateApplication,
@@ -474,6 +475,70 @@ def test_dangling_previous_rejected():
     )
     with pytest.raises(WorkTemplateStateError, match="previous.*dangling"):
         _aggregate([a])
+
+
+def test_current_pointer_not_terminal_rejected():
+    # A1(epoch1)·A2(epoch2) 인데 current 가 A1 로 되돌아가면 조용한 rollback → 거절.
+    a = _app(application_id="A1", application_epoch=1)
+    b = _app(
+        application_id="A2", application_epoch=2, previous_application_id="A1",
+        origin=PREPARED_CHANGE, prepared_change_id="C1",
+    )
+    with pytest.raises(WorkTemplateStateError, match="최고 epoch"):
+        _aggregate([a, b], work_over={"current_template_application_id": "A1"})
+
+
+def test_dangling_current_preparation_pointer_rejected():
+    with pytest.raises(WorkTemplateStateError, match="current preparation"):
+        _aggregate(
+            [_app()], work_over={"current_template_preparation_id": "MISSING"}
+        )
+
+
+def test_dangling_provenance_reference_rejected():
+    with pytest.raises(WorkTemplateStateError, match="provenance"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION,
+            aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0),
+            applications=(_app(),),
+            preparations=(),
+            prepared_changes=(),
+            apply_provenance=(ApplyProvenance("PR1", "GONE", {}),),
+            outbox_events=(),
+        )
+
+
+def test_lineage_mismatch_reference_rejected(tmp_path):
+    store = AtomicWorkTemplateStateStore(tmp_path / "works")
+    qstore, cstore = _seed_reference(tmp_path / "q", tmp_path / "c")  # revision lineage = LIN1
+    with pytest.raises(WorkTemplateReferenceError, match="lineage"):
+        initialize_work(
+            store, qstore, cstore,
+            work_id="W1", template_lineage_id="OTHER", application_id="A1",
+            pass_evidence_id=EV, actor="t", applied_at="t2",
+        )
+
+
+def test_in_place_payload_mutation_is_not_silently_discarded(tmp_path):
+    store = AtomicWorkTemplateStateStore(tmp_path / "works")
+    store.create(
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION,
+            aggregate_version=1,
+            work=DocumentWork("W1", "LIN1", "A1", None, 0),
+            applications=(_app(),),
+            preparations=(TemplateChangePreparation("P1", "W1", {"k": ["v"]}),),
+            prepared_changes=(),
+            apply_provenance=(),
+            outbox_events=(),
+        )
+    )
+    # payload nested list 를 in-place 로 고치고 version 을 안 올리면 조용히 유실되지 않고 거절된다.
+    with pytest.raises(WorkTemplateStoreError, match="정확히 1"):
+        with store.update("W1") as txn:
+            txn.aggregate.preparations[0].payload["k"].append("x")
+    assert store.load("W1").aggregate_version == 1  # 기존 무손상
 
 
 def test_preparation_of_other_work_rejected():

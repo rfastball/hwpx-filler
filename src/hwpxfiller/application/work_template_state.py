@@ -151,7 +151,7 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
         raise WorkTemplateStateError("aggregate_version 은 1 이상이다")
 
     work_id = aggregate.work.work_id
-    app_ids: set[str] = set()
+    epoch_by_id: dict[str, int] = {}
     epochs: set[int] = set()
     prepared_used: set[str] = set()
     for app in aggregate.applications:
@@ -159,13 +159,13 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
             raise WorkTemplateStateError(
                 f"application {app.application_id} 가 다른 Work 에 속한다"
             )
-        if app.application_id in app_ids:
+        if app.application_id in epoch_by_id:
             raise WorkTemplateStateError(f"application_id 중복 {app.application_id}")
-        app_ids.add(app.application_id)
         if app.application_epoch in epochs:
             raise WorkTemplateStateError(
                 f"application_epoch 중복 {app.application_epoch}"
             )
+        epoch_by_id[app.application_id] = app.application_epoch
         epochs.add(app.application_epoch)
         if app.prepared_change_id is not None:
             if app.prepared_change_id in prepared_used:
@@ -174,8 +174,14 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
                 )
             prepared_used.add(app.prepared_change_id)
 
-    if aggregate.work.current_template_application_id not in app_ids:
+    app_ids = epoch_by_id.keys()
+    current = aggregate.work.current_template_application_id
+    if current not in epoch_by_id:
         raise WorkTemplateStateError("current pointer 가 dangling(존재하지 않는 Application)")
+    # current 는 history 의 terminal(최고 epoch)이어야 한다 — next_epoch = current+1 파생이
+    # 성립하려면 current 뒤에 더 높은 epoch 이 있으면 안 된다(조용한 rollback 차단).
+    if epoch_by_id[current] != max(epochs):
+        raise WorkTemplateStateError("current pointer 가 최신 Application(최고 epoch)이 아니다")
     for app in aggregate.applications:
         if (
             app.previous_application_id is not None
@@ -187,6 +193,19 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
     for record in (*aggregate.preparations, *aggregate.prepared_changes):
         if record.work_id != work_id:
             raise WorkTemplateStateError("preparation/change 가 다른 Work 에 속한다")
+    # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
+    # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
+    # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
+    # S3-04·S3-06 이 지므로 여기서 강제하지 않는다(정당한 pruned history 오거절 방지).
+    prep_ids = {p.preparation_id for p in aggregate.preparations}
+    current_prep = aggregate.work.current_template_preparation_id
+    if current_prep is not None and current_prep not in prep_ids:
+        raise WorkTemplateStateError("current preparation pointer 가 dangling")
+    for prov in aggregate.apply_provenance:
+        if prov.application_id not in app_ids:
+            raise WorkTemplateStateError(
+                f"provenance {prov.provenance_id} 가 없는 application 을 가리킨다"
+            )
 
 
 # ─── codec: 저장 어댑터가 쓰는 native-free dict ↔ 값 ──────────────────────────
