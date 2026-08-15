@@ -274,6 +274,35 @@ def test_evidence_mismatch_is_integrity_failure(tmp_path):
     assert wstore.load("W1").prepared_changes == ()  # Change 없음
 
 
+def test_evidence_from_another_attempt_is_rejected(tmp_path):
+    # 같은 revision·profile 이라도 이 Preparation 의 attempt 에서 나온 evidence 가 아니면 거절.
+    from hwpxfiller.application.prepare_orchestration import derive_stage_ids
+
+    wstore, cstore, qstore = _work_with_pass_checkpoint(tmp_path)
+    ids = derive_stage_ids("W1", "P1")  # 이 prep 의 실제 revision
+    # 다른 attempt 에서 나온, 같은 revision·profile 의 별도 PASS evidence 를 심는다.
+    pl = {"root_fields": ["title"], "slots": []}
+    qstore.put_attempt(
+        QualificationAttempt("AT-X", "P1", ids.revision_id, PROF, PASS, "EV-X", None, "t0", "t1")
+    )
+    qstore.put_evidence(
+        QualificationEvidence(
+            "EV-X", "AT-X", ids.revision_id, PROF, PASS,
+            StructureProjection("proj-v1", pl, content_digest(pl)), (), {"e": "2"}, "t1",
+        )
+    )
+    with wstore.update("W1") as txn:  # prep 의 evidence pin 을 다른 attempt 의 것으로 바꾼다
+        agg = txn.aggregate
+        preps = tuple(
+            replace(p, evidence_id="EV-X") if p.preparation_id == "P1" else p
+            for p in agg.preparations
+        )
+        txn.aggregate = replace(agg, aggregate_version=agg.aggregate_version + 1, preparations=preps)
+    with pytest.raises(WorkTemplateStoreError, match="admission"):
+        _admit(wstore, cstore, qstore)
+    assert wstore.load("W1").prepared_changes == ()
+
+
 def test_admit_noop_when_not_pass_checkpoint(tmp_path):
     # capture 만 하고 qualify 안 한 QUALIFYING(attempt 없음) → admission 대상 아님.
     wstore = AtomicWorkTemplateStateStore(tmp_path / "works")

@@ -491,6 +491,27 @@ def test_unknown_prepared_change_status_rejected():
         PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", "WAT", "t3")
 
 
+def test_duplicate_prepared_change_id_rejected():
+    from hwpxfiller.application.work_template_state import (
+        CHANGE_PREPARED,
+        PreparedTemplateChange,
+    )
+
+    c1 = PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", CHANGE_PREPARED, "t3")
+    c2 = PreparedTemplateChange("C1", "P2", "W1", "A1", "EVy", CHANGE_PREPARED, "t3")  # 같은 id
+    with pytest.raises(WorkTemplateStateError, match="prepared_change_id 중복"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION,
+            aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0),
+            applications=(_app(),),
+            preparations=(),
+            prepared_changes=(c1, c2),
+            apply_provenance=(),
+            outbox_events=(),
+        )
+
+
 def test_duplicate_preparation_id_rejected():
     with pytest.raises(WorkTemplateStateError, match="preparation_id 중복"):
         WorkTemplateStateAggregate(

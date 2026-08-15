@@ -287,6 +287,7 @@ def _admission_gate(
     evidence = qualification_store.get_evidence(prep.evidence_id)
     if (
         evidence.result != PASS
+        or evidence.attempt_id != prep.attempt_id  # 이 Preparation 의 attempt 에서 나온 evidence 인가
         or evidence.revision_id != prep.revision_id
         or evidence.qualification_profile_id != prep.qualification_profile_id
         or evidence.structure_projection is None

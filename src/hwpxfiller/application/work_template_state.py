@@ -281,6 +281,13 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
         if prep.preparation_id in prep_ids:
             raise WorkTemplateStateError(f"preparation_id 중복 {prep.preparation_id}")
         prep_ids.add(prep.preparation_id)
+    change_ids: set[str] = set()
+    for change in aggregate.prepared_changes:
+        if change.prepared_change_id in change_ids:
+            raise WorkTemplateStateError(
+                f"prepared_change_id 중복 {change.prepared_change_id}"
+            )
+        change_ids.add(change.prepared_change_id)
     # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
     # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
     # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
