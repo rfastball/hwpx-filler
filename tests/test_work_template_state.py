@@ -166,6 +166,24 @@ def _app(**over):
     return WorkTemplateApplication(**args)
 
 
+def _prep(**over):
+    args = dict(
+        preparation_id="P1",
+        work_id="W1",
+        prepare_request_id="RQ1",
+        prepare_seq=1,
+        base_application_id="A1",
+        source_binding_id="SB1",
+        source_binding_generation=1,
+        qualification_profile_id=PROF,
+        execution_session_id="S1",
+        status="CAPTURING",
+        started_at="t3",
+    )
+    args.update(over)
+    return TemplateChangePreparation(**args)
+
+
 def _aggregate(apps, *, work_over=None, version=1):
     work_kwargs = dict(
         work_id="W1",
@@ -461,6 +479,35 @@ def test_unknown_schema_version_rejected():
         )
 
 
+def test_unknown_preparation_status_rejected():
+    with pytest.raises(WorkTemplateStateError, match="preparation status"):
+        _prep(status="WAT")
+
+
+def test_unknown_prepared_change_status_rejected():
+    from hwpxfiller.application.work_template_state import PreparedTemplateChange
+
+    with pytest.raises(WorkTemplateStateError, match="prepared change status"):
+        PreparedTemplateChange("C1", "P1", "W1", "WAT", {})
+
+
+def test_duplicate_preparation_id_rejected():
+    with pytest.raises(WorkTemplateStateError, match="preparation_id 중복"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION,
+            aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0),
+            applications=(_app(),),
+            preparations=(
+                _prep(preparation_id="P1", prepare_request_id="R1"),
+                _prep(preparation_id="P1", prepare_request_id="R2"),  # 같은 id 재사용
+            ),
+            prepared_changes=(),
+            apply_provenance=(),
+            outbox_events=(),
+        )
+
+
 def test_duplicate_application_id_rejected():
     a = _app(application_id="A1", application_epoch=1)
     b = _app(application_id="A1", application_epoch=2)  # 같은 id, 다른 epoch
@@ -528,16 +575,16 @@ def test_in_place_payload_mutation_is_not_silently_discarded(tmp_path):
             aggregate_version=1,
             work=DocumentWork("W1", "LIN1", "A1", None, 0),
             applications=(_app(),),
-            preparations=(TemplateChangePreparation("P1", "W1", {"k": ["v"]}),),
+            preparations=(_prep(diagnostics=({"k": "v"},)),),
             prepared_changes=(),
             apply_provenance=(),
             outbox_events=(),
         )
     )
-    # payload nested list 를 in-place 로 고치고 version 을 안 올리면 조용히 유실되지 않고 거절된다.
+    # nested diagnostics dict 를 in-place 로 고치고 version 을 안 올리면 조용히 유실되지 않고 거절된다.
     with pytest.raises(WorkTemplateStoreError, match="정확히 1"):
         with store.update("W1") as txn:
-            txn.aggregate.preparations[0].payload["k"].append("x")
+            txn.aggregate.preparations[0].diagnostics[0]["k"] = "changed"
     assert store.load("W1").aggregate_version == 1  # 기존 무손상
 
 
@@ -548,7 +595,7 @@ def test_preparation_of_other_work_rejected():
             aggregate_version=1,
             work=DocumentWork("W1", "L", "A1", None, 0),
             applications=(_app(),),
-            preparations=(TemplateChangePreparation("P1", "OTHER", {}),),
+            preparations=(_prep(work_id="OTHER"),),
             prepared_changes=(),
             apply_provenance=(),
             outbox_events=(),

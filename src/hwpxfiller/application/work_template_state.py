@@ -83,25 +83,71 @@ class WorkTemplateApplication:
                 raise WorkTemplateStateError("PREPARED_CHANGE 는 previous 가 필수다")
 
 
-# ─── S3-04·S3-06 seam 레코드(얇은 identity + opaque payload) ──────────────────
+# ─── Preparation 상태 어휘 (S3-04) ────────────────────────────────────────────
+# in-flight/READY 는 새 prepare intent 가 supersede 하고, terminal history 는 보존한다.
+PREP_CAPTURING = "CAPTURING"
+PREP_READY = "READY"
+PREP_SUPERSEDED = "SUPERSEDED"
+PREP_APPLIED = "APPLIED"
+PREP_CONFLICTED = "CONFLICTED"
+PREP_REJECTED = "REJECTED"
+_PREP_STATES = frozenset(
+    {PREP_CAPTURING, PREP_READY, PREP_SUPERSEDED, PREP_APPLIED, PREP_CONFLICTED, PREP_REJECTED}
+)
+
+# PreparedChange 상태 — S3-04 는 PREPARED 를 읽고 SUPERSEDED 를 쓴다(나머지 전이는 S3-06 소유).
+CHANGE_PREPARED = "PREPARED"
+CHANGE_SUPERSEDED = "SUPERSEDED"
+_CHANGE_STATES = frozenset({CHANGE_PREPARED, CHANGE_SUPERSEDED})
+
 
 @dataclass(frozen=True)
 class TemplateChangePreparation:
-    """prepare workflow(S3-04)가 채울 준비 레코드의 aggregate seam."""
+    """한 prepare intent 의 서버 고정 스냅샷 — capture/qualification 진행에 따라 채워진다(S3-04).
+
+    ``preparation_id`` 가 서버 측 intent identity 다(별도 prepare_intent_id 없음). base/binding/
+    profile 은 prepare 시작 시 서버가 고정하고 client 입력을 받지 않는다. result 필드
+    (observation_id·revision_id·attempt_id·evidence_id·prepared_change_id·completed_at)는
+    CAPTURING 시점엔 모두 None 이고 후속 stage(S3-05·S3-06)가 채운다.
+    """
 
     preparation_id: str
     work_id: str
-    payload: Mapping[str, Any]
+    prepare_request_id: str
+    prepare_seq: int
+    base_application_id: str
+    source_binding_id: str
+    source_binding_generation: int
+    qualification_profile_id: str
+    execution_session_id: str
+    status: str
+    started_at: str
+    observation_id: str | None = None
+    revision_id: str | None = None
+    attempt_id: str | None = None
+    evidence_id: str | None = None
+    prepared_change_id: str | None = None
+    diagnostics: tuple[Mapping[str, str], ...] = ()
+    completed_at: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in _PREP_STATES:
+            raise WorkTemplateStateError(f"미상 preparation status {self.status!r}")
 
 
 @dataclass(frozen=True)
 class PreparedTemplateChange:
-    """apply 가능한 준비 완료 변경(S3-06)의 aggregate seam."""
+    """apply 가능한 준비 완료 변경(S3-06 이 나머지 필드 소유). S3-04 는 status·결속만 본다."""
 
     prepared_change_id: str
     preparation_id: str
     work_id: str
+    status: str
     payload: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if self.status not in _CHANGE_STATES:
+            raise WorkTemplateStateError(f"미상 prepared change status {self.status!r}")
 
 
 @dataclass(frozen=True)
@@ -193,11 +239,17 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
     for record in (*aggregate.preparations, *aggregate.prepared_changes):
         if record.work_id != work_id:
             raise WorkTemplateStateError("preparation/change 가 다른 Work 에 속한다")
+    # preparation_id 는 서버 측 intent identity 다 — 중복은 current pointer 를 두 record 사이에서
+    # 모호하게 만들므로 application_id 유일성과 대칭으로 거절한다(id 재사용 방어, 루트 원인 한 곳).
+    prep_ids: set[str] = set()
+    for prep in aggregate.preparations:
+        if prep.preparation_id in prep_ids:
+            raise WorkTemplateStateError(f"preparation_id 중복 {prep.preparation_id}")
+        prep_ids.add(prep.preparation_id)
     # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
     # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
     # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
     # S3-04·S3-06 이 지므로 여기서 강제하지 않는다(정당한 pruned history 오거절 방지).
-    prep_ids = {p.preparation_id for p in aggregate.preparations}
     current_prep = aggregate.work.current_template_preparation_id
     if current_prep is not None and current_prep not in prep_ids:
         raise WorkTemplateStateError("current preparation pointer 가 dangling")
@@ -258,25 +310,65 @@ def _decode_application(data: Mapping[str, Any]) -> WorkTemplateApplication:
     )
 
 
+def _encode_preparation(prep: TemplateChangePreparation) -> dict[str, Any]:
+    return {
+        "preparation_id": prep.preparation_id,
+        "work_id": prep.work_id,
+        "prepare_request_id": prep.prepare_request_id,
+        "prepare_seq": prep.prepare_seq,
+        "base_application_id": prep.base_application_id,
+        "source_binding_id": prep.source_binding_id,
+        "source_binding_generation": prep.source_binding_generation,
+        "qualification_profile_id": prep.qualification_profile_id,
+        "execution_session_id": prep.execution_session_id,
+        "status": prep.status,
+        "started_at": prep.started_at,
+        "observation_id": prep.observation_id,
+        "revision_id": prep.revision_id,
+        "attempt_id": prep.attempt_id,
+        "evidence_id": prep.evidence_id,
+        "prepared_change_id": prep.prepared_change_id,
+        "diagnostics": [dict(d) for d in prep.diagnostics],
+        "completed_at": prep.completed_at,
+    }
+
+
+def _decode_preparation(data: Mapping[str, Any]) -> TemplateChangePreparation:
+    return TemplateChangePreparation(
+        preparation_id=data["preparation_id"],
+        work_id=data["work_id"],
+        prepare_request_id=data["prepare_request_id"],
+        prepare_seq=data["prepare_seq"],
+        base_application_id=data["base_application_id"],
+        source_binding_id=data["source_binding_id"],
+        source_binding_generation=data["source_binding_generation"],
+        qualification_profile_id=data["qualification_profile_id"],
+        execution_session_id=data["execution_session_id"],
+        status=data["status"],
+        started_at=data["started_at"],
+        observation_id=data["observation_id"],
+        revision_id=data["revision_id"],
+        attempt_id=data["attempt_id"],
+        evidence_id=data["evidence_id"],
+        prepared_change_id=data["prepared_change_id"],
+        diagnostics=tuple(dict(d) for d in data["diagnostics"]),
+        completed_at=data["completed_at"],
+    )
+
+
 def encode_aggregate(aggregate: WorkTemplateStateAggregate) -> dict[str, Any]:
     return {
         "schema_version": aggregate.schema_version,
         "aggregate_version": aggregate.aggregate_version,
         "work": _encode_work(aggregate.work),
         "applications": [_encode_application(a) for a in aggregate.applications],
-        "preparations": [
-            {
-                "preparation_id": p.preparation_id,
-                "work_id": p.work_id,
-                "payload": dict(p.payload),
-            }
-            for p in aggregate.preparations
-        ],
+        "preparations": [_encode_preparation(p) for p in aggregate.preparations],
         "prepared_changes": [
             {
                 "prepared_change_id": c.prepared_change_id,
                 "preparation_id": c.preparation_id,
                 "work_id": c.work_id,
+                "status": c.status,
                 "payload": dict(c.payload),
             }
             for c in aggregate.prepared_changes
@@ -307,19 +399,13 @@ def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
         aggregate_version=data["aggregate_version"],
         work=_decode_work(data["work"]),
         applications=tuple(_decode_application(a) for a in data["applications"]),
-        preparations=tuple(
-            TemplateChangePreparation(
-                preparation_id=p["preparation_id"],
-                work_id=p["work_id"],
-                payload=copy.deepcopy(p["payload"]),
-            )
-            for p in data["preparations"]
-        ),
+        preparations=tuple(_decode_preparation(p) for p in data["preparations"]),
         prepared_changes=tuple(
             PreparedTemplateChange(
                 prepared_change_id=c["prepared_change_id"],
                 preparation_id=c["preparation_id"],
                 work_id=c["work_id"],
+                status=c["status"],
                 payload=copy.deepcopy(c["payload"]),
             )
             for c in data["prepared_changes"]
