@@ -101,16 +101,16 @@ def plan_prepare(
         event_type=CAPTURE_REQUESTED,
         payload={"preparation_id": preparation_id, "work_id": work.work_id},
     )
-    new_aggregate = WorkTemplateStateAggregate(
-        schema_version=aggregate.schema_version,
+    # replace() 로 바꾼 필드만 지정한다 — applications·apply_provenance·migration_provenance 같은
+    # 미지정 필드가 자동 보존된다(fresh 생성이 bootstrap provenance 를 조용히 None 으로 덮던 결함 차단).
+    new_aggregate = replace(
+        aggregate,
         aggregate_version=aggregate.aggregate_version + 1,
         work=replace(
             work, prepare_seq=new_seq, current_template_preparation_id=preparation_id
         ),
-        applications=aggregate.applications,
         preparations=(*preparations, new_prep),
         prepared_changes=prepared_changes,
-        apply_provenance=aggregate.apply_provenance,
         outbox_events=(*aggregate.outbox_events, capture_event),
     )
     return PreparePlan(new_aggregate, new_prep, created=True)

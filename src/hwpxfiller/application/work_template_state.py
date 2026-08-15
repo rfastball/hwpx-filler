@@ -216,6 +216,17 @@ class OutboxEvent:
     payload: Mapping[str, Any]
 
 
+@dataclass(frozen=True)
+class MigrationProvenance:
+    """legacy Job 을 S3 로 bootstrap 한 증거(S3-08). legacy counter 는 **identity 가 아니라 출처**다."""
+
+    bootstrap_request_id: str
+    legacy_template_revision: int
+    legacy_binding_revision: int
+    legacy_source_reference: str
+    migrated_at: str
+
+
 # ─── aggregate ────────────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -230,6 +241,7 @@ class WorkTemplateStateAggregate:
     prepared_changes: tuple[PreparedTemplateChange, ...]
     apply_provenance: tuple[ApplyProvenance, ...]
     outbox_events: tuple[OutboxEvent, ...]
+    migration_provenance: MigrationProvenance | None = None  # bootstrap 된 Work 만(S3-08)
 
     def __post_init__(self) -> None:
         validate_aggregate(self)
@@ -466,7 +478,32 @@ def encode_aggregate(aggregate: WorkTemplateStateAggregate) -> dict[str, Any]:
             }
             for e in aggregate.outbox_events
         ],
+        "migration_provenance": _encode_migration(aggregate.migration_provenance),
     }
+
+
+def _encode_migration(mp: "MigrationProvenance | None") -> dict[str, Any] | None:
+    if mp is None:
+        return None
+    return {
+        "bootstrap_request_id": mp.bootstrap_request_id,
+        "legacy_template_revision": mp.legacy_template_revision,
+        "legacy_binding_revision": mp.legacy_binding_revision,
+        "legacy_source_reference": mp.legacy_source_reference,
+        "migrated_at": mp.migrated_at,
+    }
+
+
+def _decode_migration(data: "Mapping[str, Any] | None") -> "MigrationProvenance | None":
+    if data is None:
+        return None
+    return MigrationProvenance(
+        bootstrap_request_id=data["bootstrap_request_id"],
+        legacy_template_revision=data["legacy_template_revision"],
+        legacy_binding_revision=data["legacy_binding_revision"],
+        legacy_source_reference=data["legacy_source_reference"],
+        migrated_at=data["migrated_at"],
+    )
 
 
 def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
@@ -515,4 +552,5 @@ def decode_aggregate(data: Mapping[str, Any]) -> WorkTemplateStateAggregate:
             )
             for e in data["outbox_events"]
         ),
+        migration_provenance=_decode_migration(data.get("migration_provenance")),
     )

@@ -34,6 +34,7 @@ from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     SCHEMA_VERSION,
     DocumentWork,
+    MigrationProvenance,
     TemplateChangePreparation,
     WorkTemplateApplication,
     WorkTemplateStateAggregate,
@@ -109,6 +110,9 @@ class AtomicWorkTemplateStateStore:
 
     def _lock_key(self, work_id: str) -> str:
         return f"{self._root}\x00{work_id}"
+
+    def exists(self, work_id: str) -> bool:
+        return self._path(work_id).exists()
 
     def load(self, work_id: str) -> WorkTemplateStateAggregate:
         path = self._path(work_id)
@@ -197,8 +201,13 @@ def initialize_work(
     pass_evidence_id: str,
     actor: str,
     applied_at: str,
+    migration_provenance: "MigrationProvenance | None" = None,
 ) -> WorkTemplateStateAggregate:
-    """exact PASS Evidence 로 새 Work 를 하나의 aggregate 최초 commit 으로 만든다."""
+    """exact PASS Evidence 로 새 Work 를 하나의 aggregate 최초 commit 으로 만든다.
+
+    ``migration_provenance`` 가 있으면 legacy Job bootstrap(S3-08)의 출처를 함께 못박는다 —
+    legacy counter 는 출처일 뿐 identity 가 아니다.
+    """
     _require_pass_evidence(
         qualification_store, candidate_store, pass_evidence_id, template_lineage_id
     )
@@ -228,6 +237,7 @@ def initialize_work(
         prepared_changes=(),
         apply_provenance=(),
         outbox_events=(),
+        migration_provenance=migration_provenance,
     )
     store.create(aggregate)
     return aggregate
