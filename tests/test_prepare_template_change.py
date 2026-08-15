@@ -18,6 +18,7 @@ from hwpxfiller.application.candidate_revision import (
     blob_digest,
 )
 from hwpxfiller.application.prepare_template_change import (
+    CAPTURE_REQUESTED,
     PreparePins,
     plan_prepare,
 )
@@ -251,6 +252,32 @@ def test_no_client_supplied_base_or_profile_channel(tmp_path):
     params = set(inspect.signature(start_prepare).parameters)
     for forbidden in ("base_application_id", "revision_id", "source_path", "expected_work_version"):
         assert forbidden not in params
+
+
+def test_failed_worker_handoff_leaves_durable_outbox(tmp_path):
+    # 콜백이 commit 뒤 던져도 CAPTURING prep + capture outbox event 는 durable(재시도 가능).
+    store = _fresh_work(tmp_path)
+
+    def boom(_prep):
+        raise RuntimeError("executor down")
+
+    with pytest.raises(RuntimeError):
+        _start(store, request_id="RQ1", preparation_id="P1", on_worker_handoff=boom)
+    agg = store.load("W1")
+    assert agg.preparations[0].status == PREP_CAPTURING
+    assert [e.event_type for e in agg.outbox_events] == [CAPTURE_REQUESTED]
+
+
+def test_replay_returns_existing_even_if_resolver_now_fails(tmp_path):
+    # 멱등 replay 는 resolve_pins 앞에서 short-circuit → resolver 가 이제 실패해도 안 터진다.
+    store = _fresh_work(tmp_path)
+    first = _start(store, request_id="RQ1", preparation_id="P1")
+
+    def broken(_work):
+        raise RuntimeError("source gone")
+
+    again = _start(store, request_id="RQ1", preparation_id="P2", resolve_pins=broken)
+    assert again.preparation_id == first.preparation_id
 
 
 def test_commit_failure_skips_worker(tmp_path, monkeypatch):

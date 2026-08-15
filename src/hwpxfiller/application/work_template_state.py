@@ -239,11 +239,17 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
     for record in (*aggregate.preparations, *aggregate.prepared_changes):
         if record.work_id != work_id:
             raise WorkTemplateStateError("preparation/change 가 다른 Work 에 속한다")
+    # preparation_id 는 서버 측 intent identity 다 — 중복은 current pointer 를 두 record 사이에서
+    # 모호하게 만들므로 application_id 유일성과 대칭으로 거절한다(id 재사용 방어, 루트 원인 한 곳).
+    prep_ids: set[str] = set()
+    for prep in aggregate.preparations:
+        if prep.preparation_id in prep_ids:
+            raise WorkTemplateStateError(f"preparation_id 중복 {prep.preparation_id}")
+        prep_ids.add(prep.preparation_id)
     # DocumentWork 자기 current preparation pointer 와 provenance→application 링크는
     # append-only 라 여기서 dangling 을 막는다(current_application 검증과 대칭). prepared_change
     # 존재·application↔prepared_change 링크는 prepared_changes 수명(apply 후 pruning)을 소유하는
     # S3-04·S3-06 이 지므로 여기서 강제하지 않는다(정당한 pruned history 오거절 방지).
-    prep_ids = {p.preparation_id for p in aggregate.preparations}
     current_prep = aggregate.work.current_template_preparation_id
     if current_prep is not None and current_prep not in prep_ids:
         raise WorkTemplateStateError("current preparation pointer 가 dangling")

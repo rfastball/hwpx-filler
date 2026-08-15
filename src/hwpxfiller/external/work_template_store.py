@@ -23,7 +23,12 @@ from contextlib import contextmanager
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from hwpxfiller.application.prepare_template_change import PreparePins, plan_prepare
+from hwpxfiller.application.prepare_template_change import (
+    PreparePins,
+    PreparePlan,
+    find_preparation_by_request,
+    plan_prepare,
+)
 from hwpxfiller.application.qualification_evidence import PASS
 from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
@@ -254,17 +259,23 @@ def start_prepare(
         aggregate = txn.aggregate
         if authorize is not None:
             authorize(aggregate.work, actor)
-        pins = resolve_pins(aggregate.work)
-        plan = plan_prepare(
-            aggregate,
-            prepare_request_id=prepare_request_id,
-            pins=pins,
-            preparation_id=preparation_id,
-            execution_session_id=execution_session_id,
-            started_at=started_at,
-        )
-        txn.aggregate = plan.aggregate  # 멱등이면 aggregate 불변 → snapshot 비교로 commit 안 됨
-        plan_holder["plan"] = plan
+        # 멱등 replay 는 resolve_pins 앞에서 short-circuit 한다 — 이미 고정된 Preparation 을
+        # 돌려주는 게 계약인데, source/profile resolver 가 이제 와 실패하면 replay 가 터진다.
+        existing = find_preparation_by_request(aggregate, prepare_request_id)
+        if existing is not None:
+            plan_holder["plan"] = PreparePlan(aggregate, existing, created=False)
+        else:
+            pins = resolve_pins(aggregate.work)
+            plan = plan_prepare(
+                aggregate,
+                prepare_request_id=prepare_request_id,
+                pins=pins,
+                preparation_id=preparation_id,
+                execution_session_id=execution_session_id,
+                started_at=started_at,
+            )
+            txn.aggregate = plan.aggregate
+            plan_holder["plan"] = plan
     plan = plan_holder["plan"]
     # commit 성공(with 블록이 예외 없이 끝남) + 새 Preparation 일 때만 후속 worker 를 넘긴다.
     if plan.created and on_worker_handoff is not None:

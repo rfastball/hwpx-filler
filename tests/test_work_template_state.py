@@ -491,6 +491,23 @@ def test_unknown_prepared_change_status_rejected():
         PreparedTemplateChange("C1", "P1", "W1", "WAT", {})
 
 
+def test_duplicate_preparation_id_rejected():
+    with pytest.raises(WorkTemplateStateError, match="preparation_id 중복"):
+        WorkTemplateStateAggregate(
+            schema_version=SCHEMA_VERSION,
+            aggregate_version=1,
+            work=DocumentWork("W1", "L", "A1", None, 0),
+            applications=(_app(),),
+            preparations=(
+                _prep(preparation_id="P1", prepare_request_id="R1"),
+                _prep(preparation_id="P1", prepare_request_id="R2"),  # 같은 id 재사용
+            ),
+            prepared_changes=(),
+            apply_provenance=(),
+            outbox_events=(),
+        )
+
+
 def test_duplicate_application_id_rejected():
     a = _app(application_id="A1", application_epoch=1)
     b = _app(application_id="A1", application_epoch=2)  # 같은 id, 다른 epoch

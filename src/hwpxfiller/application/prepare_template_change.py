@@ -21,12 +21,27 @@ from .work_template_state import (
     PREP_CAPTURING,
     PREP_READY,
     PREP_SUPERSEDED,
+    OutboxEvent,
     PreparedTemplateChange,
     TemplateChangePreparation,
     WorkTemplateStateAggregate,
 )
 
 _SUPERSEDABLE = frozenset({PREP_CAPTURING, PREP_READY})
+
+# capture worker 를 부르는 durable 신호 — commit 과 원자적으로 outbox 에 남는다. post-commit
+# 콜백이 실패해도 이 record 가 생존해 dispatcher(후속 stage)가 재시도할 수 있다.
+CAPTURE_REQUESTED = "template.capture_requested"
+
+
+def find_preparation_by_request(
+    aggregate: WorkTemplateStateAggregate, prepare_request_id: str
+) -> "TemplateChangePreparation | None":
+    """이미 있는 (work, prepare_request_id) Preparation 을 찾는다(멱등 short-circuit 용)."""
+    for prep in aggregate.preparations:
+        if prep.prepare_request_id == prepare_request_id:
+            return prep
+    return None
 
 
 @dataclass(frozen=True)
@@ -57,9 +72,9 @@ def plan_prepare(
     started_at: str,
 ) -> PreparePlan:
     """(work, prepare_request_id) 멱등 시작 판정. 같은 key 면 mutation 없이 기존 것을 돌려준다."""
-    for prep in aggregate.preparations:
-        if prep.prepare_request_id == prepare_request_id:
-            return PreparePlan(aggregate, prep, created=False)
+    existing = find_preparation_by_request(aggregate, prepare_request_id)
+    if existing is not None:
+        return PreparePlan(aggregate, existing, created=False)
 
     work = aggregate.work
     new_seq = work.prepare_seq + 1
@@ -77,6 +92,11 @@ def plan_prepare(
         started_at=started_at,
     )
     preparations, prepared_changes = _supersede_prior(aggregate)
+    capture_event = OutboxEvent(
+        event_id=f"{preparation_id}:capture",  # preparation 당 1개, 결정론적 identity
+        event_type=CAPTURE_REQUESTED,
+        payload={"preparation_id": preparation_id, "work_id": work.work_id},
+    )
     new_aggregate = WorkTemplateStateAggregate(
         schema_version=aggregate.schema_version,
         aggregate_version=aggregate.aggregate_version + 1,
@@ -87,7 +107,7 @@ def plan_prepare(
         preparations=(*preparations, new_prep),
         prepared_changes=prepared_changes,
         apply_provenance=aggregate.apply_provenance,
-        outbox_events=aggregate.outbox_events,
+        outbox_events=(*aggregate.outbox_events, capture_event),
     )
     return PreparePlan(new_aggregate, new_prep, created=True)
 
