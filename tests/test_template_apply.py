@@ -73,14 +73,14 @@ LINEAGE = TemplateLineage("LIN1", "hwpx", "SB1", GEN, "t0")
 BINDING = MutableSourceBinding("SB1", "hwpx", "C:/tpl.hwpx", {}, GEN)
 
 
-def _seed_init(qstore, cstore):
+def _seed_init(qstore, cstore, manifest_media="hwpx"):
     digest = blob_digest(INIT_BYTES)
     cstore.put_blob(ContentBlob(digest, "hwpx", INIT_BYTES, len(INIT_BYTES)))
     cstore.put_observation(SourceCaptureObservation("OBS0", "P0", "SB1", GEN, "zip", {}, digest, "t0"))
     cstore.put_revision(TemplateRevision("REV0", "LIN1", "hwpx", digest, "OBS0", "t0"))
     qstore.put_manifest(
         build_manifest(
-            qualification_profile_id=PROF, media="hwpx", adapter_contract_version="a1",
+            qualification_profile_id=PROF, media=manifest_media, adapter_contract_version="a1",
             product_rule_version="p1", operation_alphabet_version="o1",
             projection_schema_version="proj-v1", manifest_payload={}, created_at="t0",
         )
@@ -95,12 +95,12 @@ def _seed_init(qstore, cstore):
     )
 
 
-def _ready_change(tmp_path):
+def _ready_change(tmp_path, manifest_media="hwpx"):
     """init → prepare → capture(NEW) → qualify PASS → admit READY 까지 돌린 Work + C1."""
     wstore = AtomicWorkTemplateStateStore(tmp_path / "works")
     qstore = QualificationObjectStore(tmp_path / "q")
     cstore = CandidateObjectStore(tmp_path / "c")
-    _seed_init(qstore, cstore)
+    _seed_init(qstore, cstore, manifest_media)
     initialize_work(
         wstore, qstore, cstore, work_id="W1", template_lineage_id="LIN1",
         application_id="A1", pass_evidence_id="EV0", actor="t", applied_at="t2",
@@ -282,6 +282,26 @@ def test_evidence_missing_is_integrity_error(tmp_path):
     agg = wstore.load("W1")
     assert agg.work.current_template_application_id == "A1"  # 상태 무변경
     assert _change(wstore).status == "PREPARED"  # Change 도 그대로
+
+
+def test_missing_attempt_is_integrity_error(tmp_path):
+    # admission 뒤 target Attempt 가 사라지면(Evidence 는 남아도) INTEGRITY_ERROR — dangling chain 방지.
+    from hwpxfiller.application.prepare_orchestration import derive_stage_ids
+
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    ids = derive_stage_ids("W1", "P1")
+    (tmp_path / "q" / "attempts" / f"{ids.attempt_id}.json").unlink()  # Attempt 삭제
+    outcome = _apply(wstore, cstore, qstore)
+    assert outcome.result == APPLY_INTEGRITY_ERROR
+    assert wstore.load("W1").work.current_template_application_id == "A1"
+
+
+def test_manifest_media_mismatch_is_integrity_error(tmp_path):
+    # pinned Profile Manifest 의 media 가 target revision 의 media 와 다르면 INTEGRITY_ERROR.
+    wstore, cstore, qstore = _ready_change(tmp_path, manifest_media="docx")  # revision 은 hwpx
+    outcome = _apply(wstore, cstore, qstore)
+    assert outcome.result == APPLY_INTEGRITY_ERROR
+    assert wstore.load("W1").work.current_template_application_id == "A1"
 
 
 def test_commit_failure_keeps_prepared(tmp_path, monkeypatch):

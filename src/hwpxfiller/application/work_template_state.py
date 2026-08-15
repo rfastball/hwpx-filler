@@ -308,11 +308,21 @@ def validate_aggregate(aggregate: WorkTemplateStateAggregate) -> None:
     current_prep = aggregate.work.current_template_preparation_id
     if current_prep is not None and current_prep not in prep_ids:
         raise WorkTemplateStateError("current preparation pointer 가 dangling")
+    provenance_ids: set[str] = set()
     for prov in aggregate.apply_provenance:
         if prov.from_application_id not in app_ids or prov.to_application_id not in app_ids:
             raise WorkTemplateStateError(
                 f"provenance {prov.provenance_id} 가 없는 application 을 가리킨다"
             )
+        if prov.provenance_id in provenance_ids:
+            raise WorkTemplateStateError(f"provenance_id 중복 {prov.provenance_id}")
+        provenance_ids.add(prov.provenance_id)
+    # outbox event_id 유일성 — dispatcher 가 event_id 로 dedup 하므로 중복은 전달 유실을 부른다.
+    event_ids: set[str] = set()
+    for event in aggregate.outbox_events:
+        if event.event_id in event_ids:
+            raise WorkTemplateStateError(f"outbox event_id 중복 {event.event_id}")
+        event_ids.add(event.event_id)
 
 
 # ─── codec: 저장 어댑터가 쓰는 native-free dict ↔ 값 ──────────────────────────

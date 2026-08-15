@@ -413,20 +413,24 @@ def apply_prepared_change(
 
 
 def _apply_integrity(candidate_store, qualification_store, aggregate, prep, change) -> bool:
-    """exact PASS Evidence·Revision·digest·lineage/media·Manifest 재검증(revocation 은 conflict 축)."""
+    """exact Attempt↔Evidence↔Revision·digest·lineage/media·Manifest 재검증(revocation 은 conflict 축)."""
     try:
         evidence = qualification_store.get_evidence(change.target_pass_evidence_id)
+        attempt = qualification_store.get_attempt(prep.attempt_id)  # Attempt 실재도 요구
         if (
             evidence.result != PASS
             or evidence.structure_projection is None
-            or evidence.attempt_id != prep.attempt_id
+            or attempt.outcome != PASS
+            or attempt.evidence_id != evidence.evidence_id  # 완전 Attempt↔Evidence 결속
+            or evidence.attempt_id != attempt.attempt_id
+            or attempt.attempt_id != prep.attempt_id
             or evidence.revision_id != prep.revision_id
             or evidence.qualification_profile_id != prep.qualification_profile_id
         ):
             return False
         revision = candidate_store.get_revision(evidence.revision_id)
         candidate_store.get_blob(revision.exact_content_digest)  # 재해시로 digest 검증
-        qualification_store.get_manifest(prep.qualification_profile_id)
+        manifest = qualification_store.get_manifest(prep.qualification_profile_id)
         current = find_application(aggregate, aggregate.work.current_template_application_id)
         current_revision = candidate_store.get_revision(
             qualification_store.get_evidence(current.pass_evidence_id).revision_id
@@ -435,6 +439,7 @@ def _apply_integrity(candidate_store, qualification_store, aggregate, prep, chan
         return False
     return (
         revision.template_lineage_id == aggregate.work.template_lineage_id
+        and manifest.media == revision.media  # profile 이 이 media 를 위한 것인가
         and revision.media == current_revision.media  # 같은 Work 는 media 를 못 바꾼다
     )
 
