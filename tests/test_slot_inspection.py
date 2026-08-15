@@ -35,6 +35,7 @@ from hwpxfiller.application.template_qualification import (
 )
 from hwpxfiller.domain.slot import Slot, SlotOption
 from hwpxfiller.external.template_inspection import (
+    HWPX_QUALIFICATION_PROFILE,
     ProductClassification,
     ProductInspectionContractError,
     ProductScopeRole,
@@ -998,6 +999,35 @@ def test_qualification_projects_complete_native_free_field_ownership() -> None:
     assert "BoundaryPairRef" not in payload
     assert "Contents/" not in payload
     assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+
+def test_qualification_reads_candidate_without_serializing_or_mutating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical_bytes = _xml_package(
+        _p(_field("name")) + _p("<hp:t>TAIL</hp:t>")
+    ).to_bytes()
+    parsed = HwpxPackage.from_bytes(canonical_bytes)
+    before = dict(parsed.entries)
+
+    monkeypatch.setattr(
+        HwpxPackage,
+        "from_bytes",
+        classmethod(lambda _cls, _blob: parsed),
+    )
+
+    def unexpected_write(*_args, **_kwargs) -> None:
+        pytest.fail("qualification invoked a serializer or mutation primitive")
+
+    monkeypatch.setattr(HwpxPackage, "to_bytes", unexpected_write)
+    monkeypatch.setattr(template_inspection, "remove_bookmark_region", unexpected_write)
+    monkeypatch.setattr(template_inspection, "write_hwpx_package", unexpected_write)
+
+    inspection = HWPX_QUALIFICATION_PROFILE.inspect(canonical_bytes)
+
+    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v1"
+    assert inspection == QualificationInspection(TemplateStructure(("name",), ()), ())
+    assert parsed.entries == before
 
 
 def test_qualification_rejects_ambiguous_field_ownership_without_partial_structure() -> None:

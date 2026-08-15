@@ -44,6 +44,7 @@ from hwpxcore.structural_boundary import (
 from hwpxcore.text_extract import require_package
 
 from ..application.template_qualification import (
+    QualificationProfile,
     QualificationInspection,
     TemplateDiagnostic,
     TemplateInspectionContractError,
@@ -978,6 +979,13 @@ def inspect_hwpx_qualification(canonical_bytes: bytes) -> QualificationInspectio
             (TemplateDiagnostic("invalid-hwpx-package", str(exc)),),
         )
     return _analyze_hwpx_detail(_inspect_hwpx_detail(package))
+
+
+# Bump this identity whenever the HWPX qualification rule set or projection changes.
+HWPX_QUALIFICATION_PROFILE = QualificationProfile(
+    "hwpx-template-qualification-v1",
+    inspect_hwpx_qualification,
+)
 
 
 def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
