@@ -488,7 +488,7 @@ def test_unknown_prepared_change_status_rejected():
     from hwpxfiller.application.work_template_state import PreparedTemplateChange
 
     with pytest.raises(WorkTemplateStateError, match="prepared change status"):
-        PreparedTemplateChange("C1", "P1", "W1", "WAT", {})
+        PreparedTemplateChange("C1", "P1", "W1", "A1", "EVx", "WAT", "t3")
 
 
 def test_duplicate_preparation_id_rejected():
