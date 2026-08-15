@@ -27,6 +27,14 @@ from hwpxfiller.application.candidate_revision import (
     capture_candidate_revision,
 )
 from hwpxfiller.application.prepare_orchestration import (
+    APPLY_ALREADY_APPLIED,
+    APPLY_APPLIED,
+    APPLY_APPLIED_THEN_ADVANCED,
+    APPLY_CONFLICT,
+    APPLY_INTEGRITY_ERROR,
+    APPLY_REJECTED,
+    APPLY_SUPERSEDED,
+    ApplyOutcome,
     derive_stage_ids,
     find_application,
     find_change,
@@ -34,7 +42,9 @@ from hwpxfiller.application.prepare_orchestration import (
     in_flight_preparations,
     plan_admission_ready,
     plan_admission_terminal,
+    plan_apply,
     plan_capture_checkpoint,
+    plan_change_status,
     plan_qualification_checkpoint,
     plan_recovery,
 )
@@ -45,6 +55,11 @@ from hwpxfiller.application.template_qualification import (
     qualify_template,
 )
 from hwpxfiller.application.work_template_state import (
+    CHANGE_APPLIED,
+    CHANGE_CONFLICTED,
+    CHANGE_PREPARED,
+    CHANGE_REJECTED,
+    CHANGE_SUPERSEDED,
     PREP_BASE_CHANGED,
     PREP_CAPTURING,
     PREP_NO_CHANGE,
@@ -57,10 +72,15 @@ from hwpxfiller.application.work_template_state import (
     PreparedTemplateChange,
     TemplateChangePreparation,
 )
+from .candidate_store import ObjectCorrupt as CandidateCorrupt
+from .candidate_store import ObjectNotFound as CandidateNotFound
 from .candidate_store import CandidateObjectStore
+from .qualification_store import ObjectCorrupt as QualCorrupt
 from .qualification_store import ObjectNotFound as QualObjectNotFound
 from .qualification_store import QualificationObjectStore
 from .work_template_store import AtomicWorkTemplateStateStore, WorkTemplateStoreError
+
+_INTEGRITY_ERRORS = (CandidateNotFound, CandidateCorrupt, QualObjectNotFound, QualCorrupt)
 
 
 def run_capture_stage(
@@ -313,6 +333,109 @@ def _operational_target(candidate_store, evidence):
         revision.media,
         revision.exact_content_digest,
         evidence.qualification_profile_id,
+    )
+
+
+_TERMINAL_RESULT = {
+    CHANGE_SUPERSEDED: APPLY_SUPERSEDED,
+    CHANGE_CONFLICTED: APPLY_CONFLICT,
+    CHANGE_REJECTED: APPLY_REJECTED,
+}
+
+
+def apply_prepared_change(
+    work_store: AtomicWorkTemplateStateStore,
+    candidate_store: CandidateObjectStore,
+    qualification_store: QualificationObjectStore,
+    *,
+    work_id: str,
+    change_id: str,
+    actor: str,
+    authorize: "Callable[[DocumentWork, str], None]",
+    new_application_id: str,
+    provenance_id: str,
+    outbox_event_id: str,
+    applied_at: str,
+) -> ApplyOutcome:
+    """Prepared Change 를 fixed base 에서 Work 에 원자 적용한다 — source/qualification 재실행 없음.
+
+    status-first idempotency(APPLIED 는 current 위치에 따라 ALREADY_APPLIED/APPLIED_THEN_ADVANCED,
+    이미 terminal 이면 그 결과)를 먼저 닫고, PREPARED 만 current Preparation·exact base·Profile
+    revocation·exact PASS Evidence 를 **완료 시점 값으로 rebase 없이** 재검사한다. object missing·
+    digest 손상은 일반 conflict 가 아니라 INTEGRITY_ERROR 로 상태 무변경 종료다.
+    """
+    holder: dict = {"outcome": None}
+    with work_store.update(work_id) as txn:
+        aggregate = txn.aggregate
+        change = find_change(aggregate, change_id)  # 없으면 loud
+        authorize(aggregate.work, actor)  # Work 접근·Template 적용 권한
+
+        if change.status == CHANGE_APPLIED:  # idempotency 먼저
+            result = (
+                APPLY_ALREADY_APPLIED
+                if aggregate.work.current_template_application_id
+                == change.resulting_application_id
+                else APPLY_APPLIED_THEN_ADVANCED
+            )
+            return ApplyOutcome(result, change.resulting_application_id)
+        if change.status != CHANGE_PREPARED:  # SUPERSEDED/CONFLICTED/REJECTED 이력 반환
+            return ApplyOutcome(_TERMINAL_RESULT[change.status], None)
+
+        prep = find_preparation(aggregate, change.preparation_id)
+        # conflict 분류(ordered) — Change status 로만 닫고 base 를 자동 rebase 하지 않는다.
+        if (
+            aggregate.work.current_template_preparation_id != prep.preparation_id
+            or prep.status != PREP_READY
+            or prep.prepared_change_id != change_id
+        ):
+            conflict = (CHANGE_SUPERSEDED, APPLY_SUPERSEDED)  # newer Preparation 이 current
+        elif aggregate.work.current_template_application_id != change.base_application_id:
+            conflict = (CHANGE_CONFLICTED, APPLY_CONFLICT)  # base 전진
+        elif qualification_store.is_revoked(prep.qualification_profile_id):
+            conflict = (CHANGE_REJECTED, APPLY_REJECTED)
+        else:
+            conflict = None
+        if conflict is not None:
+            change_status, result = conflict
+            txn.aggregate = plan_change_status(aggregate, change_id, change_status)
+            return ApplyOutcome(result, None)
+
+        if not _apply_integrity(candidate_store, qualification_store, aggregate, prep, change):
+            return ApplyOutcome(APPLY_INTEGRITY_ERROR, None)  # 상태 무변경
+
+        txn.aggregate = plan_apply(
+            aggregate, change,
+            new_application_id=new_application_id, provenance_id=provenance_id,
+            outbox_event_id=outbox_event_id, actor=actor, applied_at=applied_at,
+        )
+        holder["outcome"] = ApplyOutcome(APPLY_APPLIED, new_application_id)
+    return holder["outcome"]
+
+
+def _apply_integrity(candidate_store, qualification_store, aggregate, prep, change) -> bool:
+    """exact PASS Evidence·Revision·digest·lineage/media·Manifest 재검증(revocation 은 conflict 축)."""
+    try:
+        evidence = qualification_store.get_evidence(change.target_pass_evidence_id)
+        if (
+            evidence.result != PASS
+            or evidence.structure_projection is None
+            or evidence.attempt_id != prep.attempt_id
+            or evidence.revision_id != prep.revision_id
+            or evidence.qualification_profile_id != prep.qualification_profile_id
+        ):
+            return False
+        revision = candidate_store.get_revision(evidence.revision_id)
+        candidate_store.get_blob(revision.exact_content_digest)  # 재해시로 digest 검증
+        qualification_store.get_manifest(prep.qualification_profile_id)
+        current = find_application(aggregate, aggregate.work.current_template_application_id)
+        current_revision = candidate_store.get_revision(
+            qualification_store.get_evidence(current.pass_evidence_id).revision_id
+        )
+    except _INTEGRITY_ERRORS:
+        return False
+    return (
+        revision.template_lineage_id == aggregate.work.template_lineage_id
+        and revision.media == current_revision.media  # 같은 Work 는 media 를 못 바꾼다
     )
 
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 
 from .qualification_evidence import ERROR, FAIL, PASS
 from .work_template_state import (
+    CHANGE_APPLIED,
     CHANGE_PREPARED,
     PREP_CAPTURE_ERROR,
     PREP_CAPTURING,
@@ -28,13 +29,28 @@ from .work_template_state import (
     PREP_QUALIFYING,
     PREP_READY,
     PREP_SOURCE_BINDING_CHANGED,
+    PREPARED_CHANGE,
+    ApplyProvenance,
+    OutboxEvent,
     PreparedTemplateChange,
     TemplateChangePreparation,
+    WorkTemplateApplication,
     WorkTemplateStateAggregate,
     WorkTemplateStateError,
 )
 
 _IN_FLIGHT = frozenset({PREP_CAPTURING, PREP_QUALIFYING})
+
+CHANGE_APPLIED_EVENT = "template.change_applied"
+
+# apply 결과 어휘(S3-07) — 성공·재전송·전진·conflict·revocation·integrity 를 서로 다르게 닫는다.
+APPLY_APPLIED = "APPLIED"
+APPLY_ALREADY_APPLIED = "ALREADY_APPLIED"
+APPLY_APPLIED_THEN_ADVANCED = "APPLIED_THEN_ADVANCED"
+APPLY_SUPERSEDED = "SUPERSEDED"
+APPLY_CONFLICT = "CONFLICT"
+APPLY_REJECTED = "REJECTED"
+APPLY_INTEGRITY_ERROR = "INTEGRITY_ERROR"
 
 
 @dataclass(frozen=True)
@@ -270,4 +286,89 @@ def plan_admission_ready(
         aggregate_version=aggregate.aggregate_version + 1,
         preparations=preparations,
         prepared_changes=(*aggregate.prepared_changes, change),
+    )
+
+
+# ─── apply(S3-07): Prepared Change 를 Work 에 원자 적용 ─────────────────────────
+
+@dataclass(frozen=True)
+class ApplyOutcome:
+    """apply 명령 결과 — status 와 (성공/idempotent 이면) resulting Application id."""
+
+    result: str
+    resulting_application_id: str | None
+
+
+def plan_change_status(
+    aggregate: WorkTemplateStateAggregate, prepared_change_id: str, status: str
+) -> WorkTemplateStateAggregate:
+    """conflict 분류를 Change status 로만 닫는다(Application/current pointer 무변경)."""
+    changes = tuple(
+        replace(c, status=status) if c.prepared_change_id == prepared_change_id else c
+        for c in aggregate.prepared_changes
+    )
+    return replace(
+        aggregate, aggregate_version=aggregate.aggregate_version + 1, prepared_changes=changes
+    )
+
+
+def plan_apply(
+    aggregate: WorkTemplateStateAggregate,
+    change: PreparedTemplateChange,
+    *,
+    new_application_id: str,
+    provenance_id: str,
+    outbox_event_id: str,
+    actor: str,
+    applied_at: str,
+) -> WorkTemplateStateAggregate:
+    """새 Application·current pointer·Change APPLIED·provenance·outbox 를 하나의 commit 으로 낸다."""
+    current = find_application(aggregate, aggregate.work.current_template_application_id)
+    new_epoch = current.application_epoch + 1
+    new_application = WorkTemplateApplication(
+        application_id=new_application_id,
+        work_id=change.work_id,
+        application_epoch=new_epoch,
+        pass_evidence_id=change.target_pass_evidence_id,
+        previous_application_id=current.application_id,
+        origin=PREPARED_CHANGE,
+        prepared_change_id=change.prepared_change_id,
+        actor=actor,
+        applied_at=applied_at,
+    )
+    prepared_changes = tuple(
+        replace(
+            c, status=CHANGE_APPLIED,
+            resulting_application_id=new_application_id, applied_at=applied_at,
+        )
+        if c.prepared_change_id == change.prepared_change_id
+        else c
+        for c in aggregate.prepared_changes
+    )
+    provenance = ApplyProvenance(
+        provenance_id=provenance_id,
+        work_id=change.work_id,
+        from_application_id=current.application_id,
+        to_application_id=new_application_id,
+        from_pass_evidence_id=current.pass_evidence_id,
+        to_pass_evidence_id=change.target_pass_evidence_id,
+        prepared_change_id=change.prepared_change_id,
+        epoch_before=current.application_epoch,
+        epoch_after=new_epoch,
+        actor=actor,
+        applied_at=applied_at,
+    )
+    outbox = OutboxEvent(
+        event_id=outbox_event_id,
+        event_type=CHANGE_APPLIED_EVENT,
+        payload={"work_id": change.work_id, "application_id": new_application_id},
+    )
+    return replace(
+        aggregate,
+        aggregate_version=aggregate.aggregate_version + 1,
+        applications=(*aggregate.applications, new_application),
+        work=replace(aggregate.work, current_template_application_id=new_application_id),
+        prepared_changes=prepared_changes,
+        apply_provenance=(*aggregate.apply_provenance, provenance),
+        outbox_events=(*aggregate.outbox_events, outbox),
     )

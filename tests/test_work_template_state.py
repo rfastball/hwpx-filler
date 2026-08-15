@@ -572,7 +572,9 @@ def test_dangling_provenance_reference_rejected():
             applications=(_app(),),
             preparations=(),
             prepared_changes=(),
-            apply_provenance=(ApplyProvenance("PR1", "GONE", {}),),
+            apply_provenance=(
+                ApplyProvenance("PR1", "W1", "GONE", "GONE", "EV", "EV", "C1", 1, 2, "a", "t"),
+            ),
             outbox_events=(),
         )
 
