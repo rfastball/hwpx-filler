@@ -20,14 +20,16 @@ import re
 import threading
 import weakref
 from contextlib import contextmanager
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from hwpxfiller.application.prepare_template_change import PreparePins, plan_prepare
 from hwpxfiller.application.qualification_evidence import PASS
 from hwpxfiller.application.work_template_state import (
     INITIALIZATION,
     SCHEMA_VERSION,
     DocumentWork,
+    TemplateChangePreparation,
     WorkTemplateApplication,
     WorkTemplateStateAggregate,
     decode_aggregate,
@@ -224,3 +226,47 @@ def initialize_work(
     )
     store.create(aggregate)
     return aggregate
+
+
+def start_prepare(
+    store: AtomicWorkTemplateStateStore,
+    *,
+    work_id: str,
+    prepare_request_id: str,
+    actor: str,
+    resolve_pins: "Callable[[DocumentWork], PreparePins]",
+    preparation_id: str,
+    execution_session_id: str,
+    started_at: str,
+    authorize: "Callable[[DocumentWork, str], None] | None" = None,
+    on_worker_handoff: "Callable[[TemplateChangePreparation], None] | None" = None,
+) -> TemplateChangePreparation:
+    """짧은 Work aggregate transaction 으로 prepare intent 를 시작한다(멱등).
+
+    base/source binding/profile 은 ``resolve_pins`` port 가 current Work 에서 서버-side 로 산출한다
+    (client 입력을 받지 않는다). 새 Preparation 을 만들고 commit 에 성공한 경우에만 lock 밖에서
+    ``on_worker_handoff`` 를 **한 번** 호출한다 — capture/qualification I/O 는 Work lock 안에서
+    돌리지 않는다(#654). 같은 (work, prepare_request_id) 재전송은 mutation·worker 없이 기존 것을
+    반환한다.
+    """
+    plan_holder: dict = {}
+    with store.update(work_id) as txn:
+        aggregate = txn.aggregate
+        if authorize is not None:
+            authorize(aggregate.work, actor)
+        pins = resolve_pins(aggregate.work)
+        plan = plan_prepare(
+            aggregate,
+            prepare_request_id=prepare_request_id,
+            pins=pins,
+            preparation_id=preparation_id,
+            execution_session_id=execution_session_id,
+            started_at=started_at,
+        )
+        txn.aggregate = plan.aggregate  # 멱등이면 aggregate 불변 → snapshot 비교로 commit 안 됨
+        plan_holder["plan"] = plan
+    plan = plan_holder["plan"]
+    # commit 성공(with 블록이 예외 없이 끝남) + 새 Preparation 일 때만 후속 worker 를 넘긴다.
+    if plan.created and on_worker_handoff is not None:
+        on_worker_handoff(plan.preparation)
+    return plan.preparation
