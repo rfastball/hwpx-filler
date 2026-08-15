@@ -26,6 +26,11 @@ from hwpxfiller.application.candidate_revision import (
     TemplateSourceReader,
     capture_candidate_revision,
 )
+from hwpxfiller.application.work_bootstrap import (
+    BOOTSTRAP_OK,
+    TEMPLATE_INITIALIZATION_REQUIRED,
+    BootstrapOutcome,
+)
 from hwpxfiller.application.prepare_orchestration import (
     APPLY_ALREADY_APPLIED,
     APPLY_APPLIED,
@@ -69,9 +74,11 @@ from hwpxfiller.application.work_template_state import (
     PREP_SOURCE_BINDING_CHANGED,
     PREP_SUPERSEDED,
     DocumentWork,
+    MigrationProvenance,
     PreparedTemplateChange,
     TemplateChangePreparation,
 )
+from .work_template_store import initialize_work
 from .candidate_store import ObjectCorrupt as CandidateCorrupt
 from .candidate_store import ObjectNotFound as CandidateNotFound
 from .candidate_store import CandidateObjectStore
@@ -442,6 +449,87 @@ def _apply_integrity(candidate_store, qualification_store, aggregate, prep, chan
         and manifest.media == revision.media  # profile 이 이 media 를 위한 것인가
         and revision.media == current_revision.media  # 같은 Work 는 media 를 못 바꾼다
     )
+
+
+def bootstrap_work(
+    work_store: AtomicWorkTemplateStateStore,
+    candidate_store: CandidateObjectStore,
+    qualification_store: QualificationObjectStore,
+    *,
+    work_id: str,
+    bootstrap_request_id: str,
+    lineage: TemplateLineage,
+    binding: MutableSourceBinding,
+    reader: TemplateSourceReader,
+    profile: QualificationProfile,
+    legacy_template_revision: int,
+    legacy_binding_revision: int,
+    legacy_source_reference: str,
+    observation_id: str,
+    revision_id: str,
+    attempt_id: str,
+    evidence_id: str,
+    application_id: str,
+    engine_metadata: dict,
+    actor: str,
+    captured_at: str,
+    created_at: str,
+    started_at: str,
+    completed_at: str,
+    qualified_at: str,
+) -> BootstrapOutcome:
+    """legacy Job 을 명시적으로 capture→qualify→PASS→INITIALIZATION Application 으로 bootstrap 한다.
+
+    read migration 이 아니다 — legacy Job JSON 은 읽지도 고치지도 않는다(caller 가 legacy counter·
+    source reference 를 넘긴다). capture/qualification 실패는 가짜 Application 을 만들지 않고
+    TEMPLATE_INITIALIZATION_REQUIRED 로 닫는다(repair 대상). 같은 work_id 재전송은 멱등하다.
+    """
+    if work_store.exists(work_id):  # 이미 bootstrap 됨 — 멱등 반환
+        return BootstrapOutcome(BOOTSTRAP_OK, work_store.load(work_id))
+
+    capture = capture_candidate_revision(
+        lineage=lineage, binding=binding, preparation_id=bootstrap_request_id, reader=reader,
+        store=candidate_store, observation_id=observation_id, revision_id=revision_id,
+        captured_at=captured_at, created_at=created_at,
+    )
+    if isinstance(capture, SourceCaptureError):
+        return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason=capture.reason)
+
+    manifest = qualification_store.get_manifest(profile.id)
+    qualification = qualify_template(
+        CandidateRevisionSnapshot(revision_id, capture.blob.exact_bytes), profile
+    )
+    attempt, evidence = build_records(
+        qualification,
+        attempt_id=attempt_id,
+        preparation_id=bootstrap_request_id,
+        evidence_id=evidence_id,
+        projection_schema_version=manifest.projection_schema_version,
+        engine_metadata=engine_metadata,
+        started_at=started_at,
+        completed_at=completed_at,
+        qualified_at=qualified_at,
+    )
+    qualification_store.put_attempt(attempt)  # object-first
+    if evidence is not None:
+        qualification_store.put_evidence(evidence)
+    if attempt.outcome != PASS:  # FAIL/ERROR → repair required, legacy 데이터 무손상
+        return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason=attempt.outcome)
+
+    provenance = MigrationProvenance(
+        bootstrap_request_id=bootstrap_request_id,
+        legacy_template_revision=legacy_template_revision,
+        legacy_binding_revision=legacy_binding_revision,
+        legacy_source_reference=legacy_source_reference,
+        migrated_at=qualified_at,
+    )
+    aggregate = initialize_work(
+        work_store, qualification_store, candidate_store,
+        work_id=work_id, template_lineage_id=lineage.template_lineage_id,
+        application_id=application_id, pass_evidence_id=evidence_id, actor=actor,
+        applied_at=qualified_at, migration_provenance=provenance,
+    )
+    return BootstrapOutcome(BOOTSTRAP_OK, aggregate)
 
 
 def recover_session(
