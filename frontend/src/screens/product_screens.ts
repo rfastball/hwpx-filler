@@ -21,6 +21,7 @@ import { JobPreviewSheet } from "./job_preview.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
   JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
+  JobTemplateChange,
   JobStatusPill,
 } from "./job_run.ts";
 import type { JobRunController } from "./job_run.ts";
@@ -141,6 +142,8 @@ function JobScreen(props: Pick<ProductScreensPorts, "jobRead" | "jobRun" | "data
                 h(JobNoDataExit as any, { controller: jobRead })),
               h("div", { className: "zone job-cands-row", id: "jobCandsRow" },
                 h(JobCandidates as any, { controller: jobRead })),
+              h("div", { className: "zone", id: "jobTplChangeZone" },
+                h(JobTemplateChange as any, { controller: jobRun })),
               h("div", { className: "zone" },
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),

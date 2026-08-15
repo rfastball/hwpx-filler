@@ -16,12 +16,13 @@ import { createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
-  "model", "subscribe", "getRun", "getUi", "client", "notify",
+  "model", "subscribe", "getRun", "getUi", "getTemplateChange", "client", "notify",
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
   "renderResult", "markResultStale",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
-  "pickOutputFolder", "relinkActive", "openPreviewFrom", "closePreview",
+  "pickOutputFolder", "relinkActive", "templateCheck", "templateApply",
+  "openPreviewFrom", "closePreview",
   "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
   "previewFixField", "previewFixFilename", "openRepair", "toggleLog",
   "init", "dispose",

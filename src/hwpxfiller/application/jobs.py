@@ -97,6 +97,8 @@ class JobStorePort(Protocol):
     ) -> Job: ...
     # 즐겨찾기 지정/해제 — 시각은 저장소가 쓰기 순서와 정합하게 찍는다.
     def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job: ...
+    # S3 권위 Work identity 최초 1회 결속(S3-09) — 기존 값이 있으면 쓰지 않는다(멱등).
+    def assign_authority_id(self, name: str, authority_id: str) -> Job: ...
     def rename(self, name: str, new_name: str) -> None: ...
     def clone(self, name: str) -> str: ...
     def delete(self, name: str) -> None: ...
@@ -173,6 +175,11 @@ def set_favorite(
 def rename_job(store: JobStorePort, name: str, new_name: str) -> None:
     """작업 이름 변경 — 자리 선점·빈 이름은 포트가 loud ``ValueError`` 로 거절한다."""
     store.rename(name, new_name)
+
+
+def assign_job_authority_id(store: JobStorePort, name: str, authority_id: str) -> Job:
+    """S3 권위 Work identity 최초 1회 결속(S3-09) — 반환 Job 의 값이 정본이다(경합 화해)."""
+    return store.assign_authority_id(name, authority_id)
 
 
 def clone_job(store: JobStorePort, name: str) -> str:

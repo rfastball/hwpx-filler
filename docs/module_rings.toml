@@ -369,6 +369,12 @@ source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
 oracle_nodeid = "tests/test_selftest_api.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.template_change"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/template_change.py"]
+oracle_nodeid = "tests/test_webapp_template_change.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.template_groups"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/template_groups.py"]

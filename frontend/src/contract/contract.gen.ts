@@ -52,6 +52,37 @@ export const JS_PRODUCT_ERROR_CODES = [
 
 export type JsProductErrorCode = (typeof JS_PRODUCT_ERROR_CODES)[number];
 
+/* 템플릿 변경 확인·적용의 제품 status 어휘(S3-09 #659) — 내부 Preparation/Change/Apply
+ * 상태의 투영이고 정본은 application/template_change_product.py 다. 내부 어휘를 웹이
+ * 직접 보지 않는다(opaque Product Contract). */
+export const TEMPLATE_PREPARATION_STATUSES = [
+  "checking",
+  "ready",
+  "no_change",
+  "invalid",
+  "error",
+  "interrupted",
+  "source_changed",
+  "changed_while_checking",
+  "superseded",
+  "applied",
+  "conflict",
+  "rejected",
+] as const;
+
+export type TemplatePreparationStatus = (typeof TEMPLATE_PREPARATION_STATUSES)[number];
+
+export const TEMPLATE_APPLY_STATUSES = [
+  "applied",
+  "already_applied",
+  "applied_then_advanced",
+  "conflict",
+  "superseded",
+  "rejected",
+] as const;
+
+export type TemplateApplyStatus = (typeof TEMPLATE_APPLY_STATUSES)[number];
+
 export const DISPATCH_REJECTION_KEY = "__hwpx_dispatch_rejection_v1__";
 
 export const DISPATCH_REJECTION_FIELDS = ["name", "message"] as const;
@@ -141,6 +172,8 @@ export const SCREEN_ACTIONS = {
     browse_tab: { required: [], optional: ["tab"] },
     browse_query: { required: [], optional: ["text"] },
     relink_template: { required: ["name"], optional: ["confirm", "path"] },
+    template_check: { required: ["request_id"], optional: [] },
+    template_apply: { required: ["change_token"], optional: [] },
     rename_job: { required: ["name"], optional: ["new"] },
     cancel_generation: { required: [], optional: [] },
     select_failed: { required: [], optional: [] },

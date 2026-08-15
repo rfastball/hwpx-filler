@@ -518,6 +518,26 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   을 써 확인 문안·T1 무장 가드·발신 순서가 갈리지 않는다. 상태 순회 단언은
   `tests/test_webapp_job.py` 의 불변식 테스트, 실렌더는 selftest `job_active_card` 프로브.
 
+#### 템플릿 변경사항 존 (S3-09 #659)
+
+side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 사용자 능력 둘을 연다:
+[변경사항 확인](`#jobTplCheck` → `template_check {request_id}`) ·
+[변경사항 적용](`#jobTplApply` → `template_apply {change_token}`).
+
+- **opaque Product Contract**: 스냅샷 존 `template_change` 는 capability(`supported`·`reason`·
+  `checkable`)·`epoch`·현재 Preparation view(`preparation_token`/`status`/`change_token`/
+  `diagnostics`/`prepared_at`)만 싣는다. revision 번호·목록·선택기·내부 ID(경로·evidence·
+  profile·base)는 DOM 에 없다. status 어휘는 생성 계약(`contract.gen.ts` 의
+  `TEMPLATE_PREPARATION_STATUSES`·`TEMPLATE_APPLY_STATUSES`)이 정본이고 판정·token 발급은
+  코디네이터(`webapp/template_change.py`) 소유다 — 표면은 문안과 재전송 규율만 가진다.
+- **재전송 규율**(웹 소유): 진행 중 중복 클릭은 같은 요청으로 수렴, 전송 실패로 남은 키는
+  같은 키로 재전송, 성공 뒤 클릭만 새 `request_id`(=새 prepare intent). `change_token` 은
+  `ready` 에서만 실리고 새 확인이 시작되면 스냅샷 교체로 이전 적용 버튼이 사라진다.
+- **비활성 + 사유 병기**: HWPX 아닌 작업·템플릿 미연결은 존이 명시적 unsupported, bootstrap
+  실패(`initialization_required`)는 확인 버튼 비활성 + 진단 병기이고 템플릿 실물이 바뀌면
+  재확인이 열린다. `invalid` 는 Candidate 유래 진단을 재진술하며 기존 템플릿이 계속 쓰임을
+  말한다(조용한 fallback 금지).
+
 #### 전체 표시순서 축 (F3 — 지도 §10.11)
 
 좌 열 표 위 `#jobOrderBar` 가 계약 §18.10 의 `viewOrder` 를 사용자 축으로 연다

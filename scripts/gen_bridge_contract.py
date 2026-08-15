@@ -30,6 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from hwpxfiller.application.template_change_product import (  # noqa: E402
+    PRODUCT_APPLY_STATUSES,
+    PRODUCT_PREPARATION_STATUSES,
+)
 from hwpxfiller.webapp import product_api  # noqa: E402
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY  # noqa: E402
 
@@ -193,6 +197,17 @@ def render_contract(
         *_string_array("JS_PRODUCT_ERROR_CODES", js_codes),
         "",
         "export type JsProductErrorCode = (typeof JS_PRODUCT_ERROR_CODES)[number];",
+        "",
+        "/* 템플릿 변경 확인·적용의 제품 status 어휘(S3-09 #659) — 내부 Preparation/Change/Apply",
+        " * 상태의 투영이고 정본은 application/template_change_product.py 다. 내부 어휘를 웹이",
+        " * 직접 보지 않는다(opaque Product Contract). */",
+        *_string_array("TEMPLATE_PREPARATION_STATUSES", PRODUCT_PREPARATION_STATUSES),
+        "",
+        "export type TemplatePreparationStatus = (typeof TEMPLATE_PREPARATION_STATUSES)[number];",
+        "",
+        *_string_array("TEMPLATE_APPLY_STATUSES", PRODUCT_APPLY_STATUSES),
+        "",
+        "export type TemplateApplyStatus = (typeof TEMPLATE_APPLY_STATUSES)[number];",
         "",
         f'export const DISPATCH_REJECTION_KEY = "{app.rejection_key}";',
         "",

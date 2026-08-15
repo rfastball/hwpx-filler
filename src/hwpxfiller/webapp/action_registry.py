@@ -170,6 +170,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "browse_tab": _schema(optional="tab"),
         "browse_query": _schema(optional="text"),
         "relink_template": _schema("name", "path confirm"),
+        # 템플릿 변경 확인·적용(S3-09 #659) — work 는 세션의 현재 작업이라 payload 에 없다.
+        # request_id 는 prepare intent 재전송 단위(웹 발급), change_token 은 opaque token.
+        "template_check": _schema("request_id"),
+        "template_apply": _schema("change_token"),
         "rename_job": _schema("name", "new"),
         "cancel_generation": _schema(),
         # 결과 3태의 「실패한 N건만 선택」(지도 §10.10 판정 F) — 무페이로드: 실패 index 는

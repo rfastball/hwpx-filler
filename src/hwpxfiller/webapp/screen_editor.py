@@ -109,6 +109,10 @@ _EMPTY_PRESERVED: "dict[str, object]" = {
     # 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비어(§13-2 의 조용한 반복이 깨지고)
     # 다음 실행이 가장 무거운 검토를 다시 요구한다(3R P2).
     "reviewed_rules": {},
+    # S3 권위 Work identity(S3-09) — 에디터가 소유하는 것은 규칙이고 identity 결속은
+    # 템플릿 변경 코디네이터의 일이다. 안 되싣으면 규칙 저장 한 번이 작업의 적용
+    # 이력(epoch·Preparation)을 조용히 끊는다.
+    "authority_id": "",
 }
 
 
@@ -127,6 +131,7 @@ def _preserved_meta(job: "Job") -> "dict[str, object]":
         "group": job.group,
         "favorited_at": job.favorited_at,
         "reviewed_rules": dict(job.reviewed_rules),
+        "authority_id": job.authority_id,
     }
 
 
