@@ -64,13 +64,13 @@ def _profile(outcome):
     return QualificationProfile(PROF, inspect)
 
 
-def _stores(tmp_path):
+def _stores(tmp_path, manifest_media="hwpx"):
     wstore = AtomicWorkTemplateStateStore(tmp_path / "works")
     qstore = QualificationObjectStore(tmp_path / "q")
     cstore = CandidateObjectStore(tmp_path / "c")
     qstore.put_manifest(
         build_manifest(
-            qualification_profile_id=PROF, media="hwpx", adapter_contract_version="a1",
+            qualification_profile_id=PROF, media=manifest_media, adapter_contract_version="a1",
             product_rule_version="p1", operation_alphabet_version="o1",
             projection_schema_version="proj-v1", manifest_payload={}, created_at="t0",
         )
@@ -152,6 +152,50 @@ def test_qualification_error_requires_initialization_no_evidence(tmp_path):
 
     with pytest.raises(ObjectNotFound):
         qstore.get_evidence("EV1")  # ERROR 는 Evidence 없음
+
+
+def test_revoked_profile_requires_initialization(tmp_path):
+    # bootstrap 도 admission/apply 와 같은 revocation 게이트를 통과해야 한다(우회 금지).
+    from hwpxfiller.application.qualification_evidence import QualificationProfileRevocation
+
+    wstore, qstore, cstore = _stores(tmp_path)
+    qstore.put_revocation(QualificationProfileRevocation(PROF, "compromised", "admin", "t0"))
+    outcome = _bootstrap(wstore, qstore, cstore)
+    assert outcome.result == TEMPLATE_INITIALIZATION_REQUIRED and outcome.reason == "PROFILE_REVOKED"
+    assert not wstore.exists("W1")
+
+
+def test_manifest_media_mismatch_requires_initialization(tmp_path):
+    wstore, qstore, cstore = _stores(tmp_path, manifest_media="docx")  # revision 은 hwpx
+    outcome = _bootstrap(wstore, qstore, cstore)
+    assert outcome.result == TEMPLATE_INITIALIZATION_REQUIRED and outcome.reason == "MEDIA_MISMATCH"
+    assert not wstore.exists("W1")
+
+
+def test_migration_provenance_survives_prepare(tmp_path):
+    # bootstrap 뒤 첫 prepare 가 migration provenance 를 조용히 지우지 않는다.
+    from hwpxfiller.application.prepare_template_change import PreparePins
+    from hwpxfiller.external.work_template_store import start_prepare
+
+    wstore, qstore, cstore = _stores(tmp_path)
+    _bootstrap(wstore, qstore, cstore)
+    start_prepare(
+        wstore, work_id="W1", prepare_request_id="RQ1", actor="t",
+        resolve_pins=lambda _w: PreparePins("SB1", GEN, PROF),
+        preparation_id="P1", execution_session_id="S1", started_at="t5",
+    )
+    mp = wstore.load("W1").migration_provenance
+    assert mp is not None and mp.legacy_template_revision == 7  # 보존됨
+
+
+def test_concurrent_create_collision_reconciles(tmp_path, monkeypatch):
+    # exists() 가 놓친 동시 생성(WorkAggregateExists)을 기존 aggregate 로 화해한다.
+    wstore, qstore, cstore = _stores(tmp_path)
+    _bootstrap(wstore, qstore, cstore)  # W1 이미 존재
+    monkeypatch.setattr(wstore, "exists", lambda _w: False)  # exists 우회 → initialize 가 충돌
+    outcome = _bootstrap(wstore, qstore, cstore)  # 같은 request(같은 ids) 재전송
+    assert outcome.result == BOOTSTRAP_OK
+    assert outcome.aggregate.applications[0].application_id == "A1"  # 먼저 commit 한 것
 
 
 # ─── migration codec ──────────────────────────────────────────────────────────

@@ -85,7 +85,11 @@ from .candidate_store import CandidateObjectStore
 from .qualification_store import ObjectCorrupt as QualCorrupt
 from .qualification_store import ObjectNotFound as QualObjectNotFound
 from .qualification_store import QualificationObjectStore
-from .work_template_store import AtomicWorkTemplateStateStore, WorkTemplateStoreError
+from .work_template_store import (
+    AtomicWorkTemplateStateStore,
+    WorkAggregateExists,
+    WorkTemplateStoreError,
+)
 
 _INTEGRITY_ERRORS = (CandidateNotFound, CandidateCorrupt, QualObjectNotFound, QualCorrupt)
 
@@ -515,6 +519,12 @@ def bootstrap_work(
         qualification_store.put_evidence(evidence)
     if attempt.outcome != PASS:  # FAIL/ERROR → repair required, legacy 데이터 무손상
         return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason=attempt.outcome)
+    # admission/apply 와 같은 Profile 자격 게이트를 bootstrap 도 통과해야 한다(우회 금지):
+    # 무효 qualification 권위(revoked Profile·media 불일치)로 epoch-1 current 를 세우지 않는다.
+    if qualification_store.is_revoked(profile.id):
+        return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason="PROFILE_REVOKED")
+    if manifest.media != capture.revision.media:
+        return BootstrapOutcome(TEMPLATE_INITIALIZATION_REQUIRED, reason="MEDIA_MISMATCH")
 
     provenance = MigrationProvenance(
         bootstrap_request_id=bootstrap_request_id,
@@ -523,12 +533,15 @@ def bootstrap_work(
         legacy_source_reference=legacy_source_reference,
         migrated_at=qualified_at,
     )
-    aggregate = initialize_work(
-        work_store, qualification_store, candidate_store,
-        work_id=work_id, template_lineage_id=lineage.template_lineage_id,
-        application_id=application_id, pass_evidence_id=evidence_id, actor=actor,
-        applied_at=qualified_at, migration_provenance=provenance,
-    )
+    try:
+        aggregate = initialize_work(
+            work_store, qualification_store, candidate_store,
+            work_id=work_id, template_lineage_id=lineage.template_lineage_id,
+            application_id=application_id, pass_evidence_id=evidence_id, actor=actor,
+            applied_at=qualified_at, migration_provenance=provenance,
+        )
+    except WorkAggregateExists:  # 동시 bootstrap 경합 — 먼저 commit 한 것으로 화해(멱등)
+        return BootstrapOutcome(BOOTSTRAP_OK, work_store.load(work_id))
     return BootstrapOutcome(BOOTSTRAP_OK, aggregate)
 
 
