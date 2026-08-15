@@ -144,7 +144,9 @@ _EDITOR_REBUILDS = {
     "version", "name", "template_path", "mapping", "filename_pattern",
 }
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
-_EDITOR_PRESERVES = {"tags", "last_run_at", "group", "favorited_at", "reviewed_rules"}
+_EDITOR_PRESERVES = {
+    "tags", "last_run_at", "group", "favorited_at", "reviewed_rules", "authority_id",
+}
 #: 레지스트리가 **계산해 쓰는** 파생 메타(재작성 F7) — 어느 편집 표면도 값을 싣지 않고
 #: :func:`~hwpxfiller.domain.job.advance_revisions` 가 저장 잠금 안에서 정산한다. 세 번째
 #: 갈래를 만든 이유: 이 셋을 '보존'으로 선언하면 편집 세션이 든 옛 판본이 디스크의 최신
