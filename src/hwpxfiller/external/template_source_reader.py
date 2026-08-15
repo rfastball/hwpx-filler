@@ -100,6 +100,11 @@ class FileTemplateSourceReader:
             data = _read_all(fd)
             if self._interference is not None:
                 self._interference()
+            # 내용 수준 안정성: 처음부터 다시 읽어 두 read 가 같은 bytes 인지 확인한다.
+            # 같은 길이·같은 mtime(granularity·timestamp 보존) in-place 덮어쓰기는 identity
+            # metadata 로는 안 보이지만 두 번째 read 에서 다른 bytes 로 드러난다.
+            os.lseek(fd, 0, os.SEEK_SET)
+            reread = _read_all(fd)
             post = file_identity(os.fstat(fd))
             # ponytail: open read handle 을 쥔 동안 Windows 는 경로 rename/replace/delete 를
             # 막으므로 os.stat 은 실패하지 않는다(atomic-replace 판정은 POSIX 용이고 순수
@@ -112,6 +117,8 @@ class FileTemplateSourceReader:
                 expected_generation=binding.generation,
                 probed_generation=self._probe(binding.source_binding_id),
             )
+            if reason is None and data != reread:
+                reason = SOURCE_CAPTURE_ERROR
         finally:
             os.close(fd)
         if reason is not None:

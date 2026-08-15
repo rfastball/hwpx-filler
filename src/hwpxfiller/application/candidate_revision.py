@@ -15,6 +15,7 @@ revision 의 create-once 저장은 :mod:`hwpxfiller.external.candidate_store` �
 
 from __future__ import annotations
 
+import copy
 import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -160,12 +161,17 @@ def capture_candidate_revision(
     """
     if binding.media != lineage.media:
         return SourceCaptureError(MEDIA_MISMATCH)
+    # lineage 는 특정 source binding 의 특정 generation 을 pin 한다 — id 만 맞고 generation 이
+    # 어긋나면 repin 이므로 capture 하지 않는다(gen 7 lineage 에 gen 8 binding 거절).
+    if (
+        binding.source_binding_id != lineage.mutable_source_binding_id
+        or binding.generation != lineage.source_binding_generation
+    ):
+        return SourceCaptureError(SOURCE_BINDING_CHANGED)
 
     result = reader(binding)
     if isinstance(result, SourceCaptureError):
         return result
-    if binding.source_binding_id != lineage.mutable_source_binding_id:
-        return SourceCaptureError(SOURCE_BINDING_CHANGED)
 
     blob = ContentBlob(
         digest=result.captured_content_digest,
@@ -179,7 +185,7 @@ def capture_candidate_revision(
         source_binding_id=result.source_binding_id,
         source_binding_generation=result.source_binding_generation,
         capture_method=result.capture_method,
-        observed_metadata=result.observed_metadata,
+        observed_metadata=copy.deepcopy(dict(result.observed_metadata)),  # reader alias 차단
         captured_content_digest=result.captured_content_digest,
         captured_at=captured_at,
     )

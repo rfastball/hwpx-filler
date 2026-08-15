@@ -122,6 +122,10 @@ class CandidateObjectStore:
 
     def get_blob(self, digest: str) -> ContentBlob:
         content = self._get("blobs", self._blob_key(digest))
+        # _blob_key 는 알고리즘 접두를 버리므로 저장된 full digest 가 요청과 같은지 확인한다 —
+        # 안 그러면 sha512:<같은hex> 요청이 sha256 blob 으로 조용히 해석된다.
+        if content["digest"] != digest:
+            raise ObjectNotFound(f"blob {digest} 없음(저장 digest {content['digest']})")
         exact_bytes = base64.b64decode(content["exact_bytes_b64"])
         if blob_digest(exact_bytes) != content["digest"]:
             raise ObjectCorrupt(f"blob {digest} bytes 가 digest 와 불일치")
@@ -134,7 +138,9 @@ class CandidateObjectStore:
         )
 
     def has_blob(self, digest: str) -> bool:
-        return self._exists("blobs", self._blob_key(digest))
+        if not self._exists("blobs", self._blob_key(digest)):
+            return False
+        return self._get("blobs", self._blob_key(digest))["digest"] == digest
 
     # ── Observation ───────────────────────────────────────────────────────
     def put_observation(self, observation: SourceCaptureObservation) -> None:
@@ -154,6 +160,14 @@ class CandidateObjectStore:
         if not self._exists("observations", revision.origin_capture_observation_id):
             raise DanglingReference(
                 f"revision {revision.revision_id} 의 origin observation 부재"
+            )
+        # origin observation 이 실제로 이 bytes 를 capture 했음을 증명해야 한다 — 존재만으로는
+        # 다른 blob 을 가리키는 내부 불일치 provenance 를 막지 못한다.
+        observation = self.get_observation(revision.origin_capture_observation_id)
+        if observation.captured_content_digest != revision.exact_content_digest:
+            raise DanglingReference(
+                f"revision {revision.revision_id} 의 blob 이 origin observation 의 "
+                f"capture digest 와 불일치"
             )
         self._put("revisions", revision.revision_id, encode_revision(revision))
 
