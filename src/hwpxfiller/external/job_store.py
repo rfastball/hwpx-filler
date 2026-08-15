@@ -173,6 +173,7 @@ def encode_job(job: Job) -> dict:
         "favorited_at": job.favorited_at,
         "tags": dict(job.tags),
         "group": job.group,
+        "authority_id": job.authority_id,
         "reviewed_rules": dict(job.reviewed_rules),
         "template_revision": job.template_revision,
         "binding_revision": job.binding_revision,
@@ -275,6 +276,7 @@ def decode_job(d: dict) -> Job:
         favorited_at=_str("favorited_at"),
         tags=tags,
         group=_str("group"),
+        authority_id=_str("authority_id"),
         reviewed_rules=reviewed,
         template_revision=_revision("template_revision"),
         binding_revision=_revision("binding_revision"),
@@ -310,6 +312,9 @@ def content_fingerprint(job: Job) -> str:
     d.pop("last_run_at", None)
     d.pop("favorited_at", None)
     d.pop("group", None)
+    # 권위 identity 도 뺀다(S3-09) — 첫 [변경사항 확인]의 발급이 열어 둔 편집 세션에
+    # 「외부 변경」 거짓 파괴 확인을 띄우지 않게. 위 넷과 같은 순수 메타 부류.
+    d.pop("authority_id", None)
     # 검토 기준선도 뺀다(재작성 F5 판정 B) — 완주 스탬프가 갱신하는 사용 메타라 위 넷과
     # 같은 부류다. 남기면 실행 한 번이 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
     d.pop("reviewed_rules", None)
@@ -439,6 +444,19 @@ class JobRegistry:
 
         return self.mutate(name, _stamp)
 
+    def assign_authority_id(self, name: str, authority_id: str) -> Job:
+        """S3 템플릿 권위 Work identity 결속(S3-09) — **최초 1회만** 쓴다(멱등).
+
+        이미 결속된 작업에 다른 id 를 다시 쓰면 그 작업의 적용 이력(epoch·Preparation)이
+        통째로 남의 것이 되므로, 기존 값이 있으면 쓰지 않고 그대로 돌려준다 — 경합하는
+        두 발급 중 먼저 커밋된 쪽이 이긴다(호출자는 반환 Job 의 값을 정본으로 쓴다).
+        """
+        def _set(job: Job) -> None:
+            if not job.authority_id:
+                job.authority_id = authority_id
+
+        return self.mutate(name, _set)
+
     def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job:
         """즐겨찾기 지정/해제(§18.5) — 다른 writer 와 직렬화된 단일 필드 갱신.
 
@@ -548,6 +566,9 @@ class JobRegistry:
             job.template_revision = 1
             job.binding_revision = 1
             job.previous_rules = {}
+            # 권위 identity 도 미계승(S3-09) — 복사본은 새 Work 라 원본의 적용 이력
+            # (epoch·Preparation)을 물려받으면 겪지 않은 권위 역사를 지어내는 것이다.
+            job.authority_id = ""
             self.save(job)
             return candidate
 

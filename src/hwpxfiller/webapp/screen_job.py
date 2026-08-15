@@ -2097,10 +2097,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 결과가 남의 것으로 판정돼 복구 행동이 사라지고 강등 문구가 거짓말을 한다.
         if self._last_run_job == name:
             self._last_run_job = new_clean
-        # 템플릿 권위 인덱스(S3-09)도 같은 전이에서 추종한다 — 안 따라가면 개명 뒤 첫
-        # 확인이 새 Work 로 조용히 재-bootstrap 되어 적용 이력(epoch)이 소실된다.
-        if self._template_change is not None:
-            self._template_change.on_job_renamed(name, new_clean)
+        # (템플릿 권위 identity 는 Job durable 필드(`authority_id`)라 개명을 저절로
+        #  따라간다 — 여기서 옮길 인덱스가 없다, S3-09 리뷰 P1.)
         return {"ok": True}
 
     # (close_guard_reason 은 U2 §2.9(#344)에서 사망 — 창 닫기는 명시적 종료 선언이고 진행

@@ -265,11 +265,37 @@ def test_crashed_session_preparation_recovers_as_interrupted(tmp_path, monkeypat
 
 
 def test_rename_follows_work_identity(tmp_path):
+    """identity 는 Job durable 필드라 개명을 저절로 따라간다 — 옮길 인덱스·훅이 없다."""
     reg, _tpl, coord, token = _ready(tmp_path)
     reg.rename("공고서", "공고서2")
-    coord.on_job_renamed("공고서", "공고서2")
     assert coord.zone("공고서2", "hwpx", False)["epoch"] == 1
     assert coord.apply("공고서2", token)["status"] == "applied"  # 이력·token 생존
+
+
+def test_recycled_name_is_a_fresh_work_and_inherits_nothing(tmp_path):
+    """삭제된 작업의 이름을 새 작업이 재사용해도 남의 권위 이력·token 을 물려받지 않는다."""
+    reg, tpl, coord, token = _ready(tmp_path)
+    reg.delete("공고서")
+    _write_template(tpl, ["기관명"])
+    reg.save(Job(name="공고서", template_path=str(tpl)))  # 같은 이름, 다른 작업
+    zone = coord.zone("공고서", "hwpx", False)
+    assert zone["epoch"] is None and zone["preparation"] is None  # 이력 미승계
+    with pytest.raises(TemplateChangeError):
+        coord.apply("공고서", token)  # 죽은 작업의 token 은 새 작업에 못 앉는다
+    assert coord.check("공고서", "n1")["preparation"]["status"] == "no_change"  # 새 Work 로 시작
+
+
+def test_bootstrap_failure_survives_restart(tmp_path):
+    """실패 기록은 durable — 재시작해도 같은 실물이면 비활성+사유가 유지된다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.hwpx"
+    tpl.write_bytes(b"not a zip")
+    reg.save(Job(name="깨진작업", template_path=str(tpl)))
+    first = _coordinator(tmp_path, reg)
+    assert first.check("깨진작업", "k1")["ok"] is False
+    restarted = _coordinator(tmp_path, reg)  # 새 process
+    zone = restarted.zone("깨진작업", "hwpx", False)
+    assert zone["checkable"] is False and zone["diagnostics"]
 
 
 # ─── 내부 → 제품 status 투영(순수) ──────────────────────────────────────────

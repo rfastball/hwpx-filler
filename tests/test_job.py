@@ -1034,7 +1034,7 @@ _READERS = {
 _WRITERS = {
     "save", "delete", "rename", "clone", "mutate", "stamp_last_run", "set_favorite",
     "set_group", "rename_group", "disband_group", "soft_delete", "restore_soft_deleted",
-    "remove_corrupt_entry", "set_tags", "relink_template",
+    "remove_corrupt_entry", "set_tags", "relink_template", "assign_authority_id",
 }
 
 
@@ -1123,6 +1123,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
     exercised = {
         "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
         "mutate": lambda: reg.mutate("A", lambda j: setattr(j, "filename_pattern", "p")),
+        "assign_authority_id": lambda: reg.assign_authority_id("A", "w-test"),
         "set_tags": lambda: reg.set_tags("A", {"지역": "본청"}),
         "relink_template": lambda: reg.relink_template("A", "t2.hwpx"),  # 같은 매체 = 통과
         "stamp_last_run": lambda: reg.stamp_last_run("A", "2026-07-21T09:00:00"),

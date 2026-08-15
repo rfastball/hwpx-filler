@@ -169,7 +169,17 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   function ingestFull(value: unknown): void {
     const before = run;
     const next = acceptFull(before, value as Obj);
-    const disposal = disposeBySession(before, sessionKeyOf(before.lastFull), sessionKeyOf(value as Obj));
+    const prevKey = sessionKeyOf(before.lastFull);
+    const nextKey = sessionKeyOf(value as Obj);
+    const disposal = disposeBySession(before, prevKey, nextKey);
+    /* 템플릿 변경 UI 상태(재전송 키·적용 재진술)는 세션 정체를 따른다(리뷰 P2) — 작업이
+       갈리면 A 의 「적용했습니다」가 B 밑에 남는 남의 재진술이 된다. 개명은 전환이 아니다
+       (`disposeBySession` 과 같은 술어). emit 은 아래 setRun 이 겸한다. */
+    const tplSwitched = prevKey !== null
+      && (nextKey === null || (prevKey.job !== nextKey.job && nextKey.own !== nextKey.job));
+    if (tplSwitched && (tpl.requestId !== null || tpl.notice)) {
+      tpl = { ...tpl, requestId: null, notice: "" };
+    }
     /* 퇴장 한 줄은 **초기화 갈래에서만** 선다. 그 갈래는 legacy `resetGenResult` 와 같이
        실행 기록을 **먼저 비운다** — 안 비우면 죽은 세션의 줄이 다음 세션 밑에 그대로 쌓여
        「이어지는 한 실행」으로 읽힌다(마지막 줄만 보는 계약은 이 누적을 통과시킨다).
@@ -452,22 +462,30 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     /* ---- 템플릿 변경 확인·적용(S3-09) — 판정·token 발급은 Python, 여기는 재전송 규율만 ---- */
     async templateCheck(): Promise<void> {
       if (tpl.inFlight) return; // 중복 클릭 = 진행 중인 같은 요청으로 수렴(새 intent 아님)
+      const owner = String(snapshot()?.job_name || "");
       const requestId = tpl.requestId ?? newTplRequestId();
       setTpl({ inFlight: true, requestId, notice: "" });
       try {
         await dispatch("template_check", { request_id: requestId });
         setTpl({ inFlight: false, requestId: null, notice: "" }); // 성공 — 다음 클릭은 새 intent
       } catch (error) {
-        setTpl({ ...tpl, inFlight: false }); // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송
+        // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송. 단 그사이 작업이 갈렸으면
+        // 키는 남의 intent 라 버린다(리뷰 P2 동류 — 상태는 세션 정체를 따른다).
+        const still = String(snapshot()?.job_name || "") === owner;
+        setTpl({ inFlight: false, requestId: still ? requestId : null, notice: "" });
         log(`변경사항 확인에 실패했습니다: ${String(error)}`);
       }
     },
     async templateApply(token: string): Promise<void> {
       if (tpl.inFlight) return;
+      const owner = String(snapshot()?.job_name || "");
       setTpl({ ...tpl, inFlight: true });
       try {
         const res = await dispatch("template_apply", { change_token: token });
-        setTpl({ inFlight: false, requestId: null, notice: applyNotice(res) });
+        // 응답이 오는 사이 작업이 갈렸으면 재진술을 싣지 않는다 — A 의 적용 결과가 B 의
+        // 구획에 앉는 경로 차단(리뷰 P2).
+        const still = String(snapshot()?.job_name || "") === owner;
+        setTpl({ inFlight: false, requestId: null, notice: still ? applyNotice(res) : "" });
       } catch (error) {
         setTpl({ ...tpl, inFlight: false });
         log(`변경사항 적용에 실패했습니다: ${String(error)}`);

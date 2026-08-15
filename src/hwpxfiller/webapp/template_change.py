@@ -4,10 +4,11 @@
 목록·선택기는 없고, 외부로 나가는 것은 opaque token 과 제품 status 뿐이다(내부 ID·경로·
 base·generation 비노출). 판정·상태 전이는 전부 S3-04~08 의 runner 가 소유하고, 여기는:
 
-- **이름→work_id 인덱스**: work aggregate 는 ``_SAFE_ID`` 키라 한글 작업 이름을 직접 못 쓴다.
-  works 루트의 인덱스 파일 하나가 이름→불투명 work_id 를 소유하고, 작업 개명은 유일 호출지
-  (:meth:`~hwpxfiller.webapp.screen_job.JobController._do_rename_job`)가 :meth:`on_job_renamed`
-  로 인덱스를 따라 옮긴다 — aggregate 내부 work_id 는 이름과 무관해 개명에 불변.
+- **Work identity = Job durable 필드**(``Job.authority_id``): 이름은 identity 가 아니다 —
+  개명되고, 삭제 후 같은 이름이 **다른 작업**으로 재사용된다(이름을 키로 쓰면 재활용된
+  이름이 남의 권위 이력·token 을 물려받는다 — 리뷰 P1). 첫 확인이 불투명 id 를 발급해
+  작업 실체에 결속하므로 개명·보존 삭제 복원에 생존하고 재활용 이름은 새 Work 다.
+  발급이 bootstrap 보다 **먼저** durable 하다(id-first — 중간 crash 시 같은 id 로 재개).
 - **lazy bootstrap**: 첫 확인 시 현재 bytes 를 epoch 1 INITIALIZATION 으로 세운다. legacy 실행은
   source 파일을 직접 읽으므로 「지금 파일」이 곧 현재 권위라는 기재는 정직하다(실행 배선은
   S4 — 이 슬라이스는 기존 실행·편집 권위를 바꾸지 않는다).
@@ -32,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from ..application.candidate_revision import MutableSourceBinding, TemplateLineage
-from ..application.jobs import JobStorePort, load_job
+from ..application.jobs import JobStorePort, assign_job_authority_id, load_job
 from ..application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
     find_application,
@@ -120,12 +121,13 @@ class TemplateChangeCoordinator:
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
         self._clock = clock
-        self._index_path = self._root / "work_index.json"
         #: process 세션 identity — 이전 세션의 미완 Preparation 을 INTERRUPTED 로 닫는 기준.
         self._session_id = "s-" + uuid.uuid4().hex
         self._recovered: set[str] = set()
-        #: bootstrap 실패 기록(메모리) — 같은 template 판본 동안 확인 버튼을 사유와 함께 비활성.
-        self._init_failures: dict[str, dict[str, Any]] = {}
+        #: bootstrap 실패 기록 — **durable**(재시작 뒤에도 같은 실물이면 비활성+사유 유지,
+        #: 리뷰 P2). 파일이 정본이고 이 dict 는 lazy 캐시(write-through).
+        self._failures_path = self._root / "init_failures.json"
+        self._init_failures: "dict[str, dict[str, Any]] | None" = None
         # token ↔ 내부 id 양방향 map(세션 로컬 — 재시작 후 current 조회가 새 token 을 발급한다).
         self._prep_token_by_id: dict[tuple[str, str], str] = {}
         self._change_token_by_id: dict[tuple[str, str], str] = {}
@@ -138,41 +140,41 @@ class TemplateChangeCoordinator:
     def _now(self) -> str:
         return self._clock().isoformat(timespec="seconds")
 
-    def _load_index(self) -> dict[str, str]:
-        try:
-            raw = json.loads(self._index_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return {}
-        return dict(raw.get("by_name", {}))
-
-    def _save_index(self, index: dict[str, str]) -> None:
-        self._root.mkdir(parents=True, exist_ok=True)
-        tmp = self._index_path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps({"by_name": index}, ensure_ascii=False, indent=1), encoding="utf-8"
-        )
-        os.replace(tmp, self._index_path)
-
     def _work_id_for(self, job_name: str, *, create: bool) -> "str | None":
-        """이름→work_id. ``create=True`` 면 **bootstrap 전에** 발급·영속한다(index-first —
-        중간 crash 시 다음 시도가 같은 id 로 재개하고, 반대 순서는 orphan aggregate 를 남긴다)."""
-        with self._lock:
-            index = self._load_index()
-            work_id = index.get(job_name)
-            if work_id is None and create:
-                work_id = "w-" + uuid.uuid4().hex
-                index[job_name] = work_id
-                self._save_index(index)
-            return work_id
+        """작업의 Work identity — ``Job.authority_id`` 가 정본. ``create=True`` 면
+        **bootstrap 전에** 발급·영속한다(id-first — 중간 crash 시 같은 id 로 재개).
+        경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환)."""
+        current = load_job(self._registry, job_name).authority_id
+        if current:
+            return current
+        if not create:
+            return None
+        minted = "w-" + uuid.uuid4().hex
+        return assign_job_authority_id(self._registry, job_name, minted).authority_id
 
-    def on_job_renamed(self, old_name: str, new_name: str) -> None:
-        """작업 개명을 인덱스가 따라간다 — aggregate 는 불변(내부 work_id 가 이름과 무관)."""
+    def _failures(self) -> dict[str, dict[str, Any]]:
+        if self._init_failures is None:
+            try:
+                self._init_failures = dict(
+                    json.loads(self._failures_path.read_text(encoding="utf-8"))
+                )
+            except FileNotFoundError:
+                self._init_failures = {}
+        return self._init_failures
+
+    def _record_failure(self, work_id: str, entry: "dict[str, Any] | None") -> None:
+        """실패 기록의 durable write-through — ``entry=None`` 은 해소(삭제)다."""
         with self._lock:
-            index = self._load_index()
-            work_id = index.pop(old_name, None)
-            if work_id is not None:
-                index[new_name] = work_id
-                self._save_index(index)
+            failures = self._failures()
+            if entry is None:
+                if failures.pop(work_id, None) is None:
+                    return
+            else:
+                failures[work_id] = entry
+            self._root.mkdir(parents=True, exist_ok=True)
+            tmp = self._failures_path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(failures, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, self._failures_path)
 
     # ─── 공통 재료 ──────────────────────────────────────────────────────────
 
@@ -245,10 +247,10 @@ class TemplateChangeCoordinator:
         """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch."""
         if media != "hwpx" or template_missing:
             return unsupported_zone()
-        work_id = self._work_id_for(job_name, create=False)
-        failure = self._init_failures.get(work_id or "")
+        job = load_job(self._registry, job_name)
+        work_id = job.authority_id or None
+        failure = self._failures().get(work_id or "")
         if failure is not None:
-            job = load_job(self._registry, job_name)
             if self._template_signature(job.template_path) == failure["signature"]:
                 # 같은 template 실물이 그대로다 — 확인 버튼 비활성 + 사유 병기(#659 회귀,
                 # S3-08 「repair 전 prepare/apply 비활성」). 실물이 바뀌면(한글에서 수정·
@@ -261,7 +263,7 @@ class TemplateChangeCoordinator:
                     "epoch": None,
                     "preparation": None,
                 }
-            del self._init_failures[work_id or ""]
+            self._record_failure(work_id or "", None)
         base = {
             "supported": True,
             "reason": "",
@@ -465,7 +467,7 @@ class TemplateChangeCoordinator:
                 )
             except ObjectNotFound:
                 pass
-            self._init_failures[work_id] = {
+            self._record_failure(work_id, {
                 # repair 판정은 **파일 실물 서명**이다 — job revision 은 한글에서 바이트만
                 # 고친 수정(레지스트리 무접촉)에 안 오르므로 그걸 키로 쓰면 정당한 수리
                 # 뒤에도 확인이 영영 닫힌다.
@@ -473,19 +475,21 @@ class TemplateChangeCoordinator:
                 "diagnostics": [
                     {"kind": kind, "message": message} for kind, message in diagnostics
                 ],
-            }
+            })
         else:
-            self._init_failures.pop(work_id, None)
+            self._record_failure(work_id, None)
         return outcome
 
     @staticmethod
-    def _template_signature(template_path: str) -> "tuple | None":
-        """template 실물의 변경 감지 서명 — 부재는 None(그 자체가 한 상태)."""
+    def _template_signature(template_path: str) -> "list[int] | None":
+        """template 실물의 변경 감지 서명 — 부재는 None(그 자체가 한 상태).
+
+        JSON 왕복(durable 실패 기록)과 직접 동치 비교가 되도록 list 로 낸다."""
         try:
             stat = os.stat(template_path)
         except OSError:
             return None
-        return (stat.st_mtime_ns, stat.st_size)
+        return [stat.st_mtime_ns, stat.st_size]
 
     # ─── apply ──────────────────────────────────────────────────────────────
 
