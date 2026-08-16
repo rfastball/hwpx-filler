@@ -27,6 +27,7 @@ from hwpxfiller.domain.raw_data_record import (
     build_raw_record_snapshot,
     build_record_review_evidence,
     compute_review_basis_digest,
+    decode_source_value,
     encode_source_value,
     source_value_type_of,
     verify_raw_record_snapshot,
@@ -191,6 +192,39 @@ def test_verify_detects_tampered_snapshot() -> None:
     tampered = dataclasses.replace(snap, raw_record_digest="sha256:wrong")
     with pytest.raises(RawRecordIntegrityError):
         verify_raw_record_snapshot(tampered)
+
+
+def test_source_value_encode_decode_round_trip() -> None:
+    for v in (
+        SourceText("  x\n"),
+        SourceText(""),
+        SourceDecimal("1.50"),
+        SourceDate("2026-01-02"),
+        SourceDateTime("2026-01-02T03:04:05+09:00"),
+        SourceBoolean(True),
+        SourceBoolean(False),
+        SourceNull(),
+    ):
+        assert decode_source_value(encode_source_value(v)) == v
+
+
+def test_decode_rejects_unknown_type_and_tampered_literal() -> None:
+    with pytest.raises(RawRecordIntegrityError):
+        decode_source_value({"value_type": "MONEY", "literal": "1"})
+    with pytest.raises(RawRecordIntegrityError):
+        decode_source_value({"value_type": "DECIMAL", "literal": "NaN"})  # 생성자 검증 실패
+    with pytest.raises(RawRecordIntegrityError):
+        decode_source_value({"value_type": "BOOLEAN", "literal": "true"})  # bool 아님
+
+
+def test_verify_detects_divergent_values_keeping_digest() -> None:
+    import dataclasses
+
+    snap = _snap([("a", SourceText("x"))])
+    # digest 는 그대로인데 _values 만 sealed payload 와 갈라 놓는다.
+    diverged = dataclasses.replace(snap, _values={"a": SourceText("TAMPERED")})
+    with pytest.raises(RawRecordIntegrityError):
+        verify_raw_record_snapshot(diverged)
 
 
 # ─── RecordReviewEvidence ────────────────────────────────────────────────────────────────

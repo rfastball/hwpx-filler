@@ -127,6 +127,34 @@ def encode_source_value(value: CanonicalSourceValue) -> dict[str, Any]:
     return {"value_type": source_value_type_of(value), "literal": literal}
 
 
+def decode_source_value(tagged: Mapping[str, Any]) -> CanonicalSourceValue:
+    """canonical tagged 표현 → :data:`CanonicalSourceValue`(sealed payload 를 단일 출처로 되읽는다).
+
+    scalar 생성자가 다시 검증하므로(canonical decimal·ISO·명시 timezone) tamper 된 literal 은 decode
+    에서 시끄럽게 닫힌다. unknown value_type 은 v1 로 풀지 않고 거절한다(fail-closed).
+    """
+    value_type = tagged.get("value_type")
+    if value_type == SOURCE_NULL_TYPE:
+        return SourceNull()
+    literal = tagged.get("literal")
+    if value_type == "BOOLEAN":
+        if not isinstance(literal, bool):
+            raise RawRecordIntegrityError("BOOLEAN literal 이 bool 이 아니다")
+        return CanonicalBoolean(literal)
+    ctor = {
+        "EXACT_TEXT": ExactText,
+        "DECIMAL": CanonicalDecimal,
+        "DATE": CanonicalDate,
+        "DATETIME": CanonicalDateTime,
+    }.get(value_type)  # type: ignore[arg-type]
+    if ctor is None:
+        raise RawRecordIntegrityError(f"미지원 source value_type: {value_type!r}")
+    try:
+        return ctor(literal)  # 생성자가 canonical 검증(tampered literal 은 여기서 닫힌다).
+    except Exception as exc:
+        raise RawRecordIntegrityError(f"source value decode 실패: {exc}") from exc
+
+
 # ─── capture provenance(raw semantic digest 에서 제외) ──────────────────────────────────
 @dataclass(frozen=True)
 class RawRecordCaptureProvenance:
@@ -229,11 +257,31 @@ def build_raw_record_snapshot(
 
 
 def verify_raw_record_snapshot(snapshot: RawDataRecordSnapshot) -> None:
-    """저장 payload 의 canonical digest 가 자기 content-address 와 같은지 재계산·대조(fail-closed)."""
-    recomputed = canonical_execution_digest(snapshot.semantic_payload_encoded)
-    if recomputed != snapshot.raw_record_digest:
+    """sealed payload 를 단일 출처로 삼아 digest·lookup·identity·schema digest 를 전부 대조(fail-closed).
+
+    digest 만 맞추면 ``_values``·record_identity·source_schema_digest 가 sealed payload 와 갈려도
+    통과해 잘못된 document text 를 낸다(restored snapshot). sealed payload 에서 lookup 을 재구성해
+    저장 ``_values`` 와 정확히 일치하는지, identity·schema digest 도 payload 와 같은지 확인한다.
+    """
+    payload = snapshot.semantic_payload_encoded
+    if canonical_execution_digest(payload) != snapshot.raw_record_digest:
         raise RawRecordIntegrityError(
             "raw record snapshot 의 canonical digest 가 content-address 와 불일치"
+        )
+    if snapshot.record_identity != payload.get("record_identity"):
+        raise RawRecordIntegrityError("snapshot.record_identity 가 sealed payload 와 불일치")
+    if snapshot.source_schema_digest != payload.get("source_schema_digest"):
+        raise RawRecordIntegrityError("snapshot.source_schema_digest 가 sealed payload 와 불일치")
+    sealed_values = payload.get("source_values")
+    if not isinstance(sealed_values, (list, tuple)):
+        raise RawRecordIntegrityError("sealed payload 의 source_values 형식 불량")
+    rebuilt = {
+        str(entry["source_key"]): decode_source_value(entry["tagged_value"])
+        for entry in sealed_values
+    }
+    if dict(snapshot._values) != rebuilt:
+        raise RawRecordIntegrityError(
+            "snapshot._values 가 sealed payload 에서 재구성한 lookup 과 불일치(divergent restore)"
         )
 
 

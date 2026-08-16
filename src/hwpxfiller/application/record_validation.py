@@ -30,6 +30,7 @@ from types import MappingProxyType
 from typing import Any
 
 from hwpxfiller.application.execution_contract_set import (
+    ExecutionBasisIntegrityError,
     ExecutionPlanIntegrityError,
     SealedExecutionPlanSemanticPayload,
     UnsupportedPlanSchemaError,
@@ -40,15 +41,19 @@ from hwpxfiller.application.execution_contract_set import (
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
     CanonicalExecutionEncodingError,
+    UnsupportedCanonicalEncodingError,
     canonical_execution_bytes,
     canonical_execution_digest,
 )
 from hwpxfiller.domain.field_binding import (
+    BINDING_VALUE_VERSION,
     BOOLEAN,
     DATE,
     DATETIME,
     DECIMAL,
+    EXACT_BLANK_POLICY,
     EXACT_TEXT,
+    SOURCE_SCHEMA_VERSION,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
     UnsupportedDocumentValuePolicyError,
@@ -56,7 +61,10 @@ from hwpxfiller.domain.field_binding import (
 )
 from hwpxfiller.domain.raw_data_record import (
     RAW_RECORD_CONTRACT_ID,
+    RECORD_REVIEW_CONTRACT_ID,
+    RECORD_REVIEW_EXAMINED,
     RawDataRecordSnapshot,
+    RawRecordIntegrityError,
     RecordReviewEvidence,
     RecordReviewEvidenceIntegrityError,
     SourceNull,
@@ -69,6 +77,8 @@ from hwpxfiller.domain.raw_data_record import (
 VALIDATED_RECORD_SCHEMA_VERSION = "validated-record/v1"
 RECORD_VALIDATION_CONTRACT_ID = "record-validation/v1"
 DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID = "document-content-value/v1"
+# 이 validator 가 지원하는 exact plan schema 집합 — 미지원은 v1 로 풀지 않고 fail-closed.
+SUPPORTED_PLAN_SCHEMA_VERSIONS = ("hwpx-execution-plan/v1",)
 
 # boolean logical text — canonical lexical form(v1 결정). downstream 이 format code 로 확장한다.
 _BOOLEAN_TRUE_TEXT = "true"
@@ -99,6 +109,9 @@ UNSUPPORTED_RECORD_VALIDATION_CONTRACT = "UNSUPPORTED_RECORD_VALIDATION_CONTRACT
 UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT = (
     "UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT"
 )
+UNSUPPORTED_RECORD_REVIEW_CONTRACT = "UNSUPPORTED_RECORD_REVIEW_CONTRACT"
+UNSUPPORTED_SOURCE_SCHEMA_CONTRACT = "UNSUPPORTED_SOURCE_SCHEMA_CONTRACT"
+UNSUPPORTED_BINDING_VALUE_CONTRACT = "UNSUPPORTED_BINDING_VALUE_CONTRACT"
 RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR = "RECORD_REVIEW_EVIDENCE_INTEGRITY_ERROR"
 
 
@@ -335,7 +348,14 @@ def _resolve_requirement(
     if kind == _KIND_CONSTANT:
         return _resolve_constant(ve, field_id)
     if kind == _KIND_INTENTIONAL_BLANK:
-        return ""  # exact empty logical text — field 는 보존, 값만 비운다.
+        # exact_blank_policy 를 확인한다 — unknown 을 조용히 WRITE_EMPTY 로 풀지 않는다(fail-closed).
+        if ve.get("exact_blank_policy") != EXACT_BLANK_POLICY:
+            raise _ContextSignal(
+                UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+                f"requirement {field_id!r} 의 미지원 blank policy: "
+                f"{ve.get('exact_blank_policy')!r}",
+            )
+        return ""  # WRITE_EMPTY_TEXT_PRESERVE_FIELD — field 는 보존, 값만 비운다.
     raise _ContextSignal(
         PLAN_INTEGRITY_ERROR, f"requirement {field_id!r} 의 value_expression kind 미상: {kind!r}"
     )
@@ -376,16 +396,26 @@ def _validate(
     record_review_required: bool,
     validated_at: str,
 ) -> ValidateDataRecordResult:
-    # (1) Plan canonical integrity — nested digest·bijection·operation order 재검증.
+    # (1) Plan canonical integrity — nested digest·bijection·operation order·supported schema 재검증.
+    #     tautological self-schema 가 아니라 validator 의 exact supported set 으로 검증한다(미지원 schema
+    #     를 v1 로 풀지 않는다). verifier 가 낼 수 있는 integrity·미지원-version 예외를 전부 잡아 결과
+    #     union 밖으로 새지 않게 PLAN_INTEGRITY_ERROR 로 닫는다.
     try:
         verify_sealed_plan_integrity(
-            plan, supported_plan_schemas=(plan.plan_schema_version,)
+            plan, supported_plan_schemas=SUPPORTED_PLAN_SCHEMA_VERSIONS
         )
-    except (ExecutionPlanIntegrityError, UnsupportedPlanSchemaError) as exc:
+    except (
+        ExecutionPlanIntegrityError,
+        UnsupportedPlanSchemaError,
+        ExecutionBasisIntegrityError,
+        UnsupportedCanonicalEncodingError,
+    ) as exc:
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, str(exc)) from exc
-    # raw snapshot canonical integrity.
+    # raw snapshot canonical integrity — digest·lookup·identity 재계산 실패는 결과 union 으로 매핑한다.
     try:
         verify_raw_record_snapshot(snapshot)
+    except RawRecordIntegrityError as exc:
+        raise _ContextSignal(RAW_RECORD_INTEGRITY_ERROR, str(exc)) from exc
     except CanonicalExecutionEncodingError as exc:
         raise _ContextSignal(RAW_RECORD_CANONICALIZATION_ERROR, str(exc)) from exc
 
@@ -393,21 +423,44 @@ def _validate(
     plan_digest = plan_semantic_digest(plan)
     basis_digest = execution_basis_digest(plan.execution_basis)
 
-    # (2) 미지원 contract — user-fixable 로 낮추지 않는다.
+    # (2) 미지원 contract — 모든 관여 contract id 를 exact supported constant 와 대조한다. 미지원은
+    #     v1 로 풀지 않고 user-fixable 로도 낮추지 않는다(fail-closed context error).
     if contracts.raw_record_contract_id != RAW_RECORD_CONTRACT_ID:
         raise _ContextSignal(
             UNSUPPORTED_RAW_RECORD_CONTRACT,
             f"미지원 raw record contract: {contracts.raw_record_contract_id!r}",
         )
-    if snapshot.semantic_payload_encoded["raw_record_contract_id"] != RAW_RECORD_CONTRACT_ID:
+    snap_payload = snapshot.semantic_payload_encoded
+    if snap_payload["raw_record_contract_id"] != RAW_RECORD_CONTRACT_ID:
         raise _ContextSignal(
             UNSUPPORTED_RAW_RECORD_CONTRACT,
             "snapshot 의 raw_record_contract_id 가 지원 contract 와 불일치",
+        )
+    if contracts.source_schema_contract_id != SOURCE_SCHEMA_VERSION:
+        raise _ContextSignal(
+            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
+            f"미지원 source schema contract: {contracts.source_schema_contract_id!r}",
+        )
+    # snapshot 의 source schema contract 가 Plan 과 일치해야 literal 을 같은 의미로 읽는다.
+    if snap_payload["source_schema_contract_id"] != contracts.source_schema_contract_id:
+        raise _ContextSignal(
+            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
+            "snapshot 의 source_schema_contract_id 가 Plan source schema contract 와 불일치",
+        )
+    if contracts.binding_value_contract_id != BINDING_VALUE_VERSION:
+        raise _ContextSignal(
+            UNSUPPORTED_BINDING_VALUE_CONTRACT,
+            f"미지원 binding value contract: {contracts.binding_value_contract_id!r}",
         )
     if contracts.record_validation_contract_id != RECORD_VALIDATION_CONTRACT_ID:
         raise _ContextSignal(
             UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
             f"미지원 record validation contract: {contracts.record_validation_contract_id!r}",
+        )
+    if contracts.record_review_contract_id != RECORD_REVIEW_CONTRACT_ID:
+        raise _ContextSignal(
+            UNSUPPORTED_RECORD_REVIEW_CONTRACT,
+            f"미지원 record review contract: {contracts.record_review_contract_id!r}",
         )
     if contracts.document_value_resolution_contract_id != DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID:
         raise _ContextSignal(
@@ -526,6 +579,14 @@ def _evaluate_review(
             )
         )
         return None
+    # review policy basis 가 지원 policy(EXAMINED)여야 한다 — self-consistent 한 NOT_REVIEWED 등
+    # 임의 basis 를 v1 examination 으로 받지 않는다(fail-closed). 미지원 policy = context error.
+    if review_evidence.review_policy_basis != RECORD_REVIEW_EXAMINED:
+        raise _ContextSignal(
+            UNSUPPORTED_RECORD_REVIEW_CONTRACT,
+            f"미지원 review policy basis(examination 아님): "
+            f"{review_evidence.review_policy_basis!r}",
+        )
     return review_evidence.review_basis_digest
 
 
@@ -543,6 +604,16 @@ def verify_validated_record_completeness(
     if canonical_execution_digest(payload) != record.validated_record_digest:
         raise ValidatedRecordIntegrityError(
             "validated record 의 canonical digest 가 content-address 와 불일치"
+        )
+    # digest 자기정합만으로는 부족하다 — record schema·canonical encoding version 을 exact supported
+    # 와 대조한다(미지원 version 을 rehash 로 v1 처럼 통과시키지 않는다, fail-closed).
+    if payload.get("record_schema_version") != VALIDATED_RECORD_SCHEMA_VERSION:
+        raise ValidatedRecordIntegrityError(
+            f"미지원 VDR record schema version: {payload.get('record_schema_version')!r}"
+        )
+    if payload.get("canonical_encoding_version") != CANONICAL_ENCODING_VERSION:
+        raise ValidatedRecordIntegrityError(
+            f"미지원 VDR canonical encoding version: {payload.get('canonical_encoding_version')!r}"
         )
     if payload["plan_semantic_digest"] != plan_semantic_digest(plan):
         raise ValidatedRecordIntegrityError("VDR plan_semantic_digest 가 Plan 과 불일치")

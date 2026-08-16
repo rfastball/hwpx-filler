@@ -39,6 +39,8 @@ from hwpxfiller.application.execution_contract_set import (
     plan_semantic_digest,
 )
 from hwpxfiller.application.record_validation import (
+    PLAN_INTEGRITY_ERROR,
+    RAW_RECORD_INTEGRITY_ERROR,
     RECORD_BLANK_POLICY_VIOLATION,
     RECORD_EXPLICIT_NULL_NOT_ALLOWED,
     RECORD_REQUIRED_VALUE_MISSING,
@@ -46,8 +48,12 @@ from hwpxfiller.application.record_validation import (
     RECORD_REVIEW_EVIDENCE_STALE,
     RECORD_REVIEW_REQUIRED,
     RECORD_VALUE_TYPE_INVALID,
+    UNSUPPORTED_BINDING_VALUE_CONTRACT,
     UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
     UNSUPPORTED_RAW_RECORD_CONTRACT,
+    UNSUPPORTED_RECORD_REVIEW_CONTRACT,
+    UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
+    UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
     ImmutableVdrStore,
     RecordValidationBlocked,
     RecordValidationContextError,
@@ -57,6 +63,7 @@ from hwpxfiller.application.record_validation import (
     validate_data_record_against_plan,
     verify_validated_record_completeness,
 )
+from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.domain.field_binding import (
     BOOLEAN,
     DECIMAL,
@@ -562,3 +569,129 @@ def test_vdr_store_rejects_tampered_and_unknown_ref() -> None:
         store.put(tampered)  # digest ≠ bytes 재계산
     with pytest.raises(VdrRetentionError):
         store.resolve("sha256:does-not-exist")
+
+
+# ─── Codex 리뷰: 미지원 version/contract 는 v1 로 풀지 않고 fail-closed (findings 1~6·9) ────────
+def _ctx(res):
+    assert isinstance(res, RecordValidationContextError), res
+    return res.code
+
+
+def test_unknown_plan_schema_rejected_not_treated_as_v1() -> None:
+    # finding 1: plan_schema_version 을 자기 자신으로 검증하던 tautology 제거 → v999 는 거절.
+    plan = build_sealed_plan(
+        execution_basis=_basis(),
+        active_field_requirements=[{
+            "field_id": r.field_id,
+            "expected_active_occurrence_count": 1,
+            "value_expression": encode_value_expression(r.value_expression),
+        } for r in _rules()],
+        ordered_operations=[
+            {"op": "APPLY_FIELD_BINDING", "field_id": r.field_id} for r in _rules()
+        ],
+        plan_schema_version="hwpx-execution-plan/v999",
+    )
+    assert _ctx(_validate(plan=plan)) == PLAN_INTEGRITY_ERROR
+
+
+def test_unknown_record_review_contract_rejected_even_without_evidence() -> None:
+    # finding 2: record-review/v999 를 optional-evidence early return 전에 거절한다.
+    plan = _plan(_basis(contracts=_contracts(record_review_contract_id="record-review/v999")))
+    assert _ctx(_validate(plan=plan)) == UNSUPPORTED_RECORD_REVIEW_CONTRACT
+
+
+def test_unsupported_review_policy_basis_rejected() -> None:
+    # finding 3: self-consistent NOT_REVIEWED basis 를 examination 으로 받지 않는다.
+    plan, snap = _plan(), _snapshot()
+    ev = build_record_review_evidence(
+        workspace_instance_id="ws-1", work_authority_id="work-1",
+        plan_semantic_digest=plan_semantic_digest(plan),
+        raw_record_digest=snap.raw_record_digest, record_identity=snap.record_identity,
+        review_policy_basis="NOT_REVIEWED",
+        actor_binding="user:alice", reviewed_at="t",
+    )
+    res = validate_data_record_against_plan(
+        plan=plan, snapshot=snap, review_evidence=ev,
+        record_review_required=True, validated_at="t",
+    )
+    assert _ctx(res) == UNSUPPORTED_RECORD_REVIEW_CONTRACT
+
+
+def test_unknown_blank_policy_rejected_not_treated_as_write_empty() -> None:
+    # finding 4: INTENTIONAL_BLANK 의 exact_blank_policy 를 확인한다(CUSTOM → 거절).
+    rules = (
+        EffectiveFieldBindingRule(
+            "f_blank", "INTENTIONAL_BLANK", IntentionalBlank(exact_blank_policy="CUSTOM")
+        ),
+    )
+    binding = EffectiveFieldBindingBasis(
+        effective_active_binding_rules=rules,
+        active_binding_digest=active_binding_digest(rules),
+        required_source_keys=(),
+        required_source_key_set_digest=required_source_key_set_digest(()),
+    )
+    plan = build_sealed_plan(
+        execution_basis=_basis(field_binding=binding),
+        active_field_requirements=[{
+            "field_id": "f_blank",
+            "expected_active_occurrence_count": 1,
+            "value_expression": encode_value_expression(rules[0].value_expression),
+        }],
+        ordered_operations=[{"op": "APPLY_FIELD_BINDING", "field_id": "f_blank"}],
+        plan_schema_version="hwpx-execution-plan/v1",
+    )
+    assert _ctx(_validate(plan=plan, snapshot=_snapshot([("name", SourceText("x"))]))) == (
+        UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT
+    )
+
+
+def test_unknown_vdr_record_schema_version_rejected() -> None:
+    # finding 5: record_schema_version=v999 를 rehash 로 통과시키지 않는다.
+    plan = _plan()
+    vdr = _validate(plan=plan)
+    payload = dict(vdr.semantic_payload_encoded)
+    payload["record_schema_version"] = "validated-record/v999"
+    mutant = ValidatedDataRecord(
+        validated_record_digest=canonical_execution_digest(payload),
+        semantic_payload_encoded=payload,
+        validation_provenance=vdr.validation_provenance,
+    )
+    with pytest.raises(ValidatedRecordIntegrityError):
+        verify_validated_record_completeness(mutant, plan)
+
+
+def test_unknown_source_schema_and_binding_value_contract_rejected() -> None:
+    # finding 6: source-schema/v999·binding-value/v999 를 v1 의미로 해석하지 않는다.
+    p_ss = _plan(_basis(contracts=_contracts(source_schema_contract_id="source-schema/v999")))
+    assert _ctx(_validate(plan=p_ss)) == UNSUPPORTED_SOURCE_SCHEMA_CONTRACT
+    p_bv = _plan(_basis(contracts=_contracts(binding_value_contract_id="binding-value/v999")))
+    assert _ctx(_validate(plan=p_bv)) == UNSUPPORTED_BINDING_VALUE_CONTRACT
+
+
+def test_unknown_record_validation_contract_rejected() -> None:
+    plan = _plan(
+        _basis(contracts=_contracts(record_validation_contract_id="record-validation/v999"))
+    )
+    assert _ctx(_validate(plan=plan)) == UNSUPPORTED_RECORD_VALIDATION_CONTRACT
+
+
+def test_divergent_restored_snapshot_values_returns_context_error() -> None:
+    # findings 7·8: sealed payload 와 갈린 _values 는 잘못된 text 를 내지 않고 fail-closed context error.
+    snap = _snapshot()
+    diverged = dataclasses.replace(
+        snap, _values={**dict(snap._values), "name": SourceText("TAMPERED")}
+    )
+    # digest 는 원본 그대로라 payload 와 lookup 이 갈린다.
+    assert _ctx(_validate(snapshot=diverged)) == RAW_RECORD_INTEGRITY_ERROR
+
+
+def test_tampered_plan_basis_integrity_returns_context_error() -> None:
+    # finding 9: ExecutionBasisIntegrityError 가 결과 union 밖으로 새지 않고 PLAN_INTEGRITY_ERROR 로 닫힌다.
+    bad_binding = EffectiveFieldBindingBasis(
+        effective_active_binding_rules=_rules(),
+        active_binding_digest="sha256:wrong",  # rule 재계산과 불일치.
+        required_source_keys=("amount", "flag", "name"),
+        required_source_key_set_digest=required_source_key_set_digest(("amount", "flag", "name")),
+    )
+    plan = _plan(_basis(field_binding=bad_binding))
+    assert _ctx(_validate(plan=plan)) == PLAN_INTEGRITY_ERROR
