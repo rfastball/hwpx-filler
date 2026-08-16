@@ -25,6 +25,7 @@ from hwpxfiller.application.execution_composition import (
     CompositionPremiseContextError,
     CompositionPremisesBlocked,
     CompositionPremisesPassed,
+    CompositionTheoremEvidenceIntegrityError,
     CompositionTheoremEvidenceManifest,
     RuntimeMaterializerConformanceManifest,
     RuntimeMaterializerConformanceNotAdmitted,
@@ -35,6 +36,7 @@ from hwpxfiller.application.execution_composition import (
     evaluate_composition_premises,
     fixture_manifest_digest,
     is_owner_coincidence_admitted,
+    prove_theorem_corpus,
     runtime_conformance_digest,
     theorem_evidence_digest,
     verify_execution_composition_premises,
@@ -45,6 +47,7 @@ from hwpxfiller.application.execution_structure import (
     CONTAINS,
     CROSSING,
     DISJOINT,
+    EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     SAME_SPAN,
     TOUCHING,
     ContentEntry,
@@ -52,6 +55,9 @@ from hwpxfiller.application.execution_structure import (
     OptionRegionObservation,
     SlotRegionObservation,
     build_execution_structure,
+    decode_execution_structure,
+    encode_execution_structure,
+    template_structure_digest,
 )
 from hwpxfiller.application.template_qualification import (
     TemplateOption,
@@ -527,6 +533,20 @@ def _conformance(status="PASS"):
     )
 
 
+def _admit_query(**overrides):
+    q = dict(
+        runtime_capability_manifest_digest="sha256:" + "a" * 64,
+        materialization_contract_id="hwpx-materialize/v1",
+        materialization_base_contract_id="hwpx-materialize-base/v1",
+        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
+        composition_contract_id=COMPOSITION_CONTRACT_ID,
+        plan_schema_version="hwpx-plan/v1",
+        canonical_encoding_version="hwpx-canon/v1",
+    )
+    q.update(overrides)
+    return q
+
+
 def test_runtime_conformance_identity_separate_from_theorem() -> None:
     passed = _verify(_base_structure())
     assert isinstance(passed, CompositionPremisesPassed)
@@ -539,13 +559,7 @@ def test_runtime_conformance_identity_separate_from_theorem() -> None:
 
 def test_runtime_conformance_admission_query() -> None:
     reg = RuntimeMaterializerConformanceRegistry()
-    query = dict(
-        materialization_contract_id="hwpx-materialize/v1",
-        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
-        composition_contract_id=COMPOSITION_CONTRACT_ID,
-        plan_schema_version="hwpx-plan/v1",
-        canonical_encoding_version="hwpx-canon/v1",
-    )
+    query = _admit_query()
     # 기본 registry(비어 있음)는 admit 하지 않는다 — fail-closed.
     assert reg.is_admitted(**query) is False
     with pytest.raises(RuntimeMaterializerConformanceNotAdmitted):
@@ -556,14 +570,7 @@ def test_runtime_conformance_admission_query() -> None:
 
 
 def test_runtime_conformance_default_registry_empty() -> None:
-    query = dict(
-        materialization_contract_id="hwpx-materialize/v1",
-        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
-        composition_contract_id=COMPOSITION_CONTRACT_ID,
-        plan_schema_version="hwpx-plan/v1",
-        canonical_encoding_version="hwpx-canon/v1",
-    )
-    assert DEFAULT_RUNTIME_CONFORMANCE_REGISTRY.is_admitted(**query) is False
+    assert DEFAULT_RUNTIME_CONFORMANCE_REGISTRY.is_admitted(**_admit_query()) is False
 
 
 def test_runtime_conformance_rejects_non_pass_registration() -> None:
@@ -575,18 +582,24 @@ def test_runtime_conformance_rejects_non_pass_registration() -> None:
 def test_runtime_conformance_query_partial_mismatch() -> None:
     reg = RuntimeMaterializerConformanceRegistry()
     reg.register(_conformance())
-    base = dict(
-        materialization_contract_id="hwpx-materialize/v1",
-        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
-        composition_contract_id=COMPOSITION_CONTRACT_ID,
-        plan_schema_version="hwpx-plan/v1",
-        canonical_encoding_version="hwpx-canon/v1",
-    )
-    assert reg.is_admitted(**{**base, "plan_schema_version": "hwpx-plan/v2"}) is False
-    assert reg.is_admitted(**{**base, "composition_contract_id": "ghost"}) is False
-    assert reg.is_admitted(**{**base, "canonical_encoding_version": "ghost"}) is False
-    assert reg.is_admitted(**{**base, "materialization_contract_id": "ghost"}) is False
-    assert reg.is_admitted(**{**base, "native_primitive_contract_id": "ghost"}) is False
+    assert reg.is_admitted(**_admit_query(plan_schema_version="hwpx-plan/v2")) is False
+    assert reg.is_admitted(**_admit_query(composition_contract_id="ghost")) is False
+    assert reg.is_admitted(**_admit_query(canonical_encoding_version="ghost")) is False
+    assert reg.is_admitted(**_admit_query(materialization_contract_id="ghost")) is False
+    assert reg.is_admitted(**_admit_query(native_primitive_contract_id="ghost")) is False
+
+
+def test_runtime_conformance_stale_capability_or_base_not_admitted() -> None:
+    # finding 5: shipping runtime capability digest·base contract 가 바뀌면 옛 PASS 는 stale.
+    reg = RuntimeMaterializerConformanceRegistry()
+    reg.register(_conformance())
+    assert reg.is_admitted(**_admit_query()) is True
+    assert reg.is_admitted(
+        **_admit_query(runtime_capability_manifest_digest="sha256:" + "b" * 64)
+    ) is False
+    assert reg.is_admitted(
+        **_admit_query(materialization_base_contract_id="hwpx-materialize-base/v2")
+    ) is False
 
 
 # ══ unsupported contract fail-closed ═════════════════════════════════════════════════
@@ -660,11 +673,11 @@ def test_module_imports_no_native_or_package_reader() -> None:
 
 
 def test_fixture_corpus_separated_positive_and_counterexample() -> None:
-    pos_ids = {f["id"] for f in POSITIVE_THEOREM_FIXTURES}
-    neg_ids = {f["id"] for f in COUNTEREXAMPLE_THEOREM_FIXTURES}
+    pos_ids = {f["case"] for f in POSITIVE_THEOREM_FIXTURES}
+    neg_ids = {f["case"] for f in COUNTEREXAMPLE_THEOREM_FIXTURES}
     assert pos_ids.isdisjoint(neg_ids)
-    assert all(f["admitted"] is True for f in POSITIVE_THEOREM_FIXTURES)
-    assert all(f["admitted"] is False for f in COUNTEREXAMPLE_THEOREM_FIXTURES)
+    assert all(f["expected"] == "OK" for f in POSITIVE_THEOREM_FIXTURES)
+    assert all(f["expected"] == "FAILED" for f in COUNTEREXAMPLE_THEOREM_FIXTURES)
     # digest 는 저장 순서가 아니라 내용에 결속(정렬).
     shuffled = tuple(reversed(POSITIVE_THEOREM_FIXTURES))
     assert fixture_manifest_digest(shuffled) == fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES)
@@ -768,3 +781,147 @@ def test_passed_result_carries_premise_facts() -> None:
     assert facts["crossing_free"] is True
     assert facts["target_target_relation_counts"] == {DISJOINT: 1}
     assert facts["occurrence_owner_kind_counts"]["ROOT"] == 2
+
+
+def _three_option():
+    product = TemplateStructure(
+        slots=(
+            TemplateSlot("s1", options=(
+                TemplateOption("o1", ()), TemplateOption("o2", ()), TemplateOption("o3", ()),
+            )),
+        )
+    )
+    return build_execution_structure(
+        product_structure=product,
+        occurrences=(),
+        slot_regions=(SlotRegionObservation("s1", "c0", 0, 100),),
+        option_regions=(
+            OptionRegionObservation("s1", "o1", "c0", 10, 20, REMOVE),
+            OptionRegionObservation("s1", "o2", "c0", 30, 40, REMOVE),
+            OptionRegionObservation("s1", "o3", "c0", 50, 60, REMOVE),
+        ),
+        content_entries=(_entry(),),
+        resolver_stability_facts=RESOLVER_FACTS,
+        admitted_relation_profile="unadmitted",
+    )
+
+
+# ══ Codex round #714 — 7 findings ════════════════════════════════════════════════════
+# finding 1: theorem digest 는 label 이 아니라 실 corpus 재증명에 결속된다.
+def test_theorem_corpus_is_executable_and_proven() -> None:
+    prove_theorem_corpus()  # 실 classifier 로 재실행 — 어긋나면 raise.
+
+
+def test_broken_theorem_corpus_fails_closed() -> None:
+    # DISJOINT case 의 기대를 FAILED 로 위조하면 재증명이 시끄럽게 닫힌다.
+    broken = ({"case": "x", "family": "target_target", "a": [10, 20], "b": [30, 40],
+               "touching_theorem": False, "expected": "FAILED"},)
+    with pytest.raises(CompositionTheoremEvidenceIntegrityError):
+        prove_theorem_corpus(broken)
+
+
+def test_label_only_manifest_not_bound_to_real_corpus() -> None:
+    # 순수 label corpus 로 만든 digest 를 든 manifest 는 실 corpus digest 와 안 맞아 fail-closed.
+    fake_corpus = ({"case": "fake-admitted", "family": "target_target", "a": [0, 0], "b": [0, 0],
+                    "touching_theorem": True, "expected": "OK"},)
+    forged = dataclasses.replace(
+        THEOREM_EVIDENCE_V1, theorem_test_suite_digest=fixture_manifest_digest(fake_corpus)
+    )
+    with pytest.raises(CompositionTheoremEvidenceIntegrityError):
+        verify_theorem_evidence_integrity(forged)
+
+
+def test_attested_relations_derive_from_real_geometry() -> None:
+    from hwpxfiller.application.execution_composition import _ATTESTED_TARGET_TARGET_RELATIONS
+
+    assert _ATTESTED_TARGET_TARGET_RELATIONS == frozenset({DISJOINT, TOUCHING})
+
+
+# finding 2: verifier 는 non-v2 projection schema 를 v2 의미로 해석하지 않는다.
+def test_verifier_rejects_non_v2_projection_schema() -> None:
+    forged = dataclasses.replace(
+        _base_structure(), projection_schema_version="hwpx-structure-projection-v99"
+    )
+    result = _verify(forged)
+    assert isinstance(result, CompositionPremiseContextError)
+    assert result.code == "UNSUPPORTED_EXECUTION_STRUCTURE_PROJECTION"
+    # 정상 v2 는 통과.
+    assert _base_structure().projection_schema_version == EXECUTION_STRUCTURE_PROJECTION_SCHEMA
+
+
+# finding 3: PASS 결과의 verified_premise_facts 는 깊게 immutable — 검증 뒤 변이 불가.
+def test_passed_facts_deeply_immutable() -> None:
+    passed = _verify(_base_structure())
+    assert isinstance(passed, CompositionPremisesPassed)
+    with pytest.raises(TypeError):
+        passed.verified_premise_facts["crossing_free"] = False  # type: ignore[index]
+    with pytest.raises(TypeError):
+        passed.verified_premise_facts["premises_proven"]["C1"] = "FAILED"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        passed.verified_premise_facts["target_target_relation_counts"][DISJOINT] = 9  # type: ignore[index]
+
+
+# finding 4: C6 는 retained fact 부재를 "밖"으로 추정하지 않고 완전 coverage 를 강제한다.
+def test_c6_missing_retained_fact_via_decode_stays_blocked() -> None:
+    # root Field occurrence 가 있는 base structure 를 encode → retained facts 삭제 → decode.
+    payload = encode_execution_structure(_base_structure())
+    for region in payload["option_regions"]:
+        region["retained_content_relation_facts"] = []
+    decoded = decode_execution_structure(payload)  # S5-03 decode 는 이 집합을 재구성 안 함
+    result = _verify(decoded)
+    # 조용히 Passed 로 뒤집히지 않는다 — 불완전 retained 집합은 context error.
+    assert isinstance(result, CompositionPremiseContextError)
+    assert result.premise_id == "C6"
+    assert result.code == "EXECUTION_COMPOSITION_PREMISE_INCOMPLETE"
+
+
+def test_c6_unknown_position_vocab_incomplete() -> None:
+    struct = _base_structure()
+    region = next(r for r in struct.option_regions if r.retained_content_relation_facts)
+    idx = struct.option_regions.index(region)
+    bad = dataclasses.replace(
+        region,
+        retained_content_relation_facts=tuple(
+            {**dict(f), "position": "SIDEWAYS"} for f in region.retained_content_relation_facts
+        ),
+    )
+    regions = list(struct.option_regions)
+    regions[idx] = bad
+    forged = dataclasses.replace(struct, option_regions=tuple(regions))
+    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C6"].status == "INCOMPLETE"
+
+
+# finding 6: C2 는 canonical unordered pair 집합을 요구한다.
+def test_c2_incomplete_pair_set_rejected() -> None:
+    struct = _three_option()  # 정상: 3 pair 전부.
+    assert isinstance(_verify(struct), CompositionPremisesPassed)
+    # (o1,o2),(o2,o1),(o1,o3) — (o2,o3) 누락·ba 중복 위조.
+    rels = {(r.left_option_ref.option_id, r.right_option_ref.option_id): r
+            for r in struct.removal_target_relations}
+    r12, r13 = rels[("o1", "o2")], rels[("o1", "o3")]
+    r21 = dataclasses.replace(r12, left_option_ref=r12.right_option_ref,
+                              right_option_ref=r12.left_option_ref)
+    forged = dataclasses.replace(struct, removal_target_relations=(r12, r21, r13))
+    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C2"].status == "INCOMPLETE"
+
+
+def test_c2_nonexistent_option_ref_rejected() -> None:
+    struct = _two_option((10, 20), (30, 40))
+    rel = struct.removal_target_relations[0]
+    ghost = dataclasses.replace(
+        rel, right_option_ref=dataclasses.replace(rel.right_option_ref, option_id="ghost")
+    )
+    forged = dataclasses.replace(struct, removal_target_relations=(ghost,))
+    assert evaluate_composition_premises(forged, theorem_evidence_valid=True)["C2"].status == "INCOMPLETE"
+
+
+# finding 7: premise_verification_digest 가 입력 structure identity 에 결속된다.
+def test_verification_digest_binds_structure_identity() -> None:
+    a = _verify(_base_structure())
+    b = _verify(_two_option((10, 20), (30, 40)))
+    assert isinstance(a, CompositionPremisesPassed) and isinstance(b, CompositionPremisesPassed)
+    # 서로 다른 valid v2 structure → 서로 다른 verification digest.
+    assert a.premise_verification_digest != b.premise_verification_digest
+    # 결과가 어느 template 을 검증했는지 담는다.
+    assert a.template_structure_digest == template_structure_digest(_base_structure())
+    assert a.template_structure_digest != b.template_structure_digest

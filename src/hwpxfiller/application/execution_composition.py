@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from hwpxfiller.application.execution_structure import (
@@ -32,6 +33,7 @@ from hwpxfiller.application.execution_structure import (
     CONTAINS,
     CROSSING,
     DISJOINT,
+    EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     OWNER_OPTION,
     OWNER_ROOT,
     OWNER_SLOT_SHARED,
@@ -41,10 +43,16 @@ from hwpxfiller.application.execution_structure import (
     COINCIDE_SAME_END,
     COINCIDE_SAME_SPAN,
     COINCIDE_SAME_START,
+    POSITION_AFTER,
+    POSITION_BEFORE,
     POSITION_INSIDE,
     ExecutionTemplateStructure,
+    classify_span_relation,
+    template_structure_digest,
 )
 from hwpxfiller.application.qualification_evidence import content_digest
+
+_VALID_RETAINED_POSITIONS = frozenset({POSITION_BEFORE, POSITION_INSIDE, POSITION_AFTER})
 
 # ─── contract identity(의미가 바뀌면 새 ID — 같은 ID 의미 수정 금지) ───────────────────
 COMPOSITION_CONTRACT_ID = "hwpx-composition/v1"
@@ -194,49 +202,99 @@ def encode_native_primitive_contract(m: NativePrimitiveContractManifest) -> dict
 
 
 # ─── theorem/counterexample fixture corpus(admitted ↔ counterexample 분리) ──────────
-# admitted corpus: theorem 이 참이어야 하는 최소 positive 표본.
-POSITIVE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = (
-    {"id": "content-entry-options-only", "family": "envelope", "admitted": True},
-    {"id": "selected-option-region-empty", "family": "envelope", "admitted": True},
-    {"id": "multiple-slots-same-content-entry", "family": "layout", "admitted": True},
-    {"id": "owner-target-same-start", "family": "target_owner", "admitted": True},
-    {"id": "owner-target-same-end", "family": "target_owner", "admitted": True},
-    {"id": "owner-target-same-span", "family": "target_owner", "admitted": True},
-    {"id": "distinct-target-disjoint", "family": "target_target", "relation": DISJOINT,
-     "admitted": True},
-    {"id": "distinct-target-touching", "family": "target_target", "relation": TOUCHING,
-     "admitted": True},
-    {"id": "unselected-option-envelope", "family": "envelope", "admitted": True},
-    {"id": "remove-option-active-field-parity", "family": "resolver", "admitted": True},
-    {"id": "multi-field-write-remaining-parity", "family": "resolver", "admitted": True},
-    {"id": "intentional-blank-write-parity", "family": "resolver", "admitted": True},
+# 각 case 는 self-declared label 이 아니라 EXECUTABLE geometric 관찰값이다 — 실 classifier 로
+# 재실행해 admit/reject 결과를 확인하고(prove_theorem_corpus), digest 를 그 case 내용(입력+
+# 기대)에 결속한다. label 만 든 "admitted:true" manifest 는 실 corpus 와 digest 가 안 맞아
+# fail-closed 다("declaration lives, result dies" 회피). structural/geometric theorem 층이고
+# native_primitive_contract_id 에 결속된다 — shipping runtime conformance 는 별 seam.
+
+# target-target: closed 정수 span 두 개 + touching theorem 유무 → 기대 admission.
+_TARGET_TARGET_CASES: tuple[Mapping[str, Any], ...] = (
+    {"case": "tt-disjoint", "family": "target_target", "a": [10, 20], "b": [30, 40],
+     "touching_theorem": False, "expected": OK},
+    {"case": "tt-touching-gated", "family": "target_target", "a": [10, 20], "b": [20, 40],
+     "touching_theorem": True, "expected": OK},
+    {"case": "tt-touching-ungated", "family": "target_target", "a": [10, 20], "b": [20, 40],
+     "touching_theorem": False, "expected": FAILED},
+    {"case": "tt-contains", "family": "target_target", "a": [10, 40], "b": [15, 30],
+     "touching_theorem": True, "expected": FAILED},
+    {"case": "tt-contained", "family": "target_target", "a": [15, 30], "b": [10, 40],
+     "touching_theorem": True, "expected": FAILED},
+    {"case": "tt-same-span", "family": "target_target", "a": [10, 40], "b": [10, 40],
+     "touching_theorem": True, "expected": FAILED},
+    {"case": "tt-crossing", "family": "target_target", "a": [10, 30], "b": [20, 40],
+     "touching_theorem": True, "expected": FAILED},
 )
 
-# counterexample corpus: 반드시 거절해야 하는 표본(admitted=False).
-COUNTEREXAMPLE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = (
-    {"id": "distinct-target-contains", "family": "target_target", "relation": CONTAINS,
-     "admitted": False},
-    {"id": "distinct-target-contained", "family": "target_target", "relation": CONTAINED,
-     "admitted": False},
-    {"id": "distinct-target-same-span", "family": "target_target", "relation": SAME_SPAN,
-     "admitted": False},
-    {"id": "distinct-target-crossing", "family": "target_target", "relation": CROSSING,
-     "admitted": False},
-    {"id": "retained-content-inside-target", "family": "target_retained", "admitted": False},
-    {"id": "s2-global-native-admission", "family": "global", "admitted": False},
+# target-owner: owner/target coincidence + envelope capability + theorem → 기대 admission.
+_OWNER_CASES: tuple[Mapping[str, Any], ...] = (
+    {"case": "ow-interior", "family": "owner", "coincidence": COINCIDE_INTERIOR,
+     "marker": True, "boundary": True, "theorem": False, "expected": OK},
+    {"case": "ow-same-start-gated", "family": "owner", "coincidence": COINCIDE_SAME_START,
+     "marker": True, "boundary": True, "theorem": True, "expected": OK},
+    {"case": "ow-same-end-gated", "family": "owner", "coincidence": COINCIDE_SAME_END,
+     "marker": True, "boundary": True, "theorem": True, "expected": OK},
+    {"case": "ow-same-span-gated", "family": "owner", "coincidence": COINCIDE_SAME_SPAN,
+     "marker": True, "boundary": True, "theorem": True, "expected": OK},
+    {"case": "ow-same-start-ungated", "family": "owner", "coincidence": COINCIDE_SAME_START,
+     "marker": True, "boundary": True, "theorem": False, "expected": FAILED},
+    {"case": "ow-same-span-no-capability", "family": "owner", "coincidence": COINCIDE_SAME_SPAN,
+     "marker": False, "boundary": True, "theorem": True, "expected": FAILED},
 )
 
-# theorem 이 exact 하게 attest 하는 target-target relation(positive corpus 에서 유도).
+_THEOREM_CORPUS: tuple[Mapping[str, Any], ...] = _TARGET_TARGET_CASES + _OWNER_CASES
+
+
+def _run_theorem_case(case: Mapping[str, Any]) -> str:
+    """corpus case 를 실 classifier 로 재실행해 admission verdict 를 낸다(geometry → verdict)."""
+    if case["family"] == "target_target":
+        relation = classify_span_relation(tuple(case["a"]), tuple(case["b"]))
+        return classify_target_target_admission(
+            relation, touching_theorem_available=case["touching_theorem"]
+        )
+    return is_owner_coincidence_admitted(
+        case["coincidence"],
+        preserves_owner_marker=case["marker"],
+        coincident_boundary_admissible=case["boundary"],
+        coincidence_theorem_available=case["theorem"],
+    )
+
+
+def prove_theorem_corpus(corpus: tuple[Mapping[str, Any], ...] = _THEOREM_CORPUS) -> None:
+    """corpus 전 case 를 재실행해 기대 admission 과 일치함을 강제한다(result-lives guard).
+
+    theorem PASS 는 label 이 아니라 이 재증명에 결속된다 — 어긋나면 시끄럽게 닫힌다.
+    """
+    for case in corpus:
+        verdict = _run_theorem_case(case)
+        if verdict != case["expected"]:
+            raise CompositionTheoremEvidenceIntegrityError(
+                f"theorem corpus case {case['case']!r} 결과 {verdict} != 기대 {case['expected']}"
+            )
+
+
+# positive(admitted) / counterexample(rejected) 분리 — 실 case 내용에 digest 결속.
+POSITIVE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = tuple(
+    c for c in _THEOREM_CORPUS if c["expected"] == OK
+)
+COUNTEREXAMPLE_THEOREM_FIXTURES: tuple[Mapping[str, Any], ...] = tuple(
+    c for c in _THEOREM_CORPUS if c["expected"] == FAILED
+)
+
+# import 시 corpus 가 실제로 성립함을 증명한다 — 통과 못 하면 모듈이 로드되지 않는다.
+prove_theorem_corpus()
+
+# theorem 이 attest 하는 target-target relation(admitted case 의 실 geometry 에서 유도).
 _ATTESTED_TARGET_TARGET_RELATIONS = frozenset(
-    f["relation"]
-    for f in POSITIVE_THEOREM_FIXTURES
-    if f.get("family") == "target_target"
+    classify_span_relation(tuple(c["a"]), tuple(c["b"]))
+    for c in POSITIVE_THEOREM_FIXTURES
+    if c["family"] == "target_target"
 )
 
 
 def fixture_manifest_digest(fixtures: tuple[Mapping[str, Any], ...]) -> str:
-    """fixture corpus 의 content-address(id 정렬로 저장 순서 ≠ identity)."""
-    return content_digest(sorted((dict(f) for f in fixtures), key=lambda f: f["id"]))
+    """fixture corpus 의 content-address(case 정렬로 저장 순서 ≠ identity)."""
+    return content_digest(sorted((dict(f) for f in fixtures), key=lambda f: f["case"]))
 
 
 # ─── CompositionTheoremEvidenceManifest ─────────────────────────────────────────────
@@ -407,14 +465,20 @@ class RuntimeMaterializerConformanceRegistry:
     def is_admitted(
         self,
         *,
+        runtime_capability_manifest_digest: str,
         materialization_contract_id: str,
+        materialization_base_contract_id: str,
         native_primitive_contract_id: str,
         composition_contract_id: str,
         plan_schema_version: str,
         canonical_encoding_version: str,
     ) -> bool:
+        # capability digest·base contract 를 함께 대조한다 — shipping runtime 이나 base contract 가
+        # 바뀌면 옛 PASS manifest 는 더 이상 admit 되지 않는다(stale admission 차단).
         return any(
-            m.materialization_contract_id == materialization_contract_id
+            m.runtime_capability_manifest_digest == runtime_capability_manifest_digest
+            and m.materialization_contract_id == materialization_contract_id
+            and m.materialization_base_contract_id == materialization_base_contract_id
             and m.native_primitive_contract_id == native_primitive_contract_id
             and composition_contract_id in m.admitted_composition_contract_ids
             and plan_schema_version in m.supported_plan_schema_versions
@@ -433,12 +497,26 @@ DEFAULT_RUNTIME_CONFORMANCE_REGISTRY = RuntimeMaterializerConformanceRegistry()
 
 
 # ─── verifier 결과 sum type ──────────────────────────────────────────────────────────
+def _deep_freeze(value: Any) -> Any:
+    """JSON-safe 값을 재귀적으로 얼린다 — frozen dataclass 가 nested dict/list 변이를 못 막는다.
+
+    dict → read-only MappingProxyType, list → tuple. scalar 는 그대로. 이로써 PASS 결과의
+    verified_premise_facts 를 검증 뒤 고쳐도 premise_verification_digest 가 stale 해질 수 없다.
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(v) for v in value)
+    return value
+
+
 @dataclass(frozen=True)
 class CompositionPremisesPassed:
     """모든 required premise 가 exact projection fact 에서 증명됨."""
 
     composition_contract_id: str
     native_primitive_contract_id: str
+    template_structure_digest: str
     theorem_evidence_manifest_digest: str
     verified_premise_facts: Mapping[str, Any]
     premise_verification_digest: str
@@ -491,21 +569,26 @@ def _premise_c1(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
 def _premise_c2(
     structure: ExecutionTemplateStructure, *, touching_theorem_available: bool
 ) -> _PremiseOutcome:
-    n = len(structure.option_regions)
-    expected_pairs = n * (n - 1) // 2
-    relations = structure.removal_target_relations
-    if len(relations) != expected_pairs:
-        return _PremiseOutcome(
-            INCOMPLETE, f"target-target relation 수 {len(relations)} != 기대 {expected_pairs}"
-        )
-    seen: set[tuple[Any, Any]] = set()
-    for rel in relations:
-        pair = (
-            (rel.left_option_ref.slot_id, rel.left_option_ref.option_id),
-            (rel.right_option_ref.slot_id, rel.right_option_ref.option_id),
-        )
+    # canonical UNORDERED pair set 를 option_regions 에서 유도한다 — count·ordered-dup 검사만으로는
+    # (a,b),(b,a),(a,c) 처럼 실제 pair (b,c) 가 빠진 위조 DTO 가 통과한다.
+    refs = sorted((r.slot_id, r.option_id) for r in structure.option_regions)
+    expected_pairs = {
+        frozenset((refs[i], refs[j]))
+        for i in range(len(refs))
+        for j in range(i + 1, len(refs))
+    }
+    valid_refs = set(refs)
+    seen: set[frozenset[tuple[str, str]]] = set()
+    for rel in structure.removal_target_relations:
+        left = (rel.left_option_ref.slot_id, rel.left_option_ref.option_id)
+        right = (rel.right_option_ref.slot_id, rel.right_option_ref.option_id)
+        if left not in valid_refs or right not in valid_refs or left == right:
+            return _PremiseOutcome(
+                INCOMPLETE, f"relation 이 존재하지 않는/동일 Option 을 참조: {left}·{right}"
+            )
+        pair = frozenset((left, right))
         if pair in seen:
-            return _PremiseOutcome(INCOMPLETE, f"중복 relation fact: {pair}")
+            return _PremiseOutcome(INCOMPLETE, f"중복 relation fact: {tuple(sorted(pair))}")
         seen.add(pair)
         verdict = classify_target_target_admission(
             rel.relation, touching_theorem_available=touching_theorem_available
@@ -513,7 +596,11 @@ def _premise_c2(
         if verdict == INCOMPLETE:
             return _PremiseOutcome(INCOMPLETE, f"미지 relation 어휘: {rel.relation!r}")
         if verdict == FAILED:
-            return _PremiseOutcome(FAILED, f"admit 불가 relation {rel.relation} @ {pair}")
+            return _PremiseOutcome(FAILED, f"admit 불가 relation {rel.relation} @ {tuple(sorted(pair))}")
+    if seen != expected_pairs:
+        return _PremiseOutcome(
+            INCOMPLETE, f"target-target pair 집합 불완전: 누락 {sorted(expected_pairs - seen)}"
+        )
     return _PremiseOutcome(OK)
 
 
@@ -567,15 +654,48 @@ def _premise_c5(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
 
 
 def _premise_c6(structure: ExecutionTemplateStructure) -> _PremiseOutcome:
+    """retained content(root/slot-shared/다른 Option 의 Active Field)가 어떤 removal target 안에도
+    없음을 증명한다.
+
+    빈/미지 vocab 을 "밖에 있다"로 추정하지 않는다 — region 마다 기대 retained-occurrence 집합을
+    structure 에서 재계산해 **완전 coverage** 를 강제한다. 누락·미지 position → context error(평가
+    불가), INSIDE → Blocked. decode 경로가 이 집합을 재구성 안 하므로 여기서 닫아야 조용한
+    Blocked→Passed 뒤집힘이 없다.
+    """
     for region in structure.option_regions:
+        expected = {
+            (occ.field_id, occ.occurrence_ordinal)
+            for occ in structure.field_occurrences
+            if not (
+                occ.owner_kind == OWNER_OPTION
+                and occ.owner_slot_id == region.slot_id
+                and occ.owner_option_id == region.option_id
+            )
+        }
+        positions: dict[tuple[str, int], str] = {}
         for fact in region.retained_content_relation_facts:
+            field_id = fact.get("field_id")
+            ordinal = fact.get("occurrence_ordinal")
             position = fact.get("position")
-            if not isinstance(position, str):
-                return _PremiseOutcome(INCOMPLETE, f"retained position fact 부재 @ {region.option_id}")
+            if not isinstance(field_id, str) or not isinstance(ordinal, int):
+                return _PremiseOutcome(
+                    INCOMPLETE, f"retained fact 의 occurrence 식별자 부재 @ {region.option_id}"
+                )
+            if position not in _VALID_RETAINED_POSITIONS:
+                return _PremiseOutcome(
+                    INCOMPLETE, f"retained position 어휘 밖({position!r}) @ {region.option_id}"
+                )
+            positions[(field_id, ordinal)] = position
+        if set(positions) != expected:
+            return _PremiseOutcome(
+                INCOMPLETE,
+                f"retained 집합 불완전 @ {region.option_id}: "
+                f"누락 {sorted(expected - set(positions))}·잉여 {sorted(set(positions) - expected)}",
+            )
+        for key, position in positions.items():
             if position == POSITION_INSIDE:
                 return _PremiseOutcome(
-                    FAILED,
-                    f"retained content {fact.get('field_id')!r} 가 removal target 안 @ {region.option_id}",
+                    FAILED, f"retained content {key[0]!r} 가 removal target 안 @ {region.option_id}"
                 )
     return _PremiseOutcome(OK)
 
@@ -674,6 +794,13 @@ def verify_execution_composition_premises(
     integrity·PASS, (3) projection resolver/removal contract 가 native primitive contract 와
     결속, (4) C1~C10 이 전부 증명될 때만. 증명 안 되면 latest fallback 없이 Blocked/ContextError.
     """
+    # (0) projection schema — 미지원 v2 밖 structure 를 v2 의미로 해석하지 않는다(fail-closed).
+    if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+        return CompositionPremiseContextError(
+            "UNSUPPORTED_EXECUTION_STRUCTURE_PROJECTION", None,
+            f"미지원 execution structure projection schema: "
+            f"{structure.projection_schema_version!r}",
+        )
     # (1) contract 등록 — 미지원은 latest fallback 없이 context error.
     if composition_contract_id != COMPOSITION_CONTRACT_ID:
         return CompositionPremiseContextError(
@@ -726,21 +853,24 @@ def verify_execution_composition_premises(
 
     verified_premise_facts = _verified_premise_facts(structure, outcomes)
     evidence_digest = theorem_evidence_digest(theorem_evidence)
+    structure_digest = template_structure_digest(structure)
     premise_verification_digest = content_digest(
         {
             "composition_contract_id": composition_contract_id,
             "native_primitive_contract_id": (
                 native_primitive_contract.native_primitive_contract_id
             ),
+            "template_structure_digest": structure_digest,
             "theorem_evidence_manifest_digest": evidence_digest,
-            "verified_premise_facts": dict(verified_premise_facts),
+            "verified_premise_facts": verified_premise_facts,
         }
     )
     return CompositionPremisesPassed(
         composition_contract_id=composition_contract_id,
         native_primitive_contract_id=native_primitive_contract.native_primitive_contract_id,
+        template_structure_digest=structure_digest,
         theorem_evidence_manifest_digest=evidence_digest,
-        verified_premise_facts=verified_premise_facts,
+        verified_premise_facts=_deep_freeze(verified_premise_facts),
         premise_verification_digest=premise_verification_digest,
     )
 
