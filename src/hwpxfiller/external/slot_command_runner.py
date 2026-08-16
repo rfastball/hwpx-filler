@@ -477,4 +477,5 @@ def get_current_slot_configuration(
             return _compute_view(store, work_state, qualification, candidate, context)
         except SlotConfigurationContextError as exc:
             # context error → partial fallback 없이 CONTEXT_ERROR projection(#678).
-            return project_context_error(str(exc))
+            # 소비자는 localized 메시지가 아니라 stable .code 로 분기한다(원문은 detail).
+            return project_context_error(exc.code, str(exc))

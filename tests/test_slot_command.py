@@ -401,7 +401,10 @@ def test_get_on_context_error_returns_context_error_view(tmp_path: Path) -> None
     # stale template application → partial fallback 없이 CONTEXT_ERROR projection(#678).
     store, ports = _store(tmp_path), _ports(current="A2")
     view = get_current_slot_configuration(store, *ports, context=_ctx(app="A1"))
-    assert view.view_status == CONTEXT_ERROR and view.context_error is not None
+    assert view.view_status == CONTEXT_ERROR
+    # stable code(localized 메시지 아님) — 소비자 분기의 안정 축.
+    assert view.context_error == "STALE_TEMPLATE_APPLICATION"
+    assert view.context_error_detail is not None
     assert view.summary is None and view.slots == ()
 
 

@@ -32,6 +32,7 @@ from hwpxfiller.application.template_qualification import (
     TemplateSlot,
     TemplateStructure,
 )
+from hwpxfiller.application.work_slot_configuration import create_empty
 from hwpxfiller.domain.slot_selection import (
     DEFAULT_SELECTION_SEMANTIC_REGISTRY,
     SelectionSemanticContractManifest,
@@ -147,12 +148,28 @@ def test_missing_and_broken_distinct_when_both_present() -> None:
 
 # ── view_status: CURRENT vs CONTEXT_ERROR ─────────────────────────────────────
 def test_context_error_has_no_normal_projection() -> None:
-    view = project_context_error("STALE_TEMPLATE_APPLICATION")
+    view = project_context_error("STALE_TEMPLATE_APPLICATION", "요청 Application A1 ...")
     assert view.view_status == CONTEXT_ERROR
-    assert view.context_error == "STALE_TEMPLATE_APPLICATION"
+    assert view.context_error == "STALE_TEMPLATE_APPLICATION"  # stable code, not message
+    assert view.context_error_detail == "요청 Application A1 ..."
     assert view.summary is None
     assert view.slots == () and view.detached_selections == ()
+    assert view.configuration_present is False and view.configuration_version is None
     assert view.configuration_status == NOT_APPLICABLE  # partial fallback 없음
+
+
+def test_configuration_presence_distinguishes_absence_from_tombstone() -> None:
+    # F1: 빈 selections 는 부재·explicit-empty tombstone 둘 다 만들지만 두 view 는 구별돼야 한다.
+    structure = _structure(_slot("s", [TemplateOption("A")]))
+    resolution = resolve_slot_configuration(_sel(), structure, V1)
+
+    absent = project_current_slot_configuration(_ctx(structure), None, resolution)
+    assert absent.configuration_present is False and absent.configuration_version is None
+
+    tombstone = create_empty("w1", "A1", "2026-08-16T00:00:00Z")
+    present = project_current_slot_configuration(_ctx(structure), tombstone, resolution)
+    assert present.configuration_present is True
+    assert present.configuration_version == tombstone.version
 
 
 # ── mutation-outcome vs current-view 분리 ─────────────────────────────────────
@@ -243,6 +260,16 @@ def test_summary_and_blocking_items() -> None:
     assert any(b.slot_id == "m" for b in view.blocking_items)
 
 
+def test_blocking_index_carries_secondary_diagnostic_option_id() -> None:
+    # F4: primary CARDINALITY_VIOLATION + secondary SELECTED_OPTION_REMOVED(Z) — 둘 다 실리고
+    # 사라진 선택 option_id 를 잃지 않는다.
+    structure = _structure(_slot("s", [TemplateOption("A"), TemplateOption("B")]))
+    view = _project(structure, _sel(("s", ["A", "Z"])))  # 2 declared(cardinality), Z 는 제거됨
+    kinds = {(b.kind, b.option_id) for b in view.blocking_items if b.slot_id == "s"}
+    assert ("CARDINALITY_VIOLATION", None) in kinds  # primary
+    assert ("SELECTED_OPTION_REMOVED", "Z") in kinds  # secondary, option_id 보존
+
+
 # ── reconciliation delta: source-relative 만, immediate transition 아님 ──────────
 def test_reconciliation_changes_present_only_with_delta() -> None:
     structure = _structure(_slot("s", [TemplateOption("A")]))
@@ -259,6 +286,26 @@ def test_reconciliation_changes_present_only_with_delta() -> None:
     assert rc.added_slot_ids == ("s",) and rc.removed_slot_ids == ("old",)
     # source-relative refs 만 — "이번 변경" immediate transition 필드는 없다.
     assert not hasattr(rc, "immediate") and not hasattr(rc, "applied_now")
+
+
+def test_reconciliation_changes_surface_reorder_only_delta() -> None:
+    # F3: option/slot 순서만 바뀐 delta 는 added/removed 가 비어도 reorder 로 표면화돼야 한다.
+    source = _structure(
+        _slot("s", [TemplateOption("A"), TemplateOption("B")]),
+        _slot("t", [TemplateOption("A")]),
+    )
+    target = _structure(
+        _slot("t", [TemplateOption("A")]),
+        _slot("s", [TemplateOption("B"), TemplateOption("A")]),  # option 순서 뒤집힘
+    )
+    delta = derive_reconciliation_source_delta(
+        "A0", 1, _sel(("s", ["A"])), source, "A1", target
+    )
+    rc = _project(target, _sel(("s", ["B"])), source_delta=delta).reconciliation_changes
+    assert rc is not None
+    assert rc.added_slot_ids == () and rc.removed_slot_ids == ()  # 추가·제거 없음
+    assert rc.slot_order_changed is True
+    assert rc.option_order_changes == ("s",)
 
 
 # ── JSON-safety ───────────────────────────────────────────────────────────────

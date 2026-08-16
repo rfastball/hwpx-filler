@@ -58,6 +58,8 @@ _BROKEN_STATUSES = frozenset(
         UNSUPPORTED_SELECTION_POLICY,
     }
 )
+# primary blocking = broken + missing-required(= NEEDS_SELECTION 유발 blocker).
+_BLOCKING_STATUSES = _BROKEN_STATUSES | {MISSING_REQUIRED_SELECTION}
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,8 @@ class ProjectionReconciliationChanges:
     removed_option_refs: tuple[tuple[str, str], ...]
     removed_selected_option_refs: tuple[tuple[str, str], ...]
     preserved_selection_refs: tuple[tuple[str, str], ...]
+    slot_order_changed: bool
+    option_order_changes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -141,6 +145,9 @@ class CurrentSlotConfigurationView:
     view_status: str
     configuration_status: str
     context_error: str | None
+    context_error_detail: str | None
+    configuration_present: bool
+    configuration_version: int | None
     summary: ProjectionSummary | None
     slots: tuple[ProjectedSlot, ...]
     detached_selections: tuple[ProjectedDetachedSelection, ...]
@@ -149,12 +156,21 @@ class CurrentSlotConfigurationView:
     informational_changes: tuple[ProjectedChangeItem, ...]
 
 
-def project_context_error(context_error: str) -> CurrentSlotConfigurationView:
-    """context error → normal projection 을 구성했다고 주장하지 않는다(NOT_APPLICABLE·비어 있음)."""
+def project_context_error(
+    context_error_code: str, context_error_detail: str | None = None
+) -> CurrentSlotConfigurationView:
+    """context error → normal projection 을 구성했다고 주장하지 않는다(NOT_APPLICABLE·비어 있음).
+
+    ``context_error_code`` 는 :class:`SlotConfigurationContextError` 의 stable ``.code`` 다 —
+    localized 메시지가 아니라 안정 코드로 분기하라고 그것을 싣는다. 원문은 detail 로만 남긴다.
+    """
     return CurrentSlotConfigurationView(
         view_status=CONTEXT_ERROR,
         configuration_status=NOT_APPLICABLE,
-        context_error=context_error,
+        context_error=context_error_code,
+        context_error_detail=context_error_detail,
+        configuration_present=False,
+        configuration_version=None,
         summary=None,
         slots=(),
         detached_selections=(),
@@ -210,10 +226,16 @@ def project_current_slot_configuration(
         slot_selections_complete=resolution.slot_selections_complete,
     )
 
-    blocking_items = tuple(
-        ProjectedChangeItem(slot_id=sid, kind=status)
-        for sid, status in resolution.blocking_diagnostics
-    )
+    # blocking index: 각 slot 의 primary blocker + secondary diagnostic(제거된 option_id 보존).
+    # structure 순서로 결정론. primary 만 보면 어떤 선택이 사라졌는지(option_id)를 잃는다.
+    blocking_items: list[ProjectedChangeItem] = []
+    for sr in resolution.slots:
+        if sr.status in _BLOCKING_STATUSES:
+            blocking_items.append(ProjectedChangeItem(slot_id=sr.slot_id, kind=sr.status))
+        blocking_items.extend(
+            ProjectedChangeItem(slot_id=sr.slot_id, kind=d.kind, option_id=d.option_id)
+            for d in sr.diagnostics
+        )
     informational = tuple(
         ProjectedChangeItem(slot_id=d.slot_id, kind=SLOT_REMOVED) for d in detached
     )
@@ -222,11 +244,14 @@ def project_current_slot_configuration(
         view_status=CURRENT,
         configuration_status=_configuration_status(resolution),
         context_error=None,
+        context_error_detail=None,
+        configuration_present=configuration is not None,
+        configuration_version=configuration.version if configuration is not None else None,
         summary=summary,
         slots=slots,
         detached_selections=detached,
         reconciliation_changes=_project_delta(source_delta),
-        blocking_items=blocking_items,
+        blocking_items=tuple(blocking_items),
         informational_changes=informational,
     )
 
@@ -275,4 +300,6 @@ def _project_delta(
         removed_option_refs=delta.removed_option_refs,
         removed_selected_option_refs=delta.removed_selected_option_refs,
         preserved_selection_refs=delta.preserved_selection_refs,
+        slot_order_changed=delta.slot_order_changed,
+        option_order_changes=delta.option_order_changes,
     )
