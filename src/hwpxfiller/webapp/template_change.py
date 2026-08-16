@@ -32,7 +32,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..application.candidate_revision import MutableSourceBinding, TemplateLineage
+from ..application.candidate_revision import (
+    MutableSourceBinding,
+    TemplateLineage,
+    blob_digest,
+)
+from ..application.slot_configuration_context import (
+    SlotConfigurationContextError,
+    resolve_exact_applied_template_input,
+)
 from ..application.jobs import JobStorePort, assign_job_authority_id, load_job
 from ..application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
@@ -46,8 +54,18 @@ from ..application.template_change_product import (
     preparation_view,
     product_apply_status,
 )
-from ..application.work_bootstrap import BOOTSTRAP_OK, BootstrapOutcome
+from ..application.work_bootstrap import (
+    BOOTSTRAP_OK,
+    TEMPLATE_INITIALIZATION_REQUIRED,
+    BootstrapOutcome,
+)
+from ..application.slot_selection_input import SlotSelectionCaptureError
+from ..application.slotless_run_bridge import (
+    SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE,
+    SlotlessRunAdmissionError,
+)
 from ..application.work_template_state import (
+    INITIALIZATION,
     DocumentWork,
     PREP_CAPTURING,
     PREP_QUALIFYING,
@@ -55,7 +73,12 @@ from ..application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from ..external.candidate_store import CandidateObjectStore
-from ..external.work_configuration_store import WorkspaceMetadataStore
+from ..external.slot_command_runner import admit_managed_slotless_run
+from ..external.work_configuration_store import (
+    WorkSlotConfigurationStore,
+    WorkspaceMetadataStore,
+)
+from ..external.work_template_store import WorkAggregateNotFound
 from ..external.prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -65,6 +88,7 @@ from ..external.prepare_orchestration_runner import (
     run_qualification_stage,
 )
 from ..external.qualification_store import ObjectNotFound, QualificationObjectStore
+from ..host.staged_template import clear_run_staging
 from ..external.template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
@@ -104,6 +128,41 @@ def _authorize(work: DocumentWork, actor: str) -> None:
     """actor 의 Work 접근·Template 변경 권한 — token 과 독립으로 매 요청 확인한다."""
     if actor != LOCAL_ACTOR:
         raise TemplateChangeError(f"actor {actor!r} 는 이 Work 에 접근할 수 없습니다")
+
+
+class _WorkStateReadPort:
+    """``AtomicWorkTemplateStateStore`` → #674 read Port(load()->None on missing)."""
+
+    def __init__(self, store: "AtomicWorkTemplateStateStore") -> None:
+        self._store = store
+
+    def load(self, work_id: str) -> "WorkTemplateStateAggregate | None":
+        try:
+            return self._store.load(work_id)
+        except WorkAggregateNotFound:
+            return None
+
+
+class _InitialApplicationProvenance:
+    """execution-config base = bootstrap 시 확립된 INITIALIZATION Application.
+
+    Mapping·execution 구성은 bootstrap 시점 Application 에 대고 세워졌고, 그 base 를 다른
+    Application 으로 다시 지정하는 review command 는 아직 없다(#681 비범위) — 그러니 지금은
+    INITIALIZATION Application 이 정본 base 다. S3 Apply 로 current 가 앞서면 base≠current 라
+    guard 가 NEEDS_CONFIGURATION 으로 막는다. 별도 durable 필드는 두지 않는다(초기 Application
+    이 이미 그 base 를 영속한다). Work 미부트스트랩 → None(UNKNOWN, 정직).
+    """
+
+    def __init__(self, works: "AtomicWorkTemplateStateStore") -> None:
+        self._works = works
+
+    def resolve_base_template_application_id(self, work_id: str) -> "str | None":
+        if not self._works.exists(work_id):
+            return None
+        for app in self._works.load(work_id).applications:
+            if app.origin == INITIALIZATION:
+                return app.application_id
+        return None
 
 
 class TemplateChangeCoordinator:
@@ -383,6 +442,92 @@ class TemplateChangeCoordinator:
         )
         prep = self._advance(work_id, job_name, prep)
         return {"ok": True, "preparation": self._view(self._works.load(work_id), work_id, prep)}
+
+    def resolve_generation_template(self, job_name: str) -> str:
+        """managed Product Work 생성의 정본 템플릿 경로 — current Application 의 exact applied
+        Candidate bytes 를 staging 한 read-only 경로다(#681 G11).
+
+        mutable ``job.template_path`` 를 직접 소비하지 않는다: bootstrap-on-demand 로 Work·
+        current Application 을 세우고(첫 생성이 exact bytes 를 Candidate store 에 확립),
+        slotless admission gate(exact context·provenance·bytes 무결성)를 통과할 때만 staged
+        경로를 낸다. 실패는 fallback 없이 시끄럽게 오른다(confirm-or-alarm):
+        bootstrap 실패는 ``SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)``,
+        gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
+        EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
+        """
+        job = load_job(self._registry, job_name)
+        if job.media != "hwpx":
+            raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
+        self._ensure_manifest()
+        work_id = self._work_id_for(job_name, create=True)
+        assert work_id is not None
+        self._recover(work_id)
+        if not self._works.exists(work_id):
+            # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
+            # Candidate/qualification object 를 남겨도, 템플릿을 고쳐 다시 누르면 새 id 로 재부트스트랩
+            # 된다(고정 id 면 ObjectAlreadyExists 로 복구 불가). 진짜 중복 클릭은 generation_lock 이
+            # 막으므로 여기서 재전송-멱등을 따로 지킬 필요가 없다.
+            outcome = self._bootstrap(work_id, job_name, job, f"gen-{uuid.uuid4().hex}")
+            if outcome.result != BOOTSTRAP_OK:
+                raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
+        aggregate = self._works.load(work_id)
+        ws = self._workspace.get_or_create(self._now())
+        try:
+            run = admit_managed_slotless_run(
+                WorkSlotConfigurationStore(self._root / "slot_configs"),
+                _WorkStateReadPort(self._works),
+                self._quals, self._candidates, self._candidates,
+                _InitialApplicationProvenance(self._works),
+                str(self._root),
+                workspace_instance_id=ws,
+                expected_work_authority_id=work_id,
+                expected_template_application_id=aggregate.work.current_template_application_id,
+                captured_at=self._now(),
+            )
+        except SlotSelectionCaptureError as exc:
+            # slot-bearing 이고 slot config 가 미완이면 capture 가 admit 앞에서 SLOT_CONFIGURATION_
+            # INCOMPLETE 로 던진다 — 구조화된 제품 상태로 번역한다(raw 예외가 프런트로 새지 않게).
+            raise SlotlessRunAdmissionError(
+                SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE, str(exc)
+            ) from exc
+        return run.staged_template_path
+
+    def clear_generation_staging(self) -> None:
+        """run 이 끝나 아무 실행도 staged 경로를 참조하지 않을 때 staging 사본을 정리한다
+        (#681 「cleanup 은 Host lifecycle 소유」). content-addressed 라 다음 run 이 다시
+        stage 하므로 run 뒤 지우는 것은 안전하다 — 안 지우면 판본마다 read-only 사본이 영구
+        누적된다."""
+        clear_run_staging(self._root)
+
+    def source_drift_note(self, job_name: str) -> "str | None":
+        """이미 부트스트랩된 Work 의 현재 원본 파일 bytes 가 캡처된 applied Candidate bytes 와
+        다르면 시끄러운 경고 문안을 낸다 — 생성은 캡처본을 쓰므로(#681 F1) 사용자가 「검토한
+        원본 편집분이 반영 안 됨」을 조용히 겪지 않게 한다(confirm-or-alarm). digest 비교뿐:
+        seat 시점에 gate/stage 를 돌리지 않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
+
+        미부트스트랩(원본=실행본이라 일관)·비-hwpx·무편집·값싸게 못 구하는 경우는 None.
+        """
+        job = load_job(self._registry, job_name)
+        work_id = job.authority_id or None
+        if job.media != "hwpx" or not work_id or not self._works.exists(work_id):
+            return None
+        try:
+            aggregate = self._works.load(work_id)
+            applied = resolve_exact_applied_template_input(
+                _WorkStateReadPort(self._works), self._quals, self._candidates,
+                work_id, aggregate.work.current_template_application_id,
+            )
+            # ponytail: 부트스트랩된 Work 는 snapshot 마다 원본을 해시한다(hwpx 는 클 수 있다).
+            # 지금은 그런 Work 가 드물어 무시할 비용 — 지연이 문제되면 (mtime_ns,size) 로 캐시.
+            source_digest = blob_digest(Path(job.template_path).read_bytes())
+        except (SlotConfigurationContextError, OSError):
+            return None  # 값싸게 못 구하면 경고 없음(preview 를 막지 않는다)
+        if source_digest == applied.exact_content_digest:
+            return None
+        return (
+            "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. "
+            "편집분을 반영하려면 다시 가져오세요."
+        )
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation

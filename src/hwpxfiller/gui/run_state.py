@@ -244,12 +244,16 @@ class RunViewModel:
         self.records: "list[dict]" = []
         # 이어채우기: 기존 문서가 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
         self.template_override: "str | None" = None
+        # managed Product Work 생성이 고정한 exact applied bytes staged 경로(#681 G11) —
+        # mutable job.template_path 대신 이걸 소비한다. 이어채우기(override)가 우선한다.
+        self._managed_template: "str | None" = None
         self.target_mode = "new"               # "new" | "continue"
 
     # ------------------------------------------------------------ 대상 문서
     def effective_template(self) -> str:
-        """생성이 겨눌 문서 — 누적 모드면 이전 출력, 아니면 작업 템플릿."""
-        return self.template_override or self.job.template_path
+        """생성이 겨눌 문서 — 이어채우기면 이전 출력, managed 생성이면 staged exact bytes,
+        아니면 작업 템플릿."""
+        return self.template_override or self._managed_template or self.job.template_path
 
     def set_target_mode(self, mode: str) -> None:
         """새 문서/기존 문서 이어채우기 전환. 새 문서 복귀 시 override 해제."""

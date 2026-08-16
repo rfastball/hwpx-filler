@@ -126,7 +126,19 @@ from ..gui.work_candidates import (
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
-from .template_change import unsupported_zone
+from .template_change import TemplateChangeError, unsupported_zone
+from ..application.slotless_run_bridge import SlotlessRunAdmissionError
+
+# managed 생성 admission 차단 코드 → 사용자 문안(confirm-or-alarm — 조용한 fallback 없음).
+_ADMISSION_REJECT_TEXT = {
+    "TEMPLATE_INITIALIZATION_REQUIRED": "이 템플릿을 문서 작업으로 초기화할 수 없어 생성할 수 없습니다. 템플릿 파일을 확인하세요.",
+    "NEEDS_CONFIGURATION_REVIEW": "실행 구성 출처를 확인할 수 없어 생성을 멈췄습니다. 구성을 검토하세요.",
+    "NEEDS_CONFIGURATION": "템플릿이 바뀌어 실행 구성을 다시 확인해야 생성할 수 있습니다.",
+    "STALE_TEMPLATE_APPLICATION": "적용된 템플릿 판본이 최신이 아니라 생성을 멈췄습니다.",
+    "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 템플릿의 슬롯 구성 실행은 아직 지원하지 않습니다.",
+    "SLOTLESS_SELECTION_CONTEXT_REQUIRED": "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다.",
+    "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR": "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다.",
+}
 from .job_list import drift_note
 from ..external.settings import recollapse_job_group
 from .data_zone import (
@@ -1518,6 +1530,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 템플릿 변경 존(S3-09) — 판정·token·epoch 전부 코디네이터 소유(링2 재조립 금지).
         if self._template_change is not None:
             base["template_change"] = self._template_change.zone(self.job_name, "hwpx", tmissing)
+            # 원본 파일이 캡처 이후 편집됐으면 시끄럽게 표식한다(생성은 캡처본을 씀, #681 F1).
+            base["source_drift"] = (
+                None if tmissing else self._template_change.source_drift_note(self.job_name)
+            )
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -2327,9 +2343,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         self._run = run
         try:
+            reject = self._resolve_managed_template(run_vm)
+            if reject is not None:
+                return reject
             result = self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
         finally:
             self._run = None
+            # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
+            # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
+            managed = run_vm is not None and getattr(run_vm, "_managed_template", None) is not None
+            if run_vm is not None:
+                run_vm._managed_template = None
+            if managed and self._template_change is not None:
+                self._template_change.clear_generation_staging()
             self._generation_lock.release()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
@@ -2341,6 +2367,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._names_pin = None
             self._push()
         return result
+
+    def _resolve_managed_template(self, run_vm) -> "dict | None":
+        """managed Product Work(HWPX 새 문서) 생성이 겨눌 템플릿을 current Application 의
+        exact applied bytes(staged)로 고정한다(#681 G11) — mutable ``job.template_path`` 직독을
+        managed 경로에서 없앤다. 이어채우기(이전 출력)·txt·코디네이터 부재는 해당 없음.
+        admission 차단은 fallback 없이 시끄러운 거절 dict 로 돌려준다(confirm-or-alarm).
+        반환 ``None`` = managed 해당 없음 또는 통과(``run_vm._managed_template`` 설정됨).
+        """
+        if (
+            self._template_change is None
+            or getattr(run_vm, "template_override", None) is not None  # 이어채우기=이전 출력
+            or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
+        ):
+            return None
+        try:
+            run_vm._managed_template = self._template_change.resolve_generation_template(
+                self.job_name
+            )
+        except SlotlessRunAdmissionError as exc:
+            return {
+                "ok": False, "level": "warn",
+                "error": _ADMISSION_REJECT_TEXT.get(exc.code, "생성을 진행할 수 없습니다."),
+            }
+        except TemplateChangeError as exc:
+            return {"ok": False, "level": "warn", "error": str(exc)}
+        return None
 
     def _generate_locked(self, run, run_vm, *, confirm_overwrite: bool = False) -> dict:
         """단일 생성 실행의 링2 결선 — 판정·척추는 Application use case 가 소유한다(P2-23).
