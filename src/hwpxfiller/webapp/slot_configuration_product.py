@@ -36,7 +36,11 @@ from ..application.slot_configuration_projection import (
     NOT_APPLICABLE,
     CurrentSlotConfigurationView,
     project_context_error,
+    project_current_slot_configuration,
 )
+from ..application.slot_reconciliation import resolve_slot_configuration
+from ..domain.slot_selection import SlotSelectionSet
+from ..host.per_work_fence import per_work_mutation_fence
 from ..application.slot_token import (
     TOKEN_PURPOSE,
     TOKEN_SCHEMA_VERSION,
@@ -56,7 +60,7 @@ from ..external.slot_command_runner import (
     ensure_current_slot_configuration,
     select_slot_option,
 )
-from ..external.slot_token_secret import SlotTokenSecretStore
+from ..external.slot_token_secret import SlotTokenSecretError, SlotTokenSecretStore
 from ..external.work_configuration_store import WorkSlotConfigurationStore
 from ..external.work_template_store import (
     AtomicWorkTemplateStateStore,
@@ -262,7 +266,7 @@ class SlotConfigurationProduct:
         self, token: str, ws: str, expected_work_id: str
     ) -> ConfigurationTokenClaims:
         """token open·integrity·purpose·schema·actor binding·workspace·Work 를 검증한다(#679 3~6)."""
-        secret = self._secrets.load_or_create_active_secret()
+        secret = self._load_secret()
         try:
             claims = open_configuration_token(token, secret)
         except TokenPurposeMismatch as exc:
@@ -279,6 +283,13 @@ class SlotConfigurationProduct:
         return claims
 
     # ── context / token issuance ──────────────────────────────────────────────────
+    def _load_secret(self) -> bytes:
+        # secret 손상은 외부 store 오류를 새지 않고 INVALID_CONFIGURATION_TOKEN 으로 정규화한다.
+        try:
+            return self._secrets.load_or_create_active_secret()
+        except SlotTokenSecretError as exc:
+            raise _reject("INVALID_CONFIGURATION_TOKEN", "token secret 손상") from exc
+
     def _actor_binding(self, ws: str) -> str:
         return actor_binding_digest(LOCAL_ACTOR, ws)
 
@@ -353,7 +364,45 @@ class SlotConfigurationProduct:
             actor_binding_digest=self._actor_binding(ws),
             issued_at=self._now(),
         )
-        return sign_configuration_token(claims, self._secrets.load_or_create_active_secret())
+        return sign_configuration_token(claims, self._load_secret())
+
+    def _current_view_and_token(
+        self, ws: str, work_id: str
+    ) -> tuple[CurrentSlotConfigurationView, "str | None", "str | None"]:
+        """CURRENT application 을 **한 fence 아래에서** 다시 읽어 projection·token 을 함께 만든다.
+
+        projection 과 token 이 같은 (context, config) 스냅샷에서 나오므로 서로 어긋날 수 없다
+        (F1: 사이에 낀 commit 이 view 는 옛 version·token 은 새 version 으로 갈라놓는 걸 막는다).
+        token 의 application 이 아니라 CURRENT application 을 풀므로 stale-token mutation 도
+        fresh current view 를 얻는다(F2). runner 는 자기 fence 를 이미 놓아 여기가 새 획득이다
+        (non-reentrant 안전).
+        """
+        with per_work_mutation_fence(ws, work_id):
+            try:
+                ctx = resolve_slot_configuration_context(
+                    self._works, self._quals, self._candidates, ws, work_id
+                )
+            except SlotConfigurationContextError as exc:
+                return project_context_error(exc.code), None, None
+            config = None
+            if self._configs.exists(work_id):
+                for cfg in self._configs.load(work_id).configurations.configurations:
+                    if cfg.base_template_application_id == ctx.template_application_id:
+                        config = cfg
+                        break
+            selections = config.selections if config is not None else SlotSelectionSet(())
+            resolution = resolve_slot_configuration(
+                selections, ctx.template_structure, ctx.selection_semantic_contract
+            )
+            view = project_current_slot_configuration(ctx, config, resolution)
+            token = self._issue_token(
+                ws, work_id,
+                _CurrentSnapshot(
+                    ctx.template_application_id, ctx.selection_semantic_contract_id,
+                    config is not None, config.version if config is not None else None,
+                ),
+            )
+            return view, token, ctx.template_application_id
 
     # ── response assembly ─────────────────────────────────────────────────────────
     def _respond(
@@ -367,13 +416,9 @@ class SlotConfigurationProduct:
                 outcome_replayed=outcome.outcome_replayed,
                 request_relation=_request_relation(outcome.outcome_code),
             )
-        snap, err = self._current_snapshot(ws, work_id)
-        # current view 는 fence 아래 계산한 runner 의 view 를 우선한다(더 일관적). 없으면 context error.
-        view = result.view if result.view is not None else (
-            project_context_error(err or result.view_error or CONTEXT_ERROR)
-        )
-        new_token = self._issue_token(ws, work_id, snap) if snap is not None else None
-        current_app = snap.application_id if snap is not None else None
+        # current_view·token 은 runner 의 token-application view 가 아니라 CURRENT application 을
+        # 한 fence 아래 다시 읽어 조립한다(#679: "current view 는 같은 fence 아래 현재 Work 재조립").
+        view, new_token, current_app = self._current_view_and_token(ws, work_id)
         refresh_required = (
             view.view_status == CONTEXT_ERROR
             or (token_app is not None and token_app != current_app)

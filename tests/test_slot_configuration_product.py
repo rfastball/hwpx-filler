@@ -182,6 +182,54 @@ def test_invalid_token_rejected(tmp_path: Path) -> None:
     assert ei.value.code == "INVALID_CONFIGURATION_TOKEN"
 
 
+def test_corrupt_secret_normalized_to_invalid_token(tmp_path: Path) -> None:
+    # F3: secret 파일 손상은 외부 store 오류를 새지 않고 INVALID_CONFIGURATION_TOKEN 으로.
+    _reg, product = _bootstrapped(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    (_root(tmp_path) / "slot_token_secret.json").write_text("{corrupt", "utf-8")
+    with pytest.raises(SlotConfigurationProductError) as ei:
+        product.select_slot_option("공고서", token or "x", "s", "o", "r")
+    assert ei.value.code == "INVALID_CONFIGURATION_TOKEN"
+
+
+def test_view_and_token_come_from_one_read(tmp_path: Path) -> None:
+    # F1: 발급 token 의 claims 가 표시 projection 과 같은 스냅샷(version·application)이다.
+    from hwpxfiller.application.slot_token import open_configuration_token
+
+    _reg, product = _bootstrapped(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    resp = product.select_slot_option("공고서", token or "x", "no-slot", "o", "r1")
+    new_token = resp.current_view.new_configuration_token
+    assert new_token is not None and resp.current_view.projection is not None
+    claims = open_configuration_token(new_token, _secret(tmp_path))
+    assert claims.configuration_version == resp.current_view.projection.configuration_version
+    assert claims.configuration_presence == resp.current_view.projection.configuration_present
+
+
+def test_stale_template_mutation_shows_fresh_current_view(tmp_path: Path) -> None:
+    # F2: old-application token 의 mutation 은 STALE outcome 이지만 current_view 는 새 application 을
+    # CURRENT 로 투영하고 fresh token 을 낸다(context error 가 아니다).
+    tpl = tmp_path / "공고서.hwpx"
+    _template(tpl, ["공고명"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    coord.check("공고서", "k1")  # bootstrap A_old
+    product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
+    old_token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert old_token is not None
+    _template(tpl, ["공고명", "추정가격"])  # 원본 수정
+    ready = coord.check("공고서", "k2")["preparation"]
+    coord.apply("공고서", ready["change_token"])  # A_new 로 current 전진
+
+    resp = product.select_slot_option("공고서", old_token, "s", "o", "r")
+    assert resp.mutation_outcome.outcome_code == "STALE_TEMPLATE_APPLICATION"
+    assert resp.mutation_outcome.request_relation == "STALE_TEMPLATE_APPLICATION"
+    assert resp.current_view.view_status == "CURRENT"  # 새 application, context error 아님
+    assert resp.current_view.new_configuration_token  # 새 상태용 fresh token
+    assert resp.refresh_required is True
+
+
 def test_name_reuse_does_not_inherit_token(tmp_path: Path) -> None:
     # 같은 name 이라도 authority_id 가 identity — old token 의 Work 는 새 Work 와 다르다.
     _reg, product = _bootstrapped(tmp_path)
