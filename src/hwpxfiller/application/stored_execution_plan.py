@@ -23,15 +23,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
+from types import MappingProxyType
 from typing import Any
 
 from hwpxfiller.application.execution_capture import ResolvedSealPolicy
 from hwpxfiller.application.execution_contract_set import (
+    PLAN_APPLY_FIELD_BINDING,
+    PLAN_REMOVE_OPTION,
+    AttemptSealCaptureEvidence,
     CompleteSealCaptureEvidence,
     DurableCaptureEvidenceIntegrityError,
     DurableSealCaptureEvidence,
     ExecutionPlanCompilationIntegrityError,
     ExecutionPlanIntegrityError,
+    PlanCompilationKey,
     SealedExecutionPlanSemanticPayload,
     decode_durable_capture_evidence,
     encode_durable_capture_evidence,
@@ -107,6 +112,18 @@ def _optional_str(value: object, what: str) -> "str | None":
 def _require_mapping(value: object, what: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ExecutionPlanStoreIntegrityError(f"{what} 는 매핑이어야 한다")
+    return value
+
+
+def _freeze(value: Any) -> Any:
+    """JSON-safe 값을 재귀적으로 동결한다(Mapping→MappingProxyType, sequence→tuple).
+
+    봉인 뒤 소비자가 payload 를 고쳐 content-address 와 어긋나게 하지 못하게 한다.
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _freeze(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(v) for v in value)
     return value
 
 
@@ -297,6 +314,12 @@ class SealedExecutionPlanRecord:
     dependency_set: PlanDependencySet
     first_sealed_provenance: PlanFirstSealedProvenance
 
+    def __post_init__(self) -> None:
+        # 저장 payload 를 재귀 동결 — 봉인 뒤 소비자 변이로 content-address 와 어긋나지 못하게 한다.
+        object.__setattr__(
+            self, "semantic_payload_encoded", _freeze(self.semantic_payload_encoded)
+        )
+
     @property
     def canonical_payload_bytes(self) -> bytes:
         return canonical_execution_bytes(self.semantic_payload_encoded)
@@ -309,6 +332,81 @@ def verify_record_content_address(record: SealedExecutionPlanRecord) -> None:
         raise ExecutionPlanIntegrityError(
             "Plan record 의 canonical digest 가 content-address(key)와 불일치"
         )
+
+
+def _encoded_field_id(entry: object, what: str) -> str:
+    m = _require_mapping(entry, what)
+    value = m.get("field_id")
+    if not isinstance(value, str) or value == "":
+        raise ExecutionPlanIntegrityError(f"{what} 에 field_id 가 없다")
+    return value
+
+
+def _verify_encoded_operation_structure(reqs: list, ops: list) -> None:
+    """requirement↔APPLY bijection(순서 포함)·REMOVE-before-APPLY·operand·op code 를 강제한다.
+
+    S5-06 :func:`verify_sealed_plan_integrity` 의 구조 규칙을 stored bytes 위에서 재현한다.
+    """
+    req_fields = [_encoded_field_id(r, "active field requirement") for r in reqs]
+    apply_fields = [
+        _encoded_field_id(o, "APPLY_FIELD_BINDING operation")
+        for o in ops
+        if isinstance(o, Mapping) and o.get("op") == PLAN_APPLY_FIELD_BINDING
+    ]
+    if len(set(req_fields)) != len(req_fields):
+        raise ExecutionPlanIntegrityError("active field requirement field 중복")
+    if len(set(apply_fields)) != len(apply_fields):
+        raise ExecutionPlanIntegrityError("APPLY_FIELD_BINDING field 중복")
+    if req_fields != apply_fields:
+        raise ExecutionPlanIntegrityError("requirement ↔ APPLY_FIELD_BINDING 순서/집합 불일치")
+    seen_apply = False
+    for op in ops:
+        m = _require_mapping(op, "operation")
+        code = m.get("op")
+        if code == PLAN_APPLY_FIELD_BINDING:
+            seen_apply = True
+        elif code == PLAN_REMOVE_OPTION:
+            if seen_apply:
+                raise ExecutionPlanIntegrityError(
+                    "operation order 비canonical: REMOVE_OPTION 이 APPLY_FIELD_BINDING 뒤에 온다"
+                )
+            for name in ("slot_id", "option_id"):
+                v = m.get(name)
+                if not isinstance(v, str) or v == "":
+                    raise ExecutionPlanIntegrityError(f"REMOVE_OPTION 에 {name} 가 없다/비어 있다")
+        else:
+            raise ExecutionPlanIntegrityError(f"미지원 operation code: {code!r}")
+
+
+def verify_encoded_plan_integrity(encoded: Mapping[str, Any]) -> None:
+    """load trust 경계: stored plan payload 를 구조까지 재검증한다(hash 일치 = 유효 Plan 아님).
+
+    확인: plan schema nonempty·canonical encoding closure·nested execution_basis_digest 자기정합·
+    requirement↔operation bijection·operation order canonicality. rule/value_expression 은 S5-06
+    semantic 인코딩에서 제외돼 stored bytes 에 없으므로 여기서 재검증 대상이 아니다 —
+    active_binding_digest 재계산은 full object 를 가진 publish 시점(:func:`verify_sealed_plan_integrity`)이
+    이미 진다.
+    """
+    # ponytail: rules 는 S5-06 semantic encoding 이 제외 → load 에서 active_binding_digest 재계산 불가.
+    #           그 검증은 publish 시점의 full-object verify_sealed_plan_integrity 가 소유한다.
+    _require_str(encoded.get("plan_schema_version"), "plan_schema_version")
+    require_supported_encoding(
+        _require_str(encoded.get("canonical_encoding_version"), "canonical_encoding_version")
+    )
+    basis = _require_mapping(encoded.get("execution_basis"), "execution_basis")
+    declared_basis_digest = _require_str(
+        encoded.get("execution_basis_digest"), "execution_basis_digest"
+    )
+    if canonical_execution_digest(basis) != declared_basis_digest:
+        raise ExecutionPlanIntegrityError(
+            "stored execution_basis_digest 가 basis 재계산과 불일치"
+        )
+    reqs = encoded.get("active_field_requirements")
+    ops = encoded.get("ordered_operations")
+    # freeze 경로는 tuple, JSON 복원 경로는 list — 둘 다 받는다(문자열은 배제).
+    if not isinstance(reqs, (list, tuple)) or not isinstance(ops, (list, tuple)):
+        raise ExecutionPlanIntegrityError("plan requirement/operation 형식 불량")
+    _verify_encoded_operation_structure(list(reqs), list(ops))
 
 
 def _encode_plan_record(record: SealedExecutionPlanRecord) -> dict[str, Any]:
@@ -349,6 +447,7 @@ def _decode_plan_record(value: object) -> SealedExecutionPlanRecord:
         ),
     )
     verify_record_content_address(record)
+    verify_encoded_plan_integrity(record.semantic_payload_encoded)
     return record
 
 
@@ -687,6 +786,9 @@ def decode_aggregate(
     version = content.get("aggregate_version")
     if not isinstance(version, int) or isinstance(version, bool) or version < 1:
         raise ExecutionPlanStoreIntegrityError("aggregate_version 이 양의 정수가 아니다")
+    workspace_instance_id = _require_str(
+        content.get("workspace_instance_id"), "workspace_instance_id"
+    )
 
     plans_raw = content.get("plans")
     if not isinstance(plans_raw, list):
@@ -712,6 +814,11 @@ def decode_aggregate(
             raise ExecutionPlanCompilationIntegrityError(
                 "compilation_map 이 없는 plan 을 가리킨다"
             )
+        # P2-7: map key 가 실제로 그 plan 의 basis/schema/encoding 에서 파생한 key 인지 재계산해 확인한다.
+        if _recompute_plan_compilation_key_digest(plans[plan_digest]) != key_digest:
+            raise ExecutionPlanCompilationIntegrityError(
+                "compilation_map key 가 참조 plan 의 재계산 compilation key 와 불일치"
+            )
         compilation_map[key_digest] = plan_digest
 
     ledger_raw = content.get("first_seen_ledger")
@@ -721,17 +828,81 @@ def decode_aggregate(
     seen_requests = {record.request_id for record in ledger}
     if len(seen_requests) != len(ledger):
         raise ExecutionPlanStoreIntegrityError("first_seen_ledger 에 중복 request_id")
+    for record in ledger:
+        _verify_decoded_ledger_record(record, work_authority_id, workspace_instance_id, plans)
 
     return WorkExecutionPlanAggregate(
         work_authority_id=work_authority_id,
-        workspace_instance_id=_require_str(
-            content.get("workspace_instance_id"), "workspace_instance_id"
-        ),
+        workspace_instance_id=workspace_instance_id,
         aggregate_version=version,
         plans_by_semantic_digest=plans,
         plans_by_compilation_key=compilation_map,
         first_seen_ledger=ledger,
     )
+
+
+def _recompute_plan_compilation_key_digest(record: SealedExecutionPlanRecord) -> str:
+    encoded = record.semantic_payload_encoded
+    return plan_compilation_key_digest(
+        PlanCompilationKey(
+            execution_basis_digest=_require_str(
+                encoded.get("execution_basis_digest"), "execution_basis_digest"
+            ),
+            plan_schema_version=_require_str(
+                encoded.get("plan_schema_version"), "plan_schema_version"
+            ),
+            canonical_encoding_version=_require_str(
+                encoded.get("canonical_encoding_version"), "canonical_encoding_version"
+            ),
+        )
+    )
+
+
+def _verify_decoded_ledger_record(
+    record: FirstSeenSealCommandRecord,
+    work_authority_id: str,
+    workspace_instance_id: str,
+    plans: Mapping[str, SealedExecutionPlanRecord],
+) -> None:
+    """P2-9: fingerprint identity 를 aggregate 에 결속(cross-Work enveloped record 를 replay 전에 차단).
+
+    P2-8: PlanPublished outcome 은 실재 plan·그 plan 의 basis digest·자기 evidence 와 정합해야 한다.
+    """
+    fp = record.request_intent_fingerprint
+    if fp.work_authority_id != work_authority_id:
+        raise ExecutionPlanStoreIntegrityError(
+            "ledger fingerprint 의 work_authority_id 가 aggregate 와 불일치"
+        )
+    if fp.workspace_instance_id != workspace_instance_id:
+        raise ExecutionPlanStoreIntegrityError(
+            "ledger fingerprint 의 workspace_instance_id 가 aggregate 와 불일치"
+        )
+    outcome = record.terminal_outcome
+    if not isinstance(outcome, PlanPublished):
+        return
+    target = plans.get(outcome.plan_semantic_digest)
+    if target is None:
+        raise ExecutionPlanIntegrityError(
+            "PlanPublished ledger outcome 이 없는 plan 을 가리킨다"
+        )
+    if (
+        _require_str(
+            target.semantic_payload_encoded.get("execution_basis_digest"),
+            "execution_basis_digest",
+        )
+        != outcome.execution_basis_digest
+    ):
+        raise ExecutionPlanIntegrityError(
+            "PlanPublished ledger outcome 의 execution_basis_digest 가 참조 plan 과 불일치"
+        )
+    evidence = record.durable_capture_evidence
+    if (
+        not isinstance(evidence, CompleteSealCaptureEvidence)
+        or evidence.captured_execution_input_digest != outcome.captured_execution_input_digest
+    ):
+        raise ExecutionPlanIntegrityError(
+            "PlanPublished ledger outcome 의 captured input digest 가 자기 evidence 와 불일치"
+        )
 
 
 # ─── 순수 전이: publish / ledger-only ─────────────────────────────────────────────────
@@ -748,6 +919,55 @@ def _require_matching_intent(
         raise ExecutionPlanStoreIntegrityError(
             "fingerprint.workspace_instance_id 가 aggregate 와 불일치"
         )
+
+
+# policy 가 소유하는 contract identity → plan ExecutionContractSet 의 대응 field(둘이 일치해야 한다).
+# slot_selection/field_binding/source_schema 는 S4 Selection·FieldBinding 소유라 policy 가 안 정한다.
+_POLICY_CONTRACT_FIELDS = (
+    "execution_semantic_contract_id",
+    "binding_value_contract_id",
+    "raw_record_contract_id",
+    "document_value_resolution_contract_id",
+    "record_validation_contract_id",
+    "record_review_contract_id",
+    "composition_contract_id",
+    "native_primitive_contract_id",
+    "materialization_base_contract_id",
+    "composition_theorem_evidence_manifest_digest",
+    "materialization_contract_id",
+)
+
+
+def _verify_plan_basis_matches_context(
+    aggregate: WorkExecutionPlanAggregate,
+    plan_payload: SealedExecutionPlanSemanticPayload,
+    resolved_seal_policy: ResolvedSealPolicy,
+) -> None:
+    """plan 의 execution basis 를 aggregate identity·resolved policy 에 교차 결속한다(fail-closed).
+
+    - basis 의 work/workspace identity 가 이 aggregate 의 것이어야 한다(다른 Work 의 Plan 을 이 파일에
+      저장하지 못하게 한다).
+    - policy 가 소유하는 모든 contract identity·execution_base_kind 가 plan basis 와 정확히 일치해야
+      한다(그 plan 을 만들지 않은 policy 를 durable 하게 기록하지 못하게 한다).
+    """
+    basis = plan_payload.execution_basis
+    if basis.work_authority_id != aggregate.work_authority_id:
+        raise ExecutionPlanIntegrityError(
+            "plan basis 의 work_authority_id 가 aggregate 와 불일치(cross-Work Plan)"
+        )
+    if basis.workspace_instance_id != aggregate.workspace_instance_id:
+        raise ExecutionPlanIntegrityError(
+            "plan basis 의 workspace_instance_id 가 aggregate 와 불일치"
+        )
+    if resolved_seal_policy.execution_base_kind != basis.template.execution_base_kind:
+        raise ExecutionPlanIntegrityError(
+            "resolved policy 의 execution_base_kind 가 plan basis template 과 불일치"
+        )
+    for name in _POLICY_CONTRACT_FIELDS:
+        if getattr(resolved_seal_policy, name) != getattr(basis.contracts, name):
+            raise ExecutionPlanIntegrityError(
+                f"resolved policy 의 {name} 가 plan basis contract set 과 불일치"
+            )
 
 
 def apply_publish(
@@ -780,6 +1000,8 @@ def apply_publish(
     verify_sealed_plan_integrity(
         plan_payload, supported_plan_schemas=(resolved_seal_policy.plan_schema_version,)
     )
+    # basis identity·policy-owned contract 를 aggregate·policy 에 교차 결속(cross-Work·contradictory policy 차단).
+    _verify_plan_basis_matches_context(aggregate, plan_payload, resolved_seal_policy)
 
     plan_digest = plan_semantic_digest(plan_payload)
     basis_digest = execution_basis_digest(plan_payload.execution_basis)
@@ -876,6 +1098,7 @@ def apply_ledger_only(
             "ledger-only commit 은 PlanPublished 를 받지 않는다(publish primitive 사용)"
         )
     _verify_capture_evidence_integrity(capture_evidence)
+    _verify_blocked_outcome_evidence(terminal_outcome, capture_evidence)
     record = _build_first_seen(
         request_id=request_id,
         fingerprint=fingerprint,
@@ -895,6 +1118,83 @@ def apply_ledger_only(
     return new_aggregate, record
 
 
+def _verify_blocked_outcome_evidence(
+    outcome: SealTerminalOutcome, evidence: DurableSealCaptureEvidence
+) -> None:
+    """BLOCKED/POLICY/STALE outcome 의 digest·blockers 를 대응 capture evidence 와 교차 검증한다.
+
+    complete evidence 는 attempt digest 를, attempt evidence 는 complete input digest 를 가질 수 없다.
+    stale 는 complete captured input 을 요구한다. 어긋나면 fail-closed.
+    """
+    complete = isinstance(evidence, CompleteSealCaptureEvidence)
+    if isinstance(outcome, ExecutionQualificationBlocked):
+        if complete:
+            if outcome.captured_execution_input_digest != evidence.captured_execution_input_digest:
+                raise ExecutionPlanStoreIntegrityError(
+                    "qualification block 의 captured_execution_input_digest 가 evidence 와 불일치"
+                )
+            if outcome.captured_attempt_digest is not None:
+                raise ExecutionPlanStoreIntegrityError(
+                    "complete evidence 인데 qualification block 이 attempt digest 를 담았다"
+                )
+        else:
+            assert isinstance(evidence, AttemptSealCaptureEvidence)
+            if outcome.captured_attempt_digest != evidence.captured_attempt_digest:
+                raise ExecutionPlanStoreIntegrityError(
+                    "qualification block 의 captured_attempt_digest 가 evidence 와 불일치"
+                )
+            if outcome.captured_execution_input_digest is not None:
+                raise ExecutionPlanStoreIntegrityError(
+                    "attempt evidence 인데 qualification block 이 complete input digest 를 담았다"
+                )
+            if outcome.normalized_blockers != evidence.normalized_blockers:
+                raise ExecutionPlanStoreIntegrityError(
+                    "qualification block 의 normalized_blockers 가 evidence 와 불일치"
+                )
+    elif isinstance(outcome, ExecutionPolicyBlocked):
+        if outcome.captured_attempt_digest is not None:
+            if complete or outcome.captured_attempt_digest != evidence.captured_attempt_digest:
+                raise ExecutionPlanStoreIntegrityError(
+                    "policy block 의 captured_attempt_digest 가 evidence 와 불일치"
+                )
+    elif isinstance(outcome, StaleExecutionBasis):
+        if not complete:
+            raise ExecutionPlanStoreIntegrityError(
+                "stale outcome 은 complete captured input evidence 를 요구한다"
+            )
+        if outcome.captured_execution_input_digest != evidence.captured_execution_input_digest:
+            raise ExecutionPlanStoreIntegrityError(
+                "stale outcome 의 captured_execution_input_digest 가 evidence 와 불일치"
+            )
+
+
+def _verify_fingerprint_matches_policy(
+    fingerprint: SealRequestIntentFingerprintPayload,
+    resolved_seal_policy: ResolvedSealPolicy,
+) -> None:
+    """raw intent 의 exact 요청(base kind·exact selector)이 resolve 된 policy 와 일치하는지 확인한다.
+
+    AUTO selector 는 서버 resolve 라 제약이 없고, EXACT selector 와 base kind 는 policy 가 그대로
+    받아야 한다 — 요청 A / policy B 라는 모순 쌍을 first-seen ledger 에 영구 기록하지 않는다.
+    """
+    if fingerprint.requested_execution_base_kind != resolved_seal_policy.execution_base_kind:
+        raise ExecutionPlanStoreIntegrityError(
+            "requested_execution_base_kind 가 resolved policy 와 불일치"
+        )
+    for selector, policy_value, what in (
+        (fingerprint.requested_execution_semantic_contract,
+         resolved_seal_policy.execution_semantic_contract_id, "execution_semantic_contract"),
+        (fingerprint.requested_plan_schema,
+         resolved_seal_policy.plan_schema_version, "plan_schema"),
+        (fingerprint.requested_canonical_encoding,
+         resolved_seal_policy.canonical_encoding_version, "canonical_encoding"),
+    ):
+        if isinstance(selector, RequestedExact) and selector.value != policy_value:
+            raise ExecutionPlanStoreIntegrityError(
+                f"requested exact {what} 가 resolved policy 와 불일치"
+            )
+
+
 def _build_first_seen(
     *,
     request_id: str,
@@ -904,6 +1204,8 @@ def _build_first_seen(
     terminal_outcome: SealTerminalOutcome,
     now: str,
 ) -> FirstSeenSealCommandRecord:
+    # P1-4: exact 요청↔resolved policy 정합을 두 primitive 공통 경로에서 강제한다.
+    _verify_fingerprint_matches_policy(fingerprint, resolved_seal_policy)
     return FirstSeenSealCommandRecord(
         request_id=request_id,
         request_intent_fingerprint=fingerprint,

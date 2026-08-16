@@ -11,7 +11,6 @@ import pytest
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPlanIntegrityError,
     ExecutionPlanStoreIntegrityError,
-    ExecutionQualificationBlocked,
     IdempotencyKeyReused,
     PlanPublished,
     SealTerminalOutcome,
@@ -29,6 +28,7 @@ from tests.test_stored_execution_plan import (
     plan,
     policy,
     published_outcome,
+    qual_blocked,
 )
 
 
@@ -68,13 +68,12 @@ def test_publish_persists_all_parts_and_restores_on_restart(tmp_path) -> None:
 
 
 def test_ledger_only_writes_no_plan(tmp_path) -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    ev = attempt_evidence()
     store = _store(tmp_path)
     result = store.commit_seal_terminal_outcome_atomic(
         work_authority_id="work-1", expected_aggregate_version=0, request_id="r1",
         fingerprint=fingerprint(), resolved_seal_policy=policy(),
-        capture_evidence=attempt_evidence(), terminal_outcome=outcome, now="t0",
+        capture_evidence=ev, terminal_outcome=qual_blocked(ev), now="t0",
     )
     assert result.aggregate.plans_by_semantic_digest == {}
     assert store.load("work-1").aggregate_version == 1

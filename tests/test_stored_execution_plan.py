@@ -42,6 +42,7 @@ from hwpxfiller.application.execution_contract_set import (
     ExecutionPlanIntegrityError,
     build_execution_contract_set,
     build_sealed_plan,
+    encode_sealed_plan,
     execution_basis_digest,
     plan_semantic_digest,
 )
@@ -67,9 +68,13 @@ from hwpxfiller.application.stored_execution_plan import (
     encode_aggregate,
     encode_request_intent_fingerprint,
     request_intent_fingerprint_digest,
+    verify_encoded_plan_integrity,
     verify_record_content_address,
 )
-from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
+from hwpxfiller.domain.canonical_execution_encoding import (
+    canonical_execution_digest,
+    UnsupportedCanonicalEncodingError,
+)
 
 _PLAN_SCHEMA = "hwpx-execution-plan/v1"
 _ENCODING = "execution-canonical/v1"
@@ -265,6 +270,21 @@ def published_outcome(a_plan, evidence, kind="CREATED") -> PlanPublished:
         plan_semantic_digest=plan_semantic_digest(a_plan),
         execution_basis_digest=execution_basis_digest(a_plan.execution_basis),
         captured_execution_input_digest=evidence.captured_execution_input_digest,
+    )
+
+
+def qual_blocked(evidence, ref="ev://1") -> ExecutionQualificationBlocked:
+    """대응 capture evidence 와 정합한 ExecutionQualificationBlocked(store 교차검증 통과용)."""
+    if isinstance(evidence, CompleteSealCaptureEvidence):
+        return ExecutionQualificationBlocked(
+            capture_evidence_ref=ref,
+            normalized_blockers=("COMPILER_BLOCK",),
+            captured_execution_input_digest=evidence.captured_execution_input_digest,
+        )
+    return ExecutionQualificationBlocked(
+        capture_evidence_ref=ref,
+        normalized_blockers=evidence.normalized_blockers,
+        captured_attempt_digest=evidence.captured_attempt_digest,
     )
 
 
@@ -502,19 +522,18 @@ def test_ledger_only_rejects_published_outcome() -> None:
 
 
 def test_ledger_only_all_blocked_outcomes_round_trip() -> None:
-    outcomes = [
-        ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                      normalized_blockers=("X",),
-                                      captured_execution_input_digest="sha256:i"),
-        StaleExecutionBasis(captured_execution_input_digest="sha256:i",
-                            candidate_execution_basis_digest="sha256:b",
-                            stale_reason="DIGEST_MISMATCH",
-                            observed_current_summary={"summary": 1}),
-    ]
     agg = empty_aggregate("work-1", "ws-1")
-    for i, outcome in enumerate(outcomes):
-        agg, _ = _ledger_only(agg, request_id=f"r{i}", outcome=outcome,
-                              evidence=complete_evidence(seed=str(i)))
+    evidences = [complete_evidence(seed=str(i)) for i in range(2)]
+    outcomes = [
+        qual_blocked(evidences[0]),
+        StaleExecutionBasis(
+            captured_execution_input_digest=evidences[1].captured_execution_input_digest,
+            candidate_execution_basis_digest="sha256:b",
+            stale_reason="DIGEST_MISMATCH",
+            observed_current_summary={"summary": 1}),
+    ]
+    for i, (outcome, ev) in enumerate(zip(outcomes, evidences, strict=True)):
+        agg, _ = _ledger_only(agg, request_id=f"r{i}", outcome=outcome, evidence=ev)
     restored = decode_aggregate(encode_aggregate(agg), "work-1")
     assert restored == agg
 
@@ -629,10 +648,9 @@ def test_decode_tampered_plan_payload_fail_closed() -> None:
 
 
 def test_decode_tampered_capture_evidence_fail_closed() -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    ev = complete_evidence()
     agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=outcome, evidence=complete_evidence())
+                          outcome=qual_blocked(ev), evidence=ev)
     content = encode_aggregate(agg)
     content["first_seen_ledger"][0]["durable_capture_evidence"]["semantic_projection"] = {
         "tampered": True
@@ -642,8 +660,7 @@ def test_decode_tampered_capture_evidence_fail_closed() -> None:
 
 
 def test_decode_tampered_fingerprint_digest_fail_closed() -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    outcome = qual_blocked(attempt_evidence())
     agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
     content = encode_aggregate(agg)
     content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = "sha256:forged"
@@ -686,8 +703,7 @@ def test_outcome_post_init_guards(factory) -> None:
 
 
 def test_decode_unknown_outcome_kind_fail_closed() -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    outcome = qual_blocked(attempt_evidence())
     agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
     content = encode_aggregate(agg)
     content["first_seen_ledger"][0]["terminal_outcome"]["kind"] = "UNKNOWN_OUTCOME"
@@ -696,8 +712,7 @@ def test_decode_unknown_outcome_kind_fail_closed() -> None:
 
 
 def test_decode_qualification_blocked_bad_blockers_fail_closed() -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    outcome = qual_blocked(attempt_evidence())
     agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
     content = encode_aggregate(agg)
     content["first_seen_ledger"][0]["terminal_outcome"]["normalized_blockers"] = [1, 2]
@@ -734,8 +749,7 @@ def test_decode_duplicate_compilation_key_fail_closed() -> None:
 
 
 def test_decode_duplicate_request_id_fail_closed() -> None:
-    outcome = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                            normalized_blockers=("X",))
+    outcome = qual_blocked(attempt_evidence())
     agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
     content = encode_aggregate(agg)
     content["first_seen_ledger"].append(dict(content["first_seen_ledger"][0]))
@@ -758,3 +772,355 @@ def test_decode_structural_corruption_fail_closed(mutate) -> None:
     mutate(content)
     with pytest.raises(ExecutionPlanStoreError):
         decode_aggregate(content, "work-1")
+
+
+# ─── Codex review round: trust-boundary cross-binding (9 findings) ────────────────────
+def _other_work_basis(*, work="work-OTHER", ws="ws-1"):
+    """다른 Work 로 자기정합한 basis(verify_sealed_plan_integrity 통과, aggregate 결속만 어긋난다)."""
+    template = ExactTemplateExecutionBasis(
+        execution_base_kind="APPLIED_TEMPLATE_CANDIDATE",
+        materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
+        work_authority_id=work, template_application_id="app-1",
+        exact_content_digest="sha256:aaaa", canonical_blob_reference="blob://store/path",
+    )
+    return _basis(work_authority_id=work, workspace_instance_id=ws, template=template,
+                  selection=_selection(work_id=work))
+
+
+def test_p1_1_publish_binds_plan_basis_work_to_aggregate() -> None:
+    # fingerprint 는 aggregate 와 일치하지만 plan basis 는 다른 Work → 저장 거절.
+    p = plan(basis=_other_work_basis(work="work-OTHER"))
+    with pytest.raises(ExecutionPlanIntegrityError):
+        _publish(empty_aggregate("work-1", "ws-1"), request_id="r1", a_plan=p,
+                 evidence=complete_evidence())
+
+
+def test_p1_1_publish_binds_plan_basis_workspace_to_aggregate() -> None:
+    p = plan(basis=_other_work_basis(work="work-1", ws="ws-OTHER"))
+    with pytest.raises(ExecutionPlanIntegrityError):
+        _publish(empty_aggregate("work-1", "ws-1"), request_id="r1", a_plan=p,
+                 evidence=complete_evidence())
+
+
+@pytest.mark.parametrize("field", [
+    "execution_semantic_contract_id", "binding_value_contract_id", "raw_record_contract_id",
+    "materialization_contract_id",
+])
+def test_p1_2_publish_rejects_policy_contract_mismatch(field) -> None:
+    p = plan()
+    ev = complete_evidence()
+    with pytest.raises(ExecutionPlanIntegrityError):
+        apply_publish(
+            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
+            resolved_seal_policy=policy(**{field: "wrong/v9"}), capture_evidence=ev,
+            plan_payload=p, dependency_set=deps(),
+            published_outcome=published_outcome(p, ev), now="t0",
+        )
+
+
+def test_p1_2_publish_rejects_policy_base_kind_mismatch() -> None:
+    p = plan()
+    ev = complete_evidence()
+    with pytest.raises(ExecutionPlanIntegrityError):
+        apply_publish(
+            empty_aggregate("work-1", "ws-1"), request_id="r1",
+            fingerprint=fingerprint(requested_execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"),
+            resolved_seal_policy=policy(execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"),
+            capture_evidence=ev, plan_payload=p, dependency_set=deps(),
+            published_outcome=published_outcome(p, ev), now="t0",
+        )
+
+
+def test_p1_3_ledger_only_qualification_blockers_must_match_evidence() -> None:
+    ev = attempt_evidence()  # blockers = ("SLOT_CONFIGURATION_INCOMPLETE",)
+    bad = ExecutionQualificationBlocked(
+        capture_evidence_ref="ev://1", normalized_blockers=("DIFFERENT",),
+        captured_attempt_digest=ev.captured_attempt_digest,
+    )
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_ledger_only_stale_requires_complete_evidence() -> None:
+    ev = attempt_evidence()
+    stale = StaleExecutionBasis(captured_execution_input_digest="sha256:x",
+                                candidate_execution_basis_digest="sha256:b",
+                                stale_reason="DIGEST_MISMATCH")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=stale, evidence=ev)
+
+
+def test_p1_3_ledger_only_complete_evidence_rejects_attempt_digest() -> None:
+    ev = complete_evidence()
+    bad = ExecutionQualificationBlocked(
+        capture_evidence_ref="ev://1", normalized_blockers=("X",),
+        captured_execution_input_digest=ev.captured_execution_input_digest,
+        captured_attempt_digest="sha256:sneaky",
+    )
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_ledger_only_policy_block_attempt_digest_must_match() -> None:
+    ev = attempt_evidence()
+    bad = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED",
+                                 captured_attempt_digest="sha256:wrong")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_ledger_only_consistent_outcome_accepted() -> None:
+    # 양성 대조: policy block 이 자기 attempt evidence digest 를 담으면 통과.
+    ev = attempt_evidence()
+    ok = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED",
+                                captured_attempt_digest=ev.captured_attempt_digest)
+    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                          outcome=ok, evidence=ev)
+    assert agg.aggregate_version == 1
+
+
+def test_p1_4_publish_rejects_exact_selector_disagreeing_with_policy() -> None:
+    p = plan()
+    ev = complete_evidence()
+    fp = fingerprint(requested_plan_schema=RequestedExact("hwpx-execution-plan/vOTHER"))
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        apply_publish(
+            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fp,
+            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
+            dependency_set=deps(), published_outcome=published_outcome(p, ev), now="t0",
+        )
+
+
+def test_p1_4_ledger_only_rejects_base_kind_disagreeing_with_policy() -> None:
+    ev = attempt_evidence()
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                     outcome=qual_blocked(ev), evidence=ev,
+                     fp=fingerprint(requested_execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"))
+
+
+def test_p1_4_exact_selector_matching_policy_accepted() -> None:
+    p = plan()
+    ev = complete_evidence()
+    fp = fingerprint(
+        requested_plan_schema=RequestedExact(_PLAN_SCHEMA),
+        requested_execution_semantic_contract=RequestedExact("execution-semantics/v1"),
+        requested_canonical_encoding=RequestedExact(_ENCODING),
+    )
+    agg, _ = apply_publish(
+        empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fp,
+        resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
+        dependency_set=deps(), published_outcome=published_outcome(p, ev), now="t0",
+    )
+    assert agg.aggregate_version == 1
+
+
+def test_p1_5_encoded_plan_integrity_accepts_valid_payload() -> None:
+    verify_encoded_plan_integrity(encode_sealed_plan(plan()))
+
+
+def test_p1_5_encoded_plan_integrity_rejects_bad_basis_digest() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    enc["execution_basis_digest"] = "sha256:forged"
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_bad_operation_order() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    ops = list(enc["ordered_operations"])
+    enc["ordered_operations"] = [ops[1], ops[0], ops[2]]  # APPLY before REMOVE
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_unsupported_encoding() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    enc["canonical_encoding_version"] = "other/v9"
+    with pytest.raises(UnsupportedCanonicalEncodingError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_bad_requirement_shape() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    enc["active_field_requirements"] = "notalist"
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_duplicate_apply() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    ops = list(enc["ordered_operations"])
+    enc["ordered_operations"] = [*ops, ops[1]]  # APPLY f_name 중복
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_unknown_op_code() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    ops = list(enc["ordered_operations"])
+    enc["ordered_operations"] = [*ops, {"op": "WAT"}]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_encoded_plan_integrity_rejects_bad_remove_operand() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    ops = list(enc["ordered_operations"])
+    enc["ordered_operations"] = [{"op": "REMOVE_OPTION", "slot_id": "s1", "option_id": ""},
+                                 ops[1], ops[2]]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_decode_rejects_readdressed_malformed_plan() -> None:
+    # content-address 는 맞지만 구조가 깨진 record 를 decode 가 거절한다(hash 일치 ≠ 유효 Plan).
+    from hwpxfiller.application import stored_execution_plan as sep
+
+    enc = dict(encode_sealed_plan(plan()))
+    ops = list(enc["ordered_operations"])
+    enc["ordered_operations"] = [ops[1], ops[0], ops[2]]
+    digest = canonical_execution_digest(enc)
+    record_dict = {
+        "plan_semantic_digest": digest, "semantic_payload": enc,
+        "dependency_set": {f.name: "x" for f in dataclasses.fields(PlanDependencySet)},
+        "first_sealed_provenance": {"first_sealed_at": "t0", "first_sealed_by_request_id": "r0"},
+    }
+    with pytest.raises(ExecutionPlanIntegrityError):
+        sep._decode_plan_record(record_dict)
+
+
+def test_p2_6_stored_payload_is_deeply_immutable() -> None:
+    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                      a_plan=plan(), evidence=complete_evidence())
+    record = next(iter(agg.plans_by_semantic_digest.values()))
+    with pytest.raises(TypeError):
+        record.semantic_payload_encoded["plan_schema_version"] = "x"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        record.semantic_payload_encoded["execution_basis"]["work_authority_id"] = "x"  # type: ignore[index]
+
+
+def test_p2_7_decode_rejects_mismatched_compilation_key() -> None:
+    p = plan()
+    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                      a_plan=p, evidence=complete_evidence())
+    content = encode_aggregate(agg)
+    content["compilation_map"][0]["key_digest"] = "sha256:not-the-real-key"
+    with pytest.raises(ExecutionPlanCompilationIntegrityError):
+        decode_aggregate(content, "work-1")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("plan_semantic_digest", "sha256:ghost"),
+    ("execution_basis_digest", "sha256:wrong"),
+    ("captured_execution_input_digest", "sha256:wrong"),
+])
+def test_p2_8_decode_cross_checks_published_ledger_outcome(field, value) -> None:
+    p = plan()
+    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                      a_plan=p, evidence=complete_evidence())
+    content = encode_aggregate(agg)
+    content["first_seen_ledger"][0]["terminal_outcome"][field] = value
+    with pytest.raises(ExecutionPlanIntegrityError):
+        decode_aggregate(content, "work-1")
+
+
+def test_p2_9_decode_rejects_cross_work_ledger_fingerprint() -> None:
+    ev = attempt_evidence()
+    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                          outcome=qual_blocked(ev), evidence=ev)
+    content = encode_aggregate(agg)
+    other = fingerprint(work_authority_id="work-OTHER")
+    content["first_seen_ledger"][0]["request_intent_fingerprint"] = (
+        encode_request_intent_fingerprint(other)
+    )
+    content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = (
+        request_intent_fingerprint_digest(other)
+    )
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        decode_aggregate(content, "work-1")
+
+
+def test_p2_9_decode_rejects_cross_workspace_ledger_fingerprint() -> None:
+    ev = attempt_evidence()
+    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                          outcome=qual_blocked(ev), evidence=ev)
+    content = encode_aggregate(agg)
+    other = fingerprint(workspace_instance_id="ws-OTHER")
+    content["first_seen_ledger"][0]["request_intent_fingerprint"] = (
+        encode_request_intent_fingerprint(other)
+    )
+    content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = (
+        request_intent_fingerprint_digest(other)
+    )
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        decode_aggregate(content, "work-1")
+
+
+# ─── outcome↔evidence 교차검증 나머지 분기 + operation 구조 분기 ────────────────────────
+def test_p1_3_qual_block_complete_input_digest_must_match() -> None:
+    ev = complete_evidence()
+    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
+                                        normalized_blockers=("X",),
+                                        captured_execution_input_digest="sha256:wrong")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_qual_block_attempt_digest_must_match() -> None:
+    ev = attempt_evidence()
+    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
+                                        normalized_blockers=ev.normalized_blockers,
+                                        captured_attempt_digest="sha256:wrong")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_qual_block_attempt_evidence_rejects_input_digest() -> None:
+    ev = attempt_evidence()
+    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
+                                        normalized_blockers=ev.normalized_blockers,
+                                        captured_attempt_digest=ev.captured_attempt_digest,
+                                        captured_execution_input_digest="sha256:sneaky")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
+
+
+def test_p1_3_policy_block_without_attempt_digest_accepted() -> None:
+    ev = attempt_evidence()
+    ok = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED")
+    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
+                          outcome=ok, evidence=ev)
+    assert agg.aggregate_version == 1
+
+
+def test_p1_3_stale_complete_input_digest_must_match() -> None:
+    ev = complete_evidence()
+    stale = StaleExecutionBasis(captured_execution_input_digest="sha256:wrong",
+                                candidate_execution_basis_digest="sha256:b",
+                                stale_reason="CURRENT_BASIS_NOT_SEALABLE")
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=stale, evidence=ev)
+
+
+def test_p1_5_operation_structure_requirement_missing_field_id() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    enc["active_field_requirements"] = [{"no": "id"}]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_operation_structure_duplicate_requirement_field() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    reqs = list(enc["active_field_requirements"])
+    enc["active_field_requirements"] = [reqs[0], dict(reqs[0])]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
+
+
+def test_p1_5_operation_structure_requirement_apply_set_mismatch() -> None:
+    enc = dict(encode_sealed_plan(plan()))
+    reqs = list(enc["active_field_requirements"])
+    enc["active_field_requirements"] = [*reqs, {"field_id": "f_extra"}]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_encoded_plan_integrity(enc)
