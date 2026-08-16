@@ -666,6 +666,11 @@ class TemplateChangeCoordinator:
         if work_id is None or work_id != token_work_id:
             # cross-Work misuse: request 거절, 두 Work·Change 상태 무변경.
             raise TemplateChangeError("이 변경사항은 현재 작업의 것이 아닙니다")
+        # 내장 HWPX Profile admission 을 ADMITTED 로 bootstrap 한다(멱등, check 경로와 동일).
+        # 업그레이드로 durable PREPARED change 만 있고 admission store 가 아직 없는 재시작
+        # 세션의 restored-apply 는 zone() 이 token 만 재발급하고 check 를 안 거쳐 admission 이
+        # 비어 있을 수 있다 — 그러면 admission gate 가 STATE_MISSING 으로 정당한 apply 를 막는다.
+        self._ensure_manifest()
         now = self._now()
         # create-once durable WorkspaceInstanceId — S3 Apply·S4 mutation 이 같은 fence 를 공유한다.
         workspace_instance_id = self._workspace.get_or_create(now)
