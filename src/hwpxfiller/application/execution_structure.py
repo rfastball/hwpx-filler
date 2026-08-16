@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from hwpxfiller.application.qualification_evidence import (
@@ -31,7 +32,11 @@ from hwpxfiller.application.qualification_evidence import (
     build_manifest,
     content_digest,
 )
-from hwpxfiller.application.template_qualification import TemplateStructure
+from hwpxfiller.application.template_qualification import (
+    TemplateOption,
+    TemplateSlot,
+    TemplateStructure,
+)
 
 # ─── schema·profile identity(규칙이 바뀌면 함께 올린다) ─────────────────────────────
 EXECUTION_STRUCTURE_PROJECTION_SCHEMA = "hwpx-structure-projection-v2"
@@ -118,6 +123,15 @@ class QualificationProfileManifestIntegrityError(ExecutionStructureError):
 
 
 # ─── DTO — 저장되는 stable fact ──────────────────────────────────────────────────
+def _frozen_map(mapping: Mapping[str, Any]) -> MappingProxyType[str, Any]:
+    """caller alias 를 끊은 read-only 사본 — 값은 scalar 라 shallow copy 로 충분하다.
+
+    frozen dataclass 는 attribute 재바인딩만 막고 nested mapping 은 못 막는다. 이걸 통과시키면
+    build 이후 caller 가 원본 dict 를 고쳐도 이미 지어진 structure 의 digest 가 흔들린다.
+    """
+    return MappingProxyType(dict(mapping))
+
+
 @dataclass(frozen=True)
 class FieldOccurrence:
     """logical Field 와 native occurrence 를 분리한 exact fact."""
@@ -152,6 +166,18 @@ class OptionRegion:
     retained_content_relation_facts: tuple[Mapping[str, Any], ...]  # target-retained
     removal_capability_ref: str
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "owner_relation_facts",
+            tuple(_frozen_map(f) for f in self.owner_relation_facts),
+        )
+        object.__setattr__(
+            self,
+            "retained_content_relation_facts",
+            tuple(_frozen_map(f) for f in self.retained_content_relation_facts),
+        )
+
     @property
     def ref(self) -> OptionRegionRef:
         return OptionRegionRef(self.slot_id, self.option_id)
@@ -172,12 +198,22 @@ class ContentEntry:
     envelope_class: str
     envelope_capability_facts: Mapping[str, bool]
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "envelope_capability_facts", _frozen_map(self.envelope_capability_facts)
+        )
+
 
 @dataclass(frozen=True)
 class GlobalCompositionFacts:
     crossing_free: bool
     resolver_stability_facts: Mapping[str, bool]
     admitted_relation_profile: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "resolver_stability_facts", _frozen_map(self.resolver_stability_facts)
+        )
 
 
 @dataclass(frozen=True)
@@ -422,6 +458,96 @@ def _validate_occurrences(
         )
 
 
+def _index_option_regions(
+    regions: Iterable[Any],
+    option: dict[tuple[str, str], frozenset[str]],
+    entry_ids: frozenset[str],
+) -> tuple[
+    dict[tuple[str, str], tuple[int, int]],
+    dict[tuple[str, str], str],
+    dict[tuple[str, str], str],
+]:
+    """Slot-무관 Option region 검증·색인(build 관찰값·decode 된 DTO 공용).
+
+    duck-typed: ``slot_id/option_id/content_entry_id/begin_order/end_order/
+    removal_capability_ref`` 만 읽는다(Observation·OptionRegion 둘 다 통과).
+    """
+    option_spans: dict[tuple[str, str], tuple[int, int]] = {}
+    region_entry: dict[tuple[str, str], str] = {}
+    removal_refs: dict[tuple[str, str], str] = {}
+    for obs in regions:
+        key = (obs.slot_id, obs.option_id)
+        if key not in option:
+            raise ExecutionStructureProjectionIntegrityError(
+                f"Option region 이 product 밖 Option 참조: {key}"
+            )
+        if key in option_spans:
+            raise ExecutionStructureProjectionIntegrityError(f"Option region 중복: {key}")
+        _require_span(obs.begin_order, obs.end_order, f"Option {key} region")
+        if obs.content_entry_id not in entry_ids:
+            raise ExecutionStructureEnvelopeFactMissing(
+                f"Option region 이 미선언 content entry 참조: {obs.content_entry_id!r}"
+            )
+        _require_text(obs.removal_capability_ref, "removal_capability_ref")
+        option_spans[key] = (obs.begin_order, obs.end_order)
+        region_entry[key] = obs.content_entry_id
+        removal_refs[key] = obs.removal_capability_ref
+    if set(option_spans) != set(option):
+        raise ExecutionStructureRelationIncomplete(
+            f"Option region 이 없는 Option: {sorted(set(option) - set(option_spans))}"
+        )
+    return option_spans, region_entry, removal_refs
+
+
+def _compute_removal_relations(
+    option_spans: dict[tuple[str, str], tuple[int, int]],
+) -> tuple[RemovalTargetRelation, ...]:
+    """distinct Option pair 전건의 target-target relation(누락 없음 — 구조적 보장)."""
+    sorted_keys = sorted(option_spans)
+    out: list[RemovalTargetRelation] = []
+    for i in range(len(sorted_keys)):
+        for j in range(i + 1, len(sorted_keys)):
+            left, right = sorted_keys[i], sorted_keys[j]
+            out.append(
+                RemovalTargetRelation(
+                    OptionRegionRef(*left),
+                    OptionRegionRef(*right),
+                    classify_span_relation(option_spans[left], option_spans[right]),
+                )
+            )
+    return tuple(out)
+
+
+def _validate_option_occurrence_regions(
+    occurrences: Iterable[FieldOccurrence],
+    option_spans: dict[tuple[str, str], tuple[int, int]],
+    region_entry: dict[tuple[str, str], str],
+) -> None:
+    """모든 OPTION occurrence 가 자기 region 안(같은 entry·span 내부)에 실제로 앉아 있음을 강제.
+
+    이 검증이 없으면 OPTION 라벨만 붙고 region 밖에 있는 occurrence 가 retained-facts 필터에서
+    조용히 빠져, 나중 RemoveOption 이 그 Field 를 물리적으로 남기는데도 projection 은 제거했다고
+    주장한다(confirm-or-alarm 위반).
+    """
+    for occ in occurrences:
+        if occ.owner_kind != OWNER_OPTION:
+            continue
+        key = (occ.owner_slot_id, occ.owner_option_id)
+        span = option_spans.get(key)  # type: ignore[arg-type]
+        if span is None:
+            raise ExecutionStructureProjectionIntegrityError(
+                f"OPTION occurrence {occ.field_id!r} 의 region {key} 부재"
+            )
+        if occ.content_entry_id != region_entry[key]:  # type: ignore[index]
+            raise ExecutionStructureProjectionIntegrityError(
+                f"OPTION occurrence {occ.field_id!r} 의 content entry 가 region 과 불일치"
+            )
+        if not (span[0] <= occ.structural_order <= span[1]):
+            raise ExecutionStructureProjectionIntegrityError(
+                f"OPTION occurrence {occ.field_id!r} structural_order 가 region span 밖"
+            )
+
+
 def build_execution_structure(
     *,
     product_structure: TemplateStructure,
@@ -457,8 +583,9 @@ def build_execution_structure(
             raise ExecutionStructureResolverFactMissing(f"resolver stability fact {key!r} 부재")
     _require_text(admitted_relation_profile, "admitted_relation_profile")
 
-    # Slot span — owner-target relation 계산용. 모든 product Slot 이 정확히 하나.
+    # Slot span·entry — owner-target relation 계산용. 모든 product Slot 이 정확히 하나.
     slot_spans: dict[str, tuple[int, int]] = {}
+    slot_entry: dict[str, str] = {}
     for obs in slot_obs:
         if obs.slot_id not in shared:
             raise ExecutionStructureProjectionIntegrityError(
@@ -472,55 +599,35 @@ def build_execution_structure(
                 f"Slot region 이 미선언 content entry 참조: {obs.content_entry_id!r}"
             )
         slot_spans[obs.slot_id] = (obs.begin_order, obs.end_order)
+        slot_entry[obs.slot_id] = obs.content_entry_id
     if set(slot_spans) != set(shared):
         raise ExecutionStructureRelationIncomplete(
             f"Slot region 이 없는 Slot: {sorted(set(shared) - set(slot_spans))}"
         )
 
-    # Option region — begin/end·containment·capability 검증.
-    option_spans: dict[tuple[str, str], tuple[int, int]] = {}
-    region_entry: dict[tuple[str, str], str] = {}
-    removal_refs: dict[tuple[str, str], str] = {}
-    for obs in option_obs:
-        key = (obs.slot_id, obs.option_id)
-        if key not in option:
-            raise ExecutionStructureProjectionIntegrityError(
-                f"Option region 이 product 밖 Option 참조: {key}"
-            )
-        if key in option_spans:
-            raise ExecutionStructureProjectionIntegrityError(f"Option region 중복: {key}")
-        _require_span(obs.begin_order, obs.end_order, f"Option {key} region")
-        if obs.content_entry_id not in entry_ids:
-            raise ExecutionStructureEnvelopeFactMissing(
-                f"Option region 이 미선언 content entry 참조: {obs.content_entry_id!r}"
-            )
-        _require_text(obs.removal_capability_ref, "removal_capability_ref")
-        slot_span = slot_spans[obs.slot_id]
-        if obs.begin_order < slot_span[0] or obs.end_order > slot_span[1]:
+    # Option region — Slot-무관 검증은 공용 색인기가, Slot-의존 검증은 여기서.
+    option_spans, region_entry, removal_refs = _index_option_regions(
+        option_obs, option, entry_ids
+    )
+    for key, span in option_spans.items():
+        slot_id = key[0]
+        slot_span = slot_spans[slot_id]
+        if span[0] < slot_span[0] or span[1] > slot_span[1]:
             raise ExecutionStructureProjectionIntegrityError(
                 f"Option {key} region 이 owning Slot span 밖으로 벗어난다"
             )
-        option_spans[key] = (obs.begin_order, obs.end_order)
-        region_entry[key] = obs.content_entry_id
-        removal_refs[key] = obs.removal_capability_ref
-    if set(option_spans) != set(option):
-        raise ExecutionStructureRelationIncomplete(
-            f"Option region 이 없는 Option: {sorted(set(option) - set(option_spans))}"
-        )
+        # target-owner 그래프가 content entry 를 가로지르지 않게: Option entry == owning Slot entry.
+        if region_entry[key] != slot_entry[slot_id]:
+            raise ExecutionStructureProjectionIntegrityError(
+                f"Option {key} region 의 content entry 가 owning Slot 과 불일치"
+            )
+
+    # 모든 OPTION occurrence 가 자기 region 안에 실제로 앉아 있는지(finding 3).
+    _validate_option_occurrence_regions(occ_tuple, option_spans, region_entry)
 
     # ── 계산: target-target / target-owner / target-retained ────────────────────
     sorted_keys = sorted(option_spans)
-    removal_relations: list[RemovalTargetRelation] = []
-    for i in range(len(sorted_keys)):
-        for j in range(i + 1, len(sorted_keys)):
-            left, right = sorted_keys[i], sorted_keys[j]
-            removal_relations.append(
-                RemovalTargetRelation(
-                    OptionRegionRef(*left),
-                    OptionRegionRef(*right),
-                    classify_span_relation(option_spans[left], option_spans[right]),
-                )
-            )
+    removal_relations = _compute_removal_relations(option_spans)
     crossing_free = all(r.relation != CROSSING for r in removal_relations)
 
     regions: list[OptionRegion] = []
@@ -680,6 +787,259 @@ def template_structure_digest(structure: ExecutionTemplateStructure) -> str:
     return content_digest(encode_execution_structure(structure))
 
 
+# ─── decode + self-consistency 재검증(seal·저장 신뢰 경계) ─────────────────────────
+def _dec_str(value: object, what: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{what} 는 문자열이어야 한다")
+    return value
+
+
+def _dec_opt_str(value: object, what: str) -> str | None:
+    return None if value is None else _dec_str(value, what)
+
+
+def _dec_int(value: object, what: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{what} 는 정수여야 한다")
+    return value
+
+
+def _dec_bool(value: object, what: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{what} 는 bool 이어야 한다")
+    return value
+
+
+def _dec_map(value: object) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TypeError("relation fact 는 매핑이어야 한다")
+    return dict(value)
+
+
+def _dec_str_list(value: object, what: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise TypeError(f"{what} 는 리스트여야 한다")
+    for item in value:
+        if not isinstance(item, str):
+            raise TypeError(f"{what} 항목은 문자열이어야 한다")
+    return tuple(value)
+
+
+def _decode_product_structure(value: object) -> TemplateStructure:
+    """v2 payload 의 product_structure(=v1 shape) → TemplateStructure.
+
+    slot_configuration_context 의 v1 decoder 와 같은 모양이지만 사설(_) cross-module import 는
+    boundary gate 가 금지하므로 여기서 자립 파싱한다(shape 이 20줄이라 재발명 비용이 낮다).
+    """
+    if not isinstance(value, Mapping):
+        raise TypeError("product_structure 매핑 아님")
+    slots_raw = value["slots"]
+    if not isinstance(slots_raw, list):
+        raise TypeError("slots 리스트 아님")
+    slots: list[TemplateSlot] = []
+    for slot in slots_raw:
+        if not isinstance(slot, Mapping):
+            raise TypeError("slot 매핑 아님")
+        options_raw = slot["options"]
+        if not isinstance(options_raw, list):
+            raise TypeError("options 리스트 아님")
+        options: list[TemplateOption] = []
+        for opt in options_raw:
+            if not isinstance(opt, Mapping):
+                raise TypeError("option 매핑 아님")
+            options.append(
+                TemplateOption(
+                    id=_dec_str(opt["id"], "option.id"),
+                    fields=_dec_str_list(opt["fields"], "option.fields"),
+                )
+            )
+        slots.append(
+            TemplateSlot(
+                id=_dec_str(slot["id"], "slot.id"),
+                shared_fields=_dec_str_list(slot["shared_fields"], "slot.shared_fields"),
+                options=tuple(options),
+            )
+        )
+    return TemplateStructure(
+        root_fields=_dec_str_list(value["root_fields"], "root_fields"),
+        slots=tuple(slots),
+    )
+
+
+def _dec_bool_map(value: object) -> dict[str, bool]:
+    if not isinstance(value, Mapping):
+        raise TypeError("bool fact map 이어야 한다")
+    return {str(k): _dec_bool(v, str(k)) for k, v in value.items()}
+
+
+def _decode_ref(value: object) -> OptionRegionRef:
+    if not isinstance(value, Mapping):
+        raise TypeError("option ref 는 매핑이어야 한다")
+    return OptionRegionRef(_dec_str(value["slot_id"], "slot_id"), _dec_str(value["option_id"], "option_id"))
+
+
+def _decode_occurrence(value: object) -> FieldOccurrence:
+    if not isinstance(value, Mapping):
+        raise TypeError("occurrence 는 매핑이어야 한다")
+    return FieldOccurrence(
+        field_id=_dec_str(value["field_id"], "field_id"),
+        occurrence_ordinal=_dec_int(value["occurrence_ordinal"], "occurrence_ordinal"),
+        owner_kind=_dec_str(value["owner_kind"], "owner_kind"),
+        owner_slot_id=_dec_opt_str(value["owner_slot_id"], "owner_slot_id"),
+        owner_option_id=_dec_opt_str(value["owner_option_id"], "owner_option_id"),
+        content_entry_id=_dec_str(value["content_entry_id"], "content_entry_id"),
+        structural_order=_dec_int(value["structural_order"], "structural_order"),
+        native_value_target_class=_dec_str(
+            value["native_value_target_class"], "native_value_target_class"
+        ),
+        resolver_contract_id=_dec_str(value["resolver_contract_id"], "resolver_contract_id"),
+    )
+
+
+def _decode_region(value: object) -> OptionRegion:
+    if not isinstance(value, Mapping):
+        raise TypeError("option region 은 매핑이어야 한다")
+    return OptionRegion(
+        slot_id=_dec_str(value["slot_id"], "slot_id"),
+        option_id=_dec_str(value["option_id"], "option_id"),
+        content_entry_id=_dec_str(value["content_entry_id"], "content_entry_id"),
+        begin_order=_dec_int(value["begin_order"], "begin_order"),
+        end_order=_dec_int(value["end_order"], "end_order"),
+        owner_relation_facts=tuple(_dec_map(f) for f in value["owner_relation_facts"]),
+        retained_content_relation_facts=tuple(
+            _dec_map(f) for f in value["retained_content_relation_facts"]
+        ),
+        removal_capability_ref=_dec_str(value["removal_capability_ref"], "removal_capability_ref"),
+    )
+
+
+def _decode_relation(value: object) -> RemovalTargetRelation:
+    if not isinstance(value, Mapping):
+        raise TypeError("removal relation 은 매핑이어야 한다")
+    return RemovalTargetRelation(
+        left_option_ref=_decode_ref(value["left_option_ref"]),
+        right_option_ref=_decode_ref(value["right_option_ref"]),
+        relation=_dec_str(value["relation"], "relation"),
+    )
+
+
+def _decode_entry(value: object) -> ContentEntry:
+    if not isinstance(value, Mapping):
+        raise TypeError("content entry 는 매핑이어야 한다")
+    return ContentEntry(
+        content_entry_id=_dec_str(value["content_entry_id"], "content_entry_id"),
+        envelope_class=_dec_str(value["envelope_class"], "envelope_class"),
+        envelope_capability_facts=_dec_bool_map(value["envelope_capability_facts"]),
+    )
+
+
+def _validate_structure_invariants(structure: ExecutionTemplateStructure) -> None:
+    """이미 지어진/decode 된 DTO 가 payload 만으로 self-consistent 함을 재검증한다.
+
+    Slot span 은 schema 밖이라 owner coincidence 는 여기서 재계산 못 한다 — 구조적 정합(어휘·
+    entry 일치)만 본다. load-bearing 한 target-target relation·occurrence-in-region·crossing_free
+    는 저장 span 에서 재계산해 대조하므로 위조·누락은 시끄럽게 걸린다.
+    """
+    if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+        raise UnsupportedExecutionStructureProjection(
+            f"미지원 execution structure projection schema: {structure.projection_schema_version}"
+        )
+    root, shared, option = _product_index(structure.product_structure)
+    entry_ids = _validate_content_entries(structure.content_entries)
+    _validate_occurrences(structure.field_occurrences, root, shared, option, entry_ids)
+    resolver_facts = structure.global_composition_facts.resolver_stability_facts
+    for key in RESOLVER_STABILITY_KEYS:
+        if not isinstance(resolver_facts.get(key), bool):
+            raise ExecutionStructureResolverFactMissing(f"resolver stability fact {key!r} 부재")
+    _require_text(
+        structure.global_composition_facts.admitted_relation_profile, "admitted_relation_profile"
+    )
+
+    option_spans, region_entry, _ = _index_option_regions(
+        structure.option_regions, option, entry_ids
+    )
+    _validate_option_occurrence_regions(structure.field_occurrences, option_spans, region_entry)
+
+    valid_coincidence = {
+        COINCIDE_SAME_SPAN,
+        COINCIDE_SAME_START,
+        COINCIDE_SAME_END,
+        COINCIDE_INTERIOR,
+    }
+    for region in structure.option_regions:
+        entry_fact = next(
+            (f for f in region.owner_relation_facts
+             if f.get("relation") == "target_owner_content_entry"),
+            None,
+        )
+        if entry_fact is None or entry_fact.get("content_entry_id") != region.content_entry_id:
+            raise ExecutionStructureProjectionIntegrityError(
+                f"Option ({region.slot_id!r},{region.option_id!r}) owner content-entry fact 불일치"
+            )
+        slot_fact = next(
+            (f for f in region.owner_relation_facts
+             if f.get("relation") == "target_owner_slot"),
+            None,
+        )
+        if slot_fact is None or slot_fact.get("coincidence") not in valid_coincidence:
+            raise ExecutionStructureProjectionIntegrityError(
+                f"Option ({region.slot_id!r},{region.option_id!r}) owner slot fact 불량"
+            )
+
+    expected = _compute_removal_relations(option_spans)
+    stored = structure.removal_target_relations
+    if len(stored) != len(expected) or set(stored) != set(expected):
+        raise ExecutionStructureRelationIncomplete(
+            "removal_target_relations 가 저장 span 재계산과 불일치"
+        )
+    if structure.global_composition_facts.crossing_free != all(
+        r.relation != CROSSING for r in expected
+    ):
+        raise ExecutionStructureProjectionIntegrityError("crossing_free 가 relation 과 불일치")
+
+
+def decode_execution_structure(payload: Mapping[str, Any]) -> ExecutionTemplateStructure:
+    """persisted v2 payload → 재구성 + 전건 self-consistency 재검증.
+
+    seal·저장 신뢰 경계 — digest 만 맞는 garbage payload 를 받아 조용히 통과시키지 않는다.
+    형식 불량은 loud integrity error, unknown schema 는 fail-closed(latest 없음).
+    """
+    if not isinstance(payload, Mapping):
+        raise ExecutionStructureProjectionIntegrityError("v2 payload 가 매핑이 아니다")
+    if payload.get("projection_schema_version") != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+        raise UnsupportedExecutionStructureProjection(
+            f"미지원 execution structure projection schema: "
+            f"{payload.get('projection_schema_version')!r}"
+        )
+    try:
+        product = _decode_product_structure(payload["product_structure"])
+        global_raw = payload["global_composition_facts"]
+        if not isinstance(global_raw, Mapping):
+            raise TypeError("global_composition_facts 매핑 아님")
+        structure = ExecutionTemplateStructure(
+            projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+            product_structure=product,
+            field_occurrences=tuple(_decode_occurrence(o) for o in payload["field_occurrences"]),
+            option_regions=tuple(_decode_region(r) for r in payload["option_regions"]),
+            removal_target_relations=tuple(
+                _decode_relation(r) for r in payload["removal_target_relations"]
+            ),
+            content_entries=tuple(_decode_entry(e) for e in payload["content_entries"]),
+            global_composition_facts=GlobalCompositionFacts(
+                crossing_free=_dec_bool(global_raw["crossing_free"], "crossing_free"),
+                resolver_stability_facts=_dec_bool_map(global_raw["resolver_stability_facts"]),
+                admitted_relation_profile=_dec_str(
+                    global_raw["admitted_relation_profile"], "admitted_relation_profile"
+                ),
+            ),
+        )
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ExecutionStructureProjectionIntegrityError("v2 payload 형식 불일치") from exc
+
+    _validate_structure_invariants(structure)
+    return structure
+
+
 def execution_pass_projection(structure: ExecutionTemplateStructure) -> StructureProjection:
     """v2 projection 을 PASS Evidence 에 durable 하게 실을 :class:`StructureProjection` 로 고정.
 
@@ -755,21 +1115,31 @@ class SealedExecutionProfile:
 
 
 def seal_execution_profile(manifest, projection: StructureProjection) -> SealedExecutionProfile:
-    """v2 profile+projection 만 S5-seal 가능. v1 이면 EXECUTION_PROFILE_NOT_SEALABLE.
+    """v2 profile+**검증된** v2 projection 만 S5-seal 가능. 아니면 loud 거절.
 
-    ``manifest`` 는 QualificationProfileManifest. old profile+v1 이 이 경로로 들어오면 historical
-    evidence 는 그대로 두고 새 seal 만 거절한다(재해석·수정 없음).
+    ``manifest`` 는 QualificationProfileManifest. seal 은 attestation 이라 겉 label 만 보고 통과
+    시키지 않는다: (1) schema 가 v2, (2) profile id 가 등록된 것 하나(latest fallback 없음),
+    (3) payload_digest 가 payload 와 정합, (4) payload 를 decode·전건 재검증(위조/누락 차단).
+    old profile+v1 은 historical evidence 를 두고 새 seal 만 거절한다(재해석·수정 없음).
     """
     if manifest.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
         raise ExecutionProfileNotSealable(
             f"profile projection schema 가 v2 가 아니다: {manifest.projection_schema_version}"
         )
+    if manifest.qualification_profile_id != EXECUTION_QUALIFICATION_PROFILE_ID:
+        raise ExecutionProfileNotSealable(
+            f"미등록 profile id 는 seal 할 수 없다(latest fallback 없음): "
+            f"{manifest.qualification_profile_id!r}"
+        )
     if projection.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
         raise ExecutionProfileNotSealable(
             f"projection schema 가 v2 가 아니다: {projection.projection_schema_version}"
         )
+    # StructureProjection 은 payload_digest==content_digest(payload) 를 생성 시 이미 지킨다.
+    # 남는 구멍은 digest 는 맞지만 구조가 garbage 인 payload — decode+self-consistency 로 닫는다.
+    structure = decode_execution_structure(projection.payload)
     return SealedExecutionProfile(
         qualification_profile_id=manifest.qualification_profile_id,
         projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
-        template_structure_digest=projection.payload_digest,
+        template_structure_digest=template_structure_digest(structure),
     )

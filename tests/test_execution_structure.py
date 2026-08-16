@@ -7,6 +7,7 @@ projection·DTO·digest·profile·decoder 를 소유하고 native producer 는 d
 
 from __future__ import annotations
 
+import copy
 import json
 
 import pytest
@@ -21,6 +22,7 @@ from hwpxfiller.application.execution_structure import (
     SAME_SPAN,
     TOUCHING,
     ContentEntry,
+    ExecutionStructureError,
     ExecutionProfileNotSealable,
     ExecutionStructureEnvelopeFactMissing,
     ExecutionStructureOccurrenceIncomplete,
@@ -35,6 +37,7 @@ from hwpxfiller.application.execution_structure import (
     build_execution_manifest,
     build_execution_structure,
     classify_span_relation,
+    decode_execution_structure,
     encode_execution_structure,
     execution_pass_projection,
     seal_execution_profile,
@@ -697,3 +700,193 @@ def test_execution_pass_projection_round_trips_digest() -> None:
     assert StructureProjection(
         projection.projection_schema_version, projection.payload, projection.payload_digest
     ) == projection
+
+
+# ── Codex review hardening ──────────────────────────────────────────────────────────
+def _v2_manifest():
+    return build_execution_manifest(
+        media="hwpx",
+        adapter_contract_version="a",
+        product_rule_version="p",
+        operation_alphabet_version="o",
+        created_at="t",
+    )
+
+
+# finding 1: seal 은 겉 label 만 보지 않고 payload 를 decode·재검증한다.
+def test_seal_rejects_garbage_payload_with_valid_digest() -> None:
+    payload = {"projection_schema_version": EXECUTION_STRUCTURE_PROJECTION_SCHEMA, "not": "a projection"}
+    forged = StructureProjection(
+        EXECUTION_STRUCTURE_PROJECTION_SCHEMA, payload, content_digest(payload)
+    )
+    with pytest.raises(ExecutionStructureError):
+        seal_execution_profile(_v2_manifest(), forged)
+
+
+def test_tampered_payload_digest_rejected_at_construction() -> None:
+    from hwpxfiller.application.qualification_evidence import QualificationEvidenceError
+
+    projection = execution_pass_projection(_base_structure())
+    # StructureProjection 이 이미 payload_digest 를 지킨다 — seal 의 재검사는 방어 심층.
+    with pytest.raises(QualificationEvidenceError):
+        StructureProjection(
+            projection.projection_schema_version, projection.payload, "sha256:" + "0" * 64
+        )
+
+
+def test_encode_decode_round_trip_same_digest() -> None:
+    struct = _base_structure()
+    payload = encode_execution_structure(struct)
+    decoded = decode_execution_structure(payload)
+    assert template_structure_digest(decoded) == template_structure_digest(struct)
+    assert encode_execution_structure(decoded) == payload
+
+
+def test_decode_rejects_missing_key() -> None:
+    payload = encode_execution_structure(_base_structure())
+    del payload["field_occurrences"]
+    with pytest.raises(ExecutionStructureError):
+        decode_execution_structure(payload)
+
+
+def test_decode_rejects_mistyped_order() -> None:
+    payload = encode_execution_structure(_base_structure())
+    payload["field_occurrences"][0]["structural_order"] = "zero"
+    with pytest.raises(ExecutionStructureError):
+        decode_execution_structure(payload)
+
+
+def test_decode_rejects_fabricated_relation() -> None:
+    payload = encode_execution_structure(_base_structure())
+    payload["removal_target_relations"][0]["relation"] = "SAME_SPAN"  # 실제는 DISJOINT
+    with pytest.raises(ExecutionStructureError):
+        decode_execution_structure(payload)
+
+
+def test_decode_rejects_inconsistent_crossing_free() -> None:
+    payload = encode_execution_structure(_two_option((10, 30), (20, 40)))  # crossing → False
+    payload["global_composition_facts"]["crossing_free"] = True
+    with pytest.raises(ExecutionStructureError):
+        decode_execution_structure(payload)
+
+
+def test_decode_rejects_owner_content_entry_lie() -> None:
+    payload = encode_execution_structure(_base_structure())
+    for fact in payload["option_regions"][0]["owner_relation_facts"]:
+        if fact.get("relation") == "target_owner_content_entry":
+            fact["content_entry_id"] = "ghost"
+    with pytest.raises(ExecutionStructureError):
+        decode_execution_structure(payload)
+
+
+def test_decode_rejects_unknown_schema() -> None:
+    payload = encode_execution_structure(_base_structure())
+    payload["projection_schema_version"] = "hwpx-structure-projection-v1"
+    with pytest.raises(UnsupportedExecutionStructureProjection):
+        decode_execution_structure(payload)
+
+
+# finding 2: seal 은 등록된 profile id 하나만 허용(latest fallback 없음).
+def test_seal_rejects_unregistered_profile_id() -> None:
+    ghost = build_execution_manifest(
+        qualification_profile_id="hwpx-template-qualification-ghost",
+        media="hwpx",
+        adapter_contract_version="a",
+        product_rule_version="p",
+        operation_alphabet_version="o",
+        created_at="t",
+    )
+    with pytest.raises(ExecutionProfileNotSealable):
+        seal_execution_profile(ghost, execution_pass_projection(_base_structure()))
+
+
+# finding 3: OPTION occurrence 는 자기 region 안(같은 entry·span)에 실제로 앉아야 한다.
+def _option_occ_case(occ_order, occ_entry, region_entry="c0"):
+    product = TemplateStructure(
+        slots=(TemplateSlot("s1", options=(TemplateOption("o1", ("f",)),)),)
+    )
+    entries = (_entry("c0"),) if region_entry == occ_entry == "c0" else (_entry("c0"), _entry("c1"))
+    return build_execution_structure(
+        product_structure=product,
+        occurrences=(_occ("f", 0, "OPTION", occ_order, slot="s1", option="o1", entry=occ_entry),),
+        slot_regions=(SlotRegionObservation("s1", region_entry, 0, 50),),
+        option_regions=(
+            OptionRegionObservation("s1", "o1", region_entry, 10, 20, "r"),
+        ),
+        content_entries=entries,
+        resolver_stability_facts=RESOLVER_FACTS,
+        admitted_relation_profile="unadmitted",
+    )
+
+
+def test_option_occurrence_outside_region_span_is_error() -> None:
+    with pytest.raises(ExecutionStructureProjectionIntegrityError):
+        _option_occ_case(occ_order=99, occ_entry="c0")  # span [10,20] 밖
+
+
+def test_option_occurrence_wrong_content_entry_is_error() -> None:
+    with pytest.raises(ExecutionStructureProjectionIntegrityError):
+        _option_occ_case(occ_order=15, occ_entry="c1")  # span 안이지만 entry 다름
+
+
+def test_option_occurrence_inside_region_ok() -> None:
+    struct = _option_occ_case(occ_order=15, occ_entry="c0")
+    assert struct.field_occurrences[0].structural_order == 15
+
+
+# finding 4: Option region entry 는 owning Slot entry 와 같아야 한다.
+def test_option_region_entry_must_match_slot_entry() -> None:
+    product = TemplateStructure(slots=(TemplateSlot("s1", options=(TemplateOption("o1", ()),)),))
+    with pytest.raises(ExecutionStructureProjectionIntegrityError):
+        build_execution_structure(
+            product_structure=product,
+            occurrences=(),
+            slot_regions=(SlotRegionObservation("s1", "c0", 0, 50),),
+            option_regions=(OptionRegionObservation("s1", "o1", "c1", 10, 20, "r"),),
+            content_entries=(_entry("c0"), _entry("c1")),
+            resolver_stability_facts=RESOLVER_FACTS,
+            admitted_relation_profile="unadmitted",
+        )
+
+
+# finding 5: 지어진 structure 의 digest 는 caller 원본 dict 변이에 흔들리지 않는다.
+def test_built_structure_digest_stable_against_caller_mutation() -> None:
+    envelope = {
+        "retains_admissible_envelope": True,
+        "handles_empty_edges": True,
+        "preserves_owner_marker": True,
+        "coincident_boundary_admissible": True,
+    }
+    resolver = dict(RESOLVER_FACTS)
+    product = TemplateStructure(slots=(TemplateSlot("s1", options=(TemplateOption("o1", ()),)),))
+    struct = build_execution_structure(
+        product_structure=product,
+        occurrences=(),
+        slot_regions=(SlotRegionObservation("s1", "c0", 0, 50),),
+        option_regions=(OptionRegionObservation("s1", "o1", "c0", 10, 20, "r"),),
+        content_entries=(ContentEntry("c0", "cls", envelope),),
+        resolver_stability_facts=resolver,
+        admitted_relation_profile="unadmitted",
+    )
+    before = template_structure_digest(struct)
+    envelope["retains_admissible_envelope"] = False  # caller 원본 변이
+    resolver["field_write_preserves_identity"] = False
+    assert template_structure_digest(struct) == before
+    assert struct.content_entries[0].envelope_capability_facts["retains_admissible_envelope"] is True
+
+
+def test_stored_nested_mappings_are_read_only() -> None:
+    struct = _base_structure()
+    with pytest.raises(TypeError):
+        struct.content_entries[0].envelope_capability_facts["x"] = True  # type: ignore[index]
+    with pytest.raises(TypeError):
+        struct.global_composition_facts.resolver_stability_facts["x"] = True  # type: ignore[index]
+
+
+def test_decode_helpers_preserve_deep_copy_independence() -> None:
+    # decode 된 structure 도 원본 payload 변이에 안 흔들린다(재구성 시 사본을 얼린다).
+    payload = encode_execution_structure(_base_structure())
+    decoded = decode_execution_structure(copy.deepcopy(payload))
+    digest = template_structure_digest(decoded)
+    payload["content_entries"][0]["envelope_capability_facts"]["retains_admissible_envelope"] = False
+    assert template_structure_digest(decoded) == digest
