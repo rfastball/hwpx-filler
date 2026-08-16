@@ -4750,6 +4750,61 @@ def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
     assert not list((tmp_path / "out2").glob("*.hwpx"))  # 산출물 0 (fallback 없음)
 
 
+def test_managed_generation_clears_staging_after_run(tmp_path):
+    """#681 F2: run 이 끝나면 staged 사본을 정리한다 — 판본별 read-only 사본이 영구 누적되지 않는다."""
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    assert ctrl.generate()["ok"] is True
+    staging = tmp_path / "authority" / "run_staging"
+    assert not staging.exists() or not list(staging.iterdir())  # 누적 없음
+
+
+def test_managed_generation_maps_incomplete_slot_config_to_status(tmp_path, monkeypatch):
+    """#681 F3: capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 던지면 raw 예외로 새지 않고
+    구조화된 제품 상태(ok:False)로 거절한다."""
+    import hwpxfiller.webapp.template_change as tc
+    from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
+
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+
+    def boom(*_a, **_k):
+        raise SlotSelectionCaptureError("SLOT_CONFIGURATION_INCOMPLETE", "미완")
+
+    monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
+    clean = tmp_path / "c.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out3"))
+    res = ctrl.generate()
+    assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
+
+
+def test_generation_recovers_after_repairing_bad_template(tmp_path):
+    """#681 F4: bootstrap 이 qualification 에서 실패한 뒤 템플릿을 고쳐 다시 부르면 fresh id 로
+    재부트스트랩돼 staged 경로를 낸다(고정 id 의 ObjectAlreadyExists 회복 불가 차단). 코디네이터
+    메서드 단위 — 상위 review 게이트 소음 없이 F4 의 회복 자체를 잰다."""
+    import shutil
+
+    from hwpxfiller.application.jobs import load_job
+    from hwpxfiller.application.slotless_run_bridge import SlotlessRunAdmissionError
+
+    reg = _registry(tmp_path)
+    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
+    bad = tmp_path / "bad.hwpx"
+    bad.write_bytes(b"not a real hwpx zip")             # qualify 실패
+    reg.save(Job(name="고칠작업", template_path=str(bad)))
+    with pytest.raises(SlotlessRunAdmissionError):     # 최초: TEMPLATE_INITIALIZATION_REQUIRED
+        coord.resolve_generation_template("고칠작업")
+    shutil.copyfile(load_job(reg, "공고서").template_path, bad)  # 정상 hwpx 로 수리
+    staged = coord.resolve_generation_template("고칠작업")       # fresh id → 재부트스트랩 성공
+    assert Path(staged).exists()
+
+
 def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, monkeypatch):
     """#681: managed 생성이 evaluate_execution_provenance 를 **실제로** 호출한다(정적 name-ref
     가 아니라 라이브 도달) — S3-99 가 지적한 죽은 seam 이 실행 경로에서 살아 있음을 증명."""

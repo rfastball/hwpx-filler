@@ -51,7 +51,11 @@ from ..application.work_bootstrap import (
     TEMPLATE_INITIALIZATION_REQUIRED,
     BootstrapOutcome,
 )
-from ..application.slotless_run_bridge import SlotlessRunAdmissionError
+from ..application.slot_selection_input import SlotSelectionCaptureError
+from ..application.slotless_run_bridge import (
+    SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE,
+    SlotlessRunAdmissionError,
+)
 from ..application.work_template_state import (
     INITIALIZATION,
     DocumentWork,
@@ -76,6 +80,7 @@ from ..external.prepare_orchestration_runner import (
     run_qualification_stage,
 )
 from ..external.qualification_store import ObjectNotFound, QualificationObjectStore
+from ..host.staged_template import clear_run_staging
 from ..external.template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
@@ -450,23 +455,41 @@ class TemplateChangeCoordinator:
         assert work_id is not None
         self._recover(work_id)
         if not self._works.exists(work_id):
-            outcome = self._bootstrap(work_id, job_name, job, f"gen-{work_id}")
+            # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
+            # Candidate/qualification object 를 남겨도, 템플릿을 고쳐 다시 누르면 새 id 로 재부트스트랩
+            # 된다(고정 id 면 ObjectAlreadyExists 로 복구 불가). 진짜 중복 클릭은 generation_lock 이
+            # 막으므로 여기서 재전송-멱등을 따로 지킬 필요가 없다.
+            outcome = self._bootstrap(work_id, job_name, job, f"gen-{uuid.uuid4().hex}")
             if outcome.result != BOOTSTRAP_OK:
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
         ws = self._workspace.get_or_create(self._now())
-        run = admit_managed_slotless_run(
-            WorkSlotConfigurationStore(self._root / "slot_configs"),
-            _WorkStateReadPort(self._works),
-            self._quals, self._candidates, self._candidates,
-            _InitialApplicationProvenance(self._works),
-            str(self._root),
-            workspace_instance_id=ws,
-            expected_work_authority_id=work_id,
-            expected_template_application_id=aggregate.work.current_template_application_id,
-            captured_at=self._now(),
-        )
+        try:
+            run = admit_managed_slotless_run(
+                WorkSlotConfigurationStore(self._root / "slot_configs"),
+                _WorkStateReadPort(self._works),
+                self._quals, self._candidates, self._candidates,
+                _InitialApplicationProvenance(self._works),
+                str(self._root),
+                workspace_instance_id=ws,
+                expected_work_authority_id=work_id,
+                expected_template_application_id=aggregate.work.current_template_application_id,
+                captured_at=self._now(),
+            )
+        except SlotSelectionCaptureError as exc:
+            # slot-bearing 이고 slot config 가 미완이면 capture 가 admit 앞에서 SLOT_CONFIGURATION_
+            # INCOMPLETE 로 던진다 — 구조화된 제품 상태로 번역한다(raw 예외가 프런트로 새지 않게).
+            raise SlotlessRunAdmissionError(
+                SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE, str(exc)
+            ) from exc
         return run.staged_template_path
+
+    def clear_generation_staging(self) -> None:
+        """run 이 끝나 아무 실행도 staged 경로를 참조하지 않을 때 staging 사본을 정리한다
+        (#681 「cleanup 은 Host lifecycle 소유」). content-addressed 라 다음 run 이 다시
+        stage 하므로 run 뒤 지우는 것은 안전하다 — 안 지우면 판본마다 read-only 사본이 영구
+        누적된다."""
+        clear_run_staging(self._root)
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation

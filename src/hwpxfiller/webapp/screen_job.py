@@ -2345,10 +2345,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             result = self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
         finally:
             self._run = None
-            # staged 경로는 이 런에서만 유효하다(Host 가 정리) — 다음 preview/generate 가
-            # 죽은 경로를 읽지 않게 비운다.
+            # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
+            # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
+            managed = run_vm is not None and getattr(run_vm, "_managed_template", None) is not None
             if run_vm is not None:
                 run_vm._managed_template = None
+            if managed and self._template_change is not None:
+                self._template_change.clear_generation_staging()
             self._generation_lock.release()
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
