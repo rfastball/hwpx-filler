@@ -120,6 +120,16 @@ def test_registry_rejects_manifest_with_default_outside_supported() -> None:
         SelectionSemanticContractRegistry([(_V1_KEY, inconsistent)])
 
 
+def test_decode_selection_set_rejects_nonlist_option_ids() -> None:
+    from hwpxfiller.domain.slot_selection import decode_selection_set
+
+    # bridge·역직렬화 입력이 문자열이면 char 를 option 으로 삼키지 않고 거절한다.
+    with pytest.raises(InvalidSelectionSetError):
+        decode_selection_set({"selections": [{"slot_id": "s", "selected_option_ids": "x"}]})
+    with pytest.raises(InvalidSelectionSetError):
+        decode_selection_set({"selections": ["not-a-dict"]})
+
+
 def test_registry_get_unknown_contract_rejected() -> None:
     with pytest.raises(UnsupportedSelectionSemanticContractError):
         DEFAULT_SELECTION_SEMANTIC_REGISTRY.get("slot-selection/nope")
@@ -214,3 +224,29 @@ def test_u32_count_overflow_rejected() -> None:
 
     with pytest.raises(CanonicalSelectionEncodingError):
         _encode_u32(0x1_0000_0000)
+
+
+# ── selection-set JSON codec + structural digest (S4-02 소비 seam) ────────────
+def test_selection_set_json_roundtrip() -> None:
+    from hwpxfiller.domain.slot_selection import (
+        decode_selection_set,
+        encode_selection_set,
+    )
+
+    original = _set([("s2", ["o2"]), ("s1", ["o1a", "o1b"])])
+    assert decode_selection_set(encode_selection_set(original)) == original
+
+
+def test_decode_selection_set_rejects_malformed() -> None:
+    from hwpxfiller.domain.slot_selection import decode_selection_set
+
+    with pytest.raises(InvalidSelectionSetError):
+        decode_selection_set({"selections": "nope"})
+
+
+def test_declared_digest_ignores_order() -> None:
+    from hwpxfiller.domain.slot_selection import declared_selection_digest
+
+    assert declared_selection_digest(_set([("s", ["a", "b"])])) == (
+        declared_selection_digest(_set([("s", ["b", "a"])]))
+    )
