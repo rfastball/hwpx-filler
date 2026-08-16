@@ -38,12 +38,20 @@ from hwpxfiller.application.slot_configuration_context import (
     SlotConfigurationContextError,
     StaleTemplateApplication,
     WorkTemplateStateReadPort,
+    resolve_exact_applied_template_input,
     resolve_slot_configuration_context,
 )
+from hwpxfiller.application.candidate_revision import CandidateObjectStorePort
 from hwpxfiller.application.slot_selection_input import (
     SlotSelectionInput,
     plan_capture,
 )
+from hwpxfiller.application.slotless_run_bridge import (
+    AdmittedSlotlessRun,
+    ExecutionConfigurationProvenancePort,
+    admit_slotless_run,
+)
+from hwpxfiller.host.staged_template import stage_exact_applied_bytes
 from hwpxfiller.application.slot_configuration_projection import (
     CurrentSlotConfigurationView,
     project_context_error,
@@ -545,3 +553,71 @@ def capture_slot_selection_input(
             expected_template_application_id, expected_configuration_presence,
             expected_configuration_version, captured_at,
         )
+
+
+# ─── slotless run bridge admission (S4-11 #681) ──────────────────────────────────
+def admit_managed_slotless_run(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    candidate_bytes: CandidateObjectStorePort,
+    provenance: ExecutionConfigurationProvenancePort,
+    home: "str",
+    *,
+    workspace_instance_id: str,
+    expected_work_authority_id: str,
+    expected_template_application_id: str,
+    expected_configuration_presence: bool | None = None,
+    expected_configuration_version: int | None = None,
+    captured_at: str,
+) -> AdmittedSlotlessRun:
+    """slotless legacy 실행 admission — shared fence 아래 exact context·bytes·provenance 를 고정한다.
+
+    guard 순서(#681): route auth(caller) → fence → current Application + SlotSelectionInput capture →
+    execution provenance read → exact current Application 대조 → exact Candidate bytes integrity →
+    immutable run-plan input 고정 → fence release. 장기 generation 은 fence **밖**에서 이 고정값
+    (staged_template_path)만 쓴다 — 이후 Apply 가 running run 의 bytes 를 갈아치우지 못한다.
+    """
+    with per_work_mutation_fence(workspace_instance_id, expected_work_authority_id):
+        return _admit_slotless_run_under_fence(
+            store, work_state, qualification, candidate, candidate_bytes, provenance,
+            home, workspace_instance_id, expected_work_authority_id,
+            expected_template_application_id, expected_configuration_presence,
+            expected_configuration_version, captured_at,
+        )
+
+
+def _admit_slotless_run_under_fence(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    candidate_bytes: CandidateObjectStorePort,
+    provenance: ExecutionConfigurationProvenancePort,
+    home: str,
+    workspace_instance_id: str,
+    expected_work_authority_id: str,
+    expected_template_application_id: str,
+    expected_configuration_presence: bool | None,
+    expected_configuration_version: int | None,
+    captured_at: str,
+) -> AdmittedSlotlessRun:
+    # SlotSelectionInput capture(exact Application·version 검증 포함) — capture 와 같은 seam.
+    selection_input = _capture_under_fence(
+        store, work_state, qualification, candidate,
+        workspace_instance_id, expected_work_authority_id,
+        expected_template_application_id, expected_configuration_presence,
+        expected_configuration_version, captured_at,
+    )
+    # exact applied Candidate bytes 참조(존재·digest 결속만; parse 0). 다른 Application → 무결성 오류.
+    applied_input = resolve_exact_applied_template_input(
+        work_state, qualification, candidate,
+        expected_work_authority_id, expected_template_application_id,
+    )
+    # 전체 execution configuration provenance(기존 Job/Mapping 권위) — 없으면 UNKNOWN(None).
+    base = provenance.resolve_base_template_application_id(expected_work_authority_id)
+    return admit_slotless_run(
+        selection_input, applied_input, base,
+        lambda digest: stage_exact_applied_bytes(candidate_bytes, home, digest),
+    )
