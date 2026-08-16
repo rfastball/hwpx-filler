@@ -40,6 +40,12 @@ from hwpxfiller.application.work_template_state import (
     DocumentWork,
     WorkTemplateApplication,
 )
+from hwpxfiller.application.slot_configuration_projection import (
+    CONTEXT_ERROR,
+    CURRENT,
+    NEEDS_SELECTION,
+    SLOT_SELECTIONS_COMPLETE,
+)
 from hwpxfiller.external.slot_command_runner import (
     clear_slot_selection,
     ensure_current_slot_configuration,
@@ -204,6 +210,19 @@ def test_stale_configuration_version_rejected(tmp_path: Path) -> None:
     assert out.outcome_code == STALE_CONFIGURATION and not out.changed
 
 
+def test_stale_config_outcome_still_yields_fresh_current_view(tmp_path: Path) -> None:
+    # #678 분리: mutation outcome 이 STALE_CONFIGURATION 이어도 current context 가 valid 면
+    # 반환 view 는 stale 로 표식하지 않고 CURRENT 를 유지한다(두 축이 별개).
+    store, ports = _store(tmp_path), _ports()
+    _select(store, ports, _ctx())  # config version 2
+    result = select_slot_option(
+        store, *ports, context=_ctx(presence=True, version=1), request_id="r2",
+        slot_id="s1", option_id="o1", now=NOW,
+    )
+    assert result.outcome.outcome_code == STALE_CONFIGURATION
+    assert result.view is not None and result.view.view_status == CURRENT
+
+
 def test_stale_template_application_rejected(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports(current="A2")  # current 는 A2
     out = _select(store, ports, _ctx(app="A1"))  # token 은 옛 A1
@@ -266,8 +285,10 @@ def test_mutation_result_carries_fresh_view_under_fence(tmp_path: Path) -> None:
     )
     assert result.outcome.outcome_code == CHANGED
     assert result.view is not None and result.view_error is None
-    assert result.view.configuration_version == 2
-    assert result.view.resolution.slot_selections_complete is True
+    assert result.view.view_status == CURRENT
+    assert result.view.configuration_status == SLOT_SELECTIONS_COMPLETE
+    assert result.view.summary is not None
+    assert result.view.summary.slot_selections_complete is True
 
 
 def test_view_failure_does_not_lose_mutation_outcome(tmp_path: Path) -> None:
@@ -365,14 +386,23 @@ def test_get_reflects_current_selection(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports()
     _select(store, ports, _ctx())
     view = get_current_slot_configuration(store, *ports, context=_ctx(presence=True, version=2))
-    assert view.configuration_version == 2
-    assert view.resolution.slot_selections_complete is True
+    assert view.configuration_status == SLOT_SELECTIONS_COMPLETE
+    assert view.summary is not None and view.summary.slot_selections_complete is True
 
 
 def test_get_before_any_configuration(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports()
     view = get_current_slot_configuration(store, *ports, context=_ctx())
-    assert view.configuration is None and view.configuration_version is None
+    # config 부재 + valid context → 여전히 CURRENT, s1 미선택이라 NEEDS_SELECTION.
+    assert view.view_status == CURRENT and view.configuration_status == NEEDS_SELECTION
+
+
+def test_get_on_context_error_returns_context_error_view(tmp_path: Path) -> None:
+    # stale template application → partial fallback 없이 CONTEXT_ERROR projection(#678).
+    store, ports = _store(tmp_path), _ports(current="A2")
+    view = get_current_slot_configuration(store, *ports, context=_ctx(app="A1"))
+    assert view.view_status == CONTEXT_ERROR and view.context_error is not None
+    assert view.summary is None and view.slots == ()
 
 
 def test_clear_other_slot_without_entry_is_noop(tmp_path: Path) -> None:

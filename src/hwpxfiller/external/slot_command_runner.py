@@ -40,9 +40,13 @@ from hwpxfiller.application.slot_configuration_context import (
     WorkTemplateStateReadPort,
     resolve_slot_configuration_context,
 )
+from hwpxfiller.application.slot_configuration_projection import (
+    CurrentSlotConfigurationView,
+    project_context_error,
+    project_current_slot_configuration,
+)
 from hwpxfiller.application.slot_reconciliation import (
     ReconciliationApplication,
-    SlotConfigurationResolution,
     plan_successor_reconciliation,
     resolve_slot_configuration,
 )
@@ -64,16 +68,6 @@ from hwpxfiller.domain.slot_selection import SlotSelectionSet
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
 from .work_configuration_store import WorkSlotConfigurationStore
-
-
-@dataclass(frozen=True)
-class CurrentSlotConfigurationView:
-    """Get·Capture read seam — Projection DTO 조립은 #678·#679 가 맡는다."""
-
-    context: SlotConfigurationContext
-    configuration: WorkSlotConfigurationDraft | None
-    resolution: SlotConfigurationResolution
-    configuration_version: int | None
 
 
 @dataclass(frozen=True)
@@ -276,9 +270,7 @@ def _compute_view(
     resolution = resolve_slot_configuration(
         selections, ctx.template_structure, ctx.selection_semantic_contract
     )
-    return CurrentSlotConfigurationView(
-        ctx, config, resolution, config.version if config else None
-    )
+    return project_current_slot_configuration(ctx, config, resolution)
 
 
 def _result(
@@ -481,4 +473,8 @@ def get_current_slot_configuration(
     with per_work_mutation_fence(
         context.workspace_instance_id, context.expected_work_authority_id
     ):
-        return _compute_view(store, work_state, qualification, candidate, context)
+        try:
+            return _compute_view(store, work_state, qualification, candidate, context)
+        except SlotConfigurationContextError as exc:
+            # context error → partial fallback 없이 CONTEXT_ERROR projection(#678).
+            return project_context_error(str(exc))
