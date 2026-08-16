@@ -18,8 +18,12 @@ short-circuit 한다.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
+from hwpxfiller.host.profile_admission_fence import profile_admission_fence
+
+from hwpxfiller.domain.qualification_profile_admission import ADMITTED
 
 from hwpxfiller.application.candidate_revision import (
     MutableSourceBinding,
@@ -88,6 +92,10 @@ from .candidate_store import CandidateObjectStore
 from .qualification_store import ObjectCorrupt as QualCorrupt
 from .qualification_store import ObjectNotFound as QualObjectNotFound
 from .qualification_store import QualificationObjectStore
+from .profile_admission_runner import (
+    read_qualification_profile_admission_under_fence,
+)
+from .profile_admission_store import ProfileAdmissionStore
 from .work_template_store import (
     AtomicWorkTemplateStateStore,
     WorkAggregateExists,
@@ -95,6 +103,26 @@ from .work_template_store import (
 )
 
 _INTEGRITY_ERRORS = (CandidateNotFound, CandidateCorrupt, QualObjectNotFound, QualCorrupt)
+
+# ponytail: 고정 상한. optimistic Profile discovery 는 process-local fence 아래 exact re-read 로
+# 즉시 수렴하므로 실전 반복은 사실상 1 이다 — 상한은 pathological churn 을 유한 시간에 시끄럽게
+# 종료시키는 안전판이다(처리량 이슈 시 #620 계열에서 상향).
+_MAX_APPLY_DISCOVERY_ATTEMPTS = 8
+
+
+class QualificationProfileRevoked(Exception):
+    """apply 시점 Profile admission 이 REVOKED — 새 Apply 를 시끄럽게 차단한다(상태·write 0)."""
+
+    code = "QUALIFICATION_PROFILE_REVOKED"
+
+
+class S3ApplyProfileDiscoveryRetryExhausted(Exception):
+    """optimistic Profile discovery 가 bounded 재시도를 소진 — retryable attempt error.
+
+    request ID 를 소비하지 않는다(stale Prepared Change 같은 domain-terminal 상태와 다르다).
+    """
+
+    code = "S3_APPLY_PROFILE_DISCOVERY_RETRY_EXHAUSTED"
 
 
 def run_capture_stage(
@@ -357,11 +385,39 @@ _TERMINAL_RESULT = {
 }
 
 
+def _discover_apply_profile_id(
+    work_store: AtomicWorkTemplateStateStore, work_id: str, change_id: str
+) -> str:
+    """change → preparation → qualification_profile_id. 부재는 loud(잘못된 apply target)."""
+    aggregate = work_store.load(work_id)
+    change = find_change(aggregate, change_id)
+    return find_preparation(aggregate, change.preparation_id).qualification_profile_id
+
+
+def _require_profile_admitted(
+    admission_store: ProfileAdmissionStore, qualification_profile_id: str
+) -> None:
+    """ProfileFence 보유 중 admission 을 재확인한다 — MISSING/REVOKED 는 loud, ADMITTED 만 통과.
+
+    state 부재는 ``ProfileAdmissionStateMissing``(code QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING)
+    으로 오르고, REVOKED 는 ``QualificationProfileRevoked``(code QUALIFICATION_PROFILE_REVOKED)로
+    닫는다. 어느 경우도 implicit ADMITTED 로 넘어가지 않는다(확인-또는-경보).
+    """
+    observation = read_qualification_profile_admission_under_fence(
+        admission_store, qualification_profile_id
+    )
+    if observation.state != ADMITTED:
+        raise QualificationProfileRevoked(
+            f"profile {qualification_profile_id} admission 이 REVOKED — 새 Apply 를 차단한다"
+        )
+
+
 def apply_prepared_change(
     work_store: AtomicWorkTemplateStateStore,
     candidate_store: CandidateObjectStore,
     qualification_store: QualificationObjectStore,
     *,
+    admission_store: ProfileAdmissionStore,
     workspace_instance_id: str,
     work_id: str,
     change_id: str,
@@ -371,31 +427,57 @@ def apply_prepared_change(
     provenance_id: str,
     outbox_event_id: str,
     applied_at: str,
+    profile_fence: "Callable[[str], AbstractContextManager[None]]" = profile_admission_fence,
+    discover_profile_id: "Callable[[], str] | None" = None,
+    max_discovery_attempts: int = _MAX_APPLY_DISCOVERY_ATTEMPTS,
 ) -> tuple[ApplyOutcome, WorkTemplateStateAggregate]:
-    """fence-first public entry — per-Work mutation fence 를 먼저 잡고 under-fence 로 위임한다.
+    """fence-first public entry — global lock order ``ProfileFence → WorkFence → Store lease``.
 
-    fence 는 ``(WorkspaceInstanceId, WorkAuthorityId=work_id)`` 로 S3 Apply·S4 mutation 을
-    선형화한다(#675). helper 는 fence 를 재획득하지 않는다.
+    S3 Apply 는 진입 시 exact Qualification Profile ID 를 직접 알지 못한다(change_id 만 안다).
+    그래서 (1) optimistic 하게 aggregate 를 읽어 profile_id 를 discovery 하고, (2) 그 profile 의
+    ``ProfileFence`` 를 먼저, 이어서 per-Work ``WorkFence``(#675)를 잡고, (3) fence 아래에서
+    profile_id 를 exact 재확인한다. fence 획득 사이 관측이 바뀌어 exact≠observed 면 두 fence 를
+    풀고 bounded 재시도하며, 소진 시 ``S3_APPLY_PROFILE_DISCOVERY_RETRY_EXHAUSTED``(request 미소비).
 
-    commit 된 aggregate 를 **같은 fence 아래에서** 다시 읽어 함께 돌려준다 — caller 가
-    fence 밖에서 reload 하면 그 사이 다른 apply 가 끼어들어 outcome 과 어긋난 view 를
-    투영할 수 있다(응답 status 는 이 change, epoch·is_current 는 다음 change).
+    admission MISSING/REVOKED 는 새 Apply(PREPARED)만 loud 하게 막는다(under-fence gate) — 이미
+    성공한 apply 의 idempotent replay 는 admission gate 앞에서 historical outcome 을 돌려준다.
+
+    commit 된 aggregate 를 **같은 fence 아래에서** 다시 읽어 함께 돌려준다 — fence 밖 reload 는
+    그 사이 다른 apply 가 끼어들어 outcome↔view 가 어긋날 수 있다.
     """
-    with per_work_mutation_fence(workspace_instance_id, work_id):
-        outcome = apply_prepared_change_under_fence(
-            work_store,
-            candidate_store,
-            qualification_store,
-            work_id=work_id,
-            change_id=change_id,
-            actor=actor,
-            authorize=authorize,
-            new_application_id=new_application_id,
-            provenance_id=provenance_id,
-            outbox_event_id=outbox_event_id,
-            applied_at=applied_at,
-        )
-        return outcome, work_store.load(work_id)
+    discover = discover_profile_id or (
+        lambda: _discover_apply_profile_id(work_store, work_id, change_id)
+    )
+    for _ in range(max_discovery_attempts):
+        observed_profile_id = discover()
+        # lock order: ProfileFence(바깥) → WorkFence → (under-fence 에서 Store lease).
+        with profile_fence(observed_profile_id):
+            with per_work_mutation_fence(workspace_instance_id, work_id):
+                exact_profile_id = _discover_apply_profile_id(
+                    work_store, work_id, change_id
+                )
+                if exact_profile_id != observed_profile_id:
+                    continue  # 잘못된 ProfileFence — 두 fence 풀고 재시도
+                outcome = apply_prepared_change_under_fence(
+                    work_store,
+                    candidate_store,
+                    qualification_store,
+                    work_id=work_id,
+                    change_id=change_id,
+                    actor=actor,
+                    authorize=authorize,
+                    new_application_id=new_application_id,
+                    provenance_id=provenance_id,
+                    outbox_event_id=outbox_event_id,
+                    applied_at=applied_at,
+                    require_admitted=lambda pid: _require_profile_admitted(
+                        admission_store, pid
+                    ),
+                )
+                return outcome, work_store.load(work_id)
+    raise S3ApplyProfileDiscoveryRetryExhausted(
+        f"work {work_id} change {change_id} 의 Profile discovery 재시도 소진"
+    )
 
 
 def apply_prepared_change_under_fence(
@@ -411,11 +493,14 @@ def apply_prepared_change_under_fence(
     provenance_id: str,
     outbox_event_id: str,
     applied_at: str,
+    require_admitted: "Callable[[str], None]",
 ) -> ApplyOutcome:
     """Prepared Change 를 fixed base 에서 Work 에 원자 적용한다 — source/qualification 재실행 없음.
 
-    **fence 를 이미 잡은 caller 만 호출한다**(public ``apply_prepared_change`` 를 통한다).
-    직접 호출 금지는 ``tests/repo_contract/test_per_work_fence_gate.py`` 가 강제한다.
+    **ProfileFence·WorkFence 를 이미 잡은 caller 만 호출한다**(public ``apply_prepared_change``
+    를 통한다). 직접 호출 금지는 ``tests/repo_contract/test_per_work_fence_gate.py`` 가 강제한다.
+    ``require_admitted`` 는 ProfileFence 아래에서 admission(ADMITTED)을 재확인하는 gate 로,
+    새 Apply(PREPARED)에만 적용된다 — idempotent replay·terminal 반환은 이 gate 앞에서 닫힌다.
 
     status-first idempotency(APPLIED 는 current 위치에 따라 ALREADY_APPLIED/APPLIED_THEN_ADVANCED,
     이미 terminal 이면 그 결과)를 먼저 닫고, PREPARED 만 current Preparation·exact base·Profile
@@ -440,6 +525,9 @@ def apply_prepared_change_under_fence(
             return ApplyOutcome(_TERMINAL_RESULT[change.status], None)
 
         prep = find_preparation(aggregate, change.preparation_id)
+        # S5-09 admission gate: 새 Apply 는 exact Profile 의 admission 이 ADMITTED 여야 한다.
+        # MISSING/REVOKED 는 loud(write 0) — with 블록이 예외로 빠져 commit 을 건너뛴다.
+        require_admitted(prep.qualification_profile_id)
         # conflict 분류(ordered) — Change status 로만 닫고 base 를 자동 rebase 하지 않는다.
         if (
             aggregate.work.current_template_preparation_id != prep.preparation_id

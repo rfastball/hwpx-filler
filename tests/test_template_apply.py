@@ -52,12 +52,20 @@ from hwpxfiller.application.work_template_state import (
     PREPARED_CHANGE,
 )
 from hwpxfiller.external.candidate_store import CandidateObjectStore
+from hwpxfiller.domain.qualification_profile_admission import ProfileAdmissionStateMissing
 from hwpxfiller.external.prepare_orchestration_runner import (
+    QualificationProfileRevoked,
+    S3ApplyProfileDiscoveryRetryExhausted,
     admit_preparation,
     apply_prepared_change,
     run_capture_stage,
     run_qualification_stage,
 )
+from hwpxfiller.external.profile_admission_runner import (
+    initialize_qualification_profile_admission,
+    revoke_qualification_profile,
+)
+from hwpxfiller.external.profile_admission_store import ProfileAdmissionStore
 from hwpxfiller.external.qualification_store import QualificationObjectStore
 from hwpxfiller.external.work_template_store import (
     AtomicWorkTemplateStateStore,
@@ -124,7 +132,26 @@ def _ready_change(tmp_path, manifest_media="hwpx"):
         wstore, cstore, qstore, work_id="W1", preparation_id="P1",
         resolve_current_binding=lambda _w: ("SB1", GEN), prepared_change_id="C1", prepared_at="t7",
     )
+    # S5-09(#705): Apply 는 exact Profile 의 admission gate 를 통과해야 한다 — PROF 를 ADMITTED 로 세운다.
+    astore = _admissions(wstore)
+    initialize_qualification_profile_admission(
+        astore, qstore, qstore, qualification_profile_id=PROF,
+        request_id="admit-init", now="t7",
+    )
     return wstore, cstore, qstore
+
+
+def _admissions(wstore) -> ProfileAdmissionStore:
+    """tmp_path 아래 admission 저장소(works 형제 디렉터리) — 테스트가 ADMITTED/REVOKED 를 심는다."""
+    return ProfileAdmissionStore(wstore._root.parent / "admissions")
+
+
+def _revoke(wstore, qstore) -> None:
+    """PROF 의 admission 을 REVOKED 로 전이한다(ProfileFence 아래 S5-08 command)."""
+    revoke_qualification_profile(
+        _admissions(wstore), qstore, qualification_profile_id=PROF,
+        request_id="revoke-1", reason_ref="compromised", now="t9",
+    )
 
 
 def _grant(_work, _actor):
@@ -134,7 +161,8 @@ def _grant(_work, _actor):
 def _apply(wstore, cstore, qstore, change_id="C1", app_id="A2", authorize=_grant):
     # public entry 는 (outcome, committed_aggregate) 를 fence 아래에서 함께 돌려준다(#675).
     outcome, _ = apply_prepared_change(
-        wstore, cstore, qstore, workspace_instance_id="ws-test",
+        wstore, cstore, qstore, admission_store=_admissions(wstore),
+        workspace_instance_id="ws-test",
         work_id="W1", change_id=change_id, actor="t", authorize=authorize,
         new_application_id=app_id, provenance_id="PR1", outbox_event_id="OB1", applied_at="t8",
     )
@@ -342,3 +370,100 @@ def test_other_work_untouched_by_apply(tmp_path):
     before = wstore.load("W2")
     _apply(wstore, cstore, qstore)
     assert wstore.load("W2") == before
+
+
+# ─── S5-09(#705): Profile admission gate ─────────────────────────────────────────
+
+def test_missing_admission_state_blocks_apply_write_zero(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    (_admissions(wstore)._root / f"{PROF}.json").unlink()  # admission state 제거
+    with pytest.raises(ProfileAdmissionStateMissing):
+        _apply(wstore, cstore, qstore)
+    assert wstore.load("W1").work.current_template_application_id == "A1"  # write 0
+    assert _change(wstore).status == "PREPARED"
+
+
+def test_revoked_admission_blocks_new_apply_write_zero(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    _revoke(wstore, qstore)
+    with pytest.raises(QualificationProfileRevoked):
+        _apply(wstore, cstore, qstore)
+    assert wstore.load("W1").work.current_template_application_id == "A1"  # 반쪽 적용 0
+    assert _change(wstore).status == "PREPARED"
+
+
+def test_public_route_reaches_admission_query(tmp_path):
+    # 단순 symbol 참조가 아니라 실제 public Apply call path 가 admission query 에 도달함을 본다.
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    astore = _admissions(wstore)
+    queried: list[str] = []
+    original_load = astore.load
+
+    def spy_load(profile_id):
+        queried.append(profile_id)
+        return original_load(profile_id)
+
+    astore.load = spy_load  # type: ignore[method-assign]
+    outcome, _ = apply_prepared_change(
+        wstore, cstore, qstore, admission_store=astore, workspace_instance_id="ws-test",
+        work_id="W1", change_id="C1", actor="t", authorize=_grant,
+        new_application_id="A2", provenance_id="PR1", outbox_event_id="OB1", applied_at="t8",
+    )
+    assert outcome.result == APPLY_APPLIED
+    assert PROF in queried  # admission query 가 public route 에서 실제 실행됐다
+
+
+# ─── discovery/재시도 ─────────────────────────────────────────────────────────────
+
+def test_wrong_profile_discovery_releases_and_retries(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    calls: list[int] = []
+
+    def discover():  # 첫 관측은 틀린 profile → release, 이후 정정
+        calls.append(1)
+        return "WRONG" if len(calls) == 1 else PROF
+
+    outcome, _ = apply_prepared_change(
+        wstore, cstore, qstore, admission_store=_admissions(wstore),
+        workspace_instance_id="ws-test", work_id="W1", change_id="C1", actor="t",
+        authorize=_grant, new_application_id="A2", provenance_id="PR1",
+        outbox_event_id="OB1", applied_at="t8", discover_profile_id=discover,
+    )
+    assert outcome.result == APPLY_APPLIED
+    assert len(calls) == 2  # 한 번 release 후 재시도해 성공
+
+
+def test_bounded_retry_exhaustion_leaves_request_unconsumed(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    with pytest.raises(S3ApplyProfileDiscoveryRetryExhausted):
+        apply_prepared_change(
+            wstore, cstore, qstore, admission_store=_admissions(wstore),
+            workspace_instance_id="ws-test", work_id="W1", change_id="C1", actor="t",
+            authorize=_grant, new_application_id="A2", provenance_id="PR1",
+            outbox_event_id="OB1", applied_at="t8",
+            discover_profile_id=lambda: "ALWAYS-WRONG", max_discovery_attempts=3,
+        )
+    # request 미소비: change 는 여전히 PREPARED, current 무변경.
+    assert _change(wstore).status == "PREPARED"
+    assert wstore.load("W1").work.current_template_application_id == "A1"
+    # 정정된 정상 discovery 로 다시 apply 하면 성공한다(request 가 소비되지 않았다).
+    assert _apply(wstore, cstore, qstore).result == APPLY_APPLIED
+
+
+# ─── revoke/apply 선형화 ──────────────────────────────────────────────────────────
+
+def test_apply_first_then_revoke_keeps_historical_success(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    assert _apply(wstore, cstore, qstore).result == APPLY_APPLIED  # ADMITTED 관측 하 성공
+    _revoke(wstore, qstore)  # 이후 revoke
+    again = _apply(wstore, cstore, qstore, app_id="A9")  # idempotent replay
+    assert again.result == APPLY_ALREADY_APPLIED  # 뒤늦은 revoke 가 역사적 성공을 뒤집지 않는다
+    assert wstore.load("W1").work.current_template_application_id == "A2"
+
+
+def test_revoke_first_then_apply_is_blocked(tmp_path):
+    wstore, cstore, qstore = _ready_change(tmp_path)
+    _revoke(wstore, qstore)  # ProfileFence 아래 REVOKED 선반영
+    with pytest.raises(QualificationProfileRevoked):
+        _apply(wstore, cstore, qstore)
+    assert wstore.load("W1").work.current_template_application_id == "A1"  # 반쪽 적용 0

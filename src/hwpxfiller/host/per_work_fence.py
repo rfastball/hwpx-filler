@@ -21,6 +21,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+from hwpxfiller.host.profile_admission_fence import work_fence_order_guard
+
 
 @dataclass(frozen=True)
 class PerWorkMutationFenceKey:
@@ -57,5 +59,8 @@ def per_work_mutation_fence(
     if not workspace_instance_id or not work_authority_id:
         raise ValueError("fence key 의 workspace_instance_id·work_authority_id 는 비어 있을 수 없다")
     key = PerWorkMutationFenceKey(workspace_instance_id, work_authority_id)
-    with _fence_lock(key):
-        yield
+    # global lock order 참여(S5-09 #705): ProfileFence(바깥) → 이 WorkFence → Store lease(안).
+    # inner lock 을 쥔 채 이 WorkFence 를 기다리면 guard 가 시끄럽게 거절한다.
+    with work_fence_order_guard():
+        with _fence_lock(key):
+            yield

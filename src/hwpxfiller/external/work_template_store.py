@@ -41,6 +41,8 @@ from hwpxfiller.application.work_template_state import (
     decode_aggregate,
     encode_aggregate,
 )
+from hwpxfiller.host.profile_admission_fence import store_lease_order_guard
+
 from .atomic import write_text_atomic
 from .candidate_store import CandidateObjectStore
 from .qualification_store import QualificationObjectStore
@@ -137,8 +139,12 @@ class AtomicWorkTemplateStateStore:
 
     @contextmanager
     def update(self, work_id: str) -> Iterator[_Transaction]:
-        """writer lease 아래 read→검증→(caller mutate)→atomic commit 을 한 번 수행한다."""
-        with _work_lock(self._lock_key(work_id)):
+        """writer lease 아래 read→검증→(caller mutate)→atomic commit 을 한 번 수행한다.
+
+        이 writer lease 는 global lock order 의 가장 안쪽(rank 2)이다(S5-09 #705) — 잡기 전
+        outer fence(ProfileFence·WorkFence)를 나중에 기다리는 역순은 guard 가 거절한다.
+        """
+        with store_lease_order_guard(), _work_lock(self._lock_key(work_id)):
             current = self.load(work_id)
             # object identity 가 아니라 값으로 변경을 판정한다. 스냅샷은 **직렬화 문자열**이라야
             # 한다 — encode 의 dict(payload) 는 얕은 사본이라 nested list/dict 를 원본과 공유해,

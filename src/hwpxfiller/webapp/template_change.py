@@ -87,6 +87,10 @@ from ..external.prepare_orchestration_runner import (
     run_capture_stage,
     run_qualification_stage,
 )
+from ..external.profile_admission_runner import (
+    initialize_qualification_profile_admission,
+)
+from ..external.profile_admission_store import ProfileAdmissionStore
 from ..external.qualification_store import ObjectNotFound, QualificationObjectStore
 from ..host.staged_template import clear_run_staging
 from ..external.template_inspection import (
@@ -180,6 +184,7 @@ class TemplateChangeCoordinator:
         self._works = AtomicWorkTemplateStateStore(self._root / "works")
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
+        self._admissions = ProfileAdmissionStore(self._root / "admissions")
         self._workspace = WorkspaceMetadataStore(self._root)
         self._clock = clock
         #: process 세션 identity — 이전 세션의 미완 Preparation 을 INTERRUPTED 로 닫는 기준.
@@ -246,6 +251,17 @@ class TemplateChangeCoordinator:
             self._quals.get_manifest(HWPX_QUALIFICATION_PROFILE.id)
         except ObjectNotFound:
             self._quals.put_manifest(hwpx_qualification_manifest(self._now()))
+        # HWPX Profile 의 admission 을 ADMITTED 로 bootstrap 한다(멱등) — S3 Apply 는 exact
+        # Profile 의 admission gate 를 통과해야 하고(#705), 부재면 시끄럽게 막힌다. revocation
+        # record 가 없으므로 ADMITTED v1 로 선다(있으면 REVOKED — 조용한 추측 없음).
+        initialize_qualification_profile_admission(
+            self._admissions,
+            self._quals,
+            self._quals,
+            qualification_profile_id=HWPX_QUALIFICATION_PROFILE.id,
+            request_id="admission-bootstrap",
+            now=self._now(),
+        )
         self._manifest_seeded = True
 
     def _binding(self, work_id: str, job) -> MutableSourceBinding:
@@ -657,6 +673,7 @@ class TemplateChangeCoordinator:
         # fence 밖에서 reload 하면 다른 apply 가 끼어들어 outcome↔view 가 어긋날 수 있다.
         outcome, aggregate = apply_prepared_change(
             self._works, self._candidates, self._quals,
+            admission_store=self._admissions,
             workspace_instance_id=workspace_instance_id,
             work_id=work_id, change_id=change_id, actor=actor, authorize=_authorize,
             new_application_id=f"{change_id}-app", provenance_id=f"{change_id}-prov",
