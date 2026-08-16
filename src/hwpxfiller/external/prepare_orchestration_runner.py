@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from hwpxfiller.host.per_work_fence import per_work_mutation_fence
+
 from hwpxfiller.application.candidate_revision import (
     MutableSourceBinding,
     SourceCaptureError,
@@ -77,6 +79,7 @@ from hwpxfiller.application.work_template_state import (
     MigrationProvenance,
     PreparedTemplateChange,
     TemplateChangePreparation,
+    WorkTemplateStateAggregate,
 )
 from .work_template_store import initialize_work
 from .candidate_store import ObjectCorrupt as CandidateCorrupt
@@ -359,6 +362,47 @@ def apply_prepared_change(
     candidate_store: CandidateObjectStore,
     qualification_store: QualificationObjectStore,
     *,
+    workspace_instance_id: str,
+    work_id: str,
+    change_id: str,
+    actor: str,
+    authorize: "Callable[[DocumentWork, str], None]",
+    new_application_id: str,
+    provenance_id: str,
+    outbox_event_id: str,
+    applied_at: str,
+) -> tuple[ApplyOutcome, WorkTemplateStateAggregate]:
+    """fence-first public entry — per-Work mutation fence 를 먼저 잡고 under-fence 로 위임한다.
+
+    fence 는 ``(WorkspaceInstanceId, WorkAuthorityId=work_id)`` 로 S3 Apply·S4 mutation 을
+    선형화한다(#675). helper 는 fence 를 재획득하지 않는다.
+
+    commit 된 aggregate 를 **같은 fence 아래에서** 다시 읽어 함께 돌려준다 — caller 가
+    fence 밖에서 reload 하면 그 사이 다른 apply 가 끼어들어 outcome 과 어긋난 view 를
+    투영할 수 있다(응답 status 는 이 change, epoch·is_current 는 다음 change).
+    """
+    with per_work_mutation_fence(workspace_instance_id, work_id):
+        outcome = apply_prepared_change_under_fence(
+            work_store,
+            candidate_store,
+            qualification_store,
+            work_id=work_id,
+            change_id=change_id,
+            actor=actor,
+            authorize=authorize,
+            new_application_id=new_application_id,
+            provenance_id=provenance_id,
+            outbox_event_id=outbox_event_id,
+            applied_at=applied_at,
+        )
+        return outcome, work_store.load(work_id)
+
+
+def apply_prepared_change_under_fence(
+    work_store: AtomicWorkTemplateStateStore,
+    candidate_store: CandidateObjectStore,
+    qualification_store: QualificationObjectStore,
+    *,
     work_id: str,
     change_id: str,
     actor: str,
@@ -369,6 +413,9 @@ def apply_prepared_change(
     applied_at: str,
 ) -> ApplyOutcome:
     """Prepared Change 를 fixed base 에서 Work 에 원자 적용한다 — source/qualification 재실행 없음.
+
+    **fence 를 이미 잡은 caller 만 호출한다**(public ``apply_prepared_change`` 를 통한다).
+    직접 호출 금지는 ``tests/repo_contract/test_per_work_fence_gate.py`` 가 강제한다.
 
     status-first idempotency(APPLIED 는 current 위치에 따라 ALREADY_APPLIED/APPLIED_THEN_ADVANCED,
     이미 terminal 이면 그 결과)를 먼저 닫고, PREPARED 만 current Preparation·exact base·Profile

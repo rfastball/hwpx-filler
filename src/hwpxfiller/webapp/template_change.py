@@ -55,6 +55,7 @@ from ..application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from ..external.candidate_store import CandidateObjectStore
+from ..external.work_configuration_store import WorkspaceMetadataStore
 from ..external.prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -120,6 +121,7 @@ class TemplateChangeCoordinator:
         self._works = AtomicWorkTemplateStateStore(self._root / "works")
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._quals = QualificationObjectStore(self._root / "qualification")
+        self._workspace = WorkspaceMetadataStore(self._root)
         self._clock = clock
         #: process 세션 identity — 이전 세션의 미완 Preparation 을 INTERRUPTED 로 닫는 기준.
         self._session_id = "s-" + uuid.uuid4().hex
@@ -503,17 +505,22 @@ class TemplateChangeCoordinator:
         if work_id is None or work_id != token_work_id:
             # cross-Work misuse: request 거절, 두 Work·Change 상태 무변경.
             raise TemplateChangeError("이 변경사항은 현재 작업의 것이 아닙니다")
-        outcome = apply_prepared_change(
+        now = self._now()
+        # create-once durable WorkspaceInstanceId — S3 Apply·S4 mutation 이 같은 fence 를 공유한다.
+        workspace_instance_id = self._workspace.get_or_create(now)
+        # fence 아래에서 apply 하고, commit 된 aggregate 도 같은 fence 아래에서 받는다 —
+        # fence 밖에서 reload 하면 다른 apply 가 끼어들어 outcome↔view 가 어긋날 수 있다.
+        outcome, aggregate = apply_prepared_change(
             self._works, self._candidates, self._quals,
+            workspace_instance_id=workspace_instance_id,
             work_id=work_id, change_id=change_id, actor=actor, authorize=_authorize,
             new_application_id=f"{change_id}-app", provenance_id=f"{change_id}-prov",
-            outbox_event_id=f"{change_id}-evt", applied_at=self._now(),
+            outbox_event_id=f"{change_id}-evt", applied_at=now,
         )
         if outcome.result == APPLY_INTEGRITY_ERROR:
             raise TemplateChangeError(
                 "적용 무결성 확인에 실패했습니다 — 저장된 확인 결과를 신뢰할 수 없습니다"
             )
-        aggregate = self._works.load(work_id)
         current = find_application(
             aggregate, aggregate.work.current_template_application_id
         )
