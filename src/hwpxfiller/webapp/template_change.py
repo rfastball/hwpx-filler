@@ -46,8 +46,14 @@ from ..application.template_change_product import (
     preparation_view,
     product_apply_status,
 )
-from ..application.work_bootstrap import BOOTSTRAP_OK, BootstrapOutcome
+from ..application.work_bootstrap import (
+    BOOTSTRAP_OK,
+    TEMPLATE_INITIALIZATION_REQUIRED,
+    BootstrapOutcome,
+)
+from ..application.slotless_run_bridge import SlotlessRunAdmissionError
 from ..application.work_template_state import (
+    INITIALIZATION,
     DocumentWork,
     PREP_CAPTURING,
     PREP_QUALIFYING,
@@ -55,7 +61,12 @@ from ..application.work_template_state import (
     WorkTemplateStateAggregate,
 )
 from ..external.candidate_store import CandidateObjectStore
-from ..external.work_configuration_store import WorkspaceMetadataStore
+from ..external.slot_command_runner import admit_managed_slotless_run
+from ..external.work_configuration_store import (
+    WorkSlotConfigurationStore,
+    WorkspaceMetadataStore,
+)
+from ..external.work_template_store import WorkAggregateNotFound
 from ..external.prepare_orchestration_runner import (
     admit_preparation,
     apply_prepared_change,
@@ -104,6 +115,41 @@ def _authorize(work: DocumentWork, actor: str) -> None:
     """actor 의 Work 접근·Template 변경 권한 — token 과 독립으로 매 요청 확인한다."""
     if actor != LOCAL_ACTOR:
         raise TemplateChangeError(f"actor {actor!r} 는 이 Work 에 접근할 수 없습니다")
+
+
+class _WorkStateReadPort:
+    """``AtomicWorkTemplateStateStore`` → #674 read Port(load()->None on missing)."""
+
+    def __init__(self, store: "AtomicWorkTemplateStateStore") -> None:
+        self._store = store
+
+    def load(self, work_id: str) -> "WorkTemplateStateAggregate | None":
+        try:
+            return self._store.load(work_id)
+        except WorkAggregateNotFound:
+            return None
+
+
+class _InitialApplicationProvenance:
+    """execution-config base = bootstrap 시 확립된 INITIALIZATION Application.
+
+    Mapping·execution 구성은 bootstrap 시점 Application 에 대고 세워졌고, 그 base 를 다른
+    Application 으로 다시 지정하는 review command 는 아직 없다(#681 비범위) — 그러니 지금은
+    INITIALIZATION Application 이 정본 base 다. S3 Apply 로 current 가 앞서면 base≠current 라
+    guard 가 NEEDS_CONFIGURATION 으로 막는다. 별도 durable 필드는 두지 않는다(초기 Application
+    이 이미 그 base 를 영속한다). Work 미부트스트랩 → None(UNKNOWN, 정직).
+    """
+
+    def __init__(self, works: "AtomicWorkTemplateStateStore") -> None:
+        self._works = works
+
+    def resolve_base_template_application_id(self, work_id: str) -> "str | None":
+        if not self._works.exists(work_id):
+            return None
+        for app in self._works.load(work_id).applications:
+            if app.origin == INITIALIZATION:
+                return app.application_id
+        return None
 
 
 class TemplateChangeCoordinator:
@@ -383,6 +429,44 @@ class TemplateChangeCoordinator:
         )
         prep = self._advance(work_id, job_name, prep)
         return {"ok": True, "preparation": self._view(self._works.load(work_id), work_id, prep)}
+
+    def resolve_generation_template(self, job_name: str) -> str:
+        """managed Product Work 생성의 정본 템플릿 경로 — current Application 의 exact applied
+        Candidate bytes 를 staging 한 read-only 경로다(#681 G11).
+
+        mutable ``job.template_path`` 를 직접 소비하지 않는다: bootstrap-on-demand 로 Work·
+        current Application 을 세우고(첫 생성이 exact bytes 를 Candidate store 에 확립),
+        slotless admission gate(exact context·provenance·bytes 무결성)를 통과할 때만 staged
+        경로를 낸다. 실패는 fallback 없이 시끄럽게 오른다(confirm-or-alarm):
+        bootstrap 실패는 ``SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)``,
+        gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
+        EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
+        """
+        job = load_job(self._registry, job_name)
+        if job.media != "hwpx":
+            raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
+        self._ensure_manifest()
+        work_id = self._work_id_for(job_name, create=True)
+        assert work_id is not None
+        self._recover(work_id)
+        if not self._works.exists(work_id):
+            outcome = self._bootstrap(work_id, job_name, job, f"gen-{work_id}")
+            if outcome.result != BOOTSTRAP_OK:
+                raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
+        aggregate = self._works.load(work_id)
+        ws = self._workspace.get_or_create(self._now())
+        run = admit_managed_slotless_run(
+            WorkSlotConfigurationStore(self._root / "slot_configs"),
+            _WorkStateReadPort(self._works),
+            self._quals, self._candidates, self._candidates,
+            _InitialApplicationProvenance(self._works),
+            str(self._root),
+            workspace_instance_id=ws,
+            expected_work_authority_id=work_id,
+            expected_template_application_id=aggregate.work.current_template_application_id,
+            captured_at=self._now(),
+        )
+        return run.staged_template_path
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation

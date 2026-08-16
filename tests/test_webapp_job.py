@@ -4697,6 +4697,84 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     assert ctrl.snapshot()["template_change"]["epoch"] == 1
 
 
+def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
+    """#681 G11 무회귀: 코디네이터가 배선된 managed 생성이 mutable template_path 직독 대신
+    bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존)."""
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    res = ctrl.generate()
+    assert res["ok"] is True, res
+    assert res["exit_summary"] == "2개 성공", res["exit_summary"]
+    assert len(list((tmp_path / "out").glob("*.hwpx"))) == 2  # 실제 산출물
+
+
+def test_managed_generation_uses_applied_bytes_not_edited_source(tmp_path):
+    """#681 drift 음성대조: 적용된 A bytes 뒤 source 를 B 로 고쳐도(미적용) 생성 입력은
+    A 의 exact Candidate bytes(staged) 다 — bridge 는 source 가 아니라 Candidate store 를 읽는다."""
+    from hwpxfiller.application.candidate_revision import blob_digest
+    from hwpxfiller.application.jobs import load_job
+
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    job = load_job(ctrl.registry, "공고서")
+    applied_bytes = Path(job.template_path).read_bytes()  # A
+    coord = ctrl._template_change
+    staged_a = coord.resolve_generation_template("공고서")  # bootstrap A + stage
+    # source 를 B 로 오염(미적용) — staged 는 여전히 A digest 여야 한다.
+    Path(job.template_path).write_bytes(applied_bytes + b"DRIFT-B")  # B != A
+    staged_again = coord.resolve_generation_template("공고서")
+    assert Path(staged_again).read_bytes() == applied_bytes            # A, not B
+    assert blob_digest(Path(staged_again).read_bytes()) == blob_digest(applied_bytes)
+    assert Path(staged_a).read_bytes() == applied_bytes                # 첫 스테이징도 A
+
+
+def test_managed_generation_rejects_unqualifiable_template_loudly(tmp_path):
+    """#681 confirm-or-alarm: bootstrap qualification 이 실패하는 템플릿은 조용히
+    template_path 로 fallback 하지 않고 시끄러운 거절(TEMPLATE_INITIALIZATION_REQUIRED 문안)."""
+    ctrl, _ = _template_change_controller(tmp_path)
+    bad = tmp_path / "안됨.hwpx"
+    bad.write_bytes(b"not a real hwpx zip")     # qualify 실패
+    ctrl.registry.save(Job(name="깨진작업", template_path=str(bad)))
+    ctrl.dispatch("select_job", {"name": "깨진작업"})
+    clean = tmp_path / "c.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out2"))
+    res = ctrl.generate()
+    assert res["ok"] is False and res["level"] == "warn"
+    assert "초기화" in res["error"]  # TEMPLATE_INITIALIZATION_REQUIRED 문안
+    assert not list((tmp_path / "out2").glob("*.hwpx"))  # 산출물 0 (fallback 없음)
+
+
+def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, monkeypatch):
+    """#681: managed 생성이 evaluate_execution_provenance 를 **실제로** 호출한다(정적 name-ref
+    가 아니라 라이브 도달) — S3-99 가 지적한 죽은 seam 이 실행 경로에서 살아 있음을 증명."""
+    import hwpxfiller.application.slotless_run_bridge as bridge
+
+    seen: list = []
+    real = bridge.evaluate_execution_provenance
+
+    def spy(base, current):
+        seen.append((base, current))
+        return real(base, current)
+
+    monkeypatch.setattr(bridge, "evaluate_execution_provenance", spy)
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    assert ctrl.generate()["ok"] is True
+    assert seen, "generate 가 execution provenance guard 를 부르지 않았다(seam 죽음)"
+    base, current = seen[0]
+    assert base == current  # bootstrap base == current → EXECUTION_ALLOWED
+
+
 def test_template_change_without_assembly_is_loud_not_silent(tmp_path):
     ctrl, _ = _controller(tmp_path)  # 미주입(테스트·CLI 소비자 기본)
     ctrl.dispatch("select_job", {"name": "공고서"})
