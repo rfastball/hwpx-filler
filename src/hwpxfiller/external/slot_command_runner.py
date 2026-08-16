@@ -494,6 +494,7 @@ def _capture_under_fence(
     workspace_instance_id: str,
     expected_work_authority_id: str,
     expected_template_application_id: str,
+    expected_configuration_presence: bool | None,
     expected_configuration_version: int | None,
     captured_at: str,
 ) -> SlotSelectionInput:
@@ -504,13 +505,19 @@ def _capture_under_fence(
         expected_template_application_id,
     )
     # 단계 4: current Configuration read(ensure 하지 않는다 — capture 는 mutation 아님).
-    config = None
-    if store.exists(expected_work_authority_id):
-        config = _current_config(
-            store.load(expected_work_authority_id), context.template_application_id
-        )
-    # 단계 5~8: 순수 version 검증·resolution·slotless/complete 판정·immutable value.
-    return plan_capture(context, config, expected_configuration_version, captured_at)
+    # _load_existing 로 읽어 다른 workspace 의 aggregate 를 거절한다(WorkspaceIdentityMismatch).
+    stored = _load_existing(store, workspace_instance_id, expected_work_authority_id)
+    config = (
+        _current_config(stored, context.template_application_id)
+        if stored is not None
+        else None
+    )
+    # 단계 5~8: 순수 presence/version CAS·resolution·slotless/complete 판정·immutable value.
+    return plan_capture(
+        context, config, captured_at,
+        expected_configuration_presence=expected_configuration_presence,
+        expected_configuration_version=expected_configuration_version,
+    )
 
 
 def capture_slot_selection_input(
@@ -522,17 +529,19 @@ def capture_slot_selection_input(
     workspace_instance_id: str,
     expected_work_authority_id: str,
     expected_template_application_id: str,
+    expected_configuration_presence: bool | None = None,
     expected_configuration_version: int | None = None,
     captured_at: str,
 ) -> SlotSelectionInput:
     """CaptureSlotSelectionInput — shared fence 아래 S5 입력을 immutable value 로 낸다(#680).
 
     Snapshot 을 current 권위로 저장하지 않는다. S5 가 자기 evidence/Plan 안에 보존한다.
+    presence/version 은 caller 가 관찰한 Configuration 상태의 exact CAS 다(#681 token claims).
     """
     with per_work_mutation_fence(workspace_instance_id, expected_work_authority_id):
         return _capture_under_fence(
             store, work_state, qualification, candidate,
             workspace_instance_id, expected_work_authority_id,
-            expected_template_application_id, expected_configuration_version,
-            captured_at,
+            expected_template_application_id, expected_configuration_presence,
+            expected_configuration_version, captured_at,
         )

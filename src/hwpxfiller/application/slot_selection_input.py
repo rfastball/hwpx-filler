@@ -71,25 +71,37 @@ SlotSelectionInput = SlotlessSelectionContext | SlotConfigurationSnapshot
 def plan_capture(
     context: SlotConfigurationContext,
     config: WorkSlotConfigurationDraft | None,
-    expected_configuration_version: int | None,
     captured_at: str,
+    *,
+    expected_configuration_presence: bool | None = None,
+    expected_configuration_version: int | None = None,
 ) -> SlotSelectionInput:
     """복원된 context 로 slotless 또는 complete snapshot 을 낸다(순수 5~8 단계).
 
-    stale Application(단계 2)은 caller 의 context resolve 가 이미 거절한다. 여기서는 expected
-    Configuration version(단계 5)·slotless/complete 판정(단계 7)만 한다. digest 는 exact contract
-    ID 로 slot-selection-canonical/v1 을 계산한다 — detached 는 declared 에 들고 effective 엔 빠진다.
+    stale Application(단계 2)은 caller 의 context resolve 가 이미 거절한다. 여기서는 caller 가
+    관찰한 Configuration 상태의 exact CAS(단계 5)·slotless/complete 판정(단계 7)만 한다:
+    presence=True → Configuration 존재 + version 일치, presence=False → 부재(그 사이 생기면
+    STALE), presence=None → CAS 없음(내부 caller). version 은 presence=True 일 때만 의미가 있다.
+    digest 는 exact contract ID 로 slot-selection-canonical/v1 — detached 는 declared 에 들고
+    effective 엔 빠진다.
     """
     contract_id = context.selection_semantic_contract_id
     actual_version = config.version if config is not None else None
-    if (
-        expected_configuration_version is not None
-        and actual_version != expected_configuration_version
-    ):
-        raise SlotSelectionCaptureError(
-            "STALE_CONFIGURATION",
-            f"expected version {expected_configuration_version}, current {actual_version}",
-        )
+    if expected_configuration_presence is True:
+        # 관찰했던 Configuration 이 사라졌거나 version 이 어긋나면 STALE.
+        if config is None or actual_version != expected_configuration_version:
+            raise SlotSelectionCaptureError(
+                "STALE_CONFIGURATION",
+                f"expected present version {expected_configuration_version}, "
+                f"current {actual_version}",
+            )
+    elif expected_configuration_presence is False:
+        # 부재를 관찰했는데 그 사이 Configuration 이 생겼으면 STALE(캡처가 미관찰 선택을 담지 않게).
+        if config is not None:
+            raise SlotSelectionCaptureError(
+                "STALE_CONFIGURATION",
+                "expected absent Configuration but one now exists",
+            )
 
     selections = config.selections if config is not None else SlotSelectionSet(())
     resolution = resolve_slot_configuration(

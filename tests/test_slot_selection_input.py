@@ -65,7 +65,7 @@ def _cfg(selections: SlotSelectionSet, version: int = 1) -> WorkSlotConfiguratio
 
 # ── pure judgment ─────────────────────────────────────────────────────────────
 def test_complete_slot_bearing_makes_snapshot() -> None:
-    snap = plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]))), 1, NOW)
+    snap = plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]))), NOW)
     assert isinstance(snap, SlotConfigurationSnapshot)
     assert snap.effective_selections == _sel(("s1", ["o1"]))
     assert snap.effective_selection_digest == digest_selection_set(CONTRACT, _sel(("s1", ["o1"])))
@@ -76,24 +76,48 @@ def test_complete_slot_bearing_makes_snapshot() -> None:
 @pytest.mark.parametrize("selections", [_sel(), _sel(("s1", ["gone"]))])  # missing / removed
 def test_incomplete_capture_rejected(selections: SlotSelectionSet) -> None:
     with pytest.raises(SlotSelectionCaptureError) as e:
-        plan_capture(_ctx(_SLOTTED), _cfg(selections), None, NOW)
+        plan_capture(_ctx(_SLOTTED), _cfg(selections), NOW)
     assert e.value.code == "SLOT_CONFIGURATION_INCOMPLETE"
 
 
 def test_no_config_on_slot_bearing_is_incomplete() -> None:
     with pytest.raises(SlotSelectionCaptureError) as e:
-        plan_capture(_ctx(_SLOTTED), None, None, NOW)
+        plan_capture(_ctx(_SLOTTED), None, NOW)
     assert e.value.code == "SLOT_CONFIGURATION_INCOMPLETE"
 
 
 def test_stale_configuration_version_rejected() -> None:
     with pytest.raises(SlotSelectionCaptureError) as e:
-        plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"])), version=3), 1, NOW)
+        plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"])), version=3), NOW,
+                     expected_configuration_presence=True, expected_configuration_version=1)
     assert e.value.code == "STALE_CONFIGURATION"
 
 
+def test_presence_cas() -> None:
+    slotted, cfg = _ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"])), version=2)
+    # presence=True + version 일치 → snapshot
+    assert isinstance(
+        plan_capture(slotted, cfg, NOW, expected_configuration_presence=True,
+                     expected_configuration_version=2),
+        SlotConfigurationSnapshot,
+    )
+    # presence=True + version 불일치 → STALE
+    with pytest.raises(SlotSelectionCaptureError) as e1:
+        plan_capture(slotted, cfg, NOW, expected_configuration_presence=True,
+                     expected_configuration_version=1)
+    assert e1.value.code == "STALE_CONFIGURATION"
+    # presence=False 인데 config 가 생겼음 → STALE(미관찰 선택 캡처 방지)
+    with pytest.raises(SlotSelectionCaptureError) as e2:
+        plan_capture(slotted, cfg, NOW, expected_configuration_presence=False)
+    assert e2.value.code == "STALE_CONFIGURATION"
+    # presence=False + 실제 부재 → 통과(여기선 slot-bearing 이라 INCOMPLETE 로 진행)
+    with pytest.raises(SlotSelectionCaptureError) as e3:
+        plan_capture(slotted, None, NOW, expected_configuration_presence=False)
+    assert e3.value.code == "SLOT_CONFIGURATION_INCOMPLETE"  # CAS 통과 후 완전성에서 걸림
+
+
 def test_slotless_context_without_config() -> None:
-    out = plan_capture(_ctx(_SLOTLESS), None, None, NOW)
+    out = plan_capture(_ctx(_SLOTLESS), None, NOW)
     assert isinstance(out, SlotlessSelectionContext)
     assert out.source_configuration_version is None
     assert out.declared_selection_digest is None
@@ -101,7 +125,7 @@ def test_slotless_context_without_config() -> None:
 
 def test_slotless_context_with_detached_only_config() -> None:
     # slot count 0 이면 Configuration·detached 유무와 무관하게 slotless 를 만든다.
-    out = plan_capture(_ctx(_SLOTLESS), _cfg(_sel(("gone", ["x"])), version=4), None, NOW)
+    out = plan_capture(_ctx(_SLOTLESS), _cfg(_sel(("gone", ["x"])), version=4), NOW)
     assert isinstance(out, SlotlessSelectionContext)
     assert out.source_configuration_version == 4
     assert out.declared_selection_digest == digest_selection_set(CONTRACT, _sel(("gone", ["x"])))
@@ -110,7 +134,7 @@ def test_slotless_context_with_detached_only_config() -> None:
 # ── digest semantics ──────────────────────────────────────────────────────────
 def test_detached_in_declared_not_effective() -> None:
     # config 는 current slot s1 + detached "gone" 을 선언한다.
-    snap = plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]), ("gone", ["x"]))), None, NOW)
+    snap = plan_capture(_ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]), ("gone", ["x"]))), NOW)
     assert isinstance(snap, SlotConfigurationSnapshot)
     assert snap.effective_selection_digest == digest_selection_set(CONTRACT, _sel(("s1", ["o1"])))
     assert snap.declared_selection_digest == digest_selection_set(
@@ -121,10 +145,10 @@ def test_detached_in_declared_not_effective() -> None:
 
 def test_detached_only_clear_keeps_effective_digest() -> None:
     with_detached = plan_capture(
-        _ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]), ("gone", ["x"])), version=1), None, NOW
+        _ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"]), ("gone", ["x"])), version=1), NOW
     )
     cleared = plan_capture(
-        _ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"])), version=2), None, NOW
+        _ctx(_SLOTTED), _cfg(_sel(("s1", ["o1"])), version=2), NOW
     )
     assert isinstance(with_detached, SlotConfigurationSnapshot)
     assert isinstance(cleared, SlotConfigurationSnapshot)
@@ -141,8 +165,8 @@ def test_storage_order_independent_digest() -> None:
             TemplateSlot(id="b", options=(TemplateOption("o2"),)),
         )
     )
-    forward = plan_capture(_ctx(struct), _cfg(_sel(("a", ["o1"]), ("b", ["o2"]))), None, NOW)
-    reverse = plan_capture(_ctx(struct), _cfg(_sel(("b", ["o2"]), ("a", ["o1"]))), None, NOW)
+    forward = plan_capture(_ctx(struct), _cfg(_sel(("a", ["o1"]), ("b", ["o2"]))), NOW)
+    reverse = plan_capture(_ctx(struct), _cfg(_sel(("b", ["o2"]), ("a", ["o1"]))), NOW)
     assert isinstance(forward, SlotConfigurationSnapshot)
     assert isinstance(reverse, SlotConfigurationSnapshot)
     assert forward.effective_selection_digest == reverse.effective_selection_digest
@@ -245,6 +269,21 @@ def test_capture_rejects_stale_application(tmp_path: Path) -> None:
         )
 
 
+def test_capture_rejects_other_workspace_aggregate(tmp_path: Path) -> None:
+    # 같은 Work ID 이지만 다른 workspace 의 aggregate 를 캡처하지 않는다(cross-workspace).
+    from hwpxfiller.application.slot_command import WorkspaceIdentityMismatch
+    from hwpxfiller.application.stored_work_configuration import empty_stored
+
+    store = WorkSlotConfigurationStore(tmp_path / "cfg")
+    store.create(empty_stored("ws-OTHER", "w1"))  # 다른 workspace
+    with pytest.raises(WorkspaceIdentityMismatch):
+        capture_slot_selection_input(
+            store, *_ports(), workspace_instance_id="ws-1",
+            expected_work_authority_id="w1", expected_template_application_id="A1",
+            captured_at=NOW,
+        )
+
+
 def test_capture_slotless_through_fence(tmp_path: Path) -> None:
     store = WorkSlotConfigurationStore(tmp_path / "cfg")
     out = capture_slot_selection_input(
@@ -265,7 +304,8 @@ def test_capture_snapshot_through_fence(tmp_path: Path) -> None:
     )
     out = capture_slot_selection_input(
         store, *ports, workspace_instance_id="ws-1", expected_work_authority_id="w1",
-        expected_template_application_id="A1", expected_configuration_version=2, captured_at=NOW,
+        expected_template_application_id="A1", expected_configuration_presence=True,
+        expected_configuration_version=2, captured_at=NOW,
     )
     assert isinstance(out, SlotConfigurationSnapshot)
     assert out.effective_selections == _sel(("s1", ["o1"]))
