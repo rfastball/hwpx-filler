@@ -223,14 +223,17 @@ def test_commit_guards(tmp_path: Path) -> None:
         store.commit("P", 1, dataclasses.replace(nxt, bound_manifest_digest="sha256:other"))
 
 
-def test_commit_rejects_ledger_truncation(tmp_path: Path) -> None:
+def test_commit_rejects_ledger_reordering(tmp_path: Path) -> None:
     import dataclasses
 
     store = ProfileAdmissionStore(tmp_path)
     stored = _bootstrap()
     store.create(stored)
     nxt = _revoked_next(stored)  # processed_requests = (req-1, req-2)
-    # decision chain prefix 는 지키되 ledger prefix 를 깨면 append-only 위반.
-    forged = dataclasses.replace(nxt, processed_requests=(nxt.processed_requests[1],))
+    # 두 record 를 뒤바꾸면 aggregate 는 여전히 valid(둘 다 존재)하지만 ledger prefix 가 깨진다
+    # → store 의 append-only 가 잡는다(truncation 은 aggregate 불변식이 먼저 잡는다).
+    reordered = dataclasses.replace(
+        nxt, processed_requests=(nxt.processed_requests[1], nxt.processed_requests[0])
+    )
     with pytest.raises(ProfileAdmissionStoreError):
-        store.commit("P", 1, forged)
+        store.commit("P", 1, reordered)

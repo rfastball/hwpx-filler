@@ -152,6 +152,15 @@ def test_registration_initial_decision_validated(tmp_path: Path) -> None:
         )
 
 
+def _other_manifest(pid: str = "P") -> QualificationProfileManifest:
+    return build_manifest(
+        qualification_profile_id=pid, media="hwpx", adapter_contract_version="a1",
+        product_rule_version="p1", operation_alphabet_version="o1",
+        projection_schema_version="hwpx-structure-projection-v1",
+        manifest_payload={"k": "DIFFERENT"}, created_at="t",
+    )
+
+
 def test_idempotent_replay(tmp_path: Path) -> None:
     store = _store(tmp_path)
     first = _init(store, request_id="req-A")
@@ -159,21 +168,94 @@ def test_idempotent_replay(tmp_path: Path) -> None:
     assert replay.replayed and replay.outcome_code == first.outcome_code
 
 
-def test_init_key_reuse_on_different_manifest(tmp_path: Path) -> None:
+def test_reinit_with_different_manifest_digest_is_integrity_error(tmp_path: Path) -> None:
+    # finding 3: 같은 ID 를 다른 manifest digest 로 재초기화(새 request) → integrity, 성공 위장 금지.
     store = _store(tmp_path)
     _init(store, request_id="req-A")
-    # 같은 request_id 를 다른 manifest(다른 digest → 다른 fingerprint)로 재사용 → KEY_REUSED.
-    other = build_manifest(
-        qualification_profile_id="P", media="hwpx", adapter_contract_version="a1",
-        product_rule_version="p1", operation_alphabet_version="o1",
-        projection_schema_version="hwpx-structure-projection-v1",
-        manifest_payload={"k": "DIFFERENT"}, created_at="t",
+    with pytest.raises(ProfileManifestIntegrityError):
+        initialize_qualification_profile_admission(
+            store, FakeManifestPort({"P": _other_manifest()}), FakeRevocationPort({}),
+            qualification_profile_id="P", request_id="req-B", now="t0",
+        )
+
+
+def test_reregister_with_different_manifest_digest_is_integrity_error(tmp_path: Path) -> None:
+    # finding 3: register 도 stored bound digest 와 다르면 ALREADY_INITIALIZED 가 아니라 integrity.
+    store = _store(tmp_path)
+    register_published_qualification_profile_admission(
+        store, FakeManifestPort({"P": _manifest("P")}),
+        exact_profile_manifest_ref="P", initial_decision=ADMITTED,
+        request_id="reg-1", now="t",
+    )
+    with pytest.raises(ProfileManifestIntegrityError):
+        register_published_qualification_profile_admission(
+            store, FakeManifestPort({"P": _other_manifest()}),
+            exact_profile_manifest_ref="P", initial_decision=ADMITTED,
+            request_id="reg-2", now="t",
+        )
+
+
+def test_register_key_reuse_on_different_initial_decision(tmp_path: Path) -> None:
+    # 같은 request_id + 같은 ref 인데 다른 명시 initial_decision → KEY_REUSED.
+    store = _store(tmp_path)
+    port = FakeManifestPort({"P": _manifest("P")})
+    register_published_qualification_profile_admission(
+        store, port, exact_profile_manifest_ref="P", initial_decision=ADMITTED,
+        request_id="reg-1", now="t",
     )
     with pytest.raises(AdmissionIdempotencyKeyReused):
-        initialize_qualification_profile_admission(
-            store, FakeManifestPort({"P": other}), FakeRevocationPort({}),
-            qualification_profile_id="P", request_id="req-A", now="t0",
+        register_published_qualification_profile_admission(
+            store, port, exact_profile_manifest_ref="P", initial_decision=REVOKED,
+            request_id="reg-1", now="t",
         )
+
+
+def test_revocation_record_profile_mismatch_fail_closed(tmp_path: Path) -> None:
+    # finding 2: 남의 profile 을 가리키는 revocation record 로 REVOKED bootstrap 하지 않는다.
+    store = _store(tmp_path)
+    from hwpxfiller.domain.qualification_profile_admission import (
+        ProfileAdmissionIntegrityError,
+    )
+
+    wrong = QualificationProfileRevocation("OTHER", "bad", "auth", "t")
+    with pytest.raises(ProfileAdmissionIntegrityError):
+        initialize_qualification_profile_admission(
+            store, FakeManifestPort({"P": _manifest("P")}),
+            FakeRevocationPort({"P": wrong}),
+            qualification_profile_id="P", request_id="r", now="t",
+        )
+
+
+def test_replay_does_not_touch_ports(tmp_path: Path) -> None:
+    # finding 5: seen request 는 fence 안에서 stored 로만 replay — port 가 죽어도 성립한다.
+    store = _store(tmp_path)
+    _init(store, request_id="req-A")
+
+    class ExplodingManifestPort:
+        def get_manifest(self, pid: str):
+            raise RuntimeError("port down")
+
+    class ExplodingRevocationPort:
+        def get_revocation(self, pid: str):
+            raise RuntimeError("port down")
+
+    replay = initialize_qualification_profile_admission(
+        store, ExplodingManifestPort(), ExplodingRevocationPort(),
+        qualification_profile_id="P", request_id="req-A", now="t0",
+    )
+    assert replay.replayed and replay.outcome_code == INITIALIZED_ADMITTED
+
+
+def test_replay_reflects_first_outcome_not_current_chain(tmp_path: Path) -> None:
+    # finding 1: 이후 revocation 이 있어도 최초 Initialize replay 는 그 최초 outcome/관찰을 낸다.
+    store = _store(tmp_path)
+    _init(store, request_id="req-A")
+    _revoke(store, request_id="rev-1")  # 이후 REVOKED
+    replay = _init(store, request_id="req-A")
+    assert replay.replayed
+    assert replay.outcome_code == INITIALIZED_ADMITTED  # 최초 outcome
+    assert replay.observation.state == ADMITTED  # current(REVOKED) 가 아니라 최초 관찰
+    assert replay.observation.policy_version == 1
 
 
 def test_second_request_onto_existing_is_already_initialized(tmp_path: Path) -> None:
@@ -280,6 +362,20 @@ def test_summary_reflects_current_after_revoke(tmp_path: Path) -> None:
     _revoke(store)
     summary = read_qualification_profile_admission_summary(store, "P")
     assert summary is not None and summary.state == REVOKED
+
+
+def test_register_same_request_replays(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    port = FakeManifestPort({"P": _manifest("P")})
+    first = register_published_qualification_profile_admission(
+        store, port, exact_profile_manifest_ref="P", initial_decision=ADMITTED,
+        request_id="reg-1", now="t",
+    )
+    replay = register_published_qualification_profile_admission(
+        store, port, exact_profile_manifest_ref="P", initial_decision=ADMITTED,
+        request_id="reg-1", now="t",
+    )
+    assert replay.replayed and replay.outcome_code == first.outcome_code
 
 
 def test_register_onto_existing_is_already_initialized(tmp_path: Path) -> None:

@@ -77,6 +77,39 @@ class AdmissionIdempotencyRecord:
             raise StoredProfileAdmissionError("terminal_outcome 은 AdmissionOutcome 이어야 한다")
 
 
+def _validate_ledger_against_chain(
+    decisions: tuple[AdmissionDecision, ...],
+    processed_requests: tuple[AdmissionIdempotencyRecord, ...],
+) -> None:
+    """checksum 만 통과한 envelope 를 ledger↔chain 정합으로 한번 더 닫는다(fail-closed).
+
+    - 각 decision 을 만든 request_id 는 반드시 ledger 에 남아 있어야 한다(창작자 누락 금지).
+    - 각 ledger outcome 은 자기가 가리키는 policy_version 의 chain snapshot(state·decision_ref)과
+      일치해야 한다 — unknown state·존재하지 않는 version·남의 profile decision_ref 를 거절한다.
+    """
+    by_version = {d.policy_version: d for d in decisions}  # version 은 chain 검증이 유일 보장
+    ledger_requests = {r.request_id for r in processed_requests}
+    for decision in decisions:
+        if decision.request_id not in ledger_requests:
+            raise StoredProfileAdmissionError(
+                f"decision v{decision.policy_version} 을 만든 request 가 ledger 에 없음"
+            )
+    for record in processed_requests:
+        outcome = record.terminal_outcome
+        snapshot = by_version.get(outcome.resulting_policy_version)
+        if snapshot is None:
+            raise StoredProfileAdmissionError(
+                f"ledger outcome 이 없는 policy_version {outcome.resulting_policy_version} 을 가리킴"
+            )
+        if (
+            outcome.resulting_state != snapshot.state
+            or outcome.current_decision_ref != snapshot.decision_ref
+        ):
+            raise StoredProfileAdmissionError(
+                f"ledger outcome 이 chain snapshot(v{outcome.resulting_policy_version})과 불일치"
+            )
+
+
 @dataclass(frozen=True)
 class StoredProfileAdmission:
     """한 Profile 의 durable admission aggregate."""
@@ -123,6 +156,7 @@ class StoredProfileAdmission:
                     f"request_id 당 record 는 최대 하나: {record.request_id}"
                 )
             seen.add(record.request_id)
+        _validate_ledger_against_chain(self.decisions, self.processed_requests)
 
 
 def bootstrap_stored(

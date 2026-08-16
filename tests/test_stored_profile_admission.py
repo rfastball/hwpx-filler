@@ -214,3 +214,25 @@ def test_decode_rejects_malformed_outcome() -> None:
     good["processed_requests"][0]["terminal_outcome"] = "not-a-dict"
     with pytest.raises(StoredProfileAdmissionError):
         decode_stored(good)
+
+
+# ── finding 4: ledger ↔ chain 정합(checksum 만으로는 안 닫힌다) ────────────────────
+def test_decode_rejects_decision_creator_missing_from_ledger() -> None:
+    good = encode_stored(_bootstrap(ADMITTED))
+    good["processed_requests"][0]["request_id"] = "someone-else"  # decision.request 는 req-1
+    with pytest.raises(StoredProfileAdmissionError):
+        decode_stored(good)
+
+
+def test_decode_rejects_ledger_outcome_state_mismatch() -> None:
+    good = encode_stored(_bootstrap(ADMITTED))
+    good["processed_requests"][0]["terminal_outcome"]["resulting_state"] = REVOKED
+    with pytest.raises(StoredProfileAdmissionError):
+        decode_stored(good)
+
+
+def test_decode_rejects_ledger_outcome_nonexistent_version() -> None:
+    good = encode_stored(_bootstrap(ADMITTED))
+    good["processed_requests"][0]["terminal_outcome"]["resulting_policy_version"] = 9
+    with pytest.raises(StoredProfileAdmissionError):
+        decode_stored(good)
