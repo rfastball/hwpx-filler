@@ -112,6 +112,14 @@ def test_non_tuple_shapes_rejected() -> None:
         SlotSelectionSet(("not-a-selection",))  # type: ignore[arg-type]
 
 
+def test_registry_rejects_manifest_with_default_outside_supported() -> None:
+    inconsistent = SelectionSemanticContractManifest(
+        "slot-selection/bad", "s", "c", EXACTLY_ONE, (), "v"
+    )
+    with pytest.raises(SelectionContractIntegrityError):
+        SelectionSemanticContractRegistry([(_V1_KEY, inconsistent)])
+
+
 def test_registry_get_unknown_contract_rejected() -> None:
     with pytest.raises(UnsupportedSelectionSemanticContractError):
         DEFAULT_SELECTION_SEMANTIC_REGISTRY.get("slot-selection/nope")

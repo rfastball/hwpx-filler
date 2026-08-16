@@ -141,6 +141,10 @@ class SelectionSemanticContractRegistry:
         self._by_key: dict[SelectionSemanticBindingKey, str] = {}
         self._by_id: dict[str, SelectionSemanticContractManifest] = {}
         for key, manifest in bindings:
+            if manifest.default_selection_policy not in manifest.supported_selection_policies:
+                raise SelectionContractIntegrityError(
+                    f"default policy 가 supported 밖: {manifest.contract_id}"
+                )
             existing = self._by_id.get(manifest.contract_id)
             if existing is not None and existing != manifest:
                 raise SelectionContractIntegrityError(

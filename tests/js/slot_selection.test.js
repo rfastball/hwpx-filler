@@ -74,6 +74,17 @@ test("lone surrogate rejected", () => {
   );
 });
 
+test("non-array option collection rejected", () => {
+  // 역직렬화·bridge 입력이 문자열이면 char 를 option 으로 오인하지 않고 거절한다.
+  assert.throws(
+    () =>
+      validateSelectionSet({
+        selections: [{ slotId: "s", selectedOptionIds: "opt" }],
+      }),
+    (err) => err instanceof SlotSelectionError && err.code === "INVALID_SELECTION_SET",
+  );
+});
+
 test("duplicate slot entry rejected", () => {
   assert.throws(
     () =>

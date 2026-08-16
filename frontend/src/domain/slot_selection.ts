@@ -62,6 +62,12 @@ export interface SlotSelectionSet {
 
 /** 구문 불변식을 강제한다 — 값 모델 생성지에서 부른다. */
 export function validateSelectionSet(set: SlotSelectionSet): SlotSelectionSet {
+  if (!Array.isArray(set.selections)) {
+    throw new SlotSelectionError(
+      "INVALID_SELECTION_SET",
+      "selections 는 배열이어야 한다",
+    );
+  }
   const seenSlots = new Set<string>();
   for (const selection of set.selections) {
     requireScalarText(selection.slotId, "slot_id");
@@ -72,6 +78,14 @@ export function validateSelectionSet(set: SlotSelectionSet): SlotSelectionSet {
       );
     }
     seenSlots.add(selection.slotId);
+    // 역직렬화·bridge 입력이 문자열이면 length·iteration 이 문자를 option 으로
+    // 오인한다 — Python 의 tuple 검사와 parity 를 위해 배열을 먼저 강제한다.
+    if (!Array.isArray(selection.selectedOptionIds)) {
+      throw new SlotSelectionError(
+        "INVALID_SELECTION_SET",
+        "selected_option_ids 는 배열이어야 한다",
+      );
+    }
     if (selection.selectedOptionIds.length === 0) {
       throw new SlotSelectionError(
         "INVALID_SELECTION_SET",
