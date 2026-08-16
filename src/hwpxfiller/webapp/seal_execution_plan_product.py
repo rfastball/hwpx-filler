@@ -85,6 +85,7 @@ from ..application.seal_execution_plan import (
 from ..application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
+    FirstSeenSealCommandRecord,
     PlanPublished,
     RequestedVersionSelector,
     SealTerminalOutcome,
@@ -308,6 +309,10 @@ class SealExecutionPlanProduct:
             requested_execution_base_kind=command.requested_execution_base_kind,
             **_selectors(command),
         )
+        # 봉인 dispatch 전에 signing dependency(HMAC secret)를 preflight·retain 한다 — seal 은
+        # request ID 를 소비·commit 하므로, 그 뒤에 secret 이 손상/부재면 durable outcome 이 기록됐는데도
+        # ref 발급이 실패해 재시도가 이미 소비된 request 만 replay 하는 stranded 상태가 된다(finding 3).
+        secret = self._load_secret()
         result = seal_execution_plan(
             inner,
             plan_store=self._plan_store,
@@ -323,15 +328,15 @@ class SealExecutionPlanProduct:
         )
         work_id = result.record.request_intent_fingerprint.work_authority_id
         outcome = result.terminal_outcome
+        # commit 뒤엔 fallible work 를 하지 않는다 — ref 는 반환된 record 로만 구성하고 preloaded
+        # secret 으로 서명한다(store 재조회·secret 재로딩 없음).
         opaque_ref = (
-            self._issue_reference(ws, work_id, outcome)
+            self._issue_reference(ws, work_id, outcome, result.record, secret)
             if isinstance(outcome, PlanPublished)
             else None
         )
         command_outcome = self._map_command_outcome(outcome, opaque_ref)
-        fresh = self._observe(
-            ws, work_id, outcome, result.record.resolved_seal_policy, opaque_ref
-        )
+        fresh = self._observe(ws, work_id, outcome, inner, opaque_ref)
         return SealExecutionPlanResponse(
             command_outcome=command_outcome,
             command_replayed=result.replayed,
@@ -364,15 +369,9 @@ class SealExecutionPlanProduct:
             raise _reject(
                 PLAN_REFERENCE_UNRESOLVABLE, "ref 가 가리키는 Plan 을 store 에서 찾을 수 없다"
             )
-        try:
-            fresh: FreshExecutionObservation = self._observe_published_plan(
-                ws, work_id, aggregate, claims.plan_semantic_digest, opaque_plan_ref
-            )
-        except (SealAttemptError, ObservationRetryExhausted) as exc:
-            # fresh observation 실패는 exact digest resolve(historical fact)를 막지 않는다.
-            fresh = ExecutionObservationContextError(
-                EXECUTION_OBSERVATION_CONTEXT_ERROR, str(exc)
-            )
+        # fresh observation 실패는 exact digest resolve(historical fact)를 막지 않는다(_fresh_published
+        # 가 fresh 축만 degrade). historical store 손상은 위 store 접근에서 이미 surface 된다.
+        fresh = self._fresh_published(ws, work_id, aggregate, claims.plan_semantic_digest, opaque_plan_ref)
         return ResolvedPlanReference(
             plan_semantic_digest=claims.plan_semantic_digest,
             plan_schema_version=claims.plan_schema_version,
@@ -408,25 +407,29 @@ class SealExecutionPlanProduct:
         return StaleExecutionBasisProductOutcome(stale_reason=outcome.stale_reason)
 
     def _issue_reference(
-        self, ws: str, work_id: str, outcome: PlanPublished
+        self,
+        ws: str,
+        work_id: str,
+        outcome: PlanPublished,
+        record: FirstSeenSealCommandRecord,
+        secret: bytes,
     ) -> str:
-        # Plan record 에서 plan schema·encoding 을 되읽어 ref claims 에 결속한다(digest 만이 아니라).
-        aggregate = self._plan_store.load_or_empty(work_id, ws)
-        plan = aggregate.plans_by_semantic_digest[outcome.plan_semantic_digest]
+        # commit 뒤 fallible work 0: plan schema·encoding 을 반환된 record 의 resolved policy 에서
+        # 되읽고(store 재조회 없음) preloaded secret 으로 서명한다. store 는 이 둘이 plan payload 와
+        # 일치함을 apply_publish 에서 이미 강제했으므로 record 가 권위다(finding 3).
+        policy = record.resolved_seal_policy
         claims = OpaquePlanReferenceClaims(
             ref_schema_version=PLAN_REF_SCHEMA_VERSION,
             ref_purpose=PLAN_REF_PURPOSE,
             workspace_instance_id=ws,
             work_authority_id=work_id,
             plan_semantic_digest=outcome.plan_semantic_digest,
-            plan_schema_version=plan.semantic_payload_encoded["plan_schema_version"],
-            canonical_encoding_version=(
-                plan.semantic_payload_encoded["canonical_encoding_version"]
-            ),
+            plan_schema_version=policy.plan_schema_version,
+            canonical_encoding_version=policy.canonical_encoding_version,
             actor_binding_digest=self._actor_binding(ws),
             issued_at=self._clock(),
         )
-        return sign_plan_reference(claims, self._load_secret())
+        return sign_plan_reference(claims, secret)
 
     # ── fresh observation dispatch ────────────────────────────────────────────────
     def _observe(
@@ -434,19 +437,51 @@ class SealExecutionPlanProduct:
         ws: str,
         work_id: str,
         outcome: SealTerminalOutcome,
-        record_policy: ResolvedSealPolicy,
+        command: SealExecutionPlanCommand,
         opaque_ref: "str | None",
     ) -> FreshExecutionObservation:
+        if isinstance(outcome, PlanPublished):
+            assert opaque_ref is not None
+            # historical store 접근은 degrade 밖 — 손상이면 surface(fresh 축이 아니라 store 무결성).
+            aggregate = self._plan_store.load_or_empty(work_id, ws)
+            return self._fresh_published(
+                ws, work_id, aggregate, outcome.plan_semantic_digest, opaque_ref
+            )
+        # 비-published: current Work sealability 를 fresh 관찰(historical store read 없음).
+        return self._degrade(lambda: self._observe_current_work(ws, work_id, command))
+
+    def _fresh_published(
+        self,
+        ws: str,
+        work_id: str,
+        aggregate: WorkExecutionPlanAggregate,
+        plan_digest: str,
+        opaque_ref: str,
+    ) -> FreshExecutionObservation:
+        """historical store-derived setup(손상이면 surface) + fresh 관찰(실패면 context error)."""
+        # 이 setup 은 historical store 를 읽는다 — plan 부재·ledger 손상은 degrade 하지 않고 surface.
+        plan = aggregate.plans_by_semantic_digest[plan_digest]
+        plan_basis_digest = plan.semantic_payload_encoded["execution_basis_digest"]
+        plan_app_id = plan.semantic_payload_encoded["execution_basis"]["template"][
+            "template_application_id"
+        ]
+        policy = self._resolved_policy_for_plan(aggregate, plan)
+        return self._degrade(
+            lambda: self._observe_published_plan(
+                ws, work_id, plan_basis_digest, plan_app_id, policy, opaque_ref
+            )
+        )
+
+    def _degrade(
+        self, observe: Callable[[], FreshExecutionObservation]
+    ) -> FreshExecutionObservation:
+        """fresh observation 은 best-effort 다: observation-only port(summary·shipping·admission·
+        capture·compile) 실패는 ExecutionObservationContextError 로 강등해 historical outcome 을
+        보존한다. historical store 접근은 이 호출 **전에** 끝나 손상은 여기서 삼켜지지 않는다(finding 2).
+        """
         try:
-            if isinstance(outcome, PlanPublished):
-                assert opaque_ref is not None
-                aggregate = self._plan_store.load_or_empty(work_id, ws)
-                return self._observe_published_plan(
-                    ws, work_id, aggregate, outcome.plan_semantic_digest, opaque_ref
-                )
-            return self._observe_current_work(ws, work_id, record_policy)
-        except (SealAttemptError, ObservationRetryExhausted) as exc:
-            # fresh observation 실패는 historical outcome 을 소거하지 않는다 — 이 축만 context error.
+            return observe()
+        except Exception as exc:  # noqa: BLE001 - fresh 축 전용 degrade(store 접근은 이미 완료)
             return ExecutionObservationContextError(
                 EXECUTION_OBSERVATION_CONTEXT_ERROR, str(exc)
             )
@@ -455,16 +490,11 @@ class SealExecutionPlanProduct:
         self,
         ws: str,
         work_id: str,
-        aggregate: WorkExecutionPlanAggregate,
-        plan_digest: str,
+        plan_basis_digest: str,
+        plan_app_id: str,
+        policy: ResolvedSealPolicy,
         opaque_ref: str,
     ) -> PublishedPlanObservation:
-        plan = aggregate.plans_by_semantic_digest[plan_digest]
-        basis = plan.semantic_payload_encoded["execution_basis"]
-        plan_basis_digest = plan.semantic_payload_encoded["execution_basis_digest"]
-        plan_app_id = basis["template"]["template_application_id"]
-        policy = self._resolved_policy_for_plan(aggregate, plan)
-
         for _ in range(self._attempts):
             observed = self._read_summary(ws, work_id)
             with self._profile_fence(observed.qualification_profile_id):
@@ -519,7 +549,7 @@ class SealExecutionPlanProduct:
         raise ObservationRetryExhausted("fresh observation Profile discovery 재시도 소진")
 
     def _observe_current_work(
-        self, ws: str, work_id: str, policy: ResolvedSealPolicy
+        self, ws: str, work_id: str, command: SealExecutionPlanCommand
     ) -> CurrentWorkExecutionObservation:
         for _ in range(self._attempts):
             observed = self._read_summary(ws, work_id)
@@ -528,6 +558,10 @@ class SealExecutionPlanProduct:
                     exact = self._read_summary(ws, work_id)
                     if exact.qualification_profile_id != observed.qualification_profile_id:
                         continue
+                    # CURRENT shipping policy 를 fresh resolve 한다 — durable first-seen record
+                    # policy 를 재사용하면 AUTO default 가 바뀐 뒤 obsolete contract 로 관찰하게 된다
+                    # (finding 1: historical 과 fresh 는 recorded policy 를 공유하지 않는다).
+                    policy = self._resolve_policy(command, exact)
                     current = self._capture(
                         ws, work_id, exact.template_application_id,
                         exact.qualification_profile_id, policy,

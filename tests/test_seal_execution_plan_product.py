@@ -78,8 +78,9 @@ from hwpxfiller.domain.qualification_profile_admission import (
 from hwpxfiller.external.profile_admission_runner import (
     read_qualification_profile_admission_under_fence,
 )
+from hwpxfiller.application.stored_execution_plan import ExecutionPlanStoreIntegrityError
 from hwpxfiller.external.profile_admission_store import ProfileAdmissionStore
-from hwpxfiller.external.slot_token_secret import SlotTokenSecretStore
+from hwpxfiller.external.slot_token_secret import SlotTokenSecretError, SlotTokenSecretStore
 from hwpxfiller.external.work_execution_plan_store import WorkExecutionPlanStore
 from hwpxfiller.webapp.seal_execution_plan_product import (
     ExecutionPolicyBlockedProductOutcome,
@@ -670,6 +671,76 @@ def test_current_work_observation_domain_blocked(tmp_path) -> None:
     assert isinstance(obs, CurrentWorkExecutionObservation)
     assert obs.current_sealability == "DOMAIN_BLOCKED"
     assert obs.normalized_blockers_or_policy  # nonempty
+
+
+# ══ Codex #723 findings ════════════════════════════════════════════════════════════════
+def test_current_work_observation_uses_fresh_policy_not_recorded(tmp_path) -> None:
+    # finding 1: 비-published fresh observation 은 durable first-seen record policy 를 재사용하지
+    # 않고 CURRENT shipping policy 를 fresh resolve 한다(AUTO default 가 바뀌어도 obsolete 아님).
+    resolver = Resolver(policy_resolution_version="v1")
+    h = _product(tmp_path, _stale_world(), resolver=resolver)
+    first = h.product.seal_execution_plan(_pcmd("r1"))
+    assert isinstance(first.command_outcome, StaleExecutionBasisProductOutcome)
+    resolver.policy_over["policy_resolution_version"] = "v2"  # 서버 shipping default 변경
+    seen: list[str] = []
+    orig = h.world.capture
+
+    def spy(ws, wid, app, prof, policy):
+        seen.append(policy.policy_resolution_version)
+        return orig(ws, wid, app, prof, policy)
+
+    h.product._capture = spy
+    resp = h.product.seal_execution_plan(_pcmd("r1"))  # replay → fresh current-work observation
+    assert isinstance(resp.command_outcome, StaleExecutionBasisProductOutcome)  # historical 보존
+    assert isinstance(resp.fresh_observation, CurrentWorkExecutionObservation)
+    assert seen and all(v == "v2" for v in seen)  # CURRENT policy, recorded v1 아님
+
+
+def test_observation_port_failure_degrades_keeps_historical_outcome(tmp_path) -> None:
+    # finding 2: observation-only port(admission read) 실패는 historical outcome 을 소거하지 않고
+    # 이 축만 context error 로 강등한다.
+    h = _product(tmp_path, runtime=_admitting_runtime)
+    h.product.seal_execution_plan(_pcmd("r1"))
+
+    def boom(_pid):
+        raise RuntimeError("corrupt profile-admission read")
+
+    h.product._read_admission = boom
+    resp = h.product.seal_execution_plan(_pcmd("r1"))  # replay published + observe
+    assert isinstance(resp.command_outcome, PlanPublishedProductOutcome)  # 보존
+    assert isinstance(resp.fresh_observation, ExecutionObservationContextError)
+
+
+def test_historical_store_corruption_surfaces_not_masked(tmp_path) -> None:
+    # finding 2 반대면: historical plan store 손상은 fresh 축 degrade 로 삼켜지지 않고 surface 한다.
+    h, ref, _ = _publish_and_ref(tmp_path)
+
+    class _BoomStore:
+        def load_or_empty(self, *_a, **_k):
+            raise ExecutionPlanStoreIntegrityError("corrupt aggregate")
+
+    h.product._plan_store = _BoomStore()
+    with pytest.raises(ExecutionPlanStoreIntegrityError):
+        h.product.resolve_plan_reference(ref, "job-ref", WS)
+
+
+def test_corrupt_secret_fails_before_consuming_request(tmp_path) -> None:
+    # finding 3: signing dependency(HMAC secret)는 seal dispatch 전에 preflight 된다 — 손상이면
+    # request 를 소비하기 전에 실패하고, secret 을 고치면 같은 request 가 정상 봉인된다(stranded 아님).
+    state: dict[str, "bytes | None"] = {"secret": None}
+
+    def load_secret() -> bytes:
+        if state["secret"] is None:
+            raise SlotTokenSecretError("secret 손상")
+        return state["secret"]
+
+    h = _product(tmp_path, load_secret=load_secret)
+    with pytest.raises(SlotTokenSecretError):
+        h.product.seal_execution_plan(_pcmd("r1"))
+    assert not h.plan_store.exists(WORK)  # commit 전에 실패 — request 미소비
+    state["secret"] = b"\x33" * 32
+    resp = h.product.seal_execution_plan(_pcmd("r1"))  # 같은 request 가 이제 정상 봉인
+    assert isinstance(resp.command_outcome, PlanPublishedProductOutcome)
 
 
 def test_capture_context_error_currentness(tmp_path) -> None:
