@@ -25,7 +25,11 @@ from hwpxfiller.application.template_qualification import (
     TemplateSlot,
     TemplateStructure,
 )
-from hwpxfiller.application.work_slot_configuration import EMPTY, WorkSlotConfigurationDraft
+from hwpxfiller.application.work_slot_configuration import (
+    EMPTY,
+    RECONCILED_FROM_PREDECESSOR,
+    WorkSlotConfigurationDraft,
+)
 from hwpxfiller.domain.slot_selection import (
     CARDINALITY_VIOLATION,
     MISSING_REQUIRED_SELECTION,
@@ -34,6 +38,7 @@ from hwpxfiller.domain.slot_selection import (
     SelectionSemanticContractManifest,
     SlotSelection,
     SlotSelectionSet,
+    declared_selection_digest,
 )
 
 V1 = DEFAULT_SELECTION_SEMANTIC_REGISTRY.get("slot-selection/v1")
@@ -211,6 +216,57 @@ def test_integrity_gates_fail_closed(apps) -> None:
 def test_missing_target_application_rejected() -> None:
     with pytest.raises(ReconciliationIntegrityError):
         find_nearest_predecessor_configuration("ghost", {}, {})
+
+
+def test_epoch_skip_rejected() -> None:
+    # epoch 3 → 1 직접(중간 epoch 2 를 건너뜀) → tombstone 우회 위험이라 거절.
+    apps = {"A3": _app("A3", "A1", 3), "A1": _app("A1", None, 1)}
+    with pytest.raises(ReconciliationIntegrityError):
+        find_nearest_predecessor_configuration("A3", apps, {})
+
+
+def test_corruption_past_nearest_config_still_fails_closed() -> None:
+    # nearest(A2) 에 config 가 있어도 그 뒤 chain 의 dangling 을 신뢰하지 않는다.
+    apps = {"A3": _app("A3", "A2", 3), "A2": _app("A2", "A_ghost", 2)}
+    configs = {"A2": _draft("A2", _sel(("s", ["A"])))}
+    with pytest.raises(ReconciliationIntegrityError):
+        find_nearest_predecessor_configuration("A3", apps, configs)
+
+
+def _reconciled(app_id, from_app, from_version, from_digest) -> WorkSlotConfigurationDraft:
+    return WorkSlotConfigurationDraft(
+        work_id="W", base_template_application_id=app_id, version=1,
+        selections=_sel(("s", ["A"])), origin=RECONCILED_FROM_PREDECESSOR,
+        reconciled_from_application_id=from_app, reconciled_from_version=from_version,
+        reconciled_from_declared_selection_digest=from_digest,
+        created_at=NOW, updated_at=NOW,
+    )
+
+
+def test_coherent_reconciled_provenance_accepted() -> None:
+    # A2 가 A1 에서 reconciled 됐고 version·digest 가 A1 config 와 일치 → 통과.
+    apps = {"A3": _app("A3", "A2", 3), "A2": _app("A2", "A1", 2), "A1": _app("A1", None, 1)}
+    a1 = _draft("A1", _sel(("s", ["OLD"])))
+    a2 = _reconciled("A2", "A1", a1.version, declared_selection_digest(a1.selections))
+    found = find_nearest_predecessor_configuration("A3", apps, {"A1": a1, "A2": a2})
+    assert found.base_template_application_id == "A2"
+
+
+@pytest.mark.parametrize(
+    "from_app,from_version,from_digest_ok",
+    [
+        ("A_missing", 1, True),  # dangling
+        ("A1", 99, True),  # version 불일치
+        ("A1", 1, False),  # digest 불일치
+    ],
+)
+def test_stale_reconciled_provenance_rejected(from_app, from_version, from_digest_ok) -> None:
+    apps = {"A3": _app("A3", "A2", 3), "A2": _app("A2", "A1", 2), "A1": _app("A1", None, 1)}
+    a1 = _draft("A1", _sel(("s", ["OLD"])))
+    digest = declared_selection_digest(a1.selections) if from_digest_ok else "sha256:x"
+    a2 = _reconciled("A2", from_app, from_version, digest)
+    with pytest.raises(ReconciliationIntegrityError):
+        find_nearest_predecessor_configuration("A3", apps, {"A1": a1, "A2": a2})
 
 
 def test_cross_work_chain_rejected() -> None:

@@ -22,7 +22,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from hwpxfiller.application.template_qualification import TemplateStructure
-from hwpxfiller.application.work_slot_configuration import WorkSlotConfigurationDraft
+from hwpxfiller.application.work_slot_configuration import (
+    RECONCILED_FROM_PREDECESSOR,
+    WorkSlotConfigurationDraft,
+)
 from hwpxfiller.domain.slot_selection import (
     CARDINALITY_VIOLATION,
     MISSING_REQUIRED_SELECTION,
@@ -221,8 +224,11 @@ def find_nearest_predecessor_configuration(
         raise ReconciliationIntegrityError(
             f"target application {target_application_id} 부재"
         )
+    # nearest config 를 찾더라도 chain 전체를 끝까지 걸어 무결성을 검증한 뒤 돌려준다 —
+    # nearest 뒤쪽의 cycle·epoch skip·dangling 을 조용히 신뢰하지 않는다(fail-closed).
     seen: set[str] = {target.application_id}
     current = target
+    nearest: WorkSlotConfigurationDraft | None = None
     while current.previous_application_id is not None:
         prev = applications.get(current.previous_application_id)
         if prev is None:
@@ -235,16 +241,47 @@ def find_nearest_predecessor_configuration(
             )
         if prev.work_id != target.work_id:
             raise ReconciliationIntegrityError("chain 이 다른 Work 를 가리킨다")
-        if prev.application_epoch >= current.application_epoch:
+        # previous 는 정확히 한 epoch 아래여야 한다(Application 생성이 current+1) — skip 은
+        # 중간 empty tombstone 을 건너뛰어 오래된 선택을 부활시킬 수 있어 거절한다.
+        if prev.application_epoch != current.application_epoch - 1:
             raise ReconciliationIntegrityError(
-                "epoch 이 previous 로 갈수록 정확히 감소하지 않는다"
+                "previous epoch 이 정확히 1 감소하지 않는다(skip·역행)"
             )
         seen.add(prev.application_id)
         config = configurations.get(prev.application_id)
         if config is not None:
-            return config  # nearest — empty 여도 barrier 로 멈춘다
+            # chain 안 모든 Configuration provenance 검증(#684 가 #676 으로 미룬 참조 무결성).
+            # nearest 는 첫 발견만 기록하되 검증·chain 순회는 끝까지 이어간다.
+            _validate_configuration_provenance(config, configurations)
+            if nearest is None:
+                nearest = config
         current = prev
-    return None
+    return nearest
+
+
+def _validate_configuration_provenance(
+    config: WorkSlotConfigurationDraft,
+    configurations: Mapping[str, WorkSlotConfigurationDraft],
+) -> None:
+    """RECONCILED Configuration 의 predecessor 참조가 실재·version·digest 로 일치하는지 확인한다.
+
+    #684 의 `WorkSlotConfigurationAggregate.__post_init__` 이 존재·version·digest 대조를
+    successor reconciliation(여기)으로 명시 미뤘다 — 그 audit 무결성을 여기서 닫는다.
+    """
+    if config.origin != RECONCILED_FROM_PREDECESSOR:
+        return
+    source = configurations.get(config.reconciled_from_application_id or "")
+    if source is None:
+        raise ReconciliationIntegrityError(
+            "reconciled_from Configuration 이 aggregate 에 없다(유령 승계)"
+        )
+    if source.version != config.reconciled_from_version:
+        raise ReconciliationIntegrityError("reconciled_from version 이 provenance 와 불일치")
+    if (
+        declared_selection_digest(source.selections)
+        != config.reconciled_from_declared_selection_digest
+    ):
+        raise ReconciliationIntegrityError("reconciled_from digest 가 provenance 와 불일치")
 
 
 @dataclass(frozen=True)
