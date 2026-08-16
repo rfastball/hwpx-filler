@@ -133,7 +133,8 @@ def _grant(_work, _actor):
 
 def _apply(wstore, cstore, qstore, change_id="C1", app_id="A2", authorize=_grant):
     return apply_prepared_change(
-        wstore, cstore, qstore, work_id="W1", change_id=change_id, actor="t", authorize=authorize,
+        wstore, cstore, qstore, workspace_instance_id="ws-test",
+        work_id="W1", change_id=change_id, actor="t", authorize=authorize,
         new_application_id=app_id, provenance_id="PR1", outbox_event_id="OB1", applied_at="t8",
     )
 
