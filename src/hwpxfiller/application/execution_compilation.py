@@ -23,9 +23,9 @@ operation order 는 **product structure 순서**(Slot·Option 선언 순서)와 
 **structural_order**(S5-03 이 고정한 stable projection fact)만 쓴다 — live native package
 traversal 에 의존하지 않는다.
 
-digest seam: byte framing·SHA-256 은 S5-06 소유. 여기서는 semantic payload + stable ordering
-만 고정하고 :func:`content_digest` 로 주소화한다
-(# ponytail: 로컬 canonical dict 인코더, S5-06 이 closed byte framing 으로 대체).
+digest seam: byte framing·SHA-256 은 S5-06 closed canonical set
+(:mod:`hwpxfiller.domain.canonical_execution_encoding`). 여기서는 semantic payload + stable
+ordering 을 고정하고 그 canonical encoder 로 주소화한다.
 """
 
 from __future__ import annotations
@@ -55,11 +55,11 @@ from hwpxfiller.application.execution_structure import (
     ExecutionTemplateStructure,
     FieldOccurrence,
 )
-from hwpxfiller.application.qualification_evidence import content_digest
 from hwpxfiller.application.slot_selection_input import (
     SlotConfigurationSnapshot,
     SlotlessSelectionContext,
 )
+from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     EXACT_BLANK_POLICY,
@@ -243,8 +243,7 @@ class QualifiedExecutionCompilation:
     active_field_requirements: tuple[ActiveFieldRequirement, ...]
     ordered_operations: tuple[ExecutionOperation, ...]
     execution_basis_semantic_payload: Mapping[str, Any]
-    # ponytail: byte framing·SHA-256 은 S5-06 소유. 지금은 canonical JSON sha256(content_digest)로
-    # 이 semantic payload seam 을 주소화한다.
+    # byte framing·SHA-256 은 S5-06 closed canonical set(domain.canonical_execution_encoding).
     execution_basis_semantic_digest: str
 
 
@@ -415,8 +414,12 @@ def _encode_operation(op: ExecutionOperation) -> dict[str, Any]:
     return {"op": "APPLY_FIELD_BINDING", "field_id": op.field_id}
 
 
-def _active_binding_digest(rules: tuple[EffectiveFieldBindingRule, ...]) -> str:
-    # 저장/제시 순서가 아니라 field_id 정렬로 identity — 순서 perturbation 에 불변.
+def active_binding_digest(rules: tuple[EffectiveFieldBindingRule, ...]) -> str:
+    """effective active binding 규칙의 content-address(S5-06 closed canonical framing).
+
+    저장/제시 순서가 아니라 field_id 정렬로 identity — 순서 perturbation 에 불변. S5-06 decode
+    verification 이 EffectiveFieldBindingBasis.active_binding_digest 를 이 함수로 재계산·대조한다.
+    """
     payload = sorted(
         (
             {
@@ -428,11 +431,12 @@ def _active_binding_digest(rules: tuple[EffectiveFieldBindingRule, ...]) -> str:
         ),
         key=lambda d: d["field_id"],
     )
-    return content_digest(payload)
+    return canonical_execution_digest(payload)
 
 
-def _source_key_set_digest(keys: tuple[str, ...]) -> str:
-    return content_digest(sorted(keys, key=lambda k: k.encode("utf-8")))
+def required_source_key_set_digest(keys: tuple[str, ...]) -> str:
+    """required source key set 의 content-address — unsigned UTF-8 byte order(순서 무관)."""
+    return canonical_execution_digest(sorted(keys, key=lambda k: k.encode("utf-8")))
 
 
 def _exact_basis_semantic(captured: CapturedExecutionInput) -> dict[str, Any]:
@@ -734,11 +738,11 @@ def qualify_and_compile_execution(
     effective_pairs = tuple(sorted(selected))
     binding_basis = EffectiveFieldBindingBasis(
         effective_active_binding_rules=tuple(effective_rules),
-        active_binding_digest=_active_binding_digest(tuple(effective_rules)),
+        active_binding_digest=active_binding_digest(tuple(effective_rules)),
         required_source_keys=tuple(
             sorted(required_source_keys, key=lambda k: k.encode("utf-8"))
         ),
-        required_source_key_set_digest=_source_key_set_digest(
+        required_source_key_set_digest=required_source_key_set_digest(
             tuple(required_source_keys)
         ),
     )
@@ -773,5 +777,5 @@ def qualify_and_compile_execution(
         ordered_operations=ordered_operations,
         # digest 는 raw dict 에서, 노출은 deep-frozen 사본으로(return 뒤 변이 불가).
         execution_basis_semantic_payload=_deep_freeze(payload),
-        execution_basis_semantic_digest=content_digest(payload),
+        execution_basis_semantic_digest=canonical_execution_digest(payload),
     )

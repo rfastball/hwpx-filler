@@ -34,7 +34,7 @@ from hwpxfiller.application.field_binding_input import (
     NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     FieldBindingInput,
 )
-from hwpxfiller.application.qualification_evidence import content_digest
+from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
 from hwpxfiller.application.slot_configuration_context import ExactAppliedTemplateInput
 from hwpxfiller.application.slot_selection_input import (
     SlotConfigurationSnapshot,
@@ -695,12 +695,13 @@ def build_captured_attempt_semantic_projection(
 
 
 def semantic_projection_digest(projection: Mapping[str, Any]) -> str:
-    """semantic projection 의 content-address(slice-local canonical encoder).
+    """capture semantic projection 의 content-address(S5-06 closed canonical byte framing).
 
-    # ponytail: 지금은 qualification_evidence.content_digest(정렬 JSON)로 byte framing 을 대신한다.
-    # S5-06 이 closed-set canonical byte framing·SHA-256·golden vector 로 이 seam 을 대체한다.
+    complete input 이면 captured_execution_input_digest, attempt 면 captured_attempt_digest 의
+    단일 seam 이다. byte framing·SHA-256·golden vector 는 S5-06
+    :mod:`hwpxfiller.domain.canonical_execution_encoding` 소유다(정렬 JSON 아님).
     """
-    return content_digest(dict(projection))
+    return canonical_execution_digest(dict(projection))
 
 
 # ─── cross-reference integrity(mismatch 마다 typed context error) ──────────────────
