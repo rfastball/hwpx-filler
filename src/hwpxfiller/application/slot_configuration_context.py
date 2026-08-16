@@ -97,23 +97,58 @@ class AppliedCandidateReadPort(Protocol):
 StructureDecoderFn = Callable[[Mapping[str, Any]], TemplateStructure]
 
 
+def _str_list(value: object, what: str) -> tuple[str, ...]:
+    """리스트이고 항목이 전부 문자열일 때만 tuple 로 — 스칼라 문자열을 char 로 안 쪼갠다."""
+    if not isinstance(value, list):
+        raise TemplateStructureIntegrityError(f"{what} 는 리스트여야 한다")
+    for item in value:
+        if not isinstance(item, str):
+            raise TemplateStructureIntegrityError(f"{what} 항목은 문자열이어야 한다")
+    return tuple(value)
+
+
+def _str_field(value: object, what: str) -> str:
+    if not isinstance(value, str):
+        raise TemplateStructureIntegrityError(f"{what} 는 문자열이어야 한다")
+    return value
+
+
 def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v1 payload → TemplateStructure(project_structure 의 역)."""
+    """hwpx-structure-projection-v1 payload → TemplateStructure(project_structure 의 역).
+
+    digest 유효해도 형이 틀린 payload(예: ``root_fields: "title"``)는 조용히 char 로
+    쪼개지 않고 시끄럽게 거절한다 — 이 decoder 가 persisted projection 의 신뢰 경계다.
+    """
     try:
-        return TemplateStructure(
-            root_fields=tuple(payload["root_fields"]),
-            slots=tuple(
-                TemplateSlot(
-                    id=slot["id"],
-                    shared_fields=tuple(slot["shared_fields"]),
-                    options=tuple(
-                        TemplateOption(id=opt["id"], fields=tuple(opt["fields"]))
-                        for opt in slot["options"]
-                    ),
+        slots_raw = payload["slots"]
+        root_fields = _str_list(payload["root_fields"], "root_fields")
+        if not isinstance(slots_raw, list):
+            raise TemplateStructureIntegrityError("slots 는 리스트여야 한다")
+        slots = []
+        for slot in slots_raw:
+            if not isinstance(slot, Mapping):
+                raise TemplateStructureIntegrityError("slot 항목이 매핑이 아니다")
+            options_raw = slot["options"]
+            if not isinstance(options_raw, list):
+                raise TemplateStructureIntegrityError("options 는 리스트여야 한다")
+            options = []
+            for opt in options_raw:
+                if not isinstance(opt, Mapping):
+                    raise TemplateStructureIntegrityError("option 항목이 매핑이 아니다")
+                options.append(
+                    TemplateOption(
+                        id=_str_field(opt["id"], "option.id"),
+                        fields=_str_list(opt["fields"], "option.fields"),
+                    )
                 )
-                for slot in payload["slots"]
-            ),
-        )
+            slots.append(
+                TemplateSlot(
+                    id=_str_field(slot["id"], "slot.id"),
+                    shared_fields=_str_list(slot["shared_fields"], "slot.shared_fields"),
+                    options=tuple(options),
+                )
+            )
+        return TemplateStructure(root_fields=root_fields, slots=tuple(slots))
     except (KeyError, TypeError, AttributeError) as exc:
         raise TemplateStructureIntegrityError(
             "structure projection payload 가 v1 형식과 불일치"

@@ -283,6 +283,31 @@ def test_decoder_registry_rejects_duplicate_schema() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"root_fields": "title", "slots": []},  # 스칼라 문자열을 char 로 쪼개면 안 된다
+        {"root_fields": [1], "slots": []},  # 비문자열 항목
+        {"root_fields": [], "slots": "x"},  # slots 스칼라
+        {"root_fields": [], "slots": [{"id": 1, "shared_fields": [], "options": []}]},
+        {"root_fields": [], "slots": [{"id": "s", "shared_fields": [], "options": "x"}]},
+        {"root_fields": [], "slots": ["not-a-mapping"]},  # slot 항목 비매핑
+        {  # option 항목 비매핑
+            "root_fields": [],
+            "slots": [{"id": "s", "shared_fields": [], "options": ["not-a-mapping"]}],
+        },
+    ],
+)
+def test_decoder_rejects_mistyped_projection_fields(payload: dict) -> None:
+    from hwpxfiller.application.slot_configuration_context import (
+        DEFAULT_STRUCTURE_DECODER_REGISTRY,
+    )
+
+    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(SCHEMA)
+    with pytest.raises(TemplateStructureIntegrityError):
+        decoder(payload)
+
+
 def test_malformed_projection_payload_is_integrity_error() -> None:
     # digest 는 유효하지만 v1 구조가 아닌 payload(slots 키 없음) → decoder fail-closed.
     bad_payload = {"root_fields": ["t"]}
