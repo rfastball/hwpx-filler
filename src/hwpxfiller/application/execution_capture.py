@@ -19,12 +19,16 @@ continuation(previous output document base)은 exact applied Candidate 가 아�
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, ClassVar, Protocol
 
-from hwpxfiller.application.execution_structure import ExecutionTemplateStructure
+from hwpxfiller.application.execution_structure import (
+    ExecutionTemplateStructure,
+    template_structure_digest,
+)
 from hwpxfiller.application.field_binding_input import (
     NEEDS_BINDING_SEMANTIC_MIGRATION,
     NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
@@ -37,6 +41,7 @@ from hwpxfiller.application.slot_selection_input import (
     SlotlessSelectionContext,
     SlotSelectionInput,
 )
+from hwpxfiller.domain.slot_selection import digest_selection_set
 from hwpxfiller.application.work_bootstrap import (
     NEEDS_CONFIGURATION,
     NEEDS_CONFIGURATION_REVIEW,
@@ -132,9 +137,12 @@ class QualificationProfileSemanticPayload:
             "projection_schema_version",
         ):
             _require_nonempty(getattr(self, name), name)
-        # frozen dataclass 는 attribute 재바인딩만 막고 nested mapping 은 못 막는다 — alias 를 끊는다.
+        # frozen dataclass 는 attribute 재바인딩만 막고 nested mapping/list 는 못 막는다 —
+        # deep-copy 로 alias 를 완전히 끊어야 build 이후 caller 가 nested 값을 고쳐도 digest 가 안 흔들린다.
         object.__setattr__(
-            self, "manifest_payload", MappingProxyType(dict(self.manifest_payload))
+            self,
+            "manifest_payload",
+            MappingProxyType(copy.deepcopy(dict(self.manifest_payload))),
         )
 
 
@@ -153,6 +161,8 @@ class ExactTemplateQualificationContext:
     template_structure_digest: str
     execution_structure: ExecutionTemplateStructure
     composition_profile_state: str
+    # exact PASS Evidence 의 revision — applied Candidate 와 결속해 attestation 을 옮겨 붙지 못하게 한다.
+    revision_id: str
     qualification_profile_semantic_digest: str | None = None
 
     def __post_init__(self) -> None:
@@ -162,6 +172,7 @@ class ExactTemplateQualificationContext:
             "structure_projection_schema_version",
             "template_structure_digest",
             "composition_profile_state",
+            "revision_id",
         ):
             _require_nonempty(getattr(self, name), name)
         payload = self.qualification_profile_semantic_payload
@@ -181,6 +192,12 @@ class ExactTemplateQualificationContext:
         ):
             raise ExecutionCaptureIntegrityError(
                 "execution_structure schema 가 context 선언 schema 와 불일치"
+            )
+        # template_structure_digest 는 claim 을 믿지 않고 execution_structure 에서 recompute·대조한다.
+        recomputed = template_structure_digest(self.execution_structure)
+        if recomputed != self.template_structure_digest:
+            raise ExecutionCaptureIntegrityError(
+                "template_structure_digest 가 execution_structure recompute 와 불일치"
             )
 
 
@@ -213,6 +230,12 @@ class CapturedTemplateExecutionInput:
             raise ExecutionCaptureIntegrityError(
                 "qualification semantic payload media 가 applied media 와 불일치"
             )
+        # PASS Evidence 는 exact applied revision 에 결속돼야 한다 — media 만 같은 다른 Candidate 에
+        # 남의 attestation·구조 사실을 옮겨 붙지 못하게 한다(evidence↔candidate binding).
+        if self.qualification.revision_id != self.applied.revision_id:
+            raise ExecutionCaptureIntegrityError(
+                "qualification revision_id 가 applied.revision_id 와 불일치"
+            )
 
 
 # ─── ResolvedSealPolicy(raw intent 와 서버가 resolve 한 exact policy 분리) ──────────────
@@ -239,6 +262,27 @@ class ResolvedSealPolicy:
     materialization_contract_id: str
     plan_schema_version: str
     canonical_encoding_version: str
+
+    def __post_init__(self) -> None:
+        # 모든 contract identity/version/digest 는 nonempty — 누락된 계약을 capture 로 실어 나르지 않는다.
+        for name in (
+            "policy_resolution_version",
+            "execution_base_kind",
+            "execution_semantic_contract_id",
+            "binding_value_contract_id",
+            "raw_record_contract_id",
+            "document_value_resolution_contract_id",
+            "record_validation_contract_id",
+            "record_review_contract_id",
+            "composition_contract_id",
+            "native_primitive_contract_id",
+            "materialization_base_contract_id",
+            "composition_theorem_evidence_manifest_digest",
+            "materialization_contract_id",
+            "plan_schema_version",
+            "canonical_encoding_version",
+        ):
+            _require_nonempty(getattr(self, name), name)
 
 
 @dataclass(frozen=True)
@@ -316,11 +360,19 @@ def project_effective_selection(selection: SlotSelectionInput) -> EffectiveSelec
             declared_selection_digest=selection.declared_selection_digest,
         )
     if isinstance(selection, SlotConfigurationSnapshot):
+        # claimed effective digest 를 믿지 않고 effective_selections 에서 recompute·대조한다 —
+        # 위조/stale digest 로 다른 selection 이 같은 Plan identity 를 훔치지 못하게 한다.
+        contract_id = selection.selection_semantic_contract_id
+        recomputed = digest_selection_set(contract_id, selection.effective_selections)
+        if recomputed != selection.effective_selection_digest:
+            raise ExecutionCaptureIntegrityError(
+                "effective_selection_digest 가 effective_selections recompute 와 불일치"
+            )
         return EffectiveSelectionBasis(
             slot_mode=SLOTTED,
             work_id=selection.work_id,
             template_application_id=selection.template_application_id,
-            selection_semantic_contract_id=selection.selection_semantic_contract_id,
+            selection_semantic_contract_id=contract_id,
             template_structure_digest=selection.template_structure_digest,
             effective_selection_digest=selection.effective_selection_digest,
             declared_selection_digest=selection.declared_selection_digest,
@@ -527,7 +579,9 @@ def _encode_qualification_claims(
 
 def _encode_selection_claims(basis: EffectiveSelectionBasis) -> dict[str, Any]:
     # source_configuration_version 은 durable provenance 지 execution semantic identity 가 아니다 — 제외.
+    # projection 계약 version 을 담아 projection-rule 변경이 semantic identity 를 바꾸게 한다.
     return {
+        "selection_projection_contract": EXECUTION_SELECTION_SEMANTICS_CONTRACT,
         "slot_mode": basis.slot_mode,
         "work_id": basis.work_id,
         "template_application_id": basis.template_application_id,
@@ -707,7 +761,7 @@ def _cross_reference_error(
                 FIELD_BINDING_INPUT_INTEGRITY_ERROR,
                 "field binding base Application 이 template 과 불일치",
             )
-    # template ↔ selection(selection 은 workspace field 가 없다 — work·application 만 비교).
+    # template ↔ selection(selection 은 workspace field 가 없다 — work·application·structure 만 비교).
     if selection is not None:
         if selection.work_id != template.work_authority_id:
             return ExecutionCaptureContextError(
@@ -718,6 +772,29 @@ def _cross_reference_error(
             return ExecutionCaptureContextError(
                 SELECTION_CONTRACT_INTEGRITY_ERROR,
                 "selection Application 이 template 과 불일치",
+            )
+        # selection 은 어떤 구조에서 캡처됐는지도 qualification context 와 일치해야 한다 — 같은 Work·
+        # Application id 라도 다른 structure(schema·digest)에서 온 선택이면 exact input 이 아니다.
+        qual = template.qualification
+        if selection.structure_projection_schema_version != (
+            qual.structure_projection_schema_version
+        ):
+            return ExecutionCaptureContextError(
+                SELECTION_CONTRACT_INTEGRITY_ERROR,
+                "selection structure schema 가 qualification context 와 불일치",
+            )
+        if selection.template_structure_digest != qual.template_structure_digest:
+            return ExecutionCaptureContextError(
+                SELECTION_CONTRACT_INTEGRITY_ERROR,
+                "selection template_structure_digest 가 qualification context 와 불일치",
+            )
+        # claimed effective/selection digest self-consistency(재계산)도 여기서 함께 닫는다 —
+        # project_effective_selection 이 recompute·raise 하는 것을 typed context error 로 옮긴다.
+        try:
+            project_effective_selection(selection)
+        except ExecutionCaptureIntegrityError as exc:
+            return ExecutionCaptureContextError(
+                SELECTION_CONTRACT_INTEGRITY_ERROR, str(exc)
             )
     return None
 
@@ -769,6 +846,16 @@ def judge_captured_execution(
 
     # 2. policy admission block(S5-08 판정) — exact domain 을 읽기 전이라도 새 seal 불가.
     if policy_block is not None:
+        # profile-specific block 은 요청 profile 에 결속돼야 한다 — 다른/구 profile 의 판정을
+        # 이 profile 의 결과로 되돌려주지 않는다(profile-bound policy result).
+        if (
+            policy_block.qualification_profile_id is not None
+            and policy_block.qualification_profile_id != expected_profile_id
+        ):
+            return ExecutionCaptureContextError(
+                QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR,
+                "policy block 의 qualification_profile_id 가 요청 profile 과 불일치",
+            )
         return policy_block
 
     # 3. request ↔ template cross-reference(domain-blocked 여부와 무관하게 먼저).

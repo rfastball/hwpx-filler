@@ -77,7 +77,6 @@ APP = "app-1"
 PROFILE = "hwpx-template-qualification-v2"
 MEDIA = "hwpx"
 CONTRACT = "slot-selection/v1"
-STRUCT_DIGEST = "sha256:aaaa"
 AT = "2026-08-16T00:00:00Z"
 
 
@@ -107,6 +106,9 @@ def _structure():
     )
 
 
+STRUCT_DIGEST = template_structure_digest(_structure())
+
+
 def _payload(profile=PROFILE, media=MEDIA):
     return QualificationProfileSemanticPayload(
         qualification_profile_id=profile,
@@ -131,7 +133,7 @@ def _applied(work=WORK, app=APP, media=MEDIA):
     )
 
 
-def _qualification(profile=PROFILE, schema=EXECUTION_STRUCTURE_PROJECTION_SCHEMA):
+def _qualification(profile=PROFILE, schema=EXECUTION_STRUCTURE_PROJECTION_SCHEMA, revision="rev-1"):
     struct = _structure()
     return ExactTemplateQualificationContext(
         pass_evidence_id="ev-1",
@@ -141,6 +143,7 @@ def _qualification(profile=PROFILE, schema=EXECUTION_STRUCTURE_PROJECTION_SCHEMA
         template_structure_digest=template_structure_digest(struct),
         execution_structure=struct,
         composition_profile_state="SEALED",
+        revision_id=revision,
     )
 
 
@@ -375,6 +378,7 @@ def test_semantic_payload_profile_mismatch_raises():
             template_structure_digest=template_structure_digest(struct),
             execution_structure=struct,
             composition_profile_state="SEALED",
+            revision_id="rev-1",
         )
 
 
@@ -514,6 +518,7 @@ def test_execution_structure_schema_must_match_declared_schema():
             template_structure_digest=template_structure_digest(struct),
             execution_structure=struct,
             composition_profile_state="SEALED",
+            revision_id="rev-1",
         )
 
 
@@ -529,6 +534,7 @@ def test_v1_structure_schema_rejected_at_construction():
             template_structure_digest=template_structure_digest(struct),
             execution_structure=struct,
             composition_profile_state="SEALED",
+            revision_id="rev-1",
         )
 
 
@@ -618,3 +624,149 @@ def test_effective_selection_projection_slot_mode():
     slotted = project_effective_selection(snapshot)
     assert slotted.slot_mode == SLOTTED
     assert slotted.effective_selection_digest is not None
+
+
+# ─── recompute/rebind integrity (Codex review #715) ────────────────────────────────
+def _snapshot(effective_digest=None):
+    selections = SlotSelectionSet(())
+    return SlotConfigurationSnapshot(
+        work_id=WORK,
+        template_application_id=APP,
+        source_configuration_version=3,
+        selection_semantic_contract_id=CONTRACT,
+        structure_projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+        effective_selections=selections,
+        effective_selection_digest=(
+            effective_digest
+            if effective_digest is not None
+            else digest_selection_set(CONTRACT, selections)
+        ),
+        declared_selection_digest=digest_selection_set(CONTRACT, selections),
+        template_structure_digest=STRUCT_DIGEST,
+        captured_at=AT,
+    )
+
+
+def test_selection_from_different_structure_digest_is_context_error():
+    # #1: 같은 work/app 이라도 다른 structure(digest)에서 캡처된 선택은 exact input 이 아니다.
+    result = _judge(
+        selection_observation=CapturedSelection(
+            SlotlessSelectionContext(
+                work_id=WORK,
+                template_application_id=APP,
+                selection_semantic_contract_id=CONTRACT,
+                structure_projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+                template_structure_digest="sha256:different",
+                source_configuration_version=None,
+                declared_selection_digest=None,
+                captured_at=AT,
+            )
+        )
+    )
+    assert isinstance(result, ExecutionCaptureContextError)
+    assert result.code == SELECTION_CONTRACT_INTEGRITY_ERROR
+
+
+def test_selection_from_different_structure_schema_is_context_error():
+    # #1(schema 축): 선택이 다른 projection schema 에서 캡처됐으면 exact input 이 아니다.
+    result = _judge(
+        selection_observation=CapturedSelection(
+            SlotlessSelectionContext(
+                work_id=WORK,
+                template_application_id=APP,
+                selection_semantic_contract_id=CONTRACT,
+                structure_projection_schema_version="hwpx-structure-projection-v1",
+                template_structure_digest=STRUCT_DIGEST,
+                source_configuration_version=None,
+                declared_selection_digest=None,
+                captured_at=AT,
+            )
+        )
+    )
+    assert isinstance(result, ExecutionCaptureContextError)
+    assert result.code == SELECTION_CONTRACT_INTEGRITY_ERROR
+
+
+def test_stale_template_structure_digest_rejected_at_construction():
+    # #2: template_structure_digest claim 은 execution_structure recompute 와 대조된다.
+    struct = _structure()
+    with pytest.raises(ExecutionCaptureIntegrityError):
+        ExactTemplateQualificationContext(
+            pass_evidence_id="ev-1",
+            qualification_profile_id=PROFILE,
+            qualification_profile_semantic_payload=_payload(),
+            structure_projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+            template_structure_digest="sha256:stale",
+            execution_structure=struct,
+            composition_profile_state="SEALED",
+            revision_id="rev-1",
+        )
+
+
+def test_evidence_must_bind_to_applied_revision():
+    # #3: media 만 같은 다른 Candidate 에 남의 PASS evidence 를 붙이지 못한다.
+    with pytest.raises(ExecutionCaptureIntegrityError):
+        CapturedTemplateExecutionInput(
+            workspace_instance_id=WS,
+            work_authority_id=WORK,
+            applied=_applied(),  # revision_id="rev-1"
+            qualification=_qualification(revision="rev-2"),
+            captured_at=AT,
+        )
+
+
+def test_forged_effective_selection_digest_rejected():
+    # #4: claimed effective digest 를 믿지 않고 recompute 한다.
+    with pytest.raises(ExecutionCaptureIntegrityError):
+        project_effective_selection(_snapshot(effective_digest="sha256:forged"))
+    result = _judge(selection_observation=CapturedSelection(_snapshot("sha256:forged")))
+    assert isinstance(result, ExecutionCaptureContextError)
+    assert result.code == SELECTION_CONTRACT_INTEGRITY_ERROR
+
+
+def test_manifest_payload_deep_copied():
+    # #5: nested mapping/list 를 build 이후 caller 가 고쳐도 DTO 값이 흔들리지 않는다.
+    nested = ["a"]
+    payload = QualificationProfileSemanticPayload(
+        qualification_profile_id=PROFILE,
+        media=MEDIA,
+        adapter_contract_version="a/1",
+        product_rule_version="p/1",
+        operation_alphabet_version="o/1",
+        projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+        manifest_payload={"nested": nested},
+    )
+    nested.append("MUTATED")
+    assert payload.manifest_payload["nested"] == ["a"]
+
+
+def test_resolved_seal_policy_rejects_empty_contract_id():
+    # #6: 누락된 contract identity 를 capture 로 실어 나르지 않는다.
+    with pytest.raises(ExecutionCaptureIntegrityError):
+        _policy_with(raw_record_contract_id="")
+    with pytest.raises(ExecutionCaptureIntegrityError):
+        _policy_with(canonical_encoding_version="")
+
+
+def _policy_with(**over):
+    from dataclasses import replace
+
+    return replace(_policy(), **over)
+
+
+def test_policy_block_profile_must_match_requested():
+    # #7: 다른/구 profile 의 policy 판정을 이 profile 의 결과로 되돌려주지 않는다.
+    block = CapturedExecutionPolicyBlock(
+        policy_code=QUALIFICATION_PROFILE_REVOKED,
+        observed_at=AT,
+        qualification_profile_id="OTHER-PROFILE",
+    )
+    result = _judge(policy_block=block)
+    assert isinstance(result, ExecutionCaptureContextError)
+    assert result.code == QUALIFICATION_PROFILE_MANIFEST_INTEGRITY_ERROR
+
+
+def test_selection_claims_carry_projection_contract():
+    # #8: projection 계약 version 이 semantic identity 에 참여한다.
+    proj = _judge().captured_execution_input_semantic_projection
+    assert proj["selection"]["selection_projection_contract"] == "execution-semantics/v1"
