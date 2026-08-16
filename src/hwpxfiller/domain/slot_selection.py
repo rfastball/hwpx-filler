@@ -278,3 +278,40 @@ def semantic_selection_equal(a: SlotSelectionSet, b: SlotSelectionSet) -> bool:
     """저장 순서 무관 semantic equality — 같은 canonical bytes 면 같다."""
     schema = SELECTION_SET_SCHEMA_VERSION
     return canonicalize_selection_set(schema, a) == canonicalize_selection_set(schema, b)
+
+
+def declared_selection_digest(selection_set: SlotSelectionSet) -> str:
+    """declared 선택의 구조적 content-address — semantic contract 와 무관한 단일 출처.
+
+    provenance·version 판정이 같은 digest 를 쓰도록 `semantic_selection_equal` 과 같은
+    schema-version 키를 쓴다(선택 semantic contract 를 이 계층이 복제하지 않는다).
+    """
+    return digest_selection_set(SELECTION_SET_SCHEMA_VERSION, selection_set)
+
+
+def encode_selection_set(selection_set: SlotSelectionSet) -> dict[str, object]:
+    """SlotSelectionSet 의 JSON-safe 표현 — 저장순 그대로(의미 권위는 정렬이 아님)."""
+    return {
+        "selections": [
+            {
+                "slot_id": s.slot_id,
+                "selected_option_ids": list(s.selected_option_ids),
+            }
+            for s in selection_set.selections
+        ]
+    }
+
+
+def decode_selection_set(data: object) -> SlotSelectionSet:
+    """JSON 표현에서 SlotSelectionSet 복원 — 구문 불변식은 생성지가 재검증한다."""
+    if not isinstance(data, dict) or not isinstance(data.get("selections"), list):
+        raise InvalidSelectionSetError("selection set 표현이 malformed")
+    return SlotSelectionSet(
+        tuple(
+            SlotSelection(
+                slot_id=entry["slot_id"],
+                selected_option_ids=tuple(entry["selected_option_ids"]),
+            )
+            for entry in data["selections"]
+        )
+    )
