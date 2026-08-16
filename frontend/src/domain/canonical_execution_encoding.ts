@@ -117,7 +117,10 @@ function encodeInt(sink: ByteSink, value: bigint): void {
 }
 
 function encodeValue(sink: ByteSink, value: unknown): void {
-  if (value === null || value === undefined) {
+  if (value === undefined) {
+    // undefined 는 JSON 의미 모델 밖이고 Python 대응이 없다 — null 로 조용히 접지 않는다.
+    throw new CanonicalExecutionEncodingError("undefined 는 canonical 값이 아니다");
+  } else if (value === null) {
     sink.byte(TAG_NULL);
   } else if (value === true) {
     sink.byte(TAG_TRUE);
@@ -128,6 +131,12 @@ function encodeValue(sink: ByteSink, value: unknown): void {
   } else if (typeof value === "number") {
     if (!Number.isInteger(value)) {
       throw new CanonicalExecutionEncodingError("float 은 semantic identity 를 갖지 않는다");
+    }
+    if (!Number.isSafeInteger(value)) {
+      // 2^53 이상은 number 정밀도가 깨져 Python 정수와 parity 가 무너진다 — bigint 를 쓰라고 요구한다.
+      throw new CanonicalExecutionEncodingError(
+        "안전 정수 범위를 벗어난 number — 정확한 큰 정수는 bigint 를 쓴다",
+      );
     }
     encodeInt(sink, BigInt(value));
   } else if (typeof value === "string") {

@@ -389,7 +389,7 @@ def _encode_canonical_value(value: CanonicalBindingValue) -> dict[str, Any]:
     return {"value_type": vt, "literal": literal}
 
 
-def _encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
+def encode_value_expression(ve: ActiveFieldValueExpression) -> dict[str, Any]:
     if isinstance(ve, FromSource):
         return {
             "kind": "FROM_SOURCE",
@@ -425,7 +425,7 @@ def active_binding_digest(rules: tuple[EffectiveFieldBindingRule, ...]) -> str:
             {
                 "field_id": r.field_id,
                 "binding_kind": r.binding_kind,
-                "value_expression": _encode_value_expression(r.value_expression),
+                "value_expression": encode_value_expression(r.value_expression),
             }
             for r in rules
         ),
@@ -503,7 +503,7 @@ def _build_semantic_payload(
                     {
                         "field_id": r.field_id,
                         "binding_kind": r.binding_kind,
-                        "value_expression": _encode_value_expression(
+                        "value_expression": encode_value_expression(
                             r.value_expression
                         ),
                     }
@@ -519,7 +519,7 @@ def _build_semantic_payload(
                     "expected_active_occurrence_count": (
                         r.expected_active_occurrence_count
                     ),
-                    "value_expression": _encode_value_expression(r.value_expression),
+                    "value_expression": encode_value_expression(r.value_expression),
                 }
                 for r in requirements
             ),

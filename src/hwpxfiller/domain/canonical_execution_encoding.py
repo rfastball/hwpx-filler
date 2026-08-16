@@ -20,6 +20,7 @@ PURE domain: 저장소·HWPX·native·application 을 import 하지 않는다.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 
 _U32_MAX = 0xFFFF_FFFF
 _U64_MAX = 0xFFFF_FFFF_FFFF_FFFF
@@ -96,7 +97,7 @@ def _encode_value(value: object, out: bytearray) -> None:
         out += _u32(len(value))
         for item in value:
             _encode_value(item, out)
-    elif isinstance(value, dict):
+    elif isinstance(value, Mapping):
         out.append(_TAG_MAP)
         out += _u32(len(value))
         # map key 를 UTF-8 byte order 로 정렬 — 저장/삽입 순서 ≠ identity.

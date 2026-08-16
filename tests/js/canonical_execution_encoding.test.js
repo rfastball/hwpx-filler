@@ -62,3 +62,24 @@ test("lone surrogate rejected", () => {
     CanonicalExecutionEncodingError,
   );
 });
+
+test("undefined rejected — outside JSON model, no Python counterpart", () => {
+  assert.throws(
+    () => canonicalExecutionBytes({ x: undefined }),
+    CanonicalExecutionEncodingError,
+  );
+});
+
+test("unsafe number rejected, bigint accepted (Python int parity)", async () => {
+  // 2^53 이상 number 는 정밀도가 깨진다 — bigint 로만 정확한 큰 정수를 허용한다.
+  assert.throws(
+    () => canonicalExecutionBytes(2 ** 53),
+    CanonicalExecutionEncodingError,
+  );
+  // bigint 9007199254740993 은 Python int 와 같은 bytes 를 낸다.
+  const hex = toHex(canonicalExecutionBytes(9007199254740993n));
+  assert.equal(hex.endsWith("0020000000000001"), true); // tag INT(03) + sign(00) + 8B BE magnitude
+  // 정밀도가 깨지지 않는 safe max 는 number 로도 통과(golden vector 와 동일).
+  const safeMax = GOLDEN.vectors.find((v) => v.name === "int_safe_max");
+  assert.equal(await canonicalExecutionDigest(safeMax.value), safeMax.digest);
+});

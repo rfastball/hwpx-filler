@@ -29,6 +29,7 @@ from hwpxfiller.application.execution_compilation import (
     FromSource,
     IntentionalBlank,
     active_binding_digest,
+    encode_value_expression,
     required_source_key_set_digest,
 )
 from hwpxfiller.application.execution_contract_set import (
@@ -113,16 +114,18 @@ def _selection(**over) -> EffectiveSelectionBasis:
     return EffectiveSelectionBasis(**kw)
 
 
+_RULES = (
+    EffectiveFieldBindingRule(
+        "f_name", "SOURCE", FromSource("name", "TEXT", None, "document-content-value/v1")
+    ),
+    EffectiveFieldBindingRule("f_blank", "INTENTIONAL_BLANK", IntentionalBlank()),
+)
+
+
 def _binding(keys=("addr", "name")) -> EffectiveFieldBindingBasis:
-    rules = (
-        EffectiveFieldBindingRule(
-            "f_name", "SOURCE", FromSource("name", "TEXT", None, "document-content-value/v1")
-        ),
-        EffectiveFieldBindingRule("f_blank", "INTENTIONAL_BLANK", IntentionalBlank()),
-    )
     return EffectiveFieldBindingBasis(
-        effective_active_binding_rules=rules,
-        active_binding_digest=active_binding_digest(rules),
+        effective_active_binding_rules=_RULES,
+        active_binding_digest=active_binding_digest(_RULES),
         required_source_keys=tuple(sorted(keys, key=lambda k: k.encode("utf-8"))),
         required_source_key_set_digest=required_source_key_set_digest(keys),
     )
@@ -132,6 +135,7 @@ def _basis(**over) -> ExecutionBasis:
     kw = dict(
         workspace_instance_id="ws-1",
         work_authority_id="work-1",
+        qualification_profile_semantic_digest="sha256:qual",
         template=_template(),
         contracts=_contracts(),
         selection=_selection(),
@@ -142,11 +146,11 @@ def _basis(**over) -> ExecutionBasis:
 
 
 def _requirements() -> list[dict]:
+    # value_expression 은 effective binding rule 과 정확히 일치해야 verify 를 통과한다(P1-4).
     return [
-        {"field_id": "f_name", "expected_active_occurrence_count": 1,
-         "value_expression": {"kind": "FROM_SOURCE", "source_key": "name"}},
-        {"field_id": "f_blank", "expected_active_occurrence_count": 2,
-         "value_expression": {"kind": "INTENTIONAL_BLANK"}},
+        {"field_id": r.field_id, "expected_active_occurrence_count": 1,
+         "value_expression": encode_value_expression(r.value_expression)}
+        for r in _RULES
     ]
 
 
@@ -311,6 +315,32 @@ def test_execution_basis_source_key_tamper_rejected() -> None:
         verify_execution_basis_integrity(_basis(field_binding=bad))
 
 
+def test_qualification_semantic_digest_binds_plan_identity() -> None:
+    # P1-1: 다른 qualification semantics(다른 profile manifest/product rule)면 다른 basis/Plan identity.
+    a = execution_basis_digest(_basis())
+    b = execution_basis_digest(_basis(qualification_profile_semantic_digest="sha256:other-qual"))
+    assert a != b
+
+
+def test_cross_work_basis_rejected() -> None:
+    # P1-2: selection.work_id 가 basis/template 와 어긋나면 verifier 가 fail-closed.
+    bad_sel = _selection(work_id="work-OTHER")
+    with pytest.raises(ExecutionBasisIntegrityError):
+        verify_execution_basis_integrity(_basis(selection=bad_sel))
+    bad_app = _selection(template_application_id="app-OTHER")
+    with pytest.raises(ExecutionBasisIntegrityError):
+        verify_execution_basis_integrity(_basis(selection=bad_app))
+
+
+def test_source_key_tuple_order_does_not_split_identity() -> None:
+    # P2-10: 같은 key 집합이면 tuple 순서가 달라도 같은 basis digest.
+    forward = _binding(keys=("addr", "name"))
+    reverse = dataclasses.replace(forward, required_source_keys=("name", "addr"))
+    assert execution_basis_digest(_basis(field_binding=forward)) == execution_basis_digest(
+        _basis(field_binding=reverse)
+    )
+
+
 # ─── Sealed Plan + PlanCompilationKey ────────────────────────────────────────────────────
 def test_plan_digest_deterministic_same_inputs() -> None:
     assert plan_semantic_digest(_plan()) == plan_semantic_digest(_plan())
@@ -336,13 +366,13 @@ def test_schema_version_change_distinct_plan_allowed() -> None:
     ledger.record(plan_compilation_key_of(p2), plan_semantic_digest(p2))  # 다른 key → 허용
 
 
-def test_plan_array_order_is_identity_but_map_order_is_not() -> None:
-    # array(requirement sequence) 순서는 identity 의 일부다 — 뒤집으면 다른 digest.
+def test_plan_canonicalizes_requirement_order_and_ignores_map_order() -> None:
+    # build 가 requirement 를 APPLY 순서로 정본화하므로 입력 순서(뒤집기)는 identity 를 안 바꾼다.
     reordered = list(reversed(_requirements()))
-    assert plan_semantic_digest(_plan()) != plan_semantic_digest(
+    assert plan_semantic_digest(_plan()) == plan_semantic_digest(
         _plan(active_field_requirements=reordered)
     )
-    # 반면 map key 삽입 순서는 identity 가 아니다(같은 요구, dict 키 순서만 뒤집음).
+    # map key 삽입 순서도 identity 가 아니다(같은 요구, dict 키 순서만 뒤집음).
     shuffled = [
         {"value_expression": r["value_expression"],
          "expected_active_occurrence_count": r["expected_active_occurrence_count"],
@@ -425,6 +455,83 @@ def test_verify_plan_duplicate_requirement_rejected() -> None:
             _plan(active_field_requirements=reqs, ordered_operations=ops),
             supported_plan_schemas=[_PLAN_SCHEMA],
         )
+
+
+def test_seal_deep_freezes_against_post_seal_mutation() -> None:
+    # P1-3: 봉인에 넘긴 원본 nested dict 를 이후 고쳐도 plan_semantic_digest 는 흔들리지 않는다.
+    reqs = _requirements()
+    plan = _plan(active_field_requirements=reqs)
+    before = plan_semantic_digest(plan)
+    reqs[0]["value_expression"]["source_key"] = "TAMPERED"  # 원본 변이
+    assert plan_semantic_digest(plan) == before
+    # 봉인된 payload 자체도 immutable(frozen mapping)이라 쓰기 시도가 실패한다.
+    with pytest.raises(TypeError):
+        plan.active_field_requirements[0]["expected_active_occurrence_count"] = 99  # type: ignore[index]
+
+
+def test_verify_plan_requirement_value_expression_mismatch_rejected() -> None:
+    # P1-4: field 는 그대로 두고 value_expression 만 바꾼 위조 requirement 를 잡는다.
+    reqs = _requirements()
+    reqs[0] = dict(reqs[0])
+    reqs[0]["value_expression"] = {
+        "kind": "FROM_SOURCE", "source_key": "SOMETHING_ELSE",
+        "value_type": "TEXT", "format_code": None,
+        "document_content_value_policy_id": "document-content-value/v1",
+    }
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_sealed_plan_integrity(
+            _plan(active_field_requirements=reqs), supported_plan_schemas=[_PLAN_SCHEMA]
+        )
+
+
+def test_verify_plan_requirement_without_binding_rule_rejected() -> None:
+    # requirement field 가 APPLY 와 짝은 맞지만 effective binding rule 이 없으면 fail-closed.
+    reqs = _requirements() + [
+        {"field_id": "f_ghost", "expected_active_occurrence_count": 1,
+         "value_expression": {"kind": "INTENTIONAL_BLANK", "exact_blank_policy": "EXACT_BLANK"}}
+    ]
+    ops = _operations() + [{"op": "APPLY_FIELD_BINDING", "field_id": "f_ghost"}]
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_sealed_plan_integrity(
+            _plan(active_field_requirements=reqs, ordered_operations=ops),
+            supported_plan_schemas=[_PLAN_SCHEMA],
+        )
+
+
+def test_deep_freeze_recurses_into_lists() -> None:
+    from hwpxfiller.application.execution_contract_set import _deep_freeze
+
+    frozen = _deep_freeze({"a": [1, {"b": 2}]})
+    assert frozen["a"] == (1, {"b": 2})
+    with pytest.raises(TypeError):
+        frozen["a"][1]["b"] = 9  # type: ignore[index]
+
+
+def test_verify_plan_apply_order_swap_rejected() -> None:
+    # P2-9: APPLY 두 개를 뒤바꾸면 requirement 순서와 어긋나 거절된다.
+    plan = _plan()
+    swapped_ops = (
+        {"op": "REMOVE_OPTION", "slot_id": "s1", "option_id": "o2"},
+        {"op": "APPLY_FIELD_BINDING", "field_id": "f_blank"},
+        {"op": "APPLY_FIELD_BINDING", "field_id": "f_name"},
+    )
+    tampered = dataclasses.replace(plan, ordered_operations=swapped_ops)
+    with pytest.raises(ExecutionPlanIntegrityError):
+        verify_sealed_plan_integrity(tampered, supported_plan_schemas=[_PLAN_SCHEMA])
+
+
+def test_verify_plan_remove_option_missing_operand_rejected() -> None:
+    # P2-11: 빈/비문자열 slot·option 을 가진 REMOVE_OPTION 은 decode 경계에서 거절.
+    for bad_remove in (
+        {"op": "REMOVE_OPTION"},
+        {"op": "REMOVE_OPTION", "slot_id": "s1", "option_id": ""},
+        {"op": "REMOVE_OPTION", "slot_id": 1, "option_id": "o2"},
+    ):
+        ops = [bad_remove] + [o for o in _operations() if o["op"] == "APPLY_FIELD_BINDING"]
+        with pytest.raises(ExecutionPlanIntegrityError):
+            verify_sealed_plan_integrity(
+                _plan(ordered_operations=ops), supported_plan_schemas=[_PLAN_SCHEMA]
+            )
 
 
 def test_verify_plan_recomputes_basis_nested_digest() -> None:
@@ -535,6 +642,15 @@ def test_capture_evidence_decode_non_mapping_provenance_rejected() -> None:
     payload["provenance"] = "not-a-mapping"
     with pytest.raises(DurableCaptureEvidenceIntegrityError):
         decode_durable_capture_evidence(payload)
+
+
+def test_capture_evidence_decode_non_string_provenance_field_rejected() -> None:
+    # P2-6: null/number/mapping 을 str() 로 조용히 삼키지 않는다.
+    for bad in ({"bad": 1}, 12345, None, ["x"]):
+        payload = encode_durable_capture_evidence(_complete_evidence())
+        payload["provenance"]["captured_at"] = bad
+        with pytest.raises(DurableCaptureEvidenceIntegrityError):
+            decode_durable_capture_evidence(payload)
 
 
 def test_capture_evidence_attempt_bad_blockers_rejected() -> None:

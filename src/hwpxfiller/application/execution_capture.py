@@ -907,6 +907,7 @@ def judge_captured_execution(
             normalized_blockers=tuple(blockers),
             captured_attempt_semantic_projection=attempt_projection,
             captured_at=captured_at,
+            captured_attempt_digest=semantic_projection_digest(attempt_projection),
         )
 
     # 5. complete — 모든 exact input 을 복원했다. base 를 고정하고 semantic projection 을 낸다.
@@ -928,6 +929,7 @@ def judge_captured_execution(
         resolved_seal_policy=resolved_seal_policy,
         captured_execution_input_semantic_projection=projection,
         captured_at=captured_at,
+        captured_execution_input_digest=semantic_projection_digest(projection),
     )
 
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 from hwpxfiller.application.execution_capture import (
@@ -34,6 +35,7 @@ from hwpxfiller.application.execution_capture import (
 from hwpxfiller.application.execution_compilation import (
     EffectiveFieldBindingBasis,
     active_binding_digest,
+    encode_value_expression,
     required_source_key_set_digest,
 )
 from hwpxfiller.application.execution_composition import (
@@ -85,6 +87,19 @@ class DurableCaptureEvidenceIntegrityError(Exception):
 def _require_nonempty(value: object, what: str) -> str:
     if not isinstance(value, str) or value == "":
         raise ExecutionContractSetIntegrityError(f"{what} 는 비어 있지 않은 문자열이어야 한다")
+    return value
+
+
+def _deep_freeze(value: Any) -> Any:
+    """JSON-safe 값을 재귀적으로 깊이 복사·동결한다(dict→MappingProxyType, list→tuple).
+
+    seal 시점에 caller 의 nested dict(예: value_expression)와의 alias 를 끊어, 봉인 뒤 원본을
+    고쳐도 plan_semantic_digest 가 조용히 흔들리지 못하게 한다.
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(v) for v in value)
     return value
 
 
@@ -358,7 +373,10 @@ def encode_effective_field_binding(binding: EffectiveFieldBindingBasis) -> dict[
     """
     return {
         "active_binding_digest": binding.active_binding_digest,
-        "required_source_keys": list(binding.required_source_keys),
+        # UTF-8 byte order 로 정렬 — 저장 tuple 순서가 하나의 semantic basis 를 여러 identity 로 쪼개지 못하게 한다.
+        "required_source_keys": sorted(
+            binding.required_source_keys, key=lambda k: k.encode("utf-8")
+        ),
         "required_source_key_set_digest": binding.required_source_key_set_digest,
     }
 
@@ -383,6 +401,9 @@ class ExecutionBasis:
 
     workspace_instance_id: str
     work_authority_id: str
+    # 같은 candidate/selection/binding 이라도 다른 Qualification Profile semantics(profile manifest·
+    # product rule version 등) 로 자격됐으면 다른 Plan identity 여야 한다 — 그 digest 를 basis 에 결속한다.
+    qualification_profile_semantic_digest: str
     template: ExactTemplateExecutionBasis
     contracts: ExecutionContractSet
     selection: EffectiveSelectionBasis
@@ -405,6 +426,7 @@ def encode_execution_basis(basis: ExecutionBasis) -> dict[str, Any]:
     return {
         "workspace_instance_id": basis.workspace_instance_id,
         "work_authority_id": basis.work_authority_id,
+        "qualification_profile_semantic_digest": basis.qualification_profile_semantic_digest,
         "template": _encode_exact_template(basis.template),
         "contracts": encode_execution_contract_set(basis.contracts),
         "contract_set_manifest_digest": basis.contracts.contract_set_manifest_digest,
@@ -423,7 +445,21 @@ def verify_execution_basis_integrity(basis: ExecutionBasis) -> None:
 
     contract_set_manifest_digest 는 :meth:`ExecutionContractSet.__post_init__` 가 이미 재계산·강제하므로
     여기서는 스스로 검증하지 않는 binding digest 만 재계산한다: active binding·required source key set.
+    또 selection/template locator 는 semantic digest 에서 제외되므로(우연 collision 방지) 여기서
+    cross-object identity(work + template application) 정합을 명시로 강제한다 — cross-work Plan 을 닫는다.
     """
+    if not (
+        basis.work_authority_id
+        == basis.template.work_authority_id
+        == basis.selection.work_id
+    ):
+        raise ExecutionBasisIntegrityError(
+            "work authority id 가 basis·template·selection 에서 불일치(cross-work Plan)"
+        )
+    if basis.template.template_application_id != basis.selection.template_application_id:
+        raise ExecutionBasisIntegrityError(
+            "template application id 가 template·selection 에서 불일치"
+        )
     if basis.field_binding.active_binding_digest != recompute_active_binding_digest(
         basis.field_binding
     ):
@@ -484,12 +520,22 @@ def build_sealed_plan(
     """
     require_supported_encoding(canonical_encoding_version)
     _require_nonempty(plan_schema_version, "plan_schema_version")
+    # deep-freeze: nested value_expression 까지 alias 를 끊어 봉인 뒤 변이를 막는다.
+    ops = tuple(_deep_freeze(o) for o in ordered_operations)
+    reqs = [_deep_freeze(r) for r in active_field_requirements]
+    # requirement array 를 APPLY operation 순서로 정본화한다 — 두 array 가 같은 canonical sequence 를
+    # 쓰게 해 verify 가 APPLY 순서 뒤섞임을 잡을 수 있다(#702 operation order canonicality).
+    apply_seq = [
+        o.get("field_id") for o in ops if o.get("op") == PLAN_APPLY_FIELD_BINDING
+    ]
+    apply_rank = {f: i for i, f in enumerate(apply_seq) if isinstance(f, str)}
+    reqs.sort(key=lambda r: apply_rank.get(r.get("field_id"), len(apply_rank)))
     return SealedExecutionPlanSemanticPayload(
         plan_schema_version=plan_schema_version,
         canonical_encoding_version=canonical_encoding_version,
         execution_basis=execution_basis,
-        active_field_requirements=tuple(dict(r) for r in active_field_requirements),
-        ordered_operations=tuple(dict(o) for o in ordered_operations),
+        active_field_requirements=tuple(reqs),
+        ordered_operations=ops,
     )
 
 
@@ -518,8 +564,18 @@ def verify_sealed_plan_integrity(
 def _verify_requirement_operation_bijection(
     payload: SealedExecutionPlanSemanticPayload,
 ) -> None:
-    """각 active field requirement ↔ 정확히 하나의 APPLY_FIELD_BINDING(집합 bijection·중복 0)."""
-    req_fields = [_field_id(r, "active field requirement") for r in payload.active_field_requirements]
+    """requirement ↔ APPLY_FIELD_BINDING 을 **순서까지** 대조하고, 각 requirement 의 value_expression 이
+    basis 의 effective binding rule 과 일치함을 강제한다(field 이름만 보지 않는다).
+
+    - 집합 bijection·중복 0 (기존).
+    - APPLY field 순서 == requirement field 순서 — array 순서가 Plan identity 의 일부이고 compiler 가
+      APPLY 순서를 active_logical_field_order 로 고정하므로, 순서 뒤섞임을 거절한다.
+    - COMPLETE requirement 의 value_expression == 대응 effective binding rule 의 value_expression —
+      field 는 그대로 두고 source key/constant 만 바꾼 위조 Plan 을 잡는다.
+    """
+    req_fields = [
+        _field_id(r, "active field requirement") for r in payload.active_field_requirements
+    ]
     apply_fields = [
         _field_id(o, "APPLY_FIELD_BINDING operation")
         for o in payload.ordered_operations
@@ -529,10 +585,25 @@ def _verify_requirement_operation_bijection(
         raise ExecutionPlanIntegrityError("active field requirement field 중복")
     if len(set(apply_fields)) != len(apply_fields):
         raise ExecutionPlanIntegrityError("APPLY_FIELD_BINDING field 중복")
-    if set(req_fields) != set(apply_fields):
+    if req_fields != apply_fields:
         raise ExecutionPlanIntegrityError(
-            "requirement ↔ APPLY_FIELD_BINDING bijection 위반(집합 불일치)"
+            "requirement ↔ APPLY_FIELD_BINDING 순서/집합 불일치"
         )
+    rule_ve = {
+        r.field_id: encode_value_expression(r.value_expression)
+        for r in payload.execution_basis.field_binding.effective_active_binding_rules
+    }
+    for req in payload.active_field_requirements:
+        field_id = _field_id(req, "active field requirement")
+        expected = rule_ve.get(field_id)
+        if expected is None:
+            raise ExecutionPlanIntegrityError(
+                f"requirement {field_id!r} 에 대응하는 effective binding rule 이 없다"
+            )
+        if req.get("value_expression") != expected:
+            raise ExecutionPlanIntegrityError(
+                f"requirement {field_id!r} 의 value_expression 이 effective binding rule 과 불일치"
+            )
 
 
 def _verify_operation_order_canonicality(
@@ -549,6 +620,13 @@ def _verify_operation_order_canonicality(
                 raise ExecutionPlanIntegrityError(
                     "operation order 비canonical: REMOVE_OPTION 이 APPLY_FIELD_BINDING 뒤에 온다"
                 )
+            # operand 검증 — 빈/비문자열 slot·option 을 decode 경계에서 통과시키지 않는다.
+            for name in ("slot_id", "option_id"):
+                value = op.get(name)
+                if not isinstance(value, str) or value == "":
+                    raise ExecutionPlanIntegrityError(
+                        f"REMOVE_OPTION 에 {name} 가 없다/비어 있다"
+                    )
         else:
             raise ExecutionPlanIntegrityError(f"미지원 operation code: {code!r}")
 
@@ -697,14 +775,20 @@ def encode_durable_capture_evidence(evidence: DurableSealCaptureEvidence) -> dic
 def _decode_provenance(value: object) -> CaptureEvidenceProvenance:
     if not isinstance(value, Mapping):
         raise DurableCaptureEvidenceIntegrityError("provenance 가 매핑이 아니다")
-    try:
-        return CaptureEvidenceProvenance(
-            field_binding_authority_revision=str(value["field_binding_authority_revision"]),
-            source_configuration_version=str(value["source_configuration_version"]),
-            captured_at=str(value["captured_at"]),
-        )
-    except KeyError as exc:
-        raise DurableCaptureEvidenceIntegrityError("provenance 필드 누락") from exc
+    def _prov_str(field: str) -> str:
+        raw = value.get(field)
+        # str() 강제 변환 금지 — null/number/list/mapping 을 조용히 문자열로 만들지 않고 fail-closed.
+        if not isinstance(raw, str) or raw == "":
+            raise DurableCaptureEvidenceIntegrityError(
+                f"provenance.{field} 는 비어 있지 않은 문자열이어야 한다"
+            )
+        return raw
+
+    return CaptureEvidenceProvenance(
+        field_binding_authority_revision=_prov_str("field_binding_authority_revision"),
+        source_configuration_version=_prov_str("source_configuration_version"),
+        captured_at=_prov_str("captured_at"),
+    )
 
 
 def decode_durable_capture_evidence(payload: object) -> DurableSealCaptureEvidence:

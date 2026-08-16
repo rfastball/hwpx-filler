@@ -256,7 +256,26 @@ def test_complete_input_when_all_exact():
     result = _judge()
     assert isinstance(result, CapturedExecutionInput)
     assert result.work_authority_id == WORK
-    assert result.captured_execution_input_digest is None  # S5-06 이 채운다
+    # S5-06 canonical seam 이 실제로 채운다(더 이상 None 이 아니다).
+    assert result.captured_execution_input_digest == semantic_projection_digest(
+        result.captured_execution_input_semantic_projection
+    )
+    assert result.captured_execution_input_digest.startswith("sha256:")
+
+
+def test_domain_block_carries_attempt_digest():
+    from hwpxfiller.application.execution_capture import (
+        CapturedExecutionDomainBlock,
+        DomainBlockedSelection,
+    )
+
+    result = _judge(
+        selection_observation=DomainBlockedSelection("SLOT_CONFIGURATION_INCOMPLETE", "x")
+    )
+    assert isinstance(result, CapturedExecutionDomainBlock)
+    assert result.captured_attempt_digest == semantic_projection_digest(
+        result.captured_attempt_semantic_projection
+    )
 
 
 def test_workspace_and_binding_exact_match_required():

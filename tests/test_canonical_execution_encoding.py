@@ -85,6 +85,13 @@ def test_float_rejected() -> None:
         canonical_execution_bytes(2.0)
 
 
+def test_large_int_parity_with_ts_bigint() -> None:
+    # Python int 9007199254740993(2^53+1)은 TS bigint 와 같은 bytes 여야 한다.
+    # int 인코딩 = tag(03) + sign(00) + 8B BE magnitude(0x0020000000000001).
+    raw = canonical_execution_bytes(9007199254740993)
+    assert raw.hex().endswith("03000020000000000001")
+
+
 def test_u64_overflow_rejected() -> None:
     with pytest.raises(CanonicalExecutionEncodingError):
         canonical_execution_bytes(2**64)
