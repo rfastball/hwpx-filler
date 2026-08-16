@@ -196,6 +196,22 @@ def test_apply_resend_is_already_applied(tmp_path):
     assert again["current_template_application_epoch"] == 2
 
 
+def test_restored_prepared_change_applies_after_upgrade_without_admission(tmp_path):
+    # 업그레이드 회귀(#705 Codex P2): durable PREPARED change 는 있는데 admission store 가
+    # 아직 없는 재시작 세션에서, zone() 로 재발급한 token 의 restored-apply 가 admission
+    # gate 에 STATE_MISSING 으로 막히지 않고 성공해야 한다(check 경로와 동일한 멱등 bootstrap).
+    import shutil
+
+    reg, _tpl, _coord, _token = _ready(tmp_path)
+    shutil.rmtree(tmp_path / "authority" / "admissions")  # admission store 부재(업그레이드 전 저작)
+    restarted = _coordinator(tmp_path, reg)  # 재시작 — 세션 token map·admission 비어 있음
+    view = restarted.zone("공고서", "hwpx", False)["preparation"]  # check 없이 token 재발급
+    assert view["status"] == "ready" and view["change_token"]
+    result = restarted.apply("공고서", view["change_token"])  # STATE_MISSING 없이 적용
+    assert result["status"] == "applied"
+    assert result["current_template_application_epoch"] == 2
+
+
 def test_newer_check_supersedes_old_token_without_mutation(tmp_path):
     _reg, _tpl, coord, old_token = _ready(tmp_path)
     newer = coord.check("공고서", "k3")["preparation"]  # 같은 bytes — 새 intent 가 이긴다

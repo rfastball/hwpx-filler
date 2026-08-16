@@ -78,6 +78,8 @@ def test_different_works_run_concurrently() -> None:
 
 # ── fence-first 위임 ────────────────────────────────────────────────────────────
 def test_public_apply_holds_fence_before_delegating(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
     key = PerWorkMutationFenceKey("ws-app", "W-app")
     seen = {}
 
@@ -85,18 +87,26 @@ def test_public_apply_holds_fence_before_delegating(monkeypatch: pytest.MonkeyPa
         seen["held_apply"] = _fence_lock(key).locked()  # helper 실행 시 fence 가 잡혀 있어야 한다
         return "sentinel-outcome"
 
+    # exact re-read(그리고 commit view)가 change "C" → prep → profile "P" 로 풀리는 최소 aggregate.
+    _agg = SimpleNamespace(
+        prepared_changes=(SimpleNamespace(prepared_change_id="C", preparation_id="PP"),),
+        preparations=(SimpleNamespace(preparation_id="PP", qualification_profile_id="P"),),
+    )
+
     class _FakeStore:
-        def load(self, _work_id: str) -> str:
-            seen["held_load"] = _fence_lock(key).locked()  # commit view 도 같은 fence 아래
-            return "sentinel-aggregate"
+        def load(self, _work_id: str) -> object:
+            seen["held_load"] = _fence_lock(key).locked()  # exact 재확인·commit view 는 fence 아래
+            return _agg
 
     monkeypatch.setattr(runner, "apply_prepared_change_under_fence", spy)
     outcome, aggregate = runner.apply_prepared_change(
-        _FakeStore(), None, None, workspace_instance_id="ws-app", work_id="W-app",
+        _FakeStore(), None, None, admission_store=None,
+        workspace_instance_id="ws-app", work_id="W-app",
         change_id="C", actor="a", authorize=lambda _w, _a: None,
         new_application_id="A", provenance_id="P", outbox_event_id="O", applied_at="t",
+        discover_profile_id=lambda: "P",  # observed=exact="P" — mismatch 없이 위임
     )
     assert outcome == "sentinel-outcome"
-    assert aggregate == "sentinel-aggregate"
+    assert aggregate is _agg
     assert seen["held_apply"] is True and seen["held_load"] is True
     assert not _fence_lock(key).locked()  # 반환 뒤 해제
