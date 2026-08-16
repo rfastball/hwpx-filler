@@ -39,13 +39,14 @@ def stage_exact_applied_bytes(
     ext = _MEDIA_EXT.get(blob.media, "")
     path = staging / f"{digest.replace(':', '_')}{ext}"
 
-    # content-addressed: 같은 digest 면 같은 파일. 이미 있으면 재검증만 하고 재사용한다.
-    if path.exists():
-        if blob_digest(path.read_bytes()) != digest:
-            _make_writable(path)
-            path.write_bytes(blob.exact_bytes)
-            _make_readonly(path)
+    # content-addressed: 같은 digest 면 같은 파일. 이미 있으면 재검증하고 재사용한다.
+    if path.exists() and blob_digest(path.read_bytes()) == digest:
+        # 재사용 유효 entry 도 read-only 를 다시 건다 — clear 가 writable 로 두고 unlink 에
+        # 실패하면 writable 로 남아, digest 검사 뒤 제3자가 바꿀 수 있다(run-lifetime 불변 위반).
+        _make_readonly(path)
     else:
+        if path.exists():
+            _make_writable(path)  # 손상 entry 를 덮어쓰려면 먼저 writable 로.
         path.write_bytes(blob.exact_bytes)
         _make_readonly(path)
 

@@ -126,6 +126,22 @@ def test_staging_is_byte_exact_readonly_and_content_addressed(tmp_path: Path) ->
     assert not p.exists()
 
 
+def test_staging_restores_readonly_on_reused_writable_entry(tmp_path: Path) -> None:
+    # clear 가 writable 로 두고 unlink 에 실패한 잔존 entry(디지스트는 맞음) 재사용 시
+    # read-only 를 다시 걸어야 run-lifetime 불변이 유지된다.
+    data = b"correct-bytes"
+    digest = blob_digest(data)
+    store = _BlobStore(ContentBlob(digest, "hwpx", data, len(data)))
+    path = Path(stage_exact_applied_bytes(store, tmp_path, digest))
+    import os
+
+    os.chmod(path, path.stat().st_mode | stat.S_IWRITE)  # 실패한 clear 를 흉내
+    assert path.stat().st_mode & stat.S_IWRITE  # writable 잔존 확인
+    reused = stage_exact_applied_bytes(store, tmp_path, digest)
+    assert reused == str(path)
+    assert not (path.stat().st_mode & stat.S_IWRITE)  # 재사용도 read-only 로 복원
+
+
 def test_staging_rewrites_stale_content_addressed_file(tmp_path: Path) -> None:
     data = b"correct-bytes"
     digest = blob_digest(data)
