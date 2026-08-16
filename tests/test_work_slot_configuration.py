@@ -155,6 +155,20 @@ def test_aggregate_rejects_foreign_work_id() -> None:
         WorkSlotConfigurationAggregate(SCHEMA_VERSION, "w1", (foreign,))
 
 
+def test_aggregate_rejects_noncanonical_schema_at_construction() -> None:
+    with pytest.raises(WorkSlotConfigurationError):
+        WorkSlotConfigurationAggregate("nope", "w1", ())
+
+
+@pytest.mark.parametrize("bad_version", [1.5, True, "1"])
+def test_noninteger_version_rejected(bad_version: object) -> None:
+    with pytest.raises(WorkSlotConfigurationError):
+        WorkSlotConfigurationDraft(
+            "w1", "A18", bad_version, SlotSelectionSet(()), EMPTY,
+            None, None, None, NOW, NOW,
+        )
+
+
 # ── codec ─────────────────────────────────────────────────────────────────────
 def test_roundtrip_preserves_empty_tombstone_and_provenance() -> None:
     agg = WorkSlotConfigurationAggregate(

@@ -303,15 +303,24 @@ def encode_selection_set(selection_set: SlotSelectionSet) -> dict[str, object]:
 
 
 def decode_selection_set(data: object) -> SlotSelectionSet:
-    """JSON 표현에서 SlotSelectionSet 복원 — 구문 불변식은 생성지가 재검증한다."""
+    """JSON 표현에서 SlotSelectionSet 복원 — 구문 불변식은 생성지가 재검증한다.
+
+    역직렬화 입력은 신뢰 경계다: `selected_option_ids` 가 리스트가 아니면
+    문자열을 char 로 오인해 tuple 로 삼키지 않고 시끄럽게 거절한다.
+    """
     if not isinstance(data, dict) or not isinstance(data.get("selections"), list):
         raise InvalidSelectionSetError("selection set 표현이 malformed")
-    return SlotSelectionSet(
-        tuple(
+    selections = []
+    for entry in data["selections"]:
+        if not isinstance(entry, dict):
+            raise InvalidSelectionSetError("selection entry 가 malformed")
+        option_ids = entry.get("selected_option_ids")
+        if not isinstance(option_ids, list):
+            raise InvalidSelectionSetError("selected_option_ids 는 리스트여야 한다")
+        selections.append(
             SlotSelection(
-                slot_id=entry["slot_id"],
-                selected_option_ids=tuple(entry["selected_option_ids"]),
+                slot_id=entry.get("slot_id"),  # None·비문자열은 __post_init__ 이 거절
+                selected_option_ids=tuple(option_ids),
             )
-            for entry in data["selections"]
         )
-    )
+    return SlotSelectionSet(tuple(selections))

@@ -74,6 +74,8 @@ class WorkSlotConfigurationDraft:
         _require_nonempty(self.updated_at, "updated_at")
         if not isinstance(self.selections, SlotSelectionSet):
             raise WorkSlotConfigurationError("selections 는 SlotSelectionSet 이어야 한다")
+        if not isinstance(self.version, int) or isinstance(self.version, bool):
+            raise WorkSlotConfigurationError("version 은 정수여야 한다")
         if self.version < 1:
             raise WorkSlotConfigurationError("version 은 1 이상이다")
         if self.origin not in _ORIGINS:
@@ -101,6 +103,10 @@ class WorkSlotConfigurationDraft:
                 "reconciled_from_declared_selection_digest",
             )
             assert self.reconciled_from_version is not None  # narrow for type checker
+            if isinstance(self.reconciled_from_version, bool) or not isinstance(
+                self.reconciled_from_version, int
+            ):
+                raise WorkSlotConfigurationError("reconciled_from_version 은 정수여야 한다")
             if self.reconciled_from_version < 1:
                 raise WorkSlotConfigurationError("reconciled_from_version 은 1 이상이다")
 
@@ -190,6 +196,10 @@ class WorkSlotConfigurationAggregate:
     configurations: tuple[WorkSlotConfigurationDraft, ...]
 
     def __post_init__(self) -> None:
+        if self.schema_version != SCHEMA_VERSION:
+            raise WorkSlotConfigurationError(
+                f"미상 schema_version {self.schema_version!r}"
+            )
         _require_nonempty(self.work_id, "work_id")
         seen: set[str] = set()
         for config in self.configurations:
@@ -202,6 +212,9 @@ class WorkSlotConfigurationAggregate:
                     "같은 Application 의 Configuration 중복"
                 )
             seen.add(config.base_template_application_id)
+        # predecessor provenance 의 aggregate 내 참조 무결성(존재·version·digest 대조)은
+        # 여기서 강제하지 않는다 — successor reconciliation 이 #676 의 권위라 여기서 다시
+        # 판정하면 이중 판정이 된다. 이 모델은 provenance 를 immutable audit value 로만 담는다.
 
 
 def empty_aggregate(work_id: str) -> WorkSlotConfigurationAggregate:
