@@ -181,8 +181,20 @@ _V1_BINDING_KEY = SelectionSemanticBindingKey(
     structure_projection_schema_version="hwpx-structure-projection-v1",
 )
 
+# S5-03(#699) additive: composition-ready profile + projection-v2 는 selection 의미를
+# 그대로 재사용한다 — 같은 slot-selection/v1 manifest 에 결속한다(v1 binding 불변). 리터럴은
+# ring 경계 때문에 여기 산다(Domain 은 application 을 import 하지 않는다) — 새 profile id 를
+# 바꾸면 application.execution_structure 의 상수와 함께 올린다.
+_V2_BINDING_KEY = SelectionSemanticBindingKey(
+    qualification_profile_id="hwpx-template-qualification-v2",
+    structure_projection_schema_version="hwpx-structure-projection-v2",
+)
+
 DEFAULT_SELECTION_SEMANTIC_REGISTRY = SelectionSemanticContractRegistry(
-    [(_V1_BINDING_KEY, _SLOT_SELECTION_V1)]
+    [
+        (_V1_BINDING_KEY, _SLOT_SELECTION_V1),
+        (_V2_BINDING_KEY, _SLOT_SELECTION_V1),
+    ]
 )
 
 

@@ -155,6 +155,22 @@ def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
         ) from exc
 
 
+def _decode_structure_v2(payload: Mapping[str, Any]) -> TemplateStructure:
+    """hwpx-structure-projection-v2 payload → TemplateStructure(product structure만).
+
+    S4 는 selection 에 필요한 제품 구조(root/shared/option Field·순서)만 lossless projection
+    하고 composition-only fact(occurrence/region/relation/envelope/resolver)는 S4 Configuration
+    권위로 복제하지 않는다. product_structure 하위 dict 는 v1 payload 와 같은 shape 라 v1
+    decoder 를 재사용한다.
+    """
+    product = payload.get("product_structure")
+    if not isinstance(product, Mapping):
+        raise TemplateStructureIntegrityError(
+            "v2 projection payload 에 product_structure 매핑이 없다"
+        )
+    return _decode_structure_v1(product)
+
+
 class StructureProjectionDecoderRegistry:
     """immutable projection-schema → decoder registry — unknown schema 를 latest 로 안 푼다."""
 
@@ -179,7 +195,10 @@ class StructureProjectionDecoderRegistry:
 
 
 DEFAULT_STRUCTURE_DECODER_REGISTRY = StructureProjectionDecoderRegistry(
-    [("hwpx-structure-projection-v1", _decode_structure_v1)]
+    [
+        ("hwpx-structure-projection-v1", _decode_structure_v1),
+        ("hwpx-structure-projection-v2", _decode_structure_v2),
+    ]
 )
 
 
