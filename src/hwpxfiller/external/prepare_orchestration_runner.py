@@ -79,6 +79,7 @@ from hwpxfiller.application.work_template_state import (
     MigrationProvenance,
     PreparedTemplateChange,
     TemplateChangePreparation,
+    WorkTemplateStateAggregate,
 )
 from .work_template_store import initialize_work
 from .candidate_store import ObjectCorrupt as CandidateCorrupt
@@ -370,14 +371,18 @@ def apply_prepared_change(
     provenance_id: str,
     outbox_event_id: str,
     applied_at: str,
-) -> ApplyOutcome:
+) -> tuple[ApplyOutcome, WorkTemplateStateAggregate]:
     """fence-first public entry — per-Work mutation fence 를 먼저 잡고 under-fence 로 위임한다.
 
     fence 는 ``(WorkspaceInstanceId, WorkAuthorityId=work_id)`` 로 S3 Apply·S4 mutation 을
     선형화한다(#675). helper 는 fence 를 재획득하지 않는다.
+
+    commit 된 aggregate 를 **같은 fence 아래에서** 다시 읽어 함께 돌려준다 — caller 가
+    fence 밖에서 reload 하면 그 사이 다른 apply 가 끼어들어 outcome 과 어긋난 view 를
+    투영할 수 있다(응답 status 는 이 change, epoch·is_current 는 다음 change).
     """
     with per_work_mutation_fence(workspace_instance_id, work_id):
-        return apply_prepared_change_under_fence(
+        outcome = apply_prepared_change_under_fence(
             work_store,
             candidate_store,
             qualification_store,
@@ -390,6 +395,7 @@ def apply_prepared_change(
             outbox_event_id=outbox_event_id,
             applied_at=applied_at,
         )
+        return outcome, work_store.load(work_id)
 
 
 def apply_prepared_change_under_fence(

@@ -32,19 +32,24 @@ def test_under_fence_helpers_exist() -> None:
 
 def test_under_fence_helpers_not_referenced_outside_defining_module() -> None:
     defs = _under_fence_defs()
-    names = set(defs)
+    defining_paths = set(defs.values())
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):
+        if path in defining_paths:
+            continue  # 정의 모듈은 자기 helper 를 ast.Name 으로 부른다 — 허용.
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            # ast.Name(직접 import 호출)·ast.Attribute(module.helper 접근) 둘 다 잡는다 —
-            # 한쪽만 보면 게이트 정의역이 우회 호출을 안 담는다.
-            referenced = None
-            if isinstance(node, ast.Name) and node.id in names:
-                referenced = node.id
-            elif isinstance(node, ast.Attribute) and node.attr in names:
-                referenced = node.attr
-            if referenced is not None and path != defs[referenced]:
-                offenders.append(f"{path.relative_to(SRC)}:{node.lineno} → {referenced}")
+            # 세 우회 경로를 모두 잡는다(한쪽만 보면 정의역이 우회 호출을 안 담는다):
+            #  · from runner import helper [as alias] → ImportFrom 의 원래 이름
+            #  · import runner; runner.helper()      → ast.Attribute
+            hit = None
+            if isinstance(node, ast.ImportFrom):
+                hit = next(
+                    (a.name for a in node.names if a.name.endswith("_under_fence")), None
+                )
+            elif isinstance(node, ast.Attribute) and node.attr.endswith("_under_fence"):
+                hit = node.attr
+            if hit is not None:
+                offenders.append(f"{path.relative_to(SRC)}:{node.lineno} → {hit}")
     assert not offenders, (
         "under-fence helper 를 정의 모듈 밖에서 참조했다(fence 우회 위험): " + "; ".join(offenders)
     )

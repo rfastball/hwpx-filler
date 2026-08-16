@@ -82,15 +82,21 @@ def test_public_apply_holds_fence_before_delegating(monkeypatch: pytest.MonkeyPa
     seen = {}
 
     def spy(*_a: object, **_k: object) -> str:
-        seen["held"] = _fence_lock(key).locked()  # helper 실행 시 fence 가 잡혀 있어야 한다
-        return "sentinel"
+        seen["held_apply"] = _fence_lock(key).locked()  # helper 실행 시 fence 가 잡혀 있어야 한다
+        return "sentinel-outcome"
+
+    class _FakeStore:
+        def load(self, _work_id: str) -> str:
+            seen["held_load"] = _fence_lock(key).locked()  # commit view 도 같은 fence 아래
+            return "sentinel-aggregate"
 
     monkeypatch.setattr(runner, "apply_prepared_change_under_fence", spy)
-    result = runner.apply_prepared_change(
-        None, None, None, workspace_instance_id="ws-app", work_id="W-app",
+    outcome, aggregate = runner.apply_prepared_change(
+        _FakeStore(), None, None, workspace_instance_id="ws-app", work_id="W-app",
         change_id="C", actor="a", authorize=lambda _w, _a: None,
         new_application_id="A", provenance_id="P", outbox_event_id="O", applied_at="t",
     )
-    assert result == "sentinel"
-    assert seen["held"] is True
+    assert outcome == "sentinel-outcome"
+    assert aggregate == "sentinel-aggregate"
+    assert seen["held_apply"] is True and seen["held_load"] is True
     assert not _fence_lock(key).locked()  # 반환 뒤 해제

@@ -230,7 +230,9 @@ def test_integrity_failure_is_loud_not_a_domain_status(tmp_path, monkeypatch):
     _reg, _tpl, coord, token = _ready(tmp_path)
     monkeypatch.setattr(
         tc, "apply_prepared_change",
-        lambda *a, **k: ApplyOutcome(APPLY_INTEGRITY_ERROR, None),
+        # public entry 는 (outcome, committed_aggregate) 튜플을 돌려준다(#675) — 무결성
+        # 오류는 aggregate 사용 전에 raise 하므로 view 는 None 이어도 된다.
+        lambda *a, **k: (ApplyOutcome(APPLY_INTEGRITY_ERROR, None), None),
     )
     with pytest.raises(TemplateChangeError):
         coord.apply("공고서", token)

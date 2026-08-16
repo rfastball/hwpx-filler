@@ -508,7 +508,9 @@ class TemplateChangeCoordinator:
         now = self._now()
         # create-once durable WorkspaceInstanceId — S3 Apply·S4 mutation 이 같은 fence 를 공유한다.
         workspace_instance_id = self._workspace.get_or_create(now)
-        outcome = apply_prepared_change(
+        # fence 아래에서 apply 하고, commit 된 aggregate 도 같은 fence 아래에서 받는다 —
+        # fence 밖에서 reload 하면 다른 apply 가 끼어들어 outcome↔view 가 어긋날 수 있다.
+        outcome, aggregate = apply_prepared_change(
             self._works, self._candidates, self._quals,
             workspace_instance_id=workspace_instance_id,
             work_id=work_id, change_id=change_id, actor=actor, authorize=_authorize,
@@ -519,7 +521,6 @@ class TemplateChangeCoordinator:
             raise TemplateChangeError(
                 "적용 무결성 확인에 실패했습니다 — 저장된 확인 결과를 신뢰할 수 없습니다"
             )
-        aggregate = self._works.load(work_id)
         current = find_application(
             aggregate, aggregate.work.current_template_application_id
         )
