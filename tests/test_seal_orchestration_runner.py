@@ -32,6 +32,7 @@ from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
     THEOREM_EVIDENCE_V1,
+    TheoremEvidenceRegistry,
     theorem_evidence_digest,
 )
 from hwpxfiller.application.execution_capture import (
@@ -66,6 +67,7 @@ from hwpxfiller.application.execution_contract_set import (
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
+    IdempotencyKeyReused as StoreIdempotencyKeyReused,
     PlanPublished,
     RequestedExact,
     StaleExecutionBasis,
@@ -795,3 +797,114 @@ def test_domain_block_missing_attempt_digest_raises() -> None:
     broken = dataclasses.replace(block, captured_attempt_digest=None)
     with pytest.raises(ExecutionQualificationContextError):
         sep._attempt_evidence_of_domain_block(broken)
+
+
+# ══ Codex #722 finding fixes ══════════════════════════════════════════════════════════
+def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypatch) -> None:
+    # build_execution_contract_set 가 injected registry 를 받아야 한다 — DEFAULT 로 조용히 fallback 하면
+    # injected registry 가 admit 한 manifest 가 여기서 늦게 IntegrityError 로 터진다.
+    injected = TheoremEvidenceRegistry()
+    injected.register(THEOREM_EVIDENCE_V1)
+    seen: list[object] = []
+    real = sep.build_execution_contract_set
+
+    def spy(*a, theorem_registry, **kw):
+        seen.append(theorem_registry)
+        return real(*a, theorem_registry=theorem_registry, **kw)
+
+    monkeypatch.setattr(sep, "build_execution_contract_set", spy)
+    candidate = compile_candidate(_captured(), theorem_registry=injected)
+    assert isinstance(candidate, PlanCandidate)
+    assert seen == [injected]  # DEFAULT 가 아니라 injected 를 그대로 받았다
+
+
+def test_finding2_idempotency_key_reused_single_public_type(tmp_path) -> None:
+    # optimistic 경로와 store 경로가 하나의 공개 타입을 노출한다.
+    assert sep.IdempotencyKeyReused is StoreIdempotencyKeyReused
+    store = WorkExecutionPlanStore(tmp_path)
+    command = _command("r1")
+    fingerprint = build_request_intent_fingerprint(command, WORK)
+    world = World()
+
+    def competing_diff_fingerprint(w):
+        # capture gate 이후 같은 request 를 **다른** fingerprint 로 먼저 commit → store 경로 충돌.
+        other = build_request_intent_fingerprint(
+            _command("r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v1")),
+            WORK,
+        )
+        projection = {"policy_block": {"policy_code": "X"}}
+        digest = canonical_execution_digest(projection)
+        store.commit_seal_terminal_outcome_atomic(
+            work_authority_id=WORK, expected_aggregate_version=0, request_id="r1",
+            fingerprint=other, resolved_seal_policy=_policy(),
+            capture_evidence=AttemptSealCaptureEvidence(
+                captured_attempt_semantic_projection=projection,
+                captured_attempt_digest=digest, normalized_blockers=("X",),
+                provenance=CaptureEvidenceProvenance("u", "u", AT),
+            ),
+            terminal_outcome=ExecutionPolicyBlocked("X", captured_attempt_digest=digest),
+            now="t0",
+        )
+
+    world.on_after_capture_gate = competing_diff_fingerprint
+    with pytest.raises(StoreIdempotencyKeyReused):
+        _run(store, world, command)
+
+
+def test_finding3_capture_policy_mismatch_rejected_fail_closed(tmp_path) -> None:
+    store = WorkExecutionPlanStore(tmp_path)
+
+    class TamperWorld(World):
+        def capture(self, ws, wid, exp_app, exp_profile, policy):
+            self.capture_calls += 1
+            tampered = _policy(policy_resolution_version="tampered/v9")  # ≠ 요청 policy
+            return judge_captured_execution(
+                workspace_instance_id=ws, work_authority_id=wid,
+                expected_template_application_id=exp_app, expected_profile_id=exp_profile,
+                resolved_seal_policy=tampered,
+                template=_template(self.structure, app=self.app),
+                selection_observation=CapturedSelection(_snapshot(self.structure, app=self.app)),
+                field_binding_observation=CapturedFieldBinding(_binding(self.structure, app=self.app)),
+                captured_at=AT, policy_block=None,
+            )
+
+    with pytest.raises(ExecutionQualificationContextError):
+        _run(store, TamperWorld())
+    assert not store.exists(WORK)  # request 미소비
+
+
+def test_finding4_profile_moved_and_revoked_records_policy_block(tmp_path) -> None:
+    store = WorkExecutionPlanStore(tmp_path)
+    world = World()
+
+    def mutate(w):
+        w.profile = "profile-2"  # Profile 이동
+        w.policy_block = _revoked_block()  # candidate profile 은 revoked
+
+    world.on_after_capture_gate = mutate
+    result = _run(store, world)
+    # moved 를 이유로 revocation 을 놓치지 않는다 — policy block 이 precedence 상 앞선다.
+    assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
+    assert store.load(WORK).plans_by_semantic_digest == {}
+
+
+def test_finding4_profile_moved_and_admitted_is_stale(tmp_path) -> None:
+    store = WorkExecutionPlanStore(tmp_path)
+    world = World()
+
+    def mutate(w):
+        w.profile = "profile-2"
+        w.app = "app-2"  # candidate app 관측 시 cross-ref context error → moved stale
+
+    world.on_after_capture_gate = mutate
+    result = _run(store, world)
+    assert isinstance(result.terminal_outcome, StaleExecutionBasis)
+    assert result.terminal_outcome.stale_reason == STALE_DIGEST_MISMATCH
+
+
+def test_finding5_retained_manifest_ref_is_resolvable_profile_id(tmp_path) -> None:
+    store = WorkExecutionPlanStore(tmp_path)
+    _run(store, World())
+    plan = next(iter(store.load(WORK).plans_by_semantic_digest.values()))
+    # get_manifest 는 profile ID 로 resolve 한다 — retention ref 가 그 ID 여야 한다.
+    assert plan.dependency_set.qualification_profile_manifest_ref == PROFILE

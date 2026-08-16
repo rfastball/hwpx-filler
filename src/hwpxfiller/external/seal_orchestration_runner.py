@@ -50,7 +50,7 @@ from hwpxfiller.application.seal_execution_plan import (
     classify_capture_result,
     compile_candidate,
     decide_final_verdict,
-    final_verdict_on_moved_basis,
+    final_verdict_profile_moved,
     optimistic_replay,
     publication_kind_for,
     published_outcome_for,
@@ -154,16 +154,13 @@ def seal_execution_plan(
     with profile_fence(candidate.qualification_profile_id):
         with work_fence(ws, work_authority_id):
             summary = read_summary(ws, work_authority_id)
-            if (
-                summary.qualification_profile_id != candidate.qualification_profile_id
-                or summary.template_application_id != candidate.template_application_id
-            ):
-                verdict = final_verdict_on_moved_basis(candidate, summary)
-            else:
+            if summary.qualification_profile_id == candidate.qualification_profile_id:
+                # 같은 Profile fence 아래에서 current(=summary) Application 의 basis 를 재구성한다.
+                # Application 이 같으면 candidate 와 대조, 이동했으면 다른 basis digest → stale.
                 current = capture_under_fence(
                     ws,
                     work_authority_id,
-                    candidate.template_application_id,
+                    summary.template_application_id,
                     candidate.qualification_profile_id,
                     candidate.resolved_seal_policy,
                 )
@@ -175,6 +172,18 @@ def seal_execution_plan(
                 verdict = decide_final_verdict(
                     candidate, current, current_compiled, summary
                 )
+            else:
+                # Profile 이 이동했다 — 다른 ProfileFence 를 WorkFence 아래 잡지 않는다. 대신 우리가
+                # 쥔 candidate ProfileFence 아래 candidate profile 의 admission 을 관찰해(revoked →
+                # policy block, precedence 상 stale 보다 앞) moved 로 revocation 을 놓치지 않는다.
+                observation = capture_under_fence(
+                    ws,
+                    work_authority_id,
+                    candidate.template_application_id,
+                    candidate.qualification_profile_id,
+                    candidate.resolved_seal_policy,
+                )
+                verdict = final_verdict_profile_moved(candidate, observation, summary)
             return _commit_verdict(
                 plan_store, command, fingerprint, candidate, verdict, clock()
             )

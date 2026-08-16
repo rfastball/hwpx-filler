@@ -65,6 +65,7 @@ from hwpxfiller.application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
     FirstSeenSealCommandRecord,
+    IdempotencyKeyReused,
     PlanPublished,
     RequestedAuto,
     RequestedExact,
@@ -268,12 +269,8 @@ def require_exact_selector_consistency(
 
 
 # ─── optimistic ledger replay 판정 ─────────────────────────────────────────────────────
-class IdempotencyKeyReused(SealAttemptError):
-    """같은 request_id 가 다른 intent fingerprint 로 재사용됨 — 최초 record 수정 0."""
-
-    code = "IDEMPOTENCY_KEY_REUSED"
-
-
+# idempotency 재사용 오류는 optimistic·store 두 경로가 **하나의 공개 타입**을 노출해야 한다 —
+# race timing 에 따라 다른 예외가 나오지 않게 S5-07 store 의 IdempotencyKeyReused 를 재사용한다.
 def optimistic_replay(
     prior: FirstSeenSealCommandRecord | None,
     fingerprint: SealRequestIntentFingerprintPayload,
@@ -401,7 +398,7 @@ def compile_candidate(
             captured_execution_input_digest=evidence.captured_execution_input_digest,
         )
     assert isinstance(compiled, QualifiedExecutionCompilation)
-    return _build_plan_candidate(captured, compiled, evidence)
+    return _build_plan_candidate(captured, compiled, evidence, theorem_registry)
 
 
 def require_exact_selector_consistency_for_compile(policy: ResolvedSealPolicy) -> None:
@@ -420,6 +417,7 @@ def _build_plan_candidate(
     captured: CapturedExecutionInput,
     compiled: QualifiedExecutionCompilation,
     evidence: CompleteSealCaptureEvidence,
+    theorem_registry: TheoremEvidenceRegistry,
 ) -> PlanCandidate:
     from hwpxfiller.application.stored_execution_plan import PlanDependencySet
 
@@ -446,6 +444,9 @@ def _build_plan_candidate(
         composition_theorem_evidence_manifest_digest=(
             policy.composition_theorem_evidence_manifest_digest
         ),
+        # composition verification 이 쓴 registry 를 그대로 — DEFAULT 로 조용히 되돌아가면 injected
+        # registry 가 admit 한 manifest 가 여기서 ExecutionContractSetIntegrityError 로 늦게 터진다.
+        theorem_registry=theorem_registry,
     )
     basis = ExecutionBasis(
         workspace_instance_id=captured.workspace_instance_id,
@@ -468,7 +469,9 @@ def _build_plan_candidate(
     dependency_set = PlanDependencySet(
         candidate_blob_ref=applied.canonical_blob_reference,
         pass_evidence_ref=qual.pass_evidence_id,
-        qualification_profile_manifest_ref=profile_semantic_digest,
+        # QualificationObjectStore.get_manifest 는 profile ID 로만 resolve 한다 — semantic digest 를
+        # retention ref 로 두면 nonempty 검사는 통과해도 나중에 manifest 를 못 찾는다(#722 finding 5).
+        qualification_profile_manifest_ref=qual.qualification_profile_id,
         template_structure_projection_ref=qual.template_structure_digest,
         execution_contract_set_ref=contracts.contract_set_manifest_digest,
         composition_theorem_evidence_manifest_ref=(
@@ -577,13 +580,28 @@ def _context_error_to_attempt(error: ExecutionCaptureContextError) -> SealAttemp
     )
 
 
+def _require_policy_echo(result: object, policy: ResolvedSealPolicy) -> None:
+    """capture adapter 가 요청 policy 를 그대로 echo 했는지 확인한다(fail-closed).
+
+    stale/faulty adapter 가 다른 resolved policy 를 담은 결과를 봉인하지 못하게, complete·domain
+    block 결과의 ``resolved_seal_policy`` 를 요청 policy 와 대조한다(불일치=attempt, request 미소비).
+    """
+    echoed = getattr(result, "resolved_seal_policy", None)
+    if echoed is not None and echoed != policy:
+        raise ExecutionQualificationContextError(
+            "capture adapter 가 요청과 다른 resolved policy 를 echo 했다(fail-closed)"
+        )
+
+
 def classify_capture_result(
     result: CaptureExecutionQualificationResult, policy: ResolvedSealPolicy
 ) -> CaptureGateClassification:
     """capture gate 결과를 complete/terminal 로 가른다(context error 는 raise, request 미소비)."""
     if isinstance(result, CapturedExecutionInput):
+        _require_policy_echo(result, policy)
         return CaptureComplete(result)
     if isinstance(result, CapturedExecutionDomainBlock):
+        _require_policy_echo(result, policy)
         evidence = _attempt_evidence_of_domain_block(result)
         outcome = ExecutionQualificationBlocked(
             capture_evidence_ref=evidence.captured_attempt_digest,
@@ -642,6 +660,26 @@ def final_verdict_on_moved_basis(
     )
 
 
+def final_verdict_profile_moved(
+    candidate: CandidateCompilation,
+    candidate_profile_observation: CaptureExecutionQualificationResult,
+    summary: WorkExecutionSummary,
+) -> FinalVerdict:
+    """current profile 이 candidate 와 달라진 경우 — candidate ProfileFence 아래 admission 을 먼저 본다.
+
+    다른 ProfileFence 를 WorkFence 아래 잡을 수 없으므로 candidate profile(우리가 fence 를 쥔 그
+    profile)의 admission 을 capture 로 관찰한다. 그 profile 이 revoked 면 policy block 이
+    precedence 상 stale 보다 앞선다 — moved 를 이유로 revocation 을 놓치지 않는다(#722 finding 4).
+    admitted 면 work 가 다른 base 로 이동한 것이라 moved-basis stale 로 닫는다.
+    """
+    if isinstance(candidate_profile_observation, CapturedExecutionPolicyBlock):
+        terminal = _policy_block_evidence_and_outcome(
+            candidate_profile_observation, candidate.resolved_seal_policy
+        )
+        return FinalLedger(outcome=terminal.outcome, evidence=terminal.evidence)
+    return final_verdict_on_moved_basis(candidate, summary)
+
+
 def decide_final_verdict(
     candidate: CandidateCompilation,
     current_result: CaptureExecutionQualificationResult,
@@ -663,6 +701,8 @@ def decide_final_verdict(
     # 2. exact context/integrity 복원 실패 → attempt(no ledger).
     if isinstance(current_result, ExecutionCaptureContextError):
         raise _context_error_to_attempt(current_result)
+    # capture adapter 가 candidate policy 를 그대로 echo 했는지 재확인(fail-closed).
+    _require_policy_echo(current_result, candidate.resolved_seal_policy)
     # 4. current not sealable(domain block) → STALE, current blocker 를 기록하지 않는다.
     if isinstance(current_result, CapturedExecutionDomainBlock):
         return _verdict_current_not_sealable(candidate, summary)
