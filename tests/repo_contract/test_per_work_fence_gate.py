@@ -36,12 +36,15 @@ def test_under_fence_helpers_not_referenced_outside_defining_module() -> None:
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if (
-                isinstance(node, ast.Name)
-                and node.id in names
-                and path != defs[node.id]
-            ):
-                offenders.append(f"{path.relative_to(SRC)}:{node.lineno} → {node.id}")
+            # ast.Name(직접 import 호출)·ast.Attribute(module.helper 접근) 둘 다 잡는다 —
+            # 한쪽만 보면 게이트 정의역이 우회 호출을 안 담는다.
+            referenced = None
+            if isinstance(node, ast.Name) and node.id in names:
+                referenced = node.id
+            elif isinstance(node, ast.Attribute) and node.attr in names:
+                referenced = node.attr
+            if referenced is not None and path != defs[referenced]:
+                offenders.append(f"{path.relative_to(SRC)}:{node.lineno} → {referenced}")
     assert not offenders, (
         "under-fence helper 를 정의 모듈 밖에서 참조했다(fence 우회 위험): " + "; ".join(offenders)
     )
