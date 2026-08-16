@@ -1,0 +1,118 @@
+{
+  "encoding_version": "execution-canonical/v1",
+  "vectors": [
+    {
+      "name": "null",
+      "value": null,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763100",
+      "digest": "sha256:c86e7e8aa99c433d2338628e1e835b88116dbec3e716fdd276d804b45958f815"
+    },
+    {
+      "name": "bool_true",
+      "value": true,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763102",
+      "digest": "sha256:448e6ed84db6259249ee610bf05ecd905c00bd95b06213febe94c297d7dfd273"
+    },
+    {
+      "name": "bool_false",
+      "value": false,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763101",
+      "digest": "sha256:632ced30c7571ac8124e5db254faf83434cfdb63c7bfcbdf8ff08796e857c7b9"
+    },
+    {
+      "name": "int_zero",
+      "value": 0,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763103000000000000000000",
+      "digest": "sha256:97e7cbc8d50e27ecbf75599e59a86717e6326ec0c18092e286212aaf35126dd5"
+    },
+    {
+      "name": "int_pos",
+      "value": 1,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763103000000000000000001",
+      "digest": "sha256:69d09c8a79c7425d9f47ebea806ab562309b407d3be8818659244173b8b25d63"
+    },
+    {
+      "name": "int_neg",
+      "value": -1,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763103010000000000000001",
+      "digest": "sha256:b5c57dc37c727f6834156a29031bc249bda0f1b520e537f0693907f5684a89e1"
+    },
+    {
+      "name": "int_safe_max",
+      "value": 9007199254740991,
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310300001fffffffffffff",
+      "digest": "sha256:ae729092d02ea5e1fa58521b2d358f184e48d97977a5a1297e8662e686cd186f"
+    },
+    {
+      "name": "ascii",
+      "value": "slot_a",
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310400000006736c6f745f61",
+      "digest": "sha256:0ef38b2eb4daaaf81f43bb8a93be571a65860941c9df72f0250e11e2eb6c649a"
+    },
+    {
+      "name": "hangul",
+      "value": "항목",
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310400000006ed95adebaaa9",
+      "digest": "sha256:ce73ec4a3ba48f956e384142ea25b63f7b5448a10cdcfa3a364d44bf34050087"
+    },
+    {
+      "name": "emoji",
+      "value": "opt_😀",
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f763104000000086f70745ff09f9880",
+      "digest": "sha256:6f227a285960fd436030caf0740605e997f1bb0719fbbe305bc05d8fb9828a35"
+    },
+    {
+      "name": "empty_array",
+      "value": [],
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310500000000",
+      "digest": "sha256:a8c7a545e46b42886368101d3ad26ff95926195b840fc4a4ff7f008ebb28563f"
+    },
+    {
+      "name": "empty_map",
+      "value": {},
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310600000000",
+      "digest": "sha256:2db2a2ab2514b50d56a477cac13eadbfae48df3f1b360d956c6a576e3da32d27"
+    },
+    {
+      "name": "shared_prefix_keys",
+      "value": {
+        "a": 1,
+        "ab": 2
+      },
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f7631060000000200000001610300000000000000000100000002616203000000000000000002",
+      "digest": "sha256:a2c41bcd4ec8b13039d2560c5b4f08c8d899415cca579cca36e495719a823f93"
+    },
+    {
+      "name": "nested",
+      "value": {
+        "contracts": {
+          "x": [
+            "exec/1",
+            "bind/1"
+          ],
+          "n": 3
+        },
+        "flag": false,
+        "nil": null
+      },
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f7631060000000300000009636f6e7472616374730600000002000000016e03000000000000000003000000017805000000020400000006657865632f31040000000662696e642f3100000004666c616701000000036e696c00",
+      "digest": "sha256:824b4243057f7e19a29eed5e3af6cbbc8cd7cda892f613571414882252eaf2dc"
+    },
+    {
+      "name": "nfc",
+      "value": {
+        "name": "é"
+      },
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310600000001000000046e616d650400000002c3a9",
+      "digest": "sha256:c49e51b9db94e592044f65168b4f85a3fee54178d0f1f3cfad9bf0159132c81d"
+    },
+    {
+      "name": "nfd",
+      "value": {
+        "name": "é"
+      },
+      "canonical_hex": "484650584543310000000016657865637574696f6e2d63616e6f6e6963616c2f76310600000001000000046e616d65040000000365cc81",
+      "digest": "sha256:893b776721c0494de5c6fbd71bdc6a53a42c239bac71fef3207b2d632fa23e59"
+    }
+  ]
+}
