@@ -236,6 +236,9 @@ class FieldBindingRevision:
     captured_at: str
 
     def __post_init__(self) -> None:
+        # 저장 revision 이 미지원 contract 를 담고 있으면 fail-closed(구버전 앱이 모르는 의미 방지).
+        require_field_binding_contract(self.field_binding_semantic_contract_id)
+        require_source_schema_contract(self.source_schema_contract_id)
         expected = field_binding_authority_revision_identity(
             work_authority_id=self.work_authority_id,
             base_template_application_id=self.base_template_application_id,
@@ -412,26 +415,36 @@ def prepare_legacy_field_binding_migration(
 def decide_migration_commit(
     draft: FieldBindingMigrationDraft,
     resolved_input: FieldBindingInput,
+    current_application_id: str,
     current_legacy_basis_fingerprint: str,
+    omitted_field_ids: "frozenset[str] | set[str]" = frozenset(),
 ) -> FieldBindingRevision:
     """migration commit 순수 결정 — 성공하면 immutable revision, 아니면 typed 오류.
 
-    - basis 이동 → :class:`StaleFieldBindingBasis`(ledger 미기록).
-    - blocker field 가 resolved_input 에 명시 규칙으로 없으면 → review required(미기록).
+    - basis 이동(legacy fingerprint **또는** current Application 이동) → :class:`StaleFieldBindingBasis`.
+    - draft 가 표면화한 field(candidate·blocker) 가 resolved_input 에 없고 명시 omission 결정도
+      없으면 → review required(값 누락 silent drop 방지, 미기록).
     - 그 외 integrity 위반 → :class:`FieldBindingInputIntegrityError`(미기록).
     """
+    # current Application 이 draft 의 base 와 다르면 legacy fingerprint 가 같아도 stale 이다.
     if (
         current_legacy_basis_fingerprint != draft.legacy_basis_fingerprint
+        or current_application_id != draft.base_template_application_id
         or resolved_input.base_template_application_id
         != draft.base_template_application_id
     ):
         raise StaleFieldBindingBasis("legacy migration basis 가 capture 이후 이동했다")
     resolved_fields = {rule.field_id for rule in resolved_input.binding_rules}
-    for blocker in draft.blockers:
-        if blocker.field_id not in resolved_fields:
+    accounted = resolved_fields | set(omitted_field_ids)
+    # draft 가 드러낸 모든 field 는 명시 규칙이거나 명시 omission 이어야 한다(누락=silent drop).
+    surfaced = {c.field_id for c in draft.candidate_rules} | {
+        b.field_id for b in draft.blockers
+    }
+    for field_id in surfaced:
+        if field_id not in accounted:
             raise FieldBindingReviewRequired(
                 "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED",
-                f"미해결 blocker: {blocker.field_id!r} ({blocker.reason})",
+                f"미해결 legacy field(규칙·명시 omission 없음): {field_id!r}",
             )
     if resolved_input.work_authority_id != draft.work_authority_id:
         raise FieldBindingInputIntegrityError(
@@ -538,7 +551,9 @@ def decide_application_review_commit(
     """review commit 순수 결정 — 성공하면 base=current Application 의 immutable revision.
 
     - current Application 이 review target 과 다르거나 basis digest 이동 → stale(미기록).
-    - resolved_input 이 current active 아닌 Field 를 여전히 참조 → 미해결 BROKEN(미기록).
+    - resolved_input 이 current active 아닌 Field 를 참조하거나 SOURCE 규칙이 current schema 에
+      없는 source_key 로 결속하면 → 미해결 BROKEN(미기록). reviewed revision 은 current data 에
+      결속 가능해야 한다.
     - base 는 current Application 이어야 한다(old revision base 재지정 없음).
     """
     if current_structure.application_id != review.target_application_id or (
@@ -550,11 +565,18 @@ def decide_application_review_commit(
             "resolved_input base 는 current Application 이어야 한다"
         )
     active = set(current_structure.active_field_ids)
+    current_schema = set(current_structure.source_schema_keys)
     for rule in resolved_input.binding_rules:
         if rule.field_id not in active:
             raise FieldBindingReviewRequired(
                 "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
                 f"미해결 Field(현재 active 아님): {rule.field_id!r}",
+            )
+        # SOURCE 규칙은 current schema 에 있는 source_key 로만 결속돼야 한다(stale schema 결속 방지).
+        if rule.binding_kind == SOURCE and rule.source_key not in current_schema:
+            raise FieldBindingReviewRequired(
+                "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
+                f"미해결 source_key(current schema 부재): {rule.source_key!r}",
             )
     if resolved_input.work_authority_id != review.work_authority_id:
         raise FieldBindingInputIntegrityError(

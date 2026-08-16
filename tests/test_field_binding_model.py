@@ -30,6 +30,7 @@ from hwpxfiller.domain.field_binding import (
     digest_binding_rules,
     digest_source_schema,
     require_field_binding_contract,
+    require_registered_document_value_policy,
     require_single_rule_per_field,
     require_source_schema_contract,
     require_value_type,
@@ -215,3 +216,15 @@ def test_document_policy_splits_escaping_to_native_materializer() -> None:
     # XML escaping 은 S6 소유 — 이 계층은 logical text 만.
     assert POLICY.escaping_responsibility == "NATIVE_MATERIALIZER"
     assert EXACT_BLANK_POLICY == "WRITE_EMPTY_TEXT_PRESERVE_FIELD"
+
+
+def test_registered_policy_id_with_altered_behavior_rejected() -> None:
+    # policy_id 만 persist 되므로, 등록 id 로 동작 필드를 바꾼 객체는 loud 로 거절(#1).
+    from dataclasses import replace as _replace
+
+    diverged = _replace(POLICY, whitespace_policy="STRIP_LEADING_TRAILING")
+    with pytest.raises(UnsupportedDocumentValuePolicyError):
+        require_registered_document_value_policy(diverged)
+    with pytest.raises(UnsupportedDocumentValuePolicyError):
+        FieldBindingRule("f", SOURCE, diverged, source_key="k", value_type=EXACT_TEXT)
+    assert require_registered_document_value_policy(POLICY) is POLICY

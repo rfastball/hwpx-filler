@@ -51,6 +51,7 @@ from hwpxfiller.external.field_binding_store import (
     FieldBindingIntegrityError,
     FieldBindingSchemaUnsupported,
     FieldBindingWorkspaceMismatch,
+    LegacyMigrationBasis,
     WorkFieldBindingStore,
     WorkFieldBindingStoreError,
     commit_field_binding_for_current_application,
@@ -84,11 +85,12 @@ def _input(*, base="A17", rules=None, keys=("name",), work=WORK, ws=WS):
 
 
 class _Basis:
-    def __init__(self, fingerprint: str) -> None:
+    def __init__(self, fingerprint: str, application_id: str = "A17") -> None:
         self.fingerprint = fingerprint
+        self.application_id = application_id
 
-    def current_legacy_basis_fingerprint(self, work_authority_id: str) -> str:
-        return self.fingerprint
+    def current_legacy_migration_basis(self, work_authority_id: str) -> LegacyMigrationBasis:
+        return LegacyMigrationBasis(self.application_id, self.fingerprint)
 
 
 class _StructurePort:
@@ -388,6 +390,64 @@ def test_migration_commit_dedups_revision_but_appends_ledger(tmp_path) -> None:
     assert len(stored.immutable_binding_revisions) == 1  # dedup
     assert len(stored.first_seen_command_ledger) == 2
     assert stored.aggregate_version == 2
+
+
+def test_revision_dedup_by_identity_not_dataclass_equality() -> None:
+    # 같은 semantic 이나 captured_at 이 다른 재commit 은 거짓 충돌 없이 dedup 돼야 한다(#4).
+    rev1 = revision_from_input(build_field_binding_input(
+        workspace_instance_id=WS, work_authority_id=WORK, base_template_application_id="A17",
+        binding_rules=[_rule("f1")], source_schema_keys=["name"],
+        raw_record_contract_id="raw-record/v1", captured_at="2026-01-01T00:00:00+09:00"))
+    rev2 = revision_from_input(build_field_binding_input(
+        workspace_instance_id=WS, work_authority_id=WORK, base_template_application_id="A17",
+        binding_rules=[_rule("f1")], source_schema_keys=["name"],
+        raw_record_contract_id="raw-record/v1", captured_at="2027-09-09T00:00:00+09:00"))
+    assert rev1 != rev2  # dataclass equality 는 captured_at 에서 갈린다
+    assert rev1.field_binding_authority_revision == rev2.field_binding_authority_revision
+    stored = commit_revision(
+        empty_stored(WS, WORK), rev1,
+        CommittedDraftRecord(MIGRATION, "r1", "A17", "b", rev1.field_binding_authority_revision, NOW),
+        FieldBindingIdempotencyRecord("r1", "s", "f", rev1.field_binding_authority_revision, "C", NOW),
+    )
+    stored = commit_revision(
+        stored, rev2,
+        CommittedDraftRecord(MIGRATION, "r2", "A17", "b", rev2.field_binding_authority_revision, NOW),
+        FieldBindingIdempotencyRecord("r2", "s", "f2", rev2.field_binding_authority_revision, "C", NOW),
+    )
+    assert len(stored.immutable_binding_revisions) == 1  # dedup, 오류 없음
+    assert stored.immutable_binding_revisions[0] is rev1  # 기존 유지
+
+
+def test_migration_commit_stale_when_application_moved(tmp_path) -> None:
+    # legacy entry 는 그대로지만 Work 가 A17→A18 로 옮기면 stale 로 닫는다(#6).
+    from hwpxfiller.application.field_binding_input import StaleFieldBindingBasis
+    store = WorkFieldBindingStore(tmp_path)
+    draft = _migration([LegacyFieldBindingEntry("f1", "text", "name", "", "")])
+    moved = _Basis(draft.legacy_basis_fingerprint, application_id="A18")
+    with pytest.raises(StaleFieldBindingBasis):
+        commit_field_binding_migration(
+            store, moved, workspace_instance_id=WS, work_authority_id=WORK,
+            request_id="r", draft=draft,
+            resolved_input=_input(rules=[_rule("f1")], keys=("name",)), now=NOW,
+        )
+    assert not store.exists(WORK)  # commit 0
+
+
+def test_reused_request_with_different_draft_is_rejected(tmp_path) -> None:
+    # 같은 request+같은 resolved_input 이나 다른 draft basis → reuse 거절(#5).
+    store = WorkFieldBindingStore(tmp_path)
+    resolved = _input(rules=[_rule("f1")], keys=("name",))
+    d1 = _migration([LegacyFieldBindingEntry("f1", "text", "name", "", "")])
+    commit_field_binding_migration(
+        store, _Basis(d1.legacy_basis_fingerprint), workspace_instance_id=WS,
+        work_authority_id=WORK, request_id="req", draft=d1, resolved_input=resolved, now=NOW,
+    )
+    d2 = _migration([LegacyFieldBindingEntry("f1", "text", "other_source", "", "")])
+    with pytest.raises(FieldBindingIdempotencyKeyReused):
+        commit_field_binding_migration(
+            store, _Basis(d2.legacy_basis_fingerprint), workspace_instance_id=WS,
+            work_authority_id=WORK, request_id="req", draft=d2, resolved_input=resolved, now=NOW,
+        )
 
 
 def test_migration_commit_workspace_and_route_guards(tmp_path) -> None:

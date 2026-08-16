@@ -270,6 +270,23 @@ def resolve_document_value_policy(policy_id: str) -> DocumentContentValuePolicy:
     return policy
 
 
+def require_registered_document_value_policy(
+    policy: DocumentContentValuePolicy,
+) -> DocumentContentValuePolicy:
+    """등록된 policy_id 를 쓰되 동작 필드가 정본과 다르면 거절한다.
+
+    canonical byte framing·store 는 policy_id 만 보존하므로, 같은 id 로 whitespace/line-break/
+    native-write 를 바꾼 객체를 통과시키면 persist·reload 후 조용히 정본으로 되돌아가 실행 동작과
+    content-addressed authority 가 어긋난다. 그 divergence 를 loud 로 막는다.
+    """
+    registered = resolve_document_value_policy(policy.policy_id)
+    if policy != registered:
+        raise UnsupportedDocumentValuePolicyError(
+            f"등록된 policy_id 의 동작 필드를 변경했다: {policy.policy_id!r}"
+        )
+    return registered
+
+
 # ─── field-binding/v1 semantic contract registry ─────────────────────────────────
 _SUPPORTED_SEMANTIC_CONTRACTS = frozenset({FIELD_BINDING_SEMANTIC_VERSION})
 _SUPPORTED_SOURCE_SCHEMA_CONTRACTS = frozenset({SOURCE_SCHEMA_VERSION})
@@ -322,7 +339,8 @@ class FieldBindingRule:
             raise FieldBindingInputIntegrityError(
                 "document_content_value_policy 는 DocumentContentValuePolicy 이어야 한다"
             )
-        resolve_document_value_policy(self.document_content_value_policy.policy_id)
+        # policy_id 만 persist 되므로 동작 필드가 정본과 다른 객체는 loud 로 막는다.
+        require_registered_document_value_policy(self.document_content_value_policy)
         if self.format_code is not None:
             _require_scalar_text(self.format_code, "format_code", allow_empty=True)
         if self.binding_kind == SOURCE:

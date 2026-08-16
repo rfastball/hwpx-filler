@@ -186,20 +186,63 @@ def test_migration_commit_decision_paths() -> None:
     # 미해결 blocker(빈칸 없음) → review required.
     partial = _input(rules=[_rule("계약명")])
     with pytest.raises(FieldBindingReviewRequired) as ei:
-        decide_migration_commit(draft, partial, basis)
+        decide_migration_commit(draft, partial, "A17", basis)
     assert ei.value.code == "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED"
-    # basis 이동 → stale.
     resolved = _input(rules=[_rule("계약명"), FieldBindingRule("빈칸", INTENTIONAL_BLANK, POLICY)])
+    # legacy fingerprint 이동 → stale.
     with pytest.raises(StaleFieldBindingBasis):
-        decide_migration_commit(draft, resolved, "sha256:moved")
+        decide_migration_commit(draft, resolved, "A17", "sha256:moved")
+    # current Application 이동(A17→A18, legacy 그대로) → stale(#6).
+    with pytest.raises(StaleFieldBindingBasis):
+        decide_migration_commit(draft, resolved, "A18", basis)
     # 모두 해결 → immutable revision.
-    rev = decide_migration_commit(draft, resolved, basis)
+    rev = decide_migration_commit(draft, resolved, "A17", basis)
     assert isinstance(rev, FieldBindingRevision)
     assert rev.base_template_application_id == "A17"
     # 다른 work 결속 → integrity.
     with pytest.raises(FieldBindingInputIntegrityError):
         decide_migration_commit(
-            replace(draft, work_authority_id="other"), resolved, basis
+            replace(draft, work_authority_id="other"), resolved, "A17", basis
+        )
+
+
+def test_migration_commit_blocks_dropped_candidate_unless_omitted() -> None:
+    # candidate field 를 resolved_input 에서 빼면 silent drop 대신 review required(#2).
+    draft = _legacy([
+        LegacyFieldBindingEntry("계약명", "text", "name", "", ""),
+        LegacyFieldBindingEntry("금액", "amount", "amt", "", ""),
+    ])
+    basis = draft.legacy_basis_fingerprint
+    only_one = _input(rules=[_rule("계약명")], keys=("name", "amt"))
+    with pytest.raises(FieldBindingReviewRequired):
+        decide_migration_commit(draft, only_one, "A17", basis)
+    # 명시 omission 결정을 주면 commit 가능.
+    rev = decide_migration_commit(draft, only_one, "A17", basis, omitted_field_ids={"금액"})
+    assert isinstance(rev, FieldBindingRevision)
+
+
+def test_revision_rejects_unsupported_contract_on_reconstruction() -> None:
+    # 저장 revision 이 미지원 contract 를 담으면 loud fail(#7).
+    inp = _input()
+    identity = field_binding_authority_revision_identity(
+        work_authority_id=WORK, base_template_application_id="A17",
+        field_binding_semantic_contract_id="field-binding/v2",
+        source_schema_contract_id="source-schema/v1",
+        raw_record_contract_id="raw-record/v1",
+        canonical_binding_digest=inp.canonical_binding_digest,
+        canonical_source_schema_digest=inp.canonical_source_schema_digest,
+    )
+    with pytest.raises(UnsupportedFieldBindingContractError):
+        FieldBindingRevision(
+            work_authority_id=WORK, base_template_application_id="A17",
+            field_binding_authority_revision=identity,
+            field_binding_semantic_contract_id="field-binding/v2",
+            source_schema_contract_id="source-schema/v1",
+            raw_record_contract_id="raw-record/v1",
+            binding_rules=inp.binding_rules, source_schema_keys=inp.source_schema_keys,
+            canonical_binding_digest=inp.canonical_binding_digest,
+            canonical_source_schema_digest=inp.canonical_source_schema_digest,
+            captured_at=NOW,
         )
 
 
@@ -249,6 +292,11 @@ def test_review_commit_decision_paths() -> None:
     with pytest.raises(FieldBindingReviewRequired) as ei:
         decide_application_review_commit(review, bad, structure)
     assert ei.value.code == "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED"
+    # SOURCE 규칙이 current schema 에 없는 source_key 로 결속 → review required(#3).
+    stale_key = _input(base="A18", rules=[_rule("f1", "vanished")], keys=("vanished",))
+    with pytest.raises(FieldBindingReviewRequired) as ei2:
+        decide_application_review_commit(review, stale_key, structure)
+    assert ei2.value.code == "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED"
     # base 가 current Application 아님 → integrity(old base 재지정 금지).
     wrong_base = _input(base="A17", rules=[_rule("f1")], keys=("name",))
     with pytest.raises(FieldBindingInputIntegrityError):

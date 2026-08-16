@@ -231,10 +231,24 @@ class WorkFieldBindingStore:
 
 
 # ─── commit ports ────────────────────────────────────────────────────────────────
-class LegacyFieldBindingBasisPort(Protocol):
-    """commit 시점 legacy Mapping basis fingerprint(capture 이후 이동 여부 재확인)."""
+@dataclass(frozen=True)
+class LegacyMigrationBasis:
+    """commit 시점 legacy migration basis — current Application 과 legacy fingerprint 둘 다.
 
-    def current_legacy_basis_fingerprint(self, work_authority_id: str) -> str: ...
+    legacy Mapping entry 가 그대로여도 Work 가 A17→A18 로 옮겼으면 fingerprint 만으론 stale 을
+    못 본다 — current Application 을 함께 실어 fence 아래 재확인한다.
+    """
+
+    current_application_id: str
+    legacy_basis_fingerprint: str
+
+
+class LegacyFieldBindingBasisPort(Protocol):
+    """commit 시점 legacy migration basis(current Application + fingerprint) 재확인."""
+
+    def current_legacy_migration_basis(
+        self, work_authority_id: str
+    ) -> LegacyMigrationBasis: ...
 
 
 class CurrentApplicationFieldStructurePort(Protocol):
@@ -257,8 +271,15 @@ def _text(value: str) -> bytes:
     return len(raw).to_bytes(4, "big") + raw
 
 
-def commit_fingerprint(kind: str, resolved_input: FieldBindingInput) -> str:
-    """request semantic fingerprint — 같은 request+같은 content 는 replay, 다른 content 는 reuse."""
+def commit_fingerprint(
+    kind: str, resolved_input: FieldBindingInput, basis_token: str
+) -> str:
+    """request semantic fingerprint — 같은 request+같은 content+같은 basis 는 replay.
+
+    ``basis_token`` 은 command 의 capture 기준(migration=legacy fingerprint, review=review basis
+    digest)이다. resolved_input 만 봤다면 같은 request ID 를 다른 draft/review 로 재사용해도 이전
+    revision 이 조용히 replay 된다 — basis 를 포함해 그 mismatch 를 reuse 로 시끄럽게 만든다.
+    """
     out = bytearray()
     out += _FINGERPRINT_MAGIC
     out += _text(FINGERPRINT_SCHEMA_VERSION)
@@ -268,6 +289,7 @@ def commit_fingerprint(kind: str, resolved_input: FieldBindingInput) -> str:
     out += _text(resolved_input.raw_record_contract_id)
     out += _text(resolved_input.canonical_binding_digest)
     out += _text(resolved_input.canonical_source_schema_digest)
+    out += _text(basis_token)
     return "sha256:" + hashlib.sha256(bytes(out)).hexdigest()
 
 
@@ -375,13 +397,14 @@ def commit_field_binding_migration(
     request_id: str,
     draft: FieldBindingMigrationDraft,
     resolved_input: FieldBindingInput,
+    omitted_field_ids: "frozenset[str] | set[str]" = frozenset(),
     now: str,
 ) -> FieldBindingCommitResult:
     """CommitFieldBindingMigration — fence 아래 legacy basis 재확인·immutable v1 revision 생성."""
     with per_work_mutation_fence(workspace_instance_id, work_authority_id):
         return _commit_migration_under_fence(
             store, basis_port, workspace_instance_id, work_authority_id,
-            request_id, draft, resolved_input, now,
+            request_id, draft, resolved_input, omitted_field_ids, now,
         )
 
 
@@ -393,17 +416,24 @@ def _commit_migration_under_fence(
     request_id: str,
     draft: FieldBindingMigrationDraft,
     resolved_input: FieldBindingInput,
+    omitted_field_ids: "frozenset[str] | set[str]",
     now: str,
 ) -> FieldBindingCommitResult:
     _require_route(ws, work_id, resolved_input)
     stored = _load_existing(store, ws, work_id)
-    fingerprint = commit_fingerprint(MIGRATION, resolved_input)
+    fingerprint = commit_fingerprint(
+        MIGRATION, resolved_input, draft.legacy_basis_fingerprint
+    )
     replayed = _replay_or_none(stored, request_id, fingerprint)
     if replayed is not None:
         return replayed
-    current_basis = basis_port.current_legacy_basis_fingerprint(work_id)
+    # fence 아래에서 current Application + legacy fingerprint 를 함께 재확인한다.
+    basis = basis_port.current_legacy_migration_basis(work_id)
     # 순수 결정 — stale/review/integrity 는 여기서 raise 하고 ledger 를 남기지 않는다.
-    revision = decide_migration_commit(draft, resolved_input, current_basis)
+    revision = decide_migration_commit(
+        draft, resolved_input, basis.current_application_id,
+        basis.legacy_basis_fingerprint, omitted_field_ids,
+    )
     return _finish_commit(
         store, ws, work_id, stored, revision, MIGRATION, request_id, fingerprint,
         draft.base_template_application_id, draft.legacy_basis_fingerprint, now,
@@ -442,7 +472,9 @@ def _commit_review_under_fence(
 ) -> FieldBindingCommitResult:
     _require_route(ws, work_id, resolved_input)
     stored = _load_existing(store, ws, work_id)
-    fingerprint = commit_fingerprint(APPLICATION_REVIEW, resolved_input)
+    fingerprint = commit_fingerprint(
+        APPLICATION_REVIEW, resolved_input, review.review_basis_digest
+    )
     replayed = _replay_or_none(stored, request_id, fingerprint)
     if replayed is not None:
         return replayed

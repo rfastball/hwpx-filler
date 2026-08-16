@@ -207,14 +207,13 @@ def commit_revision(
     """한 aggregate commit 으로 revision(신규면 추가·기존이면 그대로)·current pointer·draft·ledger 갱신.
 
     revision 은 create-once content-address 라 같은 id 재등장은 dedup(기존 base 를 수정하지 않는다).
+    dedup 판정은 identity(``field_binding_authority_revision``)로만 한다 — dataclass equality 는
+    identity 에 불참하는 ``captured_at``(provenance)이나 digest-불변인 규칙·키 순서에서 갈려
+    정상 재commit 을 거짓 충돌로 만든다. identity 가 같으면 **기존 revision 을 유지**한다.
     aggregate_version 은 store 가 CAS 로 +1 한다(여기선 그대로 둔다).
     """
     rid = revision.field_binding_authority_revision
     existing = revision_by_id(stored, rid)
-    if existing is not None and existing != revision:  # pragma: no cover - id 는 content-address 라 도달 불가
-        raise StoredFieldBindingError(
-            f"같은 revision identity 의 다른 내용(immutable 위반): {rid}"
-        )
     revisions = (
         stored.immutable_binding_revisions
         if existing is not None
