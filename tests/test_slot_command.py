@@ -143,15 +143,25 @@ def _store(tmp_path: Path) -> WorkSlotConfigurationStore:
 def _select(store, ports, ctx, *, req="r1", slot="s1", option="o1"):
     return select_slot_option(
         store, *ports, context=ctx, request_id=req, slot_id=slot, option_id=option, now=NOW
-    )
+    ).outcome
+
+
+def _clear(store, ports, ctx, *, req, slot):
+    return clear_slot_selection(
+        store, *ports, context=ctx, request_id=req, slot_id=slot, now=NOW
+    ).outcome
+
+
+def _ensure(store, ports, ctx):
+    return ensure_current_slot_configuration(store, *ports, context=ctx, now=NOW).outcome
 
 
 # ── ensure ────────────────────────────────────────────────────────────────────
 def test_ensure_creates_then_noop(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports()
-    first = ensure_current_slot_configuration(store, *ports, context=_ctx(), now=NOW)
+    first = _ensure(store, ports, _ctx())
     assert first.outcome_code == CHANGED and first.changed
-    again = ensure_current_slot_configuration(store, *ports, context=_ctx(), now=NOW)
+    again = _ensure(store, ports, _ctx())
     assert again.outcome_code == NO_CHANGE and not again.changed
     assert len(store.load("w1").configurations.configurations) == 1  # 하나만
 
@@ -179,13 +189,9 @@ def test_select_unknown_option(tmp_path: Path) -> None:
 def test_clear_removes_then_noop(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports()
     _select(store, ports, _ctx())  # s1=o1 (config version 2)
-    cleared = clear_slot_selection(
-        store, *ports, context=_ctx(presence=True, version=2), request_id="r2", slot_id="s1", now=NOW
-    )
+    cleared = _clear(store, ports, _ctx(presence=True, version=2), req="r2", slot="s1")
     assert cleared.outcome_code == CHANGED
-    again = clear_slot_selection(
-        store, *ports, context=_ctx(presence=True, version=3), request_id="r3", slot_id="s1", now=NOW
-    )
+    again = _clear(store, ports, _ctx(presence=True, version=3), req="r3", slot="s1")
     assert again.outcome_code == NO_CHANGE
 
 
@@ -210,10 +216,68 @@ def test_cross_work_token_raised_not_stored(tmp_path: Path) -> None:
         _select(store, ports, _ctx(work="w1", token_work="other"))
 
 
-def test_contract_claim_mismatch_raised(tmp_path: Path) -> None:
+def test_contract_claim_mismatch_raised_no_storage(tmp_path: Path) -> None:
+    # Finding A: raised token/contract 실패는 storage 를 안 만든다(첫 요청이어도).
     store, ports = _store(tmp_path), _ports()
     with pytest.raises(ConfigurationContextClaimMismatch):
         _select(store, ports, _ctx(contract="slot-selection/v9"))
+    assert not store.exists("w1")  # aggregate 생성 0
+
+
+def test_cross_work_raise_leaves_no_storage(tmp_path: Path) -> None:
+    store, ports = _store(tmp_path), _ports()
+    with pytest.raises(CrossWorkConfigurationToken):
+        _select(store, ports, _ctx(token_work="other"))
+    assert not store.exists("w1")
+
+
+def test_workspace_identity_mismatch_rejected(tmp_path: Path) -> None:
+    # Finding C: 저장된 aggregate 의 ws 와 context ws 가 다르면 거절, mutation 0.
+    from hwpxfiller.application.slot_command import WorkspaceIdentityMismatch
+
+    store, ports = _store(tmp_path), _ports()
+    _select(store, ports, _ctx())  # ws-1 로 aggregate 생성
+    before = store.load("w1")
+    other_ctx = replace(_ctx(presence=True, version=2), workspace_instance_id="ws-2")
+    with pytest.raises(WorkspaceIdentityMismatch):
+        select_slot_option(
+            store, *ports, context=other_ctx, request_id="r2", slot_id="s1", option_id="o2", now=NOW
+        )
+    assert store.load("w1") == before  # 무변경
+
+
+def test_select_slotless_barrier_records_no_config(tmp_path: Path) -> None:
+    # Finding B: slotless barrier 에서 invalid select 는 ledger 만 기록하고 config 를 안 만든다.
+    store, ports = _store(tmp_path), _ports(structure=_EMPTY_STRUCTURE)
+    result = select_slot_option(
+        store, *ports, context=_ctx(), request_id="r1", slot_id="s1", option_id="o1", now=NOW
+    )
+    assert result.outcome.outcome_code == UNKNOWN_SLOT
+    stored = store.load("w1")
+    assert len(stored.processed_requests) == 1  # ledger 기록됨
+    assert len(stored.configurations.configurations) == 0  # config 물질화 0(부재≠tombstone)
+
+
+def test_mutation_result_carries_fresh_view_under_fence(tmp_path: Path) -> None:
+    # Finding D: mutation 응답이 이 commit 의 view 를 같은 fence 아래에서 함께 낸다.
+    store, ports = _store(tmp_path), _ports()
+    result = select_slot_option(
+        store, *ports, context=_ctx(), request_id="r1", slot_id="s1", option_id="o1", now=NOW
+    )
+    assert result.outcome.outcome_code == CHANGED
+    assert result.view is not None and result.view_error is None
+    assert result.view.configuration_version == 2
+    assert result.view.resolution.slot_selections_complete is True
+
+
+def test_view_failure_does_not_lose_mutation_outcome(tmp_path: Path) -> None:
+    # Finding D nuance: view 계산 실패(stale app)는 outcome 과 분리 — outcome 은 그대로 선다.
+    store, ports = _store(tmp_path), _ports(current="A2")
+    result = select_slot_option(
+        store, *ports, context=_ctx(app="A1"), request_id="r1", slot_id="s1", option_id="o1", now=NOW
+    )
+    assert result.outcome.outcome_code == STALE_TEMPLATE_APPLICATION  # outcome 보존
+    assert result.view is None and result.view_error is not None  # view 만 표식
 
 
 # ── idempotency / replay ──────────────────────────────────────────────────────
@@ -321,17 +385,13 @@ def test_clear_other_slot_without_entry_is_noop(tmp_path: Path) -> None:
     )
     store, ports = _store(tmp_path), _ports(structure=two)
     _select(store, ports, _ctx())  # s1=o1, config version 2
-    out = clear_slot_selection(
-        store, *ports, context=_ctx(presence=True, version=2), request_id="r2", slot_id="s2", now=NOW
-    )
+    out = _clear(store, ports, _ctx(presence=True, version=2), req="r2", slot="s2")
     assert out.outcome_code == NO_CHANGE
 
 
 def test_clear_unknown_slot(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports()
-    out = clear_slot_selection(
-        store, *ports, context=_ctx(), request_id="r1", slot_id="ghost", now=NOW
-    )
+    out = _clear(store, ports, _ctx(), req="r1", slot="ghost")
     assert out.outcome_code == UNKNOWN_SLOT
 
 
@@ -341,9 +401,9 @@ _EMPTY_STRUCTURE = TemplateStructure(root_fields=(), slots=())
 
 def test_ensure_slotless_skips_creation(tmp_path: Path) -> None:
     store, ports = _store(tmp_path), _ports(structure=_EMPTY_STRUCTURE)
-    out = ensure_current_slot_configuration(store, *ports, context=_ctx(), now=NOW)
-    assert out.outcome_code == NO_CHANGE and store.exists("w1")  # ledger-only 존재
-    assert len(store.load("w1").configurations.configurations) == 0  # config 없음
+    out = _ensure(store, ports, _ctx())
+    assert out.outcome_code == NO_CHANGE
+    assert not store.exists("w1")  # barrier: aggregate·config 둘 다 안 생긴다(부재 보존)
 
 
 def test_select_slotless_is_unknown_slot(tmp_path: Path) -> None:

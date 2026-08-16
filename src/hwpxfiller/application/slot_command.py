@@ -59,6 +59,10 @@ class ConfigurationContextClaimMismatch(SlotCommandError):
     pass
 
 
+class WorkspaceIdentityMismatch(SlotCommandError):
+    """저장된 aggregate 의 workspace 와 context workspace 가 다르다(cross-workspace 재사용)."""
+
+
 @dataclass(frozen=True)
 class ConfigurationCommandContext:
     """outer boundary 가 token 을 열고 검증해 넘긴 claims — 이 층은 다시 열지 않는다."""
