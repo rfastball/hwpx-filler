@@ -110,6 +110,7 @@ _BLOCKER_PRIORITY_INDEX = {code: i for i, code in enumerate(_BLOCKER_PRIORITY)}
 # ─── context error 어휘(user-fixable 로 낮추지 않는 fail-closed 실패) ──────────────────
 COMPOSITION_PREMISES_NOT_PASSED = "COMPOSITION_PREMISES_NOT_PASSED"
 COMPOSITION_STRUCTURE_MISMATCH = "COMPOSITION_STRUCTURE_MISMATCH"
+COMPOSITION_POLICY_IDENTITY_MISMATCH = "COMPOSITION_POLICY_IDENTITY_MISMATCH"
 SELECTION_CONTRACT_INTEGRITY_ERROR = "SELECTION_CONTRACT_INTEGRITY_ERROR"
 SELECTION_STRUCTURE_DIGEST_MISMATCH = "SELECTION_STRUCTURE_DIGEST_MISMATCH"
 SLOT_MODE_MISMATCH = "SLOT_MODE_MISMATCH"
@@ -537,6 +538,19 @@ def _build_semantic_payload(
     }
 
 
+def _deep_freeze(value: Any) -> Any:
+    """JSON-safe payload 를 재귀적으로 얼린다(dict→MappingProxyType, list→tuple).
+
+    바깥 MappingProxyType 만으로는 nested dict/list 변이를 못 막는다 — content-addressed
+    payload 가 return 뒤 조용히 바뀌면 digest 가 stale 해진다(S5-03/04 와 같은 규율).
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(v) for v in value)
+    return value
+
+
 def _normalize_blockers(
     blockers: list[QualificationBlocker],
 ) -> tuple[QualificationBlocker, ...]:
@@ -585,6 +599,26 @@ def qualify_and_compile_execution(
         return ExecutionCompilationContextError(
             COMPOSITION_STRUCTURE_MISMATCH,
             "composition premise 가 이 template structure 와 다른 digest 에 결속됨",
+        )
+    # proof 가 capture 가 admit 한 exact policy 에 결속됨을 확인한다 — 다른 composition/native
+    # primitive contract·theorem evidence 로 증명된 PASS 가 operation 을 authorize 하지 못하게
+    # 세 identity 를 전부 대조한다(fail-closed).
+    policy = captured.resolved_seal_policy
+    proof_identity = (
+        composition_result.composition_contract_id,
+        composition_result.native_primitive_contract_id,
+        composition_result.theorem_evidence_manifest_digest,
+    )
+    admitted_identity = (
+        policy.composition_contract_id,
+        policy.native_primitive_contract_id,
+        policy.composition_theorem_evidence_manifest_digest,
+    )
+    if proof_identity != admitted_identity:
+        return ExecutionCompilationContextError(
+            COMPOSITION_POLICY_IDENTITY_MISMATCH,
+            "composition proof 의 contract/native-primitive/theorem-evidence identity 가 "
+            "admitted resolved_seal_policy 와 불일치",
         )
 
     # (1) selection projection — claimed effective/selection digest 를 recompute·대조한다.
@@ -737,6 +771,7 @@ def qualify_and_compile_execution(
         active_field_projection=projection,
         active_field_requirements=requirements_t,
         ordered_operations=ordered_operations,
-        execution_basis_semantic_payload=MappingProxyType(payload),
+        # digest 는 raw dict 에서, 노출은 deep-frozen 사본으로(return 뒤 변이 불가).
+        execution_basis_semantic_payload=_deep_freeze(payload),
         execution_basis_semantic_digest=content_digest(payload),
     )

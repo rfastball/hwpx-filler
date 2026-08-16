@@ -32,6 +32,7 @@ from hwpxfiller.application.execution_capture import (
 )
 from hwpxfiller.application.execution_compilation import (
     ACTIVE_FIELD_UNBOUND,
+    COMPOSITION_POLICY_IDENTITY_MISMATCH,
     COMPOSITION_PREMISES_NOT_PASSED,
     COMPOSITION_STRUCTURE_MISMATCH,
     REQUIRED_SOURCE_KEY_MISSING,
@@ -54,11 +55,14 @@ from hwpxfiller.application.execution_compilation import (
     verify_requirement_operation_bijection,
 )
 from hwpxfiller.application.execution_composition import (
+    COMPOSITION_CONTRACT_ID,
+    NATIVE_PRIMITIVE_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_V1,
     THEOREM_EVIDENCE_V1,
     CompositionPremisesBlocked,
     CompositionPremisesPassed,
     CompositionPremiseContextError,
+    theorem_evidence_digest,
     verify_execution_composition_premises,
 )
 from hwpxfiller.application.execution_structure import (
@@ -234,8 +238,10 @@ def _template(structure, app=APP, revision="rev-1"):
     )
 
 
-def _policy():
-    return ResolvedSealPolicy(
+def _policy(**over):
+    # composition identity 3종은 실 verifier 가 증명하는 registered v1 identity 와 일치해야
+    # proof↔policy binding 게이트를 통과한다.
+    kw = dict(
         policy_resolution_version="pol/1",
         execution_base_kind=APPLIED_TEMPLATE_CANDIDATE,
         execution_semantic_contract_id="exec/1",
@@ -244,14 +250,18 @@ def _policy():
         document_value_resolution_contract_id="dvr/1",
         record_validation_contract_id="rv/1",
         record_review_contract_id="review/1",
-        composition_contract_id="comp/1",
-        native_primitive_contract_id="nat/1",
+        composition_contract_id=COMPOSITION_CONTRACT_ID,
+        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest="sha256:dddd",
+        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(
+            THEOREM_EVIDENCE_V1
+        ),
         materialization_contract_id="mat/1",
         plan_schema_version="plan/1",
         canonical_encoding_version="enc/1",
     )
+    kw.update(over)
+    return ResolvedSealPolicy(**kw)
 
 
 def _snapshot(structure, *, selected="o1", detached=None, app=APP, config_version=3):
@@ -331,14 +341,14 @@ def _binding(structure, *, rules=None, schema_keys=("이름", "금액열", "unus
     )
 
 
-def _captured(structure, *, selection=None, binding=None, app=APP, revision="rev-1"):
+def _captured(structure, *, selection=None, binding=None, policy=None, app=APP, revision="rev-1"):
     return CapturedExecutionInput(
         workspace_instance_id=WS,
         work_authority_id=WORK,
         template=_template(structure, app=app, revision=revision),
         selection=selection if selection is not None else _snapshot(structure, app=app),
         field_binding=binding if binding is not None else _binding(structure, app=app),
-        resolved_seal_policy=_policy(),
+        resolved_seal_policy=policy if policy is not None else _policy(),
         captured_execution_input_semantic_projection={},
         captured_at=AT,
     )
@@ -726,6 +736,43 @@ def test_composition_bound_to_other_structure_rejected():
     )
     assert isinstance(result, ExecutionCompilationContextError)
     assert result.code == COMPOSITION_STRUCTURE_MISMATCH
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "composition_contract_id",
+        "native_primitive_contract_id",
+        "composition_theorem_evidence_manifest_digest",
+    ],
+)
+def test_proof_identity_must_match_admitted_policy(field):
+    # proof 는 실 verifier 의 registered v1 identity 를 담는다. policy 가 다른 composition/
+    # native-primitive/theorem-evidence identity 를 admit 했으면 fail-closed(다른 증명이
+    # operation 을 authorize 하지 못한다).
+    structure = _structure()
+    tampered_policy = _policy(**{field: "sha256:otherproof"})
+    result = qualify_and_compile_execution(
+        captured=_captured(structure, policy=tampered_policy),
+        composition_result=_passed(structure),
+    )
+    assert isinstance(result, ExecutionCompilationContextError)
+    assert result.code == COMPOSITION_POLICY_IDENTITY_MISMATCH
+
+
+def test_semantic_payload_is_deeply_immutable():
+    structure = _structure()
+    result = _compile(structure)
+    assert isinstance(result, QualifiedExecutionCompilation)
+    payload = result.execution_basis_semantic_payload
+    # 바깥·nested mapping 재바인딩 불가.
+    with pytest.raises(TypeError):
+        payload["effective_selection"]["slot_mode"] = "TAMPERED"  # type: ignore[index]
+    # nested list 는 tuple 로 얼려 append 불가.
+    assert isinstance(payload["effective_selection"]["selections"], tuple)
+    assert isinstance(payload["ordered_operations"], tuple)
+    with pytest.raises(AttributeError):
+        payload["ordered_operations"].append({})  # type: ignore[attr-defined]
 
 
 def test_slot_mode_mismatch_fail_closed():
