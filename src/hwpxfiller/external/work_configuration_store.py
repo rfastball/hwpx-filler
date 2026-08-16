@@ -122,7 +122,8 @@ class WorkspaceMetadataStore:
     """durable ``WorkspaceInstanceId`` provider — create-once, read 마다 새로 만들지 않는다."""
 
     def __init__(self, root: "str | Path") -> None:
-        self._root = Path(root)
+        # resolve: 상대/절대·심볼릭·Windows 대소문자 alias 가 같은 lock key 를 얻게 한다.
+        self._root = Path(root).resolve()
 
     @property
     def _path(self) -> Path:
@@ -176,7 +177,8 @@ class WorkSlotConfigurationStore:
     """Work별 S4 aggregate 의 create-once·file-atomic·CAS 저장소."""
 
     def __init__(self, root: "str | Path") -> None:
-        self._root = Path(root)
+        # resolve: per-root writer lease 가 경로 alias 로 갈라지지 않도록 정규화한다.
+        self._root = Path(root).resolve()
 
     def _path(self, work_id: str) -> Path:
         return self._root / f"{_require_id(work_id)}.json"
@@ -197,14 +199,27 @@ class WorkSlotConfigurationStore:
                 f"work {work_id} S4 aggregate schema 미상: {content.get('schema_version')!r}"
             )
         try:
-            return decode_stored(content)
-        except StoredConfigurationError as exc:
+            stored = decode_stored(content)
+        except (StoredConfigurationError, KeyError, TypeError, AttributeError) as exc:
+            # digest 유효해도 configurations 내부가 malformed 이면 store 계약 오류로 정규화한다.
             raise ConfigurationIntegrityError(
                 f"work {work_id} S4 aggregate 불변식 위반"
             ) from exc
+        if stored.work_id != work_id:
+            # 파일이 잘못된 이름으로 복사·이동되면 digest 는 통과해도 key 결속이 깨진다 —
+            # 다른 Work 의 선택을 조용히 적용하지 않도록 거절한다.
+            raise ConfigurationIntegrityError(
+                f"work {work_id} 파일이 다른 Work({stored.work_id}) aggregate 를 담았다"
+            )
+        return stored
 
     def create(self, stored: StoredWorkConfiguration) -> None:
         """새 Work S4 aggregate 를 최초 commit 한다(create-once)."""
+        if stored.aggregate_version != 1:
+            # create 는 최초 durable commit 이다 — version>1 은 일어나지 않은 commit 을 주장한다.
+            raise WorkConfigurationStoreError(
+                f"최초 aggregate commit 은 version 1 이어야 한다: {stored.aggregate_version}"
+            )
         work_id = stored.work_id
         path = self._path(work_id)
         with _lock(self._lock_key(work_id)):
@@ -234,9 +249,21 @@ class WorkSlotConfigurationStore:
             new = mutate(current)
             if new.work_id != work_id:
                 raise WorkConfigurationStoreError("update 안에서 다른 Work 로 바꿀 수 없다")
+            if new.workspace_instance_id != current.workspace_instance_id:
+                # durable workspace identity 는 fence·token 이 쓰는 값이라 재결속 금지.
+                raise WorkConfigurationStoreError(
+                    "update 는 workspace identity 를 바꿀 수 없다"
+                )
             if new.aggregate_version != current.aggregate_version + 1:
                 raise WorkConfigurationStoreError(
                     "commit 은 aggregate_version 을 정확히 1 올려야 한다"
+                )
+            prior = current.processed_requests
+            if new.processed_requests[: len(prior)] != prior:
+                # first-seen ledger 는 immutable — 기존 기록을 지우거나 바꾸면 재실행·키
+                # 재사용이 열린다. 기존 ledger 가 commit ledger 의 prefix 로 남아야 한다.
+                raise WorkConfigurationStoreError(
+                    "first-seen ledger 는 append-only 다(기존 기록 보존)"
                 )
             _write_enveloped(self._path(work_id), encode_stored(new))
             return new

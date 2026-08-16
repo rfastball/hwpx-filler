@@ -29,6 +29,7 @@ from hwpxfiller.external.work_configuration_store import (
     ConfigurationAggregateNotFound,
     ConfigurationIntegrityError,
     ConfigurationSchemaUnsupported,
+    WorkConfigurationStoreError,
     WorkspaceIdentityIntegrityError,
     WorkspaceMetadataStore,
     WorkSlotConfigurationStore,
@@ -119,6 +120,84 @@ def test_partial_temp_file_ignored(tmp_path: Path) -> None:
     store.create(empty_stored(WS, "w1"))
     (tmp_path / "configs" / "w1.json.stale.tmp").write_text("{partial", "utf-8")
     assert store.load("w1").work_id == "w1"  # 최종 파일만 관찰
+
+
+def test_aliased_roots_share_one_writer_lease(tmp_path: Path) -> None:
+    # 상대 경로 alias 로 만든 두 store 는 같은 정규화 root 를 얻어야 per-root lease 가
+    # 갈라지지 않는다(그렇지 않으면 둘 다 CAS 를 통과해 lost update).
+    plain = WorkSlotConfigurationStore(tmp_path / "configs")
+    aliased = WorkSlotConfigurationStore(tmp_path / "sub" / ".." / "configs")
+    assert plain._lock_key("w1") == aliased._lock_key("w1")
+
+
+def test_load_normalizes_nested_codec_failure(tmp_path: Path) -> None:
+    # digest 는 유효하지만 configurations 내부가 malformed → decode 가 KeyError 를 던진다.
+    # store 경계는 그것을 문서화된 ConfigurationIntegrityError 로 정규화해야 한다.
+    from hwpxfiller.application.qualification_evidence import content_digest
+
+    store = _store(tmp_path)
+    store.create(empty_stored(WS, "w1"))  # configs 디렉터리 생성
+    content = {
+        "schema_version": STORE_SCHEMA_VERSION,
+        "aggregate_version": 1,
+        "workspace_instance_id": WS,
+        "processed_requests": [],
+        "configurations": {
+            "schema_version": "work-slot-configuration-v1",
+            "work_id": "w1",
+            "configurations": [{"no_selections_key": True}],
+        },
+    }
+    envelope = {"digest": content_digest(content), "content": content}
+    (tmp_path / "configs" / "w1.json").write_text(
+        json.dumps(envelope, ensure_ascii=False), "utf-8"
+    )
+    with pytest.raises(ConfigurationIntegrityError):
+        store.load("w1")
+
+
+def test_create_rejects_initial_version_above_one(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+
+    store = _store(tmp_path)
+    with pytest.raises(WorkConfigurationStoreError):
+        store.create(dc_replace(empty_stored(WS, "w1"), aggregate_version=2))
+
+
+def test_load_rejects_file_bound_to_other_work(tmp_path: Path) -> None:
+    # w2 의 파일을 w1.json 이름으로 심으면 digest 는 통과해도 key 결속이 깨진다.
+    store = _store(tmp_path)
+    store.create(empty_stored(WS, "w2"))
+    configs = tmp_path / "configs"
+    (configs / "w1.json").write_bytes((configs / "w2.json").read_bytes())
+    with pytest.raises(ConfigurationIntegrityError):
+        store.load("w1")
+
+
+def test_update_rejects_workspace_identity_rebind(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+
+    store = _store(tmp_path)
+    store.create(empty_stored(WS, "w1"))
+    with pytest.raises(WorkConfigurationStoreError):
+        store.update(
+            "w1", 1, lambda cur: dc_replace(_bump(cur), workspace_instance_id="other")
+        )
+    assert store.load("w1").workspace_instance_id == WS  # 무손상
+
+
+def test_update_rejects_ledger_truncation(tmp_path: Path) -> None:
+    from dataclasses import replace as dc_replace
+
+    store = _store(tmp_path)
+    store.create(empty_stored(WS, "w1"))
+    store.update("w1", 1, lambda cur: _bump(append_request(cur, _record())))
+    # 기존 first-seen 기록을 지우면서 version 만 올리는 mutate → append-only 위반 거절.
+    with pytest.raises(WorkConfigurationStoreError):
+        store.update(
+            "w1", 2, lambda cur: dc_replace(_bump(cur), processed_requests=())
+        )
+    assert find_request(store.load("w1"), "req1") is not None  # 기록 생존
 
 
 def test_mutate_exception_keeps_prior_state(tmp_path: Path) -> None:
