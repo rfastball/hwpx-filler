@@ -1530,6 +1530,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 템플릿 변경 존(S3-09) — 판정·token·epoch 전부 코디네이터 소유(링2 재조립 금지).
         if self._template_change is not None:
             base["template_change"] = self._template_change.zone(self.job_name, "hwpx", tmissing)
+            # 원본 파일이 캡처 이후 편집됐으면 시끄럽게 표식한다(생성은 캡처본을 씀, #681 F1).
+            base["source_drift"] = (
+                None if tmissing else self._template_change.source_drift_note(self.job_name)
+            )
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로

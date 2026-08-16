@@ -32,7 +32,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ..application.candidate_revision import MutableSourceBinding, TemplateLineage
+from ..application.candidate_revision import (
+    MutableSourceBinding,
+    TemplateLineage,
+    blob_digest,
+)
+from ..application.slot_configuration_context import (
+    SlotConfigurationContextError,
+    resolve_exact_applied_template_input,
+)
 from ..application.jobs import JobStorePort, assign_job_authority_id, load_job
 from ..application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
@@ -490,6 +498,36 @@ class TemplateChangeCoordinator:
         stage 하므로 run 뒤 지우는 것은 안전하다 — 안 지우면 판본마다 read-only 사본이 영구
         누적된다."""
         clear_run_staging(self._root)
+
+    def source_drift_note(self, job_name: str) -> "str | None":
+        """이미 부트스트랩된 Work 의 현재 원본 파일 bytes 가 캡처된 applied Candidate bytes 와
+        다르면 시끄러운 경고 문안을 낸다 — 생성은 캡처본을 쓰므로(#681 F1) 사용자가 「검토한
+        원본 편집분이 반영 안 됨」을 조용히 겪지 않게 한다(confirm-or-alarm). digest 비교뿐:
+        seat 시점에 gate/stage 를 돌리지 않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
+
+        미부트스트랩(원본=실행본이라 일관)·비-hwpx·무편집·값싸게 못 구하는 경우는 None.
+        """
+        job = load_job(self._registry, job_name)
+        work_id = job.authority_id or None
+        if job.media != "hwpx" or not work_id or not self._works.exists(work_id):
+            return None
+        try:
+            aggregate = self._works.load(work_id)
+            applied = resolve_exact_applied_template_input(
+                _WorkStateReadPort(self._works), self._quals, self._candidates,
+                work_id, aggregate.work.current_template_application_id,
+            )
+            # ponytail: 부트스트랩된 Work 는 snapshot 마다 원본을 해시한다(hwpx 는 클 수 있다).
+            # 지금은 그런 Work 가 드물어 무시할 비용 — 지연이 문제되면 (mtime_ns,size) 로 캐시.
+            source_digest = blob_digest(Path(job.template_path).read_bytes())
+        except (SlotConfigurationContextError, OSError):
+            return None  # 값싸게 못 구하면 경고 없음(preview 를 막지 않는다)
+        if source_digest == applied.exact_content_digest:
+            return None
+        return (
+            "원본 파일이 캡처 이후 편집되었습니다 — 생성은 캡처된 버전을 사용합니다. "
+            "편집분을 반영하려면 다시 가져오세요."
+        )
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation

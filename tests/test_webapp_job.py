@@ -4805,6 +4805,29 @@ def test_generation_recovers_after_repairing_bad_template(tmp_path):
     assert Path(staged).exists()
 
 
+def test_source_drift_is_flagged_loudly_in_snapshot(tmp_path):
+    """#681 F1: 부트스트랩된 Work 의 원본을 앱 밖에서 편집하면 스냅샷이 시끄럽게 표식한다
+    — 생성은 캡처본을 쓰므로 「검토한 편집분이 조용히 안 반영」을 막는다(confirm-or-alarm)."""
+    from hwpxfiller.application.jobs import load_job
+
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("template_check", {"request_id": "k1"})   # lazy bootstrap(캡처 확립)
+    assert ctrl.snapshot().get("source_drift") is None      # 무편집 = 일관, 경고 없음
+    tp = load_job(ctrl.registry, "공고서").template_path
+    Path(tp).write_bytes(Path(tp).read_bytes() + b"EXTERNAL-EDIT")  # 앱 밖 편집(미가져오기)
+    note = ctrl.snapshot().get("source_drift")
+    assert note and "캡처된 버전" in note                    # 시끄러운 표식
+
+
+def test_unbootstrapped_work_shows_no_source_drift(tmp_path):
+    """미부트스트랩 Work 는 원본이 곧 실행본이라 일관 — 경고 없음(그리고 seat 에서 비싼
+    resolve/stage 를 하지 않는다: applied-work 회귀 방지)."""
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})          # 미부트스트랩
+    assert ctrl.snapshot().get("source_drift") is None
+
+
 def test_managed_generation_reaches_execution_provenance_guard_live(tmp_path, monkeypatch):
     """#681: managed 생성이 evaluate_execution_provenance 를 **실제로** 호출한다(정적 name-ref
     가 아니라 라이브 도달) — S3-99 가 지적한 죽은 seam 이 실행 경로에서 살아 있음을 증명."""
