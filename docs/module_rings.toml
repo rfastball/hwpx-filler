@@ -369,6 +369,12 @@ source_write_set = ["src/hwpxfiller/webapp/selftest_api.py"]
 oracle_nodeid = "tests/test_selftest_api.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.seal_execution_plan_product"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/seal_execution_plan_product.py"]
+oracle_nodeid = "tests/test_seal_execution_plan_product.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.slot_configuration_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/slot_configuration_product.py"]
