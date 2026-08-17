@@ -1,7 +1,10 @@
 """installation-scoped durable HMAC secret for configuration tokens (S4-09 · #679).
 
 단일 active secret 을 create-once 로 심고 restart 뒤 그대로 읽는다. 손상은 fail-closed.
-rotation·다중 key·key_id 는 비범위(설계 정정 2026-08-16 = HMAC signed token).
+rotation·다중 key·key_id 는 비범위(설계 정정 2026-08-16 = HMAC signed token). SG-03(#735)에서
+key-rotation UI/control plane·새 암호 라이브러리는 v1 목표에서 명시 제외됐다 — threat model
+정본은 `docs/CONTROL_PLANE_SCOPE.md` §HMAC. secret 은 token 서명 integrity 만 지지하고
+authorization/currentness 는 대체하지 않는다.
 """
 
 from __future__ import annotations

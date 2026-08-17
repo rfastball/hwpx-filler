@@ -5,7 +5,12 @@ from __future__ import annotations
 import re
 
 import gen_bridge_contract as gen
-from _web_source import source_text
+from _web_source import (
+    _frontend_sources,
+    _frontend_specifiers,
+    _resolve_frontend_module,
+    source_text,
+)
 from hwpxfiller.application import template_change_product
 from hwpxfiller.webapp import product_api
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY
@@ -137,3 +142,31 @@ def test_generated_bridge_contract_matches_independent_public_boundaries() -> No
     if generated_actions != expected_actions:
         failures.append("SCREEN_ACTIONS")
     assert not failures, "\n".join(failures)
+
+
+def test_frontend_display_sources_the_generated_contract() -> None:
+    """SG-03(#735) C5 — backend projection ↔ frontend 표시 parity 의 기전 pin.
+
+    위 두 테스트는 생성 계약 ``contract.gen.ts`` 가 backend 단일 출처(error code·status·action·
+    host method 어휘)와 정확히 일치함을 판정한다. 이 테스트는 나머지 반쪽을 잠근다: **production
+    frontend 이 그 생성 계약을 실제 import 해 표시한다** — 즉 프런트가 어휘를 손으로 재작성하지
+    않고 backend-파생 계약을 렌더한다. 두 사실이 붙어야 "표시 = backend projection" parity 가
+    드리프트 없이 성립한다. (프런트→python 값 재계산 금지는 C3/C4 가, 새 parity harness 를 짓지
+    않는다는 규율은 이 재사용이 지킨다.)
+    """
+    generated = "frontend/src/contract/contract.gen.ts"
+    sources = _frontend_sources()
+    assert generated in sources, "생성 계약 모듈이 frontend source 에 없다"
+    importers = sorted(
+        relative
+        for relative, source in sources.items()
+        if relative != generated
+        and any(
+            _resolve_frontend_module(relative, specifier, sources) == generated
+            for specifier in _frontend_specifiers(relative, source)
+        )
+    )
+    assert importers, (
+        "production frontend 이 생성 계약(contract.gen.ts)을 import 하지 않는다 — 표시 어휘가 "
+        "backend-파생 단일 출처에서 온다는 parity 근거가 사라졌다."
+    )

@@ -4,6 +4,15 @@
 HMAC-SHA256 서명해 integrity·authenticity 만 보장한다. token 은 Product consumer 에게 opaque 하되
 내부적으로는 평문 claims 를 담는다 — secret 없이는 위조·변조가 불가능하고(hmac.compare_digest),
 서명이 안 맞으면 fail-closed 다. native 암호 의존성·AEAD nonce·key_id·rotation 은 도입하지 않는다.
+
+**Threat model (SG-03 #735 로 동결 · 정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).** token 이
+**증명하는 것**: backend 가 발급한 context 의 integrity, 담긴 claim 의 authenticity, route/Work
+binding 지원, stale/cross-Work 혼입 탐지. token 이 **증명하지 않는 것**: authorization, 현재
+Work/Application, 기대 aggregate version, per-Work fence 획득, semantic command validity,
+materialization readiness. 이 검증들은 정상 gate 가 **독립** 유지한다(`slot_configuration_product`
+의 `_route`·runner 의 currentness/version). 유효 서명은 이들 중 어느 것도 대체하지 못한다 —
+회귀는 `tests/test_slot_configuration_product.py` C7/C8 이 지킨다. HMAC 을 실제 권한 경계로
+승격해야 하면 #732/#620 으로 상향한다.
 """
 
 from __future__ import annotations

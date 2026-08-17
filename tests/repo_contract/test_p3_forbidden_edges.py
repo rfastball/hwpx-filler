@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import importlib
 import json
-import posixpath
 import re
 import sys
 import tomllib
@@ -18,7 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from _web_source import SOURCE_ROOT, module_imports
+from _web_source import (
+    ContractError,
+    _frontend_sources,
+    _frontend_specifiers,
+    _js_masks,
+    _resolve_frontend_module,
+)
 
 
 ROOT = Path(__file__).parents[2]
@@ -86,9 +91,9 @@ FILESYSTEM_METHODS = {
 VENDOR_ROOTS = {"ctypes", "lxml", "openpyxl", "webview", "xml", "zipfile"}
 TS_IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 
-
-class ContractError(ValueError):
-    """영속 architecture 계약을 exact하게 해석할 수 없을 때의 fail-closed 오류."""
+# ``ContractError`` 와 frontend import-graph 스캐너(`_js_masks`·`_frontend_specifiers`·
+# `_resolve_frontend_module`·`_frontend_sources`)는 SG-03(#735)에서 ``tests/_web_source.py``
+# 로 올라갔다 — 이 게이트와 ``test_control_surface_reduction`` 이 같은 진실을 읽는다.
 
 
 def _rings() -> "list[dict[str, object]]":
@@ -142,88 +147,6 @@ def _validate_product_vendor_import(raw: object) -> set[str]:
 
 def _product_vendor_policy() -> set[str]:
     return _validate_product_vendor_import(_architecture_contract()["product_vendor_import"])
-
-
-def _js_masks(source: str) -> tuple[str, str]:
-    """주석만 지운 소스와 문자열/template raw까지 지운 동길이 code mask를 만든다."""
-    commentless = list(source)
-    code = list(source)
-    size = len(source)
-
-    def blank(buffer: list[str], start: int, end: int) -> None:
-        for index in range(start, end):
-            if source[index] not in "\r\n":
-                buffer[index] = " "
-
-    def quoted(start: int, quote: str) -> int:
-        index = start + 1
-        while index < size:
-            if source[index] == "\\":
-                index += 2
-            elif source[index] == quote:
-                return index + 1
-            else:
-                index += 1
-        return size
-
-    def template(start: int) -> int:
-        blank(code, start, start + 1)
-        index = start + 1
-        while index < size:
-            if source[index] == "\\":
-                end = min(index + 2, size)
-                blank(code, index, end)
-                index = end
-            elif source[index] == "`":
-                blank(code, index, index + 1)
-                return index + 1
-            elif source.startswith("${", index):
-                blank(code, index, index + 2)
-                end = javascript(index + 2, stop_at_brace=True)
-                if end and source[end - 1] == "}":
-                    blank(code, end - 1, end)
-                index = end
-            else:
-                blank(code, index, index + 1)
-                index += 1
-        return size
-
-    def javascript(start: int, *, stop_at_brace: bool = False) -> int:
-        index = start
-        braces = 0
-        while index < size:
-            if source.startswith("//", index):
-                end = index + 2
-                while end < size and source[end] not in "\r\n":
-                    end += 1
-                blank(commentless, index, end)
-                blank(code, index, end)
-                index = end
-            elif source.startswith("/*", index):
-                closing = source.find("*/", index + 2)
-                end = size if closing < 0 else closing + 2
-                blank(commentless, index, end)
-                blank(code, index, end)
-                index = end
-            elif source[index] in "\"'":
-                end = quoted(index, source[index])
-                blank(code, index, end)
-                index = end
-            elif source[index] == "`":
-                index = template(index)
-            elif stop_at_brace and source[index] == "}":
-                if braces == 0:
-                    return index + 1
-                braces -= 1
-                index += 1
-            else:
-                if stop_at_brace and source[index] == "{":
-                    braces += 1
-                index += 1
-        return size
-
-    javascript(0)
-    return "".join(commentless), "".join(code)
 
 
 def _js_code_mask(source: str) -> str:
@@ -310,65 +233,6 @@ def _vendor_integrations() -> dict[str, tuple[set[str], tuple[str, ...]]]:
     return out
 
 
-def _frontend_specifiers(relative: str, source: str) -> tuple[str, ...]:
-    raw = source
-    source, code = _js_masks(raw)
-    references = tuple(
-        match.group(1)
-        for match in re.finditer(
-            r'''(?m)^\s*///\s*<reference\s+types\s*=\s*["']([^"']+)["']\s*/>''',
-            raw,
-        )
-        if not source[match.start() : match.end()].strip()
-    )
-    dynamic: list[str] = []
-    for call in re.finditer(r"(?<![\w$.])import\s*\(", code):
-        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
-        if literal is None:
-            raise ContractError(
-                f"{relative}: dynamic import() specifier는 문자열 literal이어야 합니다"
-            )
-        dynamic.append(literal.group(2))
-    required: list[str] = []
-    for call in re.finditer(r"(?<![\w$])(?:module\s*\.\s*)?require\s*\(", code):
-        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
-        if literal is None:
-            raise ContractError(f"{relative}: require() specifier는 문자 literal이어야 합니다")
-        required.append(literal.group(2))
-    return (
-        *references,
-        *module_imports(source),
-        *re.findall(
-            r'''(?m)^\s*import\s+(?:type\s+)?[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)''',
-            source,
-        ),
-        *re.findall(
-            r'''(?m)^\s*export\s+(?:type\s+)?[^"\';]*?\s+from\s+["']([^"']+)["']''',
-            source,
-        ),
-        *dynamic,
-        *required,
-    )
-
-
-def _resolve_frontend_module(
-    relative: str, specifier: str, sources: dict[str, str]
-) -> str | None:
-    clean = specifier.split("?", 1)[0].split("#", 1)[0]
-    target = (
-        posixpath.normpath(f"frontend{clean}")
-        if clean.startswith("/")
-        else posixpath.normpath(posixpath.join(posixpath.dirname(relative), clean))
-    )
-    suffixes = (
-        ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
-        ".d.ts", ".d.mts", ".d.cts",
-    )
-    candidates = (target, *(f"{target}{suffix}" for suffix in suffixes))
-    candidates += tuple(f"{target}/index{suffix}" for suffix in suffixes)
-    return next((candidate for candidate in candidates if candidate in sources), None)
-
-
 def _frontend_vendor_import_violations(sources: dict[str, str]) -> set[str]:
     allowed: dict[str, tuple[str, ...]] = {}
     vendor_roots: list[str] = []
@@ -410,15 +274,6 @@ def _frontend_vendor_import_violations(sources: dict[str, str]) -> set[str]:
                 if target in provenance
             )
     return violations
-
-
-def _frontend_sources(source_root: Path = SOURCE_ROOT) -> dict[str, str]:
-    return {
-        f"frontend/{path.relative_to(source_root).as_posix()}": path.read_text(encoding="utf-8")
-        for directory in ("src", "js")
-        for path in source_root.joinpath(directory).rglob("*")
-        if path.suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
-    }
 
 
 def _tree(source: "str | bytes", filename: str = "<memory>") -> ast.Module:

@@ -118,6 +118,11 @@ def test_replay_same_request_returns_first_outcome(tmp_path: Path) -> None:
 
 
 # ── route-bound Work verification ─────────────────────────────────────────────
+# SG-03(#735) C8 — cross-Work/route mismatch token 은 거절된다. 아래 네 테스트가 그 계약이다:
+#   test_cross_work_token_rejected · test_cross_workspace_token_rejected ·
+#   test_actor_binding_mismatch_rejected · test_missing_work_ref_is_authorization_failure.
+# token 은 route 가 정한 expected Work·workspace·actor 와 **독립 비교**되고, 어긋나면 서명이
+# 유효해도 CROSS_WORK/CROSS_WORKSPACE/ACTOR_BINDING/AUTHORIZATION 으로 거절된다(신규 테스트 없음).
 def _secret(tmp_path: Path) -> bytes:
     return SlotTokenSecretStore(_root(tmp_path)).load_or_create_active_secret()
 
@@ -228,6 +233,53 @@ def test_stale_template_mutation_shows_fresh_current_view(tmp_path: Path) -> Non
     assert resp.current_view.view_status == "CURRENT"  # 새 application, context error 아님
     assert resp.current_view.new_configuration_token  # 새 상태용 fresh token
     assert resp.refresh_required is True
+
+
+# ── SG-03(#735) C7 — valid HMAC 만으로 authorization/currentness 우회 불가 ────────────
+def test_valid_token_cannot_bypass_stale_currentness(tmp_path: Path) -> None:
+    """서명·binding 이 모두 유효한 token 이라도 currentness/version gate 를 대신하지 못한다.
+
+    token 은 정상 발급분(같은 Work·workspace·actor)이라 ``_verify_token`` 을 통과한다 —
+    cross-work/workspace/actor 거절이 아니다. 그런데 template 이 새 application(version bump)
+    으로 전진한 뒤 이 token 으로 mutation 을 걸면, 유효성과 **독립인** currentness gate 가
+    STALE 로 삼켜 **적용되지 않는다**(``changed is False``). HMAC = context integrity 이지
+    currentness 승인이 아니다.
+    """
+    tpl = tmp_path / "공고서.hwpx"
+    _template(tpl, ["공고명"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    coord.check("공고서", "k1")
+    product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+
+    _template(tpl, ["공고명", "추정가격"])  # 원본 수정 → 새 application
+    ready = coord.check("공고서", "k2")["preparation"]
+    coord.apply("공고서", ready["change_token"])  # current 를 A_new 로 전진
+
+    resp = product.select_slot_option("공고서", token, "s", "o", "r")
+    # 유효 token 이 거절(INVALID/CROSS_*)된 게 아니라, currentness gate 가 STALE 로 막았다.
+    assert resp.mutation_outcome is not None
+    assert resp.mutation_outcome.outcome_code == "STALE_TEMPLATE_APPLICATION"
+    assert resp.mutation_outcome.changed is False  # 유효 서명에도 미적용
+    assert resp.refresh_required is True
+
+
+def test_valid_token_does_not_grant_authorization(tmp_path: Path) -> None:
+    """암호적으로 유효한 token 을 쥐어도 route authorization 을 대신할 수 없다.
+
+    authorization 은 ``_route`` 의 job load 가 지고 token 검증(``_verify_token``)보다 **앞선다**.
+    유효 서명 token 을 부재 work_ref 로 제출하면 token 을 들여다보기 전에 AUTHORIZATION_FAILURE
+    로 거절된다 — HMAC 은 authorization 경계가 아니다.
+    """
+    _reg, product = _bootstrapped(tmp_path)
+    product.open_slot_configuration("공고서")  # ws·secret 확립
+    valid_token = _forged(tmp_path, work_authority_id="some-work")  # 실 secret 서명 = 유효
+    with pytest.raises(SlotConfigurationProductError) as ei:
+        product.select_slot_option("없는작업", valid_token, "s", "o", "r")
+    assert ei.value.code == "AUTHORIZATION_FAILURE"
 
 
 def test_name_reuse_does_not_inherit_token(tmp_path: Path) -> None:

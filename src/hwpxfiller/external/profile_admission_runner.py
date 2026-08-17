@@ -10,6 +10,14 @@ runtime query 에서 state 가 없으면 ``QUALIFICATION_PROFILE_ADMISSION_STATE
 
 manifest 저장소·revocation record 저장소·ProfileFence 는 **injectable port** 다 — S3 Apply·
 S5 capture/publish/observation·S6 start 가 뒤 slice 에서 같은 registry 를 주입한다(여기선 안 함).
+
+**제품 표면 경계(SG-03 #735 · 정본 `docs/CONTROL_PLANE_SCOPE.md` §shipping Profile).** v1 은
+built-in shipping Profile 하나를 bootstrap 으로만 admit 한다(`initialize_…`,
+`webapp/template_change.py`). ``register_published_qualification_profile_admission`` 과
+``revoke_qualification_profile`` 은 **제품 route 가 없다** — dynamic publication·revoke 는
+internal/incident/test 경계 전용이고 사용자/관리자 대면이 아니다. production 호출자 0 은
+`tests/repo_contract/test_control_surface_reduction.py` C1 이 pin 한다. 복수 runtime/plugin/admin
+운영이 실제로 필요하면 별도 설계로 #732/#620 에 상향한다.
 """
 
 from __future__ import annotations
