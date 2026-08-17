@@ -91,7 +91,8 @@ from hwpxfiller.domain.slot_selection import (
 )
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
-from .qualification_store import ObjectNotFound
+from .candidate_store import CandidateStoreError
+from .qualification_store import QualificationStoreError
 from .work_configuration_store import WorkSlotConfigurationStore
 
 
@@ -144,36 +145,44 @@ def _put_config(
 
 
 def _chain_application_facts(
-    qualification: QualificationReadPort, pass_evidence_id: str
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    pass_evidence_id: str,
 ) -> ChainApplicationFacts:
     """한 Application 의 PASS Evidence 에서 compatibility 판정 입력을 파생한다(fail-closed).
 
-    원 HWPX 를 다시 parse 하지 않는다 — 이미 durable 한 v2 execution structure 를 decode 하고
-    self-consistency 를 재검증할 뿐이다. v1/missing/integrity-fail 이면 셋 다 None 을 낸다
-    (false AUTO_KEEP 금지 — unknown evidence 는 절대 승계 근거가 되지 못한다).
+    원 HWPX 를 다시 parse 하지 않는다 — 이미 durable 한 v2 execution structure 를 decode 하고,
+    applied candidate 의 exact_content_digest(본문 content-address)를 참조로만 읽는다(bytes read 0).
+    v1/missing/integrity-fail 이면 넷 다 None 을 낸다(false AUTO_KEEP 금지 — unknown evidence·
+    복원 불가 content digest 는 절대 승계 근거가 되지 못한다).
     """
     try:
         evidence = qualification.get_evidence(pass_evidence_id)
         proj = evidence.structure_projection
         if evidence.result != PASS or proj is None:
-            return ChainApplicationFacts(None, None, None)
+            return ChainApplicationFacts(None, None, None, None)
         structure = decode_execution_structure(proj.payload)
         contract = DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(
             SelectionSemanticBindingKey(
                 evidence.qualification_profile_id, proj.projection_schema_version
             )
         )
+        # applied candidate 의 semantic content-address(canonical_blob_reference 는 store 주소라 안 씀).
+        content_digest = candidate.get_revision(evidence.revision_id).exact_content_digest
         return ChainApplicationFacts(
-            structure, contract.contract_id, resolve_selection_policy(contract, None)
+            structure, contract.contract_id, resolve_selection_policy(contract, None), content_digest
         )
-    except (ExecutionStructureError, SlotSelectionError, ObjectNotFound):
-        return ChainApplicationFacts(None, None, None)
+    except (
+        ExecutionStructureError, SlotSelectionError, QualificationStoreError, CandidateStoreError
+    ):
+        return ChainApplicationFacts(None, None, None, None)
 
 
 def _plan_new_config(
     existing_configs: tuple[WorkSlotConfigurationDraft, ...],
     work_state: WorkTemplateStateReadPort,
     qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
     ctx: SlotConfigurationContext,
     now: str,
 ) -> WorkSlotConfigurationDraft | None:
@@ -193,9 +202,11 @@ def _plan_new_config(
         )
         for a in aggregate.applications
     }
-    # 각 chain Application 의 exact v2 evidence 에서 compatibility 입력을 파생한다(SG-01 #733).
+    # 각 chain Application 의 exact v2 evidence + applied content digest 에서 compatibility 입력을
+    # 파생한다(SG-01 #733). content digest 는 v2 structural projection 이 못 보는 literal 본문
+    # 동일성의 exact 증거다.
     chain_facts = {
-        a.application_id: _chain_application_facts(qualification, a.pass_evidence_id)
+        a.application_id: _chain_application_facts(qualification, candidate, a.pass_evidence_id)
         for a in aggregate.applications
     }
     configs = {c.base_template_application_id: c for c in existing_configs}
@@ -412,7 +423,7 @@ def _mutate_under_fence(
         ))
 
     planned = pre if pre is not None else _plan_new_config(
-        existing_configs, work_state, qualification, ctx, now
+        existing_configs, work_state, qualification, candidate, ctx, now
     )
     # barrier(planned is None): Configuration 을 만들지 않는다 — 판정은 transient empty 로만.
     decision_config = planned if planned is not None else create_empty(
@@ -495,7 +506,7 @@ def _ensure_under_fence(
         outcome = ConfigurationMutationOutcome(NO_CHANGE, False, app, pre.version, pre.version, False)
         return _result(store, work_state, qualification, candidate, context, outcome)
     existing_configs = stored.configurations.configurations if stored else ()
-    config = _plan_new_config(existing_configs, work_state, qualification, ctx, now)
+    config = _plan_new_config(existing_configs, work_state, qualification, candidate, ctx, now)
     if config is None:  # barrier → 생성 생략(부재 유지), storage 없음
         outcome = ConfigurationMutationOutcome(NO_CHANGE, False, app, None, None, False)
         return _result(store, work_state, qualification, candidate, context, outcome)

@@ -34,10 +34,12 @@ DETACHED = "DETACHED"
 
 # 사유(판정의 근거 — UI 문구·감사용).
 PRESENT_MATCH = "PRESENT_MATCH"  # AUTO_KEEP
-FINGERPRINT_CHANGED = "FINGERPRINT_CHANGED"  # REVIEW
+FINGERPRINT_CHANGED = "FINGERPRINT_CHANGED"  # REVIEW (구조 fingerprint 변경)
 REMOVED_IN_CHAIN = "REMOVED_IN_CHAIN"  # REVIEW (removed 뒤 same id 재등장)
 EVIDENCE_MISSING = "EVIDENCE_MISSING"  # REVIEW (unknown/v1/missing evidence)
 POLICY_CHANGED = "POLICY_CHANGED"  # REVIEW (contract·policy 변경)
+CONTENT_UNVERIFIED = "CONTENT_UNVERIFIED"  # REVIEW (applied content digest 복원 불가)
+CONTENT_DIGEST_CHANGED = "CONTENT_DIGEST_CHANGED"  # REVIEW (literal 본문 변경 가능)
 DETACHED_ABSENT = "DETACHED_ABSENT"  # DETACHED (target 에 없음)
 
 FINGERPRINT_SCHEMA = "selection-compatibility-fingerprint/v1"
@@ -57,13 +59,18 @@ class SelectionCompatibilityFacts:
 class ChainApplicationFacts:
     """한 Application 의 compatibility 판정 입력 — 전부 fail-closed(None) 가능.
 
-    evidence 가 v1/missing/integrity-fail 이면 셋 다 None 이고, 그 hop 은 판정에서
-    evidence-missing 으로 취급돼 `AUTO_KEEP` 가 되지 못한다.
+    evidence 가 v1/missing/integrity-fail 이면 넷 다 None 이고, 그 hop 은 판정에서
+    evidence-missing/content-unverified 로 취급돼 `AUTO_KEEP` 가 되지 못한다.
+
+    ``applied_content_digest`` 는 applied candidate bytes 의 content-address 다(store 주소
+    canonical_blob_reference 가 아니다). v2 structural projection 은 native-free 라 region 의
+    literal 본문 digest 를 담지 않으므로, 본문 동일성 증명은 이 값의 chain 전역 일치로만 선다.
     """
 
     execution_structure: ExecutionTemplateStructure | None
     selection_contract_id: str | None
     selection_policy: str | None
+    applied_content_digest: str | None
 
 
 def _option_present(structure: ExecutionTemplateStructure, slot_id: str, option_id: str) -> bool:
@@ -150,6 +157,7 @@ def classify_selection(
     slot_id: str,
     option_id: str,
     chain_execution_structures: Sequence[ExecutionTemplateStructure | None],
+    chain_content_digests: Sequence[str | None],
     *,
     source_contract_id: str | None,
     target_contract_id: str,
@@ -158,9 +166,12 @@ def classify_selection(
 ) -> SelectionCompatibilityFacts:
     """source..target chain 을 걸어 한 (slot, option) 선택의 compatibility 를 판정한다.
 
-    ``chain_execution_structures`` 는 source 부터 target 까지 순서대로다(양끝 포함). 모든 hop 이
-    present-and-identical 일 때만 AUTO_KEEP — 중간 hop 에서 removed(fingerprint None)면 같은 id
-    재등장이라도 REVIEW_REQUIRED 다(false AUTO_KEEP 금지).
+    ``chain_execution_structures``/``chain_content_digests`` 는 source 부터 target 까지 같은
+    순서·같은 길이다(양끝 포함). AUTO_KEEP 는 두 증거를 **모두** 요구한다: (a) 구조 fingerprint 가
+    모든 hop 에서 present-and-identical, (b) applied content digest 가 모든 hop 에서 동일(=applied
+    candidate bytes 가 chain 전역에서 byte-identical → region 본문이 증명상 동일). 어느 한 hop 에서
+    removed·구조 변경·본문 digest 변경·복원 불가면 같은 id 재등장이라도 REVIEW_REQUIRED 다
+    (false AUTO_KEEP 금지, SG-00 D3: 필요한 fact 를 exact 복원 못 하면 REVIEW).
     """
     target = chain_execution_structures[-1] if chain_execution_structures else None
     source = chain_execution_structures[0] if chain_execution_structures else None
@@ -198,5 +209,14 @@ def classify_selection(
             return facts(REVIEW_REQUIRED, REMOVED_IN_CHAIN, target_fp)
         if hop_fp != target_fp:
             return facts(REVIEW_REQUIRED, FINGERPRINT_CHANGED, target_fp)
+
+    # 구조 fingerprint 는 v2 projection 뿐이라 region 의 literal 본문을 못 본다. applied content
+    # digest 의 chain 전역 일치로 본문 동일성을 exact 증명한다 — 없거나 다르면 fail-closed.
+    target_content = chain_content_digests[-1] if chain_content_digests else None
+    for digest in chain_content_digests:
+        if digest is None or target_content is None:
+            return facts(REVIEW_REQUIRED, CONTENT_UNVERIFIED, target_fp)
+        if digest != target_content:
+            return facts(REVIEW_REQUIRED, CONTENT_DIGEST_CHANGED, target_fp)
 
     return facts(AUTO_KEEP, PRESENT_MATCH, target_fp)

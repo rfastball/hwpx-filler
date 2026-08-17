@@ -339,6 +339,10 @@ def _compatibility_gated_selections(
         chain_facts[aid].execution_structure if aid in chain_facts else None
         for aid in chain_ids
     ]
+    chain_content_digests = [
+        chain_facts[aid].applied_content_digest if aid in chain_facts else None
+        for aid in chain_ids
+    ]
     src_facts = chain_facts.get(source_application_id)
     source_contract_id = src_facts.selection_contract_id if src_facts else None
     source_policy = src_facts.selection_policy if src_facts else None
@@ -351,7 +355,7 @@ def _compatibility_gated_selections(
         kept_options: list[str] = []
         for option_id in selection.selected_option_ids:
             fact = classify_selection(
-                selection.slot_id, option_id, chain_structs,
+                selection.slot_id, option_id, chain_structs, chain_content_digests,
                 source_contract_id=source_contract_id,
                 target_contract_id=target_contract_id,
                 source_policy=source_policy,

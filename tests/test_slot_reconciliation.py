@@ -342,8 +342,8 @@ def _exec_slotless():
     )
 
 
-def _cf(structure) -> ChainApplicationFacts:
-    return ChainApplicationFacts(structure, "slot-selection/v1", "EXACTLY_ONE")
+def _cf(structure, digest="sha256:same") -> ChainApplicationFacts:
+    return ChainApplicationFacts(structure, "slot-selection/v1", "EXACTLY_ONE", digest)
 
 
 def test_same_lineage_auto_keeps_compatible_different_lineage_empty() -> None:
@@ -380,6 +380,18 @@ def test_same_lineage_incompatible_drops_to_review() -> None:
         "A18", _structure(("s", ["A"])), V1, apps, configs, chain_facts=facts
     )
     assert plan.initial_selections == _sel()  # AUTO_KEEP 0
+    assert plan.compatibility_facts[0].classification == REVIEW_REQUIRED
+
+
+def test_same_lineage_content_change_drops_to_review() -> None:
+    # 구조는 동일한데 applied content digest 가 다름 → 본문 변경 가능 → 자동 승계 0.
+    apps = {"A18": _app("A18", "A17", 2), "A17": _app("A17", None, 1)}
+    configs = {"A17": _draft("A17", _sel(("s", ["A"])))}
+    facts = {"A17": _cf(_exec(), "sha256:src"), "A18": _cf(_exec(), "sha256:tgt")}
+    plan = plan_successor_reconciliation(
+        "A18", _structure(("s", ["A"])), V1, apps, configs, chain_facts=facts
+    )
+    assert plan.initial_selections == _sel()
     assert plan.compatibility_facts[0].classification == REVIEW_REQUIRED
 
 

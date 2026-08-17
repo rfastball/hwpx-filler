@@ -16,6 +16,8 @@ from hwpxfiller.application.execution_structure import (
 )
 from hwpxfiller.application.selection_compatibility import (
     AUTO_KEEP,
+    CONTENT_DIGEST_CHANGED,
+    CONTENT_UNVERIFIED,
     DETACHED,
     DETACHED_ABSENT,
     EVIDENCE_MISSING,
@@ -112,9 +114,13 @@ def _classify(
     target_cid=V1,
     source_pol=EXACTLY_ONE,
     target_pol=EXACTLY_ONE,
+    content_digests=None,
 ):
+    # 기본은 chain 전역 동일 digest → 본문 동일성 증명됨(구조가 맞으면 AUTO_KEEP 도달 가능).
+    if content_digests is None:
+        content_digests = ["sha256:same"] * len(chain)
     return classify_selection(
-        slot, option, chain,
+        slot, option, chain, content_digests,
         source_contract_id=source_cid, target_contract_id=target_cid,
         source_policy=source_pol, target_policy=target_pol,
     )
@@ -122,8 +128,8 @@ def _classify(
 
 # ── A1: same id + same semantics → AUTO_KEEP ────────────────────────────────────
 def test_a1_same_semantics_auto_keep() -> None:
-    s = _one()
-    fact = _classify([_one(), s])
+    # AUTO_KEEP 는 구조 fingerprint 동일 + applied content digest 동일 을 모두 요구한다.
+    fact = _classify([_one(), _one()], content_digests=["sha256:same", "sha256:same"])
     assert fact.classification == AUTO_KEEP
     assert fact.reason == PRESENT_MATCH
     assert fact.source_fingerprint == fact.target_fingerprint is not None
@@ -135,6 +141,26 @@ def test_a2_content_change_review() -> None:
     assert fact.classification == REVIEW_REQUIRED
     assert fact.reason == FINGERPRINT_CHANGED
     assert fact.source_fingerprint != fact.target_fingerprint
+
+
+# ── A2(정확판): 구조는 동일한데 literal 본문만 바뀜 → REVIEW ─────────────────────
+def test_a2_content_change_via_digest_review() -> None:
+    # v2 structural fingerprint 는 동일(같은 marker span·owned fields·envelope·removal)이지만
+    # applied candidate 본문 digest 가 달라짐. v2 projection 은 본문을 못 보므로 fingerprint 는
+    # 안 바뀐다 → digest 축이 없으면 false AUTO_KEEP 이었을 자리. digest 로 REVIEW 로 닫는다.
+    a, b = _one(), _one()
+    assert option_compatibility_fingerprint(a, "s1", "o1") == option_compatibility_fingerprint(
+        b, "s1", "o1"
+    )  # 구조 fingerprint 동일함을 명시 — 이게 P1 의 함정이었다
+    fact = _classify([a, b], content_digests=["sha256:src", "sha256:tgt"])
+    assert fact.classification == REVIEW_REQUIRED
+    assert fact.reason == CONTENT_DIGEST_CHANGED
+
+
+def test_content_unverified_when_digest_missing_review() -> None:
+    # applied content digest 를 한 hop 이라도 복원 못 하면 fail-closed(SG-00 D3).
+    fact = _classify([_one(), _one()], content_digests=["sha256:same", None])
+    assert fact.classification == REVIEW_REQUIRED and fact.reason == CONTENT_UNVERIFIED
 
 
 # ── A3: same id + Option-owned Field 추가/삭제 → REVIEW ──────────────────────────
