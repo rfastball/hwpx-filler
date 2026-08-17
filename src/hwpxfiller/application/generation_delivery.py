@@ -30,7 +30,6 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 
-from hwpxfiller import naming
 from hwpxfiller.application.execution_composition import (
     RuntimeMaterializerConformanceRegistry,
 )
@@ -45,6 +44,11 @@ from hwpxfiller.application.record_validation import (
     verify_validated_record_completeness,
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
+from hwpxfiller.domain.output_name import (
+    clean_filename,
+    format_date_token,
+    format_seq_token,
+)
 from hwpxfiller.domain.field_binding import (
     BOOLEAN,
     CONSTANT,
@@ -681,15 +685,15 @@ def _render_item(
         if isinstance(tok, LiteralSegment):
             parts.append(tok.text)
         elif isinstance(tok, ReservedDateToken):
-            text = naming._fmt_date(tok.date_spec, clock)
+            text = format_date_token(tok.date_spec, clock)
             parts.append(text)
             resolved.append(ResolvedTokenValue("DATE", None, text))
         elif isinstance(tok, ReservedSequenceToken):
-            text = naming._fmt_seq(tok.pad, ordinal + 1)
+            text = format_seq_token(tok.pad, ordinal + 1)
             parts.append(text)
             resolved.append(ResolvedTokenValue("SEQ", None, text))
         else:  # FieldValueToken
-            cleaned = naming.clean_filename(field_values[tok.field_id])
+            cleaned = clean_filename(field_values[tok.field_id])
             parts.append(cleaned)
             resolved.append(ResolvedTokenValue("FIELD", tok.field_id, cleaned))
     stem = "".join(parts)
@@ -789,7 +793,13 @@ def _resolve(
         )
 
     # (2) delivery basis 무결성·cross-binding — digest 재계산 + pattern/contract 결속.
-    verify_delivery_binding_basis_integrity(delivery_binding_basis)
+    #     callee integrity 예외를 결과 union 밖으로 새지 않게 context error 로 닫는다.
+    try:
+        verify_delivery_binding_basis_integrity(delivery_binding_basis)
+    except DeliveryBindingBasisIntegrityError as exc:
+        raise _DeliveryContextSignal(
+            DELIVERY_BINDING_BASIS_INTEGRITY_ERROR, str(exc)
+        ) from exc
     if delivery_binding_basis.filename_pattern_contract_id != filename_pattern_contract_id:
         raise _DeliveryContextSignal(
             DELIVERY_BINDING_BASIS_INTEGRITY_ERROR,

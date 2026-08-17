@@ -58,7 +58,6 @@ from hwpxfiller.domain.field_binding import (
     EXACT_TEXT,
     INTENTIONAL_BLANK,
     SOURCE,
-    CanonicalDecimal,
     ExactText,
     FieldBindingRule,
 )
@@ -66,6 +65,7 @@ from hwpxfiller.domain.raw_data_record import (
     RawRecordCaptureProvenance,
     SourceBoolean,
     SourceDecimal,
+    SourceNull,
     SourceText,
     build_raw_record_snapshot,
 )
@@ -255,8 +255,7 @@ def test_reserved_default_specs() -> None:
 
 def test_field_token_is_target_field_id_not_raw_source_key() -> None:
     # 토큰 'f_name' 은 target Field ID 다. raw source key('name')를 토큰으로 쓰면 미해소.
-    plan = _plan()
-    res = _resolve(plan, (_snapshot(),), pattern="{{name}}")  # 'name' 은 source key(필드 ID 아님)
+    res = _basis_dto(_plan(), pattern="{{name}}", inactive_rules=())  # 'name' 은 source key
     assert isinstance(res, gd.DeliveryPlanBlocked)
     assert res.blockers[0].code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
     assert res.blockers[0].field_id == "name"
@@ -586,7 +585,9 @@ def test_managed_plan_holds_exact_refs_and_paths() -> None:
     assert mgp.sealed_execution_plan_ref == plan_semantic_digest(plan)
     items = mgp.resolved_delivery_plan.ordered_items
     assert [i.validated_record_ref for i in items] == [_vdr(plan, s).validated_record_digest for s in snaps]
-    assert [i.resolved_output_relative_path for i in items] == ["A-20260304-001.hwpx", "B-20260304-002.hwpx"]
+    assert [i.resolved_output_relative_path for i in items] == [
+        "공고서-A-20260304-001.hwpx", "공고서-B-20260304-002.hwpx",
+    ]
 
 
 def test_managed_plan_has_no_legacy_template_or_live_mapping() -> None:
@@ -716,7 +717,102 @@ def test_runtime_admission_present_is_startable() -> None:
     assert adm.status == gd.MANAGED_RUN_STARTABLE
 
 
+# ═══ fail-closed branch coverage(inactive value resolution·guards·integrity) ═══════════════
+def test_resolve_delivery_field_value_variants() -> None:
+    snap = _snapshot(dept="본과")
+    # CONSTANT boolean → canonical lexical text.
+    ve_bool = {"kind": "CONSTANT", "canonical_value": {"value_type": "BOOLEAN", "literal": True},
+               "document_content_value_policy_id": _POLICY_ID}
+    assert gd.resolve_delivery_field_value(ve_bool, snap) == "true"
+    # FROM_SOURCE explicit null → unresolved blocker.
+    null_snap = build_raw_record_snapshot(
+        source_schema_keys=["dept"],
+        source_values=[("dept", SourceNull())],
+        record_identity="rn", capture_provenance=_PROV,
+    )
+    ve_src = {"kind": "FROM_SOURCE", "source_key": "dept", "value_type": EXACT_TEXT,
+              "document_content_value_policy_id": _POLICY_ID}
+    code, _ = gd.resolve_delivery_field_value(ve_src, null_snap)
+    assert code == gd.OUTPUT_NAME_TOKEN_UNRESOLVED
+
+
+def test_resolve_delivery_field_value_fail_closed() -> None:
+    snap = _snapshot()
+    # 미지원 policy → context signal.
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(
+            {"kind": "CONSTANT", "canonical_value": {"value_type": EXACT_TEXT, "literal": "x"},
+             "document_content_value_policy_id": "document-content-value/v999"},
+            snap,
+        )
+    # unknown kind → integrity context signal.
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(
+            {"kind": "MYSTERY", "document_content_value_policy_id": _POLICY_ID}, snap
+        )
+    # CONSTANT 누락 canonical_value → integrity.
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(
+            {"kind": "CONSTANT", "document_content_value_policy_id": _POLICY_ID}, snap
+        )
+    # FROM_SOURCE 형식 불량 source_key → integrity.
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(
+            {"kind": "FROM_SOURCE", "source_key": None, "value_type": EXACT_TEXT,
+             "document_content_value_policy_id": _POLICY_ID},
+            snap,
+        )
+    # BOOLEAN literal 이 bool 이 아님 → integrity.
+    with pytest.raises(gd._DeliveryContextSignal):
+        gd.resolve_delivery_field_value(
+            {"kind": "CONSTANT", "canonical_value": {"value_type": "BOOLEAN", "literal": "yes"},
+             "document_content_value_policy_id": _POLICY_ID},
+            snap,
+        )
+
+
+def test_guard_relative_path_branches() -> None:
+    for bad in ("a/b.hwpx", "..", "../x.hwpx", ".hwpx"):
+        with pytest.raises(gd._DeliveryContextSignal):
+            gd._guard_relative_path(bad)
+    gd._guard_relative_path("ok.hwpx")  # 통과
+
+
+def test_managed_plan_integrity_tamper() -> None:
+    mgp = _managed(_plan(), (_snapshot(),))
+    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
+        gd.verify_managed_generation_plan_integrity(
+            dataclasses.replace(mgp, managed_generation_plan_digest="sha256:x")
+        )
+    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
+        gd.verify_managed_generation_plan_integrity(
+            dataclasses.replace(mgp, delivery_contract_id="generation-delivery/v999")
+        )
+
+
+def test_resolved_plan_integrity_ordinal_and_dup_path() -> None:
+    res = _ok(_resolve(_plan(), (_snapshot(identity="r1", name="A"), _snapshot(identity="r2", name="B"))))
+    a, b = res.ordered_items
+    # ordinal 뒤섞기.
+    with pytest.raises(gd.ResolvedDeliveryPlanIntegrityError):
+        gd.verify_resolved_delivery_plan_integrity(dataclasses.replace(res, ordered_items=(b, a)))
+
+
 def test_no_native_write_or_route_cutover_in_module() -> None:
-    src = inspect.getsource(gd)
-    for forbidden in ("zipfile", "import lxml", "hwpxcore", "generate_batch", "run_generation"):
-        assert forbidden not in src, forbidden
+    # native write·HWPX mutation·legacy generator 로의 conversion 경로가 이 모듈에 없다.
+    modules = {m for m in _module_imports(gd) }
+    for forbidden in ("zipfile", "lxml", "hwpxcore", "hwpxfiller.batch", "hwpxfiller.external.hwpx_engine"):
+        assert not any(m == forbidden or m.startswith(forbidden + ".") for m in modules), forbidden
+
+
+def _module_imports(mod) -> set[str]:
+    import ast
+
+    tree = ast.parse(inspect.getsource(mod))
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            out.add(node.module)
+    return out

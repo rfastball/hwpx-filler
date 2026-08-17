@@ -18,21 +18,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-_INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
+# sanitation·예약 토큰 서식은 domain kernel 단일 출처(delivery batch 해석과 공유).
+from hwpxfiller.domain.output_name import (
+    clean_filename,
+    format_date_token as _fmt_date,
+    format_seq_token as _fmt_seq,
+)
+
 _DATE_TOKEN = re.compile(r"\{\{date(?::([^}]*))?\}\}")
 _SEQ_TOKEN = re.compile(r"\{\{seq(?::([^}]*))?\}\}")
-
-# 사용자 서식 토큰 → strftime 지시자. 순서·대소문자가 하중이다(월 ``MM`` vs 분 ``mm``).
-_DATE_MAP = [
-    ("YYYY", "%Y"),
-    ("YY", "%y"),
-    ("MM", "%m"),
-    ("DD", "%d"),
-    ("HH", "%H"),
-    ("mm", "%M"),
-    ("SS", "%S"),
-]
-
 
 _FIELD_TOKEN = re.compile(r"\{\{([^{}]+)\}\}")
 _RESERVED_TOKENS = ("date", "seq")
@@ -62,22 +56,6 @@ def pattern_uses_seq(pattern: str) -> bool:
     된다 — 어느 쪽인지는 토큰 판정기 단일 출처(:data:`_SEQ_TOKEN`)가 답한다.
     """
     return _SEQ_TOKEN.search(pattern) is not None
-
-
-def clean_filename(name: str) -> str:
-    return _INVALID.sub("_", name)
-
-
-def _fmt_date(spec: "str | None", now: datetime) -> str:
-    fmt = spec or "YYYYMMDD"
-    for tok, strf in _DATE_MAP:
-        fmt = fmt.replace(tok, strf)
-    return clean_filename(now.strftime(fmt))
-
-
-def _fmt_seq(spec: "str | None", seq: int) -> str:
-    width = len(spec) if spec else 0  # ``{{seq:001}}`` → 폭 3
-    return f"{seq:0{width}d}" if width else str(seq)
 
 
 def make_output_filename(
