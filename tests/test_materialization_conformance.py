@@ -130,6 +130,7 @@ _PROV = RawRecordCaptureProvenance(
 class Opt:
     id: str
     fields: tuple[str, ...]  # ordinary Field 이름
+    nested: tuple[str | None, ...] = ()  # Option 안에 중첩된 field-less BOOKMARK(None=무명)
 
 
 @dataclass(frozen=True)
@@ -144,10 +145,12 @@ class SlotS:
 @dataclass(frozen=True)
 class CaseSpec:
     root_fields: tuple[str, ...] = ()  # 순서·중복 허용(occurrence count)
+    empty_root_fields: tuple[str, ...] = ()  # 값 hp:t 없는 빈 root Field(slot synthesize 유발)
     slots: tuple[SlotS, ...] = ()
     bindings: dict[str, tuple] = field(default_factory=dict)  # fid -> ("SOURCE",key)/("CONST",txt)/("BLANK",)
     source_values: dict[str, str] = field(default_factory=dict)
-    extra_bookmarks: tuple[str, ...] = ()  # 보호 대상 plain BOOKMARK
+    extra_bookmarks: tuple[str, ...] = ()  # 보호 대상 plain BOOKMARK(안에 {name}_f Field 보유)
+    guard_bookmarks: tuple[str | None, ...] = ()  # field-less 보호 BOOKMARK(None=무명)
     header_fields: tuple[str, ...] = ()  # header0.xml 의 root Field
 
 
@@ -181,6 +184,25 @@ def _click(name: str, value: str = "값") -> str:
     )
 
 
+def _click_empty(name: str) -> str:
+    # 값 hp:t 가 전혀 없는 빈 누름틀 — set_field 가 slot 합성(slot_synthesized)으로 채운다.
+    return (
+        f'<hp:ctrl><hp:fieldBegin type="CLICK_HERE" name="{name}"/></hp:ctrl>'
+        "<hp:ctrl><hp:fieldEnd/></hp:ctrl>"
+    )
+
+
+def _bm_begin_unnamed(pid: str) -> str:
+    return f'<hp:ctrl><hp:fieldBegin id="{pid}" type="BOOKMARK"/></hp:ctrl>'
+
+
+def _guard_markup(pid_iter, name: str | None) -> str:
+    # field-less BOOKMARK region(begin+end, 내용 없음). name=None 이면 무명.
+    i = str(next(pid_iter))
+    begin = _bm_begin_unnamed(i) if name is None else _bm_begin(i, name)
+    return begin + _bm_end(i)
+
+
 def _meta(kind: str, ident: str) -> str:
     return json.dumps(
         {"hwpxFiller": {"kind": kind, "id": ident}, "name": "#hf"}, ensure_ascii=False
@@ -206,9 +228,13 @@ def _build_bytes(spec: CaseSpec) -> bytes:
 
     for fname in spec.root_fields:
         paras.append(_p(_click(fname)))
+    for fname in spec.empty_root_fields:
+        paras.append(_p(_click_empty(fname)))
     for name in spec.extra_bookmarks:
         i = str(next(pid))
         paras.append(_p(_bm_begin(i, name) + _click(f"{name}_f") + _bm_end(i)))
+    for gb in spec.guard_bookmarks:
+        paras.append(_p(_guard_markup(pid, gb)))
     for slot in spec.slots:
         sid = str(next(pid))
         sname = f"SLOT_{next(bm_name)}"
@@ -219,8 +245,9 @@ def _build_bytes(spec: CaseSpec) -> bytes:
         for opt in slot.opts:
             oid = str(next(pid))
             oname = f"OPT_{next(bm_name)}"
+            nested = "".join(_guard_markup(pid, n) for n in opt.nested)
             inner = "".join(_click(f) for f in opt.fields)
-            paras.append(_p(_bm_begin(oid, oname) + inner + _bm_end(oid)))
+            paras.append(_p(_bm_begin(oid, oname) + nested + inner + _bm_end(oid)))
             tags[oname] = _meta("slot_option", opt.id)
         paras.append(_p(_bm_end(sid)))
 
@@ -257,6 +284,14 @@ def _build_structure(spec: CaseSpec) -> object:
     for fname in spec.root_fields:
         add(fname, OWNER_ROOT, nxt())
         root_names.append(fname)
+    for fname in spec.empty_root_fields:
+        add(fname, OWNER_ROOT, nxt())
+        root_names.append(fname)
+    # extra_bookmarks 안의 {name}_f 는 bytes 에 실재하는 root ordinary Field 다 — structure 도
+    # 정직하게 선언해야 P7 완전-일치 precheck 를 통과한다(subset 구멍 봉인).
+    for name in spec.extra_bookmarks:
+        add(f"{name}_f", OWNER_ROOT, nxt())
+        root_names.append(f"{name}_f")
     for fname in spec.header_fields:
         add(fname, OWNER_ROOT, nxt(), entry="c1")
 
@@ -402,11 +437,15 @@ def _build_case(spec: CaseSpec) -> Case:
     return Case(blob, struct, plan, vdr, dict(vdr.document_values_in_order()))
 
 
-def _run(case: Case) -> bytes:
+def _materialize(case: Case):
     return apply_execution_plan_in_memory(
         candidate_bytes=case.bytes, ordered_operations=case.plan.ordered_operations,
         document_values=case.values,
     )
+
+
+def _run(case: Case) -> bytes:
+    return _materialize(case).output_bytes
 
 
 # ══ positive corpus(7 cases) ═════════════════════════════════════════════════════════
@@ -421,13 +460,18 @@ def _slotless_case() -> CaseSpec:
 
 
 def _one_of_two() -> CaseSpec:
+    # PLAIN 은 안에 PLAIN_f Field 를 갖는 보호 BOOKMARK — structure 가 PLAIN_f 를 정직하게 선언하고
+    # 실제 write op(CONST)+VDR value 로 채운다(P7 subset 구멍 봉인). GUARD/무명은 field-less 보호
+    # region 으로 P5 topology 검사를 위해 존재한다.
     return CaseSpec(
         root_fields=("성명", "성명"),
         slots=(SlotS("s1", ("주소",), (Opt("o1", ("항목",)), Opt("o2", ("금액",))), selected="o1"),),
         bindings={"성명": ("SOURCE", "이름"), "주소": ("CONST", "서울"),
-                  "항목": ("BLANK",), "금액": ("SOURCE", "금액열")},
+                  "항목": ("BLANK",), "금액": ("SOURCE", "금액열"),
+                  "PLAIN_f": ("CONST", "책갈피")},
         source_values={"이름": "홍길동", "금액열": "1000"},
         extra_bookmarks=("PLAIN",),
+        guard_bookmarks=("GUARD", None),
     )
 
 
@@ -497,7 +541,7 @@ def test_positive_corpus_actual_pass(name: str) -> None:
     )
     output = _run(case)
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=output, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformancePass), result
 
@@ -546,6 +590,16 @@ def _corrupt_section(blob: bytes, transform) -> bytes:
     return pkg.to_bytes()
 
 
+def _drop_field_paragraph(xml: bytes, name: str) -> bytes:
+    # 해당 ordinary Field(begin+end 한 문단) 를 담은 최상위 문단을 통째로 제거한다 — orphan marker
+    # 없이 retained content 만 사라져 P2(보존) 계층을 겨눈다.
+    root = etree.fromstring(xml)
+    for para in list(root.findall(f"{{{HP}}}p")):
+        if any(fb.get("name") == name for fb in para.iter(f"{{{HP}}}fieldBegin")):
+            root.remove(para)
+    return serialize_modified_section(root)
+
+
 def test_theorem_pass_but_actual_removal_fail_stays_independent() -> None:
     # 유효 plan(theorem PASS)인데 output 이 unselected option 을 제거하지 못한 경우.
     case = _build_case(_one_of_two())
@@ -557,7 +611,7 @@ def test_theorem_pass_but_actual_removal_fail_stays_independent() -> None:
     assert isinstance(comp, CompositionPremisesPassed)
     # 그런데 actual output(=source, 아무것도 제거 안 함)은 conformance FAIL.
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=case.bytes, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=case.bytes, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == REMOVAL_INCOMPLETE
@@ -607,7 +661,7 @@ def test_wrong_native_primitive_contract_rejected_by_verifier() -> None:
     )
     with pytest.raises(CompositionUnsupportedNativePrimitiveContract):
         verify_materialization_postconditions(
-            source_bytes=case.bytes, output_bytes=output, plan=bad_plan, vdr=case.vdr
+            source_bytes=case.bytes, output_bytes=output, plan=bad_plan, structure=case.structure, vdr=case.vdr
         )
 
 
@@ -616,7 +670,7 @@ def test_serialize_ok_reparse_fail_is_distinct() -> None:
     output = _run(case)
     broken = _corrupt_section(output, lambda x: x.replace(b"</hs:sec>", b"<hp:p></hs:sec>"))
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=broken, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=broken, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == REPARSE_FAILED
@@ -627,7 +681,7 @@ def test_reparse_ok_but_field_text_mismatch_is_distinct() -> None:
     output = _run(case)
     tampered = _corrupt_section(output, lambda x: x.replace("홍길동".encode(), "위조".encode()))
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=tampered, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=tampered, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == FIELD_TEXT_MISMATCH
@@ -649,7 +703,7 @@ def test_occurrence_count_mismatch_is_distinct() -> None:
 
     corrupted = _corrupt_section(output, drop_one_seongmyeong)
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=corrupted, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=corrupted, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == OCCURRENCE_COUNT_MISMATCH
@@ -666,7 +720,7 @@ def test_marker_cleanup_violation_is_distinct() -> None:
         ),
     )
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=orphan, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=orphan, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == MARKER_CLEANUP_VIOLATION
@@ -682,7 +736,7 @@ def test_marker_cleanup_violation_in_secondary_entry() -> None:
         b"</hs:sec>", b"<hp:p><hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p></hs:sec>"
     )
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == MARKER_CLEANUP_VIOLATION
@@ -697,26 +751,92 @@ def test_preserved_content_lost_is_distinct() -> None:
     pkg = HwpxPackage.from_bytes(output)
     remove_slot_option(pkg, "s1", "o1")
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == PRESERVED_CONTENT_LOST
 
 
 def test_protected_bookmark_loss_is_distinct() -> None:
-    case = _build_case(_one_of_two())  # PLAIN 보호 BOOKMARK 포함
+    case = _build_case(_one_of_two())  # GUARD field-less 보호 BOOKMARK 포함
     output = _run(case)
-    # 유효 output 에서 보호 대상 PLAIN BOOKMARK region 을 제거한다.
+    # 유효 output 에서 제거 대상이 아닌 field-less 보호 region(GUARD)을 제거한다 — 이름 있는
+    # non-target region 소실이 per-region topology 대조에서 걸린다(count 기준이 아님).
     from hwpxcore.bookmark_region import remove_bookmark_region, resolve_bookmark_regions
 
     pkg = HwpxPackage.from_bytes(output)
-    region = next(r for r in resolve_bookmark_regions(pkg) if r.name == "PLAIN")
+    region = next(r for r in resolve_bookmark_regions(pkg) if r.name == "GUARD")
     remove_bookmark_region(pkg, region)
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == PROTECTED_STRUCTURE_LOSS
+
+
+def test_protected_region_topology_mutation_is_distinct() -> None:
+    # region 이 output 에 남아 있어도(같은 pairing id) per-region shape(이름)가 바뀌면 구조 변형이다 —
+    # count 기준으로는 소실 0 이라 보이지 않던 부패를 per-region topology 대조가 잡는다.
+    case = _build_case(_one_of_two())
+    output = _run(case)
+    renamed = _corrupt_section(output, lambda x: x.replace(b'name="GUARD"', b'name="RENAMED"'))
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=renamed, plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformanceFailure)
+    assert result.code == PROTECTED_STRUCTURE_LOSS
+
+
+def test_unnamed_protected_region_loss_is_distinct() -> None:
+    # SG-02 fix #2 (a): 이름 없는(name=None) 보호 region 이 제거 대상 밖에서 사라지면, name-set 이
+    # name is None 을 버리던 이전 구현은 눈멀었다. per-region topology 는 무명 region 소실도 잡는다.
+    case = _build_case(_one_of_two())  # guard_bookmarks 에 무명 region 하나
+    output = _run(case)
+    from hwpxcore.bookmark_region import remove_bookmark_region, resolve_bookmark_regions
+
+    pkg = HwpxPackage.from_bytes(output)
+    region = next(r for r in resolve_bookmark_regions(pkg) if r.name is None)
+    remove_bookmark_region(pkg, region)
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformanceFailure)
+    assert result.code == PROTECTED_STRUCTURE_LOSS
+
+
+def test_bookmark_nested_in_removed_option_is_not_false_reject() -> None:
+    # SG-02 fix #2 (b): 제거되는 Option 안에 중첩된 BOOKMARK 는 Option 과 함께 정당하게 사라진다 —
+    # 이전 count 기준 구현은 소실 수가 제거 Option 수를 초과해 거짓 PROTECTED_STRUCTURE_LOSS 를 냈다.
+    spec = CaseSpec(
+        slots=(
+            SlotS(
+                "s1",
+                (),
+                (Opt("o1", ("항목",)), Opt("o2", ("금액",), nested=("NESTED", None))),
+                selected="o1",
+            ),
+        ),
+        bindings={"항목": ("CONST", "선택값")},
+    )
+    case = _build_case(spec)
+    output = _run(case)
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformancePass), result
+
+
+def test_retained_shared_content_loss_is_preserved_content_lost() -> None:
+    # SG-02 fix #1: option marker 는 그대로 두고 제거 대상이 아닌 SLOT_SHARED Field(주소) 내용을
+    # 통째로 잃으면, option id 만 보던 이전 P2 는 조용히 PASS 했다. owner fact 기반 검사는 잡는다.
+    case = _build_case(_one_of_two())
+    output = _run(case)
+    corrupted = _corrupt_section(output, lambda x: _drop_field_paragraph(x, "주소"))
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=corrupted, plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformanceFailure)
+    assert result.code == PRESERVED_CONTENT_LOST
 
 
 def test_source_candidate_mutation_detected() -> None:
@@ -724,7 +844,7 @@ def test_source_candidate_mutation_detected() -> None:
     output = _run(case)
     # output(=제거된 상태)을 source 로 넘기면 removal target 이 source 에 없다 → 변형 감지.
     result = verify_materialization_postconditions(
-        source_bytes=output, output_bytes=output, plan=case.plan, vdr=case.vdr
+        source_bytes=output, output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == SOURCE_CANDIDATE_MUTATED
@@ -772,7 +892,7 @@ def test_source_unreadable_is_mutation_signal() -> None:
     case = _build_case(_one_of_two())
     output = _run(case)
     result = verify_materialization_postconditions(
-        source_bytes=b"not a zip", output_bytes=output, plan=case.plan, vdr=case.vdr
+        source_bytes=b"not a zip", output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == SOURCE_CANDIDATE_MUTATED
@@ -789,7 +909,7 @@ def test_source_with_blocking_diagnostics_is_mutation_signal() -> None:
         ),
     )
     result = verify_materialization_postconditions(
-        source_bytes=bad_source, output_bytes=output, plan=case.plan, vdr=case.vdr
+        source_bytes=bad_source, output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == SOURCE_CANDIDATE_MUTATED
@@ -803,7 +923,7 @@ def test_whole_slot_loss_is_preserved_content_lost() -> None:
     pkg = HwpxPackage.from_bytes(output)
     remove_slot(pkg, "s1")  # 통째 Slot 소실
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=pkg.to_bytes(), plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformanceFailure)
     assert result.code == PRESERVED_CONTENT_LOST
@@ -822,7 +942,7 @@ def test_unnormalizable_field_name_is_ignored() -> None:
         ),
     )
     result = verify_materialization_postconditions(
-        source_bytes=case.bytes, output_bytes=ghost, plan=case.plan, vdr=case.vdr
+        source_bytes=case.bytes, output_bytes=ghost, plan=case.plan, structure=case.structure, vdr=case.vdr
     )
     assert isinstance(result, ConformancePass)
 
@@ -882,3 +1002,32 @@ def test_executor_rejects_malformed_remove_operand() -> None:
             ordered_operations=[{"op": "REMOVE_OPTION", "slot_id": "s1", "option_id": None}],
             document_values={},
         )
+
+
+# ── fix #3: 채움 완화(FillNote)는 삼키지 않고 표면화한다 ────────────────────────────────
+def _synth_case() -> CaseSpec:
+    # 값 hp:t 가 없는 빈 root Field — set_field 가 slot 을 합성(slot_synthesized)한다.
+    return CaseSpec(
+        empty_root_fields=("빈칸",),
+        bindings={"빈칸": ("CONST", "채움")},
+    )
+
+
+def test_fill_note_is_surfaced_not_swallowed() -> None:
+    from hwpxfiller.domain.fields import FillNote
+
+    case = _build_case(_synth_case())
+    materialized = _materialize(case)
+    # executor 가 완화 사실을 삼키지 않고 돌려준다.
+    assert FillNote("빈칸", "slot_synthesized") in materialized.notes
+    # 그리고 그 사실이 ConformanceResult(PASS)에 실려 상위가 record/warn 할 수 있다.
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes,
+        output_bytes=materialized.output_bytes,
+        plan=case.plan,
+        structure=case.structure,
+        vdr=case.vdr,
+        execution_notes=materialized.notes,
+    )
+    assert isinstance(result, ConformancePass), result
+    assert FillNote("빈칸", "slot_synthesized") in result.notes

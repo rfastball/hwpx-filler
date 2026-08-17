@@ -45,8 +45,16 @@ from hwpxfiller.application.execution_contract_set import (
     PLAN_REMOVE_OPTION,
     SealedExecutionPlanSemanticPayload,
 )
-from hwpxfiller.application.execution_structure import ExecutionTemplateStructure
-from hwpxfiller.domain.fields import FieldDocument, field_xml_names, normalize_field_id
+from hwpxfiller.application.execution_structure import (
+    OWNER_OPTION,
+    ExecutionTemplateStructure,
+)
+from hwpxfiller.domain.fields import (
+    FieldDocument,
+    FillNote,
+    field_xml_names,
+    normalize_field_id,
+)
 from hwpxfiller.external.template_inspection import inspect_slots, remove_slot_option
 
 CONFORMANCE_CONTRACT_ID = "hwpx-materialization-conformance/v1"
@@ -71,10 +79,25 @@ class ConformanceExecutionError(Exception):
 
 
 @dataclass(frozen=True)
+class InMemoryMaterialization:
+    """executor 결과 — output bytes 와, 채움이 "경고 후 진행"으로 처리한 완화 사실(FillNote).
+
+    ``FieldDocument.set_field`` 은 inline range 를 벗기거나(``inline_stripped``) 값 슬롯을
+    합성할 때(``slot_synthesized``) native content 를 제거·합성하는 완화를 기록한다. 이
+    사실을 삼키면 relaxation 이 조용히 통과하므로(confirm-or-alarm 위반) bytes 와 함께
+    돌려주고, 상위(포트·미래 S6 wrapper)가 record/warn 하게 표면화한다.
+    """
+
+    output_bytes: bytes
+    notes: tuple[FillNote, ...]
+
+
+@dataclass(frozen=True)
 class ConformancePass:
     """모든 postcondition 이 actual reopened output 에서 충족됨."""
 
     output_digest: str
+    notes: tuple[FillNote, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,16 +132,20 @@ def apply_execution_plan_in_memory(
     candidate_bytes: bytes,
     ordered_operations: Iterable[Mapping[str, Any]],
     document_values: Mapping[str, str],
-) -> bytes:
-    """exact Candidate bytes 에 Plan 의 ordered operation 을 in-memory 로 적용해 output bytes 를 낸다.
+) -> InMemoryMaterialization:
+    """exact Candidate bytes 에 Plan 의 ordered operation 을 in-memory 로 적용해 output 을 낸다.
 
     순수 sequencer: ``ordered_operations`` 를 **선언 순서 그대로** 적용한다. ``REMOVE_OPTION`` 은
     :func:`remove_slot_option` 로, ``APPLY_FIELD_BINDING`` 은 VDR 이 낸 ``document_values`` 의 exact
     logical text 를 모든 content entry 의 해당 Active Field 에 쓴다. source ``candidate_bytes`` 는
     ``from_bytes`` clone 위에서만 다뤄 절대 변형되지 않는다(P6). 새 의미를 파생하지 않는다 —
     무엇을 제거/기입할지는 op·VDR 이 이미 정한다.
+
+    반환은 output bytes 와 함께 채움이 남긴 완화 사실(:class:`FillNote`)이다 — inline strip·slot
+    synthesize 같은 native content 완화를 삼키지 않고 표면화한다(confirm-or-alarm).
     """
     pkg = HwpxPackage.from_bytes(candidate_bytes)  # clone — source blob 불변
+    notes: list[FillNote] = []
     for op in ordered_operations:
         code = _op_code(op)
         if code == PLAN_REMOVE_OPTION:
@@ -132,29 +159,33 @@ def apply_execution_plan_in_memory(
                 raise ConformanceExecutionError(
                     f"Active Field {field_id!r} 에 대응하는 VDR document value 가 없다"
                 )
-            _write_active_field(pkg, field_id, document_values[field_id])
+            notes.extend(_write_active_field(pkg, field_id, document_values[field_id]))
         else:
             # unknown op 를 v1 으로 조용히 해석하지 않는다(fail-closed).
             raise UnsupportedNativePrimitiveContract(f"미지원 operation code: {code!r}")
-    return pkg.to_bytes()
+    return InMemoryMaterialization(pkg.to_bytes(), tuple(dict.fromkeys(notes)))
 
 
-def _write_active_field(pkg: HwpxPackage, field_id: str, text: str) -> None:
-    """모든 field-target content entry 에 exact logical text 를 쓴다(빈칸도 그대로 기입).
+def _write_active_field(pkg: HwpxPackage, field_id: str, text: str) -> list[FillNote]:
+    """모든 field-target content entry 에 exact logical text 를 쓰고 완화 사실을 모아 돌려준다.
 
     한 entry 라도 기입 가능한 자리가 있으면 성공. 어느 entry 에서도 못 쓰면(=Active Field 가 bytes 에
-    없음) 조용히 넘기지 않고 시끄럽게 닫는다.
+    없음) 조용히 넘기지 않고 시끄럽게 닫는다. ``set_field`` 가 남긴 ``inline_stripped``/
+    ``slot_synthesized`` 노트(native content 완화)는 삼키지 않고 호출측으로 올린다.
     """
     wrote = False
+    notes: list[FillNote] = []
     for name in field_xml_names(pkg):
         doc = FieldDocument(pkg.entries[name], entry=name)
         if doc.set_field(field_id, text):
             pkg.entries[name] = doc.to_bytes()
             wrote = True
+        notes.extend(doc.notes)
     if not wrote:
         raise ConformanceExecutionError(
             f"Active Field {field_id!r} 를 candidate 의 어느 content entry 에도 쓸 수 없다"
         )
+    return notes
 
 
 # ═══ P7 precheck: authored structure 가 exact Candidate bytes 와 id 일관 ═══════════════
@@ -186,10 +217,15 @@ def verify_structure_bytes_consistency(
         )
     bytes_fields = {fid for fid, _ in _read_field_values(pkg)}
     struct_fields = {occ.field_id for occ in structure.field_occurrences}
-    if not struct_fields <= bytes_fields:
+    # 완전 일치를 요구한다(subset 금지). subset 이면 candidate bytes 에 있는 ordinary Field 를
+    # structure 가 누락해도 통과 → 컴파일러가 그 Field 에 write op 를 내지 않아 verifier 가 그대로
+    # 두는 조용한 under-fill 을 인증하게 된다. 양방향(structure⊇bytes·structure⊆bytes)을 다 본다.
+    if struct_fields != bytes_fields:
         return ConformanceFailure(
             STRUCTURE_BYTES_INCONSISTENT,
-            f"structure Field {sorted(struct_fields - bytes_fields)} 가 bytes 에 없다",
+            f"structure Field 투영이 bytes 와 불일치: "
+            f"structure-only={sorted(struct_fields - bytes_fields)}, "
+            f"bytes-only={sorted(bytes_fields - struct_fields)}",
         )
     return ConformancePass(output_digest="")
 
@@ -200,7 +236,9 @@ def verify_materialization_postconditions(
     source_bytes: bytes,
     output_bytes: bytes,
     plan: SealedExecutionPlanSemanticPayload,
+    structure: ExecutionTemplateStructure,
     vdr: Any,
+    execution_notes: Iterable[FillNote] = (),
 ) -> ConformanceResult:
     """actual applied output bytes 를 reopen 해 issue §3 의 최소 postcondition 을 전건 재검증한다.
 
@@ -208,6 +246,11 @@ def verify_materialization_postconditions(
     PRESERVED_CONTENT_LOST · P3 FIELD_TEXT_MISMATCH/OCCURRENCE_COUNT_MISMATCH · P4
     MARKER_CLEANUP_VIOLATION · P5 PROTECTED_STRUCTURE_LOSS · P6 SOURCE_CANDIDATE_MUTATED.
     primitive 내부 postcondition 을 최종으로 신뢰하지 않고 reopened output 위에서 다시 센다.
+
+    ``structure`` 는 owner fact(ROOT/SLOT_SHARED/OPTION 귀속)를 제공해 P2 가 제거 대상이 아닌
+    retained content 의 소실을 잡게 한다 — 새 의미를 파생하지 않고 이미 검증된 structure 의
+    fact 만 읽는다. ``execution_notes`` 는 executor 가 올린 완화 사실로, PASS 결과에 그대로
+    실려 상위가 record/warn 하게 한다.
     """
     contracts = plan.execution_basis.contracts
     if contracts.native_primitive_contract_id != NATIVE_PRIMITIVE_CONTRACT_ID:
@@ -271,14 +314,35 @@ def verify_materialization_postconditions(
             REMOVAL_INCOMPLETE, f"removal target 이 output 에 잔존: {sorted(still_present)}"
         )
 
-    # P2 — selected/root/shared content 보존: target 아닌 slot/option 이 사라지지 않았다.
-    # 모든 Slot 은 최소 1 Option 을 갖고 selection 은 non-target Option 을 남기므로, 통째 Slot 소실도
-    # 그 non-target Option 소실로 여기서 함께 잡힌다(별도 slot-id 검사 불요).
+    # P2 — selected/root/shared content 보존.
+    # (a) target 아닌 Option marker 자체가 사라지지 않았다. 모든 Slot 은 최소 1 Option 을 갖고
+    #     selection 은 non-target Option 을 남기므로, 통째 Slot 소실도 그 non-target Option 소실로
+    #     여기서 함께 잡힌다(별도 slot-id 검사 불요).
     expected_remaining = source_options - removal_targets
     lost = expected_remaining - out_options
     if lost:
         return ConformanceFailure(
             PRESERVED_CONTENT_LOST, f"target 아닌 Option 이 output 에서 소실: {sorted(lost)}"
+        )
+    # (b) 제거 대상 Option 이 소유하지 않은 모든 Field occurrence 는 output 에 남아야 한다.
+    #     owner fact 는 (이미 검증된) structure 에서, 제거 대상은 plan 에서 온다 — metatag 로
+    #     product 의미를 재유도하지 않는다. option marker 만 남긴 채 root/shared/selected-option
+    #     content 를 잃는 조용한 부패를 이 검사가 시끄럽게 닫는다(P2 가 option id 만 보던 구멍).
+    #     정확한 active count/text 는 P3 소관이라 여기서는 '완전 소실'(presence)만 판정해 층을 가른다.
+    retained_field_ids = {
+        occ.field_id
+        for occ in structure.field_occurrences
+        if not (
+            occ.owner_kind == OWNER_OPTION
+            and (occ.owner_slot_id, occ.owner_option_id) in removal_targets
+        )
+    }
+    present_field_ids = {field_id for field_id, _ in field_values}
+    missing_content = retained_field_ids - present_field_ids
+    if missing_content:
+        return ConformanceFailure(
+            PRESERVED_CONTENT_LOST,
+            f"제거 대상이 아닌 retained content 가 output 에서 소실: {sorted(missing_content)}",
         )
 
     # P3 — 모든 Active Field occurrence 가 exact VDR logical text(+expected count).
@@ -303,36 +367,78 @@ def verify_materialization_postconditions(
                     f"Active Field {field_id!r} text {value!r} != 기대 {want!r}",
                 )
 
-    # P5 — protected structure: target 아닌 BOOKMARK region 이 output 에서 사라지지 않았다.
-    protected = _protected_bookmark_loss(source_pkg, reopen, len(removal_targets))
+    # P5 — protected structure: removed Option(및 그 안에 중첩된 region) 밖의 모든 BOOKMARK region 이
+    # per-region topology(이름·부모·metatag) 그대로 output 에 보존됐다.
+    protected = _protected_structure_loss(source_bytes, reopen, remove_ops)
     if protected is not None:
         return ConformanceFailure(PROTECTED_STRUCTURE_LOSS, protected)
 
-    return ConformancePass(output_digest=_blob_digest(output_bytes))
+    return ConformancePass(
+        output_digest=_blob_digest(output_bytes), notes=tuple(execution_notes)
+    )
 
 
-def _protected_bookmark_loss(
-    source_pkg: HwpxPackage, output_pkg: HwpxPackage, removal_target_count: int
-) -> str | None:
-    """BOOKMARK region 소실 수가 제거한 Option 수와 정확히 같은지 검사(protected structure).
+# ─── P5 per-region topology helpers ───────────────────────────────────────────────────
+def _region_topo_key(region: Any) -> tuple[str, str]:
+    """removal 로 다른 region 을 지워도 안정한 per-region key(production ``_region_key`` 와 동형).
 
-    public :func:`resolve_bookmark_topology` 로만 판정한다(product id→region 사설 map 을 쓰지 않고
-    metatag 재파싱으로 product 의미를 재유도하지도 않는다). P1 이 모든 removal target 이 output 에
-    부재함을 이미 보장하므로, region 이 정확히 target 수만큼만 사라져야 한다 — 더 사라졌으면
-    target 아닌 BOOKMARK 를 잃은 것이다.
-
-    # ponytail: count 기준. removed Option region 안에 다시 BOOKMARK 를 중첩하는 corpus 는 이
-    #           harness 범위 밖(그 경우 nested 도 함께 사라져 count 가 초과) — 필요 시 name-level
-    #           protected set 으로 승격.
+    ``name`` 은 None·중복 가능이라 identity 로 못 쓴다. section + native pairing id 는 다른 region
+    제거·field write 로 재번호되지 않아 source↔output 을 잇는 안정 key 다.
     """
-    source_names = {r.name for r in resolve_bookmark_topology(source_pkg) if r.name is not None}
-    output_names = {r.name for r in resolve_bookmark_topology(output_pkg) if r.name is not None}
-    lost = source_names - output_names
-    if len(lost) != removal_target_count:
-        return (
-            f"BOOKMARK region 소실 {len(lost)} != 제거 Option {removal_target_count} "
-            f"(target 아닌 BOOKMARK 소실 가능): {sorted(lost)}"
-        )
+    return (region.section, region._pairing_id)
+
+
+def _region_parent_key(region: Any) -> tuple[str, str] | None:
+    parent = region.parent
+    return None if parent is None else _region_topo_key(parent)
+
+
+def _region_shape(region: Any) -> tuple[Any, ...]:
+    """topology 값(위치 제외) — 이름·부모·metatag. 여기 하나라도 바뀌면 구조 변형이다."""
+    return (
+        region.name,
+        _region_parent_key(region),
+        region.meta_tags,
+        region.meta_tag_attribute,
+    )
+
+
+def _protected_structure_loss(
+    source_bytes: bytes,
+    output_pkg: HwpxPackage,
+    remove_ops: list[Mapping[str, Any]],
+) -> str | None:
+    """removed Option(및 그 안에 중첩된 region) 밖의 모든 BOOKMARK region 이 per-region topology 로
+    보존됐는지 검사한다.
+
+    count-기준(이전) 대신 stable per-region key 로 대조한다: (1) ``name is None`` region 도 세고,
+    (2) 같은 이름 중복을 뭉개지 않으며, (3) removed Option 의 후손은 정당하게 사라진 것으로 다룬다.
+    기대 topology 는 metatag 재파싱이 아니라 **실제 production 제거 primitive** 로 얻는다: source
+    clone 에 plan 의 REMOVE_OPTION 만 적용한 reference 를 만든다(field write 는 BOOKMARK topology 에
+    무영향). 그 reference 가 남긴 모든 region 은 output 에도 같은 key·shape 로 남아야 한다 — 제거
+    Option 과 그 안에 중첩된 region 은 reference 에서도 함께 사라지므로 거짓 거절이 없다.
+
+    stable key 는 (section, native pairing id) 로 production ``_region_key`` 와 동형이다 — 다른
+    region 제거·field write 로 재번호되지 않아 reference↔output 을 잇는다.
+    """
+    reference = HwpxPackage.from_bytes(source_bytes)  # fresh clone — source 불변
+    for op in remove_ops:
+        remove_slot_option(reference, op["slot_id"], op["option_id"])
+
+    expected = {
+        _region_topo_key(r): _region_shape(r)
+        for r in resolve_bookmark_topology(reference)
+    }
+    actual = {
+        _region_topo_key(r): _region_shape(r)
+        for r in resolve_bookmark_topology(output_pkg)
+    }
+    for key, want in expected.items():
+        got = actual.get(key)
+        if got is None:
+            return f"보호 BOOKMARK region 이 output 에서 소실: key={key} shape={want}"
+        if got != want:
+            return f"보호 BOOKMARK region topology 변형: key={key} {want} != {got}"
     return None
 
 
