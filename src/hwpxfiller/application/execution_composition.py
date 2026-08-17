@@ -512,7 +512,14 @@ def _deep_freeze(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class CompositionPremisesPassed:
-    """모든 required premise 가 exact projection fact 에서 증명됨."""
+    """모든 required premise 가 exact projection fact 에서 증명됨.
+
+    PASS = **static admission** 뿐이다: ordered ``RemoveOption``/``ApplyFieldBinding`` 이 지원되는
+    static composition contract 에 속함을 뜻한다. actual HWPX bytes 생성·serialize/reparse·
+    postcondition 충족·한글 layout 동일성·filesystem delivery 에 대해서는 **아무것도 단언하지
+    않는다** — 그 actual native materialization conformance 는 별 identity 이고 SG-02 harness /
+    S6 가 진다(SG-02 · #734).
+    """
 
     composition_contract_id: str
     native_primitive_contract_id: str
@@ -793,6 +800,12 @@ def verify_execution_composition_premises(
     PASS 는 (1) composition/native primitive contract 가 등록됨, (2) theorem evidence 가
     integrity·PASS, (3) projection resolver/removal contract 가 native primitive contract 와
     결속, (4) C1~C10 이 전부 증명될 때만. 증명 안 되면 latest fallback 없이 Blocked/ContextError.
+
+    이 PASS 는 **static admission** 만을 뜻한다 — ordered ops 가 지원되는 static composition
+    contract 에 속함. serialize/reparse/postcondition/한글 layout/delivery 성공에 대해서는 아무것도
+    단언하지 않으며, runtime materializer conformance 를 **대체하지 않는다**(그 seam 은
+    :class:`RuntimeMaterializerConformanceRegistry`·SG-02 harness·S6 소유). seal/compile 경로는
+    admission 판정에 그 registry 를 절대 consult 하지 않는다.
     """
     # (0) projection schema — 미지원 v2 밖 structure 를 v2 의미로 해석하지 않는다(fail-closed).
     if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
