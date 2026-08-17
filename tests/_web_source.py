@@ -14,10 +14,15 @@ N-03 M1부터 canonical source는 ``frontend/``이고 제품 entry는 ``frontend
 
 from __future__ import annotations
 
+import posixpath
 import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class ContractError(ValueError):
+    """영속 architecture 계약을 exact하게 해석할 수 없을 때의 fail-closed 오류."""
 
 #: canonical frontend source와 단일 제품 module entry.
 SOURCE_ROOT = REPO_ROOT / "frontend"
@@ -301,3 +306,158 @@ def evaluation_site(name: str) -> str:
     옮겨갈 때 조용히 낡는다.
     """
     return BOOTSTRAP_MODULE if name in ESM_FILES else name
+
+
+# ── frontend module graph (SG-03 #735: 단일 출처) ────────────────────────────────
+# ``test_p3_forbidden_edges`` 의 vendor 배치 게이트와 ``test_control_surface_reduction``
+# 의 canonical-semantic import 게이트가 **같은** frontend import-graph 진실을 읽도록,
+# specifier 추출·모듈 resolve·소스 census 를 여기 한 곳에 둔다(과거엔 forbidden-edges
+# 파일에 살았다). 두 게이트가 각자 스캐너를 두면 넷째 소비자가 생길 때 조용히 갈라진다.
+def _js_masks(source: str) -> tuple[str, str]:
+    """주석만 지운 소스와 문자열/template raw까지 지운 동길이 code mask를 만든다."""
+    commentless = list(source)
+    code = list(source)
+    size = len(source)
+
+    def blank(buffer: list[str], start: int, end: int) -> None:
+        for index in range(start, end):
+            if source[index] not in "\r\n":
+                buffer[index] = " "
+
+    def quoted(start: int, quote: str) -> int:
+        index = start + 1
+        while index < size:
+            if source[index] == "\\":
+                index += 2
+            elif source[index] == quote:
+                return index + 1
+            else:
+                index += 1
+        return size
+
+    def template(start: int) -> int:
+        blank(code, start, start + 1)
+        index = start + 1
+        while index < size:
+            if source[index] == "\\":
+                end = min(index + 2, size)
+                blank(code, index, end)
+                index = end
+            elif source[index] == "`":
+                blank(code, index, index + 1)
+                return index + 1
+            elif source.startswith("${", index):
+                blank(code, index, index + 2)
+                end = javascript(index + 2, stop_at_brace=True)
+                if end and source[end - 1] == "}":
+                    blank(code, end - 1, end)
+                index = end
+            else:
+                blank(code, index, index + 1)
+                index += 1
+        return size
+
+    def javascript(start: int, *, stop_at_brace: bool = False) -> int:
+        index = start
+        braces = 0
+        while index < size:
+            if source.startswith("//", index):
+                end = index + 2
+                while end < size and source[end] not in "\r\n":
+                    end += 1
+                blank(commentless, index, end)
+                blank(code, index, end)
+                index = end
+            elif source.startswith("/*", index):
+                closing = source.find("*/", index + 2)
+                end = size if closing < 0 else closing + 2
+                blank(commentless, index, end)
+                blank(code, index, end)
+                index = end
+            elif source[index] in "\"'":
+                end = quoted(index, source[index])
+                blank(code, index, end)
+                index = end
+            elif source[index] == "`":
+                index = template(index)
+            elif stop_at_brace and source[index] == "}":
+                if braces == 0:
+                    return index + 1
+                braces -= 1
+                index += 1
+            else:
+                if stop_at_brace and source[index] == "{":
+                    braces += 1
+                index += 1
+        return size
+
+    javascript(0)
+    return "".join(commentless), "".join(code)
+
+
+def _frontend_specifiers(relative: str, source: str) -> tuple[str, ...]:
+    raw = source
+    source, code = _js_masks(raw)
+    references = tuple(
+        match.group(1)
+        for match in re.finditer(
+            r'''(?m)^\s*///\s*<reference\s+types\s*=\s*["']([^"']+)["']\s*/>''',
+            raw,
+        )
+        if not source[match.start() : match.end()].strip()
+    )
+    dynamic: list[str] = []
+    for call in re.finditer(r"(?<![\w$.])import\s*\(", code):
+        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
+        if literal is None:
+            raise ContractError(
+                f"{relative}: dynamic import() specifier는 문자열 literal이어야 합니다"
+            )
+        dynamic.append(literal.group(2))
+    required: list[str] = []
+    for call in re.finditer(r"(?<![\w$])(?:module\s*\.\s*)?require\s*\(", code):
+        literal = re.match(r'''\s*(["'])([^"'\\]+)\1\s*\)''', source[call.end() :])
+        if literal is None:
+            raise ContractError(f"{relative}: require() specifier는 문자 literal이어야 합니다")
+        required.append(literal.group(2))
+    return (
+        *references,
+        *module_imports(source),
+        *re.findall(
+            r'''(?m)^\s*import\s+(?:type\s+)?[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)''',
+            source,
+        ),
+        *re.findall(
+            r'''(?m)^\s*export\s+(?:type\s+)?[^"\';]*?\s+from\s+["']([^"']+)["']''',
+            source,
+        ),
+        *dynamic,
+        *required,
+    )
+
+
+def _resolve_frontend_module(
+    relative: str, specifier: str, sources: dict[str, str]
+) -> str | None:
+    clean = specifier.split("?", 1)[0].split("#", 1)[0]
+    target = (
+        posixpath.normpath(f"frontend{clean}")
+        if clean.startswith("/")
+        else posixpath.normpath(posixpath.join(posixpath.dirname(relative), clean))
+    )
+    suffixes = (
+        ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts",
+        ".d.ts", ".d.mts", ".d.cts",
+    )
+    candidates = (target, *(f"{target}{suffix}" for suffix in suffixes))
+    candidates += tuple(f"{target}/index{suffix}" for suffix in suffixes)
+    return next((candidate for candidate in candidates if candidate in sources), None)
+
+
+def _frontend_sources(source_root: Path = SOURCE_ROOT) -> dict[str, str]:
+    return {
+        f"frontend/{path.relative_to(source_root).as_posix()}": path.read_text(encoding="utf-8")
+        for directory in ("src", "js")
+        for path in source_root.joinpath(directory).rglob("*")
+        if path.suffix in {".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
+    }

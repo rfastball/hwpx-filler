@@ -310,6 +310,19 @@ DOM 경로로 재배선한 뒤 별칭 전부와 중앙 compat 계층 파일을 �
 API `window.__hwpx`(생산자 1 = 합성 루트), 명시적 selftest 런타임에만 서는
 `window.__hwpxTest`(생산자 1 = `frontend/src/selftest/api.js`). fallback 경로는 없다.
 
+### backend-only semantic authority (SG-03 · #735)
+
+의미 판정은 **backend/application 단일 권위**다. selection canonical bytes·execution basis
+digest·Plan semantic digest·record validity·resolved delivery path·semantic currentness·runtime
+admission·materialization readiness·Workbench blocker/Primary Action 은 전부 Python 이 판정한다.
+frontend 는 **opaque ref/token 을 전달**하고 **projection/observation DTO 를 렌더**하며 focus/view
+state 를 쥐고 Product command 를 부를 뿐, Plan/currentness/record/delivery 를 **재계산하지 않는다**.
+TypeScript canonical code(`frontend/src/domain/canonical_execution_encoding.ts`·`slot_selection.ts`)는
+wire codec parity test·golden vector·contract fixture 범위로만 남고 production React path 는 이를
+import 하지 않는다 — 표시 어휘는 backend-파생 `frontend/src/contract/contract.gen.ts` 를 소비한다.
+정본은 `docs/CONTROL_PLANE_SCOPE.md`, 게이트는 `tests/repo_contract/test_control_surface_reduction.py`
+(C3·C4)와 `tests/repo_contract/test_bridge_contract.py`(C5)다.
+
 ### selftest 경계 — `window.__hwpxTest` (N-09 · #372 D-07)
 
 Python selftest가 부르는 웹 이름도 **버전 있는 뿌리 하나**다. 종전에는 `app.py`가 JS 프로브

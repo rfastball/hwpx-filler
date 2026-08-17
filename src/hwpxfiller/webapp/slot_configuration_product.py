@@ -249,7 +249,12 @@ class SlotConfigurationProduct:
 
     # ── route-bound Work verification ─────────────────────────────────────────────
     def _route(self, work_ref: str) -> tuple[str, str]:
-        """work_ref → expected WorkAuthorityId + workspace. actor 접근을 token 과 독립 확인한다."""
+        """work_ref → expected WorkAuthorityId + workspace. authorization 을 token 과 독립 확인한다.
+
+        SG-03(#735) C7: authorization 은 여기(job load)가 지고 ``_verify_token`` 보다 **앞선다** —
+        유효 서명 token 을 쥐어도 접근 불가 work_ref 는 AUTHORIZATION_FAILURE 다. HMAC 은 authz
+        경계가 아니다(정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).
+        """
         try:
             job = load_job(self._registry, work_ref)
         except Exception as exc:  # 부재·손상 = 접근 불가
@@ -265,7 +270,13 @@ class SlotConfigurationProduct:
     def _verify_token(
         self, token: str, ws: str, expected_work_id: str
     ) -> ConfigurationTokenClaims:
-        """token open·integrity·purpose·schema·actor binding·workspace·Work 를 검증한다(#679 3~6)."""
+        """token open·integrity·purpose·schema·actor binding·workspace·Work 를 검증한다(#679 3~6).
+
+        SG-03(#735): 이 검증은 context integrity·claim authenticity·route/Work·workspace·actor
+        binding 까지다. authorization 은 ``_route``(앞선다)가, currentness·expected version·per-Work
+        fence·semantic validity 는 runner(`_command_context`→context resolve/CAS)가 **독립** 진다.
+        유효 token 은 이들을 대체하지 못한다(정본 `docs/CONTROL_PLANE_SCOPE.md` §HMAC).
+        """
         secret = self._load_secret()
         try:
             claims = open_configuration_token(token, secret)
