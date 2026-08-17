@@ -41,13 +41,18 @@ from hwpxfiller.application.record_validation import (
     DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID,
     ImmutableVdrStore,
     ValidatedDataRecord,
+    ValidatedRecordIntegrityError,
     verify_validated_record_completeness,
 )
-from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
+from hwpxfiller.domain.canonical_execution_encoding import (
+    CanonicalExecutionEncodingError,
+    canonical_execution_digest,
+)
 from hwpxfiller.domain.output_name import (
     clean_filename,
     format_date_token,
     format_seq_token,
+    has_forbidden_filename_char,
 )
 from hwpxfiller.domain.field_binding import (
     BOOLEAN,
@@ -67,9 +72,11 @@ from hwpxfiller.domain.field_binding import (
 )
 from hwpxfiller.domain.raw_data_record import (
     RawDataRecordSnapshot,
+    RawRecordIntegrityError,
     SourceNull,
     encode_source_value,
     source_value_type_of,
+    verify_raw_record_snapshot,
 )
 
 # ─── contract/schema 버전(코드·문서 단일 출처) ────────────────────────────────────────────
@@ -264,6 +271,8 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
             "kind": _KIND_FROM_SOURCE,
             "source_key": rule.source_key,
             "value_type": rule.value_type,
+            # format_code 를 봉인한다 — Active 경로처럼 조용히 버리지 않고 resolution 이 판정한다.
+            "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
         }
     if rule.binding_kind == CONSTANT:
@@ -271,6 +280,7 @@ def _encode_delivery_value_expression(rule: FieldBindingRule) -> dict[str, Any]:
         return {
             "kind": _KIND_CONSTANT,
             "canonical_value": encode_source_value(rule.canonical_constant_value),
+            "format_code": rule.format_code,
             "document_content_value_policy_id": policy_id,
         }
     # INTENTIONAL_BLANK — filename 으로는 항상 미해소(값 없음). basis 는 provenance 로 보존한다.
@@ -342,6 +352,12 @@ def build_delivery_binding_basis(
     Active token(Plan active requirement/VDR 소유)은 basis 에 넣지 않는다. binding 없는 inactive token
     → OUTPUT_NAME_TOKEN_UNRESOLVED. 같은 field_id 에 규칙이 둘 → OUTPUT_NAME_BINDING_AMBIGUOUS.
     """
+    # 미지원 document value resolution contract 를 조용히 봉인하지 않는다(active-only pattern 포함, fail-closed).
+    if document_value_resolution_contract_id != DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID:
+        return DeliveryPlanContextError(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            f"미지원 document value resolution contract: {document_value_resolution_contract_id!r}",
+        )
     try:
         tokens = parse_filename_pattern(
             exact_pattern, filename_pattern_contract_id=filename_pattern_contract_id
@@ -455,6 +471,16 @@ def _scalar_literal_text(value_type: str, literal: Any, what: str) -> str:
     )
 
 
+def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> None:
+    """v1 은 format code 미구현 — nonempty format_code 는 조용히 버리지 않고 fail-closed(Active 경로 일치)."""
+    format_code = value_expression.get("format_code")
+    if format_code is not None and format_code != "":
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT,
+            f"v1 delivery resolution 은 format_code 를 지원하지 않는다: {format_code!r}",
+        )
+
+
 def resolve_delivery_field_value(
     value_expression: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
@@ -476,6 +502,8 @@ def resolve_delivery_field_value(
     kind = value_expression.get("kind")
     if kind == _KIND_INTENTIONAL_BLANK:
         return (OUTPUT_NAME_TOKEN_UNRESOLVED, "INTENTIONAL_BLANK 은 filename token 으로 미해소")
+    # v1 resolution 은 format code 를 구현하지 않는다 — Active 경로처럼 있으면 조용히 무시하지 않고 닫는다.
+    _require_no_delivery_format_code(value_expression)
     if kind == _KIND_CONSTANT:
         canonical = value_expression.get("canonical_value")
         if not isinstance(canonical, Mapping):
@@ -563,6 +591,8 @@ class ResolvedGenerationDeliveryPlan:
     output_directory_basis: str
     overwrite_policy: str
     delivery_binding_basis_digest: str
+    # 이 batch 의 모든 VDR·item 이 결속된 exact Sealed Plan identity(managed builder cross-check 축).
+    bound_plan_semantic_digest: str
     ordered_items: tuple[ResolvedGenerationItem, ...]
     delivery_plan_digest: str
 
@@ -630,6 +660,7 @@ def _delivery_plan_payload(
     output_directory_basis: str,
     overwrite_policy: str,
     delivery_binding_basis_digest: str,
+    bound_plan_semantic_digest: str,
     items: Iterable[ResolvedGenerationItem],
 ) -> dict[str, Any]:
     return {
@@ -641,6 +672,7 @@ def _delivery_plan_payload(
         "output_directory_basis": output_directory_basis,
         "overwrite_policy": overwrite_policy,
         "delivery_binding_basis_digest": delivery_binding_basis_digest,
+        "bound_plan_semantic_digest": bound_plan_semantic_digest,
         # 입력 순서(exact ordered batch authority) 그대로 — 재정렬 금지.
         "ordered_items": [_item_identity_payload(it) for it in items],
     }
@@ -649,12 +681,15 @@ def _delivery_plan_payload(
 def _guard_relative_path(name: str) -> None:
     """resolved path 가 output directory 밖으로 탈출하지 못하게 flat relative 임을 강제한다.
 
-    field/date 값은 이미 naming.clean_filename 이 separator 를 제거하지만, pattern 리터럴은 v1 이
-    청소하지 않으므로 여기서 최종 방어한다 — separator·drive·``..`` 는 OUTPUT_PATH_ESCAPE_DETECTED.
+    field/date 값은 이미 clean_filename 이 금지문자를 제거하지만, pattern 리터럴은 v1 이 청소하지
+    않으므로 여기서 최종 방어한다. Windows 금지문자(``\\ / : * ? " < > |``·제어문자)는 전부 거절한다 —
+    ``:`` 는 drive-relative(``C:x``)·ADS(``name:stream``)를 만들어 다른 드라이브의 output root 를
+    통째로 버릴 수 있다. ``..``·NUL 도 OUTPUT_PATH_ESCAPE_DETECTED.
     """
-    if "/" in name or "\\" in name or "\x00" in name:
+    if has_forbidden_filename_char(name) or "\x00" in name:
         raise _DeliveryContextSignal(
-            OUTPUT_PATH_ESCAPE_DETECTED, f"resolved path 에 경로 구분자: {name!r}"
+            OUTPUT_PATH_ESCAPE_DETECTED,
+            f"resolved path 에 경로 구분자/drive/금지문자: {name!r}",
         )
     if name in (".", "..") or name.startswith(".."):
         raise _DeliveryContextSignal(
@@ -706,27 +741,31 @@ def _dedupe_batch(base_names: list[str]) -> list[str]:
 
     접미사는 확장자 앞에 넣는다(``stem_1.hwpx``). batch 순서로 한 번 계산한다 — item 별 독립
     재결정 금지(invariant 22).
+
+    Windows FS 는 기본 case-insensitive 라 ``Report.hwpx`` 와 ``report.hwpx`` 는 같은 파일이다 —
+    충돌 판정은 casefold 로 하되(안 그러면 둘째가 첫째를 덮어쓴다) 표시 철자는 원본 그대로 둔다.
     """
-    seen: set[str] = set()
+    seen: set[str] = set()  # casefold 된 이름(충돌 판정 축)
     out: list[str] = []
     for name in base_names:
-        if name not in seen:
-            seen.add(name)
+        if name.casefold() not in seen:
+            seen.add(name.casefold())
             out.append(name)
             continue
         stem, ext = name[: -len(_HWPX_EXT)], name[-len(_HWPX_EXT) :]
         i = 1
         cand = f"{stem}_{i}{ext}"
-        while cand in seen:
+        while cand.casefold() in seen:
             i += 1
             cand = f"{stem}_{i}{ext}"
-        seen.add(cand)
+        seen.add(cand.casefold())
         out.append(cand)
     return out
 
 
 def resolve_generation_delivery_plan(
     *,
+    sealed_execution_plan: SealedExecutionPlanSemanticPayload,
     exact_pattern: str,
     filename_pattern_contract_id: str,
     delivery_binding_basis: GenerationDeliveryBindingBasis,
@@ -737,15 +776,20 @@ def resolve_generation_delivery_plan(
     overwrite_policy: str,
     delivery_contract_id: str = DELIVERY_CONTRACT_ID,
 ) -> ResolveGenerationDeliveryPlanResult:
-    """ordered raw snapshots + VDRs + exact pattern + captured clock → resolved output relative paths.
+    """exact Sealed Plan + ordered raw snapshots + VDRs + exact pattern + captured clock → resolved paths.
 
     순수·deterministic batch 해석. date·seq·duplicate suffix·item ordinal 을 ordered batch 전체에서
     한 번만 계산한다(invariant 22). 입력 순서가 exact ordered batch authority 다 — UI/source store
     순서를 나중에 다시 읽지 않는다. filename pattern 은 provenance, resolved_output_relative_path 가
     실행 naming authority 다.
+
+    trust-boundary: raw snapshot·VDR 은 복원/변조될 수 있으므로 claim(digest·identity)만 믿지 않고
+    sealed payload 에서 재검증한다 — raw 는 :func:`verify_raw_record_snapshot`, VDR 은 exact Plan 에
+    대한 :func:`verify_validated_record_completeness`. 모든 VDR 은 이 Plan 에 결속돼야 한다.
     """
     try:
         return _resolve(
+            sealed_execution_plan=sealed_execution_plan,
             exact_pattern=exact_pattern,
             filename_pattern_contract_id=filename_pattern_contract_id,
             delivery_binding_basis=delivery_binding_basis,
@@ -766,6 +810,7 @@ def resolve_generation_delivery_plan(
 
 def _resolve(
     *,
+    sealed_execution_plan: SealedExecutionPlanSemanticPayload,
     exact_pattern: str,
     filename_pattern_contract_id: str,
     delivery_binding_basis: GenerationDeliveryBindingBasis,
@@ -832,23 +877,40 @@ def _resolve(
         r.field_id: r.value_expression
         for r in delivery_binding_basis.output_name_requirements
     }
+    # 모든 VDR·item 이 결속돼야 하는 exact Plan identity(한 번만 계산).
+    bound_plan_digest = plan_semantic_digest(sealed_execution_plan)
 
     # (4) item 순서대로 값 해석 → base name(dedupe 전). 입력 순서를 item ordinal 로 고정한다.
-    plan_digest_seen: str | None = None
     blockers: list[DeliveryPlanBlocker] = []
     base_names: list[str] = []
     per_item: list[tuple[ValidatedDataRecord, RawDataRecordSnapshot, tuple[ResolvedTokenValue, ...]]] = []
     for ordinal, (snapshot, vdr) in enumerate(
         zip(ordered_raw_snapshots, ordered_validated_records, strict=True)
     ):
-        # 모든 VDR 이 같은 Plan 에 결속돼야 한다(하나의 delivery batch = 하나의 Plan).
-        if plan_digest_seen is None:
-            plan_digest_seen = vdr.plan_semantic_digest
-        elif vdr.plan_semantic_digest != plan_digest_seen:
+        # raw snapshot trust-boundary: sealed payload 에서 값·digest·identity 를 재구성해 대조한다
+        # (변조된 _values 는 claim 만 맞아도 여기서 닫힌다) — 이후 inactive lookup 이 신뢰할 수 있게.
+        try:
+            verify_raw_record_snapshot(snapshot)
+        except (RawRecordIntegrityError, CanonicalExecutionEncodingError) as exc:
+            raise _DeliveryContextSignal(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                f"item {ordinal} raw snapshot 무결성 실패: {exc}",
+            ) from exc
+        # 모든 VDR 이 이 exact Plan 에 결속돼야 한다(하나의 delivery batch = 하나의 Plan).
+        if vdr.plan_semantic_digest != bound_plan_digest:
             raise _DeliveryContextSignal(
                 VALIDATED_RECORD_PLAN_MISMATCH,
-                "batch 안 VDR 들이 서로 다른 Plan 에 결속됨",
+                f"item {ordinal} 의 VDR 이 이 Sealed Plan 에 결속되지 않음",
             )
+        # VDR trust-boundary: digest 재계산 + Plan 결속 + resolved value 완결성을 재검증한다 —
+        # 복원/변조된 payload 가 forged document_value 로 filename 을 만들지 못하게 한다.
+        try:
+            verify_validated_record_completeness(vdr, sealed_execution_plan)
+        except ValidatedRecordIntegrityError as exc:
+            raise _DeliveryContextSignal(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                f"item {ordinal} VDR 완결성 실패: {exc}",
+            ) from exc
         # raw ↔ VDR cross-binding — VDR 이 이 raw snapshot 에서 나왔는지 확인한다.
         vdr_payload = vdr.semantic_payload_encoded
         if (
@@ -947,6 +1009,7 @@ def _resolve(
         output_directory_basis=output_directory_basis,
         overwrite_policy=overwrite_policy,
         delivery_binding_basis_digest=delivery_binding_basis.delivery_binding_basis_digest,
+        bound_plan_semantic_digest=bound_plan_digest,
         items=items,
     )
     return ResolvedGenerationDeliveryPlan(
@@ -957,6 +1020,7 @@ def _resolve(
         output_directory_basis=output_directory_basis,
         overwrite_policy=overwrite_policy,
         delivery_binding_basis_digest=delivery_binding_basis.delivery_binding_basis_digest,
+        bound_plan_semantic_digest=bound_plan_digest,
         ordered_items=tuple(items),
         delivery_plan_digest=canonical_execution_digest(plan_payload),
     )
@@ -975,11 +1039,12 @@ def verify_resolved_delivery_plan_integrity(plan: ResolvedGenerationDeliveryPlan
                 f"item_ordinal 이 batch 순서와 불일치: {item.item_ordinal} != {ordinal}"
             )
         _guard_relative_path(item.resolved_output_relative_path)
-        if item.resolved_output_relative_path in seen_paths:
+        # Windows case-insensitive FS 기준 유일성 — 대소문자만 다른 경로도 같은 파일이다.
+        if item.resolved_output_relative_path.casefold() in seen_paths:
             raise ResolvedDeliveryPlanIntegrityError(
                 f"resolved output path 중복: {item.resolved_output_relative_path!r}"
             )
-        seen_paths.add(item.resolved_output_relative_path)
+        seen_paths.add(item.resolved_output_relative_path.casefold())
         basis_payload = _output_name_basis_payload(
             filename_pattern_contract_id=plan.filename_pattern_contract_id,
             exact_pattern=plan.exact_pattern,
@@ -1004,6 +1069,7 @@ def verify_resolved_delivery_plan_integrity(plan: ResolvedGenerationDeliveryPlan
         output_directory_basis=plan.output_directory_basis,
         overwrite_policy=plan.overwrite_policy,
         delivery_binding_basis_digest=plan.delivery_binding_basis_digest,
+        bound_plan_semantic_digest=plan.bound_plan_semantic_digest,
         items=plan.ordered_items,
     )
     if canonical_execution_digest(plan_payload) != plan.delivery_plan_digest:
@@ -1056,8 +1122,16 @@ def build_managed_generation_plan(
     """resolved delivery plan 을 managed GenerationPlan 으로 봉인한다(delivery plan 무결성 재검증 포함).
 
     delivery_contract_id 는 resolved plan 에서만 가져온다(별도 입력 금지 — 두 벌 판정 방지).
+
+    cross-binding: resolved plan 의 VDR 들이 결속된 exact Plan(``bound_plan_semantic_digest``)이
+    ``sealed_execution_plan_ref`` 와 일치해야 한다 — 안 그러면 모든 MaterializationInput 이 나중에
+    실패할 잘못/오타난 plan ref 를 그대로 봉인한다.
     """
     verify_resolved_delivery_plan_integrity(resolved_delivery_plan)
+    if resolved_delivery_plan.bound_plan_semantic_digest != sealed_execution_plan_ref:
+        raise ManagedGenerationPlanIntegrityError(
+            "sealed_execution_plan_ref 가 delivery plan 의 bound_plan_semantic_digest 와 불일치"
+        )
     frozen_progress = MappingProxyType(dict(progress_cancel_context or {}))
     digest = canonical_execution_digest(
         _managed_plan_identity_payload(
@@ -1084,6 +1158,10 @@ def verify_managed_generation_plan_integrity(plan: ManagedGenerationPlan) -> Non
     if plan.delivery_contract_id != plan.resolved_delivery_plan.delivery_contract_id:
         raise ManagedGenerationPlanIntegrityError(
             "managed plan 의 delivery_contract_id 가 resolved plan 과 불일치"
+        )
+    if plan.sealed_execution_plan_ref != plan.resolved_delivery_plan.bound_plan_semantic_digest:
+        raise ManagedGenerationPlanIntegrityError(
+            "sealed_execution_plan_ref 가 delivery plan 의 bound_plan_semantic_digest 와 불일치"
         )
     recomputed = canonical_execution_digest(
         _managed_plan_identity_payload(
@@ -1173,27 +1251,28 @@ class ManagedRunAdmission:
 def evaluate_managed_run_admission(
     *,
     runtime_registry: RuntimeMaterializerConformanceRegistry,
+    sealed_execution_plan: SealedExecutionPlanSemanticPayload,
     runtime_capability_manifest_digest: str,
-    materialization_contract_id: str,
-    materialization_base_contract_id: str,
-    native_primitive_contract_id: str,
-    composition_contract_id: str,
-    plan_schema_version: str,
-    canonical_encoding_version: str,
 ) -> ManagedRunAdmission:
-    """Plan observation 으로 runtime admission 을 읽는다 — runtime manifest 를 delivery identity 에 넣지 않는다.
+    """exact Sealed Plan 에서 admission query 를 **파생**해 runtime admission 을 읽는다.
+
+    contract/schema 값을 caller 자유입력으로 받으면 다른 Plan 의 supported 값을 빌려 ADMITTED 를
+    위조할 수 있다 — 그래서 실제 봉인 Plan 의 ExecutionContractSet·schema/encoding 에서만 파생한다.
+    ``runtime_capability_manifest_digest`` 만 runtime 관찰 축의 caller 입력이다(Plan 에 없다).
 
     권장 v1 정책: semantic/delivery contract 는 S5 에서 구성 가능(construction_allowed 항상 True),
     actual StartMaterialization 은 runtime ADMITTED 필수(materialization_startable = is_admitted).
+    runtime manifest 는 Plan/VDR/delivery semantic identity 에 넣지 않는다.
     """
+    contracts = sealed_execution_plan.execution_basis.contracts
     admitted = runtime_registry.is_admitted(
         runtime_capability_manifest_digest=runtime_capability_manifest_digest,
-        materialization_contract_id=materialization_contract_id,
-        materialization_base_contract_id=materialization_base_contract_id,
-        native_primitive_contract_id=native_primitive_contract_id,
-        composition_contract_id=composition_contract_id,
-        plan_schema_version=plan_schema_version,
-        canonical_encoding_version=canonical_encoding_version,
+        materialization_contract_id=contracts.materialization_contract_id,
+        materialization_base_contract_id=contracts.materialization_base_contract_id,
+        native_primitive_contract_id=contracts.native_primitive_contract_id,
+        composition_contract_id=contracts.composition_contract_id,
+        plan_schema_version=sealed_execution_plan.plan_schema_version,
+        canonical_encoding_version=sealed_execution_plan.canonical_encoding_version,
     )
     return ManagedRunAdmission(
         construction_allowed=True,

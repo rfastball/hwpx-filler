@@ -218,6 +218,7 @@ def _resolve(plan, snapshots, *, pattern=_PATTERN, basis=None, clock=_CLOCK,
     basis = basis if basis is not None else _basis_dto(plan, pattern)
     assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
     return gd.resolve_generation_delivery_plan(
+        sealed_execution_plan=plan,
         exact_pattern=pattern,
         filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
         delivery_binding_basis=basis,
@@ -483,6 +484,7 @@ def test_unsupported_delivery_and_overwrite_contract() -> None:
     vdrs = [_vdr(plan, _snapshot())]
     basis = _basis_dto(plan)
     common = dict(
+        sealed_execution_plan=plan,
         exact_pattern=_PATTERN,
         filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
         delivery_binding_basis=basis,
@@ -506,6 +508,7 @@ def test_tampered_delivery_binding_basis_rejected() -> None:
     basis = _basis_dto(plan)
     tampered = dataclasses.replace(basis, exact_pattern="다른-{{f_name}}")
     res = gd.resolve_generation_delivery_plan(
+        sealed_execution_plan=plan,
         exact_pattern=_PATTERN,
         filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
         delivery_binding_basis=tampered,
@@ -525,6 +528,7 @@ def test_count_mismatch_and_raw_vdr_mismatch_and_plan_mismatch() -> None:
     s1, s2 = _snapshot(identity="r1"), _snapshot(identity="r2", name="B")
     # count mismatch.
     res = gd.resolve_generation_delivery_plan(
+        sealed_execution_plan=plan,
         exact_pattern=_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
         delivery_binding_basis=basis, ordered_raw_snapshots=(s1, s2),
         ordered_validated_records=[_vdr(plan, s1)], captured_delivery_clock=_CLOCK,
@@ -534,6 +538,7 @@ def test_count_mismatch_and_raw_vdr_mismatch_and_plan_mismatch() -> None:
     assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
     # raw ↔ VDR mismatch: snapshot s2 와 s1 의 VDR 을 짝지운다.
     res2 = gd.resolve_generation_delivery_plan(
+        sealed_execution_plan=plan,
         exact_pattern=_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
         delivery_binding_basis=basis, ordered_raw_snapshots=(s2,),
         ordered_validated_records=[_vdr(plan, s1)], captured_delivery_clock=_CLOCK,
@@ -688,21 +693,12 @@ def _runtime_manifest(status="PASS"):
     )
 
 
-def _admission_query():
-    return dict(
-        runtime_capability_manifest_digest="sha256:cap",
-        materialization_contract_id="materialization/v1",
-        materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
-        composition_contract_id=COMPOSITION_CONTRACT_ID,
-        plan_schema_version="hwpx-execution-plan/v1",
-        canonical_encoding_version="execution-canonical/v1",
-    )
-
-
 def test_runtime_admission_absent_is_construction_only() -> None:
     empty = RuntimeMaterializerConformanceRegistry()
-    adm = gd.evaluate_managed_run_admission(runtime_registry=empty, **_admission_query())
+    adm = gd.evaluate_managed_run_admission(
+        runtime_registry=empty, sealed_execution_plan=_plan(),
+        runtime_capability_manifest_digest="sha256:cap",
+    )
     assert adm.construction_allowed is True
     assert adm.materialization_startable is False
     assert adm.status == gd.MANAGED_RUN_CONSTRUCTION_ONLY
@@ -712,9 +708,23 @@ def test_runtime_admission_present_is_startable() -> None:
     reg = RuntimeMaterializerConformanceRegistry()
     reg.register(_runtime_manifest())
     _ = runtime_conformance_digest(_runtime_manifest())  # digest seam smoke
-    adm = gd.evaluate_managed_run_admission(runtime_registry=reg, **_admission_query())
+    adm = gd.evaluate_managed_run_admission(
+        runtime_registry=reg, sealed_execution_plan=_plan(),
+        runtime_capability_manifest_digest="sha256:cap",
+    )
     assert adm.materialization_startable is True
     assert adm.status == gd.MANAGED_RUN_STARTABLE
+
+
+def test_runtime_admission_derives_query_from_plan_not_caller() -> None:
+    # 서명이 contract/schema 를 caller 자유입력으로 받지 않는다 — 다른 Plan 의 supported 값을
+    # 빌려 ADMITTED 를 위조할 수 없다(오직 sealed plan + runtime capability digest).
+    params = set(inspect.signature(gd.evaluate_managed_run_admission).parameters)
+    assert params == {
+        "runtime_registry",
+        "sealed_execution_plan",
+        "runtime_capability_manifest_digest",
+    }
 
 
 # ═══ fail-closed branch coverage(inactive value resolution·guards·integrity) ═══════════════
@@ -796,6 +806,109 @@ def test_resolved_plan_integrity_ordinal_and_dup_path() -> None:
     # ordinal 뒤섞기.
     with pytest.raises(gd.ResolvedDeliveryPlanIntegrityError):
         gd.verify_resolved_delivery_plan_integrity(dataclasses.replace(res, ordered_items=(b, a)))
+
+
+# ═══ Codex review findings (trust-boundary·cross-binding·windows FS) ═══════════════════════
+def _resolve_explicit(plan, snaps, vdrs, *, pattern, basis=None):
+    return gd.resolve_generation_delivery_plan(
+        sealed_execution_plan=plan,
+        exact_pattern=pattern,
+        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
+        delivery_binding_basis=basis if basis is not None else _basis_dto(plan, pattern),
+        ordered_raw_snapshots=snaps,
+        ordered_validated_records=vdrs,
+        captured_delivery_clock=_CLOCK,
+        output_directory_basis="C:/out",
+        overwrite_policy=gd.OVERWRITE_EXISTING,
+    )
+
+
+def test_forged_vdr_payload_rejected() -> None:
+    # F1: 원본 digest 를 유지한 채 document_value 를 위조한 VDR 은 filename 을 forged 값으로 만들지 못한다.
+    plan, snap = _plan(), _snapshot()
+    vdr = _vdr(plan, snap)
+    base = dict(vdr.semantic_payload_encoded)
+    rvs = [dict(x) for x in base["resolved_requirement_values"]]
+    rvs[0] = {**rvs[0], "document_value": "FORGED"}
+    base["resolved_requirement_values"] = rvs
+    forged = dataclasses.replace(vdr, semantic_payload_encoded=base)  # validated_record_digest 그대로
+    res = _resolve_explicit(plan, (snap,), [forged], pattern="{{f_name}}")
+    assert isinstance(res, gd.DeliveryPlanContextError)
+    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
+
+
+def test_forged_raw_snapshot_rejected() -> None:
+    # F2: 원본 digest/identity 를 유지한 채 _values 를 위조한 raw snapshot 은 inactive filename 값을 오염 못 시킨다.
+    plan, snap = _plan(), _snapshot(dept="원본")
+    forged = dataclasses.replace(
+        snap, _values={**dict(snap._values), "dept": SourceText("HACKED")}
+    )
+    basis = _basis_dto(plan, pattern="{{f_dept}}")
+    res = _resolve_explicit(plan, (forged,), [_vdr(plan, snap)], pattern="{{f_dept}}", basis=basis)
+    assert isinstance(res, gd.DeliveryPlanContextError)
+    assert res.code == gd.GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR
+
+
+def test_managed_builder_rejects_plan_ref_not_bound_to_delivery_plan() -> None:
+    # F3: delivery plan 의 VDR 이 결속된 Plan 과 다른 ref 를 봉인하면 거절(모든 MaterializationInput 이 나중에 실패).
+    plan = _plan()
+    res = _ok(_resolve(plan, (_snapshot(),)))
+    assert res.bound_plan_semantic_digest == plan_semantic_digest(plan)
+    with pytest.raises(gd.ManagedGenerationPlanIntegrityError):
+        gd.build_managed_generation_plan(
+            sealed_execution_plan_ref="sha256:wrong-plan",
+            resolved_delivery_plan=res,
+            output_directory="C:/out",
+            created_at="t",
+        )
+
+
+def test_inactive_format_code_sealed_and_fail_closed() -> None:
+    # F4: inactive SOURCE 의 nonempty format_code 는 봉인되고, v1 미구현이라 조용히 버리지 않고 fail-closed.
+    rule = FieldBindingRule(
+        field_id="f_dept", binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="dept", value_type=EXACT_TEXT, format_code="UPPER",
+    )
+    plan = _plan()
+    basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
+    assert basis.output_name_requirements[0].value_expression["format_code"] == "UPPER"
+    res = _resolve(plan, (_snapshot(),), pattern="{{f_dept}}", basis=basis)
+    assert isinstance(res, gd.DeliveryPlanContextError)
+    assert res.code == gd.UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT
+
+
+def test_unsupported_document_value_resolution_contract_rejected_in_basis() -> None:
+    # F5: 미지원 document value resolution contract 를 조용히 봉인하지 않는다(active-only pattern 포함).
+    res = gd.build_delivery_binding_basis(
+        base_template_application_id="app-1", field_binding_authority_revision="rev",
+        filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID,
+        exact_pattern="{{f_name}}", active_field_ids=("f_name",), binding_rules=(),
+        document_value_resolution_contract_id="document-content-value/v999",
+    )
+    assert isinstance(res, gd.DeliveryPlanContextError)
+    assert res.code == gd.UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT
+
+
+def test_dedup_case_insensitive_on_windows_fs() -> None:
+    # F7: 대소문자만 다른 이름은 Windows FS 에서 같은 파일 → 접미사(철자는 원본 보존).
+    plan = _plan()
+    res = _ok(_resolve(
+        plan,
+        (_snapshot(identity="r1", name="Report"), _snapshot(identity="r2", name="report")),
+        pattern="{{f_name}}",
+    ))
+    assert [i.resolved_output_relative_path for i in res.ordered_items] == [
+        "Report.hwpx", "report_1.hwpx",
+    ]
+
+
+def test_pattern_literal_colon_rejected_as_drive_relative() -> None:
+    # F8: 리터럴 ':' 는 drive-relative(C:x)·ADS 를 만들어 output root 를 버릴 수 있다 → 거절.
+    plan = _plan()
+    res = _resolve(plan, (_snapshot(),), pattern="C:{{f_name}}")
+    assert isinstance(res, gd.DeliveryPlanContextError)
+    assert res.code == gd.OUTPUT_PATH_ESCAPE_DETECTED
 
 
 def test_no_native_write_or_route_cutover_in_module() -> None:

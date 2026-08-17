@@ -33,6 +33,14 @@ def clean_filename(name: str) -> str:
     return _INVALID.sub("_", name)
 
 
+def has_forbidden_filename_char(name: str) -> bool:
+    """Windows 금지 filename 문자(``\\ / : * ? " < > |`` + 제어문자)가 하나라도 있으면 True.
+
+    drive prefix(``C:``)·alternate-data-stream(``name:stream``)의 ``:`` 도 여기 걸린다.
+    """
+    return bool(_INVALID.search(name))
+
+
 def format_date_token(spec: str | None, now: datetime) -> str:
     """``{{date}}``/``{{date:...}}`` 서식. 기본 ``YYYYMMDD``. 결과도 금지문자를 청소한다."""
     fmt = spec or "YYYYMMDD"
