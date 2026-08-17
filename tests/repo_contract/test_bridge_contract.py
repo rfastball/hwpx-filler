@@ -7,7 +7,7 @@ import re
 import gen_bridge_contract as gen
 from _web_source import (
     _frontend_sources,
-    _frontend_specifiers,
+    _js_masks,
     _resolve_frontend_module,
     source_text,
 )
@@ -144,29 +144,102 @@ def test_generated_bridge_contract_matches_independent_public_boundaries() -> No
     assert not failures, "\n".join(failures)
 
 
-def test_frontend_display_sources_the_generated_contract() -> None:
+GENERATED_CONTRACT = "frontend/src/contract/contract.gen.ts"
+
+#: production frontend 이 **값으로** 소비해야 하는 생성 계약 어휘. type-only import 는 이 집합을
+#: 못 채운다 — display 코드가 backend-파생 값을 실제로 렌더한다는 증거다(SG-03 C5). 정본
+#: `docs/CONTROL_PLANE_SCOPE.md` §backend-only semantic authority.
+_EXPECTED_CONSUMED_GENERATED_VALUES = frozenset(
+    {
+        "SCREEN_ACTIONS",         # 화면·액션 어휘(routing/dispatch)
+        "HOST_METHODS",           # host bridge method 어휘
+        "HOST_INTERNAL_METHODS",  # 직접 브리지(비-dispatch) method 어휘
+        "DISPATCH_REJECTION_KEY",  # dispatch 거절 프로토콜 키
+    }
+)
+
+
+def _generated_value_exports(sources: dict[str, str]) -> set[str]:
+    return set(re.findall(r"export const (\w+)", sources[GENERATED_CONTRACT]))
+
+
+def _generated_value_consumption(sources: dict[str, str]) -> set[str]:
+    """production frontend 이 contract.gen.ts 에서 **값으로 import 하고 참조하는** 상수 이름 집합.
+
+    parity 의 나머지 반쪽: 생성 계약이 backend 단일 출처와 일치함(위 두 테스트)에 더해, 표시
+    모듈이 그 계약의 **값**을 실제 소비한다는 것. ``import type { … }`` 절 전체와 절 안의 인라인
+    ``type X`` specifier 는 세지 않는다 — type-only import 로는 어휘 재저작을 못 막기 때문이다.
+    import 이후 코드 mask 에서 다시 참조돼야(≥2회 등장) 소비로 인정한다.
+    """
+    value_exports = _generated_value_exports(sources)
+    consumed: set[str] = set()
+    for relative, source in sources.items():
+        if relative == GENERATED_CONTRACT:
+            continue
+        _comment, code = _js_masks(source)
+        for match in re.finditer(
+            r'import\s+(type\s+)?\{([^}]*)\}\s*from\s*["\']([^"\']+)["\']', source
+        ):
+            type_clause, clause, specifier = match.group(1), match.group(2), match.group(3)
+            if type_clause:
+                continue  # 절 전체가 type import
+            if _resolve_frontend_module(relative, specifier, sources) != GENERATED_CONTRACT:
+                continue
+            for raw in clause.split(","):
+                specifier_name = raw.strip()
+                if not specifier_name or specifier_name.startswith("type "):
+                    continue
+                binding = (
+                    specifier_name.split(" as ")[-1].strip()
+                    if " as " in specifier_name
+                    else specifier_name
+                )
+                if binding not in value_exports:
+                    continue
+                references = re.findall(rf"(?<![\w$]){re.escape(binding)}(?![\w$])", code)
+                if len(references) >= 2:  # import + 최소 1회 사용
+                    consumed.add(binding)
+    return consumed
+
+
+def test_frontend_display_consumes_generated_contract_values() -> None:
     """SG-03(#735) C5 — backend projection ↔ frontend 표시 parity 의 기전 pin.
 
     위 두 테스트는 생성 계약 ``contract.gen.ts`` 가 backend 단일 출처(error code·status·action·
     host method 어휘)와 정확히 일치함을 판정한다. 이 테스트는 나머지 반쪽을 잠근다: **production
-    frontend 이 그 생성 계약을 실제 import 해 표시한다** — 즉 프런트가 어휘를 손으로 재작성하지
-    않고 backend-파생 계약을 렌더한다. 두 사실이 붙어야 "표시 = backend projection" parity 가
-    드리프트 없이 성립한다. (프런트→python 값 재계산 금지는 C3/C4 가, 새 parity harness 를 짓지
-    않는다는 규율은 이 재사용이 지킨다.)
+    frontend 이 그 생성 계약의 값을 실제 소비해 표시한다** — 단순 import 존재(특히 type-only)가
+    아니라 생성 **값**을 참조한다. 두 사실이 붙어야 "표시 = backend projection" parity 가 드리프트
+    없이 성립한다(어휘 손 재작성 금지). 새 parity harness 를 짓지 않는다는 규율은 이 재사용이 지킨다.
     """
-    generated = "frontend/src/contract/contract.gen.ts"
     sources = _frontend_sources()
-    assert generated in sources, "생성 계약 모듈이 frontend source 에 없다"
-    importers = sorted(
-        relative
-        for relative, source in sources.items()
-        if relative != generated
-        and any(
-            _resolve_frontend_module(relative, specifier, sources) == generated
-            for specifier in _frontend_specifiers(relative, source)
-        )
+    assert GENERATED_CONTRACT in sources, "생성 계약 모듈이 frontend source 에 없다"
+    consumed = _generated_value_consumption(sources)
+    missing = _EXPECTED_CONSUMED_GENERATED_VALUES - consumed
+    assert not missing, (
+        f"production frontend 이 생성 계약 값을 소비하지 않는다: {sorted(missing)} — type-only "
+        "import 로 대체됐거나 어휘를 손으로 재작성했다. 표시 어휘가 backend-파생 단일 출처에서 "
+        "온다는 parity 근거가 사라진다."
     )
-    assert importers, (
-        "production frontend 이 생성 계약(contract.gen.ts)을 import 하지 않는다 — 표시 어휘가 "
-        "backend-파생 단일 출처에서 온다는 parity 근거가 사라졌다."
+
+
+def test_negative_probe_type_only_import_fails_c5_parity() -> None:
+    """실 C5 게이트 함수가 정확한 회피(값→type-only import 전환)에 RED 되는지 본다."""
+    value_source = (
+        'import { SCREEN_ACTIONS } from "../contract/contract.gen.ts";\n'
+        "export const routes = Object.keys(SCREEN_ACTIONS);\n"
     )
+    type_only_source = (
+        'import type { SCREEN_ACTIONS } from "../contract/contract.gen.ts";\n'
+        "export const routes = [] as SCREEN_ACTIONS[];\n"
+    )
+    base = {GENERATED_CONTRACT: 'export const SCREEN_ACTIONS = {} as const;\n'}
+
+    consuming = _generated_value_consumption(
+        {**base, "frontend/src/screens/probe.ts": value_source}
+    )
+    assert "SCREEN_ACTIONS" in consuming  # 값 소비 → 통과
+
+    type_only = _generated_value_consumption(
+        {**base, "frontend/src/screens/probe.ts": type_only_source}
+    )
+    assert "SCREEN_ACTIONS" not in type_only  # type-only → 소비 아님 → 실 게이트가 RED

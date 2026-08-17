@@ -267,6 +267,45 @@ def test_valid_token_cannot_bypass_stale_currentness(tmp_path: Path) -> None:
     assert resp.refresh_required is True
 
 
+def test_valid_token_cannot_bypass_same_application_stale_configuration(
+    tmp_path: Path,
+) -> None:
+    """같은 template application 안에서 Configuration version 이 v→v+1 로 전진하면, 그 이전 version 을
+    본 유효 token 은 STALE_CONFIGURATION 으로 거절된다(적용 안 됨).
+
+    위 ``…stale_currentness`` 는 **다른** application 으로 전진해 STALE_TEMPLATE_APPLICATION 만
+    탄다 — ``_command_context`` 가 ``claims.configuration_version`` 을 무시/치환해도 통과하는 gap 이
+    남는다. 이 테스트는 그 축을 겨눈다: application 은 그대로 두고 config version 만 올린 뒤 옛
+    version token 을 재제출하면 CAS(``_config_version_cas``)가 STALE_CONFIGURATION 을 낸다.
+    ``_command_context`` 가 token version 을 그대로 실어야만 이 거절이 성립한다.
+    """
+    tpl = tmp_path / "공고서.hwpx"
+    tpl.write_bytes(Path("tests/corpus/slots/canonical.hwpx").read_bytes())
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    coord.check("공고서", "k1")  # bootstrap → 단일 application (전진 없음)
+    product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
+
+    slot, opt_a, opt_b = "추가 지급 안내", "성과급 안내", "특별수당 안내"
+    token_a = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token_a is not None
+    first = product.select_slot_option("공고서", token_a, slot, opt_a, "r1")
+    assert first.mutation_outcome is not None and first.mutation_outcome.changed  # config v1
+    token_v1 = first.current_view.new_configuration_token  # v1 을 본 유효 token
+    assert token_v1 is not None
+
+    second = product.select_slot_option("공고서", token_v1, slot, opt_b, "r2")
+    assert second.mutation_outcome is not None and second.mutation_outcome.changed  # config v2
+
+    # v1 을 본 token 을 같은 application 에 재제출 → version CAS 가 STALE_CONFIGURATION 으로 막는다.
+    resp = product.select_slot_option("공고서", token_v1, slot, opt_a, "r3")
+    assert resp.mutation_outcome is not None
+    assert resp.mutation_outcome.outcome_code == "STALE_CONFIGURATION"
+    assert resp.mutation_outcome.changed is False  # 유효 서명에도 미적용
+    assert resp.mutation_outcome.request_relation == "STALE_CONFIGURATION"
+
+
 def test_valid_token_does_not_grant_authorization(tmp_path: Path) -> None:
     """암호적으로 유효한 token 을 쥐어도 route authorization 을 대신할 수 없다.
 

@@ -12,6 +12,8 @@ version 문자열을 v1 출하값에 pin 한다. 셋이 붙으면 code == golden
 from __future__ import annotations
 
 import hashlib
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 from hwpxfiller.domain.canonical_execution_encoding import (
@@ -24,9 +26,21 @@ from hwpxfiller.domain.slot_selection import (
 from hwpxfiller.external.template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
+    inspect_hwpx_qualification,
 )
 
 _FIXTURES = Path(__file__).parent / "fixtures"
+
+#: 대표 slot 포함 fixture — build_slot_probe 로 조립된 canonical HWPX(slot 1·option 2).
+_QUALIFICATION_FIXTURE = Path(__file__).parent / "corpus" / "slots" / "canonical.hwpx"
+
+#: frozen ``hwpx-template-qualification-v1`` identity 아래 ``inspect_hwpx_qualification`` 의
+#: **행동**(structure/diagnostics)을 대표 fixture 에서 뽑은 안정 semantic digest. version 문자열만
+#: pin 하고 payload 를 비워 두면 같은 identity 로 판정 규칙이 바뀌어도 초록이 유지되는 창이 열린다 —
+#: 이 digest 가 그 창을 닫는다. 규칙 개정이면 identity 버전과 이 digest 를 **함께** 올린다.
+_QUALIFICATION_BEHAVIOR_DIGEST = (
+    "0c669e53326a2a5da09bbe75a33b89e3c3eb871e9f8556231cbc902a32afa8fb"
+)
 
 #: v1 로 출하된 golden vector 파일의 정확한 bytes(SHA-256). 재현 판정(code==golden)은 기존
 #: 테스트가 지고, 여기서는 golden 자체가 역사값이라 못 바뀐다는 것을 pin 한다.
@@ -66,3 +80,16 @@ def test_shipping_profile_identity_and_manifest_versions_pinned() -> None:
     assert manifest.product_rule_version == "hwpx-qualification-rules-v1"
     assert manifest.operation_alphabet_version == "hwpx-operations-v1"
     assert manifest.projection_schema_version == "hwpx-structure-projection-v1"
+
+
+def test_shipping_profile_inspection_behavior_frozen() -> None:
+    # frozen identity 를 그 **행동**에 묶는다: 대표 fixture 의 inspection 결과 semantic digest 가
+    # v1 값이어야 한다. identity 문자열이 그대로여도 판정이 바뀌면 이 digest 가 RED 된다.
+    inspection = inspect_hwpx_qualification(_QUALIFICATION_FIXTURE.read_bytes())
+    assert inspection.structure is not None and inspection.diagnostics == ()
+    payload = json.dumps(asdict(inspection), ensure_ascii=False, sort_keys=True)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    assert digest == _QUALIFICATION_BEHAVIOR_DIGEST, (
+        "frozen hwpx-template-qualification-v1 identity 아래 inspection 행동이 바뀌었다 — 규칙 "
+        "개정이면 profile identity 버전과 이 digest 를 함께 올리고 이슈로 남긴다."
+    )
