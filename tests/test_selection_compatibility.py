@@ -163,6 +163,16 @@ def test_content_unverified_when_digest_missing_review() -> None:
     assert fact.classification == REVIEW_REQUIRED and fact.reason == CONTENT_UNVERIFIED
 
 
+def test_mismatched_chain_lengths_fail_closed() -> None:
+    # 두 chain 축 길이가 어긋나면 content 를 hop 마다 짝지을 수 없다 → fail-closed(AUTO_KEEP 아님).
+    fact = classify_selection(
+        "s1", "o1", [_one(), _one()], ["sha256:same"],
+        source_contract_id=V1, target_contract_id=V1,
+        source_policy=EXACTLY_ONE, target_policy=EXACTLY_ONE,
+    )
+    assert fact.classification == REVIEW_REQUIRED and fact.reason == CONTENT_UNVERIFIED
+
+
 # ── A3: same id + Option-owned Field 추가/삭제 → REVIEW ──────────────────────────
 def test_a3_owned_field_added_review() -> None:
     fact = _classify([_one(fields=("f1",)), _one(fields=("f1", "f2"))])

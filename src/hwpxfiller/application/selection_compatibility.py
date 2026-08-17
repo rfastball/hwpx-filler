@@ -189,6 +189,11 @@ def classify_selection(
             reason=reason,
         )
 
+    # 두 chain 축은 같은 길이여야 content 증명이 hop 마다 짝을 이룬다 — 어긋나면 content 를
+    # 증명 못 하므로 fail-closed(길이 불일치로 content loop 를 건너뛰어 false AUTO_KEEP 금지).
+    if len(chain_content_digests) != len(chain_execution_structures):
+        return facts(REVIEW_REQUIRED, CONTENT_UNVERIFIED, None)
+
     if target is None:
         return facts(REVIEW_REQUIRED, EVIDENCE_MISSING, None)
     if not _option_present(target, slot_id, option_id):
