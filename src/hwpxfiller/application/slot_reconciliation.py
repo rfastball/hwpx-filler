@@ -21,6 +21,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from hwpxfiller.application.selection_compatibility import (
+    AUTO_KEEP,
+    ChainApplicationFacts,
+    SelectionCompatibilityFacts,
+    classify_selection,
+)
 from hwpxfiller.application.template_qualification import TemplateStructure
 from hwpxfiller.application.work_slot_configuration import (
     RECONCILED_FROM_PREDECESSOR,
@@ -292,6 +298,71 @@ class ReconciliationPlan:
     source_configuration_version: int | None
     source_declared_selection_digest: str | None
     resolution: SlotConfigurationResolution
+    compatibility_facts: tuple[SelectionCompatibilityFacts, ...] = ()
+
+
+def _ordered_chain(
+    applications: Mapping[str, ReconciliationApplication],
+    target_application_id: str,
+    source_application_id: str,
+) -> list[str]:
+    """target → previous walk 로 source..target 순 application_id 리스트를 낸다.
+
+    chain 무결성은 :func:`find_nearest_predecessor_configuration` 이 이미 검증했으므로 여기서는
+    source 에 닿을 때까지 previous 를 걷기만 한다.
+
+    # ponytail: AUTO_KEEP 는 epoch-contiguous previous_application_id walk 상의 연속성만 본다
+    # (removal 을 넘어선 재등장은 REMOVED_IN_CHAIN 으로 REVIEW). branch/merge lineage 를
+    # 다뤄야 하면 chain 을 DAG walk 로 승격한다 — 현재 lineage 는 선형이라 불필요.
+    """
+    ids: list[str] = []
+    current: str | None = target_application_id
+    while current is not None:
+        ids.append(current)
+        if current == source_application_id:
+            break
+        app = applications.get(current)
+        current = app.previous_application_id if app is not None else None
+    ids.reverse()
+    return ids
+
+
+def _compatibility_gated_selections(
+    source_selections: SlotSelectionSet,
+    contract: SelectionSemanticContractManifest,
+    chain_ids: list[str],
+    chain_facts: Mapping[str, ChainApplicationFacts],
+    source_application_id: str,
+) -> tuple[SlotSelectionSet, tuple[SelectionCompatibilityFacts, ...]]:
+    """source declared 선택을 compatibility 로 걸러 AUTO_KEEP 만 successor 선언집합에 싣는다."""
+    chain_structs = [
+        chain_facts[aid].execution_structure if aid in chain_facts else None
+        for aid in chain_ids
+    ]
+    src_facts = chain_facts.get(source_application_id)
+    source_contract_id = src_facts.selection_contract_id if src_facts else None
+    source_policy = src_facts.selection_policy if src_facts else None
+    target_contract_id = contract.contract_id
+    target_policy = resolve_selection_policy(contract, None)
+
+    kept: list[SlotSelection] = []
+    facts: list[SelectionCompatibilityFacts] = []
+    for selection in source_selections.selections:
+        kept_options: list[str] = []
+        for option_id in selection.selected_option_ids:
+            fact = classify_selection(
+                selection.slot_id, option_id, chain_structs,
+                source_contract_id=source_contract_id,
+                target_contract_id=target_contract_id,
+                source_policy=source_policy,
+                target_policy=target_policy,
+            )
+            facts.append(fact)
+            if fact.classification == AUTO_KEEP:
+                kept_options.append(option_id)
+        if kept_options:
+            kept.append(SlotSelection(selection.slot_id, tuple(kept_options)))
+    return SlotSelectionSet(tuple(kept)), tuple(facts)
 
 
 def plan_successor_reconciliation(
@@ -300,25 +371,38 @@ def plan_successor_reconciliation(
     contract: SelectionSemanticContractManifest,
     applications: Mapping[str, ReconciliationApplication],
     configurations: Mapping[str, WorkSlotConfigurationDraft],
+    *,
+    chain_facts: Mapping[str, ChainApplicationFacts] | None = None,
 ) -> ReconciliationPlan:
     """target Application 의 successor Configuration plan 을 낸다(create·fence 결선은 #677).
 
-    같은 Lineage 일 때만 nearest predecessor 의 declared SelectionSet 을 복사한다(retained intent
-    포함 — 제거된 Slot entry 도 옮긴다). 다른 Lineage 는 empty 로 시작한다.
+    같은 Lineage 이고 nearest predecessor 선택의 의미 호환성이 exact evidence 로 증명될 때만
+    그 Option 을 successor 선언집합에 싣는다(``AUTO_KEEP``). 증명 못 하면(unknown/v1/변경/removed)
+    싣지 않고 ``compatibility_facts`` 에 ``REVIEW_REQUIRED`` 로 남겨 사용자 재선택으로 닫는다.
+    다른 Lineage 는 오늘처럼 empty 로 시작한다. ``chain_facts`` 미제공은 evidence-missing 으로
+    취급돼 fail-closed(전부 REVIEW)된다.
     """
+    facts_map = chain_facts if chain_facts is not None else {}
     target = applications[target_application_id]
     source = find_nearest_predecessor_configuration(
         target_application_id, applications, configurations
     )
 
+    compatibility_facts: tuple[SelectionCompatibilityFacts, ...] = ()
     if source is None:
         initial = SlotSelectionSet(())
         source_id = source_version = source_digest = None
     else:
-        source_app = applications[source.base_template_application_id]
-        same_lineage = source_app.template_lineage_id == target.template_lineage_id
-        initial = source.selections if same_lineage else SlotSelectionSet(())
         source_id = source.base_template_application_id
+        source_app = applications[source_id]
+        same_lineage = source_app.template_lineage_id == target.template_lineage_id
+        if same_lineage:
+            chain_ids = _ordered_chain(applications, target_application_id, source_id)
+            initial, compatibility_facts = _compatibility_gated_selections(
+                source.selections, contract, chain_ids, facts_map, source_id
+            )
+        else:
+            initial = SlotSelectionSet(())
         source_version = source.version
         source_digest = declared_selection_digest(source.selections)
 
@@ -338,6 +422,7 @@ def plan_successor_reconciliation(
         source_configuration_version=source_version,
         source_declared_selection_digest=source_digest,
         resolution=resolution,
+        compatibility_facts=compatibility_facts,
     )
 
 

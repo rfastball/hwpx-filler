@@ -4,6 +4,18 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.application.execution_structure import (
+    ContentEntry,
+    OptionRegionObservation,
+    SlotRegionObservation,
+    build_execution_structure,
+)
+from hwpxfiller.application.selection_compatibility import (
+    AUTO_KEEP,
+    DETACHED,
+    REVIEW_REQUIRED,
+    ChainApplicationFacts,
+)
 from hwpxfiller.application.slot_reconciliation import (
     BLOCKED,
     COMPLETE,
@@ -278,28 +290,120 @@ def test_cross_work_chain_rejected() -> None:
         find_nearest_predecessor_configuration("A2", apps, {})
 
 
-# ── reconciliation plan ───────────────────────────────────────────────────────
-def test_same_lineage_copies_different_lineage_empty() -> None:
+# ── compatibility-gated reconciliation plan (SG-01 #733) ────────────────────────
+_RF = {
+    "remaining_target_resolvable_after_removal": True,
+    "active_field_resolvable_after_removal": True,
+    "field_write_preserves_identity": True,
+}
+_ENTRY = ContentEntry(
+    "c0",
+    "section-body/v1",
+    {
+        "retains_admissible_envelope": True,
+        "handles_empty_edges": True,
+        "preserves_owner_marker": True,
+        "coincident_boundary_admissible": True,
+    },
+)
+
+
+def _exec(slot="s", options=("A",), *, removal="remove-option/v1"):
+    """slot 하나 + option region(들)만 있는 최소 v2 execution structure(field 없음)."""
+    product = TemplateStructure(
+        root_fields=(),
+        slots=(
+            TemplateSlot(slot, shared_fields=(), options=tuple(TemplateOption(o) for o in options)),
+        ),
+    )
+    return build_execution_structure(
+        product_structure=product,
+        occurrences=(),
+        slot_regions=(SlotRegionObservation(slot, "c0", 10, 40),),
+        option_regions=tuple(
+            OptionRegionObservation(slot, o, "c0", 12 + 3 * i, 14 + 3 * i, removal)
+            for i, o in enumerate(options)
+        ),
+        content_entries=(_ENTRY,),
+        resolver_stability_facts=_RF,
+        admitted_relation_profile="unadmitted",
+    )
+
+
+def _exec_slotless():
+    return build_execution_structure(
+        product_structure=TemplateStructure(root_fields=(), slots=()),
+        occurrences=(),
+        slot_regions=(),
+        option_regions=(),
+        content_entries=(),
+        resolver_stability_facts=_RF,
+        admitted_relation_profile="unadmitted",
+    )
+
+
+def _cf(structure) -> ChainApplicationFacts:
+    return ChainApplicationFacts(structure, "slot-selection/v1", "EXACTLY_ONE")
+
+
+def test_same_lineage_auto_keeps_compatible_different_lineage_empty() -> None:
     apps = {
         "A18": _app("A18", "A17", 2, lineage="L"),
         "A17": _app("A17", None, 1, lineage="L"),
     }
     configs = {"A17": _draft("A17", _sel(("s", ["A"])))}
-    plan = plan_successor_reconciliation("A18", _structure(("s", ["A"])), V1, apps, configs)
+    facts = {"A17": _cf(_exec()), "A18": _cf(_exec())}  # 동일 의미 → AUTO_KEEP
+    plan = plan_successor_reconciliation(
+        "A18", _structure(("s", ["A"])), V1, apps, configs, chain_facts=facts
+    )
     assert plan.initial_selections == _sel(("s", ["A"]))
     assert plan.source_application_id == "A17"
+    assert plan.compatibility_facts[0].classification == AUTO_KEEP
 
     apps["A18"] = _app("A18", "A17", 2, lineage="OTHER")
-    plan2 = plan_successor_reconciliation("A18", _structure(("s", ["A"])), V1, apps, configs)
+    plan2 = plan_successor_reconciliation(
+        "A18", _structure(("s", ["A"])), V1, apps, configs, chain_facts=facts
+    )
     assert plan2.initial_selections == _sel()  # 다른 Lineage → empty
+    assert plan2.compatibility_facts == ()
 
 
-def test_slotless_target_with_retained_creates_successor() -> None:
+def test_same_lineage_incompatible_drops_to_review() -> None:
+    # 같은 id 이지만 target 의 option 의미가 바뀜(removal contract) → 자동 승계 0, REVIEW.
+    apps = {"A18": _app("A18", "A17", 2), "A17": _app("A17", None, 1)}
+    configs = {"A17": _draft("A17", _sel(("s", ["A"])))}
+    facts = {
+        "A17": _cf(_exec(removal="remove-option/v1")),
+        "A18": _cf(_exec(removal="remove-option/v2")),
+    }
+    plan = plan_successor_reconciliation(
+        "A18", _structure(("s", ["A"])), V1, apps, configs, chain_facts=facts
+    )
+    assert plan.initial_selections == _sel()  # AUTO_KEEP 0
+    assert plan.compatibility_facts[0].classification == REVIEW_REQUIRED
+
+
+def test_same_lineage_without_chain_facts_fails_closed() -> None:
+    # chain_facts 미제공 = evidence-missing → fail-closed(아무것도 승계 안 함).
+    apps = {"A18": _app("A18", "A17", 2), "A17": _app("A17", None, 1)}
+    configs = {"A17": _draft("A17", _sel(("s", ["A"])))}
+    plan = plan_successor_reconciliation("A18", _structure(("s", ["A"])), V1, apps, configs)
+    assert plan.initial_selections == _sel()
+    assert plan.compatibility_facts[0].classification == REVIEW_REQUIRED
+
+
+def test_slotless_target_retained_source_detached_not_carried() -> None:
+    # slotless target 에 예전 선택 slot 이 없으면 DETACHED — successor 로 자동 복원하지 않는다.
     apps = {"A18": _app("A18", "A17", 2), "A17": _app("A17", None, 1)}
     configs = {"A17": _draft("A17", _sel(("gone", ["C"])))}
-    plan = plan_successor_reconciliation("A18", _structure(), V1, apps, configs)
-    assert plan.should_create_configuration is True  # source non-empty → 전부 detached 로 생성
-    assert plan.resolution.detached_selections[0].slot_id == "gone"
+    facts = {"A17": _cf(_exec_slotless()), "A18": _cf(_exec_slotless())}
+    plan = plan_successor_reconciliation(
+        "A18", _structure(), V1, apps, configs, chain_facts=facts
+    )
+    assert plan.initial_selections == _sel()
+    assert plan.should_create_configuration is False  # 승계할 게 없어 생성 생략
+    assert plan.compatibility_facts[0].classification == DETACHED
+    assert plan.compatibility_facts[0].slot_id == "gone"
 
 
 def test_slotless_target_without_source_skips_creation() -> None:
