@@ -143,6 +143,7 @@ from ..application.document_creation_workbench import (
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
+    ExecutionObservationContextError,
     FreshExecutionObservation,
 )
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
@@ -2886,6 +2887,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._maybe_auto_check(response)
         return self._slot_response_dict(response)
 
+    # ── 세션 주체(Work) 정체 — 전환 시 실행 증거 무효화 ──────────────────────────────────
+    @property
+    def job_name(self) -> str:
+        return self._job_name
+
+    @job_name.setter
+    def job_name(self, value: str) -> None:
+        """세션 주체 Work. 다른 Work 로 바뀌면 세션 실행 증거를 함께 버린다.
+
+        orchestration·fresh observation·basis digest 는 그것을 만든 Work 에 묶인다 — A 를 확인해
+        SETTLED_CURRENT 로 둔 뒤 B 로 전환하면, B 는 아직 확인 전이므로 A 의 관찰로 B 를 CURRENT 라
+        하지 않는다(조용히 틀리지 않는다). 같은 값 재대입은 재설정하지 않는다.
+        """
+        prior = getattr(self, "_job_name", None)
+        self._job_name = value
+        if prior is not None and value != prior:
+            self._session_orchestration = AutomaticSealOrchestration()
+            self._last_fresh_observation = None
+            self._last_sealed_basis_digest = None
+
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def _maybe_auto_check(self, slot_response) -> None:
         """durable slot mutation 뒤 자동 확인 진입 — mutation 이 CHANGED 일 때만(#724 §4).
@@ -3014,7 +3035,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         R2(#740): observation 은 current authority 의 재계산이라 seal 과 하나다 — 별도의 'seal 없이
         관찰' 경로가 없다. seal 은 durable side effect 없는 순수 재계산이므로 다시 돌려
         ``_last_fresh_observation``·basis digest 만 교체하고 orchestration 상태는 건드리지 않는다
-        (자동 확인 궤도와 분리). 미주입·미선택·degrade 면 마지막 관찰을 보존한다(best-effort).
+        (자동 확인 궤도와 분리). **확인이 실패하면 마지막 관찰을 조용히 유지하지 않고** context error 로
+        교체한다 — refresh 가 route/store/무결성 오류로 실패했는데 이전 CURRENT 를 계속 주장하지
+        않는다(조용히 틀리지 않는다). 미주입·미선택이면 no-op.
         """
         if self._seal_execution is not None and self.job_name:
             try:
@@ -3022,6 +3045,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     self.job_name, uuid.uuid4().hex
                 )
                 self._absorb_seal_response(resp)
-            except Exception:  # noqa: BLE001 — fresh 축 degrade: 마지막 관찰 유지.
-                pass
+            except Exception as exc:  # noqa: BLE001 — 확인 실패를 시끄럽게(CURRENT 유지 금지).
+                self._last_fresh_observation = ExecutionObservationContextError(
+                    "OBSERVATION_REFRESH_FAILED", str(exc)
+                )
         return {"ok": True}

@@ -54,6 +54,7 @@ from ..application.fresh_execution_observation import (
 )
 from ..application.preview_requirement import PreviewNotRequired, PreviewRequirement
 from ..application.slot_configuration_projection import (
+    HAS_BROKEN_SELECTIONS,
     NEEDS_SELECTION,
     CurrentSlotConfigurationView,
 )
@@ -82,8 +83,11 @@ def content_selection_from_view(
     """S4 projection → content 선택 요약. **재판정하지 않는다** — projection 이 이미 낸 값을 shape 만 한다.
 
     ``selected_option_ids`` 는 effective option(현재 실효 선택)의 flat 합이고,
-    ``has_unselected_required_content`` 는 projection 의 ``configuration_status == NEEDS_SELECTION``
-    (필수 Slot 미선택)을 그대로 읽는다. projection 부재(context error·미조회)는 선택 없음으로 본다.
+    ``has_unselected_required_content`` 는 projection 의 ``configuration_status`` 가 아직 손볼 내용이
+    남았다는 두 상태 — 필수 Slot 미선택(``NEEDS_SELECTION``) **또는** 깨진 선택(``HAS_BROKEN_SELECTIONS``:
+    선택했던 Option 이 사라졌거나 cardinality 가 깨짐) — 일 때 True 다. broken 을 흘려보내면 사용자를
+    고쳐야 할 구성 너머로 지나치게 하므로 CHOOSE_CONTENT 로 시끄럽게 막는다. projection 부재(context
+    error·미조회)는 선택 없음으로 본다.
     """
     if view is None:
         return ContentSelectionSummary()
@@ -92,7 +96,8 @@ def content_selection_from_view(
         selected.extend(slot.effective_option_ids)
     return ContentSelectionSummary(
         selected_option_ids=tuple(selected),
-        has_unselected_required_content=view.configuration_status == NEEDS_SELECTION,
+        has_unselected_required_content=view.configuration_status
+        in (NEEDS_SELECTION, HAS_BROKEN_SELECTIONS),
     )
 
 

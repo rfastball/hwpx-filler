@@ -34,8 +34,14 @@ from hwpxfiller.application.fresh_execution_observation import (
     ExecutionObservationContextError,
 )
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
+from hwpxfiller.application.slot_configuration_projection import (
+    HAS_BROKEN_SELECTIONS,
+    NEEDS_SELECTION,
+    SLOT_SELECTIONS_COMPLETE,
+)
 from hwpxfiller.webapp.workbench_observation_product import (
     WorkbenchObservationProduct,
+    content_selection_from_view,
     execution_verdicts_from_fresh,
 )
 
@@ -192,6 +198,25 @@ def test_verdicts_from_current_work_observation() -> None:
     assert v.admission.state == "NOT_ADMITTED"  # 미봉인 → 정직한 NOT_ADMITTED(READY 아님)
 
 
+# ── 깨진 슬롯 선택도 content blocker(사용자를 고쳐야 할 구성 너머로 지나치게 하지 않는다) ─────────
+class _FakeView:
+    def __init__(self, status: str) -> None:
+        self.configuration_status = status
+        self.slots = ()
+
+
+def test_broken_selections_count_as_unselected_required_content() -> None:
+    assert content_selection_from_view(
+        _FakeView(HAS_BROKEN_SELECTIONS)
+    ).has_unselected_required_content is True
+    assert content_selection_from_view(
+        _FakeView(NEEDS_SELECTION)
+    ).has_unselected_required_content is True
+    assert content_selection_from_view(
+        _FakeView(SLOT_SELECTIONS_COMPLETE)
+    ).has_unselected_required_content is False
+
+
 # ── automatic checking 트리거(durable slot mutation CHANGED → 자동 확인) ─────────────────────────
 class _ChangedOutcome:
     changed = True
@@ -287,12 +312,45 @@ def test_auto_seal_failure_leaves_last_observation(tmp_path: Path) -> None:
     assert ctrl._last_fresh_observation is None
 
 
-def test_refresh_observation_degrades_without_crashing(tmp_path: Path) -> None:
+def test_refresh_observation_failure_surfaces_context_error(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True, wire_seal=False)
     ctrl._seal_execution = _RaisingSeal()
-    # seal 실패 → 마지막 관찰 유지, 예외를 밖으로 내지 않는다.
+    # 확인 실패를 조용히 이전 관찰로 두지 않는다 — context error 로 시끄럽게(CURRENT 유지 금지).
     ctrl.dispatch("refresh_observation", {})
+    assert isinstance(ctrl._last_fresh_observation, ExecutionObservationContextError)
+    assert _zone(ctrl)["kind"] == "context_error"
+
+
+def test_refresh_failure_after_current_does_not_keep_claiming_current(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
+    # 이후 refresh 가 실패하면 이전 CURRENT 를 계속 주장하지 않고 context error 로 전환.
+    ctrl._seal_execution = _RaisingSeal()
+    ctrl.dispatch("refresh_observation", {})
+    assert _zone(ctrl)["kind"] == "context_error"
+
+
+# ── 세션 실행 증거는 Work 에 묶인다(전환 시 무효화 — A 의 관찰로 B 를 CURRENT 라 하지 않는다) ──────
+def test_work_switch_resets_execution_evidence(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
+    assert ctrl._last_sealed_basis_digest is not None
+    # 다른 Work 로 전환 → 세션 실행 증거 무효화(orchestration IDLE·관찰/디지스트 None).
+    ctrl.job_name = "다른작업"
     assert ctrl._last_fresh_observation is None
+    assert ctrl._last_sealed_basis_digest is None
+    assert ctrl._session_orchestration.state == "IDLE"
+
+
+def test_same_work_reassignment_keeps_evidence(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    obs = ctrl._last_fresh_observation
+    ctrl.job_name = WORK_REF  # 같은 값 재대입은 재설정하지 않는다.
+    assert ctrl._last_fresh_observation is obs
+    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
 
 
 # ── 사용자 문안 내부어 노출 0(#725 §테스트 12 계약 유지) ─────────────────────────────────────────
