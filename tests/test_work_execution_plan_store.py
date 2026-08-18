@@ -1,7 +1,8 @@
-"""S5-07(#703) WorkExecutionPlanStore — file-atomic·CAS·first-seen durable primitives.
+"""S5-07(#703) WorkExecutionPlanStore — file-atomic·CAS·content-addressed publish primitive.
 
-publish/ledger-only atomicity·idempotent replay·restart 복원·corruption fail-closed·CAS 를
-검증한다. 순수 값/전이는 ``test_stored_execution_plan.py`` 가 지고, 여기서는 파일 I/O 경계를 진다.
+publish(content-addressed create/reuse) atomicity·restart 복원·corruption fail-closed·CAS 를
+검증한다(R2-04a: first-seen replay/idempotency 제거). 순수 값/전이는 ``test_stored_execution_plan.py``
+가 지고, 여기서는 파일 I/O 경계를 진다.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import pytest
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPlanIntegrityError,
     ExecutionPlanStoreIntegrityError,
-    IdempotencyKeyReused,
     PlanPublished,
     SealTerminalOutcome,
     StoreConcurrentModification,
@@ -21,27 +21,30 @@ from hwpxfiller.external import work_execution_plan_store as store_mod
 from hwpxfiller.external.work_execution_plan_store import WorkExecutionPlanStore
 
 from tests.test_stored_execution_plan import (
-    attempt_evidence,
+    _basis,
     complete_evidence,
     deps,
-    fingerprint,
     plan,
     policy,
     published_outcome,
-    qual_blocked,
 )
+
+
+def _distinct_plan():
+    # 다른 basis(다른 qualification digest) → 다른 compilation key → CREATE(REUSE 아님).
+    return plan(basis=_basis(qualification_profile_semantic_digest="sha256:distinct"))
 
 
 def _store(tmp_path) -> WorkExecutionPlanStore:
     return WorkExecutionPlanStore(tmp_path)
 
 
-def _publish(store, *, request_id, expected, a_plan, evidence, kind="CREATED", fp=None):
+def _publish(store, *, request_id, expected, a_plan, evidence, kind="CREATED"):
     return store.publish_sealed_plan_atomic(
         work_authority_id="work-1",
+        workspace_instance_id="ws-1",
         expected_aggregate_version=expected,
         request_id=request_id,
-        fingerprint=fp or fingerprint(),
         resolved_seal_policy=policy(),
         capture_evidence=evidence,
         plan_payload=a_plan,
@@ -56,7 +59,6 @@ def test_publish_persists_all_parts_and_restores_on_restart(tmp_path) -> None:
     p = plan()
     result = _publish(_store(tmp_path), request_id="r1", expected=0, a_plan=p,
                       evidence=complete_evidence())
-    assert result.replayed is False
     assert result.aggregate.aggregate_version == 1
     # 새 store 인스턴스(=프로세스 재시작)로 전체 복원.
     reloaded = _store(tmp_path).load("work-1")
@@ -64,32 +66,21 @@ def test_publish_persists_all_parts_and_restores_on_restart(tmp_path) -> None:
     digest = plan_semantic_digest(p)
     assert digest in reloaded.plans_by_semantic_digest
     assert len(reloaded.plans_by_compilation_key) == 1
-    assert len(reloaded.first_seen_ledger) == 1
 
 
-def test_ledger_only_writes_no_plan(tmp_path) -> None:
-    ev = attempt_evidence()
-    store = _store(tmp_path)
-    result = store.commit_seal_terminal_outcome_atomic(
-        work_authority_id="work-1", expected_aggregate_version=0, request_id="r1",
-        fingerprint=fingerprint(), resolved_seal_policy=policy(),
-        capture_evidence=ev, terminal_outcome=qual_blocked(ev), now="t0",
-    )
-    assert result.aggregate.plans_by_semantic_digest == {}
-    assert store.load("work-1").aggregate_version == 1
-
-
-def test_reuse_by_second_request_preserves_own_evidence(tmp_path) -> None:
+def test_reuse_skips_durable_write(tmp_path, monkeypatch) -> None:
+    # R2-04a: 같은 plan 재-publish 는 REUSE(aggregate 무변경) → durable write 를 생략한다.
     p = plan()
     store = _store(tmp_path)
-    _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence(seed="a"))
-    ev2 = complete_evidence(seed="b")
-    result = _publish(store, request_id="r2", expected=1, a_plan=p, evidence=ev2, kind="REUSED")
-    ledger = result.aggregate.first_seen_ledger
-    assert len(ledger) == 2
-    assert len(result.aggregate.plans_by_semantic_digest) == 1  # create-once
-    digests = {r.durable_capture_evidence.captured_execution_input_digest for r in ledger}
-    assert len(digests) == 2  # 각 request 가 자기 evidence 보존
+    _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
+
+    def boom(*a, **k):
+        raise AssertionError("REUSE 는 write 하지 않아야 한다")
+
+    monkeypatch.setattr(store_mod, "write_text_atomic", boom)
+    result = _publish(store, request_id="r2", expected=1, a_plan=p, kind="REUSED",
+                      evidence=complete_evidence(seed="b"))
+    assert result.aggregate.aggregate_version == 1  # 무변경
 
 
 def test_replace_failure_leaves_previous_intact(tmp_path, monkeypatch) -> None:
@@ -101,13 +92,13 @@ def test_replace_failure_leaves_previous_intact(tmp_path, monkeypatch) -> None:
         raise OSError("disk full")
 
     monkeypatch.setattr(store_mod, "write_text_atomic", boom)
+    # 다른 plan(CREATE) 은 실제 write 를 트리거한다 — write 실패는 기존 aggregate 를 훼손하지 않는다.
     with pytest.raises(OSError):
-        _publish(store, request_id="r2", expected=1, a_plan=p, kind="REUSED",
+        _publish(store, request_id="r2", expected=1, a_plan=_distinct_plan(),
                  evidence=complete_evidence(seed="b"))
-    # 기존 aggregate 무손상(version 1, ledger 1건).
+    # 기존 aggregate 무손상(version 1).
     reloaded = _store(tmp_path).load("work-1")
     assert reloaded.aggregate_version == 1
-    assert len(reloaded.first_seen_ledger) == 1
 
 
 def test_stray_temp_file_ignored_on_load(tmp_path) -> None:
@@ -119,60 +110,6 @@ def test_stray_temp_file_ignored_on_load(tmp_path) -> None:
 
 
 # ─── idempotency ──────────────────────────────────────────────────────────────────────
-def test_same_request_same_fingerprint_replay(tmp_path) -> None:
-    p = plan()
-    store = _store(tmp_path)
-    first = _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    replay = _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    assert replay.replayed is True
-    assert replay.record == first.record
-    assert replay.aggregate.aggregate_version == 1  # 새 commit 0
-
-
-def test_concurrent_same_request_first_commit_wins(tmp_path) -> None:
-    # in-process lease 로 직렬화 — 두 번째 호출은 durable record 를 되읽어 replay(loser reloads).
-    p = plan()
-    store = _store(tmp_path)
-    _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    loser = _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence(seed="z"))
-    assert loser.replayed is True
-    assert store.load("work-1").aggregate_version == 1
-
-
-def test_same_request_different_fingerprint_rejected(tmp_path) -> None:
-    p = plan()
-    store = _store(tmp_path)
-    _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    with pytest.raises(IdempotencyKeyReused):
-        _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence(),
-                 fp=fingerprint(command_schema_version="seal-command/vDIFFERENT"))
-    # 최초 record 수정 0.
-    assert store.load("work-1").aggregate_version == 1
-
-
-def test_auto_resolved_policy_preserved_after_default_change(tmp_path) -> None:
-    # AUTO fingerprint 로 최초 policy A 를 봉인. 서버 default 가 B 로 바뀐 retry 도 최초 A 를 replay.
-    p = plan()
-    store = _store(tmp_path)
-    first = _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    assert first.record.resolved_seal_policy.policy_resolution_version == "policy/v1"
-    replay = store.publish_sealed_plan_atomic(
-        work_authority_id="work-1", expected_aggregate_version=0, request_id="r1",
-        fingerprint=fingerprint(), resolved_seal_policy=policy(policy_resolution_version="policy/v2"),
-        capture_evidence=complete_evidence(), plan_payload=p, dependency_set=deps(),
-        published_outcome=published_outcome(p, complete_evidence()), now="t9",
-    )
-    assert replay.replayed is True
-    assert replay.record.resolved_seal_policy.policy_resolution_version == "policy/v1"
-
-
-def test_replay_across_restart(tmp_path) -> None:
-    p = plan()
-    _publish(_store(tmp_path), request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    # 새 store 인스턴스에서 같은 request 재시도 → durable record replay.
-    replay = _publish(_store(tmp_path), request_id="r1", expected=0, a_plan=p,
-                      evidence=complete_evidence())
-    assert replay.replayed is True
 
 
 def test_retryable_integrity_failure_does_not_consume_request(tmp_path) -> None:
@@ -181,8 +118,8 @@ def test_retryable_integrity_failure_does_not_consume_request(tmp_path) -> None:
     # 잘못된 published_outcome claim → integrity error, ledger 미기록.
     with pytest.raises(ExecutionPlanIntegrityError):
         store.publish_sealed_plan_atomic(
-            work_authority_id="work-1", expected_aggregate_version=0, request_id="r1",
-            fingerprint=fingerprint(), resolved_seal_policy=policy(),
+            work_authority_id="work-1", workspace_instance_id="ws-1",
+            expected_aggregate_version=0, request_id="r1", resolved_seal_policy=policy(),
             capture_evidence=complete_evidence(), plan_payload=p, dependency_set=deps(),
             published_outcome=PlanPublished("CREATED", "sha256:forged",
                                             "sha256:forged", "sha256:forged"),
@@ -191,7 +128,7 @@ def test_retryable_integrity_failure_does_not_consume_request(tmp_path) -> None:
     assert not store.exists("work-1")
     # 교정된 재시도는 정상 소비.
     ok = _publish(store, request_id="r1", expected=0, a_plan=p, evidence=complete_evidence())
-    assert ok.replayed is False
+    assert ok.aggregate.aggregate_version == 1
 
 
 def test_authorization_is_not_a_terminal_outcome() -> None:

@@ -47,17 +47,14 @@ from hwpxfiller.application.seal_execution_plan import (
     BlockedCandidate,
     ExecutionCaptureRetryExhausted,
     ExecutionQualificationContextError,
-    IdempotencyKeyReused,
     PlanCandidate,
     SealExecutionPlanCommand,
     S6_START_GATE_LOCK_ORDER,
     UnsupportedLocalImplementation,
     WorkExecutionSummary,
-    build_request_intent_fingerprint,
     compile_candidate,
     decide_final_verdict,
     final_verdict_on_moved_basis,
-    optimistic_replay,
     require_exact_selector_consistency,
 )
 from hwpxfiller.application.execution_contract_set import (
@@ -67,7 +64,6 @@ from hwpxfiller.application.execution_contract_set import (
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    IdempotencyKeyReused as StoreIdempotencyKeyReused,
     PlanPublished,
     RequestedExact,
     StaleExecutionBasis,
@@ -237,16 +233,12 @@ def test_publish_creates_plan_mapping_deps_evidence_ledger_atomic(tmp_path) -> N
     result = _run(store, World())
     assert isinstance(result.terminal_outcome, PlanPublished)
     assert result.terminal_outcome.publication_kind == "CREATED"
-    assert result.replayed is False
     agg = store.load(WORK)
     assert len(agg.plans_by_semantic_digest) == 1
     assert len(agg.plans_by_compilation_key) == 1  # functional dependency mapping
-    assert len(agg.first_seen_ledger) == 1
-    record = agg.first_seen_ledger[0]
-    # dependency set·capture evidence·resolved policy 전부 durable.
+    # dependency set·capture evidence 전부 durable(first-seen ledger 없음, R2-04a).
     plan = next(iter(agg.plans_by_semantic_digest.values()))
     assert plan.dependency_set.candidate_blob_ref  # nonempty
-    assert record.durable_capture_evidence.captured_execution_input_digest
 
 
 def test_functional_dependency_reuse_preserves_request_specific_evidence(tmp_path) -> None:
@@ -258,13 +250,8 @@ def test_functional_dependency_reuse_preserves_request_specific_evidence(tmp_pat
     assert isinstance(result.terminal_outcome, PlanPublished)
     assert result.terminal_outcome.publication_kind == "REUSED"
     agg = store.load(WORK)
-    assert len(agg.plans_by_semantic_digest) == 1  # create-once
-    assert len(agg.first_seen_ledger) == 2
-    digests = {
-        r.durable_capture_evidence.captured_execution_input_digest
-        for r in agg.first_seen_ledger
-    }
-    assert len(digests) == 2  # 각 request 가 자기 evidence 보존
+    assert len(agg.plans_by_semantic_digest) == 1  # create-once, REUSE
+    assert agg.aggregate_version == 1  # REUSE 는 version bump 없음(R2-04a)
 
 
 def test_store_failure_does_not_consume_request(tmp_path, monkeypatch) -> None:
@@ -315,7 +302,7 @@ def test_slot_mutation_after_capture_final_stale_digest_mismatch(tmp_path) -> No
     result = _run(store, world)
     assert isinstance(result.terminal_outcome, StaleExecutionBasis)
     assert result.terminal_outcome.stale_reason == STALE_DIGEST_MISMATCH
-    assert store.load(WORK).plans_by_semantic_digest == {}  # Plan write 0
+    assert not store.exists(WORK)  # block/stale 은 durable write 없음(R2-04a)
 
 
 def test_detached_only_mutation_same_basis_publishes(tmp_path) -> None:
@@ -373,7 +360,7 @@ def test_revoke_before_capture_policy_block(tmp_path) -> None:
     result = _run(store, World(policy_block=_revoked_block()))
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
     assert result.terminal_outcome.policy_code == QUALIFICATION_PROFILE_REVOKED
-    assert store.load(WORK).plans_by_semantic_digest == {}
+    assert not store.exists(WORK)  # block/stale 은 durable write 없음(R2-04a)
 
 
 def test_revoke_between_capture_and_final_policy_block(tmp_path) -> None:
@@ -386,7 +373,7 @@ def test_revoke_between_capture_and_final_policy_block(tmp_path) -> None:
     world.on_after_capture_gate = mutate
     result = _run(store, world)
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
-    assert store.load(WORK).plans_by_semantic_digest == {}
+    assert not store.exists(WORK)  # block/stale 은 durable write 없음(R2-04a)
 
 
 def test_publish_before_revoke_is_historical_success(tmp_path) -> None:
@@ -406,64 +393,12 @@ def test_no_reverse_lock_order_capture_under_profile_then_work(tmp_path) -> None
 
 
 # ══ idempotency ═══════════════════════════════════════════════════════════════════════
-def test_optimistic_ledger_hit_replay(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    first = _run(store, World(), _command("r1"))
-    replay = _run(store, World(), _command("r1"))
-    assert replay.replayed is True
-    assert replay.record == first.record
-    assert store.load(WORK).aggregate_version == 1  # 새 commit 0
 
 
-def test_final_gate_concurrent_first_commit_replay(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    command = _command("r1")
-    fingerprint = build_request_intent_fingerprint(command, WORK)
-    world = World()
-
-    def concurrent_commit(w):
-        # capture gate 이후·final commit 이전에 같은 request 가 먼저 terminal 을 commit 한다.
-        projection = {"policy_block": {"policy_code": "X"}}
-        digest = canonical_execution_digest(projection)
-        evidence = AttemptSealCaptureEvidence(
-            captured_attempt_semantic_projection=projection,
-            captured_attempt_digest=digest,
-            normalized_blockers=("X",),
-            provenance=CaptureEvidenceProvenance("u", "u", AT),
-        )
-        store.commit_seal_terminal_outcome_atomic(
-            work_authority_id=WORK, expected_aggregate_version=0, request_id="r1",
-            fingerprint=fingerprint, resolved_seal_policy=_policy(),
-            capture_evidence=evidence,
-            terminal_outcome=ExecutionPolicyBlocked("X", captured_attempt_digest=digest),
-            now="t0",
-        )
-
-    world.on_after_capture_gate = concurrent_commit
-    result = _run(store, world, command)
-    assert result.replayed is True  # final commit 이 최초 record 를 replay
-    assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
 
 
-def test_same_request_different_fingerprint_rejected(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"))
-    with pytest.raises(IdempotencyKeyReused):
-        _run(store, World(), _command(
-            "r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v1")
-        ))
-    assert store.load(WORK).aggregate_version == 1  # 최초 record 수정 0
 
 
-def test_auto_policy_persists_across_default_change(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"),
-         resolver=Resolver(policy_resolution_version="policy/v1"))
-    # 서버 default 가 v2 로 바뀐 retry 도 최초 resolved policy(v1)를 replay.
-    replay = _run(store, World(), _command("r1"),
-                  resolver=Resolver(policy_resolution_version="policy/v2"))
-    assert replay.replayed is True
-    assert replay.record.resolved_seal_policy.policy_resolution_version == "policy/v1"
 
 
 def test_authorization_repeated_on_replay(tmp_path) -> None:
@@ -554,9 +489,6 @@ def _captured(world=None, policy=None):
     )
 
 
-def test_optimistic_replay_variants() -> None:
-    fp = build_request_intent_fingerprint(_command(), WORK)
-    assert optimistic_replay(None, fp) is None
 
 
 def test_require_exact_selector_consistency_rejects_mismatch() -> None:
@@ -685,7 +617,7 @@ def test_capture_gate_domain_block_commits_qualification_blocked(tmp_path) -> No
     # domain block 은 capture gate 자체가 linearization point — 즉시 ledger commit.
     assert isinstance(result.terminal_outcome, ExecutionQualificationBlocked)
     assert world.capture_calls == 1  # final gate 재capture 없음
-    assert store.load(WORK).plans_by_semantic_digest == {}
+    assert not store.exists(WORK)  # block/stale 은 durable write 없음(R2-04a)
 
 
 def test_command_rejects_empty_request_id() -> None:
@@ -818,37 +750,6 @@ def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypat
     assert seen == [injected]  # DEFAULT 가 아니라 injected 를 그대로 받았다
 
 
-def test_finding2_idempotency_key_reused_single_public_type(tmp_path) -> None:
-    # optimistic 경로와 store 경로가 하나의 공개 타입을 노출한다.
-    assert sep.IdempotencyKeyReused is StoreIdempotencyKeyReused
-    store = WorkExecutionPlanStore(tmp_path)
-    command = _command("r1")
-    fingerprint = build_request_intent_fingerprint(command, WORK)
-    world = World()
-
-    def competing_diff_fingerprint(w):
-        # capture gate 이후 같은 request 를 **다른** fingerprint 로 먼저 commit → store 경로 충돌.
-        other = build_request_intent_fingerprint(
-            _command("r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v1")),
-            WORK,
-        )
-        projection = {"policy_block": {"policy_code": "X"}}
-        digest = canonical_execution_digest(projection)
-        store.commit_seal_terminal_outcome_atomic(
-            work_authority_id=WORK, expected_aggregate_version=0, request_id="r1",
-            fingerprint=other, resolved_seal_policy=_policy(),
-            capture_evidence=AttemptSealCaptureEvidence(
-                captured_attempt_semantic_projection=projection,
-                captured_attempt_digest=digest, normalized_blockers=("X",),
-                provenance=CaptureEvidenceProvenance("u", "u", AT),
-            ),
-            terminal_outcome=ExecutionPolicyBlocked("X", captured_attempt_digest=digest),
-            now="t0",
-        )
-
-    world.on_after_capture_gate = competing_diff_fingerprint
-    with pytest.raises(StoreIdempotencyKeyReused):
-        _run(store, world, command)
 
 
 def test_finding3_capture_policy_mismatch_rejected_fail_closed(tmp_path) -> None:
@@ -885,7 +786,7 @@ def test_finding4_profile_moved_and_revoked_records_policy_block(tmp_path) -> No
     result = _run(store, world)
     # moved 를 이유로 revocation 을 놓치지 않는다 — policy block 이 precedence 상 앞선다.
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
-    assert store.load(WORK).plans_by_semantic_digest == {}
+    assert not store.exists(WORK)  # block/stale 은 durable write 없음(R2-04a)
 
 
 def test_finding4_profile_moved_and_admitted_is_stale(tmp_path) -> None:

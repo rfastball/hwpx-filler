@@ -58,16 +58,11 @@ from hwpxfiller.application.stored_execution_plan import (
     RequestedAuto,
     RequestedExact,
     SealedExecutionPlanRecord,
-    SealRequestIntentFingerprintPayload,
     StaleExecutionBasis,
-    apply_ledger_only,
     apply_publish,
     decode_aggregate,
-    decode_request_intent_fingerprint,
     empty_aggregate,
     encode_aggregate,
-    encode_request_intent_fingerprint,
-    request_intent_fingerprint_digest,
     verify_encoded_plan_integrity,
     verify_record_content_address,
 )
@@ -222,18 +217,6 @@ def deps(**over) -> PlanDependencySet:
     return PlanDependencySet(**kw)
 
 
-def fingerprint(**over) -> SealRequestIntentFingerprintPayload:
-    kw = dict(
-        command_schema_version="seal-command/v1",
-        workspace_instance_id="ws-1",
-        work_authority_id="work-1",
-        requested_execution_base_kind="APPLIED_TEMPLATE_CANDIDATE",
-        requested_execution_semantic_contract=RequestedAuto(),
-        requested_plan_schema=RequestedAuto(),
-        requested_canonical_encoding=RequestedAuto(),
-    )
-    kw.update(over)
-    return SealRequestIntentFingerprintPayload(**kw)
 
 
 def complete_evidence(**over) -> CompleteSealCaptureEvidence:
@@ -288,11 +271,10 @@ def qual_blocked(evidence, ref="ev://1") -> ExecutionQualificationBlocked:
     )
 
 
-def _publish(aggregate, *, request_id, a_plan, evidence, kind="CREATED", fp=None, now="t0"):
+def _publish(aggregate, *, request_id, a_plan, evidence, kind="CREATED", now="t0"):
     return apply_publish(
         aggregate,
         request_id=request_id,
-        fingerprint=fp or fingerprint(),
         resolved_seal_policy=policy(),
         capture_evidence=evidence,
         plan_payload=a_plan,
@@ -305,7 +287,7 @@ def _publish(aggregate, *, request_id, a_plan, evidence, kind="CREATED", fp=None
 # ─── identity / create-once ───────────────────────────────────────────────────────────
 def test_plan_record_addressed_by_semantic_digest_only() -> None:
     p = plan()
-    agg, _ = _publish(
+    agg = _publish(
         empty_aggregate("work-1", "ws-1"),
         request_id="r1",
         a_plan=p,
@@ -328,25 +310,30 @@ def test_no_random_current_latest_pointer_fields() -> None:
         assert forbidden not in agg_names
 
 
-def test_same_digest_reuse_preserves_first_record() -> None:
+
+
+def test_same_digest_republish_is_reuse_no_version_bump() -> None:
+    # R2-04a: 같은 plan 재-publish 는 content-addressed REUSE — aggregate 무변경(version bump 없음),
+    # first-seen ledger 없음(replay 제거). 최초 봉인 provenance 는 overwrite 없이 보존된다.
     p = plan()
-    agg, rec1 = _publish(
+    agg = _publish(
         empty_aggregate("work-1", "ws-1"), request_id="r1",
         a_plan=p, evidence=complete_evidence(seed="a"), now="t0",
     )
-    ev2 = complete_evidence(seed="b")  # different request evidence
-    agg2, rec2 = apply_publish(
-        agg, request_id="r2", fingerprint=fingerprint(command_schema_version="seal-command/v2"),
-        resolved_seal_policy=policy(), capture_evidence=ev2, plan_payload=p,
-        dependency_set=deps(),
+    ev2 = complete_evidence(seed="b")
+    agg2 = apply_publish(
+        agg, request_id="r2", resolved_seal_policy=policy(), capture_evidence=ev2,
+        plan_payload=p, dependency_set=deps(),
         published_outcome=published_outcome(p, ev2, "REUSED"), now="t1",
     )
     digest = plan_semantic_digest(p)
-    # 최초 provenance 보존(overwrite 없음), ledger 는 두 request 모두 자기 evidence 로 append.
-    assert agg2.plans_by_semantic_digest[digest].first_sealed_provenance.first_sealed_by_request_id == "r1"
-    assert len(agg2.first_seen_ledger) == 2
-    assert agg2.first_seen_ledger[1].durable_capture_evidence is ev2
-    assert agg2.aggregate_version == 2
+    assert (
+        agg2.plans_by_semantic_digest[digest]
+        .first_sealed_provenance.first_sealed_by_request_id == "r1"
+    )
+    assert agg2 is agg  # REUSE = 무변경(같은 객체 반환)
+    assert agg2.aggregate_version == agg.aggregate_version
+    assert not hasattr(agg2, "first_seen_ledger")
 
 
 def test_same_digest_different_payload_rejected() -> None:
@@ -368,13 +355,12 @@ def test_same_digest_different_payload_rejected() -> None:
 
 def test_same_digest_different_dependency_set_rejected() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     ev = complete_evidence(seed="b")
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            agg, request_id="r2", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
+            agg, request_id="r2",            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
             dependency_set=deps(candidate_blob_ref="blob://OTHER"),
             published_outcome=published_outcome(p, ev, "REUSED"), now="t1",
         )
@@ -384,7 +370,7 @@ def test_same_compilation_key_different_digest_rejected() -> None:
     a = plan(removed_option="o2")
     b = plan(removed_option="o3")  # 같은 basis → 같은 compilation key, 다른 plan digest
     assert plan_semantic_digest(a) != plan_semantic_digest(b)
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=a, evidence=complete_evidence())
     with pytest.raises(ExecutionPlanCompilationIntegrityError):
         _publish(agg, request_id="r2", a_plan=b, evidence=complete_evidence(seed="b"))
@@ -393,16 +379,14 @@ def test_same_compilation_key_different_digest_rejected() -> None:
 def test_different_schema_key_coexistence() -> None:
     a = plan(plan_schema_version="hwpx-execution-plan/v1")
     b = plan(plan_schema_version="hwpx-execution-plan/v2")
-    agg, _ = apply_publish(
-        empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v1"),
+    agg = apply_publish(
+        empty_aggregate("work-1", "ws-1"), request_id="r1",        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v1"),
         capture_evidence=complete_evidence(), plan_payload=a, dependency_set=deps(),
         published_outcome=published_outcome(a, complete_evidence(), "CREATED"), now="t0",
     )
     ev = complete_evidence(seed="b")
-    agg2, _ = apply_publish(
-        agg, request_id="r2", fingerprint=fingerprint(),
-        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v2"),
+    agg2 = apply_publish(
+        agg, request_id="r2",        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v2"),
         capture_evidence=ev, plan_payload=b, dependency_set=deps(),
         published_outcome=published_outcome(b, ev, "CREATED"), now="t1",
     )
@@ -423,8 +407,7 @@ def test_plan_schema_must_match_policy() -> None:
     ev = complete_evidence()
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/vX"),
+            empty_aggregate("work-1", "ws-1"), request_id="r1",            resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/vX"),
             capture_evidence=ev, plan_payload=p, dependency_set=deps(),
             published_outcome=published_outcome(p, ev), now="t0",
         )
@@ -435,8 +418,7 @@ def test_encoding_must_match_policy() -> None:
     ev = complete_evidence()
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(canonical_encoding_version="other/v9"),
+            empty_aggregate("work-1", "ws-1"), request_id="r1",            resolved_seal_policy=policy(canonical_encoding_version="other/v9"),
             capture_evidence=ev, plan_payload=p, dependency_set=deps(),
             published_outcome=published_outcome(p, ev), now="t0",
         )
@@ -450,8 +432,7 @@ def test_published_outcome_claim_must_match(bad) -> None:
     outcome = dataclasses.replace(published_outcome(p, ev), **{bad: "sha256:forged"})
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
+            empty_aggregate("work-1", "ws-1"), request_id="r1",            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
             dependency_set=deps(), published_outcome=outcome, now="t0",
         )
 
@@ -461,8 +442,7 @@ def test_publish_requires_complete_evidence() -> None:
     ev = attempt_evidence()
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
+            empty_aggregate("work-1", "ws-1"), request_id="r1",            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
             dependency_set=deps(),
             published_outcome=PlanPublished("CREATED", plan_semantic_digest(p),
                                             execution_basis_digest(p.execution_basis),
@@ -471,18 +451,8 @@ def test_publish_requires_complete_evidence() -> None:
         )
 
 
-def test_fingerprint_work_mismatch_rejected() -> None:
-    p = plan()
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _publish(empty_aggregate("work-1", "ws-1"), request_id="r1", a_plan=p,
-                 evidence=complete_evidence(), fp=fingerprint(work_authority_id="work-OTHER"))
 
 
-def test_fingerprint_workspace_mismatch_rejected() -> None:
-    p = plan()
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _publish(empty_aggregate("work-1", "ws-1"), request_id="r1", a_plan=p,
-                 evidence=complete_evidence(), fp=fingerprint(workspace_instance_id="ws-OTHER"))
 
 
 def test_empty_request_id_rejected() -> None:
@@ -493,66 +463,27 @@ def test_empty_request_id_rejected() -> None:
 
 
 # ─── ledger-only terminal ─────────────────────────────────────────────────────────────
-def _ledger_only(aggregate, *, request_id, outcome, evidence=None, fp=None):
-    return apply_ledger_only(
-        aggregate, request_id=request_id, fingerprint=fp or fingerprint(),
-        resolved_seal_policy=policy(), capture_evidence=evidence or attempt_evidence(),
-        terminal_outcome=outcome, now="t0",
-    )
 
 
-def test_ledger_only_writes_no_plan() -> None:
-    outcome = ExecutionQualificationBlocked(
-        capture_evidence_ref="ev://1", normalized_blockers=("SLOT_CONFIGURATION_INCOMPLETE",),
-        captured_attempt_digest=attempt_evidence().captured_attempt_digest,
-    )
-    agg, rec = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    assert agg.plans_by_semantic_digest == {}
-    assert agg.plans_by_compilation_key == {}
-    assert agg.aggregate_version == 1
-    assert rec.terminal_outcome is outcome
 
 
-def test_ledger_only_rejects_published_outcome() -> None:
-    p = plan()
-    with pytest.raises(ExecutionPlanStoreError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                     outcome=published_outcome(p, complete_evidence()),
-                     evidence=complete_evidence())
 
 
-def test_ledger_only_all_blocked_outcomes_round_trip() -> None:
-    agg = empty_aggregate("work-1", "ws-1")
-    evidences = [complete_evidence(seed=str(i)) for i in range(2)]
-    outcomes = [
-        qual_blocked(evidences[0]),
-        StaleExecutionBasis(
-            captured_execution_input_digest=evidences[1].captured_execution_input_digest,
-            candidate_execution_basis_digest="sha256:b",
-            stale_reason="DIGEST_MISMATCH",
-            observed_current_summary={"summary": 1}),
-    ]
-    for i, (outcome, ev) in enumerate(zip(outcomes, evidences, strict=True)):
-        agg, _ = _ledger_only(agg, request_id=f"r{i}", outcome=outcome, evidence=ev)
-    restored = decode_aggregate(encode_aggregate(agg), "work-1")
-    assert restored == agg
 
 
 # ─── retention / dependencies ─────────────────────────────────────────────────────────
 def test_retained_dependency_refs_append_only() -> None:
     a = plan(plan_schema_version="hwpx-execution-plan/v1")
     b = plan(plan_schema_version="hwpx-execution-plan/v2")
-    agg, _ = apply_publish(
-        empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v1"),
+    agg = apply_publish(
+        empty_aggregate("work-1", "ws-1"), request_id="r1",        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v1"),
         capture_evidence=complete_evidence(), plan_payload=a,
         dependency_set=deps(candidate_blob_ref="blob://A"),
         published_outcome=published_outcome(a, complete_evidence(), "CREATED"), now="t0",
     )
     ev = complete_evidence(seed="b")
-    agg2, _ = apply_publish(
-        agg, request_id="r2", fingerprint=fingerprint(),
-        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v2"),
+    agg2 = apply_publish(
+        agg, request_id="r2",        resolved_seal_policy=policy(plan_schema_version="hwpx-execution-plan/v2"),
         capture_evidence=ev, plan_payload=b,
         dependency_set=deps(candidate_blob_ref="blob://B"),
         published_outcome=published_outcome(b, ev, "CREATED"), now="t1",
@@ -578,17 +509,8 @@ def test_empty_dependency_ref_rejected() -> None:
 
 
 # ─── selector / fingerprint codec ─────────────────────────────────────────────────────
-def test_fingerprint_round_trip_and_digest_stable() -> None:
-    fp = fingerprint(requested_plan_schema=RequestedExact("hwpx-execution-plan/v1"))
-    restored = decode_request_intent_fingerprint(encode_request_intent_fingerprint(fp))
-    assert restored == fp
-    assert request_intent_fingerprint_digest(restored) == request_intent_fingerprint_digest(fp)
 
 
-def test_auto_and_exact_are_distinct_intents() -> None:
-    auto = fingerprint(requested_plan_schema=RequestedAuto())
-    exact = fingerprint(requested_plan_schema=RequestedExact("hwpx-execution-plan/v1"))
-    assert request_intent_fingerprint_digest(auto) != request_intent_fingerprint_digest(exact)
 
 
 def test_requested_exact_empty_rejected() -> None:
@@ -596,21 +518,12 @@ def test_requested_exact_empty_rejected() -> None:
         RequestedExact("")
 
 
-def test_decode_selector_unknown_kind_fail_closed() -> None:
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_request_intent_fingerprint({
-            "command_schema_version": "c", "workspace_instance_id": "ws-1",
-            "work_authority_id": "work-1", "requested_execution_base_kind": "K",
-            "requested_execution_semantic_contract": {"kind": "WAT"},
-            "requested_plan_schema": {"kind": "AUTO"},
-            "requested_canonical_encoding": {"kind": "AUTO"},
-        })
 
 
 # ─── aggregate codec round-trip + fail-closed decode ──────────────────────────────────
 def test_aggregate_round_trip_content_address() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     restored = decode_aggregate(encode_aggregate(agg), "work-1")
     assert restored == agg
@@ -621,7 +534,7 @@ def test_aggregate_round_trip_content_address() -> None:
 
 def test_decode_unknown_store_schema_fail_closed() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     content["store_schema_version"] = "work-execution-plan-store/v999"
@@ -631,7 +544,7 @@ def test_decode_unknown_store_schema_fail_closed() -> None:
 
 def test_decode_cross_work_file_rejected() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     with pytest.raises(ExecutionPlanStoreIntegrityError):
         decode_aggregate(encode_aggregate(agg), "work-OTHER")
@@ -639,7 +552,7 @@ def test_decode_cross_work_file_rejected() -> None:
 
 def test_decode_tampered_plan_payload_fail_closed() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     content["plans"][0]["semantic_payload"]["plan_schema_version"] = "tampered"
@@ -647,30 +560,13 @@ def test_decode_tampered_plan_payload_fail_closed() -> None:
         decode_aggregate(content, "work-1")
 
 
-def test_decode_tampered_capture_evidence_fail_closed() -> None:
-    ev = complete_evidence()
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=qual_blocked(ev), evidence=ev)
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"][0]["durable_capture_evidence"]["semantic_projection"] = {
-        "tampered": True
-    }
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
-def test_decode_tampered_fingerprint_digest_fail_closed() -> None:
-    outcome = qual_blocked(attempt_evidence())
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = "sha256:forged"
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
 def test_decode_compilation_map_dangling_plan_rejected() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     content["compilation_map"][0]["plan_semantic_digest"] = "sha256:ghost"
@@ -678,17 +574,6 @@ def test_decode_compilation_map_dangling_plan_rejected() -> None:
         decode_aggregate(content, "work-1")
 
 
-def test_policy_blocked_outcome_round_trip() -> None:
-    outcome = ExecutionPolicyBlocked(
-        policy_code="EXECUTION_PROFILE_NOT_SEALABLE",
-        qualification_profile_id="profile-1",
-        observed_policy_version="pol/v3",
-        policy_observation_digest="sha256:obs",
-        captured_attempt_digest=attempt_evidence().captured_attempt_digest,
-    )
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    restored = decode_aggregate(encode_aggregate(agg), "work-1")
-    assert restored.first_seen_ledger[0].terminal_outcome == outcome
 
 
 @pytest.mark.parametrize("factory", [
@@ -702,27 +587,10 @@ def test_outcome_post_init_guards(factory) -> None:
         factory()
 
 
-def test_decode_unknown_outcome_kind_fail_closed() -> None:
-    outcome = qual_blocked(attempt_evidence())
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"][0]["terminal_outcome"]["kind"] = "UNKNOWN_OUTCOME"
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
-def test_decode_qualification_blocked_bad_blockers_fail_closed() -> None:
-    outcome = qual_blocked(attempt_evidence())
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"][0]["terminal_outcome"]["normalized_blockers"] = [1, 2]
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
-def test_require_mapping_rejects_non_mapping() -> None:
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_request_intent_fingerprint("notamapping")
 
 
 @pytest.mark.parametrize("mutate", [
@@ -730,7 +598,7 @@ def test_require_mapping_rejects_non_mapping() -> None:
 ])
 def test_decode_duplicate_plan_digest_fail_closed(mutate) -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     mutate(content["plans"])
@@ -740,7 +608,7 @@ def test_decode_duplicate_plan_digest_fail_closed(mutate) -> None:
 
 def test_decode_duplicate_compilation_key_fail_closed() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     content["compilation_map"].append(dict(content["compilation_map"][0]))
@@ -748,13 +616,6 @@ def test_decode_duplicate_compilation_key_fail_closed() -> None:
         decode_aggregate(content, "work-1")
 
 
-def test_decode_duplicate_request_id_fail_closed() -> None:
-    outcome = qual_blocked(attempt_evidence())
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=outcome)
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"].append(dict(content["first_seen_ledger"][0]))
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
 @pytest.mark.parametrize("mutate", [
@@ -762,11 +623,10 @@ def test_decode_duplicate_request_id_fail_closed() -> None:
     lambda c: c.__setitem__("aggregate_version", True),
     lambda c: c.__setitem__("plans", "notalist"),
     lambda c: c.__setitem__("compilation_map", "notalist"),
-    lambda c: c.__setitem__("first_seen_ledger", "notalist"),
 ])
 def test_decode_structural_corruption_fail_closed(mutate) -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     mutate(content)
@@ -811,8 +671,7 @@ def test_p1_2_publish_rejects_policy_contract_mismatch(field) -> None:
     ev = complete_evidence()
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fingerprint(),
-            resolved_seal_policy=policy(**{field: "wrong/v9"}), capture_evidence=ev,
+            empty_aggregate("work-1", "ws-1"), request_id="r1",            resolved_seal_policy=policy(**{field: "wrong/v9"}), capture_evidence=ev,
             plan_payload=p, dependency_set=deps(),
             published_outcome=published_outcome(p, ev), now="t0",
         )
@@ -824,95 +683,26 @@ def test_p1_2_publish_rejects_policy_base_kind_mismatch() -> None:
     with pytest.raises(ExecutionPlanIntegrityError):
         apply_publish(
             empty_aggregate("work-1", "ws-1"), request_id="r1",
-            fingerprint=fingerprint(requested_execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"),
             resolved_seal_policy=policy(execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"),
             capture_evidence=ev, plan_payload=p, dependency_set=deps(),
             published_outcome=published_outcome(p, ev), now="t0",
         )
 
 
-def test_p1_3_ledger_only_qualification_blockers_must_match_evidence() -> None:
-    ev = attempt_evidence()  # blockers = ("SLOT_CONFIGURATION_INCOMPLETE",)
-    bad = ExecutionQualificationBlocked(
-        capture_evidence_ref="ev://1", normalized_blockers=("DIFFERENT",),
-        captured_attempt_digest=ev.captured_attempt_digest,
-    )
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_ledger_only_stale_requires_complete_evidence() -> None:
-    ev = attempt_evidence()
-    stale = StaleExecutionBasis(captured_execution_input_digest="sha256:x",
-                                candidate_execution_basis_digest="sha256:b",
-                                stale_reason="DIGEST_MISMATCH")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=stale, evidence=ev)
 
 
-def test_p1_3_ledger_only_complete_evidence_rejects_attempt_digest() -> None:
-    ev = complete_evidence()
-    bad = ExecutionQualificationBlocked(
-        capture_evidence_ref="ev://1", normalized_blockers=("X",),
-        captured_execution_input_digest=ev.captured_execution_input_digest,
-        captured_attempt_digest="sha256:sneaky",
-    )
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_ledger_only_policy_block_attempt_digest_must_match() -> None:
-    ev = attempt_evidence()
-    bad = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED",
-                                 captured_attempt_digest="sha256:wrong")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_ledger_only_consistent_outcome_accepted() -> None:
-    # 양성 대조: policy block 이 자기 attempt evidence digest 를 담으면 통과.
-    ev = attempt_evidence()
-    ok = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED",
-                                captured_attempt_digest=ev.captured_attempt_digest)
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=ok, evidence=ev)
-    assert agg.aggregate_version == 1
 
 
-def test_p1_4_publish_rejects_exact_selector_disagreeing_with_policy() -> None:
-    p = plan()
-    ev = complete_evidence()
-    fp = fingerprint(requested_plan_schema=RequestedExact("hwpx-execution-plan/vOTHER"))
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        apply_publish(
-            empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fp,
-            resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
-            dependency_set=deps(), published_outcome=published_outcome(p, ev), now="t0",
-        )
 
 
-def test_p1_4_ledger_only_rejects_base_kind_disagreeing_with_policy() -> None:
-    ev = attempt_evidence()
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                     outcome=qual_blocked(ev), evidence=ev,
-                     fp=fingerprint(requested_execution_base_kind="CONTINUATION_OUTPUT_DOCUMENT"))
 
 
-def test_p1_4_exact_selector_matching_policy_accepted() -> None:
-    p = plan()
-    ev = complete_evidence()
-    fp = fingerprint(
-        requested_plan_schema=RequestedExact(_PLAN_SCHEMA),
-        requested_execution_semantic_contract=RequestedExact("execution-semantics/v1"),
-        requested_canonical_encoding=RequestedExact(_ENCODING),
-    )
-    agg, _ = apply_publish(
-        empty_aggregate("work-1", "ws-1"), request_id="r1", fingerprint=fp,
-        resolved_seal_policy=policy(), capture_evidence=ev, plan_payload=p,
-        dependency_set=deps(), published_outcome=published_outcome(p, ev), now="t0",
-    )
-    assert agg.aggregate_version == 1
 
 
 def test_p1_5_encoded_plan_integrity_accepts_valid_payload() -> None:
@@ -991,7 +781,7 @@ def test_p1_5_decode_rejects_readdressed_malformed_plan() -> None:
 
 
 def test_p2_6_stored_payload_is_deeply_immutable() -> None:
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=plan(), evidence=complete_evidence())
     record = next(iter(agg.plans_by_semantic_digest.values()))
     with pytest.raises(TypeError):
@@ -1002,7 +792,7 @@ def test_p2_6_stored_payload_is_deeply_immutable() -> None:
 
 def test_p2_7_decode_rejects_mismatched_compilation_key() -> None:
     p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
+    agg = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
                       a_plan=p, evidence=complete_evidence())
     content = encode_aggregate(agg)
     content["compilation_map"][0]["key_digest"] = "sha256:not-the-real-key"
@@ -1010,97 +800,21 @@ def test_p2_7_decode_rejects_mismatched_compilation_key() -> None:
         decode_aggregate(content, "work-1")
 
 
-@pytest.mark.parametrize("field,value", [
-    ("plan_semantic_digest", "sha256:ghost"),
-    ("execution_basis_digest", "sha256:wrong"),
-    ("captured_execution_input_digest", "sha256:wrong"),
-])
-def test_p2_8_decode_cross_checks_published_ledger_outcome(field, value) -> None:
-    p = plan()
-    agg, _ = _publish(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                      a_plan=p, evidence=complete_evidence())
-    content = encode_aggregate(agg)
-    content["first_seen_ledger"][0]["terminal_outcome"][field] = value
-    with pytest.raises(ExecutionPlanIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
-def test_p2_9_decode_rejects_cross_work_ledger_fingerprint() -> None:
-    ev = attempt_evidence()
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=qual_blocked(ev), evidence=ev)
-    content = encode_aggregate(agg)
-    other = fingerprint(work_authority_id="work-OTHER")
-    content["first_seen_ledger"][0]["request_intent_fingerprint"] = (
-        encode_request_intent_fingerprint(other)
-    )
-    content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = (
-        request_intent_fingerprint_digest(other)
-    )
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
-def test_p2_9_decode_rejects_cross_workspace_ledger_fingerprint() -> None:
-    ev = attempt_evidence()
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=qual_blocked(ev), evidence=ev)
-    content = encode_aggregate(agg)
-    other = fingerprint(workspace_instance_id="ws-OTHER")
-    content["first_seen_ledger"][0]["request_intent_fingerprint"] = (
-        encode_request_intent_fingerprint(other)
-    )
-    content["first_seen_ledger"][0]["request_intent_fingerprint_digest"] = (
-        request_intent_fingerprint_digest(other)
-    )
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        decode_aggregate(content, "work-1")
 
 
 # ─── outcome↔evidence 교차검증 나머지 분기 + operation 구조 분기 ────────────────────────
-def test_p1_3_qual_block_complete_input_digest_must_match() -> None:
-    ev = complete_evidence()
-    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                        normalized_blockers=("X",),
-                                        captured_execution_input_digest="sha256:wrong")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_qual_block_attempt_digest_must_match() -> None:
-    ev = attempt_evidence()
-    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                        normalized_blockers=ev.normalized_blockers,
-                                        captured_attempt_digest="sha256:wrong")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_qual_block_attempt_evidence_rejects_input_digest() -> None:
-    ev = attempt_evidence()
-    bad = ExecutionQualificationBlocked(capture_evidence_ref="ev://1",
-                                        normalized_blockers=ev.normalized_blockers,
-                                        captured_attempt_digest=ev.captured_attempt_digest,
-                                        captured_execution_input_digest="sha256:sneaky")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=bad, evidence=ev)
 
 
-def test_p1_3_policy_block_without_attempt_digest_accepted() -> None:
-    ev = attempt_evidence()
-    ok = ExecutionPolicyBlocked(policy_code="EXECUTION_POLICY_NOT_ADMITTED")
-    agg, _ = _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1",
-                          outcome=ok, evidence=ev)
-    assert agg.aggregate_version == 1
 
 
-def test_p1_3_stale_complete_input_digest_must_match() -> None:
-    ev = complete_evidence()
-    stale = StaleExecutionBasis(captured_execution_input_digest="sha256:wrong",
-                                candidate_execution_basis_digest="sha256:b",
-                                stale_reason="CURRENT_BASIS_NOT_SEALABLE")
-    with pytest.raises(ExecutionPlanStoreIntegrityError):
-        _ledger_only(empty_aggregate("work-1", "ws-1"), request_id="r1", outcome=stale, evidence=ev)
 
 
 def test_p1_5_operation_structure_requirement_missing_field_id() -> None:

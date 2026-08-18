@@ -89,7 +89,9 @@ DURABLE_AGGREGATE_MODULES = (
 #: 이슈에서 증명하고, allowlist·baseline 을 함께 넓힌다.
 LEDGER_BASELINE = frozenset(
     {
-        "stored_execution_plan.py|first_seen_ledger|FirstSeenSealCommandRecord",
+        # S5F R2-04a(#740): stored_execution_plan 의 first-seen seal request ledger 를 제거했다 —
+        # seal 은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다(idempotency/
+        # replay 소비자 부재). content-addressed Plan history 는 04b 대상으로 남는다.
         "stored_field_binding.py|current_by_application|ApplicationRevisionPointer",
         "stored_field_binding.py|immutable_binding_revisions|FieldBindingRevision",
         "stored_field_binding.py|migration_drafts|CommittedDraftRecord",

@@ -1,16 +1,15 @@
 """content-addressed Plan 의 file-atomic·CAS·first-seen durable store(S5-07 · #703).
 
 Work(``work_authority_id``) 단위 ``<work>.json`` 에 :class:`WorkExecutionPlanAggregate` 를 둔다.
-두 atomic primitive 를 얹는다:
+한 atomic primitive 를 얹는다:
 
 - :meth:`publish_sealed_plan_atomic` — Plan record create/reuse + compilation mapping +
-  dependency retention refs + first-seen ledger + aggregate version 을 **한 commit** 으로.
-- :meth:`commit_seal_terminal_outcome_atomic` — BLOCKED/POLICY_BLOCKED/STALE terminal 을 Plan
-  write 0 으로 ledger 에만 commit.
+  dependency retention refs + aggregate version 을 **한 commit** 으로.
 
-같은 request ID 의 재시도는 durable record 로 판정한다: 같은 intent fingerprint 면 최초 terminal
-record 를 exact replay(새 commit 0), 다른 fingerprint 면 ``IDEMPOTENCY_KEY_REUSED``(최초 record 수정
-0). in-process writer lease 아래 first commit wins 다.
+R2-04a(#740): first-seen request ledger·replay·idempotency 를 제거했다 — 같은 request 재호출은
+historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다. REUSE(같은 content-address)는
+aggregate 무변경으로 write 를 생략하고, CREATE 만 CAS 아래 version+1 을 쓴다(in-process writer
+lease 아래 first commit wins).
 
 durability 주장 범위·비주장은 :mod:`.work_configuration_store` 와 동일하다: temp 완성→atomic
 replace, crash 뒤 old/new 완성 파일만 관찰, envelope digest 검증. **주장하지 않음**: fsync·
@@ -39,20 +38,14 @@ from hwpxfiller.application.qualification_evidence import content_digest
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPlanStoreError,
     ExecutionPlanStoreIntegrityError,
-    FirstSeenSealCommandRecord,
-    IdempotencyKeyReused,
     PlanDependencySet,
     PlanPublished,
-    SealRequestIntentFingerprintPayload,
-    SealTerminalOutcome,
     StoreConcurrentModification,
     WorkExecutionPlanAggregate,
-    apply_ledger_only,
     apply_publish,
     decode_aggregate,
     empty_aggregate,
     encode_aggregate,
-    request_intent_fingerprint_digest,
 )
 
 from .atomic import write_text_atomic
@@ -92,11 +85,13 @@ def _lock(key: str) -> threading.RLock:
 
 @dataclass(frozen=True)
 class SealCommandResult:
-    """primitive 결과 — replay 면 ``replayed`` 가 True 이고 aggregate/record 는 최초 것을 되읽는다."""
+    """publish primitive 결과 — content-addressed create/reuse 뒤의 현재 aggregate(R2-04a).
+
+    first-seen replay/idempotency 를 제거했다: REUSE 는 aggregate 를 무변경으로 되돌리고(write 생략),
+    CREATE 만 version 을 올린다. request 별 record/replayed 를 더는 싣지 않는다.
+    """
 
     aggregate: WorkExecutionPlanAggregate
-    record: FirstSeenSealCommandRecord
-    replayed: bool
 
 
 class WorkExecutionPlanStore:
@@ -162,9 +157,9 @@ class WorkExecutionPlanStore:
         self,
         *,
         work_authority_id: str,
+        workspace_instance_id: str,
         expected_aggregate_version: int,
         request_id: str,
-        fingerprint: SealRequestIntentFingerprintPayload,
         resolved_seal_policy: ResolvedSealPolicy,
         capture_evidence: DurableSealCaptureEvidence,
         plan_payload: SealedExecutionPlanSemanticPayload,
@@ -172,87 +167,29 @@ class WorkExecutionPlanStore:
         published_outcome: PlanPublished,
         now: str,
     ) -> SealCommandResult:
-        """Plan create/reuse·mapping·retention·ledger·version 을 한 aggregate commit 으로 원자화."""
-        return self._commit(
-            work_authority_id=work_authority_id,
-            expected_aggregate_version=expected_aggregate_version,
-            request_id=request_id,
-            fingerprint=fingerprint,
-            transition=lambda current: apply_publish(
+        """Plan create/reuse·compilation mapping·dependency retention 을 한 aggregate commit 으로 원자화.
+
+        first-seen ledger·idempotency 는 없다(R2-04a): REUSE 는 aggregate 무변경 → write 생략,
+        CREATE 만 CAS 아래 version+1 을 쓴다.
+        """
+        with _lock(self._lock_key(work_authority_id)):
+            current = self.load_or_empty(work_authority_id, workspace_instance_id)
+            if current.aggregate_version != expected_aggregate_version:
+                raise StoreConcurrentModification(
+                    f"work {work_authority_id} CAS 실패: expected {expected_aggregate_version}, "
+                    f"current {current.aggregate_version}"
+                )
+            new_aggregate = apply_publish(
                 current,
                 request_id=request_id,
-                fingerprint=fingerprint,
                 resolved_seal_policy=resolved_seal_policy,
                 capture_evidence=capture_evidence,
                 plan_payload=plan_payload,
                 dependency_set=dependency_set,
                 published_outcome=published_outcome,
                 now=now,
-            ),
-        )
-
-    def commit_seal_terminal_outcome_atomic(
-        self,
-        *,
-        work_authority_id: str,
-        expected_aggregate_version: int,
-        request_id: str,
-        fingerprint: SealRequestIntentFingerprintPayload,
-        resolved_seal_policy: ResolvedSealPolicy,
-        capture_evidence: DurableSealCaptureEvidence,
-        terminal_outcome: SealTerminalOutcome,
-        now: str,
-    ) -> SealCommandResult:
-        """BLOCKED/POLICY_BLOCKED/STALE terminal 을 Plan write 0 으로 ledger 에만 원자 commit."""
-        return self._commit(
-            work_authority_id=work_authority_id,
-            expected_aggregate_version=expected_aggregate_version,
-            request_id=request_id,
-            fingerprint=fingerprint,
-            transition=lambda current: apply_ledger_only(
-                current,
-                request_id=request_id,
-                fingerprint=fingerprint,
-                resolved_seal_policy=resolved_seal_policy,
-                capture_evidence=capture_evidence,
-                terminal_outcome=terminal_outcome,
-                now=now,
-            ),
-        )
-
-    def _commit(
-        self,
-        *,
-        work_authority_id: str,
-        expected_aggregate_version: int,
-        request_id: str,
-        fingerprint: SealRequestIntentFingerprintPayload,
-        transition: Callable[
-            [WorkExecutionPlanAggregate],
-            tuple[WorkExecutionPlanAggregate, FirstSeenSealCommandRecord],
-        ],
-    ) -> SealCommandResult:
-        with _lock(self._lock_key(work_authority_id)):
-            current = self.load_or_empty(
-                work_authority_id, fingerprint.workspace_instance_id
             )
-            # idempotency 는 CAS 보다 먼저 — 모호한 transport 재시도가 durable record 로 판정된다.
-            prior = current.first_seen_by_request(request_id)
-            if prior is not None:
-                if prior.request_intent_fingerprint_digest != request_intent_fingerprint_digest(
-                    fingerprint
-                ):
-                    raise IdempotencyKeyReused(
-                        f"request {request_id} 가 다른 intent fingerprint 로 재사용됨(최초 record 보존)"
-                    )
-                return SealCommandResult(aggregate=current, record=prior, replayed=True)
-            if current.aggregate_version != expected_aggregate_version:
-                raise StoreConcurrentModification(
-                    f"work {work_authority_id} CAS 실패: expected {expected_aggregate_version}, "
-                    f"current {current.aggregate_version}"
-                )
-            new_aggregate, record = transition(current)
-            self._write(work_authority_id, new_aggregate)
-            return SealCommandResult(
-                aggregate=new_aggregate, record=record, replayed=False
-            )
+            # REUSE = 무변경(version 동일) → durable write 생략(재작성은 idempotent 낭비).
+            if new_aggregate.aggregate_version != current.aggregate_version:
+                self._write(work_authority_id, new_aggregate)
+            return SealCommandResult(aggregate=new_aggregate)

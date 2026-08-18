@@ -85,7 +85,6 @@ from ..application.seal_execution_plan import (
 from ..application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    FirstSeenSealCommandRecord,
     PlanPublished,
     RequestedVersionSelector,
     SealTerminalOutcome,
@@ -99,6 +98,11 @@ from ..host.profile_admission_fence import profile_admission_fence
 
 #: 단일 사용자 데스크톱 로컬 actor — token·session 과 독립으로 매 요청 확인한다.
 LOCAL_ACTOR = "local-user"
+
+# R2-04a: store 가 resolved policy 를 안 담으므로 published plan 관찰은 plan basis 에서 policy 를
+# 복원한다. policy_resolution_version 은 audit-only(모든 semantic digest 에서 제외)라 이 marker 로
+# 채운다 — 새 identity·fingerprint 가 아니라 미소비 field 의 복원 placeholder 다.
+_RECOVERED_POLICY_RESOLUTION = "recovered-from-plan-basis/v1"
 
 MAX_OBSERVATION_ATTEMPTS = 8
 
@@ -326,20 +330,20 @@ class SealExecutionPlanProduct:
             work_fence=self._work_fence,
             theorem_registry=self._theorem_registry,
         )
-        work_id = result.record.request_intent_fingerprint.work_authority_id
         outcome = result.terminal_outcome
-        # commit 뒤엔 fallible work 를 하지 않는다 — ref 는 반환된 record 로만 구성하고 preloaded
-        # secret 으로 서명한다(store 재조회·secret 재로딩 없음).
-        opaque_ref = (
-            self._issue_reference(ws, work_id, outcome, result.record, secret)
-            if isinstance(outcome, PlanPublished)
-            else None
-        )
+        work_id = self._resolve_route(ws, command.work_ref)
+        # R2-04a: request 소비·replay 가 없어 commit 뒤 store 재조회가 stranded request 를 만들지
+        # 않는다 — published plan 을 store 에서 읽어 opaque ref(schema/encoding)를 구성한다.
+        opaque_ref: "str | None" = None
+        if isinstance(outcome, PlanPublished):
+            aggregate = self._plan_store.load_or_empty(work_id, ws)
+            plan = aggregate.plans_by_semantic_digest[outcome.plan_semantic_digest]
+            opaque_ref = self._issue_reference(ws, work_id, outcome, plan, secret)
         command_outcome = self._map_command_outcome(outcome, opaque_ref)
         fresh = self._observe(ws, work_id, outcome, inner, opaque_ref)
         return SealExecutionPlanResponse(
             command_outcome=command_outcome,
-            command_replayed=result.replayed,
+            command_replayed=False,
             fresh_observation=fresh,
         )
 
@@ -411,21 +415,20 @@ class SealExecutionPlanProduct:
         ws: str,
         work_id: str,
         outcome: PlanPublished,
-        record: FirstSeenSealCommandRecord,
+        plan: Any,
         secret: bytes,
     ) -> str:
-        # commit 뒤 fallible work 0: plan schema·encoding 을 반환된 record 의 resolved policy 에서
-        # 되읽고(store 재조회 없음) preloaded secret 으로 서명한다. store 는 이 둘이 plan payload 와
-        # 일치함을 apply_publish 에서 이미 강제했으므로 record 가 권위다(finding 3).
-        policy = record.resolved_seal_policy
+        # R2-04a: plan schema·encoding 을 published plan record(content-addressed, 자기 basis)에서
+        # 되읽는다 — store 가 resolved policy 를 더는 안 담는다. record 가 아니라 plan 이 권위다.
+        payload = plan.semantic_payload_encoded
         claims = OpaquePlanReferenceClaims(
             ref_schema_version=PLAN_REF_SCHEMA_VERSION,
             ref_purpose=PLAN_REF_PURPOSE,
             workspace_instance_id=ws,
             work_authority_id=work_id,
             plan_semantic_digest=outcome.plan_semantic_digest,
-            plan_schema_version=policy.plan_schema_version,
-            canonical_encoding_version=policy.canonical_encoding_version,
+            plan_schema_version=payload["plan_schema_version"],
+            canonical_encoding_version=payload["canonical_encoding_version"],
             actor_binding_digest=self._actor_binding(ws),
             issued_at=self._clock(),
         )
@@ -465,7 +468,7 @@ class SealExecutionPlanProduct:
         plan_app_id = plan.semantic_payload_encoded["execution_basis"]["template"][
             "template_application_id"
         ]
-        policy = self._resolved_policy_for_plan(aggregate, plan)
+        policy = self._resolved_policy_for_plan(plan)
         return self._degrade(
             lambda: self._observe_published_plan(
                 ws, work_id, plan_basis_digest, plan_app_id, policy, opaque_ref
@@ -627,16 +630,39 @@ class SealExecutionPlanProduct:
         return SEALABLE, (), compiled.execution_basis_digest
 
     # ── helpers ───────────────────────────────────────────────────────────────────
-    def _resolved_policy_for_plan(
-        self, aggregate: WorkExecutionPlanAggregate, plan: Any
-    ) -> ResolvedSealPolicy:
-        """Plan 을 최초 봉인한 first-seen record 의 resolved policy(그 Plan 의 exact contracts)."""
-        record = aggregate.first_seen_by_request(
-            plan.first_sealed_provenance.first_sealed_by_request_id
+    def _resolved_policy_for_plan(self, plan: Any) -> ResolvedSealPolicy:
+        """published plan record 의 basis 에서 exact resolved policy 를 복원한다(R2-04a).
+
+        store 가 resolved policy 를 더는 안 담는다(first-seen ledger 제거). apply_publish 의
+        ``_verify_plan_basis_matches_context`` 가 policy contract field == basis contract field 를
+        강제했으므로 contract identity 는 plan 이 권위다. ``policy_resolution_version`` 은 어떤
+        digest·capture 판정에도 참여하지 않는 audit-only 값이라(모든 semantic digest 에서 제외됨)
+        recovered marker 로 채운다 — currentness 는 basis digest 로만 판정하므로 이 값에 무관하다.
+        """
+        payload = plan.semantic_payload_encoded
+        basis = payload["execution_basis"]
+        contracts = basis["contracts"]
+        return ResolvedSealPolicy(
+            policy_resolution_version=_RECOVERED_POLICY_RESOLUTION,
+            execution_base_kind=basis["template"]["execution_base_kind"],
+            execution_semantic_contract_id=contracts["execution_semantic_contract_id"],
+            binding_value_contract_id=contracts["binding_value_contract_id"],
+            raw_record_contract_id=contracts["raw_record_contract_id"],
+            document_value_resolution_contract_id=contracts[
+                "document_value_resolution_contract_id"
+            ],
+            record_validation_contract_id=contracts["record_validation_contract_id"],
+            record_review_contract_id=contracts["record_review_contract_id"],
+            composition_contract_id=contracts["composition_contract_id"],
+            native_primitive_contract_id=contracts["native_primitive_contract_id"],
+            materialization_base_contract_id=contracts["materialization_base_contract_id"],
+            composition_theorem_evidence_manifest_digest=contracts[
+                "composition_theorem_evidence_manifest_digest"
+            ],
+            materialization_contract_id=contracts["materialization_contract_id"],
+            plan_schema_version=payload["plan_schema_version"],
+            canonical_encoding_version=payload["canonical_encoding_version"],
         )
-        if record is None:  # pragma: no cover - publish 는 항상 자기 ledger record 를 남긴다
-            raise ObservationRetryExhausted("Plan 의 봉인 ledger record 를 찾을 수 없다")
-        return record.resolved_seal_policy
 
     def _actor_binding(self, ws: str) -> str:
         return plan_reference_actor_binding_digest(self._actor, ws)

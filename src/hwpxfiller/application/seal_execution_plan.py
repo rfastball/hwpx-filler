@@ -4,18 +4,19 @@
 호출·store atomic commit 은 :mod:`hwpxfiller.external.seal_orchestration_runner` 가 진다. 여기서는
 그 runner 가 각 gate 에서 부르는 결정을 소유한다:
 
-- raw ``SealExecutionPlanCommand`` → ``SealRequestIntentFingerprintPayload`` (S5-07 재사용).
-- optimistic ledger replay 판정(같은 fingerprint replay·다른 fingerprint 거절).
-- short capture gate 결과 분류(complete → 계속, domain/policy block → terminal ledger, context
+- short capture gate 결과 분류(complete → 계속, domain/policy block → fresh terminal, context
   error → attempt).
 - fence 밖 pure qualification+compile → ``PlanCandidate`` | ``BlockedCandidate`` (context/composition
   실패는 attempt 로 raise — user-fixable blocker 로 낮추지 않는다).
 - short final gate verdict: candidate 가 사용한 exact contracts 로 current basis 를 재구성해
   equality·policy·sealability 를 비교하고 publish/blocked/policy/stale/attempt 로 가른다.
 
+R2-04a(#740): first-seen ledger·replay·idempotency·request fingerprint 를 제거했다 — 같은 request
+재호출은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다. terminal outcome 은
+durable 하게 소비하지 않고 fresh 로 되돌린다(sealable plan 은 content-addressed store 에 publish).
+
 confirm-or-alarm & fail-closed: unknown 값을 latest/default 로 풀지 않고 시끄럽게 닫는다.
-terminal outcome(publish/qualification-block/policy-block/stale)만 request ID 를 소비한다.
-context/integrity/I-O 실패는 terminal 이 아니며 request ID 를 소비하지 않는다(재시도 가능).
+context/integrity/I-O 실패는 terminal 이 아니다(재시도 가능).
 """
 
 from __future__ import annotations
@@ -64,17 +65,13 @@ from hwpxfiller.application.slot_selection_input import SlotConfigurationSnapsho
 from hwpxfiller.application.stored_execution_plan import (
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    FirstSeenSealCommandRecord,
-    IdempotencyKeyReused,
     PlanPublished,
     RequestedAuto,
     RequestedExact,
     RequestedVersionSelector,
-    SealRequestIntentFingerprintPayload,
     SealTerminalOutcome,
     StaleExecutionBasis,
     WorkExecutionPlanAggregate,
-    request_intent_fingerprint_digest,
 )
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
@@ -220,21 +217,6 @@ class SealExecutionPlanCommand:
                 raise ValueError(f"{name} 는 비어 있지 않은 문자열이어야 한다")
 
 
-def build_request_intent_fingerprint(
-    command: SealExecutionPlanCommand, work_authority_id: str
-) -> SealRequestIntentFingerprintPayload:
-    """raw intent 를 durable idempotency fingerprint 로 canonicalize 한다(resolve 결과가 아니다)."""
-    return SealRequestIntentFingerprintPayload(
-        command_schema_version=COMMAND_SCHEMA_VERSION,
-        workspace_instance_id=command.workspace_instance_id,
-        work_authority_id=work_authority_id,
-        requested_execution_base_kind=command.requested_execution_base_kind,
-        requested_execution_semantic_contract=command.requested_execution_semantic_contract,
-        requested_plan_schema=command.requested_plan_schema,
-        requested_canonical_encoding=command.requested_canonical_encoding,
-    )
-
-
 def require_exact_selector_consistency(
     command: SealExecutionPlanCommand, policy: ResolvedSealPolicy
 ) -> None:
@@ -266,28 +248,6 @@ def require_exact_selector_consistency(
         raise UnsupportedLocalImplementation(
             f"미지원 canonical encoding: {policy.canonical_encoding_version!r}"
         )
-
-
-# ─── optimistic ledger replay 판정 ─────────────────────────────────────────────────────
-# idempotency 재사용 오류는 optimistic·store 두 경로가 **하나의 공개 타입**을 노출해야 한다 —
-# race timing 에 따라 다른 예외가 나오지 않게 S5-07 store 의 IdempotencyKeyReused 를 재사용한다.
-def optimistic_replay(
-    prior: FirstSeenSealCommandRecord | None,
-    fingerprint: SealRequestIntentFingerprintPayload,
-) -> FirstSeenSealCommandRecord | None:
-    """durable first-seen record 로 replay/거절/진행을 가른다(순수).
-
-    같은 fingerprint → 최초 record replay. 다른 fingerprint → ``IdempotencyKeyReused``. 없으면 None.
-    """
-    if prior is None:
-        return None
-    if prior.request_intent_fingerprint_digest != request_intent_fingerprint_digest(
-        fingerprint
-    ):
-        raise IdempotencyKeyReused(
-            "request 가 다른 intent fingerprint 로 재사용됨(최초 record 보존)"
-        )
-    return prior
 
 
 # ─── candidate compile(fence 밖 pure) ─────────────────────────────────────────────────

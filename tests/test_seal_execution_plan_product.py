@@ -204,73 +204,14 @@ def _pcmd(request_id="r1", **over) -> SealExecutionPlanProductCommand:
 
 
 # ══ historical/fresh split ═════════════════════════════════════════════════════════════
-def test_published_then_stale_replay_keeps_published(tmp_path) -> None:
-    h = _product(tmp_path)
-    first = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(first.command_outcome, PlanPublishedProductOutcome)
-    # 현재 Work 의 Application 이 바뀌어 Plan 이 stale 해진다.
-    h.world.app = "app-2"
-    replay = h.product.seal_execution_plan(_pcmd("r1"))
-    assert replay.command_replayed is True
-    # historical 은 그대로 PlanPublished, fresh 는 STALE 로 recompute.
-    assert isinstance(replay.command_outcome, PlanPublishedProductOutcome)
-    assert replay.command_outcome.plan_semantic_digest == first.command_outcome.plan_semantic_digest
-    assert isinstance(replay.fresh_observation, PublishedPlanObservation)
-    assert replay.fresh_observation.semantic_currentness.state == STALE
-    assert replay.fresh_observation.semantic_currentness.reason == TEMPLATE_APPLICATION_CHANGED
 
 
-def test_published_then_revoked_replay_keeps_success_not_admitted(tmp_path) -> None:
-    h = _product(tmp_path, runtime=_admitting_runtime)
-    h.product.seal_execution_plan(_pcmd("r1"))
-    _revoke(h.admission_store)
-    replay = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(replay.command_outcome, PlanPublishedProductOutcome)
-    obs = replay.fresh_observation
-    assert isinstance(obs, PublishedPlanObservation)
-    assert obs.semantic_currentness.state == CURRENT  # basis 는 그대로 current
-    assert obs.runtime_policy_admission.state == NOT_ADMITTED
-    assert QUALIFICATION_PROFILE_REVOKED in obs.runtime_policy_admission.reasons
-    assert obs.materialization_readiness == NOT_READY
 
 
-def test_blocked_replay_after_work_fixed_keeps_blocked_fresh_sealable(tmp_path) -> None:
-    world = World(selection=DomainBlockedSelection(SLOT_CONFIGURATION_INCOMPLETE, "미완"))
-    h = _product(tmp_path, world)
-    first = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(first.command_outcome, ExecutionQualificationBlockedProductOutcome)
-    # Work 를 고친다(선택 완성) → fresh 는 SEALABLE, historical 은 여전히 blocked.
-    h.world._sel = None
-    replay = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(replay.command_outcome, ExecutionQualificationBlockedProductOutcome)
-    obs = replay.fresh_observation
-    assert isinstance(obs, CurrentWorkExecutionObservation)
-    assert obs.current_sealability == SEALABLE
 
 
-def test_stale_replay_after_work_changed_keeps_stale(tmp_path) -> None:
-    world = World()
-
-    def mutate(w):
-        w._sel = CapturedSelection(_snapshot(w.structure, selected="o2", app=w.app))
-
-    world.on_after_capture_gate = mutate
-    h = _product(tmp_path, world)
-    first = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(first.command_outcome, StaleExecutionBasisProductOutcome)
-    replay = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(replay.command_outcome, StaleExecutionBasisProductOutcome)
-    assert isinstance(replay.fresh_observation, CurrentWorkExecutionObservation)
 
 
-def test_fresh_observation_context_error_preserves_outcome(tmp_path) -> None:
-    h = _product(tmp_path)
-    h.product.seal_execution_plan(_pcmd("r1"))
-    # replay 는 ledger 에서 즉시 반환하므로 이후 관찰만 alternate 로 영영 mismatch → context error.
-    h.world.alternate = True
-    replay = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(replay.command_outcome, PlanPublishedProductOutcome)  # 보존
-    assert isinstance(replay.fresh_observation, ExecutionObservationContextError)
 
 
 def test_blocked_and_stale_outcomes_carry_no_plan_ref(tmp_path) -> None:
@@ -307,9 +248,10 @@ def test_effective_change_same_app_is_digest_mismatch(tmp_path) -> None:
     from hwpxfiller.application.execution_capture import CapturedSelection
 
     h = _product(tmp_path)
-    h.product.seal_execution_plan(_pcmd("r1"))
+    ref = h.product.seal_execution_plan(_pcmd("r1")).command_outcome.opaque_plan_ref
     h.world._sel = CapturedSelection(_snapshot(h.world.structure, selected="o2", app=APP))
-    obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    # R2-04a: published plan 을 바뀐 current 에 대해 관찰하는 것은 reference resolution 경로가 진다.
+    obs = h.product.resolve_plan_reference(ref, "job-ref", WS).fresh_observation
     assert isinstance(obs, PublishedPlanObservation)
     assert obs.semantic_currentness.state == STALE
     assert obs.semantic_currentness.reason == DIGEST_MISMATCH
@@ -335,12 +277,14 @@ def test_s6_absent_current_not_admitted_not_ready(tmp_path) -> None:
 
 def test_runtime_admitted_ready_only_with_current(tmp_path) -> None:
     h = _product(tmp_path, runtime=_admitting_runtime)
-    ready = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    resp = h.product.seal_execution_plan(_pcmd("r1"))
+    ready = resp.fresh_observation
     assert isinstance(ready, PublishedPlanObservation)
     assert ready.materialization_readiness == READY
-    # 이제 app 을 바꿔 STALE 로 만들면 admitted 여도 READY 가 아니다.
+    # 이제 app 을 바꿔 STALE 로 만들면 admitted 여도 READY 가 아니다(reference resolution 으로 관찰).
+    ref = resp.command_outcome.opaque_plan_ref
     h.world.app = "app-2"
-    stale = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    stale = h.product.resolve_plan_reference(ref, "job-ref", WS).fresh_observation
     assert isinstance(stale, PublishedPlanObservation)
     assert stale.runtime_policy_admission.state == ADMITTED
     assert stale.semantic_currentness.state == STALE
@@ -550,9 +494,9 @@ def test_route_failure_no_ledger_mutation(tmp_path) -> None:
 def test_product_reaches_real_s5_10_service_and_persists(tmp_path) -> None:
     h = _product(tmp_path)
     h.product.seal_execution_plan(_pcmd("r1"))
-    aggregate = h.plan_store.load(WORK)  # 실 store 에 durable 하게 남는다
+    aggregate = h.plan_store.load(WORK)  # 실 store 에 durable 하게 남는다(content-addressed)
     assert len(aggregate.plans_by_semantic_digest) == 1
-    assert len(aggregate.first_seen_ledger) == 1
+    assert not hasattr(aggregate, "first_seen_ledger")  # R2-04a: ledger 제거
 
 
 def test_product_contract_vocabulary_is_closed(tmp_path) -> None:
@@ -619,9 +563,9 @@ def test_open_ref_roundtrip_pure() -> None:
 
 def test_currentness_stale_when_current_policy_blocked(tmp_path) -> None:
     h = _product(tmp_path, runtime=_admitting_runtime)
-    h.product.seal_execution_plan(_pcmd("r1"))
+    ref = h.product.seal_execution_plan(_pcmd("r1")).command_outcome.opaque_plan_ref
     h.world.policy_block = _revoked_block()  # 관찰 시점 current 가 policy block
-    obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    obs = h.product.resolve_plan_reference(ref, "job-ref", WS).fresh_observation
     assert isinstance(obs, PublishedPlanObservation)
     assert obs.semantic_currentness.state == STALE
     assert obs.semantic_currentness.reason == CURRENT_BASIS_NOT_SEALABLE
@@ -629,12 +573,12 @@ def test_currentness_stale_when_current_policy_blocked(tmp_path) -> None:
 
 def test_currentness_stale_when_current_blocked_candidate(tmp_path) -> None:
     h = _product(tmp_path, runtime=_admitting_runtime)
-    h.product.seal_execution_plan(_pcmd("r1"))
+    ref = h.product.seal_execution_plan(_pcmd("r1")).command_outcome.opaque_plan_ref
     # current binding 에서 active field 하나를 떨어뜨려 current 가 seal 불가(BlockedCandidate).
     h.world._bind = CapturedFieldBinding(
         _binding(h.world.structure, app=APP, rules=_rules(drop=("성명",)))
     )
-    obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    obs = h.product.resolve_plan_reference(ref, "job-ref", WS).fresh_observation
     assert isinstance(obs, PublishedPlanObservation)
     assert obs.semantic_currentness.state == STALE
     assert obs.semantic_currentness.reason == CURRENT_BASIS_NOT_SEALABLE
@@ -674,26 +618,6 @@ def test_current_work_observation_domain_blocked(tmp_path) -> None:
 
 
 # ══ Codex #723 findings ════════════════════════════════════════════════════════════════
-def test_current_work_observation_uses_fresh_policy_not_recorded(tmp_path) -> None:
-    # finding 1: 비-published fresh observation 은 durable first-seen record policy 를 재사용하지
-    # 않고 CURRENT shipping policy 를 fresh resolve 한다(AUTO default 가 바뀌어도 obsolete 아님).
-    resolver = Resolver(policy_resolution_version="v1")
-    h = _product(tmp_path, _stale_world(), resolver=resolver)
-    first = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(first.command_outcome, StaleExecutionBasisProductOutcome)
-    resolver.policy_over["policy_resolution_version"] = "v2"  # 서버 shipping default 변경
-    seen: list[str] = []
-    orig = h.world.capture
-
-    def spy(ws, wid, app, prof, policy):
-        seen.append(policy.policy_resolution_version)
-        return orig(ws, wid, app, prof, policy)
-
-    h.product._capture = spy
-    resp = h.product.seal_execution_plan(_pcmd("r1"))  # replay → fresh current-work observation
-    assert isinstance(resp.command_outcome, StaleExecutionBasisProductOutcome)  # historical 보존
-    assert isinstance(resp.fresh_observation, CurrentWorkExecutionObservation)
-    assert seen and all(v == "v2" for v in seen)  # CURRENT policy, recorded v1 아님
 
 
 def test_observation_port_failure_degrades_keeps_historical_outcome(tmp_path) -> None:
@@ -746,13 +670,13 @@ def test_corrupt_secret_fails_before_consuming_request(tmp_path) -> None:
 def test_capture_context_error_currentness(tmp_path) -> None:
     world = World()
     h = _product(tmp_path, world)
-    h.product.seal_execution_plan(_pcmd("r1"))
+    ref = h.product.seal_execution_plan(_pcmd("r1")).command_outcome.opaque_plan_ref
 
     def ctx(*a, **k):
         world.capture_calls += 1
         return ExecutionCaptureContextError("SELECTION_CONTRACT_INTEGRITY_ERROR", "복원 불가")
 
     h.product._capture = ctx  # 관찰 시점 capture 가 context error → currentness CONTEXT_ERROR
-    obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    obs = h.product.resolve_plan_reference(ref, "job-ref", WS).fresh_observation
     assert isinstance(obs, PublishedPlanObservation)
     assert obs.semantic_currentness.state == CURRENTNESS_CONTEXT_ERROR

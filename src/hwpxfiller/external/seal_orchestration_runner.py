@@ -46,20 +46,15 @@ from hwpxfiller.application.seal_execution_plan import (
     PlanCandidate,
     SealExecutionPlanCommand,
     ShippingSealPolicyResolver,
-    build_request_intent_fingerprint,
     classify_capture_result,
     compile_candidate,
     decide_final_verdict,
     final_verdict_profile_moved,
-    optimistic_replay,
     publication_kind_for,
     published_outcome_for,
     require_exact_selector_consistency,
 )
-from hwpxfiller.application.stored_execution_plan import (
-    FirstSeenSealCommandRecord,
-    SealTerminalOutcome,
-)
+from hwpxfiller.application.stored_execution_plan import SealTerminalOutcome
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 from hwpxfiller.host.profile_admission_fence import profile_admission_fence
 
@@ -74,11 +69,14 @@ _Clock = Callable[[], str]
 
 @dataclass(frozen=True)
 class SealExecutionPlanResult:
-    """command terminal 결과 — replay 면 최초 durable record 를 되읽는다."""
+    """command 의 현재-state 결과 — 매 호출이 현재 authority 에서 재계산한 terminal outcome(R2-04a).
+
+    historical replay·first-seen record 를 싣지 않는다. publish(sealable) 은 content-addressed
+    store 에 여전히 create/reuse 되지만(04b 대상), 응답은 replayed 된 과거가 아니라 방금 계산한
+    ``PlanPublished``/block/policy/stale 다.
+    """
 
     terminal_outcome: SealTerminalOutcome
-    record: FirstSeenSealCommandRecord
-    replayed: bool
 
 
 def seal_execution_plan(
@@ -96,23 +94,16 @@ def seal_execution_plan(
     theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
     max_discovery_attempts: int = MAX_DISCOVERY_ATTEMPTS,
 ) -> SealExecutionPlanResult:
-    """route → auth → optimistic replay → capture gate → pure compile → final gate → atomic commit.
+    """route → auth → capture gate → pure compile → final gate → 현재-state terminal(R2-04a).
 
-    terminal outcome(publish/qualification-block/policy-block/stale)만 request ID 를 소비한다.
-    route/auth/context/integrity/store 실패는 attempt error 로 raise 하며 request 를 소비하지 않는다.
+    같은 request 를 다시 호출해도 historical response 를 replay 하지 않고 현재 authority 에서 다시
+    계산한다. block/policy/stale terminal 은 durable 하게 남기지 않고 fresh 로 되돌린다. sealable
+    plan 은 content-addressed store 에 create/reuse 로 publish 한다(04b 대상). route/auth/context/
+    integrity/store 실패는 attempt error 로 raise 한다.
     """
     ws = command.workspace_instance_id
     work_authority_id = resolve_route(ws, command.work_ref)  # 실패는 port 가 attempt 로 raise
-    authorize(work_authority_id, command)  # historical replay 에서도 매번 재확인
-    fingerprint = build_request_intent_fingerprint(command, work_authority_id)
-
-    # optimistic ledger lookup — 같은 fingerprint replay·다른 fingerprint 거절.
-    prior = plan_store.load_or_empty(work_authority_id, ws).first_seen_by_request(
-        command.request_id
-    )
-    replayed = optimistic_replay(prior, fingerprint)
-    if replayed is not None:
-        return SealExecutionPlanResult(replayed.terminal_outcome, replayed, True)
+    authorize(work_authority_id, command)  # 매 호출 재확인(replay 없음)
 
     # ── short exact capture gate(optimistic Profile discovery + bounded 재시도) ──────
     captured: CapturedExecutionInput | None = None
@@ -134,11 +125,8 @@ def seal_execution_plan(
                 )
                 classification = classify_capture_result(cap, policy)
                 if isinstance(classification, CaptureTerminal):
-                    # capture gate 자체가 이 terminal 의 linearization point 다.
-                    return _commit_ledger(
-                        plan_store, command, fingerprint, policy,
-                        classification.evidence, classification.outcome, clock(),
-                    )
+                    # capture gate terminal(block/policy) 을 fresh 로 되돌린다(durable 기록 없음).
+                    return SealExecutionPlanResult(classification.outcome)
                 captured = classification.captured
         break  # complete capture — fence 를 풀고 pure work 로 진행
     else:
@@ -164,7 +152,7 @@ def seal_execution_plan(
                     candidate.qualification_profile_id,
                     candidate.resolved_seal_policy,
                 )
-                current_compiled: CandidateCompilation | None = (
+                current_compiled: "CandidateCompilation | None" = (
                     compile_candidate(current, theorem_registry=theorem_registry)
                     if isinstance(current, CapturedExecutionInput)
                     else None
@@ -185,68 +173,40 @@ def seal_execution_plan(
                 )
                 verdict = final_verdict_profile_moved(candidate, observation, summary)
             return _commit_verdict(
-                plan_store, command, fingerprint, candidate, verdict, clock()
+                plan_store, command, work_authority_id, verdict, clock()
             )
-
-
-def _commit_ledger(
-    plan_store: WorkExecutionPlanStore,
-    command: SealExecutionPlanCommand,
-    fingerprint,
-    policy,
-    evidence,
-    outcome: SealTerminalOutcome,
-    now: str,
-) -> SealExecutionPlanResult:
-    expected = plan_store.load_or_empty(
-        fingerprint.work_authority_id, command.workspace_instance_id
-    ).aggregate_version
-    result = plan_store.commit_seal_terminal_outcome_atomic(
-        work_authority_id=fingerprint.work_authority_id,
-        expected_aggregate_version=expected,
-        request_id=command.request_id,
-        fingerprint=fingerprint,
-        resolved_seal_policy=policy,
-        capture_evidence=evidence,
-        terminal_outcome=outcome,
-        now=now,
-    )
-    return SealExecutionPlanResult(
-        result.record.terminal_outcome, result.record, result.replayed
-    )
 
 
 def _commit_verdict(
     plan_store: WorkExecutionPlanStore,
     command: SealExecutionPlanCommand,
-    fingerprint,
-    candidate: CandidateCompilation,
+    work_authority_id: str,
     verdict: FinalVerdict,
     now: str,
 ) -> SealExecutionPlanResult:
-    if isinstance(verdict, FinalPublish):
-        plan = verdict.candidate
-        assert isinstance(plan, PlanCandidate)
-        aggregate = plan_store.load_or_empty(
-            fingerprint.work_authority_id, command.workspace_instance_id
-        )
-        kind = publication_kind_for(aggregate, plan.plan_semantic_digest)
-        result = plan_store.publish_sealed_plan_atomic(
-            work_authority_id=fingerprint.work_authority_id,
-            expected_aggregate_version=aggregate.aggregate_version,
-            request_id=command.request_id,
-            fingerprint=fingerprint,
-            resolved_seal_policy=plan.resolved_seal_policy,
-            capture_evidence=plan.capture_evidence,
-            plan_payload=plan.plan_payload,
-            dependency_set=plan.dependency_set,
-            published_outcome=published_outcome_for(plan, kind),
-            now=now,
-        )
-        return SealExecutionPlanResult(
-            result.record.terminal_outcome, result.record, result.replayed
-        )
-    return _commit_ledger(
-        plan_store, command, fingerprint, candidate.resolved_seal_policy,
-        verdict.evidence, verdict.outcome, now,
+    """FinalPublish → content-addressed store 에 create/reuse publish. block/policy/stale → fresh.
+
+    first-seen ledger·replay 없이 publish 한다: REUSE 는 store 가 무변경으로 흡수하고, CREATE 만
+    version 을 올린다. 응답은 방금 계산한 :class:`PlanPublished`(또는 fresh terminal)다.
+    """
+    if not isinstance(verdict, FinalPublish):
+        return SealExecutionPlanResult(verdict.outcome)
+    plan = verdict.candidate
+    assert isinstance(plan, PlanCandidate)
+    ws = command.workspace_instance_id
+    aggregate = plan_store.load_or_empty(work_authority_id, ws)
+    kind = publication_kind_for(aggregate, plan.plan_semantic_digest)
+    published = published_outcome_for(plan, kind)
+    plan_store.publish_sealed_plan_atomic(
+        work_authority_id=work_authority_id,
+        workspace_instance_id=ws,
+        expected_aggregate_version=aggregate.aggregate_version,
+        request_id=command.request_id,
+        resolved_seal_policy=plan.resolved_seal_policy,
+        capture_evidence=plan.capture_evidence,
+        plan_payload=plan.plan_payload,
+        dependency_set=plan.dependency_set,
+        published_outcome=published,
+        now=now,
     )
+    return SealExecutionPlanResult(published)
