@@ -1,15 +1,12 @@
 """S5-10(#706) SealExecutionPlan orchestration — optimistic capture·pure compile·final seal.
 
-체크리스트(issue #706): capture races(profile change retry·final stale·detached same-basis·
-complete→incomplete·bounded exhaustion) · revocation(before/between/publish-before-revoke·lock
-order) · idempotency(optimistic replay·final concurrent replay·fingerprint reuse·AUTO persist·
-auth on replay) · current basis(candidate contracts·same-meaning publish·app change stale·
-unsealable stale not blocker rebase·context no ledger) · publication(dependency·functional
-dependency reuse·atomic·reused evidence·store failure) · forbidden work(pure section holds no
-fence·no mutable/HWPX/native seam) · S6 start port 선언.
+S5F R2-04b-2(#740): durable Plan store(aggregate·publish·create/reuse·dependency retention)를
+제거했다. orchestration 은 store commit 없이 current candidate 에서 직접 ``ExecutionPlanSealed`` 를
+낸다. 이 테스트는 capture races·revocation·final-gate stale·lock order·auth·fail-closed 판정을
+검증한다 — durable publication·persistence 는 더는 검사 대상이 아니다.
 
-capture port·fresh observation·shipping resolver 는 fake seam 이다. compile·store 는 실 primitive
-로 돌려 실 basis digest·functional dependency·atomic commit 을 검증한다.
+capture port·fresh observation·shipping resolver 는 fake seam 이다. compile 은 실 primitive 로
+돌려 실 basis digest·final gate 판정을 검증한다.
 """
 
 from __future__ import annotations
@@ -45,30 +42,23 @@ from hwpxfiller.application.seal_execution_plan import (
     STALE_DIGEST_MISMATCH,
     AuthorizationError,
     BlockedCandidate,
-    ExecutionCaptureRetryExhausted,
     ExecutionQualificationContextError,
-    IdempotencyKeyReused,
     PlanCandidate,
     SealExecutionPlanCommand,
     S6_START_GATE_LOCK_ORDER,
     UnsupportedLocalImplementation,
     WorkExecutionSummary,
-    build_request_intent_fingerprint,
     compile_candidate,
     decide_final_verdict,
-    final_verdict_on_moved_basis,
-    optimistic_replay,
     require_exact_selector_consistency,
 )
 from hwpxfiller.application.execution_contract_set import (
-    AttemptSealCaptureEvidence,
     CaptureEvidenceProvenance,
 )
 from hwpxfiller.application.stored_execution_plan import (
+    ExecutionPlanSealed,
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    IdempotencyKeyReused as StoreIdempotencyKeyReused,
-    PlanPublished,
     RequestedExact,
     StaleExecutionBasis,
 )
@@ -76,13 +66,11 @@ from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
     canonical_execution_digest,
 )
-from hwpxfiller.external import work_execution_plan_store as store_mod
 from hwpxfiller.external.seal_orchestration_runner import (
     SealExecutionPlanResult,
     seal_execution_plan,
 )
-from hwpxfiller.external.work_execution_plan_store import WorkExecutionPlanStore
-from hwpxfiller.host.profile_admission_fence import _held_ranks
+from hwpxfiller.host.per_work_fence import _held_ranks
 
 from tests.test_execution_compilation import (
     APP,
@@ -216,143 +204,70 @@ def _command(request_id="r1", **over) -> SealExecutionPlanCommand:
     )
 
 
-def _run(store, world, command=None, *, resolver=None, authorize=None,
-         route=None, clock=None, **over) -> SealExecutionPlanResult:
+def _run(world, command=None, *, resolver=None, authorize=None, route=None, **over) -> SealExecutionPlanResult:
     return seal_execution_plan(
         command or _command(),
-        plan_store=store,
         resolve_route=route or (lambda ws, ref: WORK),
         authorize=authorize or (lambda wid, cmd: None),
         read_summary=world.summary,
         capture_under_fence=world.capture,
         resolve_shipping_policy=resolver or Resolver(),
-        clock=clock or (lambda: "t0"),
         **over,
     )
 
 
-# ══ publication ═══════════════════════════════════════════════════════════════════════
-def test_publish_creates_plan_mapping_deps_evidence_ledger_atomic(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    result = _run(store, World())
-    assert isinstance(result.terminal_outcome, PlanPublished)
-    assert result.terminal_outcome.publication_kind == "CREATED"
-    assert result.replayed is False
-    agg = store.load(WORK)
-    assert len(agg.plans_by_semantic_digest) == 1
-    assert len(agg.plans_by_compilation_key) == 1  # functional dependency mapping
-    assert len(agg.first_seen_ledger) == 1
-    record = agg.first_seen_ledger[0]
-    # dependency set·capture evidence·resolved policy 전부 durable.
-    plan = next(iter(agg.plans_by_semantic_digest.values()))
-    assert plan.dependency_set.candidate_blob_ref  # nonempty
-    assert record.durable_capture_evidence.captured_execution_input_digest
-
-
-def test_functional_dependency_reuse_preserves_request_specific_evidence(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"))
-    # 다른 request·detached-only 변경 → 같은 effective basis → REUSED, 다른 capture evidence.
-    detached = World(selection=CapturedSelection(_snapshot(_structure(), detached="o2")))
-    result = _run(store, detached, _command("r2"))
-    assert isinstance(result.terminal_outcome, PlanPublished)
-    assert result.terminal_outcome.publication_kind == "REUSED"
-    agg = store.load(WORK)
-    assert len(agg.plans_by_semantic_digest) == 1  # create-once
-    assert len(agg.first_seen_ledger) == 2
-    digests = {
-        r.durable_capture_evidence.captured_execution_input_digest
-        for r in agg.first_seen_ledger
-    }
-    assert len(digests) == 2  # 각 request 가 자기 evidence 보존
-
-
-def test_store_failure_does_not_consume_request(tmp_path, monkeypatch) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-
-    def boom(*a, **k):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(store_mod, "write_text_atomic", boom)
-    with pytest.raises(OSError):
-        _run(store, World())
-    assert not store.exists(WORK)
+# ══ seal 성공(durable publication 없이 current candidate 에서 직접) ══════════════════════
+def test_publish_returns_sealed_current_value() -> None:
+    result = _run(World())
+    assert isinstance(result.terminal_outcome, ExecutionPlanSealed)
+    assert result.terminal_outcome.execution_basis_digest  # nonempty basis identity
 
 
 # ══ capture races ═════════════════════════════════════════════════════════════════════
-def test_profile_change_before_fences_retries_then_publishes(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    world = World()
-    # optimistic P, under-fence other → mismatch → retry; 2회차 P/P → 진행; final P.
-    world.summary_script = [
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary("other-profile", APP),
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary(PROFILE, APP),
-    ]
-    result = _run(store, world)
-    assert isinstance(result.terminal_outcome, PlanPublished)
-
-
-def test_bounded_retry_exhaustion_request_unconsumed(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    world = World()
-    world.alternate = True  # optimistic≠under-fence 매 회차 → 영영 mismatch
-    with pytest.raises(ExecutionCaptureRetryExhausted):
-        _run(store, world, max_discovery_attempts=3)
-    assert not store.exists(WORK)  # request 미소비
-
-
-def test_slot_mutation_after_capture_final_stale_digest_mismatch(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_slot_mutation_after_capture_final_stale_digest_mismatch() -> None:
     world = World()
 
     def mutate(w):
         w._sel = CapturedSelection(_snapshot(w.structure, selected="o2", app=w.app))
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
+    result = _run(world)
     assert isinstance(result.terminal_outcome, StaleExecutionBasis)
     assert result.terminal_outcome.stale_reason == STALE_DIGEST_MISMATCH
-    assert store.load(WORK).plans_by_semantic_digest == {}  # Plan write 0
 
 
-def test_detached_only_mutation_same_basis_publishes(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_detached_only_mutation_same_basis_publishes() -> None:
     world = World()
 
     def mutate(w):  # declared 만 바뀌고 effective 는 동일 → 같은 basis
         w._sel = CapturedSelection(_snapshot(w.structure, detached="o2", app=w.app))
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
-    assert isinstance(result.terminal_outcome, PlanPublished)
+    result = _run(world)
+    assert isinstance(result.terminal_outcome, ExecutionPlanSealed)
 
 
-def test_complete_becomes_incomplete_stale_not_blocker_rebase(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_complete_becomes_incomplete_stale_not_blocker_rebase() -> None:
     world = World()
 
     def mutate(w):
         w._sel = DomainBlockedSelection(SLOT_CONFIGURATION_INCOMPLETE, "slot 미완")
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
+    result = _run(world)
     # current 가 seal 불가 → STALE(CURRENT_BASIS_NOT_SEALABLE), current blocker 를 기록하지 않는다.
     assert isinstance(result.terminal_outcome, StaleExecutionBasis)
     assert result.terminal_outcome.stale_reason == STALE_CURRENT_BASIS_NOT_SEALABLE
 
 
-def test_application_change_stale(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_application_change_stale() -> None:
     world = World()
 
     def mutate(w):
         w.app = "app-2"  # current Application 이동 → summary 가 candidate 와 불일치
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
+    result = _run(world)
     assert isinstance(result.terminal_outcome, StaleExecutionBasis)
     assert result.terminal_outcome.stale_reason == STALE_DIGEST_MISMATCH
 
@@ -368,130 +283,61 @@ def _revoked_block():
     )
 
 
-def test_revoke_before_capture_policy_block(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    result = _run(store, World(policy_block=_revoked_block()))
+def test_revoke_before_capture_policy_block() -> None:
+    result = _run(World(policy_block=_revoked_block()))
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
     assert result.terminal_outcome.policy_code == QUALIFICATION_PROFILE_REVOKED
-    assert store.load(WORK).plans_by_semantic_digest == {}
 
 
-def test_revoke_between_capture_and_final_policy_block(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_revoke_between_capture_and_final_policy_block() -> None:
     world = World()
 
     def mutate(w):
         w.policy_block = _revoked_block()
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
-    assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
-    assert store.load(WORK).plans_by_semantic_digest == {}
-
-
-def test_publish_before_revoke_is_historical_success(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    result = _run(store, World())  # ADMITTED 관측 → publish
-    assert isinstance(result.terminal_outcome, PlanPublished)
-    # 이후 revocation 이 있어도 이 publication 은 historical valid(store 에 그대로 남는다).
-    assert store.load(WORK).aggregate_version == 1
-
-
-def test_no_reverse_lock_order_capture_under_profile_then_work(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    world = World()
-    _run(store, world)  # 실 fence — 역순이면 LockOrderViolation 이 났을 것이다
-    # capture 는 ProfileFence(0)→WorkFence(1) 아래에서만 일어난다.
-    assert all(ranks == [0, 1] for ranks in world.capture_ranks)
-
-
-# ══ idempotency ═══════════════════════════════════════════════════════════════════════
-def test_optimistic_ledger_hit_replay(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    first = _run(store, World(), _command("r1"))
-    replay = _run(store, World(), _command("r1"))
-    assert replay.replayed is True
-    assert replay.record == first.record
-    assert store.load(WORK).aggregate_version == 1  # 새 commit 0
-
-
-def test_final_gate_concurrent_first_commit_replay(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    command = _command("r1")
-    fingerprint = build_request_intent_fingerprint(command, WORK)
-    world = World()
-
-    def concurrent_commit(w):
-        # capture gate 이후·final commit 이전에 같은 request 가 먼저 terminal 을 commit 한다.
-        projection = {"policy_block": {"policy_code": "X"}}
-        digest = canonical_execution_digest(projection)
-        evidence = AttemptSealCaptureEvidence(
-            captured_attempt_semantic_projection=projection,
-            captured_attempt_digest=digest,
-            normalized_blockers=("X",),
-            provenance=CaptureEvidenceProvenance("u", "u", AT),
-        )
-        store.commit_seal_terminal_outcome_atomic(
-            work_authority_id=WORK, expected_aggregate_version=0, request_id="r1",
-            fingerprint=fingerprint, resolved_seal_policy=_policy(),
-            capture_evidence=evidence,
-            terminal_outcome=ExecutionPolicyBlocked("X", captured_attempt_digest=digest),
-            now="t0",
-        )
-
-    world.on_after_capture_gate = concurrent_commit
-    result = _run(store, world, command)
-    assert result.replayed is True  # final commit 이 최초 record 를 replay
+    result = _run(world)
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
 
 
-def test_same_request_different_fingerprint_rejected(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"))
-    with pytest.raises(IdempotencyKeyReused):
-        _run(store, World(), _command(
-            "r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v1")
-        ))
-    assert store.load(WORK).aggregate_version == 1  # 최초 record 수정 0
+def test_no_reverse_lock_order_capture_under_profile_then_work() -> None:
+    world = World()
+    _run(world)  # 실 fence — 역순이면 LockOrderViolation 이 났을 것이다
+    # capture 는 PerWorkFence(0) 아래에서만 일어난다.
+    assert all(ranks == [0] for ranks in world.capture_ranks)
 
 
-def test_auto_policy_persists_across_default_change(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"),
-         resolver=Resolver(policy_resolution_version="policy/v1"))
-    # 서버 default 가 v2 로 바뀐 retry 도 최초 resolved policy(v1)를 replay.
-    replay = _run(store, World(), _command("r1"),
-                  resolver=Resolver(policy_resolution_version="policy/v2"))
-    assert replay.replayed is True
-    assert replay.record.resolved_seal_policy.policy_resolution_version == "policy/v1"
-
-
-def test_authorization_repeated_on_replay(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World(), _command("r1"))
+# ══ recompute-not-persist / auth ══════════════════════════════════════════════════════
+def test_authorization_repeated_each_call() -> None:
+    _run(World(), _command("r1"))
 
     calls = {"n": 0}
 
     def authz(wid, cmd):
         calls["n"] += 1
-        raise AuthorizationError("denied on replay")
+        raise AuthorizationError("denied")
 
     with pytest.raises(AuthorizationError):
-        _run(store, World(), _command("r1"), authorize=authz)
-    assert calls["n"] == 1  # replay 에서도 authorize 를 다시 확인한다
+        _run(World(), _command("r1"), authorize=authz)
+    assert calls["n"] == 1  # 매 호출 authorize 를 다시 확인한다(replay 없음)
+
+
+def test_same_request_recomputes_current_value_no_persistence() -> None:
+    # durable store 가 없다 — 같은 request 를 다시 호출해도 방금 계산한 현재 결과를 낸다(persistence 없음).
+    a = _run(World(), _command("r1")).terminal_outcome
+    b = _run(World(), _command("r1")).terminal_outcome
+    assert isinstance(a, ExecutionPlanSealed) and isinstance(b, ExecutionPlanSealed)
+    assert a.execution_basis_digest == b.execution_basis_digest  # 같은 authority → 같은 basis
 
 
 # ══ current basis: candidate contracts, not latest ════════════════════════════════════
-def test_final_gate_uses_candidate_contracts_not_re_resolved(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_final_gate_uses_candidate_contracts_not_re_resolved() -> None:
     resolver = Resolver()
-    _run(store, World(), resolver=resolver)
+    _run(World(), resolver=resolver)
     assert resolver.calls == 1  # capture gate 에서 1회만 — final 은 candidate policy 재사용
 
 
-def test_capture_context_error_no_ledger(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-
+def test_capture_context_error_raises_attempt() -> None:
     class CtxWorld(World):
         def capture(self, ws, wid, exp_app, exp_profile, policy):
             self.capture_calls += 1
@@ -500,21 +346,20 @@ def test_capture_context_error_no_ledger(tmp_path) -> None:
             )
 
     with pytest.raises(ExecutionQualificationContextError):
-        _run(store, CtxWorld())
-    assert not store.exists(WORK)  # terminal ledger 없음
+        _run(CtxWorld())
 
 
 # ══ S6 start admission port 선언 ══════════════════════════════════════════════════════
 def test_s6_start_gate_lock_order_declared() -> None:
-    assert S6_START_GATE_LOCK_ORDER[0] == "QualificationProfileAdmissionFence"
-    assert S6_START_GATE_LOCK_ORDER[1] == "PerWorkMutationFence"
+    # R2-05b: ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다(S6 구현은 미착수).
+    assert S6_START_GATE_LOCK_ORDER[0] == "PerWorkMutationFence"
+    assert "QualificationProfileAdmissionFence" not in S6_START_GATE_LOCK_ORDER
     assert S6_START_GATE_LOCK_ORDER[-1] == "LongMaterialization"
     assert "<fences released>" in S6_START_GATE_LOCK_ORDER
 
 
 # ══ forbidden work: pure section holds no fence ═══════════════════════════════════════
-def test_long_pure_section_holds_no_fence(tmp_path, monkeypatch) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_long_pure_section_holds_no_fence(monkeypatch) -> None:
     from hwpxfiller.external import seal_orchestration_runner as runner_mod
 
     ranks_at_compile: list[list[int]] = []
@@ -525,10 +370,10 @@ def test_long_pure_section_holds_no_fence(tmp_path, monkeypatch) -> None:
         return real(captured, **kw)
 
     monkeypatch.setattr(runner_mod, "compile_candidate", spy)
-    _run(store, World())
-    # 첫 compile(candidate)은 fence 밖(빈 rank), 둘째(final current)는 [0,1] 아래.
+    _run(World())
+    # 첫 compile(candidate)은 fence 밖(빈 rank), 둘째(final current)는 [0] 아래.
     assert ranks_at_compile[0] == []
-    assert ranks_at_compile[1] == [0, 1]
+    assert ranks_at_compile[1] == [0]
 
 
 def test_runner_declares_no_native_or_source_seam() -> None:
@@ -552,11 +397,6 @@ def _captured(world=None, policy=None):
         field_binding_observation=CapturedFieldBinding(_binding(world.structure, app=world.app)),
         captured_at=AT, policy_block=None,
     )
-
-
-def test_optimistic_replay_variants() -> None:
-    fp = build_request_intent_fingerprint(_command(), WORK)
-    assert optimistic_replay(None, fp) is None
 
 
 def test_require_exact_selector_consistency_rejects_mismatch() -> None:
@@ -587,12 +427,11 @@ def test_compile_candidate_unsupported_composition_contract() -> None:
 
 
 def test_compile_candidate_context_error_raises_attempt() -> None:
-    # SLOTTED selection + slotless structure → SLOT_MODE_MISMATCH context error.
+    # SLOTTED selection + 잘못된 structure digest → compile context error.
     from hwpxfiller.application.slot_selection_input import SlotConfigurationSnapshot
 
     world = World()
     captured = _captured(world)
-    # inject a selection whose structure digest mismatches → compile context error.
     bad = SlotConfigurationSnapshot(
         work_id=WORK, template_application_id=APP, source_configuration_version=1,
         selection_semantic_contract_id=captured.selection.selection_semantic_contract_id,
@@ -622,15 +461,8 @@ def _blocked_candidate(digest="sha256:in", blockers=("ACTIVE_FIELD_UNBOUND",)):
     )
 
 
-def _plan_candidate(store_free=True):
+def _plan_candidate():
     return compile_candidate(_captured())
-
-
-def test_final_moved_basis_blocked_candidate_raises() -> None:
-    with pytest.raises(ExecutionQualificationContextError):
-        final_verdict_on_moved_basis(
-            _blocked_candidate(), WorkExecutionSummary("other", "app-2")
-        )
 
 
 def test_decide_final_blocked_candidate_same_input_commits_blocked() -> None:
@@ -676,16 +508,14 @@ def test_decide_final_context_error_raises() -> None:
 
 
 # ══ capture gate domain block (terminal at capture linearization point) ═══════════════
-def test_capture_gate_domain_block_commits_qualification_blocked(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_capture_gate_domain_block_commits_qualification_blocked() -> None:
     world = World(
         selection=DomainBlockedSelection(SLOT_CONFIGURATION_INCOMPLETE, "slot 미완")
     )
-    result = _run(store, world)
-    # domain block 은 capture gate 자체가 linearization point — 즉시 ledger commit.
+    result = _run(world)
+    # domain block 은 capture gate 자체가 linearization point — 즉시 terminal.
     assert isinstance(result.terminal_outcome, ExecutionQualificationBlocked)
     assert world.capture_calls == 1  # final gate 재capture 없음
-    assert store.load(WORK).plans_by_semantic_digest == {}
 
 
 def test_command_rejects_empty_request_id() -> None:
@@ -693,7 +523,7 @@ def test_command_rejects_empty_request_id() -> None:
         SealExecutionPlanCommand(workspace_instance_id=WS, work_ref="ref", request_id="")
 
 
-def test_compile_slotless_captured_publishes(tmp_path) -> None:
+def test_compile_slotless_captured_publishes() -> None:
     # slotless structure/selection → source_configuration_version None branch.
     structure = _slotless_structure()
     captured = judge_captured_execution(
@@ -799,7 +629,7 @@ def test_domain_block_missing_attempt_digest_raises() -> None:
         sep._attempt_evidence_of_domain_block(broken)
 
 
-# ══ Codex #722 finding fixes ══════════════════════════════════════════════════════════
+# ══ Codex #722 finding fixes (store 무관 판정만 잔존) ══════════════════════════════════
 def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypatch) -> None:
     # build_execution_contract_set 가 injected registry 를 받아야 한다 — DEFAULT 로 조용히 fallback 하면
     # injected registry 가 admit 한 manifest 가 여기서 늦게 IntegrityError 로 터진다.
@@ -818,42 +648,7 @@ def test_finding1_injected_theorem_registry_threaded_into_contract_set(monkeypat
     assert seen == [injected]  # DEFAULT 가 아니라 injected 를 그대로 받았다
 
 
-def test_finding2_idempotency_key_reused_single_public_type(tmp_path) -> None:
-    # optimistic 경로와 store 경로가 하나의 공개 타입을 노출한다.
-    assert sep.IdempotencyKeyReused is StoreIdempotencyKeyReused
-    store = WorkExecutionPlanStore(tmp_path)
-    command = _command("r1")
-    fingerprint = build_request_intent_fingerprint(command, WORK)
-    world = World()
-
-    def competing_diff_fingerprint(w):
-        # capture gate 이후 같은 request 를 **다른** fingerprint 로 먼저 commit → store 경로 충돌.
-        other = build_request_intent_fingerprint(
-            _command("r1", requested_plan_schema=RequestedExact("hwpx-execution-plan/v1")),
-            WORK,
-        )
-        projection = {"policy_block": {"policy_code": "X"}}
-        digest = canonical_execution_digest(projection)
-        store.commit_seal_terminal_outcome_atomic(
-            work_authority_id=WORK, expected_aggregate_version=0, request_id="r1",
-            fingerprint=other, resolved_seal_policy=_policy(),
-            capture_evidence=AttemptSealCaptureEvidence(
-                captured_attempt_semantic_projection=projection,
-                captured_attempt_digest=digest, normalized_blockers=("X",),
-                provenance=CaptureEvidenceProvenance("u", "u", AT),
-            ),
-            terminal_outcome=ExecutionPolicyBlocked("X", captured_attempt_digest=digest),
-            now="t0",
-        )
-
-    world.on_after_capture_gate = competing_diff_fingerprint
-    with pytest.raises(StoreIdempotencyKeyReused):
-        _run(store, world, command)
-
-
-def test_finding3_capture_policy_mismatch_rejected_fail_closed(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-
+def test_finding3_capture_policy_mismatch_rejected_fail_closed() -> None:
     class TamperWorld(World):
         def capture(self, ws, wid, exp_app, exp_profile, policy):
             self.capture_calls += 1
@@ -869,12 +664,10 @@ def test_finding3_capture_policy_mismatch_rejected_fail_closed(tmp_path) -> None
             )
 
     with pytest.raises(ExecutionQualificationContextError):
-        _run(store, TamperWorld())
-    assert not store.exists(WORK)  # request 미소비
+        _run(TamperWorld())
 
 
-def test_finding4_profile_moved_and_revoked_records_policy_block(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_finding4_profile_moved_and_revoked_records_policy_block() -> None:
     world = World()
 
     def mutate(w):
@@ -882,14 +675,12 @@ def test_finding4_profile_moved_and_revoked_records_policy_block(tmp_path) -> No
         w.policy_block = _revoked_block()  # candidate profile 은 revoked
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
+    result = _run(world)
     # moved 를 이유로 revocation 을 놓치지 않는다 — policy block 이 precedence 상 앞선다.
     assert isinstance(result.terminal_outcome, ExecutionPolicyBlocked)
-    assert store.load(WORK).plans_by_semantic_digest == {}
 
 
-def test_finding4_profile_moved_and_admitted_is_stale(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
+def test_finding4_profile_moved_and_admitted_is_stale() -> None:
     world = World()
 
     def mutate(w):
@@ -897,14 +688,6 @@ def test_finding4_profile_moved_and_admitted_is_stale(tmp_path) -> None:
         w.app = "app-2"  # candidate app 관측 시 cross-ref context error → moved stale
 
     world.on_after_capture_gate = mutate
-    result = _run(store, world)
+    result = _run(world)
     assert isinstance(result.terminal_outcome, StaleExecutionBasis)
     assert result.terminal_outcome.stale_reason == STALE_DIGEST_MISMATCH
-
-
-def test_finding5_retained_manifest_ref_is_resolvable_profile_id(tmp_path) -> None:
-    store = WorkExecutionPlanStore(tmp_path)
-    _run(store, World())
-    plan = next(iter(store.load(WORK).plans_by_semantic_digest.values()))
-    # get_manifest 는 profile ID 로 resolve 한다 — retention ref 가 그 ID 여야 한다.
-    assert plan.dependency_set.qualification_profile_manifest_ref == PROFILE

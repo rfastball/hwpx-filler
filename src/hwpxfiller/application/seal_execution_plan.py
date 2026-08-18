@@ -4,18 +4,19 @@
 호출·store atomic commit 은 :mod:`hwpxfiller.external.seal_orchestration_runner` 가 진다. 여기서는
 그 runner 가 각 gate 에서 부르는 결정을 소유한다:
 
-- raw ``SealExecutionPlanCommand`` → ``SealRequestIntentFingerprintPayload`` (S5-07 재사용).
-- optimistic ledger replay 판정(같은 fingerprint replay·다른 fingerprint 거절).
-- short capture gate 결과 분류(complete → 계속, domain/policy block → terminal ledger, context
+- short capture gate 결과 분류(complete → 계속, domain/policy block → fresh terminal, context
   error → attempt).
 - fence 밖 pure qualification+compile → ``PlanCandidate`` | ``BlockedCandidate`` (context/composition
   실패는 attempt 로 raise — user-fixable blocker 로 낮추지 않는다).
 - short final gate verdict: candidate 가 사용한 exact contracts 로 current basis 를 재구성해
   equality·policy·sealability 를 비교하고 publish/blocked/policy/stale/attempt 로 가른다.
 
+R2-04a(#740): first-seen ledger·replay·idempotency·request fingerprint 를 제거했다 — 같은 request
+재호출은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다. terminal outcome 은
+durable 하게 소비하지 않고 fresh 로 되돌린다(sealable plan 은 content-addressed store 에 publish).
+
 confirm-or-alarm & fail-closed: unknown 값을 latest/default 로 풀지 않고 시끄럽게 닫는다.
-terminal outcome(publish/qualification-block/policy-block/stale)만 request ID 를 소비한다.
-context/integrity/I-O 실패는 terminal 이 아니며 request ID 를 소비하지 않는다(재시도 가능).
+context/integrity/I-O 실패는 terminal 이 아니다(재시도 가능).
 """
 
 from __future__ import annotations
@@ -56,25 +57,19 @@ from hwpxfiller.application.execution_contract_set import (
     build_execution_contract_set,
     build_sealed_plan,
     execution_basis_digest,
-    plan_semantic_digest,
     qualification_profile_semantic_digest,
     verify_execution_basis_integrity,
 )
 from hwpxfiller.application.slot_selection_input import SlotConfigurationSnapshot
 from hwpxfiller.application.stored_execution_plan import (
+    ExecutionPlanSealed,
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    FirstSeenSealCommandRecord,
-    IdempotencyKeyReused,
-    PlanPublished,
     RequestedAuto,
     RequestedExact,
     RequestedVersionSelector,
-    SealRequestIntentFingerprintPayload,
     SealTerminalOutcome,
     StaleExecutionBasis,
-    WorkExecutionPlanAggregate,
-    request_intent_fingerprint_digest,
 )
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
@@ -93,11 +88,6 @@ STALE_CURRENT_BASIS_NOT_SEALABLE = "CURRENT_BASIS_NOT_SEALABLE"
 # ponytail: attempt/policy block 는 domain provenance 를 안 가질 수 있다 — 감사용 sentinel 로 둔다.
 _PROVENANCE_UNRESOLVED = "unresolved"
 _SLOTLESS_CONFIG_REF = "SLOTLESS_NO_CONFIGURATION"
-
-# ponytail: 고정 상한 — optimistic discovery 는 fence 아래 exact re-read 로 즉시 수렴하므로 실전 반복은
-# 사실상 1 이다. 상한은 pathological churn 을 유한 시간에 시끄럽게 종료시키는 안전판(#620 계열 상향).
-MAX_DISCOVERY_ATTEMPTS = 8
-
 
 # ─── attempt error(request 미소비) ────────────────────────────────────────────────────
 class SealAttemptError(Exception):
@@ -128,12 +118,6 @@ class UnsupportedLocalImplementation(SealAttemptError):
     """다른 shipping build 에서 지원될 수 있는 local attempt failure — semantic policy block 아님."""
 
     code = "UNSUPPORTED_LOCAL_IMPLEMENTATION"
-
-
-class ExecutionCaptureRetryExhausted(SealAttemptError):
-    """optimistic Profile discovery 가 bounded 재시도를 소진 — request 미소비."""
-
-    code = "EXECUTION_CAPTURE_RETRY_EXHAUSTED"
 
 
 # ─── fresh observation query port seam(S5-10 소유 선언) ────────────────────────────────
@@ -174,8 +158,8 @@ class ShippingSealPolicyResolver(Protocol):
 # ─── S6 start admission port 선언(구현하지 않는다) ────────────────────────────────────
 # S6 materialization 은 이 lock order 를 따라야 한다 — 짧은 ordered start-gate 로 Plan·current
 # basis·runtime admission·VDR·dependency 를 pin 하고 fence 를 푼 뒤 긴 materialization 을 한다.
+# R2-05b(#740): ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다(S6 구현은 미착수·미변경).
 S6_START_GATE_LOCK_ORDER = (
-    "QualificationProfileAdmissionFence",
     "PerWorkMutationFence",
     "PlanAndCurrentBasisAndRuntimeAdmissionAndDependencyPin",
     "<fences released>",
@@ -186,8 +170,8 @@ S6_START_GATE_LOCK_ORDER = (
 class S6StartAdmissionGate(Protocol):
     """S6 가 구현할 ordered start-gate port — S5-10 은 선언만 하고 구현하지 않는다.
 
-    ProfileFence→WorkFence 아래에서 Plan·current basis·runtime admission·dependency 를 pin 하고
-    fence 를 release 한 뒤 long materialization 을 시작한다(:data:`S6_START_GATE_LOCK_ORDER`).
+    PerWorkFence 아래에서 Plan·current basis·runtime admission·dependency 를 pin 하고 fence 를
+    release 한 뒤 long materialization 을 시작한다(:data:`S6_START_GATE_LOCK_ORDER`).
     S5-99 는 이 구현에 의존하지 않는다.
     """
 
@@ -218,21 +202,6 @@ class SealExecutionPlanCommand:
             value = getattr(self, name)
             if not isinstance(value, str) or value == "":
                 raise ValueError(f"{name} 는 비어 있지 않은 문자열이어야 한다")
-
-
-def build_request_intent_fingerprint(
-    command: SealExecutionPlanCommand, work_authority_id: str
-) -> SealRequestIntentFingerprintPayload:
-    """raw intent 를 durable idempotency fingerprint 로 canonicalize 한다(resolve 결과가 아니다)."""
-    return SealRequestIntentFingerprintPayload(
-        command_schema_version=COMMAND_SCHEMA_VERSION,
-        workspace_instance_id=command.workspace_instance_id,
-        work_authority_id=work_authority_id,
-        requested_execution_base_kind=command.requested_execution_base_kind,
-        requested_execution_semantic_contract=command.requested_execution_semantic_contract,
-        requested_plan_schema=command.requested_plan_schema,
-        requested_canonical_encoding=command.requested_canonical_encoding,
-    )
 
 
 def require_exact_selector_consistency(
@@ -268,41 +237,21 @@ def require_exact_selector_consistency(
         )
 
 
-# ─── optimistic ledger replay 판정 ─────────────────────────────────────────────────────
-# idempotency 재사용 오류는 optimistic·store 두 경로가 **하나의 공개 타입**을 노출해야 한다 —
-# race timing 에 따라 다른 예외가 나오지 않게 S5-07 store 의 IdempotencyKeyReused 를 재사용한다.
-def optimistic_replay(
-    prior: FirstSeenSealCommandRecord | None,
-    fingerprint: SealRequestIntentFingerprintPayload,
-) -> FirstSeenSealCommandRecord | None:
-    """durable first-seen record 로 replay/거절/진행을 가른다(순수).
-
-    같은 fingerprint → 최초 record replay. 다른 fingerprint → ``IdempotencyKeyReused``. 없으면 None.
-    """
-    if prior is None:
-        return None
-    if prior.request_intent_fingerprint_digest != request_intent_fingerprint_digest(
-        fingerprint
-    ):
-        raise IdempotencyKeyReused(
-            "request 가 다른 intent fingerprint 로 재사용됨(최초 record 보존)"
-        )
-    return prior
-
-
 # ─── candidate compile(fence 밖 pure) ─────────────────────────────────────────────────
 @dataclass(frozen=True)
 class PlanCandidate:
-    """complete capture 가 sealable Plan 으로 compile 된 결과 — final gate publish 후보."""
+    """complete capture 가 sealable Plan 으로 compile 된 결과 — final gate seal 후보.
+
+    R2-04b-2(#740): durable store 가 없어 plan_payload·plan_semantic_digest·dependency_set 를 싣지
+    않는다. final gate 의 basis-equality staleness 판정과 성공 outcome 이 쓰는 ``execution_basis_digest``
+    만 identity 로 남긴다.
+    """
 
     qualification_profile_id: str
     template_application_id: str
     resolved_seal_policy: ResolvedSealPolicy
-    execution_basis: ExecutionBasis
     execution_basis_digest: str
-    plan_semantic_digest: str
-    plan_payload: Any  # SealedExecutionPlanSemanticPayload
-    dependency_set: Any  # PlanDependencySet
+    plan_payload: Any  # SealedExecutionPlanSemanticPayload — S6 materialization/conformance 소비
     capture_evidence: CompleteSealCaptureEvidence
     captured_execution_input_digest: str
 
@@ -419,8 +368,6 @@ def _build_plan_candidate(
     evidence: CompleteSealCaptureEvidence,
     theorem_registry: TheoremEvidenceRegistry,
 ) -> PlanCandidate:
-    from hwpxfiller.application.stored_execution_plan import PlanDependencySet
-
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
     applied = captured.template.applied
@@ -458,6 +405,10 @@ def _build_plan_candidate(
         field_binding=compiled.effective_field_binding_basis,
     )
     verify_execution_basis_integrity(basis)
+    # durable store·dependency retention·plan_semantic_digest identity 는 없다(R2-04b-2). 다만 sealed
+    # plan payload 는 여전히 조립한다 — S6 materialization/conformance gate 가 소비하는 compiled plan
+    # 이라 store artifact 가 아니다. candidate 는 그 payload + final gate staleness 가 쓰는
+    # execution_basis_digest 만 싣는다(publication kind·plan digest 없음).
     semantic_payload = compiled.execution_basis_semantic_payload
     plan_payload = build_sealed_plan(
         execution_basis=basis,
@@ -466,27 +417,12 @@ def _build_plan_candidate(
         plan_schema_version=policy.plan_schema_version,
         canonical_encoding_version=policy.canonical_encoding_version,
     )
-    dependency_set = PlanDependencySet(
-        candidate_blob_ref=applied.canonical_blob_reference,
-        pass_evidence_ref=qual.pass_evidence_id,
-        # QualificationObjectStore.get_manifest 는 profile ID 로만 resolve 한다 — semantic digest 를
-        # retention ref 로 두면 nonempty 검사는 통과해도 나중에 manifest 를 못 찾는다(#722 finding 5).
-        qualification_profile_manifest_ref=qual.qualification_profile_id,
-        template_structure_projection_ref=qual.template_structure_digest,
-        execution_contract_set_ref=contracts.contract_set_manifest_digest,
-        composition_theorem_evidence_manifest_ref=(
-            policy.composition_theorem_evidence_manifest_digest
-        ),
-    )
     return PlanCandidate(
         qualification_profile_id=qual.qualification_profile_id,
         template_application_id=applied.template_application_id,
         resolved_seal_policy=policy,
-        execution_basis=basis,
         execution_basis_digest=execution_basis_digest(basis),
-        plan_semantic_digest=plan_semantic_digest(plan_payload),
         plan_payload=plan_payload,
-        dependency_set=dependency_set,
         capture_evidence=evidence,
         captured_execution_input_digest=evidence.captured_execution_input_digest,
     )
@@ -645,41 +581,6 @@ def _stale(candidate: PlanCandidate, reason: str, summary: WorkExecutionSummary)
     )
 
 
-def final_verdict_on_moved_basis(
-    candidate: CandidateCompilation, summary: WorkExecutionSummary
-) -> FinalVerdict:
-    """current summary 가 candidate 의 profile/application 과 다르면 base 가 이동한 것이다.
-
-    다른 ProfileFence 를 WorkFence 아래 잡지 않는다 — PlanCandidate 는 STALE(DIGEST_MISMATCH),
-    BlockedCandidate 는 basis digest 가 없어 attempt(재판정)로 닫는다.
-    """
-    if isinstance(candidate, PlanCandidate):
-        return _stale(candidate, STALE_DIGEST_MISMATCH, summary)
-    raise ExecutionQualificationContextError(
-        "captured blocker 의 base 가 이동했다 — current 로 재판정하라(재시도 가능)"
-    )
-
-
-def final_verdict_profile_moved(
-    candidate: CandidateCompilation,
-    candidate_profile_observation: CaptureExecutionQualificationResult,
-    summary: WorkExecutionSummary,
-) -> FinalVerdict:
-    """current profile 이 candidate 와 달라진 경우 — candidate ProfileFence 아래 admission 을 먼저 본다.
-
-    다른 ProfileFence 를 WorkFence 아래 잡을 수 없으므로 candidate profile(우리가 fence 를 쥔 그
-    profile)의 admission 을 capture 로 관찰한다. 그 profile 이 revoked 면 policy block 이
-    precedence 상 stale 보다 앞선다 — moved 를 이유로 revocation 을 놓치지 않는다(#722 finding 4).
-    admitted 면 work 가 다른 base 로 이동한 것이라 moved-basis stale 로 닫는다.
-    """
-    if isinstance(candidate_profile_observation, CapturedExecutionPolicyBlock):
-        terminal = _policy_block_evidence_and_outcome(
-            candidate_profile_observation, candidate.resolved_seal_policy
-        )
-        return FinalLedger(outcome=terminal.outcome, evidence=terminal.evidence)
-    return final_verdict_on_moved_basis(candidate, summary)
-
-
 def decide_final_verdict(
     candidate: CandidateCompilation,
     current_result: CaptureExecutionQualificationResult,
@@ -765,16 +666,7 @@ def _verdict_current_sealable(
     return _stale(candidate, STALE_DIGEST_MISMATCH, summary)
 
 
-# ─── publish kind 결정 ─────────────────────────────────────────────────────────────────
-def publication_kind_for(aggregate: WorkExecutionPlanAggregate, plan_digest: str) -> str:
-    """WorkFence 아래 load 한 aggregate 로 create/reuse 를 결정한다(store 가 재검증한다)."""
-    return "REUSED" if plan_digest in aggregate.plans_by_semantic_digest else "CREATED"
-
-
-def published_outcome_for(candidate: PlanCandidate, publication_kind: str) -> PlanPublished:
-    return PlanPublished(
-        publication_kind=publication_kind,
-        plan_semantic_digest=candidate.plan_semantic_digest,
-        execution_basis_digest=candidate.execution_basis_digest,
-        captured_execution_input_digest=candidate.captured_execution_input_digest,
-    )
+# ─── seal 성공 outcome(durable publication 없음) ────────────────────────────────────────
+def sealed_outcome_for(candidate: PlanCandidate) -> ExecutionPlanSealed:
+    """current candidate 에서 직접 seal 성공 outcome 을 낸다 — store commit·publication kind 없음."""
+    return ExecutionPlanSealed(execution_basis_digest=candidate.execution_basis_digest)

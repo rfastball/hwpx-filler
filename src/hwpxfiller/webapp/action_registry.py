@@ -174,6 +174,19 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # request_id 는 prepare intent 재전송 단위(웹 발급), change_token 은 opaque token.
         "template_check": _schema("request_id"),
         "template_apply": _schema("change_token"),
+        # S4 Working Slot Configuration Product command(SX-02 #725) — work 는 세션의 현재 작업이라
+        # payload 에 없다(template_check 선례). configuration_token 은 직전 응답이 되돌려준 opaque
+        # HMAC token(프런트가 계산하지 않는다), request_id 는 프런트 발급 재전송 단위. open 은
+        # 무페이로드 조회, refresh 는 optional token(무이면 최초 조회), select/clear 는 mutation.
+        "open_slot_configuration": _schema(),
+        "refresh_slot_configuration": _schema(optional="configuration_token"),
+        "select_slot_option": _schema("configuration_token slot_id option_id request_id"),
+        "clear_slot_selection": _schema("configuration_token slot_id request_id"),
+        # 작업대 execution 확인(SX-03 #726) — 무페이로드: 무엇을 봉인·관찰할지(현재 작업)는 Python 이
+        # 소유한다. resolve_execution 은 자동 확인의 명시 재실행(수동 seal 관리 동사 아님),
+        # refresh_observation 은 마지막 Plan 재관찰(새 seal 아님). 둘 다 seal 서비스 경로를 지난다.
+        "resolve_execution": _schema(),
+        "refresh_observation": _schema(),
         "rename_job": _schema("name", "new"),
         "cancel_generation": _schema(),
         # 결과 3태의 「실패한 N건만 선택」(지도 §10.10 판정 F) — 무페이로드: 실패 index 는

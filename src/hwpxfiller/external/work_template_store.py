@@ -41,7 +41,7 @@ from hwpxfiller.application.work_template_state import (
     decode_aggregate,
     encode_aggregate,
 )
-from hwpxfiller.host.profile_admission_fence import store_lease_order_guard
+from hwpxfiller.host.per_work_fence import store_lease_order_guard
 
 from .atomic import write_text_atomic
 from .candidate_store import CandidateObjectStore

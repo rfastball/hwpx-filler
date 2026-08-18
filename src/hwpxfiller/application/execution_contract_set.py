@@ -72,10 +72,6 @@ class ExecutionPlanIntegrityError(Exception):
     code = "EXECUTION_PLAN_INTEGRITY_ERROR"
 
 
-class ExecutionPlanCompilationIntegrityError(Exception):
-    code = "EXECUTION_PLAN_COMPILATION_INTEGRITY_ERROR"
-
-
 class UnsupportedPlanSchemaError(Exception):
     code = "UNSUPPORTED_PLAN_SCHEMA"
 
@@ -201,7 +197,7 @@ def build_execution_contract_set(
     materialization_base_contract_id: str,
     materialization_contract_id: str,
     composition_theorem_evidence_manifest_digest: str,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+    theorem_registry: "TheoremEvidenceRegistry | None" = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> ExecutionContractSet:
     """모든 contract 역할을 exact 하게 결속해 closed set 을 만든다(fail-closed).
 
@@ -209,20 +205,34 @@ def build_execution_contract_set(
     ``composition_theorem_evidence_manifest_digest`` 는 (composition, native primitive) 로 registry 가
     resolve 한 canonical theorem evidence digest 와 정확히 일치해야 한다 — 미등록 pair 는 latest 로
     fallback 하지 않고 registry.resolve 가 시끄럽게 닫는다.
+
+    R2-01(#740): ``theorem_registry=None`` 은 theorem runtime bureaucracy 결합을 끊은 semantic
+    kernel 용 opt-out 이다 — registry 를 consult 하지 않고 caller 가 신뢰하는 digest 를 그대로
+    싣는다(digest 는 여전히 nonempty). 결과 ExecutionContractSet 은 registry 검증 경로와 **byte
+    동일**하다(검증만 생략, 구성값 동일). 기존 caller 는 default registry 로 종전대로 검증한다.
     """
     if materialization_base_contract_id != MATERIALIZATION_BASE_CONTRACT_ID:
         raise ExecutionContractSetIntegrityError(
             f"materialization base contract 가 admitted base 가 아니다(latest fallback 없음): "
             f"{materialization_base_contract_id!r}"
         )
-    # theorem evidence 는 (composition, native primitive) 로 registry 가 resolve — 미등록은 fail-closed.
-    registered = theorem_registry.resolve(composition_contract_id, native_primitive_contract_id)
-    if theorem_evidence_digest(registered) != _require_nonempty(
-        composition_theorem_evidence_manifest_digest,
-        "composition_theorem_evidence_manifest_digest",
-    ):
-        raise ExecutionContractSetIntegrityError(
-            "composition_theorem_evidence_manifest_digest 가 등록된 theorem evidence 와 불일치"
+    if theorem_registry is not None:
+        # theorem evidence 는 (composition, native primitive) 로 registry 가 resolve — 미등록은 fail-closed.
+        registered = theorem_registry.resolve(
+            composition_contract_id, native_primitive_contract_id
+        )
+        if theorem_evidence_digest(registered) != _require_nonempty(
+            composition_theorem_evidence_manifest_digest,
+            "composition_theorem_evidence_manifest_digest",
+        ):
+            raise ExecutionContractSetIntegrityError(
+                "composition_theorem_evidence_manifest_digest 가 등록된 theorem evidence 와 불일치"
+            )
+    else:
+        # registry 미consult(kernel opt-out) — digest 는 caller 신뢰값이되 비어 있을 수 없다(fail-closed).
+        _require_nonempty(
+            composition_theorem_evidence_manifest_digest,
+            "composition_theorem_evidence_manifest_digest",
         )
     roles = {
         "slot_selection_contract_id": _require_nonempty(
@@ -504,6 +514,27 @@ def plan_semantic_digest(payload: SealedExecutionPlanSemanticPayload) -> str:
     return canonical_execution_digest(encode_sealed_plan(payload))
 
 
+def canonicalize_execution_operations(
+    active_field_requirements: Iterable[Mapping[str, Any]],
+    ordered_operations: Iterable[Mapping[str, Any]],
+) -> tuple[tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
+    """ordered_operations 를 deep-freeze 하고 active_field_requirements 를 APPLY 순서로 정본화한다.
+
+    :func:`build_sealed_plan`(legacy Plan payload)과 semantic kernel(closed manifest 없는 값)이
+    **같은** canonical ordering 을 공유하는 단일 출처다 — requirement array 를 APPLY operation 순서로
+    정본화해 두 array 가 같은 canonical sequence 를 쓰게 한다(#702 operation order canonicality).
+    deep-freeze 로 nested value_expression 까지 alias 를 끊어 봉인 뒤 변이를 막는다.
+    """
+    ops = tuple(_deep_freeze(o) for o in ordered_operations)
+    reqs = [_deep_freeze(r) for r in active_field_requirements]
+    apply_seq = [
+        o.get("field_id") for o in ops if o.get("op") == PLAN_APPLY_FIELD_BINDING
+    ]
+    apply_rank = {f: i for i, f in enumerate(apply_seq) if isinstance(f, str)}
+    reqs.sort(key=lambda r: apply_rank.get(r.get("field_id"), len(apply_rank)))
+    return tuple(reqs), ops
+
+
 def build_sealed_plan(
     *,
     execution_basis: ExecutionBasis,
@@ -520,21 +551,14 @@ def build_sealed_plan(
     """
     require_supported_encoding(canonical_encoding_version)
     _require_nonempty(plan_schema_version, "plan_schema_version")
-    # deep-freeze: nested value_expression 까지 alias 를 끊어 봉인 뒤 변이를 막는다.
-    ops = tuple(_deep_freeze(o) for o in ordered_operations)
-    reqs = [_deep_freeze(r) for r in active_field_requirements]
-    # requirement array 를 APPLY operation 순서로 정본화한다 — 두 array 가 같은 canonical sequence 를
-    # 쓰게 해 verify 가 APPLY 순서 뒤섞임을 잡을 수 있다(#702 operation order canonicality).
-    apply_seq = [
-        o.get("field_id") for o in ops if o.get("op") == PLAN_APPLY_FIELD_BINDING
-    ]
-    apply_rank = {f: i for i, f in enumerate(apply_seq) if isinstance(f, str)}
-    reqs.sort(key=lambda r: apply_rank.get(r.get("field_id"), len(apply_rank)))
+    reqs, ops = canonicalize_execution_operations(
+        active_field_requirements, ordered_operations
+    )
     return SealedExecutionPlanSemanticPayload(
         plan_schema_version=plan_schema_version,
         canonical_encoding_version=canonical_encoding_version,
         execution_basis=execution_basis,
-        active_field_requirements=tuple(reqs),
+        active_field_requirements=reqs,
         ordered_operations=ops,
     )
 
@@ -636,65 +660,6 @@ def _field_id(entry: Mapping[str, Any], what: str) -> str:
     if not isinstance(value, str) or value == "":
         raise ExecutionPlanIntegrityError(f"{what} 에 field_id 가 없다")
     return value
-
-
-# ─── PlanCompilationKey ────────────────────────────────────────────────────────────────
-@dataclass(frozen=True)
-class PlanCompilationKey:
-    """(execution_basis_digest, plan_schema_version, canonical_encoding_version).
-
-    불변식: 한 key 는 최대 하나의 ``plan_semantic_digest`` 를 갖는다. 같은 execution basis 라도
-    plan schema/encoding version 이 다르면 다른 key → 다른 Plan digest 가 허용된다.
-    """
-
-    execution_basis_digest: str
-    plan_schema_version: str
-    canonical_encoding_version: str
-
-
-def plan_compilation_key_of(payload: SealedExecutionPlanSemanticPayload) -> PlanCompilationKey:
-    return PlanCompilationKey(
-        execution_basis_digest=execution_basis_digest(payload.execution_basis),
-        plan_schema_version=payload.plan_schema_version,
-        canonical_encoding_version=payload.canonical_encoding_version,
-    )
-
-
-def encode_plan_compilation_key(key: PlanCompilationKey) -> dict[str, Any]:
-    return {
-        "execution_basis_digest": key.execution_basis_digest,
-        "plan_schema_version": key.plan_schema_version,
-        "canonical_encoding_version": key.canonical_encoding_version,
-    }
-
-
-def plan_compilation_key_digest(key: PlanCompilationKey) -> str:
-    """PlanCompilationKey 의 canonical content-address."""
-    return canonical_execution_digest(encode_plan_compilation_key(key))
-
-
-class PlanCompilationLedger:
-    """functional dependency 계약: PlanCompilationKey → 최대 1 plan_semantic_digest.
-
-    같은 key 에서 다른 plan digest 가 관찰되면 EXECUTION_PLAN_COMPILATION_INTEGRITY_ERROR. 이 검사는
-    끌 수 없다(record 가 유일한 삽입 경로다). durable store/publication 은 S5-07 소유다 — 여기서는
-    functional dependency 판정만 진다.
-    """
-
-    def __init__(self) -> None:
-        self._by_key: dict[str, str] = {}
-
-    def record(self, key: PlanCompilationKey, plan_digest: str) -> None:
-        key_digest = plan_compilation_key_digest(key)
-        existing = self._by_key.get(key_digest)
-        if existing is not None and existing != plan_digest:
-            raise ExecutionPlanCompilationIntegrityError(
-                f"PlanCompilationKey 가 서로 다른 plan digest 로 매핑됨: {existing} != {plan_digest}"
-            )
-        self._by_key[key_digest] = plan_digest
-
-    def get(self, key: PlanCompilationKey) -> str | None:
-        return self._by_key.get(plan_compilation_key_digest(key))
 
 
 # ─── DurableSealCaptureEvidence codec seam ─────────────────────────────────────────────

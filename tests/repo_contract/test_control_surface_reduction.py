@@ -73,7 +73,6 @@ _PROFILE_SURFACE_TERMS = ("profile", "qualification")
 DURABLE_AGGREGATE_MODULES = (
     "stored_execution_plan.py",
     "stored_field_binding.py",
-    "stored_profile_admission.py",
     "stored_work_configuration.py",
     "work_slot_configuration.py",
 )
@@ -89,14 +88,14 @@ DURABLE_AGGREGATE_MODULES = (
 #: 이슈에서 증명하고, allowlist·baseline 을 함께 넓힌다.
 LEDGER_BASELINE = frozenset(
     {
-        "stored_execution_plan.py|first_seen_ledger|FirstSeenSealCommandRecord",
+        # S5F R2-04a(#740): stored_execution_plan 의 first-seen seal request ledger 를 제거했다 —
+        # seal 은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다(idempotency/
+        # replay 소비자 부재). content-addressed Plan history 는 04b 대상으로 남는다.
         "stored_field_binding.py|current_by_application|ApplicationRevisionPointer",
         "stored_field_binding.py|immutable_binding_revisions|FieldBindingRevision",
         "stored_field_binding.py|migration_drafts|CommittedDraftRecord",
         "stored_field_binding.py|application_review_drafts|CommittedDraftRecord",
         "stored_field_binding.py|first_seen_command_ledger|FieldBindingIdempotencyRecord",
-        "stored_profile_admission.py|decisions|AdmissionDecision",
-        "stored_profile_admission.py|processed_requests|AdmissionIdempotencyRecord",
         "stored_work_configuration.py|processed_requests|IdempotencyRecord",
         "work_slot_configuration.py|configurations|WorkSlotConfigurationDraft",
     }
@@ -344,15 +343,17 @@ def test_exactly_one_shipping_qualification_profile() -> None:
     ], f"shipping Profile 은 정확히 하나여야 한다: {constructions}"
 
     counts = _call_counts()
-    # bootstrap explicit admission 1 (template_change) · dynamic publication route 0 · revoke 0.
-    assert counts["initialize_qualification_profile_admission"] == 1, (
-        "built-in Profile bootstrap admission 은 production 에서 정확히 1회여야 한다"
+    # S5F R2-05a(#740): mutable Profile admission control plane 을 제거했다 — bootstrap-to-ADMITTED·
+    # dynamic publication·revoke 가 production·저장소 전역에서 0 이다(immutable Qualification identity 만
+    # 남는다). 셋 다 0 이 admission 제어면 부재의 census 증거다.
+    assert counts["initialize_qualification_profile_admission"] == 0, (
+        "mutable Profile admission bootstrap 은 R2-05a 에서 제거됐다(호출 0)"
     )
     assert counts["register_published_qualification_profile_admission"] == 0, (
-        "dynamic Profile publication 은 v1 제품 route 가 없어야 한다(internal/incident/test 전용)"
+        "dynamic Profile publication route 는 없다(R2-05a 로 admission 제어면 전면 제거)"
     )
     assert counts["revoke_qualification_profile"] == 0, (
-        "Profile revoke 는 v1 사용자/관리자 제품 표면이 아니다(internal/incident/test 전용)"
+        "Profile revoke 표면은 없다(R2-05a 로 admission 제어면 전면 제거)"
     )
 
 

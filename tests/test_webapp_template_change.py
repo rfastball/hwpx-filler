@@ -196,18 +196,15 @@ def test_apply_resend_is_already_applied(tmp_path):
     assert again["current_template_application_epoch"] == 2
 
 
-def test_restored_prepared_change_applies_after_upgrade_without_admission(tmp_path):
-    # 업그레이드 회귀(#705 Codex P2): durable PREPARED change 는 있는데 admission store 가
-    # 아직 없는 재시작 세션에서, zone() 로 재발급한 token 의 restored-apply 가 admission
-    # gate 에 STATE_MISSING 으로 막히지 않고 성공해야 한다(check 경로와 동일한 멱등 bootstrap).
-    import shutil
-
+def test_restored_prepared_change_applies_after_restart(tmp_path):
+    # 재시작 세션에서 durable PREPARED change 를 zone() 로 재발급한 token 의 restored-apply 가
+    # check 없이 성공한다. (R2-05a: mutable Profile admission gate 가 사라져 STATE_MISSING 으로
+    # 막힐 여지 자체가 없다 — apply 는 exact qualification evidence + Work-local currentness 로 닫힌다.)
     reg, _tpl, _coord, _token = _ready(tmp_path)
-    shutil.rmtree(tmp_path / "authority" / "admissions")  # admission store 부재(업그레이드 전 저작)
-    restarted = _coordinator(tmp_path, reg)  # 재시작 — 세션 token map·admission 비어 있음
+    restarted = _coordinator(tmp_path, reg)  # 재시작 — 세션 token map 비어 있음
     view = restarted.zone("공고서", "hwpx", False)["preparation"]  # check 없이 token 재발급
     assert view["status"] == "ready" and view["change_token"]
-    result = restarted.apply("공고서", view["change_token"])  # STATE_MISSING 없이 적용
+    result = restarted.apply("공고서", view["change_token"])
     assert result["status"] == "applied"
     assert result["current_template_application_epoch"] == 2
 

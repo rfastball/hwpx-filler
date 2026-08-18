@@ -68,6 +68,9 @@ from .screen_editor import EditorController
 from .screen_library import LibraryController
 from .screen_job import JobController
 from .template_change import TemplateChangeCoordinator
+from .slot_configuration_product import SlotConfigurationProduct
+from .seal_execution_plan_service import SealExecutionPlanService
+from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
 from .screen_template import TemplateController
 from .screen_workbench import TargetFontSetting, WorkbenchController
@@ -240,7 +243,26 @@ class WebFrontend:
                               job_registry,
                               root=default_template_authority_dir(),
                               clock=datetime.now,
-                          )),
+                          ),
+                          # S4 Working Slot Configuration(SX-02 #679·#725) — TemplateChangeCoordinator
+                          # 와 **같은 authority root** 를 공유한다: bootstrap 이 세운 Work/Application 을
+                          # 그대로 읽어 slot projection·durable command 를 낸다(별도 스토어 조립 없음).
+                          slot_configuration=SlotConfigurationProduct(
+                              job_registry,
+                              root=default_template_authority_dir(),
+                              clock=datetime.now,
+                          ),
+                          # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
+                          # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
+                          # fence 아래에서 exact execution plan 을 봉인·관찰한다(dispatch 배선은 SX-03).
+                          seal_execution=SealExecutionPlanService(
+                              job_registry,
+                              root=default_template_authority_dir(),
+                              clock=datetime.now,
+                          ),
+                          # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
+                          # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
+                          workbench_observation=WorkbenchObservationProduct()),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups

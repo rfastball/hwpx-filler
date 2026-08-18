@@ -30,9 +30,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from hwpxfiller.application import document_creation_vocabulary as vocab  # noqa: E402
 from hwpxfiller.application.template_change_product import (  # noqa: E402
     PRODUCT_APPLY_STATUSES,
     PRODUCT_PREPARATION_STATUSES,
+)
+from hwpxfiller.application.workbench_execution_status import (  # noqa: E402
+    WORKBENCH_EXECUTION_STATUS_CODES,
 )
 from hwpxfiller.webapp import product_api  # noqa: E402
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY  # noqa: E402
@@ -251,6 +255,38 @@ def render_contract(
         )
         lines.append(f"  {name}({rendered}): unknown;")
     lines += ["}", ""]
+    lines += [
+        "/* 문서 만들기 작업대 blocker 계열(SX-01 #724 §3) — 정의 순서가 곧 우선순위 기반이다.",
+        " * 정본: application/document_creation_vocabulary.py. React 가 이 순서를 재구현하지 않는다",
+        " * (blocker 합성은 backend Product 계약이 진다). */",
+        *_string_array("DOCUMENT_CREATION_BLOCKERS", vocab.BLOCKER_CODES),
+        "",
+        "export type DocumentCreationBlocker = (typeof DOCUMENT_CREATION_BLOCKERS)[number];",
+        "",
+        "/* Primary Action 코드 — 우선순위 순서(#724 §3). 첫 원소가 최우선, 마지막이",
+        " * CREATE_DOCUMENTS. 표시층은 이 순서를 재계산하지 않고 backend 가 고른 하나를 소비한다. */",
+        *_string_array("PRIMARY_ACTIONS", vocab.PRIMARY_ACTION_CODES),
+        "",
+        "export type PrimaryAction = (typeof PRIMARY_ACTIONS)[number];",
+        "",
+        "/* 작업대 execution status 7상태(SX-03 #726 §3) — orchestration+sealability+",
+        " * admission verdict 의 재라벨. 정본: application/workbench_execution_status.py. 표시층은",
+        " * 이 코드를 재판정하지 않고 backend 가 파생한 하나를 소비한다(문안은 STATUS_PHRASE 정본). */",
+        *_string_array("WORKBENCH_EXECUTION_STATUSES", WORKBENCH_EXECUTION_STATUS_CODES),
+        "",
+        "export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];",
+        "",
+        "/* PreviewRequirement v1 종류(#724 §6) — REQUIRED 의 reason·basis 는 Product DTO 소유. */",
+        *_string_array("PREVIEW_REQUIREMENT_KINDS", vocab.PREVIEW_REQUIREMENT_KINDS),
+        "",
+        "export type PreviewRequirementKind = (typeof PREVIEW_REQUIREMENT_KINDS)[number];",
+        "",
+        "/* RunDeliveryIntent collision policy(#724 §8) — 기본 ADD_SUFFIX, overwrite 는 명시 선택. */",
+        *_string_array("COLLISION_POLICIES", vocab.COLLISION_POLICIES),
+        "",
+        "export type CollisionPolicy = (typeof COLLISION_POLICIES)[number];",
+        "",
+    ]
     return "\n".join(lines)
 
 
