@@ -787,25 +787,14 @@ def evaluate_composition_premises(
 
 
 # ─── verifier ────────────────────────────────────────────────────────────────────────
-def verify_execution_composition_premises(
-    *,
+def _composition_identity_context_error(
     structure: ExecutionTemplateStructure,
     native_primitive_contract: NativePrimitiveContractManifest,
-    theorem_evidence: CompositionTheoremEvidenceManifest,
-    composition_contract_id: str = COMPOSITION_CONTRACT_ID,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-) -> CompositionPremiseVerificationResult:
-    """exact projection fact + theorem evidence 로 ordered composition premise 를 판정한다.
+    composition_contract_id: str,
+) -> "CompositionPremiseContextError | None":
+    """(0) projection schema + (1) composition/native primitive contract identity(순수 fail-closed).
 
-    PASS 는 (1) composition/native primitive contract 가 등록됨, (2) theorem evidence 가
-    integrity·PASS, (3) projection resolver/removal contract 가 native primitive contract 와
-    결속, (4) C1~C10 이 전부 증명될 때만. 증명 안 되면 latest fallback 없이 Blocked/ContextError.
-
-    이 PASS 는 **static admission** 만을 뜻한다 — ordered ops 가 지원되는 static composition
-    contract 에 속함. serialize/reparse/postcondition/한글 layout/delivery 성공에 대해서는 아무것도
-    단언하지 않으며, runtime materializer conformance 를 **대체하지 않는다**(그 seam 은
-    :class:`RuntimeMaterializerConformanceRegistry`·SG-02 harness·S6 소유). seal/compile 경로는
-    admission 판정에 그 registry 를 절대 consult 하지 않는다.
+    theorem registry 를 consult 하지 않는다 — 미지원 contract/schema 는 latest fallback 없이 닫는다.
     """
     # (0) projection schema — 미지원 v2 밖 structure 를 v2 의미로 해석하지 않는다(fail-closed).
     if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
@@ -832,24 +821,44 @@ def verify_execution_composition_premises(
             UnsupportedNativePrimitiveContract.code, None,
             "native primitive contract 가 등록된 canonical 과 불일치(같은 ID 의미 수정 금지)",
         )
+    return None
 
-    # (2) theorem evidence integrity·PASS.
-    try:
-        verify_theorem_evidence_integrity(theorem_evidence, registry=theorem_registry)
-    except CompositionTheoremEvidenceUnproven as exc:
-        return CompositionPremiseContextError(exc.code, None, str(exc))
-    except CompositionAdmissionError as exc:
-        return CompositionPremiseContextError(exc.code, None, str(exc))
-    # integrity 가 evidence == 등록 canonical(=요청 contract 와 같은 ID)임을 이미 강제하므로
-    # evidence↔요청 contract 재대조는 불요(dead) — 여기서 다시 세우지 않는다.
+
+def admit_composition_premises(
+    *,
+    structure: ExecutionTemplateStructure,
+    native_primitive_contract: NativePrimitiveContractManifest,
+    theorem_evidence_manifest_digest: str,
+    composition_contract_id: str = COMPOSITION_CONTRACT_ID,
+    theorem_capability_available: bool = True,
+) -> CompositionPremiseVerificationResult:
+    """C1~C10 structural admission 을 theorem runtime registry **없이** 판정한다(순수·deterministic).
+
+    S5F R2-01(#740) 첫 절개 — theorem runtime bureaucracy 와 semantic kernel 의 결합을 끊는다.
+    :func:`verify_execution_composition_premises` 의 (2) theorem evidence integrity(유일한 registry
+    consult)를 제외한 전부 — (0) projection schema, (1) contract identity, (3) native binding,
+    (4) C1~C10, PASS 조립 — 를 여기 순수하게 둔다. theorem evidence 의 manifest digest 는 caller 가
+    신뢰하는 값(``theorem_evidence_manifest_digest``)으로 그대로 싣고, target-target TOUCHING·owner
+    coincidence gate 는 caller 가 선언한 proven capability(``theorem_capability_available``)로 연다.
+    그 capability correctness 는 theorem corpus 가 **test 로** 증명한다(runtime authority 아님).
+
+    반환 의미는 verify 와 동일하다: PASS / INCOMPLETE(ContextError) / FAILED(Blocked).
+    """
+    identity_error = _composition_identity_context_error(
+        structure, native_primitive_contract, composition_contract_id
+    )
+    if identity_error is not None:
+        return identity_error
 
     # (3) projection 이 native primitive contract 로 servable — resolver/removal 결속.
     binding = _check_native_binding(structure, native_primitive_contract)
     if binding is not None:
         return binding
 
-    # (4) C1~C10.
-    outcomes = evaluate_composition_premises(structure, theorem_evidence_valid=True)
+    # (4) C1~C10 — theorem capability 는 caller 선언(registry 아님).
+    outcomes = evaluate_composition_premises(
+        structure, theorem_evidence_valid=theorem_capability_available
+    )
     # 부재/모순(INCOMPLETE) 을 provable-false(FAILED) 보다 먼저 — 평가 불가가 우선.
     for premise_id in PREMISE_IDS:
         outcome = outcomes[premise_id]
@@ -865,7 +874,6 @@ def verify_execution_composition_premises(
             )
 
     verified_premise_facts = _verified_premise_facts(structure, outcomes)
-    evidence_digest = theorem_evidence_digest(theorem_evidence)
     structure_digest = template_structure_digest(structure)
     premise_verification_digest = content_digest(
         {
@@ -874,7 +882,7 @@ def verify_execution_composition_premises(
                 native_primitive_contract.native_primitive_contract_id
             ),
             "template_structure_digest": structure_digest,
-            "theorem_evidence_manifest_digest": evidence_digest,
+            "theorem_evidence_manifest_digest": theorem_evidence_manifest_digest,
             "verified_premise_facts": verified_premise_facts,
         }
     )
@@ -882,9 +890,57 @@ def verify_execution_composition_premises(
         composition_contract_id=composition_contract_id,
         native_primitive_contract_id=native_primitive_contract.native_primitive_contract_id,
         template_structure_digest=structure_digest,
-        theorem_evidence_manifest_digest=evidence_digest,
+        theorem_evidence_manifest_digest=theorem_evidence_manifest_digest,
         verified_premise_facts=_deep_freeze(verified_premise_facts),
         premise_verification_digest=premise_verification_digest,
+    )
+
+
+def verify_execution_composition_premises(
+    *,
+    structure: ExecutionTemplateStructure,
+    native_primitive_contract: NativePrimitiveContractManifest,
+    theorem_evidence: CompositionTheoremEvidenceManifest,
+    composition_contract_id: str = COMPOSITION_CONTRACT_ID,
+    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+) -> CompositionPremiseVerificationResult:
+    """exact projection fact + theorem evidence 로 ordered composition premise 를 판정한다.
+
+    PASS 는 (1) composition/native primitive contract 가 등록됨, (2) theorem evidence 가
+    integrity·PASS, (3) projection resolver/removal contract 가 native primitive contract 와
+    결속, (4) C1~C10 이 전부 증명될 때만. 증명 안 되면 latest fallback 없이 Blocked/ContextError.
+
+    이 PASS 는 **static admission** 만을 뜻한다 — ordered ops 가 지원되는 static composition
+    contract 에 속함. serialize/reparse/postcondition/한글 layout/delivery 성공에 대해서는 아무것도
+    단언하지 않으며, runtime materializer conformance 를 **대체하지 않는다**(그 seam 은
+    :class:`RuntimeMaterializerConformanceRegistry`·SG-02 harness·S6 소유). seal/compile 경로는
+    admission 판정에 그 registry 를 절대 consult 하지 않는다.
+
+    R2-01(#740): (2) theorem evidence integrity 만 이 wrapper 의 registry consult 로 남기고, 나머지
+    순수 판정((0)(1)(3)(4)·PASS 조립)은 :func:`admit_composition_premises` 가 공유한다 — semantic
+    kernel 은 그 순수 함수만 부른다(registry 미consult). 두 경로의 판정·byte 는 동일하다.
+    """
+    # (0),(1) identity — precedence 를 위해 (2) registry consult 앞에 둔다.
+    identity_error = _composition_identity_context_error(
+        structure, native_primitive_contract, composition_contract_id
+    )
+    if identity_error is not None:
+        return identity_error
+    # (2) theorem evidence integrity·PASS — 이 함수의 **유일한** registry consult.
+    try:
+        verify_theorem_evidence_integrity(theorem_evidence, registry=theorem_registry)
+    except CompositionTheoremEvidenceUnproven as exc:
+        return CompositionPremiseContextError(exc.code, None, str(exc))
+    except CompositionAdmissionError as exc:
+        return CompositionPremiseContextError(exc.code, None, str(exc))
+    # integrity 가 evidence == 등록 canonical 임을 이미 강제하므로 evidence↔contract 재대조는 dead.
+    # (3),(4),PASS 조립 — registry 없는 순수 판정에 위임(theorem digest 는 등록 canonical 값).
+    return admit_composition_premises(
+        structure=structure,
+        native_primitive_contract=native_primitive_contract,
+        theorem_evidence_manifest_digest=theorem_evidence_digest(theorem_evidence),
+        composition_contract_id=composition_contract_id,
+        theorem_capability_available=True,
     )
 
 

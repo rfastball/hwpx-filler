@@ -201,7 +201,7 @@ def build_execution_contract_set(
     materialization_base_contract_id: str,
     materialization_contract_id: str,
     composition_theorem_evidence_manifest_digest: str,
-    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+    theorem_registry: "TheoremEvidenceRegistry | None" = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
 ) -> ExecutionContractSet:
     """모든 contract 역할을 exact 하게 결속해 closed set 을 만든다(fail-closed).
 
@@ -209,20 +209,34 @@ def build_execution_contract_set(
     ``composition_theorem_evidence_manifest_digest`` 는 (composition, native primitive) 로 registry 가
     resolve 한 canonical theorem evidence digest 와 정확히 일치해야 한다 — 미등록 pair 는 latest 로
     fallback 하지 않고 registry.resolve 가 시끄럽게 닫는다.
+
+    R2-01(#740): ``theorem_registry=None`` 은 theorem runtime bureaucracy 결합을 끊은 semantic
+    kernel 용 opt-out 이다 — registry 를 consult 하지 않고 caller 가 신뢰하는 digest 를 그대로
+    싣는다(digest 는 여전히 nonempty). 결과 ExecutionContractSet 은 registry 검증 경로와 **byte
+    동일**하다(검증만 생략, 구성값 동일). 기존 caller 는 default registry 로 종전대로 검증한다.
     """
     if materialization_base_contract_id != MATERIALIZATION_BASE_CONTRACT_ID:
         raise ExecutionContractSetIntegrityError(
             f"materialization base contract 가 admitted base 가 아니다(latest fallback 없음): "
             f"{materialization_base_contract_id!r}"
         )
-    # theorem evidence 는 (composition, native primitive) 로 registry 가 resolve — 미등록은 fail-closed.
-    registered = theorem_registry.resolve(composition_contract_id, native_primitive_contract_id)
-    if theorem_evidence_digest(registered) != _require_nonempty(
-        composition_theorem_evidence_manifest_digest,
-        "composition_theorem_evidence_manifest_digest",
-    ):
-        raise ExecutionContractSetIntegrityError(
-            "composition_theorem_evidence_manifest_digest 가 등록된 theorem evidence 와 불일치"
+    if theorem_registry is not None:
+        # theorem evidence 는 (composition, native primitive) 로 registry 가 resolve — 미등록은 fail-closed.
+        registered = theorem_registry.resolve(
+            composition_contract_id, native_primitive_contract_id
+        )
+        if theorem_evidence_digest(registered) != _require_nonempty(
+            composition_theorem_evidence_manifest_digest,
+            "composition_theorem_evidence_manifest_digest",
+        ):
+            raise ExecutionContractSetIntegrityError(
+                "composition_theorem_evidence_manifest_digest 가 등록된 theorem evidence 와 불일치"
+            )
+    else:
+        # registry 미consult(kernel opt-out) — digest 는 caller 신뢰값이되 비어 있을 수 없다(fail-closed).
+        _require_nonempty(
+            composition_theorem_evidence_manifest_digest,
+            "composition_theorem_evidence_manifest_digest",
         )
     roles = {
         "slot_selection_contract_id": _require_nonempty(

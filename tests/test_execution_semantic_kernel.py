@@ -36,6 +36,7 @@ from hwpxfiller.application.execution_composition import (
     NATIVE_PRIMITIVE_CONTRACT_V1,
     THEOREM_EVIDENCE_V1,
     CompositionPremisesBlocked,
+    TheoremEvidenceRegistry,
     theorem_evidence_digest,
     verify_execution_composition_premises,
 )
@@ -56,7 +57,10 @@ from hwpxfiller.application.execution_structure import (
     SlotRegionObservation,
     build_execution_structure,
 )
-from hwpxfiller.application.seal_execution_plan import compile_candidate
+from hwpxfiller.application.seal_execution_plan import (
+    UnsupportedLocalImplementation,
+    compile_candidate,
+)
 from hwpxfiller.application.template_qualification import (
     TemplateOption,
     TemplateSlot,
@@ -72,6 +76,7 @@ from tests.test_execution_compilation import (
     _binding,
     _entry,
     _occ,
+    _rules,
     _slotless_selection,
     _slotless_structure,
     _snapshot,
@@ -250,6 +255,79 @@ def test_semantic_parity_with_existing_capture_compile_seam():
     assert kern_value.ordered_operations == candidate.plan_payload.ordered_operations
     # kernel 이 만든 snapshot 도 동일 seam 산출과 같다.
     assert compute_execution_snapshot(authority) == captured
+
+
+# ── 미지원 plan schema/encoding → fail-closed(latest 로 풀지 않는다) ──────────────────────
+def test_unsupported_plan_schema_and_encoding_are_fail_closed():
+    structure = _structure()
+    with pytest.raises(SemanticKernelContextError):
+        compute_sealed_execution_plan(
+            _authority(structure, policy=_policy(plan_schema_version="bogus-plan/v9"))
+        )
+    with pytest.raises(SemanticKernelContextError):
+        compute_sealed_execution_plan(
+            _authority(structure, policy=_policy(canonical_encoding_version="bogus-enc/v9"))
+        )
+
+
+# ── Active Field 미바인딩 → user-fixable Blocked(Plan 없음, context error 아님) ────────────
+def test_unbound_active_field_returns_blocked():
+    structure = _structure()
+    # o2(금액) 를 활성화하되 금액 rule 을 빼면 Active Field 가 미바인딩 → ExecutionQualificationBlocked.
+    binding = _binding(structure, rules=_rules(drop=("금액",)))
+    authority = DurableExecutionAuthority(
+        workspace_instance_id=WS,
+        work_authority_id=WORK,
+        expected_template_application_id=APP,
+        expected_profile_id=PROFILE,
+        resolved_seal_policy=_policy(),
+        template=_template(structure),
+        selection=_snapshot(structure, selected="o2"),
+        field_binding=binding,
+        captured_at="2026-08-18T00:00:00Z",
+    )
+    result = compute_sealed_execution_plan(authority)
+    assert isinstance(result, SealedExecutionPlanBlocked)
+    assert result.normalized_blockers  # 사유가 비어 있지 않다
+
+
+# ── R2-01: theorem runtime registry 결합 제거(kernel 은 registry 미consult) ──────────────
+def _judge(authority):
+    return judge_captured_execution(
+        workspace_instance_id=authority.workspace_instance_id,
+        work_authority_id=authority.work_authority_id,
+        expected_template_application_id=authority.expected_template_application_id,
+        expected_profile_id=authority.expected_profile_id,
+        resolved_seal_policy=authority.resolved_seal_policy,
+        template=authority.template,
+        selection_observation=CapturedSelection(authority.selection),
+        field_binding_observation=CapturedFieldBinding(authority.field_binding),
+        captured_at=authority.captured_at,
+        policy_block=None,
+    )
+
+
+def test_kernel_is_independent_of_theorem_registry_runtime():
+    """kernel 은 theorem registry 가 resolve 못 해도 동일 Plan 을 낸다 — theorem runtime
+    bureaucracy 와의 결합이 끊겼음을 행위로 증명한다. 대조로 compile_candidate 는 빈 registry 에서
+    fail-closed 로 raise 하지만, kernel 산출은 registry-검증 경로(default)와 byte 동일하다."""
+    structure = _structure()
+    authority = _authority(structure)
+
+    kern = compute_sealed_execution_plan(authority)  # registry 미consult → 성공
+    assert isinstance(kern, SealedExecutionPlanValue)
+
+    captured = _judge(authority)
+    assert isinstance(captured, CapturedExecutionInput)
+    # 대조: v1 미등록 빈 registry 에서 기존 seam 은 theorem 을 resolve 못 해 fail-closed.
+    empty_registry = TheoremEvidenceRegistry()
+    with pytest.raises(UnsupportedLocalImplementation):
+        compile_candidate(captured, theorem_registry=empty_registry)
+
+    # 그럼에도 kernel(registry 없음) 산출은 registry-검증 compile_candidate(default)와 byte 동일.
+    canonical = compile_candidate(captured)
+    assert kern.plan_payload == canonical.plan_payload
+    assert kern.execution_basis == canonical.execution_basis
 
 
 # ── slotless authority 도 순수 재계산된다 ──────────────────────────────────────────────
