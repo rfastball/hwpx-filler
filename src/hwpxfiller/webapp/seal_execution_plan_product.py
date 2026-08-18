@@ -12,10 +12,10 @@
 PublishedPlanObservation + digest-vs-stored currentness(CURRENT/STALE) + command_replayed 를 제거했다.
 observation 은 store 의 과거 Plan 이 아니라 current authority 에서 SealedExecutionPlanValue 를 직접
 계산한다(value 가 곧 현재라 currentness 축이 없다). command_outcome 의 StaleExecutionBasis(capture→
-final gate concurrency)와 ProfileFence 는 유지한다. **S5F R2-05a(#740): mutable Profile
-admission(ADMITTED/REVOKED) 조회를 제거했다** — runtime admission 은 base kind·plan schema/encoding
-runtime support·materializer conformance capability 만 보고(S6 미출하면 NOT_ADMITTED→NOT_READY),
-Product 는 더 이상 admission-state port 를 받지 않는다.
+final gate concurrency)는 유지한다. **R2-05a 로 mutable Profile admission 조회를, R2-05b(#740)로
+ProfileFence·optimistic Profile discovery 를 제거했다** — observation 은 PerWorkFence 하나 아래에서
+current authority 를 capture 하고, runtime admission 은 base kind·plan schema/encoding runtime
+support·materializer conformance capability 만 본다(S6 미출하면 NOT_ADMITTED→NOT_READY).
 
 **additive 경계**: 이 Product service 는 headless(pywebview 비의존)이고 production Generate route 를
 cut over 하거나 native materialization 을 시작하지 않는다(S6 소유). action registry·bridge·frontend
@@ -73,18 +73,9 @@ from ..application.stored_execution_plan import (
 )
 from ..external.seal_orchestration_runner import seal_execution_plan
 from ..host.per_work_fence import per_work_mutation_fence
-from ..host.profile_admission_fence import profile_admission_fence
-
-MAX_OBSERVATION_ATTEMPTS = 8
 
 # Product contract error code(fresh observation 축 전용 강등 코드).
 EXECUTION_OBSERVATION_CONTEXT_ERROR = "EXECUTION_OBSERVATION_CONTEXT_ERROR"
-
-
-class ObservationRetryExhausted(Exception):
-    """fresh observation Profile discovery 가 bounded 재시도를 소진 — command outcome 은 보존."""
-
-    code = EXECUTION_OBSERVATION_CONTEXT_ERROR
 
 
 # ─── runtime materializer conformance port(S6 가 admit 을 구현, S5 는 미출하) ────────────
@@ -190,7 +181,6 @@ class SealExecutionPlanResponse:
 
 _Route = Callable[[str, str], str]
 _Authorize = Callable[[str, str], None]
-_ProfileFence = Callable[[str], Any]
 _WorkFence = Callable[[str, str], Any]
 
 
@@ -213,9 +203,7 @@ class SealExecutionPlanProduct:
             s6_absent_runtime_conformance
         ),
         theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-        profile_fence: _ProfileFence = profile_admission_fence,
         work_fence: _WorkFence = per_work_mutation_fence,
-        max_observation_attempts: int = MAX_OBSERVATION_ATTEMPTS,
     ) -> None:
         self._resolve_route = resolve_route
         self._authorize = authorize
@@ -225,9 +213,7 @@ class SealExecutionPlanProduct:
         self._clock = clock
         self._runtime = runtime_conformance
         self._theorem_registry = theorem_registry
-        self._profile_fence = profile_fence
         self._work_fence = work_fence
-        self._attempts = max_observation_attempts
 
     # ── public Product API ────────────────────────────────────────────────────────
     def seal_execution_plan(
@@ -253,7 +239,6 @@ class SealExecutionPlanProduct:
             read_summary=self._read_summary,
             capture_under_fence=self._capture,
             resolve_shipping_policy=self._resolve_policy,
-            profile_fence=self._profile_fence,
             work_fence=self._work_fence,
             theorem_registry=self._theorem_registry,
         )
@@ -304,27 +289,23 @@ class SealExecutionPlanProduct:
     def _observe_current_work(
         self, ws: str, work_id: str, command: SealExecutionPlanCommand
     ) -> FreshExecutionObservation:
-        """current Work 를 ProfileFence→WorkFence 아래 관찰해 current Sealed Plan value 를 재계산한다.
+        """current Work 를 PerWorkFence 하나 아래 관찰해 current Sealed Plan value 를 재계산한다.
 
-        exact capture → kernel compile: sealable 이면 SealedExecutionPlanValue + admission + readiness,
-        seal 불가면 current-work blocker. store 를 읽지 않는다(historical Plan lookup 없음).
+        R2-05b(#740): ProfileFence·optimistic Profile discovery·bounded retry 를 제거했다 — PerWorkFence
+        아래에서 exact authority 를 바로 읽어 capture 한다. exact capture → kernel compile: sealable 이면
+        SealedExecutionPlanValue + admission + readiness, seal 불가면 current-work blocker. store 를
+        읽지 않는다(historical Plan lookup 없음).
         """
-        for _ in range(self._attempts):
-            observed = self._read_summary(ws, work_id)
-            with self._profile_fence(observed.qualification_profile_id):
-                with self._work_fence(ws, work_id):
-                    exact = self._read_summary(ws, work_id)
-                    if exact.qualification_profile_id != observed.qualification_profile_id:
-                        continue
-                    # CURRENT shipping policy 를 fresh resolve 한다 — AUTO default 가 바뀐 뒤
-                    # obsolete contract 로 관찰하지 않게 매 관찰이 현재 policy 를 쓴다.
-                    policy = self._resolve_policy(command, exact)
-                    current = self._capture(
-                        ws, work_id, exact.template_application_id,
-                        exact.qualification_profile_id, policy,
-                    )
-                    return self._classify_current(work_id, exact, policy, current)
-        raise ObservationRetryExhausted("fresh observation Profile discovery 재시도 소진")
+        with self._work_fence(ws, work_id):
+            exact = self._read_summary(ws, work_id)
+            # CURRENT shipping policy 를 fresh resolve 한다 — AUTO default 가 바뀐 뒤 obsolete contract
+            # 로 관찰하지 않게 매 관찰이 현재 policy 를 쓴다.
+            policy = self._resolve_policy(command, exact)
+            current = self._capture(
+                ws, work_id, exact.template_application_id,
+                exact.qualification_profile_id, policy,
+            )
+            return self._classify_current(work_id, exact, policy, current)
 
     def _classify_current(
         self,

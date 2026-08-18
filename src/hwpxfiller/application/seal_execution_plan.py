@@ -89,11 +89,6 @@ STALE_CURRENT_BASIS_NOT_SEALABLE = "CURRENT_BASIS_NOT_SEALABLE"
 _PROVENANCE_UNRESOLVED = "unresolved"
 _SLOTLESS_CONFIG_REF = "SLOTLESS_NO_CONFIGURATION"
 
-# ponytail: 고정 상한 — optimistic discovery 는 fence 아래 exact re-read 로 즉시 수렴하므로 실전 반복은
-# 사실상 1 이다. 상한은 pathological churn 을 유한 시간에 시끄럽게 종료시키는 안전판(#620 계열 상향).
-MAX_DISCOVERY_ATTEMPTS = 8
-
-
 # ─── attempt error(request 미소비) ────────────────────────────────────────────────────
 class SealAttemptError(Exception):
     """terminal 이 아닌 실패의 뿌리 — request ID 를 소비하지 않는다(재시도 가능)."""
@@ -123,12 +118,6 @@ class UnsupportedLocalImplementation(SealAttemptError):
     """다른 shipping build 에서 지원될 수 있는 local attempt failure — semantic policy block 아님."""
 
     code = "UNSUPPORTED_LOCAL_IMPLEMENTATION"
-
-
-class ExecutionCaptureRetryExhausted(SealAttemptError):
-    """optimistic Profile discovery 가 bounded 재시도를 소진 — request 미소비."""
-
-    code = "EXECUTION_CAPTURE_RETRY_EXHAUSTED"
 
 
 # ─── fresh observation query port seam(S5-10 소유 선언) ────────────────────────────────
@@ -169,8 +158,8 @@ class ShippingSealPolicyResolver(Protocol):
 # ─── S6 start admission port 선언(구현하지 않는다) ────────────────────────────────────
 # S6 materialization 은 이 lock order 를 따라야 한다 — 짧은 ordered start-gate 로 Plan·current
 # basis·runtime admission·VDR·dependency 를 pin 하고 fence 를 푼 뒤 긴 materialization 을 한다.
+# R2-05b(#740): ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다(S6 구현은 미착수·미변경).
 S6_START_GATE_LOCK_ORDER = (
-    "QualificationProfileAdmissionFence",
     "PerWorkMutationFence",
     "PlanAndCurrentBasisAndRuntimeAdmissionAndDependencyPin",
     "<fences released>",
@@ -181,8 +170,8 @@ S6_START_GATE_LOCK_ORDER = (
 class S6StartAdmissionGate(Protocol):
     """S6 가 구현할 ordered start-gate port — S5-10 은 선언만 하고 구현하지 않는다.
 
-    ProfileFence→WorkFence 아래에서 Plan·current basis·runtime admission·dependency 를 pin 하고
-    fence 를 release 한 뒤 long materialization 을 시작한다(:data:`S6_START_GATE_LOCK_ORDER`).
+    PerWorkFence 아래에서 Plan·current basis·runtime admission·dependency 를 pin 하고 fence 를
+    release 한 뒤 long materialization 을 시작한다(:data:`S6_START_GATE_LOCK_ORDER`).
     S5-99 는 이 구현에 의존하지 않는다.
     """
 
@@ -590,41 +579,6 @@ def _stale(candidate: PlanCandidate, reason: str, summary: WorkExecutionSummary)
         ),
         evidence=candidate.capture_evidence,
     )
-
-
-def final_verdict_on_moved_basis(
-    candidate: CandidateCompilation, summary: WorkExecutionSummary
-) -> FinalVerdict:
-    """current summary 가 candidate 의 profile/application 과 다르면 base 가 이동한 것이다.
-
-    다른 ProfileFence 를 WorkFence 아래 잡지 않는다 — PlanCandidate 는 STALE(DIGEST_MISMATCH),
-    BlockedCandidate 는 basis digest 가 없어 attempt(재판정)로 닫는다.
-    """
-    if isinstance(candidate, PlanCandidate):
-        return _stale(candidate, STALE_DIGEST_MISMATCH, summary)
-    raise ExecutionQualificationContextError(
-        "captured blocker 의 base 가 이동했다 — current 로 재판정하라(재시도 가능)"
-    )
-
-
-def final_verdict_profile_moved(
-    candidate: CandidateCompilation,
-    candidate_profile_observation: CaptureExecutionQualificationResult,
-    summary: WorkExecutionSummary,
-) -> FinalVerdict:
-    """current profile 이 candidate 와 달라진 경우 — candidate ProfileFence 아래 admission 을 먼저 본다.
-
-    다른 ProfileFence 를 WorkFence 아래 잡을 수 없으므로 candidate profile(우리가 fence 를 쥔 그
-    profile)의 admission 을 capture 로 관찰한다. 그 profile 이 revoked 면 policy block 이
-    precedence 상 stale 보다 앞선다 — moved 를 이유로 revocation 을 놓치지 않는다(#722 finding 4).
-    admitted 면 work 가 다른 base 로 이동한 것이라 moved-basis stale 로 닫는다.
-    """
-    if isinstance(candidate_profile_observation, CapturedExecutionPolicyBlock):
-        terminal = _policy_block_evidence_and_outcome(
-            candidate_profile_observation, candidate.resolved_seal_policy
-        )
-        return FinalLedger(outcome=terminal.outcome, evidence=terminal.evidence)
-    return final_verdict_on_moved_basis(candidate, summary)
 
 
 def decide_final_verdict(

@@ -8,10 +8,38 @@ import pytest
 
 from hwpxfiller.external import prepare_orchestration_runner as runner
 from hwpxfiller.host.per_work_fence import (
+    LockOrderViolation,
     PerWorkMutationFenceKey,
     _fence_lock,
     per_work_mutation_fence,
+    store_lease_order_guard,
+    work_fence_order_guard,
 )
+
+
+# ── repository lock order(R2-05b: ProfileFence 제거로 PerWorkFence → StoreWriterLease 2-rank) ──
+def test_positive_order_work_then_store() -> None:
+    with work_fence_order_guard():
+        with store_lease_order_guard():
+            pass  # PerWorkFence → Store 는 허용
+
+
+def test_store_lease_then_work_fence_rejected() -> None:
+    with store_lease_order_guard():
+        with pytest.raises(LockOrderViolation):
+            with work_fence_order_guard():
+                pass  # 안쪽 Store lease 를 쥔 채 바깥 WorkFence 대기 → 거절
+
+
+def test_ledger_unwinds_after_violation() -> None:
+    # 위반으로 raise 한 뒤에도 ledger 가 오염되지 않아 이후 정상 획득이 가능하다.
+    with store_lease_order_guard():
+        with pytest.raises(LockOrderViolation):
+            with work_fence_order_guard():
+                pass
+    with work_fence_order_guard():  # ledger 비었으니 다시 바깥부터 정상
+        with store_lease_order_guard():
+            pass
 
 
 # ── identity ──────────────────────────────────────────────────────────────────
@@ -104,7 +132,6 @@ def test_public_apply_holds_fence_before_delegating(monkeypatch: pytest.MonkeyPa
         workspace_instance_id="ws-app", work_id="W-app",
         change_id="C", actor="a", authorize=lambda _w, _a: None,
         new_application_id="A", provenance_id="P", outbox_event_id="O", applied_at="t",
-        discover_profile_id=lambda: "P",  # observed=exact="P" — mismatch 없이 위임
     )
     assert outcome == "sentinel-outcome"
     assert aggregate is _agg

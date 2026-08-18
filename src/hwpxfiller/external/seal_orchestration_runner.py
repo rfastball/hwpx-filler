@@ -37,10 +37,8 @@ from hwpxfiller.application.execution_composition import (
     TheoremEvidenceRegistry,
 )
 from hwpxfiller.application.seal_execution_plan import (
-    MAX_DISCOVERY_ATTEMPTS,
     CandidateCompilation,
     CaptureTerminal,
-    ExecutionCaptureRetryExhausted,
     FinalPublish,
     FinalVerdict,
     FreshWorkObservationPort,
@@ -50,15 +48,12 @@ from hwpxfiller.application.seal_execution_plan import (
     classify_capture_result,
     compile_candidate,
     decide_final_verdict,
-    final_verdict_profile_moved,
     require_exact_selector_consistency,
     sealed_outcome_for,
 )
 from hwpxfiller.application.stored_execution_plan import SealTerminalOutcome
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
-from hwpxfiller.host.profile_admission_fence import profile_admission_fence
 
-_ProfileFence = Callable[[str], AbstractContextManager[None]]
 _WorkFence = Callable[[str, str], AbstractContextManager[None]]
 _RouteResolver = Callable[[str, str], str]
 _Authorizer = Callable[[str, SealExecutionPlanCommand], None]
@@ -84,10 +79,8 @@ def seal_execution_plan(
     read_summary: FreshWorkObservationPort,
     capture_under_fence: CaptureExecutionQualificationInputUnderFence,
     resolve_shipping_policy: ShippingSealPolicyResolver,
-    profile_fence: _ProfileFence = profile_admission_fence,
     work_fence: _WorkFence = per_work_mutation_fence,
     theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-    max_discovery_attempts: int = MAX_DISCOVERY_ATTEMPTS,
 ) -> SealExecutionPlanResult:
     """route → auth → capture gate → pure compile → final gate → 현재-state terminal.
 
@@ -100,74 +93,50 @@ def seal_execution_plan(
     work_authority_id = resolve_route(ws, command.work_ref)  # 실패는 port 가 attempt 로 raise
     authorize(work_authority_id, command)  # 매 호출 재확인(replay 없음)
 
-    # ── short exact capture gate(optimistic Profile discovery + bounded 재시도) ──────
-    captured: CapturedExecutionInput | None = None
-    for _ in range(max_discovery_attempts):
-        observed = read_summary(ws, work_authority_id)
-        with profile_fence(observed.qualification_profile_id):
-            with work_fence(ws, work_authority_id):
-                exact = read_summary(ws, work_authority_id)
-                if exact.qualification_profile_id != observed.qualification_profile_id:
-                    continue  # 잘못된 ProfileFence — 두 fence 풀고 재시도
-                policy = resolve_shipping_policy(command, exact)
-                require_exact_selector_consistency(command, policy)
-                cap = capture_under_fence(
-                    ws,
-                    work_authority_id,
-                    exact.template_application_id,
-                    exact.qualification_profile_id,
-                    policy,
-                )
-                classification = classify_capture_result(cap, policy)
-                if isinstance(classification, CaptureTerminal):
-                    # capture gate terminal(block/policy) 을 fresh 로 되돌린다(durable 기록 없음).
-                    return SealExecutionPlanResult(classification.outcome)
-                captured = classification.captured
-        break  # complete capture — fence 를 풀고 pure work 로 진행
-    else:
-        raise ExecutionCaptureRetryExhausted(
-            f"work {work_authority_id} 의 Profile discovery 재시도 소진"
+    # ── exact capture gate(PerWorkFence 하나 아래에서 exact Work authority 를 직접 capture) ──
+    # R2-05b(#740): ProfileFence·optimistic Profile discovery·bounded retry 를 제거했다. profile 은
+    # 이제 immutable Template Application 의 함수라 fence 사이에 따로 관측할 대상이 아니다 —
+    # PerWorkFence 아래에서 exact authority 를 바로 읽어 capture 한다.
+    with work_fence(ws, work_authority_id):
+        exact = read_summary(ws, work_authority_id)
+        policy = resolve_shipping_policy(command, exact)
+        require_exact_selector_consistency(command, policy)
+        cap = capture_under_fence(
+            ws,
+            work_authority_id,
+            exact.template_application_id,
+            exact.qualification_profile_id,
+            policy,
         )
-    assert captured is not None
+        classification = classify_capture_result(cap, policy)
+        if isinstance(classification, CaptureTerminal):
+            # capture gate terminal(block/policy) 을 fresh 로 되돌린다(durable 기록 없음).
+            return SealExecutionPlanResult(classification.outcome)
+        captured = classification.captured
 
     # ── pure qualification + compile(어떤 fence 도 보유하지 않는다) ──────────────────
     candidate = compile_candidate(captured, theorem_registry=theorem_registry)
 
-    # ── short final gate(candidate ProfileFence → WorkFence 재진입) ─────────────────
-    with profile_fence(candidate.qualification_profile_id):
-        with work_fence(ws, work_authority_id):
-            summary = read_summary(ws, work_authority_id)
-            if summary.qualification_profile_id == candidate.qualification_profile_id:
-                # 같은 Profile fence 아래에서 current(=summary) Application 의 basis 를 재구성한다.
-                # Application 이 같으면 candidate 와 대조, 이동했으면 다른 basis digest → stale.
-                current = capture_under_fence(
-                    ws,
-                    work_authority_id,
-                    summary.template_application_id,
-                    candidate.qualification_profile_id,
-                    candidate.resolved_seal_policy,
-                )
-                current_compiled: "CandidateCompilation | None" = (
-                    compile_candidate(current, theorem_registry=theorem_registry)
-                    if isinstance(current, CapturedExecutionInput)
-                    else None
-                )
-                verdict = decide_final_verdict(
-                    candidate, current, current_compiled, summary
-                )
-            else:
-                # Profile 이 이동했다 — 다른 ProfileFence 를 WorkFence 아래 잡지 않는다. 대신 우리가
-                # 쥔 candidate ProfileFence 아래 candidate profile 의 admission 을 관찰해(revoked →
-                # policy block, precedence 상 stale 보다 앞) moved 로 revocation 을 놓치지 않는다.
-                observation = capture_under_fence(
-                    ws,
-                    work_authority_id,
-                    candidate.template_application_id,
-                    candidate.qualification_profile_id,
-                    candidate.resolved_seal_policy,
-                )
-                verdict = final_verdict_profile_moved(candidate, observation, summary)
-            return _result_for_verdict(verdict)
+    # ── final gate(PerWorkFence 재진입, current Work basis recheck) ──────────────────
+    with work_fence(ws, work_authority_id):
+        summary = read_summary(ws, work_authority_id)
+        # candidate 가 사용한 exact profile/policy 로 current Application 의 basis 를 재구성해 candidate
+        # 와 대조한다. Application 이 이동했으면 다른 basis digest → StaleExecutionBasis(현재 blocker 를
+        # 기록하지 않는다). policy/domain block·context error 는 decide_final_verdict 가 닫는다.
+        current = capture_under_fence(
+            ws,
+            work_authority_id,
+            summary.template_application_id,
+            candidate.qualification_profile_id,
+            candidate.resolved_seal_policy,
+        )
+        current_compiled: "CandidateCompilation | None" = (
+            compile_candidate(current, theorem_registry=theorem_registry)
+            if isinstance(current, CapturedExecutionInput)
+            else None
+        )
+        verdict = decide_final_verdict(candidate, current, current_compiled, summary)
+        return _result_for_verdict(verdict)
 
 
 def _result_for_verdict(verdict: FinalVerdict) -> SealExecutionPlanResult:

@@ -303,9 +303,9 @@ def test_product_contract_vocabulary_is_closed() -> None:
 def test_fresh_observation_profile_then_work_no_reverse(tmp_path) -> None:
     h = _product(tmp_path)
     h.product.seal_execution_plan(_pcmd("r1"))
-    # seal(gate·final) + fresh observation 의 모든 capture 는 ProfileFence(0)→WorkFence(1) 아래.
+    # seal(gate·final) + fresh observation 의 모든 capture 는 PerWorkFence(0) 아래.
     assert h.world.capture_ranks  # 최소 한 번은 capture
-    assert all(ranks == [0, 1] for ranks in h.world.capture_ranks)
+    assert all(ranks == [0] for ranks in h.world.capture_ranks)
 
 
 def test_repeated_call_recomputes_same_sealed_basis(tmp_path) -> None:

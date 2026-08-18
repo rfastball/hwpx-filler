@@ -53,7 +53,6 @@ from hwpxfiller.application.work_template_state import (
 )
 from hwpxfiller.external.candidate_store import CandidateObjectStore
 from hwpxfiller.external.prepare_orchestration_runner import (
-    S3ApplyProfileDiscoveryRetryExhausted,
     admit_preparation,
     apply_prepared_change,
     run_capture_stage,
@@ -346,38 +345,3 @@ def test_other_work_untouched_by_apply(tmp_path):
     assert wstore.load("W2") == before
 
 
-# ─── discovery/재시도 ─────────────────────────────────────────────────────────────
-
-def test_wrong_profile_discovery_releases_and_retries(tmp_path):
-    wstore, cstore, qstore = _ready_change(tmp_path)
-    calls: list[int] = []
-
-    def discover():  # 첫 관측은 틀린 profile → release, 이후 정정
-        calls.append(1)
-        return "WRONG" if len(calls) == 1 else PROF
-
-    outcome, _ = apply_prepared_change(
-        wstore, cstore, qstore,
-        workspace_instance_id="ws-test", work_id="W1", change_id="C1", actor="t",
-        authorize=_grant, new_application_id="A2", provenance_id="PR1",
-        outbox_event_id="OB1", applied_at="t8", discover_profile_id=discover,
-    )
-    assert outcome.result == APPLY_APPLIED
-    assert len(calls) == 2  # 한 번 release 후 재시도해 성공
-
-
-def test_bounded_retry_exhaustion_leaves_request_unconsumed(tmp_path):
-    wstore, cstore, qstore = _ready_change(tmp_path)
-    with pytest.raises(S3ApplyProfileDiscoveryRetryExhausted):
-        apply_prepared_change(
-            wstore, cstore, qstore,
-            workspace_instance_id="ws-test", work_id="W1", change_id="C1", actor="t",
-            authorize=_grant, new_application_id="A2", provenance_id="PR1",
-            outbox_event_id="OB1", applied_at="t8",
-            discover_profile_id=lambda: "ALWAYS-WRONG", max_discovery_attempts=3,
-        )
-    # request 미소비: change 는 여전히 PREPARED, current 무변경.
-    assert _change(wstore).status == "PREPARED"
-    assert wstore.load("W1").work.current_template_application_id == "A1"
-    # 정정된 정상 discovery 로 다시 apply 하면 성공한다(request 가 소비되지 않았다).
-    assert _apply(wstore, cstore, qstore).result == APPLY_APPLIED

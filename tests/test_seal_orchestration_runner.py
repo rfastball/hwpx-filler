@@ -42,7 +42,6 @@ from hwpxfiller.application.seal_execution_plan import (
     STALE_DIGEST_MISMATCH,
     AuthorizationError,
     BlockedCandidate,
-    ExecutionCaptureRetryExhausted,
     ExecutionQualificationContextError,
     PlanCandidate,
     SealExecutionPlanCommand,
@@ -51,7 +50,6 @@ from hwpxfiller.application.seal_execution_plan import (
     WorkExecutionSummary,
     compile_candidate,
     decide_final_verdict,
-    final_verdict_on_moved_basis,
     require_exact_selector_consistency,
 )
 from hwpxfiller.application.execution_contract_set import (
@@ -72,7 +70,7 @@ from hwpxfiller.external.seal_orchestration_runner import (
     SealExecutionPlanResult,
     seal_execution_plan,
 )
-from hwpxfiller.host.profile_admission_fence import _held_ranks
+from hwpxfiller.host.per_work_fence import _held_ranks
 
 from tests.test_execution_compilation import (
     APP,
@@ -226,27 +224,6 @@ def test_publish_returns_sealed_current_value() -> None:
 
 
 # ══ capture races ═════════════════════════════════════════════════════════════════════
-def test_profile_change_before_fences_retries_then_publishes() -> None:
-    world = World()
-    # optimistic P, under-fence other → mismatch → retry; 2회차 P/P → 진행; final P.
-    world.summary_script = [
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary("other-profile", APP),
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary(PROFILE, APP),
-        WorkExecutionSummary(PROFILE, APP),
-    ]
-    result = _run(world)
-    assert isinstance(result.terminal_outcome, ExecutionPlanSealed)
-
-
-def test_bounded_retry_exhaustion_raises() -> None:
-    world = World()
-    world.alternate = True  # optimistic≠under-fence 매 회차 → 영영 mismatch
-    with pytest.raises(ExecutionCaptureRetryExhausted):
-        _run(world, max_discovery_attempts=3)
-
-
 def test_slot_mutation_after_capture_final_stale_digest_mismatch() -> None:
     world = World()
 
@@ -326,8 +303,8 @@ def test_revoke_between_capture_and_final_policy_block() -> None:
 def test_no_reverse_lock_order_capture_under_profile_then_work() -> None:
     world = World()
     _run(world)  # 실 fence — 역순이면 LockOrderViolation 이 났을 것이다
-    # capture 는 ProfileFence(0)→WorkFence(1) 아래에서만 일어난다.
-    assert all(ranks == [0, 1] for ranks in world.capture_ranks)
+    # capture 는 PerWorkFence(0) 아래에서만 일어난다.
+    assert all(ranks == [0] for ranks in world.capture_ranks)
 
 
 # ══ recompute-not-persist / auth ══════════════════════════════════════════════════════
@@ -374,8 +351,9 @@ def test_capture_context_error_raises_attempt() -> None:
 
 # ══ S6 start admission port 선언 ══════════════════════════════════════════════════════
 def test_s6_start_gate_lock_order_declared() -> None:
-    assert S6_START_GATE_LOCK_ORDER[0] == "QualificationProfileAdmissionFence"
-    assert S6_START_GATE_LOCK_ORDER[1] == "PerWorkMutationFence"
+    # R2-05b: ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다(S6 구현은 미착수).
+    assert S6_START_GATE_LOCK_ORDER[0] == "PerWorkMutationFence"
+    assert "QualificationProfileAdmissionFence" not in S6_START_GATE_LOCK_ORDER
     assert S6_START_GATE_LOCK_ORDER[-1] == "LongMaterialization"
     assert "<fences released>" in S6_START_GATE_LOCK_ORDER
 
@@ -393,9 +371,9 @@ def test_long_pure_section_holds_no_fence(monkeypatch) -> None:
 
     monkeypatch.setattr(runner_mod, "compile_candidate", spy)
     _run(World())
-    # 첫 compile(candidate)은 fence 밖(빈 rank), 둘째(final current)는 [0,1] 아래.
+    # 첫 compile(candidate)은 fence 밖(빈 rank), 둘째(final current)는 [0] 아래.
     assert ranks_at_compile[0] == []
-    assert ranks_at_compile[1] == [0, 1]
+    assert ranks_at_compile[1] == [0]
 
 
 def test_runner_declares_no_native_or_source_seam() -> None:
@@ -485,13 +463,6 @@ def _blocked_candidate(digest="sha256:in", blockers=("ACTIVE_FIELD_UNBOUND",)):
 
 def _plan_candidate():
     return compile_candidate(_captured())
-
-
-def test_final_moved_basis_blocked_candidate_raises() -> None:
-    with pytest.raises(ExecutionQualificationContextError):
-        final_verdict_on_moved_basis(
-            _blocked_candidate(), WorkExecutionSummary("other", "app-2")
-        )
 
 
 def test_decide_final_blocked_candidate_same_input_commits_blocked() -> None:
