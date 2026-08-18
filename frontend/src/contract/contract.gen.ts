@@ -174,6 +174,12 @@ export const SCREEN_ACTIONS = {
     relink_template: { required: ["name"], optional: ["confirm", "path"] },
     template_check: { required: ["request_id"], optional: [] },
     template_apply: { required: ["change_token"], optional: [] },
+    open_slot_configuration: { required: [], optional: [] },
+    refresh_slot_configuration: { required: [], optional: ["configuration_token"] },
+    select_slot_option: { required: ["configuration_token", "option_id", "request_id", "slot_id"], optional: [] },
+    clear_slot_selection: { required: ["configuration_token", "request_id", "slot_id"], optional: [] },
+    resolve_execution: { required: [], optional: [] },
+    refresh_observation: { required: [], optional: [] },
     rename_job: { required: ["name"], optional: ["new"] },
     cancel_generation: { required: [], optional: [] },
     select_failed: { required: [], optional: [] },
@@ -291,3 +297,78 @@ export interface HostApi {
   open_job_in_editor(name: unknown, context?: unknown): unknown;
   new_job_from_data(context?: unknown): unknown;
 }
+
+/* 문서 만들기 작업대 blocker 계열(SX-01 #724 §3) — 정의 순서가 곧 우선순위 기반이다.
+ * 정본: application/document_creation_vocabulary.py. React 가 이 순서를 재구현하지 않는다
+ * (blocker 합성은 backend Product 계약이 진다). */
+export const DOCUMENT_CREATION_BLOCKERS = [
+  "SELECT_DATA",
+  "SELECT_RECORDS",
+  "SELECT_WORK",
+  "REVIEW_TEMPLATE_CHANGE",
+  "CHOOSE_CONTENT",
+  "REVIEW_BINDING",
+  "REVIEW_RECORD_DATA",
+  "REVIEW_PREVIEW",
+  "REVIEW_DELIVERY",
+  "EXECUTION_CHECKING",
+  "EXECUTION_STALE",
+  "POLICY_BLOCKED",
+  "RUNTIME_NOT_ADMITTED",
+  "CONTEXT_ERROR",
+] as const;
+
+export type DocumentCreationBlocker = (typeof DOCUMENT_CREATION_BLOCKERS)[number];
+
+/* Primary Action 코드 — 우선순위 순서(#724 §3). 첫 원소가 최우선, 마지막이
+ * CREATE_DOCUMENTS. 표시층은 이 순서를 재계산하지 않고 backend 가 고른 하나를 소비한다. */
+export const PRIMARY_ACTIONS = [
+  "RECOVER_CONTEXT",
+  "SELECT_DATA",
+  "SELECT_RECORDS",
+  "SELECT_WORK",
+  "REVIEW_TEMPLATE_CHANGE",
+  "CHOOSE_CONTENT",
+  "REVIEW_BINDING",
+  "RESOLVE_EXECUTION",
+  "REVIEW_RECORD_DATA",
+  "REVIEW_PREVIEW",
+  "REVIEW_DELIVERY",
+  "RESOLVE_RUNTIME_POLICY",
+  "CREATE_DOCUMENTS",
+] as const;
+
+export type PrimaryAction = (typeof PRIMARY_ACTIONS)[number];
+
+/* 작업대 execution status 7상태(SX-03 #726 §3) — orchestration+sealability+
+ * admission verdict 의 재라벨. 정본: application/workbench_execution_status.py. 표시층은
+ * 이 코드를 재판정하지 않고 backend 가 파생한 하나를 소비한다(문안은 STATUS_PHRASE 정본). */
+export const WORKBENCH_EXECUTION_STATUSES = [
+  "NO_EVIDENCE",
+  "CHECKING",
+  "CURRENT",
+  "STALE",
+  "DOMAIN_BLOCKED",
+  "POLICY_BLOCKED",
+  "CONTEXT_ERROR",
+] as const;
+
+export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];
+
+/* PreviewRequirement v1 종류(#724 §6) — REQUIRED 의 reason·basis 는 Product DTO 소유. */
+export const PREVIEW_REQUIREMENT_KINDS = [
+  "NOT_REQUIRED",
+  "OPTIONAL",
+  "REQUIRED",
+] as const;
+
+export type PreviewRequirementKind = (typeof PREVIEW_REQUIREMENT_KINDS)[number];
+
+/* RunDeliveryIntent collision policy(#724 §8) — 기본 ADD_SUFFIX, overwrite 는 명시 선택. */
+export const COLLISION_POLICIES = [
+  "ADD_SUFFIX",
+  "FAIL",
+  "OVERWRITE_EXPLICIT",
+] as const;
+
+export type CollisionPolicy = (typeof COLLISION_POLICIES)[number];

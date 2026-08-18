@@ -128,6 +128,25 @@ from ..gui.work_candidates import (
 from .action_registry import ZONE_MUTATIONS
 from .template_change import TemplateChangeError, unsupported_zone
 from ..application.slotless_run_bridge import SlotlessRunAdmissionError
+# S4 Working Slot Configuration 배선(SX-02 #725) — Product/Observation 소비만(재구현 금지).
+from dataclasses import asdict
+import uuid
+from ..application.automatic_seal_orchestration import (
+    FAILED as ORCHESTRATION_FAILED,
+    AutomaticSealOrchestration,
+    on_durable_command_settled,
+    on_seal_settled,
+    request_manual_recovery,
+)
+from ..application.document_creation_workbench import (
+    DocumentCreationWorkbenchContextError,
+)
+from ..application.fresh_execution_observation import (
+    CurrentSealedPlanObservation,
+    FreshExecutionObservation,
+)
+from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
+from .slot_configuration_product import SlotConfigurationProductError
 
 # managed 생성 admission 차단 코드 → 사용자 문안(confirm-or-alarm — 조용한 fallback 없음).
 _ADMISSION_REJECT_TEXT = {
@@ -281,6 +300,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         existing_outputs: Callable[[str, list[str]], list[str]],
         ensure_output_dir: Callable[[str], None],
         template_change=None,
+        slot_configuration=None,
+        workbench_observation=None,
+        seal_execution=None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -292,6 +314,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 미주입(None)이면 존은 unsupported·동사는 loud 거절 — text_registry 선례(위)와
         # 같은 이유로 무관 테스트·CLI 소비자에 S3 스토어 조립을 물리지 않는다.
         self._template_change = template_change
+        # S4 Working Slot Configuration Product(SX-02 #679·#725) — durable slot command·HMAC token·
+        # fresh view 소유는 저쪽이고 이 컨트롤러는 세션의 현재 작업 이름을 붙여 관통만 한다. 미주입
+        # (None)이면 존은 unsupported·동사는 loud 거절(template_change 선례) — 무관 테스트·CLI 소비자에
+        # S4 스토어 조립을 물리지 않는다. 판정·문안·token 을 링2 에서 재조립하지 않는다(재판정 금지).
+        self._slot_configuration = slot_configuration
+        # 작업대 Observation 합성 Product(SX-01 #724 소비 어댑터) — S3/S4/S5 권위를 사용자 작업대 상태로
+        # 합성한다. SX-02 는 content/data/active/orchestration 축만 채우고 나머지는 seam 이라, 이
+        # Observation 은 아직 사용자 실행 표면이 아니다(snapshot 에 노출하지 않는다 — SX-03/04/05 소관).
+        self._workbench_observation = workbench_observation
+        # SealExecutionPlan production 서비스(SX-SEAL #719 결선) — 조립·store 소유는 webapp.app 이
+        # 진다. 이 컨트롤러는 참조만 보관하고, dispatch·automatic 트리거·snapshot 노출 배선은 SX-03
+        # 소관이라 여기서 하지 않는다(미주입이면 seal 표면 부재).
+        self._seal_execution = seal_execution
+        # session-scoped automatic seal orchestration 상태(SX-01 #724 §4). durable current state 가
+        # 아니라 세션 진행 값이다. SX-SEAL 이 seal 인프라를 배선했으므로(#719) SX-03 이 자동 확인
+        # 트리거를 아래 `_maybe_auto_check` 로 배선한다(수동 seal 버튼 0).
+        self._session_orchestration = AutomaticSealOrchestration()
+        # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
+        # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
+        # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
+        # (UI 가 basis 를 계산하지 않는다).
+        self._last_sealed_basis_digest: "str | None" = None
+        # 마지막 seal/observe 의 fresh observation(CurrentSealedPlanObservation/CurrentWorkExecutionObservation/
+        # ExecutionObservationContextError). 작업대 Observation 의 admission/readiness/7상태를
+        # 여기서 **소비만** 한다(재판정 0). None = 아직 확인 증거 없음(NO_EVIDENCE).
+        self._last_fresh_observation: "FreshExecutionObservation | None" = None
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
@@ -1350,6 +1398,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 템플릿 변경 존(S3-09) 기본값 — TXT·미상·미선택은 명시적 unsupported(키 부재 분기
         # 금지). hwpx 분기가 실제 capability·현재 Preparation 으로 덮어쓴다.
         base["template_change"] = unsupported_zone()
+        # S4 Working Slot Configuration 존 기본값(SX-02 #725) — TXT·미선택·미상 매체는 명시적
+        # 미지원(키 부재 분기 금지, template_change 선례). hwpx 분기가 실제 fresh view 로 덮는다.
+        base["slot_configuration"] = self._slot_blank_zone()
         if self.job_is_txt:
             # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
             # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
@@ -1534,6 +1585,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             base["source_drift"] = (
                 None if tmissing else self._template_change.source_drift_note(self.job_name)
             )
+        # S4 Working Slot Configuration 존(SX-02 #725) — projection·token·상태 전부 Product 소유
+        # (링2 재조립 금지). fresh current view 를 매 스냅샷 조회한다: open 은 무변이라 늘 fresh
+        # view+새 token 을 낸다(F1/F2 fence). preserved/broken/detached 분리는 projection 이 이미 진다.
+        base["slot_configuration"] = self._slot_configuration_zone(tmissing)
+        # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
+        # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
+        # 템플릿 부재면 unsupported(조용히 비우지 않는다).
+        base["workbench_observation"] = self._workbench_observation_zone(tmissing)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -2633,3 +2692,336 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # Template·Binding 판본") — 원인을 모를수록 아는 사실을 빠짐없이 대야 한다.
             "revisions": dict(self._run_revisions),
         }
+
+    # ----------------------------------- S4 Working Slot Configuration(SX-02 #725)
+    # 4개 command 는 전부 **dispatch 경로**다(직접 브리지 아님). work_ref 는 세션의 현재 작업
+    # (payload 에 없음, template_check 선례). configuration_token 은 opaque(프런트가 직전 응답의 새
+    # token 을 되돌려준다), request_id 는 프런트 발급 재전송 단위. command outcome + fresh view 는
+    # Product `SlotConfigurationProduct._respond` 가 이미 조립하므로 컨트롤러는 asdict 로 관통만 한다
+    # (local optimistic authority 0 — 응답 도착 시 backend view 로 통째 교체). preserved/broken/detached
+    # 분리는 projection(blocking_items=broken+missing·detached_selections=detached·
+    # reconciliation_changes.preserved_selection_refs=preserved)이 이미 지므로 여기서 재판정하지 않는다.
+    def _slot_response_dict(self, response) -> dict:
+        """`SlotConfigurationCommandResponse`(중첩 frozen dataclass) → JSON-safe dict.
+
+        `asdict` 가 중첩 dataclass·tuple 을 dict/list 로 재귀 변환한다. projection 의
+        detached_selections·blocking_items·reconciliation_changes 가 그대로 실려 프런트가
+        preserved/broken/detached 를 분리 소비한다(문안·확인 UI 는 웹, 판정·수치는 Python).
+        """
+        return asdict(response)
+
+    @staticmethod
+    def _slot_blank_zone() -> dict:
+        """미지원 slot_configuration 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
+        return {
+            "supported": False,
+            "initialized": False,
+            "mutation_outcome": None,
+            "current_view": None,
+            "refresh_required": False,
+        }
+
+    def _slot_configuration_zone(self, tmissing: bool) -> dict:
+        """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
+
+        미주입·미선택·비-hwpx·템플릿 부재면 명시적 unsupported(분기별 키 동형). 초기화 전(Work
+        durable id 미발급) Work 는 Product 를 부르지 않는다 — open 의 route 가 read 중 durable id 를
+        발급하므로(write-on-read) 렌더 부작용을 피한다. 초기화된 Work 만 read-only open 으로 조회한다.
+        """
+        blank = self._slot_blank_zone()
+        if self._slot_configuration is None or not self.job_name or tmissing:
+            return blank
+        job = load_job(self.registry, self.job_name)
+        if job.media != "hwpx":
+            return blank
+        if not job.authority_id:
+            # 템플릿 확인(bootstrap) 전 — 지원은 하되 아직 조회하지 않는다(durable id 미발급 보존).
+            return {**blank, "supported": True}
+        try:
+            response = self._slot_configuration.open_slot_configuration(self.job_name)
+        except SlotConfigurationProductError:
+            # 접근 불가·token 오류는 렌더를 깨지 않고 시끄러운 미지원으로 — 존은 비활성 + 지원 표기.
+            return {**blank, "supported": True}
+        return {"supported": True, "initialized": True, **self._slot_response_dict(response)}
+
+    # ── 작업대 Observation 존(SX-03 #726) — 합성 observation → JSON-safe dict ───────────────
+    @staticmethod
+    def _workbench_observation_blank() -> dict:
+        return {"supported": False, "kind": None}
+
+    def _workbench_observation_zone(self, tmissing: bool) -> dict:
+        """스냅샷의 ``workbench_observation`` 존 — 합성 Observation(또는 ContextError)을 실어 보낸다.
+
+        미조립·미선택·템플릿 부재면 명시적 unsupported. 그 밖에는 :meth:`workbench_observation` 을
+        조립해 JSON-safe dict 로 성형한다 — 판정·문안·7상태는 Product/status 함수가 이미 낸 값이라
+        여기서 재판정하지 않는다(프런트도 재판정 0, 읽기만).
+        """
+        if self._workbench_observation is None or not self.job_name or tmissing:
+            return self._workbench_observation_blank()
+        try:
+            observation = self.workbench_observation()
+        except ValueError:
+            return self._workbench_observation_blank()
+        return {"supported": True, **self._serialize_observation(observation)}
+
+    def _serialize_observation(self, observation) -> dict:
+        """`DocumentCreationWorkbenchObservation | ...ContextError` → JSON-safe dict(재판정 0).
+
+        context error 는 user-fixable blocker 로 낮추지 않는다(kind=context_error, user_fixable=False).
+        observation 은 blocker/primary_action/disabled_reason/deep-link + 이미 판정된 execution
+        verdict(admission/readiness) + 7상태(code+phrase)를 성형한다. R2(#740): currentness 축은
+        7상태(CURRENT/STALE)로 흡수돼 별도 키가 없다.
+        """
+        if isinstance(observation, DocumentCreationWorkbenchContextError):
+            return {
+                "kind": "context_error",
+                "code": observation.code,
+                "detail": observation.detail,
+                "user_fixable": observation.user_fixable,
+                "primary_action": observation.primary_action,
+            }
+        code, phrase = self._workbench_observation.execution_status(
+            orchestration=self._session_orchestration,
+            fresh_observation=self._last_fresh_observation,
+        )
+        return {
+            "kind": "observation",
+            "primary_action": observation.primary_action,
+            "primary_action_enabled": observation.primary_action_enabled,
+            "disabled_reason": observation.disabled_reason,
+            "blockers": list(observation.blockers),
+            "deep_link_targets": [
+                {"blocker_code": t.blocker_code, "route": t.route}
+                for t in observation.deep_link_targets
+            ],
+            "execution_status_code": code,
+            "execution_status_phrase": phrase,
+            "materialization_readiness": observation.materialization_readiness,
+            "admission": {
+                "state": observation.admission.state,
+                "reasons": list(observation.admission.reasons),
+            },
+            "active_field_requirement_ids": list(observation.active_field_requirement_ids),
+            "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
+            # 사용자 문안 축(vocabulary 정본 — 내부어 0).
+            "content_section_label": observation.content_section_label,
+            "input_requirements_label": observation.input_requirements_label,
+            "delivery_label": observation.delivery_label,
+            # 이미 정한 것 요약.
+            "active_work": {
+                "active": observation.active_work.active,
+                "work_ref": observation.active_work.work_ref,
+            },
+            "data_scope": {
+                "mounted": observation.data_scope.mounted,
+                "selected_record_count": observation.data_scope.selected_record_count,
+                "total_record_count": observation.data_scope.total_record_count,
+            },
+        }
+
+    def _require_slot_configuration(self) -> None:
+        if self._slot_configuration is None:
+            raise ValueError("문서 구성 기능이 조립되지 않았습니다")
+        if not self.job_name:
+            raise ValueError("먼저 작업을 선택하세요")
+
+    def _do_open_slot_configuration(self, p: dict) -> dict:
+        """현재 작업의 S4 Working Configuration 을 열어 fresh projection + 새 token 을 낸다(무변이).
+
+        React 가 stored configuration·Template 구조를 직접 조립하지 않는다 — Product 가 낸
+        authoritative view 하나를 그대로 소비한다.
+        """
+        self._require_slot_configuration()
+        return self._slot_response_dict(
+            self._slot_configuration.open_slot_configuration(self.job_name)
+        )
+
+    def _do_refresh_slot_configuration(self, p: dict) -> dict:
+        """현재 configuration 을 새로 고쳐 fresh current view 를 되받는다(무변이).
+
+        optional ``configuration_token`` 을 실으면 Product 가 그 token 의 Application 과 현재
+        Application 을 대조해 stale 여부(``refresh_required``)를 판정한다 — 미실으면 최초 조회다.
+        """
+        self._require_slot_configuration()
+        token = p.get("configuration_token")
+        token = str(token) if token is not None else None
+        return self._slot_response_dict(
+            self._slot_configuration.refresh_slot_configuration(self.job_name, token)
+        )
+
+    def _do_select_slot_option(self, p: dict) -> dict:
+        """Option 선택 = durable S4 command(별도 전체 저장 버튼 없음). command outcome + fresh view.
+
+        stale token 은 Product 가 mutation 을 거절하고 fresh current view 를 되돌린다(유령 반영 0) —
+        컨트롤러는 backend view 로 통째 교체만 한다(local optimistic authority 0).
+
+        **automatic checking(SX-03 #726 · R2(#740) 착지).** durable commit 이 CHANGED 면
+        `_maybe_auto_check` 가 자동 확인(`on_durable_command_settled` → 필요 시 seal → `on_seal_settled`)에
+        진입한다. 수동 seal 버튼 0. seal 은 durable side effect 없는 순수 재계산이라 매 durable 변경마다
+        재확인한다(opaque Plan ref 로 same-basis 를 미리 엿보던 경로는 R2 가 제거했다).
+        """
+        self._require_slot_configuration()
+        response = self._slot_configuration.select_slot_option(
+            self.job_name,
+            str(p["configuration_token"]),
+            str(p["slot_id"]),
+            str(p["option_id"]),
+            str(p["request_id"]),
+        )
+        self._maybe_auto_check(response)
+        return self._slot_response_dict(response)
+
+    def _do_clear_slot_selection(self, p: dict) -> dict:
+        """Slot 선택 해제 = durable S4 command. command outcome + fresh view(선택과 동일 규율).
+
+        automatic checking 진입은 `_do_select_slot_option` 과 같은 규율이다(`_maybe_auto_check`).
+        """
+        self._require_slot_configuration()
+        response = self._slot_configuration.clear_slot_selection(
+            self.job_name,
+            str(p["configuration_token"]),
+            str(p["slot_id"]),
+            str(p["request_id"]),
+        )
+        self._maybe_auto_check(response)
+        return self._slot_response_dict(response)
+
+    # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
+    def _maybe_auto_check(self, slot_response) -> None:
+        """durable slot mutation 뒤 자동 확인 진입 — mutation 이 CHANGED 일 때만(#724 §4).
+
+        R2(#740): seal 은 durable side effect 없는 순수 재계산이고 opaque Plan ref 로 same-basis 를
+        미리 엿보던 경로가 사라졌다 — durable 변경이 CHANGED 면 항상 재확인한다(``effective_basis_changed
+        =True``). 미변경(open/ensure)은 아래 guard 로 걸러 blanket reseal 을 막는다. seal product
+        미주입이면 자동 확인 없음(honest — 표면 부재).
+        """
+        if self._seal_execution is None or not self.job_name:
+            return
+        outcome = slot_response.mutation_outcome
+        if outcome is None or not outcome.changed:
+            return  # 무변이(open/ensure)·미변경 mutation → 반응할 basis 변경 없음.
+        transition = on_durable_command_settled(
+            self._session_orchestration,
+            durable_command_succeeded=True,
+            effective_basis_changed=True,
+        )
+        self._session_orchestration = transition.next_state
+        if transition.should_start_seal:
+            self._run_automatic_seal()
+
+    def _run_automatic_seal(self) -> None:
+        """진행 중 orchestration(CHECKING)에서 실 seal 을 돌리고 결과로 다음 상태를 판정한다.
+
+        coalesce 대기(진행 중 도착한 basis 변경)를 소진할 때만 다시 seal 한다 — 무한 자동 재시도 0.
+        route/context 예외는 seal 실패(연속 실패 수 상한 → 수동 복구)로, 반환된 terminal outcome 은
+        '실행됨'으로 본다(qualification/policy block 은 실패가 아니라 not-current 로 알린다).
+        """
+        assert self._seal_execution is not None
+        for _ in range(self._MAX_AUTO_SEAL_COALESCE):
+            try:
+                resp = self._seal_execution.seal_execution_plan(
+                    self.job_name, uuid.uuid4().hex
+                )
+            except Exception:  # noqa: BLE001 — route/auth/context 예외 = 전이 실패(수동 복구 상한).
+                transition = on_seal_settled(
+                    self._session_orchestration,
+                    seal_succeeded=False,
+                    resulting_currentness_current=False,
+                )
+                self._session_orchestration = transition.next_state
+                return
+            self._absorb_seal_response(resp)
+            transition = on_seal_settled(
+                self._session_orchestration,
+                seal_succeeded=True,
+                resulting_currentness_current=self._fresh_is_current(resp.fresh_observation),
+            )
+            self._session_orchestration = transition.next_state
+            if not transition.should_start_seal:
+                return
+
+    #: 진행 중 seal 위에 coalesce 로 이어붙는 연속 확인의 상한(무한 루프 방지).
+    _MAX_AUTO_SEAL_COALESCE = 4
+
+    def _absorb_seal_response(self, resp) -> None:
+        """seal 응답 흡수 — fresh observation 보관 + sealed 면 마지막 basis digest 갱신(R2(#740))."""
+        self._last_fresh_observation = resp.fresh_observation
+        if isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome):
+            self._last_sealed_basis_digest = resp.command_outcome.execution_basis_digest
+
+    @staticmethod
+    def _fresh_is_current(fresh: "FreshExecutionObservation") -> bool:
+        # R2(#740): current sealable value 가 관찰되면 그 값이 곧 현재다(currentness 축 흡수).
+        return isinstance(fresh, CurrentSealedPlanObservation)
+
+    def workbench_observation(self):
+        """세션 사실 + seal 서비스 fresh observation → 작업대 Observation(SX-01 #724 · SX-03 #726).
+
+        admission/readiness/7상태는 세션이 든 마지막 fresh observation
+        (``_last_fresh_observation``)을 **소비만** 한다 — composer/status 함수가 재라벨하고 이 화면은
+        재판정하지 않는다(CURRENT/STALE 은 orchestration 축이 나른다). fresh observation 이 없으면
+        NO_EVIDENCE(정직한 disabled). SX-04 축
+        (record/preview/delivery)은 seam 유지 — delivery anchor 가 CREATE 로의 누수를 막는다.
+        """
+        if self._workbench_observation is None:
+            raise ValueError("작업대 Observation 기능이 조립되지 않았습니다")
+        slot_view = None
+        if self._slot_configuration is not None and self.job_name:
+            job = load_job(self.registry, self.job_name)
+            if job.media == "hwpx" and job.authority_id:
+                try:
+                    resp = self._slot_configuration.open_slot_configuration(self.job_name)
+                except SlotConfigurationProductError:
+                    resp = None
+                if resp is not None:
+                    slot_view = resp.current_view.projection
+        return self._workbench_observation.compose(
+            data_mounted=self.datasource is not None,
+            selected_record_count=self.selection.selected_count(),
+            total_record_count=len(self.records),
+            active_work_ref=self.job_name or None,
+            slot_view=slot_view,
+            orchestration=self._session_orchestration,
+            fresh_observation=self._last_fresh_observation,
+        )
+
+    def _do_resolve_execution(self, p: dict) -> dict:
+        """'현재 설정 확인' Primary Action(EXECUTION_CHECKING/STALE·NO_EVIDENCE) — 자동 확인의 명시 재실행.
+
+        수동 seal 관리 동사가 아니다: automatic checking 과 **같은 seal 경로**를 사용자가 명시로
+        재개할 뿐이다(§4 "수동 복구 요구를 상태로 표현"). FAILED 면 먼저 수동 복구(IDLE)로 되돌린 뒤
+        CHECKING 진입 → 실 seal. seal 미주입이면 loud 거절(조용한 no-op 금지).
+        """
+        if self._seal_execution is None:
+            raise ValueError("실행 확인 기능이 조립되지 않았습니다")
+        if not self.job_name:
+            raise ValueError("먼저 문서 작업을 선택하세요.")
+        if self._session_orchestration.state == ORCHESTRATION_FAILED:
+            self._session_orchestration = request_manual_recovery(self._session_orchestration)
+        transition = on_durable_command_settled(
+            self._session_orchestration,
+            durable_command_succeeded=True,
+            effective_basis_changed=True,
+        )
+        self._session_orchestration = transition.next_state
+        if transition.should_start_seal:
+            self._run_automatic_seal()
+        return {"ok": True}
+
+    def _do_refresh_observation(self, p: dict) -> dict:
+        """현재 설정의 관찰을 '지금 이 순간'으로 새로 고친다(orchestration 전이 없음).
+
+        R2(#740): observation 은 current authority 의 재계산이라 seal 과 하나다 — 별도의 'seal 없이
+        관찰' 경로가 없다. seal 은 durable side effect 없는 순수 재계산이므로 다시 돌려
+        ``_last_fresh_observation``·basis digest 만 교체하고 orchestration 상태는 건드리지 않는다
+        (자동 확인 궤도와 분리). 미주입·미선택·degrade 면 마지막 관찰을 보존한다(best-effort).
+        """
+        if self._seal_execution is not None and self.job_name:
+            try:
+                resp = self._seal_execution.seal_execution_plan(
+                    self.job_name, uuid.uuid4().hex
+                )
+                self._absorb_seal_response(resp)
+            except Exception:  # noqa: BLE001 — fresh 축 degrade: 마지막 관찰 유지.
+                pass
+        return {"ok": True}
