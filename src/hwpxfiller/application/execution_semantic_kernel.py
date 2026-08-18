@@ -1,4 +1,4 @@
-"""S5F-01(#740 R1) execution semantic kernel — control-plane 없이 실행 의미를 계산한다.
+"""S5F-01(#740) execution semantic kernel — control-plane 없이 실행 의미를 계산한다.
 
 두 차례 Architecture Falsification Audit 는 S5 의 semantic compiler/validator 는 유지하되
 `SealedExecutionPlan` 을 둘러싼 durable proof/control plane(store·ledger·first-seen·profile
@@ -14,20 +14,22 @@ topology 에 과대하다고 판정했다. 이 모듈은 그 판정의 실물 �
             │  effective content · Active Fields · deterministic operations
             │  (admit_composition_premises + qualify_and_compile_execution — 순수)
             ▼
-    immutable SealedExecutionPlan **value**
+    immutable SealedExecutionPlan **value**(closed contract manifest 없음)
 
-**R2-01(#740) 첫 절개 — theorem runtime bureaucracy 와 semantic kernel 의 결합 제거:** kernel 은
-더 이상 :func:`compile_candidate` 를 거치지 않는다. C1~C10 admission 은 registry 를 consult 하지
-않는 :func:`admit_composition_premises` 로, contract set 은
-``build_execution_contract_set(theorem_registry=None)`` opt-out 으로 조립한다 — theorem evidence
-manifest digest 는 policy 가 든 값을 그대로 싣는다(등록 canonical 과 byte 동일). theorem
-registry/manifest integrity 의 runtime consult 는 kernel 경로에서 **사라졌다**. theorem corpus 는
-classifier correctness 를 증명하는 **test evidence** 로만 남는다(runtime authority 아님).
+**R2-01(#740) — theorem runtime bureaucracy 결합 제거:** C1~C10 admission 은 registry 를 consult
+하지 않는 :func:`admit_composition_premises` 로 한다. theorem corpus 는 classifier correctness 를
+증명하는 **test evidence** 로만 남는다(runtime authority 아님).
+
+**R2-02(#740) — closed contract manifest 결합 제거:** kernel 은 13-role :class:`ExecutionContractSet`
+(closed manifest + manifest digest + schema)을 **전혀 만들지도 싣지도 않는다**. 실제 저장소에서
+contract id 를 deref 하는 compilation/validation/delivery 소비자가 읽는 semantics 만
+:class:`ExecutionContractSemantics` 작은 값으로 담는다. 기존 ExecutionContractSet 은 legacy caller
+용 **compatibility shell** 로 그대로 둔다(이 절개는 삭제하지 않는다).
 
 **이 모듈이 하지 않는 것:** store·ledger·registry·Profile abstraction·HMAC token·digest
 hierarchy·contract manifest·global execution_generation·history/replay·MaterializationRun·
-PreparedBatch persistence 를 **새로 만들지 않는다**. 기존 ProfileFence·theorem registry·Plan store
-도 **삭제하지 않는다**(다른 mechanism 은 별도 절개 소유). SealedExecutionPlan 의 제품 의미는
+PreparedBatch persistence 를 **새로 만들지 않는다**. ProfileFence·theorem registry·Plan store·
+semantic digest 전면 제거는 이 절개에서 건드리지 않는다. SealedExecutionPlan 의 제품 의미는
 유지하되 durable aggregate 가 아니라 exact durable authority 에서 재계산 가능한
 **record-independent immutable value** 로 취급한다.
 
@@ -38,17 +40,22 @@ PreparedBatch persistence 를 **새로 만들지 않는다**. 기존 ProfileFenc
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from hwpxfiller.application.execution_capture import (
     CapturedExecutionInput,
     CapturedFieldBinding,
     CapturedSelection,
     CapturedTemplateExecutionInput,
+    EffectiveSelectionBasis,
+    ExactTemplateExecutionBasis,
     ResolvedSealPolicy,
     judge_captured_execution,
 )
 from hwpxfiller.application.execution_compilation import (
+    EffectiveFieldBindingBasis,
     ExecutionCompilationContextError,
     ExecutionQualificationBlocked,
     QualifiedExecutionCompilation,
@@ -59,14 +66,8 @@ from hwpxfiller.application.execution_composition import (
     CompositionPremisesPassed,
     admit_composition_premises,
 )
-from hwpxfiller.application.execution_contract_set import (
-    ExecutionBasis,
-    SealedExecutionPlanSemanticPayload,
-    build_execution_contract_set,
-    build_sealed_plan,
-    qualification_profile_semantic_digest,
-    verify_execution_basis_integrity,
-)
+from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
+from hwpxfiller.application.execution_contract_set import canonicalize_execution_operations
 from hwpxfiller.application.field_binding_input import FieldBindingInput
 from hwpxfiller.application.slot_selection_input import SlotSelectionInput
 from hwpxfiller.domain.canonical_execution_encoding import CANONICAL_ENCODING_VERSION
@@ -117,27 +118,25 @@ class DurableExecutionAuthority:
 
 @dataclass(frozen=True)
 class SealedExecutionPlanValue:
-    """재계산 가능한 record-independent immutable Sealed Execution Plan value.
+    """재계산 가능한 record-independent immutable Sealed Execution Plan value(closed manifest 없음).
 
-    durable aggregate 가 아니다 — store ref·first-seen·request id·digest history 를 싣지 않는다.
-    제품 의미(exact basis·effective content·Active Fields·ordered operations·composition 통과
-    사실)는 ``plan_payload`` 와 ``execution_basis`` 가 그대로 진다.
+    R2-02: 13-role closed :class:`ExecutionContractSet` 을 싣지 않는다 — 실제 소비되는 contract
+    semantics 만 :class:`ExecutionContractSemantics` 로 담는다. 나머지 제품 의미(exact template/
+    selection/binding basis · Active Field 요구 · deterministic operations)는 compilation 산출
+    그대로다. durable aggregate 가 아니다 — store ref·first-seen·request id·manifest digest 를 싣지
+    않는다.
     """
 
     qualification_profile_id: str
     template_application_id: str
-    execution_basis: ExecutionBasis
-    plan_payload: SealedExecutionPlanSemanticPayload
-
-    @property
-    def active_field_requirements(self) -> tuple:
-        """Active Field 요구 — parity 비교의 실행 의미 축(effective content 투영)."""
-        return self.plan_payload.active_field_requirements
-
-    @property
-    def ordered_operations(self) -> tuple:
-        """deterministic operations — RemoveOption + ApplyFieldBinding 정렬열."""
-        return self.plan_payload.ordered_operations
+    contract_semantics: ExecutionContractSemantics
+    exact_template_execution_basis: ExactTemplateExecutionBasis
+    effective_selection_basis: EffectiveSelectionBasis
+    effective_field_binding_basis: EffectiveFieldBindingBasis
+    active_field_requirements: tuple[Mapping[str, Any], ...]
+    ordered_operations: tuple[Mapping[str, Any], ...]
+    plan_schema_version: str
+    canonical_encoding_version: str
 
 
 @dataclass(frozen=True)
@@ -190,15 +189,37 @@ def compute_execution_snapshot(
     )
 
 
-def _compile_sealed_plan_value(captured: CapturedExecutionInput) -> KernelResult:
-    """exact snapshot → Sealed Plan value(순수, theorem registry 미consult).
+def _build_contract_semantics(captured: CapturedExecutionInput) -> ExecutionContractSemantics:
+    """실제 소비되는 contract semantics 만 뽑은 작은 값(closed manifest 없음).
 
-    :func:`compile_candidate` 와 같은 실행 의미를 내되 theorem runtime bureaucracy(registry
-    resolve·manifest integrity·digest match) 를 kernel 경로에서 제거한다:
-      - C1~C10 admission 은 :func:`admit_composition_premises`(registry 없음).
-      - contract set 은 ``build_execution_contract_set(theorem_registry=None)``(digest opaque).
-    theorem evidence manifest digest 는 policy 가 든 값(등록 canonical 과 동일)이라 결과
-    ExecutionBasis·Plan payload 는 registry 검증 경로와 **byte 동일**하다(semantic parity).
+    필드 출처는 legacy contract-set 조립과 동일하다(raw_record 는 policy, source_schema 는 field
+    binding). materialization base contract 의 admitted-base fail-closed 는 이미 capture 판정
+    (:func:`judge_captured_execution`)이 상류에서 진다 — 여기서 재검하지 않는다(중복 방지). 모든
+    역할의 nonempty 는 :class:`ExecutionContractSemantics` __post_init__ 이 강제한다.
+    """
+    policy = captured.resolved_seal_policy
+    return ExecutionContractSemantics(
+        raw_record_contract_id=policy.raw_record_contract_id,
+        source_schema_contract_id=captured.field_binding.source_schema_contract_id,
+        binding_value_contract_id=policy.binding_value_contract_id,
+        record_validation_contract_id=policy.record_validation_contract_id,
+        record_review_contract_id=policy.record_review_contract_id,
+        document_value_resolution_contract_id=policy.document_value_resolution_contract_id,
+        composition_contract_id=policy.composition_contract_id,
+        native_primitive_contract_id=policy.native_primitive_contract_id,
+        materialization_base_contract_id=policy.materialization_base_contract_id,
+        materialization_contract_id=policy.materialization_contract_id,
+    )
+
+
+def _compile_sealed_plan_value(captured: CapturedExecutionInput) -> KernelResult:
+    """exact snapshot → Sealed Plan value(순수, theorem registry·closed manifest 미사용).
+
+    :func:`compile_candidate` 와 같은 실행 의미를 내되 (R2-01) theorem runtime bureaucracy 와
+    (R2-02) closed contract manifest 를 kernel 경로에서 제거한다: C1~C10 admission 은
+    :func:`admit_composition_premises`(registry 없음), contract semantics 는
+    :class:`ExecutionContractSemantics` 작은 값, operation 정본화는 legacy plan payload 와 공유하는
+    :func:`canonicalize_execution_operations` 단일 출처로 한다.
     """
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
@@ -245,51 +266,24 @@ def _compile_sealed_plan_value(captured: CapturedExecutionInput) -> KernelResult
         )
     assert isinstance(compiled, QualifiedExecutionCompilation)
 
-    # (3) contract set + basis + Sealed Plan value — theorem_registry=None(opt-out).
-    contracts = build_execution_contract_set(
-        slot_selection_contract_id=captured.selection.selection_semantic_contract_id,
-        field_binding_contract_id=captured.field_binding.field_binding_semantic_contract_id,
-        source_schema_contract_id=captured.field_binding.source_schema_contract_id,
-        raw_record_contract_id=policy.raw_record_contract_id,
-        execution_semantic_contract_id=policy.execution_semantic_contract_id,
-        binding_value_contract_id=policy.binding_value_contract_id,
-        document_value_resolution_contract_id=policy.document_value_resolution_contract_id,
-        record_validation_contract_id=policy.record_validation_contract_id,
-        record_review_contract_id=policy.record_review_contract_id,
-        composition_contract_id=policy.composition_contract_id,
-        native_primitive_contract_id=policy.native_primitive_contract_id,
-        materialization_base_contract_id=policy.materialization_base_contract_id,
-        materialization_contract_id=policy.materialization_contract_id,
-        composition_theorem_evidence_manifest_digest=(
-            policy.composition_theorem_evidence_manifest_digest
-        ),
-        theorem_registry=None,
-    )
-    basis = ExecutionBasis(
-        workspace_instance_id=captured.workspace_instance_id,
-        work_authority_id=captured.work_authority_id,
-        qualification_profile_semantic_digest=qualification_profile_semantic_digest(
-            qual.qualification_profile_semantic_payload
-        ),
-        template=compiled.exact_template_execution_basis,
-        contracts=contracts,
-        selection=compiled.effective_selection_basis,
-        field_binding=compiled.effective_field_binding_basis,
-    )
-    verify_execution_basis_integrity(basis)
+    # (3) 작은 contract semantics + canonical operations — closed manifest 없이 Plan value 조립.
+    contract_semantics = _build_contract_semantics(captured)
     semantic_payload = compiled.execution_basis_semantic_payload
-    plan_payload = build_sealed_plan(
-        execution_basis=basis,
-        active_field_requirements=semantic_payload["active_field_requirements"],
-        ordered_operations=semantic_payload["ordered_operations"],
-        plan_schema_version=policy.plan_schema_version,
-        canonical_encoding_version=policy.canonical_encoding_version,
+    reqs, ops = canonicalize_execution_operations(
+        semantic_payload["active_field_requirements"],
+        semantic_payload["ordered_operations"],
     )
     return SealedExecutionPlanValue(
         qualification_profile_id=qual.qualification_profile_id,
         template_application_id=applied.template_application_id,
-        execution_basis=basis,
-        plan_payload=plan_payload,
+        contract_semantics=contract_semantics,
+        exact_template_execution_basis=compiled.exact_template_execution_basis,
+        effective_selection_basis=compiled.effective_selection_basis,
+        effective_field_binding_basis=compiled.effective_field_binding_basis,
+        active_field_requirements=reqs,
+        ordered_operations=ops,
+        plan_schema_version=policy.plan_schema_version,
+        canonical_encoding_version=policy.canonical_encoding_version,
     )
 
 
@@ -298,7 +292,7 @@ def compute_sealed_execution_plan(authority: DurableExecutionAuthority) -> Kerne
 
     경로: capture snapshot → :func:`_compile_sealed_plan_value`(C1~C10 direct admission + effective
     content/Active Field/deterministic operation compile + Sealed Plan value 조립). store·ledger·
-    fingerprint·profile admission·fence·theorem registry 를 **쥐지 않는다**.
+    fingerprint·profile admission·fence·theorem registry·closed contract manifest 를 **쥐지 않는다**.
 
     반환:
       - :class:`SealedExecutionPlanValue` — sealable Plan value.

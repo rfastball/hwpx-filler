@@ -40,6 +40,7 @@ from hwpxfiller.application.execution_composition import (
     theorem_evidence_digest,
     verify_execution_composition_premises,
 )
+from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
 from hwpxfiller.application.execution_semantic_kernel import (
     DurableExecutionAuthority,
     SealedExecutionPlanBlocked,
@@ -48,6 +49,39 @@ from hwpxfiller.application.execution_semantic_kernel import (
     compute_execution_snapshot,
     compute_sealed_execution_plan,
 )
+
+
+def _judge(authority):
+    return judge_captured_execution(
+        workspace_instance_id=authority.workspace_instance_id,
+        work_authority_id=authority.work_authority_id,
+        expected_template_application_id=authority.expected_template_application_id,
+        expected_profile_id=authority.expected_profile_id,
+        resolved_seal_policy=authority.resolved_seal_policy,
+        template=authority.template,
+        selection_observation=CapturedSelection(authority.selection),
+        field_binding_observation=CapturedFieldBinding(authority.field_binding),
+        captured_at=authority.captured_at,
+        policy_block=None,
+    )
+
+
+def _assert_semantic_parity(kern, candidate):
+    """kernel value 의 실행 의미가 legacy compile_candidate 산출과 동일함을 semantic 축으로 확인한다.
+
+    비교 축(용자 정의): effective content/Active Field(active_field_requirements)·ordered operations·
+    exact template/selection/binding basis·소비되는 contract semantics. 비교 대상 아님: plan digest·
+    request id·first-seen·theorem digest·manifest digest·store ref(=closed manifest 의 identity).
+    """
+    payload = candidate.plan_payload
+    basis = payload.execution_basis
+    assert kern.active_field_requirements == payload.active_field_requirements
+    assert kern.ordered_operations == payload.ordered_operations
+    assert kern.exact_template_execution_basis == basis.template
+    assert kern.effective_selection_basis == basis.selection
+    assert kern.effective_field_binding_basis == basis.field_binding
+    # closed manifest 의 소비 semantics 만 투영해 kernel 의 작은 값과 대조한다.
+    assert kern.contract_semantics == ExecutionContractSemantics.from_contract_set(basis.contracts)
 from hwpxfiller.application.execution_structure import (
     OWNER_OPTION,
     OWNER_ROOT,
@@ -163,9 +197,7 @@ def test_same_authority_yields_same_execution_meaning():
     a = compute_sealed_execution_plan(_authority(structure))
     b = compute_sealed_execution_plan(_authority(structure))
     assert isinstance(a, SealedExecutionPlanValue)
-    assert a == b
-    assert a.plan_payload == b.plan_payload
-    assert a.execution_basis == b.execution_basis
+    assert a == b  # frozen value 전체 동등(contract semantics·bases·reqs·ops 포함)
 
 
 # ── 2. effective meaning 변경 → Active Field/operations 정확히 변경 ─────────────────────
@@ -212,17 +244,34 @@ def test_capture_context_failure_is_fail_closed():
 
 
 # ── 4. Plan store 없이도 durable authority 에서 Plan 재계산 가능 ─────────────────────────
-def test_plan_recomputable_from_authority_without_store():
+def test_plan_recomputable_without_store_or_closed_manifest():
     structure = _structure()
     plan = compute_sealed_execution_plan(_authority(structure))
     assert isinstance(plan, SealedExecutionPlanValue)
-    assert plan.plan_payload.active_field_requirements  # 실 Plan value 를 얻었다
-    # kernel 모듈은 어떤 store/ledger 도 import 하지 않는다(control plane 밖 재계산의 구조적 증거).
+    assert plan.active_field_requirements  # 실 Plan value 를 얻었다
+    assert isinstance(plan.contract_semantics, ExecutionContractSemantics)
+    # kernel 은 store/ledger 도, closed contract manifest(ExecutionContractSet/basis/sealed payload)도
+    # 만들지 않는다 — control plane·manifest 밖 재계산의 구조적 증거.
+    import inspect
+
     import hwpxfiller.application.execution_semantic_kernel as kern
 
-    src = __import__("inspect").getsource(kern)
-    for forbidden in ("work_execution_plan_store", "stored_execution_plan", "job_store", "_store"):
-        assert forbidden not in src, f"kernel 이 {forbidden} 에 의존하면 안 된다"
+    src = inspect.getsource(kern)
+    # 구성/호출 구문(괄호)으로 확인한다 — 산문 언급이 아니라 실제 사용을 잡는다.
+    forbidden = (
+        "work_execution_plan_store",
+        "stored_execution_plan",
+        "job_store",
+        "build_execution_contract_set(",
+        "ExecutionContractSet(",
+        "build_sealed_plan(",
+        "ExecutionBasis(",
+        "SealedExecutionPlanSemanticPayload(",
+        "compile_candidate(",
+        "theorem_registry=",
+    )
+    for token in forbidden:
+        assert token not in src, f"kernel 이 {token} 를 쓰면 안 된다(closed manifest/control plane 결합)"
 
 
 # ── parity: kernel semantic == 기존 capture+compile seam ───────────────────────────────
@@ -233,26 +282,12 @@ def test_semantic_parity_with_existing_capture_compile_seam():
     assert isinstance(kern_value, SealedExecutionPlanValue)
 
     # 기존 seam 을 직접 구동: judge_captured_execution → compile_candidate.
-    captured = judge_captured_execution(
-        workspace_instance_id=WS,
-        work_authority_id=WORK,
-        expected_template_application_id=APP,
-        expected_profile_id=PROFILE,
-        resolved_seal_policy=authority.resolved_seal_policy,
-        template=authority.template,
-        selection_observation=CapturedSelection(authority.selection),
-        field_binding_observation=CapturedFieldBinding(authority.field_binding),
-        captured_at=authority.captured_at,
-        policy_block=None,
-    )
+    captured = _judge(authority)
     assert isinstance(captured, CapturedExecutionInput)
     candidate = compile_candidate(captured)
 
-    # 실행 의미(exact basis·Active Fields·ordered operations·plan payload)가 동일하다.
-    assert kern_value.plan_payload == candidate.plan_payload
-    assert kern_value.execution_basis == candidate.execution_basis
-    assert kern_value.active_field_requirements == candidate.plan_payload.active_field_requirements
-    assert kern_value.ordered_operations == candidate.plan_payload.ordered_operations
+    # 실행 의미(Active Fields·ordered operations·bases·소비 contract semantics)가 동일하다.
+    _assert_semantic_parity(kern_value, candidate)
     # kernel 이 만든 snapshot 도 동일 seam 산출과 같다.
     assert compute_execution_snapshot(authority) == captured
 
@@ -291,26 +326,34 @@ def test_unbound_active_field_returns_blocked():
     assert result.normalized_blockers  # 사유가 비어 있지 않다
 
 
-# ── R2-01: theorem runtime registry 결합 제거(kernel 은 registry 미consult) ──────────────
-def _judge(authority):
-    return judge_captured_execution(
-        workspace_instance_id=authority.workspace_instance_id,
-        work_authority_id=authority.work_authority_id,
-        expected_template_application_id=authority.expected_template_application_id,
-        expected_profile_id=authority.expected_profile_id,
-        resolved_seal_policy=authority.resolved_seal_policy,
-        template=authority.template,
-        selection_observation=CapturedSelection(authority.selection),
-        field_binding_observation=CapturedFieldBinding(authority.field_binding),
-        captured_at=authority.captured_at,
-        policy_block=None,
+# ── R2-02: 실제 contract mismatch fail-closed ─────────────────────────────────────────────
+def test_contract_mismatch_is_fail_closed():
+    structure = _structure()
+    # materialization base contract 가 admitted base 가 아니면 Plan 을 내지 않는다(fail-closed).
+    bad = _policy(materialization_base_contract_id="bogus-base/v9")
+    with pytest.raises(SemanticKernelContextError):
+        compute_sealed_execution_plan(_authority(structure, policy=bad))
+
+
+def test_contract_semantics_rejects_empty_role():
+    import dataclasses
+
+    from hwpxfiller.application.execution_contract_semantics import (
+        ExecutionContractSemanticsError,
     )
 
+    semantics = compute_sealed_execution_plan(_authority(_structure())).contract_semantics
+    assert isinstance(semantics, ExecutionContractSemantics)
+    # 모든 소비 역할은 nonempty 여야 한다 — 빈 역할은 latest 로 풀지 않고 fail-closed.
+    with pytest.raises(ExecutionContractSemanticsError):
+        dataclasses.replace(semantics, binding_value_contract_id="")
 
+
+# ── R2-01: theorem runtime registry 결합 제거(kernel 은 registry 미consult) ──────────────
 def test_kernel_is_independent_of_theorem_registry_runtime():
-    """kernel 은 theorem registry 가 resolve 못 해도 동일 Plan 을 낸다 — theorem runtime
+    """kernel 은 theorem registry 가 resolve 못 해도 동일 실행 의미를 낸다 — theorem runtime
     bureaucracy 와의 결합이 끊겼음을 행위로 증명한다. 대조로 compile_candidate 는 빈 registry 에서
-    fail-closed 로 raise 하지만, kernel 산출은 registry-검증 경로(default)와 byte 동일하다."""
+    fail-closed 로 raise 하지만, kernel 산출 semantic 은 registry-검증 경로(default)와 동일하다."""
     structure = _structure()
     authority = _authority(structure)
 
@@ -324,10 +367,9 @@ def test_kernel_is_independent_of_theorem_registry_runtime():
     with pytest.raises(UnsupportedLocalImplementation):
         compile_candidate(captured, theorem_registry=empty_registry)
 
-    # 그럼에도 kernel(registry 없음) 산출은 registry-검증 compile_candidate(default)와 byte 동일.
+    # 그럼에도 kernel(registry 없음) 산출 semantic 은 registry-검증 compile_candidate(default)와 동일.
     canonical = compile_candidate(captured)
-    assert kern.plan_payload == canonical.plan_payload
-    assert kern.execution_basis == canonical.execution_basis
+    _assert_semantic_parity(kern, canonical)
 
 
 # ── slotless authority 도 순수 재계산된다 ──────────────────────────────────────────────

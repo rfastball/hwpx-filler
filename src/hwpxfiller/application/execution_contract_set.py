@@ -518,6 +518,27 @@ def plan_semantic_digest(payload: SealedExecutionPlanSemanticPayload) -> str:
     return canonical_execution_digest(encode_sealed_plan(payload))
 
 
+def canonicalize_execution_operations(
+    active_field_requirements: Iterable[Mapping[str, Any]],
+    ordered_operations: Iterable[Mapping[str, Any]],
+) -> tuple[tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
+    """ordered_operations 를 deep-freeze 하고 active_field_requirements 를 APPLY 순서로 정본화한다.
+
+    :func:`build_sealed_plan`(legacy Plan payload)과 semantic kernel(closed manifest 없는 값)이
+    **같은** canonical ordering 을 공유하는 단일 출처다 — requirement array 를 APPLY operation 순서로
+    정본화해 두 array 가 같은 canonical sequence 를 쓰게 한다(#702 operation order canonicality).
+    deep-freeze 로 nested value_expression 까지 alias 를 끊어 봉인 뒤 변이를 막는다.
+    """
+    ops = tuple(_deep_freeze(o) for o in ordered_operations)
+    reqs = [_deep_freeze(r) for r in active_field_requirements]
+    apply_seq = [
+        o.get("field_id") for o in ops if o.get("op") == PLAN_APPLY_FIELD_BINDING
+    ]
+    apply_rank = {f: i for i, f in enumerate(apply_seq) if isinstance(f, str)}
+    reqs.sort(key=lambda r: apply_rank.get(r.get("field_id"), len(apply_rank)))
+    return tuple(reqs), ops
+
+
 def build_sealed_plan(
     *,
     execution_basis: ExecutionBasis,
@@ -534,21 +555,14 @@ def build_sealed_plan(
     """
     require_supported_encoding(canonical_encoding_version)
     _require_nonempty(plan_schema_version, "plan_schema_version")
-    # deep-freeze: nested value_expression 까지 alias 를 끊어 봉인 뒤 변이를 막는다.
-    ops = tuple(_deep_freeze(o) for o in ordered_operations)
-    reqs = [_deep_freeze(r) for r in active_field_requirements]
-    # requirement array 를 APPLY operation 순서로 정본화한다 — 두 array 가 같은 canonical sequence 를
-    # 쓰게 해 verify 가 APPLY 순서 뒤섞임을 잡을 수 있다(#702 operation order canonicality).
-    apply_seq = [
-        o.get("field_id") for o in ops if o.get("op") == PLAN_APPLY_FIELD_BINDING
-    ]
-    apply_rank = {f: i for i, f in enumerate(apply_seq) if isinstance(f, str)}
-    reqs.sort(key=lambda r: apply_rank.get(r.get("field_id"), len(apply_rank)))
+    reqs, ops = canonicalize_execution_operations(
+        active_field_requirements, ordered_operations
+    )
     return SealedExecutionPlanSemanticPayload(
         plan_schema_version=plan_schema_version,
         canonical_encoding_version=canonical_encoding_version,
         execution_basis=execution_basis,
-        active_field_requirements=tuple(reqs),
+        active_field_requirements=reqs,
         ordered_operations=ops,
     )
 
