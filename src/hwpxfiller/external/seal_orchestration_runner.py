@@ -1,24 +1,25 @@
 """SealExecutionPlan orchestration runner — optimistic capture → pure compile → final seal (S5-10 · #706).
 
-짧은 exact capture gate 와 짧은 final publication gate 사이에서 **fence 밖** pure qualification·
-compile 을 수행한다. capture 는 reservation 이 아니다: publish 직전에 candidate 가 사용한 exact
-contracts 로 current semantic basis 를 재구성해 equality·Profile policy·functional dependency·
-dependency resolvability 를 다시 확인한 뒤 Plan 또는 first-seen terminal outcome 을 atomic commit 한다.
+짧은 exact capture gate 와 짧은 final gate 사이에서 **fence 밖** pure qualification·compile 을
+수행한다. capture 는 reservation 이 아니다: final 직전에 candidate 가 사용한 exact contracts 로
+current semantic basis 를 재구성해 equality·Profile policy 를 다시 확인한 뒤 current candidate 에서
+직접 terminal outcome 을 낸다. **S5F R2-04b-2(#740): durable Plan store 가 없다** — publish·create/
+reuse·atomic commit 없이 방금 계산한 현재 결과(``ExecutionPlanSealed``/block/policy/stale)를 반환한다.
 
 global lock order 를 엄격히 지킨다(바깥→안):
 
-    QualificationProfileAdmissionFence → PerWorkMutationFence → 단일 Store writer lease
+    QualificationProfileAdmissionFence → PerWorkMutationFence
 
-WorkFence/lease 를 잡은 뒤 다른 ProfileFence 를 기다리지 않는다 — final gate 에서 current summary 가
+WorkFence 를 잡은 뒤 다른 ProfileFence 를 기다리지 않는다 — final gate 에서 current summary 가
 candidate Profile 과 달라졌으면 fence 를 풀고 stale/context 로 닫는다(다른 ProfileFence 를 WorkFence
 아래 잡지 않는다). 장기 pure section 동안은 어떤 fence 도 보유하지 않는다.
 
 판정·값 모델·순수 전이는 :mod:`hwpxfiller.application.seal_execution_plan` 소유다. 이 어댑터는
-fence 획득·capture port 호출·store atomic primitive 결선만 진다(#675 pattern).
+fence 획득·capture port 호출·verdict 결선만 진다(#675 pattern).
 
 이 runner 는 **additive** 다 — 어떤 product Generate route 도 이 slice 에서 cut over 하지 않는다
 (S5-11 Product API / S5-13 bridge 소유). capture port·fresh observation·shipping policy resolver 는
-injectable seam 이라 실 store/HWPX 결선은 downstream 이 주입한다.
+injectable seam 이라 실 결선은 downstream 이 주입한다.
 """
 
 from __future__ import annotations
@@ -50,30 +51,26 @@ from hwpxfiller.application.seal_execution_plan import (
     compile_candidate,
     decide_final_verdict,
     final_verdict_profile_moved,
-    publication_kind_for,
-    published_outcome_for,
     require_exact_selector_consistency,
+    sealed_outcome_for,
 )
 from hwpxfiller.application.stored_execution_plan import SealTerminalOutcome
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 from hwpxfiller.host.profile_admission_fence import profile_admission_fence
 
-from .work_execution_plan_store import WorkExecutionPlanStore
-
 _ProfileFence = Callable[[str], AbstractContextManager[None]]
 _WorkFence = Callable[[str, str], AbstractContextManager[None]]
 _RouteResolver = Callable[[str, str], str]
 _Authorizer = Callable[[str, SealExecutionPlanCommand], None]
-_Clock = Callable[[], str]
 
 
 @dataclass(frozen=True)
 class SealExecutionPlanResult:
-    """command 의 현재-state 결과 — 매 호출이 현재 authority 에서 재계산한 terminal outcome(R2-04a).
+    """command 의 현재-state 결과 — 매 호출이 현재 authority 에서 재계산한 terminal outcome.
 
-    historical replay·first-seen record 를 싣지 않는다. publish(sealable) 은 content-addressed
-    store 에 여전히 create/reuse 되지만(04b 대상), 응답은 replayed 된 과거가 아니라 방금 계산한
-    ``PlanPublished``/block/policy/stale 다.
+    R2-04b-2(#740): durable Plan store 가 없다. sealable 은 current candidate 에서 직접
+    ``ExecutionPlanSealed`` 를 낸다(content-addressed publish·create/reuse 없음). block/policy/stale
+    도 durable 하게 남기지 않는다 — 응답은 방금 계산한 현재 terminal outcome 이다.
     """
 
     terminal_outcome: SealTerminalOutcome
@@ -82,24 +79,22 @@ class SealExecutionPlanResult:
 def seal_execution_plan(
     command: SealExecutionPlanCommand,
     *,
-    plan_store: WorkExecutionPlanStore,
     resolve_route: _RouteResolver,
     authorize: _Authorizer,
     read_summary: FreshWorkObservationPort,
     capture_under_fence: CaptureExecutionQualificationInputUnderFence,
     resolve_shipping_policy: ShippingSealPolicyResolver,
-    clock: _Clock,
     profile_fence: _ProfileFence = profile_admission_fence,
     work_fence: _WorkFence = per_work_mutation_fence,
     theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
     max_discovery_attempts: int = MAX_DISCOVERY_ATTEMPTS,
 ) -> SealExecutionPlanResult:
-    """route → auth → capture gate → pure compile → final gate → 현재-state terminal(R2-04a).
+    """route → auth → capture gate → pure compile → final gate → 현재-state terminal.
 
     같은 request 를 다시 호출해도 historical response 를 replay 하지 않고 현재 authority 에서 다시
-    계산한다. block/policy/stale terminal 은 durable 하게 남기지 않고 fresh 로 되돌린다. sealable
-    plan 은 content-addressed store 에 create/reuse 로 publish 한다(04b 대상). route/auth/context/
-    integrity/store 실패는 attempt error 로 raise 한다.
+    계산한다. sealable 은 current candidate 에서 직접 ``ExecutionPlanSealed`` 를 내고(durable store
+    없음), block/policy/stale 도 durable 하게 남기지 않는다. route/auth/context/integrity 실패는
+    attempt error 로 raise 한다.
     """
     ws = command.workspace_instance_id
     work_authority_id = resolve_route(ws, command.work_ref)  # 실패는 port 가 attempt 로 raise
@@ -172,41 +167,17 @@ def seal_execution_plan(
                     candidate.resolved_seal_policy,
                 )
                 verdict = final_verdict_profile_moved(candidate, observation, summary)
-            return _commit_verdict(
-                plan_store, command, work_authority_id, verdict, clock()
-            )
+            return _result_for_verdict(verdict)
 
 
-def _commit_verdict(
-    plan_store: WorkExecutionPlanStore,
-    command: SealExecutionPlanCommand,
-    work_authority_id: str,
-    verdict: FinalVerdict,
-    now: str,
-) -> SealExecutionPlanResult:
-    """FinalPublish → content-addressed store 에 create/reuse publish. block/policy/stale → fresh.
+def _result_for_verdict(verdict: FinalVerdict) -> SealExecutionPlanResult:
+    """FinalPublish → current candidate 에서 직접 ``ExecutionPlanSealed``. block/policy/stale → 그대로.
 
-    first-seen ledger·replay 없이 publish 한다: REUSE 는 store 가 무변경으로 흡수하고, CREATE 만
-    version 을 올린다. 응답은 방금 계산한 :class:`PlanPublished`(또는 fresh terminal)다.
+    durable store 가 없다(R2-04b-2): publish·create/reuse·ledger 없이 방금 계산한 현재 terminal
+    outcome 을 반환한다.
     """
     if not isinstance(verdict, FinalPublish):
         return SealExecutionPlanResult(verdict.outcome)
     plan = verdict.candidate
     assert isinstance(plan, PlanCandidate)
-    ws = command.workspace_instance_id
-    aggregate = plan_store.load_or_empty(work_authority_id, ws)
-    kind = publication_kind_for(aggregate, plan.plan_semantic_digest)
-    published = published_outcome_for(plan, kind)
-    plan_store.publish_sealed_plan_atomic(
-        work_authority_id=work_authority_id,
-        workspace_instance_id=ws,
-        expected_aggregate_version=aggregate.aggregate_version,
-        request_id=command.request_id,
-        resolved_seal_policy=plan.resolved_seal_policy,
-        capture_evidence=plan.capture_evidence,
-        plan_payload=plan.plan_payload,
-        dependency_set=plan.dependency_set,
-        published_outcome=published,
-        now=now,
-    )
-    return SealExecutionPlanResult(published)
+    return SealExecutionPlanResult(sealed_outcome_for(plan))

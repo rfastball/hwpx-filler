@@ -69,9 +69,11 @@ def _judge(authority):
 def _assert_semantic_parity(kern, candidate):
     """kernel value 의 실행 의미가 legacy compile_candidate 산출과 동일함을 semantic 축으로 확인한다.
 
-    비교 축(용자 정의): effective content/Active Field(active_field_requirements)·ordered operations·
-    exact template/selection/binding basis·소비되는 contract semantics. 비교 대상 아님: plan digest·
-    request id·first-seen·theorem digest·manifest digest·store ref(=closed manifest 의 identity).
+    비교 축: effective content/Active Field(active_field_requirements)·ordered operations·exact
+    template/selection/binding basis·소비되는 contract semantics. 비교 대상 아님: plan digest·request
+    id·theorem digest·manifest digest(=closed manifest 의 identity). R2-04b-2 이후 PlanCandidate 는
+    plan_payload(S6 materialization 소비)만 싣고 execution_basis/plan_semantic_digest 는 안 싣는다 —
+    basis 는 payload 안에서 읽는다.
     """
     payload = candidate.plan_payload
     basis = payload.execution_basis
@@ -347,7 +349,7 @@ def test_kernel_value_is_independent_of_the_three_identity_digests():
     qpd = qualification_profile_semantic_digest(
         captured.template.qualification.qualification_profile_semantic_payload
     )
-    ebd = execution_basis_digest(candidate.execution_basis)
+    ebd = execution_basis_digest(candidate.plan_payload.execution_basis)
     psd = plan_semantic_digest(candidate.plan_payload)
     blob = repr(kern)
     for label, digest in (

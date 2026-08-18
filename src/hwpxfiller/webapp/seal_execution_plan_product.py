@@ -2,7 +2,7 @@
 
 두 질의를 나란히 노출한다:
 
-- ``command_outcome`` — 방금 계산한 terminal seal outcome(PlanPublished/blocked/policy/stale). S5-10
+- ``command_outcome`` — 방금 계산한 terminal seal outcome(ExecutionPlanSealed/blocked/policy/stale). S5-10
   application service(:func:`seal_execution_plan`)가 현재 authority 에서 재계산한다.
 - ``fresh_observation`` — 지금 이 순간 current Work 의 **SealedExecutionPlanValue** 재계산(sealable 이면
   그 value + runtime admission + readiness, 아니면 current-work blocker). historical durable Plan 을
@@ -65,15 +65,14 @@ from ..application.seal_execution_plan import (
     WorkExecutionSummary,
 )
 from ..application.stored_execution_plan import (
+    ExecutionPlanSealed,
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    PlanPublished,
     RequestedVersionSelector,
     SealTerminalOutcome,
     StaleExecutionBasis,
 )
 from ..external.seal_orchestration_runner import seal_execution_plan
-from ..external.work_execution_plan_store import WorkExecutionPlanStore
 from ..host.per_work_fence import per_work_mutation_fence
 from ..host.profile_admission_fence import profile_admission_fence
 
@@ -153,11 +152,10 @@ class SealExecutionPlanProductCommand:
 
 # ─── command outcome Product DTOs ────────────────────────────────────────────────────
 @dataclass(frozen=True)
-class PlanPublishedProductOutcome:
-    publication_kind: str
-    plan_semantic_digest: str
+class ExecutionPlanSealedProductOutcome:
+    """seal 성공 — durable publication 없이 current candidate 에서 직접 낸 sealed basis identity."""
+
     execution_basis_digest: str
-    captured_execution_input_digest: str
 
 
 @dataclass(frozen=True)
@@ -178,7 +176,7 @@ class StaleExecutionBasisProductOutcome:
 
 
 SealExecutionPlanCommandOutcome = (
-    PlanPublishedProductOutcome
+    ExecutionPlanSealedProductOutcome
     | ExecutionQualificationBlockedProductOutcome
     | ExecutionPolicyBlockedProductOutcome
     | StaleExecutionBasisProductOutcome
@@ -206,7 +204,6 @@ class SealExecutionPlanProduct:
     def __init__(
         self,
         *,
-        plan_store: WorkExecutionPlanStore,
         read_admission_state: Callable[[str], "str | None"],
         resolve_route: _Route,
         authorize: _Authorize,
@@ -222,7 +219,6 @@ class SealExecutionPlanProduct:
         work_fence: _WorkFence = per_work_mutation_fence,
         max_observation_attempts: int = MAX_OBSERVATION_ATTEMPTS,
     ) -> None:
-        self._plan_store = plan_store
         self._read_admission = read_admission_state
         self._resolve_route = resolve_route
         self._authorize = authorize
@@ -255,13 +251,11 @@ class SealExecutionPlanProduct:
         )
         result = seal_execution_plan(
             inner,
-            plan_store=self._plan_store,
             resolve_route=self._resolve_route,
             authorize=lambda wid, _cmd: self._authorize(wid, ws),
             read_summary=self._read_summary,
             capture_under_fence=self._capture,
             resolve_shipping_policy=self._resolve_policy,
-            clock=self._clock,
             profile_fence=self._profile_fence,
             work_fence=self._work_fence,
             theorem_registry=self._theorem_registry,
@@ -279,12 +273,9 @@ class SealExecutionPlanProduct:
     def _map_command_outcome(
         self, outcome: SealTerminalOutcome
     ) -> SealExecutionPlanCommandOutcome:
-        if isinstance(outcome, PlanPublished):
-            return PlanPublishedProductOutcome(
-                publication_kind=outcome.publication_kind,
-                plan_semantic_digest=outcome.plan_semantic_digest,
+        if isinstance(outcome, ExecutionPlanSealed):
+            return ExecutionPlanSealedProductOutcome(
                 execution_basis_digest=outcome.execution_basis_digest,
-                captured_execution_input_digest=outcome.captured_execution_input_digest,
             )
         if isinstance(outcome, ExecutionQualificationBlocked):
             return ExecutionQualificationBlockedProductOutcome(
@@ -444,7 +435,7 @@ __all__ = [
     "SealExecutionPlanProductCommand",
     "SealExecutionPlanResponse",
     "SealExecutionPlanCommandOutcome",
-    "PlanPublishedProductOutcome",
+    "ExecutionPlanSealedProductOutcome",
     "ExecutionQualificationBlockedProductOutcome",
     "ExecutionPolicyBlockedProductOutcome",
     "StaleExecutionBasisProductOutcome",

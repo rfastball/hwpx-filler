@@ -1,14 +1,14 @@
 """S5-11(#707) SealExecutionPlan Product API — command outcome + current Sealed Plan 관찰.
 
-S5F R2-04b-1(#740): historical durable Plan lookup·opaque Plan ref/HMAC·resolve_plan_reference·
-PublishedPlanObservation·digest-vs-stored currentness(CURRENT/STALE)·command_replayed 를 제거했다.
-observation 은 store 의 과거 Plan 이 아니라 current authority 에서 SealedExecutionPlanValue 를 직접
-재계산한다(value 가 곧 현재라 currentness 축이 없다). command_outcome 의 StaleExecutionBasis(capture→
-final gate concurrency)와 ProfileFence·runtime admission 은 유지한다. content-addressed Plan store 로의
-publish(create/reuse)는 orchestration 이 아직 진다(04b-2 대상).
+S5F R2-04b(#740): durable Plan store·opaque Plan ref/HMAC·resolve_plan_reference·PublishedPlanObservation·
+digest-vs-stored currentness(CURRENT/STALE)·command_replayed 를 제거했다. command_outcome 성공은
+``ExecutionPlanSealed``(현재-value, publication kind 없음)이고, observation 은 store 과거 Plan 이 아니라
+current authority 에서 SealedExecutionPlanValue 를 직접 재계산한다(value 가 곧 현재라 currentness 축이
+없다). command_outcome 의 StaleExecutionBasis(capture→final gate concurrency)와 ProfileFence·runtime
+admission 은 유지한다.
 
 seal seam(capture/summary/shipping)은 seal runner 테스트의 fake World/Resolver 를 재사용한다.
-plan store·admission store 는 실 primitive 로 돌린다.
+admission store 는 실 primitive 로 돌린다(durable Plan store 는 없다).
 """
 
 from __future__ import annotations
@@ -66,12 +66,9 @@ from hwpxfiller.external.profile_admission_runner import (
     read_qualification_profile_admission_under_fence,
 )
 from hwpxfiller.external.profile_admission_store import ProfileAdmissionStore
-from hwpxfiller.external.work_execution_plan_store import WorkExecutionPlanStore
 from hwpxfiller.webapp.seal_execution_plan_product import (
     EXECUTION_OBSERVATION_CONTEXT_ERROR,
-    ExecutionPolicyBlockedProductOutcome,
-    ExecutionQualificationBlockedProductOutcome,
-    PlanPublishedProductOutcome,
+    ExecutionPlanSealedProductOutcome,
     RuntimeMaterializerConformance,
     SealExecutionPlanProduct,
     SealExecutionPlanProductCommand,
@@ -88,7 +85,6 @@ from tests.test_execution_compilation import (
     _binding,
     _rules,
     _snapshot,
-    _structure,
 )
 from tests.test_seal_orchestration_runner import Resolver, World
 
@@ -148,9 +144,8 @@ def _ctx_error_runtime(**_kw) -> RuntimeMaterializerConformance:
 
 # ─── product harness ───────────────────────────────────────────────────────────────────
 class _Harness:
-    def __init__(self, product, plan_store, admission_store, world):
+    def __init__(self, product, admission_store, world):
         self.product = product
-        self.plan_store = plan_store
         self.admission_store = admission_store
         self.world = world
 
@@ -160,12 +155,10 @@ def _product(
     clock=None, seed_admission=True, admission_store=None,
 ) -> _Harness:
     world = world or World()
-    plan_store = WorkExecutionPlanStore(tmp_path / "plans")
     adm = admission_store or ProfileAdmissionStore(tmp_path / "adm")
     if seed_admission and not adm.exists(PROFILE):
         _seed_admitted(adm)
     product = SealExecutionPlanProduct(
-        plan_store=plan_store,
         read_admission_state=_admission_port(adm),
         resolve_route=route or (lambda ws, ref: WORK),
         authorize=authorize or (lambda wid, ws: None),
@@ -175,7 +168,7 @@ def _product(
         clock=clock or (lambda: "t0"),
         runtime_conformance=runtime or s6_absent_runtime_conformance,
     )
-    return _Harness(product, plan_store, adm, world)
+    return _Harness(product, adm, world)
 
 
 def _pcmd(request_id="r1", **over) -> SealExecutionPlanProductCommand:
@@ -193,22 +186,16 @@ def test_blocked_and_stale_outcomes_carry_no_plan_ref(tmp_path) -> None:
     assert not hasattr(blocked, "plan_semantic_digest")
 
 
-def test_revoked_profile_leaves_plan_semantic_digest_unchanged(tmp_path) -> None:
+def test_revoked_profile_leaves_sealed_basis_unchanged(tmp_path) -> None:
+    # profile 을 revoke 해도 sealed current basis 의 identity 는 그대로다(seal 은 durable 하지 않고
+    # 매번 현재 authority 에서 재계산되지만 같은 basis 를 낸다).
     h = _product(tmp_path)
     before = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
     _revoke(h.admission_store)
     after = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
-    assert isinstance(before, PlanPublishedProductOutcome)
-    assert isinstance(after, PlanPublishedProductOutcome)
-    assert before.plan_semantic_digest == after.plan_semantic_digest
-
-
-def test_no_current_plan_pointer_stored(tmp_path) -> None:
-    h = _product(tmp_path)
-    h.product.seal_execution_plan(_pcmd("r1"))
-    aggregate = h.plan_store.load(WORK)
-    for forbidden in ("current_plan_id", "is_current", "latest", "current_plan"):
-        assert not hasattr(aggregate, forbidden)
+    assert isinstance(before, ExecutionPlanSealedProductOutcome)
+    assert isinstance(after, ExecutionPlanSealedProductOutcome)
+    assert before.execution_basis_digest == after.execution_basis_digest
 
 
 # ══ current Sealed Plan observation ════════════════════════════════════════════════════
@@ -304,7 +291,7 @@ def test_current_capture_context_error_is_current_work_observation(tmp_path) -> 
 
     h.product._capture = gated
     resp = h.product.seal_execution_plan(_pcmd("r1"))
-    assert isinstance(resp.command_outcome, PlanPublishedProductOutcome)  # command 은 정상 봉인
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)  # command 은 정상 봉인
     assert state["n"] == 3  # gate+final(2) 정상, observation(1) context error
     obs = resp.fresh_observation
     assert isinstance(obs, CurrentWorkExecutionObservation)
@@ -356,7 +343,7 @@ def test_authorization_repeated_each_call(tmp_path) -> None:
         raise AuthorizationError("denied")
 
     other = SealExecutionPlanProduct(
-        plan_store=h.plan_store, read_admission_state=_admission_port(h.admission_store),
+        read_admission_state=_admission_port(h.admission_store),
         resolve_route=lambda ws, r: WORK, authorize=deny,
         read_summary=h.world.summary, capture_under_fence=h.world.capture,
         resolve_shipping_policy=Resolver(), clock=lambda: "t0",
@@ -366,22 +353,21 @@ def test_authorization_repeated_each_call(tmp_path) -> None:
     assert calls["n"] == 1  # 매 호출 authorize 를 다시 확인(replay 없음)
 
 
-def test_route_failure_no_ledger_mutation(tmp_path) -> None:
+def test_route_failure_propagates_no_terminal(tmp_path) -> None:
     def boom(ws, ref):
         raise RouteResolutionError("route 불가")
 
     h = _product(tmp_path, route=boom)
     with pytest.raises(RouteResolutionError):
         h.product.seal_execution_plan(_pcmd("r1"))
-    assert not h.plan_store.exists(WORK)
 
 
-def test_product_reaches_real_s5_10_service_and_persists(tmp_path) -> None:
+def test_product_reaches_real_s5_10_service_and_seals(tmp_path) -> None:
+    # durable store 가 없다 — Product 는 실 S5-10 orchestration 을 타고 sealed current-value 를 낸다.
     h = _product(tmp_path)
-    h.product.seal_execution_plan(_pcmd("r1"))
-    aggregate = h.plan_store.load(WORK)  # 실 store 에 durable 하게 남는다(content-addressed)
-    assert len(aggregate.plans_by_semantic_digest) == 1
-    assert not hasattr(aggregate, "first_seen_ledger")  # R2-04a: ledger 제거
+    outcome = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
+    assert isinstance(outcome, ExecutionPlanSealedProductOutcome)
+    assert outcome.execution_basis_digest  # nonempty basis identity
 
 
 def test_product_contract_vocabulary_is_closed() -> None:
@@ -403,12 +389,14 @@ def test_fresh_observation_profile_then_work_no_reverse(tmp_path) -> None:
     assert all(ranks == [0, 1] for ranks in h.world.capture_ranks)
 
 
-def test_fresh_observation_no_store_write(tmp_path) -> None:
+def test_repeated_call_recomputes_same_sealed_basis(tmp_path) -> None:
+    # durable store 가 없다 — 같은 request 재호출은 현재 authority 에서 재계산하되 같은 basis 를 낸다.
     h = _product(tmp_path)
-    h.product.seal_execution_plan(_pcmd("r1"))
-    version_after_seal = h.plan_store.load(WORK).aggregate_version
-    h.product.seal_execution_plan(_pcmd("r1"))  # 재호출 + fresh observe
-    assert h.plan_store.load(WORK).aggregate_version == version_after_seal
+    first = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
+    second = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
+    assert isinstance(first, ExecutionPlanSealedProductOutcome)
+    assert isinstance(second, ExecutionPlanSealedProductOutcome)
+    assert first.execution_basis_digest == second.execution_basis_digest
 
 
 # ══ Codex #723 finding 2: observation-only port 실패는 command outcome 을 소거하지 않는다 ═══
@@ -421,7 +409,7 @@ def test_observation_port_failure_degrades_keeps_command_outcome(tmp_path) -> No
 
     h.product._read_admission = boom
     resp = h.product.seal_execution_plan(_pcmd("r1"))  # 재봉인 + observe
-    assert isinstance(resp.command_outcome, PlanPublishedProductOutcome)  # 보존
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)  # 보존
     assert isinstance(resp.fresh_observation, ExecutionObservationContextError)
     assert resp.fresh_observation.code == EXECUTION_OBSERVATION_CONTEXT_ERROR
 

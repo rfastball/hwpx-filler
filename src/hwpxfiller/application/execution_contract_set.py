@@ -72,10 +72,6 @@ class ExecutionPlanIntegrityError(Exception):
     code = "EXECUTION_PLAN_INTEGRITY_ERROR"
 
 
-class ExecutionPlanCompilationIntegrityError(Exception):
-    code = "EXECUTION_PLAN_COMPILATION_INTEGRITY_ERROR"
-
-
 class UnsupportedPlanSchemaError(Exception):
     code = "UNSUPPORTED_PLAN_SCHEMA"
 
@@ -664,65 +660,6 @@ def _field_id(entry: Mapping[str, Any], what: str) -> str:
     if not isinstance(value, str) or value == "":
         raise ExecutionPlanIntegrityError(f"{what} 에 field_id 가 없다")
     return value
-
-
-# ─── PlanCompilationKey ────────────────────────────────────────────────────────────────
-@dataclass(frozen=True)
-class PlanCompilationKey:
-    """(execution_basis_digest, plan_schema_version, canonical_encoding_version).
-
-    불변식: 한 key 는 최대 하나의 ``plan_semantic_digest`` 를 갖는다. 같은 execution basis 라도
-    plan schema/encoding version 이 다르면 다른 key → 다른 Plan digest 가 허용된다.
-    """
-
-    execution_basis_digest: str
-    plan_schema_version: str
-    canonical_encoding_version: str
-
-
-def plan_compilation_key_of(payload: SealedExecutionPlanSemanticPayload) -> PlanCompilationKey:
-    return PlanCompilationKey(
-        execution_basis_digest=execution_basis_digest(payload.execution_basis),
-        plan_schema_version=payload.plan_schema_version,
-        canonical_encoding_version=payload.canonical_encoding_version,
-    )
-
-
-def encode_plan_compilation_key(key: PlanCompilationKey) -> dict[str, Any]:
-    return {
-        "execution_basis_digest": key.execution_basis_digest,
-        "plan_schema_version": key.plan_schema_version,
-        "canonical_encoding_version": key.canonical_encoding_version,
-    }
-
-
-def plan_compilation_key_digest(key: PlanCompilationKey) -> str:
-    """PlanCompilationKey 의 canonical content-address."""
-    return canonical_execution_digest(encode_plan_compilation_key(key))
-
-
-class PlanCompilationLedger:
-    """functional dependency 계약: PlanCompilationKey → 최대 1 plan_semantic_digest.
-
-    같은 key 에서 다른 plan digest 가 관찰되면 EXECUTION_PLAN_COMPILATION_INTEGRITY_ERROR. 이 검사는
-    끌 수 없다(record 가 유일한 삽입 경로다). durable store/publication 은 S5-07 소유다 — 여기서는
-    functional dependency 판정만 진다.
-    """
-
-    def __init__(self) -> None:
-        self._by_key: dict[str, str] = {}
-
-    def record(self, key: PlanCompilationKey, plan_digest: str) -> None:
-        key_digest = plan_compilation_key_digest(key)
-        existing = self._by_key.get(key_digest)
-        if existing is not None and existing != plan_digest:
-            raise ExecutionPlanCompilationIntegrityError(
-                f"PlanCompilationKey 가 서로 다른 plan digest 로 매핑됨: {existing} != {plan_digest}"
-            )
-        self._by_key[key_digest] = plan_digest
-
-    def get(self, key: PlanCompilationKey) -> str | None:
-        return self._by_key.get(plan_compilation_key_digest(key))
 
 
 # ─── DurableSealCaptureEvidence codec seam ─────────────────────────────────────────────

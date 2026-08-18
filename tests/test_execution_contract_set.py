@@ -42,10 +42,7 @@ from hwpxfiller.application.execution_contract_set import (
     ExecutionContractSet,
     ExecutionContractSetIntegrityError,
     ExecutionContractSetRegistry,
-    ExecutionPlanCompilationIntegrityError,
     ExecutionPlanIntegrityError,
-    PlanCompilationKey,
-    PlanCompilationLedger,
     QualificationProfileManifestIntegrityError,
     UnsupportedPlanSchemaError,
     build_execution_contract_set,
@@ -55,7 +52,6 @@ from hwpxfiller.application.execution_contract_set import (
     encode_effective_selection,
     encode_durable_capture_evidence,
     execution_basis_digest,
-    plan_compilation_key_of,
     plan_semantic_digest,
     qualification_profile_semantic_digest,
     require_consistent_qualification_profile,
@@ -341,29 +337,15 @@ def test_source_key_tuple_order_does_not_split_identity() -> None:
     )
 
 
-# ─── Sealed Plan + PlanCompilationKey ────────────────────────────────────────────────────
+# ─── Sealed Plan identity ────────────────────────────────────────────────────────────────
 def test_plan_digest_deterministic_same_inputs() -> None:
     assert plan_semantic_digest(_plan()) == plan_semantic_digest(_plan())
 
 
-def test_same_key_different_payload_integrity_error() -> None:
-    ledger = PlanCompilationLedger()
-    plan = _plan()
-    key = plan_compilation_key_of(plan)
-    ledger.record(key, plan_semantic_digest(plan))
-    ledger.record(key, plan_semantic_digest(plan))  # idempotent
-    with pytest.raises(ExecutionPlanCompilationIntegrityError):
-        ledger.record(key, "sha256:conflicting-plan")
-    assert ledger.get(key) == plan_semantic_digest(plan)
-
-
-def test_schema_version_change_distinct_plan_allowed() -> None:
-    ledger = PlanCompilationLedger()
+def test_schema_version_change_gives_distinct_plan_digest() -> None:
     p1 = _plan()
     p2 = _plan(plan_schema_version="hwpx-execution-plan/v2")
-    assert plan_semantic_digest(p1) != plan_semantic_digest(p2)
-    ledger.record(plan_compilation_key_of(p1), plan_semantic_digest(p1))
-    ledger.record(plan_compilation_key_of(p2), plan_semantic_digest(p2))  # 다른 key → 허용
+    assert plan_semantic_digest(p1) != plan_semantic_digest(p2)  # schema version 이 identity 에 참여
 
 
 def test_plan_canonicalizes_requirement_order_and_ignores_map_order() -> None:
@@ -541,13 +523,6 @@ def test_verify_plan_recomputes_basis_nested_digest() -> None:
             _plan(execution_basis=_basis(field_binding=bad)),
             supported_plan_schemas=[_PLAN_SCHEMA],
         )
-
-
-def test_plan_key_encoding_stable() -> None:
-    from hwpxfiller.application.execution_contract_set import plan_compilation_key_digest
-
-    key = PlanCompilationKey("sha256:basis", _PLAN_SCHEMA, "execution-canonical/v1")
-    assert plan_compilation_key_digest(key) == plan_compilation_key_digest(key)
 
 
 # ─── DurableSealCaptureEvidence codec ────────────────────────────────────────────────────

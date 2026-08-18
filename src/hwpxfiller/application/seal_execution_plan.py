@@ -57,21 +57,19 @@ from hwpxfiller.application.execution_contract_set import (
     build_execution_contract_set,
     build_sealed_plan,
     execution_basis_digest,
-    plan_semantic_digest,
     qualification_profile_semantic_digest,
     verify_execution_basis_integrity,
 )
 from hwpxfiller.application.slot_selection_input import SlotConfigurationSnapshot
 from hwpxfiller.application.stored_execution_plan import (
+    ExecutionPlanSealed,
     ExecutionPolicyBlocked,
     ExecutionQualificationBlocked,
-    PlanPublished,
     RequestedAuto,
     RequestedExact,
     RequestedVersionSelector,
     SealTerminalOutcome,
     StaleExecutionBasis,
-    WorkExecutionPlanAggregate,
 )
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
@@ -253,16 +251,18 @@ def require_exact_selector_consistency(
 # ─── candidate compile(fence 밖 pure) ─────────────────────────────────────────────────
 @dataclass(frozen=True)
 class PlanCandidate:
-    """complete capture 가 sealable Plan 으로 compile 된 결과 — final gate publish 후보."""
+    """complete capture 가 sealable Plan 으로 compile 된 결과 — final gate seal 후보.
+
+    R2-04b-2(#740): durable store 가 없어 plan_payload·plan_semantic_digest·dependency_set 를 싣지
+    않는다. final gate 의 basis-equality staleness 판정과 성공 outcome 이 쓰는 ``execution_basis_digest``
+    만 identity 로 남긴다.
+    """
 
     qualification_profile_id: str
     template_application_id: str
     resolved_seal_policy: ResolvedSealPolicy
-    execution_basis: ExecutionBasis
     execution_basis_digest: str
-    plan_semantic_digest: str
-    plan_payload: Any  # SealedExecutionPlanSemanticPayload
-    dependency_set: Any  # PlanDependencySet
+    plan_payload: Any  # SealedExecutionPlanSemanticPayload — S6 materialization/conformance 소비
     capture_evidence: CompleteSealCaptureEvidence
     captured_execution_input_digest: str
 
@@ -379,8 +379,6 @@ def _build_plan_candidate(
     evidence: CompleteSealCaptureEvidence,
     theorem_registry: TheoremEvidenceRegistry,
 ) -> PlanCandidate:
-    from hwpxfiller.application.stored_execution_plan import PlanDependencySet
-
     policy = captured.resolved_seal_policy
     qual = captured.template.qualification
     applied = captured.template.applied
@@ -418,6 +416,10 @@ def _build_plan_candidate(
         field_binding=compiled.effective_field_binding_basis,
     )
     verify_execution_basis_integrity(basis)
+    # durable store·dependency retention·plan_semantic_digest identity 는 없다(R2-04b-2). 다만 sealed
+    # plan payload 는 여전히 조립한다 — S6 materialization/conformance gate 가 소비하는 compiled plan
+    # 이라 store artifact 가 아니다. candidate 는 그 payload + final gate staleness 가 쓰는
+    # execution_basis_digest 만 싣는다(publication kind·plan digest 없음).
     semantic_payload = compiled.execution_basis_semantic_payload
     plan_payload = build_sealed_plan(
         execution_basis=basis,
@@ -426,27 +428,12 @@ def _build_plan_candidate(
         plan_schema_version=policy.plan_schema_version,
         canonical_encoding_version=policy.canonical_encoding_version,
     )
-    dependency_set = PlanDependencySet(
-        candidate_blob_ref=applied.canonical_blob_reference,
-        pass_evidence_ref=qual.pass_evidence_id,
-        # QualificationObjectStore.get_manifest 는 profile ID 로만 resolve 한다 — semantic digest 를
-        # retention ref 로 두면 nonempty 검사는 통과해도 나중에 manifest 를 못 찾는다(#722 finding 5).
-        qualification_profile_manifest_ref=qual.qualification_profile_id,
-        template_structure_projection_ref=qual.template_structure_digest,
-        execution_contract_set_ref=contracts.contract_set_manifest_digest,
-        composition_theorem_evidence_manifest_ref=(
-            policy.composition_theorem_evidence_manifest_digest
-        ),
-    )
     return PlanCandidate(
         qualification_profile_id=qual.qualification_profile_id,
         template_application_id=applied.template_application_id,
         resolved_seal_policy=policy,
-        execution_basis=basis,
         execution_basis_digest=execution_basis_digest(basis),
-        plan_semantic_digest=plan_semantic_digest(plan_payload),
         plan_payload=plan_payload,
-        dependency_set=dependency_set,
         capture_evidence=evidence,
         captured_execution_input_digest=evidence.captured_execution_input_digest,
     )
@@ -725,16 +712,7 @@ def _verdict_current_sealable(
     return _stale(candidate, STALE_DIGEST_MISMATCH, summary)
 
 
-# ─── publish kind 결정 ─────────────────────────────────────────────────────────────────
-def publication_kind_for(aggregate: WorkExecutionPlanAggregate, plan_digest: str) -> str:
-    """WorkFence 아래 load 한 aggregate 로 create/reuse 를 결정한다(store 가 재검증한다)."""
-    return "REUSED" if plan_digest in aggregate.plans_by_semantic_digest else "CREATED"
-
-
-def published_outcome_for(candidate: PlanCandidate, publication_kind: str) -> PlanPublished:
-    return PlanPublished(
-        publication_kind=publication_kind,
-        plan_semantic_digest=candidate.plan_semantic_digest,
-        execution_basis_digest=candidate.execution_basis_digest,
-        captured_execution_input_digest=candidate.captured_execution_input_digest,
-    )
+# ─── seal 성공 outcome(durable publication 없음) ────────────────────────────────────────
+def sealed_outcome_for(candidate: PlanCandidate) -> ExecutionPlanSealed:
+    """current candidate 에서 직접 seal 성공 outcome 을 낸다 — store commit·publication kind 없음."""
+    return ExecutionPlanSealed(execution_basis_digest=candidate.execution_basis_digest)
