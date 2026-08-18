@@ -33,10 +33,6 @@ ADMITTED = "ADMITTED"
 NOT_ADMITTED = "NOT_ADMITTED"
 ADMISSION_CONTEXT_ERROR = "CONTEXT_ERROR"
 
-QUALIFICATION_PROFILE_REVOKED = "QUALIFICATION_PROFILE_REVOKED"
-QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING = (
-    "QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING"
-)
 EXECUTION_BASE_NOT_ADMITTED = "EXECUTION_BASE_NOT_ADMITTED"
 MATERIALIZATION_CONTRACT_NOT_ADMITTED = "MATERIALIZATION_CONTRACT_NOT_ADMITTED"
 PLAN_SCHEMA_NOT_SUPPORTED_BY_RUNTIME = "PLAN_SCHEMA_NOT_SUPPORTED_BY_RUNTIME"
@@ -60,9 +56,12 @@ MATERIALIZER_CONTEXT_ERROR = "CONTEXT_ERROR"
 
 @dataclass(frozen=True)
 class RuntimeAdmissionFacts:
-    """admission 판정이 소비하는 현재 authoritative facts(Plan semantic identity 와 무관)."""
+    """admission 판정이 소비하는 현재 authoritative facts(Plan semantic identity 와 무관).
 
-    profile_admission_state: str | None  # ADMITTED | REVOKED | None(state missing)
+    S5F R2-05a(#740): mutable Profile admission(ADMITTED/REVOKED) 축을 제거했다 — runtime admission 은
+    base kind·plan schema/encoding runtime support·materializer conformance capability 만 본다.
+    """
+
     execution_base_kind_admitted: bool
     plan_schema_supported_by_runtime: bool
     canonical_encoding_supported_by_runtime: bool
@@ -124,21 +123,16 @@ def decide_runtime_policy_admission(
 ) -> RuntimePolicyAdmission:
     """현재 facts → admission. unknown support 를 admitted 로 fallback 하지 않는다(fail-closed).
 
-    precedence: context error(state missing·runtime capability context error)가 우선한다 —
-    determinable 하지 않으면 NOT_ADMITTED 로 단정하지 않고 CONTEXT_ERROR 로 시끄럽게 닫는다.
-    그 외에는 모든 not-admitted 사유를 누적한다.
+    precedence: context error(runtime capability context error)가 우선한다 — determinable 하지
+    않으면 NOT_ADMITTED 로 단정하지 않고 CONTEXT_ERROR 로 시끄럽게 닫는다. 그 외에는 모든
+    not-admitted 사유를 누적한다.
     """
-    context_reasons: list[str] = []
-    if facts.profile_admission_state is None:
-        context_reasons.append(QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING)
     if facts.materializer_conformance == MATERIALIZER_CONTEXT_ERROR:
-        context_reasons.append(RUNTIME_CAPABILITY_CONTEXT_ERROR)
-    if context_reasons:
-        return RuntimePolicyAdmission(ADMISSION_CONTEXT_ERROR, tuple(context_reasons))
+        return RuntimePolicyAdmission(
+            ADMISSION_CONTEXT_ERROR, (RUNTIME_CAPABILITY_CONTEXT_ERROR,)
+        )
 
     reasons: list[str] = []
-    if facts.profile_admission_state == "REVOKED":
-        reasons.append(QUALIFICATION_PROFILE_REVOKED)
     if not facts.execution_base_kind_admitted:
         reasons.append(EXECUTION_BASE_NOT_ADMITTED)
     if not facts.plan_schema_supported_by_runtime:

@@ -37,8 +37,6 @@ from hwpxfiller.application.fresh_execution_observation import (
     NOT_ADMITTED,
     NOT_READY,
     POLICY_BLOCKED,
-    QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING,
-    QUALIFICATION_PROFILE_REVOKED,
     READY,
     RUNTIME_CAPABILITY_CONTEXT_ERROR,
     SEALABILITY_CONTEXT_ERROR,
@@ -49,23 +47,6 @@ from hwpxfiller.application.fresh_execution_observation import (
     decide_runtime_policy_admission,
 )
 from hwpxfiller.application.seal_execution_plan import AuthorizationError, RouteResolutionError
-from hwpxfiller.application.stored_profile_admission import (
-    AdmissionIdempotencyRecord,
-    AdmissionOutcome,
-    bootstrap_stored,
-    commit_next,
-)
-from hwpxfiller.domain.qualification_profile_admission import (
-    ADMITTED as DEC_ADMITTED,
-    REVOKED as DEC_REVOKED,
-    AdmissionDecision,
-    ProfileAdmissionStateMissing,
-    decision_ref,
-)
-from hwpxfiller.external.profile_admission_runner import (
-    read_qualification_profile_admission_under_fence,
-)
-from hwpxfiller.external.profile_admission_store import ProfileAdmissionStore
 from hwpxfiller.webapp.seal_execution_plan_product import (
     EXECUTION_OBSERVATION_CONTEXT_ERROR,
     ExecutionPlanSealedProductOutcome,
@@ -96,44 +77,7 @@ def _revoked_block() -> CapturedExecutionPolicyBlock:
     )
 
 
-# ─── admission seed helpers ────────────────────────────────────────────────────────────
-def _seed_admitted(store: ProfileAdmissionStore, profile_id: str = PROFILE) -> None:
-    dec = AdmissionDecision(1, DEC_ADMITTED, decision_ref(profile_id, 1), "seed1", None, "t0")
-    rec = AdmissionIdempotencyRecord(
-        "seed1", "fp1", AdmissionOutcome("INIT", 1, DEC_ADMITTED, dec.decision_ref), "t0"
-    )
-    store.create(
-        bootstrap_stored(
-            qualification_profile_id=profile_id,
-            bound_manifest_digest="sha256:m",
-            decision=dec,
-            record=rec,
-        )
-    )
-
-
-def _revoke(store: ProfileAdmissionStore, profile_id: str = PROFILE) -> None:
-    stored = store.load(profile_id)
-    v = stored.decisions[-1].policy_version + 1
-    dec = AdmissionDecision(v, DEC_REVOKED, decision_ref(profile_id, v), f"rev{v}", "why", "t1")
-    rec = AdmissionIdempotencyRecord(
-        f"rev{v}", f"fp{v}", AdmissionOutcome("REVOKED", v, DEC_REVOKED, dec.decision_ref), "t1"
-    )
-    store.commit(profile_id, stored.aggregate_version, commit_next(stored, new_decision=dec, record=rec))
-
-
-def _admission_port(store: ProfileAdmissionStore):
-    """ProfileFence 를 보유한 Product 가 부르는 admission-state 읽기 port(state missing → None)."""
-
-    def read(profile_id: str) -> "str | None":
-        try:
-            return read_qualification_profile_admission_under_fence(store, profile_id).state
-        except ProfileAdmissionStateMissing:
-            return None
-
-    return read
-
-
+# ─── runtime conformance seams(R2-05a: mutable Profile admission 제거, materializer 축만) ───
 def _admitting_runtime(**_kw) -> RuntimeMaterializerConformance:
     return RuntimeMaterializerConformance(MATERIALIZER_ADMITTED, True, True, "sha256:manifest")
 
@@ -144,22 +88,18 @@ def _ctx_error_runtime(**_kw) -> RuntimeMaterializerConformance:
 
 # ─── product harness ───────────────────────────────────────────────────────────────────
 class _Harness:
-    def __init__(self, product, admission_store, world):
+    def __init__(self, product, world):
         self.product = product
-        self.admission_store = admission_store
         self.world = world
 
 
 def _product(
     tmp_path, world=None, *, resolver=None, authorize=None, route=None, runtime=None,
-    clock=None, seed_admission=True, admission_store=None,
+    clock=None,
 ) -> _Harness:
+    # R2-05a: Product 는 더 이상 mutable Profile admission-state port 를 받지 않는다.
     world = world or World()
-    adm = admission_store or ProfileAdmissionStore(tmp_path / "adm")
-    if seed_admission and not adm.exists(PROFILE):
-        _seed_admitted(adm)
     product = SealExecutionPlanProduct(
-        read_admission_state=_admission_port(adm),
         resolve_route=route or (lambda ws, ref: WORK),
         authorize=authorize or (lambda wid, ws: None),
         read_summary=world.summary,
@@ -168,7 +108,7 @@ def _product(
         clock=clock or (lambda: "t0"),
         runtime_conformance=runtime or s6_absent_runtime_conformance,
     )
-    return _Harness(product, adm, world)
+    return _Harness(product, world)
 
 
 def _pcmd(request_id="r1", **over) -> SealExecutionPlanProductCommand:
@@ -184,18 +124,6 @@ def test_blocked_and_stale_outcomes_carry_no_plan_ref(tmp_path) -> None:
     blocked = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
     assert not hasattr(blocked, "opaque_plan_ref")
     assert not hasattr(blocked, "plan_semantic_digest")
-
-
-def test_revoked_profile_leaves_sealed_basis_unchanged(tmp_path) -> None:
-    # profile 을 revoke 해도 sealed current basis 의 identity 는 그대로다(seal 은 durable 하지 않고
-    # 매번 현재 authority 에서 재계산되지만 같은 basis 를 낸다).
-    h = _product(tmp_path)
-    before = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
-    _revoke(h.admission_store)
-    after = h.product.seal_execution_plan(_pcmd("r1")).command_outcome
-    assert isinstance(before, ExecutionPlanSealedProductOutcome)
-    assert isinstance(after, ExecutionPlanSealedProductOutcome)
-    assert before.execution_basis_digest == after.execution_basis_digest
 
 
 # ══ current Sealed Plan observation ════════════════════════════════════════════════════
@@ -234,14 +162,6 @@ def test_runtime_admitted_ready(tmp_path) -> None:
     assert isinstance(obs, CurrentSealedPlanObservation)
     assert obs.runtime_policy_admission.state == ADMITTED
     assert obs.materialization_readiness == READY
-
-
-def test_profile_state_missing_is_admission_context_error(tmp_path) -> None:
-    h = _product(tmp_path, seed_admission=False, runtime=_admitting_runtime)
-    obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation
-    assert isinstance(obs, CurrentSealedPlanObservation)
-    assert obs.runtime_policy_admission.state == ADMISSION_CONTEXT_ERROR
-    assert QUALIFICATION_PROFILE_ADMISSION_STATE_MISSING in obs.runtime_policy_admission.reasons
 
 
 def test_runtime_capability_context_error(tmp_path) -> None:
@@ -343,7 +263,6 @@ def test_authorization_repeated_each_call(tmp_path) -> None:
         raise AuthorizationError("denied")
 
     other = SealExecutionPlanProduct(
-        read_admission_state=_admission_port(h.admission_store),
         resolve_route=lambda ws, r: WORK, authorize=deny,
         read_summary=h.world.summary, capture_under_fence=h.world.capture,
         resolve_shipping_policy=Resolver(), clock=lambda: "t0",
@@ -404,10 +323,10 @@ def test_observation_port_failure_degrades_keeps_command_outcome(tmp_path) -> No
     h = _product(tmp_path, runtime=_admitting_runtime)
     h.product.seal_execution_plan(_pcmd("r1"))
 
-    def boom(_pid):
-        raise RuntimeError("corrupt profile-admission read")
+    def boom(**_kw):  # runtime conformance 는 observation-only port(command seal 은 안 부른다)
+        raise RuntimeError("corrupt runtime conformance read")
 
-    h.product._read_admission = boom
+    h.product._runtime = boom
     resp = h.product.seal_execution_plan(_pcmd("r1"))  # 재봉인 + observe
     assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)  # 보존
     assert isinstance(resp.fresh_observation, ExecutionObservationContextError)
@@ -416,8 +335,8 @@ def test_observation_port_failure_degrades_keeps_command_outcome(tmp_path) -> No
 
 # ══ pure decision units ════════════════════════════════════════════════════════════════
 def test_decide_admission_all_not_admitted_reasons_accumulate() -> None:
+    # R2-05a: profile admission 축 제거 — base kind·schema·encoding·materializer 사유만 누적한다.
     facts = RuntimeAdmissionFacts(
-        profile_admission_state="REVOKED",
         execution_base_kind_admitted=False,
         plan_schema_supported_by_runtime=False,
         canonical_encoding_supported_by_runtime=False,
@@ -425,12 +344,12 @@ def test_decide_admission_all_not_admitted_reasons_accumulate() -> None:
     )
     verdict = decide_runtime_policy_admission(facts)
     assert verdict.state == NOT_ADMITTED
-    assert QUALIFICATION_PROFILE_REVOKED in verdict.reasons
     assert MATERIALIZATION_CONTRACT_NOT_ADMITTED in verdict.reasons
+    assert len(verdict.reasons) >= 2  # 여러 not-admitted 사유가 누적된다
 
 
 def test_decide_admission_all_pass_admitted() -> None:
-    facts = RuntimeAdmissionFacts(ADMITTED, True, True, True, MATERIALIZER_ADMITTED)
+    facts = RuntimeAdmissionFacts(True, True, True, MATERIALIZER_ADMITTED)
     assert decide_runtime_policy_admission(facts).state == ADMITTED
 
 

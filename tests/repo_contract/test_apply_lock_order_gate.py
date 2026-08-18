@@ -100,14 +100,12 @@ def test_shared_profile_fence_registry_imported() -> None:
     assert "store_lease_order_guard" in _imports_from(WORK_STORE, PROFILE_FENCE_MODULE)
 
 
-# ── public Apply call path 가 admission query 에 도달 ─────────────────────────────
-def test_public_apply_wires_admission_query() -> None:
+# ── public Apply call path 가 under-fence helper 를 배선한다 ─────────────────────────
+def test_public_apply_wires_under_fence_helper() -> None:
+    # S5F R2-05a(#740): mutable Profile admission query(require_admitted·read_qualification_profile_
+    # admission_under_fence)를 제거했다. public apply 는 여전히 ProfileFence→WorkFence 아래에서
+    # under-fence helper 를 호출한다(admission gate 없이 exact qualification evidence 로 fail-closed).
     tree = _tree(RUNNER)
-    # runner 가 admission observation 을 import 하고,
-    assert "read_qualification_profile_admission_under_fence" in _imports_from(
-        RUNNER, "hwpxfiller.external.profile_admission_runner"
-    )
-    # apply 가 under-fence gate 로 require_admitted 를 넘긴다(단순 symbol 참조가 아니라 배선).
     apply = _func(tree, "apply_prepared_change")
     under_fence_calls = [
         call
@@ -117,9 +115,3 @@ def test_public_apply_wires_admission_query() -> None:
         and call.func.id == "apply_prepared_change_under_fence"
     ]
     assert under_fence_calls, "apply 가 under-fence helper 를 호출하지 않는다"
-    assert any(
-        kw.arg == "require_admitted" for call in under_fence_calls for kw in call.keywords
-    ), "under-fence gate 에 require_admitted 를 배선하지 않았다"
-    # 그리고 admission gate closure 가 실제 admission query 를 호출한다.
-    gate = _func(tree, "_require_profile_admitted")
-    assert "read_qualification_profile_admission_under_fence" in _call_names(gate)

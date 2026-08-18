@@ -12,16 +12,15 @@
 PublishedPlanObservation + digest-vs-stored currentness(CURRENT/STALE) + command_replayed 를 제거했다.
 observation 은 store 의 과거 Plan 이 아니라 current authority 에서 SealedExecutionPlanValue 를 직접
 계산한다(value 가 곧 현재라 currentness 축이 없다). command_outcome 의 StaleExecutionBasis(capture→
-final gate concurrency)와 ProfileFence·runtime admission 은 유지한다. content-addressed Plan store 로의
-publish(create/reuse)는 orchestration 이 아직 진다 — 그 제거는 04b-2 대상이다.
+final gate concurrency)와 ProfileFence 는 유지한다. **S5F R2-05a(#740): mutable Profile
+admission(ADMITTED/REVOKED) 조회를 제거했다** — runtime admission 은 base kind·plan schema/encoding
+runtime support·materializer conformance capability 만 보고(S6 미출하면 NOT_ADMITTED→NOT_READY),
+Product 는 더 이상 admission-state port 를 받지 않는다.
 
 **additive 경계**: 이 Product service 는 headless(pywebview 비의존)이고 production Generate route 를
 cut over 하거나 native materialization 을 시작하지 않는다(S6 소유). action registry·bridge·frontend
 generated types 배선은 downstream wiring slice(S5-13) 소유다. capture port·shipping policy resolver·
-fresh observation summary·admission-state read 는 injectable seam 이라 실 store/HWPX 결선은 downstream 이
-주입한다(#706 과 동일). admission-state read 는 Product 가 보유한 ProfileFence 아래에서 호출되며,
-downstream 은 ``read_qualification_profile_admission_under_fence`` 로 배선한다(under-fence helper 를
-직접 참조하지 않아 per-Work fence 우회 게이트를 지킨다).
+fresh observation summary 는 injectable seam 이라 실 결선은 downstream 이 주입한다(#706 과 동일).
 """
 
 from __future__ import annotations
@@ -204,7 +203,6 @@ class SealExecutionPlanProduct:
     def __init__(
         self,
         *,
-        read_admission_state: Callable[[str], "str | None"],
         resolve_route: _Route,
         authorize: _Authorize,
         read_summary: Callable[[str, str], WorkExecutionSummary],
@@ -219,7 +217,6 @@ class SealExecutionPlanProduct:
         work_fence: _WorkFence = per_work_mutation_fence,
         max_observation_attempts: int = MAX_OBSERVATION_ATTEMPTS,
     ) -> None:
-        self._read_admission = read_admission_state
         self._resolve_route = resolve_route
         self._authorize = authorize
         self._read_summary = read_summary
@@ -382,12 +379,12 @@ class SealExecutionPlanProduct:
         policy: ResolvedSealPolicy,
         value: SealedExecutionPlanValue,
     ) -> CurrentSealedPlanObservation:
-        """current sealable value 에 runtime admission·readiness 를 얹는다(ProfileFence 아래).
+        """current sealable value 에 runtime admission·readiness 를 얹는다.
 
-        admission-state read 는 우리가 보유한 ProfileFence 아래에서 호출된다(port 는 downstream 이
-        read_qualification_profile_admission_under_fence 로 배선). readiness 는 admission 만으로 갈린다.
+        S5F R2-05a(#740): mutable Profile admission(ADMITTED/REVOKED) 조회를 제거했다 — runtime
+        admission 은 base kind·plan schema/encoding runtime support·materializer conformance 만 본다.
+        readiness 는 그 admission 만으로 갈린다(S6 미출하면 NOT_ADMITTED→NOT_READY).
         """
-        admission_state = self._read_admission(exact.qualification_profile_id)
         conformance = self._runtime(
             plan_schema_version=value.plan_schema_version,
             canonical_encoding_version=value.canonical_encoding_version,
@@ -396,7 +393,6 @@ class SealExecutionPlanProduct:
         )
         admission = decide_runtime_policy_admission(
             RuntimeAdmissionFacts(
-                profile_admission_state=admission_state,
                 execution_base_kind_admitted=(
                     policy.execution_base_kind == APPLIED_TEMPLATE_CANDIDATE
                 ),
