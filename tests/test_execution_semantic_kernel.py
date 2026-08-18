@@ -144,7 +144,7 @@ def _policy(**over) -> ResolvedSealPolicy:
     return ResolvedSealPolicy(**kw)
 
 
-def _authority(structure, *, selected="o1", policy=None) -> DurableExecutionAuthority:
+def _authority(structure, *, selected="o1", policy=None, binding=None) -> DurableExecutionAuthority:
     """durable authority 하나 — store·fence 없이 exact DTO 만 담는다."""
     return DurableExecutionAuthority(
         workspace_instance_id=WS,
@@ -154,7 +154,7 @@ def _authority(structure, *, selected="o1", policy=None) -> DurableExecutionAuth
         resolved_seal_policy=policy if policy is not None else _policy(),
         template=_template(structure),
         selection=_snapshot(structure, selected=selected),
-        field_binding=_binding(structure),
+        field_binding=binding if binding is not None else _binding(structure),
         captured_at="2026-08-18T00:00:00Z",
     )
 
@@ -324,6 +324,83 @@ def test_unbound_active_field_returns_blocked():
     result = compute_sealed_execution_plan(authority)
     assert isinstance(result, SealedExecutionPlanBlocked)
     assert result.normalized_blockers  # 사유가 비어 있지 않다
+
+
+# ── R2-03: semantic identity digest 비의존(correctness 는 explicit value 로 정의) ──────────
+def test_kernel_value_is_independent_of_the_three_identity_digests():
+    """kernel value 는 qualification_profile_semantic_digest·execution_basis_digest·
+    plan_semantic_digest 를 correctness/identity 로 싣지 않는다 — 그 셋은 legacy identity 경로의 것.
+    (digest 함수·legacy 경로는 이 절개에서 삭제하지 않는다 — 여기선 kernel 비의존만 못박는다.)"""
+    from hwpxfiller.application.execution_contract_set import (
+        execution_basis_digest,
+        plan_semantic_digest,
+        qualification_profile_semantic_digest,
+    )
+
+    structure = _structure()
+    authority = _authority(structure)
+    kern = compute_sealed_execution_plan(authority)
+    assert isinstance(kern, SealedExecutionPlanValue)
+
+    captured = _judge(authority)
+    candidate = compile_candidate(captured)
+    qpd = qualification_profile_semantic_digest(
+        captured.template.qualification.qualification_profile_semantic_payload
+    )
+    ebd = execution_basis_digest(candidate.execution_basis)
+    psd = plan_semantic_digest(candidate.plan_payload)
+    blob = repr(kern)
+    for label, digest in (
+        ("qualification_profile_semantic_digest", qpd),
+        ("execution_basis_digest", ebd),
+        ("plan_semantic_digest", psd),
+    ):
+        assert digest  # legacy 는 여전히 그 digest 를 계산한다(경로 보존 확인)
+        assert digest not in blob, f"kernel value 가 {label} 를 identity 로 실으면 안 된다"
+
+    # kernel 소스도 세 digest 함수를 호출하지 않는다(구성/호출 구문).
+    import inspect
+
+    import hwpxfiller.application.execution_semantic_kernel as k
+
+    src = inspect.getsource(k)
+    for fn in (
+        "qualification_profile_semantic_digest(",
+        "execution_basis_digest(",
+        "plan_semantic_digest(",
+    ):
+        assert fn not in src, f"kernel 이 {fn} 를 호출하면 안 된다"
+
+
+def test_real_meaning_change_shows_in_explicit_value_not_only_digest():
+    """실제 의미 변경(선택·binding)은 digest 뿐 아니라 explicit semantic value 로 갈린다."""
+    structure = _structure()
+    # 선택 변경 → 명시적 ordered_operations(제거 대상 반전)가 다르다.
+    sel_a = compute_sealed_execution_plan(_authority(structure, selected="o1"))
+    sel_b = compute_sealed_execution_plan(_authority(structure, selected="o2"))
+    assert sel_a != sel_b
+    assert sel_a.ordered_operations != sel_b.ordered_operations
+
+    # binding 변경(성명 source key 이름→금액열, 둘 다 schema 에 존재) → 명시적 binding rule 이 다르다.
+    bind_a = compute_sealed_execution_plan(
+        _authority(structure, binding=_binding(structure, rules=_rules(name_key="이름")))
+    )
+    bind_b = compute_sealed_execution_plan(
+        _authority(structure, binding=_binding(structure, rules=_rules(name_key="금액열")))
+    )
+    assert bind_a != bind_b
+    assert (
+        bind_a.effective_field_binding_basis.effective_active_binding_rules
+        != bind_b.effective_field_binding_basis.effective_active_binding_rules
+    )
+
+
+def test_same_explicit_semantics_are_equal_regardless_of_recompute():
+    """같은 explicit authority → 같은 value(결정적). identity 는 explicit value 로 정의된다."""
+    structure = _structure()
+    assert compute_sealed_execution_plan(_authority(structure)) == compute_sealed_execution_plan(
+        _authority(structure)
+    )
 
 
 # ── R2-02: 실제 contract mismatch fail-closed ─────────────────────────────────────────────

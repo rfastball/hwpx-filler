@@ -26,6 +26,15 @@ contract id 를 deref 하는 compilation/validation/delivery 소비자가 읽는
 :class:`ExecutionContractSemantics` 작은 값으로 담는다. 기존 ExecutionContractSet 은 legacy caller
 용 **compatibility shell** 로 그대로 둔다(이 절개는 삭제하지 않는다).
 
+**R2-03(#740) — semantic identity digest 비의존:** kernel 의 correctness·identity 는 explicit
+semantic value(qualification_profile_id·contract semantics·exact bases·Active Field 요구·ordered
+operations)로 정의되고, ``qualification_profile_semantic_digest``·``execution_basis_digest``·
+``plan_semantic_digest`` 를 correctness dependency 로 **쓰지도 싣지도 않는다**(R2-02 에서
+ExecutionBasis·plan_payload 를 걷어내며 이미 제거됨 — R2-03 이 명시·검증·고정). 두 값 비교(같음/다름)는
+그 셋 digest 가 아니라 explicit value 로 갈린다. 그 digest 함수와 legacy identity 경로는 **삭제하지
+않는다** — store/seal/reference consumer 가 compatibility layer 에서 계속 쓴다. 새 fingerprint·
+counter·identity 를 만들지 않는다.
+
 **이 모듈이 하지 않는 것:** store·ledger·registry·Profile abstraction·HMAC token·digest
 hierarchy·contract manifest·global execution_generation·history/replay·MaterializationRun·
 PreparedBatch persistence 를 **새로 만들지 않는다**. ProfileFence·theorem registry·Plan store·
