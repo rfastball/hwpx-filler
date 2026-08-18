@@ -221,7 +221,7 @@ def _build_contract_semantics(captured: CapturedExecutionInput) -> ExecutionCont
     )
 
 
-def _compile_sealed_plan_value(captured: CapturedExecutionInput) -> KernelResult:
+def compile_sealed_plan_from_snapshot(captured: CapturedExecutionInput) -> KernelResult:
     """exact snapshot → Sealed Plan value(순수, theorem registry·closed manifest 미사용).
 
     :func:`compile_candidate` 와 같은 실행 의미를 내되 (R2-01) theorem runtime bureaucracy 와
@@ -299,8 +299,8 @@ def _compile_sealed_plan_value(captured: CapturedExecutionInput) -> KernelResult
 def compute_sealed_execution_plan(authority: DurableExecutionAuthority) -> KernelResult:
     """exact durable authority → immutable SealedExecutionPlan value(순수, control plane 밖).
 
-    경로: capture snapshot → :func:`_compile_sealed_plan_value`(C1~C10 direct admission + effective
-    content/Active Field/deterministic operation compile + Sealed Plan value 조립). store·ledger·
+    경로: capture snapshot → :func:`compile_sealed_plan_from_snapshot`(C1~C10 direct admission +
+    effective content/Active Field/deterministic operation compile + Sealed Plan value 조립). store·ledger·
     fingerprint·profile admission·fence·theorem registry·closed contract manifest 를 **쥐지 않는다**.
 
     반환:
@@ -310,4 +310,4 @@ def compute_sealed_execution_plan(authority: DurableExecutionAuthority) -> Kerne
       - :class:`SemanticKernelContextError` — C1~C10 위반·context·미지원 구현(fail-closed, Plan 없음).
     """
     snapshot = compute_execution_snapshot(authority)
-    return _compile_sealed_plan_value(snapshot)
+    return compile_sealed_plan_from_snapshot(snapshot)
