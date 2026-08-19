@@ -27,15 +27,17 @@ from hwpxfiller.application.fresh_execution_observation import (
 from hwpxfiller.application.jobs import Job
 from hwpxfiller.application.seal_execution_plan import RouteResolutionError
 from hwpxfiller.external.job_store import JobRegistry
+from hwpxfiller.external.work_configuration_store import WorkspaceMetadataStore
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.seal_execution_plan_product import (
     ExecutionPlanSealedProductOutcome,
     ExecutionQualificationBlockedProductOutcome,
 )
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
+from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 
 from tests.test_execution_compilation import WORK
-from tests.test_seal_execution_capture_runner import _seed_v2_work
+from tests.test_seal_execution_capture_runner import WS, _seed_v2_work
 
 WORK_REF = "봉인작업"
 
@@ -108,3 +110,81 @@ def test_unknown_work_ref_raises_route_error(tmp_path) -> None:
 # - test_opaque_ref_resolves_across_restart: resolve_plan_reference·opaque Plan ref 제거.
 # - test_published_observation_surfaces_missing_admission: mutable Profile admission store 제거
 #   (admission 부재라는 상태가 더는 없다 — runtime admission 은 capability 만 본다).
+
+
+def test_binding_absent_projects_new_active_fields_and_exact_targets(tmp_path) -> None:
+    service = _service(tmp_path, with_binding=False)
+    service.seal_execution_plan(WORK_REF, "r1")
+
+    projection = service.current_binding_review(WORK_REF)
+    assert projection is not None
+    assert projection.active_field_ids == ("\uc131\uba85", "\uc8fc\uc18c", "\ud56d\ubaa9")
+    assert tuple(item.binding_state for item in projection.input_requirements) == (
+        "NEW_ACTIVE_FIELD",
+        "NEW_ACTIVE_FIELD",
+        "NEW_ACTIVE_FIELD",
+    )
+    assert all(item.action_required for item in projection.input_requirements)
+    assert tuple(item.exact_target for item in projection.input_requirements) == (
+        "binding/\uc131\uba85",
+        "binding/\uc8fc\uc18c",
+        "binding/\ud56d\ubaa9",
+    )
+
+
+def test_binding_review_preserves_inactive_as_non_actionable(tmp_path) -> None:
+    service = _service(tmp_path, with_binding=True)
+    service.seal_execution_plan(WORK_REF, "r1")
+
+    projection = service.current_binding_review(WORK_REF)
+    assert projection is not None
+    states = {
+        item.field_id: (item.binding_state, item.action_required)
+        for item in projection.input_requirements
+    }
+    assert states == {
+        "\uc131\uba85": ("PRESERVED", False),
+        "\uc8fc\uc18c": ("PRESERVED", False),
+        "\ud56d\ubaa9": ("PRESERVED", False),
+        "\uae08\uc561": ("INACTIVE_ONLY", False),
+    }
+
+
+def test_option_change_changes_backend_active_field_projection(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
+    registry = _registry(tmp_path)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    slots = SlotConfigurationProduct(registry, root=root, clock=datetime.now)
+    opened = slots.open_slot_configuration(WORK_REF)
+    token = opened.current_view.new_configuration_token
+    assert token is not None
+
+    before = service.current_binding_review(WORK_REF)
+    assert before is not None
+    changed = slots.select_slot_option(
+        WORK_REF,
+        token,
+        "s1",
+        "o2",
+        "select-o2",
+    )
+    assert changed.mutation_outcome is not None
+    after = service.current_binding_review(WORK_REF)
+    assert after is not None
+
+    assert before.active_field_ids == ("\uc131\uba85", "\uc8fc\uc18c", "\ud56d\ubaa9")
+    assert after.active_field_ids == ("\uc131\uba85", "\uc8fc\uc18c", "\uae08\uc561")
+
+
+def test_passive_binding_review_does_not_create_workspace_metadata(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    workspace = WorkspaceMetadataStore(root)
+    assert workspace.read() is None
+
+    assert service.current_binding_review(WORK_REF) is None
+    assert workspace.read() is None

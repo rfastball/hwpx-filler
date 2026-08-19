@@ -143,6 +143,7 @@ from ..application.document_creation_workbench import (
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
+    CurrentWorkExecutionObservation,
     ExecutionObservationContextError,
     FreshExecutionObservation,
 )
@@ -2805,6 +2806,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "reasons": list(observation.admission.reasons),
             },
             "active_field_requirement_ids": list(observation.active_field_requirement_ids),
+            "input_requirements": [
+                {
+                    "field_id": item.field_id,
+                    "display_label": item.display_label,
+                    "binding_state": item.binding_state,
+                    "action_required": item.action_required,
+                    "exact_target": item.exact_target,
+                }
+                for item in observation.input_requirements
+            ],
             "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
             # 사용자 문안 축(vocabulary 정본 — 내부어 0).
             "content_section_label": observation.content_section_label,
@@ -3034,6 +3045,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     resp = None
                 if resp is not None:
                     slot_view = resp.current_view.projection
+        binding_projection = None
+        if (
+            self._seal_execution is not None
+            and self.job_name
+            and isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
+        ):
+            binding_projection = self._seal_execution.current_binding_review(self.job_name)
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -3042,6 +3060,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             slot_view=slot_view,
             orchestration=self._session_orchestration,
             fresh_observation=self._last_fresh_observation,
+            active_field_requirement_ids=(
+                binding_projection.active_field_ids if binding_projection is not None else ()
+            ),
+            input_requirements=(
+                binding_projection.input_requirements if binding_projection is not None else ()
+            ),
         )
 
     def _do_resolve_execution(self, p: dict) -> dict:

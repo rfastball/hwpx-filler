@@ -37,10 +37,18 @@ from ..application.document_creation_workbench import (
     DataScopeSummary,
     DeliveryPreviewSummary,
     GetDocumentCreationWorkbenchResult,
+    InputRequirement,
     RecordValidationSummary,
     WorkbenchCompositionInput,
     compose_document_creation_workbench,
 )
+from ..application.execution_compilation import (
+    ACTIVE_FIELD_UNBOUND,
+    NEEDS_BINDING_SEMANTIC_MIGRATION,
+    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
+    REQUIRED_SOURCE_KEY_MISSING,
+)
+from ..application.field_binding_input import INACTIVE_ONLY, PRESERVED
 from ..application.fresh_execution_observation import (
     ADMISSION_CONTEXT_ERROR,
     MATERIALIZATION_CONTRACT_NOT_ADMITTED,
@@ -129,6 +137,33 @@ class WorkbenchExecutionVerdicts:
     current_work_sealability: str | None
     materialization_readiness: str
 
+    normalized_blockers_or_policy: tuple[str, ...] = ()
+
+
+_BINDING_BLOCKERS = frozenset(
+    (
+        ACTIVE_FIELD_UNBOUND,
+        REQUIRED_SOURCE_KEY_MISSING,
+        NEEDS_BINDING_SEMANTIC_MIGRATION,
+        NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
+    )
+)
+
+
+def _sealed_input_requirements(
+    fresh: FreshExecutionObservation | None,
+) -> tuple[InputRequirement, ...]:
+    if not isinstance(fresh, CurrentSealedPlanObservation):
+        return ()
+    return tuple(
+        InputRequirement(
+            field_id=requirement["field_id"],
+            display_label=requirement["field_id"],
+            binding_state=PRESERVED,
+            exact_target=f"binding/{requirement['field_id']}",
+        )
+        for requirement in fresh.sealed_plan_value.active_field_requirements
+    )
 
 #: 확인 증거 부재(seal 미실행)·current-work 미봉인의 정직한 runtime admission — S6 미출하와 같은
 #: 계열로 NOT_ADMITTED. unknown 을 ADMITTED 로 풀지 않는다(fail-closed, #726 §5).
@@ -165,6 +200,7 @@ def execution_verdicts_from_fresh(
             admission=_NO_EVIDENCE_ADMISSION,
             current_work_sealability=fresh.current_sealability,
             materialization_readiness=NOT_READY,
+            normalized_blockers_or_policy=fresh.normalized_blockers_or_policy,
         )
     if isinstance(fresh, ExecutionObservationContextError):
         return WorkbenchExecutionVerdicts(
@@ -224,6 +260,7 @@ class WorkbenchObservationProduct:
         active_field_requirement_ids: tuple[str, ...] = (),
         binding_review_needed: bool = False,
         template_change_verdict: str | None = None,
+        input_requirements: tuple[InputRequirement, ...] = (),
     ) -> GetDocumentCreationWorkbenchResult:
         """세션 사실 + seal 서비스 fresh_observation → 작업대 Observation(또는 ContextError).
 
@@ -233,6 +270,17 @@ class WorkbenchObservationProduct:
         여전히 seam 기본값이다 — delivery anchor(resolvable=False)가 CREATE 로의 조용한 누수를 막는다.
         """
         verdicts = execution_verdicts_from_fresh(fresh_observation)
+        if not input_requirements:
+            input_requirements = _sealed_input_requirements(fresh_observation)
+        if not active_field_requirement_ids:
+            active_field_requirement_ids = tuple(
+                item.field_id for item in input_requirements
+                if item.binding_state != INACTIVE_ONLY
+            )
+        binding_review_needed = binding_review_needed or any(
+            blocker in _BINDING_BLOCKERS
+            for blocker in verdicts.normalized_blockers_or_policy
+        )
         composition = WorkbenchCompositionInput(
             # ── SX-02 소유 축(실제 세션 사실) ──
             data_scope=data_scope_from_session(
@@ -249,6 +297,7 @@ class WorkbenchObservationProduct:
             active_field_requirement_ids=active_field_requirement_ids,
             binding_review_needed=binding_review_needed,
             template_change_verdict=template_change_verdict,
+            input_requirements=input_requirements,
             # ── SX-04 seam ──
             record_validation=_sx04_seam_record_validation(),
             delivery=_sx04_seam_delivery(),

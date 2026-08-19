@@ -59,6 +59,12 @@ from hwpxfiller.application.fresh_execution_observation import (
     RuntimePolicyAdmission,
     decide_materialization_readiness,
 )
+from hwpxfiller.application.field_binding_input import (
+    BROKEN,
+    INACTIVE_ONLY,
+    NEW_ACTIVE_FIELD,
+    PRESERVED,
+)
 from hwpxfiller.application.preview_requirement import (
     PreviewRequired,
     PreviewRequirement,
@@ -300,6 +306,28 @@ class DeepLinkTarget:
     route: str
 
 
+@dataclass(frozen=True)
+class InputRequirement:
+    """Backend-authored Active Field/Binding review item for passive UI rendering."""
+
+    field_id: str
+    display_label: str
+    binding_state: str
+    exact_target: str
+
+    def __post_init__(self) -> None:
+        if not self.field_id or not self.display_label:
+            raise ValueError("field_id/display_label must be non-empty")
+        if self.binding_state not in (PRESERVED, BROKEN, NEW_ACTIVE_FIELD, INACTIVE_ONLY):
+            raise ValueError(f"unknown binding_state: {self.binding_state!r}")
+        if self.exact_target != f"binding/{self.field_id}":
+            raise ValueError("exact_target must identify the exact Binding field")
+
+    @property
+    def action_required(self) -> bool:
+        return self.binding_state in (BROKEN, NEW_ACTIVE_FIELD)
+
+
 # ══════════════════════════════════════ 합성 입력 aggregate ═════════════════════════════════════
 @dataclass(frozen=True)
 class WorkbenchCompositionInput:
@@ -324,6 +352,7 @@ class WorkbenchCompositionInput:
     template_change_verdict: str | None = None
     active_field_requirement_ids: tuple[str, ...] = ()
     binding_review_needed: bool = False
+    input_requirements: tuple[InputRequirement, ...] = ()
     preview_satisfied: bool = False
     semantic_preview: SemanticValuePreviewProjection | None = None
     run_delivery_intent: RunDeliveryIntent | None = None
@@ -369,6 +398,7 @@ class DocumentCreationWorkbenchObservation:
     active_work: ActiveWorkContext
     active_field_requirement_ids: tuple[str, ...]
     # (b) 이미 판정된 실행 verdict — 재판정 아님(권위 shape 그대로)
+    input_requirements: tuple[InputRequirement, ...]
     # R2(#740): currentness 축은 orchestration 으로 흡수(별도 필드 없음).
     admission: RuntimePolicyAdmission
     materialization_readiness: str  # decide_materialization_readiness 권위 함수 결과
@@ -485,7 +515,7 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
         present.add(REVIEW_TEMPLATE_CHANGE)
     if inp.content_selection.has_unselected_required_content:
         present.add(CHOOSE_CONTENT)
-    if inp.binding_review_needed:
+    if inp.binding_review_needed or any(item.action_required for item in inp.input_requirements):
         present.add(REVIEW_BINDING)
 
     # record / preview / delivery
@@ -606,6 +636,7 @@ def compose_document_creation_workbench(
         active_work=inp.active_work,
         active_field_requirement_ids=inp.active_field_requirement_ids,
         admission=inp.admission,
+        input_requirements=inp.input_requirements,
         materialization_readiness=readiness,
         orchestration=inp.orchestration,
         record_validation=inp.record_validation,
@@ -635,6 +666,7 @@ __all__ = [
     "HistoricalOutcomeSummary",
     "DeepLinkTarget",
     "WorkbenchCompositionInput",
+    "InputRequirement",
     "DocumentCreationWorkbenchObservation",
     "DocumentCreationWorkbenchContextError",
     "GetDocumentCreationWorkbenchResult",

@@ -139,6 +139,11 @@ def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -
     assert zone["materialization_readiness"] == "NOT_READY"
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
     assert ctrl._last_sealed_basis_digest is None  # sealed 안 됨 → digest 없음
+    assert "REVIEW_BINDING" in zone["blockers"]
+    assert zone["input_requirements"]
+    assert all(item["binding_state"] == "NEW_ACTIVE_FIELD" for item in zone["input_requirements"])
+    assert all(item["action_required"] is True for item in zone["input_requirements"])
+    assert all(item["exact_target"].startswith("binding/") for item in zone["input_requirements"])
 
 
 # ── refresh_observation: 지금 이 순간을 재관찰(orchestration 전이 없음) ──────────────────────────
@@ -191,11 +196,42 @@ def test_verdicts_from_context_error_observation() -> None:
 
 def test_verdicts_from_current_work_observation() -> None:
     obs = CurrentWorkExecutionObservation(
-        work_authority_ref="w", current_sealability="DOMAIN_BLOCKED", observed_at="t"
+        work_authority_ref="w",
+        current_sealability="DOMAIN_BLOCKED",
+        observed_at="t",
+        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
     )
     v = execution_verdicts_from_fresh(obs)
     assert v.current_work_sealability == "DOMAIN_BLOCKED"
     assert v.admission.state == "NOT_ADMITTED"  # 미봉인 → 정직한 NOT_ADMITTED(READY 아님)
+
+    assert v.normalized_blockers_or_policy == (
+        "NEEDS_FIELD_BINDING_APPLICATION_REVIEW",
+    )
+
+
+def test_normalized_binding_blocker_selects_review_binding() -> None:
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    fresh = CurrentWorkExecutionObservation(
+        work_authority_ref="w",
+        current_sealability="DOMAIN_BLOCKED",
+        observed_at="t",
+        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
+    )
+    result = WorkbenchObservationProduct().compose(
+        data_mounted=True,
+        selected_record_count=1,
+        total_record_count=1,
+        active_work_ref="w",
+        slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
+        orchestration=AutomaticSealOrchestration(),
+        fresh_observation=fresh,
+    )
+    assert result.primary_action == "REVIEW_BINDING"
+
 
 
 # ── 깨진 슬롯 선택도 content blocker(사용자를 고쳐야 할 구성 너머로 지나치게 하지 않는다) ─────────

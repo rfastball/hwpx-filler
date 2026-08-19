@@ -27,6 +27,7 @@ admission 은 base kind·plan schema/encoding runtime support·materializer conf
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable
 
 from hwpxfiller.application.execution_capture import (
@@ -45,15 +46,23 @@ from hwpxfiller.application.execution_capture import (
     ResolvedSealPolicy,
     judge_captured_execution,
 )
+from hwpxfiller.application.execution_compilation import project_active_fields
 from hwpxfiller.application.execution_structure import (
     ExecutionStructureError,
     decode_execution_structure,
     template_structure_digest,
 )
 from hwpxfiller.application.field_binding_input import (
-    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
+    CurrentApplicationFieldStructure,
+    FieldBindingApplicationReview,
     FieldBindingInputIntegrityError,
+    FieldBindingRevision,
+    FieldReviewClassification,
+    NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
+    NEW_ACTIVE_FIELD,
     build_field_binding_input,
+    review_basis_digest,
+    review_field_binding_for_current_application,
 )
 from hwpxfiller.application.qualification_evidence import content_digest
 from hwpxfiller.application.seal_execution_plan import WorkExecutionSummary
@@ -64,10 +73,12 @@ from hwpxfiller.application.slot_configuration_context import (
     resolve_slot_configuration_context,
 )
 from hwpxfiller.application.slot_selection_input import (
+    SlotConfigurationSnapshot,
     SlotSelectionCaptureError,
     plan_capture,
 )
 from hwpxfiller.application.work_slot_configuration import WorkSlotConfigurationDraft
+from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
 from .candidate_store import CandidateObjectStore, CandidateStoreError
 from .field_binding_store import WorkFieldBindingStore, load_current_revision
@@ -104,6 +115,14 @@ _CONTEXT_ERROR_TYPES = (
     FieldBindingInputIntegrityError,
 )
 
+
+
+@dataclass(frozen=True)
+class CurrentFieldBindingReview:
+    """Exact current Active Field set plus the canonical Binding review."""
+
+    active_field_ids: tuple[str, ...]
+    review: FieldBindingApplicationReview
 
 class _WorkStateReadAdapter:
     """AtomicWorkTemplateStateStore → WorkTemplateStateReadPort(부재를 None 으로 번역).
@@ -167,6 +186,82 @@ class SealExecutionCaptureRunner:
             template_application_id=current_id,
         )
 
+
+    def read_current_field_binding_review(
+        self, workspace_instance_id: str, work_authority_id: str
+    ) -> CurrentFieldBindingReview | None:
+        """Project current Active Fields with the existing Binding review semantics."""
+        with per_work_mutation_fence(workspace_instance_id, work_authority_id):
+            aggregate = self._work_state.load(work_authority_id)
+            application_id = aggregate.work.current_template_application_id
+            now = self._clock()
+            template, context = self._capture_template(
+                workspace_instance_id,
+                work_authority_id,
+                application_id,
+                now,
+            )
+            selection_observation = self._capture_selection(context, now)
+            if not isinstance(selection_observation, CapturedSelection):
+                return None
+
+            selection = selection_observation.selection
+            selected: frozenset[tuple[str, str]] = frozenset()
+            if isinstance(selection, SlotConfigurationSnapshot):
+                selected = frozenset(
+                    (item.slot_id, option_id)
+                    for item in selection.effective_selections.selections
+                    for option_id in item.selected_option_ids
+                )
+            structure = template.qualification.execution_structure
+            active, _counts = project_active_fields(structure, selected)
+            active_ids = active.active_logical_field_order
+            active_set = set(active_ids)
+            all_fields = tuple(
+                dict.fromkeys(
+                    occurrence.field_id for occurrence in structure.field_occurrences
+                )
+            )
+            old_revision = self._nearest_binding_revision(aggregate, application_id)
+            current_structure = CurrentApplicationFieldStructure(
+                application_id=application_id,
+                active_field_ids=active_ids,
+                inactive_field_ids=tuple(
+                    field_id for field_id in all_fields if field_id not in active_set
+                ),
+                source_schema_keys=(
+                    old_revision.source_schema_keys if old_revision is not None else ()
+                ),
+            )
+            if old_revision is not None:
+                review = review_field_binding_for_current_application(
+                    old_revision, current_structure
+                )
+            else:
+                review = FieldBindingApplicationReview(
+                    work_authority_id=work_authority_id,
+                    target_application_id=application_id,
+                    review_basis_digest=review_basis_digest(current_structure),
+                    classifications=tuple(
+                        FieldReviewClassification(field_id, NEW_ACTIVE_FIELD)
+                        for field_id in active_ids
+                    ),
+                )
+            return CurrentFieldBindingReview(active_ids, review)
+
+    def _nearest_binding_revision(
+        self, aggregate: WorkTemplateStateAggregate, application_id: str
+    ) -> FieldBindingRevision | None:
+        applications = {item.application_id: item for item in aggregate.applications}
+        current_id: str | None = application_id
+        while current_id is not None:
+            revision = load_current_revision(
+                self._field_binding, aggregate.work.work_id, current_id
+            )
+            if revision is not None:
+                return revision
+            current_id = applications[current_id].previous_application_id
+        return None
     # ── under-fence exact capture(Product 가 PerWorkFence 아래 부르는 injectable 포트) ─────
     def capture_execution(
         self,
@@ -339,5 +434,6 @@ def _context_error_code(exc: Exception) -> str:
 
 __all__ = [
     "COMPOSITION_PROFILE_SEALED",
+    "CurrentFieldBindingReview",
     "SealExecutionCaptureRunner",
 ]

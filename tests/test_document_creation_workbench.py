@@ -37,6 +37,7 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
     DocumentCreationWorkbenchObservation,
     HistoricalOutcomeSummary,
+    InputRequirement,
     RecordValidationSummary,
     WorkbenchCompositionInput,
     WorkbenchContextIntegrity,
@@ -439,3 +440,35 @@ def test_delivery_label_is_planned_not_artifact() -> None:
 def test_record_validation_rejects_hollow_blocking() -> None:
     with pytest.raises(ValueError):
         RecordValidationSummary(has_blocking_issues=True, issue_count=0)
+
+
+def test_binding_review_items_keep_existing_review_semantics_and_exact_targets() -> None:
+    items = tuple(
+        InputRequirement(
+            field_id=field_id,
+            display_label=field_id,
+            binding_state=state,
+            exact_target=f"binding/{field_id}",
+        )
+        for field_id, state in (
+            ("preserved", "PRESERVED"),
+            ("broken", "BROKEN"),
+            ("new", "NEW_ACTIVE_FIELD"),
+            ("inactive", "INACTIVE_ONLY"),
+        )
+    )
+    obs = _observation(input_requirements=items)
+
+    assert tuple(item.action_required for item in obs.input_requirements) == (
+        False,
+        True,
+        True,
+        False,
+    )
+    assert tuple(item.exact_target for item in obs.input_requirements) == (
+        "binding/preserved",
+        "binding/broken",
+        "binding/new",
+        "binding/inactive",
+    )
+    assert obs.primary_action == "REVIEW_BINDING"

@@ -335,7 +335,7 @@ def _resolve_selected(
     return frozenset(selected), tuple(blockers), None
 
 
-def _active_projection(
+def project_active_fields(
     structure: ExecutionTemplateStructure, selected: frozenset[tuple[str, str]]
 ) -> tuple[ActiveFieldProjection, dict[str, int]]:
     """occurrence(structural_order)·first-occurrence logical order·occurrence count 를 계산한다."""
@@ -665,7 +665,7 @@ def qualify_and_compile_execution(
         )
 
     # Active Field projection(occurrence·logical order·count).
-    projection, counts = _active_projection(structure, selected)
+    projection, counts = project_active_fields(structure, selected)
 
     # (5) Active-only Binding Qualification.
     rules_by_field = {r.field_id: r for r in captured.field_binding.binding_rules}

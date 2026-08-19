@@ -24,10 +24,12 @@ SX-03 소유고, field-binding commit 도 SX-03 이 진다 — 이 service 는 f
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from ..application.document_creation_workbench import InputRequirement
 from ..application.jobs import (
     JobStorePort,
     assign_job_authority_id,
@@ -38,7 +40,10 @@ from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..external.candidate_store import CandidateObjectStore
 from ..external.field_binding_store import WorkFieldBindingStore
 from ..external.qualification_store import QualificationObjectStore
-from ..external.seal_execution_capture_runner import SealExecutionCaptureRunner
+from ..external.seal_execution_capture_runner import (
+    CurrentFieldBindingReview,
+    SealExecutionCaptureRunner,
+)
 from ..external.work_configuration_store import (
     WorkSlotConfigurationStore,
     WorkspaceMetadataStore,
@@ -50,6 +55,14 @@ from .seal_execution_plan_product import (
     SealExecutionPlanResponse,
 )
 
+
+
+@dataclass(frozen=True)
+class BindingReviewProjection:
+    """Backend-authored review items; the UI performs no Binding inference."""
+
+    active_field_ids: tuple[str, ...]
+    input_requirements: tuple[InputRequirement, ...]
 
 class SealExecutionPlanService:
     """job 화면이 소비하는 seal-execution Product 서비스 — webview 비의존, 헤드리스 구동."""
@@ -81,6 +94,7 @@ class SealExecutionPlanService:
             field_binding_store=field_binding,
             clock=self._seal_clock,
         )
+        self._capture = capture
         # R2(#740): plan_store·read_admission_state·load_secret seam 이 사라졌다 — Product 는
         # route/auth + capture/summary/shipping 만 받아 매 호출 current authority 를 재계산한다.
         self._product = SealExecutionPlanProduct(
@@ -107,6 +121,34 @@ class SealExecutionPlanService:
         )
         return self._product.seal_execution_plan(command)
 
+    def current_binding_review(self, work_ref: str) -> BindingReviewProjection | None:
+        """Read-only Active Field/Binding review projection for the current exact basis."""
+        job = load_job(self._registry, work_ref)
+        if not job.authority_id:
+            return None
+        workspace_id = self._workspace.read()
+        if workspace_id is None:
+            return None
+        current: CurrentFieldBindingReview | None = (
+            self._capture.read_current_field_binding_review(
+                workspace_id, job.authority_id
+            )
+        )
+        if current is None:
+            return None
+        return BindingReviewProjection(
+            active_field_ids=current.active_field_ids,
+            input_requirements=tuple(
+                InputRequirement(
+                    field_id=item.field_id,
+                    display_label=item.field_id,
+                    binding_state=item.category,
+                    exact_target=f"binding/{item.field_id}",
+                )
+                for item in current.review.classifications
+            ),
+        )
+
     # ── seam 결선 ──────────────────────────────────────────────────────────────────
     def _seal_clock(self) -> str:
         return self._clock().isoformat()
@@ -128,4 +170,4 @@ class SealExecutionPlanService:
         return None
 
 
-__all__ = ["SealExecutionPlanService"]
+__all__ = ["BindingReviewProjection", "SealExecutionPlanService"]
