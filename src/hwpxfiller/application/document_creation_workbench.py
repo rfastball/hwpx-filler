@@ -298,6 +298,24 @@ class RecordValidationSummary:
 
 
 @dataclass(frozen=True)
+class PlannedDocumentSummary:
+    """현재 관찰에서 만들 예정인 한 문서. Artifact/reservation/publication 이 아니다."""
+
+    record_identity: str
+    item_ordinal: int
+    relative_path: str
+    collision_disposition: str
+
+
+@dataclass(frozen=True)
+class DeliveryPreviewBlocker:
+    code: str
+    message: str
+    item_ordinal: int | None = None
+    field_id: str | None = None
+
+
+@dataclass(frozen=True)
 class DeliveryPreviewSummary:
     """delivery 미리보기 요약 — ResolvedGenerationDeliveryPlan 의 사용자 투영(생성 예정 문서).
 
@@ -308,8 +326,18 @@ class DeliveryPreviewSummary:
 
     resolvable: bool
     planned_output_names: tuple[str, ...] = ()
+    planned_documents: tuple[PlannedDocumentSummary, ...] = ()
+    blockers: tuple[DeliveryPreviewBlocker, ...] = ()
     label: ClassVar[str] = USER_VOCABULARY["Resolved Delivery"]  # "생성 예정 문서"
     is_artifact: ClassVar[bool] = False
+
+    def __post_init__(self) -> None:
+        if self.resolvable and self.blockers:
+            raise ValueError("resolvable delivery cannot have blockers")
+        if self.planned_documents and self.planned_output_names != tuple(
+            item.relative_path for item in self.planned_documents
+        ):
+            raise ValueError("planned delivery names and documents must match")
 
 
 @dataclass(frozen=True)
@@ -514,6 +542,7 @@ class DocumentCreationWorkbenchObservation:
             texts.append(self.semantic_preview.label)
         for issue in self.record_validation.issues:
             texts.extend((issue.record_display_locator, issue.field_display_label, issue.message))
+        texts.extend(blocker.message for blocker in self.delivery.blockers)
         return tuple(t for t in texts if t != "")
 
 
@@ -734,6 +763,8 @@ __all__ = [
     "ActiveWorkContext",
     "RecordValidationSummary",
     "DeliveryPreviewSummary",
+    "DeliveryPreviewBlocker",
+    "PlannedDocumentSummary",
     "WorkbenchContextIntegrity",
     "HistoricalOutcomeSummary",
     "DeepLinkTarget",

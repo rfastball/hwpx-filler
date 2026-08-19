@@ -184,6 +184,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "clear_slot_selection": _schema("configuration_token slot_id request_id"),
         # SX-04A record issue recovery — exact backend target만 되돌려 받는다.
         "recover_record_issue": _schema("target"),
+        # SX-04B session delivery intent. output directory 는 native picker가 좁은
+        # set_output_folder command로 세우고, 이 둘은 current delivery만 재계산한다.
+        "set_delivery_collision": _schema("collision_policy"),
+        "refresh_delivery": _schema(),
         # 작업대 execution 확인(SX-03 #726) — 무페이로드: 무엇을 봉인·관찰할지(현재 작업)는 Python 이
         # 소유한다. resolve_execution 은 자동 확인의 명시 재실행(수동 seal 관리 동사 아님),
         # refresh_observation 은 마지막 Plan 재관찰(새 seal 아님). 둘 다 seal 서비스 경로를 지난다.

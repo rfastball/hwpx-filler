@@ -46,6 +46,7 @@ from ..application.execution_semantic_kernel import (
     SemanticKernelContextError,
     compile_sealed_plan_from_snapshot,
 )
+from ..application.field_binding_input import FieldBindingInput
 from ..application.fresh_execution_observation import (
     DOMAIN_BLOCKED,
     MATERIALIZER_NOT_ADMITTED,
@@ -345,7 +346,7 @@ class SealExecutionPlanProduct:
                 work_id, DOMAIN_BLOCKED, app_ref, value.normalized_blockers
             )
         assert isinstance(value, SealedExecutionPlanValue)
-        return self._observe_sealable(exact, policy, value)
+        return self._observe_sealable(exact, policy, value, current.field_binding)
 
     def _blocked_work(
         self, work_id: str, sealability: str, app_ref: str, blockers: tuple[str, ...]
@@ -363,6 +364,7 @@ class SealExecutionPlanProduct:
         exact: WorkExecutionSummary,
         policy: ResolvedSealPolicy,
         value: SealedExecutionPlanValue,
+        current_field_binding: FieldBindingInput,
     ) -> CurrentSealedPlanObservation:
         """current sealable value 에 runtime admission·readiness 를 얹는다.
 
@@ -394,6 +396,7 @@ class SealExecutionPlanProduct:
             runtime_policy_admission=admission,
             materialization_readiness=readiness,
             observed_at=self._clock(),
+            current_field_binding=current_field_binding,
         )
 
 
