@@ -419,6 +419,20 @@ export function createJobRunController(deps: JobRunControllerDeps) {
         log(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
       }
     },
+    async recoverRecordIssue(target: Obj): Promise<void> {
+      try {
+        const result = await dispatch('recover_record_issue', { target });
+        const element = (
+          deps.doc.getElementById(String(result.element_id || ''))
+          || deps.doc.getElementById(String(result.fallback_element_id || ''))
+        );
+        if (!element) throw new Error('문제 위치가 현재 표에 없습니다.');
+        element.scrollIntoView?.({ block: 'center' });
+        element.focus();
+      } catch (error) {
+        log(`문제 위치로 이동하지 못했습니다: ${String(error)}`);
+      }
+    },
     confirmDestructiveIfArmed, log,
 
     /** 결과 3태 구획의 **프로브 입구**(F4) — legacy 파사드가 지던 이름 그대로다.
@@ -752,6 +766,28 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const items = (wb.input_requirements || []) as Obj[];
   const executionAction = (wb.execution_action || null) as Obj | null;
+  const recordValidation = (wb.record_validation || {}) as Obj;
+  const recordIssues = (recordValidation.issues || []) as Obj[];
+  const recordSection = createElement(Fragment, null,
+    h('div', { className: 'zone-cap' }, '데이터 확인'),
+    recordIssues.length
+      ? h('ul', { className: 'plain-list', id: 'jobRecordValidationIssues' },
+          ...recordIssues.map((issue) => h('li', {
+            key: `${String(issue.record_identity)}:${String(issue.field_id)}`,
+          },
+          h('span', null,
+            `${String(issue.record_display_locator)} · ${String(issue.field_display_label)} · `,
+            String(issue.message || '')),
+          h('button', {
+            className: 'btn sm', type: 'button',
+            onClick: () => { void props.controller.recoverRecordIssue(
+              issue.recovery_target as Obj,
+            ); },
+          }, '문제 위치 보기'))))
+      : h('p', { className: 'muted capnote' },
+          Number(recordValidation.validated_count || 0) > 0
+            ? `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`
+            : '확인할 데이터가 없습니다.'));
   return createElement(Fragment, null,
     h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
     items.length
@@ -782,7 +818,8 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
           }, String(executionAction.label || "")),
           h("span", { className: "muted capnote" },
             String(executionAction.disabled_reason || "")))
-      : null);
+      : null,
+    recordSection);
 }
 
 export function JobActionBar(props: { controller: JobRunController }): ReactNode {

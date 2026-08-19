@@ -299,7 +299,9 @@ export function JobDataZone(props: {
               return column.visible === false
                 ? null
                 : h("td", { className: `col-${column.kind || "text"}`, key: index },
-                  h(Segments as any, { value: cell }));
+                  h('span', {
+                    id: `jobCell-${row.index}-${index}`, tabIndex: -1,
+                  }, h(Segments as any, { value: cell })));
             })))))),
       h("div", {
         className: "job-empty muted",

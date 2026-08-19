@@ -38,6 +38,7 @@ from hwpxfiller.application.execution_contract_set import (
     plan_semantic_digest,
     verify_sealed_plan_integrity,
 )
+from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION,
     CanonicalExecutionEncodingError,
@@ -197,8 +198,34 @@ class ValidatedDataRecord:
         )
 
 
+@dataclass(frozen=True)
+class CurrentRecordValidationBasis:
+    raw_record_contract_id: str
+    source_schema_contract_id: str
+    binding_value_contract_id: str
+    record_validation_contract_id: str
+    record_review_contract_id: str
+    document_value_resolution_contract_id: str
+    active_field_requirements: tuple[Mapping[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class CurrentValidatedDataRecord:
+    validation_basis: CurrentRecordValidationBasis
+    record_identity: str
+    raw_record_digest: str
+    resolved_requirement_values: tuple[tuple[str, str], ...]
+    validation_provenance: ValidationProvenance
+
+    def document_values_in_order(self) -> tuple[tuple[str, str], ...]:
+        return self.resolved_requirement_values
+
+
 ValidateDataRecordResult = (
     ValidatedDataRecord | RecordValidationBlocked | RecordValidationContextError
+)
+ValidateCurrentDataRecordResult = (
+    CurrentValidatedDataRecord | RecordValidationBlocked | RecordValidationContextError
 )
 
 
@@ -386,6 +413,117 @@ def validate_data_record_against_plan(
         )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
+
+
+def _verify_current_snapshot(snapshot: RawDataRecordSnapshot) -> None:
+    try:
+        verify_raw_record_snapshot(snapshot)
+    except RawRecordIntegrityError as exc:
+        raise _ContextSignal(RAW_RECORD_INTEGRITY_ERROR, str(exc)) from exc
+    except CanonicalExecutionEncodingError as exc:
+        raise _ContextSignal(RAW_RECORD_CANONICALIZATION_ERROR, str(exc)) from exc
+
+
+def _validate_record_contracts(contracts: Any, snapshot: RawDataRecordSnapshot) -> None:
+    expected = (
+        ("raw_record_contract_id", RAW_RECORD_CONTRACT_ID, UNSUPPORTED_RAW_RECORD_CONTRACT),
+        ("source_schema_contract_id", SOURCE_SCHEMA_VERSION, UNSUPPORTED_SOURCE_SCHEMA_CONTRACT),
+        ("binding_value_contract_id", BINDING_VALUE_VERSION, UNSUPPORTED_BINDING_VALUE_CONTRACT),
+        (
+            "record_validation_contract_id",
+            RECORD_VALIDATION_CONTRACT_ID,
+            UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
+        ),
+        (
+            "record_review_contract_id",
+            RECORD_REVIEW_CONTRACT_ID,
+            UNSUPPORTED_RECORD_REVIEW_CONTRACT,
+        ),
+        (
+            "document_value_resolution_contract_id",
+            DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID,
+            UNSUPPORTED_DOCUMENT_VALUE_RESOLUTION_CONTRACT,
+        ),
+    )
+    for name, supported, code in expected:
+        if getattr(contracts, name) != supported:
+            raise _ContextSignal(code, f"unsupported {name}")
+    payload = snapshot.semantic_payload_encoded
+    if payload["raw_record_contract_id"] != contracts.raw_record_contract_id:
+        raise _ContextSignal(
+            UNSUPPORTED_RAW_RECORD_CONTRACT, "snapshot raw record contract mismatch"
+        )
+    if payload["source_schema_contract_id"] != contracts.source_schema_contract_id:
+        raise _ContextSignal(
+            UNSUPPORTED_SOURCE_SCHEMA_CONTRACT, "snapshot source schema contract mismatch"
+        )
+
+
+def _current_validation_basis(
+    plan: SealedExecutionPlanValue,
+) -> CurrentRecordValidationBasis:
+    contracts = plan.contract_semantics
+    return CurrentRecordValidationBasis(
+        raw_record_contract_id=contracts.raw_record_contract_id,
+        source_schema_contract_id=contracts.source_schema_contract_id,
+        binding_value_contract_id=contracts.binding_value_contract_id,
+        record_validation_contract_id=contracts.record_validation_contract_id,
+        record_review_contract_id=contracts.record_review_contract_id,
+        document_value_resolution_contract_id=(contracts.document_value_resolution_contract_id),
+        active_field_requirements=tuple(_freeze(r) for r in plan.active_field_requirements),
+    )
+
+
+def validate_data_record_against_current_value(
+    *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
+) -> ValidateCurrentDataRecordResult:
+    try:
+        return _validate_current_value(plan=plan, snapshot=snapshot, validated_at=validated_at)
+    except _ContextSignal as sig:
+        return RecordValidationContextError(sig.code, sig.detail)
+
+
+def _validate_current_value(
+    *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
+) -> ValidateCurrentDataRecordResult:
+    if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
+        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
+    if plan.canonical_encoding_version != CANONICAL_ENCODING_VERSION:
+        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported canonical encoding")
+    _verify_current_snapshot(snapshot)
+    _validate_record_contracts(plan.contract_semantics, snapshot)
+    field_ids = [requirement.get("field_id") for requirement in plan.active_field_requirements]
+    if any(not isinstance(field_id, str) or not field_id for field_id in field_ids):
+        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "invalid current field identity")
+    if len(set(field_ids)) != len(field_ids):
+        raise _ContextSignal(PLAN_INTEGRITY_ERROR, "duplicate current field identity")
+    blockers: list[RecordValidationBlocker] = []
+    resolved: list[tuple[str, str]] = []
+    for requirement in plan.active_field_requirements:
+        outcome = _resolve_requirement(requirement, snapshot)
+        if isinstance(outcome, RecordValidationBlocker):
+            blockers.append(outcome)
+        else:
+            resolved.append((str(requirement["field_id"]), outcome))
+    if blockers:
+        return RecordValidationBlocked(tuple(blockers))
+    basis = _current_validation_basis(plan)
+    record = CurrentValidatedDataRecord(
+        validation_basis=basis,
+        record_identity=snapshot.record_identity,
+        raw_record_digest=snapshot.raw_record_digest,
+        resolved_requirement_values=tuple(resolved),
+        validation_provenance=ValidationProvenance(
+            validation_facts=(f"validated:{len(resolved)}",),
+            record_review_evidence_refs=(),
+            validated_at=validated_at,
+        ),
+    )
+    try:
+        verify_current_validated_record_completeness(record, plan, snapshot)
+    except ValidatedRecordIntegrityError as exc:
+        raise _ContextSignal(VALIDATED_RECORD_INTEGRITY_ERROR, str(exc)) from exc
+    return record
 
 
 def _validate(
@@ -645,6 +783,28 @@ def verify_validated_record_completeness(
 
 
 # ─── 최소 immutable VDR ref/retention port ─────────────────────────────────────────────────
+def verify_current_validated_record_completeness(
+    record: CurrentValidatedDataRecord,
+    plan: SealedExecutionPlanValue,
+    snapshot: RawDataRecordSnapshot,
+) -> None:
+    expected_basis = _current_validation_basis(plan)
+    if record.validation_basis != expected_basis:
+        raise ValidatedRecordIntegrityError("current VDR validation basis mismatch")
+    if record.record_identity != snapshot.record_identity:
+        raise ValidatedRecordIntegrityError("current VDR record identity mismatch")
+    if record.raw_record_digest != snapshot.raw_record_digest:
+        raise ValidatedRecordIntegrityError("current VDR raw record digest mismatch")
+    expected_fields = [str(r["field_id"]) for r in plan.active_field_requirements]
+    actual_fields = [field_id for field_id, _ in record.resolved_requirement_values]
+    if len(set(actual_fields)) != len(actual_fields):
+        raise ValidatedRecordIntegrityError("current VDR duplicate field")
+    if actual_fields != expected_fields:
+        raise ValidatedRecordIntegrityError("current VDR field sequence mismatch")
+    if any(not isinstance(value, str) for _, value in record.resolved_requirement_values):
+        raise ValidatedRecordIntegrityError("current VDR value is not logical text")
+
+
 class ImmutableVdrStore:
     """content-addressed(``validated_record_digest``) create-once VDR store — GenerationPlan 수명까지 보존.
 

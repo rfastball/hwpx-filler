@@ -178,6 +178,7 @@ export const SCREEN_ACTIONS = {
     refresh_slot_configuration: { required: [], optional: ["configuration_token"] },
     select_slot_option: { required: ["configuration_token", "option_id", "request_id", "slot_id"], optional: [] },
     clear_slot_selection: { required: ["configuration_token", "request_id", "slot_id"], optional: [] },
+    recover_record_issue: { required: ["target"], optional: [] },
     resolve_execution: { required: [], optional: [] },
     refresh_observation: { required: [], optional: [] },
     rename_job: { required: ["name"], optional: ["new"] },

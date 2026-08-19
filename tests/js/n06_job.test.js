@@ -21,6 +21,7 @@ import { createJobRunAdapter } from "../../frontend/src/screens/job_read.ts";
 
 /* 실앱 프로브와 셸이 부르는 이름 — 이 집합이 곧 소비 계약이다. */
 const SURFACE = [
+  'recoverRecordIssue',
   "model", "subscribe", "getRun", "getUi", "getTemplateChange", "client", "notify",
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
@@ -94,7 +95,7 @@ function harness(options = {}) {
     services: { relink: port({ relinkTemplate: () => Promise.resolve(true) }) },
     modal: { confirm: () => Promise.resolve(true), open() {}, close() {} },
     navigation: { go() {} },
-    doc: { getElementById: () => null, querySelector: () => null },
+    doc: options.doc ?? { getElementById: () => null, querySelector: () => null },
     selectionLine: (n) => `${n}행 선택`,
     notify() {},
   });
@@ -429,4 +430,59 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
   assert.match(action, /id="jobManagedCreate"[^>]*disabled=""/);
   assert.ok(action.includes("문서 만들기"));
   assert.ok(action.includes(reason));
+});
+
+test('데이터 확인은 backend 문안과 recovery target만 소비한다', async () => {
+  const target = {
+    snapshot_generation: 3,
+    record_identity: 'current-record/3/7',
+    model_index: 7,
+    field_id: 'name',
+  };
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
+      record_validation: {
+        validated_count: 1, blocked_count: 1, issue_count: 1,
+        issues: [{
+          record_identity: target.record_identity,
+          record_display_locator: '데이터 8행',
+          field_id: 'f_name',
+          field_display_label: '이름',
+          message: '빈 값이나 공백만 있는 값은 사용할 수 없습니다.',
+          recovery_target: target,
+        }],
+      },
+    },
+  };
+  let focused = false;
+  const element = {
+    focus: () => { focused = true; },
+    scrollIntoView: () => {},
+  };
+  const h = harness({
+    snapshot: snap,
+    dispatchValue: { element_id: 'backend-cell', fallback_element_id: 'backend-row' },
+    doc: {
+      getElementById: (id) => id === 'backend-cell' ? element : null,
+      querySelector: () => null,
+    },
+  });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  for (const text of ['데이터 확인', '데이터 8행', '이름',
+    '빈 값이나 공백만 있는 값은 사용할 수 없습니다.', '문제 위치 보기']) {
+    assert.ok(markup.includes(text));
+  }
+  assert.equal(markup.includes('RECORD_BLANK_POLICY_VIOLATION'), false);
+
+  await h.controller.recoverRecordIssue(target);
+  assert.equal(h.calls.at(-1).payload.target, target);
+  assert.equal(focused, true);
 });

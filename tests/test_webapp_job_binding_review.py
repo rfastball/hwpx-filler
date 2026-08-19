@@ -14,6 +14,7 @@ side effect 없는 순수 재계산이라 마지막 sealed basis 는 digest 로�
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -30,11 +31,15 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
+from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.application.fresh_execution_observation import (
+    CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
     ExecutionObservationContextError,
 )
+from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
+from hwpxfiller.domain.field_binding import EXACT_TEXT
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.application.slot_configuration_projection import (
     HAS_BROKEN_SELECTIONS,
@@ -95,6 +100,31 @@ def _zone(ctrl) -> dict:
 
 
 # ── 확인 증거 없음 → NO_EVIDENCE(정직한 disabled) ─────────────────────────────────────────────
+def _wire_source_plan(ctrl: JobController) -> None:
+    ctrl.dispatch("resolve_execution", {})
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
+    requirement = {
+        "field_id": "f_name",
+        "expected_active_occurrence_count": 1,
+        "value_expression": encode_value_expression(
+            FromSource("name", EXACT_TEXT, None, "document-content-value/v1")
+        ),
+    }
+    plan = dataclasses.replace(
+        fresh.sealed_plan_value,
+        active_field_requirements=(requirement,),
+    )
+    ctrl._last_fresh_observation = dataclasses.replace(fresh, sealed_plan_value=plan)
+
+
+def _mount_rows(ctrl: JobController, rows: list[dict]) -> None:
+    ctrl.datasource = object()
+    ctrl.records = rows
+    ctrl.selection = SelectionModel(len(rows))
+    ctrl._install_filter(rows, {})
+
+
 def test_no_evidence_before_any_check(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     zone = _zone(ctrl)
@@ -104,6 +134,105 @@ def test_no_evidence_before_any_check(tmp_path: Path) -> None:
     # 아직 확인 전이라 READY 를 주장하지 않는다(materialization NOT_READY).
     assert zone["materialization_readiness"] == "NOT_READY"
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
+
+
+def test_selected_record_capture_preserves_order_and_never_rereads_source(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    rows = [{"name": "A"}, {"name": "B"}, {"name": "C"}]
+    _mount_rows(ctrl, rows)
+    ctrl.view_order = "sourceDesc"
+
+    class NoReadSource:
+        def __getattribute__(self, name):
+            raise AssertionError(f"mutable source reread: {name}")
+
+    ctrl.datasource = NoReadSource()
+    generation, indices, snapshots = ctrl._capture_current_selected_records()
+    assert generation == ctrl._snapshot_gen
+    assert indices == (2, 1, 0)
+    assert [snapshot.value_for("name").text for snapshot in snapshots] == ["C", "B", "A"]
+    rows[2]["name"] = "changed after capture"
+    assert snapshots[0].value_for("name").text == "C"
+
+
+def test_generation_move_rejects_mixed_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _mount_rows(ctrl, [{"name": "A"}, {"name": "B"}])
+    original = screen_job_module.build_raw_record_snapshot
+    calls = 0
+
+    def moving_capture(**kwargs):
+        nonlocal calls
+        calls += 1
+        result = original(**kwargs)
+        if calls == 1:
+            ctrl._snapshot_gen += 1
+        return result
+
+    monkeypatch.setattr(screen_job_module, "build_raw_record_snapshot", moving_capture)
+    with pytest.raises(ValueError, match="다시 불러와져"):
+        ctrl._capture_current_selected_records()
+    assert ctrl._current_record_preparation is None
+
+
+def test_current_record_blocker_projects_exact_backend_target(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    _mount_rows(ctrl, [{"name": "정상"}, {"name": " "}])
+
+    zone = _zone(ctrl)
+    validation = zone["record_validation"]
+    assert validation["validated_count"] == 1
+    assert validation["blocked_count"] == 1
+    assert zone["primary_action"] == "REVIEW_RECORD_DATA"
+    issue = validation["issues"][0]
+    assert issue["record_display_locator"] == "데이터 2행"
+    assert issue["field_id"] == "f_name"
+    assert issue["field_display_label"] == "name"
+    assert issue["message"] == "빈 값이나 공백만 있는 값은 사용할 수 없습니다."
+    target = issue["recovery_target"]
+    assert target == {
+        "snapshot_generation": ctrl._snapshot_gen,
+        "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+        "model_index": 1,
+        "field_id": "name",
+    }
+    assert ctrl.dispatch("recover_record_issue", {"target": target}) == {
+        "ok": True,
+        "element_id": "jobCell-1-0",
+        "fallback_element_id": "jobRow-1",
+    }
+    ctrl._snapshot_gen += 1
+    with pytest.raises(ValueError, match="위치를 복원할 수 없습니다"):
+        ctrl.dispatch("recover_record_issue", {"target": target})
+
+
+def test_current_preparation_is_reused_until_existing_basis_moves(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    rows = [{"name": "정상"}, {"name": " "}]
+    _mount_rows(ctrl, rows)
+    assert _zone(ctrl)["record_validation"]["blocked_count"] == 1
+    first = ctrl._current_record_preparation
+    rows[1]["name"] = "원본에서 수정됨"
+    assert _zone(ctrl)["record_validation"]["blocked_count"] == 1
+    assert ctrl._current_record_preparation is first
+
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
+    moved = dataclasses.replace(fresh.sealed_plan_value, qualification_profile_id="profile-moved")
+    ctrl._last_fresh_observation = dataclasses.replace(fresh, sealed_plan_value=moved)
+    assert _zone(ctrl)["record_validation"]["validated_count"] == 2
+    assert ctrl._current_record_preparation is not first
 
 
 def test_stale_projects_backend_execution_action_when_it_is_primary(

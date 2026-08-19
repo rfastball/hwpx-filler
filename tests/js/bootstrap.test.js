@@ -32,6 +32,7 @@ const FACTORY_SERVICES = {
     "newDraftFromData", "restoreEntryFocus",
   ],
   JobRun: [
+    'recoverRecordIssue',
     "model", "client", "notify", "subscribe", "getRun", "getUi", "getTemplateChange",
     "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
     "confirmDestructiveIfArmed", "log", "renderResult", "markResultStale",
