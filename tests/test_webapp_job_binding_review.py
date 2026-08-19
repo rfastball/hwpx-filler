@@ -39,7 +39,16 @@ from hwpxfiller.application.fresh_execution_observation import (
     ExecutionObservationContextError,
 )
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
-from hwpxfiller.domain.field_binding import DATE, DECIMAL, EXACT_TEXT
+from hwpxfiller.application.field_binding_input import build_field_binding_input
+from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
+from hwpxfiller.domain.field_binding import (
+    DATE,
+    DECIMAL,
+    DOCUMENT_CONTENT_VALUE_POLICY_V1,
+    EXACT_TEXT,
+    SOURCE,
+    FieldBindingRule,
+)
 from hwpxfiller.domain.raw_data_record import source_value_type_of
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.application.slot_configuration_projection import (
@@ -465,6 +474,8 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
     ctrl, out = _delivery_controller(tmp_path)
     existing = out / "공고서-20260818-001.hwpx"
     existing.write_text("existing", encoding="utf-8")
+    second_existing = out / "공고서-20260818-002.hwpx"
+    second_existing.write_text("existing", encoding="utf-8")
     before = tuple(item.name for item in out.iterdir())
 
     ctrl.set_output_folder(str(out))
@@ -479,6 +490,10 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
     assert zone["delivery"]["blockers"][0]["code"] == (
         "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
     )
+    assert [
+        blocker["conflicting_relative_path"]
+        for blocker in zone["delivery"]["blockers"]
+    ] == ["공고서-20260818-001.hwpx", "공고서-20260818-002.hwpx"]
     assert tuple(item.name for item in out.iterdir()) == before
 
     ctrl.dispatch(
@@ -492,6 +507,100 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
         "collision_disposition": "WRITE_OVERWRITE",
     }
     assert tuple(item.name for item in out.iterdir()) == before
+
+
+def test_directory_collision_blocks_explicit_overwrite_with_exact_path(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    conflict = out / "공고서-20260818-001.hwpx"
+    conflict.mkdir()
+
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch(
+        "set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"}
+    )
+    zone = _zone(ctrl)
+
+    assert zone["delivery"]["resolvable"] is False
+    assert zone["delivery"]["blockers"][0]["conflicting_relative_path"] == conflict.name
+    assert conflict.is_dir()
+
+
+def test_path_occupancy_classifies_symlink_without_following_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = tmp_path / "symlink-observation"
+    out.mkdir()
+
+    class SymlinkEntry:
+        name = "보고서.hwpx"
+
+        @staticmethod
+        def is_symlink() -> bool:
+            return True
+
+        @staticmethod
+        def is_file() -> bool:
+            raise AssertionError("symlink target was followed")
+
+    monkeypatch.setattr(Path, "iterdir", lambda _path: iter((SymlinkEntry(),)))
+    observation = JobController._observe_path_occupancy(
+        RunDeliveryIntent(str(out)), NOW.isoformat()
+    )
+
+    assert observation.occupied_entries[0].relative_name == SymlinkEntry.name
+    assert observation.occupied_entries[0].kind == screen_job_module.NON_REGULAR
+
+
+def test_inactive_typed_filename_uses_frozen_record_without_source_reread(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+    _wire_source_plan(ctrl)
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
+    binding = fresh.current_field_binding
+    assert binding is not None
+    typed_rule = FieldBindingRule(
+        field_id="f_date",
+        binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="typed_date",
+        value_type=DATE,
+    )
+    current_binding = build_field_binding_input(
+        workspace_instance_id=binding.workspace_instance_id,
+        work_authority_id=binding.work_authority_id,
+        base_template_application_id=binding.base_template_application_id,
+        binding_rules=(*binding.binding_rules, typed_rule),
+        source_schema_keys=(*binding.source_schema_keys, "typed_date"),
+        raw_record_contract_id=binding.raw_record_contract_id,
+        captured_at=binding.captured_at,
+    )
+    ctrl._last_fresh_observation = dataclasses.replace(
+        fresh, current_field_binding=current_binding
+    )
+    _mount_rows(ctrl, [{"name": "A", "typed_date": "2026-08-20"}])
+    assert ctrl.vm is not None
+    ctrl.vm.job.filename_pattern = "{{f_date}}"
+
+    class NoReadSource:
+        def __getattribute__(self, name):
+            raise AssertionError(f"delivery-time mutable source reread: {name}")
+
+    out = tmp_path / "typed-delivery"
+    out.mkdir()
+    record_validation, context = ctrl._current_record_validation()
+    assert context is None
+    ctrl.datasource = NoReadSource()
+    ctrl._run_delivery_intent = RunDeliveryIntent(str(out))
+
+    delivery, context = ctrl._current_delivery(record_validation)
+    assert context is None
+    assert delivery.resolvable is True
+    assert delivery.planned_documents[0].relative_path == (
+        "2026-08-20.hwpx"
+    )
 
 
 def test_delivery_unreadable_directory_is_loud_and_never_created(tmp_path: Path) -> None:

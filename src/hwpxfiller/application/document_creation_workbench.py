@@ -313,6 +313,7 @@ class DeliveryPreviewBlocker:
     message: str
     item_ordinal: int | None = None
     field_id: str | None = None
+    conflicting_relative_path: str | None = None
 
 
 @dataclass(frozen=True)

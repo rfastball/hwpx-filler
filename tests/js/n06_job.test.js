@@ -509,6 +509,38 @@ test('기존 파일 덮어쓰기는 명시 확인 뒤에만 backend policy comma
   });
 });
 
+test('delivery blocker는 backend exact 충돌 경로를 추론 없이 구분해 표시한다', async () => {
+  const blockers = ['발주요청서-2026-001.hwpx', '발주요청서-2026-002.hwpx'].map(
+    (conflicting_relative_path, item_ordinal) => ({
+      code: 'OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED',
+      message: '같은 이름의 파일이 있습니다:',
+      item_ordinal,
+      field_id: null,
+      conflicting_relative_path,
+    }),
+  );
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
+      run_delivery_intent: {
+        output_directory: 'C:\\문서', collision_policy: 'FAIL',
+      },
+      delivery: { resolvable: false, planned_documents: [], blockers },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  for (const blocker of blockers) assert.ok(markup.includes(blocker.conflicting_relative_path));
+  assert.equal(String(JobWorkbenchStatus).includes('blocker.item_ordinal'), false);
+});
+
 test('데이터 확인은 backend 문안과 recovery target만 소비한다', async () => {
   const target = {
     snapshot_generation: 3,
