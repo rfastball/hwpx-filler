@@ -60,11 +60,18 @@ export function createJobContentSelectionController(deps: {
   service: SlotConfigService;
 }): JobContentSelectionController {
   const model = deps.runtime.model<JobScreenModel>("job");
+  // pending 중 도착해 건너뛴 스냅샷이 있었는지 — settle 뒤 최신 model 로 재hydrate 하기 위한 표식.
+  let skippedWhilePending = false;
 
   function hydrateFromModel(): void {
     // 진행 중 command(pending)은 authoritative round-trip 이 소유 — passive snapshot 이 덮지 않는다.
-    // 그 밖(idle·stale·error)은 job 전체 스냅샷의 read-only view 가 최신 durable 사실이라 재hydrate.
-    if (deps.service.state().phase === "pending") return;
+    // 다만 그 사이 도착한 스냅샷(Work 전환·Template 갱신)을 통째로 버리면, 옛 command 응답이
+    // 커밋된 뒤 새 Work 의 slot view·token 이 영영 반영되지 않아 다음 선택이 옛 token 으로 새
+    // Work 를 건드린다(#725 리뷰 P2). 그래서 건너뛴 사실을 남겨 settle 뒤 재hydrate 한다.
+    if (deps.service.state().phase === "pending") {
+      skippedWhilePending = true;
+      return;
+    }
     const snap = model.getSnapshot();
     deps.service.hydrate(readSlotZone(snap ? snap.full : null));
   }
@@ -72,6 +79,14 @@ export function createJobContentSelectionController(deps: {
   // job 스냅샷 변화(최초 로드·Template 변경·command 뒤 재푸시)마다 read-only view 를 재hydrate 한다.
   // 모듈 싱글턴 수명이라 해제하지 않는다(다른 job 화면 controller 와 동일 규율).
   model.subscribe(hydrateFromModel);
+  // 서비스 상태 전이 감시 — command 가 settle(pending 해제)됐는데 그 사이 스냅샷을 건너뛰었으면
+  // 최신 model 로 재hydrate 한다. hydrate 는 idle 을 커밋하므로 재진입해도 이 가지를 다시 타지 않는다.
+  deps.service.subscribe(() => {
+    if (skippedWhilePending && deps.service.state().phase !== "pending") {
+      skippedWhilePending = false;
+      hydrateFromModel();
+    }
+  });
   hydrateFromModel(); // 이미 도착한 스냅샷을 즉시 seed — mount 에서 open() 을 부르지 않기 위함.
 
   return {
@@ -84,19 +99,31 @@ export function createJobContentSelectionController(deps: {
 }
 
 /* ── 표현 파생(재판정 0 — backend status/kind 를 사용자 어휘로 사상만 한다) ───────────────────── */
-const _BROKEN_KIND_LABEL = "다시 선택해야 합니다";
-const _MISSING_KIND_LABEL = "선택이 필요합니다";
+type SlotAttention = { label: string; selectable: boolean };
 
-/** slot_id → 이 Slot 이 행동 대상인 사유 문안(backend blocking_items.kind 소비). */
-function blockingBySlot(view: SlotCurrentView | null): Map<string, string> {
-  const out = new Map<string, string>();
+/** backend blocking kind → 정직한 사유 문안 + 사용자가 재선택으로 고칠 수 있는지(#725 리뷰 P2).
+ *  NO_AVAILABLE_OPTIONS(고를 게 없음)·UNSUPPORTED_SELECTION_POLICY(현재 방식에서 선택 불가)는
+ *  재선택이 불가능하다 — "다시 선택"으로 오안내하지 않고 선택 자체를 비활성화한다(무동작 no-op 방지). */
+function attentionForKind(kind: string): SlotAttention {
+  switch (kind) {
+    case "MISSING_REQUIRED_SELECTION":
+      return { label: "선택이 필요합니다", selectable: true };
+    case "NO_AVAILABLE_OPTIONS":
+      return { label: "선택할 수 있는 항목이 없습니다", selectable: false };
+    case "UNSUPPORTED_SELECTION_POLICY":
+      return { label: "이 항목은 현재 방식에서 선택할 수 없습니다", selectable: false };
+    default: // SELECTED_OPTION_REMOVED · CARDINALITY_VIOLATION 등 재선택으로 고칠 수 있는 것.
+      return { label: "다시 선택해야 합니다", selectable: true };
+  }
+}
+
+/** slot_id → 이 Slot 의 행동 사유·선택 가능 여부(backend blocking_items.kind 소비). */
+function blockingBySlot(view: SlotCurrentView | null): Map<string, SlotAttention> {
+  const out = new Map<string, SlotAttention>();
   const items = view?.projection?.blocking_items ?? [];
   for (const item of items) {
     if (out.has(item.slot_id)) continue; // Slot 당 첫 사유만.
-    out.set(
-      item.slot_id,
-      item.kind === "MISSING_REQUIRED_SELECTION" ? _MISSING_KIND_LABEL : _BROKEN_KIND_LABEL,
-    );
+    out.set(item.slot_id, attentionForKind(item.kind));
   }
   return out;
 }
@@ -125,24 +152,29 @@ function statusLine(state: SlotConfigState): { kind: string; text: string } | nu
 /* ── slot 하나 → fieldset/legend + native radio(EXACTLY_ONE) ────────────────────────────────── */
 function SlotFieldset(props: {
   slot: ProjectedSlot;
-  attention: string | undefined;
+  slotIndex: number;
+  attention: SlotAttention | undefined;
   pending: boolean;
   onSelect: (slotId: string, optionId: string) => void;
 }): ReactNode {
-  const { slot, attention, pending } = props;
-  const groupName = `cs-slot-${slot.slot_id}`;
+  const { slot, slotIndex, attention, pending } = props;
+  // DOM id/name 은 render-local index 로만 만든다 — slot_id/option_id 는 임의 문자열이라 이어붙이면
+  // 충돌한다("a-b"+"c" == "a"+"b-c"). index 는 injective 라 htmlFor 가 엉뚱한 radio 를 가리키지 않는다.
+  const groupName = `cs-slot-${slotIndex}`;
+  // 재선택으로 고칠 수 없는 kind(고를 게 없음·현재 방식 미지원)는 선택을 비활성화한다(무동작 no-op 방지).
+  const disabled = pending || attention?.selectable === false;
   return h(
     "fieldset",
     { className: `cs-slot${attention !== undefined ? " cs-slot-attention" : ""}` },
     h("legend", { className: "cs-slot-legend" }, slot.display_text),
     attention !== undefined
-      ? h("p", { className: "cs-slot-note", role: "note" }, attention)
+      ? h("p", { className: "cs-slot-note", role: "note" }, attention.label)
       : null,
     h(
       "div",
       { className: "cs-options" },
-      ...slot.options.map((opt) => {
-        const inputId = `cs-opt-${slot.slot_id}-${opt.option_id}`;
+      ...slot.options.map((opt, optIndex) => {
+        const inputId = `cs-opt-${slotIndex}-${optIndex}`;
         return h(
           "label",
           { key: opt.option_id, className: "cs-option", htmlFor: inputId },
@@ -152,7 +184,7 @@ function SlotFieldset(props: {
             name: groupName,
             className: "cs-option-input",
             checked: opt.effective,
-            disabled: pending,
+            disabled,
             // 선택 자체를 로컬에서 켜지 않는다 — backend command 로만 반영(local optimistic 0).
             onChange: () => props.onSelect(slot.slot_id, opt.option_id),
           }),
@@ -214,10 +246,11 @@ export function JobContentSelection(props: {
       : h(
           "div",
           { className: "cs-slots" },
-          ...projection.slots.map((slot) =>
+          ...projection.slots.map((slot, slotIndex) =>
             h(SlotFieldset as any, {
               key: slot.slot_id,
               slot,
+              slotIndex,
               attention: attention.get(slot.slot_id),
               pending,
               onSelect: controller.selectOption,
@@ -226,6 +259,8 @@ export function JobContentSelection(props: {
         ),
     // detached = 사라졌지만 의도로 보존된 이전 선택 — 현재 포함 내용처럼 표시하지 않고, 사용자
     // label 이 없는 내부 key 를 노출하지 않으며, 정직한 일반 문안으로 informational 분리한다(#725 §3).
+    // clearable detached 는 제거 액션을 준다(#725 리뷰 P2): 두지 않으면 그 slot 이 다시 나타날 때
+    // backend 가 옛 선택을 자동 복원해 사용자 모르게 반영된다 — 조용히 틀리지 않으려면 제거 경로가 필요.
     detached.length > 0
       ? h(
           "aside",
@@ -235,6 +270,22 @@ export function JobContentSelection(props: {
             { className: "cs-detached-note" },
             "이전 템플릿에서 유지된 선택이 있으나 현재 문서에는 적용되지 않습니다.",
           ),
+          ...detached
+            .filter((d) => d.clearable)
+            .map((d) =>
+              h(
+                "button",
+                {
+                  key: d.slot_id,
+                  type: "button",
+                  className: "cs-detached-clear",
+                  disabled: pending,
+                  // slot_id 는 command 용 내부 key 로만 쓰고 화면 텍스트로는 노출하지 않는다.
+                  onClick: () => controller.clearSelection(d.slot_id),
+                },
+                "이 선택 제거",
+              ),
+            ),
         )
       : null,
   );

@@ -269,6 +269,94 @@ test("context error 는 숨기지 않고 alert 로 그린다", () => {
   assert.match(html, /role="alert"/);
 });
 
+/* ══ 리뷰 회수 fixes(#725 Codex) ═════════════════════════════════════════════════════════ */
+test("P2#6 collision-free radio id: slot_id 이어붙이기가 충돌해도 radio id 는 갈린다", () => {
+  // ("a-b","c") 와 ("a","b-c") 는 slot_id+option_id 를 이어붙이면 같은 문자열이 된다.
+  const collide = view("NEEDS_SELECTION",
+    [slot("a-b", "표지", "MISSING_REQUIRED_SELECTION", [opt("c", "옵션C")]),
+      slot("a", "부록", "MISSING_REQUIRED_SELECTION", [opt("b-c", "옵션BC")])],
+    { blocking: [
+      { slot_id: "a-b", kind: "MISSING_REQUIRED_SELECTION", option_id: null },
+      { slot_id: "a", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
+  const html = render(stateOf(collide));
+  const ids = [...html.matchAll(/id="(cs-opt-[^"]+)"/g)].map((m) => m[1]);
+  assert.equal(ids.length, 2);
+  assert.equal(new Set(ids).size, 2); // index 기반이라 전부 유일(충돌 0)
+});
+
+test("P2#2 NO_AVAILABLE_OPTIONS: '선택할 수 있는 항목이 없습니다'(다시 선택 오안내 금지)", () => {
+  const noav = view("HAS_BROKEN_SELECTIONS",
+    [slot("s1", "표지", "NO_AVAILABLE_OPTIONS", [])],
+    { blocking: [{ slot_id: "s1", kind: "NO_AVAILABLE_OPTIONS", option_id: null }] });
+  const html = render(stateOf(noav));
+  assert.match(html, /선택할 수 있는 항목이 없습니다/);
+  // per-slot note 가 "다시 선택해야 합니다"(재선택 오안내)가 아니다 — config 요약줄과는 다른 문자열.
+  assert.ok(!html.includes("다시 선택해야 합니다"));
+});
+
+test("P2#2 UNSUPPORTED_SELECTION_POLICY: 현재 방식 선택 불가 + radio disabled(무동작 no-op 방지)", () => {
+  const unsup = view("HAS_BROKEN_SELECTIONS",
+    [slot("s1", "표지", "UNSUPPORTED_SELECTION_POLICY", [opt("o1", "기본")])],
+    { blocking: [{ slot_id: "s1", kind: "UNSUPPORTED_SELECTION_POLICY", option_id: null }] });
+  const html = render(stateOf(unsup));
+  assert.match(html, /선택할 수 없습니다/);
+  assert.match(html, /disabled/);
+});
+
+test("P2#3 clearable detached 는 제거 액션을 준다(내부 key 비노출)", () => {
+  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
+    [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
+    { detached: [{ slot_id: "gone-slot", selected_option_ids: ["gone-opt"], clearable: true, status: "SLOT_REMOVED" }] });
+  const html = render(stateOf(withDetached));
+  assert.match(html, /이 선택 제거/);
+  assert.ok(!html.includes("gone-slot"));
+  assert.ok(!html.includes("gone-opt"));
+});
+
+test("P2#3 clearable=false detached 는 제거 액션이 없다", () => {
+  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
+    [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
+    { detached: [{ slot_id: "gone", selected_option_ids: ["o"], clearable: false, status: "SLOT_REMOVED" }] });
+  const html = render(stateOf(withDetached));
+  assert.ok(!html.includes("이 선택 제거"));
+});
+
+test("P2#5 pending 중 도착한 스냅샷을 settle 뒤 최신 model 로 재hydrate", async () => {
+  let resolveDispatch = null;
+  const client = {
+    calls: [],
+    dispatch(screen, action, payload) {
+      this.calls.push({ screen, action, payload });
+      return new Promise((r) => { resolveDispatch = r; });
+    },
+  };
+  const svc = createSlotConfigService({ client });
+  const rt = fakeRuntime({ slot_configuration: zone(NEEDS) });
+  const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
+  const p = ctrl.selectOption("s1", "o1"); // 느린 command → pending 창
+  assert.equal(svc.state().phase, "pending");
+  rt.push({ slot_configuration: zone(SELECTED) }); // pending 중 Work 전환/Template 갱신 스냅샷
+  assert.notEqual(ctrl.getSnapshot().view, SELECTED); // pending 소유 — 아직 반영 안 함
+  resolveDispatch(okv(response(NEEDS))); // 옛 command 응답이 뒤늦게 settle
+  await p;
+  assert.equal(ctrl.getSnapshot().view, SELECTED); // 건너뛴 최신 스냅샷으로 복구(유령 반영 0)
+});
+
+test("P2#4 display_text==id 인 production 형상에서도 지정 표시 필드를 소비한다(라벨 소스=backend, 후속 분리)", () => {
+  // v1 backend 는 canonical label 이 없어 display_text=slot_id/option_id 다(Slot/Option 저작=비소유).
+  // 프런트는 id 를 직접 조립하지 않고 지정 필드(display_text)를 그린다 — 라벨 개선은 backend projection 몫.
+  const prod = view("NEEDS_SELECTION",
+    [{
+      slot_id: "표지유형", display_text: "표지유형", selection_policy: "EXACTLY_ONE",
+      status: "MISSING_REQUIRED_SELECTION", declared_option_ids: [], effective_option_ids: [],
+      options: [{ option_id: "기본", display_text: "기본", selected: false, effective: false, structurally_associated_field_ids: [] }],
+      shared_field_ids: [],
+    }],
+    { blocking: [{ slot_id: "표지유형", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
+  const html = render(stateOf(prod));
+  assert.match(html, /표지유형/); // display_text 필드를 그대로 소비(현재는 id 와 동일값)
+});
+
 /* ══ C. architecture negative ═════════════════════════════════════════════════════════════ */
 test("Active Field 를 계산·표시하지 않는다(structurally_associated_field_ids 미노출 — SX-03 소유)", () => {
   const withFields = view("NEEDS_SELECTION",

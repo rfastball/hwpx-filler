@@ -212,6 +212,27 @@ def test_command_without_selected_job_rejects_loudly(tmp_path: Path) -> None:
         ctrl.dispatch("open_slot_configuration", {})
 
 
+def test_slot_mutation_rejected_while_generating(tmp_path: Path) -> None:
+    # #725 리뷰 P1: 생성 중 durable 구성 변경(select/clear)은 다른 실행-입력 변경과 같이 시끄럽게
+    # 거절한다 — 실행 중 배치가 고정한 immutable 입력과 화면 구성이 어긋나지 않게. 조용한 통과 0.
+    ctrl, _ = _controller(tmp_path)
+    token = ctrl.dispatch("open_slot_configuration", {})["current_view"]["new_configuration_token"]
+    acquired = ctrl._generation_lock.acquire(blocking=False)
+    assert acquired  # 테스트가 생성 중 상태를 만든다
+    try:
+        with pytest.raises(ValueError, match="문서 생성이 진행 중"):
+            ctrl.dispatch("select_slot_option", {
+                "configuration_token": token, "slot_id": "no-such", "option_id": "opt",
+                "request_id": "r1",
+            })
+        with pytest.raises(ValueError, match="문서 생성이 진행 중"):
+            ctrl.dispatch("clear_slot_selection", {
+                "configuration_token": token, "slot_id": "no-such", "request_id": "r2",
+            })
+    finally:
+        ctrl._generation_lock.release()
+
+
 # ── stale / cross-Work (Product 규율 소비) ────────────────────────────────────────────────
 def test_stale_token_after_template_change_returns_fresh_view_not_ghost(tmp_path: Path) -> None:
     """D 시나리오: 예전 Application 의 token 으로 mutation → Product 가 fresh current view 를 되돌리고

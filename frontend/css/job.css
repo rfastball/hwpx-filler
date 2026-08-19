@@ -334,3 +334,7 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .cs-detached{margin:0;padding:var(--sp-8) var(--sp-10);border:1px dashed var(--a-border);
   border-radius:var(--rad-surface)}
 .cs-detached-note{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.cs-detached-clear{margin-top:var(--sp-6);font-size:var(--fs-caption);color:var(--a-muted);
+  background:none;border:1px solid var(--a-border);border-radius:var(--rad-pill);
+  padding:2px var(--sp-8);cursor:pointer}
+.cs-detached-clear:disabled{cursor:default;opacity:.6}

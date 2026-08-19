@@ -2862,8 +2862,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         `_maybe_auto_check` 가 자동 확인(`on_durable_command_settled` → 필요 시 seal → `on_seal_settled`)에
         진입한다. 수동 seal 버튼 0. seal 은 durable side effect 없는 순수 재계산이라 매 durable 변경마다
         재확인한다(opaque Plan ref 로 same-basis 를 미리 엿보던 경로는 R2 가 제거했다).
+
+        생성 중에는 거절한다(#725 리뷰 P1) — 다른 실행-입력 변경과 같은 규율이다. 실행 중인
+        생성은 capture 된 immutable 입력을 쓰므로, 그 사이 durable 구성을 바꾸면 화면 구성과
+        생성 중 파일의 입력이 어긋난다(automatic checking 재진입도 겹친다). 조용히 통과시키지
+        않고 시끄럽게 거절한다.
         """
         self._require_slot_configuration()
+        self.raise_if_generating("포함할 내용을 바꾸세요")
         response = self._slot_configuration.select_slot_option(
             self.job_name,
             str(p["configuration_token"]),
@@ -2878,8 +2884,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """Slot 선택 해제 = durable S4 command. command outcome + fresh view(선택과 동일 규율).
 
         automatic checking 진입은 `_do_select_slot_option` 과 같은 규율이다(`_maybe_auto_check`).
+        생성 중 거절도 같은 규율이다(#725 리뷰 P1).
         """
         self._require_slot_configuration()
+        self.raise_if_generating("선택을 해제하세요")
         response = self._slot_configuration.clear_slot_selection(
             self.job_name,
             str(p["configuration_token"]),
