@@ -116,13 +116,14 @@ _CONTEXT_ERROR_TYPES = (
 )
 
 
-
 @dataclass(frozen=True)
 class CurrentFieldBindingReview:
     """Exact current Active Field set plus the canonical Binding review."""
 
     active_field_ids: tuple[str, ...]
     review: FieldBindingApplicationReview
+    has_prior_revision: bool
+
 
 class _WorkStateReadAdapter:
     """AtomicWorkTemplateStateStore → WorkTemplateStateReadPort(부재를 None 으로 번역).
@@ -186,53 +187,76 @@ class SealExecutionCaptureRunner:
             template_application_id=current_id,
         )
 
+    def current_application_field_structure(
+        self,
+        workspace_instance_id: str,
+        work_authority_id: str,
+        source_schema_keys: tuple[str, ...],
+    ) -> CurrentApplicationFieldStructure | None:
+        """Capture current Application+S4 Active Fields; caller holds PerWorkFence."""
+        aggregate = self._work_state.load(work_authority_id)
+        application_id = aggregate.work.current_template_application_id
+        now = self._clock()
+        template, context = self._capture_template(
+            workspace_instance_id,
+            work_authority_id,
+            application_id,
+            now,
+        )
+        selection_observation = self._capture_selection(context, now)
+        if not isinstance(selection_observation, CapturedSelection):
+            return None
+
+        selection = selection_observation.selection
+        selected: frozenset[tuple[str, str]] = frozenset()
+        if isinstance(selection, SlotConfigurationSnapshot):
+            selected = frozenset(
+                (item.slot_id, option_id)
+                for item in selection.effective_selections.selections
+                for option_id in item.selected_option_ids
+            )
+        structure = template.qualification.execution_structure
+        active, _counts = project_active_fields(structure, selected)
+        active_ids = active.active_logical_field_order
+        active_set = set(active_ids)
+        all_fields = tuple(
+            dict.fromkeys(
+                occurrence.field_id for occurrence in structure.field_occurrences
+            )
+        )
+        return CurrentApplicationFieldStructure(
+            application_id=application_id,
+            active_field_ids=active_ids,
+            inactive_field_ids=tuple(
+                field_id for field_id in all_fields if field_id not in active_set
+            ),
+            source_schema_keys=source_schema_keys,
+        )
 
     def read_current_field_binding_review(
-        self, workspace_instance_id: str, work_authority_id: str
+        self,
+        workspace_instance_id: str,
+        work_authority_id: str,
+        source_schema_keys: tuple[str, ...] | None = None,
     ) -> CurrentFieldBindingReview | None:
         """Project current Active Fields with the existing Binding review semantics."""
         with per_work_mutation_fence(workspace_instance_id, work_authority_id):
             aggregate = self._work_state.load(work_authority_id)
             application_id = aggregate.work.current_template_application_id
-            now = self._clock()
-            template, context = self._capture_template(
+            old_revision = self._nearest_binding_revision(aggregate, application_id)
+            schema_keys = source_schema_keys
+            if schema_keys is None:
+                schema_keys = (
+                    old_revision.source_schema_keys if old_revision is not None else ()
+                )
+            current_structure = self.current_application_field_structure(
                 workspace_instance_id,
                 work_authority_id,
-                application_id,
-                now,
+                schema_keys,
             )
-            selection_observation = self._capture_selection(context, now)
-            if not isinstance(selection_observation, CapturedSelection):
+            if current_structure is None:
                 return None
-
-            selection = selection_observation.selection
-            selected: frozenset[tuple[str, str]] = frozenset()
-            if isinstance(selection, SlotConfigurationSnapshot):
-                selected = frozenset(
-                    (item.slot_id, option_id)
-                    for item in selection.effective_selections.selections
-                    for option_id in item.selected_option_ids
-                )
-            structure = template.qualification.execution_structure
-            active, _counts = project_active_fields(structure, selected)
-            active_ids = active.active_logical_field_order
-            active_set = set(active_ids)
-            all_fields = tuple(
-                dict.fromkeys(
-                    occurrence.field_id for occurrence in structure.field_occurrences
-                )
-            )
-            old_revision = self._nearest_binding_revision(aggregate, application_id)
-            current_structure = CurrentApplicationFieldStructure(
-                application_id=application_id,
-                active_field_ids=active_ids,
-                inactive_field_ids=tuple(
-                    field_id for field_id in all_fields if field_id not in active_set
-                ),
-                source_schema_keys=(
-                    old_revision.source_schema_keys if old_revision is not None else ()
-                ),
-            )
+            active_ids = current_structure.active_field_ids
             if old_revision is not None:
                 review = review_field_binding_for_current_application(
                     old_revision, current_structure
@@ -247,7 +271,7 @@ class SealExecutionCaptureRunner:
                         for field_id in active_ids
                     ),
                 )
-            return CurrentFieldBindingReview(active_ids, review)
+            return CurrentFieldBindingReview(active_ids, review, old_revision is not None)
 
     def _nearest_binding_revision(
         self, aggregate: WorkTemplateStateAggregate, application_id: str

@@ -25,6 +25,9 @@ from hwpxfiller.application.fresh_execution_observation import (
     CurrentWorkExecutionObservation,
 )
 from hwpxfiller.application.jobs import Job
+from hwpxfiller.application.field_binding_input import StaleFieldBindingBasis
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+from hwpxfiller.external.field_binding_store import WorkFieldBindingStore, load_current_revision
 from hwpxfiller.application.seal_execution_plan import RouteResolutionError
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.work_configuration_store import WorkspaceMetadataStore
@@ -36,6 +39,7 @@ from hwpxfiller.webapp.seal_execution_plan_product import (
 from hwpxfiller.webapp.seal_execution_plan_service import SealExecutionPlanService
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 
+import hwpxfiller.webapp.seal_execution_plan_service as service_module
 from tests.test_execution_compilation import WORK
 from tests.test_seal_execution_capture_runner import WS, _seed_v2_work
 
@@ -44,7 +48,7 @@ WORK_REF = "봉인작업"
 
 def _registry(tmp_path) -> JobRegistry:
     reg = JobRegistry(tmp_path / "jobs")
-    reg.save(Job(name=WORK_REF, template_path=""))
+    reg.save(Job(name=WORK_REF, template_path="managed.hwpx"))
     # route 가 resolve 할 WorkAuthorityId 를 seed 한 work aggregate 의 work_id 에 못박는다.
     reg.assign_authority_id(WORK_REF, WORK)
     return reg
@@ -55,7 +59,19 @@ def _service(tmp_path, *, with_binding: bool) -> SealExecutionPlanService:
     # materializer conformance 만 보고 mutable Profile admission store 를 읽지 않는다.
     root = default_template_authority_dir()
     _seed_v2_work(root, with_binding=with_binding)
-    return SealExecutionPlanService(_registry(tmp_path), root=root, clock=datetime.now)
+    registry = _registry(tmp_path)
+    if with_binding:
+        job = registry.load(WORK_REF)
+        job.mapping = MappingProfile(
+            mappings=[
+                FieldMapping("\uc131\uba85", source="\uc774\ub984"),
+                FieldMapping("\uc8fc\uc18c", type="const", const="\uc11c\uc6b8"),
+                FieldMapping("\ud56d\ubaa9", type="blank"),
+                FieldMapping("\uae08\uc561", source="\uae08\uc561\uc5f4"),
+            ]
+        )
+        registry.save(job, allow_overwrite=True)
+    return SealExecutionPlanService(registry, root=root, clock=datetime.now)
 
 
 # ─── binding 미seed → ExecutionQualificationBlocked + current-work observation ──────────────
@@ -188,3 +204,77 @@ def test_passive_binding_review_does_not_create_workspace_metadata(tmp_path) -> 
 
     assert service.current_binding_review(WORK_REF) is None
     assert workspace.read() is None
+
+
+def _complete_mapping(value: str = "v") -> MappingProfile:
+    return MappingProfile(
+        mappings=[
+            FieldMapping(field_id, type="const", const=f"{value}-{field_id}")
+            for field_id in (
+                "\uc131\uba85",
+                "\uc8fc\uc18c",
+                "\ud56d\ubaa9",
+                "\uae08\uc561",
+            )
+        ]
+    )
+
+
+def test_saved_mapping_commits_revision_and_recomputes_sealed_value(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+
+    committed = service.commit_current_mapping(WORK_REF, "binding-1")
+
+    assert committed is not None and committed.changed is True
+    revision = load_current_revision(
+        WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1"
+    )
+    assert revision is not None
+    assert tuple(rule.field_id for rule in revision.binding_rules) == (
+        "\uc131\uba85",
+        "\uc8fc\uc18c",
+        "\ud56d\ubaa9",
+    )
+    resp = service.seal_execution_plan(WORK_REF, "seal-after-binding")
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)
+    assert isinstance(resp.fresh_observation, CurrentSealedPlanObservation)
+
+    unchanged = service.commit_current_mapping(WORK_REF, "binding-2")
+    assert unchanged is not None and unchanged.changed is False
+    assert unchanged.revision_id == committed.revision_id
+
+
+def test_mapping_basis_change_during_commit_writes_no_revision(
+    tmp_path, monkeypatch
+) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    real_commit = service_module.commit_field_binding_migration
+
+    def race_mapping(*args, **kwargs):
+        raced = registry.load(WORK_REF)
+        raced.mapping = _complete_mapping("raced")
+        registry.save(raced, allow_overwrite=True)
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(
+        service_module,
+        "commit_field_binding_migration",
+        race_mapping,
+    )
+
+    with pytest.raises(StaleFieldBindingBasis):
+        service.commit_current_mapping(WORK_REF, "binding-stale")
+
+    assert not WorkFieldBindingStore(root / "field_bindings").exists(WORK)

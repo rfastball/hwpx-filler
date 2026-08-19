@@ -34,7 +34,9 @@ def _clock() -> datetime:
     return _NOW
 
 
-def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
+def _controller(
+    tmp_path: Path, *, after_mapping_saved=None
+) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
     # 빈 라이브러리 VM·격리 TXT 레지스트리 주입 — 기본(표준 라이브러리 지연 생성)이 실
@@ -48,6 +50,7 @@ def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
             file_ops=HWPX_TEMPLATE_OPS,
         ),
         text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        after_mapping_saved=after_mapping_saved,
     )
     return ctrl, pushes
 
@@ -682,6 +685,7 @@ def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
     job = reg.load("메타작업")
     job.tags = {"물품": "의약품"}
     job.last_run_at = "2026-07-01T09:00:00"
+    job.authority_id = "work-authority-1"
     reg.save(job, allow_overwrite=True)
 
     ctrl.load_job("메타작업")
@@ -690,6 +694,7 @@ def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
     saved = reg.load("메타작업")
     assert saved.tags == {"물품": "의약품"}              # 태그 조용한 소실 없음
     assert saved.last_run_at == "2026-07-01T09:00:00"
+    assert saved.authority_id == "work-authority-1"
 
 
 def test_edit_save_holds_the_registry_write_lock(tmp_path):
@@ -2430,3 +2435,31 @@ def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_pat
     import pytest
     with pytest.raises(ValueError, match="deep-link target"):
         ctrl.load_job("겨눔작업", target="template/x")       # fail-closed 관통(make_context)
+
+
+def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_path) -> None:
+    calls: list[str] = []
+
+    def fail_after_save(work_ref: str) -> None:
+        calls.append(work_ref)
+        raise RuntimeError("binding commit failed")
+
+    ctrl, _ = _controller(tmp_path, after_mapping_saved=fail_after_save)
+
+    assert _save_named(ctrl, "\ubd80\ubd84\uc131\uacf5")["ok"] is True
+    ctrl.load_job(
+        "\ubd80\ubd84\uc131\uacf5",
+        entry_reason="preview_result",
+        return_context={"surface": "data"},
+        target="binding/\uacf5\uace0\uba85",
+    )
+    result = ctrl.dispatch("save", {})
+
+    assert result["ok"] is False
+    assert result["legacy_saved"] is True
+    assert result["binding_commit_ok"] is False
+    assert calls == ["\ubd80\ubd84\uc131\uacf5"]
+    saved = JobRegistry(tmp_path / "jobs").load("\ubd80\ubd84\uc131\uacf5")
+    assert saved.mapping.mappings
+    assert ctrl.snapshot()["notice"]["level"] == "danger"
+    assert "Field Binding" in result["block_reason"]

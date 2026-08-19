@@ -278,6 +278,7 @@ class WebFrontend:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규
         # 1단계 피커가 관리 화면과 다른 목록을 조용히 보인다(라이브러리=단일 실체).
         tpl_ctrl = next(c for c in controllers if c.name == "tpl")
+        job_ctrl = next(c for c in controllers if c.name == "job")
         controllers.insert(
             2,
             EditorController(
@@ -297,6 +298,7 @@ class WebFrontend:
                 library_result=lambda: {
                     "text": tpl_ctrl.result_text, "level": tpl_ctrl.result_level,
                 },
+                after_mapping_saved=job_ctrl.on_editor_mapping_saved,
             ),
         )
         self.controllers = {c.name: c for c in controllers}

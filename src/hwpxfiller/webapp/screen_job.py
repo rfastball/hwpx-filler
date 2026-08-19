@@ -2954,7 +2954,30 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_sealed_basis_digest = None
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
-    def _maybe_auto_check(self, slot_response) -> None:
+    def on_editor_mapping_saved(self, work_ref: str) -> dict:
+        """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
+        if self._seal_execution is None:
+            raise ValueError("Field Binding is not configured.")
+        if not self._generation_lock.acquire(blocking=False):
+            raise ValueError(
+                "\ubb38\uc11c \uc0dd\uc131\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4. \ub05d\ub09c \ub4a4\uc5d0 Mapping\uc744 \uc800\uc7a5\ud558\uc138\uc694."
+            )
+        try:
+            result = self._seal_execution.commit_current_mapping(
+                work_ref, uuid.uuid4().hex
+            )
+            if result is not None and self.job_name == work_ref:
+                self._maybe_auto_check(effective_basis_changed=result.changed)
+            return {
+                "binding_commit_ok": result is not None,
+                "binding_revision_id": result.revision_id if result is not None else None,
+            }
+        finally:
+            self._generation_lock.release()
+
+    def _maybe_auto_check(
+        self, slot_response=None, *, effective_basis_changed: "bool | None" = None
+    ) -> None:
         """durable slot mutation 뒤 자동 확인 진입 — mutation 이 CHANGED 일 때만(#724 §4).
 
         R2(#740): seal 은 durable side effect 없는 순수 재계산이고 opaque Plan ref 로 same-basis 를
@@ -2964,8 +2987,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self._seal_execution is None or not self.job_name:
             return
-        outcome = slot_response.mutation_outcome
-        if outcome is None or not outcome.changed:
+        if effective_basis_changed is None:
+            outcome = slot_response.mutation_outcome
+            effective_basis_changed = outcome is not None and outcome.changed
+        if not effective_basis_changed:
             return  # 무변이(open/ensure)·미변경 mutation → 반응할 basis 변경 없음.
         transition = on_durable_command_settled(
             self._session_orchestration,
