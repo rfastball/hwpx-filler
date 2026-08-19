@@ -1331,6 +1331,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         jobs = list_jobs(self.registry)
         base = {
             "job_name": self.job_name,
+            # managed HWPX comes from durable Work identity, never a suffix heuristic.
+            "managed_hwpx": False,
             # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
             # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
             "last_run_job": self._last_run_job,
@@ -1512,6 +1514,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             })
             return base
         job = self.vm.job
+        base["managed_hwpx"] = bool(job.authority_id)
         indices = self._indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
         # 승인 지문 성분(scope key 해시)·요구 판정(blank_set)이 전부 이 한 집합을 소비한다.
@@ -2382,6 +2385,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
+        job = self.vm.job
+        if job.authority_id:
+            # S6-absent managed Work cannot fall through to the legacy generator.
+            zone = self._workbench_observation_zone(template_missing(job.template_path))
+            create_action = zone.get("create_action", {})
+            return {
+                "ok": False,
+                "error": create_action.get("disabled_reason")
+                or "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+                "level": "warn",
+            }
+
         if self.range_draft is not None:
             # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
             # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
@@ -2776,6 +2791,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         verdict(admission/readiness) + 7상태(code+phrase)를 성형한다. R2(#740): currentness 축은
         7상태(CURRENT/STALE)로 흡수돼 별도 키가 없다.
         """
+        code, phrase = self._workbench_observation.execution_status(
+            orchestration=self._session_orchestration,
+            fresh_observation=self._last_fresh_observation,
+        )
         if isinstance(observation, DocumentCreationWorkbenchContextError):
             return {
                 "kind": "context_error",
@@ -2783,16 +2802,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "detail": observation.detail,
                 "user_fixable": observation.user_fixable,
                 "primary_action": observation.primary_action,
+                "execution_status_code": code,
+                "execution_status_phrase": phrase,
+                "create_action": {
+                    "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+                    "enabled": False,
+                    "disabled_reason": phrase,
+                },
             }
-        code, phrase = self._workbench_observation.execution_status(
-            orchestration=self._session_orchestration,
-            fresh_observation=self._last_fresh_observation,
-        )
         return {
             "kind": "observation",
             "primary_action": observation.primary_action,
             "primary_action_enabled": observation.primary_action_enabled,
             "disabled_reason": observation.disabled_reason,
+            "create_action": {
+                "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+                "enabled": observation.create_documents_enabled,
+                "disabled_reason": observation.create_documents_disabled_reason,
+            },
             "blockers": list(observation.blockers),
             "deep_link_targets": [
                 {"blocker_code": t.blocker_code, "route": t.route}

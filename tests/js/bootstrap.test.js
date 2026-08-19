@@ -35,6 +35,7 @@ const FACTORY_SERVICES = {
     "model", "client", "notify", "subscribe", "getRun", "getUi", "getTemplateChange",
     "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
     "confirmDestructiveIfArmed", "log", "renderResult", "markResultStale",
+    "openBindingRequirement",
     "startGenerate", "cancelGeneration", "closeResult", "selectFailed",
     "openRenameRules", "pickOutputFolder", "relinkActive",
     "templateCheck", "templateApply", "openPreviewFrom",

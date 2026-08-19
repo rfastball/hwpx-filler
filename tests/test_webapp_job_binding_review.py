@@ -118,6 +118,11 @@ def test_resolve_execution_reaches_current_not_admitted_not_ready(tmp_path: Path
     assert ctrl._last_sealed_basis_digest is not None
     # CREATE 로 조용히 새지 않는다(honest disabled) — delivery anchor + runtime.
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
+    assert zone["create_action"] == {
+        "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+        "enabled": False,
+        "disabled_reason": "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+    }
 
 
 def test_create_documents_never_reached_with_current(tmp_path: Path) -> None:
@@ -128,6 +133,27 @@ def test_create_documents_never_reached_with_current(tmp_path: Path) -> None:
     assert obs.primary_action != "CREATE_DOCUMENTS"
     assert obs.materialization_readiness == "NOT_READY"
 
+
+def test_snapshot_marks_durable_work_as_managed_hwpx(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    assert ctrl.snapshot()["managed_hwpx"] is True
+
+
+def test_managed_hwpx_generate_never_reaches_legacy_generator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("managed HWPX reached legacy generator")
+
+    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
+    result = ctrl._generate_with_token()
+    assert result["ok"] is False
+    assert result["error"] == "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
 
 # ── binding 없음 → 정직한 blocked(NO_EVIDENCE 를 CURRENT/READY 로 위장하지 않는다) ─────────────
 def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -> None:
@@ -356,6 +382,11 @@ def test_refresh_observation_failure_surfaces_context_error(tmp_path: Path) -> N
     ctrl.dispatch("refresh_observation", {})
     assert isinstance(ctrl._last_fresh_observation, ExecutionObservationContextError)
     assert _zone(ctrl)["kind"] == "context_error"
+    zone = _zone(ctrl)
+    assert zone["execution_status_code"] == "CONTEXT_ERROR"
+    assert zone["execution_status_phrase"] == "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc\ub97c \ud655\uc778\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
+    assert zone["user_fixable"] is False
+    assert zone["create_action"]["enabled"] is False
 
 
 def test_refresh_failure_after_current_does_not_keep_claiming_current(tmp_path: Path) -> None:

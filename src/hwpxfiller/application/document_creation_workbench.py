@@ -169,6 +169,7 @@ _CHECKING_PHRASE = "설정을 확인하고 있습니다"
 _FAILED_PHRASE = "설정 확인에 실패했습니다. 다시 시도해 주세요"
 _RUNTIME_DISABLED_PHRASE = "현재 환경에서는 문서를 만들 수 없습니다"
 _POLICY_DISABLED_PHRASE = "정책상 지금은 문서를 만들 수 없습니다"
+_CREATE_PREPARATION_DISABLED_PHRASE = "필요한 준비를 먼저 완료해 주세요"
 
 
 # ══════════════════════════════════════ 입력 DTO(이 모듈 소유) ══════════════════════════════════
@@ -427,6 +428,22 @@ class DocumentCreationWorkbenchObservation:
         return self.disabled_reason is None
 
     @property
+    def create_documents_enabled(self) -> bool:
+        """Derived Create capability; not a durable readiness authority."""
+        return self.primary_action == CREATE_DOCUMENTS and self.primary_action_enabled
+
+    @property
+    def create_documents_disabled_reason(self) -> str | None:
+        """Explain the Create CTA independently of Primary Action precedence."""
+        if self.create_documents_enabled:
+            return None
+        if self.admission.state == NOT_ADMITTED:
+            if _has_runtime_reason(self.admission):
+                return _RUNTIME_DISABLED_PHRASE
+            return _POLICY_DISABLED_PHRASE
+        return _CREATE_PREPARATION_DISABLED_PHRASE
+
+    @property
     def user_facing_texts(self) -> tuple[str, ...]:
         """사용자 대면 문안 필드만 모은다 — 내부어 노출 0 계약(#724 §테스트 12)의 스캔 대상.
 
@@ -442,6 +459,8 @@ class DocumentCreationWorkbenchObservation:
         ]
         if self.disabled_reason is not None:
             texts.append(self.disabled_reason)
+        if self.create_documents_disabled_reason is not None:
+            texts.append(self.create_documents_disabled_reason)
         if self.semantic_preview is not None:
             texts.append(self.semantic_preview.label)
         return tuple(t for t in texts if t != "")
