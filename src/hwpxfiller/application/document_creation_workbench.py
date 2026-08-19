@@ -231,6 +231,46 @@ class ActiveWorkContext:
 
 
 @dataclass(frozen=True)
+class RecordRecoveryTarget:
+    snapshot_generation: int
+    record_identity: str
+    model_index: int
+    field_id: str
+    target_kind: str = 'cell'
+
+    def __post_init__(self) -> None:
+        if self.target_kind not in ('cell', 'row'):
+            raise ValueError('record recovery target kind must be cell or row')
+        if self.snapshot_generation < 0 or self.model_index < 0:
+            raise ValueError("record recovery target position must be non-negative")
+        if not self.record_identity or not self.field_id:
+            raise ValueError("record recovery target identity and field are required")
+
+
+@dataclass(frozen=True)
+class RecordValidationIssue:
+    record_identity: str
+    record_display_locator: str
+    field_id: str
+    field_display_label: str
+    message: str
+    recovery_target: RecordRecoveryTarget
+
+    def __post_init__(self) -> None:
+        values = (
+            self.record_identity,
+            self.record_display_locator,
+            self.field_id,
+            self.field_display_label,
+            self.message,
+        )
+        if any(not value for value in values):
+            raise ValueError("record validation issue fields must be non-empty")
+        if self.recovery_target.record_identity != self.record_identity:
+            raise ValueError("record issue and recovery target identities must match")
+
+
+@dataclass(frozen=True)
 class RecordValidationSummary:
     """record validation 요약 — record_validation 권위(RecordValidationBlocked)의 verdict 를 담는다.
 
@@ -240,8 +280,17 @@ class RecordValidationSummary:
 
     has_blocking_issues: bool = False
     issue_count: int = 0
+    validated_count: int = 0
+    blocked_count: int = 0
+    issues: tuple[RecordValidationIssue, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.validated_count < 0 or self.blocked_count < 0:
+            raise ValueError("record validation counts cannot be negative")
+        if self.issues and len(self.issues) != self.issue_count:
+            raise ValueError("record validation issue count mismatch")
+        if self.issues and (not self.has_blocking_issues or self.blocked_count == 0):
+            raise ValueError("record validation issues require blocked records")
         if self.issue_count < 0:
             raise ValueError("issue_count 는 음수가 될 수 없다")
         if self.has_blocking_issues and self.issue_count == 0:
@@ -463,6 +512,8 @@ class DocumentCreationWorkbenchObservation:
             texts.append(self.create_documents_disabled_reason)
         if self.semantic_preview is not None:
             texts.append(self.semantic_preview.label)
+        for issue in self.record_validation.issues:
+            texts.extend((issue.record_display_locator, issue.field_display_label, issue.message))
         return tuple(t for t in texts if t != "")
 
 
@@ -676,6 +727,8 @@ def compose_document_creation_workbench(
 
 
 __all__ = [
+    "RecordRecoveryTarget",
+    "RecordValidationIssue",
     "DataScopeSummary",
     "ContentSelectionSummary",
     "ActiveWorkContext",

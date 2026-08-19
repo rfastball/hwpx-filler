@@ -38,6 +38,8 @@ from hwpxfiller.application.execution_contract_set import (
     execution_basis_digest,
     plan_semantic_digest,
 )
+from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
+from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.application.record_validation import (
     PLAN_INTEGRITY_ERROR,
     RAW_RECORD_INTEGRITY_ERROR,
@@ -55,12 +57,15 @@ from hwpxfiller.application.record_validation import (
     UNSUPPORTED_RECORD_VALIDATION_CONTRACT,
     UNSUPPORTED_SOURCE_SCHEMA_CONTRACT,
     ImmutableVdrStore,
+    CurrentValidatedDataRecord,
     RecordValidationBlocked,
     RecordValidationContextError,
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
     VdrRetentionError,
     validate_data_record_against_plan,
+    validate_data_record_against_current_value,
+    validate_data_records_against_current_value,
     verify_validated_record_completeness,
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
@@ -194,6 +199,23 @@ def _snapshot(pairs=None, *, identity="rec-1"):
     )
 
 
+def _current_plan() -> SealedExecutionPlanValue:
+    legacy = _plan()
+    basis = legacy.execution_basis
+    return SealedExecutionPlanValue(
+        qualification_profile_id="profile-1",
+        template_application_id=basis.template.template_application_id,
+        contract_semantics=ExecutionContractSemantics.from_contract_set(basis.contracts),
+        exact_template_execution_basis=basis.template,
+        effective_selection_basis=basis.selection,
+        effective_field_binding_basis=basis.field_binding,
+        active_field_requirements=legacy.active_field_requirements,
+        ordered_operations=legacy.ordered_operations,
+        plan_schema_version=legacy.plan_schema_version,
+        canonical_encoding_version=legacy.canonical_encoding_version,
+    )
+
+
 def _validate(plan=None, snapshot=None, **over):
     return validate_data_record_against_plan(
         plan=plan or _plan(),
@@ -204,6 +226,96 @@ def _validate(plan=None, snapshot=None, **over):
 
 
 # ─── exact logical text ──────────────────────────────────────────────────────────────────
+def test_current_value_validator_has_no_legacy_plan_identity_or_review_authority() -> None:
+    result = validate_data_record_against_current_value(
+        plan=_current_plan(), snapshot=_snapshot(), validated_at="now"
+    )
+    assert isinstance(result, CurrentValidatedDataRecord)
+    assert not hasattr(result, "plan_semantic_digest")
+    assert not hasattr(result, "execution_basis_digest")
+    assert result.validation_provenance.record_review_evidence_refs == ()
+
+    import inspect
+
+    assert set(inspect.signature(validate_data_record_against_current_value).parameters) == {
+        "plan",
+        "snapshot",
+        "validated_at",
+    }
+
+
+@pytest.mark.parametrize(
+    ("pairs", "expected"),
+    [
+        (
+            [("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))],
+            RECORD_REQUIRED_VALUE_MISSING,
+        ),
+        (
+            [("name", SourceNull()), ("amount", SourceDecimal("1")), ("flag", SourceBoolean(True))],
+            RECORD_EXPLICIT_NULL_NOT_ALLOWED,
+        ),
+        (
+            [
+                ("name", SourceText("ok")),
+                ("amount", SourceText("1")),
+                ("flag", SourceBoolean(True)),
+            ],
+            RECORD_VALUE_TYPE_INVALID,
+        ),
+        (
+            [
+                ("name", SourceText(" ")),
+                ("amount", SourceDecimal("1")),
+                ("flag", SourceBoolean(True)),
+            ],
+            RECORD_BLANK_POLICY_VIOLATION,
+        ),
+    ],
+)
+def test_current_value_validator_preserves_exact_blocker_distinctions(pairs, expected: str) -> None:
+    result = validate_data_record_against_current_value(
+        plan=_current_plan(), snapshot=_snapshot(pairs), validated_at="now"
+    )
+    assert isinstance(result, RecordValidationBlocked)
+    assert expected in {blocker.code for blocker in result.blockers}
+
+
+def test_current_batch_shares_one_validation_basis_value() -> None:
+    results = validate_data_records_against_current_value(
+        plan=_current_plan(),
+        snapshots=(_snapshot(identity='rec-1'), _snapshot(identity='rec-2')),
+        validated_at='now',
+    )
+    first, second = results
+    assert isinstance(first, CurrentValidatedDataRecord)
+    assert isinstance(second, CurrentValidatedDataRecord)
+    assert first.validation_basis is second.validation_basis
+
+
+def test_current_vdr_basis_ignores_non_validation_execution_meaning() -> None:
+    plan = _current_plan()
+    other_contracts = dataclasses.replace(
+        plan.contract_semantics, materialization_contract_id="materialization/v2"
+    )
+    other = dataclasses.replace(
+        plan,
+        contract_semantics=other_contracts,
+        ordered_operations=tuple(reversed(plan.ordered_operations)),
+    )
+    a = validate_data_record_against_current_value(
+        plan=plan, snapshot=_snapshot(), validated_at="a"
+    )
+    b = validate_data_record_against_current_value(
+        plan=other, snapshot=_snapshot(), validated_at="b"
+    )
+    assert isinstance(a, CurrentValidatedDataRecord)
+    assert isinstance(b, CurrentValidatedDataRecord)
+    assert plan != other
+    assert a.validation_basis == b.validation_basis
+    assert a.document_values_in_order() == b.document_values_in_order()
+
+
 def test_happy_path_exact_logical_text_all_kinds() -> None:
     vdr = _validate()
     assert isinstance(vdr, ValidatedDataRecord)

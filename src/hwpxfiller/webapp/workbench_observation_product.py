@@ -39,6 +39,7 @@ from ..application.document_creation_workbench import (
     GetDocumentCreationWorkbenchResult,
     InputRequirement,
     RecordValidationSummary,
+    WorkbenchContextIntegrity,
     WorkbenchCompositionInput,
     compose_document_creation_workbench,
 )
@@ -224,9 +225,11 @@ def _sx03_seam_preview_requirement() -> PreviewRequirement:
 
 
 # ── SX-04 seam(record/delivery/preview-satisfied 축) — 부분함수 하나씩 ────────────────────────────
-def _sx04_seam_record_validation() -> RecordValidationSummary:
+def _sx04_seam_record_validation(
+    projection: RecordValidationSummary | None = None,
+) -> RecordValidationSummary:
     # SX-04 seam: 실제 record validation 은 RecordValidation 권위 verdict 로 온다.
-    return RecordValidationSummary()
+    return projection if projection is not None else RecordValidationSummary()
 
 
 def _sx04_seam_delivery() -> DeliveryPreviewSummary:
@@ -261,6 +264,8 @@ class WorkbenchObservationProduct:
         binding_review_needed: bool = False,
         template_change_verdict: str | None = None,
         input_requirements: tuple[InputRequirement, ...] = (),
+        record_validation: RecordValidationSummary | None = None,
+        context_integrity: WorkbenchContextIntegrity | None = None,
     ) -> GetDocumentCreationWorkbenchResult:
         """세션 사실 + seal 서비스 fresh_observation → 작업대 Observation(또는 ContextError).
 
@@ -299,9 +304,10 @@ class WorkbenchObservationProduct:
             template_change_verdict=template_change_verdict,
             input_requirements=input_requirements,
             # ── SX-04 seam ──
-            record_validation=_sx04_seam_record_validation(),
+            record_validation=_sx04_seam_record_validation(record_validation),
             delivery=_sx04_seam_delivery(),
             preview_satisfied=_sx04_seam_preview_satisfied(),
+            context_integrity=context_integrity,
         )
         return compose_document_creation_workbench(composition)
 

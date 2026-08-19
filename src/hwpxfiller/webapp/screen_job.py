@@ -42,7 +42,7 @@ seam 은 존치하나 이 패널이 노출하지 않는다. "없는 기능을 �
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -129,10 +129,11 @@ from .action_registry import ZONE_MUTATIONS
 from .template_change import TemplateChangeError, unsupported_zone
 from ..application.slotless_run_bridge import SlotlessRunAdmissionError
 # S4 Working Slot Configuration 배선(SX-02 #725) — Product/Observation 소비만(재구현 금지).
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import uuid
 from ..application.automatic_seal_orchestration import (
     FAILED as ORCHESTRATION_FAILED,
+    SETTLED_CURRENT as ORCHESTRATION_SETTLED_CURRENT,
     AutomaticSealOrchestration,
     on_durable_command_settled,
     on_seal_settled,
@@ -140,13 +141,51 @@ from ..application.automatic_seal_orchestration import (
 )
 from ..application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
+    RecordRecoveryTarget,
+    RecordValidationIssue,
+    RecordValidationSummary,
     RESOLVE_EXECUTION,
+    WorkbenchContextIntegrity,
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
     ExecutionObservationContextError,
     FreshExecutionObservation,
+)
+from ..application.execution_semantic_kernel import SealedExecutionPlanValue
+from ..application.record_validation import (
+    CurrentValidatedDataRecord,
+    RECORD_BLANK_POLICY_VIOLATION,
+    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED,
+    RECORD_EXPLICIT_NULL_NOT_ALLOWED,
+    RECORD_REQUIRED_VALUE_MISSING,
+    RECORD_VALUE_FORMAT_INVALID,
+    RECORD_VALUE_TYPE_INVALID,
+    RecordValidationBlocked,
+    RecordValidationContextError,
+    RecordValidationBlocker,
+    validate_data_records_against_current_value,
+)
+from ..domain.raw_data_record import (
+    RawDataRecordSnapshot,
+    RawDataRecordError,
+    RawRecordCaptureProvenance,
+    SourceBoolean,
+    SourceDate,
+    SourceDateTime,
+    SourceDecimal,
+    SourceNull,
+    SourceText,
+    build_raw_record_snapshot,
+)
+from ..domain.field_binding import (
+    BOOLEAN,
+    DATE,
+    DATETIME,
+    DECIMAL,
+    EXACT_TEXT,
+    FieldBindingError,
 )
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
@@ -216,6 +255,54 @@ _RESTATE_SAMPLE = 3
 VIEW_ORDER_DESC = "sourceDesc"
 VIEW_ORDER_ASC = "sourceAsc"
 VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
+
+
+@dataclass(frozen=True)
+class _CurrentRecordPreparation:
+    snapshot_generation: int
+    work_ref: str
+    ordered_model_indices: tuple[int, ...]
+    execution_value: SealedExecutionPlanValue
+    raw_records: tuple[RawDataRecordSnapshot, ...]
+    validated_records: tuple[CurrentValidatedDataRecord, ...]
+    record_validation: RecordValidationSummary
+
+
+class _CurrentRecordCaptureError(ValueError):
+    pass
+
+
+def _capture_source_value(value: object, declared_type: str | None):
+    if value is None:
+        return SourceNull()
+    if not isinstance(value, str):
+        raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
+    if declared_type in (None, EXACT_TEXT):
+        return SourceText(value)
+    try:
+        if declared_type == DECIMAL:
+            return SourceDecimal(value)
+        if declared_type == DATE:
+            return SourceDate(value)
+        if declared_type == DATETIME:
+            return SourceDateTime(value)
+        if declared_type == BOOLEAN and value in ('TRUE', 'FALSE'):
+            return SourceBoolean(value == 'TRUE')
+    except FieldBindingError:
+        return SourceText(value)
+    if declared_type == BOOLEAN:
+        return SourceText(value)
+    raise _CurrentRecordCaptureError('현재 필드의 데이터 값 종류를 확인할 수 없습니다.')
+
+
+_RECORD_BLOCKER_PHRASES = {
+    RECORD_REQUIRED_VALUE_MISSING: "필수 값이 없습니다.",
+    RECORD_EXPLICIT_NULL_NOT_ALLOWED: "값이 명시적으로 비어 있어 사용할 수 없습니다.",
+    RECORD_VALUE_TYPE_INVALID: "값의 종류가 이 항목에서 요구하는 형식과 다릅니다.",
+    RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
+    RECORD_BLANK_POLICY_VIOLATION: "빈 값이나 공백만 있는 값은 사용할 수 없습니다.",
+    RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
+}
 
 
 # (결과 3태 판정은 :func:`hwpxfiller.application.generation.run_status` 가 소유한다 —
@@ -334,6 +421,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 아니라 세션 진행 값이다. SX-SEAL 이 seal 인프라를 배선했으므로(#719) SX-03 이 자동 확인
         # 트리거를 아래 `_maybe_auto_check` 로 배선한다(수동 seal 버튼 0).
         self._session_orchestration = AutomaticSealOrchestration()
+        self._current_record_preparation: _CurrentRecordPreparation | None = None
         # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
         # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
         # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
@@ -582,6 +670,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 세대를 올리고 초안을 버린다(판정 J): 초안의 index 는 죽은 스냅샷의 좌표다. 세대는
         # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
         self._snapshot_gen += 1
+        self._current_record_preparation = None
         self.range_draft = None
         self.zone_epoch += 1
 
@@ -2863,6 +2952,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 for item in observation.input_requirements
             ],
             "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
+            "record_validation": {
+                "validated_count": observation.record_validation.validated_count,
+                "blocked_count": observation.record_validation.blocked_count,
+                "issue_count": observation.record_validation.issue_count,
+                "issues": [
+                    {
+                        "record_identity": issue.record_identity,
+                        "record_display_locator": issue.record_display_locator,
+                        "field_id": issue.field_id,
+                        "field_display_label": issue.field_display_label,
+                        "message": issue.message,
+                        "recovery_target": asdict(issue.recovery_target),
+                    }
+                    for issue in observation.record_validation.issues
+                ],
+            },
             # 사용자 문안 축(vocabulary 정본 — 내부어 0).
             "content_section_label": observation.content_section_label,
             "input_requirements_label": observation.input_requirements_label,
@@ -3002,6 +3107,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._session_orchestration = AutomaticSealOrchestration()
         self._last_fresh_observation = None
         self._last_sealed_basis_digest = None
+        self._current_record_preparation = None
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
@@ -3099,6 +3205,281 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # R2(#740): current sealable value 가 관찰되면 그 값이 곧 현재다(currentness 축 흡수).
         return isinstance(fresh, CurrentSealedPlanObservation)
 
+    @staticmethod
+    def _current_record_identity(snapshot_generation: int, model_index: int) -> str:
+        return f"current-record/{snapshot_generation}/{model_index}"
+
+    @staticmethod
+    def _current_source_value_types(plan: SealedExecutionPlanValue) -> dict[str, str]:
+        source_types: dict[str, str] = {}
+        for requirement in plan.active_field_requirements:
+            value_expression = requirement.get('value_expression')
+            if not isinstance(value_expression, Mapping):
+                continue
+            if value_expression.get('kind') != 'FROM_SOURCE':
+                continue
+            source_key = value_expression.get('source_key')
+            value_type = value_expression.get('value_type')
+            if not isinstance(source_key, str) or not isinstance(value_type, str):
+                raise _CurrentRecordCaptureError(
+                    '현재 필드의 원본 항목과 데이터 값 종류를 확인할 수 없습니다.'
+                )
+            existing = source_types.get(source_key)
+            if existing is not None and existing != value_type:
+                source_types[source_key] = EXACT_TEXT
+                continue
+            source_types[source_key] = value_type
+        return source_types
+
+    def _capture_current_selected_records(
+        self, plan: SealedExecutionPlanValue,
+    ) -> tuple[int, tuple[int, ...], tuple[RawDataRecordSnapshot, ...]]:
+        generation = self._snapshot_gen
+        indices = tuple(self._indices())
+        rows = self.records
+        schema = (
+            tuple(self.filter.columns)
+            if self.filter is not None
+            else tuple(rows[0].keys())
+            if rows
+            else ()
+        )
+        captured_at = self._clock().isoformat(timespec="seconds")
+        source_value_types = self._current_source_value_types(plan)
+        captured: list[RawDataRecordSnapshot] = []
+        for model_index in indices:
+            if not 0 <= model_index < len(rows):
+                raise _CurrentRecordCaptureError("선택한 데이터 위치를 확인할 수 없습니다.")
+            source_values = []
+            for key, value in rows[model_index].items():
+                if not isinstance(key, str):
+                    raise _CurrentRecordCaptureError("데이터 항목 이름을 확인할 수 없습니다.")
+                if value is None:
+                    source_value = SourceNull()
+                elif isinstance(value, str):
+                    source_value = _capture_source_value(
+                        value, source_value_types.get(key)
+                    )
+                else:
+                    raise _CurrentRecordCaptureError(
+                        f"{model_index + 1}행 {key} 값을 정확히 읽을 수 없습니다."
+                    )
+                source_values.append((key, source_value))
+            captured.append(
+                build_raw_record_snapshot(
+                    source_schema_keys=schema,
+                    source_values=source_values,
+                    record_identity=self._current_record_identity(generation, model_index),
+                    capture_provenance=RawRecordCaptureProvenance(
+                        source_adapter_contract_id="job-current-record-capture/v1",
+                        captured_at=captured_at,
+                        source_observation_ref=f"job-snapshot/{generation}",
+                    ),
+                )
+            )
+        if (
+            generation != self._snapshot_gen
+            or rows is not self.records
+            or indices != tuple(self._indices())
+        ):
+            raise _CurrentRecordCaptureError(
+                "데이터가 다시 불러와져 선택한 값을 함께 확인할 수 없습니다. 다시 시도해 주세요."
+            )
+        return generation, indices, tuple(captured)
+
+    @staticmethod
+    def _record_source_key(plan: SealedExecutionPlanValue, field_id: str) -> str:
+        for requirement in plan.active_field_requirements:
+            if requirement.get("field_id") != field_id:
+                continue
+            value_expression = requirement.get("value_expression")
+            if isinstance(value_expression, Mapping):
+                source_key = value_expression.get("source_key")
+                if isinstance(source_key, str) and source_key:
+                    return source_key
+        raise _CurrentRecordCaptureError("문제 데이터의 원본 항목을 확인할 수 없습니다.")
+
+    def _record_issue(
+        self,
+        *,
+        plan: SealedExecutionPlanValue,
+        blocker: RecordValidationBlocker,
+        generation: int,
+        model_index: int,
+        record_identity: str,
+    ) -> RecordValidationIssue:
+        if not isinstance(blocker.field_id, str):
+            raise _CurrentRecordCaptureError("문제 데이터의 필드를 확인할 수 없습니다.")
+        message = _RECORD_BLOCKER_PHRASES.get(blocker.code)
+        if message is None:
+            raise _CurrentRecordCaptureError("데이터 문제를 사용자 문안으로 표시할 수 없습니다.")
+        source_key = self._record_source_key(plan, blocker.field_id)
+        columns = self.filter.columns if self.filter is not None else []
+        target = RecordRecoveryTarget(
+            snapshot_generation=generation,
+            record_identity=record_identity,
+            model_index=model_index,
+            field_id=source_key,
+            target_kind='cell' if source_key in columns else 'row',
+        )
+        return RecordValidationIssue(
+            record_identity=record_identity,
+            record_display_locator=f"데이터 {model_index + 1}행",
+            field_id=blocker.field_id,
+            field_display_label=source_key,
+            message=message,
+            recovery_target=target,
+        )
+
+    def _current_record_validation(
+        self,
+    ) -> tuple[RecordValidationSummary, WorkbenchContextIntegrity | None]:
+        fresh = self._last_fresh_observation
+        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
+            return RecordValidationSummary(), None
+        if not isinstance(fresh, CurrentSealedPlanObservation):
+            return RecordValidationSummary(), None
+        plan = fresh.sealed_plan_value
+        work_ref = self.job_name
+        indices = tuple(self._indices())
+        cached = self._current_record_preparation
+        if (
+            cached is not None
+            and cached.snapshot_generation == self._snapshot_gen
+            and cached.work_ref == work_ref
+            and cached.ordered_model_indices == indices
+            and cached.execution_value == plan
+        ):
+            return cached.record_validation, None
+        if not indices:
+            return RecordValidationSummary(), None
+        try:
+            generation, captured_indices, raw_records = (
+                self._capture_current_selected_records(plan)
+            )
+            results = validate_data_records_against_current_value(
+                plan=plan,
+                snapshots=raw_records,
+                validated_at=raw_records[0].capture_provenance.captured_at,
+            )
+            validated: list[CurrentValidatedDataRecord] = []
+            issues: list[RecordValidationIssue] = []
+            blocked_count = 0
+            for model_index, snapshot, result in zip(
+                captured_indices, raw_records, results, strict=True
+            ):
+                if isinstance(result, RecordValidationContextError):
+                    return RecordValidationSummary(), WorkbenchContextIntegrity(
+                        restore_failure=True, code=result.code, detail=result.detail
+                    )
+                if isinstance(result, RecordValidationBlocked):
+                    blocked_count += 1
+                    issues.extend(
+                        self._record_issue(
+                            plan=plan,
+                            blocker=blocker,
+                            generation=generation,
+                            model_index=model_index,
+                            record_identity=snapshot.record_identity,
+                        )
+                        for blocker in result.blockers
+                    )
+                else:
+                    validated.append(result)
+        except (_CurrentRecordCaptureError, RawDataRecordError, FieldBindingError) as exc:
+            return RecordValidationSummary(), WorkbenchContextIntegrity(
+                restore_failure=True,
+                code="CURRENT_RECORD_CAPTURE_STALE",
+                detail=str(exc),
+            )
+        if (
+            generation != self._snapshot_gen
+            or captured_indices != tuple(self._indices())
+            or work_ref != self.job_name
+            or fresh != self._last_fresh_observation
+        ):
+            return RecordValidationSummary(), WorkbenchContextIntegrity(
+                restore_failure=True,
+                code="CURRENT_RECORD_PREPARATION_STALE",
+                detail="확인 중 데이터나 작업 설정이 바뀌었습니다. 다시 시도해 주세요.",
+            )
+        summary = RecordValidationSummary(
+            has_blocking_issues=bool(issues),
+            issue_count=len(issues),
+            validated_count=len(validated),
+            blocked_count=blocked_count,
+            issues=tuple(issues),
+        )
+        self._current_record_preparation = _CurrentRecordPreparation(
+            snapshot_generation=generation,
+            work_ref=work_ref,
+            ordered_model_indices=captured_indices,
+            execution_value=plan,
+            raw_records=raw_records,
+            validated_records=tuple(validated),
+            record_validation=summary,
+        )
+        return summary, None
+
+    def _do_recover_record_issue(self, p: dict) -> dict:
+        target = p.get("target")
+        if not isinstance(target, Mapping):
+            raise ValueError("문제 위치 정보가 올바르지 않습니다.")
+        preparation = self._current_record_preparation
+        target_kind = target.get('target_kind')
+        if preparation is None:
+            raise ValueError("현재 데이터 확인 결과가 없습니다. 다시 확인해 주세요.")
+        exact_targets = tuple(
+            asdict(issue.recovery_target) for issue in preparation.record_validation.issues
+        )
+        if dict(target) not in exact_targets:
+            raise ValueError(
+                "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
+            )
+        generation = target.get("snapshot_generation")
+        model_index = target.get("model_index")
+        record_identity = target.get("record_identity")
+        field_id = target.get("field_id")
+        if (
+            type(generation) is not int
+            or type(model_index) is not int
+            or not isinstance(record_identity, str)
+            or not isinstance(field_id, str)
+            or target_kind not in ('cell', 'row')
+            or generation != self._snapshot_gen
+            or model_index not in tuple(self._indices())
+            or record_identity != self._current_record_identity(generation, model_index)
+            or preparation.work_ref != self.job_name
+            or self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT
+            or not isinstance(self._last_fresh_observation, CurrentSealedPlanObservation)
+            or preparation.execution_value != self._last_fresh_observation.sealed_plan_value
+        ):
+            raise ValueError(
+                "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
+            )
+        columns = self.filter.columns if self.filter is not None else []
+        if target_kind == 'cell' and field_id not in columns:
+            raise ValueError("문제 데이터의 항목 위치를 복원할 수 없습니다.")
+        if target_kind == 'cell' and field_id in self.hidden_columns:
+            raise ValueError("문제 항목이 숨겨져 있습니다. 열을 다시 표시한 뒤 이동해 주세요.")
+        visible = self.filter.visible_indices(self.records) if self.filter is not None else []
+        if model_index not in visible:
+            raise ValueError("문제 행이 현재 검색 결과에 없습니다. 검색 조건을 해제해 주세요.")
+        if target_kind == 'row':
+            return {
+                'ok': True,
+                'element_id': f'jobRow-{model_index}',
+                'fallback_element_id': f'jobRow-{model_index}',
+            }
+        column_index = columns.index(field_id)
+        return {
+            "ok": True,
+            "element_id": f"jobCell-{model_index}-{column_index}",
+            "fallback_element_id": f"jobRow-{model_index}",
+        }
+
+    _do_recover_record_issue.is_query = True
+
     def workbench_observation(self):
         """세션 사실 + seal 서비스 fresh observation → 작업대 Observation(SX-01 #724 · SX-03 #726).
 
@@ -3130,6 +3511,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             and isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
         ):
             binding_projection = self._seal_execution.current_binding_review(self.job_name)
+        record_validation, context_integrity = self._current_record_validation()
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -3144,6 +3526,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             input_requirements=(
                 binding_projection.input_requirements if binding_projection is not None else ()
             ),
+            record_validation=record_validation,
+            context_integrity=context_integrity,
         )
 
     def _do_resolve_execution(self, p: dict) -> dict:
