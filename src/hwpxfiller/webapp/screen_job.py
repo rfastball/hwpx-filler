@@ -2892,8 +2892,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self._generation_lock.acquire(blocking=False):
             raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
         try:
+            work_at_start = self.job_name
             response = run()
-            self._maybe_auto_check(response)
+            # auto-check 를 이 mutation 의 exact Work 에 결속한다(#725 재리뷰 P1). 작업 전환
+            # (`select_job`)은 check-then-act 라 이 임계구역 사이에 job_name 을 바꿀 수 있다 —
+            # 그러면 바뀐 Work 를 seal 하게 된다. Work 가 그대로일 때만 auto-check 하고, 바뀌었으면
+            # 건너뛴다(변경된 Work 는 자기 command 가 몰고, 이 Work 는 다음 관찰에서 fresh 재계산).
+            if self.job_name == work_at_start:
+                self._maybe_auto_check(response)
             return response
         finally:
             self._generation_lock.release()
