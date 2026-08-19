@@ -2863,38 +2863,57 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         진입한다. 수동 seal 버튼 0. seal 은 durable side effect 없는 순수 재계산이라 매 durable 변경마다
         재확인한다(opaque Plan ref 로 same-basis 를 미리 엿보던 경로는 R2 가 제거했다).
 
-        생성 중에는 거절한다(#725 리뷰 P1) — 다른 실행-입력 변경과 같은 규율이다. 실행 중인
-        생성은 capture 된 immutable 입력을 쓰므로, 그 사이 durable 구성을 바꾸면 화면 구성과
-        생성 중 파일의 입력이 어긋난다(automatic checking 재진입도 겹친다). 조용히 통과시키지
-        않고 시끄럽게 거절한다.
+        생성과 **상호배제**한다(#725 리뷰). check-then-act(`raise_if_generating`)는 pywebview
+        브리지가 별도 스레드라 검사와 mutation 사이에 `generate` 가 lock 을 잡아 old 구성을
+        capture 하는 창이 남는다. 그래서 generation lock 을 직접 잡고 mutation+auto-check 를
+        그 아래서 수행한다 — 그 사이 `generate`(non-blocking acquire)도 작업 전환/작업대 열기
+        (`raise_if_generating_before_swap` 가 같은 lock 을 검사)도 끼지 못한다. 생성 중이면
+        non-blocking 실패로 시끄럽게 거절한다.
         """
         self._require_slot_configuration()
-        self.raise_if_generating("포함할 내용을 바꾸세요")
-        response = self._slot_configuration.select_slot_option(
-            self.job_name,
-            str(p["configuration_token"]),
-            str(p["slot_id"]),
-            str(p["option_id"]),
-            str(p["request_id"]),
+        response = self._slot_command_serialized_with_generation(
+            "포함할 내용을 바꾸세요",
+            lambda: self._slot_configuration.select_slot_option(
+                self.job_name,
+                str(p["configuration_token"]),
+                str(p["slot_id"]),
+                str(p["option_id"]),
+                str(p["request_id"]),
+            ),
         )
-        self._maybe_auto_check(response)
         return self._slot_response_dict(response)
+
+    def _slot_command_serialized_with_generation(self, then_do: str, run):
+        """durable slot mutation + auto-check 를 generation lock 아래 원자로 수행한다(#725 리뷰).
+
+        generate 와 같은 lock 을 non-blocking 으로 잡아 상호배제한다 — 잡히면 mutation·auto-check
+        를 하고 반드시 놓는다. 이미 생성 중이면 시끄럽게 거절한다(`raise_if_generating` 문안 동형).
+        """
+        if not self._generation_lock.acquire(blocking=False):
+            raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
+        try:
+            response = run()
+            self._maybe_auto_check(response)
+            return response
+        finally:
+            self._generation_lock.release()
 
     def _do_clear_slot_selection(self, p: dict) -> dict:
         """Slot 선택 해제 = durable S4 command. command outcome + fresh view(선택과 동일 규율).
 
         automatic checking 진입은 `_do_select_slot_option` 과 같은 규율이다(`_maybe_auto_check`).
-        생성 중 거절도 같은 규율이다(#725 리뷰 P1).
+        생성과의 상호배제도 같은 규율이다(#725 리뷰) — generation lock 아래 원자로 수행한다.
         """
         self._require_slot_configuration()
-        self.raise_if_generating("선택을 해제하세요")
-        response = self._slot_configuration.clear_slot_selection(
-            self.job_name,
-            str(p["configuration_token"]),
-            str(p["slot_id"]),
-            str(p["request_id"]),
+        response = self._slot_command_serialized_with_generation(
+            "선택을 해제하세요",
+            lambda: self._slot_configuration.clear_slot_selection(
+                self.job_name,
+                str(p["configuration_token"]),
+                str(p["slot_id"]),
+                str(p["request_id"]),
+            ),
         )
-        self._maybe_auto_check(response)
         return self._slot_response_dict(response)
 
     # ── 세션 주체(Work) 정체 — 전환 시 실행 증거 무효화 ──────────────────────────────────

@@ -303,14 +303,25 @@ test("P2#2 UNSUPPORTED_SELECTION_POLICY: 현재 방식 선택 불가 + radio dis
   assert.match(html, /disabled/);
 });
 
-test("P2#3 clearable detached 는 제거 액션을 준다(내부 key 비노출)", () => {
+test("P2#3 clearable detached 는 단일 명시 제거 액션을 준다(내부 key 비노출)", () => {
   const withDetached = view("SLOT_SELECTIONS_COMPLETE",
     [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
     { detached: [{ slot_id: "gone-slot", selected_option_ids: ["gone-opt"], clearable: true, status: "SLOT_REMOVED" }] });
   const html = render(stateOf(withDetached));
-  assert.match(html, /이 선택 제거/);
+  assert.match(html, /이전 선택 모두 제거/);
   assert.ok(!html.includes("gone-slot"));
   assert.ok(!html.includes("gone-opt"));
+});
+
+test("P2#3 detached 여러 개여도 모호한 항목별 버튼이 아니라 clear-all 하나만 그린다", () => {
+  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
+    [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
+    { detached: [
+      { slot_id: "a", selected_option_ids: ["x"], clearable: true, status: "SLOT_REMOVED" },
+      { slot_id: "b", selected_option_ids: ["y"], clearable: true, status: "SLOT_REMOVED" }] });
+  const html = render(stateOf(withDetached));
+  const buttons = (html.match(/cs-detached-clear/g) ?? []).length;
+  assert.equal(buttons, 1); // 항목 수와 무관하게 명시 액션 하나
 });
 
 test("P2#3 clearable=false detached 는 제거 액션이 없다", () => {
@@ -318,7 +329,7 @@ test("P2#3 clearable=false detached 는 제거 액션이 없다", () => {
     [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
     { detached: [{ slot_id: "gone", selected_option_ids: ["o"], clearable: false, status: "SLOT_REMOVED" }] });
   const html = render(stateOf(withDetached));
-  assert.ok(!html.includes("이 선택 제거"));
+  assert.ok(!html.includes("이전 선택 모두 제거"));
 });
 
 test("P2#5 pending 중 도착한 스냅샷을 settle 뒤 최신 model 로 재hydrate", async () => {
@@ -340,6 +351,27 @@ test("P2#5 pending 중 도착한 스냅샷을 settle 뒤 최신 model 로 재hyd
   resolveDispatch(okv(response(NEEDS))); // 옛 command 응답이 뒤늦게 settle
   await p;
   assert.equal(ctrl.getSnapshot().view, SELECTED); // 건너뛴 최신 스냅샷으로 복구(유령 반영 0)
+});
+
+test("P2(재리뷰) stale 로 끝난 command 는 스냅샷을 건너뛰었어도 stale notice 를 보존한다", async () => {
+  // 느린 stale command: pending 중 command 자신의 응답 push 가 skippedWhilePending 을 세워도,
+  // settle 이 stale 이면 재hydrate 로 idle 로 덮지 않는다(#725 재리뷰).
+  let resolveDispatch = null;
+  const client = {
+    calls: [],
+    dispatch(screen, action, payload) {
+      this.calls.push({ screen, action, payload });
+      return new Promise((r) => { resolveDispatch = r; });
+    },
+  };
+  const svc = createSlotConfigService({ client });
+  const rt = fakeRuntime({ slot_configuration: zone(NEEDS) });
+  const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
+  const p = ctrl.selectOption("s1", "o1");
+  rt.push({ slot_configuration: zone(SELECTED) }); // pending 중 스냅샷(=command 자신의 push 대역)
+  resolveDispatch(okv(response(SELECTED, { refresh: true }))); // stale 응답
+  await p;
+  assert.equal(ctrl.getSnapshot().phase, "stale"); // idle 로 덮이지 않음 — notice 보존
 });
 
 test("P2#4 display_text==id 인 production 형상에서도 지정 표시 필드를 소비한다(라벨 소스=backend, 후속 분리)", () => {

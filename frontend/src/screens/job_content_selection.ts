@@ -72,6 +72,7 @@ export function createJobContentSelectionController(deps: {
       skippedWhilePending = true;
       return;
     }
+    skippedWhilePending = false; // 실제 hydrate → 최신 model 을 반영하므로 밀린 delivery 없음.
     const snap = model.getSnapshot();
     deps.service.hydrate(readSlotZone(snap ? snap.full : null));
   }
@@ -79,10 +80,13 @@ export function createJobContentSelectionController(deps: {
   // job 스냅샷 변화(최초 로드·Template 변경·command 뒤 재푸시)마다 read-only view 를 재hydrate 한다.
   // 모듈 싱글턴 수명이라 해제하지 않는다(다른 job 화면 controller 와 동일 규율).
   model.subscribe(hydrateFromModel);
-  // 서비스 상태 전이 감시 — command 가 settle(pending 해제)됐는데 그 사이 스냅샷을 건너뛰었으면
-  // 최신 model 로 재hydrate 한다. hydrate 는 idle 을 커밋하므로 재진입해도 이 가지를 다시 타지 않는다.
+  // 서비스 상태 전이 감시 — command 가 **성공(idle)** 으로 settle 됐는데 그 사이 스냅샷을
+  // 건너뛰었으면 최신 model 로 재hydrate 한다. stale/error 로 끝난 경우엔 재hydrate 하지 않는다:
+  // command 자신의 응답 push 도 skippedWhilePending 을 세우므로, 무조건 재hydrate 하면 그 stale/
+  // error notice("설정이 갱신되어…")를 곧바로 idle 로 덮어 사용자가 못 본다(#725 리뷰). stale/error
+  // 의 fresh view 는 command 응답이 이미 실었고, 외부 스냅샷은 다음 push 가 반영한다.
   deps.service.subscribe(() => {
-    if (skippedWhilePending && deps.service.state().phase !== "pending") {
+    if (skippedWhilePending && deps.service.state().phase === "idle") {
       skippedWhilePending = false;
       hydrateFromModel();
     }
@@ -225,6 +229,7 @@ export function JobContentSelection(props: {
 
   const attention = blockingBySlot(state.view);
   const detached = projection.detached_selections;
+  const clearableDetached = detached.filter((d) => d.clearable);
 
   return h(
     "section",
@@ -259,8 +264,9 @@ export function JobContentSelection(props: {
         ),
     // detached = 사라졌지만 의도로 보존된 이전 선택 — 현재 포함 내용처럼 표시하지 않고, 사용자
     // label 이 없는 내부 key 를 노출하지 않으며, 정직한 일반 문안으로 informational 분리한다(#725 §3).
-    // clearable detached 는 제거 액션을 준다(#725 리뷰 P2): 두지 않으면 그 slot 이 다시 나타날 때
-    // backend 가 옛 선택을 자동 복원해 사용자 모르게 반영된다 — 조용히 틀리지 않으려면 제거 경로가 필요.
+    // detached 는 label 이 없어 개별 구분이 안 된다 — 항목별 버튼은 어느 선택을 지우는지 모호하다
+    // (#725 리뷰). 그래서 clearable 전체를 지우는 **단일 명시 액션** 하나만 둔다. 두지 않으면 그
+    // slot 재등장 시 backend 가 옛 선택을 자동 복원해 사용자 모르게 반영된다(조용히 틀리지 않는다).
     detached.length > 0
       ? h(
           "aside",
@@ -270,22 +276,25 @@ export function JobContentSelection(props: {
             { className: "cs-detached-note" },
             "이전 템플릿에서 유지된 선택이 있으나 현재 문서에는 적용되지 않습니다.",
           ),
-          ...detached
-            .filter((d) => d.clearable)
-            .map((d) =>
-              h(
+          clearableDetached.length > 0
+            ? h(
                 "button",
                 {
-                  key: d.slot_id,
                   type: "button",
                   className: "cs-detached-clear",
                   disabled: pending,
-                  // slot_id 는 command 용 내부 key 로만 쓰고 화면 텍스트로는 노출하지 않는다.
-                  onClick: () => controller.clearSelection(d.slot_id),
+                  // clearable 을 순차로 지운다 — 각 command 뒤 token 이 갱신되므로 await 로 직렬화한다
+                  // (동기 다발 발사는 2번째부터 옛 token 을 써 거절된다). slot_id 는 command 용 내부
+                  // key 로만 쓰고 화면 텍스트로 노출하지 않는다.
+                  onClick: async () => {
+                    for (const d of clearableDetached) {
+                      await controller.clearSelection(d.slot_id);
+                    }
+                  },
                 },
-                "이 선택 제거",
-              ),
-            ),
+                "이전 선택 모두 제거",
+              )
+            : null,
         )
       : null,
   );
