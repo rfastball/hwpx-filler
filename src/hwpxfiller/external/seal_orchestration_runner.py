@@ -66,9 +66,14 @@ class SealExecutionPlanResult:
     R2-04b-2(#740): durable Plan store 가 없다. sealable 은 current candidate 에서 직접
     ``ExecutionPlanSealed`` 를 낸다(content-addressed publish·create/reuse 없음). block/policy/stale
     도 durable 하게 남기지 않는다 — 응답은 방금 계산한 현재 terminal outcome 이다.
+
+    ``work_authority_id`` 는 이 command 이 실제로 결속한 exact Work identity 다(#742). downstream
+    이 command outcome 과 나란히 fresh observation 을 낼 때 work_ref 를 다시 resolve 하지 않고
+    이 값을 재사용해야 command 과 observation 이 같은 Work 에 묶인다(사이에 rename/삭제가 나도).
     """
 
     terminal_outcome: SealTerminalOutcome
+    work_authority_id: str
 
 
 def seal_execution_plan(
@@ -111,7 +116,7 @@ def seal_execution_plan(
         classification = classify_capture_result(cap, policy)
         if isinstance(classification, CaptureTerminal):
             # capture gate terminal(block/policy) 을 fresh 로 되돌린다(durable 기록 없음).
-            return SealExecutionPlanResult(classification.outcome)
+            return SealExecutionPlanResult(classification.outcome, work_authority_id)
         captured = classification.captured
 
     # ── pure qualification + compile(어떤 fence 도 보유하지 않는다) ──────────────────
@@ -136,17 +141,20 @@ def seal_execution_plan(
             else None
         )
         verdict = decide_final_verdict(candidate, current, current_compiled, summary)
-        return _result_for_verdict(verdict)
+        return _result_for_verdict(verdict, work_authority_id)
 
 
-def _result_for_verdict(verdict: FinalVerdict) -> SealExecutionPlanResult:
+def _result_for_verdict(
+    verdict: FinalVerdict, work_authority_id: str
+) -> SealExecutionPlanResult:
     """FinalPublish → current candidate 에서 직접 ``ExecutionPlanSealed``. block/policy/stale → 그대로.
 
     durable store 가 없다(R2-04b-2): publish·create/reuse·ledger 없이 방금 계산한 현재 terminal
-    outcome 을 반환한다.
+    outcome 을 반환한다. ``work_authority_id`` 는 이 command 이 결속한 exact Work identity 로
+    outcome 과 함께 실려 downstream 이 observation 을 같은 Work 에 묶게 한다(#742).
     """
     if not isinstance(verdict, FinalPublish):
-        return SealExecutionPlanResult(verdict.outcome)
+        return SealExecutionPlanResult(verdict.outcome, work_authority_id)
     plan = verdict.candidate
     assert isinstance(plan, PlanCandidate)
-    return SealExecutionPlanResult(sealed_outcome_for(plan))
+    return SealExecutionPlanResult(sealed_outcome_for(plan), work_authority_id)

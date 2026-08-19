@@ -145,6 +145,32 @@ def test_snapshot_carries_slot_configuration_zone(tmp_path: Path) -> None:
     assert zone["current_view"]["new_configuration_token"]
 
 
+def test_snapshot_render_paths_never_mutate_durable_s4(tmp_path: Path, monkeypatch) -> None:
+    # #744: passive 렌더(스냅샷 slot_configuration 존 + workbench_observation)는 read-only
+    # projection 을 써야 한다 — open(ensure)의 successor reconciliation 물질화로 durable S4 를
+    # 바꾸지 않는다. ensure 호출을 spy 해 렌더 경로가 0, 명시적 command 만 ensure 를 타는지 판정한다.
+    import hwpxfiller.webapp.slot_configuration_product as mod
+
+    calls = {"ensure": 0}
+    real = mod.ensure_current_slot_configuration
+
+    def spy(*a, **k):
+        calls["ensure"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(mod, "ensure_current_slot_configuration", spy)
+    ctrl, _ = _controller(tmp_path)
+
+    snap = ctrl.snapshot()  # slot_configuration 존 + workbench_observation 존을 함께 조립
+    assert snap["slot_configuration"]["current_view"]["view_status"] == "CURRENT"
+    assert snap["workbench_observation"]["supported"] is True
+    ctrl.workbench_observation()  # 관찰 경로 직접 호출도 렌더다
+    assert calls["ensure"] == 0  # 렌더 경로 어디서도 ensure 를 부르지 않는다
+
+    ctrl.dispatch("open_slot_configuration", {})  # 명시적 command 만 ensure 를 탄다
+    assert calls["ensure"] == 1
+
+
 def test_snapshot_zone_before_bootstrap_does_not_mint_durable_id(tmp_path: Path) -> None:
     """초기화 전(템플릿 확인 전) 스냅샷은 Product 를 부르지 않는다 — write-on-read 로 Work id 를
     발급하지 않는다(렌더 부작용 0). 지원은 하되 아직 미초기화로 선다."""

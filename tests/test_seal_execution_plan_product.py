@@ -333,6 +333,45 @@ def test_observation_port_failure_degrades_keeps_command_outcome(tmp_path) -> No
     assert resp.fresh_observation.code == EXECUTION_OBSERVATION_CONTEXT_ERROR
 
 
+# ══ #742: command 이 결속한 exact Work id 를 observation 이 재사용(work_ref 이중 resolve 금지) ══
+def test_observation_reuses_command_work_id_no_second_resolve(tmp_path) -> None:
+    # seal 러너가 work_ref 를 한 번 resolve 해 command 을 결속하면, fresh observation 은 그
+    # exact id 를 재사용한다 — product 가 work_ref 를 다시 resolve 하지 않는다. 재-resolve 는
+    # (a) command outcome 과 다른 Work 의 observation 을 짝지을 수 있고 (b) 두 번째 lookup 실패
+    # 시 이미 계산한 command outcome 을 버린다. resolve 호출이 정확히 1 이면 두 위험이 모두 없다.
+    calls = {"n": 0}
+
+    def route(ws, ref):
+        calls["n"] += 1
+        return WORK
+
+    h = _product(tmp_path, route=route, runtime=_admitting_runtime)
+    resp = h.product.seal_execution_plan(_pcmd("r1"))
+    assert calls["n"] == 1  # 러너 안에서 한 번만 resolve — product 의 두 번째 resolve 가 없다
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)
+    assert isinstance(resp.fresh_observation, CurrentSealedPlanObservation)
+
+
+def test_observation_work_lookup_failure_keeps_command_outcome(tmp_path) -> None:
+    # #742(b): command 봉인 뒤 observation 의 Work read 가 실패해도 command outcome 은 보존된다
+    # (관찰 축만 CONTEXT_ERROR 로 강등). 이전에는 재-resolve 가 _degrade 밖이라 outcome 을 잃었다.
+    h = _product(tmp_path, runtime=_admitting_runtime)
+    real = h.world.summary
+    state = {"n": 0}
+
+    def gated(*a, **k):
+        state["n"] += 1
+        if state["n"] >= 3:  # gate+final(2) 정상, 3번째 = observation summary read
+            raise RuntimeError("work summary read 실패(관찰 시점 삭제/교체)")
+        return real(*a, **k)
+
+    h.product._read_summary = gated
+    resp = h.product.seal_execution_plan(_pcmd("r1"))
+    assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)  # 보존
+    assert isinstance(resp.fresh_observation, ExecutionObservationContextError)
+    assert resp.fresh_observation.code == EXECUTION_OBSERVATION_CONTEXT_ERROR
+
+
 # ══ pure decision units ════════════════════════════════════════════════════════════════
 def test_decide_admission_all_not_admitted_reasons_accumulate() -> None:
     # R2-05a: profile admission 축 제거 — base kind·schema·encoding·materializer 사유만 누적한다.

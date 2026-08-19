@@ -243,7 +243,11 @@ class SealExecutionPlanProduct:
             theorem_registry=self._theorem_registry,
         )
         outcome = result.terminal_outcome
-        work_id = self._resolve_route(ws, command.work_ref)
+        # #742: seal 러너가 이미 결속한 exact Work id 를 그대로 재사용한다. work_ref 를 다시
+        # resolve 하면 그 사이 rename/삭제/교체 시 (a) command outcome 과 다른 Work 의
+        # observation 이 짝지어지거나 (b) 두 번째 lookup 실패가 _degrade 밖에서 command outcome
+        # 을 버린다. 재사용하므로 observation 실패는 아래 _degrade 안에서만 강등된다.
+        work_id = result.work_authority_id
         command_outcome = self._map_command_outcome(outcome)
         fresh = self._degrade(lambda: self._observe_current_work(ws, work_id, inner))
         return SealExecutionPlanResponse(

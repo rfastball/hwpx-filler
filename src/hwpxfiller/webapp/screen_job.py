@@ -2726,8 +2726,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
 
         미주입·미선택·비-hwpx·템플릿 부재면 명시적 unsupported(분기별 키 동형). 초기화 전(Work
-        durable id 미발급) Work 는 Product 를 부르지 않는다 — open 의 route 가 read 중 durable id 를
-        발급하므로(write-on-read) 렌더 부작용을 피한다. 초기화된 Work 만 read-only open 으로 조회한다.
+        durable id 미발급) Work 는 Product 를 부르지 않는다 — route 가 read 중 durable id 를 발급하므로
+        (write-on-read) 렌더 부작용을 피한다. 초기화된 Work 는 #744 read-only projection 으로 조회한다
+        — 스냅샷은 렌더라 open(ensure)의 successor reconciliation 물질화로 durable S4 를 바꾸지 않는다.
+        ensure 는 명시적 open/refresh command(`_do_open_slot_configuration`·`_do_refresh_...`)에만 남긴다.
         """
         blank = self._slot_blank_zone()
         if self._slot_configuration is None or not self.job_name or tmissing:
@@ -2739,7 +2741,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 템플릿 확인(bootstrap) 전 — 지원은 하되 아직 조회하지 않는다(durable id 미발급 보존).
             return {**blank, "supported": True}
         try:
-            response = self._slot_configuration.open_slot_configuration(self.job_name)
+            response = self._slot_configuration.current_slot_configuration_view(self.job_name)
         except SlotConfigurationProductError:
             # 접근 불가·token 오류는 렌더를 깨지 않고 시끄러운 미지원으로 — 존은 비활성 + 지원 표기.
             return {**blank, "supported": True}
@@ -2991,7 +2993,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             job = load_job(self.registry, self.job_name)
             if job.media == "hwpx" and job.authority_id:
                 try:
-                    resp = self._slot_configuration.open_slot_configuration(self.job_name)
+                    # #744: 관찰은 읽기다 — read-only projection 을 쓴다. open(ensure)은 stored
+                    # config 부재 시 successor reconciliation 을 durable 하게 물질화하므로 render
+                    # 경로에서 부르면 authority 를 mutate 한다(그 basis 변경은 관찰과도 어긋난다).
+                    resp = self._slot_configuration.current_slot_configuration_view(self.job_name)
                 except SlotConfigurationProductError:
                     resp = None
                 if resp is not None:
