@@ -46,11 +46,18 @@ from hwpxfiller.application.execution_contract_set import (
     build_sealed_plan,
     plan_semantic_digest,
 )
+from hwpxfiller.application.execution_semantic_kernel import (
+    ExecutionContractSemantics,
+    SealedExecutionPlanValue,
+)
 from hwpxfiller.application.record_validation import (
+    CurrentValidatedDataRecord,
     ImmutableVdrStore,
     ValidatedDataRecord,
+    validate_data_record_against_current_value,
     validate_data_record_against_plan,
 )
+from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.domain.field_binding import (
     CONSTANT,
     DECIMAL,
@@ -233,6 +240,110 @@ def _resolve(plan, snapshots, *, pattern=_PATTERN, basis=None, clock=_CLOCK,
 def _ok(res) -> gd.ResolvedGenerationDeliveryPlan:
     assert isinstance(res, gd.ResolvedGenerationDeliveryPlan), res
     return res
+
+
+def _current_plan() -> SealedExecutionPlanValue:
+    legacy = _plan()
+    basis = legacy.execution_basis
+    return SealedExecutionPlanValue(
+        qualification_profile_id="profile-1",
+        template_application_id=basis.template.template_application_id,
+        contract_semantics=ExecutionContractSemantics.from_contract_set(basis.contracts),
+        exact_template_execution_basis=basis.template,
+        effective_selection_basis=basis.selection,
+        effective_field_binding_basis=basis.field_binding,
+        active_field_requirements=legacy.active_field_requirements,
+        ordered_operations=legacy.ordered_operations,
+        plan_schema_version=legacy.plan_schema_version,
+        canonical_encoding_version=legacy.canonical_encoding_version,
+    )
+
+
+def _current_vdr(
+    plan: SealedExecutionPlanValue, snapshot,
+) -> CurrentValidatedDataRecord:
+    result = validate_data_record_against_current_value(
+        plan=plan, snapshot=snapshot, validated_at=_CLOCK
+    )
+    assert isinstance(result, CurrentValidatedDataRecord), result
+    return result
+
+
+def _resolve_current(
+    plan: SealedExecutionPlanValue,
+    snapshots,
+    *,
+    pattern="{{f_name}}",
+    occupied=(),
+    collision="ADD_SUFFIX",
+):
+    basis = _basis_dto(plan, pattern=pattern, inactive_rules=())
+    assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
+    return gd.resolve_current_generation_delivery(
+        sealed_execution_plan=plan,
+        ordered_validated_records=tuple(_current_vdr(plan, item) for item in snapshots),
+        ordered_raw_snapshots=snapshots,
+        delivery_binding_basis=basis,
+        exact_pattern=pattern,
+        captured_delivery_clock=_CLOCK,
+        run_delivery_intent=RunDeliveryIntent("C:/out", collision),
+        path_occupancy=gd.PathOccupancyObservation("C:/out", tuple(occupied), _CLOCK),
+    )
+
+
+def test_current_resolver_consumes_current_values_without_legacy_identity() -> None:
+    plan = _current_plan()
+    result = _resolve_current(plan, (_snapshot(),))
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert result.ordered_items[0].resolved_output_relative_path == "홍길동.hwpx"
+    assert not hasattr(result, "bound_plan_semantic_digest")
+    assert not hasattr(result.ordered_items[0], "validated_record_ref")
+
+
+def test_current_resolver_fails_closed_on_validation_basis_mismatch() -> None:
+    plan, snapshot = _current_plan(), _snapshot()
+    record = _current_vdr(plan, snapshot)
+    record = dataclasses.replace(
+        record,
+        validation_basis=dataclasses.replace(
+            record.validation_basis, record_validation_contract_id="record-validation/v999"
+        ),
+    )
+    basis = _basis_dto(plan, pattern="{{f_name}}", inactive_rules=())
+    assert isinstance(basis, gd.GenerationDeliveryBindingBasis)
+    result = gd.resolve_current_generation_delivery(
+        sealed_execution_plan=plan,
+        ordered_validated_records=(record,),
+        ordered_raw_snapshots=(snapshot,),
+        delivery_binding_basis=basis,
+        exact_pattern="{{f_name}}",
+        captured_delivery_clock=_CLOCK,
+        run_delivery_intent=RunDeliveryIntent("C:/out"),
+        path_occupancy=gd.PathOccupancyObservation("C:/out", (), _CLOCK),
+    )
+    assert isinstance(result, gd.DeliveryPlanContextError)
+    assert result.code == gd.CURRENT_RECORD_VALIDATION_BASIS_MISMATCH
+
+
+def test_current_resolver_fails_closed_on_raw_vdr_pair_mismatch() -> None:
+    plan = _current_plan()
+    snapshot = _snapshot(identity="record-a")
+    other = _snapshot(identity="record-b")
+    record = _current_vdr(plan, snapshot)
+    basis = _basis_dto(plan, pattern="{{f_name}}", inactive_rules=())
+    assert isinstance(basis, gd.GenerationDeliveryBindingBasis)
+    result = gd.resolve_current_generation_delivery(
+        sealed_execution_plan=plan,
+        ordered_validated_records=(record,),
+        ordered_raw_snapshots=(other,),
+        delivery_binding_basis=basis,
+        exact_pattern="{{f_name}}",
+        captured_delivery_clock=_CLOCK,
+        run_delivery_intent=RunDeliveryIntent("C:/out"),
+        path_occupancy=gd.PathOccupancyObservation("C:/out", (), _CLOCK),
+    )
+    assert isinstance(result, gd.DeliveryPlanContextError)
+    assert result.code == gd.RAW_VALIDATED_RECORD_MISMATCH
 
 
 # ═══ pattern compatibility ══════════════════════════════════════════════════════════════════
