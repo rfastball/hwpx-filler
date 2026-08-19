@@ -141,8 +141,14 @@ export type SlotConfigService = {
   refresh(): Promise<SlotConfigState>;
   selectOption(slotId: string, optionId: string): Promise<SlotConfigState>;
   clearSelection(slotId: string): Promise<SlotConfigState>;
-  /** 마지막 커밋 상태(구독 렌더가 참조). */
+  /** 마지막 커밋 상태(구독 렌더가 참조). `useSyncExternalStore` 의 getSnapshot 으로도 쓴다. */
   state(): SlotConfigState;
+  /** React 구독(수명주기 인터페이스) — 상태 커밋마다 listener 를 부른다. semantic 아님. */
+  subscribe(listener: () => void): () => void;
+  /** passive render 초기 자료 seed — snapshot 의 read-only current view 를 dispatch 없이 실는다.
+   *  #744 write-on-read 방지: mount 는 open() 을 부르지 않고 이 read-only view 로 hydrate 한다.
+   *  view=null(미지원/미초기화) → 빈 idle. command 축(pending)을 덮지 않도록 호출자가 게이트한다. */
+  hydrate(view: SlotCurrentView | null): SlotConfigState;
 };
 
 export type SlotConfigDeps = {
@@ -156,10 +162,12 @@ export type SlotConfigDeps = {
 /** 패널 서비스 factory — 상태를 든 4개 dispatch 왕복. token 은 서비스가 보관하고 되돌려준다. */
 export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService {
   let current: SlotConfigState = initialSlotConfigState;
+  const listeners = new Set<() => void>();
 
   function commit(next: SlotConfigState): SlotConfigState {
     current = next;
     deps.onChange?.(current);
+    for (const listener of [...listeners]) listener();
     return current;
   }
 
@@ -244,6 +252,26 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
     },
     state() {
       return current;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    hydrate(view) {
+      if (view === null) {
+        // 미지원·미초기화 zone → 빈 idle(현재 durable 사실이 없음을 정직하게 반영).
+        return commit(initialSlotConfigState);
+      }
+      const isError = view.view_status === "CONTEXT_ERROR";
+      // read-only current view 를 baseline 으로 실는다 — token 은 backend 발급값 그대로.
+      return commit({
+        view,
+        token: view.new_configuration_token,
+        phase: isError ? "error" : "idle",
+        error: isError ? String(view.context_error ?? "context_error") : null,
+      });
     },
   };
 }

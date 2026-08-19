@@ -2862,31 +2862,64 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         `_maybe_auto_check` 가 자동 확인(`on_durable_command_settled` → 필요 시 seal → `on_seal_settled`)에
         진입한다. 수동 seal 버튼 0. seal 은 durable side effect 없는 순수 재계산이라 매 durable 변경마다
         재확인한다(opaque Plan ref 로 same-basis 를 미리 엿보던 경로는 R2 가 제거했다).
+
+        생성과 **상호배제**한다(#725 리뷰). check-then-act(`raise_if_generating`)는 pywebview
+        브리지가 별도 스레드라 검사와 mutation 사이에 `generate` 가 lock 을 잡아 old 구성을
+        capture 하는 창이 남는다. 그래서 generation lock 을 직접 잡고 mutation+auto-check 를
+        그 아래서 수행한다 — 그 사이 `generate`(non-blocking acquire)도 작업 전환/작업대 열기
+        (`raise_if_generating_before_swap` 가 같은 lock 을 검사)도 끼지 못한다. 생성 중이면
+        non-blocking 실패로 시끄럽게 거절한다.
         """
         self._require_slot_configuration()
-        response = self._slot_configuration.select_slot_option(
-            self.job_name,
-            str(p["configuration_token"]),
-            str(p["slot_id"]),
-            str(p["option_id"]),
-            str(p["request_id"]),
+        response = self._slot_command_serialized_with_generation(
+            "포함할 내용을 바꾸세요",
+            lambda: self._slot_configuration.select_slot_option(
+                self.job_name,
+                str(p["configuration_token"]),
+                str(p["slot_id"]),
+                str(p["option_id"]),
+                str(p["request_id"]),
+            ),
         )
-        self._maybe_auto_check(response)
         return self._slot_response_dict(response)
+
+    def _slot_command_serialized_with_generation(self, then_do: str, run):
+        """durable slot mutation + auto-check 를 generation lock 아래 원자로 수행한다(#725 리뷰).
+
+        generate 와 같은 lock 을 non-blocking 으로 잡아 상호배제한다 — 잡히면 mutation·auto-check
+        를 하고 반드시 놓는다. 이미 생성 중이면 시끄럽게 거절한다(`raise_if_generating` 문안 동형).
+        """
+        if not self._generation_lock.acquire(blocking=False):
+            raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
+        try:
+            work_at_start = self.job_name
+            response = run()
+            # auto-check 를 이 mutation 의 exact Work 에 결속한다(#725 재리뷰 P1). 작업 전환
+            # (`select_job`)은 check-then-act 라 이 임계구역 사이에 job_name 을 바꿀 수 있다 —
+            # 그러면 바뀐 Work 를 seal 하게 된다. Work 가 그대로일 때만 auto-check 하고, 바뀌었으면
+            # 건너뛴다(변경된 Work 는 자기 command 가 몰고, 이 Work 는 다음 관찰에서 fresh 재계산).
+            if self.job_name == work_at_start:
+                self._maybe_auto_check(response)
+            return response
+        finally:
+            self._generation_lock.release()
 
     def _do_clear_slot_selection(self, p: dict) -> dict:
         """Slot 선택 해제 = durable S4 command. command outcome + fresh view(선택과 동일 규율).
 
         automatic checking 진입은 `_do_select_slot_option` 과 같은 규율이다(`_maybe_auto_check`).
+        생성과의 상호배제도 같은 규율이다(#725 리뷰) — generation lock 아래 원자로 수행한다.
         """
         self._require_slot_configuration()
-        response = self._slot_configuration.clear_slot_selection(
-            self.job_name,
-            str(p["configuration_token"]),
-            str(p["slot_id"]),
-            str(p["request_id"]),
+        response = self._slot_command_serialized_with_generation(
+            "선택을 해제하세요",
+            lambda: self._slot_configuration.clear_slot_selection(
+                self.job_name,
+                str(p["configuration_token"]),
+                str(p["slot_id"]),
+                str(p["request_id"]),
+            ),
         )
-        self._maybe_auto_check(response)
         return self._slot_response_dict(response)
 
     # ── 세션 주체(Work) 정체 — 전환 시 실행 증거 무효화 ──────────────────────────────────

@@ -17,6 +17,8 @@ import {
   JobReadEffects,
 } from "./job_read.ts";
 import type { JobReadController } from "./job_read.ts";
+import { JobContentSelection } from "./job_content_selection.ts";
+import type { JobContentSelectionController } from "./job_content_selection.ts";
 import { JobPreviewSheet } from "./job_preview.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
@@ -83,6 +85,7 @@ export type ProductScreensPorts = {
   workbench: WorkbenchController;
   jobRead: JobReadController;
   jobRun: JobRunController;
+  slotContent: JobContentSelectionController;
   dataPicker: DataPickerController;
   groupMove: GroupMoveDialogController;
   sheetPicker: SheetPickerController;
@@ -113,9 +116,11 @@ function screenProps(id: ProductScreenId, active: ProductScreenId): Obj {
   };
 }
 
-function JobScreen(props: Pick<ProductScreensPorts, "jobRead" | "jobRun" | "dataSheetClose"> & {
-  active: ProductScreenId;
-}): ReactNode {
+function JobScreen(
+  props: Pick<ProductScreensPorts, "jobRead" | "jobRun" | "slotContent" | "dataSheetClose"> & {
+    active: ProductScreenId;
+  },
+): ReactNode {
   const { jobRead, jobRun } = props;
   return h("section", screenProps("job", props.active),
     h(JobReadEffects as any, { controller: jobRead, closeButton: props.dataSheetClose }),
@@ -144,6 +149,8 @@ function JobScreen(props: Pick<ProductScreensPorts, "jobRead" | "jobRun" | "data
                 h(JobCandidates as any, { controller: jobRead })),
               h("div", { className: "zone", id: "jobTplChangeZone" },
                 h(JobTemplateChange as any, { controller: jobRun })),
+              h("div", { className: "zone", id: "jobContentSelectionZone" },
+                h(JobContentSelection as any, { controller: props.slotContent })),
               h("div", { className: "zone" },
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),
@@ -175,6 +182,7 @@ export function ProductScreens(ports: ProductScreensPorts): ReactNode {
       h(LibraryScreen as any, { controller: ports.library })),
     h(JobScreen as any, {
       active, jobRead: ports.jobRead, jobRun: ports.jobRun,
+      slotContent: ports.slotContent,
       dataSheetClose: ports.dataSheetClose,
     }),
     h("section", screenProps("editor", active),
