@@ -24,7 +24,7 @@ canonical framing·digest 는 S5-06 closed set(:mod:`hwpxfiller.domain.canonical
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -477,14 +477,47 @@ def _current_validation_basis(
 def validate_data_record_against_current_value(
     *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
 ) -> ValidateCurrentDataRecordResult:
+    basis = _current_validation_basis(plan)
     try:
-        return _validate_current_value(plan=plan, snapshot=snapshot, validated_at=validated_at)
+        return _validate_current_value(
+            plan=plan,
+            snapshot=snapshot,
+            validated_at=validated_at,
+            validation_basis=basis,
+        )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
 
 
+def validate_data_records_against_current_value(
+    *,
+    plan: SealedExecutionPlanValue,
+    snapshots: Iterable[RawDataRecordSnapshot],
+    validated_at: str,
+) -> tuple[ValidateCurrentDataRecordResult, ...]:
+    basis = _current_validation_basis(plan)
+    results: list[ValidateCurrentDataRecordResult] = []
+    for snapshot in snapshots:
+        try:
+            results.append(
+                _validate_current_value(
+                    plan=plan,
+                    snapshot=snapshot,
+                    validated_at=validated_at,
+                    validation_basis=basis,
+                )
+            )
+        except _ContextSignal as sig:
+            results.append(RecordValidationContextError(sig.code, sig.detail))
+    return tuple(results)
+
+
 def _validate_current_value(
-    *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
+    *,
+    plan: SealedExecutionPlanValue,
+    snapshot: RawDataRecordSnapshot,
+    validated_at: str,
+    validation_basis: CurrentRecordValidationBasis,
 ) -> ValidateCurrentDataRecordResult:
     if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
@@ -507,9 +540,8 @@ def _validate_current_value(
             resolved.append((str(requirement["field_id"]), outcome))
     if blockers:
         return RecordValidationBlocked(tuple(blockers))
-    basis = _current_validation_basis(plan)
     record = CurrentValidatedDataRecord(
-        validation_basis=basis,
+        validation_basis=validation_basis,
         record_identity=snapshot.record_identity,
         raw_record_digest=snapshot.raw_record_digest,
         resolved_requirement_values=tuple(resolved),
@@ -520,7 +552,9 @@ def _validate_current_value(
         ),
     )
     try:
-        verify_current_validated_record_completeness(record, plan, snapshot)
+        verify_current_validated_record_completeness(
+            record, plan, snapshot, expected_basis=validation_basis
+        )
     except ValidatedRecordIntegrityError as exc:
         raise _ContextSignal(VALIDATED_RECORD_INTEGRITY_ERROR, str(exc)) from exc
     return record
@@ -787,8 +821,10 @@ def verify_current_validated_record_completeness(
     record: CurrentValidatedDataRecord,
     plan: SealedExecutionPlanValue,
     snapshot: RawDataRecordSnapshot,
+    *,
+    expected_basis: CurrentRecordValidationBasis | None = None,
 ) -> None:
-    expected_basis = _current_validation_basis(plan)
+    expected_basis = expected_basis or _current_validation_basis(plan)
     if record.validation_basis != expected_basis:
         raise ValidatedRecordIntegrityError("current VDR validation basis mismatch")
     if record.record_identity != snapshot.record_identity:

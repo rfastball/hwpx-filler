@@ -768,7 +768,12 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const executionAction = (wb.execution_action || null) as Obj | null;
   const recordValidation = (wb.record_validation || {}) as Obj;
   const recordIssues = (recordValidation.issues || []) as Obj[];
-  const recordSection = createElement(Fragment, null,
+  const recordSection = wb.kind === 'context_error'
+    ? createElement(Fragment, null,
+        h('div', { className: 'zone-cap' }, '데이터 확인'),
+        h('p', { className: 'danger capnote' },
+          String(wb.detail || '현재 데이터를 확인할 수 없습니다.')))
+    : createElement(Fragment, null,
     h('div', { className: 'zone-cap' }, '데이터 확인'),
     recordIssues.length
       ? h('ul', { className: 'plain-list', id: 'jobRecordValidationIssues' },

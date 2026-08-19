@@ -39,7 +39,8 @@ from hwpxfiller.application.fresh_execution_observation import (
     ExecutionObservationContextError,
 )
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
-from hwpxfiller.domain.field_binding import EXACT_TEXT
+from hwpxfiller.domain.field_binding import DATE, DECIMAL, EXACT_TEXT
+from hwpxfiller.domain.raw_data_record import source_value_type_of
 from hwpxfiller.webapp.slot_configuration_product import SlotConfigurationProduct
 from hwpxfiller.application.slot_configuration_projection import (
     HAS_BROKEN_SELECTIONS,
@@ -140,6 +141,9 @@ def test_selected_record_capture_preserves_order_and_never_rereads_source(
     tmp_path: Path,
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
     rows = [{"name": "A"}, {"name": "B"}, {"name": "C"}]
     _mount_rows(ctrl, rows)
     ctrl.view_order = "sourceDesc"
@@ -149,7 +153,9 @@ def test_selected_record_capture_preserves_order_and_never_rereads_source(
             raise AssertionError(f"mutable source reread: {name}")
 
     ctrl.datasource = NoReadSource()
-    generation, indices, snapshots = ctrl._capture_current_selected_records()
+    generation, indices, snapshots = ctrl._capture_current_selected_records(
+        fresh.sealed_plan_value
+    )
     assert generation == ctrl._snapshot_gen
     assert indices == (2, 1, 0)
     assert [snapshot.value_for("name").text for snapshot in snapshots] == ["C", "B", "A"]
@@ -162,6 +168,9 @@ def test_generation_move_rejects_mixed_capture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
     _mount_rows(ctrl, [{"name": "A"}, {"name": "B"}])
     original = screen_job_module.build_raw_record_snapshot
     calls = 0
@@ -176,8 +185,42 @@ def test_generation_move_rejects_mixed_capture(
 
     monkeypatch.setattr(screen_job_module, "build_raw_record_snapshot", moving_capture)
     with pytest.raises(ValueError, match="다시 불러와져"):
-        ctrl._capture_current_selected_records()
+        ctrl._capture_current_selected_records(fresh.sealed_plan_value)
     assert ctrl._current_record_preparation is None
+
+
+def test_capture_uses_current_declared_date_and_decimal_types(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
+    requirements = tuple(
+        {
+            'field_id': field_id,
+            'expected_active_occurrence_count': 1,
+            'value_expression': encode_value_expression(
+                FromSource(source_key, value_type, None, 'document-content-value/v1')
+            ),
+        }
+        for field_id, source_key, value_type in (
+            ('f_amount', 'amount', DECIMAL),
+            ('f_date', 'date', DATE),
+        )
+    )
+    plan = dataclasses.replace(
+        fresh.sealed_plan_value, active_field_requirements=requirements
+    )
+    ctrl._last_fresh_observation = dataclasses.replace(
+        fresh, sealed_plan_value=plan
+    )
+    _mount_rows(ctrl, [{'amount': '1500.00', 'date': '2026-08-19'}])
+
+    _, _, snapshots = ctrl._capture_current_selected_records(plan)
+    amount = snapshots[0].value_for('amount')
+    date = snapshots[0].value_for('date')
+    assert amount is not None and source_value_type_of(amount) == DECIMAL
+    assert date is not None and source_value_type_of(date) == DATE
+    assert _zone(ctrl)['record_validation']['validated_count'] == 1
 
 
 def test_current_record_blocker_projects_exact_backend_target(
@@ -199,6 +242,7 @@ def test_current_record_blocker_projects_exact_backend_target(
     assert issue["message"] == "빈 값이나 공백만 있는 값은 사용할 수 없습니다."
     target = issue["recovery_target"]
     assert target == {
+        'target_kind': 'cell',
         "snapshot_generation": ctrl._snapshot_gen,
         "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
         "model_index": 1,
@@ -212,6 +256,40 @@ def test_current_record_blocker_projects_exact_backend_target(
     ctrl._snapshot_gen += 1
     with pytest.raises(ValueError, match="위치를 복원할 수 없습니다"):
         ctrl.dispatch("recover_record_issue", {"target": target})
+
+
+def test_missing_source_column_projects_reachable_row_target(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    _mount_rows(ctrl, [{'other': '값'}])
+
+    issue = _zone(ctrl)['record_validation']['issues'][0]
+    target = issue['recovery_target']
+    assert target['field_id'] == 'name'
+    assert target['target_kind'] == 'row'
+    assert ctrl.dispatch('recover_record_issue', {'target': target}) == {
+        'ok': True,
+        'element_id': 'jobRow-0',
+        'fallback_element_id': 'jobRow-0',
+    }
+
+
+def test_stale_orchestration_hides_old_record_validation_and_target(
+    tmp_path: Path,
+) -> None:
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    _mount_rows(ctrl, [{'name': ' '}])
+    target = _zone(ctrl)['record_validation']['issues'][0]['recovery_target']
+
+    ctrl._session_orchestration = AutomaticSealOrchestration(state='STALE')
+    assert _zone(ctrl)['record_validation']['issue_count'] == 0
+    with pytest.raises(ValueError, match='위치를 복원할 수 없습니다'):
+        ctrl.dispatch('recover_record_issue', {'target': target})
 
 
 def test_current_preparation_is_reused_until_existing_basis_moves(

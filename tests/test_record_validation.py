@@ -65,6 +65,7 @@ from hwpxfiller.application.record_validation import (
     VdrRetentionError,
     validate_data_record_against_plan,
     validate_data_record_against_current_value,
+    validate_data_records_against_current_value,
     verify_validated_record_completeness,
 )
 from hwpxfiller.domain.canonical_execution_encoding import canonical_execution_digest
@@ -278,6 +279,18 @@ def test_current_value_validator_preserves_exact_blocker_distinctions(pairs, exp
     )
     assert isinstance(result, RecordValidationBlocked)
     assert expected in {blocker.code for blocker in result.blockers}
+
+
+def test_current_batch_shares_one_validation_basis_value() -> None:
+    results = validate_data_records_against_current_value(
+        plan=_current_plan(),
+        snapshots=(_snapshot(identity='rec-1'), _snapshot(identity='rec-2')),
+        validated_at='now',
+    )
+    first, second = results
+    assert isinstance(first, CurrentValidatedDataRecord)
+    assert isinstance(second, CurrentValidatedDataRecord)
+    assert first.validation_basis is second.validation_basis
 
 
 def test_current_vdr_basis_ignores_non_validation_execution_meaning() -> None:

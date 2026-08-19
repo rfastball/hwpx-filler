@@ -486,3 +486,30 @@ test('데이터 확인은 backend 문안과 recovery target만 소비한다', as
   assert.equal(h.calls.at(-1).payload.target, target);
   assert.equal(focused, true);
 });
+
+test('데이터 확인은 backend context error detail을 숨기지 않는다', async () => {
+  const detail = '현재 데이터 검증을 완료할 수 없습니다.';
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true,
+      kind: 'context_error',
+      code: 'INTERNAL_RECORD_CONTEXT',
+      detail,
+      input_requirements: [],
+      input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CONTEXT_ERROR',
+      execution_status_phrase: '현재 실행 상태를 확인할 수 없습니다',
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  assert.ok(markup.includes(detail));
+  assert.equal(markup.includes('확인할 데이터가 없습니다.'), false);
+  assert.equal(markup.includes('INTERNAL_RECORD_CONTEXT'), false);
+});

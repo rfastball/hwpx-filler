@@ -236,8 +236,11 @@ class RecordRecoveryTarget:
     record_identity: str
     model_index: int
     field_id: str
+    target_kind: str = 'cell'
 
     def __post_init__(self) -> None:
+        if self.target_kind not in ('cell', 'row'):
+            raise ValueError('record recovery target kind must be cell or row')
         if self.snapshot_generation < 0 or self.model_index < 0:
             raise ValueError("record recovery target position must be non-negative")
         if not self.record_identity or not self.field_id:

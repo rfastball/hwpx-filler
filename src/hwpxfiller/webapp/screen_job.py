@@ -133,6 +133,7 @@ from dataclasses import asdict, dataclass
 import uuid
 from ..application.automatic_seal_orchestration import (
     FAILED as ORCHESTRATION_FAILED,
+    SETTLED_CURRENT as ORCHESTRATION_SETTLED_CURRENT,
     AutomaticSealOrchestration,
     on_durable_command_settled,
     on_seal_settled,
@@ -164,17 +165,28 @@ from ..application.record_validation import (
     RecordValidationBlocked,
     RecordValidationContextError,
     RecordValidationBlocker,
-    validate_data_record_against_current_value,
+    validate_data_records_against_current_value,
 )
 from ..domain.raw_data_record import (
     RawDataRecordSnapshot,
     RawDataRecordError,
     RawRecordCaptureProvenance,
+    SourceBoolean,
+    SourceDate,
+    SourceDateTime,
+    SourceDecimal,
     SourceNull,
     SourceText,
     build_raw_record_snapshot,
 )
-from ..domain.field_binding import FieldBindingError
+from ..domain.field_binding import (
+    BOOLEAN,
+    DATE,
+    DATETIME,
+    DECIMAL,
+    EXACT_TEXT,
+    FieldBindingError,
+)
 from .seal_execution_plan_product import ExecutionPlanSealedProductOutcome
 from .slot_configuration_product import SlotConfigurationProductError
 
@@ -258,6 +270,29 @@ class _CurrentRecordPreparation:
 
 class _CurrentRecordCaptureError(ValueError):
     pass
+
+
+def _capture_source_value(value: object, declared_type: str | None):
+    if value is None:
+        return SourceNull()
+    if not isinstance(value, str):
+        raise _CurrentRecordCaptureError('데이터 값을 정확히 읽을 수 없습니다.')
+    if declared_type in (None, EXACT_TEXT):
+        return SourceText(value)
+    try:
+        if declared_type == DECIMAL:
+            return SourceDecimal(value)
+        if declared_type == DATE:
+            return SourceDate(value)
+        if declared_type == DATETIME:
+            return SourceDateTime(value)
+        if declared_type == BOOLEAN and value in ('TRUE', 'FALSE'):
+            return SourceBoolean(value == 'TRUE')
+    except FieldBindingError:
+        return SourceText(value)
+    if declared_type == BOOLEAN:
+        return SourceText(value)
+    raise _CurrentRecordCaptureError('현재 필드의 데이터 값 종류를 확인할 수 없습니다.')
 
 
 _RECORD_BLOCKER_PHRASES = {
@@ -3174,8 +3209,31 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _current_record_identity(snapshot_generation: int, model_index: int) -> str:
         return f"current-record/{snapshot_generation}/{model_index}"
 
+    @staticmethod
+    def _current_source_value_types(plan: SealedExecutionPlanValue) -> dict[str, str]:
+        source_types: dict[str, str] = {}
+        for requirement in plan.active_field_requirements:
+            value_expression = requirement.get('value_expression')
+            if not isinstance(value_expression, Mapping):
+                continue
+            if value_expression.get('kind') != 'FROM_SOURCE':
+                continue
+            source_key = value_expression.get('source_key')
+            value_type = value_expression.get('value_type')
+            if not isinstance(source_key, str) or not isinstance(value_type, str):
+                raise _CurrentRecordCaptureError(
+                    '현재 필드의 원본 항목과 데이터 값 종류를 확인할 수 없습니다.'
+                )
+            existing = source_types.get(source_key)
+            if existing is not None and existing != value_type:
+                raise _CurrentRecordCaptureError(
+                    '같은 원본 항목에 서로 다른 데이터 값 종류가 지정됐습니다.'
+                )
+            source_types[source_key] = value_type
+        return source_types
+
     def _capture_current_selected_records(
-        self,
+        self, plan: SealedExecutionPlanValue,
     ) -> tuple[int, tuple[int, ...], tuple[RawDataRecordSnapshot, ...]]:
         generation = self._snapshot_gen
         indices = tuple(self._indices())
@@ -3188,6 +3246,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             else ()
         )
         captured_at = self._clock().isoformat(timespec="seconds")
+        source_value_types = self._current_source_value_types(plan)
         captured: list[RawDataRecordSnapshot] = []
         for model_index in indices:
             if not 0 <= model_index < len(rows):
@@ -3199,7 +3258,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if value is None:
                     source_value = SourceNull()
                 elif isinstance(value, str):
-                    source_value = SourceText(value)
+                    source_value = _capture_source_value(
+                        value, source_value_types.get(key)
+                    )
                 else:
                     raise _CurrentRecordCaptureError(
                         f"{model_index + 1}행 {key} 값을 정확히 읽을 수 없습니다."
@@ -3254,11 +3315,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if message is None:
             raise _CurrentRecordCaptureError("데이터 문제를 사용자 문안으로 표시할 수 없습니다.")
         source_key = self._record_source_key(plan, blocker.field_id)
+        columns = self.filter.columns if self.filter is not None else []
         target = RecordRecoveryTarget(
             snapshot_generation=generation,
             record_identity=record_identity,
             model_index=model_index,
             field_id=source_key,
+            target_kind='cell' if source_key in columns else 'row',
         )
         return RecordValidationIssue(
             record_identity=record_identity,
@@ -3273,6 +3336,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self,
     ) -> tuple[RecordValidationSummary, WorkbenchContextIntegrity | None]:
         fresh = self._last_fresh_observation
+        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
+            return RecordValidationSummary(), None
         if not isinstance(fresh, CurrentSealedPlanObservation):
             return RecordValidationSummary(), None
         plan = fresh.sealed_plan_value
@@ -3290,16 +3355,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not indices:
             return RecordValidationSummary(), None
         try:
-            generation, captured_indices, raw_records = self._capture_current_selected_records()
+            generation, captured_indices, raw_records = (
+                self._capture_current_selected_records(plan)
+            )
+            results = validate_data_records_against_current_value(
+                plan=plan,
+                snapshots=raw_records,
+                validated_at=raw_records[0].capture_provenance.captured_at,
+            )
             validated: list[CurrentValidatedDataRecord] = []
             issues: list[RecordValidationIssue] = []
             blocked_count = 0
-            for model_index, snapshot in zip(captured_indices, raw_records, strict=True):
-                result = validate_data_record_against_current_value(
-                    plan=plan,
-                    snapshot=snapshot,
-                    validated_at=snapshot.capture_provenance.captured_at,
-                )
+            for model_index, snapshot, result in zip(
+                captured_indices, raw_records, results, strict=True
+            ):
                 if isinstance(result, RecordValidationContextError):
                     return RecordValidationSummary(), WorkbenchContextIntegrity(
                         restore_failure=True, code=result.code, detail=result.detail
@@ -3358,6 +3427,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not isinstance(target, Mapping):
             raise ValueError("문제 위치 정보가 올바르지 않습니다.")
         preparation = self._current_record_preparation
+        target_kind = target.get('target_kind')
         if preparation is None:
             raise ValueError("현재 데이터 확인 결과가 없습니다. 다시 확인해 주세요.")
         exact_targets = tuple(
@@ -3376,10 +3446,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or type(model_index) is not int
             or not isinstance(record_identity, str)
             or not isinstance(field_id, str)
+            or target_kind not in ('cell', 'row')
             or generation != self._snapshot_gen
             or model_index not in tuple(self._indices())
             or record_identity != self._current_record_identity(generation, model_index)
             or preparation.work_ref != self.job_name
+            or self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT
             or not isinstance(self._last_fresh_observation, CurrentSealedPlanObservation)
             or preparation.execution_value != self._last_fresh_observation.sealed_plan_value
         ):
@@ -3387,13 +3459,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "데이터가 다시 불러와져 문제 위치를 복원할 수 없습니다. 현재 데이터에서 다시 확인해 주세요."
             )
         columns = self.filter.columns if self.filter is not None else []
-        if field_id not in columns:
+        if target_kind == 'cell' and field_id not in columns:
             raise ValueError("문제 데이터의 항목 위치를 복원할 수 없습니다.")
-        if field_id in self.hidden_columns:
+        if target_kind == 'cell' and field_id in self.hidden_columns:
             raise ValueError("문제 항목이 숨겨져 있습니다. 열을 다시 표시한 뒤 이동해 주세요.")
         visible = self.filter.visible_indices(self.records) if self.filter is not None else []
         if model_index not in visible:
             raise ValueError("문제 행이 현재 검색 결과에 없습니다. 검색 조건을 해제해 주세요.")
+        if target_kind == 'row':
+            return {
+                'ok': True,
+                'element_id': f'jobRow-{model_index}',
+                'fallback_element_id': f'jobRow-{model_index}',
+            }
         column_index = columns.index(field_id)
         return {
             "ok": True,
