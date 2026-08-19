@@ -309,3 +309,28 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .topbar,button,select,input[type="checkbox"],input[type="radio"],.jobtb tbody tr{user-select:none}
 /* R4 화면 portal의 무의미한 중간 div는 기존 side-card의 직접 자식 흐름을 바꾸지 않는다. */
 .job-read-side-content{display:contents}
+
+/* SX-02 「포함할 내용」 zone (#725) — S4 Working Slot Configuration 소비 표면. */
+.content-selection{display:flex;flex-direction:column;gap:var(--sp-8)}
+.cs-title{margin:0;font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700}
+.cs-status{margin:0;font-size:var(--fs-caption);padding:var(--sp-6) var(--sp-8);
+  border-radius:var(--rad-surface);line-height:1.4}
+.cs-status-needs,.cs-status-broken{background:var(--fb-missing-bg);color:var(--a-danger)}
+.cs-status-pending,.cs-status-stale{background:var(--a-card);color:var(--a-muted);
+  border:1px solid var(--a-border)}
+.cs-status-error{background:var(--fb-missing-bg);color:var(--a-danger);border:1px solid var(--a-danger)}
+.cs-slots{display:flex;flex-direction:column;gap:var(--sp-10)}
+.cs-slot{margin:0;padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);background:var(--a-card);display:flex;flex-direction:column;gap:var(--sp-6)}
+.cs-slot-attention{border-color:var(--a-danger)}
+.cs-slot-legend{padding:0 var(--sp-4);font-size:var(--fs-body);font-weight:700;color:var(--n-header-ink)}
+.cs-slot-note{margin:0;font-size:var(--fs-caption);color:var(--a-danger)}
+.cs-options{display:flex;flex-direction:column;gap:var(--sp-4)}
+.cs-option{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--fs-body);
+  padding:var(--sp-4) 0;cursor:pointer}
+.cs-option-input:disabled{cursor:default}
+.cs-option:has(.cs-option-input:disabled){color:var(--a-muted);cursor:default}
+.cs-empty{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.cs-detached{margin:0;padding:var(--sp-8) var(--sp-10);border:1px dashed var(--a-border);
+  border-radius:var(--rad-surface)}
+.cs-detached-note{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}

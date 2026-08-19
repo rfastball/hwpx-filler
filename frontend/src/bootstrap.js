@@ -96,6 +96,8 @@ import { createLibraryController } from "./screens/library.ts";
 import { createDataPickerController } from "./screens/data_picker.ts";
 import { createJobReadController } from "./screens/job_read.ts";
 import { createJobRunController } from "./screens/job_run.ts";
+import { createSlotConfigService } from "./screens/job_slot_config.ts";
+import { createJobContentSelectionController } from "./screens/job_content_selection.ts";
 import { createJobRelink } from "./screens/job_relink.ts";
 import { createEditorController } from "./screens/editor.ts";
 import { createEditorEntry } from "./screens/editor_entry.ts";
@@ -254,6 +256,17 @@ export function bootProduct() {
     modal: Modal, navigation, doc: document,
     selectionLine: Guard.selectionLine,
     notify: (message) => window.alert(message),
+  });
+  /* SX-02(#725) — 「문서 만들기」 "포함할 내용" zone. 순수 slot config 서비스(4 dispatch 왕복,
+     local optimistic authority 0)를 job 화면 composition 에 잇는다. 컨트롤러가 job 스냅샷의
+     read-only slot_configuration view 로 passive hydrate 하므로 mount 는 open()(write-on-read)을
+     부르지 않는다(#744). loud 실패는 alert 로 착지시킨다(조용한 삼킴 0). */
+  const SlotConfigService = createSlotConfigService({
+    client,
+    alarm: (message) => window.alert(message),
+  });
+  const JobContentSelectionController = createJobContentSelectionController({
+    runtime, service: SlotConfigService,
   });
   const DataPickerService = {
     init: () => DataPicker.init(),
@@ -443,6 +456,7 @@ export function bootProduct() {
       workbench: WorkbenchController,
       jobRead: JobRead,
       jobRun: JobRunController,
+      slotContent: JobContentSelectionController,
       dataPicker: DataPicker,
       groupMove: GroupMove,
       sheetPicker: SheetPickerController,
