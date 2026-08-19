@@ -351,6 +351,162 @@ def test_current_preparation_is_reused_until_existing_basis_moves(
     assert ctrl._current_record_preparation is not first
 
 
+def _delivery_controller(tmp_path: Path) -> tuple[JobController, Path]:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+    _wire_source_plan(ctrl)
+    rows = [{"name": "A"}, {"name": "B"}]
+    _mount_rows(ctrl, rows)
+
+    class Source:
+        def records(self) -> list[dict]:
+            return rows
+
+    ctrl.datasource = Source()
+    assert ctrl.vm is not None
+    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    out = tmp_path / "delivery"
+    out.mkdir()
+    return ctrl, out
+
+
+def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    legacy_out = ctrl.out_dir
+
+    ctrl.set_output_folder(str(out))
+
+    zone = _zone(ctrl)
+    assert ctrl.out_dir == legacy_out
+    assert zone["run_delivery_intent"] == {
+        "output_directory": str(out),
+        "collision_policy": "ADD_SUFFIX",
+    }
+    assert zone["delivery"] == {
+        "resolvable": True,
+        "planned_documents": [
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+                "item_ordinal": 0,
+                "relative_path": "공고서-20260818-001.hwpx",
+                "collision_disposition": "WRITE_NEW",
+            },
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 0),
+                "item_ordinal": 1,
+                "relative_path": "공고서-20260818-002.hwpx",
+                "collision_disposition": "WRITE_NEW",
+            },
+        ],
+        "blockers": [],
+    }
+    assert zone["create_action"]["enabled"] is False  # S6 absent 보존
+
+
+def test_delivery_intent_changes_reuse_record_preparation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrl, first_out = _delivery_controller(tmp_path)
+    second_out = tmp_path / "delivery-2"
+    second_out.mkdir()
+    ctrl.set_output_folder(str(first_out))
+    _zone(ctrl)
+    record_preparation = ctrl._current_record_preparation
+    assert record_preparation is not None
+
+    monkeypatch.setattr(
+        screen_job_module,
+        "validate_data_records_against_current_value",
+        lambda **_kwargs: pytest.fail("delivery change reran record validation"),
+    )
+    ctrl.set_output_folder(str(second_out))
+    _zone(ctrl)
+    assert ctrl._current_record_preparation is record_preparation
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    _zone(ctrl)
+    assert ctrl._current_record_preparation is record_preparation
+
+
+def test_delivery_clock_is_pinned_until_delivery_invalidation(tmp_path: Path) -> None:
+    ctrl, first_out = _delivery_controller(tmp_path)
+    second_out = tmp_path / "delivery-2"
+    second_out.mkdir()
+    ctrl.set_output_folder(str(first_out))
+    calls = 0
+
+    def counting_clock() -> datetime:
+        nonlocal calls
+        calls += 1
+        return NOW
+
+    ctrl._clock = counting_clock
+    ctrl._run_delivery_intent = dataclasses.replace(
+        ctrl._run_delivery_intent, output_directory=str(second_out)
+    )
+    ctrl._current_delivery_preparation = None
+    record_validation, context = ctrl._current_record_validation()
+    assert context is None
+    calls = 0
+    ctrl._current_delivery(record_validation)
+    assert calls == 1
+    prepared = ctrl._current_delivery_preparation
+    ctrl._current_delivery(record_validation)
+    assert calls == 1
+    assert ctrl._current_delivery_preparation is prepared
+    ctrl.dispatch("refresh_delivery", {})
+    assert ctrl._current_delivery_preparation is not prepared
+
+
+def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    existing = out / "공고서-20260818-001.hwpx"
+    existing.write_text("existing", encoding="utf-8")
+    before = tuple(item.name for item in out.iterdir())
+
+    ctrl.set_output_folder(str(out))
+    zone = _zone(ctrl)
+    assert zone["delivery"]["planned_documents"][0]["relative_path"] == (
+        "공고서-20260818-001_1.hwpx"
+    )
+    assert tuple(item.name for item in out.iterdir()) == before
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    zone = _zone(ctrl)
+    assert zone["delivery"]["resolvable"] is False
+    assert zone["delivery"]["blockers"][0]["code"] == (
+        "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
+    )
+    assert tuple(item.name for item in out.iterdir()) == before
+
+    ctrl.dispatch(
+        "set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"}
+    )
+    zone = _zone(ctrl)
+    assert zone["delivery"]["planned_documents"][0] == {
+        "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+        "item_ordinal": 0,
+        "relative_path": "공고서-20260818-001.hwpx",
+        "collision_disposition": "WRITE_OVERWRITE",
+    }
+    assert tuple(item.name for item in out.iterdir()) == before
+
+
+def test_delivery_unreadable_directory_is_loud_and_never_created(tmp_path: Path) -> None:
+    ctrl, _out = _delivery_controller(tmp_path)
+    missing = tmp_path / "missing-output"
+
+    ctrl.set_output_folder(str(missing))
+    zone = _zone(ctrl)
+
+    assert zone["kind"] == "context_error"
+    assert zone["code"] == "PATH_OCCUPANCY_OBSERVATION_FAILED"
+    assert zone["detail"] == "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
+    assert not missing.exists()
+
+
 def test_stale_projects_backend_execution_action_when_it_is_primary(
     tmp_path: Path,
 ) -> None:

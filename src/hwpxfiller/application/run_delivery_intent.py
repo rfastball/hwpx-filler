@@ -22,16 +22,13 @@ collision policy 어휘의 정본은 :mod:`hwpxfiller.application.document_creat
 resolver overwrite disposition 어휘의 정본은 :mod:`hwpxfiller.application.generation_delivery`
 다 — 둘 다 **import 만** 한다(재정의 없음).
 
-.. note:: **ADD_SUFFIX 사상 한계(확인 필요)**
+.. note:: **legacy compatibility 사상**
 
    resolver 의 disposition 어휘는 ``OVERWRITE_EXISTING``/``SKIP_EXISTING``/``FAIL_ON_EXISTING``
-   뿐이라 **on-disk add-suffix** 를 표현하지 못한다(batch 내부 중복은 resolver 가 항상 suffix 로
-   dedupe 하지만, 이전 실행이 디스크에 남긴 파일까지 suffix 로 피하는 disposition 은 없다). 그래서
-   비파괴 기본값 ``ADD_SUFFIX`` 를 조용히 ``OVERWRITE``(파괴적)나 ``SKIP``(조용한 드롭)으로 낮추지
-   않고, 가장 보수적인 **비파괴·무드롭** disposition 인 ``FAIL_ON_EXISTING``(confirm-or-alarm)으로
-   사상한다. 진짜 on-disk suffix 는 resolver disposition 어휘 확장이 필요하며 SX-02 배선/ resolver
-   소관이다. SX preview 는 디스크 상태를 건드리지 않으므로 이 disposition 은 preview 에서 표식일 뿐
-   실제 write 를 바꾸지 않는다.
+   뿐이라 legacy :func:`map_run_delivery_intent_to_resolution_inputs` 는 ``ADD_SUFFIX`` 를 가장
+   보수적인 ``FAIL_ON_EXISTING`` 으로 유지한다. current production path 는 이 어댑터를 거치지 않고
+   :func:`hwpxfiller.application.generation_delivery.resolve_current_generation_delivery` 가
+   ``RunDeliveryIntent`` 와 one-shot filesystem observation 을 직접 소비해 실제 suffix 를 정한다.
 """
 
 from __future__ import annotations
@@ -51,7 +48,7 @@ from hwpxfiller.application.generation_delivery import (
 ADD_SUFFIX, FAIL, OVERWRITE_EXPLICIT = COLLISION_POLICIES
 
 #: RunDeliveryIntent collision policy → resolver overwrite disposition.
-#: OVERWRITE 는 명시적 ``OVERWRITE_EXPLICIT`` 일 때만. ADD_SUFFIX 사상 한계는 모듈 docstring 참고.
+#: legacy compatibility resolver 용. current production resolver 는 intent 를 직접 소비한다.
 _OVERWRITE_POLICY_BY_COLLISION: dict[str, str] = {
     OVERWRITE_EXPLICIT: OVERWRITE_EXISTING,
     FAIL: FAIL_ON_EXISTING,

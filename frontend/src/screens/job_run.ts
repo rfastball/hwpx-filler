@@ -72,6 +72,18 @@ const GATE_ZONE: Record<string, string> = {
   template_unreadable: "",
 };
 
+const DELIVERY_POLICIES = [
+  ["ADD_SUFFIX", "같은 이름이 있으면 번호 붙이기"],
+  ["FAIL", "같은 이름이 있으면 만들지 않기"],
+  ["OVERWRITE_EXPLICIT", "기존 파일 덮어쓰기"],
+] as const;
+
+const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
+  WRITE_NEW: "새 파일",
+  WRITE_ADD_SUFFIX: "번호를 붙인 새 파일",
+  WRITE_OVERWRITE: "기존 파일 덮어쓰기",
+};
+
 /* ------------------------------------------------------------------ 순수 합성기 */
 
 /** 덮어쓰기 확인 본문 — 총량·파괴분·신규분을 종류별로 재진술한다(결정 36). */
@@ -498,6 +510,28 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       if (text.startsWith("ERROR:")) { log(`폴더 오류: ${text.slice(6).trim()}`); return; }
       log(`저장 폴더: ${text}`);
     },
+    async setDeliveryCollision(policy: string): Promise<void> {
+      if (policy === "OVERWRITE_EXPLICIT") {
+        const confirmed = await deps.modal.confirm({
+          title: "기존 파일 덮어쓰기",
+          body: "같은 이름의 파일이 있으면 기존 파일을 덮어씁니다.",
+          confirmLabel: "덮어쓰기 사용", cancelLabel: "취소", danger: true,
+        });
+        if (!confirmed) return;
+      }
+      try {
+        await dispatch("set_delivery_collision", { collision_policy: policy });
+      } catch (error) {
+        log(`충돌 처리를 바꾸지 못했습니다: ${String(error)}`);
+      }
+    },
+    async refreshDelivery(): Promise<void> {
+      try {
+        await dispatch("refresh_delivery", {});
+      } catch (error) {
+        log(`생성 예정 문서를 다시 확인하지 못했습니다: ${String(error)}`);
+      }
+    },
     relinkActive(): void {
       const s = snapshot();
       if (s && s.job_name) void deps.ports.jobRelinkFlow.current().relinkTemplateFor(String(s.job_name));
@@ -762,6 +796,7 @@ function gateStep(s: Obj, g: Obj): string {
 
 export function JobWorkbenchStatus(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
+  const running = useRun(props.controller).running;
   const wb = (s?.workbench_observation || {}) as Obj;
   if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const items = (wb.input_requirements || []) as Obj[];
@@ -793,6 +828,62 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
           Number(recordValidation.validated_count || 0) > 0
             ? `${Number(recordValidation.validated_count)}건의 데이터를 확인했습니다.`
             : '확인할 데이터가 없습니다.'));
+  const intent = (wb.run_delivery_intent || null) as Obj | null;
+  const delivery = (wb.delivery || {}) as Obj;
+  const planned = (delivery.planned_documents || []) as Obj[];
+  const deliveryBlockers = (delivery.blockers || []) as Obj[];
+  const collisionPolicy = String(intent?.collision_policy || '');
+  const deliverySection = createElement(Fragment, null,
+    h('div', { className: 'zone-cap' }, '저장 폴더'),
+    h('div', { className: 'run-row' },
+      h('input', {
+        className: 'field ro', id: 'jobManagedOutDir', type: 'text', readOnly: true,
+        value: String(intent?.output_directory || ''),
+        placeholder: '이 폴더에 문서를 저장합니다',
+      }),
+      h('button', {
+        className: 'btn sm', id: 'jobManagedPickFolder', type: 'button',
+        disabled: running || !s?.has_job,
+        onClick: () => { void props.controller.pickOutputFolder(); },
+      }, '찾아보기…')),
+    h('div', { className: 'zone-cap' }, '충돌 처리'),
+    h('select', {
+      className: 'field', id: 'jobDeliveryCollision', value: collisionPolicy,
+      disabled: running || intent === null,
+      onChange: (event: Obj) => {
+        const policy = String(event.currentTarget.value);
+        event.currentTarget.value = collisionPolicy;
+        void props.controller.setDeliveryCollision(policy);
+      },
+    },
+    intent === null
+      ? h('option', { value: '' }, '저장 폴더를 먼저 선택하세요')
+      : null,
+    ...DELIVERY_POLICIES.map(([value, label]) =>
+      h('option', { key: value, value }, label))),
+    h('div', { className: 'zone-cap' }, '생성 예정 문서'),
+    planned.length
+      ? h('ul', { className: 'plain-list', id: 'jobPlannedDocuments' },
+          ...planned.map((item) => h('li', {
+            key: `${String(item.record_identity)}:${String(item.item_ordinal)}`,
+            'data-collision-disposition': String(item.collision_disposition || ''),
+          },
+          h('span', null, String(item.relative_path || '')),
+          h('span', { className: 'muted capnote' },
+            DELIVERY_DISPOSITION_COPY[String(item.collision_disposition || '')] || ''))))
+      : deliveryBlockers.length
+        ? h('ul', { className: 'plain-list danger capnote', id: 'jobDeliveryBlockers' },
+            ...deliveryBlockers.map((blocker, index) =>
+              h('li', { key: index }, String(blocker.message || ''))))
+        : h('p', { className: 'muted capnote' }, '생성 예정 문서가 없습니다.'),
+    h('div', { className: 'run-row' },
+      h('button', {
+        className: 'btn sm', id: 'jobRefreshDelivery', type: 'button',
+        disabled: running || intent === null,
+        onClick: () => { void props.controller.refreshDelivery(); },
+      }, '목록 새로 확인'),
+      h('span', { className: 'muted capnote' },
+        '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
   return createElement(Fragment, null,
     h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
     items.length
@@ -824,7 +915,8 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
           h("span", { className: "muted capnote" },
             String(executionAction.disabled_reason || "")))
       : null,
-    recordSection);
+    recordSection,
+    deliverySection);
 }
 
 export function JobActionBar(props: { controller: JobRunController }): ReactNode {

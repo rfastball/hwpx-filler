@@ -28,7 +28,8 @@ const SURFACE = [
   "renderResult", "markResultStale",
   "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
-  "pickOutputFolder", "relinkActive", "templateCheck", "templateApply",
+  "pickOutputFolder", "setDeliveryCollision", "refreshDelivery",
+  "relinkActive", "templateCheck", "templateApply",
   "openPreviewFrom", "closePreview",
   "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
   "previewFixField", "previewFixFilename", "openRepair", "toggleLog",
@@ -39,6 +40,7 @@ const SURFACE = [
 
 function harness(options = {}) {
   const calls = [];
+  const confirmSpecs = [];
   let listeners = 0;
   let initialCalls = 0;
   let snapshot = options.snapshot ?? null;
@@ -93,7 +95,13 @@ function harness(options = {}) {
   const controller = createJobRunController({
     runtime, client, ports,
     services: { relink: port({ relinkTemplate: () => Promise.resolve(true) }) },
-    modal: { confirm: () => Promise.resolve(true), open() {}, close() {} },
+    modal: {
+      confirm: (spec) => {
+        confirmSpecs.push(spec);
+        return Promise.resolve(options.confirmResult ?? true);
+      },
+      open() {}, close() {},
+    },
     navigation: { go() {} },
     doc: options.doc ?? { getElementById: () => null, querySelector: () => null },
     selectionLine: (n) => `${n}행 선택`,
@@ -104,7 +112,7 @@ function harness(options = {}) {
     for (const listener of [...subscribers]) listener();
   };
   return {
-    controller, calls, editorEntry, client, push,
+    controller, calls, confirmSpecs, editorEntry, client, push,
     editorCalls,
     listeners: () => listeners,
     initialCalls: () => initialCalls,
@@ -430,6 +438,75 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
   assert.match(action, /id="jobManagedCreate"[^>]*disabled=""/);
   assert.ok(action.includes("문서 만들기"));
   assert.ok(action.includes(reason));
+});
+
+test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 push를 기다린다', async () => {
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: '입력이 필요한 항목',
+      execution_status_code: 'CURRENT', execution_status_phrase: '현재 설정이 반영됐습니다',
+      run_delivery_intent: {
+        output_directory: 'C:\\문서', collision_policy: 'ADD_SUFFIX',
+      },
+      delivery: {
+        resolvable: true, blockers: [],
+        planned_documents: [{
+          record_identity: 'opaque-record', item_ordinal: 0,
+          relative_path: '백엔드-그대로_7.hwpx',
+          collision_disposition: 'WRITE_ADD_SUFFIX',
+        }],
+      },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(
+    createElement(JobWorkbenchStatus, { controller: h.controller }),
+  );
+  for (const text of [
+    '저장 폴더', '충돌 처리', '생성 예정 문서', 'C:\\문서',
+    '백엔드-그대로_7.hwpx', '번호를 붙인 새 파일', '목록 새로 확인',
+    '실제 파일 생성을 예약한 것은 아닙니다.',
+  ]) assert.ok(markup.includes(text), text);
+
+  const before = h.controller.getRun().lastFull;
+  await h.controller.setDeliveryCollision('FAIL');
+  assert.deepEqual(h.calls.at(-1), {
+    screen: 'job', action: 'set_delivery_collision',
+    payload: { collision_policy: 'FAIL' },
+  });
+  assert.equal(h.controller.getRun().lastFull, before);
+  assert.equal(h.controller.getRun().lastFull.workbench_observation
+    .delivery.planned_documents[0].relative_path, '백엔드-그대로_7.hwpx');
+
+  await h.controller.refreshDelivery();
+  assert.deepEqual(h.calls.at(-1), {
+    screen: 'job', action: 'refresh_delivery', payload: {},
+  });
+
+  const source = String(JobWorkbenchStatus);
+  for (const forbidden of ['new Date', '{{date', '{{seq', 'existsSync', 'casefold', '.sort(']) {
+    assert.equal(source.includes(forbidden), false, forbidden);
+  }
+});
+
+test('기존 파일 덮어쓰기는 명시 확인 뒤에만 backend policy command를 보낸다', async () => {
+  const cancelled = harness({ confirmResult: false });
+  await cancelled.controller.setDeliveryCollision('OVERWRITE_EXPLICIT');
+  assert.equal(cancelled.confirmSpecs.length, 1);
+  assert.equal(cancelled.confirmSpecs[0].danger, true);
+  assert.equal(cancelled.calls.some((call) => call.action === 'set_delivery_collision'), false);
+
+  const confirmed = harness();
+  await confirmed.controller.setDeliveryCollision('OVERWRITE_EXPLICIT');
+  assert.equal(confirmed.confirmSpecs.length, 1);
+  assert.deepEqual(confirmed.calls.at(-1), {
+    screen: 'job', action: 'set_delivery_collision',
+    payload: { collision_policy: 'OVERWRITE_EXPLICIT' },
+  });
 });
 
 test('데이터 확인은 backend 문안과 recovery target만 소비한다', async () => {

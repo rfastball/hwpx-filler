@@ -62,6 +62,7 @@ from ..application.fresh_execution_observation import (
     RuntimePolicyAdmission,
 )
 from ..application.preview_requirement import PreviewNotRequired, PreviewRequirement
+from ..application.run_delivery_intent import RunDeliveryIntent
 from ..application.slot_configuration_projection import (
     HAS_BROKEN_SELECTIONS,
     NEEDS_SELECTION,
@@ -232,10 +233,12 @@ def _sx04_seam_record_validation(
     return projection if projection is not None else RecordValidationSummary()
 
 
-def _sx04_seam_delivery() -> DeliveryPreviewSummary:
+def _sx04_seam_delivery(
+    projection: DeliveryPreviewSummary | None = None,
+) -> DeliveryPreviewSummary:
     # SX-04 seam(정직성 앵커): delivery 가 실제로 채워지기 전에는 resolvable=False —
     # Primary Action 이 CREATE_DOCUMENTS 로 조용히 새지 않고 REVIEW_DELIVERY 로 시끄럽게 막힌다.
-    return DeliveryPreviewSummary(resolvable=False)
+    return projection if projection is not None else DeliveryPreviewSummary(resolvable=False)
 
 
 def _sx04_seam_preview_satisfied() -> bool:
@@ -265,6 +268,8 @@ class WorkbenchObservationProduct:
         template_change_verdict: str | None = None,
         input_requirements: tuple[InputRequirement, ...] = (),
         record_validation: RecordValidationSummary | None = None,
+        delivery: DeliveryPreviewSummary | None = None,
+        run_delivery_intent: RunDeliveryIntent | None = None,
         context_integrity: WorkbenchContextIntegrity | None = None,
     ) -> GetDocumentCreationWorkbenchResult:
         """세션 사실 + seal 서비스 fresh_observation → 작업대 Observation(또는 ContextError).
@@ -305,7 +310,8 @@ class WorkbenchObservationProduct:
             input_requirements=input_requirements,
             # ── SX-04 seam ──
             record_validation=_sx04_seam_record_validation(record_validation),
-            delivery=_sx04_seam_delivery(),
+            delivery=_sx04_seam_delivery(delivery),
+            run_delivery_intent=run_delivery_intent,
             preview_satisfied=_sx04_seam_preview_satisfied(),
             context_integrity=context_integrity,
         )

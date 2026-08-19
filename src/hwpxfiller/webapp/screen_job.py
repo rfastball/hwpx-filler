@@ -140,12 +140,25 @@ from ..application.automatic_seal_orchestration import (
     request_manual_recovery,
 )
 from ..application.document_creation_workbench import (
+    DeliveryPreviewBlocker,
+    DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
+    PlannedDocumentSummary,
     RecordRecoveryTarget,
     RecordValidationIssue,
     RecordValidationSummary,
     RESOLVE_EXECUTION,
     WorkbenchContextIntegrity,
+)
+from ..application.generation_delivery import (
+    DeliveryPlanBlocked,
+    DeliveryPlanContextError,
+    FILENAME_PATTERN_CONTRACT_ID,
+    GenerationDeliveryBindingBasis,
+    PathOccupancyObservation,
+    CurrentResolvedDelivery,
+    build_delivery_binding_basis,
+    resolve_current_generation_delivery,
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
@@ -167,6 +180,11 @@ from ..application.record_validation import (
     RecordValidationBlocker,
     validate_data_records_against_current_value,
 )
+from ..application.run_delivery_intent import (
+    ADD_SUFFIX,
+    RunDeliveryIntent,
+)
+from ..application.field_binding_input import FieldBindingInput
 from ..domain.raw_data_record import (
     RawDataRecordSnapshot,
     RawDataRecordError,
@@ -268,6 +286,16 @@ class _CurrentRecordPreparation:
     record_validation: RecordValidationSummary
 
 
+@dataclass(frozen=True)
+class _CurrentDeliveryPreparation:
+    record_preparation: _CurrentRecordPreparation
+    current_field_binding: FieldBindingInput
+    exact_pattern: str
+    run_delivery_intent: RunDeliveryIntent
+    captured_delivery_clock: str
+    result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
+
+
 class _CurrentRecordCaptureError(ValueError):
     pass
 
@@ -302,6 +330,14 @@ _RECORD_BLOCKER_PHRASES = {
     RECORD_VALUE_FORMAT_INVALID: "값 형식이 올바르지 않습니다.",
     RECORD_BLANK_POLICY_VIOLATION: "빈 값이나 공백만 있는 값은 사용할 수 없습니다.",
     RECORD_DOCUMENT_VALUE_RESOLUTION_FAILED: "이 값을 문서 내용으로 해석할 수 없습니다.",
+}
+
+_DELIVERY_BLOCKER_PHRASES = {
+    "OUTPUT_NAME_TOKEN_UNRESOLVED": "파일 이름에 사용할 값을 확인할 수 없습니다.",
+    "OUTPUT_NAME_BINDING_AMBIGUOUS": "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다.",
+    "OUTPUT_NAME_VALUE_RESOLUTION_FAILED": "파일 이름에 사용할 값을 해석할 수 없습니다.",
+    "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
+    "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 항목이 이미 있어 현재 충돌 처리로 만들 수 없습니다.",
 }
 
 
@@ -422,6 +458,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 트리거를 아래 `_maybe_auto_check` 로 배선한다(수동 seal 버튼 0).
         self._session_orchestration = AutomaticSealOrchestration()
         self._current_record_preparation: _CurrentRecordPreparation | None = None
+        self._run_delivery_intent: RunDeliveryIntent | None = None
+        self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
         # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
         # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
         # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
@@ -671,6 +709,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
         self._snapshot_gen += 1
         self._current_record_preparation = None
+        self._current_delivery_preparation = None
         self.range_draft = None
         self.zone_epoch += 1
 
@@ -1791,6 +1830,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
+        if self.vm is not None and self.vm.job.authority_id:
+            collision = (
+                self._run_delivery_intent.collision_policy
+                if self._run_delivery_intent is not None
+                else ADD_SUFFIX
+            )
+            self._run_delivery_intent = RunDeliveryIntent(path, collision)
+            self._current_delivery_preparation = None
+            self._push()
+            return
         self.out_dir = path
         self._push()
 
@@ -1813,6 +1862,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not is_query and not blocked:
             self._push()
         return result
+
+    def _do_set_delivery_collision(self, p: dict) -> dict:
+        if self._run_delivery_intent is None:
+            raise ValueError("먼저 저장 폴더를 선택하세요.")
+        self._run_delivery_intent = RunDeliveryIntent(
+            self._run_delivery_intent.output_directory,
+            str(p["collision_policy"]),
+        )
+        self._current_delivery_preparation = None
+        return {"ok": True}
+
+    def _do_refresh_delivery(self, p: dict) -> dict:
+        if self._run_delivery_intent is None:
+            raise ValueError("먼저 저장 폴더를 선택하세요.")
+        self._current_delivery_preparation = None
+        return {"ok": True}
 
     def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
         """이 존 변이가 **남의 세계**를 겨누고 있는가(리뷰 4R).
@@ -2968,6 +3033,35 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     for issue in observation.record_validation.issues
                 ],
             },
+            "run_delivery_intent": (
+                {
+                    "output_directory": observation.run_delivery_intent.output_directory,
+                    "collision_policy": observation.run_delivery_intent.collision_policy,
+                }
+                if observation.run_delivery_intent is not None
+                else None
+            ),
+            "delivery": {
+                "resolvable": observation.delivery.resolvable,
+                "planned_documents": [
+                    {
+                        "record_identity": item.record_identity,
+                        "item_ordinal": item.item_ordinal,
+                        "relative_path": item.relative_path,
+                        "collision_disposition": item.collision_disposition,
+                    }
+                    for item in observation.delivery.planned_documents
+                ],
+                "blockers": [
+                    {
+                        "code": blocker.code,
+                        "message": blocker.message,
+                        "item_ordinal": blocker.item_ordinal,
+                        "field_id": blocker.field_id,
+                    }
+                    for blocker in observation.delivery.blockers
+                ],
+            },
             # 사용자 문안 축(vocabulary 정본 — 내부어 0).
             "content_section_label": observation.content_section_label,
             "input_requirements_label": observation.input_requirements_label,
@@ -3108,6 +3202,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_fresh_observation = None
         self._last_sealed_basis_digest = None
         self._current_record_preparation = None
+        self._current_delivery_preparation = None
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
@@ -3480,6 +3575,167 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     _do_recover_record_issue.is_query = True
 
+    @staticmethod
+    def _unresolved_delivery(code: str, message: str) -> DeliveryPreviewSummary:
+        return DeliveryPreviewSummary(
+            resolvable=False,
+            blockers=(DeliveryPreviewBlocker(code=code, message=message),),
+        )
+
+    @staticmethod
+    def _observe_path_occupancy(
+        intent: RunDeliveryIntent, observed_at: str
+    ) -> PathOccupancyObservation:
+        root = Path(intent.output_directory)
+        if not root.is_absolute():
+            raise ValueError("저장 폴더는 전체 경로여야 합니다.")
+        try:
+            names = tuple(sorted((entry.name for entry in root.iterdir()), key=str.casefold))
+        except OSError as exc:
+            raise ValueError("저장 폴더의 현재 파일 목록을 읽을 수 없습니다.") from exc
+        return PathOccupancyObservation(intent.output_directory, names, observed_at)
+
+    @staticmethod
+    def _delivery_projection(
+        result: CurrentResolvedDelivery | DeliveryPlanBlocked,
+    ) -> DeliveryPreviewSummary:
+        if isinstance(result, DeliveryPlanBlocked):
+            return DeliveryPreviewSummary(
+                resolvable=False,
+                blockers=tuple(
+                    DeliveryPreviewBlocker(
+                        code=blocker.code,
+                        message=_DELIVERY_BLOCKER_PHRASES.get(
+                            blocker.code, "생성 예정 문서 이름을 확인할 수 없습니다."
+                        ),
+                        item_ordinal=blocker.item_ordinal,
+                        field_id=blocker.field_id,
+                    )
+                    for blocker in result.blockers
+                ),
+            )
+        planned = tuple(
+            PlannedDocumentSummary(
+                record_identity=item.record_identity,
+                item_ordinal=item.item_ordinal,
+                relative_path=item.resolved_output_relative_path,
+                collision_disposition=item.collision_disposition,
+            )
+            for item in result.ordered_items
+        )
+        return DeliveryPreviewSummary(
+            resolvable=True,
+            planned_output_names=tuple(item.relative_path for item in planned),
+            planned_documents=planned,
+        )
+
+    def _current_delivery(
+        self,
+        record_validation: RecordValidationSummary,
+    ) -> tuple[DeliveryPreviewSummary, WorkbenchContextIntegrity | None]:
+        intent = self._run_delivery_intent
+        if intent is None:
+            return self._unresolved_delivery(
+                "OUTPUT_DIRECTORY_REQUIRED", "저장 폴더를 선택하세요."
+            ), None
+        preparation = self._current_record_preparation
+        if record_validation.has_blocking_issues:
+            return self._unresolved_delivery(
+                "RECORD_VALIDATION_REQUIRED", "먼저 데이터 문제를 확인하세요."
+            ), None
+        if (
+            preparation is None
+            or preparation.snapshot_generation != self._snapshot_gen
+            or preparation.work_ref != self.job_name
+            or preparation.ordered_model_indices != tuple(self._indices())
+            or not preparation.validated_records
+        ):
+            return self._unresolved_delivery(
+                "CURRENT_RECORD_PREPARATION_REQUIRED", "생성할 데이터를 먼저 선택하세요."
+            ), None
+        fresh = self._last_fresh_observation
+        if not isinstance(fresh, CurrentSealedPlanObservation):
+            return self._unresolved_delivery(
+                "CURRENT_EXECUTION_REQUIRED", "현재 설정을 먼저 확인하세요."
+            ), None
+        current_field_binding = fresh.current_field_binding
+        if current_field_binding is None:
+            return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
+                restore_failure=True,
+                code="CURRENT_DELIVERY_BINDING_CONTEXT_MISSING",
+                detail="현재 파일 이름에 사용할 항목 연결을 복원할 수 없습니다.",
+            )
+        exact_pattern = self.vm.job.filename_pattern if self.vm is not None else ""
+        cached = self._current_delivery_preparation
+        if (
+            cached is not None
+            and cached.record_preparation is preparation
+            and cached.current_field_binding == current_field_binding
+            and cached.exact_pattern == exact_pattern
+            and cached.run_delivery_intent == intent
+        ):
+            if isinstance(cached.result, DeliveryPlanContextError):
+                return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
+                    restore_failure=True,
+                    code=cached.result.code,
+                    detail=cached.result.detail,
+                )
+            return self._delivery_projection(cached.result), None
+
+        captured_clock = self._clock().isoformat(timespec="seconds")
+        basis = build_delivery_binding_basis(
+            base_template_application_id=current_field_binding.base_template_application_id,
+            field_binding_authority_revision=(
+                current_field_binding.field_binding_authority_revision
+            ),
+            filename_pattern_contract_id=FILENAME_PATTERN_CONTRACT_ID,
+            exact_pattern=exact_pattern,
+            active_field_ids=(
+                str(requirement["field_id"])
+                for requirement in preparation.execution_value.active_field_requirements
+            ),
+            binding_rules=current_field_binding.binding_rules,
+            document_value_resolution_contract_id=(
+                preparation.execution_value.contract_semantics
+                .document_value_resolution_contract_id
+            ),
+        )
+        result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
+        if isinstance(basis, (DeliveryPlanBlocked, DeliveryPlanContextError)):
+            result = basis
+        else:
+            assert isinstance(basis, GenerationDeliveryBindingBasis)
+            try:
+                occupancy = self._observe_path_occupancy(intent, captured_clock)
+            except ValueError as exc:
+                result = DeliveryPlanContextError(
+                    "PATH_OCCUPANCY_OBSERVATION_FAILED", str(exc)
+                )
+            else:
+                result = resolve_current_generation_delivery(
+                    sealed_execution_plan=preparation.execution_value,
+                    ordered_validated_records=preparation.validated_records,
+                    ordered_raw_snapshots=preparation.raw_records,
+                    delivery_binding_basis=basis,
+                    exact_pattern=exact_pattern,
+                    captured_delivery_clock=captured_clock,
+                    run_delivery_intent=intent,
+                    path_occupancy=occupancy,
+                )
+        self._current_delivery_preparation = _CurrentDeliveryPreparation(
+            record_preparation=preparation,
+            current_field_binding=current_field_binding,
+            exact_pattern=exact_pattern,
+            run_delivery_intent=intent,
+            captured_delivery_clock=captured_clock,
+            result=result,
+        )
+        if isinstance(result, DeliveryPlanContextError):
+            return DeliveryPreviewSummary(resolvable=False), WorkbenchContextIntegrity(
+                restore_failure=True, code=result.code, detail=result.detail
+            )
+        return self._delivery_projection(result), None
+
     def workbench_observation(self):
         """세션 사실 + seal 서비스 fresh observation → 작업대 Observation(SX-01 #724 · SX-03 #726).
 
@@ -3512,6 +3768,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ):
             binding_projection = self._seal_execution.current_binding_review(self.job_name)
         record_validation, context_integrity = self._current_record_validation()
+        if context_integrity is None:
+            delivery, delivery_context = self._current_delivery(record_validation)
+            context_integrity = delivery_context
+        else:
+            delivery = DeliveryPreviewSummary(resolvable=False)
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -3527,6 +3788,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 binding_projection.input_requirements if binding_projection is not None else ()
             ),
             record_validation=record_validation,
+            delivery=delivery,
+            run_delivery_intent=self._run_delivery_intent,
             context_integrity=context_integrity,
         )
 

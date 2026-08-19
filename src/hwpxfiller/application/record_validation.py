@@ -493,7 +493,7 @@ def _validate_record_contracts(contracts: Any, snapshot: RawDataRecordSnapshot) 
         )
 
 
-def _current_validation_basis(
+def current_record_validation_basis(
     plan: SealedExecutionPlanValue,
 ) -> CurrentRecordValidationBasis:
     contracts = plan.contract_semantics
@@ -532,7 +532,7 @@ def _current_source_text_interpretation_keys(
 def validate_data_record_against_current_value(
     *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
 ) -> ValidateCurrentDataRecordResult:
-    basis = _current_validation_basis(plan)
+    basis = current_record_validation_basis(plan)
     interpretation_keys = _current_source_text_interpretation_keys(plan)
     try:
         return _validate_current_value(
@@ -552,7 +552,7 @@ def validate_data_records_against_current_value(
     snapshots: Iterable[RawDataRecordSnapshot],
     validated_at: str,
 ) -> tuple[ValidateCurrentDataRecordResult, ...]:
-    basis = _current_validation_basis(plan)
+    basis = current_record_validation_basis(plan)
     interpretation_keys = _current_source_text_interpretation_keys(plan)
     results: list[ValidateCurrentDataRecordResult] = []
     for snapshot in snapshots:
@@ -893,7 +893,7 @@ def verify_current_validated_record_completeness(
     *,
     expected_basis: CurrentRecordValidationBasis | None = None,
 ) -> None:
-    expected_basis = expected_basis or _current_validation_basis(plan)
+    expected_basis = expected_basis or current_record_validation_basis(plan)
     if record.validation_basis != expected_basis:
         raise ValidatedRecordIntegrityError("current VDR validation basis mismatch")
     if record.record_identity != snapshot.record_identity:

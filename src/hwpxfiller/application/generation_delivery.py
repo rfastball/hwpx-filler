@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hwpxfiller.application.execution_composition import (
     RuntimeMaterializerConformanceRegistry,
@@ -38,12 +38,17 @@ from hwpxfiller.application.execution_contract_set import (
     plan_semantic_digest,
 )
 from hwpxfiller.application.record_validation import (
+    CurrentValidatedDataRecord,
     DOCUMENT_VALUE_RESOLUTION_CONTRACT_ID,
     ImmutableVdrStore,
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
+    current_record_validation_basis,
+    verify_current_validated_record_completeness,
     verify_validated_record_completeness,
 )
+from hwpxfiller.application.document_creation_vocabulary import COLLISION_POLICIES
+from hwpxfiller.application.execution_semantic_kernel import SealedExecutionPlanValue
 from hwpxfiller.domain.canonical_execution_encoding import (
     CanonicalExecutionEncodingError,
     canonical_execution_digest,
@@ -78,6 +83,9 @@ from hwpxfiller.domain.raw_data_record import (
     source_value_type_of,
     verify_raw_record_snapshot,
 )
+
+if TYPE_CHECKING:
+    from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 
 # ─── contract/schema 버전(코드·문서 단일 출처) ────────────────────────────────────────────
 FILENAME_PATTERN_CONTRACT_ID = "filename-pattern/v1"
@@ -115,6 +123,10 @@ UNSUPPORTED_OVERWRITE_POLICY = "UNSUPPORTED_OVERWRITE_POLICY"
 DELIVERY_BINDING_BASIS_INTEGRITY_ERROR = "DELIVERY_BINDING_BASIS_INTEGRITY_ERROR"
 VALIDATED_RECORD_PLAN_MISMATCH = "VALIDATED_RECORD_PLAN_MISMATCH"
 RAW_VALIDATED_RECORD_MISMATCH = "RAW_VALIDATED_RECORD_MISMATCH"
+CURRENT_RECORD_VALIDATION_BASIS_MISMATCH = (
+    "CURRENT_RECORD_VALIDATION_BASIS_MISMATCH"
+)
+PATH_OCCUPANCY_OBSERVATION_MISMATCH = "PATH_OCCUPANCY_OBSERVATION_MISMATCH"
 OUTPUT_PATH_ESCAPE_DETECTED = "OUTPUT_PATH_ESCAPE_DETECTED"
 UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT = (
     "UNSUPPORTED_DELIVERY_VALUE_RESOLUTION_CONTRACT"
@@ -134,6 +146,11 @@ _KIND_INTENTIONAL_BLANK = "INTENTIONAL_BLANK"
 
 _BOOLEAN_TRUE_TEXT = "true"
 _BOOLEAN_FALSE_TEXT = "false"
+
+# current delivery disposition — publication guarantee 가 아니라 현재 관찰에 대한 계획이다.
+WRITE_NEW = "WRITE_NEW"
+WRITE_ADD_SUFFIX = "WRITE_ADD_SUFFIX"
+WRITE_OVERWRITE = "WRITE_OVERWRITE"
 
 
 # ─── 예외(구성된 DTO 무결성) / 내부 signal ─────────────────────────────────────────────────
@@ -602,6 +619,44 @@ ResolveGenerationDeliveryPlanResult = (
 )
 
 
+@dataclass(frozen=True)
+class PathOccupancyObservation:
+    """한 output directory 를 한 번 읽은 read-only current observation."""
+
+    output_directory: str
+    occupied_relative_names: tuple[str, ...]
+    observed_at: str
+
+    def __post_init__(self) -> None:
+        if not self.output_directory or not self.observed_at:
+            raise ValueError("path occupancy observation context is required")
+        if any(not isinstance(name, str) or not name for name in self.occupied_relative_names):
+            raise ValueError("occupied relative names must be non-empty strings")
+
+
+@dataclass(frozen=True)
+class CurrentResolvedDeliveryItem:
+    record_identity: str
+    item_ordinal: int
+    resolved_output_relative_path: str
+    collision_disposition: str
+    resolved_token_values: tuple[ResolvedTokenValue, ...] = ()
+
+
+@dataclass(frozen=True)
+class CurrentResolvedDelivery:
+    exact_pattern: str
+    captured_delivery_clock: str
+    output_directory: str
+    collision_policy: str
+    ordered_items: tuple[CurrentResolvedDeliveryItem, ...]
+
+
+ResolveCurrentGenerationDeliveryResult = (
+    CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
+)
+
+
 def _resolved_token_values_payload(
     values: Iterable[ResolvedTokenValue],
 ) -> list[dict[str, Any]]:
@@ -736,7 +791,9 @@ def _render_item(
     return name, tuple(resolved)
 
 
-def _dedupe_batch(base_names: list[str]) -> list[str]:
+def _dedupe_batch(
+    base_names: list[str], *, occupied_names: Iterable[str] = ()
+) -> list[str]:
     """배치 내 같은 이름 충돌에 결정적 접미사(_1·_2…)를 붙인다(naming.OutputNamer 규칙).
 
     접미사는 확장자 앞에 넣는다(``stem_1.hwpx``). batch 순서로 한 번 계산한다 — item 별 독립
@@ -745,7 +802,7 @@ def _dedupe_batch(base_names: list[str]) -> list[str]:
     Windows FS 는 기본 case-insensitive 라 ``Report.hwpx`` 와 ``report.hwpx`` 는 같은 파일이다 —
     충돌 판정은 casefold 로 하되(안 그러면 둘째가 첫째를 덮어쓴다) 표시 철자는 원본 그대로 둔다.
     """
-    seen: set[str] = set()  # casefold 된 이름(충돌 판정 축)
+    seen = {name.casefold() for name in occupied_names}
     out: list[str] = []
     for name in base_names:
         if name.casefold() not in seen:
@@ -761,6 +818,244 @@ def _dedupe_batch(base_names: list[str]) -> list[str]:
         seen.add(cand.casefold())
         out.append(cand)
     return out
+
+
+def resolve_current_generation_delivery(
+    *,
+    sealed_execution_plan: SealedExecutionPlanValue,
+    ordered_validated_records: Iterable[CurrentValidatedDataRecord],
+    ordered_raw_snapshots: Iterable[RawDataRecordSnapshot],
+    delivery_binding_basis: GenerationDeliveryBindingBasis,
+    exact_pattern: str,
+    captured_delivery_clock: str,
+    run_delivery_intent: RunDeliveryIntent,
+    path_occupancy: PathOccupancyObservation,
+    filename_pattern_contract_id: str = FILENAME_PATTERN_CONTRACT_ID,
+) -> ResolveCurrentGenerationDeliveryResult:
+    """current Plan/VDR values + one occupancy observation -> exact planned paths.
+
+    No legacy Plan shell, VDR ref, semantic digest, durable pointer, reservation, or write is
+    constructed. Existing-path decisions are based only on ``path_occupancy``; a later publisher
+    must recheck the filesystem race.
+    """
+    try:
+        return _resolve_current(
+            sealed_execution_plan=sealed_execution_plan,
+            ordered_validated_records=tuple(ordered_validated_records),
+            ordered_raw_snapshots=tuple(ordered_raw_snapshots),
+            delivery_binding_basis=delivery_binding_basis,
+            exact_pattern=exact_pattern,
+            captured_delivery_clock=captured_delivery_clock,
+            run_delivery_intent=run_delivery_intent,
+            path_occupancy=path_occupancy,
+            filename_pattern_contract_id=filename_pattern_contract_id,
+        )
+    except _PatternInvalidSignal as exc:
+        return DeliveryPlanBlocked(
+            (DeliveryPlanBlocker(OUTPUT_NAME_PATTERN_INVALID, None, None, str(exc)),)
+        )
+    except _DeliveryContextSignal as sig:
+        return DeliveryPlanContextError(sig.code, sig.detail)
+
+
+def _resolve_current(
+    *,
+    sealed_execution_plan: SealedExecutionPlanValue,
+    ordered_validated_records: tuple[CurrentValidatedDataRecord, ...],
+    ordered_raw_snapshots: tuple[RawDataRecordSnapshot, ...],
+    delivery_binding_basis: GenerationDeliveryBindingBasis,
+    exact_pattern: str,
+    captured_delivery_clock: str,
+    run_delivery_intent: RunDeliveryIntent,
+    path_occupancy: PathOccupancyObservation,
+    filename_pattern_contract_id: str,
+) -> ResolveCurrentGenerationDeliveryResult:
+    if filename_pattern_contract_id != FILENAME_PATTERN_CONTRACT_ID:
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_FILENAME_PATTERN_CONTRACT,
+            f"미지원 filename pattern contract: {filename_pattern_contract_id!r}",
+        )
+    if run_delivery_intent.collision_policy not in COLLISION_POLICIES:
+        raise _DeliveryContextSignal(
+            UNSUPPORTED_OVERWRITE_POLICY,
+            f"미지원 collision policy: {run_delivery_intent.collision_policy!r}",
+        )
+    if path_occupancy.output_directory != run_delivery_intent.output_directory:
+        raise _DeliveryContextSignal(
+            PATH_OCCUPANCY_OBSERVATION_MISMATCH,
+            "filesystem observation output directory 가 RunDeliveryIntent 와 불일치",
+        )
+    try:
+        verify_delivery_binding_basis_integrity(delivery_binding_basis)
+    except DeliveryBindingBasisIntegrityError as exc:
+        raise _DeliveryContextSignal(
+            DELIVERY_BINDING_BASIS_INTEGRITY_ERROR, str(exc)
+        ) from exc
+    if (
+        delivery_binding_basis.filename_pattern_contract_id
+        != filename_pattern_contract_id
+        or delivery_binding_basis.exact_pattern != exact_pattern
+        or delivery_binding_basis.base_template_application_id
+        != sealed_execution_plan.template_application_id
+    ):
+        raise _DeliveryContextSignal(
+            DELIVERY_BINDING_BASIS_INTEGRITY_ERROR,
+            "delivery binding basis 가 current Plan/pattern 과 불일치",
+        )
+    if len(ordered_raw_snapshots) != len(ordered_validated_records):
+        raise _DeliveryContextSignal(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+            "ordered raw snapshots 와 current validated records 개수 불일치",
+        )
+    try:
+        clock = datetime.fromisoformat(captured_delivery_clock)
+    except (TypeError, ValueError) as exc:
+        raise _DeliveryContextSignal(
+            GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+            f"captured_delivery_clock 이 유효한 ISO 8601 이 아니다: {captured_delivery_clock!r}",
+        ) from exc
+
+    tokens = parse_filename_pattern(
+        exact_pattern, filename_pattern_contract_id=filename_pattern_contract_id
+    )
+    inactive_by_field = {
+        requirement.field_id: requirement.value_expression
+        for requirement in delivery_binding_basis.output_name_requirements
+    }
+    expected_basis = current_record_validation_basis(sealed_execution_plan)
+    blockers: list[DeliveryPlanBlocker] = []
+    base_names: list[str] = []
+    token_values: list[tuple[ResolvedTokenValue, ...]] = []
+    for ordinal, (snapshot, record) in enumerate(
+        zip(ordered_raw_snapshots, ordered_validated_records, strict=True)
+    ):
+        try:
+            verify_raw_record_snapshot(snapshot)
+        except (RawRecordIntegrityError, CanonicalExecutionEncodingError) as exc:
+            raise _DeliveryContextSignal(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                f"item {ordinal} raw snapshot 무결성 실패: {exc}",
+            ) from exc
+        if record.validation_basis != expected_basis:
+            raise _DeliveryContextSignal(
+                CURRENT_RECORD_VALIDATION_BASIS_MISMATCH,
+                f"item {ordinal} current VDR validation basis 가 current Plan 과 불일치",
+            )
+        if (
+            record.record_identity != snapshot.record_identity
+            or record.raw_record_digest != snapshot.raw_record_digest
+        ):
+            raise _DeliveryContextSignal(
+                RAW_VALIDATED_RECORD_MISMATCH,
+                f"item {ordinal} raw snapshot 이 current VDR 과 결속되지 않음",
+            )
+        try:
+            verify_current_validated_record_completeness(
+                record, sealed_execution_plan, snapshot, expected_basis=expected_basis
+            )
+        except ValidatedRecordIntegrityError as exc:
+            raise _DeliveryContextSignal(
+                GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR,
+                f"item {ordinal} current VDR 완결성 실패: {exc}",
+            ) from exc
+
+        active_map = dict(record.document_values_in_order())
+        field_values: dict[str, str] = {}
+        item_blocked = False
+        for field_id in pattern_field_token_ids(tokens):
+            value: str | tuple[str, str]
+            if field_id in active_map:
+                value = active_map[field_id]
+            elif field_id in inactive_by_field:
+                value = resolve_delivery_field_value(inactive_by_field[field_id], snapshot)
+            else:
+                value = (
+                    OUTPUT_NAME_TOKEN_UNRESOLVED,
+                    f"filename token {field_id!r} 이 Active 도 delivery basis 도 아니다",
+                )
+            if isinstance(value, tuple):
+                blockers.append(DeliveryPlanBlocker(value[0], ordinal, field_id, value[1]))
+                item_blocked = True
+            elif value == "":
+                blockers.append(
+                    DeliveryPlanBlocker(
+                        OUTPUT_NAME_TOKEN_UNRESOLVED,
+                        ordinal,
+                        field_id,
+                        f"filename token {field_id!r} 이 빈 logical text 로 해석됨",
+                    )
+                )
+                item_blocked = True
+            else:
+                field_values[field_id] = value
+        if item_blocked:
+            base_names.append("")
+            token_values.append(())
+            continue
+        name, resolved_tokens = _render_item(
+            tokens, field_values, ordinal=ordinal, clock=clock
+        )
+        _guard_relative_path(name)
+        base_names.append(name)
+        token_values.append(resolved_tokens)
+    if blockers:
+        blockers.sort(
+            key=lambda blocker: (
+                blocker.item_ordinal if blocker.item_ordinal is not None else -1,
+                blocker.code,
+                blocker.field_id or "",
+            )
+        )
+        return DeliveryPlanBlocked(tuple(blockers))
+
+    occupied = path_occupancy.occupied_relative_names
+    policy = run_delivery_intent.collision_policy
+    if policy == "ADD_SUFFIX":
+        paths = _dedupe_batch(base_names, occupied_names=occupied)
+    else:
+        paths = _dedupe_batch(base_names)
+    occupied_folded = {name.casefold() for name in occupied}
+    if policy == "FAIL":
+        conflicts = [
+            DeliveryPlanBlocker(
+                OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED,
+                ordinal,
+                None,
+                f"existing output path: {path}",
+            )
+            for ordinal, path in enumerate(paths)
+            if path.casefold() in occupied_folded
+        ]
+        if conflicts:
+            return DeliveryPlanBlocked(tuple(conflicts))
+
+    items: list[CurrentResolvedDeliveryItem] = []
+    for ordinal, (record, base_name, path, resolved_tokens) in enumerate(
+        zip(ordered_validated_records, base_names, paths, token_values, strict=True)
+    ):
+        _guard_relative_path(path)
+        if policy == "OVERWRITE_EXPLICIT" and path.casefold() in occupied_folded:
+            disposition = WRITE_OVERWRITE
+        elif policy == "ADD_SUFFIX" and path != base_name:
+            disposition = WRITE_ADD_SUFFIX
+        else:
+            disposition = WRITE_NEW
+        items.append(
+            CurrentResolvedDeliveryItem(
+                record_identity=record.record_identity,
+                item_ordinal=ordinal,
+                resolved_output_relative_path=path,
+                collision_disposition=disposition,
+                resolved_token_values=resolved_tokens,
+            )
+        )
+    return CurrentResolvedDelivery(
+        exact_pattern=exact_pattern,
+        captured_delivery_clock=captured_delivery_clock,
+        output_directory=run_delivery_intent.output_directory,
+        collision_policy=policy,
+        ordered_items=tuple(items),
+    )
 
 
 def resolve_generation_delivery_plan(

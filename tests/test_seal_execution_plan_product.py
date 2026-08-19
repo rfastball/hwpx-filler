@@ -133,6 +133,7 @@ def test_current_sealable_returns_recomputed_plan_value(tmp_path) -> None:
     obs = resp.fresh_observation
     assert isinstance(obs, CurrentSealedPlanObservation)
     assert isinstance(obs.sealed_plan_value, SealedExecutionPlanValue)
+    assert obs.current_field_binding == h.world._binding_obs().field_binding
 
 
 def test_observation_returns_recomputed_current_value_not_a_stored_one(tmp_path) -> None:
