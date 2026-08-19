@@ -1,8 +1,13 @@
 /* 「문서 만들기」 controller와 실행 정체 reducer의 장기 행동 계약. */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { createJobRunController } from "../../frontend/src/screens/job_run.ts";
+import {
+  JobActionBar, JobStatusPill, JobWorkbenchStatus,
+} from "../../frontend/src/screens/job_run.ts";
 import {
   acceptDirect,
   acceptFull,
@@ -20,6 +25,7 @@ const SURFACE = [
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
   "renderResult", "markResultStale",
+  "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
   "pickOutputFolder", "relinkActive", "templateCheck", "templateApply",
   "openPreviewFrom", "closePreview",
@@ -75,6 +81,8 @@ function harness(options = {}) {
     };
   };
   const editorEntry = { openGuarded: () => options.openGuardedResult ?? true, aimAt: undefined };
+  const editorCalls = [];
+  editorEntry.openGuarded = (...args) => { editorCalls.push(args); return options.openGuardedResult ?? true; };
   const ports = {
     jobRun: port(), jobRunCoordination: port(),
     jobData: port({ flushPendingEdits: () => Promise.resolve() }),
@@ -96,6 +104,7 @@ function harness(options = {}) {
   };
   return {
     controller, calls, editorEntry, client, push,
+    editorCalls,
     listeners: () => listeners,
     initialCalls: () => initialCalls,
   };
@@ -323,4 +332,101 @@ test("Python 결과 판정 필드는 reducer를 무가공 통과한다", () => {
   };
   const result = acceptDirect(beginRun(runState(), "t1"), payload).result;
   for (const [key, value] of Object.entries(payload)) assert.deepEqual(result[key], value, key);
+});
+
+test("Binding review는 backend exact target과 ReturnContext를 EditorEntry에 그대로 넘긴다", async () => {
+  const h = harness({ snapshot: SNAP });
+  await h.controller.init();
+  h.push(SNAP);
+  await h.controller.openBindingRequirement("binding/공고명", "공고명");
+
+  assert.deepEqual(h.editorCalls, [[
+    "A",
+    { entry_reason: "document_browser_repair", target: "binding/공고명", evidence: { "입력이 필요한 항목": "공고명" }, return_context: { surface: "data" } },
+  ]]);
+});
+
+test("backend execution action dispatches resolve_execution without frontend priority logic", async () => {
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: "",
+      execution_status_code: "STALE", execution_status_phrase: "needs check",
+      execution_action: { label: "check current settings", enabled: true, disabled_reason: null },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
+  assert.ok(markup.includes("jobResolveExecution"));
+  assert.ok(markup.includes("check current settings"));
+
+  await h.controller.resolveExecution();
+  assert.deepEqual(h.calls.at(-1), { screen: "job", action: "resolve_execution", payload: {} });
+});
+
+test("managed HWPX는 CURRENT여도 S6 disabled reason을 내고 legacy generate를 호출하지 않는다", async () => {
+  const reason = "현재 환경에서는 문서를 만들 수 없습니다";
+  const snap = { ...SNAP, managed_hwpx: true, gate: { enabled: true }, run_action: { key: "generate" }, workbench_observation: { create_action: { label: "문서 만들기", enabled: false, disabled_reason: reason } } };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+  await h.controller.startGenerate();
+
+  assert.equal(h.calls.filter((call) => call.method === "generate").length, 0);
+  assert.ok(h.controller.getUi().log.at(-1).endsWith(reason));
+});
+
+test("managed HWPX 상태 pill은 backend 7상태 phrase를 무가공 소비한다", async () => {
+  const states = [
+    ["NO_EVIDENCE", "현재 설정을 확인해야 합니다"],
+    ["CHECKING", "현재 설정을 확인하고 있습니다"],
+    ["CURRENT", "현재 설정이 반영됐습니다"],
+    ["STALE", "설정이 바뀌어 다시 확인해야 합니다"],
+    ["DOMAIN_BLOCKED", "확인할 항목이 있습니다"],
+    ["POLICY_BLOCKED", "현재 이 구성으로 실행을 준비할 수 없습니다"],
+    ["CONTEXT_ERROR", "현재 실행 상태를 확인할 수 없습니다"],
+  ];
+  const h = harness();
+  await h.controller.init();
+  for (const [code, phrase] of states) {
+    const snap = { ...SNAP, managed_hwpx: true, workbench_observation: { execution_status_code: code, execution_status_phrase: phrase } };
+    h.push(snap);
+    const markup = renderToStaticMarkup(createElement(JobStatusPill, { controller: h.controller }));
+    assert.ok(markup.includes(String(phrase)), code);
+    assert.ok(markup.includes(`data-status-code="${code}"`), code);
+  }
+});
+
+test("Workbench surface는 review projection과 S6 Create action을 backend 그대로 그린다", async () => {
+  const reason = "현재 환경에서는 문서를 만들 수 없습니다";
+  const snap = {
+    ...SNAP, managed_hwpx: true, gate: { enabled: true, text: "legacy ready" },
+    workbench_observation: {
+      supported: true, input_requirements_label: "입력이 필요한 항목",
+      execution_status_code: "CURRENT", execution_status_phrase: "현재 설정이 반영됐습니다",
+      input_requirements: [
+        { field_id: "보존", display_label: "보존", binding_state: "PRESERVED", action_required: false, exact_target: "binding/보존" },
+        { field_id: "깨짐", display_label: "깨짐", binding_state: "BROKEN", action_required: true, exact_target: "binding/깨짐" },
+        { field_id: "신규", display_label: "신규", binding_state: "NEW_ACTIVE_FIELD", action_required: true, exact_target: "binding/신규" },
+        { field_id: "비활성", display_label: "비활성", binding_state: "INACTIVE_ONLY", action_required: false, exact_target: "binding/비활성" },
+      ],
+      create_action: { label: "문서 만들기", enabled: false, disabled_reason: reason },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+  const requirements = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
+  for (const label of ["보존", "깨짐", "신규", "비활성"]) assert.ok(requirements.includes(label));
+  assert.equal((requirements.match(/data-exact-target=/g) || []).length, 2);
+  assert.ok(requirements.includes("binding/깨짐"));
+  assert.ok(requirements.includes("binding/신규"));
+
+  const action = renderToStaticMarkup(createElement(JobActionBar, { controller: h.controller }));
+  assert.match(action, /id="jobManagedCreate"[^>]*disabled=""/);
+  assert.ok(action.includes("문서 만들기"));
+  assert.ok(action.includes(reason));
 });

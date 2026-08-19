@@ -140,9 +140,11 @@ from ..application.automatic_seal_orchestration import (
 )
 from ..application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
+    RESOLVE_EXECUTION,
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
+    CurrentWorkExecutionObservation,
     ExecutionObservationContextError,
     FreshExecutionObservation,
 )
@@ -1330,6 +1332,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         jobs = list_jobs(self.registry)
         base = {
             "job_name": self.job_name,
+            # managed HWPX comes from durable Work identity, never a suffix heuristic.
+            "managed_hwpx": False,
             # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
             # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
             "last_run_job": self._last_run_job,
@@ -1511,6 +1515,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             })
             return base
         job = self.vm.job
+        base["managed_hwpx"] = bool(job.authority_id)
         indices = self._indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
         # 승인 지문 성분(scope key 해시)·요구 판정(blank_set)이 전부 이 한 집합을 소비한다.
@@ -1959,6 +1964,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
             if job.template_path else ""
         )
+        if job.media == "hwpx" and job.authority_id:
+            self._maybe_auto_check(effective_basis_changed=True)
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
@@ -2110,6 +2117,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 세션에서만 참이라 TXT 를 재연결하면 세션이 옛 템플릿을 그대로 그린다. 같은 질문에
         # 매체별 술어를 쓰면 그게 곧 구멍이다.
         if res.get("relinked") and self.job_name == p["name"]:
+            self._invalidate_execution_evidence()
             self._do_select_job({"name": p["name"]})
             res["restated"] = (
                 "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니 데이터와 저장 폴더 "
@@ -2144,7 +2152,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self.job_name:
             raise ValueError("먼저 작업을 선택하세요")
         self.raise_if_generating("템플릿 변경사항을 적용하세요")
-        return self._template_change.apply(self.job_name, str(p.get("change_token", "")))
+        result = self._template_change.apply(
+            self.job_name, str(p.get("change_token", ""))
+        )
+        if result.get("status") in {"applied", "already_applied", "applied_then_advanced"}:
+            self._invalidate_execution_evidence()
+            self._maybe_auto_check(effective_basis_changed=True)
+        return result
 
     # ----------------------------------- 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
     # 좌 목록이 죽어도(F2 PR-B) 아래 넷은 남는다: 열린 세션의 정체(``job_name``·VM)와 결속돼
@@ -2381,6 +2395,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """``generate`` 의 판정 본체 — 토큰은 진행 델타의 이름표로만 쓴다."""
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
+        job = self.vm.job
+        if job.authority_id:
+            # S6-absent managed Work cannot fall through to the legacy generator.
+            zone = self._workbench_observation_zone(template_missing(job.template_path))
+            create_action = zone.get("create_action", {})
+            return {
+                "ok": False,
+                "error": create_action.get("disabled_reason")
+                or "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+                "level": "warn",
+            }
+
         if self.range_draft is not None:
             # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
             # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
@@ -2775,6 +2801,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         verdict(admission/readiness) + 7상태(code+phrase)를 성형한다. R2(#740): currentness 축은
         7상태(CURRENT/STALE)로 흡수돼 별도 키가 없다.
         """
+        code, phrase = self._workbench_observation.execution_status(
+            orchestration=self._session_orchestration,
+            fresh_observation=self._last_fresh_observation,
+        )
         if isinstance(observation, DocumentCreationWorkbenchContextError):
             return {
                 "kind": "context_error",
@@ -2782,16 +2812,33 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "detail": observation.detail,
                 "user_fixable": observation.user_fixable,
                 "primary_action": observation.primary_action,
+                "execution_status_code": code,
+                "execution_status_phrase": phrase,
+                "create_action": {
+                    "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+                    "enabled": False,
+                    "disabled_reason": phrase,
+                },
             }
-        code, phrase = self._workbench_observation.execution_status(
-            orchestration=self._session_orchestration,
-            fresh_observation=self._last_fresh_observation,
-        )
         return {
             "kind": "observation",
             "primary_action": observation.primary_action,
             "primary_action_enabled": observation.primary_action_enabled,
             "disabled_reason": observation.disabled_reason,
+            "execution_action": (
+                {
+                    "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
+                    "enabled": observation.primary_action_enabled,
+                    "disabled_reason": observation.disabled_reason,
+                }
+                if observation.primary_action == RESOLVE_EXECUTION
+                else None
+            ),
+            "create_action": {
+                "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+                "enabled": observation.create_documents_enabled,
+                "disabled_reason": observation.create_documents_disabled_reason,
+            },
             "blockers": list(observation.blockers),
             "deep_link_targets": [
                 {"blocker_code": t.blocker_code, "route": t.route}
@@ -2805,6 +2852,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "reasons": list(observation.admission.reasons),
             },
             "active_field_requirement_ids": list(observation.active_field_requirement_ids),
+            "input_requirements": [
+                {
+                    "field_id": item.field_id,
+                    "display_label": item.display_label,
+                    "binding_state": item.binding_state,
+                    "action_required": item.action_required,
+                    "exact_target": item.exact_target,
+                }
+                for item in observation.input_requirements
+            ],
             "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
             # 사용자 문안 축(vocabulary 정본 — 내부어 0).
             "content_section_label": observation.content_section_label,
@@ -2938,12 +2995,42 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         prior = getattr(self, "_job_name", None)
         self._job_name = value
         if prior is not None and value != prior:
-            self._session_orchestration = AutomaticSealOrchestration()
-            self._last_fresh_observation = None
-            self._last_sealed_basis_digest = None
+            self._invalidate_execution_evidence()
+
+    def _invalidate_execution_evidence(self) -> None:
+        """Drop session-only execution evidence after its Work basis moves."""
+        self._session_orchestration = AutomaticSealOrchestration()
+        self._last_fresh_observation = None
+        self._last_sealed_basis_digest = None
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
-    def _maybe_auto_check(self, slot_response) -> None:
+    def on_editor_mapping_saved(self, work_ref: str) -> dict:
+        """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
+        job = load_job(self.registry, work_ref)
+        if job.media != "hwpx" or not job.authority_id:
+            return {"binding_commit_ok": False, "binding_revision_id": None}
+        if self._seal_execution is None:
+            raise ValueError("Field Binding is not configured.")
+        if not self._generation_lock.acquire(blocking=False):
+            raise ValueError(
+                "\ubb38\uc11c \uc0dd\uc131\uc774 \uc9c4\ud589 \uc911\uc785\ub2c8\ub2e4. \ub05d\ub09c \ub4a4\uc5d0 Mapping\uc744 \uc800\uc7a5\ud558\uc138\uc694."
+            )
+        try:
+            result = self._seal_execution.commit_current_mapping(
+                work_ref, uuid.uuid4().hex
+            )
+            if result is not None and self.job_name == work_ref:
+                self._maybe_auto_check(effective_basis_changed=result.changed)
+            return {
+                "binding_commit_ok": result is not None,
+                "binding_revision_id": result.revision_id if result is not None else None,
+            }
+        finally:
+            self._generation_lock.release()
+
+    def _maybe_auto_check(
+        self, slot_response=None, *, effective_basis_changed: "bool | None" = None
+    ) -> None:
         """durable slot mutation 뒤 자동 확인 진입 — mutation 이 CHANGED 일 때만(#724 §4).
 
         R2(#740): seal 은 durable side effect 없는 순수 재계산이고 opaque Plan ref 로 same-basis 를
@@ -2953,8 +3040,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self._seal_execution is None or not self.job_name:
             return
-        outcome = slot_response.mutation_outcome
-        if outcome is None or not outcome.changed:
+        if effective_basis_changed is None:
+            outcome = slot_response.mutation_outcome
+            effective_basis_changed = outcome is not None and outcome.changed
+        if not effective_basis_changed:
             return  # 무변이(open/ensure)·미변경 mutation → 반응할 basis 변경 없음.
         transition = on_durable_command_settled(
             self._session_orchestration,
@@ -3034,6 +3123,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     resp = None
                 if resp is not None:
                     slot_view = resp.current_view.projection
+        binding_projection = None
+        if (
+            self._seal_execution is not None
+            and self.job_name
+            and isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
+        ):
+            binding_projection = self._seal_execution.current_binding_review(self.job_name)
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -3042,6 +3138,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             slot_view=slot_view,
             orchestration=self._session_orchestration,
             fresh_observation=self._last_fresh_observation,
+            active_field_requirement_ids=(
+                binding_projection.active_field_ids if binding_projection is not None else ()
+            ),
+            input_requirements=(
+                binding_projection.input_requirements if binding_projection is not None else ()
+            ),
         )
 
     def _do_resolve_execution(self, p: dict) -> dict:

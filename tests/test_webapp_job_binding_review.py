@@ -21,9 +21,11 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.application.jobs import Job
+from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.host.locations import default_template_authority_dir
@@ -67,7 +69,7 @@ def _controller(tmp_path: Path, *, with_binding: bool, wire_seal: bool = True):
     root = default_template_authority_dir()
     _seed_v2_work(root, with_binding=with_binding)
     reg = JobRegistry(tmp_path / "jobs")
-    reg.save(Job(name=WORK_REF, template_path=""))
+    reg.save(Job(name=WORK_REF, template_path="managed.hwpx"))
     reg.assign_authority_id(WORK_REF, WORK)
     kwargs = dict(
         clock=_clock(),
@@ -104,6 +106,38 @@ def test_no_evidence_before_any_check(tmp_path: Path) -> None:
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
 
 
+def test_stale_projects_backend_execution_action_when_it_is_primary(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    ctrl.datasource = object()
+    ctrl.records = [{}]
+    ctrl.selection = SelectionModel(1)
+
+    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
+    zone = _zone(ctrl)
+
+    assert zone["primary_action"] == "RESOLVE_EXECUTION"
+    assert zone["execution_action"] == {
+        "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
+        "enabled": True,
+        "disabled_reason": None,
+    }
+
+
+def test_select_managed_work_automatically_prepares_current_value(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.job_name = ""
+
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
+
+
 # ── binding seed → resolve_execution → CURRENT + NOT_ADMITTED + NOT_READY(S6 미출하 정직) ───────
 def test_resolve_execution_reaches_current_not_admitted_not_ready(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
@@ -117,6 +151,11 @@ def test_resolve_execution_reaches_current_not_admitted_not_ready(tmp_path: Path
     assert ctrl._last_sealed_basis_digest is not None
     # CREATE 로 조용히 새지 않는다(honest disabled) — delivery anchor + runtime.
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
+    assert zone["create_action"] == {
+        "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
+        "enabled": False,
+        "disabled_reason": "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+    }
 
 
 def test_create_documents_never_reached_with_current(tmp_path: Path) -> None:
@@ -127,6 +166,27 @@ def test_create_documents_never_reached_with_current(tmp_path: Path) -> None:
     assert obs.primary_action != "CREATE_DOCUMENTS"
     assert obs.materialization_readiness == "NOT_READY"
 
+
+def test_snapshot_marks_durable_work_as_managed_hwpx(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    assert ctrl.snapshot()["managed_hwpx"] is True
+
+
+def test_managed_hwpx_generate_never_reaches_legacy_generator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("managed HWPX reached legacy generator")
+
+    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
+    result = ctrl._generate_with_token()
+    assert result["ok"] is False
+    assert result["error"] == "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
 
 # ── binding 없음 → 정직한 blocked(NO_EVIDENCE 를 CURRENT/READY 로 위장하지 않는다) ─────────────
 def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -> None:
@@ -139,6 +199,11 @@ def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -
     assert zone["materialization_readiness"] == "NOT_READY"
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
     assert ctrl._last_sealed_basis_digest is None  # sealed 안 됨 → digest 없음
+    assert "REVIEW_BINDING" in zone["blockers"]
+    assert zone["input_requirements"]
+    assert all(item["binding_state"] == "NEW_ACTIVE_FIELD" for item in zone["input_requirements"])
+    assert all(item["action_required"] is True for item in zone["input_requirements"])
+    assert all(item["exact_target"].startswith("binding/") for item in zone["input_requirements"])
 
 
 # ── refresh_observation: 지금 이 순간을 재관찰(orchestration 전이 없음) ──────────────────────────
@@ -191,11 +256,42 @@ def test_verdicts_from_context_error_observation() -> None:
 
 def test_verdicts_from_current_work_observation() -> None:
     obs = CurrentWorkExecutionObservation(
-        work_authority_ref="w", current_sealability="DOMAIN_BLOCKED", observed_at="t"
+        work_authority_ref="w",
+        current_sealability="DOMAIN_BLOCKED",
+        observed_at="t",
+        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
     )
     v = execution_verdicts_from_fresh(obs)
     assert v.current_work_sealability == "DOMAIN_BLOCKED"
     assert v.admission.state == "NOT_ADMITTED"  # 미봉인 → 정직한 NOT_ADMITTED(READY 아님)
+
+    assert v.normalized_blockers_or_policy == (
+        "NEEDS_FIELD_BINDING_APPLICATION_REVIEW",
+    )
+
+
+def test_normalized_binding_blocker_selects_review_binding() -> None:
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    fresh = CurrentWorkExecutionObservation(
+        work_authority_ref="w",
+        current_sealability="DOMAIN_BLOCKED",
+        observed_at="t",
+        normalized_blockers_or_policy=("NEEDS_FIELD_BINDING_APPLICATION_REVIEW",),
+    )
+    result = WorkbenchObservationProduct().compose(
+        data_mounted=True,
+        selected_record_count=1,
+        total_record_count=1,
+        active_work_ref="w",
+        slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
+        orchestration=AutomaticSealOrchestration(),
+        fresh_observation=fresh,
+    )
+    assert result.primary_action == "REVIEW_BINDING"
+
 
 
 # ── 깨진 슬롯 선택도 content blocker(사용자를 고쳐야 할 구성 너머로 지나치게 하지 않는다) ─────────
@@ -319,6 +415,11 @@ def test_refresh_observation_failure_surfaces_context_error(tmp_path: Path) -> N
     ctrl.dispatch("refresh_observation", {})
     assert isinstance(ctrl._last_fresh_observation, ExecutionObservationContextError)
     assert _zone(ctrl)["kind"] == "context_error"
+    zone = _zone(ctrl)
+    assert zone["execution_status_code"] == "CONTEXT_ERROR"
+    assert zone["execution_status_phrase"] == "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc\ub97c \ud655\uc778\ud560 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
+    assert zone["user_fixable"] is False
+    assert zone["create_action"]["enabled"] is False
 
 
 def test_refresh_failure_after_current_does_not_keep_claiming_current(tmp_path: Path) -> None:
@@ -366,3 +467,67 @@ def test_observation_exposes_no_internal_vocabulary(tmp_path: Path) -> None:
     for text in texts:
         for word in banned:
             assert word not in text, (word, text)
+
+
+def _saved_active_mapping() -> MappingProfile:
+    return MappingProfile(
+        mappings=[
+            FieldMapping(field_id, type="const", const="v")
+            for field_id in (
+                "\uc131\uba85",
+                "\uc8fc\uc18c",
+                "\ud56d\ubaa9",
+                "\uae08\uc561",
+            )
+        ]
+    )
+
+
+def test_binding_commit_reuses_auto_check_and_reaches_current(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=False)
+    job = ctrl.registry.load(WORK_REF)
+    job.mapping = _saved_active_mapping()
+    ctrl.registry.save(job, allow_overwrite=True)
+
+    result = ctrl.on_editor_mapping_saved(WORK_REF)
+
+    assert result["binding_commit_ok"] is True
+    assert ctrl._last_sealed_basis_digest is not None
+    assert ctrl._session_orchestration.state == "SETTLED_CURRENT"
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
+
+
+def test_binding_commit_for_other_work_does_not_absorb_observation(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=False)
+    job = ctrl.registry.load(WORK_REF)
+    job.mapping = _saved_active_mapping()
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.job_name = "\ub2e4\ub978\uc791\uc5c5"
+
+    result = ctrl.on_editor_mapping_saved(WORK_REF)
+
+    assert result["binding_commit_ok"] is True
+    assert ctrl._last_fresh_observation is None
+    assert ctrl._last_sealed_basis_digest is None
+    assert ctrl._session_orchestration.state == "IDLE"
+
+
+def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    before = ctrl._last_fresh_observation
+
+    class AppliedTemplateChange:
+        @staticmethod
+        def apply(job_name: str, change_token: str) -> dict:
+            assert job_name == WORK_REF and change_token == "token"
+            return {"status": "applied"}
+
+    ctrl._template_change = AppliedTemplateChange()
+    result = ctrl.dispatch("template_apply", {"change_token": "token"})
+
+    assert result["status"] == "applied"
+    assert ctrl._last_fresh_observation is not before
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"

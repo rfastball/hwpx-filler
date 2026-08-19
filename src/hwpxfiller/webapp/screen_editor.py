@@ -151,6 +151,7 @@ class EditorController:
         text_registry: "TextTemplateRegistry | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
         library_result: "Callable[[], dict] | None" = None,
+        after_mapping_saved: "Callable[[str], object] | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -177,6 +178,7 @@ class EditorController:
         # TemplateController(result_text/level)가 계속 소유하고 여기는 **읽기만** 한다(성형
         # 두 벌 금지 — §10.17.2 판정 B). 미주입(테스트 단독 구동)은 빈 결과.
         self._library_result = library_result
+        self._after_mapping_saved = after_mapping_saved
         self._reset()
 
     def _reset(self) -> None:
@@ -1880,7 +1882,39 @@ class EditorController:
         # Job 이 방금 찍힌 시각을 낡은 값으로 되돌린다. 잠금은 레지스트리가 소유해 모든
         # writer 가 공유한다 — 저장 한 번만 원자적인 것으로는 lost update 가 안 막힌다.
         with self.registry.write_lock():
-            return self._save_locked(p, verdict)
+            result = self._save_locked(p, verdict)
+        saved_job = (
+            self.registry.load(str(result["saved_name"])) if result.get("ok") else None
+        )
+        if (
+            not result.get("ok")
+            or self._after_mapping_saved is None
+            or not (
+                self.session.context.target.startswith("binding/")
+                or (
+                    saved_job is not None
+                    and saved_job.media == "hwpx"
+                    and bool(saved_job.authority_id)
+                )
+            )
+        ):
+            return result
+        try:
+            self._after_mapping_saved(str(result["saved_name"]))
+        except Exception as exc:  # noqa: BLE001 - legacy save is already committed.
+            message = (
+                "작업 Mapping은 저장됐지만 Field Binding 검토를 완료하지 못했습니다: "
+                f"{exc}"
+            )
+            self._set_notice(message, "danger")
+            return {
+                "ok": False,
+                "legacy_saved": True,
+                "binding_commit_ok": False,
+                "saved_name": result["saved_name"],
+                "block_reason": message,
+            }
+        return result
 
     def _save_locked(self, p: dict, verdict) -> dict:
         """저장 임계구역 몸통 — 게이트 판정부터 저장까지(레지스트리 쓰기 잠금 안).
@@ -1920,6 +1954,7 @@ class EditorController:
             group=str(preserved["group"]),
             favorited_at=str(preserved["favorited_at"]),
             reviewed_rules=dict(preserved["reviewed_rules"]),  # type: ignore[arg-type]
+            authority_id=str(preserved["authority_id"]),
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
         # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.

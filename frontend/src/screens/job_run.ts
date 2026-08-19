@@ -116,6 +116,10 @@ function isCopyWork(s: Obj | null): boolean {
   return !!(s && s.run_action && s.run_action.key === "workbench");
 }
 
+function isManagedHwpx(s: Obj | null): boolean {
+  return s?.managed_hwpx === true;
+}
+
 function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode {
   return createElement(tag, props, ...children);
 }
@@ -275,6 +279,14 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       log(String(res.error || "작업대를 열지 못했습니다."));
       return;
     }
+    if (isManagedHwpx(s)) {
+      const createAction = (s?.workbench_observation?.create_action || {}) as Obj;
+      const reason = createAction.disabled_reason
+        || s?.workbench_observation?.execution_status_phrase;
+      if (reason) log(String(reason));
+      return;
+    }
+
     /* 진입 직렬화는 **첫 await 앞**에 선다. legacy 는 커밋 관문(`flushPendingEdits`) 뒤에
        `generating` 을 세웠고 그 창에 둘째 클릭이 들어올 수 있었다 — 토큰이 없던 때는 둘째가
        백엔드 자물쇠에 거절당하고 첫 런의 결과가 그대로 그려져 무해했다. **귀속이 생기면서
@@ -364,6 +376,15 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     );
   }
 
+  function openBindingRequirement(exactTarget: string, displayLabel: string): Promise<boolean> {
+    return openEditForRepair({
+      entry_reason: "document_browser_repair",
+      target: exactTarget,
+      evidence: { "\uc785\ub825\uc774 \ud544\uc694\ud55c \ud56d\ubaa9": displayLabel },
+      return_context: { surface: "data" },
+    });
+  }
+
   /* ---- 파괴 전이 가드 — 무장 판정은 guard_state **실시간 질의**다(스냅샷 캐시는
      generate 무푸시 경로·왕복 지연에서 stale — 양방향 오판). true=진행, false=머무르기. */
   async function confirmDestructiveIfArmed(
@@ -391,6 +412,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     /* 순수 합성기 — 실앱 게이트가 산출을 되읽는다(이름째 표면에 남는 이유). */
     overwriteBody, guardBody, resultExitLine,
     selectionLine: deps.selectionLine,
+    async resolveExecution(): Promise<void> {
+      try {
+        await dispatch("resolve_execution", {});
+      } catch (error) {
+        log(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
+      }
+    },
     confirmDestructiveIfArmed, log,
 
     /** 결과 3태 구획의 **프로브 입구**(F4) — legacy 파사드가 지던 이름 그대로다.
@@ -405,6 +433,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       setRun({ ...run, result: { ...run.result, stale: true } });
     },
     startGenerate,
+    openBindingRequirement,
     async cancelGeneration(): Promise<void> {
       await dispatch("cancel_generation", {});
       log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
@@ -574,13 +603,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
 export type JobRunController = ReturnType<typeof createJobRunController>;
 
 export function useRun(controller: JobRunController): JobRunState & UiState {
-  const state = useSyncExternalStore(controller.subscribe, controller.getRun);
-  const ui = useSyncExternalStore(controller.subscribe, controller.getUi);
+  const state = useSyncExternalStore(controller.subscribe, controller.getRun, controller.getRun);
+  const ui = useSyncExternalStore(controller.subscribe, controller.getUi, controller.getUi);
   return { ...state, ...ui };
 }
 
 export function useRunSnapshot(controller: JobRunController): Obj | null {
-  return useSyncExternalStore(controller.subscribe, controller.getRun).lastFull;
+  return useSyncExternalStore(controller.subscribe, controller.getRun, controller.getRun).lastFull;
 }
 
 /* ------------------------------------------------------------------ 표면 */
@@ -601,7 +630,7 @@ export function JobMirrorZone(props: { controller: JobRunController }): ReactNod
   // 뒤에도 그대로 서서, 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
   // 자리를 비우면 `#jobMirrorZone:empty` 가 존을 접는다(legacy 의 `style.display` 후계 —
   // portal target 의 속성은 React 가 만지지 않는다).
-  if (isCopyWork(s)) return null;
+  if (isCopyWork(s) || isManagedHwpx(s)) return null;
   const drift = (s?.drift || []) as string[];
   const nameTokens = (s?.name_tokens || []) as string[];
   const n = Number(s?.selected_count || 0);
@@ -657,7 +686,7 @@ export function JobOutRow(props: { controller: JobRunController }): ReactNode {
   const run = useRun(props.controller);
   // 저장 폴더는 hwpx 생성의 축이다 — TXT 에선 그 자리를 그리지 않는다(빈 값으로 두면
   // "아직 안 정했다"로 읽혀 사용자가 고르러 간다).
-  if (isCopyWork(s)) return null;
+  if (isCopyWork(s) || isManagedHwpx(s)) return null;
   const out = String(s?.out_dir || "");
   return createElement(Fragment, null,
     h("span", { className: "lbl" }, "저장 폴더"),
@@ -684,6 +713,7 @@ export function JobOutRow(props: { controller: JobRunController }): ReactNode {
 /** 재진술 블록 — 이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. */
 export function JobRestate(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
+  if (isManagedHwpx(s)) return null;
   const sel = ((s?.records || []) as Obj[]).filter((r) => r.selected);
   const gate = (s?.gate || {}) as Obj;
   // danger 차단 중엔 재진술을 숨긴다 — "생성 불가"인데 "N건 생성"을 동시에 진술하면 모순.
@@ -716,6 +746,45 @@ function gateStep(s: Obj, g: Obj): string {
   return "";
 }
 
+export function JobWorkbenchStatus(props: { controller: JobRunController }): ReactNode {
+  const s = useRunSnapshot(props.controller);
+  const wb = (s?.workbench_observation || {}) as Obj;
+  if (!isManagedHwpx(s) || wb.supported !== true) return null;
+  const items = (wb.input_requirements || []) as Obj[];
+  const executionAction = (wb.execution_action || null) as Obj | null;
+  return createElement(Fragment, null,
+    h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
+    items.length
+      ? h("ul", { className: "plain-list", id: "jobInputRequirements" },
+          ...items.map((item) => h("li", {
+            key: String(item.field_id),
+            "data-binding-state": String(item.binding_state || ""),
+          },
+          h("span", null, String(item.display_label || "")),
+          item.action_required === true
+            ? h("button", {
+                className: "btn sm", type: "button",
+                "data-exact-target": String(item.exact_target || ""),
+                onClick: () => { void props.controller.openBindingRequirement(
+                  String(item.exact_target || ""), String(item.display_label || "")); },
+              }, "\uc218\uc815\u2026")
+            : null)))
+      : null,
+    h("div", { className: "zone-cap" }, "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc"),
+    h("p", { className: "muted capnote", "data-status-code": String(wb.execution_status_code || "") },
+      String(wb.execution_status_phrase || "")),
+    executionAction
+      ? h("div", { className: "run-row" },
+          h("button", {
+            className: "btn sm", type: "button", id: "jobResolveExecution",
+            disabled: executionAction.enabled !== true,
+            onClick: () => { void props.controller.resolveExecution(); },
+          }, String(executionAction.label || "")),
+          h("span", { className: "muted capnote" },
+            String(executionAction.disabled_reason || "")))
+      : null);
+}
+
 export function JobActionBar(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
   const run = useRun(props.controller);
@@ -725,6 +794,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const gate = (s?.gate || { enabled: false, level: "", text: "" }) as Obj;
   const review = (s?.review || {}) as Obj;
   const pv = (s?.preview || {}) as Obj;
+  const managed = isManagedHwpx(s);
+  const workbench = (s?.workbench_observation || {}) as Obj;
+  const createAction = (workbench.create_action || {}) as Obj;
   const ra = (s?.run_action || { key: "generate", label: "이 작업으로 문서 생성" }) as Obj;
 
   return h("div", { className: "actionbar-row" },
@@ -738,28 +810,39 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
       }, "템플릿 다시 연결…")),
     h("button", {
       className: "btn", id: "jobPreviewOpen", "data-busy-lock": true,
-      disabled: busy || !pv.can_open,
+      hidden: managed, disabled: busy || managed || !pv.can_open,
       onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
     }, "생성 값 미리보기"),
     // 「승인 필요」 표지는 요구가 **아직 안 풀렸을 때만** — 승인한 뒤에도 붙어 있으면
     // 확인이 무의미해진다.
     h("span", {
       className: "pill warn", id: "jobReviewFlag",
+      hidden: managed,
       style: { display: review.required && !review.approved ? "" : "none" },
     }, "승인 필요"),
     h("button", {
       className: "btn primary", id: "jobGenBtn",
+      hidden: managed,
       disabled: busy || !gate.enabled,
       onClick: () => { void props.controller.startGenerate(); },
     }, busy ? "생성 중…" : String(ra.label)),
+    managed ? h("button", {
+      className: "btn primary", id: "jobManagedCreate", type: "button",
+      disabled: busy || createAction.enabled !== true,
+      onClick: () => { void props.controller.startGenerate(); },
+    }, String(createAction.label || "")) : null,
     h("button", {
       className: "btn", id: "jobGenCancel", style: { display: busy ? "" : "none" },
       onClick: () => { void props.controller.cancelGeneration(); },
     }, "다음 건부터 중단"),
     // 정적 선언(`muted capnote`)을 덮어쓰지 않는다(리뷰 R5) — 빈 문안이 자리를 비우게
     // 하는 규칙(`.actionbar-row>.capnote:empty`)이 붙을 곳을 잃는다.
+    managed ? h("span", { className: "muted capnote", id: "jobManagedCreateReason" },
+      String(createAction.disabled_reason || "")) : null,
+
     h("span", {
       className: "muted capnote", id: "jobGate",
+      hidden: managed,
       style: {
         color: gate.level === "danger" ? "var(--a-danger)"
           : gate.level === "warn" ? "var(--a-warn)" : "",
@@ -769,6 +852,13 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
 
 export function JobStatusPill(props: { controller: JobRunController }): ReactNode {
   const s = useRunSnapshot(props.controller);
+  if (isManagedHwpx(s)) {
+    const wb = (s?.workbench_observation || {}) as Obj;
+    return h("div", {
+      id: "jobStatus", className: "status", "data-level": "idle",
+      "data-status-code": String(wb.execution_status_code || ""),
+    }, String(wb.execution_status_phrase || ""));
+  }
   let level = "idle";
   let text = "작업 선택";
   if (s?.has_job) {
@@ -791,7 +881,11 @@ export function JobStatusPill(props: { controller: JobRunController }): ReactNod
 
 /** 생성 준비 캡션 — 하는 일을 따라간다(TXT 는 파일을 만들지 않는다). */
 export function JobRunCap(props: { controller: JobRunController }): ReactNode {
-  return isCopyWork(useRunSnapshot(props.controller)) ? "복사 준비" : "생성 준비";
+  const s = useRunSnapshot(props.controller);
+  if (isManagedHwpx(s)) {
+    return String(s?.workbench_observation?.create_action?.label || "");
+  }
+  return isCopyWork(s) ? "복사 준비" : "생성 준비";
 }
 
 /* ------------------------------------------------------------------ 템플릿 변경(S3-09) */

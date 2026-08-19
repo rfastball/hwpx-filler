@@ -37,6 +37,7 @@ from hwpxfiller.application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
     DocumentCreationWorkbenchObservation,
     HistoricalOutcomeSummary,
+    InputRequirement,
     RecordValidationSummary,
     WorkbenchCompositionInput,
     WorkbenchContextIntegrity,
@@ -322,6 +323,10 @@ def test_s6_absent_is_current_not_admitted_not_ready() -> None:
     assert obs.primary_action != CREATE_DOCUMENTS
     assert obs.primary_action_enabled is False
     assert obs.disabled_reason is not None and obs.disabled_reason != ""
+    assert obs.create_documents_enabled is False
+    assert obs.create_documents_disabled_reason == (
+        "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
+    )
 
 
 def test_admitted_current_is_ready_and_can_create() -> None:
@@ -332,6 +337,21 @@ def test_admitted_current_is_ready_and_can_create() -> None:
     assert obs.primary_action == CREATE_DOCUMENTS
     assert obs.primary_action_enabled is True
     assert obs.disabled_reason is None
+    assert obs.create_documents_enabled is True
+    assert obs.create_documents_disabled_reason is None
+
+
+def test_create_cta_keeps_s6_reason_when_delivery_review_is_primary() -> None:
+    obs = _observation(
+        admission=_s6_absent_admission(),
+        delivery=DeliveryPreviewSummary(resolvable=False),
+    )
+
+    assert obs.primary_action == "REVIEW_DELIVERY"
+    assert obs.create_documents_enabled is False
+    assert obs.create_documents_disabled_reason == (
+        "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
+    )
 
 
 # ══════════════════════════════════════ (7) historical / fresh 분리 ═════════════════════════════
@@ -439,3 +459,35 @@ def test_delivery_label_is_planned_not_artifact() -> None:
 def test_record_validation_rejects_hollow_blocking() -> None:
     with pytest.raises(ValueError):
         RecordValidationSummary(has_blocking_issues=True, issue_count=0)
+
+
+def test_binding_review_items_keep_existing_review_semantics_and_exact_targets() -> None:
+    items = tuple(
+        InputRequirement(
+            field_id=field_id,
+            display_label=field_id,
+            binding_state=state,
+            exact_target=f"binding/{field_id}",
+        )
+        for field_id, state in (
+            ("preserved", "PRESERVED"),
+            ("broken", "BROKEN"),
+            ("new", "NEW_ACTIVE_FIELD"),
+            ("inactive", "INACTIVE_ONLY"),
+        )
+    )
+    obs = _observation(input_requirements=items)
+
+    assert tuple(item.action_required for item in obs.input_requirements) == (
+        False,
+        True,
+        True,
+        False,
+    )
+    assert tuple(item.exact_target for item in obs.input_requirements) == (
+        "binding/preserved",
+        "binding/broken",
+        "binding/new",
+        "binding/inactive",
+    )
+    assert obs.primary_action == "REVIEW_BINDING"

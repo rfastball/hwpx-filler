@@ -23,7 +23,7 @@ import { JobPreviewSheet } from "./job_preview.ts";
 import { JobResultZone } from "./job_result.ts";
 import {
   JobActionBar, JobMirrorZone, JobOutRow, JobPreflight, JobRestate, JobRunCap,
-  JobTemplateChange,
+  JobTemplateChange, JobWorkbenchStatus,
   JobStatusPill,
 } from "./job_run.ts";
 import type { JobRunController } from "./job_run.ts";
@@ -151,6 +151,8 @@ function JobScreen(
                 h(JobTemplateChange as any, { controller: jobRun })),
               h("div", { className: "zone", id: "jobContentSelectionZone" },
                 h(JobContentSelection as any, { controller: props.slotContent })),
+              h("div", { className: "zone", id: "jobWorkbenchStatusZone" },
+                h(JobWorkbenchStatus as any, { controller: jobRun })),
               h("div", { className: "zone" },
                 h("div", { className: "zone-cap", id: "jobRunCap" },
                   h(JobRunCap as any, { controller: jobRun })),
