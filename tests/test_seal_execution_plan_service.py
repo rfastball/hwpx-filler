@@ -25,7 +25,10 @@ from hwpxfiller.application.fresh_execution_observation import (
     CurrentWorkExecutionObservation,
 )
 from hwpxfiller.application.jobs import Job
-from hwpxfiller.application.field_binding_input import StaleFieldBindingBasis
+from hwpxfiller.application.field_binding_input import (
+    FieldBindingReviewRequired,
+    StaleFieldBindingBasis,
+)
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.external.field_binding_store import WorkFieldBindingStore, load_current_revision
 from hwpxfiller.application.seal_execution_plan import RouteResolutionError
@@ -244,10 +247,25 @@ def test_saved_mapping_commits_revision_and_recomputes_sealed_value(tmp_path) ->
     resp = service.seal_execution_plan(WORK_REF, "seal-after-binding")
     assert isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome)
     assert isinstance(resp.fresh_observation, CurrentSealedPlanObservation)
-
     unchanged = service.commit_current_mapping(WORK_REF, "binding-2")
     assert unchanged is not None and unchanged.changed is False
     assert unchanged.revision_id == committed.revision_id
+
+
+def test_blank_legacy_mapping_stays_review_required_and_writes_nothing(tmp_path) -> None:
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    job.mapping.mappings[2] = FieldMapping("\ud56d\ubaa9", type="blank")
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+
+    with pytest.raises(FieldBindingReviewRequired, match="explicit|\\uba85\\uc2dc"):
+        service.commit_current_mapping(WORK_REF, "binding-blank")
+
+    assert not WorkFieldBindingStore(root / "field_bindings").exists(WORK)
 
 
 def test_mapping_basis_change_during_commit_writes_no_revision(

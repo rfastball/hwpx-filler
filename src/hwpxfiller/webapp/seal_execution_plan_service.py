@@ -48,8 +48,6 @@ from ..application.jobs import (
 from ..application.seal_execution_plan import RouteResolutionError
 from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.field_binding import (
-    DOCUMENT_CONTENT_VALUE_POLICY_V1,
-    INTENTIONAL_BLANK,
     FieldBindingRule,
     resolve_document_value_policy,
 )
@@ -344,14 +342,10 @@ def _resolved_rules(
             continue
         candidate = candidates.get(entry.template_field)
         if candidate is None:
-            rules.append(
-                FieldBindingRule(
-                    field_id=entry.template_field,
-                    binding_kind=INTENTIONAL_BLANK,
-                    document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
-                )
+            raise FieldBindingReviewRequired(
+                "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED",
+                f"legacy blank omission\uc5d0 \ub300\ud55c \uba85\uc2dc \uacb0\uc815\uc774 \ud544\uc694\ud569\ub2c8\ub2e4: {entry.template_field!r}",
             )
-            continue
         rules.append(
             FieldBindingRule(
                 field_id=candidate.field_id,

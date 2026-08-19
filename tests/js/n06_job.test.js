@@ -25,7 +25,7 @@ const SURFACE = [
   "overwriteBody", "guardBody", "resultExitLine", "selectionLine",
   "confirmDestructiveIfArmed", "log",
   "renderResult", "markResultStale",
-  "openBindingRequirement",
+  "openBindingRequirement", "resolveExecution",
   "startGenerate", "cancelGeneration", "closeResult", "selectFailed", "openRenameRules",
   "pickOutputFolder", "relinkActive", "templateCheck", "templateApply",
   "openPreviewFrom", "closePreview",
@@ -344,6 +344,27 @@ test("Binding review는 backend exact target과 ReturnContext를 EditorEntry에 
     "A",
     { entry_reason: "document_browser_repair", target: "binding/공고명", evidence: { "입력이 필요한 항목": "공고명" }, return_context: { surface: "data" } },
   ]]);
+});
+
+test("backend execution action dispatches resolve_execution without frontend priority logic", async () => {
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: "",
+      execution_status_code: "STALE", execution_status_phrase: "needs check",
+      execution_action: { label: "check current settings", enabled: true, disabled_reason: null },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
+  assert.ok(markup.includes("jobResolveExecution"));
+  assert.ok(markup.includes("check current settings"));
+
+  await h.controller.resolveExecution();
+  assert.deepEqual(h.calls.at(-1), { screen: "job", action: "resolve_execution", payload: {} });
 });
 
 test("managed HWPX는 CURRENT여도 S6 disabled reason을 내고 legacy generate를 호출하지 않는다", async () => {

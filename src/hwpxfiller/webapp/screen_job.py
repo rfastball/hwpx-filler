@@ -140,6 +140,7 @@ from ..application.automatic_seal_orchestration import (
 )
 from ..application.document_creation_workbench import (
     DocumentCreationWorkbenchContextError,
+    RESOLVE_EXECUTION,
 )
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
@@ -1963,6 +1964,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
             if job.template_path else ""
         )
+        if job.media == "hwpx" and job.authority_id:
+            self._maybe_auto_check(effective_basis_changed=True)
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
@@ -2114,6 +2117,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 세션에서만 참이라 TXT 를 재연결하면 세션이 옛 템플릿을 그대로 그린다. 같은 질문에
         # 매체별 술어를 쓰면 그게 곧 구멍이다.
         if res.get("relinked") and self.job_name == p["name"]:
+            self._invalidate_execution_evidence()
             self._do_select_job({"name": p["name"]})
             res["restated"] = (
                 "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니 데이터와 저장 폴더 "
@@ -2148,7 +2152,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self.job_name:
             raise ValueError("먼저 작업을 선택하세요")
         self.raise_if_generating("템플릿 변경사항을 적용하세요")
-        return self._template_change.apply(self.job_name, str(p.get("change_token", "")))
+        result = self._template_change.apply(
+            self.job_name, str(p.get("change_token", ""))
+        )
+        if result.get("status") in {"applied", "already_applied", "applied_then_advanced"}:
+            self._invalidate_execution_evidence()
+            self._maybe_auto_check(effective_basis_changed=True)
+        return result
 
     # ----------------------------------- 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
     # 좌 목록이 죽어도(F2 PR-B) 아래 넷은 남는다: 열린 세션의 정체(``job_name``·VM)와 결속돼
@@ -2815,6 +2825,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "primary_action": observation.primary_action,
             "primary_action_enabled": observation.primary_action_enabled,
             "disabled_reason": observation.disabled_reason,
+            "execution_action": (
+                {
+                    "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
+                    "enabled": observation.primary_action_enabled,
+                    "disabled_reason": observation.disabled_reason,
+                }
+                if observation.primary_action == RESOLVE_EXECUTION
+                else None
+            ),
             "create_action": {
                 "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
                 "enabled": observation.create_documents_enabled,
@@ -2976,13 +2995,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         prior = getattr(self, "_job_name", None)
         self._job_name = value
         if prior is not None and value != prior:
-            self._session_orchestration = AutomaticSealOrchestration()
-            self._last_fresh_observation = None
-            self._last_sealed_basis_digest = None
+            self._invalidate_execution_evidence()
+
+    def _invalidate_execution_evidence(self) -> None:
+        """Drop session-only execution evidence after its Work basis moves."""
+        self._session_orchestration = AutomaticSealOrchestration()
+        self._last_fresh_observation = None
+        self._last_sealed_basis_digest = None
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
         """Commit the saved Mapping to S5, then reuse automatic current-value checking."""
+        job = load_job(self.registry, work_ref)
+        if job.media != "hwpx" or not job.authority_id:
+            return {"binding_commit_ok": False, "binding_revision_id": None}
         if self._seal_execution is None:
             raise ValueError("Field Binding is not configured.")
         if not self._generation_lock.acquire(blocking=False):

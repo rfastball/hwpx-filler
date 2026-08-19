@@ -1883,10 +1883,20 @@ class EditorController:
         # writer 가 공유한다 — 저장 한 번만 원자적인 것으로는 lost update 가 안 막힌다.
         with self.registry.write_lock():
             result = self._save_locked(p, verdict)
+        saved_job = (
+            self.registry.load(str(result["saved_name"])) if result.get("ok") else None
+        )
         if (
             not result.get("ok")
             or self._after_mapping_saved is None
-            or not self.session.context.target.startswith("binding/")
+            or not (
+                self.session.context.target.startswith("binding/")
+                or (
+                    saved_job is not None
+                    and saved_job.media == "hwpx"
+                    and bool(saved_job.authority_id)
+                )
+            )
         ):
             return result
         try:

@@ -2463,3 +2463,21 @@ def test_binding_commit_failure_reports_partial_success_without_rollback(tmp_pat
     assert saved.mapping.mappings
     assert ctrl.snapshot()["notice"]["level"] == "danger"
     assert "Field Binding" in result["block_reason"]
+
+
+def test_ordinary_managed_mapping_save_runs_binding_sync(tmp_path) -> None:
+    ctrl, _ = _controller(tmp_path)
+    name = "\uad00\ub9ac\uc791\uc5c5"
+    assert _save_named(ctrl, name)["ok"] is True
+    registry = JobRegistry(tmp_path / "jobs")
+    job = registry.load(name)
+    job.authority_id = "managed-work-1"
+    registry.save(job, allow_overwrite=True)
+    calls: list[str] = []
+    ctrl._after_mapping_saved = calls.append
+
+    ctrl.load_job(name)
+    result = ctrl.dispatch("save", {})
+
+    assert result["ok"] is True
+    assert calls == [name]

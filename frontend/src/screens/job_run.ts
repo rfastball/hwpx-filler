@@ -412,6 +412,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     /* 순수 합성기 — 실앱 게이트가 산출을 되읽는다(이름째 표면에 남는 이유). */
     overwriteBody, guardBody, resultExitLine,
     selectionLine: deps.selectionLine,
+    async resolveExecution(): Promise<void> {
+      try {
+        await dispatch("resolve_execution", {});
+      } catch (error) {
+        log(`\ud604\uc7ac \uc124\uc815\uc744 \ud655\uc778\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4: ${String(error)}`);
+      }
+    },
     confirmDestructiveIfArmed, log,
 
     /** 결과 3태 구획의 **프로브 입구**(F4) — legacy 파사드가 지던 이름 그대로다.
@@ -744,6 +751,7 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const wb = (s?.workbench_observation || {}) as Obj;
   if (!isManagedHwpx(s) || wb.supported !== true) return null;
   const items = (wb.input_requirements || []) as Obj[];
+  const executionAction = (wb.execution_action || null) as Obj | null;
   return createElement(Fragment, null,
     h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
     items.length
@@ -764,7 +772,17 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       : null,
     h("div", { className: "zone-cap" }, "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc"),
     h("p", { className: "muted capnote", "data-status-code": String(wb.execution_status_code || "") },
-      String(wb.execution_status_phrase || "")));
+      String(wb.execution_status_phrase || "")),
+    executionAction
+      ? h("div", { className: "run-row" },
+          h("button", {
+            className: "btn sm", type: "button", id: "jobResolveExecution",
+            disabled: executionAction.enabled !== true,
+            onClick: () => { void props.controller.resolveExecution(); },
+          }, String(executionAction.label || "")),
+          h("span", { className: "muted capnote" },
+            String(executionAction.disabled_reason || "")))
+      : null);
 }
 
 export function JobActionBar(props: { controller: JobRunController }): ReactNode {

@@ -25,6 +25,7 @@ from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.hwpx_engine import make_hwpx_engine
+from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
 from hwpxfiller.host.locations import default_template_authority_dir
@@ -103,6 +104,38 @@ def test_no_evidence_before_any_check(tmp_path: Path) -> None:
     # 아직 확인 전이라 READY 를 주장하지 않는다(materialization NOT_READY).
     assert zone["materialization_readiness"] == "NOT_READY"
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
+
+
+def test_stale_projects_backend_execution_action_when_it_is_primary(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    ctrl.datasource = object()
+    ctrl.records = [{}]
+    ctrl.selection = SelectionModel(1)
+
+    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
+    zone = _zone(ctrl)
+
+    assert zone["primary_action"] == "RESOLVE_EXECUTION"
+    assert zone["execution_action"] == {
+        "label": "\ud604\uc7ac \uc124\uc815 \ud655\uc778",
+        "enabled": True,
+        "disabled_reason": None,
+    }
+
+
+def test_select_managed_work_automatically_prepares_current_value(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.job_name = ""
+
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
 # ── binding seed → resolve_execution → CURRENT + NOT_ADMITTED + NOT_READY(S6 미출하 정직) ───────
@@ -479,3 +512,22 @@ def test_binding_commit_for_other_work_does_not_absorb_observation(
     assert ctrl._last_fresh_observation is None
     assert ctrl._last_sealed_basis_digest is None
     assert ctrl._session_orchestration.state == "IDLE"
+
+
+def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    before = ctrl._last_fresh_observation
+
+    class AppliedTemplateChange:
+        @staticmethod
+        def apply(job_name: str, change_token: str) -> dict:
+            assert job_name == WORK_REF and change_token == "token"
+            return {"status": "applied"}
+
+    ctrl._template_change = AppliedTemplateChange()
+    result = ctrl.dispatch("template_apply", {"change_token": "token"})
+
+    assert result["status"] == "applied"
+    assert ctrl._last_fresh_observation is not before
+    assert _zone(ctrl)["execution_status_code"] == "CURRENT"
