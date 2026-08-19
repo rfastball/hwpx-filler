@@ -191,6 +191,26 @@ class SlotConfigurationProduct:
             )
         ))
 
+    def current_slot_configuration_view(
+        self, work_ref: str
+    ) -> SlotConfigurationCommandResponse:
+        """render/snapshot 전용 **read-only** projection — durable S4 authority 를 mutate 하지 않는다.
+
+        #744: open/refresh 는 ``ensure_current_slot_configuration`` 을 태워 stored config 부재 시
+        successor reconciliation 을 물질화(CHANGED persist)한다. 그 durable materialization 은
+        **명시적 사용자 open/refresh command 에만** 남긴다 — passive 한 화면 렌더/네비게이션 스냅샷은
+        이 경로로 현재 authority 를 그대로 투영한다. stored config 가 없으면 빈 선택(NEEDS_SELECTION)
+        으로 정직하게 표시하고 새 config 를 만들지 않는다. token 은 발급하되(편집 진입 seam) slot
+        config 를 저장하지 않으므로 basis 변경도 없다(``_maybe_auto_check`` 진입 근거를 만들지 않는다).
+        """
+        work_id, ws = self._route(work_ref)
+        view, new_token, _current_app = self._current_view_and_token(ws, work_id)
+        return SlotConfigurationCommandResponse(
+            mutation_outcome=None,
+            current_view=self._current_view_response(view, new_token),
+            refresh_required=view.view_status == CONTEXT_ERROR,
+        )
+
     def select_slot_option(
         self,
         work_ref: str,
@@ -435,7 +455,21 @@ class SlotConfigurationProduct:
             or (token_app is not None and token_app != current_app)
             or (outcome is not None and outcome.application_id != current_app)
         )
-        current = CurrentViewResponse(
+        return SlotConfigurationCommandResponse(
+            mutation_outcome=mutation,
+            current_view=self._current_view_response(view, new_token),
+            refresh_required=refresh_required,
+        )
+
+    def _current_view_response(
+        self, view: CurrentSlotConfigurationView, new_token: "str | None"
+    ) -> CurrentViewResponse:
+        """CurrentSlotConfigurationView → 프런트 소비 CurrentViewResponse(mutation 축과 무관한 view 성형).
+
+        command 응답(:meth:`_respond`)과 read-only projection(:meth:`current_slot_configuration_view`)
+        이 같은 성형을 공유해 view/token 조립이 갈라지지 않게 한다.
+        """
+        return CurrentViewResponse(
             view_status=view.view_status,
             configuration_status=view.configuration_status,
             context_error=view.context_error,
@@ -443,10 +477,6 @@ class SlotConfigurationProduct:
             projection=view if view.view_status != CONTEXT_ERROR else None,
             blocking_items=view.blocking_items,
             informational_changes=view.informational_changes,
-        )
-        return SlotConfigurationCommandResponse(
-            mutation_outcome=mutation, current_view=current,
-            refresh_required=refresh_required,
         )
 
     def _now(self) -> str:

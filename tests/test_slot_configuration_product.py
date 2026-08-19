@@ -96,6 +96,43 @@ def test_open_yields_current_view_and_token(tmp_path: Path) -> None:
     assert resp.refresh_required is False
 
 
+# ── #744: read-only projection 은 durable S4 authority 를 mutate 하지 않는다 ─────────────────
+def test_read_only_view_never_calls_ensure(tmp_path: Path, monkeypatch) -> None:
+    # render/snapshot 경로가 쓰는 read-only projection 은 ensure_current_slot_configuration 을
+    # 부르지 않는다 — stored config 부재 시 successor reconciliation 을 persist(CHANGED)하지 않는다.
+    # ensure 는 명시적 open command 에만 남는다. spy 로 호출 유무를 직접 판정한다(결정론적).
+    import hwpxfiller.webapp.slot_configuration_product as mod
+
+    calls = {"ensure": 0}
+    real = mod.ensure_current_slot_configuration
+
+    def spy(*a, **k):
+        calls["ensure"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(mod, "ensure_current_slot_configuration", spy)
+    _reg, product = _bootstrapped(tmp_path)
+
+    ro = product.current_slot_configuration_view("공고서")
+    assert calls["ensure"] == 0  # read-only — ensure 미호출(durable mutation 없음)
+    assert ro.mutation_outcome is None
+    assert ro.current_view.view_status == "CURRENT"
+    assert ro.current_view.new_configuration_token  # token 은 발급(편집 seam) — config 는 미저장
+
+    product.open_slot_configuration("공고서")
+    assert calls["ensure"] == 1  # 명시적 open 만 ensure 를 탄다
+
+
+def test_read_only_view_matches_open_view_status_and_projection(tmp_path: Path) -> None:
+    # read-only projection 이 낸 current view 는 명시적 open 이 낸 것과 같은 view_status·projection
+    # 형상을 나른다(성형 공유) — 렌더 소비자는 두 경로에서 동일 계약을 본다.
+    _reg, product = _bootstrapped(tmp_path)
+    ro = product.current_slot_configuration_view("공고서")
+    opened = product.open_slot_configuration("공고서")
+    assert ro.current_view.view_status == opened.current_view.view_status == "CURRENT"
+    assert (ro.current_view.projection is None) == (opened.current_view.projection is None)
+
+
 def test_select_with_issued_token_runs_and_reissues(tmp_path: Path) -> None:
     _reg, product = _bootstrapped(tmp_path)
     token = product.open_slot_configuration("공고서").current_view.new_configuration_token
