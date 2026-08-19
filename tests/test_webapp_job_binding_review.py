@@ -223,6 +223,44 @@ def test_capture_uses_current_declared_date_and_decimal_types(tmp_path: Path) ->
     assert _zone(ctrl)['record_validation']['validated_count'] == 1
 
 
+def test_shared_source_column_is_interpreted_per_current_requirement(
+    tmp_path: Path,
+) -> None:
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_source_plan(ctrl)
+    fresh = ctrl._last_fresh_observation
+    assert isinstance(fresh, CurrentSealedPlanObservation)
+    requirements = tuple(
+        {
+            'field_id': field_id,
+            'expected_active_occurrence_count': 1,
+            'value_expression': encode_value_expression(
+                FromSource('value', value_type, None, 'document-content-value/v1')
+            ),
+        }
+        for field_id, value_type in (
+            ('f_text', EXACT_TEXT),
+            ('f_decimal', DECIMAL),
+        )
+    )
+    plan = dataclasses.replace(
+        fresh.sealed_plan_value, active_field_requirements=requirements
+    )
+    ctrl._last_fresh_observation = dataclasses.replace(
+        fresh, sealed_plan_value=plan
+    )
+    _mount_rows(ctrl, [{'value': '1'}])
+
+    zone = _zone(ctrl)
+    assert zone['record_validation']['validated_count'] == 1
+    preparation = ctrl._current_record_preparation
+    assert preparation is not None
+    assert preparation.validated_records[0].document_values_in_order() == (
+        ('f_text', '1'),
+        ('f_decimal', '1'),
+    )
+
+
 def test_current_record_blocker_projects_exact_backend_target(
     tmp_path: Path,
 ) -> None:

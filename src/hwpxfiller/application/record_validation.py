@@ -57,6 +57,7 @@ from hwpxfiller.domain.field_binding import (
     SOURCE_SCHEMA_VERSION,
     WHITESPACE_PRESERVE_EXACT,
     WHITESPACE_STRIP_LEADING_TRAILING,
+    FieldBindingError,
     UnsupportedDocumentValuePolicyError,
     resolve_document_value_policy,
 )
@@ -68,7 +69,12 @@ from hwpxfiller.domain.raw_data_record import (
     RawRecordIntegrityError,
     RecordReviewEvidence,
     RecordReviewEvidenceIntegrityError,
+    SourceBoolean,
+    SourceDate,
+    SourceDateTime,
+    SourceDecimal,
     SourceNull,
+    SourceText,
     encode_source_value,
     source_value_type_of,
     verify_raw_record_snapshot,
@@ -283,10 +289,29 @@ def _require_no_format_code(ve: Mapping[str, Any]) -> None:
         )
 
 
+def _interpret_current_source_text(value, expected_type: str):
+    if not isinstance(value, SourceText) or expected_type == EXACT_TEXT:
+        return value
+    try:
+        if expected_type == DECIMAL:
+            return SourceDecimal(value.text)
+        if expected_type == DATE:
+            return SourceDate(value.text)
+        if expected_type == DATETIME:
+            return SourceDateTime(value.text)
+        if expected_type == BOOLEAN and value.text in ('TRUE', 'FALSE'):
+            return SourceBoolean(value.text == 'TRUE')
+    except FieldBindingError:
+        pass
+    return value
+
+
 def _resolve_from_source(
     ve: Mapping[str, Any],
     field_id: str,
     snapshot: RawDataRecordSnapshot,
+    *,
+    interpret_source_text: bool = False,
 ) -> str | RecordValidationBlocker:
     """required source key 를 frozen snapshot 에서만 읽어 logical text 를 낸다(row 재조회 0)."""
     _require_no_format_code(ve)
@@ -313,6 +338,8 @@ def _resolve_from_source(
             f"source key {source_key!r} 가 explicit null 이다",
         )
     assert value is not None  # has_key True 이고 NULL 이 아니면 scalar
+    if interpret_source_text:
+        value = _interpret_current_source_text(value, expected_type)
     actual_type = source_value_type_of(value)
     if actual_type != expected_type:
         return RecordValidationBlocker(
@@ -360,6 +387,8 @@ def _resolve_constant(ve: Mapping[str, Any], field_id: str) -> str:
 def _resolve_requirement(
     requirement: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
+    *,
+    interpret_source_text: bool = False,
 ) -> str | RecordValidationBlocker:
     field_id = requirement.get("field_id")
     if not isinstance(field_id, str) or field_id == "":
@@ -371,7 +400,12 @@ def _resolve_requirement(
         )
     kind = ve.get("kind")
     if kind == _KIND_FROM_SOURCE:
-        return _resolve_from_source(ve, field_id, snapshot)
+        return _resolve_from_source(
+            ve,
+            field_id,
+            snapshot,
+            interpret_source_text=interpret_source_text,
+        )
     if kind == _KIND_CONSTANT:
         return _resolve_constant(ve, field_id)
     if kind == _KIND_INTENTIONAL_BLANK:
@@ -474,16 +508,39 @@ def _current_validation_basis(
     )
 
 
+def _current_source_text_interpretation_keys(
+    plan: SealedExecutionPlanValue,
+) -> frozenset[str]:
+    declared: dict[str, str] = {}
+    conflicts: set[str] = set()
+    for requirement in plan.active_field_requirements:
+        value_expression = requirement.get('value_expression')
+        if not isinstance(value_expression, Mapping):
+            continue
+        if value_expression.get('kind') != _KIND_FROM_SOURCE:
+            continue
+        source_key = value_expression.get('source_key')
+        value_type = value_expression.get('value_type')
+        if not isinstance(source_key, str) or not isinstance(value_type, str):
+            continue
+        existing = declared.setdefault(source_key, value_type)
+        if existing != value_type:
+            conflicts.add(source_key)
+    return frozenset(conflicts)
+
+
 def validate_data_record_against_current_value(
     *, plan: SealedExecutionPlanValue, snapshot: RawDataRecordSnapshot, validated_at: str
 ) -> ValidateCurrentDataRecordResult:
     basis = _current_validation_basis(plan)
+    interpretation_keys = _current_source_text_interpretation_keys(plan)
     try:
         return _validate_current_value(
             plan=plan,
             snapshot=snapshot,
             validated_at=validated_at,
             validation_basis=basis,
+            source_text_interpretation_keys=interpretation_keys,
         )
     except _ContextSignal as sig:
         return RecordValidationContextError(sig.code, sig.detail)
@@ -496,6 +553,7 @@ def validate_data_records_against_current_value(
     validated_at: str,
 ) -> tuple[ValidateCurrentDataRecordResult, ...]:
     basis = _current_validation_basis(plan)
+    interpretation_keys = _current_source_text_interpretation_keys(plan)
     results: list[ValidateCurrentDataRecordResult] = []
     for snapshot in snapshots:
         try:
@@ -505,6 +563,7 @@ def validate_data_records_against_current_value(
                     snapshot=snapshot,
                     validated_at=validated_at,
                     validation_basis=basis,
+                    source_text_interpretation_keys=interpretation_keys,
                 )
             )
         except _ContextSignal as sig:
@@ -518,6 +577,7 @@ def _validate_current_value(
     snapshot: RawDataRecordSnapshot,
     validated_at: str,
     validation_basis: CurrentRecordValidationBasis,
+    source_text_interpretation_keys: frozenset[str],
 ) -> ValidateCurrentDataRecordResult:
     if plan.plan_schema_version not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
         raise _ContextSignal(PLAN_INTEGRITY_ERROR, "unsupported plan schema")
@@ -533,7 +593,16 @@ def _validate_current_value(
     blockers: list[RecordValidationBlocker] = []
     resolved: list[tuple[str, str]] = []
     for requirement in plan.active_field_requirements:
-        outcome = _resolve_requirement(requirement, snapshot)
+        value_expression = requirement.get('value_expression')
+        outcome = _resolve_requirement(
+            requirement,
+            snapshot,
+            interpret_source_text=(
+                isinstance(value_expression, Mapping)
+                and value_expression.get('source_key')
+                in source_text_interpretation_keys
+            ),
+        )
         if isinstance(outcome, RecordValidationBlocker):
             blockers.append(outcome)
         else:

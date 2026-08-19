@@ -3226,9 +3226,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 )
             existing = source_types.get(source_key)
             if existing is not None and existing != value_type:
-                raise _CurrentRecordCaptureError(
-                    '같은 원본 항목에 서로 다른 데이터 값 종류가 지정됐습니다.'
-                )
+                source_types[source_key] = EXACT_TEXT
+                continue
             source_types[source_key] = value_type
         return source_types
 
