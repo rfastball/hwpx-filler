@@ -412,7 +412,9 @@ def test_delivery_intent_changes_reuse_record_preparation(
     second_out = tmp_path / "delivery-2"
     second_out.mkdir()
     ctrl.set_output_folder(str(first_out))
+    _zone(ctrl)
     record_preparation = ctrl._current_record_preparation
+    assert record_preparation is not None
 
     monkeypatch.setattr(
         screen_job_module,
@@ -420,8 +422,10 @@ def test_delivery_intent_changes_reuse_record_preparation(
         lambda **_kwargs: pytest.fail("delivery change reran record validation"),
     )
     ctrl.set_output_folder(str(second_out))
+    _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
     ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    _zone(ctrl)
     assert ctrl._current_record_preparation is record_preparation
 
 
@@ -469,7 +473,6 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
         "공고서-20260818-001_1.hwpx"
     )
     assert tuple(item.name for item in out.iterdir()) == before
-
     ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
     zone = _zone(ctrl)
     assert zone["delivery"]["resolvable"] is False
@@ -489,6 +492,19 @@ def test_delivery_occupancy_is_read_only_and_collision_policy_is_backend_owned(
         "collision_disposition": "WRITE_OVERWRITE",
     }
     assert tuple(item.name for item in out.iterdir()) == before
+
+
+def test_delivery_unreadable_directory_is_loud_and_never_created(tmp_path: Path) -> None:
+    ctrl, _out = _delivery_controller(tmp_path)
+    missing = tmp_path / "missing-output"
+
+    ctrl.set_output_folder(str(missing))
+    zone = _zone(ctrl)
+
+    assert zone["kind"] == "context_error"
+    assert zone["code"] == "PATH_OCCUPANCY_OBSERVATION_FAILED"
+    assert zone["detail"] == "저장 폴더의 현재 파일 목록을 읽을 수 없습니다."
+    assert not missing.exists()
 
 
 def test_stale_projects_backend_execution_action_when_it_is_primary(
