@@ -38,7 +38,7 @@ const FACTORY_SERVICES = {
     "confirmDestructiveIfArmed", "log", "renderResult", "markResultStale",
     "openBindingRequirement", "resolveExecution",
     "startGenerate", "cancelGeneration", "closeResult", "selectFailed",
-    "openRenameRules", "pickOutputFolder", "relinkActive",
+    "openRenameRules", "pickOutputFolder", "setDeliveryCollision", "refreshDelivery", "relinkActive",
     "templateCheck", "templateApply", "openPreviewFrom",
     "closePreview", "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
     "previewFixField", "previewFixFilename", "openRepair", "toggleLog", "init", "dispose",
