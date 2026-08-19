@@ -346,6 +346,73 @@ def test_current_resolver_fails_closed_on_raw_vdr_pair_mismatch() -> None:
     assert result.code == gd.RAW_VALIDATED_RECORD_MISMATCH
 
 
+def test_current_add_suffix_avoids_disk_and_ordered_batch_case_insensitively() -> None:
+    plan = _current_plan()
+    snapshots = (
+        _snapshot(name="보고서", identity="record-1"),
+        _snapshot(name="보고서", identity="record-2"),
+    )
+    result = _resolve_current(
+        plan,
+        snapshots,
+        occupied=("보고서.HWPX", "보고서_1.hwpx"),
+    )
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert [item.resolved_output_relative_path for item in result.ordered_items] == [
+        "보고서_2.hwpx",
+        "보고서_3.hwpx",
+    ]
+    assert [item.item_ordinal for item in result.ordered_items] == [0, 1]
+    assert all(
+        item.collision_disposition == gd.WRITE_ADD_SUFFIX
+        for item in result.ordered_items
+    )
+    assert _resolve_current(
+        plan,
+        snapshots,
+        occupied=("보고서.HWPX", "보고서_1.hwpx"),
+    ) == result
+
+
+def test_current_fail_reports_existing_path_without_changing_batch_suffix() -> None:
+    plan = _current_plan()
+    result = _resolve_current(
+        plan,
+        (
+            _snapshot(name="보고서", identity="record-1"),
+            _snapshot(name="보고서", identity="record-2"),
+        ),
+        occupied=("보고서.hwpx",),
+        collision="FAIL",
+    )
+    assert isinstance(result, gd.DeliveryPlanBlocked), result
+    assert [(item.code, item.item_ordinal) for item in result.blockers] == [
+        (gd.OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED, 0)
+    ]
+
+
+def test_current_explicit_overwrite_marks_only_existing_exact_path() -> None:
+    plan = _current_plan()
+    result = _resolve_current(
+        plan,
+        (
+            _snapshot(name="보고서", identity="record-1"),
+            _snapshot(name="새문서", identity="record-2"),
+        ),
+        occupied=("보고서.HWPX",),
+        collision="OVERWRITE_EXPLICIT",
+    )
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert [item.resolved_output_relative_path for item in result.ordered_items] == [
+        "보고서.hwpx",
+        "새문서.hwpx",
+    ]
+    assert [item.collision_disposition for item in result.ordered_items] == [
+        gd.WRITE_OVERWRITE,
+        gd.WRITE_NEW,
+    ]
+
+
 # ═══ pattern compatibility ══════════════════════════════════════════════════════════════════
 def test_pattern_token_union_and_order() -> None:
     tokens = gd.parse_filename_pattern(_PATTERN, filename_pattern_contract_id=gd.FILENAME_PATTERN_CONTRACT_ID)
