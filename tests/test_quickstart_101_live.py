@@ -215,6 +215,10 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     observed = report["observations"]
     assert observed["hwpx_result_state"] == "completed"
     assert observed["preview_approved"] is True
+    assert observed["active_work_absent_after_mount"] is True
+    assert observed["work_candidate_actionable"] == "발주요청서"
+    assert observed["preferred_notice_requires_selection"] is True
+    assert observed["explicit_work_selected"] == "발주요청서"
     assert str(observed["txt_copied"]).startswith("1 /"), observed["txt_copied"]
     assert observed["empty_value_gate_asked"] is True
     assert observed["empty_value_surfaced"] is True

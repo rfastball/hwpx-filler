@@ -191,8 +191,8 @@ def run(ctx: ScenarioContext) -> dict:
     s.click_sel('#libraryDetail [data-use="발주요청서"]', what="문서 만들기에서 사용")
     # 작업↔데이터 결속(`Job.default_dataset_ref`)과 자동 조준은 U2 §5.3 판정 D 로 폐기됐다
     # (#347) — 「문서 만들기에서 사용」은 **데이터 선택을 반드시 지난다**. 데이터가 없으면
-    # 백엔드가 그 명시 사건을 보관만 하고(reason=no_data), 마운트 순간
-    # `_apply_preferred_work` 가 그때 판정해 작업을 연다. 101 도 이 순서를 그대로 가르친다.
+    # 백엔드가 그 명시 사건을 보관만 한다(reason=no_data). 마운트 뒤에도 active Work 는 0이고,
+    # 사용자가 현재 데이터에 맞는 후보를 다시 명시적으로 골라야 한다.
     s.wait("document.querySelector('#scr-job.on') !== null", "문서 만들기 착지", requires=["#scr-job"])
     ctx.queue_file_answer(ctx.csv_path)
     s.click_sel("#jobBtnPickData", what="데이터 선택")
@@ -216,18 +216,52 @@ def run(ctx: ScenarioContext) -> dict:
         requires=["#dataPickerModal", "#dataPickerCurrent", "#dataPickerPin"],
     )
     s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
-    # 보관된 명시 사건이 이 마운트에서 판정돼 작업이 열린다. 「열렸다」의 정본은 액션바
-    # 이름이다(「선택한 작업」 존 사망의 승계처 — U2 §4 판정 A, #342): 후보 카드 문안으로
-    # 재면 카드 목록에 이름이 **있기만 해도** 참이 돼 안 열린 화면을 통과로 읽는다.
     s.wait(
         "document.getElementById('dataPickerModal').classList.contains('hidden')"
-        " && document.getElementById('jobActionName').textContent.trim() === '발주요청서'"
-        " && document.getElementById('jobDataLabel').value.length > 0"
-        " && !document.getElementById('jobSelAll').disabled",
-        "데이터 마운트·보관 작업 승격",
+        " && document.getElementById('jobDataLabel').value.length > 0",
+        "데이터 마운트 착지",
         timeout=25.0,
-        requires=["#jobActionName", "#jobDataLabel", "#jobSelAll"],
+        requires=["#dataPickerModal", "#jobDataLabel"],
     )
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === ''",
+        "데이터 마운트 뒤 active Work 0",
+        requires=["#jobActionName"],
+    )
+    seen["active_work_absent_after_mount"] = True
+
+    candidate = '#jobCandidates button[data-cand="발주요청서"]'
+    s.wait(
+        "(function(){"
+        f"const b=document.querySelector({candidate!r});"
+        "if(!b)return false;const style=getComputedStyle(b);"
+        "return !b.disabled && b.getClientRects().length > 0"
+        " && style.visibility !== 'hidden' && style.pointerEvents !== 'none'"
+        " && b.getAttribute('aria-pressed') === 'false';})()",
+        "현재 데이터의 발주요청서 후보 가시·선택 가능",
+        requires=["#jobCandidates", candidate],
+    )
+    seen["work_candidate_actionable"] = "발주요청서"
+    s.wait(
+        "(function(){const n=document.getElementById('jobDataNotice');"
+        "return !n.hidden && n.textContent.includes('발주요청서')"
+        " && n.textContent.includes('직접 고르세요');})()",
+        "preferred notice의 직접 선택 안내",
+        requires=["#jobDataNotice"],
+    )
+    seen["preferred_notice_requires_selection"] = True
+
+    # 후보 카드의 보이는 production action을 실제로 누른다. 「열렸다」의 정본은 액션바 이름과
+    # 카드 aria-pressed다. 이 확인 전에 다음 단계로 가면 명시 선택 없는 진행을 놓친다.
+    s.click_sel(candidate, what="발주요청서 후보 명시 선택")
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === '발주요청서'"
+        f" && document.querySelector({candidate!r}).getAttribute('aria-pressed') === 'true'"
+        " && !document.getElementById('jobSelAll').disabled",
+        "데이터 마운트·명시 작업 선택",
+        requires=["#jobActionName", candidate, "#jobSelAll"],
+    )
+    seen["explicit_work_selected"] = "발주요청서"
     # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
     # 사용자가 고른다. 그래서 마운트만으로는 게이트가 열리지 않고, 여기서 전체 선택을
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
