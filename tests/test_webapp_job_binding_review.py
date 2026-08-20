@@ -41,6 +41,7 @@ from hwpxfiller.application.fresh_execution_observation import (
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
 from hwpxfiller.application.field_binding_input import build_field_binding_input
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
+from hwpxfiller.application.preview_requirement import PreviewNotRequired, PreviewRequired
 from hwpxfiller.domain.field_binding import (
     DATE,
     DECIMAL,
@@ -412,6 +413,101 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
         "blockers": [],
     }
     assert zone["create_action"]["enabled"] is False  # S6 absent 보존
+
+
+def test_optional_preview_token_is_stable_across_passive_render_and_drawer(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+    _zone(ctrl)
+
+    first = ctrl._current_preview_preparation
+    assert first is not None
+    assert first.requirement.kind == "OPTIONAL"
+    assert "REVIEW_PREVIEW" not in _zone(ctrl)["blockers"]
+    assert ctrl._current_preview_preparation is first
+
+    ctrl.dispatch("preview_open", {})
+    assert ctrl._current_preview_preparation is first
+    ctrl.dispatch("preview_close", {})
+    assert ctrl._current_preview_preparation is first
+    assert ctrl._approved_preview_token is None
+
+
+def test_required_preview_approval_is_current_token_only_and_legacy_review_isolated(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    _zone(ctrl)
+
+    current = ctrl._current_preview_preparation
+    assert current is not None and isinstance(current.requirement, PreviewRequired)
+    assert _zone(ctrl)["primary_action"] == "REVIEW_PREVIEW"
+    ctrl.dispatch("preview_open", {})
+    legacy_approvals = set(ctrl.review.approved)
+    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    zone = _zone(ctrl)
+    assert "REVIEW_PREVIEW" not in zone["blockers"]
+    assert ctrl._approved_preview_token == current.preview_token
+    assert ctrl.review.approved == legacy_approvals
+
+
+def test_delivery_refresh_replaces_token_and_stale_approval_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    old = ctrl._current_preview_preparation
+    assert old is not None
+
+    ctrl.dispatch("refresh_delivery", {})
+    _zone(ctrl)
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    assert current.preview_token != old.preview_token
+    assert ctrl._approved_preview_token is None
+    with pytest.raises(ValueError, match="바뀌었습니다"):
+        ctrl.dispatch("preview_approve", {"preview_token": old.preview_token})
+    assert ctrl._approved_preview_token is None
+    assert not ctrl.review.approved
+
+
+def test_record_preparation_identity_change_replaces_preview_token(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+    _zone(ctrl)
+    first = ctrl._current_preview_preparation
+    assert first is not None
+
+    ctrl.selection.toggle(0, False)
+    _zone(ctrl)
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    assert current.record_preparation is not first.record_preparation
+    assert current.preview_token != first.preview_token
+
+
+def test_non_regular_collision_keeps_delivery_ahead_of_preview(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").mkdir()
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+
+    zone = _zone(ctrl)
+    assert zone["primary_action"] == "REVIEW_DELIVERY"
+    assert "REVIEW_PREVIEW" not in zone["blockers"]
+    assert ctrl._current_preview_preparation is None
+    obs = ctrl.workbench_observation()
+    assert obs.preview_requirement.kind == "NOT_REQUIRED"
+    assert obs.semantic_preview is None
 
 
 def test_delivery_intent_changes_reuse_record_preparation(
@@ -803,6 +899,9 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
         orchestration=AutomaticSealOrchestration(),
         fresh_observation=fresh,
+        preview_requirement=PreviewNotRequired(),
+        preview_satisfied=True,
+        semantic_preview=None,
     )
     assert result.primary_action == "REVIEW_BINDING"
 

@@ -241,6 +241,25 @@ def test_compose_primary_action_returns_exactly_one_by_priority() -> None:
         assert isinstance(result, str) and result in PRIMARY_ACTION_CODES
 
 
+def test_record_then_delivery_then_preview_priority() -> None:
+    required = PreviewRequired(reason="DESTRUCTIVE_OVERWRITE")
+    all_three = _observation(
+        record_validation=RecordValidationSummary(
+            has_blocking_issues=True, issue_count=1
+        ),
+        delivery=DeliveryPreviewSummary(resolvable=False),
+        preview_requirement=required,
+        preview_satisfied=False,
+    )
+    assert all_three.primary_action == "REVIEW_RECORD_DATA"
+    delivery_and_preview = _observation(
+        delivery=DeliveryPreviewSummary(resolvable=False),
+        preview_requirement=required,
+        preview_satisfied=False,
+    )
+    assert delivery_and_preview.primary_action == "REVIEW_DELIVERY"
+
+
 # ══════════════════════════════════════ (2) 여러 blocker 보존 + primary 1개 ═════════════════════
 def test_multiple_blockers_preserved_with_single_primary() -> None:
     obs = _observation(

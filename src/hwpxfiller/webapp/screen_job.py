@@ -163,6 +163,15 @@ from ..application.generation_delivery import (
     build_delivery_binding_basis,
     resolve_current_generation_delivery,
 )
+from ..application.preview_requirement import (
+    CurrentPreviewPreparationError,
+    PreviewNotRequired,
+    PreviewRequired,
+    PreviewRequirement,
+    SemanticValuePreviewProjection,
+    build_current_preview_projection,
+    evaluate_current_preview_requirement,
+)
 from ..application.fresh_execution_observation import (
     CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
@@ -297,6 +306,15 @@ class _CurrentDeliveryPreparation:
     run_delivery_intent: RunDeliveryIntent
     captured_delivery_clock: str
     result: CurrentResolvedDelivery | DeliveryPlanBlocked | DeliveryPlanContextError
+
+
+@dataclass(frozen=True)
+class _CurrentPreviewPreparation:
+    record_preparation: _CurrentRecordPreparation
+    delivery_preparation: _CurrentDeliveryPreparation
+    requirement: PreviewRequirement
+    projection: SemanticValuePreviewProjection
+    preview_token: str
 
 
 class _CurrentRecordCaptureError(ValueError):
@@ -464,6 +482,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._current_record_preparation: _CurrentRecordPreparation | None = None
         self._run_delivery_intent: RunDeliveryIntent | None = None
         self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
+        self._current_preview_preparation: _CurrentPreviewPreparation | None = None
+        self._approved_preview_token: str | None = None
         # 마지막으로 봉인된 current basis 의 digest(**세션 소유·durable 아님**). R2(#740): opaque Plan
         # ref·resolve_plan_reference 가 사라져 seal 은 durable side effect 없는 순수 재계산이다 —
         # observe 성공마다 이 digest 를 갱신하고, durable mutation 이 changed 면 매번 재확인한다
@@ -714,6 +734,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._snapshot_gen += 1
         self._current_record_preparation = None
         self._current_delivery_preparation = None
+        self._invalidate_current_preview()
         self.range_draft = None
         self.zone_epoch += 1
 
@@ -755,6 +776,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
+        if self.vm is not None and self.vm.job.authority_id:
+            self.workbench_observation()
+            if self._current_preview_preparation is None:
+                raise ValueError(
+                    "현재 생성 내용을 확인할 수 없습니다. 먼저 데이터와 저장 위치를 확인하세요."
+                )
+            self.preview_open = True
+            self.preview_pos = 0
+            return {"ok": True}
         if self.job_is_txt:
             raise ValueError(
                 "이 작업은 검토·복사 작업대에서 행마다 값을 확인합니다."
@@ -841,6 +871,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         경로로 세우면 그 승인은 무엇에 근거했는지 말할 수 없다(F-06 이 지목한 바로 그
         결함을 우리 손으로 재현하는 꼴). 요구가 없으면 거절한다 — 조용히 세우지 않는다.
         """
+        if self.vm is not None and self.vm.job.authority_id:
+            token = p.get("preview_token")
+            if not isinstance(token, str) or not token:
+                raise ValueError("현재 생성 내용 확인 토큰이 필요합니다.")
+            if not self.preview_open:
+                raise ValueError("생성 내용을 연 뒤에 확인할 수 있습니다.")
+            self.workbench_observation()
+            current = self._current_preview_preparation
+            if current is None:
+                raise ValueError(
+                    "현재 생성 내용을 더 이상 구성할 수 없습니다. 다시 확인해 주세요."
+                )
+            if token != current.preview_token:
+                raise ValueError("생성 내용이 바뀌었습니다. 새 내용을 다시 확인해 주세요.")
+            if not isinstance(current.requirement, PreviewRequired):
+                raise ValueError("현재 생성 내용은 별도 승인이 필요하지 않습니다.")
+            self._approved_preview_token = token
+            return
         if not self.preview_open:
             raise ValueError("미리보기를 연 뒤에 확인할 수 있습니다.")
         req, unmet = self._review()
@@ -1842,6 +1890,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             )
             self._run_delivery_intent = RunDeliveryIntent(path, collision)
             self._current_delivery_preparation = None
+            self._invalidate_current_preview()
             self._push()
             return
         self.out_dir = path
@@ -1875,12 +1924,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             str(p["collision_policy"]),
         )
         self._current_delivery_preparation = None
+        self._invalidate_current_preview()
         return {"ok": True}
 
     def _do_refresh_delivery(self, p: dict) -> dict:
         if self._run_delivery_intent is None:
             raise ValueError("먼저 저장 폴더를 선택하세요.")
         self._current_delivery_preparation = None
+        self._invalidate_current_preview()
         return {"ok": True}
 
     def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
@@ -3208,6 +3259,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_sealed_basis_digest = None
         self._current_record_preparation = None
         self._current_delivery_preparation = None
+        self._invalidate_current_preview()
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
@@ -3648,6 +3700,73 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             planned_documents=planned,
         )
 
+    def _invalidate_current_preview(self) -> None:
+        self._current_preview_preparation = None
+        self._approved_preview_token = None
+
+    def _current_preview(
+        self,
+    ) -> tuple[_CurrentPreviewPreparation | None, WorkbenchContextIntegrity | None]:
+        record_preparation = self._current_record_preparation
+        delivery_preparation = self._current_delivery_preparation
+        if (
+            record_preparation is None
+            or delivery_preparation is None
+            or delivery_preparation.record_preparation is not record_preparation
+            or not isinstance(delivery_preparation.result, CurrentResolvedDelivery)
+        ):
+            self._invalidate_current_preview()
+            return None, None
+
+        cached = self._current_preview_preparation
+        if (
+            cached is not None
+            and cached.record_preparation is record_preparation
+            and cached.delivery_preparation is delivery_preparation
+        ):
+            return cached, None
+
+        self._invalidate_current_preview()
+        requirement = evaluate_current_preview_requirement(delivery_preparation.result)
+        preview_token = uuid.uuid4().hex
+        try:
+            projection = build_current_preview_projection(
+                preview_token=preview_token,
+                requirement=requirement,
+                plan=record_preparation.execution_value,
+                raw_records=record_preparation.raw_records,
+                validated_records=record_preparation.validated_records,
+                delivery=delivery_preparation.result,
+                record_display_locators=tuple(
+                    f"데이터 {model_index + 1}행"
+                    for model_index in record_preparation.ordered_model_indices
+                ),
+            )
+        except CurrentPreviewPreparationError as exc:
+            return None, WorkbenchContextIntegrity(
+                restore_failure=True,
+                code="CURRENT_PREVIEW_PREPARATION_STALE",
+                detail=str(exc),
+            )
+        if (
+            record_preparation is not self._current_record_preparation
+            or delivery_preparation is not self._current_delivery_preparation
+        ):
+            return None, WorkbenchContextIntegrity(
+                restore_failure=True,
+                code="CURRENT_PREVIEW_PREPARATION_STALE",
+                detail="확인 중 데이터나 생성 예정 경로가 바뀌었습니다. 다시 시도해 주세요.",
+            )
+        current = _CurrentPreviewPreparation(
+            record_preparation=record_preparation,
+            delivery_preparation=delivery_preparation,
+            requirement=requirement,
+            projection=projection,
+            preview_token=preview_token,
+        )
+        self._current_preview_preparation = current
+        return current, None
+
     def _current_delivery(
         self,
         record_validation: RecordValidationSummary,
@@ -3787,11 +3906,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ):
             binding_projection = self._seal_execution.current_binding_review(self.job_name)
         record_validation, context_integrity = self._current_record_validation()
+        preview_preparation = None
         if context_integrity is None:
             delivery, delivery_context = self._current_delivery(record_validation)
             context_integrity = delivery_context
+            if context_integrity is None:
+                preview_preparation, preview_context = self._current_preview()
+                context_integrity = preview_context
         else:
             delivery = DeliveryPreviewSummary(resolvable=False)
+        if context_integrity is not None:
+            self._invalidate_current_preview()
+            preview_preparation = None
+        preview_requirement = (
+            preview_preparation.requirement
+            if preview_preparation is not None
+            else PreviewNotRequired()
+        )
+        preview_satisfied = (
+            not isinstance(preview_requirement, PreviewRequired)
+            or self._approved_preview_token == preview_preparation.preview_token
+        )
         return self._workbench_observation.compose(
             data_mounted=self.datasource is not None,
             selected_record_count=self.selection.selected_count(),
@@ -3808,6 +3943,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ),
             record_validation=record_validation,
             delivery=delivery,
+            preview_requirement=preview_requirement,
+            preview_satisfied=preview_satisfied,
+            semantic_preview=(
+                preview_preparation.projection
+                if preview_preparation is not None
+                else None
+            ),
             run_delivery_intent=self._run_delivery_intent,
             context_integrity=context_integrity,
         )

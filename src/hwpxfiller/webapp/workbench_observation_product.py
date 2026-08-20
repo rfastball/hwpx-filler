@@ -61,7 +61,10 @@ from ..application.fresh_execution_observation import (
     FreshExecutionObservation,
     RuntimePolicyAdmission,
 )
-from ..application.preview_requirement import PreviewNotRequired, PreviewRequirement
+from ..application.preview_requirement import (
+    PreviewRequirement,
+    SemanticValuePreviewProjection,
+)
 from ..application.run_delivery_intent import RunDeliveryIntent
 from ..application.slot_configuration_projection import (
     HAS_BROKEN_SELECTIONS,
@@ -219,12 +222,6 @@ def execution_verdicts_from_fresh(
     )
 
 
-def _sx03_seam_preview_requirement() -> PreviewRequirement:
-    # PreviewRequirement 정책 v1: 일반 Option 선택은 NOT_REQUIRED(#724 §6). 새 Work 첫 실행·Template
-    # Application 변경 뒤 첫 실행 등 REQUIRED 판정은 preview_requirement 판정 함수 소관(SX-04 축).
-    return PreviewNotRequired()
-
-
 # ── SX-04 seam(record/delivery/preview-satisfied 축) — 부분함수 하나씩 ────────────────────────────
 def _sx04_seam_record_validation(
     projection: RecordValidationSummary | None = None,
@@ -239,11 +236,6 @@ def _sx04_seam_delivery(
     # SX-04 seam(정직성 앵커): delivery 가 실제로 채워지기 전에는 resolvable=False —
     # Primary Action 이 CREATE_DOCUMENTS 로 조용히 새지 않고 REVIEW_DELIVERY 로 시끄럽게 막힌다.
     return projection if projection is not None else DeliveryPreviewSummary(resolvable=False)
-
-
-def _sx04_seam_preview_satisfied() -> bool:
-    # SX-04 seam: preview 승인 사건 소비는 SX-04 축이다.
-    return False
 
 
 class WorkbenchObservationProduct:
@@ -269,6 +261,9 @@ class WorkbenchObservationProduct:
         input_requirements: tuple[InputRequirement, ...] = (),
         record_validation: RecordValidationSummary | None = None,
         delivery: DeliveryPreviewSummary | None = None,
+        preview_requirement: PreviewRequirement,
+        preview_satisfied: bool,
+        semantic_preview: SemanticValuePreviewProjection | None,
         run_delivery_intent: RunDeliveryIntent | None = None,
         context_integrity: WorkbenchContextIntegrity | None = None,
     ) -> GetDocumentCreationWorkbenchResult:
@@ -303,7 +298,7 @@ class WorkbenchObservationProduct:
             orchestration=orchestration,
             # ── SX-03 축(fresh_observation 소비 — 재판정 0) ──
             admission=verdicts.admission,
-            preview_requirement=_sx03_seam_preview_requirement(),
+            preview_requirement=preview_requirement,
             active_field_requirement_ids=active_field_requirement_ids,
             binding_review_needed=binding_review_needed,
             template_change_verdict=template_change_verdict,
@@ -312,7 +307,8 @@ class WorkbenchObservationProduct:
             record_validation=_sx04_seam_record_validation(record_validation),
             delivery=_sx04_seam_delivery(delivery),
             run_delivery_intent=run_delivery_intent,
-            preview_satisfied=_sx04_seam_preview_satisfied(),
+            preview_satisfied=preview_satisfied,
+            semantic_preview=semantic_preview,
             context_integrity=context_integrity,
         )
         return compose_document_creation_workbench(composition)
