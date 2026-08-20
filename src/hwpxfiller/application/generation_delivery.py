@@ -115,6 +115,7 @@ OUTPUT_NAME_BINDING_AMBIGUOUS = "OUTPUT_NAME_BINDING_AMBIGUOUS"
 OUTPUT_NAME_VALUE_RESOLUTION_FAILED = "OUTPUT_NAME_VALUE_RESOLUTION_FAILED"
 OUTPUT_NAME_PATTERN_INVALID = "OUTPUT_NAME_PATTERN_INVALID"
 OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED = "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
+OUTPUT_PATH_NON_REGULAR_CONFLICT = "OUTPUT_PATH_NON_REGULAR_CONFLICT"
 
 # ─── context/integrity 어휘(user-fixable 로 낮추지 않는 fail-closed 실패) ─────────────────────
 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR = "GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR"
@@ -502,6 +503,8 @@ def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> Non
 def resolve_delivery_field_value(
     value_expression: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
+    *,
+    interpret_source_text: bool = False,
 ) -> str | tuple[str, str]:
     """inactive Field token 값을 exact requirement + raw snapshot 에서 해석한다.
 
@@ -546,7 +549,8 @@ def resolve_delivery_field_value(
         if isinstance(value, SourceNull):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 explicit null")
         assert value is not None
-        value = interpret_current_source_value(value, expected_type)
+        if interpret_source_text:
+            value = interpret_current_source_value(value, expected_type)
         actual_type = source_value_type_of(value)
         if actual_type != expected_type:
             return (
@@ -990,7 +994,9 @@ def _resolve_current(
             if field_id in active_map:
                 value = active_map[field_id]
             elif field_id in inactive_by_field:
-                value = resolve_delivery_field_value(inactive_by_field[field_id], snapshot)
+                value = resolve_delivery_field_value(
+                    inactive_by_field[field_id], snapshot, interpret_source_text=True
+                )
             else:
                 value = (
                     OUTPUT_NAME_TOKEN_UNRESOLVED,
@@ -1046,7 +1052,11 @@ def _resolve_current(
     if policy == "FAIL":
         conflicts = [
             DeliveryPlanBlocker(
-                OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED,
+                (
+                    OUTPUT_PATH_NON_REGULAR_CONFLICT
+                    if path.casefold() in non_regular_folded
+                    else OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED
+                ),
                 ordinal,
                 None,
                 f"existing output path: {path}",
@@ -1060,7 +1070,7 @@ def _resolve_current(
     if policy == "OVERWRITE_EXPLICIT":
         conflicts = [
             DeliveryPlanBlocker(
-                OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED,
+                OUTPUT_PATH_NON_REGULAR_CONFLICT,
                 ordinal,
                 None,
                 f"non-regular output path: {path}",

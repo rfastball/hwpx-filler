@@ -341,6 +341,7 @@ _DELIVERY_BLOCKER_PHRASES = {
     "OUTPUT_NAME_VALUE_RESOLUTION_FAILED": "파일 이름에 사용할 값을 해석할 수 없습니다.",
     "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
     "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 파일이 있습니다:",
+    "OUTPUT_PATH_NON_REGULAR_CONFLICT": "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:",
 }
 
 

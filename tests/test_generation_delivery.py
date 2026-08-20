@@ -437,6 +437,7 @@ def test_current_non_regular_collision_blocks_overwrite_and_add_suffix_avoids_it
         collision="OVERWRITE_EXPLICIT",
     )
     assert isinstance(blocked, gd.DeliveryPlanBlocked), blocked
+    assert blocked.blockers[0].code == gd.OUTPUT_PATH_NON_REGULAR_CONFLICT
     assert blocked.blockers[0].conflicting_relative_path == "보고서.hwpx"
 
     suffixed = _resolve_current(
@@ -644,7 +645,7 @@ def test_inactive_source_type_mismatch_resolution_failed() -> None:
         source_key="dept", value_type=DECIMAL,  # dept 는 EXACT_TEXT → 불일치
     )
     basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    res = _resolve(plan, (_snapshot(),), pattern="{{f_dept}}", basis=basis)
+    res = _resolve(plan, (_snapshot(dept="1500.00"),), pattern="{{f_dept}}", basis=basis)
     assert isinstance(res, gd.DeliveryPlanBlocked)
     assert res.blockers[0].code == gd.OUTPUT_NAME_VALUE_RESOLUTION_FAILED
 

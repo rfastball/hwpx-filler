@@ -521,6 +521,10 @@ def test_directory_collision_blocks_explicit_overwrite_with_exact_path(tmp_path:
     zone = _zone(ctrl)
 
     assert zone["delivery"]["resolvable"] is False
+    assert zone["delivery"]["blockers"][0]["code"] == "OUTPUT_PATH_NON_REGULAR_CONFLICT"
+    assert zone["delivery"]["blockers"][0]["message"] == (
+        "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:"
+    )
     assert zone["delivery"]["blockers"][0]["conflicting_relative_path"] == conflict.name
     assert conflict.is_dir()
 
