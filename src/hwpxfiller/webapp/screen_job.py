@@ -3088,6 +3088,55 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     for issue in observation.record_validation.issues
                 ],
             },
+            "preview_requirement": {
+                "kind": observation.preview_requirement.kind,
+                **(
+                    {"reason": observation.preview_requirement.reason}
+                    if isinstance(observation.preview_requirement, PreviewRequired)
+                    else {}
+                ),
+            },
+            "preview_satisfied": observation.preview_satisfied,
+            "semantic_preview": (
+                {
+                    "preview_token": observation.semantic_preview.preview_token,
+                    "requirement": {
+                        "kind": observation.semantic_preview.requirement.kind,
+                        **(
+                            {"reason": observation.semantic_preview.requirement.reason}
+                            if isinstance(
+                                observation.semantic_preview.requirement,
+                                PreviewRequired,
+                            )
+                            else {}
+                        ),
+                    },
+                    "included_content_summary": (
+                        observation.semantic_preview.included_content_summary
+                    ),
+                    "ordered_records": [
+                        {
+                            "record_identity": record.record_identity,
+                            "record_display_locator": record.record_display_locator,
+                            "logical_field_values": [
+                                {
+                                    "field_id": field.field_id,
+                                    "display_label": field.display_label,
+                                    "value": field.value,
+                                }
+                                for field in record.logical_field_values
+                            ],
+                            "planned_document_relative_path": (
+                                record.planned_document_relative_path
+                            ),
+                            "collision_disposition": record.collision_disposition,
+                        }
+                        for record in observation.semantic_preview.ordered_records
+                    ],
+                }
+                if observation.semantic_preview is not None
+                else None
+            ),
             "run_delivery_intent": (
                 {
                     "output_directory": observation.run_delivery_intent.output_directory,

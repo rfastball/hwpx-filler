@@ -484,6 +484,7 @@ class DocumentCreationWorkbenchObservation:
     orchestration: AutomaticSealOrchestration
     record_validation: RecordValidationSummary
     preview_requirement: PreviewRequirement
+    preview_satisfied: bool
     delivery: DeliveryPreviewSummary
     semantic_preview: SemanticValuePreviewProjection | None
     run_delivery_intent: RunDeliveryIntent | None
@@ -741,6 +742,7 @@ def compose_document_creation_workbench(
         orchestration=inp.orchestration,
         record_validation=inp.record_validation,
         preview_requirement=inp.preview_requirement,
+        preview_satisfied=inp.preview_satisfied,
         delivery=inp.delivery,
         semantic_preview=inp.semantic_preview,
         run_delivery_intent=inp.run_delivery_intent,

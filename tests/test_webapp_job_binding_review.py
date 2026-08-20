@@ -446,13 +446,45 @@ def test_required_preview_approval_is_current_token_only_and_legacy_review_isola
 
     current = ctrl._current_preview_preparation
     assert current is not None and isinstance(current.requirement, PreviewRequired)
-    assert _zone(ctrl)["primary_action"] == "REVIEW_PREVIEW"
+    before = _zone(ctrl)
+    assert before["primary_action"] == "REVIEW_PREVIEW"
+    assert before["preview_requirement"] == {
+        "kind": "REQUIRED",
+        "reason": "DESTRUCTIVE_OVERWRITE",
+    }
+    assert before["preview_satisfied"] is False
+    assert before["semantic_preview"] == {
+        "preview_token": current.preview_token,
+        "requirement": {"kind": "REQUIRED", "reason": "DESTRUCTIVE_OVERWRITE"},
+        "included_content_summary": "데이터 2건 · 항목 1개",
+        "ordered_records": [
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+                "record_display_locator": "데이터 2행",
+                "logical_field_values": [
+                    {"field_id": "f_name", "display_label": "f_name", "value": "B"}
+                ],
+                "planned_document_relative_path": "공고서-20260818-001.hwpx",
+                "collision_disposition": "WRITE_OVERWRITE",
+            },
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 0),
+                "record_display_locator": "데이터 1행",
+                "logical_field_values": [
+                    {"field_id": "f_name", "display_label": "f_name", "value": "A"}
+                ],
+                "planned_document_relative_path": "공고서-20260818-002.hwpx",
+                "collision_disposition": "WRITE_NEW",
+            },
+        ],
+    }
     ctrl.dispatch("preview_open", {})
     legacy_approvals = set(ctrl.review.approved)
     ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
 
     zone = _zone(ctrl)
     assert "REVIEW_PREVIEW" not in zone["blockers"]
+    assert zone["preview_satisfied"] is True
     assert ctrl._approved_preview_token == current.preview_token
     assert ctrl.review.approved == legacy_approvals
 
