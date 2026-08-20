@@ -732,9 +732,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 세대를 올리고 초안을 버린다(판정 J): 초안의 index 는 죽은 스냅샷의 좌표다. 세대는
         # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
         self._snapshot_gen += 1
-        self._current_record_preparation = None
-        self._current_delivery_preparation = None
-        self._invalidate_current_preview()
+        self._invalidate_current_preparations()
         self.range_draft = None
         self.zone_epoch += 1
 
@@ -3134,7 +3132,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         for record in observation.semantic_preview.ordered_records
                     ],
                 }
-                if observation.semantic_preview is not None
+                if self.preview_open and observation.semantic_preview is not None
                 else None
             ),
             "run_delivery_intent": (
@@ -3306,9 +3304,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._session_orchestration = AutomaticSealOrchestration()
         self._last_fresh_observation = None
         self._last_sealed_basis_digest = None
-        self._current_record_preparation = None
-        self._current_delivery_preparation = None
-        self._invalidate_current_preview()
+        self._invalidate_current_preparations()
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
     def on_editor_mapping_saved(self, work_ref: str) -> dict:
@@ -3753,9 +3749,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._current_preview_preparation = None
         self._approved_preview_token = None
 
+    def _invalidate_current_preparations(self) -> None:
+        self._current_record_preparation = None
+        self._current_delivery_preparation = None
+        self._invalidate_current_preview()
+
     def _current_preview(
         self,
     ) -> tuple[_CurrentPreviewPreparation | None, WorkbenchContextIntegrity | None]:
+        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
+            self._invalidate_current_preparations()
+            return None, None
         record_preparation = self._current_record_preparation
         delivery_preparation = self._current_delivery_preparation
         if (
@@ -3954,6 +3958,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             and isinstance(self._last_fresh_observation, CurrentWorkExecutionObservation)
         ):
             binding_projection = self._seal_execution.current_binding_review(self.job_name)
+        if self._session_orchestration.state != ORCHESTRATION_SETTLED_CURRENT:
+            self._invalidate_current_preparations()
         record_validation, context_integrity = self._current_record_validation()
         preview_preparation = None
         if context_integrity is None:

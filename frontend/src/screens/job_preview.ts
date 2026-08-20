@@ -70,7 +70,9 @@ export function JobPreviewSheet(props: { controller: JobRunController }): ReactN
 
   if (snapshot?.managed_hwpx === true) {
     const workbench = (snapshot.workbench_observation || {}) as Obj;
-    const preview = (workbench.semantic_preview || null) as Obj | null;
+    const preview = p.open === true
+      ? (workbench.semantic_preview || null) as Obj | null
+      : null;
     const records = (preview?.ordered_records || []) as Obj[];
     const required = preview?.requirement?.kind === "REQUIRED";
     const satisfied = workbench.preview_satisfied === true;

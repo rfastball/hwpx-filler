@@ -461,6 +461,7 @@ test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복�
     ...SNAP, managed_hwpx: true, preview: { ...SNAP.preview, open: true },
     workbench_observation: {
       supported: true, primary_action: "REVIEW_PREVIEW", preview_satisfied: false,
+      preview_requirement: preview.requirement,
       semantic_preview: preview,
       create_action: { label: "문서 만들기", enabled: false, disabled_reason: "S6 부재" },
     },
@@ -510,6 +511,29 @@ test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복�
   const source = String(JobPreviewSheet);
   for (const forbidden of ["existsSync", "OVERWRITE_EXPLICIT", "planned_document_relative_path =", ".sort("])
     assert.equal(source.includes(forbidden), false, forbidden);
+
+  h.push({
+    ...snap,
+    preview: { ...snap.preview, open: false },
+    workbench_observation: { ...snap.workbench_observation, semantic_preview: null },
+  });
+  const closedAction = renderToStaticMarkup(
+    createElement(JobActionBar, { controller: h.controller }),
+  );
+  assert.ok(closedAction.includes('id="jobManagedPreviewOpen"'));
+
+  const closedPreview = { ...preview };
+  Object.defineProperty(closedPreview, "ordered_records", {
+    get() { throw new Error("closed preview rendered records"); },
+  });
+  h.push({
+    ...snap,
+    preview: { ...snap.preview, open: false },
+    workbench_observation: { ...snap.workbench_observation, semantic_preview: closedPreview },
+  });
+  assert.doesNotThrow(() => renderToStaticMarkup(
+    createElement(JobPreviewSheet, { controller: h.controller }),
+  ));
 });
 
 test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 push를 기다린다', async () => {

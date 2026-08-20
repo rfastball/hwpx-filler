@@ -936,7 +936,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const managed = isManagedHwpx(s);
   const workbench = (s?.workbench_observation || {}) as Obj;
   const createAction = (workbench.create_action || {}) as Obj;
-  const semanticPreview = (workbench.semantic_preview || null) as Obj | null;
+  const previewRequirement = (workbench.preview_requirement || {}) as Obj;
+  const previewAvailable = previewRequirement.kind === "OPTIONAL"
+    || previewRequirement.kind === "REQUIRED";
   const ra = (s?.run_action || { key: "generate", label: "이 작업으로 문서 생성" }) as Obj;
 
   return h("div", { className: "actionbar-row" },
@@ -960,7 +962,7 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
       hidden: managed,
       style: { display: review.required && !review.approved ? "" : "none" },
     }, "승인 필요"),
-    managed && semanticPreview ? h("button", {
+    managed && previewAvailable ? h("button", {
       className: workbench.primary_action === "REVIEW_PREVIEW" ? "btn primary" : "btn",
       id: "jobManagedPreviewOpen", type: "button", disabled: busy,
       onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),

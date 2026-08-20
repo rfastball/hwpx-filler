@@ -343,7 +343,7 @@ def test_stale_orchestration_hides_old_record_validation_and_target(
 
     ctrl._session_orchestration = AutomaticSealOrchestration(state='STALE')
     assert _zone(ctrl)['record_validation']['issue_count'] == 0
-    with pytest.raises(ValueError, match='위치를 복원할 수 없습니다'):
+    with pytest.raises(ValueError, match='현재 데이터 확인 결과가 없습니다'):
         ctrl.dispatch('recover_record_issue', {'target': target})
 
 
@@ -462,7 +462,9 @@ def test_required_preview_approval_is_current_token_only_and_legacy_review_isola
         "reason": "DESTRUCTIVE_OVERWRITE",
     }
     assert before["preview_satisfied"] is False
-    assert before["semantic_preview"] == {
+    assert before["semantic_preview"] is None
+    ctrl.dispatch("preview_open", {})
+    assert _zone(ctrl)["semantic_preview"] == {
         "preview_token": current.preview_token,
         "requirement": {"kind": "REQUIRED", "reason": "DESTRUCTIVE_OVERWRITE"},
         "included_content_summary": "데이터 2건 · 항목 1개",
@@ -487,7 +489,6 @@ def test_required_preview_approval_is_current_token_only_and_legacy_review_isola
             },
         ],
     }
-    ctrl.dispatch("preview_open", {})
     legacy_approvals = set(ctrl.review.approved)
     with pytest.raises(ValueError, match="토큰이 필요"):
         ctrl.dispatch("preview_approve", {})
@@ -500,6 +501,37 @@ def test_required_preview_approval_is_current_token_only_and_legacy_review_isola
     assert zone["preview_satisfied"] is True
     assert ctrl._approved_preview_token == current.preview_token
     assert ctrl.review.approved == legacy_approvals
+
+
+def test_stale_execution_invalidates_preview_and_rejects_old_token(
+    tmp_path: Path,
+) -> None:
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
+    with pytest.raises(ValueError, match="더 이상 구성"):
+        ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    assert ctrl._current_record_preparation is None
+    assert ctrl._current_delivery_preparation is None
+    assert ctrl._current_preview_preparation is None
+    assert ctrl._approved_preview_token is None
+    assert not ctrl.review.approved
+    zone = _zone(ctrl)
+    assert zone["primary_action"] == "RESOLVE_EXECUTION"
+    assert zone["preview_requirement"] == {"kind": "NOT_REQUIRED"}
+    assert zone["semantic_preview"] is None
 
 
 def test_delivery_refresh_replaces_token_and_stale_approval_writes_nothing(
@@ -545,14 +577,19 @@ def test_output_directory_and_policy_changes_replace_preview_token(tmp_path: Pat
     second_out = tmp_path / "delivery-2"
     second_out.mkdir()
     ctrl.set_output_folder(str(first_out))
-    first = _zone(ctrl)["semantic_preview"]["preview_token"]
+    _zone(ctrl)
+    first = ctrl._current_preview_preparation
+    assert first is not None
 
     ctrl.set_output_folder(str(second_out))
-    second = _zone(ctrl)["semantic_preview"]["preview_token"]
-    assert second != first
+    _zone(ctrl)
+    second = ctrl._current_preview_preparation
+    assert second is not None and second.preview_token != first.preview_token
     ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
-    third = _zone(ctrl)["semantic_preview"]["preview_token"]
-    assert third not in (first, second)
+    _zone(ctrl)
+    third = ctrl._current_preview_preparation
+    assert third is not None
+    assert third.preview_token not in (first.preview_token, second.preview_token)
 
 
 def test_preview_becoming_unconstructable_rejects_old_token(tmp_path: Path) -> None:
