@@ -164,7 +164,7 @@ export const SCREEN_ACTIONS = {
     preview_close: { required: [], optional: [] },
     preview_move: { required: ["delta"], optional: [] },
     preview_blank_only: { required: ["value"], optional: [] },
-    preview_approve: { required: [], optional: [] },
+    preview_approve: { required: [], optional: ["preview_token"] },
     set_selected_only: { required: ["value"], optional: [] },
     select_job: { required: ["name"], optional: ["confirm"] },
     toggle_favorite: { required: ["name", "value"], optional: [] },
@@ -312,8 +312,8 @@ export const DOCUMENT_CREATION_BLOCKERS = [
   "CHOOSE_CONTENT",
   "REVIEW_BINDING",
   "REVIEW_RECORD_DATA",
-  "REVIEW_PREVIEW",
   "REVIEW_DELIVERY",
+  "REVIEW_PREVIEW",
   "EXECUTION_CHECKING",
   "EXECUTION_STALE",
   "POLICY_BLOCKED",
@@ -335,8 +335,8 @@ export const PRIMARY_ACTIONS = [
   "REVIEW_BINDING",
   "RESOLVE_EXECUTION",
   "REVIEW_RECORD_DATA",
-  "REVIEW_PREVIEW",
   "REVIEW_DELIVERY",
+  "REVIEW_PREVIEW",
   "RESOLVE_RUNTIME_POLICY",
   "CREATE_DOCUMENTS",
 ] as const;
@@ -358,7 +358,7 @@ export const WORKBENCH_EXECUTION_STATUSES = [
 
 export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];
 
-/* PreviewRequirement v1 종류(#724 §6) — REQUIRED 의 reason·basis 는 Product DTO 소유. */
+/* Current PreviewRequirement — 실제 resolved delivery가 사용자 확인 필요성을 결정한다. */
 export const PREVIEW_REQUIREMENT_KINDS = [
   "NOT_REQUIRED",
   "OPTIONAL",

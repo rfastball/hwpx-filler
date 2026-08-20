@@ -182,7 +182,7 @@ def _observation(**overrides: object) -> DocumentCreationWorkbenchObservation:
         # 필수 preview 미충족 → REVIEW_PREVIEW
         (
             {
-                "preview_requirement": PreviewRequired(reason="NEW_WORK_FIRST_RUN", exact_basis_ref="b1"),
+                "preview_requirement": PreviewRequired(reason="DESTRUCTIVE_OVERWRITE"),
                 "preview_satisfied": False,
             },
             "REVIEW_PREVIEW",
@@ -239,6 +239,25 @@ def test_compose_primary_action_returns_exactly_one_by_priority() -> None:
     for code in BLOCKER_CODES:
         result = compose_primary_action((code,))
         assert isinstance(result, str) and result in PRIMARY_ACTION_CODES
+
+
+def test_record_then_delivery_then_preview_priority() -> None:
+    required = PreviewRequired(reason="DESTRUCTIVE_OVERWRITE")
+    all_three = _observation(
+        record_validation=RecordValidationSummary(
+            has_blocking_issues=True, issue_count=1
+        ),
+        delivery=DeliveryPreviewSummary(resolvable=False),
+        preview_requirement=required,
+        preview_satisfied=False,
+    )
+    assert all_three.primary_action == "REVIEW_RECORD_DATA"
+    delivery_and_preview = _observation(
+        delivery=DeliveryPreviewSummary(resolvable=False),
+        preview_requirement=required,
+        preview_satisfied=False,
+    )
+    assert delivery_and_preview.primary_action == "REVIEW_DELIVERY"
 
 
 # ══════════════════════════════════════ (2) 여러 blocker 보존 + primary 1개 ═════════════════════

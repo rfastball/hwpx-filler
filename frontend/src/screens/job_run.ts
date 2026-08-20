@@ -78,7 +78,7 @@ const DELIVERY_POLICIES = [
   ["OVERWRITE_EXPLICIT", "기존 파일 덮어쓰기"],
 ] as const;
 
-const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
+export const DELIVERY_DISPOSITION_COPY: Record<string, string> = {
   WRITE_NEW: "새 파일",
   WRITE_ADD_SUFFIX: "번호를 붙인 새 파일",
   WRITE_OVERWRITE: "기존 파일 덮어쓰기",
@@ -578,8 +578,8 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       void dispatch("preview_blank_only", { value }).catch((error) =>
         log(`빈 값 건만 보기를 바꾸지 못했습니다: ${String(error)}`));
     },
-    previewApprove(): void {
-      void dispatch("preview_approve", {}).catch((error) =>
+    previewApprove(previewToken?: string): void {
+      void dispatch("preview_approve", previewToken ? { preview_token: previewToken } : {}).catch((error) =>
         log(`확인을 저장하지 못했습니다: ${String(error)}`));
     },
     previewEdit(): void {
@@ -936,6 +936,9 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
   const managed = isManagedHwpx(s);
   const workbench = (s?.workbench_observation || {}) as Obj;
   const createAction = (workbench.create_action || {}) as Obj;
+  const previewRequirement = (workbench.preview_requirement || {}) as Obj;
+  const previewAvailable = previewRequirement.kind === "OPTIONAL"
+    || previewRequirement.kind === "REQUIRED";
   const ra = (s?.run_action || { key: "generate", label: "이 작업으로 문서 생성" }) as Obj;
 
   return h("div", { className: "actionbar-row" },
@@ -959,6 +962,11 @@ export function JobActionBar(props: { controller: JobRunController }): ReactNode
       hidden: managed,
       style: { display: review.required && !review.approved ? "" : "none" },
     }, "승인 필요"),
+    managed && previewAvailable ? h("button", {
+      className: workbench.primary_action === "REVIEW_PREVIEW" ? "btn primary" : "btn",
+      id: "jobManagedPreviewOpen", type: "button", disabled: busy,
+      onClick: (event: Obj) => props.controller.openPreviewFrom(event.currentTarget),
+    }, "생성 내용 확인") : null,
     h("button", {
       className: "btn primary", id: "jobGenBtn",
       hidden: managed,

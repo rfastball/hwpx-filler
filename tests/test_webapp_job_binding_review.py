@@ -41,6 +41,7 @@ from hwpxfiller.application.fresh_execution_observation import (
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
 from hwpxfiller.application.field_binding_input import build_field_binding_input
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
+from hwpxfiller.application.preview_requirement import PreviewNotRequired, PreviewRequired
 from hwpxfiller.domain.field_binding import (
     DATE,
     DECIMAL,
@@ -73,7 +74,13 @@ def _clock():
     return lambda: NOW
 
 
-def _controller(tmp_path: Path, *, with_binding: bool, wire_seal: bool = True):
+def _controller(
+    tmp_path: Path,
+    *,
+    with_binding: bool,
+    wire_seal: bool = True,
+    seed: bool = True,
+):
     """실 SlotConfigurationProduct + SealExecutionPlanService 를 **같은 authority root** 로 배선.
 
     v2 Work 를 그 root 에 직접 seed 하고 registry 의 WorkAuthorityId 를 그 Work 에 못박아, 컨트롤러의
@@ -82,7 +89,8 @@ def _controller(tmp_path: Path, *, with_binding: bool, wire_seal: bool = True):
     capability(S6 미출하 → NOT_ADMITTED)만 본다.
     """
     root = default_template_authority_dir()
-    _seed_v2_work(root, with_binding=with_binding)
+    if seed:
+        _seed_v2_work(root, with_binding=with_binding)
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name=WORK_REF, template_path="managed.hwpx"))
     reg.assign_authority_id(WORK_REF, WORK)
@@ -335,7 +343,7 @@ def test_stale_orchestration_hides_old_record_validation_and_target(
 
     ctrl._session_orchestration = AutomaticSealOrchestration(state='STALE')
     assert _zone(ctrl)['record_validation']['issue_count'] == 0
-    with pytest.raises(ValueError, match='위치를 복원할 수 없습니다'):
+    with pytest.raises(ValueError, match='현재 데이터 확인 결과가 없습니다'):
         ctrl.dispatch('recover_record_issue', {'target': target})
 
 
@@ -412,6 +420,274 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
         "blockers": [],
     }
     assert zone["create_action"]["enabled"] is False  # S6 absent 보존
+
+
+def test_optional_preview_token_is_stable_across_passive_render_and_drawer(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+    _zone(ctrl)
+
+    first = ctrl._current_preview_preparation
+    assert first is not None
+    assert first.requirement.kind == "OPTIONAL"
+    assert "REVIEW_PREVIEW" not in _zone(ctrl)["blockers"]
+    assert ctrl._current_preview_preparation is first
+
+    ctrl.dispatch("preview_open", {})
+    assert ctrl._current_preview_preparation is first
+    ctrl.dispatch("preview_move", {"delta": 1})
+    assert ctrl._current_preview_preparation is first
+    ctrl.dispatch("preview_close", {})
+    assert ctrl._current_preview_preparation is first
+    assert ctrl._approved_preview_token is None
+
+
+def test_required_preview_approval_is_current_token_only_and_legacy_review_isolated(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    _zone(ctrl)
+
+    current = ctrl._current_preview_preparation
+    assert current is not None and isinstance(current.requirement, PreviewRequired)
+    before = _zone(ctrl)
+    assert before["primary_action"] == "REVIEW_PREVIEW"
+    assert before["preview_requirement"] == {
+        "kind": "REQUIRED",
+        "reason": "DESTRUCTIVE_OVERWRITE",
+    }
+    assert before["preview_satisfied"] is False
+    assert before["semantic_preview"] is None
+    ctrl.dispatch("preview_open", {})
+    assert _zone(ctrl)["semantic_preview"] == {
+        "preview_token": current.preview_token,
+        "requirement": {"kind": "REQUIRED", "reason": "DESTRUCTIVE_OVERWRITE"},
+        "included_content_summary": "데이터 2건 · 항목 1개",
+        "ordered_records": [
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 1),
+                "record_display_locator": "데이터 2행",
+                "logical_field_values": [
+                    {"field_id": "f_name", "display_label": "f_name", "value": "B"}
+                ],
+                "planned_document_relative_path": "공고서-20260818-001.hwpx",
+                "collision_disposition": "WRITE_OVERWRITE",
+            },
+            {
+                "record_identity": ctrl._current_record_identity(ctrl._snapshot_gen, 0),
+                "record_display_locator": "데이터 1행",
+                "logical_field_values": [
+                    {"field_id": "f_name", "display_label": "f_name", "value": "A"}
+                ],
+                "planned_document_relative_path": "공고서-20260818-002.hwpx",
+                "collision_disposition": "WRITE_NEW",
+            },
+        ],
+    }
+    legacy_approvals = set(ctrl.review.approved)
+    with pytest.raises(ValueError, match="토큰이 필요"):
+        ctrl.dispatch("preview_approve", {})
+    assert ctrl._approved_preview_token is None
+    assert ctrl.review.approved == legacy_approvals
+    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    zone = _zone(ctrl)
+    assert "REVIEW_PREVIEW" not in zone["blockers"]
+    assert zone["preview_satisfied"] is True
+    assert ctrl._approved_preview_token == current.preview_token
+    assert ctrl.review.approved == legacy_approvals
+
+
+def test_stale_execution_invalidates_preview_and_rejects_old_token(
+    tmp_path: Path,
+) -> None:
+    from hwpxfiller.application.automatic_seal_orchestration import (
+        AutomaticSealOrchestration,
+    )
+
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    ctrl._session_orchestration = AutomaticSealOrchestration(state="STALE")
+    with pytest.raises(ValueError, match="더 이상 구성"):
+        ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+
+    assert ctrl._current_record_preparation is None
+    assert ctrl._current_delivery_preparation is None
+    assert ctrl._current_preview_preparation is None
+    assert ctrl._approved_preview_token is None
+    assert not ctrl.review.approved
+    zone = _zone(ctrl)
+    assert zone["primary_action"] == "RESOLVE_EXECUTION"
+    assert zone["preview_requirement"] == {"kind": "NOT_REQUIRED"}
+    assert zone["semantic_preview"] is None
+
+
+def test_delivery_refresh_replaces_token_and_stale_approval_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    old = ctrl._current_preview_preparation
+    assert old is not None
+
+    ctrl.dispatch("refresh_delivery", {})
+    _zone(ctrl)
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    assert current.preview_token != old.preview_token
+    assert ctrl._approved_preview_token is None
+    with pytest.raises(ValueError, match="바뀌었습니다"):
+        ctrl.dispatch("preview_approve", {"preview_token": old.preview_token})
+    assert ctrl._approved_preview_token is None
+    assert not ctrl.review.approved
+
+
+def test_record_preparation_identity_change_replaces_preview_token(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+    _zone(ctrl)
+    first = ctrl._current_preview_preparation
+    assert first is not None
+
+    ctrl.selection.toggle(0, False)
+    _zone(ctrl)
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    assert current.record_preparation is not first.record_preparation
+    assert current.preview_token != first.preview_token
+
+
+def test_output_directory_and_policy_changes_replace_preview_token(tmp_path: Path) -> None:
+    ctrl, first_out = _delivery_controller(tmp_path)
+    second_out = tmp_path / "delivery-2"
+    second_out.mkdir()
+    ctrl.set_output_folder(str(first_out))
+    _zone(ctrl)
+    first = ctrl._current_preview_preparation
+    assert first is not None
+
+    ctrl.set_output_folder(str(second_out))
+    _zone(ctrl)
+    second = ctrl._current_preview_preparation
+    assert second is not None and second.preview_token != first.preview_token
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+    _zone(ctrl)
+    third = ctrl._current_preview_preparation
+    assert third is not None
+    assert third.preview_token not in (first.preview_token, second.preview_token)
+
+
+def test_preview_becoming_unconstructable_rejects_old_token(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    current = ctrl._current_preview_preparation
+    assert current is not None
+
+    ctrl.selection.set_none()
+    with pytest.raises(ValueError, match="더 이상 구성"):
+        ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+    assert ctrl._current_preview_preparation is None
+    assert ctrl._approved_preview_token is None
+    assert not ctrl.review.approved
+
+
+def test_new_controller_never_restores_preview_approval(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    current = ctrl._current_preview_preparation
+    assert current is not None
+    ctrl.dispatch("preview_approve", {"preview_token": current.preview_token})
+    assert ctrl._approved_preview_token == current.preview_token
+
+    restart_root = tmp_path / "restart"
+    restart_root.mkdir()
+    restarted = _controller(restart_root, with_binding=True, seed=False)
+    assert restarted._approved_preview_token is None
+    assert restarted._current_preview_preparation is None
+
+
+def test_s6_new_overwrite_target_requires_fresh_token_and_approval(
+    tmp_path: Path,
+) -> None:
+    """Preview approval is no reservation: S6 handoff must refresh occupancy before write."""
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").write_bytes(b"occupied")
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+    ctrl.dispatch("preview_open", {})
+    approved = ctrl._current_preview_preparation
+    assert approved is not None
+    ctrl.dispatch("preview_approve", {"preview_token": approved.preview_token})
+
+    (out / "공고서-20260818-002.hwpx").write_bytes(b"late collision")
+    ctrl.dispatch("refresh_delivery", {})
+    zone = _zone(ctrl)
+    current = ctrl._current_preview_preparation
+    assert current is not None and current.preview_token != approved.preview_token
+    assert ctrl._approved_preview_token is None
+    assert [
+        item["collision_disposition"]
+        for item in zone["semantic_preview"]["ordered_records"]
+    ] == ["WRITE_OVERWRITE", "WRITE_OVERWRITE"]
+    assert zone["primary_action"] == "REVIEW_PREVIEW"
+
+
+def test_preview_final_recheck_fails_closed_on_delivery_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    ctrl.set_output_folder(str(out))
+    _zone(ctrl)
+    original = screen_job_module.build_current_preview_projection
+
+    def race(**kwargs):
+        projection = original(**kwargs)
+        ctrl._current_delivery_preparation = None
+        return projection
+
+    monkeypatch.setattr(screen_job_module, "build_current_preview_projection", race)
+    ctrl.dispatch("refresh_delivery", {})
+    zone = _zone(ctrl)
+    assert zone["kind"] == "context_error"
+    assert zone["code"] == "CURRENT_PREVIEW_PREPARATION_STALE"
+    assert ctrl._current_preview_preparation is None
+    assert ctrl._approved_preview_token is None
+
+
+def test_non_regular_collision_keeps_delivery_ahead_of_preview(tmp_path: Path) -> None:
+    ctrl, out = _delivery_controller(tmp_path)
+    (out / "공고서-20260818-001.hwpx").mkdir()
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "OVERWRITE_EXPLICIT"})
+
+    zone = _zone(ctrl)
+    assert zone["primary_action"] == "REVIEW_DELIVERY"
+    assert "REVIEW_PREVIEW" not in zone["blockers"]
+    assert ctrl._current_preview_preparation is None
+    obs = ctrl.workbench_observation()
+    assert obs.preview_requirement.kind == "NOT_REQUIRED"
+    assert obs.semantic_preview is None
 
 
 def test_delivery_intent_changes_reuse_record_preparation(
@@ -803,6 +1079,9 @@ def test_normalized_binding_blocker_selects_review_binding() -> None:
         slot_view=_FakeView(SLOT_SELECTIONS_COMPLETE),
         orchestration=AutomaticSealOrchestration(),
         fresh_observation=fresh,
+        preview_requirement=PreviewNotRequired(),
+        preview_satisfied=True,
+        semantic_preview=None,
     )
     assert result.primary_action == "REVIEW_BINDING"
 

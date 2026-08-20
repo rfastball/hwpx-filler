@@ -151,7 +151,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "range_draft_cancel": _schema(),
         # 미리보기 드로어(§7 Value preview·§13-2·4, 재작성 F5) — 열림·자리는 **Python 소유**라
         # 웹은 이동 방향만 보낸다(레코드 index 를 되돌려주지 않는다, 지도 §10.12 판정 M).
-        # 승인은 무페이로드 명시 사건이다: 무엇을 승인했는지는 Python 이 든 요구가 정한다.
+        # managed HWPX 승인은 backend preview_token 을 왕복한다. legacy 는 무페이로드 의미를 유지한다.
         # `at` 은 판정 M 의 carve-out 이 아니라 동류다(§10.15.15 판정 C): deep-link 복귀가
         # 같은 자리로 서기 위한 값이고, 출처가 **Python 자신이 push 한 스냅샷**(preview.pos)
         # 의 왕복이며 Python 이 클램프해 권위를 유지한다 — 값을 프런트가 짓지 않는다.
@@ -161,7 +161,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 빈 값 있는 건으로 한정하는 면의
         # 보기 상태. 열림·자리와 같은 이유로 Python 소유라 웹은 의도한 값만 보낸다.
         "preview_blank_only": _schema("value"),
-        "preview_approve": _schema(),
+        "preview_approve": _schema(optional="preview_token"),
         "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),

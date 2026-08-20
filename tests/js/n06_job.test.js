@@ -8,6 +8,7 @@ import { createJobRunController } from "../../frontend/src/screens/job_run.ts";
 import {
   JobActionBar, JobStatusPill, JobWorkbenchStatus,
 } from "../../frontend/src/screens/job_run.ts";
+import { JobPreviewSheet } from "../../frontend/src/screens/job_preview.ts";
 import {
   acceptDirect,
   acceptFull,
@@ -102,7 +103,7 @@ function harness(options = {}) {
       },
       open() {}, close() {},
     },
-    navigation: { go() {} },
+    navigation: { go() {}, currentScreen: () => "job" },
     doc: options.doc ?? { getElementById: () => null, querySelector: () => null },
     selectionLine: (n) => `${n}행 선택`,
     notify() {},
@@ -438,6 +439,101 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
   assert.match(action, /id="jobManagedCreate"[^>]*disabled=""/);
   assert.ok(action.includes("문서 만들기"));
   assert.ok(action.includes(reason));
+});
+
+test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복한다", async () => {
+  const preview = {
+    preview_token: "opaque-current-token",
+    requirement: { kind: "REQUIRED", reason: "DESTRUCTIVE_OVERWRITE" },
+    included_content_summary: "데이터 1건 · 항목 2개",
+    ordered_records: [{
+      record_identity: "record-7",
+      record_display_locator: "데이터 8행",
+      logical_field_values: [
+        { field_id: "f_name", display_label: "이름", value: "홍길동" },
+        { field_id: "f_note", display_label: "f_note", value: "원문 값" },
+      ],
+      planned_document_relative_path: "backend-exact.hwpx",
+      collision_disposition: "WRITE_OVERWRITE",
+    }],
+  };
+  const snap = {
+    ...SNAP, managed_hwpx: true, preview: { ...SNAP.preview, open: true },
+    workbench_observation: {
+      supported: true, primary_action: "REVIEW_PREVIEW", preview_satisfied: false,
+      preview_requirement: preview.requirement,
+      semantic_preview: preview,
+      create_action: { label: "문서 만들기", enabled: false, disabled_reason: "S6 부재" },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const sheet = renderToStaticMarkup(
+    createElement(JobPreviewSheet, { controller: h.controller }),
+  );
+  for (const text of [
+    "생성 내용 확인", "포함할 내용", "데이터 1건 · 항목 2개", "데이터 8행",
+    "이름", "홍길동", "f_note", "원문 값", "backend-exact.hwpx",
+    "기존 파일 덮어쓰기", "기존 파일을 덮어쓸 예정입니다.", "확인 완료",
+  ]) assert.ok(sheet.includes(text), text);
+  for (const forbidden of ["SEMANTIC", "VALUE", "current_plan_ref", "representative_vdr_ref"])
+    assert.equal(sheet.includes(forbidden), false, forbidden);
+
+  const action = renderToStaticMarkup(
+    createElement(JobActionBar, { controller: h.controller }),
+  );
+  assert.match(action, /id="jobManagedPreviewOpen"[^>]*class="btn primary"|class="btn primary"[^>]*id="jobManagedPreviewOpen"/);
+  h.controller.previewApprove(preview.preview_token);
+  await Promise.resolve();
+  assert.deepEqual(h.calls.at(-1), {
+    screen: "job", action: "preview_approve",
+    payload: { preview_token: "opaque-current-token" },
+  });
+
+  const optional = {
+    ...snap,
+    workbench_observation: {
+      ...snap.workbench_observation,
+      primary_action: "RESOLVE_RUNTIME_POLICY",
+      preview_satisfied: true,
+      semantic_preview: { ...preview, requirement: { kind: "OPTIONAL" } },
+    },
+  };
+  h.push(optional);
+  const optionalSheet = renderToStaticMarkup(
+    createElement(JobPreviewSheet, { controller: h.controller }),
+  );
+  assert.equal(optionalSheet.includes('id="previewApprove"'), false);
+  assert.ok(optionalSheet.includes("필요할 때 생성 내용을 확인할 수 있습니다."));
+
+  const source = String(JobPreviewSheet);
+  for (const forbidden of ["existsSync", "OVERWRITE_EXPLICIT", "planned_document_relative_path =", ".sort("])
+    assert.equal(source.includes(forbidden), false, forbidden);
+
+  h.push({
+    ...snap,
+    preview: { ...snap.preview, open: false },
+    workbench_observation: { ...snap.workbench_observation, semantic_preview: null },
+  });
+  const closedAction = renderToStaticMarkup(
+    createElement(JobActionBar, { controller: h.controller }),
+  );
+  assert.ok(closedAction.includes('id="jobManagedPreviewOpen"'));
+
+  const closedPreview = { ...preview };
+  Object.defineProperty(closedPreview, "ordered_records", {
+    get() { throw new Error("closed preview rendered records"); },
+  });
+  h.push({
+    ...snap,
+    preview: { ...snap.preview, open: false },
+    workbench_observation: { ...snap.workbench_observation, semantic_preview: closedPreview },
+  });
+  assert.doesNotThrow(() => renderToStaticMarkup(
+    createElement(JobPreviewSheet, { controller: h.controller }),
+  ));
 });
 
 test('managed delivery는 backend intent와 exact path만 그리고 command 뒤 push를 기다린다', async () => {
