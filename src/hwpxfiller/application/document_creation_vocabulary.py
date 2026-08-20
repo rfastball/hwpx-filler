@@ -54,8 +54,8 @@ BLOCKER_CODES: tuple[str, ...] = (
     "CHOOSE_CONTENT",
     "REVIEW_BINDING",
     "REVIEW_RECORD_DATA",
-    "REVIEW_PREVIEW",
     "REVIEW_DELIVERY",
+    "REVIEW_PREVIEW",
     "EXECUTION_CHECKING",
     "EXECUTION_STALE",
     "POLICY_BLOCKED",
@@ -81,32 +81,31 @@ PRIMARY_ACTION_CODES: tuple[str, ...] = (
     "REVIEW_BINDING",          # Binding
     "RESOLVE_EXECUTION",       # execution checking/stale
     "REVIEW_RECORD_DATA",      # record
-    "REVIEW_PREVIEW",          # required preview
     "REVIEW_DELIVERY",         # delivery
+    "REVIEW_PREVIEW",          # required preview
     "RESOLVE_RUNTIME_POLICY",  # runtime/policy
     "CREATE_DOCUMENTS",        # 최종 실행(이슈가 리터럴로 고정)
 )
 
 # ------------------------------------------------------------------ PreviewRequirement
 
-#: PreviewRequirement v1 종류(#724 §6). ``REQUIRED`` 는 reason·exact_basis_ref 를 달지만 그
-#: DTO 는 ``preview_requirement`` 모듈 소유다 — 여기는 종류 어휘의 정본만 진다.
+#: PreviewRequirement 종류. ``REQUIRED`` reason 은 current delivery 의 실제 overwrite 사실이다.
 PREVIEW_REQUIREMENT_KINDS: tuple[str, ...] = ("NOT_REQUIRED", "OPTIONAL", "REQUIRED")
 
-#: semantic/value preview 정체 라벨(#724 §7). 이 미리보기는 current Plan + VDR 의 사용자 투영이라
+#: semantic/value preview 정체 라벨. 이 미리보기는 current Plan + VDR 의 사용자 투영이라
 #: **HWPX bytes·actual layout·Artifact 가 아니다**. 그래서 라벨은 "실제 생성된 결과"(=Artifact
 #: 문안)처럼 읽히지 않고 "확인" 계열로만 말한다.
 SEMANTIC_PREVIEW_LABEL = "생성 내용 확인"
 VALUE_PREVIEW_LABEL = "내용 확인"
 
-#: 정의 순서(semantic → value)가 계약이다.
+#: legacy 문안까지 포함한 고정 어휘 순서.
 PREVIEW_IDENTITY_LABELS: tuple[str, ...] = (SEMANTIC_PREVIEW_LABEL, VALUE_PREVIEW_LABEL)
 
 # ------------------------------------------------------------------ RunDeliveryIntent
 
 #: session-scoped RunDeliveryIntent 의 collision policy(#724 §8). 기본은
 #: :data:`DEFAULT_COLLISION_POLICY`(``ADD_SUFFIX``)이고 ``OVERWRITE_EXPLICIT`` 은 명시적 선택이
-#: 필요하다(§6: OVERWRITE_EXPLICIT → REQUIRED preview).
+#: 필요하다. 선택 사실만으로 preview 를 REQUIRED 로 만들지는 않는다.
 COLLISION_POLICIES: tuple[str, ...] = ("ADD_SUFFIX", "FAIL", "OVERWRITE_EXPLICIT")
 
 #: 기본 충돌 정책 — 덮어쓰기는 사용자가 명시로 골라야 한다(조용히 덮지 않는다).

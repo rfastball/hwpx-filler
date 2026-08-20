@@ -50,9 +50,9 @@ from hwpxfiller.application.fresh_execution_observation import (
 )
 from hwpxfiller.application.preview_requirement import (
     PreviewNotRequired,
-    build_semantic_value_preview,
+    PreviewOptional,
+    SemanticValuePreviewProjection,
 )
-from hwpxfiller.application.preview_requirement import SEMANTIC_PREVIEW
 from hwpxfiller.application.selection_compatibility import AUTO_KEEP, DETACHED, REVIEW_REQUIRED
 from hwpxfiller.webapp.seal_execution_plan_product import s6_absent_runtime_conformance
 
@@ -251,7 +251,12 @@ def test_h7_planned_delivery_not_artifact() -> None:
     """T7: delivery preview 는 '생성 예정 문서'로 말하고 Artifact(실제 결과)가 아니다."""
     verdict = PASS
 
-    semantic = build_semantic_value_preview(SEMANTIC_PREVIEW, current_plan_ref="plan-ref-1")
+    semantic = SemanticValuePreviewProjection(
+        preview_token="token",
+        requirement=PreviewOptional(),
+        included_content_summary="데이터 2건 · 항목 1개",
+        ordered_records=(),
+    )
     obs = _obs(
         delivery=DeliveryPreviewSummary(resolvable=True, planned_output_names=("문서-1.hwpx", "문서-2.hwpx")),
         semantic_preview=semantic,

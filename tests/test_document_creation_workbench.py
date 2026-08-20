@@ -182,7 +182,7 @@ def _observation(**overrides: object) -> DocumentCreationWorkbenchObservation:
         # 필수 preview 미충족 → REVIEW_PREVIEW
         (
             {
-                "preview_requirement": PreviewRequired(reason="NEW_WORK_FIRST_RUN", exact_basis_ref="b1"),
+                "preview_requirement": PreviewRequired(reason="DESTRUCTIVE_OVERWRITE"),
                 "preview_satisfied": False,
             },
             "REVIEW_PREVIEW",

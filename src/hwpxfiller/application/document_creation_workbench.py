@@ -82,8 +82,8 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     CHOOSE_CONTENT,
     REVIEW_BINDING,
     REVIEW_RECORD_DATA,
-    REVIEW_PREVIEW,
     REVIEW_DELIVERY,
+    REVIEW_PREVIEW,
     EXECUTION_CHECKING,
     EXECUTION_STALE,
     POLICY_BLOCKED,
@@ -101,8 +101,8 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
     PA_REVIEW_BINDING,
     RESOLVE_EXECUTION,
     PA_REVIEW_RECORD_DATA,
-    PA_REVIEW_PREVIEW,
     PA_REVIEW_DELIVERY,
+    PA_REVIEW_PREVIEW,
     RESOLVE_RUNTIME_POLICY,
     CREATE_DOCUMENTS,
 ) = PRIMARY_ACTION_CODES
@@ -110,7 +110,7 @@ from hwpxfiller.application.selection_compatibility import DETACHED, REVIEW_REQU
 # ─── Primary Action 우선순위 사슬(#724 §3) ─────────────────────────────────────────────────────
 # (blocker_code, primary_action_code) 쌍의 **우선순위 순서**. 이슈 §3 사슬을 리터럴로 인코딩한다:
 #   context → 데이터 → 레코드 → Work → Template change → content → Binding
-#   → execution checking/stale → record → required preview → delivery → runtime/policy → CREATE.
+#   → execution checking/stale → record → delivery → required preview → runtime/policy → CREATE.
 # 두 blocker(EXECUTION_CHECKING/EXECUTION_STALE)가 하나의 RESOLVE_EXECUTION 로,
 # 두 blocker(POLICY_BLOCKED/RUNTIME_NOT_ADMITTED)가 하나의 RESOLVE_RUNTIME_POLICY 로 접힌다.
 # :func:`compose_primary_action` 이 이 순서로 **첫 blocker 하나**만 골라 정확히 하나를 낸다.
@@ -125,8 +125,8 @@ _PRIMARY_ACTION_CHAIN: tuple[tuple[str, str], ...] = (
     (EXECUTION_CHECKING, RESOLVE_EXECUTION),
     (EXECUTION_STALE, RESOLVE_EXECUTION),
     (REVIEW_RECORD_DATA, PA_REVIEW_RECORD_DATA),
-    (REVIEW_PREVIEW, PA_REVIEW_PREVIEW),
     (REVIEW_DELIVERY, PA_REVIEW_DELIVERY),
+    (REVIEW_PREVIEW, PA_REVIEW_PREVIEW),
     (POLICY_BLOCKED, RESOLVE_RUNTIME_POLICY),
     (RUNTIME_NOT_ADMITTED, RESOLVE_RUNTIME_POLICY),
 )
@@ -618,13 +618,13 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     if inp.binding_review_needed or any(item.action_required for item in inp.input_requirements):
         present.add(REVIEW_BINDING)
 
-    # record / preview / delivery
+    # record / delivery / preview
     if inp.record_validation.has_blocking_issues:
         present.add(REVIEW_RECORD_DATA)
-    if isinstance(inp.preview_requirement, PreviewRequired) and not inp.preview_satisfied:
-        present.add(REVIEW_PREVIEW)
     if not inp.delivery.resolvable:
         present.add(REVIEW_DELIVERY)
+    if isinstance(inp.preview_requirement, PreviewRequired) and not inp.preview_satisfied:
+        present.add(REVIEW_PREVIEW)
 
     # execution(checking / stale) — orchestration verdict(R2(#740): currentness 축 흡수).
     # STALE 은 orchestration STALE/FAILED 가 나른다(durable command 가 settle 됐으나 재확인 필요).
