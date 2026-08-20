@@ -1876,36 +1876,58 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
-        self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
-        self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
         self._push()
 
     def _commit_data_transition(self, source, records: list) -> None:
         """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다."""
         work_ref = self.job_name
+        seated_authority_id = (
+            self.vm.job.authority_id if self.vm is not None else ""
+        )
         active_job = None
+        restore_failed = False
         if work_ref:
             try:
                 active_job = load_job(self.registry, work_ref)
             except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
-                pass
+                restore_failed = True
+        exact_context_restorable = bool(
+            active_job is not None
+            # 빈 값끼리의 equality 는 identity 증거가 아니다.
+            and seated_authority_id
+            and active_job.authority_id == seated_authority_id
+        )
         context = ActiveWorkContext(
             active=bool(work_ref),
             work_ref=work_ref or None,
             template_application_ref=(active_job.authority_id or None) if active_job else None,
-            exact_context_restorable=active_job is not None,
+            exact_context_restorable=exact_context_restorable,
             usable_with_current_data=(
                 active_job is not None
                 and compatibility_for(active_job, list(records[0].keys())).kind == KIND_AVAILABLE
             ),
         )
         decision = decide_active_work_after_data_transition(context)
+        self._clear_data_notice()
         if decision.disposition == RELEASE and work_ref:
             self._release_active_work()
         self.datasource = source
         self.records = records
         if self.vm is not None:
             self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
+        self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
+        if restore_failed:
+            self.data_notice_text = (
+                "이전 문서 작업을 다시 확인할 수 없어 선택을 해제했습니다. "
+                "문서 작업을 다시 선택하세요."
+            )
+            self.data_notice_level = "warn"
+        elif active_job is not None and not exact_context_restorable:
+            self.data_notice_text = (
+                "이전 문서 작업이 같은 작업인지 확인할 수 없어 선택을 해제했습니다. "
+                "문서 작업을 다시 선택하세요."
+            )
+            self.data_notice_level = "warn"
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
@@ -2589,8 +2611,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
-        self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
-        self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:

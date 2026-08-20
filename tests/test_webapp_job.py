@@ -141,9 +141,11 @@ def _data_csv(tmp_path) -> str:
 
 
 def _mount_all(ctrl, path, *, sheet=None) -> None:
-    """마운트 + 전체 선택 — 데이터-우선 전이(§18.2: 마운트 직후 선택 0건) 이후, 전체
-    레코드를 대상으로 하던 기존 시나리오는 명시적 set_all 로 같은 전제를 복원한다."""
+    """마운트 + 명시 Work 재선택 + 전체 선택 — legacy 생성 시나리오의 공통 준비."""
+    selected_work = ctrl.job_name
     ctrl.load_data_path(path, sheet=sheet)
+    if selected_work and not ctrl.job_name:
+        ctrl.dispatch("select_job", {"name": selected_work})
     ctrl.dispatch("set_all", {})
 
 
@@ -185,14 +187,13 @@ def test_initial_then_selection_and_mount_serialize_the_session(tmp_path):
     }
     # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert factory_calls == [(_data_csv(tmp_path), None)]  # 주입 factory 경유 1회
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
     # 저장 폴더 기본값 = 템플릿 폴더/Results(실행 화면 동형).
     assert snap["out_dir"].endswith("Results")
-    ctrl.load_data_path(_data_csv(tmp_path))
-    assert factory_calls == [(_data_csv(tmp_path), None)]  # 주입 factory 경유 1회
-    snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 0  # 마운트 직후 선택 0건(§18.2 — 구 전체선택 개정)
     assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
@@ -2891,11 +2892,54 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
 
 @pytest.mark.parametrize("target", ["file", "pool"])
 @pytest.mark.parametrize(
-    ("case", "active_name", "expected_name", "restorable", "usable"),
+    (
+        "case",
+        "active_name",
+        "expected_name",
+        "restorable",
+        "usable",
+        "restored_authority",
+        "notice",
+    ),
     [
-        ("compatible", "공고서", "공고서", True, True),
-        ("incompatible", "계약서", "", True, False),
-        ("non_restorable", "공고서", "", False, False),
+        ("compatible", "공고서", "공고서", True, True, "authority-old", None),
+        ("incompatible", "계약서", "", True, False, "authority-old", None),
+        (
+            "same_name_recreated",
+            "공고서",
+            "",
+            False,
+            True,
+            "authority-replacement",
+            "같은 작업인지 확인할 수 없어",
+        ),
+        (
+            "authority_changed",
+            "공고서",
+            "",
+            False,
+            True,
+            "authority-replacement",
+            "같은 작업인지 확인할 수 없어",
+        ),
+        (
+            "reload_error",
+            "공고서",
+            "",
+            False,
+            False,
+            None,
+            "다시 확인할 수 없어",
+        ),
+        (
+            "identity_missing",
+            "공고서",
+            "",
+            False,
+            True,
+            None,
+            "같은 작업인지 확인할 수 없어",
+        ),
     ],
 )
 def test_successful_data_transition_uses_authoritative_active_work_decision(
@@ -2907,19 +2951,35 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     expected_name,
     restorable,
     usable,
+    restored_authority,
+    notice,
 ):
-    """file/pool 성공 전환은 같은 KEEP/RELEASE 결정과 SX-04 무효화 seam을 탄다."""
+    """file/pool 성공 전환은 exact authority KEEP/RELEASE와 같은 무효화 seam을 탄다."""
     registry = _incompatible_reg(tmp_path) if case == "incompatible" else _registry(tmp_path)
+    if case != "identity_missing":
+        registry.assign_authority_id(active_name, "authority-old")
     ctrl, pool = _pool_controller(tmp_path, registry=registry)
     old_path = tmp_path / "old.csv"
     old_path.write_text(
         "bidNtceNm,presmptPrce,없는열\n이전,100,old\n", encoding="utf-8"
     )
-    ctrl.dispatch("select_job", {"name": active_name})
-    ctrl.load_data_path(str(old_path))
+    if case == "identity_missing":
+        ctrl.load_data_path(str(old_path))
+        ctrl.dispatch("select_job", {"name": active_name})
+    else:
+        ctrl.dispatch("select_job", {"name": active_name})
+        ctrl.load_data_path(str(old_path))
     ctrl.dispatch("set_all", {})
-    if case == "non_restorable":
+    if case == "same_name_recreated":
+        replacement = ctrl.registry.load(active_name)
         ctrl.registry.delete(active_name)
+        replacement.authority_id = "authority-replacement"
+        ctrl.registry.save(replacement)
+    elif case == "authority_changed":
+        ctrl.registry.mutate(
+            active_name,
+            lambda job: setattr(job, "authority_id", "authority-replacement"),
+        )
 
     old_records = ctrl.records
     old_observation = object()
@@ -2939,6 +2999,11 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     monkeypatch.setattr(
         screen_job_module, "decide_active_work_after_data_transition", recording_decision
     )
+    if case == "reload_error":
+        def fail_active_work_reload(store, name):
+            raise ValueError("internal registry detail")
+
+        monkeypatch.setattr(screen_job_module, "load_job", fail_active_work_reload)
     new_path = _data_csv(tmp_path)
     if target == "file":
         ctrl.load_data_path(new_path)
@@ -2948,6 +3013,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
 
     assert len(calls) == 1
     assert calls[0].work_ref == active_name
+    assert calls[0].template_application_ref == restored_authority
     assert calls[0].exact_context_restorable is restorable
     assert calls[0].usable_with_current_data is usable
     assert ctrl.job_name == expected_name
@@ -2958,8 +3024,14 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert ctrl._current_preview_preparation is None
     assert ctrl._approved_preview_token is None
     assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
+    snap = ctrl.snapshot()
+    if notice is None:
+        assert snap["data_notice"] is None
+    else:
+        assert notice in snap["data_notice"]["text"]
+        assert "internal registry detail" not in snap["data_notice"]["text"]
+        assert snap["data_notice"]["level"] == "warn"
     if case == "incompatible":
-        snap = ctrl.snapshot()
         assert snap["candidates"]["suggested"] == "공고서"
         assert ctrl.job_name == ""  # 유일 후보도 자동 활성화하지 않는다.
 
@@ -3085,6 +3157,7 @@ def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
     조용히 아무 일도 안 일어나면 사용자는 자기가 누른 버튼이 무엇을 했는지 알 수 없다.
     """
     ctrl, _ = _controller(_p := tmp_path)
+    ctrl.registry.assign_authority_id("공고서", "authority-old")
     ctrl.dispatch("prefer_work", {"name": "공고서"})
     ctrl.dispatch("select_job", {"name": "공고서"})   # 명시 선택 = 보관분 소비
     assert ctrl.preferred_work == ""
@@ -4372,6 +4445,7 @@ def test_new_blanks_on_new_data_reinstate_the_gate(tmp_path):
     assert ctrl.generate()["ok"] is True                  # 완주 — 기준선이 다시 선다
 
     _mount_all(ctrl, _data_csv(tmp_path))                 # 다음 달 데이터 — 빈 값 신규 발생
+    ctrl.set_output_folder(str(tmp_path / "out"))         # RELEASE 뒤 명시 Work·저장 위치 재선택
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is False, "새 빈 값인데 게이트가 서지 않습니다(조용한 표식 생성)."
     assert snap["gate"]["reason"] == "review_required" and "빈 값" in snap["gate"]["text"]
