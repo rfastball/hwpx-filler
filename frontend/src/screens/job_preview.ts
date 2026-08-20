@@ -13,7 +13,11 @@ import { Fragment, createElement } from "react";
 import type { ReactNode } from "react";
 
 import type { JobRunController } from "./job_run.ts";
-import { useRun, useRunSnapshot } from "./job_run.ts";
+import {
+  DELIVERY_DISPOSITION_COPY,
+  useRun,
+  useRunSnapshot,
+} from "./job_run.ts";
 
 type Obj = Record<string, any>;
 
@@ -63,6 +67,63 @@ export function JobPreviewSheet(props: { controller: JobRunController }): ReactN
   const rows = (p.rows || []) as Obj[];
   const busy = run.running;
   const hasEvidence = !!(evRows.length || ev.note || ev.reason);
+
+  if (snapshot?.managed_hwpx === true) {
+    const workbench = (snapshot.workbench_observation || {}) as Obj;
+    const preview = (workbench.semantic_preview || null) as Obj | null;
+    const records = (preview?.ordered_records || []) as Obj[];
+    const required = preview?.requirement?.kind === "REQUIRED";
+    const satisfied = workbench.preview_satisfied === true;
+    return h("div", { className: "modal-card sheet-card preview-drawer" },
+      h("div", { className: "sheet-head" },
+        h("h3", { id: "previewTitle" }, "생성 내용 확인"),
+        h("button", {
+          className: "btn", id: "previewClose", type: "button",
+          onClick: props.controller.closePreview,
+        }, "닫기")),
+      h("div", { className: "sheet-body preview-sheet-body" },
+        preview
+          ? createElement(Fragment, null,
+              h("section", { className: "picker-sec", "aria-labelledby": "managedPreviewSummary" },
+                h("div", { className: "cap", id: "managedPreviewSummary" }, "포함할 내용"),
+                h("p", { className: "modal-sub" }, String(preview.included_content_summary || ""))),
+              ...records.map((record, index) => {
+                const fields = (record.logical_field_values || []) as Obj[];
+                const disposition = DELIVERY_DISPOSITION_COPY[
+                  String(record.collision_disposition || "")
+                ] || "확인할 수 없음";
+                return h("section", {
+                  className: "picker-sec", key: String(record.record_identity || index),
+                  "data-record-identity": String(record.record_identity || ""),
+                },
+                h("div", { className: "cap" }, String(record.record_display_locator || "")),
+                ...fields.map((field, fieldIndex) => h("div", {
+                  className: "mir-row", key: String(field.field_id || fieldIndex),
+                  "data-field": String(field.field_id || ""),
+                },
+                h("span", { className: "mir-name" }, String(field.display_label || "")),
+                h("span", { className: "mir-val" }, shownValue(field.value)))),
+                h("div", { className: "preview-foot" },
+                  h("div", null,
+                    h("span", { className: "muted capnote" }, "생성 예정"),
+                    h("strong", null, String(record.planned_document_relative_path || ""))),
+                  h("div", null,
+                    h("span", { className: "muted capnote" }, "충돌 처리"),
+                    h("span", null, disposition))));
+              }),
+              required
+                ? h("p", { className: satisfied ? "note" : "danger" },
+                    satisfied ? "확인 완료" : "기존 파일을 덮어쓸 예정입니다.")
+                : h("p", { className: "muted capnote" }, "필요할 때 생성 내용을 확인할 수 있습니다."))
+          : h("p", { className: "note" }, "현재 생성 내용을 확인할 수 없습니다.")),
+      required && !satisfied && preview
+        ? h("div", { className: "modal-actions" },
+            h("button", {
+              className: "btn primary", id: "previewApprove", type: "button",
+              onClick: () => props.controller.previewApprove(String(preview.preview_token || "")),
+            }, "확인 완료"))
+        : null);
+  }
 
   return h("div", { className: "modal-card sheet-card preview-drawer" },
     h("div", { className: "sheet-head" },
@@ -147,6 +208,6 @@ export function JobPreviewSheet(props: { controller: JobRunController }): ReactN
         h("button", {
           className: "btn primary", id: "previewApprove",
           style: { display: p.can_approve ? "" : "none" },
-          onClick: props.controller.previewApprove,
+          onClick: () => props.controller.previewApprove(),
         }, "이 이름과 값으로 승인"))));
 }
