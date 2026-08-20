@@ -62,6 +62,7 @@ from hwpxfiller.domain.field_binding import (
     resolve_document_value_policy,
 )
 from hwpxfiller.domain.raw_data_record import (
+    CanonicalSourceValue,
     RAW_RECORD_CONTRACT_ID,
     RECORD_REVIEW_CONTRACT_ID,
     RECORD_REVIEW_EXAMINED,
@@ -289,7 +290,10 @@ def _require_no_format_code(ve: Mapping[str, Any]) -> None:
         )
 
 
-def _interpret_current_source_text(value, expected_type: str):
+def interpret_current_source_value(
+    value: CanonicalSourceValue, expected_type: str
+) -> CanonicalSourceValue:
+    """Frozen current source scalar를 exact declared type 의미로 해석한다."""
     if not isinstance(value, SourceText) or expected_type == EXACT_TEXT:
         return value
     try:
@@ -339,7 +343,7 @@ def _resolve_from_source(
         )
     assert value is not None  # has_key True 이고 NULL 이 아니면 scalar
     if interpret_source_text:
-        value = _interpret_current_source_text(value, expected_type)
+        value = interpret_current_source_value(value, expected_type)
     actual_type = source_value_type_of(value)
     if actual_type != expected_type:
         return RecordValidationBlocker(

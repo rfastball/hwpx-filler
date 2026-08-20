@@ -874,7 +874,12 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       : deliveryBlockers.length
         ? h('ul', { className: 'plain-list danger capnote', id: 'jobDeliveryBlockers' },
             ...deliveryBlockers.map((blocker, index) =>
-              h('li', { key: index }, String(blocker.message || ''))))
+              h('li', { key: index },
+                String(blocker.message || ''),
+                blocker.conflicting_relative_path
+                  ? h('span', null,
+                    h('br', null), String(blocker.conflicting_relative_path))
+                  : null)))
         : h('p', { className: 'muted capnote' }, '생성 예정 문서가 없습니다.'),
     h('div', { className: 'run-row' },
       h('button', {

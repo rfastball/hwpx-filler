@@ -44,6 +44,7 @@ from hwpxfiller.application.record_validation import (
     ValidatedDataRecord,
     ValidatedRecordIntegrityError,
     current_record_validation_basis,
+    interpret_current_source_value,
     verify_current_validated_record_completeness,
     verify_validated_record_completeness,
 )
@@ -114,6 +115,7 @@ OUTPUT_NAME_BINDING_AMBIGUOUS = "OUTPUT_NAME_BINDING_AMBIGUOUS"
 OUTPUT_NAME_VALUE_RESOLUTION_FAILED = "OUTPUT_NAME_VALUE_RESOLUTION_FAILED"
 OUTPUT_NAME_PATTERN_INVALID = "OUTPUT_NAME_PATTERN_INVALID"
 OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED = "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED"
+OUTPUT_PATH_NON_REGULAR_CONFLICT = "OUTPUT_PATH_NON_REGULAR_CONFLICT"
 
 # ─── context/integrity 어휘(user-fixable 로 낮추지 않는 fail-closed 실패) ─────────────────────
 GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR = "GENERATION_DELIVERY_PLAN_INTEGRITY_ERROR"
@@ -501,6 +503,8 @@ def _require_no_delivery_format_code(value_expression: Mapping[str, Any]) -> Non
 def resolve_delivery_field_value(
     value_expression: Mapping[str, Any],
     snapshot: RawDataRecordSnapshot,
+    *,
+    interpret_source_text: bool = False,
 ) -> str | tuple[str, str]:
     """inactive Field token 값을 exact requirement + raw snapshot 에서 해석한다.
 
@@ -545,6 +549,8 @@ def resolve_delivery_field_value(
         if isinstance(value, SourceNull):
             return (OUTPUT_NAME_TOKEN_UNRESOLVED, f"source key {source_key!r} 가 explicit null")
         assert value is not None
+        if interpret_source_text:
+            value = interpret_current_source_value(value, expected_type)
         actual_type = source_value_type_of(value)
         if actual_type != expected_type:
             return (
@@ -567,6 +573,7 @@ class DeliveryPlanBlocker:
     item_ordinal: int | None
     field_id: str | None
     detail: str
+    conflicting_relative_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -619,19 +626,39 @@ ResolveGenerationDeliveryPlanResult = (
 )
 
 
+REGULAR_FILE = "REGULAR_FILE"
+NON_REGULAR = "NON_REGULAR"
+_PATH_OCCUPANCY_KINDS = frozenset({REGULAR_FILE, NON_REGULAR})
+
+
+@dataclass(frozen=True)
+class PathOccupancyEntry:
+    relative_name: str
+    kind: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.relative_name, str)
+            or not self.relative_name
+            or not isinstance(self.kind, str)
+            or self.kind not in _PATH_OCCUPANCY_KINDS
+        ):
+            raise ValueError("path occupancy entry is invalid")
+
+
 @dataclass(frozen=True)
 class PathOccupancyObservation:
     """한 output directory 를 한 번 읽은 read-only current observation."""
 
     output_directory: str
-    occupied_relative_names: tuple[str, ...]
+    occupied_entries: tuple[PathOccupancyEntry, ...]
     observed_at: str
 
     def __post_init__(self) -> None:
         if not self.output_directory or not self.observed_at:
             raise ValueError("path occupancy observation context is required")
-        if any(not isinstance(name, str) or not name for name in self.occupied_relative_names):
-            raise ValueError("occupied relative names must be non-empty strings")
+        if any(not isinstance(entry, PathOccupancyEntry) for entry in self.occupied_entries):
+            raise ValueError("occupied entries must be PathOccupancyEntry values")
 
 
 @dataclass(frozen=True)
@@ -967,7 +994,9 @@ def _resolve_current(
             if field_id in active_map:
                 value = active_map[field_id]
             elif field_id in inactive_by_field:
-                value = resolve_delivery_field_value(inactive_by_field[field_id], snapshot)
+                value = resolve_delivery_field_value(
+                    inactive_by_field[field_id], snapshot, interpret_source_text=True
+                )
             else:
                 value = (
                     OUTPUT_NAME_TOKEN_UNRESOLVED,
@@ -1008,7 +1037,12 @@ def _resolve_current(
         )
         return DeliveryPlanBlocked(tuple(blockers))
 
-    occupied = path_occupancy.occupied_relative_names
+    occupied = tuple(entry.relative_name for entry in path_occupancy.occupied_entries)
+    non_regular_folded = {
+        entry.relative_name.casefold()
+        for entry in path_occupancy.occupied_entries
+        if entry.kind == NON_REGULAR
+    }
     policy = run_delivery_intent.collision_policy
     if policy == "ADD_SUFFIX":
         paths = _dedupe_batch(base_names, occupied_names=occupied)
@@ -1018,13 +1052,32 @@ def _resolve_current(
     if policy == "FAIL":
         conflicts = [
             DeliveryPlanBlocker(
-                OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED,
+                (
+                    OUTPUT_PATH_NON_REGULAR_CONFLICT
+                    if path.casefold() in non_regular_folded
+                    else OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED
+                ),
                 ordinal,
                 None,
                 f"existing output path: {path}",
+                path,
             )
             for ordinal, path in enumerate(paths)
             if path.casefold() in occupied_folded
+        ]
+        if conflicts:
+            return DeliveryPlanBlocked(tuple(conflicts))
+    if policy == "OVERWRITE_EXPLICIT":
+        conflicts = [
+            DeliveryPlanBlocker(
+                OUTPUT_PATH_NON_REGULAR_CONFLICT,
+                ordinal,
+                None,
+                f"non-regular output path: {path}",
+                path,
+            )
+            for ordinal, path in enumerate(paths)
+            if path.casefold() in non_regular_folded
         ]
         if conflicts:
             return DeliveryPlanBlocked(tuple(conflicts))

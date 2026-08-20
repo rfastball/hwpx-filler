@@ -155,7 +155,10 @@ from ..application.generation_delivery import (
     DeliveryPlanContextError,
     FILENAME_PATTERN_CONTRACT_ID,
     GenerationDeliveryBindingBasis,
+    NON_REGULAR,
+    PathOccupancyEntry,
     PathOccupancyObservation,
+    REGULAR_FILE,
     CurrentResolvedDelivery,
     build_delivery_binding_basis,
     resolve_current_generation_delivery,
@@ -337,7 +340,8 @@ _DELIVERY_BLOCKER_PHRASES = {
     "OUTPUT_NAME_BINDING_AMBIGUOUS": "파일 이름에 사용할 항목 연결을 하나로 확인할 수 없습니다.",
     "OUTPUT_NAME_VALUE_RESOLUTION_FAILED": "파일 이름에 사용할 값을 해석할 수 없습니다.",
     "OUTPUT_NAME_PATTERN_INVALID": "파일 이름 규칙이 올바르지 않습니다.",
-    "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 항목이 이미 있어 현재 충돌 처리로 만들 수 없습니다.",
+    "OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED": "같은 이름의 파일이 있습니다:",
+    "OUTPUT_PATH_NON_REGULAR_CONFLICT": "같은 이름의 폴더나 바로가기 등이 있어 덮어쓸 수 없습니다:",
 }
 
 
@@ -3058,6 +3062,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         "message": blocker.message,
                         "item_ordinal": blocker.item_ordinal,
                         "field_id": blocker.field_id,
+                        "conflicting_relative_path": blocker.conflicting_relative_path,
                     }
                     for blocker in observation.delivery.blockers
                 ],
@@ -3590,10 +3595,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not root.is_absolute():
             raise ValueError("저장 폴더는 전체 경로여야 합니다.")
         try:
-            names = tuple(sorted((entry.name for entry in root.iterdir()), key=str.casefold))
+            entries = tuple(
+                sorted(
+                    (
+                        PathOccupancyEntry(
+                            entry.name,
+                            REGULAR_FILE
+                            if not entry.is_symlink() and entry.is_file()
+                            else NON_REGULAR,
+                        )
+                        for entry in root.iterdir()
+                    ),
+                    key=lambda entry: entry.relative_name.casefold(),
+                )
+            )
         except OSError as exc:
             raise ValueError("저장 폴더의 현재 파일 목록을 읽을 수 없습니다.") from exc
-        return PathOccupancyObservation(intent.output_directory, names, observed_at)
+        return PathOccupancyObservation(intent.output_directory, entries, observed_at)
 
     @staticmethod
     def _delivery_projection(
@@ -3610,6 +3628,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         ),
                         item_ordinal=blocker.item_ordinal,
                         field_id=blocker.field_id,
+                        conflicting_relative_path=blocker.conflicting_relative_path,
                     )
                     for blocker in result.blockers
                 ),

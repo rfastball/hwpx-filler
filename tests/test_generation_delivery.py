@@ -59,7 +59,10 @@ from hwpxfiller.application.record_validation import (
 )
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.domain.field_binding import (
+    BOOLEAN,
     CONSTANT,
+    DATE,
+    DATETIME,
     DECIMAL,
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     EXACT_TEXT,
@@ -275,10 +278,17 @@ def _resolve_current(
     *,
     pattern="{{f_name}}",
     occupied=(),
+    occupancy_entries=None,
     collision="ADD_SUFFIX",
+    inactive_rules=(),
 ):
-    basis = _basis_dto(plan, pattern=pattern, inactive_rules=())
+    basis = _basis_dto(plan, pattern=pattern, inactive_rules=inactive_rules)
     assert isinstance(basis, gd.GenerationDeliveryBindingBasis), basis
+    entries = (
+        tuple(occupancy_entries)
+        if occupancy_entries is not None
+        else tuple(gd.PathOccupancyEntry(name, gd.REGULAR_FILE) for name in occupied)
+    )
     return gd.resolve_current_generation_delivery(
         sealed_execution_plan=plan,
         ordered_validated_records=tuple(_current_vdr(plan, item) for item in snapshots),
@@ -287,7 +297,7 @@ def _resolve_current(
         exact_pattern=pattern,
         captured_delivery_clock=_CLOCK,
         run_delivery_intent=RunDeliveryIntent("C:/out", collision),
-        path_occupancy=gd.PathOccupancyObservation("C:/out", tuple(occupied), _CLOCK),
+        path_occupancy=gd.PathOccupancyObservation("C:/out", entries, _CLOCK),
     )
 
 
@@ -382,12 +392,16 @@ def test_current_fail_reports_existing_path_without_changing_batch_suffix() -> N
             _snapshot(name="보고서", identity="record-1"),
             _snapshot(name="보고서", identity="record-2"),
         ),
-        occupied=("보고서.hwpx",),
+        occupied=("보고서.hwpx", "보고서_1.hwpx"),
         collision="FAIL",
     )
     assert isinstance(result, gd.DeliveryPlanBlocked), result
-    assert [(item.code, item.item_ordinal) for item in result.blockers] == [
-        (gd.OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED, 0)
+    assert [
+        (item.code, item.item_ordinal, item.conflicting_relative_path)
+        for item in result.blockers
+    ] == [
+        (gd.OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED, 0, "보고서.hwpx"),
+        (gd.OUTPUT_NAME_CONFLICT_REVIEW_REQUIRED, 1, "보고서_1.hwpx"),
     ]
 
 
@@ -411,6 +425,80 @@ def test_current_explicit_overwrite_marks_only_existing_exact_path() -> None:
         gd.WRITE_OVERWRITE,
         gd.WRITE_NEW,
     ]
+
+
+def test_current_non_regular_collision_blocks_overwrite_and_add_suffix_avoids_it() -> None:
+    plan = _current_plan()
+    occupied = (gd.PathOccupancyEntry("보고서.hwpx", gd.NON_REGULAR),)
+    blocked = _resolve_current(
+        plan,
+        (_snapshot(name="보고서"),),
+        occupancy_entries=occupied,
+        collision="OVERWRITE_EXPLICIT",
+    )
+    assert isinstance(blocked, gd.DeliveryPlanBlocked), blocked
+    assert blocked.blockers[0].code == gd.OUTPUT_PATH_NON_REGULAR_CONFLICT
+    assert blocked.blockers[0].conflicting_relative_path == "보고서.hwpx"
+
+    suffixed = _resolve_current(
+        plan,
+        (_snapshot(name="보고서"),),
+        occupancy_entries=occupied,
+    )
+    assert isinstance(suffixed, gd.CurrentResolvedDelivery), suffixed
+    assert suffixed.ordered_items[0].resolved_output_relative_path == "보고서_1.hwpx"
+    assert suffixed.ordered_items[0].collision_disposition == gd.WRITE_ADD_SUFFIX
+
+
+@pytest.mark.parametrize(
+    ("value_type", "raw_text", "expected"),
+    [
+        (DECIMAL, "1500.00", "1500.00"),
+        (DATE, "2026-08-20", "2026-08-20"),
+        (DATETIME, "2026-08-20T09:15:00+09:00", "2026-08-20T09_15_00+09_00"),
+        (BOOLEAN, "TRUE", "true"),
+    ],
+)
+def test_current_inactive_filename_interprets_frozen_source_text_by_binding_type(
+    value_type: str, raw_text: str, expected: str,
+) -> None:
+    plan = _current_plan()
+    rule = FieldBindingRule(
+        field_id="f_typed",
+        binding_kind=SOURCE,
+        document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+        source_key="typed",
+        value_type=value_type,
+    )
+    result = _resolve_current(
+        plan,
+        (_snapshot(extra_pairs=(("typed", SourceText(raw_text)),)),),
+        pattern="{{f_typed}}",
+        inactive_rules=(rule,),
+    )
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert result.ordered_items[0].resolved_output_relative_path == f"{expected}.hwpx"
+
+
+def test_current_inactive_fields_interpret_same_frozen_source_key_independently() -> None:
+    rules = tuple(
+        FieldBindingRule(
+            field_id=field_id,
+            binding_kind=SOURCE,
+            document_content_value_policy=DOCUMENT_CONTENT_VALUE_POLICY_V1,
+            source_key="shared",
+            value_type=value_type,
+        )
+        for field_id, value_type in (("f_text", EXACT_TEXT), ("f_decimal", DECIMAL))
+    )
+    result = _resolve_current(
+        _current_plan(),
+        (_snapshot(extra_pairs=(("shared", SourceText("1")),)),),
+        pattern="{{f_text}}-{{f_decimal}}",
+        inactive_rules=rules,
+    )
+    assert isinstance(result, gd.CurrentResolvedDelivery), result
+    assert result.ordered_items[0].resolved_output_relative_path == "1-1.hwpx"
 
 
 # ═══ pattern compatibility ══════════════════════════════════════════════════════════════════
@@ -557,7 +645,7 @@ def test_inactive_source_type_mismatch_resolution_failed() -> None:
         source_key="dept", value_type=DECIMAL,  # dept 는 EXACT_TEXT → 불일치
     )
     basis = _basis_dto(plan, pattern="{{f_dept}}", inactive_rules=(rule,))
-    res = _resolve(plan, (_snapshot(),), pattern="{{f_dept}}", basis=basis)
+    res = _resolve(plan, (_snapshot(dept="1500.00"),), pattern="{{f_dept}}", basis=basis)
     assert isinstance(res, gd.DeliveryPlanBlocked)
     assert res.blockers[0].code == gd.OUTPUT_NAME_VALUE_RESOLUTION_FAILED
 
