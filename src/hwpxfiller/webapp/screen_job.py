@@ -112,12 +112,14 @@ from ..gui.work_mode import (
     work_mode_label,
 )
 from ..gui.work_candidates import (
+    KIND_AVAILABLE,
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
     TAB_AVAILABLE,
     TAB_NEEDS_ACTION,
     browse_candidates,
     candidate_rows,
+    compatibility_for,
     prework_gate,
     unsupported_media_gate,
     workbench_entry_gate,
@@ -140,6 +142,7 @@ from ..application.automatic_seal_orchestration import (
     request_manual_recovery,
 )
 from ..application.document_creation_workbench import (
+    ActiveWorkContext,
     DeliveryPreviewBlocker,
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
@@ -147,8 +150,10 @@ from ..application.document_creation_workbench import (
     RecordRecoveryTarget,
     RecordValidationIssue,
     RecordValidationSummary,
+    RELEASE,
     RESOLVE_EXECUTION,
     WorkbenchContextIntegrity,
+    decide_active_work_after_data_transition,
 )
 from ..application.generation_delivery import (
     DeliveryPlanBlocked,
@@ -1860,10 +1865,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
-        self.datasource = source
-        self.records = records
-        if self.vm is not None:
-            self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
+        self._commit_data_transition(source, records)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
@@ -1877,6 +1879,33 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
         self._push()
+
+    def _commit_data_transition(self, source, records: list) -> None:
+        """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다."""
+        work_ref = self.job_name
+        active_job = None
+        if work_ref:
+            try:
+                active_job = load_job(self.registry, work_ref)
+            except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
+                pass
+        context = ActiveWorkContext(
+            active=bool(work_ref),
+            work_ref=work_ref or None,
+            template_application_ref=(active_job.authority_id or None) if active_job else None,
+            exact_context_restorable=active_job is not None,
+            usable_with_current_data=(
+                active_job is not None
+                and compatibility_for(active_job, list(records[0].keys())).kind == KIND_AVAILABLE
+            ),
+        )
+        decision = decide_active_work_after_data_transition(context)
+        if decision.disposition == RELEASE and work_ref:
+            self._release_active_work()
+        self.datasource = source
+        self.records = records
+        if self.vm is not None:
+            self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
@@ -2136,21 +2165,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 사용자가 직접 골랐다 = 보관된 명시 사건보다 최신 의사. 들고 있으면 다음 마운트에서
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
         self.preferred_work = ""
-        self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
-        # 승인은 규칙·선택 지문에 결속돼 이미 남의 작업에 닿지 않는다(F5 판정 I) — 여기서
-        # 비우는 건 무효화가 아니라 **누적 방지**다(작업을 오래 오가는 세션의 키 적재).
-        self.review.clear()
-        # 열려 있던 미리보기는 남의 작업의 값을 그린다 — 전환과 함께 닫는다(모달이라
-        # 실표면에선 못 일어나지만, 상태 진실은 DOM 이 아니라 여기다).
-        self._do_preview_close({})
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
-            self.vm = None
-            self.job_is_txt = False
-            self.job_unsupported = False
-            self.job_name = ""
-            self.out_dir = ""
-            self._last_failed = []
+            self._release_active_work()
             return
+        self._discard_active_work_session_evidence()
         job = load_job(self.registry, name)
         # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
         # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
@@ -2173,6 +2191,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if job.media == "hwpx" and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
+
+    def _release_active_work(self) -> None:
+        """현재 active Work만 해제한다. 데이터와 후보는 그대로 둔다."""
+        self._discard_active_work_session_evidence()
+        self.vm = None
+        self.job_is_txt = False
+        self.job_unsupported = False
+        self.job_name = ""
+        self.out_dir = ""
+        self._last_failed = []
+
+    def _discard_active_work_session_evidence(self) -> None:
+        """active Work에 묶인 실행·검토·미리보기 증거만 버린다."""
+        self._last_generated = None
+        self.review.clear()
+        self._do_preview_close({})
 
     # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
     def _ranked_now(self) -> list:
@@ -2219,13 +2253,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {"stored": True, "reason": "incompatible", "name": name}
 
     def _apply_preferred_work(self) -> None:
-        """마운트 직후 보관된 명시 사건을 판정한다(§18.3 개정 1행). **1회 소비**.
+        """마운트 직후 보관된 명시 사건을 재진술한다. **1회 소비**, 자동 선택은 하지 않는다.
 
-        판정은 링1(:func:`preferred_promotion`)이 내고 여기서는 그 결과를 세션에 반영만
-        한다. 올리지 못하는 경우에도 보관분을 **비운다** — 다음 마운트까지 들고 있으면
+        호환 판정은 링1(:func:`preferred_promotion`)이 내고 여기서는 후보 안내만 한다.
+        보관분은 **비운다** — 다음 마운트까지 들고 있으면
         사용자가 잊은 의도가 나중에 조용히 발화한다(지연된 조용한 추측 금지).
 
-        올리지 못한 사유는 삼키지 않는다: 사용자가 방금 「이 작업을 쓰겠다」고 눌렀는데
+        선택하지 않은 사유는 삼키지 않는다: 사용자가 방금 「이 작업을 쓰겠다」고 눌렀는데
         아무 일도 안 일어나면 그게 조용한 소실이다. 기존 활성 작업이 있어 계약이 유지를
         지시한 경우(§18.3 2행)와 이 데이터로 실행할 수 없는 경우를 갈라 재진술한다.
         """
@@ -2243,9 +2277,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ranked, active=self.job_name, preferred=name,
         )
         if promoted:
-            self._do_select_job({"name": promoted})
-            self.data_notice_text = f"「문서 작업」에서 고른 '{promoted}' 을(를) 열었습니다."
-            self.data_notice_level = "ok"
+            self.data_notice_text = (
+                f"「문서 작업」에서 고른 '{promoted}' 을(를) 사용할 수 있습니다. "
+                "아래 후보에서 직접 고르세요."
+            )
+            self.data_notice_level = "warn"
             return
         if self.job_name:
             self.data_notice_text = (
@@ -2543,10 +2579,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if not records:
             return []
-        self.datasource = source
-        self.records = records
-        if self.vm is not None:
-            self.vm.set_acquired(source, records)
+        self._commit_data_transition(source, records)
         return records
 
     def _after_pool_load(self, records: list) -> None:

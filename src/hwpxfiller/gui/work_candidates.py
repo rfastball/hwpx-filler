@@ -166,8 +166,9 @@ def suggested_work(ranked: "list[RankedWork]", *, active: str) -> str:
     가능한 후보가 **정확히 1개**일 때. 2개 이상에서 1위를 추천하지 않는 것은 의도다:
     순위는 사용 이력의 관측이지 이 데이터에 맞는 문서라는 권위가 아니다.
 
-    ``preferredWorkId``(명시 사건 유래 승격)는 :func:`preferred_promotion` 이 소유한다 —
-    추천과 **다른 축**이다: 추천은 앱의 관측이고 승격은 사용자가 이미 낸 명시 사건이다.
+    ``preferredWorkId``도 DataTarget 전환의 활성화 권위는 아니다. 호환 후보인지 확인하는
+    :func:`preferred_promotion`의 역사적 이름은 남아 있지만, 호출자는 후보 안내만 하고
+    사용자의 현재 명시 선택을 기다린다.
     """
     if active:
         return ""
@@ -177,18 +178,15 @@ def suggested_work(ranked: "list[RankedWork]", *, active: str) -> str:
 def preferred_promotion(
     ranked: "list[RankedWork]", *, active: str, preferred: str,
 ) -> str:
-    """§18.3 개정 규칙 첫 줄 — 보관된 `preferredWorkId` 를 활성으로 올릴지. 아니면 ``""``.
+    """보관된 `preferredWorkId`가 현재 선택 가능한 후보인지. 아니면 ``""``.
 
-    ``preferred`` 는 **명시 사건 유래**다(라이브러리 「문서 만들기에서 사용」). 그래서 추천
-    (:func:`suggested_work`)과 달리 활성 선정이 허용된다 — 앱이 고른 게 아니라 사용자가
-    이미 고른 것을 데이터가 준비되는 시점까지 들고 있었을 뿐이다.
+    이름은 과거 자동 승격 계약에서 왔지만 반환값은 후보 사실일 뿐이다. DataTarget 전환은
+    이 값을 active Work로 반영하지 않고 사용자의 현재 명시 선택을 기다린다(#760).
 
     두 가지를 하지 않는다.
 
-    - **기존 활성 작업을 밀어내지 않는다**(§18.3 2행 "유지"). 사용자가 그사이 다른 작업을
-      골랐다면 그 선택이 더 최신 의사다.
-    - **available 이 아니면 올리지 않는다.** 실행할 수 없는 작업을 활성으로 세우면 게이트가
-      닫힌 채 화면이 "이걸 만들 참"이라고 말하게 된다 — 호출자는 대신 사유를 재진술한다.
+    - **기존 활성 작업이 있으면 후보로도 반환하지 않는다.** 그 선택이 더 최신 의사다.
+    - **available 이 아니면 반환하지 않는다.** 호출자는 대신 사유를 재진술한다.
     """
     if active or not preferred:
         return ""

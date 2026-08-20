@@ -25,6 +25,7 @@ from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.work_candidates import MAIN_TOP_N
+from hwpxfiller.webapp import screen_job as screen_job_module
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
@@ -820,8 +821,10 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
         encoding="utf-8",
     )
     ctrl = JobController(reg, lambda s, snap: None, **_deps(tmp_path))
-    ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, str(csv))
+    # DataTarget 전환은 호환되지 않는 active Work를 RELEASE한다(#760). 이 테스트가 재는
+    # 것은 파일명 source 역해소이므로, 데이터 뒤 사용자가 Work를 명시 선택한다.
+    ctrl.dispatch("select_job", {"name": "공고서"})
     # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
     assert ctrl._filename_source_columns() == ["bidNtceNm"]
 
@@ -1512,18 +1515,24 @@ from hwpxfiller.external.dataset_store import DatasetPoolRegistry
 from hwpxfiller.external.template_inspection import template_compile_status
 
 
-def _pool_controller(tmp_path, *, pool_source_factory=source_from_pool_item):
+def _pool_controller(
+    tmp_path,
+    *,
+    pool_source_factory=source_from_pool_item,
+    file_source_factory=source_for_path,
+    registry=None,
+):
     pool = DatasetPoolRegistry(tmp_path / "pool")
     pushes: list = []
     ctrl = JobController(
-        _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+        registry or _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
         clock=_clock(),
         existing_outputs=existing_output_paths,
         ensure_output_dir=ensure_output_directory,
         engine=make_hwpx_engine(),
         pool_registry=pool,
         generation_lock=threading.Lock(),
-        file_source_factory=source_for_path,
+        file_source_factory=file_source_factory,
         pool_source_factory=pool_source_factory,
     )
     return ctrl, pool
@@ -2880,6 +2889,138 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
     return reg
 
 
+@pytest.mark.parametrize("target", ["file", "pool"])
+@pytest.mark.parametrize(
+    ("case", "active_name", "expected_name", "restorable", "usable"),
+    [
+        ("compatible", "공고서", "공고서", True, True),
+        ("incompatible", "계약서", "", True, False),
+        ("non_restorable", "공고서", "", False, False),
+    ],
+)
+def test_successful_data_transition_uses_authoritative_active_work_decision(
+    tmp_path,
+    monkeypatch,
+    target,
+    case,
+    active_name,
+    expected_name,
+    restorable,
+    usable,
+):
+    """file/pool 성공 전환은 같은 KEEP/RELEASE 결정과 SX-04 무효화 seam을 탄다."""
+    registry = _incompatible_reg(tmp_path) if case == "incompatible" else _registry(tmp_path)
+    ctrl, pool = _pool_controller(tmp_path, registry=registry)
+    old_path = tmp_path / "old.csv"
+    old_path.write_text(
+        "bidNtceNm,presmptPrce,없는열\n이전,100,old\n", encoding="utf-8"
+    )
+    ctrl.dispatch("select_job", {"name": active_name})
+    ctrl.load_data_path(str(old_path))
+    ctrl.dispatch("set_all", {})
+    if case == "non_restorable":
+        ctrl.registry.delete(active_name)
+
+    old_records = ctrl.records
+    old_observation = object()
+    ctrl._last_fresh_observation = old_observation
+    ctrl._current_record_preparation = object()
+    ctrl._current_delivery_preparation = object()
+    ctrl._current_preview_preparation = object()
+    ctrl._approved_preview_token = "old-preview"
+    old_generation = ctrl._snapshot_gen
+    calls = []
+    decide = screen_job_module.decide_active_work_after_data_transition
+
+    def recording_decision(context):
+        calls.append(context)
+        return decide(context)
+
+    monkeypatch.setattr(
+        screen_job_module, "decide_active_work_after_data_transition", recording_decision
+    )
+    new_path = _data_csv(tmp_path)
+    if target == "file":
+        ctrl.load_data_path(new_path)
+    else:
+        key = _pool_add(pool, "새 데이터", {"path": new_path})
+        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+
+    assert len(calls) == 1
+    assert calls[0].work_ref == active_name
+    assert calls[0].exact_context_restorable is restorable
+    assert calls[0].usable_with_current_data is usable
+    assert ctrl.job_name == expected_name
+    assert ctrl.records is not old_records
+    assert ctrl._snapshot_gen == old_generation + 1
+    assert ctrl._current_record_preparation is None
+    assert ctrl._current_delivery_preparation is None
+    assert ctrl._current_preview_preparation is None
+    assert ctrl._approved_preview_token is None
+    assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
+    if case == "incompatible":
+        snap = ctrl.snapshot()
+        assert snap["candidates"]["suggested"] == "공고서"
+        assert ctrl.job_name == ""  # 유일 후보도 자동 활성화하지 않는다.
+
+
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, target):
+    """candidate read/load 실패는 commit 전 실패라 기존 session state를 건드리지 않는다."""
+    def file_factory(path, *, sheet=None):
+        if Path(path).name == "broken.csv":
+            raise ValueError("broken file")
+        return source_for_path(path, sheet=sheet)
+
+    def pool_factory(item, *, secret_store=None, fetcher=None):
+        if item.name == "깨진 데이터":
+            raise ValueError("broken pool")
+        return source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+
+    ctrl, pool = _pool_controller(
+        tmp_path,
+        file_source_factory=file_factory,
+        pool_source_factory=pool_factory,
+    )
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("set_all", {})
+    observation = object()
+    record_preparation = object()
+    delivery_preparation = object()
+    preview_preparation = object()
+    ctrl._last_fresh_observation = observation
+    ctrl._current_record_preparation = record_preparation
+    ctrl._current_delivery_preparation = delivery_preparation
+    ctrl._current_preview_preparation = preview_preparation
+    ctrl._approved_preview_token = "old-preview"
+    old_source = ctrl.datasource
+    old_records = ctrl.records
+    old_selection = ctrl.selection
+    old_vm = ctrl.vm
+    old_generation = ctrl._snapshot_gen
+
+    if target == "file":
+        with pytest.raises(ValueError, match="broken file"):
+            ctrl.load_data_path(str(tmp_path / "broken.csv"))
+    else:
+        key = _pool_add(pool, "깨진 데이터", {"path": _data_csv(tmp_path)})
+        result = ctrl.dispatch("load_pool", {"key": key})
+        assert result["ok"] is False and "broken pool" in result["error"]
+
+    assert ctrl.datasource is old_source
+    assert ctrl.records is old_records
+    assert ctrl.selection is old_selection
+    assert ctrl.vm is old_vm
+    assert ctrl.job_name == "공고서"
+    assert ctrl._snapshot_gen == old_generation
+    assert ctrl._last_fresh_observation is observation
+    assert ctrl._current_record_preparation is record_preparation
+    assert ctrl._current_delivery_preparation is delivery_preparation
+    assert ctrl._current_preview_preparation is preview_preparation
+    assert ctrl._approved_preview_token == "old-preview"
+
+
 def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
     """§19.8 1분기 — 명시 선택과 같다. 데이터·선택은 세션 소유라 **생존**한다."""
     ctrl, _ = _controller(tmp_path)
@@ -2892,11 +3033,11 @@ def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
     assert ctrl.selection.selected_count() == before  # RecordRangeState 생존
 
 
-def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
-    """§19.8 3분기 — 데이터가 없으면 보관하고, 마운트 시 §18.3 1행이 승격한다.
+def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_path):
+    """데이터가 없으면 보관하되, 마운트 뒤에도 active Work는 사용자가 직접 고른다.
 
-    슬2가 규칙만 박제하고 비워 뒀던 seam 이 여기서 처음 소비된다. 승격은 **조용하지 않다** —
-    사용자가 방금 낸 의도가 이제 발화했다는 사실을 데이터 재진술로 말한다.
+    preferredWorkId도 DataTarget 전환의 자동 선택 권위가 아니다. 보관분은 1회 소비하고
+    사용할 수 있는 후보라는 사실만 재진술한다.
     """
     ctrl, _ = _controller(tmp_path)
     res = ctrl.dispatch("prefer_work", {"name": "공고서"})
@@ -2904,10 +3045,12 @@ def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
     assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"
 
     ctrl.load_data_path(_data_csv(tmp_path))
-    assert ctrl.job_name == "공고서"
+    assert ctrl.job_name == ""
     assert ctrl.preferred_work == ""              # 1회 소비
     snap = ctrl.snapshot()
-    assert "공고서" in snap["data_notice"]["text"] and snap["data_notice"]["level"] == "ok"
+    assert "공고서" in snap["data_notice"]["text"]
+    assert "직접 고르세요" in snap["data_notice"]["text"]
+    assert snap["data_notice"]["level"] == "warn"
 
 
 def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
@@ -2915,7 +3058,7 @@ def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
 
     구 default_data 분기(작업의 기본 데이터 참조 자동 마운트 — F2 PR-B 판정 I)는 결속
     폐기와 함께 죽었다: 구 JSON 이 결속 키를 들고 있고 동명 풀 항목이 실재해도 데이터
-    선택을 반드시 지난다. 마운트 시 _apply_preferred_work 가 보관분을 판정한다.
+    선택을 반드시 지난다. 마운트 시 보관분도 후보 안내만 하고 선택하지 않는다.
     """
     import json as _json
 
@@ -2930,9 +3073,10 @@ def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
     assert res == {"stored": True, "reason": "no_data", "name": "공고서"}
     assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"  # 보관 — 자동 마운트 없음
     assert ctrl.snapshot()["has_data"] is False
-    # 데이터를 명시로 고르면 보관분이 §18.3 1행으로 승격된다(요구는 세션당 1회 — 완화 ⑴).
+    # 데이터를 명시로 골라도 active Work 선택은 별도 명시 사건이다.
     ctrl.load_data_path(_data_csv(tmp_path))
-    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""
+    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert "직접 고르세요" in ctrl.snapshot()["data_notice"]["text"]
 
 
 def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
