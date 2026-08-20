@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
+import hwpxfiller.application.preview_requirement as preview_module
 from hwpxfiller.application.document_creation_vocabulary import (
     PREVIEW_REQUIREMENT_KINDS,
     SEMANTIC_PREVIEW_LABEL,
@@ -184,3 +186,18 @@ def test_projection_has_no_historical_refs_or_artifact_payload() -> None:
         "xml",
         "artifact",
     }
+
+
+def test_current_preview_module_has_no_historical_policy_or_opaque_refs() -> None:
+    source = Path(preview_module.__file__).read_text(encoding="utf-8")
+    for forbidden in (
+        "NEW_WORK_FIRST_RUN",
+        "TEMPLATE_APPLICATION_CHANGED_FIRST_RUN",
+        "ACTIVE_BINDING_OUTPUT_IMPACT_CHANGE",
+        "exact_basis_ref",
+        "WorkLevelPreviewApproval",
+        "work_level_approval_still_valid",
+        "current_plan_ref",
+        "representative_vdr_ref",
+    ):
+        assert forbidden not in source

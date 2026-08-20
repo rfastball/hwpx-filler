@@ -111,13 +111,7 @@ def test_user_facing_copy_never_leaks_internal_vocabulary() -> None:
 
 
 def test_preview_identity_labels_do_not_impersonate_artifact() -> None:
-    # semantic/value preview 는 Artifact 가 아니다(§7) — 라벨이 "실제 생성된 결과"(Artifact
-    # 문안)이거나 내부 진단어를 담으면 안 된다.
-    assert vocab.PREVIEW_IDENTITY_LABELS == (
-        vocab.SEMANTIC_PREVIEW_LABEL,
-        vocab.VALUE_PREVIEW_LABEL,
-    )
+    # current preview 는 Artifact 가 아니다 — 라벨이 "실제 생성된 결과"이거나 내부어면 안 된다.
     artifact_copy = vocab.USER_VOCABULARY["Artifact"]
-    for label in vocab.PREVIEW_IDENTITY_LABELS:
-        assert label != artifact_copy
-        assert not _INTERNAL_DIAGNOSTIC.search(label)
+    assert vocab.SEMANTIC_PREVIEW_LABEL != artifact_copy
+    assert not _INTERNAL_DIAGNOSTIC.search(vocab.SEMANTIC_PREVIEW_LABEL)

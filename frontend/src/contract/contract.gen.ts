@@ -358,7 +358,7 @@ export const WORKBENCH_EXECUTION_STATUSES = [
 
 export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];
 
-/* PreviewRequirement v1 종류(#724 §6) — REQUIRED 의 reason·basis 는 Product DTO 소유. */
+/* Current PreviewRequirement — 실제 resolved delivery가 사용자 확인 필요성을 결정한다. */
 export const PREVIEW_REQUIREMENT_KINDS = [
   "NOT_REQUIRED",
   "OPTIONAL",

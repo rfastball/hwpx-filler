@@ -276,7 +276,7 @@ def render_contract(
         "",
         "export type WorkbenchExecutionStatus = (typeof WORKBENCH_EXECUTION_STATUSES)[number];",
         "",
-        "/* PreviewRequirement v1 종류(#724 §6) — REQUIRED 의 reason·basis 는 Product DTO 소유. */",
+        "/* Current PreviewRequirement — 실제 resolved delivery가 사용자 확인 필요성을 결정한다. */",
         *_string_array("PREVIEW_REQUIREMENT_KINDS", vocab.PREVIEW_REQUIREMENT_KINDS),
         "",
         "export type PreviewRequirementKind = (typeof PREVIEW_REQUIREMENT_KINDS)[number];",

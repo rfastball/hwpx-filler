@@ -3959,9 +3959,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if context_integrity is None:
             delivery, delivery_context = self._current_delivery(record_validation)
             context_integrity = delivery_context
-            if context_integrity is None:
+            if context_integrity is None and delivery.resolvable:
                 preview_preparation, preview_context = self._current_preview()
                 context_integrity = preview_context
+            else:
+                self._invalidate_current_preview()
         else:
             delivery = DeliveryPreviewSummary(resolvable=False)
         if context_integrity is not None:

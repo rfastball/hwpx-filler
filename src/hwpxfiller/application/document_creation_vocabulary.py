@@ -96,10 +96,6 @@ PREVIEW_REQUIREMENT_KINDS: tuple[str, ...] = ("NOT_REQUIRED", "OPTIONAL", "REQUI
 #: **HWPX bytes·actual layout·Artifact 가 아니다**. 그래서 라벨은 "실제 생성된 결과"(=Artifact
 #: 문안)처럼 읽히지 않고 "확인" 계열로만 말한다.
 SEMANTIC_PREVIEW_LABEL = "생성 내용 확인"
-VALUE_PREVIEW_LABEL = "내용 확인"
-
-#: legacy 문안까지 포함한 고정 어휘 순서.
-PREVIEW_IDENTITY_LABELS: tuple[str, ...] = (SEMANTIC_PREVIEW_LABEL, VALUE_PREVIEW_LABEL)
 
 # ------------------------------------------------------------------ RunDeliveryIntent
 
