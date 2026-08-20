@@ -3166,6 +3166,43 @@ def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_pat
     assert snap["data_notice"]["level"] == "warn"
 
 
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
+    tmp_path, monkeypatch, target,
+):
+    """후보 조회 실패는 성공한 file/pool 마운트를 partial failure로 되돌리지 않는다."""
+    ctrl, pool = _pool_controller(tmp_path)
+    ctrl.dispatch("prefer_work", {"name": "공고서"})
+    ranked_now = ctrl._ranked_now
+    calls = 0
+
+    def fail_once():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("internal candidate detail")
+        return ranked_now()
+
+    monkeypatch.setattr(ctrl, "_ranked_now", fail_once)
+    new_path = _data_csv(tmp_path)
+    if target == "file":
+        ctrl.load_data_path(new_path)
+        assert ctrl.data_source == "file" and ctrl.data_label == Path(new_path).name
+    else:
+        key = _pool_add(pool, "새 데이터", {"path": new_path})
+        assert ctrl.dispatch("load_pool", {"key": key}) == {
+            "ok": True,
+            "label": "등록 데이터: 새 데이터",
+        }
+        assert ctrl.data_source == "pool" and ctrl.data_pool_key == key
+
+    assert ctrl.records and ctrl.selection.selected_count() == 0
+    assert ctrl.preferred_work == ""
+    notice = ctrl.snapshot()["data_notice"]
+    assert notice["level"] == "warn" and "다시 확인할 수 없습니다" in notice["text"]
+    assert "internal candidate detail" not in notice["text"]
+
+
 def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
     """무데이터 「문서 만들기에서 사용」은 언제나 「보관 후 안내」 하나다(§5.3 판정 D).
 

@@ -2299,13 +2299,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         name, self.preferred_work = self.preferred_work, ""
         if not name:
             return
-        if not job_exists(self.registry, name):  # 그사이 삭제·개명 — 유령을 겨누지 않는다
+        try:
+            exists = job_exists(self.registry, name)
+            ranked = self._ranked_now() if exists else []
+        except Exception:  # noqa: BLE001 — 후보 조회 실패는 성공한 데이터 마운트를 되돌리지 않는다.
+            self.data_notice_text = (
+                f"「문서 작업」에서 고른 '{name}' 작업을 다시 확인할 수 없습니다. "
+                "아래 후보에서 문서 작업을 다시 선택하세요."
+            )
+            self.data_notice_level = "warn"
+            return
+        if not exists:  # 그사이 삭제·개명 — 유령을 겨누지 않는다
             self.data_notice_text = (
                 f"「문서 작업」에서 고른 '{name}' 작업이 더는 없습니다."
             )
             self.data_notice_level = "warn"
             return
-        ranked = self._ranked_now()
         promoted = preferred_promotion(
             ranked, active=self.job_name, preferred=name,
         )
