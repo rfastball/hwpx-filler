@@ -2903,7 +2903,15 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
     ),
     [
         ("compatible", "공고서", "공고서", True, True, "authority-old", None),
-        ("incompatible", "계약서", "", True, False, "authority-old", None),
+        (
+            "incompatible",
+            "계약서",
+            "",
+            True,
+            False,
+            "authority-old",
+            "이 데이터로 실행할 수 없어",
+        ),
         (
             "same_name_recreated",
             "공고서",

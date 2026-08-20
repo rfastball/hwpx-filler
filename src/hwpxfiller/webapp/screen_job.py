@@ -1928,6 +1928,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "문서 작업을 다시 선택하세요."
             )
             self.data_notice_level = "warn"
+        elif active_job is not None and not context.usable_with_current_data:
+            self.data_notice_text = (
+                "이전 문서 작업은 이 데이터로 실행할 수 없어 선택을 해제했습니다. "
+                "아래 후보를 선택하거나 「확인 필요」에서 사유를 확인하세요."
+            )
+            self.data_notice_level = "warn"
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
