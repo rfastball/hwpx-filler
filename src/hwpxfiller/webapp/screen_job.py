@@ -1881,22 +1881,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _commit_data_transition(self, source, records: list) -> None:
         """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다."""
         work_ref = self.job_name
-        seated_authority_id = (
-            self.vm.job.authority_id if self.vm is not None else ""
-        )
+        seated_job = self.vm.job if self.vm is not None else None
         active_job = None
         restore_failed = False
+        exact_context_restorable = False
         if work_ref:
             try:
                 active_job = load_job(self.registry, work_ref)
+                exact_context_restorable = bool(
+                    seated_job is not None
+                    # 빈 값끼리의 equality 는 identity 증거가 아니다.
+                    and seated_job.authority_id
+                    and active_job.authority_id == seated_job.authority_id
+                    and job_content_fingerprint(self.registry, active_job)
+                    == job_content_fingerprint(self.registry, seated_job)
+                    and active_job.template_revision == seated_job.template_revision
+                    and active_job.binding_revision == seated_job.binding_revision
+                    and active_job.previous_rules == seated_job.previous_rules
+                )
             except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
+                active_job = None
                 restore_failed = True
-        exact_context_restorable = bool(
-            active_job is not None
-            # 빈 값끼리의 equality 는 identity 증거가 아니다.
-            and seated_authority_id
-            and active_job.authority_id == seated_authority_id
-        )
         context = ActiveWorkContext(
             active=bool(work_ref),
             work_ref=work_ref or None,

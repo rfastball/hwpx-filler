@@ -2931,6 +2931,24 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             "같은 작업인지 확인할 수 없어",
         ),
         (
+            "rules_changed",
+            "공고서",
+            "",
+            False,
+            True,
+            "authority-old",
+            "같은 작업인지 확인할 수 없어",
+        ),
+        (
+            "revision_changed",
+            "공고서",
+            "",
+            False,
+            True,
+            "authority-old",
+            "같은 작업인지 확인할 수 없어",
+        ),
+        (
             "reload_error",
             "공고서",
             "",
@@ -2987,6 +3005,21 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
         ctrl.registry.mutate(
             active_name,
             lambda job: setattr(job, "authority_id", "authority-replacement"),
+        )
+    elif case == "rules_changed":
+        ctrl.registry.mutate(
+            active_name,
+            lambda job: setattr(job, "filename_pattern", "새규칙-{{seq:001}}"),
+        )
+    elif case == "revision_changed":
+        original = ctrl.registry.load(active_name).filename_pattern
+        ctrl.registry.mutate(
+            active_name,
+            lambda job: setattr(job, "filename_pattern", "임시규칙-{{seq:001}}"),
+        )
+        ctrl.registry.mutate(
+            active_name,
+            lambda job: setattr(job, "filename_pattern", original),
         )
 
     old_records = ctrl.records
