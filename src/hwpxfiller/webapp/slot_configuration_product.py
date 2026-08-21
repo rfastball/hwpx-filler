@@ -28,7 +28,13 @@ from ..application.slot_command import (
     ConfigurationCommandContext,
 )
 from ..application.slot_configuration_context import (
+    AppliedTemplateContentIntegrityError,
+    CrossWorkContext,
     SlotConfigurationContextError,
+    StaleTemplateApplication,
+    TemplateInitializationRequired,
+    TemplateStructureIntegrityError,
+    UnsupportedTemplateStructureProjection,
     resolve_slot_configuration_context,
 )
 from ..application.slot_configuration_projection import (
@@ -73,6 +79,37 @@ from ..external.work_configuration_store import WorkspaceMetadataStore
 LOCAL_ACTOR = "local-user"
 
 CURRENT = "CURRENT"
+
+_CONTEXT_ERROR_FALLBACK = (
+    "포함할 내용을 불러오지 못했습니다. "
+    "문서 작업을 다시 열고 템플릿을 확인하세요."
+)
+_CONTEXT_ERROR_MESSAGES = {
+    TemplateInitializationRequired.code: (
+        "템플릿 확인이 끝나지 않아 포함할 내용을 불러오지 못했습니다. "
+        "템플릿을 확인하세요."
+    ),
+    StaleTemplateApplication.code: (
+        "템플릿이 바뀌어 포함할 내용을 불러오지 못했습니다. "
+        "템플릿을 다시 확인하세요."
+    ),
+    UnsupportedTemplateStructureProjection.code: (
+        "이 템플릿 구조에서는 포함할 내용을 선택할 수 없습니다. "
+        "다른 템플릿을 적용하세요."
+    ),
+    TemplateStructureIntegrityError.code: (
+        "템플릿 구조를 확인할 수 없어 포함할 내용을 불러오지 못했습니다. "
+        "템플릿을 다시 확인하세요."
+    ),
+    AppliedTemplateContentIntegrityError.code: (
+        "적용된 템플릿 파일을 확인할 수 없어 포함할 내용을 불러오지 못했습니다. "
+        "템플릿을 다시 확인하세요."
+    ),
+    CrossWorkContext.code: (
+        "현재 문서 작업과 템플릿이 맞지 않아 포함할 내용을 불러오지 못했습니다. "
+        "문서 작업을 다시 연 뒤 템플릿을 확인하세요."
+    ),
+}
 
 
 class SlotConfigurationProductError(Exception):
@@ -126,6 +163,7 @@ class CurrentViewResponse:
     view_status: str
     configuration_status: str
     context_error: str | None
+    context_error_message: str | None
     new_configuration_token: str | None
     projection: CurrentSlotConfigurationView | None
     blocking_items: tuple
@@ -258,12 +296,7 @@ class SlotConfigurationProduct:
         view = project_context_error(code)
         return SlotConfigurationCommandResponse(
             mutation_outcome=None,
-            current_view=CurrentViewResponse(
-                view_status=view.view_status, configuration_status=view.configuration_status,
-                context_error=view.context_error, new_configuration_token=None,
-                projection=None, blocking_items=view.blocking_items,
-                informational_changes=view.informational_changes,
-            ),
+            current_view=self._current_view_response(view, None),
             refresh_required=True,
         )
 
@@ -473,6 +506,11 @@ class SlotConfigurationProduct:
             view_status=view.view_status,
             configuration_status=view.configuration_status,
             context_error=view.context_error,
+            context_error_message=(
+                _CONTEXT_ERROR_MESSAGES.get(view.context_error, _CONTEXT_ERROR_FALLBACK)
+                if view.context_error is not None
+                else None
+            ),
             new_configuration_token=new_token,
             projection=view if view.view_status != CONTEXT_ERROR else None,
             blocking_items=view.blocking_items,

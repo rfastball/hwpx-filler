@@ -35,11 +35,13 @@ function slot(id, text, status, options, sharedFields = []) {
 function view(status, slots, extra = {}) {
   const {
     token = "tok-1", detached = [], blocking = [], viewStatus = "CURRENT", contextError = null,
+    contextErrorMessage = null,
   } = extra;
   return {
     view_status: viewStatus,
     configuration_status: status,
     context_error: contextError,
+    context_error_message: contextErrorMessage,
     new_configuration_token: token,
     projection: viewStatus === "CONTEXT_ERROR" ? null : {
       view_status: viewStatus, configuration_status: status, configuration_present: true,
@@ -262,11 +264,23 @@ test("pending 동안 radio 를 disabled 로 그려 중복 mutation 을 막는다
   assert.match(html, /반영 중/);
 });
 
-test("context error 는 숨기지 않고 alert 로 그린다", () => {
-  const errView = view("CONTEXT_ERROR", [], { viewStatus: "CONTEXT_ERROR", contextError: "복원 불가" });
-  const html = render(stateOf(errView, "error", "복원 불가"));
-  assert.match(html, /복원 불가/);
+test("context error 는 backend 사용자 문안만 service와 alert에 공유한다", async () => {
+  const code = "TEMPLATE_INITIALIZATION_REQUIRED";
+  const message = "템플릿 확인이 끝나지 않아 포함할 내용을 불러오지 못했습니다. 템플릿을 확인하세요.";
+  const errView = view("CONTEXT_ERROR", [], {
+    viewStatus: "CONTEXT_ERROR", contextError: code, contextErrorMessage: message, token: null,
+  });
+  const client = fakeClient(() => okv(response(errView, { refresh: true })));
+  const svc = createSlotConfigService({ client });
+
+  assert.equal(svc.hydrate(errView).error, message);
+  const state = await svc.refresh();
+  assert.equal(state.error, message);
+
+  const html = render(state);
+  assert.match(html, new RegExp(message));
   assert.match(html, /role="alert"/);
+  assert.ok(!html.includes(code));
 });
 
 /* ══ 리뷰 회수 fixes(#725 Codex) ═════════════════════════════════════════════════════════ */

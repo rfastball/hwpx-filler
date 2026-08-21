@@ -61,6 +61,7 @@ export type SlotCurrentView = {
   view_status: string;
   configuration_status: string;
   context_error: string | null;
+  context_error_message: string | null;
   new_configuration_token: string | null;
   projection: SlotProjection | null;
 };
@@ -106,7 +107,7 @@ function replaceFromResponse(res: SlotCommandResponse): SlotConfigState {
     // token 은 backend 가 낸 새 값으로만 갱신한다(없으면 유지하지 않는다 — 무효 상태를 시끄럽게).
     token: view.new_configuration_token,
     phase,
-    error: view.view_status === "CONTEXT_ERROR" ? String(view.context_error ?? "context_error") : null,
+    error: view.context_error_message,
   };
 }
 
@@ -270,7 +271,7 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
         view,
         token: view.new_configuration_token,
         phase: isError ? "error" : "idle",
-        error: isError ? String(view.context_error ?? "context_error") : null,
+        error: view.context_error_message,
       });
     },
   };

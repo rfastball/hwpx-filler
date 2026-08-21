@@ -75,8 +75,36 @@ def test_unbootstrapped_work_is_initialization_required(tmp_path: Path) -> None:
     resp = product.open_slot_configuration("공고서")
     assert resp.current_view.view_status == "CONTEXT_ERROR"
     assert resp.current_view.context_error == "TEMPLATE_INITIALIZATION_REQUIRED"
+    assert resp.current_view.context_error_message == (
+        "템플릿 확인이 끝나지 않아 포함할 내용을 불러오지 못했습니다. 템플릿을 확인하세요."
+    )
     assert resp.current_view.new_configuration_token is None
     assert resp.refresh_required is True
+
+    passive = product.current_slot_configuration_view("공고서")
+    assert passive.current_view.context_error_message == resp.current_view.context_error_message
+
+    unknown = product._context_error_response("FUTURE_CONTEXT_ERROR")
+    assert unknown.current_view.context_error == "FUTURE_CONTEXT_ERROR"
+    assert unknown.current_view.context_error_message == (
+        "포함할 내용을 불러오지 못했습니다. 문서 작업을 다시 열고 템플릿을 확인하세요."
+    )
+
+
+def test_every_known_context_error_has_specific_user_copy() -> None:
+    import hwpxfiller.webapp.slot_configuration_product as mod
+
+    from hwpxfiller.application.slot_configuration_context import (
+        SlotConfigurationContextError,
+    )
+
+    known_codes = {
+        error.code
+        for error in SlotConfigurationContextError.__subclasses__()
+        if error.__module__ == SlotConfigurationContextError.__module__
+    }
+    assert set(mod._CONTEXT_ERROR_MESSAGES) == known_codes
+    assert all(code not in message for code, message in mod._CONTEXT_ERROR_MESSAGES.items())
 
 
 def test_missing_work_ref_is_authorization_failure(tmp_path: Path) -> None:
