@@ -1515,16 +1515,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
         # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
         # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
+        registry_notice_text = ""
         try:
             jobs = list_jobs(self.registry)
         except Exception:  # noqa: BLE001 — 조회 장애는 빈 후보 + loud 안내로 표면화한다.
             jobs = []
-            if not self.data_notice_text:
-                self.data_notice_text = (
-                    "문서 작업 목록을 다시 확인할 수 없습니다. "
-                    "잠시 뒤 다시 시도하세요."
-                )
-                self.data_notice_level = "warn"
+            registry_notice_text = (
+                "문서 작업 목록을 다시 확인할 수 없습니다. "
+                "잠시 뒤 다시 시도하세요."
+            )
         base = {
             "job_name": self.job_name,
             # managed HWPX comes from durable Work identity, never a suffix heuristic.
@@ -1579,8 +1578,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "data_target": self._data_target(),
             # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 없으면 None.
             "data_notice": (
-                {"level": self.data_notice_level, "text": self.data_notice_text}
-                if self.data_notice_text else None
+                {
+                    "level": self.data_notice_level if self.data_notice_text else "warn",
+                    "text": self.data_notice_text or registry_notice_text,
+                }
+                if self.data_notice_text or registry_notice_text else None
             ),
         }
         # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
@@ -2131,24 +2133,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         터지는 형태로 나타났다. 두 값을 **한 자리에서만** 세우면 갈라질 수가 없고, 갱신이
         필요한 곳은 이 함수를 부르면 된다.
         """
-        self.job_is_txt, self.job_unsupported = seat_kinds(job.template_path)
-        self.vm = (
+        job_is_txt, job_unsupported = seat_kinds(job.template_path)
+        vm = (
             None
-            if (self.job_is_txt or self.job_unsupported)
+            if (job_is_txt or job_unsupported)
             else RunViewModel(job, engine=self._engine)
         )
-        self._seated_template_application_id = (
+        seated_template_application_id = (
             self._template_change.current_template_application_id(
                 job.authority_id or None
             )
-            if self.vm is not None and self._template_change is not None
+            if vm is not None and self._template_change is not None
             else None
         )
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
         # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
-        if self.vm is not None and self.records:
-            self.vm.set_acquired(self.datasource, self.records)  # 데이터 귀속 원자 진입점(RC-22)
+        if vm is not None and self.records:
+            vm.set_acquired(self.datasource, self.records)  # 데이터 귀속 원자 진입점(RC-22)
+        self.job_is_txt, self.job_unsupported = job_is_txt, job_unsupported
+        self.vm = vm
+        self._seated_template_application_id = seated_template_application_id
 
     def _run_action(self) -> dict:
         """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
@@ -2262,6 +2267,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._discard_active_work_session_evidence()
         self.vm = None
         self._seated_template_application_id = None
+        self._run_delivery_intent = None
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
@@ -2474,6 +2480,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.job_name, str(p.get("change_token", ""))
         )
         if result.get("status") in {"applied", "already_applied", "applied_then_advanced"}:
+            self._seated_template_application_id = (
+                self._template_change.current_template_application_id(
+                    self.vm.job.authority_id or None
+                )
+                if self.vm is not None else None
+            )
             self._invalidate_execution_evidence()
             self._maybe_auto_check(effective_basis_changed=True)
         return result

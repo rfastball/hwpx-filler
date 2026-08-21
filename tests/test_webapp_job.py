@@ -2998,6 +2998,8 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
         ctrl.dispatch("select_job", {"name": active_name})
         ctrl.load_data_path(str(old_path))
     ctrl.dispatch("set_all", {})
+    ctrl.set_output_folder(str(tmp_path / "managed-out"))
+    old_delivery_intent = ctrl._run_delivery_intent
     if case == "same_name_recreated":
         replacement = ctrl.registry.load(active_name)
         ctrl.registry.delete(active_name)
@@ -3067,6 +3069,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     assert ctrl._current_preview_preparation is None
     assert ctrl._approved_preview_token is None
     assert ctrl._last_fresh_observation is (old_observation if expected_name else None)
+    assert ctrl._run_delivery_intent is (old_delivery_intent if expected_name else None)
     snap = ctrl.snapshot()
     if notice is None:
         assert snap["data_notice"] is None
@@ -3137,10 +3140,11 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
-def test_data_transition_releases_when_template_application_identity_changed(
-    tmp_path, monkeypatch, target,
+@pytest.mark.parametrize("applied_locally", [False, True])
+def test_data_transition_uses_template_application_identity(
+    tmp_path, monkeypatch, target, applied_locally,
 ):
-    """동일 authority·규칙·revision이어도 실 Template Application 교체는 RELEASE다."""
+    """명시 apply는 seated로 받고, 관측 밖 Application 교체만 RELEASE한다."""
     registry = _registry(tmp_path)
     coordinator = TemplateChangeCoordinator(
         registry, root=tmp_path / "authority", clock=_clock()
@@ -3159,7 +3163,12 @@ def test_data_transition_releases_when_template_application_identity_changed(
     template = Path(registry.load("공고서").template_path)
     _write_template(template, ["공고명", "추정가격", "비고"])
     prepared = coordinator.check("공고서", "external-change")["preparation"]
-    assert coordinator.apply("공고서", prepared["change_token"])["status"] == "applied"
+    result = (
+        ctrl.dispatch("template_apply", {"change_token": prepared["change_token"]})
+        if applied_locally
+        else coordinator.apply("공고서", prepared["change_token"])
+    )
+    assert result["status"] == "applied"
     restored_application_id = coordinator.current_template_application_id(authority_id)
     assert restored_application_id != seated_application_id
 
@@ -3181,11 +3190,59 @@ def test_data_transition_releases_when_template_application_identity_changed(
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
 
     assert contexts[0].template_application_ref == restored_application_id
-    assert contexts[0].exact_context_restorable is False
+    assert contexts[0].exact_context_restorable is applied_locally
     assert contexts[0].usable_with_current_data is True
-    assert ctrl.job_name == "" and ctrl.vm is None
-    assert ctrl._seated_template_application_id is None
-    assert "같은 작업인지 확인할 수 없어" in ctrl.snapshot()["data_notice"]["text"]
+    assert ctrl.job_name == ("공고서" if applied_locally else "")
+    assert ctrl._seated_template_application_id == (
+        restored_application_id if applied_locally else None
+    )
+    notice = ctrl.snapshot()["data_notice"]
+    if applied_locally:
+        assert notice is None
+    else:
+        assert "같은 작업인지 확인할 수 없어" in notice["text"]
+
+
+def test_seating_identity_read_failure_does_not_split_the_active_work(
+    tmp_path, monkeypatch,
+):
+    """Fallible authority 조회는 VM·매체·이름을 교체하기 전에 끝난다."""
+    registry = _incompatible_reg(tmp_path)
+    registry.assign_authority_id("공고서", "authority-a")
+    registry.assign_authority_id("계약서", "authority-b")
+    coordinator = TemplateChangeCoordinator(
+        registry, root=tmp_path / "authority", clock=_clock()
+    )
+    ctrl, _ = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    old_vm = ctrl.vm
+    old_seat = (
+        ctrl.job_name,
+        ctrl.job_is_txt,
+        ctrl.job_unsupported,
+        ctrl.out_dir,
+        ctrl._seated_template_application_id,
+    )
+
+    def fail_identity_read(_work_id):
+        raise ValueError("authority store broken")
+
+    monkeypatch.setattr(
+        coordinator, "current_template_application_id", fail_identity_read
+    )
+    with pytest.raises(ValueError, match="authority store broken"):
+        ctrl.dispatch("select_job", {"name": "계약서"})
+
+    assert ctrl.vm is old_vm
+    assert (
+        ctrl.job_name,
+        ctrl.job_is_txt,
+        ctrl.job_unsupported,
+        ctrl.out_dir,
+        ctrl._seated_template_application_id,
+    ) == old_seat
 
 
 def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
@@ -3249,6 +3306,25 @@ def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     notice = ctrl.snapshot()["data_notice"]
     assert notice["level"] == "warn" and "다시 확인할 수 없습니다" in notice["text"]
     assert "internal candidate detail" not in notice["text"]
+
+
+def test_snapshot_registry_warning_clears_when_lookup_recovers(tmp_path, monkeypatch):
+    """Snapshot-only registry 경고는 목록이 복구되면 다음 조회에서 사라진다."""
+    ctrl, _ = _controller(tmp_path)
+    list_jobs = screen_job_module.list_jobs
+    calls = 0
+
+    def fail_once(store):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("temporary registry error")
+        return list_jobs(store)
+
+    monkeypatch.setattr(screen_job_module, "list_jobs", fail_once)
+    first = ctrl.snapshot()["data_notice"]
+    assert first["level"] == "warn" and "목록을 다시 확인" in first["text"]
+    assert ctrl.snapshot()["data_notice"] is None
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
