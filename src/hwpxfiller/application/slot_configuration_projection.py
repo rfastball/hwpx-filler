@@ -14,7 +14,7 @@ Resolution 이 이미 판정했고 여기선 값을 primitive 로 shape 할 뿐�
 3. ``configuration_status`` mapping(0-slot / missing-only / broken / complete).
 
 소유 밖: Product token 문자열·Product API(#679), Snapshot(#680), run bridge(#681).
-v1 display_text 는 exact ID 다 — canonical structure 에 label 이 없어 추측하지 않는다.
+display_text 는 canonical label 이며, historical label 부재는 ID 와 명시적 표식으로 드러낸다.
 """
 
 from __future__ import annotations
@@ -262,7 +262,7 @@ def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> Projec
     options = tuple(
         ProjectedOption(
             option_id=opt.id,
-            display_text=opt.id,  # v1: canonical label 없음.
+            display_text=_display_text(opt.label, opt.id),
             selected=opt.id in declared,
             effective=opt.id in effective,
             structurally_associated_field_ids=opt.fields,
@@ -271,7 +271,7 @@ def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> Projec
     )
     return ProjectedSlot(
         slot_id=slot_res.slot_id,
-        display_text=slot_res.slot_id,
+        display_text=_display_text(struct_slot.label, slot_res.slot_id),
         selection_policy=slot_res.policy,
         status=slot_res.status,
         declared_option_ids=slot_res.declared_option_ids,
@@ -283,6 +283,10 @@ def _project_slot(struct_slot: TemplateSlot, slot_res: SlotResolution) -> Projec
             for d in slot_res.diagnostics
         ),
     )
+
+
+def _display_text(label: str | None, identifier: str) -> str:
+    return label if label is not None else f"라벨 미지정 (ID: {identifier})"
 
 
 def _project_delta(

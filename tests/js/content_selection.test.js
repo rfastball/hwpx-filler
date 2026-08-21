@@ -455,21 +455,6 @@ test("error settle도 command 사유와 latest backend view/token을 함께 보�
   assert.equal(state.token, "tok-b");
 });
 
-test("P2#4 display_text==id 인 production 형상에서도 지정 표시 필드를 소비한다(라벨 소스=backend, 후속 분리)", () => {
-  // v1 backend 는 canonical label 이 없어 display_text=slot_id/option_id 다(Slot/Option 저작=비소유).
-  // 프런트는 id 를 직접 조립하지 않고 지정 필드(display_text)를 그린다 — 라벨 개선은 backend projection 몫.
-  const prod = view("NEEDS_SELECTION",
-    [{
-      slot_id: "표지유형", display_text: "표지유형", selection_policy: "EXACTLY_ONE",
-      status: "MISSING_REQUIRED_SELECTION", declared_option_ids: [], effective_option_ids: [],
-      options: [{ option_id: "기본", display_text: "기본", selected: false, effective: false, structurally_associated_field_ids: [] }],
-      shared_field_ids: [],
-    }],
-    { blocking: [{ slot_id: "표지유형", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
-  const html = render(stateOf(prod));
-  assert.match(html, /표지유형/); // display_text 필드를 그대로 소비(현재는 id 와 동일값)
-});
-
 /* ══ C. architecture negative ═════════════════════════════════════════════════════════════ */
 test("Active Field 를 계산·표시하지 않는다(structurally_associated_field_ids 미노출 — SX-03 소유)", () => {
   const withFields = view("NEEDS_SELECTION",

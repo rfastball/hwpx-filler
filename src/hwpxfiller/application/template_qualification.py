@@ -24,6 +24,7 @@ class CandidateRevisionSnapshot:
 class TemplateOption:
     id: str
     fields: tuple[str, ...] = ()
+    label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ class TemplateSlot:
     id: str
     shared_fields: tuple[str, ...] = ()
     options: tuple[TemplateOption, ...] = ()
+    label: str | None = None
 
 
 @dataclass(frozen=True)

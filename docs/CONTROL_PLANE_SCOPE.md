@@ -44,7 +44,7 @@ SG-03 은 **제거 슬라이스가 아니라 pin/narrow 슬라이스**다. store
 | `initialize_qualification_profile_admission` | `external/profile_admission_runner.py` | `webapp/template_change.py` (built-in 1개, bootstrap ADMITTED, idempotent) |
 | `register_published_qualification_profile_admission` | `external/profile_admission_runner.py` | **없음**(dynamic publication 미사용) |
 | `revoke_qualification_profile` | `external/profile_admission_runner.py` | **없음**(internal/incident/test 전용) |
-| shipping Profile 상수 + manifest | `external/template_inspection.py` (`HWPX_QUALIFICATION_PROFILE` id `hwpx-template-qualification-v1`·`hwpx_qualification_manifest`) | `webapp/template_change.py` |
+| shipping Profile 상수 + manifest | `external/template_inspection.py` (`HWPX_QUALIFICATION_PROFILE` id `hwpx-template-qualification-v3`·`hwpx_qualification_manifest`) | `webapp/template_change.py` |
 | fence + runtime admission query | `host/profile_admission_fence.py`; `external/prepare_orchestration_runner.py`·`seal_orchestration_runner.py` | — |
 
 production `QualificationProfile(...)` 생성은 정확히 1개다.

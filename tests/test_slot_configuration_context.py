@@ -15,6 +15,7 @@ import pytest
 from hwpxfiller.application.candidate_revision import TemplateRevision
 from hwpxfiller.application.qualification_evidence import (
     QualificationEvidence,
+    QualificationEvidenceError,
     StructureProjection,
     build_manifest,
     content_digest,
@@ -23,6 +24,7 @@ from hwpxfiller.application.qualification_evidence import (
 from hwpxfiller.application.slot_configuration_context import (
     AppliedTemplateContentIntegrityError,
     CrossWorkContext,
+    DEFAULT_STRUCTURE_DECODER_REGISTRY,
     StaleTemplateApplication,
     StructureProjectionDecoderRegistry,
     TemplateInitializationRequired,
@@ -69,12 +71,16 @@ def _app(app_id: str = "A1", work_id: str = "w1", evidence: str = "E1", epoch: i
 
 
 def _evidence(
-    evidence_id: str = "E1", revision: str = "R1", profile: str = PROFILE, schema: str = SCHEMA
+    evidence_id: str = "E1",
+    revision: str = "R1",
+    profile: str = PROFILE,
+    schema: str = SCHEMA,
+    structure: TemplateStructure = _STRUCTURE,
 ) -> QualificationEvidence:
     return QualificationEvidence(
         evidence_id=evidence_id, attempt_id="AT1", revision_id=revision,
         qualification_profile_id=profile, result="PASS",
-        structure_projection=project_structure(_STRUCTURE, schema),
+        structure_projection=project_structure(structure, schema),
         diagnostics=(), engine_metadata={}, qualified_at=NOW,
     )
 
@@ -158,6 +164,85 @@ def test_resolves_exact_context() -> None:
     assert ctx.selection_semantic_contract_id == "slot-selection/v1"
     # template_structure_digest 는 Evidence projection 의 payload_digest 를 그대로 싣는다.
     assert ctx.template_structure_digest == project_structure(_STRUCTURE, SCHEMA).payload_digest
+
+
+def test_v3_projection_restores_labels_and_rejects_missing_label() -> None:
+    structure = TemplateStructure(
+        slots=(
+            TemplateSlot(
+                "s1",
+                options=(TemplateOption("o1", label="기본"),),
+                label="표지 유형",
+            ),
+        )
+    )
+    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(
+        "hwpx-structure-projection-v3"
+    )
+    projection = project_structure(structure, "hwpx-structure-projection-v3")
+    assert decoder(projection.payload) == structure
+
+    ctx = _resolve(
+        _ports(
+            evidence=_evidence(
+                profile="hwpx-template-qualification-v3",
+                schema="hwpx-structure-projection-v3",
+                structure=structure,
+            ),
+            manifest=_manifest(
+                profile="hwpx-template-qualification-v3",
+                schema="hwpx-structure-projection-v3",
+            ),
+        )
+    )
+    assert ctx.template_structure == structure
+    assert ctx.selection_semantic_contract_id == "slot-selection/v1"
+
+    with pytest.raises(QualificationEvidenceError):
+        project_structure(structure, SCHEMA)
+
+    invalid_payloads = (
+        {
+            "root_fields": [],
+            "slots": [{"id": "s1", "shared_fields": [], "options": []}],
+        },
+        {
+            "root_fields": [],
+            "slots": [
+                {
+                    "id": "s1",
+                    "label": "",
+                    "shared_fields": [],
+                    "options": [],
+                }
+            ],
+        },
+        {
+            "root_fields": [],
+            "slots": [
+                {
+                    "id": "s1",
+                    "label": None,
+                    "shared_fields": [],
+                    "options": [{"id": "o1", "fields": []}],
+                }
+            ],
+        },
+        {
+            "root_fields": [],
+            "slots": [
+                {
+                    "id": "s1",
+                    "label": None,
+                    "shared_fields": [],
+                    "options": [{"id": "o1", "label": [], "fields": []}],
+                }
+            ],
+        },
+    )
+    for payload in invalid_payloads:
+        with pytest.raises(TemplateStructureIntegrityError):
+            decoder(payload)
 
 
 def test_applied_input_references_candidate_blob() -> None:
@@ -299,10 +384,6 @@ def test_decoder_registry_rejects_duplicate_schema() -> None:
     ],
 )
 def test_decoder_rejects_mistyped_projection_fields(payload: dict) -> None:
-    from hwpxfiller.application.slot_configuration_context import (
-        DEFAULT_STRUCTURE_DECODER_REGISTRY,
-    )
-
     decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(SCHEMA)
     with pytest.raises(TemplateStructureIntegrityError):
         decoder(payload)

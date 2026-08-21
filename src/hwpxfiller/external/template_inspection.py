@@ -99,6 +99,7 @@ class ProductScopeObservation:
     kind: str | None
     product_id: str | None
     owning_slot_pair: BoundaryPairRef | None
+    product_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +145,7 @@ class _ParsedProduct(NamedTuple):
     classification: ProductClassification
     kind: str | None = None
     product_id: str | None = None
+    label: str | None = None
 
 
 class _OpenBookmark(NamedTuple):
@@ -165,9 +167,14 @@ def _diagnostic(
     return TemplateDiagnostic(kind, f"{entry}: BOOKMARK {bookmark_name!r}: {detail}")
 
 
-def _serialize_product_metatag(kind: str, identifier: str) -> str:
+def _serialize_product_metatag(
+    kind: str, identifier: str, label: str | None = None
+) -> str:
+    product = {"kind": kind, "id": identifier}
+    if label is not None:
+        product["label"] = _require_text(label, f"{kind} label")
     return json.dumps(
-        {"hwpxFiller": {"kind": kind, "id": identifier}, "name": _NATIVE_NAME},
+        {"hwpxFiller": product, "name": _NATIVE_NAME},
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -182,13 +189,13 @@ def _require_text(value: object, field: str) -> str:
 def serialize_slot_metatag(slot: Slot) -> str:
     """Serialize one canonical object-local Slot payload; native ``name`` is last."""
     _require_text(slot.id, "Slot id")
-    return _serialize_product_metatag("slot", slot.id)
+    return _serialize_product_metatag("slot", slot.id, slot.label)
 
 
 def serialize_slot_option_metatag(option: SlotOption) -> str:
     """Serialize one canonical object-local Slot Option payload."""
     _require_text(option.id, "Slot Option id")
-    return _serialize_product_metatag("slot_option", option.id)
+    return _serialize_product_metatag("slot_option", option.id, option.label)
 
 
 def _product_tag(
@@ -316,6 +323,17 @@ def _product_tag(
             )
         )
         return _ParsedProduct(ProductClassification.KNOWN_PRODUCT, kind)
+    label = body.get("label") if "label" in body else None
+    if "label" in body and (not isinstance(label, str) or not label.strip()):
+        diagnostics.append(
+            _diagnostic(
+                "invalid-label",
+                entry,
+                begin.bookmark_name,
+                "label must be a non-empty string when present",
+            )
+        )
+        label = None
     native_name = root.get("name")
     if native_name != _NATIVE_NAME:
         diagnostics.append(
@@ -331,6 +349,7 @@ def _product_tag(
         ProductClassification.KNOWN_PRODUCT,
         kind,
         None if unsupported_carrier else identifier,
+        None if unsupported_carrier else label,
     )
 
 
@@ -441,6 +460,7 @@ def inspect_product_bookmarks(
                             product.kind,
                             product.product_id,
                             None,
+                            product.label,
                         )
                     )
                     continue
@@ -455,6 +475,7 @@ def inspect_product_bookmarks(
                             product.kind,
                             product.product_id,
                             None,
+                            product.label,
                         )
                     )
                     open_bookmarks.append(_OpenBookmark(event.pair, None, False))
@@ -553,6 +574,7 @@ def inspect_product_bookmarks(
                         product.kind,
                         product.product_id,
                         owning_slot,
+                        product.label,
                     )
                 )
                 open_bookmarks.append(_OpenBookmark(event.pair, product.kind, usable))
@@ -949,7 +971,9 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
         for option in option_observations.get(slot.pair, ()):
             options.append(
                 TemplateOption(
-                    cast(str, option.product_id), tuple(option_fields[option.pair])
+                    cast(str, option.product_id),
+                    tuple(option_fields[option.pair]),
+                    label=option.product_label,
                 )
             )
         slots.append(
@@ -957,6 +981,7 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                 cast(str, slot.product_id),
                 tuple(shared_fields[slot.pair]),
                 tuple(options),
+                label=slot.product_label,
             )
         )
     return QualificationInspection(
@@ -987,7 +1012,7 @@ def inspect_hwpx_qualification(canonical_bytes: bytes) -> QualificationInspectio
 
 # Bump this identity whenever the HWPX qualification rule set or projection changes.
 HWPX_QUALIFICATION_PROFILE = QualificationProfile(
-    "hwpx-template-qualification-v1",
+    "hwpx-template-qualification-v3",
     inspect_hwpx_qualification,
 )
 
@@ -1002,17 +1027,18 @@ def hwpx_qualification_manifest(created_at: str) -> "QualificationProfileManifes
     return build_manifest(
         qualification_profile_id=HWPX_QUALIFICATION_PROFILE.id,
         media="hwpx",
-        adapter_contract_version="hwpx-inspection-v1",
-        product_rule_version="hwpx-qualification-rules-v1",
+        adapter_contract_version="hwpx-inspection-v3",
+        product_rule_version="hwpx-qualification-rules-v3",
+        # label 은 operation 종류·피연산자·순서를 바꾸지 않는다.
         operation_alphabet_version="hwpx-operations-v1",
-        projection_schema_version="hwpx-structure-projection-v1",
+        projection_schema_version="hwpx-structure-projection-v3",
         manifest_payload={},
         created_at=created_at,
     )
 
 
 def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
-    option_ids: dict[BoundaryPairRef, list[str]] = {}
+    options: dict[BoundaryPairRef, list[tuple[str, str | None]]] = {}
     for item in inspection.observations:
         if (
             item.classification is ProductClassification.KNOWN_PRODUCT
@@ -1021,14 +1047,17 @@ def _project_slots(inspection: ProductBookmarkInspection) -> tuple[Slot, ...]:
             and item.owning_slot_pair is not None
             and item.pair in inspection._projection_pairs
         ):
-            option_ids.setdefault(item.owning_slot_pair, []).append(item.product_id)
+            options.setdefault(item.owning_slot_pair, []).append(
+                (item.product_id, item.product_label)
+            )
     return tuple(
         Slot(
             item.product_id,
             tuple(
-                SlotOption(identifier, order)
-                for order, identifier in enumerate(option_ids.get(item.pair, ()))
+                SlotOption(identifier, order, label)
+                for order, (identifier, label) in enumerate(options.get(item.pair, ()))
             ),
+            item.product_label,
         )
         for item in inspection.observations
         if item.classification is ProductClassification.KNOWN_PRODUCT
@@ -1173,11 +1202,12 @@ def remove_slot_option(pkg: object, slot_id: str, option_id: str) -> None:
         else Slot(
             slot.id,
             tuple(
-                SlotOption(option.id, order)
+                SlotOption(option.id, order, option.label)
                 for order, option in enumerate(
                     item for item in slot.options if item.id != target_id
                 )
             ),
+            slot.label,
         )
         for slot in snapshot.slots
     )
