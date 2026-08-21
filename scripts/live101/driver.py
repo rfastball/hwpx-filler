@@ -34,7 +34,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import capture as capture_mod
@@ -151,6 +151,19 @@ class LiveRunResult:
         if self.ok:
             return ExitCode.OK
         return ExitCode.ENVIRONMENT if self.environment else ExitCode.SCENARIO_FAILED
+
+
+def _infrastructure_failure(
+    result: LiveRunResult, event: str, error: str
+) -> LiveRunResult:
+    """하드 스톱을 제품 판정과 분리하고 성공 성능 표본에서도 제외한다."""
+    report = {**result.report, "infrastructure_event": event}
+    report["verdict"] = {
+        **report.get("verdict", {}),
+        "ok": False,
+        "reason": error,
+    }
+    return replace(result, ok=False, report=report, error=error)
 
 
 # ------------------------------------------------------------------ 홈 수명주기
@@ -334,7 +347,13 @@ def _run_with_home(
     from hwpxfiller.webapp import live_run
 
     answers: "deque[str]" = deque()
-    state: dict = {"result": None, "error": None, "environment": False}
+    state: dict = {
+        "result": None,
+        "error": None,
+        "environment": False,
+        "phase": "host-loading",
+        "infrastructure_event": None,
+    }
     deadline = Deadline(budget_s)
     #: `main()` 이 정상 반환하면 선다 — 워치독을 **해제**하는 신호(#426 리뷰 P1).
     finished = threading.Event()
@@ -396,19 +415,30 @@ def _run_with_home(
         )
 
     def drive(ctx) -> None:
+        host_timed_out = state["phase"] == "host-timeout"
+        state["phase"] = "window"
         window = ctx.window
         observations: dict = {}
         sink = None
         try:
+            if host_timed_out:
+                state["infrastructure_event"] = "boot_hung"
+                raise WindowBootFailure(
+                    "loaded",
+                    ctx.boot_budget_s + BOOT_GRACE_S,
+                    ctx.boot_budget_reason,
+                )
             # 창 부팅은 **제품 단언이 아니라 전제**다 — 우리 예산으로 기다린 뒤에야 창을
             # 만진다. 이 줄이 없으면 아래 첫 호출이 pywebview 의 20초 상수를 먼저 문다(#460).
             _await_window(window, *boot_wait_budget(ctx, deadline))
+            state["phase"] = "bridge"
             _await_bridge(window, deadline)
             window.resize(WINDOW_W, WINDOW_H)
             time.sleep(0.6)
             surface = Surface(window, deadline)
             surface.install_helpers()
             sink = _make_sink(mode, out_dir, webapp_app.WINDOW_TITLE)
+            state["phase"] = "scenario"
             observations = scenario_mod.run(
                 scenario_mod.ScenarioContext(
                     surface=surface,
@@ -431,9 +461,14 @@ def _run_with_home(
             result = settle(
                 observations, sink, state["error"], environment=state["environment"]
             )
+            if state["infrastructure_event"]:
+                result = _infrastructure_failure(
+                    result, state["infrastructure_event"], state["error"]
+                )
             state["result"] = result
-            ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
+            state["phase"] = "teardown"
             _arm_teardown_watchdog(result, home, finished, landing)
+            ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
 
     _arm_run_watchdog(
         home=home,
@@ -442,7 +477,12 @@ def _run_with_home(
         mode=mode,
         landing=landing,
         settle=settle,
+        state=state,
     )
+
+    def host_event(event: str) -> None:
+        state["phase"] = f"host-{event}"
+
     try:
         rc = webapp_app.main(
             argv=[],
@@ -453,6 +493,8 @@ def _run_with_home(
                 file_dialogs=live_run.FileDialogs(
                     open_file=answer_file_dialog, open_folder=answer_folder_dialog
                 ),
+                host_event=host_event,
+                host_wait_grace_s=BOOT_GRACE_S,
             ),
         )
     finally:
@@ -595,7 +637,8 @@ def _arm_run_watchdog(
     budget_s: float,
     mode: str,
     landing: "_Landing",
-    settle: "Callable[[dict, object, str], LiveRunResult]",
+    settle: "Callable[..., LiveRunResult]",
+    state: dict,
 ) -> None:
     """실행 예산의 **하드 백스톱** — 브리지가 멎어도 무는 유일한 이빨(#426 리뷰 라운드 2).
 
@@ -620,10 +663,18 @@ def _arm_run_watchdog(
             f" (브리지 무응답 의심). 스택 — {where}",
             stream=2,
         )
-        landing.once(
-            settle({}, None, f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)")
+        phase = state["phase"]
+        boot_hung = phase in ("host-loading", "host-timeout")
+        event = "boot_hung" if boot_hung else "run_hung"
+        error = f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)"
+        base = settle(
+            {},
+            None,
+            error,
+            environment=boot_hung or phase == "window",
         )
-        _hard_exit(ExitCode.RUN_HUNG)
+        landing.once(_infrastructure_failure(base, event, error))
+        _hard_exit(ExitCode.ENVIRONMENT if boot_hung else ExitCode.RUN_HUNG)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -654,7 +705,9 @@ def _arm_teardown_watchdog(
             f" → 워치독 종료. 스택 — {where}",
             stream=2,
         )
-        _hard_exit(landing.once(result))
+        error = f"teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 끝나지 않았습니다"
+        landing.once(_infrastructure_failure(result, "teardown_hung", error))
+        _hard_exit(ExitCode.TEARDOWN_HUNG)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 

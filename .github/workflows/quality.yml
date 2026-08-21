@@ -257,12 +257,11 @@ jobs:
   live-webview2:
     name: live-webview2 (real WebView2 session)
     runs-on: windows-latest
-    # 바깥 상한은 안쪽 진단보다 **느슨해야** 한다(N-11A 교훈). 이 잡의 자식 예산 합계는
-    # 실 게이트 넷(4×420s)·selftest 합계(1200s)·101 실주행(600s)이라 전면 매달림에서
-    # 30분을 넘고, 그때 러너가 잡을 죽이면 pytest 의 테스트별 보고도 `if: always()` 증거
-    # 회수도 **사라진다** — 진단을 겨냥한 시나리오에서 진단을 잃는다. 정상 실행은 2~3분이라
-    # 이 값을 올려도 평시 비용은 0 이고, 무는 것은 매달림뿐이다. (전 항목 동시 매달림은
-    # 여전히 이 값을 넘는다 — 그 정도면 부분 증거 + 러너 강제 종료로 충분히 시끄럽다.)
+    # 바깥 상한은 안쪽 진단보다 **느슨해야** 한다(N-11A 교훈). 현재 최악 대기는 selftest
+    # 합계 1200s + qualified 콜드부팅 실패 75s + 101 바깥 상한 720s = 33.25분이다.
+    # 45분이면 테스트별 하드스톱과
+    # `if: always()` 증거 회수가 먼저 끝난다. 첫 실패 뒤에는 아래 maxfail 이 형제 부팅을
+    # 더 태우지 않는다. 정상 실행은 2~3분이라 평시 비용은 늘지 않는다.
     timeout-minutes: 45
     needs: sealed-web
     env:
@@ -311,7 +310,7 @@ jobs:
         # 뜻이었는지 아무도 묻지 않게 되고, 그 상태의 게이트는 이미 게이트가 아니다.
         run: |
           Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync pytest -q -m live --basetemp="$env:RUNNER_TEMP/live"
+          uv run --no-sync pytest -q -m live --maxfail=1 --basetemp="$env:RUNNER_TEMP/live"
       - name: Collect live diagnostics
         if: always()
         shell: pwsh

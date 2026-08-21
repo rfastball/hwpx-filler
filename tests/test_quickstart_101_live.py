@@ -107,6 +107,21 @@ def _keep_output(evidence: Path, stdout, stderr) -> None:
         (evidence / name).write_text(text, encoding="utf-8")
 
 
+def _retryable_boot_hang(proc: subprocess.CompletedProcess, report: object) -> bool:
+    """구조화된 loaded 전 매달림만 fresh-process 재시도 자격을 준다."""
+    if not isinstance(report, dict):
+        return False
+    return (
+        proc.returncode == driver.ExitCode.ENVIRONMENT
+        and report.get("infrastructure_event") == "boot_hung"
+        and report.get("environment") is True
+        and report.get("shots") == []
+        and report.get("observations") == {}
+        and report.get("hwpx_generated") == 0
+        and report.get("verdict", {}).get("failures") == []
+    )
+
+
 @pytest.fixture(scope="module")
 def live_check_run(tmp_path_factory) -> dict:
     """101 `check` 를 **모듈당 한 번** 돌리고 그 실행의 사실을 모아 준다.
@@ -119,52 +134,71 @@ def live_check_run(tmp_path_factory) -> dict:
     된다(다른 테스트가 사이에 끼면 귀속이 흐려진다).
     """
     evidence = _evidence_dir(tmp_path_factory)
-    report_path = evidence / "check-report.json"
     before = _tree_manifest(EXAMPLE_HOME)
     assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
-    command = [
-        sys.executable,
-        str(CLI),
-        "check",
-        "--home",
-        "temp",
-        "--no-build",
-        "--budget-s",
-        str(_LIVE_BUDGET_S),
-        "--report",
-        str(report_path),
-    ]
-    try:
-        proc = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=_OUTER_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired as expired:
-        # 바깥 시한이 물었다 = 드라이버의 하드 스톱조차 착지하지 못했다는 뜻이고, 증거가
-        # 가장 필요한 자리가 정확히 여기다. 그런데 이 예외를 그냥 올리면 아래 저장 줄을
-        # 지나치지 못해 **그 시나리오에서만** 표준출력이 사라진다(코덱스 리뷰 P2).
-        _keep_output(evidence, expired.stdout, expired.stderr)
-        raise AssertionError(
-            f"101 check 가 바깥 시한 {_OUTER_TIMEOUT_S:.0f}s 를 넘겼습니다 — 드라이버의 하드 "
-            f"스톱({_LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S:.0f}s)조차 착지하지 "
-            f"못했습니다. 남긴 증거: {evidence}"
-        ) from expired
+    attempts: "list[dict]" = []
+    for number in (1, 2):
+        attempt_dir = evidence / f"attempt-{number}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        report_path = attempt_dir / "check-report.json"
+        command = [
+            sys.executable,
+            str(CLI),
+            "check",
+            "--home",
+            "temp",
+            "--no-build",
+            "--budget-s",
+            str(_LIVE_BUDGET_S),
+            "--report",
+            str(report_path),
+        ]
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=_OUTER_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as expired:
+            _keep_output(attempt_dir, expired.stdout, expired.stderr)
+            raise AssertionError(
+                f"101 check 가 바깥 시한 {_OUTER_TIMEOUT_S:.0f}s 를 넘겼습니다 — 드라이버의 "
+                f"하드 스톱({_LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S:.0f}s)조차 착지하지 "
+                f"못했습니다. 남긴 증거: {attempt_dir}"
+            ) from expired
 
+        _keep_output(attempt_dir, proc.stdout, proc.stderr)
+        assert report_path.exists(), (
+            f"보고서 미생성 — attempt={number}, rc={proc.returncode}\n"
+            f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        attempts.append({"proc": proc, "report": report, "evidence": attempt_dir})
+        if number == 1 and _retryable_boot_hang(proc, report):
+            warnings.warn(
+                f"webview_boot_flake: loaded 전 매달림, fresh process 1회 재시도; 증거={attempt_dir}",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+            continue
+        break
+
+    selected = attempts[-1]
+    proc, report = selected["proc"], selected["report"]
     after = _tree_manifest(EXAMPLE_HOME)
     _keep_output(evidence, proc.stdout, proc.stderr)
-    assert report_path.exists(), (
-        f"보고서 미생성 — rc={proc.returncode}\n"
-        f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
+    (evidence / "check-report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return {
         "proc": proc,
-        "report": json.loads(report_path.read_text(encoding="utf-8")),
+        "report": report,
         "before": before,
         "after": after,
+        "attempts": attempts,
     }
 
 
@@ -192,6 +226,70 @@ def test_the_evidence_writer_survives_what_a_timeout_hands_it(tmp_path) -> None:
 
     assert (tmp_path / "check-stdout.txt").read_text(encoding="utf-8") == "한글 stdout"
     assert "캡처 없음" in (tmp_path / "check-stderr.txt").read_text(encoding="utf-8")
+
+
+def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
+    monkeypatch, tmp_path
+) -> None:
+    """제품 중간 사망은 재시도하지 않고, qualified boot hang 두 실행은 따로 남긴다."""
+
+    class _Factory:
+        def mktemp(self, name: str) -> Path:
+            target = tmp_path / name
+            target.mkdir(exist_ok=True)
+            return target
+
+    reports = [
+        {
+            "infrastructure_event": "boot_hung",
+            "environment": True,
+            "shots": [],
+            "observations": {},
+            "hwpx_generated": 0,
+            "verdict": {"ok": False, "failures": []},
+        },
+        {
+            "environment": False,
+            "shots": [],
+            "observations": {},
+            "hwpx_generated": EXPECTED_HWPX,
+            "verdict": {"ok": True, "failures": []},
+        },
+    ]
+    calls: "list[Path]" = []
+
+    def fake_run(command, **_kwargs):
+        report_path = Path(command[command.index("--report") + 1])
+        calls.append(report_path)
+        report_path.write_text(
+            json.dumps(reports[len(calls) - 1], ensure_ascii=False), encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(
+            command,
+            driver.ExitCode.ENVIRONMENT if len(calls) == 1 else driver.ExitCode.OK,
+            stdout=f"attempt {len(calls)}",
+            stderr="",
+        )
+
+    monkeypatch.delenv("HWPX_LIVE_EVIDENCE_DIR", raising=False)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "_tree_manifest", lambda _root: {"x": "y"})
+
+    with pytest.warns(RuntimeWarning, match="webview_boot_flake"):
+        result = live_check_run.__wrapped__(_Factory())
+
+    assert result["proc"].returncode == driver.ExitCode.OK
+    assert len(result["attempts"]) == 2
+    assert calls[0].parent.name == "attempt-1" and calls[1].parent.name == "attempt-2"
+    assert (tmp_path / "live101" / "check-report.json").exists()
+
+    product_death = dict(reports[0], shots=["job-landing"])
+    assert not _retryable_boot_hang(
+        subprocess.CompletedProcess([], driver.ExitCode.ENVIRONMENT), product_death
+    )
+    assert not _retryable_boot_hang(
+        subprocess.CompletedProcess([], driver.ExitCode.SCENARIO_FAILED), reports[0]
+    )
 
 
 @pytest.mark.live
@@ -527,6 +625,86 @@ def test_the_exit_code_splits_environment_from_product(environment, expected) ->
     result = driver.LiveRunResult(mode="check", ok=False, environment=environment)
 
     assert result.exit_code() == expected
+
+
+def test_hard_stops_land_on_their_own_unhealthy_axis(monkeypatch, capsys, tmp_path) -> None:
+    """run/teardown 매달림은 성공 표본도 제품 실패도 아닌 인프라 하드스톱이다."""
+    landed: "list[driver.LiveRunResult]" = []
+    exits: "list[int]" = []
+
+    class _Finished:
+        def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 즉시 발화시키는 시계 대역
+            return False
+
+    class _Thread:
+        def __init__(self, *, target, daemon=True) -> None:  # noqa: ARG002
+            self.target = target
+
+        def start(self) -> None:
+            self.target()
+
+    def settle(_observations, _sink, error, *, environment=False):
+        return driver.LiveRunResult(
+            mode="check",
+            ok=False,
+            report={"verdict": {"ok": True, "reason": None, "failures": []}},
+            error=error,
+            environment=environment,
+        )
+
+    monkeypatch.setattr(driver.threading, "Thread", _Thread)
+    monkeypatch.setattr(driver, "_dump_stacks", lambda _home: "stack")
+    monkeypatch.setattr(driver, "_say", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(driver, "_hard_exit", exits.append)
+
+    driver._arm_run_watchdog(
+        home=tmp_path,
+        finished=_Finished(),
+        budget_s=1.0,
+        mode="check",
+        landing=driver._Landing(lambda result: landed.append(result) or result.exit_code()),
+        settle=settle,
+        state={"phase": "host-loading"},
+    )
+    driver._arm_run_watchdog(
+        home=tmp_path,
+        finished=_Finished(),
+        budget_s=1.0,
+        mode="check",
+        landing=driver._Landing(lambda result: landed.append(result) or result.exit_code()),
+        settle=settle,
+        state={"phase": "scenario"},
+    )
+    healthy = driver.LiveRunResult(
+        mode="check",
+        ok=True,
+        report={"verdict": {"ok": True, "reason": None, "failures": []}},
+    )
+    driver._arm_teardown_watchdog(
+        healthy,
+        tmp_path,
+        _Finished(),
+        driver._Landing(lambda result: landed.append(result) or result.exit_code()),
+    )
+
+    assert exits == [
+        driver.ExitCode.ENVIRONMENT,
+        driver.ExitCode.RUN_HUNG,
+        driver.ExitCode.TEARDOWN_HUNG,
+    ]
+    assert [result.report["infrastructure_event"] for result in landed] == [
+        "boot_hung",
+        "run_hung",
+        "teardown_hung",
+    ]
+    assert all(result.report["verdict"]["ok"] is False for result in landed)
+    assert landed[0].environment is True and landed[1].environment is False
+    assert landed[2].ok is False
+
+    import capture_101_screenshots as cli
+
+    cli._land(landed[2], home=tmp_path, temp_root=None, use_example_home=False, report_path=None)
+    assert "실패[인프라]" in capsys.readouterr().err
 
 
 def _landing_stderr(capsys, tmp_path, *, environment: bool, failures: "list[str]") -> "list[str]":

@@ -77,18 +77,37 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     def fake_start(*args, **kwargs):
         started.append((args, kwargs))
 
+    window = _FakeWindow()
     monkeypatch.setitem(
         sys.modules,
         "webview",
         SimpleNamespace(
-            create_window=lambda *a, **k: _FakeWindow(),
+            create_window=lambda *a, **k: window,
             start=fake_start,
         ),
     )
     _stub_app_boot(monkeypatch, tmp_path)
 
-    drove: "list[live_run.LiveContext]" = []
-    assert app_mod.main(argv=[], live=_run(drive=drove.append, name="harness")) == 0
+    order: "list[str]" = []
+    client = SimpleNamespace(
+        describe=lambda _events: order.append("theme:describe"),
+        preferences=lambda *_args: order.append("theme:preferences")
+        or SimpleNamespace(ok=True, failure_text=None),
+    )
+    monkeypatch.setattr(
+        app_mod.product_api,
+        "ProductApiClient",
+        SimpleNamespace(for_window=lambda _window: client),
+    )
+    assert app_mod.main(
+        argv=[],
+        live=_run(
+            drive=lambda _ctx: order.append("drive"),
+            name="harness",
+            host_event=lambda event: order.append(f"host:{event}"),
+            host_wait_grace_s=15.0,
+        ),
+    ) == 0
 
     (positional, keywords) = started[0]
     assert len(positional) == 1, f"위치 인자가 하나(진입점)여야 한다: {positional!r}"
@@ -96,7 +115,44 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     assert list(inspect.signature(positional[0]).parameters) == []
 
     positional[0]()
-    assert len(drove) == 1 and drove[0].run_name == "harness"
+    assert window.events.loaded.timeouts == [16.0]
+    assert window.events.loaded.handlers == [], "live 에 비동기 loaded 핸들러를 함께 달았습니다"
+    assert order == [
+        "host:loaded",
+        "theme:describe",
+        "theme:preferences",
+        "host:ready",
+        "drive",
+    ]
+
+
+def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
+    monkeypatch, tmp_path
+) -> None:
+    """loaded 미도달만 구조화된 boot-hang 사건으로 넘기며 theme bridge 는 열지 않는다."""
+    started: list = []
+    window = _FakeWindow(loaded=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(
+            create_window=lambda *a, **k: window,
+            start=lambda entry, **kwargs: started.append(entry),
+        ),
+    )
+    _stub_app_boot(monkeypatch, tmp_path)
+    order: "list[str]" = []
+
+    run = _run(
+        drive=lambda _ctx: order.append("drive"),
+        host_event=lambda event: order.append(f"host:{event}"),
+        host_wait_grace_s=15.0,
+    )
+    assert app_mod.main(argv=[], live=run) == 0
+    started[0]()
+
+    assert window.events.loaded.timeouts == [16.0]
+    assert order == ["host:timeout", "drive"]
 
 
 # ------------------------------------------------------------ 등록 시점 음성 대조
@@ -351,19 +407,25 @@ def test_native_dialogs_have_a_single_entrance(monkeypatch) -> None:
 class _Event:
     """pywebview 이벤트 슬롯 대역 — ``window.events.X += handler`` 를 받는다."""
 
-    def __init__(self) -> None:
+    def __init__(self, fired: bool = True) -> None:
         self.handlers: "list[object]" = []
+        self.fired = fired
+        self.timeouts: "list[float | None]" = []
 
     def __iadd__(self, handler):
         self.handlers.append(handler)
         return self
 
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — pywebview Event 계약 대역
+        self.timeouts.append(timeout)
+        return self.fired
+
 
 class _FakeWindow:
-    def __init__(self, on_destroy=None) -> None:
+    def __init__(self, on_destroy=None, *, loaded: bool = True) -> None:
         self.destroyed = 0
         self.events = SimpleNamespace(
-            loaded=_Event(),
+            loaded=_Event(loaded),
             resized=_Event(),
             moved=_Event(),
             maximized=_Event(),

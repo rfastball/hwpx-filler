@@ -97,6 +97,10 @@ class LiveRun:
     write_output: "Callable[[Mapping[str, object]], object]"
     capability: bool = False
     file_dialogs: "FileDialogs | None" = None
+    #: 앱 host 가 loaded 전/후 경계를 하니스에 알리는 비내구성 관측. 제품 실행에는 없다.
+    host_event: "Callable[[str], None] | None" = None
+    #: host loaded 대기에 기존 제품 부팅 예산 위로 얹는 하니스 여유.
+    host_wait_grace_s: float = 0.0
     version: int = LIVE_RUN_VERSION
 
 
@@ -118,6 +122,10 @@ def validate(run: object) -> LiveRun:
         raise LiveRunContractError(f"드라이버가 콜러블이 아닙니다: {run.drive!r}")
     if not callable(run.write_output):
         raise LiveRunContractError(f"증거 기록기가 콜러블이 아닙니다: {run.write_output!r}")
+    if run.host_event is not None and not callable(run.host_event):
+        raise LiveRunContractError(f"host_event 가 콜러블이 아닙니다: {run.host_event!r}")
+    if run.host_wait_grace_s < 0:
+        raise LiveRunContractError("host_wait_grace_s 는 음수일 수 없습니다")
     if run.file_dialogs is not None:
         if not isinstance(run.file_dialogs, FileDialogs):
             raise LiveRunContractError(

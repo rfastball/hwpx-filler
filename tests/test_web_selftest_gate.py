@@ -63,7 +63,7 @@ _SELFTEST_TIMEOUT = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS
 
 # 부팅 하나의 상한을 늘리면 **최악의 경우가 곱해진다**(#428 리뷰 P1). 이 모듈은 파라미터화
 # 포함 십수 회 부팅하고 pytest 는 시한 초과 뒤에도 다음 테스트로 간다 — WebView2 가 전면
-# 매달리면 대기만으로 CI 잡 상한(30분)을 넘긴다. 그때 러너가 잡을 죽이면 위에서 애써 남긴
+# 매달리면 대기만으로 CI 잡 상한을 넘길 수 있다. 그때 러너가 잡을 죽이면 위에서 애써 남긴
 # 진단도 커버리지 산출물도 **회수되기 전에 사라진다**. 진단을 겨냥한 그 시나리오에서 진단을
 # 잃는 셈이라, 합계에도 상한이 있어야 한다.
 #
@@ -75,7 +75,8 @@ _SELFTEST_TIMEOUT = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS
 #   발화선 = 합계 1200 - 부팅 하나 몫 600 = 600s. 정상 소진(로컬 실측 33s·감속 러너 수백 초)
 #   의 18배라 느린 러너로는 안 닿는다.
 #   최악 대기는 유계다: 매달림 한 번(600s) 뒤 남은 예산이 부팅 하나 몫 아래로 떨어져 나머지가
-#   즉시 실패하므로, 대기 총량 ≤ 1200s = 20분 < CI 잡 상한 30분 - 셋업·증거 회수 여유.
+#   즉시 실패하므로, 대기 총량 ≤ 1200s = 20분이다. 101의 qualified 부팅 실패 75s + 바깥
+#   상한 720s를 합쳐도 45분 잡 상한 안이다.
 _AGGREGATE_BOOT_BUDGET_S = 1200.0
 
 #: 지금까지 부팅 대기에 쓴 시간과 실제로 시한을 넘긴 부팅들 — 진단이 "몇 번째부터 무너졌나"를
@@ -126,7 +127,7 @@ def _exhausted_report(what: str, spent: float) -> str:
             f" (부팅 하나 상한 {_SELFTEST_TIMEOUT:.0f}s)",
             f"  먼저 시한을 넘긴 부팅: {stuck}",
             "  → WebView2 가 전면 매달린 상태로 보입니다. 남은 부팅을 마저 기다리면 CI 잡"
-            " 상한(30분)을 넘겨 이 진단조차 회수되지 못합니다.",
+            " 상한을 넘겨 이 진단조차 회수되지 못합니다.",
         ]
     )
 
@@ -136,7 +137,19 @@ def _timeout_report(
 ) -> str:
     """시한 초과를 **진단**으로 바꾼다 — 다음 사람이 재실행 말고 읽을 것이 있게."""
     tail = _tail(expired.stderr) or _tail(expired.stdout) or "(자식 출력 없음)"
-    reached = "생성됨 — 드라이버가 종결에 닿았다" if out.exists() else "없음 — 종결에 못 닿았다"
+    if not out.exists():
+        reached = "없음 — 종결에 못 닿았다"
+    else:
+        try:
+            parsed = json.loads(out.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            reached = "불완전 — 종결 증거를 쓰는 중 멎었다"
+        else:
+            reached = (
+                "유효함 — 결과를 쓴 뒤 프로세스 종료에 못 닿았다"
+                if isinstance(parsed, dict)
+                else "불완전 — 종결 증거가 JSON 객체가 아니다"
+            )
     return "\n".join(
         [
             f"selftest 부팅 시한 초과 — {what}",
@@ -2088,15 +2101,19 @@ def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
         stderr="[hwpx] 마지막 한 줄",
     )
     missing = tmp_path / "absent.json"
+    partial = tmp_path / "partial.json"
     reached = tmp_path / "present.json"
+    partial.write_text("{", encoding="utf-8")
     reached.write_text("{}", encoding="utf-8")
 
     hung = _timeout_report(expired, out=missing, what="어떤 부팅", elapsed=170.4)
+    writing = _timeout_report(expired, out=partial, what="어떤 부팅", elapsed=170.4)
     slow = _timeout_report(expired, out=reached, what="어떤 부팅", elapsed=170.4)
 
     assert "어떤 부팅" in hung and "170.4s" in hung
     assert "종결에 못 닿았다" in hung
-    assert "종결에 닿았다" in slow and "종결에 못 닿았다" not in slow
+    assert "쓰는 중 멎었다" in writing
+    assert "결과를 쓴 뒤 프로세스 종료에 못 닿았다" in slow
     # 자식이 남긴 마지막 말이 실려야 한다 — 그것이 유일한 창 안쪽 단서일 때가 많다.
     assert "[hwpx] 마지막 한 줄" in hung
     # 예산 사슬 수치를 함께 적는다: 읽는 사람이 "이 상한이 왜 이 값인가"를 되짚을 수 있게.
@@ -2106,7 +2123,7 @@ def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
 def test_aggregate_boot_budget_fails_fast_instead_of_burning_the_ci_job(monkeypatch) -> None:
     """전면 매달림에서 남은 부팅은 **기다리지 않는다** — 그 대기가 진단을 삼킨다.
 
-    부팅 하나의 상한을 늘리면 최악의 경우가 곱해진다: 십수 회 × 상한이 CI 잡 상한(30분)을
+    부팅 하나의 상한을 늘리면 최악의 경우가 곱해진다: 십수 회 × 상한이 CI 잡 상한을
     넘기면 러너가 잡을 죽이고, 그때 이 모듈이 남긴 진단도 커버리지 산출물도 회수되지 못한다
     (#428 리뷰 P1). 그래서 합계에도 상한이 있고, 소진되면 즉시 실패한다.
     """

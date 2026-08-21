@@ -1461,7 +1461,8 @@ def main(
         if err is not None:
             _alarm(f"테마 주입 실패: {err!r}", window)
 
-    window.events.loaded += _apply_theme_then_show
+    if run is None:
+        window.events.loaded += _apply_theme_then_show
 
     # 폴백(confirm-or-alarm): loaded 가 끝내 안 오면 창이 영영 숨겨진다 — 상한 후 강제 show + 경보.
     # 순서 계약(#75 리뷰): show 가 경보보다 **먼저**다 — _alarm 의 evaluate_js 는 pywebview 가
@@ -1480,12 +1481,14 @@ def main(
         # 어느 예산이 얼마 만에 발화했는지 함께 남긴다 — 예산이 짧아 선발화한 것인지 진짜
         # 매달림인지를 로그만 보고 가를 수 있어야 한다(#77 오경보 진단의 유일 단서).
         budget_note = f" [예산 {budget_seconds:.0f}s · {budget_reason}]"
-        _alarm(
-            ("loaded 후 표시 매달림. 폴백으로 창 표시(테마 미주입 가능)"
-             if loaded_seen.is_set()
-             else "loaded 미발화. 폴백으로 창 표시(테마 미주입 가능)") + budget_note,
-            window,
-        )
+        message = (
+            "loaded 후 표시 매달림. 폴백으로 창 표시(테마 미주입 가능)"
+            if loaded_seen.is_set()
+            else "loaded 미발화. 폴백으로 창 표시(테마 미주입 가능)"
+        ) + budget_note
+        # live 드라이버와 loaded 핸들러가 같은 WebView2 bridge 를 동시에 평가하지 않게 한다.
+        # 제품 실행은 종전처럼 창 경보까지 보내고, live 는 내구성 채널만 쓴다.
+        _alarm(message, None if run is not None else window)
 
     # 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·AV
     # 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
@@ -1506,7 +1509,7 @@ def main(
             # 인자 0개 콜러블 — `webview.start(fn)` 은 `args=None` 분기로 들어가 위치 인자를
             # 넘기지 않는다. 드라이버가 알아야 할 것은 전부 봉투 하나에 실린다(#423).
             _live_file_dialogs = run.file_dialogs
-            entry = live_run.entrypoint(
+            drive = live_run.entrypoint(
                 run,
                 live_run.context_for(
                     run,
@@ -1520,6 +1523,25 @@ def main(
                     boot_budget_reason=budget_reason,
                 ),
             )
+
+            def entry() -> None:
+                # pywebview 의 loaded Event 는 핸들러 *완주 전* 선다. live 부팅은 같은
+                # 스레드에서 테마 bridge 를 끝낸 뒤 드라이버를 시작해 evaluate_js 경합을 막는다.
+                if run.host_event is None:
+                    window.events.loaded.wait()
+                elif not window.events.loaded.wait(
+                    budget_seconds + run.host_wait_grace_s
+                ):
+                    run.host_event("timeout")
+                    drive()
+                    return
+                if run.host_event is not None:
+                    run.host_event("loaded")
+                _apply_theme_then_show()
+                if run.host_event is not None:
+                    run.host_event("ready")
+                drive()
+
             webview.start(entry, gui=gui, storage_path=str(storage_dir))
         else:
             webview.start(gui=gui, storage_path=str(storage_dir))
