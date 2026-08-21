@@ -113,12 +113,19 @@ def _str_field(value: object, what: str) -> str:
     return value
 
 
-def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
-    """hwpx-structure-projection-v1 payload → TemplateStructure(project_structure 의 역).
+def _label_field(value: object, what: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise TemplateStructureIntegrityError(
+            f"{what} 는 null 또는 비어 있지 않은 문자열이어야 한다"
+        )
+    return value
 
-    digest 유효해도 형이 틀린 payload(예: ``root_fields: "title"``)는 조용히 char 로
-    쪼개지 않고 시끄럽게 거절한다 — 이 decoder 가 persisted projection 의 신뢰 경계다.
-    """
+
+def _decode_product_structure(
+    payload: Mapping[str, Any], *, schema: str, include_labels: bool
+) -> TemplateStructure:
     try:
         slots_raw = payload["slots"]
         root_fields = _str_list(payload["root_fields"], "root_fields")
@@ -139,6 +146,11 @@ def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
                     TemplateOption(
                         id=_str_field(opt["id"], "option.id"),
                         fields=_str_list(opt["fields"], "option.fields"),
+                        label=(
+                            _label_field(opt["label"], "option.label")
+                            if include_labels
+                            else None
+                        ),
                     )
                 )
             slots.append(
@@ -146,13 +158,27 @@ def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
                     id=_str_field(slot["id"], "slot.id"),
                     shared_fields=_str_list(slot["shared_fields"], "slot.shared_fields"),
                     options=tuple(options),
+                    label=(
+                        _label_field(slot["label"], "slot.label")
+                        if include_labels
+                        else None
+                    ),
                 )
             )
         return TemplateStructure(root_fields=root_fields, slots=tuple(slots))
     except (KeyError, TypeError, AttributeError) as exc:
         raise TemplateStructureIntegrityError(
-            "structure projection payload 가 v1 형식과 불일치"
+            f"structure projection payload 가 {schema} 형식과 불일치"
         ) from exc
+
+
+def _decode_structure_v1(payload: Mapping[str, Any]) -> TemplateStructure:
+    """hwpx-structure-projection-v1 payload → TemplateStructure(project_structure 의 역).
+
+    digest 유효해도 형이 틀린 payload(예: ``root_fields: "title"``)는 조용히 char 로
+    쪼개지 않고 시끄럽게 거절한다 — 이 decoder 가 persisted projection 의 신뢰 경계다.
+    """
+    return _decode_product_structure(payload, schema="v1", include_labels=False)
 
 
 def _decode_structure_v2(payload: Mapping[str, Any]) -> TemplateStructure:
@@ -169,6 +195,11 @@ def _decode_structure_v2(payload: Mapping[str, Any]) -> TemplateStructure:
             "v2 projection payload 에 product_structure 매핑이 없다"
         )
     return _decode_structure_v1(product)
+
+
+def _decode_structure_v3(payload: Mapping[str, Any]) -> TemplateStructure:
+    """hwpx-structure-projection-v3 의 canonical Slot/Option label 을 복원한다."""
+    return _decode_product_structure(payload, schema="v3", include_labels=True)
 
 
 class StructureProjectionDecoderRegistry:
@@ -198,6 +229,7 @@ DEFAULT_STRUCTURE_DECODER_REGISTRY = StructureProjectionDecoderRegistry(
     [
         ("hwpx-structure-projection-v1", _decode_structure_v1),
         ("hwpx-structure-projection-v2", _decode_structure_v2),
+        ("hwpx-structure-projection-v3", _decode_structure_v3),
     ]
 )
 

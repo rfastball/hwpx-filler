@@ -35,6 +35,7 @@ from .template_qualification import (
 PASS = "PASS"
 FAIL = "FAIL"
 ERROR = "ERROR"
+_LABEL_PROJECTION_SCHEMA = "hwpx-structure-projection-v3"
 
 
 class QualificationEvidenceError(ValueError):
@@ -66,6 +67,15 @@ def project_structure(
     structure: TemplateStructure, projection_schema_version: str
 ) -> StructureProjection:
     """native-free TemplateStructure 를 serializable projection + digest 로 고정한다."""
+    include_labels = projection_schema_version == _LABEL_PROJECTION_SCHEMA
+    if not include_labels and any(
+        slot.label is not None
+        or any(option.label is not None for option in slot.options)
+        for slot in structure.slots
+    ):
+        raise QualificationEvidenceError(
+            "label-bearing structure requires hwpx-structure-projection-v3"
+        )
     payload = {
         "root_fields": list(structure.root_fields),
         "slots": [
@@ -73,8 +83,14 @@ def project_structure(
                 "id": slot.id,
                 "shared_fields": list(slot.shared_fields),
                 "options": [
-                    {"id": opt.id, "fields": list(opt.fields)} for opt in slot.options
+                    {
+                        "id": opt.id,
+                        "fields": list(opt.fields),
+                        **({"label": opt.label} if include_labels else {}),
+                    }
+                    for opt in slot.options
                 ],
+                **({"label": slot.label} if include_labels else {}),
             }
             for slot in structure.slots
         ],

@@ -217,10 +217,10 @@ def _three_option_package() -> HwpxPackage:
     return _write_tags(
         package,
         {
-            "SLOT": _slot("slot"),
-            "A": _option("a"),
-            "B": _option("b"),
-            "C": _option("c"),
+            "SLOT": _slot("slot", label="슬롯 라벨"),
+            "A": _option("a", label="A 라벨"),
+            "B": _option("b", label="B 라벨"),
+            "C": _option("c", label="C 라벨"),
         },
     )
 
@@ -326,7 +326,11 @@ def test_remove_slot_option_preserves_siblings_and_rebuilds_native_order(
     expected = (
         Slot(
             "slot",
-            tuple(SlotOption(identifier, order) for order, identifier in enumerate(remaining)),
+            tuple(
+                SlotOption(identifier, order, f"{identifier.upper()} 라벨")
+                for order, identifier in enumerate(remaining)
+            ),
+            "슬롯 라벨",
         ),
     )
     assert inspect_slots(package) == (expected, ())
@@ -449,6 +453,7 @@ def test_product_removal_failures_are_atomic(monkeypatch: pytest.MonkeyPatch) ->
         ({"S0_SLOT": _slot(kind=[])}, None, {"unknown-kind"}),
         ({"S0_SLOT": _slot("")}, None, {"invalid-id"}),
         ({"S0_SLOT": _slot(3)}, None, {"invalid-id"}),
+        ({"S0_SLOT": _slot(label=[])}, None, {"invalid-label"}),
         (
             {"S0_SLOT": _slot(name="#hf_slot")},
             None,
@@ -889,8 +894,8 @@ def test_topology_failures_have_stable_diagnostics(
 
 
 def test_canonical_serializers_fix_schema_and_native_name_last() -> None:
-    slot = Slot("추가 지급 안내", ())
-    option = SlotOption("성과급 안내", 0)
+    slot = Slot("slot-1", (), "추가 지급 안내")
+    option = SlotOption("option-1", 0, "성과급 안내")
     slot_raw = serialize_slot_metatag(slot)
     option_raw = serialize_slot_option_metatag(option)
     assert slot_raw.endswith('"name":"#hf"}')
@@ -898,12 +903,17 @@ def test_canonical_serializers_fix_schema_and_native_name_last() -> None:
     assert json.loads(slot_raw) == {
         "hwpxFiller": {
             "kind": "slot",
-            "id": "추가 지급 안내",
+            "id": "slot-1",
+            "label": "추가 지급 안내",
         },
         "name": "#hf",
     }
     assert json.loads(option_raw) == {
-        "hwpxFiller": {"kind": "slot_option", "id": "성과급 안내"},
+        "hwpxFiller": {
+            "kind": "slot_option",
+            "id": "option-1",
+            "label": "성과급 안내",
+        },
         "name": "#hf",
     }
 
@@ -965,10 +975,10 @@ def test_qualification_projects_complete_native_free_field_ownership() -> None:
         + _p(_field("duplicate"))
         + _p("<hp:t>TAIL</hp:t>"),
         {
-            "SLOT": _slot("slot"),
-            "SLOT_2": _slot("slot_2"),
-            "OPTION_A": _option("a"),
-            "OPTION_B": _option("b"),
+            "SLOT": _slot("slot", label="지급 안내"),
+            "SLOT_2": _slot("slot_2", label="추가 안내"),
+            "OPTION_A": _option("a", label="성과급"),
+            "OPTION_B": _option("b", label="특별수당"),
         },
     )
 
@@ -986,11 +996,12 @@ def test_qualification_projects_complete_native_free_field_ownership() -> None:
                         "shared_after",
                     ),
                     (
-                        TemplateOption("a", ("option_a",)),
-                        TemplateOption("b", ("option_b",)),
+                        TemplateOption("a", ("option_a",), "성과급"),
+                        TemplateOption("b", ("option_b",), "특별수당"),
                     ),
+                    "지급 안내",
                 ),
-                TemplateSlot("slot_2", ("second_shared",), ()),
+                TemplateSlot("slot_2", ("second_shared",), (), "추가 안내"),
             ),
         ),
         (),
@@ -1025,7 +1036,7 @@ def test_qualification_reads_candidate_without_serializing_or_mutating(
 
     inspection = HWPX_QUALIFICATION_PROFILE.inspect(canonical_bytes)
 
-    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v1"
+    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v3"
     assert inspection == QualificationInspection(TemplateStructure(("name",), ()), ())
     assert parsed.entries == before
 

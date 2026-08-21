@@ -45,6 +45,9 @@ _GOLDEN = json.loads(
 _V1_KEY = SelectionSemanticBindingKey(
     "hwpx-template-qualification-v1", "hwpx-structure-projection-v1"
 )
+_V3_KEY = SelectionSemanticBindingKey(
+    "hwpx-template-qualification-v3", "hwpx-structure-projection-v3"
+)
 
 
 def _set(pairs: list[tuple[str, list[str]]]) -> SlotSelectionSet:
@@ -54,11 +57,12 @@ def _set(pairs: list[tuple[str, list[str]]]) -> SlotSelectionSet:
 
 
 # ── registry ────────────────────────────────────────────────────────────────
-def test_v1_binding_resolves_slot_selection_v1() -> None:
-    manifest = DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(_V1_KEY)
-    assert manifest.contract_id == "slot-selection/v1"
-    assert manifest.default_selection_policy == EXACTLY_ONE
-    assert manifest.supported_selection_policies == (EXACTLY_ONE,)
+def test_shipping_bindings_resolve_slot_selection_v1() -> None:
+    for key in (_V1_KEY, _V3_KEY):
+        manifest = DEFAULT_SELECTION_SEMANTIC_REGISTRY.resolve(key)
+        assert manifest.contract_id == "slot-selection/v1"
+        assert manifest.default_selection_policy == EXACTLY_ONE
+        assert manifest.supported_selection_policies == (EXACTLY_ONE,)
 
 
 def test_unknown_binding_does_not_fall_back_to_latest() -> None:

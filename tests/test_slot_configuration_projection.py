@@ -50,8 +50,13 @@ def _structure(*slots: TemplateSlot) -> TemplateStructure:
     return TemplateStructure(slots=slots)
 
 
-def _slot(sid: str, opts: list[TemplateOption], shared: tuple[str, ...] = ()) -> TemplateSlot:
-    return TemplateSlot(sid, shared_fields=shared, options=tuple(opts))
+def _slot(
+    sid: str,
+    opts: list[TemplateOption],
+    shared: tuple[str, ...] = (),
+    label: str | None = None,
+) -> TemplateSlot:
+    return TemplateSlot(sid, shared_fields=shared, options=tuple(opts), label=label)
 
 
 def _sel(*pairs: tuple[str, list[str]]) -> SlotSelectionSet:
@@ -187,23 +192,25 @@ def test_slot_option_projection_selected_effective_and_fields() -> None:
         _slot(
             "s1",
             [
-                TemplateOption("o1", fields=("f1", "f2")),
+                TemplateOption("o1", fields=("f1", "f2"), label="기본 표지"),
                 TemplateOption("o2", fields=("f3",)),
             ],
             shared=("sh1",),
+            label="표지 유형",
         )
     )
     view = _project(structure, _sel(("s1", ["o1"])))
     (slot,) = view.slots
-    assert slot.slot_id == "s1" and slot.display_text == "s1"  # exact ID
+    assert slot.slot_id == "s1" and slot.display_text == "표지 유형"
     assert slot.shared_field_ids == ("sh1",)
     assert slot.declared_option_ids == ("o1",)
     assert slot.effective_option_ids == ("o1",)
     o1, o2 = slot.options
-    assert o1.option_id == "o1" and o1.display_text == "o1"  # exact ID
+    assert o1.option_id == "o1" and o1.display_text == "기본 표지"
     assert o1.selected is True and o1.effective is True
     assert o1.structurally_associated_field_ids == ("f1", "f2")
     assert o2.selected is False and o2.effective is False
+    assert o2.option_id == "o2" and o2.display_text == "라벨 미지정 (ID: o2)"
 
 
 def test_slots_follow_template_order() -> None:
@@ -212,7 +219,10 @@ def test_slots_follow_template_order() -> None:
         _slot("a", [TemplateOption("A")]),
     )
     view = _project(structure, _sel())
-    assert [s.slot_id for s in view.slots] == ["b", "a"]
+    assert [(s.slot_id, s.display_text) for s in view.slots] == [
+        ("b", "라벨 미지정 (ID: b)"),
+        ("a", "라벨 미지정 (ID: a)"),
+    ]
 
 
 def test_declared_effective_separation_on_removed_option() -> None:

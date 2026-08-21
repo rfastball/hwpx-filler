@@ -190,10 +190,16 @@ _V2_BINDING_KEY = SelectionSemanticBindingKey(
     structure_projection_schema_version="hwpx-structure-projection-v2",
 )
 
+_V3_BINDING_KEY = SelectionSemanticBindingKey(
+    qualification_profile_id="hwpx-template-qualification-v3",
+    structure_projection_schema_version="hwpx-structure-projection-v3",
+)
+
 DEFAULT_SELECTION_SEMANTIC_REGISTRY = SelectionSemanticContractRegistry(
     [
         (_V1_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V2_BINDING_KEY, _SLOT_SELECTION_V1),
+        (_V3_BINDING_KEY, _SLOT_SELECTION_V1),
     ]
 )
 
