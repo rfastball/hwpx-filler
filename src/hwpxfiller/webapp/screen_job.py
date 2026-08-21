@@ -2805,19 +2805,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
         ):
             return None
-        try:
-            managed_template, authority_id, application_id = (
-                self._template_change.resolve_generation_template_for_seated_context(
-                    self.job_name
-                )
-            )
-            run_vm._managed_template = managed_template
+
+        def synchronize_seated_identity(authority_id: str, application_id: str) -> None:
             if self.vm is run_vm and (
                 not run_vm.job.authority_id
                 or self._seated_template_application_id is None
             ):
                 run_vm.job.authority_id = authority_id
                 self._seated_template_application_id = application_id
+
+        try:
+            run_vm._managed_template = (
+                self._template_change.resolve_generation_template_for_seated_context(
+                    self.job_name, on_context=synchronize_seated_identity
+                )
+            )
         except SlotlessRunAdmissionError as exc:
             return {
                 "ok": False, "level": "warn",

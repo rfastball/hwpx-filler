@@ -484,15 +484,15 @@ class TemplateChangeCoordinator:
         gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
         EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
         """
-        path, _work_id, _application_id = (
-            self.resolve_generation_template_for_seated_context(job_name)
-        )
-        return path
+        return self.resolve_generation_template_for_seated_context(job_name)
 
     def resolve_generation_template_for_seated_context(
-        self, job_name: str
-    ) -> "tuple[str, str, str]":
-        """생성 경로와 같은 admitted aggregate의 Work/Application identity를 낸다."""
+        self,
+        job_name: str,
+        *,
+        on_context: "Callable[[str, str], None] | None" = None,
+    ) -> str:
+        """생성 admission 전에 이미 확립된 Work/Application identity를 알린다."""
         job = load_job(self._registry, job_name)
         if job.media != "hwpx":
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
@@ -509,6 +509,8 @@ class TemplateChangeCoordinator:
             if outcome.result != BOOTSTRAP_OK:
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
+        if on_context is not None:
+            on_context(work_id, aggregate.work.current_template_application_id)
         ws = self._workspace.get_or_create(self._now())
         try:
             run = admit_managed_slotless_run(
@@ -528,11 +530,7 @@ class TemplateChangeCoordinator:
             raise SlotlessRunAdmissionError(
                 SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE, str(exc)
             ) from exc
-        return (
-            run.staged_template_path,
-            work_id,
-            aggregate.work.current_template_application_id,
-        )
+        return run.staged_template_path
 
     def clear_generation_staging(self) -> None:
         """run 이 끝나 아무 실행도 staged 경로를 참조하지 않을 때 staging 사본을 정리한다

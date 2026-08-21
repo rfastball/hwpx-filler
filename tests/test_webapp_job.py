@@ -5265,7 +5265,10 @@ def test_managed_generation_clears_staging_after_run(tmp_path):
     assert not staging.exists() or not list(staging.iterdir())  # 누적 없음
 
 
-def test_managed_generation_maps_incomplete_slot_config_to_status(tmp_path, monkeypatch):
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_managed_generation_maps_incomplete_slot_config_to_status(
+    tmp_path, monkeypatch, target,
+):
     """#681 F3: capture 가 SLOT_CONFIGURATION_INCOMPLETE 로 던지면 raw 예외로 새지 않고
     구조화된 제품 상태(ok:False)로 거절한다."""
     import hwpxfiller.webapp.template_change as tc
@@ -5284,6 +5287,15 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(tmp_path, monk
     ctrl.set_output_folder(str(tmp_path / "out3"))
     res = ctrl.generate()
     assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
+    restored = ctrl.registry.load("공고서")
+    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
+    assert ctrl._seated_template_application_id is not None
+    if target == "file":
+        ctrl.load_data_path(str(clean))
+    else:
+        key = _pool_add(ctrl.pool_registry, "거절 뒤 데이터", {"path": str(clean)})
+        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    assert ctrl.job_name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
 
 
 def test_generation_recovers_after_repairing_bad_template(tmp_path):
