@@ -1522,6 +1522,7 @@ def _pool_controller(
     pool_source_factory=source_from_pool_item,
     file_source_factory=source_for_path,
     registry=None,
+    template_change=None,
 ):
     pool = DatasetPoolRegistry(tmp_path / "pool")
     pushes: list = []
@@ -1535,6 +1536,7 @@ def _pool_controller(
         generation_lock=threading.Lock(),
         file_source_factory=file_source_factory,
         pool_source_factory=pool_source_factory,
+        template_change=template_change,
     )
     return ctrl, pool
 
@@ -2898,18 +2900,18 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
         "expected_name",
         "restorable",
         "usable",
-        "restored_authority",
+        "expected_application_ref",
         "notice",
     ),
     [
-        ("compatible", "공고서", "공고서", True, True, "authority-old", None),
+        ("compatible", "공고서", "공고서", True, True, None, None),
         (
             "incompatible",
             "계약서",
             "",
             True,
             False,
-            "authority-old",
+            None,
             "이 데이터로 실행할 수 없어",
         ),
         (
@@ -2918,7 +2920,7 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             "",
             False,
             True,
-            "authority-replacement",
+            None,
             "같은 작업인지 확인할 수 없어",
         ),
         (
@@ -2927,7 +2929,7 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             "",
             False,
             True,
-            "authority-replacement",
+            None,
             "같은 작업인지 확인할 수 없어",
         ),
         (
@@ -2936,7 +2938,7 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             "",
             False,
             True,
-            "authority-old",
+            None,
             "같은 작업인지 확인할 수 없어",
         ),
         (
@@ -2945,7 +2947,7 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             "",
             False,
             True,
-            "authority-old",
+            None,
             "같은 작업인지 확인할 수 없어",
         ),
         (
@@ -2977,7 +2979,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     expected_name,
     restorable,
     usable,
-    restored_authority,
+    expected_application_ref,
     notice,
 ):
     """file/pool 성공 전환은 exact authority KEEP/RELEASE와 같은 무효화 seam을 탄다."""
@@ -3054,7 +3056,7 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
 
     assert len(calls) == 1
     assert calls[0].work_ref == active_name
-    assert calls[0].template_application_ref == restored_authority
+    assert calls[0].template_application_ref == expected_application_ref
     assert calls[0].exact_context_restorable is restorable
     assert calls[0].usable_with_current_data is usable
     assert ctrl.job_name == expected_name
@@ -3134,6 +3136,58 @@ def test_failed_data_transition_preserves_committed_data_and_work(tmp_path, targ
     assert ctrl._approved_preview_token == "old-preview"
 
 
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_data_transition_releases_when_template_application_identity_changed(
+    tmp_path, monkeypatch, target,
+):
+    """동일 authority·규칙·revision이어도 실 Template Application 교체는 RELEASE다."""
+    registry = _registry(tmp_path)
+    coordinator = TemplateChangeCoordinator(
+        registry, root=tmp_path / "authority", clock=_clock()
+    )
+    coordinator.check("공고서", "bootstrap")
+    ctrl, pool = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    authority_id = registry.load("공고서").authority_id
+    seated_application_id = coordinator.current_template_application_id(authority_id)
+    assert seated_application_id == ctrl._seated_template_application_id
+    assert ctrl.job_name == "공고서"  # exact application은 KEEP
+
+    template = Path(registry.load("공고서").template_path)
+    _write_template(template, ["공고명", "추정가격", "비고"])
+    prepared = coordinator.check("공고서", "external-change")["preparation"]
+    assert coordinator.apply("공고서", prepared["change_token"])["status"] == "applied"
+    restored_application_id = coordinator.current_template_application_id(authority_id)
+    assert restored_application_id != seated_application_id
+
+    contexts = []
+    decide = screen_job_module.decide_active_work_after_data_transition
+
+    def recording_decision(context):
+        contexts.append(context)
+        return decide(context)
+
+    monkeypatch.setattr(
+        screen_job_module, "decide_active_work_after_data_transition", recording_decision
+    )
+    new_path = _data_csv(tmp_path)
+    if target == "file":
+        ctrl.load_data_path(new_path)
+    else:
+        key = _pool_add(pool, "새 데이터", {"path": new_path})
+        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+
+    assert contexts[0].template_application_ref == restored_application_id
+    assert contexts[0].exact_context_restorable is False
+    assert contexts[0].usable_with_current_data is True
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl._seated_template_application_id is None
+    assert "같은 작업인지 확인할 수 없어" in ctrl.snapshot()["data_notice"]["text"]
+
+
 def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
     """§19.8 1분기 — 명시 선택과 같다. 데이터·선택은 세션 소유라 **생존**한다."""
     ctrl, _ = _controller(tmp_path)
@@ -3173,17 +3227,11 @@ def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     """후보 조회 실패는 성공한 file/pool 마운트를 partial failure로 되돌리지 않는다."""
     ctrl, pool = _pool_controller(tmp_path)
     ctrl.dispatch("prefer_work", {"name": "공고서"})
-    ranked_now = ctrl._ranked_now
-    calls = 0
 
-    def fail_once():
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise ValueError("internal candidate detail")
-        return ranked_now()
+    def fail_registry_list(_store):
+        raise ValueError("internal candidate detail")
 
-    monkeypatch.setattr(ctrl, "_ranked_now", fail_once)
+    monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
     new_path = _data_csv(tmp_path)
     if target == "file":
         ctrl.load_data_path(new_path)

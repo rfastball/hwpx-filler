@@ -307,6 +307,13 @@ class TemplateChangeCoordinator:
 
     # ─── 조회(스냅샷 존) ────────────────────────────────────────────────────
 
+    def current_template_application_id(self, work_id: "str | None") -> "str | None":
+        """Durable Work authority가 가리키는 현재 Template Application을 읽는다."""
+        if work_id is None or not self._works.exists(work_id):
+            return None
+        self._recover(work_id)
+        return self._works.load(work_id).work.current_template_application_id
+
     def zone(self, job_name: str, media: str, template_missing: bool) -> dict[str, Any]:
         """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch."""
         if media != "hwpx" or template_missing:

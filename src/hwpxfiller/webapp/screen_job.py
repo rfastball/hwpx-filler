@@ -510,6 +510,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 미주입(None)이면 술어가 항상 거짓 — 테스트·CLI 소비자에 실 홈 스캔을 물리지 않는다.
         self.text_registry = text_registry
         self.vm: "RunViewModel | None" = None
+        # 명시 선택 시점에 seated VM이 가리키던 기존 durable identity의
+        # 세션 래치. 새 identity를 만들거나 영속하지 않는다.
+        self._seated_template_application_id: "str | None" = None
         # 세션 소유 데이터(data-first 봉합, §18.2 보존 계약) — 마운트된 datasource·records 는
         # 컨트롤러(세션)가 보유해 **작업 전환에서 생존**한다. vm 은 재생성 시
         # ``set_acquired`` 로 이 상태를 주입받는 소비자다(RC-22 원자 진입점 재사용).
@@ -1512,7 +1515,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
         # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
         # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
-        jobs = list_jobs(self.registry)
+        try:
+            jobs = list_jobs(self.registry)
+        except Exception:  # noqa: BLE001 — 조회 장애는 빈 후보 + loud 안내로 표면화한다.
+            jobs = []
+            if not self.data_notice_text:
+                self.data_notice_text = (
+                    "문서 작업 목록을 다시 확인할 수 없습니다. "
+                    "잠시 뒤 다시 시도하세요."
+                )
+                self.data_notice_level = "warn"
         base = {
             "job_name": self.job_name,
             # managed HWPX comes from durable Work identity, never a suffix heuristic.
@@ -1883,11 +1895,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         work_ref = self.job_name
         seated_job = self.vm.job if self.vm is not None else None
         active_job = None
+        restored_template_application_id = None
         restore_failed = False
         exact_context_restorable = False
         if work_ref:
             try:
                 active_job = load_job(self.registry, work_ref)
+                if self._template_change is not None:
+                    restored_template_application_id = (
+                        self._template_change.current_template_application_id(
+                            active_job.authority_id or None
+                        )
+                    )
                 exact_context_restorable = bool(
                     seated_job is not None
                     # 빈 값끼리의 equality 는 identity 증거가 아니다.
@@ -1898,6 +1917,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     and active_job.template_revision == seated_job.template_revision
                     and active_job.binding_revision == seated_job.binding_revision
                     and active_job.previous_rules == seated_job.previous_rules
+                    and restored_template_application_id
+                    == self._seated_template_application_id
                 )
             except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
                 active_job = None
@@ -1905,7 +1926,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         context = ActiveWorkContext(
             active=bool(work_ref),
             work_ref=work_ref or None,
-            template_application_ref=(active_job.authority_id or None) if active_job else None,
+            template_application_ref=restored_template_application_id,
             exact_context_restorable=exact_context_restorable,
             usable_with_current_data=(
                 active_job is not None
@@ -2116,6 +2137,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if (self.job_is_txt or self.job_unsupported)
             else RunViewModel(job, engine=self._engine)
         )
+        self._seated_template_application_id = (
+            self._template_change.current_template_application_id(
+                job.authority_id or None
+            )
+            if self.vm is not None and self._template_change is not None
+            else None
+        )
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
         # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
@@ -2233,6 +2261,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """현재 active Work만 해제한다. 데이터와 후보는 그대로 둔다."""
         self._discard_active_work_session_evidence()
         self.vm = None
+        self._seated_template_application_id = None
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
