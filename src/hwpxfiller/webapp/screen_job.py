@@ -2503,6 +2503,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 self.job_name, str(p.get("request_id", ""))
             )
         )
+        if result.get("reason") == "work_context_changed":
+            self._release_changed_active_work("문서 작업이 변경되어")
+            result["error"] = (
+                "문서 작업이 변경되어 선택을 해제했습니다. "
+                "문서 작업을 다시 선택하세요."
+            )
+            return result
         if (
             result.get("ok") is True
             and self.vm is not None

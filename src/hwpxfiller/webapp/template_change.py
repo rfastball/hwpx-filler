@@ -467,14 +467,16 @@ class TemplateChangeCoordinator:
             started_at=self._now(),
             authorize=_authorize,
         )
-        prep, aggregate = self._advance(work_id, job_name, prep)
+        prep, aggregate, command_job = self._advance(work_id, job_name, prep)
         # `_advance` 반환 뒤 Preparation/Application은 이미 durable 하다. 그 뒤 registry를
-        # 재조회해 관찰 실패를 성공한 command의 실패로 바꾸지 않고, authority 결속 직후
-        # 검증해 이 command가 실제로 사용한 Job snapshot을 함께 반환한다.
+        # 재조회해 관찰 실패를 성공한 command의 실패로 바꾸지 않고, `_advance`가 실제
+        # capture에 사용한 Job snapshot을 함께 반환한다.
         application_id = aggregate.work.current_template_application_id
+        if command_job.authority_id != work_id:
+            return ({"ok": False, "reason": "work_context_changed"}, None, None)
         return (
             {"ok": True, "preparation": self._view(aggregate, work_id, prep)},
-            job,
+            command_job,
             application_id,
         )
 
@@ -583,7 +585,7 @@ class TemplateChangeCoordinator:
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation
-    ) -> "tuple[TemplateChangePreparation, WorkTemplateStateAggregate]":
+    ) -> "tuple[TemplateChangePreparation, WorkTemplateStateAggregate, Job]":
         """CAPTURING→QUALIFYING→admission 을 순서대로 전진 — 각 stage 는 멱등 short-circuit."""
         job = load_job(self._registry, job_name)
         if prep.status == PREP_CAPTURING:
@@ -628,7 +630,7 @@ class TemplateChangeCoordinator:
         prep = next(
             p for p in aggregate.preparations if p.preparation_id == prep.preparation_id
         )
-        return prep, aggregate
+        return prep, aggregate, job
 
     def _bootstrap(
         self, work_id: str, job_name: str, job, request_id: str

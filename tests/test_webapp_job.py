@@ -5409,6 +5409,42 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
     assert durable_after_retry == durable
 
 
+def test_template_check_returns_the_job_snapshot_used_by_advance(
+    tmp_path, monkeypatch,
+):
+    """Check 중 registry Job이 갈리면 old seat에 새 durable identity를 섞지 않는다."""
+    from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
+
+    ctrl, _pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    advance = coordinator._advance
+    state = {}
+
+    def replace_before_advance(*args, **kwargs):
+        replacement = ctrl.registry.load("공고서")
+        state["work_id"] = replacement.authority_id
+        ctrl.registry.delete("공고서")
+        replacement.authority_id = "authority-replacement"
+        ctrl.registry.save(replacement)
+        return advance(*args, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_advance", replace_before_advance)
+
+    result = ctrl.dispatch("template_check", {"request_id": "mid-check-replacement"})
+
+    assert result["ok"] is False and result["reason"] == "work_context_changed"
+    assert "변경되어 선택을 해제" in result["error"]
+    assert ctrl.registry.load("공고서").authority_id == "authority-replacement"
+    durable = AtomicWorkTemplateStateStore(tmp_path / "authority" / "works").load(
+        state["work_id"]
+    )
+    assert durable.work.current_template_application_id
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl._seated_template_application_id is None
+
+
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
     """#681 G11 무회귀: 코디네이터가 배선된 managed 생성이 mutable template_path 직독 대신
     bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존)."""
