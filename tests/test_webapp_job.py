@@ -3304,7 +3304,9 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
     assert ctrl._seated_template_application_id is None
     assert "문서 작업이 변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
     if action == "generate":
+        assert len(pushes) == 1
         assert pushes[-1]["has_job"] is False and pushes[-1]["job_name"] == ""
+        assert pushes[-1] == ctrl.snapshot()
 
 
 def test_applied_then_advanced_releases_instead_of_adopting_the_later_application(
@@ -5448,14 +5450,17 @@ def test_template_check_returns_the_job_snapshot_used_by_advance(
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
     """#681 G11 무회귀: 코디네이터가 배선된 managed 생성이 mutable template_path 직독 대신
     bootstrap→admission gate→exact staged bytes 로 정상 문서를 만든다(핵심 제품 기능 생존)."""
-    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     clean = tmp_path / "clean.csv"
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
+    pushes.clear()
     res = ctrl.generate()
     assert res["ok"] is True, res
+    snapshots = [snapshot for _screen, snapshot in pushes if "has_job" in snapshot]
+    assert len(snapshots) == 1 and snapshots[0] == ctrl.snapshot()
     assert res["exit_summary"] == "2개 성공", res["exit_summary"]
     assert len(list((tmp_path / "out").glob("*.hwpx"))) == 2  # 실제 산출물
     restored = ctrl.registry.load("공고서")
@@ -5525,7 +5530,7 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     import hwpxfiller.webapp.template_change as tc
     from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
 
-    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
 
     def boom(*_a, **_k):
@@ -5536,8 +5541,10 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n", encoding="utf-8")
     _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out3"))
+    pushes.clear()
     res = ctrl.generate()
     assert res["ok"] is False and res["level"] == "warn"  # 구조화된 거절, raw 예외 아님
+    assert len(pushes) == 1 and pushes[-1][1] == ctrl.snapshot()
     restored = ctrl.registry.load("공고서")
     assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
     assert ctrl._seated_template_application_id is not None
@@ -5547,6 +5554,42 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
         key = _pool_add(ctrl.pool_registry, "거절 뒤 데이터", {"path": str(clean)})
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     assert ctrl.job_name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
+
+
+@pytest.mark.parametrize("application_is_current", [False, True])
+def test_managed_rejection_pushes_only_when_application_identity_changes(
+    tmp_path, monkeypatch, application_is_current,
+):
+    """Callback 호출이 아니라 실제 Application latch 변경만 rejection push를 만든다."""
+    import hwpxfiller.webapp.template_change as tc
+    from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
+
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    coordinator = ctrl._template_change
+    assert coordinator is not None and ctrl.vm is not None
+    assert coordinator.check("공고서", "seed")["ok"] is True
+    restored = ctrl.registry.load("공고서")
+    application_id = coordinator.current_template_application_id(
+        restored.authority_id
+    )
+    ctrl.vm.job.authority_id = restored.authority_id
+    ctrl._seated_template_application_id = (
+        application_id if application_is_current else None
+    )
+
+    def boom(*_a, **_k):
+        raise SlotSelectionCaptureError("SLOT_CONFIGURATION_INCOMPLETE", "미완")
+
+    monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
+    pushes.clear()
+    rejected = ctrl._resolve_managed_template(ctrl.vm)
+
+    assert rejected is not None and rejected["ok"] is False
+    assert ctrl._seated_template_application_id == application_id
+    assert len(pushes) == (0 if application_is_current else 1)
+    if pushes:
+        assert pushes[-1][1] == ctrl.snapshot()
 
 
 def test_generation_recovers_after_repairing_bad_template(tmp_path):

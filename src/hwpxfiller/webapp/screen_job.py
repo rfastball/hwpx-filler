@@ -2847,8 +2847,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
             self._names_pin = None
             self._push()
-        elif reject is not None and self.vm is not run_vm:
-            self._push()
         return result
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":
@@ -2864,6 +2862,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
         ):
             return None
+
+        visible_identity_before = (
+            self.vm,
+            getattr(getattr(self.vm, "job", None), "authority_id", None),
+            self._seated_template_application_id,
+            self.job_name,
+        )
 
         def synchronize_seated_identity(restored_job: Job, application_id: str) -> None:
             if self.vm is run_vm and (
@@ -2885,12 +2890,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     self.job_name, on_context=synchronize_seated_identity
                 )
             )
-        except SlotlessRunAdmissionError as exc:
-            return {
-                "ok": False, "level": "warn",
-                "error": _ADMISSION_REJECT_TEXT.get(exc.code, "생성을 진행할 수 없습니다."),
-            }
-        except TemplateChangeError as exc:
+        except (SlotlessRunAdmissionError, TemplateChangeError) as exc:
+            visible_identity_after = (
+                self.vm,
+                getattr(getattr(self.vm, "job", None), "authority_id", None),
+                self._seated_template_application_id,
+                self.job_name,
+            )
+            if visible_identity_after != visible_identity_before:
+                self._push()
+            if isinstance(exc, SlotlessRunAdmissionError):
+                return {
+                    "ok": False, "level": "warn",
+                    "error": _ADMISSION_REJECT_TEXT.get(
+                        exc.code, "생성을 진행할 수 없습니다."
+                    ),
+                }
             return {"ok": False, "level": "warn", "error": str(exc)}
         return None
 
