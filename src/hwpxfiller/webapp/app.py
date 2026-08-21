@@ -1527,12 +1527,11 @@ def main(
             def entry() -> None:
                 # pywebview 의 loaded Event 는 핸들러 *완주 전* 선다. live 부팅은 같은
                 # 스레드에서 테마 bridge 를 끝낸 뒤 드라이버를 시작해 evaluate_js 경합을 막는다.
-                if run.host_event is None:
-                    window.events.loaded.wait()
-                elif not window.events.loaded.wait(
+                if not window.events.loaded.wait(
                     budget_seconds + run.host_wait_grace_s
                 ):
-                    run.host_event("timeout")
+                    if run.host_event is not None:
+                        run.host_event("timeout")
                     drive()
                     return
                 if run.host_event is not None:

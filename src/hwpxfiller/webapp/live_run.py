@@ -37,6 +37,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from math import isfinite
 
 #: 이 seam 이 말할 줄 아는 유일한 버전. 다른 값은 협상이 아니라 거절이다.
 LIVE_RUN_VERSION = 1
@@ -124,8 +125,10 @@ def validate(run: object) -> LiveRun:
         raise LiveRunContractError(f"증거 기록기가 콜러블이 아닙니다: {run.write_output!r}")
     if run.host_event is not None and not callable(run.host_event):
         raise LiveRunContractError(f"host_event 가 콜러블이 아닙니다: {run.host_event!r}")
-    if run.host_wait_grace_s < 0:
-        raise LiveRunContractError("host_wait_grace_s 는 음수일 수 없습니다")
+    if not isinstance(run.host_wait_grace_s, (int, float)) or (
+        not isfinite(run.host_wait_grace_s) or run.host_wait_grace_s < 0
+    ):
+        raise LiveRunContractError("host_wait_grace_s 는 0 이상의 유한한 수여야 합니다")
     if run.file_dialogs is not None:
         if not isinstance(run.file_dialogs, FileDialogs):
             raise LiveRunContractError(

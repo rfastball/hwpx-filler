@@ -126,10 +126,11 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     ]
 
 
+@pytest.mark.parametrize("observe_host", [True, False])
 def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, observe_host
 ) -> None:
-    """loaded 미도달만 구조화된 boot-hang 사건으로 넘기며 theme bridge 는 열지 않는다."""
+    """observer 유무와 무관하게 loaded 미도달은 기존 부팅 예산 안에서 driver로 넘긴다."""
     started: list = []
     window = _FakeWindow(loaded=False)
     monkeypatch.setitem(
@@ -170,7 +171,7 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
 
     run = _run(
         drive=lambda _ctx: order.append("drive"),
-        host_event=lambda event: order.append(f"host:{event}"),
+        host_event=(lambda event: order.append(f"host:{event}")) if observe_host else None,
         host_wait_grace_s=15.0,
     )
     assert app_mod.main(argv=[], live=run) == 0
@@ -178,7 +179,7 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
     started[0]()
 
     assert window.events.loaded.timeouts == [16.0]
-    assert order == ["host:timeout", "drive"]
+    assert order == (["host:timeout", "drive"] if observe_host else ["drive"])
     assert len(alerts) == 1 and notices == [], "live fallback이 WebView bridge를 다시 열었습니다"
 
 
@@ -263,7 +264,6 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
         ({"drive": "not-callable"}, "콜러블이 아닙니다"),
         ({"write_output": "not-callable"}, "증거 기록기"),
         ({"host_event": "not-callable"}, "host_event"),
-        ({"host_wait_grace_s": -1.0}, "음수"),
         ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
         # 형태만 보면 통과해 **첫 파일 선택에서** 죽는다 — 창이 이미 뜬 뒤의 늦은 진단이다.
         (
@@ -280,6 +280,12 @@ def test_contract_names_the_malformed_field(kwargs, fragment) -> None:
     """무엇이 틀렸는지 **이름을 대며** 거절한다 — 조립 실수가 한 줄로 읽혀야 한다."""
     with pytest.raises(live_run.LiveRunContractError, match=fragment):
         live_run.validate(_run(**kwargs))
+
+
+def test_host_wait_grace_is_finite_and_nonnegative() -> None:
+    for value in (-1.0, float("inf"), float("nan"), "invalid"):
+        with pytest.raises(live_run.LiveRunContractError, match="host_wait_grace_s"):
+            live_run.validate(_run(host_wait_grace_s=value))
 
 
 def test_an_unreadable_signature_is_refused_not_assumed() -> None:

@@ -653,17 +653,24 @@ def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_pa
     from hwpxfiller.webapp import app as app_mod
 
     monkeypatch.setattr(app_mod, "main", lambda **_kwargs: 9)
+    landed: "list[driver.LiveRunResult]" = []
+    landing = driver._Landing(
+        lambda result: landed.append(result) or result.exit_code()
+    )
     no_driver = driver._run_with_home(
         mode="check",
         home=tmp_path,
         out_dir=None,
         budget_s=1.0,
-        landing=driver._Landing(lambda result: result.exit_code()),
+        landing=landing,
     )
     assert no_driver.environment is True
     assert no_driver.report["verdict"]["failures"] == []
     assert "app rc=9" in (no_driver.error or "")
     assert "infrastructure_event" not in no_driver.report, "조기 반환은 retry 자격이 아닙니다"
+    assert landing.claim_timeout(lambda: no_driver) is None
+    assert landing.once(no_driver) == driver.ExitCode.ENVIRONMENT
+    assert landed == [no_driver]
 
 
 @pytest.mark.parametrize(
@@ -687,8 +694,14 @@ def test_hard_stops_land_on_their_own_unhealthy_axis(monkeypatch, capsys, tmp_pa
     exits: "list[int]" = []
 
     class _Finished:
+        def __init__(self) -> None:
+            self.set_calls = 0
+
         def wait(self, timeout=None) -> bool:  # noqa: ARG002 — 즉시 발화시키는 시계 대역
             return False
+
+        def set(self) -> None:
+            self.set_calls += 1
 
     class _Thread:
         def __init__(self, *, target, daemon=True) -> None:  # noqa: ARG002
@@ -777,13 +790,58 @@ def test_hard_stops_land_on_their_own_unhealthy_axis(monkeypatch, capsys, tmp_pa
         mode="check",
         landing=shared,
         settle=settle,
-        state={"phase": "teardown", "result": healthy},
+        state={"phase": "scenario", "result": healthy},
     )
     driver._arm_teardown_watchdog(healthy, tmp_path, _Finished(), shared)
-    assert exits[-2:] == [driver.ExitCode.RUN_HUNG, driver.ExitCode.RUN_HUNG]
+    assert exits[-1:] == [driver.ExitCode.RUN_HUNG]
     assert len(shared_landed) == 1
     assert shared_landed[0].report["infrastructure_event"] == "run_hung"
     assert shared_landed[0].report["documents"] == ["kept.hwpx"]
+
+    def assert_normal_finish_cannot_steal_timeout(event: str) -> None:
+        race_landed: "list[driver.LiveRunResult]" = []
+        normal_codes: "list[int]" = []
+        race = driver._Landing(
+            lambda result: race_landed.append(result) or result.exit_code()
+        )
+        race_finished = _Finished()
+
+        def finish_during_stack_dump(_home) -> str:
+            race.mark_finished(race_finished)
+            normal_codes.append(race.once(healthy))
+            return "stack"
+
+        monkeypatch.setattr(driver, "_dump_stacks", finish_during_stack_dump)
+        exit_count = len(exits)
+        if event == "run_hung":
+            driver._arm_run_watchdog(
+                home=tmp_path,
+                finished=race_finished,
+                budget_s=1.0,
+                mode="check",
+                landing=race,
+                settle=settle,
+                state={"phase": "scenario"},
+            )
+            expected = driver.ExitCode.RUN_HUNG
+        else:
+            driver._arm_teardown_watchdog(healthy, tmp_path, race_finished, race)
+            expected = driver.ExitCode.TEARDOWN_HUNG
+        assert exits[exit_count:] == [expected]
+        assert [result.report["infrastructure_event"] for result in race_landed] == [event]
+        assert normal_codes == [expected]
+        assert race_finished.set_calls == 1
+
+    for event in ("run_hung", "teardown_hung"):
+        assert_normal_finish_cannot_steal_timeout(event)
+
+    normal_first_landed: "list[driver.LiveRunResult]" = []
+    normal_first = driver._Landing(
+        lambda result: normal_first_landed.append(result) or result.exit_code()
+    )
+    normal_first.mark_finished(_Finished())
+    assert normal_first.claim_timeout(lambda: healthy) is None
+    assert normal_first_landed == []
 
     wiring = inspect.getsource(driver._run_with_home)
     assert wiring.index("_arm_teardown_watchdog(") < wiring.index("ctx.finish(result.report)")

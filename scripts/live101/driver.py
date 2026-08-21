@@ -332,11 +332,28 @@ class _Landing:
         self._land = land
         self._lock = threading.Lock()
         self._code: "int | None" = None
+        self._finished = False
 
     def once(self, result: LiveRunResult) -> int:
         with self._lock:
             if self._code is None:
                 self._code = self._land(result)
+            return self._code
+
+    def mark_finished(self, signal: "threading.Event") -> None:
+        """정상 반환과 timeout claim 을 같은 잠금 아래 직렬화한다."""
+        with self._lock:
+            self._finished = True
+            signal.set()
+
+    def claim_timeout(
+        self, result: "Callable[[], LiveRunResult]"
+    ) -> "int | None":
+        """정상 반환이 아직 확정되지 않았을 때만 timeout 착지를 선점한다."""
+        with self._lock:
+            if self._finished or self._code is not None:
+                return None
+            self._code = self._land(result())
             return self._code
 
 
@@ -505,7 +522,7 @@ def _run_with_home(
     finally:
         # 정상 teardown 이면 워치독을 **해제**한다. 안 그러면 이 함수를 부른 장수 프로세스
         # (pytest 게이트 등)를 10초 뒤 `os._exit` 가 통째로 죽인다(#426 리뷰 P1).
-        finished.set()
+        landing.mark_finished(finished)
 
     result = state["result"]
     if result is None:
@@ -662,24 +679,30 @@ def _arm_run_watchdog(
     def _watchdog() -> None:
         if finished.wait(budget_s):
             return  # 실행이 자기 끝에 닿았다 — 물러난다
+        error = f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)"
+
+        def failure() -> LiveRunResult:
+            phase = state["phase"]
+            base = state.get("result")
+            if base is None:
+                base = settle(
+                    {},
+                    None,
+                    error,
+                    environment=phase != "scenario",
+                )
+            return _infrastructure_failure(base, "run_hung", error)
+
+        code = landing.claim_timeout(failure)
+        if code is None:
+            return
         where = _dump_stacks(home)
         _say(
             f"101 {mode} 하드 스톱: 실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다"
             f" (브리지 무응답 의심). 스택 — {where}",
             stream=2,
         )
-        phase = state["phase"]
-        error = f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)"
-        base = state.get("result") if phase == "teardown" else None
-        if base is None:
-            base = settle(
-                {},
-                None,
-                error,
-                environment=phase != "scenario",
-            )
-        result = _infrastructure_failure(base, "run_hung", error)
-        _hard_exit(landing.once(result))
+        _hard_exit(code)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -704,15 +727,18 @@ def _arm_teardown_watchdog(
     def _watchdog() -> None:
         if finished.wait(TEARDOWN_GRACE_S):
             return  # 정상 teardown — 물러난다
+        error = f"teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 끝나지 않았습니다"
+        failure = _infrastructure_failure(result, "teardown_hung", error)
+        code = landing.claim_timeout(lambda: failure)
+        if code is None:
+            return
         where = _dump_stacks(home)
         _say(
             f"101 {result.mode}: teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 안 내려왔습니다"
             f" → 워치독 종료. 스택 — {where}",
             stream=2,
         )
-        error = f"teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 끝나지 않았습니다"
-        failure = _infrastructure_failure(result, "teardown_hung", error)
-        _hard_exit(landing.once(failure))
+        _hard_exit(code)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
