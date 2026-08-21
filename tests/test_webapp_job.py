@@ -5620,6 +5620,9 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     restored = ctrl.registry.load("공고서")
     assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
     assert ctrl._seated_template_application_id is not None
+    pushes.clear()
+    assert ctrl.generate()["ok"] is False
+    assert pushes == []  # visible identity 무변경 rejection은 extra push 0
     ctrl.load_data_path(str(clean))
     assert ctrl.job_name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
@@ -5727,40 +5730,89 @@ def test_managed_generation_maps_incomplete_slot_config_to_status(
     assert ctrl.job_name == "공고서"  # admission 거절 뒤에도 같은 seated Work는 KEEP
 
 
-@pytest.mark.parametrize("application_is_current", [False, True])
-def test_managed_rejection_pushes_only_when_application_identity_changes(
-    tmp_path, monkeypatch, application_is_current,
+@pytest.mark.parametrize("failpoint", ["manifest", "workspace", "staging"])
+def test_managed_generation_exception_pushes_only_changed_identity(
+    tmp_path, monkeypatch, failpoint,
 ):
-    """Callback 호출이 아니라 실제 Application latch 변경만 rejection push를 만든다."""
-    import hwpxfiller.webapp.template_change as tc
-    from hwpxfiller.application.slot_selection_input import SlotSelectionCaptureError
+    """Invocation 중 실제 identity가 바뀐 예외 종료만 fresh snapshot을 한 번 민다."""
+    import hwpxfiller.external.slot_command_runner as slot_command_runner
 
     ctrl, pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     coordinator = ctrl._template_change
     assert coordinator is not None and ctrl.vm is not None
-    assert coordinator.check("공고서", "seed")["ok"] is True
-    restored = ctrl.registry.load("공고서")
-    application_id = coordinator.current_template_application_id(
-        restored.authority_id
-    )
-    ctrl.vm.job.authority_id = restored.authority_id
-    ctrl._seated_template_application_id = (
-        application_id if application_is_current else None
-    )
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
 
     def boom(*_a, **_k):
-        raise SlotSelectionCaptureError("SLOT_CONFIGURATION_INCOMPLETE", "미완")
+        raise OSError(f"{failpoint} I/O failed")
 
-    monkeypatch.setattr(tc, "admit_managed_slotless_run", boom)
+    if failpoint == "manifest":
+        monkeypatch.setattr(coordinator, "_ensure_manifest", boom)
+    elif failpoint == "workspace":
+        monkeypatch.setattr(coordinator._workspace, "get_or_create", boom)
+    else:
+        monkeypatch.setattr(slot_command_runner, "stage_exact_applied_bytes", boom)
     pushes.clear()
-    rejected = ctrl._resolve_managed_template(ctrl.vm)
 
-    assert rejected is not None and rejected["ok"] is False
-    assert ctrl._seated_template_application_id == application_id
-    assert len(pushes) == (0 if application_is_current else 1)
-    if pushes:
-        assert pushes[-1][1] == ctrl.snapshot()
+    with pytest.raises(OSError, match=rf"{failpoint} I/O failed"):
+        ctrl.generate()
+
+    adopted = failpoint != "manifest"
+    current = ctrl.snapshot()
+    assert current["managed_hwpx"] is adopted
+    assert len(pushes) == int(adopted)
+    if adopted:
+        restored = ctrl.registry.load("공고서")
+        assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
+        assert ctrl._seated_template_application_id is not None
+        assert pushes[-1][1] == current
+    assert ctrl._run is None and ctrl.vm is not None
+    assert ctrl.vm._managed_template is None
+    assert ctrl._generation_lock.acquire(blocking=False)
+    ctrl._generation_lock.release()
+    staging = tmp_path / "authority" / "run_staging"
+    assert not staging.exists() or not list(staging.iterdir())
+
+
+def test_release_then_cleanup_exception_pushes_released_snapshot_once(tmp_path):
+    """RELEASE 뒤 cleanup 예외도 has_job=false를 한 번만 밀고 원래 예외를 유지한다."""
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    run_vm = ctrl.vm
+    assert run_vm is not None
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.registry.mutate(
+        "공고서",
+        lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
+    )
+
+    class ReleaseErrorLock:
+        def __init__(self):
+            self.lock = threading.Lock()
+            self.released = False
+
+        def acquire(self, *, blocking=True):
+            return self.lock.acquire(blocking=blocking)
+
+        def release(self):
+            self.lock.release()
+            self.released = True
+            raise OSError("generation lock cleanup failed")
+
+    lock = ReleaseErrorLock()
+    ctrl._generation_lock = lock
+    pushes.clear()
+
+    with pytest.raises(OSError, match="generation lock cleanup failed"):
+        ctrl.generate()
+
+    current = ctrl.snapshot()
+    assert current["has_job"] is False and current["job_name"] == ""
+    assert len(pushes) == 1 and pushes[-1][1] == current
+    assert ctrl._run is None and run_vm._managed_template is None
+    assert lock.released is True
 
 
 def test_generation_recovers_after_repairing_bad_template(tmp_path):

@@ -2831,28 +2831,43 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.job_name,
         )
         try:
-            reject = self._resolve_managed_template(run_vm)
-            visible_identity_changed = (
+            try:
+                reject = self._resolve_managed_template(run_vm)
+                visible_identity_changed = (
+                    self.vm,
+                    getattr(getattr(self.vm, "job", None), "authority_id", None),
+                    self._seated_template_application_id,
+                    self.job_name,
+                ) != visible_identity_before
+                result = (
+                    reject
+                    if reject is not None
+                    else self._generate_locked(
+                        run, run_vm, confirm_overwrite=confirm_overwrite
+                    )
+                )
+            finally:
+                self._run = None
+                # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
+                # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
+                managed = (
+                    run_vm is not None
+                    and getattr(run_vm, "_managed_template", None) is not None
+                )
+                if run_vm is not None:
+                    run_vm._managed_template = None
+                if managed and self._template_change is not None:
+                    self._template_change.clear_generation_staging()
+                self._generation_lock.release()
+        except Exception:
+            if (
                 self.vm,
                 getattr(getattr(self.vm, "job", None), "authority_id", None),
                 self._seated_template_application_id,
                 self.job_name,
-            ) != visible_identity_before
-            result = (
-                reject
-                if reject is not None
-                else self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
-            )
-        finally:
-            self._run = None
-            # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
-            # 참조하지 않는 staging 사본을 Host lifecycle 로 정리한다(#681, 판본별 영구 누적 방지).
-            managed = run_vm is not None and getattr(run_vm, "_managed_template", None) is not None
-            if run_vm is not None:
-                run_vm._managed_template = None
-            if managed and self._template_change is not None:
-                self._template_change.clear_generation_staging()
-            self._generation_lock.release()
+            ) != visible_identity_before:
+                self._push()
+            raise
         # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
         # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
@@ -2862,7 +2877,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
             self._names_pin = None
             self._push()
-        elif reject is None and visible_identity_changed:
+        elif visible_identity_changed:
             self._push()
         return result
 
@@ -2879,13 +2894,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             or getattr(getattr(run_vm, "job", None), "media", "") != "hwpx"
         ):
             return None
-
-        visible_identity_before = (
-            self.vm,
-            getattr(getattr(self.vm, "job", None), "authority_id", None),
-            self._seated_template_application_id,
-            self.job_name,
-        )
 
         def synchronize_seated_identity(restored_job: Job, application_id: str) -> None:
             if self.vm is run_vm and (
@@ -2908,14 +2916,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 )
             )
         except (SlotlessRunAdmissionError, TemplateChangeError) as exc:
-            visible_identity_after = (
-                self.vm,
-                getattr(getattr(self.vm, "job", None), "authority_id", None),
-                self._seated_template_application_id,
-                self.job_name,
-            )
-            if visible_identity_after != visible_identity_before:
-                self._push()
             if isinstance(exc, SlotlessRunAdmissionError):
                 return {
                     "ok": False, "level": "warn",
