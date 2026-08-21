@@ -133,13 +133,6 @@ def test_same_request_key_is_idempotent_new_key_is_new_intent(tmp_path):
     assert c["preparation_token"] != a["preparation_token"]
 
 
-def test_bad_request_key_is_refused(tmp_path):
-    reg, _tpl = _seed(tmp_path)
-    coord = _coordinator(tmp_path, reg)
-    with pytest.raises(TemplateChangeError):
-        coord.check("공고서", "한글키")
-
-
 def test_bootstrap_failure_disables_check_until_template_repaired(tmp_path):
     reg = JobRegistry(tmp_path / "jobs")
     tpl = tmp_path / "깨진.hwpx"

@@ -430,7 +430,7 @@ class TemplateChangeCoordinator:
     def check_for_seated_context(
         self, job_name: str, prepare_request_id: str, actor: str = LOCAL_ACTOR
     ) -> "tuple[dict, Job | None, str | None]":
-        """확인 결과와 같은 registry Job/Application identity를 낸다."""
+        """확인 결과와 같은 command Job/Application identity를 낸다."""
         if not _REQUEST_ID.fullmatch(prepare_request_id or ""):
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
@@ -467,11 +467,10 @@ class TemplateChangeCoordinator:
             started_at=self._now(),
             authorize=_authorize,
         )
-        prep = self._advance(work_id, job_name, prep)
-        aggregate = self._works.load(work_id)
-        job = load_job(self._registry, job_name)
-        if job.authority_id != work_id:
-            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
+        prep, aggregate = self._advance(work_id, job_name, prep)
+        # `_advance` 반환 뒤 Preparation/Application은 이미 durable 하다. 그 뒤 registry를
+        # 재조회해 관찰 실패를 성공한 command의 실패로 바꾸지 않고, authority 결속 직후
+        # 검증해 이 command가 실제로 사용한 Job snapshot을 함께 반환한다.
         application_id = aggregate.work.current_template_application_id
         return (
             {"ok": True, "preparation": self._view(aggregate, work_id, prep)},
@@ -584,7 +583,7 @@ class TemplateChangeCoordinator:
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation
-    ) -> TemplateChangePreparation:
+    ) -> "tuple[TemplateChangePreparation, WorkTemplateStateAggregate]":
         """CAPTURING→QUALIFYING→admission 을 순서대로 전진 — 각 stage 는 멱등 short-circuit."""
         job = load_job(self._registry, job_name)
         if prep.status == PREP_CAPTURING:
@@ -625,12 +624,11 @@ class TemplateChangeCoordinator:
                 ),
                 prepared_change_id=f"{prep.preparation_id}-chg", prepared_at=self._now(),
             )
-            prep = next(
-                p
-                for p in self._works.load(work_id).preparations
-                if p.preparation_id == prep.preparation_id
-            )
-        return prep
+        aggregate = self._works.load(work_id)
+        prep = next(
+            p for p in aggregate.preparations if p.preparation_id == prep.preparation_id
+        )
+        return prep, aggregate
 
     def _bootstrap(
         self, work_id: str, job_name: str, job, request_id: str

@@ -26,8 +26,9 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.work_candidates import MAIN_TOP_N
 from hwpxfiller.webapp import screen_job as screen_job_module
+from hwpxfiller.webapp import template_change as template_change_module
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
+from hwpxfiller.webapp.template_change import TemplateChangeCoordinator, TemplateChangeError
 # TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
 from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -5329,6 +5330,83 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     # 개명이 권위 인덱스를 추종한다 — epoch 이 살아 있으면 재-bootstrap 이 아니다.
     ctrl.dispatch("rename_job", {"name": "공고서", "new": "공고서갱신"})
     assert ctrl.snapshot()["template_change"]["epoch"] == 1
+
+
+def test_template_check_validation_failure_precedes_durable_commit(tmp_path):
+    """Commit 전 validation 실패는 authority/Application과 seated identity를 바꾸지 않는다."""
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    old_vm = ctrl.vm
+    push_count = len(pushes)
+
+    with pytest.raises(TemplateChangeError, match="잘못된 확인 요청 키"):
+        ctrl.dispatch("template_check", {"request_id": "한글키"})
+
+    assert ctrl.registry.load("공고서").authority_id == ""
+    assert not (tmp_path / "authority" / "works").exists()
+    assert ctrl.vm is old_vm and ctrl._seated_template_application_id is None
+    assert len(pushes) == push_count
+
+
+def test_template_check_does_not_reread_registry_after_durable_commit(
+    tmp_path, monkeypatch,
+):
+    """Commit 뒤 registry 관찰 실패는 성공을 뒤집지 않고 retry도 같은 상태로 수렴한다."""
+    from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
+
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    state = {"in_check": False, "committed": False}
+    advance = coordinator._advance
+    check = coordinator.check_for_seated_context
+    load_job = template_change_module.load_job
+
+    def record_commit(*args, **kwargs):
+        result = advance(*args, **kwargs)
+        state["committed"] = True
+        return result
+
+    def mark_check(*args, **kwargs):
+        state["committed"] = False
+        state["in_check"] = True
+        try:
+            return check(*args, **kwargs)
+        finally:
+            state["in_check"] = False
+
+    def fail_post_commit_read(*args, **kwargs):
+        if state["in_check"] and state["committed"]:
+            raise OSError("post-commit registry observation failed")
+        return load_job(*args, **kwargs)
+
+    monkeypatch.setattr(coordinator, "_advance", record_commit)
+    monkeypatch.setattr(coordinator, "check_for_seated_context", mark_check)
+    monkeypatch.setattr(template_change_module, "load_job", fail_post_commit_read)
+
+    result = ctrl.dispatch("template_check", {"request_id": "commit-truth"})
+    assert result["ok"] is True and result["preparation"]["status"] == "no_change"
+    assert "error" not in result
+
+    durable_job = ctrl.registry.load("공고서")
+    durable = AtomicWorkTemplateStateStore(
+        tmp_path / "authority" / "works"
+    ).load(durable_job.authority_id)
+    application_id = durable.work.current_template_application_id
+    assert len(durable.applications) == 1 and len(durable.preparations) == 1
+    assert ctrl.vm is not None and ctrl.vm.job.authority_id == durable_job.authority_id
+    assert ctrl._seated_template_application_id == application_id
+    assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
+
+    retried = ctrl.dispatch("template_check", {"request_id": "commit-truth"})
+    durable_after_retry = AtomicWorkTemplateStateStore(
+        tmp_path / "authority" / "works"
+    ).load(durable_job.authority_id)
+    assert retried["preparation"]["preparation_token"] == (
+        result["preparation"]["preparation_token"]
+    )
+    assert durable_after_retry == durable
 
 
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):
