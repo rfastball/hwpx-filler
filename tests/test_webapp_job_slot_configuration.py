@@ -141,8 +141,37 @@ def test_snapshot_carries_slot_configuration_zone(tmp_path: Path) -> None:
     ctrl, _ = _controller(tmp_path)
     zone = ctrl.snapshot()["slot_configuration"]
     assert zone["supported"] is True and zone["initialized"] is True
+    assert zone["error"] is None
     assert zone["current_view"]["view_status"] == "CURRENT"
     assert zone["current_view"]["new_configuration_token"]
+
+
+def test_snapshot_projects_slot_initialization_failure_and_read_only_recovery(
+    tmp_path: Path,
+) -> None:
+    ctrl, _ = _controller(tmp_path)
+    ctrl.snapshot()  # token secret 생성
+    secret_path = _root(tmp_path) / "slot_token_secret.json"
+    original = secret_path.read_text("utf-8")
+    secret_path.write_text("{corrupt", "utf-8")
+
+    expected_error = {
+        "code": "INVALID_CONFIGURATION_TOKEN",
+        "message": "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+        "action": {"key": "refresh", "label": "다시 불러오기"},
+    }
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is False
+    assert zone["current_view"] is None
+    assert zone["error"] == expected_error
+    assert "token secret" not in repr(zone["error"])
+    assert ctrl.snapshot()["slot_configuration"]["error"] == expected_error
+
+    secret_path.write_text(original, "utf-8")
+    recovered = ctrl.snapshot()["slot_configuration"]
+    assert recovered["initialized"] is True
+    assert recovered["error"] is None
+    assert recovered["current_view"]["view_status"] == "CURRENT"
 
 
 def test_snapshot_render_paths_never_mutate_durable_s4(tmp_path: Path, monkeypatch) -> None:
@@ -180,6 +209,7 @@ def test_snapshot_zone_before_bootstrap_does_not_mint_durable_id(tmp_path: Path)
     zone = ctrl.snapshot()["slot_configuration"]
     assert zone["supported"] is True and zone["initialized"] is False
     assert zone["current_view"] is None
+    assert zone["error"] is None
     assert not load_job(ctrl.registry, "공고서").authority_id  # durable id 미발급 보존
 
 

@@ -74,6 +74,13 @@ export type SlotCommandResponse = {
   refresh_required: boolean;
 };
 
+/** snapshot read 실패 projection — 의미·문안·복구 행동은 backend가 정하고 웹은 운반만 한다. */
+export type SlotZoneError = {
+  code: string;
+  message: string;
+  action: { key: string; label: string } | null;
+};
+
 /** 패널 phase — backend 상태를 재판정하지 않고 **왕복 진행**만 표현한다(#725 §3). */
 export type SlotPhase = "idle" | "pending" | "stale" | "error";
 
@@ -83,6 +90,8 @@ export type SlotConfigState = {
   phase: SlotPhase;
   /** phase='error' 일 때의 사유(조용한 거절 금지). */
   error: string | null;
+  /** 최신 backend snapshot의 zone 실패. command notice와 별도 축으로 보존한다. */
+  zoneError: SlotZoneError | null;
 };
 
 export const initialSlotConfigState: SlotConfigState = {
@@ -90,6 +99,7 @@ export const initialSlotConfigState: SlotConfigState = {
   token: null,
   phase: "idle",
   error: null,
+  zoneError: null,
 };
 
 /* ── backend fresh view 로 **통째 교체**(local optimistic authority 0) ────────────────────── */
@@ -108,6 +118,7 @@ function replaceFromResponse(res: SlotCommandResponse): SlotConfigState {
     token: view.new_configuration_token,
     phase,
     error: view.context_error_message,
+    zoneError: null,
   };
 }
 
@@ -149,7 +160,12 @@ export type SlotConfigService = {
   /** passive render 초기 자료 seed — snapshot 의 read-only current view 를 dispatch 없이 실는다.
    *  #744 write-on-read 방지: mount 는 open() 을 부르지 않고 이 read-only view 로 hydrate 한다.
    *  view=null(미지원/미초기화) → 빈 idle. command 축(pending)을 덮지 않도록 호출자가 게이트한다. */
-  hydrate(view: SlotCurrentView | null): SlotConfigState;
+  hydrate(
+    view: SlotCurrentView | null,
+    options?: { zoneError?: SlotZoneError | null; preserveNotice?: boolean },
+  ): SlotConfigState;
+  /** snapshot 재당김 transport 실패를 기존 loud 채널과 상태에 함께 남긴다. */
+  reportFailure(error: unknown): SlotConfigState;
 };
 
 export type SlotConfigDeps = {
@@ -180,6 +196,12 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
     return current.token;
   }
 
+  function reportFailure(error: unknown): SlotConfigState {
+    const message = String((error as { message?: unknown })?.message ?? error);
+    deps.alarm?.(message);
+    return commit({ ...current, phase: "error", error: message });
+  }
+
   // dispatch 는 화면×액션별 exact payload 타입을 요구하므로(생성 계약 SCREEN_ACTIONS), 각 왕복은
   // literal action 으로 호출부에서 부른다. 공통(pending 세움·fresh view 교체·loud error)만 여기 모은다.
   async function apply(
@@ -195,10 +217,8 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
       const raw = expectHostValue(await call(), label);
       return commit(replaceFromResponse(raw as SlotCommandResponse));
     } catch (error) {
-      const message = String((error as { message?: unknown })?.message ?? error);
-      deps.alarm?.(message);
       // 실패를 성공 UI 뒤에 숨기지 않는다 — 상태는 view 를 보존하되 phase='error' + 사유.
-      return commit({ ...current, phase: "error", error: message });
+      return reportFailure(error);
     }
   }
 
@@ -260,19 +280,23 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
         listeners.delete(listener);
       };
     },
-    hydrate(view) {
-      if (view === null) {
-        // 미지원·미초기화 zone → 빈 idle(현재 durable 사실이 없음을 정직하게 반영).
-        return commit(initialSlotConfigState);
-      }
-      const isError = view.view_status === "CONTEXT_ERROR";
-      // read-only current view 를 baseline 으로 실는다 — token 은 backend 발급값 그대로.
-      return commit({
+    hydrate(view, options = {}) {
+      const zoneError = options.zoneError ?? null;
+      const isError = view?.view_status === "CONTEXT_ERROR" || zoneError !== null;
+      const next: SlotConfigState = {
         view,
-        token: view.new_configuration_token,
+        token: view?.new_configuration_token ?? null,
         phase: isError ? "error" : "idle",
-        error: view.context_error_message,
-      });
+        error: view?.context_error_message ?? zoneError?.message ?? null,
+        zoneError,
+      };
+      // replay는 최신 snapshot 사실(view/token/zoneError)을 채택하되 command notice를 지우지 않는다.
+      if (options.preserveNotice && (current.phase === "stale" || current.phase === "error")) {
+        next.phase = current.phase;
+        next.error = current.error;
+      }
+      return commit(next);
     },
+    reportFailure,
   };
 }
