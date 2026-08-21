@@ -2389,17 +2389,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         promoted = preferred_promotion(
             ranked, active=self.job_name, preferred=name,
         )
+        in_top = any(r.name == name for r in ranked[:MAIN_TOP_N])
+        next_action = (
+            "아래 후보에서 직접 고르세요."
+            if in_top else "'문서 작업'에서 직접 선택하세요."
+        )
         if promoted:
             self.data_notice_text = (
-                f"「문서 작업」에서 고른 '{promoted}' 을(를) 사용할 수 있습니다. "
-                "아래 후보에서 직접 고르세요."
+                f"이전에 고른 '{promoted}' 작업을 사용할 수 있습니다. {next_action}"
             )
             self.data_notice_level = "warn"
             return
         if self.job_name:
             self.data_notice_text = (
                 f"'{self.job_name}' 작업이 이미 열려 있어 '{name}' 으로 바꾸지 않았습니다. "
-                "바꾸려면 아래 후보에서 직접 고르세요."
+                f"{next_action}"
             )
         else:
             self.data_notice_text = (

@@ -3408,9 +3408,54 @@ def test_prefer_work_stores_then_requires_explicit_selection_after_mount(tmp_pat
     assert ctrl.job_name == ""
     assert ctrl.preferred_work == ""              # 1회 소비
     snap = ctrl.snapshot()
+    assert [row["name"] for row in snap["candidates"]["top"]] == ["공고서"]
     assert "공고서" in snap["data_notice"]["text"]
     assert "직접 고르세요" in snap["data_notice"]["text"]
+    assert "'문서 작업'에서 직접 선택하세요" not in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
+
+
+def test_preferred_outside_top_reaches_exact_work_through_full_browser(tmp_path):
+    """Top-N 밖 preferred는 순위를 왜곡하지 않고 전역 라이브러리의 명시 선택으로 잇는다."""
+    ctrl, _ = _controller(tmp_path)
+    for i in range(MAIN_TOP_N + 1):
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+
+    assert ctrl.dispatch("prefer_work", {"name": "공고서"})["stored"] is True
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    top = [row["name"] for row in snap["candidates"]["top"]]
+    ranked = [row.name for row in ctrl._ranked_now()]
+    assert top == ranked[:MAIN_TOP_N] == ["작업5", "작업4", "작업3", "작업2", "작업1"]
+    assert "공고서" not in top
+    assert snap["candidates"]["more"] == len(ranked) - MAIN_TOP_N == 2
+    assert snap["candidates"]["suggested"] == ""
+    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    notice = snap["data_notice"]["text"]
+    assert "이전에 고른 '공고서' 작업을 사용할 수 있습니다" in notice
+    assert "'문서 작업'에서 직접 선택하세요" in notice
+    assert "아래 후보" not in notice
+
+    library = LibraryController(
+        ctrl.registry, TextTemplateRegistry(tmp_path / "txt"), lambda _s, _snap: None,
+        engine=make_hwpx_engine(),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=ctrl._generation_lock,
+    )
+    library.dispatch("set_query", {"text": "공고서"})
+    visible = [
+        row for section in library.snapshot()["sections"] for row in section["rows"]
+    ]
+    assert [row["name"] for row in visible] == ["공고서"]
+    library.dispatch("select_work", {"name": "공고서"})
+    primary = library.snapshot()["detail"]["primary"]
+    assert primary == {"target": "job", "label": "문서 만들기에서 사용", "hint": ""}
+    assert ctrl.job_name == ""  # 라이브러리 행 선택은 active authority가 아니다.
+
+    assert ctrl.dispatch("prefer_work", {"name": "공고서"}) == {
+        "promoted": True, "name": "공고서",
+    }
+    assert ctrl.job_name == "공고서"
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])
@@ -3568,6 +3613,7 @@ def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp
     snap = ctrl.snapshot()
     assert ctrl.job_name == "" and ctrl.preferred_work == ""
     assert "실행할 수 없습니다" in snap["data_notice"]["text"]
+    assert "직접 선택하세요" not in snap["data_notice"]["text"]
     assert snap["data_notice"]["level"] == "warn"
 
 
@@ -3580,6 +3626,7 @@ def test_stored_preference_pointing_at_a_deleted_work_is_loud(tmp_path):
     snap = ctrl.snapshot()
     assert ctrl.job_name == "" and ctrl.preferred_work == ""
     assert "더는 없습니다" in snap["data_notice"]["text"]
+    assert "선택하세요" not in snap["data_notice"]["text"]
 
 
 def test_prefer_work_rejects_unknown_names_loudly(tmp_path):

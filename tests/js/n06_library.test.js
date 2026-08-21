@@ -123,6 +123,17 @@ test("문서 만들기에서 사용 — incompatible이면 job 착지 뒤 확인
   assert.deepEqual(h.browse, ["작업A"]);
 });
 
+test("문서 만들기에서 사용 — compatible이면 명시 선택 뒤 job 착지", async () => {
+  const h = build({
+    snapshot: { detail: { name: "작업A", primary: { target: "job" } } },
+    dispatch: async (_screen, action) => action === "prefer_work" ? { promoted: true } : {},
+  });
+  await h.controller.runPrimary("작업A");
+  assert.deepEqual(h.dispatchCalls[0], ["job", "prefer_work", { name: "작업A" }]);
+  assert.deepEqual(h.navigation, ["job"]);
+  assert.deepEqual(h.browse, []);
+});
+
 test("편집 대상 primary — EditorEntry 6-key port로 위임한다", async () => {
   const h = build({ snapshot: { detail: { name: "작업A", primary: { target: "editor" } } } });
   await h.controller.runPrimary("작업A");
