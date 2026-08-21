@@ -2968,6 +2968,15 @@ def _incompatible_reg(tmp_path) -> JobRegistry:
             None,
             "같은 작업인지 확인할 수 없어",
         ),
+        (
+            "application_missing",
+            "공고서",
+            "",
+            False,
+            True,
+            None,
+            "다시 확인할 수 없어",
+        ),
     ],
 )
 def test_successful_data_transition_uses_authoritative_active_work_decision(
@@ -2986,12 +2995,21 @@ def test_successful_data_transition_uses_authoritative_active_work_decision(
     registry = _incompatible_reg(tmp_path) if case == "incompatible" else _registry(tmp_path)
     if case != "identity_missing":
         registry.assign_authority_id(active_name, "authority-old")
-    ctrl, pool = _pool_controller(tmp_path, registry=registry)
+    coordinator = (
+        TemplateChangeCoordinator(
+            registry, root=tmp_path / "authority", clock=_clock()
+        )
+        if case == "application_missing"
+        else None
+    )
+    ctrl, pool = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
     old_path = tmp_path / "old.csv"
     old_path.write_text(
         "bidNtceNm,presmptPrce,없는열\n이전,100,old\n", encoding="utf-8"
     )
-    if case == "identity_missing":
+    if case in {"identity_missing", "application_missing"}:
         ctrl.load_data_path(str(old_path))
         ctrl.dispatch("select_job", {"name": active_name})
     else:
@@ -3247,6 +3265,73 @@ def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transitio
         assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
     assert ctrl.job_name == "공고서"
     assert ctrl.snapshot()["data_notice"] is None
+
+
+@pytest.mark.parametrize("action", ["check", "generate"])
+def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
+    tmp_path, action,
+):
+    """Authority 미발급 seat와 registry snapshot이 갈리면 새 identity를 섞지 않는다."""
+    registry = _registry(tmp_path)
+    coordinator = TemplateChangeCoordinator(
+        registry, root=tmp_path / "authority", clock=_clock()
+    )
+    ctrl, _pool = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    if action == "generate":
+        _mount_all(ctrl, _data_csv(tmp_path))
+        ctrl.set_output_folder(str(tmp_path / "out"))
+    registry.mutate(
+        "공고서",
+        lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
+    )
+
+    result = (
+        ctrl.dispatch("template_check", {"request_id": "replacement"})
+        if action == "check"
+        else ctrl.generate()
+    )
+
+    assert result["ok"] is False and "변경되어 선택을 해제" in result["error"]
+    assert registry.load("공고서").authority_id  # 새 registry Work는 bootstrap됨
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl._seated_template_application_id is None
+    assert "문서 작업이 변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
+
+
+def test_applied_then_advanced_releases_instead_of_adopting_the_later_application(
+    tmp_path,
+):
+    """재전송한 apply가 외부 최신 Application을 seated authority로 승격하지 않는다."""
+    registry = _registry(tmp_path)
+    coordinator = TemplateChangeCoordinator(
+        registry, root=tmp_path / "authority", clock=_clock()
+    )
+    coordinator.check("공고서", "bootstrap")
+    ctrl, _pool = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    template = Path(registry.load("공고서").template_path)
+
+    _write_template(template, ["공고명", "추정가격", "비고1"])
+    first = coordinator.check("공고서", "first")["preparation"]
+    assert coordinator.apply("공고서", first["change_token"])["status"] == "applied"
+    _write_template(template, ["공고명", "추정가격", "비고2"])
+    second = coordinator.check("공고서", "second")["preparation"]
+    assert coordinator.apply("공고서", second["change_token"])["status"] == "applied"
+
+    result = ctrl.dispatch(
+        "template_apply", {"change_token": first["change_token"]}
+    )
+
+    assert result["status"] == "applied_then_advanced"
+    assert result["is_current"] is False
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert ctrl._seated_template_application_id is None
+    assert "다른 변경이 이어져 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
 
 
 def test_seating_identity_read_failure_does_not_split_the_active_work(

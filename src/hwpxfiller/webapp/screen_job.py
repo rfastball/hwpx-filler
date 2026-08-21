@@ -1909,18 +1909,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                             active_job.authority_id or None
                         )
                     )
+                    if (
+                        active_job.authority_id
+                        and restored_template_application_id is None
+                    ):
+                        restore_failed = True
                 exact_context_restorable = bool(
                     seated_job is not None
                     # 빈 값끼리의 equality 는 identity 증거가 아니다.
                     and seated_job.authority_id
                     and active_job.authority_id == seated_job.authority_id
-                    and job_content_fingerprint(self.registry, active_job)
-                    == job_content_fingerprint(self.registry, seated_job)
-                    and active_job.template_revision == seated_job.template_revision
-                    and active_job.binding_revision == seated_job.binding_revision
-                    and active_job.previous_rules == seated_job.previous_rules
-                    and restored_template_application_id
-                    == self._seated_template_application_id
+                    and self._same_work_snapshot(seated_job, active_job)
+                    and (
+                        self._template_change is None
+                        or bool(
+                            restored_template_application_id
+                            and self._seated_template_application_id
+                            and restored_template_application_id
+                            == self._seated_template_application_id
+                        )
+                    )
                 )
             except Exception:  # noqa: BLE001 — 읽을 수 없는 active Work는 exact 복원 불가다.
                 active_job = None
@@ -1953,6 +1961,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 f"문서 작업을 다시 선택하세요.{preferred_restatement}"
             )
             self.data_notice_level = "warn"
+
         elif active_job is not None and not exact_context_restorable:
             self.data_notice_text = (
                 "이전 문서 작업이 같은 작업인지 확인할 수 없어 선택을 해제했습니다. "
@@ -1966,6 +1975,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 f"{preferred_restatement}"
             )
             self.data_notice_level = "warn"
+
+    def _same_work_snapshot(self, seated: Job, restored: Job) -> bool:
+        """authority 외 실행 문맥이 같은 registry Job snapshot인지 판정한다."""
+        return (
+            job_content_fingerprint(self.registry, restored)
+            == job_content_fingerprint(self.registry, seated)
+            and restored.template_revision == seated.template_revision
+            and restored.binding_revision == seated.binding_revision
+            and restored.previous_rules == seated.previous_rules
+        )
+
+    def _can_adopt_seated_identity(self, seated: Job, restored: Job) -> bool:
+        """identity 미발급 seat만 exact same snapshot의 durable identity를 받을 수 있다."""
+        return (
+            (not seated.authority_id or seated.authority_id == restored.authority_id)
+            and self._same_work_snapshot(seated, restored)
+        )
 
     def set_output_folder(self, path: str) -> None:
         """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
@@ -2274,6 +2300,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.out_dir = ""
         self._last_failed = []
 
+    def _release_changed_active_work(self, reason: str) -> None:
+        """외부 권위 변경으로 stale해진 active Work를 loud RELEASE한다."""
+        self._release_active_work()
+        self.data_notice_text = f"{reason} 선택을 해제했습니다. 문서 작업을 다시 선택하세요."
+        self.data_notice_level = "warn"
+
     def _discard_active_work_session_evidence(self) -> None:
         """active Work에 묶인 실행·검토·미리보기 증거만 버린다."""
         self._last_generated = None
@@ -2462,7 +2494,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
         if not self.job_name:
             raise ValueError("먼저 작업을 선택하세요")
-        result, authority_id, application_id = (
+        result, restored_job, application_id = (
             self._template_change.check_for_seated_context(
                 self.job_name, str(p.get("request_id", ""))
             )
@@ -2475,8 +2507,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 or self._seated_template_application_id is None
             )
         ):
-            assert authority_id is not None and application_id is not None
-            self.vm.job.authority_id = authority_id
+            assert restored_job is not None and application_id is not None
+            if not self._can_adopt_seated_identity(self.vm.job, restored_job):
+                self._release_changed_active_work("문서 작업이 변경되어")
+                return {
+                    "ok": False,
+                    "reason": "work_context_changed",
+                    "error": (
+                        "문서 작업이 변경되어 선택을 해제했습니다. "
+                        "문서 작업을 다시 선택하세요."
+                    ),
+                }
+            self.vm.job.authority_id = restored_job.authority_id
             self._seated_template_application_id = application_id
         return result
 
@@ -2497,10 +2539,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 self.job_name, str(p.get("change_token", ""))
             )
         )
-        if result.get("status") in {"applied", "already_applied", "applied_then_advanced"}:
+        if result.get("is_current") is True:
             self._seated_template_application_id = committed_application_id
             self._invalidate_execution_evidence()
             self._maybe_auto_check(effective_basis_changed=True)
+        elif result.get("status") == "applied_then_advanced":
+            self._release_changed_active_work("문서 작업에 다른 변경이 이어져")
         return result
 
     # ----------------------------------- 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
@@ -2806,12 +2850,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ):
             return None
 
-        def synchronize_seated_identity(authority_id: str, application_id: str) -> None:
+        def synchronize_seated_identity(restored_job: Job, application_id: str) -> None:
             if self.vm is run_vm and (
                 not run_vm.job.authority_id
                 or self._seated_template_application_id is None
             ):
-                run_vm.job.authority_id = authority_id
+                if not self._can_adopt_seated_identity(run_vm.job, restored_job):
+                    self._release_changed_active_work("문서 작업이 변경되어")
+                    raise TemplateChangeError(
+                        "문서 작업이 변경되어 선택을 해제했습니다. "
+                        "문서 작업을 다시 선택하세요."
+                    )
+                run_vm.job.authority_id = restored_job.authority_id
                 self._seated_template_application_id = application_id
 
         try:

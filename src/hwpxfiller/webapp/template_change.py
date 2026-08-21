@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..domain.job import Job
 from ..application.candidate_revision import (
     MutableSourceBinding,
     TemplateLineage,
@@ -421,15 +422,15 @@ class TemplateChangeCoordinator:
         ``{"ok": False, "reason": "initialization_required"}`` — 후자는 오류가 아니라 정상
         결과라 raise 하지 않는다(진단·비활성 사유는 스냅샷 존이 병기한다).
         """
-        result, _work_id, _application_id = self.check_for_seated_context(
+        result, _job, _application_id = self.check_for_seated_context(
             job_name, prepare_request_id, actor
         )
         return result
 
     def check_for_seated_context(
         self, job_name: str, prepare_request_id: str, actor: str = LOCAL_ACTOR
-    ) -> "tuple[dict, str | None, str | None]":
-        """확인 결과와 같은 aggregate의 Work/Application identity를 낸다."""
+    ) -> "tuple[dict, Job | None, str | None]":
+        """확인 결과와 같은 registry Job/Application identity를 낸다."""
         if not _REQUEST_ID.fullmatch(prepare_request_id or ""):
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
@@ -438,6 +439,9 @@ class TemplateChangeCoordinator:
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
         self._recover(work_id)
 
         if not self._works.exists(work_id):
@@ -465,10 +469,13 @@ class TemplateChangeCoordinator:
         )
         prep = self._advance(work_id, job_name, prep)
         aggregate = self._works.load(work_id)
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
         application_id = aggregate.work.current_template_application_id
         return (
             {"ok": True, "preparation": self._view(aggregate, work_id, prep)},
-            work_id,
+            job,
             application_id,
         )
 
@@ -490,7 +497,7 @@ class TemplateChangeCoordinator:
         self,
         job_name: str,
         *,
-        on_context: "Callable[[str, str], None] | None" = None,
+        on_context: "Callable[[Job, str], None] | None" = None,
     ) -> str:
         """생성 admission 전에 이미 확립된 Work/Application identity를 알린다."""
         job = load_job(self._registry, job_name)
@@ -499,6 +506,9 @@ class TemplateChangeCoordinator:
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
         self._recover(work_id)
         if not self._works.exists(work_id):
             # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
@@ -510,7 +520,10 @@ class TemplateChangeCoordinator:
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
         if on_context is not None:
-            on_context(work_id, aggregate.work.current_template_application_id)
+            job = load_job(self._registry, job_name)
+            if job.authority_id != work_id:
+                raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
+            on_context(job, aggregate.work.current_template_application_id)
         ws = self._workspace.get_or_create(self._now())
         try:
             run = admit_managed_slotless_run(
