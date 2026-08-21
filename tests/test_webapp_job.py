@@ -3488,27 +3488,59 @@ def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     assert ctrl.records and ctrl.selection.selected_count() == 0
     assert ctrl.preferred_work == ""
     notice = ctrl.snapshot()["data_notice"]
-    assert notice["level"] == "warn" and "다시 확인할 수 없습니다" in notice["text"]
+    assert notice["level"] == "warn"
+    assert "고른 '공고서' 작업을 다시 확인할 수 없습니다" in notice["text"]
+    assert "문서 작업 목록을 다시 확인할 수 없습니다" in notice["text"]
     assert "internal candidate detail" not in notice["text"]
 
 
-def test_snapshot_registry_warning_clears_when_lookup_recovers(tmp_path, monkeypatch):
-    """Snapshot-only registry 경고는 목록이 복구되면 다음 조회에서 사라진다."""
+def test_snapshot_registry_warning_composes_and_clears_on_recovery(
+    tmp_path, monkeypatch,
+):
+    """Registry 경고는 기존 notice와 합성하되 복구 뒤 영속하지 않는다."""
     ctrl, _ = _controller(tmp_path)
     list_jobs = screen_job_module.list_jobs
-    calls = 0
+    registry_warning = (
+        "문서 작업 목록을 다시 확인할 수 없습니다. 잠시 뒤 다시 시도하세요."
+    )
 
-    def fail_once(store):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise ValueError("temporary registry error")
-        return list_jobs(store)
+    def fail_registry_list(_store):
+        raise ValueError("internal registry detail")
 
-    monkeypatch.setattr(screen_job_module, "list_jobs", fail_once)
-    first = ctrl.snapshot()["data_notice"]
-    assert first["level"] == "warn" and "목록을 다시 확인" in first["text"]
     assert ctrl.snapshot()["data_notice"] is None
+    monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
+    assert ctrl.snapshot()["data_notice"] == {
+        "level": "warn", "text": registry_warning,
+    }
+    monkeypatch.setattr(screen_job_module, "list_jobs", list_jobs)
+    assert ctrl.snapshot()["data_notice"] is None
+
+    existing_notices = (
+        (
+            "이전에 고른 '공고서' 작업을 사용할 수 있습니다. "
+            "아래 후보에서 직접 고르세요.",
+            "ok",
+        ),
+        (
+            "이전 문서 작업은 이 데이터로 실행할 수 없어 선택을 해제했습니다. "
+            "아래 후보를 선택하거나 「확인 필요」에서 사유를 확인하세요.",
+            "warn",
+        ),
+    )
+    for existing_text, existing_level in existing_notices:
+        ctrl.data_notice_text = existing_text
+        ctrl.data_notice_level = existing_level
+        monkeypatch.setattr(screen_job_module, "list_jobs", fail_registry_list)
+        assert ctrl.snapshot()["data_notice"] == {
+            "level": "warn", "text": f"{existing_text} {registry_warning}",
+        }
+        assert (ctrl.data_notice_text, ctrl.data_notice_level) == (
+            existing_text, existing_level,
+        )
+        monkeypatch.setattr(screen_job_module, "list_jobs", list_jobs)
+        assert ctrl.snapshot()["data_notice"] == {
+            "level": existing_level, "text": existing_text,
+        }
 
 
 @pytest.mark.parametrize("target", ["file", "pool"])

@@ -1524,6 +1524,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "문서 작업 목록을 다시 확인할 수 없습니다. "
                 "잠시 뒤 다시 시도하세요."
             )
+        notice_text = " ".join(
+            filter(None, (self.data_notice_text, registry_notice_text))
+        )
+        notice_level = "warn" if registry_notice_text else self.data_notice_level
         base = {
             "job_name": self.job_name,
             # managed HWPX comes from durable Work identity, never a suffix heuristic.
@@ -1578,11 +1582,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "data_target": self._data_target(),
             # 데이터 겨눔 결과 재진술(preferred_work 판정 등) — 없으면 None.
             "data_notice": (
-                {
-                    "level": self.data_notice_level if self.data_notice_text else "warn",
-                    "text": self.data_notice_text or registry_notice_text,
-                }
-                if self.data_notice_text or registry_notice_text else None
+                {"level": notice_level, "text": notice_text}
+                if notice_text else None
             ),
         }
         # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
