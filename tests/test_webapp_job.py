@@ -3279,6 +3279,8 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
     ctrl, _pool = _pool_controller(
         tmp_path, registry=registry, template_change=coordinator
     )
+    pushes: list[dict] = []
+    ctrl._push_sink = lambda _screen, snapshot: pushes.append(snapshot)
     ctrl.dispatch("select_job", {"name": "공고서"})
     if action == "generate":
         _mount_all(ctrl, _data_csv(tmp_path))
@@ -3287,6 +3289,7 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
         "공고서",
         lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
     )
+    pushes.clear()
 
     result = (
         ctrl.dispatch("template_check", {"request_id": "replacement"})
@@ -3299,6 +3302,8 @@ def test_lazy_bootstrap_does_not_adopt_a_changed_same_name_work(
     assert ctrl.job_name == "" and ctrl.vm is None
     assert ctrl._seated_template_application_id is None
     assert "문서 작업이 변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
+    if action == "generate":
+        assert pushes[-1]["has_job"] is False and pushes[-1]["job_name"] == ""
 
 
 def test_applied_then_advanced_releases_instead_of_adopting_the_later_application(

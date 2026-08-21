@@ -2812,9 +2812,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._run = run
         try:
             reject = self._resolve_managed_template(run_vm)
-            if reject is not None:
-                return reject
-            result = self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
+            result = (
+                reject
+                if reject is not None
+                else self._generate_locked(run, run_vm, confirm_overwrite=confirm_overwrite)
+            )
         finally:
             self._run = None
             # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
@@ -2833,6 +2835,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
             # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
             self._names_pin = None
+            self._push()
+        elif reject is not None and self.vm is not run_vm:
             self._push()
         return result
 
