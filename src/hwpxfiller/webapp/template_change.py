@@ -606,9 +606,7 @@ class TemplateChangeCoordinator:
         final_job_snapshot = None
 
         def capture_gate_generation(_work: DocumentWork) -> int:
-            nonlocal final_job_snapshot
-            final_job_snapshot = load_job(self._registry, job_name)
-            return final_job_snapshot.binding_revision
+            return load_job(self._registry, job_name).binding_revision
 
         def admission_gate_binding(_work: DocumentWork) -> tuple[str, int]:
             nonlocal final_job_snapshot
@@ -642,13 +640,15 @@ class TemplateChangeCoordinator:
             )
         if prep.status == PREP_QUALIFYING and prep.attempt_id is not None:
             # PASS checkpoint 는 QUALIFYING 을 유지한다 — READY 승격/terminal 은 admission 몫.
-            admit_preparation(
+            admission = admit_preparation(
                 self._works, self._candidates, self._quals,
                 work_id=work_id, preparation_id=prep.preparation_id,
                 resolve_current_binding=admission_gate_binding,
                 prepared_change_id=f"{prep.preparation_id}-chg", prepared_at=self._now(),
             )
-        aggregate = self._works.load(work_id)
+            aggregate = admission.aggregate
+        else:
+            aggregate = self._works.load(work_id)
         prep = next(
             p for p in aggregate.preparations if p.preparation_id == prep.preparation_id
         )

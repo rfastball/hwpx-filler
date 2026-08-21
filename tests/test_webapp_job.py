@@ -5451,6 +5451,52 @@ def test_template_check_returns_the_job_snapshot_seen_by_final_gate(
     assert application_id is not None
 
 
+def test_template_check_returns_the_application_seen_by_final_gate(
+    tmp_path, monkeypatch,
+):
+    """Admission 뒤 다른 coordinator가 B를 적용해도 caller에는 gate의 A만 돌아간다."""
+    ctrl, _pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    other = TemplateChangeCoordinator(
+        ctrl.registry, root=tmp_path / "authority", clock=_clock()
+    )
+    admit = template_change_module.admit_preparation
+    nested = {"active": False}
+    later_application_ids = []
+
+    def apply_after_final_gate(*args, **kwargs):
+        admitted = admit(*args, **kwargs)
+        if nested["active"]:
+            return admitted
+        nested["active"] = True
+        try:
+            _write_template(
+                Path(ctrl.registry.load("공고서").template_path),
+                ["공고명", "추정가격", "비고"],
+            )
+            prepared = other.check("공고서", "later-application")["preparation"]
+            assert other.apply("공고서", prepared["change_token"])["status"] == "applied"
+            work_id = ctrl.registry.load("공고서").authority_id
+            later_application_ids.append(other.current_template_application_id(work_id))
+        finally:
+            nested["active"] = False
+        return admitted
+
+    monkeypatch.setattr(
+        template_change_module, "admit_preparation", apply_after_final_gate
+    )
+
+    result = ctrl.dispatch("template_check", {"request_id": "application-race"})
+
+    assert result["ok"] is True and ctrl._seated_template_application_id
+    assert ctrl._seated_template_application_id != later_application_ids[0]
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert "같은 작업인지 확인할 수 없어" in ctrl.snapshot()["data_notice"]["text"]
+
+
 def test_template_check_releases_when_rules_change_before_final_gate(
     tmp_path, monkeypatch,
 ):
