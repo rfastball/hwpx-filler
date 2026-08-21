@@ -3203,6 +3203,37 @@ def test_preferred_lookup_failure_keeps_the_successful_data_commit_loud(
     assert "internal candidate detail" not in notice["text"]
 
 
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_release_notice_preserves_the_pending_preferred_work_restatement(
+    tmp_path, target,
+):
+    """A RELEASE 사유가 새 데이터에서 사용 가능한 명시 preferred B 안내를 덮지 않는다."""
+    registry = _incompatible_reg(tmp_path)
+    registry.assign_authority_id("공고서", "authority-a")
+    ctrl, pool = _pool_controller(tmp_path, registry=registry)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.dispatch("prefer_work", {"name": "계약서"}) == {
+        "stored": True,
+        "reason": "incompatible",
+        "name": "계약서",
+    }
+
+    new_path = tmp_path / "contract.csv"
+    new_path.write_text("없는열\n새 계약\n", encoding="utf-8")
+    if target == "file":
+        ctrl.load_data_path(str(new_path))
+    else:
+        key = _pool_add(pool, "계약 데이터", {"path": str(new_path)})
+        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+
+    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    notice = ctrl.snapshot()["data_notice"]
+    assert "공고서" not in notice["text"]
+    assert "이 데이터로 실행할 수 없어 선택을 해제했습니다" in notice["text"]
+    assert "계약서" in notice["text"] and "직접 고르세요" in notice["text"]
+
+
 def test_prefer_work_without_data_always_stores_and_guides(tmp_path):
     """무데이터 「문서 만들기에서 사용」은 언제나 「보관 후 안내」 하나다(§5.3 판정 D).
 

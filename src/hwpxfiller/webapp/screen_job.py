@@ -1921,22 +1921,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.vm is not None:
             self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
+        preferred_restatement = (
+            f" {self.data_notice_text}" if self.data_notice_text else ""
+        )
         if restore_failed:
             self.data_notice_text = (
                 "이전 문서 작업을 다시 확인할 수 없어 선택을 해제했습니다. "
-                "문서 작업을 다시 선택하세요."
+                f"문서 작업을 다시 선택하세요.{preferred_restatement}"
             )
             self.data_notice_level = "warn"
         elif active_job is not None and not exact_context_restorable:
             self.data_notice_text = (
                 "이전 문서 작업이 같은 작업인지 확인할 수 없어 선택을 해제했습니다. "
-                "문서 작업을 다시 선택하세요."
+                f"문서 작업을 다시 선택하세요.{preferred_restatement}"
             )
             self.data_notice_level = "warn"
         elif active_job is not None and not context.usable_with_current_data:
             self.data_notice_text = (
                 "이전 문서 작업은 이 데이터로 실행할 수 없어 선택을 해제했습니다. "
                 "아래 후보를 선택하거나 「확인 필요」에서 사유를 확인하세요."
+                f"{preferred_restatement}"
             )
             self.data_notice_level = "warn"
 
