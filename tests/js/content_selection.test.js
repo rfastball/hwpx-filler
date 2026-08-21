@@ -54,7 +54,16 @@ function response(v, extra = {}) {
   return { mutation_outcome: mutation, current_view: v, refresh_required: refresh };
 }
 function zone(v) {
-  return { supported: true, initialized: true, mutation_outcome: null, current_view: v, refresh_required: false };
+  return {
+    supported: true, initialized: true, mutation_outcome: null,
+    current_view: v, refresh_required: false, error: null,
+  };
+}
+function inactiveZone(error = null) {
+  return {
+    supported: true, initialized: false, mutation_outcome: null,
+    current_view: null, refresh_required: false, error,
+  };
 }
 function fakeClient(responder) {
   const calls = [];
@@ -69,9 +78,10 @@ function fakeClient(responder) {
 function okv(value) {
   return { ok: true, value };
 }
-function fakeRuntime(fullSnapshot) {
+function fakeRuntime(fullSnapshot, { refreshError = null } = {}) {
   let snap = fullSnapshot;
   const subs = new Set();
+  const refreshes = [];
   const model = {
     getSnapshot: () => ({ full: snap, progress: null }),
     subscribe(listener) {
@@ -80,7 +90,16 @@ function fakeRuntime(fullSnapshot) {
     },
   };
   return {
-    runtime: { model: () => model },
+    runtime: {
+      model: () => model,
+      async refresh(screen) {
+        refreshes.push(screen);
+        if (refreshError !== null) throw refreshError;
+        for (const listener of [...subs]) listener();
+        return snap;
+      },
+    },
+    refreshes,
     push(next) {
       snap = next;
       for (const listener of [...subs]) listener();
@@ -94,6 +113,8 @@ const NEEDS = view("NEEDS_SELECTION",
   { blocking: [{ slot_id: "s1", kind: "MISSING_REQUIRED_SELECTION", option_id: null }] });
 const SELECTED = view("SLOT_SELECTIONS_COMPLETE",
   [slot("s1", "표지 유형", "RESOLVED", [opt("o1", "기본 표지", true), opt("o2", "간이 표지")])]);
+const LATEST_B = { ...SELECTED, new_configuration_token: "tok-b" };
+const LATEST_C = { ...NEEDS, new_configuration_token: "tok-c" };
 
 /* ══ A. 서비스 계약 ═══════════════════════════════════════════════════════════════════════ */
 test("selectOption: 응답 전엔 선택을 로컬로 켜지 않는다(local optimistic authority 0)", async () => {
@@ -211,8 +232,8 @@ function fakeController(state, handlers = {}) {
     refresh: handlers.refresh ?? (async () => state),
   };
 }
-function stateOf(v, phase = "idle", error = null) {
-  return { view: v, token: v?.new_configuration_token ?? null, phase, error };
+function stateOf(v, phase = "idle", error = null, zoneError = null) {
+  return { view: v, token: v?.new_configuration_token ?? null, phase, error, zoneError };
 }
 function render(state) {
   return renderToStaticMarkup(createElement(JobContentSelection, { controller: fakeController(state) }));
@@ -360,16 +381,58 @@ test("P2#5 pending 중 도착한 스냅샷을 settle 뒤 최신 model 로 재hyd
   const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
   const p = ctrl.selectOption("s1", "o1"); // 느린 command → pending 창
   assert.equal(svc.state().phase, "pending");
-  rt.push({ slot_configuration: zone(SELECTED) }); // pending 중 Work 전환/Template 갱신 스냅샷
-  assert.notEqual(ctrl.getSnapshot().view, SELECTED); // pending 소유 — 아직 반영 안 함
+  rt.push({ slot_configuration: zone(LATEST_B) });
+  rt.push({ slot_configuration: zone(LATEST_C) }); // 여러 delivery도 latest 하나로 합친다
+  assert.notEqual(ctrl.getSnapshot().view, LATEST_C); // pending 소유 — 아직 반영 안 함
   resolveDispatch(okv(response(NEEDS))); // 옛 command 응답이 뒤늦게 settle
   await p;
-  assert.equal(ctrl.getSnapshot().view, SELECTED); // 건너뛴 최신 스냅샷으로 복구(유령 반영 0)
+  assert.equal(ctrl.getSnapshot().view, LATEST_C); // 건너뛴 latest C로 복구(유령 반영 0)
+  assert.equal(ctrl.getSnapshot().token, "tok-c");
 });
 
-test("P2(재리뷰) stale 로 끝난 command 는 스냅샷을 건너뛰었어도 stale notice 를 보존한다", async () => {
-  // 느린 stale command: pending 중 command 자신의 응답 push 가 skippedWhilePending 을 세워도,
-  // settle 이 stale 이면 재hydrate 로 idle 로 덮지 않는다(#725 재리뷰).
+test("stale settle은 notice와 latest view/null/error를 함께 보존한다", async () => {
+  const loadError = {
+    code: "INVALID_CONFIGURATION_TOKEN",
+    message: "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+    action: { key: "refresh", label: "다시 불러오기" },
+  };
+  const cases = [
+    { latest: zone(LATEST_B), view: LATEST_B, token: "tok-b", message: null },
+    { latest: inactiveZone(), view: null, token: null, message: null },
+    { latest: inactiveZone(loadError), view: null, token: null, message: loadError.message },
+  ];
+  for (const item of cases) {
+    let resolveDispatch = null;
+    const client = {
+      calls: [],
+      dispatch(screen, action, payload) {
+        this.calls.push({ screen, action, payload });
+        return new Promise((r) => { resolveDispatch = r; });
+      },
+    };
+    const svc = createSlotConfigService({ client });
+    const rt = fakeRuntime({ slot_configuration: zone(NEEDS) });
+    const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
+    const p = ctrl.selectOption("s1", "o1");
+    rt.push({ slot_configuration: item.latest });
+    resolveDispatch(okv(response(SELECTED, { refresh: true })));
+    await p;
+
+    const state = ctrl.getSnapshot();
+    assert.equal(state.phase, "stale");
+    assert.equal(state.view, item.view);
+    assert.equal(state.token, item.token);
+    const html = render(state);
+    assert.match(html, /설정이 갱신되어 최신 내용을 다시 불러왔습니다/);
+    if (item.message !== null) {
+      assert.match(html, new RegExp(item.message));
+      assert.match(html, /다시 불러오기/);
+      assert.ok(!html.includes(loadError.code));
+    }
+  }
+});
+
+test("error settle도 command 사유와 latest backend view/token을 함께 보존한다", async () => {
   let resolveDispatch = null;
   const client = {
     calls: [],
@@ -382,10 +445,14 @@ test("P2(재리뷰) stale 로 끝난 command 는 스냅샷을 건너뛰었어도
   const rt = fakeRuntime({ slot_configuration: zone(NEEDS) });
   const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
   const p = ctrl.selectOption("s1", "o1");
-  rt.push({ slot_configuration: zone(SELECTED) }); // pending 중 스냅샷(=command 자신의 push 대역)
-  resolveDispatch(okv(response(SELECTED, { refresh: true }))); // stale 응답
-  await p;
-  assert.equal(ctrl.getSnapshot().phase, "stale"); // idle 로 덮이지 않음 — notice 보존
+  rt.push({ slot_configuration: zone(LATEST_B) });
+  resolveDispatch({ ok: false, failure: { message: "거절" } });
+
+  const state = await p;
+  assert.equal(state.phase, "error");
+  assert.match(state.error, /거절/);
+  assert.equal(state.view, LATEST_B);
+  assert.equal(state.token, "tok-b");
 });
 
 test("P2#4 display_text==id 인 production 형상에서도 지정 표시 필드를 소비한다(라벨 소스=backend, 후속 분리)", () => {
@@ -429,9 +496,36 @@ test("projection.slots 를 그대로 그린다(Template 구조 재해석/조립 
   assert.match(html, /부록 유형/);
 });
 
-test("view 부재(미지원 zone) → 빈칸을 새지 않고 조용히 비운다", () => {
-  const html = render(stateOf(null));
-  assert.equal(html, "");
+test("정상 view 부재는 비우고 init 실패는 backend 문안/action으로 복구한다", async () => {
+  assert.equal(render(stateOf(null)), "");
+
+  const loadError = {
+    code: "INVALID_CONFIGURATION_TOKEN",
+    message: "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+    action: { key: "refresh", label: "다시 불러오기" },
+  };
+  const client = fakeClient(() => okv(response(SELECTED)));
+  const alarms = [];
+  const svc = createSlotConfigService({ client, alarm: (message) => alarms.push(message) });
+  const rt = fakeRuntime(
+    { slot_configuration: inactiveZone(loadError) },
+    { refreshError: new Error("재당김 실패") },
+  );
+  const ctrl = createJobContentSelectionController({ runtime: rt.runtime, service: svc });
+
+  const html = render(ctrl.getSnapshot());
+  assert.match(html, new RegExp(loadError.message));
+  assert.match(html, /다시 불러오기/);
+  assert.match(html, /role="alert"/);
+  assert.ok(!html.includes(loadError.code));
+  assert.equal(client.calls.length, 0); // 표시만으로 durable slot command 0
+
+  const failed = await ctrl.refresh();
+  assert.deepEqual(rt.refreshes, ["job"]);
+  assert.deepEqual(alarms, ["재당김 실패"]);
+  assert.equal(failed.zoneError, loadError); // transport 실패가 backend 원인을 지우지 않음
+  assert.equal(failed.error, "재당김 실패");
+  assert.equal(client.calls.length, 0);
 });
 
 test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면 그대로)", () => {

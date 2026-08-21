@@ -3193,6 +3193,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "mutation_outcome": None,
             "current_view": None,
             "refresh_required": False,
+            "error": None,
         }
 
     def _slot_configuration_zone(self, tmissing: bool) -> dict:
@@ -3215,10 +3216,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {**blank, "supported": True}
         try:
             response = self._slot_configuration.current_slot_configuration_view(self.job_name)
-        except SlotConfigurationProductError:
-            # 접근 불가·token 오류는 렌더를 깨지 않고 시끄러운 미지원으로 — 존은 비활성 + 지원 표기.
-            return {**blank, "supported": True}
-        return {"supported": True, "initialized": True, **self._slot_response_dict(response)}
+        except SlotConfigurationProductError as exc:
+            # 정상 미초기화와 실패를 구분한다. 진단 code 는 보존하되 사용자 표면에는 snapshot
+            # 재당김만 권한다 — Slot Product refresh 는 durable reconciliation 을 할 수 있다.
+            return {
+                **blank,
+                "supported": True,
+                "error": {
+                    "code": exc.code,
+                    "message": "포함할 내용을 불러오지 못했습니다. 다시 불러오세요.",
+                    "action": {"key": "refresh", "label": "다시 불러오기"},
+                },
+            }
+        return {
+            "supported": True,
+            "initialized": True,
+            "error": None,
+            **self._slot_response_dict(response),
+        }
 
     # ── 작업대 Observation 존(SX-03 #726) — 합성 observation → JSON-safe dict ───────────────
     @staticmethod

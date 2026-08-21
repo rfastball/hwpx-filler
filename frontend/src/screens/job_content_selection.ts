@@ -24,6 +24,7 @@ import type {
   SlotConfigService,
   SlotConfigState,
   SlotCurrentView,
+  SlotZoneError,
 } from "./job_slot_config.ts";
 
 type Obj = Record<string, unknown>;
@@ -33,17 +34,23 @@ const h = (
   ...children: ReactNode[]
 ) => createElement(tag as any, props, ...children);
 
-/* ── snapshot 의 slot_configuration zone → read-only current view(없으면 null) ──────────────── */
-function readSlotZone(full: unknown): SlotCurrentView | null {
-  if (full === null || typeof full !== "object") return null;
+type SlotZoneSnapshot = { view: SlotCurrentView | null; error: SlotZoneError | null };
+
+/* ── snapshot 의 slot_configuration zone → read-only current 사실 ─────────────────────────── */
+function readSlotZone(full: unknown): SlotZoneSnapshot {
+  const empty = { view: null, error: null };
+  if (full === null || typeof full !== "object") return empty;
   const zone = (full as Obj).slot_configuration;
-  if (zone === null || typeof zone !== "object") return null;
+  if (zone === null || typeof zone !== "object") return empty;
   const z = zone as Obj;
-  // 미초기화·미지원(템플릿 확인 전·비-hwpx·미주입)은 passive baseline 이 없다 — 빈 상태로 hydrate.
-  if (z.initialized !== true) return null;
+  const error = z.error !== null && typeof z.error === "object"
+    ? z.error as SlotZoneError
+    : null;
+  // 미초기화·미지원에는 view가 없지만, 실패 projection은 정상 빈 상태와 구분해 함께 운반한다.
+  if (z.initialized !== true) return { view: null, error };
   const view = z.current_view;
-  if (view === null || typeof view !== "object") return null;
-  return view as SlotCurrentView;
+  if (view === null || typeof view !== "object") return { view: null, error };
+  return { view: view as SlotCurrentView, error };
 }
 
 /* ── controller — job model(read-only view)로 passive hydrate + command 위임 ────────────────── */
@@ -63,7 +70,7 @@ export function createJobContentSelectionController(deps: {
   // pending 중 도착해 건너뛴 스냅샷이 있었는지 — settle 뒤 최신 model 로 재hydrate 하기 위한 표식.
   let skippedWhilePending = false;
 
-  function hydrateFromModel(): void {
+  function hydrateFromModel(preserveNotice = false): void {
     // 진행 중 command(pending)은 authoritative round-trip 이 소유 — passive snapshot 이 덮지 않는다.
     // 다만 그 사이 도착한 스냅샷(Work 전환·Template 갱신)을 통째로 버리면, 옛 command 응답이
     // 커밋된 뒤 새 Work 의 slot view·token 이 영영 반영되지 않아 다음 선택이 옛 token 으로 새
@@ -74,21 +81,21 @@ export function createJobContentSelectionController(deps: {
     }
     skippedWhilePending = false; // 실제 hydrate → 최신 model 을 반영하므로 밀린 delivery 없음.
     const snap = model.getSnapshot();
-    deps.service.hydrate(readSlotZone(snap ? snap.full : null));
+    const zone = readSlotZone(snap ? snap.full : null);
+    deps.service.hydrate(zone.view, { zoneError: zone.error, preserveNotice });
   }
 
   // job 스냅샷 변화(최초 로드·Template 변경·command 뒤 재푸시)마다 read-only view 를 재hydrate 한다.
   // 모듈 싱글턴 수명이라 해제하지 않는다(다른 job 화면 controller 와 동일 규율).
   model.subscribe(hydrateFromModel);
-  // 서비스 상태 전이 감시 — command 가 **성공(idle)** 으로 settle 됐는데 그 사이 스냅샷을
-  // 건너뛰었으면 최신 model 로 재hydrate 한다. stale/error 로 끝난 경우엔 재hydrate 하지 않는다:
-  // command 자신의 응답 push 도 skippedWhilePending 을 세우므로, 무조건 재hydrate 하면 그 stale/
-  // error notice("설정이 갱신되어…")를 곧바로 idle 로 덮어 사용자가 못 본다(#725 리뷰). stale/error
-  // 의 fresh view 는 command 응답이 이미 실었고, 외부 스냅샷은 다음 push 가 반영한다.
+  // 서비스 상태 전이 감시 — 어느 settle 이든 건너뛴 최신 model을 채택한다. stale/error는 command
+  // notice만 보존하고 view/token/error projection은 latest snapshot으로 바꾼다(#749).
   deps.service.subscribe(() => {
-    if (skippedWhilePending && deps.service.state().phase === "idle") {
+    const phase = deps.service.state().phase;
+    if (skippedWhilePending && phase !== "pending") {
+      // hydrate commit이 listener를 다시 부르므로 nested commit 전에 먼저 내린다.
       skippedWhilePending = false;
-      hydrateFromModel();
+      hydrateFromModel(phase === "stale" || phase === "error");
     }
   });
   hydrateFromModel(); // 이미 도착한 스냅샷을 즉시 seed — mount 에서 open() 을 부르지 않기 위함.
@@ -98,7 +105,15 @@ export function createJobContentSelectionController(deps: {
     getSnapshot: deps.service.state,
     selectOption: (slotId, optionId) => deps.service.selectOption(slotId, optionId),
     clearSelection: (slotId) => deps.service.clearSelection(slotId),
-    refresh: () => deps.service.refresh(),
+    refresh: async () => {
+      try {
+        // passive 실패 복구는 read-only full snapshot 재당김이다. Product refresh(ensure)는 쓰지 않는다.
+        await deps.runtime.refresh("job");
+        return deps.service.state();
+      } catch (error) {
+        return deps.service.reportFailure(error);
+      }
+    },
   };
 }
 
@@ -213,18 +228,45 @@ export function JobContentSelection(props: {
   const projection = state.view?.projection ?? null;
   const status = statusLine(state);
   const pending = state.phase === "pending";
+  const backendError = state.zoneError?.message ?? state.view?.context_error_message ?? null;
+  const statusNode = status === null
+    ? null
+    : h(
+        "p",
+        {
+          className: `cs-status cs-status-${status.kind}`,
+          role: status.kind === "error" ? "alert" : "status",
+          "aria-live": "polite",
+        },
+        status.text,
+      );
+  const backendErrorNode = backendError === null || backendError === status?.text
+    ? null
+    : h("p", { className: "cs-status cs-status-error", role: "alert" }, backendError);
+  const recoveryNode = state.zoneError?.action?.key === "refresh"
+    ? h(
+        "button",
+        {
+          type: "button",
+          className: "btn",
+          disabled: pending,
+          onClick: () => { void controller.refresh(); },
+        },
+        state.zoneError.action.label,
+      )
+    : null;
 
   // view 부재(미지원·미초기화 zone)면 이 zone 은 적용 대상이 아니다 — 조용히 비운다(빈칸 누수 0).
   if (projection === null) {
-    if (status?.kind === "error") {
-      return h(
-        "section",
-        { className: "content-selection", "aria-label": "포함할 내용" },
-        h("h2", { className: "cs-title" }, "포함할 내용"),
-        h("p", { className: "cs-status cs-status-error", role: "alert" }, status.text),
-      );
-    }
-    return null;
+    if (statusNode === null && backendErrorNode === null) return null;
+    return h(
+      "section",
+      { className: "content-selection", "aria-label": "포함할 내용" },
+      h("h2", { className: "cs-title" }, "포함할 내용"),
+      statusNode,
+      backendErrorNode,
+      recoveryNode,
+    );
   }
 
   const attention = blockingBySlot(state.view);
@@ -235,17 +277,8 @@ export function JobContentSelection(props: {
     "section",
     { className: "content-selection", "aria-label": "포함할 내용", "aria-busy": pending },
     h("h2", { className: "cs-title" }, "포함할 내용"),
-    status !== null
-      ? h(
-          "p",
-          {
-            className: `cs-status cs-status-${status.kind}`,
-            role: status.kind === "error" ? "alert" : "status",
-            "aria-live": "polite",
-          },
-          status.text,
-        )
-      : null,
+    statusNode,
+    backendErrorNode,
     projection.slots.length === 0
       ? h("p", { className: "cs-empty" }, "이 문서 작업에는 선택할 내용이 없습니다.")
       : h(
