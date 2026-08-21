@@ -35,6 +35,7 @@ from live101 import driver, report as report_mod  # noqa: E402
 from live101.scenario import CAPTURE_POINTS, EXPECTED_HWPX  # noqa: E402
 from live101.surface import (  # noqa: E402
     Deadline,
+    JS_HELPERS,
     MissingSurface,
     StepTimeout,
     Surface,
@@ -993,8 +994,8 @@ class _CommitMissingWindow:
         return expression.startswith("window.__cap.setValue(")
 
 
-def test_set_value_commits_on_a_second_host_call_and_names_a_missing_control() -> None:
-    """React 입력 커밋은 한 JS 스택에 붙이지 않고, 2차 부재도 자리를 대며 죽는다."""
+def test_set_value_commits_once_and_names_a_missing_control() -> None:
+    """React 입력은 최신 노드에서 한 번만 커밋하고, 2차 부재도 자리를 대며 죽는다."""
     window = _CommitMissingWindow()
     surface = Surface(window, Deadline(30.0))
 
@@ -1005,6 +1006,18 @@ def test_set_value_commits_on_a_second_host_call_and_names_a_missing_control() -
         'window.__cap.setValue("#editorName", "발주요청 기안")',
         'window.__cap.commitValue("#editorName")',
     ]
+    native = "el.addEventListener('focusout', markLeft);"
+    fallback = "if (!left && el.tagName !== 'SELECT')"
+    synthetic = "el.dispatchEvent(new view.FocusEvent('focusout', { bubbles: true }));"
+    assert JS_HELPERS.count(native) == 1
+    assert JS_HELPERS.count(fallback) == 1
+    assert JS_HELPERS.count(synthetic) == 1
+    assert (
+        JS_HELPERS.index(native)
+        < JS_HELPERS.index("el.blur();")
+        < JS_HELPERS.index(fallback)
+        < JS_HELPERS.index(synthetic)
+    )
     assert excinfo.value.selector == "#editorName"
     assert "커밋" in str(excinfo.value)
 
