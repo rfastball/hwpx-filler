@@ -2821,8 +2821,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             getattr(run_vm, "job", None), job_name=self.job_name, token=run_token
         )
         self._run = run
+        visible_identity_before = (
+            self.vm,
+            getattr(getattr(self.vm, "job", None), "authority_id", None),
+            self._seated_template_application_id,
+            self.job_name,
+        )
         try:
             reject = self._resolve_managed_template(run_vm)
+            visible_identity_changed = (
+                self.vm,
+                getattr(getattr(self.vm, "job", None), "authority_id", None),
+                self._seated_template_application_id,
+                self.job_name,
+            ) != visible_identity_before
             result = (
                 reject
                 if reject is not None
@@ -2846,6 +2858,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
             # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
             self._names_pin = None
+            self._push()
+        elif reject is None and visible_identity_changed:
             self._push()
         return result
 

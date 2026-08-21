@@ -5470,6 +5470,23 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert ctrl.job_name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
+def test_managed_generation_pushes_adopted_identity_before_review_rejection(tmp_path):
+    """Lazy bootstrap 뒤 plan 거절도 새 managed identity를 한 번 밀어야 한다."""
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    assert ctrl.snapshot()["managed_hwpx"] is False
+
+    pushes.clear()
+    rejected = ctrl.generate()
+
+    assert rejected["ok"] is False and "빈 값" in rejected["error"]
+    current = ctrl.snapshot()
+    assert current["managed_hwpx"] is True
+    assert len(pushes) == 1 and pushes[0][1] == current
+
+
 def test_managed_generation_uses_applied_bytes_not_edited_source(tmp_path):
     """#681 drift 음성대조: 적용된 A bytes 뒤 source 를 B 로 고쳐도(미적용) 생성 입력은
     A 의 exact Candidate bytes(staged) 다 — bridge 는 source 가 아니라 Candidate store 를 읽는다."""
