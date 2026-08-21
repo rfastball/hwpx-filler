@@ -421,6 +421,15 @@ class TemplateChangeCoordinator:
         ``{"ok": False, "reason": "initialization_required"}`` — 후자는 오류가 아니라 정상
         결과라 raise 하지 않는다(진단·비활성 사유는 스냅샷 존이 병기한다).
         """
+        result, _work_id, _application_id = self.check_for_seated_context(
+            job_name, prepare_request_id, actor
+        )
+        return result
+
+    def check_for_seated_context(
+        self, job_name: str, prepare_request_id: str, actor: str = LOCAL_ACTOR
+    ) -> "tuple[dict, str | None, str | None]":
+        """확인 결과와 같은 aggregate의 Work/Application identity를 낸다."""
         if not _REQUEST_ID.fullmatch(prepare_request_id or ""):
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
@@ -434,7 +443,11 @@ class TemplateChangeCoordinator:
         if not self._works.exists(work_id):
             outcome = self._bootstrap(work_id, job_name, job, prepare_request_id)
             if outcome.result != BOOTSTRAP_OK:
-                return {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED}
+                return (
+                    {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED},
+                    None,
+                    None,
+                )
 
         binding = self._binding(work_id, job)
         prep = start_prepare(
@@ -451,7 +464,13 @@ class TemplateChangeCoordinator:
             authorize=_authorize,
         )
         prep = self._advance(work_id, job_name, prep)
-        return {"ok": True, "preparation": self._view(self._works.load(work_id), work_id, prep)}
+        aggregate = self._works.load(work_id)
+        application_id = aggregate.work.current_template_application_id
+        return (
+            {"ok": True, "preparation": self._view(aggregate, work_id, prep)},
+            work_id,
+            application_id,
+        )
 
     def resolve_generation_template(self, job_name: str) -> str:
         """managed Product Work 생성의 정본 템플릿 경로 — current Application 의 exact applied
@@ -465,6 +484,15 @@ class TemplateChangeCoordinator:
         gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
         EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
         """
+        path, _work_id, _application_id = (
+            self.resolve_generation_template_for_seated_context(job_name)
+        )
+        return path
+
+    def resolve_generation_template_for_seated_context(
+        self, job_name: str
+    ) -> "tuple[str, str, str]":
+        """생성 경로와 같은 admitted aggregate의 Work/Application identity를 낸다."""
         job = load_job(self._registry, job_name)
         if job.media != "hwpx":
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
@@ -500,7 +528,11 @@ class TemplateChangeCoordinator:
             raise SlotlessRunAdmissionError(
                 SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE, str(exc)
             ) from exc
-        return run.staged_template_path
+        return (
+            run.staged_template_path,
+            work_id,
+            aggregate.work.current_template_application_id,
+        )
 
     def clear_generation_staging(self) -> None:
         """run 이 끝나 아무 실행도 staged 경로를 참조하지 않을 때 staging 사본을 정리한다
@@ -652,6 +684,15 @@ class TemplateChangeCoordinator:
 
     def apply(self, job_name: str, change_token: str, actor: str = LOCAL_ACTOR) -> dict:
         """[변경사항 적용] — token 해석·독립 권한 확인·cross-Work 거절 뒤 원자 apply."""
+        result, _application_id = self.apply_for_seated_context(
+            job_name, change_token, actor
+        )
+        return result
+
+    def apply_for_seated_context(
+        self, job_name: str, change_token: str, actor: str = LOCAL_ACTOR
+    ) -> "tuple[dict, str]":
+        """Apply 결과와 같은 atomic aggregate의 current Application ID를 낸다."""
         resolved = self._change_id_by_token.get(str(change_token or ""))
         if resolved is None:
             raise TemplateChangeError("적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요")
@@ -686,4 +727,4 @@ class TemplateChangeCoordinator:
             "current_template_application_epoch": current.application_epoch,
             "is_current": outcome.resulting_application_id
             == aggregate.work.current_template_application_id,
-        }
+        }, current.application_id

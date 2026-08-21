@@ -2462,7 +2462,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("템플릿 변경 기능이 조립되지 않았습니다")
         if not self.job_name:
             raise ValueError("먼저 작업을 선택하세요")
-        return self._template_change.check(self.job_name, str(p.get("request_id", "")))
+        result, authority_id, application_id = (
+            self._template_change.check_for_seated_context(
+                self.job_name, str(p.get("request_id", ""))
+            )
+        )
+        if (
+            result.get("ok") is True
+            and self.vm is not None
+            and (
+                not self.vm.job.authority_id
+                or self._seated_template_application_id is None
+            )
+        ):
+            assert authority_id is not None and application_id is not None
+            self.vm.job.authority_id = authority_id
+            self._seated_template_application_id = application_id
+        return result
 
     def _do_template_apply(self, p: dict) -> dict:
         """[변경사항 적용](S3-09) — opaque change token 하나로 원자 적용을 요청한다.
@@ -2476,16 +2492,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self.job_name:
             raise ValueError("먼저 작업을 선택하세요")
         self.raise_if_generating("템플릿 변경사항을 적용하세요")
-        result = self._template_change.apply(
-            self.job_name, str(p.get("change_token", ""))
+        result, committed_application_id = (
+            self._template_change.apply_for_seated_context(
+                self.job_name, str(p.get("change_token", ""))
+            )
         )
         if result.get("status") in {"applied", "already_applied", "applied_then_advanced"}:
-            self._seated_template_application_id = (
-                self._template_change.current_template_application_id(
-                    self.vm.job.authority_id or None
-                )
-                if self.vm is not None else None
-            )
+            self._seated_template_application_id = committed_application_id
             self._invalidate_execution_evidence()
             self._maybe_auto_check(effective_basis_changed=True)
         return result
@@ -2793,9 +2806,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ):
             return None
         try:
-            run_vm._managed_template = self._template_change.resolve_generation_template(
-                self.job_name
+            managed_template, authority_id, application_id = (
+                self._template_change.resolve_generation_template_for_seated_context(
+                    self.job_name
+                )
             )
+            run_vm._managed_template = managed_template
+            if self.vm is run_vm and (
+                not run_vm.job.authority_id
+                or self._seated_template_application_id is None
+            ):
+                run_vm.job.authority_id = authority_id
+                self._seated_template_application_id = application_id
         except SlotlessRunAdmissionError as exc:
             return {
                 "ok": False, "level": "warn",

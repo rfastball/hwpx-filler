@@ -3163,11 +3163,23 @@ def test_data_transition_uses_template_application_identity(
     template = Path(registry.load("공고서").template_path)
     _write_template(template, ["공고명", "추정가격", "비고"])
     prepared = coordinator.check("공고서", "external-change")["preparation"]
-    result = (
-        ctrl.dispatch("template_apply", {"change_token": prepared["change_token"]})
-        if applied_locally
-        else coordinator.apply("공고서", prepared["change_token"])
-    )
+    if applied_locally:
+        read_application = coordinator.current_template_application_id
+
+        def fail_post_commit_read(_work_id):
+            raise ValueError("post-commit store read failed")
+
+        monkeypatch.setattr(
+            coordinator, "current_template_application_id", fail_post_commit_read
+        )
+        result = ctrl.dispatch(
+            "template_apply", {"change_token": prepared["change_token"]}
+        )
+        monkeypatch.setattr(
+            coordinator, "current_template_application_id", read_application
+        )
+    else:
+        result = coordinator.apply("공고서", prepared["change_token"])
     assert result["status"] == "applied"
     restored_application_id = coordinator.current_template_application_id(authority_id)
     assert restored_application_id != seated_application_id
@@ -3201,6 +3213,40 @@ def test_data_transition_uses_template_application_identity(
         assert notice is None
     else:
         assert "같은 작업인지 확인할 수 없어" in notice["text"]
+
+
+@pytest.mark.parametrize("target", ["file", "pool"])
+def test_lazy_template_bootstrap_refreshes_seated_identity_before_data_transition(
+    tmp_path, target,
+):
+    """Seated 뒤 lazy bootstrap한 authority/Application은 다음 mount에서 KEEP한다."""
+    registry = _registry(tmp_path)
+    coordinator = TemplateChangeCoordinator(
+        registry, root=tmp_path / "authority", clock=_clock()
+    )
+    ctrl, pool = _pool_controller(
+        tmp_path, registry=registry, template_change=coordinator
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.vm is not None and not ctrl.vm.job.authority_id
+    assert ctrl._seated_template_application_id is None
+
+    result = ctrl.dispatch("template_check", {"request_id": "bootstrap"})
+    restored = registry.load("공고서")
+    assert result["ok"] is True and restored.authority_id
+    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
+    assert ctrl._seated_template_application_id == (
+        coordinator.current_template_application_id(restored.authority_id)
+    )
+
+    new_path = _data_csv(tmp_path)
+    if target == "file":
+        ctrl.load_data_path(new_path)
+    else:
+        key = _pool_add(pool, "새 데이터", {"path": new_path})
+        assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    assert ctrl.job_name == "공고서"
+    assert ctrl.snapshot()["data_notice"] is None
 
 
 def test_seating_identity_read_failure_does_not_split_the_active_work(
@@ -5161,6 +5207,11 @@ def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp
     assert res["ok"] is True, res
     assert res["exit_summary"] == "2개 성공", res["exit_summary"]
     assert len(list((tmp_path / "out").glob("*.hwpx"))) == 2  # 실제 산출물
+    restored = ctrl.registry.load("공고서")
+    assert ctrl.vm is not None and ctrl.vm.job.authority_id == restored.authority_id
+    assert ctrl._seated_template_application_id is not None
+    ctrl.load_data_path(str(clean))
+    assert ctrl.job_name == "공고서"  # generate lazy bootstrap도 다음 mount에서 KEEP
 
 
 def test_managed_generation_uses_applied_bytes_not_edited_source(tmp_path):

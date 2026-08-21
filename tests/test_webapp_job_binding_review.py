@@ -1314,9 +1314,9 @@ def test_template_apply_rechecks_same_work_execution_evidence(tmp_path: Path) ->
 
     class AppliedTemplateChange:
         @staticmethod
-        def apply(job_name: str, change_token: str) -> dict:
+        def apply_for_seated_context(job_name: str, change_token: str) -> tuple[dict, str]:
             assert job_name == WORK_REF and change_token == "token"
-            return {"status": "applied"}
+            return {"status": "applied"}, "app-applied"
 
     ctrl._template_change = AppliedTemplateChange()
     result = ctrl.dispatch("template_apply", {"change_token": "token"})
