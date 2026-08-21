@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -111,29 +112,39 @@ def _retryable_boot_hang(proc: subprocess.CompletedProcess, report: object) -> b
     """구조화된 loaded 전 매달림만 fresh-process 재시도 자격을 준다."""
     if not isinstance(report, dict):
         return False
+    verdict = report.get("verdict")
+    if not isinstance(verdict, dict):
+        return False
     return (
         proc.returncode == driver.ExitCode.ENVIRONMENT
         and report.get("infrastructure_event") == "boot_hung"
         and report.get("environment") is True
         and report.get("shots") == []
         and report.get("observations") == {}
+        and report.get("documents") == []
         and report.get("hwpx_generated") == 0
-        and report.get("verdict", {}).get("failures") == []
+        and verdict.get("ok") is False
+        and verdict.get("failures") == []
     )
 
 
 @pytest.fixture(scope="module")
 def live_check_run(tmp_path_factory) -> dict:
-    """101 `check` 를 **모듈당 한 번** 돌리고 그 실행의 사실을 모아 준다.
+    """101 `check` 를 정상 경로에서 **모듈당 한 번** 돌리고 그 사실을 모아 준다.
 
     실 WebView2 완주는 비싸다(실측 9초 + 창 부팅). 종전에는 두 테스트가 각자 한 번씩 돌아
     CI 잡이 같은 여정을 두 번 태웠다(#430 리뷰). 한 번 돌려 그 결과에 여러 단언을 거는 것은
     이 저장소의 실앱 게이트가 이미 쓰는 관용이다(`test_web_selftest_gate.py` 의 모듈 픽스처).
+    구조화된 loaded 전 매달림만 fresh process 한 번을 더 허용하며, 두 시도의 증거는 분리한다.
 
     예제 홈 스냅샷을 **이 실행을 감싸서** 뜬다 — 그래야 「이 실행이 바꿨는가」가 정확한 질문이
     된다(다른 테스트가 사이에 끼면 귀속이 흐려진다).
     """
     evidence = _evidence_dir(tmp_path_factory)
+    evidence_names = ("check-report.json", "check-stdout.txt", "check-stderr.txt")
+    for directory in (evidence, evidence / "attempt-1", evidence / "attempt-2"):
+        for name in evidence_names:
+            (directory / name).unlink(missing_ok=True)
     before = _tree_manifest(EXAMPLE_HOME)
     assert before, f"예제 홈이 비어 있습니다 — 무오염 대조가 아무것도 안 지킵니다: {EXAMPLE_HOME}"
 
@@ -245,6 +256,7 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
             "environment": True,
             "shots": [],
             "observations": {},
+            "documents": [],
             "hwpx_generated": 0,
             "verdict": {"ok": False, "failures": []},
         },
@@ -252,6 +264,7 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
             "environment": False,
             "shots": [],
             "observations": {},
+            "documents": [],
             "hwpx_generated": EXPECTED_HWPX,
             "verdict": {"ok": True, "failures": []},
         },
@@ -260,6 +273,7 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
 
     def fake_run(command, **_kwargs):
         report_path = Path(command[command.index("--report") + 1])
+        assert not report_path.exists(), "이전 실행의 보고서를 현재 증거로 읽습니다"
         calls.append(report_path)
         report_path.write_text(
             json.dumps(reports[len(calls) - 1], ensure_ascii=False), encoding="utf-8"
@@ -274,6 +288,15 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
     monkeypatch.delenv("HWPX_LIVE_EVIDENCE_DIR", raising=False)
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(sys.modules[__name__], "_tree_manifest", lambda _root: {"x": "y"})
+    stale = tmp_path / "live101" / "attempt-1" / "check-report.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text('{"stale": true}', encoding="utf-8")
+    stale_second = tmp_path / "live101" / "attempt-2" / "check-report.json"
+    stale_second.parent.mkdir(parents=True)
+    stale_second.write_text('{"stale": true}', encoding="utf-8")
+    (tmp_path / "live101" / "check-report.json").write_text(
+        '{"stale": true}', encoding="utf-8"
+    )
 
     with pytest.warns(RuntimeWarning, match="webview_boot_flake"):
         result = live_check_run.__wrapped__(_Factory())
@@ -281,7 +304,14 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
     assert result["proc"].returncode == driver.ExitCode.OK
     assert len(result["attempts"]) == 2
     assert calls[0].parent.name == "attempt-1" and calls[1].parent.name == "attempt-2"
-    assert (tmp_path / "live101" / "check-report.json").exists()
+    assert (calls[0].parent / "check-stdout.txt").read_text(encoding="utf-8") == "attempt 1"
+    assert (calls[1].parent / "check-stdout.txt").read_text(encoding="utf-8") == "attempt 2"
+    assert json.loads(calls[0].read_text(encoding="utf-8"))["infrastructure_event"] == "boot_hung"
+    assert json.loads(calls[1].read_text(encoding="utf-8"))["verdict"]["ok"] is True
+    canonical = json.loads(
+        (tmp_path / "live101" / "check-report.json").read_text(encoding="utf-8")
+    )
+    assert canonical["verdict"]["ok"] is True
 
     product_death = dict(reports[0], shots=["job-landing"])
     assert not _retryable_boot_hang(
@@ -289,6 +319,10 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
     )
     assert not _retryable_boot_hang(
         subprocess.CompletedProcess([], driver.ExitCode.SCENARIO_FAILED), reports[0]
+    )
+    contradictory = {**reports[0], "verdict": {"ok": True, "failures": []}}
+    assert not _retryable_boot_hang(
+        subprocess.CompletedProcess([], driver.ExitCode.ENVIRONMENT), contradictory
     )
 
 
@@ -364,7 +398,12 @@ def test_a_healthy_run_reports_when_it_nears_the_live_budget(live_check_run) -> 
     차단이 정당하다. 성능 소견은 경보로 낸다(#477): 실제 소요를 예산과 견줘 시끄럽게 적되,
     공유 러너에서 제품이 아니라 인프라를 재는 축으로는 머지를 막지 않는다.
     """
-    elapsed = float(live_check_run["report"]["elapsed_s"])
+    proc = live_check_run["proc"]
+    report = live_check_run["report"]
+    assert proc.returncode == driver.ExitCode.OK
+    assert report["verdict"]["ok"] is True
+    assert "infrastructure_event" not in report
+    elapsed = float(report["elapsed_s"])
 
     assert elapsed > 0, "소요가 0이면 이 대조가 아무것도 안 지킨다"
     note = _budget_health_note(elapsed, _LIVE_BUDGET_S)
@@ -595,7 +634,7 @@ def test_a_booted_window_passes_so_the_negative_controls_mean_something() -> Non
     driver._await_window(_FakeWindow(loaded=_AlreadyFired(), shown=_AlreadyFired()), 0.05, "웜")
 
 
-def test_an_environment_failure_produces_no_product_failures() -> None:
+def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_path) -> None:
     """**이 파일의 존재 이유**(#460) — 환경 실패는 제품 판정을 낳지 않는다.
 
     종전에는 창이 안 뜬 실행도 :func:`report_mod.judge` 를 그대로 타 「HWPX 생성 0건」·
@@ -610,6 +649,21 @@ def test_an_environment_failure_produces_no_product_failures() -> None:
     # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
     product = report_mod.judge({"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check")
     assert len(product.failures) == 7, product.failures
+
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "main", lambda **_kwargs: 9)
+    no_driver = driver._run_with_home(
+        mode="check",
+        home=tmp_path,
+        out_dir=None,
+        budget_s=1.0,
+        landing=driver._Landing(lambda result: result.exit_code()),
+    )
+    assert no_driver.environment is True
+    assert no_driver.report["verdict"]["failures"] == []
+    assert "app rc=9" in (no_driver.error or "")
+    assert "infrastructure_event" not in no_driver.report, "조기 반환은 retry 자격이 아닙니다"
 
 
 @pytest.mark.parametrize(
@@ -657,28 +711,26 @@ def test_hard_stops_land_on_their_own_unhealthy_axis(monkeypatch, capsys, tmp_pa
     monkeypatch.setattr(driver, "_say", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(driver, "_hard_exit", exits.append)
 
-    driver._arm_run_watchdog(
-        home=tmp_path,
-        finished=_Finished(),
-        budget_s=1.0,
-        mode="check",
-        landing=driver._Landing(lambda result: landed.append(result) or result.exit_code()),
-        settle=settle,
-        state={"phase": "host-loading"},
-    )
-    driver._arm_run_watchdog(
-        home=tmp_path,
-        finished=_Finished(),
-        budget_s=1.0,
-        mode="check",
-        landing=driver._Landing(lambda result: landed.append(result) or result.exit_code()),
-        settle=settle,
-        state={"phase": "scenario"},
-    )
+    phases = ("host-loading", "host-loaded", "host-ready", "window", "bridge", "scenario")
+    for phase in phases:
+        driver._arm_run_watchdog(
+            home=tmp_path,
+            finished=_Finished(),
+            budget_s=1.0,
+            mode="check",
+            landing=driver._Landing(
+                lambda result: landed.append(result) or result.exit_code()
+            ),
+            settle=settle,
+            state={"phase": phase},
+        )
     healthy = driver.LiveRunResult(
         mode="check",
         ok=True,
-        report={"verdict": {"ok": True, "reason": None, "failures": []}},
+        report={
+            "documents": ["kept.hwpx"],
+            "verdict": {"ok": True, "reason": None, "failures": []},
+        },
     )
     driver._arm_teardown_watchdog(
         healthy,
@@ -688,23 +740,53 @@ def test_hard_stops_land_on_their_own_unhealthy_axis(monkeypatch, capsys, tmp_pa
     )
 
     assert exits == [
-        driver.ExitCode.ENVIRONMENT,
+        driver.ExitCode.RUN_HUNG,
+        driver.ExitCode.RUN_HUNG,
+        driver.ExitCode.RUN_HUNG,
+        driver.ExitCode.RUN_HUNG,
+        driver.ExitCode.RUN_HUNG,
         driver.ExitCode.RUN_HUNG,
         driver.ExitCode.TEARDOWN_HUNG,
     ]
     assert [result.report["infrastructure_event"] for result in landed] == [
-        "boot_hung",
+        "run_hung",
+        "run_hung",
+        "run_hung",
+        "run_hung",
+        "run_hung",
         "run_hung",
         "teardown_hung",
     ]
     assert all(result.report["verdict"]["ok"] is False for result in landed)
-    assert landed[0].environment is True and landed[1].environment is False
-    assert landed[2].ok is False
+    assert [result.environment for result in landed[:6]] == [True, True, True, True, True, False]
+    assert landed[6].ok is False
 
     import capture_101_screenshots as cli
 
-    cli._land(landed[2], home=tmp_path, temp_root=None, use_example_home=False, report_path=None)
+    cli._land(landed[6], home=tmp_path, temp_root=None, use_example_home=False, report_path=None)
     assert "실패[인프라]" in capsys.readouterr().err
+
+    shared_landed: "list[driver.LiveRunResult]" = []
+    shared = driver._Landing(
+        lambda result: shared_landed.append(result) or result.exit_code()
+    )
+    driver._arm_run_watchdog(
+        home=tmp_path,
+        finished=_Finished(),
+        budget_s=1.0,
+        mode="check",
+        landing=shared,
+        settle=settle,
+        state={"phase": "teardown", "result": healthy},
+    )
+    driver._arm_teardown_watchdog(healthy, tmp_path, _Finished(), shared)
+    assert exits[-2:] == [driver.ExitCode.RUN_HUNG, driver.ExitCode.RUN_HUNG]
+    assert len(shared_landed) == 1
+    assert shared_landed[0].report["infrastructure_event"] == "run_hung"
+    assert shared_landed[0].report["documents"] == ["kept.hwpx"]
+
+    wiring = inspect.getsource(driver._run_with_home)
+    assert wiring.index("_arm_teardown_watchdog(") < wiring.index("ctx.finish(result.report)")
 
 
 def _landing_stderr(capsys, tmp_path, *, environment: bool, failures: "list[str]") -> "list[str]":

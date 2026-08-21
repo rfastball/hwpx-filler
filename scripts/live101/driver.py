@@ -148,6 +148,11 @@ class LiveRunResult:
     environment: bool = False
 
     def exit_code(self) -> int:
+        event = self.report.get("infrastructure_event")
+        if event == "run_hung":
+            return ExitCode.RUN_HUNG
+        if event == "teardown_hung":
+            return ExitCode.TEARDOWN_HUNG
         if self.ok:
             return ExitCode.OK
         return ExitCode.ENVIRONMENT if self.environment else ExitCode.SCENARIO_FAILED
@@ -508,8 +513,8 @@ def _run_with_home(
         return settle(
             {},
             None,
-            state["error"] or "드라이버가 실행되지 않았습니다",
-            environment=state["environment"],
+            state["error"] or f"드라이버가 실행되지 않았습니다(app rc={rc})",
+            environment=True,
         )
     if rc != 0:
         return LiveRunResult(
@@ -664,17 +669,17 @@ def _arm_run_watchdog(
             stream=2,
         )
         phase = state["phase"]
-        boot_hung = phase in ("host-loading", "host-timeout")
-        event = "boot_hung" if boot_hung else "run_hung"
         error = f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)"
-        base = settle(
-            {},
-            None,
-            error,
-            environment=boot_hung or phase == "window",
-        )
-        landing.once(_infrastructure_failure(base, event, error))
-        _hard_exit(ExitCode.ENVIRONMENT if boot_hung else ExitCode.RUN_HUNG)
+        base = state.get("result") if phase == "teardown" else None
+        if base is None:
+            base = settle(
+                {},
+                None,
+                error,
+                environment=phase != "scenario",
+            )
+        result = _infrastructure_failure(base, "run_hung", error)
+        _hard_exit(landing.once(result))
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -706,8 +711,8 @@ def _arm_teardown_watchdog(
             stream=2,
         )
         error = f"teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 끝나지 않았습니다"
-        landing.once(_infrastructure_failure(result, "teardown_hung", error))
-        _hard_exit(ExitCode.TEARDOWN_HUNG)
+        failure = _infrastructure_failure(result, "teardown_hung", error)
+        _hard_exit(landing.once(failure))
 
     threading.Thread(target=_watchdog, daemon=True).start()
 

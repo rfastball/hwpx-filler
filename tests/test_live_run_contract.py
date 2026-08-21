@@ -142,6 +142,31 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
     )
     _stub_app_boot(monkeypatch, tmp_path)
     order: "list[str]" = []
+    fallback: "list[object]" = []
+    alerts: "list[str]" = []
+    notices: "list[str]" = []
+
+    class _Timer:
+        daemon = False
+
+        def __init__(self, _seconds, callback) -> None:
+            fallback.append(callback)
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr(app_mod.threading, "Timer", _Timer)
+    monkeypatch.setattr(app_mod.settings, "alert", alerts.append)
+    monkeypatch.setattr(
+        app_mod.product_api,
+        "ProductApiClient",
+        SimpleNamespace(
+            for_window=lambda _window: SimpleNamespace(notice=notices.append)
+        ),
+    )
 
     run = _run(
         drive=lambda _ctx: order.append("drive"),
@@ -149,10 +174,12 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
         host_wait_grace_s=15.0,
     )
     assert app_mod.main(argv=[], live=run) == 0
+    fallback[0]()
     started[0]()
 
     assert window.events.loaded.timeouts == [16.0]
     assert order == ["host:timeout", "drive"]
+    assert len(alerts) == 1 and notices == [], "live fallback이 WebView bridge를 다시 열었습니다"
 
 
 # ------------------------------------------------------------ 등록 시점 음성 대조
@@ -235,6 +262,8 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
         ({"name": "  "}, "실행 이름"),
         ({"drive": "not-callable"}, "콜러블이 아닙니다"),
         ({"write_output": "not-callable"}, "증거 기록기"),
+        ({"host_event": "not-callable"}, "host_event"),
+        ({"host_wait_grace_s": -1.0}, "음수"),
         ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
         # 형태만 보면 통과해 **첫 파일 선택에서** 죽는다 — 창이 이미 뜬 뒤의 늦은 진단이다.
         (
