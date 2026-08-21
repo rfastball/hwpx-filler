@@ -28,6 +28,7 @@ import secrets
 import threading
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,14 @@ _ENGINE_METADATA = {"engine": "hwpxfiller"}
 
 class TemplateChangeError(ValueError):
     """제품 계약 위반·권한 실패·무결성 오류 — 정상 domain status 와 분리된 시끄러운 실패."""
+
+
+@dataclass(frozen=True)
+class _AdvanceResult:
+    preparation: TemplateChangePreparation
+    aggregate: WorkTemplateStateAggregate
+    final_job_snapshot: Job | None
+    current_application_id: str
 
 
 def unsupported_zone() -> dict[str, Any]:
@@ -467,17 +476,23 @@ class TemplateChangeCoordinator:
             started_at=self._now(),
             authorize=_authorize,
         )
-        prep, aggregate, command_job = self._advance(work_id, job_name, prep)
+        advanced = self._advance(work_id, job_name, prep)
         # `_advance` 반환 뒤 Preparation/Application은 이미 durable 하다. 그 뒤 registry를
-        # 재조회해 관찰 실패를 성공한 command의 실패로 바꾸지 않고, `_advance`가 실제
-        # capture에 사용한 Job snapshot을 함께 반환한다.
-        application_id = aggregate.work.current_template_application_id
-        if command_job.authority_id != work_id:
+        # 재조회하지 않고, 마지막 load-bearing gate가 실제로 본 Job snapshot을 함께 반환한다.
+        if (
+            advanced.final_job_snapshot is not None
+            and advanced.final_job_snapshot.authority_id != work_id
+        ):
             return ({"ok": False, "reason": "work_context_changed"}, None, None)
         return (
-            {"ok": True, "preparation": self._view(aggregate, work_id, prep)},
-            command_job,
-            application_id,
+            {
+                "ok": True,
+                "preparation": self._view(
+                    advanced.aggregate, work_id, advanced.preparation
+                ),
+            },
+            advanced.final_job_snapshot,
+            advanced.current_application_id,
         )
 
     def resolve_generation_template(self, job_name: str) -> str:
@@ -585,16 +600,28 @@ class TemplateChangeCoordinator:
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation
-    ) -> "tuple[TemplateChangePreparation, WorkTemplateStateAggregate, Job]":
+    ) -> _AdvanceResult:
         """CAPTURING→QUALIFYING→admission 을 순서대로 전진 — 각 stage 는 멱등 short-circuit."""
-        job = load_job(self._registry, job_name)
+        initial_job_snapshot = load_job(self._registry, job_name)
+        final_job_snapshot = None
+
+        def capture_gate_generation(_work: DocumentWork) -> int:
+            nonlocal final_job_snapshot
+            final_job_snapshot = load_job(self._registry, job_name)
+            return final_job_snapshot.binding_revision
+
+        def admission_gate_binding(_work: DocumentWork) -> tuple[str, int]:
+            nonlocal final_job_snapshot
+            final_job_snapshot = load_job(self._registry, job_name)
+            return f"{work_id}.binding", final_job_snapshot.binding_revision
+
         if prep.status == PREP_CAPTURING:
             # pin 된 generation 으로 capture 한다(현재 job 값이 아니라) — pin 불일치는
             # runner 의 신뢰 경계가 SOURCE_BINDING_CHANGED 로 판정할 몫이다.
             pinned = MutableSourceBinding(
                 source_binding_id=prep.source_binding_id,
                 media="hwpx",
-                host_reference=job.template_path,
+                host_reference=initial_job_snapshot.template_path,
                 display_metadata={},
                 generation=prep.source_binding_generation,
             )
@@ -603,9 +630,7 @@ class TemplateChangeCoordinator:
                 work_id=work_id, preparation_id=prep.preparation_id,
                 lineage=self._lineage(work_id, pinned), binding=pinned,
                 reader=self._reader(job_name),
-                resolve_current_generation=lambda _w: load_job(
-                    self._registry, job_name
-                ).binding_revision,
+                resolve_current_generation=capture_gate_generation,
                 captured_at=self._now(), created_at=self._now(),
             )
         if prep.status == PREP_QUALIFYING:
@@ -620,17 +645,19 @@ class TemplateChangeCoordinator:
             admit_preparation(
                 self._works, self._candidates, self._quals,
                 work_id=work_id, preparation_id=prep.preparation_id,
-                resolve_current_binding=lambda _w: (
-                    f"{work_id}.binding",
-                    load_job(self._registry, job_name).binding_revision,
-                ),
+                resolve_current_binding=admission_gate_binding,
                 prepared_change_id=f"{prep.preparation_id}-chg", prepared_at=self._now(),
             )
         aggregate = self._works.load(work_id)
         prep = next(
             p for p in aggregate.preparations if p.preparation_id == prep.preparation_id
         )
-        return prep, aggregate, job
+        return _AdvanceResult(
+            prep,
+            aggregate,
+            final_job_snapshot,
+            aggregate.work.current_template_application_id,
+        )
 
     def _bootstrap(
         self, work_id: str, job_name: str, job, request_id: str

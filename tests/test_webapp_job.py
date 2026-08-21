@@ -5322,11 +5322,16 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     # 작업 미선택 — 존은 부재가 아니라 명시적 unsupported 다(분기별 키 동형).
     assert ctrl.snapshot()["template_change"]["supported"] is False
     ctrl.dispatch("select_job", {"name": "공고서"})
+    seated_job = ctrl.vm.job
+    assert seated_job.authority_id == ""
     zone = ctrl.snapshot()["template_change"]
     assert zone["supported"] is True and zone["checkable"] is True
     result = ctrl.dispatch("template_check", {"request_id": "k1"})
     assert result["ok"] is True
     assert result["preparation"]["status"] == "no_change"
+    final_job = ctrl.registry.load("공고서")
+    assert seated_job.authority_id == final_job.authority_id
+    assert ctrl._seated_template_application_id is not None
     # 비-query 동사라 push 가 일어나 존이 최신 Preparation 을 실었다.
     assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
     # 개명이 권위 인덱스를 추종한다 — epoch 이 살아 있으면 재-bootstrap 이 아니다.
@@ -5360,13 +5365,15 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
     ctrl.dispatch("select_job", {"name": "공고서"})
     coordinator = ctrl._template_change
     assert coordinator is not None
-    state = {"in_check": False, "committed": False}
+    state = {"in_check": False, "committed": False, "post_commit_reads": 0}
+    final_job_snapshots = []
     advance = coordinator._advance
     check = coordinator.check_for_seated_context
     load_job = template_change_module.load_job
 
     def record_commit(*args, **kwargs):
         result = advance(*args, **kwargs)
+        final_job_snapshots.append(result.final_job_snapshot)
         state["committed"] = True
         return result
 
@@ -5380,6 +5387,7 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
 
     def fail_post_commit_read(*args, **kwargs):
         if state["in_check"] and state["committed"]:
+            state["post_commit_reads"] += 1
             raise OSError("post-commit registry observation failed")
         return load_job(*args, **kwargs)
 
@@ -5399,6 +5407,8 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
     assert len(durable.applications) == 1 and len(durable.preparations) == 1
     assert ctrl.vm is not None and ctrl.vm.job.authority_id == durable_job.authority_id
     assert ctrl._seated_template_application_id == application_id
+    assert state["post_commit_reads"] == 0
+    assert final_job_snapshots[-1] is not None
     assert pushes[-1][1]["template_change"]["preparation"]["status"] == "no_change"
 
     retried = ctrl.dispatch("template_check", {"request_id": "commit-truth"})
@@ -5409,42 +5419,140 @@ def test_template_check_does_not_reread_registry_after_durable_commit(
         result["preparation"]["preparation_token"]
     )
     assert durable_after_retry == durable
+    assert state["post_commit_reads"] == 0
+    assert final_job_snapshots[-1] is None  # no gate면 stale initial 반환 0
 
 
-def test_template_check_returns_the_job_snapshot_used_by_advance(
+def test_template_check_returns_the_job_snapshot_seen_by_final_gate(
     tmp_path, monkeypatch,
 ):
-    """Check 중 registry Job이 갈리면 old seat에 새 durable identity를 섞지 않는다."""
-    from hwpxfiller.external.work_template_store import AtomicWorkTemplateStateStore
-
+    """Capture gate 뒤 바뀐 B를 admission gate가 보면 caller도 exact B를 받는다."""
     ctrl, _pushes = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     coordinator = ctrl._template_change
     assert coordinator is not None
-    advance = coordinator._advance
-    state = {}
+    admit = template_change_module.admit_preparation
+    favorite_at = "2026-08-21T16:00:00+09:00"
 
-    def replace_before_advance(*args, **kwargs):
+    def change_before_final_gate(*args, **kwargs):
+        ctrl.registry.set_favorite("공고서", True, favorite_at)
+        return admit(*args, **kwargs)
+
+    monkeypatch.setattr(
+        template_change_module, "admit_preparation", change_before_final_gate
+    )
+
+    result, final_job, application_id = coordinator.check_for_seated_context(
+        "공고서", "final-witness"
+    )
+
+    assert result["ok"] is True and result["preparation"]["status"] == "no_change"
+    assert final_job is not None and final_job.favorited_at == favorite_at
+    assert application_id is not None
+
+
+def test_template_check_releases_when_rules_change_before_final_gate(
+    tmp_path, monkeypatch,
+):
+    """같은 authority라도 final gate B의 규칙/판본이 seated A와 다르면 채택하지 않는다."""
+    ctrl, _pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    seated_job = ctrl.vm.job
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    admit = template_change_module.admit_preparation
+
+    def change_before_final_gate(*args, **kwargs):
+        ctrl.registry.mutate(
+            "공고서",
+            lambda job: setattr(job, "filename_pattern", "교체-{{seq:001}}"),
+        )
+        return admit(*args, **kwargs)
+
+    monkeypatch.setattr(
+        template_change_module, "admit_preparation", change_before_final_gate
+    )
+
+    result = ctrl.dispatch("template_check", {"request_id": "rules-race"})
+
+    assert result["ok"] is False and result["reason"] == "work_context_changed"
+    assert seated_job.authority_id == ""  # B identity adoption 0
+    assert ctrl.registry.load("공고서").binding_revision > seated_job.binding_revision
+    assert ctrl.job_name == "" and ctrl.vm is None
+    assert "변경되어 선택을 해제" in ctrl.snapshot()["data_notice"]["text"]
+
+
+def test_template_check_releases_same_name_recreation_seen_by_final_gate(
+    tmp_path, monkeypatch,
+):
+    """Capture 뒤 동명 A→B 재생성은 final gate B를 돌려 loud RELEASE한다."""
+    ctrl, _pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    seated_job = ctrl.vm.job
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    admit = template_change_module.admit_preparation
+
+    def recreate_before_final_gate(*args, **kwargs):
         replacement = ctrl.registry.load("공고서")
-        state["work_id"] = replacement.authority_id
         ctrl.registry.delete("공고서")
         replacement.authority_id = "authority-replacement"
         ctrl.registry.save(replacement)
-        return advance(*args, **kwargs)
+        return admit(*args, **kwargs)
 
-    monkeypatch.setattr(coordinator, "_advance", replace_before_advance)
+    monkeypatch.setattr(
+        template_change_module, "admit_preparation", recreate_before_final_gate
+    )
 
-    result = ctrl.dispatch("template_check", {"request_id": "mid-check-replacement"})
+    result = ctrl.dispatch("template_check", {"request_id": "recreation-race"})
 
     assert result["ok"] is False and result["reason"] == "work_context_changed"
-    assert "변경되어 선택을 해제" in result["error"]
+    assert seated_job.authority_id == ""  # replacement identity adoption 0
     assert ctrl.registry.load("공고서").authority_id == "authority-replacement"
-    durable = AtomicWorkTemplateStateStore(tmp_path / "authority" / "works").load(
-        state["work_id"]
-    )
-    assert durable.work.current_template_application_id
     assert ctrl.job_name == "" and ctrl.vm is None
     assert ctrl._seated_template_application_id is None
+
+
+def test_template_check_final_gate_read_failure_prevents_admission_commit(
+    tmp_path, monkeypatch,
+):
+    """Admission transaction의 final Job read 실패는 그 commit을 허가하지 않는다."""
+    ctrl, pushes = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    seated_job = ctrl.vm.job
+    coordinator = ctrl._template_change
+    assert coordinator is not None
+    admit = template_change_module.admit_preparation
+    load_job = template_change_module.load_job
+    state = {"in_final_gate": False}
+    before_gate = []
+
+    def fail_final_gate(*args, **kwargs):
+        work_id = kwargs["work_id"]
+        before_gate.append(coordinator._works.load(work_id))
+        state["in_final_gate"] = True
+        try:
+            return admit(*args, **kwargs)
+        finally:
+            state["in_final_gate"] = False
+
+    def fail_final_read(*args, **kwargs):
+        if state["in_final_gate"]:
+            raise OSError("final-gate registry observation failed")
+        return load_job(*args, **kwargs)
+
+    monkeypatch.setattr(template_change_module, "admit_preparation", fail_final_gate)
+    monkeypatch.setattr(template_change_module, "load_job", fail_final_read)
+    push_count = len(pushes)
+
+    with pytest.raises(OSError, match="final-gate registry observation failed"):
+        ctrl.dispatch("template_check", {"request_id": "final-gate-failure"})
+
+    work_id = ctrl.registry.load("공고서").authority_id
+    assert coordinator._works.load(work_id) == before_gate[0]
+    assert before_gate[0].prepared_changes == ()
+    assert seated_job.authority_id == "" and ctrl._seated_template_application_id is None
+    assert ctrl.vm is not None and len(pushes) == push_count
 
 
 def test_managed_generation_routes_through_exact_applied_bytes_no_regression(tmp_path):

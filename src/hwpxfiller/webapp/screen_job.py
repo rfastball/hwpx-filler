@@ -2518,8 +2518,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 or self._seated_template_application_id is None
             )
         ):
-            assert restored_job is not None and application_id is not None
-            if not self._can_adopt_seated_identity(self.vm.job, restored_job):
+            if (
+                restored_job is None
+                or application_id is None
+                or not self._can_adopt_seated_identity(self.vm.job, restored_job)
+            ):
                 self._release_changed_active_work("문서 작업이 변경되어")
                 return {
                     "ok": False,
