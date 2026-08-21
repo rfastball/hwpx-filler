@@ -28,10 +28,12 @@ import secrets
 import threading
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..domain.job import Job
 from ..application.candidate_revision import (
     MutableSourceBinding,
     TemplateLineage,
@@ -110,6 +112,14 @@ _ENGINE_METADATA = {"engine": "hwpxfiller"}
 
 class TemplateChangeError(ValueError):
     """제품 계약 위반·권한 실패·무결성 오류 — 정상 domain status 와 분리된 시끄러운 실패."""
+
+
+@dataclass(frozen=True)
+class _AdvanceResult:
+    preparation: TemplateChangePreparation
+    aggregate: WorkTemplateStateAggregate
+    final_job_snapshot: Job | None
+    current_application_id: str
 
 
 def unsupported_zone() -> dict[str, Any]:
@@ -307,6 +317,13 @@ class TemplateChangeCoordinator:
 
     # ─── 조회(스냅샷 존) ────────────────────────────────────────────────────
 
+    def current_template_application_id(self, work_id: "str | None") -> "str | None":
+        """Durable Work authority가 가리키는 현재 Template Application을 읽는다."""
+        if work_id is None or not self._works.exists(work_id):
+            return None
+        self._recover(work_id)
+        return self._works.load(work_id).work.current_template_application_id
+
     def zone(self, job_name: str, media: str, template_missing: bool) -> dict[str, Any]:
         """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch."""
         if media != "hwpx" or template_missing:
@@ -414,6 +431,15 @@ class TemplateChangeCoordinator:
         ``{"ok": False, "reason": "initialization_required"}`` — 후자는 오류가 아니라 정상
         결과라 raise 하지 않는다(진단·비활성 사유는 스냅샷 존이 병기한다).
         """
+        result, _job, _application_id = self.check_for_seated_context(
+            job_name, prepare_request_id, actor
+        )
+        return result
+
+    def check_for_seated_context(
+        self, job_name: str, prepare_request_id: str, actor: str = LOCAL_ACTOR
+    ) -> "tuple[dict, Job | None, str | None]":
+        """확인 결과와 같은 command Job/Application identity를 낸다."""
         if not _REQUEST_ID.fullmatch(prepare_request_id or ""):
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
@@ -422,12 +448,19 @@ class TemplateChangeCoordinator:
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
         self._recover(work_id)
 
         if not self._works.exists(work_id):
             outcome = self._bootstrap(work_id, job_name, job, prepare_request_id)
             if outcome.result != BOOTSTRAP_OK:
-                return {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED}
+                return (
+                    {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED},
+                    None,
+                    None,
+                )
 
         binding = self._binding(work_id, job)
         prep = start_prepare(
@@ -443,8 +476,24 @@ class TemplateChangeCoordinator:
             started_at=self._now(),
             authorize=_authorize,
         )
-        prep = self._advance(work_id, job_name, prep)
-        return {"ok": True, "preparation": self._view(self._works.load(work_id), work_id, prep)}
+        advanced = self._advance(work_id, job_name, prep)
+        # `_advance` 반환 뒤 Preparation/Application은 이미 durable 하다. 그 뒤 registry를
+        # 재조회하지 않고, 마지막 load-bearing gate가 실제로 본 Job snapshot을 함께 반환한다.
+        if (
+            advanced.final_job_snapshot is not None
+            and advanced.final_job_snapshot.authority_id != work_id
+        ):
+            return ({"ok": False, "reason": "work_context_changed"}, None, None)
+        return (
+            {
+                "ok": True,
+                "preparation": self._view(
+                    advanced.aggregate, work_id, advanced.preparation
+                ),
+            },
+            advanced.final_job_snapshot,
+            advanced.current_application_id,
+        )
 
     def resolve_generation_template(self, job_name: str) -> str:
         """managed Product Work 생성의 정본 템플릿 경로 — current Application 의 exact applied
@@ -458,12 +507,24 @@ class TemplateChangeCoordinator:
         gate 차단은 그 verdict code(NEEDS_CONFIGURATION[_REVIEW]·STALE·SLOT_CONFIGURATION_
         EXECUTION_NOT_AVAILABLE·SLOTLESS_SELECTION_CONTEXT_REQUIRED)로 오른다.
         """
+        return self.resolve_generation_template_for_seated_context(job_name)
+
+    def resolve_generation_template_for_seated_context(
+        self,
+        job_name: str,
+        *,
+        on_context: "Callable[[Job, str], None] | None" = None,
+    ) -> str:
+        """생성 admission 전에 이미 확립된 Work/Application identity를 알린다."""
         job = load_job(self._registry, job_name)
         if job.media != "hwpx":
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
+        job = load_job(self._registry, job_name)
+        if job.authority_id != work_id:
+            raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
         self._recover(work_id)
         if not self._works.exists(work_id):
             # 매 Generate 시도는 fresh id 다 — bootstrap 이 qualification 에서 실패하며 create-once
@@ -474,6 +535,11 @@ class TemplateChangeCoordinator:
             if outcome.result != BOOTSTRAP_OK:
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
+        if on_context is not None:
+            job = load_job(self._registry, job_name)
+            if job.authority_id != work_id:
+                raise TemplateChangeError("문서 작업 권위를 다시 확인할 수 없습니다")
+            on_context(job, aggregate.work.current_template_application_id)
         ws = self._workspace.get_or_create(self._now())
         try:
             run = admit_managed_slotless_run(
@@ -534,16 +600,26 @@ class TemplateChangeCoordinator:
 
     def _advance(
         self, work_id: str, job_name: str, prep: TemplateChangePreparation
-    ) -> TemplateChangePreparation:
+    ) -> _AdvanceResult:
         """CAPTURING→QUALIFYING→admission 을 순서대로 전진 — 각 stage 는 멱등 short-circuit."""
-        job = load_job(self._registry, job_name)
+        initial_job_snapshot = load_job(self._registry, job_name)
+        final_job_snapshot = None
+
+        def capture_gate_generation(_work: DocumentWork) -> int:
+            return load_job(self._registry, job_name).binding_revision
+
+        def admission_gate_binding(_work: DocumentWork) -> tuple[str, int]:
+            nonlocal final_job_snapshot
+            final_job_snapshot = load_job(self._registry, job_name)
+            return f"{work_id}.binding", final_job_snapshot.binding_revision
+
         if prep.status == PREP_CAPTURING:
             # pin 된 generation 으로 capture 한다(현재 job 값이 아니라) — pin 불일치는
             # runner 의 신뢰 경계가 SOURCE_BINDING_CHANGED 로 판정할 몫이다.
             pinned = MutableSourceBinding(
                 source_binding_id=prep.source_binding_id,
                 media="hwpx",
-                host_reference=job.template_path,
+                host_reference=initial_job_snapshot.template_path,
                 display_metadata={},
                 generation=prep.source_binding_generation,
             )
@@ -552,9 +628,7 @@ class TemplateChangeCoordinator:
                 work_id=work_id, preparation_id=prep.preparation_id,
                 lineage=self._lineage(work_id, pinned), binding=pinned,
                 reader=self._reader(job_name),
-                resolve_current_generation=lambda _w: load_job(
-                    self._registry, job_name
-                ).binding_revision,
+                resolve_current_generation=capture_gate_generation,
                 captured_at=self._now(), created_at=self._now(),
             )
         if prep.status == PREP_QUALIFYING:
@@ -566,21 +640,24 @@ class TemplateChangeCoordinator:
             )
         if prep.status == PREP_QUALIFYING and prep.attempt_id is not None:
             # PASS checkpoint 는 QUALIFYING 을 유지한다 — READY 승격/terminal 은 admission 몫.
-            admit_preparation(
+            admission = admit_preparation(
                 self._works, self._candidates, self._quals,
                 work_id=work_id, preparation_id=prep.preparation_id,
-                resolve_current_binding=lambda _w: (
-                    f"{work_id}.binding",
-                    load_job(self._registry, job_name).binding_revision,
-                ),
+                resolve_current_binding=admission_gate_binding,
                 prepared_change_id=f"{prep.preparation_id}-chg", prepared_at=self._now(),
             )
-            prep = next(
-                p
-                for p in self._works.load(work_id).preparations
-                if p.preparation_id == prep.preparation_id
-            )
-        return prep
+            aggregate = admission.aggregate
+        else:
+            aggregate = self._works.load(work_id)
+        prep = next(
+            p for p in aggregate.preparations if p.preparation_id == prep.preparation_id
+        )
+        return _AdvanceResult(
+            prep,
+            aggregate,
+            final_job_snapshot,
+            aggregate.work.current_template_application_id,
+        )
 
     def _bootstrap(
         self, work_id: str, job_name: str, job, request_id: str
@@ -645,6 +722,15 @@ class TemplateChangeCoordinator:
 
     def apply(self, job_name: str, change_token: str, actor: str = LOCAL_ACTOR) -> dict:
         """[변경사항 적용] — token 해석·독립 권한 확인·cross-Work 거절 뒤 원자 apply."""
+        result, _application_id = self.apply_for_seated_context(
+            job_name, change_token, actor
+        )
+        return result
+
+    def apply_for_seated_context(
+        self, job_name: str, change_token: str, actor: str = LOCAL_ACTOR
+    ) -> "tuple[dict, str]":
+        """Apply 결과와 같은 atomic aggregate의 current Application ID를 낸다."""
         resolved = self._change_id_by_token.get(str(change_token or ""))
         if resolved is None:
             raise TemplateChangeError("적용 대상이 유효하지 않습니다 — 변경사항을 다시 확인하세요")
@@ -679,4 +765,4 @@ class TemplateChangeCoordinator:
             "current_template_application_epoch": current.application_epoch,
             "is_current": outcome.resulting_application_id
             == aggregate.work.current_template_application_id,
-        }
+        }, current.application_id

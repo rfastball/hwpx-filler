@@ -150,7 +150,7 @@ def _admit(wstore, cstore, qstore, binding=_binding, change_id="C1"):
     return admit_preparation(
         wstore, cstore, qstore, work_id="W1", preparation_id="P1",
         resolve_current_binding=binding, prepared_change_id=change_id, prepared_at="t7",
-    )
+    ).change
 
 
 def _prep(wstore):

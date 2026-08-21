@@ -224,6 +224,27 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].data_path == ""
 
 
+def test_pick_data_file_cancel_preserves_committed_job_session(tmp_path, monkeypatch):
+    """picker cancel은 controller 진입 전 종료되어 기존 data/Work를 그대로 둔다."""
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    ctrl = frontend.controllers["job"]
+    template = tmp_path / "기안.txt"
+    template.write_text("고정 본문", encoding="utf-8")
+    ctrl.registry.save(Job(name="기안", template_path=str(template)))
+    data = tmp_path / "old.csv"
+    data.write_text("항목\n이전 값\n", encoding="utf-8")
+    ctrl.load_data_path(str(data))
+    ctrl.dispatch("select_job", {"name": "기안"})
+    before = (ctrl.datasource, ctrl.records, ctrl.selection, ctrl.job_name, ctrl._snapshot_gen)
+
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: None)
+    assert frontend.pick_data_file("job") is None
+    assert (ctrl.datasource, ctrl.records, ctrl.selection, ctrl.job_name, ctrl._snapshot_gen) == before
+
+
 @pytest.mark.parametrize("screen", ["editor", "job"])
 def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, monkeypatch):
     """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 화면 모두 needs_sheet 로

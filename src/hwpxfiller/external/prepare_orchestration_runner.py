@@ -18,6 +18,7 @@ short-circuit 한다.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
@@ -95,6 +96,13 @@ from .work_template_store import (
 )
 
 _INTEGRITY_ERRORS = (CandidateNotFound, CandidateCorrupt, QualObjectNotFound, QualCorrupt)
+
+
+@dataclass(frozen=True)
+class AdmissionResult:
+    change: PreparedTemplateChange | None
+    aggregate: WorkTemplateStateAggregate
+
 
 # ponytail: 고정 상한. optimistic Profile discovery 는 process-local fence 아래 exact re-read 로
 # 즉시 수렴하므로 실전 반복은 사실상 1 이다 — 상한은 pathological churn 을 유한 시간에 시끄럽게
@@ -269,22 +277,22 @@ def admit_preparation(
     resolve_current_binding: "Callable[[DocumentWork], tuple[str, int]]",
     prepared_change_id: str,
     prepared_at: str,
-) -> PreparedTemplateChange | None:
+) -> AdmissionResult:
     """durable PASS checkpoint 를 ordered gate 로 admission 한다 — READY+Change 또는 fail-closed.
 
     idempotent: 이미 READY 면 기존 Change 를, terminal 이면 무변경으로 닫는다. current intent·exact
     base·source binding·Profile revocation·exact PASS Evidence 를 완료 시점 값으로 rebase 하지 않고
     **재검사**하고, current target 과 operational 동치면 NO_CHANGE 로 닫는다(Work 변경 없음).
     """
-    holder: dict = {"change": None}
     with work_store.update(work_id) as txn:
         aggregate = txn.aggregate
         prep = find_preparation(aggregate, preparation_id)
         if prep.status == PREP_READY:  # idempotent — 기존 Change 반환, 무변경
-            holder["change"] = find_change(aggregate, prep.prepared_change_id)
-            return holder["change"]
+            return AdmissionResult(
+                find_change(aggregate, prep.prepared_change_id), aggregate
+            )
         if prep.status != PREP_QUALIFYING or prep.attempt_id is None:
-            return None  # admission 대상 아님(terminal 이거나 아직 PASS checkpoint 없음)
+            return AdmissionResult(None, aggregate)  # terminal/아직 PASS checkpoint 없음
 
         terminal = _admission_gate(
             aggregate, prep, candidate_store, qualification_store, resolve_current_binding
@@ -293,15 +301,16 @@ def admit_preparation(
             txn.aggregate = plan_admission_terminal(
                 aggregate, preparation_id, terminal, completed_at=prepared_at
             )
-            return None
+            return AdmissionResult(None, txn.aggregate)
         txn.aggregate = plan_admission_ready(
             aggregate, preparation_id,
             prepared_change_id=prepared_change_id,
             target_pass_evidence_id=prep.evidence_id,
             prepared_at=prepared_at,
         )
-        holder["change"] = find_change(txn.aggregate, prepared_change_id)
-    return holder["change"]
+        return AdmissionResult(
+            find_change(txn.aggregate, prepared_change_id), txn.aggregate
+        )
 
 
 def _admission_gate(
