@@ -68,6 +68,16 @@ def _run_commands(job: dict) -> list[str]:
     ]
 
 
+def _logical_lines(command: str) -> list[str]:
+    """줄잇기(PowerShell 백틱 · sh 백슬래시)를 이어 붙여 **한 명령이 한 줄**이 되게 한다.
+
+    이걸 안 하면 `uv run …` 과 그 인자가 다른 줄에 놓이는 순간 두 조각 어느 쪽도 안 걸린다 —
+    규칙은 초록인데 실제로는 그대로 통과한다. `quality.yml` 은 이미 백틱 줄잇기를 쓰므로
+    (커버리지 하한 호출) 이건 가상의 형상이 아니다.
+    """
+    return re.sub(r"[`\\]\r?\n\s*", " ", command).splitlines()
+
+
 def _runs_axis(job: dict, axis: str) -> bool:
     """그 job 이 `-m <축>` 으로 pytest 를 도는가(축 이름의 부분일치가 아니라 낱말로)."""
     return any(re.search(rf"-m {axis}\b", command) for command in _run_commands(job))
@@ -319,12 +329,12 @@ def test_no_step_conjures_a_dependency_the_lockfile_never_saw() -> None:
     고칠 자리는 실행 줄이 아니라 `pyproject.toml` 의 의존 그룹이다. 그래야 CI 와 개발 기기가
     같은 환경을 본다.
     """
-    conjured = re.compile(r"\buv run\b.*\s--with\b")
+    conjured = re.compile(r"\buv run\b[^\n]*\s--with\b")
     offenders = [
         f"{name}: {line.strip()}"
         for name, job in _jobs().items()
         for command in _run_commands(job)
-        for line in command.splitlines()
+        for line in _logical_lines(command)
         if conjured.search(line)
     ]
 
@@ -332,9 +342,16 @@ def test_no_step_conjures_a_dependency_the_lockfile_never_saw() -> None:
         "잠금 밖 의존을 실행 줄에서 얹는 단계가 있습니다 — 선언으로 옮기세요:\n"
         + "\n".join(offenders)
     )
+
+    def _caught(command: str) -> bool:
+        return any(conjured.search(line) for line in _logical_lines(command))
+
     # 음성 대조 — 형상을 실제로 거절하는가(항상 참인 검사가 아니다).
-    assert conjured.search("uv run --no-sync --with pillow pytest -q")
-    assert not conjured.search("uv run --no-sync pytest -q")
+    assert _caught("uv run --no-sync --with pillow pytest -q")
+    assert _caught("uv run --no-sync `\n            --with pillow pytest -q")  # 줄잇기로 쪼갠 것도
+    assert not _caught("uv run --no-sync pytest -q")
+    # 다른 명령의 `--with` 를 앞 줄의 `uv run` 에 붙여 읽지 않는다(거짓 양성 금지).
+    assert not _caught("uv run --no-sync pytest -q\nsome-tool --with foo")
 
 
 def test_packaging_consumes_the_same_artifact_instead_of_building_its_own() -> None:
