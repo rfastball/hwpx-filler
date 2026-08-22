@@ -339,7 +339,7 @@ uv run python examples/quickstart-101/make_template.py
 완주하며 다시 찍는다(깨끗한 상태 전제, `reset-101.cmd` 먼저):
 
 ```powershell
-uv run --with pillow --extra gui python scripts/capture_101_screenshots.py capture
+uv run --extra gui python scripts/capture_101_screenshots.py capture
 ```
 
 같은 실습을 **그림 없이 동작만** 검사할 수도 있다. 이쪽은 이 폴더가 아니라 임시 홈에

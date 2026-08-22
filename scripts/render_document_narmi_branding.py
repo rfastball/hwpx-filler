@@ -16,10 +16,11 @@ ICO 는 원래 프레임별로 다른 그림을 담으라고 있는 포맷이다
 래스터는 **목표 크기에서 네이티브로** 그린다. 크게 그려 축소하면 브라우저가 실제로
 그리는 픽셀과 달라져, 16px 판독성 판정이 출하물과 다른 그림을 근거로 서게 된다.
 
-Pillow·Playwright 는 프로젝트 런타임 의존성이 아니다 — 산출물(.png/.ico)을 커밋하는
-dev 전용 생성기라 재생성 시에만 얹어 돌린다(Chrome 은 설치본을 쓴다):
+Pillow·Playwright 는 **제품** 런타임 의존성이 아니다 — 산출물(.png/.ico)을 커밋하는 dev
+전용 생성기다. 둘 다 `[dependency-groups] dev` 가 선언하므로 canonical 환경이면 그냥 돈다
+(Chrome 은 설치본을 쓴다):
 
-    uv run --with playwright --with pillow python scripts/render_document_narmi_branding.py
+    uv run python scripts/render_document_narmi_branding.py
 """
 from __future__ import annotations
 
