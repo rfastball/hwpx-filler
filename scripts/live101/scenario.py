@@ -663,6 +663,30 @@ def _workbench(snapshot: dict) -> dict:
     return value
 
 
+def _preview_observation(s: Surface, what: str) -> dict:
+    """미리보기 서랍을 **열어** `semantic_preview` 가 실린 관측을 읽는다(닫지는 않는다).
+
+    `semantic_preview` 는 서랍이 열려 있을 때만 스냅샷에 실린다(`screen_job.py:3390` —
+    `self.preview_open and observation.semantic_preview is not None`). 그래서 토큰을 읽는
+    걸음은 여는 행위와 **한 몸**이다. 닫힌 채로 물으면 `None` 이 오고, 대본은 그 자리에서
+    `TypeError` 로 죽어 무엇이 없었는지 말하지 못한다 — 그 침묵을 여기서 문장으로 바꾼다.
+    """
+    s.click_sel("#jobManagedPreviewOpen", what=f"{what} semantic preview 열기")
+    s.wait(
+        "!document.getElementById('previewSheet').classList.contains('hidden')",
+        f"{what} preview 서랍",
+        timeout=30.0,
+        requires=["#previewSheet"],
+    )
+    observation = _workbench(_snapshot(s))
+    if not isinstance(observation.get("semantic_preview"), dict):
+        raise ScenarioFailure(
+            f"{what} preview 서랍이 열렸는데 semantic_preview 가 없습니다 — "
+            f"requirement={observation.get('preview_requirement')!r}"
+        )
+    return observation
+
+
 def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> None:
     s = ctx.surface
     ctx.queue_file_answer(path)
@@ -1007,20 +1031,53 @@ def run_sx(ctx: ScenarioContext) -> dict:
         + ")"
     )
     old_recovery = s.bridge(recovery_expr, "old record recovery target 거절")
+    # 전환은 `_reset_range_for_snapshot` 에서 record preparation 을 무효화한다
+    # (`screen_job.py:743`). 그래서 옛 좌표는 「…복원할 수 없습니다」 가지가 아니라 그 **앞의**
+    # 「현재 데이터 확인 결과가 없습니다」로 거절된다 — 둘 다 옳은 거절이고, 계약은 한 문장이
+    # 아니라 「옛 좌표를 수락하지 않고 현재 데이터에서 다시 확인하라고 말한다」다. 한 가지의
+    # 문장을 통째로 겨누면 옳은 거절을 실패로 읽는다(수락은 거절 문안 자체가 없어 걸린다).
+    old_message = _rejection_message(old_recovery)
     _expect(
-        "복원할 수 없습니다" in _rejection_message(old_recovery),
-        "H7: old record recovery target이 수락됐습니다",
+        "다시 확인해" in old_message,
+        f"H7: old record recovery target이 수락됐습니다 — {old_recovery!r}",
     )
 
     # Exact delivery + OPTIONAL/REQUIRED semantic preview. The harness collision file predates the no-mutation bracket.
+    # 새 스냅샷은 선택을 0건으로 되돌린다(`_reset_range_for_snapshot` — 마운트 직후 선택 0건).
+    # 그래서 전환 뒤에 배달 계획을 물으려면 **다시 고르는** 걸음이 대본에 있어야 한다. 없으면
+    # 제품은 계획 대신 배달 blocker 를 세우므로(`job_run.ts:869-878`) `#jobPlannedDocuments` 는
+    # 아예 서지 않고, 그 부재는 「계획이 늦다」가 아니라 「고른 것이 0건이다」라는 뜻이다.
+    s.click_sel("#jobSelAll", what="전환 뒤 record 재선택")
     output_dir = ctx.prepare_output()
     ctx.queue_folder_answer(output_dir)
     s.click_sel("#jobManagedPickFolder", what="managed output folder 선택")
-    s.wait("document.querySelectorAll('#jobPlannedDocuments li').length > 0", "exact delivery 계획", timeout=30.0, requires=["#jobPlannedDocuments"])
-    optional = _workbench(_snapshot(s))
+    try:
+        # `requires` 에 `#jobPlannedDocuments` 를 걸지 않는다 — 그것이 안 서는 것이 바로 제품의
+        # 대답이라, requires 로 걸면 뜻 있는 시한이 「없는 요소를 겨눴다」로 둔갑한다.
+        s.wait(
+            "document.querySelectorAll('#jobPlannedDocuments li').length > 0",
+            "exact delivery 계획",
+            timeout=30.0,
+        )
+    except StepTimeout as exc:
+        # 계획이 안 서면 제품은 그 이유를 blocker 로 말한다 — 시한만 남기지 말고 그 말을 싣는다.
+        blockers = s.js(
+            "(function(){var b=document.getElementById('jobDeliveryBlockers');"
+            "return b?b.innerText.trim():null;})()"
+        )
+        raise ScenarioFailure(f"SX-05 배달 계획이 서지 않았습니다 — blockers={blockers!r}") from exc
+    optional = _preview_observation(s, "OPTIONAL")
     _expect(optional["preview_requirement"]["kind"] == "OPTIONAL", "H5: OPTIONAL preview가 아닙니다")
     optional_token = optional["semantic_preview"]["preview_token"]
     relative_path = optional["delivery"]["planned_documents"][0]["relative_path"]
+    # 읽었으면 닫는다 — 이어지는 충돌 처리·배달 재계산은 작업대 표면의 걸음이라, 서랍을 얹은
+    # 채로 밟으면 무엇이 무엇을 가렸는지가 증거에서 흐려진다.
+    s.click_sel("#previewClose", what="OPTIONAL preview 닫기")
+    s.wait(
+        "document.getElementById('previewSheet').classList.contains('hidden')",
+        "OPTIONAL preview 닫힘",
+        requires=["#previewSheet"],
+    )
     ctx.create_collision(relative_path)
     baseline_manifest = ctx.output_manifest()
     s.set_value("#jobDeliveryCollision", "OVERWRITE_EXPLICIT")
@@ -1034,7 +1091,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         timeout=30.0,
         requires=["#jobPlannedDocuments"],
     )
-    required = _workbench(_snapshot(s))
+    required = _preview_observation(s, "REQUIRED")
     _expect(required["preview_requirement"]["kind"] == "REQUIRED", "H5: REQUIRED preview가 아닙니다")
     _expect(required["preview_requirement"].get("reason") == "DESTRUCTIVE_OVERWRITE", "H5: REQUIRED reason이 틀렸습니다")
     current_token = required["semantic_preview"]["preview_token"]
@@ -1058,7 +1115,18 @@ def run_sx(ctx: ScenarioContext) -> dict:
     preview_text = str(s.js("document.getElementById('previewSheet').innerText"))
     _expect("Artifact" not in preview_text and "아티팩트" not in preview_text, "H6: preview를 Artifact로 표현했습니다")
     s.click_sel("#previewApprove", what="current preview 승인")
-    s.wait("getComputedStyle(document.getElementById('previewApprove')).display === 'none'", "current preview 승인 착지", requires=["#previewApprove"])
+    # 승인이 착지하면 이 서랍은 승인 버튼을 **지운다**(`job_preview.ts:121-127` — 요구가 남아
+    # 있을 때만 서는 블록이라 satisfied 뒤에는 null 이다). 다른 변형(`:205-213`)은 display 로
+    # 숨기지만 여기 오는 것은 앞의 것이다. 그래서 「display 가 none 인가」로 재면
+    # `getElementById` 가 null 을 내고 `getComputedStyle` 이 던진다 — 착지가 예외로 둔갑한다.
+    # 착지의 증거는 버튼의 **부재**와 문안의 전환을 함께 본다: 문안만 보면 승인 전 버튼 라벨이
+    # 같은 말("확인 완료")을 해서 vacuous 하다.
+    s.wait(
+        "!document.getElementById('previewApprove')"
+        " && document.getElementById('previewSheet').textContent.includes('확인 완료')",
+        "current preview 승인 착지",
+        requires=["#previewSheet"],
+    )
     s.click_sel("#previewClose", what="managed preview 닫기")
     s.wait("document.getElementById('previewSheet').classList.contains('hidden')", "managed preview 닫힘", requires=["#previewSheet"])
     s.wait(
