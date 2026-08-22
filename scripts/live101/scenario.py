@@ -884,6 +884,12 @@ def run_sx(ctx: ScenarioContext) -> dict:
     exact_target = "binding/추가확인"
     exact_selector = f'#jobInputRequirements button[data-exact-target="{exact_target}"]'
     s.wait(f"!!document.querySelector({json.dumps(exact_selector)})", "신규 Active Field exact Binding", requires=["#jobInputRequirements"])
+    s.js(
+        "(function(){window.__focusLog=[];"
+        "document.addEventListener('focusin',function(e){var t=e.target||{};"
+        "window.__focusLog.push((t.tagName||'?')+'#'+(t.id||'')+'|'"
+        "+((t.getAttribute&&t.getAttribute('data-act'))||''));},true);return true;})()"
+    )
     s.click_sel(exact_selector, what="신규 Binding 수정")
     row = '#editor-body table.map tr[data-field="추가확인"]'
     source_select = row + ' select[data-act="row-source"]'
@@ -911,7 +917,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     _expect(
         isinstance(focus_state, dict) and focus_state.get("focused"),
         "H4: Binding deep-link가 exact source select에 focus하지 않았습니다 — "
-        f"{focus_state} · editor context={editor_context}",
+        f"{focus_state} · editor context={editor_context} · focus log={s.js('window.__focusLog')}",
     )
     s.set_value(source_select, "공고명")
     s.js(
