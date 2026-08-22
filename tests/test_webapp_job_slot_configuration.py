@@ -33,6 +33,8 @@ from hwpxfiller.webapp.slot_configuration_product import (
 from hwpxfiller.webapp.template_change import TemplateChangeCoordinator
 from hwpxfiller.webapp.workbench_observation_product import WorkbenchObservationProduct
 
+from tests.test_slot_configuration_product import _two_slot_template
+
 NOW = datetime(2026, 8, 18, 9, 0, 0)
 
 
@@ -364,3 +366,90 @@ def test_blocker_codes_include_choose_content_axis(tmp_path: Path) -> None:
     # SX-02 content 축이 소비하는 blocker 가 vocabulary 정본에 존재한다(드리프트 조기 감지).
     assert "CHOOSE_CONTENT" in BLOCKER_CODES
     assert "REVIEW_DELIVERY" in BLOCKER_CODES
+
+
+# ── S6G-00 R2·R3: S6 cutover 가 설 자리와 복제 경로를 실사실로 고정한다(#806) ──────────────
+def _slot_bearing_controller(tmp_path: Path):
+    """Slot 둘짜리 Template 으로 세운 managed Work — `_controller` 의 slotless 짝.
+
+    fixture 는 production Apply 경로를 타는 `_two_slot_template`(test_slot_configuration_product)
+    를 그대로 쓴다. store 직접 seed 를 하지 않아야 「slot-bearing 이라는 사실」이 실제 판정 경로에서
+    나온다.
+    """
+    tpl = tmp_path / "공고서.hwpx"
+    _two_slot_template(tpl)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    ctrl = JobController(
+        reg, lambda s, snap: None,
+        clock=_clock(),
+        engine=make_hwpx_engine(),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=threading.Lock(),
+        file_source_factory=source_for_path,
+        pool_source_factory=source_from_pool_item,
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
+        template_change=coord,
+        slot_configuration=SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock()),
+        workbench_observation=WorkbenchObservationProduct(),
+    )
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("template_check", {"request_id": "k1"})
+    return ctrl, reg, tpl
+
+
+def test_slot_bearing_generate_refusal_has_an_owner_below_the_authority_guard(
+    tmp_path: Path,
+) -> None:
+    """slot-bearing 거절은 `authority_id` 가드가 **없어도** 제 사유로 난다.
+
+    오늘 `_generate_with_token` 은 `job.authority_id` 만 보고 먼저 거절한다(SX-03 #750). 그 가드가
+    앞에 서 있는 동안 **그 아래가 실제로 무엇을 하는지 확인된 적이 없다** — #807 S6-05 가 가드를
+    걷을 때 무엇이 남는지가 이 테스트의 산출물이다.
+
+    남는 것은 admission 이다: `resolve_generation_template_for_seated_context` →
+    `admit_managed_slotless_run` → `admit_slotless_run` 이 `SlotConfigurationSnapshot`(slot-bearing)을
+    무조건 `SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE` 로 거절한다. 단위 층은
+    `test_slotless_run_bridge.py` 가 이미 덮으므로 여기서는 **컨트롤러 층 도달**만 잰다.
+    """
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+
+    # (1) 오늘의 표면 — 가드가 먼저 서서 managed 사유로 닫는다.
+    guarded = ctrl.generate()
+    assert guarded["ok"] is False
+
+    # (2) 가드 아래 — 같은 작업을 admission 이 **제 사유로** 거절한다(가드가 없어도 안전).
+    reject = ctrl._resolve_managed_template(ctrl.vm)
+    assert reject is not None, "slot-bearing 은 legacy generator 로 통과되면 안 된다"
+    assert reject["ok"] is False
+    assert reject["error"] == "이 템플릿의 슬롯 구성 실행은 아직 지원하지 않습니다."
+
+
+def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
+    tmp_path: Path,
+) -> None:
+    """복제본은 「변경사항 확인」으로 초기화에 **도달한다** — #804 의 막다른 길은 여기서 안 난다.
+
+    #804 는 실 WebView2 관측이고 스스로 「결정적 재현으로 확정하지 않았다」고 적었다. 이 테스트가
+    그 재현 시도다. 결과는 **음성**이다: 복제본의 `authority_id` 는 미계승(S3-09)이라 존이
+    `initialized=False` 로 서지만, 화면이 시키는 확인이 durable id 를 발급해 존이 열린다.
+
+    따라서 #804 의 원인은 이 층 **아래가 아니라 위**(ring2 렌더) 또는 이 fixture 가 갖지 못한
+    실파일·기존 선택 쪽에 있다. 배선을 「고치지 않는다」는 판정의 근거가 이 테스트다.
+    """
+    ctrl, reg, _tpl = _slot_bearing_controller(tmp_path)
+    assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
+
+    clone = reg.clone("공고서")
+    assert reg.load(clone).authority_id == ""  # 겪지 않은 권위 역사를 지어내지 않는다(S3-09)
+
+    ctrl.dispatch("select_job", {"name": clone})
+    stuck = ctrl.snapshot()["slot_configuration"]
+    assert stuck["supported"] is True and stuck["initialized"] is False
+
+    # 화면이 지시하는 행동이 실제로 그 상태를 푼다.
+    assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
+    assert reg.load(clone).authority_id != ""
+    assert ctrl.snapshot()["slot_configuration"]["initialized"] is True

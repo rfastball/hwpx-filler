@@ -522,7 +522,9 @@ class ManagedPlanMaterializationAdapter:
 
 # ─── under-fence exact capture port ───────────────────────────────────────────────
 class CaptureExecutionQualificationInputUnderFence(Protocol):
-    """caller 가 candidate ProfileFence·shared PerWorkMutationFence 를 이미 보유한 상태의 exact capture port.
+    """caller 가 shared PerWorkMutationFence 를 이미 보유한 상태의 exact capture port.
+
+    (R2-05b(#740)로 ProfileFence 가 사라져 보유 전제는 PerWorkFence 하나다 — #806 정정.)
 
     helper 는 fence 를 재획득하지 않는다. S4 capture 와 FieldBinding exact read 를 같은 Work fence
     안에서 수행하고, 정상 capture 에서 mutable source·Job.template_path·template_override·latest

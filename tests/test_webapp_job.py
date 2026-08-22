@@ -5371,6 +5371,48 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     assert ctrl.snapshot()["template_change"]["epoch"] == 1
 
 
+# ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
+def test_slotless_hwpx_generate_mints_authority_then_second_run_is_refused(
+    tmp_path, monkeypatch
+):
+    """**오늘의 동작을 고정한다 — 옳다고 주장하지 않는다.**
+
+    slot 없는 HWPX 작업의 1회차 generate 는 성공하면서 **스스로** ``authority_id`` 를 발급하고
+    (`template_change.resolve_generation_template_for_seated_context(create=True)`, S4-11 #694),
+    2회차는 그 발급물 때문에 managed 로 읽혀 거절된다(`screen_job._generate_with_token`, SX-03 #750).
+    두 슬라이스는 각자 옳았고 **곱이 트랩**이다 — 실사용 템플릿은 아직 전부 slotless 라
+    (Slot 저작 UI 는 S8) 이 경로가 곧 실제 HWPX 생성 경로다.
+
+    기존 `test_managed_hwpx_generate_never_reaches_legacy_generator` 는 ``authority_id`` 를 **미리
+    심어 두고** 재기 때문에 발급과 차단이 같은 호출에서 만나는 이 자리를 지나가지 않는다
+    (#729 가 말한 hollow measurement 부류). 봉합은 #807 S6-05 가 진다 — 그때 이 테스트가 뒤집히며
+    착지하는 것이 정상이고, 그 전에 조용히 초록으로 남는 것이 결함이다.
+    """
+    ctrl, _ = _template_change_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    _approve_run(ctrl)
+    assert ctrl.registry.load("공고서").authority_id == ""
+
+    assert ctrl.generate()["ok"] is True
+    # 1회차가 자물쇠를 발급했다 — 사용자는 「변경사항 확인」을 누른 적이 없다.
+    minted = ctrl.registry.load("공고서").authority_id
+    assert minted != ""
+
+    # 2회차는 legacy generator 에 **닿지 못한다**. 덮어쓰기 재진술 갈래가 아니라 managed 가드다.
+    def forbidden(*args, **kwargs):
+        pytest.fail("두 번째 generate 가 legacy generator 에 도달했다")
+
+    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
+    refused = ctrl.generate(confirm_overwrite=True)
+    assert refused["ok"] is False
+    assert refused.get("needs_overwrite") is not True
+    assert refused["error"] == "현재 환경에서는 문서를 만들 수 없습니다"
+    # 발급물은 그대로다 — 되돌릴 길은 복제뿐이고 그 길은 #804 가 막혀 있다고 보고한다.
+    assert ctrl.registry.load("공고서").authority_id == minted
+
+
 def test_template_check_validation_failure_precedes_durable_commit(tmp_path):
     """Commit 전 validation 실패는 authority/Application과 seated identity를 바꾸지 않는다."""
     ctrl, pushes = _template_change_controller(tmp_path)

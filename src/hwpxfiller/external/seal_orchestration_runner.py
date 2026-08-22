@@ -8,11 +8,12 @@ reuse·atomic commit 없이 방금 계산한 현재 결과(``ExecutionPlanSealed
 
 global lock order 를 엄격히 지킨다(바깥→안):
 
-    QualificationProfileAdmissionFence → PerWorkMutationFence
+    PerWorkMutationFence → StoreWriterLease
 
-WorkFence 를 잡은 뒤 다른 ProfileFence 를 기다리지 않는다 — final gate 에서 current summary 가
-candidate Profile 과 달라졌으면 fence 를 풀고 stale/context 로 닫는다(다른 ProfileFence 를 WorkFence
-아래 잡지 않는다). 장기 pure section 동안은 어떤 fence 도 보유하지 않는다.
+R2-05b(#740)가 `QualificationProfileAdmissionFence`(ProfileFence)를 제거해 outer rank 는
+PerWorkMutationFence 다(:mod:`hwpxfiller.host.per_work_fence` 가 2-rank 정본). final gate 에서
+current summary 가 candidate 와 달라졌으면 fence 를 풀고 stale/context 로 닫는다. 장기 pure
+section 동안은 어떤 fence 도 보유하지 않는다.
 
 판정·값 모델·순수 전이는 :mod:`hwpxfiller.application.seal_execution_plan` 소유다. 이 어댑터는
 fence 획득·capture port 호출·verdict 결선만 진다(#675 pattern).

@@ -142,7 +142,8 @@ class AtomicWorkTemplateStateStore:
         """writer lease 아래 read→검증→(caller mutate)→atomic commit 을 한 번 수행한다.
 
         이 writer lease 는 global lock order 의 가장 안쪽(rank 2)이다(S5-09 #705) — 잡기 전
-        outer fence(ProfileFence·WorkFence)를 나중에 기다리는 역순은 guard 가 거절한다.
+        outer fence(PerWorkMutationFence)를 나중에 기다리는 역순은 guard 가 거절한다
+        (R2-05b(#740)로 rank 는 둘이다 — #806 정정).
         """
         with store_lease_order_guard(), _work_lock(self._lock_key(work_id)):
             current = self.load(work_id)

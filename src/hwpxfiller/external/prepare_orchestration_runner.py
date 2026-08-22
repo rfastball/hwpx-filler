@@ -467,8 +467,8 @@ def apply_prepared_change_under_fence(
 ) -> ApplyOutcome:
     """Prepared Change 를 fixed base 에서 Work 에 원자 적용한다 — source/qualification 재실행 없음.
 
-    **ProfileFence·WorkFence 를 이미 잡은 caller 만 호출한다**(public ``apply_prepared_change``
-    를 통한다). 직접 호출 금지는 ``tests/repo_contract/test_per_work_fence_gate.py`` 가 강제한다.
+    **PerWorkMutationFence 를 이미 잡은 caller 만 호출한다**(public ``apply_prepared_change``
+    를 통한다. R2-05b(#740)로 ProfileFence 는 없다 — 아래 R2-05a 문단과 어긋나던 서술을 #806 이 정정). 직접 호출 금지는 ``tests/repo_contract/test_per_work_fence_gate.py`` 가 강제한다.
 
     S5F R2-05a(#740): mutable Profile admission gate 를 제거했다 — 새 Apply 의 fail-closed 는 exact
     PASS QualificationEvidence 무결성(:func:`_apply_integrity`)과 Work-local currentness(current

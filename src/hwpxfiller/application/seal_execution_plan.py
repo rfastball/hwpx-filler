@@ -1,8 +1,8 @@
 """SealExecutionPlan 순수 판정 — raw intent·candidate compile·final gate verdict (S5-10 · #706).
 
-이 모듈은 **순수**하다: store·fence·wall-clock·HWPX·native 를 모른다. fence 획득·capture port
-호출·store atomic commit 은 :mod:`hwpxfiller.external.seal_orchestration_runner` 가 진다. 여기서는
-그 runner 가 각 gate 에서 부르는 결정을 소유한다:
+이 모듈은 **순수**하다: store·fence·wall-clock·HWPX·native 를 모른다. fence 획득과 capture port
+호출은 :mod:`hwpxfiller.external.seal_orchestration_runner` 가 진다. 여기서는 그 runner 가 각
+gate 에서 부르는 결정을 소유한다:
 
 - short capture gate 결과 분류(complete → 계속, domain/policy block → fresh terminal, context
   error → attempt).
@@ -13,7 +13,9 @@
 
 R2-04a(#740): first-seen ledger·replay·idempotency·request fingerprint 를 제거했다 — 같은 request
 재호출은 historical outcome 을 replay 하지 않고 현재 authority 에서 재계산한다. terminal outcome 은
-durable 하게 소비하지 않고 fresh 로 되돌린다(sealable plan 은 content-addressed store 에 publish).
+durable 하게 소비하지 않고 fresh 로 되돌린다. R2-04b-2(#740)로 **content-addressed store publication
+도 없다** — sealable candidate 는 store artifact 가 아니라 in-memory sealed plan payload 를 낸다
+(:func:`sealed_outcome_for` · 조립부 주석 참조). 폐기된 publication 어휘를 되살리지 않는다(#806).
 
 confirm-or-alarm & fail-closed: unknown 값을 latest/default 로 풀지 않고 시끄럽게 닫는다.
 context/integrity/I-O 실패는 terminal 이 아니다(재시도 가능).
