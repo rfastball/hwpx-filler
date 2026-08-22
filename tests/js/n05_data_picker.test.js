@@ -1,10 +1,8 @@
 /* Data-picker controller behavior: lifecycle, validation, and settle-once flows. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 
-import { createDataPickerController, DataPickerDialog } from "../../frontend/src/screens/data_picker.ts";
+import { createDataPickerController } from "../../frontend/src/screens/data_picker.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -136,20 +134,21 @@ test("전환 착지 표식 — 이전 카드는 여는 순간 이미 서 있고,
   const { result } = await opened(h, {
     current: { label: "파일: 이전.csv", origin: "file", path: "C:/이전.csv" },
   });
-  const render = () =>
-    renderToStaticMarkup(createElement(DataPickerDialog, { controller: h.controller }));
 
-  const atOpen = render();
-  assert.match(atOpen, /tplcard-name/, "이전 데이터 카드는 여는 순간 이미 서 있다");
-  assert.match(atOpen, /id="dataPickerPin"/, "고정 버튼도 여는 순간 이미 서 있다");
-  assert.doesNotMatch(atOpen, /불러왔습니다/, "여는 순간에는 적재 문안이 없어야 한다");
+  // 여는 순간: 카드를 그리는 값(`current.label`/`origin`/`path`)이 **이미** 차 있다. 이 값들이
+  // `.tplcard-name` 과 `#dataPickerPin` 을 세우므로, 그 둘의 존재는 새 적재를 증언하지 못한다.
+  const atOpen = h.controller.model.getSnapshot();
+  assert.equal(atOpen.current === undefined, true);
+  assert.equal(atOpen.session.current.label, "파일: 이전.csv");
+  assert.equal(atOpen.session.current.origin, "file");
+  assert.equal(atOpen.status, "", "open 은 문안을 비운다 — 그래서 문안만이 이번 적재를 증언한다");
 
   await h.controller.browseFile();
 
-  const landed = render();
-  assert.match(landed, /불러왔습니다/, "적재 완료 문안이 실 대본의 착지 표식이다");
-  assert.match(landed, /파일: 새\.csv/, "카드가 새 데이터로 재진술된다");
-  assert.equal(h.controller.model.getSnapshot().loading, false, "착지 문안 시점에 loading은 풀려 있다");
+  const landed = h.controller.model.getSnapshot();
+  assert.match(landed.status, /불러왔습니다/, "적재 완료 문안이 실 대본의 착지 표식이다");
+  assert.equal(landed.session.current.label, "파일: 새.csv", "카드가 새 데이터로 재진술된다");
+  assert.equal(landed.loading, false, "착지 문안이 선 시점에 loading 은 이미 풀려 있다");
 
   h.controller.close();
   await result;
