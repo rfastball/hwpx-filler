@@ -7,7 +7,7 @@
 실행(저장소 루트, Windows 데스크톱 세션 필요)::
 
     # 동작만 검사 — PNG 없음, 임시 홈, 저장소 작업트리 무오염
-    uv run --extra gui python scripts/capture_101_screenshots.py check
+    uv run --with pillow --extra gui python scripts/capture_101_screenshots.py check
 
     # 문서용 14컷 재생성 — 예제 홈(화면에 뜨는 경로가 문서와 같아야 한다)
     uv run --extra gui python scripts/capture_101_screenshots.py capture

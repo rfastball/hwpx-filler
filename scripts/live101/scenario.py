@@ -19,6 +19,8 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
+
 from .surface import ScenarioFailure, Surface
 
 #: 캡처 지점 14개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
@@ -45,6 +47,13 @@ JOB_NAMES: "tuple[str, ...]" = ("발주요청서", "발주요청 기안", "오�
 
 #: 트랙 A 가 만들어야 하는 문서 수(CSV 3행).
 EXPECTED_HWPX = 3
+
+
+def _rejection_message(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    rejection = value.get(_DISPATCH_REJECTION_KEY)
+    return str(rejection.get("message", "")) if isinstance(rejection, dict) else ""
 
 
 @dataclass
@@ -892,8 +901,11 @@ def run_sx(ctx: ScenarioContext) -> dict:
         + json.dumps({"target": old_recovery_target}, ensure_ascii=False)
         + ")"
     )
-    old_recovery = s.bridge_outcome(recovery_expr, "old record recovery target 거절")
-    _expect(old_recovery.get("ok") is False, "H7: old record recovery target이 수락됐습니다")
+    old_recovery = s.bridge(recovery_expr, "old record recovery target 거절")
+    _expect(
+        "복원할 수 없습니다" in _rejection_message(old_recovery),
+        "H7: old record recovery target이 수락됐습니다",
+    )
 
     # Exact delivery + OPTIONAL/REQUIRED semantic preview. The harness collision file predates the no-mutation bracket.
     output_dir = ctx.prepare_output()
@@ -926,8 +938,11 @@ def run_sx(ctx: ScenarioContext) -> dict:
         + json.dumps({"preview_token": optional_token})
         + ")"
     )
-    old_preview = s.bridge_outcome(old_preview_expr, "old preview token 거절")
-    _expect(old_preview.get("ok") is False, "H7: old preview token이 수락됐습니다")
+    old_preview = s.bridge(old_preview_expr, "old preview token 거절")
+    _expect(
+        "생성 내용이 바뀌었습니다" in _rejection_message(old_preview),
+        "H7: old preview token이 수락됐습니다",
+    )
     s.click_sel("#jobManagedPreviewOpen", what="REQUIRED semantic preview")
     s.wait(
         "!document.getElementById('previewSheet').classList.contains('hidden')"
@@ -974,7 +989,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.release_dispatch()
     s.wait(
         "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
-        " && !document.getElementById('jobContentSelectionZone')",
+        " && document.getElementById('jobContentSelectionZone').textContent.trim() === ''",
         "Work B latest snapshot wins",
         timeout=30.0,
         requires=["#jobActionName"],
