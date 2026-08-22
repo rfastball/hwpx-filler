@@ -96,13 +96,22 @@ window.__cap = {
     const el = document.querySelector(sel);
     if (!el) return false;
     /* host 왕복 사이 concurrent commit 이 초점을 옮겼더라도, 최신 노드에서 실제
-       focus→blur 전이를 다시 만들어 React onBlur 커밋을 반드시 세운다. */
+       focus→blur 전이를 다시 만든다. 비활성 WebView2 창은 programmatic focus 를 얻지
+       못해 native focusout 을 내지 않을 수 있으므로, 실제 발생을 관찰한 뒤 없을 때만
+       한 번 합성한다(둘 다 내면 같은 편집을 두 번 발신한다). */
+    let left = false;
+    const markLeft = () => { left = true; };
+    el.addEventListener('focusout', markLeft);
     el.focus();
     /* set_value 의 기존 소비자인 #jobOrderSel 은 select 다. React 의 select
        onChange 는 native change 를 소유하므로 이탈 상에서만 실제 이벤트를 재현한다. */
     const view = el.ownerDocument.defaultView || window;
     if (el.tagName === 'SELECT') el.dispatchEvent(new view.Event('change', { bubbles: true }));
     el.blur();
+    el.removeEventListener('focusout', markLeft);
+    if (!left && el.tagName !== 'SELECT') {
+      el.dispatchEvent(new view.FocusEvent('focusout', { bubbles: true }));
+    }
     return true;
   },
 };
