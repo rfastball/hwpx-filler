@@ -673,18 +673,35 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
         requires=["#dataPickerModal", "#dataPickerBrowse"],
     )
     s.click_sel("#dataPickerBrowse", what="SX-05 데이터 파일 찾아보기")
+    # 착지는 **이번 찾아보기가 낸 말**로 잰다. 전환에서 이 면은 열리는 순간 이미 *이전* 데이터의
+    # 카드를 세우므로(`open({current: currentData()})`), 「.tplcard-name 이 있다」·「문안이 비어
+    # 있지 않다」는 새 적재를 증언하지 못한다 — 둘 다 여는 순간·진행 문안에서 이미 참이다.
+    # 그 vacuous 대기가 적재 도중에 [닫기]를 누르게 하고, 그 닫기는 「불러오는 중」 계약대로
+    # **거절**된다(제품이 옳다). 거절 문안은 곧 성공 문안에 덮여 증거가 「닫히지 않은 면」만
+    # 남는다 — #728 이 이 자리를 overlay 결함으로 오진한 출처가 그것이다.
+    # 반면 문안은 open 이 비워 두므로(`status: ""`), 아래 두 표식은 **이번** 적재에서만 참이고
+    # 그때 `loading` 은 이미 false 다(성공 patch 와 `finally` 의 loading 해제가 한 tick).
     if failure:
+        # 진행 문안(「파일 선택 창에서 파일을 고르세요…」)도 비어 있지 않다 — 길이가 아니라
+        # 거절 표식으로 재야 실패한 전환을 진행 중과 가른다.
         s.wait(
-            "document.getElementById('dataPickerNote').textContent.trim().length > 0",
+            "document.getElementById('dataPickerNote').textContent.trim().startsWith('⚠')",
             "실패한 데이터 전환 문안",
+            timeout=25.0,
             requires=["#dataPickerNote"],
         )
     else:
+        # 존재만 재면 hidden 요소도 통과하므로 고정 버튼은 **가시성**으로 잰다(master 규율 승계).
         s.wait(
-            "!!document.querySelector('#dataPickerCurrent .tplcard-name')",
+            "(function(){"
+            "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
+            "if(!document.getElementById('dataPickerNote').textContent.includes('불러왔습니다'))return false;"
+            "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
+            "const b=document.getElementById('dataPickerPin');"
+            "return !!b && getComputedStyle(b).display !== 'none';})()",
             "데이터 전환 착지",
             timeout=25.0,
-            requires=["#dataPickerCurrent"],
+            requires=["#dataPickerModal", "#dataPickerNote", "#dataPickerCurrent"],
         )
     s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
     try:
@@ -696,13 +713,19 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
     except StepTimeout as exc:
         # 이 면은 「불러오는 중」에는 닫히기를 거절한다(제품 계약). 그 거절인지 다른 것인지
         # 는 면이 스스로 말하고 있으므로, 시한만 남기지 말고 그 말을 함께 싣는다.
+        s.js(
+            "(function(){var b=document.getElementById('dataPickerClose');"
+            "window.__retry={before:document.getElementById('dataPickerModal').className,"
+            " dur:getComputedStyle(document.getElementById('dataPickerModal')).transitionDuration};"
+            "if(b)b.click();return true;})()"
+        )
         state = s.js(
             "(function(){var m=document.getElementById('dataPickerModal');"
             "var n=document.getElementById('dataPickerNote');"
             "var all=[].slice.call(document.querySelectorAll('.modal')).map(function(x){"
             "return x.id+'['+x.className+'] depth='+(x.style.getPropertyValue('--modal-depth')||'-');});"
             "return {cls:m?m.className:null, depth:m?(m.style.getPropertyValue('--modal-depth')||'-'):null,"
-            " note:n?n.textContent.trim():null, modals:all};"
+            " note:n?n.textContent.trim():null, retry:window.__retry||null, modals:all};"
             "})()"
         )
         raise ScenarioFailure(f"SX-05 데이터 선택 면이 닫히지 않았습니다 — {state}") from exc
