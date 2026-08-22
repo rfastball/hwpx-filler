@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from hwpxfiller.application.slot_configuration_context import SlotConfigurationContext
 from hwpxfiller.application.slot_reconciliation import (
+    RESOLVED,
     SELECTED_OPTION_REMOVED,
     SLOT_REMOVED,
     UNSUPPORTED_SELECTION_POLICY,
@@ -58,6 +59,8 @@ _BROKEN_STATUSES = frozenset(
         UNSUPPORTED_SELECTION_POLICY,
     }
 )
+# 재선택으로 닫을 수 없는 것들 — 「다른 것을 고르세요」가 할 수 없는 일을 시키는 자리다.
+_UNSELECTABLE_STATUSES = frozenset({NO_AVAILABLE_OPTIONS, UNSUPPORTED_SELECTION_POLICY})
 # primary blocking = broken + missing-required(= NEEDS_SELECTION 유발 blocker).
 _BLOCKING_STATUSES = _BROKEN_STATUSES | {MISSING_REQUIRED_SELECTION}
 
@@ -108,6 +111,44 @@ class ProjectedChangeItem:
 
 
 @dataclass(frozen=True)
+class ProjectedRetainedSelection:
+    """successor 로 넘어온 뒤 **이전에 고른 것이 어떻게 됐는지**(#777).
+
+    Template 이 바뀌면 SG-01(#733) compatibility gate 가 의미 동일성을 exact 증명하지 못한
+    선택을 successor 선언집합에 싣지 않는다 — 그것이 fail-closed 설계다. 그런데 종전에는 그
+    사실이 **아무 데도 안 남아서**, 사용자는 자기가 고른 셋이 어떻게 됐는지 묻지도 못한 채
+    「아직 선택 안 함」만 봤다. 「숨기는 대신 비활성 + 사유 병기」의 정반대다.
+
+    셋은 서로 **다른 행동**을 부른다(#728 H4). 그래서 한 값으로 뭉뚱그리지 않는다.
+
+    ``RESOLVED``
+        Slot·Option 이 successor 에도 있다. 그대로 다시 고르면 닫힌다.
+        **자동 승계가 아니다** — Template 이 바뀌었으므로 확인은 사용자가 한다.
+    ``SELECTED_OPTION_REMOVED``
+        Slot 은 남았고 고른 Option 이 사라졌다. **다른 것을 골라야** 닫힌다.
+    ``SLOT_REMOVED``
+        항목 자체가 사라졌다. 정보일 뿐 현재 구성의 일부가 아니고 자동 부활하지 않는다.
+
+    ``NO_AVAILABLE_OPTIONS``·``UNSUPPORTED_SELECTION_POLICY``
+        Slot 은 남았지만 지금은 **고를 수 있는 것이 없다**. 「다른 것을 고르세요」는 할 수 없는
+        일을 시키는 문안이라, 이 둘은 재선택 요구와 갈라 둔다.
+
+    ``slot_display_text`` 는 현재 구조에 있는 Slot 만 채운다(사라진 Slot 은 `None`) — 내부 ID 를
+    사용자에게 보이지 않는다(#728 H1).
+
+    **이전에 고른 Option 의 이름은 싣지 않는다.** 남아 있는 것은 같은 ID 뿐이고, 그 ID 의
+    **현재** 라벨은 이전 라벨이 아니다 — successor 가 같은 ID 를 다른 뜻으로 다시 쓰면(compatibility
+    gate 가 의미 동일성 증명을 거절한 바로 그 경우) 현재 라벨을 「이전에 고르신 것」이라고 부르는
+    순간 없는 역사를 지어낸다. predecessor 라벨은 보존되지 않으므로 이름 대신 Slot 과 개수로 말한다.
+    """
+
+    slot_id: str
+    slot_display_text: str | None
+    option_ids: tuple[str, ...]
+    fate: str
+
+
+@dataclass(frozen=True)
 class ProjectionSummary:
     blocking_kinds: tuple[str, ...]
     missing_selection_count: int
@@ -154,6 +195,7 @@ class CurrentSlotConfigurationView:
     reconciliation_changes: ProjectionReconciliationChanges | None
     blocking_items: tuple[ProjectedChangeItem, ...]
     informational_changes: tuple[ProjectedChangeItem, ...]
+    retained_selections: tuple[ProjectedRetainedSelection, ...] = ()
 
 
 def project_context_error(
@@ -190,17 +232,76 @@ def _configuration_status(resolution: SlotConfigurationResolution) -> str:
     return NEEDS_SELECTION
 
 
+def project_retained_selections(
+    context: SlotConfigurationContext,
+    resolution: SlotConfigurationResolution,
+    retained: SlotConfigurationResolution | None,
+) -> tuple[ProjectedRetainedSelection, ...]:
+    """이전 Configuration 의 **선언 선택**을 현재 구조에 대고 분류한 것을 DTO 로 shape 한다.
+
+    입력은 이미 :func:`resolve_slot_configuration` 이 낸 판정이다 — 여기서 다시 판정하지 않고
+    Slot 라벨만 붙이고, **현재 resolution 이 이미 닫은 항목을 걷어낸다**.
+
+    닫힘의 기준은 「현재 Configuration 이 있는가」가 아니라 **「그 Slot 이 지금 유효 선택을
+    갖는가」**다. 전자로 끊으면 successor 에서 한 칸을 고르는 순간 나머지 사연이 통째로
+    증발한다 — 아직 안 고른 Slot 도, 사라진 항목도 함께.
+    """
+    if retained is None:
+        return ()
+    answered = {
+        slot_res.slot_id for slot_res in resolution.slots if slot_res.effective_option_ids
+    }
+    slot_by_id = {slot.id: slot for slot in context.template_structure.slots}
+    projected: list[ProjectedRetainedSelection] = []
+    for slot_res in retained.slots:
+        if not slot_res.declared_option_ids or slot_res.slot_id in answered:
+            continue  # 이전에 안 골랐거나, 사용자가 이미 다시 골라 닫은 항목
+        struct_slot = slot_by_id.get(slot_res.slot_id)
+        removed = any(d.kind == SELECTED_OPTION_REMOVED for d in slot_res.diagnostics)
+        if slot_res.status in _UNSELECTABLE_STATUSES:
+            # 고를 수 있는 것이 없거나 현재 방식에서 선택 불가 — 재선택을 시킬 수 없다.
+            fate = slot_res.status
+        else:
+            fate = SELECTED_OPTION_REMOVED if removed else RESOLVED
+        projected.append(
+            ProjectedRetainedSelection(
+                slot_id=slot_res.slot_id,
+                slot_display_text=(
+                    _display_text(struct_slot.label, slot_res.slot_id) if struct_slot else None
+                ),
+                option_ids=slot_res.declared_option_ids,
+                fate=fate,
+            )
+        )
+    projected.extend(
+        ProjectedRetainedSelection(
+            slot_id=detached.slot_id,
+            slot_display_text=None,  # 사라진 Slot 의 라벨은 현재 구조 어디에도 없다
+            option_ids=detached.option_ids,
+            fate=SLOT_REMOVED,
+        )
+        for detached in retained.detached_selections
+    )
+    return tuple(projected)
+
+
 def project_current_slot_configuration(
     context: SlotConfigurationContext,
     configuration: WorkSlotConfigurationDraft | None,
     resolution: SlotConfigurationResolution,
     source_delta: ReconciliationSourceDelta | None = None,
+    retained: SlotConfigurationResolution | None = None,
 ) -> CurrentSlotConfigurationView:
     """verified current context 의 Resolution 을 구조적 Projection DTO 로 shape 한다.
 
     configuration 은 fields 를 위해 쓰지 않는다(fields 는 exact structure 소유) — 부재/존재만
     이미 Resolution 에 반영돼 있다. structure.slots 와 resolution.slots 는 같은 순서·길이라
     zip 으로 정렬한다.
+
+    ``retained`` 는 **이전 Configuration 의 선언 선택을 현재 구조에 대고** 판정한 별도 Resolution
+    이다(#777). current resolution 과 섞지 않는다 — 그것은 「지금 무엇이 골라져 있는가」이고,
+    이쪽은 「이전에 고른 것이 어떻게 됐는가」다. 둘을 한 값으로 뭉치면 아직 안 고른 것과 방금
+    잃은 것이 같은 빈칸이 된다.
     """
     structure = context.template_structure
     slots = tuple(
@@ -253,6 +354,7 @@ def project_current_slot_configuration(
         reconciliation_changes=_project_delta(source_delta),
         blocking_items=tuple(blocking_items),
         informational_changes=informational,
+        retained_selections=project_retained_selections(context, resolution, retained),
     )
 
 

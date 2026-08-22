@@ -47,6 +47,14 @@ export type ProjectedDetachedSelection = {
   status: string;
 };
 
+/** 이전에 고른 것이 successor 에서 어떻게 됐는지 — 판정은 backend, 문안만 여기(#777). */
+export type ProjectedRetainedSelection = {
+  slot_id: string;
+  slot_display_text: string | null;
+  option_ids: string[];
+  fate: string;
+};
+
 export type SlotProjection = {
   view_status: string;
   configuration_status: string;
@@ -55,6 +63,7 @@ export type SlotProjection = {
   detached_selections: ProjectedDetachedSelection[];
   blocking_items: { slot_id: string; kind: string; option_id: string | null }[];
   informational_changes: { slot_id: string; kind: string; option_id: string | null }[];
+  retained_selections?: ProjectedRetainedSelection[];
 };
 
 export type SlotCurrentView = {

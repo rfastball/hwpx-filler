@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
 import type {
+  ProjectedRetainedSelection,
   ProjectedSlot,
   SlotConfigService,
   SlotConfigState,
@@ -136,6 +137,29 @@ function attentionForKind(kind: string): SlotAttention {
   }
 }
 
+/** 이전에 고른 것의 운명 → 사용자 문안. **판정은 backend 가 이미 했다**(fate) — 여기는 문장만 고른다.
+ *
+ *  이전에 고른 Option 의 **이름을 대지 않는다**. 남아 있는 것은 같은 ID 뿐이고 그 ID 의 현재
+ *  라벨은 이전 라벨이 아니다 — successor 가 같은 ID 를 다른 뜻으로 다시 쓴 경우(compatibility
+ *  gate 가 의미 동일성 증명을 거절한 바로 그 경우) 현재 라벨을 「이전에 고르신 것」이라 부르면
+ *  없는 역사를 지어낸다. Slot 은 지금 있는 것이므로 그 자리에서 말하는 것으로 족하다.
+ *
+ *  「유지됩니다」라고도 쓰지 않는다: Template 이 바뀌면 자동 승계되지 않고 사용자가 다시 확인해야
+ *  한다(SG-01 fail-closed). 있는 것을 「이어졌다」고 말하면 그것이 곧 새 거짓말이다. */
+function retainedNoteText(retained: ProjectedRetainedSelection): string {
+  const count = retained.option_ids.length;
+  switch (retained.fate) {
+    case "SELECTED_OPTION_REMOVED":
+      return "이전에 이 항목에서 고르신 것이 이 템플릿에는 없습니다. 다른 것을 골라 주세요.";
+    case "NO_AVAILABLE_OPTIONS":
+    case "UNSUPPORTED_SELECTION_POLICY":
+      // 고를 수 있는 것이 없다 — 여기서 「다시 고르세요」는 할 수 없는 일을 시키는 문안이다.
+      return "이전에 이 항목에서 고르신 것이 있으나, 이 템플릿에서는 선택할 수 없습니다.";
+    default:
+      return `이전에 이 항목에서 ${count}개를 고르셨습니다. 템플릿이 바뀌어 다시 확인이 필요합니다.`;
+  }
+}
+
 /** slot_id → 이 Slot 의 행동 사유·선택 가능 여부(backend blocking_items.kind 소비). */
 function blockingBySlot(view: SlotCurrentView | null): Map<string, SlotAttention> {
   const out = new Map<string, SlotAttention>();
@@ -173,10 +197,11 @@ function SlotFieldset(props: {
   slot: ProjectedSlot;
   slotIndex: number;
   attention: SlotAttention | undefined;
+  retained: ProjectedRetainedSelection | undefined;
   pending: boolean;
   onSelect: (slotId: string, optionId: string) => void;
 }): ReactNode {
-  const { slot, slotIndex, attention, pending } = props;
+  const { slot, slotIndex, attention, retained, pending } = props;
   // DOM id/name 은 render-local index 로만 만든다 — slot_id/option_id 는 임의 문자열이라 이어붙이면
   // 충돌한다("a-b"+"c" == "a"+"b-c"). index 는 injective 라 htmlFor 가 엉뚱한 radio 를 가리키지 않는다.
   const groupName = `cs-slot-${slotIndex}`;
@@ -188,6 +213,15 @@ function SlotFieldset(props: {
     h("legend", { className: "cs-slot-legend" }, slot.display_text),
     attention !== undefined
       ? h("p", { className: "cs-slot-note", role: "note" }, attention.label)
+      : null,
+    // 이전에 고른 것의 운명 — 판정(fate)은 backend 가 이미 내렸고 여기는 문안만 고른다(#777).
+    // 라벨이 없으면 이름 대신 개수로 말한다: 내부 key 를 사용자에게 보이지 않는다.
+    retained !== undefined
+      ? h(
+          "p",
+          { className: "cs-retained-note", "data-fate": retained.fate, role: "note" },
+          retainedNoteText(retained),
+        )
       : null,
     h(
       "div",
@@ -270,6 +304,11 @@ export function JobContentSelection(props: {
   }
 
   const attention = blockingBySlot(state.view);
+  const retained = projection.retained_selections ?? [];
+  const retainedBySlot = new Map(
+    retained.filter((r) => r.fate !== "SLOT_REMOVED").map((r) => [r.slot_id, r]),
+  );
+  const retainedGone = retained.filter((r) => r.fate === "SLOT_REMOVED");
   const detached = projection.detached_selections;
   const clearableDetached = detached.filter((d) => d.clearable);
 
@@ -290,11 +329,25 @@ export function JobContentSelection(props: {
               slot,
               slotIndex,
               attention: attention.get(slot.slot_id),
+              retained: retainedBySlot.get(slot.slot_id),
               pending,
               onSelect: controller.selectOption,
             }),
           ),
         ),
+    // 항목 자체가 사라진 이전 선택 — blocking 이 아니라 정보다. 현재 구성의 일부가 아니고
+    // 자동으로 되살아나지도 않는다. 이름을 댈 수 없으므로(현재 구조에 없다) 개수로만 말한다.
+    retainedGone.length > 0
+      ? h(
+          "aside",
+          { className: "cs-retained-gone", "aria-label": "이 템플릿에서 사라진 이전 선택" },
+          h(
+            "p",
+            { className: "cs-retained-gone-note" },
+            `이전에 고르신 항목 ${retainedGone.length}개가 이 템플릿에는 없습니다. 현재 문서에는 반영되지 않습니다.`,
+          ),
+        )
+      : null,
     // detached = 사라졌지만 의도로 보존된 이전 선택 — 현재 포함 내용처럼 표시하지 않고, 사용자
     // label 이 없는 내부 key 를 노출하지 않으며, 정직한 일반 문안으로 informational 분리한다(#725 §3).
     // detached 는 label 이 없어 개별 구분이 안 된다 — 항목별 버튼은 어느 선택을 지우는지 모호하다

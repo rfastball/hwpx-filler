@@ -332,3 +332,75 @@ def test_dto_serializes_to_primitives() -> None:
     assert json.loads(payload)["view_status"] == CURRENT
     # context error variant 도 JSON-safe.
     json.dumps(dataclasses.asdict(project_context_error("BOOM")))
+
+
+# ── #777: 이전 선택의 운명을 라벨과 함께 shape 한다(판정은 resolver 가 이미 했다) ──────────
+def test_retained_selections_separate_the_three_fates_and_name_what_survives() -> None:
+    """셋은 서로 다른 ``fate`` 로 나온다 — 뭉치면 화면이 다시 구별을 잃는다(#728 H4).
+
+    라벨은 **현재 구조에 있는 것만** 채운다. 사라진 Slot/Option 의 이름은 현재 구조 어디에도
+    없고, 그 자리에 내부 ID 를 꽂으면 사용자에게 아무것도 알려 주지 못한 채 H1 만 깬다.
+    """
+    current = _structure(
+        _slot("s-keep", [TemplateOption("o-keep", label="추정가격 표시")], label="공고 상세"),
+        _slot("s-broken", [TemplateOption("o-other", label="다른 것")], label="표지"),
+    )
+    previous = _sel(("s-keep", ["o-keep"]), ("s-broken", ["o-gone"]), ("s-gone", ["o-x"]))
+
+    view = project_current_slot_configuration(
+        _ctx(current),
+        None,
+        resolve_slot_configuration(_sel(), current, V1),
+        retained=resolve_slot_configuration(previous, current, V1),
+    )
+    fates = {r.slot_id: r for r in view.retained_selections}
+
+    assert set(fates) == {"s-keep", "s-broken", "s-gone"}
+    assert fates["s-keep"].fate == "RESOLVED"
+    assert fates["s-broken"].fate == "SELECTED_OPTION_REMOVED"
+    assert fates["s-gone"].fate == SLOT_REMOVED
+    assert len({r.fate for r in view.retained_selections}) == 3  # 한 값으로 뭉치지 않았다
+
+    assert fates["s-keep"].slot_display_text == "공고 상세"
+    assert fates["s-broken"].slot_display_text == "표지"  # slot 은 남아 이름을 댈 수 있다
+    assert fates["s-gone"].slot_display_text is None
+    # 이전에 고른 Option 의 **이름**은 어디에도 싣지 않는다 — 남은 것은 같은 ID 뿐이고 그 ID 의
+    # 현재 라벨은 이전 라벨이 아니다(같은 ID 재사용 시 없는 역사를 지어내게 된다).
+    assert not any(hasattr(r, "option_display_texts") for r in view.retained_selections)
+
+    # 현재 구성은 그대로다 — 이전 이야기가 지금 골라진 것을 만들지 않는다(false AUTO_KEEP 금지).
+    assert all(slot.effective_option_ids == () for slot in view.slots)
+
+
+def test_retained_selections_are_absent_when_there_is_no_previous_story() -> None:
+    """이전 Configuration 이 없으면 할 말이 없다 — 빈 목록이지 추측이 아니다."""
+    structure = _structure(_slot("s", [TemplateOption("A")]))
+    assert _project(structure, _sel()).retained_selections == ()
+    assert project_context_error("STALE_TEMPLATE_APPLICATION").retained_selections == ()
+
+
+def test_retained_selections_skip_slots_the_user_never_answered() -> None:
+    """이전에 고르지 않은 Slot 은 운명이랄 게 없다 — 말하지 않는다."""
+    structure = _structure(
+        _slot("s1", [TemplateOption("A")]), _slot("s2", [TemplateOption("B")])
+    )
+    view = project_current_slot_configuration(
+        _ctx(structure),
+        None,
+        resolve_slot_configuration(_sel(), structure, V1),
+        retained=resolve_slot_configuration(_sel(("s1", ["A"])), structure, V1),
+    )
+    assert [r.slot_id for r in view.retained_selections] == ["s1"]
+
+
+def test_retained_selections_stay_json_safe() -> None:
+    """프런트로 나가는 값이라 asdict → json 이 그대로 돌아야 한다."""
+    structure = _structure(_slot("s", [TemplateOption("A", label="가")], label="ㄱ"))
+    view = project_current_slot_configuration(
+        _ctx(structure),
+        None,
+        resolve_slot_configuration(_sel(), structure, V1),
+        retained=resolve_slot_configuration(_sel(("s", ["A"]), ("z", ["Q"])), structure, V1),
+    )
+    payload = json.loads(json.dumps(dataclasses.asdict(view), ensure_ascii=False))
+    assert [r["fate"] for r in payload["retained_selections"]] == ["RESOLVED", SLOT_REMOVED]

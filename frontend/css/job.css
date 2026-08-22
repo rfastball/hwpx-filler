@@ -331,6 +331,13 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .cs-option-input:disabled{cursor:default}
 .cs-option:has(.cs-option-input:disabled){color:var(--a-muted);cursor:default}
 .cs-empty{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+/* 이전 선택의 운명(#777). 남은 항목의 note 는 그 Slot 안에서 조용히(muted) 말하고,
+   사라진 항목은 아래 별도 블록으로 분리한다 — 셋이 같은 강조를 쓰면 화면에서 다시 뭉개진다. */
+.cs-retained-note{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.cs-retained-note[data-fate="SELECTED_OPTION_REMOVED"]{color:var(--a-danger)}
+.cs-retained-gone{margin:0;padding:var(--sp-8) var(--sp-10);border:1px dashed var(--a-border);
+  border-radius:var(--rad-surface)}
+.cs-retained-gone-note{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
 .cs-detached{margin:0;padding:var(--sp-8) var(--sp-10);border:1px dashed var(--a-border);
   border-radius:var(--rad-surface)}
 .cs-detached-note{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}

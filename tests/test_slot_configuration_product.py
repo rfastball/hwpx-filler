@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 
@@ -396,3 +398,275 @@ def test_name_reuse_does_not_inherit_token(tmp_path: Path) -> None:
     with pytest.raises(SlotConfigurationProductError) as ei:
         product.select_slot_option("공고서", forged, "s", "o", "r")
     assert ei.value.code == "CROSS_WORK_CONFIGURATION_TOKEN"
+
+
+# ── #777: successor 로 넘어간 뒤 **이전에 고른 것이 어떻게 됐는지** ──────────────────────
+#
+# SG-01(#733) compatibility gate 는 Template 이 바뀌면 의미 동일성을 exact 증명하지 못한 선택을
+# successor 선언집합에 싣지 않는다 — fail-closed 설계이고 그건 옳다. 문제는 그 사실이 **아무
+# 데도 안 남았다**는 것이다: 사용자가 고른 셋이 조용히 사라지고 화면은 「아직 선택 안 함」만
+# 말했다. 여기서 재는 것은 셋이 서로 **다른 것으로** 드러나는가다(#728 H4).
+_S_KEEP, _S_GONE = "s-keep", "s-gone"
+_O_KEEP, _O_DROP, _O_ONLY = "o-keep", "o-drop", "o-only"
+
+
+def _metatag(kind: str, identifier: str, label: str) -> str:
+    return json.dumps(
+        {"hwpxFiller": {"kind": kind, "id": identifier, "label": label}, "name": "#hf"},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _para(content: str) -> str:
+    return f"<hp:p><hp:run>{content}</hp:run></hp:p>"
+
+
+def _bm_begin(identifier: str, metatag: str) -> str:
+    return (
+        f'<hp:ctrl><hp:fieldBegin id="{identifier}" type="BOOKMARK" name="bm{identifier}">'
+        f"<hp:metaTag>{escape(metatag)}</hp:metaTag>"
+        "</hp:fieldBegin></hp:ctrl>"
+    )
+
+
+def _bm_end(identifier: str) -> str:
+    return f'<hp:ctrl><hp:fieldEnd beginIDRef="{identifier}"/></hp:ctrl>'
+
+
+def _named_field(name: str) -> str:
+    return (
+        f'<hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl>'
+        f"<hp:t>{{{{{name}}}}}</hp:t>"
+        "<hp:ctrl><hp:fieldEnd/></hp:ctrl>"
+    )
+
+
+def _option(bookmark: str, option_id: str, label: str, field: str) -> str:
+    return (
+        _para(_bm_begin(bookmark, _metatag("slot_option", option_id, label)) + "<hp:t>o</hp:t>")
+        + _para(_named_field(field))
+        + _para("<hp:t>oe</hp:t>" + _bm_end(bookmark))
+    )
+
+
+def _two_slot_template(path: Path, *, successor: bool = False) -> None:
+    """Slot 둘 · Option 셋. successor 는 Option 하나와 Slot 하나를 **동시에** 걷어낸다.
+
+    셋이 한 fixture 에 같이 있어야 「같은 행동으로 뭉뚱그렸는가」를 실제로 물을 수 있다.
+
+    ``s-keep``  Option ``o-keep`` 유지 · Option ``o-drop`` 제거   → 유지 / 고른 것이 사라짐
+    ``s-gone``  Slot 통째 제거                                    → 항목 자체가 사라짐
+    """
+    body = _para(_named_field("공고명"))
+    body += _para(_bm_begin("1", _metatag("slot", _S_KEEP, "공고 상세")) + "<hp:t>s</hp:t>")
+    body += _option("2", _O_KEEP, "추정가격 표시", "추정가격")
+    if not successor:
+        body += _option("3", _O_DROP, "담당자 표시", "담당자")
+    body += _para("<hp:t>se</hp:t>" + _bm_end("1"))
+    if not successor:
+        body += _para(_bm_begin("4", _metatag("slot", _S_GONE, "부가 안내")) + "<hp:t>s</hp:t>")
+        body += _option("5", _O_ONLY, "안내 문단 포함", "안내문")
+        body += _para("<hp:t>se</hp:t>" + _bm_end("4"))
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">' + body + "</hs:sec>"
+    ).encode()
+    write_hwpx_package(
+        path,
+        HwpxPackage(
+            entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml},
+            stored={MIMETYPE_NAME},
+        ),
+    )
+
+
+def _slot_bearing_work(tmp_path: Path):
+    """production Apply 로 Slot 둘짜리 Work 를 세운다 — store 직접 seed 0."""
+    tpl = tmp_path / "공고서.hwpx"
+    _two_slot_template(tpl)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    coord.check("공고서", "k1")
+    product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
+    return tpl, coord, product
+
+
+def _advance_to_successor(tpl: Path, coord: TemplateChangeCoordinator) -> None:
+    _two_slot_template(tpl, successor=True)
+    ready = coord.check("공고서", "k2")["preparation"]
+    coord.apply("공고서", ready["change_token"])
+
+
+def _census(*roots: Path) -> "dict[str, bytes]":
+    """트리 전체의 ``상대경로 → bytes``.
+
+    ensure 호출 유무를 spy 로 세는 것으로는 부족하다 — store 를 직접 쓰는 경로는 그 그물을
+    통과한다. 「무엇을 안 불렀는가」가 아니라 **「무엇이 안 바뀌었는가」** 를 센다.
+    """
+    manifest: "dict[str, bytes]" = {}
+    for root in roots:
+        for path in sorted(root.rglob("*")):
+            if path.is_file():
+                manifest[f"{root.name}/{path.relative_to(root).as_posix()}"] = path.read_bytes()
+    return manifest
+
+
+def test_successor_view_tells_what_became_of_each_previous_selection(tmp_path: Path) -> None:
+    """셋은 서로 **다른 것으로** 드러난다 — 유지 / 고른 것이 사라짐 / 항목이 사라짐(#728 H4).
+
+    종전에는 셋이 똑같이 사라져 화면에서 구별되지 않았다. 「숨기는 대신 비활성 + 사유 병기」의
+    정반대이고, 하필 법적 효력이 있는 문서의 내용 선택에서 그랬다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_DROP, "r1")
+    token = product.current_slot_configuration_view("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_GONE, _O_ONLY, "r2")
+
+    _advance_to_successor(tpl, coord)
+
+    view = product.current_slot_configuration_view("공고서").current_view.projection
+    assert view is not None
+    fates = {r.slot_id: r for r in view.retained_selections}
+    assert set(fates) == {_S_KEEP, _S_GONE}, "이전 선택이 조용히 사라졌습니다"
+
+    kept = fates[_S_KEEP]
+    assert kept.fate == "SELECTED_OPTION_REMOVED"  # slot 은 남고 고른 option 이 사라졌다
+    assert kept.option_ids == (_O_DROP,)
+    assert kept.slot_display_text == "공고 상세"  # 남은 Slot 은 이름을 댈 수 있다
+
+    gone = fates[_S_GONE]
+    assert gone.fate == "SLOT_REMOVED"  # 항목 자체가 사라졌다 — 정보일 뿐
+    assert gone.slot_display_text is None
+
+    # 셋을 한 값으로 뭉치지 않았는가 — 서로 다른 fate 여야 이 계약이 무언가를 지킨다.
+    assert kept.fate != gone.fate
+    # 그리고 자동 부활은 없다: 사라진 항목은 현재 구성의 일부가 아니다.
+    assert all(slot.slot_id != _S_GONE for slot in view.slots)
+    assert view.configuration_status == "NEEDS_SELECTION"
+
+
+def test_a_surviving_previous_choice_is_named_not_silently_dropped(tmp_path: Path) -> None:
+    """successor 에도 있는 선택은 **그대로 다시 고를 수 있다**고 이름과 함께 드러난다.
+
+    자동 승계가 아니다 — Template 이 바뀌었으므로 확인은 사용자가 한다(SG-01 fail-closed).
+    그러나 「내가 고른 게 무엇이었는지」까지 잃을 이유는 없다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r1")
+
+    _advance_to_successor(tpl, coord)
+
+    view = product.current_slot_configuration_view("공고서").current_view.projection
+    assert view is not None
+    (kept,) = [r for r in view.retained_selections if r.slot_id == _S_KEEP]
+    assert kept.fate == "RESOLVED"
+    assert kept.option_ids == (_O_KEEP,)
+    # 그러나 effective 는 아니다 — 다시 확인해야 닫힌다(false AUTO_KEEP 금지).
+    (slot,) = [s for s in view.slots if s.slot_id == _S_KEEP]
+    assert slot.effective_option_ids == ()
+    assert slot.status == "MISSING_REQUIRED_SELECTION"
+
+
+def test_reading_the_successor_view_writes_no_configuration(tmp_path: Path) -> None:
+    """passive view 는 durable S4 를 **바이트 하나** 안 건드린다(#744).
+
+    ensure spy 만으로는 store 를 직접 쓰는 경로를 못 본다. 한 번 불러 create-once 부작용
+    (authority_id·workspace·token secret)을 끝낸 뒤, 그다음부터 트리 전체를 바이트로 고정한다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_DROP, "r1")
+    _advance_to_successor(tpl, coord)
+
+    product.current_slot_configuration_view("공고서")  # create-once 부작용을 여기서 끝낸다
+    before = _census(_root(tmp_path), tmp_path / "jobs")
+    assert before, "센 것이 0건이면 이 계약이 아무것도 안 지킵니다"
+
+    for _ in range(3):
+        assert product.current_slot_configuration_view("공고서").current_view.projection
+
+    assert _census(_root(tmp_path), tmp_path / "jobs") == before
+    # 음성 대조 — 명시적 open 은 **바꾼다**(이 검사가 항상 참이 아니다).
+    product.open_slot_configuration("공고서")
+    assert _census(_root(tmp_path), tmp_path / "jobs") != before
+
+
+def test_a_current_configuration_leaves_no_room_for_a_previous_story(tmp_path: Path) -> None:
+    """current Application 에 Configuration 이 있으면 그 선택이 곧 답이라 물을 것이 없다.
+
+    두 이야기를 동시에 하면 「지금 골라져 있는 것」과 「이전에 골랐던 것」이 섞인다.
+    """
+    _tpl, _coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r1")
+
+    view = product.current_slot_configuration_view("공고서").current_view.projection
+    assert view is not None and view.configuration_present is True
+    assert view.retained_selections == ()
+
+
+def test_answering_one_slot_does_not_erase_the_rest_of_the_story(tmp_path: Path) -> None:
+    """첫 클릭 한 번이 나머지 사연을 지우지 않는다.
+
+    successor 에서 한 칸을 고르는 순간 Configuration 이 생긴다. 그 **존재**를 「다 해결됐다」로
+    읽으면, 아직 안 고른 항목도 사라진 항목도 함께 증발한다 — 사용자는 자기가 방금 무엇을
+    잃었는지 영영 못 본다. 닫힘의 기준은 Configuration 유무가 아니라 **그 항목이 닫혔는가**다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r1")
+    token = product.current_slot_configuration_view("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_GONE, _O_ONLY, "r2")
+
+    _advance_to_successor(tpl, coord)
+
+    before = product.current_slot_configuration_view("공고서").current_view.projection
+    assert before is not None
+    assert {r.slot_id for r in before.retained_selections} == {_S_KEEP, _S_GONE}
+
+    # successor 에서 s-keep 을 다시 고른다 → Configuration 이 생긴다.
+    token = product.current_slot_configuration_view("공고서").current_view.new_configuration_token
+    assert token is not None
+    resp = product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r3")
+    assert resp.mutation_outcome is not None and resp.mutation_outcome.changed is True
+
+    after = product.current_slot_configuration_view("공고서").current_view.projection
+    assert after is not None and after.configuration_present is True
+    fates = {r.slot_id: r for r in after.retained_selections}
+    assert _S_KEEP not in fates, "다시 고른 항목은 닫혔으므로 더 말하지 않는다"
+    assert fates[_S_GONE].fate == "SLOT_REMOVED", "사라진 항목의 사연은 남아 있어야 한다"
+
+
+def test_the_explicit_open_path_shows_the_story_too(tmp_path: Path) -> None:
+    """명시적 open/refresh 도 같은 사연을 낸다.
+
+    open 은 view 를 만들기 **전에** Configuration 을 물질화한다. 그러니 Configuration 존재로
+    끊으면 하필 사용자가 「포함할 내용」을 여는 그 순간에 이 정보가 통째로 사라진다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_GONE, _O_ONLY, "r1")
+
+    _advance_to_successor(tpl, coord)
+
+    opened = product.open_slot_configuration("공고서").current_view.projection
+    assert opened is not None
+    assert [(r.slot_id, r.fate) for r in opened.retained_selections] == [(_S_GONE, "SLOT_REMOVED")]
+
+    # 그리고 두 경로가 같은 것을 본다 — 렌더와 command 응답이 갈라지지 않는다.
+    passive = product.current_slot_configuration_view("공고서").current_view.projection
+    assert passive is not None
+    assert passive.retained_selections == opened.retained_selections
