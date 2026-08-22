@@ -444,3 +444,69 @@ test("겨눔은 성사되면 소비된다 — 나중 렌더가 남의 행을 다
     globalThis.CSS = previous;
   }
 });
+
+test("#789 진입 문맥이 지목한 자리를 보낸 화면의 호출 없이 스스로 겨눈다", async () => {
+  // 종전에는 보낸 화면이 port 너머로 `aimAt` 을 불러 주기를 기다렸는데, 그 메서드는
+  // `EditorEntryPort` 표면에 **없었다**. `typeof` 확인에 걸려 조용히 지나갔고, 그래서
+  // deep-link 초점은 한 번도 선 적이 없다. 문맥은 이미 목표를 담아 여기 도착한다.
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    const row = {
+      scrollIntoView() {},
+      querySelector: () => ({ focus() { focused.push("row-source"); } }),
+    };
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc: { getElementById: () => null, querySelector: () => row },
+    });
+    await h.controller.init();
+
+    h.controller.consumeAim(); // 렌더 훅 — 바깥에서 aimAt 을 부른 적이 없다
+
+    assert.deepEqual(focused, ["row-source"]);
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source"], "문맥당 한 번만 겨눈다");
+  } finally {
+    globalThis.CSS = previous;
+  }
+});
+
+test("#789 문맥이 없으면 겨누지 않고, 떠났다 다시 들어오면 또 겨눈다", async () => {
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    const row = {
+      scrollIntoView() {},
+      querySelector: () => ({ focus() { focused.push("row-source"); } }),
+    };
+    let context = {};
+    const h = harness({
+      initial: async () => snap({ context }),
+      doc: { getElementById: () => null, querySelector: () => row },
+    });
+    await h.controller.init();
+    h.controller.consumeAim();
+    assert.deepEqual(focused, [], "겨눌 자리를 안 지목한 진입은 초점을 옮기지 않는다");
+
+    // 같은 자리로 **다시** 들어오면 그때도 겨눠야 한다. 문맥이 사라진 렌더가 기억을 비우므로
+    // 두 번째 진입이 조용히 안 서는 일이 없다.
+    context = { target: "binding/추가확인" };
+    h.store.ingest("editor", snap({ context }));
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source"]);
+
+    context = {};
+    h.store.ingest("editor", snap({ context }));
+    h.controller.consumeAim(); // 편집기를 떠났다 — 기억이 비워진다
+
+    context = { target: "binding/추가확인" };
+    h.store.ingest("editor", snap({ context }));
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source", "row-source"], "두 번째 진입부터 조용히 안 섭니다");
+  } finally {
+    globalThis.CSS = previous;
+  }
+});

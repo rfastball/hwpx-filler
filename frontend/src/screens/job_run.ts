@@ -370,14 +370,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   async function previewFix(target: string, evidence: Obj): Promise<void> {
     const at = ((snapshot()?.preview) || {}).pos || 0;
     deps.modal.close("previewSheet");
-    const opened = await openEditForRepair({
+    // 조준은 editor 가 **자기 진입 문맥으로** 한다(#789). 여기서 port 너머로 부르지 않는다 —
+    // 종전에는 port 표면에 없는 메서드를 `typeof` 로 물어보고 없으면 조용히 지나가서,
+    // deep-link 초점이 한 번도 선 적이 없었다.
+    await openEditForRepair({
       entry_reason: "preview_result", target, evidence,
       return_context: { surface: "preview", reopen_drawer: true, preview_index: at },
     });
-    if (opened) {
-      const editor = deps.ports.editorEntry.current() as Obj;
-      if (typeof editor.aimAt === "function") editor.aimAt(target);
-    }
   }
 
   function openEditForRepair(context: Obj): Promise<boolean> {
@@ -388,25 +387,18 @@ export function createJobRunController(deps: JobRunControllerDeps) {
     );
   }
 
-  /** exact target \uc744 \uc9c0\ubaa9\ud55c \uc9c4\uc785\uc740 **\uadf8 \ud589\uc5d0 \uc120\ub2e4**(`previewFix` \uc640 \uac19\uc740 \ud615\uc0c1).
+  /** exact target 을 지목한 진입은 그 문맥을 editor 에 넘긴다 — **조준은 editor 가** 한다(#789).
    *
-   *  \uaca8\ub204\uc9c0 \uc54a\uc73c\uba74 \uc0ac\uc6a9\uc790\uac00 \ubc29\uae08 \uc9c0\ubaa9\ud55c \ud56d\ubaa9\uc744 \ub9e4\ud551 \ud45c\uc5d0\uc11c \ub2e4\uc2dc \ucc3e\uc544\uc57c \ud558\uace0, \uadf8\ub7ec\ub2e4 \ub2e4\ub978 \ud589\uc744
-   *  \uace0\uce60 \uc218 \uc788\ub2e4 \u2014 exact \ub97c \uc57d\uc18d\ud574 \ub193\uace0 \uadfc\uc0ac\ub85c \ucc29\uc9c0\ud558\ub294 \uac83\uc774\ub2e4. target \uc744 **\uc548 \ub118\uae30\ub294** \uc77c\ubc18
-   *  \uc218\ub9ac \uc9c4\uc785(`previewEdit`\u00b7`openRepair`)\uc740 \uaca8\ub20c \uc790\ub9ac\uac00 \uc5c6\uc5b4 \uadf8\ub300\ub85c \ub454\ub2e4. */
-  async function openBindingRequirement(
-    exactTarget: string, displayLabel: string,
-  ): Promise<boolean> {
-    const opened = await openEditForRepair({
+   *  종전에는 여기서 port 너머로 `aimAt` 을 부르려 했는데 그 메서드는 `EditorEntryPort` 표면에
+   *  없었고, `typeof` 로 물어보고 없으면 조용히 지나가는 형상이라 초점이 한 번도 선 적이 없었다.
+   *  진입 문맥은 이미 목표를 담아 editor 에 도착하므로 물어볼 곳은 바깥이 아니라 그쪽이다. */
+  function openBindingRequirement(exactTarget: string, displayLabel: string): Promise<boolean> {
+    return openEditForRepair({
       entry_reason: "document_browser_repair",
       target: exactTarget,
-      evidence: { "\uc785\ub825\uc774 \ud544\uc694\ud55c \ud56d\ubaa9": displayLabel },
+      evidence: { "입력이 필요한 항목": displayLabel },
       return_context: { surface: "data" },
     });
-    if (opened) {
-      const editor = deps.ports.editorEntry.current() as Obj;
-      if (typeof editor.aimAt === "function") editor.aimAt(exactTarget);
-    }
-    return opened;
   }
 
   /* ---- 파괴 전이 가드 — 무장 판정은 guard_state **실시간 질의**다(스냅샷 캐시는

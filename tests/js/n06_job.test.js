@@ -167,61 +167,42 @@ test("dispose 는 구독을 걷고 세대를 올려 앞선 실행의 응답을 �
   assert.equal(h.controller.getRun().screenEpoch, 1);
 });
 
-/* ================= ④ 교차 콜백 late-binding ================= */
+/* ================= ④ 진입 문맥이 겨눌 자리를 나른다 ================= */
 
-test("교차 콜백 aimAt — 진입 성사 뒤에만 호출되고 late-binding 으로 잡힌다", async () => {
+// 조준은 editor 가 **자기 진입 문맥으로** 한다(#789). 종전 이 자리의 증거는 port 너머
+// `aimAt` 호출을 셌는데, 그 메서드는 `EditorEntryPort` 표면에 **없다** — 대역이 진짜 port 보다
+// 능력이 많아서 초록이었고, 실제 앱에서는 `typeof` 확인에 걸려 조용히 지나갔다. 그래서 여기서
+// 세는 것을 「무엇을 불렀는가」에서 **「무엇을 넘겼는가」** 로 옮긴다.
+
+test("#789 미리보기 수정은 exact target 을 진입 문맥으로 넘긴다", async () => {
   const h = harness({ openGuardedResult: true, snapshot: SNAP });
   await h.controller.init();
   h.push(SNAP);
-  const aimed = [];
-  // 구성 **뒤에** 갈아끼운 콜백이 호출 시점에 잡힌다.
-  h.editorEntry.aimAt = (target) => aimed.push(target);
   await h.controller.previewFixField("공고명");
-  assert.deepEqual(aimed, ["binding/공고명"]);
+  const [, context] = h.editorCalls.at(-1);
+  assert.equal(context.target, "binding/공고명");
+  assert.equal(context.entry_reason, "preview_result");
 });
 
-test("진입이 거절되면 겨눔은 나가지 않는다", async () => {
-  const h = harness({ openGuardedResult: false, snapshot: SNAP });
-  await h.controller.init();
-  h.push(SNAP);
-  const aimed = [];
-  h.editorEntry.aimAt = (target) => aimed.push(target);
-  await h.controller.previewFixField("공고명");
-  assert.deepEqual(aimed, [], "성사 없이 겨누면 남의 화면을 조준한다");
-});
-
-test("exact Binding 수정 진입도 그 행을 겨눈다(미리보기 수정과 같은 계약)", async () => {
-  // 정확한 필드를 지목해 들어갔는데 아무 데도 안 서면, 사용자는 매핑 표에서 그 행을 다시
-  // 찾아야 하고 그러다 다른 행을 고칠 수 있다 — exact 를 약속하고 근사로 착지하는 것이다.
+test("#789 exact Binding 수정도 같은 문맥을 넘긴다", async () => {
   const h = harness({ openGuardedResult: true, snapshot: SNAP });
   await h.controller.init();
   h.push(SNAP);
-  const aimed = [];
-  h.editorEntry.aimAt = (target) => aimed.push(target);
   await h.controller.openBindingRequirement("binding/추가확인", "추가 확인");
-  assert.deepEqual(aimed, ["binding/추가확인"]);
+  const [, context] = h.editorCalls.at(-1);
+  assert.equal(context.target, "binding/추가확인");
+  assert.equal(context.entry_reason, "document_browser_repair");
 });
 
-test("Binding 진입이 거절되면 겨눔은 나가지 않는다", async () => {
-  const h = harness({ openGuardedResult: false, snapshot: SNAP });
-  await h.controller.init();
-  h.push(SNAP);
-  const aimed = [];
-  h.editorEntry.aimAt = (target) => aimed.push(target);
-  await h.controller.openBindingRequirement("binding/추가확인", "추가 확인");
-  assert.deepEqual(aimed, [], "성사 없이 겨누면 남의 화면을 조준한다");
-});
-
-test("target 없는 일반 수리 진입은 겨누지 않는다", async () => {
-  // 음성 대조 — 겨눌 자리가 없는 진입까지 조준하면 엉뚱한 행에 초점을 세운다.
+test("#789 target 없는 일반 수리 진입은 겨눌 자리를 넘기지 않는다", async () => {
+  // 음성 대조 — 겨눌 자리가 없는 진입까지 조준 문맥을 실으면 엉뚱한 행에 초점이 선다.
   const h = harness({ openGuardedResult: true, snapshot: SNAP });
   await h.controller.init();
   h.push(SNAP);
-  const aimed = [];
-  h.editorEntry.aimAt = (target) => aimed.push(target);
   h.controller.openRepair("fix-mapping");
   await Promise.resolve();
-  assert.deepEqual(aimed, []);
+  const [, context] = h.editorCalls.at(-1);
+  assert.equal(context.target, undefined);
 });
 
 /* ================= ⑥ 포트는 객체째 ================= */
