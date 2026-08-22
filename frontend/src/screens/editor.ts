@@ -139,6 +139,8 @@ type ViewState = {
   saveMessage: { text: string; level: string } | null;
   invalidField: string;
   aim: string;
+  /** 이 문맥에서 이미 겨눈 목표 — 문맥당 한 번만 조준한다. */
+  aimed: string;
 };
 
 const isEditing = (snapshot: Obj): boolean => !!snapshot.editing_origin;
@@ -150,6 +152,7 @@ export function createEditorController(deps: EditorControllerDeps) {
   let view: ViewState = {
     libMenu: null, folderImportInFlight: false, txtEdit: null,
     foldOpen: false, tokFoldOpen: false, saveMessage: null, invalidField: "", aim: "",
+    aimed: "",
   };
   const libContextMenu = createContextMenu();
   const draftListeners = new Set<Listener>();
@@ -319,15 +322,32 @@ export function createEditorController(deps: EditorControllerDeps) {
    *  않기 때문이다. 실측으로 SX-05 actual shell 이 정확히 그 자리에서 죽었다: 행은 있고 초점만
    *  없었다. 그래서 성사하지 못한 요청은 남겨 다음 렌더가 다시 시도한다. */
   function aimAt(target: string): void {
-    if ((snapshot().context || {}).target === target && aimAtTarget(target)) return;
+    if ((snapshot().context || {}).target === target && aimAtTarget(target)) {
+      patchView({ aim: "", aimed: target });
+      return;
+    }
     patchView({ aim: target });
   }
 
-  /** 렌더 뒤 소비 — 조준 문맥이 도착한 렌더에서 겨누되, **성사했을 때만** 요청을 지운다. */
+  /** 렌더 뒤 소비 — **진입 문맥이 지목한 자리**를 그 문맥당 한 번 겨눈다.
+   *
+   *  보낸 화면의 호출을 기다리지 않는다. 그 경로는 port 표면에 없는 메서드를 `typeof` 로
+   *  확인하고 조용히 지나가는 형상이었고(있지도 않은 것을 물어보고 없으면 넘어간다), 그래서
+   *  deep-link 초점은 **한 번도 선 적이 없었다**. 진입 문맥은 이미 목표를 담아 여기 도착하므로
+   *  물어볼 곳은 바깥이 아니라 여기다.
+   *
+   *  성사할 때까지 남는다 — 진입 성사 시점에는 매핑 표가 아직 DOM 에 없다. 그리고 문맥당 한
+   *  번만이라, 사용자가 그 뒤 초점을 옮겨도 매 렌더 다시 빼앗지 않는다. */
   function consumeAim(): void {
-    const target = view.aim;
-    if (target === "" || (snapshot().context || {}).target !== target) return;
-    if (aimAtTarget(target)) patchView({ aim: "" });
+    const target = String((snapshot().context || {}).target || "");
+    if (target === "") {
+      // 진입 문맥이 없으면(편집기를 떠났다) 기억을 비운다 — 같은 자리로 **다시** 들어오면
+      // 그때도 겨눠야 한다. 안 비우면 두 번째 진입부터 조용히 안 선다.
+      if (view.aimed !== "" || view.aim !== "") patchView({ aim: "", aimed: "" });
+      return;
+    }
+    if (target === view.aimed) return;
+    if (aimAtTarget(target)) patchView({ aim: "", aimed: target });
   }
 
   /* ---- 라이브러리 관리(F8 — tpl 화면 사망의 승계) ---- */
