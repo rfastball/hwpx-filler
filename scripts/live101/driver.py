@@ -34,8 +34,10 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+
+from hwpxfiller.webapp import live_run as live_run_contract
 
 from . import capture as capture_mod
 from . import report as report_mod
@@ -77,7 +79,7 @@ BOOT_GRACE_S = 15.0
 TEARDOWN_GRACE_S = 10.0
 #: 실행 예산을 넘긴 뒤 **하드 스톱**까지의 여유. 부드러운 시한(:class:`Deadline`)이 먼저
 #: 발화해 구조화된 실패로 착지할 기회를 주고, 그마저 못 도달할 때만 이 백스톱이 문다.
-RUN_HARD_STOP_MARGIN_S = 60.0
+RUN_HARD_STOP_MARGIN_S = live_run_contract.RUN_HARD_STOP_MARGIN_S
 
 #: 101 이 만드는 것들 — 성공 시 정리 대상(``reset-101.cmd`` 와 같은 집합).
 PRACTICE_STATE = [
@@ -107,9 +109,9 @@ class ExitCode:
     ENVIRONMENT = 3
     DIRTY_HOME = 4
     #: 창은 내려가라는 말을 들었는데 GUI 루프가 안 내려온다.
-    TEARDOWN_HUNG = 7
+    TEARDOWN_HUNG = live_run_contract.TEARDOWN_HUNG_EXIT_CODE
     #: 실행이 자기 끝에 **도달조차 못 했다** — 브리지가 멎어 시한을 되짚을 기회가 없었다.
-    RUN_HUNG = 8
+    RUN_HUNG = live_run_contract.RUN_HUNG_EXIT_CODE
 
 
 class DirtyHome(RuntimeError):
@@ -148,9 +150,27 @@ class LiveRunResult:
     environment: bool = False
 
     def exit_code(self) -> int:
+        event = self.report.get("infrastructure_event")
+        if event == "run_hung":
+            return ExitCode.RUN_HUNG
+        if event == "teardown_hung":
+            return ExitCode.TEARDOWN_HUNG
         if self.ok:
             return ExitCode.OK
         return ExitCode.ENVIRONMENT if self.environment else ExitCode.SCENARIO_FAILED
+
+
+def _infrastructure_failure(
+    result: LiveRunResult, event: str, error: str
+) -> LiveRunResult:
+    """하드 스톱을 제품 판정과 분리하고 성공 성능 표본에서도 제외한다."""
+    report = {**result.report, "infrastructure_event": event}
+    report["verdict"] = {
+        **report.get("verdict", {}),
+        "ok": False,
+        "reason": error,
+    }
+    return replace(result, ok=False, report=report, error=error)
 
 
 # ------------------------------------------------------------------ 홈 수명주기
@@ -314,11 +334,28 @@ class _Landing:
         self._land = land
         self._lock = threading.Lock()
         self._code: "int | None" = None
+        self._finished = False
 
     def once(self, result: LiveRunResult) -> int:
         with self._lock:
             if self._code is None:
                 self._code = self._land(result)
+            return self._code
+
+    def mark_finished(self, signal: "threading.Event") -> None:
+        """정상 반환과 timeout claim 을 같은 잠금 아래 직렬화한다."""
+        with self._lock:
+            self._finished = True
+            signal.set()
+
+    def claim_timeout(
+        self, result: "Callable[[], LiveRunResult]"
+    ) -> "int | None":
+        """정상 반환이 아직 확정되지 않았을 때만 timeout 착지를 선점한다."""
+        with self._lock:
+            if self._finished or self._code is not None:
+                return None
+            self._code = self._land(result())
             return self._code
 
 
@@ -334,7 +371,13 @@ def _run_with_home(
     from hwpxfiller.webapp import live_run
 
     answers: "deque[str]" = deque()
-    state: dict = {"result": None, "error": None, "environment": False}
+    state: dict = {
+        "result": None,
+        "error": None,
+        "environment": False,
+        "phase": "host-loading",
+        "infrastructure_event": None,
+    }
     deadline = Deadline(budget_s)
     #: `main()` 이 정상 반환하면 선다 — 워치독을 **해제**하는 신호(#426 리뷰 P1).
     finished = threading.Event()
@@ -396,19 +439,30 @@ def _run_with_home(
         )
 
     def drive(ctx) -> None:
+        host_timed_out = state["phase"] == "host-timeout"
+        state["phase"] = "window"
         window = ctx.window
         observations: dict = {}
         sink = None
         try:
+            if host_timed_out:
+                state["infrastructure_event"] = "boot_hung"
+                raise WindowBootFailure(
+                    "loaded",
+                    ctx.boot_budget_s + BOOT_GRACE_S,
+                    ctx.boot_budget_reason,
+                )
             # 창 부팅은 **제품 단언이 아니라 전제**다 — 우리 예산으로 기다린 뒤에야 창을
             # 만진다. 이 줄이 없으면 아래 첫 호출이 pywebview 의 20초 상수를 먼저 문다(#460).
             _await_window(window, *boot_wait_budget(ctx, deadline))
+            state["phase"] = "bridge"
             _await_bridge(window, deadline)
             window.resize(WINDOW_W, WINDOW_H)
             time.sleep(0.6)
             surface = Surface(window, deadline)
             surface.install_helpers()
             sink = _make_sink(mode, out_dir, webapp_app.WINDOW_TITLE)
+            state["phase"] = "scenario"
             observations = scenario_mod.run(
                 scenario_mod.ScenarioContext(
                     surface=surface,
@@ -431,9 +485,14 @@ def _run_with_home(
             result = settle(
                 observations, sink, state["error"], environment=state["environment"]
             )
+            if state["infrastructure_event"]:
+                result = _infrastructure_failure(
+                    result, state["infrastructure_event"], state["error"]
+                )
             state["result"] = result
-            ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
+            state["phase"] = "teardown"
             _arm_teardown_watchdog(result, home, finished, landing)
+            ctx.finish(result.report)  # 증거 파일 = 판정까지 담긴 보고서
 
     _arm_run_watchdog(
         home=home,
@@ -442,7 +501,12 @@ def _run_with_home(
         mode=mode,
         landing=landing,
         settle=settle,
+        state=state,
     )
+
+    def host_event(event: str) -> None:
+        state["phase"] = f"host-{event}"
+
     try:
         rc = webapp_app.main(
             argv=[],
@@ -453,12 +517,14 @@ def _run_with_home(
                 file_dialogs=live_run.FileDialogs(
                     open_file=answer_file_dialog, open_folder=answer_folder_dialog
                 ),
+                host_event=host_event,
+                host_wait_grace_s=BOOT_GRACE_S,
             ),
         )
     finally:
         # 정상 teardown 이면 워치독을 **해제**한다. 안 그러면 이 함수를 부른 장수 프로세스
         # (pytest 게이트 등)를 10초 뒤 `os._exit` 가 통째로 죽인다(#426 리뷰 P1).
-        finished.set()
+        landing.mark_finished(finished)
 
     result = state["result"]
     if result is None:
@@ -466,8 +532,8 @@ def _run_with_home(
         return settle(
             {},
             None,
-            state["error"] or "드라이버가 실행되지 않았습니다",
-            environment=state["environment"],
+            state["error"] or f"드라이버가 실행되지 않았습니다(app rc={rc})",
+            environment=True,
         )
     if rc != 0:
         return LiveRunResult(
@@ -595,7 +661,8 @@ def _arm_run_watchdog(
     budget_s: float,
     mode: str,
     landing: "_Landing",
-    settle: "Callable[[dict, object, str], LiveRunResult]",
+    settle: "Callable[..., LiveRunResult]",
+    state: dict,
 ) -> None:
     """실행 예산의 **하드 백스톱** — 브리지가 멎어도 무는 유일한 이빨(#426 리뷰 라운드 2).
 
@@ -614,16 +681,30 @@ def _arm_run_watchdog(
     def _watchdog() -> None:
         if finished.wait(budget_s):
             return  # 실행이 자기 끝에 닿았다 — 물러난다
+        error = f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)"
+
+        def failure() -> LiveRunResult:
+            phase = state["phase"]
+            base = state.get("result")
+            if base is None:
+                base = settle(
+                    {},
+                    None,
+                    error,
+                    environment=phase != "scenario",
+                )
+            return _infrastructure_failure(base, "run_hung", error)
+
+        code = landing.claim_timeout(failure)
+        if code is None:
+            return
         where = _dump_stacks(home)
         _say(
             f"101 {mode} 하드 스톱: 실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다"
             f" (브리지 무응답 의심). 스택 — {where}",
             stream=2,
         )
-        landing.once(
-            settle({}, None, f"실행 예산 {budget_s:.0f}s 안에 끝에 닿지 못했습니다(브리지 무응답)")
-        )
-        _hard_exit(ExitCode.RUN_HUNG)
+        _hard_exit(code)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -648,13 +729,18 @@ def _arm_teardown_watchdog(
     def _watchdog() -> None:
         if finished.wait(TEARDOWN_GRACE_S):
             return  # 정상 teardown — 물러난다
+        error = f"teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 끝나지 않았습니다"
+        failure = _infrastructure_failure(result, "teardown_hung", error)
+        code = landing.claim_timeout(lambda: failure)
+        if code is None:
+            return
         where = _dump_stacks(home)
         _say(
             f"101 {result.mode}: teardown 이 {TEARDOWN_GRACE_S:.0f}s 안에 안 내려왔습니다"
             f" → 워치독 종료. 스택 — {where}",
             stream=2,
         )
-        _hard_exit(landing.once(result))
+        _hard_exit(code)
 
     threading.Thread(target=_watchdog, daemon=True).start()
 
@@ -664,20 +750,4 @@ def _say(message: str, *, stream: int = 1) -> None:
     print(message, file=sys.stderr if stream == 2 else sys.stdout, flush=True)
 
 
-def _hard_exit(code: int) -> None:
-    """강제 종료 — **버퍼를 비우고** 나간다. 강제 종료의 **유일한 문**이다.
-
-    ``os._exit`` 는 인터프리터를 그 자리에서 끝내므로 파이썬 스트림 버퍼를 비우지 않는다.
-    CI 처럼 stdout 이 파이프로 리다이렉트되면 블록 버퍼링이라, 착지가 낸 요약과 보고서 JSON 이
-    **한 글자도 나가지 못한 채** 사라진다(#426 리뷰 라운드 4). 강제 종료를 하는 이유가 진단을
-    남기기 위해서인데, 그 진단을 종료가 삼키고 있었다.
-
-    문을 하나로 두면 앞으로 착지가 무엇을 더 출력하든 함께 살아남는다 — 라운드 3 이 착지
-    경로를 하나로 접은 것과 같은 이유다.
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.flush()
-        except Exception:  # noqa: BLE001 — 비우기 실패로 종료를 막지 않는다
-            pass
-    os._exit(code)
+_hard_exit = live_run_contract.hard_exit

@@ -77,18 +77,41 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     def fake_start(*args, **kwargs):
         started.append((args, kwargs))
 
+    window = _FakeWindow()
     monkeypatch.setitem(
         sys.modules,
         "webview",
         SimpleNamespace(
-            create_window=lambda *a, **k: _FakeWindow(),
+            create_window=lambda *a, **k: window,
             start=fake_start,
         ),
     )
     _stub_app_boot(monkeypatch, tmp_path)
 
-    drove: "list[live_run.LiveContext]" = []
-    assert app_mod.main(argv=[], live=_run(drive=drove.append, name="harness")) == 0
+    order: "list[str]" = []
+    alerts: "list[str]" = []
+    notices: "list[str]" = []
+    client = SimpleNamespace(
+        describe=lambda _events: order.append("theme:describe"),
+        preferences=lambda *_args: order.append("theme:preferences")
+        or SimpleNamespace(ok=False, failure_text="theme failed"),
+        notice=notices.append,
+    )
+    monkeypatch.setattr(app_mod.settings, "alert", alerts.append)
+    monkeypatch.setattr(
+        app_mod.product_api,
+        "ProductApiClient",
+        SimpleNamespace(for_window=lambda _window: client),
+    )
+    assert app_mod.main(
+        argv=[],
+        live=_run(
+            drive=lambda _ctx: order.append("drive"),
+            name="harness",
+            host_event=lambda event: order.append(f"host:{event}"),
+            host_wait_grace_s=15.0,
+        ),
+    ) == 0
 
     (positional, keywords) = started[0]
     assert len(positional) == 1, f"위치 인자가 하나(진입점)여야 한다: {positional!r}"
@@ -96,7 +119,179 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     assert list(inspect.signature(positional[0]).parameters) == []
 
     positional[0]()
-    assert len(drove) == 1 and drove[0].run_name == "harness"
+    assert window.events.loaded.timeouts == [16.0]
+    assert window.events.loaded.handlers == [], "live 에 비동기 loaded 핸들러를 함께 달았습니다"
+    assert order == [
+        "host:loaded",
+        "theme:describe",
+        "theme:preferences",
+        "host:ready",
+        "drive",
+    ]
+    assert len(alerts) == 1 and "theme failed" in alerts[0]
+    assert notices == [], "live theme 경보가 WebView bridge를 다시 열었습니다"
+
+    window = _FakeWindow()
+    monkeypatch.setattr(app_mod.single_instance, "acquire", lambda _home: object())
+    assert app_mod.main(argv=[]) == 0
+    window.events.loaded.handlers[0]()
+    assert len(notices) == 1 and "theme failed" in notices[0]
+    assert len(alerts) == 1, "정상 제품의 창 경보를 durable-only로 강등했습니다"
+
+
+def test_builtin_selftest_hard_stop_is_armed_before_window_creation(
+    monkeypatch, tmp_path
+) -> None:
+    """내장 selftest의 마지막 그물은 create/output/teardown 어느 정지에도 묶이지 않는다."""
+    def exercise(mode: str):
+        with monkeypatch.context() as scoped:
+            order: "list[str]" = []
+            outputs: "list[dict[str, object]]" = []
+            exits: "list[int]" = []
+
+            class _Timer:
+                daemon = False
+
+                def __init__(self, seconds, callback) -> None:
+                    timers.append(self)
+                    self.seconds = seconds
+                    self.callback = callback
+                    self.active = False
+
+                def start(self) -> None:
+                    self.active = True
+                    order.append(f"timer:{self.seconds}:armed")
+
+                def cancel(self) -> None:
+                    self.active = False
+                    order.append(f"timer:{self.seconds}:cancel")
+
+            timers: "list[_Timer]" = []
+
+            def hard_stop(*, after_cancel: bool = False) -> None:
+                timer = timers[0]
+                if timer.active or after_cancel:
+                    timer.callback()
+
+            def write_output(result) -> None:
+                if mode == "writing":
+                    hard_stop()
+                outputs.append(dict(result))
+
+            window = _FakeWindow(on_destroy=hard_stop if mode == "valid" else None)
+
+            def create_window(*_args, **_kwargs):
+                order.append("create")
+                return window
+
+            def preferences(*_args):
+                if mode == "missing":
+                    hard_stop()
+                return SimpleNamespace(ok=True, failure_text=None)
+
+            scoped.setattr(app_mod.threading, "Timer", _Timer)
+            scoped.setattr(app_mod, "_write_selftest_output", write_output)
+            scoped.setattr(app_mod, "_selftest_drive", lambda ctx: ctx.finish({"complete": True}))
+            scoped.setattr(app_mod.settings, "alert", lambda message: order.append(message))
+            scoped.setattr(app_mod.live_run, "hard_exit", lambda code: exits.append(code))
+            scoped.setitem(
+                sys.modules,
+                "webview",
+                SimpleNamespace(create_window=create_window, start=lambda entry, **kwargs: entry()),
+            )
+            scoped.setattr(
+                app_mod.product_api,
+                "ProductApiClient",
+                SimpleNamespace(
+                    for_window=lambda _window: SimpleNamespace(
+                        describe=lambda _events: None,
+                        preferences=preferences,
+                    )
+                ),
+            )
+            _stub_app_boot(scoped, tmp_path / mode)
+
+            result = app_mod.main(argv=["app", "--selftest"])
+            if mode == "normal":
+                hard_stop(after_cancel=True)  # 정상 완료가 먼저 claim했으면 늦은 callback은 no-op이다.
+
+            return result, order, outputs, exits, timers
+
+    hard_limit = 1.0 + app_mod._SELFTEST_BUDGET_S + live_run.RUN_HARD_STOP_MARGIN_S
+    cases = (
+        ("missing", live_run.RUN_HUNG_EXIT_CODE, "missing/pre-terminal", []),
+        ("writing", live_run.RUN_HUNG_EXIT_CODE, "write-in-progress", [{"complete": True}]),
+        ("valid", live_run.TEARDOWN_HUNG_EXIT_CODE, "valid/post-output", [{"complete": True}]),
+        ("normal", 0, None, [{"complete": True}]),
+    )
+    for mode, expected_code, expected_state, expected_outputs in cases:
+        result, order, outputs, exits, timers = exercise(mode)
+        assert result == expected_code
+        assert [timer.seconds for timer in timers] == [hard_limit, 1.0]
+        assert order.index(f"timer:{hard_limit}:armed") < order.index("create")
+        assert exits == ([] if mode == "normal" else [expected_code])
+        if expected_state is not None:
+            assert any(expected_state in line for line in order)
+        assert outputs == expected_outputs
+
+
+@pytest.mark.parametrize("observe_host", [True, False])
+def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
+    monkeypatch, tmp_path, observe_host
+) -> None:
+    """observer 유무와 무관하게 loaded 미도달은 기존 부팅 예산 안에서 driver로 넘긴다."""
+    started: list = []
+    window = _FakeWindow(loaded=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "webview",
+        SimpleNamespace(
+            create_window=lambda *a, **k: window,
+            start=lambda entry, **kwargs: started.append(entry),
+        ),
+    )
+    _stub_app_boot(monkeypatch, tmp_path)
+    order: "list[str]" = []
+    fallback: "list[object]" = []
+    alerts: "list[str]" = []
+    notices: "list[str]" = []
+
+    class _Timer:
+        daemon = False
+
+        def __init__(self, _seconds, callback) -> None:
+            fallback.append(callback)
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+    monkeypatch.setattr(app_mod.threading, "Timer", _Timer)
+    monkeypatch.setattr(app_mod.settings, "alert", alerts.append)
+    monkeypatch.setattr(
+        app_mod.product_api,
+        "ProductApiClient",
+        SimpleNamespace(
+            for_window=lambda _window: SimpleNamespace(notice=notices.append)
+        ),
+    )
+
+    run = _run(
+        drive=lambda _ctx: order.append("drive"),
+        name="quickstart-101",
+        host_event=(lambda event: order.append(f"host:{event}")) if observe_host else None,
+        host_wait_grace_s=15.0,
+    )
+    assert app_mod.main(argv=[], live=run) == 0
+    fallback[0]()
+    started[0]()
+
+    assert window.events.loaded.timeouts == [16.0]
+    assert order == (["host:timeout", "drive"] if observe_host else ["drive"])
+    assert len(fallback) == 1, "Quickstart가 자기 Landing 밖의 raw hard-exit timer를 얻었습니다"
+    assert len(alerts) == 1 and notices == [], "live fallback이 WebView bridge를 다시 열었습니다"
 
 
 # ------------------------------------------------------------ 등록 시점 음성 대조
@@ -179,6 +374,7 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
         ({"name": "  "}, "실행 이름"),
         ({"drive": "not-callable"}, "콜러블이 아닙니다"),
         ({"write_output": "not-callable"}, "증거 기록기"),
+        ({"host_event": "not-callable"}, "host_event"),
         ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
         # 형태만 보면 통과해 **첫 파일 선택에서** 죽는다 — 창이 이미 뜬 뒤의 늦은 진단이다.
         (
@@ -195,6 +391,12 @@ def test_contract_names_the_malformed_field(kwargs, fragment) -> None:
     """무엇이 틀렸는지 **이름을 대며** 거절한다 — 조립 실수가 한 줄로 읽혀야 한다."""
     with pytest.raises(live_run.LiveRunContractError, match=fragment):
         live_run.validate(_run(**kwargs))
+
+
+def test_host_wait_grace_is_finite_and_nonnegative() -> None:
+    for value in (-1.0, float("inf"), float("nan"), "invalid"):
+        with pytest.raises(live_run.LiveRunContractError, match="host_wait_grace_s"):
+            live_run.validate(_run(host_wait_grace_s=value))
 
 
 def test_an_unreadable_signature_is_refused_not_assumed() -> None:
@@ -351,19 +553,25 @@ def test_native_dialogs_have_a_single_entrance(monkeypatch) -> None:
 class _Event:
     """pywebview 이벤트 슬롯 대역 — ``window.events.X += handler`` 를 받는다."""
 
-    def __init__(self) -> None:
+    def __init__(self, fired: bool = True) -> None:
         self.handlers: "list[object]" = []
+        self.fired = fired
+        self.timeouts: "list[float | None]" = []
 
     def __iadd__(self, handler):
         self.handlers.append(handler)
         return self
 
+    def wait(self, timeout=None) -> bool:  # noqa: ARG002 — pywebview Event 계약 대역
+        self.timeouts.append(timeout)
+        return self.fired
+
 
 class _FakeWindow:
-    def __init__(self, on_destroy=None) -> None:
+    def __init__(self, on_destroy=None, *, loaded: bool = True) -> None:
         self.destroyed = 0
         self.events = SimpleNamespace(
-            loaded=_Event(),
+            loaded=_Event(loaded),
             resized=_Event(),
             moved=_Event(),
             maximized=_Event(),

@@ -219,6 +219,10 @@ def test_product_assertions_are_never_retried() -> None:
     for retry_token in ("nick-fields/retry", "continue-on-error: true", "--reruns"):
         assert retry_token not in text, f"재시도 흔적: {retry_token}"
 
+    live = _jobs()["live-webview2"]
+    assert live["timeout-minutes"] == "45"
+    assert "--maxfail=1" in _job_text(live), "첫 하드스톱 뒤 형제 live 부팅을 계속 태웁니다"
+
 
 # ───────────────────────── 생산자 하나 · 소비자 N ─────────────────────────
 

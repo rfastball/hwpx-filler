@@ -197,7 +197,11 @@ def _land(
         # 첫 줄이 **축**을 말한다 — 환경인가 제품인가(#460). 로그를 읽는 쪽(특히 무인 판정)이
         # 「내 변경이 깼나」를 그 한 줄로 답할 수 있어야 한다. 종전에는 창이 안 뜬 실행도
         # 제품 실패 7줄을 달고 나와, 그 질문의 답이 로그 어디에도 없었다.
-        axis = "환경" if result.environment else "제품"
+        axis = (
+            "인프라"
+            if result.report.get("infrastructure_event")
+            else "환경" if result.environment else "제품"
+        )
         print(f"101 {result.mode} 실패[{axis}] — {result.error}", file=sys.stderr)
         for failure in result.report.get("verdict", {}).get("failures", []):
             print(f"  · {failure}", file=sys.stderr)

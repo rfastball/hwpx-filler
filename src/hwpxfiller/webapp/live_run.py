@@ -35,11 +35,29 @@ GUI 루프에서 무한 대기했다. 그 몇 달 동안 ``tests/test_web_runtim
 from __future__ import annotations
 
 import inspect
+import os
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from math import isfinite
 
 #: 이 seam 이 말할 줄 아는 유일한 버전. 다른 값은 협상이 아니라 거절이다.
 LIVE_RUN_VERSION = 1
+#: live 실행의 안정적인 인프라 종료 축. 호출자가 제품 실패와 분리해 판정한다.
+TEARDOWN_HUNG_EXIT_CODE = 7
+RUN_HUNG_EXIT_CODE = 8
+#: 하위의 구조화된 시한이 먼저 결론을 낼 기회. selftest와 101 hard stop이 함께 쓴다.
+RUN_HARD_STOP_MARGIN_S = 60.0
+
+
+def hard_exit(code: int) -> None:
+    """Flush live-run diagnostics before terminating a stuck process."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except Exception:  # noqa: BLE001 -- 진단 flush 실패로 hard stop을 막지 않는다
+            pass
+    os._exit(code)
 
 
 class LiveRunContractError(RuntimeError):
@@ -97,6 +115,10 @@ class LiveRun:
     write_output: "Callable[[Mapping[str, object]], object]"
     capability: bool = False
     file_dialogs: "FileDialogs | None" = None
+    #: 앱 host 가 loaded 전/후 경계를 하니스에 알리는 비내구성 관측. 제품 실행에는 없다.
+    host_event: "Callable[[str], None] | None" = None
+    #: host loaded 대기에 기존 제품 부팅 예산 위로 얹는 하니스 여유.
+    host_wait_grace_s: float = 0.0
     version: int = LIVE_RUN_VERSION
 
 
@@ -118,6 +140,12 @@ def validate(run: object) -> LiveRun:
         raise LiveRunContractError(f"드라이버가 콜러블이 아닙니다: {run.drive!r}")
     if not callable(run.write_output):
         raise LiveRunContractError(f"증거 기록기가 콜러블이 아닙니다: {run.write_output!r}")
+    if run.host_event is not None and not callable(run.host_event):
+        raise LiveRunContractError(f"host_event 가 콜러블이 아닙니다: {run.host_event!r}")
+    if not isinstance(run.host_wait_grace_s, (int, float)) or (
+        not isfinite(run.host_wait_grace_s) or run.host_wait_grace_s < 0
+    ):
+        raise LiveRunContractError("host_wait_grace_s 는 0 이상의 유한한 수여야 합니다")
     if run.file_dialogs is not None:
         if not isinstance(run.file_dialogs, FileDialogs):
             raise LiveRunContractError(
