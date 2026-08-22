@@ -859,8 +859,28 @@ def run_sx(ctx: ScenarioContext) -> dict:
     _expect(stale_commands, "H5: stale command trace가 없습니다")
 
     # Repair the broken option and its exact Binding target, then return through the real entry seam.
+    #
+    # 셋의 **행동이 다르다**는 것을 여기서 실제로 밟는다. broken 은 고른 것이 사라졌으니 **다른
+    # 것**을 골라야 닫히고, 유지된 것은 **같은 것을 다시 고르면** 닫힌다(자동 승계가 아니므로
+    # 확인은 사용자가 한다). 사라진 항목은 어느 쪽으로도 닫히지 않는다 — 정보로만 남는다.
     s.click_sel("#cs-opt-1-0", what="깨진 선택 복구")
     s.wait("document.getElementById('cs-opt-1-0').checked", "깨진 선택 복구 반영", requires=["#cs-opt-1-0"])
+    s.click_sel("#cs-opt-0-0", what="유지된 이전 선택 재확인")
+    s.wait("document.getElementById('cs-opt-0-0').checked", "재확인 반영", requires=["#cs-opt-0-0"])
+    s.wait(
+        "!document.querySelector('#jobContentSelectionZone"
+        " .cs-retained-note[data-fate=\"RESOLVED\"]')"
+        " && !document.querySelector('#jobContentSelectionZone"
+        " .cs-retained-note[data-fate=\"SELECTED_OPTION_REMOVED\"]')"
+        " && !!document.querySelector('#jobContentSelectionZone .cs-retained-gone')",
+        "닫은 항목의 안내는 사라지고 사라진 항목은 남는다",
+        requires=["#jobContentSelectionZone"],
+    )
+    closed = _current_view(_snapshot(s))["projection"]
+    _expect(
+        {item["fate"] for item in closed.get("retained_selections", ())} == {"SLOT_REMOVED"},
+        "H4: 닫은 이전 선택이 계속 남거나 사라진 항목이 조용히 없어졌습니다",
+    )
     exact_target = "binding/추가확인"
     exact_selector = f'#jobInputRequirements button[data-exact-target="{exact_target}"]'
     s.wait(f"!!document.querySelector({json.dumps(exact_selector)})", "신규 Active Field exact Binding", requires=["#jobInputRequirements"])
