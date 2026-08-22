@@ -929,7 +929,10 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "신규 Binding 확정",
         requires=[row],
     )
-    s.click_text("#scr-editor", "작업 저장")
+    # 수리 진입은 **저장된 작업의 편집 모드**다 — footer 가 마법사의 「작업 저장」이 아니라
+    # 「변경 저장」을 낸다(저장·버리기를 상시 표시 + 상태 비활성으로 두는 U2 §2.4 형상).
+    # 여기서 마법사 문안을 겨누면 없는 버튼을 기다리게 된다.
+    s.click_text("#scr-editor", "변경 저장")
     s.wait("document.querySelector('#scr-editor').textContent.includes('저장했습니다')", "Binding 저장", timeout=30.0, requires=["#scr-editor"])
     s.click_text("#editorContext", "문서 만들기로 돌아가기")
     s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
