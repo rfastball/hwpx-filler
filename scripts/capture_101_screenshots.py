@@ -154,7 +154,7 @@ def main(argv: "list[str] | None" = None) -> int:
         return driver.ExitCode.USAGE
 
     if getattr(args, "preflight", False):
-        problems = driver.preflight(args.mode)
+        problems = driver.preflight(args.mode, phase)
         for problem in problems:
             print(f"선행조건 미충족: {problem}", file=sys.stderr)
         if problems:
@@ -182,7 +182,7 @@ def main(argv: "list[str] | None" = None) -> int:
     # stale seal 로 14컷을 지운 **뒤에야** 부팅이 거절된다(#430 리뷰). 이미 만든 러너(CI)가
     # 두 번 만들지 않게 하려던 것이지, 보장을 빼려던 것이 아니다.
     if args.no_build:
-        problems = driver.preflight(args.mode)
+        problems = driver.preflight(args.mode, phase)
         for problem in problems:
             print(f"산출물 검증 실패(--no-build): {problem}", file=sys.stderr)
         if problems:

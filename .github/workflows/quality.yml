@@ -311,7 +311,7 @@ jobs:
         # 뜻이었는지 아무도 묻지 않게 되고, 그 상태의 게이트는 이미 게이트가 아니다.
         run: |
           Remove-Item Env:HWPX_SKIP_GUI_TESTS -ErrorAction SilentlyContinue
-          uv run --no-sync --with pillow pytest -q -m live --maxfail=1 --basetemp="$env:RUNNER_TEMP/live"
+          uv run --no-sync pytest -q -m live --maxfail=1 --basetemp="$env:RUNNER_TEMP/live"
       - name: Collect live diagnostics
         if: always()
         shell: pwsh

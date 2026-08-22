@@ -810,23 +810,49 @@ def run_sx(ctx: ScenarioContext) -> dict:
         requires=["#jobTplChange"],
     )
     s.release_dispatch()
+    # 셋이 **화면에서** 서로 다른 것으로 서야 한다(#728 H4). 남은 둘은 각자의 Slot 자리에서
+    # 서로 다른 fate 로 말하고, 사라진 항목은 별도 정보 블록으로 갈린다.
+    #
+    # `.cs-detached` 를 기다리지 않는다: 그 클래스는 `detached_selections` 로만 뜨는데 그 필드는
+    # SG-01(#733) 이후 구조적으로 영영 비어 있다 — declared 에 실리려면 AUTO_KEEP 이어야 하고,
+    # AUTO_KEEP 이려면 그 Option 이 target 에 **있어야** 하므로 「없다」와 동시에 성립할 수 없다.
+    # 이전 선택의 운명은 #777 이 세운 `retained_selections` 가 나른다.
     s.wait(
         "!!document.querySelector('.cs-status-stale')"
         " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 2"
-        " && !!document.querySelector('#jobContentSelectionZone .cs-detached')",
-        "stale notice와 skipped successor hydrate",
+        " && !!document.querySelector('#jobContentSelectionZone"
+        " .cs-retained-note[data-fate=\"RESOLVED\"]')"
+        " && !!document.querySelector('#jobContentSelectionZone"
+        " .cs-retained-note[data-fate=\"SELECTED_OPTION_REMOVED\"]')"
+        " && !!document.querySelector('#jobContentSelectionZone .cs-retained-gone')",
+        "stale notice와 skipped successor hydrate + 세 갈래 이전 선택",
         timeout=30.0,
         requires=["#jobContentSelectionZone"],
     )
     successor = _snapshot(s)
     successor_view = _current_view(successor)
     successor_projection = successor_view["projection"]
-    changes = successor_projection.get("reconciliation_changes") or {}
-    _expect(changes.get("preserved_selection_refs"), "H4: preserved selection이 없습니다")
-    _expect(successor_projection.get("detached_selections"), "H4: detached selection이 없습니다")
+    fates = {
+        item["slot_id"]: item["fate"]
+        for item in successor_projection.get("retained_selections", ())
+    }
+    _expect(fates, "H4: 이전 선택이 조용히 사라졌습니다")
+    _expect("RESOLVED" in fates.values(), "H4: 그대로 다시 고를 수 있는 선택이 없습니다")
+    _expect("SELECTED_OPTION_REMOVED" in fates.values(), "H4: broken selection이 없습니다")
+    _expect("SLOT_REMOVED" in fates.values(), "H4: detached selection이 없습니다")
+    _expect(len(set(fates.values())) == 3, f"H4: 세 상태가 같은 행동으로 뭉쳤습니다 — {fates}")
+    # 사라진 항목은 자동 부활하지 않는다 — 현재 구성의 일부가 아니다.
+    current_slot_ids = {slot["slot_id"] for slot in successor_projection["slots"]}
+    detached_ids = {sid for sid, fate in fates.items() if fate == "SLOT_REMOVED"}
     _expect(
-        any(item.get("kind") == "SELECTED_OPTION_REMOVED" for item in successor_projection.get("blocking_items", ())),
-        "H4: broken selection이 없습니다",
+        not (detached_ids & current_slot_ids),
+        "H4: 사라진 항목이 현재 구성으로 되살아났습니다",
+    )
+    # 내부 어휘는 여전히 화면에 없다(H1 은 이 새 문안에도 걸린다).
+    successor_visible = str(s.js("document.getElementById('jobContentSelectionZone').innerText"))
+    _expect(
+        all(sid not in successor_visible for sid in fates),
+        "H4: 이전 선택 문안이 내부 Slot id 를 노출했습니다",
     )
     stale_trace = s.take_dispatch_trace()
     stale_commands = [item for item in stale_trace if item.get("action") == "select_slot_option"]
@@ -1000,7 +1026,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "H1": {"labels": labels, "raw_ids": raw_ids, "pixel": audit},
         "H2": {"before_token": before_token, "after_token": after_first_view["new_configuration_token"], "trace": h2_trace},
         "H3": {"option_a_fields": before_fields, "option_b_fields": after_fields},
-        "H4": {"reconciliation": changes, "binding_target": exact_target, "binding_state": repaired.get("binding_state")},
+        "H4": {"retained_fates": fates, "binding_target": exact_target, "binding_state": repaired.get("binding_state")},
         "H5": {"context_copy": context_text, "record_focus": record_focus, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
         "H6": {"preview_token": current_token, "filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
         "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "old_preview_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},

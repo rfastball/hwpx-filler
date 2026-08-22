@@ -351,11 +351,16 @@ def build_web_artifact() -> None:
     )
 
 
-def preflight(mode: str) -> "list[str]":
+def preflight(mode: str, phase: str = "legacy") -> "list[str]":
     """실행 없이 **전제만** 센다 — CI 가 "돌 수 있는 환경인가"를 시끄럽게 증명하는 자리.
 
     실주행(2~4분)을 CI 단계에서 두 번 돌리지 않으려는 것이다. 실제 완주는 pytest 게이트가
     한 번 돌고, 이 단계는 그 게이트가 조용히 스킵될 수 없음을 앞에서 보인다.
+
+    픽셀 조건은 **모드가 아니라 실제로 셔터가 서는가**로 센다. SX-05 journey 는 `check` 인데도
+    audit sink 를 세우므로(아래 :func:`run`), 모드만 보면 이 단계가 「돌 수 있다」고 증명한 환경이
+    정작 완주하지 못한다 — 그리고 그 실패는 한참 뒤 대본 한가운데서 맨 `ModuleNotFoundError` 로
+    터진다. 전제를 증명하는 자리가 못 보는 전제가 있으면 그 초록은 아무 말도 안 하는 것이다.
     """
     problems: "list[str]" = []
     if sys.platform != "win32":
@@ -365,11 +370,11 @@ def preflight(mode: str) -> "list[str]":
             problems.append(f"101 자산 없음: {EXAMPLE_HOME / name}")
     if not (EXAMPLE_HOME / "data" / "발주목록.csv").is_file():
         problems.append("101 데이터 없음: data/발주목록.csv")
-    if mode == "capture":
+    if mode == "capture" or phase == "journey":
         try:
             import PIL  # noqa: F401
         except ImportError:
-            problems.append("Pillow 없음 — capture 모드는 PNG 저장에 필요합니다")
+            problems.append("Pillow 없음 — 픽셀 증거를 남기는 실행에는 PNG 저장이 필요합니다")
     try:
         from hwpxfiller.webapp import app as webapp_app
 

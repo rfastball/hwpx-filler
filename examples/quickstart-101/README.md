@@ -346,7 +346,7 @@ uv run --extra gui python scripts/capture_101_screenshots.py capture
 자산을 복사해 돌기 때문에 실습 상태를 건드리지 않는다:
 
 ```powershell
-uv run --with pillow --extra gui python scripts/capture_101_screenshots.py check
+uv run --extra gui python scripts/capture_101_screenshots.py check
 ```
 
 두 명령 모두 실습을 **실제로** 완주하므로 OS 클립보드를 한 번 덮어쓴다(작업대의

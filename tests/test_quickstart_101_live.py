@@ -260,7 +260,7 @@ def live_check_run(tmp_path_factory) -> dict:
     proc, report = selected["proc"], selected["report"]
     assert proc.returncode == driver.ExitCode.OK and report.get("verdict", {}).get("ok") is True, (
         f"SX-05 journey가 실패해 restart를 시작하지 않습니다 — rc={proc.returncode}\n"
-        f"stdout={proc.stdout[-3000:]}\nstderr={proc.stderr[-3000:]}"
+        f"stderr={_tail(proc.stderr)}\nstdout={_tail(proc.stdout)}"
     )
     restart_dir = evidence / "restart"
     restart_dir.mkdir(parents=True, exist_ok=True)
@@ -283,8 +283,9 @@ def live_check_run(tmp_path_factory) -> dict:
         restart_proc = subprocess.run(
             restart_command,
             cwd=REPO_ROOT,
+            env=_child_env(),
             capture_output=True,
-            text=True,
+            **_CHILD_TEXT,
             timeout=_RESTART_OUTER_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as expired:
@@ -294,8 +295,8 @@ def live_check_run(tmp_path_factory) -> dict:
         ) from expired
     _keep_output(restart_dir, restart_proc.stdout, restart_proc.stderr)
     assert restart_report_path.exists(), (
-        f"restart 보고서 미생성 — rc={restart_proc.returncode}\n"
-        f"stdout={restart_proc.stdout[-2000:]}\nstderr={restart_proc.stderr[-2000:]}"
+        f"restart 보고서 미생성 — rc={restart_proc.returncode}, 증거={restart_dir}\n"
+        f"stderr={_tail(restart_proc.stderr, 2000)}\nstdout={_tail(restart_proc.stdout, 2000)}"
     )
     restart_report = json.loads(restart_report_path.read_text(encoding="utf-8"))
     after = _tree_manifest(EXAMPLE_HOME)
@@ -535,6 +536,27 @@ def test_a_child_that_leaves_no_report_is_named_not_a_typeerror(monkeypatch, tmp
         _drive_fixture(monkeypatch, tmp_path, fake_run)
 
 
+def test_the_precondition_sees_the_pixel_path_it_actually_takes(monkeypatch) -> None:
+    """픽셀 조건은 **모드가 아니라 실제로 셔터가 서는가**로 센다(#779 · #774).
+
+    SX-05 journey 는 `check` 인데도 audit sink 를 세운다. 모드만 보면 이 단계가 「돌 수 있다」고
+    증명한 환경이 정작 완주하지 못하고, 그 실패는 한참 뒤 대본 한가운데서 맨 `ModuleNotFoundError`
+    로 터진다 — 전제를 증명하는 자리가 못 보는 전제가 있으면 그 초록은 아무 말도 안 하는 것이다.
+
+    게이트 밖이다: 창도 자식도 없이 판정만 본다.
+    """
+    monkeypatch.setitem(sys.modules, "PIL", None)  # import PIL → ImportError
+
+    def problems(mode: str, phase: str = "legacy") -> "list[str]":
+        return [p for p in driver.preflight(mode, phase) if "Pillow" in p]
+
+    assert problems("check", "journey"), "픽셀을 남기는 journey 를 선행조건이 못 봅니다"
+    assert problems("capture"), "capture 는 종전부터 픽셀을 남긴다"
+    # 음성 대조 — 픽셀을 안 남기는 실행까지 막지는 않는다(있지도 않은 전제를 요구하지 않는다).
+    assert not problems("check", "restart")
+    assert not problems("check")
+
+
 @pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) -> None:
@@ -567,7 +589,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert observed["sx05"]["H6"]["filesystem_before"] == observed["sx05"]["H6"]["filesystem_after"]
     restart_proc = live_check_run["restart_proc"]
     restart = live_check_run["restart_report"]
-    assert restart_proc.returncode == driver.ExitCode.OK, restart_proc.stderr[-3000:]
+    assert restart_proc.returncode == driver.ExitCode.OK, _tail(restart_proc.stderr)
     assert restart["phase"] == "restart" and restart["verdict"]["ok"] is True
     assert restart["observations"]["sx05_restart"]["filesystem_before"] == restart["observations"]["sx05_restart"]["filesystem_after"]
     assert restart["source"] == report["source"]
