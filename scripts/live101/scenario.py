@@ -906,9 +906,12 @@ def run_sx(ctx: ScenarioContext) -> dict:
         " editorOn:!!document.querySelector('#scr-editor.on')};"
         "})()"
     )
+    editor_snapshot = s.bridge("window.pywebview.api.initial('editor')", "현재 editor projection")
+    editor_context = (editor_snapshot or {}).get("context") if isinstance(editor_snapshot, dict) else None
     _expect(
         isinstance(focus_state, dict) and focus_state.get("focused"),
-        f"H4: Binding deep-link가 exact source select에 focus하지 않았습니다 — {focus_state}",
+        "H4: Binding deep-link가 exact source select에 focus하지 않았습니다 — "
+        f"{focus_state} · editor context={editor_context}",
     )
     s.set_value(source_select, "공고명")
     s.js(
