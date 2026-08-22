@@ -892,8 +892,15 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "Binding editor exact row",
         requires=["#scr-editor", row],
     )
-    focus_on_entry = s.js("document.activeElement === document.querySelector(" + json.dumps(source_select) + ")")
-    _expect(focus_on_entry, "H4: Binding deep-link가 exact source select에 focus하지 않았습니다")
+    # 초점은 진입 **뒤 렌더**가 세운다(`editor.aimAt` → `aimAtTarget`). 행의 존재를 본 그 순간에
+    # 한 번 찍으면 아직 안 왔을 수 있다 — 그건 제품이 안 세운 것이 아니라 우리가 일찍 본 것이다.
+    # 조건으로 기다리되 시한을 넘기면 시끄럽게 죽는다: 「안 세웠다」와 「아직 안 왔다」를 통과로
+    # 뭉개지 않는다(대기는 단언을 약화시키는 것이 아니라 그 순간을 정확히 겨누는 것이다).
+    s.wait(
+        "document.activeElement === document.querySelector(" + json.dumps(source_select) + ")",
+        "Binding deep-link exact focus",
+        requires=["#scr-editor", row],
+    )
     s.set_value(source_select, "공고명")
     s.js(
         "(function(){const c=document.querySelector(" + json.dumps(row + ' input[data-act="row-confirm"]') + ");"
