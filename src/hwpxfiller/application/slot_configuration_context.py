@@ -202,6 +202,21 @@ def _decode_structure_v3(payload: Mapping[str, Any]) -> TemplateStructure:
     return _decode_product_structure(payload, schema="v3", include_labels=True)
 
 
+def _decode_structure_v4(payload: Mapping[str, Any]) -> TemplateStructure:
+    """hwpx-structure-projection-v4 payload → TemplateStructure(label 포함 product structure).
+
+    v4 는 v2 의 composition-ready shape 에 canonical label 을 더한 shipping schema 다(#773).
+    S4 는 v2 때와 똑같이 ``product_structure`` 만 읽고 composition-only fact(occurrence/region/
+    relation/envelope/resolver)는 S4 권위로 복제하지 않는다 — 다른 점은 label 뿐이다.
+    """
+    product = payload.get("product_structure")
+    if not isinstance(product, Mapping):
+        raise TemplateStructureIntegrityError(
+            "v4 projection payload 에 product_structure 매핑이 없다"
+        )
+    return _decode_product_structure(product, schema="v4", include_labels=True)
+
+
 class StructureProjectionDecoderRegistry:
     """immutable projection-schema → decoder registry — unknown schema 를 latest 로 안 푼다."""
 
@@ -230,6 +245,7 @@ DEFAULT_STRUCTURE_DECODER_REGISTRY = StructureProjectionDecoderRegistry(
         ("hwpx-structure-projection-v1", _decode_structure_v1),
         ("hwpx-structure-projection-v2", _decode_structure_v2),
         ("hwpx-structure-projection-v3", _decode_structure_v3),
+        ("hwpx-structure-projection-v4", _decode_structure_v4),
     ]
 )
 

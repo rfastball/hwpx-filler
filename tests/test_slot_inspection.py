@@ -25,6 +25,7 @@ from hwpxcore.structural_boundary import (
     scan_structural_boundaries,
 )
 import hwpxfiller.external.template_inspection as template_inspection
+from hwpxfiller.application.execution_structure import encode_execution_structure
 from hwpxfiller.application.template_qualification import (
     QualificationInspection,
     TemplateDiagnostic,
@@ -983,7 +984,7 @@ def test_qualification_projects_complete_native_free_field_ownership() -> None:
     )
 
     inspection = inspect_hwpx_qualification(package.to_bytes())
-    assert inspection == QualificationInspection(
+    assert (inspection.structure, inspection.diagnostics) == (
         TemplateStructure(
             ("duplicate", "duplicate"),
             (
@@ -1006,10 +1007,27 @@ def test_qualification_projects_complete_native_free_field_ownership() -> None:
         ),
         (),
     )
-    payload = json.dumps(asdict(inspection), ensure_ascii=False)
+    payload = json.dumps(asdict(inspection.structure), ensure_ascii=False)
     assert "BoundaryPairRef" not in payload
     assert "Contents/" not in payload
     assert (inspection.structure is not None) is (not inspection.diagnostics)
+
+    # #773: 같은 inspection 이 composition-ready projection 도 낸다. product structure 는 두 view
+    # 가 **같은 값**이어야 하고(둘이 다른 사실을 말하면 qualify_template 이 ERROR 로 닫는다),
+    # native handle 은 여전히 0 이다 — content entry 이름은 schema 가 요구하는 stable id 라
+    # 예외이고, BoundaryPairRef/XML/경로는 실리지 않는다.
+    execution = inspection.execution_structure
+    assert execution is not None
+    assert execution.product_structure == inspection.structure
+    execution_payload = json.dumps(
+        encode_execution_structure(execution), ensure_ascii=False
+    )
+    assert "BoundaryPairRef" not in execution_payload
+    assert "hp:" not in execution_payload
+    # duplicate root Field 는 occurrence 가 둘이고 ordinal 은 문서 순서로 0,1 이다.
+    duplicates = [o for o in execution.field_occurrences if o.field_id == "duplicate"]
+    assert [o.occurrence_ordinal for o in duplicates] == [0, 1]
+    assert duplicates[0].structural_order < duplicates[1].structural_order
 
 
 def test_qualification_reads_candidate_without_serializing_or_mutating(
@@ -1036,8 +1054,11 @@ def test_qualification_reads_candidate_without_serializing_or_mutating(
 
     inspection = HWPX_QUALIFICATION_PROFILE.inspect(canonical_bytes)
 
-    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v3"
-    assert inspection == QualificationInspection(TemplateStructure(("name",), ()), ())
+    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v4"
+    assert (inspection.structure, inspection.diagnostics) == (
+        TemplateStructure(("name",), ()),
+        (),
+    )
     assert parsed.entries == before
 
 
