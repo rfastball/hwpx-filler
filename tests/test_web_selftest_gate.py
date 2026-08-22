@@ -108,9 +108,16 @@ def _boot_selftest(env: "dict[str, str]", *, out: Path, what: str) -> "subproces
     try:
         completed = subprocess.run(
             [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
-            env=env,
+            # 파이프 양끝의 인코딩을 **로캘과 무관하게** 맞춘다(#778). 읽는 쪽만 고정하면
+            # 한국어 Windows 에서 자식이 cp949 로 써 나가 사유가 뭉개지고, 아무것도 고정하지
+            # 않으면 reader thread 가 `UnicodeDecodeError` 로 죽어 `stdout` 이 `None` 이 된다.
+            # `PYTHONIOENCODING` 은 자식의 **스트림만** 바꾼다 — 파일 기본 인코딩은 그대로라
+            # 이 게이트가 재는 제품 거동은 움직이지 않는다.
+            env={**env, "PYTHONIOENCODING": "utf-8"},
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="backslashreplace",
             timeout=_SELFTEST_TIMEOUT,
         )
         if completed.returncode != 0:
@@ -196,7 +203,9 @@ def _evidence_progress(out: Path) -> str:
 def _tail(stream: "str | bytes | None", limit: int = 2000) -> str:
     if not stream:
         return ""
-    text = stream if isinstance(stream, str) else stream.decode("utf-8", "replace")
+    # backslashreplace: 되돌릴 수 있는 손실만 낸다 — U+FFFD 로 뭉개면 인코딩 사고의 원 바이트가
+    # 사라져 사후에 원인을 짚을 수 없다(#778, `src/hwpxfiller/cli.py` 와 같은 정책).
+    text = stream if isinstance(stream, str) else stream.decode("utf-8", "backslashreplace")
     return text[-limit:]
 
 
@@ -218,7 +227,7 @@ def selftest_result(tmp_path_factory) -> dict:
     proc = _boot_selftest(env, out=out, what="full 모드 모듈 픽스처")
     assert out.exists(), (
         "selftest 결과 파일 미생성 — 창 부팅/렌더 실패 가능. "
-        f"rc={proc.returncode}\nstdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
+        f"rc={proc.returncode}\nstdout={_tail(proc.stdout)}\nstderr={_tail(proc.stderr)}"
     )
     return json.loads(out.read_text(encoding="utf-8"))
 
@@ -1752,7 +1761,7 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         what="테마 쓰기 단계",
     )
     assert out_write.exists(), (
-        f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}"
+        f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={_tail(w.stderr)}"
     )
     written = json.loads(out_write.read_text(encoding="utf-8"))
     assert written.get("set_result") == "dark", f"쓰기 단계 Theme.set 실패: {written}"
@@ -1762,7 +1771,7 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="테마 읽기 콜드부트"
     )
     assert out_read.exists(), (
-        f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={r.stderr[-2000:]}"
+        f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={_tail(r.stderr)}"
     )
     tp = json.loads(out_read.read_text(encoding="utf-8"))["theme_persist"]
     assert tp["data_theme"] == "dark", (
@@ -1793,7 +1802,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
         what=f"배율 쓰기 단계({scale})",
     )
     assert out_write.exists(), (
-        f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
+        f"배율 쓰기 실패 rc={written_proc.returncode}: {_tail(written_proc.stderr)}"
     )
     assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
@@ -1804,7 +1813,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
         dict(base, HWPX_SELFTEST_OUT=str(out_read)), out=out_read, what="배율 되읽기 콜드부트"
     )
     assert out_read.exists(), (
-        f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
+        f"배율 되읽기 실패 rc={read_proc.returncode}: {_tail(read_proc.stderr)}"
     )
     p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
     assert p["font_scale"] == scale and p["root_px"] == root_px
@@ -1840,7 +1849,7 @@ def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: 
         HWPX_SELFTEST_GEOMETRY_ONLY="1",
     )
     proc = _boot_selftest(env, out=out, what="창 기하 되읽기")
-    assert out.exists(), f"창 기하 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    assert out.exists(), f"창 기하 부팅 실패 rc={proc.returncode}: {_tail(proc.stderr)}"
     actual = json.loads(out.read_text(encoding="utf-8"))["window_geometry"]
     if mode == "normal":
         # WinForms screenX/Y에는 DPI별 비클라이언트 프레임 오프셋이 붙는다.
@@ -1874,7 +1883,7 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     out = tmp_path / "boot.json"
     env = dict(os.environ, HWPXFILLER_HOME=str(home), HWPX_SELFTEST_OUT=str(out))
     proc = _boot_selftest(env, out=out, what="부팅 스탬프")
-    assert out.exists(), f"부팅 실패 — rc={proc.returncode}\nstderr={proc.stderr[-2000:]}"
+    assert out.exists(), f"부팅 실패 — rc={proc.returncode}\nstderr={_tail(proc.stderr)}"
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
     stamp = saved.get("boot_completed_runtime")
     assert isinstance(stamp, str) and stamp, (
@@ -1902,7 +1911,7 @@ def normal_window_evidence(tmp_path_factory) -> dict:
         HWPX_SELFTEST_NO_CAPABILITY="1",
     )
     proc = _boot_selftest(env, out=out, what="능력 없는 창(음성 대조)")
-    assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    assert out.exists(), f"음성 대조 부팅 실패 rc={proc.returncode}: {_tail(proc.stderr)}"
     evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in evidence, evidence.get("error")
     return evidence
@@ -2007,7 +2016,7 @@ def test_global_allowlist_gate_actually_catches_a_planted_leak(tmp_path) -> None
         HWPX_SELFTEST_LEAK_SENTINEL=sentinel,
     )
     proc = _boot_selftest(env, out=out, what="누수 파수꾼")
-    assert out.exists(), f"파수꾼 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    assert out.exists(), f"파수꾼 부팅 실패 rc={proc.returncode}: {_tail(proc.stderr)}"
     evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in evidence, evidence.get("error")
     assert evidence["leak_sentinel"] == sentinel
@@ -2058,7 +2067,7 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
         HWPX_SELFTEST_GLOBAL_DELTA="1",
     )
     proc = _boot_selftest(env, out=out, what="능력 켠 전역 델타 측정")
-    assert out.exists(), f"능력 측정 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    assert out.exists(), f"능력 측정 실패 rc={proc.returncode}: {_tail(proc.stderr)}"
     capability_evidence = json.loads(out.read_text(encoding="utf-8"))
     assert "error" not in capability_evidence, capability_evidence.get("error")
     testing = capability_evidence["global_delta"]

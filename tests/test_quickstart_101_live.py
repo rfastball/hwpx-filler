@@ -92,21 +92,52 @@ def _evidence_dir(tmp_path_factory) -> Path:
     return target
 
 
+#: 자식 출력을 읽는 방식 — **로캘에 기대지 않는다**(#778).
+#
+# ``text=True`` 만 주면 파이썬은 `locale.getpreferredencoding(False)` 로 디코딩한다. 한국어
+# Windows 에서 그건 cp949 이고, 자식이 UTF-8 을 뱉으면 reader thread 가 `UnicodeDecodeError` 로
+# 죽는다. 그러면 `proc.stdout` 이 `None` 이 되고 테스트는 진짜 원인 대신 엉뚱한 `TypeError` 로
+# 넘어진다 — 실측으로 그 밑에 깔려 있던 원인은 `ModuleNotFoundError: No module named 'PIL'`
+# 이었고 그 문자열은 어디에도 안 남았다.
+#
+# CI 와 `test.ps1` 은 `PYTHONUTF8=1` 을 걸어 이 결함을 덮고 있다(그 모드에서는 preferred 가
+# utf-8 이라 맨 `text=True` 가 우연히 맞는다). 그래서 이 계약은 **환경이 아니라 여기**가 진다.
+# 짝이 되는 인코딩 쪽 고정은 자식(`scripts/capture_101_screenshots.py`)이 자기 스트림에 건다.
+_CHILD_TEXT = {"text": True, "encoding": "utf-8", "errors": "backslashreplace"}
+
+
 def _keep_output(evidence: Path, stdout, stderr) -> None:
     """하니스가 무엇을 말하며 끝났는지 회수 가능한 자리에 통째로 남긴다.
 
-    단언 문자열은 2000자로 잘리고 러너 로그는 접혀 있다. 시한 초과 경로에서는 잡힌 출력이
-    ``bytes`` 이거나 아예 ``None`` 일 수 있어(:class:`subprocess.TimeoutExpired`) 있는 그대로
-    받아 적는다 — 증거를 남기다 다른 예외를 내면 남는 것이 또 없다.
+    단언 문자열은 2000자로 잘리고 러너 로그는 접혀 있다. 잡힌 출력은 ``None`` 일 수 있고
+    (:class:`subprocess.TimeoutExpired`, reader 버퍼가 빈 채 끝난 경우) 호출자에 따라
+    ``bytes`` 일 수도 있어 세 종류를 다 받아 적는다 — 증거를 남기다 다른 예외를 내면 남는 것이
+    또 없다.
     """
     for name, captured in (("check-stdout.txt", stdout), ("check-stderr.txt", stderr)):
-        if captured is None:
-            text = "(캡처 없음)"
-        elif isinstance(captured, bytes):
-            text = captured.decode("utf-8", errors="backslashreplace")
-        else:
-            text = captured
-        (evidence / name).write_text(text, encoding="utf-8")
+        (evidence / name).write_text(_tail(captured, None), encoding="utf-8")
+
+
+def _tail(captured, limit: "int | None" = 3000) -> str:
+    """자식 출력의 꼬리를 **무엇이 오든** 문자열로 만든다.
+
+    진단 문자열을 조립하다 예외를 내면 원인이 통째로 사라진다 — 실측으로 ``proc.stdout`` 이
+    ``None`` 인데 `[-3000:]` 로 잘라 :class:`TypeError` 가 났고, 그 자리에 있던 진짜 원인
+    (``ModuleNotFoundError: No module named 'PIL'``)은 어디에도 안 남았다(#778). 그래서 꼬리를
+    만드는 이 경로는 **어떤 입력에도 던지지 않는다**. 부재는 빈 문자열이 아니라 이름으로 남긴다 —
+    「출력이 없었다」와 「출력을 못 받았다」가 같은 빈칸이 되면 안 된다.
+    """
+    if captured is None:
+        return "(캡처 없음)"
+    if isinstance(captured, bytes):
+        # backslashreplace: 되돌릴 수 있는 손실만 낸다. U+FFFD 로 뭉개면 원 바이트가 사라져
+        # 인코딩 사고의 원인을 사후에 짚을 수 없다(`src/hwpxfiller/cli.py` 와 같은 정책).
+        text = captured.decode("utf-8", errors="backslashreplace")
+    else:
+        text = captured
+    if not text:
+        return "(빈 출력)"
+    return text if limit is None else text[-limit:]
 
 
 def _retryable_boot_hang(proc: subprocess.CompletedProcess, report: object) -> bool:
@@ -171,7 +202,7 @@ def live_check_run(tmp_path_factory) -> dict:
                 command,
                 cwd=REPO_ROOT,
                 capture_output=True,
-                text=True,
+                **_CHILD_TEXT,
                 timeout=_OUTER_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired as expired:
@@ -184,8 +215,8 @@ def live_check_run(tmp_path_factory) -> dict:
 
         _keep_output(attempt_dir, proc.stdout, proc.stderr)
         assert report_path.exists(), (
-            f"보고서 미생성 — attempt={number}, rc={proc.returncode}\n"
-            f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
+            f"보고서 미생성 — attempt={number}, rc={proc.returncode}, 증거={attempt_dir}\n"
+            f"stderr={_tail(proc.stderr, 2000)}\nstdout={_tail(proc.stdout, 2000)}"
         )
         report = json.loads(report_path.read_text(encoding="utf-8"))
         attempts.append({"proc": proc, "report": report, "evidence": attempt_dir})
@@ -327,6 +358,87 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
     )
 
 
+class _EvidenceFactory:
+    """`tmp_path_factory` 대역 — 픽스처 본체를 창 없이 돌리기 위한 최소 형상."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+
+    def mktemp(self, name: str) -> Path:
+        target = self._root / name
+        target.mkdir(exist_ok=True)
+        return target
+
+
+def _drive_fixture(monkeypatch, tmp_path: Path, fake_run) -> None:
+    monkeypatch.delenv("HWPX_LIVE_EVIDENCE_DIR", raising=False)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(sys.modules[__name__], "_tree_manifest", lambda _root: {"x": "y"})
+    live_check_run.__wrapped__(_EvidenceFactory(tmp_path))
+
+
+def test_every_child_spawn_pins_utf8_instead_of_the_locale(monkeypatch, tmp_path) -> None:
+    """자식 출력을 **로캘로** 읽지 않는다 — 그 하나가 진짜 실패를 통째로 가렸다(#778).
+
+    게이트 밖이다: 자식도 창도 없이 호출 형상만 본다. 그리고 이 단언은 **kwargs 를** 본다.
+    「한국어를 실제로 깨뜨려 보는」 행동 단언은 여기서 영영 초록이다 — `test.ps1` 과 CI 의
+    모든 잡이 `PYTHONUTF8=1` 을 걸어 두어 그 모드에서는 맨 `text=True` 도 우연히 UTF-8 로
+    디코딩하기 때문이다. 즉 결과를 재는 척하면서 아무것도 못 재는 자리라, 계약 자체를 센다.
+
+    호출을 **전부** 세는 것도 계약이다. 하나만 고친 반쪽 수정이 초록으로 남으면 안 된다.
+    """
+    seen: "list[dict]" = []
+
+    def fake_run(command, **kwargs):
+        seen.append(kwargs)
+        report_path = Path(command[command.index("--report") + 1])
+        report_path.write_text(
+            json.dumps(
+                {
+                    "phase": "journey",
+                    "environment": False,
+                    "shots": [],
+                    "observations": {},
+                    "documents": [],
+                    "hwpx_generated": EXPECTED_HWPX,
+                    "verdict": {"ok": True, "failures": []},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(command, driver.ExitCode.OK, stdout="", stderr="")
+
+    _drive_fixture(monkeypatch, tmp_path, fake_run)
+
+    assert seen, "자식 호출이 한 번도 없었습니다 — 이 단언이 아무것도 안 지킵니다"
+    for index, kwargs in enumerate(seen):
+        assert kwargs.get("encoding") == "utf-8", (
+            f"{index + 1}번째 자식 호출이 인코딩을 로캘에 맡깁니다: {kwargs!r}"
+        )
+        assert kwargs.get("errors") == "backslashreplace", (
+            f"{index + 1}번째 자식 호출의 오류 정책이 손실 복구 불가입니다: {kwargs!r}"
+        )
+
+
+def test_a_child_that_leaves_no_report_is_named_not_a_typeerror(monkeypatch, tmp_path) -> None:
+    """보고서 없이 죽은 자식은 **사유로** 착지한다 — 진단을 만들다 죽지 않는다(#778).
+
+    실측 회귀: reader thread 가 디코딩에서 죽어 `proc.stdout` 이 `None` 이 되자, 단언 문자열을
+    조립하던 `[-2000:]` 이 `TypeError` 를 냈다. 그 자리에 있던 진짜 원인은 어디에도 안 남았다.
+    그래서 여기서는 `stdout`·`stderr` 를 아예 `None` 으로 건네고, 남는 것이 `TypeError` 가
+    아니라 사유를 재진술하는 `AssertionError` 인지 본다.
+    """
+
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(
+            command, driver.ExitCode.ENVIRONMENT, stdout=None, stderr=None
+        )
+
+    with pytest.raises(AssertionError, match="보고서 미생성"):
+        _drive_fixture(monkeypatch, tmp_path, fake_run)
+
+
 @pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) -> None:
@@ -338,7 +450,7 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     proc = live_check_run["proc"]
     assert proc.returncode == driver.ExitCode.OK, (
         f"101 check 가 exit {proc.returncode} 로 끝났습니다\n"
-        f"stdout={proc.stdout[-3000:]}\nstderr={proc.stderr[-3000:]}"
+        f"stderr={_tail(proc.stderr)}\nstdout={_tail(proc.stdout)}"
     )
 
     report = live_check_run["report"]

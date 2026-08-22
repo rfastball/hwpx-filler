@@ -104,7 +104,22 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _force_utf8_output() -> None:
+    """이 하니스의 출력 인코딩을 **로캘과 무관하게** 못박는다(#778).
+
+    이 CLI 의 진단은 전부 한국어이고, 부모(`tests/test_quickstart_101_live.py`)는 그 파이프를
+    UTF-8 로 읽는다. 인코딩 쪽을 로캘에 맡기면 한국어 Windows 에서 cp949 로 써 나가고, 읽는
+    쪽과 어긋나 실패 사유가 통째로 뭉개진다 — 실패를 알리려다 실패의 이름을 잃는다.
+    `src/hwpxfiller/cli.py` 의 `_force_utf8_output` 과 같은 정책이다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main(argv: "list[str] | None" = None) -> int:
+    _force_utf8_output()
     args = _parse_args(argv)
 
     if getattr(args, "preflight", False):
