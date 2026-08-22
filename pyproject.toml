@@ -22,7 +22,12 @@ dev = ["pytest>=8.0"]
 package = ["pyinstaller>=6.21"]
 
 [dependency-groups]
+# 실렌더 증거 도구는 여기 산다 — `src/` 는 안 쓰고(제품 의존이 아니다) 테스트·하니스만 쓴다.
+# playwright 는 설치 Chrome 으로 눌림 기하를, pillow 는 실 WebView2 창의 픽셀을 남긴다.
+# 선언 없이 `uv run --with` 로 얹으면 잠금 밖 의존이 초록 뱃지를 달고, 그 명령을 아는 사람만
+# 재현할 수 있다(#779).
 dev = [
+    "pillow>=11.0",
     "pre-commit>=4.0",
     "pyright>=1.1.390",
     "pytest>=8.0",

@@ -10,7 +10,7 @@
     uv run --extra gui python scripts/capture_101_screenshots.py check
 
     # 문서용 14컷 재생성 — 예제 홈(화면에 뜨는 경로가 문서와 같아야 한다)
-    uv run --with pillow --extra gui python scripts/capture_101_screenshots.py capture
+    uv run --extra gui python scripts/capture_101_screenshots.py capture
 
     # 실행 없이 전제만 증명(CI 선행조건 단계)
     uv run python scripts/capture_101_screenshots.py check --preflight

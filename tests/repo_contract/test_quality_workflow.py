@@ -309,6 +309,34 @@ def test_the_artifact_is_verified_before_any_node_appears_in_the_job() -> None:
         )
 
 
+def test_no_step_conjures_a_dependency_the_lockfile_never_saw() -> None:
+    """CI 는 **선언한 환경**으로만 돈다 — `uv run --with` 로 얹지 않는다(#779).
+
+    `uv sync --locked` 가 재현성의 계약인데 실행 줄에서 `--with X` 를 얹으면 그 X 는 매번
+    PyPI 에서 새로 받는 잠금 밖 의존이 된다. 어느 버전으로 초록이었는지 기록이 없고, 같은
+    커밋이 CI 에선 통과하고 `test.ps1` 에선 죽는다 — 실측으로 Pillow 가 그렇게 몇 달을 살았다.
+
+    고칠 자리는 실행 줄이 아니라 `pyproject.toml` 의 의존 그룹이다. 그래야 CI 와 개발 기기가
+    같은 환경을 본다.
+    """
+    conjured = re.compile(r"\buv run\b.*\s--with\b")
+    offenders = [
+        f"{name}: {line.strip()}"
+        for name, job in _jobs().items()
+        for command in _run_commands(job)
+        for line in command.splitlines()
+        if conjured.search(line)
+    ]
+
+    assert not offenders, (
+        "잠금 밖 의존을 실행 줄에서 얹는 단계가 있습니다 — 선언으로 옮기세요:\n"
+        + "\n".join(offenders)
+    )
+    # 음성 대조 — 형상을 실제로 거절하는가(항상 참인 검사가 아니다).
+    assert conjured.search("uv run --no-sync --with pillow pytest -q")
+    assert not conjured.search("uv run --no-sync pytest -q")
+
+
 def test_packaging_consumes_the_same_artifact_instead_of_building_its_own() -> None:
     """패키징도 소비자다 — 자기 안에서 프런트를 또 만들지 않는다(종전 4회째 빌드의 자리)."""
     commands = _run_commands(_jobs()["distribution-webview2"])
