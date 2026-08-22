@@ -321,6 +321,60 @@ def test_production_option_command_moves_backend_owned_binding_review(product) -
     assert slot_view.display_text == "공고 상세"
 
 
+def test_shipping_structure_is_admissible_by_composition_premises(applied) -> None:
+    """capture 만 고치고 admission 을 두면 반쪽이다 — 같은 v4 structure 가 premise 도 통과해야 한다.
+
+    회귀 근거: 첫 구현은 `execution_composition.admit_composition_premises` 의 schema gate 를
+    v2 상수로 둔 채 shipping 만 v4 로 올렸다. 그러면 S5 capture 는 살아나고 seal/compile 이
+    `UNSUPPORTED_EXECUTION_STRUCTURE_PROJECTION` 로 영구 차단된다 — 내용은 멀쩡한데 schema
+    문자열 하나 때문에.
+    """
+    from hwpxfiller.application.execution_composition import (
+        NATIVE_PRIMITIVE_CONTRACT_V1,
+        CompositionPremiseContextError,
+        admit_composition_premises,
+    )
+
+    _, _, evidence = applied
+    projection = evidence.structure_projection
+    assert projection is not None
+    structure = decode_execution_structure(projection.payload)
+
+    result = admit_composition_premises(
+        structure=structure,
+        native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
+        theorem_evidence_manifest_digest="d",
+    )
+    assert not isinstance(result, CompositionPremiseContextError), result
+
+
+def test_seal_attests_the_schema_it_verified(applied) -> None:
+    """seal 은 방금 검증한 pair 의 schema 를 적는다 — v4 payload 에 v2 라고 서명하지 않는다."""
+    from hwpxfiller.application.execution_structure import (
+        LABELED_EXECUTION_QUALIFICATION_PROFILE_ID as V4_PROFILE,
+        build_execution_manifest,
+        seal_execution_profile,
+    )
+
+    _, _, evidence = applied
+    projection = evidence.structure_projection
+    assert projection is not None
+    manifest = build_execution_manifest(
+        qualification_profile_id=V4_PROFILE,
+        media="hwpx",
+        adapter_contract_version="hwpx-inspection-v4",
+        product_rule_version="hwpx-qualification-rules-v4",
+        operation_alphabet_version="hwpx-operations-v1",
+        created_at="2026-08-22T00:00:00",
+    )
+    sealed = seal_execution_profile(manifest, projection)
+    assert sealed.qualification_profile_id == V4_PROFILE
+    assert (
+        sealed.projection_schema_version
+        == LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA
+    )
+
+
 # ─── 거절: 부재·불일치는 조용히 빈 값이 되지 않는다 ──────────────────────────────────
 
 

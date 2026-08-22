@@ -144,8 +144,10 @@ def qualify_template(
             profile.id,
             diagnostics,
         )
-    # 두 view 가 같은 inspection 에서 나왔음을 구조로 확인한다 — product structure 가 어긋나면
-    # label 과 composition fact 가 다른 사실을 말하는 것이라 조용히 넘기지 않는다.
+    # 두 view 가 같은 product structure 를 말하는지 확인한다. 제품 HWPX profile 은 두 값을 같은
+    # 객체로 넘기므로 여기서 걸릴 일이 없다 — 이 검사가 지키는 것은 **다른 inspector 구현**이다
+    # (port 는 임의 구현을 받는다). 어긋나면 label 과 composition fact 가 서로 다른 사실을
+    # 말하는 것이라 PASS 로 넘기지 않는다.
     if (
         execution_structure is not None
         and execution_structure.product_structure != structure

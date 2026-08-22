@@ -33,7 +33,6 @@ from hwpxfiller.application.execution_structure import (
     CONTAINS,
     CROSSING,
     DISJOINT,
-    EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     OWNER_OPTION,
     OWNER_ROOT,
     OWNER_SLOT_SHARED,
@@ -48,6 +47,7 @@ from hwpxfiller.application.execution_structure import (
     POSITION_INSIDE,
     ExecutionTemplateStructure,
     classify_span_relation,
+    is_supported_execution_projection,
     template_structure_digest,
 )
 from hwpxfiller.application.qualification_evidence import content_digest
@@ -796,8 +796,10 @@ def _composition_identity_context_error(
 
     theorem registry 를 consult 하지 않는다 — 미지원 contract/schema 는 latest fallback 없이 닫는다.
     """
-    # (0) projection schema — 미지원 v2 밖 structure 를 v2 의미로 해석하지 않는다(fail-closed).
-    if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+    # (0) projection schema — 등록된 composition-ready schema 밖 structure 를 그 의미로 해석하지
+    # 않는다(fail-closed). 판정은 execution_structure 의 pair 표 하나가 진다 — 여기서 상수를 따로
+    # 들면 새 schema 를 더할 때 capture 는 통과하고 admission 만 막히는 반쪽 상태가 생긴다(#773).
+    if not is_supported_execution_projection(structure.projection_schema_version):
         return CompositionPremiseContextError(
             "UNSUPPORTED_EXECUTION_STRUCTURE_PROJECTION", None,
             f"미지원 execution structure projection schema: "

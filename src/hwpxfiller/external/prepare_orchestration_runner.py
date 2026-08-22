@@ -57,8 +57,8 @@ from hwpxfiller.application.prepare_orchestration import (
     plan_recovery,
 )
 from hwpxfiller.application.execution_structure import (
-    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     execution_pass_projection,
+    is_supported_execution_projection,
 )
 from hwpxfiller.application.qualification_evidence import (
     ERROR,
@@ -187,7 +187,10 @@ def _composition_projection(
     인데 inspection 이 execution structure 를 내지 않았으면 **시끄럽게 닫는다** — product-only
     projection 으로 조용히 되돌아가면 S5 가 나중에 decode 불가로 넘어져 원인이 여기서 멀어진다.
     """
-    if projection_schema_version != LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+    # composition-ready schema **전부**를 잡는다(v2·v4). v4 만 보면, manifest 가 v2 를 pin 했을 때
+    # build_records 가 조용히 product-only payload 를 v2 label 로 써 버린다 — #773 이 없애려는
+    # 그 결함을 다른 schema 에 그대로 남기는 셈이다.
+    if not is_supported_execution_projection(projection_schema_version):
         return None
     if not isinstance(qualification, TemplateQualificationPassed):
         return None  # FAIL/ERROR 는 Evidence 에 structure 를 싣지 않는다.

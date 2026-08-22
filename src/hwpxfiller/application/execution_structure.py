@@ -59,8 +59,17 @@ _EXECUTION_PROFILE_PAIRS = {
 _LABEL_BEARING_SCHEMAS = frozenset({LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA})
 
 
+def is_supported_execution_projection(schema: str) -> bool:
+    """등록된 composition-ready projection schema 인가(v2 · v4). latest fallback 없음.
+
+    schema 를 판정하는 곳이 이 모듈 밖에도 있다(예: composition premise admission). 그쪽이
+    상수 하나를 따로 들면 새 schema 를 더할 때 한쪽만 늙는다 — 판정은 여기 하나로 모은다.
+    """
+    return schema in _EXECUTION_PROFILE_PAIRS.values()
+
+
 def _require_supported_schema(schema: str) -> None:
-    if schema not in _EXECUTION_PROFILE_PAIRS.values():
+    if not is_supported_execution_projection(schema):
         raise UnsupportedExecutionStructureProjection(
             f"미지원 execution structure projection schema: {schema!r}"
         )
@@ -1235,6 +1244,8 @@ def seal_execution_profile(manifest, projection: StructureProjection) -> SealedE
     structure = decode_execution_structure(projection.payload)
     return SealedExecutionProfile(
         qualification_profile_id=manifest.qualification_profile_id,
-        projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+        # seal 은 attestation 이다 — 방금 검증한 그 pair 의 schema 를 적는다. 상수를 박으면 v4
+        # payload 위에 v2 라고 서명하는 셈이 된다(digest 는 v4 payload 로 계산된다).
+        projection_schema_version=expected_schema,
         template_structure_digest=template_structure_digest(structure),
     )
