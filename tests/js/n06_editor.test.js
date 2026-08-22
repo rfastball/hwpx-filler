@@ -72,7 +72,7 @@ function harness(cfg) {
     go: (target, options) => { trace.push(["navigation.go", target, options]); },
   };
   const controller = createEditorController({
-    doc: { getElementById: () => null, querySelector: () => null },
+    doc: opts.doc || { getElementById: () => null, querySelector: () => null },
     runtime, client, ports, services,
     modal: {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return opts.confirm?.(spec) ?? false; },
@@ -380,4 +380,67 @@ test("성공은 Python 확인값이 draft와 같을 때만 clean으로 승격한
   });
   assert.equal(fieldError(failed, NAME_FIELD), "이름 중복");
   assert.equal(valueOf(failed, NAME_FIELD), "새 이름");
+});
+
+/* ---------------- 겨눔은 행이 설 때까지 살아 있는다 ---------------- */
+
+test("겨눔 요청은 그 행이 실제로 렌더될 때까지 살아 있는다", async () => {
+  // 진입 성사 직후에는 매핑 표가 아직 DOM 에 없다(렌더는 다음 틱이다). 그 순간 한 번 겨누고
+  // 요청을 버리면 초점은 **영영** 서지 않는다 — 행은 나중에 생기는데 아무도 다시 겨누지 않는다.
+  // 실측으로 SX-05 actual shell 이 여기서 20s 시한으로 죽었다: 행은 있고 초점만 없었다.
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    let row = null; // 아직 렌더 전
+    const rowSelector = '#editor-body table.map tr[data-field="추가확인"]';
+    const doc = {
+      getElementById: () => null,
+      querySelector: (selector) => (selector === rowSelector ? row : null),
+    };
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc,
+    });
+    await h.controller.init();
+
+    h.controller.aimAt("binding/추가확인");
+    assert.deepEqual(focused, [], "없는 행에 가짜 초점을 세우지 않는다");
+
+    row = {
+      scrollIntoView() {},
+      querySelector: () => ({ focus() { focused.push("row-source"); } }),
+    };
+    h.controller.consumeAim(); // 행이 선 렌더
+
+    assert.deepEqual(focused, ["row-source"], "행이 선 뒤에도 겨누지 않으면 초점은 영영 안 선다");
+  } finally {
+    globalThis.CSS = previous;
+  }
+});
+
+test("겨눔은 성사되면 소비된다 — 나중 렌더가 남의 행을 다시 낚아채지 않는다", async () => {
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    const row = {
+      scrollIntoView() {},
+      querySelector: () => ({ focus() { focused.push("row-source"); } }),
+    };
+    const doc = { getElementById: () => null, querySelector: () => row };
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc,
+    });
+    await h.controller.init();
+
+    h.controller.aimAt("binding/추가확인");
+    assert.deepEqual(focused, ["row-source"]);
+    h.controller.consumeAim();
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source"], "한 번 선 초점을 매 렌더 다시 빼앗지 않는다");
+  } finally {
+    globalThis.CSS = previous;
+  }
 });

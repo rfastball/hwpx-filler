@@ -294,34 +294,40 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 조준(deep-link) ---- */
 
-  function aimAtTarget(target: string): void {
+  /** 실제로 겨눴는지 돌려준다 — 아직 안 선 행에 대한 요청을 **버리지 않기** 위해서다. */
+  function aimAtTarget(target: string): boolean {
     if (target === "filename/filenamePattern") {
-      deps.doc.querySelector<HTMLElement>('#editor-body input[data-act="pattern"]')?.focus();
-      return;
+      const input = deps.doc.querySelector<HTMLElement>(
+        '#editor-body input[data-act="pattern"]');
+      input?.focus();
+      return input !== null;
     }
     const field = target.slice("binding/".length);
     const row = deps.doc.querySelector<HTMLElement>(
       `#editor-body table.map tr[data-field="${CSS.escape(field)}"]`);
-    if (row === null) return;      // 없는 행에 가짜 초점을 세우지 않는다(fail-open)
+    if (row === null) return false;  // 없는 행에 가짜 초점을 세우지 않는다
     row.scrollIntoView({ block: "center" });
-    row.querySelector<HTMLElement>('select[data-act="row-source"]')?.focus();
+    const select = row.querySelector<HTMLElement>('select[data-act="row-source"]');
+    select?.focus();
+    return select !== null;
   }
 
-  /** 보낸 표면이 진입 성사 뒤 부르는 조준 seam — 문맥이 이미 왔으면 즉시, 아니면 다음 렌더가 소비. */
+  /** 보낸 표면이 진입 성사 뒤 부르는 조준 seam — **설 때까지** 살아 있는다.
+   *
+   *  진입이 성사된 그 순간에는 매핑 표가 아직 DOM 에 없다(렌더는 다음 틱이다). 거기서 한 번
+   *  겨누고 요청을 버리면 초점은 **영영** 안 선다 — 행은 나중에 생기는데 아무도 다시 겨누지
+   *  않기 때문이다. 실측으로 SX-05 actual shell 이 정확히 그 자리에서 죽었다: 행은 있고 초점만
+   *  없었다. 그래서 성사하지 못한 요청은 남겨 다음 렌더가 다시 시도한다. */
   function aimAt(target: string): void {
-    if ((snapshot().context || {}).target === target) {
-      aimAtTarget(target);
-      return;
-    }
+    if ((snapshot().context || {}).target === target && aimAtTarget(target)) return;
     patchView({ aim: target });
   }
 
-  /** 렌더 뒤 소비 — 조준 문맥이 도착한 렌더에서 정확히 한 번 겨눈다. */
+  /** 렌더 뒤 소비 — 조준 문맥이 도착한 렌더에서 겨누되, **성사했을 때만** 요청을 지운다. */
   function consumeAim(): void {
     const target = view.aim;
     if (target === "" || (snapshot().context || {}).target !== target) return;
-    patchView({ aim: "" });
-    aimAtTarget(target);
+    if (aimAtTarget(target)) patchView({ aim: "" });
   }
 
   /* ---- 라이브러리 관리(F8 — tpl 화면 사망의 승계) ---- */
