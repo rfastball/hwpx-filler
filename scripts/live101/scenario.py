@@ -1150,9 +1150,21 @@ def run_sx(ctx: ScenarioContext) -> dict:
     _expect(after_failure.get("job_name") == "발주요청서", "H7: failed transition이 committed Work를 바꿨습니다")
     _mount_data(ctx, ctx.stage_data("release"))
     s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "incompatible DataTarget RELEASE", timeout=30.0, requires=["#jobActionName"])
+    # 호환 재적재의 계약은 **KEEP** 이다. 그런데 RELEASE 직후엔 이름이 이미 비어 있어서
+    # 「비어 있는가」로 물으면 무엇을 하든 참이다 — 그 대기는 아무것도 증언하지 못한다(제품이
+    # 저절로 작업을 세우는 길은 명시 `prefer_work` 뿐이라 마운트로는 애초에 안 선다).
+    # 그래서 호환 데이터로 되돌린 뒤 **명시로 고르고**, 한 번 더 호환 데이터를 얹어 그 작업이
+    # 그대로 서 있는지를 잰다. 순서가 계약이다 — 비호환 데이터 위에서는 후보가 애초에 고를 수
+    # 없고(방금 RELEASE 된 이유가 그것이다), 고르지 못하면 KEEP 을 물을 자리도 없다.
     _mount_data(ctx, ctx.stage_data("clean"))
-    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "compatible reload 뒤 auto Work 0", requires=["#jobActionName"])
     _select_work(s, "발주요청서")
+    _mount_data(ctx, ctx.stage_data("clean"))
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === '발주요청서'",
+        "compatible reload 뒤 active Work KEEP",
+        timeout=30.0,
+        requires=["#jobActionName"],
+    )
 
     # Work A response cannot land on Work B: send A, hold only its response, switch B, then settle/re-hydrate latest.
     s.gate_dispatch("select_slot_option", mode="after")
