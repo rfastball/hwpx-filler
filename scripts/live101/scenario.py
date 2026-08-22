@@ -15,10 +15,11 @@
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .surface import Surface
+from .surface import ScenarioFailure, Surface
 
 #: 캡처 지점 14개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
 #: README 참조·커밋된 ``img/*.png`` 와 3자 대조된다.
@@ -56,6 +57,15 @@ class ScenarioContext:
     csv_path: str
     #: 다음 native 파일 대화상자의 답을 큐에 넣는다. 큐가 비면 대화상자는 취소로 답한다.
     queue_file_answer: "Callable[[str], None]"
+    queue_folder_answer: "Callable[[str], None]"
+    stage_template: "Callable[[str], str]"
+    stage_data: "Callable[[str], str]"
+    stage_context: "Callable[[str], None]"
+    output_dir: str
+    prepare_output: "Callable[[], str]"
+    create_collision: "Callable[[str], None]"
+    output_manifest: "Callable[[], dict[str, str]]"
+    audit_shoot: "Callable[[str], dict]"
     #: 대본이 관측한 사실 — 드라이버가 파일 시스템 사실과 합쳐 보고서를 만든다.
     observations: dict = field(default_factory=dict)
 
@@ -615,3 +625,402 @@ def run(ctx: ScenarioContext) -> dict:
     ctx.shoot("workbench-empty-value")
 
     return seen
+
+
+def _expect(value: object, message: str) -> None:
+    if not value:
+        raise ScenarioFailure(message)
+
+
+def _snapshot(surface: Surface) -> dict:
+    value = surface.bridge("window.pywebview.api.initial('job')", "현재 job projection")
+    if not isinstance(value, dict):
+        raise ScenarioFailure(f"job projection이 객체가 아닙니다: {type(value)!r}")
+    return value
+
+
+def _current_view(snapshot: dict) -> dict:
+    zone = snapshot.get("slot_configuration") or {}
+    view = zone.get("current_view") if isinstance(zone, dict) else None
+    if not isinstance(view, dict):
+        raise ScenarioFailure(f"current Slot view가 없습니다: {zone!r}")
+    return view
+
+
+def _workbench(snapshot: dict) -> dict:
+    value = snapshot.get("workbench_observation")
+    if not isinstance(value, dict) or value.get("supported") is not True:
+        raise ScenarioFailure(f"current workbench observation이 없습니다: {value!r}")
+    return value
+
+
+def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> None:
+    s = ctx.surface
+    ctx.queue_file_answer(path)
+    s.click_sel("#jobBtnPickData", what="SX-05 데이터 선택")
+    s.wait(
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "SX-05 데이터 선택 면",
+        requires=["#dataPickerModal", "#dataPickerBrowse"],
+    )
+    s.click_sel("#dataPickerBrowse", what="SX-05 데이터 파일 찾아보기")
+    if failure:
+        s.wait(
+            "document.getElementById('dataPickerNote').textContent.trim().length > 0",
+            "실패한 데이터 전환 문안",
+            requires=["#dataPickerNote"],
+        )
+    else:
+        s.wait(
+            "!!document.querySelector('#dataPickerCurrent .tplcard-name')",
+            "데이터 전환 착지",
+            timeout=25.0,
+            requires=["#dataPickerCurrent"],
+        )
+    s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
+    s.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 면 닫힘",
+        requires=["#dataPickerModal"],
+    )
+
+
+def _select_work(surface: Surface, name: str) -> None:
+    selector = f'#jobCandidates button[data-cand={json.dumps(name, ensure_ascii=False)}]'
+    surface.wait(
+        f"!!document.querySelector({json.dumps(selector)})"
+        f" && !document.querySelector({json.dumps(selector)}).disabled",
+        f"{name} 후보 선택 가능",
+        requires=["#jobCandidates"],
+    )
+    surface.click_sel(selector, what=f"{name} 명시 선택")
+    surface.wait(
+        f"document.getElementById('jobActionName').textContent.trim() === {json.dumps(name, ensure_ascii=False)}",
+        f"{name} active Work",
+        requires=["#jobActionName"],
+    )
+
+
+def _apply_staged_template(ctx: ScenarioContext, kind: str) -> None:
+    s = ctx.surface
+    ctx.stage_template(kind)
+    s.click_sel("#jobTplCheck", what=f"{kind} 템플릿 변경사항 확인")
+    s.wait(
+        "!!document.getElementById('jobTplApply')",
+        f"{kind} 템플릿 적용 가능",
+        timeout=30.0,
+        requires=["#jobTplChange", "#jobTplStatus"],
+    )
+    s.click_sel("#jobTplApply", what=f"{kind} 템플릿 적용")
+    s.wait(
+        "(document.getElementById('jobTplNotice')||{textContent:''}).textContent.includes('적용')",
+        f"{kind} 템플릿 적용 착지",
+        timeout=30.0,
+        requires=["#jobTplChange"],
+    )
+
+
+def run_sx(ctx: ScenarioContext) -> dict:
+    """Append SX-05 V1–V4 to the existing journey without another normal boot."""
+    s = ctx.surface
+    seen = ctx.observations
+
+    # Legacy journey ends in the error-work workbench. Return and explicitly select Work A.
+    s.click_sel("#wbBack", what="SX-05 진입을 위한 작업대 출구")
+    s.wait(
+        "document.querySelector('#scr-job.on') !== null || !!window.__cap.btn(null,'나가기')",
+        "SX-05 작업대 이탈",
+    )
+    s.js("window.__cap.clickBtn(null,'나가기'); true;")
+    s.wait("document.querySelector('#scr-job.on') !== null", "SX-05 job 복귀", requires=["#scr-job"])
+    _select_work(s, "발주요청서")
+    s.install_dispatch_probe()
+
+    # V1: actual canonical labels, opaque ids, no local optimism, fresh backend view.
+    _apply_staged_template(ctx, "initial")
+    s.wait(
+        "document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 3",
+        "canonical Slot 세 개",
+        requires=["#jobContentSelectionZone"],
+    )
+    initial = _snapshot(s)
+    initial_view = _current_view(initial)
+    projection = initial_view["projection"]
+    raw_ids = [slot["slot_id"] for slot in projection["slots"]]
+    raw_ids += [
+        option["option_id"]
+        for slot in projection["slots"]
+        for option in slot["options"]
+    ]
+    visible = str(s.js("document.getElementById('jobContentSelectionZone').innerText"))
+    _expect(all(raw not in visible for raw in raw_ids), "H1: raw Slot/Option id가 화면에 노출됐습니다")
+    labels = s.js(
+        "[...document.querySelectorAll('#jobContentSelectionZone "
+        ".cs-slot-legend,#jobContentSelectionZone .cs-option-text')].map(e=>e.textContent.trim())"
+    )
+    _expect(isinstance(labels, list) and len(labels) == 9, "H1: canonical label 전집이 보이지 않습니다")
+    audit = ctx.audit_shoot("sx05-content-selection")
+    _expect(audit.get("size", 0) > 0 and not audit.get("unstable"), "H1: actual pixel evidence가 불안정합니다")
+
+    s.take_dispatch_trace()
+    before_token = initial_view["new_configuration_token"]
+    s.click_sel("#cs-opt-0-0", what="공고번호 표시 선택")
+    s.wait("document.getElementById('cs-opt-0-0').checked", "첫 Option fresh 반영", requires=["#cs-opt-0-0"])
+    after_first = _snapshot(s)
+    after_first_view = _current_view(after_first)
+    _expect(after_first_view["new_configuration_token"] != before_token, "H2: command 뒤 token이 갱신되지 않았습니다")
+    first_option = after_first_view["projection"]["slots"][0]["options"][0]
+    _expect(first_option["selected"] and first_option["effective"], "H2: declared/effective intent가 일치하지 않습니다")
+    h2_trace = s.take_dispatch_trace()
+    _expect(any(item.get("action") == "select_slot_option" for item in h2_trace), "H2: actual Product command trace가 없습니다")
+    for selector in ("#cs-opt-1-0", "#cs-opt-2-0"):
+        s.click_sel(selector, what="initial canonical Option 선택")
+        s.wait(f"document.querySelector({json.dumps(selector)}).checked", "Option fresh 반영", requires=[selector])
+
+    before_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
+    s.click_sel("#cs-opt-0-1", what="S1 Option B 전환")
+    s.wait("document.getElementById('cs-opt-0-1').checked", "Option B fresh recompute", requires=["#cs-opt-0-1"])
+    after_fields = tuple(_workbench(_snapshot(s)).get("active_field_requirement_ids") or ())
+    _expect(before_fields != after_fields, "H3: Option A↔B 뒤 Active Field가 변하지 않았습니다")
+    s.click_sel("#cs-opt-0-0", what="preserved Option 복원")
+    s.wait("document.getElementById('cs-opt-0-0').checked", "preserved Option 복원 반영", requires=["#cs-opt-0-0"])
+
+    # V2: hold the real old-token request, apply successor through the UI, then let it settle stale.
+    ctx.stage_template("successor")
+    s.gate_dispatch("select_slot_option", mode="before")
+    s.click_sel("#cs-opt-1-1", what="old-token Option command")
+    s.wait_dispatch_gate("old-token command 보류")
+    s.wait("!!document.querySelector('.cs-status-pending')", "content command pending", requires=["#jobContentSelectionZone"])
+    s.click_sel("#jobTplCheck", what="successor 템플릿 변경사항 확인")
+    s.wait("!!document.getElementById('jobTplApply')", "successor 템플릿 적용 가능", timeout=30.0, requires=["#jobTplChange"])
+    s.click_sel("#jobTplApply", what="successor 템플릿 적용")
+    s.wait(
+        "(document.getElementById('jobTplNotice')||{textContent:''}).textContent.includes('적용')",
+        "successor 템플릿 적용 착지",
+        timeout=30.0,
+        requires=["#jobTplChange"],
+    )
+    s.release_dispatch()
+    s.wait(
+        "!!document.querySelector('.cs-status-stale')"
+        " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 2"
+        " && !!document.querySelector('#jobContentSelectionZone .cs-detached')",
+        "stale notice와 skipped successor hydrate",
+        timeout=30.0,
+        requires=["#jobContentSelectionZone"],
+    )
+    successor = _snapshot(s)
+    successor_view = _current_view(successor)
+    successor_projection = successor_view["projection"]
+    changes = successor_projection.get("reconciliation_changes") or {}
+    _expect(changes.get("preserved_selection_refs"), "H4: preserved selection이 없습니다")
+    _expect(successor_projection.get("detached_selections"), "H4: detached selection이 없습니다")
+    _expect(
+        any(item.get("kind") == "SELECTED_OPTION_REMOVED" for item in successor_projection.get("blocking_items", ())),
+        "H4: broken selection이 없습니다",
+    )
+    stale_trace = s.take_dispatch_trace()
+    stale_commands = [item for item in stale_trace if item.get("action") == "select_slot_option"]
+    _expect(stale_commands, "H5: stale command trace가 없습니다")
+
+    # Repair the broken option and its exact Binding target, then return through the real entry seam.
+    s.click_sel("#cs-opt-1-0", what="깨진 선택 복구")
+    s.wait("document.getElementById('cs-opt-1-0').checked", "깨진 선택 복구 반영", requires=["#cs-opt-1-0"])
+    exact_target = "binding/추가확인"
+    exact_selector = f'#jobInputRequirements button[data-exact-target="{exact_target}"]'
+    s.wait(f"!!document.querySelector({json.dumps(exact_selector)})", "신규 Active Field exact Binding", requires=["#jobInputRequirements"])
+    s.click_sel(exact_selector, what="신규 Binding 수정")
+    row = '#editor-body table.map tr[data-field="추가확인"]'
+    source_select = row + ' select[data-act="row-source"]'
+    s.wait(
+        f"document.querySelector('#scr-editor.on') !== null && !!document.querySelector({json.dumps(source_select)})",
+        "Binding editor exact row",
+        requires=["#scr-editor", row],
+    )
+    focus_on_entry = s.js("document.activeElement === document.querySelector(" + json.dumps(source_select) + ")")
+    _expect(focus_on_entry, "H4: Binding deep-link가 exact source select에 focus하지 않았습니다")
+    s.set_value(source_select, "공고명")
+    s.js(
+        "(function(){const c=document.querySelector(" + json.dumps(row + ' input[data-act="row-confirm"]') + ");"
+        "if(c && !c.checked)c.click();return !!c;})()"
+    )
+    s.wait(
+        "document.querySelector(" + json.dumps(row + ' input[data-act="row-confirm"]') + ").checked",
+        "신규 Binding 확정",
+        requires=[row],
+    )
+    s.click_text("#scr-editor", "작업 저장")
+    s.wait("document.querySelector('#scr-editor').textContent.includes('저장했습니다')", "Binding 저장", timeout=30.0, requires=["#scr-editor"])
+    s.click_text("#editorContext", "문서 만들기로 돌아가기")
+    s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
+    binding_after = _workbench(_snapshot(s))
+    repaired = next(item for item in binding_after.get("input_requirements", ()) if item.get("field_id") == "추가확인")
+    _expect(repaired.get("action_required") is False, "H4: Binding 저장 뒤 current recompute가 갱신되지 않았습니다")
+
+    # H5 context axis: deterministic lower-layer corruption only induces the real snapshot/recovery UI.
+    ctx.stage_context("corrupt")
+    s.click_sel('.navbtn[data-scr="library"]', what="context error snapshot 유발")
+    s.wait("document.querySelector('#scr-library.on') !== null", "context error 전환")
+    s.click_sel('.navbtn[data-scr="job"]', what="context error job 복귀")
+    s.wait(
+        "document.getElementById('jobContentSelectionZone').textContent.includes('포함할 내용을 불러오지 못했습니다')"
+        " && !!window.__cap.btn('#jobContentSelectionZone','다시 불러오기')",
+        "backend context copy/action",
+        requires=["#jobContentSelectionZone"],
+    )
+    context_text = str(s.js("document.getElementById('jobContentSelectionZone').innerText"))
+    _expect("INVALID_CONFIGURATION_TOKEN" not in context_text, "H5: context raw code가 화면에 노출됐습니다")
+    ctx.stage_context("restore")
+    s.click_text("#jobContentSelectionZone", "다시 불러오기")
+    s.wait("document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 2", "context recovery", timeout=30.0, requires=["#jobContentSelectionZone"])
+
+    # Record recovery: the blank value is induced by a real DataTarget transition; PASS comes from Product projection/DOM.
+    blank_path = ctx.stage_data("blank")
+    _mount_data(ctx, blank_path)
+    s.click_sel("#jobSelAll", what="blank record 전체 선택")
+    s.wait("!!document.querySelector('#jobRecordValidationIssues button')", "record validation issue", timeout=30.0, requires=["#jobRecordValidationIssues"])
+    record_before = _workbench(_snapshot(s))
+    issue = record_before["record_validation"]["issues"][0]
+    old_recovery_target = issue["recovery_target"]
+    s.click_sel("#jobRecordValidationIssues button", what="exact record recovery")
+    s.wait("document.activeElement && document.activeElement.id.startsWith('job')", "record ReturnContext focus")
+    record_focus = str(s.js("document.activeElement.id"))
+    _expect(record_focus, "H5: record recovery가 exact focus를 내지 않았습니다")
+    _mount_data(ctx, ctx.stage_data("clean"))
+    recovery_expr = (
+        "window.pywebview.api.dispatch('job','recover_record_issue',"
+        + json.dumps({"target": old_recovery_target}, ensure_ascii=False)
+        + ")"
+    )
+    old_recovery = s.bridge_outcome(recovery_expr, "old record recovery target 거절")
+    _expect(old_recovery.get("ok") is False, "H7: old record recovery target이 수락됐습니다")
+
+    # Exact delivery + OPTIONAL/REQUIRED semantic preview. The harness collision file predates the no-mutation bracket.
+    output_dir = ctx.prepare_output()
+    ctx.queue_folder_answer(output_dir)
+    s.click_sel("#jobManagedPickFolder", what="managed output folder 선택")
+    s.wait("document.querySelectorAll('#jobPlannedDocuments li').length > 0", "exact delivery 계획", timeout=30.0, requires=["#jobPlannedDocuments"])
+    optional = _workbench(_snapshot(s))
+    _expect(optional["preview_requirement"]["kind"] == "OPTIONAL", "H5: OPTIONAL preview가 아닙니다")
+    optional_token = optional["semantic_preview"]["preview_token"]
+    relative_path = optional["delivery"]["planned_documents"][0]["relative_path"]
+    ctx.create_collision(relative_path)
+    baseline_manifest = ctx.output_manifest()
+    s.set_value("#jobDeliveryCollision", "OVERWRITE_EXPLICIT")
+    s.wait("!!window.__cap.btn(null,'덮어쓰기 사용')", "overwrite 명시 확인")
+    s.click_text(None, "덮어쓰기 사용")
+    s.click_sel("#jobRefreshDelivery", what="overwrite exact delivery 재계산")
+    s.wait(
+        "!!document.querySelector('#jobPlannedDocuments li[data-collision-disposition="
+        "\"WRITE_OVERWRITE\"]')",
+        "destructive overwrite delivery",
+        timeout=30.0,
+        requires=["#jobPlannedDocuments"],
+    )
+    required = _workbench(_snapshot(s))
+    _expect(required["preview_requirement"]["kind"] == "REQUIRED", "H5: REQUIRED preview가 아닙니다")
+    _expect(required["preview_requirement"].get("reason") == "DESTRUCTIVE_OVERWRITE", "H5: REQUIRED reason이 틀렸습니다")
+    current_token = required["semantic_preview"]["preview_token"]
+    old_preview_expr = (
+        "window.pywebview.api.dispatch('job','preview_approve',"
+        + json.dumps({"preview_token": optional_token})
+        + ")"
+    )
+    old_preview = s.bridge_outcome(old_preview_expr, "old preview token 거절")
+    _expect(old_preview.get("ok") is False, "H7: old preview token이 수락됐습니다")
+    s.click_sel("#jobManagedPreviewOpen", what="REQUIRED semantic preview")
+    s.wait(
+        "!document.getElementById('previewSheet').classList.contains('hidden')"
+        " && document.getElementById('previewSheet').textContent.includes('생성 내용')",
+        "semantic/value preview",
+        requires=["#previewSheet"],
+    )
+    preview_text = str(s.js("document.getElementById('previewSheet').innerText"))
+    _expect("Artifact" not in preview_text and "아티팩트" not in preview_text, "H6: preview를 Artifact로 표현했습니다")
+    s.click_sel("#previewApprove", what="current preview 승인")
+    s.wait("getComputedStyle(document.getElementById('previewApprove')).display === 'none'", "current preview 승인 착지", requires=["#previewApprove"])
+    s.click_sel("#previewClose", what="managed preview 닫기")
+    s.wait("document.getElementById('previewSheet').classList.contains('hidden')", "managed preview 닫힘", requires=["#previewSheet"])
+    s.wait(
+        "document.getElementById('jobManagedCreate').disabled"
+        " && document.getElementById('jobManagedCreateReason').textContent.includes('현재 환경에서는 문서를 만들 수 없습니다')",
+        "S6 unavailable disabled create",
+        requires=["#jobManagedCreate", "#jobManagedCreateReason"],
+    )
+    final_managed = _workbench(_snapshot(s))
+    _expect(ctx.output_manifest() == baseline_manifest, "H6: managed path가 filesystem을 변경했습니다")
+
+    # V4 data transition: cancel/failure are atomic, compatible keeps A, incompatible releases without auto-select.
+    before_cancel = _snapshot(s)
+    s.click_sel("#jobBtnPickData", what="DataTarget cancel 대조")
+    s.wait("!document.getElementById('dataPickerModal').classList.contains('hidden')", "DataTarget cancel 면")
+    s.click_sel("#dataPickerClose", what="DataTarget cancel")
+    after_cancel = _snapshot(s)
+    _expect(after_cancel.get("job_name") == before_cancel.get("job_name"), "H7: cancel이 active Work를 바꿨습니다")
+    _mount_data(ctx, ctx.stage_data("missing"), failure=True)
+    after_failure = _snapshot(s)
+    _expect(after_failure.get("job_name") == "발주요청서", "H7: failed transition이 committed Work를 바꿨습니다")
+    _mount_data(ctx, ctx.stage_data("release"))
+    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "incompatible DataTarget RELEASE", timeout=30.0, requires=["#jobActionName"])
+    _mount_data(ctx, ctx.stage_data("clean"))
+    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "compatible reload 뒤 auto Work 0", requires=["#jobActionName"])
+    _select_work(s, "발주요청서")
+
+    # Work A response cannot land on Work B: send A, hold only its response, switch B, then settle/re-hydrate latest.
+    s.gate_dispatch("select_slot_option", mode="after")
+    s.click_sel("#cs-opt-0-1", what="Work A pending Option")
+    s.wait_dispatch_gate("Work A response 보류")
+    _select_work(s, "발주요청 기안")
+    s.release_dispatch()
+    s.wait(
+        "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
+        " && !document.getElementById('jobContentSelectionZone')",
+        "Work B latest snapshot wins",
+        timeout=30.0,
+        requires=["#jobActionName"],
+    )
+    _select_work(s, "발주요청서")
+
+    seen["sx05"] = {
+        "H1": {"labels": labels, "raw_ids": raw_ids, "pixel": audit},
+        "H2": {"before_token": before_token, "after_token": after_first_view["new_configuration_token"], "trace": h2_trace},
+        "H3": {"option_a_fields": before_fields, "option_b_fields": after_fields},
+        "H4": {"reconciliation": changes, "binding_target": exact_target, "binding_state": repaired.get("binding_state")},
+        "H5": {"context_copy": context_text, "record_focus": record_focus, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
+        "H6": {"preview_token": current_token, "filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
+        "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "old_preview_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},
+    }
+    return seen
+
+
+def run_restart(ctx: ScenarioContext) -> dict:
+    """Second actual process: durable intent recomputes; session-only values stay absent."""
+    s = ctx.surface
+    before_files = ctx.output_manifest()
+    initial = _snapshot(s)
+    _expect(initial.get("has_data") is False and initial.get("has_job") is False, "H7: restart가 DataTarget/active Work를 복원했습니다")
+    initial_wb = initial.get("workbench_observation") or {}
+    _expect(initial_wb.get("run_delivery_intent") is None, "H7: restart가 delivery intent를 복원했습니다")
+    _mount_data(ctx, ctx.stage_data("clean"))
+    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "restart data reload 뒤 active Work 0", requires=["#jobActionName"])
+    _select_work(s, "발주요청서")
+    current = _snapshot(s)
+    view = _current_view(current)
+    selected = {
+        slot["slot_id"]: [option["option_id"] for option in slot["options"] if option["effective"]]
+        for slot in view["projection"]["slots"]
+    }
+    wb = _workbench(current)
+    binding = next(item for item in wb.get("input_requirements", ()) if item.get("field_id") == "추가확인")
+    _expect(binding.get("action_required") is False, "H7: durable Binding이 restart 뒤 복원되지 않았습니다")
+    _expect(wb.get("run_delivery_intent") is None and wb.get("semantic_preview") is None, "H7: session delivery/preview가 거짓 복원됐습니다")
+    after_files = ctx.output_manifest()
+    _expect(after_files == before_files, "H7: restart observation이 filesystem을 변경했습니다")
+    return {
+        "sx05_restart": {
+            "durable": {"job": current.get("job_name"), "selections": selected, "binding": binding},
+            "session_absent": {"data_before_reload": True, "active_work_before_reselect": True, "delivery": True, "preview": True},
+            "filesystem_before": before_files,
+            "filesystem_after": after_files,
+        }
+    }
