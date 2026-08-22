@@ -1156,6 +1156,16 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.click_sel("#jobBtnPickData", what="DataTarget cancel 대조")
     s.wait("!document.getElementById('dataPickerModal').classList.contains('hidden')", "DataTarget cancel 면")
     s.click_sel("#dataPickerClose", what="DataTarget cancel")
+    # 닫힘이 **정착할 때까지** 기다린 뒤 다음 걸음을 딛는다. 여기서 그냥 넘어가면 다음
+    # `_mount_data` 의 여는 걸음이 아직 스택에 있는 같은 host 를 다시 열려다 멱등 무시로
+    # 삼켜지고(`engine.open` — 같은 host 이중 open 은 무시), 대본은 **이미 settle 된 세션**의
+    # 면을 보며 「열렸다」고 읽는다. 그러면 찾아보기가 session=null 로 조용히 되돌아와 문안이
+    # 영영 안 선다. 로컬은 빨라서 지나가고 CI 러너에서만 터졌다(실측: note='' · current=None).
+    s.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "DataTarget cancel 면 닫힘",
+        requires=["#dataPickerModal"],
+    )
     after_cancel = _snapshot(s)
     _expect(after_cancel.get("job_name") == before_cancel.get("job_name"), "H7: cancel이 active Work를 바꿨습니다")
     _mount_data(ctx, ctx.stage_data("missing"), failure=True)
