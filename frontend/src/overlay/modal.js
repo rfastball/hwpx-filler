@@ -63,6 +63,11 @@ function restoreFocus(target) {
   }
   const screen = document.querySelector(".scr.on");
   if (!screen) return;
+  // 목적 화면이 **이미 자기 자리를 잡았으면** 대안은 발동하지 않는다 — 대안의 근거는 「초점이
+  // 사라지는 것보다 화면 처음이 낫다」인데, 사라지지 않았다면 그 근거가 없다. deep-link 진입이
+  // 그 형상이다: 누른 버튼이 화면 전환으로 사라져 복원이 실패하고, 대안이 조준 초점을 덮는다.
+  const active = document.activeElement;
+  if (active && active !== document.body && screen.contains(active)) return;
   if (!screen.hasAttribute("tabindex")) screen.setAttribute("tabindex", "-1");
   screen.focus();
 }

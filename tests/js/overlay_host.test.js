@@ -106,6 +106,7 @@ class El {
     this.hidden = false;
     this.listeners = new Map();
     this.styleProps = {};
+    this.attrs = {};
     const self = this;
     this.classList = {
       add: (...n) => n.forEach((x) => self.classSet.add(x)),
@@ -124,6 +125,10 @@ class El {
       set display(v) { self.styleProps.display = String(v); },
     };
   }
+
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+
+  hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); }
 
   add(child) { child.parentNode = this; this.childNodes.push(child); return child; }
 
@@ -314,4 +319,62 @@ test("슬롯 수명주기 — 이중 대입은 throw, 해제 뒤 재대입은 �
   const again = setOverlayDialogHost(s.controller);
   again();
   s.dispose();
+});
+
+/* ---------------- 닫힘 뒤 대안 착지(#787) ---------------- */
+
+function withScreen(screen, body) {
+  const previous = DOC.querySelector;
+  DOC.querySelector = (selector) => (String(selector) === ".scr.on" ? screen : null);
+  try {
+    return body();
+  } finally {
+    DOC.querySelector = previous;
+  }
+}
+
+test("#787 대안 착지는 목적 화면이 이미 잡은 초점을 빼앗지 않는다", async () => {
+  // 대안의 근거는 「초점이 사라지는 것보다 화면 처음이 낫다」다. 초점이 사라지지 않았다면 그
+  // 근거가 없다 — deep-link 진입이 그 형상이다: 누른 버튼은 화면 전환으로 사라져 트리거 복원이
+  // 실패하고, 그 대안이 목적 화면의 조준 초점을 덮어쓴다.
+  const screen = new El("section", "scr-editor", ["scr", "on"]);
+  const aimed = screen.add(new El("select", "row-source"));
+  const gone = new El("button", "vanished-trigger");
+  gone.isConnected = false; // 화면이 바뀌며 사라진 트리거
+
+  await withScreen(screen, async () => {
+    const s = session();
+    const c = s.controller.confirm({
+      title: "확인", body: "b", confirmLabel: "확인", cancelLabel: "취소",
+      danger: false, missingText: "m", returnFocus: gone,
+    });
+    click(s.roots.confirm.querySelector("#confirmModalCancel"));
+    aimed.focus(); // 목적 화면이 자기 자리를 잡았다
+    flushClose(s.roots.confirm);
+    await c;
+    assert.equal(DOC.activeElement, aimed, "조준한 자리를 화면 루트가 빼앗았습니다");
+    s.dispose();
+  });
+});
+
+test("#787 초점을 잃었으면 대안은 그대로 화면 루트로 착지한다", async () => {
+  // 음성 대조 — 기존 계약(초점이 사라지는 것보다 화면 처음이 낫다)을 약화시키지 않는다.
+  const screen = new El("section", "scr-job", ["scr", "on"]);
+  const gone = new El("button", "vanished-trigger");
+  gone.isConnected = false;
+
+  await withScreen(screen, async () => {
+    const s = session();
+    const c = s.controller.confirm({
+      title: "확인", body: "b", confirmLabel: "확인", cancelLabel: "취소",
+      danger: false, missingText: "m", returnFocus: gone,
+    });
+    click(s.roots.confirm.querySelector("#confirmModalCancel"));
+    DOC.activeElement = null; // 초점이 갈 곳을 잃었다
+    flushClose(s.roots.confirm);
+    await c;
+    assert.equal(DOC.activeElement, screen, "초점을 잃었는데 아무 데도 안 세웠습니다");
+    assert.equal(screen.attrs.tabindex, "-1", "프로그램 초점이라 tabindex 는 -1 이다");
+    s.dispose();
+  });
 });

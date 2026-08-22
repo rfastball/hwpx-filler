@@ -80,8 +80,19 @@ function restoreFocusTo(target: unknown, doc: Document): void {
   }
   const screen = doc.querySelector<HTMLElement>(".scr.on");
   if (screen === null) return;
+  if (keepsItsOwnFocus(screen, doc)) return;
   if (!screen.hasAttribute("tabindex")) screen.setAttribute("tabindex", "-1");
   screen.focus();
+}
+
+/** 목적 화면이 **이미 자기 자리를 잡았으면** 대안 착지는 발동하지 않는다.
+ *
+ *  대안의 근거는 「초점이 사라지는 것보다 화면 처음이 낫다」인데, 초점이 사라지지 않았다면 그
+ *  근거가 없다. deep-link 진입이 정확히 그 형상이다 — 누른 버튼은 화면이 바뀌며 사라지므로
+ *  트리거 복원이 실패하고, 그 대안이 목적 화면이 세워 둔 조준 초점을 덮어쓴다. */
+function keepsItsOwnFocus(screen: HTMLElement, doc: Document): boolean {
+  const active = doc.activeElement;
+  return active !== null && active !== doc.body && screen.contains(active);
 }
 
 type SettleMachinery = {
