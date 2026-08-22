@@ -345,6 +345,17 @@ export function createEditorController(deps: EditorControllerDeps) {
    *
    *  성사할 때까지 남는다 — 진입 성사 시점에는 매핑 표가 아직 DOM 에 없다. 그리고 문맥당 한
    *  번만이라, 사용자가 그 뒤 초점을 옮겨도 매 렌더 다시 빼앗지 않는다. */
+  /** 초점을 **아무도 안 잡고 있는가**.
+   *
+   *  `body`·`null` 은 초점을 잃은 것이고, 화면 루트는 「트리거로 못 돌아갈 때」의 대안 착지라
+   *  사용자가 고른 자리가 아니다. 셋 다 「비어 있음」으로 읽는다 — 사용자가 실제로 옮겨 둔
+   *  초점(입력칸·버튼)은 여기 해당하지 않으므로 빼앗지 않는다. */
+  function focusIsUnclaimed(): boolean {
+    const active = deps.doc.activeElement;
+    if (active === null || active === deps.doc.body) return true;
+    return active === deps.doc.querySelector(".scr.on");
+  }
+
   function consumeAim(): void {
     const target = String((snapshot().context || {}).target || "");
     if (target === "") {
@@ -353,7 +364,10 @@ export function createEditorController(deps: EditorControllerDeps) {
       if (view.aimed !== "" || view.aim !== "") patchView({ aim: "", aimed: "" });
       return;
     }
-    if (target === view.aimed) return;
+    // 이미 겨눴어도 **초점을 잃었으면** 다시 세운다. 리렌더가 그 노드를 갈아 끼우면 초점이
+    // 조용히 `body` 로 떨어지고, 그 틈을 면 닫힘의 대안 착지가 화면 루트로 채운다 — 그러면
+    // 사용자가 지목한 자리는 영영 비어 있다. 사용자가 스스로 옮긴 초점은 여기 안 걸린다.
+    if (target === view.aimed && !focusIsUnclaimed()) return;
     if (aimAtTarget(target)) patchView({ aim: "", aimed: target });
   }
 
