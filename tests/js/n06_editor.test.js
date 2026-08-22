@@ -397,6 +397,7 @@ test("겨눔 요청은 그 행이 실제로 렌더될 때까지 살아 있는다
     const doc = {
       getElementById: () => null,
       querySelector: (selector) => (selector === rowSelector ? row : null),
+      activeElement: null,
     };
     const h = harness({
       initial: async () => snap({ context: { target: "binding/추가확인" } }),
@@ -407,10 +408,8 @@ test("겨눔 요청은 그 행이 실제로 렌더될 때까지 살아 있는다
     h.controller.aimAt("binding/추가확인");
     assert.deepEqual(focused, [], "없는 행에 가짜 초점을 세우지 않는다");
 
-    row = {
-      scrollIntoView() {},
-      querySelector: () => ({ focus() { focused.push("row-source"); } }),
-    };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    row = { scrollIntoView() {}, querySelector: () => select };
     h.controller.consumeAim(); // 행이 선 렌더
 
     assert.deepEqual(focused, ["row-source"], "행이 선 뒤에도 겨누지 않으면 초점은 영영 안 선다");
@@ -424,11 +423,10 @@ test("겨눔은 성사되면 소비된다 — 나중 렌더가 남의 행을 다
   globalThis.CSS = { escape: (value) => value };
   try {
     const focused = [];
-    const row = {
-      scrollIntoView() {},
-      querySelector: () => ({ focus() { focused.push("row-source"); } }),
-    };
-    const doc = { getElementById: () => null, querySelector: () => row };
+    const doc = { getElementById: () => null, querySelector: () => null, activeElement: null };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    doc.querySelector = () => row;
     const h = harness({
       initial: async () => snap({ context: { target: "binding/추가확인" } }),
       doc,
@@ -453,13 +451,13 @@ test("#789 진입 문맥이 지목한 자리를 보낸 화면의 호출 없이 �
   globalThis.CSS = { escape: (value) => value };
   try {
     const focused = [];
-    const row = {
-      scrollIntoView() {},
-      querySelector: () => ({ focus() { focused.push("row-source"); } }),
-    };
+    const doc = { getElementById: () => null, querySelector: () => row, activeElement: null };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    doc.querySelector = () => row;
     const h = harness({
       initial: async () => snap({ context: { target: "binding/추가확인" } }),
-      doc: { getElementById: () => null, querySelector: () => row },
+      doc,
     });
     await h.controller.init();
 
@@ -478,15 +476,12 @@ test("#789 문맥이 없으면 겨누지 않고, 떠났다 다시 들어오면 �
   globalThis.CSS = { escape: (value) => value };
   try {
     const focused = [];
-    const row = {
-      scrollIntoView() {},
-      querySelector: () => ({ focus() { focused.push("row-source"); } }),
-    };
+    const doc = { getElementById: () => null, querySelector: () => null, activeElement: null };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    doc.querySelector = () => row;
     let context = {};
-    const h = harness({
-      initial: async () => snap({ context }),
-      doc: { getElementById: () => null, querySelector: () => row },
-    });
+    const h = harness({ initial: async () => snap({ context }), doc });
     await h.controller.init();
     h.controller.consumeAim();
     assert.deepEqual(focused, [], "겨눌 자리를 안 지목한 진입은 초점을 옮기지 않는다");
@@ -506,6 +501,46 @@ test("#789 문맥이 없으면 겨누지 않고, 떠났다 다시 들어오면 �
     h.store.ingest("editor", snap({ context }));
     h.controller.consumeAim();
     assert.deepEqual(focused, ["row-source", "row-source"], "두 번째 진입부터 조용히 안 섭니다");
+  } finally {
+    globalThis.CSS = previous;
+  }
+});
+
+test("#791 초점이 실제로 안 옮겨졌으면 성사로 치지 않고 다음 렌더가 다시 시도한다", async () => {
+  // 요소가 **있다**는 것과 초점이 **섰다**는 것은 다르다. 비활성·숨김·전이 중이면 `focus()` 는
+  // 조용한 no-op 다. 존재만 보고 성사했다고 답하면 조준은 「했다」고 말하면서 초점은 아무 데도
+  // 안 서고, 그 거짓 성공이 재시도까지 막는다 — 실측으로 SX-05 가 정확히 그 상태였다.
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const attempts = [];
+    let focusable = false;
+    const doc = { getElementById: () => null, querySelector: () => null, activeElement: null };
+    const select = {
+      focus() {
+        attempts.push("try");
+        if (focusable) doc.activeElement = select; // 비활성 요소의 focus() 는 조용한 no-op
+      },
+    };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    doc.querySelector = () => row;
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc,
+    });
+    await h.controller.init();
+
+    h.controller.consumeAim(); // 아직 초점을 못 받는 상태
+    assert.equal(attempts.length, 1);
+    assert.equal(doc.activeElement, null);
+
+    focusable = true; // 다음 렌더에서 활성화됐다
+    h.controller.consumeAim();
+    assert.equal(doc.activeElement, select, "거짓 성공이 재시도를 막았습니다");
+    assert.equal(attempts.length, 2);
+
+    h.controller.consumeAim();
+    assert.equal(attempts.length, 2, "성사한 뒤에는 매 렌더 다시 겨누지 않는다");
   } finally {
     globalThis.CSS = previous;
   }
