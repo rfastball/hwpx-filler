@@ -329,7 +329,10 @@ def test_no_step_conjures_a_dependency_the_lockfile_never_saw() -> None:
     고칠 자리는 실행 줄이 아니라 `pyproject.toml` 의 의존 그룹이다. 그래야 CI 와 개발 기기가
     같은 환경을 본다.
     """
-    conjured = re.compile(r"\buv run\b[^\n]*\s--with\b")
+    # `--with` 만 보면 안 된다: uv 는 `-w` 를 **같은 뜻의 별칭**으로 받고(`uv run --help`:
+    # ``-w, --with <WITH>``), `--with-editable`·`--with-requirements` 도 같은 식구다. 하나라도
+    # 빠뜨리면 계약은 초록인 채 잠금 밖 의존이 그대로 얹힌다.
+    conjured = re.compile(r"\buv run\b[^\n]*\s(?:--with|-w)\b")
     offenders = [
         f"{name}: {line.strip()}"
         for name, job in _jobs().items()
@@ -348,8 +351,11 @@ def test_no_step_conjures_a_dependency_the_lockfile_never_saw() -> None:
 
     # 음성 대조 — 형상을 실제로 거절하는가(항상 참인 검사가 아니다).
     assert _caught("uv run --no-sync --with pillow pytest -q")
+    assert _caught("uv run -w pillow pytest -q")  # 같은 뜻의 짧은 별칭
+    assert _caught("uv run --with-editable . pytest -q")  # 같은 식구
     assert _caught("uv run --no-sync `\n            --with pillow pytest -q")  # 줄잇기로 쪼갠 것도
     assert not _caught("uv run --no-sync pytest -q")
+    assert not _caught("uv run --no-sync pytest --workers 2")  # `-w` 로 시작하는 다른 낱말
     # 다른 명령의 `--with` 를 앞 줄의 `uv run` 에 붙여 읽지 않는다(거짓 양성 금지).
     assert not _caught("uv run --no-sync pytest -q\nsome-tool --with foo")
 
