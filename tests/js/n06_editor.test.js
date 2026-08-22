@@ -545,3 +545,72 @@ test("#791 초점이 실제로 안 옮겨졌으면 성사로 치지 않고 다�
     globalThis.CSS = previous;
   }
 });
+
+test("#793 리렌더가 초점을 떨어뜨리면 지목한 자리를 다시 세운다", async () => {
+  // 조준이 성사한 뒤에도 리렌더가 그 노드를 갈아 끼우면 초점이 조용히 `body` 로 떨어지고,
+  // 그 틈을 면 닫힘의 대안 착지가 화면 루트로 채운다 — 그러면 사용자가 지목한 자리는 영영
+  // 비어 있다. 실측으로 SX-05 의 focus 사건이 정확히 ['SELECT', 'SECTION#scr-editor'] 였다.
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    const screenRoot = { id: "scr-editor" };
+    const doc = {
+      getElementById: () => null,
+      body: { id: "body" },
+      activeElement: null,
+      querySelector: (selector) => (String(selector) === ".scr.on" ? screenRoot : row),
+    };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc,
+    });
+    await h.controller.init();
+
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source"]);
+
+    // 면 닫힘의 대안 착지가 화면 루트를 잡았다(사용자가 고른 자리가 아니다).
+    doc.activeElement = screenRoot;
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source", "row-source"], "지목한 자리가 비어 있는 채 끝났습니다");
+
+    // 이제는 우리 자리가 잡고 있으므로 매 렌더 다시 겨누지 않는다.
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source", "row-source"]);
+  } finally {
+    globalThis.CSS = previous;
+  }
+});
+
+test("#793 사용자가 스스로 옮긴 초점은 빼앗지 않는다", async () => {
+  const previous = globalThis.CSS;
+  globalThis.CSS = { escape: (value) => value };
+  try {
+    const focused = [];
+    const screenRoot = { id: "scr-editor" };
+    const doc = {
+      getElementById: () => null,
+      body: { id: "body" },
+      activeElement: null,
+      querySelector: (selector) => (String(selector) === ".scr.on" ? screenRoot : row),
+    };
+    const select = { focus() { focused.push("row-source"); doc.activeElement = select; } };
+    const row = { scrollIntoView() {}, querySelector: () => select };
+    const h = harness({
+      initial: async () => snap({ context: { target: "binding/추가확인" } }),
+      doc,
+    });
+    await h.controller.init();
+    h.controller.consumeAim();
+
+    // 사용자가 다른 입력칸으로 갔다 — 여기서 되돌리면 남의 손을 잡아채는 것이다.
+    doc.activeElement = { id: "editorName" };
+    h.controller.consumeAim();
+    assert.deepEqual(focused, ["row-source"]);
+  } finally {
+    globalThis.CSS = previous;
+  }
+});
