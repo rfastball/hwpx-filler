@@ -708,12 +708,25 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
     if failure:
         # 진행 문안(「파일 선택 창에서 파일을 고르세요…」)도 비어 있지 않다 — 길이가 아니라
         # 거절 표식으로 재야 실패한 전환을 진행 중과 가른다.
-        s.wait(
-            "document.getElementById('dataPickerNote').textContent.trim().startsWith('⚠')",
-            "실패한 데이터 전환 문안",
-            timeout=25.0,
-            requires=["#dataPickerNote"],
-        )
+        try:
+            s.wait(
+                "document.getElementById('dataPickerNote').textContent.trim().startsWith('⚠')",
+                "실패한 데이터 전환 문안",
+                timeout=25.0,
+                requires=["#dataPickerNote"],
+            )
+        except StepTimeout as exc:
+            # 실패한 전환이 무엇을 말했는지 없이 시한만 남기면, 「거절 문안이 다르다」와
+            # 「아무 말도 없었다」가 같은 빨강이 된다 — 그 둘은 전혀 다른 사건이다.
+            state = s.js(
+                "(function(){var n=document.getElementById('dataPickerNote');"
+                "var c=document.querySelector('#dataPickerCurrent .tplcard-name');"
+                "return {note:n?n.textContent.trim():null, note_shown:n?n.style.display!=='none':null,"
+                " current:c?c.textContent.trim():null};})()"
+            )
+            raise ScenarioFailure(
+                f"SX-05 실패한 데이터 전환이 사유를 말하지 않았습니다 — {state}"
+            ) from exc
     else:
         # 존재만 재면 hidden 요소도 통과하므로 고정 버튼은 **가시성**으로 잰다(master 규율 승계).
         s.wait(
