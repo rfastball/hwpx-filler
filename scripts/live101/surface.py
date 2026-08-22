@@ -114,6 +114,80 @@ window.__cap = {
     }
     return true;
   },
+  asyncResults: {},
+  startAsync(key, task) {
+    this.asyncResults[key] = { done: false };
+    Promise.resolve().then(task).then(
+      (value) => { this.asyncResults[key] = { done: true, ok: true, value }; },
+      (error) => {
+        this.asyncResults[key] = {
+          done: true,
+          ok: false,
+          error: String(error && (error.message || error)),
+        };
+      },
+    );
+    return true;
+  },
+  asyncDone(key) {
+    return Boolean(this.asyncResults[key] && this.asyncResults[key].done);
+  },
+  takeAsync(key) {
+    const result = this.asyncResults[key];
+    delete this.asyncResults[key];
+    return result;
+  },
+  dispatchTrace: [],
+  dispatchGate: null,
+  installDispatchProbe() {
+    if (this.dispatchInstalled) return true;
+    const api = window.pywebview && window.pywebview.api;
+    if (!api || typeof api.dispatch !== 'function') return false;
+    const original = api.dispatch.bind(api);
+    api.dispatch = async (screen, action, payload) => {
+      const trace = { screen, action, payload };
+      this.dispatchTrace.push(trace);
+      const gate = this.dispatchGate;
+      if (gate && gate.action === action && gate.mode === 'before') {
+        gate.reached = true;
+        await gate.promise;
+      }
+      try {
+        const response = await original(screen, action, payload);
+        trace.response = response;
+        if (gate && gate.action === action && gate.mode === 'after') {
+          gate.reached = true;
+          await gate.promise;
+        }
+        return response;
+      } catch (error) {
+        trace.error = String(error && (error.message || error));
+        throw error;
+      }
+    };
+    this.dispatchInstalled = true;
+    return true;
+  },
+  gateDispatch(action, mode) {
+    if (this.dispatchGate !== null || !['before', 'after'].includes(mode)) return false;
+    let release;
+    const promise = new Promise((resolve) => { release = resolve; });
+    this.dispatchGate = { action, mode, reached: false, promise, release };
+    return true;
+  },
+  dispatchGateReached() {
+    return Boolean(this.dispatchGate && this.dispatchGate.reached);
+  },
+  releaseDispatch() {
+    const gate = this.dispatchGate;
+    if (!gate) return false;
+    this.dispatchGate = null;
+    gate.release();
+    return true;
+  },
+  takeDispatchTrace() {
+    return this.dispatchTrace.splice(0);
+  },
 };
 /* 실창 하니스에서만 native modal 을 만들지 않는다. 문안은 poll 한 번의 JSON-safe 결과로
    Python 에 건너가므로 경보가 timeout이나 bridge hang으로 둔갑하지 않는다. */
@@ -187,6 +261,7 @@ class Surface:
     def __init__(self, window: object, deadline: Deadline) -> None:
         self._window = window
         self._deadline = deadline
+        self._async_serial = 0
 
     # ------------------------------------------------------------------ 원자
 
@@ -195,6 +270,53 @@ class Surface:
 
     def install_helpers(self) -> None:
         self.js(JS_HELPERS)
+
+    def bridge_outcome(self, expression: str, what: str) -> dict:
+        """Await one real pywebview Promise without adding a second timeout clock."""
+        self._async_serial += 1
+        key = f"p{self._async_serial}"
+        if not self.js(
+            f"window.__cap.startAsync({js_literal(key)}, () => ({expression}))"
+        ):
+            raise ScenarioFailure(f"브리지 호출을 시작하지 못했습니다: {what}")
+        self.wait(
+            f"window.__cap.asyncDone({js_literal(key)})",
+            what,
+        )
+        result = self.js(f"window.__cap.takeAsync({js_literal(key)})")
+        if not isinstance(result, dict):
+            raise ScenarioFailure(f"브리지 호출 결과가 객체가 아닙니다: {what}")
+        return result
+
+    def bridge(self, expression: str, what: str) -> object:
+        result = self.bridge_outcome(expression, what)
+        if result.get("ok") is not True:
+            detail = result.get("error") if isinstance(result, dict) else result
+            raise ScenarioFailure(f"브리지 호출 실패: {what} — {detail}")
+        return result.get("value")
+
+    def install_dispatch_probe(self) -> None:
+        if not self.js("window.__cap.installDispatchProbe()"):
+            raise ScenarioFailure("Product dispatch probe를 설치하지 못했습니다")
+
+    def gate_dispatch(self, action: str, *, mode: str) -> None:
+        if not self.js(
+            f"window.__cap.gateDispatch({js_literal(action)}, {js_literal(mode)})"
+        ):
+            raise ScenarioFailure(f"dispatch gate를 무장하지 못했습니다: {action}/{mode}")
+
+    def wait_dispatch_gate(self, what: str) -> None:
+        self.wait("window.__cap.dispatchGateReached()", what)
+
+    def release_dispatch(self) -> None:
+        if not self.js("window.__cap.releaseDispatch()"):
+            raise ScenarioFailure("dispatch gate가 무장되지 않았습니다")
+
+    def take_dispatch_trace(self) -> list[dict]:
+        value = self.js("window.__cap.takeDispatchTrace()")
+        if not isinstance(value, list):
+            raise ScenarioFailure("Product dispatch trace가 배열이 아닙니다")
+        return value
 
     def exists(self, selector: str) -> bool:
         return bool(self.js(f"document.querySelector({js_literal(selector)}) !== null"))

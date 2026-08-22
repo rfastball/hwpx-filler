@@ -22,8 +22,10 @@ import inspect
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import warnings
 from pathlib import Path
 
@@ -71,6 +73,8 @@ _GATE_REASON = (
 # 예산과 견줘, 정상 실행이 예산에 가까워지면 시끄럽게 알린다.
 _LIVE_BUDGET_S = 600.0
 _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
+_RESTART_BUDGET_S = 120.0
+_RESTART_OUTER_TIMEOUT_S = _RESTART_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 
 
 # ───────────────────────────────── 실주행 ─────────────────────────────────
@@ -158,6 +162,7 @@ def _retryable_boot_hang(proc: subprocess.CompletedProcess, report: object) -> b
         return False
     return (
         proc.returncode == driver.ExitCode.ENVIRONMENT
+        and report.get("phase") == "journey"
         and report.get("infrastructure_event") == "boot_hung"
         and report.get("environment") is True
         and report.get("shots") == []
@@ -194,12 +199,18 @@ def live_check_run(tmp_path_factory) -> dict:
         attempt_dir = evidence / f"attempt-{number}"
         attempt_dir.mkdir(parents=True, exist_ok=True)
         report_path = attempt_dir / "check-report.json"
+        temp_root = Path(tempfile.mkdtemp(prefix="hwpx-101-"))
+        home = driver.seed_temp_home(temp_root / "home")
         command = [
             sys.executable,
             str(CLI),
             "check",
-            "--home",
-            "temp",
+            "--shared-home",
+            str(home),
+            "--sx-phase",
+            "journey",
+            "--evidence-dir",
+            str(attempt_dir / "pixels"),
             "--no-build",
             "--budget-s",
             str(_LIVE_BUDGET_S),
@@ -229,7 +240,13 @@ def live_check_run(tmp_path_factory) -> dict:
             f"stderr={_tail(proc.stderr, 2000)}\nstdout={_tail(proc.stdout, 2000)}"
         )
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        attempts.append({"proc": proc, "report": report, "evidence": attempt_dir})
+        attempts.append({
+            "proc": proc,
+            "report": report,
+            "evidence": attempt_dir,
+            "temp_root": temp_root,
+            "home": home,
+        })
         if number == 1 and _retryable_boot_hang(proc, report):
             warnings.warn(
                 f"webview_boot_flake: loaded 전 매달림, fresh process 1회 재시도; 증거={attempt_dir}",
@@ -241,17 +258,65 @@ def live_check_run(tmp_path_factory) -> dict:
 
     selected = attempts[-1]
     proc, report = selected["proc"], selected["report"]
+    assert proc.returncode == driver.ExitCode.OK and report.get("verdict", {}).get("ok") is True, (
+        f"SX-05 journey가 실패해 restart를 시작하지 않습니다 — rc={proc.returncode}\n"
+        f"stderr={_tail(proc.stderr)}\nstdout={_tail(proc.stdout)}"
+    )
+    restart_dir = evidence / "restart"
+    restart_dir.mkdir(parents=True, exist_ok=True)
+    restart_report_path = restart_dir / "check-report.json"
+    restart_command = [
+        sys.executable,
+        str(CLI),
+        "check",
+        "--shared-home",
+        str(selected["home"]),
+        "--sx-phase",
+        "restart",
+        "--no-build",
+        "--budget-s",
+        str(_RESTART_BUDGET_S),
+        "--report",
+        str(restart_report_path),
+    ]
+    try:
+        restart_proc = subprocess.run(
+            restart_command,
+            cwd=REPO_ROOT,
+            env=_child_env(),
+            capture_output=True,
+            **_CHILD_TEXT,
+            timeout=_RESTART_OUTER_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as expired:
+        _keep_output(restart_dir, expired.stdout, expired.stderr)
+        raise AssertionError(
+            f"SX-05 restart가 바깥 시한 {_RESTART_OUTER_TIMEOUT_S:.0f}s를 넘겼습니다: {restart_dir}"
+        ) from expired
+    _keep_output(restart_dir, restart_proc.stdout, restart_proc.stderr)
+    assert restart_report_path.exists(), (
+        f"restart 보고서 미생성 — rc={restart_proc.returncode}, 증거={restart_dir}\n"
+        f"stderr={_tail(restart_proc.stderr, 2000)}\nstdout={_tail(restart_proc.stdout, 2000)}"
+    )
+    restart_report = json.loads(restart_report_path.read_text(encoding="utf-8"))
     after = _tree_manifest(EXAMPLE_HOME)
     _keep_output(evidence, proc.stdout, proc.stderr)
     (evidence / "check-report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    (evidence / "restart-report.json").write_text(
+        json.dumps(restart_report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    if proc.returncode == restart_proc.returncode == driver.ExitCode.OK:
+        shutil.rmtree(selected["temp_root"])
     return {
         "proc": proc,
         "report": report,
         "before": before,
         "after": after,
         "attempts": attempts,
+        "restart_proc": restart_proc,
+        "restart_report": restart_report,
     }
 
 
@@ -294,6 +359,7 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
 
     reports = [
         {
+            "phase": "journey",
             "infrastructure_event": "boot_hung",
             "environment": True,
             "shots": [],
@@ -303,11 +369,21 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
             "verdict": {"ok": False, "failures": []},
         },
         {
+            "phase": "journey",
             "environment": False,
             "shots": [],
             "observations": {},
             "documents": [],
             "hwpx_generated": EXPECTED_HWPX,
+            "verdict": {"ok": True, "failures": []},
+        },
+        {
+            "phase": "restart",
+            "environment": False,
+            "shots": [],
+            "observations": {"sx05_restart": {}},
+            "documents": [],
+            "hwpx_generated": 0,
             "verdict": {"ok": True, "failures": []},
         },
     ]
@@ -345,6 +421,8 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
 
     assert result["proc"].returncode == driver.ExitCode.OK
     assert len(result["attempts"]) == 2
+    assert result["restart_proc"].returncode == driver.ExitCode.OK
+    assert len(calls) == 3
     assert calls[0].parent.name == "attempt-1" and calls[1].parent.name == "attempt-2"
     assert (calls[0].parent / "check-stdout.txt").read_text(encoding="utf-8") == "attempt 1"
     assert (calls[1].parent / "check-stdout.txt").read_text(encoding="utf-8") == "attempt 2"
@@ -354,6 +432,10 @@ def test_only_a_structured_preloaded_hang_gets_one_loud_fresh_attempt(
         (tmp_path / "live101" / "check-report.json").read_text(encoding="utf-8")
     )
     assert canonical["verdict"]["ok"] is True
+    restart = json.loads(
+        (tmp_path / "live101" / "restart-report.json").read_text(encoding="utf-8")
+    )
+    assert restart["phase"] == "restart"
 
     product_death = dict(reports[0], shots=["job-landing"])
     assert not _retryable_boot_hang(
@@ -454,6 +536,27 @@ def test_a_child_that_leaves_no_report_is_named_not_a_typeerror(monkeypatch, tmp
         _drive_fixture(monkeypatch, tmp_path, fake_run)
 
 
+def test_the_precondition_sees_the_pixel_path_it_actually_takes(monkeypatch) -> None:
+    """픽셀 조건은 **모드가 아니라 실제로 셔터가 서는가**로 센다(#779 · #774).
+
+    SX-05 journey 는 `check` 인데도 audit sink 를 세운다. 모드만 보면 이 단계가 「돌 수 있다」고
+    증명한 환경이 정작 완주하지 못하고, 그 실패는 한참 뒤 대본 한가운데서 맨 `ModuleNotFoundError`
+    로 터진다 — 전제를 증명하는 자리가 못 보는 전제가 있으면 그 초록은 아무 말도 안 하는 것이다.
+
+    게이트 밖이다: 창도 자식도 없이 판정만 본다.
+    """
+    monkeypatch.setitem(sys.modules, "PIL", None)  # import PIL → ImportError
+
+    def problems(mode: str, phase: str = "legacy") -> "list[str]":
+        return [p for p in driver.preflight(mode, phase) if "Pillow" in p]
+
+    assert problems("check", "journey"), "픽셀을 남기는 journey 를 선행조건이 못 봅니다"
+    assert problems("capture"), "capture 는 종전부터 픽셀을 남긴다"
+    # 음성 대조 — 픽셀을 안 남기는 실행까지 막지는 않는다(있지도 않은 전제를 요구하지 않는다).
+    assert not problems("check", "restart")
+    assert not problems("check")
+
+
 @pytest.mark.live
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) -> None:
@@ -482,9 +585,18 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert str(observed["txt_copied"]).startswith("1 /"), observed["txt_copied"]
     assert observed["empty_value_gate_asked"] is True
     assert observed["empty_value_surfaced"] is True
+    assert set(observed["sx05"]) == {"H1", "H2", "H3", "H4", "H5", "H6", "H7"}
+    assert observed["sx05"]["H6"]["filesystem_before"] == observed["sx05"]["H6"]["filesystem_after"]
+    restart_proc = live_check_run["restart_proc"]
+    restart = live_check_run["restart_report"]
+    assert restart_proc.returncode == driver.ExitCode.OK, _tail(restart_proc.stderr)
+    assert restart["phase"] == "restart" and restart["verdict"]["ok"] is True
+    assert restart["observations"]["sx05_restart"]["filesystem_before"] == restart["observations"]["sx05_restart"]["filesystem_after"]
+    assert restart["source"] == report["source"]
     # 무엇으로 잰 실행인지가 남는다 — 스크린샷은 눈검증 증거라 좌표 없이는 대조가 안 된다.
     assert report["source"]["artifact_id"]
     assert report["source"]["commit"]
+    assert report["source"]["seal_source_commit"] == report["source"]["commit"]
 
 
 def _budget_health_note(elapsed: float, budget_s: float) -> "str | None":
@@ -654,6 +766,7 @@ def test_the_cross_check_notices_each_way_it_can_drift(committed, referenced, fr
 
 def _healthy_report(**overrides) -> dict:
     base = {
+        "phase": "legacy",
         "hwpx_generated": EXPECTED_HWPX,
         "shots": list(CAPTURE_POINTS),
         "unstable_shots": [],
@@ -672,6 +785,7 @@ def _healthy_report(**overrides) -> dict:
 def test_a_healthy_report_passes_so_the_negative_controls_mean_something() -> None:
     """양성 대조 — 아래 음성들이 「언제나 실패」가 아님을 먼저 보인다."""
     assert report_mod.judge(_healthy_report(), mode="capture").ok is True
+    assert report_mod.judge({**_healthy_report(), "phase": "unknown"}, mode="check").ok is False
 
 
 def test_zero_documents_fails_even_with_every_screenshot_present() -> None:
@@ -775,7 +889,10 @@ def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_pa
     assert verdict.failures == (), "환경 실패가 제품 언어를 낳았습니다"
     assert "창이" in (verdict.reason or "")
     # 음성 대조 — 같은 빈 보고서를 제품 판정에 넣으면 **7줄이 나온다**(그것이 종전 형상이다).
-    product = report_mod.judge({"hwpx_generated": 0, "shots": [], "observations": {}}, mode="check")
+    product = report_mod.judge(
+        {"phase": "legacy", "hwpx_generated": 0, "shots": [], "observations": {}},
+        mode="check",
+    )
     assert len(product.failures) == 7, product.failures
 
     from hwpxfiller.webapp import app as app_mod
@@ -791,6 +908,8 @@ def test_an_environment_failure_produces_no_product_failures(monkeypatch, tmp_pa
         out_dir=None,
         budget_s=1.0,
         landing=landing,
+        phase="legacy",
+        evidence_dir=None,
     )
     assert no_driver.environment is True
     assert no_driver.report["verdict"]["failures"] == []
@@ -1211,3 +1330,26 @@ def test_seeding_copies_committed_assets_without_practice_output(tmp_path) -> No
         assert (home / name).is_dir(), f"시딩 누락: {name}"
     assert driver.generated_documents(home) == [], "시딩 직후 생성물이 있으면 안 됩니다"
     assert not (home / driver.RESULTS_REL).exists()
+
+
+def test_sx05_fixture_is_deterministic_canonical_and_three_way() -> None:
+    """한 canonical fixture가 preserved/broken/detached와 신규 Binding을 함께 만든다."""
+    from hwpxfiller.external.template_inspection import inspect_hwpx_qualification
+
+    base = (EXAMPLE_HOME / driver.SX_TEMPLATE_REL).read_bytes()
+    initial = driver.sx_template_bytes(base)
+    successor = driver.sx_template_bytes(base, successor=True)
+
+    assert initial == driver.sx_template_bytes(base)
+    assert successor == driver.sx_template_bytes(base, successor=True)
+    before = inspect_hwpx_qualification(initial)
+    after = inspect_hwpx_qualification(successor)
+    assert before.diagnostics == after.diagnostics == ()
+    assert before.structure is not None and after.structure is not None
+    assert [slot.id for slot in before.structure.slots] == [
+        "s7f0c2a91", "s41bd77e0", "sd2e84c13",
+    ]
+    assert [slot.id for slot in after.structure.slots] == ["s7f0c2a91", "s41bd77e0"]
+    assert before.structure.slots[0] == after.structure.slots[0]
+    assert [option.id for option in after.structure.slots[1].options] == ["o8d735ba2"]
+    assert after.structure.slots[1].options[0].fields == ("추가확인",)

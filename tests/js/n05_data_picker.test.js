@@ -123,6 +123,37 @@ test("close — 미선택 session은 null로 정확히 한 번 settle된다", as
   assert.equal(h.modalCalls.filter((row) => row[0] === "close" && row[1] === "dataPickerModal").length, 1);
 });
 
+/* 전환 착지의 **증언자**를 못박는다(#728 H7 오진의 자리).
+   이 면은 열릴 때 `current: currentData()` 로 *이전* 데이터의 카드를 이미 세운다. 그래서
+   「.tplcard-name 이 있다」·「고정 버튼이 있다」는 새 적재를 증언하지 못한다 — 실 대본이 그
+   존재로 기다리면 즉시 통과해 적재 도중에 [닫기]를 누르고, 그 닫기는 busy 계약대로 거절된다
+   (바로 위 테스트가 그 거절을 이미 못박는다). 이번 적재를 증언하는 것은 **문안** 하나뿐이다:
+   open 이 `status:""` 로 비워 두므로 「불러왔습니다」는 이번 browse 가 끝났을 때만 선다. */
+test("전환 착지 표식 — 이전 카드는 여는 순간 이미 서 있고, 이번 적재는 문안만 증언한다", async () => {
+  const h = build({ invoke: async () => ({ label: "파일: 새.csv", rows: 3, path: "C:/새.csv" }) });
+  const { result } = await opened(h, {
+    current: { label: "파일: 이전.csv", origin: "file", path: "C:/이전.csv" },
+  });
+
+  // 여는 순간: 카드를 그리는 값(`current.label`/`origin`/`path`)이 **이미** 차 있다. 이 값들이
+  // `.tplcard-name` 과 `#dataPickerPin` 을 세우므로, 그 둘의 존재는 새 적재를 증언하지 못한다.
+  const atOpen = h.controller.model.getSnapshot();
+  assert.equal(atOpen.current === undefined, true);
+  assert.equal(atOpen.session.current.label, "파일: 이전.csv");
+  assert.equal(atOpen.session.current.origin, "file");
+  assert.equal(atOpen.status, "", "open 은 문안을 비운다 — 그래서 문안만이 이번 적재를 증언한다");
+
+  await h.controller.browseFile();
+
+  const landed = h.controller.model.getSnapshot();
+  assert.match(landed.status, /불러왔습니다/, "적재 완료 문안이 실 대본의 착지 표식이다");
+  assert.equal(landed.session.current.label, "파일: 새.csv", "카드가 새 데이터로 재진술된다");
+  assert.equal(landed.loading, false, "착지 문안이 선 시점에 loading 은 이미 풀려 있다");
+
+  h.controller.close();
+  await result;
+});
+
 test("파일 mount 뒤 close — label settle과 onLoaded는 각각 한 번이다", async () => {
   const h = build({ invoke: async () => ({ label: "목록.xlsx", rows: 3, path: "C:/목록.xlsx" }) });
   const loaded = [];

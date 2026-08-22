@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ class Verdict:
 
 def build(
     *,
+    phase: str,
     mode: str,
     home: Path,
     observations: dict,
@@ -42,6 +44,7 @@ def build(
 ) -> dict:
     """실행 하나의 사실을 한 봉투로 모은다 — 판정은 하지 않는다."""
     return {
+        "phase": phase,
         "mode": mode,
         "home": str(home),
         "source": _source_identity(),
@@ -73,6 +76,28 @@ def judge(report: dict, *, mode: str) -> Verdict:
     failures: "list[str]" = []
     observed = report.get("observations") or {}
 
+    phase = report.get("phase")
+    if phase == "restart":
+        restart = observed.get("sx05_restart") or {}
+        durable = restart.get("durable") or {}
+        absent = restart.get("session_absent") or {}
+        if durable.get("job") != "발주요청서":
+            failures.append("restart 뒤 명시 재선택한 durable Work가 복원되지 않았습니다")
+        binding = durable.get("binding") or {}
+        if not durable.get("selections") or binding.get("action_required") is not False:
+            failures.append("restart 뒤 S4 intent/Binding current meaning이 복원되지 않았습니다")
+        if not absent or not all(absent.values()):
+            failures.append("restart 뒤 session-only 상태가 거짓 복원됐습니다")
+        if restart.get("filesystem_before") != restart.get("filesystem_after"):
+            failures.append("restart 관찰 중 filesystem이 바뀌었습니다")
+        if report.get("shots") != []:
+            failures.append("restart phase가 legacy capture 대본을 다시 실행했습니다")
+        if failures:
+            return Verdict(False, f"{len(failures)}건이 restart 계약과 어긋났습니다", tuple(failures))
+        return Verdict(True)
+    if phase not in ("legacy", "journey"):
+        return Verdict(False, f"알 수 없거나 빠진 live phase: {phase!r}", ("phase 계약 위반",))
+
     generated = report.get("hwpx_generated")
     if generated != EXPECTED_HWPX:
         failures.append(f"HWPX 생성 {generated}건 (기대 {EXPECTED_HWPX}건)")
@@ -96,6 +121,20 @@ def judge(report: dict, *, mode: str) -> Verdict:
     if mode == "capture" and report.get("unstable_shots"):
         # 정착하지 못한 프레임은 찢겨 있을 수 있다 — 조용히 문서에 넣지 않는다.
         failures.append(f"정착하지 못한 컷: {report['unstable_shots']}")
+
+    if phase == "journey":
+        sx = observed.get("sx05") or {}
+        for hypothesis in ("H1", "H2", "H3", "H4", "H5", "H6", "H7"):
+            if not sx.get(hypothesis):
+                failures.append(f"SX-05 {hypothesis} actual-shell evidence가 없습니다")
+        pixel = (sx.get("H1") or {}).get("pixel") or {}
+        if not pixel.get("sha256") or pixel.get("unstable") is not False:
+            failures.append("H1 actual pixel evidence가 없거나 불안정합니다")
+        h6 = sx.get("H6") or {}
+        if h6.get("filesystem_before") != h6.get("filesystem_after"):
+            failures.append("H6 managed path filesystem mutation이 0이 아닙니다")
+        if (sx.get("H7") or {}).get("work_race") != "B_WON":
+            failures.append("H7 Work A/B race에서 latest Work B가 이기지 않았습니다")
 
     if failures:
         return Verdict(False, f"{len(failures)}건이 계약과 다릅니다", tuple(failures))
@@ -121,6 +160,8 @@ def _source_identity() -> dict:
         artifact = webapp_app.web_artifact()
         identity["artifact_id"] = artifact.artifact_id
         identity["tree_sha256"] = artifact.tree_sha256
+        seal = json.loads((artifact.root / "web-artifact-seal.json").read_text(encoding="utf-8"))
+        identity["seal_source_commit"] = seal["source"]["commit"]
     except Exception as exc:  # noqa: BLE001 — 정체 부재도 사실이다
         identity["artifact_error"] = repr(exc)
     return identity

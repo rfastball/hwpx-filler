@@ -26,6 +26,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import csv
+import io
 import os
 import shutil
 import subprocess
@@ -37,6 +40,20 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from hwpxcore.bookmark_region import (
+    append_bookmark_metatag,
+    create_bookmark_region,
+    resolve_bookmark_topology,
+    unwrap_bookmark_region,
+)
+from hwpxcore.package import HwpxPackage
+from hwpxfiller.domain.slot import Slot, SlotOption
+from hwpxfiller.external.atomic import write_bytes_atomic
+from hwpxfiller.external.template_inspection import (
+    inspect_hwpx_qualification,
+    serialize_slot_metatag,
+    serialize_slot_option_metatag,
+)
 from hwpxfiller.webapp import live_run as live_run_contract
 
 from . import capture as capture_mod
@@ -84,7 +101,8 @@ RUN_HARD_STOP_MARGIN_S = live_run_contract.RUN_HARD_STOP_MARGIN_S
 #: 101 이 만드는 것들 — 성공 시 정리 대상(``reset-101.cmd`` 와 같은 집합).
 PRACTICE_STATE = [
     "jobs", "datasets", "mapping_bases", "webview", "out", "Results",
-    "templates/Results", "ui_settings.ini", "settings.json", "webapp-alerts.log",
+    "templates/Results", "template_authority", "sx-output", "ui_settings.ini",
+    "settings.json", "webapp-alerts.log",
 ]
 #: dirty 판별에서 ``webview`` 는 뺀다 — 앱이 부팅마다 스스로 통청소하는 프로필이라
 #: 잔존해도 화면 결정성에 영향이 없고, 워치독 종료 직후엔 잠겨 있어 남는 것이 정상이다.
@@ -95,6 +113,25 @@ SEED_ASSETS = ["data", "templates", "text_templates"]
 
 #: 생성물이 떨어지는 자리(README 「기본 저장 폴더」).
 RESULTS_REL = Path("templates") / "Results"
+SX_TEMPLATE_REL = Path("templates") / "발주요청서.hwpx"
+SX_OUTPUT_REL = Path("sx-output")
+_SECTION = "Contents/section0.xml"
+
+# Opaque ids are command keys; Korean labels are the only user-facing copy.
+SX_SLOTS = (
+    ("SX05-S1", 2, 3, "s7f0c2a91", "공고 기본 정보", (
+        ("SX05-S1-A", 2, "o91aa4301", "공고번호 표시"),
+        ("SX05-S1-B", 3, "ob4de5820", "수요기관 표시"),
+    )),
+    ("SX05-S2", 4, 5, "s41bd77e0", "공고 상세 정보", (
+        ("SX05-S2-A", 4, "o0c22d6f4", "공고명 표시"),
+        ("SX05-S2-B", 5, "o8d735ba2", "추가 확인 표시"),
+    )),
+    ("SX05-S3", 6, 7, "sd2e84c13", "업무 후속 정보", (
+        ("SX05-S3-A", 6, "o773a912f", "납품기한 표시"),
+        ("SX05-S3-B", 7, "of0a165c8", "담당자 표시"),
+    )),
+)
 
 
 class ExitCode:
@@ -230,6 +267,72 @@ def generated_documents(home: Path) -> "list[str]":
     return sorted(p.name for p in results.glob("*.hwpx"))
 
 
+def sx_template_bytes(base: bytes, *, successor: bool = False) -> bytes:
+    """Build the two deterministic SX-05 canonical templates from the 101 asset."""
+    package = HwpxPackage.from_bytes(base)
+
+    def current(name: str):
+        matches = [region for region in resolve_bookmark_topology(package) if region.name == name]
+        if len(matches) != 1:
+            raise ValueError(f"SX-05 BOOKMARK가 정확히 하나가 아닙니다: {name!r}")
+        return matches[0]
+
+    for outer_name, start, end, slot_id, label, options in SX_SLOTS:
+        outer = create_bookmark_region(
+            package, _SECTION, start, end, name=outer_name
+        )
+        append_bookmark_metatag(
+            package,
+            outer,
+            serialize_slot_metatag(
+                Slot(slot_id, tuple(SlotOption(item[2], order) for order, item in enumerate(options)), label)
+            ),
+        )
+        for order, (name, paragraph, option_id, option_label) in enumerate(options):
+            child = create_bookmark_region(
+                package,
+                _SECTION,
+                paragraph,
+                paragraph,
+                name=name,
+                parent=current(outer_name),
+            )
+            append_bookmark_metatag(
+                package,
+                child,
+                serialize_slot_option_metatag(SlotOption(option_id, order, option_label)),
+            )
+
+    if successor:
+        # S1 remains byte-identical (preserved); S2-A disappears (broken); S3 disappears
+        # after its children are content-preserving unwrapped (detached).
+        for name in ("SX05-S2-A", "SX05-S3-A", "SX05-S3-B", "SX05-S3"):
+            unwrap_bookmark_region(package, current(name))
+        section = package.entries[_SECTION]
+        old = "추정가격".encode()
+        new = "추가확인".encode()
+        if old not in section:
+            raise ValueError("SX-05 successor가 바꿀 추정가격 필드를 찾지 못했습니다")
+        package.entries[_SECTION] = section.replace(old, new)
+
+    payload = package.to_bytes()
+    inspection = inspect_hwpx_qualification(payload)
+    if inspection.structure is None or inspection.diagnostics:
+        raise ValueError(f"SX-05 canonical fixture qualification 실패: {inspection.diagnostics}")
+    return payload
+
+
+def filesystem_manifest(root: Path) -> dict[str, str]:
+    """Stable file manifest used to prove the managed path published nothing."""
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 # ------------------------------------------------------------------ 선행 조건
 
 
@@ -248,11 +351,16 @@ def build_web_artifact() -> None:
     )
 
 
-def preflight(mode: str) -> "list[str]":
+def preflight(mode: str, phase: str = "legacy") -> "list[str]":
     """실행 없이 **전제만** 센다 — CI 가 "돌 수 있는 환경인가"를 시끄럽게 증명하는 자리.
 
     실주행(2~4분)을 CI 단계에서 두 번 돌리지 않으려는 것이다. 실제 완주는 pytest 게이트가
     한 번 돌고, 이 단계는 그 게이트가 조용히 스킵될 수 없음을 앞에서 보인다.
+
+    픽셀 조건은 **모드가 아니라 실제로 셔터가 서는가**로 센다. SX-05 journey 는 `check` 인데도
+    audit sink 를 세우므로(아래 :func:`run`), 모드만 보면 이 단계가 「돌 수 있다」고 증명한 환경이
+    정작 완주하지 못한다 — 그리고 그 실패는 한참 뒤 대본 한가운데서 맨 `ModuleNotFoundError` 로
+    터진다. 전제를 증명하는 자리가 못 보는 전제가 있으면 그 초록은 아무 말도 안 하는 것이다.
     """
     problems: "list[str]" = []
     if sys.platform != "win32":
@@ -262,11 +370,11 @@ def preflight(mode: str) -> "list[str]":
             problems.append(f"101 자산 없음: {EXAMPLE_HOME / name}")
     if not (EXAMPLE_HOME / "data" / "발주목록.csv").is_file():
         problems.append("101 데이터 없음: data/발주목록.csv")
-    if mode == "capture":
+    if mode == "capture" or phase == "journey":
         try:
             import PIL  # noqa: F401
         except ImportError:
-            problems.append("Pillow 없음 — capture 모드는 PNG 저장에 필요합니다")
+            problems.append("Pillow 없음 — 픽셀 증거를 남기는 실행에는 PNG 저장이 필요합니다")
     try:
         from hwpxfiller.webapp import app as webapp_app
 
@@ -286,6 +394,8 @@ def run(
     land: "Callable[[LiveRunResult], int]",
     out_dir: "Path | None" = None,
     budget_s: float = RUN_BUDGET_S,
+    phase: str = "legacy",
+    evidence_dir: "Path | None" = None,
 ) -> int:
     """제품 창을 띄워 101 을 완주하고 **착지 코드**를 돌려준다.
 
@@ -307,13 +417,23 @@ def run(
     """
     if mode not in ("check", "capture"):
         raise ValueError(f"모르는 실행 모드: {mode!r}")
+    if phase not in ("legacy", "journey", "restart"):
+        raise ValueError(f"모르는 SX-05 phase: {phase!r}")
+    if mode == "capture" and phase != "legacy":
+        raise ValueError("SX-05 phase는 check 모드에서만 실행합니다")
 
     landing = _Landing(land)
     previous_home = os.environ.get("HWPXFILLER_HOME")
     os.environ["HWPXFILLER_HOME"] = str(home)
     try:
         result = _run_with_home(
-            mode=mode, home=home, out_dir=out_dir, budget_s=budget_s, landing=landing
+            mode=mode,
+            home=home,
+            out_dir=out_dir,
+            budget_s=budget_s,
+            landing=landing,
+            phase=phase,
+            evidence_dir=evidence_dir,
         )
         return landing.once(result)
     finally:
@@ -366,11 +486,16 @@ def _run_with_home(
     out_dir: "Path | None",
     budget_s: float,
     landing: "_Landing",
+    phase: str,
+    evidence_dir: "Path | None",
 ) -> LiveRunResult:
     from hwpxfiller.webapp import app as webapp_app
     from hwpxfiller.webapp import live_run
 
     answers: "deque[str]" = deque()
+    folder_answers: "deque[str]" = deque()
+    base_template = (home / SX_TEMPLATE_REL).read_bytes() if phase == "journey" else b""
+    secret_original: dict[str, bytes] = {}
     state: dict = {
         "result": None,
         "error": None,
@@ -386,9 +511,70 @@ def _run_with_home(
         return answers.popleft() if answers else None
 
     def answer_folder_dialog(title, owner_title=None):  # noqa: ARG001 — 시그니처 계약 유지
-        # 대본이 폴더 피커를 밟지 않는다. 밟는 순간 조용히 취소로 접지 않고 시끄럽게 죽는다 —
-        # 답이 없는 대화상자를 None 으로 넘기면 그 뒤의 화면이 "사용자가 취소했다"가 된다.
+        if folder_answers:
+            return folder_answers.popleft()
         raise RuntimeError(f"대본에 없는 폴더 대화상자 요청: {title!r}")
+
+    def stage_template(kind: str) -> str:
+        if kind not in ("initial", "successor"):
+            raise ValueError(f"모르는 SX-05 template stage: {kind!r}")
+        target = home / SX_TEMPLATE_REL
+        write_bytes_atomic(target, sx_template_bytes(base_template, successor=kind == "successor"))
+        return str(target)
+
+    def stage_data(kind: str) -> str:
+        source = home / "data" / "발주목록.csv"
+        if kind == "clean":
+            return str(source)
+        if kind == "missing":
+            return str(home / "data" / "sx05-does-not-exist.csv")
+        target = home / "data" / f"sx05-{kind}.csv"
+        if kind == "incompatible":
+            target.write_text("다른항목\n값\n", encoding="utf-8-sig")
+            return str(target)
+        if kind not in ("blank", "release"):
+            raise ValueError(f"모르는 SX-05 data stage: {kind!r}")
+        with source.open(encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream)
+            rows = list(reader)
+            fields = list(reader.fieldnames or ())
+        if not rows or "공고명" not in fields:
+            raise ValueError("SX-05 blank fixture가 공고명 열을 찾지 못했습니다")
+        if kind == "blank":
+            rows[0]["공고명"] = ""
+        else:
+            fields.remove("공고명")
+            for row in rows:
+                row.pop("공고명", None)
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+        target.write_text(buffer.getvalue(), encoding="utf-8-sig")
+        return str(target)
+
+    def stage_context(kind: str) -> None:
+        secret = home / "template_authority" / "slot_token_secret.json"
+        if kind == "corrupt":
+            secret_original["payload"] = secret.read_bytes()
+            write_bytes_atomic(secret, b"{corrupt")
+            return
+        if kind != "restore" or "payload" not in secret_original:
+            raise ValueError(f"모르는 SX-05 context stage: {kind!r}")
+        write_bytes_atomic(secret, secret_original.pop("payload"))
+
+    def prepare_output() -> str:
+        target = home / SX_OUTPUT_REL
+        target.mkdir(parents=True, exist_ok=True)
+        return str(target)
+
+    def create_collision(relative_path: str) -> None:
+        root = (home / SX_OUTPUT_REL).resolve()
+        target = (root / relative_path).resolve()
+        if root not in target.parents:
+            raise ValueError(f"SX-05 collision path가 output root 밖입니다: {relative_path!r}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_bytes_atomic(target, b"sx05-existing-output\n")
 
     def write_evidence(result) -> Path:
         out = home / "_live101_result.json"
@@ -412,6 +598,7 @@ def _run_with_home(
         7줄을 읽고 있지도 않은 제품 결함을 고치러 간다.
         """
         built = report_mod.build(
+            phase=phase,
             mode=mode,
             home=home,
             observations=observations,
@@ -463,17 +650,55 @@ def _run_with_home(
             surface.install_helpers()
             sink = _make_sink(mode, out_dir, webapp_app.WINDOW_TITLE)
             state["phase"] = "scenario"
-            observations = scenario_mod.run(
-                scenario_mod.ScenarioContext(
-                    surface=surface,
-                    shoot=sink.shoot,
-                    csv_path=str(home / "data" / "발주목록.csv"),
-                    queue_file_answer=answers.append,
+            audit_sink = None
+            if phase == "journey":
+                if evidence_dir is None:
+                    raise ScenarioFailure("SX-05 journey에는 pixel evidence dir가 필요합니다")
+                audit_sink = capture_mod.Win32Sink(
+                    capture_mod.find_window(webapp_app.WINDOW_TITLE), evidence_dir
                 )
+
+            def audit_shoot(name: str) -> dict:
+                if audit_sink is None:
+                    raise ScenarioFailure("SX-05 pixel sink가 없습니다")
+                audit_sink.shoot(name)
+                path = evidence_dir / f"{len(audit_sink.shots):02d}-{name}.png"
+                return {
+                    "path": str(path),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "size": path.stat().st_size,
+                    "geometry": audit_sink.geometry(),
+                    "unstable": name in audit_sink.unstable,
+                }
+
+            scenario_ctx = scenario_mod.ScenarioContext(
+                surface=surface,
+                shoot=sink.shoot,
+                csv_path=str(home / "data" / "발주목록.csv"),
+                queue_file_answer=answers.append,
+                queue_folder_answer=folder_answers.append,
+                stage_template=stage_template,
+                stage_data=stage_data,
+                stage_context=stage_context,
+                output_dir=str(home / SX_OUTPUT_REL),
+                prepare_output=prepare_output,
+                create_collision=create_collision,
+                output_manifest=lambda: filesystem_manifest(home / SX_OUTPUT_REL),
+                audit_shoot=audit_shoot,
             )
+            if phase == "restart":
+                observations = scenario_mod.run_restart(scenario_ctx)
+            else:
+                observations = scenario_mod.run(scenario_ctx)
+                if phase == "journey":
+                    observations = scenario_mod.run_sx(scenario_ctx)
             if answers:
                 raise ScenarioFailure(
                     f"대화상자 답변 잔량 {len(answers)} — 대본이 화면과 어긋났습니다"
+                )
+            if folder_answers:
+                raise ScenarioFailure(
+                    f"폴더 대화상자 답변 잔량 {len(folder_answers)} — 대본이 화면과 어긋났습니다"
                 )
         except WindowBootFailure as exc:
             # 환경 축 — 제품에 닿지 못했다. settle 이 판정을 건너뛰어 파생 실패를 만들지 않는다.

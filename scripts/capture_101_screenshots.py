@@ -7,7 +7,7 @@
 실행(저장소 루트, Windows 데스크톱 세션 필요)::
 
     # 동작만 검사 — PNG 없음, 임시 홈, 저장소 작업트리 무오염
-    uv run --extra gui python scripts/capture_101_screenshots.py check
+    uv run --with pillow --extra gui python scripts/capture_101_screenshots.py check
 
     # 문서용 14컷 재생성 — 예제 홈(화면에 뜨는 경로가 문서와 같아야 한다)
     uv run --extra gui python scripts/capture_101_screenshots.py capture
@@ -91,6 +91,24 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
         action="store_true",
         help="실행하지 않고 전제(Windows·자산·봉인 산출물)만 증명한다.",
     )
+    check.add_argument(
+        "--shared-home",
+        type=Path,
+        default=None,
+        help="SX-05 두 프로세스가 공유할 호출자 소유 home.",
+    )
+    check.add_argument(
+        "--sx-phase",
+        choices=("journey", "restart"),
+        default=None,
+        help="SX-05 actual-shell journey 또는 같은-home restart phase.",
+    )
+    check.add_argument(
+        "--evidence-dir",
+        type=Path,
+        default=None,
+        help="SX-05 actual pixel evidence를 남길 디렉터리.",
+    )
     _add_report(check)
 
     capture = subparsers.add_parser("capture", help="문서용 14컷을 재생성한다")
@@ -126,8 +144,17 @@ def main(argv: "list[str] | None" = None) -> int:
     _force_utf8_output()
     args = _parse_args(argv)
 
+    phase = getattr(args, "sx_phase", None) or "legacy"
+    shared_home = getattr(args, "shared_home", None)
+    if phase == "restart" and shared_home is None:
+        print("--sx-phase restart에는 --shared-home이 필요합니다", file=sys.stderr)
+        return driver.ExitCode.USAGE
+    if phase == "journey" and getattr(args, "evidence_dir", None) is None:
+        print("--sx-phase journey에는 --evidence-dir가 필요합니다", file=sys.stderr)
+        return driver.ExitCode.USAGE
+
     if getattr(args, "preflight", False):
-        problems = driver.preflight(args.mode)
+        problems = driver.preflight(args.mode, phase)
         for problem in problems:
             print(f"선행조건 미충족: {problem}", file=sys.stderr)
         if problems:
@@ -139,7 +166,7 @@ def main(argv: "list[str] | None" = None) -> int:
         print("Windows 데스크톱 세션 전용(WebView2 실창)", file=sys.stderr)
         return driver.ExitCode.ENVIRONMENT
 
-    use_example_home = args.home == "example"
+    use_example_home = shared_home is None and args.home == "example"
     if use_example_home:
         try:
             driver.refuse_if_dirty(driver.EXAMPLE_HOME)
@@ -155,7 +182,7 @@ def main(argv: "list[str] | None" = None) -> int:
     # stale seal 로 14컷을 지운 **뒤에야** 부팅이 거절된다(#430 리뷰). 이미 만든 러너(CI)가
     # 두 번 만들지 않게 하려던 것이지, 보장을 빼려던 것이 아니다.
     if args.no_build:
-        problems = driver.preflight(args.mode)
+        problems = driver.preflight(args.mode, phase)
         for problem in problems:
             print(f"산출물 검증 실패(--no-build): {problem}", file=sys.stderr)
         if problems:
@@ -174,7 +201,18 @@ def main(argv: "list[str] | None" = None) -> int:
     print("알림: 이 실행은 OS 클립보드를 한 번 덮어씁니다(작업대 「복사」를 실제로 누릅니다).")
 
     temp_root = None
-    if use_example_home:
+    if shared_home is not None:
+        home = shared_home.resolve()
+        if not home.is_dir():
+            print(f"공유 home이 없습니다: {home}", file=sys.stderr)
+            return driver.ExitCode.USAGE
+        if phase != "restart":
+            try:
+                driver.refuse_if_dirty(home)
+            except driver.DirtyHome as exc:
+                print(str(exc), file=sys.stderr)
+                return driver.ExitCode.DIRTY_HOME
+    elif use_example_home:
         home = driver.EXAMPLE_HOME
     else:
         temp_root = Path(tempfile.mkdtemp(prefix="hwpx-101-"))
@@ -193,7 +231,13 @@ def main(argv: "list[str] | None" = None) -> int:
         )
 
     return driver.run(
-        mode=args.mode, home=home, out_dir=out_dir, land=land, budget_s=args.budget_s
+        mode=args.mode,
+        home=home,
+        out_dir=out_dir,
+        land=land,
+        budget_s=args.budget_s,
+        phase=phase,
+        evidence_dir=getattr(args, "evidence_dir", None),
     )
 
 
@@ -253,6 +297,8 @@ def _land(
             f" (HWPX {summary['hwpx_generated']}건 · {summary['elapsed_s']}s"
             f" · artifact {summary['source'].get('artifact_id', '?')[:12]})"
         )
+    elif summary.get("phase") == "restart":
+        print(f"완료: SX-05 restart 통과 ({summary['elapsed_s']}s)")
     else:
         print(
             f"완료: 101 check 통과 (HWPX {summary['hwpx_generated']}건 ·"
