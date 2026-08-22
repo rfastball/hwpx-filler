@@ -23,6 +23,7 @@ C9 는 `test_control_plane_evidence.py` 가 진다.
 from __future__ import annotations
 
 import ast
+import importlib.util
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -144,6 +145,20 @@ def _import_alias_map(tree: ast.Module) -> dict[str, str]:
                 if name.asname:
                     aliases[name.asname] = name.name.split(".")[-1]
     return aliases
+
+
+# R2-05a(#740)로 제거된 mutable Profile admission 제어면의 호출 이름 — C1 census 와 그 음성 대조가
+# **같은 이 목록**을 소비한다(S6G-00 #806 · #805). 프로브가 겨누는 표면이 census 가 세는 표면과
+# 다르면 프로브는 아무 위반도 잡지 못하므로, 두 자리가 문자열을 각자 들고 있지 않게 한다.
+REMOVED_ADMISSION_CONTROL_CALLS = (
+    "initialize_qualification_profile_admission",
+    "register_published_qualification_profile_admission",
+    "revoke_qualification_profile",
+)
+
+# 음성 대조가 fabricate 하는 import 의 출처 — **실재하는** 모듈이어야 한다. 삭제된 모듈을 쓰면
+# 읽는 사람이 그 표면을 현재로 오해하고, 프로브가 무엇을 지키는지도 흐려진다.
+_LIVE_IMPORT_SOURCE_MODULE = "hwpxfiller.external.qualification_store"
 
 
 def _call_counts_in(source: str, filename: str = "<probe>") -> Counter[str]:
@@ -346,15 +361,10 @@ def test_exactly_one_shipping_qualification_profile() -> None:
     # S5F R2-05a(#740): mutable Profile admission control plane 을 제거했다 — bootstrap-to-ADMITTED·
     # dynamic publication·revoke 가 production·저장소 전역에서 0 이다(immutable Qualification identity 만
     # 남는다). 셋 다 0 이 admission 제어면 부재의 census 증거다.
-    assert counts["initialize_qualification_profile_admission"] == 0, (
-        "mutable Profile admission bootstrap 은 R2-05a 에서 제거됐다(호출 0)"
-    )
-    assert counts["register_published_qualification_profile_admission"] == 0, (
-        "dynamic Profile publication route 는 없다(R2-05a 로 admission 제어면 전면 제거)"
-    )
-    assert counts["revoke_qualification_profile"] == 0, (
-        "Profile revoke 표면은 없다(R2-05a 로 admission 제어면 전면 제거)"
-    )
+    for name in REMOVED_ADMISSION_CONTROL_CALLS:
+        assert counts[name] == 0, (
+            f"{name} 은 R2-05a 에서 제거된 admission 제어면이다(호출 0)"
+        )
 
 
 # ─── C2 ──────────────────────────────────────────────────────────────────────────
@@ -434,15 +444,32 @@ def test_negative_probe_detects_annotated_and_inline_profile_construction() -> N
 
 
 def test_negative_probe_detects_aliased_forbidden_call() -> None:
-    # ``… as revoke_profile`` 로 alias 해도 실 count helper 가 원 이름으로 잡는다.
-    source = (
-        "from hwpxfiller.external.profile_admission_runner import "
-        "revoke_qualification_profile as revoke_profile\n"
-        "revoke_profile('work')\n"
+    """alias 로 숨긴 호출을 census 가 원 이름으로 잡는다 — **C1 이 세는 이름 전건**으로 잰다.
+
+    #805: 이전 판은 이미 삭제된 ``profile_admission_runner`` 를 import 출처로 썼다. 기제 자체는
+    유효했지만(alias 해소를 고장 내면 빨강이 난다) 겨누는 표면이 현재가 아니었고, 겨냥이 C1 의
+    금지 목록과 **우연히** 겹쳐 있어 한쪽이 바뀌면 조용히 어긋날 수 있었다. 이제 둘 다
+    :data:`REMOVED_ADMISSION_CONTROL_CALLS` 하나를 소비하므로 드리프트가 구조적으로 불가능하다.
+    """
+    for name in REMOVED_ADMISSION_CONTROL_CALLS:
+        alias = "hidden_call"
+        counts = _call_counts_in(
+            f"from {_LIVE_IMPORT_SOURCE_MODULE} import {name} as {alias}\n"
+            f"{alias}('work')\n"
+        )
+        assert counts[name] == 1, f"{name}: alias 를 원 이름으로 해소해야 한다"
+        assert counts[alias] == 0, f"{name}: alias 이름으로는 남지 않는다"
+
+
+def test_negative_probe_import_source_module_exists() -> None:
+    """프로브가 fabricate 하는 import 출처가 **실재**한다(#805 수용조건 1).
+
+    삭제된 모듈을 겨누면 프로브는 「현재 코드가 그 표면을 안 쓴다」가 아니라 자기 문자열을 재게
+    된다. 출처가 사라지는 순간 이 단언이 빨강으로 알린다.
+    """
+    assert importlib.util.find_spec(_LIVE_IMPORT_SOURCE_MODULE) is not None, (
+        f"{_LIVE_IMPORT_SOURCE_MODULE} 이 사라졌다 — 음성 대조의 겨냥을 실재 모듈로 옮겨라"
     )
-    counts = _call_counts_in(source)
-    assert counts["revoke_qualification_profile"] == 1, "alias 를 원 이름으로 해소해야 한다"
-    assert counts["revoke_profile"] == 0, "alias 이름으로는 남지 않는다"
 
 
 def test_negative_probe_detects_profile_management_surface() -> None:

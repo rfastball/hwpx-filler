@@ -172,6 +172,10 @@ def classify_selection(
     candidate bytes 가 chain 전역에서 byte-identical → region 본문이 증명상 동일). 어느 한 hop 에서
     removed·구조 변경·본문 digest 변경·복원 불가면 같은 id 재등장이라도 REVIEW_REQUIRED 다
     (false AUTO_KEEP 금지, SG-00 D3: 필요한 fact 를 exact 복원 못 하면 REVIEW).
+
+    (b)는 문서 **전체** bytes 를 보므로 손대지 않은 Slot 의 선택도 재요구된다 — #719 불변식 6
+    「깨진 결정만 다시 요구한다」와의 이 긴장은 알고 받아들인 것이고, 근거와 상향 조건은
+    `docs/CONTROL_PLANE_SCOPE.md` §2.5 가 진다(#806 · #729 잔여위험 5).
     """
     target = chain_execution_structures[-1] if chain_execution_structures else None
     source = chain_execution_structures[0] if chain_execution_structures else None
