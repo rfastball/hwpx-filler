@@ -111,6 +111,12 @@ function restoreMemory(
   const focusInHiddenScreen = active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== null
     && active?.closest?.('.scr[hidden],.scr[inert],[aria-hidden="true"]') !== undefined;
   if (!outgoingOwnedFocus && !focusInHiddenScreen) return;
+  /* 목적 화면이 **이미 자기 안에** 초점을 세웠으면 되돌릴 것이 없다.
+
+     이 복원의 근거는 「나가는 화면이 초점을 들고 있었으니 들어오는 화면에 시작점을 준다」다.
+     그런데 들어오는 화면이 스스로 자리를 잡았다면 초점은 고아가 아니고, 여기서 덮으면 그
+     화면이 방금 지목한 자리를 빼앗는다 — deep-link 조준이 정확히 그 형상이다(#795). */
+  if (active !== null && active !== doc.body && root.contains(active)) return;
 
   const remembered = rememberedFocus(root, doc, memory?.focus ?? null);
   const target = remembered !== null && isUsableFocusTarget(remembered, root) ? remembered : root;
