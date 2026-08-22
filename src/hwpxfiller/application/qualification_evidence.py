@@ -241,11 +241,32 @@ def build_records(
     started_at: str,
     completed_at: str,
     qualified_at: str,
+    structure_projection: StructureProjection | None = None,
 ) -> tuple[QualificationAttempt, QualificationEvidence | None]:
     """S2 결과 하나를 immutable Attempt(+PASS/FAIL 이면 Evidence)로 고정한다.
 
     ATTEMPT ERROR 는 Evidence 없이 Attempt 만 낸다.
+
+    ``structure_projection`` 은 호출자가 이미 만든 PASS projection 이다(#773 의 composition-ready
+    schema 처럼 이 모듈이 조립할 수 없는 payload 를 위해서다 — ring cycle 을 만들지 않는다).
+    주면 그 schema 가 ``projection_schema_version`` 과 **정확히** 같아야 하고, 안 주면 기존대로
+    :func:`project_structure` 가 product projection 을 만든다.
     """
+    if structure_projection is not None and not isinstance(
+        result, TemplateQualificationPassed
+    ):
+        raise QualificationEvidenceError(
+            "PASS 아닌 결과에는 structure projection 을 실을 수 없다"
+        )
+    if (
+        structure_projection is not None
+        and structure_projection.projection_schema_version != projection_schema_version
+    ):
+        raise QualificationEvidenceError(
+            f"공급된 projection schema 가 pin 과 불일치: "
+            f"{structure_projection.projection_schema_version!r} != "
+            f"{projection_schema_version!r}"
+        )
     engine_metadata = copy.deepcopy(dict(engine_metadata))  # caller alias 차단(build_manifest 동형)
     if isinstance(result, TemplateQualificationAttemptErrored):
         attempt = QualificationAttempt(
@@ -268,8 +289,10 @@ def build_records(
             revision_id=result.revision_id,
             qualification_profile_id=result.qualification_profile_id,
             result=PASS,
-            structure_projection=project_structure(
-                result.structure, projection_schema_version
+            structure_projection=(
+                structure_projection
+                if structure_projection is not None
+                else project_structure(result.structure, projection_schema_version)
             ),
             diagnostics=(),
             engine_metadata=engine_metadata,

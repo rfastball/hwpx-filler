@@ -42,6 +42,36 @@ from hwpxfiller.application.template_qualification import (
 EXECUTION_STRUCTURE_PROJECTION_SCHEMA = "hwpx-structure-projection-v2"
 EXECUTION_QUALIFICATION_PROFILE_ID = "hwpx-template-qualification-v2"
 
+# S5F #773 additive: shipping qualification 이 canonical Slot/Option label 과 composition fact 를
+# **한 payload·한 Evidence** 로 내기 위한 label-bearing composition-ready schema. v2 와 shape 이
+# 같고 ``product_structure`` 안에 label 만 더 싣는다 — v2 bytes·의미는 한 글자도 안 바꾼다
+# (v2 는 label 을 구조적으로 못 싣는다: `_encode_product_structure(include_labels=False)`).
+LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA = "hwpx-structure-projection-v4"
+LABELED_EXECUTION_QUALIFICATION_PROFILE_ID = "hwpx-template-qualification-v4"
+
+#: exact (profile, projection) pair 만 산다 — latest fallback 없음.
+_EXECUTION_PROFILE_PAIRS = {
+    EXECUTION_QUALIFICATION_PROFILE_ID: EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID: LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+}
+
+#: label 을 싣는 schema 는 v4 하나다.
+_LABEL_BEARING_SCHEMAS = frozenset({LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA})
+
+
+def _require_supported_schema(schema: str) -> None:
+    if schema not in _EXECUTION_PROFILE_PAIRS.values():
+        raise UnsupportedExecutionStructureProjection(
+            f"미지원 execution structure projection schema: {schema!r}"
+        )
+
+
+def _structure_has_labels(structure: TemplateStructure) -> bool:
+    return any(
+        slot.label is not None or any(opt.label is not None for opt in slot.options)
+        for slot in structure.slots
+    )
+
 # owner 귀속(정확히 하나).
 OWNER_ROOT = "ROOT"
 OWNER_SLOT_SHARED = "SLOT_SHARED"
@@ -564,9 +594,16 @@ def build_execution_structure(
     같은 입력은 같은 semantic payload 를 낸다(deterministic). fact 누락·중복은 추측 FAIL 이
     아니라 issue 가 열거한 integrity/incomplete 오류로 닫힌다.
     """
-    if projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
-        raise UnsupportedExecutionStructureProjection(
-            f"미지원 execution structure projection schema: {projection_schema_version}"
+    _require_supported_schema(projection_schema_version)
+    # v2 는 label 을 못 싣는다 — label 있는 product structure 를 v2 로 조립하면 encode 가 label 을
+    # 조용히 떨어뜨려 digest 만 맞는 반쪽 사실이 남는다. 시끄럽게 거절한다.
+    if (
+        projection_schema_version not in _LABEL_BEARING_SCHEMAS
+        and _structure_has_labels(product_structure)
+    ):
+        raise ExecutionStructureProjectionIntegrityError(
+            "label-bearing product structure 는 "
+            f"{LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA} 가 필요하다"
         )
     occ_tuple = tuple(occurrences)
     entry_tuple = tuple(content_entries)
@@ -686,15 +723,26 @@ def build_execution_structure(
 
 
 # ─── canonical semantic payload + digest seam ────────────────────────────────────
-def _encode_product_structure(structure: TemplateStructure) -> dict[str, Any]:
-    # v1 payload 와 같은 shape·순서(lossless) — S4 v2 decoder 가 이걸 그대로 읽는다.
+def _encode_product_structure(
+    structure: TemplateStructure, *, include_labels: bool = False
+) -> dict[str, Any]:
+    # v1 payload 와 같은 shape·순서(lossless) — S4 v2/v4 decoder 가 이걸 그대로 읽는다.
+    # ``include_labels`` 는 v4 에서만 참이다(v2 bytes 불변).
     return {
         "root_fields": list(structure.root_fields),
         "slots": [
             {
                 "id": slot.id,
                 "shared_fields": list(slot.shared_fields),
-                "options": [{"id": o.id, "fields": list(o.fields)} for o in slot.options],
+                "options": [
+                    {
+                        "id": o.id,
+                        "fields": list(o.fields),
+                        **({"label": o.label} if include_labels else {}),
+                    }
+                    for o in slot.options
+                ],
+                **({"label": slot.label} if include_labels else {}),
             }
             for slot in structure.slots
         ],
@@ -702,10 +750,13 @@ def _encode_product_structure(structure: TemplateStructure) -> dict[str, Any]:
 
 
 def encode_execution_structure(structure: ExecutionTemplateStructure) -> dict[str, Any]:
-    """v2 semantic payload — stable ordering. content_digest 가 이걸 주소화한다."""
+    """v2/v4 semantic payload — stable ordering. content_digest 가 이걸 주소화한다."""
     return {
         "projection_schema_version": structure.projection_schema_version,
-        "product_structure": _encode_product_structure(structure.product_structure),
+        "product_structure": _encode_product_structure(
+            structure.product_structure,
+            include_labels=structure.projection_schema_version in _LABEL_BEARING_SCHEMAS,
+        ),
         "field_occurrences": [
             {
                 "field_id": o.field_id,
@@ -825,11 +876,28 @@ def _dec_str_list(value: object, what: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _decode_product_structure(value: object) -> TemplateStructure:
-    """v2 payload 의 product_structure(=v1 shape) → TemplateStructure.
+def _dec_label(value: object, what: str) -> str | None:
+    """v4 label — null 이거나 비어 있지 않은 문자열이다(v3 `_label_field` 와 같은 의미).
+
+    label 없는 제품 구조도 정당하다(canonical id 만 있는 historical 템플릿). 다만 **빈 문자열**은
+    "label 이 있다"고 말하면서 아무것도 안 주는 값이라 조용히 통과시키지 않는다.
+    """
+    if value is None:
+        return None
+    label = _dec_str(value, what)
+    if not label.strip():
+        raise TypeError(f"{what} 는 null 또는 비어 있지 않은 문자열이어야 한다")
+    return label
+
+
+def _decode_product_structure(
+    value: object, *, include_labels: bool = False
+) -> TemplateStructure:
+    """v2/v4 payload 의 product_structure(=v1 shape) → TemplateStructure.
 
     slot_configuration_context 의 v1 decoder 와 같은 모양이지만 사설(_) cross-module import 는
     boundary gate 가 금지하므로 여기서 자립 파싱한다(shape 이 20줄이라 재발명 비용이 낮다).
+    ``include_labels`` 는 v4 에서만 참이고, 그때 label 은 **필수**다(부재면 loud).
     """
     if not isinstance(value, Mapping):
         raise TypeError("product_structure 매핑 아님")
@@ -851,6 +919,9 @@ def _decode_product_structure(value: object) -> TemplateStructure:
                 TemplateOption(
                     id=_dec_str(opt["id"], "option.id"),
                     fields=_dec_str_list(opt["fields"], "option.fields"),
+                    label=(
+                        _dec_label(opt["label"], "option.label") if include_labels else None
+                    ),
                 )
             )
         slots.append(
@@ -858,6 +929,7 @@ def _decode_product_structure(value: object) -> TemplateStructure:
                 id=_dec_str(slot["id"], "slot.id"),
                 shared_fields=_dec_str_list(slot["shared_fields"], "slot.shared_fields"),
                 options=tuple(options),
+                label=(_dec_label(slot["label"], "slot.label") if include_labels else None),
             )
         )
     return TemplateStructure(
@@ -940,9 +1012,13 @@ def _validate_structure_invariants(structure: ExecutionTemplateStructure) -> Non
     entry 일치)만 본다. load-bearing 한 target-target relation·occurrence-in-region·crossing_free
     는 저장 span 에서 재계산해 대조하므로 위조·누락은 시끄럽게 걸린다.
     """
-    if structure.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
-        raise UnsupportedExecutionStructureProjection(
-            f"미지원 execution structure projection schema: {structure.projection_schema_version}"
+    _require_supported_schema(structure.projection_schema_version)
+    if (
+        structure.projection_schema_version not in _LABEL_BEARING_SCHEMAS
+        and _structure_has_labels(structure.product_structure)
+    ):
+        raise ExecutionStructureProjectionIntegrityError(
+            f"{structure.projection_schema_version} 는 label 을 싣지 않는다"
         )
     root, shared, option = _product_index(structure.product_structure)
     entry_ids = _validate_content_entries(structure.content_entries)
@@ -999,25 +1075,28 @@ def _validate_structure_invariants(structure: ExecutionTemplateStructure) -> Non
 
 
 def decode_execution_structure(payload: Mapping[str, Any]) -> ExecutionTemplateStructure:
-    """persisted v2 payload → 재구성 + 전건 self-consistency 재검증.
+    """persisted v2/v4 payload → 재구성 + 전건 self-consistency 재검증.
 
     seal·저장 신뢰 경계 — digest 만 맞는 garbage payload 를 받아 조용히 통과시키지 않는다.
     형식 불량은 loud integrity error, unknown schema 는 fail-closed(latest 없음).
     """
     if not isinstance(payload, Mapping):
-        raise ExecutionStructureProjectionIntegrityError("v2 payload 가 매핑이 아니다")
-    if payload.get("projection_schema_version") != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+        raise ExecutionStructureProjectionIntegrityError("execution structure payload 가 매핑이 아니다")
+    schema = payload.get("projection_schema_version")
+    if not isinstance(schema, str):
         raise UnsupportedExecutionStructureProjection(
-            f"미지원 execution structure projection schema: "
-            f"{payload.get('projection_schema_version')!r}"
+            f"미지원 execution structure projection schema: {schema!r}"
         )
+    _require_supported_schema(schema)
     try:
-        product = _decode_product_structure(payload["product_structure"])
+        product = _decode_product_structure(
+            payload["product_structure"], include_labels=schema in _LABEL_BEARING_SCHEMAS
+        )
         global_raw = payload["global_composition_facts"]
         if not isinstance(global_raw, Mapping):
             raise TypeError("global_composition_facts 매핑 아님")
         structure = ExecutionTemplateStructure(
-            projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+            projection_schema_version=schema,
             product_structure=product,
             field_occurrences=tuple(_decode_occurrence(o) for o in payload["field_occurrences"]),
             option_regions=tuple(_decode_region(r) for r in payload["option_regions"]),
@@ -1034,21 +1113,25 @@ def decode_execution_structure(payload: Mapping[str, Any]) -> ExecutionTemplateS
             ),
         )
     except (KeyError, TypeError, AttributeError) as exc:
-        raise ExecutionStructureProjectionIntegrityError("v2 payload 형식 불일치") from exc
+        raise ExecutionStructureProjectionIntegrityError(
+            f"{schema} payload 형식 불일치"
+        ) from exc
 
     _validate_structure_invariants(structure)
     return structure
 
 
 def execution_pass_projection(structure: ExecutionTemplateStructure) -> StructureProjection:
-    """v2 projection 을 PASS Evidence 에 durable 하게 실을 :class:`StructureProjection` 로 고정.
+    """v2/v4 projection 을 PASS Evidence 에 durable 하게 실을 :class:`StructureProjection` 로 고정.
 
-    기존 Evidence/store 기계를 그대로 재사용한다 — v1 payload 대신 v2 semantic payload 를 담고
-    payload_digest 는 :func:`template_structure_digest` 와 같은 seam(content_digest)이다.
+    기존 Evidence/store 기계를 그대로 재사용한다 — v1 payload 대신 composition-ready semantic
+    payload 를 담고 payload_digest 는 :func:`template_structure_digest` 와 같은
+    seam(content_digest)이다. schema 는 structure 가 이미 들고 있는 것을 따른다(재선언 0).
     """
+    _require_supported_schema(structure.projection_schema_version)
     payload = encode_execution_structure(structure)
     return StructureProjection(
-        EXECUTION_STRUCTURE_PROJECTION_SCHEMA, payload, content_digest(payload)
+        structure.projection_schema_version, payload, content_digest(payload)
     )
 
 
@@ -1071,8 +1154,10 @@ def build_execution_manifest(
     manifest_payload: Mapping[str, Any] | None = None,
     created_at: str,
 ):
-    """composition-ready Profile 의 immutable manifest(projection_schema_version=v2 고정).
+    """composition-ready Profile 의 immutable manifest.
 
+    projection schema 는 profile id 에 결속된 exact pair 로 정해진다(v2↔v2 · v4↔v4) — 호출자가
+    따로 고를 수 없고 미등록 profile 은 latest 로 풀리지 않는다.
     필수 semantic contract 필드가 비어 있으면 latest 로 보완하지 않고 시끄럽게 거절한다.
     반환형은 :class:`~hwpxfiller.application.qualification_evidence.QualificationProfileManifest`.
     """
@@ -1089,13 +1174,19 @@ def build_execution_manifest(
             )
     if not qualification_profile_id:
         raise QualificationProfileManifestIntegrityError("qualification_profile_id 가 비어 있다")
+    # 등록된 pair 면 그 schema, 아니면 v2 — **기존(#699) 동작 그대로**다. 미등록 id 의 거절은
+    # 여기가 아니라 seal 이 진다(`seal_execution_profile`): manifest 는 store 에서도 오므로
+    # 신뢰 경계는 seal 이고, 여기서 막으면 그 gate 가 도달 불가가 될 뿐 더 안전해지지 않는다.
+    schema = _EXECUTION_PROFILE_PAIRS.get(
+        qualification_profile_id, EXECUTION_STRUCTURE_PROJECTION_SCHEMA
+    )
     return build_manifest(
         qualification_profile_id=qualification_profile_id,
         media=media,
         adapter_contract_version=adapter_contract_version,
         product_rule_version=product_rule_version,
         operation_alphabet_version=operation_alphabet_version,
-        projection_schema_version=EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+        projection_schema_version=schema,
         manifest_payload=dict(manifest_payload or {}),
         created_at=created_at,
     )
@@ -1115,25 +1206,29 @@ class SealedExecutionProfile:
 
 
 def seal_execution_profile(manifest, projection: StructureProjection) -> SealedExecutionProfile:
-    """v2 profile+**검증된** v2 projection 만 S5-seal 가능. 아니면 loud 거절.
+    """등록된 (profile, projection) pair + **검증된** projection 만 S5-seal 가능. 아니면 loud 거절.
 
     ``manifest`` 는 QualificationProfileManifest. seal 은 attestation 이라 겉 label 만 보고 통과
-    시키지 않는다: (1) schema 가 v2, (2) profile id 가 등록된 것 하나(latest fallback 없음),
-    (3) payload_digest 가 payload 와 정합, (4) payload 를 decode·전건 재검증(위조/누락 차단).
+    시키지 않는다: (1) profile id 가 등록된 pair(latest fallback 없음), (2) manifest·projection 의
+    schema 가 그 pair 와 정확히 일치, (3) payload_digest 가 payload 와 정합, (4) payload 를
+    decode·전건 재검증(위조/누락 차단).
     old profile+v1 은 historical evidence 를 두고 새 seal 만 거절한다(재해석·수정 없음).
     """
-    if manifest.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
-        raise ExecutionProfileNotSealable(
-            f"profile projection schema 가 v2 가 아니다: {manifest.projection_schema_version}"
-        )
-    if manifest.qualification_profile_id != EXECUTION_QUALIFICATION_PROFILE_ID:
+    expected_schema = _EXECUTION_PROFILE_PAIRS.get(manifest.qualification_profile_id)
+    if expected_schema is None:
         raise ExecutionProfileNotSealable(
             f"미등록 profile id 는 seal 할 수 없다(latest fallback 없음): "
             f"{manifest.qualification_profile_id!r}"
         )
-    if projection.projection_schema_version != EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+    if manifest.projection_schema_version != expected_schema:
         raise ExecutionProfileNotSealable(
-            f"projection schema 가 v2 가 아니다: {projection.projection_schema_version}"
+            f"profile 이 선언한 projection schema 가 pair 와 다르다: "
+            f"{manifest.projection_schema_version!r} != {expected_schema!r}"
+        )
+    if projection.projection_schema_version != expected_schema:
+        raise ExecutionProfileNotSealable(
+            f"projection schema 가 profile pair 와 다르다: "
+            f"{projection.projection_schema_version!r} != {expected_schema!r}"
         )
     # StructureProjection 은 payload_digest==content_digest(payload) 를 생성 시 이미 지킨다.
     # 남는 구멍은 digest 는 맞지만 구조가 garbage 인 payload — decode+self-consistency 로 닫는다.

@@ -195,11 +195,20 @@ _V3_BINDING_KEY = SelectionSemanticBindingKey(
     structure_projection_schema_version="hwpx-structure-projection-v3",
 )
 
+# S5F #773: shipping label-bearing composition-ready pair. selection 의미는 v1~v3 와 같다 —
+# label 과 composition fact 는 Slot 선택 규칙(EXACTLY_ONE)을 바꾸지 않으므로 같은 manifest 에
+# 결속한다(v1/v2/v3 binding 불변).
+_V4_BINDING_KEY = SelectionSemanticBindingKey(
+    qualification_profile_id="hwpx-template-qualification-v4",
+    structure_projection_schema_version="hwpx-structure-projection-v4",
+)
+
 DEFAULT_SELECTION_SEMANTIC_REGISTRY = SelectionSemanticContractRegistry(
     [
         (_V1_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V2_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V3_BINDING_KEY, _SLOT_SELECTION_V1),
+        (_V4_BINDING_KEY, _SLOT_SELECTION_V1),
     ]
 )
 

@@ -19,6 +19,7 @@ from pathlib import Path
 from hwpxfiller.domain.canonical_execution_encoding import (
     CANONICAL_ENCODING_VERSION as EXECUTION_CANONICAL_VERSION,
 )
+from hwpxfiller.application.execution_structure import encode_execution_structure
 from hwpxfiller.domain.slot_selection import (
     CANONICAL_ENCODING_VERSION as SELECTION_CANONICAL_VERSION,
     SELECTION_SET_SCHEMA_VERSION,
@@ -34,12 +35,17 @@ _FIXTURES = Path(__file__).parent / "fixtures"
 #: 대표 slot 포함 fixture — build_slot_probe 로 조립된 canonical HWPX(slot 1·option 2).
 _QUALIFICATION_FIXTURE = Path(__file__).parent / "corpus" / "slots" / "canonical.hwpx"
 
-#: frozen ``hwpx-template-qualification-v3`` identity 아래 ``inspect_hwpx_qualification`` 의
-#: **행동**(structure/diagnostics)을 대표 fixture 에서 뽑은 안정 semantic digest. version 문자열만
-#: pin 하고 payload 를 비워 두면 같은 identity 로 판정 규칙이 바뀌어도 초록이 유지되는 창이 열린다 —
-#: 이 digest 가 그 창을 닫는다. 규칙 개정이면 identity 버전과 이 digest 를 **함께** 올린다.
+#: frozen ``hwpx-template-qualification-v4`` identity 아래 ``inspect_hwpx_qualification`` 의
+#: **행동**(structure/diagnostics/composition projection)을 대표 fixture 에서 뽑은 안정 semantic
+#: digest. version 문자열만 pin 하고 payload 를 비워 두면 같은 identity 로 판정 규칙이 바뀌어도
+#: 초록이 유지되는 창이 열린다 — 이 digest 가 그 창을 닫는다. 규칙 개정이면 identity 버전과 이
+#: digest 를 **함께** 올린다.
+#:
+#: v3→v4(#773)에서 함께 올렸다: 같은 inspection 이 이제 composition-ready execution structure 도
+#: 낸다(occurrence·region·envelope·resolver fact). 그래서 digest 는 그 payload 까지 덮는다 —
+#: composition fact 가 조용히 달라지면 여기서 RED 다.
 _QUALIFICATION_BEHAVIOR_DIGEST = (
-    "869ab5245141a3aa3a560ab13ac902dd103f5159e3015ea5771313fcde44991c"
+    "1534fd3d203a59bdb560d0c74aedf6ffebf87bfdfc2c65d4b9991abdad8187e7"
 )
 
 #: v1 로 출하된 golden vector 파일의 정확한 bytes(SHA-256). 재현 판정(code==golden)은 기존
@@ -72,24 +78,37 @@ def test_canonical_encoding_versions_pinned() -> None:
 
 
 def test_shipping_profile_identity_and_manifest_versions_pinned() -> None:
-    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v3"
+    assert HWPX_QUALIFICATION_PROFILE.id == "hwpx-template-qualification-v4"
     manifest = hwpx_qualification_manifest("2020-01-01T00:00:00")
-    assert manifest.qualification_profile_id == "hwpx-template-qualification-v3"
+    assert manifest.qualification_profile_id == "hwpx-template-qualification-v4"
     assert manifest.media == "hwpx"
-    assert manifest.adapter_contract_version == "hwpx-inspection-v3"
-    assert manifest.product_rule_version == "hwpx-qualification-rules-v3"
+    assert manifest.adapter_contract_version == "hwpx-inspection-v4"
+    assert manifest.product_rule_version == "hwpx-qualification-rules-v4"
     assert manifest.operation_alphabet_version == "hwpx-operations-v1"
-    assert manifest.projection_schema_version == "hwpx-structure-projection-v3"
+    assert manifest.projection_schema_version == "hwpx-structure-projection-v4"
 
 
 def test_shipping_profile_inspection_behavior_frozen() -> None:
     # frozen identity 를 그 **행동**에 묶는다: 대표 fixture 의 inspection 결과 semantic digest 가
-    # v3 값이어야 한다. identity 문자열이 그대로여도 판정이 바뀌면 이 digest 가 RED 된다.
+    # v4 값이어야 한다. identity 문자열이 그대로여도 판정이 바뀌면 이 digest 가 RED 된다.
+    # execution structure 는 canonical encoder 로 편다 — `asdict` 는 frozen mappingproxy 를 못
+    # 넘고(deepcopy 불가), 이 encoder 가 애초에 payload/digest 의 정본 seam 이다.
     inspection = inspect_hwpx_qualification(_QUALIFICATION_FIXTURE.read_bytes())
     assert inspection.structure is not None and inspection.diagnostics == ()
-    payload = json.dumps(asdict(inspection), ensure_ascii=False, sort_keys=True)
+    assert inspection.execution_structure is not None
+    payload = json.dumps(
+        {
+            "structure": asdict(inspection.structure),
+            "diagnostics": [asdict(d) for d in inspection.diagnostics],
+            "execution_structure": encode_execution_structure(
+                inspection.execution_structure
+            ),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     assert digest == _QUALIFICATION_BEHAVIOR_DIGEST, (
-        "frozen hwpx-template-qualification-v3 identity 아래 inspection 행동이 바뀌었다 — 규칙 "
+        "frozen hwpx-template-qualification-v4 identity 아래 inspection 행동이 바뀌었다 — 규칙 "
         "개정이면 profile identity 버전과 이 digest 를 함께 올리고 이슈로 남긴다."
     )

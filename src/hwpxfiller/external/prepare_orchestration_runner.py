@@ -56,10 +56,21 @@ from hwpxfiller.application.prepare_orchestration import (
     plan_qualification_checkpoint,
     plan_recovery,
 )
-from hwpxfiller.application.qualification_evidence import ERROR, PASS, build_records
+from hwpxfiller.application.execution_structure import (
+    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+    execution_pass_projection,
+)
+from hwpxfiller.application.qualification_evidence import (
+    ERROR,
+    PASS,
+    StructureProjection,
+    build_records,
+)
 from hwpxfiller.application.template_qualification import (
     CandidateRevisionSnapshot,
     QualificationProfile,
+    TemplateQualificationPassed,
+    TemplateQualificationResult,
     qualify_template,
 )
 from hwpxfiller.application.work_template_state import (
@@ -167,6 +178,28 @@ def run_capture_stage(
     return find_preparation(work_store.load(work_id), preparation_id)
 
 
+def _composition_projection(
+    qualification: TemplateQualificationResult, projection_schema_version: str
+) -> StructureProjection | None:
+    """manifest 가 composition-ready schema 를 pin 했으면 그 PASS projection 을 고정한다(#773).
+
+    schema 는 Profile manifest 의 pin 이고 evidence 는 그 pin 을 따른다. pin 이 composition-ready
+    인데 inspection 이 execution structure 를 내지 않았으면 **시끄럽게 닫는다** — product-only
+    projection 으로 조용히 되돌아가면 S5 가 나중에 decode 불가로 넘어져 원인이 여기서 멀어진다.
+    """
+    if projection_schema_version != LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA:
+        return None
+    if not isinstance(qualification, TemplateQualificationPassed):
+        return None  # FAIL/ERROR 는 Evidence 에 structure 를 싣지 않는다.
+    execution_structure = qualification.execution_structure
+    if execution_structure is None:
+        raise WorkTemplateStoreError(
+            f"Profile 이 {projection_schema_version} 를 pin 했는데 inspection 이 "
+            "composition-ready structure 를 내지 않았다"
+        )
+    return execution_pass_projection(execution_structure)
+
+
 def run_qualification_stage(
     work_store: AtomicWorkTemplateStateStore,
     candidate_store: CandidateObjectStore,
@@ -208,6 +241,9 @@ def run_qualification_stage(
         started_at=started_at,
         completed_at=completed_at,
         qualified_at=qualified_at,
+        structure_projection=_composition_projection(
+            result, manifest.projection_schema_version
+        ),
     )
     qualification_store.put_attempt(attempt)  # object-first
     if evidence is not None:
@@ -576,6 +612,9 @@ def bootstrap_work(
         started_at=started_at,
         completed_at=completed_at,
         qualified_at=qualified_at,
+        structure_projection=_composition_projection(
+            qualification, manifest.projection_schema_version
+        ),
     )
     qualification_store.put_attempt(attempt)  # object-first
     if evidence is not None:

@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import json
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple, TypeVar, cast
+from typing import Any, NamedTuple, TypeVar, cast
 
 from hwpxcore.bookmark_region import (
     BookmarkRegion,
@@ -24,7 +24,9 @@ from hwpxcore.bookmark_region import (
 )
 from hwpxcore.native_admission import (
     BookmarkRemovalBlocker,
+    BookmarkRemovalBlockerKind,
     FieldFillBlocker,
+    FieldFillBlockerKind,
     FieldFillObservation,
     NativeCapabilityInspection,
     inspect_native_capabilities,
@@ -43,6 +45,20 @@ from hwpxcore.structural_boundary import (
 )
 from hwpxcore.text_extract import require_package
 
+from ..application.execution_composition import NATIVE_PRIMITIVE_CONTRACT_V1
+from ..application.execution_structure import (
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
+    LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+    OWNER_OPTION,
+    OWNER_ROOT,
+    OWNER_SLOT_SHARED,
+    ContentEntry,
+    ExecutionTemplateStructure,
+    FieldOccurrence,
+    OptionRegionObservation,
+    SlotRegionObservation,
+    build_execution_structure,
+)
 from ..application.qualification_evidence import (
     QualificationProfileManifest,
     build_manifest,
@@ -138,6 +154,8 @@ class _OpenField:
     field_id: str | None
     owner: _FieldOwner
     fill: FieldFillObservation
+    #: 이 Field 가 열린 문서 순서(#773 composition projection 의 structural_order).
+    structural_order: int = 0
     product_boundary_opened: bool = False
 
 
@@ -737,6 +755,91 @@ def _inspect_hwpx_detail(pkg: object) -> _HwpxInspectionDetail:
     )
 
 
+# ─── #773 composition fact 유도 — 관찰된 blocker 의 부재가 근거다 ────────────────────────
+# 각 fact 는 **서로 다른** blocker 집합에서 나온다. 한 관찰을 네 곳에 복사하면 fact 가 넷인 척하는
+# 한 개짜리 사실이 되므로, 근거가 겹치지 않게 갈라 둔다.
+_ENVELOPE_FACT_BLOCKERS: dict[str, frozenset[BookmarkRemovalBlockerKind]] = {
+    "retains_admissible_envelope": frozenset(
+        {
+            BookmarkRemovalBlockerKind.UNSUPPORTED_ENTRY,
+            BookmarkRemovalBlockerKind.WHOLE_SECTION,
+            BookmarkRemovalBlockerKind.SECTION_DEFINITION,
+        }
+    ),
+    "handles_empty_edges": frozenset(
+        {
+            BookmarkRemovalBlockerKind.PARTIAL_PARAGRAPH_BEGIN,
+            BookmarkRemovalBlockerKind.PARTIAL_PARAGRAPH_END,
+            BookmarkRemovalBlockerKind.NON_PARAGRAPH_EXTENT,
+        }
+    ),
+    "preserves_owner_marker": frozenset(
+        {
+            BookmarkRemovalBlockerKind.COLLATERAL_BOOKMARK,
+            BookmarkRemovalBlockerKind.FIELD_ENCLOSES_TARGET,
+        }
+    ),
+    "coincident_boundary_admissible": frozenset(
+        {
+            BookmarkRemovalBlockerKind.UNSUPPORTED_BOUNDARY,
+            BookmarkRemovalBlockerKind.PROTECTED_RANGE_CROSSING,
+            BookmarkRemovalBlockerKind.UNPAIRED_PROTECTED_RANGE,
+            BookmarkRemovalBlockerKind.BOOKMARK_TOPOLOGY_UNUSABLE,
+            BookmarkRemovalBlockerKind.BOOKMARK_METADATA_UNUSABLE,
+        }
+    ),
+}
+
+_REMOVAL_RESOLVER_FACT_BLOCKERS: dict[str, frozenset[BookmarkRemovalBlockerKind]] = {
+    "remaining_target_resolvable_after_removal": frozenset(
+        {
+            BookmarkRemovalBlockerKind.FIELD_INTERSECTION,
+            BookmarkRemovalBlockerKind.COLLATERAL_BOOKMARK,
+        }
+    ),
+    "active_field_resolvable_after_removal": frozenset(
+        {
+            BookmarkRemovalBlockerKind.FIELD_INTERSECTION,
+            BookmarkRemovalBlockerKind.FIELD_ENCLOSES_TARGET,
+            BookmarkRemovalBlockerKind.FIELD_PAIRING_UNUSABLE,
+        }
+    ),
+}
+
+_FIELD_WRITE_IDENTITY_BLOCKERS = frozenset(
+    {
+        FieldFillBlockerKind.FIELD_PAIRING_UNUSABLE,
+        FieldFillBlockerKind.UNSUPPORTED_INLINE_OBJECT,
+        FieldFillBlockerKind.PROTECTED_RANGE_CROSSING,
+        FieldFillBlockerKind.UNPAIRED_PROTECTED_RANGE,
+    }
+)
+
+#: 이 adapter 가 쓰는 native value target class — adapter contract version 과 함께 올린다.
+_NATIVE_VALUE_TARGET_CLASS = "hwpx-field-value/v1"
+
+#: publication 은 admission 이 아니다(#699) — 이 projection 은 admission 을 주장하지 않는다.
+_ADMITTED_RELATION_PROFILE = "unadmitted"
+
+_OWNER_KIND_BY_TAG = {
+    _FieldOwnerTag.ROOT: OWNER_ROOT,
+    _FieldOwnerTag.SLOT_SHARED: OWNER_SLOT_SHARED,
+    _FieldOwnerTag.OPTION: OWNER_OPTION,
+}
+
+
+def _envelope_class(kind: ContentEntryKind) -> str:
+    return f"{kind.value}-body/v1"
+
+
+def _facts_from_absent_blockers(
+    groups: "dict[str, frozenset[Any]]", observed: "Iterable[Any]"
+) -> dict[str, bool]:
+    """관찰된 blocker 집합에서 fact 를 유도한다 — 해당 근거가 없으면 True."""
+    seen = set(observed)
+    return {name: not (seen & blockers) for name, blockers in groups.items()}
+
+
 def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspection:
     scan, products, capabilities = (
         detail.structural,
@@ -758,6 +861,19 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
     shared_fields: dict[BoundaryPairRef, list[str]] = {}
     option_fields: dict[BoundaryPairRef, list[str]] = {}
 
+    # ── #773 composition observation 수집기 ──────────────────────────────────────────
+    # 문서 순서 counter 하나가 모든 event 를 훑는다 — begin/end 가 서로 다른 event 라 어떤
+    # region 도 begin < end 를 만족하고(단일 paragraph Option 포함), order 는 전역 유일하다.
+    # paragraph index 를 쓰지 않는 이유가 이것이다(inclusive 라 단일 paragraph 는 begin==end).
+    order_counter = 0
+    occurrence_rows: list[tuple[str, _FieldOwner, str, int]] = []
+    slot_span_rows: dict[BoundaryPairRef, tuple[int, int, str]] = {}
+    option_span_rows: dict[BoundaryPairRef, tuple[int, int, str]] = {}
+    entry_kinds: dict[str, ContentEntryKind] = {}
+    entry_removal_blockers: dict[str, list[BookmarkRemovalBlockerKind]] = {}
+    fill_blocker_kinds: list[FieldFillBlockerKind] = []
+    removal_blocker_kinds: list[BookmarkRemovalBlockerKind] = []
+
     diagnostics = list(products.diagnostics)
     diagnostics.extend(_field_structural_diagnostics(scan))
     root_fields: list[str] = []
@@ -768,11 +884,17 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
         invalid_product_depth = 0
         open_field: _OpenField | None = None
 
+        entry_kinds[entry.entry] = entry.kind
+        entry_removal_blockers.setdefault(entry.entry, [])
+
         for event in entry.events:
+            order_counter += 1
+            structural_order = order_counter
             if isinstance(event, FieldBegin):
                 fill = _consume_observation(
                     field_fill_cursor, event.pair, "Field fill", entry.entry
                 )
+                fill_blocker_kinds.extend(blocker.kind for blocker in fill.blockers)
                 if open_field is not None:
                     raise TemplateInspectionContractError(
                         f"{entry.entry}: Field began while another Field was open"
@@ -788,6 +910,7 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                         current_option_pair=current_option_pair,
                     ),
                     fill,
+                    structural_order,
                 )
                 continue
 
@@ -856,6 +979,16 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                         option_fields[cast(BoundaryPairRef, owner_pair)].append(
                             open_field.field_id
                         )
+                    # 제품 구조에 실린 Field 만 occurrence 를 갖는다 — 진단으로 거절된 Field 는
+                    # 애초에 PASS 가 아니므로 여기 오지 않는다.
+                    occurrence_rows.append(
+                        (
+                            open_field.field_id,
+                            open_field.owner,
+                            entry.entry,
+                            open_field.structural_order,
+                        )
+                    )
                 open_field = None
                 continue
 
@@ -873,6 +1006,16 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                     raise TemplateInspectionContractError("product scope entry mismatch")
                 role = observation.scope_role
 
+                if (
+                    observation.classification is ProductClassification.KNOWN_PRODUCT
+                    and observation.kind in _PRODUCT_KINDS
+                ):
+                    # envelope·resolver capability fact 의 **관찰 근거**다. PASS 면 비어 있지만
+                    # 상수 True 를 쓰지 않는 이유가 이것 — 값이 관찰에서 나와야 규칙이 바뀌어도
+                    # projection 이 따라 움직인다.
+                    kinds = [blocker.kind for blocker in removal.blockers]
+                    entry_removal_blockers[entry.entry].extend(kinds)
+                    removal_blocker_kinds.extend(kinds)
                 if (
                     observation.classification is ProductClassification.KNOWN_PRODUCT
                     and observation.kind in _PRODUCT_KINDS
@@ -915,6 +1058,7 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                     current_slot_pair = event.pair
                     slot_observations.append(observation)
                     shared_fields[event.pair] = []
+                    slot_span_rows[event.pair] = (structural_order, -1, entry.entry)
                     continue
                 if (
                     current_slot_pair is not observation.owning_slot_pair
@@ -927,6 +1071,7 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                 owner = cast(BoundaryPairRef, observation.owning_slot_pair)
                 option_observations.setdefault(owner, []).append(observation)
                 option_fields[event.pair] = []
+                option_span_rows[event.pair] = (structural_order, -1, entry.entry)
                 continue
 
             if not entry.bookmark_topology_usable:
@@ -935,6 +1080,8 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                 invalid_product_depth -= 1
                 continue
             if current_option_pair is event.pair:
+                begin, _, owner_entry = option_span_rows[event.pair]
+                option_span_rows[event.pair] = (begin, structural_order, owner_entry)
                 current_option_pair = None
                 continue
             if current_slot_pair is event.pair:
@@ -942,6 +1089,8 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                     raise TemplateInspectionContractError(
                         f"{entry.entry}: Slot end contradicts current scope"
                     )
+                begin, _, owner_entry = slot_span_rows[event.pair]
+                slot_span_rows[event.pair] = (begin, structural_order, owner_entry)
                 current_slot_pair = None
 
         if (
@@ -984,9 +1133,136 @@ def _analyze_hwpx_detail(detail: _HwpxInspectionDetail) -> QualificationInspecti
                 label=slot.product_label,
             )
         )
-    return QualificationInspection(
-        TemplateStructure(tuple(root_fields), tuple(slots)),
-        (),
+    structure = TemplateStructure(tuple(root_fields), tuple(slots))
+    execution_structure = _build_execution_structure(
+        structure=structure,
+        slot_observations=slot_observations,
+        option_observations=option_observations,
+        occurrence_rows=occurrence_rows,
+        slot_span_rows=slot_span_rows,
+        option_span_rows=option_span_rows,
+        entry_kinds=entry_kinds,
+        entry_removal_blockers=entry_removal_blockers,
+        removal_blocker_kinds=removal_blocker_kinds,
+        fill_blocker_kinds=fill_blocker_kinds,
+    )
+    return QualificationInspection(structure, (), execution_structure)
+
+
+def _build_execution_structure(
+    *,
+    structure: TemplateStructure,
+    slot_observations: list[ProductScopeObservation],
+    option_observations: dict[BoundaryPairRef, list[ProductScopeObservation]],
+    occurrence_rows: list[tuple[str, _FieldOwner, str, int]],
+    slot_span_rows: dict[BoundaryPairRef, tuple[int, int, str]],
+    option_span_rows: dict[BoundaryPairRef, tuple[int, int, str]],
+    entry_kinds: dict[str, ContentEntryKind],
+    entry_removal_blockers: dict[str, list[BookmarkRemovalBlockerKind]],
+    removal_blocker_kinds: list[BookmarkRemovalBlockerKind],
+    fill_blocker_kinds: list[FieldFillBlockerKind],
+) -> ExecutionTemplateStructure:
+    """PASS inspection 한 번의 관찰값에서 label-bearing composition projection(v4)을 조립한다.
+
+    HWPX 를 다시 열지 않는다 — 위 event pass 가 이미 본 것만 쓴다. 같은 bytes 는 같은 order·
+    같은 payload 를 낸다(결정적). fact 누락·모순은 :func:`build_execution_structure` 가 typed
+    오류로 닫는다 — 여기서 추측 기본값을 채우지 않는다.
+    """
+    slot_id_by_pair = {obs.pair: cast(str, obs.product_id) for obs in slot_observations}
+    option_ref_by_pair: dict[BoundaryPairRef, tuple[str, str]] = {
+        obs.pair: (slot_id_by_pair[owner_pair], cast(str, obs.product_id))
+        for owner_pair, observations in option_observations.items()
+        for obs in observations
+    }
+
+    slot_regions = tuple(
+        SlotRegionObservation(
+            slot_id=slot_id_by_pair[pair],
+            content_entry_id=entry_id,
+            begin_order=begin,
+            end_order=end,
+        )
+        for pair, (begin, end, entry_id) in sorted(
+            slot_span_rows.items(), key=lambda item: item[1][0]
+        )
+    )
+    option_regions = tuple(
+        OptionRegionObservation(
+            slot_id=option_ref_by_pair[pair][0],
+            option_id=option_ref_by_pair[pair][1],
+            content_entry_id=entry_id,
+            begin_order=begin,
+            end_order=end,
+            removal_capability_ref=NATIVE_PRIMITIVE_CONTRACT_V1.option_removal_contract_id,
+        )
+        for pair, (begin, end, entry_id) in sorted(
+            option_span_rows.items(), key=lambda item: item[1][0]
+        )
+    )
+
+    # occurrence ordinal 은 같은 field_id 안에서 문서 순서대로 0..n-1 이다.
+    ordinal_seen: dict[str, int] = {}
+    occurrences: list[FieldOccurrence] = []
+    for field_id, owner, entry_id, order in sorted(
+        occurrence_rows, key=lambda row: row[3]
+    ):
+        owner_tag, owner_pair = owner
+        slot_ref: str | None = None
+        option_ref: str | None = None
+        if owner_tag is _FieldOwnerTag.SLOT_SHARED:
+            slot_ref = slot_id_by_pair[cast(BoundaryPairRef, owner_pair)]
+        elif owner_tag is _FieldOwnerTag.OPTION:
+            slot_ref, option_ref = option_ref_by_pair[cast(BoundaryPairRef, owner_pair)]
+        ordinal = ordinal_seen.get(field_id, 0)
+        ordinal_seen[field_id] = ordinal + 1
+        occurrences.append(
+            FieldOccurrence(
+                field_id=field_id,
+                occurrence_ordinal=ordinal,
+                owner_kind=_OWNER_KIND_BY_TAG[owner_tag],
+                owner_slot_id=slot_ref,
+                owner_option_id=option_ref,
+                content_entry_id=entry_id,
+                structural_order=order,
+                native_value_target_class=_NATIVE_VALUE_TARGET_CLASS,
+                resolver_contract_id=(
+                    NATIVE_PRIMITIVE_CONTRACT_V1.field_resolver_contract_id
+                ),
+            )
+        )
+
+    referenced_entries = (
+        {occ.content_entry_id for occ in occurrences}
+        | {region.content_entry_id for region in slot_regions}
+        | {region.content_entry_id for region in option_regions}
+    )
+    content_entries = tuple(
+        ContentEntry(
+            content_entry_id=entry_id,
+            envelope_class=_envelope_class(entry_kinds[entry_id]),
+            envelope_capability_facts=_facts_from_absent_blockers(
+                _ENVELOPE_FACT_BLOCKERS, entry_removal_blockers.get(entry_id, ())
+            ),
+        )
+        for entry_id in sorted(referenced_entries)
+    )
+
+    resolver_facts = _facts_from_absent_blockers(
+        _REMOVAL_RESOLVER_FACT_BLOCKERS, removal_blocker_kinds
+    )
+    resolver_facts["field_write_preserves_identity"] = not (
+        set(fill_blocker_kinds) & _FIELD_WRITE_IDENTITY_BLOCKERS
+    )
+
+    return build_execution_structure(
+        product_structure=structure,
+        occurrences=tuple(occurrences),
+        slot_regions=slot_regions,
+        option_regions=option_regions,
+        content_entries=content_entries,
+        resolver_stability_facts=resolver_facts,
+        admitted_relation_profile=_ADMITTED_RELATION_PROFILE,
+        projection_schema_version=LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     )
 
 
@@ -1011,8 +1287,11 @@ def inspect_hwpx_qualification(canonical_bytes: bytes) -> QualificationInspectio
 
 
 # Bump this identity whenever the HWPX qualification rule set or projection changes.
+# v4(#773): 같은 read-only inspection 이 canonical label 과 composition-ready execution fact 를
+# 함께 낸다. v3 는 label 만, v2 는 composition fact 만 실을 수 있어 둘 중 어느 것도 shipping
+# Qualification 이 S4·S5 를 동시에 먹일 수 없었다.
 HWPX_QUALIFICATION_PROFILE = QualificationProfile(
-    "hwpx-template-qualification-v3",
+    LABELED_EXECUTION_QUALIFICATION_PROFILE_ID,
     inspect_hwpx_qualification,
 )
 
@@ -1027,11 +1306,11 @@ def hwpx_qualification_manifest(created_at: str) -> "QualificationProfileManifes
     return build_manifest(
         qualification_profile_id=HWPX_QUALIFICATION_PROFILE.id,
         media="hwpx",
-        adapter_contract_version="hwpx-inspection-v3",
-        product_rule_version="hwpx-qualification-rules-v3",
-        # label 은 operation 종류·피연산자·순서를 바꾸지 않는다.
+        adapter_contract_version="hwpx-inspection-v4",
+        product_rule_version="hwpx-qualification-rules-v4",
+        # label·composition fact 는 operation 종류·피연산자·순서를 바꾸지 않는다.
         operation_alphabet_version="hwpx-operations-v1",
-        projection_schema_version="hwpx-structure-projection-v3",
+        projection_schema_version=LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
         manifest_payload={},
         created_at=created_at,
     )
