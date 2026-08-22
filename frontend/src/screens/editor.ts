@@ -297,13 +297,20 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 조준(deep-link) ---- */
 
-  /** 실제로 겨눴는지 돌려준다 — 아직 안 선 행에 대한 요청을 **버리지 않기** 위해서다. */
+  /** **옮겨 보고 결과를 읽는다** — 요소가 있다는 것과 초점이 섰다는 것은 다르다.
+   *
+   *  어떤 요소가 초점을 받을 수 있는지의 규칙(비활성·분리·숨김·inert·전이 중)을 여기서
+   *  재현하려 들면 그 목록이 곧 다음 결함이 된다. 실제로 옮겨 보고 안 옮겨졌으면 실패로
+   *  보고해 요청을 남긴다 — 다음 렌더가 다시 시도한다. 존재만 보고 성사했다고 답하면 조준은
+   *  「했다」고 말하면서 초점은 아무 데도 안 서고, 그 거짓 성공이 재시도까지 막는다(실측).
+   *
+   *  `modal.js` 의 초점 복원이 이미 같은 규율을 쓴다: 판정을 흉내내지 않고 결과를 읽는다. */
   function aimAtTarget(target: string): boolean {
     if (target === "filename/filenamePattern") {
       const input = deps.doc.querySelector<HTMLElement>(
         '#editor-body input[data-act="pattern"]');
       input?.focus();
-      return input !== null;
+      return input !== null && deps.doc.activeElement === input;
     }
     const field = target.slice("binding/".length);
     const row = deps.doc.querySelector<HTMLElement>(
@@ -312,7 +319,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     row.scrollIntoView({ block: "center" });
     const select = row.querySelector<HTMLElement>('select[data-act="row-source"]');
     select?.focus();
-    return select !== null;
+    return select !== null && deps.doc.activeElement === select;
   }
 
   /** 보낸 표면이 진입 성사 뒤 부르는 조준 seam — **설 때까지** 살아 있는다.
