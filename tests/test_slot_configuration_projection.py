@@ -362,11 +362,11 @@ def test_retained_selections_separate_the_three_fates_and_name_what_survives() -
     assert len({r.fate for r in view.retained_selections}) == 3  # 한 값으로 뭉치지 않았다
 
     assert fates["s-keep"].slot_display_text == "공고 상세"
-    assert fates["s-keep"].option_display_texts == ("추정가격 표시",)
     assert fates["s-broken"].slot_display_text == "표지"  # slot 은 남아 이름을 댈 수 있다
-    assert fates["s-broken"].option_display_texts == (None,)  # 사라진 option 은 못 댄다
     assert fates["s-gone"].slot_display_text is None
-    assert fates["s-gone"].option_display_texts == (None,)
+    # 이전에 고른 Option 의 **이름**은 어디에도 싣지 않는다 — 남은 것은 같은 ID 뿐이고 그 ID 의
+    # 현재 라벨은 이전 라벨이 아니다(같은 ID 재사용 시 없는 역사를 지어내게 된다).
+    assert not any(hasattr(r, "option_display_texts") for r in view.retained_selections)
 
     # 현재 구성은 그대로다 — 이전 이야기가 지금 골라진 것을 만들지 않는다(false AUTO_KEEP 금지).
     assert all(slot.effective_option_ids == () for slot in view.slots)

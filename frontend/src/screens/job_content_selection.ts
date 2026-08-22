@@ -139,20 +139,25 @@ function attentionForKind(kind: string): SlotAttention {
 
 /** 이전에 고른 것의 운명 → 사용자 문안. **판정은 backend 가 이미 했다**(fate) — 여기는 문장만 고른다.
  *
- *  라벨은 현재 구조에 있는 것만 온다. 사라진 Option/Slot 의 이름은 어디에도 없으므로 내부 key 를
- *  꺼내 보이는 대신 개수로 말한다 — 「라벨이 없으면 ID 라도」는 사용자에게 아무것도 알려 주지 않는다.
+ *  이전에 고른 Option 의 **이름을 대지 않는다**. 남아 있는 것은 같은 ID 뿐이고 그 ID 의 현재
+ *  라벨은 이전 라벨이 아니다 — successor 가 같은 ID 를 다른 뜻으로 다시 쓴 경우(compatibility
+ *  gate 가 의미 동일성 증명을 거절한 바로 그 경우) 현재 라벨을 「이전에 고르신 것」이라 부르면
+ *  없는 역사를 지어낸다. Slot 은 지금 있는 것이므로 그 자리에서 말하는 것으로 족하다.
  *
- *  「유지됩니다」라고 쓰지 않는다: Template 이 바뀌면 그 선택은 자동 승계되지 않고 사용자가 다시
- *  확인해야 한다(SG-01 fail-closed). 있는 것을 「이어졌다」고 말하면 그것이 곧 새 거짓말이다. */
+ *  「유지됩니다」라고도 쓰지 않는다: Template 이 바뀌면 자동 승계되지 않고 사용자가 다시 확인해야
+ *  한다(SG-01 fail-closed). 있는 것을 「이어졌다」고 말하면 그것이 곧 새 거짓말이다. */
 function retainedNoteText(retained: ProjectedRetainedSelection): string {
-  const named = retained.option_display_texts.filter((text): text is string => text !== null);
-  if (retained.fate === "SELECTED_OPTION_REMOVED") {
-    return "이전에 고르신 항목이 이 템플릿에는 없습니다. 다른 것을 골라 주세요.";
+  const count = retained.option_ids.length;
+  switch (retained.fate) {
+    case "SELECTED_OPTION_REMOVED":
+      return "이전에 이 항목에서 고르신 것이 이 템플릿에는 없습니다. 다른 것을 골라 주세요.";
+    case "NO_AVAILABLE_OPTIONS":
+    case "UNSUPPORTED_SELECTION_POLICY":
+      // 고를 수 있는 것이 없다 — 여기서 「다시 고르세요」는 할 수 없는 일을 시키는 문안이다.
+      return "이전에 이 항목에서 고르신 것이 있으나, 이 템플릿에서는 선택할 수 없습니다.";
+    default:
+      return `이전에 이 항목에서 ${count}개를 고르셨습니다. 템플릿이 바뀌어 다시 확인이 필요합니다.`;
   }
-  if (named.length > 0) {
-    return `이전에 「${named.join("」·「")}」을(를) 고르셨습니다. 템플릿이 바뀌어 다시 확인이 필요합니다.`;
-  }
-  return "이전에 고르신 것이 이 템플릿에도 있습니다. 템플릿이 바뀌어 다시 확인이 필요합니다.";
 }
 
 /** slot_id → 이 Slot 의 행동 사유·선택 가능 여부(backend blocking_items.kind 소비). */

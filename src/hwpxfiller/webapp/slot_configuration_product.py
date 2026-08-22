@@ -446,26 +446,34 @@ class SlotConfigurationProduct:
     def _retained_fate(
         self,
         ctx: SlotConfigurationContext,
-        config: "WorkSlotConfigurationDraft | None",
         stored: "tuple[WorkSlotConfigurationDraft, ...]",
     ) -> "SlotConfigurationResolution | None":
         """이전에 고른 것이 successor 에서 **어떻게 됐는지**를 read-only 로 판정한다(#777).
 
-        current Application 에 Configuration 이 이미 있으면 그 선택이 곧 답이라 물을 것이 없다.
-        없을 때만 — successor 로 넘어와 SG-01 compatibility gate 가 아무것도 못 실은 바로 그
-        경우 — nearest predecessor 의 **선언 선택**을 현재 구조에 대고 다시 분류한다. 종전에는
-        그 사실이 아무 데도 안 남아 선택 셋이 조용히 사라졌다.
+        nearest predecessor 의 **선언 선택**을 현재 구조에 대고 다시 분류한다. 종전에는 그
+        사실이 아무 데도 안 남아 선택 셋이 조용히 사라졌다.
+
+        **current Configuration 의 존재를 「다 해결됐다」로 읽지 않는다.** successor 에서 한 칸을
+        고르는 순간 Configuration 이 생기는데, 그때 남은 이전 선택들(아직 안 고른 것·사라진 항목)의
+        사연까지 같이 지우면 첫 클릭 한 번에 나머지가 조용히 증발한다. 게다가 명시적
+        open/refresh 는 view 를 만들기 **전에** Configuration 을 물질화하므로, 존재로 끊으면 그
+        경로에서는 이 정보가 아예 안 보인다. 항목별로 닫혔는지는 projection 이 현재 resolution 과
+        대조해 판정한다.
 
         읽기만 한다. 새 Configuration 을 만들지 않고(그건 명시적 open/refresh 의 몫 — #744),
         predecessor 의 **구조를 복원하지도 않는다**: 필요한 것은 「이전 선언 선택」과 「현재
-        구조」뿐이고, 둘 다 이미 손에 있다. chain evidence 를 다시 읽지 않으므로 render 경로에
-        붙는 비용은 works aggregate 한 번이다.
+        구조」뿐이고, 둘 다 이미 손에 있다. predecessor Configuration 이 애초에 없으면(대다수의
+        정상 상태) 이미 읽은 ``stored`` 만 보고 그 자리에서 돌아서므로 추가 store read 는 0 이다.
 
         chain 무결성이 깨져 있으면(:class:`ReconciliationIntegrityError`) 판정을 **지어내지
         않는다** — 이 자리는 현재 구조를 멀쩡히 그릴 수 있는 렌더 경로라, 여기서 CONTEXT_ERROR 로
         올리면 고칠 화면 자체를 지운다. 이전 선택 이야기만 비운다.
         """
-        if config is not None:
+        # predecessor Configuration 후보가 없으면 chain 을 걸을 이유가 없다 — nearest 는 반드시
+        # current 아닌 Application 의 것이므로, 그런 항목이 하나도 없으면 결과는 확정적으로 None 이다.
+        if not any(
+            cfg.base_template_application_id != ctx.template_application_id for cfg in stored
+        ):
             return None
         aggregate = self._works.load(ctx.work_id)
         if aggregate is None:  # pragma: no cover - context resolve 가 이미 보장
@@ -526,7 +534,7 @@ class SlotConfigurationProduct:
                 selections, ctx.template_structure, ctx.selection_semantic_contract
             )
             view = project_current_slot_configuration(
-                ctx, config, resolution, retained=self._retained_fate(ctx, config, stored)
+                ctx, config, resolution, retained=self._retained_fate(ctx, stored)
             )
             token = self._issue_token(
                 ws, work_id,

@@ -52,7 +52,6 @@ export type ProjectedRetainedSelection = {
   slot_id: string;
   slot_display_text: string | null;
   option_ids: string[];
-  option_display_texts: (string | null)[];
   fate: string;
 };
 

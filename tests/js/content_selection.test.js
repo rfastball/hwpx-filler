@@ -375,15 +375,15 @@ test("#777 이전 선택의 운명 셋을 서로 다르게 그린다(재판정 0
       retained: [
         {
           slot_id: "s-keep", slot_display_text: "공고 상세",
-          option_ids: ["o-keep"], option_display_texts: ["추정가격 표시"], fate: "RESOLVED",
+          option_ids: ["o-keep"], fate: "RESOLVED",
         },
         {
           slot_id: "s-other", slot_display_text: "표지",
-          option_ids: ["o-vanished"], option_display_texts: [null], fate: "SELECTED_OPTION_REMOVED",
+          option_ids: ["o-vanished"], fate: "SELECTED_OPTION_REMOVED",
         },
         {
           slot_id: "s-gone", slot_display_text: null,
-          option_ids: ["o-gone"], option_display_texts: [null], fate: "SLOT_REMOVED",
+          option_ids: ["o-gone"], fate: "SLOT_REMOVED",
         },
       ],
     },
@@ -396,17 +396,46 @@ test("#777 이전 선택의 운명 셋을 서로 다르게 그린다(재판정 0
   assert.match(html, /cs-retained-gone/);
   assert.ok(!html.includes('data-fate="SLOT_REMOVED"'));
 
-  // 있는 것은 이름을 대고, 사라진 것은 다른 것을 고르라고 말한다.
-  assert.match(html, /이전에 「추정가격 표시」을\(를\) 고르셨습니다/);
+  // 남은 것은 다시 확인하라 하고, 사라진 것은 다른 것을 고르라고 말한다.
+  assert.match(html, /이전에 이 항목에서 1개를 고르셨습니다/);
   assert.match(html, /다른 것을 골라 주세요/);
   assert.match(html, /항목 1개가 이 템플릿에는 없습니다/);
 
   // 「유지됩니다」라고 말하지 않는다 — 자동 승계가 아니다(그렇게 쓰면 새 거짓말이다).
   assert.ok(!html.includes("유지됩니다"));
+  // 이전에 고른 Option 의 **이름**도 대지 않는다. 같은 ID 의 현재 라벨은 이전 라벨이 아니라서,
+  // successor 가 그 ID 를 다른 뜻으로 다시 쓰면 없는 역사를 지어내게 된다. (라벨 자체는 지금
+  // 고를 수 있는 항목으로서 화면에 있다 — 문제는 그것을 「이전에 고르신 것」이라 부르는 것이다.)
+  const notes = [...html.matchAll(/class="cs-retained-note"[^>]*>([^<]*)</g)].map((m) => m[1]);
+  assert.equal(notes.length, 2);
+  assert.ok(notes.every((text) => !text.includes("추정가격 표시")), notes.join(" | "));
   // 내부 key 는 화면에 없다.
   for (const key of ["o-vanished", "s-gone", "o-gone"]) {
     assert.ok(!html.includes(key), key);
   }
+});
+
+test("#777 고를 수 있는 것이 없으면 「다른 것을 고르세요」라고 하지 않는다", () => {
+  // Slot 은 남았는데 Option 이 전부 사라진 successor. 현재 blocker 는 NO_AVAILABLE_OPTIONS 라
+  // 입력이 전부 비활성인데, 이전 선택 문안이 재선택을 시키면 할 수 없는 일을 시키는 것이다.
+  const stuck = view(
+    "HAS_BROKEN_SELECTIONS",
+    [slot("s1", "공고 상세", "NO_AVAILABLE_OPTIONS", [])],
+    {
+      blocking: [{ slot_id: "s1", kind: "NO_AVAILABLE_OPTIONS", option_id: null }],
+      retained: [
+        {
+          slot_id: "s1", slot_display_text: "공고 상세",
+          option_ids: ["o-old"], fate: "NO_AVAILABLE_OPTIONS",
+        },
+      ],
+    },
+  );
+  const html = render(stateOf(stuck));
+  assert.match(html, /선택할 수 있는 항목이 없습니다/); // 현재 상태
+  assert.match(html, /이 템플릿에서는 선택할 수 없습니다/); // 이전 선택의 운명
+  assert.ok(!html.includes("다른 것을 골라 주세요"));
+  assert.ok(!html.includes("다시 확인이 필요합니다"));
 });
 
 test("#777 이전 선택 이야기가 없으면 아무것도 그리지 않는다", () => {

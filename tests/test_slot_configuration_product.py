@@ -539,11 +539,10 @@ def test_successor_view_tells_what_became_of_each_previous_selection(tmp_path: P
     assert kept.fate == "SELECTED_OPTION_REMOVED"  # slot 은 남고 고른 option 이 사라졌다
     assert kept.option_ids == (_O_DROP,)
     assert kept.slot_display_text == "공고 상세"  # 남은 Slot 은 이름을 댈 수 있다
-    assert kept.option_display_texts == (None,)  # 사라진 Option 의 라벨은 어디에도 없다
 
     gone = fates[_S_GONE]
     assert gone.fate == "SLOT_REMOVED"  # 항목 자체가 사라졌다 — 정보일 뿐
-    assert gone.slot_display_text is None and gone.option_display_texts == (None,)
+    assert gone.slot_display_text is None
 
     # 셋을 한 값으로 뭉치지 않았는가 — 서로 다른 fate 여야 이 계약이 무언가를 지킨다.
     assert kept.fate != gone.fate
@@ -569,7 +568,7 @@ def test_a_surviving_previous_choice_is_named_not_silently_dropped(tmp_path: Pat
     assert view is not None
     (kept,) = [r for r in view.retained_selections if r.slot_id == _S_KEEP]
     assert kept.fate == "RESOLVED"
-    assert kept.option_display_texts == ("추정가격 표시",)  # 이름을 댈 수 있다
+    assert kept.option_ids == (_O_KEEP,)
     # 그러나 effective 는 아니다 — 다시 확인해야 닫힌다(false AUTO_KEEP 금지).
     (slot,) = [s for s in view.slots if s.slot_id == _S_KEEP]
     assert slot.effective_option_ids == ()
@@ -614,3 +613,60 @@ def test_a_current_configuration_leaves_no_room_for_a_previous_story(tmp_path: P
     view = product.current_slot_configuration_view("공고서").current_view.projection
     assert view is not None and view.configuration_present is True
     assert view.retained_selections == ()
+
+
+def test_answering_one_slot_does_not_erase_the_rest_of_the_story(tmp_path: Path) -> None:
+    """첫 클릭 한 번이 나머지 사연을 지우지 않는다.
+
+    successor 에서 한 칸을 고르는 순간 Configuration 이 생긴다. 그 **존재**를 「다 해결됐다」로
+    읽으면, 아직 안 고른 항목도 사라진 항목도 함께 증발한다 — 사용자는 자기가 방금 무엇을
+    잃었는지 영영 못 본다. 닫힘의 기준은 Configuration 유무가 아니라 **그 항목이 닫혔는가**다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r1")
+    token = product.current_slot_configuration_view("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_GONE, _O_ONLY, "r2")
+
+    _advance_to_successor(tpl, coord)
+
+    before = product.current_slot_configuration_view("공고서").current_view.projection
+    assert before is not None
+    assert {r.slot_id for r in before.retained_selections} == {_S_KEEP, _S_GONE}
+
+    # successor 에서 s-keep 을 다시 고른다 → Configuration 이 생긴다.
+    token = product.current_slot_configuration_view("공고서").current_view.new_configuration_token
+    assert token is not None
+    resp = product.select_slot_option("공고서", token, _S_KEEP, _O_KEEP, "r3")
+    assert resp.mutation_outcome is not None and resp.mutation_outcome.changed is True
+
+    after = product.current_slot_configuration_view("공고서").current_view.projection
+    assert after is not None and after.configuration_present is True
+    fates = {r.slot_id: r for r in after.retained_selections}
+    assert _S_KEEP not in fates, "다시 고른 항목은 닫혔으므로 더 말하지 않는다"
+    assert fates[_S_GONE].fate == "SLOT_REMOVED", "사라진 항목의 사연은 남아 있어야 한다"
+
+
+def test_the_explicit_open_path_shows_the_story_too(tmp_path: Path) -> None:
+    """명시적 open/refresh 도 같은 사연을 낸다.
+
+    open 은 view 를 만들기 **전에** Configuration 을 물질화한다. 그러니 Configuration 존재로
+    끊으면 하필 사용자가 「포함할 내용」을 여는 그 순간에 이 정보가 통째로 사라진다.
+    """
+    tpl, coord, product = _slot_bearing_work(tmp_path)
+    token = product.open_slot_configuration("공고서").current_view.new_configuration_token
+    assert token is not None
+    product.select_slot_option("공고서", token, _S_GONE, _O_ONLY, "r1")
+
+    _advance_to_successor(tpl, coord)
+
+    opened = product.open_slot_configuration("공고서").current_view.projection
+    assert opened is not None
+    assert [(r.slot_id, r.fate) for r in opened.retained_selections] == [(_S_GONE, "SLOT_REMOVED")]
+
+    # 그리고 두 경로가 같은 것을 본다 — 렌더와 command 응답이 갈라지지 않는다.
+    passive = product.current_slot_configuration_view("공고서").current_view.projection
+    assert passive is not None
+    assert passive.retained_selections == opened.retained_selections
