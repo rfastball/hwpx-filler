@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from hwpxfiller.webapp.app import _DISPATCH_REJECTION_KEY
 
-from .surface import ScenarioFailure, Surface
+from .surface import ScenarioFailure, StepTimeout, Surface
 
 #: 캡처 지점 14개 — **순서가 계약이다**(파일 이름의 번호가 여기서 나온다).
 #: README 참조·커밋된 ``img/*.png`` 와 3자 대조된다.
@@ -687,11 +687,23 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
             requires=["#dataPickerCurrent"],
         )
     s.click_sel("#dataPickerClose", what="데이터 선택 면 닫기")
-    s.wait(
-        "document.getElementById('dataPickerModal').classList.contains('hidden')",
-        "데이터 선택 면 닫힘",
-        requires=["#dataPickerModal"],
-    )
+    try:
+        s.wait(
+            "document.getElementById('dataPickerModal').classList.contains('hidden')",
+            "데이터 선택 면 닫힘",
+            requires=["#dataPickerModal"],
+        )
+    except StepTimeout as exc:
+        # 이 면은 「불러오는 중」에는 닫히기를 거절한다(제품 계약). 그 거절인지 다른 것인지
+        # 는 면이 스스로 말하고 있으므로, 시한만 남기지 말고 그 말을 함께 싣는다.
+        state = s.js(
+            "(function(){var m=document.getElementById('dataPickerModal');"
+            "var n=document.getElementById('dataPickerNote');"
+            "return {cls:m?m.className:null, note:n?n.textContent.trim():null,"
+            " current:(document.querySelector('#dataPickerCurrent .tplcard-name')||{}).textContent||null};"
+            "})()"
+        )
+        raise ScenarioFailure(f"SX-05 데이터 선택 면이 닫히지 않았습니다 — {state}") from exc
 
 
 def _select_work(surface: Surface, name: str) -> None:
