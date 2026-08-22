@@ -105,8 +105,15 @@ def test_open_reaches_product_via_dispatch_and_yields_view_and_token(tmp_path: P
     # open 은 무변이 — outcome 이 있어도 changed=False(Product 의 ensure 는 NO_CHANGE 를 낸다).
     assert res["mutation_outcome"] is None or res["mutation_outcome"]["changed"] is False
     # projection 이 preserved/broken/detached 분리 축을 그대로 나른다(컨트롤러가 드롭하지 않음).
+    # 이전 선택의 운명(#777)도 같은 축이다 — 키가 사라지면 프런트가 그릴 근거를 잃는다.
     proj = res["current_view"]["projection"]
-    assert {"slots", "detached_selections", "blocking_items", "reconciliation_changes"} <= set(proj)
+    assert {
+        "slots",
+        "detached_selections",
+        "blocking_items",
+        "reconciliation_changes",
+        "retained_selections",
+    } <= set(proj)
 
 
 def test_select_and_clear_reach_product_with_outcome_and_fresh_token(tmp_path: Path) -> None:

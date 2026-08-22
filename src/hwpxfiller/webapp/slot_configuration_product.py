@@ -30,6 +30,7 @@ from ..application.slot_command import (
 from ..application.slot_configuration_context import (
     AppliedTemplateContentIntegrityError,
     CrossWorkContext,
+    SlotConfigurationContext,
     SlotConfigurationContextError,
     StaleTemplateApplication,
     TemplateInitializationRequired,
@@ -44,7 +45,14 @@ from ..application.slot_configuration_projection import (
     project_context_error,
     project_current_slot_configuration,
 )
-from ..application.slot_reconciliation import resolve_slot_configuration
+from ..application.slot_reconciliation import (
+    ReconciliationApplication,
+    ReconciliationIntegrityError,
+    SlotConfigurationResolution,
+    find_nearest_predecessor_configuration,
+    resolve_slot_configuration,
+)
+from ..application.work_slot_configuration import WorkSlotConfigurationDraft
 from ..domain.slot_selection import SlotSelectionSet
 from ..host.per_work_fence import per_work_mutation_fence
 from ..application.slot_token import (
@@ -238,8 +246,13 @@ class SlotConfigurationProduct:
         successor reconciliation 을 물질화(CHANGED persist)한다. 그 durable materialization 은
         **명시적 사용자 open/refresh command 에만** 남긴다 — passive 한 화면 렌더/네비게이션 스냅샷은
         이 경로로 현재 authority 를 그대로 투영한다. stored config 가 없으면 빈 선택(NEEDS_SELECTION)
-        으로 정직하게 표시하고 새 config 를 만들지 않는다. token 은 발급하되(편집 진입 seam) slot
+        으로 표시하고 새 config 를 만들지 않는다. token 은 발급하되(편집 진입 seam) slot
         config 를 저장하지 않으므로 basis 변경도 없다(``_maybe_auto_check`` 진입 근거를 만들지 않는다).
+
+        #777: 빈 선택을 그리는 것만으로는 **정직하지 않다**. successor 로 넘어온 직후가 정확히
+        그 상태인데, 그때 사용자는 자기가 고른 것이 어떻게 됐는지 묻지도 못한 채 「아직 선택 안
+        함」만 봤다. 그래서 이전 Configuration 의 선언 선택을 현재 구조에 대고 다시 분류해
+        ``retained_selections`` 로 함께 싣는다 — 판정만 하고 **저장은 여전히 0** 이다.
         """
         work_id, ws = self._route(work_ref)
         view, new_token, _current_app = self._current_view_and_token(ws, work_id)
@@ -430,6 +443,56 @@ class SlotConfigurationProduct:
         )
         return sign_configuration_token(claims, self._load_secret())
 
+    def _retained_fate(
+        self,
+        ctx: SlotConfigurationContext,
+        config: "WorkSlotConfigurationDraft | None",
+        stored: "tuple[WorkSlotConfigurationDraft, ...]",
+    ) -> "SlotConfigurationResolution | None":
+        """이전에 고른 것이 successor 에서 **어떻게 됐는지**를 read-only 로 판정한다(#777).
+
+        current Application 에 Configuration 이 이미 있으면 그 선택이 곧 답이라 물을 것이 없다.
+        없을 때만 — successor 로 넘어와 SG-01 compatibility gate 가 아무것도 못 실은 바로 그
+        경우 — nearest predecessor 의 **선언 선택**을 현재 구조에 대고 다시 분류한다. 종전에는
+        그 사실이 아무 데도 안 남아 선택 셋이 조용히 사라졌다.
+
+        읽기만 한다. 새 Configuration 을 만들지 않고(그건 명시적 open/refresh 의 몫 — #744),
+        predecessor 의 **구조를 복원하지도 않는다**: 필요한 것은 「이전 선언 선택」과 「현재
+        구조」뿐이고, 둘 다 이미 손에 있다. chain evidence 를 다시 읽지 않으므로 render 경로에
+        붙는 비용은 works aggregate 한 번이다.
+
+        chain 무결성이 깨져 있으면(:class:`ReconciliationIntegrityError`) 판정을 **지어내지
+        않는다** — 이 자리는 현재 구조를 멀쩡히 그릴 수 있는 렌더 경로라, 여기서 CONTEXT_ERROR 로
+        올리면 고칠 화면 자체를 지운다. 이전 선택 이야기만 비운다.
+        """
+        if config is not None:
+            return None
+        aggregate = self._works.load(ctx.work_id)
+        if aggregate is None:  # pragma: no cover - context resolve 가 이미 보장
+            return None
+        apps = {
+            a.application_id: ReconciliationApplication(
+                a.application_id, a.previous_application_id, a.application_epoch,
+                a.work_id, aggregate.work.template_lineage_id,
+            )
+            for a in aggregate.applications
+        }
+        if ctx.template_application_id not in apps:  # pragma: no cover - 방어
+            return None
+        try:
+            source = find_nearest_predecessor_configuration(
+                ctx.template_application_id,
+                apps,
+                {c.base_template_application_id: c for c in stored},
+            )
+        except ReconciliationIntegrityError:
+            return None
+        if source is None or not source.selections.selections:
+            return None
+        return resolve_slot_configuration(
+            source.selections, ctx.template_structure, ctx.selection_semantic_contract
+        )
+
     def _current_view_and_token(
         self, ws: str, work_id: str
     ) -> tuple[CurrentSlotConfigurationView, "str | None", "str | None"]:
@@ -448,17 +511,23 @@ class SlotConfigurationProduct:
                 )
             except SlotConfigurationContextError as exc:
                 return project_context_error(exc.code), None, None
+            stored = (
+                self._configs.load(work_id).configurations.configurations
+                if self._configs.exists(work_id)
+                else ()
+            )
             config = None
-            if self._configs.exists(work_id):
-                for cfg in self._configs.load(work_id).configurations.configurations:
-                    if cfg.base_template_application_id == ctx.template_application_id:
-                        config = cfg
-                        break
+            for cfg in stored:
+                if cfg.base_template_application_id == ctx.template_application_id:
+                    config = cfg
+                    break
             selections = config.selections if config is not None else SlotSelectionSet(())
             resolution = resolve_slot_configuration(
                 selections, ctx.template_structure, ctx.selection_semantic_contract
             )
-            view = project_current_slot_configuration(ctx, config, resolution)
+            view = project_current_slot_configuration(
+                ctx, config, resolution, retained=self._retained_fate(ctx, config, stored)
+            )
             token = self._issue_token(
                 ws, work_id,
                 _CurrentSnapshot(

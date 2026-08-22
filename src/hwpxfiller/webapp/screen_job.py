@@ -3172,15 +3172,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     # (payload 에 없음, template_check 선례). configuration_token 은 opaque(프런트가 직전 응답의 새
     # token 을 되돌려준다), request_id 는 프런트 발급 재전송 단위. command outcome + fresh view 는
     # Product `SlotConfigurationProduct._respond` 가 이미 조립하므로 컨트롤러는 asdict 로 관통만 한다
-    # (local optimistic authority 0 — 응답 도착 시 backend view 로 통째 교체). preserved/broken/detached
-    # 분리는 projection(blocking_items=broken+missing·detached_selections=detached·
-    # reconciliation_changes.preserved_selection_refs=preserved)이 이미 지므로 여기서 재판정하지 않는다.
+    # (local optimistic authority 0 — 응답 도착 시 backend view 로 통째 교체). 현재 구성의
+    # broken/missing 분리는 projection(blocking_items·detached_selections)이, **이전에 고른 것의
+    # 운명**은 projection.retained_selections(#777)가 이미 지므로 여기서 재판정하지 않는다.
     def _slot_response_dict(self, response) -> dict:
         """`SlotConfigurationCommandResponse`(중첩 frozen dataclass) → JSON-safe dict.
 
         `asdict` 가 중첩 dataclass·tuple 을 dict/list 로 재귀 변환한다. projection 의
-        detached_selections·blocking_items·reconciliation_changes 가 그대로 실려 프런트가
-        preserved/broken/detached 를 분리 소비한다(문안·확인 UI 는 웹, 판정·수치는 Python).
+        detached_selections·blocking_items·retained_selections 가 그대로 실려 프런트가
+        분리 소비한다(문안·확인 UI 는 웹, 판정·수치는 Python).
         """
         return asdict(response)
 

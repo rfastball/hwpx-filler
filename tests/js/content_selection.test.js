@@ -35,7 +35,7 @@ function slot(id, text, status, options, sharedFields = []) {
 function view(status, slots, extra = {}) {
   const {
     token = "tok-1", detached = [], blocking = [], viewStatus = "CURRENT", contextError = null,
-    contextErrorMessage = null,
+    contextErrorMessage = null, retained = [],
   } = extra;
   return {
     view_status: viewStatus,
@@ -46,6 +46,7 @@ function view(status, slots, extra = {}) {
     projection: viewStatus === "CONTEXT_ERROR" ? null : {
       view_status: viewStatus, configuration_status: status, configuration_present: true,
       slots, detached_selections: detached, blocking_items: blocking, informational_changes: [],
+      retained_selections: retained,
     },
   };
 }
@@ -357,6 +358,67 @@ test("P2#3 detached 여러 개여도 모호한 항목별 버튼이 아니라 cle
   const html = render(stateOf(withDetached));
   const buttons = (html.match(/cs-detached-clear/g) ?? []).length;
   assert.equal(buttons, 1); // 항목 수와 무관하게 명시 액션 하나
+});
+
+test("#777 이전 선택의 운명 셋을 서로 다르게 그린다(재판정 0·내부 key 비노출)", () => {
+  // Template 이 바뀌면 이전 선택은 자동 승계되지 않는다(SG-01 fail-closed). 그렇다고 셋이
+  // 똑같이 사라지면 사용자는 무엇을 잃었는지 묻지도 못한다 — 그래서 셋은 서로 다른 것으로
+  // 그려진다. 판정(fate)은 backend 가 이미 했고 여기서 재판정하지 않는다.
+  const successor = view(
+    "NEEDS_SELECTION",
+    [
+      slot("s-keep", "공고 상세", "MISSING_REQUIRED_SELECTION", [opt("o-keep", "추정가격 표시")]),
+      slot("s-other", "표지", "MISSING_REQUIRED_SELECTION", [opt("o-x", "기본")]),
+    ],
+    {
+      blocking: [{ slot_id: "s-keep", kind: "MISSING_REQUIRED_SELECTION", option_id: null }],
+      retained: [
+        {
+          slot_id: "s-keep", slot_display_text: "공고 상세",
+          option_ids: ["o-keep"], option_display_texts: ["추정가격 표시"], fate: "RESOLVED",
+        },
+        {
+          slot_id: "s-other", slot_display_text: "표지",
+          option_ids: ["o-vanished"], option_display_texts: [null], fate: "SELECTED_OPTION_REMOVED",
+        },
+        {
+          slot_id: "s-gone", slot_display_text: null,
+          option_ids: ["o-gone"], option_display_texts: [null], fate: "SLOT_REMOVED",
+        },
+      ],
+    },
+  );
+  const html = render(stateOf(successor));
+
+  // 셋이 서로 다른 것으로 나온다 — 남은 둘은 그 Slot 자리에, 사라진 항목은 정보 블록으로.
+  assert.match(html, /data-fate="RESOLVED"/);
+  assert.match(html, /data-fate="SELECTED_OPTION_REMOVED"/);
+  assert.match(html, /cs-retained-gone/);
+  assert.ok(!html.includes('data-fate="SLOT_REMOVED"'));
+
+  // 있는 것은 이름을 대고, 사라진 것은 다른 것을 고르라고 말한다.
+  assert.match(html, /이전에 「추정가격 표시」을\(를\) 고르셨습니다/);
+  assert.match(html, /다른 것을 골라 주세요/);
+  assert.match(html, /항목 1개가 이 템플릿에는 없습니다/);
+
+  // 「유지됩니다」라고 말하지 않는다 — 자동 승계가 아니다(그렇게 쓰면 새 거짓말이다).
+  assert.ok(!html.includes("유지됩니다"));
+  // 내부 key 는 화면에 없다.
+  for (const key of ["o-vanished", "s-gone", "o-gone"]) {
+    assert.ok(!html.includes(key), key);
+  }
+});
+
+test("#777 이전 선택 이야기가 없으면 아무것도 그리지 않는다", () => {
+  // 필드 부재(옛 backend)와 빈 목록 둘 다 조용히 통과해야 한다 — null 가드 결함이 초록으로
+  // 지나가지 않게 두 경로를 다 센다.
+  const plain = view("NEEDS_SELECTION", [
+    slot("s1", "표지", "MISSING_REQUIRED_SELECTION", [opt("o1", "기본")]),
+  ]);
+  assert.ok(!render(stateOf(plain)).includes("cs-retained"));
+
+  delete plain.projection.retained_selections;
+  assert.ok(!render(stateOf(plain)).includes("cs-retained"));
 });
 
 test("P2#3 clearable=false detached 는 제거 액션이 없다", () => {
