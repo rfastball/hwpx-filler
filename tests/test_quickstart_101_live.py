@@ -102,8 +102,17 @@ def _evidence_dir(tmp_path_factory) -> Path:
 #
 # CI 와 `test.ps1` 은 `PYTHONUTF8=1` 을 걸어 이 결함을 덮고 있다(그 모드에서는 preferred 가
 # utf-8 이라 맨 `text=True` 가 우연히 맞는다). 그래서 이 계약은 **환경이 아니라 여기**가 진다.
-# 짝이 되는 인코딩 쪽 고정은 자식(`scripts/capture_101_screenshots.py`)이 자기 스트림에 건다.
+#
+# 쓰는 쪽은 `PYTHONIOENCODING` 으로 **인터프리터 시작 시점부터** 못박는다. 자식이 `main()` 에서
+# 자기 스트림을 다시 여는 것만으로는 늦다 — 최상위 import 가 터지면 그 traceback 은 `main()` 에
+# 닿기 전에 로캘 인코딩으로 나가고, 읽는 쪽이 UTF-8 로 읽어 사유가 escape 로 뭉개진다. 즉 부팅
+# 진단만 조용히 잃는다. `PYTHONUTF8` 이 아니라 `PYTHONIOENCODING` 인 것도 계약이다 — 스트림만
+# 바꾸고 파일 기본 인코딩은 그대로라, 이 게이트가 재는 제품 거동은 움직이지 않는다.
 _CHILD_TEXT = {"text": True, "encoding": "utf-8", "errors": "backslashreplace"}
+
+
+def _child_env() -> "dict[str, str]":
+    return {**os.environ, "PYTHONIOENCODING": "utf-8"}
 
 
 def _keep_output(evidence: Path, stdout, stderr) -> None:
@@ -201,6 +210,7 @@ def live_check_run(tmp_path_factory) -> dict:
             proc = subprocess.run(
                 command,
                 cwd=REPO_ROOT,
+                env=_child_env(),
                 capture_output=True,
                 **_CHILD_TEXT,
                 timeout=_OUTER_TIMEOUT_S,
@@ -418,6 +428,11 @@ def test_every_child_spawn_pins_utf8_instead_of_the_locale(monkeypatch, tmp_path
         )
         assert kwargs.get("errors") == "backslashreplace", (
             f"{index + 1}번째 자식 호출의 오류 정책이 손실 복구 불가입니다: {kwargs!r}"
+        )
+        # 쓰는 쪽도 같이 못박혔는가 — 한쪽만 고정하면 침묵을 갈아탈 뿐이다.
+        assert (kwargs.get("env") or {}).get("PYTHONIOENCODING") == "utf-8", (
+            f"{index + 1}번째 자식이 자기 출력 인코딩을 로캘에 맡깁니다: "
+            "최상위 import 가 터지면 그 사유는 `main()` 에 닿기 전에 나간다"
         )
 
 

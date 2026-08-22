@@ -105,12 +105,16 @@ def _parse_args(argv: "list[str] | None") -> argparse.Namespace:
 
 
 def _force_utf8_output() -> None:
-    """이 하니스의 출력 인코딩을 **로캘과 무관하게** 못박는다(#778).
+    """이 CLI 를 **직접** 돌릴 때의 출력 인코딩을 로캘과 무관하게 못박는다(#778).
 
-    이 CLI 의 진단은 전부 한국어이고, 부모(`tests/test_quickstart_101_live.py`)는 그 파이프를
-    UTF-8 로 읽는다. 인코딩 쪽을 로캘에 맡기면 한국어 Windows 에서 cp949 로 써 나가고, 읽는
-    쪽과 어긋나 실패 사유가 통째로 뭉개진다 — 실패를 알리려다 실패의 이름을 잃는다.
+    진단이 전부 한국어인데 인코딩을 로캘에 맡기면 한국어 Windows 에서 cp949 로 써 나가고,
+    UTF-8 로 읽는 쪽과 어긋나 실패 사유가 뭉개진다 — 실패를 알리려다 실패의 이름을 잃는다.
     `src/hwpxfiller/cli.py` 의 `_force_utf8_output` 과 같은 정책이다.
+
+    **여기는 늦은 자리다.** 위의 최상위 import 가 터지면 그 traceback 은 이 함수에 닿기 전에
+    나간다. 그래서 하니스가 부를 때는 부모가 `PYTHONIOENCODING` 으로 인터프리터 시작 시점부터
+    고정한다(`tests/test_quickstart_101_live.py`). 이 함수는 그 env 없이 사람이 직접 돌리는
+    경우를 받는다.
     """
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
