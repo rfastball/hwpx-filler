@@ -31,6 +31,7 @@ from _web_source import source_text
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
 from hwpxfiller.webapp import app as app_mod
 from hwpxfiller.webapp import boot_budget
+from hwpxfiller.webapp import live_run
 
 # 게이트: Windows 아니거나 명시 옵트아웃이면 스킵. 자동 감지 스킵 아님(위 docstring).
 _GUI_GATE = sys.platform != "win32" or bool(os.environ.get("HWPX_SKIP_GUI_TESTS"))
@@ -41,7 +42,7 @@ _GATE_REASON = (
 # 하니스 상한은 **아래 층들에서 파생된다**(#427). 종전에는 90 이라는 상수였는데, 그 값이
 # 지키려던 층화를 정작 지키지 못했다:
 #
-#   제품 폴백 표시 예산(콜드) 60s  +  Python selftest 예산 80s   >   하니스 상한 90s
+#   제품 폴백 표시 예산(콜드) 60s + selftest 엔진 80s + hard-stop 여유 60s > 하니스 상한 90s
 #
 # 세 층의 의도는 순서다 — JS 가 먼저 구조화된 실패를 내고, 그 다음 파이썬이 시끄럽게 끝나고,
 # 하니스는 **마지막 그물**이다(app.py 의 예산 사슬 주석). 그런데 마지막 그물이 그 아래
@@ -58,8 +59,13 @@ _GATE_REASON = (
 # 있으려면 실측 최악(콜드 부팅 76.9초·40배 감속 여정)을 훨씬 웃돌아야 하고, 그 아래 구간의
 # 성능은 차단이 아니라 **보고**의 몫이다(모듈 끝 양성 대조). 시한 자체는 남는다 — 매달림은
 # 진짜 결함이고, 이 상한이 마지막 그물이다.
-_HARNESS_MARGIN_S = 460.0
-_SELFTEST_TIMEOUT = app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + _HARNESS_MARGIN_S
+_HARNESS_MARGIN_S = 400.0
+_SELFTEST_TIMEOUT = (
+    app_mod._SELFTEST_BUDGET_S
+    + boot_budget.COLD_BUDGET_SECONDS
+    + live_run.RUN_HARD_STOP_MARGIN_S
+    + _HARNESS_MARGIN_S
+)
 
 # 부팅 하나의 상한을 늘리면 **최악의 경우가 곱해진다**(#428 리뷰 P1). 이 모듈은 파라미터화
 # 포함 십수 회 부팅하고 pytest 는 시한 초과 뒤에도 다음 테스트로 간다 — WebView2 가 전면
@@ -100,13 +106,16 @@ def _boot_selftest(env: "dict[str, str]", *, out: Path, what: str) -> "subproces
         raise AssertionError(_exhausted_report(what, spent))
     started = time.monotonic()
     try:
-        return subprocess.run(
+        completed = subprocess.run(
             [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
             env=env,
             capture_output=True,
             text=True,
             timeout=_SELFTEST_TIMEOUT,
         )
+        if completed.returncode != 0:
+            raise AssertionError(_process_failure_report(completed, out=out, what=what))
+        return completed
     except subprocess.TimeoutExpired as expired:
         _boot_waits["timed_out"].append(what)  # type: ignore[union-attr]
         raise AssertionError(
@@ -137,29 +146,50 @@ def _timeout_report(
 ) -> str:
     """시한 초과를 **진단**으로 바꾼다 — 다음 사람이 재실행 말고 읽을 것이 있게."""
     tail = _tail(expired.stderr) or _tail(expired.stdout) or "(자식 출력 없음)"
-    if not out.exists():
-        reached = "없음 — 종결에 못 닿았다"
-    else:
-        try:
-            parsed = json.loads(out.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            reached = "불완전 — 종결 증거를 쓰는 중 멎었다"
-        else:
-            reached = (
-                "유효함 — 결과를 쓴 뒤 프로세스 종료에 못 닿았다"
-                if isinstance(parsed, dict)
-                else "불완전 — 종결 증거가 JSON 객체가 아니다"
-            )
+    reached = _evidence_progress(out)
     return "\n".join(
         [
             f"selftest 부팅 시한 초과 — {what}",
             f"  소요 {elapsed:.1f}s / 상한 {_SELFTEST_TIMEOUT:.0f}s"
-            f" (= Python 예산 {app_mod._SELFTEST_BUDGET_S:.0f}s"
+            f" (= selftest 엔진 {app_mod._SELFTEST_BUDGET_S:.0f}s"
             f" + 콜드 부팅 예산 {boot_budget.COLD_BUDGET_SECONDS:.0f}s"
-            f" + 여유 {_HARNESS_MARGIN_S:.0f}s)",
+            f" + hard-stop 여유 {live_run.RUN_HARD_STOP_MARGIN_S:.0f}s"
+            f" + 부모 진단 여유 {_HARNESS_MARGIN_S:.0f}s)",
             f"  증거 파일: {reached} ({out})",
             f"  자식 출력 꼬리:\n{tail}",
         ]
+    )
+
+
+def _process_failure_report(
+    completed: "subprocess.CompletedProcess", *, out: Path, what: str
+) -> str:
+    event = {
+        live_run.TEARDOWN_HUNG_EXIT_CODE: "teardown_hung",
+        live_run.RUN_HUNG_EXIT_CODE: "run_hung",
+    }.get(completed.returncode, "process_failed")
+    tail = _tail(completed.stderr) or _tail(completed.stdout) or "(자식 출력 없음)"
+    return "\n".join(
+        [
+            f"selftest 프로세스 실패 — {what}",
+            f"  event={event} rc={completed.returncode}",
+            f"  증거 파일: {_evidence_progress(out)} ({out})",
+            f"  자식 출력 꼬리:\n{tail}",
+        ]
+    )
+
+
+def _evidence_progress(out: Path) -> str:
+    if not out.exists():
+        return "없음 — 종결에 못 닿았다"
+    try:
+        parsed = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "불완전 — 종결 증거를 쓰는 중 멎었다"
+    return (
+        "유효함 — 결과를 쓴 뒤 프로세스 종료에 못 닿았다"
+        if isinstance(parsed, dict)
+        else "불완전 — 종결 증거가 JSON 객체가 아니다"
     )
 
 
@@ -2058,9 +2088,11 @@ def test_selftest_run_adds_exactly_one_global_over_a_normal_run(
 # 환경에서도 층화가 뒤집히는 것은 잡혀야 한다(그 뒤집힘이 곧 옵트아웃 없는 러너의 실패다).
 
 
-def _cap_covers_layers_beneath(cap: float, python_budget: float, cold_budget: float) -> bool:
+def _cap_covers_layers_beneath(
+    cap: float, python_budget: float, cold_budget: float, hard_stop_margin: float
+) -> bool:
     """마지막 그물이 그 아래 그물보다 성긴가 — 순수 술어라 대조를 값으로 세울 수 있다."""
-    return cap > python_budget + cold_budget
+    return cap > python_budget + cold_budget + hard_stop_margin
 
 
 def test_harness_cap_sits_above_every_budget_beneath_it() -> None:
@@ -2076,16 +2108,20 @@ def test_harness_cap_sits_above_every_budget_beneath_it() -> None:
     계약이 아니다.
     """
     assert _cap_covers_layers_beneath(
-        _SELFTEST_TIMEOUT, app_mod._SELFTEST_BUDGET_S, boot_budget.COLD_BUDGET_SECONDS
+        _SELFTEST_TIMEOUT,
+        app_mod._SELFTEST_BUDGET_S,
+        boot_budget.COLD_BUDGET_SECONDS,
+        live_run.RUN_HARD_STOP_MARGIN_S,
     ), (
         f"하니스 상한 {_SELFTEST_TIMEOUT}s 가 아래 층의 합 "
-        f"{app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS}s 보다 촘촘합니다 — "
+        f"{app_mod._SELFTEST_BUDGET_S + boot_budget.COLD_BUDGET_SECONDS + live_run.RUN_HARD_STOP_MARGIN_S}s"
+        " 보다 촘촘합니다 — "
         "가장 진단이 빈약한 층이 먼저 발화합니다."
     )
-    # 술어가 뒤집힌 층화를 실제로 거절하는가 — #427 이 관측한 형상(90 < 80+60)이 그 표본이다.
-    assert not _cap_covers_layers_beneath(90.0, 80.0, 60.0)
+    # 술어가 뒤집힌 층화를 실제로 거절하는가 — #427 형상(90 < 80+60+60)이 그 표본이다.
+    assert not _cap_covers_layers_beneath(90.0, 80.0, 60.0, 60.0)
     # 그리고 성긴 쪽은 통과시킨다(항상 거짓을 내는 술어가 아니다).
-    assert _cap_covers_layers_beneath(171.0, 80.0, 60.0)
+    assert _cap_covers_layers_beneath(201.0, 80.0, 60.0, 60.0)
 
 
 def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
@@ -2118,6 +2154,16 @@ def test_a_boot_timeout_reports_where_it_got_to(tmp_path) -> None:
     assert "[hwpx] 마지막 한 줄" in hung
     # 예산 사슬 수치를 함께 적는다: 읽는 사람이 "이 상한이 왜 이 값인가"를 되짚을 수 있게.
     assert f"{app_mod._SELFTEST_BUDGET_S:.0f}s" in hung
+    for code, target, event in (
+        (live_run.RUN_HUNG_EXIT_CODE, missing, "run_hung"),
+        (live_run.TEARDOWN_HUNG_EXIT_CODE, reached, "teardown_hung"),
+    ):
+        stopped = _process_failure_report(
+            subprocess.CompletedProcess([], code, stdout="", stderr="hard stop"),
+            out=target,
+            what="어떤 부팅",
+        )
+        assert f"event={event} rc={code}" in stopped and "hard stop" in stopped
 
 
 def test_aggregate_boot_budget_fails_fast_instead_of_burning_the_ci_job(monkeypatch) -> None:

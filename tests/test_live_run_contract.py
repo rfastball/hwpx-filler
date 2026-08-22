@@ -89,11 +89,15 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
     _stub_app_boot(monkeypatch, tmp_path)
 
     order: "list[str]" = []
+    alerts: "list[str]" = []
+    notices: "list[str]" = []
     client = SimpleNamespace(
         describe=lambda _events: order.append("theme:describe"),
         preferences=lambda *_args: order.append("theme:preferences")
-        or SimpleNamespace(ok=True, failure_text=None),
+        or SimpleNamespace(ok=False, failure_text="theme failed"),
+        notice=notices.append,
     )
+    monkeypatch.setattr(app_mod.settings, "alert", alerts.append)
     monkeypatch.setattr(
         app_mod.product_api,
         "ProductApiClient",
@@ -124,6 +128,111 @@ def test_main_hands_the_window_over_with_no_positional_arguments(monkeypatch, tm
         "host:ready",
         "drive",
     ]
+    assert len(alerts) == 1 and "theme failed" in alerts[0]
+    assert notices == [], "live theme 경보가 WebView bridge를 다시 열었습니다"
+
+    window = _FakeWindow()
+    monkeypatch.setattr(app_mod.single_instance, "acquire", lambda _home: object())
+    assert app_mod.main(argv=[]) == 0
+    window.events.loaded.handlers[0]()
+    assert len(notices) == 1 and "theme failed" in notices[0]
+    assert len(alerts) == 1, "정상 제품의 창 경보를 durable-only로 강등했습니다"
+
+
+def test_builtin_selftest_hard_stop_is_armed_before_window_creation(
+    monkeypatch, tmp_path
+) -> None:
+    """내장 selftest의 마지막 그물은 create/output/teardown 어느 정지에도 묶이지 않는다."""
+    def exercise(mode: str):
+        with monkeypatch.context() as scoped:
+            order: "list[str]" = []
+            outputs: "list[dict[str, object]]" = []
+            exits: "list[int]" = []
+
+            class _Timer:
+                daemon = False
+
+                def __init__(self, seconds, callback) -> None:
+                    timers.append(self)
+                    self.seconds = seconds
+                    self.callback = callback
+                    self.active = False
+
+                def start(self) -> None:
+                    self.active = True
+                    order.append(f"timer:{self.seconds}:armed")
+
+                def cancel(self) -> None:
+                    self.active = False
+                    order.append(f"timer:{self.seconds}:cancel")
+
+            timers: "list[_Timer]" = []
+
+            def hard_stop(*, after_cancel: bool = False) -> None:
+                timer = timers[0]
+                if timer.active or after_cancel:
+                    timer.callback()
+
+            def write_output(result) -> None:
+                if mode == "writing":
+                    hard_stop()
+                outputs.append(dict(result))
+
+            window = _FakeWindow(on_destroy=hard_stop if mode == "valid" else None)
+
+            def create_window(*_args, **_kwargs):
+                order.append("create")
+                return window
+
+            def preferences(*_args):
+                if mode == "missing":
+                    hard_stop()
+                return SimpleNamespace(ok=True, failure_text=None)
+
+            scoped.setattr(app_mod.threading, "Timer", _Timer)
+            scoped.setattr(app_mod, "_write_selftest_output", write_output)
+            scoped.setattr(app_mod, "_selftest_drive", lambda ctx: ctx.finish({"complete": True}))
+            scoped.setattr(app_mod.settings, "alert", lambda message: order.append(message))
+            scoped.setattr(app_mod.live_run, "hard_exit", lambda code: exits.append(code))
+            scoped.setitem(
+                sys.modules,
+                "webview",
+                SimpleNamespace(create_window=create_window, start=lambda entry, **kwargs: entry()),
+            )
+            scoped.setattr(
+                app_mod.product_api,
+                "ProductApiClient",
+                SimpleNamespace(
+                    for_window=lambda _window: SimpleNamespace(
+                        describe=lambda _events: None,
+                        preferences=preferences,
+                    )
+                ),
+            )
+            _stub_app_boot(scoped, tmp_path / mode)
+
+            result = app_mod.main(argv=["app", "--selftest"])
+            if mode == "normal":
+                hard_stop(after_cancel=True)  # 정상 완료가 먼저 claim했으면 늦은 callback은 no-op이다.
+
+            return result, order, outputs, exits, timers
+
+    hard_limit = 1.0 + app_mod._SELFTEST_BUDGET_S + live_run.RUN_HARD_STOP_MARGIN_S
+    cases = (
+        ("missing", live_run.RUN_HUNG_EXIT_CODE, "missing/pre-terminal", []),
+        ("writing", live_run.RUN_HUNG_EXIT_CODE, "write-in-progress", [{"complete": True}]),
+        ("valid", live_run.TEARDOWN_HUNG_EXIT_CODE, "valid/post-output", [{"complete": True}]),
+        ("normal", 0, None, [{"complete": True}]),
+    )
+    for mode, expected_code, expected_state, expected_outputs in cases:
+        result, order, outputs, exits, timers = exercise(mode)
+        assert result == expected_code
+        assert [timer.seconds for timer in timers] == [hard_limit, 1.0]
+        assert order.index(f"timer:{hard_limit}:armed") < order.index("create")
+        assert exits == ([] if mode == "normal" else [expected_code])
+        if expected_state is not None:
+            assert any(expected_state in line for line in order)
+        assert outputs == expected_outputs
 
 
 @pytest.mark.parametrize("observe_host", [True, False])
@@ -171,6 +280,7 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
 
     run = _run(
         drive=lambda _ctx: order.append("drive"),
+        name="quickstart-101",
         host_event=(lambda event: order.append(f"host:{event}")) if observe_host else None,
         host_wait_grace_s=15.0,
     )
@@ -180,6 +290,7 @@ def test_live_host_timeout_reaches_the_driver_without_touching_the_bridge(
 
     assert window.events.loaded.timeouts == [16.0]
     assert order == (["host:timeout", "drive"] if observe_host else ["drive"])
+    assert len(fallback) == 1, "Quickstart가 자기 Landing 밖의 raw hard-exit timer를 얻었습니다"
     assert len(alerts) == 1 and notices == [], "live fallback이 WebView bridge를 다시 열었습니다"
 
 

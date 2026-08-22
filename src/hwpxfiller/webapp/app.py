@@ -991,10 +991,10 @@ _MODE_NO_CAPABILITY = "no_capability"
 #: 이유가 그것이다.
 _SELFTEST_ECHO_KEYS = {"theme_write": "theme_write", "font_scale_write": "font_scale_write"}
 
-#: 파이썬 프로세스 예산(초). JS 실행 시한(기본 75s)보다 **길고** 게이트 하네스의 프로세스
-#: 상한(90s, ``tests/test_web_selftest_gate.py``)보다 **짧다**. 순서가 계약이다: JS 가 먼저
-#: 깨어 구조화된 실패를 주고, 그마저 안 오면 파이썬이 시끄럽게 끝내고, 하네스는 마지막
-#: 그물이다. 어느 예산도 레거시보다 늘리지 않았다 — 레거시엔 실행 전체 상한이 아예 없었다.
+#: selftest 엔진 예산(초). JS 실행 시한(기본 75s)보다 길다. 자동 ``--selftest`` 프로세스의
+#: 마지막 그물은 ``부팅 예산 + 이 값 + live hard-stop 여유``로 바깥에서 감싸고, 게이트 하네스의
+#: 600s 상한은 그보다 뒤의 최종 부모 그물이다. 순서가 계약이다: 구조화된 실패 → 사건별 7/8
+#: hard stop → 부모 회수. 기존 하위/외부 예산 값은 늘리지 않는다.
 _SELFTEST_BUDGET_S = 80.0
 
 
@@ -1271,7 +1271,8 @@ def main(
     """
     global _live_file_dialogs
     args = list(sys.argv if argv is None else argv)
-    run = live if live is not None else (_selftest_live_run() if "--selftest" in args else None)
+    auto_selftest = live is None and "--selftest" in args
+    run = live if live is not None else (_selftest_live_run() if auto_selftest else None)
     if run is not None:
         live_run.validate(run)  # 계약 위반은 워커 스레드가 아니라 **여기서** 시끄럽다
 
@@ -1298,6 +1299,65 @@ def main(
         if single_instance.acquire(settings.home_dir()) is None:
             single_instance.focus_existing(WINDOW_TITLE)
             return 0
+
+    # 같은 부팅 판정을 창 생성·FOUC 폴백·live context가 함께 쓴다. selftest의 마지막 그물은
+    # create_window보다 먼저 무장해야 그 호출 자체가 멎어도 부모의 무한 대기로 번지지 않는다.
+    runtime_version = boot_budget.detect_runtime_version()
+    budget_seconds, budget_reason = boot_budget.decide(
+        settings.load_boot_completed(), runtime_version
+    )
+    selftest_lock = threading.Lock()
+    selftest_terminal: "list[int | None]" = [None]
+    selftest_output_state = ["missing/pre-terminal"]
+    selftest_timer: "threading.Timer | None" = None
+
+    def _write_live_output(result: "Mapping[str, object]") -> object:
+        assert run is not None
+        with selftest_lock:
+            if selftest_terminal[0] is not None:
+                return None
+            selftest_output_state[0] = "write-in-progress"
+        try:
+            written = run.write_output(result)
+        except Exception:
+            with selftest_lock:
+                if selftest_terminal[0] is None:
+                    selftest_output_state[0] = "write-failed"
+            raise
+        with selftest_lock:
+            if selftest_terminal[0] is None:
+                selftest_output_state[0] = "valid/post-output"
+            return written
+
+    def _hard_stop_selftest() -> None:
+        with selftest_lock:
+            if selftest_terminal[0] is not None:
+                return
+            evidence_state = selftest_output_state[0]
+            exit_code = (
+                live_run.TEARDOWN_HUNG_EXIT_CODE
+                if evidence_state == "valid/post-output"
+                else live_run.RUN_HUNG_EXIT_CODE
+            )
+            selftest_terminal[0] = exit_code
+        event = "run_hung" if exit_code == live_run.RUN_HUNG_EXIT_CODE else "teardown_hung"
+        message = (
+            f"WebView2 selftest {event}: 전체 예산 안에 종료되지 않았습니다"
+            f" [예산 {budget_seconds + _SELFTEST_BUDGET_S + live_run.RUN_HARD_STOP_MARGIN_S:.0f}s"
+            f" · {budget_reason} · evidence={evidence_state}]"
+        )
+        try:
+            settings.alert(message)
+        finally:
+            live_run.hard_exit(exit_code)
+
+    if auto_selftest:
+        selftest_timer = threading.Timer(
+            budget_seconds + _SELFTEST_BUDGET_S + live_run.RUN_HARD_STOP_MARGIN_S,
+            _hard_stop_selftest,
+        )
+        selftest_timer.daemon = True
+        selftest_timer.start()
 
     frontend = WebFrontend(default_text_templates_dir())
 
@@ -1415,12 +1475,6 @@ def main(
             shown.set()  # show 성공 **후** — 먼저 세우면 show 실패가 다른 경로까지 영구 차단
             return True
 
-    # 폴백 예산(#77) — 첫 부트스트랩(또는 런타임 교체)에만 넓힌다. 판정·근거는 boot_budget.
-    runtime_version = boot_budget.detect_runtime_version()
-    budget_seconds, budget_reason = boot_budget.decide(
-        settings.load_boot_completed(), runtime_version
-    )
-
     def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
         loaded_seen.set()
         # 완주 스탬프(#77): loaded 가 실제로 왔다 = 이 환경에서 은닉 부팅이 끝까지 간다.
@@ -1459,7 +1513,7 @@ def main(
             # 창은 안 보이는데 경보가 없다 — 여기서 직접 경보(창 은닉 상태라 alert 채널은 생략).
             _alarm(f"창 표시(show) 실패: {exc!r}")
         if err is not None:
-            _alarm(f"테마 주입 실패: {err!r}", window)
+            _alarm(f"테마 주입 실패: {err!r}", None if run is not None else window)
 
     if run is None:
         window.events.loaded += _apply_theme_then_show
@@ -1490,12 +1544,13 @@ def main(
         # 제품 실행은 종전처럼 창 경보까지 보내고, live 는 내구성 채널만 쓴다.
         _alarm(message, None if run is not None else window)
 
-    # 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·AV
+    # forced-show 타이머는 selftest의 별도 절대 hard stop과 함께 살아 있다. 타이머가
+    # webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·AV
     # 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
     # 그 콜드스타트는 설치 후 첫 실행에만 30~60s 이므로 예산도 그때만 넓힌다(#77, boot_budget).
-    timer = threading.Timer(budget_seconds, _fallback_show)
-    timer.daemon = True
-    timer.start()
+    fallback_timer = threading.Timer(budget_seconds, _fallback_show)
+    fallback_timer.daemon = True
+    fallback_timer.start()
 
     # private_mode 기본(True) = 랜덤 빈 포트 + InPrivate(비영속) → 포트 스쿼팅·캐시 스테일·서버
     # 크로스톡 클래스 구조 소멸(#74). 프로필은 홈/webview/profile 고정 폴더 — 단일 인스턴스
@@ -1515,7 +1570,9 @@ def main(
                     run,
                     window=window,
                     artifact=artifact,
-                    finish=_live_terminator(window, run.write_output),
+                    finish=_live_terminator(
+                        window, _write_live_output if auto_selftest else run.write_output
+                    ),
                     # 위에서 **이미 무장한** 예산을 그대로 건넨다(#460 리뷰 P1). 드라이버가
                     # 다시 계산하면 아래 loaded 콜백이 먼저 쓴 완주 스탬프를 읽어, 콜드로
                     # 무장한 이 부팅을 웜 예산으로 재게 된다.
@@ -1546,9 +1603,17 @@ def main(
             webview.start(gui=gui, storage_path=str(storage_dir))
     finally:
         _live_file_dialogs = None  # 대체는 이 실행의 것이다 — 프로세스에 남기지 않는다
-        timer.cancel()
+        if selftest_timer is not None:
+            with selftest_lock:
+                if selftest_terminal[0] is None:
+                    selftest_terminal[0] = 0
+                exit_code = selftest_terminal[0]
+            selftest_timer.cancel()
+        else:
+            exit_code = 0
+        fallback_timer.cancel()
         shutil.rmtree(storage_dir, ignore_errors=True)  # 자기 정리(크래시로 못 지우면 다음 부팅 청소)
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

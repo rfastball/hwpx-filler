@@ -37,6 +37,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from hwpxfiller.webapp import live_run as live_run_contract
+
 from . import capture as capture_mod
 from . import report as report_mod
 from . import scenario as scenario_mod
@@ -77,7 +79,7 @@ BOOT_GRACE_S = 15.0
 TEARDOWN_GRACE_S = 10.0
 #: 실행 예산을 넘긴 뒤 **하드 스톱**까지의 여유. 부드러운 시한(:class:`Deadline`)이 먼저
 #: 발화해 구조화된 실패로 착지할 기회를 주고, 그마저 못 도달할 때만 이 백스톱이 문다.
-RUN_HARD_STOP_MARGIN_S = 60.0
+RUN_HARD_STOP_MARGIN_S = live_run_contract.RUN_HARD_STOP_MARGIN_S
 
 #: 101 이 만드는 것들 — 성공 시 정리 대상(``reset-101.cmd`` 와 같은 집합).
 PRACTICE_STATE = [
@@ -107,9 +109,9 @@ class ExitCode:
     ENVIRONMENT = 3
     DIRTY_HOME = 4
     #: 창은 내려가라는 말을 들었는데 GUI 루프가 안 내려온다.
-    TEARDOWN_HUNG = 7
+    TEARDOWN_HUNG = live_run_contract.TEARDOWN_HUNG_EXIT_CODE
     #: 실행이 자기 끝에 **도달조차 못 했다** — 브리지가 멎어 시한을 되짚을 기회가 없었다.
-    RUN_HUNG = 8
+    RUN_HUNG = live_run_contract.RUN_HUNG_EXIT_CODE
 
 
 class DirtyHome(RuntimeError):
@@ -748,20 +750,4 @@ def _say(message: str, *, stream: int = 1) -> None:
     print(message, file=sys.stderr if stream == 2 else sys.stdout, flush=True)
 
 
-def _hard_exit(code: int) -> None:
-    """강제 종료 — **버퍼를 비우고** 나간다. 강제 종료의 **유일한 문**이다.
-
-    ``os._exit`` 는 인터프리터를 그 자리에서 끝내므로 파이썬 스트림 버퍼를 비우지 않는다.
-    CI 처럼 stdout 이 파이프로 리다이렉트되면 블록 버퍼링이라, 착지가 낸 요약과 보고서 JSON 이
-    **한 글자도 나가지 못한 채** 사라진다(#426 리뷰 라운드 4). 강제 종료를 하는 이유가 진단을
-    남기기 위해서인데, 그 진단을 종료가 삼키고 있었다.
-
-    문을 하나로 두면 앞으로 착지가 무엇을 더 출력하든 함께 살아남는다 — 라운드 3 이 착지
-    경로를 하나로 접은 것과 같은 이유다.
-    """
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.flush()
-        except Exception:  # noqa: BLE001 — 비우기 실패로 종료를 막지 않는다
-            pass
-    os._exit(code)
+_hard_exit = live_run_contract.hard_exit
