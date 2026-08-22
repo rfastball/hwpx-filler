@@ -699,8 +699,10 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
         state = s.js(
             "(function(){var m=document.getElementById('dataPickerModal');"
             "var n=document.getElementById('dataPickerNote');"
-            "return {cls:m?m.className:null, note:n?n.textContent.trim():null,"
-            " current:(document.querySelector('#dataPickerCurrent .tplcard-name')||{}).textContent||null};"
+            "var all=[].slice.call(document.querySelectorAll('.modal')).map(function(x){"
+            "return x.id+'['+x.className+'] depth='+(x.style.getPropertyValue('--modal-depth')||'-');});"
+            "return {cls:m?m.className:null, depth:m?(m.style.getPropertyValue('--modal-depth')||'-'):null,"
+            " note:n?n.textContent.trim():null, modals:all};"
             "})()"
         )
         raise ScenarioFailure(f"SX-05 데이터 선택 면이 닫히지 않았습니다 — {state}") from exc
