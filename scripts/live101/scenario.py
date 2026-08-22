@@ -713,19 +713,13 @@ def _mount_data(ctx: ScenarioContext, path: str, *, failure: bool = False) -> No
     except StepTimeout as exc:
         # 이 면은 「불러오는 중」에는 닫히기를 거절한다(제품 계약). 그 거절인지 다른 것인지
         # 는 면이 스스로 말하고 있으므로, 시한만 남기지 말고 그 말을 함께 싣는다.
-        s.js(
-            "(function(){var b=document.getElementById('dataPickerClose');"
-            "window.__retry={before:document.getElementById('dataPickerModal').className,"
-            " dur:getComputedStyle(document.getElementById('dataPickerModal')).transitionDuration};"
-            "if(b)b.click();return true;})()"
-        )
         state = s.js(
             "(function(){var m=document.getElementById('dataPickerModal');"
             "var n=document.getElementById('dataPickerNote');"
             "var all=[].slice.call(document.querySelectorAll('.modal')).map(function(x){"
             "return x.id+'['+x.className+'] depth='+(x.style.getPropertyValue('--modal-depth')||'-');});"
             "return {cls:m?m.className:null, depth:m?(m.style.getPropertyValue('--modal-depth')||'-'):null,"
-            " note:n?n.textContent.trim():null, retry:window.__retry||null, modals:all};"
+            " note:n?n.textContent.trim():null, modals:all};"
             "})()"
         )
         raise ScenarioFailure(f"SX-05 데이터 선택 면이 닫히지 않았습니다 — {state}") from exc
