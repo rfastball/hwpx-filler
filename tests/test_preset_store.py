@@ -240,6 +240,47 @@ def test_save_at_creates_directory(tmp_path: Path) -> None:
     assert reg.load("k1") == _preset()
 
 
+def test_save_confirmed_overwrites_the_confirmed_slot(tmp_path: Path) -> None:
+    reg = PresetRegistry(tmp_path)
+    key = reg.add(_preset("표준"))
+    same = reg.save_confirmed(key, _preset("표준", selection_set=_selection("s2", "o9")))
+    assert same == key
+    assert reg.load(key).selection_set == _selection("s2", "o9")
+    assert len(reg.list_entries()) == 1
+
+
+def test_save_confirmed_lands_as_new_save_when_target_vanished(tmp_path: Path) -> None:
+    """확인 사이 대상이 사라졌으면 덮을 것이 없다 — 파괴 0 이라 신규 저장으로 착지한다."""
+    reg = PresetRegistry(tmp_path / "새폴더")
+    key = reg.save_confirmed("없는키", _preset("표준"))
+    assert key != "없는키"
+    assert reg.load(key).name == "표준"
+
+
+def test_save_confirmed_rejects_a_different_slot_holding_the_name(tmp_path: Path) -> None:
+    """사용자가 본 항목이 아닌 것을 덮지 않는다 — 거절 후 그 항목은 무변경이다."""
+    reg = PresetRegistry(tmp_path)
+    other = reg.add(_preset("표준"))
+    with pytest.raises(ValueError, match="확인 근거가 지금 상태와 다릅니다"):
+        reg.save_confirmed("b" * 16, _preset("표준", selection_set=_selection("s2", "o9")))
+    assert reg.load(other).selection_set == _selection()
+    assert len(reg.list_entries()) == 1
+
+
+def test_delete_loaded_returns_the_destroyed_preset(tmp_path: Path) -> None:
+    reg = PresetRegistry(tmp_path)
+    key = reg.add(_preset("표준"))
+    removed = reg.delete_loaded(key)
+    assert removed.name == "표준" and not reg.exists(key)
+
+
+def test_delete_loaded_of_missing_slot_raises(tmp_path: Path) -> None:
+    """무엇을 지웠는지 말할 수 없는 삭제를 성공으로 보고하지 않는다."""
+    reg = PresetRegistry(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        reg.delete_loaded("a" * 16)
+
+
 def test_delete_is_idempotent(tmp_path: Path) -> None:
     reg = PresetRegistry(tmp_path)
     key = reg.add(_preset())

@@ -114,11 +114,48 @@ class PresetRegistry:
             self.directory.mkdir(parents=True, exist_ok=True)
             save_preset(path, preset)
 
+    def save_confirmed(self, expected_key: str, preset: SelectionPreset) -> str:
+        """확정된 덮어쓰기 — 사용자가 본 그 항목만 덮고, 아니면 loud 거절한다(S9-02 · #828).
+
+        확인 왕복 사이에 상태가 바뀔 수 있으므로 잠금 안에서 지금 이름을 다시 조회해 세 갈래로
+        착지한다(dataset ``*_confirmed`` 규율 동형):
+
+        * 그 이름이 **사라졌으면** 덮을 것이 없으니 신규 저장으로 착지한다 — 파괴 0 이라 안전하고,
+          「저장」이라는 사용자 의도를 취소로 바꾸지 않는다. 새 슬롯 키를 반환한다.
+        * 그 이름을 **다른 슬롯**이 들고 있으면 거절한다 — 사용자가 승인한 것은 1차가 보여준
+          그 항목이지, 그 사이 생긴 다른 항목이 아니다.
+        * 같으면 :meth:`save_at` 으로 덮고 ``expected_key`` 를 반환한다.
+        """
+        with self._write_lock:
+            current = self.find_name(preset.name)
+            if current is None:
+                self.directory.mkdir(parents=True, exist_ok=True)
+                key = self.new_slot_key()
+                save_preset(self.slot_path(key), preset)
+                return key
+            if current[0] != expected_key:
+                raise ValueError(
+                    f"확인 근거가 지금 상태와 다릅니다: {preset.name}"
+                )
+            self.save_at(expected_key, preset)
+            return expected_key
+
     def delete(self, key: str) -> None:
         with self._write_lock:
             p = self.slot_path(key)
             if p.exists():
                 p.unlink()
+
+    def delete_loaded(self, key: str) -> SelectionPreset:
+        """삭제하고 **지워진 Preset 을 반환**한다 — 파괴 재진술의 소재(dataset 규율 동형).
+
+        부재·손상이면 :meth:`load` 의 오류가 그대로 오르고 파일은 건드리지 않는다: 무엇을
+        지웠는지 말할 수 없는 삭제를 성공으로 보고하지 않는다.
+        """
+        with self._write_lock:
+            preset = self.load(key)
+            self.delete(key)
+            return preset
 
     # ------------------------------------------------------------- 읽기
     def exists(self, key: str) -> bool:
