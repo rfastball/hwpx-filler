@@ -12,8 +12,23 @@ outcome 을 재생한다 — current view 계산은 replay 뒤 별도 단계라 
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 
+from hwpxfiller.application.preset_command import (
+    NEEDS_CONFIRM,
+    PRESET_ENTRY_CORRUPT,
+    PRESET_NAME_CONFLICT,
+    PRESET_NOT_FOUND,
+    REJECTED,
+    SAVED,
+    PresetSaveRejected,
+    PresetSaveResult,
+    PresetStorePort,
+    decide_apply_preset,
+    plan_preset_save,
+)
+from hwpxfiller.domain.preset import PresetError, SelectionPreset
 from hwpxfiller.application.slot_command import (
     CHANGED,
     CLEAR,
@@ -60,6 +75,7 @@ from hwpxfiller.application.slotless_run_bridge import (
 from hwpxfiller.host.staged_template import stage_exact_applied_bytes
 from hwpxfiller.application.slot_configuration_projection import (
     CurrentSlotConfigurationView,
+    ProjectedDetachedSelection,
     project_context_error,
     project_current_slot_configuration,
 )
@@ -643,6 +659,264 @@ def admit_managed_slotless_run(
             home, workspace_instance_id, expected_work_authority_id,
             expected_template_application_id, expected_configuration_presence,
             expected_configuration_version, captured_at,
+        )
+
+
+# ─── Preset 저장·적용 (S9-02 · #828) ─────────────────────────────────────────────
+# 이 두 동사는 새 모듈이 아니라 **여기** 산다: Configuration 읽기·context 복원·CAS·persist·
+# fresh view 는 이미 이 모듈의 private helper 가 지고, 새 모듈에서는 그것들을 재사용할 수 없어
+# 인라인 재구현(=같은 상태의 두 번째 판정)이 된다.
+@dataclass(frozen=True)
+class PresetApplyResult:
+    """적용 시도의 outcome + 수치 + 같은 fence 아래 fresh view.
+
+    ``applied_slot_ids``·``broken`` 은 :class:`~hwpxfiller.application.preset_command.PresetApplyDecision`
+    의 값을 **그대로** 싣는다(재계산 0). 거절(``rejection_code``)이면 outcome 은 None 이다.
+    """
+
+    outcome: ConfigurationMutationOutcome | None
+    rejection_code: str | None  # PRESET_NOT_FOUND | PRESET_ENTRY_CORRUPT
+    rejection_detail: str | None
+    applied_slot_ids: tuple[str, ...]
+    broken: tuple[ProjectedDetachedSelection, ...]
+    view: CurrentSlotConfigurationView | None
+    view_error: str | None
+
+    @property
+    def applied_count(self) -> int:
+        return len(self.applied_slot_ids)
+
+    @property
+    def broken_count(self) -> int:
+        return len(self.broken)
+
+
+def _save_selection_preset_under_fence(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    context: ConfigurationCommandContext,
+    name: str,
+    now: str,
+) -> SelectionPreset:
+    """현재 Configuration 을 **읽기만** 해서 Preset 값을 만든다(ensure·물질화 0).
+
+    ``StaleTemplateApplication`` 은 잡지 않고 전파한다 — 저장은 mutation 이 아니라 stale
+    terminal outcome 을 저장할 자리가 없다. 호출측(S9-03)이 context error 로 접는다.
+    """
+    ctx = _resolve_context(work_state, qualification, candidate, context)
+    stored = _load_existing(
+        store, context.workspace_instance_id, context.expected_work_authority_id
+    )
+    pre = _current_config(stored, ctx.template_application_id) if stored else None
+    provenance = {
+        "template_application_id": ctx.template_application_id,
+        "selection_contract_id": ctx.selection_semantic_contract_id,
+    }
+    return plan_preset_save(pre, name, provenance, now)
+
+
+def _needs_confirm(
+    name: str, existing: "tuple[str, SelectionPreset] | None", detail: str
+) -> PresetSaveResult:
+    """이름 충돌 → 확인 왕복. **쓰기 0** 이고 지금 상태의 사실을 동봉한다.
+
+    ``existing`` 이 None 인 경우(경합 실패 뒤 재조회에서 그 항목이 사라진 경우)에도 조용히
+    저장으로 넘어가지 않는다 — 사용자가 한 번 더 확인하고 착지시킨다.
+    """
+    return PresetSaveResult(
+        status=NEEDS_CONFIRM,
+        code=PRESET_NAME_CONFLICT,
+        saved_key=None,
+        existing_key=existing[0] if existing else None,
+        existing_created_at=existing[1].created_at if existing else None,
+        detail=detail or f"같은 이름의 프리셋이 이미 있습니다: {name}",
+    )
+
+
+def save_selection_preset(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    presets: PresetStorePort,
+    *,
+    context: ConfigurationCommandContext,
+    name: str,
+    confirmed_overwrite_key: str | None = None,
+    now: str,
+) -> PresetSaveResult:
+    """현재 선택을 이름 붙여 Preset 으로 저장한다 — 조용한 덮기 경로가 없다.
+
+    Configuration 읽기는 shared fence 아래, registry 쓰기는 그 **밖**이다: 그 시점의 Preset
+    값은 이미 확정된 immutable value 라 Work fence 가 지킬 것이 없고, Preset 레지스트리는
+    Work 와 다른 쓰기 경계(자기 잠금)를 갖는다(#821 D2).
+
+    빈 이름 등 :class:`~hwpxfiller.domain.preset.PresetError` 는 접지 않고 전파한다 — 입력
+    검증을 지나지 않은 호출은 프로그래밍 오류이지 사용자에게 재진술할 업무 판정이 아니다.
+    """
+    if context.expected_work_authority_id != context.token_work_authority_id:
+        raise CrossWorkConfigurationToken("route Work 와 token Work 가 다르다")
+    with per_work_mutation_fence(
+        context.workspace_instance_id, context.expected_work_authority_id
+    ):
+        try:
+            preset = _save_selection_preset_under_fence(
+                store, work_state, qualification, candidate, context, name, now
+            )
+        except PresetSaveRejected as exc:
+            return PresetSaveResult(REJECTED, exc.code, None, None, None, str(exc))
+
+    if confirmed_overwrite_key is None:
+        existing = presets.find_name(preset.name)
+        if existing is not None:
+            return _needs_confirm(preset.name, existing, "")
+        try:
+            key = presets.add(preset)
+        except ValueError as exc:
+            # add 의 백스톱(스캔↔잠금 사이 경합) — 조용히 덮지 않고 확인으로 되돌린다.
+            return _needs_confirm(preset.name, presets.find_name(preset.name), str(exc))
+    else:
+        try:
+            key = presets.save_confirmed(confirmed_overwrite_key, preset)
+        except ValueError as exc:
+            # 확인 근거가 지금 상태와 다르다 → 지금 사실로 다시 묻는다(덮기 0).
+            return _needs_confirm(preset.name, presets.find_name(preset.name), str(exc))
+    return PresetSaveResult(SAVED, None, key, None, None, None)
+
+
+def _apply_rejected(code: str, detail: str) -> PresetApplyResult:
+    return PresetApplyResult(None, code, detail, (), (), None, None)
+
+
+def _apply_result(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    context: ConfigurationCommandContext,
+    outcome: ConfigurationMutationOutcome,
+    applied_slot_ids: tuple[str, ...],
+    broken: tuple[ProjectedDetachedSelection, ...],
+) -> PresetApplyResult:
+    base = _result(store, work_state, qualification, candidate, context, outcome)
+    return PresetApplyResult(
+        outcome=base.outcome,
+        rejection_code=None,
+        rejection_detail=None,
+        applied_slot_ids=applied_slot_ids,
+        broken=broken,
+        view=base.view,
+        view_error=base.view_error,
+    )
+
+
+def _apply_selection_preset_under_fence(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    context: ConfigurationCommandContext,
+    preset: SelectionPreset,
+    now: str,
+) -> PresetApplyResult:
+    """``_mutate_under_fence`` 골격을 미러하되 **ledger·fingerprint 를 쓰지 않는다**.
+
+    Select/Clear 는 요청 재전송을 최초 outcome 의 재생으로 닫아야 하지만(그 편집 하나가 무엇을
+    했는지는 나중에 재계산할 수 없다), Preset 적용의 중복 재전송은 token version CAS 가
+    ``STALE_CONFIGURATION`` 으로 시끄럽게 잡고 결과 재진술은 fresh view 로 충분하다 — 원장에
+    남길 새 terminal 어휘를 발명하지 않는다.
+    """
+    ws = context.workspace_instance_id
+    work_id = context.expected_work_authority_id
+    stored = _load_existing(store, ws, work_id)
+
+    try:
+        ctx = _resolve_context(work_state, qualification, candidate, context)
+    except StaleTemplateApplication:
+        outcome = ConfigurationMutationOutcome(
+            STALE_TEMPLATE_APPLICATION, False, context.token_template_application_id,
+            context.token_configuration_version, context.token_configuration_version,
+            False,
+        )
+        return _apply_result(
+            store, work_state, qualification, candidate, context, outcome, (), ()
+        )
+
+    if ctx.selection_semantic_contract_id != context.token_selection_contract_id:
+        raise ConfigurationContextClaimMismatch("token contract claim 이 current 와 다르다")
+
+    pre = _current_config(stored, ctx.template_application_id) if stored else None
+    if not _config_version_cas(context, pre):
+        outcome = ConfigurationMutationOutcome(
+            STALE_CONFIGURATION, False, ctx.template_application_id,
+            pre.version if pre else None, pre.version if pre else None, False,
+        )
+        return _apply_result(
+            store, work_state, qualification, candidate, context, outcome, (), ()
+        )
+
+    existing_configs = stored.configurations.configurations if stored else ()
+    planned = pre if pre is not None else _plan_new_config(
+        existing_configs, work_state, qualification, candidate, ctx, now
+    )
+    # barrier(planned is None): 판정은 transient empty 로만 하고 물질화하지 않는다(select 동형).
+    decision_config = planned if planned is not None else create_empty(
+        ctx.work_id, ctx.template_application_id, now
+    )
+    decision = decide_apply_preset(ctx, decision_config, preset.selection_set, now)
+
+    committed_config = decision.new_config
+    if committed_config is None and pre is None and planned is not None:
+        committed_config = planned
+    if committed_config is not None:  # ledger record 가 없으므로 쓸 것이 없으면 쓰지 않는다
+        _persist(store, ws, work_id, stored, committed_config, None)
+
+    outcome = ConfigurationMutationOutcome(
+        decision.outcome_code, decision.changed, ctx.template_application_id,
+        decision.source_version, decision.resulting_version, False,
+    )
+    return _apply_result(
+        store, work_state, qualification, candidate, context, outcome,
+        decision.applied_slot_ids, decision.broken,
+    )
+
+
+def apply_selection_preset(
+    store: WorkSlotConfigurationStore,
+    work_state: WorkTemplateStateReadPort,
+    qualification: QualificationReadPort,
+    candidate: AppliedCandidateReadPort,
+    presets: PresetStorePort,
+    *,
+    context: ConfigurationCommandContext,
+    preset_key: str,
+    now: str,
+) -> PresetApplyResult:
+    """Preset 을 현재 Configuration 에 **제안**으로 적용한다(#821 D3).
+
+    Preset 로드는 fence 밖이다 — Work 상태가 아니라 별도 레지스트리의 읽기다. 부재·불량 키는
+    ``PRESET_NOT_FOUND``, 읽을 수 없는 항목은 ``PRESET_ENTRY_CORRUPT`` + 사유로 거절한다
+    (숨기지 않고 사유 병기).
+    """
+    try:
+        preset = presets.load(preset_key)
+    except FileNotFoundError as exc:
+        return _apply_rejected(PRESET_NOT_FOUND, str(exc))
+    except (PresetError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # 파일은 있는데 값으로 복원되지 않는다 — 「없다」와 다른 사실이라 코드를 가른다.
+        return _apply_rejected(PRESET_ENTRY_CORRUPT, str(exc))
+    except ValueError as exc:  # 경로 탈출 등 불량 키 — 가리키는 항목이 없다
+        return _apply_rejected(PRESET_NOT_FOUND, str(exc))
+
+    if context.expected_work_authority_id != context.token_work_authority_id:
+        raise CrossWorkConfigurationToken("route Work 와 token Work 가 다르다")
+    with per_work_mutation_fence(
+        context.workspace_instance_id, context.expected_work_authority_id
+    ):
+        return _apply_selection_preset_under_fence(
+            store, work_state, qualification, candidate, context, preset, now
         )
 
 
