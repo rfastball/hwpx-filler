@@ -130,9 +130,11 @@ def judge(report: dict, *, mode: str) -> Verdict:
         pixel = (sx.get("H1") or {}).get("pixel") or {}
         if not pixel.get("sha256") or pixel.get("unstable") is not False:
             failures.append("H1 actual pixel evidence가 없거나 불안정합니다")
+        # S6-05(#812) H6 극성 전환: managed create 가 실제로 문서를 앉힌다 — before==after 는
+        # 이제 「클릭이 조용히 무반응」이라는 결함의 신호다(계획된 문서 실존은 시나리오가 잰다).
         h6 = sx.get("H6") or {}
-        if h6.get("filesystem_before") != h6.get("filesystem_after"):
-            failures.append("H6 managed path filesystem mutation이 0이 아닙니다")
+        if h6.get("filesystem_before") == h6.get("filesystem_after"):
+            failures.append("H6 managed create가 filesystem을 바꾸지 못했습니다")
         if (sx.get("H7") or {}).get("work_race") != "B_WON":
             failures.append("H7 Work A/B race에서 latest Work B가 이기지 않았습니다")
 
