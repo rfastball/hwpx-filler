@@ -62,6 +62,17 @@ def default_dataset_pool_dir() -> Path:
     return home_dir() / "datasets"
 
 
+def default_preset_dir() -> Path:
+    """Selection Preset 레지스트리 기본 위치 — 사용자 홈(``~/.hwpxfiller/presets``).
+
+    작업·데이터셋·txt 템플릿과 동일 홈 관례(:func:`default_dataset_pool_dir` 미러).
+    ``HWPXFILLER_HOME`` 로 재지정 가능(해석은 :func:`home_dir`). 레지스트리 *클래스*
+    (:class:`~hwpxfiller.external.preset_store.PresetRegistry`)는 위치-불가지(생성자가
+    디렉터리를 받는다) — 이 함수는 기본값 해석기일 뿐이다(S9-01 #827).
+    """
+    return home_dir() / "presets"
+
+
 def default_template_authority_dir() -> Path:
     """S3 template 권위 영속 루트 — 사용자 홈(``~/.hwpxfiller/template_authority``).
 

@@ -41,12 +41,12 @@ ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일
 from __future__ import annotations
 
 import json
-import os
 import threading
 import uuid
 from pathlib import Path
 
 from .atomic import write_text_atomic
+from .write_locks import shared_write_lock
 from hwpxfiller.application.dataset_pool import (
     CorruptDatasetEntry,
     StaleConfirmError,
@@ -60,18 +60,8 @@ from hwpxfiller.domain.dataset_reference import (
     reference_identity,
 )
 
-# 같은 데이터셋 디렉터리를 보는 컨트롤러·레지스트리 인스턴스는 하나의 쓰기 경계를 공유한다.
-# pywebview 는 호출마다 다른 스레드로 진입하고 화면마다 레지스트리를 새로 만들 수 있으므로
-# instance-local RLock 은 load→수정→save 사이의 lost update 를 막지 못한다. #182 범위는
-# single-process 직렬화이며 cross-process lock 은 명시적 비목표다.
-_WRITE_LOCKS: "dict[str, threading.RLock]" = {}
-_WRITE_LOCKS_GUARD = threading.Lock()
-
-
-def _shared_write_lock(directory: Path) -> "threading.RLock":
-    key = os.path.normcase(os.path.abspath(os.fspath(directory)))
-    with _WRITE_LOCKS_GUARD:
-        return _WRITE_LOCKS.setdefault(key, threading.RLock())
+# 같은 디렉터리를 보는 인스턴스들의 공유 쓰기 경계는 :mod:`.write_locks` 가 소유한다
+# (S9-01 #827 에서 원문 승격 — Preset 레지스트리가 같은 규율을 인라인 재구현하지 않게).
 
 
 # ------------------------------------------------------------------ persistence codec
@@ -121,7 +111,7 @@ class DatasetPoolRegistry:
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
-        self._write_lock = _shared_write_lock(self.directory)
+        self._write_lock = shared_write_lock(self.directory)
 
     # ------------------------------------------------------------- 슬롯 키
     def slot_path(self, key: str) -> Path:
