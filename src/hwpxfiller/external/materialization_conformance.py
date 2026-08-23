@@ -58,6 +58,8 @@ from hwpxfiller.domain.fields import (
 )
 from hwpxfiller.external.template_inspection import inspect_slots, remove_slot_option
 
+from .content_digest import blob_digest
+
 CONFORMANCE_CONTRACT_ID = "hwpx-materialization-conformance/v1"
 
 # reopen/reparse 실패로 취급하는 오류 집합(bad zip·bad mimetype·malformed XML).
@@ -375,7 +377,7 @@ def verify_materialization_postconditions(
         return ConformanceFailure(PROTECTED_STRUCTURE_LOSS, protected)
 
     return ConformancePass(
-        output_digest=_blob_digest(output_bytes), notes=tuple(execution_notes)
+        output_digest=blob_digest(output_bytes), notes=tuple(execution_notes)
     )
 
 
@@ -465,7 +467,3 @@ def _read_field_values(pkg: object) -> list[tuple[str, str]]:
     return values
 
 
-def _blob_digest(blob: bytes) -> str:
-    from hashlib import sha256
-
-    return "sha256:" + sha256(blob).hexdigest()
