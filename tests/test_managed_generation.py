@@ -24,6 +24,7 @@ from hwpxfiller.external.delivery_coordinator import DeliveryCompleted, Delivery
 from hwpxfiller.external.runtime_capability import admitted_runtime_conformance_registry
 from hwpxfiller.webapp.managed_generation import (
     RECORD_VALIDATION_BLOCKED,
+    ManagedReadBackFailed,
     ManagedRunCancelled,
     ManagedRunRefused,
     run_managed_generation,
@@ -112,6 +113,60 @@ def test_two_records_deliver_two_distinct_documents(tmp_path) -> None:
     assert blob_digest(first) == result.delivered[0].output_digest
     assert blob_digest(second) == result.delivered[1].output_digest
     assert progress == [(1, 2), (2, 2)]
+
+
+# ═══ 되읽기 검증(S7-01 · #823 — #818 회수) ═══════════════════════════════════════════════
+def test_read_back_failure_is_a_distinct_state_that_keeps_delivered_facts(
+    tmp_path, monkeypatch
+) -> None:
+    """되읽기 거절은 완주·중단 어느 쪽도 아니다 — 안착 사실은 그대로 실려 온다.
+
+    관찰 커널 자체의 진실은 ``test_artifact_observation`` 이 실 파일로 소유한다. 여기는
+    배선을 잰다: 완주 뒤 delivered 순서로 관찰이 돌고, 첫 거절에서 그 항목의 ordinal 과
+    사유가 재조립 없이 실려 나온다.
+    """
+    import hwpxfiller.webapp.managed_generation as mg
+    from hwpxfiller.external.artifact_observation import (
+        ARTIFACT_DIGEST_MISMATCH,
+        ArtifactObservationRefused,
+        ObservedArtifact,
+    )
+
+    case, registry, manifest, basis, out = _kit(tmp_path)
+    seen: list[str] = []
+
+    def fake_observe(*, absolute_path: str, recorded_digest: str):
+        seen.append(absolute_path)
+        if len(seen) == 1:  # 첫 문서는 관찰이 서고, 둘째에서 사건이 난다
+            from pathlib import Path
+
+            from hwpxcore.package import HwpxPackage
+
+            data = Path(absolute_path).read_bytes()
+            return ObservedArtifact(
+                absolute_path=absolute_path, output_digest=recorded_digest,
+                exact_bytes=data, package=HwpxPackage.from_bytes(data),
+            )
+        return ArtifactObservationRefused(
+            ARTIFACT_DIGEST_MISMATCH, f"{absolute_path} 의 내용이 안착 기록과 다르다"
+        )
+
+    monkeypatch.setattr(mg, "observe_delivered_artifact", fake_observe)
+    result = _run(
+        case, registry, manifest, basis, out, tmp_path,
+        [_snapshot("r1", "홍길동", "1000"), _snapshot("r2", "김철수", "2000")],
+        ["공고서-001.hwpx", "공고서-002.hwpx"],
+    )
+
+    assert isinstance(result, ManagedReadBackFailed), result
+    assert result.code == ARTIFACT_DIGEST_MISMATCH  # 커널 사유의 재진술(재조립 0)
+    assert result.failed_item_ordinal == 1
+    assert [doc.relative_path for doc in result.delivered] == [
+        "공고서-001.hwpx", "공고서-002.hwpx"
+    ]
+    # 안착 사실은 유효하다 — 파일 둘 다 disk 에 남아 있고 아무것도 되돌리지 않았다.
+    assert sorted(p.name for p in out.iterdir()) == ["공고서-001.hwpx", "공고서-002.hwpx"]
+    assert seen == [str(out / "공고서-001.hwpx"), str(out / "공고서-002.hwpx")]
 
 
 # ═══ 거절 갈래 — 전부 write 0 ═════════════════════════════════════════════════════════

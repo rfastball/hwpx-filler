@@ -10,6 +10,11 @@ record ↔ delivery item 의 짝은 위치다: caller 가 넘긴 raw snapshot �
 materialization 순서 = ``resolved_delivery.ordered_items`` 순서(enumerate ordinal). 그 순서
 일치는 delivery 준비(:func:`resolve_current_generation_delivery`)와 이 호출이 **같은 record
 투영**에서 나왔다는 caller 의 전제이고, 수 불일치는 coordinator 가 loud 하게 닫는다.
+
+완주(``DeliveryCompleted``) 직후에는 앉은 파일들을 관찰 커널(:mod:`hwpxfiller.external
+.artifact_observation`)로 되읽어 기록 digest 와 대조한다 — #818 의 「안착 bytes read-back digest
+재검증」 항목을 S7-01(#823 · #820 D6)이 여기서 회수한 것이고, 실패는 안착 사실을 부정하지 않는
+:class:`ManagedReadBackFailed` 라는 구분된 상태로 낸다.
 """
 
 from __future__ import annotations
@@ -38,7 +43,13 @@ from ..application.record_validation import (
 )
 from ..domain.raw_data_record import RawDataRecordSnapshot
 from ..external.candidate_store import CandidateObjectStore
+from ..external.artifact_observation import (
+    ArtifactObservationRefused,
+    observe_delivered_artifact,
+)
 from ..external.delivery_coordinator import (
+    DeliveredDocument,
+    DeliveryCompleted,
     DeliveryExecutionResult,
     deliver_current_documents,
 )
@@ -73,7 +84,27 @@ class ManagedRunCancelled:
     total: int
 
 
-ManagedGenerationResult = DeliveryExecutionResult | ManagedRunRefused | ManagedRunCancelled
+@dataclass(frozen=True)
+class ManagedReadBackFailed:
+    """안착은 됐으나 되읽기 검증이 서지 않았다(S7-01 · #823 — #818 회수).
+
+    ``delivered`` 는 여전히 유효한 사실이다: 파일들은 이미 disk 에 앉았고 이 상태는 그것을
+    되돌리지도 부정하지도 않는다. 다른 것은 「앉은 것을 다시 읽어 기록과 대조했더니 어긋났다」
+    는 관찰 결과뿐이라, 완주·중단 어느 쪽으로도 뭉개지 않고 구분된 상태로 낸다.
+    """
+
+    code: str
+    detail: str
+    failed_item_ordinal: int
+    delivered: tuple[DeliveredDocument, ...]
+
+
+ManagedGenerationResult = (
+    DeliveryExecutionResult
+    | ManagedRunRefused
+    | ManagedRunCancelled
+    | ManagedReadBackFailed
+)
 
 
 def run_managed_generation(
@@ -158,14 +189,34 @@ def run_managed_generation(
             on_progress(ordinal + 1, total)
 
     # 4. 안착 — 전건 PASS 게이트·항목별 원자는 coordinator 계약(S6-8).
-    return deliver_current_documents(
+    delivery = deliver_current_documents(
         resolved=resolved_delivery, ordered_outcomes=outcomes
     )
+    if not isinstance(delivery, DeliveryCompleted):
+        # 부분 안착(``DeliveryAborted``)의 되읽기는 이 슬라이스의 범위 밖이다(#818 잔여) —
+        # 조용히 절반만 검증하지 않고 멈춘 사실 그대로 올려보낸다.
+        return delivery
+
+    # 5. 되읽기 검증(#820 D6) — 앉은 파일을 다시 읽어 기록 digest 와 대조한다. 반환된 bytes·
+    #    package 는 판정에만 쓰고 버린다(보존·캐시 없음 — S7-03 이 필요할 때 다시 관찰한다).
+    for doc in delivery.delivered:
+        observed = observe_delivered_artifact(
+            absolute_path=doc.absolute_path, recorded_digest=doc.output_digest
+        )
+        if isinstance(observed, ArtifactObservationRefused):
+            return ManagedReadBackFailed(
+                code=observed.code,
+                detail=observed.detail,
+                failed_item_ordinal=doc.item_ordinal,
+                delivered=delivery.delivered,
+            )
+    return delivery
 
 
 __all__ = [
     "RECORD_VALIDATION_BLOCKED",
     "ManagedGenerationResult",
+    "ManagedReadBackFailed",
     "ManagedRunCancelled",
     "ManagedRunRefused",
     "run_managed_generation",
