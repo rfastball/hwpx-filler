@@ -37,6 +37,7 @@ from ..application.document_creation_workbench import (
     DataScopeSummary,
     DeliveryPreviewSummary,
     GetDocumentCreationWorkbenchResult,
+    HistoricalOutcomeSummary,
     InputRequirement,
     RecordValidationSummary,
     WorkbenchContextIntegrity,
@@ -266,6 +267,7 @@ class WorkbenchObservationProduct:
         semantic_preview: SemanticValuePreviewProjection | None,
         run_delivery_intent: RunDeliveryIntent | None = None,
         context_integrity: WorkbenchContextIntegrity | None = None,
+        historical_outcome: "HistoricalOutcomeSummary | None" = None,
     ) -> GetDocumentCreationWorkbenchResult:
         """세션 사실 + seal 서비스 fresh_observation → 작업대 Observation(또는 ContextError).
 
@@ -310,6 +312,8 @@ class WorkbenchObservationProduct:
             preview_satisfied=preview_satisfied,
             semantic_preview=semantic_preview,
             context_integrity=context_integrity,
+            # ── S6-05(#812): 세션 실행 증거 — 부차 축(Primary Action 을 결정하지 못한다) ──
+            historical_outcome=historical_outcome,
         )
         return compose_document_creation_workbench(composition)
 

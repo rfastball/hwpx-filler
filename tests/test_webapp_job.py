@@ -5372,21 +5372,15 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
 
 
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
-def test_slotless_hwpx_generate_mints_authority_then_second_run_is_refused(
-    tmp_path, monkeypatch
-):
-    """**오늘의 동작을 고정한다 — 옳다고 주장하지 않는다.**
+def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_path):
+    """**#806 R1 의 뒤집힘 — S6-05(#812)가 트랩을 구조로 해소했다.**
 
-    slot 없는 HWPX 작업의 1회차 generate 는 성공하면서 **스스로** ``authority_id`` 를 발급하고
-    (`template_change.resolve_generation_template_for_seated_context(create=True)`, S4-11 #694),
-    2회차는 그 발급물 때문에 managed 로 읽혀 거절된다(`screen_job._generate_with_token`, SX-03 #750).
-    두 슬라이스는 각자 옳았고 **곱이 트랩**이다 — 실사용 템플릿은 아직 전부 slotless 라
-    (Slot 저작 UI 는 S8) 이 경로가 곧 실제 HWPX 생성 경로다.
-
-    기존 `test_managed_hwpx_generate_never_reaches_legacy_generator` 는 ``authority_id`` 를 **미리
-    심어 두고** 재기 때문에 발급과 차단이 같은 호출에서 만나는 이 자리를 지나가지 않는다
-    (#729 가 말한 hollow measurement 부류). 봉합은 #807 S6-05 가 진다 — 그때 이 테스트가 뒤집히며
-    착지하는 것이 정상이고, 그 전에 조용히 초록으로 남는 것이 결함이다.
+    S6G-00(#806)이 재현으로 고정한 generate-once 트랩: 1회차 generate 가 스스로
+    ``authority_id`` 를 발급하고(S4-11), 2회차가 그 발급물 때문에 managed 로 읽혀 거절됐다
+    (SX-03 가드). S6-05 는 곱의 반대편 항을 제거했다 — 실행 경로 선택(의미 4)은
+    ``bool(authority_id)`` 가 아니라 slot-bearing 사실에서 갈리므로, slotless 작업은 발급
+    뒤에도 legacy 갈래로 흘러 **2회차도 같은 갈래에서 성공한다**(같은 입력 = 같은 갈래).
+    발급 자체(의미 1·2)는 그대로 옳다 — 발급이 트랩이 아니라 곱이 트랩이었다.
     """
     ctrl, _ = _template_change_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -5396,20 +5390,15 @@ def test_slotless_hwpx_generate_mints_authority_then_second_run_is_refused(
     assert ctrl.registry.load("공고서").authority_id == ""
 
     assert ctrl.generate()["ok"] is True
-    # 1회차가 자물쇠를 발급했다 — 사용자는 「변경사항 확인」을 누른 적이 없다.
+    # 1회차가 Work identity 를 발급했다(의미 1·2 — lazy 발급은 그대로 옳다).
     minted = ctrl.registry.load("공고서").authority_id
     assert minted != ""
+    assert minted.startswith("w-")  # 발급 형태 단일화(S6-05)
 
-    # 2회차는 legacy generator 에 **닿지 못한다**. 덮어쓰기 재진술 갈래가 아니라 managed 가드다.
-    def forbidden(*args, **kwargs):
-        pytest.fail("두 번째 generate 가 legacy generator 에 도달했다")
-
-    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
-    refused = ctrl.generate(confirm_overwrite=True)
-    assert refused["ok"] is False
-    assert refused.get("needs_overwrite") is not True
-    assert refused["error"] == "현재 환경에서는 문서를 만들 수 없습니다"
-    # 발급물은 그대로다 — 되돌릴 길은 복제뿐이고 그 길은 #804 가 막혀 있다고 보고한다.
+    # 2회차: 발급물이 있어도 slotless 는 legacy 갈래 그대로 — 트랩이 구조로 사라졌다.
+    second = ctrl.generate(confirm_overwrite=True)
+    assert second["ok"] is True, second
+    assert second.get("needs_overwrite") is not True
     assert ctrl.registry.load("공고서").authority_id == minted
 
 
@@ -5714,7 +5703,10 @@ def test_managed_generation_pushes_adopted_identity_before_review_rejection(tmp_
 
     assert rejected["ok"] is False and "빈 값" in rejected["error"]
     current = ctrl.snapshot()
-    assert current["managed_hwpx"] is True
+    # S6-05(#812): managed_hwpx 는 slot-bearing 파생이라 slotless 발급 작업은 False 다 —
+    # 채택된 identity(authority_id) push 는 그대로 한 번 일어난다.
+    assert current["managed_hwpx"] is False
+    assert ctrl.registry.load("공고서").authority_id != ""
     assert len(pushes) == 1 and pushes[0][1] == current
 
 
@@ -5834,7 +5826,10 @@ def test_managed_generation_exception_pushes_only_changed_identity(
 
     adopted = failpoint != "manifest"
     current = ctrl.snapshot()
-    assert current["managed_hwpx"] is adopted
+    # S6-05(#812): slotless 는 발급(채택) 뒤에도 managed_hwpx=False — 채택 여부는
+    # authority_id 로 직접 확인한다(push 계약은 그대로).
+    assert current["managed_hwpx"] is False
+    assert (ctrl.registry.load("공고서").authority_id != "") is adopted
     assert len(pushes) == int(adopted)
     if adopted:
         restored = ctrl.registry.load("공고서")
