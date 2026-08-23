@@ -12,6 +12,7 @@ from hwpxfiller.host.locations import home_dir
 from hwpxfiller.host.locations import (
     default_dataset_pool_dir,
     default_jobs_dir,
+    default_preset_dir,
     default_text_templates_dir,
     default_templates_dir,
 )
@@ -35,13 +36,14 @@ def test_empty_override_is_treated_as_unset(monkeypatch) -> None:
 
 
 def test_all_default_roots_share_one_home(monkeypatch, tmp_path: Path) -> None:
-    """5개 소비자가 같은 홈을 본다 — 재지정 뒤 하나라도 딴 곳을 보면 조용한 갈라짐(#76)."""
+    """6개 소비자가 같은 홈을 본다 — 재지정 뒤 하나라도 딴 곳을 보면 조용한 갈라짐(#76)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
     home = tmp_path / "home"
     assert default_jobs_dir() == home / "jobs"
     assert default_dataset_pool_dir() == home / "datasets"
     assert default_templates_dir() == home / "templates"
     assert default_text_templates_dir() == home / "text_templates"
+    assert default_preset_dir() == home / "presets"
     assert settings._settings_path() == home / "settings.json"
 
 
