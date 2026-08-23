@@ -39,6 +39,33 @@ def write_bytes_atomic(path: "str | os.PathLike[str]", data: bytes) -> None:
         raise
 
 
+def write_bytes_atomic_exclusive(path: "str | os.PathLike[str]", data: bytes) -> None:
+    """``data`` 를 임시 파일에 완성한 뒤 **비어 있는** ``path`` 로만 원자 이동한다(no-clobber).
+
+    :func:`write_bytes_atomic` 의 ``os.replace`` 는 무조건 덮어쓴다 — 「이 이름은 관찰 시점에
+    비어 있었다」는 계획(WRITE_NEW·WRITE_ADD_SUFFIX)을 그것으로 집행하면 관찰과 쓰기 사이에
+    생긴 파일을 조용히 파괴한다(S6-04 · #811). 이 함수는 ``os.rename`` 을 쓴다 — Windows 는
+    대상이 존재하면 :class:`FileExistsError` 로 거절하므로, 재관찰-후-쓰기의 경쟁 창 없이
+    「생성 자체가 검사」다. 대상이 이미 있으면 기존 파일은 무손상으로 남고 임시 파일은
+    치워지며 예외가 그대로 올라간다(확인-또는-경보).
+    """
+    path = os.fspath(path)
+    directory = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(
+        prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory
+    )
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        os.rename(tmp, path)  # 대상 존재 시 FileExistsError — no-clobber 원자 이동
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def write_text_atomic(
     path: "str | os.PathLike[str]", text: str, encoding: str = "utf-8"
 ) -> None:
