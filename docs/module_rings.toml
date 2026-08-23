@@ -403,3 +403,9 @@ module = "hwpxfiller.webapp.workbench_observation_product"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/workbench_observation_product.py"]
 oracle_nodeid = "tests/test_webapp_job_slot_configuration.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.managed_generation"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/managed_generation.py"]
+oracle_nodeid = "tests/test_managed_generation.py"
