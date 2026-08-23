@@ -34,7 +34,19 @@ export type RunIdentity = {
   runToken: string;
 };
 
-export type RunResult = Record<string, any>;
+/** 이 실행이 **실제로 disk 에 앉힌** 문서 한 건(S7-03 · #825). 값은 전부 Python 이 낸
+ *  그대로다 — 파일명·안착 처분·경로 어느 것도 표면이 조립하지 않는다. `ordinal` 은 그
+ *  실행이 고정한 좌표라 관찰·저장이 이 값으로 겨눈다(표시 index·파일명은 갈릴 수 있다). */
+export type DeliveredArtifactRow = {
+  ordinal: number;
+  filename: string;
+  disposition: string;
+  path: string;
+};
+
+export type RunResult = Record<string, any> & {
+  delivered?: readonly DeliveredArtifactRow[];
+};
 export type RunProgress = { done: number; total: number; run_token?: string };
 
 export type JobRunState = {

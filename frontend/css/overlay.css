@@ -144,3 +144,22 @@
 .preview-drawer .preview-foot>div{display:flex;flex-direction:column;gap:var(--sp-2);
   min-width:0}
 .preview-drawer .preview-foot strong{overflow-wrap:anywhere}
+
+/* ---- 산출물 관찰 시트 (S7-03 · #825) ----
+   위 미리보기 드로어와 **골격은 같고 시각 어휘는 다르다**(#820 D4): 저기는 값 행(mir-row)의
+   면이고 여기는 문서 본문의 면이다. 문서를 문서처럼 읽히게 하려고 본문 폭을 재단하고
+   문단·표를 그 안에 세운다. 조판·서식 재현은 비범위라(#360) 글꼴·여백을 흉내 내지 않는다. */
+.artifact-sheet .artifact-sheet-body{display:flex;flex-direction:column;gap:var(--sp-12)}
+.artifact-sheet .picker-sec{max-width:72ch}
+.artifact-para{margin:0 0 var(--sp-6);white-space:pre-wrap;overflow-wrap:anywhere}
+.artifact-para:empty::before{content:"(빈 문단)";color:var(--a-muted)}
+/* 넓은 표는 **자기 상자 안에서** 가로로 흐른다 — 면 전체가 가로로 밀리면 본문을 잃는다. */
+.artifact-table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;
+  margin:var(--sp-6) 0;font-size:var(--fs-caption)}
+.artifact-table td{border:1px solid var(--n-border);padding:var(--sp-4) var(--sp-6);
+  vertical-align:top;min-width:6ch}
+.artifact-table td .artifact-para:last-child{margin-bottom:0}
+/* 못 본 구간·빈 값 표식은 부수 정보가 아니라 관찰의 일부다 — 접거나 흐리게 두지 않는다. */
+.artifact-sheet .artifact-unrendered[data-partial="true"]{
+  border-left:3px solid var(--a-warn);padding-left:var(--sp-8)}
+.artifact-sheet .artifact-refused{max-width:72ch}

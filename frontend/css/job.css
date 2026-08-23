@@ -127,6 +127,15 @@
    진행·거절 태에서 저장 폴더 줄을 숨기려면 되돌려 놔야 한다. */
 .result3-folder[hidden]{display:none}
 .result3-dir{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;word-break:break-all}
+/* 만든 문서 목록(S7-03 · #825) — 실패 목록과 같은 세로 밀도이되 경보 색을 쓰지 않는다.
+   `display:flex` 가 UA [hidden] 을 이기는 결함 클래스는 여기도 같으므로 되돌려 놓는다. */
+.result3-docs{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-8)}
+.result3-docs[hidden]{display:none}
+.result3-doc{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap;
+  font-size:var(--fs-caption);padding:var(--sp-4) 0;border-bottom:1px solid var(--n-border)}
+.result3-doc-name{flex:1;min-width:0;font-weight:600;overflow-wrap:anywhere}
+.result3-doc-disp{color:var(--a-muted)}
+.result3-doc-acts{display:flex;align-items:center;gap:var(--sp-4);flex:none}
 .result3-fails{display:flex;flex-direction:column;gap:var(--sp-6)}
 .result3-fail{border:1px solid color-mix(in srgb,var(--a-danger) 38%,var(--a-border));
   border-radius:var(--rad-control);padding:var(--sp-8);display:flex;flex-direction:column;gap:2px}

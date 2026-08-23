@@ -1,5 +1,5 @@
 /* 브리지 클라이언트 — pywebview.api(=Python WebFrontend)와 왕복. 화면-불가지.
-   웹→Python 은 dispatch/네이티브 호스트 메서드 **23개**(데이터·네이티브 21 + 창 닫기 확인 2),
+   웹→Python 은 dispatch/네이티브 호스트 메서드 **24개**(데이터·네이티브 22 + 창 닫기 확인 2),
    Python→웹은 factory 가 돌려주는 `push(screen, snapshot)` 관측 푸시다.
    화면 모듈은 `bridge.onPush(screen, fn)` 로 렌더러를 등록한다 — 브리지는 화면 로직을 모른다.
 
@@ -129,6 +129,13 @@ export function createBridge() {
     openPath(path) { return window.pywebview.api.open_path(path); },
     revealPath(path) { return window.pywebview.api.reveal_path(path); },
     copyPath(path) { return window.pywebview.api.copy_path(path); },
+
+    /** 산출물 관찰의 「다른 이름으로 저장」(S7-03 · #825) — 파일 피커가 관여하므로 직접
+     *  브리지다. 겨눔은 배달 문서의 `ordinal` 하나이고 bytes 는 웹이 만지지 않는다:
+     *  백엔드가 그 자리에서 안착 파일을 다시 관찰해 검증된 bytes 를 그대로 옮긴다(D2).
+     *  반환 {ok, status, detail, path} — 저장·취소·관찰 거절·SAVE_COPY_FAILED 가 서로
+     *  다른 status 로 오므로 호출자가 넷을 구분해 말한다(fallback 금지). */
+    saveArtifactAs(ordinal) { return window.pywebview.api.save_artifact_as(ordinal); },
 
     /** 테마 선택 영속(오리진 비의존 Python 설정, #74). 확정값(문자열) 반환.
      *  당김(get)은 없다 — 부팅 주입(app.py loaded→Theme.apply)이 유일한 읽기 경로. */

@@ -72,6 +72,29 @@ const GATE_ZONE: Record<string, string> = {
   template_unreadable: "",
 };
 
+/** 산출물 관찰이 서지 않은 사유의 **제목**(S7-03 · #825, #820 §3). 본문 사유는 Python 이
+ *  낸 `detail` 그대로다 — 수치·경로·기대값이 거기 있고, 표면이 다시 지으면 두 벌이 된다.
+ *  넷은 서로 겹치지 않는다: 세션에 없다 / 파일이 없다 / 내용이 다르다 / 열리지 않는다. */
+export const ARTIFACT_REFUSAL_TITLE: Record<string, string> = {
+  ARTIFACT_FILE_MISSING: "문서 파일을 찾을 수 없습니다",
+  ARTIFACT_DIGEST_MISMATCH: "문서 내용이 만든 직후와 다릅니다",
+  ARTIFACT_REPARSE_FAILED: "문서를 다시 열지 못했습니다",
+  ARTIFACT_NOT_IN_SESSION: "이 문서는 지금 결과에 없습니다",
+};
+
+/** 「다른 이름으로 저장」 결과 한 줄 — 네 갈래가 서로 다른 문장을 받는다(#820 §3).
+ *  `SAVE_COPY_FAILED` 는 관찰 상태와 **독립**이라 '문서가 깨졌다' 로 읽힐 말을 쓰지 않는다. */
+export function saveArtifactMessage(result: Obj): string {
+  const status = String(result.status || "");
+  if (result.ok === true) return `저장했습니다: ${String(result.path || "")}`;
+  if (status === "cancelled") return "저장을 취소했습니다.";
+  if (status === "SAVE_COPY_FAILED") {
+    return `저장하지 못했습니다. ${String(result.detail || "")}`;
+  }
+  const title = ARTIFACT_REFUSAL_TITLE[status] || "문서를 확인하지 못했습니다";
+  return `${title}. ${String(result.detail || "")}`;
+}
+
 const DELIVERY_POLICIES = [
   ["ADD_SUFFIX", "같은 이름이 있으면 번호 붙이기"],
   ["FAIL", "같은 이름이 있으면 만들지 않기"],
@@ -138,7 +161,14 @@ function h(tag: string, props: Obj | null, ...children: ReactNode[]): ReactNode 
 
 /* ------------------------------------------------------------------ 컨트롤러 */
 
-type UiState = { log: readonly string[]; logOpen: boolean };
+type UiState = {
+  log: readonly string[];
+  logOpen: boolean;
+  /** 산출물 「다른 이름으로 저장」의 마지막 결과 한 줄(S7-03 · #825). 저장·취소·저장 실패·
+   *  관찰 거절이 서로 다른 문장으로 여기 앉는다. 판정은 백엔드 `status` 가 하고 이 값은
+   *  그 코드를 문안으로 옮긴 결과다(시트 밖에서 조립해 시트가 상태를 갖지 않게 한다). */
+  artifactSave: string;
+};
 
 type TemplateChangeUi = { inFlight: boolean; requestId: string | null; notice: string };
 
@@ -147,7 +177,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
   const nextToken = createTokenFactory();
 
   let run: JobRunState = initialRunState();
-  let ui: UiState = { log: [], logOpen: false };
+  let ui: UiState = { log: [], logOpen: false, artifactSave: "" };
   /* 템플릿 변경 확인·적용(S3-09)의 화면 local 상태 — 진행 여부·요청 키·적용 재진술.
      요청 키는 prepare intent 의 재전송 단위다: 진행 중 중복 클릭은 무시(한 요청으로 수렴),
      전송 실패로 남은 키는 다음 클릭이 **같은 키로 재전송**, 성공 뒤 클릭만 새 키(=새 intent). */
@@ -203,10 +233,11 @@ export function createJobRunController(deps: JobRunControllerDeps) {
        적은 줄이 곧바로 지워진다). `ui` 를 `setRun` 앞에 두어 emit 한 번에 함께 실린다. */
     const resetting = !before.running && disposal.kind === "reset";
     const line = resetting ? resultExitLine(before.result, disposal.exitOwner) : "";
-    if (resetting) ui = { log: [], logOpen: false };
+    if (resetting) ui = { log: [], logOpen: false, artifactSave: "" };
     setRun(next);
     if (line) log(line);
     syncPreviewOpen(next.lastFull);
+    syncArtifactOpen(next.lastFull);
   }
 
   /** 확인 면의 개폐를 상태에 맞춘다(legacy `closePreviewIfOpen` 동등). Python 이 닫았다고
@@ -218,6 +249,15 @@ export function createJobRunController(deps: JobRunControllerDeps) {
    *  여부를 되묻지 않는다 — 상태의 진실은 스냅샷이지 클래스가 아니다. */
   function syncPreviewOpen(full: Obj | null): void {
     if (!(full && full.preview && full.preview.open)) deps.modal.close("previewSheet");
+  }
+
+  /** 산출물 관찰 시트의 개폐를 상태에 맞춘다(S7-03 · #825) — `syncPreviewOpen` 과 같은
+   *  까닭이다. 백엔드가 배달 좌표를 놓으면(데이터 교체·작업 전환) 면도 함께 닫힌다고
+   *  말하는데, 그때 면이 떠 있으면 이미 없는 실행의 문서를 계속 그린다. */
+  function syncArtifactOpen(full: Obj | null): void {
+    if (!(full && full.artifact_view && full.artifact_view.open)) {
+      deps.modal.close("artifactSheet");
+    }
   }
 
   function pump(): void {
@@ -339,6 +379,35 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       onClose: () => { void dispatch("preview_close", {}); },
     });
     if (o.focusTarget) focusPreviewTarget(o.focusTarget);
+  }
+
+  /* ---- 산출물 관찰 시트(S7-03 · #825) ---- */
+  /** 어느 행이 열었는가 — 닫을 때 초점이 그 자리로 돌아가야 한다(면은 문서마다 열린다). */
+  let artifactTrigger: HTMLElement | null = null;
+
+  /** 배달 문서 하나를 관찰해 시트를 연다.
+   *
+   *  `openPreview` 와 같은 골격이되 커밋 관문(`flushPendingEdits`)은 지나지 않는다: 관찰의
+   *  대상은 **이미 만들어진 파일**이라 지금 표의 편집과 아무 관계가 없다.
+   *
+   *  관찰이 서지 않은 갈래에서도 **면은 연다**. 백엔드가 사유를 스냅샷에 실어 주므로 시트가
+   *  그것을 말한다 — 여기서 실패로 접으면 사용자는 눌렀는데 아무 일도 없는 화면을 본다. */
+  async function openArtifact(ordinal: number): Promise<void> {
+    try {
+      await dispatch("artifact_open", { ordinal });
+    } catch (error) {
+      log(`문서 내용을 열지 못했습니다: ${String((error as Obj)?.message ?? error)}`);
+      return;
+    }
+    if (deps.navigation.currentScreen() !== "job") {
+      void dispatch("artifact_close", {});
+      return;
+    }
+    deps.modal.open("artifactSheet", {
+      returnFocus: artifactTrigger,
+      initialFocus: deps.doc.getElementById("artifactClose"),
+      onClose: () => { void dispatch("artifact_close", {}); },
+    });
   }
 
   let previewTrigger: HTMLElement | null = null;
@@ -469,7 +538,7 @@ export function createJobRunController(deps: JobRunControllerDeps) {
          치운다. 로그가 남으면 치우라는 행동을 반만 들은 것이 되고, 다음 실행의 첫 줄이 남의
          실행 끝줄 밑에 붙어 「이어지는 한 세션」으로 읽힌다. 펼침은 그 세션의 의사표시라
          함께 접는다. `log`·`logOpen` 은 JobRunState 가 아니라 UiState 라 reducer 밖이다. */
-      ui = { log: [], logOpen: false };
+      ui = { log: [], logOpen: false, artifactSave: "" };
       setRun(closeResult(run));
       // S6-05: managed 화면에선 #jobGenBtn 이 숨어 있다 — 눌렀던 create 로 초점을 되돌린다.
       const managedButton = deps.doc.getElementById(
@@ -578,6 +647,38 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       void openPreview({});
     },
     closePreview(): void { deps.modal.close("previewSheet"); },
+
+    /* ---- 산출물 관찰(S7-03 · #825) — 열림·값은 Python 소유, 여기는 집행과 문안이다. */
+    openArtifactFrom(ordinal: number, trigger: HTMLElement | null): void {
+      artifactTrigger = trigger;
+      ui = { ...ui, artifactSave: "" };  // 새 문서를 열면 앞 문서의 저장 한 줄은 남의 것이다
+      void openArtifact(ordinal);
+    },
+    closeArtifact(): void { deps.modal.close("artifactSheet"); },
+    /** 「다른 이름으로 저장」 — 직접 브리지다(파일 피커가 관여). 겨눔은 **지금 열린 면의
+     *  ordinal** 이고 그 값은 스냅샷에서 읽는다: 표면이 따로 기억하면 그 사이 도착한 푸시가
+     *  면을 다른 문서로 바꿨을 때 보고 있는 것과 저장하는 것이 갈린다. */
+    async saveArtifactAs(): Promise<void> {
+      const view = (snapshot()?.artifact_view || {}) as Obj;
+      const ordinal = Number(view.ordinal);
+      if (!Number.isInteger(ordinal) || ordinal < 0) {
+        ui = { ...ui, artifactSave: "저장할 문서를 확인할 수 없습니다." };
+        emit();
+        return;
+      }
+      try {
+        const result = (await deps.client.invoke("save_artifact_as", ordinal)) as Obj;
+        const message = saveArtifactMessage(result || {});
+        ui = { ...ui, artifactSave: message };
+        emit();
+        log(message);
+      } catch (error) {
+        const message = `저장하지 못했습니다. ${String((error as Obj)?.message ?? error)}`;
+        ui = { ...ui, artifactSave: message };
+        emit();
+        log(message);
+      }
+    },
     previewMove(delta: number): void { void dispatch("preview_move", { delta }); },
     previewBlankOnly(value: boolean): void {
       void dispatch("preview_blank_only", { value }).catch((error) =>
