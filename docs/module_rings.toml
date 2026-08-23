@@ -147,6 +147,12 @@ source_write_set = ["src/hwpxfiller/external/template_files.py"]
 oracle_nodeid = "tests/test_webapp_template.py"
 
 [[unit]]
+module = "hwpxfiller.gui.artifact_view_state"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/gui/artifact_view_state.py"]
+oracle_nodeid = "tests/test_artifact_view_state.py"
+
+[[unit]]
 module = "hwpxfiller.gui.compile_badge"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/compile_badge.py"]
