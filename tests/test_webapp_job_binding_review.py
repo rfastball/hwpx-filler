@@ -3,7 +3,7 @@
 seal 판정·admission 파생은 SealExecutionPlanService·SealExecutionPlanProduct 테스트가 소유한다.
 여기가 잰다: JobController 가 `self._seal_execution`(SX-SEAL) 을 소비해 (1) 확인 증거 없이
 NO_EVIDENCE 로 서고, (2) `resolve_execution` 이 실 seal 을 돌려 binding 있는 Work 는
-CURRENT+NOT_ADMITTED+NOT_READY 로, binding 없는 Work 는 정직한 blocked 로 관찰되며, (3) 어느 경우도
+CURRENT+ADMITTED+READY(S6-03 #810 정식 주입)로, binding 없는 Work 는 정직한 blocked 로 관찰되며, (3) 어느 경우도
 Primary Action 이 CREATE_DOCUMENTS 로 조용히 새지 않고, (4) snapshot 존이 그 관계를 그대로 나른다는 것.
 
 R2(#740): currentness 축이 orchestration 으로 흡수됐다 — CURRENT/STALE 은 orchestration 상태가
@@ -86,7 +86,7 @@ def _controller(
     v2 Work 를 그 root 에 직접 seed 하고 registry 의 WorkAuthorityId 를 그 Work 에 못박아, 컨트롤러의
     job_name → seal 서비스 route 가 seed 한 Work 에 닿게 한다(test_seal_execution_plan_service 패턴).
     R2(#740): admission store seed 는 필요 없다 — runtime admission 은 materializer conformance
-    capability(S6 미출하 → NOT_ADMITTED)만 본다.
+    capability(S6-03 정식 주입 → 실제 봉인 Plan 은 ADMITTED)만 본다.
     """
     root = default_template_authority_dir()
     if seed:
@@ -419,7 +419,10 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
         ],
         "blockers": [],
     }
-    assert zone["create_action"]["enabled"] is False  # S6 absent 보존
+    # S6-03(#810): runtime admission 이 정식 주입으로 ADMITTED 라, 준비가 끝난 이 시나리오에서
+    # create 는 열린다. 실제 클릭은 S6-05 가드 철거 전까지 시끄럽게 거절된다(#806 R1 계약 —
+    # 조용한 진행 경로는 없다). 이 간극은 S6-05 가 닫고, HWPX 릴리스는 #807 완주 전 없다.
+    assert zone["create_action"]["enabled"] is True
 
 
 def test_optional_preview_token_is_stable_across_passive_render_and_drawer(
@@ -928,23 +931,24 @@ def test_select_managed_work_automatically_prepares_current_value(tmp_path: Path
     assert _zone(ctrl)["execution_status_code"] == "CURRENT"
 
 
-# ── binding seed → resolve_execution → CURRENT + NOT_ADMITTED + NOT_READY(S6 미출하 정직) ───────
-def test_resolve_execution_reaches_current_not_admitted_not_ready(tmp_path: Path) -> None:
+# ── binding seed → resolve_execution → CURRENT + ADMITTED + READY(S6-03 정식 주입) ─────────────
+def test_resolve_execution_reaches_current_admitted_ready(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
     zone = _zone(ctrl)
     assert zone["execution_status_code"] == "CURRENT"
     assert zone["execution_status_phrase"] == "현재 설정이 반영됐습니다"
-    assert zone["admission"]["state"] == "NOT_ADMITTED"
-    assert zone["materialization_readiness"] == "NOT_READY"
+    # S6-03(#810): shipping capability manifest 가 정식 주입돼 실제 봉인 Plan 은 ADMITTED·READY.
+    assert zone["admission"]["state"] == "ADMITTED"
+    assert zone["materialization_readiness"] == "READY"
     # seal 루프가 닫혔다: 마지막 sealed basis digest 가 세션에 잡혔다(durable 아님).
     assert ctrl._last_sealed_basis_digest is not None
-    # CREATE 로 조용히 새지 않는다(honest disabled) — delivery anchor + runtime.
+    # runtime 이 열려도 CREATE 로 조용히 새지 않는다 — 데이터 미장착이 다음 정직한 blocker 다.
     assert zone["primary_action"] != "CREATE_DOCUMENTS"
     assert zone["create_action"] == {
         "label": "\ubb38\uc11c \ub9cc\ub4e4\uae30",
         "enabled": False,
-        "disabled_reason": "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+        "disabled_reason": "\ud544\uc694\ud55c \uc900\ube44\ub97c \uba3c\uc800 \uc644\ub8cc\ud574 \uc8fc\uc138\uc694",
     }
 
 
@@ -952,9 +956,9 @@ def test_create_documents_never_reached_with_current(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("resolve_execution", {})
     obs = ctrl.workbench_observation()
-    # CURRENT 여도 admission NOT_ADMITTED + delivery 미해결이라 CREATE_DOCUMENTS 아님.
+    # CURRENT + READY(S6-03) 여도 데이터·delivery 미해결이라 CREATE_DOCUMENTS 아님(조용한 진행 0).
     assert obs.primary_action != "CREATE_DOCUMENTS"
-    assert obs.materialization_readiness == "NOT_READY"
+    assert obs.materialization_readiness == "READY"
 
 
 def test_snapshot_marks_durable_work_as_managed_hwpx(tmp_path: Path) -> None:

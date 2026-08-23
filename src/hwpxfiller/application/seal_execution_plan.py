@@ -157,10 +157,12 @@ class ShippingSealPolicyResolver(Protocol):
     ) -> ResolvedSealPolicy: ...
 
 
-# ─── S6 start admission port 선언(구현하지 않는다) ────────────────────────────────────
+# ─── S6 start admission port 선언 ─────────────────────────────────────────────────────
 # S6 materialization 은 이 lock order 를 따라야 한다 — 짧은 ordered start-gate 로 Plan·current
 # basis·runtime admission·VDR·dependency 를 pin 하고 fence 를 푼 뒤 긴 materialization 을 한다.
-# R2-05b(#740): ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다(S6 구현은 미착수·미변경).
+# R2-05b(#740): ProfileFence 제거로 outer rank 는 PerWorkMutationFence 다.
+# S6-02(#810) 구현: external/materialization_start_gate.start_materialization — pin 입력(VDR ref·
+# runtime capability 관찰 축)이 필요해 signature 는 확장됐고, 이 선언은 lock order 의 정본으로 남는다.
 S6_START_GATE_LOCK_ORDER = (
     "PerWorkMutationFence",
     "PlanAndCurrentBasisAndRuntimeAdmissionAndDependencyPin",

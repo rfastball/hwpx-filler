@@ -165,6 +165,58 @@ def test_runtime_admitted_ready(tmp_path) -> None:
     assert obs.materialization_readiness == READY
 
 
+def test_registry_binding_formal_injection_admits_and_ready(tmp_path) -> None:
+    # S6-03(#810) 정식 주입 경로: runtime_conformance= kwarg(위조 가능한 판정 주입) 대신
+    # shipping capability manifest 를 등록한 registry binding 으로 — 판정은 Plan value 파생.
+    from hwpxfiller.external.runtime_capability import admitted_runtime_conformance_registry
+    from hwpxfiller.webapp.seal_execution_plan_product import RuntimeConformanceBinding
+
+    registry, manifest = admitted_runtime_conformance_registry()
+    world = World()
+    product = SealExecutionPlanProduct(
+        resolve_route=lambda ws, ref: WORK,
+        authorize=lambda wid, ws: None,
+        read_summary=world.summary,
+        capture_under_fence=world.capture,
+        resolve_shipping_policy=Resolver(),
+        clock=lambda: "t0",
+        runtime_conformance_binding=RuntimeConformanceBinding(
+            registry=registry, manifest=manifest
+        ),
+    )
+    obs = product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    assert isinstance(obs, CurrentSealedPlanObservation)
+    assert obs.runtime_policy_admission.state == ADMITTED
+    assert obs.materialization_readiness == READY
+
+
+def test_registry_binding_without_registered_manifest_stays_not_admitted(tmp_path) -> None:
+    # 빈 registry 를 결속하면 fail-closed — 발행 없이 binding 만으로 admit 되지 않는다.
+    from hwpxfiller.application.execution_composition import (
+        RuntimeMaterializerConformanceRegistry,
+    )
+    from hwpxfiller.external.runtime_capability import shipping_runtime_conformance_manifest
+    from hwpxfiller.webapp.seal_execution_plan_product import RuntimeConformanceBinding
+
+    world = World()
+    product = SealExecutionPlanProduct(
+        resolve_route=lambda ws, ref: WORK,
+        authorize=lambda wid, ws: None,
+        read_summary=world.summary,
+        capture_under_fence=world.capture,
+        resolve_shipping_policy=Resolver(),
+        clock=lambda: "t0",
+        runtime_conformance_binding=RuntimeConformanceBinding(
+            registry=RuntimeMaterializerConformanceRegistry(),
+            manifest=shipping_runtime_conformance_manifest(),
+        ),
+    )
+    obs = product.seal_execution_plan(_pcmd("r1")).fresh_observation
+    assert isinstance(obs, CurrentSealedPlanObservation)
+    assert obs.runtime_policy_admission.state == NOT_ADMITTED
+    assert obs.materialization_readiness == NOT_READY
+
+
 def test_runtime_capability_context_error(tmp_path) -> None:
     h = _product(tmp_path, runtime=_ctx_error_runtime)
     obs = h.product.seal_execution_plan(_pcmd("r1")).fresh_observation

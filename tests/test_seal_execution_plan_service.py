@@ -3,7 +3,8 @@
 test_seal_execution_plan_product 의 fake World 계약을 production service 조립으로 강제한다: 실
 Job registry·work/qualification/candidate/config/binding 로 실제 봉인해, binding 미seed→
 ExecutionQualificationBlocked(+CurrentWorkExecutionObservation), seed→ExecutionPlanSealed(+current
-sealable observation: NOT_ADMITTED·NOT_READY = S6 미출하 판정)을 낸다.
+sealable observation: ADMITTED·READY — S6-03(#810)이 shipping capability manifest 를 정식
+주입 경로로 결속했다)을 낸다.
 
 **R2(#740) 착지.** durable Plan store·Profile admission store·opaque Plan ref(resolve_plan_reference)·
 HMAC secret 이 사라졌다 — seal 은 durable side effect 없는 순수 재계산이라 command outcome 은
@@ -18,9 +19,8 @@ from datetime import datetime
 import pytest
 
 from hwpxfiller.application.fresh_execution_observation import (
-    MATERIALIZATION_CONTRACT_NOT_ADMITTED,
-    NOT_ADMITTED,
-    NOT_READY,
+    ADMITTED,
+    READY,
     CurrentSealedPlanObservation,
     CurrentWorkExecutionObservation,
 )
@@ -85,8 +85,10 @@ def test_binding_absent_blocks_with_current_work_observation(tmp_path) -> None:
     assert isinstance(resp.fresh_observation, CurrentWorkExecutionObservation)
 
 
-# ─── binding seed → ExecutionPlanSealed + S6 미출하 판정(NOT_ADMITTED·NOT_READY) ──────────
-def test_binding_present_seals_current_not_admitted_not_ready(tmp_path) -> None:
+# ─── binding seed → ExecutionPlanSealed + S6-03 정식 주입 판정(ADMITTED·READY) ────────────
+def test_binding_present_seals_current_admitted_ready(tmp_path) -> None:
+    # S6-03(#810): 실 서비스는 shipping capability manifest 를 등록한 registry 를 결속하므로
+    # 실제 봉인 Plan 의 관찰은 ADMITTED + READY 다(NOT_ADMITTED 는 binding 부재 기본값에만 남는다).
     service = _service(tmp_path, with_binding=True)
     resp = service.seal_execution_plan(WORK_REF, "r1")
     outcome = resp.command_outcome
@@ -94,12 +96,9 @@ def test_binding_present_seals_current_not_admitted_not_ready(tmp_path) -> None:
     assert outcome.execution_basis_digest  # nonempty sealed basis identity
     obs = resp.fresh_observation
     assert isinstance(obs, CurrentSealedPlanObservation)
-    # S6 미출하: runtime materializer 미admit → NOT_ADMITTED + NOT_READY(READY 과장 0).
-    assert obs.runtime_policy_admission.state == NOT_ADMITTED
-    assert (
-        MATERIALIZATION_CONTRACT_NOT_ADMITTED in obs.runtime_policy_admission.reasons
-    )
-    assert obs.materialization_readiness == NOT_READY
+    assert obs.runtime_policy_admission.state == ADMITTED
+    assert obs.runtime_policy_admission.reasons == ()
+    assert obs.materialization_readiness == READY
 
 
 # ─── R2(#740): durable publication 없는 순수 재계산 → 같은 basis 는 같은 digest(결정론) ─────

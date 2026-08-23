@@ -1142,11 +1142,13 @@ def run_sx(ctx: ScenarioContext) -> dict:
     )
     s.click_sel("#previewClose", what="managed preview 닫기")
     s.wait("document.getElementById('previewSheet').classList.contains('hidden')", "managed preview 닫힘", requires=["#previewSheet"])
+    # S6-03(#810): runtime admission 이 정식 주입돼 준비 완료 시 create 는 열린다. 클릭은
+    # S6-05 가드 철거 전까지 시끄럽게 거절되므로 여기서는 누르지 않는다 — 이 지점의 수직
+    # 증거는 「열림 + filesystem 불변(H6)」이고, 클릭 간극 해소는 S6-05 수직 시나리오 몫이다.
     s.wait(
-        "document.getElementById('jobManagedCreate').disabled"
-        " && document.getElementById('jobManagedCreateReason').textContent.includes('현재 환경에서는 문서를 만들 수 없습니다')",
-        "S6 unavailable disabled create",
-        requires=["#jobManagedCreate", "#jobManagedCreateReason"],
+        "!document.getElementById('jobManagedCreate').disabled",
+        "S6-03 admitted enabled create",
+        requires=["#jobManagedCreate"],
     )
     final_managed = _workbench(_snapshot(s))
     _expect(ctx.output_manifest() == baseline_manifest, "H6: managed path가 filesystem을 변경했습니다")

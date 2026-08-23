@@ -38,6 +38,8 @@ from ..application.execution_capture import (
 )
 from ..application.execution_composition import (
     DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+    RuntimeMaterializerConformanceManifest,
+    RuntimeMaterializerConformanceRegistry,
     TheoremEvidenceRegistry,
 )
 from ..application.execution_semantic_kernel import (
@@ -49,6 +51,7 @@ from ..application.execution_semantic_kernel import (
 from ..application.field_binding_input import FieldBindingInput
 from ..application.fresh_execution_observation import (
     DOMAIN_BLOCKED,
+    MATERIALIZER_ADMITTED,
     MATERIALIZER_NOT_ADMITTED,
     POLICY_BLOCKED,
     SEALABILITY_CONTEXT_ERROR,
@@ -101,6 +104,52 @@ class RuntimeMaterializerConformancePort(Protocol):
         materialization_contract_id: str,
         execution_base_kind: str,
     ) -> RuntimeMaterializerConformance: ...
+
+
+@dataclass(frozen=True)
+class RuntimeConformanceBinding:
+    """정식 주입 경로(S6-03 · #810) — registry 와 거기 등록된 shipping capability manifest 의 결속.
+
+    `runtime_conformance=` kwarg(판정 자체를 caller 가 위조 가능)와 달리, 이 binding 은 판정을
+    싣지 않는다 — 판정은 매 관찰마다 **Plan value 의 contract semantics 에서 파생한 7축 query**
+    로 registry 가 낸다(:func:`registry_conformance_for_plan_value`). caller 몫은 runtime 관찰
+    축 하나(capability manifest)뿐이다 — `evaluate_managed_run_admission` 과 같은 결이다.
+    """
+
+    registry: RuntimeMaterializerConformanceRegistry
+    manifest: RuntimeMaterializerConformanceManifest
+
+
+def registry_conformance_for_plan_value(
+    binding: RuntimeConformanceBinding, value: SealedExecutionPlanValue
+) -> RuntimeMaterializerConformance:
+    """current Plan value 의 계약 축으로 registry admission 을 판정한다(축 재타이핑 0).
+
+    raise 하지 않고 bool 로 닫는다 — 이 함수는 `_degrade` 안(관찰 축)에서 불리므로 예외는
+    admission 판정이 아니라 관찰 전체의 CONTEXT_ERROR 강등이 된다.
+    """
+    semantics = value.contract_semantics
+    digest = binding.manifest.runtime_capability_manifest_digest
+    admitted = binding.registry.is_admitted(
+        runtime_capability_manifest_digest=digest,
+        materialization_contract_id=semantics.materialization_contract_id,
+        materialization_base_contract_id=semantics.materialization_base_contract_id,
+        native_primitive_contract_id=semantics.native_primitive_contract_id,
+        composition_contract_id=semantics.composition_contract_id,
+        plan_schema_version=value.plan_schema_version,
+        canonical_encoding_version=value.canonical_encoding_version,
+    )
+    return RuntimeMaterializerConformance(
+        verdict=MATERIALIZER_ADMITTED if admitted else MATERIALIZER_NOT_ADMITTED,
+        plan_schema_supported=(
+            value.plan_schema_version in binding.manifest.supported_plan_schema_versions
+        ),
+        canonical_encoding_supported=(
+            value.canonical_encoding_version
+            in binding.manifest.supported_canonical_encoding_versions
+        ),
+        runtime_capability_manifest_digest=digest if admitted else None,
+    )
 
 
 def s6_absent_runtime_conformance(
@@ -203,6 +252,7 @@ class SealExecutionPlanProduct:
         runtime_conformance: RuntimeMaterializerConformancePort = (
             s6_absent_runtime_conformance
         ),
+        runtime_conformance_binding: "RuntimeConformanceBinding | None" = None,
         theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
         work_fence: _WorkFence = per_work_mutation_fence,
     ) -> None:
@@ -213,6 +263,9 @@ class SealExecutionPlanProduct:
         self._resolve_policy = resolve_shipping_policy
         self._clock = clock
         self._runtime = runtime_conformance
+        # 정식 주입 경로(S6-03): binding 이 있으면 판정은 Plan value 파생 registry query 가 지고,
+        # 4-인자 port 는 binding 부재 시의 fail-closed 기본(s6_absent)으로 남는다.
+        self._runtime_binding = runtime_conformance_binding
         self._theorem_registry = theorem_registry
         self._work_fence = work_fence
 
@@ -372,12 +425,15 @@ class SealExecutionPlanProduct:
         admission 은 base kind·plan schema/encoding runtime support·materializer conformance 만 본다.
         readiness 는 그 admission 만으로 갈린다(S6 미출하면 NOT_ADMITTED→NOT_READY).
         """
-        conformance = self._runtime(
-            plan_schema_version=value.plan_schema_version,
-            canonical_encoding_version=value.canonical_encoding_version,
-            materialization_contract_id=value.contract_semantics.materialization_contract_id,
-            execution_base_kind=policy.execution_base_kind,
-        )
+        if self._runtime_binding is not None:
+            conformance = registry_conformance_for_plan_value(self._runtime_binding, value)
+        else:
+            conformance = self._runtime(
+                plan_schema_version=value.plan_schema_version,
+                canonical_encoding_version=value.canonical_encoding_version,
+                materialization_contract_id=value.contract_semantics.materialization_contract_id,
+                execution_base_kind=policy.execution_base_kind,
+            )
         admission = decide_runtime_policy_admission(
             RuntimeAdmissionFacts(
                 execution_base_kind_admitted=(
@@ -423,8 +479,10 @@ __all__ = [
     "ExecutionQualificationBlockedProductOutcome",
     "ExecutionPolicyBlockedProductOutcome",
     "StaleExecutionBasisProductOutcome",
+    "RuntimeConformanceBinding",
     "RuntimeMaterializerConformance",
     "RuntimeMaterializerConformancePort",
+    "registry_conformance_for_plan_value",
     "s6_absent_runtime_conformance",
     "EXECUTION_OBSERVATION_CONTEXT_ERROR",
 ]
