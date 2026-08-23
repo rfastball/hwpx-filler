@@ -21,6 +21,7 @@ production ref+store 조달로 감싸는 **유일한 production 소유자**다. 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -39,6 +40,10 @@ from hwpxfiller.application.generation_delivery import (
     MaterializationInputPort,
 )
 from hwpxfiller.application.record_validation import ImmutableVdrStore
+from hwpxfiller.domain.field_binding import (
+    ESCAPING_NATIVE_MATERIALIZER,
+    resolve_document_value_policy,
+)
 from hwpxfiller.domain.fields import FillNote
 
 from .candidate_store import CandidateObjectStore
@@ -51,6 +56,15 @@ from .materialization_conformance import (
 )
 from .qualification_store import QualificationObjectStore
 from .work_template_store import AtomicWorkTemplateStateStore
+
+
+class EscapingResponsibilityError(Exception):
+    """Plan 의 값 정책이 이 materializer 의 escaping 소유와 안 맞음 — 실행 전 fail-closed.
+
+    S6-06(#809): ``escaping_responsibility=NATIVE_MATERIALIZER`` 선언을 실제로 읽는 자리가
+    이 gate 다. 다른 책임 주체를 선언한 정책의 값을 이 러너가 쓰면 escaping 이 0번 또는
+    2번 일어날 수 있다 — 조용히 진행하지 않는다.
+    """
 
 
 class MaterializationProcurementError(Exception):
@@ -77,6 +91,35 @@ class MaterializedDocumentBytes:
 
 
 MaterializationOutcome = MaterializedDocumentBytes | ConformanceFailure
+
+
+def require_native_materializer_escaping(
+    plan: SealedExecutionPlanSemanticPayload,
+) -> None:
+    """Plan 의 모든 값 정책이 escaping 을 이 materializer 에 위임했는지 실행 전에 확인한다.
+
+    logical text 는 VDR 가, XML escaping 은 native serialization(lxml text node 직렬화)이
+    소유한다 — 그 분업은 정책의 ``escaping_responsibility`` 선언 위에 서 있으므로, 선언을
+    읽지 않고 실행하면 다른 책임 주체(예: pre-escaped 값)를 조용히 이중 escape 하게 된다.
+    INTENTIONAL_BLANK 는 값 정책이 없다(``exact_blank_policy`` 소관) — 건너뛴다.
+    unknown 정책은 :func:`resolve_document_value_policy` 가 시끄럽게 거절한다.
+    """
+    for requirement in plan.active_field_requirements:
+        expression = requirement.get("value_expression")
+        if not isinstance(expression, Mapping):
+            raise EscapingResponsibilityError(
+                f"requirement {requirement.get('field_id')!r} 에 value_expression 이 없다"
+            )
+        if expression.get("kind") == "INTENTIONAL_BLANK":
+            continue
+        policy = resolve_document_value_policy(
+            str(expression.get("document_content_value_policy_id"))
+        )
+        if policy.escaping_responsibility != ESCAPING_NATIVE_MATERIALIZER:
+            raise EscapingResponsibilityError(
+                f"값 정책 {policy.policy_id!r} 의 escaping 책임 "
+                f"{policy.escaping_responsibility!r} 는 이 materializer 소유가 아니다"
+            )
 
 
 class ProductionMaterializationRunner:
@@ -106,6 +149,10 @@ class ProductionMaterializationRunner:
         # 1. Plan·VDR 복원 — digest 재검증·cross-bind·completeness 는 port 가 이미 진다
         #    (두 벌 판정 금지: 여기서 requirement/count 를 재조립하지 않는다).
         plan, vdr = self._input_port.resolve(materialization_input)
+
+        # 1b. escaping 책임 확인(S6-06) — 실행 전 gate. 값 정책이 다른 책임 주체를 선언한
+        #     Plan 을 이 materializer 가 조용히 이중/무 escape 로 진행하지 않는다.
+        require_native_materializer_escaping(plan)
 
         # 2. candidate bytes 조달 — resolver 반환을 Plan 의 exact_content_digest 로 재해시 대조.
         wanted_blob = plan.execution_basis.template.exact_content_digest
@@ -221,10 +268,12 @@ def production_materialization_runner(
 
 
 __all__ = [
+    "EscapingResponsibilityError",
     "MaterializationOutcome",
     "MaterializationProcurementError",
     "MaterializedDocumentBytes",
     "ProductionMaterializationRunner",
     "production_materialization_runner",
+    "require_native_materializer_escaping",
     "store_backed_structure_resolver",
 ]

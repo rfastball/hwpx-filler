@@ -60,6 +60,7 @@ from tests._materialization_case import (
     SlotS,
     _build_case,
     _build_structure,
+    _escaping_case,
     _materialize,
     _one_of_two,
     _run,
@@ -539,6 +540,43 @@ def test_executor_rejects_malformed_remove_operand() -> None:
             ordered_operations=[{"op": "REMOVE_OPTION", "slot_id": "s1", "option_id": None}],
             document_values={},
         )
+
+
+# ── S6-06(#809): escaping 소유의 양성·음성 증거 ──────────────────────────────────────
+def test_escaping_logical_text_roundtrip_and_bytes_escaped() -> None:
+    # 양성: logical text 는 exact 로 보존되고(P3), bytes 층에서는 native serialization 이
+    # escape 했다. pre-escaped 처럼 보이는 리터럴("&amp;")은 이중 표기로 정직하게 남는다 —
+    # 즉 escaping 은 정확히 한 번, VDR 값 그대로 위에서 일어난다.
+    case = _build_case(_escaping_case())
+    output = _run(case)
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=output, plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformancePass), result
+    from hwpxfiller.external.materialization_conformance import _read_field_values
+
+    values = dict(_read_field_values(HwpxPackage.from_bytes(output)))
+    assert values["특수"] == 'A&B<C>D"E\'F'
+    assert values["리터럴"] == "&amp;"
+    assert values["여러줄"] == "한글\n두줄"
+    assert values["꼬리"] == "]]>"
+    section = HwpxPackage.from_bytes(output).entries[SECTION]
+    assert b"A&amp;B&lt;C&gt;D" in section  # 특수문자가 실제로 escape 됐다
+    assert "&amp;amp;".encode() in section  # "&amp;" 리터럴의 & 도 escape 됐다(double-escape 아님)
+    assert b"]]&gt;" in section  # CDATA 꼬리의 > 도 escape 됐다
+
+
+def test_double_escape_regression_is_field_text_mismatch() -> None:
+    # 음성: escaping 층의 부패(리터럴 "&amp;" 가 "&" 로 강등)는 reopened logical text 대조(P3)가
+    # FIELD_TEXT_MISMATCH 로 잡는다 — escaping 정확성이 postcondition 재검사 범위임을 증명한다.
+    case = _build_case(_escaping_case())
+    output = _run(case)
+    tampered = _corrupt_section(output, lambda x: x.replace(b"&amp;amp;", b"&amp;"))
+    result = verify_materialization_postconditions(
+        source_bytes=case.bytes, output_bytes=tampered, plan=case.plan, structure=case.structure, vdr=case.vdr
+    )
+    assert isinstance(result, ConformanceFailure)
+    assert result.code == FIELD_TEXT_MISMATCH
 
 
 # ── fix #3: 채움 완화(FillNote)는 삼키지 않고 표면화한다 ────────────────────────────────

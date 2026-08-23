@@ -40,10 +40,12 @@ from hwpxfiller.external.materialization_conformance import (
     ConformanceFailure,
 )
 from hwpxfiller.external.materialization_runner import (
+    EscapingResponsibilityError,
     MaterializationProcurementError,
     MaterializedDocumentBytes,
     ProductionMaterializationRunner,
     production_materialization_runner,
+    require_native_materializer_escaping,
     store_backed_structure_resolver,
 )
 from hwpxfiller.external.qualification_store import QualificationObjectStore
@@ -248,6 +250,73 @@ def test_vdr_cross_bind_failure_propagates_from_input_port() -> None:
                 sealed_execution_plan_ref=plan_ref, validated_record_ref=other_vdr_ref
             )
         )
+
+
+# ═══ S6-06 escaping gate — 정책 선언을 실제로 읽고 fail-closed 한다 ═══════════════════
+def test_escaping_gate_rejects_foreign_responsibility(monkeypatch) -> None:
+    # 등록된 두 정책은 모두 NATIVE_MATERIALIZER 라, 다른 책임 주체는 resolve seam 을 바꿔
+    # 재현한다(음성 대조) — gate 가 정책 값을 실제로 읽는다는 것이 이 테스트의 대상이다.
+    from dataclasses import replace as dc_replace
+
+    from hwpxfiller.domain.field_binding import DOCUMENT_CONTENT_VALUE_POLICY_V1
+
+    case = _build_case(_one_of_two())
+    runner, mi = _memory_runner(case)
+    foreign = dc_replace(
+        DOCUMENT_CONTENT_VALUE_POLICY_V1, escaping_responsibility="VDR_PRODUCER"
+    )
+    monkeypatch.setattr(
+        "hwpxfiller.external.materialization_runner.resolve_document_value_policy",
+        lambda policy_id: foreign,
+    )
+    with pytest.raises(EscapingResponsibilityError):
+        runner.materialize(mi)
+
+
+def test_escaping_gate_rejects_unknown_policy_loudly() -> None:
+    from types import SimpleNamespace
+
+    from hwpxfiller.domain.field_binding import UnsupportedDocumentValuePolicyError
+
+    plan = SimpleNamespace(
+        active_field_requirements=(
+            {
+                "field_id": "f",
+                "value_expression": {
+                    "kind": "FROM_SOURCE",
+                    "document_content_value_policy_id": "nope/v9",
+                },
+            },
+        )
+    )
+    with pytest.raises(UnsupportedDocumentValuePolicyError):
+        require_native_materializer_escaping(plan)
+
+
+def test_escaping_gate_rejects_requirement_without_value_expression() -> None:
+    from types import SimpleNamespace
+
+    plan = SimpleNamespace(active_field_requirements=({"field_id": "f"},))
+    with pytest.raises(EscapingResponsibilityError):
+        require_native_materializer_escaping(plan)
+
+
+def test_escaping_gate_skips_intentional_blank() -> None:
+    # INTENTIONAL_BLANK 는 값 정책이 없다(exact_blank_policy 소관) — gate 대상이 아니다.
+    from types import SimpleNamespace
+
+    plan = SimpleNamespace(
+        active_field_requirements=(
+            {
+                "field_id": "f",
+                "value_expression": {
+                    "kind": "INTENTIONAL_BLANK",
+                    "exact_blank_policy": "WRITE_EMPTY",
+                },
+            },
+        )
+    )
+    require_native_materializer_escaping(plan)  # 예외 없음
 
 
 # ═══ 실 store 결선(공유 authority root 규약) ══════════════════════════════════════════

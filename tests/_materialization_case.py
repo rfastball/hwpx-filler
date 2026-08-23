@@ -506,6 +506,21 @@ def _mixed_owner() -> CaseSpec:
     )
 
 
+def _escaping_case() -> CaseSpec:
+    # S6-06(#809) escaping corpus — XML 특수문자·pre-escaped 처럼 보이는 리터럴·개행·CDATA 꼬리.
+    # logical text 는 VDR 가, XML escaping 은 native serialization 이 소유한다는 분업의 양성 증거.
+    return CaseSpec(
+        root_fields=("특수", "리터럴", "여러줄", "꼬리"),
+        bindings={
+            "특수": ("SOURCE", "k특수"),
+            "리터럴": ("CONST", "&amp;"),
+            "여러줄": ("SOURCE", "k여러줄"),
+            "꼬리": ("CONST", "]]>"),
+        },
+        source_values={"k특수": 'A&B<C>D"E\'F', "k여러줄": "한글\n두줄"},
+    )
+
+
 def _synth_case() -> CaseSpec:
     # 값 hp:t 가 없는 빈 root Field — set_field 가 slot 을 합성(slot_synthesized)한다.
     return CaseSpec(
@@ -522,4 +537,5 @@ POSITIVE = {
     "empty_selected_option": _empty_selected,
     "field_in_selected_option": _field_in_selected,
     "root_shared_option_mix": _mixed_owner,
+    "escaping_special_chars": _escaping_case,
 }
