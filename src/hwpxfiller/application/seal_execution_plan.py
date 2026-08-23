@@ -672,5 +672,12 @@ def _verdict_current_sealable(
 
 # ─── seal 성공 outcome(durable publication 없음) ────────────────────────────────────────
 def sealed_outcome_for(candidate: PlanCandidate) -> ExecutionPlanSealed:
-    """current candidate 에서 직접 seal 성공 outcome 을 낸다 — store commit·publication kind 없음."""
-    return ExecutionPlanSealed(execution_basis_digest=candidate.execution_basis_digest)
+    """current candidate 에서 직접 seal 성공 outcome 을 낸다 — store commit·publication kind 없음.
+
+    S6-05(#812): 방금 봉인한 ``plan_payload`` 를 화물로 함께 싣는다 — materialization caller 가
+    Value→Payload 재조립(불가능) 대신 봉인 산출을 그대로 소비한다(재판정 0).
+    """
+    return ExecutionPlanSealed(
+        execution_basis_digest=candidate.execution_basis_digest,
+        plan_payload=candidate.plan_payload,
+    )

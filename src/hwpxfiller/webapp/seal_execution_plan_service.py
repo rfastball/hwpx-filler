@@ -44,7 +44,11 @@ from ..application.jobs import (
     ensure_job_authority_id,
     load_job,
 )
-from ..application.seal_execution_plan import RouteResolutionError
+from ..application.execution_composition import RuntimeMaterializerConformanceRegistry
+from ..application.seal_execution_plan import (
+    RouteResolutionError,
+    SealExecutionPlanCommand,
+)
 from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.field_binding import (
     FieldBindingRule,
@@ -63,6 +67,7 @@ from ..external.field_binding_store import (
 )
 from ..external.qualification_store import QualificationObjectStore
 from ..external.runtime_capability import admitted_runtime_conformance_registry
+from ..external.seal_orchestration_runner import observe_current_basis_digest
 from ..external.seal_execution_capture_runner import (
     CurrentFieldBindingReview,
     SealExecutionCaptureRunner,
@@ -94,6 +99,18 @@ class BindingCommitProjection:
 
     changed: bool
     revision_id: str
+
+
+@dataclass(frozen=True)
+class ManagedRunContext:
+    """managed materialization 조립 재료(S6-05 · #812) — 서비스가 이미 쥔 것의 읽기 전용 묶음."""
+
+    root: Path
+    workspace_instance_id: str
+    work_authority_id: str
+    runtime_registry: RuntimeMaterializerConformanceRegistry
+    runtime_capability_manifest_digest: str
+    current_basis_digest_reader: "Callable[[], str | None]"
 
 
 class SealExecutionPlanService:
@@ -150,6 +167,47 @@ class SealExecutionPlanService:
         )
 
     # ── public surface(product 를 감싸는 얇은 표면) ────────────────────────────────
+    def managed_run_context(self, work_ref: str) -> "ManagedRunContext | None":
+        """managed materialization 조립 재료의 묶음 accessor(S6-05 · #812) — 발급 0.
+
+        이 서비스가 __init__ 에서 이미 쥔 것(authority root·workspace·runtime registry·
+        capability manifest·capture 결선)을 그대로 노출한다. ``authority_id`` 가 없으면 None —
+        여기서 발급하지 않는다(발급은 라우팅·확인의 몫, 실행 준비 조회는 읽기 전용).
+        reader 는 fence 없는 current basis 관찰이라 start gate 가 fence 아래에서 부른다.
+        """
+        job = load_job(self._registry, work_ref)
+        if not job.authority_id:
+            return None
+        workspace_id = self._workspace.read()
+        if workspace_id is None:
+            return None
+        work_id = job.authority_id
+        command = SealExecutionPlanCommand(
+            workspace_instance_id=workspace_id,
+            work_ref=work_ref,
+            request_id="managed-basis-read",
+        )
+
+        def read_basis() -> "str | None":
+            return observe_current_basis_digest(
+                command,
+                work_id,
+                read_summary=self._capture.read_summary,
+                capture_under_fence=self._capture.capture_execution,
+                resolve_shipping_policy=resolve_shipping_policy,
+            )
+
+        return ManagedRunContext(
+            root=self._root,
+            workspace_instance_id=workspace_id,
+            work_authority_id=work_id,
+            runtime_registry=self._runtime_registry,
+            runtime_capability_manifest_digest=(
+                self._runtime_manifest.runtime_capability_manifest_digest
+            ),
+            current_basis_digest_reader=read_basis,
+        )
+
     def seal_execution_plan(
         self, work_ref: str, request_id: str
     ) -> SealExecutionPlanResponse:
