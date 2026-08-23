@@ -3057,9 +3057,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             indices[failed_ordinal] if failed_ordinal < len(indices) else failed_ordinal
         )
         failed_item = prep.result.ordered_items[failed_ordinal]
+        # identity 는 legacy 와 같은 링1 표시명(§10.10 판정 E) — 내부 locator 를 노출하지 않는다.
+        isum = identity_summary(
+            self.records, filename_tokens=self._filename_source_columns()
+        )
         failures = [{
             "index": failed_index,
-            "identity": failed_item.record_identity,
+            "identity": (
+                isum.display_for(self.records[failed_index])
+                if 0 <= failed_index < len(self.records) else ""
+            ),
             "filename": failed_item.resolved_output_relative_path,
             "reason": outcome.detail,
             "known": True,
