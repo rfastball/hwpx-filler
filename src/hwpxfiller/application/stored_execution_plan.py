@@ -19,7 +19,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-_STALE_REASONS = frozenset({"DIGEST_MISMATCH", "CURRENT_BASIS_NOT_SEALABLE"})
+# stale 사유 어휘 — S6-02(#810) start gate 가 같은 값을 재진술하므로 상수로 승격(값 불변).
+DIGEST_MISMATCH = "DIGEST_MISMATCH"
+CURRENT_BASIS_NOT_SEALABLE = "CURRENT_BASIS_NOT_SEALABLE"
+_STALE_REASONS = frozenset({DIGEST_MISMATCH, CURRENT_BASIS_NOT_SEALABLE})
 
 
 # ─── 오류 ────────────────────────────────────────────────────────────────────────────
