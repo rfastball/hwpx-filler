@@ -193,9 +193,14 @@ class SealExecutionPlanProductCommand:
 # ─── command outcome Product DTOs ────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class ExecutionPlanSealedProductOutcome:
-    """seal 성공 — durable publication 없이 current candidate 에서 직접 낸 sealed basis identity."""
+    """seal 성공 — durable publication 없이 current candidate 에서 직접 낸 sealed basis identity.
+
+    ``plan_payload`` 는 identity 가 아니라 운반 화물(S6-05 · #812) — 세션이 basis digest 와
+    함께 보관해 managed materialization 의 입력으로 쓴다(재판정 0).
+    """
 
     execution_basis_digest: str
+    plan_payload: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -316,6 +321,7 @@ class SealExecutionPlanProduct:
         if isinstance(outcome, ExecutionPlanSealed):
             return ExecutionPlanSealedProductOutcome(
                 execution_basis_digest=outcome.execution_basis_digest,
+                plan_payload=outcome.plan_payload,
             )
         if isinstance(outcome, ExecutionQualificationBlocked):
             return ExecutionQualificationBlockedProductOutcome(

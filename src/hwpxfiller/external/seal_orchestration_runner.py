@@ -145,6 +145,51 @@ def seal_execution_plan(
         return _result_for_verdict(verdict, work_authority_id)
 
 
+def observe_current_basis_digest(
+    command: SealExecutionPlanCommand,
+    work_authority_id: str,
+    *,
+    read_summary: FreshWorkObservationPort,
+    capture_under_fence: CaptureExecutionQualificationInputUnderFence,
+    resolve_shipping_policy: ShippingSealPolicyResolver,
+    theorem_registry: TheoremEvidenceRegistry = DEFAULT_THEOREM_EVIDENCE_REGISTRY,
+) -> "str | None":
+    """fence 를 잡지 않고 current Work 의 execution basis digest 만 관찰한다(S6-05 · #812).
+
+    S6-02 start gate 의 「current basis pin」 reader — caller(gate)가 PerWorkMutationFence
+    (rank 0)를 **이미 쥔 상태**에서 불리므로 이 함수는 fence 를 재획득하지 않는다(비재진입
+    Lock 이라 재획득은 데드락이다). 내부의 store 읽기는 store lease(rank 1)만 지나 lock
+    order 정방향이다. 같은 이유로 여기서 :func:`seal_execution_plan` 을 부르는 것은 금지다.
+
+    capture terminal(block/policy)·compile blocked·context 예외는 전부 ``None`` 으로 닫는다 —
+    gate 가 ``CURRENT_BASIS_NOT_SEALABLE`` 로 시끄럽게 거절하는 것이 이 값의 소비 계약이라
+    관찰 실패가 조용히 통과할 길이 없다(fail-closed).
+    """
+    ws = command.workspace_instance_id
+    try:
+        exact = read_summary(ws, work_authority_id)
+        policy = resolve_shipping_policy(command, exact)
+        require_exact_selector_consistency(command, policy)
+        cap = capture_under_fence(
+            ws,
+            work_authority_id,
+            exact.template_application_id,
+            exact.qualification_profile_id,
+            policy,
+        )
+        classification = classify_capture_result(cap, policy)
+        if isinstance(classification, CaptureTerminal):
+            return None
+        candidate = compile_candidate(
+            classification.captured, theorem_registry=theorem_registry
+        )
+        if not isinstance(candidate, PlanCandidate):
+            return None
+        return candidate.execution_basis_digest
+    except Exception:
+        return None
+
+
 def _result_for_verdict(
     verdict: FinalVerdict, work_authority_id: str
 ) -> SealExecutionPlanResult:

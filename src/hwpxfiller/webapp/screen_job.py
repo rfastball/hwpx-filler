@@ -70,7 +70,22 @@ from ..application.jobs import (
     set_favorite,
 )
 from ..domain.engine import HwpxEngine
+from ..application.execution_contract_set import (
+    execution_basis_digest,
+    plan_semantic_digest,
+)
 from ..domain.identity_summary import identity_summary
+from ..external.delivery_coordinator import (
+    DeliveryAborted,
+    DeliveryCompleted,
+    DeliveryRefused,
+)
+from ..external.ledger_export import write_managed_delivery_ledger
+from .managed_generation import (
+    ManagedRunCancelled,
+    ManagedRunRefused,
+    run_managed_generation,
+)
 from ..domain.job import (
     Job,
     rules_fingerprints,
@@ -146,6 +161,7 @@ from ..application.document_creation_workbench import (
     DeliveryPreviewBlocker,
     DeliveryPreviewSummary,
     DocumentCreationWorkbenchContextError,
+    HistoricalOutcomeSummary,
     PlannedDocumentSummary,
     RecordRecoveryTarget,
     RecordValidationIssue,
@@ -498,6 +514,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # ExecutionObservationContextError). 작업대 Observation 의 admission/readiness/7상태를
         # 여기서 **소비만** 한다(재판정 0). None = 아직 확인 증거 없음(NO_EVIDENCE).
         self._last_fresh_observation: "FreshExecutionObservation | None" = None
+        # 마지막 seal 이 봉인한 plan payload(S6-05 · #812) — identity 가 아니라 화물이다.
+        # basis digest 와 **같은 응답**에서 짝으로 보관해 managed 실행이 재판정 없이 소비한다.
+        self._last_sealed_plan_payload = None
+        # 마지막 managed 완주의 실행 증거(S6-05) — 작업대 historical_outcome 으로만 나른다.
+        self._last_managed_outcome: "HistoricalOutcomeSummary | None" = None
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
@@ -1713,7 +1734,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             })
             return base
         job = self.vm.job
-        base["managed_hwpx"] = bool(job.authority_id)
+        # S6-05(#812) 의미 3 파생 전환: bool(authority_id) 는 slotless 발급 작업까지 managed 로
+        # 취급해 generate-once 트랩(#806 R1)의 곱 반대편 항이었다. managed 는 「materialization
+        # 대상인가」= slot-bearing 사실(링1 projection 이 이미 소유)에서 파생한다.
+        base["managed_hwpx"] = self._is_managed_hwpx_work(job)
         indices = self._indices()
         # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
         # 승인 지문 성분(scope key 해시)·요구 판정(blank_set)이 전부 이 한 집합을 소비한다.
@@ -2793,16 +2817,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
         job = self.vm.job
-        if job.authority_id:
-            # S6-absent managed Work cannot fall through to the legacy generator.
-            zone = self._workbench_observation_zone(template_missing(job.template_path))
-            create_action = zone.get("create_action", {})
-            return {
-                "ok": False,
-                "error": create_action.get("disabled_reason")
-                or "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
-                "level": "warn",
-            }
+        # S6-05(#812): S6-absent \uac00\ub4dc(authority_id \ub2e8\ub3c5 \ud544\ud130)\ub294 \ucca0\uac70\ub410\ub2e4 \u2014 \uc2e4\ud589 \uacbd\ub85c \uc120\ud0dd
+        # (\uc758\ubbf8 4)\uc740 \uc544\ub798\uc5d0\uc11c managed_hwpx \ud30c\uc0dd\uacfc \uac19\uc740 \uc6d0\ucc9c\uc73c\ub85c \uac08\ub9ac\uace0, managed \uac08\ub798\uc758
+        # \uc2dc\uc791 \uc790\uaca9\uc740 start gate \uac00, slot-bearing \uc758 legacy \uc720\uc785\uc740 admission \uc774 \uac01\uc790 \uc18c\uc720\ud55c
+        # \uc0ac\uc720\ub85c \ub2eb\ub294\ub2e4(#806 R1\u00b7R2 \uac00 \ub51b\ub294 \uc0ac\uc2e4).
 
         if self.range_draft is not None:
             # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
@@ -2833,20 +2851,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         try:
             try:
-                reject = self._resolve_managed_template(run_vm)
-                visible_identity_changed = (
-                    self.vm,
-                    getattr(getattr(self.vm, "job", None), "authority_id", None),
-                    self._seated_template_application_id,
-                    self.job_name,
-                ) != visible_identity_before
-                result = (
-                    reject
-                    if reject is not None
-                    else self._generate_locked(
-                        run, run_vm, confirm_overwrite=confirm_overwrite
+                if self._is_managed_hwpx_work(job):
+                    # managed 갈래(S6-05) — legacy staging·admission 을 타지 않는다. 준비
+                    # 미달·stale·runtime 은 파이프라인 안의 소유자들이 각자 사유로 닫는다.
+                    visible_identity_changed = False
+                    result = self._generate_managed_locked(run, run_vm)
+                else:
+                    reject = self._resolve_managed_template(run_vm)
+                    visible_identity_changed = (
+                        self.vm,
+                        getattr(getattr(self.vm, "job", None), "authority_id", None),
+                        self._seated_template_application_id,
+                        self.job_name,
+                    ) != visible_identity_before
+                    result = (
+                        reject
+                        if reject is not None
+                        else self._generate_locked(
+                            run, run_vm, confirm_overwrite=confirm_overwrite
+                        )
                     )
-                )
             finally:
                 self._run = None
                 # staged 경로는 이 런에서만 유효하다 — VM 포인터를 비우고, 실행이 끝나 아무도
@@ -2881,6 +2905,193 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         elif visible_identity_changed:
             self._push()
         return result
+
+    def _generate_managed_locked(self, run, run_vm) -> dict:
+        """managed HWPX 실행(S6-05 · #812) — legacy generator 를 부르지 않는다(S6-9).
+
+        판정 재조립 0(S6-10): 준비 판정은 workbench observation 이, payload↔digest 짝은
+        같은 seal 응답 출처가, 시작 자격은 start gate 가, 안착은 delivery coordinator 가
+        소유한다. 거절 문안은 observation 의 disabled_reason 재진술이다(구 가드와 같은
+        원천, 다른 자리). 취소는 record 경계에서만 읽고 write 0 이다(legacy 의 부분 유지와
+        다름을 요약이 말한다).
+        """
+        self._last_run_job = run.job_name
+        self._run_revisions = dict(run.revisions)
+        try:
+            observation = self.workbench_observation()
+        except ValueError:
+            return {
+                "ok": False,
+                "error": "현재 환경에서는 문서를 만들 수 없습니다",
+                "level": "warn",
+            }
+        if not observation.create_documents_enabled:
+            return {
+                "ok": False,
+                "error": observation.create_documents_disabled_reason
+                or "필요한 준비를 먼저 완료해 주세요",
+                "level": "warn",
+            }
+        payload = self._last_sealed_plan_payload
+        if payload is None or (
+            execution_basis_digest(payload.execution_basis)
+            != self._last_sealed_basis_digest
+        ):
+            return {
+                "ok": False,
+                "error": "실행 준비가 현재 확인 상태와 달라 생성하지 않았습니다. "
+                "변경사항을 다시 확인해 주세요.",
+                "level": "warn",
+            }
+        prep = self._current_delivery_preparation
+        if prep is None or not isinstance(prep.result, CurrentResolvedDelivery):
+            return {
+                "ok": False,
+                "error": "필요한 준비를 먼저 완료해 주세요",
+                "level": "warn",
+            }
+        context = (
+            self._seal_execution.managed_run_context(self.job_name)
+            if self._seal_execution is not None
+            else None
+        )
+        if context is None:
+            return {
+                "ok": False,
+                "error": "현재 환경에서는 문서를 만들 수 없습니다",
+                "level": "warn",
+            }
+        now = self._clock().isoformat(timespec="seconds")
+        outcome = run_managed_generation(
+            root=context.root,
+            workspace_instance_id=context.workspace_instance_id,
+            work_authority_id=context.work_authority_id,
+            plan_payload=payload,
+            ordered_raw_snapshots=prep.record_preparation.raw_records,
+            resolved_delivery=prep.result,
+            validated_at=now,
+            runtime_registry=context.runtime_registry,
+            runtime_capability_manifest_digest=(
+                context.runtime_capability_manifest_digest
+            ),
+            current_basis_digest_reader=context.current_basis_digest_reader,
+            cancel_requested=run.cancel.is_set,
+        )
+        return self._managed_result_dict(outcome, prep, payload, context, now)
+
+    def _managed_result_dict(self, outcome, prep, payload, context, now: str) -> dict:
+        """managed 실행 결과 → legacy 와 같은 키 집합의 결과 dict(JobResultZone 무변경)."""
+        indices = list(prep.record_preparation.ordered_model_indices)
+        total = len(indices)
+        if isinstance(outcome, (ManagedRunRefused, DeliveryRefused)):
+            return {"ok": False, "error": outcome.detail, "level": "warn"}
+        if isinstance(outcome, ManagedRunCancelled):
+            summary = (
+                f"중단했습니다. 시도 {outcome.attempted}/{outcome.total}건 — 안착 전이라 "
+                "문서는 만들지 않았습니다."
+            )
+            return {
+                "ok": True, "status": "cancelled",
+                "title": _run_title("cancelled", True, 0, 0),
+                "exit_summary": _run_exit_summary(
+                    "cancelled", True, 0, 0,
+                    outcome.total - outcome.attempted, outcome.attempted, outcome.total,
+                ),
+                "stage": "", "message": "", "known": True, "summary": summary,
+                "level": "warn", "out_dir": prep.result.output_directory,
+                "succeeded": 0, "failed": 0, "failed_selectable": 0,
+                "total": outcome.total, "failures": [], "fill_notes": [],
+                "cancelled": True, "attempted": outcome.attempted,
+                "unstarted": outcome.total - outcome.attempted,
+                "revisions": dict(self._run_revisions),
+            }
+        # DeliveryCompleted | DeliveryAborted — 앉은 문서까지는 유효하다.
+        delivered = list(outcome.delivered)
+        succeeded = len(delivered)
+        fill_notes = [
+            describe_fill_note(note)
+            for note in dict.fromkeys(
+                note for doc in delivered for note in doc.execution_notes
+            )
+        ]
+        ledger_note = ""
+        try:
+            write_managed_delivery_ledger(
+                prep.result.output_directory,
+                generated_at=now,
+                work_authority_id=context.work_authority_id,
+                execution_basis_digest=self._last_sealed_basis_digest or "",
+                plan_semantic_digest=plan_semantic_digest(payload),
+                result=outcome,
+            )
+        except OSError as exc:
+            # 기록 실패의 loud surface — 문서는 이미 앉았으므로 요약에 병기한다.
+            ledger_note = f" 문서는 만들어졌지만 실행 기록 저장에 실패했습니다({exc})."
+        if isinstance(outcome, DeliveryCompleted):
+            self._last_generated = set(indices)
+            self._last_failed = []
+            self._last_managed_outcome = HistoricalOutcomeSummary(
+                "DOCUMENTS_DELIVERED", now
+            )
+            summary = f"완료. 성공 {succeeded}/{total}, 실패 0."
+            if fill_notes:
+                summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
+            summary += ledger_note
+            return {
+                "ok": True, "status": "completed",
+                "title": _run_title("completed", False, succeeded, 0),
+                "exit_summary": _run_exit_summary(
+                    "completed", False, succeeded, 0, 0, total, total
+                ),
+                "stage": "", "message": "", "known": True, "summary": summary,
+                "level": "ok" if not ledger_note else "danger",
+                "out_dir": outcome.output_directory,
+                "succeeded": succeeded, "failed": 0, "failed_selectable": 0,
+                "total": total, "failures": [], "fill_notes": fill_notes,
+                "cancelled": False, "attempted": total, "unstarted": 0,
+                "revisions": dict(self._run_revisions),
+            }
+        # DeliveryAborted — 실패 항목에서 멈췄다(항목별 원자, 사실 그대로 표면화).
+        failed_ordinal = outcome.failed_item_ordinal
+        failed_index = (
+            indices[failed_ordinal] if failed_ordinal < len(indices) else failed_ordinal
+        )
+        failed_item = prep.result.ordered_items[failed_ordinal]
+        # identity 는 legacy 와 같은 링1 표시명(§10.10 판정 E) — 내부 locator 를 노출하지 않는다.
+        isum = identity_summary(
+            self.records, filename_tokens=self._filename_source_columns()
+        )
+        failures = [{
+            "index": failed_index,
+            "identity": (
+                isum.display_for(self.records[failed_index])
+                if 0 <= failed_index < len(self.records) else ""
+            ),
+            "filename": failed_item.resolved_output_relative_path,
+            "reason": outcome.detail,
+            "known": True,
+        }]
+        self._last_failed = [failed_index]
+        unstarted = total - succeeded - 1
+        status = "partiallyCompleted" if succeeded else "failed"
+        summary = (
+            f"완료. 성공 {succeeded}/{total}, 실패 1. 미착수 {unstarted}건 — "
+            "앉은 문서는 그대로 유지됩니다."
+        ) + ledger_note
+        return {
+            "ok": True, "status": status,
+            "title": _run_title(status, False, succeeded, 1),
+            "exit_summary": _run_exit_summary(
+                status, False, succeeded, 1, unstarted, succeeded + 1, total
+            ),
+            "stage": "", "message": "", "known": True, "summary": summary,
+            "level": "danger", "out_dir": prep.result.output_directory,
+            "succeeded": succeeded, "failed": 1,
+            "failed_selectable": len(self._last_failed),
+            "total": total, "failures": failures, "fill_notes": fill_notes,
+            "cancelled": False, "attempted": succeeded + 1, "unstarted": unstarted,
+            "revisions": dict(self._run_revisions),
+        }
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":
         """managed Product Work(HWPX 새 문서) 생성이 겨눌 템플릿을 current Application 의
@@ -3196,6 +3407,28 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "error": None,
         }
 
+    def _is_managed_hwpx_work(self, job) -> bool:
+        """의미 3(managed_hwpx)의 파생(S6-05 · #812) — 실행 경로 의미와 한 원천에서 나온다.
+
+        「이 Work 가 materialization 대상인가」= hwpx ∧ durable authority ∧ **slot-bearing**
+        (링1 projection 의 slots 사실 — 재판정이 아니라 이름 붙이기). slotless 발급 작업은
+        False → legacy 갈래로 흘러 R1 트랩이 구조로 소멸한다. view 실패·미초기화도 False —
+        slot-bearing 이 잘못 legacy 로 가도 admission 이 제 사유로 loud 거절한다(#806 R2 백스톱).
+        조회는 read-only projection(#744)이라 렌더 부작용이 없다.
+        """
+        if job.media != "hwpx" or not job.authority_id:
+            return False
+        if self._slot_configuration is None or not self.job_name:
+            return False
+        try:
+            response = self._slot_configuration.current_slot_configuration_view(
+                self.job_name
+            )
+        except SlotConfigurationProductError:
+            return False
+        projection = response.current_view.projection
+        return projection is not None and bool(projection.slots)
+
     def _slot_configuration_zone(self, tmissing: bool) -> dict:
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
 
@@ -3313,6 +3546,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "state": observation.admission.state,
                 "reasons": list(observation.admission.reasons),
             },
+            # S6-05(#812): 세션 실행 증거 — 부차 키(Primary Action·문안을 결정하지 않는다).
+            "historical_outcome": (
+                {
+                    "outcome_kind": observation.historical_outcome.outcome_kind,
+                    "observed_at": observation.historical_outcome.observed_at,
+                }
+                if observation.historical_outcome is not None
+                else None
+            ),
             "active_field_requirement_ids": list(observation.active_field_requirement_ids),
             "input_requirements": [
                 {
@@ -3559,6 +3801,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._session_orchestration = AutomaticSealOrchestration()
         self._last_fresh_observation = None
         self._last_sealed_basis_digest = None
+        self._last_sealed_plan_payload = None
+        self._last_managed_outcome = None
         self._invalidate_current_preparations()
 
     # ── automatic seal orchestration(SX-03 #726 §2·§3 · SX-SEAL 배선) ──────────────────
@@ -3647,10 +3891,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     _MAX_AUTO_SEAL_COALESCE = 4
 
     def _absorb_seal_response(self, resp) -> None:
-        """seal 응답 흡수 — fresh observation 보관 + sealed 면 마지막 basis digest 갱신(R2(#740))."""
+        """seal 응답 흡수 — fresh observation 보관 + sealed 면 basis digest·plan payload 를
+        같은 응답에서 짝으로 갱신한다(S6-05 — 대조가 유의미하려면 출처가 같아야 한다)."""
         self._last_fresh_observation = resp.fresh_observation
         if isinstance(resp.command_outcome, ExecutionPlanSealedProductOutcome):
             self._last_sealed_basis_digest = resp.command_outcome.execution_basis_digest
+            self._last_sealed_plan_payload = resp.command_outcome.plan_payload
 
     @staticmethod
     def _fresh_is_current(fresh: "FreshExecutionObservation") -> bool:
@@ -4262,6 +4508,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if preview_preparation is not None
                 else None
             ),
+            # S6-05(#812): 세션의 managed 실행 증거 — 부차 축(Primary Action 불결정).
+            historical_outcome=self._last_managed_outcome,
             run_delivery_intent=self._run_delivery_intent,
             context_integrity=context_integrity,
         )

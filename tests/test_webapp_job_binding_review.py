@@ -971,6 +971,9 @@ def test_snapshot_marks_durable_work_as_managed_hwpx(tmp_path: Path) -> None:
 def test_managed_hwpx_generate_never_reaches_legacy_generator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # S6-05(#812): slot-bearing managed Work \ub294 managed \uac08\ub798\ub85c \uac04\ub2e4 \u2014 legacy generator \ub3c4\ub2ec
+    # 0(S6-9)\uc740 \uc720\uc9c0\ub418\uace0, \uc900\ube44 \ubbf8\ub2ec\uc758 \uac70\uc808 \uc0ac\uc720\ub294 \uac00\ub4dc \ud558\ub4dc\ucf54\ub529\uc774 \uc544\ub2c8\ub77c workbench
+    # observation \uc758 disabled_reason \uc7ac\uc9c4\uc220\uc774\ub2e4(\ub370\uc774\ud130 \ubbf8\uc7a5\ucc29).
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.dispatch("select_job", {"name": WORK_REF})
 
@@ -980,7 +983,78 @@ def test_managed_hwpx_generate_never_reaches_legacy_generator(
     monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
     result = ctrl._generate_with_token()
     assert result["ok"] is False
-    assert result["error"] == "\ud604\uc7ac \ud658\uacbd\uc5d0\uc11c\ub294 \ubb38\uc11c\ub97c \ub9cc\ub4e4 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4"
+    assert result["error"] == "\ud544\uc694\ud55c \uc900\ube44\ub97c \uba3c\uc800 \uc644\ub8cc\ud574 \uc8fc\uc138\uc694"
+
+def test_managed_generate_wires_session_facts_into_the_pipeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S6-05(#812) managed 갈래 배선 수직 — 세션 사실이 재조립 없이 파이프라인에 닿는다.
+
+    bytes 진실은 test_managed_generation(실 store)·live101(actual WebView2)이 소유한다 —
+    여기는 컨트롤러 층의 seam 계약을 잰다: 실 seal 이 세운 payload·digest·delivery 준비가
+    그대로 넘어가고, reader 는 실제 authority 관찰로 sealed digest 와 동치이며, legacy
+    generator 는 도달 0 이고, 결과 dict 는 legacy 키 집합으로 번역된다.
+    """
+    import hwpxfiller.webapp.screen_job as sj
+    from hwpxfiller.external.delivery_coordinator import (
+        DeliveredDocument,
+        DeliveryCompleted,
+    )
+
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+    ctrl.dispatch("resolve_execution", {})  # 실 seal — payload·digest·workspace 가 세션에 선다
+    assert ctrl._last_sealed_plan_payload is not None
+    rows = [{"이름": "A"}, {"이름": "B"}]  # 실 plan 의 source schema 그대로
+    _mount_rows(ctrl, rows)
+
+    class Source:
+        def records(self) -> list[dict]:
+            return rows
+
+    ctrl.datasource = Source()
+    assert ctrl.vm is not None
+    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    out = tmp_path / "delivery"
+    out.mkdir()
+    ctrl.set_output_folder(str(out))
+
+    captured: dict = {}
+
+    def fake_run(**kw):
+        captured.update(kw)
+        return DeliveryCompleted(
+            output_directory=str(out),
+            delivered=(
+                DeliveredDocument(0, "rec-0", "a.hwpx", str(out / "a.hwpx"),
+                                  "WRITE_NEW", "sha256:" + "0" * 64, ()),
+                DeliveredDocument(1, "rec-1", "b.hwpx", str(out / "b.hwpx"),
+                                  "WRITE_NEW", "sha256:" + "1" * 64, ()),
+            ),
+        )
+
+    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("managed 갈래가 legacy generator 에 도달했다")
+
+    monkeypatch.setattr(ctrl, "_generate_locked", forbidden)
+    result = ctrl.generate(run_token="tk-1")
+    assert result["ok"] is True, result.get("error")
+    assert result["status"] == "completed", result
+    assert (result["succeeded"], result["failed"], result["total"]) == (2, 0, 2)
+    assert result["run_token"] == "tk-1"
+    # 세션 사실이 재조립 없이 그대로 넘어갔다.
+    assert captured["plan_payload"] is ctrl._last_sealed_plan_payload
+    prep = ctrl._current_delivery_preparation
+    assert prep is not None
+    assert captured["ordered_raw_snapshots"] == prep.record_preparation.raw_records
+    assert captured["resolved_delivery"] is prep.result
+    # reader 는 실 authority 관찰이다 — 방금 봉인된 digest 와 동치(자기 비교가 아니다).
+    assert captured["current_basis_digest_reader"]() == ctrl._last_sealed_basis_digest
+    # 실행 증거가 작업대의 부차 축으로 남는다(S7 선행 없이 세션 요약만).
+    assert _zone(ctrl)["historical_outcome"]["outcome_kind"] == "DOCUMENTS_DELIVERED"
+
 
 # ── binding 없음 → 정직한 blocked(NO_EVIDENCE 를 CURRENT/READY 로 위장하지 않는다) ─────────────
 def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -> None:

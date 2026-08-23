@@ -1142,16 +1142,31 @@ def run_sx(ctx: ScenarioContext) -> dict:
     )
     s.click_sel("#previewClose", what="managed preview 닫기")
     s.wait("document.getElementById('previewSheet').classList.contains('hidden')", "managed preview 닫힘", requires=["#previewSheet"])
-    # S6-03(#810): runtime admission 이 정식 주입돼 준비 완료 시 create 는 열린다. 클릭은
-    # S6-05 가드 철거 전까지 시끄럽게 거절되므로 여기서는 누르지 않는다 — 이 지점의 수직
-    # 증거는 「열림 + filesystem 불변(H6)」이고, 클릭 간극 해소는 S6-05 수직 시나리오 몫이다.
+    # S6-05(#812): 클릭 간극이 닫혔다 — 열린 create 를 실제로 눌러 managed materialization
+    # 이 actual WebView2 에서 문서를 앉히는 것까지가 이 지점의 수직 증거다(H6 극성 전환:
+    # 「filesystem 불변」→「계획된 문서가 실제로 생겼다」).
     s.wait(
         "!document.getElementById('jobManagedCreate').disabled",
         "S6-03 admitted enabled create",
         requires=["#jobManagedCreate"],
     )
     final_managed = _workbench(_snapshot(s))
-    _expect(ctx.output_manifest() == baseline_manifest, "H6: managed path가 filesystem을 변경했습니다")
+    planned_names = [
+        item["relative_path"]
+        for item in final_managed["delivery"]["planned_documents"]
+    ]
+    s.click_sel("#jobManagedCreate", what="managed 문서 만들기")
+    s.wait(
+        "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",
+        "managed 생성 완료 착지",
+        timeout=60.0,
+        requires=["#jobResult"],
+    )
+    after_manifest = ctx.output_manifest()
+    _expect(after_manifest != baseline_manifest, "H6: managed create가 filesystem을 바꾸지 못했습니다")
+    for name in planned_names:
+        _expect(name in after_manifest, f"H6: 계획된 문서 {name!r} 가 실제로 생기지 않았습니다")
+    s.click_sel("#jobResultClose", what="managed 결과 닫기")
 
     # V4 data transition: cancel/failure are atomic, compatible keeps A, incompatible releases without auto-select.
     before_cancel = _snapshot(s)

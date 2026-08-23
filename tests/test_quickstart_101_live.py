@@ -586,7 +586,8 @@ def test_check_mode_completes_the_101_journey_on_a_clean_home(live_check_run) ->
     assert observed["empty_value_gate_asked"] is True
     assert observed["empty_value_surfaced"] is True
     assert set(observed["sx05"]) == {"H1", "H2", "H3", "H4", "H5", "H6", "H7"}
-    assert observed["sx05"]["H6"]["filesystem_before"] == observed["sx05"]["H6"]["filesystem_after"]
+    # S6-05(#812) H6 극성 전환: managed create 가 실제 문서를 앉힌다 — 불변이면 클릭이 무반응.
+    assert observed["sx05"]["H6"]["filesystem_before"] != observed["sx05"]["H6"]["filesystem_after"]
     restart_proc = live_check_run["restart_proc"]
     restart = live_check_run["restart_report"]
     assert restart_proc.returncode == driver.ExitCode.OK, _tail(restart_proc.stderr)

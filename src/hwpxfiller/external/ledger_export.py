@@ -214,6 +214,48 @@ def export_plan_ledger(plan: "GenerationPlan", batch) -> str:
     return str(sidecar)
 
 
+def write_managed_delivery_ledger(
+    out_dir: "str | Path",
+    *,
+    generated_at: str,
+    work_authority_id: str,
+    execution_basis_digest: str,
+    plan_semantic_digest: str,
+    result,
+) -> Path:
+    """managed 배달 원장(S6-05 · #812) — DeliveredDocument 사실을 그대로 축적한다.
+
+    legacy ``OutputLedger``(MappingProfile 형)는 managed 실행의 사실(plan/basis digest·
+    disposition·output digest·완화 노트)을 담을 수 없어 별도 사이드카 종류를 둔다.
+    경로 규약(:func:`ledger_sidecar_path` — 축적, 덮지 않음)과 원자 쓰기는 공유한다.
+    ``result`` 는 delivery coordinator 의 Completed/Aborted 값이다 — 재판정 없이 기록만.
+    """
+    from dataclasses import asdict
+
+    delivered = [
+        {**asdict(doc), "execution_notes": [asdict(note) for note in doc.execution_notes]}
+        for doc in result.delivered
+    ]
+    payload: dict = {
+        "ledger_kind": "managed-delivery/v1",
+        "generated_at": generated_at,
+        "work_authority_id": work_authority_id,
+        "execution_basis_digest": execution_basis_digest,
+        "plan_semantic_digest": plan_semantic_digest,
+        "outcome": type(result).__name__,
+        "delivered": delivered,
+    }
+    if hasattr(result, "code"):  # DeliveryAborted — 멈춘 사실도 증거다(숨기지 않는다).
+        payload["aborted"] = {
+            "code": result.code,
+            "detail": result.detail,
+            "failed_item_ordinal": result.failed_item_ordinal,
+        }
+    sidecar = ledger_sidecar_path(out_dir, generated_at)
+    write_text_atomic(sidecar, json.dumps(payload, ensure_ascii=False, indent=2))
+    return sidecar
+
+
 def ledger_sidecar_path(out_dir: "str | Path", generated_at: str) -> Path:
     """실행별 원장 사이드카 경로 — 타임스탬프 파일명으로 이전 실행의 증거를 덮지 않는다(RC-02).
 

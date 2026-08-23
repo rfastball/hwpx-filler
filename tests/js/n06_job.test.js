@@ -392,16 +392,20 @@ test("backend execution action dispatches resolve_execution without frontend pri
   assert.deepEqual(h.calls.at(-1), { screen: "job", action: "resolve_execution", payload: {} });
 });
 
-test("managed HWPX는 CURRENT여도 S6 disabled reason을 내고 legacy generate를 호출하지 않는다", async () => {
-  const reason = "현재 환경에서는 문서를 만들 수 없습니다";
-  const snap = { ...SNAP, managed_hwpx: true, gate: { enabled: true }, run_action: { key: "generate" }, workbench_observation: { create_action: { label: "문서 만들기", enabled: false, disabled_reason: reason } } };
+test("managed HWPX create는 legacy와 같은 generate 왕복을 탄다 — 조용한 로그 분기 철거(S6-05 #812)", async () => {
+  // 옛 조기 return(#729 잔여위험 2: reason 로그 후 무반응)은 철거됐다 — 판정은 전부
+  // 백엔드가 지고, 거절도 generate 왕복의 결과 dict 로 시끄럽게 돌아온다.
+  const snap = { ...SNAP, managed_hwpx: true, gate: { enabled: true }, run_action: { key: "generate" }, workbench_observation: { create_action: { label: "문서 만들기", enabled: true, disabled_reason: null } } };
   const h = harness({ snapshot: snap });
   await h.controller.init();
   h.push(snap);
   await h.controller.startGenerate();
 
-  assert.equal(h.calls.filter((call) => call.method === "generate").length, 0);
-  assert.ok(h.controller.getUi().log.at(-1).endsWith(reason));
+  const generateCalls = h.calls.filter((call) => call.method === "generate");
+  assert.equal(generateCalls.length, 1);
+  // run_token 왕복 계약: 표면이 발급한 토큰이 세 번째 인자로 실린다(bridge.js 경로 아님).
+  assert.equal(typeof generateCalls[0].args[2], "string");
+  assert.ok(generateCalls[0].args[2].length > 0);
 });
 
 test("managed HWPX 상태 pill은 backend 7상태 phrase를 무가공 소비한다", async () => {

@@ -113,6 +113,45 @@ def test_reseal_recomputes_same_basis_digest(tmp_path) -> None:
     assert again.execution_basis_digest == first.execution_basis_digest
 
 
+# ─── S6-05(#812): sealed payload 운반 + managed run 조립 재료 ──────────────────────────
+def test_sealed_outcome_carries_the_plan_payload(tmp_path) -> None:
+    # payload 는 identity 가 아니라 화물 — basis digest 와 같은 응답에서 짝으로 온다(재판정 0).
+    from hwpxfiller.application.execution_contract_set import (
+        SealedExecutionPlanSemanticPayload,
+        execution_basis_digest,
+    )
+
+    service = _service(tmp_path, with_binding=True)
+    outcome = service.seal_execution_plan(WORK_REF, "r1").command_outcome
+    assert isinstance(outcome, ExecutionPlanSealedProductOutcome)
+    payload = outcome.plan_payload
+    assert isinstance(payload, SealedExecutionPlanSemanticPayload)
+    assert execution_basis_digest(payload.execution_basis) == outcome.execution_basis_digest
+
+
+def test_managed_run_context_exposes_assembly_without_minting(tmp_path) -> None:
+    service = _service(tmp_path, with_binding=True)
+    # authority 미발급(어떤 확인·seal 도 전) — 발급하지 않고 None.
+    assert service.managed_run_context(WORK_REF) is None
+    outcome = service.seal_execution_plan(WORK_REF, "r1").command_outcome
+    assert isinstance(outcome, ExecutionPlanSealedProductOutcome)
+    context = service.managed_run_context(WORK_REF)
+    assert context is not None
+    assert context.work_authority_id
+    assert context.runtime_capability_manifest_digest.startswith("sha256:")
+    # reader 는 fence 없이 current basis 를 관찰한다 — 방금 봉인한 digest 와 동치다.
+    assert context.current_basis_digest_reader() == outcome.execution_basis_digest
+
+
+def test_basis_reader_returns_none_when_current_is_not_sealable(tmp_path) -> None:
+    # binding 없는 Work 는 sealable 이 아니다 — reader 는 None(gate 가 시끄럽게 닫는다).
+    service = _service(tmp_path, with_binding=False)
+    service.seal_execution_plan(WORK_REF, "r1")  # route 가 authority 를 발급(blocked 종결)
+    context = service.managed_run_context(WORK_REF)
+    assert context is not None
+    assert context.current_basis_digest_reader() is None
+
+
 # ─── route 실패: 알 수 없는 work_ref → RouteResolutionError(request 미소비) ─────────────
 def test_unknown_work_ref_raises_route_error(tmp_path) -> None:
     root = default_template_authority_dir()

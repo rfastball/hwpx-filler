@@ -66,9 +66,15 @@ class ExecutionPlanSealed:
     content-addressed store·publication kind(CREATE/REUSE)·plan record·plan_semantic_digest 를
     싣지 않는다 — sealed current basis 의 identity(``execution_basis_digest``)만 담는다. 이 digest 는
     final gate 의 basis-equality staleness 판정이 이미 계산하는 값이라 parity·식별에 재사용한다.
+
+    ``plan_payload``(S6-05 · #812)는 identity 가 아니라 **운반 화물**이다 — 방금 봉인된
+    ``SealedExecutionPlanSemanticPayload`` 를 재판정 없이 materialization caller 까지 나른다.
+    durable 로 남기지 않고(R2 #740 의 durable Plan store 제거는 유지), 세션이 basis digest 와
+    같은 응답에서 함께 보관해 짝을 맞춘다.
     """
 
     execution_basis_digest: str
+    plan_payload: Any | None = None
 
     def __post_init__(self) -> None:
         _require_str(self.execution_basis_digest, "execution_basis_digest")
