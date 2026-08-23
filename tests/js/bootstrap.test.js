@@ -41,18 +41,21 @@ const FACTORY_SERVICES = {
     "openRenameRules", "pickOutputFolder", "setDeliveryCollision", "refreshDelivery", "relinkActive",
     "templateCheck", "templateApply", "openPreviewFrom",
     "closePreview", "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
-    "previewFixField", "previewFixFilename", "openRepair", "toggleLog", "init", "dispose",
+    "previewFixField", "previewFixFilename",
+    // 산출물 관찰(S7-03 · #825) — 결과 존 행이 여는 별도 표면과 그 직접 브리지 저장.
+    "openArtifactFrom", "closeArtifact", "saveArtifactAs",
+    "openRepair", "toggleLog", "init", "dispose",
   ],
   Nav: ["go", "refresh", "currentScreen"],
   AppCloseGuard: ["prompt"],
-  /* 표면 25 = 호스트 메서드 23 + `onPush` + `hostReady`. selftest 프로브가
+  /* 표면 26 = 호스트 메서드 24 + `onPush` + `hostReady`. selftest 프로브가
      `Bridge.call = stub` 으로 프로퍼티를 교체하므로 **객체째**여야 한다. */
   Bridge: [
     "onPush", "hostReady", "initial", "call", "pickDataFile", "loadDataSheet",
     "importTemplateFile", "importTemplatesFolder", "copyClipboard", "pickOutputFolder",
     "generate", "editorHasUnsavedWork", "openJobInEditor", "newJobFromData",
     "revealCorruptJob", "pickPoolDataFile", "pickTemplatePath", "openPath", "revealPath",
-    "copyPath", "setTheme", "setFontScale", "setMasterWidth",
+    "copyPath", "saveArtifactAs", "setTheme", "setFontScale", "setMasterWidth",
     "confirmWindowClose", "cancelWindowClose",
   ],
 };

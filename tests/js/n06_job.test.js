@@ -33,7 +33,10 @@ const SURFACE = [
   "relinkActive", "templateCheck", "templateApply",
   "openPreviewFrom", "closePreview",
   "previewMove", "previewBlankOnly", "previewApprove", "previewEdit",
-  "previewFixField", "previewFixFilename", "openRepair", "toggleLog",
+  "previewFixField", "previewFixFilename",
+  // 산출물 관찰(S7-03 · #825) — 미리보기와 **별도 표면**이라 이름도 갈린다.
+  "openArtifactFrom", "closeArtifact", "saveArtifactAs",
+  "openRepair", "toggleLog",
   "init", "dispose",
 ];
 

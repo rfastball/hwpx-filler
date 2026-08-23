@@ -166,8 +166,16 @@ def test_screen_controllers_stay_transport_thin() -> None:
 
 def test_native_file_dialogs_have_one_app_entry() -> None:
     path = ROOT / "src" / "hwpxfiller" / "webapp" / "app.py"
-    pattern = re.compile(r"^\s*(?:.*[=(\s])?(open_file_dialog|open_folder_dialog)\(")
-    allowed = {"    return open_file_dialog(", "    return open_folder_dialog("}
+    pattern = re.compile(
+        r"^\s*(?:.*[=(\s])?(open_file_dialog|open_folder_dialog|save_file_dialog)\("
+    )
+    # 세 native 대화상자 각각의 **단일 진입 한 줄**. 저장은 S7-03(#825)이 「다른 이름으로
+    # 저장」을 열며 합류했다 — 입구가 하나여야 라이브 실행의 대체가 그 자리를 비껴가지 않는다.
+    allowed = {
+        "    return open_file_dialog(",
+        "    return open_folder_dialog(",
+        "    return save_file_dialog(",
+    }
     offenders = [
         f"{path.relative_to(ROOT)}:{lineno}: {line.strip()}"
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
