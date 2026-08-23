@@ -37,10 +37,18 @@ from ..application.slot_configuration_context import (
     UnsupportedTemplateStructureProjection,
     resolve_slot_configuration_context,
 )
+from ..application.preset_command import (
+    PresetListing,
+    PresetSaveResult,
+    PresetStorePort,
+    REJECTED,
+    list_selection_presets as list_presets_from_store,
+)
 from ..application.slot_configuration_projection import (
     CONTEXT_ERROR,
     NOT_APPLICABLE,
     CurrentSlotConfigurationView,
+    ProjectedDetachedSelection,
     project_context_error,
     project_current_slot_configuration,
 )
@@ -53,6 +61,7 @@ from ..application.slot_reconciliation import (
 )
 from ..application.work_slot_configuration import WorkSlotConfigurationDraft
 from ..domain.slot_selection import SlotSelectionSet
+from ..host.locations import default_preset_dir
 from ..host.per_work_fence import per_work_mutation_fence
 from ..application.slot_token import (
     TOKEN_PURPOSE,
@@ -66,11 +75,14 @@ from ..application.slot_token import (
     sign_configuration_token,
 )
 from ..external.candidate_store import CandidateObjectStore
+from ..external.preset_store import PresetRegistry
 from ..external.qualification_store import QualificationObjectStore
 from ..external.slot_command_runner import (
     SlotCommandResult,
+    apply_selection_preset as run_apply_selection_preset,
     clear_slot_selection,
     ensure_current_slot_configuration,
+    save_selection_preset as run_save_selection_preset,
     select_slot_option,
 )
 from ..external.slot_token_secret import SlotTokenSecretError, SlotTokenSecretStore
@@ -184,6 +196,29 @@ class SlotConfigurationCommandResponse:
     refresh_required: bool
 
 
+@dataclass(frozen=True)
+class PresetApplyResponse:
+    """Preset 적용 응답 — mutation 축은 select/clear 와 **같은 형**이고 수치는 관통이다(S9-03 · #829).
+
+    ``applied_count``·``broken_count``·``applied_slot_ids``·``broken`` 은
+    :class:`~hwpxfiller.application.preset_command.PresetApplyDecision` 이 낸 값을 runner 를 거쳐
+    **그대로** 싣는다 — 링2 가 slot 목록을 다시 훑어 세면 같은 상태를 두 곳이 판정하게 된다(#828).
+
+    거절(``rejection_code``)이면 mutation 도 view 도 없다: 적용된 것이 없으니 새 token 을 발급할
+    근거도, 되돌려 그릴 새 view 도 없다. 무엇이 거절했는지는 code·detail 이 재진술한다.
+    """
+
+    mutation_outcome: MutationOutcomeView | None
+    current_view: CurrentViewResponse | None
+    refresh_required: bool
+    applied_slot_ids: tuple[str, ...]
+    broken: tuple[ProjectedDetachedSelection, ...]
+    applied_count: int
+    broken_count: int
+    rejection_code: str | None
+    rejection_detail: str | None
+
+
 def _request_relation(outcome_code: str) -> str:
     if outcome_code in (STALE_TEMPLATE_APPLICATION, STALE_CONFIGURATION):
         return outcome_code
@@ -199,6 +234,7 @@ class SlotConfigurationProduct:
         *,
         root: "str | Path",
         clock: Callable[[], datetime],
+        presets: "PresetStorePort | None" = None,
     ) -> None:
         self._registry = registry
         self._root = Path(root)
@@ -210,6 +246,12 @@ class SlotConfigurationProduct:
         self._candidates = CandidateObjectStore(self._root / "candidates")
         self._workspace = WorkspaceMetadataStore(self._root)
         self._secrets = SlotTokenSecretStore(self._root)
+        # Preset 레지스트리는 **Work authority root 아래가 아니라 홈**이다(#821 D2 — Work 밖
+        # 재사용이 존재 이유라 Work 저장소와 수명·경계를 공유하지 않는다). 미주입이면 홈
+        # 기본 위치로 해석한다(테스트는 autouse 홈 격리가 지킨다).
+        self._presets: PresetStorePort = (
+            presets if presets is not None else PresetRegistry(default_preset_dir())
+        )
         self._clock = clock
 
     # ── public Product API ──────────────────────────────────────────────────────
@@ -291,6 +333,112 @@ class SlotConfigurationProduct:
                 request_id=request_id, slot_id=slot_id, now=self._now(),
             )
         ))
+
+    # ── Selection Preset(S9-03 · #829) — 저장·나열·적용 ──────────────────────────────
+    def save_selection_preset(
+        self,
+        work_ref: str,
+        configuration_token: str,
+        name: str,
+        confirmed_overwrite_key: "str | None" = None,
+    ) -> PresetSaveResult:
+        """현재 선택을 이름 붙여 Preset 으로 보관한다 — 판정·코드는 S9-02 값 **그대로**.
+
+        Work durable 상태는 읽기만 한다(선택의 사본을 뜬다). 그래도 token 을 요구하는 이유는
+        route/Work/actor 결속과 「지금 화면이 보고 있는 그 구성」의 exact context 를 세우기
+        위해서다 — token 없이 부르면 어느 Application 의 선택을 떴는지 말할 수 없다.
+
+        문안을 조립하지 않는다: ``status``/``code``/``existing_key`` 만 나가고 덮어쓰기 확인
+        문구·거절 재진술은 웹이 소유한다(#829 — 판정·수치는 Python, 문안·확인 UI 는 웹).
+        """
+        work_id, ws = self._route(work_ref)
+        claims = self._verify_token(configuration_token, ws, work_id)
+        try:
+            return run_save_selection_preset(
+                self._configs, self._works, self._quals, self._candidates, self._presets,
+                context=self._command_context(ws, work_id, claims),
+                name=name,
+                confirmed_overwrite_key=confirmed_overwrite_key,
+                now=self._now(),
+            )
+        except SlotConfigurationContextError as exc:
+            # `_run` 과 같은 규율로 접는다(mutation 미발생·무저장). 저장 응답에는 view 축이
+            # 없으므로 사실은 거절로 실린다 — 사유 코드는 보존하고 사용자 문안은 context
+            # 문안 지도에서 온다(빈칸으로 새지 않는다).
+            return PresetSaveResult(
+                status=REJECTED,
+                code=exc.code,
+                saved_key=None,
+                existing_key=None,
+                existing_created_at=None,
+                detail=_CONTEXT_ERROR_MESSAGES.get(exc.code, _CONTEXT_ERROR_FALLBACK),
+            )
+
+    def list_selection_presets(self) -> PresetListing:
+        """홈 레지스트리의 Preset 목록 + 손상 항목 — Work 무관(Work 밖 보관이 존재 이유다).
+
+        손상 항목을 목록에서 지우지 않는다: 소비 표면이 비활성 + 사유 병기로 재진술한다.
+        """
+        return list_presets_from_store(self._presets)
+
+    def apply_selection_preset(
+        self, work_ref: str, configuration_token: str, preset_key: str
+    ) -> PresetApplyResponse:
+        """Preset 을 현재 Configuration 에 제안으로 적용하고 fresh view + 새 token 을 낸다.
+
+        성공 축의 성형은 select/clear 의 :meth:`_respond` 와 **동형**이다 — view 가 갈렸으니
+        새 token 을 함께 낸다(다음 command 가 옛 token 으로 서면 STALE 로 거절된다). 여기에
+        S9-02 가 낸 수치(적용 n·깨짐 m)를 얹기만 한다(재조립 0).
+        """
+        work_id, ws = self._route(work_ref)
+        claims = self._verify_token(configuration_token, ws, work_id)
+        try:
+            result = run_apply_selection_preset(
+                self._configs, self._works, self._quals, self._candidates, self._presets,
+                context=self._command_context(ws, work_id, claims),
+                preset_key=preset_key,
+                now=self._now(),
+            )
+        except SlotConfigurationContextError as exc:
+            return self._preset_apply_rejected(
+                exc.code, _CONTEXT_ERROR_MESSAGES.get(exc.code, _CONTEXT_ERROR_FALLBACK)
+            )
+        if result.rejection_code is not None:
+            return self._preset_apply_rejected(
+                result.rejection_code, result.rejection_detail
+            )
+        assert result.outcome is not None  # 거절이 아니면 runner 는 terminal outcome 을 낸다
+        base = self._respond(
+            ws,
+            work_id,
+            SlotCommandResult(result.outcome, result.view, result.view_error),
+            token_app=claims.template_application_id,
+        )
+        return PresetApplyResponse(
+            mutation_outcome=base.mutation_outcome,
+            current_view=base.current_view,
+            refresh_required=base.refresh_required,
+            applied_slot_ids=result.applied_slot_ids,
+            broken=result.broken,
+            applied_count=result.applied_count,
+            broken_count=result.broken_count,
+            rejection_code=None,
+            rejection_detail=None,
+        )
+
+    @staticmethod
+    def _preset_apply_rejected(code: str, detail: "str | None") -> PresetApplyResponse:
+        return PresetApplyResponse(
+            mutation_outcome=None,
+            current_view=None,
+            refresh_required=False,
+            applied_slot_ids=(),
+            broken=(),
+            applied_count=0,
+            broken_count=0,
+            rejection_code=code,
+            rejection_detail=detail,
+        )
 
     def _run(
         self, work_id: str, ws: str, *, token_app: "str | None", mutating: bool,
@@ -603,6 +751,7 @@ __all__ = [
     "SlotConfigurationCommandResponse",
     "MutationOutcomeView",
     "CurrentViewResponse",
+    "PresetApplyResponse",
     "LOCAL_ACTOR",
     "NOT_APPLICABLE",
 ]

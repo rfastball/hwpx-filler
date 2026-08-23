@@ -862,6 +862,66 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.click_sel("#cs-opt-0-0", what="preserved Option 복원")
     s.wait("document.getElementById('cs-opt-0-0').checked", "preserved Option 복원 반영", requires=["#cs-opt-0-0"])
 
+    # S9-03(#829) 보관된 선택 왕복 — **기존 창·기존 선택 위**에서 밟는다(새 콜드 부팅 0).
+    # 저장은 dispatch 로(이름 입력 모달은 프런트 소관이라 여기서는 command 자체를 겨눈다),
+    # 적용은 **화면의 버튼**으로 민다: 「적용 n · 깨짐 m」 재진술은 렌더 층이 소유하므로 실제
+    # 클릭만이 그 문장이 섰다는 증거다. 깨짐 m>0 갈래는 헤드리스 계약이 진다
+    # (`tests/test_webapp_job_preset.py`) — 여기서 successor 를 끌어오면 아래 V2 의 old-token
+    # 시나리오가 서 있는 전제(초기 Application)를 이 걸음이 먼저 무너뜨린다.
+    preset_name = "sx-preset"
+    save_expr = (
+        "window.pywebview.api.dispatch('job','save_selection_preset',"
+        + json.dumps(
+            {
+                "configuration_token": _current_view(_snapshot(s))["new_configuration_token"],
+                "name": preset_name,
+            },
+            ensure_ascii=False,
+        )
+        + ")"
+    )
+    saved = s.bridge(save_expr, "현재 선택을 프리셋으로 저장")
+    _expect(
+        isinstance(saved, dict) and saved.get("status") == "SAVED" and saved.get("saved_key"),
+        f"S9: 프리셋 저장이 성립하지 않았습니다 — {saved!r}",
+    )
+    preset_items = (_snapshot(s).get("content_presets") or {}).get("items") or []
+    _expect(
+        any(item.get("name") == preset_name for item in preset_items),
+        f"S9: 저장한 프리셋이 스냅샷 목록에 없습니다 — {preset_items!r}",
+    )
+    # 목록에 **실제로 보이는지**를 잰다(hidden 요소는 존재해도 사용자에게는 없는 것이다).
+    s.wait(
+        "[...document.querySelectorAll('#jobContentSelectionZone .cs-preset-name')]"
+        f".some(e=>e.offsetParent!==null&&e.textContent.trim()==={json.dumps(preset_name)})",
+        "보관된 선택 목록의 실렌더 항목",
+        requires=["#jobContentSelectionZone"],
+    )
+    # 지금을 저장 시점과 다르게 만든 뒤 적용해야 「되돌아왔다」가 vacuous 하지 않다.
+    s.click_sel("#cs-opt-0-1", what="프리셋 적용 대조를 위한 다른 선택")
+    s.wait("document.getElementById('cs-opt-0-1').checked", "대조 선택 반영", requires=["#cs-opt-0-1"])
+    s.gate_dispatch("apply_selection_preset", mode="after")
+    s.click_sel("#jobContentSelectionZone .cs-preset-apply", what="보관된 선택 적용")
+    s.wait_dispatch_gate("프리셋 적용 응답 보류")
+    s.release_dispatch()
+    s.wait(
+        "document.getElementById('cs-opt-0-0').checked"
+        " && !document.getElementById('cs-opt-0-1').checked"
+        " && !!document.querySelector('#jobContentSelectionZone .cs-preset-notice-applied')",
+        "프리셋 적용 뒤 저장 시점 선택 복귀 + 결과 재진술",
+        timeout=30.0,
+        requires=["#jobContentSelectionZone"],
+    )
+    preset_notice = str(s.js(
+        "document.querySelector('#jobContentSelectionZone .cs-preset-notice').textContent"
+    )).strip()
+    _expect("적용했습니다" in preset_notice, f"S9: 적용 결과 재진술이 없습니다 — {preset_notice!r}")
+    preset_trace = [
+        item for item in s.take_dispatch_trace()
+        if item.get("action") == "apply_selection_preset"
+    ]
+    _expect(preset_trace, "S9: actual 프리셋 적용 command trace가 없습니다")
+
     # V2: hold the real old-token request, apply successor through the UI, then let it settle stale.
     ctx.stage_template("successor")
     s.gate_dispatch("select_slot_option", mode="before")

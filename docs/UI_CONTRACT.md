@@ -567,6 +567,32 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
 - 시트는 조판·서식을 재현하지 않는다(#360 rhwp 는 별도 트랙): 문단 텍스트와 표(행·열 및
   `cellSpan`/`cellAddr` 병합 메타)와 빈 값 표식 집계까지다.
 
+#### 「포함할 내용」 존의 보관된 선택(Preset) (S9-03 · #829)
+
+`#jobContentSelectionZone` 의 slot 목록 아래 `.cs-presets` 구획이 선택 묶음을 Work **밖**에
+보관하고 되불러오는 동사 둘을 연다. 직접 브리지는 늘지 않는다 — 둘 다 dispatch 경로다:
+`save_selection_preset {configuration_token, name, confirmed_overwrite_key?}` ·
+`apply_selection_preset {configuration_token, preset_key}`. `request_id` 가 없는 이유는 S9-02 가
+재전송을 원장이 아니라 이름 유일성 + token version CAS 로 닫았기 때문이다.
+
+- **목록은 스냅샷 존 `content_presets`** 가 낸다(`{supported, items[{key,name,created_at}],
+  corrupt[{file_name,error}], corrupt_code}`). 지원 조건은 `slot_configuration` 존과 동형이고,
+  `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —
+  비활성 + 사유 병기로 같은 목록에 선다(숨기면 사용자가 묻지도 못한다).
+- **확인 왕복은 웹이 구현한다**: 이름 입력은 `Modal.prompt`, 이름 충돌(`NEEDS_CONFIRM` ·
+  `PRESET_NAME_CONFLICT`)은 `Modal.confirm`(danger). 확정은 backend 가 낸 **그 항목의 key**
+  (`existing_key`)를 되돌려 보낸다 — 이름만 다시 보내면 그 사이 그 이름을 차지한 남의 항목을
+  덮는다. 근거를 못 받은 확정은 덮기가 아니라 재시도로 착지한다(조용한 덮기 경로 0).
+- **수치는 Python 값 그대로다**: 적용 응답의 `applied_count`·`broken_count`·`applied_slot_ids`·
+  `broken` 은 S9-02 `PresetApplyDecision` 이 낸 값이고 표면은 「적용 n · 깨짐 m」으로 문장만
+  고른다(slot 목록을 다시 훑어 세지 않는다 — 같은 상태의 두 판정 금지). 깨짐 m>0 은 성공 UI
+  뒤에 숨지 않고 같은 `aria-live` 줄에서 함께 선다.
+- **적용은 durable S4 mutation** 이라 select/clear 와 같은 규율이다: 생성과 상호배제하고,
+  CHANGED 면 자동 확인에 진입하며, 응답의 fresh view + **새 token** 으로 패널을 통째 교체한다.
+  거절(`PRESET_NOT_FOUND`·`PRESET_ENTRY_CORRUPT`)이면 새 view·token 이 없으므로 옛 상태를 두고
+  사유만 재진술한다. 진단 원문(`detail`)은 사실 서술이라 아는 코드는 웹 문안으로 말한다.
+- 삭제·편집·공유·자동 적용은 비범위다(#821 §6).
+
 #### 템플릿 변경사항 존 (S3-09 #659)
 
 side card 의 `#jobTplChange`(`#jobTplChangeZone`) 가 S3 템플릿 권위의 사용자 능력 둘을 연다:

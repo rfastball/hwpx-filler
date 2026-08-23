@@ -1733,6 +1733,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # S4 Working Slot Configuration 존 기본값(SX-02 #725) — TXT·미선택·미상 매체는 명시적
         # 미지원(키 부재 분기 금지, template_change 선례). hwpx 분기가 실제 fresh view 로 덮는다.
         base["slot_configuration"] = self._slot_blank_zone()
+        # Selection Preset 목록 존 기본값(S9-03 #829) — 같은 이유로 키 부재 분기를 만들지 않는다.
+        base["content_presets"] = self._content_presets_blank()
         if self.job_is_txt:
             # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
             # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
@@ -1925,6 +1927,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # (링2 재조립 금지). fresh current view 를 매 스냅샷 조회한다: open 은 무변이라 늘 fresh
         # view+새 token 을 낸다(F1/F2 fence). preserved/broken/detached 분리는 projection 이 이미 진다.
         base["slot_configuration"] = self._slot_configuration_zone(tmissing)
+        # Selection Preset 목록 존(S9-03 #829) — 같은 지원 조건에서 함께 선다. 손상 항목은
+        # 숨기지 않고 함께 실려 표면이 비활성 + 사유 병기로 재진술한다.
+        base["content_presets"] = self._content_presets_zone(tmissing)
         # 작업대 Observation(SX-03 #726) — currentness/admission/readiness/7상태/Primary Action 을
         # 한 사용자 작업대 상태로 노출한다. 판정·합성은 Product 소유(링2 재판정 0). 미조립·미선택·
         # 템플릿 부재면 unsupported(조용히 비우지 않는다).
@@ -3944,6 +3949,82 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 str(p["configuration_token"]),
                 str(p["slot_id"]),
                 str(p["request_id"]),
+            ),
+        )
+        return self._slot_response_dict(response)
+
+    # ----------------------------------- Selection Preset 표면(S9-03 · #829)
+    # 두 동사도 **dispatch 경로**다(직접 브리지 신설 0). 수치(적용 n·깨짐 m)는 S9-02
+    # `PresetApplyDecision` 값이 Product 를 지나 그대로 실린다 — 여기서도 프런트에서도 slot
+    # 목록을 다시 훑어 세지 않는다(같은 상태의 두 판정 금지).
+    @staticmethod
+    def _content_presets_blank() -> dict:
+        """미지원 content_presets 존 — 매 호출 fresh dict(공유 mutable 상수 금지)."""
+        return {"supported": False, "items": [], "corrupt": []}
+
+    def _content_presets_zone(self, tmissing: bool) -> dict:
+        """스냅샷의 ``content_presets`` 존 — 홈 레지스트리 목록 + 손상 항목 병기.
+
+        지원 조건은 ``slot_configuration`` 존과 **동형**이다(미주입·미선택·비-hwpx·템플릿
+        부재면 명시적 unsupported). 목록 자체는 Work 무관이지만 이 존을 소비하는 표면이
+        「포함할 내용」 존이라 같은 조건에서 함께 서고 함께 진다.
+
+        ``provenance`` 는 싣지 않는다 — advisory 내부 정보(Application·contract id)라 사용자
+        표면의 재료가 아니다. 손상 항목은 숨기지 않고 ``corrupt`` 로 함께 나가고, 표면이
+        비활성 + 사유 병기로 재진술한다.
+        """
+        blank = self._content_presets_blank()
+        if self._slot_configuration is None or not self.job_name or tmissing:
+            return blank
+        job = load_job(self.registry, self.job_name)
+        if job.media != "hwpx":
+            return blank
+        listing = self._slot_configuration.list_selection_presets()
+        return {
+            "supported": True,
+            "items": [
+                {"key": item.key, "name": item.name, "created_at": item.created_at}
+                for item in listing.items
+            ],
+            "corrupt": [
+                {"file_name": entry.file_name, "error": entry.error}
+                for entry in listing.corrupt
+            ],
+            "corrupt_code": listing.corrupt_code,
+        }
+
+    def _do_save_selection_preset(self, p: dict) -> dict:
+        """현재 선택을 이름 붙여 보관한다 — 조용한 덮기 경로 0(이름 충돌은 확인 왕복).
+
+        generation lock 을 잡지 않는다: Work durable 상태는 **읽기만** 하고 쓰기는 홈
+        레지스트리로 간다. 생성 중 배치가 고정한 실행 입력과 어긋날 것이 없다(select/clear
+        와 갈리는 지점이고, 그 이유가 이 주석이다).
+        """
+        self._require_slot_configuration()
+        confirmed = p.get("confirmed_overwrite_key")
+        result = self._slot_configuration.save_selection_preset(
+            self.job_name,
+            str(p["configuration_token"]),
+            str(p["name"]),
+            str(confirmed) if confirmed is not None else None,
+        )
+        return asdict(result)
+
+    def _do_apply_selection_preset(self, p: dict) -> dict:
+        """Preset 적용 = durable S4 mutation — select 와 **같은 규율**이다.
+
+        생성과 상호배제하고(`_slot_command_serialized_with_generation`), CHANGED 면 자동
+        확인에 진입한다(`_maybe_auto_check` — 응답의 `mutation_outcome` 축이 select 응답과
+        같은 형이라 그 판정이 그대로 선다). 응답은 outcome·fresh view·새 token 에 적용 n·
+        깨짐 m 을 얹은 것이고, 수치는 backend 값 그대로다.
+        """
+        self._require_slot_configuration()
+        response = self._slot_command_serialized_with_generation(
+            "프리셋을 적용하세요",
+            lambda: self._slot_configuration.apply_selection_preset(
+                self.job_name,
+                str(p["configuration_token"]),
+                str(p["preset_key"]),
             ),
         )
         return self._slot_response_dict(response)

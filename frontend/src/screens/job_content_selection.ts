@@ -19,7 +19,10 @@ import { createElement, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { JobScreenModel, ScreenRuntime } from "./runtime.ts";
+import { emptyPresetZone } from "./job_slot_config.ts";
 import type {
+  PresetNotice,
+  PresetZone,
   ProjectedRetainedSelection,
   ProjectedSlot,
   SlotConfigService,
@@ -54,6 +57,21 @@ function readSlotZone(full: unknown): SlotZoneSnapshot {
   return { view: view as SlotCurrentView, error };
 }
 
+/* ── snapshot 의 content_presets zone → 보관된 선택 묶음 목록(손상 포함) ────────────────── */
+function readPresetZone(full: unknown): PresetZone {
+  if (full === null || typeof full !== "object") return emptyPresetZone;
+  const zone = (full as Obj).content_presets;
+  if (zone === null || typeof zone !== "object") return emptyPresetZone;
+  const z = zone as Obj;
+  if (z.supported !== true) return emptyPresetZone;
+  return {
+    supported: true,
+    items: Array.isArray(z.items) ? (z.items as PresetZone["items"]) : [],
+    // 손상 항목을 목록에서 지우지 않는다 — 표면이 비활성 + 사유 병기로 재진술한다.
+    corrupt: Array.isArray(z.corrupt) ? (z.corrupt as PresetZone["corrupt"]) : [],
+  };
+}
+
 /* ── controller — job model(read-only view)로 passive hydrate + command 위임 ────────────────── */
 export type JobContentSelectionController = {
   subscribe(listener: () => void): () => void;
@@ -61,11 +79,22 @@ export type JobContentSelectionController = {
   selectOption(slotId: string, optionId: string): Promise<SlotConfigState>;
   clearSelection(slotId: string): Promise<SlotConfigState>;
   refresh(): Promise<SlotConfigState>;
+  /** 「현재 선택을 프리셋으로 저장」 — 이름 입력·덮어쓰기 확인 UI 는 이 컨트롤러가 소유하고
+   *  (문안·확인 UI 는 웹), 충돌 판정·확정 근거(key)는 backend 가 낸 값을 그대로 되돌려준다. */
+  savePreset(): Promise<SlotConfigState>;
+  applyPreset(presetKey: string): Promise<SlotConfigState>;
+};
+
+/** 확인·입력 다이얼로그 포트(`overlay/modal.js` 파사드) — 다른 화면 컨트롤러와 같은 계약. */
+export type ContentSelectionModalPort = {
+  prompt(spec: Record<string, unknown>): Promise<string | null>;
+  confirm(spec: Record<string, unknown>): Promise<boolean>;
 };
 
 export function createJobContentSelectionController(deps: {
   runtime: ScreenRuntime;
   service: SlotConfigService;
+  modal?: ContentSelectionModalPort;
 }): JobContentSelectionController {
   const model = deps.runtime.model<JobScreenModel>("job");
   // pending 중 도착해 건너뛴 스냅샷이 있었는지 — settle 뒤 최신 model 로 재hydrate 하기 위한 표식.
@@ -82,8 +111,13 @@ export function createJobContentSelectionController(deps: {
     }
     skippedWhilePending = false; // 실제 hydrate → 최신 model 을 반영하므로 밀린 delivery 없음.
     const snap = model.getSnapshot();
-    const zone = readSlotZone(snap ? snap.full : null);
-    deps.service.hydrate(zone.view, { zoneError: zone.error, preserveNotice });
+    const full = snap ? snap.full : null;
+    const zone = readSlotZone(full);
+    deps.service.hydrate(zone.view, {
+      zoneError: zone.error,
+      preserveNotice,
+      presets: readPresetZone(full),
+    });
   }
 
   // job 스냅샷 변화(최초 로드·Template 변경·command 뒤 재푸시)마다 read-only view 를 재hydrate 한다.
@@ -101,11 +135,56 @@ export function createJobContentSelectionController(deps: {
   });
   hydrateFromModel(); // 이미 도착한 스냅샷을 즉시 seed — mount 에서 open() 을 부르지 않기 위함.
 
+  /** 이름 입력 → 저장 → (이름 충돌이면) 덮어쓰기 확인 → 확정 저장. **조용한 덮기 경로 0**.
+   *
+   *  판정은 전부 backend 다(빈 선택 거절·이름 충돌·확정 근거 대조). 여기가 소유하는 것은
+   *  문안과 확인 UI 뿐이고, 확정은 backend 가 낸 **그 항목의 key** 를 되돌려 보낸다 — 이름만
+   *  다시 보내면 그 사이 다른 항목이 그 이름을 차지했을 때 남의 것을 덮는다. */
+  async function savePreset(): Promise<SlotConfigState> {
+    const modal = deps.modal;
+    if (modal === undefined) {
+      // 입력 창이 없으면 저장하지 않는다 — 이름 없는 보관을 지어내지 않고 시끄럽게 알린다.
+      return deps.service.reportFailure(
+        new Error("이름 입력 창을 열 수 없어 저장하지 않았습니다."),
+      );
+    }
+    const typed = await modal.prompt({
+      title: "프리셋으로 저장",
+      body: "지금 고른 내용을 어떤 이름으로 보관할까요?",
+      validate: (raw: unknown) =>
+        String(raw ?? "").trim() === "" ? "이름을 입력하세요." : "",
+    });
+    if (typed === null) return deps.service.state(); // 취소 = 아무 일도 하지 않는다
+    const name = typed.trim();
+    if (name === "") return deps.service.state();
+    const after = await deps.service.savePreset(name);
+    const notice = after.presetNotice;
+    if (notice === null || notice.kind !== "save_conflict") return after;
+    const accepted = await modal.confirm({
+      title: "같은 이름이 이미 있습니다",
+      body:
+        `'${notice.name}' 이름의 프리셋이 이미 있습니다.\n`
+        + "덮어쓰면 그 프리셋에 보관된 이전 선택은 사라지고 되돌릴 수 없습니다.",
+      confirmLabel: "덮어쓰기",
+      cancelLabel: "취소",
+      danger: true,
+    });
+    if (!accepted) return deps.service.state();
+    if (notice.existingKey === null) {
+      // 확인 왕복 사이에 그 항목이 사라졌다(backend 가 근거를 못 냈다) — 지금 상태로 다시
+      // 시도하고, 여전히 충돌이면 또 묻는다. 근거 없는 확정으로 덮지 않는다.
+      return deps.service.savePreset(name);
+    }
+    return deps.service.savePreset(name, notice.existingKey);
+  }
+
   return {
     subscribe: deps.service.subscribe,
     getSnapshot: deps.service.state,
     selectOption: (slotId, optionId) => deps.service.selectOption(slotId, optionId),
     clearSelection: (slotId) => deps.service.clearSelection(slotId),
+    savePreset,
+    applyPreset: (presetKey) => deps.service.applyPreset(presetKey),
     refresh: async () => {
       try {
         // passive 실패 복구는 read-only full snapshot 재당김이다. Product refresh(ensure)는 쓰지 않는다.
@@ -248,6 +327,131 @@ function SlotFieldset(props: {
   );
 }
 
+/* ── 보관된 선택 묶음(Preset) 구획 — 저장·적용 두 동사(S9-03 #829) ───────────────────────── */
+
+/** preset 왕복 결과 → 사용자 문장. **수치는 응답 값 그대로**이고 여기는 문장만 고른다.
+ *
+ *  거절 코드에 문안을 붙이는 이유: backend 의 `detail` 은 사실 서술(파일 경로·예외 문자열)이라
+ *  그대로 그리면 내부어가 샌다. 아는 코드는 사용자 어휘로 말하고, 모르는 코드는 backend 가 낸
+ *  사유를 그대로 재진술한다 — 어느 쪽도 조용히 삼키지 않는다. */
+function presetNoticeText(notice: PresetNotice): { kind: string; text: string } {
+  switch (notice.kind) {
+    case "saved":
+      return { kind: "saved", text: `'${notice.name}' 이름으로 보관했습니다.` };
+    case "save_conflict":
+      return {
+        kind: "conflict",
+        text: `'${notice.name}' 이름의 프리셋이 이미 있어 저장하지 않았습니다.`,
+      };
+    case "save_rejected":
+      return {
+        kind: "rejected",
+        text:
+          notice.code === "PRESET_EMPTY_SELECTION"
+            ? "고른 내용이 없어 저장하지 않았습니다. 먼저 포함할 내용을 고르세요."
+            : (notice.detail ?? "프리셋을 저장하지 못했습니다."),
+      };
+    case "apply_rejected":
+      return {
+        kind: "rejected",
+        text:
+          notice.code === "PRESET_NOT_FOUND"
+            ? "그 프리셋을 찾을 수 없습니다. 목록을 다시 확인하세요."
+            : notice.code === "PRESET_ENTRY_CORRUPT"
+              ? "그 프리셋을 읽을 수 없어 적용하지 않았습니다."
+              : (notice.detail ?? "프리셋을 적용하지 못했습니다."),
+      };
+    default:
+      // 적용 n · 깨짐 m — 깨진 것이 있으면 숨기지 않고 같은 줄에서 함께 말한다.
+      return {
+        kind: notice.broken > 0 ? "partial" : "applied",
+        text:
+          notice.broken > 0
+            ? `${notice.applied}개를 적용했고 ${notice.broken}개는 현재 문서에 적용되지 않습니다.`
+            : `${notice.applied}개를 적용했습니다.`,
+      };
+  }
+}
+
+function PresetSection(props: {
+  presets: PresetZone;
+  notice: PresetNotice | null;
+  pending: boolean;
+  onSave: () => void;
+  onApply: (presetKey: string) => void;
+}): ReactNode {
+  const { presets, notice, pending } = props;
+  const noticeLine = notice === null ? null : presetNoticeText(notice);
+  return h(
+    "section",
+    { className: "cs-presets", "aria-label": "보관된 선택" },
+    h("h3", { className: "cs-presets-title" }, "보관된 선택"),
+    h(
+      "button",
+      {
+        type: "button",
+        className: "cs-preset-save",
+        disabled: pending,
+        onClick: props.onSave,
+      },
+      "현재 선택을 프리셋으로 저장",
+    ),
+    // 결과 재진술 — 깨짐이 있는 적용도 성공 UI 뒤에 숨지 않는다(같은 자리에서 시끄럽게).
+    noticeLine === null
+      ? null
+      : h(
+          "p",
+          {
+            className: `cs-preset-notice cs-preset-notice-${noticeLine.kind}`,
+            role: noticeLine.kind === "rejected" ? "alert" : "status",
+            "aria-live": "polite",
+          },
+          noticeLine.text,
+        ),
+    presets.items.length === 0 && presets.corrupt.length === 0
+      ? h("p", { className: "cs-presets-empty" }, "보관된 선택이 아직 없습니다.")
+      : h(
+          "ul",
+          { className: "cs-preset-list" },
+          ...presets.items.map((item) =>
+            h(
+              "li",
+              { key: item.key, className: "cs-preset-item" },
+              h("span", { className: "cs-preset-name" }, item.name),
+              h(
+                "button",
+                {
+                  type: "button",
+                  className: "cs-preset-apply",
+                  disabled: pending,
+                  onClick: () => props.onApply(item.key),
+                },
+                "적용",
+              ),
+            ),
+          ),
+          // 손상 항목은 목록에서 지우지 않는다 — 비활성 + 사유 병기(숨기면 사용자가 못 묻는다).
+          ...presets.corrupt.map((entry) =>
+            h(
+              "li",
+              { key: entry.file_name, className: "cs-preset-item cs-preset-corrupt" },
+              h("span", { className: "cs-preset-name" }, "읽을 수 없는 프리셋"),
+              h(
+                "button",
+                { type: "button", className: "cs-preset-apply", disabled: true },
+                "적용",
+              ),
+              h(
+                "span",
+                { className: "cs-preset-corrupt-note" },
+                "파일이 손상돼 적용할 수 없습니다.",
+              ),
+            ),
+          ),
+        ),
+  );
+}
+
 /* ── zone 컴포넌트 — JobScreen composition 이 마운트한다 ─────────────────────────────────────── */
 export function JobContentSelection(props: {
   controller: JobContentSelectionController;
@@ -382,6 +586,17 @@ export function JobContentSelection(props: {
               )
             : null,
         )
+      : null,
+    // 보관된 선택(S9-03 #829) — slot 목록 아래에 선다. 목록·손상은 snapshot 존이 낸 사실이고
+    // 적용 결과의 수치는 command 응답 값 그대로다(웹 재계산 0).
+    state.presets.supported
+      ? h(PresetSection as any, {
+          presets: state.presets,
+          notice: state.presetNotice,
+          pending,
+          onSave: () => { void controller.savePreset(); },
+          onApply: (presetKey: string) => { void controller.applyPreset(presetKey); },
+        })
       : null,
   );
 }

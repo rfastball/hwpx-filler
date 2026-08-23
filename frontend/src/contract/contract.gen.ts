@@ -180,6 +180,8 @@ export const SCREEN_ACTIONS = {
     refresh_slot_configuration: { required: [], optional: ["configuration_token"] },
     select_slot_option: { required: ["configuration_token", "option_id", "request_id", "slot_id"], optional: [] },
     clear_slot_selection: { required: ["configuration_token", "request_id", "slot_id"], optional: [] },
+    save_selection_preset: { required: ["configuration_token", "name"], optional: ["confirmed_overwrite_key"] },
+    apply_selection_preset: { required: ["configuration_token", "preset_key"], optional: [] },
     recover_record_issue: { required: ["target"], optional: [] },
     set_delivery_collision: { required: ["collision_policy"], optional: [] },
     refresh_delivery: { required: [], optional: [] },

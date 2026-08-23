@@ -233,8 +233,13 @@ function fakeController(state, handlers = {}) {
     refresh: handlers.refresh ?? (async () => state),
   };
 }
-function stateOf(v, phase = "idle", error = null, zoneError = null) {
-  return { view: v, token: v?.new_configuration_token ?? null, phase, error, zoneError };
+function stateOf(v, phase = "idle", error = null, zoneError = null, extra = {}) {
+  return {
+    view: v, token: v?.new_configuration_token ?? null, phase, error, zoneError,
+    // S9-03(#829) — 보관된 선택 축은 서비스가 항상 세운다(미지원이 기본값).
+    presets: extra.presets ?? { supported: false, items: [], corrupt: [] },
+    presetNotice: extra.presetNotice ?? null,
+  };
 }
 function render(state) {
   return renderToStaticMarkup(createElement(JobContentSelection, { controller: fakeController(state) }));
@@ -606,4 +611,293 @@ test("정상 view 부재는 비우고 init 실패는 backend 문안/action으로
 
 test("새 제품 화면 id/root/lifecycle 을 만들지 않는다(기존 4화면 그대로)", () => {
   assert.deepEqual([...PRODUCT_SCREEN_IDS], ["library", "job", "editor", "workbench"]);
+});
+
+/* ══ S9-03(#829) 보관된 선택(Preset) — 저장·적용 두 동사 ═══════════════════════════════════ */
+function presetZone(items = [], corrupt = []) {
+  return { supported: true, items, corrupt };
+}
+function presetItem(key, name, createdAt = "2026-08-24T09:00:00") {
+  return { key, name, created_at: createdAt };
+}
+function saveResult(status, extra = {}) {
+  return {
+    status,
+    code: extra.code ?? null,
+    saved_key: extra.savedKey ?? null,
+    existing_key: extra.existingKey ?? null,
+    existing_created_at: extra.existingCreatedAt ?? null,
+    detail: extra.detail ?? null,
+  };
+}
+function applyResult(v, extra = {}) {
+  const {
+    applied = [], broken = [], refresh = false, rejection = null, detail = null,
+    mutation = {
+      outcome_code: "CHANGED", changed: true, outcome_replayed: false, request_relation: "CURRENT",
+    },
+  } = extra;
+  return {
+    mutation_outcome: rejection === null ? mutation : null,
+    current_view: rejection === null ? v : null,
+    refresh_required: refresh,
+    applied_slot_ids: applied,
+    broken,
+    applied_count: applied.length,
+    broken_count: broken.length,
+    rejection_code: rejection,
+    rejection_detail: detail,
+  };
+}
+function fakeModal(answers = {}) {
+  const calls = [];
+  return {
+    calls,
+    prompt(spec) {
+      calls.push({ kind: "prompt", spec });
+      return Promise.resolve(answers.prompt ?? null);
+    },
+    confirm(spec) {
+      calls.push({ kind: "confirm", spec });
+      return Promise.resolve(answers.confirm ?? false);
+    },
+  };
+}
+
+test("savePreset: dispatch 왕복 뒤 결과를 상태로 싣는다(Configuration 은 건드리지 않는다)", async () => {
+  const client = fakeClient(() => okv(saveResult("SAVED", { savedKey: "k1" })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(SELECTED);
+  const st = await svc.savePreset("표준 구성");
+  assert.equal(client.calls[0].action, "save_selection_preset");
+  assert.deepEqual(client.calls[0].payload, { configuration_token: "tok-1", name: "표준 구성" });
+  assert.deepEqual(st.presetNotice, { kind: "saved", name: "표준 구성" });
+  assert.equal(st.view, SELECTED); // 저장은 view 를 바꾸지 않는다
+  assert.equal(st.token, "tok-1"); // 새 token 이 없으므로 쓰던 것을 그대로 든다
+  assert.equal(st.phase, "idle");
+});
+
+test("savePreset: 이름 충돌은 확정 근거(key)와 함께 상태로 돌아온다(모달은 렌더 층 소관)", async () => {
+  const client = fakeClient(() => okv(saveResult("NEEDS_CONFIRM", {
+    code: "PRESET_NAME_CONFLICT", existingKey: "k-old", existingCreatedAt: "2026-08-01",
+  })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(SELECTED);
+  const st = await svc.savePreset("표준 구성");
+  assert.deepEqual(st.presetNotice, {
+    kind: "save_conflict", name: "표준 구성", existingKey: "k-old", existingCreatedAt: "2026-08-01",
+  });
+  assert.equal(client.calls.length, 1); // 확정 없이 두 번째 저장을 스스로 보내지 않는다
+});
+
+test("savePreset(확정): 사용자가 본 그 항목의 key 를 되돌려 보낸다", async () => {
+  const client = fakeClient(() => okv(saveResult("SAVED", { savedKey: "k-old" })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(SELECTED);
+  await svc.savePreset("표준 구성", "k-old");
+  assert.equal(client.calls[0].payload.confirmed_overwrite_key, "k-old");
+});
+
+test("savePreset 거절은 코드로 상태에 남는다(조용한 성공 0)", async () => {
+  const client = fakeClient(() => okv(saveResult("REJECTED", {
+    code: "PRESET_EMPTY_SELECTION", detail: "저장할 선택이 없습니다(선택 0건).",
+  })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(NEEDS);
+  const st = await svc.savePreset("빈 구성");
+  assert.equal(st.presetNotice.kind, "save_rejected");
+  assert.equal(st.presetNotice.code, "PRESET_EMPTY_SELECTION");
+});
+
+test("applyPreset: fresh view 통째 교체 + 새 token + 수치는 응답 값 그대로(재계산 0)", async () => {
+  const applied = { ...SELECTED, new_configuration_token: "tok-after" };
+  const broken = [{
+    slot_id: "s-gone", selected_option_ids: ["o-gone"], clearable: false, status: "SLOT_REMOVED",
+  }];
+  const client = fakeClient(() => okv(applyResult(applied, { applied: ["s1"], broken })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(NEEDS);
+  const st = await svc.applyPreset("k1");
+  assert.deepEqual(client.calls[0].payload, { configuration_token: "tok-1", preset_key: "k1" });
+  assert.equal(st.view, applied);
+  assert.equal(st.token, "tok-after");
+  assert.equal(st.phase, "idle");
+  // 수치는 목록 길이를 다시 센 값이 아니라 backend 가 낸 applied_count/broken_count 다.
+  assert.equal(st.presetNotice.kind, "applied");
+  assert.equal(st.presetNotice.applied, 1);
+  assert.equal(st.presetNotice.broken, 1);
+  assert.equal(st.presetNotice.brokenItems, broken);
+});
+
+test("applyPreset 거절: 새 view 가 없으므로 옛 상태를 두고 사유만 싣는다", async () => {
+  const client = fakeClient(() => okv(applyResult(null, {
+    rejection: "PRESET_NOT_FOUND", detail: "없는 파일",
+  })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(SELECTED);
+  const st = await svc.applyPreset("gone");
+  assert.equal(st.view, SELECTED); // 유령 교체 0
+  assert.equal(st.token, "tok-1");
+  assert.equal(st.presetNotice.kind, "apply_rejected");
+  assert.equal(st.presetNotice.code, "PRESET_NOT_FOUND");
+});
+
+test("applyPreset: refresh_required 는 select 와 같은 stale 규율", async () => {
+  const client = fakeClient(() => okv(applyResult(SELECTED, { applied: ["s1"], refresh: true })));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(NEEDS);
+  const st = await svc.applyPreset("k1");
+  assert.equal(st.phase, "stale");
+  assert.equal(st.view, SELECTED);
+});
+
+test("token 없이 preset 왕복은 조용히 무동작하지 않고 시끄럽게 던진다", async () => {
+  const client = fakeClient(() => okv(saveResult("SAVED", { savedKey: "k" })));
+  const svc = createSlotConfigService({ client });
+  await assert.rejects(async () => svc.savePreset("이름"), /configuration_token 이 없습니다/);
+  await assert.rejects(async () => svc.applyPreset("k"), /configuration_token 이 없습니다/);
+  assert.equal(client.calls.length, 0);
+});
+
+test("다른 command 가 끼면 직전 preset 결과 재진술은 지워진다(남의 왕복 결과 금지)", async () => {
+  const client = fakeClient((action) => okv(
+    action === "save_selection_preset" ? saveResult("SAVED", { savedKey: "k" }) : response(SELECTED),
+  ));
+  const svc = createSlotConfigService({ client });
+  svc.hydrate(NEEDS);
+  await svc.savePreset("표준 구성");
+  assert.ok(svc.state().presetNotice !== null);
+  await svc.selectOption("s1", "o1");
+  assert.equal(svc.state().presetNotice, null);
+});
+
+test("컨트롤러: snapshot content_presets 존을 dispatch 없이 hydrate 한다", () => {
+  const client = fakeClient(() => okv(response(SELECTED)));
+  const svc = createSlotConfigService({ client });
+  const { runtime } = fakeRuntime({
+    slot_configuration: zone(NEEDS),
+    content_presets: presetZone([presetItem("k1", "표준 구성")]),
+  });
+  const ctrl = createJobContentSelectionController({ runtime, service: svc });
+  assert.deepEqual(ctrl.getSnapshot().presets.items, [presetItem("k1", "표준 구성")]);
+  assert.equal(client.calls.length, 0);
+});
+
+test("컨트롤러 savePreset: 이름 입력 취소는 dispatch 0(빈 이름 보관 0)", async () => {
+  const client = fakeClient(() => okv(saveResult("SAVED", { savedKey: "k" })));
+  const svc = createSlotConfigService({ client });
+  const { runtime } = fakeRuntime({
+    slot_configuration: zone(SELECTED), content_presets: presetZone(),
+  });
+  const modal = fakeModal({ prompt: null });
+  const ctrl = createJobContentSelectionController({ runtime, service: svc, modal });
+  await ctrl.savePreset();
+  assert.equal(modal.calls.length, 1);
+  assert.equal(client.calls.length, 0);
+});
+
+test("컨트롤러 savePreset: 충돌 → danger 확인 → 그 항목 key 로 확정(조용한 덮기 0)", async () => {
+  let round = 0;
+  const client = fakeClient(() => okv(round++ === 0
+    ? saveResult("NEEDS_CONFIRM", { code: "PRESET_NAME_CONFLICT", existingKey: "k-old" })
+    : saveResult("SAVED", { savedKey: "k-old" })));
+  const svc = createSlotConfigService({ client });
+  const { runtime } = fakeRuntime({
+    slot_configuration: zone(SELECTED), content_presets: presetZone(),
+  });
+  const modal = fakeModal({ prompt: "표준 구성", confirm: true });
+  const ctrl = createJobContentSelectionController({ runtime, service: svc, modal });
+  const st = await ctrl.savePreset();
+  assert.equal(client.calls.length, 2);
+  assert.equal(client.calls[0].payload.confirmed_overwrite_key, undefined);
+  assert.equal(client.calls[1].payload.confirmed_overwrite_key, "k-old");
+  assert.equal(st.presetNotice.kind, "saved");
+  const confirmCall = modal.calls.find((c) => c.kind === "confirm");
+  assert.equal(confirmCall.spec.danger, true); // 되돌릴 수 없는 덮어쓰기
+  assert.match(String(confirmCall.spec.body), /되돌릴 수 없습니다/);
+});
+
+test("컨트롤러 savePreset: 확인 거절이면 두 번째 저장을 보내지 않는다", async () => {
+  const client = fakeClient(() => okv(saveResult("NEEDS_CONFIRM", {
+    code: "PRESET_NAME_CONFLICT", existingKey: "k-old",
+  })));
+  const svc = createSlotConfigService({ client });
+  const { runtime } = fakeRuntime({
+    slot_configuration: zone(SELECTED), content_presets: presetZone(),
+  });
+  const modal = fakeModal({ prompt: "표준 구성", confirm: false });
+  const ctrl = createJobContentSelectionController({ runtime, service: svc, modal });
+  await ctrl.savePreset();
+  assert.equal(client.calls.length, 1);
+});
+
+test("존 렌더: 목록·적용 버튼과 정직한 빈 상태", () => {
+  const empty = render(stateOf(SELECTED, "idle", null, null, { presets: presetZone() }));
+  assert.match(empty, /보관된 선택이 아직 없습니다/);
+  assert.match(empty, /현재 선택을 프리셋으로 저장/);
+
+  const listed = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+  }));
+  assert.match(listed, /표준 구성/);
+  assert.match(listed, /적용/);
+  assert.ok(!listed.includes(">k1<")); // 슬롯 키는 내부 식별자다
+});
+
+test("존 렌더: 손상 항목은 숨기지 않고 비활성 + 사유 병기", () => {
+  const html = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone(
+      [presetItem("k1", "표준 구성")],
+      [{ file_name: "bad.preset.json", error: "digest 불일치" }],
+    ),
+  }));
+  assert.match(html, /표준 구성/); // 정상 항목은 그대로
+  assert.match(html, /cs-preset-corrupt/);
+  assert.match(html, /파일이 손상돼 적용할 수 없습니다/);
+  assert.match(html, /disabled/);
+  assert.ok(!html.includes("digest 불일치")); // 내부 진단 원문은 화면 문안이 아니다
+});
+
+test("존 렌더: 적용 결과를 「적용 n · 깨짐 m」으로 재진술하고 m>0 을 숨기지 않는다", () => {
+  const clean = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: { kind: "applied", applied: 2, broken: 0, brokenItems: [] },
+  }));
+  assert.match(clean, /2개를 적용했습니다/);
+  assert.match(clean, /aria-live="polite"/);
+
+  const partial = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+    presetNotice: {
+      kind: "applied", applied: 1, broken: 2,
+      brokenItems: [{
+        slot_id: "s-gone", selected_option_ids: ["o"], clearable: false, status: "SLOT_REMOVED",
+      }],
+    },
+  }));
+  assert.match(partial, /1개를 적용했고 2개는 현재 문서에 적용되지 않습니다/);
+  assert.ok(!partial.includes("s-gone")); // 내부 key 비노출
+});
+
+test("존 렌더: 거절은 alert 로 서고 내부 진단 원문을 그리지 않는다", () => {
+  const html = render(stateOf(SELECTED, "idle", null, null, {
+    presets: presetZone(),
+    presetNotice: { kind: "apply_rejected", code: "PRESET_ENTRY_CORRUPT", detail: "선언 digest 불일치" },
+  }));
+  assert.match(html, /읽을 수 없어 적용하지 않았습니다/);
+  assert.match(html, /role="alert"/);
+  assert.ok(!html.includes("선언 digest 불일치"));
+});
+
+test("존 렌더: pending 중에는 저장·적용 버튼이 비활성이다", () => {
+  const html = render(stateOf(SELECTED, "pending", null, null, {
+    presets: presetZone([presetItem("k1", "표준 구성")]),
+  }));
+  const disabled = (html.match(/disabled=""/g) ?? []).length;
+  assert.ok(disabled >= 2, html); // 저장 + 적용
+});
+
+test("존 렌더: 미지원(비-hwpx·미선택)이면 프리셋 구획 자체가 서지 않는다", () => {
+  const html = render(stateOf(SELECTED));
+  assert.ok(!html.includes("cs-presets"));
 });

@@ -188,6 +188,14 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "refresh_slot_configuration": _schema(optional="configuration_token"),
         "select_slot_option": _schema("configuration_token slot_id option_id request_id"),
         "clear_slot_selection": _schema("configuration_token slot_id request_id"),
+        # Selection Preset(S9-03 #829) — 선택 묶음의 Work 밖 보관·적용. `request_id` 가 없는
+        # 이유: 저장은 이름 유일성 + 확인 왕복(`confirmed_overwrite_key` = 사용자가 본 그
+        # 항목의 키)이, 적용은 token version CAS 가 재전송을 닫는다(S9-02 는 원장 대신 그
+        # 둘을 썼다). 겨눔의 정체는 슬롯 `key` 다 — 이름은 사용자가 바꿀 수 있는 라벨이다.
+        "save_selection_preset": _schema(
+            "configuration_token name", "confirmed_overwrite_key"
+        ),
+        "apply_selection_preset": _schema("configuration_token preset_key"),
         # SX-04A record issue recovery — exact backend target만 되돌려 받는다.
         "recover_record_issue": _schema("target"),
         # SX-04B session delivery intent. output directory 는 native picker가 좁은

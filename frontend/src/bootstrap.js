@@ -265,8 +265,10 @@ export function bootProduct() {
     client,
     alarm: (message) => window.alert(message),
   });
+  /* S9-03(#829) — 보관된 선택(Preset)의 이름 입력·덮어쓰기 확인은 공유 모달 파사드가 진다
+     (판정·수치는 Python, 문안·확인 UI 는 웹). */
   const JobContentSelectionController = createJobContentSelectionController({
-    runtime, service: SlotConfigService,
+    runtime, service: SlotConfigService, modal: Modal,
   });
   const DataPickerService = {
     init: () => DataPicker.init(),

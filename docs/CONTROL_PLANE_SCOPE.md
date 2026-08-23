@@ -93,6 +93,9 @@ census 가 지킨다 — 그 목록과 음성 대조가 같은 상수를 소비�
   주입하고, 네 command 는 **dispatch 경로**(`action_registry.py` 의 `open_slot_configuration`·
   `refresh_slot_configuration`·`select_slot_option`·`clear_slot_selection`)로 도달한다. 직접
   브리지 경로(`frontend/js/bridge.js`)는 여전히 이 표면을 쓰지 않는다.
+- **갱신(S9-03 · #829):** Selection Preset 동사 둘(`save_selection_preset`·
+  `apply_selection_preset`)이 같은 route 의 dispatch 소비자로 합류했다 — token 발급·소비
+  구조는 불변이고, 직접 브리지는 여전히 이 표면을 쓰지 않는다(census 6 command).
 
 ### 1.6 Workbench / Product observation 소비자
 
