@@ -837,7 +837,8 @@ class TestWebSelftestGate:
         assert a["unrendered_partial"] == "true" and a["unrendered_shown"], a
         assert "mystery" in a["unrendered_text"], a
         # ⑤ 닫기 — 면이 걷히고 초점이 그 행의 트리거로 돌아온다(runJobMirror 관용구).
-        assert a["sheet_closed"], a
+        # 「닫혔다」는 **안 보인다**이지 DOM 소멸이 아니다(portal 내용은 마운트된 채다).
+        assert a["sheet_closed"] and a["sheet_host_hidden"], a
         assert "job/artifact_close" in a["close_dispatches"], a
         assert a["close_focus_target_state"] == "ready", a
 

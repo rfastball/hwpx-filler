@@ -1413,7 +1413,12 @@ async function runJobResult(ctx) {
     if (!button) return "missing";
     return button.disabled ? "disabled" : (button.isConnected ? "ready" : "detached");
   })();
-  artifact.sheet_closed = !doc.querySelector("#artifactSheet .artifact-sheet");
+  /* 「닫혔다」 = **안 보인다** 이지 DOM 에서 사라졌다가 아니다 — portal 내용은 그대로
+     마운트돼 있고 골격이 `hidden` 을 받는다. 둘을 함께 재 어느 층이 안 닫혔는지 가른다. */
+  const closedSheet = doc.querySelector("#artifactSheet .artifact-sheet");
+  artifact.sheet_closed = !closedSheet || closedSheet.offsetParent === null;
+  artifact.sheet_host_hidden = !!doc.getElementById("artifactSheet")
+    ?.classList.contains("hidden");
   artifactStub.restore();
   out.artifact = artifact;
 
