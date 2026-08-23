@@ -354,3 +354,25 @@ body.resizing-master{cursor:col-resize;user-select:none}
   background:none;border:1px solid var(--a-border);border-radius:var(--rad-pill);
   padding:2px var(--sp-8);cursor:pointer}
 .cs-detached-clear:disabled{cursor:default;opacity:.6}
+/* 보관된 선택(S9-03 #829) — 목록·저장·적용. 손상 항목은 숨기지 않고 비활성 + 사유 병기라
+   같은 행 리듬 안에서 약하게(muted) 서고, 거절·부분 적용 재진술만 경고색을 얻는다. */
+.cs-presets{margin:0;padding:var(--sp-8) var(--sp-10);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);display:flex;flex-direction:column;gap:var(--sp-6)}
+.cs-presets-title{margin:0;font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700}
+.cs-preset-save{align-self:flex-start;font-size:var(--fs-caption);background:none;
+  border:1px solid var(--a-border);border-radius:var(--rad-pill);padding:2px var(--sp-8);
+  cursor:pointer}
+.cs-preset-save:disabled{cursor:default;opacity:.6}
+.cs-presets-empty{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.cs-preset-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;
+  gap:var(--sp-4)}
+.cs-preset-item{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--fs-body)}
+.cs-preset-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-preset-apply{font-size:var(--fs-caption);background:none;border:1px solid var(--a-border);
+  border-radius:var(--rad-pill);padding:2px var(--sp-8);cursor:pointer}
+.cs-preset-apply:disabled{cursor:default;opacity:.6}
+.cs-preset-corrupt{color:var(--a-muted)}
+.cs-preset-corrupt-note{font-size:var(--fs-caption);color:var(--a-danger)}
+.cs-preset-notice{margin:0;font-size:var(--fs-caption);color:var(--a-muted)}
+.cs-preset-notice-rejected,.cs-preset-notice-partial,
+.cs-preset-notice-conflict{color:var(--a-danger)}

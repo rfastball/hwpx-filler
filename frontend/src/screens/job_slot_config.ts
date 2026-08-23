@@ -90,6 +90,61 @@ export type SlotZoneError = {
   action: { key: string; label: string } | null;
 };
 
+/* ── Selection Preset(S9-03 #829) — 보관된 선택 묶음의 저장·나열·적용 ────────────────────── */
+export type PresetListItem = { key: string; name: string; created_at: string };
+export type PresetCorruptEntry = { file_name: string; error: string };
+
+/** snapshot `content_presets` 존 — 손상 항목은 items 와 **함께** 온다(숨기지 않는다). */
+export type PresetZone = {
+  supported: boolean;
+  items: PresetListItem[];
+  corrupt: PresetCorruptEntry[];
+};
+
+export const emptyPresetZone: PresetZone = { supported: false, items: [], corrupt: [] };
+
+/** backend `PresetSaveResult` asdict — 문안 0(status·code·충돌 항목 사실만). */
+export type PresetSaveResponse = {
+  status: string; // SAVED | NEEDS_CONFIRM | REJECTED
+  code: string | null;
+  saved_key: string | null;
+  existing_key: string | null;
+  existing_created_at: string | null;
+  detail: string | null;
+};
+
+/** backend `PresetApplyResponse` asdict — mutation 축은 select 응답과 같은 형이고 수치가 얹힌다. */
+export type PresetApplyResponse = {
+  mutation_outcome: SlotCommandResponse["mutation_outcome"];
+  current_view: SlotCurrentView | null;
+  refresh_required: boolean;
+  applied_slot_ids: string[];
+  broken: ProjectedDetachedSelection[];
+  applied_count: number;
+  broken_count: number;
+  rejection_code: string | null;
+  rejection_detail: string | null;
+};
+
+/** 직전 preset 왕복의 결과 사실 — **수치는 응답 값 그대로**이고 문안은 렌더 층이 고른다.
+ *  `save_conflict` 가 든 `existingKey` 는 확정 덮어쓰기의 근거다(사용자가 본 그 항목). */
+export type PresetNotice =
+  | { kind: "saved"; name: string }
+  | {
+      kind: "save_conflict";
+      name: string;
+      existingKey: string | null;
+      existingCreatedAt: string | null;
+    }
+  | { kind: "save_rejected"; code: string | null; detail: string | null }
+  | {
+      kind: "applied";
+      applied: number;
+      broken: number;
+      brokenItems: ProjectedDetachedSelection[];
+    }
+  | { kind: "apply_rejected"; code: string | null; detail: string | null };
+
 /** 패널 phase — backend 상태를 재판정하지 않고 **왕복 진행**만 표현한다(#725 §3). */
 export type SlotPhase = "idle" | "pending" | "stale" | "error";
 
@@ -101,6 +156,10 @@ export type SlotConfigState = {
   error: string | null;
   /** 최신 backend snapshot의 zone 실패. command notice와 별도 축으로 보존한다. */
   zoneError: SlotZoneError | null;
+  /** 최신 snapshot 의 보관된 선택 묶음 목록(손상 항목 포함) — 판정 0, 운반만. */
+  presets: PresetZone;
+  /** 직전 preset 왕복의 결과 사실. 다른 command 가 시작되면 지워진다(남의 왕복 결과 금지). */
+  presetNotice: PresetNotice | null;
 };
 
 export const initialSlotConfigState: SlotConfigState = {
@@ -109,10 +168,15 @@ export const initialSlotConfigState: SlotConfigState = {
   phase: "idle",
   error: null,
   zoneError: null,
+  presets: emptyPresetZone,
+  presetNotice: null,
 };
 
 /* ── backend fresh view 로 **통째 교체**(local optimistic authority 0) ────────────────────── */
-function replaceFromResponse(res: SlotCommandResponse): SlotConfigState {
+function replaceFromResponse(
+  res: SlotCommandResponse,
+  carried: { presets: PresetZone; presetNotice: PresetNotice | null },
+): SlotConfigState {
   const view = res.current_view;
   // refresh_required(옛 Application stale) → 'stale' 로 알린다. context error → 'error'.
   const phase: SlotPhase =
@@ -128,6 +192,9 @@ function replaceFromResponse(res: SlotCommandResponse): SlotConfigState {
     phase,
     error: view.context_error_message,
     zoneError: null,
+    // 목록은 snapshot 이 소유한다(command 응답이 나르지 않는다) — 직전 값을 이어 든다.
+    presets: carried.presets,
+    presetNotice: carried.presetNotice,
   };
 }
 
@@ -162,6 +229,11 @@ export type SlotConfigService = {
   refresh(): Promise<SlotConfigState>;
   selectOption(slotId: string, optionId: string): Promise<SlotConfigState>;
   clearSelection(slotId: string): Promise<SlotConfigState>;
+  /** 현재 선택을 이름 붙여 보관한다. 이름 충돌은 상태(`presetNotice.save_conflict`)로 돌아오고
+   *  모달 확인은 렌더 층 소관이다 — 확정은 그 항목의 key 를 다시 실어 보낸다(조용한 덮기 0). */
+  savePreset(name: string, confirmedOverwriteKey?: string): Promise<SlotConfigState>;
+  /** 보관된 묶음을 현재 구성에 적용한다. 적용 n·깨짐 m 은 backend 값 그대로 notice 에 실린다. */
+  applyPreset(presetKey: string): Promise<SlotConfigState>;
   /** 마지막 커밋 상태(구독 렌더가 참조). `useSyncExternalStore` 의 getSnapshot 으로도 쓴다. */
   state(): SlotConfigState;
   /** React 구독(수명주기 인터페이스) — 상태 커밋마다 listener 를 부른다. semantic 아님. */
@@ -171,7 +243,11 @@ export type SlotConfigService = {
    *  view=null(미지원/미초기화) → 빈 idle. command 축(pending)을 덮지 않도록 호출자가 게이트한다. */
   hydrate(
     view: SlotCurrentView | null,
-    options?: { zoneError?: SlotZoneError | null; preserveNotice?: boolean },
+    options?: {
+      zoneError?: SlotZoneError | null;
+      preserveNotice?: boolean;
+      presets?: PresetZone;
+    },
   ): SlotConfigState;
   /** snapshot 재당김 transport 실패를 기존 loud 채널과 상태에 함께 남긴다. */
   reportFailure(error: unknown): SlotConfigState;
@@ -211,6 +287,11 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
     return commit({ ...current, phase: "error", error: message });
   }
 
+  /** preset 왕복 진입 — '반영 중' + 직전 결과 비움. 남의 왕복 결과를 이 왕복에 남기지 않는다. */
+  function beginPreset(): void {
+    commit({ ...current, phase: "pending", error: null, presetNotice: null });
+  }
+
   // dispatch 는 화면×액션별 exact payload 타입을 요구하므로(생성 계약 SCREEN_ACTIONS), 각 왕복은
   // literal action 으로 호출부에서 부른다. 공통(pending 세움·fresh view 교체·loud error)만 여기 모은다.
   async function apply(
@@ -224,7 +305,13 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
     }
     try {
       const raw = expectHostValue(await call(), label);
-      return commit(replaceFromResponse(raw as SlotCommandResponse));
+      return commit(
+        replaceFromResponse(raw as SlotCommandResponse, {
+          presets: current.presets,
+          // 다른 command 가 끼면 직전 preset 결과 재진술은 그 순간의 사실이 아니게 된다.
+          presetNotice: null,
+        }),
+      );
     } catch (error) {
       // 실패를 성공 UI 뒤에 숨기지 않는다 — 상태는 view 를 보존하되 phase='error' + 사유.
       return reportFailure(error);
@@ -280,6 +367,88 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
         { pending: true },
       );
     },
+    async savePreset(name, confirmedOverwriteKey) {
+      const token = requireToken();
+      beginPreset();
+      try {
+        const raw = expectHostValue(
+          await (confirmedOverwriteKey === undefined
+            ? deps.client.dispatch("job", "save_selection_preset", {
+                configuration_token: token,
+                name,
+              })
+            : deps.client.dispatch("job", "save_selection_preset", {
+                configuration_token: token,
+                name,
+                confirmed_overwrite_key: confirmedOverwriteKey,
+              })),
+          "save_selection_preset",
+        ) as PresetSaveResponse;
+        // 저장은 Configuration 을 바꾸지 않는다 — view·token 은 그대로 두고 결과 사실만 싣는다.
+        // status 를 웹이 재판정하지 않는다: backend 가 낸 세 갈래를 그대로 사상한다.
+        const notice: PresetNotice =
+          raw.status === "SAVED"
+            ? { kind: "saved", name }
+            : raw.status === "NEEDS_CONFIRM"
+              ? {
+                  kind: "save_conflict",
+                  name,
+                  existingKey: raw.existing_key,
+                  existingCreatedAt: raw.existing_created_at,
+                }
+              : { kind: "save_rejected", code: raw.code, detail: raw.detail };
+        return commit({ ...current, phase: "idle", presetNotice: notice });
+      } catch (error) {
+        return reportFailure(error);
+      }
+    },
+    async applyPreset(presetKey) {
+      const token = requireToken();
+      beginPreset();
+      try {
+        const raw = expectHostValue(
+          await deps.client.dispatch("job", "apply_selection_preset", {
+            configuration_token: token,
+            preset_key: presetKey,
+          }),
+          "apply_selection_preset",
+        ) as PresetApplyResponse;
+        if (raw.rejection_code !== null || raw.current_view === null) {
+          // 거절이면 새 view·token 이 없다 — 옛 상태를 그대로 두고 사유만 시끄럽게 싣는다.
+          return commit({
+            ...current,
+            phase: "idle",
+            presetNotice: {
+              kind: "apply_rejected",
+              code: raw.rejection_code,
+              detail: raw.rejection_detail,
+            },
+          });
+        }
+        // 성공은 select 와 같은 규율 — fresh view + 새 token 으로 **통째 교체**하고 수치를 얹는다.
+        return commit(
+          replaceFromResponse(
+            {
+              mutation_outcome: raw.mutation_outcome,
+              current_view: raw.current_view,
+              refresh_required: raw.refresh_required,
+            },
+            {
+              presets: current.presets,
+              presetNotice: {
+                kind: "applied",
+                // 재계산 0: 목록 길이를 다시 세지 않고 backend 가 낸 수치를 그대로 싣는다.
+                applied: raw.applied_count,
+                broken: raw.broken_count,
+                brokenItems: raw.broken,
+              },
+            },
+          ),
+        );
+      } catch (error) {
+        return reportFailure(error);
+      }
+    },
     state() {
       return current;
     },
@@ -298,6 +467,10 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
         phase: isError ? "error" : "idle",
         error: view?.context_error_message ?? zoneError?.message ?? null,
         zoneError,
+        presets: options.presets ?? current.presets,
+        // preset 결과 재진술은 snapshot 사실이 아니라 **직전 왕복의 사실**이라 passive
+        // 재hydrate 가 지우지 않는다(저장·적용 뒤의 push 가 곧바로 도착한다).
+        presetNotice: current.presetNotice,
       };
       // replay는 최신 snapshot 사실(view/token/zoneError)을 채택하되 command notice를 지우지 않는다.
       if (options.preserveNotice && (current.phase === "stale" || current.phase === "error")) {
