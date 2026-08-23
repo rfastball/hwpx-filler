@@ -18,6 +18,7 @@ Application 은 External 을 import 하지 않고, 기본 구현·service locato
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -180,6 +181,31 @@ def rename_job(store: JobStorePort, name: str, new_name: str) -> None:
 def assign_job_authority_id(store: JobStorePort, name: str, authority_id: str) -> Job:
     """S3 권위 Work identity 최초 1회 결속(S3-09) — 반환 Job 의 값이 정본이다(경합 화해)."""
     return store.assign_authority_id(name, authority_id)
+
+
+def mint_work_authority_id() -> str:
+    """WorkAuthorityId 의 단일 발급 형태(S6-05 · #812) — ``"w-" + uuid4().hex``.
+
+    발급 지점 넷이 두 형태("w-" 접두 vs bare hex)로 갈라져 있던 것을 최초 발급자(S3-09)의
+    durable 선례로 통일한다. 기존 bare-hex 발급물은 유효 유지 — 이 helper 는 신규 발급만
+    지배하고 마이그레이션을 만들지 않는다.
+    """
+    return "w-" + uuid.uuid4().hex
+
+
+def ensure_job_authority_id(store: JobStorePort, name: str) -> str:
+    """작업의 WorkAuthorityId 를 읽고, 없으면 lazy 발급해 결속한다(id-first, S3-09).
+
+    lazy 발급은 Work identity(의미 1)·durable authority 표식(의미 2)의 성질이라 라우팅에서
+    일어나도 옳다 — 실행 경로 선택(의미 4)은 이 값이 아니라 start gate 판정이 진다(#812).
+    경합 화해는 저장소 멱등 결속이 진다(먼저 커밋된 id 반환).
+    """
+    current = load_job(store, name).authority_id
+    if current:
+        return current
+    minted = assign_job_authority_id(store, name, mint_work_authority_id()).authority_id
+    assert minted is not None
+    return minted
 
 
 def clone_job(store: JobStorePort, name: str) -> str:

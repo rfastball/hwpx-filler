@@ -23,7 +23,6 @@ Application 구조와 legacy Mapping 지문을 다시 확인하며, seal은 계�
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +41,7 @@ from ..application.field_binding_input import (
 )
 from ..application.jobs import (
     JobStorePort,
-    assign_job_authority_id,
+    ensure_job_authority_id,
     load_job,
 )
 from ..application.seal_execution_plan import RouteResolutionError
@@ -300,10 +299,8 @@ class SealExecutionPlanService:
             job = load_job(self._registry, work_ref)
         except Exception as exc:  # 부재·손상 = 접근 불가
             raise RouteResolutionError(f"work {work_ref!r} 접근 불가") from exc
-        work_id = job.authority_id or assign_job_authority_id(
-            self._registry, work_ref, uuid.uuid4().hex
-        ).authority_id
-        assert work_id is not None
+        # 발급 형태·결속은 단일 helper(S6-05 · #812) — lazy 발급은 의미 1·2 의 성질.
+        work_id = job.authority_id or ensure_job_authority_id(self._registry, work_ref)
         return work_id
 
     def _authorize(self, work_id: str, workspace_instance_id: str) -> None:

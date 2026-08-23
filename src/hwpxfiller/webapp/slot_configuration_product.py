@@ -11,7 +11,6 @@ expected Work 와 token 이 담은 Work 를 **독립 비교**해 다르면 CROSS
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +18,7 @@ from typing import Callable
 
 from ..application.jobs import (
     JobStorePort,
-    assign_job_authority_id,
+    ensure_job_authority_id,
     load_job,
 )
 from ..application.slot_command import (
@@ -326,10 +325,9 @@ class SlotConfigurationProduct:
         except Exception as exc:  # 부재·손상 = 접근 불가
             raise _reject("AUTHORIZATION_FAILURE", f"work {work_ref!r} 접근 불가") from exc
         # 단일 사용자 desktop: actor 는 항상 LOCAL_ACTOR. 다른 actor 면 거절.
-        work_id = job.authority_id or assign_job_authority_id(
-            self._registry, work_ref, uuid.uuid4().hex
-        ).authority_id
-        assert work_id is not None
+        # lazy 발급은 의미 1·2(Work identity·durable 표식)의 성질이라 라우팅에서 옳다 —
+        # 발급 형태·결속은 단일 helper(S6-05 · #812).
+        work_id = job.authority_id or ensure_job_authority_id(self._registry, work_ref)
         ws = self._workspace.get_or_create(self._now())
         return work_id, ws
 

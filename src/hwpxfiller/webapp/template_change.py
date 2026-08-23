@@ -43,7 +43,7 @@ from ..application.slot_configuration_context import (
     SlotConfigurationContextError,
     resolve_exact_applied_template_input,
 )
-from ..application.jobs import JobStorePort, assign_job_authority_id, load_job
+from ..application.jobs import JobStorePort, ensure_job_authority_id, load_job
 from ..application.prepare_orchestration import (
     APPLY_INTEGRITY_ERROR,
     find_application,
@@ -220,8 +220,8 @@ class TemplateChangeCoordinator:
             return current
         if not create:
             return None
-        minted = "w-" + uuid.uuid4().hex
-        return assign_job_authority_id(self._registry, job_name, minted).authority_id
+        # 발급 형태·결속은 단일 helper(S6-05 · #812) — 형태 재타이핑 금지.
+        return ensure_job_authority_id(self._registry, job_name)
 
     def _failures(self) -> dict[str, dict[str, Any]]:
         if self._init_failures is None:
