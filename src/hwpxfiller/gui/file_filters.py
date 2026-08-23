@@ -20,5 +20,7 @@ EXCEL_FILTER = "엑셀/CSV (" + " ".join(f"*{ext}" for ext in EXCEL_EXTS) + ")"
 # 단일 출처(EXCEL_EXTS)는 같아 화면별 확장자 하드코딩 사본을 만들지 않는다.
 EXCEL_FILTER_PATTERN = ";".join(f"*{ext}" for ext in EXCEL_EXTS)
 
-# HWPX 문서(템플릿·기존 문서) 선택 필터.
-HWPX_FILTER = "HWPX (*.hwpx)"
+# HWPX 문서(템플릿·기존 문서) 선택 필터. Win32 comdlg32 는 (설명, 패턴) 쌍을 받으므로
+# 패턴을 따로 낸다 — 설명 문자열이 패턴에서 파생해 둘이 갈릴 자리가 없다.
+HWPX_FILTER_PATTERN = "*.hwpx"
+HWPX_FILTER = f"HWPX ({HWPX_FILTER_PATTERN})"

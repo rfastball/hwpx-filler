@@ -378,12 +378,29 @@ def test_contract_rejects_unknown_versions_and_foreign_envelopes() -> None:
         ({"file_dialogs": ("open", "folder")}, "FileDialogs"),
         # 형태만 보면 통과해 **첫 파일 선택에서** 죽는다 — 창이 이미 뜬 뒤의 늦은 진단이다.
         (
-            {"file_dialogs": live_run.FileDialogs(open_file=None, open_folder=lambda *a: None)},
+            {
+                "file_dialogs": live_run.FileDialogs(
+                    open_file=None, open_folder=lambda *a: None, save_file=lambda *a: None
+                )
+            },
             r"file_dialogs\.open_file",
         ),
         (
-            {"file_dialogs": live_run.FileDialogs(open_file=lambda *a: None, open_folder=None)},
+            {
+                "file_dialogs": live_run.FileDialogs(
+                    open_file=lambda *a: None, open_folder=None, save_file=lambda *a: None
+                )
+            },
             r"file_dialogs\.open_folder",
+        ),
+        # 저장 대화상자도 같은 관문을 진다(S7-03 · #825) — 반쪽 대체는 첫 저장에서 매달린다.
+        (
+            {
+                "file_dialogs": live_run.FileDialogs(
+                    open_file=lambda *a: None, open_folder=lambda *a: None, save_file=None
+                )
+            },
+            r"file_dialogs\.save_file",
         ),
     ],
 )
@@ -519,7 +536,11 @@ def test_a_live_run_never_mutates_process_state(monkeypatch, tmp_path) -> None:
     _stub_app_boot(monkeypatch, tmp_path)
     before = list(sys.argv)
 
-    dialogs = live_run.FileDialogs(open_file=lambda *a, **k: None, open_folder=lambda *a, **k: None)
+    dialogs = live_run.FileDialogs(
+        open_file=lambda *a, **k: None,
+        open_folder=lambda *a, **k: None,
+        save_file=lambda *a, **k: None,
+    )
     assert app_mod.main(argv=[], live=_run(file_dialogs=dialogs)) == 0
 
     assert sys.argv == before
@@ -539,12 +560,16 @@ def test_native_dialogs_have_a_single_entrance(monkeypatch) -> None:
         live_run.FileDialogs(
             open_file=lambda filters, owner_title=None: answered.append("file") or "F",
             open_folder=lambda title, owner_title=None: answered.append("folder") or "D",
+            save_file=lambda name, filters, ext="", owner_title=None: (
+                answered.append("save") or "S"
+            ),
         ),
     )
 
     assert app_mod._file_dialog([("x", "*.x")]) == "F"
     assert app_mod._folder_dialog("고르세요") == "D"
-    assert answered == ["file", "folder"]
+    assert app_mod._save_dialog("a.hwpx", [("x", "*.x")], "hwpx") == "S"
+    assert answered == ["file", "folder", "save"]
 
 
 # ------------------------------------------------------------------ 대역

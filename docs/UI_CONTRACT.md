@@ -66,7 +66,13 @@ owner는 구독·listener·worker·WASM instance 등 자신이 세운 자원을 
   (마운트 정체의 단일 출처 = 그 화면. 웹이 기억한 값을 실으면 도착 순서에 따라 다른
   파일로 시작한다). 데이터 부재는 조용히 빈 마법사를 열지 않고 `ERROR:` 로 거절),
   경로 추적
-  (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`), 클립보드·설정
+  (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`),
+  산출물 저장(`save_artifact_as` — S7-03 · #825: 결과 존이 나열한 배달 문서 하나를 「다른
+  이름으로 저장」한다. 겨눔은 그 실행이 고정한 `ordinal` 하나이고 payload 검증은 메서드
+  본문이 진다. 원료는 **그 자리에서 다시 관찰한** 검증된 bytes 그대로이며(#820 D2 — 재물질화
+  경로 없음), 관찰이 서지 않으면 저장이 아니라 그 거절을 낸다. 저장 자체의 실패는
+  `SAVE_COPY_FAILED` 로 관찰 상태와 **독립** 보고다. 「복사」는 별도 bytes 브리지를 만들지
+  않고 행 수준 경로 복사(`copy_path`)가 진다), 클립보드·설정
   (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_master_width`),
   시트 적재(`load_data_sheet`),
   네이티브 X 닫기 확인의 처분 통보(`confirm_window_close`, `cancel_window_close` — N-07에서
@@ -88,7 +94,7 @@ owner는 구독·listener·worker·WASM instance 등 자신이 세운 자원을 
 
 ### Python↔TypeScript 단일 계약과 typed bridge client (R2-02 · #406)
 
-위 두 경로의 어휘(화면×액션×payload 키·직접 메서드 24·프로토콜 v1 상수·오류 어휘·거절
+위 두 경로의 어휘(화면×액션×payload 키·직접 메서드 25·프로토콜 v1 상수·오류 어휘·거절
 봉투)는 **Python 실물이 정본**이고, TypeScript 쪽은 생성물 하나로만 소비한다 — 같은 계약을
 두 언어에서 손으로 중복 유지하지 않는다.
 
@@ -530,6 +536,36 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   같은 술어)만 읽는다. 두 입구(경고 카드 클릭·액션바 버튼)는 **한 몸통**(`relinkTemplateFor`)
   을 써 확인 문안·T1 무장 가드·발신 순서가 갈리지 않는다. 상태 순회 단언은
   `tests/test_webapp_job.py` 의 불변식 테스트, 실렌더는 selftest `job_active_card` 프로브.
+
+#### 생성 결과 존의 문서 목록과 산출물 관찰 시트 (S7-03 · #825)
+
+좌 열 `#jobResult` 의 결과 3태 안에서, 이 실행이 **실제로 disk 에 앉힌** 문서를 개별 단위로
+나열한다(`#jobResultDocs`). 범위는 **현재 세션 결과**뿐이다(#820 D5 — 원장 되읽기·과거
+브라우징은 비범위). 목록의 원천은 결과 dict 의 `delivered` 하나이고, 폴더를 훑어 유추하지
+않는다.
+
+- **행 하나**(`#jobResultDoc-<ordinal>`) = 파일명 · 안착 처분 라벨 · 폴더에서 보기/경로 복사
+  (`path_actions.ts` 재사용) · 「내용 보기」. 처분 라벨은 확인 면과 **같은 어휘 지도**
+  (`DELIVERY_DISPOSITION_COPY`)를 쓴다. 경로 어포던스가 결과 파일을 겨눌 수 있는 근거는
+  소유 화이트리스트의 세션 성분 확장 하나다(`JobController.delivered_artifact_paths()` →
+  `WebFrontend._validate_owned`): 등록의 원천은 「앱 자신이 그 파일을 냈다」는 사실이고 exact
+  대조 판정 자체는 그대로다.
+- **「내용 보기」 → `artifact_open {ordinal}`** → 안착 파일 재읽기 + 기록 digest 대조 +
+  재파싱(S7-01 커널) → 구조 스냅샷(S7-02) → 읽기 전용 시트 `#artifactSheet`. 열림·대상·판정·
+  수치는 전부 Python 소유(`artifact_view` = `{open, ordinal, filename, status, detail,
+  structure}`)이고 닫기는 `artifact_close` 무페이로드다. bytes 는 세션이 들고 있지 않으므로
+  **매 관찰이 커널 재호출**이다(#820 D1 — 캐시는 관찰 권위가 못 된다).
+- **미리보기(`#previewSheet`)와 별도 표면·별도 어휘다**(#820 D4): 저기는 생성 **전** 예고,
+  여기는 생성 **후** 실물이다. 클래스는 `artifact-*`, 제목은 '산출물 관찰'
+  (`docs/DOCUMENT_AUTHORITY_LAYERS.md` §1 정준어). 두 시트는 각자의 portal 자리를 가진다.
+- **네 상태가 각각 다른 문장을 받는다**(#820 §3, fallback·빈 화면 0): `ARTIFACT_FILE_MISSING`
+  / `ARTIFACT_DIGEST_MISMATCH` / `ARTIFACT_REPARSE_FAILED` / 세션 좌표 밖
+  (`ARTIFACT_NOT_IN_SESSION` — 준비 안 됨과 무결성 실패를 같은 침묵으로 접지 않는다).
+  `ARTIFACT_PARTIAL_COVERAGE` 는 거절이 아니라 **병기**다: 관찰은 성립하고 「표시하지 못한
+  구간」 구획(`#artifactUnrendered`)이 사유와 구간을 나열한다. 그 구획은 못 본 구간이 없어도
+  '없음' 으로 **항상** 선다(#820 D3 — 키째 지우면 완전한 관찰과 부분 관찰이 같아 보인다).
+- 시트는 조판·서식을 재현하지 않는다(#360 rhwp 는 별도 트랙): 문단 텍스트와 표(행·열 및
+  `cellSpan`/`cellAddr` 병합 메타)와 빈 값 표식 집계까지다.
 
 #### 템플릿 변경사항 존 (S3-09 #659)
 

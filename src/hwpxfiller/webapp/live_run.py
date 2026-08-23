@@ -68,13 +68,15 @@ class LiveRunContractError(RuntimeError):
 class FileDialogs:
     """native 파일·폴더 선택의 대체 — 실물 대신 설 수 있는 **유일한** 표면.
 
-    둘을 함께 요구한다. 종전 하니스는 ``open_file_dialog`` 만 스텁해서 폴더 피커에 닿는 순간
+    셋을 함께 요구한다. 종전 하니스는 ``open_file_dialog`` 만 스텁해서 폴더 피커에 닿는 순간
     실 네이티브 창에 매달렸다(그 경로를 밟는 대본이 아직 없었을 뿐이다). 반쪽 대체는 "언젠가
-    조용히 멈춘다"를 예약해 두는 것과 같다.
+    조용히 멈춘다"를 예약해 두는 것과 같다 — 그래서 산출물 「다른 이름으로 저장」이
+    저장 다이얼로그를 여는 순간(S7-03 · #825) ``save_file`` 도 같은 자리에 선다.
     """
 
     open_file: "Callable[..., str | None]"
     open_folder: "Callable[..., str | None]"
+    save_file: "Callable[..., str | None]"
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,7 @@ def validate(run: object) -> LiveRun:
         for member, answer in (
             ("open_file", run.file_dialogs.open_file),
             ("open_folder", run.file_dialogs.open_folder),
+            ("save_file", run.file_dialogs.save_file),
         ):
             if not callable(answer):
                 raise LiveRunContractError(

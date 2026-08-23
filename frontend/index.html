@@ -128,6 +128,15 @@
     <div id="previewSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
          aria-labelledby="previewTitle"></div>
 
+    <!-- 산출물 관찰 시트(S7-03 · #825) — 위 미리보기가 **생성 전** 예고라면 이 면은 **생성
+         후** 실물이다. 안착 파일을 다시 읽어 기록 digest 와 대조를 통과한 bytes 의 구조를
+         읽기 전용으로 그린다(#820 D1·D4). 별도 표면·별도 어휘라 자리도 따로 선다 — 한 자리를
+         돌려쓰면 두 면의 열림 상태가 서로를 밀어낸다. 내용 생산자는 React
+         `screens/job_artifact.ts` 의 JobArtifactSheet portal 이고 이 자리는 그 target 이라
+         **비어 있어야** 한다(product_screens.requireEmptyTarget 가 fail-closed). -->
+    <div id="artifactSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="artifactTitle"></div>
+
     <!-- 그룹 이동 다이얼로그(결정 43) — 기존 그룹 + 새 그룹 입력 동거 + 해제. 소속=생성이라
          빈 그룹은 만들 수 없다(퇴화 불변식). 「문서 만들기」 몫(groupMoveModal)은 좌 목록과
          함께 사망했고(F2 PR-B), 아래 둘이 화면별 wiring 격리로 남는다 — 라이브러리가 작업

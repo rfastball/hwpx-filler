@@ -165,6 +165,8 @@ export const SCREEN_ACTIONS = {
     preview_move: { required: ["delta"], optional: [] },
     preview_blank_only: { required: ["value"], optional: [] },
     preview_approve: { required: [], optional: ["preview_token"] },
+    artifact_open: { required: ["ordinal"], optional: [] },
+    artifact_close: { required: [], optional: [] },
     set_selected_only: { required: ["value"], optional: [] },
     select_job: { required: ["name"], optional: ["confirm"] },
     toggle_favorite: { required: ["name", "value"], optional: [] },
@@ -261,6 +263,7 @@ export const HOST_METHODS = [
   "copy_path",
   "reveal_path",
   "open_path",
+  "save_artifact_as",
   "open_job_in_editor",
   "new_job_from_data",
 ] as const;
@@ -297,6 +300,7 @@ export interface HostApi {
   copy_path(path: unknown): unknown;
   reveal_path(path: unknown): unknown;
   open_path(path: unknown): unknown;
+  save_artifact_as(ordinal: unknown): unknown;
   open_job_in_editor(name: unknown, context?: unknown): unknown;
   new_job_from_data(context?: unknown): unknown;
 }

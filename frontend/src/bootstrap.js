@@ -480,6 +480,8 @@ export function bootProduct() {
           { controller: SheetPickerController }),
         productOverlayComponent("previewSheet", PRODUCT_OVERLAY_COMPONENTS.JobPreviewSheet,
           { controller: JobRunController }),
+        productOverlayComponent("artifactSheet", PRODUCT_OVERLAY_COMPONENTS.JobArtifactSheet,
+          { controller: JobRunController }),
       ],
     },
   });

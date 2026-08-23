@@ -13,7 +13,8 @@ import type { ReactNode } from "react";
 
 import { PathActions } from "./path_actions.ts";
 import type { JobRunController } from "./job_run.ts";
-import { useRun, useRunSnapshot } from "./job_run.ts";
+import { DELIVERY_DISPOSITION_COPY, useRun, useRunSnapshot } from "./job_run.ts";
+import type { DeliveredArtifactRow } from "./job_run_state.ts";
 
 type Obj = Record<string, any>;
 
@@ -31,6 +32,42 @@ function FailRow(props: { fail: Obj }): ReactNode {
     h("div", { className: "result3-fail-why" }, String(f.reason || "")),
     f.known ? null : h("div", { className: "result3-undiagnosed" },
       "원인 진단 미연결 — 확인된 원인이 없어 받은 메시지를 그대로 보여줍니다."));
+}
+
+/** 만들어진 문서 한 줄(S7-03 · #825) — 파일명 · 안착 처분 · 경로 어포던스 · 내용 보기.
+ *
+ *  값은 Python 이 낸 `delivered` 행 그대로다. 처분 라벨만 공용 어휘 지도를 지나는데, 그
+ *  지도는 이 화면이 이미 다른 자리에서 쓰던 것과 **같은 하나**다(라벨을 여기서 다시 지으면
+ *  같은 처분이 두 이름으로 불린다). 「내용 보기」는 실물을 다시 읽는 관찰이라 미리보기와
+ *  다른 표면으로 간다(#820 D4). */
+function DeliveredRow(props: {
+  row: DeliveredArtifactRow;
+  controller: JobRunController;
+}): ReactNode {
+  const row = props.row;
+  const ordinal = Number(row.ordinal);
+  return h("div", {
+    className: "result3-doc", id: `jobResultDoc-${String(ordinal)}`,
+    "data-ordinal": String(ordinal),
+  },
+    h("span", { className: "result3-doc-name" }, String(row.filename || "")),
+    h("span", { className: "result3-doc-disp" },
+      DELIVERY_DISPOSITION_COPY[String(row.disposition || "")] || "확인할 수 없음"),
+    h("span", { className: "result3-doc-acts" },
+      createElement(PathActions as any, {
+        client: props.controller.client,
+        path: String(row.path || ""),
+        only: ["reveal", "copy"],
+        notify: props.controller.notify,
+      }),
+      h("button", {
+        className: "btn sm", type: "button", "data-busy-lock": true,
+        "data-act": "artifact-open",
+        "aria-label": `'${String(row.filename || "")}' 내용 보기`,
+        onClick: (event: any) => {
+          props.controller.openArtifactFrom(ordinal, event?.currentTarget ?? null);
+        },
+      }, "내용 보기")));
 }
 
 /** 접힘 증거 — 로그 상자가 나르던 것(FillNote 사실·받은 메시지 원문)의 거처(§10.10.3).
@@ -101,6 +138,10 @@ export function JobResultZone(props: { controller: JobRunController }): ReactNod
   const fails = (shown?.failures || []) as Obj[];
   const hasDir = !!(shown && shown.out_dir && !shown.running && !shown.rejected);
   const selectable = Number(shown?.failed_selectable || 0);
+  // 만들어진 문서 목록(S7-03) — **결과 dict 가 실은 것만** 그린다. 폴더를 훑어 목록을
+  // 유추하지 않는다: 이 존이 말하는 것은 「이 실행이 앉힌 문서」이고, 그 사실의 출처는
+  // 그 실행의 결과 하나다(#820 D5 — 원장·폴더 되읽기는 이 슬라이스 밖).
+  const delivered = ((shown?.delivered || []) as DeliveredArtifactRow[]);
 
   return createElement(Fragment, null,
     h("div", { className: "zone-cap" }, "생성 결과"),
@@ -147,6 +188,15 @@ export function JobResultZone(props: { controller: JobRunController }): ReactNod
               only: ["reveal", "copy"],
               notify: props.controller.notify,
             }) : null)),
+        h("section", {
+          className: "result3-docs", id: "jobResultDocs",
+          hidden: !delivered.length, "aria-labelledby": "jobResultDocsCap",
+        },
+          h("div", { className: "zone-cap zone-cap-sub", id: "jobResultDocsCap" },
+            `만든 문서 ${delivered.length}건`),
+          ...delivered.map((row) => createElement(DeliveredRow as any, {
+            key: String(row.ordinal), row, controller: props.controller,
+          }))),
         h("div", { className: "result3-fails", id: "jobResultFails" },
           ...fails.map((f, i) => createElement(FailRow as any, { key: i, fail: f }))),
         createElement(Evidence as any, { result: shown }))),

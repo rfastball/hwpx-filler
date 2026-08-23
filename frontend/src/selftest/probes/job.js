@@ -55,6 +55,12 @@
  *                      renamed_*_shown · folder_hidden_while_running ↔ folder_shown_on_result ·
  *                      reject_state=="rejected" · close_focus ∈ {jobGenBtn, jobResultZone} ·
  *                      close_runlog_last 는 퇴장 한 줄의 **부재**를 단언한다.
+ *                      하위 `artifact`(S7-03 · #825): 문서 목록 행이 그려지고(offsetParent) ·
+ *                      「내용 보기」가 `job/artifact_open` 을 쏘고 `.artifact-sheet` 가
+ *                      **보이며** · 관찰이 선 판은 문단·병합 표·빈 값 표식·「표시하지 못한
+ *                      구간」을 함께 세우고 · 관찰이 서지 않은 두 상태(세션 밖 ↔ digest
+ *                      불일치)가 **다른 문안**을 받으며 · 닫으면 초점이 그 행의 버튼으로
+ *                      돌아온다. 새 프로브 키·새 창 0 — 이 창의 증거에 붙는다.
  *   · job_density_narrow : 1열 ↔ job_mirror.job_grid_wide 의 2열.
  *
  * 알고 옮긴 취약점(가리지 않는다): `_JOB_DATA_FIRST` 의 `.click()` 열 자리와 `_JOB_MIRROR` 의
@@ -1160,7 +1166,7 @@ async function runJobMirror(ctx) {
 
 /** app.py:1755-1947 + 3922·3923. */
 async function runJobResult(ctx) {
-  const services = requireServices(ctx, ["Nav", "Bridge", "JobRun"]);
+  const services = requireServices(ctx, ["Nav", "Bridge", "JobRun", "Modal"]);
   const doc = ctx.doc;
   const out = {};
 
@@ -1280,6 +1286,146 @@ async function runJobResult(ctx) {
   out.folder_shown_on_result = displayOf(
     ctx, doc.querySelector("#jobResult .result3-folder"),
   ) !== "none";
+
+  /* ── 산출물 관찰(S7-03 · #825) — 결과 존 문서 목록 + 읽기 전용 시트 ─────────────
+     새 프로브 키·새 클러스터·새 콜드 부팅을 늘리지 않는다: 이미 서 있는 이 창의
+     `job_result` 증거에 하위 필드로 붙는다. 클릭 자리마다 `offsetParent` 를 함께 재는
+     이유는 머리말이 못박은 함정 때문이다 — `click()` 은 hidden 요소도 통과하므로
+     가시성을 따로 묻지 않으면 「눈으로 본 것」과 다른 결론이 나온다. */
+  const artifact = {};
+  const deliveredResult = {
+    ...partial,
+    delivered: [
+      { ordinal: 0, filename: "공고서-001.hwpx", disposition: "WRITE_NEW",
+        path: "D:\out\공고서-001.hwpx" },
+      { ordinal: 1, filename: "공고서-002.hwpx", disposition: "WRITE_ADD_SUFFIX",
+        path: "D:\out\공고서-002.hwpx" },
+    ],
+  };
+  services.JobRun.renderResult(deliveredResult);
+  await settle(ctx);
+  const docsBox = doc.getElementById("jobResultDocs");
+  artifact.docs_shown = !!docsBox && !docsBox.hidden && isShown(ctx, docsBox);
+  artifact.docs_rows = docsBox === null ? -1 : docsBox.querySelectorAll(".result3-doc").length;
+  const docRow = doc.getElementById("jobResultDoc-0");
+  /* 행 하나가 **그려졌는가**(offsetParent) + 파일명·처분 라벨·경로 어포던스가 그 안에 있는가.
+     처분 라벨은 확인 면과 같은 어휘 지도를 지난다 — 코드 원문이 새면 그 자리가 재조립이다. */
+  artifact.doc_visible = !!docRow && docRow.offsetParent !== null;
+  artifact.doc_text = docRow === null ? "(자리 없음)" : String(docRow.textContent || "");
+  artifact.doc_track_acts = docRow === null ? [] : mapAll(
+    docRow.querySelectorAll("[data-track-act]"), (button) => button.dataset.trackAct,
+  );
+
+  /* 열기 왕복은 스텁 안에서 돈다 — 실 백엔드에 닿으면 세션 없는 실 스냅샷이 이 창에
+     착지해 §2.18 처분이 방금 세운 결과를 초기화한다(runJobMirror 가 같은 자리에서 배운 것). */
+  const artifactDispatches = [];
+  const artifactStub = stubDispatch(services, () => async (screen, action) => {
+    artifactDispatches.push(`${screen}/${action}`);
+    return {};
+  });
+  const openButton = docRow === null
+    ? null : docRow.querySelector('[data-act="artifact-open"]');
+  artifact.open_btn_visible = !!openButton && openButton.offsetParent !== null;
+  if (openButton) openButton.focus();
+  if (openButton) openButton.click();
+  await ctx.sleep(30);
+  artifact.open_dispatches = artifactDispatches.slice();
+  const sheetCard = doc.querySelector("#artifactSheet .artifact-sheet");
+  /* 면이 **그려졌는가** — 계산 스타일과 offsetParent 를 함께 본다(hidden 이 flex 를 이기는
+     결함 클래스와 「눌렸지만 안 보인다」 결함 클래스가 각각 다른 계기에 걸린다). */
+  artifact.sheet_shown = !!sheetCard && isShown(ctx, sheetCard) && sheetCard.offsetParent !== null;
+  /* ④ 백엔드에 그 문서가 없는 상태 — 조용한 빈 화면이 아니라 **구분된 거절 문안**이다. */
+  artifact.absent_status = String(
+    (doc.getElementById("artifactRefused") || {}).dataset?.status ?? "(자리 없음)",
+  );
+  artifact.absent_title = String(
+    (doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)",
+  );
+  artifact.absent_save_disabled = !!(doc.getElementById("artifactSaveAs") || {}).disabled;
+
+  /* 관찰이 선 상태의 상 — 구조·빈 값 표식·「표시하지 못한 구간」이 한 판에 선다.
+     값은 전부 Python 이 낸 스냅샷 형상 그대로다(표면이 재조립하지 않는다). */
+  const observedSnap = deepCopy(baseSnap);
+  observedSnap.artifact_view = {
+    open: true, ordinal: 0, filename: "공고서-001.hwpx", status: "observed", detail: "",
+    structure: {
+      kind: "artifact-observation/v1",
+      sections: [{ blocks: [
+        { type: "paragraph", text: "계약 상대자 귀하", fields: [] },
+        { type: "table", rows: [[
+          { blocks: [{ type: "paragraph", text: "항목", fields: [] }],
+            span: { colSpan: 2, rowSpan: 1 }, addr: { colAddr: 0, rowAddr: 0 } },
+        ]] },
+      ] }],
+      headers: [], footers: [],
+      unrendered_regions: { counts: { mystery: 2 }, examples: { mystery: "sec/mystery" } },
+      partial_coverage: true,
+      coverage_code: "ARTIFACT_PARTIAL_COVERAGE",
+      missing_value_markers: [{ field: "추정가격", count: 1 }],
+    },
+  };
+  await pushAndSettle(ctx, "job", observedSnap);
+  artifact.observed_paragraph = mapAll(
+    doc.querySelectorAll("#artifactSheet .artifact-para"), (node) => node.textContent,
+  );
+  const mergedCell = doc.querySelector("#artifactSheet .artifact-table td");
+  artifact.observed_colspan = mergedCell === null ? -1 : Number(mergedCell.colSpan);
+  artifact.observed_markers = String(
+    (doc.getElementById("artifactMarkerList") || {}).textContent ?? "(자리 없음)",
+  );
+  const unrendered = doc.getElementById("artifactUnrendered");
+  artifact.unrendered_partial = String(unrendered?.dataset?.partial ?? "(자리 없음)");
+  artifact.unrendered_shown = !!unrendered && unrendered.offsetParent !== null;
+  artifact.unrendered_text = String(
+    (doc.getElementById("artifactUnrenderedList") || {}).textContent ?? "(자리 없음)",
+  );
+  artifact.observed_save_enabled = !(doc.getElementById("artifactSaveAs") || {}).disabled;
+
+  /* 무결성 실패는 「준비 안 됨」과 다른 문장을 받는다(#820 §3, fallback 0). */
+  const mismatchSnap = deepCopy(observedSnap);
+  mismatchSnap.artifact_view = {
+    open: true, ordinal: 0, filename: "공고서-001.hwpx",
+    status: "ARTIFACT_DIGEST_MISMATCH", detail: "내용이 안착 기록과 다르다", structure: null,
+  };
+  await pushAndSettle(ctx, "job", mismatchSnap);
+  artifact.mismatch_title = String(
+    (doc.getElementById("artifactRefusedTitle") || {}).textContent ?? "(자리 없음)",
+  );
+  artifact.mismatch_detail = String(
+    (doc.getElementById("artifactRefusedDetail") || {}).textContent ?? "(자리 없음)",
+  );
+  artifact.mismatch_differs_from_absent = artifact.mismatch_title !== artifact.absent_title;
+
+  /* 닫기 — runJobMirror 관용구 그대로(transitionend 수동 발화 + 복귀 초점 판별). */
+  services.Modal.close("artifactSheet");
+  const closingCard = doc.querySelector("#artifactSheet .modal-card");
+  if (closingCard) {
+    const transitionEnd = new ctx.win.Event("transitionend", { bubbles: true });
+    Object.defineProperty(transitionEnd, "propertyName", { value: "opacity" });
+    closingCard.dispatchEvent(transitionEnd);
+  }
+  await ctx.sleep(30);
+  artifact.close_dispatches = artifactDispatches.slice();
+  artifact.close_focus = String(activeId(doc));
+  artifact.close_focus_target_state = (() => {
+    const row = doc.getElementById("jobResultDoc-0");
+    const button = row && row.querySelector('[data-act="artifact-open"]');
+    if (!button) return "missing";
+    return button.disabled ? "disabled" : (button.isConnected ? "ready" : "detached");
+  })();
+  /* 「닫혔다」 = **안 보인다** 이지 DOM 에서 사라졌다가 아니다 — portal 내용은 그대로
+     마운트돼 있고 골격이 `hidden` 을 받는다. 둘을 함께 재 어느 층이 안 닫혔는지 가른다. */
+  const closedSheet = doc.querySelector("#artifactSheet .artifact-sheet");
+  artifact.sheet_closed = !closedSheet || closedSheet.offsetParent === null;
+  artifact.sheet_host_hidden = !!doc.getElementById("artifactSheet")
+    ?.classList.contains("hidden");
+  artifactStub.restore();
+  out.artifact = artifact;
+
+  /* 비교군 복귀 — 뒤 단계(닫기·거절 창)는 delivered 없는 결과 위에서 돈다. */
+  await pushAndSettle(ctx, "job", baseSnap);
+  services.JobRun.renderResult(partial);
+  await settle(ctx);
 
   /* 닫기 = 유일한 명시 파기 + 포커스는 다음 행동으로 착지(계약면 3). */
   doc.getElementById("jobResultClose").click();

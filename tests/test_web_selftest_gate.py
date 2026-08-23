@@ -797,6 +797,51 @@ class TestWebSelftestGate:
         assert j["runlog_collapsed"] and j["runlog_last_visible"], j
         assert "빈 값" in j["runlog_last"], j
 
+    def test_job_result_lists_documents_and_opens_the_artifact_sheet(
+        self, selftest_result: dict
+    ) -> None:
+        """결과 존 문서 목록 + 산출물 관찰 시트(S7-03 · #825)의 실 WebView2 되읽기.
+
+        **새 콜드 부팅은 0** 이다 — 위 결과 3태 프로브가 이미 세운 창의 증거에 붙은 하위
+        필드를 읽는다. 정적 계약은 조각의 존재만 보고, 여기서 잡는 것은 ①행이 실제로
+        **그려지는가**(hidden 요소 click 함정 회피 — `offsetParent`) ②「내용 보기」가 실제로
+        백엔드를 쏘고 면이 뜨는가 ③관찰이 서지 않은 두 상태가 **다른 문안**을 받는가다.
+        """
+        j = selftest_result["job_result"]
+        assert j.get("error") is None, f"결과 3태 프로브 예외: {j.get('error')!r}"
+        a = j["artifact"]
+        # ① 문서 목록 — 결과 dict 의 `delivered` 만큼 행이 서고 실제로 보인다.
+        assert a["docs_shown"] and a["docs_rows"] == 2, a
+        assert a["doc_visible"], "문서 행이 DOM 에는 있는데 그려지지 않았습니다."
+        assert "공고서-001.hwpx" in a["doc_text"] and "새 파일" in a["doc_text"], a
+        # 경로 어포던스는 공용 `path_actions` 재사용이다 — 열기는 걷고 둘만 남는다.
+        assert a["doc_track_acts"] == ["reveal", "copy"], a
+        # ② 「내용 보기」 — 눌린 버튼이 보이는 상태였고, 발신이 실제로 났고, 면이 떴다.
+        assert a["open_btn_visible"], "「내용 보기」가 hidden 인 채 눌렸습니다(단언 공허)."
+        assert "job/artifact_open" in a["open_dispatches"], a
+        assert a["sheet_shown"], "산출물 관찰 시트가 DOM 에만 있고 그려지지 않았습니다."
+        # ③ 관찰이 서지 않은 상태 = 조용한 빈 화면이 아니라 사유를 말하는 면이다.
+        assert a["absent_title"] not in ("", "(자리 없음)"), a
+        assert a["absent_save_disabled"], (
+            "관찰이 서지 않았는데 저장 버튼이 살아 있습니다 — 원료 없는 저장의 미끼입니다."
+        )
+        # 무결성 실패와 준비 안 됨은 **다른 문장**이다(#775 교훈 · #820 §3).
+        assert a["mismatch_differs_from_absent"], (a["absent_title"], a["mismatch_title"])
+        assert "안착 기록과 다르다" in a["mismatch_detail"], a
+        # ④ 관찰이 선 판 — 문단·병합 표·빈 값 표식·「표시하지 못한 구간」이 함께 선다.
+        assert "계약 상대자 귀하" in a["observed_paragraph"], a
+        assert a["observed_colspan"] == 2, "표 병합 메타가 colspan 으로 서지 않았습니다."
+        assert "추정가격" in a["observed_markers"], a
+        assert a["observed_save_enabled"], a
+        # 부분 포섭은 숨기지 않고 **병기**한다(#820 D3) — 사유와 구간이 실제로 그려진다.
+        assert a["unrendered_partial"] == "true" and a["unrendered_shown"], a
+        assert "mystery" in a["unrendered_text"], a
+        # ⑤ 닫기 — 면이 걷히고 초점이 그 행의 트리거로 돌아온다(runJobMirror 관용구).
+        # 「닫혔다」는 **안 보인다**이지 DOM 소멸이 아니다(portal 내용은 마운트된 채다).
+        assert a["sheet_closed"] and a["sheet_host_hidden"], a
+        assert "job/artifact_close" in a["close_dispatches"], a
+        assert a["close_focus_target_state"] == "ready", a
+
     def test_job_data_first_prework_surface(self, selftest_result: dict) -> None:
         # 데이터-우선(§18.2) — 작업 미선택+데이터 마운트 상태에서 세션 존·액션바가 살아 있고,
         # 후보 카드(available=클릭형·needs_action=정직한 비활성+없는 열 병기)와 prework 게이트
