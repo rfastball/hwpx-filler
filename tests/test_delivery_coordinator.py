@@ -204,6 +204,43 @@ def test_path_escaping_output_directory_is_loud(tmp_path) -> None:
     assert _fs_snapshot(out) == {}
 
 
+def test_contract_violation_anywhere_writes_nothing(tmp_path) -> None:
+    # 계약 게이트는 write 앞에 선다 — item 0 이 정상이어도 item 1 의 위반이면 write 0 이다.
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DeliveryContractError):
+        deliver_current_documents(
+            resolved=_resolved(
+                out, _item(0, "정상.hwpx", WRITE_NEW), _item(1, "..\\탈출.hwpx", WRITE_NEW)
+            ),
+            ordered_outcomes=[_doc(b"D0"), _doc(b"D1")],
+        )
+    assert _fs_snapshot(out) == {}  # 정상 항목도 쓰지 않았다
+
+
+def test_foreign_drive_path_is_contract_error(tmp_path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DeliveryContractError):
+        deliver_current_documents(
+            resolved=_resolved(out, _item(0, "Z:\\밖.hwpx", WRITE_NEW)),
+            ordered_outcomes=[_doc(b"D0")],
+        )
+    assert _fs_snapshot(out) == {}
+
+
+def test_empty_relative_path_is_contract_error(tmp_path) -> None:
+    # 빈 이름은 target 이 output directory 자신이 된다 — 오보고 대신 계약 위반으로 닫는다.
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DeliveryContractError):
+        deliver_current_documents(
+            resolved=_resolved(out, _item(0, "", WRITE_NEW)),
+            ordered_outcomes=[_doc(b"D0")],
+        )
+    assert _fs_snapshot(out) == {}
+
+
 def test_unknown_disposition_is_loud(tmp_path) -> None:
     out = tmp_path / "out"
     out.mkdir()

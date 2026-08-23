@@ -16,8 +16,11 @@ start gate + postcondition(:class:`MaterializedDocumentBytes`)이 이미 정했�
 - **write 는 전건 PASS 뒤에만 시작한다**: outcome 하나라도 실패·거절이면 아무것도 쓰지 않고
   사유를 재진술해 닫는다(S6-8 — 실패한 런은 filesystem 불변). legacy batch 의 「시작 전 전수
   차단」(RC-02) 선례와 같은 결이다.
-- write 도중의 충돌·IO 실패는 그 항목에서 멈추고, 어디까지 앉았고 무엇이 남았는지를 숨기지
-  않고 되돌려준다(항목별 원자 — 이미 앉은 문서는 유효하고, 실패 항목 이후는 손대지 않는다).
+- write 도중의 이름 충돌은 그 항목에서 멈추고 어디까지 앉았는지를 값으로 되돌려주며, 그 외
+  IO 실패(디스크풀·잠금)는 예외로 시끄럽게 전파된다 — 어느 쪽이든 항목별 원자라 이미 앉은
+  문서는 유효하고 실패 항목의 기존 파일은 무손상이다.
+- no-clobber 의 배타 의미는 Windows ``os.rename`` 의 것이다 — 이 저장소는 Windows 전용이고
+  CI 도 windows 러너만 돈다(POSIX rename 은 조용히 덮어쓰므로 이식 시 재검토 대상).
 """
 
 from __future__ import annotations
@@ -102,7 +105,33 @@ def deliver_current_documents(
             f"outcome {len(ordered_outcomes)}개가 delivery item {len(items)}개와 불일치"
         )
 
-    # 1. 전건 PASS 게이트 — 하나라도 실패·거절이면 write 0(S6-8, filesystem 불변).
+    # 1a. 계약 게이트 — 경로 봉쇄·disposition 어휘를 write 앞에 전건 검증한다. 계약-오류
+    #     런도 write 0 으로 닫혀야 하므로(조용한 부분 산출 금지) 루프 안이 아니라 여기다.
+    root = os.path.abspath(resolved.output_directory)
+    targets: list[str] = []
+    for item in items:
+        relative = item.resolved_output_relative_path
+        target = os.path.abspath(os.path.join(root, relative))
+        # resolver 가 이미 경로 문자를 봉쇄했지만, 집행 경계는 억지량을 실측으로 다시 닫는다 —
+        # root 밖·root 자신을 가리키는 이름은 계약 밖이라 예외다(조용한 상위 디렉터리 쓰기 금지).
+        try:
+            contained = os.path.commonpath([root, target]) == root and target != root
+        except ValueError as exc:  # 드라이브가 다른 절대경로 등 — 같은 층의 계약 위반이다.
+            raise DeliveryContractError(
+                f"item {item.item_ordinal} 의 경로를 output directory 와 비교할 수 없다: "
+                f"{relative!r}"
+            ) from exc
+        if not contained:
+            raise DeliveryContractError(
+                f"item {item.item_ordinal} 의 경로가 output directory 밖을 가리킨다: {relative!r}"
+            )
+        if item.collision_disposition not in (WRITE_NEW, WRITE_ADD_SUFFIX, WRITE_OVERWRITE):
+            raise DeliveryContractError(
+                f"미지원 collision disposition: {item.collision_disposition!r}"
+            )
+        targets.append(target)
+
+    # 1b. 전건 PASS 게이트 — 하나라도 실패·거절이면 write 0(S6-8, filesystem 불변).
     for item, outcome in zip(items, ordered_outcomes, strict=True):
         if not isinstance(outcome, MaterializedDocumentBytes):
             return DeliveryRefused(
@@ -114,29 +143,16 @@ def deliver_current_documents(
                 failed_item_ordinal=item.item_ordinal,
             )
 
-    # 2. 집행 — 항목별 원자. 실패 항목에서 멈추고 사실을 그대로 되돌려준다.
-    root = os.path.abspath(resolved.output_directory)
+    # 2. 집행 — 항목별 원자. 이름 충돌에서 멈추고 사실을 그대로 되돌려준다.
     delivered: list[DeliveredDocument] = []
-    for item, outcome in zip(items, ordered_outcomes, strict=True):
+    for item, outcome, target in zip(items, ordered_outcomes, targets, strict=True):
         assert isinstance(outcome, MaterializedDocumentBytes)
-        target = os.path.abspath(os.path.join(root, item.resolved_output_relative_path))
-        # resolver 가 이미 경로 문자를 봉쇄했지만, 집행 경계는 억지량을 실측으로 다시 닫는다 —
-        # root 밖으로 나가는 이름은 계약 밖이라 예외다(조용한 상위 디렉터리 쓰기 금지).
-        if os.path.commonpath([root, target]) != root:
-            raise DeliveryContractError(
-                f"item {item.item_ordinal} 의 경로가 output directory 밖을 가리킨다: "
-                f"{item.resolved_output_relative_path!r}"
-            )
         try:
             if item.collision_disposition == WRITE_OVERWRITE:
                 # 사용자가 명시 확인한 파괴(preview DESTRUCTIVE_OVERWRITE 승인) — 원자 교체.
                 write_bytes_atomic(target, outcome.output_bytes)
-            elif item.collision_disposition in (WRITE_NEW, WRITE_ADD_SUFFIX):
+            else:  # WRITE_NEW · WRITE_ADD_SUFFIX — 1a 가 어휘를 이미 닫았다.
                 write_bytes_atomic_exclusive(target, outcome.output_bytes)
-            else:
-                raise DeliveryContractError(
-                    f"미지원 collision disposition: {item.collision_disposition!r}"
-                )
         except FileExistsError:
             # 관찰 이후 disk 가 움직였다 — 계획의 전제(occupancy 관찰)가 더는 사실이 아니다.
             return DeliveryAborted(
