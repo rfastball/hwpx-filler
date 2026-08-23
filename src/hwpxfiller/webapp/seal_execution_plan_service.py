@@ -63,6 +63,7 @@ from ..external.field_binding_store import (
     load_current_revision,
 )
 from ..external.qualification_store import QualificationObjectStore
+from ..external.runtime_capability import admitted_runtime_conformance_registry
 from ..external.seal_execution_capture_runner import (
     CurrentFieldBindingReview,
     SealExecutionCaptureRunner,
@@ -73,6 +74,7 @@ from ..external.work_configuration_store import (
 )
 from ..external.work_template_store import AtomicWorkTemplateStateStore
 from .seal_execution_plan_product import (
+    RuntimeConformanceBinding,
     SealExecutionPlanProduct,
     SealExecutionPlanProductCommand,
     SealExecutionPlanResponse,
@@ -128,6 +130,12 @@ class SealExecutionPlanService:
             clock=self._seal_clock,
         )
         self._capture = capture
+        # S6-03(#810) 정식 주입 경로: shipping capability manifest 를 등록한 registry 인스턴스를
+        # 결속한다 — 전역 DEFAULT registry 는 계속 비어 있고(`runtime_conformance=` kwarg 우회도
+        # 여전히 금지), 판정은 매 관찰마다 Plan value 파생 7축 query 로 registry 가 낸다.
+        runtime_registry, runtime_manifest = admitted_runtime_conformance_registry()
+        self._runtime_registry = runtime_registry
+        self._runtime_manifest = runtime_manifest
         # R2(#740): plan_store·read_admission_state·load_secret seam 이 사라졌다 — Product 는
         # route/auth + capture/summary/shipping 만 받아 매 호출 current authority 를 재계산한다.
         self._product = SealExecutionPlanProduct(
@@ -137,6 +145,9 @@ class SealExecutionPlanService:
             capture_under_fence=capture.capture_execution,
             resolve_shipping_policy=resolve_shipping_policy,
             clock=self._seal_clock,
+            runtime_conformance_binding=RuntimeConformanceBinding(
+                registry=runtime_registry, manifest=runtime_manifest
+            ),
         )
 
     # ── public surface(product 를 감싸는 얇은 표면) ────────────────────────────────
