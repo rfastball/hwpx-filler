@@ -57,16 +57,22 @@ from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확�
 # 링1(run_state)·링2(screen_job)는 포트로 관통만 한다(`gui → data.factory` 역간선 제거).
 from ..data.factory import source_for_path, source_from_pool_item
 from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
-from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
+from ..external.artifact_observation import (  # 안착 문서 되읽기 커널(S7-01 · #823)
+    ArtifactObservationRefused,
+    observe_delivered_artifact,
+)
+from ..external.atomic import write_bytes_atomic
+# 확장자 단일 출처(RC-34) — Qt-free 상수
+from ..gui.file_filters import EXCEL_FILTER_PATTERN, HWPX_FILTER, HWPX_FILTER_PATTERN
 from ..host.native import single_instance
 from ..host.native.clipboard import set_clipboard_text
 from ..host.native.debug import log
-from ..host.native.dialogs import open_file_dialog, open_folder_dialog
+from ..host.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from ..host.native.reveal import open_path as _native_open_path
 from ..host.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_library import LibraryController
-from .screen_job import JobController
+from .screen_job import ARTIFACT_NOT_IN_SESSION, JobController
 from .template_change import TemplateChangeCoordinator
 from .slot_configuration_product import SlotConfigurationProduct
 from .seal_execution_plan_service import SealExecutionPlanService
@@ -98,6 +104,12 @@ _TEMPLATE_FILTERS = [("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")]
 # 라이브러리 가져오기 필터(#108 결정 4) — HWPX·TXT 겸용. 확장자가 곧 매체 라우팅(복사 대상
 # 루트 결정)이라 두 형식을 함께 연다("모든 파일"은 오확장 유입 방지로 제외 — import 는 확장자로만 라우팅).
 _LIBRARY_IMPORT_FILTERS = [("HWPX·TXT 템플릿", "*.hwpx;*.txt")]
+# 산출물 「다른 이름으로 저장」 필터(S7-03 · #825) — 확장자·설명 모두 단일 출처 파생(RC-34).
+# 저장 대상은 방금 만든 HWPX 문서 하나뿐이라 "모든 파일" 을 열지 않는다(오확장 유출 방지).
+_ARTIFACT_SAVE_FILTERS = [(HWPX_FILTER, HWPX_FILTER_PATTERN)]
+#: 관찰한 bytes 의 저장 실패(#820 §3) — **관찰 상태와 독립**이다. 관찰은 이미 성립했고
+#: 실패한 것은 옮겨 쓰기다: 둘을 한 코드로 접으면 사용자는 문서가 깨졌다고 읽는다.
+SAVE_COPY_FAILED = "SAVE_COPY_FAILED"
 
 
 # ------------------------------------------------------ native 대화상자 단일 입구
@@ -126,6 +138,25 @@ def _folder_dialog(title: str) -> "str | None":
     if dialogs is not None:
         return dialogs.open_folder(title, owner_title=WINDOW_TITLE)
     return open_folder_dialog(title, owner_title=WINDOW_TITLE)
+
+
+def _save_dialog(
+    default_name: str, filters: "list[tuple[str, str]]", default_ext: str
+) -> "str | None":
+    """native 저장 선택의 유일한 입구 — 위 둘의 셋째 짝(S7-03 · #825).
+
+    라이브 실행이 대체할 수 있는 표면에 저장 다이얼로그가 빠져 있으면 그 대본은 **첫 저장에서
+    실 OS 모달에 매달린다** — :class:`live_run.FileDialogs` 가 「반쪽 대체는 언젠가 조용히
+    멈춘다」로 못박아 둔 바로 그 자리다. 그래서 세 입구가 같은 모양으로 산다.
+    """
+    dialogs = _live_file_dialogs
+    if dialogs is not None:
+        return dialogs.save_file(
+            default_name, filters, default_ext, owner_title=WINDOW_TITLE
+        )
+    return save_file_dialog(
+        default_name, filters, default_ext, owner_title=WINDOW_TITLE
+    )
 
 
 # ------------------------------------------------------------------ 경로 해석
@@ -676,13 +707,71 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return None
 
+    def save_artifact_as(self, ordinal: object) -> dict:
+        """산출물 「다른 이름으로 저장」 — 원료는 **관찰한 그 bytes** 하나다(#820 D2).
+
+        직접 브리지 경로라 payload 검증이 이 본문에 산다(action registry 밖). 재물질화·
+        재생성 경로는 만들지 않는다: 저장 직전에 커널로 **다시 관찰**하고, 관찰이 서지
+        않으면 저장이 아니라 그 거절을 그대로 낸다 — 검증되지 않은 bytes 는 저장의 원료가
+        못 된다. 저장 자체의 실패(:data:`SAVE_COPY_FAILED`)는 관찰 상태와 **독립**으로
+        보고한다(#820 §3): 관찰은 성립했는데 옮겨 쓰기가 실패한 것을 무결성 실패로 접으면
+        사용자는 만든 문서가 깨졌다고 읽는다.
+
+        반환 ``{"ok", "status", "detail", "path"}`` — ``status`` 는 ``saved``·``cancelled``·
+        세션 좌표 밖·커널 거절 코드·``SAVE_COPY_FAILED`` 중 하나이고 서로 겹치지 않는다.
+        """
+        if not isinstance(ordinal, int) or isinstance(ordinal, bool):
+            # 브리지는 무형 경계다 — 형이 어긋난 payload 를 `int()` 로 조용히 구제하면
+            # 오타난 호출이 남의 문서를 저장한다(action registry 관문과 같은 결).
+            return {
+                "ok": False, "status": SAVE_COPY_FAILED, "path": "",
+                "detail": f"문서 번호가 정수가 아닙니다: {ordinal!r}",
+            }
+        document = self._controller("job").delivered_artifact(ordinal)
+        if document is None:
+            return {
+                "ok": False, "status": ARTIFACT_NOT_IN_SESSION, "path": "",
+                "detail": (
+                    "이 문서는 지금 세션의 생성 결과에 없습니다. "
+                    "문서를 다시 만든 뒤에 저장할 수 있습니다."
+                ),
+            }
+        observed = observe_delivered_artifact(
+            absolute_path=document.absolute_path,
+            recorded_digest=document.output_digest,
+        )
+        if isinstance(observed, ArtifactObservationRefused):
+            return {
+                "ok": False, "status": observed.code, "detail": observed.detail,
+                "path": "",
+            }
+        chosen = _save_dialog(
+            Path(document.absolute_path).name, _ARTIFACT_SAVE_FILTERS, "hwpx"
+        )
+        if not chosen:
+            return {"ok": False, "status": "cancelled", "detail": "", "path": ""}
+        try:
+            write_bytes_atomic(chosen, observed.exact_bytes)
+        except OSError as exc:
+            return {
+                "ok": False, "status": SAVE_COPY_FAILED, "path": "",
+                "detail": f"{chosen} 에 저장하지 못했습니다: {exc}",
+            }
+        return {"ok": True, "status": "saved", "detail": "", "path": chosen}
+
     def _validate_owned(self, path: str) -> str:
         """소유 화이트리스트(작업 템플릿·등록 데이터·현재 세션 경로)로 검증 — 순수 로직은
-        :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상)."""
+        :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상).
+
+        이 세션이 **방금 만들어 앉힌** 문서의 절대경로도 세션 성분으로 든다(S7-03 · #825):
+        결과 존의 행 어포던스(폴더에서 보기·경로 복사)가 겨누는 대상이고, 등록의 근거는
+        「앱 자신이 그 파일을 냈다」는 사실 하나다 — 판정 자체는 그대로 exact 대조라
+        화이트리스트가 넓어질 뿐 검증이 약해지지 않는다.
+        """
         ed = self._controller("editor")
         job = self._controller("job")
         session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
-                   getattr(job, "out_dir", "")]
+                   getattr(job, "out_dir", ""), *job.delivered_artifact_paths()]
         owned = collect_owned_paths(
             self._job_registry, self._pool_registry, session, base_dir=self._owned_path_base
         )

@@ -162,6 +162,12 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 보기 상태. 열림·자리와 같은 이유로 Python 소유라 웹은 의도한 값만 보낸다.
         "preview_blank_only": _schema("value"),
         "preview_approve": _schema(optional="preview_token"),
+        # 산출물 관찰 시트(S7-03 · #825, #820 D1·D4) — 생성 **후** 실물을 다시 읽어 보는
+        # 면이라 미리보기와 어휘가 갈린다. 겨눔의 정체는 배달 문서의 `ordinal` 이다:
+        # 표시 index·파일명은 그 사이 갈릴 수 있는 값이고 ordinal 은 그 실행이 고정한
+        # 좌표다. 열림 여부는 Python 소유라 닫기는 무페이로드다(preview_close 선례).
+        "artifact_open": _schema("ordinal"),
+        "artifact_close": _schema(),
         "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),

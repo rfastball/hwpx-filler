@@ -75,11 +75,17 @@ from ..application.execution_contract_set import (
     plan_semantic_digest,
 )
 from ..domain.identity_summary import identity_summary
+from ..external.artifact_observation import (
+    ArtifactObservationRefused,
+    observe_delivered_artifact,
+)
 from ..external.delivery_coordinator import (
+    DeliveredDocument,
     DeliveryAborted,
     DeliveryCompleted,
     DeliveryRefused,
 )
+from ..gui.artifact_view_state import observed_artifact_snapshot
 from ..external.ledger_export import write_managed_delivery_ledger
 from .managed_generation import (
     ManagedReadBackFailed,
@@ -291,6 +297,15 @@ def _template_conn(path: str) -> "tuple[bool, str]":
     missing = template_missing(path)
     return missing, (_CONN_MISSING_LABEL if missing else "")
 
+
+#: 산출물 관찰이 **세션 좌표에서** 서지 않았다(S7-03 · #825). 커널 거절 셋
+#: (:mod:`~hwpxfiller.external.artifact_observation`)과 겹치지 않는 넷째 상태다: 파일이
+#: 어떤가를 묻기도 전에 「그 문서가 이 세션 결과에 없다」로 끝난 경우다. 조용한 무시로
+#: 접지 않는 이유는 #775 교훈 그대로 — 준비 안 됨과 무결성 실패는 같은 빈 화면이 아니다.
+ARTIFACT_NOT_IN_SESSION = "ARTIFACT_NOT_IN_SESSION"
+
+#: 관찰이 성립한 상태의 이름표. 거절 코드와 같은 축에 실려 화면이 한 값으로 분기한다.
+ARTIFACT_OBSERVED = "observed"
 
 # 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
 # (data_zone.EMPTY_*)이 소유한다(PR-2b).
@@ -520,6 +535,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_sealed_plan_payload = None
         # 마지막 managed 완주의 실행 증거(S6-05) — 작업대 historical_outcome 으로만 나른다.
         self._last_managed_outcome: "HistoricalOutcomeSummary | None" = None
+        # 직전 managed 실행이 **실제로 disk 에 앉힌** 문서들(S7-03 · #825). 결과 존의 문서
+        # 목록과 산출물 관찰·「다른 이름으로 저장」이 겨누는 좌표이고, 범위는 **현재 세션
+        # 결과**뿐이다(#820 D5 — 원장 되읽기는 이 슬라이스 밖). bytes 는 들지 않는다:
+        # 관찰이 필요할 때마다 커널을 다시 부른다(#820 D1 — 캐시는 관찰 권위가 못 된다).
+        # 수명은 `_last_generated` 와 같은 자리다 — 데이터 교체·작업 전환에서 비운다.
+        self._last_delivered: "tuple[DeliveredDocument, ...]" = ()
+        # 산출물 관찰 시트의 **열림과 결과**(S7-03) — JobPreviewSheet 선례대로 열림·값이
+        # 전부 Python 소유다. DOM 이 들면 push 재렌더가 면을 조용히 닫거나 남의 문서를 그린다.
+        self._artifact_view: "dict | None" = None
         # 데이터 소스 factory 포트(P2-16) — **필수 주입**. 구체 선택(엑셀/CSV·풀 복원)은
         # 유일한 제품 조립점 `webapp.app` 이 하고, 이 컨트롤러는 링1 리졸버로 관통만 한다
         # (기본값·service locator 를 두면 링2 가 구체를 조용히 재선택하는 뒷문이 된다).
@@ -835,6 +859,86 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.preview_open = False
         self.preview_pos = 0
         self.preview_blank_only = False  # 면의 보기 상태 — 열림과 같은 수명(U2 §2.13)
+
+    # ---- 산출물 관찰(S7-03 · #825, #820 D1·D4) --------------------------------
+    def delivered_artifact(self, ordinal: int) -> "DeliveredDocument | None":
+        """이 세션이 앉힌 문서 중 ``item_ordinal`` 이 맞는 것 — 없으면 ``None``.
+
+        겨눔의 정체가 **ordinal** 인 이유는 표시 index·파일명이 그 사이 갈릴 수 있는 값이기
+        때문이다(선택·표시순서·재실행). ordinal 은 그 실행이 고정한 좌표다.
+        """
+        return next(
+            (d for d in self._last_delivered if d.item_ordinal == ordinal), None
+        )
+
+    def delivered_artifact_paths(self) -> "tuple[str, ...]":
+        """이 세션이 **앱 자신이 내준** 문서의 절대경로 전수.
+
+        소유 경로 화이트리스트(``webapp.app.WebFrontend._validate_owned``)의 세션 성분이다 —
+        행 어포던스(폴더에서 보기·경로 복사)가 결과 문서를 겨눌 수 있는 유일한 근거이고,
+        등록의 원천은 「이 앱이 방금 그 파일을 만들었다」는 사실 하나다(검증 완화 아님).
+        """
+        return tuple(d.absolute_path for d in self._last_delivered)
+
+    def _discard_delivered_artifacts(self) -> None:
+        """배달 좌표와 열린 관찰 면을 **함께** 놓는다.
+
+        좌표만 비우고 면을 남기면 그 면은 이미 없는 실행의 문서를 계속 그리고, 면만 닫고
+        좌표를 남기면 저장·관찰이 남의 데이터 좌표를 가리킨다. 둘은 한 수명이다.
+        """
+        self._last_delivered = ()
+        self._artifact_view = None
+
+    def _artifact_view_payload(self) -> dict:
+        """관찰 시트의 스냅샷 투영 — 닫힌 상태도 **키를 갖춰** 낸다(키 부재 분기 금지)."""
+        view = self._artifact_view
+        if view is None:
+            return {
+                "open": False, "ordinal": -1, "filename": "",
+                "status": "", "detail": "", "structure": None,
+            }
+        return dict(view)
+
+    def _do_artifact_open(self, p: dict) -> dict:
+        """배달 문서 하나를 **다시 관찰해** 시트를 연다(#820 D1).
+
+        성립 경로는 커널 재호출 하나뿐이다 — 세션이 bytes 를 들고 있다가 내주는 길은 없다.
+        서지 않는 경우(세션 좌표 밖·파일 부재·digest 불일치·재파싱 실패)는 전부 **면을 열어
+        사유를 말한다**: 조용히 무시하면 사용자는 「눌렀는데 아무 일도 없다」만 보고, 그것은
+        준비 안 됨과 무결성 실패를 같은 침묵으로 접는 것이다(#775 교훈).
+        """
+        ordinal = int(p["ordinal"])
+        doc = self.delivered_artifact(ordinal)
+        if doc is None:
+            self._artifact_view = {
+                "open": True, "ordinal": ordinal, "filename": "",
+                "status": ARTIFACT_NOT_IN_SESSION,
+                "detail": (
+                    "이 문서는 지금 세션의 생성 결과에 없습니다. "
+                    "문서를 다시 만든 뒤에 내용을 볼 수 있습니다."
+                ),
+                "structure": None,
+            }
+            return {"ok": True}
+        observed = observe_delivered_artifact(
+            absolute_path=doc.absolute_path, recorded_digest=doc.output_digest
+        )
+        if isinstance(observed, ArtifactObservationRefused):
+            # 사유는 커널 실측의 재진술이다 — 여기서 다시 짓지 않는다(판정 단일 출처).
+            self._artifact_view = {
+                "open": True, "ordinal": ordinal, "filename": doc.relative_path,
+                "status": observed.code, "detail": observed.detail, "structure": None,
+            }
+            return {"ok": True}
+        self._artifact_view = {
+            "open": True, "ordinal": ordinal, "filename": doc.relative_path,
+            "status": ARTIFACT_OBSERVED, "detail": "",
+            "structure": observed_artifact_snapshot(observed.package),
+        }
+        return {"ok": True}
+
+    def _do_artifact_close(self, p: dict) -> None:
+        self._artifact_view = None
 
     def _preview_blank_positions(self, mapped: "list[dict] | None" = None) -> "list[int]":
         """빈 값이 있는 건의 표시순 자리 — 판정은 링1
@@ -1608,6 +1712,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if notice_text else None
             ),
         }
+        # 산출물 관찰 시트(S7-03 · #825) — 열림·대상·판정·수치는 전부 Python 이 낸다.
+        # 어느 갈래로 빠져나가든 키가 있어야 표면이 키 부재로 갈라지지 않으므로 `base` 에 산다.
+        base["artifact_view"] = self._artifact_view_payload()
         # 「이 데이터로 새 작업」 가부(U2 §2.4·#349 리뷰 P1) — **판정은 여기 하나**다.
         # 표면이 `data_target.path` 유무로 유추하면 「누를 수 있다」고 그려 놓고 백엔드가
         # 거절하는 어긋남이 난다. 막힐 땐 숨기지 않고 비활성 + 사유 병기(조용한 무동작 금지).
@@ -2142,6 +2249,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if seat_kinds(job.template_path) != (self.job_is_txt, self.job_unsupported):
             self._seat_active_job(job)
             self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
+            self._discard_delivered_artifacts()  # 배달 좌표도 그 표면의 것이다(S7-03)
             self._do_preview_close({})
             return True
         # TXT 세션은 여기서 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로
@@ -2168,6 +2276,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
             # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
             self._last_generated = None
+            self._discard_delivered_artifacts()  # 옛 규칙으로 만든 문서다(S7-03)
             self._do_preview_close({})
         return True
 
@@ -2335,6 +2444,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _discard_active_work_session_evidence(self) -> None:
         """active Work에 묶인 실행·검토·미리보기 증거만 버린다."""
         self._last_generated = None
+        # 배달 좌표는 **그 작업의 실행**이 낸 것이다(S7-03) — 작업이 바뀌면 남의 문서를
+        # 가리키게 되므로 완주 담보와 같은 자리에서 놓는다.
+        self._discard_delivered_artifacts()
         self.review.clear()
         self._do_preview_close({})
 
@@ -2740,6 +2852,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
         self._install_filter(self.records, hints)
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
+        self._discard_delivered_artifacts()  # 배달 좌표도 이전 데이터의 것이다(S7-03)
         self._do_preview_close({})   # 미리보던 값은 이전 스냅샷의 것이다(F5)
 
     # (_do_ack_field·_do_unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13.
@@ -3010,6 +3123,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 유효하다(되읽기 실패도 안착 사실을 부정하지 않는다 — S7-01 · #823).
         delivered = list(outcome.delivered)
         succeeded = len(delivered)
+        # 세션이 앉힌 문서 좌표를 여기서 세운다(S7-03 · #825) — 되읽기 실패·중단 갈래도
+        # **앉은 것까지는** 유효하므로 같은 자리에서 실린다. 결과 dict 의 목록은 그
+        # 좌표의 투영이고 bytes 는 어느 쪽도 들지 않는다(#820 D1·D2).
+        self._last_delivered = tuple(delivered)
+        self._artifact_view = None  # 새 실행 = 열려 있던 관찰은 앞선 실행의 것이다
+        delivered_rows = [
+            {
+                "ordinal": doc.item_ordinal,
+                "filename": doc.relative_path,
+                "disposition": doc.collision_disposition,
+                "path": doc.absolute_path,
+            }
+            for doc in delivered
+        ]
         fill_notes = [
             describe_fill_note(note)
             for note in dict.fromkeys(
@@ -3052,6 +3179,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "total": total, "failures": [], "fill_notes": fill_notes,
                 "cancelled": False, "attempted": total, "unstarted": 0,
                 "revisions": dict(self._run_revisions),
+                "delivered": delivered_rows,
             }
         if isinstance(outcome, ManagedReadBackFailed):
             # 안착은 전건 됐고, 그중 하나를 되읽어 확인하는 데 실패했다(#818 회수) — 실패
@@ -3080,6 +3208,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "total": total, "failures": [failure], "fill_notes": fill_notes,
                 "cancelled": False, "attempted": total, "unstarted": 0,
                 "revisions": dict(self._run_revisions),
+                "delivered": delivered_rows,
             }
         # DeliveryAborted — 실패 항목에서 멈췄다(항목별 원자, 사실 그대로 표면화).
         failed_index, failure = self._managed_failure_row(
@@ -3106,6 +3235,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "total": total, "failures": failures, "fill_notes": fill_notes,
             "cancelled": False, "attempted": succeeded + 1, "unstarted": unstarted,
             "revisions": dict(self._run_revisions),
+            "delivered": delivered_rows,
         }
 
     def _managed_failure_row(

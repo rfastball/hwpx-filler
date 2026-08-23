@@ -515,6 +515,13 @@ def _run_with_home(
             return folder_answers.popleft()
         raise RuntimeError(f"대본에 없는 폴더 대화상자 요청: {title!r}")
 
+    def answer_save_dialog(  # noqa: ARG001 — 시그니처 계약 유지
+        default_name, filters, default_ext="", owner_title=None
+    ):
+        # 101 대본은 아직 「다른 이름으로 저장」을 밟지 않는다(S7-03). 대체가 **있다**는
+        # 사실이 계약이고, 대본에 없는 요청은 실 OS 모달에 매달리는 대신 시끄럽게 죽는다.
+        raise RuntimeError(f"대본에 없는 저장 대화상자 요청: {default_name!r}")
+
     def stage_template(kind: str) -> str:
         if kind not in ("initial", "successor"):
             raise ValueError(f"모르는 SX-05 template stage: {kind!r}")
@@ -740,7 +747,9 @@ def _run_with_home(
                 drive=drive,
                 write_output=write_evidence,
                 file_dialogs=live_run.FileDialogs(
-                    open_file=answer_file_dialog, open_folder=answer_folder_dialog
+                    open_file=answer_file_dialog,
+                    open_folder=answer_folder_dialog,
+                    save_file=answer_save_dialog,
                 ),
                 host_event=host_event,
                 host_wait_grace_s=BOOT_GRACE_S,
