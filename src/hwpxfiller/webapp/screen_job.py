@@ -82,6 +82,7 @@ from ..external.delivery_coordinator import (
 )
 from ..external.ledger_export import write_managed_delivery_ledger
 from .managed_generation import (
+    ManagedReadBackFailed,
     ManagedRunCancelled,
     ManagedRunRefused,
     run_managed_generation,
@@ -3005,7 +3006,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "unstarted": outcome.total - outcome.attempted,
                 "revisions": dict(self._run_revisions),
             }
-        # DeliveryCompleted | DeliveryAborted — 앉은 문서까지는 유효하다.
+        # DeliveryCompleted | ManagedReadBackFailed | DeliveryAborted — 앉은 문서까지는
+        # 유효하다(되읽기 실패도 안착 사실을 부정하지 않는다 — S7-01 · #823).
         delivered = list(outcome.delivered)
         succeeded = len(delivered)
         fill_notes = [
@@ -3051,26 +3053,39 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "cancelled": False, "attempted": total, "unstarted": 0,
                 "revisions": dict(self._run_revisions),
             }
+        if isinstance(outcome, ManagedReadBackFailed):
+            # 안착은 전건 됐고, 그중 하나를 되읽어 확인하는 데 실패했다(#818 회수) — 실패
+            # 항목도 disk 에 있으므로 미착수는 0 이고 성공 수에서만 빠진다.
+            succeeded -= 1
+            failed_index, failure = self._managed_failure_row(
+                prep, indices, outcome.failed_item_ordinal, outcome.detail
+            )
+            self._last_failed = [failed_index]
+            status = "partiallyCompleted" if succeeded else "failed"
+            summary = (
+                f"완료. 성공 {succeeded}/{total}, 실패 1. 문서는 만들었지만 만든 뒤 다시 "
+                f"읽어 확인하는 데 실패했습니다({outcome.code}). 해당 파일을 직접 열어 "
+                "내용을 확인하세요."
+            ) + ledger_note
+            return {
+                "ok": True, "status": status,
+                "title": _run_title(status, False, succeeded, 1),
+                "exit_summary": _run_exit_summary(
+                    status, False, succeeded, 1, 0, total, total
+                ),
+                "stage": "", "message": "", "known": True, "summary": summary,
+                "level": "danger", "out_dir": prep.result.output_directory,
+                "succeeded": succeeded, "failed": 1,
+                "failed_selectable": len(self._last_failed),
+                "total": total, "failures": [failure], "fill_notes": fill_notes,
+                "cancelled": False, "attempted": total, "unstarted": 0,
+                "revisions": dict(self._run_revisions),
+            }
         # DeliveryAborted — 실패 항목에서 멈췄다(항목별 원자, 사실 그대로 표면화).
-        failed_ordinal = outcome.failed_item_ordinal
-        failed_index = (
-            indices[failed_ordinal] if failed_ordinal < len(indices) else failed_ordinal
+        failed_index, failure = self._managed_failure_row(
+            prep, indices, outcome.failed_item_ordinal, outcome.detail
         )
-        failed_item = prep.result.ordered_items[failed_ordinal]
-        # identity 는 legacy 와 같은 링1 표시명(§10.10 판정 E) — 내부 locator 를 노출하지 않는다.
-        isum = identity_summary(
-            self.records, filename_tokens=self._filename_source_columns()
-        )
-        failures = [{
-            "index": failed_index,
-            "identity": (
-                isum.display_for(self.records[failed_index])
-                if 0 <= failed_index < len(self.records) else ""
-            ),
-            "filename": failed_item.resolved_output_relative_path,
-            "reason": outcome.detail,
-            "known": True,
-        }]
+        failures = [failure]
         self._last_failed = [failed_index]
         unstarted = total - succeeded - 1
         status = "partiallyCompleted" if succeeded else "failed"
@@ -3091,6 +3106,31 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "total": total, "failures": failures, "fill_notes": fill_notes,
             "cancelled": False, "attempted": succeeded + 1, "unstarted": unstarted,
             "revisions": dict(self._run_revisions),
+        }
+
+    def _managed_failure_row(
+        self, prep, indices, failed_ordinal: int, reason: str
+    ) -> "tuple[int, dict]":
+        """managed 실패 항목 하나 → legacy 실패 행(안착 중단·되읽기 실패가 같은 투영을 쓴다).
+
+        identity 는 legacy 와 같은 링1 표시명(§10.10 판정 E) — 내부 locator 를 노출하지 않는다.
+        """
+        failed_index = (
+            indices[failed_ordinal] if failed_ordinal < len(indices) else failed_ordinal
+        )
+        failed_item = prep.result.ordered_items[failed_ordinal]
+        isum = identity_summary(
+            self.records, filename_tokens=self._filename_source_columns()
+        )
+        return failed_index, {
+            "index": failed_index,
+            "identity": (
+                isum.display_for(self.records[failed_index])
+                if 0 <= failed_index < len(self.records) else ""
+            ),
+            "filename": failed_item.resolved_output_relative_path,
+            "reason": reason,
+            "known": True,
         }
 
     def _resolve_managed_template(self, run_vm) -> "dict | None":

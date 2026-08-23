@@ -1056,6 +1056,77 @@ def test_managed_generate_wires_session_facts_into_the_pipeline(
     assert _zone(ctrl)["historical_outcome"]["outcome_kind"] == "DOCUMENTS_DELIVERED"
 
 
+def test_managed_read_back_failure_maps_to_a_distinct_loud_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S7-01(#823): 되읽기 실패 → legacy 키 집합 그대로의 실패 1건 결과(JobResultZone 무변경).
+
+    안착은 전건 됐으므로 미착수는 0 이고 원장도 평소 경로로 기록된다 — 다른 것은 성공 수에서
+    한 건이 빠지고 사유가 「만든 뒤 다시 읽어 확인」 실패로 재진술된다는 점이다.
+    """
+    import hwpxfiller.webapp.screen_job as sj
+    from hwpxfiller.external.artifact_observation import ARTIFACT_DIGEST_MISMATCH
+    from hwpxfiller.external.delivery_coordinator import DeliveredDocument
+    from hwpxfiller.webapp.managed_generation import ManagedReadBackFailed
+
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+    ctrl.dispatch("resolve_execution", {})
+    rows = [{"이름": "A"}, {"이름": "B"}]
+    _mount_rows(ctrl, rows)
+
+    class Source:
+        def records(self) -> list[dict]:
+            return rows
+
+    ctrl.datasource = Source()
+    assert ctrl.vm is not None
+    ctrl.vm.set_acquired(ctrl.datasource, rows)
+    out = tmp_path / "delivery"
+    out.mkdir()
+    ctrl.set_output_folder(str(out))
+
+    delivered = (
+        DeliveredDocument(0, "rec-0", "a.hwpx", str(out / "a.hwpx"),
+                          "WRITE_NEW", "sha256:" + "0" * 64, ()),
+        DeliveredDocument(1, "rec-1", "b.hwpx", str(out / "b.hwpx"),
+                          "WRITE_NEW", "sha256:" + "1" * 64, ()),
+    )
+
+    def fake_run(**kw):
+        return ManagedReadBackFailed(
+            code=ARTIFACT_DIGEST_MISMATCH,
+            detail="b.hwpx 의 내용이 안착 기록과 다르다",
+            failed_item_ordinal=1,
+            delivered=delivered,
+        )
+
+    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    result = ctrl.generate(run_token="tk-rb")
+
+    assert result["ok"] is True, result.get("error")
+    assert result["status"] == "partiallyCompleted"
+    assert result["level"] == "danger"
+    # 안착은 전건 — 미착수 0, 시도 = 전체. 실패는 되읽기 1건뿐이다.
+    assert (result["succeeded"], result["failed"], result["total"]) == (1, 1, 2)
+    assert (result["unstarted"], result["attempted"]) == (0, 2)
+    assert len(result["failures"]) == 1
+    failure = result["failures"][0]
+    prep = ctrl._current_delivery_preparation
+    assert prep is not None
+    # ordinal → 표시 index·파일 이름 투영은 실 준비의 것이다(중단 갈래와 같은 방식).
+    assert failure["index"] == prep.record_preparation.ordered_model_indices[1]
+    assert (
+        failure["filename"] == prep.result.ordered_items[1].resolved_output_relative_path
+    )
+    assert failure["reason"] == "b.hwpx 의 내용이 안착 기록과 다르다"
+    # 중단(부분 안착)과 문안이 갈린다 — 유지 안내가 아니라 확인 요청이다.
+    assert ARTIFACT_DIGEST_MISMATCH in result["summary"]
+    assert "앉은 문서는 그대로 유지됩니다" not in result["summary"]
+    # 문서가 disk 에 있으므로 원장은 평소 경로로 기록된다(기록 실패 병기 없음).
+    assert list(out.glob("fill-ledger-*.json")), "managed 원장이 기록되지 않았다"
+
+
 # ── binding 없음 → 정직한 blocked(NO_EVIDENCE 를 CURRENT/READY 로 위장하지 않는다) ─────────────
 def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -> None:
     ctrl = _controller(tmp_path, with_binding=False)
