@@ -211,6 +211,11 @@ def value_type_of(value: CanonicalBindingValue) -> str:
 
 
 # ─── document-content-value/v1 정책 ──────────────────────────────────────────────
+# escaping 책임의 정본 값 — S6-06(#809)에서 production materializer 가 이 값을 실제로 읽어
+# fail-closed 한다(문자열 재타이핑 금지). 값 자체는 기존과 동일해 canonical digest 불변이다.
+ESCAPING_NATIVE_MATERIALIZER = "NATIVE_MATERIALIZER"
+
+
 @dataclass(frozen=True)
 class DocumentContentValuePolicy:
     """logical text resolution 과 XML escaping 을 분리한 값 정책.
@@ -240,7 +245,7 @@ DOCUMENT_CONTENT_VALUE_POLICY_V1 = DocumentContentValuePolicy(
     policy_id="document-content-value/v1",
     line_break_policy="PRESERVE_LOGICAL_LINE_BREAKS",
     whitespace_policy=WHITESPACE_PRESERVE_EXACT,
-    escaping_responsibility="NATIVE_MATERIALIZER",  # XML escaping 은 S6 소유
+    escaping_responsibility=ESCAPING_NATIVE_MATERIALIZER,  # XML escaping 은 S6 소유
     native_text_write_policy="WRITE_LOGICAL_TEXT_NODE",
 )
 
@@ -249,7 +254,7 @@ DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP = DocumentContentValuePolicy(
     policy_id="document-content-value/legacy-strip-v1",
     line_break_policy="PRESERVE_LOGICAL_LINE_BREAKS",
     whitespace_policy=WHITESPACE_STRIP_LEADING_TRAILING,
-    escaping_responsibility="NATIVE_MATERIALIZER",
+    escaping_responsibility=ESCAPING_NATIVE_MATERIALIZER,
     native_text_write_policy="WRITE_LOGICAL_TEXT_NODE",
 )
 

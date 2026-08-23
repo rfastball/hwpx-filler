@@ -1,10 +1,11 @@
 """In-memory native materialization conformance port (SG-02 · #734).
 
 이 모듈은 S5 composition theorem 이 **actual HWPX native mutation** 을 함의하지 않음을 반증
-가능하게 하는, 실제 production native primitive 위의 얇은 **sequencer + checker** 다. S6
-``StartMaterialization`` 이 이 두 함수(executor + postcondition verifier)를 fence·atomic
-delivery 로 감싸 재사용한다. **현재는 production 호출자가 0(unwired)** — harness·미래 S6 만
-import 한다.
+가능하게 하는, 실제 production native primitive 위의 얇은 **sequencer + checker** 다. production
+소유자는 S6-01(#809)의 :class:`hwpxfiller.external.materialization_runner
+.ProductionMaterializationRunner` **하나**다 — executor/verifier 를 ref+store 조달로 감싸
+재사용하고, S6-02 start gate·S6-04 atomic delivery 가 그 러너를 다시 감싼다. 다른 production
+모듈은 이 함수들을 직접 부르지 않는다(repo-contract 가 강제).
 
 경계(issue #734):
 - **새 의미(semantic) 파생 0**. 어떤 Option 을 제거할지는 오직 Plan 의 ``REMOVE_OPTION`` op 에서,
