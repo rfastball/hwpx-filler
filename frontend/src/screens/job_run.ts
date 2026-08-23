@@ -291,13 +291,9 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       log(String(res.error || "작업대를 열지 못했습니다."));
       return;
     }
-    if (isManagedHwpx(s)) {
-      const createAction = (s?.workbench_observation?.create_action || {}) as Obj;
-      const reason = createAction.disabled_reason
-        || s?.workbench_observation?.execution_status_phrase;
-      if (reason) log(String(reason));
-      return;
-    }
+    /* S6-05(#812): managed 조기 return(조용한 로그, #729 잔여위험 2)은 철거됐다 — managed
+       create 도 legacy 와 같은 generate 왕복을 탄다. 판정은 전부 백엔드가 진다: 준비 미달·
+       stale·admission 거절은 결과 dict 의 rejected 구획으로 시끄럽게 돌아온다(재조립 0). */
 
     /* 진입 직렬화는 **첫 await 앞**에 선다. legacy 는 커밋 관문(`flushPendingEdits`) 뒤에
        `generating` 을 세웠고 그 창에 둘째 클릭이 들어올 수 있었다 — 토큰이 없던 때는 둘째가
@@ -475,8 +471,13 @@ export function createJobRunController(deps: JobRunControllerDeps) {
          함께 접는다. `log`·`logOpen` 은 JobRunState 가 아니라 UiState 라 reducer 밖이다. */
       ui = { log: [], logOpen: false };
       setRun(closeResult(run));
+      // S6-05: managed 화면에선 #jobGenBtn 이 숨어 있다 — 눌렀던 create 로 초점을 되돌린다.
+      const managedButton = deps.doc.getElementById(
+        "jobManagedCreate",
+      ) as HTMLButtonElement | null;
       const button = deps.doc.getElementById("jobGenBtn") as HTMLButtonElement | null;
-      if (button && !button.disabled) button.focus();
+      if (managedButton && !managedButton.disabled) managedButton.focus();
+      else if (button && !button.disabled) button.focus();
       else deps.doc.getElementById("jobResultZone")?.focus();
     },
     async selectFailed(): Promise<void> {
