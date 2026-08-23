@@ -11,7 +11,11 @@ import os
 
 import pytest
 
-from hwpxfiller.external.atomic import write_bytes_atomic, write_text_atomic
+from hwpxfiller.external.atomic import (
+    write_bytes_atomic,
+    write_bytes_atomic_exclusive,
+    write_text_atomic,
+)
 
 
 def _tmp_leftovers(directory) -> "list[str]":
@@ -37,6 +41,38 @@ def test_overwrite_replaces_existing(tmp_path):
     target.write_text("이전", encoding="utf-8")
     write_text_atomic(target, "새 내용")
     assert target.read_text(encoding="utf-8") == "새 내용"
+
+
+# ------------------------------------------------------------------ no-clobber(S6-04 · #811)
+def test_exclusive_write_creates_when_absent(tmp_path):
+    target = tmp_path / "새문서.hwpx"
+    write_bytes_atomic_exclusive(target, b"PK\x03\x04")
+    assert target.read_bytes() == b"PK\x03\x04"
+    assert _tmp_leftovers(tmp_path) == []
+
+
+def test_exclusive_write_refuses_existing_and_keeps_it_intact(tmp_path):
+    """관찰과 쓰기 사이에 생긴 파일은 조용히 파괴되지 않는다 — 생성 자체가 검사다."""
+    target = tmp_path / "충돌.hwpx"
+    target.write_bytes(b"interloper")
+    with pytest.raises(FileExistsError):
+        write_bytes_atomic_exclusive(target, b"NEW")
+    assert target.read_bytes() == b"interloper"  # 기존 파일 무손상
+    assert _tmp_leftovers(tmp_path) == []        # 잔해 없음
+
+
+def test_exclusive_write_failure_cleans_tmp(tmp_path, monkeypatch):
+    """이동 단계 실패 — 임시 파일 정리 + 예외 전파(부분 산출물 0)."""
+    target = tmp_path / "f.hwpx"
+
+    def _boom(src, dst):
+        raise OSError(5, "I/O error")
+
+    monkeypatch.setattr("hwpxfiller.external.atomic.os.rename", _boom)
+    with pytest.raises(OSError):
+        write_bytes_atomic_exclusive(target, b"NEW")
+    assert not target.exists()
+    assert _tmp_leftovers(tmp_path) == []
 
 
 # ------------------------------------------------------------------ 실패 주입
