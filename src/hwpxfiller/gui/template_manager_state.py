@@ -2,9 +2,10 @@
 
 웹 템플릿·에디터 컨트롤러가 이 뷰모델을 들고
 ``rows()``·``actions_for(state)``·``scan_preview(path)``·``apply_fieldize(path)``·
+``convert_preview(path)``·``apply_convert(path)``·``slot_view(path)`` 와 Slot 관리 동사 셋·
 ``lint(path, vocabulary=None)``·``drift(old,new)`` 로 **렌더·오케스트레이션만** 한다. 상태 판정(compile_status)·상태별
-게이트 액션·2단계 fieldize(스캔 미리보기→적용)·lint/drift 는 전부 여기 산다 — PySide6 임포트
-없이 창 없이 테스트된다.
+게이트 액션·2단계 fieldize(스캔 미리보기→적용)·구간 표기 변환·Slot 목록 투영·lint/drift 는
+전부 여기 산다 — PySide6 임포트 없이 창 없이 테스트된다.
 
 **새 코어 없음.** 전부 기존 코어 재사용:
 - ``domain.template_status.compile_status`` — RAW/PARTIAL/COMPILED/FILLED 4-상태(호출마다 재산출).
@@ -25,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..application.template_qualification import TemplateDiagnostic
-from ..domain.authoring import CompileReport, TokenSite
+from ..domain.authoring import CompileReport, StructureScan, TokenSite
 from ..domain.fields import FillNote
 from ..domain.lint import LintReport, SchemaDrift
 from ..domain.slot import Slot
@@ -74,6 +75,14 @@ class TemplateFileOps:
     lint: "Callable[..., LintReport]"                # (path, vocabulary=None)
     diff: "Callable[[str, str], SchemaDrift]"
     read_fields: "Callable[[str], dict[str, str]]"
+    # 구간 표기 축(S8-03 #834). 컴파일 리포트·Slot 동사의 concrete 는 External 이 소유하고
+    # 링1 은 **형체만** 안다(``modified``·``slots``·``refusal`` 읽기) — 링1 이 External 타입을
+    # 임포트하면 링 경계가 뒤집힌다. Slot 동사 셋은 변이 뒤 제품 Slot 목록을 돌려준다.
+    scan_structure: "Callable[[str], StructureScan]"
+    compile_structure_file: "Callable[[str], object]"
+    rename_slot_label: "Callable[[str, str, str | None], tuple[Slot, ...]]"
+    decompile_slot: "Callable[[str, str], tuple[Slot, ...]]"
+    remove_slot: "Callable[[str, str], tuple[Slot, ...]]"
 
 
 class ResultLine(str):
@@ -106,12 +115,18 @@ class TemplateAction:
 
 
 # 상태 → 허용 액션(순수 함수의 단일 출처). C5 수용기준 1이 이 표를 못박는다.
-#   RAW      → [누름틀 변환]
+#   RAW      → [누름틀·구간 변환]
 #   PARTIAL  → [마저 변환] [검토]
 #   COMPILED → [미리보기] [작업 만들기]
 #   FILLED   → [미리보기]
+#
+# RAW 라벨은 S8-03 에서 「누름틀 변환」→「누름틀·구간 변환」이 됐다: 같은 한 동사가 필드
+# 토큰과 **구간 표기**를 함께 변환하므로(:meth:`TemplateManagerViewModel.apply_convert`)
+# 라벨이 누름틀만 말하면 구간 마커가 조용히 바뀐 것처럼 보인다. PARTIAL 의 「마저 변환」은
+# 그대로다 — 같은 동사의 이어하기라 대상을 다시 열거하지 않는다(COPY_STYLE_GUIDE §2:
+# 버튼은 명사구·동사구, 상태 문맥은 배지가 이미 말한다).
 _STATE_ACTIONS: "dict[CompileState, tuple[TemplateAction, ...]]" = {
-    CompileState.RAW: (TemplateAction("compile", "누름틀 변환"),),
+    CompileState.RAW: (TemplateAction("compile", "누름틀·구간 변환"),),
     CompileState.PARTIAL: (
         TemplateAction("compile", "마저 변환"),
         TemplateAction("review", "검토"),
@@ -149,6 +164,94 @@ class ScanPreview:
 
     def summary(self) -> str:
         return f"변환 가능 {len(self.compilable)}개 · 건너뜀 {len(self.skipped)}개"
+
+
+@dataclass(frozen=True)
+class ConvertPreview:
+    """「누름틀·구간 변환」 dry-run — 필드 토큰 축과 구간 표기 축을 **한 판정**으로(S8-03).
+
+    두 축을 따로 보여 주면 사용자가 「무엇이 바뀌는가」를 두 번 조립해야 하고, 표면이
+    그 합을 다시 계산하면 같은 상태를 두 곳이 판정한다. 판정은 여기 하나다:
+
+    - :attr:`blocked` — 표기 진단이 1건이라도 있으면 **변환 불가**다(부분 변환 경로 없음).
+    - :attr:`has_convertible` — 바꿀 것이 하나라도 있는가(필드 토큰 또는 구간 선언).
+    """
+
+    tokens: ScanPreview
+    slots: int = 0
+    options: int = 0
+    diagnostics: "tuple[str, ...]" = ()
+
+    @property
+    def blocked(self) -> bool:
+        """표기 진단 존재 = 변환 불가(확인을 묻지 않고 사유를 재진술한다)."""
+        return bool(self.diagnostics)
+
+    @property
+    def has_convertible(self) -> bool:
+        return bool(self.tokens.compilable) or self.slots > 0
+
+    def summary(self) -> str:
+        """「항목 n · 선택 m · 누름틀 k」 — 확인 왕복의 수치 재진술(#822 D7)."""
+        return (
+            f"항목 {self.slots}개 · 선택 {self.options}개 "
+            f"· 누름틀 {len(self.tokens.compilable)}개"
+        )
+
+
+@dataclass(frozen=True)
+class ConvertResult:
+    """「누름틀·구간 변환」 적용 결과 — 두 축의 성과와 **구조 거절**을 함께 진다.
+
+    ``refusals`` 가 비어 있지 않으면 구간 컴파일이 거절됐다는 뜻이다. 필드 변환이 이미
+    저장됐더라도 그 사실을 지우지 않는다(조용한 부분 성공 금지 — 결과 문구가 둘 다 말한다).
+    """
+
+    fields: int = 0
+    slots: int = 0
+    options: int = 0
+    refusals: "tuple[str, ...]" = ()
+
+    @property
+    def refused(self) -> bool:
+        return bool(self.refusals)
+
+
+@dataclass(frozen=True)
+class SlotRow:
+    """컴파일된 Slot 1건의 표시 투영 — **판정 없음**(Slot 객체를 그대로 편다)."""
+
+    id: str
+    label: str
+    option_count: int
+    options: "tuple[str, ...]"
+
+    @classmethod
+    def from_slot(cls, slot: Slot) -> "SlotRow":
+        return cls(
+            id=slot.id,
+            label=slot.label or "",
+            option_count=len(slot.options),
+            options=tuple(option.label or option.id for option in slot.options),
+        )
+
+
+@dataclass(frozen=True)
+class SlotView:
+    """한 템플릿의 Slot 목록 + 판독 진단(검토 결과 영역이 그릴 원료)."""
+
+    path: str
+    name: str
+    rows: "tuple[SlotRow, ...]" = ()
+    diagnostics: "tuple[str, ...]" = ()
+
+    def summary(self) -> str:
+        if self.diagnostics:
+            return f"구간 구조를 읽을 수 없습니다: {self.name}"
+        if not self.rows:
+            return f"구간 항목이 없습니다: {self.name}"
+        options = sum(row.option_count for row in self.rows)
+        return f"항목 {len(self.rows)}개 · 선택 {options}개"
 
 
 @dataclass
@@ -366,6 +469,135 @@ class TemplateManagerViewModel:
         if report.modified:
             self.refresh()
         return report
+
+    # ------------------------------------ 누름틀·구간 변환 2단계(S8-03 #834)
+    def convert_preview(self, path: str) -> ConvertPreview:
+        """dry-run — 필드 토큰 + 구간 표기를 한 미리보기로. **파일 무변형**(읽기 전용)."""
+        tokens = self.scan_preview(path)
+        scan = self._file_ops.scan_structure(str(path))
+        return ConvertPreview(
+            tokens=tokens,
+            slots=scan.summary.slots,
+            options=scan.summary.options,
+            diagnostics=tuple(item.message for item in scan.diagnostics),
+        )
+
+    def apply_convert(self, path: str) -> ConvertResult:
+        """명시적 적용 — **필드 컴파일 먼저, 구간 컴파일 다음**. 행 갱신 후 결과 반환.
+
+        **순서 근거(S8-02 실측)**: 구간을 먼저 컴파일하면 그 region 안의 ``{{필드}}`` 는
+        depth>0 이 되어 필드 스캔·컴파일에서 제외된다. 즉 순서를 뒤집으면 구간 안의 필드가
+        조용히 미변환으로 남는다.
+
+        두 단계는 각자 제자리 저장하는 파일 동사다(원자적 단일 저장은 두 커널 경로를 한
+        패키지 세션으로 묶는 별건이다). 그래서 구간 컴파일이 거절되면 **그 사실을 결과에
+        싣는다** — 필드만 저장되고 구조 거절이 조용히 사라지는 경로를 만들지 않는다.
+        """
+        report = self._file_ops.compile_file(str(path))
+        structure = self._file_ops.compile_structure_file(str(path))
+        refusal = getattr(structure, "refusal", None) or ()
+        slots = getattr(structure, "slots", ()) or ()
+        result = ConvertResult(
+            fields=len(report.compiled),
+            slots=len(slots),
+            options=getattr(structure, "options", 0),
+            refusals=tuple(item.message for item in refusal),
+        )
+        if report.modified or getattr(structure, "modified", False):
+            self.refresh()
+        return result
+
+    def format_convert_result(self, path: str, result: ConvertResult) -> ResultLine:
+        """적용 결과 → 결과 문구. 구조 거절이 있으면 그 사유가 같은 줄에 남는다."""
+        name = Path(path).name
+        parts = [f"누름틀 {result.fields}개"]
+        if result.slots:
+            parts.append(f"항목 {result.slots}개")
+        if result.options:
+            parts.append(f"선택 {result.options}개")
+        text = f"변환 완료 {name}: " + " · ".join(parts)
+        if not result.refused:
+            return ResultLine(text, "ok")
+        reasons = "\n".join(f"- {item}" for item in result.refusals)
+        return ResultLine(f"{text}\n구간 변환은 하지 못했습니다:\n{reasons}", "warn")
+
+    def format_convert_blocked_result(
+        self, path: str, preview: ConvertPreview
+    ) -> ResultLine:
+        """표기 진단 → 변환 불가 통지(인라인, warn). 확인을 묻지 않는다."""
+        reasons = "\n".join(f"- {item}" for item in preview.diagnostics)
+        return ResultLine(
+            f"변환할 수 없습니다 {Path(path).name}: 구간 표기를 고친 뒤 다시 시도하세요."
+            f"\n{reasons}",
+            "warn",
+        )
+
+    def format_convert_empty_result(self, path: str, preview: ConvertPreview) -> ResultLine:
+        """바꿀 것이 없음 → 인라인 결과(UD-24 동형, warn)."""
+        name = Path(path).name
+        text = f"변환 {name}: 변환할 토큰과 구간이 없습니다"
+        if preview.tokens.skipped:
+            names = ", ".join(site.name for site in preview.tokens.skipped)
+            text += f" (건너뜀 {len(preview.tokens.skipped)}개: {names})"
+        return ResultLine(text, "warn")
+
+    # ------------------------------------------- 컴파일된 Slot 목록·관리 동사
+    def slot_view(self, path: str) -> SlotView:
+        """한 템플릿의 Slot 목록 투영(읽기 전용) — 판정 재조립 없이 Slot 을 편다."""
+        name = Path(path).name
+        inspection = self._inspect_template(str(path))
+        return SlotView(
+            path=str(path),
+            name=name,
+            rows=tuple(SlotRow.from_slot(slot) for slot in inspection.slots),
+            diagnostics=tuple(item.message for item in inspection.diagnostics),
+        )
+
+    def rename_slot(self, path: str, slot_id: str, label: "str | None") -> SlotView:
+        """Slot label 변경(구조 무변형) — 저장 후 목록을 다시 투영한다."""
+        self._file_ops.rename_slot_label(str(path), slot_id, label)
+        self.refresh()
+        return self.slot_view(path)
+
+    def decompile_slot(self, path: str, slot_id: str) -> SlotView:
+        """Slot 하나를 구간 표기로 되돌리고 저장 — 그 템플릿은 다시 미변환 상태가 된다."""
+        self._file_ops.decompile_slot(str(path), slot_id)
+        self.refresh()
+        return self.slot_view(path)
+
+    def remove_slot(self, path: str, slot_id: str) -> SlotView:
+        """Slot 하나를 **내용째** 지우고 저장."""
+        self._file_ops.remove_slot(str(path), slot_id)
+        self.refresh()
+        return self.slot_view(path)
+
+    def format_slot_result(self, path: str, text: str, level: str = "ok") -> ResultLine:
+        """Slot 동사 결과 문구 — 대상 템플릿명을 늘 병기한다(RC-14 규율)."""
+        return ResultLine(f"{text}: {Path(path).name}", level)
+
+    def confirm_decompile_text(self, path: str, slot_id: str) -> str:
+        """표기로 풀기 확인 본문 — **전이의 결과**를 재진술한다(#822 D5).
+
+        푸는 순간 그 구간은 미변환 표기로 돌아가므로, 다시 변환하기 전에는 이 템플릿으로
+        문서를 만들 수 없다. 그 사실이 확인의 요점이다.
+        """
+        return (
+            f"'{slot_id}' 항목을 구간 표기로 되돌립니다.\n"
+            f"되돌린 뒤: '{Path(path).name}' 은(는) 다시 변환하기 전까지 문서를 만들 수 "
+            "없습니다.\n한글에서 표기를 고친 뒤 '누름틀·구간 변환'을 다시 하세요."
+        )
+
+    def confirm_remove_slot_text(self, path: str, slot_id: str) -> str:
+        """항목 삭제 확인 본문 — **내용까지** 사라진다는 손실 재진술(파괴 확정)."""
+        row = next(
+            (item for item in self.slot_view(path).rows if item.id == slot_id), None
+        )
+        options = "" if row is None else f" · 선택 {row.option_count}개"
+        return (
+            f"'{slot_id}' 항목을 지웁니다.\n"
+            f"사라지는 것: 항목 범위의 본문{options}\n"
+            f"대상 파일: {Path(path).name}"
+        )
 
     # ----------------------------------------------------------- lint/drift
     def lint(self, path: str, vocabulary=None) -> LintReport:

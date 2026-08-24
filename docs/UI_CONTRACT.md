@@ -441,8 +441,30 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   `window.alert`(`deps.notify`)는 **던져진 예외의 catch 백스톱 전용**이다. 종전에는 파일
   이름 탭에서만 인라인이라 나머지 두 탭의 거절이 모달 경보로 샜다 — 경보는 읽는 순간
   사라지고 그 뒤 화면은 왜 막혔는지 아무 말도 하지 않는다.
+- **「누름틀·구간 변환」과 구간 항목 관리**(S8-03 #834): 라이브러리 행의 상태 동사
+  `compile` 은 **한 동사로 두 축**을 변환한다 — 필드 토큰(`compile_document`)을 먼저,
+  구간 표기(`compile_structure`)를 다음에(순서는 계약이다: 구조를 먼저 만들면 그 안의
+  `{{필드}}` 가 depth>0 이 되어 필드 컴파일에서 조용히 빠진다). 라벨은 링1
+  `_STATE_ACTIONS` 소유고 RAW 에서 「누름틀·구간 변환」이다. 미리보기·판정·문안은 전부 링1
+  (`convert_preview`·`apply_convert`·`format_convert_*`)이고, **표기 진단이 1건이라도 있으면
+  확인을 묻지 않고** 인라인 결과로 차단 사유를 재진술한다(변환 불가는 확정할 것이 아니다).
+  구조 컴파일이 거절되면 필드 변환이 이미 저장됐더라도 그 거절이 같은 결과 줄에 실린다.
+  - `review` 는 lint 결과에 더해 그 템플릿의 **구간 항목 목록**을 스냅샷 `library.slots`
+    (`{path, name, summary, rows[{id,label,option_count,options}], diagnostics}`)로 세운다.
+    투영·수명은 `TemplateController` 소유고 편집기 스냅샷은 읽기만 한다(결과 줄과 같은
+    규율 — 조립 한 줄은 `app.py` 의 `library_slots`). 목록이 겨눈 파일이 라이브러리에서
+    사라지면 스냅샷이 스스로 `null` 로 걷는다(죽은 경로를 겨눈 버튼 금지).
+  - 표면은 `#tplSlots` 구획이고 행 동사 셋은 `data-act="slot-rename"`·`"slot-decompile"`·
+    `"slot-remove"`(+`data-slot=<id>`)다. 개명은 `Modal.prompt` 하나로 끝나고(파괴 아님),
+    표기로 되돌리기·삭제는 `needs_confirm` 왕복이다 — **확인 본문은 Python 이 싣는다**
+    (되돌리기는 「다시 변환 전까지 문서를 만들 수 없다」는 전이 결과를, 삭제는 손실 집합을
+    재진술한다). 판독 진단이 있으면 사유만 서고 동사 버튼은 아예 없다.
+  - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
+    (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
+    한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
-  (`compile` 확정 · `txt_edit` · `delete` · `undo_delete`) 그 성공 **직후**
+  (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_remove` 확정 · `txt_edit` ·
+  `delete` · `undo_delete`) 그 성공 **직후**
   `TemplateController.mutation_sinks` 가 `(kind, path)` 로 통지하고
   `EditorController.reconcile_template_mutation` 이 같은 파일을 든 세션만 다시 세운다
   (경로 대조는 `template_groups.norm_library_path` 단일 술어, 남의 파일이면 푸시도 없다).

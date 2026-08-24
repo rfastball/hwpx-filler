@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import zipfile
 from collections import Counter
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -24,7 +24,9 @@ from hwpxcore.bookmark_region import (
     create_bookmark_region,
     remove_bookmark_region,
     remove_top_level_paragraph,
+    replace_bookmark_metatag,
     resolve_bookmark_topology,
+    unwrap_bookmark_region,
 )
 from hwpxcore.native_admission import (
     BookmarkRemovalBlocker,
@@ -82,7 +84,10 @@ from ..domain.authoring import (
     CompileReport,
     StructureScan,
     TokenSite,
+    begin_marker_text,
     compile_document,
+    end_marker_text,
+    insert_marker_paragraphs,
     scan_structure,
     scan_tokens,
 )
@@ -1460,25 +1465,50 @@ def _require_mutable_snapshot(pkg: object) -> tuple[object, _SlotSnapshot]:
     return package, snapshot
 
 
+def _guarded_slot_mutation(
+    package: object,
+    mutate: "Callable[[], None]",
+    verify: "Callable[[], None]",
+) -> None:
+    """제품 Slot 변이의 공용 몸통 — entries 백업 → 변이 → 사후조건 → 실패 시 롤백.
+
+    사후조건이 동사마다 다르므로(삭제는 남은 Slot, 풀기는 표기 복원까지) 검사 자체는
+    호출자가 ``verify`` 로 싣는다. **롤백 범위는 이 몸통 하나**라 어느 동사도 반쯤
+    바뀐 패키지를 남기지 않는다.
+    """
+    entries = package.entries  # type: ignore[attr-defined]
+    original = dict(entries)
+    try:
+        mutate()
+        verify()
+    except Exception:
+        entries.clear()
+        entries.update(original)
+        raise
+
+
+def _require_slots(
+    package: object, expected: "tuple[Slot, ...]", what: str
+) -> None:
+    """변이 후 제품 판독이 기대치와 같은가 — 다르면 어느 동사가 왜 깨졌는지 남긴다."""
+    actual, diagnostics = inspect_slots(package)
+    if diagnostics or actual != expected:
+        raise ValueError(
+            f"{what} postcondition failed: "
+            f"expected {expected!r}, got {actual!r} with {diagnostics!r}"
+        )
+
+
 def _remove_product_region(
     package: object,
     region: BookmarkRegion,
     expected: tuple[Slot, ...],
 ) -> None:
-    entries = package.entries  # type: ignore[attr-defined]
-    original = dict(entries)
-    try:
-        remove_bookmark_region(package, region)
-        actual, diagnostics = inspect_slots(package)
-        if diagnostics or actual != expected:
-            raise ValueError(
-                "Slot removal postcondition failed: "
-                f"expected {expected!r}, got {actual!r} with {diagnostics!r}"
-            )
-    except Exception:
-        entries.clear()
-        entries.update(original)
-        raise
+    _guarded_slot_mutation(
+        package,
+        lambda: remove_bookmark_region(package, region),
+        lambda: _require_slots(package, expected, "Slot removal"),
+    )
 
 
 def remove_slot(pkg: object, slot_id: str) -> None:
@@ -1520,6 +1550,192 @@ def remove_slot_option(pkg: object, slot_id: str, option_id: str) -> None:
     _remove_product_region(package, region, expected)
 
 
+# --------------------------------------- 컴파일된 Slot 의 개명·표기로 풀기(S8-03 #834)
+# 삭제(:func:`remove_slot`)와 같은 결이다: ``_require_mutable_snapshot`` fail-closed →
+# 변이 전 좌표·핸들 확보 → :func:`_guarded_slot_mutation` 안에서 변이·사후조건·롤백.
+# **커널 신설 0** — 소비하는 프리미티브는 ``replace_bookmark_metatag``(개명)과
+# ``unwrap_bookmark_region``(풀기)뿐이고, 마커 문단 저작은 Domain 이 진다.
+
+
+def _is_product_payload(raw: str) -> bool:
+    """이 MetaTag 문자열이 제품 payload 인가(``hwpxFiller`` 보유)."""
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(value, dict) and "hwpxFiller" in value
+
+
+def _product_metatag_index(region: BookmarkRegion) -> int:
+    """제품 payload 를 실은 ``hp:metaTag`` 의 **순서 index**(교체 프리미티브의 주소).
+
+    진단 0 인 스냅샷에서만 부른다 — 제품 payload 가 2건 이상이면
+    ``conflicting-product-metatag`` 진단이 먼저 서서 여기 도달하지 않는다. 그래도
+    1건이 아니면 엉뚱한 MetaTag 를 덮지 않고 시끄럽게 멈춘다.
+    """
+    matches = [
+        index for index, raw in enumerate(region.meta_tags) if _is_product_payload(raw)
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"product MetaTag is not uniquely addressable: {region.name!r} ({len(matches)})"
+        )
+    return matches[0]
+
+
+def _relocate_region(package: object, region: BookmarkRegion) -> BookmarkRegion:
+    """같은 정체(이름·좌표·MetaTag)의 **현재** 핸들을 다시 집는다.
+
+    핸들은 섹션 바이트에 묶여 있어 변이 한 번이면 낡는다(:func:`_locate_region` 동형).
+    여러 region 을 잇달아 걷을 때 각 걸음 직전에 이것으로 되집는다.
+    """
+    identity = (
+        region.section,
+        region.name,
+        region.start_paragraph,
+        region.end_paragraph,
+        region.meta_tags,
+    )
+    matches = [
+        item
+        for item in resolve_bookmark_topology(package)
+        if (
+            item.section,
+            item.name,
+            item.start_paragraph,
+            item.end_paragraph,
+            item.meta_tags,
+        )
+        == identity
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"BOOKMARK is not uniquely resolvable: {identity!r} ({len(matches)})"
+        )
+    return matches[0]
+
+
+def _region_identity_counter(
+    regions: "Iterable[BookmarkRegion]",
+) -> "Counter[tuple[object, ...]]":
+    """region 정체(이름·MetaTag)의 다중집합 — 위치·계층은 뺀다.
+
+    위치는 마커 문단이 늘면서 **의도대로** 밀린다. 계층도 뺀다: 걷어낸 region 안에
+    있던 남의 region 은 커널 unwrap 이 부모로 승격시키는 것이 계약이고 그 승격의
+    정확성은 커널 자신의 사후조건이 이미 검사한다. 여기서 계층까지 못박으면 정상적인
+    승격이 「보존 실패」로 뒤집힌다.
+    """
+    return Counter(
+        (region.section, region.name, region.meta_tags, region.meta_tag_attribute)
+        for region in regions
+    )
+
+
+def rename_slot_label(pkg: object, slot_id: str, new_label: "str | None" = None) -> None:
+    """컴파일된 Slot 의 **label 만** 바꾼다(구조 무변형).
+
+    ``new_label`` 이 ``None`` 이거나 공백뿐이면 label 을 **뗀다**(payload 에서 키 탈락).
+    공백은 접는다 — 되쓰기(:func:`decompile_slot`)가 도로 읽을 수 있는 값만 만든다.
+    """
+    identifier = _require_text(slot_id, "Slot id")
+    if new_label is not None and not isinstance(new_label, str):
+        raise ValueError(f"Slot label must be str or None: {type(new_label)!r}")
+    label = " ".join(new_label.split()) if new_label else ""
+    package, snapshot = _require_mutable_snapshot(pkg)
+    region = snapshot.slot_regions.get(identifier)
+    if region is None:
+        raise ValueError(f"Slot {identifier!r} was not found")
+    index = _product_metatag_index(region)
+    expected = tuple(
+        Slot(slot.id, slot.options, label or None) if slot.id == identifier else slot
+        for slot in snapshot.slots
+    )
+    payload = serialize_slot_metatag(
+        next(slot for slot in expected if slot.id == identifier)
+    )
+    _guarded_slot_mutation(
+        package,
+        lambda: replace_bookmark_metatag(package, region, index, payload),
+        lambda: _require_slots(package, expected, "Slot rename"),
+    )
+
+
+def decompile_slot(pkg: object, slot_id: str) -> None:
+    """컴파일된 Slot 하나를 **구간 표기로 되돌린다**(:func:`compile_structure` 의 역함수).
+
+    ① 대상 Slot region 과 소속 Option region 의 **변이 전 좌표**를 뜬다.
+    ② Option → Slot 순으로 ``unwrap_bookmark_region`` 으로 ctrl 쌍만 걷는다(문단
+       무변형이라 ①의 좌표가 그대로 유효하다).
+    ③ 그 좌표에 마커 문단을 되심는다 — 문서 읽기 순서(항목 여는 마커 → 선택 마커들 →
+       항목 닫는 마커)대로 실어 보내고 삽입 순서 처리는 Domain 이 진다.
+    ④ 사후조건: 표기 진단 0 · 그 선언이 표기로 전건 복원 · 남은 제품 Slot == 기존 − 대상 ·
+       비제품 region 정체 보존. 하나라도 깨지면 패키지는 원본으로 돌아간다.
+
+    **문서 전체 일괄 풀기는 없다**(#822 D6) — 대상은 언제나 Slot 하나다.
+    """
+    identifier = _require_text(slot_id, "Slot id")
+    package, snapshot = _require_mutable_snapshot(pkg)
+    region = snapshot.slot_regions.get(identifier)
+    if region is None:
+        raise ValueError(f"Slot {identifier!r} was not found")
+    slot = next(item for item in snapshot.slots if item.id == identifier)
+    options = [
+        (option, snapshot.option_regions[(identifier, option.id)])
+        for option in slot.options
+    ]
+    entry = region.section
+    for option, option_region in options:
+        if option_region.section != entry:
+            # 범위는 한 content XML 안에서 닫힌다(스캐너와 같은 계약) — 어긋나면
+            # 되쓴 표기가 도로 읽히지 않는다.
+            raise ValueError(
+                f"Slot {identifier!r} option {option.id!r} lives in another entry"
+            )
+
+    markers: "list[tuple[int, str]]" = [
+        (region.start_paragraph, begin_marker_text(PLACEMENT_SLOT, slot.id, slot.label))
+    ]
+    for option, option_region in options:
+        markers.append(
+            (
+                option_region.start_paragraph,
+                begin_marker_text(PLACEMENT_OPTION, option.id, option.label),
+            )
+        )
+        markers.append((option_region.end_paragraph + 1, end_marker_text(PLACEMENT_OPTION)))
+    markers.append((region.end_paragraph + 1, end_marker_text(PLACEMENT_SLOT)))
+
+    expected = tuple(item for item in snapshot.slots if item.id != identifier)
+    before = _region_identity_counter(resolve_bookmark_topology(package))
+    removed = _region_identity_counter(
+        [region, *(option_region for _option, option_region in options)]
+    )
+
+    def mutate() -> None:
+        for _option, option_region in options:
+            unwrap_bookmark_region(package, _relocate_region(package, option_region))
+        unwrap_bookmark_region(package, _relocate_region(package, region))
+        insert_marker_paragraphs(package, entry, markers)
+
+    def verify() -> None:
+        residue = scan_structure(package)
+        if residue.diagnostics or residue.slots != (slot,):
+            raise ValueError(
+                "Slot decompile postcondition (notation) failed: "
+                f"expected {(slot,)!r}, got {residue.to_dict()!r}"
+            )
+        _require_slots(package, expected, "Slot decompile")
+        after = _region_identity_counter(resolve_bookmark_topology(package))
+        if after != before - removed:
+            raise ValueError(
+                "Slot decompile postcondition (pre-existing regions) failed: "
+                f"expected {sorted(map(repr, before - removed))!r}, "
+                f"got {sorted(map(repr, after))!r}"
+            )
+
+    _guarded_slot_mutation(package, mutate, verify)
+
+
 # ------------------------------------------------- 구간 표기 → native Slot 컴파일(S8-02)
 # **왜 여기(External)인가.** #822 는 domain 확장을 「제안」했지만, 이 오케스트레이션의
 # 사후조건이 :func:`inspect_slots`(External 이 소유한 제품 판독)를 요구하고, 「entries
@@ -1551,6 +1767,12 @@ class StructureCompileRefusalKind(StrEnum):
     NATIVE_BLOCKER = "native-blocker"
     EXISTING_PRODUCT = "existing-product"
     NAME_COLLISION = "name-collision"
+
+
+#: :attr:`StructureCompileRefusalKind.EXISTING_PRODUCT` 의 전용 code — 선언 id 가 기존
+#: 제품 Slot id 와 겹쳤다(사후조건 성립 불가). 기존 제품 **판독 진단** 과 갈라 두는 이유는
+#: 상위 링의 조치가 다르기 때문이다(id 를 바꾼다 vs 깨진 구조를 고친다).
+DUPLICATE_SLOT_ID = "duplicate-slot-id"
 
 
 @dataclass(frozen=True)
@@ -1693,8 +1915,12 @@ def _structure_preflight(
     if refusals:
         return tuple(dict.fromkeys(refusals))
 
-    # 사후조건 ⓐ 는 「컴파일 뒤 제품 Slot == 선언」이다. 이미 제품 Slot 이 든 문서는
-    # 그 등식이 성립할 수 없으므로 사후조건 실패(raise)로 흘리지 않고 여기서 거절한다.
+    # 기존 제품 Slot 과의 공존(S8-03 D6). 사후조건 ⓐ 는 「컴파일 뒤 제품 Slot ==
+    # 기존 ∪ 선언」으로 일반화됐으므로(:func:`_merged_slot_expectation`) 유효한 기존
+    # 구조는 더 이상 거절 사유가 아니다 — 풀기→한글 수정→재컴파일 왕복은 **다른 슬롯이
+    # 컴파일된 채 남아 있는 문서**에서 성립해야 하는 경로다. 남는 거절은 둘이다:
+    # 기존 제품 판독 진단(그 문서의 구조를 못 믿는다)과 **id 중복**(같은 id 가 둘이면
+    # 사후조건이 성립할 수 없고 판독도 어느 쪽을 가리키는지 갈린다).
     existing, diagnostics = inspect_slots(package)
     refusals.extend(
         _refusal(
@@ -1702,14 +1928,16 @@ def _structure_preflight(
         )
         for item in diagnostics
     )
+    taken = {slot.id for slot in existing}
     refusals.extend(
         _refusal(
             StructureCompileRefusalKind.EXISTING_PRODUCT,
-            "product-slot-present",
-            f"이미 「{slot.id}」 항목이 누름틀 구조로 들어 있습니다 — 표기 컴파일은 "
-            "구조가 없는 문서에서만 합니다.",
+            DUPLICATE_SLOT_ID,
+            f"'{slot.id}' 항목이 이미 누름틀 구조로 들어 있습니다. 표기의 id 를 바꾸거나 "
+            "기존 항목을 먼저 지우세요.",
         )
-        for slot in existing
+        for slot in scan.slots
+        if slot.id in taken
     )
     if refusals:
         return tuple(refusals)
@@ -1842,18 +2070,50 @@ def _locate_region(
     return matches[0]
 
 
+def _merged_slot_expectation(
+    package: PackageLike, scan: StructureScan
+) -> "tuple[Slot, ...]":
+    """사후조건 ⓐ 의 기대치 — 기존 slots ∪ 선언 slots 를 **문서 위치 순**으로 병합(S8-03).
+
+    위치는 **변이 전 좌표**로 잰다: 기존 region 은 시작 문단, 선언은 배치의
+    ``content_start``. 컴파일이 하는 변형은 마커 문단 삭제와 BOOKMARK 쌍 삽입뿐이라
+    **상대 순서를 바꾸지 않으므로** 변이 전 좌표로 세운 이 순서가 변이 후 판독
+    (:func:`inspect_slots` 의 문서 순서)과 같다.
+
+    같은 좌표에서는 기존이 앞선다 — 선언 범위가 기존 region 을 품으면 커널이 먼저
+    거절하므로(``changed existing native topology``) 실제로 겹치는 경우가 없고, 그래도
+    갈리면 사후조건이 시끄럽게 깨지는 쪽을 고른다.
+    """
+    order = {name: index for index, name in enumerate(section_xml_names(package))}
+    snapshot = _inspect_slot_snapshot(package)
+    placed: "list[tuple[tuple[int, int, int], Slot]]" = []
+    for slot in snapshot.slots:
+        region = snapshot.slot_regions[slot.id]
+        placed.append(((order[region.section], region.start_paragraph, 0), slot))
+    starts = {
+        placement.slot_id: (order[placement.entry], placement.content_start)
+        for placement in scan.placements
+        if placement.kind == PLACEMENT_SLOT
+    }
+    for slot in scan.slots:
+        entry_index, start = starts[slot.id]
+        placed.append(((entry_index, start, 1), slot))
+    placed.sort(key=lambda item: item[0])
+    return tuple(slot for _key, slot in placed)
+
+
 def _assert_structure_postconditions(
     package: PackageLike,
-    scan: StructureScan,
+    expected: "tuple[Slot, ...]",
     created: "frozenset[tuple[str, str]]",
     before: "Counter[_RegionShape]",
 ) -> None:
     """ⓐ 선언 복원 · ⓑ 표기 잔존 0 · ⓒ 기존 region 보존. 어느 쪽이 왜 깨졌는지 구분한다."""
     slots, diagnostics = inspect_slots(package)
-    if diagnostics or slots != scan.slots:
+    if diagnostics or slots != expected:
         raise ValueError(
             "structure compile postcondition A (declared Slots) failed: "
-            f"expected {scan.slots!r}, got {slots!r} with {diagnostics!r}"
+            f"expected {expected!r}, got {slots!r} with {diagnostics!r}"
         )
     residue = scan_structure(package)
     if residue.slots or residue.diagnostics or residue.placements:
@@ -1903,11 +2163,12 @@ def compile_structure(pkg: object) -> StructureCompileReport:
     before = _non_product_region_shape(
         resolve_bookmark_topology(package), frozenset()
     )
+    expected = _merged_slot_expectation(package, scan)
     entries = package.entries
     original = dict(entries)
     try:
         _create_structure_regions(package, scan)
-        _assert_structure_postconditions(package, scan, created, before)
+        _assert_structure_postconditions(package, expected, created, before)
     except Exception:
         entries.clear()
         entries.update(original)
@@ -1927,6 +2188,42 @@ def compile_structure_file(path: str) -> StructureCompileReport:
     if report.modified:
         write_hwpx_package(path, package)
     return report
+
+
+def _mutate_slot_file(
+    path: str, mutate: "Callable[[object], None]"
+) -> "tuple[Slot, ...]":
+    """경로를 열어 Slot 동사 하나를 돌리고 **성공했을 때만** 같은 경로에 저장.
+
+    동사가 거절하면(``ValueError``) 파일은 한 바이트도 바뀌지 않는다 —
+    :func:`compile_structure_file` 과 같은 규율이다. 반환은 변이 뒤 제품 Slot 목록이라
+    상위 링이 결과를 재진술하려고 파일을 다시 열지 않는다.
+    """
+    package = read_hwpx_package(path)
+    mutate(package)
+    write_hwpx_package(path, package)
+    slots, _diagnostics = inspect_slots(package)
+    return slots
+
+
+def rename_slot_label_file(path: str, slot_id: str, label: "str | None" = None):
+    """경로의 Slot label 을 바꾸고 제자리 저장(성공 시에만)."""
+    return _mutate_slot_file(path, lambda pkg: rename_slot_label(pkg, slot_id, label))
+
+
+def decompile_slot_file(path: str, slot_id: str):
+    """경로의 Slot 하나를 구간 표기로 되돌리고 제자리 저장(성공 시에만)."""
+    return _mutate_slot_file(path, lambda pkg: decompile_slot(pkg, slot_id))
+
+
+def remove_slot_file(path: str, slot_id: str):
+    """경로의 Slot 하나를 **내용째** 지우고 제자리 저장(성공 시에만)."""
+    return _mutate_slot_file(path, lambda pkg: remove_slot(pkg, slot_id))
+
+
+def scan_template_structure(path: str) -> StructureScan:
+    """경로 → 구간 표기 스캔(읽기 전용, 파일 무변형)."""
+    return scan_structure(read_hwpx_package(path))
 
 
 def inspect_hwpx_template(path: str) -> TemplateInspection:
@@ -2013,4 +2310,9 @@ HWPX_TEMPLATE_OPS = TemplateFileOps(
     lint=lint_template_file,
     diff=diff_template_schemas,
     read_fields=read_template_fields,
+    scan_structure=scan_template_structure,
+    compile_structure_file=compile_structure_file,
+    rename_slot_label=rename_slot_label_file,
+    decompile_slot=decompile_slot_file,
+    remove_slot=remove_slot_file,
 )

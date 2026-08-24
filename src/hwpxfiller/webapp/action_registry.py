@@ -269,6 +269,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "refresh": _schema(),
         "compile": _schema("path", "confirm"),
         "review": _schema("path"),
+        # 컴파일된 Slot 관리(S8-03 #834). 개명은 구조 무변형이라 무확인이고, 표기로 풀기·
+        # 삭제는 확인 왕복이다(`confirm` 2차 호출).
+        "slot_rename": _schema("path slot_id", "label"),
+        "slot_decompile": _schema("path slot_id", "confirm"),
+        "slot_remove": _schema("path slot_id", "confirm"),
         "set_group": _schema("media key", "group"),
         "toggle_group": _schema("media group"),
         "rename_group": _schema("media group", "new confirm"),

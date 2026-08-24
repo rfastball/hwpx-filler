@@ -1315,6 +1315,128 @@ def scan_structure(pkg: object) -> StructureScan:
     )
 
 
+# ------------------------------------------- 구간 표기 되쓰기(S8-03 #834 · 표기로 풀기)
+# 컴파일의 역함수(External ``decompile_slot``)는 native Slot 구조를 걷고 **그 자리에 마커
+# 문단을 되심는다**. 마커 텍스트와 문단 저작은 그 오케스트레이션이 아니라 **여기** 산다:
+# 형식의 단일 출처는 그것을 읽는 스캐너(:func:`scan_structure`)와 같은 모듈이어야 하고
+# (읽기와 쓰기가 갈리면 「도로 읽히지 않는 마커」가 조용히 난다), 섹션 XML 저작은 이미
+# :func:`compile_document` 가 지는 이 모듈의 책임이다.
+_PLACEMENT_KEYWORDS = {PLACEMENT_SLOT: _SLOT_KEYWORD, PLACEMENT_OPTION: _OPTION_KEYWORD}
+
+
+def _placement_keyword(kind: str) -> str:
+    keyword = _PLACEMENT_KEYWORDS.get(kind)
+    if keyword is None:  # 오타는 조용히 「항목」으로 접히지 않는다
+        raise ValueError(f"알 수 없는 구간 종류입니다: {kind!r}")
+    return keyword
+
+
+def _marker_identifier(value: object) -> str:
+    """마커에 실을 id — **스캐너가 같은 값으로 도로 읽는지**가 통과 조건이다.
+
+    :func:`~hwpxfiller.domain.fields.normalize_field_id` 가 공백을 접고 스캐너가
+    id 와 label 을 공백으로 가르므로, 공백을 품은 id 는 되읽기에서 갈라진다. 추측해
+    잘라 쓰지 않고 시끄럽게 멈춘다.
+    """
+    ident = normalize_field_id(value)
+    if ident is None:
+        raise ValueError("구간 id 가 비어 있습니다.")
+    if any(character.isspace() for character in ident) or "{{" in ident or "}}" in ident:
+        raise ValueError(f"구간 표기로 되쓸 수 없는 id 입니다: {ident!r}")
+    return ident
+
+
+def _marker_label(value: object) -> str:
+    """마커에 실을 label — 되읽기 동등(공백 접힘·괄호 없음)만 통과."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"구간 label 은 문자열이어야 합니다: {type(value)!r}")
+    if not value.strip():
+        return ""
+    if " ".join(value.split()) != value or "{{" in value or "}}" in value:
+        raise ValueError(f"구간 표기로 되쓸 수 없는 label 입니다: {value!r}")
+    return value
+
+
+def begin_marker_text(kind: str, identifier: object, label: object = None) -> str:
+    """여는 구간 마커 1건의 문단 텍스트(``{{#항목 id label}}``)."""
+    keyword = _placement_keyword(kind)
+    ident = _marker_identifier(identifier)
+    tail = _marker_label(label)
+    body = f"#{keyword} {ident}" + (f" {tail}" if tail else "")
+    return "{{" + body + "}}"
+
+
+def end_marker_text(kind: str) -> str:
+    """닫는 구간 마커 1건의 문단 텍스트(``{{/항목}}``) — 키워드만 가진다."""
+    return "{{/" + _placement_keyword(kind) + "}}"
+
+
+def _marker_paragraph(neighbor: etree._Element, text: str) -> etree._Element:
+    """이웃 문단의 서식을 승계한 마커 문단 1개(``hp:p``/``hp:run``/``hp:t``).
+
+    문단·글자 모양 참조만 물려받는다. ``id`` 는 복사하지 않는다(같은 값이 두 문단에
+    서게 하지 않는다) — 커널의 신설 요소도 같은 최소 형상이다.
+    """
+    paragraph = etree.Element(_hp("p"))
+    for attribute in ("paraPrIDRef", "styleIDRef"):
+        value = neighbor.get(attribute)
+        if value is not None:
+            paragraph.set(attribute, value)
+    run = etree.SubElement(paragraph, _hp("run"))
+    neighbor_run = neighbor.find(_hp("run"))
+    char = None if neighbor_run is None else neighbor_run.get("charPrIDRef")
+    if char is not None:
+        run.set("charPrIDRef", char)
+    etree.SubElement(run, _hp("t")).text = text
+    return paragraph
+
+
+def insert_marker_paragraphs(
+    pkg: object, entry: str, insertions: "list[tuple[int, str]]"
+) -> None:
+    """마커 문단들을 한 content XML 의 **본문 직계** 자리에 되심는다(제자리 변형).
+
+    ``insertions`` 는 ``(gap, text)`` 목록이고 ``gap`` 은 **삽입 전** 본문 직계 문단
+    번호(그 문단 **앞**; ``문단 수`` 면 맨 뒤)다 — 쓰기 커널
+    :func:`~hwpxcore.bookmark_region.remove_top_level_paragraph` 와 **같은 주소 기준**이라
+    호출자가 좌표를 번역하지 않는다. 같은 gap 이 여러 번 오면 **나열 순서대로** 문서에
+    선다. 처리는 gap 내림차순이라 앞 gap 좌표는 삽입 뒤에도 유효하다.
+
+    재직렬화는 공용 경로(:func:`~hwpxcore.lineseg.serialize_modified_section`)를 탄다 —
+    문단이 늘면 줄배치 캐시가 stale 이 된다(#95 와 같은 재발류).
+    """
+    pkg = require_package(pkg)
+    if entry not in pkg.entries:
+        raise ValueError(f"content XML 을 찾을 수 없습니다: {entry!r}")
+    parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
+    root = etree.fromstring(pkg.entries[entry], parser=parser)
+    paragraphs = [child for child in root if child.tag == _hp("p")]
+    if not paragraphs:
+        raise ValueError(f"{entry}: 본문 직계 문단이 없어 마커를 되심을 수 없습니다.")
+    groups: "dict[int, list[str]]" = {}
+    for gap, text in insertions:
+        if gap < 0 or gap > len(paragraphs):
+            raise ValueError(
+                f"{entry}: 마커 삽입 위치 {gap} 가 문단 수 {len(paragraphs)} 밖입니다."
+            )
+        groups.setdefault(gap, []).append(text)
+    if not groups:
+        return
+    for gap in sorted(groups, reverse=True):
+        if gap < len(paragraphs):
+            neighbor = paragraphs[gap]
+            position = list(root).index(neighbor)
+        else:
+            neighbor = paragraphs[-1]
+            position = list(root).index(neighbor) + 1
+        # 같은 gap 의 마커는 역순으로 밀어 넣어야 나열 순서 그대로 선다.
+        for text in reversed(groups[gap]):
+            root.insert(position, _marker_paragraph(neighbor, text))
+    pkg.entries[entry] = serialize_modified_section(root)
+
+
 def compile_document(pkg: object) -> "tuple[object, CompileReport]":
     """토큰을 누름틀로 컴파일. (변형된 package, 리포트) 반환.
 

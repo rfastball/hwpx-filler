@@ -1748,6 +1748,14 @@ export function createEditorWorkbenchDataProbes() {
                 }],
               },
               result: { text: "검토: 문제 없음", level: "ok" },
+              /* 검토가 낸 구간 항목 목록(S8-03 #834) — 같은 창에 얹는 단계다(새 부팅 0). */
+              slots: {
+                path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
+                rows: [{
+                  id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
+                }],
+                diagnostics: [],
+              },
             },
           });
           ctx.push("editor", draft);
@@ -1812,7 +1820,53 @@ export function createEditorWorkbenchDataProbes() {
           if (!settleModal(ctx, "tplMoveModal")) {
             ctx.fail(ERROR_CODES.CONTRACT, "#tplMoveModal .modal-card 가 없습니다 — 닫힘 전이를 정착시킬 수 없습니다.");
           }
+          /* 구간 항목 목록 + 동사 1건 왕복(S8-03). 개명이 가장 싸다: 프롬프트 하나로
+             끝나고 확인 왕복이 없다. 발신은 이 클러스터의 관례대로 가로챈다 — 목록 자체가
+             **합성 스냅샷**이라 그 경로를 실 백엔드에 보내면 남의 라이브러리를 겨눈다.
+             여기서 재는 것은 「트리거 → 프롬프트 → 등록된 액션·payload 발신 → 실패의
+             인라인 착지」이고, 컨트롤러 쪽 판정은 헤드리스 계약(test_webapp_template)이 진다. */
+          out.slot_rows = host.querySelectorAll("#tplSlots .slotrow").length;
+          out.slot_verbs = ["slot-rename", "slot-decompile", "slot-remove"]
+            .map((a) => !!host.querySelector(`[data-act="${a}"][data-slot="특약"]`));
+          const renameBtn = host.querySelector('[data-act="slot-rename"][data-slot="특약"]');
+          out.slot_rename_visible = !!renameBtn && !isHidden(ctx, renameBtn);
+          const slotSent = [];
+          const slotStub = stubBridgeCall(ctx, () => async (screen, action, payload) => {
+            slotSent.push([screen, action, payload]);
+            throw new Error("SLOT_PROBE_REFUSAL");   // 성공 경로의 재당김이 합성 draft 를 걷지 않게
+          });
+          try {
+            flush();
+            renameBtn.click();
+            await settleRender(ctx);
+            const promptModal = byId(ctx, "promptModal");
+            out.slot_prompt_shown = !!promptModal && !isHidden(ctx, promptModal);
+            out.slot_prompt_value = byId(ctx, "promptModalInput").value;
+            byId(ctx, "promptModalOk").click();
+            /* 확인은 **닫힘 전이가 끝난 뒤** 값을 낸다(runDialog 의 requestClose) —
+               전이를 정착시키지 않으면 발신이 영영 안 서고 프로브가 조용히 0 을 읽는다. */
+            if (!settleModal(ctx, "promptModal")) {
+              ctx.fail(ERROR_CODES.CONTRACT, "#promptModal .modal-card 가 없습니다 — 닫힘 전이를 정착시킬 수 없습니다.");
+            }
+            await settleUntil(ctx, () => slotSent.length > 0);
+            out.slot_dispatch = slotSent.map(([screen, action, payload]) => [
+              screen, action, payload.path, payload.slot_id, payload.label,
+            ]);
+            /* 실패는 인라인 채널로 간다(#323) — 앞선 프로브가 남긴 문안과 섞이지 않게
+               우리 사유가 실렸는지로 본다. */
+            await settleUntil(ctx, () => {
+              const node = byId(ctx, "save-msg");
+              return !!node && node.textContent.indexOf("SLOT_PROBE_REFUSAL") !== -1;
+            });
+            const notice = byId(ctx, "save-msg");
+            out.slot_notice_inline = !!notice
+              && notice.textContent.indexOf("SLOT_PROBE_REFUSAL") !== -1
+              && !isHidden(ctx, notice);
+          } finally {
+            slotStub.restore();
+          }
           /* 퇴화 평면(그룹 0개) — 헤더 없는 행 나열. */
+          draft.library.slots = null;
           draft.library.hwpx = {
             flat: true, count: 1, group_names: [], dir: "C:/lib",
             sections: [{ group: "", collapsed: false, count: 1, items: [H("d.hwpx", "", false)] }],

@@ -151,6 +151,7 @@ class EditorController:
         text_registry: "TextTemplateRegistry | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
         library_result: "Callable[[], dict] | None" = None,
+        library_slots: "Callable[[], dict | None] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
     ) -> None:
         self.registry = registry
@@ -178,6 +179,9 @@ class EditorController:
         # TemplateController(result_text/level)가 계속 소유하고 여기는 **읽기만** 한다(성형
         # 두 벌 금지 — §10.17.2 판정 B). 미주입(테스트 단독 구동)은 빈 결과.
         self._library_result = library_result
+        # 검토가 낸 Slot 목록(S8-03 #834) — 결과 줄과 같은 규율(투영·수명은 tpl 소유,
+        # 여기는 읽기만). 미주입(테스트 단독 구동)은 목록 없음.
+        self._library_slots = library_slots
         self._after_mapping_saved = after_mapping_saved
         self._reset()
 
@@ -644,6 +648,8 @@ class EditorController:
                 "text": str(result.get("text", "") or ""),
                 "level": str(result.get("level", "muted") or "muted"),
             },
+            # 검토가 낸 Slot 목록(S8-03) — 없으면 ``None`` 이고 표면은 구획째 서지 않는다.
+            "slots": self._library_slots() if self._library_slots is not None else None,
         }
 
     def _txt_library_rows(self) -> "list[dict]":
