@@ -372,6 +372,69 @@ test("#323 던져진 예외는 여전히 catch 백스톱(window.alert)이 받는
   assert.ok(h.notices[0].includes("브리지 단절"));
 });
 
+/* ---------------- 알림의 해소 전이(#874) ---------------- */
+
+/* 세우는 전이만 있고 지우는 전이가 없으면 인라인 채널은 과거를 계속 서술한다: 「⚠ 작업
+   이름을 입력하세요.」가 한 번 서면 이름을 채워도, 저장이 성사돼도, 편집기를 다시 세워도
+   그대로 남았다(컨트롤러는 부팅 1회 싱글턴이다). 사유가 해소되는 세 자리에서 걷는다. */
+
+test("#874 겨눈 칸을 고치면 그 차단 알림이 사라진다 — 겨눔과 사유를 함께 걷는다", async () => {
+  const h = blockedSaveHarness("template");
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), false);
+  assert.ok(h.controller.viewModel.getSnapshot().saveMessage, "차단 알림이 먼저 서 있어야 한다");
+  assert.equal(h.controller.viewModel.getSnapshot().invalidField, NAME_FIELD);
+
+  h.controller.type(NAME_FIELD, "채운 이름");
+
+  const view = h.controller.viewModel.getSnapshot();
+  assert.equal(view.saveMessage, null, "고친 칸을 계속 나무라지 않는다");
+  assert.equal(view.invalidField, "");
+});
+
+test("#874 저장 성공은 앞선 차단 알림을 걷는다 — 겨눔 없는 차단도 성사에서 사라진다", async () => {
+  // 겨눌 칸이 없는 차단(`blocked_field` 공백)은 타이핑 전이가 닿지 않는다 — 그 사유가
+  // 사라졌음을 말하는 것은 저장 성사뿐이다. 성공 문구를 새로 짓지는 않는다.
+  let blocked = true;
+  const h = harness({
+    initial: async () => snap({ section: "template", is_draft: false, editing_origin: "공고서" }),
+    call: async (_screen, action) => {
+      if (action !== "save") return {};
+      return blocked
+        ? { ok: false, block_reason: "템플릿을 먼저 골라야 저장할 수 있습니다.", blocked_field: "" }
+        : { ok: true };
+    },
+  });
+  h.ports.jobRead.bind({ refreshList() {}, openBrowseNeedsAction: async () => {} });
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), false);
+  assert.ok(h.controller.viewModel.getSnapshot().saveMessage);
+  h.controller.type(PATTERN_FIELD, "무관한 칸");
+  assert.ok(h.controller.viewModel.getSnapshot().saveMessage,
+    "사유가 그대로면 알림도 그대로다 — 아무 타이핑이나 지우지 않는다");
+
+  blocked = false;                       // 사유 해소(템플릿 선택)
+  assert.equal(await h.controller.doSave({}), true);
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null,
+    "성사된 저장 뒤에 차단 문안이 남으면 사용자는 실패했다고 읽는다");
+});
+
+test("#874 편집기 세션이 다시 서면 앞 세션의 알림은 남지 않는다", async () => {
+  const h = blockedSaveHarness("template");
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), false);
+  assert.ok(h.controller.viewModel.getSnapshot().saveMessage);
+
+  // 새 작업 초안으로 편집기가 다시 선다(session `job:공고서` → `draft`).
+  h.store.ingest("editor", snap({ section: "template", is_draft: true }));
+
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null,
+    "컨트롤러가 싱글턴이라 세션 전이에서 걷지 않으면 앞 작업의 경고가 새 작업에 실린다");
+});
+
 /* ---------------- ⑤ 통로는 객체째 ---------------- */
 
 test("client.dispatch 프로퍼티 교체가 관측된다 — 메서드 사전 추출 없음", async () => {

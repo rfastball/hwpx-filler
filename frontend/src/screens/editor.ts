@@ -205,6 +205,10 @@ export function createEditorController(deps: EditorControllerDeps) {
   function absorb(): void {
     const current = model.getSnapshot();
     if (current === null) return;
+    /* 편집기 세션이 다시 서면(새 작업 시작·다른 작업 load) 앞 세션의 알림은 지금 상태를
+       더는 서술하지 않는다. 컨트롤러는 부팅 1회 싱글턴이라 여기서 걷지 않으면 화면을
+       나갔다 들어와도 남는다(#874). draft 를 통째로 새로 세우는 그 전이와 같은 자리다. */
+    if (editorSession(current) !== draft.session) clearSaveMessage();
     draft = ingestSnapshot(draft, {
       session: editorSession(current),
       revision: editorRevision(current),
@@ -265,7 +269,11 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   function type(field: string, value: string): void {
     draft = typeInto(draft, field, value);
-    if (view.invalidField !== "" && field === view.invalidField) patchView({ invalidField: "" });
+    /* 겨눈 칸을 사용자가 고치는 순간 그 차단 알림은 현 상태를 서술하지 않는다 — 겨눔과
+       사유를 같은 전이에서 함께 걷는다(#874). */
+    if (view.invalidField !== "" && field === view.invalidField) {
+      patchView({ invalidField: "", saveMessage: null });
+    }
     emitDraft();
   }
 
@@ -825,6 +833,15 @@ export function createEditorController(deps: EditorControllerDeps) {
     patchView({ saveMessage: { text: message, level: level || "" } });
   }
 
+  /** 세우는 자리의 짝 — 사유가 해소된 알림을 걷는다(#874).
+   *
+   *  이 채널에는 지우는 전이가 없었다: 한 번 선 「⚠ …」이 이름을 채워도, 저장이 성사돼도,
+   *  화면을 다시 들어와도 남아 지금이 아닌 과거를 계속 서술했다. 성공 문구를 새로 짓지는
+   *  않는다 — 사유가 사라졌으면 말할 것도 사라진 것이다. */
+  function clearSaveMessage(): void {
+    if (view.saveMessage !== null) patchView({ saveMessage: null });
+  }
+
   /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다. */
   function aimAtBlockedField(field: string): void {
     if (field !== NAME_FIELD && field !== PATTERN_FIELD) return;
@@ -854,6 +871,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       return false;
     }
     if (result.ok) {
+      clearSaveMessage();   // 막았던 사유가 해소됐다 — 차단 문안을 남겨 두지 않는다(#874)
       /* 저장은 제자리(결정 40). 후보·문서 탐색 스냅샷만 갱신해 새/개명 작업이 바로 보이게 한다. */
       void deps.ports.jobRead.current().refreshList();
       return true;
