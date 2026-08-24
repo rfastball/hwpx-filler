@@ -151,7 +151,11 @@ from ..gui.work_candidates import (
 )
 from .action_registry import ZONE_MUTATIONS
 from .template_change import TemplateChangeError, unsupported_zone
-from ..application.slotless_run_bridge import SlotlessRunAdmissionError
+from ..application.slotless_run_bridge import (
+    STRUCTURE_NOTATION_UNCOMPILED,
+    SlotlessRunAdmissionError,
+)
+from ..gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
 # S4 Working Slot Configuration 배선(SX-02 #725) — Product/Observation 소비만(재구현 금지).
 from dataclasses import asdict, dataclass
 import uuid
@@ -257,6 +261,8 @@ _ADMISSION_REJECT_TEXT = {
     "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE": "이 템플릿의 슬롯 구성 실행은 아직 지원하지 않습니다.",
     "SLOTLESS_SELECTION_CONTEXT_REQUIRED": "슬롯 없는 실행 맥락을 확립하지 못해 생성할 수 없습니다.",
     "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR": "적용된 템플릿 바이트 무결성 확인에 실패해 생성을 멈췄습니다.",
+    # 문안은 링1 단일 원천 — 편집 게이트와 생성 차단이 같은 상태를 같은 문장으로 말한다(S8-04).
+    STRUCTURE_NOTATION_UNCOMPILED: STRUCTURE_NOTATION_BLOCK_MESSAGE,
 }
 from .job_list import drift_note
 from ..external.settings import recollapse_job_group

@@ -37,6 +37,9 @@ from .work_bootstrap import (
 SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE = "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE"
 SLOTLESS_SELECTION_CONTEXT_REQUIRED = "SLOTLESS_SELECTION_CONTEXT_REQUIRED"
 APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR = "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR"
+#: 실행할 bytes 에 미변환 구간 표기가 남았다(S8-04 #835). 이것을 통과시키면 산출물은
+#: 모든 선택지를 품은 채 마커 텍스트까지 그대로 실린 **구조적으로 틀린 문서**가 된다.
+STRUCTURE_NOTATION_UNCOMPILED = "STRUCTURE_NOTATION_UNCOMPILED"
 
 
 class SlotlessRunAdmissionError(Exception):
@@ -77,12 +80,21 @@ def admit_slotless_run(
     applied_input: ExactAppliedTemplateInput,
     execution_base_application_id: str | None,
     stage_exact_bytes: "Callable[[str], str]",
+    *,
+    count_structure_markers: "Callable[[str], int]",
 ) -> AdmittedSlotlessRun:
-    """순수 admission — slot guard → provenance gate → exact bytes staging.
+    """순수 admission — slot guard → provenance gate → exact bytes staging → 구조 표기 검문.
 
     ``stage_exact_bytes(digest) -> path`` 는 Candidate blob 을 content-addressed read-only 경로로
     옮기고 digest 를 검증하는 호출자 주입이다(bytes read/serialize 는 그 adapter 안, 여기 순수).
     slot-bearing 은 S5/S6 미완이라 실행 불가, slotless 만 provenance·bytes 게이트를 통과한다.
+
+    ``count_structure_markers(staged_path) -> int`` 도 같은 결의 주입이다(파싱은 adapter 안).
+    **기본값 없는 필수 인자**인 이유는 하나다: 빠뜨린 호출이 「마커 0」으로 조용히 통과하면
+    이 게이트는 존재하지만 아무것도 막지 않는다. 세는 주체는 스캐너 단일 출처
+    (:attr:`~hwpxfiller.domain.authoring.StructureSummary.markers`)이고 여기는 그 수치로
+    **판정만** 한다 — admission 이 마커를 다시 세지 않는다. 검문 대상은 캐시된 상태가 아니라
+    이 실행이 실제로 쓸 staged bytes 다(실행 시점 재읽기).
     """
     if isinstance(selection_input, SlotConfigurationSnapshot):
         # slot-bearing Template: 선택이 complete 여도 S5/S6 전에는 legacy generator 를 부르지 않는다.
@@ -109,6 +121,12 @@ def admit_slotless_run(
         raise SlotlessRunAdmissionError(verdict)
 
     staged_path = stage_exact_bytes(applied_input.exact_content_digest)
+    marker_n = count_structure_markers(staged_path)
+    if marker_n > 0:
+        raise SlotlessRunAdmissionError(
+            STRUCTURE_NOTATION_UNCOMPILED,
+            f"실행할 템플릿에 미변환 구간 표기가 {marker_n}건 남아 있다",
+        )
     return AdmittedSlotlessRun(
         work_id=applied_input.work_id,
         template_application_id=current_application_id,
@@ -129,4 +147,5 @@ __all__ = [
     "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE",
     "SLOTLESS_SELECTION_CONTEXT_REQUIRED",
     "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR",
+    "STRUCTURE_NOTATION_UNCOMPILED",
 ]

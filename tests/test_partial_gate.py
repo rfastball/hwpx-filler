@@ -180,3 +180,46 @@ def test_inline_compile_flips_partial_to_compiled():
     assert gate.can_proceed()
     # 컴파일본은 실제로 잔존 토큰이 사라진 상태여야 한다.
     assert compile_status(compiled_pkg).compilable_n == 0
+
+
+# ------------------------------ 잔존 구간 표기(S8-04 #835) — ack 로 열리지 않는 차단
+def test_residual_structure_notation_blocks_and_is_not_ackable():
+    """미변환 구간 표기는 「비우고 진행」으로 확정할 수 있는 값이 아니다.
+
+    ack 는 「이 토큰은 비워도 좋다」는 확정인데, 표기가 남았다는 것은 **구조가 아직
+    안 섰다**는 뜻이다. 확정하면 모든 선택지가 든 문서가 나오므로 게이트는 열리지 않고
+    수선 동선(변환)을 재진술한다. 토큰 이름 열거로 답할 수 없어 문안도 다르다.
+    """
+    from hwpxfiller.gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
+
+    pkg, _ = compile_document(_pkg(
+        "<hp:p><hp:run><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>{{/항목}}</hp:t></hp:run></hp:p>"
+    ))
+
+    gate = gate_for_template(pkg)
+    assert gate.state is CompileState.PARTIAL and gate.needs_gate()
+    assert gate.structure_blocked is True
+    assert not gate.can_proceed()
+    assert gate.message() == STRUCTURE_NOTATION_BLOCK_MESSAGE
+    # 마커는 확인 목록에 오르지 않는다 — 토큰이 아닌 것을 확인시키지 않는다.
+    assert gate.unmet_tokens == []
+
+    gate.acknowledge(gate.unmet_tokens)
+    assert not gate.can_proceed()   # 무엇을 확인해도 열리지 않는다
+
+
+def test_structure_block_outranks_the_token_ack_path():
+    """토큰 잔존과 표기 잔존이 함께 있으면 ack 로 열리지 않는 쪽이 판정을 진다."""
+    pkg, _ = compile_document(_pkg(
+        "<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"
+    ))
+    pkg = _append_plaintext(pkg, "{{미컴파일필드}}")
+    pkg = _append_plaintext(pkg, "{{#항목 특약}}")
+
+    gate = gate_for_template(pkg)
+    assert "미컴파일필드" in gate.unmet_tokens
+    gate.acknowledge(gate.unmet_tokens)  # 토큰 축은 정확히 확정했다
+    assert gate.is_acked() is True
+    assert not gate.can_proceed()        # 그래도 표기 축이 남아 있으면 진행 불가

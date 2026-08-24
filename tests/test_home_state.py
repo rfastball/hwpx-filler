@@ -786,3 +786,27 @@ def test_last_use_wording_follows_the_work_mode(tmp_path):
     rows = {r.name: r for r in HomeViewModel(reg, engine=make_hwpx_engine(), inspect_status=template_compile_status).rows()}
     assert rows["기안"].last_run_display == "마지막 복사 2026-07-28"
     assert rows["빈기안"].last_run_display == "복사한 적 없음"
+
+
+# ================================= 구간 표기 잔존의 홈 전파(S8-04 #835 — 표면 전파)
+def _notation_hwpx(tmp_path) -> str:
+    """필드는 컴파일됐는데 구간 표기가 남은 템플릿 — 「다 된 것 같지만 아닌」 문서."""
+    xml = (
+        "<hp:p><hp:run><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>{{/항목}}</hp:t></hp:run></hp:p>"
+    )
+    pkg, _ = compile_document(_pkg(xml))
+    return _save(pkg, tmp_path / "notation.hwpx")
+
+
+def test_residual_structure_notation_shows_a_warning_badge_with_its_count(tmp_path):
+    """잔존 표기는 홈 카드에서 ✅ 로 통과하지 않고 ⚠ 배지 + 수치로 선다.
+
+    수치가 배지에서 빠지면 「⚠ 미확인 토큰 0개」라는 속 빈 경고가 되고, 마커가 배지에서
+    빠지면 조용한 「실행 준비」가 된다 — 둘 다 confirm-or-alarm 위반이다.
+    """
+    row = _row(_notation_hwpx(tmp_path))
+    assert row.compile_state == CompileState.PARTIAL
+    assert row.compile_badge == "⚠ 미확인 토큰 2개"   # 여는·닫는 마커, 이중 계상 없음
+    assert row.is_runnable() is True                  # 차단은 생성 admission 이 진다

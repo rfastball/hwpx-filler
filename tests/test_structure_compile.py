@@ -588,3 +588,31 @@ def test_compile_structure_file_leaves_bytes_untouched_on_refusal(
     assert report.modified is False
     assert report.refusal is not None
     assert target.read_bytes() == before
+
+
+# ------------------------------------------- 9. 컴파일 뒤 상태(S8-04 #835 양성 대조)
+def test_compiled_structure_clears_the_status_notation_channel() -> None:
+    """S8-02 산출(마커 0)은 상태 축에서도 잔존 0 이고 상태가 COMPILED 로 선다.
+
+    S8-04 가 세운 「구간 표기 잔존」 채널의 **양성 대조**다. 음성(마커 잔존 → PARTIAL·
+    생성 차단)만 세우면 게이트가 늘 빨강이어도 초록으로 보이므로 둘을 함께 못박는다.
+    """
+    from hwpxfiller.domain.authoring import compile_document
+    from hwpxfiller.domain.template_status import CompileState, compile_status
+
+    pkg = _pkg(*(_text(line) for line in (
+        "계약 일반사항",
+        "{{#항목 특약 특약 사항}}",
+        "특약 본문",
+        "{{/항목}}",
+        "발주자: {{수요기관}}",
+    )))
+    assert compile_status(pkg).structure_marker_n == 2
+
+    assert compile_structure(pkg).modified is True   # 표기 → native Slot
+    pkg, _report = compile_document(pkg)             # 필드 토큰 → 누름틀
+
+    after = compile_status(pkg)
+    assert after.structure_marker_n == 0
+    assert after.state == CompileState.COMPILED
+    assert inspect_slots(pkg)[0] == (Slot("특약", (), "특약 사항"),)

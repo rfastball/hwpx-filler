@@ -10,8 +10,9 @@
 계산값 위에 앉는다. 저장·캐시·상태 전이 부작용은 없다(재산출 원칙 위반).
 
 **설계 원칙**("묻고 확정하게 하라, 아니면 시끄럽게 알려라")의 준수:
-- 필드는 있는데 잔존 토큰(미컴파일·파편·본문 평문)이 남은 "다 된 것 같지만 아닌" 위험
-  상태를 ``PARTIAL`` 로 **시끄럽게** 구분한다(조용히 COMPILED 로 통과시키지 않는다).
+- 필드는 있는데 잔존 토큰(미컴파일·파편·본문 평문)이나 **미변환 구간 표기**가 남은
+  "다 된 것 같지만 아닌" 위험 상태를 ``PARTIAL`` 로 **시끄럽게** 구분한다(조용히
+  COMPILED 로 통과시키지 않는다).
 - ``COMPILED`` vs ``FILLED`` 는 추측이 아니라 실제 누름틀 값을 결정적으로 **읽어** 판정한다.
 
 **읽기 전용.** 재사용하는 ``scan_tokens``·``extract_schema`` 와 아래 로컬 값 리더는
@@ -24,7 +25,7 @@ import enum
 from dataclasses import dataclass
 
 from hwpxcore.text_extract import require_package
-from hwpxfiller.domain.authoring import scan_tokens
+from hwpxfiller.domain.authoring import scan_structure, scan_tokens
 from hwpxfiller.domain.fields import FieldDocument, normalize_field_id
 from hwpxfiller.domain.schema import extract_schema
 
@@ -51,7 +52,8 @@ class CompileState(str, enum.Enum):
     """HWPX 컴파일 수명주기의 4-상태.
 
     - ``RAW``: 진짜 필드 0개 + 본문에 ``{{}}`` 평문 토큰(미컴파일 원문).
-    - ``PARTIAL``: 필드 有 + skip/파편/본문 잔존 토큰이 남음("다 된 것 같지만 아닌" 위험).
+    - ``PARTIAL``: 필드 有 + skip/파편/본문 잔존 토큰 또는 미변환 구간 표기가 남음
+      ("다 된 것 같지만 아닌" 위험).
     - ``COMPILED``: 필드 有 + 잔존 토큰 0 + 값이 아직 ``{{X}}`` placeholder 리터럴.
     - ``FILLED``: 필드 有 + 값이 placeholder 와 다름(실제 값이 채워짐).
     """
@@ -68,7 +70,14 @@ class TemplateStatus:
 
     ``field_n`` 은 누름틀(fieldBegin) 이름 수, ``compilable_n``/``skipped_n`` 은
     ``scan_tokens`` 가 각각 컴파일 가능/불가로 신고한 잔존 토큰 수, ``stray_n`` 은 본문
-    평문에 남은 ``{{}}`` 수. ``state`` 는 이 카운트 + 실제 값 판독에서 파생된다.
+    평문에 남은 ``{{}}`` 수. ``structure_marker_n`` 은 아직 native Slot 으로 변환되지 않고
+    본문에 남은 **구간 표기 마커** 수(:attr:`~hwpxfiller.domain.authoring.StructureSummary.markers`
+    를 그대로 싣는다 — 여기서 다시 세지 않는다). ``state`` 는 이 카운트 + 실제 값 판독에서
+    파생된다.
+
+    ``structure_marker_n`` 만 기본값을 갖는 이유는 하나다: 생산자는
+    :func:`compile_status` 하나뿐이고 그것은 항상 실측값을 싣는다. 값 객체를 직접 짓는
+    테스트·시험 코드가 기존 다섯 필드 계약을 그대로 쓰게 두려는 하위 호환이다.
     """
 
     state: CompileState
@@ -76,6 +85,7 @@ class TemplateStatus:
     compilable_n: int
     skipped_n: int
     stray_n: int
+    structure_marker_n: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -84,6 +94,7 @@ class TemplateStatus:
             "compilable_n": self.compilable_n,
             "skipped_n": self.skipped_n,
             "stray_n": self.stray_n,
+            "structure_marker_n": self.structure_marker_n,
         }
 
 
@@ -127,11 +138,20 @@ def compile_status(pkg: object) -> TemplateStatus:
     compilable_n = sum(1 for s in sites if s.compilable)
     skipped_n = sum(1 for s in sites if not s.compilable)
 
+    # 구간 표기 마커는 sigil 선행 분류(S8-01)로 ``scan_tokens`` 에서 빠진다. 그래서 이 수치를
+    # 따로 읽지 않으면 「컴파일된 필드 + 잔존 마커」 문서가 어느 카운트에도 안 잡혀 COMPILED
+    # 로 뜨고, 모든 선택지가 든 채 마커 텍스트까지 새는 문서가 조용히 생성된다(#835 D5).
+    # 재산출 비용(scan_structure 1회 추가)은 scan_tokens 와 같은 compute-not-store 원칙의
+    # 대가다 — 마커를 여기서 다시 세어 값을 싸게 얻는 길은 판정 이중화라 택하지 않는다.
+    structure_marker_n = scan_structure(pkg).summary.markers
+
     if field_n == 0:
         # 진짜 필드 없음 → 미컴파일 원문. 토큰이 아예 없어도 정직하게 RAW(컴파일된 것 없음).
+        # 마커만 남은 문서도 RAW 다: RAW 는 이미 실행 불가이고 수선 동선(누름틀·구간 변환)이
+        # 같으므로, 마커의 존재만으로 상태를 새로 쪼개지 않는다(#835 — 새 enum 멤버 없음).
         state = CompileState.RAW
-    elif skipped_n > 0 or stray_n > 0 or compilable_n > 0:
-        # 필드는 있는데 잔존 토큰이 남음 → "다 된 것 같지만 아닌" 위험 상태.
+    elif skipped_n > 0 or stray_n > 0 or compilable_n > 0 or structure_marker_n > 0:
+        # 필드는 있는데 잔존 토큰·구간 표기가 남음 → "다 된 것 같지만 아닌" 위험 상태.
         state = CompileState.PARTIAL
     else:
         # 필드 有 + 잔존 토큰 0 → 실제 값을 읽어 COMPILED(placeholder) vs FILLED 구분.
@@ -149,4 +169,5 @@ def compile_status(pkg: object) -> TemplateStatus:
         compilable_n=compilable_n,
         skipped_n=skipped_n,
         stray_n=stray_n,
+        structure_marker_n=structure_marker_n,
     )

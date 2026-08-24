@@ -77,8 +77,10 @@ def _derive_compile(
     if st.state == CompileState.RAW:
         return st.state, BADGE_RAW
     if st.state == CompileState.PARTIAL:
-        # N = 미확인(잔존) 토큰 총합: skip 채널 + 본문 stray + 미컴파일(compilable).
-        n = st.skipped_n + st.stray_n + st.compilable_n
+        # N = 미확인(잔존) 토큰 총합: skip 채널 + 본문 stray + 미컴파일(compilable) +
+        # 미변환 구간 표기(S8-04). 마커를 빼면 마커만 남은 PARTIAL 이 「미확인 토큰 0개」라는
+        # 속 빈 배지가 된다 — 상태는 시끄러운데 수치가 조용한 어긋남.
+        n = st.skipped_n + st.stray_n + st.compilable_n + st.structure_marker_n
         return st.state, _partial_badge(n)
     return st.state, BADGE_READY              # COMPILED 또는 FILLED(잔존 토큰 0)
 

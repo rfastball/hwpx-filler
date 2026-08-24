@@ -19,14 +19,18 @@ from hwpxfiller.application.slot_selection_input import (
     SlotlessSelectionContext,
 )
 from hwpxfiller.application.slotless_run_bridge import (
+    STRUCTURE_NOTATION_UNCOMPILED,
     AdmittedSlotlessRun,
     SlotlessRunAdmissionError,
     admit_slotless_run,
 )
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.host.staged_template import clear_run_staging, stage_exact_applied_bytes
 
 NOW = "2026-08-16T00:00:00Z"
 CONTRACT = "slot-selection/v1"
+HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+HS = "http://www.hancom.co.kr/hwpml/2011/section"
 
 
 def _slotless(app: str = "A1", work: str = "w1") -> SlotlessSelectionContext:
@@ -52,6 +56,11 @@ def _stager(seen: list[str]):
     return _stage
 
 
+def _no_markers(_path: str) -> int:
+    """구간 표기 0 — 순수 게이트 테스트가 겨누는 축이 아닌 입력의 중립값."""
+    return 0
+
+
 # ── pure admission gate ───────────────────────────────────────────────────────
 def test_slot_bearing_snapshot_is_not_executable() -> None:
     snap = SlotConfigurationSnapshot(
@@ -62,38 +71,53 @@ def test_slot_bearing_snapshot_is_not_executable() -> None:
         declared_selection_digest="sha256:dec", template_structure_digest="sha256:s", captured_at=NOW,
     )
     with pytest.raises(SlotlessRunAdmissionError) as e:
-        admit_slotless_run(snap, _applied(), "A1", _stager([]))
+        admit_slotless_run(snap, _applied(), "A1", _stager([]), count_structure_markers=_no_markers)
     assert e.value.code == "SLOT_CONFIGURATION_EXECUTION_NOT_AVAILABLE"
 
 
 def test_unknown_provenance_needs_review() -> None:
     with pytest.raises(SlotlessRunAdmissionError) as e:
-        admit_slotless_run(_slotless(), _applied(), None, _stager([]))  # None = UNKNOWN
+        admit_slotless_run(
+            _slotless(), _applied(), None, _stager([]),  # None = UNKNOWN
+            count_structure_markers=_no_markers,
+        )
     assert e.value.code == "NEEDS_CONFIGURATION_REVIEW"
 
 
 def test_old_application_provenance_needs_configuration() -> None:
     with pytest.raises(SlotlessRunAdmissionError) as e:
-        admit_slotless_run(_slotless(app="A2"), _applied(app="A2"), "A1", _stager([]))
+        admit_slotless_run(
+            _slotless(app="A2"), _applied(app="A2"), "A1", _stager([]),
+            count_structure_markers=_no_markers,
+        )
     assert e.value.code == "NEEDS_CONFIGURATION"
 
 
 def test_applied_bytes_from_other_application_rejected() -> None:
     # slotless context 는 A1 인데 applied input 이 A2 를 가리키면 무결성 오류(다른 bytes 실행 금지).
     with pytest.raises(SlotlessRunAdmissionError) as e:
-        admit_slotless_run(_slotless(app="A1"), _applied(app="A2"), "A1", _stager([]))
+        admit_slotless_run(
+            _slotless(app="A1"), _applied(app="A2"), "A1", _stager([]),
+            count_structure_markers=_no_markers,
+        )
     assert e.value.code == "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR"
 
 
 def test_non_variant_input_requires_slotless_context() -> None:
     with pytest.raises(SlotlessRunAdmissionError) as e:
-        admit_slotless_run(object(), _applied(), "A1", _stager([]))  # type: ignore[arg-type]
+        admit_slotless_run(
+            object(), _applied(), "A1", _stager([]),  # type: ignore[arg-type]
+            count_structure_markers=_no_markers,
+        )
     assert e.value.code == "SLOTLESS_SELECTION_CONTEXT_REQUIRED"
 
 
 def test_allowed_stages_exact_bytes() -> None:
     seen: list[str] = []
-    admitted = admit_slotless_run(_slotless(), _applied(digest="sha256:exact"), "A1", _stager(seen))
+    admitted = admit_slotless_run(
+        _slotless(), _applied(digest="sha256:exact"), "A1", _stager(seen),
+        count_structure_markers=_no_markers,
+    )
     assert isinstance(admitted, AdmittedSlotlessRun)
     assert seen == ["sha256:exact"]  # exact applied digest 만 staging (source read 없음)
     assert admitted.template_application_id == "A1"
@@ -168,11 +192,32 @@ def test_staging_rejects_store_returning_wrong_digest(tmp_path: Path) -> None:
 
 
 # ── fence-first admission (end-to-end wiring) ─────────────────────────────────
-_BYTES = b"applied-A17-exact-bytes"
+def _hwpx_bytes(*paragraphs: str) -> bytes:
+    """실 HWPX bytes — staged 사본을 **열어서** 검문하는 admission 이 파싱할 수 있어야 한다.
+
+    S8-04 전에는 이 픽스처가 아무 bytes 나 써도 됐다(admission 이 bytes 를 열지 않았다).
+    구간 표기 검문이 들어온 지금은 열리지 않는 bytes 자체가 무결성 거절 사유다.
+    """
+    body = "".join(
+        f'<hp:p><hp:run charPrIDRef="0"><hp:t>{text}</hp:t></hp:run></hp:p>'
+        for text in paragraphs
+    )
+    xml = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{body}</hs:sec>'
+    ).encode("utf-8")
+    return HwpxPackage(
+        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}
+    ).to_bytes()
+
+
+_BYTES = _hwpx_bytes("applied-A17-exact-bytes")
 _DIGEST = blob_digest(_BYTES)
+#: 필드 없이 구간 표기만 남은 실행 bytes(S8-04 음성 대조) — 통과하면 마커가 산출물에 샌다.
+_MARKER_BYTES = _hwpx_bytes("{{#항목 특약 특약 사항}}", "특약 본문", "{{/항목}}")
+_MARKER_DIGEST = blob_digest(_MARKER_BYTES)
 
 
-def _fence_fixture(structure, current="A1"):
+def _fence_fixture(structure, current="A1", *, data: bytes = _BYTES):
     """capture 계열 fake 를 실 digest 로 세운 fence-first 픽스처."""
     from hwpxfiller.application.candidate_revision import TemplateRevision
     from hwpxfiller.application.qualification_evidence import (
@@ -203,15 +248,16 @@ def _fence_fixture(structure, current="A1"):
         product_rule_version="p", operation_alphabet_version="op",
         projection_schema_version=schema, manifest_payload={"x": 1}, created_at=NOW,
     )
-    revision = TemplateRevision("R1", "L1", "hwpx", _DIGEST, "OBS1", NOW)
-    blob = ContentBlob(_DIGEST, "hwpx", _BYTES, len(_BYTES))
+    digest = blob_digest(data)
+    revision = TemplateRevision("R1", "L1", "hwpx", digest, "OBS1", NOW)
+    blob = ContentBlob(digest, "hwpx", data, len(data))
 
     work_state = SimpleNamespace(load=lambda w: SimpleNamespace(work=work, applications=(app,)))
     qual = SimpleNamespace(
         get_evidence=lambda e: evidence, get_manifest=lambda p: manifest
     )
     candidate = SimpleNamespace(
-        get_revision=lambda r: revision, has_blob=lambda d: d == _DIGEST
+        get_revision=lambda r: revision, has_blob=lambda d: d == digest
     )
     candidate_bytes = _BlobStore(blob)
     return work_state, qual, candidate, candidate_bytes
@@ -244,6 +290,47 @@ def test_managed_admission_slotless_allowed_stages_candidate_bytes(tmp_path: Pat
     # staged bytes 는 Candidate blob 에서 온다(mutable source read 0) — drift 대조.
     assert Path(admitted.staged_template_path).read_bytes() == _BYTES
     assert admitted.exact_content_digest == _DIGEST
+
+
+def test_managed_admission_blocks_residual_structure_notation(tmp_path: Path) -> None:
+    """S8-04 음성 대조 — 실행할 bytes 에 구간 표기가 남았으면 생성 자체가 서지 않는다.
+
+    provenance·무결성·context 는 전부 통과하는 정상 실행이다. 막는 것은 오직 「표기가
+    아직 변환되지 않았다」 하나이고, 통과시키면 산출물에 모든 선택지 + 마커 텍스트가 실린다.
+    """
+    from hwpxfiller.external.slot_command_runner import admit_managed_slotless_run
+    from hwpxfiller.external.work_configuration_store import WorkSlotConfigurationStore
+
+    slotless, _ = _structures()
+    ws, qual, cand, cand_bytes = _fence_fixture(slotless, data=_MARKER_BYTES)
+    store = WorkSlotConfigurationStore(tmp_path / "cfg")
+    provenance = SimpleNamespace(resolve_base_template_application_id=lambda w: "A1")
+    with pytest.raises(SlotlessRunAdmissionError) as e:
+        admit_managed_slotless_run(
+            store, ws, qual, cand, cand_bytes, provenance, str(tmp_path),
+            workspace_instance_id="ws-1", expected_work_authority_id="w1",
+            expected_template_application_id="A1", captured_at=NOW,
+        )
+    assert e.value.code == STRUCTURE_NOTATION_UNCOMPILED
+    assert "2건" in str(e.value)  # 사유를 수치로 재진술한다(여는·닫는 마커 2개)
+
+
+def test_managed_admission_rejects_unreadable_staged_bytes(tmp_path: Path) -> None:
+    """열리지 않는 staged bytes 는 「마커 0」으로 접히지 않고 무결성 오류다(fail-closed)."""
+    from hwpxfiller.external.slot_command_runner import admit_managed_slotless_run
+    from hwpxfiller.external.work_configuration_store import WorkSlotConfigurationStore
+
+    slotless, _ = _structures()
+    ws, qual, cand, cand_bytes = _fence_fixture(slotless, data=b"not-a-hwpx-zip")
+    store = WorkSlotConfigurationStore(tmp_path / "cfg")
+    provenance = SimpleNamespace(resolve_base_template_application_id=lambda w: "A1")
+    with pytest.raises(SlotlessRunAdmissionError) as e:
+        admit_managed_slotless_run(
+            store, ws, qual, cand, cand_bytes, provenance, str(tmp_path),
+            workspace_instance_id="ws-1", expected_work_authority_id="w1",
+            expected_template_application_id="A1", captured_at=NOW,
+        )
+    assert e.value.code == "APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR"
 
 
 def test_managed_admission_unknown_provenance_blocks(tmp_path: Path) -> None:

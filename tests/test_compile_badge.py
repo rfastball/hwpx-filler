@@ -51,3 +51,20 @@ def test_template_manager_rows_derive_from_single_source():
     err = TemplateRow.from_error(Path("broken.hwpx"), "읽기 실패")
     assert err.badge_label == badge_label(None) == "오류"
     assert err.badge_level == badge_level(None) == "danger"
+
+
+def test_structure_notation_status_routes_through_the_same_badge_source():
+    """구간 표기만 남은 PARTIAL 도 배지 어휘를 새로 만들지 않는다(S8-04 #835).
+
+    새 수치는 상세 줄이 말하고 심각도 신호는 기존 단일 출처가 그대로 낸다 — 잔존 종류마다
+    배지를 새로 만들면 같은 위험이 화면마다 다른 색·다른 말로 보인다.
+    """
+    status = TemplateStatus(
+        state=CompileState.PARTIAL, field_n=1, compilable_n=0, skipped_n=0, stray_n=0,
+        structure_marker_n=2,
+    )
+    row = TemplateRow.from_status(Path("notation.hwpx"), status)
+
+    assert (row.badge_label, row.badge_level) == (badge_label(CompileState.PARTIAL), "warn")
+    assert row.structure_marker_n == 2
+    assert row.detail_line() == "필드 1개 · 구간 표기 2개"
