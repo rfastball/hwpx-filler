@@ -55,13 +55,14 @@ SG-03 은 **제거 슬라이스가 아니라 pin/narrow 슬라이스**였다(제
 
 | 사실 | 소유 | 현재 상태 |
 |---|---|---|
-| shipping Profile 상수 + manifest | `external/template_inspection.py` (`HWPX_QUALIFICATION_PROFILE` id `hwpx-template-qualification-v4`·`hwpx_qualification_manifest`) | `webapp/template_change.py` 가 소비 |
+| shipping Profile 상수 + manifest (hwpx) | `external/template_inspection.py` (`HWPX_QUALIFICATION_PROFILE` id `hwpx-template-qualification-v4`·`hwpx_qualification_manifest`) | `webapp/template_change.py` 가 소비 |
+| shipping Profile 상수 + manifest (txt) | `external/text_template_inspection.py` (`TXT_QUALIFICATION_PROFILE` id `txt-template-qualification-v1`·`txt_qualification_manifest`) | 같은 소비자 — `_MEDIA_QUALIFICATION` 표가 매체를 고른다 |
 | `initialize_qualification_profile_admission` | — | **정의·호출 0**(모듈 삭제) |
 | `register_published_qualification_profile_admission` | — | **정의·호출 0**(모듈 삭제) |
 | `revoke_qualification_profile` | — | **정의·호출 0**(모듈 삭제) |
 | per-Work mutation fence | `host/` per-work fence(`PerWorkMutationFence`) | ProfileFence 는 R2-05b(#740)에서 제거 |
 
-production `QualificationProfile(...)` 생성은 정확히 1개다. 위 세 command 이름의 호출 0 은
+production `QualificationProfile(...)` 생성은 **매체마다 정확히 1개**다(hwpx·txt). 위 세 command 이름의 호출 0 은
 `tests/repo_contract/test_control_surface_reduction.py` 의 `REMOVED_ADMISSION_CONTROL_CALLS`
 census 가 지킨다 — 그 목록과 음성 대조가 같은 상수를 소비하므로 겨냥이 어긋날 수 없다(#805).
 
@@ -104,19 +105,28 @@ census 가 지킨다 — 그 목록과 음성 대조가 같은 상수를 소비�
 
 ## 2. Scope 결정
 
-### 2.1 shipping Qualification Profile = 1
+### 2.1 shipping Qualification Profile = 매체마다 1
+
+> **갱신(S10-02 · #859):** 원래 정책은 `exactly 1` 이었고 그 1 은 hwpx profile 이었다. TXT 템플릿을
+> 같은 S2/S3 생애주기에 인수하면서 shipping profile 은 **hwpx·txt 둘**이 됐다. §4 의 상향 조건
+> 「v1 에서 복수 shipping Profile 이 실제 사용자 흐름에 필수」가 성립해 #856(S10 TXT parity)로
+> 상향된 결과이고, 우회가 아니다. **이 결정이 막는 것은 개수가 아니라 제어면**이다 — 매체가
+> 자기 자격 규칙을 하나 갖는 것과 사용자가 profile 을 고르는 표면이 생기는 것은 다른 사건이고,
+> 후자의 금지(아래 세 줄)는 한 글자도 완화되지 않았다. 게이트도 개수 대신 **정확한 목록**을
+> pin 하므로 목록 밖의 생성은 여전히 RED 다.
 
 기존 durable Profile manifest/admission/history/fence 는 유지한다. v1 제품 정책:
 
 ```
-built-in shipping Profile = exactly 1
+built-in shipping Profile = 지원 매체마다 정확히 1 (hwpx · txt)
 bootstrap explicit admission
 user Profile selector = 0 · Profile management UI = 0
 dynamic Profile publication product route = 0 · plugin Profile = 0
 revoke = internal incident/test 경계 전용
 ```
 
-복수 runtime/plugin/admin 운영 요구가 실제로 생기면 별도 설계로 #732/#620 에 상향한다.
+같은 매체 안에서 복수 runtime/plugin/admin 운영 요구가 실제로 생기면 별도 설계로 #732/#620 에
+상향한다.
 
 ### 2.2 backend/application 단일 semantic authority
 
@@ -185,7 +195,7 @@ selection 을 재판정하지 않기 때문이다(#807 불변식 S6-1).
 
 | 계약 | 게이트 |
 |---|---|
-| C1 shipping Profile count == 1 (+ bootstrap 1 · publication/revoke route 0) | `tests/repo_contract/test_control_surface_reduction.py::test_exactly_one_shipping_qualification_profile` |
+| C1 shipping Profile census == 매체마다 1 (+ publication/revoke route 0) | `tests/repo_contract/test_control_surface_reduction.py::test_exactly_one_shipping_qualification_profile_per_media` |
 | C2 Profile selector/management UI == 0 | `…::test_no_profile_management_surface` |
 | C3 frontend canonical semantic import == 0 | `…::test_frontend_does_not_import_canonical_semantics` |
 | C4 frontend Plan/currentness/record/delivery 재판정 == 0 | `…::test_frontend_recomputes_no_semantics` |
@@ -212,3 +222,7 @@ HMAC 을 실제 권한 경계로 승격해야 함
 ```
 
 SG-03 착지 시점에는 다섯 조건 모두 성립하지 않았다(census 가 근거다).
+
+이후 첫 줄이 실제로 성립했다: TXT 템플릿이 hwpx 와 같은 「템플릿 변경사항 확인/적용」 흐름을
+타야 했고(#856 S10 TXT parity), 그 요구는 #859 에서 **매체별 profile 하나**로 착지했다(§2.1
+갱신). 나머지 네 조건은 그대로 미성립이다.

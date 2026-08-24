@@ -35,7 +35,13 @@ from .template_qualification import (
 PASS = "PASS"
 FAIL = "FAIL"
 ERROR = "ERROR"
-_LABEL_PROJECTION_SCHEMA = "hwpx-structure-projection-v3"
+#: canonical Slot/Option label 을 payload 에 실을 수 있는 product projection schema 집합.
+#: **매체마다 자기 이름이 선다**(S10-02 #859) — HWPX 의 v3 와 TXT 의 v1 은 좌표계도 자격
+#: 규칙도 다르므로 이름을 공유하지 않는다. 여기 없는 schema 로 label-bearing 구조를 실으면
+#: label 이 조용히 증발하므로 아래 :func:`project_structure` 가 시끄럽게 거절한다.
+_LABEL_PROJECTION_SCHEMAS = frozenset(
+    {"hwpx-structure-projection-v3", "txt-structure-projection-v1"}
+)
 
 
 class QualificationEvidenceError(ValueError):
@@ -67,14 +73,15 @@ def project_structure(
     structure: TemplateStructure, projection_schema_version: str
 ) -> StructureProjection:
     """native-free TemplateStructure 를 serializable projection + digest 로 고정한다."""
-    include_labels = projection_schema_version == _LABEL_PROJECTION_SCHEMA
+    include_labels = projection_schema_version in _LABEL_PROJECTION_SCHEMAS
     if not include_labels and any(
         slot.label is not None
         or any(option.label is not None for option in slot.options)
         for slot in structure.slots
     ):
         raise QualificationEvidenceError(
-            "label-bearing structure requires hwpx-structure-projection-v3"
+            "label-bearing structure requires a label-bearing projection schema "
+            f"({', '.join(sorted(_LABEL_PROJECTION_SCHEMAS))})"
         )
     payload = {
         "root_fields": list(structure.root_fields),

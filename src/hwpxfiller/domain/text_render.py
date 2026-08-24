@@ -69,12 +69,25 @@ class RenderSegment:
     name: str = ""
 
 
-def template_fields(template: str) -> "list[str]":
-    """템플릿이 참조하는 필드 이름 목록(중복 제거, 등장 순) — 구간 마커는 제외."""
-    seen: "dict[str, None]" = {}
+def iter_field_token_matches(template: str):
+    """**필드 토큰** 매치를 위치와 함께 등장순으로 yield(구조 마커는 제외).
+
+    「이 문자열의 필드 토큰은 무엇이고 어디 있는가」의 단일 출처다. 이름 목록만 필요한
+    :func:`template_fields`, 세그먼트를 자르는 :func:`render_segments`, 그리고 토큰의
+    **줄 위치**로 소유권을 유도하는 TXT qualification inspector
+    (:mod:`hwpxfiller.external.text_template_inspection`)가 전부 이것을 돈다 — 토큰
+    정규식과 sigil 필터를 각자 다시 쓰면 「무엇이 필드인가」가 표면마다 갈린다.
+    """
     for m in _TOKEN.finditer(template):
         if is_structure_sigil(m.group(1)):
             continue  # 구조 마커는 필드가 아니다(모듈 도크스트링)
+        yield m
+
+
+def template_fields(template: str) -> "list[str]":
+    """템플릿이 참조하는 필드 이름 목록(중복 제거, 등장 순) — 구간 마커는 제외."""
+    seen: "dict[str, None]" = {}
+    for m in iter_field_token_matches(template):
         seen.setdefault(m.group(1).strip(), None)
     return list(seen)
 
@@ -102,12 +115,10 @@ def render_segments(
         else:
             segments.append(RenderSegment(chunk, SEG_LITERAL))
 
-    for m in _TOKEN.finditer(template):
-        if is_structure_sigil(m.group(1)):
-            # 구조 마커는 토큰이 아니다 — ``last`` 를 옮기지 않고 지나가면 마커 원문이
-            # 다음 literal 조각에 통째로 실린다(앞·마커·뒤가 한 조각). 세그먼트 연결이
-            # 원문과 같다는 불변식은 그대로고, 마커는 MISSING 으로 붉게 뜨지 않는다.
-            continue
+    # 구조 마커는 토큰이 아니다 — 필터가 걸러 ``last`` 를 옮기지 않으므로 마커 원문이
+    # 다음 literal 조각에 통째로 실린다(앞·마커·뒤가 한 조각). 세그먼트 연결이 원문과
+    # 같다는 불변식은 그대로고, 마커는 MISSING 으로 붉게 뜨지 않는다.
+    for m in iter_field_token_matches(template):
         _literal(template[last:m.start()])
         last = m.end()
         name = m.group(1).strip()

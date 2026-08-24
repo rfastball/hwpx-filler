@@ -96,6 +96,7 @@ from .managed_generation import (
 from ..domain.job import (
     Job,
     rules_fingerprints,
+    template_media,
     work_mode,
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
@@ -1733,9 +1734,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["browse"] = self._browse_payload(jobs)
         # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
         base["range_draft"] = self._range_draft_payload()
-        # 템플릿 변경 존(S3-09) 기본값 — TXT·미상·미선택은 명시적 unsupported(키 부재 분기
-        # 금지). hwpx 분기가 실제 capability·현재 Preparation 으로 덮어쓴다.
+        # 템플릿 변경 존(S3-09) 기본값 — 미상 매체·미선택은 명시적 unsupported(키 부재 분기
+        # 금지). 지원 매체 분기(hwpx·txt)가 실제 capability·현재 Preparation 으로 덮어쓴다.
         base["template_change"] = unsupported_zone()
+        # 원본 드리프트 표식도 **같은 자리**에서 기본값을 갖는다(S10-02 #859): 종전에는 hwpx
+        # 분기에서만 키가 생겨, 다른 분기의 스냅샷은 「드리프트 없음」과 「키 없음」이 구별되지
+        # 않았다(키 부재 분기 금지 — template_change 와 같은 근거).
+        base["source_drift"] = None
         # S4 Working Slot Configuration 존 기본값(SX-02 #725) — TXT·미선택·미상 매체는 명시적
         # 미지원(키 부재 분기 금지, template_change 선례). hwpx 분기가 실제 fresh view 로 덮는다.
         base["slot_configuration"] = self._slot_blank_zone()
@@ -1759,6 +1764,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 세션 축의 연결 상태(#342 3R) — 술어·문안 단일 출처. 재연결 도달 보장이 이
             # 축에 걸리므로 매체 가지마다 빠짐없이 싣는다(진입 게이트도 같은 술어를 쓴다).
             tmissing, tconn = _template_conn(tpath)
+            # 템플릿 변경 존은 **매체를 가리지 않는다**(S10-02 #859) — TXT 템플릿도 같은
+            # S2/S3 생애주기(확인 → immutable Candidate → Qualification → 적용)를 탄다.
+            # 사건 경계·문안·token 은 전부 코디네이터 소유라 여기는 존을 앉히기만 한다.
+            self._seat_template_change_zone(base, template_media(tpath), tmissing)
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
@@ -1923,12 +1932,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # (#342 3R): 조건 없는 세션 값이라 데이터·호환성·순위와 무관하게 흐른다.
         tmissing, tconn = _template_conn(job.template_path)
         # 템플릿 변경 존(S3-09) — 판정·token·epoch 전부 코디네이터 소유(링2 재조립 금지).
-        if self._template_change is not None:
-            base["template_change"] = self._template_change.zone(self.job_name, "hwpx", tmissing)
-            # 원본 파일이 캡처 이후 편집됐으면 시끄럽게 표식한다(생성은 캡처본을 씀, #681 F1).
-            base["source_drift"] = (
-                None if tmissing else self._template_change.source_drift_note(self.job_name)
-            )
+        self._seat_template_change_zone(base, job.media, tmissing)
         # S4 Working Slot Configuration 존(SX-02 #725) — projection·token·상태 전부 Product 소유
         # (링2 재조립 금지). fresh current view 를 매 스냅샷 조회한다: open 은 무변이라 늘 fresh
         # view+새 token 을 낸다(F1/F2 fence). preserved/broken/detached 분리는 projection 이 이미 진다.
@@ -2311,11 +2315,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if (job_is_txt or job_unsupported)
             else RunViewModel(job, engine=self._engine)
         )
+        # 착석 시점 Template Application 정체는 **실행뷰 유무와 무관**하다(S10-02 #859):
+        # TXT 작업도 같은 S3 권위를 지므로 vm 부재를 조건으로 걸면 매체 하나만 정체를
+        # 들고 다니게 된다. 조회는 durable id 가 있을 때만 store 를 읽는 read-only 다
+        # (미발급 Work 는 None — write-on-read 없음).
         seated_template_application_id = (
             self._template_change.current_template_application_id(
                 job.authority_id or None
             )
-            if vm is not None and self._template_change is not None
+            if self._template_change is not None
             else None
         )
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
@@ -3594,6 +3602,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "refresh_required": False,
             "error": None,
         }
+
+    def _seat_template_change_zone(self, base: dict, media: str, tmissing: bool) -> None:
+        """스냅샷의 ``template_change`` 존 + ``source_drift`` 표식을 앉힌다(매체 무관).
+
+        **매체 분기를 여기서 만들지 않는다**(S10-02 #859): 지원 매체 판정은 코디네이터의
+        단일 출처(:data:`~hwpxfiller.webapp.template_change.SUPPORTED_MEDIA`)가 지고 이
+        함수는 현재 작업의 매체를 그대로 전달한다. 매체 가지마다 이 두 줄을 복붙하면
+        새 매체가 설 때 한 가지만 늙는다 — 그것이 지금 TXT 가 서지 못하던 이유였다.
+
+        ``source_drift`` 는 템플릿 부재면 계산하지 않는다: 없는 파일과 캡처본을 비교해
+        「편집됐다」고 말하면 사유가 틀린 경보다(부재는 연결 축이 이미 말한다).
+        """
+        if self._template_change is None:
+            return
+        base["template_change"] = self._template_change.zone(self.job_name, media, tmissing)
+        # 원본 파일이 캡처 이후 편집됐으면 시끄럽게 표식한다(생성은 캡처본을 씀, #681 F1).
+        base["source_drift"] = (
+            None if tmissing else self._template_change.source_drift_note(self.job_name)
+        )
 
     def _is_managed_hwpx_work(self, job) -> bool:
         """의미 3(managed_hwpx)의 파생(S6-05 · #812) — 실행 경로 의미와 한 원천에서 나온다.

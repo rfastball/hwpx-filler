@@ -10,7 +10,8 @@ contract lane 에 산다(실 런타임·브라우저 불요). frontend import-gr
 (병렬 재구현이 아니다). 회피표본에서 RED 를 못 내는 게이트는 무가치이고, 이 슬라이스의 산출물이
 곧 이 게이트들이라 hollow gate 는 결함이다.
 
-- C1 shipping Qualification Profile count == 1 (+ bootstrap admission 1 · dynamic publication 0 · revoke 0).
+- C1 shipping Qualification Profile census == :data:`SHIPPING_QUALIFICATION_PROFILES` (매체마다
+  정확히 하나 · dynamic publication 0 · revoke 0).
 - C2 제품 Profile/qualification 관리 표면(action·bridge·screen) == 0.
 - C3 production frontend 의 `frontend/src/domain/` semantic module import == 0.
 - C4 production frontend 의 canonical digest 계산·재저작 == 0(retained codec 2개만 제외).
@@ -51,6 +52,19 @@ RETAINED_CODEC_MODULES = (
     "frontend/src/domain/canonical_execution_encoding.ts",
     "frontend/src/domain/slot_selection.ts",
 )
+
+#: shipping Qualification Profile 의 **정확한 census**(개수가 아니라 목록을 pin 한다).
+#:
+#: C1 이 막는 것은 **profile 을 고르는 제어면**이지 매체가 자기 자격 규칙을 갖는 것이 아니다 —
+#: 후자는 매체가 늘 때 정확히 하나씩 늘고, 사용자에게는 어떤 선택지도 되지 않는다(그 금지는
+#: C2 가 표면 census 로 따로 진다). S10-02(#859)가 TXT 를 S2/S3 생애주기에 인수하며 목록이
+#: 둘이 됐고, 그것은 우회가 아니라 `docs/CONTROL_PLANE_SCOPE.md` §4 「복수 shipping Profile 이
+#: 실제 사용자 흐름에 필수」의 상향 경로(#856 S10 TXT parity)를 탄 결과다. 목록에 없는 생성은
+#: 여전히 RED 이므로 「하나만」이 「아무거나」로 풀리지 않는다.
+SHIPPING_QUALIFICATION_PROFILES = [
+    "hwpxfiller/external/template_inspection.py|HWPX_QUALIFICATION_PROFILE",
+    "hwpxfiller/external/text_template_inspection.py|TXT_QUALIFICATION_PROFILE",
+]
 
 #: canonical semantic 을 재저작했다는 표식이 될 심볼·primitive. production frontend 이
 #: 이 이름들을 **정의하거나 참조하면** 두 번째 판정자가 생긴 것이다.
@@ -351,11 +365,12 @@ def _durable_ledger_fields(
 
 
 # ─── C1 ──────────────────────────────────────────────────────────────────────────
-def test_exactly_one_shipping_qualification_profile() -> None:
+def test_exactly_one_shipping_qualification_profile_per_media() -> None:
     constructions = _profile_constructions()
-    assert constructions == [
-        "hwpxfiller/external/template_inspection.py|HWPX_QUALIFICATION_PROFILE"
-    ], f"shipping Profile 은 정확히 하나여야 한다: {constructions}"
+    assert sorted(constructions) == sorted(SHIPPING_QUALIFICATION_PROFILES), (
+        f"shipping Profile census 가 pin 과 다르다: {constructions} — 매체마다 정확히 "
+        "하나이고, 새 매체가 아닌 이유로 늘리려면 docs/CONTROL_PLANE_SCOPE.md §4 상향 조건을 탄다"
+    )
 
     counts = _call_counts()
     # S5F R2-05a(#740): mutable Profile admission control plane 을 제거했다 — bootstrap-to-ADMITTED·
@@ -426,7 +441,7 @@ def test_no_new_durable_ledger_outside_allowlist() -> None:
 # ─── negative probes (파일 관례: 게이트가 실제 회피를 잡는지 — 실 게이트 함수를 호출한다) ──────
 def test_negative_probe_detects_annotated_and_inline_profile_construction() -> None:
     # 옛 census 는 ``ast.Assign`` 만 봐서 annotated/return/inline 생성이 빠져나갔다. 실 helper 는
-    # 호출 노드를 겨눠 모두 센다 — 두 번째 profile 이 있으면 게이트 단언(길이 1)이 RED 다.
+    # 호출 노드를 겨눠 모두 센다 — pin 목록 **밖의** profile 이 하나라도 있으면 게이트가 RED 다.
     annotated = _profile_constructions_in(
         "probe.py", "second: QualificationProfile = QualificationProfile('a', f)\n"
     )
@@ -440,7 +455,10 @@ def test_negative_probe_detects_annotated_and_inline_profile_construction() -> N
 
     real = _profile_constructions()
     injected = real + annotated
-    assert len(real) == 1 and len(injected) == 2, "annotated 2번째 profile 은 census 를 2로 만든다"
+    pinned = len(SHIPPING_QUALIFICATION_PROFILES)
+    assert len(real) == pinned and len(injected) == pinned + 1, (
+        "annotated 로 숨긴 추가 profile 도 census 를 한 건 늘린다"
+    )
 
 
 def test_negative_probe_detects_aliased_forbidden_call() -> None:
