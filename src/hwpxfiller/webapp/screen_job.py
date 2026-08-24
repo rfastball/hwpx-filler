@@ -3808,6 +3808,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 else None
             ),
             "active_field_requirement_ids": list(observation.active_field_requirement_ids),
+            # U3-03(#876): 「입력이 필요한 항목」은 **조치가 필요한 항목만** 싣는다. 링1 의
+            # ``input_requirements`` 는 현재 활성 누름틀 전건의 분류표라 그대로 실으면 손댈 것이
+            # 없는 상태에서도 구획이 상시로 뜬다. 술어는 링1 이 이미 소유한 ``action_required``
+            # 를 그대로 쓴다 — 여기서 분류값(BROKEN 등)을 재해석하지 않는다. 표시 필터는 이
+            # 한 자리뿐이고, 프런트는 실린 항목을 그대로 그린다(0건이면 구획을 안 세운다).
             "input_requirements": [
                 {
                     "field_id": item.field_id,
@@ -3817,6 +3822,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                     "exact_target": item.exact_target,
                 }
                 for item in observation.input_requirements
+                if item.action_required
             ],
             "binding_review_needed": "REVIEW_BINDING" in observation.blockers,
             "record_validation": {

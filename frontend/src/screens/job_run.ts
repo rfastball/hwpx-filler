@@ -995,24 +995,28 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
       }, '목록 새로 확인'),
       h('span', { className: 'muted capnote' },
         '현재 상태에서 만들 예정인 이름입니다. 실제 파일 생성을 예약한 것은 아닙니다.')));
+  // U3-03(#876): backend 가 조치 필요만 실어 준다 — 0건이면 라벨까지 포함해 구획을 안 세운다.
+  // 손댈 것이 없는데 「입력이 필요한 항목」이 상시로 서 있으면 그 자체가 잘못된 진술이다.
+  const inputRequirementSection = items.length
+    ? createElement(Fragment, null,
+      h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
+      h("ul", { className: "plain-list", id: "jobInputRequirements" },
+        ...items.map((item) => h("li", {
+          key: String(item.field_id),
+          "data-binding-state": String(item.binding_state || ""),
+        },
+        h("span", null, String(item.display_label || "")),
+        item.action_required === true
+          ? h("button", {
+              className: "btn sm", type: "button",
+              "data-exact-target": String(item.exact_target || ""),
+              onClick: () => { void props.controller.openBindingRequirement(
+                String(item.exact_target || ""), String(item.display_label || "")); },
+            }, "\uc218\uc815\u2026")
+          : null))))
+    : null;
   return createElement(Fragment, null,
-    h("div", { className: "zone-cap" }, String(wb.input_requirements_label || "")),
-    items.length
-      ? h("ul", { className: "plain-list", id: "jobInputRequirements" },
-          ...items.map((item) => h("li", {
-            key: String(item.field_id),
-            "data-binding-state": String(item.binding_state || ""),
-          },
-          h("span", null, String(item.display_label || "")),
-          item.action_required === true
-            ? h("button", {
-                className: "btn sm", type: "button",
-                "data-exact-target": String(item.exact_target || ""),
-                onClick: () => { void props.controller.openBindingRequirement(
-                  String(item.exact_target || ""), String(item.display_label || "")); },
-              }, "\uc218\uc815\u2026")
-            : null)))
-      : null,
+    inputRequirementSection,
     h("div", { className: "zone-cap" }, "\ud604\uc7ac \uc2e4\ud589 \uc0c1\ud0dc"),
     h("p", { className: "muted capnote", "data-status-code": String(wb.execution_status_code || "") },
       String(wb.execution_status_phrase || "")),

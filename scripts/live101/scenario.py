@@ -1065,8 +1065,20 @@ def run_sx(ctx: ScenarioContext) -> dict:
     s.click_text("#editorContext", "문서 만들기로 돌아가기")
     s.wait("document.querySelector('#scr-job.on') !== null", "Binding ReturnContext", timeout=30.0, requires=["#scr-job"])
     binding_after = _workbench(_snapshot(s))
-    repaired = next(item for item in binding_after.get("input_requirements", ()) if item.get("field_id") == "추가확인")
-    _expect(repaired.get("action_required") is False, "H4: Binding 저장 뒤 current recompute가 갱신되지 않았습니다")
+    # U3-03(#876): 「입력이 필요한 항목」 존은 조치 필요만 싣는다 — 수리된 Active Field 는 활성
+    # 누름틀로는 남고 이 목록에서만 사라진다. 그 둘을 함께 봐야 「갱신됐다」가 증명된다.
+    repaired = {
+        "field_id": "추가확인",
+        "active_field": "추가확인" in tuple(binding_after.get("active_field_requirement_ids", ())),
+        "pending_action": any(
+            item.get("field_id") == "추가확인"
+            for item in binding_after.get("input_requirements", ())
+        ),
+    }
+    _expect(
+        repaired["active_field"] and not repaired["pending_action"],
+        "H4: Binding 저장 뒤 current recompute가 갱신되지 않았습니다",
+    )
 
     # H5 context axis: deterministic lower-layer corruption only induces the real snapshot/recovery UI.
     ctx.stage_context("corrupt")
@@ -1285,7 +1297,7 @@ def run_sx(ctx: ScenarioContext) -> dict:
         "H1": {"labels": labels, "raw_ids": raw_ids, "pixel": audit},
         "H2": {"before_token": before_token, "after_token": after_first_view["new_configuration_token"], "trace": h2_trace},
         "H3": {"option_a_fields": before_fields, "option_b_fields": after_fields},
-        "H4": {"retained_fates": fates, "binding_target": exact_target, "binding_state": repaired.get("binding_state")},
+        "H4": {"retained_fates": fates, "binding_target": exact_target, "binding_repaired": repaired},
         "H5": {"context_copy": context_text, "record_focus": record_focus, "optional": optional["preview_requirement"], "required": required["preview_requirement"], "runtime_reason": final_managed["create_action"].get("disabled_reason")},
         "H6": {"preview_token": current_token, "filesystem_before": baseline_manifest, "filesystem_after": ctx.output_manifest()},
         "H7": {"stale_trace": stale_commands, "old_record_rejected": True, "old_preview_rejected": True, "data_transition": "KEEP/RELEASE/FAILURE_ATOMIC", "work_race": "B_WON"},
@@ -1311,8 +1323,18 @@ def run_restart(ctx: ScenarioContext) -> dict:
         for slot in view["projection"]["slots"]
     }
     wb = _workbench(current)
-    binding = next(item for item in wb.get("input_requirements", ()) if item.get("field_id") == "추가확인")
-    _expect(binding.get("action_required") is False, "H7: durable Binding이 restart 뒤 복원되지 않았습니다")
+    # U3-03(#876): 수리된 Binding 은 활성 누름틀로 남되 「입력이 필요한 항목」에는 안 실린다.
+    binding = {
+        "field_id": "추가확인",
+        "active_field": "추가확인" in tuple(wb.get("active_field_requirement_ids", ())),
+        "pending_action": any(
+            item.get("field_id") == "추가확인" for item in wb.get("input_requirements", ())
+        ),
+    }
+    _expect(
+        binding["active_field"] and not binding["pending_action"],
+        "H7: durable Binding이 restart 뒤 복원되지 않았습니다",
+    )
     _expect(wb.get("run_delivery_intent") is None and wb.get("semantic_preview") is None, "H7: session delivery/preview가 거짓 복원됐습니다")
     after_files = ctx.output_manifest()
     _expect(after_files == before_files, "H7: restart observation이 filesystem을 변경했습니다")
