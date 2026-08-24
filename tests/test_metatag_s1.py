@@ -21,7 +21,12 @@ from _hwpx_metatag_spike import (
     build_package_probe,
     metatag_carriers,
 )
+from hwpxcore.bookmark_region import resolve_bookmark_topology
 from hwpxcore.package import HwpxPackage
+from hwpxfiller.external.template_inspection import (
+    inspect_hwpx_template,
+    scan_template_structure,
+)
 
 CORPUS = Path(__file__).parent / "corpus"
 S0 = CORPUS / "structural_range_s0"
@@ -40,6 +45,49 @@ def _hancom(name: str) -> dict[str, str]:
 
 def _authored(carriers: dict[str, str]) -> dict[str, str]:
     return {key: value for key, value in carriers.items() if '"hwpxFiller"' in value}
+
+
+def _topology(name: str) -> list[dict[str, object]]:
+    """Region shape as committed: names, spans, nesting and decoded payloads."""
+    package = HwpxPackage.from_bytes((S1 / name).read_bytes())
+    return [
+        {
+            "name": region.name,
+            "section": region.section,
+            "span": (region.start_paragraph, region.end_paragraph),
+            "parent": region.parent.name if region.parent is not None else None,
+            "meta_tags": [json.loads(value) for value in region.meta_tags],
+            "meta_tag_attribute": region.meta_tag_attribute,
+        }
+        for region in resolve_bookmark_topology(package)
+    ]
+
+
+def _product_reading(name: str) -> dict[str, object]:
+    """What the product itself reads out of the file — slots, fields, residue."""
+    path = str(S1 / name)
+    inspection = inspect_hwpx_template(path)
+    scan = scan_template_structure(path)
+    return {
+        "fields": list(inspection.fields),
+        "state": inspection.status.state.value,
+        "stray_n": inspection.status.stray_n,
+        "structure_marker_n": inspection.status.structure_marker_n,
+        "slots": [
+            {
+                "id": slot.id,
+                "label": slot.label,
+                "options": [
+                    {"id": option.id, "label": option.label, "order": option.order}
+                    for option in slot.options
+                ],
+            }
+            for slot in inspection.slots
+        ],
+        "diagnostics": [item.message for item in inspection.diagnostics],
+        "scan_markers": scan.summary.markers,
+        "scan_diagnostics": [item.message for item in scan.diagnostics],
+    }
 
 
 def test_authored_metatag_payloads_survive_our_own_serialize_reparse() -> None:
@@ -181,6 +229,81 @@ def test_hancom_preserves_modelled_carriers_and_wipes_everything_else() -> None:
 
     entries = _hancom("G3-resaved.hwpx")["#entries"].split(", ")
     assert DECLARED_ENTRY not in entries and UNDECLARED_ENTRY not in entries
+
+
+def test_hancom_round_trip_preserves_the_nested_kernel_region_pair() -> None:
+    """Claim C for the kernel minimum under nesting — the shape G1..G3 lack.
+
+    ``N1-nested-kernel.hwpx`` was authored by the product compile path over
+    ``corpus/structural_range_s0/R0-plain.hwpx``: nothing but
+    ``fieldBegin@type=BOOKMARK`` regions carrying ``hp:metaTag`` children, with
+    one 항목 region containing two sibling 선택 regions.  ``N1-resaved.hwpx`` is
+    that file opened and saved unedited by Hancom Office Hangul 12.0.0.4426
+    (2026-08-25, #807 §6 condition 10 verification session).
+    """
+    before, after = _topology("N1-nested-kernel.hwpx"), _topology("N1-resaved.hwpx")
+
+    assert [region["name"] for region in before] == [
+        "계약방식",
+        "계약방식/일반경쟁",
+        "계약방식/수의계약",
+    ]
+    assert [region["span"] for region in before] == [(5, 6), (5, 5), (6, 6)]
+    slot, *options = before
+    for option in options:
+        # The two 선택 regions are siblings nested inside the 항목 region, and
+        # each spans a paragraph range the parent's range contains.
+        assert option["parent"] == slot["name"] and slot["parent"] is None
+        assert option["section"] == slot["section"]
+        assert slot["span"][0] <= option["span"][0]
+        assert option["span"][1] <= slot["span"][1]
+    assert [region["meta_tags"] for region in before] == [
+        [{"hwpxFiller": {"kind": "slot", "id": "계약방식", "label": "계약 방식"}, "name": "#hf"}],
+        [
+            {
+                "hwpxFiller": {"kind": "slot_option", "id": "일반경쟁", "label": "일반경쟁 계약"},
+                "name": "#hf",
+            }
+        ],
+        [
+            {
+                "hwpxFiller": {"kind": "slot_option", "id": "수의계약", "label": "수의 계약"},
+                "name": "#hf",
+            }
+        ],
+    ]
+
+    # The single allowed normalization, the one M1 already records: the camel
+    # fieldBegin@metaTag attribute is absent as we author it and empty after a
+    # Hancom save.  The child element is the carrier and product reads are
+    # truthiness over the attribute, so absent and empty mean the same thing.
+    assert [region["meta_tag_attribute"] for region in before] == [None, None, None]
+    assert [region["meta_tag_attribute"] for region in after] == ["", "", ""]
+    assert [
+        {key: value for key, value in region.items() if key != "meta_tag_attribute"}
+        for region in after
+    ] == [
+        {key: value for key, value in region.items() if key != "meta_tag_attribute"}
+        for region in before
+    ]
+
+    reading = _product_reading("N1-nested-kernel.hwpx")
+    assert _product_reading("N1-resaved.hwpx") == reading
+    assert reading["slots"] == [
+        {
+            "id": "계약방식",
+            "label": "계약 방식",
+            "options": [
+                {"id": "일반경쟁", "label": "일반경쟁 계약", "order": 0},
+                {"id": "수의계약", "label": "수의 계약", "order": 1},
+            ],
+        }
+    ]
+    assert reading["state"] == "compiled"
+    assert reading["fields"] == ["수요기관", "담당자", "계약금액", "납품기한", "수의사유"]
+    assert reading["diagnostics"] == [] and reading["scan_diagnostics"] == []
+    assert reading["scan_markers"] == 0 and reading["structure_marker_n"] == 0
+    assert reading["stray_n"] == 0
 
 
 def test_package_probe_adds_declared_and_undeclared_catalog_entries() -> None:
