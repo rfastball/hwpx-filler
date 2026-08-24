@@ -629,6 +629,39 @@ def test_kernel_still_refuses_an_enclosing_creation_as_depth_defense() -> None:
         create_bookmark_region(pkg, SECTION, 0, 2, name="특약", parent=None)
 
 
+def test_existing_bookmark_in_another_entry_is_not_an_overlap() -> None:
+    """겹침은 **같은 entry** 안에서만 판정한다 — 다른 섹션의 같은 문단 번호는 남이다.
+
+    문단 인덱스는 content XML 마다 0 부터 다시 세므로 entry 를 안 가르면 무관한 섹션의
+    책갈피가 선언 범위를 가로막는다. 여기서는 section1 의 책갈피가 section0 선언의
+    content 범위와 **같은 번호**(1)에 앉아 그 혼동을 실제로 유발한다.
+    """
+    pkg = HwpxPackage(
+        entries={
+            MIMETYPE_NAME: MIMETYPE_VALUE,
+            SECTION: _entry(
+                "".join((_text("{{#항목 특약}}"), _text("본문"), _text("{{/항목}}")))
+            ),
+            "Contents/section1.xml": _entry(
+                _text("머리") + _bookmark("5", "남의 섹션", "본문", _OPAQUE_METATAG)
+            ),
+        },
+        stored={MIMETYPE_NAME},
+    )
+
+    report = compile_structure(pkg)
+
+    assert (report.modified, report.refusal) == (True, None)
+    assert [(name, section) for name, section in _named_sections(pkg)] == [
+        ("특약", SECTION),
+        ("남의 섹션", "Contents/section1.xml"),
+    ]
+
+
+def _named_sections(pkg: HwpxPackage) -> "list[tuple[str, str]]":
+    return [(r.name, r.section) for r in resolve_bookmark_topology(pkg) if r.name]
+
+
 def test_disjoint_existing_bookmark_still_compiles() -> None:
     """겹치지 않는 기존 책갈피는 종전대로 통과한다(양성 대조 — 과잉 거절 금지)."""
     pkg = _pkg(
