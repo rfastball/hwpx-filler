@@ -285,6 +285,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 바뀌었으면 확인 왕복(`confirm_fingerprint` 2차 호출)으로만 덮는다(#216 이월 2).
         "txt_edit": _schema("path content baseline", "confirm_fingerprint"),
         "txt_content": _schema("path"),
+        # 저작 중 본문의 표기 판정 — 파일이 아니라 **창이 든 문자열**을 받는다(S10-05 #862).
+        # 읽기 전용이라 확인 왕복이 없고, 새 TXT 창에는 경로가 아직 없으므로 키도 없다.
+        "txt_lint": _schema("content"),
     },
 }
 

@@ -486,3 +486,54 @@ def test_marker_lines_and_unselected_option_lines_are_disjoint_stages():
     visible = text_structure.visible_lines(_CANONICAL, scan, selected)
     assert set(visible) | hidden == set(range(len(_CANONICAL.splitlines())))
     assert not set(visible) & hidden
+
+
+# ---------------------------------------------- 토큰 스팬(S10-05 #862 · 저작 표면의 좌표)
+def test_token_spans_split_fields_from_markers_in_document_order():
+    """같은 괄호 문법을 쓰는 둘을 **sigil 로** 가르고 등장순 좌표로 낸다.
+
+    이 함수가 도메인에 있는 이유가 여기 있다: 저작 표면이 정규식을 다시 쓰면
+    ``{{#항목 …}}`` 이 「#항목 …」 이라는 이름의 누름틀로 칠해진다.
+    """
+    spans = text_structure.scan_text_token_spans(_CANONICAL)
+
+    assert [span.start for span in spans] == sorted(span.start for span in spans)
+    # 좌표는 원문에 그대로 얹힌다 — 강조가 어긋나지 않는다는 불변식.
+    for span in spans:
+        assert _CANONICAL[span.start:span.end] == span.source
+    kinds = {span.kind for span in spans}
+    assert kinds == {text_structure.TOKEN_SPAN_FIELD, text_structure.TOKEN_SPAN_MARKER}
+    fields = [s.source for s in spans if s.kind == text_structure.TOKEN_SPAN_FIELD]
+    assert fields == ["{{지체상금률}}", "{{하자기간}}", "{{수요기관}}"]
+    markers = [s for s in spans if s.kind == text_structure.TOKEN_SPAN_MARKER]
+    # 마커 수는 요약(`summary.markers`)과 같아야 한다 — 둘이 갈리면 화면이 센 것과 판정이
+    # 센 것이 다르다는 뜻이고, 그 어긋남은 사용자가 볼 수 없는 자리에서 자란다.
+    assert len(markers) == text_structure.scan_text_structure(_CANONICAL).summary.markers
+
+
+def test_token_spans_never_overlap_and_are_empty_for_plain_text():
+    """스팬은 겹치지 않고, 토큰이 없는 본문에서는 아무것도 내지 않는다(빈 창의 첫 판정)."""
+    spans = text_structure.scan_text_token_spans(_CANONICAL)
+    for previous, current in zip(spans, spans[1:], strict=False):
+        assert previous.end <= current.start
+
+    assert text_structure.scan_text_token_spans("") == ()
+    assert text_structure.scan_text_token_spans("토큰 없는 안내문\n둘째 줄") == ()
+
+
+def test_token_spans_leave_broken_markers_visible_as_markers():
+    """짝이 안 맞아도 마커는 마커다 — 강조는 진단과 별개 축이다.
+
+    진단이 있으면 ``slots``/``placements`` 는 신뢰 대상이 아니지만, **어디에 무엇이 쓰여
+    있는가**는 여전히 사실이다. 그 사실이 없으면 표기가 깨진 순간 화면이 색을 잃어
+    사용자는 무엇을 고쳐야 하는지 볼 수 없다.
+    """
+    text = "제목: {{공고명}}\n{{#항목 사유}}"
+    scan = text_structure.scan_text_structure(text)
+    assert len(scan.diagnostics) == 1              # 열린 채 끝난 범위
+
+    spans = text_structure.scan_text_token_spans(text)
+    assert [(s.kind, s.source) for s in spans] == [
+        (text_structure.TOKEN_SPAN_FIELD, "{{공고명}}"),
+        (text_structure.TOKEN_SPAN_MARKER, "{{#항목 사유}}"),
+    ]

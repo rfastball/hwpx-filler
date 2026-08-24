@@ -250,6 +250,92 @@ function fire(ctx, el, type) {
   el.dispatchEvent(new ctx.win.Event(type, { bubbles: true }));
 }
 
+/** **원소에서** 키를 올린다(문서 직접 발사가 아니다) — vendor 편집기가 그 키를 먹는지를
+ *  재려면 사건이 그 편집기의 DOM 을 먼저 지나야 한다. 문서에 바로 쏘면 중간층을 건너뛰어
+ *  「먹히지 않았다」가 언제나 참인 거짓 초록이 된다. */
+function keydownOn(ctx, el, key) {
+  el.dispatchEvent(new ctx.win.KeyboardEvent("keydown", { key, bubbles: true }));
+}
+
+/** contentEditable 표면에 **붙여넣기**로 본문을 넣는다.
+ *
+ *  `el.value = …`(React 제어 입력)도 `el.textContent = …`(DOM 되쓰기)도 여기서는 통하지
+ *  않는다 — 앞은 그런 프로퍼티가 없고, 뒤는 편집기가 자기 상태로 DOM 을 되돌린다(실측:
+ *  주입 뒤 문서가 그대로였다). 붙여넣기는 편집기가 **명시 처리기**로 받는 실제 사용자
+ *  경로라, 그 경로로 넣어야 「사용자가 친 것과 같은 길」이라는 말이 참이 된다. */
+function pasteInto(ctx, el, text) {
+  const transfer = new ctx.win.DataTransfer();
+  transfer.setData("text/plain", text);
+  el.dispatchEvent(new ctx.win.ClipboardEvent("paste", {
+    clipboardData: transfer, bubbles: true, cancelable: true,
+  }));
+}
+
+/** 실시간(ms) 대기 — `settleUntil` 은 turn 양보라 **디바운스·브리지 왕복을 못 넘긴다**.
+ *  조건이 서면 즉시 끝나므로 고정 지연이 아니고, 안 서면 그대로 읽어 빨강으로 남는다. */
+async function waitFor(ctx, ready, tries = 30, ms = 40) {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (ready()) return true;
+    await ctx.sleep(ms);
+  }
+  return !!ready();
+}
+
+/** TXT 저작 린트메모장 실물 확인(S10-05 #862 · #299 회수) — `editor_txt_band` 의 뒷단계.
+ *
+ *  정적 계약이 못 보는 넷을 실 WebView2 에서 센다:
+ *
+ *  ① CodeMirror 가 **정말 마운트되는가**(모듈은 있는데 붙지 않는 상태가 정적으로는 초록).
+ *  ② 판정이 **왕복해 실물이 되는가** — 강조 두 종과 진단 줄이 Python 이 낸 좌표·문안에서
+ *     온다. 프론트에 정규식이 없으므로 왕복이 죽으면 강조가 0 이 되어 바로 드러난다.
+ *  ③ **Escape 를 vendor 가 먹지 않는가** — 키맵을 안 세운 것이 계약이고, 그 계약이 깨지면
+ *     더럽혀진 창의 이탈 가드가 조용히 우회된다(저장 안 한 저작이 소리 없이 사라진다).
+ *  ④ 창을 닫으면 **인스턴스가 걷히는가**(누수는 다음 열기에서 두 벌로 보인다).
+ *
+ *  본문 주입은 `contentDOM.textContent` 다 — CodeMirror 가 IME·붙여넣기로 DOM 이 바뀌었을 때
+ *  쓰는 **되읽기** 경로와 같은 자리라, 값 대입으로 상태를 밀어 넣는 것보다 사용자 입력에
+ *  가깝다. 새 창을 늘리지 않는다: 이 단계는 이미 서 있는 편집기 세션 위에 얹힌다. */
+async function probeLintpad(ctx, out) {
+  const doc = ctx.doc;
+  const trigger = doc.querySelector('#editor-body [data-act="lib-new-txt"]');
+  out.lintpad_trigger = !!trigger;
+  if (!trigger) return;
+  trigger.click();
+  out.lintpad_mounted = await waitFor(ctx, () => !!doc.querySelector("#txtLintpad .cm-editor"));
+  if (!out.lintpad_mounted) return;
+  const content = doc.getElementById("txtEditContent");
+  out.lintpad_content_editable = !!content && content.isContentEditable === true;
+  /* 새 생성 창의 첫 초점은 **이름 칸**이다(메모장이 마운트에서 가로채면 여기가 갈린다).
+     메모장 자신이 초점 대상이 되는지는 바로 아래에서 따로 잰다. */
+  out.lintpad_focus = doc.activeElement ? doc.activeElement.id : "";
+  content.focus();
+  out.lintpad_focusable = doc.activeElement ? doc.activeElement.id : "";
+  /* 양성 대조의 **선행 음성** — 주입 전에는 강조가 0 이어야 한다. 이게 없으면 늘 켜져 있는
+     클래스도 초록을 훔친다. */
+  out.lintpad_marks_before = doc.querySelectorAll("#txtLintpad .cm-txtField").length
+    + doc.querySelectorAll("#txtLintpad .cm-txtMarker").length;
+  pasteInto(ctx, content, "제목: {{공고명}}\n{{#항목 사유}}");
+  out.lintpad_lint_arrived = await waitFor(
+    ctx, () => doc.querySelectorAll("#txtLintDiag li").length > 0);
+  out.lintpad_field_marks = doc.querySelectorAll("#txtLintpad .cm-txtField").length;
+  out.lintpad_marker_marks = doc.querySelectorAll("#txtLintpad .cm-txtMarker").length;
+  const diagnostics = doc.querySelectorAll("#txtLintDiag li");
+  out.lintpad_diag_count = diagnostics.length;
+  out.lintpad_diag_text = diagnostics.length ? diagnostics[0].textContent : "";
+  /* ③ 편집기 안에서 올린 Escape 가 모달 이탈 가드까지 도달하는가. 창은 더럽혀졌으므로
+     **확인 왕복**이 서야 한다 — 바로 닫히면 그것이 곧 가드 우회다. */
+  keydownOn(ctx, content, "Escape");
+  const confirmRoot = doc.getElementById("confirmModal");
+  out.lintpad_escape_asks = await waitFor(
+    ctx, () => !!confirmRoot && !confirmRoot.classList.contains("hidden"), 20);
+  if (out.lintpad_escape_asks) {
+    doc.getElementById("confirmModalOk").click();
+    settleModal(ctx, "confirmModal");
+  }
+  settleModal(ctx, "txtEditModal");
+  out.lintpad_disposed = await waitFor(ctx, () => doc.getElementById("txtLintpad") === null, 20);
+}
+
 /** 몰입 표면을 걷고 셸을 되돌린다 — app.py:2058-2065 · 2158-2162 · 3316-3322 의 `finish()` 앞머리.
  *
  *  레거시는 실패를 `out.teardown_error` 에만 적었고 **아무 테스트도 그 필드를 읽지 않는다**.
@@ -934,15 +1020,21 @@ export function createEditorWorkbenchDataProbes() {
       owner: "frontend",
       modes: ["full"],
       legacySite: 3808,
-      deadlineMs: 2500,
-      deadlineRationale: "공용 `_probe_late` 예산 2.5초 그대로(측정 자체는 동기다).",
+      deadlineMs: 6000,
+      deadlineRationale:
+        "공용 `_probe_late` 예산 2.5초에 **린트메모장 단계**가 얹혔다(S10-05 #862): 창 열기 +"
+        + " 디바운스 180ms + `tpl/txt_lint` 실왕복 + 이탈 확인 왕복이 한 프로브 안에서 돈다."
+        + " 늘린 것은 매달림을 유한 시간에 빨강으로 만드는 상한이지 통과 조건이 아니다 —"
+        + " 실측 여유(내부 대기 상한 2×1.2초)를 담되 무한정은 아니게 잡는다.",
       completionField: "pending",
       after: ["editor_discard_cancel"],
       afterReason: "레거시 드라이버 순서 그대로(3802 → 3808).",
       note:
         "레거시의 `teardown_error` 필드가 태어난 자리(app.py:3322). 그 필드를 읽는 테스트가"
         + " **하나도 없어** 정리 실패가 보이지 않았다 — 필드는 배선 호환으로 남기고, 실패는"
-        + " 러너의 teardown 계약으로 시끄럽게 세운다.",
+        + " 러너의 teardown 계약으로 시끄럽게 세운다."
+        + " 같은 프로브가 TXT **저작** 표면까지 진다(S10-05 #862): 새 창을 늘리지 않고"
+        + " 이미 선 세션에 단계를 얹는 것이 실창 게이트 규율이다.",
       async run(ctx) {
         const Nav = service(ctx, "Nav");
         const out = { pending: true };
@@ -975,6 +1067,7 @@ export function createEditorWorkbenchDataProbes() {
           out.bands = caps.filter((t) => t === "HWPX 서식" || t === "TXT 기안");
           out.txt_pick = !!ctx.doc.querySelector(
             '#editor-body [data-act="use-library"][data-path="C:/t/기안.txt"]');
+          await probeLintpad(ctx, out);
           ctx.push("editor", Object.assign({}, base, {
             sections: ["template", "binding"], template_path: "C:/t/기안.txt",
             template_name: "기안.txt", template_media: "txt",

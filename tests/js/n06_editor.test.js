@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { createEditorController, EditorScreen } from "../../frontend/src/screens/editor.ts";
+import {
+  createEditorController, EditorScreen, TxtEditDialog,
+} from "../../frontend/src/screens/editor.ts";
+import { usableSpans } from "../../frontend/src/editorview/txt_lintpad.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 import { createScreenRuntime } from "../../frontend/src/screens/runtime.ts";
@@ -861,4 +864,171 @@ test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
     createElement(EditorScreen, { controller: h.controller }),
   );
   assert.equal(markup.includes('id="tplSlots"'), false);
+});
+
+/* ---------------- ⑧ TXT 저작 린트메모장(S10-05 #862 · #299 회수) ---------------- */
+
+const LINT_CONTENT = "제목: {{공고명}}\n{{#항목 사유}}";
+const LINT_REPLY = {
+  slots: [],
+  diagnostics: [{
+    kind: "unbalanced_marker",
+    message: "「항목 사유」 범위가 열린 채 파일이 끝났습니다 — 닫는 마커가 없습니다.",
+    context: "{{#항목 사유}}",
+  }],
+  summary: { slots: 0, options: 0, fields: 1, markers: 1 },
+  placements: [],
+  spans: [
+    { kind: "field", start: 4, end: 11, source: "{{공고명}}" },
+    { kind: "marker", start: 12, end: 22, source: "{{#항목 사유}}" },
+  ],
+};
+
+/** 디바운스(180ms) 뒤의 왕복까지 기다린다 — 고정 지연이 아니라 상한이다. */
+async function awaitLint(controller, tries = 40) {
+  for (let attempt = 0; attempt < tries; attempt += 1) {
+    if (controller.viewModel.getSnapshot().txtEdit?.lint !== null) return true;
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+  }
+  return controller.viewModel.getSnapshot().txtEdit?.lint !== null;
+}
+
+test("S10-05 저작 창은 textarea 가 아니라 린트메모장 호스트를 세운다", async () => {
+  const h = harness();
+  await h.controller.init();
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+
+  const markup = renderToStaticMarkup(
+    createElement(TxtEditDialog, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('id="txtLintpad"'), "메모장이 붙을 자리가 없다");
+  assert.ok(!markup.includes("<textarea"),
+    "textarea 가 남아 있으면 두 편집 표면이 같은 값을 두고 다툰다");
+  /* 「새 파일로 저장」은 편집 모드의 동사다 — 새 생성 창에는 원본이 없으므로 뜨지 않는다. */
+  assert.ok(markup.includes('id="txtEditSaveAs"'), "편집 모드에 「새 파일로 저장」이 없다");
+});
+
+test("S10-05 새 TXT 창에는 「새 파일로 저장」이 서지 않는다(원본이 없다)", async () => {
+  const h = harness();
+  await h.controller.init();
+  h.controller.openTxtEdit("new", "", "", "", {});
+
+  const markup = renderToStaticMarkup(
+    createElement(TxtEditDialog, { controller: h.controller }),
+  );
+  assert.ok(!markup.includes('id="txtEditSaveAs"'), "새 생성 창에 「새 파일로 저장」이 떴다");
+});
+
+test("S10-05 판정은 tpl/txt_lint 왕복에서 오고 문안은 그대로 재진술된다", async () => {
+  const h = harness({
+    call: async (_screen, action) => (action === "txt_lint" ? LINT_REPLY : {}),
+  });
+  await h.controller.init();
+  const initialPulls = h.counts.initial;
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+
+  assert.ok(await awaitLint(h.controller), "디바운스 뒤에도 판정이 도착하지 않았다");
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[2] === "txt_lint");
+  assert.equal(sent.length, 1, "린트 왕복은 디바운스로 한 번만 나간다");
+  assert.deepEqual(sent[0][3], { content: LINT_CONTENT }, "본문만 싣는다(경로 없음)");
+  /* 읽기 전용 동사라 editor 재당김을 태우지 않는다 — 글자마다 화면 전체가 돌면 안 된다. */
+  assert.equal(h.counts.initial, initialPulls, "읽기 전용 왕복이 재당김을 태웠다");
+
+  const markup = renderToStaticMarkup(
+    createElement(TxtEditDialog, { controller: h.controller }),
+  );
+  assert.ok(markup.includes("닫는 마커가 없습니다"),
+    "Python 이 낸 message 가 그대로 서지 않는다(kind 로 문안을 다시 지으면 갈린다)");
+});
+
+test("S10-05 낡은 응답은 새 본문을 덮지 않는다", async () => {
+  const replies = [];
+  const h = harness({
+    call: async (_screen, action, payload) => {
+      if (action !== "txt_lint") return {};
+      /* 첫 요청만 늦게 답한다 — 그 사이 사용자가 더 쳤다. */
+      const late = payload.content === LINT_CONTENT;
+      await new Promise((resolve) => { setTimeout(resolve, late ? 120 : 0); });
+      const reply = { ...LINT_REPLY, summary: { ...LINT_REPLY.summary, markers: late ? 99 : 1 } };
+      replies.push(payload.content);
+      return reply;
+    },
+  });
+  await h.controller.init();
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+  await new Promise((resolve) => { setTimeout(resolve, 200); });
+  h.controller.typeTxtEdit("{{공고명}}");
+  assert.ok(await awaitLint(h.controller), "둘째 판정이 도착하지 않았다");
+  await new Promise((resolve) => { setTimeout(resolve, 200); });
+
+  const lint = h.controller.viewModel.getSnapshot().txtEdit.lint;
+  assert.equal(lint.content, "{{공고명}}", "판정이 본 본문이 화면의 것과 다르다");
+  assert.equal(lint.summary.markers, 1, "늦게 온 옛 응답이 새 판정을 덮었다");
+});
+
+test("S10-05 「새 파일로 저장」은 기존 txt_new 를 재사용한다(새 동사 없음)", async () => {
+  const h = harness({ prompt: () => "회의결과" });
+  await h.controller.init();
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+
+  await h.controller.saveTxtEditAsNew({});
+
+  const verbs = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+    .map((row) => row[2]);
+  assert.ok(verbs.includes("txt_new"), "새 파일 저장이 txt_new 를 부르지 않았다");
+  assert.ok(!verbs.includes("txt_edit"), "새 파일 저장이 원본까지 덮었다");
+  const call = h.trace.find((row) => row[0] === "dispatch" && row[2] === "txt_new");
+  assert.deepEqual(call[3], { name: "회의결과", content: LINT_CONTENT });
+});
+
+test("S10-05 「새 파일로 저장」 취소는 아무것도 발신하지 않는다", async () => {
+  const h = harness({ prompt: () => null });
+  await h.controller.init();
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+
+  await h.controller.saveTxtEditAsNew({});
+
+  assert.equal(
+    h.trace.filter((row) => row[0] === "dispatch" && row[2] === "txt_new").length, 0,
+    "취소했는데 파일이 만들어졌다");
+  assert.notEqual(h.controller.viewModel.getSnapshot().txtEdit, null, "취소가 창을 닫았다");
+});
+
+test("S10-05 저장 성공은 「변경사항 확인/적용」이 남았음을 인라인으로 말한다", async () => {
+  const h = harness();
+  await h.controller.init();
+  h.controller.openTxtEdit("edit", "C:/t/기안.txt", "기안", LINT_CONTENT, {});
+
+  await h.controller.submitTxtEdit();
+
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.equal(message.level, "ok");
+  assert.ok(message.text.includes("변경사항 확인") && message.text.includes("변경사항 적용"),
+    `저장이 반영까지 한 것처럼 읽힌다: ${message.text}`);
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('id="save-msg"') && markup.includes("변경사항 확인"),
+    "안내가 갈 인라인 자리에 실제로 실리지 않았다");
+});
+
+test("S10-05 스팬→데코 투영은 문서 밖·겹침·미지 kind 를 버린다", () => {
+  assert.deepEqual(
+    usableSpans([{ kind: "field", start: 4, end: 11 }, { kind: "marker", start: 12, end: 22 }], 22),
+    [
+      { from: 4, to: 11, className: "cm-txtField" },
+      { from: 12, to: 22, className: "cm-txtMarker" },
+    ],
+  );
+  // 문서가 줄어든 뒤 도착한 좌표 — 자르고, 빈 것은 버린다.
+  assert.deepEqual(usableSpans([{ kind: "field", start: 4, end: 11 }], 6),
+    [{ from: 4, to: 6, className: "cm-txtField" }]);
+  assert.deepEqual(usableSpans([{ kind: "field", start: 8, end: 11 }], 6), []);
+  // 겹침은 RangeSet 이 던진다 — 뒤 조각을 버려 화면이 살아 있게 한다.
+  assert.deepEqual(
+    usableSpans([{ kind: "field", start: 0, end: 10 }, { kind: "marker", start: 5, end: 8 }], 20),
+    [{ from: 0, to: 10, className: "cm-txtField" }],
+  );
+  // 모르는 어휘는 칠하지 않는다(조용히 틀린 색보다 무색이 낫다).
+  assert.deepEqual(usableSpans([{ kind: "미래어휘", start: 0, end: 3 }], 20), []);
 });

@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 NODE_VERSION = "24.18.1"
 NPM_VERSION = "11.16.0"
 DEPENDENCIES = {
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
 }
