@@ -41,6 +41,15 @@ def _pkg(section_inner: str) -> HwpxPackage:
     return pkg
 
 
+def _multi_entry_pkg(section_inner: str, header_inner: str) -> HwpxPackage:
+    """section0 + header0 두 content XML 을 가진 패키지(파일 경계 대조용)."""
+    pkg = _pkg(section_inner)
+    pkg.entries["Contents/header0.xml"] = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{header_inner}</hs:sec>'
+    ).encode("utf-8")
+    return pkg
+
+
 def _p(text: str) -> str:
     return f'<hp:p><hp:run charPrIDRef="0"><hp:t>{text}</hp:t></hp:run></hp:p>'
 
@@ -391,6 +400,38 @@ def test_diagnostic_end_marker_extra_text():
     assert "닫는 마커는 키워드만" in scan.diagnostics[0].message
     # 진단은 냈지만 범위 자체는 닫아 뒤이은 유령 불균형을 만들지 않는다.
     assert [slot.id for slot in scan.slots] == ["특약"]
+
+
+# --------------------------------------------------- 파일 경계 음성 대조
+def test_range_does_not_pair_across_content_xml_boundary():
+    """범위는 한 content XML 안에서 닫혀야 한다 — 파일을 넘는 짝짓기는 불균형이다.
+
+    쓰기 커널의 region 은 한 XML 안에 사는 단위라, section0 의 여는 마커를 header0
+    의 고아 닫는 마커가 닫아 「균형」으로 통과하면 S8-02 가 컴파일할 수 없는 구조를
+    진단 계층이 조용히 승인하는 셈이 된다.
+    """
+    pkg = _multi_entry_pkg(
+        _p("{{#항목 특약}}") + _p("본문"),
+        _p("{{/항목}}"),
+    )
+    snapshot = dict(pkg.entries)
+    scan = scan_structure(pkg)
+
+    assert pkg.entries == snapshot  # 무변형
+    assert _kinds(scan) == [Kind.UNBALANCED_MARKER, Kind.UNBALANCED_MARKER]
+    assert "content XML 이 끝났습니다" in scan.diagnostics[0].message  # 열린 begin
+    assert "여는 「항목」 마커 없이" in scan.diagnostics[1].message  # 고아 end
+    assert scan.slots == ()  # 파일을 넘어 짝지어진 항목은 복원되지 않는다
+    assert scan.summary.to_dict() == {"slots": 0, "options": 0, "fields": 0}
+
+
+def test_slot_id_duplication_is_still_detected_across_content_xml():
+    """짝짓기만 파일 단위로 닫힌다 — id 중복 검사·결과 누적은 문서 전역 그대로."""
+    body = _p("{{#항목 특약}}") + _p("본문") + _p("{{/항목}}")
+    scan = scan_structure(_multi_entry_pkg(body, body))
+
+    assert _kinds(scan) == [Kind.DUPLICATE_SLOT_ID]
+    assert [slot.id for slot in scan.slots] == ["특약", "특약"]
 
 
 # --------------------------------------------------------- 기타 계약

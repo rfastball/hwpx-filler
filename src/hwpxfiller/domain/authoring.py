@@ -936,19 +936,27 @@ class _StructureReader:
             return
         self._read_marker(match.group(1), context)
 
-    def finish(self) -> None:
-        """스트림 종료 — 닫히지 않은 범위를 불균형으로 신고한다."""
+    def close_entry(self) -> None:
+        """content XML 하나의 끝 — 닫히지 않은 범위를 불균형으로 신고한다.
+
+        **범위는 한 content XML 안에서 닫혀야 한다.** 쓰기 커널의 region(bookmark)이
+        한 XML 안에 사는 단위라, 파일 경계를 넘어 짝지어진 범위는 S8-02 가 컴파일할
+        수 없다 — 그런 구조를 「균형」으로 통과시키면 진단 계층이 조용히 틀린다.
+        그래서 짝짓기는 파일마다 닫고, id 중복 검사와 누적 결과만 문서 전역이다.
+        """
         if self._option is not None:
             self._note(
                 StructureDiagnosticKind.UNBALANCED_MARKER,
-                f"「선택 {self._option.id}」 범위가 열린 채 끝났습니다 — 닫는 마커가 없습니다.",
+                f"「선택 {self._option.id}」 범위가 열린 채 content XML 이 끝났습니다 — "
+                "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
                 self._option.context,
             )
             self._option = None
         if self._slot is not None:
             self._note(
                 StructureDiagnosticKind.UNBALANCED_MARKER,
-                f"「항목 {self._slot.id}」 범위가 열린 채 끝났습니다 — 닫는 마커가 없습니다.",
+                f"「항목 {self._slot.id}」 범위가 열린 채 content XML 이 끝났습니다 — "
+                "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
                 self._slot.context,
             )
             self._slot = None
@@ -1129,6 +1137,10 @@ def scan_structure(pkg: object) -> StructureScan:
     **무변형**: ``pkg.entries`` 를 읽기만 하고 어떤 바이트도 쓰지 않는다(변형
     프리미티브는 S8-02 소관).
 
+    범위는 **한 content XML 안에서 닫혀야 한다**(section·header·footer 를 넘나드는
+    짝짓기 금지 — :meth:`_StructureReader.close_entry`). Slot id 중복 검사와 결과
+    누적만 문서 전역이다.
+
     반환 계약은 :class:`StructureScan` 이 진다 — **진단 1건 이상이면 변환 불가**이고
     ``slots`` 는 신뢰 대상이 아니다.
     """
@@ -1143,7 +1155,10 @@ def scan_structure(pkg: object) -> StructureScan:
                 top_level=_is_top_level_paragraph(p, root),
                 in_table=_paragraph_in_table(p),
             )
-    reader.finish()
+        # 짝짓기는 파일 경계에서 닫는다 — 범위가 XML 을 넘어 짝지어지면 S8-02 가
+        # 컴파일할 수 없는 구조가 「균형」으로 통과한다. 누적 결과와 id 중복
+        # 검사는 문서 전역 그대로다.
+        reader.close_entry()
     # 필드 수는 같은 스캔의 단일 진실원(``scan_tokens``)에서 센다 — 「누름틀 k」가 두
     # 곳에서 따로 세어져 갈라지지 않게 한다. 못 바꾸는 토큰(skipped)은 변환 대상이
     # 아니므로 k 에 들어가지 않는다.
