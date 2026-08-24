@@ -17,6 +17,11 @@
 본문 직계 문단 좌표)를 낸다(무변형). 그 배치를 native Slot 구조로 실제 컴파일하는
 것은 External 의 ``compile_structure`` 몫이다(S8-02).
 
+**매체 독립 절반은 여기 없다(S10-01 #858).** 토큰 문법·sigil 술어·진단 어휘·구간
+상태기계는 lxml-free 코어 :mod:`~hwpxfiller.domain.structure_scan` 이 소유하고 TXT
+스캐너(:mod:`~hwpxfiller.domain.text_structure`)와 **한 몸통**을 쓴다. 이 모듈에 남는
+것은 HWPX 매체 판정(표 셀·본문 직계·문단 단독)과 문단 좌표 배치, 그리고 컴파일이다.
+
 **충실도.** 생성 누름틀은 실제 코퍼스 속성을 미러링한다:
 ``fieldBegin@type=CLICK_HERE, editable=1, dirty=1, zorder=-1, metaTag=""`` +
 ``fieldEnd@beginIDRef=<begin id>`` + 공유 ``fieldid``. id/fieldid 는 해당 XML 의 기존
@@ -40,62 +45,40 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from lxml import etree
 
-from .fields import normalize_field_id
-from .slot import Slot, SlotOption
+from .slot import Slot
+from .structure_scan import (
+    CONTEXT_MAX,
+    OPTION_KEYWORD,
+    PLACEMENT_OPTION,
+    PLACEMENT_SLOT,
+    SLOT_KEYWORD,
+    TOKEN_RE,
+    StructureDiagnostic,
+    StructureDiagnosticKind,
+    StructureReader,
+    StructureSummary,
+    iter_field_tokens,
+    iter_structure_markers,
+    is_structure_sigil,
+    normalize_field_id,
+)
 from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.text_extract import HP_NS, local_name, require_package
 
-_TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
+# 토큰 문법·sigil 술어·진단 어휘·구간 상태기계는 매체 독립이라 lxml-free 코어
+# (:mod:`~hwpxfiller.domain.structure_scan`)가 소유한다 — TXT 스캐너
+# (:mod:`~hwpxfiller.domain.text_structure`)가 같은 몸통을 쓴다. 위 이름들은 여기서
+# 계속 재노출한다: 기존 소비자(schema·template_status·template_inspection·
+# template_manager_state)의 import 경로가 그대로 서 있어야 한다.
+
 _ID_ATTRS = ("id", "fieldid", "beginIDRef", "instId", "endIDRef")
-_CONTEXT_MAX = 120
 
 
 def _hp(tag: str) -> str:
     return f"{{{HP_NS}}}{tag}"
-
-
-# --------------------------------------------------- sigil 선행 분류(S8-01 #832)
-# 구간 표기 마커(``{{#항목 …}}``·``{{/항목}}``)는 필드 토큰과 **같은 괄호 문법**을 쓴다.
-# 그래서 sigil 판정이 필드 토큰화보다 **먼저** 서야 한다 — 그러지 않으면 구조 마커가
-# 「#항목 …」 이라는 이름의 누름틀로 조용히 오변환된다. 토큰 발견 지점이 여럿이므로
-# 술어와 필터를 **한 곳**에 두고 전 지점이 그것만 쓴다(각 지점 인라인 재구현 금지).
-_STRUCTURE_SIGILS = ("#", "/")
-
-
-def is_structure_sigil(raw: str) -> bool:
-    """토큰 내용이 구간 표기 마커인가 — 앞 공백을 뗀 첫 글자가 ``#``/``/``.
-
-    **공개 술어**(S8-04): 완전 토큰을 발견하는 자리는 이 모듈 밖에도 있다
-    (:func:`~hwpxfiller.domain.schema.extract_schema` 의 미치환 잔존 분류). 그 자리들이
-    각자 sigil 을 다시 판정하면 「구조 마커인가」가 두 곳에서 갈린다 — 같은 토큰이 한
-    표면에선 구간 표기, 다른 표면에선 미치환 필드 토큰으로 세어져 한 잔존물이 두 번
-    보고된다. 그래서 술어는 여기 하나이고 전 발견 지점이 그것만 쓴다.
-    """
-    body = raw.lstrip()
-    return bool(body) and body[0] in _STRUCTURE_SIGILS
-
-
-def _iter_field_tokens(text: str):
-    """완전 토큰 매치 중 **필드 토큰**만 yield(구조 마커 제외).
-
-    ``_TOKEN_RE.finditer`` 를 그대로 쓰는 자리는 「완전 매치 집합」이 필요한 파편
-    신고뿐이다 — 필드 토큰 후보를 세는 자리는 전부 이 필터를 통과한다.
-    """
-    for match in _TOKEN_RE.finditer(text):
-        if is_structure_sigil(match.group(1)):
-            continue
-        yield match
-
-
-def _iter_structure_markers(text: str):
-    """완전 토큰 매치 중 **구조 마커**만 yield(필드 토큰의 정확한 여집합)."""
-    for match in _TOKEN_RE.finditer(text):
-        if is_structure_sigil(match.group(1)):
-            yield match
 
 
 # ------------------------------------------------------------------ 리포트 모델
@@ -536,7 +519,7 @@ def _classify_paragraph_tokens(p_el: etree._Element) -> "list[_TokenSpan]":
     """문단의 각 완전 토큰을 (컴파일 가능·단순여부·병리 사유)로 분류."""
     text, pieces, events, run_base = _build_paragraph_model(p_el)
     spans: "list[_TokenSpan]" = []
-    for match in _iter_field_tokens(text):
+    for match in iter_field_tokens(text):
         covered_pieces = [
             piece for piece in pieces if piece[0] < match.end() and piece[1] > match.start()
         ]
@@ -668,7 +651,7 @@ def _report_uncompilable_tokens(
     # 여기만은 sigil 필터를 걸지 않는다 — 기준은 「완전 매치가 있었는가」이고, 완결된
     # 구조 마커(``{{#항목 A}}``)가 「파편」으로 오신고되면 안 되기 때문이다. 미완결
     # sigil(``{{#항목`` 뒤에 닫는 괄호 없음)은 종전대로 파편으로 시끄럽게 남는다.
-    match_starts = {match.start() for match in _TOKEN_RE.finditer(text)}
+    match_starts = {match.start() for match in TOKEN_RE.finditer(text)}
     search_from = 0
     while True:
         opener = text.find("{{", search_from)
@@ -714,7 +697,7 @@ def _process_paragraph(
     depth 는 런 경계가 아니라 **런 내부 자식 수준**으로 추적한다 — 인라인 누름틀
     (한 런 안 begin/end)의 값 텍스트를 미치환 토큰으로 오인하지 않기 위해서다.
     """
-    context = _paragraph_text(p_el).strip()[:_CONTEXT_MAX]
+    context = _paragraph_text(p_el).strip()[:CONTEXT_MAX]
     depth = 0
     children = list(p_el)  # 스냅샷(치환 중 순회 안정)
     index = 0
@@ -748,7 +731,7 @@ def _process_paragraph(
                 next(c for c in grouped if local_name(c.tag) == "t").text or ""
                 for grouped in group
             )
-            matches = list(_iter_field_tokens(text))
+            matches = list(iter_field_tokens(text))
             if matches and not apply:
                 for m in matches:
                     report.compilable.append(
@@ -773,77 +756,12 @@ def _process_paragraph(
 
 
 # --------------------------------------------------- 구간 표기 문법 v1(S8-01 #832)
-# 문법(#822 D2): 마커는 **자기 문단을 단독으로 차지하는 본문 직계 문단**이고 쌍으로
-# 범위를 감싼다 — ``{{#항목 <id> <label…>}}`` … ``{{/항목}}`` / ``{{#선택 <id>
-# <label…>}}`` … ``{{/선택}}``. 「선택」은 「항목」 직속만, 「항목」 중첩은 없다.
+# 문법(#822 D2)·진단 어휘·상태기계 몸통은 매체 독립이라
+# :mod:`~hwpxfiller.domain.structure_scan` 이 소유한다. 여기 남는 것은 **HWPX 매체 판정**
+# 뿐이다 — 마커가 「자기 문단을 단독으로 차지하는 본문 직계 문단」인가, 그리고 그 문단
+# 좌표로 만드는 배치(:class:`StructurePlacement`).
 # 이 스캐너는 **읽기만** 한다 — 마커 소거·문단 삭제 같은 변형은 External 컴파일러
 # (S8-02 ``compile_structure``)가 이 배치를 받아 수행한다.
-_SLOT_KEYWORD = "항목"
-_OPTION_KEYWORD = "선택"
-_STRUCTURE_KEYWORDS = (_SLOT_KEYWORD, _OPTION_KEYWORD)
-
-
-class StructureDiagnosticKind(StrEnum):
-    """구간 표기 진단의 안정 식별자 — 상위 링이 문안 대신 이 값으로 분기한다."""
-
-    UNBALANCED_MARKER = "unbalanced_marker"
-    CROSSED_RANGE = "crossed_range"
-    UNKNOWN_KEYWORD = "unknown_keyword"
-    EMPTY_SLOT_ID = "empty_slot_id"
-    EMPTY_OPTION_ID = "empty_option_id"
-    DUPLICATE_SLOT_ID = "duplicate_slot_id"
-    DUPLICATE_OPTION_ID = "duplicate_option_id"
-    OPTION_OUTSIDE_SLOT = "option_outside_slot"
-    NESTED_SLOT = "nested_slot"
-    NESTED_OPTION = "nested_option"
-    MARKER_IN_TABLE = "marker_in_table"
-    MARKER_NOT_TOP_LEVEL = "marker_not_top_level"
-    MARKER_NOT_ALONE = "marker_not_alone"
-    EMPTY_RANGE = "empty_range"
-    END_MARKER_EXTRA_TEXT = "end_marker_extra_text"
-
-
-@dataclass(frozen=True)
-class StructureDiagnostic:
-    """표기 이상 1건 — ``kind`` 는 안정 식별자, ``message`` 는 한국어 재진술."""
-
-    kind: StructureDiagnosticKind
-    message: str
-    context: str
-
-    def to_dict(self) -> dict:
-        return {"kind": str(self.kind), "message": self.message, "context": self.context}
-
-
-@dataclass(frozen=True)
-class StructureSummary:
-    """확인 왕복 원료 — 「항목 n·선택 m·누름틀 k」 + 마커 총수.
-
-    ``markers`` 는 이 문서에서 발견된 **완전 구조 마커 토큰의 총수**다(유효·무효 불문:
-    표 셀 안·중첩 문단·짝이 안 맞는 마커도 전부 센다). ``slots``/``options`` 는 진단이
-    없을 때만 신뢰할 수 있는 **선언** 수라, 「표기가 아직 남아 있는가」를 그것으로 물으면
-    깨진 표기가 0 으로 보인다 — 그 질문의 단일 출처가 이 수치다(S8-04 #835). 마커를 세는
-    코드는 :func:`_iter_structure_markers` 를 도는 :class:`_StructureReader` 하나뿐이고
-    상태·admission 은 이 값(또는 그 파생)을 **소비만** 한다.
-    """
-
-    slots: int
-    options: int
-    fields: int
-    markers: int
-
-    def to_dict(self) -> dict:
-        return {
-            "slots": self.slots,
-            "options": self.options,
-            "fields": self.fields,
-            "markers": self.markers,
-        }
-
-
-#: :attr:`StructurePlacement.kind` 의 어휘 — 상위 링이 문안 대신 이 값으로 분기한다.
-PLACEMENT_SLOT = "slot"
-PLACEMENT_OPTION = "option"
 
 
 @dataclass(frozen=True)
@@ -938,59 +856,46 @@ def _is_top_level_paragraph(p_el: etree._Element, root: etree._Element) -> bool:
     return p_el.getparent() is root
 
 
-@dataclass
-class _OpenRange:
-    """열려 있는 범위의 진행 상태 — 닫힐 때 Slot/SlotOption 으로 확정된다.
-
-    ``entry``·``begin_index`` 는 배치(:class:`StructurePlacement`)의 절반이다 —
-    닫는 마커를 만나야 나머지 절반이 정해지므로 여는 시점에 함께 붙들어 둔다.
-    ``first_content``/``last_content`` 는 이 범위가 실제로 감싼 **내용 문단**의 처음과
-    끝이다(마커 문단은 내용이 아니다).
-    """
-
-    id: str
-    label: str
-    context: str
-    entry: str
-    begin_index: int
-    content: int = 0
-    first_content: "int | None" = None
-    last_content: "int | None" = None
-
-    def note_content(self, index: int) -> None:
-        """내용 문단 1개의 위치를 범위 경계에 반영한다."""
-        if self.first_content is None:
-            self.first_content = index
-        self.last_content = index
+def _hwpx_placement(
+    *,
+    kind: str,
+    opened,
+    slot_id: str,
+    option_id: "str | None",
+    end_index: int,
+    content_start: int,
+    content_end: int,
+) -> StructurePlacement:
+    """코어가 확정한 범위 1건을 **본문 직계 문단 좌표** 배치로 성형한다(매체 주입분)."""
+    return StructurePlacement(
+        entry=opened.entry,
+        kind=kind,
+        slot_id=slot_id,
+        option_id=option_id,
+        begin_marker_index=opened.begin_index,
+        end_marker_index=end_index,
+        content_start=content_start,
+        content_end=content_end,
+    )
 
 
-class _StructureReader:
-    """문단 스트림을 받아 선언 구조와 진단을 누적하는 상태기계(무변형).
+class _StructureReader(StructureReader):
+    """HWPX 문단 스트림 어댑터 — 전이 몸통은 코어가 지고 여기는 **자격**만 판정한다.
+
+    HWPX 에만 있는 판정은 셋이다: 표 셀 안인가(``MARKER_IN_TABLE``), 본문 직계인가
+    (``MARKER_NOT_TOP_LEVEL``), 문단을 단독으로 차지하는가(``MARKER_NOT_ALONE``).
+    셋 다 문단 트리가 있어야 물을 수 있으므로 TXT 는 물음 자체가 다르다(줄 단독 여부만
+    남는다) — 그래서 이 어댑터는 매체별이고 그 아래 상태기계는 하나다.
 
     조용히 무시하는 경로 0 — 자격을 잃은 마커는 「없던 것」이 되지 않고 반드시
     진단 1건을 남긴다.
     """
 
     def __init__(self) -> None:
-        self.slots: "list[Slot]" = []
-        self.diagnostics: "list[StructureDiagnostic]" = []
-        self.placements: "list[StructurePlacement]" = []
-        # 본 마커 토큰의 총수(유효·무효 불문) — 「표기가 아직 남아 있는가」의 단일 출처.
-        # 자격을 잃어 진단만 남은 마커도 문서에는 그대로 있으므로 함께 센다.
-        self.markers = 0
-        self._slot: "_OpenRange | None" = None
-        self._option: "_OpenRange | None" = None
-        self._options: "list[SlotOption]" = []
-        self._option_placements: "list[StructurePlacement]" = []
-        self._seen_slot_ids: "set[str]" = set()
-        self._entry = ""
-        self._index = -1
+        # scope 는 조사까지 실은 주어구다 — 코어가 「{scope} 끝났습니다」로 잇는다.
+        # ("content XML 이"의 띄어 붙는 조사는 외래어 뒤 하우스 표기, "파일이"는 붙여 쓴다.)
+        super().__init__(scope="content XML 이", placement=_hwpx_placement)
 
-    # ---------------------------------------------------------------- 진단
-    def _note(self, kind: StructureDiagnosticKind, message: str, context: str) -> None:
-        self.diagnostics.append(StructureDiagnostic(kind, message, context))
-
-    # ---------------------------------------------------------------- 입력
     def read_paragraph(
         self,
         p_el: etree._Element,
@@ -1001,33 +906,31 @@ class _StructureReader:
         in_table: bool,
     ) -> None:
         """문단 1개를 읽는다. ``index`` 는 본문 직계 문단일 때만 의미가 있다."""
-        self._entry = entry
-        if top_level:
-            self._index = index
+        self.position(entry=entry, index=index if top_level else None)
         text, _, _, _ = _build_paragraph_model(p_el)
-        context = _paragraph_text(p_el).strip()[:_CONTEXT_MAX]
-        markers = list(_iter_structure_markers(text))
-        self.markers += len(markers)  # 자격 판정 **앞** — 거절될 마커도 문서에 남아 있다
+        context = _paragraph_text(p_el).strip()[:CONTEXT_MAX]
+        markers = list(iter_structure_markers(text))
+        self.note_markers(len(markers))  # 자격 판정 **앞** — 거절될 마커도 문서에 남아 있다
         if not markers:
             if top_level:
-                self._count_content()
+                self.count_content()
             return
         if not top_level:
             if in_table:
-                self._note(
+                self.note(
                     StructureDiagnosticKind.MARKER_IN_TABLE,
                     "표 셀 안에는 구간 마커를 둘 수 없습니다 — 본문 직계 문단으로 옮기세요.",
                     context,
                 )
             else:
-                self._note(
+                self.note(
                     StructureDiagnosticKind.MARKER_NOT_TOP_LEVEL,
                     "본문 직계가 아닌 문단(글상자·중첩 구조 안)의 구간 마커는 인정되지 않습니다.",
                     context,
                 )
             return
         if len(markers) > 1:
-            self._note(
+            self.note(
                 StructureDiagnosticKind.MARKER_NOT_ALONE,
                 "한 문단에 구간 마커가 2개 이상입니다 — 마커는 문단을 단독으로 차지해야 합니다.",
                 context,
@@ -1035,235 +938,14 @@ class _StructureReader:
             return
         match = markers[0]
         if (text[: match.start()] + text[match.end() :]).strip():
-            self._note(
+            self.note(
                 StructureDiagnosticKind.MARKER_NOT_ALONE,
                 "구간 마커가 다른 텍스트와 같은 문단에 있습니다 — 마커는 문단을 단독으로 "
                 "차지해야 합니다.",
                 context,
             )
             return
-        self._read_marker(match.group(1), context)
-
-    def close_entry(self) -> None:
-        """content XML 하나의 끝 — 닫히지 않은 범위를 불균형으로 신고한다.
-
-        **범위는 한 content XML 안에서 닫혀야 한다.** 쓰기 커널의 region(bookmark)이
-        한 XML 안에 사는 단위라, 파일 경계를 넘어 짝지어진 범위는 S8-02 가 컴파일할
-        수 없다 — 그런 구조를 「균형」으로 통과시키면 진단 계층이 조용히 틀린다.
-        그래서 짝짓기는 파일마다 닫고, id 중복 검사와 누적 결과만 문서 전역이다.
-        """
-        if self._option is not None:
-            self._note(
-                StructureDiagnosticKind.UNBALANCED_MARKER,
-                f"「선택 {self._option.id}」 범위가 열린 채 content XML 이 끝났습니다 — "
-                "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
-                self._option.context,
-            )
-            self._option = None
-        if self._slot is not None:
-            self._note(
-                StructureDiagnosticKind.UNBALANCED_MARKER,
-                f"「항목 {self._slot.id}」 범위가 열린 채 content XML 이 끝났습니다 — "
-                "닫는 마커가 없습니다(범위는 한 파일 안에서 닫혀야 합니다).",
-                self._slot.context,
-            )
-            self._slot = None
-            self._options = []
-            self._option_placements = []
-
-    # ------------------------------------------------------------ 내부 전이
-    def _placement(
-        self,
-        kind: str,
-        opened: _OpenRange,
-        slot_id: str,
-        option_id: "str | None",
-    ) -> StructurePlacement:
-        """닫는 마커 위치(``self._index``)를 붙여 배치 1건을 확정한다.
-
-        내용 경계가 비어 있는 경우(``EMPTY_RANGE`` 진단이 이미 선 경우)에만 마커
-        사이 전체로 되돌린다 — 그때 배치는 어차피 신뢰 대상이 아니다.
-        """
-        return StructurePlacement(
-            entry=opened.entry,
-            kind=kind,
-            slot_id=slot_id,
-            option_id=option_id,
-            begin_marker_index=opened.begin_index,
-            end_marker_index=self._index,
-            content_start=(
-                opened.begin_index + 1
-                if opened.first_content is None
-                else opened.first_content
-            ),
-            content_end=(
-                self._index - 1
-                if opened.last_content is None
-                else opened.last_content
-            ),
-        )
-
-    def _count_content(self) -> None:
-        """내용 문단 1개 누적 — 「선택」이 열려 있으면 그쪽이 먼저 가져간다.
-
-        「비었는가」 판정은 가장 안쪽 범위 하나만 세지만, **배치 경계**는 열려 있는
-        범위 전부가 함께 넓힌다 — 선택 안의 문단도 그 선택을 품은 항목의 내용이다.
-        """
-        if self._option is not None:
-            self._option.content += 1
-        elif self._slot is not None:
-            self._slot.content += 1
-        for opened in (self._slot, self._option):
-            if opened is not None:
-                opened.note_content(self._index)
-
-    def _read_marker(self, raw: str, context: str) -> None:
-        body = raw.lstrip()
-        sigil, rest = body[0], body[1:].strip()
-        parts = rest.split(None, 1)
-        keyword = parts[0] if parts else ""
-        tail = parts[1] if len(parts) > 1 else ""
-        if keyword not in _STRUCTURE_KEYWORDS:
-            self._note(
-                StructureDiagnosticKind.UNKNOWN_KEYWORD,
-                f"알 수 없는 구간 키워드입니다: 「{keyword or '(없음)'}」 — 「항목」·「선택」만 "
-                "쓸 수 있습니다.",
-                context,
-            )
-            return
-        if sigil == "#":
-            self._begin(keyword, tail, context)
-        else:
-            self._end(keyword, tail, context)
-
-    def _begin(self, keyword: str, tail: str, context: str) -> None:
-        parts = tail.split(None, 1)
-        ident = normalize_field_id(parts[0] if parts else "")
-        label = " ".join(parts[1].split()) if len(parts) > 1 else ""
-        if ident is None:
-            kind = (
-                StructureDiagnosticKind.EMPTY_SLOT_ID
-                if keyword == _SLOT_KEYWORD
-                else StructureDiagnosticKind.EMPTY_OPTION_ID
-            )
-            self._note(kind, f"「{keyword}」 마커에 id 가 없습니다 — id 는 필수입니다.", context)
-            return
-        if keyword == _SLOT_KEYWORD:
-            self._begin_slot(ident, label, context)
-        else:
-            self._begin_option(ident, label, context)
-
-    def _begin_slot(self, ident: str, label: str, context: str) -> None:
-        if self._slot is not None:
-            self._note(
-                StructureDiagnosticKind.NESTED_SLOT,
-                f"「항목 {self._slot.id}」 안에서 다시 「항목 {ident}」 을 열었습니다 — "
-                "항목 중첩은 없습니다.",
-                context,
-            )
-            return
-        if ident in self._seen_slot_ids:
-            self._note(
-                StructureDiagnosticKind.DUPLICATE_SLOT_ID,
-                f"같은 문서에서 항목 id 「{ident}」 가 두 번 선언됐습니다.",
-                context,
-            )
-        self._seen_slot_ids.add(ident)
-        self._slot = _OpenRange(ident, label, context, self._entry, self._index)
-        self._options = []
-        self._option_placements = []
-
-    def _begin_option(self, ident: str, label: str, context: str) -> None:
-        if self._slot is None:
-            self._note(
-                StructureDiagnosticKind.OPTION_OUTSIDE_SLOT,
-                f"「선택 {ident}」 이 항목 범위 밖에 있습니다 — 선택은 항목 직속만 가능합니다.",
-                context,
-            )
-            return
-        if self._option is not None:
-            self._note(
-                StructureDiagnosticKind.NESTED_OPTION,
-                f"「선택 {self._option.id}」 이 닫히기 전에 「선택 {ident}」 을 열었습니다.",
-                context,
-            )
-            return
-        if any(option.id == ident for option in self._options):
-            self._note(
-                StructureDiagnosticKind.DUPLICATE_OPTION_ID,
-                f"항목 「{self._slot.id}」 안에서 선택 id 「{ident}」 가 두 번 선언됐습니다.",
-                context,
-            )
-        self._option = _OpenRange(ident, label, context, self._entry, self._index)
-
-    def _end(self, keyword: str, tail: str, context: str) -> None:
-        if tail.strip():
-            self._note(
-                StructureDiagnosticKind.END_MARKER_EXTRA_TEXT,
-                f"닫는 「{keyword}」 마커에 남은 텍스트가 있습니다: 「{' '.join(tail.split())}」 — "
-                "닫는 마커는 키워드만 가집니다.",
-                context,
-            )
-        if keyword == _OPTION_KEYWORD:
-            if self._option is None:
-                self._note(
-                    StructureDiagnosticKind.UNBALANCED_MARKER,
-                    "여는 「선택」 마커 없이 닫는 「선택」 마커가 나왔습니다.",
-                    context,
-                )
-                return
-            self._close_option(context)
-            return
-        if self._slot is None:
-            self._note(
-                StructureDiagnosticKind.UNBALANCED_MARKER,
-                "여는 「항목」 마커 없이 닫는 「항목」 마커가 나왔습니다.",
-                context,
-            )
-            return
-        if self._option is not None:
-            self._note(
-                StructureDiagnosticKind.CROSSED_RANGE,
-                f"「선택 {self._option.id}」 이 닫히기 전에 「항목 {self._slot.id}」 이 "
-                "닫혔습니다 — 범위가 교차합니다.",
-                context,
-            )
-            self._close_option(context)
-        slot = self._slot
-        if slot.content == 0:
-            self._note(
-                StructureDiagnosticKind.EMPTY_RANGE,
-                f"「항목 {slot.id}」 범위에 내용 문단이 없습니다.",
-                context,
-            )
-        self.slots.append(Slot(id=slot.id, options=tuple(self._options), label=slot.label or None))
-        # 배치는 컴파일 순서대로 쌓는다 — 항목이 먼저 서야 그 안에 선택이 들어간다.
-        self.placements.append(self._placement(PLACEMENT_SLOT, slot, slot.id, None))
-        self.placements.extend(self._option_placements)
-        self._slot = None
-        self._options = []
-        self._option_placements = []
-
-    def _close_option(self, context: str) -> None:
-        option = self._option
-        assert option is not None  # 호출자가 열림을 확인한 뒤에만 부른다
-        if option.content == 0:
-            self._note(
-                StructureDiagnosticKind.EMPTY_RANGE,
-                f"「선택 {option.id}」 범위에 내용 문단이 없습니다.",
-                context,
-            )
-        self._options.append(
-            SlotOption(id=option.id, order=len(self._options), label=option.label or None)
-        )
-        assert self._slot is not None  # 선택은 항목 직속에서만 열린다
-        self._option_placements.append(
-            self._placement(PLACEMENT_OPTION, option, self._slot.id, option.id)
-        )
-        self._option = None
-        if self._slot is not None:
-            # 닫힌 선택 범위 자체가 항목의 내용 1건이다(빈 항목 오판 방지).
-            self._slot.content += 1
+        self.read_marker(match.group(1), context)
 
 
 # ------------------------------------------------------------------ 공개 API
@@ -1347,7 +1029,7 @@ def scan_structure(pkg: object) -> StructureScan:
 # 형식의 단일 출처는 그것을 읽는 스캐너(:func:`scan_structure`)와 같은 모듈이어야 하고
 # (읽기와 쓰기가 갈리면 「도로 읽히지 않는 마커」가 조용히 난다), 섹션 XML 저작은 이미
 # :func:`compile_document` 가 지는 이 모듈의 책임이다.
-_PLACEMENT_KEYWORDS = {PLACEMENT_SLOT: _SLOT_KEYWORD, PLACEMENT_OPTION: _OPTION_KEYWORD}
+_PLACEMENT_KEYWORDS = {PLACEMENT_SLOT: SLOT_KEYWORD, PLACEMENT_OPTION: OPTION_KEYWORD}
 
 
 def _placement_keyword(kind: str) -> str:
