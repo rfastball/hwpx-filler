@@ -203,12 +203,24 @@ _V4_BINDING_KEY = SelectionSemanticBindingKey(
     structure_projection_schema_version="hwpx-structure-projection-v4",
 )
 
+# S10-03(#860): TXT 매체의 shipping pair. **선택 규칙은 매체로 갈리지 않는다** — 같은 구간
+# 표기가 두 매체에서 같은 Slot 으로 복원되는 것(S10-01 #858)이 전제이므로, 그 Slot 을 고르는
+# 규칙까지 매체마다 다르면 형식만 바꾼 같은 템플릿이 다른 선택 언어를 쓰게 된다. 그래서 새
+# manifest 를 세우지 않고 같은 slot-selection/v1 에 결속한다(hwpx v1~v4 binding 불변).
+# binding **key** 는 따로 서는데, 그것이 fail-closed 의 얼굴이다: 미등록 (profile, projection)
+# 조합은 latest 로 풀리지 않고 거절된다.
+_TXT_V1_BINDING_KEY = SelectionSemanticBindingKey(
+    qualification_profile_id="txt-template-qualification-v1",
+    structure_projection_schema_version="txt-structure-projection-v1",
+)
+
 DEFAULT_SELECTION_SEMANTIC_REGISTRY = SelectionSemanticContractRegistry(
     [
         (_V1_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V2_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V3_BINDING_KEY, _SLOT_SELECTION_V1),
         (_V4_BINDING_KEY, _SLOT_SELECTION_V1),
+        (_TXT_V1_BINDING_KEY, _SLOT_SELECTION_V1),
     ]
 )
 

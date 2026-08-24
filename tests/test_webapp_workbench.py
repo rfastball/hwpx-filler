@@ -839,3 +839,173 @@ def test_closing_mid_copy_cannot_destroy_the_session_under_the_write(tmp_path):
 
     assert res["copied"] is True          # 거래는 온전히 끝난다
     assert ctrl.is_open is False          # 이탈은 그 뒤에 착지한다
+
+
+# ─── 「포함할 내용」 투영과 복사 admission(S10-03 · #860) ────────────────────────────────
+# 이 세 가지가 여기서 만난다: 세션이 진입 시 스캔 하나를 들고(재스캔 0), 카드가 고른 내용만
+# 그리고, **그래도 복사는 막힌다**(투영 ≠ 실행 권위 — 물질화는 S10-04 소관).
+
+_SLOT_TEMPLATE = "\n".join([
+    "수신: {{수신}}",
+    "{{#항목 첨부 첨부 서류}}",
+    "담당자: {{담당자}}",
+    "{{#선택 계약서 계약서}}",
+    "계약서를 첨부합니다.",
+    "{{/선택}}",
+    "{{#선택 견적서 견적서}}",
+    "견적서를 첨부합니다.",
+    "{{/선택}}",
+    "{{/항목}}",
+    "끝.",
+    "",
+])
+
+
+def _slot_job(tmp_path: Path, *, body: str = _SLOT_TEMPLATE) -> Job:
+    tpl = tmp_path / "첨부안내.txt"
+    tpl.write_text(body, encoding="utf-8")
+    return Job(
+        name="첨부안내",
+        template_path=str(tpl),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="수신", source="부서"),
+            FieldMapping(template_field="담당자", source="사업명"),
+        ]),
+    )
+
+
+def _open_slot(tmp_path: Path, selection, *, body: str = _SLOT_TEMPLATE):
+    """선택 조회 포트를 결선한 작업대 세션. ``selection`` 은 사전 또는 예외를 낼 callable."""
+    reg = JobRegistry(tmp_path / "jobs")
+    calls: "list[str]" = []
+
+    def port(work_ref: str):
+        calls.append(work_ref)
+        return selection(work_ref) if callable(selection) else selection
+
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=lambda: datetime(2026, 8, 24, 12, 0, 0),
+        target_font=TargetFontSetting(),
+        content_selection=port,
+    )
+    job = _slot_job(tmp_path, body=body)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), _rows())
+    return ctrl, calls
+
+
+def _card(ctrl) -> str:
+    return "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
+
+
+def test_card_shows_only_the_chosen_option_and_never_the_markers(tmp_path):
+    ctrl, calls = _open_slot(tmp_path, {"첨부": frozenset({"견적서"})})
+
+    text = _card(ctrl)
+    assert "견적서를 첨부합니다." in text
+    assert "계약서를 첨부합니다." not in text      # 고르지 않은 선택은 접힌다
+    assert "담당자: 복사기 임차" in text            # 항목 직속 문구는 남는다
+    assert "수신: 회계과" in text and "끝." in text  # 항목 밖도 그대로
+    assert "{{#" not in text and "{{/" not in text  # 저작 표기는 산출로 새지 않는다
+    # 조회는 진입 시 **1회**다(세션 텍스트가 고정 사본이라 매 렌더 재조회할 근거가 없다).
+    assert calls == ["첨부안내"]
+    assert ctrl.snapshot()["notice"]["text"] == ""
+
+
+def test_changed_selection_lands_on_the_next_session(tmp_path):
+    """선택은 저쪽(「문서 만들기」) 권위다 — 작업대는 진입 때 그 결과를 받아 그린다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    chosen = {"첨부": frozenset({"계약서"})}
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=lambda: datetime(2026, 8, 24, 12, 0, 0),
+        target_font=TargetFontSetting(),
+        content_selection=lambda _ref: chosen,
+    )
+    job = _slot_job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), _rows())
+    assert "계약서를 첨부합니다." in _card(ctrl)
+
+    chosen = {"첨부": frozenset({"견적서"})}
+    ctrl.open(reg.load(job.name), _rows())
+    text = _card(ctrl)
+    assert "견적서를 첨부합니다." in text and "계약서를 첨부합니다." not in text
+
+
+def test_copy_is_blocked_while_structure_notation_remains(tmp_path):
+    """투영이 서 있어도 복사는 막힌다 — 화면의 접기는 미리 보기이지 물질화가 아니다."""
+    from hwpxfiller.webapp.screen_workbench import COPY_BLOCK_STRUCTURE_NOTATION
+
+    ctrl, _calls = _open_slot(tmp_path, {"첨부": frozenset({"견적서"})})
+
+    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_STRUCTURE_NOTATION
+    assert ctrl.can_copy() is False
+    # 버튼이 닫힌 이유와 실제 거절 사유가 **같은 값**이다(잠금은 DOM 이 아니라 상태가 진다).
+    wrote: "list[str]" = []
+    result = ctrl.copy_to(ctrl.copy_token(), wrote.append)
+    assert result["copied"] is False
+    assert result["error"] == COPY_BLOCK_STRUCTURE_NOTATION
+    assert wrote == []  # 클립보드에 아무것도 나가지 않았다
+    # 보기를 바꿔도 사유는 그대로다(보기 축이 아니라 템플릿 축의 차단이다).
+    _send(ctrl, "set_view", {"view": "raw"})
+    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_STRUCTURE_NOTATION
+
+
+def test_broken_notation_keeps_the_source_text_and_restates_the_reason(tmp_path):
+    """표기가 깨졌으면 반쪽을 그리지 않는다 — 원문을 들고 사유를 상시 재진술한다."""
+    from hwpxfiller.webapp.screen_workbench import SELECTION_UNAVAILABLE_NOTE
+
+    broken = "수신: {{수신}}\n{{#항목 첨부}}\n계약서를 첨부합니다.\n"  # 닫는 마커 없음
+    ctrl, _calls = _open_slot(tmp_path, {}, body=broken)
+
+    assert "{{#항목 첨부}}" in _card(ctrl)  # 조용한 접기 0
+    assert ctrl.snapshot()["notice"] == {"text": SELECTION_UNAVAILABLE_NOTE, "level": "warn"}
+    # 사건 노트가 아니라 **상시 사실**이라 다음 타건에도 남는다(dispatch 가 비우지 않는다).
+    _send(ctrl, "set_view", {"view": "raw"})
+    assert ctrl.snapshot()["notice"]["text"] == SELECTION_UNAVAILABLE_NOTE
+    assert ctrl.snapshot()["card"]["copy_block"]  # 차단은 그대로
+
+
+def test_selection_lookup_failure_is_stated_not_swallowed(tmp_path):
+    from hwpxfiller.webapp.screen_workbench import SELECTION_UNAVAILABLE_NOTE
+
+    def boom(_ref):
+        raise ValueError("포함할 내용을 불러오지 못했습니다(TEMPLATE_INITIALIZATION_REQUIRED)")
+
+    ctrl, _calls = _open_slot(tmp_path, boom)
+    assert "{{#항목 첨부 첨부 서류}}" in _card(ctrl)
+    assert ctrl.snapshot()["notice"]["text"] == SELECTION_UNAVAILABLE_NOTE
+
+
+def test_unwired_selection_port_does_not_pretend_to_have_chosen(tmp_path):
+    """포트 미주입 = 표면 부재. 조용히 「아무것도 안 골랐다」로 접지 않는다."""
+    from hwpxfiller.webapp.screen_workbench import SELECTION_UNAVAILABLE_NOTE
+
+    reg = JobRegistry(tmp_path / "jobs")
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=lambda: datetime(2026, 8, 24, 12, 0, 0),
+        target_font=TargetFontSetting(),
+    )
+    job = _slot_job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), _rows())
+
+    assert "계약서를 첨부합니다." in _card(ctrl)  # 원문 그대로
+    assert ctrl.snapshot()["notice"]["text"] == SELECTION_UNAVAILABLE_NOTE
+
+
+def test_slotless_session_is_untouched_by_the_selection_axis(tmp_path):
+    """회귀 축 — 마커 0 건이면 조회도, 투영도, 새 차단도 일어나지 않는다."""
+    ctrl, calls = _open_slot(tmp_path, {"첨부": frozenset({"견적서"})},
+                             body="수신: {{수신}}\n건명: {{담당자}}\n")
+
+    assert calls == []  # 고를 것이 없으면 묻지도 않는다
+    assert ctrl.snapshot()["notice"]["text"] == ""
+    assert ctrl.snapshot()["card"]["copy_block"] == ""
+    assert ctrl.can_copy() is True
+    wrote: "list[str]" = []
+    assert ctrl.copy_to(ctrl.copy_token(), wrote.append)["copied"] is True
+    assert wrote == ["수신: 회계과\n건명: 복사기 임차\n"]

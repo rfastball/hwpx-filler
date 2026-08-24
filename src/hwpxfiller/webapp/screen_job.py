@@ -151,7 +151,7 @@ from ..gui.work_candidates import (
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
-from .template_change import TemplateChangeError, unsupported_zone
+from .template_change import SUPPORTED_MEDIA, TemplateChangeError, unsupported_zone
 from ..application.slotless_run_bridge import (
     STRUCTURE_NOTATION_UNCOMPILED,
     SlotlessRunAdmissionError,
@@ -1768,6 +1768,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # S2/S3 생애주기(확인 → immutable Candidate → Qualification → 적용)를 탄다.
             # 사건 경계·문안·token 은 전부 코디네이터 소유라 여기는 존을 앉히기만 한다.
             self._seat_template_change_zone(base, template_media(tpath), tmissing)
+            # 「포함할 내용」·Preset 존도 매체를 가리지 않는다(S10-03 #860) — S4 아래(선택
+            # 언어·context·store·command·projection·Preset)에는 어디에도 매체가 없고, 존의
+            # 자격 판정은 그 함수들이 `SUPPORTED_MEDIA` 하나로 진다. 그러니 여기는 hwpx
+            # 분기와 **같은 두 줄**을 앉히기만 한다(가지마다 다른 조립을 만들지 않는다).
+            base["slot_configuration"] = self._slot_configuration_zone(tmissing)
+            base["content_presets"] = self._content_presets_zone(tmissing)
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
@@ -2667,19 +2673,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "문서 작업을 다시 선택하세요."
             )
             return result
-        if (
-            result.get("ok") is True
-            and self.vm is not None
-            and (
-                not self.vm.job.authority_id
-                or self._seated_template_application_id is None
-            )
-        ):
-            if (
-                restored_job is None
-                or application_id is None
-                or not self._can_adopt_seated_identity(self.vm.job, restored_job)
-            ):
+        if result.get("ok") is True and not self._seat_is_identified():
+            if not self._adopt_seated_identity(restored_job, application_id):
                 self._release_changed_active_work("문서 작업이 변경되어")
                 return {
                     "ok": False,
@@ -2689,9 +2684,46 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                         "문서 작업을 다시 선택하세요."
                     ),
                 }
-            self.vm.job.authority_id = restored_job.authority_id
-            self._seated_template_application_id = application_id
         return result
+
+    def _seat_is_identified(self) -> bool:
+        """착석한 Work 의 durable 정체가 이미 서 있는가 — **실행뷰 유무와 무관**(S10-03 #860).
+
+        종전에는 채택 자체가 ``self.vm is not None`` 아래 있어서, 실행뷰를 세우지 않는 TXT 는
+        확인을 통과해도 `_seated_template_application_id` 가 세션 내내 ``None`` 이었다
+        (`_seat_active_job` 은 이미 매체와 무관하게 그것을 세우는데, 확인이 **바꾼** 값을 다시
+        받지 못했다). 매체 하나만 자기 정체를 들고 다니는 상태다.
+
+        HWPX 는 in-memory Job 사본(``vm.job``)이 authority_id 를 함께 드므로 둘 다 서야 정체가
+        선 것이고, TXT 는 그 사본 자체가 없어(Job 은 쓸 때마다 registry 에서 다시 읽는다)
+        세션이 드는 정체가 이 id 하나다.
+        """
+        if self._seated_template_application_id is None:
+            return False
+        return self.vm is None or bool(self.vm.job.authority_id)
+
+    def _adopt_seated_identity(
+        self, restored_job: "Job | None", application_id: "str | None"
+    ) -> bool:
+        """확인이 확립한 durable 정체를 세션 seat 에 채택한다(실패면 False → loud RELEASE).
+
+        실행뷰가 없으면(TXT·미지원 매체) 지킬 Job 사본도, 대조할 snapshot 도 없다 —
+        :meth:`_can_adopt_seated_identity` 가 지키는 것이 바로 그 **사본**이므로, 사본이 없는
+        seat 에 그 대조를 씌우면 없는 위험에 답하느라 멀쩡한 선택을 해제하게 된다. 그때 세션이
+        받는 것은 확인이 방금 읽은 current Application id 하나다.
+        """
+        if application_id is None:
+            return False
+        if self.vm is None:
+            self._seated_template_application_id = application_id
+            return True
+        if restored_job is None or not self._can_adopt_seated_identity(
+            self.vm.job, restored_job
+        ):
+            return False
+        self.vm.job.authority_id = restored_job.authority_id
+        self._seated_template_application_id = application_id
+        return True
 
     def _do_template_apply(self, p: dict) -> dict:
         """[변경사항 적용](S3-09) — opaque change token 하나로 원자 적용을 요청한다.
@@ -3647,17 +3679,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _slot_configuration_zone(self, tmissing: bool) -> dict:
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
 
-        미주입·미선택·비-hwpx·템플릿 부재면 명시적 unsupported(분기별 키 동형). 초기화 전(Work
+        미주입·미선택·미지원 매체·템플릿 부재면 명시적 unsupported(분기별 키 동형). 초기화 전(Work
         durable id 미발급) Work 는 Product 를 부르지 않는다 — route 가 read 중 durable id 를 발급하므로
         (write-on-read) 렌더 부작용을 피한다. 초기화된 Work 는 #744 read-only projection 으로 조회한다
         — 스냅샷은 렌더라 open(ensure)의 successor reconciliation 물질화로 durable S4 를 바꾸지 않는다.
         ensure 는 명시적 open/refresh command(`_do_open_slot_configuration`·`_do_refresh_...`)에만 남긴다.
+
+        **매체 판정은 S3 지원 집합 그대로다**(S10-03 #860): S4 아래(선택 언어·context·store·
+        command·projection·Preset)는 어디에도 매체가 없고, 갈리는 것은 「그 bytes 를 무엇으로
+        자격 심사하는가」 하나뿐이라 그 표(`SUPPORTED_MEDIA`)가 이 존의 자격도 진다. 여기서
+        문자열을 다시 조립하면 새 매체가 설 때 한 가지만 늙는다.
         """
         blank = self._slot_blank_zone()
         if self._slot_configuration is None or not self.job_name or tmissing:
             return blank
         job = load_job(self.registry, self.job_name)
-        if job.media != "hwpx":
+        if job.media not in SUPPORTED_MEDIA:
             return blank
         if not job.authority_id:
             # 템플릿 확인(bootstrap) 전 — 지원은 하되 아직 조회하지 않는다(durable id 미발급 보존).
@@ -4005,9 +4042,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _content_presets_zone(self, tmissing: bool) -> dict:
         """스냅샷의 ``content_presets`` 존 — 홈 레지스트리 목록 + 손상 항목 병기.
 
-        지원 조건은 ``slot_configuration`` 존과 **동형**이다(미주입·미선택·비-hwpx·템플릿
+        지원 조건은 ``slot_configuration`` 존과 **동형**이다(미주입·미선택·미지원 매체·템플릿
         부재면 명시적 unsupported). 목록 자체는 Work 무관이지만 이 존을 소비하는 표면이
-        「포함할 내용」 존이라 같은 조건에서 함께 서고 함께 진다.
+        「포함할 내용」 존이라 같은 조건에서 함께 서고 함께 진다 — 그 동형이 매체 축에서도
+        유지되므로(S10-03 #860) 매체 판정도 같은 `SUPPORTED_MEDIA` 를 묻는다.
 
         ``provenance`` 는 싣지 않는다 — advisory 내부 정보(Application·contract id)라 사용자
         표면의 재료가 아니다. 손상 항목은 숨기지 않고 ``corrupt`` 로 함께 나가고, 표면이
@@ -4017,7 +4055,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self._slot_configuration is None or not self.job_name or tmissing:
             return blank
         job = load_job(self.registry, self.job_name)
-        if job.media != "hwpx":
+        if job.media not in SUPPORTED_MEDIA:
             return blank
         listing = self._slot_configuration.list_selection_presets()
         return {
@@ -4130,8 +4168,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         미리 엿보던 경로가 사라졌다 — durable 변경이 CHANGED 면 항상 재확인한다(``effective_basis_changed
         =True``). 미변경(open/ensure)은 아래 guard 로 걸러 blanket reseal 을 막는다. seal product
         미주입이면 자동 확인 없음(honest — 표면 부재).
+
+        **HWPX 전용이다**(S10-03 #860). TXT 도 이제 같은 durable command 로 「포함할 내용」을
+        고르지만, 그 선택의 산출은 문서 생성이 아니라 작업대 복사이고 물질화는 S10-04 소관이다.
+        여기에 들여보내면 seal 이 있지도 않은 실행 계획을 세우려다 실패하고, 그 실패가 화면에
+        「확인 실패」로 재진술된다 — 짓지 않은 축에 거짓 실패를 기록하는 쪽이 조용한 누락보다
+        나쁘다. 매체는 registry Job 이 단일 출처다(경로 파생 래치를 여기서 다시 읽지 않는다).
         """
         if self._seal_execution is None or not self.job_name:
+            return
+        if load_job(self.registry, self.job_name).media != "hwpx":
             return
         if effective_basis_changed is None:
             outcome = slot_response.mutation_outcome

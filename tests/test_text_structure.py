@@ -339,3 +339,84 @@ def test_placement_types_do_not_share_the_hwpx_coordinate_name():
     }
     assert "entry" in hwpx_scan.placements[0].to_dict()
     assert "begin_marker_index" in hwpx_scan.placements[0].to_dict()
+
+
+# ---------------------------------------------- D. 선택 투영(S10-03 #860)
+# 「포함할 내용」이 고른 것만 남기는 **순수 함수**의 계약. 마커는 저작 표기라 언제나 걷히고,
+# 고르지 않은 선택 범위만 접힌다 — 항목 직속 문구는 선택의 대상이 아니므로 남는다.
+
+
+def test_selection_projection_keeps_only_chosen_options():
+    scan = _scan_unchanged(_CANONICAL)
+    selected = {"특약": frozenset({"하자보수"}), "부칙": frozenset({"가"})}
+
+    assert text_structure.visible_lines(_CANONICAL, scan, selected) == (
+        0, 6, 9, 12, 18,
+    )
+    assert text_structure.project_selected_text(_CANONICAL, scan, selected) == _lines(
+        "계약 일반사항",
+        "하자보수 기간은 {{하자기간}} 이다.",
+        "",
+        "가 본문",
+        "발주자: {{수요기관}}",
+    )
+
+
+def test_selection_projection_hides_every_option_when_nothing_is_chosen():
+    """선택 0 건이면 그 항목의 선택 범위는 전부 접힌다 — 1개짜리도 자동 선택하지 않는다."""
+    scan = _scan_unchanged(_CANONICAL)
+
+    projected = text_structure.project_selected_text(_CANONICAL, scan, {})
+    assert projected == _lines("계약 일반사항", "", "발주자: {{수요기관}}")
+    # 마커는 어느 경우에도 새지 않는다(저작 표기가 산출 텍스트로 흘러가면 그것이 결함이다).
+    assert "{{#" not in projected and "{{/" not in projected
+
+
+def test_selection_projection_keeps_lines_directly_under_a_slot():
+    """항목 직속(선택 밖) 줄은 언제나 보인다 — 항목을 연 것이 공통 문구를 고르게 하지 않는다."""
+    text = _lines(
+        "머리말",                        # 0
+        "{{#항목 첨부}}",                # 1
+        "공통 안내",                     # 2
+        "{{#선택 가}}",                  # 3
+        "가 본문",                       # 4
+        "{{/선택}}",                     # 5
+        "맺음 안내",                     # 6
+        "{{/항목}}",                     # 7
+    )
+    scan = _scan_unchanged(text)
+
+    assert text_structure.visible_lines(text, scan, {}) == (0, 2, 6)
+    assert text_structure.visible_lines(
+        text, scan, {"첨부": frozenset({"가"})}
+    ) == (0, 2, 4, 6)
+
+
+def test_selection_projection_preserves_original_line_endings():
+    """줄 끝 문자는 원문 그대로 옮긴다 — 투영이 CRLF 템플릿의 줄바꿈을 갈아입히지 않는다."""
+    text = "머리말\r\n{{#항목 첨부}}\r\n{{#선택 가}}\r\n가 본문\r\n{{/선택}}\r\n{{/항목}}\r\n꼬리말\r\n"
+    scan = _scan_unchanged(text)
+
+    assert text_structure.project_selected_text(
+        text, scan, {"첨부": frozenset({"가"})}
+    ) == "머리말\r\n가 본문\r\n꼬리말\r\n"
+
+
+def test_selection_projection_refuses_when_the_scan_carries_diagnostics():
+    """진단 1건 이상 = 좌표 불신뢰. 반쪽을 그리지 않고 시끄럽게 거절한다(fail-closed)."""
+    text = _lines("{{#항목 첨부}}", "본문", "")  # 닫는 마커 없음
+    scan = _scan_unchanged(text)
+    assert scan.diagnostics
+
+    with pytest.raises(text_structure.TextStructureProjectionError):
+        text_structure.visible_lines(text, scan, {})
+    with pytest.raises(text_structure.TextStructureProjectionError):
+        text_structure.project_selected_text(text, scan, {})
+
+
+def test_selection_projection_is_identity_for_a_slotless_template():
+    """마커 0 건이면 투영은 항등이다 — 기존 TXT 작업 경로가 이 함수를 지나도 무변화."""
+    text = _lines("수신: {{수신}}", "건명: {{건명}}", "")
+    scan = _scan_unchanged(text)
+
+    assert text_structure.project_selected_text(text, scan, {}) == text

@@ -46,6 +46,10 @@ from hwpxfiller.application.work_template_state import (
 from hwpxfiller.domain.slot_selection import (
     UnsupportedSelectionSemanticContractError,
 )
+from hwpxfiller.external.text_template_inspection import (
+    TXT_QUALIFICATION_PROFILE_ID,
+    TXT_STRUCTURE_PROJECTION_SCHEMA,
+)
 
 NOW = "2026-08-16T00:00:00Z"
 SCHEMA = "hwpx-structure-projection-v1"
@@ -356,6 +360,60 @@ def test_unknown_selection_binding_unsupported() -> None:
     ports = _ports(
         evidence=_evidence(profile="unknown-profile"),
         manifest=_manifest(profile="unknown-profile"),
+    )
+    with pytest.raises(UnsupportedSelectionSemanticContractError):
+        _resolve(ports)
+
+
+def test_txt_projection_restores_labels_and_binds_the_same_selection_contract() -> None:
+    """S10-03(#860) — TXT shipping pair 가 decoder·selection registry 를 함께 통과한다.
+
+    schema·profile 문자열은 **제품 상수**에서 가져온다: 여기서 리터럴을 다시 적으면 출하 쪽
+    이름이 바뀌어도 테스트가 옛 이름으로 혼자 초록이다. structure 를 감싸는 payload 도
+    ``project_structure``(qualification stage 가 실제로 쓰는 인코더)로 만들어 인코드/디코드
+    대칭을 실물로 잰다.
+    """
+    structure = TemplateStructure(
+        root_fields=("수신",),
+        slots=(
+            TemplateSlot(
+                "첨부",
+                shared_fields=("담당자",),
+                options=(TemplateOption("계약서", fields=("건명",), label="계약서"),),
+                label="첨부 서류",
+            ),
+        ),
+    )
+    decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(TXT_STRUCTURE_PROJECTION_SCHEMA)
+    projection = project_structure(structure, TXT_STRUCTURE_PROJECTION_SCHEMA)
+    assert decoder(projection.payload) == structure  # label 까지 왕복
+
+    ctx = _resolve(
+        _ports(
+            evidence=_evidence(
+                profile=TXT_QUALIFICATION_PROFILE_ID,
+                schema=TXT_STRUCTURE_PROJECTION_SCHEMA,
+                structure=structure,
+            ),
+            manifest=_manifest(
+                profile=TXT_QUALIFICATION_PROFILE_ID,
+                schema=TXT_STRUCTURE_PROJECTION_SCHEMA,
+                media="txt",
+            ),
+            revision=_revision(media="txt"),
+        )
+    )
+    assert ctx.template_structure == structure
+    # 선택 규칙은 매체로 갈리지 않는다 — HWPX 와 **같은** contract 에 결속한다.
+    assert ctx.selection_semantic_contract_id == "slot-selection/v1"
+    assert ctx.selection_semantic_contract.default_selection_policy == "EXACTLY_ONE"
+
+
+def test_txt_projection_schema_does_not_answer_for_hwpx_profiles() -> None:
+    """이름을 가른 이유가 fail-closed 다 — 섞인 (profile, projection) 은 거절된다."""
+    ports = _ports(
+        evidence=_evidence(profile=PROFILE, schema=TXT_STRUCTURE_PROJECTION_SCHEMA),
+        manifest=_manifest(profile=PROFILE, schema=TXT_STRUCTURE_PROJECTION_SCHEMA),
     )
     with pytest.raises(UnsupportedSelectionSemanticContractError):
         _resolve(ports)
