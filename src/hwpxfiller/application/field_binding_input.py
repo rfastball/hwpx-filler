@@ -47,6 +47,9 @@ _LEGACY_TYPE_TO_VALUE_TYPE = {"text": EXACT_TEXT, "date": DATE, "amount": DECIMA
 PRESERVED = "PRESERVED"
 BROKEN = "BROKEN"
 NEW_ACTIVE_FIELD = "NEW_ACTIVE_FIELD"
+#: 판본에 규칙이 있으나 current Application 에서 비활성인 Field — **판본이 계속 보존하는 규칙**이다
+#: (U3-04 #877). 확정 이후 Option 을 바꿔 비활성이 됐다는 사실 하나로 규칙을 버리면, 그 Option 으로
+#: 되돌아올 때마다 같은 결정을 다시 확정하게 된다. 실행에 참여하지 않을 뿐 판본에서는 산다.
 INACTIVE_ONLY = "INACTIVE_ONLY"
 
 # migration blocker 어휘.
@@ -484,6 +487,16 @@ class FieldBindingApplicationReview:
             c.field_id for c in self.classifications if c.category == BROKEN
         )
 
+    def inactive_only_field_ids(self) -> tuple[str, ...]:
+        """판본이 보존해야 할 비활성 Field — 다음 commit 이 그대로 실어 나른다(#877).
+
+        BROKEN(템플릿에서 사라졌거나 재결속 불가)은 여기 들지 않는다 — 보존 가능한 것은 current
+        Application 이 여전히 아는 Field 뿐이다.
+        """
+        return tuple(
+            c.field_id for c in self.classifications if c.category == INACTIVE_ONLY
+        )
+
 
 def review_basis_digest(structure: CurrentApplicationFieldStructure) -> str:
     """current Application 구조의 content-address — commit 시점 재확인 기준."""
@@ -514,6 +527,10 @@ def review_field_binding_for_current_application(
 
     source 규칙은 exact source key 재결속 가능성까지 본다(현재 스키마에 없으면 BROKEN).
     silent rebase·old revision base 재지정은 하지 않는다 — 분류만 낸다.
+
+    분류의 스코프는 판본이다(#877): INACTIVE_ONLY 는 "판본이 보존 중이나 지금은 실행에 참여하지
+    않는 규칙"이고, NEW_ACTIVE_FIELD 는 "판본에 규칙이 정말 없는 활성 Field"다. 비활성이었다가
+    다시 활성이 된 Field 는 규칙이 판본에 남아 있으므로 PRESERVED 로 온다(재확정 요구 0).
     """
     active = set(structure.active_field_ids)
     inactive = set(structure.inactive_field_ids)
@@ -551,10 +568,18 @@ def decide_application_review_commit(
     """review commit 순수 결정 — 성공하면 base=current Application 의 immutable revision.
 
     - current Application 이 review target 과 다르거나 basis digest 이동 → stale(미기록).
-    - resolved_input 이 current active 아닌 Field 를 참조하거나 SOURCE 규칙이 current schema 에
-      없는 source_key 로 결속하면 → 미해결 BROKEN(미기록). reviewed revision 은 current data 에
-      결속 가능해야 한다.
+    - resolved_input 이 current Application 이 모르는 Field(active 도 inactive 도 아님)를
+      참조하면 → 미해결 BROKEN(미기록).
+    - **Active Field 에 결속한** SOURCE 규칙이 current schema 에 없는 source_key 를 쓰면 →
+      미해결 BROKEN(미기록). 실행에 참여하는 규칙은 current data 에 결속 가능해야 한다.
     - base 는 current Application 이어야 한다(old revision base 재지정 없음).
+
+    **판본 스코프는 active 절단이 아니다**(U3-04 #877). 판본은 "한 번이라도 확정된 Field 의
+    규칙"을 담고, 그 중 지금 실행에 참여하는 것은 compile 이 Active projection 으로 고른다
+    (:func:`hwpxfiller.application.execution_compilation.qualify_and_compile_execution`). 그래서
+    비활성 Field 규칙을 실은 입력도 여기서 거절하지 않는다 — 거절하면 Option 을 오갈 때마다 이미
+    확정한 결정이 판본에서 탈락해 재확정을 무한히 요구하게 된다. 비활성 규칙의 source_key 는
+    current schema 대조 대상이 아니다(다시 활성이 될 때 review 가 BROKEN 으로 시끄럽게 잡는다).
     """
     if current_structure.application_id != review.target_application_id or (
         review_basis_digest(current_structure) != review.review_basis_digest
@@ -565,14 +590,18 @@ def decide_application_review_commit(
             "resolved_input base 는 current Application 이어야 한다"
         )
     active = set(current_structure.active_field_ids)
+    inactive = set(current_structure.inactive_field_ids)
     current_schema = set(current_structure.source_schema_keys)
     for rule in resolved_input.binding_rules:
         if rule.field_id not in active:
-            raise FieldBindingReviewRequired(
-                "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
-                f"미해결 Field(현재 active 아님): {rule.field_id!r}",
-            )
-        # SOURCE 규칙은 current schema 에 있는 source_key 로만 결속돼야 한다(stale schema 결속 방지).
+            # 보존 중인 비활성 규칙은 통과, current Application 이 아예 모르는 Field 는 거절.
+            if rule.field_id not in inactive:
+                raise FieldBindingReviewRequired(
+                    "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",
+                    f"미해결 Field(현재 Application 에 없음): {rule.field_id!r}",
+                )
+            continue
+        # Active SOURCE 규칙은 current schema 에 있는 source_key 로만 결속돼야 한다(stale 결속 방지).
         if rule.binding_kind == SOURCE and rule.source_key not in current_schema:
             raise FieldBindingReviewRequired(
                 "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED",

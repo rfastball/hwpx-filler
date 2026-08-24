@@ -19,6 +19,11 @@ binding 을 그대로 읽는다(별도 스토어 조립 없음). :class:`Workspa
 SX-03(#726): passive Binding review는 읽기만 하고, exact binding/<fieldId> 편집 저장 명령만
 기존 S5 commit 함수로 Work-default immutable revision을 쓴다. commit 함수가 PerWorkFence 아래
 Application 구조와 legacy Mapping 지문을 다시 확인하며, seal은 계속 current value 재계산이다.
+
+U3-04(#877): 그 commit 의 의미는 **활성 Field upsert + 기존 판본의 비활성 Field 규칙 보존** 이다
+(활성 Field 로 잘라 교체하지 않는다). 확정 이후 Option 을 바꿔 비활성이 됐다는 사실만으로 규칙을
+버리면 그 Option 으로 되돌아올 때마다 같은 결정을 다시 확정하게 된다 — 옵션 왕복이 재확정을
+무한히 요구하던 결함의 자리가 여기였다.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from ..application.field_binding_input import (
     FieldBindingMigrationDraft,
     FieldBindingReviewRequired,
     LegacyFieldBindingEntry,
+    MigrationCandidateRule,
     StaleFieldBindingBasis,
     build_field_binding_input,
     legacy_field_binding_basis_fingerprint,
@@ -317,6 +323,9 @@ class SealExecutionPlanService:
 
         active = frozenset(current.active_field_ids)
         mapped = {entry.template_field for entry in entries}
+        # 미매핑 검사는 **활성 Field 기준**이다(#877 재확인): 비활성 Field 는 이번 실행에 참여하지
+        # 않으므로 Mapping 결정이 없어도 확정을 막지 않는다. 그 Field 가 다시 활성이 되는 순간
+        # review 가 NEW_ACTIVE_FIELD 로 세워 그때 묻는다.
         missing = tuple(
             field_id for field_id in current.active_field_ids if field_id not in mapped
         )
@@ -332,11 +341,16 @@ class SealExecutionPlanService:
             legacy_entries=entries,
             captured_at=captured_at,
         )
+        # 판본 스코프 = 활성 Field upsert + 이미 확정된 비활성 Field 규칙 보존(#877). 판본이 없는
+        # 최초 migration 이면 보존할 규칙도 없다(빈 tuple).
+        binding_rules = _resolved_rules(
+            draft, entries, active, media=media
+        ) + _preserved_inactive_rules(draft, current, media=media)
         resolved = build_field_binding_input(
             workspace_instance_id=workspace_id,
             work_authority_id=job.authority_id,
             base_template_application_id=current.review.target_application_id,
-            binding_rules=_resolved_rules(draft, entries, active, media=media),
+            binding_rules=binding_rules,
             source_schema_keys=schema_keys,
             raw_record_contract_id=RAW_RECORD_CONTRACT_ID,
             captured_at=captured_at,
@@ -374,6 +388,10 @@ class SealExecutionPlanService:
                 request_id=request_id,
                 draft=draft,
                 resolved_input=resolved,
+                # 최초 판본에는 보존할 이전 규칙이 없다 — 활성 아닌 legacy entry 는 여기서
+                # **명시 omission** 으로 회계된다(silent drop 금지). upsert 의미와 충돌하지
+                # 않는다: 그 Field 가 활성이 되면 review 가 NEW_ACTIVE_FIELD 로 세워 확정을
+                # 받고, 그 뒤로는 비활성이 되어도 판본이 규칙을 보존한다(#877).
                 omitted_field_ids={
                     entry.template_field
                     for entry in entries
@@ -433,6 +451,63 @@ def _source_schema_keys(mapping: MappingProfile) -> tuple[str, ...]:
     )
 
 
+def _rule_from_candidate(
+    candidate: MigrationCandidateRule, *, media: str
+) -> FieldBindingRule:
+    """migration 후보 규칙 → exact FieldBindingRule(활성 upsert·보존 갱신 공용).
+
+    값 정책은 매체가 가른다(S10-04 · #861): 같은 whitespace/line-break 의미를 갖되 escaping
+    책임이 다르다. 사용자에게 다시 묻지 않고 표로 옮긴다 — 이미 확정한 값 의미를 매체가
+    바뀌었다고 재확인시키는 것은 같은 결정을 두 번 시키는 것이다.
+    """
+    resolve_policy = (
+        txt_document_value_policy if media == "txt" else resolve_document_value_policy
+    )
+    return FieldBindingRule(
+        field_id=candidate.field_id,
+        binding_kind=candidate.binding_kind,
+        document_content_value_policy=resolve_policy(candidate.proposed_policy_id),
+        source_key=candidate.source_key,
+        value_type=candidate.value_type,
+        format_code=candidate.format_code,
+        canonical_constant_value=candidate.canonical_constant_value,
+    )
+
+
+def _preserved_inactive_rules(
+    draft: FieldBindingMigrationDraft,
+    current: CurrentFieldBindingReview,
+    *,
+    media: str,
+) -> tuple[FieldBindingRule, ...]:
+    """이미 확정된 Field 가 비활성이 되어도 판본에서 사라지지 않게 규칙을 이어 나른다(#877).
+
+    **스코프는 판본, 값은 Mapping** 이다: 어떤 Field 가 판본에 드는지는 「한 번이라도 확정됐는가」
+    (review 의 INACTIVE_ONLY 분류)가 정하고, 그 Field 의 값 결정은 그것이 아직 Mapping 에 살아
+    있으면 **현재 Mapping** 이 정한다. 이전 규칙을 무조건 그대로 박으면 편집기가 보여주는 값과
+    판본이 조용히 갈라진다 — 같은 상태를 두 곳이 판정하지 않게 Mapping 을 우선한다. Mapping 에서
+    사라졌거나 명시 결정이 남은 blank 항목은 이전 규칙을 그대로 보존한다(비활성이라 실행에 참여
+    하지 않고, 다시 활성이 되면 그때 review·commit 이 명시 결정을 요구한다).
+
+    BROKEN(템플릿에서 사라진 Field)은 보존 대상이 아니다 — review 분류가 이미 갈라 두었고,
+    존재하지 않는 Field 규칙을 실은 판본은 commit 결정이 거절한다.
+    """
+    prior = current.prior_revision
+    if prior is None:
+        return ()
+    keep = frozenset(current.review.inactive_only_field_ids())
+    candidates = {item.field_id: item for item in draft.candidate_rules}
+    preserved: list[FieldBindingRule] = []
+    for rule in prior.binding_rules:
+        if rule.field_id not in keep:
+            continue
+        candidate = candidates.get(rule.field_id)
+        preserved.append(
+            rule if candidate is None else _rule_from_candidate(candidate, media=media)
+        )
+    return tuple(preserved)
+
+
 def _resolved_rules(
     draft: FieldBindingMigrationDraft,
     entries: tuple[LegacyFieldBindingEntry, ...],
@@ -440,12 +515,7 @@ def _resolved_rules(
     *,
     media: str = "hwpx",
 ) -> tuple[FieldBindingRule, ...]:
-    # 값 정책은 매체가 가른다(S10-04 · #861): 같은 whitespace/line-break 의미를 갖되 escaping
-    # 책임이 다르다. 사용자에게 다시 묻지 않고 표로 옮긴다 — 이미 확정한 값 의미를 매체가
-    # 바뀌었다고 재확인시키는 것은 같은 결정을 두 번 시키는 것이다.
-    resolve_policy = (
-        txt_document_value_policy if media == "txt" else resolve_document_value_policy
-    )
+    """현재 활성 Field 의 규칙 — 현재 Mapping 결정을 그대로 upsert 한다."""
     candidates = {item.field_id: item for item in draft.candidate_rules}
     rules: list[FieldBindingRule] = []
     for entry in entries:
@@ -457,19 +527,7 @@ def _resolved_rules(
                 "FIELD_BINDING_MIGRATION_REVIEW_REQUIRED",
                 f"legacy blank omission\uc5d0 \ub300\ud55c \uba85\uc2dc \uacb0\uc815\uc774 \ud544\uc694\ud569\ub2c8\ub2e4: {entry.template_field!r}",
             )
-        rules.append(
-            FieldBindingRule(
-                field_id=candidate.field_id,
-                binding_kind=candidate.binding_kind,
-                document_content_value_policy=resolve_policy(
-                    candidate.proposed_policy_id
-                ),
-                source_key=candidate.source_key,
-                value_type=candidate.value_type,
-                format_code=candidate.format_code,
-                canonical_constant_value=candidate.canonical_constant_value,
-            )
-        )
+        rules.append(_rule_from_candidate(candidate, media=media))
     return tuple(rules)
 
 

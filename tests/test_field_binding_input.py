@@ -271,6 +271,9 @@ def test_review_classifies_preserved_broken_new_inactive() -> None:
     assert got["source_gone"] == BROKEN  # source key 재결속 불가
     assert got["brand_new"] == NEW_ACTIVE_FIELD
     assert set(review.broken_field_ids()) == {"removed", "source_gone"}
+    # 보존 대상은 INACTIVE_ONLY 뿐이다(#877) — 삭제된 Field 는 BROKEN 이라 판본이 이어 나르지
+    # 않는다(존재하지 않는 Field 규칙을 실은 판본은 commit 결정이 거절한다).
+    assert review.inactive_only_field_ids() == ("moved_inactive",)
 
 
 def test_review_commit_decision_paths() -> None:
@@ -309,3 +312,29 @@ def test_review_commit_decision_paths() -> None:
         decide_application_review_commit(
             replace(review, work_authority_id="zzz"), resolved, structure
         )
+
+
+def test_review_commit_keeps_inactive_rules_and_rejects_absent_fields() -> None:
+    # U3-04(#877): 판본 스코프는 활성 절단이 아니다 — 비활성 Field 규칙을 실은 입력도 통과하고
+    # (그 규칙이 판본에 남아야 옵션 왕복이 재확정을 요구하지 않는다), current Application 이
+    # 아예 모르는 Field 규칙만 거절한다.
+    old = revision_from_input(_input(rules=[_rule("f1"), _rule("f2")], keys=("name",)))
+    structure = _structure(active=("f1",), inactive=("f2",), keys=("name",))
+    review = review_field_binding_for_current_application(old, structure)
+    assert review.inactive_only_field_ids() == ("f2",)
+
+    kept = _input(base="A18", rules=[_rule("f1"), _rule("f2")], keys=("name",))
+    rev = decide_application_review_commit(review, kept, structure)
+    assert {r.field_id for r in rev.binding_rules} == {"f1", "f2"}
+
+    # 비활성 규칙의 source_key 는 current schema 대조 대상이 아니다(실행에 참여하지 않는다).
+    stale_inactive = _input(
+        base="A18", rules=[_rule("f1"), _rule("f2", "vanished")], keys=("name",)
+    )
+    assert decide_application_review_commit(review, stale_inactive, structure)
+
+    # active 도 inactive 도 아닌 Field(템플릿에서 사라짐) → 미해결 BROKEN.
+    ghost = _input(base="A18", rules=[_rule("f1"), _rule("gone")], keys=("name",))
+    with pytest.raises(FieldBindingReviewRequired) as ei:
+        decide_application_review_commit(review, ghost, structure)
+    assert ei.value.code == "FIELD_BINDING_APPLICATION_REVIEW_REQUIRED"
