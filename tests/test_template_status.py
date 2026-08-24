@@ -314,3 +314,72 @@ def test_reedit_drift_recomputes_compiled_to_partial():
     assert st.state == CompileState.PARTIAL  # 도장이었다면 여전히 COMPILED 였을 것
     assert st.field_n == 1
     assert st.compilable_n >= 1 or st.stray_n >= 1
+
+
+# ------------------------------------- 구간 표기 잔존(S8-04 #835 — D5 음성 대조)
+def _p(text: str) -> str:
+    return f'<hp:p><hp:run charPrIDRef="0"><hp:t>{text}</hp:t></hp:run></hp:p>'
+
+
+def test_compiled_fields_with_residual_structure_notation_are_partial():
+    """**핵심 음성 대조**: 필드는 다 컴파일됐는데 구간 표기가 남은 문서는 COMPILED 가 아니다.
+
+    S8-01 의 sigil 선행 분류로 구조 마커는 ``scan_tokens`` 에서 빠진다. 그래서 이 수치를
+    따로 보지 않으면 이 문서가 어느 카운트에도 안 잡혀 「실행 준비」로 뜨고, 생성은 모든
+    선택지 + 마커 텍스트가 실린 구조적으로 틀린 문서를 낸다.
+    """
+    pkg, report = compile_document(_pkg(
+        _p("{{#항목 특약 특약 사항}}")
+        + _p("계약명: {{계약명}}")
+        + _p("{{/항목}}")
+    ))
+    assert report.compiled == ["계약명"]  # 필드 축은 완결(마커는 무변형)
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.PARTIAL
+    assert st.structure_marker_n == 2          # 여는·닫는 마커
+    # 잔존물 하나는 한 번만 세어진다 — 마커는 「남은 토큰」 채널로 새지 않는다(S8-04).
+    assert (st.compilable_n, st.skipped_n, st.stray_n) == (0, 0, 0)
+    assert st.to_dict()["structure_marker_n"] == 2
+
+
+def test_structure_markers_alone_stay_raw():
+    """필드 0 + 마커만 → RAW 유지(기존 동작). 마커로 상태를 새로 쪼개지 않는다."""
+    st = compile_status(_pkg(_p("{{#항목 특약}}") + _p("본문") + _p("{{/항목}}")))
+    assert st.state == CompileState.RAW
+    assert st.field_n == 0
+    assert st.structure_marker_n == 2   # RAW 여도 수치는 정직하게 실린다
+
+
+def test_invalid_structure_markers_are_still_counted_as_residue():
+    """자격을 잃은 마커(짝 없음·알 수 없는 키워드)도 문서에 남아 있으므로 센다.
+
+    「선언이 몇 개인가」와 「표기가 남았는가」는 다른 질문이다. 진단만 남기고 세지 않으면
+    깨진 표기를 가진 문서가 0 으로 보여 조용히 통과한다.
+    """
+    pkg, _ = compile_document(_pkg(_p("계약명: {{계약명}}") + _p("{{/항목}}")))
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.PARTIAL
+    assert st.structure_marker_n == 1
+
+
+def test_status_is_compiled_again_once_notation_is_gone():
+    """양성 대조(도메인 절반) — 마커 문단을 걷어내면 즉시 COMPILED 로 되돌아온다."""
+    pkg, _ = compile_document(_pkg(
+        _p("{{#항목 특약}}") + _p("계약명: {{계약명}}") + _p("{{/항목}}")
+    ))
+    assert compile_status(pkg).state == CompileState.PARTIAL
+
+    root = etree.fromstring(pkg.entries[SECTION])
+    for para in list(root):
+        text = "".join(para.itertext())
+        if "{{#" in text or "{{/" in text:   # 마커 문단만(누름틀 값 문단은 남긴다)
+            root.remove(para)
+    pkg.entries[SECTION] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.COMPILED
+    assert st.structure_marker_n == 0

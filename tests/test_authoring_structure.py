@@ -179,7 +179,9 @@ def test_positive_control_restores_declaration_and_summary():
             ],
         }
     ]
-    assert scan.summary.to_dict() == {"slots": 1, "options": 2, "fields": 3}
+    assert scan.summary.to_dict() == {
+        "slots": 1, "options": 2, "fields": 3, "markers": 6,
+    }
     # 「누름틀 k」는 같은 스캔의 필드 토큰 수와 정합한다.
     assert scan.summary.fields == sum(1 for s in scan_tokens(pkg) if s.compilable)
     assert json.dumps(scan.to_dict())  # 상위 링 직렬화 가능
@@ -422,7 +424,11 @@ def test_range_does_not_pair_across_content_xml_boundary():
     assert "content XML 이 끝났습니다" in scan.diagnostics[0].message  # 열린 begin
     assert "여는 「항목」 마커 없이" in scan.diagnostics[1].message  # 고아 end
     assert scan.slots == ()  # 파일을 넘어 짝지어진 항목은 복원되지 않는다
-    assert scan.summary.to_dict() == {"slots": 0, "options": 0, "fields": 0}
+    # 선언은 0 이어도 마커는 문서에 그대로 남아 있다 — 「표기 잔존」은 선언 수가 아니라
+    # 마커 총수가 답한다(S8-04: 깨진 표기가 0 으로 보이면 생성이 조용히 통과한다).
+    assert scan.summary.to_dict() == {
+        "slots": 0, "options": 0, "fields": 0, "markers": 2,
+    }
 
 
 def test_slot_id_duplication_is_still_detected_across_content_xml():
@@ -452,3 +458,30 @@ def test_scan_structure_reads_only():
     snapshot = dict(pkg.entries)
     scan_structure(pkg)
     assert pkg.entries == snapshot
+
+
+# ------------------------------------------ 마커 총수(S8-04 #835 — 잔존의 단일 출처)
+def test_marker_total_counts_every_complete_marker_regardless_of_validity():
+    """자격을 잃은 마커도 문서에는 남아 있다 — 총수는 유효·무효를 가리지 않는다.
+
+    표 셀 안(MARKER_IN_TABLE)·다른 텍스트와 동거(MARKER_NOT_ALONE)·알 수 없는 키워드는
+    전부 「없던 것」이 아니라 「변환되지 않은 채 남은 표기」다. 이것을 선언 수(``slots``)로
+    물으면 깨진 표기를 가진 문서가 0 으로 보이고, 그 문서의 생성이 조용히 통과한다.
+    """
+    scan = _scan_unchanged(_doc(
+        _p("{{#항목 특약 특약 사항}}"),
+        _p("계약명: {{계약명}}"),          # 필드 토큰은 마커가 아니다
+        _in_table(_p("{{#선택 지체상금}}")),  # 표 셀 안 — 진단만 남고 선언은 안 선다
+        _p("{{/조건}} 남은 말"),            # 알 수 없는 키워드 + 동거
+        _p("{{/항목}}"),
+    ))
+
+    assert scan.summary.markers == 4          # 필드 토큰 1개는 세지 않는다
+    assert scan.summary.slots == 1 and scan.summary.fields == 1
+    assert scan.diagnostics != ()             # 무효 마커는 진단으로도 남는다
+
+
+def test_marker_total_is_zero_without_any_notation():
+    """표기가 없는 문서는 정직하게 0 — 「잔존 있음」의 거짓 양성이 없다."""
+    scan = _scan_unchanged(_doc(_p("계약명: {{계약명}}"), _p("본문")))
+    assert scan.summary.markers == 0

@@ -5961,3 +5961,74 @@ def test_template_change_without_assembly_is_loud_not_silent(tmp_path):
         ctrl.dispatch("template_check", {"request_id": "k1"})
     with pytest.raises(ValueError):
         ctrl.dispatch("template_apply", {"change_token": "tok"})
+
+
+# ============ 잔존 구간 표기의 생성 admission 차단(S8-04 #835 — D5 음성 대조) ============
+def _write_notation_template(path, fields, markers=("{{#항목 특약 특약 사항}}", "{{/항목}}")):
+    """누름틀은 컴파일됐는데 구간 표기가 남은 템플릿 — 실행되면 마커가 산출물에 샌다."""
+    body = "".join(
+        f'<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p>' for text in markers
+    )
+    field_runs = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{name}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for name in fields
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+        f'{body}<hp:p>{field_runs}</hp:p></hs:sec>'
+    ).encode()
+    write_hwpx_package(
+        path,
+        HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}),
+    )
+
+
+def test_generation_is_refused_while_structure_notation_is_uncompiled(tmp_path):
+    """생성 admission 이 **실행 시점 bytes** 를 보고 잔존 표기를 시끄럽게 거절한다.
+
+    상태 배지만으로는 실행이 막히지 않는다(홈은 알리고 admission 이 막는다). 통과하면
+    산출물에 모든 선택지 + 마커 텍스트가 실린 구조적으로 틀린 문서가 나온다(#822 D5).
+    """
+    from hwpxfiller.application.slotless_run_bridge import (
+        STRUCTURE_NOTATION_UNCOMPILED,
+        SlotlessRunAdmissionError,
+    )
+    from hwpxfiller.domain.template_status import CompileState
+    from hwpxfiller.webapp.screen_job import _ADMISSION_REJECT_TEXT
+
+    reg = _registry(tmp_path)
+    template = tmp_path / "notation.hwpx"
+    _write_notation_template(template, ["공고명"])
+    reg.save(Job(name="표기작업", template_path=str(template)))
+    status = template_compile_status(str(template))
+    assert (status.state, status.structure_marker_n) == (CompileState.PARTIAL, 2)
+
+    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
+    with pytest.raises(SlotlessRunAdmissionError) as exc:
+        coord.resolve_generation_template("표기작업")
+
+    assert exc.value.code == STRUCTURE_NOTATION_UNCOMPILED
+    # 코드 → 문안 맵이 이 거절을 재진술한다(조용한 fallback 「생성을 진행할 수 없습니다」 금지).
+    text = _ADMISSION_REJECT_TEXT[exc.value.code]
+    assert "구간 표기" in text and "변환" in text
+
+
+def test_generation_proceeds_when_no_notation_is_left(tmp_path):
+    """양성 대조 — 표기가 없는 같은 모양의 템플릿은 그대로 staged 경로를 낸다.
+
+    새 검문이 「항상 빨강」이 아님을 못박는다. 표기를 실제로 변환한 뒤(S8-02)의 실행은
+    slot-bearing 실행 자격이라는 **다른 게이트**의 소관이라 여기서 겨누지 않는다.
+    """
+    reg = _registry(tmp_path)
+    template = tmp_path / "clean.hwpx"
+    _write_notation_template(template, ["공고명"], markers=("계약 일반사항",))
+    reg.save(Job(name="표기없음", template_path=str(template)))
+    assert template_compile_status(str(template)).structure_marker_n == 0
+
+    coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
+    staged = coord.resolve_generation_template("표기없음")
+    assert Path(staged).exists()

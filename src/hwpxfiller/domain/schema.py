@@ -30,7 +30,7 @@ from hwpxcore.text_extract import (
     require_package,
     text_of_t,
 )
-from hwpxfiller.domain.authoring import scan_tokens
+from hwpxfiller.domain.authoring import is_structure_sigil, scan_tokens
 from hwpxfiller.domain.fields import (
     FieldDocument,
     field_xml_names,
@@ -306,6 +306,8 @@ def extract_schema(pkg: object) -> TemplateSchema:
                 and normalize_field_id(wrapped) == field_id
             )
             for match in _TOKEN_RE.finditer(value):
+                if is_structure_sigil(match.group(1)):
+                    continue  # 구간 표기 축(아래 문단 순회와 **같은 필터**로 짝을 맞춘다)
                 token = normalize_field_id(match.group(0))
                 if token is not None:
                     field_tokens[token] += 1
@@ -314,6 +316,13 @@ def extract_schema(pkg: object) -> TemplateSchema:
 
     for text in iter_paragraph_texts(doc):
         for match in _TOKEN_RE.finditer(text):
+            if is_structure_sigil(match.group(1)):
+                # 구간 표기 마커는 **미치환 필드 토큰이 아니다**(S8-04 #835): 잔존 여부는
+                # 스캐너 단일 출처(``StructureSummary.markers``)가 세고 상태는
+                # ``structure_marker_n`` 으로 싣는다. 여기서도 세면 마커 하나가 「남은
+                # 토큰」과 「구간 표기」로 두 번 보고되고(수치 이중화), 이름이 토큰이 아닌
+                # 것이 PARTIAL 게이트의 확인 목록에 올라 「비우고 진행」으로 확정된다.
+                continue
             token = normalize_field_id(match.group(0))
             if token is None:
                 continue

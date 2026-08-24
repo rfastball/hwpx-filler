@@ -68,8 +68,10 @@ from hwpxfiller.application.slot_selection_input import (
     plan_capture,
 )
 from hwpxfiller.application.slotless_run_bridge import (
+    APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
     AdmittedSlotlessRun,
     ExecutionConfigurationProvenancePort,
+    SlotlessRunAdmissionError,
     admit_slotless_run,
 )
 from hwpxfiller.host.staged_template import stage_exact_applied_bytes
@@ -109,6 +111,7 @@ from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 
 from .candidate_store import CandidateStoreError
 from .qualification_store import QualificationStoreError
+from .template_inspection import template_compile_status
 from .work_configuration_store import WorkSlotConfigurationStore
 
 
@@ -952,4 +955,26 @@ def _admit_slotless_run_under_fence(
     return admit_slotless_run(
         selection_input, applied_input, base,
         lambda digest: stage_exact_applied_bytes(candidate_bytes, home, digest),
+        count_structure_markers=_staged_structure_marker_count,
     )
+
+
+def _staged_structure_marker_count(staged_path: str) -> int:
+    """staged 실행 bytes 에 남은 구간 표기 수 — 상태 판정과 **같은 출처**를 되읽는다.
+
+    :func:`~hwpxfiller.external.template_inspection.template_compile_status` 를 그대로 쓰는
+    이유는 두 가지다: 경로 열기 + 마커 셈을 여기서 다시 조립하면 같은 상태의 두 번째 판정이
+    되고(그 둘이 갈리면 화면은 PARTIAL 인데 생성은 통과한다), admission 은 캐시된 상태가
+    아니라 **이 실행이 쓸 bytes** 를 봐야 한다(staged 사본이 곧 그 bytes 다).
+
+    읽지 못하면 「마커 0」으로 접지 않고 무결성 오류로 거절한다: qualification 이 이미
+    parse 를 증명한 bytes 라 여기서 실패했다는 것은 staged 사본이 그때 본 것과 다르다는
+    뜻이고, 못 읽은 문서를 통과시키면 검문이 있으나 마나다(fail-closed).
+    """
+    try:
+        return template_compile_status(staged_path).structure_marker_n
+    except Exception as exc:  # noqa: BLE001 — 열기·파싱 실패류를 제품 상태로 번역(raw 누출 금지)
+        raise SlotlessRunAdmissionError(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            f"staged 템플릿 bytes 를 읽을 수 없어 구간 표기를 확인하지 못했다: {exc}",
+        ) from exc

@@ -66,8 +66,15 @@ def _hp(tag: str) -> str:
 _STRUCTURE_SIGILS = ("#", "/")
 
 
-def _is_structure_sigil(raw: str) -> bool:
-    """토큰 내용이 구간 표기 마커인가 — 앞 공백을 뗀 첫 글자가 ``#``/``/``."""
+def is_structure_sigil(raw: str) -> bool:
+    """토큰 내용이 구간 표기 마커인가 — 앞 공백을 뗀 첫 글자가 ``#``/``/``.
+
+    **공개 술어**(S8-04): 완전 토큰을 발견하는 자리는 이 모듈 밖에도 있다
+    (:func:`~hwpxfiller.domain.schema.extract_schema` 의 미치환 잔존 분류). 그 자리들이
+    각자 sigil 을 다시 판정하면 「구조 마커인가」가 두 곳에서 갈린다 — 같은 토큰이 한
+    표면에선 구간 표기, 다른 표면에선 미치환 필드 토큰으로 세어져 한 잔존물이 두 번
+    보고된다. 그래서 술어는 여기 하나이고 전 발견 지점이 그것만 쓴다.
+    """
     body = raw.lstrip()
     return bool(body) and body[0] in _STRUCTURE_SIGILS
 
@@ -79,7 +86,7 @@ def _iter_field_tokens(text: str):
     신고뿐이다 — 필드 토큰 후보를 세는 자리는 전부 이 필터를 통과한다.
     """
     for match in _TOKEN_RE.finditer(text):
-        if _is_structure_sigil(match.group(1)):
+        if is_structure_sigil(match.group(1)):
             continue
         yield match
 
@@ -87,7 +94,7 @@ def _iter_field_tokens(text: str):
 def _iter_structure_markers(text: str):
     """완전 토큰 매치 중 **구조 마커**만 yield(필드 토큰의 정확한 여집합)."""
     for match in _TOKEN_RE.finditer(text):
-        if _is_structure_sigil(match.group(1)):
+        if is_structure_sigil(match.group(1)):
             yield match
 
 
@@ -810,14 +817,28 @@ class StructureDiagnostic:
 
 @dataclass(frozen=True)
 class StructureSummary:
-    """확인 왕복 원료 — 「항목 n·선택 m·누름틀 k」."""
+    """확인 왕복 원료 — 「항목 n·선택 m·누름틀 k」 + 마커 총수.
+
+    ``markers`` 는 이 문서에서 발견된 **완전 구조 마커 토큰의 총수**다(유효·무효 불문:
+    표 셀 안·중첩 문단·짝이 안 맞는 마커도 전부 센다). ``slots``/``options`` 는 진단이
+    없을 때만 신뢰할 수 있는 **선언** 수라, 「표기가 아직 남아 있는가」를 그것으로 물으면
+    깨진 표기가 0 으로 보인다 — 그 질문의 단일 출처가 이 수치다(S8-04 #835). 마커를 세는
+    코드는 :func:`_iter_structure_markers` 를 도는 :class:`_StructureReader` 하나뿐이고
+    상태·admission 은 이 값(또는 그 파생)을 **소비만** 한다.
+    """
 
     slots: int
     options: int
     fields: int
+    markers: int
 
     def to_dict(self) -> dict:
-        return {"slots": self.slots, "options": self.options, "fields": self.fields}
+        return {
+            "slots": self.slots,
+            "options": self.options,
+            "fields": self.fields,
+            "markers": self.markers,
+        }
 
 
 #: :attr:`StructurePlacement.kind` 의 어휘 — 상위 링이 문안 대신 이 값으로 분기한다.
@@ -954,6 +975,9 @@ class _StructureReader:
         self.slots: "list[Slot]" = []
         self.diagnostics: "list[StructureDiagnostic]" = []
         self.placements: "list[StructurePlacement]" = []
+        # 본 마커 토큰의 총수(유효·무효 불문) — 「표기가 아직 남아 있는가」의 단일 출처.
+        # 자격을 잃어 진단만 남은 마커도 문서에는 그대로 있으므로 함께 센다.
+        self.markers = 0
         self._slot: "_OpenRange | None" = None
         self._option: "_OpenRange | None" = None
         self._options: "list[SlotOption]" = []
@@ -983,6 +1007,7 @@ class _StructureReader:
         text, _, _, _ = _build_paragraph_model(p_el)
         context = _paragraph_text(p_el).strip()[:_CONTEXT_MAX]
         markers = list(_iter_structure_markers(text))
+        self.markers += len(markers)  # 자격 판정 **앞** — 거절될 마커도 문서에 남아 있다
         if not markers:
             if top_level:
                 self._count_content()
@@ -1310,6 +1335,7 @@ def scan_structure(pkg: object) -> StructureScan:
             slots=len(reader.slots),
             options=sum(len(slot.options) for slot in reader.slots),
             fields=fields,
+            markers=reader.markers,
         ),
         placements=tuple(reader.placements),
     )

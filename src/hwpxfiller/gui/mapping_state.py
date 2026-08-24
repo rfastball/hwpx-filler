@@ -40,6 +40,16 @@ RAW_BLOCK_MESSAGE = (
     "한글에서 누름틀을 삽입하거나 누름틀 변환으로 토큰을 바꾼 템플릿을 쓰세요."
 )
 
+# 잔존 구간 표기 차단 사유의 **단일 원천**(S8-04 #835). 편집 게이트
+# (:meth:`PartialGate.message`)와 생성 admission(`webapp.screen_job._ADMISSION_REJECT_TEXT`)
+# 이 같은 차단을 같은 문장으로 말한다 — 같은 상태를 두 표면이 따로 문안화하면 사용자는
+# 한 결함을 두 이름으로 배운다. 문형은 COPY_STYLE_GUIDE(오류=① 문제 ② 조치 2문장,
+# em dash 금지, 낫표 대신 작은따옴표) 준수.
+STRUCTURE_NOTATION_BLOCK_MESSAGE = (
+    "구간 표기가 아직 변환되지 않았습니다. "
+    "'템플릿' 탭에서 '누름틀·구간 변환'을 먼저 실행하세요."
+)
+
 
 def default_transform_for(inferred_type: str) -> str:
     """스키마의 의미 타입에서 기본 값 유형을 유도한다(date→date, amount→amount, 그 외 text)."""
@@ -772,6 +782,17 @@ class PartialGate:
     def state(self) -> CompileState:
         return self.status.state
 
+    @property
+    def structure_blocked(self) -> bool:
+        """잔존 구간 표기가 있는가 — **ack 로 열리지 않는** 차단(S8-04 #835).
+
+        빈 값 ack 는 「이 토큰은 비우고 진행한다」는 사용자 확정이다. 미변환 구간 표기는
+        비우고 진행할 수 있는 값이 아니라 **구조가 아직 안 선 상태**라, 확정할 대상이
+        없다(확정하면 모든 선택지가 든 문서가 나온다). 그래서 여기는 확인 왕복이 아니라
+        수선 동선을 재진술하는 차단이다.
+        """
+        return self.status.structure_marker_n > 0
+
     def needs_gate(self) -> bool:
         """PARTIAL 만 확정 게이트가 닫힌다(RAW 는 상위에서 차단, COMPILED/FILLED 는 통과)."""
         return self.status.state is CompileState.PARTIAL
@@ -793,6 +814,8 @@ class PartialGate:
         st = self.status.state
         if st is CompileState.RAW:
             return False
+        if self.structure_blocked:
+            return False  # ack 와 무관한 차단(구조 미완 — 수선 동선은 변환)
         if st is CompileState.PARTIAL:
             return self.is_acked()
         return True  # COMPILED / FILLED
@@ -802,6 +825,10 @@ class PartialGate:
         st = self.status.state
         if st is CompileState.RAW:
             return RAW_BLOCK_MESSAGE
+        if self.structure_blocked:
+            # 토큰 이름 열거로 답할 수 없는 차단이라 먼저 선다 — 그러지 않으면 잔존
+            # 토큰이 0 인 문서에서 「토큰 0개가 남아 있습니다()」라는 속 빈 문장이 나온다.
+            return STRUCTURE_NOTATION_BLOCK_MESSAGE
         if st is not CompileState.PARTIAL:
             return ""
         names = ", ".join(self.unmet_tokens)

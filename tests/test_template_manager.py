@@ -612,3 +612,48 @@ def test_rows_carry_fill_precheck_warns(tmp_path):
     assert "markpenBegin" in by_name["marker.hwpx"].fill_warns[0]
     assert "제거됩니다" in by_name["marker.hwpx"].fill_warns[0]  # 사전형 문안
     assert by_name["clean.hwpx"].fill_warns == ()  # 과경고 금지
+
+
+# ============================ 구간 표기 잔존의 행 전파(S8-04 #835 — 표면 전파)
+def test_row_surfaces_residual_structure_notation_with_repair_verb(tmp_path):
+    """컴파일된 필드 + 잔존 표기 파일의 행: PARTIAL 배지 · 수치 병기 · 수선 동사 노출.
+
+    링1 이 판정을 그대로 실어 나르는지만 본다 — 행이 상태를 다시 조립하면 배지와 상세가
+    갈린다(같은 상태의 두 번째 판정 금지).
+    """
+    inner = (
+        "<hp:p><hp:run><hp:t>{{#항목 특약 특약 사항}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>{{/항목}}</hp:t></hp:run></hp:p>"
+    )
+    path = _write_compiled(tmp_path / "notation.hwpx", inner)
+    status = template_compile_status(str(path))
+    assert (status.state, status.structure_marker_n) == (CompileState.PARTIAL, 2)
+
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+    row = vm.row_for(str(path))
+
+    assert row.state == CompileState.PARTIAL
+    assert row.badge_label == "부분 변환" and row.badge_level == "warn"
+    assert row.structure_marker_n == 2
+    assert "구간 표기 2개" in row.detail_line()
+    assert [a.label for a in row.actions()] == ["마저 변환", "검토"]
+
+
+def test_row_without_notation_says_nothing_about_it(tmp_path):
+    """양성 대조 — 표기가 없으면 상세 줄에 그 축이 등장하지 않는다(빈 수치 노출 금지)."""
+    path = _write_compiled(
+        tmp_path / "clean.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    )
+    vm = TemplateManagerViewModel(
+        paths=[path],
+        inspect_template=inspect_hwpx_template,
+        file_ops=HWPX_TEMPLATE_OPS,
+    )
+    row = vm.row_for(str(path))
+    assert row.state == CompileState.COMPILED
+    assert "구간 표기" not in row.detail_line()

@@ -271,6 +271,9 @@ class TemplateRow:
     compilable_n: int
     skipped_n: int
     stray_n: int
+    # 아직 native Slot 으로 바뀌지 않고 본문에 남은 구간 표기 마커 수(S8-04). 상태는 이미
+    # PARTIAL 로 서지만, 배지만으로는 「무엇이 남았는가」를 알 수 없어 메타 줄이 병기한다.
+    structure_marker_n: int = 0
     error: str = ""
     # 채움 완화 사전 고지(#154) — "채우면 무슨 일이 생기는가"의 점검 문안.
     fill_warns: "tuple[str, ...]" = ()
@@ -291,6 +294,9 @@ class TemplateRow:
             parts.append(f"수동 {self.skipped_n}개")
         if self.stray_n:
             parts.append(f"남은 토큰 {self.stray_n}개")
+        if self.structure_marker_n:
+            # 「구간 표기」는 UI_VOCABULARY 의 표기 어휘 그대로(마커·sigil 노출 금지).
+            parts.append(f"구간 표기 {self.structure_marker_n}개")
         return " · ".join(parts)
 
     def actions(self) -> "list[TemplateAction]":
@@ -313,6 +319,7 @@ class TemplateRow:
             compilable_n=status.compilable_n,
             skipped_n=status.skipped_n,
             stray_n=status.stray_n,
+            structure_marker_n=status.structure_marker_n,
             fill_warns=fill_warns,
         )
 
