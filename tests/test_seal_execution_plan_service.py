@@ -290,6 +290,140 @@ def test_saved_mapping_commits_revision_and_recomputes_sealed_value(tmp_path) ->
     assert unchanged.revision_id == committed.revision_id
 
 
+# ─── U3-04(#877): 판본은 활성 절단이 아니라 upsert + 비활성 규칙 보존 ────────────────────
+def _roundtrip_world(tmp_path):
+    """옵션 왕복 시나리오의 실 store 세계 — Mapping 은 네 Field 전건 확정 상태."""
+    root = tmp_path / "authority"
+    _seed_v2_work(root, with_binding=False)
+    # seed 한 config aggregate 와 같은 workspace identity 를 쓴다(select 가 그 aggregate 를 연다).
+    WorkspaceMetadataStore(root).get_or_create("now", mint=lambda: WS)
+    registry = _registry(tmp_path)
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping()
+    registry.save(job, allow_overwrite=True)
+    service = SealExecutionPlanService(registry, root=root, clock=datetime.now)
+    slots = SlotConfigurationProduct(registry, root=root, clock=datetime.now)
+    return root, registry, service, slots
+
+
+def _select_option(slots, option_id: str, request_id: str) -> None:
+    opened = slots.open_slot_configuration(WORK_REF)
+    token = opened.current_view.new_configuration_token
+    assert token is not None
+    response = slots.select_slot_option(WORK_REF, token, "s1", option_id, request_id)
+    assert response.mutation_outcome is not None
+
+
+def _review_states(service) -> dict[str, tuple[str, bool]]:
+    projection = service.current_binding_review(WORK_REF)
+    assert projection is not None
+    return {
+        item.field_id: (item.binding_state, item.action_required)
+        for item in projection.input_requirements
+    }
+
+
+def test_option_roundtrip_needs_no_reconfirmation_after_both_options_committed(
+    tmp_path,
+) -> None:
+    # A 확정 → B 전환(재확정 요구) → B 확정 → A 재선택. 마지막 단계에서 재확정 요구는 0 건이고
+    # seal 이 그대로 통과한다 — 확정한 규칙이 비활성이 됐다고 판본에서 탈락하지 않기 때문이다.
+    root, _registry_unused, service, slots = _roundtrip_world(tmp_path)
+    bindings = WorkFieldBindingStore(root / "field_bindings")
+
+    # 1) 옵션 o1(항목 활성)에서 확정.
+    first = service.commit_current_mapping(WORK_REF, "commit-o1")
+    assert first is not None and first.changed is True
+    assert isinstance(
+        service.seal_execution_plan(WORK_REF, "seal-o1").command_outcome,
+        ExecutionPlanSealedProductOutcome,
+    )
+
+    # 2) 옵션 o2 로 전환 — 금액은 판본에 규칙이 없는 활성 Field 라 재확정을 요구한다.
+    _select_option(slots, "o2", "select-o2")
+    assert _review_states(service) == {
+        "성명": ("PRESERVED", False),
+        "주소": ("PRESERVED", False),
+        "항목": ("INACTIVE_ONLY", False),
+        "금액": ("NEW_ACTIVE_FIELD", True),
+    }
+    assert isinstance(
+        service.seal_execution_plan(WORK_REF, "seal-o2-before").command_outcome,
+        ExecutionQualificationBlockedProductOutcome,
+    )
+
+    # 3) 옵션 o2 에서 확정 — 판본은 교체가 아니라 upsert 다(비활성 항목 규칙이 남는다).
+    second = service.commit_current_mapping(WORK_REF, "commit-o2")
+    assert second is not None and second.changed is True
+    revision = load_current_revision(bindings, WORK, "app-1")
+    assert revision is not None
+    assert {rule.field_id for rule in revision.binding_rules} == {
+        "성명",
+        "주소",
+        "항목",
+        "금액",
+    }
+
+    # 4) 옵션 o1 로 되돌아옴 — 재확정 요구 0 건, seal 통과.
+    _select_option(slots, "o1", "select-o1-again")
+    states = _review_states(service)
+    assert states == {
+        "성명": ("PRESERVED", False),
+        "주소": ("PRESERVED", False),
+        "항목": ("PRESERVED", False),
+        "금액": ("INACTIVE_ONLY", False),
+    }
+    assert [field for field, (_, action) in states.items() if action] == []
+    assert isinstance(
+        service.seal_execution_plan(WORK_REF, "seal-o1-again").command_outcome,
+        ExecutionPlanSealedProductOutcome,
+    )
+
+
+def test_preserved_inactive_rule_follows_the_current_mapping_decision(tmp_path) -> None:
+    # 보존의 스코프는 판본이고 값은 Mapping 이다 — 비활성 동안 Mapping 이 바뀌면 판본이 따라간다
+    # (편집기가 보여주는 값과 판본이 조용히 갈라지지 않는다).
+    root, registry, service, slots = _roundtrip_world(tmp_path)
+    service.commit_current_mapping(WORK_REF, "commit-o1")
+    _select_option(slots, "o2", "select-o2")
+
+    job = registry.load(WORK_REF)
+    job.mapping = _complete_mapping("고침")  # 항목(비활성) 포함 전건 재작성
+    registry.save(job, allow_overwrite=True)
+    service.commit_current_mapping(WORK_REF, "commit-o2-edited")
+
+    revision = load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1")
+    assert revision is not None
+    values = {
+        rule.field_id: rule.canonical_constant_value.text
+        for rule in revision.binding_rules
+    }
+    assert values["항목"] == "고침-항목"  # 비활성인데도 최신 결정
+    assert values["금액"] == "고침-금액"
+
+
+def test_inactive_blank_mapping_keeps_the_committed_rule_without_blocking(
+    tmp_path,
+) -> None:
+    # 비활성 Field 가 blank 로 바뀌어도 확정을 막지 않는다(명시 결정은 활성 Field 의 몫) —
+    # 판본은 이전에 확정한 규칙을 그대로 보존한다.
+    root, registry, service, slots = _roundtrip_world(tmp_path)
+    service.commit_current_mapping(WORK_REF, "commit-o1")
+    _select_option(slots, "o2", "select-o2")
+
+    job = registry.load(WORK_REF)
+    job.mapping.mappings[2] = FieldMapping("항목", type="blank")
+    registry.save(job, allow_overwrite=True)
+    committed = service.commit_current_mapping(WORK_REF, "commit-o2-blank")
+    assert committed is not None
+
+    revision = load_current_revision(WorkFieldBindingStore(root / "field_bindings"), WORK, "app-1")
+    assert revision is not None
+    kept = {rule.field_id: rule for rule in revision.binding_rules}
+    assert set(kept) == {"성명", "주소", "항목", "금액"}
+    assert kept["항목"].canonical_constant_value.text == "v-항목"
+
+
 def test_blank_legacy_mapping_stays_review_required_and_writes_nothing(tmp_path) -> None:
     root = tmp_path / "authority"
     _seed_v2_work(root, with_binding=False)

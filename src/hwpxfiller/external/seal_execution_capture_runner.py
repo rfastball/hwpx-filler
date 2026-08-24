@@ -118,11 +118,20 @@ _CONTEXT_ERROR_TYPES = (
 
 @dataclass(frozen=True)
 class CurrentFieldBindingReview:
-    """Exact current Active Field set plus the canonical Binding review."""
+    """Exact current Active Field set plus the canonical Binding review.
+
+    ``prior_revision`` 은 review 가 실제로 대조한 그 판본이다(#877) — commit 이 비활성 Field 규칙을
+    보존하려면 분류와 **같은** 판본을 봐야 한다. ancestor Application 의 판본일 수 있으므로
+    호출자가 store 를 다시 뒤져 고르지 않는다(같은 상태의 두 판정 금지).
+    """
 
     active_field_ids: tuple[str, ...]
     review: FieldBindingApplicationReview
-    has_prior_revision: bool
+    prior_revision: FieldBindingRevision | None
+
+    @property
+    def has_prior_revision(self) -> bool:
+        return self.prior_revision is not None
 
 
 class _WorkStateReadAdapter:
@@ -271,7 +280,7 @@ class SealExecutionCaptureRunner:
                         for field_id in active_ids
                     ),
                 )
-            return CurrentFieldBindingReview(active_ids, review, old_revision is not None)
+            return CurrentFieldBindingReview(active_ids, review, old_revision)
 
     def _nearest_binding_revision(
         self, aggregate: WorkTemplateStateAggregate, application_id: str
