@@ -79,6 +79,11 @@ from .slot_configuration_product import (
     SlotConfigurationProductError,
 )
 from .seal_execution_plan_service import SealExecutionPlanService
+from .txt_materialization import (
+    TxtMaterializationRefused,
+    TxtMaterializationService,
+    materialized_text,
+)
 from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
 from .screen_template import TemplateController
@@ -263,6 +268,29 @@ def _content_selection_reader(
     return read
 
 
+def _txt_materialization_port(
+    registry: JobRegistry, seal_execution: SealExecutionPlanService
+) -> "Callable[[str, dict, str], tuple[str | None, str]]":
+    """TXT 물질화 서비스 → 작업대의 복사 포트(S10-04 #861).
+
+    `_content_selection_reader` 와 같은 규율의 번역 한 겹이다: 작업대는 봉인·VDR·start gate 의
+    타입을 모른 채 **(검증된 텍스트, 사유)** 두 값만 받는다(정확히 한쪽만 산다). 서비스는
+    :class:`SealExecutionPlanService` 를 「문서 만들기」와 **공유**한다 — 봉인 권위가 표면마다
+    갈리면 같은 Work 가 두 basis 로 보인다.
+    """
+    service = TxtMaterializationService(registry, seal_execution, clock=datetime.now)
+
+    def materialize(
+        work_ref: str, record: dict, request_id: str
+    ) -> "tuple[str | None, str]":
+        outcome = service.materialize_record(work_ref, record, request_id=request_id)
+        if isinstance(outcome, TxtMaterializationRefused):
+            return None, outcome.detail
+        return materialized_text(outcome), ""
+
+    return materialize
+
+
 # ------------------------------------------------------------------ 브리지
 class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
@@ -293,6 +321,11 @@ class WebFrontend:
         # **같은 authority root** 를 공유한다: bootstrap 이 세운 Work/Application 을 그대로
         # 읽어 slot projection·durable command 를 낸다(별도 스토어 조립 없음).
         slot_configuration = SlotConfigurationProduct(
+            job_registry, root=default_template_authority_dir(), clock=datetime.now,
+        )
+        # SealExecutionPlan production 결선 — 「문서 만들기」와 작업대가 **같은 인스턴스**를
+        # 쓴다(S10-04 #861): 봉인 권위가 표면마다 갈리면 같은 Work 를 두 basis 로 보게 된다.
+        seal_execution = SealExecutionPlanService(
             job_registry, root=default_template_authority_dir(), clock=datetime.now,
         )
         template_files = TemplateFileStore(
@@ -332,11 +365,7 @@ class WebFrontend:
                           # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
                           # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
                           # fence 아래에서 exact execution plan 을 봉인·관찰한다(dispatch 배선은 SX-03).
-                          seal_execution=SealExecutionPlanService(
-                              job_registry,
-                              root=default_template_authority_dir(),
-                              clock=datetime.now,
-                          ),
+                          seal_execution=seal_execution,
                           # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
                           # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
                           workbench_observation=WorkbenchObservationProduct()),
@@ -351,10 +380,16 @@ class WebFrontend:
             # 「포함할 내용」 투영(S10-03 #860)은 **읽기 포트 하나**로 붙는다: 작업대는 Product
             # 의 형체를 모르고 「항목 → 고른 선택」 사전만 받는다(workbench_open 이 handoff
             # callable 인 것과 같은 규율). read-only projection 이라 durable 변이는 0 이다.
+            # slot-bearing TXT 의 복사는 **봉인된 실행 산출**을 내보낸다(S10-04 #861) — 그
+            # 물질화도 읽기 포트 하나로 붙는다: 작업대는 봉인·VDR·start gate 의 형체를 모르고
+            # 「검증된 텍스트 아니면 사유」만 받는다.
             WorkbenchController(job_registry, self._push, clock=datetime.now,
                                 target_font=target_font,
                                 content_selection=_content_selection_reader(
                                     slot_configuration, job_registry
+                                ),
+                                txt_materialization=_txt_materialization_port(
+                                    job_registry, seal_execution
                                 )),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:

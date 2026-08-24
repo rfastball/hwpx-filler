@@ -118,6 +118,18 @@ class RuntimeConformanceBinding:
 
     registry: RuntimeMaterializerConformanceRegistry
     manifest: RuntimeMaterializerConformanceManifest
+    #: 매체가 늘면(S10-04 #861 TXT) capability manifest 도 매체마다 선다 — admission 은 7축 전건
+    #: AND 라 한 manifest 로 다른 매체를 admit 할 수 없기 때문이다. 관찰은 Plan 이 선언한 native
+    #: primitive 로 자기 manifest 를 고르고, 못 고르면 primary 로 물어 fail-closed 로 닫힌다.
+    additional_manifests: tuple[RuntimeMaterializerConformanceManifest, ...] = ()
+
+    def manifest_for(
+        self, native_primitive_contract_id: str
+    ) -> RuntimeMaterializerConformanceManifest:
+        for candidate in (self.manifest, *self.additional_manifests):
+            if candidate.native_primitive_contract_id == native_primitive_contract_id:
+                return candidate
+        return self.manifest
 
 
 def registry_conformance_for_plan_value(
@@ -129,7 +141,8 @@ def registry_conformance_for_plan_value(
     admission 판정이 아니라 관찰 전체의 CONTEXT_ERROR 강등이 된다.
     """
     semantics = value.contract_semantics
-    digest = binding.manifest.runtime_capability_manifest_digest
+    manifest = binding.manifest_for(semantics.native_primitive_contract_id)
+    digest = manifest.runtime_capability_manifest_digest
     admitted = binding.registry.is_admitted(
         runtime_capability_manifest_digest=digest,
         materialization_contract_id=semantics.materialization_contract_id,
@@ -142,11 +155,11 @@ def registry_conformance_for_plan_value(
     return RuntimeMaterializerConformance(
         verdict=MATERIALIZER_ADMITTED if admitted else MATERIALIZER_NOT_ADMITTED,
         plan_schema_supported=(
-            value.plan_schema_version in binding.manifest.supported_plan_schema_versions
+            value.plan_schema_version in manifest.supported_plan_schema_versions
         ),
         canonical_encoding_supported=(
             value.canonical_encoding_version
-            in binding.manifest.supported_canonical_encoding_versions
+            in manifest.supported_canonical_encoding_versions
         ),
         runtime_capability_manifest_digest=digest if admitted else None,
     )

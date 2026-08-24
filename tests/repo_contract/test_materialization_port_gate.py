@@ -21,6 +21,11 @@ GUARDED_SYMBOLS = frozenset(
         "apply_execution_plan_in_memory",
         "verify_structure_bytes_consistency",
         "verify_materialization_postconditions",
+        # TXT 축(S10-04 · #861) — 같은 계약, 다른 매체. 러너 밖에서 부르면 조달 digest 대조와
+        # 단계별 postcondition 밖의 두 번째 물질화 경로가 생기는 것도 똑같다.
+        "apply_txt_execution_plan_in_memory",
+        "verify_txt_structure_bytes_consistency",
+        "verify_txt_materialization_postconditions",
     }
 )
 
@@ -30,6 +35,8 @@ ALLOWED_MODULES = frozenset(
     {
         "src/hwpxfiller/external/materialization_conformance.py",
         "src/hwpxfiller/external/materialization_runner.py",
+        "src/hwpxfiller/external/text_materialization_conformance.py",
+        "src/hwpxfiller/external/text_materialization_runner.py",
     }
 )
 

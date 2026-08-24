@@ -220,18 +220,22 @@ def _decode_structure_v4(payload: Mapping[str, Any]) -> TemplateStructure:
 def _decode_structure_txt_v1(payload: Mapping[str, Any]) -> TemplateStructure:
     """txt-structure-projection-v1 payload → TemplateStructure(label 포함 product structure).
 
-    TXT profile(S10-02 #859)은 composition fact 를 내지 않으므로 payload 는 v2/v4 처럼
-    ``product_structure`` 로 한 겹 싸이지 않고, ``project_structure`` 가 낸 flat product
-    projection 그대로다. label 은 실린다 — TXT projection schema 는
-    :data:`~hwpxfiller.application.qualification_evidence._LABEL_PROJECTION_SCHEMAS` 소속이라
-    Slot/Option 의 canonical label 이 payload 에 있고, 그것을 안 읽으면 사용자가 저작한 이름이
-    조용히 증발해 화면에 내부 ID 가 뜬다.
+    **S10-04(#861)에서 shape 이 한 겹 깊어졌다.** TXT profile 이 composition-ready 로 올라서면서
+    (:data:`~hwpxfiller.application.execution_structure.TXT_EXECUTION_STRUCTURE_PROJECTION_SCHEMA`)
+    payload 는 v4 와 같이 ``product_structure`` 로 싸인 execution projection 이다. schema 이름을
+    올리지 않은 것은 TXT 가 미출하라 되읽을 durable 사용자 payload 가 없기 때문이고, 그 이름에
+    S10-03 의 selection binding key 가 걸려 있어 개명이 더 비싸기 때문이다.
 
-    shape 가 지금 v3 와 같다고 v3 decoder 를 **같은 이름으로 재등록하지 않는다**: schema 이름을
-    가른 이유가 좌표계·자격 규칙의 차이라, 한쪽 payload 가 바뀔 때 다른 쪽이 조용히 따라가면
-    안 된다. 공유하는 것은 성형 helper 하나뿐이다.
+    label 은 실린다 — TXT 의 Slot/Option label 은 사용자가 저작한 이름이라 안 읽으면 화면에
+    내부 ID 가 뜬다. composition-only fact(occurrence/region/relation/envelope/resolver)는 v2/v4
+    때와 똑같이 **읽지 않는다**: S4 는 selection 에 필요한 제품 구조만 복원한다.
     """
-    return _decode_product_structure(payload, schema="txt-v1", include_labels=True)
+    product = payload.get("product_structure")
+    if not isinstance(product, Mapping):
+        raise TemplateStructureIntegrityError(
+            "txt-v1 projection payload 에 product_structure 매핑이 없다"
+        )
+    return _decode_product_structure(product, schema="txt-v1", include_labels=True)
 
 
 class StructureProjectionDecoderRegistry:

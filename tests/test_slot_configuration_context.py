@@ -80,11 +80,12 @@ def _evidence(
     profile: str = PROFILE,
     schema: str = SCHEMA,
     structure: TemplateStructure = _STRUCTURE,
+    projection=None,
 ) -> QualificationEvidence:
     return QualificationEvidence(
         evidence_id=evidence_id, attempt_id="AT1", revision_id=revision,
         qualification_profile_id=profile, result="PASS",
-        structure_projection=project_structure(structure, schema),
+        structure_projection=projection or project_structure(structure, schema),
         diagnostics=(), engine_metadata={}, qualified_at=NOW,
     )
 
@@ -365,27 +366,41 @@ def test_unknown_selection_binding_unsupported() -> None:
         _resolve(ports)
 
 
+def _txt_execution_projection(body: str):
+    """실 TXT inspector 가 낸 composition-ready projection — payload 를 손으로 짓지 않는다."""
+    from hwpxfiller.application.execution_structure import execution_pass_projection
+    from hwpxfiller.external.text_template_inspection import inspect_txt_qualification
+
+    inspection = inspect_txt_qualification(body.encode("utf-8"))
+    assert inspection.execution_structure is not None
+    return inspection.structure, execution_pass_projection(inspection.execution_structure)
+
+
+_TXT_BODY = "\n".join(
+    [
+        "수신: {{수신}}",
+        "{{#항목 첨부 첨부 서류}}",
+        "담당자: {{담당자}}",
+        "{{#선택 계약서 계약서}}",
+        "계약서 {{건명}}",
+        "{{/선택}}",
+        "{{/항목}}",
+        "",
+    ]
+)
+
+
 def test_txt_projection_restores_labels_and_binds_the_same_selection_contract() -> None:
-    """S10-03(#860) — TXT shipping pair 가 decoder·selection registry 를 함께 통과한다.
+    """S10-03(#860) → S10-04(#861) — TXT shipping pair 가 decoder·selection registry 를 통과한다.
 
     schema·profile 문자열은 **제품 상수**에서 가져온다: 여기서 리터럴을 다시 적으면 출하 쪽
-    이름이 바뀌어도 테스트가 옛 이름으로 혼자 초록이다. structure 를 감싸는 payload 도
-    ``project_structure``(qualification stage 가 실제로 쓰는 인코더)로 만들어 인코드/디코드
-    대칭을 실물로 잰다.
+    이름이 바뀌어도 테스트가 옛 이름으로 혼자 초록이다. payload 도 실 inspector +
+    ``execution_pass_projection``(qualification stage 가 실제로 쓰는 인코더)으로 만들어
+    인코드/디코드 대칭을 실물로 잰다 — S10-04 에서 TXT payload 는 flat product projection 이
+    아니라 ``product_structure`` 로 싸인 execution projection 이다.
     """
-    structure = TemplateStructure(
-        root_fields=("수신",),
-        slots=(
-            TemplateSlot(
-                "첨부",
-                shared_fields=("담당자",),
-                options=(TemplateOption("계약서", fields=("건명",), label="계약서"),),
-                label="첨부 서류",
-            ),
-        ),
-    )
+    structure, projection = _txt_execution_projection(_TXT_BODY)
     decoder = DEFAULT_STRUCTURE_DECODER_REGISTRY.resolve(TXT_STRUCTURE_PROJECTION_SCHEMA)
-    projection = project_structure(structure, TXT_STRUCTURE_PROJECTION_SCHEMA)
     assert decoder(projection.payload) == structure  # label 까지 왕복
 
     ctx = _resolve(
@@ -393,7 +408,7 @@ def test_txt_projection_restores_labels_and_binds_the_same_selection_contract() 
             evidence=_evidence(
                 profile=TXT_QUALIFICATION_PROFILE_ID,
                 schema=TXT_STRUCTURE_PROJECTION_SCHEMA,
-                structure=structure,
+                projection=projection,
             ),
             manifest=_manifest(
                 profile=TXT_QUALIFICATION_PROFILE_ID,
@@ -410,13 +425,26 @@ def test_txt_projection_restores_labels_and_binds_the_same_selection_contract() 
 
 
 def test_txt_projection_schema_does_not_answer_for_hwpx_profiles() -> None:
-    """이름을 가른 이유가 fail-closed 다 — 섞인 (profile, projection) 은 거절된다."""
-    ports = _ports(
-        evidence=_evidence(profile=PROFILE, schema=TXT_STRUCTURE_PROJECTION_SCHEMA),
-        manifest=_manifest(profile=PROFILE, schema=TXT_STRUCTURE_PROJECTION_SCHEMA),
-    )
-    with pytest.raises(UnsupportedSelectionSemanticContractError):
-        _resolve(ports)
+    """이름을 가른 이유가 fail-closed 다 — 섞인 (profile, projection) 은 거절된다.
+
+    S10-04(#861) 이후 거절이 **두 자리**에서 설 수 있다: TXT payload shape 이 아니면 decoder 가
+    먼저 닫고, shape 이 맞아도 (profile, projection) pair 가 selection registry 에 없어 닫힌다.
+    어느 쪽이든 조용한 통과는 없다는 것이 이 테스트가 지키는 사실이라 둘 다 받는다.
+    """
+    _structure, projection = _txt_execution_projection(_TXT_BODY)
+    for evidence_projection in (None, projection):
+        ports = _ports(
+            evidence=_evidence(
+                profile=PROFILE,
+                schema=TXT_STRUCTURE_PROJECTION_SCHEMA,
+                projection=evidence_projection,
+            ),
+            manifest=_manifest(profile=PROFILE, schema=TXT_STRUCTURE_PROJECTION_SCHEMA),
+        )
+        with pytest.raises(
+            (UnsupportedSelectionSemanticContractError, TemplateStructureIntegrityError)
+        ):
+            _resolve(ports)
 
 
 def test_decoder_registry_rejects_duplicate_schema() -> None:

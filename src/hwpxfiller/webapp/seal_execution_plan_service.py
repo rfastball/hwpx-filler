@@ -53,6 +53,7 @@ from ..application.shipping_seal_policy import resolve_shipping_policy
 from ..domain.field_binding import (
     FieldBindingRule,
     resolve_document_value_policy,
+    txt_document_value_policy,
 )
 from ..domain.job import Job
 from ..domain.mapping import MappingProfile
@@ -66,7 +67,10 @@ from ..external.field_binding_store import (
     load_current_revision,
 )
 from ..external.qualification_store import QualificationObjectStore
-from ..external.runtime_capability import admitted_runtime_conformance_registry
+from ..external.runtime_capability import (
+    admitted_runtime_conformance_registry,
+    admitted_txt_runtime_conformance,
+)
 from ..external.seal_orchestration_runner import observe_current_basis_digest
 from ..external.seal_execution_capture_runner import (
     CurrentFieldBindingReview,
@@ -152,6 +156,10 @@ class SealExecutionPlanService:
         runtime_registry, runtime_manifest = admitted_runtime_conformance_registry()
         self._runtime_registry = runtime_registry
         self._runtime_manifest = runtime_manifest
+        # 같은 registry 안에 TXT 축 manifest 도 등록돼 있다(S10-04 · #861). admission 은 7축
+        # 전건 AND 라 서로를 admit 하지 못하므로, 관찰·start gate 는 Plan 이 선언한 native
+        # primitive 로 자기 manifest 를 고른다.
+        self._txt_runtime_manifest = admitted_txt_runtime_conformance()
         # R2(#740): plan_store·read_admission_state·load_secret seam 이 사라졌다 — Product 는
         # route/auth + capture/summary/shipping 만 받아 매 호출 current authority 를 재계산한다.
         self._product = SealExecutionPlanProduct(
@@ -162,12 +170,16 @@ class SealExecutionPlanService:
             resolve_shipping_policy=resolve_shipping_policy,
             clock=self._seal_clock,
             runtime_conformance_binding=RuntimeConformanceBinding(
-                registry=runtime_registry, manifest=runtime_manifest
+                registry=runtime_registry,
+                manifest=runtime_manifest,
+                additional_manifests=(self._txt_runtime_manifest,),
             ),
         )
 
     # ── public surface(product 를 감싸는 얇은 표면) ────────────────────────────────
-    def managed_run_context(self, work_ref: str) -> "ManagedRunContext | None":
+    def managed_run_context(
+        self, work_ref: str, *, media: str = "hwpx"
+    ) -> "ManagedRunContext | None":
         """managed materialization 조립 재료의 묶음 accessor(S6-05 · #812) — 발급 0.
 
         이 서비스가 __init__ 에서 이미 쥔 것(authority root·workspace·runtime registry·
@@ -202,9 +214,13 @@ class SealExecutionPlanService:
             workspace_instance_id=workspace_id,
             work_authority_id=work_id,
             runtime_registry=self._runtime_registry,
+            # capability manifest 는 매체축이다(S10-04 · #861) — 같은 registry 에 둘이 등록돼
+            # 있고 admission 은 7축 전건 AND 라 잘못 고른 digest 는 조용히 통과하지 못한다.
             runtime_capability_manifest_digest=(
-                self._runtime_manifest.runtime_capability_manifest_digest
-            ),
+                self._txt_runtime_manifest
+                if media == "txt"
+                else self._runtime_manifest
+            ).runtime_capability_manifest_digest,
             current_basis_digest_reader=read_basis,
         )
 
@@ -260,8 +276,29 @@ class SealExecutionPlanService:
         self, work_ref: str, request_id: str
     ) -> BindingCommitProjection | None:
         """Commit an explicit legacy Mapping save as the Work-default S5 revision."""
+        return self._commit_mapping_binding(work_ref, request_id, media="hwpx")
+
+    def commit_txt_mapping(
+        self, work_ref: str, request_id: str
+    ) -> BindingCommitProjection | None:
+        """TXT Work 의 현재 Mapping 을 S5 Field Binding 판본으로 확정한다(S10-04 · #861).
+
+        :meth:`commit_current_mapping` 과 **같은 몸통**이다 — 검토 축(현재 Active Field 전건에
+        Mapping 결정이 있는가)도, 판본 규율(migration 1회 → 이후 current-application commit)도
+        같다. 갈리는 것은 값 정책의 escaping 책임 하나뿐이고 그 번역은
+        :func:`~hwpxfiller.domain.field_binding.txt_document_value_policy` 가 진다.
+
+        메서드를 가른 이유는 media 가드가 **검토 축의 사실**이라서다: hwpx 진입점은 편집기
+        저장 사건에 결속돼 있고 TXT 진입점은 작업대 복사 직전의 내부 pin 이다. 한 메서드가 두
+        진입 문맥을 겸하면 어느 쪽이 이 판본을 만들었는지 사후에 말할 수 없다.
+        """
+        return self._commit_mapping_binding(work_ref, request_id, media="txt")
+
+    def _commit_mapping_binding(
+        self, work_ref: str, request_id: str, *, media: str
+    ) -> BindingCommitProjection | None:
         job = load_job(self._registry, work_ref)
-        if job.media != "hwpx" or not job.authority_id:
+        if job.media != media or not job.authority_id:
             return None
         workspace_id = self._workspace.get_or_create(self._seal_clock())
         entries = _legacy_entries(job.mapping)
@@ -299,7 +336,7 @@ class SealExecutionPlanService:
             workspace_instance_id=workspace_id,
             work_authority_id=job.authority_id,
             base_template_application_id=current.review.target_application_id,
-            binding_rules=_resolved_rules(draft, entries, active),
+            binding_rules=_resolved_rules(draft, entries, active, media=media),
             source_schema_keys=schema_keys,
             raw_record_contract_id=RAW_RECORD_CONTRACT_ID,
             captured_at=captured_at,
@@ -400,7 +437,15 @@ def _resolved_rules(
     draft: FieldBindingMigrationDraft,
     entries: tuple[LegacyFieldBindingEntry, ...],
     active: frozenset[str],
+    *,
+    media: str = "hwpx",
 ) -> tuple[FieldBindingRule, ...]:
+    # 값 정책은 매체가 가른다(S10-04 · #861): 같은 whitespace/line-break 의미를 갖되 escaping
+    # 책임이 다르다. 사용자에게 다시 묻지 않고 표로 옮긴다 — 이미 확정한 값 의미를 매체가
+    # 바뀌었다고 재확인시키는 것은 같은 결정을 두 번 시키는 것이다.
+    resolve_policy = (
+        txt_document_value_policy if media == "txt" else resolve_document_value_policy
+    )
     candidates = {item.field_id: item for item in draft.candidate_rules}
     rules: list[FieldBindingRule] = []
     for entry in entries:
@@ -416,7 +461,7 @@ def _resolved_rules(
             FieldBindingRule(
                 field_id=candidate.field_id,
                 binding_kind=candidate.binding_kind,
-                document_content_value_policy=resolve_document_value_policy(
+                document_content_value_policy=resolve_policy(
                     candidate.proposed_policy_id
                 ),
                 source_key=candidate.source_key,

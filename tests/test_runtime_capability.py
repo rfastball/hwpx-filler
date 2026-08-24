@@ -146,3 +146,107 @@ def test_registry_conformance_rejects_unsupported_schema_per_axis() -> None:
     assert conformance.plan_schema_supported is False
     assert conformance.canonical_encoding_supported is True
     assert conformance.runtime_capability_manifest_digest is None
+
+
+# ── TXT 축(S10-04 · #861) — 같은 registry, 다른 계약 identity ─────────────────
+def test_txt_manifest_is_registered_and_never_admits_the_hwpx_axis() -> None:
+    """두 매체 manifest 가 한 registry 에 살되 **서로를 admit 하지 않는다**(7축 전건 AND).
+
+    한쪽 manifest 로 다른 매체를 admit 할 수 있으면 HWPX Plan 이 평문 materializer 로,
+    또는 그 반대로 흘러갈 자리가 생긴다.
+    """
+    from hwpxfiller.application.execution_composition import (
+        TXT_COMPOSITION_CONTRACT_ID,
+        TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+    )
+    from hwpxfiller.external.runtime_capability import (
+        admitted_txt_runtime_conformance,
+        txt_runtime_capability_manifest_digest,
+        txt_runtime_capability_manifest_payload,
+    )
+
+    registry, hwpx = admitted_runtime_conformance_registry()
+    txt = admitted_txt_runtime_conformance()
+    assert txt.conformance_status == PASS
+    assert txt.runtime_capability_manifest_digest != hwpx.runtime_capability_manifest_digest
+    # payload 가 단일 출처다 — manifest 축은 재타이핑이 아니라 그 payload 에서 나온다.
+    payload = txt_runtime_capability_manifest_payload()
+    assert txt.runtime_capability_manifest_digest == txt_runtime_capability_manifest_digest()
+    assert payload["native_primitive_contract_id"] == TXT_NATIVE_PRIMITIVE_CONTRACT_ID
+
+    def _query(manifest, *, native: str, composition: str) -> bool:
+        return registry.is_admitted(
+            runtime_capability_manifest_digest=(
+                manifest.runtime_capability_manifest_digest
+            ),
+            materialization_contract_id=manifest.materialization_contract_id,
+            materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
+            native_primitive_contract_id=native,
+            composition_contract_id=composition,
+            plan_schema_version=manifest.supported_plan_schema_versions[0],
+            canonical_encoding_version=(
+                manifest.supported_canonical_encoding_versions[0]
+            ),
+        )
+
+    assert _query(txt, native=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+                  composition=TXT_COMPOSITION_CONTRACT_ID) is True
+    assert _query(hwpx, native=NATIVE_PRIMITIVE_CONTRACT_ID,
+                  composition=COMPOSITION_CONTRACT_ID) is True
+    # 교차는 어느 방향으로도 admit 되지 않는다.
+    assert _query(txt, native=NATIVE_PRIMITIVE_CONTRACT_ID,
+                  composition=COMPOSITION_CONTRACT_ID) is False
+    assert _query(hwpx, native=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+                  composition=TXT_COMPOSITION_CONTRACT_ID) is False
+
+
+def test_binding_picks_the_manifest_of_the_plans_native_primitive() -> None:
+    """관찰은 Plan 이 선언한 primitive 로 자기 manifest 를 고른다 — 못 고르면 fail-closed."""
+    from hwpxfiller.application.execution_composition import (
+        TXT_COMPOSITION_CONTRACT_ID,
+        TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+    )
+    from hwpxfiller.external.runtime_capability import admitted_txt_runtime_conformance
+
+    registry, hwpx = admitted_runtime_conformance_registry()
+    txt = admitted_txt_runtime_conformance()
+    binding = RuntimeConformanceBinding(
+        registry=registry, manifest=hwpx, additional_manifests=(txt,)
+    )
+    assert binding.manifest_for(TXT_NATIVE_PRIMITIVE_CONTRACT_ID) is txt
+    assert binding.manifest_for(NATIVE_PRIMITIVE_CONTRACT_ID) is hwpx
+    assert binding.manifest_for("미등록/v1") is hwpx  # primary — 질의에서 닫힌다
+
+    case = _build_case(_one_of_two())
+    value = _plan_value_duck(case)
+    txt_semantics = ExecutionContractSemantics(
+        raw_record_contract_id=value.contract_semantics.raw_record_contract_id,
+        source_schema_contract_id=value.contract_semantics.source_schema_contract_id,
+        binding_value_contract_id=value.contract_semantics.binding_value_contract_id,
+        record_validation_contract_id=(
+            value.contract_semantics.record_validation_contract_id
+        ),
+        record_review_contract_id=value.contract_semantics.record_review_contract_id,
+        document_value_resolution_contract_id=(
+            value.contract_semantics.document_value_resolution_contract_id
+        ),
+        composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
+        native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+        materialization_base_contract_id=(
+            value.contract_semantics.materialization_base_contract_id
+        ),
+        materialization_contract_id=(
+            value.contract_semantics.materialization_contract_id
+        ),
+    )
+    txt_value = SimpleNamespace(
+        contract_semantics=txt_semantics,
+        plan_schema_version=value.plan_schema_version,
+        canonical_encoding_version=value.canonical_encoding_version,
+    )
+    conformance = registry_conformance_for_plan_value(binding, txt_value)
+    assert conformance.verdict == MATERIALIZER_ADMITTED
+    assert (
+        conformance.runtime_capability_manifest_digest
+        == txt.runtime_capability_manifest_digest
+    )

@@ -215,6 +215,13 @@ def value_type_of(value: CanonicalBindingValue) -> str:
 # fail-closed 한다(문자열 재타이핑 금지). 값 자체는 기존과 동일해 canonical digest 불변이다.
 ESCAPING_NATIVE_MATERIALIZER = "NATIVE_MATERIALIZER"
 
+#: TXT 물질화의 escaping 책임(S10-04 · #861) — **escape 문법이 없는 매체**라 이 책임의 이행은
+#: 항등(0회)이다. HWPX 값(NATIVE_MATERIALIZER)을 그대로 쓰지 않는 이유는 그 선언이 "XML escaping
+#: 은 native serialization 이 한다"는 사실을 담고 있어서다: 그 값을 든 값이 평문에 literal 로
+#: 꽂히면 escape 를 두 번 하거나(pre-escaped) 한 번도 안 한 것이 조용히 지나간다. 어휘를 갈라
+#: 두면 TXT materializer 의 gate 가 그 혼선을 시끄럽게 닫는다.
+ESCAPING_PLAINTEXT_MATERIALIZER = "PLAINTEXT_MATERIALIZER"
+
 
 @dataclass(frozen=True)
 class DocumentContentValuePolicy:
@@ -258,13 +265,56 @@ DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP = DocumentContentValuePolicy(
     native_text_write_policy="WRITE_LOGICAL_TEXT_NODE",
 )
 
+# TXT 쌍(S10-04 · #861) — whitespace·line-break 의미는 HWPX 쌍과 **한 글자도 다르지 않다**.
+# 갈리는 것은 escaping 책임 하나뿐이라, 같은 데이터가 두 매체에서 같은 logical text 를 낸다.
+DOCUMENT_CONTENT_VALUE_POLICY_TXT_V1 = DocumentContentValuePolicy(
+    policy_id="document-content-value/txt-v1",
+    line_break_policy="PRESERVE_LOGICAL_LINE_BREAKS",
+    whitespace_policy=WHITESPACE_PRESERVE_EXACT,
+    escaping_responsibility=ESCAPING_PLAINTEXT_MATERIALIZER,
+    native_text_write_policy="WRITE_PLAINTEXT_SPAN",
+)
+
+DOCUMENT_CONTENT_VALUE_POLICY_TXT_LEGACY_STRIP = DocumentContentValuePolicy(
+    policy_id="document-content-value/txt-legacy-strip-v1",
+    line_break_policy="PRESERVE_LOGICAL_LINE_BREAKS",
+    whitespace_policy=WHITESPACE_STRIP_LEADING_TRAILING,
+    escaping_responsibility=ESCAPING_PLAINTEXT_MATERIALIZER,
+    native_text_write_policy="WRITE_PLAINTEXT_SPAN",
+)
+
+#: HWPX 값 정책 → 같은 값 의미를 갖는 TXT 짝. legacy Mapping 을 TXT Work 의 Binding 으로 옮길 때
+#: 정책을 **새로 고르게 하지 않고** 이 표로 옮긴다 — 사용자가 이미 확정한 값 의미(공백 보존/절삭)를
+#: 매체가 바뀌었다고 다시 묻는 것은 같은 결정을 두 번 시키는 것이다.
+_TXT_DOCUMENT_VALUE_POLICY_BY_HWPX_ID: dict[str, DocumentContentValuePolicy] = {
+    DOCUMENT_CONTENT_VALUE_POLICY_V1.policy_id: DOCUMENT_CONTENT_VALUE_POLICY_TXT_V1,
+    DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP.policy_id: (
+        DOCUMENT_CONTENT_VALUE_POLICY_TXT_LEGACY_STRIP
+    ),
+}
+
 _DOCUMENT_VALUE_POLICIES: dict[str, DocumentContentValuePolicy] = {
     p.policy_id: p
     for p in (
         DOCUMENT_CONTENT_VALUE_POLICY_V1,
         DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
+        DOCUMENT_CONTENT_VALUE_POLICY_TXT_V1,
+        DOCUMENT_CONTENT_VALUE_POLICY_TXT_LEGACY_STRIP,
     )
 }
+
+
+def txt_document_value_policy(policy_id: str) -> DocumentContentValuePolicy:
+    """HWPX 값 정책 id → 같은 값 의미의 TXT 정책(이미 TXT 면 그대로). 미지는 시끄럽게 거절."""
+    mapped = _TXT_DOCUMENT_VALUE_POLICY_BY_HWPX_ID.get(policy_id)
+    if mapped is not None:
+        return mapped
+    policy = resolve_document_value_policy(policy_id)
+    if policy.escaping_responsibility != ESCAPING_PLAINTEXT_MATERIALIZER:
+        raise UnsupportedDocumentValuePolicyError(
+            f"TXT 짝이 없는 문서 값 정책: {policy_id!r}"
+        )
+    return policy
 
 
 def resolve_document_value_policy(policy_id: str) -> DocumentContentValuePolicy:

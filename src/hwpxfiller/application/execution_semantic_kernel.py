@@ -71,9 +71,10 @@ from hwpxfiller.application.execution_compilation import (
     qualify_and_compile_execution,
 )
 from hwpxfiller.application.execution_composition import (
-    NATIVE_PRIMITIVE_CONTRACT_V1,
+    CompositionAdmissionError,
     CompositionPremisesPassed,
     admit_composition_premises,
+    resolve_native_primitive_contract,
 )
 from hwpxfiller.application.execution_contract_semantics import ExecutionContractSemantics
 from hwpxfiller.application.execution_contract_set import canonicalize_execution_operations
@@ -243,10 +244,18 @@ def compile_sealed_plan_from_snapshot(captured: CapturedExecutionInput) -> Kerne
             f"미지원 canonical encoding: {policy.canonical_encoding_version!r}"
         )
 
-    # (1) direct C1~C10 structural admission — theorem registry 미consult.
+    # (1) direct C1~C10 structural admission — theorem registry 미consult. native primitive 는
+    # policy 가 선언한 것을 **표에서 푼다**(S10-04 #861): 상수를 박으면 TXT Plan 이 HWPX
+    # primitive 로 증명돼 조용히 틀린다. 미등록 id 는 latest 로 풀지 않고 fail-closed.
+    try:
+        native_primitive = resolve_native_primitive_contract(
+            policy.native_primitive_contract_id
+        )
+    except CompositionAdmissionError as exc:
+        raise SemanticKernelContextError(str(exc), cause_code=exc.code) from exc
     admitted = admit_composition_premises(
         structure=structure,
-        native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
+        native_primitive_contract=native_primitive,
         theorem_evidence_manifest_digest=policy.composition_theorem_evidence_manifest_digest,
         composition_contract_id=policy.composition_contract_id,
         theorem_capability_available=True,

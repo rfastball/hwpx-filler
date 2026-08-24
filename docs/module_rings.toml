@@ -415,3 +415,9 @@ module = "hwpxfiller.webapp.managed_generation"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/managed_generation.py"]
 oracle_nodeid = "tests/test_managed_generation.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.txt_materialization"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/txt_materialization.py"]
+oracle_nodeid = "tests/test_txt_materialization.py"

@@ -35,13 +35,15 @@ from .template_qualification import (
 PASS = "PASS"
 FAIL = "FAIL"
 ERROR = "ERROR"
-#: canonical Slot/Option label 을 payload 에 실을 수 있는 product projection schema 집합.
-#: **매체마다 자기 이름이 선다**(S10-02 #859) — HWPX 의 v3 와 TXT 의 v1 은 좌표계도 자격
-#: 규칙도 다르므로 이름을 공유하지 않는다. 여기 없는 schema 로 label-bearing 구조를 실으면
-#: label 이 조용히 증발하므로 아래 :func:`project_structure` 가 시끄럽게 거절한다.
-_LABEL_PROJECTION_SCHEMAS = frozenset(
-    {"hwpx-structure-projection-v3", "txt-structure-projection-v1"}
-)
+#: canonical Slot/Option label 을 payload 에 실을 수 있는 **flat product** projection schema 집합.
+#: 여기 없는 schema 로 label-bearing 구조를 실으면 label 이 조용히 증발하므로 아래
+#: :func:`project_structure` 가 시끄럽게 거절한다.
+#:
+#: TXT 의 v1 은 S10-04(#861)에서 이 집합을 **떠났다**: 그 schema 는 이제 composition-ready
+#: execution projection 의 이름이고(:func:`~hwpxfiller.application.execution_structure.
+#: execution_pass_projection` 이 만든다), label 은 그 payload 의 ``product_structure`` 안에
+#: 실린다. 남겨 두면 이 함수가 decoder 가 거절할 flat payload 를 만들 수 있는 자리가 된다.
+_LABEL_PROJECTION_SCHEMAS = frozenset({"hwpx-structure-projection-v3"})
 
 
 class QualificationEvidenceError(ValueError):

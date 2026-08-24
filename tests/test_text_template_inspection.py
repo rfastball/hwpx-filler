@@ -12,6 +12,20 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.application.execution_composition import (
+    THEOREM_EVIDENCE_TXT_V1,
+    TXT_COMPOSITION_CONTRACT_ID,
+    TXT_LINE_PRIMITIVE_CONTRACT_V1,
+    CompositionPremisesPassed,
+    verify_execution_composition_premises,
+)
+from hwpxfiller.application.execution_structure import (
+    OWNER_OPTION,
+    OWNER_ROOT,
+    OWNER_SLOT_SHARED,
+    execution_pass_projection,
+    is_supported_execution_projection,
+)
 from hwpxfiller.application.qualification_evidence import (
     QualificationEvidenceError,
     project_structure,
@@ -77,19 +91,78 @@ def test_field_ownership_follows_the_scanned_line_ranges():
     )
 
 
-def test_pass_carries_no_execution_structure():
-    """composition fact 를 낼 수 있는 profile 만 그것을 싣는다 — TXT 물질화는 S10-04."""
-    assert _inspect(_FULL).execution_structure is None
+def test_pass_carries_a_composition_ready_execution_structure():
+    """S10-04(#861): TXT materializer 가 서면서 이 profile 도 composition fact 를 싣는다.
+
+    담기는 것: 등장별 occurrence(제품 구조의 이름 중복 접기와 **다른 축**)·마커 줄을 포함한
+    Option region·문자 오프셋 order. 좌표가 줄 번호가 아닌 이유는 한 줄에 토큰이 둘일 때
+    ``structural_order`` 유일성이 깨지기 때문이다.
+    """
+    execution = _inspect(_FULL).execution_structure
+    assert execution is not None
+    assert execution.projection_schema_version == TXT_STRUCTURE_PROJECTION_SCHEMA
+    assert is_supported_execution_projection(execution.projection_schema_version)
+
+    # 제품 구조는 이름을 접고(담당자 1건), occurrence 는 등장을 센다(root 제목 2건).
+    by_field: dict[str, list] = {}
+    for occ in execution.field_occurrences:
+        by_field.setdefault(occ.field_id, []).append(occ)
+    assert [o.occurrence_ordinal for o in by_field["제목"]] == [0, 1]
+    assert {o.owner_kind for o in by_field["제목"]} == {OWNER_ROOT}
+    assert [(o.owner_kind, o.owner_slot_id, o.owner_option_id) for o in by_field["담당자"]] == [
+        (OWNER_SLOT_SHARED, "첨부", None),
+        (OWNER_OPTION, "첨부", "있음"),
+    ]
+    # order 는 문서 순서를 보존하고 occurrence 마다 유일하다.
+    orders = [o.structural_order for o in execution.field_occurrences]
+    assert orders == sorted(orders) and len(set(orders)) == len(orders)
+
+    # Option region 은 마커 줄을 포함하므로 서로 언제나 DISJOINT 다(겹침이 구조적으로 불가능).
+    assert {(r.slot_id, r.option_id) for r in execution.option_regions} == {
+        ("첨부", "있음"), ("첨부", "없음"),
+    }
+    assert {r.relation for r in execution.removal_target_relations} == {"DISJOINT"}
+    assert execution.global_composition_facts.crossing_free is True
+
+
+def test_execution_structure_admits_the_txt_composition_premises():
+    """C1~C10 이 TXT 축 계약으로 실제 증명된다 — 「구조는 냈는데 못 쓴다」를 막는 축."""
+    execution = _inspect(_FULL).execution_structure
+    assert execution is not None
+    verdict = verify_execution_composition_premises(
+        structure=execution,
+        native_primitive_contract=TXT_LINE_PRIMITIVE_CONTRACT_V1,
+        theorem_evidence=THEOREM_EVIDENCE_TXT_V1,
+        composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
+    )
+    assert isinstance(verdict, CompositionPremisesPassed)
+
+    # 짝이 아닌 primitive 로는 증명되지 않는다(HWPX composition 을 TXT primitive 로 금지).
+    mismatched = verify_execution_composition_premises(
+        structure=execution,
+        native_primitive_contract=TXT_LINE_PRIMITIVE_CONTRACT_V1,
+        theorem_evidence=THEOREM_EVIDENCE_TXT_V1,
+        composition_contract_id="hwpx-composition/v1",
+    )
+    assert not isinstance(mismatched, CompositionPremisesPassed)
 
 
 def test_label_bearing_structure_survives_the_txt_projection():
-    """label 이 projection 을 통과한다 — schema 이름이 label 허용 집합에 등재돼 있다."""
+    """label 이 durable projection 을 통과한다 — 안 실으면 화면에 내부 ID 가 뜬다.
+
+    S10-04(#861)에서 TXT 의 durable projection 은 flat product payload 가 아니라
+    **execution projection** 이다(:func:`execution_pass_projection`) — label 은 그 payload 의
+    ``product_structure`` 안에 실린다. PASS Evidence 가 실제로 나르는 그 payload 로 잰다.
+    """
+    execution = _inspect(_FULL).execution_structure
+    assert execution is not None
+    payload = execution_pass_projection(execution).payload
+    slots = payload["product_structure"]["slots"]
+    assert slots[0]["label"] == "첨부 목록"
+    assert slots[0]["options"][0]["label"] == "붙임 있음"
+    # 반대 방향: label 을 못 싣는 schema 로 실으면 조용히 버리지 않고 거절한다.
     structure = _inspect(_FULL).structure
     assert structure is not None
-    payload = project_structure(structure, TXT_STRUCTURE_PROJECTION_SCHEMA).payload
-    assert payload["slots"][0]["label"] == "첨부 목록"
-    assert payload["slots"][0]["options"][0]["label"] == "붙임 있음"
-    # 반대 방향: label 을 못 싣는 schema 로 실으면 조용히 버리지 않고 거절한다.
     with pytest.raises(QualificationEvidenceError):
         project_structure(structure, "hwpx-structure-projection-v1")
 
@@ -127,7 +200,7 @@ def test_qualify_template_passes_the_txt_profile():
     )
     assert isinstance(result, TemplateQualificationPassed)
     assert result.qualification_profile_id == TXT_QUALIFICATION_PROFILE.id
-    assert result.execution_structure is None
+    assert result.execution_structure is not None
 
 
 # ─── FAIL: 진단 있으면 구조 없음 ────────────────────────────────────────────

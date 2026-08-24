@@ -61,6 +61,14 @@ COMPOSITION_PREMISE_VERIFIER_VERSION = "hwpx-composition-verifier/v1"
 NATIVE_PRIMITIVE_CONTRACT_ID = "hwpx-native-primitive/v1"
 PRIMITIVE_SEMANTICS_VERSION = "1"
 
+# TXT 축(S10-04 · #861) — HWPX 상수는 한 글자도 바꾸지 않는다. 갈리는 것은 **매체가 무엇을
+# primitive 로 갖는가**뿐이다: HWPX 는 bookmark region 제거·field marker write 이고 TXT 는
+# 줄 제거·평문 삽입이다. 같은 ID 로 두 의미를 싣지 않으므로 ID 를 따로 세운다.
+TXT_COMPOSITION_CONTRACT_ID = "txt-composition/v1"
+TXT_COMPOSITION_PREMISE_SCHEMA = "txt-composition-premises/v1"
+TXT_COMPOSITION_PREMISE_VERIFIER_VERSION = "txt-composition-verifier/v1"
+TXT_NATIVE_PRIMITIVE_CONTRACT_ID = "txt-line-primitive/v1"
+
 # 결과 status.
 PASS = "PASS"
 
@@ -186,6 +194,50 @@ NATIVE_PRIMITIVE_CONTRACT_V1 = NativePrimitiveContractManifest(
     intentional_blank_write_contract_id="hwpx-intentional-blank/v1",
     primitive_semantics_version=PRIMITIVE_SEMANTICS_VERSION,
 )
+
+
+TXT_LINE_PRIMITIVE_CONTRACT_V1 = NativePrimitiveContractManifest(
+    native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+    option_resolver_contract_id="txt-option-resolver/v1",
+    option_removal_contract_id="txt-remove-option-lines/v1",  # OptionRegion.removal_capability_ref
+    field_resolver_contract_id="txt-field-token-resolver/v1",  # FieldOccurrence.resolver_contract_id
+    # 평문에는 escape 문법이 없다 — 이 write contract 가 뜻하는 escaping 은 **항등(0회)** 이고,
+    # 그 사실이 TXT materializer 의 escaping gate 가 읽는 정본이다(#861 D3).
+    field_write_contract_id="txt-plaintext-write/v1",
+    envelope_postcondition_contract_id="txt-line-envelope-postcondition/v1",
+    intentional_blank_write_contract_id="txt-intentional-blank/v1",
+    primitive_semantics_version=PRIMITIVE_SEMANTICS_VERSION,
+)
+
+#: composition contract → 그 contract 가 결속하는 canonical native primitive manifest.
+#: **pair 표다** — composition 과 primitive 를 자유 조합할 수 없다(HWPX composition 을 TXT
+#: primitive 로 증명하는 Plan 을 구조로 막는다). latest fallback 없음.
+_COMPOSITION_PRIMITIVE_PAIRS: dict[str, NativePrimitiveContractManifest] = {
+    COMPOSITION_CONTRACT_ID: NATIVE_PRIMITIVE_CONTRACT_V1,
+    TXT_COMPOSITION_CONTRACT_ID: TXT_LINE_PRIMITIVE_CONTRACT_V1,
+}
+
+#: native primitive contract id → canonical manifest(같은 ID 의미 수정 금지).
+_NATIVE_PRIMITIVE_CONTRACTS: dict[str, NativePrimitiveContractManifest] = {
+    m.native_primitive_contract_id: m for m in _COMPOSITION_PRIMITIVE_PAIRS.values()
+}
+
+
+def resolve_native_primitive_contract(
+    native_primitive_contract_id: str,
+) -> NativePrimitiveContractManifest:
+    """등록된 native primitive contract 의 canonical manifest(latest fallback 없음).
+
+    semantic kernel 이 Plan policy 가 선언한 primitive 를 상수 대신 이 표로 푼다 — 상수를
+    박으면 TXT Plan 이 HWPX primitive 로 증명되어 조용히 틀린다.
+    """
+    manifest = _NATIVE_PRIMITIVE_CONTRACTS.get(native_primitive_contract_id)
+    if manifest is None:
+        raise UnsupportedNativePrimitiveContract(
+            f"미지원 native primitive contract(latest fallback 없음): "
+            f"{native_primitive_contract_id!r}"
+        )
+    return manifest
 
 
 def encode_native_primitive_contract(m: NativePrimitiveContractManifest) -> dict[str, Any]:
@@ -370,8 +422,24 @@ class TheoremEvidenceRegistry:
         return manifest
 
 
+# TXT 축(S10-04 · #861) — corpus 는 **순수 기하**(closed 정수 span 관계·owner coincidence)라
+# 매체를 모른다. 그래서 test suite/counterexample digest 는 같은 corpus 에서 나오고, 갈리는 것은
+# 이 evidence 가 어느 (composition, primitive) 쌍을 attest 하는지뿐이다.
+THEOREM_EVIDENCE_TXT_V1 = CompositionTheoremEvidenceManifest(
+    composition_contract_id=TXT_COMPOSITION_CONTRACT_ID,
+    premise_schema_version=TXT_COMPOSITION_PREMISE_SCHEMA,
+    native_primitive_contract_id=TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+    premise_verifier_version=TXT_COMPOSITION_PREMISE_VERIFIER_VERSION,
+    theorem_test_suite_digest=fixture_manifest_digest(POSITIVE_THEOREM_FIXTURES),
+    counterexample_fixture_manifest_digest=fixture_manifest_digest(
+        COUNTEREXAMPLE_THEOREM_FIXTURES
+    ),
+    evidence_status=PASS,
+)
+
 DEFAULT_THEOREM_EVIDENCE_REGISTRY = TheoremEvidenceRegistry()
 DEFAULT_THEOREM_EVIDENCE_REGISTRY.register(THEOREM_EVIDENCE_V1)
+DEFAULT_THEOREM_EVIDENCE_REGISTRY.register(THEOREM_EVIDENCE_TXT_V1)
 
 
 def verify_theorem_evidence_integrity(
@@ -384,11 +452,12 @@ def verify_theorem_evidence_integrity(
     status != PASS → unproven, fixture/test digest tamper 나 registered 와 불일치 → integrity
     error. unknown contract 는 resolve 에서 latest fallback 없이 닫힌다.
     """
-    if manifest.composition_contract_id != COMPOSITION_CONTRACT_ID:
+    paired = _COMPOSITION_PRIMITIVE_PAIRS.get(manifest.composition_contract_id)
+    if paired is None:
         raise UnsupportedCompositionContract(
             f"미지원 composition contract: {manifest.composition_contract_id!r}"
         )
-    if manifest.native_primitive_contract_id != NATIVE_PRIMITIVE_CONTRACT_ID:
+    if manifest.native_primitive_contract_id != paired.native_primitive_contract_id:
         raise UnsupportedNativePrimitiveContract(
             f"미지원 native primitive contract: {manifest.native_primitive_contract_id!r}"
         )
@@ -805,20 +874,25 @@ def _composition_identity_context_error(
             f"미지원 execution structure projection schema: "
             f"{structure.projection_schema_version!r}",
         )
-    # (1) contract 등록 — 미지원은 latest fallback 없이 context error.
-    if composition_contract_id != COMPOSITION_CONTRACT_ID:
+    # (1) contract 등록 — 미지원은 latest fallback 없이 context error. composition 과 primitive 는
+    # **쌍**이라 자유 조합할 수 없다(HWPX composition 을 TXT primitive 로 증명하는 Plan 차단).
+    paired = _COMPOSITION_PRIMITIVE_PAIRS.get(composition_contract_id)
+    if paired is None:
         return CompositionPremiseContextError(
             UnsupportedCompositionContract.code, None,
             f"미지원 composition contract: {composition_contract_id!r}",
         )
-    if native_primitive_contract.native_primitive_contract_id != NATIVE_PRIMITIVE_CONTRACT_ID:
+    if (
+        native_primitive_contract.native_primitive_contract_id
+        != paired.native_primitive_contract_id
+    ):
         return CompositionPremiseContextError(
             UnsupportedNativePrimitiveContract.code, None,
             f"미지원 native primitive contract: "
             f"{native_primitive_contract.native_primitive_contract_id!r}",
         )
     # native primitive contract 는 semantic 의미가 고정 — 위조 필드는 context error.
-    if native_primitive_contract != NATIVE_PRIMITIVE_CONTRACT_V1:
+    if native_primitive_contract != paired:
         return CompositionPremiseContextError(
             UnsupportedNativePrimitiveContract.code, None,
             "native primitive contract 가 등록된 canonical 과 불일치(같은 ID 의미 수정 금지)",

@@ -49,14 +49,29 @@ EXECUTION_QUALIFICATION_PROFILE_ID = "hwpx-template-qualification-v2"
 LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA = "hwpx-structure-projection-v4"
 LABELED_EXECUTION_QUALIFICATION_PROFILE_ID = "hwpx-template-qualification-v4"
 
+# TXT 축(S10-04 · #861). 이름은 S10-02 가 세운 것을 **그대로** 쓴다 — 개명하면 S10-03 의 selection
+# binding key(:mod:`hwpxfiller.domain.slot_selection`)와 structure decoder 가 함께 늙는다. TXT 는
+# 미출하라 이 자리에서 v1 을 composition-ready 로 올려도 깨질 durable 사용자 데이터가 없다.
+# 좌표계는 HWPX 와 다르지만(줄/문자 오프셋 vs 문단 순번) projection 이 담는 것은 어느 쪽이든
+# **정수 stable order** 라 v2/v4 와 같은 shape 을 그대로 쓴다.
+TXT_EXECUTION_STRUCTURE_PROJECTION_SCHEMA = "txt-structure-projection-v1"
+TXT_EXECUTION_QUALIFICATION_PROFILE_ID = "txt-template-qualification-v1"
+
 #: exact (profile, projection) pair 만 산다 — latest fallback 없음.
 _EXECUTION_PROFILE_PAIRS = {
     EXECUTION_QUALIFICATION_PROFILE_ID: EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
     LABELED_EXECUTION_QUALIFICATION_PROFILE_ID: LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+    TXT_EXECUTION_QUALIFICATION_PROFILE_ID: TXT_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
 }
 
-#: label 을 싣는 schema 는 v4 하나다.
-_LABEL_BEARING_SCHEMAS = frozenset({LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA})
+#: label 을 싣는 schema — hwpx v4 와 txt v1. TXT 는 저작 라벨이 곧 사용자가 고르는 이름이라
+#: label 없는 projection 이 성립하지 않는다.
+_LABEL_BEARING_SCHEMAS = frozenset(
+    {
+        LABELED_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+        TXT_EXECUTION_STRUCTURE_PROJECTION_SCHEMA,
+    }
+)
 
 
 def is_supported_execution_projection(schema: str) -> bool:
