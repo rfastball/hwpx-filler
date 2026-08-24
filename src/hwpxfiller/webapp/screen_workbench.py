@@ -62,16 +62,22 @@ REVIEW_RECHECK = "recheck"
 
 _VIEWS = ("filled", "raw")
 
-#: slot-bearing TXT 의 복사 차단 사유(S10-03 #860). ``slotless_run_bridge`` 의
-#: ``STRUCTURE_NOTATION_UNCOMPILED`` 와 **같은 서사**다: 변환되지 않은 구간 표기를 그대로
-#: 내보내면 산출물은 고르지 않은 선택지와 마커까지 실린 구조적으로 틀린 문서가 된다.
-#: 링1 단일 원천 :data:`~hwpxfiller.gui.mapping_state.STRUCTURE_NOTATION_BLOCK_MESSAGE` 를
-#: 재사용하지 **않는** 이유는 그 문장이 지목하는 조치("'템플릿' 탭의 '누름틀·구간 변환'")가
-#: TXT 에는 아직 없기 때문이다 — 할 수 없는 일을 시키는 문안은 사유를 말하지 않은 것과 같다.
-#: (TXT 물질화는 S10-04 소관이고, 그때 이 상수도 함께 걷힌다.)
-COPY_BLOCK_STRUCTURE_NOTATION = (
-    "구간 표기가 아직 변환되지 않아 복사할 수 없습니다. "
-    "지금은 '포함할 내용'에서 고른 결과를 화면으로 확인만 할 수 있습니다."
+#: 물질화 표면이 결선되지 않은 채 slot-bearing TXT 를 연 세션의 복사 차단 사유(S10-04 #861).
+#: S10-03 의 상시 차단(``COPY_BLOCK_STRUCTURE_NOTATION``)은 걷혔다 — 이제 복사는 Sealed Plan 이
+#: 물질화한 bytes 를 내보낸다. 남은 것은 **미주입**이라는 오배선의 정직한 얼굴이다: 포트가
+#: 없으면 이 화면은 고르지 않은 선택지와 마커가 실린 텍스트를 내보내는 대신 사유를 말한다.
+COPY_BLOCK_MATERIALIZATION_UNAVAILABLE = (
+    "구간 표기가 있는 템플릿의 복사 준비가 이 창에 연결되지 않았습니다. "
+    "'문서 만들기'에서 다시 시작하세요."
+)
+
+#: 화면이 보여 준 문장과 봉인된 실행 결과가 갈렸을 때의 차단 사유(S10-04 #861).
+#: **보이는 것 = 복사되는 것**(결정 17)이 이 화면의 계약이라, 두 문장이 다르면 조용히 한쪽을
+#: 내보내지 않고 복사하지 않는다. 갈리는 원인은 둘뿐이다: 아직 저장하지 않은 연결 편집(봉인은
+#: 저장된 규칙을 쓴다)과 전각 정렬(표시 전용 치환이라 봉인된 실행에 없다).
+COPY_BLOCK_MATERIALIZATION_DIVERGED = (
+    "화면에 보이는 문장과 실제로 만들어진 문서가 다릅니다. "
+    "「기본 규칙으로 저장」으로 연결을 확정하거나 전각 정렬을 끈 뒤 다시 복사하세요."
 )
 
 #: 선택을 조회하지 못했을 때의 상시 재진술. 조용히 원문으로 접지 않는다(복사는 어차피 차단).
@@ -125,10 +131,18 @@ class WorkbenchController(MappingVerbsMixin):
         clock: Callable[[], datetime],
         target_font,
         content_selection: "Callable[[str], dict[str, frozenset[str]]] | None" = None,
+        txt_materialization: (
+            "Callable[[str, dict, str], tuple[str | None, str]] | None"
+        ) = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
+        # slot-bearing TXT 의 **물질화 포트**(S10-04 #861). 앱 조립이 봉인→VDR→start gate 를
+        # 거쳐 검증된 bytes 를 내는 서비스에 결선한다. 이 컨트롤러는 그 안을 모른다 — 받는
+        # 것은 「검증된 텍스트」 아니면 「사유」뿐이고, 사유는 그대로 복사 차단으로 재진술된다.
+        # 미주입이면 slot-bearing 복사가 서지 않고 그 사실이 사유로 남는다(조용한 투영 유출 0).
+        self._txt_materialization = txt_materialization
         # 「포함할 내용」(S4 Slot Option 선택) **조회 포트**(S10-03 #860). 앱 조립이 Slot
         # Configuration Product 의 read-only projection 에 결선한다 — 이 컨트롤러는 선택을
         # 판정하지도, 저장하지도, 그 형체를 알지도 않는다(투영 ≠ 실행 권위, S-9). 미주입이면
@@ -212,7 +226,11 @@ class WorkbenchController(MappingVerbsMixin):
         예외로 올리지 않는다: 원문을 그대로 들고 사유를 남기면 화면은 서고 복사는 어차피
         차단된다(반쪽 세션보다 정직한 세션이 낫다).
         """
-        text = Path(job.template_path).read_text(encoding="utf-8")
+        # ``newline=""`` — 줄 끝 문자를 **원문 그대로** 든다(S10-04 #861). 기본 universal
+        # newline 은 CRLF 템플릿을 LF 로 접어 읽는데, 물질화는 Candidate bytes 를 그대로 다루므로
+        # 그때 화면(LF)과 문서(CRLF)가 갈려 「보이는 것 = 복사되는 것」이 거짓이 된다. 사용자가
+        # 고칠 수 없는 사유로 복사가 막히느니 읽기를 원문에 맞춘다.
+        text = Path(job.template_path).read_text(encoding="utf-8", newline="")
         card_text_source, selection_note, marker_count = self._project_selection(job, text)
         records = [dict(rec) for _, rec in rows]        # 고정 사본(§13-13) — 바깥과 공유 금지
         source_fields = list(records[0].keys()) if records else []
@@ -546,15 +564,15 @@ class WorkbenchController(MappingVerbsMixin):
         사람은 잘못된 문서를 만든다. 이 화면의 복사는 **채운 모습 하나**이므로, 원문 보기에선
         조용히 다른 것을 주지 않고 **복사하지 않고 사유를 말한다**(confirm-or-alarm).
 
-        **구간 표기가 남아 있으면 보기와 무관하게 막는다**(S10-03 #860). 화면은 고른 내용만
-        그리지만 그 접기는 **투영**이고, 클립보드로 나가는 것은 이 세션이 실제로 물질화한
-        문서가 아니다(투영 ≠ 실행 권위). 여기를 열면 고르지 않은 선택지와 마커 텍스트가 그대로
-        붙여넣어진다 — ``admit_slotless_run`` 이 ``STRUCTURE_NOTATION_UNCOMPILED`` 로 막는 것과
-        같은 결함이고, 그래서 같은 서사로 막는다. 판정 원천은 진입 시 스캔 하나다(재스캔 0 —
-        세션 텍스트는 고정 사본이라 다시 세면 같은 값이고, 두 번 세면 값이 갈릴 자리만 생긴다).
+        **구간 표기가 있으면 물질화 포트가 있어야 한다**(S10-04 #861). S10-03 은 이 자리를
+        상시 차단으로 닫아 두었다 — 화면의 접기는 **투영**이고 투영은 실행 권위가 아니어서,
+        그대로 내보내면 고르지 않은 선택지와 마커 텍스트가 붙여넣어졌기 때문이다. 이제 복사는
+        Sealed Plan 이 물질화한 bytes 를 내보내므로 그 차단이 사라졌고, 남은 것은 포트 미주입
+        (오배선)뿐이다. 판정 원천은 진입 시 스캔 하나다(재스캔 0 — 세션 텍스트는 고정 사본이라
+        다시 세면 같은 값이고, 두 번 세면 값이 갈릴 자리만 생긴다).
         """
-        if self._marker_count:
-            return COPY_BLOCK_STRUCTURE_NOTATION
+        if self._marker_count and self._txt_materialization is None:
+            return COPY_BLOCK_MATERIALIZATION_UNAVAILABLE
         if self.view != "filled":
             return "원문 보기에서는 복사하지 않습니다. 「채운 모습」으로 바꾼 뒤 복사하세요."
         return ""
@@ -876,10 +894,37 @@ class WorkbenchController(MappingVerbsMixin):
                 return {"copied": False, "missing_fields": list(report.missing_fields),
                         "empty_fields": list(report.empty_fields)}
             text, report = self.render()
+            if self._marker_count:
+                # slot-bearing 은 화면이 그린 투영이 아니라 **봉인된 실행 산출**을 내보낸다.
+                materialized, reason = self._materialize_current()
+                if materialized is None:
+                    return {"copied": False, "missing_fields": [], "empty_fields": [],
+                            "error": reason}
+                if materialized != text:
+                    return {"copied": False, "missing_fields": [], "empty_fields": [],
+                            "error": COPY_BLOCK_MATERIALIZATION_DIVERGED}
+                text = materialized
             write(text)                       # OS 쓰기도 임계구역 안 — 성사 뒤에만 전진한다
             self.note_copied(report)
             return {"copied": True, "missing_fields": list(report.missing_fields),
                     "empty_fields": gate_empty_fields(report, self.mapping)}
+
+    def _materialize_current(self) -> "tuple[str | None, str]":
+        """작업점 레코드의 물질화 결과 — (검증된 텍스트, 사유). 정확히 한쪽만 산다.
+
+        판정은 전부 저쪽(봉인·record 검증·start gate·postcondition)의 것이고 이 컨트롤러는
+        결과를 나르기만 한다 — 여기서 사유를 다시 조립하면 같은 상태를 두 곳이 말하게 된다.
+        그래서 포트가 내는 것도 값 두 개뿐이다: 봉인·VDR·start gate 의 타입을 이 화면이
+        알면 「형체를 모른다」는 계약이 이름만 남는다. 포트가 예외를 던지면 그것도 사유로
+        접어 복사만 막는다(세션은 살아 있다).
+        """
+        assert self._txt_materialization is not None
+        try:
+            return self._txt_materialization(
+                self.job_name, self._current_record(), self.copy_token()
+            )
+        except Exception as exc:  # noqa: BLE001 — 복사 차단 사유로 접는다(조용한 성공 0)
+            return None, f"문서를 만들지 못했습니다: {exc}"
 
     def note_copied(self, report) -> None:
         """복사 성사 뒤 상태 전진 — 클립보드 쓰기가 **성공한 뒤에만** 불린다.

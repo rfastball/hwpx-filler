@@ -23,7 +23,7 @@ PerWorkMutationFence
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, ContextManager
+from typing import Callable, ContextManager, Protocol
 
 from hwpxfiller.application.execution_composition import (
     RuntimeMaterializerConformanceRegistry,
@@ -43,10 +43,23 @@ from hwpxfiller.host.per_work_fence import per_work_mutation_fence
 from .materialization_runner import (
     MaterializationOutcome,
     MaterializationProcurementError,
-    ProductionMaterializationRunner,
 )
 
 _WorkFence = Callable[[str, str], ContextManager[None]]
+
+
+class MaterializationRunnerPort(Protocol):
+    """pin 이 풀린 뒤 부르는 LongMaterialization — 매체마다 다른 러너가 이 자리에 선다.
+
+    S10-04(#861)로 TXT 러너가 두 번째 구현이 되면서 gate 가 concrete class 를 이름으로 아는
+    이유가 사라졌다(gate 는 순서·pin 만 지고 bytes 를 만들지 않는다). 러너 자격은 여전히
+    `test_materialization_port_gate` 가 진다 — executor/verifier 를 직접 부를 수 있는 모듈은
+    러너뿐이다.
+    """
+
+    def materialize(
+        self, materialization_input: MaterializationInput
+    ) -> MaterializationOutcome: ...
 
 # current basis 관찰 seam — fence 아래에서 current Work 의 execution_basis_digest 를 읽는다.
 # 관찰 불가(미봉인·chain 단절)는 None 으로 돌려 CURRENT_BASIS_NOT_SEALABLE 로 닫는다.
@@ -70,7 +83,7 @@ def start_materialization(
     work_authority_id: str,
     materialization_input: MaterializationInput,
     input_port: MaterializationInputPort,
-    runner: ProductionMaterializationRunner,
+    runner: MaterializationRunnerPort,
     runtime_registry: RuntimeMaterializerConformanceRegistry,
     runtime_capability_manifest_digest: str,
     current_basis_digest_reader: CurrentBasisDigestReader,
@@ -128,6 +141,7 @@ def start_materialization(
 
 __all__ = [
     "CurrentBasisDigestReader",
+    "MaterializationRunnerPort",
     "StartMaterializationRefusal",
     "StartMaterializationResult",
     "start_materialization",

@@ -46,8 +46,8 @@ from hwpxfiller.application.execution_compilation import (
 )
 from hwpxfiller.application.execution_composition import (
     DEFAULT_THEOREM_EVIDENCE_REGISTRY,
-    NATIVE_PRIMITIVE_CONTRACT_V1,
     TheoremEvidenceRegistry,
+    resolve_native_primitive_contract,
     verify_execution_composition_premises,
 )
 from hwpxfiller.application.execution_contract_set import (
@@ -321,13 +321,18 @@ def compile_candidate(
         theorem = theorem_registry.resolve(
             policy.composition_contract_id, policy.native_primitive_contract_id
         )
+        # native primitive manifest 도 policy 가 선언한 것을 **표에서 푼다**(S10-04 · #861):
+        # 상수를 박으면 TXT Plan 이 HWPX primitive 로 증명돼 조용히 틀린다.
+        native_primitive = resolve_native_primitive_contract(
+            policy.native_primitive_contract_id
+        )
     except Exception as exc:  # UnsupportedCompositionContract 등
         raise UnsupportedLocalImplementation(
             f"미지원 composition/native primitive contract: {exc}"
         ) from exc
     composition_result = verify_execution_composition_premises(
         structure=structure,
-        native_primitive_contract=NATIVE_PRIMITIVE_CONTRACT_V1,
+        native_primitive_contract=native_primitive,
         theorem_evidence=theorem,
         composition_contract_id=policy.composition_contract_id,
         theorem_registry=theorem_registry,

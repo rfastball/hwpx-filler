@@ -420,3 +420,69 @@ def test_selection_projection_is_identity_for_a_slotless_template():
     scan = _scan_unchanged(text)
 
     assert text_structure.project_selected_text(text, scan, {}) == text
+
+
+# ---------------------------------------------- E. 표시 투영 == 2단계 물질화(S10-04 #861)
+# 화면이 그리는 접기와 물질화가 **같은 줄 집합**을 쓴다는 것이 「보이는 것 = 복사되는 것」의
+# 구조적 근거다. 두 함수가 각자 계산하면 언젠가 갈리고, 그때 사용자는 화면과 다른 문서를 받는다.
+
+
+def _two_stage(text: str, selected) -> str:
+    """물질화가 밟는 순서 그대로 — 1단계 제거 → **재스캔** → 2단계 마커 소거."""
+    scan = _scan_unchanged(text)
+    stage1 = text_structure.drop_lines(
+        text, text_structure.unselected_option_lines(scan, selected)
+    )
+    stage1_scan = text_structure.scan_text_structure(stage1)
+    return text_structure.drop_lines(
+        stage1, text_structure.marker_lines(stage1_scan)
+    )
+
+
+@pytest.mark.parametrize(
+    "selected",
+    [
+        # 실행이 실제로 도달하는 형태만 잰다: 컴파일러가 「항목마다 선택 정확히 하나」를
+        # 요구하므로(SLOT_CONFIGURATION_INCOMPLETE), 미완 선택은 물질화에 오지 않는다.
+        {"특약": frozenset({"하자보수"}), "부칙": frozenset({"가"})},
+        {"특약": frozenset({"지체상금"}), "부칙": frozenset({"나"})},
+    ],
+)
+def test_two_stage_materialization_equals_the_display_projection(selected):
+    scan = _scan_unchanged(_CANONICAL)
+    assert _two_stage(_CANONICAL, selected) == text_structure.project_selected_text(
+        _CANONICAL, scan, selected
+    )
+
+
+def test_stage_one_keeps_the_slot_markers_so_the_rescan_can_verify_structure():
+    """1단계는 **선택 선언 전체**를 지우고 항목 마커는 남긴다 — 그래야 구조를 재확인할 수 있다.
+
+    남은 Option 집합이 authorized 와 정확히 같은지 묻는 자리가 여기뿐이다: 2단계가 마커를
+    걷고 나면 평문에는 구조가 없어 그 술어를 세울 곳이 사라진다.
+    """
+    scan = _scan_unchanged(_CANONICAL)
+    stage1 = text_structure.drop_lines(
+        _CANONICAL,
+        text_structure.unselected_option_lines(
+            scan, {"특약": frozenset({"하자보수"}), "부칙": frozenset({"가"})}
+        ),
+    )
+    rescan = text_structure.scan_text_structure(stage1)
+    assert rescan.diagnostics == ()
+    assert rescan.summary.markers  # 항목·남은 선택의 마커가 서 있다
+    assert {
+        (slot.id, option.id) for slot in rescan.slots for option in slot.options
+    } == {("특약", "하자보수"), ("부칙", "가")}
+
+
+def test_marker_lines_and_unselected_option_lines_are_disjoint_stages():
+    """두 집합의 합이 표시 투영의 숨김 집합이다 — 단계를 나눠도 결과가 같은 이유."""
+    scan = _scan_unchanged(_CANONICAL)
+    selected = {"특약": frozenset({"하자보수"}), "부칙": frozenset({"가"})}
+    hidden = text_structure.marker_lines(scan) | text_structure.unselected_option_lines(
+        scan, selected
+    )
+    visible = text_structure.visible_lines(_CANONICAL, scan, selected)
+    assert set(visible) | hidden == set(range(len(_CANONICAL.splitlines())))
+    assert not set(visible) & hidden

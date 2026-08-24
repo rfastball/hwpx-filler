@@ -12,8 +12,10 @@ default contract 집합을 이 한 곳에서 소유하고(shipping-default 단�
 - **AUTO 는 current shipping default 로 canonicalize 한다** — 생략된 selector 는 지금 출하 build 의
   기본 contract 로 확정한다.
 - **fail-closed** — unknown/latest fallback 이 없다. 여기서 정하는 것은 오직 (a) 요청이 준 EXACT
-  값, (b) 이 모듈이 소유한 shipping default 뿐이다. store·observed Work 상태를 읽어 policy 를
-  바꾸지 않는다(``observed`` 는 seam 대칭을 위해 받되 현재 shipping default 는 Work-불변이다).
+  값, (b) 이 모듈이 소유한 shipping default(매체별 composition 축 포함) 뿐이다. store 를 읽지
+  않는다 — ``observed`` 에서 읽는 것은 **Qualification Profile identity 하나**이고, 그것이
+  composition/native-primitive/theorem 축을 가른다(S10-04 · #861, 아래 표). 같은 매체 안에서는
+  여전히 Work-불변이다.
 
 ``execution_base_kind`` 은 요청에서 그대로 echo 한다 — S5 v1 admitted base 검증은 capture/compile
 층이 지고(``APPLIED_TEMPLATE_CANDIDATE`` 이 아니면 policy block/ context error), 여기서는 요청과
@@ -30,8 +32,14 @@ from hwpxfiller.application.execution_compilation import EXECUTION_SEMANTICS_CON
 from hwpxfiller.application.execution_composition import (
     COMPOSITION_CONTRACT_ID,
     NATIVE_PRIMITIVE_CONTRACT_ID,
+    THEOREM_EVIDENCE_TXT_V1,
     THEOREM_EVIDENCE_V1,
+    TXT_COMPOSITION_CONTRACT_ID,
+    TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
     theorem_evidence_digest,
+)
+from hwpxfiller.application.execution_structure import (
+    TXT_EXECUTION_QUALIFICATION_PROFILE_ID,
 )
 from hwpxfiller.application.seal_execution_plan import (
     SUPPORTED_PLAN_SCHEMAS,
@@ -63,6 +71,29 @@ SHIPPING_PLAN_SCHEMA_VERSION = SUPPORTED_PLAN_SCHEMAS[0]
 # S6 materialization contract — 아직 미출하다. 다른 정본이 없어 이 모듈이 default 를 소유한다.
 SHIPPING_MATERIALIZATION_CONTRACT_ID = "materialization/v1"
 
+# ─── 매체가 가르는 유일한 축(S10-04 · #861) ────────────────────────────────────────────
+# composition/native-primitive 는 **매체의 사실**이다: HWPX 는 bookmark region 제거·field marker
+# write, TXT 는 줄 제거·평문 삽입. 그래서 이 셋만 관찰된 Qualification Profile 로 갈린다. 나머지
+# contract(값 정책·record·plan schema·encoding)는 매체 중립이라 계속 build 전역 default 다.
+#
+# 이것이 "``observed`` 는 seam 대칭용이고 shipping default 는 Work-불변"이라는 종전 서술의 유일한
+# 예외다 — Work 가 아니라 **Profile identity** 로 갈리고, 같은 매체 안에서는 여전히 불변이다.
+# 매체를 policy 밖에서 추측하면(예: materializer 가 Plan 을 열어 보고) 봉인된 계약과 실제 실행이
+# 갈리므로, 갈림은 policy 한 곳에서 명시로 일어난다.
+_MEDIA_COMPOSITION_AXIS: "dict[str, tuple[str, str, str]]" = {
+    TXT_EXECUTION_QUALIFICATION_PROFILE_ID: (
+        TXT_COMPOSITION_CONTRACT_ID,
+        TXT_NATIVE_PRIMITIVE_CONTRACT_ID,
+        theorem_evidence_digest(THEOREM_EVIDENCE_TXT_V1),
+    ),
+}
+
+_DEFAULT_COMPOSITION_AXIS = (
+    COMPOSITION_CONTRACT_ID,
+    NATIVE_PRIMITIVE_CONTRACT_ID,
+    theorem_evidence_digest(THEOREM_EVIDENCE_V1),
+)
+
 
 def _selected(selector: RequestedVersionSelector, default: str) -> str:
     """EXACT selector 는 그 값을 그대로, 그 외(AUTO)는 shipping default 를 canonicalize 한다."""
@@ -80,6 +111,9 @@ def resolve_shipping_policy(
     나머지 contract 집합은 이 build 의 shipping default 로 확정한다. ``execution_base_kind`` 은
     요청에서 echo 한다(요청/policy 모순 금지). unknown 을 latest 로 풀지 않는다.
     """
+    composition_id, native_primitive_id, theorem_digest = _MEDIA_COMPOSITION_AXIS.get(
+        observed.qualification_profile_id, _DEFAULT_COMPOSITION_AXIS
+    )
     return ResolvedSealPolicy(
         policy_resolution_version=SHIPPING_POLICY_RESOLUTION_VERSION,
         execution_base_kind=command.requested_execution_base_kind,
@@ -91,12 +125,10 @@ def resolve_shipping_policy(
         document_value_resolution_contract_id=DOCUMENT_CONTENT_VALUE_POLICY_VERSION,
         record_validation_contract_id=RECORD_VALIDATION_CONTRACT_ID,
         record_review_contract_id=RECORD_REVIEW_CONTRACT_ID,
-        composition_contract_id=COMPOSITION_CONTRACT_ID,
-        native_primitive_contract_id=NATIVE_PRIMITIVE_CONTRACT_ID,
+        composition_contract_id=composition_id,
+        native_primitive_contract_id=native_primitive_id,
         materialization_base_contract_id=MATERIALIZATION_BASE_CONTRACT_ID,
-        composition_theorem_evidence_manifest_digest=theorem_evidence_digest(
-            THEOREM_EVIDENCE_V1
-        ),
+        composition_theorem_evidence_manifest_digest=theorem_digest,
         materialization_contract_id=SHIPPING_MATERIALIZATION_CONTRACT_ID,
         plan_schema_version=_selected(
             command.requested_plan_schema, SHIPPING_PLAN_SCHEMA_VERSION

@@ -59,26 +59,49 @@ from hwpxfiller.domain.fields import (
 from hwpxfiller.external.template_inspection import inspect_slots, remove_slot_option
 
 from .content_digest import blob_digest
+from .materialization_conformance_vocabulary import (
+    FIELD_TEXT_MISMATCH,
+    MARKER_CLEANUP_VIOLATION,
+    OCCURRENCE_COUNT_MISMATCH,
+    PRESERVED_CONTENT_LOST,
+    PROTECTED_STRUCTURE_LOSS,
+    REMOVAL_INCOMPLETE,
+    REPARSE_FAILED,
+    SOURCE_CANDIDATE_MUTATED,
+    STRUCTURE_BYTES_INCONSISTENT,
+    ConformanceExecutionError,
+    ConformanceFailure,
+    ConformancePass,
+    ConformanceResult,
+)
 
 CONFORMANCE_CONTRACT_ID = "hwpx-materialization-conformance/v1"
 
 # reopen/reparse 실패로 취급하는 오류 집합(bad zip·bad mimetype·malformed XML).
 _REOPEN_ERRORS = (ValueError, etree.XMLSyntaxError, zipfile.BadZipFile)
 
-# ─── distinct failure code(층 구분 유지 — serialize/reparse/postcondition 분리) ─────────
-STRUCTURE_BYTES_INCONSISTENT = "STRUCTURE_BYTES_INCONSISTENT"  # P7 precheck
-REPARSE_FAILED = "REPARSE_FAILED"  # P0
-REMOVAL_INCOMPLETE = "REMOVAL_INCOMPLETE"  # P1
-PRESERVED_CONTENT_LOST = "PRESERVED_CONTENT_LOST"  # P2
-FIELD_TEXT_MISMATCH = "FIELD_TEXT_MISMATCH"  # P3
-OCCURRENCE_COUNT_MISMATCH = "OCCURRENCE_COUNT_MISMATCH"  # P3
-MARKER_CLEANUP_VIOLATION = "MARKER_CLEANUP_VIOLATION"  # P4
-PROTECTED_STRUCTURE_LOSS = "PROTECTED_STRUCTURE_LOSS"  # P5
-SOURCE_CANDIDATE_MUTATED = "SOURCE_CANDIDATE_MUTATED"  # P6
-
-
-class ConformanceExecutionError(Exception):
-    """executor 가 Plan/VDR 로 시퀀싱할 수 없는 상태 — 조용히 넘기지 않는다."""
+# 실패 코드·결과 합타입의 정본은 매체 중립 어휘 모듈이다(S10-04 · #861) — 위 import 가 그것을
+# 이 모듈 이름으로 그대로 re-export 한다(문자열·타입 identity·기존 import 경로 전부 불변).
+__all__ = [
+    "CONFORMANCE_CONTRACT_ID",
+    "FIELD_TEXT_MISMATCH",
+    "MARKER_CLEANUP_VIOLATION",
+    "OCCURRENCE_COUNT_MISMATCH",
+    "PRESERVED_CONTENT_LOST",
+    "PROTECTED_STRUCTURE_LOSS",
+    "REMOVAL_INCOMPLETE",
+    "REPARSE_FAILED",
+    "SOURCE_CANDIDATE_MUTATED",
+    "STRUCTURE_BYTES_INCONSISTENT",
+    "ConformanceExecutionError",
+    "ConformanceFailure",
+    "ConformancePass",
+    "ConformanceResult",
+    "InMemoryMaterialization",
+    "apply_execution_plan_in_memory",
+    "verify_materialization_postconditions",
+    "verify_structure_bytes_consistency",
+]
 
 
 @dataclass(frozen=True)
@@ -93,25 +116,6 @@ class InMemoryMaterialization:
 
     output_bytes: bytes
     notes: tuple[FillNote, ...]
-
-
-@dataclass(frozen=True)
-class ConformancePass:
-    """모든 postcondition 이 actual reopened output 에서 충족됨."""
-
-    output_digest: str
-    notes: tuple[FillNote, ...] = ()
-
-
-@dataclass(frozen=True)
-class ConformanceFailure:
-    """actual native mutation 결과가 postcondition 을 위반 — distinct code 로 재진술."""
-
-    code: str
-    detail: str
-
-
-ConformanceResult = ConformancePass | ConformanceFailure
 
 
 # ─── op / vdr projection(포트가 새 의미를 파생하지 않는 두 입력) ─────────────────────────

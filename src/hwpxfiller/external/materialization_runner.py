@@ -22,7 +22,6 @@ production ref+store 조달로 감싸는 **유일한 production 소유자**다. 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -44,7 +43,6 @@ from hwpxfiller.domain.field_binding import (
     ESCAPING_NATIVE_MATERIALIZER,
     resolve_document_value_policy,
 )
-from hwpxfiller.domain.fields import FillNote
 
 from .candidate_store import CandidateObjectStore
 from .materialization_conformance import (
@@ -53,6 +51,10 @@ from .materialization_conformance import (
     apply_execution_plan_in_memory,
     verify_materialization_postconditions,
     verify_structure_bytes_consistency,
+)
+from .materialization_conformance_vocabulary import (
+    MaterializationOutcome,
+    MaterializedDocumentBytes,
 )
 from .qualification_store import QualificationObjectStore
 from .work_template_store import AtomicWorkTemplateStateStore
@@ -73,24 +75,6 @@ class MaterializationProcurementError(Exception):
     postcondition 실패(:class:`ConformanceFailure`)는 「실행했더니 결과가 계약 위반」이고,
     조달 실패는 「실행할 자격이 있는 입력을 복원하지 못함」이다 — 두 층을 섞지 않는다.
     """
-
-
-@dataclass(frozen=True)
-class MaterializedDocumentBytes:
-    """postcondition PASS 를 통과한 materialization 산출 — bytes 와 그 증거.
-
-    ``execution_notes`` 는 채움이 「경고 후 진행」으로 처리한 완화 사실(FillNote)로, 삼키지
-    않고 상위(S6-04 delivery·원장)가 record/warn 하게 나른다(confirm-or-alarm).
-    """
-
-    plan_semantic_digest: str
-    validated_record_ref: str
-    output_bytes: bytes
-    output_digest: str
-    execution_notes: tuple[FillNote, ...]
-
-
-MaterializationOutcome = MaterializedDocumentBytes | ConformanceFailure
 
 
 def require_native_materializer_escaping(

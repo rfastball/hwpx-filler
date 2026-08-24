@@ -175,8 +175,14 @@ def _render_main(argv: "list[str]") -> int:
     순수 ``{{필드}}`` 치환이다. ``--profile`` 을 주면 소스 레코드에 매핑 프로파일을 적용해
     **표시형까지 서식된 값**(예: `150,000,000원`)으로 채운다(HWPX 생성 경로와 동일 모델).
     없으면 원본 값 그대로. 데이터에 없는 필드는 토큰을 남기고 stderr 로 시끄럽게 신고한다.
+
+    **구간 표기가 있는 템플릿은 거절한다**(S10-04 · #861). 그 템플릿을 물질화하려면 「포함할
+    내용」 선택과 그 선택을 봉인한 실행 계획이 있어야 하는데, CLI 에는 Work 도 선택 축도 없다.
+    선택 없이 치환만 하면 산출물은 **고르지 않은 선택지와 마커 텍스트를 그대로 실은** 문서가
+    된다 — 조용히 그것을 내주는 대신 작업대를 안내하고 멈춘다.
     """
     from .domain.text_render import render_record
+    from .domain.text_structure import scan_text_structure
 
     ap = argparse.ArgumentParser(prog="hwpxfiller render")
     ap.add_argument("template", help="텍스트 템플릿 경로(.txt 등, {{필드}} 토큰)")
@@ -192,6 +198,15 @@ def _render_main(argv: "list[str]") -> int:
 
     with open(args.template, encoding="utf-8") as fh:
         template = fh.read()
+    markers = scan_text_structure(template).summary.markers
+    if markers:
+        print(
+            f"구간 표기가 {markers}건 있는 템플릿입니다 — 이 명령은 '포함할 내용'을 고를 수 "
+            "없어 문서를 만들 수 없습니다.\n"
+            "문서나르미의 '문서 만들기'에서 이 작업을 실행하고 검토·복사 작업대에서 복사하세요.",
+            file=sys.stderr,
+        )
+        return 1
     _require_sheet_if_ambiguous(ap, args.data, args.sheet)
     records = ExcelDataSource(args.data, sheet=args.sheet).records()
     if not records:

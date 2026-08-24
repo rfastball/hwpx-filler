@@ -863,7 +863,7 @@ _SLOT_TEMPLATE = "\n".join([
 
 def _slot_job(tmp_path: Path, *, body: str = _SLOT_TEMPLATE) -> Job:
     tpl = tmp_path / "첨부안내.txt"
-    tpl.write_text(body, encoding="utf-8")
+    tpl.write_text(body, encoding="utf-8", newline="\n")
     return Job(
         name="첨부안내",
         template_path=str(tpl),
@@ -934,23 +934,30 @@ def test_changed_selection_lands_on_the_next_session(tmp_path):
     assert "견적서를 첨부합니다." in text and "계약서를 첨부합니다." not in text
 
 
-def test_copy_is_blocked_while_structure_notation_remains(tmp_path):
-    """투영이 서 있어도 복사는 막힌다 — 화면의 접기는 미리 보기이지 물질화가 아니다."""
-    from hwpxfiller.webapp.screen_workbench import COPY_BLOCK_STRUCTURE_NOTATION
+def test_copy_is_blocked_when_the_materialization_port_is_unwired(tmp_path):
+    """물질화 포트가 없으면 투영을 대신 내보내지 않는다(S10-04 #861 — 오배선의 정직한 얼굴).
+
+    S10-03 은 여기를 **상시** 차단으로 닫아 두었다. 이제 slot-bearing 복사는 봉인된 실행
+    산출을 내보내므로 그 차단이 걷혔고, 남은 것은 포트 미주입 하나다 — 그때도 화면의 접기가
+    조용히 클립보드로 나가지는 않는다(투영 ≠ 실행 권위).
+    """
+    from hwpxfiller.webapp.screen_workbench import (
+        COPY_BLOCK_MATERIALIZATION_UNAVAILABLE,
+    )
 
     ctrl, _calls = _open_slot(tmp_path, {"첨부": frozenset({"견적서"})})
 
-    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_STRUCTURE_NOTATION
+    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_MATERIALIZATION_UNAVAILABLE
     assert ctrl.can_copy() is False
     # 버튼이 닫힌 이유와 실제 거절 사유가 **같은 값**이다(잠금은 DOM 이 아니라 상태가 진다).
     wrote: "list[str]" = []
     result = ctrl.copy_to(ctrl.copy_token(), wrote.append)
     assert result["copied"] is False
-    assert result["error"] == COPY_BLOCK_STRUCTURE_NOTATION
+    assert result["error"] == COPY_BLOCK_MATERIALIZATION_UNAVAILABLE
     assert wrote == []  # 클립보드에 아무것도 나가지 않았다
-    # 보기를 바꿔도 사유는 그대로다(보기 축이 아니라 템플릿 축의 차단이다).
+    # 보기를 바꿔도 사유는 그대로다(보기 축이 아니라 배선 축의 차단이다).
     _send(ctrl, "set_view", {"view": "raw"})
-    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_STRUCTURE_NOTATION
+    assert ctrl.snapshot()["card"]["copy_block"] == COPY_BLOCK_MATERIALIZATION_UNAVAILABLE
 
 
 def test_broken_notation_keeps_the_source_text_and_restates_the_reason(tmp_path):
@@ -1009,3 +1016,34 @@ def test_slotless_session_is_untouched_by_the_selection_axis(tmp_path):
     wrote: "list[str]" = []
     assert ctrl.copy_to(ctrl.copy_token(), wrote.append)["copied"] is True
     assert wrote == ["수신: 회계과\n건명: 복사기 임차\n"]
+
+
+def test_session_text_keeps_the_original_line_endings(tmp_path):
+    """세션 텍스트는 줄 끝을 **원문 그대로** 든다(S10-04 #861).
+
+    universal newline 으로 읽으면 CRLF 템플릿이 화면에서 LF 로 접힌다. 물질화는 Candidate
+    bytes 를 그대로 다루므로 그때 화면(LF)과 문서(CRLF)가 갈리고, 「보이는 것 = 복사되는 것」이
+    사용자가 고칠 수 없는 사유로 거짓이 된다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "crlf.txt"
+    tpl.write_bytes("수신: {{수신}}\r\n건명: {{건명}}\r\n".encode("utf-8"))
+    job = Job(
+        name="crlf",
+        template_path=str(tpl),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="수신", source="부서"),
+            FieldMapping(template_field="건명", source="사업명"),
+        ]),
+    )
+    reg.save(job)
+    ctrl = WorkbenchController(
+        reg, lambda s, snap: None,
+        clock=lambda: datetime(2026, 8, 25, 12, 0, 0),
+        target_font=TargetFontSetting(),
+    )
+    ctrl.open(reg.load("crlf"), _rows())
+
+    wrote: "list[str]" = []
+    assert ctrl.copy_to(ctrl.copy_token(), wrote.append)["copied"] is True
+    assert wrote == ["수신: 회계과\r\n건명: 복사기 임차\r\n"]

@@ -228,3 +228,41 @@ def test_registered_policy_id_with_altered_behavior_rejected() -> None:
     with pytest.raises(UnsupportedDocumentValuePolicyError):
         FieldBindingRule("f", SOURCE, diverged, source_key="k", value_type=EXACT_TEXT)
     assert require_registered_document_value_policy(POLICY) is POLICY
+
+
+# ── TXT 짝(S10-04 · #861) — 값 의미는 같고 escaping 책임만 갈린다 ───────────────
+def test_txt_policies_mirror_the_hwpx_pair_except_for_escaping() -> None:
+    """같은 데이터가 두 매체에서 **같은 logical text** 를 내야 한다 — 갈리는 축은 하나뿐이다."""
+    from hwpxfiller.domain.field_binding import (
+        DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
+        DOCUMENT_CONTENT_VALUE_POLICY_TXT_LEGACY_STRIP,
+        DOCUMENT_CONTENT_VALUE_POLICY_TXT_V1,
+        ESCAPING_NATIVE_MATERIALIZER,
+        ESCAPING_PLAINTEXT_MATERIALIZER,
+        txt_document_value_policy,
+    )
+
+    for hwpx, txt in (
+        (DOCUMENT_CONTENT_VALUE_POLICY_V1, DOCUMENT_CONTENT_VALUE_POLICY_TXT_V1),
+        (
+            DOCUMENT_CONTENT_VALUE_POLICY_LEGACY_STRIP,
+            DOCUMENT_CONTENT_VALUE_POLICY_TXT_LEGACY_STRIP,
+        ),
+    ):
+        assert txt.whitespace_policy == hwpx.whitespace_policy
+        assert txt.line_break_policy == hwpx.line_break_policy
+        assert hwpx.escaping_responsibility == ESCAPING_NATIVE_MATERIALIZER
+        assert txt.escaping_responsibility == ESCAPING_PLAINTEXT_MATERIALIZER
+        # 번역은 표 하나가 진다 — 사용자에게 같은 결정을 두 번 시키지 않는다.
+        assert txt_document_value_policy(hwpx.policy_id) is txt
+        assert txt_document_value_policy(txt.policy_id) is txt
+
+
+def test_txt_policy_translation_refuses_a_policy_without_a_pair() -> None:
+    from hwpxfiller.domain.field_binding import (
+        UnsupportedDocumentValuePolicyError,
+        txt_document_value_policy,
+    )
+
+    with pytest.raises(UnsupportedDocumentValuePolicyError):
+        txt_document_value_policy("document-content-value/v9")

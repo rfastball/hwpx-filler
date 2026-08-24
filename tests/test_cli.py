@@ -643,3 +643,49 @@ def test_fill_notes_surface_on_stderr_once_per_batch(tmp_path, capsys):
     # 두 완화가 각각 정확히 1회 — 레코드 2건이어도 반복 고지하지 않는다.
     assert err.count("빈 누름틀 '계약명'") == 1
     assert err.count("인라인 요소(markpenBegin, markpenEnd)") == 1
+
+
+# ------------------------------------------------- render 의 구간 표기 검문(S10-04 #861)
+def test_cli_render_refuses_a_slot_bearing_template(tmp_path, capsys):
+    """CLI 에는 「포함할 내용」 축이 없다 — 고르지 않은 선택지를 실은 문서를 조용히 내주지 않는다.
+
+    거절이 **치환 앞**에 서는 것이 계약이다(정적 얼굴은
+    ``tests/repo_contract/test_text_render_port_gate.py``). 여기서 재는 것은 그 계약의 실행
+    결과: 표준출력에 아무것도 나가지 않고, 사유가 작업대를 지목한다.
+    """
+    data = _xlsx(tmp_path / "d.xlsx", [["R26BK00000001", "관급자재 구매", "일반경쟁",
+                                        "12000000", "2026-08-01 10:00"]])
+    tpl = tmp_path / "slot.txt"
+    tpl.write_text(
+        "공고: {{공고명}}\n{{#항목 첨부 첨부}}\n{{#선택 가 가}}\n가 본문\n"
+        "{{/선택}}\n{{/항목}}\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    out = tmp_path / "rendered.txt"
+
+    assert main(["render", str(tpl), "--data", data, "--out", str(out)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""            # 조용한 산출 0
+    assert not out.exists()              # 파일도 남기지 않는다
+    # 마커 총수는 스캐너 단일 출처에서 나온다(여는·닫는 각 2 = 4건).
+    assert "구간 표기가 4건" in captured.err
+    assert "작업대" in captured.err and "문서 만들기" in captured.err
+
+
+def test_cli_render_still_serves_a_slotless_template(tmp_path, capsys):
+    """회귀 축 — 마커 0 이면 종전과 **byte 동등**이다(검문이 기존 경로를 건드리지 않는다)."""
+    from hwpxfiller.domain.text_render import render_record
+
+    data = _xlsx(tmp_path / "d.xlsx", [["R26BK00000001", "관급자재 구매", "일반경쟁",
+                                        "12000000", "2026-08-01 10:00"]])
+    body = "공고: {{공고명}}\n번호: {{입찰공고번호}}\n"
+    tpl = tmp_path / "plain.txt"
+    tpl.write_text(body, encoding="utf-8", newline="\n")
+    out = tmp_path / "rendered.txt"
+
+    assert main(["render", str(tpl), "--data", data, "--out", str(out)]) == 0
+    expected, _report = render_record(
+        body, {"공고명": "관급자재 구매", "입찰공고번호": "R26BK00000001"}
+    )
+    assert out.read_text(encoding="utf-8", newline="") == expected

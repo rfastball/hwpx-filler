@@ -124,6 +124,57 @@ class TextStructureProjectionError(ValueError):
     """
 
 
+def marker_lines(scan: TextStructureScan) -> "frozenset[int]":
+    """구간 마커(여는·닫는) 줄 번호 전부 — 표시 투영과 물질화 2단계의 **공통 원천**.
+
+    ``scan.summary.markers`` 는 자격 거절된 마커까지 세지만(파일에 남아 있으므로) 여기서 내는
+    것은 **짝지어진 범위의 경계 줄**이다. 진단 0 인 스캔에서는 둘이 같은 집합을 가리킨다 —
+    진단이 있으면 좌표 자체가 신뢰 대상이 아니라 소비자가 먼저 거절한다.
+    """
+    lines: "set[int]" = set()
+    for placement in scan.placements:
+        lines.add(placement.begin_marker_line)
+        lines.add(placement.end_marker_line)
+    return frozenset(lines)
+
+
+def unselected_option_lines(
+    scan: TextStructureScan, selected: "Mapping[str, Collection[str]]"
+) -> "frozenset[int]":
+    """고르지 않은 「선택」 범위가 차지한 줄 전부 — **자기 마커 줄까지 포함**한다.
+
+    표시 투영(:func:`visible_lines`)은 마커를 어차피 전부 숨기므로 경계를 포함하든 말든 같은
+    그림을 낸다. 물질화는 다르다: 1단계가 complement 를 지운 **직후 재스캔**이 구조 검증의
+    자리이고, 그때 지워진 선택의 마커가 남아 있으면 「남은 Option 집합 == authorized」라는
+    술어가 성립하지 않는다(지운 것이 여전히 선언돼 있고, 게다가 빈 범위가 된다). 그래서 제거
+    단위는 선언 전체다 — 「항목」 마커는 그대로 남아 1단계 재스캔이 구조를 볼 수 있다.
+
+    ``selected`` 는 항목 id → 고른 선택 id 들이다. 없는 키는 「아무것도 안 골랐다」이고 그
+    항목의 선택 범위는 전부 여기 든다(:func:`visible_lines` 와 같은 규율).
+    """
+    lines: "set[int]" = set()
+    for placement in scan.placements:
+        if placement.kind != PLACEMENT_OPTION:
+            continue
+        if placement.option_id in selected.get(placement.slot_id, ()):
+            continue
+        lines.update(
+            range(placement.begin_marker_line, placement.end_marker_line + 1)
+        )
+    return frozenset(lines)
+
+
+def drop_lines(text: str, lines: "Collection[int]") -> str:
+    """``lines`` 의 0-기반 줄만 뺀 텍스트(무변형 — 남는 줄은 줄 끝 문자까지 원문 그대로).
+
+    ``keepends`` 로 이어붙이므로 CRLF 템플릿이 이 연산을 지나며 조용히 줄바꿈을 갈아입지
+    않는다(:func:`project_selected_text` 와 같은 규율).
+    """
+    drop = set(lines)
+    pieces = text.splitlines(keepends=True)
+    return "".join(p for i, p in enumerate(pieces) if i not in drop)
+
+
 def visible_lines(
     text: str,
     scan: TextStructureScan,
@@ -144,21 +195,16 @@ def visible_lines(
     :func:`~hwpxfiller.domain.slot_selection.evaluate_slot` 과 같은 규율).
 
     진단이 1건이라도 있으면 :class:`TextStructureProjectionError` 다(fail-closed).
+
+    숨김 집합은 :func:`marker_lines` 와 :func:`unselected_option_lines` 의 합집합이다 — 물질화
+    (:mod:`hwpxfiller.external.text_materialization_runner`)가 두 단계로 나눠 쓰는 바로 그
+    두 집합이라, 「보이는 것」과 「나가는 것」이 **같은 원천**에서 나온다(L22).
     """
     if scan.diagnostics:
         raise TextStructureProjectionError(
             f"구간 표기 진단이 {len(scan.diagnostics)}건 있어 선택을 반영할 수 없다"
         )
-    hidden: "set[int]" = set()
-    for placement in scan.placements:
-        hidden.add(placement.begin_marker_line)
-        hidden.add(placement.end_marker_line)
-    for placement in scan.placements:
-        if placement.kind != PLACEMENT_OPTION:
-            continue
-        if placement.option_id in selected.get(placement.slot_id, ()):
-            continue
-        hidden.update(range(placement.content_start, placement.content_end + 1))
+    hidden = marker_lines(scan) | unselected_option_lines(scan, selected)
     return tuple(i for i in range(len(text.splitlines())) if i not in hidden)
 
 
