@@ -14,6 +14,7 @@ from hwpxcore.bookmark_region import (
     create_bookmark_region,
     remove_bookmark_region,
     remove_bookmark_metatag,
+    remove_top_level_paragraph,
     replace_bookmark_metatag,
     resolve_bookmark_regions,
     resolve_bookmark_topology,
@@ -273,7 +274,15 @@ def test_mutation_postcondition_failures_never_commit(
     tagged = _native("R2-block-bookmark.hwpx")
     unwrapped = _native("R5-nested.hwpx")
     removed = _native("R4-adjacent.hwpx")
+    dropped = _package(
+        _paragraph(_begin() + "<hp:t>A</hp:t>" + _end())
+        + _paragraph("<hp:t>B</hp:t>")
+    )
     cases = (
+        (
+            dropped,
+            lambda: remove_top_level_paragraph(dropped, SECTION, 1),
+        ),
         (
             created,
             lambda: create_bookmark_region(
@@ -1016,3 +1025,106 @@ def test_rejects_malformed_or_unsupported_bookmark_regions_loudly() -> None:
     for pkg, message in cases:
         with pytest.raises(ValueError, match=message):
             resolve_bookmark_regions(pkg)
+
+
+# ------------------------------------- 본문 직계 문단 삭제 프리미티브(S8-02 #833)
+def _region_spans(pkg: HwpxPackage) -> list[tuple[str | None, int, int]]:
+    return [
+        (region.name, region.start_paragraph, region.end_paragraph)
+        for region in resolve_bookmark_topology(pkg)
+    ]
+
+
+def _marker_package(*, second_section: bool = False) -> HwpxPackage:
+    """P0..P5 위에 바깥·안쪽·뒤쪽 region 셋을 얹은 삭제 관찰용 섹션.
+
+    지울 문단(``D``)에는 XML 주석을 함께 둔다 — 비요소 노드가 섞여도 거절 판정이
+    걸려 넘어지지 않아야 한다.
+    """
+    return _package(
+        _paragraph("<hp:t>A</hp:t>")
+        + _paragraph(_begin("1", "OUTER") + "<hp:t>B</hp:t>")
+        + _paragraph(_begin("2", "INNER") + "<hp:t>C</hp:t>" + _end("2"))
+        + _paragraph("<hp:t>D</hp:t><!--layout hint-->")
+        + _paragraph("<hp:t>E</hp:t>" + _end("1"))
+        + _paragraph(_begin("3", "AFTER") + "<hp:t>F</hp:t>" + _end("3")),
+        _paragraph(_begin("4", "OTHER") + "<hp:t>G</hp:t>" + _end("4"))
+        if second_section
+        else None,
+    )
+
+
+def test_remove_top_level_paragraph_moves_regions_deterministically() -> None:
+    """삭제 위치별 이동 규칙 — 뒤는 -1, 품은 것은 end 만 -1, 앞은 무변화."""
+    pkg = _marker_package(second_section=True)
+    other = pkg.entries["Contents/section1.xml"]
+    assert _region_spans(pkg) == [
+        ("OUTER", 1, 4),
+        ("INNER", 2, 2),
+        ("AFTER", 5, 5),
+        ("OTHER", 0, 0),
+    ]
+
+    remove_top_level_paragraph(pkg, SECTION, 3)  # OUTER 안, INNER 뒤
+    assert _paragraph_texts(pkg) == ["A", "B", "C", "E", "F"]
+    assert _region_spans(pkg)[:3] == [("OUTER", 1, 3), ("INNER", 2, 2), ("AFTER", 4, 4)]
+
+    remove_top_level_paragraph(pkg, SECTION, 0)  # 모든 region 앞
+    assert _paragraph_texts(pkg) == ["B", "C", "E", "F"]
+    assert _region_spans(pkg)[:3] == [("OUTER", 0, 2), ("INNER", 1, 1), ("AFTER", 3, 3)]
+
+    # 다른 섹션은 주소가 다르므로 좌표도 바이트도 건드리지 않는다.
+    assert _region_spans(pkg)[3] == ("OTHER", 0, 0)
+    assert pkg.entries["Contents/section1.xml"] == other
+
+
+def test_remove_top_level_paragraph_preserves_unrelated_regions() -> None:
+    """이름·계층·MetaTag 는 그대로다 — 삭제가 옮기는 것은 위치뿐."""
+    pkg = _marker_package()
+    append_bookmark_metatag(pkg, _region(pkg, "INNER"), "payload")
+    remove_top_level_paragraph(pkg, SECTION, 3)
+
+    regions = {region.name: region for region in resolve_bookmark_topology(pkg)}
+    assert regions["INNER"].meta_tags == ("payload",)
+    assert regions["INNER"].parent is not None
+    assert regions["INNER"].parent.name == "OUTER"
+    assert regions["AFTER"].parent is None
+    assert regions["OUTER"].parent is None
+
+
+def test_remove_top_level_paragraph_refuses_boundary_and_last_paragraph() -> None:
+    """경계 거절 3종 + 주소 오류 — 전부 loud 하고 entries 는 한 바이트도 안 바뀐다."""
+    boundary = _marker_package()
+    definition = _package(
+        _paragraph("<hp:secPr/>") + _paragraph("<hp:t>B</hp:t>")
+    )
+    single = _package(_paragraph("<hp:t>ONLY</hp:t>"))
+    cases = (
+        # 1. 대상 문단이 field 경계 ctrl 을 담는다(쌍이 깨진다).
+        (boundary, lambda: remove_top_level_paragraph(boundary, SECTION, 1), "fieldBegin"),
+        (boundary, lambda: remove_top_level_paragraph(boundary, SECTION, 4), "fieldEnd"),
+        # 2. 대상 문단이 섹션 정의를 담는다.
+        (definition, lambda: remove_top_level_paragraph(definition, SECTION, 0), "secPr"),
+        # 3. 지우면 본문 문단이 0 이 된다.
+        (single, lambda: remove_top_level_paragraph(single, SECTION, 0), "leave none"),
+        # 주소 자체가 틀린 경우도 같은 결로 거절한다.
+        (boundary, lambda: remove_top_level_paragraph(boundary, SECTION, 6), "invalid paragraph index"),
+        (boundary, lambda: remove_top_level_paragraph(boundary, SECTION, -1), "invalid paragraph index"),
+        (boundary, lambda: remove_top_level_paragraph(boundary, "missing.xml", 0), "section was not found"),
+    )
+    for pkg, call, message in cases:
+        before = dict(pkg.entries)
+        with pytest.raises(ValueError, match=message):
+            call()
+        assert pkg.entries == before
+
+    typed = _marker_package()
+    before = dict(typed.entries)
+    for call in (
+        lambda: remove_top_level_paragraph(typed, 1, 0),
+        lambda: remove_top_level_paragraph(typed, SECTION, True),
+        lambda: remove_top_level_paragraph(typed, SECTION, "0"),
+    ):
+        with pytest.raises(TypeError):
+            call()
+        assert typed.entries == before

@@ -29,6 +29,14 @@ from .text_extract import (
 _HS_NS = "http://www.hancom.co.kr/hwpml/2011/section"
 _HP = f"{{{_HP_NS}}}"
 _PAIRING_ID_START = 1_600_000_001
+#: Local names whose presence makes a paragraph undeletable.  Boundary controls
+#: pair across paragraphs, so dropping one half silently breaks the pairing that
+#: every resolver here depends on; the section/column definition is the section's
+#: own layout root.  Local names (not namespaced tags) so a non-native carrier of
+#: the same name is refused too, never silently deleted.
+_UNDELETABLE_LOCAL_NAMES = frozenset(
+    {"fieldBegin", "fieldEnd", "secPr", "colPr"}
+)
 
 
 def _object_metatags(node: etree._Element, entry: str) -> tuple[str, ...]:
@@ -540,6 +548,80 @@ def create_bookmark_region(
         raise ValueError("creating BOOKMARK changed existing native topology")
     package.entries[section] = data
     return created[0].region
+
+
+def remove_top_level_paragraph(
+    pkg: object, section: str, paragraph_index: int
+) -> None:
+    """Delete one section-direct ``hp:p`` that carries no structural meaning.
+
+    Addressing matches :func:`create_bookmark_region` exactly — a section entry
+    name plus the zero-based position among that section's direct ``hp:p``
+    children — so a caller that computed a range with one can delete with the
+    other without translating coordinates.
+
+    Every refusal is a loud ``ValueError`` and leaves ``package.entries``
+    untouched: the paragraph may not carry a field/BOOKMARK boundary control
+    (removing one half of a pair destroys the pairing), may not carry the section
+    or column definition, and the section must keep at least one paragraph.
+
+    Regions survive with their names, containment and MetaTags intact; only
+    positions move, and deterministically — a region entirely after the deleted
+    paragraph shifts by one, a region containing it loses one from its end, and a
+    region entirely before it does not move.  Any other observed change is a
+    postcondition failure and nothing is committed.
+    """
+    if not isinstance(section, str):
+        raise TypeError(f"section must be str: {type(section)!r}")
+    if isinstance(paragraph_index, bool) or not isinstance(paragraph_index, int):
+        raise TypeError(f"paragraph_index must be int: {type(paragraph_index)!r}")
+
+    package = require_package(pkg)
+    current = _resolve(package, require_removable=False)
+    sections = _parse_sections(package)
+    matches = [item for item in sections if item.entry == section]
+    if len(matches) != 1:
+        raise ValueError(f"HWPX section was not found: {section!r}")
+    parsed = matches[0]
+    paragraphs = [child for child in parsed.root if child.tag == f"{_HP}p"]
+    if paragraph_index < 0 or paragraph_index >= len(paragraphs):
+        raise ValueError(
+            f"invalid paragraph index {paragraph_index} "
+            f"for {len(paragraphs)} paragraphs"
+        )
+    if len(paragraphs) == 1:
+        raise ValueError(f"{section}: removing the paragraph would leave none")
+    target = paragraphs[paragraph_index]
+    for node in target.iter():
+        if not isinstance(node.tag, str):
+            continue
+        if local_name(node.tag) in _UNDELETABLE_LOCAL_NAMES:
+            raise ValueError(
+                f"{section}: paragraph {paragraph_index} carries "
+                f"{local_name(node.tag)} and cannot be removed"
+            )
+
+    wanted = _topology_shape(current, include_positions=True)
+    for item in current:
+        region = item.region
+        if region.section != section:
+            continue
+        value = list(wanted[_region_key(item)])
+        # The refusals above guarantee the deleted index is neither bound of any
+        # region, so "<" and "<=" split the three cases without overlap.
+        if paragraph_index < region.start_paragraph:
+            value[-2] = region.start_paragraph - 1
+        if paragraph_index <= region.end_paragraph:
+            value[-1] = region.end_paragraph - 1
+        wanted[_region_key(item)] = tuple(value)
+
+    parsed.root.remove(target)
+    data, after = _candidate_resolution(
+        package, section, parsed.root, require_removable=False
+    )
+    if _topology_shape(after, include_positions=True) != wanted:
+        raise ValueError("top-level paragraph removal postcondition failed")
+    package.entries[section] = data
 
 
 def _commit_metatag_mutation(
