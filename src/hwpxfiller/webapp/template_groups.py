@@ -57,6 +57,20 @@ def rel_key(path: "str | Path", root: "Path | None") -> str:
     return library_rel_key(path, root) or Path(path).name
 
 
+def norm_library_path(path: "str | Path") -> str:
+    """경로 정규화(대소문자·구분자·심볼릭 해소) — 같은 파일인지 대조하는 단일 형식.
+
+    tpl 채널의 라이브 집합 대조(:meth:`~hwpxfiller.webapp.screen_template.TemplateController._norm`)와
+    편집 세션의 변이 재정산(:meth:`~hwpxfiller.webapp.screen_editor.EditorController.reconcile_template_mutation`)
+    이 **같은 술어**를 써야 한다(#320): 한쪽이 원문 문자열로, 다른쪽이 resolve 로 대조하면
+    같은 파일이 두 형식으로 갈라져 재정산이 조용히 no-op 된다.
+    """
+    try:
+        return str(Path(path).resolve())
+    except OSError:  # 존재하지 않는 드라이브·권한 등 — 원문 형식으로 폴백(추측 없음)
+        return str(Path(path))
+
+
 class TemplateGroupModel:
     """한 매체의 템플릿 그룹 지정 + 접힘 상태. 설정에서 로드하고 변경 시 즉시 영속한다.
 

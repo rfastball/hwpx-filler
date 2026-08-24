@@ -139,6 +139,10 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 body.editor-open .nav,body.workbench-open .nav{display:none}
 .editor-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
 .editor-shell .back{align-self:flex-start}
+/* 인라인 알림(#323) — 셸 자식이라 세 탭이 공유한다. 본문(.wbody)은 flex:1 로 줄어들고
+   이 줄은 줄지 않는다: 통지가 스크롤 영역 안에 있으면 아래로 밀려 안 보인 채 남는다.
+   셸이 gap 을 이미 주므로 note 박스의 margin-top 은 여기서 걷는다. */
+.editor-shell > #save-msg{flex:none;margin-top:0}
 .editor-head{padding:0;border:0;background:none}
 .editor-head .eyebrow{font-size:var(--fs-caption);color:var(--a-muted);margin:0;letter-spacing:.02em}
 .ctxbanner{display:flex;flex-direction:column;gap:var(--sp-6)}

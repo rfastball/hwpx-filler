@@ -344,6 +344,13 @@ class WebFrontend:
         self.controllers["library"].session_guards = [
             self.controllers["job"].session_guard_for,
         ]
+        # 템플릿 bytes 변이 → 편집 세션 재정산(S8G-00 #320) — tpl 이 편집기보다 먼저 조립되고
+        # 편집기는 tpl 을 모르므로 여기서 사후 배선한다(workbench_open·session_guards 선례).
+        # 디스패치 액션이 아니라 **컨트롤러 간 seam** 이라 action registry 밖이다: 웹이 부르는
+        # 표면이 아니고, 원인 동사(tpl 변이)의 완료와 같은 줄에서 파이썬이 스스로 부른다.
+        self.controllers["tpl"].mutation_sinks.append(
+            self.controllers["editor"].reconcile_template_mutation
+        )
 
     def _controller(self, screen: str):
         try:

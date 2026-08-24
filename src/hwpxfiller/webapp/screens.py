@@ -30,6 +30,15 @@ from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 �
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
 
+# 템플릿 bytes 변이 통지 sink: (kind, path) → None. 통지하는 쪽(tpl 채널)과 받는 쪽(편집
+# 세션 재정산)이 **같은 어휘**를 써야 해서 여기 공용에 둔다(#320).
+MutationSink = Callable[[str, str], None]
+
+#: 그 kind 의 전수 — 파일이 제자리에서 **바뀜**(누름틀 변환·TXT 내용 저장) · **사라짐**
+#: (휴지통 이동) · **돌아옴**(복원) 셋뿐이다. 새 durable 변이 동사를 더하면 여기 이름을 먼저
+#: 정하고 그 성공 직후에 통지한다 — 이름 없는 kind 는 양쪽 다 시끄럽게 거절한다.
+MUTATION_KINDS: "tuple[str, ...]" = ("mutated", "deleted", "restored")
+
 # ------------------------------------------------- 등록 데이터(풀) 겨눔 공유 관문(#26/#6)
 # 나라장터 소스 동결 결정(2026-07-16): 내부망 API 미확인으로 매몰비용이 가장 큰 영역이라
 # 웹 표면에 노출하지 않는다(#10 frozen·#24 계류와 정합). 도메인 seam(data/nara.py·

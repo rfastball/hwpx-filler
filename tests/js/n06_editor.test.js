@@ -1,8 +1,10 @@
 /* Editor controller behavior: retries, late-bound ports, ordering, and draft races. */
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { createEditorController } from "../../frontend/src/screens/editor.ts";
+import { createEditorController, EditorScreen } from "../../frontend/src/screens/editor.ts";
 import { createScreenPorts } from "../../frontend/src/screens/ports.ts";
 import { createServiceHandoffPorts } from "../../frontend/src/ports/service_handoff.ts";
 import { createScreenRuntime } from "../../frontend/src/screens/runtime.ts";
@@ -278,6 +280,93 @@ test("이탈 3택의 stay 는 draft 를 파기하지 않고 붙잡는다(확인 
   assert.equal(actions.includes("discard_patch"), false, "머무르기가 patch 를 버리지 않는다");
   assert.equal(actions.includes("save"), false);
   assert.equal(h.names().includes("navigation.go"), false, "stay 는 이동 0");
+});
+
+/* ---------------- 인라인 알림 채널(#323) ---------------- */
+
+/* 편집기의 세 탭 전부에서 통지가 화면 안(`#save-msg`)에 서야 한다. 종전에는 파일 이름
+   탭에서만 인라인이었고 나머지 두 탭은 `window.alert` 로 샜다 — 모달 경보는 읽는 순간
+   사라지고, 그 뒤 화면은 왜 저장이 막혔는지 아무 말도 하지 않는다. */
+const NOTICE_SECTIONS = ["template", "binding", "filename"];
+
+function blockedSaveHarness(section) {
+  return harness({
+    initial: async () => snap({
+      section, is_draft: false, editing_origin: "공고서", dirty: true,
+      reachable: { template: true, binding: true, filename: true },
+    }),
+    call: async (_screen, action) => (
+      action === "save"
+        ? { ok: false, block_reason: "이름을 입력해야 저장할 수 있습니다.", blocked_field: "name" }
+        : {}
+    ),
+  });
+}
+
+for (const section of NOTICE_SECTIONS) {
+  test(`#323 '${section}' 탭의 저장 차단은 인라인으로 서고 window.alert 는 0 이다`, async () => {
+    const h = blockedSaveHarness(section);
+    await h.controller.init();
+
+    assert.equal(await h.controller.doSave({}), false);
+
+    const message = h.controller.viewModel.getSnapshot().saveMessage;
+    assert.ok(message, "차단 사유가 인라인 채널에 실려야 한다");
+    assert.equal(message.text, "이름을 입력해야 저장할 수 있습니다.");
+    assert.deepEqual(h.notices, [], "구조화 거절은 window.alert 로 새지 않는다");
+  });
+
+  test(`#323 '${section}' 탭 렌더에 #save-msg 노드가 실재한다`, async () => {
+    const h = blockedSaveHarness(section);
+    await h.controller.init();
+    await h.controller.doSave({});
+
+    const markup = renderToStaticMarkup(
+      createElement(EditorScreen, { controller: h.controller }),
+    );
+    assert.ok(markup.includes('id="save-msg"'),
+      `${section} 탭 본문에 통지가 갈 노드가 없다 — 셸 자리가 아니면 탭마다 증발한다`);
+    assert.ok(markup.includes("이름을 입력해야 저장할 수 있습니다."),
+      "노드는 있는데 문안이 안 실리면 사용자는 여전히 아무것도 못 읽는다");
+  });
+}
+
+test("#323 구조화 거절(전체 미사용 선차단)도 인라인 채널로 간다", async () => {
+  // `useNone` 의 확정 선차단은 던져진 예외가 아니라 **판정 결과**다. catch 백스톱
+  // (`deps.notify`)이 아니라 화면이 붙들 수 있는 자리로 가야 한다.
+  const h = harness({
+    initial: async () => snap({ section: "binding" }),
+    call: async (_screen, action) => (
+      action === "mapping_reset_stakes" ? { confirmed: 2, human: 2 } : {}
+    ),
+  });
+  await h.controller.init();
+
+  await h.controller.useNone();
+
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("확정한 매핑 2개"));
+  assert.deepEqual(h.notices, []);
+  const actions = h.trace.filter((row) => row[0] === "dispatch").map((row) => row[2]);
+  assert.equal(actions.includes("use_none"), false, "선차단이므로 파괴 동사는 안 나간다");
+});
+
+test("#323 던져진 예외는 여전히 catch 백스톱(window.alert)이 받는다", async () => {
+  // 인라인 채널이 **모든** 통지를 삼키면 반대 결함이 된다: 화면이 그릴 수 없는 실패
+  // (발신 자체가 죽은 경우)를 조용히 잃는다. 백스톱은 남는다.
+  const h = harness({
+    initial: async () => snap({ section: "binding" }),
+    call: async (_screen, action) => {
+      if (action === "save") throw new Error("브리지 단절");
+      return {};
+    },
+  });
+  await h.controller.init();
+
+  assert.equal(await h.controller.doSave({}), false);
+  assert.equal(h.controller.viewModel.getSnapshot().saveMessage, null);
+  assert.equal(h.notices.length, 1);
+  assert.ok(h.notices[0].includes("브리지 단절"));
 });
 
 /* ---------------- ⑤ 통로는 객체째 ---------------- */

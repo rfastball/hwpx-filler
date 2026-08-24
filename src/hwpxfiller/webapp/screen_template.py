@@ -36,8 +36,13 @@ from ..external.template_files import TemplateFileStore
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import TemplateManagerViewModel
-from .screens import PushSink
-from .template_groups import TemplateGroupModel, rel_key, validate_template_name
+from .screens import MUTATION_KINDS, MutationSink, PushSink
+from .template_groups import (
+    TemplateGroupModel,
+    norm_library_path,
+    rel_key,
+    validate_template_name,
+)
 
 # HWPX 미리보기 액션은 작업 위저드와 중복이라 링2에서 노출하지 않는다(#13 10F2FF98-B).
 _HIDDEN_ACTIONS = frozenset({"preview"})
@@ -92,10 +97,26 @@ class TemplateController:
         # 보존해야 한다(#269 리뷰): 삭제 직후 스냅샷 푸시의 reconcile 이 사라진 키의 그룹 지정을
         # 영구 제거하므로, 복원 시 파일만 돌아오면 조용히 「그룹 없음」이 된다.
         self._deleted_template_slot: "tuple[str, Path, Path, str] | None" = None
+        # 템플릿 bytes 변이 통지 sink(S8G-00 #320) — 이 채널이 파일을 실제로 바꾼 **직후**,
+        # 같은 파일을 든 다른 표면(편집 세션)이 스스로 재정산할 수 있게 알린다. 서명은
+        # ``(kind, path)`` 이고 kind 는 :data:`MUTATION_KINDS` 셋 중 하나다. 배선은 앱
+        # 조립부 한 줄(app.py)이고 이 컨트롤러는 상대의 형체를 모른다(handoff callable).
+        self.mutation_sinks: "list[MutationSink]" = []
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
         self._push_sink(self.name, self.snapshot())
+
+    def _notify_mutation(self, kind: str, path: "str | Path") -> None:
+        """durable 변이 성공 직후 통지 — **예외를 삼키지 않는다**(confirm-or-alarm).
+
+        재정산이 실패했는데 변이가 성공을 보고하면, 편집 세션은 사라졌거나 바뀐 파일을
+        든 채 조용히 살아남는다. 던지면 dispatch 가 그대로 표면화한다.
+        """
+        if kind not in MUTATION_KINDS:  # 오타는 시끄럽게(미지 kind 는 상대가 무시한다)
+            raise ValueError(f"알 수 없는 템플릿 변이 종류: {kind!r}")
+        for sink in self.mutation_sinks:
+            sink(kind, str(path))
 
     def _set_result(self, line) -> None:
         """ResultLine(str 하위형, ``.level`` 보유) 또는 (text, level) 을 결과로 성형."""
@@ -397,6 +418,8 @@ class TemplateController:
         if p.get("confirm"):
             report = self.vm.apply_fieldize(path)
             self._set_result(self.vm.format_compile_result(path, report))
+            # 제자리 변환 = bytes 변이. 같은 파일을 든 편집 세션은 스키마가 방금 달라졌다.
+            self._notify_mutation("mutated", path)
             return {"ok": True, "applied": True}
         preview = self.vm.scan_preview(path)
         if not preview.has_compilable:
@@ -468,11 +491,11 @@ class TemplateController:
 
     @staticmethod
     def _norm(path: "str | Path") -> str:
-        """경로 정규화(대소문자·구분자·심볼릭 해소) — 라이브 집합 대조용 단일 형식."""
-        try:
-            return str(Path(path).resolve())
-        except OSError:
-            return str(Path(path))
+        """경로 정규화 — 라이브 집합 대조용 단일 형식(:func:`norm_library_path` 위임).
+
+        편집 세션 재정산(#320)이 같은 술어를 써야 해서 몸통은 공용 모듈이 소유한다.
+        """
+        return norm_library_path(path)
 
     def _live_paths(self, media: str) -> "set[str]":
         """이 매체 라이브러리의 현재 목록에 실재하는 파일 경로 집합(정규화) — 삭제 대상 검증용."""
@@ -511,6 +534,9 @@ class TemplateController:
         # 이 자리는 비운다(_do_refresh 와 같은 초기화 — 삭제 경로에만 적용).
         self.result_text = ""
         self.result_level = "muted"
+        # 세션이 든 템플릿이 사라졌다 — 편집기가 스스로 시끄러워진다(#320). 통지는 이동이
+        # **끝난 뒤**다: 실패한 삭제로 남의 세션을 놀라게 하지 않는다.
+        self._notify_mutation("deleted", path)
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:
@@ -559,6 +585,8 @@ class TemplateController:
         if media == "hwpx":
             self.vm.refresh()
         self._set_result(_ok(f"템플릿을 복원했습니다: {path.stem}"))
+        # 같은 경로로 돌아왔다 — 삭제 통지로 danger 를 띄운 편집 세션이 여기서 되살아난다.
+        self._notify_mutation("restored", path)
         return {"ok": True, "name": path.stem}
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
@@ -579,6 +607,8 @@ class TemplateController:
         """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5)."""
         path = self._files.edit_text(p["path"], p.get("content", ""))
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
+        # 내용이 바뀌면 토큰 집합이 바뀐다 — 편집 세션의 스키마가 방금 낡았다(#320).
+        self._notify_mutation("mutated", path)
         return {"ok": True}
 
     def _do_txt_content(self, p: dict) -> dict:

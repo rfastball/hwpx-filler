@@ -290,6 +290,54 @@ function editorBase(overrides) {
   }, overrides || {});
 }
 
+/** 편집기가 통지하는 세 탭(#323) — 노드가 서야 하는 자리의 전수. */
+const NOTICE_SECTIONS = Object.freeze(["template", "binding", "filename"]);
+
+/** 인라인 알림 채널 측정(#323) — 노드 실재(세 탭) · 구조화 거절의 **가시** 인라인 · alert 0.
+ *
+ *  `save` 만 스텁해 「막힌 저장」을 실제로 태운다. 값을 직접 심지 않는 이유는 그러면
+ *  이 프로브가 자기가 심은 값을 되읽는 무동작 측정이 되기 때문이다 — 클릭 → 판정 →
+ *  patch → 커밋의 실 경로를 지나야 「어느 탭에서 어디로 가는가」가 관측된다. */
+async function measureNoticeChannel(ctx, baseSnap, saveBtn) {
+  const BLOCKED = "저장 게이트 대역: 인라인으로 서야 합니다.";
+  const out = { present: {}, alerts: 0 };
+  let alerts = 0;
+  const realAlert = ctx.win.alert;
+  ctx.win.alert = function () { alerts += 1; };
+  const stub = stubBridgeCall(ctx, (real) => function (screen, action, payload) {
+    if (screen === "editor" && action === "save") {
+      return Promise.resolve({ ok: false, block_reason: BLOCKED });
+    }
+    return real(screen, action, payload);
+  });
+  try {
+    for (const section of NOTICE_SECTIONS) {
+      ctx.push("editor", Object.assign({}, baseSnap, { section, dirty: true }));
+      await settleRender(ctx);
+      out.present[section] = !!byId(ctx, "save-msg");
+    }
+    const save = saveBtn();
+    out.save_enabled = !!(save && !save.disabled);
+    if (save) save.click();
+    await ctx.sleep(80);                              // 저장 왕복 + patch 커밋
+    await settleRender(ctx);
+    const node = byId(ctx, "save-msg");
+    out.text = textOf(node);
+    out.matches_block_reason = out.text.indexOf(BLOCKED) >= 0;
+    /* 존재와 가시는 다르다 — 노드가 셸에 있어도 본문 재렌더가 덮거나 display:none 이면
+       사용자는 아무것도 못 읽는다(프로브 click 이 hidden 을 통과하는 것과 같은 함정). */
+    out.visible = !!node && !isHidden(ctx, node) && !!node.offsetParent;
+    /* 셸 자리 확인 — 본문(`#editor-body`) 안이면 탭 전환·재렌더에 다시 증발한다. */
+    const body = byId(ctx, "editor-body");
+    out.inside_body = !!(node && body && body.contains(node));
+  } finally {
+    stub.restore();
+    ctx.win.alert = realAlert;
+  }
+  out.alerts = alerts;
+  return out;
+}
+
 /* ────────────────────────── 프로브 정의 ────────────────────────── */
 
 /** 클러스터 D 의 프로브 전수를 **정의 데이터**로 낸다. 부작용 없음 — 부르기 전엔 아무 일도
@@ -1628,6 +1676,12 @@ export function createEditorWorkbenchDataProbes() {
             constEl = ctx.doc.querySelector('#editor-body [data-act="row-const"]');
             if (constEl) constEl.blur();
           }
+          /* ⑧ 인라인 알림 채널(#323) — 통지가 갈 자리(`#save-msg`)가 **세 탭 모두**에 서고,
+             구조화 거절이 거기 **보이게** 실리며, `window.alert` 는 한 번도 안 뜬다.
+             종전에는 파일 이름 탭 본문에만 노드가 있어 나머지 두 탭의 통지가 모달 경보로
+             샜다 — 정적 계약은 노드의 존재만 보고 **어느 탭에서** 서는지는 못 본다.
+             `click` 은 hidden 도 통과하므로 가시성을 계산 스타일 + offsetParent 로 명시한다. */
+          out.notice_channel = await measureNoticeChannel(ctx, rowSnap, saveBtn);
           out.error = null;
         } catch (thrown) {
           ctx.fail(ERROR_CODES.PROBE_THREW, String((thrown && thrown.message) || thrown));
