@@ -281,7 +281,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "delete": _schema("media path", "confirm"),
         "undo_delete": _schema(),
         "txt_new": _schema("name content"),
-        "txt_edit": _schema("path content"),
+        # 저장은 편집 창이 열릴 때 읽은 원문(`baseline`)을 함께 싣는다 — 그 사이 밖에서
+        # 바뀌었으면 확인 왕복(`confirm_fingerprint` 2차 호출)으로만 덮는다(#216 이월 2).
+        "txt_edit": _schema("path content baseline", "confirm_fingerprint"),
         "txt_content": _schema("path"),
     },
 }

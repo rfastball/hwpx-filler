@@ -235,7 +235,7 @@ export const SCREEN_ACTIONS = {
     delete: { required: ["media", "path"], optional: ["confirm"] },
     undo_delete: { required: [], optional: [] },
     txt_new: { required: ["content", "name"], optional: [] },
-    txt_edit: { required: ["content", "path"], optional: [] },
+    txt_edit: { required: ["baseline", "content", "path"], optional: ["confirm_fingerprint"] },
     txt_content: { required: ["path"], optional: [] },
   },
 } as const;

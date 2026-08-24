@@ -40,6 +40,14 @@ def _txt(frontend, name: str, body: str) -> Path:
     return frontend.controllers["tpl"].text_registry.directory / f"{name}.txt"
 
 
+def _txt_edit(frontend, path: Path, body: str):
+    """TXT 내용 저장 — 편집 창이 연 원문을 ``baseline`` 으로 싣는다(드리프트 없음 · #857)."""
+    return frontend.controllers["tpl"].dispatch(
+        "txt_edit",
+        {"path": str(path), "content": body, "baseline": path.read_text(encoding="utf-8")},
+    )
+
+
 def _raw_hwpx(name: str = "계약서") -> Path:
     """평문 ``{{토큰}}`` 만 든 미컴파일 HWPX 를 라이브러리 루트에 놓는다(compile 대상)."""
     sec = (f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{_TOKEN_BODY}</hs:sec>').encode("utf-8")
@@ -85,9 +93,7 @@ def test_txt_edit_reruns_the_live_editor_session_schema_and_mapping(tmp_path):
     assert _field_names(editor) == ["수신", "제목"]
     assert _row(editor, "수신")["confirmed"] is True
 
-    fe.controllers["tpl"].dispatch(
-        "txt_edit", {"path": str(path), "content": "수신: {{수신}}\n제목: {{제목}}\n담당: {{담당}}"}
-    )
+    _txt_edit(fe, path, "수신: {{수신}}\n제목: {{제목}}\n담당: {{담당}}")
 
     assert _field_names(editor) == ["수신", "제목", "담당"]
     snap = editor.snapshot()
@@ -258,9 +264,7 @@ def test_mutation_of_another_template_leaves_the_session_untouched(tmp_path):
     pushes: list = []
     editor._push_sink = lambda screen, snap: pushes.append((screen, snap))
 
-    fe.controllers["tpl"].dispatch(
-        "txt_edit", {"path": str(other), "content": "안건: {{안건}}\n장소: {{장소}}"}
-    )
+    _txt_edit(fe, other, "안건: {{안건}}\n장소: {{장소}}")
     fe.controllers["tpl"].dispatch("delete", {"media": "txt", "path": str(other)})
 
     assert editor.snapshot() == before
@@ -293,7 +297,7 @@ def test_sink_failure_is_not_swallowed_by_the_mutating_verb(tmp_path):
 
     fe.controllers["tpl"].mutation_sinks.append(explode)
     with pytest.raises(RuntimeError, match="재정산 실패"):
-        fe.controllers["tpl"].dispatch("txt_edit", {"path": str(path), "content": "{{수신}}"})
+        _txt_edit(fe, path, "{{수신}}")
 
 
 # ==================================================== ⑦ RAW 강등 — 낡은 모델 생존 금지
@@ -305,9 +309,7 @@ def test_raw_downgrade_drops_the_stale_model_loudly(tmp_path):
     editor.dispatch("set_name", {"name": "발주 기안"})
     assert editor.snapshot()["is_complete"] is True
 
-    fe.controllers["tpl"].dispatch(
-        "txt_edit", {"path": str(path), "content": "토큰 없는 안내문"}
-    )
+    _txt_edit(fe, path, "토큰 없는 안내문")
 
     snap = editor.snapshot()
     assert editor.model is None and editor.schema is None
