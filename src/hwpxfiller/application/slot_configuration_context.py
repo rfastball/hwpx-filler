@@ -217,6 +217,23 @@ def _decode_structure_v4(payload: Mapping[str, Any]) -> TemplateStructure:
     return _decode_product_structure(product, schema="v4", include_labels=True)
 
 
+def _decode_structure_txt_v1(payload: Mapping[str, Any]) -> TemplateStructure:
+    """txt-structure-projection-v1 payload → TemplateStructure(label 포함 product structure).
+
+    TXT profile(S10-02 #859)은 composition fact 를 내지 않으므로 payload 는 v2/v4 처럼
+    ``product_structure`` 로 한 겹 싸이지 않고, ``project_structure`` 가 낸 flat product
+    projection 그대로다. label 은 실린다 — TXT projection schema 는
+    :data:`~hwpxfiller.application.qualification_evidence._LABEL_PROJECTION_SCHEMAS` 소속이라
+    Slot/Option 의 canonical label 이 payload 에 있고, 그것을 안 읽으면 사용자가 저작한 이름이
+    조용히 증발해 화면에 내부 ID 가 뜬다.
+
+    shape 가 지금 v3 와 같다고 v3 decoder 를 **같은 이름으로 재등록하지 않는다**: schema 이름을
+    가른 이유가 좌표계·자격 규칙의 차이라, 한쪽 payload 가 바뀔 때 다른 쪽이 조용히 따라가면
+    안 된다. 공유하는 것은 성형 helper 하나뿐이다.
+    """
+    return _decode_product_structure(payload, schema="txt-v1", include_labels=True)
+
+
 class StructureProjectionDecoderRegistry:
     """immutable projection-schema → decoder registry — unknown schema 를 latest 로 안 푼다."""
 
@@ -246,6 +263,7 @@ DEFAULT_STRUCTURE_DECODER_REGISTRY = StructureProjectionDecoderRegistry(
         ("hwpx-structure-projection-v2", _decode_structure_v2),
         ("hwpx-structure-projection-v3", _decode_structure_v3),
         ("hwpx-structure-projection-v4", _decode_structure_v4),
+        ("txt-structure-projection-v1", _decode_structure_txt_v1),
     ]
 )
 

@@ -35,6 +35,7 @@ from ..domain.job import Job, work_mode
 from ..external.job_store import JobRegistry, content_fingerprint
 from ..domain.mapping import TYPES, MappingProfile
 from ..domain.text_render import template_fields
+from ..domain.text_structure import project_selected_text, scan_text_structure
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..gui.filter_state import sniff_column_kinds
 from ..gui.mapping_state import MappingModel
@@ -60,6 +61,24 @@ REVIEW_COPIED = "copied"
 REVIEW_RECHECK = "recheck"
 
 _VIEWS = ("filled", "raw")
+
+#: slot-bearing TXT 의 복사 차단 사유(S10-03 #860). ``slotless_run_bridge`` 의
+#: ``STRUCTURE_NOTATION_UNCOMPILED`` 와 **같은 서사**다: 변환되지 않은 구간 표기를 그대로
+#: 내보내면 산출물은 고르지 않은 선택지와 마커까지 실린 구조적으로 틀린 문서가 된다.
+#: 링1 단일 원천 :data:`~hwpxfiller.gui.mapping_state.STRUCTURE_NOTATION_BLOCK_MESSAGE` 를
+#: 재사용하지 **않는** 이유는 그 문장이 지목하는 조치("'템플릿' 탭의 '누름틀·구간 변환'")가
+#: TXT 에는 아직 없기 때문이다 — 할 수 없는 일을 시키는 문안은 사유를 말하지 않은 것과 같다.
+#: (TXT 물질화는 S10-04 소관이고, 그때 이 상수도 함께 걷힌다.)
+COPY_BLOCK_STRUCTURE_NOTATION = (
+    "구간 표기가 아직 변환되지 않아 복사할 수 없습니다. "
+    "지금은 '포함할 내용'에서 고른 결과를 화면으로 확인만 할 수 있습니다."
+)
+
+#: 선택을 조회하지 못했을 때의 상시 재진술. 조용히 원문으로 접지 않는다(복사는 어차피 차단).
+SELECTION_UNAVAILABLE_NOTE = (
+    "포함할 내용을 불러오지 못해 템플릿 원문 그대로 보여 줍니다. "
+    "'문서 만들기'에서 템플릿을 다시 확인하세요."
+)
 
 
 def _row_own(row) -> str:
@@ -105,10 +124,16 @@ class WorkbenchController(MappingVerbsMixin):
         *,
         clock: Callable[[], datetime],
         target_font,
+        content_selection: "Callable[[str], dict[str, frozenset[str]]] | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
+        # 「포함할 내용」(S4 Slot Option 선택) **조회 포트**(S10-03 #860). 앱 조립이 Slot
+        # Configuration Product 의 read-only projection 에 결선한다 — 이 컨트롤러는 선택을
+        # 판정하지도, 저장하지도, 그 형체를 알지도 않는다(투영 ≠ 실행 권위, S-9). 미주입이면
+        # slot-bearing 템플릿의 투영이 서지 않고 그 사실이 사유로 남는다(조용한 원문 폴백 0).
+        self._content_selection = content_selection
         # 대상 글꼴은 앱 전역 영속 선언(TargetFontSetting — 「기안」 사망으로 이 화면이
         # 유일 소비자, §10.15.15 판정 E). 앱 조립이 단일 인스턴스를 주입한다.
         self._font = target_font
@@ -142,6 +167,15 @@ class WorkbenchController(MappingVerbsMixin):
         self.job_name = ""
         self.base_job: "Job | None" = None
         self.template_text = ""
+        # 구간 표기 스캔은 **진입 시 1회**다(S10-03 #860). 세션 텍스트가 고정 사본이므로 매
+        # 스냅샷마다 다시 훑을 것이 없고, 복사 admission 과 투영이 **같은 스캔 하나**를 봐야
+        # 「버튼이 닫힌 이유」와 「카드가 그런 이유」가 갈리지 않는다.
+        self._marker_count = 0
+        # 선택을 반영한 카드용 텍스트. slotless(마커 0)이면 원문과 같은 값이라 그 경로는
+        # 이 슬라이스로 **한 줄도 달라지지 않는다**.
+        self._card_text = ""
+        # 투영이 서지 못한 사유(없으면 ``""``) — 스냅샷이 상시 재진술한다.
+        self._selection_note = ""
         self.records: "list[dict]" = []
         self.source_rows: "list[int]" = []
         self.mapping: "MappingModel | None" = None
@@ -172,8 +206,14 @@ class WorkbenchController(MappingVerbsMixin):
         그대로다 — 반쪽 세션으로 화면이 서지 않는다(「기안」 `_restore_from_job` 과 같은 규율).
         파일 읽기는 잠금 **밖**이다: 실패해도 바꾸는 것이 없고, 느린 I/O 로 진행 중인 복사
         거래를 잡아 둘 이유도 없다. 잠그는 것은 교체 자체다.
+
+        구간 표기 스캔과 「포함할 내용」 투영도 여기서 **한 번** 끝난다(S10-03 #860) — 세션은
+        고정 사본이므로 이후 스냅샷마다 다시 훑거나 다시 조회할 근거가 없다. 선택 조회 실패는
+        예외로 올리지 않는다: 원문을 그대로 들고 사유를 남기면 화면은 서고 복사는 어차피
+        차단된다(반쪽 세션보다 정직한 세션이 낫다).
         """
         text = Path(job.template_path).read_text(encoding="utf-8")
+        card_text_source, selection_note, marker_count = self._project_selection(job, text)
         records = [dict(rec) for _, rec in rows]        # 고정 사본(§13-13) — 바깥과 공유 금지
         source_fields = list(records[0].keys()) if records else []
         mapping = MappingModel.from_field_names(
@@ -189,6 +229,9 @@ class WorkbenchController(MappingVerbsMixin):
             self.job_name = job.name
             self.base_job = job
             self.template_text = text
+            self._card_text = card_text_source
+            self._selection_note = selection_note
+            self._marker_count = marker_count
             self.records = records
             self.source_rows = [i + 1 for i, _ in rows]  # 1-based 원본 행 번호(정체 병기용)
             self.mapping = mapping
@@ -200,6 +243,35 @@ class WorkbenchController(MappingVerbsMixin):
                 context=EditContext(work=job.name), base=job, section=SECTION_BINDING,
             )
             self._push()
+
+    def _project_selection(self, job: Job, text: str) -> "tuple[str, str, int]":
+        """(카드용 텍스트, 투영 실패 사유, 마커 총수) — 잠금 밖 순수 조립(S10-03 #860).
+
+        **slotless 는 아무 일도 일어나지 않는다**: 마커가 0 건이면 선택을 조회하지도, 투영을
+        시도하지도 않고 원문 그대로다. 그 경로가 이 슬라이스의 회귀 축이다.
+
+        slot-bearing 이면 「포함할 내용」을 조회해 고른 선택만 남긴 텍스트를 만든다. 판정은
+        전부 저쪽(S4 Product)의 것이고 여기는 **읽어서 접기만** 한다 — 이 컨트롤러가 선택을
+        다시 판정하면 같은 상태를 두 곳이 결정하게 된다. 조회·투영이 실패하면 원문을 들되
+        사유를 함께 낸다(조용한 폴백 0).
+        """
+        scan = scan_text_structure(text)
+        if not scan.summary.markers:
+            return text, "", 0
+        if self._content_selection is None:
+            return text, SELECTION_UNAVAILABLE_NOTE, scan.summary.markers
+        try:
+            selected = self._content_selection(job.name)
+            return (
+                project_selected_text(text, scan, selected),
+                "",
+                scan.summary.markers,
+            )
+        except (ValueError, OSError):
+            # 표기 오류(`TextStructureProjectionError` 는 ValueError 다)와 조회 실패(포트가
+            # 낸 ValueError·홈 손상)를 같은 처분으로 닫는다: 둘 다 「지금 화면이 고른 내용을
+            # 말할 수 없다」이고, 사용자가 할 일도 같다(템플릿을 다시 확인).
+            return text, SELECTION_UNAVAILABLE_NOTE, scan.summary.markers
 
     def close(self) -> None:
         """세션 파기 — 이탈이 성사된 뒤 호출한다(가드는 웹→`leave_guard` 가 먼저 본다)."""
@@ -317,6 +389,20 @@ class WorkbenchController(MappingVerbsMixin):
             else REVIEW_RECHECK
         )
 
+    def _notice(self) -> dict:
+        """스냅샷 알림 — **사건 노트**(변이 1회분)와 **상시 사실**을 한 채널로 낸다.
+
+        투영 실패는 사건이 아니라 이 세션 내내 참인 사실이라, `dispatch` 가 매 변이마다 비우는
+        `notice_text` 에만 실으면 다음 타건에 사유가 증발한다(그러면 화면은 원문을 그리면서
+        아무 말도 하지 않는다). 그래서 파생으로 낸다 — 방금 일어난 사건이 우선이고, 없으면
+        상시 사실이 자리를 지킨다.
+        """
+        if self.notice_text:
+            return {"text": self.notice_text, "level": self.notice_level}
+        if self._selection_note:
+            return {"text": self._selection_note, "level": "warn"}
+        return {"text": "", "level": self.notice_level}
+
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
         base = {
@@ -325,7 +411,7 @@ class WorkbenchController(MappingVerbsMixin):
             "mode_label": work_mode_label(WORK_MODE_TEXT),
             "view": self.view,
             "target_font": self._font.value,
-            "notice": {"text": self.notice_text, "level": self.notice_level},
+            "notice": self._notice(),
         }
         if not self.is_open or self.mapping is None:
             # 세션 없음 = 빈 골격. 표면은 이 상태에서 화면을 세우지 않는다(라우팅 가드).
@@ -338,7 +424,7 @@ class WorkbenchController(MappingVerbsMixin):
 
         record = self._current_record()
         rendered = render_card(
-            self.template_text, self.mapping, record, fullwidth=self._fullwidth
+            self._card_text, self.mapping, record, fullwidth=self._fullwidth
         )
         report = rendered.report
         cur = self.queue.current
@@ -459,7 +545,16 @@ class WorkbenchController(MappingVerbsMixin):
         보이는데 클립보드엔 값이 채워진 문장이 들어간다 — 원문을 복사한 줄 알고 붙여넣은
         사람은 잘못된 문서를 만든다. 이 화면의 복사는 **채운 모습 하나**이므로, 원문 보기에선
         조용히 다른 것을 주지 않고 **복사하지 않고 사유를 말한다**(confirm-or-alarm).
+
+        **구간 표기가 남아 있으면 보기와 무관하게 막는다**(S10-03 #860). 화면은 고른 내용만
+        그리지만 그 접기는 **투영**이고, 클립보드로 나가는 것은 이 세션이 실제로 물질화한
+        문서가 아니다(투영 ≠ 실행 권위). 여기를 열면 고르지 않은 선택지와 마커 텍스트가 그대로
+        붙여넣어진다 — ``admit_slotless_run`` 이 ``STRUCTURE_NOTATION_UNCOMPILED`` 로 막는 것과
+        같은 결함이고, 그래서 같은 서사로 막는다. 판정 원천은 진입 시 스캔 하나다(재스캔 0 —
+        세션 텍스트는 고정 사본이라 다시 세면 같은 값이고, 두 번 세면 값이 갈릴 자리만 생긴다).
         """
+        if self._marker_count:
+            return COPY_BLOCK_STRUCTURE_NOTATION
         if self.view != "filled":
             return "원문 보기에서는 복사하지 않습니다. 「채운 모습」으로 바꾼 뒤 복사하세요."
         return ""
@@ -550,7 +645,7 @@ class WorkbenchController(MappingVerbsMixin):
         self._require_open()
         assert self.mapping is not None
         rendered = render_card(
-            self.template_text, self.mapping, self._current_record(),
+            self._card_text, self.mapping, self._current_record(),
             fullwidth=self._fullwidth,
         )
         cur = self.queue.current
@@ -728,7 +823,7 @@ class WorkbenchController(MappingVerbsMixin):
         """작업점 카드의 (클립보드 텍스트, 리포트) — 카드와 **같은 통로**(링1 공유)."""
         assert self.mapping is not None
         rendered = render_card(
-            self.template_text, self.mapping, self._current_record(),
+            self._card_text, self.mapping, self._current_record(),
             fullwidth=self._fullwidth,
         )
         return card_text(rendered.segments), rendered.report

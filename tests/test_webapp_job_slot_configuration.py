@@ -453,3 +453,182 @@ def test_cloned_slot_bearing_work_reaches_initialization_through_template_check(
     assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
     assert reg.load(clone).authority_id != ""
     assert ctrl.snapshot()["slot_configuration"]["initialized"] is True
+
+
+# ── S10-03(#860): 「포함할 내용」이 TXT 작업에서도 선다 ────────────────────────────────────
+# 판정·token·projection·Preset 은 위 hwpx 인수와 **같은 기계**가 진다(S4 아래 어디에도 매체가
+# 없다). 여기가 재는 것은 그 기계가 TXT 매체에서 **도달 가능한가** 하나다: 존이 열리고,
+# durable 선택 왕복이 성사되고, 라벨이 저작한 이름 그대로 온다.
+
+#: 항목 1(선택 2) + 항목 밖·직속 문구를 가진 TXT 템플릿. 좌표는 줄 번호다(#856 D2).
+_TXT_SLOT_TEMPLATE = "\n".join(
+    [
+        "수신: {{수신}}",
+        "{{#항목 첨부 첨부 서류}}",
+        "담당자: {{담당자}}",
+        "{{#선택 계약서 계약서}}",
+        "계약서를 첨부합니다. {{건명}}",
+        "{{/선택}}",
+        "{{#선택 견적서 견적서}}",
+        "견적서를 첨부합니다.",
+        "{{/선택}}",
+        "{{/항목}}",
+        "끝.",
+        "",
+    ]
+)
+
+
+def _txt_slot_bearing_controller(tmp_path: Path, *, body: str = _TXT_SLOT_TEMPLATE):
+    """구간 표기가 있는 TXT 작업으로 세운 헤드리스 컨트롤러 — hwpx 짝과 같은 조립.
+
+    seal 서비스는 주입하지 않는다: 자동 확인(S5)은 HWPX 실행 계획의 축이고 TXT 물질화는
+    S10-04 소관이다(미주입 = 표면 부재의 정직한 얼굴).
+    """
+    tpl = tmp_path / "안내문.txt"
+    tpl.write_text(body, encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="안내문", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    ctrl = JobController(
+        reg, lambda s, snap: None,
+        clock=_clock(),
+        engine=make_hwpx_engine(),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=threading.Lock(),
+        file_source_factory=source_for_path,
+        pool_source_factory=source_from_pool_item,
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
+        template_change=coord,
+        slot_configuration=SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock()),
+        workbench_observation=WorkbenchObservationProduct(),
+    )
+    ctrl.dispatch("select_job", {"name": "안내문"})
+    ctrl.dispatch("template_check", {"request_id": "k1"})
+    return ctrl, reg, tpl
+
+
+def test_txt_work_opens_the_content_selection_zone_with_authored_labels(
+    tmp_path: Path,
+) -> None:
+    ctrl, _reg, _tpl = _txt_slot_bearing_controller(tmp_path)
+
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is True and zone["error"] is None
+    assert zone["current_view"]["view_status"] == "CURRENT"
+    assert zone["current_view"]["configuration_status"] == "NEEDS_SELECTION"
+
+    slots = zone["current_view"]["projection"]["slots"]
+    assert [s["slot_id"] for s in slots] == ["첨부"]
+    # 저작한 이름이 그대로 온다 — 라벨을 잃으면 화면에 내부 ID 가 뜬다.
+    assert slots[0]["display_text"] == "첨부 서류"
+    assert [(o["option_id"], o["display_text"]) for o in slots[0]["options"]] == [
+        ("계약서", "계약서"), ("견적서", "견적서"),
+    ]
+    # 필드 소유권도 줄 좌표에서 유도된 그대로다(항목 직속 = 공유, 선택 안 = 그 선택).
+    assert slots[0]["shared_field_ids"] == ("담당자",)
+    assert slots[0]["options"][0]["structurally_associated_field_ids"] == ("건명",)
+
+
+def test_txt_selection_round_trip_is_durable_without_extra_machinery(
+    tmp_path: Path,
+) -> None:
+    """선택·해제가 hwpx 와 **같은 dispatch 동사**로 성사되고 스냅샷에 남는다(추가 기계 0)."""
+    ctrl, _reg, _tpl = _txt_slot_bearing_controller(tmp_path)
+    token = ctrl.dispatch("open_slot_configuration", {})["current_view"][
+        "new_configuration_token"
+    ]
+
+    picked = ctrl.dispatch("select_slot_option", {
+        "configuration_token": token, "slot_id": "첨부",
+        "option_id": "견적서", "request_id": "r1",
+    })
+    assert picked["mutation_outcome"]["outcome_code"] == "CHANGED"
+    view = picked["current_view"]["projection"]
+    assert view["configuration_status"] == "SLOT_SELECTIONS_COMPLETE"
+    assert view["slots"][0]["effective_option_ids"] == ("견적서",)
+    # 스냅샷(별도 조회)도 같은 사실을 본다 — durable 이지 세션 사본이 아니다.
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["current_view"]["projection"]["slots"][0]["effective_option_ids"] == ("견적서",)
+
+    fresh = picked["current_view"]["new_configuration_token"]
+    cleared = ctrl.dispatch("clear_slot_selection", {
+        "configuration_token": fresh, "slot_id": "첨부", "request_id": "r2",
+    })
+    assert cleared["mutation_outcome"]["changed"] is True
+    assert cleared["current_view"]["projection"]["slots"][0]["effective_option_ids"] == ()
+
+
+def test_slotless_txt_work_supports_the_zone_with_nothing_to_choose(tmp_path: Path) -> None:
+    """마커 없는 기존 TXT 작업은 존을 열되 고를 것이 없다 — 회귀 축(무선언 = 무선택)."""
+    ctrl, _reg, _tpl = _txt_slot_bearing_controller(
+        tmp_path, body="수신: {{수신}}\n건명: {{건명}}\n"
+    )
+    zone = ctrl.snapshot()["slot_configuration"]
+    assert zone["supported"] is True and zone["initialized"] is True
+    assert zone["current_view"]["projection"]["slots"] == ()
+    assert zone["current_view"]["configuration_status"] == "NOT_APPLICABLE"
+
+
+def test_txt_check_seats_the_template_application_identity(tmp_path: Path) -> None:
+    """S10-02 잔여 seam — 실행뷰가 없어도 확인이 세운 정체를 세션이 받는다(#860)."""
+    tpl = tmp_path / "안내문.txt"
+    tpl.write_text(_TXT_SLOT_TEMPLATE, encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="안내문", template_path=str(tpl)))
+    coord = TemplateChangeCoordinator(reg, root=_root(tmp_path), clock=_clock())
+    ctrl = JobController(
+        reg, lambda s, snap: None,
+        clock=_clock(), engine=make_hwpx_engine(),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        generation_lock=threading.Lock(),
+        file_source_factory=source_for_path,
+        pool_source_factory=source_from_pool_item,
+        existing_outputs=existing_output_paths,
+        ensure_output_dir=ensure_output_directory,
+        template_change=coord,
+    )
+    ctrl.dispatch("select_job", {"name": "안내문"})
+    assert ctrl.vm is None and ctrl.job_is_txt is True  # 실행뷰 없음(§F6 판정 D)
+    assert ctrl._seated_template_application_id is None  # 아직 durable id 미발급
+
+    assert ctrl.dispatch("template_check", {"request_id": "k1"})["ok"] is True
+    seated = ctrl._seated_template_application_id
+    assert seated  # 확인이 세운 current Application 을 세션이 든다
+    assert ctrl.job_name == "안내문"  # 조용한 해제 0
+    # 재확인은 이미 선 정체를 흔들지 않는다(중복 채택 0).
+    assert ctrl.dispatch("template_check", {"request_id": "k2"})["ok"] is True
+    assert ctrl._seated_template_application_id == seated
+
+
+def test_content_selection_reader_hands_the_workbench_effective_choices(
+    tmp_path: Path,
+) -> None:
+    """앱 조립의 조회 포트가 실 Product 에서 「항목 → 고른 선택」만 뽑아 준다(S10-03 #860).
+
+    작업대는 Product 의 형체를 모른 채 이 사전 하나로 투영한다. 실패는 삼키지 않고
+    ``ValueError`` 로 올라간다 — 조용한 빈 사전은 「아무것도 안 골랐다」와 구별되지 않는다.
+    """
+    from hwpxfiller.webapp.app import _content_selection_reader
+
+    ctrl, reg, _tpl = _txt_slot_bearing_controller(tmp_path)
+    product = SlotConfigurationProduct(reg, root=_root(tmp_path), clock=_clock())
+    read = _content_selection_reader(product, reg)
+
+    assert read("안내문") == {"첨부": frozenset()}  # 아직 안 골랐다(항목은 있다)
+
+    token = ctrl.dispatch("open_slot_configuration", {})["current_view"][
+        "new_configuration_token"
+    ]
+    ctrl.dispatch("select_slot_option", {
+        "configuration_token": token, "slot_id": "첨부",
+        "option_id": "계약서", "request_id": "r1",
+    })
+    assert read("안내문") == {"첨부": frozenset({"계약서"})}
+
+    # 확인 전(권위 미발급) Work 는 Product 를 부르지 않고 거절한다 — 렌더 부작용 0.
+    reg.save(Job(name="미확인", template_path=str(tmp_path / "안내문.txt")))
+    with pytest.raises(ValueError, match="TEMPLATE_INITIALIZATION_REQUIRED"):
+        read("미확인")
+    assert not reg.load("미확인").authority_id  # write-on-read 로 durable id 를 만들지 않았다

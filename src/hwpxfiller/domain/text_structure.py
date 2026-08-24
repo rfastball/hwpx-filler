@@ -25,11 +25,13 @@ admission 은 S10-02 소관).
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from .slot import Slot
 from .structure_scan import (
     CONTEXT_MAX,
+    PLACEMENT_OPTION,
     StructureDiagnostic,
     StructureDiagnosticKind,
     StructureReader,
@@ -110,6 +112,68 @@ class TextStructureScan:
             "summary": self.summary.to_dict(),
             "placements": [p.to_dict() for p in self.placements],
         }
+
+
+class TextStructureProjectionError(ValueError):
+    """선택 투영 불가 — 스캔 진단이 있어 좌표를 믿을 수 없다.
+
+    :class:`TextStructureScan` 의 계약("진단 1건 이상이면 ``slots``/``placements`` 는 신뢰
+    대상이 아니다")을 투영 쪽에서 집행한다. 깨진 표기를 「보이는 줄」로 접으면 사용자가 고른
+    적 없는 내용이 사라지거나 고르지 않은 내용이 남는다 — 조용히 반쪽을 그리느니 거절하고
+    호출자가 원문을 그대로 들게 한다.
+    """
+
+
+def visible_lines(
+    text: str,
+    scan: TextStructureScan,
+    selected: "Mapping[str, Collection[str]]",
+) -> "tuple[int, ...]":
+    """선택을 반영했을 때 **보이는 줄**의 0-기반 번호(오름차순, 무변형).
+
+    규칙 넷이 전부다:
+
+    - 구간 마커 줄(여는·닫는)은 전부 숨는다 — 마커는 저작 표기이지 내용이 아니다.
+    - 고른 「선택」 범위의 내용 줄은 보인다.
+    - 고르지 않은 「선택」 범위의 내용 줄은 숨는다.
+    - 어느 항목 밖의 줄과 항목 직속(선택 밖) 줄은 언제나 보인다 — 항목을 열었다는 것이
+      그 안의 공통 문구까지 고르게 만들지는 않는다.
+
+    ``selected`` 는 항목 id → 고른 선택 id 들이다. **없는 키는 「아무것도 안 골랐다」**이고
+    그때 그 항목의 선택 범위는 전부 숨는다(선택 1개짜리 항목도 자동 선택하지 않는다 —
+    :func:`~hwpxfiller.domain.slot_selection.evaluate_slot` 과 같은 규율).
+
+    진단이 1건이라도 있으면 :class:`TextStructureProjectionError` 다(fail-closed).
+    """
+    if scan.diagnostics:
+        raise TextStructureProjectionError(
+            f"구간 표기 진단이 {len(scan.diagnostics)}건 있어 선택을 반영할 수 없다"
+        )
+    hidden: "set[int]" = set()
+    for placement in scan.placements:
+        hidden.add(placement.begin_marker_line)
+        hidden.add(placement.end_marker_line)
+    for placement in scan.placements:
+        if placement.kind != PLACEMENT_OPTION:
+            continue
+        if placement.option_id in selected.get(placement.slot_id, ()):
+            continue
+        hidden.update(range(placement.content_start, placement.content_end + 1))
+    return tuple(i for i in range(len(text.splitlines())) if i not in hidden)
+
+
+def project_selected_text(
+    text: str,
+    scan: TextStructureScan,
+    selected: "Mapping[str, Collection[str]]",
+) -> str:
+    """``text`` 에서 :func:`visible_lines` 가 남긴 줄만 이어붙인 투영 텍스트(무변형).
+
+    줄 끝 문자는 **원문 그대로** 옮긴다(``keepends``) — ``"\\n"`` 으로 다시 이으면 CRLF
+    템플릿이 투영을 지날 때마다 조용히 줄바꿈을 갈아입는다.
+    """
+    pieces = text.splitlines(keepends=True)
+    return "".join(pieces[i] for i in visible_lines(text, scan, selected))
 
 
 def _text_placement(

@@ -74,7 +74,10 @@ from .screen_editor import EditorController
 from .screen_library import LibraryController
 from .screen_job import ARTIFACT_NOT_IN_SESSION, JobController
 from .template_change import TemplateChangeCoordinator
-from .slot_configuration_product import SlotConfigurationProduct
+from .slot_configuration_product import (
+    SlotConfigurationProduct,
+    SlotConfigurationProductError,
+)
 from .seal_execution_plan_service import SealExecutionPlanService
 from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
@@ -216,6 +219,50 @@ def _geometry_is_visible(
     return overlap >= min(width, 64) and y + 32 > vy and y < vy + vh
 
 
+def _content_selection_reader(
+    product: SlotConfigurationProduct, registry: JobRegistry
+) -> "Callable[[str], dict[str, frozenset[str]]]":
+    """Slot Configuration Product → 작업대의 「포함할 내용」 조회 포트(S10-03 #860).
+
+    작업대가 Product 를 직접 들지 않게 하는 번역 한 겹이다(`workbench_open` 이 컨트롤러가
+    아니라 handoff callable 인 것과 같은 규율). 넘기는 것은 **항목 id → 고른 선택 id 들**
+    뿐이고, 그 값은 :meth:`~hwpxfiller.webapp.slot_configuration_product.
+    SlotConfigurationProduct.current_slot_configuration_view` 의 read-only projection 에서
+    나온다 — durable S4 를 mutate 하지 않는다(#744).
+
+    **effective 를 읽는다**(declared 아님): 사용자가 골랐어도 구조에서 사라진 선택은 지금 그릴
+    수 있는 내용이 아니다. 그 사연은 「문서 만들기」의 retained/blocking 축이 이미 말한다.
+
+    실패는 삼키지 않고 ``ValueError`` 로 올린다 — 작업대가 그것을 사유로 바꿔 재진술한다.
+    context error(템플릿 확인 전·구조 불일치)도 같은 실패다: 그때 projection 은 없으므로
+    「고른 것이 없다」로 접으면 전 선택지가 사라진 카드를 조용히 그리게 된다.
+
+    **durable id 미발급 Work 는 Product 를 부르지 않는다**(스냅샷 존과 같은 규율): Product
+    route 는 read 중 Work 권위 id 를 lazy 발급하므로(write-on-read), 확인 전 Work 를 그냥
+    넘기면 작업대를 여는 것만으로 durable 표식이 생긴다. 결과는 어차피 같은 거절이므로,
+    부작용 없는 쪽으로 먼저 닫는다.
+    """
+
+    def read(work_ref: str) -> "dict[str, frozenset[str]]":
+        if not registry.load(work_ref).authority_id:
+            raise ValueError("포함할 내용을 불러오지 못했습니다(TEMPLATE_INITIALIZATION_REQUIRED)")
+        try:
+            response = product.current_slot_configuration_view(work_ref)
+        except SlotConfigurationProductError as exc:
+            raise ValueError(f"포함할 내용을 불러오지 못했습니다({exc.code})") from exc
+        projection = response.current_view.projection
+        if projection is None:
+            raise ValueError(
+                "포함할 내용을 불러오지 못했습니다"
+                f"({response.current_view.context_error or 'NO_PROJECTION'})"
+            )
+        return {
+            slot.slot_id: frozenset(slot.effective_option_ids) for slot in projection.slots
+        }
+
+    return read
+
+
 # ------------------------------------------------------------------ 브리지
 class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
@@ -242,6 +289,12 @@ class WebFrontend:
         # 대상 글꼴 선언(결정 17)은 **앱 전역 영속** — 단일 실체 주입 규율은 소비자가
         # 작업대 하나가 된 지금도 유지한다(사본 캐시 = 선언≠실제 결함류, 코덱스 P2).
         target_font = TargetFontSetting()
+        # S4 Working Slot Configuration(SX-02 #679·#725) — TemplateChangeCoordinator 와
+        # **같은 authority root** 를 공유한다: bootstrap 이 세운 Work/Application 을 그대로
+        # 읽어 slot projection·durable command 를 낸다(별도 스토어 조립 없음).
+        slot_configuration = SlotConfigurationProduct(
+            job_registry, root=default_template_authority_dir(), clock=datetime.now,
+        )
         template_files = TemplateFileStore(
             default_templates_dir(), registry,
             clock=time.time, new_id=lambda: uuid.uuid4().hex,
@@ -275,14 +328,7 @@ class WebFrontend:
                               root=default_template_authority_dir(),
                               clock=datetime.now,
                           ),
-                          # S4 Working Slot Configuration(SX-02 #679·#725) — TemplateChangeCoordinator
-                          # 와 **같은 authority root** 를 공유한다: bootstrap 이 세운 Work/Application 을
-                          # 그대로 읽어 slot projection·durable command 를 낸다(별도 스토어 조립 없음).
-                          slot_configuration=SlotConfigurationProduct(
-                              job_registry,
-                              root=default_template_authority_dir(),
-                              clock=datetime.now,
-                          ),
+                          slot_configuration=slot_configuration,
                           # SealExecutionPlan production 결선(SX-SEAL #719) — SlotConfigurationProduct
                           # 와 **같은 authority root** 를 공유해 같은 workspace·HMAC secret·per-Work
                           # fence 아래에서 exact execution plan 을 봉인·관찰한다(dispatch 배선은 SX-03).
@@ -302,8 +348,14 @@ class WebFrontend:
             PoolController(pool_registry, self._push),
             # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면
             # 여기로 온다. 대상 글꼴(TargetFontSetting)은 앱 전역 영속 선언의 단일 실체다.
+            # 「포함할 내용」 투영(S10-03 #860)은 **읽기 포트 하나**로 붙는다: 작업대는 Product
+            # 의 형체를 모르고 「항목 → 고른 선택」 사전만 받는다(workbench_open 이 handoff
+            # callable 인 것과 같은 규율). read-only projection 이라 durable 변이는 0 이다.
             WorkbenchController(job_registry, self._push, clock=datetime.now,
-                                target_font=target_font),
+                                target_font=target_font,
+                                content_selection=_content_selection_reader(
+                                    slot_configuration, job_registry
+                                )),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규

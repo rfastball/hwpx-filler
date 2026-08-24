@@ -283,3 +283,38 @@ def test_action_registry_rejects_unregistered_and_missing_payload_keys() -> None
     assert validate_dispatch("job", "save_selection_preset", {
         "configuration_token": "t", "name": "n", "confirmed_overwrite_key": "k",
     })
+
+
+# ── S10-03(#860): Preset 이 TXT 작업에서도 선다 — **게이트 개방만으로** ─────────────────
+# Preset 기계(도메인 값·store·명령·수치)는 어디에도 매체가 없다. 그 사실의 검사 가능한
+# 얼굴이 이 왕복이다: TXT 전용 코드를 한 줄도 더하지 않고 저장·나열·적용이 성사된다.
+
+
+def test_txt_work_saves_and_applies_a_selection_preset_with_no_extra_machinery(
+    tmp_path: Path,
+) -> None:
+    from tests.test_webapp_job_slot_configuration import _txt_slot_bearing_controller
+
+    ctrl, _reg, _tpl = _txt_slot_bearing_controller(tmp_path)
+    token = _token(ctrl)
+    token = _select(ctrl, token, "첨부", "견적서", "r1")
+
+    saved = ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "견적 안내",
+    })
+    assert saved["status"] == "SAVED" and saved["saved_key"]
+
+    zone = _presets_zone(ctrl)
+    assert zone["supported"] is True
+    assert [item["name"] for item in zone["items"]] == ["견적 안내"]
+
+    # 다른 선택으로 옮긴 뒤 Preset 을 적용하면 저장 당시 선택으로 되돌아온다.
+    token = _select(ctrl, token, "첨부", "계약서", "r2")
+    applied = ctrl.dispatch("apply_selection_preset", {
+        "configuration_token": token, "preset_key": saved["saved_key"],
+    })
+    assert applied["rejection_code"] is None
+    assert (applied["applied_count"], applied["broken_count"]) == (1, 0)
+    assert applied["current_view"]["projection"]["slots"][0]["effective_option_ids"] == (
+        "견적서",
+    )
