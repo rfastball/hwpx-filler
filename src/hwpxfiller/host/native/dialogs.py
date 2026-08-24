@@ -233,6 +233,21 @@ class _BROWSEINFOW(ctypes.Structure):
     ]
 
 
+def _free_shell_pidl(pidl) -> None:
+    """셸 할당 PIDL 반환(``CoTaskMemFree``) — **argtypes 선언은 생략 불가**(64-bit safe).
+
+    미선언 호출은 ctypes 가 정수 인자를 32-bit C int 로 접는데 PIDL 은 64-bit 포인터라,
+    할당 주소가 2GB 를 넘는 순간 ``argument 1: OverflowError: int too long to convert`` 로
+    폴더 선택 전체가 죽는다(주소 의존이라 간헐 재현 — 실사용 보고로 확인된 실결함).
+    :mod:`.clipboard` 의 ``_apis`` 가 지키는 규율과 같다. 실 왕복은
+    ``tests/test_native_positive.py`` 의 CoTaskMem alloc/free 게이트가 이 몸통으로 검증한다.
+    """
+    free = ctypes.windll.ole32.CoTaskMemFree  # type: ignore[attr-defined]
+    free.argtypes = [ctypes.c_void_p]
+    free.restype = None
+    free(pidl)
+
+
 def open_folder_dialog(
     title: str = "저장 폴더 선택", owner_title: "str | None" = None
 ) -> "str | None":
@@ -269,7 +284,7 @@ def open_folder_dialog(
             return out.value if ok else None
         finally:
             # PIDL 은 셸 할당 — CoTaskMemFree 로 반환(_in_sta_thread 의 OLE 아파트 안).
-            ctypes.windll.ole32.CoTaskMemFree(pidl)  # type: ignore[attr-defined]
+            _free_shell_pidl(pidl)
 
     log("open_folder_dialog: enter")
     return _in_sta_thread(call)  # type: ignore[return-value]

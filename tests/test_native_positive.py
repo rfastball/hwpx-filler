@@ -45,6 +45,33 @@ def test_dialog_sta_probe_distinguishes_selection_cancel_and_error() -> None:
 
 @pytest.mark.native
 @pytest.mark.skipif(_NATIVE_GATE, reason=_NATIVE_REASON)
+def test_folder_dialog_pidl_free_survives_real_cotaskmem_roundtrip() -> None:
+    """실 CoTaskMem alloc → 프로덕션 free 몸통(``_free_shell_pidl``) 왕복 — OLE 아파트 안.
+
+    회귀 표적: ``CoTaskMemFree`` 를 argtypes 미선언으로 부르면 64-bit 포인터가 32-bit
+    C int 로 접혀 ``OverflowError: int too long to convert`` 가 난다(주소 의존 간헐 —
+    저장 폴더 지정에서 실사용 보고). 이 게이트는 실 셸 할당 포인터가 프로덕션 free
+    몸통을 예외 없이 통과하는 것을 실 Win32 로 검증한다. 여러 번 할당해 서로 다른
+    주소를 지나게 한다(단 한 번의 낮은 주소가 게이트를 헐겁게 만들지 않게).
+    """
+    def roundtrip() -> int:
+        ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
+        alloc = ole32.CoTaskMemAlloc
+        alloc.argtypes = [ctypes.c_size_t]
+        alloc.restype = ctypes.c_void_p  # 미선언이면 반환 포인터도 32-bit 로 접힌다
+        freed = 0
+        for _ in range(64):
+            pidl = alloc(64)
+            assert pidl, "CoTaskMemAlloc 실패 — 왕복을 검증할 수 없다"
+            dialogs._free_shell_pidl(pidl)
+            freed += 1
+        return freed
+
+    assert dialogs._in_sta_thread(roundtrip) == 64
+
+
+@pytest.mark.native
+@pytest.mark.skipif(_NATIVE_GATE, reason=_NATIVE_REASON)
 class TestWindowsNativePositivePaths:
     def test_clipboard_unicode_write_readback(self) -> None:
         """실 CF_UNICODETEXT에 한글·보조평면 문자를 쓴 뒤 같은 Win32 API로 되읽는다."""
