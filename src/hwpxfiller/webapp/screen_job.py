@@ -3109,7 +3109,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         indices = list(prep.record_preparation.ordered_model_indices)
         total = len(indices)
         if isinstance(outcome, (ManagedRunRefused, DeliveryRefused)):
-            return {"ok": False, "error": outcome.detail, "level": "warn"}
+            # admission 어휘를 쓰는 거절은 legacy 갈래와 **같은 문장**으로 나간다(S8-F1
+            # · #852) — 같은 차단이 경로에 따라 다른 말을 하면 사용자는 다른 상태로 읽는다.
+            # 맵에 없는 코드는 상류 판정의 재진술(detail)이 그대로 사유다.
+            return {
+                "ok": False,
+                "error": _ADMISSION_REJECT_TEXT.get(outcome.code, outcome.detail),
+                "level": "warn",
+            }
         if isinstance(outcome, ManagedRunCancelled):
             summary = (
                 f"중단했습니다. 시도 {outcome.attempted}/{outcome.total}건 — 안착 전이라 "

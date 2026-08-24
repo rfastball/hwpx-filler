@@ -210,6 +210,54 @@ def test_cancel_at_record_boundary_writes_nothing(tmp_path) -> None:
     assert list(out.iterdir()) == []  # delivery 전 취소 — write 0(legacy 와 다름을 명시)
 
 
+# ═══ 잔존 구간 표기 검문(S8-F1 · #852 — S8-99 감사 F-1) ══════════════════════════════
+def test_uncompiled_structure_notation_refuses_the_managed_run(tmp_path) -> None:
+    """slot-bearing managed 실행도 미변환 구간 표기를 통과시키지 않는다 — write 0.
+
+    감사 재현: 컴파일된 슬롯을 가진 문서에 새 표기(마커 2)가 남은 상태. qualification 은
+    이 bytes 를 통과시키므로(진단 0 · execution_structure 성립) 검문이 없으면 모든 선택지와
+    마커 텍스트가 그대로 실린 문서가 만들어진다. 다중 슬롯 문서에서 한 슬롯만 「표기로
+    풀기」 하면 제품이 스스로 이 상태를 만든다.
+    """
+    from dataclasses import replace
+
+    from hwpxfiller.application.slotless_run_bridge import STRUCTURE_NOTATION_UNCOMPILED
+    from hwpxfiller.gui.mapping_state import STRUCTURE_NOTATION_BLOCK_MESSAGE
+    from hwpxfiller.webapp.screen_job import _ADMISSION_REJECT_TEXT
+
+    spec = replace(
+        _one_of_two(), notation_lines=("{{#항목 특약 특약 사항}}", "{{/항목}}")
+    )
+    case = _build_case(spec)
+    _seed_authority(tmp_path, case)
+    registry, manifest = admitted_runtime_conformance_registry()
+    out = tmp_path / "delivery"
+    out.mkdir()
+
+    result = _run(
+        case, registry, manifest,
+        execution_basis_digest(case.plan.execution_basis), out, tmp_path,
+        [_snapshot("r1", "홍길동", "1000")], ["공고서-001.hwpx"],
+    )
+
+    assert isinstance(result, ManagedRunRefused), result
+    assert result.code == STRUCTURE_NOTATION_UNCOMPILED
+    assert "2건" in result.detail  # 스캐너 단일 출처 수치의 재진술
+    assert list(out.iterdir()) == []  # 검문은 안착 전이다 — write 0
+    # 같은 차단을 같은 문장으로: legacy admission 과 managed 거절이 한 맵을 탄다.
+    assert _ADMISSION_REJECT_TEXT[result.code] == STRUCTURE_NOTATION_BLOCK_MESSAGE
+
+
+def test_marker_free_slot_bearing_run_passes_the_notation_gate(tmp_path) -> None:
+    """양성 대조 — 마커 0 slot-bearing 은 검문에 걸리지 않는다(항상 빨강 금지)."""
+    case, registry, manifest, basis, out = _kit(tmp_path)
+    result = _run(
+        case, registry, manifest, basis, out, tmp_path,
+        [_snapshot("r1", "홍길동", "1000")], ["공고서-001.hwpx"],
+    )
+    assert isinstance(result, DeliveryCompleted), result
+
+
 def test_foreign_plan_against_this_authority_fails_closed(tmp_path) -> None:
     # 다른 작업에서 봉인된 payload 를 이 authority root 에 대고 실행하면 조달이 loud 하게
     # 닫힌다(candidate blob 부재) — write 0. 조용한 혼선 경로가 없음을 실측한다.

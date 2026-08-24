@@ -160,6 +160,94 @@ def test_compile_apply_reruns_the_session_schema(tmp_path):
     assert snap["notice"]["level"] == "warn"
 
 
+# ====================== ④b 변이 여부에 결속된 통지(S8-F2 · #853 F-3·F-4)
+def _bookmark_p(begin_id: str, name: str, value: str) -> str:
+    return (
+        f'<hp:p><hp:run><hp:ctrl><hp:fieldBegin id="{begin_id}" type="BOOKMARK" '
+        f'name="{name}"/></hp:ctrl><hp:t>{value}</hp:t>'
+        f'<hp:ctrl><hp:fieldEnd beginIDRef="{begin_id}"/></hp:ctrl></hp:run></hp:p>'
+    )
+
+
+def _collision_hwpx(name: str = "충돌") -> Path:
+    """평문 토큰 0 + 이름이 겹치는 기존 책갈피 → 구간 거절이 서지만 **변이는 0** 인 문서."""
+    body = (
+        _bookmark_p("5", "특약", "남의 구간")
+        + "".join(
+            f"<hp:p><hp:run><hp:t>{line}</hp:t></hp:run></hp:p>"
+            for line in ("{{#항목 특약}}", "본문", "{{/항목}}")
+        )
+    )
+    sec = (f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{body}</hs:sec>').encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries[SECTION] = sec
+    path = default_templates_dir() / f"{name}.hwpx"
+    write_hwpx_package(path, pkg)
+    return path
+
+
+def test_field_mutation_notifies_even_when_the_structure_step_raises(tmp_path):
+    """필드는 이미 저장됐고 구간 단계가 터진 갈래 — 통지 1회 + 세션 재정산 + danger.
+
+    S8G-00(#320)이 닫은 결함류가 예외 경로에 잔존했다(#853 F-3): bytes 는 이미 바뀌었는데
+    통지가 안 서서 같은 파일을 든 편집 세션이 낡은 스키마로 남았다.
+    """
+    from dataclasses import replace
+
+    fe = _frontend(tmp_path)
+    raw = _raw_hwpx()
+    fe.controllers["tpl"].dispatch("refresh", {})
+    editor = fe.controllers["editor"]
+    editor.load_template_path(str(raw))
+    assert editor.schema is None  # RAW
+
+    tpl = fe.controllers["tpl"]
+    seen: list[tuple[str, str]] = []
+    tpl.mutation_sinks.append(lambda kind, path: seen.append((kind, path)))
+
+    def boom(_path: str):
+        raise ValueError("구간 커널이 멈췄습니다")
+
+    tpl.vm._file_ops = replace(tpl.vm._file_ops, compile_structure_file=boom)
+    tpl.dispatch("compile", {"path": str(raw), "confirm": True})
+
+    assert seen == [("mutated", str(raw))]  # 변이가 있었으니 통지가 선다
+    assert _field_names(editor) == ["계약명"]  # 세션이 새 스키마로 다시 섰다
+    assert editor.snapshot()["notice"]["level"] == "warn"
+    result = tpl.snapshot()["result"]
+    assert result["level"] == "danger"
+    assert "구간 커널이 멈췄습니다" in result["text"]
+
+
+def test_zero_mutation_refusal_notifies_nothing(tmp_path):
+    """무변이 거절은 통지 0 · 세션 notice 0 — 안 바뀐 파일로 거짓 경보를 내지 않는다(F-4)."""
+    fe = _frontend(tmp_path)
+    target = _collision_hwpx()
+    tpl = fe.controllers["tpl"]
+    tpl.dispatch("refresh", {})
+    editor = fe.controllers["editor"]
+    editor.load_template_path(str(target))
+    before_snapshot = editor.snapshot()
+    before_bytes = target.read_bytes()
+    seen: list[tuple[str, str]] = []
+    tpl.mutation_sinks.append(lambda kind, path: seen.append((kind, path)))
+
+    tpl.dispatch("compile", {"path": str(target), "confirm": True})
+
+    assert seen == []
+    assert target.read_bytes() == before_bytes
+    # 세션은 손대지 않았다(재정산 notice 없음 · 스키마 그대로). 스냅샷 전체는 tpl 결과 줄을
+    # 품고 있어 같을 수 없으므로 세션 소유분만 대조한다.
+    after = editor.snapshot()
+    assert after["notice"] == before_snapshot["notice"]
+    assert after["rows"] == before_snapshot["rows"]
+    assert _field_names(editor) == []
+    result = tpl.snapshot()["result"]
+    assert result["level"] == "warn" and "구간 변환은 하지 못했습니다" in result["text"]
+
+
 # ==================================================== ⑤ 남의 파일 변이 = 무변화
 def test_mutation_of_another_template_leaves_the_session_untouched(tmp_path):
     fe = _frontend(tmp_path)
