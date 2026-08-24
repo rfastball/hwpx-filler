@@ -29,11 +29,13 @@ from hwpxfiller.application.work_template_state import (
     CHANGE_SUPERSEDED,
     TemplateChangePreparation,
 )
+from hwpxfiller.application.jobs import load_job
 from hwpxfiller.domain.job import Job
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.webapp import template_change as tc
 from hwpxfiller.webapp.template_change import (
+    SUPPORTED_MEDIA,
     TemplateChangeCoordinator,
     TemplateChangeError,
     unsupported_zone,
@@ -100,13 +102,20 @@ def _ready(tmp_path):
 # ─── prepare: capability·bootstrap·멱등 ─────────────────────────────────────
 
 
-def test_non_hwpx_job_is_refused_and_zone_unsupported(tmp_path):
+def test_unsupported_media_job_is_refused_and_zone_unsupported(tmp_path):
+    """미지원 매체는 조용히 추측하지 않고 capability 를 감춘 채 시끄럽게 거절한다.
+
+    지원 매체 집합(hwpx·txt)은 코디네이터 단일 출처라 이 테스트도 그것을 묻는다 —
+    「hwpx 가 아니면 거절」을 재타이핑하면 TXT 인수(S10-02) 같은 확장에서 이 테스트가
+    거짓 빨강을 낸다.
+    """
     reg = JobRegistry(tmp_path / "jobs")
-    txt = tmp_path / "안내.txt"
-    txt.write_text("본문", encoding="utf-8")
-    reg.save(Job(name="안내", template_path=str(txt)))
+    other = tmp_path / "안내.docx"
+    other.write_bytes(b"not a template")
+    reg.save(Job(name="안내", template_path=str(other)))
     coord = _coordinator(tmp_path, reg)
-    assert coord.zone("안내", "txt", False) == unsupported_zone()
+    assert "" not in SUPPORTED_MEDIA  # 미상 매체는 지원 집합 밖(fail-closed)
+    assert coord.zone("안내", "", False) == unsupported_zone()
     with pytest.raises(TemplateChangeError):
         coord.check("안내", "k1")
 
@@ -304,6 +313,104 @@ def test_bootstrap_failure_survives_restart(tmp_path):
     restarted = _coordinator(tmp_path, reg)  # 새 process
     zone = restarted.zone("깨진작업", "hwpx", False)
     assert zone["checkable"] is False and zone["diagnostics"]
+
+
+# ─── TXT 매체 인수(S10-02 #859) ─────────────────────────────────────────────
+# 사건 경계는 위 hwpx 왕복이 이미 소유한다 — 여기서 다시 세우지 않고, **매체가 갈리는
+# 자리**만 본다: 자격 심사(qualification profile)와 그 진단, 그리고 캡처본이 원본 변이에
+# 흔들리지 않는다는 Candidate 불변성.
+
+
+def _seed_txt(tmp_path, *, name="안내문", body="본문 {{공고명}}\n"):
+    tpl = tmp_path / "안내문.txt"
+    tpl.write_text(body, encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name=name, template_path=str(tpl)))
+    return reg, tpl
+
+
+def test_txt_check_and_apply_advance_the_same_lifecycle(tmp_path):
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    first = coord.check("안내문", "k1")
+    assert first["ok"] is True and first["preparation"]["status"] == "no_change"
+    zone = coord.zone("안내문", "txt", False)
+    assert zone["supported"] and zone["checkable"] and zone["epoch"] == 1
+
+    tpl.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
+    ready = coord.check("안내문", "k2")["preparation"]
+    assert ready["status"] == "ready" and ready["change_token"]
+    result = coord.apply("안내문", ready["change_token"])
+    assert result == {
+        "status": "applied",
+        "current_template_application_epoch": 2,
+        "is_current": True,
+    }
+    assert coord.zone("안내문", "txt", False)["epoch"] == 2
+
+
+def test_txt_authority_id_is_issued_by_the_first_check(tmp_path):
+    reg, _tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    assert load_job(reg, "안내문").authority_id == ""  # 조용한 migration 없음
+    coord.check("안내문", "k1")
+    issued = load_job(reg, "안내문").authority_id
+    assert issued and coord.current_template_application_id(issued)
+
+
+def test_txt_structure_marker_diagnostics_project_invalid_with_reasons(tmp_path):
+    """구간 표기가 깨진 TXT 는 빈 구조로 통과하지 않고 사유를 재진술한다."""
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")  # bootstrap(정상 표기)
+    tpl.write_text("{{#항목 s1 첨부}}\n내용 {{공고명}}\n", encoding="utf-8")  # 닫는 마커 없음
+    view = coord.check("안내문", "k2")["preparation"]
+    assert view["status"] == "invalid" and view["change_token"] is None
+    # kind 는 코어 진단 어휘 그대로다 — 매체 어댑터가 다시 이름 짓지 않는다.
+    assert {d["kind"] for d in view["diagnostics"]} == {"unbalanced_marker"}
+    assert all(d["message"] for d in view["diagnostics"])  # 빈 fallback 금지
+    assert coord.zone("안내문", "txt", False)["epoch"] == 1  # 기존 Work 계속 사용
+
+
+def test_txt_encoding_failure_is_a_loud_diagnostic_not_an_empty_structure(tmp_path):
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    tpl.write_bytes("본문 {{공고명}}".encode("cp949"))  # 온나라 기안 txt 의 흔한 인코딩
+    view = coord.check("안내문", "k2")["preparation"]
+    assert view["status"] == "invalid"
+    assert any(d["kind"] == "txt_encoding" for d in view["diagnostics"])
+
+
+def test_txt_bootstrap_failure_disables_check_until_repaired(tmp_path):
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "깨진.txt"
+    tpl.write_bytes(b"\xff\xfe\x00\x00")  # UTF-8 아님
+    reg.save(Job(name="깨진안내", template_path=str(tpl)))
+    coord = _coordinator(tmp_path, reg)
+    assert coord.check("깨진안내", "k1") == {"ok": False, "reason": "initialization_required"}
+    zone = coord.zone("깨진안내", "txt", False)
+    assert zone["checkable"] is False and zone["diagnostics"]  # 비활성 + 사유 병기
+    tpl.write_text("고쳤습니다 {{공고명}}\n", encoding="utf-8")
+    assert coord.zone("깨진안내", "txt", False)["checkable"] is True
+    assert coord.check("깨진안내", "k2")["preparation"]["status"] == "no_change"
+
+
+def test_txt_applied_work_survives_later_source_edits_with_a_loud_note(tmp_path):
+    """적용 뒤 원본을 고쳐도 Work 는 안 움직이고, 그 사실을 시끄럽게 알린다(#681 F1 동형)."""
+    reg, tpl = _seed_txt(tmp_path)
+    coord = _coordinator(tmp_path, reg)
+    coord.check("안내문", "k1")
+    assert coord.source_drift_note("안내문") is None  # 무편집 = 일관
+    tpl.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
+    token = coord.check("안내문", "k2")["preparation"]["change_token"]
+    coord.apply("안내문", token)
+    staged_before = coord.zone("안내문", "txt", False)["epoch"]
+
+    tpl.write_text("적용 뒤 다시 고침 {{공고명}}\n", encoding="utf-8")
+    assert coord.zone("안내문", "txt", False)["epoch"] == staged_before  # Work 무변경
+    note = coord.source_drift_note("안내문")
+    assert note and "캡처" in note
 
 
 # ─── 내부 → 제품 status 투영(순수) ──────────────────────────────────────────

@@ -5371,6 +5371,38 @@ def test_template_change_zone_rides_snapshot_and_verbs_route(tmp_path):
     assert ctrl.snapshot()["template_change"]["epoch"] == 1
 
 
+def test_txt_job_snapshot_seats_the_same_template_change_zone(tmp_path):
+    """TXT 분기도 같은 존을 싣는다(S10-02 #859) — 매체 특례가 아니라 같은 배선이다.
+
+    종전 TXT 분기는 기본값 ``unsupported_zone()`` 을 그대로 두고 반환해, 존이 **구조적으로**
+    닿을 수 없었다(판정이 아니라 배선 부재). 판정·token·epoch 은 여전히 코디네이터 소유라
+    여기서는 존이 서고 동사가 라우팅되는지만 본다.
+    """
+    ctrl, pushes = _template_change_controller(tmp_path)
+    txt = tmp_path / "안내문.txt"
+    txt.write_text("본문 {{공고명}}\n", encoding="utf-8")
+    ctrl.registry.save(Job(name="안내문", template_path=str(txt)))
+    ctrl.dispatch("select_job", {"name": "안내문"})
+    assert ctrl.job_is_txt and ctrl.vm is None  # TXT 는 hwpx 실행뷰를 세우지 않는다
+
+    snap = ctrl.snapshot()
+    zone = snap["template_change"]
+    assert zone["supported"] is True and zone["checkable"] is True
+    assert snap["source_drift"] is None  # 키 부재 분기 금지 — 미부트스트랩은 정직한 None
+
+    result = ctrl.dispatch("template_check", {"request_id": "t1"})
+    assert result["ok"] is True and result["preparation"]["status"] == "no_change"
+    assert ctrl.registry.load("안내문").authority_id != ""  # 첫 확인이 권위를 발급한다
+    assert pushes[-1][1]["template_change"]["epoch"] == 1
+
+    txt.write_text("본문 {{공고명}}\n덧붙임 {{담당자}}\n", encoding="utf-8")
+    ready = ctrl.dispatch("template_check", {"request_id": "t2"})["preparation"]
+    assert ready["status"] == "ready"
+    applied = ctrl.dispatch("template_apply", {"change_token": ready["change_token"]})
+    assert applied["status"] == "applied"
+    assert ctrl.snapshot()["template_change"]["epoch"] == 2
+
+
 # ── S6G-00 R1: generate-once 트랩을 오늘의 사실로 고정한다(#806) ──────────────────────────
 def test_slotless_hwpx_generate_mints_authority_then_second_run_succeeds(tmp_path):
     """**#806 R1 의 뒤집힘 — S6-05(#812)가 트랩을 구조로 해소했다.**

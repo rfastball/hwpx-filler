@@ -50,6 +50,7 @@ from ..application.prepare_orchestration import (
     find_change,
 )
 from ..application.prepare_template_change import PreparePins
+from ..application.template_qualification import QualificationProfile
 from ..application.template_change_product import (
     CAPABILITY_INITIALIZATION_REQUIRED,
     CAPABILITY_UNSUPPORTED_MEDIA,
@@ -95,6 +96,10 @@ from ..external.template_inspection import (
     HWPX_QUALIFICATION_PROFILE,
     hwpx_qualification_manifest,
 )
+from ..external.text_template_inspection import (
+    TXT_QUALIFICATION_PROFILE,
+    txt_qualification_manifest,
+)
 from ..external.template_source_reader import FileTemplateSourceReader
 from ..external.work_template_store import (
     AtomicWorkTemplateStateStore,
@@ -114,6 +119,31 @@ class TemplateChangeError(ValueError):
     """제품 계약 위반·권한 실패·무결성 오류 — 정상 domain status 와 분리된 시끄러운 실패."""
 
 
+#: 매체 → (qualification profile, durable manifest 팩토리). **지원 매체의 단일 출처**다
+#: (S10-02 #859). 사건 경계·상태 전이는 매체를 모르는 S2/S3 기계가 그대로 지고, 매체가
+#: 가르는 것은 「그 bytes 를 무엇으로 자격 심사하는가」 하나뿐이다 — 그래서 이 표만 늘고
+#: 아래 게이트들은 전부 이 표의 키 집합을 묻는다. 미등록 매체는 조용한 추측 없이 거절된다
+#: (:func:`unsupported_zone` · :class:`TemplateChangeError`).
+_MEDIA_QUALIFICATION: "dict[str, tuple[QualificationProfile, Callable[[str], Any]]]" = {
+    "hwpx": (HWPX_QUALIFICATION_PROFILE, hwpx_qualification_manifest),
+    "txt": (TXT_QUALIFICATION_PROFILE, txt_qualification_manifest),
+}
+
+#: 「변경사항 확인/적용」이 서는 매체 집합 — 표면·테스트가 문자열을 재조립하지 않게 한다.
+SUPPORTED_MEDIA = frozenset(_MEDIA_QUALIFICATION)
+
+
+def _profile_for(media: str, what: str) -> QualificationProfile:
+    """매체의 qualification profile — 미지원 매체는 시끄럽게 거절(fail-closed)."""
+    entry = _MEDIA_QUALIFICATION.get(media)
+    if entry is None:
+        raise TemplateChangeError(
+            f"지원하지 않는 템플릿 형식이라 {what}을(를) 지원하지 않습니다"
+            f"(형식={media or '미상'})"
+        )
+    return entry[0]
+
+
 @dataclass(frozen=True)
 class _AdvanceResult:
     preparation: TemplateChangePreparation
@@ -123,7 +153,7 @@ class _AdvanceResult:
 
 
 def unsupported_zone() -> dict[str, Any]:
-    """HWPX 가 아니거나 템플릿 미연결·작업 미선택 — capability 비노출(명시적 unsupported)."""
+    """지원 매체가 아니거나 템플릿 미연결·작업 미선택 — capability 비노출(명시적 unsupported)."""
     return {
         "supported": False,
         "reason": CAPABILITY_UNSUPPORTED_MEDIA,
@@ -250,21 +280,31 @@ class TemplateChangeCoordinator:
     # ─── 공통 재료 ──────────────────────────────────────────────────────────
 
     def _ensure_manifest(self) -> None:
+        """지원 매체 **전부**의 immutable manifest 를 create-once 로 세운다.
+
+        매체별로 늦게 seed 하지 않는다 — Work 는 매체를 못 바꾸지만 한 홈에 두 매체의 Work
+        가 함께 살고, 어느 쪽이 먼저 오든 apply 의 무결성 검사가 자기 manifest 를 찾아야
+        한다. 표(``_MEDIA_QUALIFICATION``)를 도는 것이 그 보장의 얼굴이다.
+        """
         if self._manifest_seeded:
             return
-        try:
-            self._quals.get_manifest(HWPX_QUALIFICATION_PROFILE.id)
-        except ObjectNotFound:
-            self._quals.put_manifest(hwpx_qualification_manifest(self._now()))
+        for profile, manifest in _MEDIA_QUALIFICATION.values():
+            try:
+                self._quals.get_manifest(profile.id)
+            except ObjectNotFound:
+                self._quals.put_manifest(manifest(self._now()))
         # S5F R2-05a(#740): mutable Profile admission bootstrap-to-ADMITTED 를 제거했다 — S3 Apply 는
         # 이제 mutable admission gate 가 아니라 exact PASS QualificationEvidence + Work-local currentness
         # 로 fail-closed 한다(immutable qualification manifest 만 seed 한다).
         self._manifest_seeded = True
 
     def _binding(self, work_id: str, job) -> MutableSourceBinding:
+        # media 는 Job 파생이다(S10-02) — 「무슨 bytes 를 캡처했는가」는 매체 사실이고,
+        # 그 값이 revision·manifest·apply 무결성까지 관통하므로 하드코딩하면 TXT Work 가
+        # hwpx 로 기재된 채 통과한다(선언과 실제가 갈리는 이 저장소의 지배 결함류).
         return MutableSourceBinding(
             source_binding_id=f"{work_id}.binding",
-            media="hwpx",
+            media=job.media,
             host_reference=job.template_path,
             display_metadata={},
             generation=job.binding_revision,
@@ -273,7 +313,7 @@ class TemplateChangeCoordinator:
     def _lineage(self, work_id: str, binding: MutableSourceBinding) -> TemplateLineage:
         return TemplateLineage(
             template_lineage_id=f"{work_id}.lineage",
-            media="hwpx",
+            media=binding.media,
             mutable_source_binding_id=binding.source_binding_id,
             source_binding_generation=binding.generation,
             updated_at=self._now(),
@@ -326,7 +366,7 @@ class TemplateChangeCoordinator:
 
     def zone(self, job_name: str, media: str, template_missing: bool) -> dict[str, Any]:
         """job 스냅샷의 ``template_change`` 존 — capability·현재 Preparation·epoch."""
-        if media != "hwpx" or template_missing:
+        if media not in SUPPORTED_MEDIA or template_missing:
             return unsupported_zone()
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
@@ -443,8 +483,7 @@ class TemplateChangeCoordinator:
         if not _REQUEST_ID.fullmatch(prepare_request_id or ""):
             raise TemplateChangeError(f"잘못된 확인 요청 키 {prepare_request_id!r}")
         job = load_job(self._registry, job_name)  # 없으면 loud(포트가 raise)
-        if job.media != "hwpx":
-            raise TemplateChangeError("HWPX 작업이 아니라 변경사항 확인을 지원하지 않습니다")
+        profile = _profile_for(job.media, "변경사항 확인")
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
@@ -454,7 +493,7 @@ class TemplateChangeCoordinator:
         self._recover(work_id)
 
         if not self._works.exists(work_id):
-            outcome = self._bootstrap(work_id, job_name, job, prepare_request_id)
+            outcome = self._bootstrap(work_id, job_name, job, prepare_request_id, profile)
             if outcome.result != BOOTSTRAP_OK:
                 return (
                     {"ok": False, "reason": CAPABILITY_INITIALIZATION_REQUIRED},
@@ -469,14 +508,14 @@ class TemplateChangeCoordinator:
             prepare_request_id=prepare_request_id,
             actor=actor,
             resolve_pins=lambda _work: PreparePins(
-                binding.source_binding_id, binding.generation, HWPX_QUALIFICATION_PROFILE.id
+                binding.source_binding_id, binding.generation, profile.id
             ),
             preparation_id=f"p-{prepare_request_id}",
             execution_session_id=self._session_id,
             started_at=self._now(),
             authorize=_authorize,
         )
-        advanced = self._advance(work_id, job_name, prep)
+        advanced = self._advance(work_id, job_name, prep, profile)
         # `_advance` 반환 뒤 Preparation/Application은 이미 durable 하다. 그 뒤 registry를
         # 재조회하지 않고, 마지막 load-bearing gate가 실제로 본 Job snapshot을 함께 반환한다.
         if (
@@ -517,8 +556,12 @@ class TemplateChangeCoordinator:
     ) -> str:
         """생성 admission 전에 이미 확립된 Work/Application identity를 알린다."""
         job = load_job(self._registry, job_name)
+        # **여기만 여전히 hwpx 전용이다**(S10-02 #859 범위 밖): 이 경로는 managed HWPX 문서
+        # 생성이 겨눌 staged 템플릿을 낸다. TXT 의 산출은 문서 생성이 아니라 작업대 복사라
+        # 물질화·복사 인수는 S10-04 소관이고, 그 전에 여는 것은 없는 기능을 있는 척하는 것이다.
         if job.media != "hwpx":
             raise TemplateChangeError("HWPX 작업이 아니라 생성을 이 경로로 지원하지 않습니다")
+        profile = _profile_for(job.media, "생성")
         self._ensure_manifest()
         work_id = self._work_id_for(job_name, create=True)
         assert work_id is not None
@@ -531,7 +574,9 @@ class TemplateChangeCoordinator:
             # Candidate/qualification object 를 남겨도, 템플릿을 고쳐 다시 누르면 새 id 로 재부트스트랩
             # 된다(고정 id 면 ObjectAlreadyExists 로 복구 불가). 진짜 중복 클릭은 generation_lock 이
             # 막으므로 여기서 재전송-멱등을 따로 지킬 필요가 없다.
-            outcome = self._bootstrap(work_id, job_name, job, f"gen-{uuid.uuid4().hex}")
+            outcome = self._bootstrap(
+                work_id, job_name, job, f"gen-{uuid.uuid4().hex}", profile
+            )
             if outcome.result != BOOTSTRAP_OK:
                 raise SlotlessRunAdmissionError(TEMPLATE_INITIALIZATION_REQUIRED)
         aggregate = self._works.load(work_id)
@@ -574,11 +619,15 @@ class TemplateChangeCoordinator:
         원본 편집분이 반영 안 됨」을 조용히 겪지 않게 한다(confirm-or-alarm). digest 비교뿐:
         seat 시점에 gate/stage 를 돌리지 않는다(applied-work NEEDS_CONFIGURATION 회귀 방지).
 
-        미부트스트랩(원본=실행본이라 일관)·비-hwpx·무편집·값싸게 못 구하는 경우는 None.
+        미부트스트랩(원본=실행본이라 일관)·미지원 매체·무편집·값싸게 못 구하는 경우는 None.
         """
         job = load_job(self._registry, job_name)
         work_id = job.authority_id or None
-        if job.media != "hwpx" or not work_id or not self._works.exists(work_id):
+        if (
+            job.media not in SUPPORTED_MEDIA
+            or not work_id
+            or not self._works.exists(work_id)
+        ):
             return None
         try:
             aggregate = self._works.load(work_id)
@@ -599,7 +648,11 @@ class TemplateChangeCoordinator:
         )
 
     def _advance(
-        self, work_id: str, job_name: str, prep: TemplateChangePreparation
+        self,
+        work_id: str,
+        job_name: str,
+        prep: TemplateChangePreparation,
+        profile: QualificationProfile,
     ) -> _AdvanceResult:
         """CAPTURING→QUALIFYING→admission 을 순서대로 전진 — 각 stage 는 멱등 short-circuit."""
         initial_job_snapshot = load_job(self._registry, job_name)
@@ -618,7 +671,7 @@ class TemplateChangeCoordinator:
             # runner 의 신뢰 경계가 SOURCE_BINDING_CHANGED 로 판정할 몫이다.
             pinned = MutableSourceBinding(
                 source_binding_id=prep.source_binding_id,
-                media="hwpx",
+                media=initial_job_snapshot.media,
                 host_reference=initial_job_snapshot.template_path,
                 display_metadata={},
                 generation=prep.source_binding_generation,
@@ -635,7 +688,7 @@ class TemplateChangeCoordinator:
             prep = run_qualification_stage(
                 self._works, self._candidates, self._quals,
                 work_id=work_id, preparation_id=prep.preparation_id,
-                profile=HWPX_QUALIFICATION_PROFILE, engine_metadata=dict(_ENGINE_METADATA),
+                profile=profile, engine_metadata=dict(_ENGINE_METADATA),
                 started_at=self._now(), completed_at=self._now(), qualified_at=self._now(),
             )
         if prep.status == PREP_QUALIFYING and prep.attempt_id is not None:
@@ -660,7 +713,12 @@ class TemplateChangeCoordinator:
         )
 
     def _bootstrap(
-        self, work_id: str, job_name: str, job, request_id: str
+        self,
+        work_id: str,
+        job_name: str,
+        job,
+        request_id: str,
+        profile: QualificationProfile,
     ) -> BootstrapOutcome:
         binding = self._binding(work_id, job)
         boot_id = f"boot-{request_id}"
@@ -675,7 +733,7 @@ class TemplateChangeCoordinator:
             self._works, self._candidates, self._quals,
             work_id=work_id, bootstrap_request_id=boot_id,
             lineage=self._lineage(work_id, binding), binding=binding,
-            reader=self._reader(job_name), profile=HWPX_QUALIFICATION_PROFILE,
+            reader=self._reader(job_name), profile=profile,
             legacy_template_revision=job.template_revision,
             legacy_binding_revision=job.binding_revision,
             legacy_source_reference=job.template_path,
