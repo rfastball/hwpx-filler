@@ -444,7 +444,10 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
-  /** 누름틀 변환 — CLI 2단계 미러(스캔 dry-run → 확인 왕복 → 제자리 적용). */
+  /** 누름틀·구간 변환 — 2단계(스캔 dry-run → 확인 왕복 → 제자리 적용).
+   *
+   *  문안·수치·차단 판정은 Python 이 낸다. 여기서 재조립하지 않는다: 차단(`blocked`)은
+   *  결과 줄로 이미 재진술됐으므로 확인을 띄우지 않고 조용히 끝난다. */
   async function compileTemplate(path: string): Promise<void> {
     const result = await dispatch("tpl", "compile", { path });
     if (result.needs_confirm && await deps.modal.confirm({
@@ -452,6 +455,61 @@ export function createEditorController(deps: EditorControllerDeps) {
       confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
     })) {
       await dispatch("tpl", "compile", { path, confirm: true });
+    }
+  }
+
+  /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ---- */
+
+  /** 항목 이름 바꾸기 — 파괴가 아니라 프롬프트 하나다(확인 왕복 없음). */
+  async function renameSlot(slotId: string, label: string, trigger: HTMLElement): Promise<void> {
+    const slots = (snapshot().library || {}).slots || {};
+    const value = await deps.modal.prompt({
+      /* 빈 문자열도 유효한 답이다(이름 없는 항목으로 되돌리기) — 검증을 걸지 않는다. */
+      title: "항목 이름 바꾸기", body: `'${slotId}' 의 새 이름`, value: label,
+      returnFocus: trigger,
+    });
+    if (value === null) return;
+    await dispatch("tpl", "slot_rename", { path: String(slots.path || ""), slot_id: slotId, label: value });
+  }
+
+  /** 항목을 표기로 되돌리기 — 확인 본문(전이 결과 재진술)은 Python 이 싣는다. */
+  async function decompileSlot(slotId: string, trigger: HTMLElement): Promise<void> {
+    const path = String(((snapshot().library || {}).slots || {}).path || "");
+    const result = await dispatch("tpl", "slot_decompile", { path, slot_id: slotId });
+    if (result.needs_confirm && await deps.modal.confirm({
+      body: `${result.confirm_text}\n\n되돌릴까요?`,
+      confirmLabel: "표기로 되돌리기", cancelLabel: "취소", returnFocus: trigger, danger: true,
+    })) {
+      await dispatch("tpl", "slot_decompile", { path, slot_id: slotId, confirm: true });
+    }
+  }
+
+  /** 항목 삭제 — 내용째 사라지는 파괴 확정. */
+  async function removeSlot(slotId: string, trigger: HTMLElement): Promise<void> {
+    const path = String(((snapshot().library || {}).slots || {}).path || "");
+    const result = await dispatch("tpl", "slot_remove", { path, slot_id: slotId });
+    if (result.needs_confirm && await deps.modal.confirm({
+      body: `${result.confirm_text}\n\n지울까요?`,
+      confirmLabel: "삭제", cancelLabel: "취소", returnFocus: trigger, danger: true,
+    })) {
+      await dispatch("tpl", "slot_remove", { path, slot_id: slotId, confirm: true });
+    }
+  }
+
+  /** Slot 동사 3종의 단일 진입 — 실패는 인라인 채널로(#323 라우팅 규칙). */
+  async function handleSlotVerb(
+    verb: string, slotId: string, trigger: HTMLElement,
+  ): Promise<void> {
+    try {
+      if (verb === "rename") {
+        const rows = (((snapshot().library || {}).slots || {}).rows || []) as Obj[];
+        const row = rows.find((item) => String(item.id) === slotId);
+        await renameSlot(slotId, String((row || {}).label || ""), trigger);
+      } else if (verb === "decompile") await decompileSlot(slotId, trigger);
+      else if (verb === "remove") await removeSlot(slotId, trigger);
+      else throw new Error(`알 수 없는 항목 동사입니다: ${verb}`);
+    } catch (error) {
+      noticeSave(String((error as Obj)?.message || error));
     }
   }
 
@@ -944,7 +1002,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     type, focus, compose, commitField, commitRow, commitRowOnBlur,
     setFold(open: boolean): void { patchView({ foldOpen: open }); },
     setTokFold(open: boolean): void { patchView({ tokFoldOpen: open }); },
-    toggleLibMenu, closeLibMenu, handleLibMenu,
+    toggleLibMenu, closeLibMenu, handleLibMenu, handleSlotVerb,
     isLibMenuOpen: (): boolean => view.libMenu !== null,
     libContextMenu,
     openLibMoveDialog, findLibItem,
@@ -1167,12 +1225,46 @@ function BandCap(props: { label: string; band: Obj }): ReactNode {
     }, band.dir) : null);
 }
 
+/** 검토가 낸 구간 항목(Slot) 목록 + 행 동사 3종(S8-03 #834).
+ *
+ *  목록·요약·진단은 Python 투영 그대로 그린다(판정 재조립 금지). 진단이 있으면 목록 대신
+ *  사유가 서고 동사 버튼은 아예 없다 — 못 믿는 구조 위에서 변이를 권하지 않는다. */
+function SlotBand(props: { slots: Obj; controller: EditorController }): ReactNode {
+  const { slots, controller } = props;
+  const rows = (slots.rows || []) as Obj[];
+  const diagnostics = (slots.diagnostics || []) as string[];
+  const verb = (row: Obj, act: string, label: string, danger?: boolean): ReactNode =>
+    h("button", {
+      className: `btn sm${danger ? " danger" : ""}`, key: act,
+      "data-act": `slot-${act}`, "data-slot": String(row.id),
+      onClick: (event: Obj) => controller.guarded(
+        () => controller.handleSlotVerb(act, String(row.id), event.currentTarget)),
+    }, label);
+  return h("div", { className: "grp", id: "tplSlots" },
+    h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
+      h("span", { className: "cap" }, "구간 항목"),
+      h("span", { className: "muted capnote" }, String(slots.name || "")),
+      h("span", { className: "muted capnote" }, String(slots.summary || ""))),
+    ...diagnostics.map((text, index) =>
+      h("div", { className: "hint danger", key: `diag-${index}` }, text)),
+    ...(diagnostics.length ? [] : rows.map((row) => h("div", {
+      className: "slotrow", key: String(row.id), "data-slot": String(row.id),
+    },
+    h("span", { className: "fname" }, String(row.label || row.id)),
+    h("span", { className: "tbadge", title: (row.options || []).join(" · ") },
+      `선택 ${row.option_count}`),
+    verb(row, "rename", "이름 바꾸기"),
+    verb(row, "decompile", "표기로 되돌리기"),
+    verb(row, "remove", "삭제", true)))));
+}
+
 function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): ReactNode {
   const { snapshot, controller } = props;
   const library = snapshot.library || {};
   const hwpx = library.hwpx || {};
   const txt = library.txt || {};
   const result = library.result || {};
+  const slots = library.slots || null;
   return createElement(Fragment, null,
     /* 가져오기는 hwpx·txt 겸용(확장자가 매체 라우팅)이라 밴드 밖 공용 줄에 둔다. */
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
@@ -1209,6 +1301,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         band: txt, media: "txt", controller,
         emptyText: "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…' 또는 '폴더에서 가져오기…'로 추가하세요.",
       })),
+    slots ? h(SlotBand as any, { slots, controller }) : null,
     result.text ? h("div", {
       className: `run-result${result.level && result.level !== "muted" ? " " + result.level : ""}`,
     }, result.text) : null);

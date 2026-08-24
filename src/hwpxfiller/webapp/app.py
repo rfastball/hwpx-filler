@@ -329,6 +329,9 @@ class WebFrontend:
                 library_result=lambda: {
                     "text": tpl_ctrl.result_text, "level": tpl_ctrl.result_level,
                 },
+                # 검토가 낸 Slot 목록(S8-03)도 같은 규율이다: 투영·수명은 tpl 컨트롤러가
+                # 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지).
+                library_slots=tpl_ctrl.slot_snapshot,
                 after_mapping_saved=job_ctrl.on_editor_mapping_saved,
             ),
         )

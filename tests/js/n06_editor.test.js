@@ -78,7 +78,7 @@ function harness(cfg) {
     runtime, client, ports, services,
     modal: {
       confirm: async (spec) => { trace.push(["modal.confirm", spec]); return opts.confirm?.(spec) ?? false; },
-      prompt: async () => null,
+      prompt: async (spec) => { trace.push(["modal.prompt", spec]); return opts.prompt?.(spec) ?? null; },
       choose: async (spec) => { trace.push(["modal.choose", spec]); return opts.choose?.(spec) ?? null; },
       open() {}, close() {},
     },
@@ -702,4 +702,163 @@ test("#793 사용자가 스스로 옮긴 초점은 빼앗지 않는다", async (
   } finally {
     globalThis.CSS = previous;
   }
+});
+
+/* ---------------- ⑦ 구간 항목(Slot) 목록·동사 3종 — S8-03 #834 ---------------- */
+
+/** 검토가 낸 Slot 목록이 실린 「템플릿」 탭 스냅샷. */
+function slotSnap(extra) {
+  return snap(Object.assign({
+    section: "template",
+    library: {
+      hwpx: { flat: true, count: 0, group_names: [], dir: "C:/lib", sections: [] },
+      txt: { flat: true, count: 0, group_names: [], dir: "C:/txt", sections: [] },
+      result: { text: "", level: "muted" },
+      slots: {
+        path: "C:/lib/구간.hwpx", name: "구간.hwpx", summary: "항목 1개 · 선택 1개",
+        rows: [{
+          id: "특약", label: "특약 사항", option_count: 1, options: ["지체상금 조항"],
+        }],
+        diagnostics: [],
+      },
+    },
+  }, extra || {}));
+}
+
+test("S8-03 Slot 목록이 「템플릿」 탭에 서고 동사 3종이 함께 그려진다", async () => {
+  const h = harness({ initial: async () => slotSnap() });
+  await h.controller.init();
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes('id="tplSlots"'), "목록 구획이 실재해야 한다");
+  assert.ok(markup.includes("특약 사항") && markup.includes("선택 1"),
+    "투영된 이름·선택 수가 그대로 실린다");
+  for (const act of ["slot-rename", "slot-decompile", "slot-remove"]) {
+    assert.ok(markup.includes(`data-act="${act}"`), `${act} 트리거가 없다`);
+  }
+  assert.ok(markup.includes('data-slot="특약"'), "동사가 겨눌 항목 id 가 실려야 한다");
+});
+
+test("S8-03 진단이 있으면 사유만 서고 동사 버튼은 없다", async () => {
+  const h = harness({
+    initial: async () => slotSnap({
+      library: Object.assign({}, slotSnap().library, {
+        slots: {
+          path: "C:/lib/구간.hwpx", name: "구간.hwpx",
+          summary: "구간 구조를 읽을 수 없습니다: 구간.hwpx",
+          rows: [], diagnostics: ["BOOKMARK '특약': invalid MetaTag JSON"],
+        },
+      }),
+    }),
+  });
+  await h.controller.init();
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.ok(markup.includes("invalid MetaTag JSON"), "사유는 숨기지 않는다");
+  assert.equal(markup.includes('data-act="slot-remove"'), false,
+    "못 믿는 구조 위에서 변이를 권하지 않는다");
+});
+
+test("S8-03 개명은 프롬프트 하나로 끝난다(확인 왕복 없음)", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    prompt: () => "새 이름",
+  });
+  await h.controller.init();
+
+  await h.controller.handleSlotVerb("rename", "특약", {});
+
+  const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+  assert.deepEqual(sent.map((row) => [row[2], row[3]]), [
+    ["slot_rename", { path: "C:/lib/구간.hwpx", slot_id: "특약", label: "새 이름" }],
+  ]);
+  const prompted = h.trace.find((row) => row[0] === "modal.prompt");
+  assert.equal(prompted[1].value, "특약 사항", "현재 이름이 초기값이어야 한다");
+  assert.equal(h.trace.some((row) => row[0] === "modal.confirm"), false);
+});
+
+test("S8-03 개명 프롬프트 취소는 아무것도 보내지 않는다", async () => {
+  const h = harness({ initial: async () => slotSnap(), prompt: () => null });
+  await h.controller.init();
+
+  await h.controller.handleSlotVerb("rename", "특약", {});
+
+  assert.equal(
+    h.trace.some((row) => row[0] === "dispatch" && row[1] === "tpl"), false);
+});
+
+for (const [verb, action] of [["decompile", "slot_decompile"], ["remove", "slot_remove"]]) {
+  test(`S8-03 '${verb}' 는 2왕복이고 확인 본문은 Python 이 싣는다`, async () => {
+    const h = harness({
+      initial: async () => slotSnap(),
+      call: async (_screen, name) => (
+        name === action
+          ? { needs_confirm: true, confirm_text: `${action} 재진술` }
+          : {}
+      ),
+      confirm: () => true,
+    });
+    await h.controller.init();
+
+    await h.controller.handleSlotVerb(verb, "특약", {});
+
+    const sent = h.trace
+      .filter((row) => row[0] === "dispatch" && row[1] === "tpl")
+      .map((row) => [row[2], row[3]]);
+    assert.deepEqual(sent, [
+      [action, { path: "C:/lib/구간.hwpx", slot_id: "특약" }],
+      [action, { path: "C:/lib/구간.hwpx", slot_id: "특약", confirm: true }],
+    ]);
+    const asked = h.trace.find((row) => row[0] === "modal.confirm");
+    assert.ok(asked[1].body.includes(`${action} 재진술`),
+      "확인 문안을 웹이 다시 조립하지 않는다");
+    assert.equal(asked[1].danger, true);
+  });
+
+  test(`S8-03 '${verb}' 확인 취소는 확정 호출을 보내지 않는다`, async () => {
+    const h = harness({
+      initial: async () => slotSnap(),
+      call: async () => ({ needs_confirm: true, confirm_text: "재진술" }),
+      confirm: () => false,
+    });
+    await h.controller.init();
+
+    await h.controller.handleSlotVerb(verb, "특약", {});
+
+    const sent = h.trace.filter((row) => row[0] === "dispatch" && row[1] === "tpl");
+    assert.equal(sent.length, 1, "1차 질의 하나뿐이어야 한다");
+    assert.equal(sent[0][3].confirm, undefined);
+  });
+}
+
+test("S8-03 Slot 동사의 실패는 인라인 채널로 간다(#323 라우팅)", async () => {
+  const h = harness({
+    initial: async () => slotSnap(),
+    prompt: () => "새 이름",
+    call: async (_screen, action) => {
+      if (action === "slot_rename") throw new Error("항목이 없습니다");
+      return {};
+    },
+  });
+  await h.controller.init();
+
+  await h.controller.handleSlotVerb("rename", "특약", {});
+
+  const message = h.controller.viewModel.getSnapshot().saveMessage;
+  assert.ok(message && message.text.includes("항목이 없습니다"));
+  assert.deepEqual(h.notices, [], "구조화 실패는 window.alert 로 새지 않는다");
+});
+
+test("S8-03 목록이 없으면 구획째 서지 않는다", async () => {
+  const h = harness({ initial: async () => snap({ section: "template", library: {} }) });
+  await h.controller.init();
+
+  const markup = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: h.controller }),
+  );
+  assert.equal(markup.includes('id="tplSlots"'), false);
 });

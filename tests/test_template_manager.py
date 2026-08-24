@@ -84,8 +84,9 @@ def test_action_matrix_and_vm_delegation():
     }
     for state, keys in expected.items():
         assert [a.key for a in available_actions(state)] == keys
+    # RAW 라벨은 S8-03 에서 구간 축을 포함하게 바뀌었다(같은 한 동사가 둘을 변환한다).
     assert [available_actions(state)[0].label for state in (CompileState.RAW, CompileState.PARTIAL)] == [
-        "누름틀 변환", "마저 변환",
+        "누름틀·구간 변환", "마저 변환",
     ]
     vm = TemplateManagerViewModel(
         paths=[], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
@@ -442,6 +443,146 @@ def test_format_scan_empty_result_is_inline_warn(tmp_path):
     line = vm.format_scan_empty_result(str(raw), ScanPreview(compilable=[], skipped=[]))
     assert "onlymanual.hwpx" in line and "변환 가능한 토큰이 없습니다" in line
     assert line.level == "warn"
+
+
+# ================================= S8-03 — 누름틀·구간 변환 미리보기·적용·Slot 목록
+def _structure_body(*lines: str) -> str:
+    return "".join(
+        f"<hp:p><hp:run charPrIDRef=\"0\"><hp:t>{line}</hp:t></hp:run></hp:p>"
+        for line in lines
+    )
+
+
+_NOTATION_LINES = (
+    "{{#항목 특약 특약 사항}}",
+    "{{#선택 지체상금 지체상금 조항}}",
+    "지체상금은 {{지체상금률}} 로 한다.",
+    "{{/선택}}",
+    "{{/항목}}",
+    "발주자: {{수요기관}}",
+)
+
+
+def _structure_vm(tmp_path, *lines: str):
+    path = _write_raw(tmp_path / "구간.hwpx", _structure_body(*lines))
+    vm = TemplateManagerViewModel(
+        paths=[path], inspect_template=inspect_hwpx_template, file_ops=HWPX_TEMPLATE_OPS
+    )
+    return vm, path
+
+
+def test_convert_preview_counts_both_axes(tmp_path):
+    """미리보기 하나가 필드 토큰과 구간 선언을 함께 센다(「항목 n · 선택 m · 누름틀 k」)."""
+    vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)
+    preview = vm.convert_preview(str(path))
+
+    assert (preview.slots, preview.options) == (1, 1)
+    assert len(preview.tokens.compilable) == 2
+    assert preview.summary() == "항목 1개 · 선택 1개 · 누름틀 2개"
+    assert (preview.blocked, preview.has_convertible) == (False, True)
+    assert path.read_bytes()  # dry-run — 파일 무변형(아래 apply 가 대조군)
+
+
+def test_convert_preview_blocks_on_a_notation_diagnostic(tmp_path):
+    """표기 진단이 있으면 미리보기가 스스로 '변환 불가'를 말한다."""
+    vm, path = _structure_vm(tmp_path, "{{#항목 특약}}", "본문 {{값}}")
+    preview = vm.convert_preview(str(path))
+
+    assert preview.blocked is True
+    assert any("닫는 마커" in item for item in preview.diagnostics)
+    line = vm.format_convert_blocked_result(str(path), preview)
+    assert "변환할 수 없습니다" in line and "구간.hwpx" in line
+    assert line.level == "warn"
+
+
+def test_convert_preview_with_nothing_to_do(tmp_path):
+    vm, path = _structure_vm(tmp_path, "본문에 토큰도 마커도 없습니다.")
+    preview = vm.convert_preview(str(path))
+
+    assert (preview.blocked, preview.has_convertible) == (False, False)
+    line = vm.format_convert_empty_result(str(path), preview)
+    assert "변환할 토큰과 구간이 없습니다" in line and line.level == "warn"
+
+
+def test_apply_convert_compiles_fields_before_structure(tmp_path):
+    """순서 계약(S8-02 실측) — 구간 **안**의 토큰도 누름틀이 된다.
+
+    구조를 먼저 컴파일하면 그 region 안 토큰은 depth>0 이라 필드 컴파일에서 제외된다.
+    「지체상금률」이 필드로 잡혔다는 사실이 곧 순서의 증거다.
+    """
+    vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)
+    result = vm.apply_convert(str(path))
+
+    assert (result.fields, result.slots, result.options) == (2, 1, 1)
+    assert result.refused is False
+    inspection = inspect_hwpx_template(str(path))
+    assert set(inspection.fields) == {"지체상금률", "수요기관"}
+    assert [slot.id for slot in inspection.slots] == ["특약"]
+    line = vm.format_convert_result(str(path), result)
+    assert "구간.hwpx" in line and "항목 1개" in line and line.level == "ok"
+
+
+def test_apply_convert_restates_a_structure_refusal(tmp_path):
+    """구간 컴파일 거절은 조용히 사라지지 않는다 — 결과 문구가 사유를 싣는다."""
+    from hwpxfiller.gui.template_manager_state import ConvertResult
+
+    vm, path = _structure_vm(tmp_path, "값: {{값}}")
+    line = vm.format_convert_result(
+        str(path), ConvertResult(fields=1, refusals=("이름 충돌",))
+    )
+    assert "누름틀 1개" in line and "구간 변환은 하지 못했습니다" in line
+    assert "이름 충돌" in line and line.level == "warn"
+
+
+def test_slot_view_projects_compiled_slots(tmp_path):
+    """Slot 목록은 **투영**이다 — 판정 없이 id·label·선택 수를 편다."""
+    vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)
+    vm.apply_convert(str(path))
+
+    view = vm.slot_view(str(path))
+    assert view.name == "구간.hwpx" and view.diagnostics == ()
+    assert [(row.id, row.label, row.option_count) for row in view.rows] == [
+        ("특약", "특약 사항", 1)
+    ]
+    assert view.rows[0].options == ("지체상금 조항",)
+    assert view.summary() == "항목 1개 · 선택 1개"
+
+
+def test_slot_verbs_go_through_the_ports_and_reproject(tmp_path):
+    """개명·풀기·삭제가 파일을 바꾸고 목록을 다시 투영한다."""
+    vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)
+    vm.apply_convert(str(path))
+
+    renamed = vm.rename_slot(str(path), "특약", "새 이름")
+    assert renamed.rows[0].label == "새 이름"
+
+    decompiled = vm.decompile_slot(str(path), "특약")
+    assert decompiled.rows == ()
+    assert vm.convert_preview(str(path)).slots == 1  # 표기로 돌아왔다
+
+    vm.apply_convert(str(path))
+    removed = vm.remove_slot(str(path), "특약")
+    assert removed.rows == ()
+    assert vm.convert_preview(str(path)).slots == 0  # 내용째 사라졌다
+
+
+def test_slot_confirm_texts_restate_the_transition_and_the_loss(tmp_path):
+    """확인 문안: 풀기는 **전이 결과**를, 삭제는 **손실 집합**을 재진술한다."""
+    vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)
+    vm.apply_convert(str(path))
+
+    decompile_text = vm.confirm_decompile_text(str(path), "특약")
+    assert "구간 표기로 되돌립니다" in decompile_text
+    assert "문서를 만들 수 없습니다" in decompile_text
+    assert "구간.hwpx" in decompile_text
+
+    remove_text = vm.confirm_remove_slot_text(str(path), "특약")
+    assert "사라지는 것:" in remove_text and "선택 1개" in remove_text
+    assert "구간.hwpx" in remove_text
+
+    # 문안 규율: em dash 금지·낫표 금지(COPY_STYLE_GUIDE §3).
+    for text in (decompile_text, remove_text):
+        assert "—" not in text and "「" not in text
 
 
 def test_rows_carry_fill_precheck_warns(tmp_path):

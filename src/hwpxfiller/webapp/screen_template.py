@@ -35,7 +35,7 @@ from ..host.locations import default_templates_dir
 from ..external.template_files import TemplateFileStore
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
-from ..gui.template_manager_state import TemplateManagerViewModel
+from ..gui.template_manager_state import SlotView, TemplateManagerViewModel
 from .screens import MUTATION_KINDS, MutationSink, PushSink
 from .template_groups import (
     TemplateGroupModel,
@@ -93,6 +93,9 @@ class TemplateController:
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
+        # 마지막으로 검토한 템플릿의 Slot 목록(S8-03) — 결과 줄과 같은 수명의 관측 채널이다.
+        # 「어느 템플릿의 목록인가」를 뷰가 추측하지 않게 경로·이름을 함께 싣는다.
+        self._slot_view: "SlotView | None" = None
         # 최근 삭제 1건 복원 슬롯 — (media, 원경로, 휴지통경로, 삭제 시점 그룹). 그룹을 슬롯에
         # 보존해야 한다(#269 리뷰): 삭제 직후 스냅샷 푸시의 reconcile 이 사라진 키의 그룹 지정을
         # 영구 제거하므로, 복원 시 파일만 돌아오면 조용히 「그룹 없음」이 된다.
@@ -204,6 +207,35 @@ class TemplateController:
             "hwpx": hwpx,
             "txt": txt,
             "result": {"text": self.result_text, "level": self.result_level},
+            "slots": self.slot_snapshot(),
+        }
+
+    def slot_snapshot(self) -> "dict | None":
+        """검토한 템플릿의 Slot 목록 투영(없으면 ``None``) — 편집기 밴드도 이 값을 읽는다.
+
+        목록이 가리키는 파일이 라이브러리에서 사라졌으면 스스로 걷는다: 죽은 경로를 겨눈
+        동사 버튼을 남기면 누를 때야 실패한다.
+        """
+        view = self._slot_view
+        if view is None:
+            return None
+        if self._norm(view.path) not in self._live_paths("hwpx"):
+            self._slot_view = None
+            return None
+        return {
+            "path": view.path,
+            "name": view.name,
+            "summary": view.summary(),
+            "rows": [
+                {
+                    "id": row.id,
+                    "label": row.label,
+                    "option_count": row.option_count,
+                    "options": list(row.options),
+                }
+                for row in view.rows
+            ],
+            "diagnostics": list(view.diagnostics),
         }
 
     def initial(self) -> dict:
@@ -408,36 +440,106 @@ class TemplateController:
 
     # ---- HWPX 상태 게이트 액션
     def _do_compile(self, p: dict) -> dict:
-        """CLI 2단계 미러 — 스캔 미리보기(dry-run) → 확인 라운드트립 → 적용·저장.
+        """「누름틀·구간 변환」 2단계 — 미리보기(dry-run) → 확인 라운드트립 → 적용·저장.
 
-        1차 호출(``confirm`` 없음): 스캔만. 변환 가능 토큰이 없으면 인라인 결과로 통지하고
-        끝(파괴 아님). 있으면 ``needs_confirm`` 으로 미리보기를 재진술 — 조용히 파일을 만지지
-        않는다. 2차 호출(``confirm``): 실제 컴파일·저장.
+        1차 호출(``confirm`` 없음): 스캔만. 표기 진단이 있으면 **확인을 묻지 않고** 차단
+        사유를 인라인으로 재진술한다(변환 불가는 확정할 것이 아니다). 바꿀 것이 없으면
+        역시 인라인 통지로 끝(파괴 아님). 있으면 ``needs_confirm`` 으로 두 축(누름틀·구간)을
+        함께 재진술한다. 2차 호출(``confirm``): 실제 변환·저장.
+
+        판정·수치·문안은 전부 링1(:class:`TemplateManagerViewModel`) 소유다 — 여기서
+        다시 조립하지 않는다.
         """
         path = p["path"]
         if p.get("confirm"):
-            report = self.vm.apply_fieldize(path)
-            self._set_result(self.vm.format_compile_result(path, report))
+            result = self.vm.apply_convert(path)
+            self._set_result(self.vm.format_convert_result(path, result))
             # 제자리 변환 = bytes 변이. 같은 파일을 든 편집 세션은 스키마가 방금 달라졌다.
             self._notify_mutation("mutated", path)
-            return {"ok": True, "applied": True}
-        preview = self.vm.scan_preview(path)
-        if not preview.has_compilable:
-            # UD-24: '변환 가능 토큰 없음'은 차단 모달이 아니라 인라인 결과로(파괴 아님).
-            self._set_result(self.vm.format_scan_empty_result(path, preview))
+            return {"ok": True, "applied": True, "refused": result.refused}
+        preview = self.vm.convert_preview(path)
+        if preview.blocked:
+            self._set_result(self.vm.format_convert_blocked_result(path, preview))
+            return {"ok": True, "applied": False, "blocked": True}
+        if not preview.has_convertible:
+            # UD-24: '바꿀 것 없음'은 차단 모달이 아니라 인라인 결과로(파괴 아님).
+            self._set_result(self.vm.format_convert_empty_result(path, preview))
             return {"ok": True, "applied": False}
         lines = [preview.summary(), ""]
-        lines.extend(f"+ {s.name}" for s in preview.compilable)
-        lines.extend(f"! {s.name} — {s.reason}" for s in preview.skipped)
-        lines.append(f"\n지금 누름틀로 변환하면 파일이 제자리에서 변경됩니다: {Path(path).name}")
+        lines.extend(f"+ {s.name}" for s in preview.tokens.compilable)
+        lines.extend(f"! {s.name}: {s.reason}" for s in preview.tokens.skipped)
+        lines.append(f"\n지금 변환하면 파일이 제자리에서 바뀝니다: {Path(path).name}")
         return {"ok": True, "needs_confirm": True, "confirm_text": "\n".join(lines), "path": path}
 
     def _do_review(self, p: dict) -> dict:
-        """lint 점검(읽기 전용) → 결과 문구(심각도 채널)."""
+        """lint 점검(읽기 전용) → 결과 문구 + **Slot 목록 투영**(S8-03).
+
+        검토는 「이 템플릿이 지금 어떤가」를 묻는 자리라 컴파일된 구간 항목 목록도 같은
+        왕복에서 선다. 목록·진단은 링1 투영 그대로다(판정 재조립 금지).
+        """
         path = p["path"]
         report = self.vm.lint(path)
         self._set_result(self.vm.format_lint_result(path, report))
+        self._slot_view = self.vm.slot_view(path)
         return {"ok": True}
+
+    # ---- 컴파일된 Slot 관리 동사(S8-03 #834)
+    def _slot_target(self, p: dict) -> "tuple[str, str]":
+        """(path, slot_id) 검증 — 라이브러리 밖 임의 파일 변이 권한 승격을 막는다.
+
+        ``_do_delete`` 와 같은 술어다: 경로가 이 매체 라이브러리의 **현재 목록**에 실재해야
+        한다. slot id 는 비어 있을 수 없다(빈 값이 「첫 항목」으로 접히지 않게).
+        """
+        path = str(p["path"])
+        if self._norm(path) not in self._live_paths("hwpx"):
+            raise ValueError("현재 라이브러리 목록에 없는 경로는 바꿀 수 없습니다.")
+        slot_id = str(p.get("slot_id", "")).strip()
+        if not slot_id:
+            raise ValueError("대상 항목 id 가 비어 있습니다.")
+        return path, slot_id
+
+    def _after_slot_mutation(self, path: str, view, text: str) -> dict:
+        """Slot 동사 성공 뒤 공통 후처리 — 목록 재투영·결과 줄·재정산 통지."""
+        self._slot_view = view
+        self._set_result(self.vm.format_slot_result(path, text))
+        # bytes 변이 = 같은 파일을 든 편집 세션의 스키마가 방금 달라졌다(S8G-00 seam).
+        self._notify_mutation("mutated", path)
+        return {"ok": True, "slot_count": len(view.rows)}
+
+    def _do_slot_rename(self, p: dict) -> dict:
+        """항목 이름(label) 변경 — 구조 무변형이라 확인 왕복이 없다(파괴 아님).
+
+        빈 값은 label 을 뗀다(이름 없는 항목). 입력 프롬프트는 웹이 소유한다.
+        """
+        path, slot_id = self._slot_target(p)
+        label = str(p.get("label", "") or "").strip()
+        view = self.vm.rename_slot(path, slot_id, label or None)
+        told = f"항목 이름을 바꿨습니다 '{slot_id}'" if label else f"항목 이름을 지웠습니다 '{slot_id}'"
+        return self._after_slot_mutation(path, view, told)
+
+    def _do_slot_decompile(self, p: dict) -> dict:
+        """항목을 구간 표기로 되돌리기 — 2왕복. 확인 본문이 **전이 결과**를 재진술한다."""
+        path, slot_id = self._slot_target(p)
+        if not p.get("confirm"):
+            return {
+                "ok": True, "needs_confirm": True, "kind": "slot_decompile",
+                "path": path, "slot_id": slot_id,
+                "confirm_text": self.vm.confirm_decompile_text(path, slot_id),
+            }
+        view = self.vm.decompile_slot(path, slot_id)
+        return self._after_slot_mutation(path, view, f"항목을 표기로 되돌렸습니다 '{slot_id}'")
+
+    def _do_slot_remove(self, p: dict) -> dict:
+        """항목을 **내용째** 삭제 — 2왕복 파괴 확정(손실 목록 재진술)."""
+        path, slot_id = self._slot_target(p)
+        if not p.get("confirm"):
+            return {
+                "ok": True, "needs_confirm": True, "kind": "slot_remove",
+                "path": path, "slot_id": slot_id,
+                "confirm_text": self.vm.confirm_remove_slot_text(path, slot_id),
+            }
+        view = self.vm.remove_slot(path, slot_id)
+        return self._after_slot_mutation(path, view, f"항목을 지웠습니다 '{slot_id}'")
 
     # ---- 그룹 관리(작업 목록과 단일 모델 · 결정 2)
     def _do_set_group(self, p: dict) -> None:

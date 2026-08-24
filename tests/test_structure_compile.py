@@ -342,10 +342,43 @@ def test_preflight_refuses_declaration_outside_a_body_section() -> None:
     assert pkg.entries == before
 
 
-def test_preflight_refuses_when_product_structure_already_exists() -> None:
-    """사후조건 ⓐ 가 성립할 수 없는 문서는 raise 로 흘리지 않고 먼저 거절한다."""
+def test_valid_existing_product_slot_coexists_with_a_new_declaration() -> None:
+    """S8-03 완화: **유효한** 기존 Slot 은 거절 사유가 아니다(왕복의 전제 · D6).
+
+    사후조건 ⓐ 는 「기존 ∪ 선언」으로 일반화됐고 기대치는 **문서 위치 순**이다 —
+    여기서는 기존 region 이 앞(문단 0)이고 선언 범위가 뒤(문단 2)다.
+    """
     pkg = _pkg(
         _bookmark("5", "기존", "A", serialize_slot_metatag(Slot("기존", ()))),
+        _text("{{#항목 특약}}"),
+        _text("본문"),
+        _text("{{/항목}}"),
+    )
+    report = compile_structure(pkg)
+
+    assert (report.modified, report.refusal) == (True, None)
+    assert report.slots == (Slot("특약", ()),)  # 리포트는 **이번에** 만든 것만 말한다
+    assert inspect_slots(pkg) == ((Slot("기존", ()), Slot("특약", ())), ())
+
+
+def test_declaration_before_an_existing_slot_keeps_document_order() -> None:
+    """기대치 병합이 이름순·선언순이 아니라 **위치순**임을 반대 배치로 못박는다."""
+    pkg = _pkg(
+        _text("{{#항목 특약}}"),
+        _text("본문"),
+        _text("{{/항목}}"),
+        _bookmark("5", "기존", "A", serialize_slot_metatag(Slot("기존", ()))),
+    )
+    report = compile_structure(pkg)
+
+    assert (report.modified, report.refusal) == (True, None)
+    assert inspect_slots(pkg) == ((Slot("특약", ()), Slot("기존", ())), ())
+
+
+def test_preflight_refuses_a_duplicate_slot_id() -> None:
+    """선언 id 가 기존 Slot id 와 겹치면 사후조건이 성립할 수 없다 — 전용 code 로 거절."""
+    pkg = _pkg(
+        _bookmark("5", "다른이름", "A", serialize_slot_metatag(Slot("특약", ()))),
         _text("{{#항목 특약}}"),
         _text("본문"),
         _text("{{/항목}}"),
@@ -355,9 +388,9 @@ def test_preflight_refuses_when_product_structure_already_exists() -> None:
 
     assert report.refusal is not None
     assert [(item.kind, item.code) for item in report.refusal] == [
-        (Refusal.EXISTING_PRODUCT, "product-slot-present")
+        (Refusal.EXISTING_PRODUCT, "duplicate-slot-id")
     ]
-    assert "「기존」" in report.refusal[0].message
+    assert "'특약'" in report.refusal[0].message
     assert pkg.entries == before
 
 

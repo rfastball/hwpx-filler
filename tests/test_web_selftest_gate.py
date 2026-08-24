@@ -1502,6 +1502,23 @@ class TestWebSelftestGate:
         assert t["move_shown_after_chip"] is True, (
             "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
         )
+        # 구간 항목 목록 + 동사 1건 실왕복(S8-03 #834) — 같은 창에 얹은 단계다.
+        assert t["slot_rows"] == 1, f"구간 항목 목록이 렌더되지 않았습니다: {t!r}"
+        assert t["slot_verbs"] == [True, True, True], (
+            f"항목 행 동사 3종(개명·표기로 되돌리기·삭제)이 다 서지 않았습니다: {t['slot_verbs']!r}"
+        )
+        assert t["slot_rename_visible"] is True, "개명 트리거가 보이지 않습니다(클릭은 hidden 도 통과)."
+        assert t["slot_prompt_shown"] is True, "개명 트리거가 입력 창을 열지 않았습니다."
+        assert t["slot_prompt_value"] == "특약 사항", (
+            f"개명 프롬프트 초기값이 현재 이름이 아닙니다: {t['slot_prompt_value']!r}"
+        )
+        # 확정이 등록된 액션·payload 로 나간다(확인 왕복 없음 — 개명은 파괴가 아니다).
+        assert t["slot_dispatch"] == [
+            ["tpl", "slot_rename", "C:/lib/구간.hwpx", "특약", "특약 사항"]
+        ], f"개명 발신이 계약과 다릅니다: {t['slot_dispatch']!r}"
+        assert t["slot_notice_inline"] is True, (
+            "동사 실패가 인라인 채널(#save-msg)에 보이게 서지 않았습니다(#323 라우팅)."
+        )
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
         assert t["flat_heads"] == 0 and t["flat_rows"] == 1, f"퇴화 평면 위반: {t!r}"
 

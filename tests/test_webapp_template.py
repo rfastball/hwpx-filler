@@ -114,15 +114,164 @@ def test_compile_two_phase_scan_then_apply(tmp_path, monkeypatch):
     review = ctrl.dispatch("review", {"path": raw})
     assert review["ok"] is True and "검토" in ctrl.snapshot()["result"]["text"]
     res1 = ctrl.dispatch("compile", {"path": raw})
-    assert res1["needs_confirm"] is True and "변환 가능" in res1["confirm_text"]
+    # 확인 본문은 두 축을 함께 재진술한다(S8-03) — 「항목 n · 선택 m · 누름틀 k」.
+    assert res1["needs_confirm"] is True and "누름틀 1개" in res1["confirm_text"]
     assert (tp / "lib" / "raw.hwpx").read_bytes() == before  # dry-run 무변형
     res2 = ctrl.dispatch("compile", {"path": raw, "confirm": True})
-    assert res2["applied"] is True
+    assert res2["applied"] is True and res2["refused"] is False
     assert ctrl.snapshot()["result"]["level"] == "ok"
     assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["state"] == "compiled"
     res = ctrl.dispatch("compile", {"path": str(tp / "lib" / "comp.hwpx")})
     assert res.get("needs_confirm") is not True and res["applied"] is False
-    assert "변환 가능한 토큰이 없습니다" in ctrl.snapshot()["result"]["text"]
+    assert "변환할 토큰과 구간이 없습니다" in ctrl.snapshot()["result"]["text"]
+
+
+# ============================================= S8-03 구간 표기 변환 · Slot 관리 동사
+_NOTATION_BODY = "".join(
+    f'<hp:p><hp:run charPrIDRef="0"><hp:t>{line}</hp:t></hp:run></hp:p>'
+    for line in (
+        "{{#항목 특약 특약 사항}}",
+        "{{#선택 지체상금 지체상금 조항}}",
+        "지체상금은 {{지체상금률}} 로 한다.",
+        "{{/선택}}",
+        "{{/항목}}",
+        # 항목 밖 본문 1줄 — 삭제가 섹션을 통째로 비우지 않게(커널이 그건 거절한다).
+        "발주자: {{수요기관}}",
+    )
+)
+
+
+def _notation_template(ctrl, tmp_path: Path, body: str = _NOTATION_BODY) -> str:
+    """라이브러리에 구간 표기 템플릿을 놓고 목록을 다시 읽는다."""
+    path = tmp_path / "lib" / "구간.hwpx"
+    write_hwpx_package(path, _pkg(body))
+    ctrl.dispatch("refresh", {})
+    return str(path)
+
+
+def test_compile_refuses_a_notation_diagnostic_without_asking(tmp_path, monkeypatch):
+    """변환 불가는 확정할 것이 아니다 — 확인 왕복 없이 사유만 재진술한다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    broken = _notation_template(
+        ctrl, tp, '<hp:p><hp:run><hp:t>{{#항목 특약}}</hp:t></hp:run></hp:p>'
+        '<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p>'
+    )
+    before = Path(broken).read_bytes()
+
+    result = ctrl.dispatch("compile", {"path": broken})
+
+    assert result == {"ok": True, "applied": False, "blocked": True}
+    assert "변환할 수 없습니다" in ctrl.snapshot()["result"]["text"]
+    assert Path(broken).read_bytes() == before
+
+
+def test_review_projects_the_slot_list(tmp_path, monkeypatch):
+    """검토가 Slot 목록을 스냅샷에 세운다(판정 재조립 없이 투영 그대로)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+
+    assert ctrl.snapshot()["slots"] is None  # 검토 전에는 목록이 서지 않는다
+    ctrl.dispatch("review", {"path": path})
+
+    slots = ctrl.snapshot()["slots"]
+    assert slots["path"] == path and slots["name"] == "구간.hwpx"
+    assert slots["rows"] == [
+        {"id": "특약", "label": "특약 사항", "option_count": 1, "options": ["지체상금 조항"]}
+    ]
+    assert slots["summary"] == "항목 1개 · 선택 1개" and slots["diagnostics"] == []
+
+
+def test_slot_rename_is_a_single_round_trip(tmp_path, monkeypatch):
+    """개명은 파괴가 아니다 — 확인 없이 바로 적용하고 목록을 다시 투영한다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+
+    result = ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "새 이름"})
+
+    assert result == {"ok": True, "slot_count": 1}
+    assert ctrl.snapshot()["slots"]["rows"][0]["label"] == "새 이름"
+    assert "항목 이름을 바꿨습니다" in ctrl.snapshot()["result"]["text"]
+    # 빈 label 은 이름을 뗀다.
+    ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "  "})
+    assert ctrl.snapshot()["slots"]["rows"][0]["label"] == ""
+
+
+def test_slot_decompile_and_remove_take_two_round_trips(tmp_path, monkeypatch):
+    """파괴·전이 동사는 확인 왕복을 거친다. 1차 호출은 파일을 만지지 않는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+    before = Path(path).read_bytes()
+
+    ask = ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약"})
+    assert ask["needs_confirm"] is True and ask["kind"] == "slot_decompile"
+    assert "문서를 만들 수 없습니다" in ask["confirm_text"]
+    assert Path(path).read_bytes() == before
+
+    ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약", "confirm": True})
+    assert ctrl.snapshot()["slots"]["rows"] == []
+    assert "표기로 되돌렸습니다" in ctrl.snapshot()["result"]["text"]
+
+    # 다시 변환한 뒤 삭제 왕복.
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+    ask = ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약"})
+    assert ask["needs_confirm"] is True and "사라지는 것:" in ask["confirm_text"]
+    ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약", "confirm": True})
+    assert ctrl.snapshot()["slots"]["rows"] == []
+
+
+def test_slot_verbs_notify_the_reconciliation_seam(tmp_path, monkeypatch):
+    """bytes 변이 동사 셋이 전부 S8G-00 재정산 seam 을 태운다(#320 선례)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+    seen: "list[tuple[str, str]]" = []
+    ctrl.mutation_sinks.append(lambda kind, mutated: seen.append((kind, mutated)))
+
+    ctrl.dispatch("slot_rename", {"path": path, "slot_id": "특약", "label": "새 이름"})
+    ctrl.dispatch("slot_decompile", {"path": path, "slot_id": "특약", "confirm": True})
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("slot_remove", {"path": path, "slot_id": "특약", "confirm": True})
+
+    assert [kind for kind, _ in seen] == ["mutated"] * 4
+    assert {mutated for _, mutated in seen} == {path}
+
+
+def test_slot_verbs_reject_paths_outside_the_live_library(tmp_path, monkeypatch):
+    """라이브러리 밖 임의 파일 변이 권한 승격 차단(_do_delete 와 같은 술어)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    foreign = tp / "foreign.hwpx"
+    write_hwpx_package(foreign, _pkg(_NOTATION_BODY))
+    before = foreign.read_bytes()
+
+    for action in ("slot_rename", "slot_decompile", "slot_remove"):
+        with pytest.raises(ValueError, match="현재 라이브러리 목록에 없는"):
+            ctrl.dispatch(action, {"path": str(foreign), "slot_id": "특약"})
+    assert foreign.read_bytes() == before
+
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    with pytest.raises(ValueError, match="항목 id 가 비어"):
+        ctrl.dispatch("slot_rename", {"path": path, "slot_id": "  ", "label": "x"})
+
+
+def test_slot_list_is_dropped_when_its_template_disappears(tmp_path, monkeypatch):
+    """목록이 죽은 경로를 겨눈 채 남지 않는다(누를 때야 실패하는 버튼 금지)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _notation_template(ctrl, tp)
+    ctrl.dispatch("compile", {"path": path, "confirm": True})
+    ctrl.dispatch("review", {"path": path})
+    assert ctrl.snapshot()["slots"] is not None
+
+    ctrl.dispatch("delete", {"media": "hwpx", "path": path})
+
+    assert ctrl.snapshot()["slots"] is None
 
 
 # ================================================================ TXT 저작
