@@ -9,12 +9,23 @@
 (``{{필드|amount}}``)는 두지 않는다: 맥락 없는 템플릿에서의 서식 선언은 폐기했다(D-6).
 
 데이터에 없는 필드는 토큰을 그대로 남기고 신고한다(조용히 빈칸 처리 안 함 — 누락은 시끄럽게).
+
+**구간 표기 마커는 필드가 아니다(S10-01 #858).** ``{{#항목 …}}``·``{{/선택}}`` 는 필드 토큰과
+같은 괄호 문법을 쓰므로, sigil 분류가 토큰화보다 **먼저** 서지 않으면 마커가 「#항목 …」 이라는
+이름의 없는 필드로 세어져 MISSING 으로 붉게 뜬다(있지도 않은 결손 보고). 그래서 여기 토큰
+순회 두 곳은 :func:`~hwpxfiller.domain.structure_scan.is_structure_sigil` 로 마커를 걸러
+**원문 literal 로 흘린다** — 마커는 구조 스캐너
+(:func:`~hwpxfiller.domain.text_structure.scan_text_structure`)의 소관이고 렌더는 그것을
+건드리지 않는다. 술어를 그 lxml-free 코어에서 가져오는 것은 이 모듈의 「lxml·OCF 없이 순수
+문자열」 서사를 지키기 위해서다(:mod:`~hwpxfiller.domain.authoring` 을 부르면 XML 커널이 딸려온다).
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+
+from .structure_scan import is_structure_sigil
 
 # ``{{필드}}`` — 내부 공백 허용. 파이프(``|``)는 배제한다: 인라인 포매터 문법을 두지 않으므로
 # ``{{x|amount}}`` 같은 옛 토큰은 매칭되지 않고 원문에 그대로 남아(눈에 보이는) 신호가 된다.
@@ -59,9 +70,11 @@ class RenderSegment:
 
 
 def template_fields(template: str) -> "list[str]":
-    """템플릿이 참조하는 필드 이름 목록(중복 제거, 등장 순)."""
+    """템플릿이 참조하는 필드 이름 목록(중복 제거, 등장 순) — 구간 마커는 제외."""
     seen: "dict[str, None]" = {}
     for m in _TOKEN.finditer(template):
+        if is_structure_sigil(m.group(1)):
+            continue  # 구조 마커는 필드가 아니다(모듈 도크스트링)
         seen.setdefault(m.group(1).strip(), None)
     return list(seen)
 
@@ -90,6 +103,11 @@ def render_segments(
             segments.append(RenderSegment(chunk, SEG_LITERAL))
 
     for m in _TOKEN.finditer(template):
+        if is_structure_sigil(m.group(1)):
+            # 구조 마커는 토큰이 아니다 — ``last`` 를 옮기지 않고 지나가면 마커 원문이
+            # 다음 literal 조각에 통째로 실린다(앞·마커·뒤가 한 조각). 세그먼트 연결이
+            # 원문과 같다는 불변식은 그대로고, 마커는 MISSING 으로 붉게 뜨지 않는다.
+            continue
         _literal(template[last:m.start()])
         last = m.end()
         name = m.group(1).strip()

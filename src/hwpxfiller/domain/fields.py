@@ -30,6 +30,11 @@ from hwpxcore.native_admission import (
 )
 from hwpxcore.text_extract import require_package
 
+# Field ID 정규화는 토큰 문법(``{{ }}``)의 단일 출처인 lxml-free 코어가 소유한다 —
+# 구간 표기 스캐너(HWPX·TXT)가 같은 규칙으로 마커 id 를 읽어야 하는데, 그 소비자들이
+# 이 모듈을 지나면 XML 커널이 딸려온다. 이름은 여기서 계속 재노출한다(기존 소비자 무변경).
+from .structure_scan import collapse_field_id, normalize_field_id
+
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _FIELD_PART_PATTERNS = (
     (0, re.compile(r"section(\d+)\.xml$", re.IGNORECASE)),
@@ -54,27 +59,6 @@ class FillNote:
     field: str
     kind: str
     detail: "tuple[str, ...]" = ()
-
-
-def _collapse_field_id(raw: object) -> "str | None":
-    if not isinstance(raw, str):
-        return None
-    value = " ".join(raw.split())
-    return value or None
-
-
-def normalize_field_id(raw: object) -> "str | None":
-    """제품 Field ID를 정규화하고 빈 값·비문자열은 거절한다.
-
-    앞뒤와 내부의 Unicode 공백을 접고, 전체를 감싼 ``{{...}}`` 표기 한 겹만
-    벗긴 뒤 다시 공백을 접는다. 문자열 안쪽의 중괄호는 Field ID의 일부다.
-    """
-    name = _collapse_field_id(raw)
-    if name is None:
-        return None
-    if name.startswith("{{") and name.endswith("}}"):
-        return _collapse_field_id(name[2:-2])
-    return name
 
 
 class FieldDocument:
@@ -166,7 +150,7 @@ class FieldDocument:
         canonical ID는 ``{{X}}``이므로 required_fields가 돌려준 값을 다시
         정규화하지 않고 먼저 찾아야 read/write 왕복이 보존된다.
         """
-        requested_text = _collapse_field_id(requested)
+        requested_text = collapse_field_id(requested)
         if requested_text is None:
             return []
         identified = [

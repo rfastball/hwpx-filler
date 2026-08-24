@@ -172,3 +172,43 @@ def test_lint_ignores_data_values():
     assert segments_have_space_run(segments) is False  # 템플릿엔 런이 없다
     aligned = align_segments(segments)
     assert "".join(s.text for s in aligned) == "규격: 12  345"  # 값 원본 그대로
+
+
+# --------------------------------------- 구간 표기 마커 보호(S10-01 #858)
+_MARKED = "{{#항목 특약 특약 사항}}\n본문 {{건명}}\n{{/항목}}"
+
+
+def test_structure_markers_are_not_template_fields():
+    """마커는 필드가 아니다 — 「#항목 …」 이라는 없는 필드로 세어지지 않는다."""
+    assert template_fields(_MARKED) == ["건명"]
+
+
+def test_structure_markers_render_as_literal_not_missing():
+    """마커는 원문 literal 로 흘러간다 — MISSING(있지도 않은 결손)으로 뜨지 않는다."""
+    segments, report = render_segments(_MARKED, {"건명": "청사 유지보수"})
+
+    assert report.missing_fields == []
+    assert [s.kind for s in segments] == [SEG_LITERAL, SEG_FILL, SEG_LITERAL]
+    # 마커 앞·마커 원문·마커 뒤가 **한 조각**으로 합쳐진다(연속 literal 병합 규칙).
+    assert segments[0].text == "{{#항목 특약 특약 사항}}\n본문 "
+    assert segments[2].text == "\n{{/항목}}"
+
+
+def test_structure_markers_survive_render_record_roundtrip():
+    """평문 왕복에서 마커 원문이 그대로 남는다(불변식: 결과 == 세그먼트 연결)."""
+    text, report = render_record(_MARKED, {"건명": "청사 유지보수"})
+
+    assert text == "{{#항목 특약 특약 사항}}\n본문 청사 유지보수\n{{/항목}}"
+    assert not report.has_issues
+    segments, _ = render_segments(_MARKED, {"건명": "청사 유지보수"})
+    assert "".join(s.text for s in segments) == text
+
+
+def test_marker_only_template_reports_no_missing_field():
+    """마커만 있는 템플릿은 필드 0 · 결손 0 — 전부 원문 literal 한 조각이다."""
+    segments, report = render_segments("{{#선택 가}}\n{{/선택}}", {})
+    assert template_fields("{{#선택 가}}\n{{/선택}}") == []
+    assert report.missing_fields == []
+    assert [(s.kind, s.text) for s in segments] == [
+        (SEG_LITERAL, "{{#선택 가}}\n{{/선택}}")
+    ]
