@@ -197,7 +197,8 @@ marker 는 **같은 노드에 함께** 있고, 축은 서로 겹치지 않는다
 
 - `docs/DEVELOPMENT_ENVIRONMENT.md` — 환경·게이트·패키징·릴리스 절차
 - `docs/UI_CONTRACT.md` — 현재 웹 UI 의 링 구조·라우팅·화면별 계약
-- `docs/UX_FEEDBACK_U2.md` — v6 착지 후 실사용 피드백의 판정과 **미결 목록**(새 판정은 여기)
+- `docs/UX_FEEDBACK_U3.md` — 현재 실사용 피드백 라운드의 판정(새 판정은 여기, 조치 추적 #873).
+  이전 라운드는 `docs/UX_FEEDBACK_U2.md`
 - `docs/archive/DATA_FIRST_INTEGRATION_MAP.md` — v6 워크플로 계약 ↔ master seam 대조.
   **완주·동결**(2026-07-29) — 인용은 하되 새 판정을 덧붙이지 않는다
 - `examples/quickstart-101/README.md` — 실제 사용 흐름(예제 템플릿·데이터 동봉)

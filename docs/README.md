@@ -42,7 +42,8 @@
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
 | [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 부분 대체 | 전체 스냅샷·서브트리 재구성 결정은 완료된 React 전환이 대체. 포커스·캐럿·스크롤 보존 **책임**과 재고 술어의 틀은 유효하다. 근거 1·「현재 실효 범위」·검증 절은 오늘 거짓이니 배경으로만 읽는다 |
-| [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
+| [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 그 라운드 미결 항목의 정본이기도 하다 |
+| [U3 실사용 피드백 라운드](UX_FEEDBACK_U3.md) | 유효 결정 | S 로드맵 완주(v0.4.0) 후 「문서 만들기」 표면 6건의 트리아지·판정. 조치 추적은 #873. **새 실사용 판정은 여기** |
 | [제어면 범위](CONTROL_PLANE_SCOPE.md) | 유효 결정 | SG-03(#735) v1 제어면 축소의 정본 — production consumer census + 네 scope 결정(shipping Profile 1개·backend-only semantic authority·신규 ledger allowlist·HMAC threat model). 짝 게이트는 `tests/repo_contract/test_control_surface_reduction.py`·`test_bridge_contract.py`·`tests/test_slot_configuration_product.py`·`tests/test_control_plane_evidence.py` |
 | [문서 표현과 변경 권위 계층 이론](DOCUMENT_AUTHORITY_LAYERS.md) | 유효 결정 | 저작·구성 투영·산출물 관찰 계층과 그 사이 경계 사건의 판정 기준. **미래 제품 모델이라 P 로드맵(#433·#511)의 입력이 아니다**(§0.0). 명사·불변식의 구체 적용은 [핵심 워크플로 계약](core-workflow.md)이, 현재 표면은 UI 계약이 소유. 적용 우산 = #530 |
 | [HWPX structural range S0 관찰](HWPX_STRUCTURAL_RANGE_S0.md) | 유효 결정 | native R0~R5·T0~T7 증거와 `hwpxcore.bookmark_region` production 계약. R5(§19)·F계열(§22)·G계열(§23)이 proper nesting 의 표현·제거·경계 겹침을 증명했고 S1.6(§23.6)이 생성·unwrap·MetaTag mutation과 겹친 경계의 안전한 안쪽 제거를 승격했다 — crossing 은 §24 에서 **한글이 저장하지 못함**이 확인돼 거부를 유지한다 |
