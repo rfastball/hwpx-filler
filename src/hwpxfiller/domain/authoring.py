@@ -13,7 +13,9 @@
 **구간 표기(S8-01).** 같은 ``{{ }}`` 문법 위에 sigil 로 구조 마커가 산다 —
 ``{{#항목 …}}``/``{{#선택 …}}``/``{{/선택}}``/``{{/항목}}``. sigil 분류는 필드
 토큰화보다 **먼저** 서서 구조 마커가 그 이름의 누름틀로 오변환되는 것을 막고,
-``scan_structure`` 가 그 마커들을 읽어 선언 구조와 진단을 낸다(무변형).
+``scan_structure`` 가 그 마커들을 읽어 선언 구조·진단과 **배치**(쓰기 커널과 같은
+본문 직계 문단 좌표)를 낸다(무변형). 그 배치를 native Slot 구조로 실제 컴파일하는
+것은 External 의 ``compile_structure`` 몫이다(S8-02).
 
 **충실도.** 생성 누름틀은 실제 코퍼스 속성을 미러링한다:
 ``fieldBegin@type=CLICK_HERE, editable=1, dirty=1, zorder=-1, metaTag=""`` +
@@ -767,7 +769,8 @@ def _process_paragraph(
 # 문법(#822 D2): 마커는 **자기 문단을 단독으로 차지하는 본문 직계 문단**이고 쌍으로
 # 범위를 감싼다 — ``{{#항목 <id> <label…>}}`` … ``{{/항목}}`` / ``{{#선택 <id>
 # <label…>}}`` … ``{{/선택}}``. 「선택」은 「항목」 직속만, 「항목」 중첩은 없다.
-# 이 슬라이스는 **읽기만** 한다 — 마커 소거·문단 삭제 같은 변형 프리미티브는 S8-02.
+# 이 스캐너는 **읽기만** 한다 — 마커 소거·문단 삭제 같은 변형은 External 컴파일러
+# (S8-02 ``compile_structure``)가 이 배치를 받아 수행한다.
 _SLOT_KEYWORD = "항목"
 _OPTION_KEYWORD = "선택"
 _STRUCTURE_KEYWORDS = (_SLOT_KEYWORD, _OPTION_KEYWORD)
@@ -817,6 +820,50 @@ class StructureSummary:
         return {"slots": self.slots, "options": self.options, "fields": self.fields}
 
 
+#: :attr:`StructurePlacement.kind` 의 어휘 — 상위 링이 문안 대신 이 값으로 분기한다.
+PLACEMENT_SLOT = "slot"
+PLACEMENT_OPTION = "option"
+
+
+@dataclass(frozen=True)
+class StructurePlacement:
+    """범위 1건의 **본문 직계 문단 인덱스** 배치(S8-02 컴파일 입력).
+
+    인덱스는 전부 한 content XML 안에서 root 직계 ``hp:p`` 의 0-기반 순번이고,
+    이는 쓰기 커널 ``hwpxcore.bookmark_region`` 이 받는 주소와 **같은 기준**이다
+    (:func:`_is_top_level_paragraph` 가 그 기준을 한 곳에서 판정한다). 그래서
+    컴파일러가 좌표를 번역하지 않고 그대로 넘긴다.
+
+    ``content_start``/``content_end`` 는 이 범위의 **내용 문단** 처음과 끝(포함)이다.
+    마커 문단은 내용이 아니다 — 그래서 마커 사이(``begin_marker_index + 1`` …
+    ``end_marker_index - 1``) 전체가 아니라 그 안에서 마커를 뺀 경계다. 항목 범위가
+    선택 마커를 품는 흔한 형태에서 이 구별이 결정적이다: 항목 region 의 경계가 선택
+    마커 문단 위에 서면 그 문단을 지울 수 없게 되고(경계 ctrl 이 그 안에 있으므로),
+    컴파일이 자기 마커에 발이 묶인다.
+    """
+
+    entry: str
+    kind: str
+    slot_id: str
+    option_id: "str | None"
+    begin_marker_index: int
+    end_marker_index: int
+    content_start: int
+    content_end: int
+
+    def to_dict(self) -> dict:
+        return {
+            "entry": self.entry,
+            "kind": self.kind,
+            "slot_id": self.slot_id,
+            "option_id": self.option_id,
+            "begin_marker_index": self.begin_marker_index,
+            "end_marker_index": self.end_marker_index,
+            "content_start": self.content_start,
+            "content_end": self.content_end,
+        }
+
+
 @dataclass(frozen=True)
 class StructureScan:
     """구간 표기 스캔 결과(무변형).
@@ -825,11 +872,16 @@ class StructureScan:
     파서가 복원할 수 있었던 부분 구조만 담기므로 선언 의도와 다를 수 있다. 그래서
     소비자(S8-02 컴파일)는 **``diagnostics`` 가 1건 이상이면 변환 불가**로 판정하고
     ``slots`` 를 쓰지 않는다 — 조용히 추측해 반쪽 구조를 만들지 않는다.
+
+    ``placements`` 도 **같은 조건**을 진다. 배치는 ``slots`` 의 문단 좌표 얼굴이라
+    선언이 못 미더우면 좌표도 못 미덥다. 순서는 컴파일 순서 그대로 —
+    항목 1건 다음에 그 항목의 선택들이 온다.
     """
 
     slots: "tuple[Slot, ...]"
     diagnostics: "tuple[StructureDiagnostic, ...]"
     summary: StructureSummary
+    placements: "tuple[StructurePlacement, ...]" = ()
 
     def to_dict(self) -> dict:
         return {
@@ -846,6 +898,7 @@ class StructureScan:
             ],
             "diagnostics": [d.to_dict() for d in self.diagnostics],
             "summary": self.summary.to_dict(),
+            "placements": [p.to_dict() for p in self.placements],
         }
 
 
@@ -866,12 +919,28 @@ def _is_top_level_paragraph(p_el: etree._Element, root: etree._Element) -> bool:
 
 @dataclass
 class _OpenRange:
-    """열려 있는 범위의 진행 상태 — 닫힐 때 Slot/SlotOption 으로 확정된다."""
+    """열려 있는 범위의 진행 상태 — 닫힐 때 Slot/SlotOption 으로 확정된다.
+
+    ``entry``·``begin_index`` 는 배치(:class:`StructurePlacement`)의 절반이다 —
+    닫는 마커를 만나야 나머지 절반이 정해지므로 여는 시점에 함께 붙들어 둔다.
+    ``first_content``/``last_content`` 는 이 범위가 실제로 감싼 **내용 문단**의 처음과
+    끝이다(마커 문단은 내용이 아니다).
+    """
 
     id: str
     label: str
     context: str
+    entry: str
+    begin_index: int
     content: int = 0
+    first_content: "int | None" = None
+    last_content: "int | None" = None
+
+    def note_content(self, index: int) -> None:
+        """내용 문단 1개의 위치를 범위 경계에 반영한다."""
+        if self.first_content is None:
+            self.first_content = index
+        self.last_content = index
 
 
 class _StructureReader:
@@ -884,10 +953,14 @@ class _StructureReader:
     def __init__(self) -> None:
         self.slots: "list[Slot]" = []
         self.diagnostics: "list[StructureDiagnostic]" = []
+        self.placements: "list[StructurePlacement]" = []
         self._slot: "_OpenRange | None" = None
         self._option: "_OpenRange | None" = None
         self._options: "list[SlotOption]" = []
+        self._option_placements: "list[StructurePlacement]" = []
         self._seen_slot_ids: "set[str]" = set()
+        self._entry = ""
+        self._index = -1
 
     # ---------------------------------------------------------------- 진단
     def _note(self, kind: StructureDiagnosticKind, message: str, context: str) -> None:
@@ -895,8 +968,18 @@ class _StructureReader:
 
     # ---------------------------------------------------------------- 입력
     def read_paragraph(
-        self, p_el: etree._Element, *, top_level: bool, in_table: bool
+        self,
+        p_el: etree._Element,
+        *,
+        entry: str,
+        index: int,
+        top_level: bool,
+        in_table: bool,
     ) -> None:
+        """문단 1개를 읽는다. ``index`` 는 본문 직계 문단일 때만 의미가 있다."""
+        self._entry = entry
+        if top_level:
+            self._index = index
         text, _, _, _ = _build_paragraph_model(p_el)
         context = _paragraph_text(p_el).strip()[:_CONTEXT_MAX]
         markers = list(_iter_structure_markers(text))
@@ -961,14 +1044,53 @@ class _StructureReader:
             )
             self._slot = None
             self._options = []
+            self._option_placements = []
 
     # ------------------------------------------------------------ 내부 전이
+    def _placement(
+        self,
+        kind: str,
+        opened: _OpenRange,
+        slot_id: str,
+        option_id: "str | None",
+    ) -> StructurePlacement:
+        """닫는 마커 위치(``self._index``)를 붙여 배치 1건을 확정한다.
+
+        내용 경계가 비어 있는 경우(``EMPTY_RANGE`` 진단이 이미 선 경우)에만 마커
+        사이 전체로 되돌린다 — 그때 배치는 어차피 신뢰 대상이 아니다.
+        """
+        return StructurePlacement(
+            entry=opened.entry,
+            kind=kind,
+            slot_id=slot_id,
+            option_id=option_id,
+            begin_marker_index=opened.begin_index,
+            end_marker_index=self._index,
+            content_start=(
+                opened.begin_index + 1
+                if opened.first_content is None
+                else opened.first_content
+            ),
+            content_end=(
+                self._index - 1
+                if opened.last_content is None
+                else opened.last_content
+            ),
+        )
+
     def _count_content(self) -> None:
-        """내용 문단 1개 누적 — 「선택」이 열려 있으면 그쪽이 먼저 가져간다."""
+        """내용 문단 1개 누적 — 「선택」이 열려 있으면 그쪽이 먼저 가져간다.
+
+        「비었는가」 판정은 가장 안쪽 범위 하나만 세지만, **배치 경계**는 열려 있는
+        범위 전부가 함께 넓힌다 — 선택 안의 문단도 그 선택을 품은 항목의 내용이다.
+        """
         if self._option is not None:
             self._option.content += 1
         elif self._slot is not None:
             self._slot.content += 1
+        for opened in (self._slot, self._option):
+            if opened is not None:
+                opened.note_content(self._index)
 
     def _read_marker(self, raw: str, context: str) -> None:
         body = raw.lstrip()
@@ -1022,8 +1144,9 @@ class _StructureReader:
                 context,
             )
         self._seen_slot_ids.add(ident)
-        self._slot = _OpenRange(ident, label, context)
+        self._slot = _OpenRange(ident, label, context, self._entry, self._index)
         self._options = []
+        self._option_placements = []
 
     def _begin_option(self, ident: str, label: str, context: str) -> None:
         if self._slot is None:
@@ -1046,7 +1169,7 @@ class _StructureReader:
                 f"항목 「{self._slot.id}」 안에서 선택 id 「{ident}」 가 두 번 선언됐습니다.",
                 context,
             )
-        self._option = _OpenRange(ident, label, context)
+        self._option = _OpenRange(ident, label, context, self._entry, self._index)
 
     def _end(self, keyword: str, tail: str, context: str) -> None:
         if tail.strip():
@@ -1089,8 +1212,12 @@ class _StructureReader:
                 context,
             )
         self.slots.append(Slot(id=slot.id, options=tuple(self._options), label=slot.label or None))
+        # 배치는 컴파일 순서대로 쌓는다 — 항목이 먼저 서야 그 안에 선택이 들어간다.
+        self.placements.append(self._placement(PLACEMENT_SLOT, slot, slot.id, None))
+        self.placements.extend(self._option_placements)
         self._slot = None
         self._options = []
+        self._option_placements = []
 
     def _close_option(self, context: str) -> None:
         option = self._option
@@ -1103,6 +1230,10 @@ class _StructureReader:
             )
         self._options.append(
             SlotOption(id=option.id, order=len(self._options), label=option.label or None)
+        )
+        assert self._slot is not None  # 선택은 항목 직속에서만 열린다
+        self._option_placements.append(
+            self._placement(PLACEMENT_OPTION, option, self._slot.id, option.id)
         )
         self._option = None
         if self._slot is not None:
@@ -1149,10 +1280,19 @@ def scan_structure(pkg: object) -> StructureScan:
     reader = _StructureReader()
     for name in pkg.content_xml_names():
         root = etree.fromstring(pkg.entries[name], parser=parser)
+        # 본문 직계 문단만 번호를 받는다 — 그 번호가 곧 쓰기 커널의 주소다.
+        # ``root.iter`` 는 문서 순서라 이 누산기가 root 직계 ``hp:p`` 목록의
+        # 순번과 정확히 같다(커널 ``_parse_sections`` 와 같은 열거).
+        index = -1
         for p in _iter_paragraphs(root):
+            top_level = _is_top_level_paragraph(p, root)
+            if top_level:
+                index += 1
             reader.read_paragraph(
                 p,
-                top_level=_is_top_level_paragraph(p, root),
+                entry=name,
+                index=index,
+                top_level=top_level,
                 in_table=_paragraph_in_table(p),
             )
         # 짝짓기는 파일 경계에서 닫는다 — 범위가 XML 을 넘어 짝지어지면 S8-02 가
@@ -1171,6 +1311,7 @@ def scan_structure(pkg: object) -> StructureScan:
             options=sum(len(slot.options) for slot in reader.slots),
             fields=fields,
         ),
+        placements=tuple(reader.placements),
     )
 
 
