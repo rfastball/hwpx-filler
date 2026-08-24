@@ -455,8 +455,15 @@ class TemplateController:
             result = self.vm.apply_convert(path)
             self._set_result(self.vm.format_convert_result(path, result))
             # 제자리 변환 = bytes 변이. 같은 파일을 든 편집 세션은 스키마가 방금 달라졌다.
-            self._notify_mutation("mutated", path)
-            return {"ok": True, "applied": True, "refused": result.refused}
+            # 통지는 **실제 변이 여부**에만 결속한다(#853 F-3·F-4): 무변이 거절에서 통지가
+            # 서면 거짓 경보이고, 필드만 저장된 뒤 구간이 실패한 갈래에서 통지가 빠지면
+            # 세션이 낡은 스키마로 남는다. 판정 축은 링1 의 ``mutated`` 하나다.
+            if result.mutated:
+                self._notify_mutation("mutated", path)
+            return {
+                "ok": True, "applied": True,
+                "refused": result.refused, "mutated": result.mutated,
+            }
         preview = self.vm.convert_preview(path)
         if preview.blocked:
             self._set_result(self.vm.format_convert_blocked_result(path, preview))

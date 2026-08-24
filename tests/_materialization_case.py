@@ -133,6 +133,9 @@ class CaseSpec:
     extra_bookmarks: tuple[str, ...] = ()  # 보호 대상 plain BOOKMARK(안에 {name}_f Field 보유)
     guard_bookmarks: tuple[str | None, ...] = ()  # field-less 보호 BOOKMARK(None=무명)
     header_fields: tuple[str, ...] = ()  # header0.xml 의 root Field
+    #: 본문 끝에 그대로 실릴 평문 문단 — 미변환 구간 표기(``{{#항목 …}}``) 재현용(S8-F1 #852).
+    #: 필드도 BOOKMARK 도 만들지 않으므로 structure 선언은 건드리지 않는다.
+    notation_lines: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -231,6 +234,8 @@ def _build_bytes(spec: CaseSpec) -> bytes:
             paras.append(_p(_bm_begin(oid, oname) + nested + inner + _bm_end(oid)))
             tags[oname] = _meta("slot_option", opt.id)
         paras.append(_p(_bm_end(sid)))
+    for line in spec.notation_lines:
+        paras.append(_p(f"<hp:t>{line}</hp:t>"))
 
     root = etree.fromstring(_sec("".join(paras)))
     _write_metatags(root, tags)

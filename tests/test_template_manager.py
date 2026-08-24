@@ -534,6 +534,42 @@ def test_apply_convert_restates_a_structure_refusal(tmp_path):
     assert "이름 충돌" in line and line.level == "warn"
 
 
+def test_apply_convert_carries_a_structure_exception_with_the_mutation_fact(tmp_path):
+    """구간 단계의 **예외**는 삼켜지지 않고 「이미 바뀌었다」와 함께 결과로 내려온다.
+
+    필드 단계가 파일을 저장한 뒤 구간 단계가 raise 하면, 종전에는 예외가 호출자를 지나쳐
+    재정산 통지가 통째로 빠졌다(#853 F-3). 예외를 result 로 바꾸는 것이지 숨기는 것이
+    아니라서 사유가 문구에 그대로 남고 레벨은 danger 다.
+    """
+    from dataclasses import replace
+
+    def boom(_path: str):
+        raise ValueError("커널이 멈췄습니다")
+
+    vm, path = _structure_vm(tmp_path, "값: {{값}}", *_NOTATION_LINES)
+    vm._file_ops = replace(vm._file_ops, compile_structure_file=boom)
+
+    result = vm.apply_convert(str(path))
+
+    assert (result.fields, result.slots, result.mutated) == (3, 0, True)
+    assert result.failed is True and result.refused is False
+    line = vm.format_convert_result(str(path), result)
+    assert line.level == "danger"
+    assert "구간 변환이 중단됐습니다" in line and "커널이 멈췄습니다" in line
+    assert "누름틀 3개는 저장됐습니다" in line  # 변이 사실이 문구에 선다
+
+
+def test_apply_convert_reports_no_mutation_when_nothing_changed(tmp_path):
+    """무변이 거절은 ``mutated=False`` 다 — 통지 축이 이 한 필드로 판정된다(#853 F-4)."""
+    vm, path = _structure_vm(tmp_path, "바꿀 것이 없는 본문입니다.")
+    before = path.read_bytes()
+
+    result = vm.apply_convert(str(path))
+
+    assert (result.fields, result.mutated, result.refused) == (0, False, False)
+    assert path.read_bytes() == before
+
+
 def test_slot_view_projects_compiled_slots(tmp_path):
     """Slot 목록은 **투영**이다 — 판정 없이 id·label·선택 수를 편다."""
     vm, path = _structure_vm(tmp_path, *_NOTATION_LINES)

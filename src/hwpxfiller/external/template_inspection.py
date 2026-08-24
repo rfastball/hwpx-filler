@@ -1767,6 +1767,7 @@ class StructureCompileRefusalKind(StrEnum):
     NATIVE_BLOCKER = "native-blocker"
     EXISTING_PRODUCT = "existing-product"
     NAME_COLLISION = "name-collision"
+    EXISTING_REGION_OVERLAP = "existing-region-overlap"
 
 
 #: :attr:`StructureCompileRefusalKind.EXISTING_PRODUCT` 의 전용 code — 선언 id 가 기존
@@ -1945,7 +1946,8 @@ def _structure_preflight(
     # 같은 이름의 기존 BOOKMARK 가 있으면 「신설분 제외」 대조(사후조건 ⓒ)가 어느 쪽을
     # 가리키는지 갈리지 않는다 — 조용히 틀리는 대신 먼저 거절한다.
     wanted = _created_region_names(scan)
-    for region in resolve_bookmark_topology(package):
+    existing_regions = tuple(resolve_bookmark_topology(package))
+    for region in existing_regions:
         if (region.section, region.name) in wanted:
             refusals.append(
                 _refusal(
@@ -1955,7 +1957,53 @@ def _structure_preflight(
                     "선언 id 를 바꾸거나 기존 책갈피를 지우세요.",
                 )
             )
-    return tuple(refusals)
+    refusals.extend(_existing_region_overlaps(scan, existing_regions))
+    return tuple(dict.fromkeys(refusals))
+
+
+def _existing_region_overlaps(
+    scan: StructureScan, regions: "Iterable[BookmarkRegion]"
+) -> "list[StructureCompileRefusal]":
+    """선언 content 범위와 문단이 겹치는 기존 BOOKMARK 를 구조화 거절로 낸다(S8-F2 · #853).
+
+    **판정 근거는 커널 실측이다.** 컴파일은 항목 region 을 ``parent=None`` 으로 만들므로
+    (:func:`_create_structure_regions`) 겹치는 네 위상이 전부 커널에서 raise 로 닫힌다:
+
+    - 기존이 범위 **안**(동일 span 포함) → 새 region 이 그것을 감싸 부모가 바뀐다
+      (``creating BOOKMARK changed existing native topology``).
+    - 기존이 범위를 **감싼다** → 새 region 이 그 자식으로 서는데 요청 부모는 ``None`` 이다
+      (``created BOOKMARK does not match the requested native topology``).
+    - **부분 교차** → ``crossing BOOKMARK regions are unsupported``.
+
+    롤백은 정상이었으나 그 영문 문자열이 ``app.dispatch`` 봉투를 타고 그대로 사용자에게
+    나갔다(감사 F-2). 그래서 겹침 전부를 여기서 먼저 한국어 사유로 닫는다 — 커널 raise 는
+    심층 방어로 그대로 남는다. 겹치지 않는(disjoint) 기존 region 은 종전대로 통과하고
+    사후조건 ⓒ 가 그 보존을 검증한다.
+    """
+    found: "list[StructureCompileRefusal]" = []
+    for placement in scan.placements:
+        name = structure_region_name(
+            placement.slot_id,
+            placement.option_id if placement.kind == PLACEMENT_OPTION else None,
+        )
+        for region in regions:
+            if region.section != placement.entry:
+                continue
+            if (
+                region.start_paragraph > placement.content_end
+                or region.end_paragraph < placement.content_start
+            ):
+                continue  # disjoint — 컴파일이 건드리지 않는다
+            label = region.name or "(이름 없음)"
+            found.append(
+                _refusal(
+                    StructureCompileRefusalKind.EXISTING_REGION_OVERLAP,
+                    region.name or "",
+                    f"'{name}' 범위가 기존 '{label}' 책갈피와 겹칩니다. "
+                    "그 책갈피를 범위 밖으로 옮기거나 지운 뒤 다시 변환하세요.",
+                )
+            )
+    return found
 
 
 def _non_product_region_shape(
@@ -2242,6 +2290,18 @@ def inspect_hwpx_template(path: str) -> TemplateInspection:
 def template_compile_status(path: str) -> TemplateStatus:
     """경로 → 컴파일 수명주기 상태(C2). 홈/라이브러리 배지 파생 포트의 concrete."""
     return compile_status(read_hwpx_package(path))
+
+
+def hwpx_structure_marker_count(canonical_bytes: bytes) -> int:
+    """bytes → 잔존 구간 표기 수. :func:`template_compile_status` 의 **bytes 얼굴**이다.
+
+    managed 실행 admission(S8-F1 · #852)이 검문할 것은 staging 파일이 아니라 Candidate
+    blob 의 exact bytes 라 경로 진입점이 맞지 않는다. 그래서 같은
+    :func:`~hwpxfiller.domain.template_status.compile_status` 를 bytes 로 한 번 더 열 뿐,
+    마커를 여기서 다시 세지 않는다 — 세는 주체는 스캐너 단일 출처
+    (:attr:`~hwpxfiller.domain.authoring.StructureSummary.markers`)뿐이다(판정 이중화 금지).
+    """
+    return compile_status(HwpxPackage.from_bytes(canonical_bytes)).structure_marker_n
 
 
 def scan_template_tokens(path: str) -> "list[TokenSite]":

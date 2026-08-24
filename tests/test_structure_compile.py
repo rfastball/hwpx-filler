@@ -66,6 +66,18 @@ def _bookmark(begin_id: str, name: str, value: str, meta: str = "") -> str:
     )
 
 
+def _begin(begin_id: str, name: str, value: str) -> str:
+    """여러 문단에 걸치는 기존 책갈피의 **여는** 문단(짝은 :func:`_end`)."""
+    return _p(
+        f'<hp:ctrl><hp:fieldBegin id="{begin_id}" type="BOOKMARK" name="{name}"/>'
+        f"</hp:ctrl><hp:t>{value}</hp:t>"
+    )
+
+
+def _end(begin_id: str, value: str) -> str:
+    return _p(f'<hp:t>{value}</hp:t><hp:ctrl><hp:fieldEnd beginIDRef="{begin_id}"/></hp:ctrl>')
+
+
 #: 제품 소유가 아닌(``hwpxFiller`` 도 canonical name 도 없는) 남의 MetaTag payload.
 _OPAQUE_METATAG = '{"name":"#other"}'
 
@@ -528,7 +540,11 @@ def test_pre_existing_region_outside_the_range_survives_compilation() -> None:
 
 
 def test_pre_existing_region_inside_the_range_is_refused_loudly() -> None:
-    """기존 region 을 새로 감싸는 것은 커널이 거절한다 — 조용히 계층을 바꾸지 않는다."""
+    """기존 region 을 새로 감싸는 것은 거절된다 — 조용히 계층을 바꾸지 않는다.
+
+    S8-F2(#853) 전에는 이 자리를 커널 영문 ValueError 가 닫았고 그 문자열이 그대로
+    사용자에게 나갔다. 지금은 preflight 가 먼저 서서 구조화 거절로 낸다.
+    """
     pkg = _pkg(
         _text("{{#항목 특약}}"),
         _bookmark("5", "기존", "본문", _OPAQUE_METATAG),
@@ -536,9 +552,95 @@ def test_pre_existing_region_inside_the_range_is_refused_loudly() -> None:
     )
     before = dict(pkg.entries)
 
-    with pytest.raises(ValueError, match="changed existing native topology"):
-        compile_structure(pkg)
+    report = compile_structure(pkg)
+
+    assert report.refusal is not None
+    assert [(item.kind, item.code) for item in report.refusal] == [
+        (Refusal.EXISTING_REGION_OVERLAP, "기존")
+    ]
     assert pkg.entries == before
+
+
+# --------------------------------- 5b. 기존 책갈피 겹침 → 구조화 거절(S8-F2 · #853)
+@pytest.mark.parametrize(
+    ("label", "paragraphs"),
+    [
+        # 감사 재현: 5문단 문서, p2 를 감싸는 기존 책갈피, p1..p3 을 감싸는 선언.
+        (
+            "contained",
+            (
+                _text("머리"),
+                _text("{{#항목 특약}}"),
+                _bookmark("5", "기존", "본문", _OPAQUE_METATAG),
+                _text("{{/항목}}"),
+                _text("꼬리"),
+            ),
+        ),
+        # 기존 책갈피가 선언을 감싼다 — 컴파일은 항목 region 을 parent=None 으로 만든다.
+        (
+            "enclosing",
+            (
+                _begin("5", "기존", "머리"),
+                _text("{{#항목 특약}}"),
+                _text("본문"),
+                _text("{{/항목}}"),
+                _end("5", "꼬리"),
+            ),
+        ),
+        # 부분 교차 — 커널은 crossing region 을 아예 지원하지 않는다.
+        (
+            "crossing",
+            (
+                _begin("5", "기존", "머리"),
+                _text("{{#항목 특약}}"),
+                _end("5", "본문1"),
+                _text("본문2"),
+                _text("{{/항목}}"),
+            ),
+        ),
+    ],
+)
+def test_existing_bookmark_overlap_is_a_structured_refusal(
+    label: str, paragraphs: "tuple[str, ...]"
+) -> None:
+    """겹침 세 위상 전부 한국어 구조화 거절 + 무변형 — 커널 영문 문자열은 새지 않는다."""
+    pkg = _pkg(*paragraphs)
+    before = dict(pkg.entries)
+
+    report = compile_structure(pkg)
+
+    assert report.modified is False, label
+    assert report.refusal is not None
+    kinds = {item.kind for item in report.refusal}
+    assert kinds == {Refusal.EXISTING_REGION_OVERLAP}, label
+    message = report.refusal[0].message
+    assert "'특약' 범위가 기존 '기존' 책갈피와 겹칩니다" in message
+    assert "옮기거나 지운 뒤 다시 변환하세요" in message
+    # 커널 문자열 미노출 + 문안 규율(COPY_STYLE_GUIDE §3: em dash·낫표 금지).
+    for banned in ("BOOKMARK", "topology", "crossing", "—", "「", "」"):
+        assert banned not in message, (label, banned)
+    assert pkg.entries == before
+
+
+def test_kernel_still_refuses_an_enclosing_creation_as_depth_defense() -> None:
+    """preflight 가 앞섰다고 커널 방어가 걷히지는 않는다 — 직접 부르면 그대로 거절한다."""
+    pkg = _pkg(_text("머리"), _bookmark("5", "기존", "본문", _OPAQUE_METATAG), _text("꼬리"))
+    with pytest.raises(ValueError, match="changed existing native topology"):
+        create_bookmark_region(pkg, SECTION, 0, 2, name="특약", parent=None)
+
+
+def test_disjoint_existing_bookmark_still_compiles() -> None:
+    """겹치지 않는 기존 책갈피는 종전대로 통과한다(양성 대조 — 과잉 거절 금지)."""
+    pkg = _pkg(
+        _bookmark("5", "기존", "남의 구간", _OPAQUE_METATAG),
+        _text("{{#항목 특약}}"),
+        _text("본문"),
+        _text("{{/항목}}"),
+    )
+    report = compile_structure(pkg)
+
+    assert (report.modified, report.refusal) == (True, None)
+    assert [name for name, *_rest in _topology(pkg)] == ["기존", "특약"]
 
 
 # ------------------------------------------------------------------- 6. no-op

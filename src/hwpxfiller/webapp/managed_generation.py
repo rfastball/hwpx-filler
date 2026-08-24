@@ -41,6 +41,10 @@ from ..application.record_validation import (
     ValidatedDataRecord,
     validate_data_record_against_plan,
 )
+from ..application.slotless_run_bridge import (
+    APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+    STRUCTURE_NOTATION_UNCOMPILED,
+)
 from ..domain.raw_data_record import RawDataRecordSnapshot
 from ..external.candidate_store import CandidateObjectStore
 from ..external.artifact_observation import (
@@ -61,6 +65,7 @@ from ..external.materialization_start_gate import (
 )
 from ..external.materialization_runner import store_backed_structure_resolver
 from ..external.qualification_store import QualificationObjectStore
+from ..external.template_inspection import hwpx_structure_marker_count
 from ..external.work_template_store import AtomicWorkTemplateStateStore
 
 # record 검증 거절의 재진술 코드 — UI 검증(resolve/record 준비)이 이미 통과한 뒤라, 여기서
@@ -105,6 +110,45 @@ ManagedGenerationResult = (
     | ManagedRunCancelled
     | ManagedReadBackFailed
 )
+
+
+def _refuse_uncompiled_structure_notation(
+    candidate_store: CandidateObjectStore,
+    plan_payload: SealedExecutionPlanSemanticPayload,
+) -> "ManagedRunRefused | None":
+    """managed 실행이 **실제로 쓸 bytes** 에 미변환 구간 표기가 남았으면 거절한다(S8-F1 · #852).
+
+    S8-04(#835)가 세운 같은 검문이 slotless admission 에만 살아, slot-bearing 작업은
+    ``{{#항목}}`` 문단을 그대로 실은 문서를 만들 수 있었다(S8-99 감사 F-1). 다중 슬롯
+    문서에서 한 슬롯만 「표기로 풀기」 하면 제품이 스스로 그 상태를 만든다.
+
+    검문 대상은 캐시된 상태가 아니라 러너가 조달할 바로 그 Candidate blob 이다 — Plan 이
+    봉인한 ``exact_content_digest`` 로 같은 store 에서 같은 bytes 를 집는다. 판정 수치는
+    스캐너 단일 출처 파생(:func:`~hwpxfiller.external.template_inspection
+    .hwpx_structure_marker_count`)이고 여기서 다시 세지 않는다. 거절 코드·문안은 slotless
+    쪽과 같은 것을 쓴다 — 같은 차단을 같은 문장으로.
+
+    조달 자체가 끊긴 경우(blob 부재)는 종전대로 store 예외가 그대로 올라간다 — 러너가
+    같은 digest 로 같은 실패를 낼 자리이고 그 loud 계약을 이 검문이 가로채지 않는다.
+    읽어 온 bytes 를 **열지 못하면** 「마커 0」 으로 접지 않고 무결성 오류로 닫는다
+    (fail-closed): qualification 이 이미 parse 를 증명한 bytes 라 여기서 실패했다는 것은
+    그때 본 것과 다르다는 뜻이고, 못 읽은 문서를 통과시키면 검문이 있으나 마나다.
+    """
+    wanted_blob = plan_payload.execution_basis.template.exact_content_digest
+    exact_bytes = candidate_store.get_blob(wanted_blob).exact_bytes
+    try:
+        marker_n = hwpx_structure_marker_count(exact_bytes)
+    except Exception as exc:  # noqa: BLE001 — 열기·파싱 실패류를 제품 상태로 번역(raw 누출 금지)
+        return ManagedRunRefused(
+            APPLIED_TEMPLATE_CONTENT_INTEGRITY_ERROR,
+            f"실행할 Candidate bytes 를 읽을 수 없어 구간 표기를 확인하지 못했다: {exc}",
+        )
+    if marker_n > 0:
+        return ManagedRunRefused(
+            STRUCTURE_NOTATION_UNCOMPILED,
+            f"실행할 템플릿에 미변환 구간 표기가 {marker_n}건 남아 있다",
+        )
+    return None
 
 
 def run_managed_generation(
@@ -154,6 +198,13 @@ def run_managed_generation(
         plan_resolver=resolve_plan, vdr_store=vdr_store
     )
     candidate_store = CandidateObjectStore(root / "candidates")
+    # 2b. 실행이 쓸 bytes 가 확정된 직후의 admission 검문(S8-F1 · #852) — 여기는 아직
+    #     write 0 이라(안착은 4단계) 거절이 filesystem 을 건드리지 않는다.
+    notation_refusal = _refuse_uncompiled_structure_notation(
+        candidate_store, plan_payload
+    )
+    if notation_refusal is not None:
+        return notation_refusal
     runner = ProductionMaterializationRunner(
         input_port=input_port,
         candidate_blob_resolver=lambda digest: candidate_store.get_blob(

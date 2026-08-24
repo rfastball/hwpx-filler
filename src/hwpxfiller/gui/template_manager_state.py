@@ -205,16 +205,29 @@ class ConvertResult:
 
     ``refusals`` 가 비어 있지 않으면 구간 컴파일이 거절됐다는 뜻이다. 필드 변환이 이미
     저장됐더라도 그 사실을 지우지 않는다(조용한 부분 성공 금지 — 결과 문구가 둘 다 말한다).
+
+    ``errors`` 는 구간 단계가 **거절이 아니라 예외**로 끝난 경우다(S8-F2 · #853 F-3).
+    거절과 가르는 이유는 조치가 다르기 때문이다: 거절은 사용자가 고칠 선언 문제이고,
+    예외는 예상 밖 실패라 사유를 그대로 실어 보여야 한다.
+
+    ``mutated`` 는 이 호출이 **파일 bytes 를 실제로 바꿨는가** 하나다. 재정산 통지의
+    판정 축이 이 필드 하나로 통일된다(#853 F-3·F-4 — 같은 상태를 두 곳이 판정하지 않는다).
     """
 
     fields: int = 0
     slots: int = 0
     options: int = 0
     refusals: "tuple[str, ...]" = ()
+    errors: "tuple[str, ...]" = ()
+    mutated: bool = False
 
     @property
     def refused(self) -> bool:
         return bool(self.refusals)
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.errors)
 
 
 @dataclass(frozen=True)
@@ -499,29 +512,53 @@ class TemplateManagerViewModel:
         두 단계는 각자 제자리 저장하는 파일 동사다(원자적 단일 저장은 두 커널 경로를 한
         패키지 세션으로 묶는 별건이다). 그래서 구간 컴파일이 거절되면 **그 사실을 결과에
         싣는다** — 필드만 저장되고 구조 거절이 조용히 사라지는 경로를 만들지 않는다.
+
+        같은 이유로 구간 단계의 **예외**도 여기서 결과로 바꾼다(S8-F2 · #853 F-3): 필드
+        단계가 이미 파일을 저장한 뒤라, 예외가 그대로 올라가면 호출자는 변이 사실을 모른
+        채 재정산 통지를 건너뛴다. 예외를 숨기는 것이 아니라 **사유를 실어 내리는 것**이고
+        (결과 줄이 danger 로 재진술한다), 필드 단계 자체의 예외는 변이 전이라 그대로 raise
+        한다.
         """
         report = self._file_ops.compile_file(str(path))
-        structure = self._file_ops.compile_structure_file(str(path))
+        structure = None
+        errors: "tuple[str, ...]" = ()
+        try:
+            structure = self._file_ops.compile_structure_file(str(path))
+        except Exception as exc:  # noqa: BLE001 — 예외를 result 로 바꾼다(숨기지 않는다)
+            errors = (f"구간 변환 중 오류가 났습니다: {exc}",)
         refusal = getattr(structure, "refusal", None) or ()
         slots = getattr(structure, "slots", ()) or ()
+        mutated = bool(report.modified) or bool(getattr(structure, "modified", False))
         result = ConvertResult(
             fields=len(report.compiled),
             slots=len(slots),
             options=getattr(structure, "options", 0),
             refusals=tuple(item.message for item in refusal),
+            errors=errors,
+            mutated=mutated,
         )
-        if report.modified or getattr(structure, "modified", False):
+        if mutated:
             self.refresh()
         return result
 
     def format_convert_result(self, path: str, result: ConvertResult) -> ResultLine:
-        """적용 결과 → 결과 문구. 구조 거절이 있으면 그 사유가 같은 줄에 남는다."""
+        """적용 결과 → 결과 문구. 구조 거절·오류가 있으면 그 사유가 같은 줄에 남는다."""
         name = Path(path).name
         parts = [f"누름틀 {result.fields}개"]
         if result.slots:
             parts.append(f"항목 {result.slots}개")
         if result.options:
             parts.append(f"선택 {result.options}개")
+        if result.failed:
+            # 예상 밖 실패는 거절보다 세게 말한다. 필드 단계가 이미 저장한 뒤면 그 사실을
+            # 먼저 밝힌다 — 파일이 바뀌었는지 아닌지가 다음 행동을 가른다.
+            head = (
+                f"구간 변환이 중단됐습니다 {name}: 누름틀 {result.fields}개는 저장됐습니다."
+                if result.mutated
+                else f"구간 변환이 중단됐습니다 {name}: 파일은 바뀌지 않았습니다."
+            )
+            reasons = "\n".join(f"- {item}" for item in result.errors)
+            return ResultLine(f"{head}\n{reasons}", "danger")
         text = f"변환 완료 {name}: " + " · ".join(parts)
         if not result.refused:
             return ResultLine(text, "ok")
