@@ -434,6 +434,25 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   저장 버튼·차단 사유=footer. **저장 시 데이터 자동등록(#18·#26)과 기본 데이터 연결
   재진술(#53-A)은 #347(U2 §5.3 판정 D)로 폐기** — 편집 세션의 데이터는 검토용 문맥일 뿐
   작업에 저장되지 않고, 풀 등록은 데이터 선택 면의 「이 데이터 고정」 하나다.
+- **알림은 인라인 한 채널**(`#save-msg` — S8G-00 #323). 노드는 섹션 본문이 아니라 **셸
+  레벨**(`.editor-shell` 직속, 본문과 footer 사이)에 서서 세 탭이 공유하고 본문 재렌더에
+  증발하지 않는다. 라우팅 규칙은 하나다: **구조화된 실패·안내**(`block_reason`,
+  `result.error`, `ERROR:` 접두 브리지 반환, 선차단 안내)는 `noticeSave` 로 가고,
+  `window.alert`(`deps.notify`)는 **던져진 예외의 catch 백스톱 전용**이다. 종전에는 파일
+  이름 탭에서만 인라인이라 나머지 두 탭의 거절이 모달 경보로 샜다 — 경보는 읽는 순간
+  사라지고 그 뒤 화면은 왜 막혔는지 아무 말도 하지 않는다.
+- **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
+  (`compile` 확정 · `txt_edit` · `delete` · `undo_delete`) 그 성공 **직후**
+  `TemplateController.mutation_sinks` 가 `(kind, path)` 로 통지하고
+  `EditorController.reconcile_template_mutation` 이 같은 파일을 든 세션만 다시 세운다
+  (경로 대조는 `template_groups.norm_library_path` 단일 술어, 남의 파일이면 푸시도 없다).
+  `mutated`·`restored` 는 템플릿을 재로드해 스키마를 다시 파생하고 기존 이월·강등
+  의미론(`_ensure_model`)을 그 위에 돌린 뒤 warn 으로 재진술한다. 채울 대상이 0 이 되면
+  (RAW 강등) 낡은 모델을 걷고 danger 로 말한다 — 남겨 두면 이제는 없는 필드로 저장 게이트가
+  통과한다. `deleted` 는 danger 재진술만 하고 `template_path` 는 **지우지 않는다**(복원
+  왕복이 같은 경로로 돌아온다); 그동안의 저장은 링2 심층 방어(`_missing_template_block`)가
+  기존 `block_reason` 채널로 막는다. 이 seam 은 디스패치 액션이 아니라 **컨트롤러 간
+  배선**이라 action registry 밖이고, 조립 한 줄은 `webapp/app.py` 가 소유한다.
 
 ### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
 

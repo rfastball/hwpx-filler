@@ -80,8 +80,8 @@ from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
-from .screens import NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink
-from .template_groups import TemplateGroupModel, rel_key
+from .screens import MUTATION_KINDS, NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink
+from .template_groups import TemplateGroupModel, norm_library_path, rel_key
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
@@ -1000,6 +1000,65 @@ class EditorController:
         if emit_push:
             self._push()
 
+    # ------------------------------------------- tpl 변이 재정산(S8G-00 #320)
+    def reconcile_template_mutation(self, kind: str, path: str) -> None:
+        """tpl 채널이 템플릿 파일을 바꾼 직후, 그 파일을 든 편집 세션을 다시 세운다.
+
+        **디스패치 액션이 아니다** — 웹이 부르는 표면이 아니라 컨트롤러 간 seam 이고 배선은
+        앱 조립부 한 줄이다(action registry 등록 불요). 인자는
+        :data:`~hwpxfiller.webapp.screens.MUTATION_KINDS` 의 종류와 변이한 경로다.
+
+        **이 세션의 파일이 아니면 아무 일도 하지 않는다**(푸시도 없다): 남의 템플릿 변이가
+        내 세션에 통지를 남기면 사용자는 자기가 만지지도 않은 파일의 경고를 읽는다. 대조는
+        :func:`~hwpxfiller.webapp.template_groups.norm_library_path` 단일 술어다.
+
+        ``deleted`` 는 ``template_path`` 를 **지우지 않는다**: 되돌리기가 같은 경로로 파일을
+        돌려놓고 ``restored`` 가 이 세션을 되살린다. 경로를 비우면 그 복원이 닿을 자리가
+        사라져, 사용자는 실수로 지운 템플릿을 되살려도 세션을 처음부터 다시 세워야 한다.
+        저장은 그동안 :meth:`_missing_template_block` 이 심층 방어로 막는다.
+        """
+        if kind not in MUTATION_KINDS:  # 오타·미지 종류는 조용히 무시하지 않는다
+            raise ValueError(f"알 수 없는 템플릿 변이 종류: {kind!r}")
+        if not self.template_path:
+            return
+        if norm_library_path(self.template_path) != norm_library_path(path):
+            return
+        if kind == "deleted":
+            self._set_notice(
+                "편집 중인 템플릿이 삭제됐습니다. 되돌리거나 다른 템플릿을 선택하세요.",
+                "danger",
+            )
+            self._push()
+            return
+        # 재로드가 스키마의 단일 출처다(매체 분기·게이트·RAW 판정을 재구현하지 않는다).
+        self.load_template_path(self.template_path, emit_push=False)
+        if self.schema is None:
+            # RAW 강등: 채울 대상이 사라졌다. 낡은 모델을 그대로 두면 이제는 없는 필드로
+            # `is_complete()` 가 참을 내고 저장 게이트가 통과한다(조용한 게이트 우회).
+            self.model = None
+            self._model_key = None
+            self._unconfirm_undo = []
+            self._set_notice(
+                "편집 중인 템플릿 파일이 바뀌어 채울 항목이 없어졌습니다. "
+                "되돌리거나 다른 템플릿을 선택하세요.",
+                "danger",
+            )
+            self._push()
+            return
+        message = "편집 중인 템플릿 파일이 바뀌어 세션을 다시 읽었습니다."
+        if self.model is not None:
+            # 정체 키에 스키마 성분이 없다(경로·데이터만 담는다 — :meth:`_model_key_now`).
+            # 경로가 그대로인 bytes 변이는 그래서 키를 안 움직이고 `_ensure_model` 이 조기
+            # 반환한다. 여기서 **명시로 무효화**해 기존 이월·강등 의미론을 그 위에 그대로
+            # 돌린다(확정 전원 해제 + 값 이월 + 재확정 재진술을 재구현하지 않는다).
+            before = self.notice_text
+            self._model_key = None
+            self._ensure_model()
+            if self.notice_text != before:
+                message = f"{message}\n{self.notice_text}"
+        self._set_notice(message, "warn")
+        self._push()
+
     def _load_txt_template(self, path: str) -> None:
         """TXT 원문 → 동형 스키마. 판독 실패는 loud raise(조용한 빈 스키마 금지).
 
@@ -1772,6 +1831,27 @@ class EditorController:
             victim = ""
         return overwrite_confirm_text(self.job_name, victim)
 
+    def _missing_template_block(self) -> str:
+        """세션 템플릿 파일이 사라졌으면 거절 문안, 아니면 ``""``(#320 심층 방어).
+
+        재정산(:meth:`reconcile_template_mutation`)은 삭제를 danger 로 재진술하고 세션을
+        붙잡아 두지만(복원 왕복을 살리려고 경로를 지우지 않는다), 그 상태로 저장하면 실행
+        시점에야 터지는 죽은 템플릿 작업이 durable 로 남는다. 링1 ``validate_save`` 는 순수
+        메모리 판정 계약이라(:meth:`_do_save` 참조) 파일시스템 접촉은 링2 인 여기 몫이고,
+        재진술은 **기존 차단 채널**(``block_reason``)로 나간다 — 새 채널을 만들지 않는다.
+
+        통지를 못 받은 경로(앱 밖 삭제 등)도 여기서 걸린다. 디스크를 읽으므로 쓰기 잠금
+        안에서만 부른다(#149 규율, :meth:`_cross_media_block` 동형).
+        """
+        if not self.template_path:
+            return ""  # 템플릿 미선택은 validate_save 의 자리다(여기서 두 번 말하지 않는다)
+        if Path(self.template_path).is_file():
+            return ""
+        return (
+            f"'{Path(self.template_path).name}' 템플릿 파일이 없어 저장하지 않았습니다. "
+            "삭제를 되돌리거나 다른 템플릿을 선택하세요."
+        )
+
     def _cross_media_block(self) -> str:
         """저장 대상 자리의 기존 작업과 이 세션의 매체가 갈리면 거절 문안, 아니면 ``""``(§10.16 판정 D).
 
@@ -1925,6 +2005,10 @@ class EditorController:
         같으면 통과(같은 사실을 확인한 것). 게이트가 사라졌으면(외부 변경이 되돌려짐 등) 덮을
         것이 없으므로 그냥 통과한다.
         """
+        # 템플릿 실재 선차단(#320 심층 방어) — 사라진 템플릿을 가리키는 작업을 만들지 않는다.
+        missing = self._missing_template_block()
+        if missing:
+            return {"ok": False, "block_reason": missing}
         # 교차 매체 선차단(§10.16 판정 D) — 거절될 저장에 덮어쓰기 확인부터 보여주지 않는다.
         blocked = self._cross_media_block()
         if blocked:

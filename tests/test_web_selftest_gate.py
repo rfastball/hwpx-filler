@@ -1437,6 +1437,33 @@ class TestWebSelftestGate:
             "되돌릴 자리가 사라졌는데 저장이 열린 채입니다 — 없는 편집을 있다고 말합니다."
         )
 
+    def test_editor_notice_channel_is_inline_on_every_tab(self, selftest_result: dict) -> None:
+        """편집기 통지는 세 탭 어디서든 화면 안(``#save-msg``)에 선다(#323).
+
+        종전에는 파일 이름 탭 **본문**에만 노드가 있어, 나머지 두 탭의 구조화 거절이
+        ``window.alert`` 로 샜다. 모달 경보는 읽는 순간 사라지고 그 뒤 화면은 왜 막혔는지
+        아무 말도 하지 않는다. 정적 계약은 노드의 존재만 보고 **어느 탭에서** 서는지·실제로
+        **보이는지**는 못 본다 — 그래서 실렌더 층이 이 계약을 진다.
+        """
+        n = probe(selftest_result, "editor_save_gate")["notice_channel"]
+        assert n["present"] == {"template": True, "binding": True, "filename": True}, (
+            f"통지가 갈 노드가 없는 탭이 있습니다: {n['present']!r} — 그 탭의 거절은 "
+            "모달 경보로 새거나 아무 데도 안 섭니다."
+        )
+        assert n["save_enabled"] is True, "막힌 저장을 태울 주 행동이 잠겨 있습니다(측정 무효)."
+        assert n["matches_block_reason"] is True, (
+            f"차단 사유가 인라인에 실리지 않았습니다: {n['text']!r}"
+        )
+        # 프로브 click 은 hidden 도 통과한다 — 가시성을 따로 세지 않으면 눈으로 본 것과
+        # 다른 결론이 난다(계산 스타일 + offsetParent 실가시성).
+        assert n["visible"] is True, "통지 노드가 DOM 에는 있는데 보이지 않습니다."
+        assert n["inside_body"] is False, (
+            "통지가 본문(#editor-body) 안에 있습니다 — 탭 전환·본문 재렌더에 다시 증발합니다."
+        )
+        assert n["alerts"] == 0, (
+            f"구조화 거절이 window.alert 로 샜습니다({n['alerts']}회)."
+        )
+
     def test_editor_library_manage_renders_menus_and_dialog(self, selftest_result: dict) -> None:
         # F8(§10.17.2 판정 D) — 구 tpl 그룹 프로브의 승계 재작성: 관리 표면(그룹·⋮·칩·이동
         # 다이얼로그·행동 줄·결과 줄)이 편집기 「템플릿」 탭 실 WebView2 에 서는지 되읽는다

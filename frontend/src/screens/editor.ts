@@ -482,7 +482,7 @@ export function createEditorController(deps: EditorControllerDeps) {
         await dispatch("tpl", "rename_group", { media, group: old, new: value, confirm: true });
       }
     } else if (result.error) {
-      deps.notify(String(result.error));
+      noticeSave(String(result.error));      // 구조화 거절 — 인라인 채널(#323)
     }
   }
 
@@ -615,12 +615,14 @@ export function createEditorController(deps: EditorControllerDeps) {
 
   /* ---- 저장·이동·이탈 ---- */
 
+  /** 편집기의 **인라인 알림 채널**(#323) — 세 탭 어디서든 같은 자리(`#save-msg`)로 간다.
+   *
+   *  종전에는 파일 이름 탭에서만 인라인이고 나머지 두 탭에서는 `window.alert` 로 샜다.
+   *  구조화된 거절·안내는 화면이 붙들고 있어야 사용자가 값을 고치면서 읽는데, 모달 경보는
+   *  읽자마자 사라지고 그 사이 화면은 아무 말도 하지 않는다. `deps.notify` 는 이제 던져진
+   *  예외의 catch 백스톱 전용이다(잡을 자리가 화면에 없는 실패). */
   function noticeSave(message: string, level?: string): void {
-    if (snapshot().section === "filename") {
-      patchView({ saveMessage: { text: message, level: level || "" } });
-      return;
-    }
-    deps.notify(message);
+    patchView({ saveMessage: { text: message, level: level || "" } });
   }
 
   /** 차단당한 칸으로 커서를 옮긴다 — 어느 칸인지는 Python 이 말한다. */
@@ -839,7 +841,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     /* 확정 존재는 확인 **전에** 선차단한다(파괴를 승인시킨 뒤 거부하는 순서 금지). */
     const stakes = await sendEdit("mapping_reset_stakes", {});
     if (stakes.confirmed) {
-      deps.notify(`확정한 매핑 ${stakes.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
+      noticeSave(`확정한 매핑 ${stakes.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
       return;
     }
     const manual = Number(stakes.use_none_manual || 0);
@@ -866,7 +868,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     const result = await sendEdit("resuggest_all", {});
     /* 아무것도 안 바뀐 경우를 조용히 넘기지 않는다 — 무동작으로 보이면 그게 조용한 소실이다. */
     if (!result.resuggested) {
-      deps.notify(`자동 제안을 다시 받을 행이 없습니다. 확정한 ${result.kept_confirmed}개는 그대로 둡니다.`);
+      noticeSave(`자동 제안을 다시 받을 행이 없습니다. 확정한 ${result.kept_confirmed}개는 그대로 둡니다.`);
     }
   }
 
@@ -1589,12 +1591,17 @@ function FilenameStage(props: {
       "날짜: ", h("code", null, "{{date}}"), " → 생성 날짜(YYYYMMDD) · ",
       h("code", null, "{{date:YYYY-MM-DD}}"), " → 하이픈 포함 날짜", h("br", null),
       "순번: ", h("code", null, "{{seq}}"), " → 1부터 증가 · ",
-      h("code", null, "{{seq:001}}"), " → 001부터 세 자리로 증가")),
-    h("div", {
-      id: "save-msg", className: `note ${view.saveMessage?.level === "ok" ? "okbox" : "warnbox"}`,
-      style: { display: view.saveMessage ? "block" : "none" },
-    }, view.saveMessage
-      ? `${view.saveMessage.level === "ok" ? "" : "⚠ "}${view.saveMessage.text}` : ""));
+      h("code", null, "{{seq:001}}"), " → 001부터 세 자리로 증가")));
+}
+
+/** 인라인 알림 노드(#323) — **셸 레벨**이라 세 탭이 공유하고 본문 재렌더에 증발하지 않는다.
+ *  종전 거처는 파일 이름 탭 본문이었고, 그래서 나머지 두 탭의 통지가 갈 곳이 없었다. */
+function SaveMessage(props: { view: ViewState }): ReactNode {
+  const { saveMessage } = props.view;
+  return h("div", {
+    id: "save-msg", className: `note ${saveMessage?.level === "ok" ? "okbox" : "warnbox"}`,
+    style: { display: saveMessage ? "block" : "none" },
+  }, saveMessage ? `${saveMessage.level === "ok" ? "" : "⚠ "}${saveMessage.text}` : "");
 }
 
 function EditorFooter(props: {
@@ -1645,9 +1652,17 @@ function EditorFooter(props: {
 
 export function EditorScreen(props: { controller: EditorController }): ReactNode {
   const { controller } = props;
-  const snapshot = useSyncExternalStore(controller.model.subscribe, controller.model.getSnapshot);
-  const draft = useSyncExternalStore(controller.draftModel.subscribe, controller.draftModel.getSnapshot);
-  const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot);
+  /* 세 store 모두 세 번째 인자(getServerSnapshot)를 같은 getter 로 넘긴다
+     (`JobContentSelection` 선례): 제품 런타임은 이 인자를 쓰지 않지만, 없으면 이 셸이
+     `react-dom/server` 로 **한 번도** 렌더되지 못해 노드 배치 계약을 단위층에서 잴 수 없다. */
+  const snapshot = useSyncExternalStore(
+    controller.model.subscribe, controller.model.getSnapshot, controller.model.getSnapshot);
+  const draft = useSyncExternalStore(
+    controller.draftModel.subscribe, controller.draftModel.getSnapshot,
+    controller.draftModel.getSnapshot);
+  const view = useSyncExternalStore(
+    controller.viewModel.subscribe, controller.viewModel.getSnapshot,
+    controller.viewModel.getSnapshot);
 
   /* 조준은 렌더 **뒤**에 — 커밋 전에는 겨눌 노드가 아직 없다. */
   useEffect(() => { controller.consumeAim(); });
@@ -1675,6 +1690,7 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
         style: { whiteSpace: "pre-line" },
       }, snapshot.notice.text) : null,
       body),
+    h(SaveMessage as any, { view }),
     h(EditorFooter as any, { snapshot, draft, controller }),
     h(ContextMenu as any, {
       id: "tplRowMenu",
