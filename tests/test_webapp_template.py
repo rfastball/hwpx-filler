@@ -1121,3 +1121,53 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
 
 # (고지 ②(휘발 「기안」 폐지 재진술) 테스트 삭제 — 문안이 tpl 화면과 함께 사망(F8
 #  §10.17). 고지 ①(job txt_note)은 test_webapp_job 이 계속 진다.)
+
+
+# ------------------------------------------------ 저작 중 본문 판정(S10-05 #862 · #299 회수)
+def test_txt_lint_restates_ring0_diagnostics_and_token_spans(tmp_path, monkeypatch):
+    """린트 왕복은 **파일이 아니라 창이 든 문자열**을 보고, 링0 판정을 그대로 싣는다.
+
+    좌표가 두 곳에서 나면(웹이 정규식을 다시 쓰면) sigil 선행 분류가 갈려 같은 토큰이
+    한쪽에선 구간 마커, 다른 쪽에선 미치환 누름틀이 된다. 그래서 스팬은 여기서 나온다.
+    """
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+    content = "제목: {{공고명}}\n{{#항목 사유}}"
+
+    result = ctrl.dispatch("txt_lint", {"content": content})
+
+    assert [d["kind"] for d in result["diagnostics"]] == ["unbalanced_marker"]
+    assert "닫는 마커가 없습니다" in result["diagnostics"][0]["message"]
+    assert result["summary"] == {"slots": 0, "options": 0, "fields": 1, "markers": 1}
+    assert result["spans"] == [
+        {"kind": "field", "start": 4, "end": 11, "source": "{{공고명}}"},
+        {"kind": "marker", "start": 12, "end": 22, "source": "{{#항목 사유}}"},
+    ]
+    # 좌표는 원문에 **그대로** 얹힌다 — 이 불변식이 깨지면 강조가 조용히 어긋난다.
+    for span in result["spans"]:
+        assert content[span["start"]:span["end"]] == span["source"]
+
+
+def test_txt_lint_on_a_clean_body_is_quiet_and_writes_nothing(tmp_path, monkeypatch):
+    """진단 0 · 스팬 정상 · 라이브러리 무변경(읽기 전용 왕복이라는 사실의 얼굴)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    before = sorted(p.name for p in (tp / "txt").iterdir())
+
+    result = ctrl.dispatch("txt_lint", {
+        "content": "{{#항목 사유 사유}}\n본문\n{{/항목}}\n값: {{금액}}",
+    })
+
+    assert result["diagnostics"] == []
+    assert result["summary"]["slots"] == 1 and result["summary"]["fields"] == 1
+    assert [s["kind"] for s in result["spans"]] == ["marker", "marker", "field"]
+    assert sorted(p.name for p in (tp / "txt").iterdir()) == before
+
+
+def test_txt_lint_accepts_an_empty_body(tmp_path, monkeypatch):
+    """빈 본문은 실패가 아니라 「아직 아무것도 없다」다 — 새 창의 첫 판정이 이것이다."""
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+
+    result = ctrl.dispatch("txt_lint", {"content": ""})
+
+    assert result["diagnostics"] == []
+    assert result["spans"] == []
+    assert result["summary"] == {"slots": 0, "options": 0, "fields": 0, "markers": 0}

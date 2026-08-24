@@ -94,7 +94,8 @@ _VITE_CLIENT_RE = re.compile(r"(?i)(?:/@vite/client|@vite/client)")
 #: 면제는 **``.js`` 번들 텍스트에만** 선다. HTML·CSS 의 외부 URL 은 등장 자체가 로딩
 #: 맥락(``src``·``href``·``url()``)일 개연성이 지배적이라 전면 금지를 유지한다 — 텍스트만
 #: 보고 소비 맥락을 안 보면 ``<script src="http://www.w3.org/2000/svg">`` 가 면제를
-#: 훔친다(#484 Codex P2). 실측 모집단 5종 20회는 전부 JS 문자열이다.
+#: 훔친다(#484 Codex P2). 실측 모집단(React 5종 + CodeMirror 계열 115종)은 전부 JS 문자열
+#: 이거나 주석 본문이고, HTML·CSS 산출물의 외부 URL 은 여전히 0 이다.
 #:
 #: 이 열거 밖의 ``http(s)://`` 는 여전히 전부 거절이다(fail-closed 불변). 넓힐 때는
 #: 「그 URL 을 소비하는 로더가 산출물 안에 있는가」를 먼저 반증한다.
@@ -104,9 +105,31 @@ _INERT_OUTPUT_URLS = frozenset(
         "http://www.w3.org/2000/svg",
         "http://www.w3.org/XML/1998/namespace",
         "http://www.w3.org/1998/Math/MathML",
+        # CodeMirror 6 계열(S10-05 #862 · TXT 저작 린트메모장)이 데려온 **문서 주석** 링크
+        # 전수. 반증 방법과 결과: 같은 그래프를 `minify: true` 로 다시 빌드하면
+        # (주석만 사라지고 문자열 리터럴은 남는다) 산출물에 남는 외부 URL 은
+        # `http://www.w3.org/2000/svg` **하나뿐**이다 — 아래 전부가 주석 본문이고 어떤
+        # 로더도 이 값을 fetch 하지 않는다. 제품 빌드는 감사 가능성을 위해 `minify: false`
+        # 라 주석이 그대로 실린다(그 결정이 이 목록의 존재 이유다).
+        "https://code.haverbeke.berlin/marijn/style-mod#documentation",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/direction",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/white-space",
+        "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference"
+        "/Global_Objects/String/codePointAt",
+        "https://en.wikipedia.org/wiki/Input_method",
+        "https://en.wikipedia.org/wiki/Operational_transformation",
     }
 )
-_INERT_OUTPUT_URL_PREFIX = "https://react.dev/errors/"
+#: 접두 면제 — 개별 열거가 무의미한 **한 문서 사이트의 API 레퍼런스 앵커 집합**만 받는다.
+#: `react.dev/errors/` 는 프로덕션 오류 메시지 본문의 문서 링크,
+#: `codemirror.net/6/docs/ref/` 는 CodeMirror 6 dts 주석의 `@link` 대상 109 종이다(실측).
+#: 접두를 넓힐 때도 판정은 같다 — 「그 URL 을 소비하는 로더가 산출물 안에 있는가」를 먼저
+#: 반증한다. 호스트 전체(`https://codemirror.net/`)로 넓히지 않은 것은 의도다: 경로까지
+#: 좁혀 두면 같은 호스트의 **비주석** 등장이 여전히 빨강으로 남는다.
+_INERT_OUTPUT_URL_PREFIXES = (
+    "https://react.dev/errors/",
+    "https://codemirror.net/6/docs/ref/",
+)
 
 
 def _external_url_offenders(text: str, *, allow_inert: bool) -> "list[str]":
@@ -118,7 +141,7 @@ def _external_url_offenders(text: str, *, allow_inert: bool) -> "list[str]":
             allow_inert
             and (
                 token in _INERT_OUTPUT_URLS
-                or token.startswith(_INERT_OUTPUT_URL_PREFIX)
+                or token.startswith(_INERT_OUTPUT_URL_PREFIXES)
             )
         )
     ]

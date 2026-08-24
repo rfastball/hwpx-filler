@@ -462,6 +462,24 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   - 액션은 `slot_rename`(`path`·`slot_id`·`label`)·`slot_decompile`·`slot_remove`
     (각 `path`·`slot_id`·`confirm`)이고 셋 다 경로가 **현재 HWPX 라이브러리 목록**에 있어야
     한다(`_do_delete` 와 같은 술어 — 임의 파일 변이 권한 승격 차단).
+- **TXT 저작 린트메모장**(S10-05 #862 · #299 회수): `#txtEditModal` 의 본문 입력은 textarea 가
+  아니라 CodeMirror 6 메모장(`#txtLintpad`, 컨텐츠 DOM 은 종전 id `#txtEditContent`)이다.
+  **판정은 하나도 프런트에 없다** — 타이핑 180ms 디바운스 뒤 `tpl/txt_lint`(`content` 하나,
+  경로 없음 · 읽기 전용이라 editor 재당김을 태우지 않는다)가 링0
+  `scan_text_structure`+`scan_text_token_spans` 의 진단·요약·**토큰 문자 오프셋**을 그대로
+  싣고, 표면은 그 좌표에 `.cm-txtField`/`.cm-txtMarker` 를 얹고 `message` 를 `#txtLintDiag`
+  로 재진술만 한다(웹에 `{{…}}` 정규식 0 — 있으면 sigil 선행 분류가 두 곳에서 갈린다).
+  낡은 응답은 세대 + 본문 대조 두 관문이 막는다.
+  - vendor 봉쇄(#588)는 `frontend/src/editorview/txt_lintpad.ts` **파일 하나**다:
+    `mountLintpad`·`updateLintpad`·`disposeLintpad` 가 `tests/architecture_contract.toml`
+    `[vendor_integration.codemirror]` 의 세 소유 심볼이고, CodeMirror 타입은 이 파일 밖으로
+    나가지 않는다. **키맵을 세우지 않는 것이 계약**이다 — Escape/Tab 이 vendor 에 먹히면
+    모달 이탈 가드(`beforeClose`)와 포커스 트랩이 조용히 우회된다.
+  - 저장 동사는 셋이고 **전부 Draft 보존까지**다(#856 D5): 「저장」(신규=`txt_new` ·
+    편집=`txt_edit` 드리프트 왕복)과 편집 모드의 「새 파일로 저장…」(`Modal.prompt` +
+    같은 `txt_new` 재사용 — 새 백엔드 동사 없음). 성공 직후 `#save-msg` 가 「변경사항 확인」
+    다음 「변경사항 적용」이 남았음을 말한다 — Candidate 출생은 그 동사이지 저장이 아니고,
+    말하지 않으면 한 동작이 두 사건인 척한다.
 - **tpl→editor 재정산 seam**(S8G-00 #320): tpl 채널이 템플릿 파일을 durable 로 바꾸면
   (`compile` 확정 · `slot_rename`·`slot_decompile`·`slot_remove` 확정 · `txt_edit` ·
   `delete` · `undo_delete`) 그 성공 **직후**

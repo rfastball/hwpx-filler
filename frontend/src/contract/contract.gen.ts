@@ -237,6 +237,7 @@ export const SCREEN_ACTIONS = {
     txt_new: { required: ["content", "name"], optional: [] },
     txt_edit: { required: ["baseline", "content", "path"], optional: ["confirm_fingerprint"] },
     txt_content: { required: ["path"], optional: [] },
+    txt_lint: { required: ["content"], optional: [] },
   },
 } as const;
 

@@ -1278,6 +1278,56 @@ class TestWebSelftestGate:
             f"TXT 세션 탭 수가 2가 아닙니다(파일 이름 탭은 HWPX 속성): {b['txt_tabs']!r}"
         )
 
+    def test_txt_authoring_lintpad_mounts_lints_and_yields_escape(
+        self, selftest_result: dict
+    ) -> None:
+        # S10-05 #862 — TXT 저작 표면이 CodeMirror 린트메모장인지, 그 판정이 **Python 왕복**
+        # 에서 오는지를 실 WebView2 에서 되읽는다. 정적 계약은 모듈의 존재만 본다: 마운트가
+        # 죽어도, 왕복이 죽어 강조가 0 이어도, vendor 키맵이 Escape 를 먹어 이탈 가드가
+        # 우회돼도 전부 초록이다(U2 §2.11 표본과 같은 결함류).
+        b = selftest_result["editor_txt_band"]
+        assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
+        assert b["lintpad_trigger"] is True, "「새 TXT 템플릿…」 진입점이 없습니다."
+        assert b["lintpad_mounted"] is True, (
+            "TXT 저작 창에 CodeMirror 가 마운트되지 않았습니다(모듈은 있고 화면은 빈 상태)."
+        )
+        assert b["lintpad_content_editable"] is True, (
+            f"#txtEditContent 가 편집 가능한 표면이 아닙니다: {b!r}"
+        )
+        # 새 생성 창의 첫 초점은 이름 칸이다 — 메모장이 마운트에서 가로채면 초기 초점의
+        # 주인이 둘이 되고, 이기는 쪽이 효과 순서에 따라 갈린다.
+        assert b["lintpad_focus"] == "txtEditName", (
+            f"새 TXT 창의 첫 초점이 이름 칸이 아닙니다: {b['lintpad_focus']!r}"
+        )
+        assert b["lintpad_focusable"] == "txtEditContent", (
+            f"메모장이 초점을 받을 수 있는 표면이 아닙니다: {b['lintpad_focusable']!r}"
+        )
+        # 양성 대조의 선행 음성 — 늘 켜져 있는 클래스가 초록을 훔치지 못하게.
+        assert b["lintpad_marks_before"] == 0, (
+            f"본문을 넣기 전부터 강조가 있습니다: {b['lintpad_marks_before']!r}"
+        )
+        assert b["lintpad_lint_arrived"] is True, (
+            "본문을 넣었는데 판정이 도착하지 않았습니다 — tpl/txt_lint 왕복이 죽었습니다."
+        )
+        assert b["lintpad_field_marks"] == 1 and b["lintpad_marker_marks"] == 1, (
+            "누름틀·구간 표기 강조가 1:1 로 서지 않습니다"
+            f" (필드 {b['lintpad_field_marks']!r} · 마커 {b['lintpad_marker_marks']!r})."
+        )
+        assert b["lintpad_diag_count"] == 1, (
+            f"진단 1건이 그대로 재진술되지 않았습니다: {b['lintpad_diag_count']!r}"
+        )
+        # 문안은 링0 이 낸 `message` 그대로다 — 표면이 `kind` 로 다시 지으면 여기서 갈린다.
+        assert "닫는 마커가 없습니다" in b["lintpad_diag_text"], (
+            f"진단 문안이 Python 이 낸 것과 다릅니다: {b['lintpad_diag_text']!r}"
+        )
+        assert b["lintpad_escape_asks"] is True, (
+            "편집기 안의 Escape 가 모달 이탈 가드에 닿지 않았습니다"
+            " — vendor 키맵이 먹으면 저장 안 한 저작이 조용히 사라집니다."
+        )
+        assert b["lintpad_disposed"] is True, (
+            "창을 닫았는데 메모장 인스턴스가 남았습니다(다음 열기에서 두 벌이 됩니다)."
+        )
+
     def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
         # 편집기가 실 WebView2 에서 **자기 화면**으로 서고 상단 2탭을 덮는지, 머리(이름·저장
         # 상태·판본)와 진입 문맥 배너가 실제로 그려지는지 되읽는다. 정적 계약(클래스·문자열

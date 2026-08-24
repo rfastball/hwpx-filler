@@ -38,7 +38,11 @@ from .structure_scan import (
     StructureSummary,
     iter_structure_markers,
 )
-from .text_render import template_fields
+from .text_render import iter_field_token_matches, template_fields
+
+#: 토큰 스팬의 ``kind`` 어휘 — 상위 링이 정규식 대신 이 값으로 표기를 가른다.
+TOKEN_SPAN_FIELD = "field"
+TOKEN_SPAN_MARKER = "marker"
 
 
 @dataclass(frozen=True)
@@ -293,3 +297,59 @@ def scan_text_structure(text: str) -> TextStructureScan:
         ),
         placements=tuple(reader.placements),
     )
+
+
+@dataclass(frozen=True)
+class TextTokenSpan:
+    """토큰 1개의 **문자 오프셋** 스팬 — 저작 표면의 표기 강조가 읽는 좌표.
+
+    ``start``/``end`` 는 원문 문자열의 0-기반 반열린 구간이라 ``text[start:end]`` 가
+    ``source`` 와 같다(불변식). 줄 좌표(:class:`TextStructurePlacement`)와 **다른 축**이다 —
+    표기 강조는 줄 안쪽의 토큰 하나를 겨누므로 줄 번호로는 그릴 수 없다.
+
+    ``kind`` 는 :data:`TOKEN_SPAN_FIELD`(누름틀 토큰)·:data:`TOKEN_SPAN_MARKER`(구간 마커)
+    둘뿐이고, 그 이분은 sigil 술어
+    (:func:`~hwpxfiller.domain.structure_scan.is_structure_sigil`)의 얼굴이다.
+    """
+
+    kind: str
+    start: int
+    end: int
+    source: str
+
+    def to_dict(self) -> dict:
+        return {
+            "kind": self.kind,
+            "start": self.start,
+            "end": self.end,
+            "source": self.source,
+        }
+
+
+def scan_text_token_spans(text: str) -> "tuple[TextTokenSpan, ...]":
+    """``text`` 의 필드 토큰·구간 마커 스팬 전부를 등장순으로 낸다(무변형).
+
+    **왜 도메인에 있는가.** 저작 표면이 표기를 색으로 가르려면 「어디부터 어디까지가
+    무엇인가」를 알아야 하는데, 그 답을 표면이 정규식으로 다시 만들면 토큰 문법이 두
+    곳에서 살게 된다 — sigil 선행 분류(``{{#항목 …}}`` 은 필드가 아니다)를 한쪽이
+    빠뜨리면 같은 문자열이 한 표면에선 마커, 다른 표면에선 미치환 누름틀로 칠해진다.
+    그래서 좌표를 **여기서** 내고 표면은 받아 얹기만 한다.
+
+    두 축은 :func:`~hwpxfiller.domain.text_render.iter_field_token_matches` 와
+    :func:`~hwpxfiller.domain.structure_scan.iter_structure_markers` 를 그대로 돈다 —
+    「무엇이 필드인가/마커인가」의 단일 출처를 우회해 다시 판정하지 않는다. sigil 술어가
+    필드 쪽에서 마커를 먼저 걸러내므로 두 축의 스팬은 겹치지 않고, ``start`` 오름차순
+    정렬이 곧 등장순이다. 두 축의 **합집합**이 완전 토큰 전부는 아니다: 렌더의 필드 토큰
+    문법이 ``|`` 를 배제하므로 그런 토큰은 어느 축에도 들지 않는다 — 강조되지 않을 뿐
+    잘못 강조되지는 않는다(문법의 단일 출처를 여기서 넓히지 않는다).
+    """
+    spans = [
+        TextTokenSpan(TOKEN_SPAN_FIELD, m.start(), m.end(), m.group(0))
+        for m in iter_field_token_matches(text)
+    ]
+    spans.extend(
+        TextTokenSpan(TOKEN_SPAN_MARKER, m.start(), m.end(), m.group(0))
+        for m in iter_structure_markers(text)
+    )
+    spans.sort(key=lambda span: span.start)
+    return tuple(spans)

@@ -19,6 +19,23 @@ hwpxcore = [
 ]
 hwpxfiller = []
 
+# CodeMirror 6 는 **TXT 저작 린트메모장 한 자리**에만 산다(S10-05 #862). 배치 경로가 파일
+# 하나인 것이 봉쇄의 얼굴이다 — react 처럼 디렉터리로 넓히면 「편집기가 필요하니 여기도」가
+# 파문되고, 그때부터 vendor 타입이 제품 계약에 새기 시작한다. 키맵·언어·자동완성 축은
+# 들이지 않았다(패키지 둘이 전부): Escape/Tab 을 CodeMirror 가 먹으면 모달 이탈 가드가
+# 조용히 우회된다.
+[vendor_integration.codemirror]
+packages = [
+  "@codemirror/state",
+  "@codemirror/view",
+]
+allowed_source_roots = [
+  "frontend/src/editorview/txt_lintpad.ts",
+]
+mount_owner = "frontend/src/editorview/txt_lintpad.ts|mountLintpad"
+update_owner = "frontend/src/editorview/txt_lintpad.ts|updateLintpad"
+dispose_owner = "frontend/src/editorview/txt_lintpad.ts|disposeLintpad"
+
 [vendor_integration.react]
 packages = [
   "react",

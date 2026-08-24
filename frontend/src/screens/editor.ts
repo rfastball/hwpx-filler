@@ -13,8 +13,11 @@
    - 판정·문안·수치는 Python 이다. 표면은 그리기와 발신만 한다.
    - 브리지 왕복은 **한 줄에 선다**(`EDIT_CHAIN`). 커밋(이동·저장·이탈)은 그 줄을 먼저 정산한다.
    - 확인 전에는 draft 를 파기하지 않는다. */
-import { createElement, Fragment, useEffect, useSyncExternalStore } from "react";
+import { createElement, Fragment, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+
+import { disposeLintpad, mountLintpad, updateLintpad } from "../editorview/txt_lintpad.ts";
+import type { LintpadHandle, LintpadSpan } from "../editorview/txt_lintpad.ts";
 
 import type { BridgeClient } from "../runtime/client.ts";
 import type { ServiceHandoffPorts } from "../ports/service_handoff.ts";
@@ -109,6 +112,17 @@ const RETURN_SCREEN: Record<string, string> = {
   data: "job", preview: "job", result: "job", documents: "job", library: "library",
 };
 
+/** `tpl/txt_lint` 한 왕복의 결과 — Python 이 낸 값을 **그대로** 든다.
+ *
+ *  `content` 는 이 판정이 본 본문이다(세대 검사의 근거). 진단 문안은 `message` 를 그대로
+ *  쓴다 — `kind` 로 여기서 문장을 다시 지으면 같은 결함이 두 어휘를 갖는다. */
+type TxtLintState = {
+  content: string;
+  diagnostics: Obj[];
+  summary: Obj;
+  spans: LintpadSpan[];
+};
+
 type TxtEditState = {
   mode: "new" | "edit";
   path: string;
@@ -119,6 +133,8 @@ type TxtEditState = {
   baselineContent: string;
   error: string;
   allowClose: boolean;
+  /** 마지막으로 도착한 판정(아직 없으면 `null`). 낡은 응답은 여기 오지 못한다. */
+  lint: TxtLintState | null;
 };
 
 type LibMenu = {
@@ -144,6 +160,21 @@ type ViewState = {
 };
 
 const isEditing = (snapshot: Obj): boolean => !!snapshot.editing_origin;
+
+/** 목록을 바꾸지 않는 tpl 동사 — 완료 뒤 editor 재당김을 걸지 않는다.
+ *
+ *  `txt_lint` 는 저작 중 타이핑마다(디바운스) 도는 **순수 판정**이라, 재당김이 붙으면
+ *  글자 하나마다 편집기 스냅샷 전체가 다시 온다. 나머지 tpl 동사는 전부 변이라 종전대로다. */
+const TPL_READONLY_ACTIONS = new Set(["txt_lint"]);
+
+/** 저작 창의 lint 왕복 디바운스(ms) — 하우스 관용구(`library.ts` 검색 상자와 같은 값). */
+const TXT_LINT_DEBOUNCE_MS = 180;
+
+/** 저장 뒤 안내 — 저장은 Draft 보존일 뿐이고 작업에 실리는 것은 별개 동사다(D5 · #299).
+ *
+ *  이 한 줄이 없으면 「저장했으니 반영됐다」는 조용한 오해가 남는다. 문안의 두 동사는
+ *  「문서 만들기」의 실제 버튼 이름이다(`job_run.ts` — 여기서 발명하지 않는다). */
+const TXT_SAVE_NOTICE = "저장했습니다. 작업에 반영하려면 「변경사항 확인」 다음 「변경사항 적용」을 누르세요.";
 
 export function createEditorController(deps: EditorControllerDeps) {
   const model = deps.runtime.model<Obj | null>(SCREEN);
@@ -192,7 +223,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     /* tpl 동사는 모두 snapshot push를 내지만 editor 목록의 정본은 editor snapshot이다.
        교차 채널 구독으로 push를 다시 initial로 번역하지 않고, 원인 동사의 완료와 같은 줄에서
        editor를 한 번 재당긴다. 호출이 실패하면 재당김도 실행하지 않는다. */
-    if (screen === "tpl") await deps.runtime.refresh(SCREEN);
+    if (screen === "tpl" && !TPL_READONLY_ACTIONS.has(action)) await deps.runtime.refresh(SCREEN);
     return value;
   };
 
@@ -580,9 +611,10 @@ export function createEditorController(deps: EditorControllerDeps) {
       title: mode === "new" ? "새 TXT 템플릿" : `TXT 템플릿 편집: ${name}`,
       name: "", content: content || "",
       baselineName: "", baselineContent: content || "",
-      error: "", allowClose: false,
+      error: "", allowClose: false, lint: null,
     };
     patchView({ txtEdit: state });
+    scheduleTxtLint(state.content);   // 연 순간의 표기 상태부터 말한다(첫 타이핑을 기다리지 않는다)
     deps.modal.open("txtEditModal", {
       /* 초기 포커스는 여기서 넘기지 않는다 — 이 시점엔 창 내용이 아직 커밋 전이라 대상이
          없다. 겨눔은 `TxtEditDialog` 의 커밋 뒤 effect 가 진다. */
@@ -590,6 +622,7 @@ export function createEditorController(deps: EditorControllerDeps) {
       beforeClose: () => {
         const current = view.txtEdit;
         if (current === null || current.allowClose || !txtDirty(current)) {
+          cancelTxtLint();          // 도착할 곳이 사라졌다 — 예약과 진행 중 왕복을 함께 걷는다
           patchView({ txtEdit: null });
           return true;
         }
@@ -602,6 +635,62 @@ export function createEditorController(deps: EditorControllerDeps) {
   function patchTxtEdit(next: Partial<TxtEditState>): void {
     if (view.txtEdit === null) return;
     patchView({ txtEdit: { ...view.txtEdit, ...next } });
+  }
+
+  /* ---- 저작 중 본문의 라이브 판정(S10-05 #862) ----
+     판정 원천은 링0 스캐너 하나다(`tpl/txt_lint` → `scan_text_structure`). 표면은 좌표와
+     문안을 받아 얹기만 하고 `{{…}}` 를 다시 가르지 않는다 — sigil 선행 분류가 두 곳에
+     살면 같은 토큰이 표면과 백엔드에서 다른 것이 된다. */
+
+  /** 왕복 세대 — 낡은 응답이 새 입력을 덮지 않게 하는 두 관문 중 하나. */
+  let txtLintGeneration = 0;
+  let txtLintTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleTxtLint(content: string): void {
+    if (txtLintTimer !== null) clearTimeout(txtLintTimer);
+    txtLintTimer = setTimeout(() => {
+      txtLintTimer = null;
+      void runTxtLint(content);
+    }, TXT_LINT_DEBOUNCE_MS);
+  }
+
+  /** 예약된 판정을 걷는다 — 창이 닫히면 도착할 곳이 없다. */
+  function cancelTxtLint(): void {
+    if (txtLintTimer !== null) clearTimeout(txtLintTimer);
+    txtLintTimer = null;
+    txtLintGeneration += 1;
+  }
+
+  /** 한 왕복. 실패는 **조용히** 버린다 — 린트는 보조 표시라, 못 물었다고 저작을 막지 않는다.
+   *
+   *  관문 둘: ① 세대(그 사이 새 요청이 떴는가) ② 본문 대조(응답이 본 문자열이 지금
+   *  화면의 것인가). 오프셋을 다른 문서에 얹으면 강조가 조용히 어긋난다. */
+  async function runTxtLint(content: string): Promise<void> {
+    const generation = ++txtLintGeneration;
+    let result: Obj;
+    try {
+      result = await dispatch("tpl", "txt_lint", { content });
+    } catch {
+      return;
+    }
+    if (generation !== txtLintGeneration) return;
+    const current = view.txtEdit;
+    if (current === null || current.content !== content) return;
+    patchTxtEdit({
+      lint: {
+        content,
+        diagnostics: (result.diagnostics || []) as Obj[],
+        summary: (result.summary || {}) as Obj,
+        spans: (result.spans || []) as LintpadSpan[],
+      },
+    });
+  }
+
+  /** 메모장이 낸 본문 변경 — 상태를 갱신하고 판정을 다시 예약한다. */
+  function typeTxtEdit(content: string): void {
+    if (view.txtEdit === null || view.txtEdit.content === content) return;
+    patchTxtEdit({ content });
+    scheduleTxtLint(content);
   }
 
   async function confirmDiscardTxtEdit(): Promise<void> {
@@ -653,11 +742,43 @@ export function createEditorController(deps: EditorControllerDeps) {
       } else if (!await saveTxtEdit(current)) {
         return;                                  // 덮어쓰기를 거절했다 — 창은 그대로 산다
       }
-      patchTxtEdit({ allowClose: true });
-      deps.modal.close("txtEditModal");
+      closeTxtEditAfterSave();
     } catch (error) {
       patchTxtEdit({ error: String((error as Obj)?.message || error) });
     }
+  }
+
+  /** 편집 중인 본문을 **다른 이름의 새 템플릿**으로 낸다(D5 · #299).
+   *
+   *  새 백엔드 동사를 세우지 않는다 — 「새 TXT 템플릿」이 쓰는 `txt_new` 를 그대로 부른다.
+   *  이름 검증·중복 차단은 그쪽 한 자리가 지고 여기서 재조립하지 않는다. 취소는 창을
+   *  그대로 둔다(편집 내용을 잃지 않는다). */
+  async function saveTxtEditAsNew(trigger: HTMLElement): Promise<void> {
+    const current = view.txtEdit;
+    if (current === null) return;
+    const name = await deps.modal.prompt({
+      title: "새 파일로 저장",
+      body: "새 TXT 템플릿 이름(확장자 제외)",
+      value: "", returnFocus: trigger,
+    });
+    if (name === null) return;
+    try {
+      await dispatch("tpl", "txt_new", { name, content: current.content });
+      closeTxtEditAfterSave();
+    } catch (error) {
+      patchTxtEdit({ error: String((error as Obj)?.message || error) });
+    }
+  }
+
+  /** 저장 성공 뒤 닫기 — 창을 걷고 **저장의 한계**를 인라인으로 재진술한다.
+   *
+   *  TXT 정본에서 파일 쓰기는 Draft 보존까지다(L19). Candidate 가 태어나는 것은 「문서
+   *  만들기」의 「변경사항 확인」이고, 그것을 말하지 않으면 저장이 반영까지 한 것처럼
+   *  읽힌다 — 한 동작이 두 사건인 척하지 않게 하는 한 줄이다. */
+  function closeTxtEditAfterSave(): void {
+    patchTxtEdit({ allowClose: true });
+    deps.modal.close("txtEditModal");
+    noticeSave(TXT_SAVE_NOTICE, "ok");
   }
 
   /* ---- 확인 관문 ---- */
@@ -1028,6 +1149,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     libContextMenu,
     openLibMoveDialog, findLibItem,
     openTxtEdit, patchTxtEdit, confirmDiscardTxtEdit, submitTxtEdit,
+    typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
     useLibraryTemplate, importTemplate, importFolder, pickData, skipData,
@@ -1816,15 +1938,88 @@ export function EditorScreen(props: { controller: EditorController }): ReactNode
     }));
 }
 
+/** 린트메모장 호스트 — vendor 수명주기를 **React 효과 하나**가 진다.
+ *
+ *  마운트/해제는 이 창이 살아 있는 동안만이다(`state === null` 이면 부모가 아예 렌더하지
+ *  않는다). CodeMirror 타입은 `txt_lintpad.ts` 밖으로 나오지 않으므로 여기 있는 것은
+ *  불투명 손잡이뿐이다(#588 봉쇄).
+ *
+ *  본문의 주인은 CodeMirror 문서이고 상태는 그 거울이다 — 매 렌더마다 값을 되밀어 넣지
+ *  않는다(`updateLintpad` 가 같은 문자열이면 아무것도 하지 않는다). 그래서 캐럿이 튀지
+ *  않으면서도 밖에서 갈아 끼운 본문은 따라 들어온다. */
+function TxtLintpad(props: {
+  controller: EditorController; content: string; spans: readonly LintpadSpan[] | null;
+}): ReactNode {
+  const { controller } = props;
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const handleRef = useRef<LintpadHandle | null>(null);
+  /* 마지막으로 **얹은** 판정. 렌더마다 같은 좌표를 다시 dispatch 하면 타이핑 한 글자에
+     트랜잭션이 둘씩 붙는다(강조는 그대로인 채 비용만 는다). */
+  const appliedSpans = useRef<readonly LintpadSpan[] | null>(null);
+  /* 마운트 시점의 본문만 심는다 — 이후 갱신은 아래 효과가 진다(deps 를 비워 재마운트 금지). */
+  const initial = useRef<string>(props.content);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null) return undefined;
+    const handle = mountLintpad({
+      host,
+      doc: initial.current,
+      contentId: "txtEditContent",
+      ariaLabel: "템플릿 내용",
+      onDocChanged: (text: string) => { controller.typeTxtEdit(text); },
+    });
+    handleRef.current = handle;
+    return () => { disposeLintpad(handle); handleRef.current = null; };
+  }, []);
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (handle === null) return;
+    const fresh = props.spans !== null && props.spans !== appliedSpans.current;
+    if (fresh) appliedSpans.current = props.spans;
+    updateLintpad(handle, {
+      doc: props.content, spans: fresh ? props.spans ?? undefined : undefined,
+    });
+  });
+  return h("div", { className: "lintpad", id: "txtLintpad", ref: hostRef });
+}
+
+/** 진단 재진술 — Python 이 낸 `message` 를 **그대로** 줄로 편다(문안 재조립 금지). */
+function TxtLintReport(props: { lint: TxtLintState | null }): ReactNode {
+  const { lint } = props;
+  const diagnostics = lint?.diagnostics || [];
+  if (lint === null) {
+    return h("p", { id: "txtLintReport", className: "hint" }, "표기를 확인하는 중…");
+  }
+  if (diagnostics.length === 0) {
+    const summary = lint.summary || {};
+    return h("p", { id: "txtLintReport", className: "hint" },
+      `표기 이상 없음 · 항목 ${Number(summary.slots || 0)} · 선택 ${Number(summary.options || 0)}`
+      + ` · 누름틀 ${Number(summary.fields || 0)}`);
+  }
+  return h("div", { id: "txtLintReport", className: "note warnbox", role: "status" },
+    h("p", { style: { margin: 0 } }, `구간 표기 이상 ${diagnostics.length}건`),
+    h("ul", { id: "txtLintDiag", className: "muted capnote" },
+      diagnostics.map((diagnostic, index) => h("li", { key: index },
+        String(diagnostic.message || ""),
+        diagnostic.context ? h("span", { className: "muted" }, ` — ${String(diagnostic.context)}`) : null))));
+}
+
 export function TxtEditDialog(props: { controller: EditorController }): ReactNode {
   const { controller } = props;
-  const view = useSyncExternalStore(controller.viewModel.subscribe, controller.viewModel.getSnapshot);
+  /* 세 번째 인자(getServerSnapshot)는 `EditorScreen` 과 같은 이유로 선다: 없으면 이 창이
+     `react-dom/server` 로 **한 번도** 렌더되지 못해 노드 배치를 단위층에서 잴 수 없다. */
+  const view = useSyncExternalStore(
+    controller.viewModel.subscribe, controller.viewModel.getSnapshot,
+    controller.viewModel.getSnapshot);
   const state = view.txtEdit;
   /* 초기 포커스는 **커밋 뒤** 이 자리가 겨눈다. 모달 executor 의 `initialFocus` 는 열림
      **시점**의 DOM 을 보는데 이 창의 내용은 그 뒤 커밋에서 생기므로, 열림 시점에 넘기면
      대상이 없어 되돌림 트리거로 떨어진다(시트 선택이 같은 이유로 같은 형태를 쓴다). */
   useEffect(() => {
     if (state === null) return;
+    /* 초기 포커스의 주인은 **여기 하나**다. 메모장이 마운트에서 스스로 겨누면 새 생성
+       창에서 이름 칸과 두 번 다투고, 마지막에 이긴 쪽이 순서에 따라 갈린다. 메모장의
+       컨텐츠 DOM 은 종전 id 를 그대로 이어받으므로 겨눔 방식은 바뀌지 않았다. */
     const target = controller.doc.getElementById(
       state.mode === "new" ? "txtEditName" : "txtEditContent");
     target?.focus();
@@ -1841,12 +2036,14 @@ export function TxtEditDialog(props: { controller: EditorController }): ReactNod
       value: state?.name || "",
       onChange: (event: Obj) => controller.patchTxtEdit({ name: String(event.currentTarget.value) }),
     })),
-    h("p", { className: "modal-sub" }, "{{필드}} 토큰을 포함한 템플릿 내용"),
-    h("textarea", {
-      id: "txtEditContent", rows: 10, placeholder: "제목: {{공고명}} ...",
-      value: state?.content || "",
-      onChange: (event: Obj) => controller.patchTxtEdit({ content: String(event.currentTarget.value) }),
+    h("p", { className: "modal-sub" },
+      "{{필드}} 토큰과 {{#항목 …}} 구간 표기를 포함한 템플릿 내용"),
+    state === null ? null : h(TxtLintpad as any, {
+      /* 판정이 아직 없으면 `null` 이다 — 빈 배열을 주면 「강조 없음」을 매번 새로 얹는
+         것과 구분되지 않는다(렌더마다 같은 좌표를 다시 dispatch 하는 자리). */
+      controller, content: state.content, spans: state.lint?.spans ?? null,
     }),
+    h(TxtLintReport as any, { lint: state?.lint || null }),
     h("p", {
       id: "txtEditError", className: "note dangerbox", role: "alert",
       style: { display: state?.error ? "block" : "none" },
@@ -1856,6 +2053,13 @@ export function TxtEditDialog(props: { controller: EditorController }): ReactNod
         className: "btn", id: "txtEditCancel",
         onClick: () => controller.guarded(() => controller.confirmDiscardTxtEdit()),
       }, "취소"),
+      state?.mode === "edit"
+        ? h("button", {
+          className: "btn", id: "txtEditSaveAs",
+          onClick: (event: Obj) => controller.guarded(
+            () => controller.saveTxtEditAsNew(event.currentTarget)),
+        }, "새 파일로 저장…")
+        : null,
       h("button", {
         className: "btn primary", id: "txtEditOk",
         onClick: () => controller.guarded(() => controller.submitTxtEdit()),

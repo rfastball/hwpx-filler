@@ -169,3 +169,25 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
    경보색 밑줄을 함께 단다(초점 표지는 이동을, 색은 사유를 말한다). */
 .title-input:invalid,.title-input[aria-invalid="true"]{border-bottom-color:var(--a-danger)}
 
+
+/* ---- TXT 저작 린트메모장(S10-05 #862) ----
+   CodeMirror 6 가 마운트되는 그릇이다. **색과 굵기는 여기 산다** — vendor 테마는 레이아웃만
+   세우고(`frontend/src/editorview/txt_lintpad.ts`) 팔레트를 발명하지 않는다. 강조 두 종은
+   Python 이 준 좌표에 얹히므로, 이 두 클래스가 곧 「무엇이 누름틀이고 무엇이 구간 표기인가」의
+   시각적 얼굴이다. */
+.modal-card .lintpad{border:1px solid var(--a-border);border-radius:var(--rad-control);
+  background:var(--a-card);overflow:hidden}
+.modal-card .lintpad .cm-editor{max-height:44vh}
+.modal-card .lintpad .cm-editor.cm-focused{outline:2px solid var(--a-primary);outline-offset:-2px}
+.modal-card .lintpad .cm-scroller{overflow:auto}
+.modal-card .lintpad .cm-content{
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace;caret-color:var(--a-ink)}
+/* 누름틀 토큰 — 「값이 들어올 자리」. 미리보기의 fill 표지와 같은 색족이라 두 표면이 같은
+   것을 같은 색으로 말한다. */
+.cm-txtField{background:var(--fb-fill-bg);box-shadow:inset 0 -1px 0 var(--fb-fill-bd);
+  border-radius:var(--sp-2)}
+/* 구간 표기 마커 — 「내용이 아니라 구조」. ack 색족(자주)이 값 자리와 뚜렷이 갈린다. */
+.cm-txtMarker{background:var(--fb-ack-bg);color:var(--fb-ack-fg);font-weight:600;
+  box-shadow:inset 0 -1px 0 var(--fb-ack-bd);border-radius:var(--sp-2)}
+#txtLintReport{margin:var(--sp-8) 0 0}
+#txtLintDiag{margin:var(--sp-4) 0 0;padding-left:var(--sp-16)}

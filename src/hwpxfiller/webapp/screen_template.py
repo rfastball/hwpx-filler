@@ -31,6 +31,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from ..domain.text_structure import scan_text_structure, scan_text_token_spans
 from ..host.locations import default_templates_dir
 from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.text_registry import TextTemplateRegistry
@@ -749,6 +750,27 @@ class TemplateController:
     def _do_txt_content(self, p: dict) -> dict:
         """편집 모달용 현재 내용 반환(읽기 전용). 읽기 실패는 loud raise."""
         return {"content": self._files.read_text(p["path"])}
+
+    def _do_txt_lint(self, p: dict) -> dict:
+        """저작 중인 **미저장 본문**의 구간 표기 판정 + 토큰 좌표(읽기 전용·무변형).
+
+        린트메모장(S10-05 #862)의 판정 원천이다. 파일이 아니라 **창이 들고 있는 문자열**을
+        받는다 — 저장 전에 표기가 깨졌는지 말해 주는 것이 이 왕복의 존재 이유라, 디스크를
+        읽으면 늘 한 저장 늦게 대답한다. 그래서 경로 인자가 없고 쓰기도 없다(새 TXT 저작
+        창에는 아직 경로 자체가 없다).
+
+        진단은 링0 스캐너(:func:`~hwpxfiller.domain.text_structure.scan_text_structure`)가
+        낸 것을 **그대로** 싣는다. 표면은 ``message`` 를 재진술만 하고 ``kind`` 로 문안을
+        다시 짓지 않는다. 강조 좌표도 마찬가지로
+        :func:`~hwpxfiller.domain.text_structure.scan_text_token_spans` 가 낸 문자
+        오프셋이다 — 웹이 토큰 정규식을 다시 쓰면 sigil 선행 분류가 두 곳에서 갈린다.
+        """
+        content = p.get("content", "")
+        scan = scan_text_structure(content)
+        return {
+            **scan.to_dict(),
+            "spans": [span.to_dict() for span in scan_text_token_spans(content)],
+        }
 
 
 def _ok(text: str):

@@ -48,7 +48,12 @@
       "node_modules/react-dom/index.js",
       "node_modules/react-dom/cjs/react-dom-client.production.js",
       "node_modules/scheduler/cjs/scheduler.production.js",
-      "node_modules/scheduler/index.js"
+      "node_modules/scheduler/index.js",
+      "node_modules/@marijn/find-cluster-break/src/index.js",
+      "node_modules/@codemirror/state/dist/index.js",
+      "node_modules/style-mod/src/style-mod.js",
+      "node_modules/w3c-keyname/index.js",
+      "node_modules/@codemirror/view/dist/index.js"
     ]
   },
   "dev_dependency_owners": {
