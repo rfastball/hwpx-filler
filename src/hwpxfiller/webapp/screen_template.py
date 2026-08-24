@@ -32,7 +32,7 @@ import threading
 from pathlib import Path
 
 from ..host.locations import default_templates_dir
-from ..external.template_files import TemplateFileStore
+from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import SlotView, TemplateManagerViewModel
@@ -713,8 +713,34 @@ class TemplateController:
         return {"ok": True, "name": name}
 
     def _do_txt_edit(self, p: dict) -> dict:
-        """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5)."""
-        path = self._files.edit_text(p["path"], p.get("content", ""))
+        """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5) + 드리프트 확인 왕복.
+
+        ``baseline`` 은 편집 창이 열릴 때 읽은 원문이다(필수 키 — 없으면 시끄럽게 실패).
+        디스크가 그것과 다르면 창이 열린 사이 밖에서 바뀐 것이라 무확인 덮어쓰기가 파괴가
+        된다(#216 이월 2): 쓰지 않고 재진술 문안과 **현재 지문**을 돌려주고, 웹이 확인을
+        받아 그 지문을 ``confirm_fingerprint`` 로 되실어 다시 부른다. 판정은
+        :meth:`~hwpxfiller.external.template_files.TemplateFileStore.edit_text` 가 쓰기와
+        같은 임계구역 안에서 내린다 — 여기서 미리 읽어 재판정하지 않는다.
+        """
+        result = self._files.edit_text(
+            p["path"],
+            p.get("content", ""),
+            baseline=p["baseline"],
+            confirm_fingerprint=str(p.get("confirm_fingerprint", "") or ""),
+        )
+        if isinstance(result, TextEditDrift):
+            name = Path(p["path"]).stem
+            return {
+                "needs_confirm": True,
+                "kind": "txt_drift",
+                "fingerprint": result.fingerprint,
+                "text": (
+                    f"편집 중 외부 변경: TXT 템플릿 '{name}' 이 이 편집 창을 여는 사이 "
+                    "다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 이 편집 창의 "
+                    "내용으로 덮어씁니다."
+                ),
+            }
+        path = result
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
         # 내용이 바뀌면 토큰 집합이 바뀐다 — 편집 세션의 스키마가 방금 낡았다(#320).
         self._notify_mutation("mutated", path)

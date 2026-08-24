@@ -220,6 +220,79 @@ def test_job_registry_writes_go_through_locked_boundaries() -> None:
     )
 
 
+#: TXT 템플릿 durable 쓰기의 단일 소유자(S10G-00 #857) — 잠금·경로 검증·원자 쓰기·드리프트
+#: 판정이 전부 여기 산다.
+_TEXT_STORE = "external/template_files.py"
+
+
+def _terminal_name(node: ast.expr) -> str:
+    """속성 체인의 말단 이름 — ``self.text_registry`` / ``store.text_registry`` 둘 다 잡는다."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def test_txt_template_write_lock_has_one_owner() -> None:
+    """TXT 쓰기 잠금은 :mod:`~hwpxfiller.external.template_files` 밖에서 잡히지 않는다.
+
+    #176 RC-A 가 기록한 결함류다: 잠금·경로 검증·원자 쓰기를 링2 가 **각자** 조립하면
+    한 자리가 빠져도 조용히 지나간다(무락 check/write 교차, 라이브 목록 밖 경로 변이).
+    소유자를 하나로 못박아야 새 TXT 쓰기 경로가 그 규율을 우회한 채 생길 수 없다.
+
+    줄 grep 이 아니라 AST 로 본다 — ``screen_template.py`` 의 도크스트링이 이 잠금을
+    **설명**하므로 문자열까지 세면 규칙이 제 문서에 걸려 영영 빨강이다(#216 회귀 금지).
+    """
+    base = ROOT / "src" / "hwpxfiller"
+    offenders: list[str] = []
+    for path in sorted(base.rglob("*.py")):
+        relative = path.relative_to(base).as_posix()
+        if relative == _TEXT_STORE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        offenders.extend(
+            f"{relative}:{node.lineno}: text_registry.write_lock 직접 획득"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == "write_lock"
+            and _terminal_name(node.value) == "text_registry"
+        )
+    assert not offenders, (
+        f"TXT 쓰기 잠금 우회; {_TEXT_STORE} 의 TemplateFileStore 를 지나세요:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_template_channel_delegates_every_durable_write() -> None:
+    """``screen_template.py`` 는 파일 I/O 프리미티브를 직접 부르지 않는다(#857 종료 조건).
+
+    tpl 채널은 TXT·HWPX 템플릿을 durable 로 바꾸는 유일한 웹 표면이라, 여기서 프리미티브를
+    한 번 직접 부르는 순간 그 경로만 잠금·경로 검증·드리프트 판정 밖에 선다(#176 RC-A).
+    허용되는 유일한 수신자는 주입된 :class:`TemplateFileStore`(``self._files``) 다 —
+    같은 이름의 위임 메서드(``_files.read_text``)는 프리미티브가 아니라 그 관문이다.
+    """
+    primitives = frozenset({"open", "write_text_atomic", "write_bytes_atomic"})
+    methods = frozenset(
+        {"write_text", "write_bytes", "read_text", "read_bytes", "replace", "unlink", "copy2"}
+    )
+    path = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_template.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id in primitives:
+            offenders.append(f"{node.lineno}: {node.func.id}() 직접 호출")
+        elif isinstance(node.func, ast.Attribute) and node.func.attr in methods:
+            if _terminal_name(node.func.value) != "_files":
+                offenders.append(f"{node.lineno}: .{node.func.attr}() 직접 호출")
+    assert not offenders, (
+        "screen_template 이 파일 I/O 를 직접 함; TemplateFileStore 에 위임하세요:\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_home_directory_resolution_has_one_source() -> None:
     pattern = re.compile(r"""environ(?:\.get)?[\[(]\s*["']HWPXFILLER_HOME["']""")
     owner = ROOT / "src" / "hwpxfiller" / "host" / "locations.py"

@@ -623,14 +623,35 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
+  /** 편집 저장 — 드리프트 확인 왕복(#216 이월 2). 문안·지문은 Python 이 낸다.
+   *
+   *  확인을 받고 되부른 호출이 **또** 막힐 수 있다(그 사이 또 바뀜) — 그때는 새 문안·새
+   *  지문으로 다시 묻는다. 취소하면 창을 그대로 둔다(편집 내용을 잃지 않는다). */
+  async function saveTxtEdit(state: TxtEditState): Promise<boolean> {
+    const { path, content, baselineContent: baseline } = state;
+    let confirmed = "";
+    for (;;) {
+      const payload: Obj = { path, content, baseline };
+      if (confirmed) payload.confirm_fingerprint = confirmed;
+      const result = await dispatch("tpl", "txt_edit", payload);
+      if (!result.needs_confirm) return true;
+      const accepted = await deps.modal.confirm({
+        body: `${result.text}\n\n덮어쓸까요?`,
+        confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+      });
+      if (!accepted) return false;
+      confirmed = String(result.fingerprint || "");
+    }
+  }
+
   async function submitTxtEdit(): Promise<void> {
     const current = view.txtEdit;
     if (current === null) return;
     try {
       if (current.mode === "new") {
         await dispatch("tpl", "txt_new", { name: current.name, content: current.content });
-      } else {
-        await dispatch("tpl", "txt_edit", { path: current.path, content: current.content });
+      } else if (!await saveTxtEdit(current)) {
+        return;                                  // 덮어쓰기를 거절했다 — 창은 그대로 산다
       }
       patchTxtEdit({ allowClose: true });
       deps.modal.close("txtEditModal");

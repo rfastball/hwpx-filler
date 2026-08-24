@@ -279,7 +279,10 @@ def test_txt_new_edit_delete_roundtrip(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     ctrl.dispatch("txt_new", {"name": "회의결과", "content": "{{안건}}"})
     assert (tp / "txt" / "회의결과.txt").read_text(encoding="utf-8") == "{{안건}}"
-    ctrl.dispatch("txt_edit", {"path": str(tp / "txt" / "회의결과.txt"), "content": "{{안건}} {{일시}}"})
+    ctrl.dispatch("txt_edit", {
+        "path": str(tp / "txt" / "회의결과.txt"), "content": "{{안건}} {{일시}}",
+        "baseline": "{{안건}}",           # 드리프트 없음(= 연 그대로) → 즉시 쓰기
+    })
     assert (tp / "txt" / "회의결과.txt").read_text(encoding="utf-8") == "{{안건}} {{일시}}"
     # 삭제 = 30일 휴지통 이동 + 최근 1건 복원.
     res1 = ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt")})
@@ -306,7 +309,9 @@ def test_txt_edit_and_read_reject_paths_outside_the_live_library(tmp_path, monke
     foreign = tp / "foreign.txt"
     foreign.write_text("do not touch", encoding="utf-8")
     with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
-        ctrl.dispatch("txt_edit", {"path": str(foreign), "content": "changed"})
+        ctrl.dispatch("txt_edit", {
+            "path": str(foreign), "content": "changed", "baseline": "do not touch"
+        })
     with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
         ctrl.dispatch("txt_content", {"path": str(foreign)})
     assert foreign.read_text(encoding="utf-8") == "do not touch"
@@ -324,8 +329,95 @@ def test_txt_edit_and_read_reject_paths_outside_the_live_library(tmp_path, monke
         Path, "is_symlink", lambda path: path == alias or real_is_symlink(path)
     )
     with pytest.raises(ValueError, match="현재 TXT 라이브러리"):
-        ctrl.dispatch("txt_edit", {"path": str(alias), "content": "changed"})
+        ctrl.dispatch("txt_edit", {
+            "path": str(alias), "content": "changed", "baseline": "link placeholder"
+        })
     assert foreign.read_text(encoding="utf-8") == "do not touch"
+
+
+# ------------------------------------------- 편집 중 외부 변경(S10G-00 #857 · #216 이월 2)
+def _txt_seed(ctrl, tp: Path, content: str = "{{안건}}") -> Path:
+    ctrl.dispatch("txt_new", {"name": "회의결과", "content": content})
+    return tp / "txt" / "회의결과.txt"
+
+
+def test_txt_edit_refuses_to_overwrite_an_outside_change_without_confirmation(tmp_path, monkeypatch):
+    """편집 창이 열린 사이 파일이 밖에서 바뀌었으면 조용히 덮지 않는다(확인 승격)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _txt_seed(ctrl, tp)
+    path.write_text("밖에서 바뀐 내용", encoding="utf-8")  # 창이 열린 사이의 외부 변경
+
+    result = ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}"
+    })
+
+    assert result["needs_confirm"] is True and result["kind"] == "txt_drift"
+    assert "회의결과" in result["text"] and "외부 변경" in result["text"]
+    assert result["fingerprint"]
+    assert path.read_text(encoding="utf-8") == "밖에서 바뀐 내용"  # 무변형
+
+
+def test_txt_edit_writes_after_the_current_state_is_confirmed(tmp_path, monkeypatch):
+    """사용자가 그 상태를 보고 확정하면(지문 일치) 덮어쓴다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _txt_seed(ctrl, tp)
+    path.write_text("밖에서 바뀐 내용", encoding="utf-8")
+    gate = ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}"
+    })
+
+    done = ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}",
+        "confirm_fingerprint": gate["fingerprint"],
+    })
+
+    assert done == {"ok": True}
+    assert path.read_text(encoding="utf-8") == "창에서 쓴 내용"
+
+
+def test_txt_edit_asks_again_when_the_file_changes_between_confirm_and_save(tmp_path, monkeypatch):
+    """확인과 저장 사이에 또 바뀌면 낡은 지문은 통하지 않는다 — 새 지문으로 다시 묻는다.
+
+    사용자가 읽고 확정한 문안과 실제로 덮이는 상태가 갈라지지 않게 하는 것이 이 왕복의 전부다.
+    """
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _txt_seed(ctrl, tp)
+    path.write_text("1차 외부 변경", encoding="utf-8")
+    stale = ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}"
+    })
+    path.write_text("2차 외부 변경", encoding="utf-8")  # 확인~저장 사이의 또 한 번
+
+    again = ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}",
+        "confirm_fingerprint": stale["fingerprint"],
+    })
+
+    assert again["needs_confirm"] is True and again["kind"] == "txt_drift"
+    assert again["fingerprint"] != stale["fingerprint"]
+    assert path.read_text(encoding="utf-8") == "2차 외부 변경"  # 무변형
+    # 새 지문으로 확정하면 그제야 쓴다.
+    ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}",
+        "confirm_fingerprint": again["fingerprint"],
+    })
+    assert path.read_text(encoding="utf-8") == "창에서 쓴 내용"
+
+
+def test_txt_edit_drift_gate_does_not_notify_the_editing_session(tmp_path, monkeypatch):
+    """쓰지 않은 왕복은 변이가 아니다 — 재정산 통지도 결과 줄도 나가지 않는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    path = _txt_seed(ctrl, tp)
+    path.write_text("밖에서 바뀐 내용", encoding="utf-8")
+    seen: "list[tuple[str, str]]" = []
+    ctrl.mutation_sinks.append(lambda kind, mutated: seen.append((kind, mutated)))
+
+    ctrl.dispatch("txt_edit", {
+        "path": str(path), "content": "창에서 쓴 내용", "baseline": "{{안건}}"
+    })
+
+    assert seen == []
+    assert "저장했습니다" not in ctrl.snapshot()["result"]["text"]
 
 
 # =============================================== 매체 구획 + 그룹(결정 2·3)
