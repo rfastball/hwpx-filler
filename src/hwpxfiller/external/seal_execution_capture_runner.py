@@ -105,7 +105,11 @@ COMPOSITION_PROFILE_SEALED = "SEALED"
 # code 없는 store/integrity 실패의 generic capture context error code.
 _GENERIC_CAPTURE_CONTEXT_ERROR = "EXECUTION_CAPTURE_CONTEXT_ERROR"
 
-_CONTEXT_ERROR_TYPES = (
+# context/무결성 실패의 **단일 출처 집합**(#775). capture seam 과 작업대 Observation 존이 같은
+# 표를 본다 — 한쪽만 늙으면 같은 실패가 한 표면에선 context error, 다른 표면에선 「아직 준비
+# 안 됨」(또는 스냅샷 crash)이 된다. ``ValueError`` 자손인 것과 아닌 것이 섞여 있는 게 이 표가
+# 필요한 이유다: 상속으로는 이 집합을 못 고른다.
+CONTEXT_ERROR_TYPES = (
     SlotConfigurationContextError,
     ExecutionStructureError,
     QualificationStoreError,
@@ -327,8 +331,8 @@ class SealExecutionCaptureRunner:
                 workspace_instance_id, work_authority_id,
                 context.template_application_id, now,
             )
-        except _CONTEXT_ERROR_TYPES as exc:
-            return ExecutionCaptureContextError(_context_error_code(exc), str(exc))
+        except CONTEXT_ERROR_TYPES as exc:
+            return ExecutionCaptureContextError(context_error_code(exc), str(exc))
 
         # 3. pure capture 판정(policy block 은 위에서 이미 처리 → None).
         return judge_captured_execution(
@@ -458,7 +462,12 @@ class SealExecutionCaptureRunner:
         return CapturedFieldBinding(field_binding)
 
 
-def _context_error_code(exc: Exception) -> str:
+def context_error_code(exc: Exception) -> str:
+    """context/무결성 예외 → 진단 code(예외가 든 ``.code`` 우선, 없으면 generic).
+
+    :data:`CONTEXT_ERROR_TYPES` 와 짝이다 — code 를 소비 표면이 다시 조립하면 같은 실패가
+    표면마다 다른 이름을 얻는다.
+    """
     code = getattr(exc, "code", None)
     if isinstance(code, str) and code:
         return code
@@ -467,6 +476,8 @@ def _context_error_code(exc: Exception) -> str:
 
 __all__ = [
     "COMPOSITION_PROFILE_SEALED",
+    "CONTEXT_ERROR_TYPES",
     "CurrentFieldBindingReview",
     "SealExecutionCaptureRunner",
+    "context_error_code",
 ]

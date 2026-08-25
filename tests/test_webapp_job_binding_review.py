@@ -44,6 +44,7 @@ from hwpxfiller.application.fresh_execution_observation import (
     ExecutionObservationContextError,
 )
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
+from hwpxfiller.application.execution_structure import ExecutionStructureError
 from hwpxfiller.application.document_creation_workbench import InputRequirement
 from hwpxfiller.application.field_binding_input import (
     BROKEN,
@@ -60,6 +61,7 @@ from hwpxfiller.domain.field_binding import (
     DOCUMENT_CONTENT_VALUE_POLICY_V1,
     EXACT_TEXT,
     SOURCE,
+    FieldBindingInputIntegrityError,
     FieldBindingRule,
 )
 from hwpxfiller.domain.raw_data_record import source_value_type_of
@@ -80,6 +82,7 @@ from tests.test_seal_execution_capture_runner import _seed_v2_work
 
 WORK_REF = "봉인작업"
 NOW = datetime(2026, 8, 18, 9, 0, 0)
+TEMPLATE_FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 
 
 def _clock():
@@ -1591,10 +1594,81 @@ def test_context_error_observation_is_not_lowered_to_user_blocker(tmp_path: Path
 
 
 def test_zone_blank_without_selected_job(tmp_path: Path) -> None:
+    """blank 는 **pre-guard 만** 잰다 — 미선택은 준비 부족이지 무결성 실패가 아니다(#775)."""
     ctrl = _controller(tmp_path, with_binding=True)
     ctrl.job_name = ""  # 미선택 → unsupported(조용히 비우지 않는다).
     zone = _zone(ctrl)
     assert zone["supported"] is False and zone["kind"] is None
+
+
+# ── 무결성 예외를 「지원 안 함」으로 접지 않는다(#775) ────────────────────────────────────────────
+class _RaisingBindingReview:
+    """`current_binding_review` 가 context/무결성 예외를 던지는 seal 서비스 대역.
+
+    실 경로 재현: `_binding_review_projection` → `read_current_field_binding_review` 는
+    capture seam 과 달리 context-error 가드가 없어 예외가 존까지 올라온다.
+    """
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def current_binding_review(self, work_ref: str):
+        raise self._exc
+
+
+def _wire_raising_binding_review(ctrl: JobController, exc: Exception) -> None:
+    # 분류표를 **읽는 조건**을 세운다(봉인 계획이 아닌 current-work 관찰).
+    ctrl._last_fresh_observation = CurrentWorkExecutionObservation(
+        work_authority_ref=WORK,
+        current_sealability="DOMAIN_BLOCKED",
+        observed_at=NOW.isoformat(),
+    )
+    ctrl._seal_execution = _RaisingBindingReview(exc)
+
+
+def test_zone_surfaces_value_error_integrity_failure_as_context_error(
+    tmp_path: Path,
+) -> None:
+    """ValueError 자손 무결성 예외(ExecutionStructureError)가 blank 로 접히지 않는다."""
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_raising_binding_review(
+        ctrl, ExecutionStructureError("v2 projection 이 깨졌습니다")
+    )
+    zone = _zone(ctrl)
+    assert zone["supported"] is True  # blank(supported=False, kind=None)와 구분된다
+    assert zone["kind"] == "context_error"
+    assert zone["code"] == ExecutionStructureError.code
+    assert zone["detail"] == "v2 projection 이 깨졌습니다"
+    assert zone["user_fixable"] is False
+    assert zone["primary_action"] == "RECOVER_CONTEXT"
+    assert zone["create_action"]["enabled"] is False
+    # 저장 폴더 사실은 관찰이 무너져도 실린다(U3-06 #879 계약 유지).
+    assert "output_folder" in zone
+
+
+def test_zone_surfaces_non_value_error_integrity_failure_without_killing_snapshot(
+    tmp_path: Path,
+) -> None:
+    """ValueError 가 **아닌** 무결성 예외도 같은 결과 — 스냅샷 조립을 죽이지 않는다."""
+    # 실 템플릿을 둔다 — 템플릿 부재면 pre-guard 가 blank 로 답해 이 축이 안 재진다.
+    ctrl = _controller(tmp_path, with_binding=True, template_path=str(TEMPLATE_FIXTURE))
+    exc = FieldBindingInputIntegrityError("binding input 무결성 위반")
+    assert not isinstance(exc, ValueError)  # 옛 그물(except ValueError)이 못 잡던 절반
+    ctrl.dispatch("select_job", {"name": WORK_REF})  # 실 스냅샷 조립 경로를 탄다
+    _wire_raising_binding_review(ctrl, exc)
+    zone = ctrl.snapshot()["workbench_observation"]
+    assert zone["supported"] is True and zone["kind"] == "context_error"
+    assert zone["code"] == FieldBindingInputIntegrityError.code
+    assert zone["detail"] == "binding input 무결성 위반"
+    assert zone["user_fixable"] is False
+
+
+def test_zone_does_not_swallow_unexpected_exception(tmp_path: Path) -> None:
+    """집합 밖 예외는 화면 값으로 번역하지 않고 그대로 전파한다(조용한 추측 금지)."""
+    ctrl = _controller(tmp_path, with_binding=True)
+    _wire_raising_binding_review(ctrl, RuntimeError("예기치 못한 실패"))
+    with pytest.raises(RuntimeError):
+        _zone(ctrl)
 
 
 # ── resolve_execution: FAILED 에서 수동 복구 후 재확인 ───────────────────────────────────────────
