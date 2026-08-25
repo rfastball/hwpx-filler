@@ -26,6 +26,7 @@ from urllib.parse import quote, urlsplit
 
 import pytest
 
+from _live_budget import SELFTEST_AGGREGATE_BOOT_S, SELFTEST_HARNESS_MARGIN_S
 from _web_source import NAV_SCREENS
 from _web_source import source_text
 from _web_source import RETIRED_COMPAT_GLOBALS as _RETIRED_COMPAT_GLOBALS
@@ -53,13 +54,13 @@ _GATE_REASON = (
 # 없고, `boot_budget.decide()` 는 그때마다 "첫 실행"으로 판정한다.
 #
 # 여유(margin)는 「러너가 이만큼은 느릴 수 있다」는 인내가 아니라 **판별 불능 구간의 정직한
-# 폭**이다(#477). 종전 30초는 층화(#427)만 지키고 공유 러너의 실측을 안 봤다 — PR #476 CI 가
-# 이 상한을 여유 0.0(170.0s/170s)으로 물었고, 코드 무변경 재실행이 초록이었다. 그 값으로는
-# 완주 직전이었는지 매달렸는지 말할 수 없다. 상한이 무는 순간 "명백히 멈췄다"라고 말할 수
-# 있으려면 실측 최악(콜드 부팅 76.9초·40배 감속 여정)을 훨씬 웃돌아야 하고, 그 아래 구간의
-# 성능은 차단이 아니라 **보고**의 몫이다(모듈 끝 양성 대조). 시한 자체는 남는다 — 매달림은
-# 진짜 결함이고, 이 상한이 마지막 그물이다.
-_HARNESS_MARGIN_S = 400.0
+# 폭**이다(#477) — 값과 그 사유는 `tests/_live_budget.py` 가 소유한다. 종전 30초는 층화(#427)만
+# 지키고 공유 러너의 실측을 안 봤다 — PR #476 CI 가 이 상한을 여유 0.0(170.0s/170s)으로 물었고,
+# 코드 무변경 재실행이 초록이었다. 그 값으로는 완주 직전이었는지 매달렸는지 말할 수 없다.
+# 상한이 무는 순간 "명백히 멈췄다"라고 말할 수 있으려면 실측 최악(콜드 부팅 76.9초·40배 감속
+# 여정)을 훨씬 웃돌아야 하고, 그 아래 구간의 성능은 차단이 아니라 **보고**의 몫이다(모듈 끝
+# 양성 대조). 시한 자체는 남는다 — 매달림은 진짜 결함이고, 이 상한이 마지막 그물이다.
+_HARNESS_MARGIN_S = SELFTEST_HARNESS_MARGIN_S
 _SELFTEST_TIMEOUT = (
     app_mod._SELFTEST_BUDGET_S
     + boot_budget.COLD_BUDGET_SECONDS
@@ -78,13 +79,15 @@ _SELFTEST_TIMEOUT = (
 # 것이 없으므로 남은 부팅을 즉시 실패시킨다.
 #
 # 산술(#477 갱신 — 부팅 하나 상한을 벌리면 합계도 같이 벌려야 이 관계가 산다):
-#   발화선 = 합계 1200 - 부팅 하나 몫 600 = 600s. 정상 소진(로컬 실측 33s·감속 러너 수백 초)
-#   의 18배라 느린 러너로는 안 닿는다.
-#   최악 대기는 유계다: 매달림 한 번(600s) 뒤 남은 예산이 부팅 하나 몫 아래로 떨어져 나머지가
-#   즉시 실패하므로, 대기 총량 ≤ 1200s = 20분이다. 101의 qualified 부팅 실패 75s + 바깥
-#   상한 720s + restart 240s + 온보딩 여정 720s(#895)를 합쳐도 60분 잡 상한 안이다
-#   (합계 2955s = 49.25분 — 산술 정본은 `.github/workflows/quality.yml` 의 live-webview2 주석).
-_AGGREGATE_BOOT_BUDGET_S = 1200.0
+#   발화선 = 합계 - 부팅 하나 몫. 정상 소진(로컬 실측 33s·감속 러너 수백 초)의 여러 배라
+#   느린 러너로는 안 닿는다.
+#   최악 대기는 유계다: 매달림 한 번 뒤 남은 예산이 부팅 하나 몫 아래로 떨어져 나머지가
+#   즉시 실패하므로, 대기 총량 ≤ 이 합계다. 이 항이 101 phase 들과 함께 live-webview2 잡의
+#   최악 산술을 이루고, 그 산술과 잡 상한의 대조는 **기계 단언**이 진다 — 항·합·판정 모두
+#   `tests/_live_budget.py`(값) + `tests/repo_contract/test_quality_workflow.py`(대조) 소유다.
+#   종전에는 같은 합이 여기·워크플로·형상 계약 세 곳의 주석에 손으로 복사돼 있었고, 이
+#   주석은 워크플로 주석을 「산술 정본」이라 가리키면서 정작 그 값을 읽지 않았다(#912).
+_AGGREGATE_BOOT_BUDGET_S = SELFTEST_AGGREGATE_BOOT_S
 
 #: 지금까지 부팅 대기에 쓴 시간과 실제로 시한을 넘긴 부팅들 — 진단이 "몇 번째부터 무너졌나"를
 #: 말할 수 있게 남긴다.
