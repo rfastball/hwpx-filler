@@ -18,6 +18,13 @@ from pathlib import Path
 import pytest
 import yaml
 
+from _live_budget import (
+    LIVE_WEBVIEW2_HEADROOM_RATIO,
+    LIVE_WEBVIEW2_TIMEOUT_MINUTES,
+    LIVE_WEBVIEW2_WORST_CASE_S,
+    LIVE_WEBVIEW2_WORST_CASE_TERMS as WORST_CASE_TERMS,
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 QUALITY = ROOT / ".github" / "workflows" / "quality.yml"
 AXES = {
@@ -230,11 +237,39 @@ def test_product_assertions_are_never_retried() -> None:
         assert retry_token not in text, f"재시도 흔적: {retry_token}"
 
     live = _jobs()["live-webview2"]
-    # 최악 산술은 워크플로 주석이 소유한다(그 자리에서 항이 유도된다):
-    # 1200 + 75 + 720 + 240 + 720 = 2955s = 49.25분 → 여유를 두고 60분.
-    # 온보딩 여정(#895)이 720s 항을 더하며 45 → 60 으로 올랐다.
-    assert live["timeout-minutes"] == "60"
     assert "--maxfail=1" in _job_text(live), "첫 하드스톱 뒤 형제 live 부팅을 계속 태웁니다"
+
+
+def test_the_live_job_ceiling_covers_its_worst_case_arithmetic() -> None:
+    """잡 상한은 그 아래 phase 예산의 **합**보다 성겨야 한다 — 그리고 그 대조가 기계여야 한다.
+
+    종전 이 계약은 `timeout-minutes == "60"` 리터럴 하나였고, 항과 합(2955s)은 세 곳의 산문
+    주석에 손으로 복사돼 있었다 — 워크플로·selftest 게이트·여기. 그중 하나는 다른 하나를
+    「산술 정본」이라 가리키면서 그 값을 읽지 않았다(순환). 즉 온보딩 여정처럼 항이 하나
+    늘어도 합은 아무도 다시 계산하지 않았고, 리터럴 60 은 그 사실을 몰랐다.
+
+    이제 항·합은 `tests/_live_budget.py` 가 값으로 소유하고, 여기서 셋을 견준다:
+    YAML 실값이 그 상수와 같은가 · 최악 합이 상한 안인가 · 상한이 회수 여유까지 남기는가.
+    """
+    live = _jobs()["live-webview2"]
+    terms = ", ".join(f"{name} {seconds:.0f}s" for name, seconds in WORST_CASE_TERMS)
+    ceiling_s = LIVE_WEBVIEW2_TIMEOUT_MINUTES * 60
+
+    assert int(live["timeout-minutes"]) == LIVE_WEBVIEW2_TIMEOUT_MINUTES, (
+        f"워크플로 상한 {live['timeout-minutes']}분 이 예산 모듈의 "
+        f"{LIVE_WEBVIEW2_TIMEOUT_MINUTES}분 과 다릅니다 — 둘 중 하나만 고쳤습니다."
+    )
+    assert LIVE_WEBVIEW2_WORST_CASE_S <= ceiling_s, (
+        f"최악 대기 {LIVE_WEBVIEW2_WORST_CASE_S:.0f}s 가 잡 상한 {ceiling_s}s 를 넘습니다 — "
+        f"러너가 잡을 죽여 `if: always()` 증거 회수가 사라집니다. 항: {terms}"
+    )
+    # 상한이 최악 합에 딱 붙으면 「매달림 상한」이 아니라 러너 편차가 잡을 죽인다. 테스트별
+    # 하드스톱과 증거 업로드가 먼저 끝날 여유를 남긴다.
+    assert LIVE_WEBVIEW2_WORST_CASE_S <= ceiling_s * LIVE_WEBVIEW2_HEADROOM_RATIO, (
+        f"최악 대기 {LIVE_WEBVIEW2_WORST_CASE_S:.0f}s 가 잡 상한 {ceiling_s}s 의 "
+        f"{LIVE_WEBVIEW2_HEADROOM_RATIO:.0%}({ceiling_s * LIVE_WEBVIEW2_HEADROOM_RATIO:.0f}s)를 "
+        f"넘습니다 — 증거 회수 여유가 없습니다. 항: {terms}"
+    )
 
 
 # ───────────────────────── 생산자 하나 · 소비자 N ─────────────────────────

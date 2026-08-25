@@ -31,6 +31,8 @@ from pathlib import Path
 
 import pytest
 
+import _live_budget as live_budget
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from live101 import driver, report as report_mod  # noqa: E402
@@ -72,16 +74,19 @@ _GATE_REASON = (
 # 추정치로 잡지 않는 이유가 있다 — 종전 driver 주석의 "2~4분"은 측정 전 추정이었고, 그 낡은
 # 값을 믿고 계산하면 예산이 통째로 어긋난다(#430 리뷰). 그래서 아래 양성 대조가 **실제 소요**를
 # 예산과 견줘, 정상 실행이 예산에 가까워지면 시끄럽게 알린다.
-_LIVE_BUDGET_S = 600.0
-_OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
-_RESTART_BUDGET_S = 120.0
-_RESTART_OUTER_TIMEOUT_S = _RESTART_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
+#
+# 값과 파생은 `tests/_live_budget.py` 가 소유한다 — 이 항들이 곧 live-webview2 잡의 최악
+# 산술이라, 여기서만 알고 있으면 잡 상한과의 관계를 아무도 다시 계산하지 않는다(#912).
+_LIVE_BUDGET_S = live_budget.LIVE101_JOURNEY_BUDGET_S
+_OUTER_TIMEOUT_S = live_budget.outer(_LIVE_BUDGET_S)
+_RESTART_BUDGET_S = live_budget.LIVE101_RESTART_BUDGET_S
+_RESTART_OUTER_TIMEOUT_S = live_budget.outer(_RESTART_BUDGET_S)
 #: 온보딩 여정(#895)의 예산 — 위와 **같은 형상**이다(안쪽 하드 스톱이 먼저 물게 파생).
 #:
 #: 실측(2026-08-25, 개발 기기): 완주 77.5초. 601초는 「명백히 멈춘 것」만 잡는 천장이고
 #: 느린 러너를 탈락시키지 않는다 — 느림으로 난 빨강은 정보가 0 이기 때문이다(위 주석 승계).
-_ONBOARDING_BUDGET_S = 600.0
-_ONBOARDING_OUTER_TIMEOUT_S = _ONBOARDING_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
+_ONBOARDING_BUDGET_S = live_budget.LIVE101_ONBOARDING_BUDGET_S
+_ONBOARDING_OUTER_TIMEOUT_S = live_budget.outer(_ONBOARDING_BUDGET_S)
 
 
 # ───────────────────────────────── 실주행 ─────────────────────────────────
@@ -339,6 +344,23 @@ def test_the_outer_timeout_lets_the_driver_hard_stop_first() -> None:
     )
     # 음성 대조 — 뒤집힌 형상을 실제로 거절하는가(항상 참인 산술이 아니다).
     assert not (300.0 + 60.0 < 120.0)
+
+
+def test_the_shared_budget_module_knows_the_real_boot_grace() -> None:
+    """`tests/_live_budget.py` 는 하니스를 import 하지 않는다 — 그 대가를 여기서 갚는다.
+
+    잡 상한 산술의 「qualified 콜드부팅 실패」 항은 콜드 예산 + 하니스 유예의 파생값인데,
+    유예의 정본은 `scripts/live101/driver.BOOT_GRACE_S` 다. 예산 모듈이 그 값을 사본으로
+    들고 있으므로 드리프트는 **여기서 시끄럽게** 잡는다 — 조용히 어긋나면 워크플로 상한이
+    아무도 모르는 사이에 최악 산술보다 촘촘해진다.
+    """
+    assert live_budget.LIVE101_BOOT_GRACE_S == driver.BOOT_GRACE_S, (
+        f"예산 모듈의 유예 {live_budget.LIVE101_BOOT_GRACE_S}s 가 하니스 실값 "
+        f"{driver.BOOT_GRACE_S}s 와 다릅니다 — live-webview2 최악 산술이 틀어집니다."
+    )
+    assert live_budget.QUALIFIED_COLD_BOOT_FAILURE_S == (
+        boot_budget.COLD_BUDGET_SECONDS + driver.BOOT_GRACE_S
+    )
 
 
 def test_the_evidence_writer_survives_what_a_timeout_hands_it(tmp_path) -> None:
