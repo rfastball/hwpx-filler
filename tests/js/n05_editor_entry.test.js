@@ -191,6 +191,26 @@ test("가드 — 미저장이 있으면 확인을 거치고, 취소는 이동을
   }
 });
 
+test("가드 — 수리 진입의 손실 목록은 데이터를 말하지 않는다(#878)", async () => {
+  /* 문안이 실동작보다 넓게 파기를 말하면 사람은 지금 잃지 않을 것까지 저울질한다.
+     데이터를 든 화면에서 온 수리 진입은 편집기의 데이터 칸을 비우지 않고 그 화면이 든
+     것으로 갈아 끼운다 — 무엇이 실제로 인계되는지의 판정은 Python 몫이고, 여기서는 이
+     seam 이 자기가 실어 보낼 진입 사유만 본다. */
+  const h = harness({ unsaved: true, confirmResult: false });
+  await h.entry.openGuarded("작업A", { entry_reason: "document_browser_repair" });
+  const { body } = h.log.find((row) => row[0] === "modal.confirm")[1];
+  assert.ok(body.startsWith("'작업A' 편집을 열면"), "흐름의 문안은 그대로다");
+  assert.ok(body.includes("사라지는 것: 이름 · 매핑"), body);
+  assert.ok(!body.includes("사라지는 것: 이름 · 데이터 · 매핑"), body);
+  assert.ok(body.includes("데이터는 문서 만들기 화면에서 고른 것으로 바뀝니다."), body);
+
+  // 음성 대조 — 다른 진입은 종전 목록 그대로다(데이터는 실제로 사라진다).
+  const other = harness({ unsaved: true, confirmResult: false });
+  await other.entry.openGuarded("작업A", { entry_reason: "library" });
+  assert.ok(other.log.find((row) => row[0] === "modal.confirm")[1].body
+    .includes("사라지는 것: 이름 · 데이터 · 매핑"));
+});
+
 test("가드 — 확인하면 백엔드가 돌고 착지한다", async () => {
   const h = harness({ unsaved: true, confirmResult: true });
   assert.equal(await h.entry.newDraft(), true);

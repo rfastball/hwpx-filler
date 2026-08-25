@@ -303,6 +303,42 @@ def test_anchored_draft_survives_the_real_template_pick(tmp_path):
     assert plain.snapshot()["data_name"] == ""
 
 
+def test_repair_entry_data_also_survives_the_template_pick(tmp_path):
+    """#878 — 앵커 승계는 **진입 사유**가 열고 저장본 유무는 보지 않는다.
+
+    종전 가드는 초안(`session.base is None`)만 앵커로 봤는데, 데이터를 들고 오는 진입이
+    초안 하나뿐이라 그 조건이 사유 조건과 구별되지 않았다. 수리 진입은 저장된 작업을 여는데
+    그 데이터도 사람이 아니라 진입이 들고 온 것이고, 템플릿을 갈아 끼우는 것은 그 세션의
+    정상 진행이다 — 거기서 데이터가 끊기면 인계가 한 걸음 만에 무효가 된다.
+    """
+    from hwpxfiller.domain.job import Job
+
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    ctrl.registry.save(Job(name="수리대상", template_path=str(TPL_COMPILED)))
+    ctrl.load_job(
+        "수리대상",
+        entry_reason="document_browser_repair",
+        return_context={"surface": "data"},
+        source_ref={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+    )
+    assert ctrl.snapshot()["data_name"] == "multi_sheet.xlsx"
+
+    ctrl.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})   # 실 UX 경로
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == TPL_PARTIAL.name
+    assert snap["data_name"] == "multi_sheet.xlsx" and snap["data_sheet"] == "낙찰현황"
+    assert snap["record_count"] == 3
+    assert snap["context"]["entry_reason"] == "document_browser_repair"
+
+    # 대조군: 사람이 관문에서 고른 데이터는 종전대로 끊긴다(계약 무변경).
+    plain, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    plain.registry.save(Job(name="자발", template_path=str(TPL_COMPILED)))
+    plain.load_job("자발")
+    plain.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    plain.dispatch("use_library_template", {"path": str(TPL_PARTIAL)})
+    assert plain.snapshot()["data_name"] == ""
+
+
 def test_new_draft_carries_the_whole_reference_not_just_the_path(tmp_path):
     """#349 리뷰 P1 — 참조를 경로로 줄이면 **다른 헤더**의 데이터로 마법사가 선다.
 

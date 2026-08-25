@@ -68,6 +68,24 @@ LIVE_ENTRY_REASONS = frozenset({
     "document_browser_repair", "document_browser_new_work",
 })
 
+#: 「문서 만들기」의 **마운트 데이터를 들고 서는** 진입 사유(#349 · #878).
+#:
+#: 이 사유로 열린 편집 세션의 데이터는 「이전 세션의 잔재」가 아니라 **그 세션이 존재하는
+#: 이유**다. 그래서 두 자리가 이 목록 하나를 읽는다: ①브리지가 진입에 데이터 참조를
+#: 실어 보낼지(``WebFrontend._mounted_data_handoff``) ②편집기가 템플릿 교체를 건너 그
+#: 데이터를 살릴지(``EditorController._anchor_stash``). 사유로 판정하는 이유는 데이터가
+#: 있는 세션이라고 다 여기 들지 않기 때문이다 — 관문에서 사람이 직접 고른 데이터는
+#: 종전대로 끊긴다.
+#:
+#: ``document_browser_repair`` 가 든 근거(#878): 「입력이 필요한 항목」의 「수정…」은 데이터를
+#: 든 화면에서 **그 데이터에 열을 붙이러** 가는 왕복이다. 인계가 없으면 편집기의 소스 어휘가
+#: 저장 매핑이 참조하던 키뿐이라(§ ``profile_source_vocabulary``) 새 필드에 붙일 열이 아예
+#: 없고, 사람이 같은 파일을 한 번 더 고르게 된다.
+DATA_ANCHORED_ENTRY_REASONS = frozenset({
+    "document_browser_new_work",
+    "document_browser_repair",
+})
+
 #: 배제 **선언**(§10.13 판정 K): 조용한 무시와 선언된 배제는 다르다. 여기 사유로 진입하면
 #: fail-closed 로 거절되고, 그 표면을 짓는 슬라이스가 이 표에서 자기 줄을 지운다.
 DEFERRED_ENTRY_REASONS = {

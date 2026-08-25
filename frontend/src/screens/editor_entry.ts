@@ -94,11 +94,23 @@ export function createEditorEntry(deps: EditorEntryDeps): EditorEntryPort {
     return true;
   }
 
+  /* 손실 집합은 **진입마다 다르다**(#878). 데이터를 든 화면에서 온 수리 진입은 편집기의
+     데이터 칸을 비우지 않고 그 화면이 든 것으로 갈아 끼우므로, 데이터를 손실 목록에 두면
+     문안이 실동작보다 넓게 파기를 말한다. 여기서 보는 것은 이 seam 이 **자기가 실어 보낼**
+     진입 사유뿐이고(라우팅 사실), 그 사유로 실제 무엇이 인계되는지의 판정은 Python 이
+     그 자리에서 「문서 만들기」에 되묻는다(`WebFrontend._mounted_data_handoff`). */
+  function openLossCopy(name: string, context?: Obj): string {
+    const lead = `'${name}' 편집을 열면 저장하지 않은 편집 세션이 사라집니다.\n`;
+    if (String(context?.entry_reason || "") === "document_browser_repair") {
+      return lead + "사라지는 것: 이름 · 매핑\n"
+        + "데이터는 문서 만들기 화면에서 고른 것으로 바뀝니다.\n\n계속할까요?";
+    }
+    return lead + "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?";
+  }
+
   async function openGuarded(name: string, context?: Obj): Promise<boolean> {
     rememberEntryFocus();
-    if (!(await confirmDiscard(
-      `'${name}' 편집을 열면 저장하지 않은 편집 세션이 사라집니다.\n` +
-      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
+    if (!(await confirmDiscard(openLossCopy(name, context)))) {
       return false;
     }
     const result = await invoke("open_job_in_editor", name, context || {});

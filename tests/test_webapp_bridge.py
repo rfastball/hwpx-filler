@@ -619,6 +619,157 @@ def test_new_job_from_data_refuses_non_file_mounts_with_the_same_reason(tmp_path
     assert editor.data_path == ""                        # 조용한 빈 초안으로 가지 않는다
 
 
+def _repairable_job(frontend, tmp_path, *, name: str = "공고문") -> "Path":
+    """수리 진입의 표본 — 저장 매핑 1행 + 아직 비어 있는 필드 1개를 든 TXT 작업.
+
+    「입력이 필요한 항목」이 실제로 겨누는 모양이다: 채워진 필드 하나와 붙일 열을 아직 못
+    고른 필드 하나. 후자가 이 왕복이 존재하는 이유라 표본에서 뺄 수 없다.
+    """
+    from hwpxfiller.domain.job import Job
+    from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
+
+    tpl = tmp_path / f"{name}.txt"
+    tpl.write_text("수신: {{수신}}\n사업: {{사업명}}", encoding="utf-8")
+    frontend.controllers["editor"].registry.save(Job(
+        name=name, template_path=str(tpl),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="수신", source="부서")]),
+    ))
+    return tpl
+
+
+_REPAIR = {
+    "entry_reason": "document_browser_repair",
+    "target": "binding/사업명",
+    "evidence": {"입력이 필요한 항목": "사업명"},
+    "return_context": {"surface": "data"},
+}
+
+
+def test_repair_entry_stands_the_editor_on_the_mounted_data(tmp_path, monkeypatch):
+    """#878 — 데이터를 든 화면에서 온 수리 진입은 **그 데이터를 들고** 편집기에 선다.
+
+    인계 전에는 편집기의 소스 어휘가 저장 매핑이 참조하던 키뿐이라, 「입력이 필요한 항목」을
+    고치러 온 사람이 붙일 열을 하나도 못 보고 같은 파일을 한 번 더 골라야 했다. 참조는 웹이
+    싣지 않고 브리지가 「문서 만들기」에 되묻는다(`new_work_handoff` 단일 판정).
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+    csv = tmp_path / "발주.csv"
+    csv.write_text("부서,사업명\n총무과,책상\n회계과,복사기\n", encoding="utf-8")
+    job.load_data_path(str(csv))
+
+    assert frontend.open_job_in_editor("공고문", _REPAIR) == "공고문"
+
+    snap = editor.snapshot()
+    assert snap["data_path"] == str(csv) and snap["data_name"] == "발주.csv"
+    assert snap["record_count"] == 2                      # 참조로 **다시 읽었다**
+    # 새 필드에 붙일 열이 후보로 선다 — 이 목록이 곧 이 슬라이스의 산출이다.
+    assert snap["source_fields"] == ["부서", "사업명"]
+    rows = {r["template_field"]: r for r in snap["rows"]}
+    assert rows["수신"]["confirmed"] is True and rows["수신"]["source"] == "부서"
+    assert rows["사업명"]["confirmed"] is False           # 고치러 온 그 필드는 그대로 미확정
+    # 사람이 고른 적 없는 데이터를 변경으로 세지 않는다(이탈마다 헛확인 금지).
+    assert editor.has_unsaved_work() is False and snap["dirty"] is False
+    assert snap["context"]["entry_reason"] == "document_browser_repair"
+    # 「문서 만들기」의 세션은 이 왕복으로 흔들리지 않는다(데이터는 그 화면 소유).
+    assert job.data_path == str(csv)
+
+
+def test_repair_entry_without_a_mount_keeps_the_empty_data_gate(tmp_path, monkeypatch):
+    """음성 대조(#878) — 들고 올 데이터가 없으면 종전 그대로 빈 데이터 관문으로 선다.
+
+    이 진입은 데이터를 약속한 적이 없다. 마운트가 없다고 거절하면 고치러 온 필드조차 못
+    고치게 된다 — 「이 데이터로 새 작업」(약속한 진입)의 loud 거절과 갈리는 자리다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+
+    assert frontend.open_job_in_editor("공고문", _REPAIR) == "공고문"
+
+    snap = editor.snapshot()
+    assert snap["data_path"] == "" and snap["record_count"] == 0
+    assert snap["source_fields"] == ["부서"]             # 저장 매핑 어휘로 선다(종전 거동)
+    assert editor.has_unsaved_work() is False
+    assert "다시 읽지 못했습니다" not in (snap["notice"] or {}).get("text", "")
+
+
+def test_repair_entry_restates_a_handoff_that_cannot_be_reread(tmp_path, monkeypatch):
+    """#878 — 인계 참조를 다시 읽지 못하면 **사유를 재진술**하고, 진입은 계속한다.
+
+    조용히 빈 데이터 관문으로 떨어지면 사람은 데이터가 왜 안 왔는지 영영 모른다. 반대로
+    진입을 막으면 데이터와 무관한 필드 하나 고치는 길까지 함께 막힌다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+    csv = tmp_path / "사라질.csv"
+    csv.write_text("부서,사업명\n총무과,책상\n", encoding="utf-8")
+    job.load_data_path(str(csv))
+    csv.unlink()                                          # 마운트 뒤 파일이 사라졌다
+
+    assert frontend.open_job_in_editor("공고문", _REPAIR) == "공고문"
+
+    snap = editor.snapshot()
+    assert snap["data_path"] == "" and snap["record_count"] == 0
+    notice = snap["notice"] or {}
+    assert notice.get("level") == "warn"
+    assert "다시 읽지 못했습니다" in notice.get("text", "")
+    assert "사라질.csv" in notice.get("text", "")
+
+
+def test_repair_entry_unconfirms_rows_whose_column_the_mounted_data_lacks(tmp_path, monkeypatch):
+    """#878 — 인계 데이터에 없는 열을 쓰던 행은 **확정 상태로 도착하지 않는다**.
+
+    확정으로 도착하면 저장 게이트(`is_complete`)를 사람 검토 없이 통과해 빈 값 문서를 찍는다.
+    재진술도 사유별로 갈라야 한다 — 데이터 불일치를 "템플릿에 새로 생긴 필드"로 말하면
+    사람이 엉뚱한 곳을 고친다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+    csv = tmp_path / "다른데이터.csv"
+    csv.write_text("기관,사업명\n총무과,책상\n", encoding="utf-8")   # '부서' 열이 없다
+    job.load_data_path(str(csv))
+
+    frontend.open_job_in_editor("공고문", _REPAIR)
+
+    snap = editor.snapshot()
+    rows = {r["template_field"]: r for r in snap["rows"]}
+    assert rows["수신"]["source"] == "부서"               # 값은 남고
+    assert rows["수신"]["confirmed"] is False             # 확정만 빠진다
+    lines = {
+        line.split(":")[0]: line.split(": ", 1)[1]
+        for line in (snap["notice"] or {}).get("text", "").split("\n") if ": " in line
+    }
+    assert lines["불러온 데이터에 없는 열을 쓰던 필드 1개는 확정이 필요합니다"] == "수신"
+    # 같은 미확정이라도 사유가 다른 행은 다른 줄이 말한다(뭉치면 오보가 된다).
+    assert lines["템플릿에 새로 생긴 필드 1개는 확정이 필요합니다"] == "사업명"
+
+
+def test_library_entry_does_not_pick_up_the_mounted_data(tmp_path, monkeypatch):
+    """음성 대조(#878) — 인계는 **진입 사유**가 연다. 「문서 작업」에서 연 편집은 그대로다.
+
+    사유를 안 보고 마운트만 보면 데이터와 무관한 표면에서 연 편집까지 남의 화면 데이터를
+    들고 서게 된다(§5.3 — 작업↔데이터 결속 없음).
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    job = frontend.controllers["job"]
+    editor = frontend.controllers["editor"]
+    _repairable_job(frontend, tmp_path)
+    csv = tmp_path / "발주.csv"
+    csv.write_text("부서,사업명\n총무과,책상\n", encoding="utf-8")
+    job.load_data_path(str(csv))
+
+    frontend.open_job_in_editor("공고문", {"entry_reason": "library"})
+
+    assert editor.data_path == "" and editor.source_fields == ["부서"]
+
+
 def test_job_selection_loss_is_contracted_silence_not_a_close_guard(tmp_path, monkeypatch):
     """U2 §2.9(#344) — job 의 무장 선택은 창 종료 가드를 세우지 **않는다**(계약상 침묵).
 
