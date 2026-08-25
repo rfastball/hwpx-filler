@@ -84,7 +84,13 @@ def judge(report: dict, *, mode: str) -> Verdict:
         if durable.get("job") != "발주요청서":
             failures.append("restart 뒤 명시 재선택한 durable Work가 복원되지 않았습니다")
         binding = durable.get("binding") or {}
-        if not durable.get("selections") or binding.get("action_required") is not False:
+        # U3-03(#876): 수리된 Binding 의 current meaning 은 「활성 누름틀로 남되 조치 목록에는
+        # 없다」로 관찰된다 — 「입력이 필요한 항목」이 조치 필요만 싣게 됐기 때문이다.
+        if (
+            not durable.get("selections")
+            or binding.get("active_field") is not True
+            or binding.get("pending_action") is not False
+        ):
             failures.append("restart 뒤 S4 intent/Binding current meaning이 복원되지 않았습니다")
         if not absent or not all(absent.values()):
             failures.append("restart 뒤 session-only 상태가 거짓 복원됐습니다")

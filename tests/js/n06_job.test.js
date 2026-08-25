@@ -439,11 +439,10 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
     workbench_observation: {
       supported: true, input_requirements_label: "입력이 필요한 항목",
       execution_status_code: "CURRENT", execution_status_phrase: "현재 설정이 반영됐습니다",
+      // U3-03(#876): backend 가 조치 필요만 실어 준다 — 분류표 전건이 오지 않는다.
       input_requirements: [
-        { field_id: "보존", display_label: "보존", binding_state: "PRESERVED", action_required: false, exact_target: "binding/보존" },
         { field_id: "깨짐", display_label: "깨짐", binding_state: "BROKEN", action_required: true, exact_target: "binding/깨짐" },
         { field_id: "신규", display_label: "신규", binding_state: "NEW_ACTIVE_FIELD", action_required: true, exact_target: "binding/신규" },
-        { field_id: "비활성", display_label: "비활성", binding_state: "INACTIVE_ONLY", action_required: false, exact_target: "binding/비활성" },
       ],
       create_action: { label: "문서 만들기", enabled: false, disabled_reason: reason },
     },
@@ -452,7 +451,8 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
   await h.controller.init();
   h.push(snap);
   const requirements = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
-  for (const label of ["보존", "깨짐", "신규", "비활성"]) assert.ok(requirements.includes(label));
+  assert.ok(requirements.includes("입력이 필요한 항목"));
+  for (const label of ["깨짐", "신규"]) assert.ok(requirements.includes(label));
   assert.equal((requirements.match(/data-exact-target=/g) || []).length, 2);
   assert.ok(requirements.includes("binding/깨짐"));
   assert.ok(requirements.includes("binding/신규"));
@@ -461,6 +461,29 @@ test("Workbench surface는 review projection과 S6 Create action을 backend 그�
   assert.match(action, /id="jobManagedCreate"[^>]*disabled=""/);
   assert.ok(action.includes("문서 만들기"));
   assert.ok(action.includes(reason));
+});
+
+test("입력이 필요한 항목 0건이면 라벨까지 포함해 구획을 안 세운다 (#876)", async () => {
+  const snap = {
+    ...SNAP, managed_hwpx: true,
+    workbench_observation: {
+      supported: true, input_requirements: [], input_requirements_label: "입력이 필요한 항목",
+      execution_status_code: "CURRENT", execution_status_phrase: "현재 설정이 반영됐습니다",
+      record_validation: { validated_count: 2, blocked_count: 0, issue_count: 0, issues: [] },
+    },
+  };
+  const h = harness({ snapshot: snap });
+  await h.controller.init();
+  h.push(snap);
+
+  const markup = renderToStaticMarkup(createElement(JobWorkbenchStatus, { controller: h.controller }));
+  assert.equal(markup.includes("입력이 필요한 항목"), false);
+  assert.equal(markup.includes("jobInputRequirements"), false);
+  // 나머지 구획은 그대로 선다 — 확인 대상 정보·미지정 조치 요구를 숨기지 않는다.
+  for (const text of ["현재 실행 상태", "현재 설정이 반영됐습니다", "데이터 확인",
+    "2건의 데이터를 확인했습니다.", "저장 폴더", "충돌 처리", "생성 예정 문서"]) {
+    assert.ok(markup.includes(text), text);
+  }
 });
 
 test("managed 생성 내용 확인은 backend DTO만 그리고 token만 왕복한다", async () => {

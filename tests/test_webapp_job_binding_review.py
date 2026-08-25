@@ -39,7 +39,14 @@ from hwpxfiller.application.fresh_execution_observation import (
     ExecutionObservationContextError,
 )
 from hwpxfiller.application.execution_compilation import FromSource, encode_value_expression
-from hwpxfiller.application.field_binding_input import build_field_binding_input
+from hwpxfiller.application.document_creation_workbench import InputRequirement
+from hwpxfiller.application.field_binding_input import (
+    BROKEN,
+    INACTIVE_ONLY,
+    NEW_ACTIVE_FIELD,
+    PRESERVED,
+    build_field_binding_input,
+)
 from hwpxfiller.application.run_delivery_intent import RunDeliveryIntent
 from hwpxfiller.application.preview_requirement import PreviewNotRequired, PreviewRequired
 from hwpxfiller.domain.field_binding import (
@@ -1143,6 +1150,54 @@ def test_resolve_execution_without_binding_is_honestly_blocked(tmp_path: Path) -
     assert all(item["binding_state"] == "NEW_ACTIVE_FIELD" for item in zone["input_requirements"])
     assert all(item["action_required"] is True for item in zone["input_requirements"])
     assert all(item["exact_target"].startswith("binding/") for item in zone["input_requirements"])
+
+
+# ── U3-03(#876) 「입력이 필요한 항목」 존 = 조치 필요만(분류표 전건 아님) ─────────────────────────
+def test_input_requirements_zone_carries_only_action_required_items(tmp_path: Path) -> None:
+    """혼재 분류표 → 존에는 BROKEN·NEW_ACTIVE_FIELD 만 실린다(링1 분류표는 그대로).
+
+    술어는 링1 의 ``action_required`` 다 — 직렬화 경계가 분류값을 재해석하지 않는다.
+    """
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    observation = ctrl.workbench_observation()
+    mixed = tuple(
+        InputRequirement(
+            field_id=field_id,
+            display_label=field_id,
+            binding_state=state,
+            exact_target=f"binding/{field_id}",
+        )
+        for field_id, state in (
+            ("보존", PRESERVED),
+            ("깨짐", BROKEN),
+            ("신규", NEW_ACTIVE_FIELD),
+            ("비활성", INACTIVE_ONLY),
+        )
+    )
+    mixed_observation = dataclasses.replace(observation, input_requirements=mixed)
+    zone = ctrl._serialize_observation(mixed_observation)
+
+    assert [item["field_id"] for item in zone["input_requirements"]] == ["깨짐", "신규"]
+    assert all(item["action_required"] is True for item in zone["input_requirements"])
+    # 필터는 표시 경계 한 자리뿐 — 링1 분류표(전건)는 손대지 않는다.
+    assert len(mixed_observation.input_requirements) == 4
+
+
+def test_sealed_current_input_requirements_zone_is_empty(tmp_path: Path) -> None:
+    """봉인 성공(전건 PRESERVED) → 조치 필요 0건이라 존은 빈 목록으로 나간다."""
+    ctrl = _controller(tmp_path, with_binding=True)
+    ctrl.dispatch("resolve_execution", {})
+    observation = ctrl.workbench_observation()
+    zone = _zone(ctrl)
+
+    assert zone["execution_status_code"] == "CURRENT"
+    # 링1 은 여전히 활성 누름틀 전건의 분류표를 든다 — 비워진 건 표시 경계다.
+    assert observation.input_requirements, "봉인 성공 경로의 분류표가 비었다"
+    assert all(item.binding_state == PRESERVED for item in observation.input_requirements)
+    assert zone["input_requirements"] == []
+    # 라벨 자체는 불변(구획을 세울지는 프런트가 표시 항목 수로 정한다).
+    assert zone["input_requirements_label"] == "입력이 필요한 항목"
 
 
 # ── refresh_observation: 지금 이 순간을 재관찰(orchestration 전이 없음) ──────────────────────────
