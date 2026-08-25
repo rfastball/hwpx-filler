@@ -94,6 +94,12 @@ def judge(report: dict, *, mode: str) -> Verdict:
             failures.append("restart 뒤 S4 intent/Binding current meaning이 복원되지 않았습니다")
         if not absent or not all(absent.values()):
             failures.append("restart 뒤 session-only 상태가 거짓 복원됐습니다")
+        # U3-07(#880): 마지막 사용 데이터는 첫 화면에 이미 서 있다. 선택 0건·사유 문구 부재가
+        # 「손으로 마운트한 것과 같은 세션 상태로 성사됐다」를 함께 말한다.
+        if restart.get("data_restored") != {
+            "has_data": True, "selected_count": 0, "notice": None
+        }:
+            failures.append("restart 뒤 마지막 사용 데이터가 자동 마운트되지 않았습니다")
         if restart.get("filesystem_before") != restart.get("filesystem_after"):
             failures.append("restart 관찰 중 filesystem이 바뀌었습니다")
         if report.get("shots") != []:

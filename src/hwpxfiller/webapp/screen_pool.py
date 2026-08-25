@@ -41,8 +41,6 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from ..application.dataset_pool import (
     BOUND_FIELDS,
     DatasetPoolPort,
@@ -55,7 +53,7 @@ from ..application.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..domain.dataset_reference import DatasetReference
-from .screens import PushSink
+from .screens import PushSink, reference_missing
 
 __all__ = [
     "BOUND_FIELDS",
@@ -116,8 +114,8 @@ class PoolController:
                 "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
                 "sheet": r.sheet,  # 다시 연결 프리필(#67)
                 # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
-                # exists() 는 풀 액션 시에만 push 되는 이 화면에서만 지불(렌더당 I/O 아님).
-                "missing": bool(r.locate_path) and not Path(r.locate_path).exists(),
+                # 판정은 공유 술어(U3-07 #880) — 부팅 자동 마운트가 같은 것을 본다.
+                "missing": reference_missing(r.locate_path),
                 "note": r.note,
                 "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
             }

@@ -1310,17 +1310,32 @@ def run_restart(ctx: ScenarioContext) -> dict:
 
     U3-06(#879) 이후 「저장 폴더」는 그 사이에 선다 — 설정에 기억된 마지막 명시 지정이 **기본값**
     으로 되살지만, 그것은 session intent 의 부활이 아니다(충돌 처리 선언은 기본값으로 돌아온다).
+
+    U3-07(#880) 이후 **데이터도 그 사이에 선다**: 마지막으로 성사된 마운트가 첫 화면에 이미
+    서 있다(매 세션 파일을 다시 고르게 하던 자리). 그것도 session 상태의 부활이 아니다 —
+    선택은 0건이고 active Work 는 여전히 비어 있다.
     """
     s = ctx.surface
     before_files = ctx.output_manifest()
     initial = _snapshot(s)
-    _expect(initial.get("has_data") is False and initial.get("has_job") is False, "H7: restart가 DataTarget/active Work를 복원했습니다")
+    # 자동 마운트는 「파일 다시 고르기」의 대역일 뿐이라 마운트만 승계한다: 데이터는 서고,
+    # active Work·선택은 서지 않는다. 실패(파일 소실 등)면 조용한 빈 상태가 아니라
+    # `data_notice` 가 사유를 실으므로 그 부재도 성사의 증거다.
+    data_restored = {
+        "has_data": initial.get("has_data"),
+        "selected_count": initial.get("selected_count"),
+        "notice": initial.get("data_notice"),
+    }
+    _expect(
+        data_restored == {"has_data": True, "selected_count": 0, "notice": None},
+        f"H7: restart가 마지막 사용 데이터를 계약대로 복원하지 않았습니다 — {data_restored!r}",
+    )
+    _expect(initial.get("has_job") is False, "H7: restart가 active Work를 복원했습니다")
     initial_wb = initial.get("workbench_observation") or {}
     # 작업을 고르기 전에는 저장 폴더를 도출할 재료(템플릿)조차 없다 — 기억이 있어도 여기서는
     # 아무것도 서지 않는다(U3-06 #879: 기억은 도출의 재료이지 그 자체로 세워지는 값이 아니다).
     _expect(initial_wb.get("run_delivery_intent") is None, "H7: 작업 선택 전에 delivery intent가 섰습니다")
-    _mount_data(ctx, ctx.stage_data("clean"))
-    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "restart data reload 뒤 active Work 0", requires=["#jobActionName"])
+    s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "restart 자동 마운트 뒤 active Work 0", requires=["#jobActionName"])
     _select_work(s, "발주요청서")
     current = _snapshot(s)
     view = _current_view(current)
@@ -1366,7 +1381,8 @@ def run_restart(ctx: ScenarioContext) -> dict:
         "sx05_restart": {
             "durable": {"job": current.get("job_name"), "selections": selected, "binding": binding},
             "delivery_default": delivery_default,
-            "session_absent": {"data_before_reload": True, "active_work_before_reselect": True, "delivery_collision": True, "preview": True},
+            "data_restored": data_restored,
+            "session_absent": {"active_work_before_reselect": True, "delivery_collision": True, "preview": True},
             "filesystem_before": before_files,
             "filesystem_after": after_files,
         }

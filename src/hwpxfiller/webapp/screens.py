@@ -143,6 +143,20 @@ def validate_owned_path(path: str, owned: "set[str]", *, base_dir: "str | Path")
     return path
 
 
+def reference_missing(path: str) -> bool:
+    """가리키는 파일이 자리에 없는가 — **참조 끊김 판정의 단일 출처**(#67 · U3-07 #880).
+
+    풀 목록의 「끊김」 배지(:mod:`~hwpxfiller.webapp.screen_pool`)와 부팅 자동 마운트
+    (:mod:`~hwpxfiller.webapp.screen_job`)가 같은 술어를 본다. 사이트마다 ``exists()`` 를
+    다시 적으면 한쪽만 빈 경로를 끊김으로 세거나 한쪽만 폴더를 파일로 세는 표류가 난다.
+    경로 없음(``""``)은 **끊김이 아니다**: 파일로 가리킬 수 없는 참조(조립 파이프라인 등)는
+    애초에 이 판정의 대상이 아니라 배지도 서지 않는다.
+
+    렌더당 I/O 가 아니다 — 호출자는 사건 시점(풀 액션·부팅)에만 지불한다.
+    """
+    return bool(path) and not Path(path).exists()
+
+
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, key: str
 ) -> DatasetReference:

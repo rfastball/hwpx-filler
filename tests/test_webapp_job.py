@@ -18,6 +18,7 @@ from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.hwpx_package_io import read_hwpx_package, write_hwpx_package
 from hwpxfiller.external.text_registry import TextTemplateRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+from hwpxfiller.external.settings import load_last_data_source, save_last_data_source
 from hwpxfiller.data.factory import source_for_path, source_from_pool_item
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.domain.mapping import FieldMapping, MappingProfile
@@ -6064,3 +6065,142 @@ def test_generation_proceeds_when_no_notation_is_left(tmp_path):
     coord = TemplateChangeCoordinator(reg, root=tmp_path / "authority", clock=_clock())
     staged = coord.resolve_generation_template("표기없음")
     assert Path(staged).exists()
+
+
+# ------------------- 마지막 사용 데이터의 부팅 자동 마운트(U3-07 · #880)
+def test_file_mount_is_remembered_in_settings(tmp_path):
+    """마운트 성공 = 기억 기록. 성분은 세션이 그때 포획한 한 벌 그대로다."""
+    ctrl, _ = _controller(tmp_path)
+    path = _data_csv(tmp_path)
+
+    ctrl.load_data_path(path)
+
+    assert load_last_data_source() == {
+        "source": "file", "path": path, "sheet": "", "header_row": 0, "pool_key": "",
+    }
+
+
+def test_pool_mount_is_remembered_by_slot_key(tmp_path):
+    """풀 겨눔도 같은 한 자리를 부른다 — 정체는 슬롯 키다(§5.3)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path), "header_row": 1})
+
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+
+    remembered = load_last_data_source()
+    assert remembered["source"] == "pool" and remembered["pool_key"] == key
+    assert remembered["header_row"] == 1
+
+
+def test_restart_mounts_the_remembered_file_on_the_first_snapshot(tmp_path):
+    """재시작(새 컨트롤러)의 **첫 스냅샷**에 데이터가 이미 서 있다. 선택은 0건."""
+    ctrl, _ = _controller(tmp_path)
+    path = _data_csv(tmp_path)
+    ctrl.load_data_path(path)
+
+    fresh, pushes = _controller(tmp_path)
+    assert fresh.snapshot()["has_data"] is False  # 마운트는 initial 이 한다
+    snap = fresh.initial()
+
+    assert snap["has_data"] is True and snap["record_count"] == 2
+    assert snap["selected_count"] == 0 and snap["data_label"] == Path(path).name
+    assert snap["data_notice"] is None
+    # 작업 선택·실행 상태는 건드리지 않는다(자동 마운트는 「파일 다시 고르기」의 대역).
+    assert snap["has_job"] is False and snap["last_run_job"] == ""
+    # 결과는 첫 스냅샷 자체로 간다 — 그 전에 미는 푸시는 없다.
+    assert pushes == []
+
+
+def test_restart_mounts_the_remembered_pool_slot(tmp_path):
+    """풀 기억도 같은 자리에서 산다 — 슬롯을 그때 다시 읽는다(재연결 반영)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+
+    fresh, _ = _pool_controller(tmp_path)
+    snap = fresh.initial()
+
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert snap["record_count"] == 2 and snap["selected_count"] == 0
+    assert snap["data_notice"] is None
+
+
+def test_boot_mount_happens_once_and_does_not_undo_a_live_mount(tmp_path):
+    """재진입(``initial`` 재호출)이 사용자가 지금 고른 데이터를 되돌리지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))
+
+    fresh, _ = _controller(tmp_path)
+    fresh.initial()
+    other = tmp_path / "다른.csv"
+    other.write_text("bidNtceNm,presmptPrce\n한건,1\n", encoding="utf-8")
+    fresh.load_data_path(str(other))
+
+    assert fresh.initial()["data_label"] == "다른.csv"
+
+
+def test_missing_remembered_file_leaves_an_empty_state_with_a_loud_reason(tmp_path):
+    """소실은 조용한 빈 상태가 아니다 — 첫 화면이 사유를 싣고, 기억은 남아 재시도한다."""
+    ctrl, _ = _controller(tmp_path)
+    path = Path(_data_csv(tmp_path))
+    ctrl.load_data_path(str(path))
+    path.unlink()  # 외장 드라이브 분리·파일 이동
+
+    fresh, _ = _controller(tmp_path)
+    snap = fresh.initial()
+
+    assert snap["has_data"] is False and snap["data_label"] == ""
+    assert snap["data_notice"] == {
+        "level": "warn",
+        "text": (
+            f"지난번에 사용한 데이터 파일을 찾을 수 없습니다: {path}. "
+            "데이터를 다시 고르세요."
+        ),
+    }
+    # 기억은 지우지 않는다 — 드라이브가 돌아오면 다음 부팅이 그대로 세운다.
+    assert load_last_data_source()["path"] == str(path)
+    path.write_text("bidNtceNm,presmptPrce\n돌아옴,1\n", encoding="utf-8")
+    assert _controller(tmp_path)[0].initial()["record_count"] == 1
+
+
+def test_deleted_pool_slot_restates_the_existing_refusal_text(tmp_path):
+    """풀 실패는 기존 로드 관문의 문장을 그대로 이어 붙인다(새 문안 발명 금지)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    key = _pool_add(pool, "7월공고", {"path": _data_csv(tmp_path)})
+    assert ctrl.dispatch("load_pool", {"key": key})["ok"] is True
+    pool.delete(key)
+
+    fresh, _ = _pool_controller(tmp_path)
+    snap = fresh.initial()
+
+    assert snap["has_data"] is False
+    assert snap["data_notice"] == {
+        "level": "warn",
+        "text": (
+            "지난번에 사용한 데이터를 다시 불러오지 못했습니다. "
+            "등록 데이터를 찾을 수 없습니다(이미 삭제된 항목)."
+        ),
+    }
+    assert load_last_data_source()["pool_key"] == key  # 기억 유지
+
+
+def test_no_memory_boots_exactly_as_before(tmp_path):
+    """이 키가 없는 기존 ``settings.json`` 은 그대로 빈 부팅으로 산다."""
+    ctrl, pushes = _controller(tmp_path)
+
+    snap = ctrl.initial()
+
+    assert load_last_data_source() is None
+    assert snap["has_data"] is False and snap["data_notice"] is None
+    assert pushes == []
+
+
+def test_remembered_descriptor_rejects_half_written_components(tmp_path):
+    """반쪽 descriptor 는 조용히 저장되지 않는다 — 손상 저장분은 미저장과 같이 다룬다."""
+    with pytest.raises(ValueError):
+        save_last_data_source(source="file", path="  ")
+    with pytest.raises(ValueError):
+        save_last_data_source(source="pool", pool_key="")
+    with pytest.raises(ValueError):
+        save_last_data_source(source="registry", path="x")
+    assert load_last_data_source() is None

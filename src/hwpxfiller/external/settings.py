@@ -52,6 +52,9 @@ __all__ = (
     "save_boot_completed",
     "load_last_output_directory",
     "save_last_output_directory",
+    "VALID_DATA_SOURCES",
+    "load_last_data_source",
+    "save_last_data_source",
     "load_job_collapsed_groups",
     "recollapse_job_group",
     "save_job_collapsed_groups",
@@ -352,6 +355,86 @@ def save_last_output_directory(path: str) -> None:
     if not isinstance(path, str) or not path.strip():
         raise ValueError(f"유효하지 않은 저장 폴더 경로: {path!r}")
     _save_key("last_output_directory", path)
+
+
+# 마지막으로 성사된 데이터 마운트의 출처 축(U3-07 · #880) — 세션의 `data_source` 플래그와
+# 같은 열거형이다('' = 미겨눔이라 기억할 것이 없다). 오타 키는 loud 로 자른다.
+VALID_DATA_SOURCES = ("file", "pool")
+
+
+def load_last_data_source() -> "dict | None":
+    """마지막으로 **성사된** 데이터 마운트의 성분 — 없으면 ``None``(U3-07 · #880).
+
+    성분은 세션이 마운트 시점에 한 벌로 포획하는 그것이다(``path``·``sheet``·
+    ``header_row``·``pool_key`` + 출처 축) — :meth:`~hwpxfiller.webapp.data_zone.
+    DataZoneMixin.new_work_handoff` 가 내는 참조와 같은 재료다. 앱 시작 시 이 성분으로
+    다시 마운트하는 것이 매 세션 데이터를 다시 고르게 하던 결함(#880)의 조치다.
+
+    **판정은 여기 없다**: 그 파일이 지금도 있는지·읽히는지는 마운트가 답하고, 실패는 조용한
+    빈 상태가 아니라 사유 문구로 재진술된다(:mod:`hwpxfiller.webapp.screen_job`).
+
+    비dict·형 불일치·필수 성분 부재(파일인데 경로 없음, 풀인데 슬롯 키 없음)는 미저장과 같이
+    다룬다 — 이 키가 없는 기존 ``settings.json`` 은 그대로 빈 부팅으로 산다."""
+    raw = _read().get("last_data_source")
+    if not isinstance(raw, dict):
+        return None
+    source = raw.get("source")
+    if source not in VALID_DATA_SOURCES:
+        return None
+    path = raw.get("path")
+    sheet = raw.get("sheet")
+    pool_key = raw.get("pool_key")
+    header_row = raw.get("header_row")
+    if not (isinstance(path, str) and isinstance(sheet, str) and isinstance(pool_key, str)):
+        return None
+    if not isinstance(header_row, int) or isinstance(header_row, bool) or header_row < 0:
+        return None
+    if source == "file" and not path:
+        return None
+    if source == "pool" and not pool_key:
+        return None
+    return {
+        "source": source,
+        "path": path,
+        "sheet": sheet,
+        "header_row": header_row,
+        "pool_key": pool_key,
+    }
+
+
+def save_last_data_source(
+    *,
+    source: str,
+    path: str = "",
+    sheet: str = "",
+    header_row: int = 0,
+    pool_key: str = "",
+) -> None:
+    """성사된 데이터 마운트 성분 영속 — 다음 부팅 자동 마운트의 재료.
+
+    필수 성분이 빠진 저장은 조용히 무시하지 않고 ``ValueError`` 다(confirm-or-alarm): 반쪽
+    descriptor 를 받아 두면 다음 부팅이 무엇을 열어야 할지 모른 채 침묵한다. 보존·원자성·
+    재시도 계약은 :func:`_save_key` 공용 몸통이 진다."""
+    if source not in VALID_DATA_SOURCES:
+        raise ValueError(f"유효하지 않은 데이터 출처: {source!r} (허용: {VALID_DATA_SOURCES})")
+    if not all(isinstance(v, str) for v in (path, sheet, pool_key)):
+        raise ValueError("데이터 마운트 성분(경로·시트·슬롯 키)은 문자열이어야 합니다")
+    if not isinstance(header_row, int) or isinstance(header_row, bool) or header_row < 0:
+        raise ValueError(f"유효하지 않은 헤더 행: {header_row!r}")
+    if source == "file" and not path.strip():
+        raise ValueError("파일 마운트 기억에는 데이터 파일 경로가 필요합니다")
+    if source == "pool" and not pool_key.strip():
+        raise ValueError("등록 데이터 마운트 기억에는 슬롯 키가 필요합니다")
+    _save_key(
+        "last_data_source",
+        {
+            "source": source,
+            "path": path,
+            "sheet": sheet,
+            "header_row": header_row,
+            "pool_key": pool_key,
+        },
+    )
 
 
 def load_job_collapsed_groups() -> "list[str]":
