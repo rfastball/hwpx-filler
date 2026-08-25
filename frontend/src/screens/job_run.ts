@@ -617,8 +617,17 @@ export function createJobRunController(deps: JobRunControllerDeps) {
       const requestId = tpl.requestId ?? newTplRequestId();
       setTpl({ inFlight: true, requestId, notice: "" });
       try {
-        await dispatch("template_check", { request_id: requestId });
-        setTpl({ inFlight: false, requestId: null, notice: "" }); // 성공 — 다음 클릭은 새 intent
+        const res = await dispatch("template_check", { request_id: requestId });
+        // **거절도 응답이다**(#804): `ok:false` 는 전송 실패가 아니라 종결된 판정이라 예외로
+        // 오지 않는다 — 여기서 읽지 않으면 「시키는 대로 눌렀는데 아무 일도 안 일어난다」가
+        // 된다. 판정·사유는 Python 이 싣고 여기는 그것을 재진술할 뿐이다.
+        const notice = res.ok === true ? "" : tplCheckRefusalNotice(res);
+        // 응답이 오는 사이 작업이 갈렸으면 구획에는 싣지 않는다(남의 재진술 차단, 리뷰 P2).
+        // 그래도 **실행 기록에는 남긴다** — 좌석이 풀리는 거절(work_context_changed)은 존
+        // 자체가 사라져 구획이 아무 말도 할 수 없는 자리이기 때문이다.
+        const still = String(snapshot()?.job_name || "") === owner;
+        setTpl({ inFlight: false, requestId: null, notice: still ? notice : "" });
+        if (notice) log(notice);
       } catch (error) {
         // 전송 실패 — 키를 남겨 다음 클릭이 같은 키로 재전송. 단 그사이 작업이 갈렸으면
         // 키는 남의 intent 라 버린다(리뷰 P2 동류 — 상태는 세션 정체를 따른다).
@@ -1190,6 +1199,28 @@ const TPL_STATUS_COPY: Record<string, string> = {
   rejected: "이 변경사항은 더 이상 적용할 수 없습니다.",
 };
 
+/** 초기 등록 실패 재진술의 **단일 출처** — 존 상태 문안과 확인 거절 재진술이 같은 문장을
+ *  쓴다(#804). 존이 그리는 자리와 dispatch 가 답하는 자리가 갈리면 같은 사실을 두 문장이
+ *  말하게 되고, 그중 하나가 늙는다. */
+const TPL_INITIALIZATION_REQUIRED_COPY =
+  "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다. "
+  + "템플릿을 수정하거나 다시 연결한 뒤 확인하세요.";
+
+/** [변경사항 확인] 거절(`ok:false`) 한 줄 — **판정은 Python, 문안만 여기**(#804).
+ *
+ *  백엔드가 `error` 문장을 실어 보냈으면 그것이 정본이라 그대로 쓴다(좌석 해제처럼 사유와
+ *  다음 행동을 아는 쪽이 Python 인 경우). 그 밖에는 `reason` 코드를 존이 이미 쓰는 문안으로
+ *  옮기고, 표에 없는 사유도 **조용히 비우지 않는다** — 재진술 없는 거절이 곧 막다른 길이다. */
+export function tplCheckRefusalNotice(res: Obj): string {
+  const error = String(res.error ?? "").trim();
+  if (error) return error;
+  const reason = String(res.reason ?? "").trim();
+  if (reason === "initialization_required") return TPL_INITIALIZATION_REQUIRED_COPY;
+  return reason
+    ? `변경사항을 확인하지 못했습니다: ${reason}`
+    : "변경사항을 확인하지 못했습니다.";
+}
+
 /** FAIL(invalid)과 오류·중단·대체를 다른 행동 문구로 가른다 — 재확인 라벨이 그 분리다. */
 const TPL_RECHECK_LABEL: Record<string, string> = {
   error: "다시 확인",
@@ -1215,7 +1246,11 @@ export function applyNotice(res: Obj): string {
 }
 
 export function useTemplateChangeUi(controller: JobRunController): TemplateChangeUi {
-  return useSyncExternalStore(controller.subscribe, controller.getTemplateChange);
+  // 세 번째 인자(server snapshot)는 형제 훅과 같은 값이다 — 없으면 SSR 렌더가 이 구획만
+  // 클라이언트 렌더로 강등돼 계약 테스트가 존 문안을 볼 수 없다.
+  return useSyncExternalStore(
+    controller.subscribe, controller.getTemplateChange, controller.getTemplateChange,
+  );
 }
 
 /** 템플릿 변경사항 구획 — revision 번호·목록·선택기는 없다(#659 계약). token 은 스냅샷의
@@ -1232,7 +1267,7 @@ export function JobTemplateChange(props: { controller: JobRunController }): Reac
   const busy = tpl.inFlight || running;
   const diagnostics = ((needsInit ? z.diagnostics : prep?.diagnostics) || []) as Obj[];
   const statusText = needsInit
-    ? "템플릿 초기 등록에 실패해 변경사항을 확인할 수 없습니다. 템플릿을 수정하거나 다시 연결한 뒤 확인하세요."
+    ? TPL_INITIALIZATION_REQUIRED_COPY
     : status
       ? (TPL_STATUS_COPY[status] ?? `확인 상태: ${status}`)
       : "템플릿 원본을 고쳤다면 변경사항을 확인한 뒤 이 작업에 적용할 수 있습니다.";

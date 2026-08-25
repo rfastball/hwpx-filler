@@ -1021,6 +1021,22 @@ def test_soft_delete_retains_trash_30_days_and_undo_error_names_no_trash(tmp_pat
     assert str(exc.value) == "되돌릴 작업 파일을 찾을 수 없습니다."
 
 
+def test_release_authority_id_clears_only_the_value_it_was_given(tmp_path):
+    """권위 되돌림은 **대조 후 삭제**다 — 남의 결속을 끊지 않는다(#804).
+
+    되돌림은 초기 등록에 실패해 「이력 없는 권위」만 남은 경우를 위한 것이라, 그사이 다른
+    결속이 이겼으면 그 값은 이미 다른 이력을 가리킨다. 값이 다르면 **무변경**이어야 이
+    되돌림이 안전한 동사다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx"))
+    reg.assign_authority_id("공고서", "w-mine")
+
+    assert reg.release_authority_id("공고서", "w-남의것").authority_id == "w-mine"
+    assert reg.release_authority_id("공고서", "w-mine").authority_id == ""
+    assert reg.load("공고서").authority_id == ""  # durable 까지 반영된다
+
+
 # ---- 쓰기 표면 전수 분류 가드(#129 리뷰 3R P1 — 4차 재발 차단) ----
 #
 # 같은 결함류가 세 라운드 연속 재발했다: ①스탬프가 남의 작업에 ②스탬프가 잠금 밖 ③delete·
@@ -1035,6 +1051,7 @@ _WRITERS = {
     "save", "delete", "rename", "clone", "mutate", "stamp_last_run", "set_favorite",
     "set_group", "rename_group", "disband_group", "soft_delete", "restore_soft_deleted",
     "remove_corrupt_entry", "set_tags", "relink_template", "assign_authority_id",
+    "release_authority_id",
 }
 
 
@@ -1124,6 +1141,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
         "mutate": lambda: reg.mutate("A", lambda j: setattr(j, "filename_pattern", "p")),
         "assign_authority_id": lambda: reg.assign_authority_id("A", "w-test"),
+        "release_authority_id": lambda: reg.release_authority_id("A", "w-test"),
         "set_tags": lambda: reg.set_tags("A", {"지역": "본청"}),
         "relink_template": lambda: reg.relink_template("A", "t2.hwpx"),  # 같은 매체 = 통과
         "stamp_last_run": lambda: reg.stamp_last_run("A", "2026-07-21T09:00:00"),
