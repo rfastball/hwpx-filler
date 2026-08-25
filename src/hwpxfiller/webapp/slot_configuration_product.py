@@ -374,12 +374,32 @@ class SlotConfigurationProduct:
                 detail=_CONTEXT_ERROR_MESSAGES.get(exc.code, _CONTEXT_ERROR_FALLBACK),
             )
 
-    def list_selection_presets(self) -> PresetListing:
-        """홈 레지스트리의 Preset 목록 + 손상 항목 — Work 무관(Work 밖 보관이 존재 이유다).
+    def list_selection_presets(self, work_ref: "str | None") -> PresetListing:
+        """이 Work 의 **현재 구조에 전부 적용 가능한** Preset 목록 + 손상 항목(#875).
+
+        보관은 Work 밖(홈 레지스트리)이지만 소비는 Work 안이다 — 그래서 나열은 Work 를 받는다.
+        호환 판정은 적용 경로가 쓰는 :func:`~hwpxfiller.application.preset_command.fit_preset_selections`
+        하나가 지고 여기는 구조 context 를 세워 넘기기만 한다(slot·option 재순회 0).
+
+        ``work_ref`` 가 없거나 그 Work 의 구조를 세울 수 없으면(초기화 전·context error·접근
+        불가) 호환을 **주장할 수 있는** 항목이 0 이다 — 무필터 전량 노출로 되돌아가지 않는다.
+        그 사유는 같은 스냅샷의 「포함할 내용」 존이 이미 시끄럽게 재진술하고 있고, 적용 경로도
+        같은 사유로 거절한다.
 
         손상 항목을 목록에서 지우지 않는다: 소비 표면이 비활성 + 사유 병기로 재진술한다.
         """
-        return list_presets_from_store(self._presets)
+        context: SlotConfigurationContext | None = None
+        if work_ref is not None:
+            try:
+                work_id, ws = self._route(work_ref)
+                context = resolve_slot_configuration_context(
+                    self._works, self._quals, self._candidates, ws, work_id
+                )
+            except (SlotConfigurationProductError, SlotConfigurationContextError):
+                # 구조를 세우지 못하는 모든 사유는 「호환을 주장할 수 있는 항목 0」 하나로
+                # 접힌다 — 여기서 목록을 그리려고 판정을 지어내지 않는다.
+                context = None
+        return list_presets_from_store(self._presets, context)
 
     def apply_selection_preset(
         self, work_ref: str, configuration_token: str, preset_key: str

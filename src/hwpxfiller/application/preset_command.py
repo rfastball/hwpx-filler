@@ -174,21 +174,41 @@ def _overlay(
     return SlotSelectionSet(tuple(merged))
 
 
-def decide_apply_preset(
-    ctx: SlotConfigurationContext,
-    config: WorkSlotConfigurationDraft,
-    proposal: SlotSelectionSet,
-    now: str,
-) -> PresetApplyDecision:
+@dataclass(frozen=True)
+class PresetStructuralFit:
+    """Preset 선택 묶음을 현재 구조에 대고 가른 결과 — **적용과 목록이 함께 쓰는 단일 판정**.
+
+    「무엇이 적용되는가」(적용 경로)와 「전부 적용 가능한가」(목록 필터 · #875)는 같은 물음의
+    두 얼굴이다. 각자 구조를 훑으면 같은 상태를 두 곳이 판정하게 되므로 둘 다 이 값 하나에서
+    파생한다.
+    """
+
+    applied: tuple[SlotSelection, ...]
+    broken: tuple[ProjectedDetachedSelection, ...]
+    declared_slot_count: int
+
+    @property
+    def fully_applicable(self) -> bool:
+        """proposal 의 **모든** entry 가 현재 구조에서 RESOLVED 인가.
+
+        부분 겹침은 호환이 아니다 — 하나라도 깨지면 적용은 부분 적용 + 깨짐 보고로 끝나므로
+        「고르면 그대로 서는 것」이 아니다. 구조에는 있으나 proposal 이 언급하지 않은 Slot 은
+        이 판정의 대상이 아니다(적용의 대상이 아니다 — 기존 선택도 소거하지 않는다).
+        """
+        return not self.broken and len(self.applied) == self.declared_slot_count
+
+
+def fit_preset_selections(
+    ctx: SlotConfigurationContext, proposal: SlotSelectionSet
+) -> PresetStructuralFit:
     """Preset 선택 묶음을 현재 구조에 대고 판정해 적용 대상과 깨진 것을 가른다.
 
     대조 대상은 **proposal 만**이다(현재 config 가 아니다) — 「이 Preset 이 지금 쓸 수 있는가」가
     물음이라 현재 선택을 섞으면 답이 흐려진다. 그래서 구조에는 있으나 proposal 이 언급하지
     않은 Slot 은 적용에도 깨짐에도 세지 않는다(이 명령의 대상이 아니다).
 
-    깨진 entry 는 새 declared set 에 **싣지 않는다** — 보고로만 남는다. 유효하지 않은 값을
-    Configuration 에 적어 두면 사용자가 고치지 않은 채로 blocked 상태만 늘어난다. proposal
-    entry 는 option ≥1 이라 ``MISSING_REQUIRED_SELECTION`` 으로는 분류되지 않는다.
+    판정 기계는 여전히 S4 :func:`~hwpxfiller.application.slot_reconciliation.resolve_slot_configuration`
+    하나이고, 이 함수는 그 결과를 **분류**할 뿐이다(새 판정 0).
     """
     resolution = resolve_slot_configuration(
         proposal, ctx.template_structure, ctx.selection_semantic_contract
@@ -226,9 +246,28 @@ def decide_apply_preset(
         )
         for detached in resolution.detached_selections
     )
+    return PresetStructuralFit(
+        applied=tuple(applied),
+        broken=tuple(broken),
+        declared_slot_count=len(proposal.selections),
+    )
 
+
+def decide_apply_preset(
+    ctx: SlotConfigurationContext,
+    config: WorkSlotConfigurationDraft,
+    proposal: SlotSelectionSet,
+    now: str,
+) -> PresetApplyDecision:
+    """구조 판정(:func:`fit_preset_selections`)을 Configuration 전이로 물질화한다.
+
+    깨진 entry 는 새 declared set 에 **싣지 않는다** — 보고로만 남는다. 유효하지 않은 값을
+    Configuration 에 적어 두면 사용자가 고치지 않은 채로 blocked 상태만 늘어난다. proposal
+    entry 는 option ≥1 이라 ``MISSING_REQUIRED_SELECTION`` 으로는 분류되지 않는다.
+    """
+    fit = fit_preset_selections(ctx, proposal)
     source_version = config.version
-    new_config = apply_selections(config, _overlay(config.selections, tuple(applied)), now)
+    new_config = apply_selections(config, _overlay(config.selections, fit.applied), now)
     changed = new_config.version != source_version
     return PresetApplyDecision(
         outcome_code=CHANGED if changed else NO_CHANGE,
@@ -236,8 +275,8 @@ def decide_apply_preset(
         new_config=new_config if changed else None,
         source_version=source_version,
         resulting_version=new_config.version,
-        applied_slot_ids=tuple(entry.slot_id for entry in applied),
-        broken=tuple(broken),
+        applied_slot_ids=tuple(entry.slot_id for entry in fit.applied),
+        broken=fit.broken,
     )
 
 
@@ -263,10 +302,30 @@ class PresetListing:
         return len(self.corrupt)
 
 
-def list_selection_presets(port: PresetStorePort) -> PresetListing:
-    """이름순 목록 + 손상 항목. 손상을 목록에서 지우지 않는다(숨기면 사용자가 못 묻는다)."""
+def list_selection_presets(
+    port: PresetStorePort, context: "SlotConfigurationContext | None"
+) -> PresetListing:
+    """이름순 목록 + 손상 항목 — **현재 구조에 전부 적용 가능한 것만** 싣는다(#875).
+
+    Preset 보관은 Work 밖이지만 소비는 Work 안이다. 무필터 전량 노출은 다른 템플릿·다른 매체의
+    Preset 까지 모든 작업에 띄워, 목록의 어느 줄도 「고르면 그대로 서는 것」을 뜻하지 않게 만든다.
+    그래서 목록은 :func:`fit_preset_selections` 의 ``fully_applicable`` 로 좁힌다 — 적용 경로가
+    쓰는 것과 **같은 해석**이라 목록과 적용이 두 곳에서 따로 판정하지 않는다.
+
+    ``context`` 가 None 이면 대조할 구조가 없다 — 호환을 주장할 수 있는 항목이 0 이다(전량
+    노출로 되돌아가지 않는다). 걸러진 항목의 저장 파일은 그대로다(삭제가 아니라 목록의 좁힘).
+
+    손상 항목은 어느 경우에도 거르지 않는다: 읽을 수 없는 항목은 호환 판정의 **대상이 아니라
+    표시 대상**이라 숨기면 사용자가 묻지도 못한다.
+    """
     entries, corrupt = port.list_presets()
-    ordered = sorted(entries, key=lambda entry: (entry[1].name, entry[0]))
+    applicable = [
+        entry
+        for entry in entries
+        if context is not None
+        and fit_preset_selections(context, entry[1].selection_set).fully_applicable
+    ]
+    ordered = sorted(applicable, key=lambda entry: (entry[1].name, entry[0]))
     return PresetListing(
         items=tuple(
             PresetListItem(

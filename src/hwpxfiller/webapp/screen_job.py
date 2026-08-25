@@ -4056,6 +4056,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``provenance`` 는 싣지 않는다 — advisory 내부 정보(Application·contract id)라 사용자
         표면의 재료가 아니다. 손상 항목은 숨기지 않고 ``corrupt`` 로 함께 나가고, 표면이
         비활성 + 사유 병기로 재진술한다.
+
+        **목록은 현재 템플릿 구조에 전부 적용 가능한 것만 싣는다**(U3 §2 · #875). 종전에는 홈
+        레지스트리 전량이 매 작업에 떠서, 다른 템플릿·다른 매체에서 만든 Preset 까지 「적용」
+        버튼을 달고 서 있었다. 판정은 Product 를 지나 적용 경로와 **같은 해석**이 진다 — 이
+        존은 어느 Work 를 대고 물을지만 정한다(호환을 여기서 다시 세지 않는다). 걸러진 항목의
+        저장 파일은 그대로다(목록의 좁힘이지 삭제가 아니다).
         """
         blank = self._content_presets_blank()
         if self._slot_configuration is None or not self.job_name or tmissing:
@@ -4063,7 +4069,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         job = load_job(self.registry, self.job_name)
         if job.media not in SUPPORTED_MEDIA:
             return blank
-        listing = self._slot_configuration.list_selection_presets()
+        # 템플릿 확인(bootstrap) 전이면 durable Work id 가 아직 없다 — 렌더에서 발급하지
+        # 않는다(`_slot_configuration_zone` 과 같은 write-on-read 회피). 그 상태에는 대고 물을
+        # 구조가 없으므로 Work 를 넘기지 않고, Product 가 호환 항목 0 으로 접는다.
+        listing = self._slot_configuration.list_selection_presets(
+            self.job_name if job.authority_id else None
+        )
         return {
             "supported": True,
             "items": [

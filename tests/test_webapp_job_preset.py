@@ -269,6 +269,147 @@ def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
     assert ctrl.snapshot()["content_presets"]["supported"] is False
 
 
+# ── 목록 필터: 현재 템플릿 구조 호환만 실린다(U3 §2 · #875) ─────────────────────────────
+# 프리셋 보관은 Work 밖(홈 레지스트리)이라 종전에는 전량이 매 작업에 떴다 — 다른 템플릿에서
+# 만든 것까지 「적용」 버튼을 달고. 여기가 재는 것은 존이 구조 호환으로 좁혀지는가, 그러면서도
+# 읽을 수 없는 항목은 계속 시끄럽게 남는가다. 호환 판정 자체는 application 층 테스트가 잰다.
+
+
+def _clear(ctrl, token: str, slot_id: str, request_id: str) -> str:
+    res = ctrl.dispatch("clear_slot_selection", {
+        "configuration_token": token, "slot_id": slot_id, "request_id": request_id,
+    })
+    fresh = res["current_view"]["new_configuration_token"]
+    assert fresh
+    return str(fresh)
+
+
+def _seat_second_work(ctrl, reg, tmp_path: Path, name: str) -> None:
+    """구조가 **다른** 두 번째 작업(후속 구조 템플릿)을 세우고 그리로 옮긴다."""
+    from hwpxfiller.domain.job import Job
+
+    other = tmp_path / f"{name}.hwpx"
+    _two_slot_template(other, successor=True)  # _S_GONE 없음 · _O_DROP 없음
+    reg.save(Job(name=name, template_path=str(other)))
+    ctrl.dispatch("select_job", {"name": name})
+    ctrl.dispatch("template_check", {"request_id": "k-other"})
+
+
+def test_zone_lists_only_presets_the_current_structure_can_fully_apply(
+    tmp_path: Path,
+) -> None:
+    """A 구조에서 저장한 두 프리셋이 A 에는 다 실리고, 구조가 다른 B 에는 맞는 것만 남는다."""
+    ctrl, token, _tpl = _seated(tmp_path)  # _S_KEEP=_O_KEEP · _S_GONE=_O_ONLY
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })
+    # _S_GONE 을 비워 **후속 구조에서도 서는** 프리셋을 하나 더 만든다(양성 대조).
+    token = _clear(ctrl, token, _S_GONE, "r-clear")
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "한 칸",
+    })
+    assert [item["name"] for item in _presets_zone(ctrl)["items"]] == ["두 칸", "한 칸"]
+
+    _seat_second_work(ctrl, reg=ctrl.registry, tmp_path=tmp_path, name="다른 공고서")
+
+    zone = _presets_zone(ctrl)
+    assert zone["supported"] is True  # 구획 자격은 그대로다(호환 0건이어도 진다)
+    # 「두 칸」은 이 구조에 _S_GONE 이 없어 부분 적용밖에 못 한다 → 목록에서 빠진다.
+    assert [item["name"] for item in zone["items"]] == ["한 칸"]
+    # 뺀 것이지 지운 것이 아니다 — 파일은 그대로고 원래 작업으로 돌아가면 다시 뜬다.
+    assert len(list(default_preset_dir().glob("*.preset.json"))) == 2
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert [item["name"] for item in _presets_zone(ctrl)["items"]] == ["두 칸", "한 칸"]
+
+
+def test_incompatible_zone_still_lists_corrupt_entries_loudly(tmp_path: Path) -> None:
+    """손상 항목은 호환 판정의 대상이 아니라 표시 대상이다 — 호환 0건이어도 그대로 선다."""
+    ctrl, token, _tpl = _seated(tmp_path)
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })
+    broken_key = "cafe0000cafe0000"
+    (default_preset_dir() / f"{broken_key}.preset.json").write_text(
+        json.dumps({"schema_version": "selection-preset/v1", "name": "망가진 것"}),
+        encoding="utf-8",
+    )
+
+    _seat_second_work(ctrl, reg=ctrl.registry, tmp_path=tmp_path, name="다른 공고서")
+
+    zone = _presets_zone(ctrl)
+    assert zone["items"] == []  # 호환 0건 → 구획은 기존 빈 상태로 선다
+    assert [entry["file_name"] for entry in zone["corrupt"]] == [
+        f"{broken_key}.preset.json"
+    ]
+    assert zone["corrupt"][0]["error"] and zone["corrupt_code"] == "PRESET_ENTRY_CORRUPT"
+
+
+def test_zone_before_template_check_claims_no_compatible_item_without_issuing_id(
+    tmp_path: Path,
+) -> None:
+    """템플릿 확인 전(복제본)은 대고 물을 구조가 없다 — 호환 0건이고 durable id 도 안 난다.
+
+    렌더가 durable id 를 발급하면 write-on-read 다(`_slot_configuration_zone` 과 같은 규율).
+    """
+    ctrl, token, _tpl = _seated(tmp_path)
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })
+    clone = ctrl.registry.clone("공고서")
+    ctrl.dispatch("select_job", {"name": clone})
+
+    assert _presets_zone(ctrl) == {
+        "supported": True, "items": [], "corrupt": [], "corrupt_code": "PRESET_ENTRY_CORRUPT",
+    }
+    assert ctrl.registry.load(clone).authority_id == ""  # 렌더가 발급하지 않았다
+
+
+def test_product_claims_no_compatible_item_when_the_structure_cannot_be_resolved(
+    tmp_path: Path,
+) -> None:
+    """구조를 세우지 못하는 Work 는 호환 0건이다 — 전량 노출로 새지 않는다.
+
+    존은 durable id 미발급 Work 를 Product 에 넘기지도 않지만(위 테스트), 그 가드가 **없어도**
+    아래가 안전한지를 여기서 직접 잰다: 확인을 지나지 않아 template application 이 없으면
+    대고 물을 구조가 없고, 손상 항목만 그대로 남는다.
+    """
+    from hwpxfiller.domain.job import Job
+
+    ctrl, token, _tpl = _seated(tmp_path)
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })
+    (default_preset_dir() / "cafe0000cafe0000.preset.json").write_text(
+        json.dumps({"schema_version": "selection-preset/v1"}), encoding="utf-8"
+    )
+    unchecked = tmp_path / "미확인.hwpx"
+    _two_slot_template(unchecked)
+    ctrl.registry.save(Job(name="미확인", template_path=str(unchecked)))
+
+    listing = ctrl._slot_configuration.list_selection_presets("미확인")
+    assert listing.items == ()
+    assert listing.corrupt_count == 1 and listing.corrupt[0].error
+
+
+def test_apply_path_still_defends_after_the_list_is_filtered(tmp_path: Path) -> None:
+    """목록이 걸러져도 적용 경로의 부분 적용·깨짐 보고는 그대로다(방어층 불변 · #875 요구 4)."""
+    ctrl, token, _tpl = _seated(tmp_path)
+    key = ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })["saved_key"]
+
+    _seat_second_work(ctrl, reg=ctrl.registry, tmp_path=tmp_path, name="다른 공고서")
+    assert _presets_zone(ctrl)["items"] == []  # 목록에는 없지만
+
+    token = _token(ctrl)
+    res = ctrl.dispatch("apply_selection_preset", {  # 키를 직접 부르면 여전히 판정한다
+        "configuration_token": token, "preset_key": key,
+    })
+    assert res["rejection_code"] is None
+    assert res["applied_slot_ids"] == (_S_KEEP,) and res["broken_count"] == 1
+    assert [item["slot_id"] for item in res["broken"]] == [_S_GONE]
+
+
 # ── dispatch 스키마: 미등록 키·필수 키 누락은 조용히 무시되지 않는다 ────────────────────
 def test_action_registry_rejects_unregistered_and_missing_payload_keys() -> None:
     from hwpxfiller.webapp.action_registry import validate_dispatch
