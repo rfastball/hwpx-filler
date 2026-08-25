@@ -28,6 +28,7 @@ Primary Action 이 결코 ``CREATE_DOCUMENTS`` 에 닿지 못한다 — 뒤 슬�
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ..application.automatic_seal_orchestration import AutomaticSealOrchestration
@@ -42,6 +43,7 @@ from ..application.document_creation_workbench import (
     RecordValidationSummary,
     WorkbenchContextIntegrity,
     WorkbenchCompositionInput,
+    binding_review_needed,
     compose_document_creation_workbench,
 )
 from ..application.execution_compilation import (
@@ -154,6 +156,15 @@ _BINDING_BLOCKERS = frozenset(
         NEEDS_FIELD_BINDING_APPLICATION_REVIEW,
     )
 )
+
+
+def binding_blockers_present(blockers: "Iterable[str]") -> bool:
+    """정규화 blocker 집합에 **결속 축**이 있는가 — 이 판정의 단일 출처(#911).
+
+    :meth:`WorkbenchObservationProduct.compose` 와 편집기 확정 동사가 같은 자리를 부른다.
+    호출자가 각자 `_BINDING_BLOCKERS` 를 뒤지면 축이 하나 늘어나는 날 한쪽만 따라간다.
+    """
+    return any(blocker in _BINDING_BLOCKERS for blocker in blockers)
 
 
 def _sealed_input_requirements(
@@ -284,9 +295,8 @@ class WorkbenchObservationProduct:
                 item.field_id for item in input_requirements
                 if item.binding_state != INACTIVE_ONLY
             )
-        binding_review_needed = binding_review_needed or any(
-            blocker in _BINDING_BLOCKERS
-            for blocker in verdicts.normalized_blockers_or_policy
+        binding_review_needed = binding_review_needed or binding_blockers_present(
+            verdicts.normalized_blockers_or_policy
         )
         composition = WorkbenchCompositionInput(
             # ── SX-02 소유 축(실제 세션 사실) ──
@@ -316,6 +326,27 @@ class WorkbenchObservationProduct:
             historical_outcome=historical_outcome,
         )
         return compose_document_creation_workbench(composition)
+
+    def binding_review_pending(
+        self,
+        *,
+        fresh_observation: "FreshExecutionObservation | None",
+        input_requirements: "tuple[InputRequirement, ...]" = (),
+    ) -> bool:
+        """``REVIEW_BINDING`` 조건을 **합성 밖에서** 묻는다(#911) — 편집기 확정 동사의 근거.
+
+        :meth:`compose` 가 쓰는 두 술어를 같은 순서로 그대로 쓴다(재판정 0):
+        정규화 blocker 의 결속 축 + 분류표의 조치 필요 항목. 합성 전체를 부르지 않는 이유는
+        그것이 읽기가 아니어서다 — 관찰 조립은 레코드 검증·미리보기 준비를 무효화한다.
+        """
+        return binding_review_needed(
+            blocker_signal=binding_blockers_present(
+                execution_verdicts_from_fresh(
+                    fresh_observation
+                ).normalized_blockers_or_policy
+            ),
+            input_requirements=input_requirements,
+        )
 
     def execution_status(
         self,

@@ -66,6 +66,8 @@ from ..gui.edit_session import (
     sections_for,
 )
 from ..gui.job_editor_state import (
+    BINDING_CONFIRM_HINT,
+    BINDING_CONFIRM_LABEL,
     needs_overwrite_confirm,
     overwrite_confirm_text,
     validate_save,
@@ -163,6 +165,7 @@ class EditorController:
         library_result: "Callable[[], dict] | None" = None,
         library_slots: "Callable[[], dict | None] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
+        binding_confirm_pending: "Callable[[str], bool] | None" = None,
         tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
         self.registry = registry
@@ -198,6 +201,10 @@ class EditorController:
         # 여기는 읽기만). 미주입(테스트 단독 구동)은 목록 없음.
         self._library_slots = library_slots
         self._after_mapping_saved = after_mapping_saved
+        # 연결 확정 대기 판정(#911) — `after_mapping_saved` 와 **같은 짝의 반대편**이다(쓰기 ↔
+        # 읽기). 판정·문안은 백엔드 소유이고 이 화면은 사실 하나를 싣기만 한다. 미주입(테스트
+        # 단독 구동·비관리 조립)이면 확정 대기는 없다 — 없는 표면을 있다고 말하지 않는다.
+        self._binding_confirm_pending_probe = binding_confirm_pending
         self._reset()
 
     def _reset(self) -> None:
@@ -259,6 +266,27 @@ class EditorController:
         self._session_clean = False
         # 「모두 해제」 직전 확정 집합 1슬롯. 다음 해제/세션 리셋이 덮으며 durable 저장하지 않는다.
         self._unconfirm_undo: "list[int]" = []
+        # 연결 확정 대기(#911) — **저장본**의 사실이라 세션 편집 중에는 움직이지 않는다. 그래서
+        # 매 스냅샷마다 다시 묻지 않고 진입(:meth:`load_job`)과 저장 착지에서만 새로 잰다:
+        # 판정은 durable 저장소를 mutation fence 안에서 읽는 일이라 렌더 경로에서 반복하면
+        # 타이핑 한 번마다 그 값을 문다.
+        self._binding_confirm_pending = False
+
+    def _refresh_binding_confirm_pending(self) -> None:
+        """저장본 기준으로 연결 확정 대기를 다시 잰다 — 진입·저장 착지 두 자리에서만 부른다.
+
+        초안은 저장본이 없어 잴 것도 없다(권위 발급 자체가 저장 뒤의 일이다). 판정 실패는
+        「대기 아님」으로 접는다: 확정할 수 없는 상태에서 확정 동사를 세우면 그 동사는 눌러도
+        아무 일도 안 하고, 그 침묵이 지금 고치는 결함과 같은 것이다.
+        """
+        probe = self._binding_confirm_pending_probe
+        if probe is None or not self._editing_origin or not self.job_name:
+            self._binding_confirm_pending = False
+            return
+        try:
+            self._binding_confirm_pending = bool(probe(self.job_name))
+        except Exception:  # noqa: BLE001 - 판정 불가 = 확정 동사 없음(거짓 무장 금지).
+            self._binding_confirm_pending = False
 
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.notice_text = text
@@ -554,6 +582,15 @@ class EditorController:
             "name": self.job_name,
             "pattern": self.pattern,
             "has_unsaved_work": self.has_unsaved_work(),
+            # 연결 확정 대기(#911) — footer 무장 사유를 **더한다**(빼지 않는다). dirty 기반
+            # 무장은 그대로고, 바꿀 것이 없는데 관리 검토가 확정을 기다리는 상태에서만 이
+            # 사실이 참이다. 판정·라벨·설명은 전부 여기서 실어 보낸다: 표면이 「저장 안 됨」
+            # 같은 인접 사실로 확정 필요를 추론하면 두 곳이 같은 상태를 다르게 답한다.
+            "binding_confirm": {
+                "pending": self._binding_confirm_pending,
+                "label": BINDING_CONFIRM_LABEL,
+                "hint": BINDING_CONFIRM_HINT,
+            },
             "unconfirm_undo_count": len(self._unconfirm_undo),
             # #26 편집 모드·프로파일 표면. (dataset_name·default_dataset 스냅샷 키는 #347
             # 에서 사망 — 자동등록·기본 데이터 연결이 U2 §5.3 판정 D 로 폐기됐다.)
@@ -1242,6 +1279,7 @@ class EditorController:
         emit_push: bool = True,
         keep_data: bool = False,
         source_ref: "dict | None" = None,
+        probe_binding: bool = True,
     ) -> None:
         """작업 스냅샷 하나로 편집 세션 상태를 재구성 — 3분류 상태 재구성(단순 배선 아님).
 
@@ -1379,6 +1417,13 @@ class EditorController:
         # 세션" 헛확인을 띄우지 않는다(리뷰). 내부의 load_template_path 가 표지를 껐으므로
         # 마지막에 켠다. 드리프트 경고(warn)가 있어도 내용 동일성은 참이다.
         self._session_clean = True
+        # 연결 확정 대기(#911)는 진입에서 잰다 — 이 세션이 서 있는 저장본이 방금 정해졌다.
+        # ``probe_binding=False`` 는 **저장 임계구역 안의 재로드** 하나다: 판정이 durable 결속
+        # 저장소를 per-Work fence 안에서 읽으므로 레지스트리 쓰기 잠금을 쥔 채 부르면 잠금
+        # 두 개를 문서화되지 않은 순서로 겹친다. 게다가 그 시점 값은 어차피 낡았다 — 확정을
+        # 부르는 `_after_mapping_saved` 가 아직 돌지 않았다. 저장 갈래는 잠금 밖에서 다시 잰다.
+        if probe_binding:
+            self._refresh_binding_confirm_pending()
         if emit_push:
             self._push()
 
@@ -2109,6 +2154,9 @@ class EditorController:
                 )
             )
         ):
+            # 확정을 부르지 않은 갈래여도 저장본은 움직였다 — 확정 대기는 저장본의 사실이라
+            # 여기서도 다시 잰다(#911). 잰 뒤에 반환해야 이 저장의 스냅샷이 최신을 싣는다.
+            self._refresh_binding_confirm_pending()
             return result
         try:
             self._after_mapping_saved(str(result["saved_name"]))
@@ -2118,6 +2166,8 @@ class EditorController:
                 f"{exc}"
             )
             self._set_notice(message, "danger")
+            # 확정이 실패했으면 대기는 여전히 참이다 — 실패를 성공처럼 접어 동사를 걷지 않는다.
+            self._refresh_binding_confirm_pending()
             return {
                 "ok": False,
                 "legacy_saved": True,
@@ -2125,6 +2175,8 @@ class EditorController:
                 "saved_name": result["saved_name"],
                 "block_reason": message,
             }
+        # 확정이 성립했다 — 대기 사실을 다시 재서 footer 의 확정 동사가 스스로 걷히게 한다.
+        self._refresh_binding_confirm_pending()
         return result
 
     def _save_locked(self, p: dict, verdict) -> dict:
@@ -2197,6 +2249,7 @@ class EditorController:
             landing_section=landing_section,
             context=self.session.context,
             emit_push=False,
+            probe_binding=False,  # 쓰기 잠금 안 — 확정 대기는 `_do_save` 가 잠금 밖에서 잰다.
         )
         self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
         return {"ok": True, "saved_name": saved}

@@ -593,6 +593,20 @@ def _has_runtime_reason(admission: RuntimePolicyAdmission) -> bool:
     return bool(set(admission.reasons) & _RUNTIME_ADMISSION_REASONS)
 
 
+def binding_review_needed(
+    *, blocker_signal: bool, input_requirements: "tuple[InputRequirement, ...]"
+) -> bool:
+    """``REVIEW_BINDING`` 이 서는 **그 술어** — 이 이름 하나가 조건의 단일 출처다(#911).
+
+    두 갈래의 OR 이다: 봉인 판정이 결속 축 blocker 를 낸 경우와, 현재 Active Field 분류표에
+    조치가 필요한 항목이 있는 경우. 함수로 뽑은 이유는 소비자가 둘이 됐기 때문이다 —
+    :func:`compose_blockers` 가 관리 검토 사슬에 세우고, 편집기 footer 가 같은 사실로 무변경
+    확정 동사를 무장한다. 두 자리가 각자 조건을 조립하면 「확정하라고 하는데 확정 동사가
+    없다」(#911) 또는 그 거울상(「확정할 것이 없는데 동사가 서 있다」)이 조용히 생긴다.
+    """
+    return blocker_signal or any(item.action_required for item in input_requirements)
+
+
 def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
     """여러 blocker 를 **동시에 보존**해 BLOCKER_CODES 순서로 낸다(#724 §테스트 2).
 
@@ -616,7 +630,10 @@ def compose_blockers(inp: WorkbenchCompositionInput) -> tuple[str, ...]:
         present.add(REVIEW_TEMPLATE_CHANGE)
     if inp.content_selection.has_unselected_required_content:
         present.add(CHOOSE_CONTENT)
-    if inp.binding_review_needed or any(item.action_required for item in inp.input_requirements):
+    if binding_review_needed(
+        blocker_signal=inp.binding_review_needed,
+        input_requirements=inp.input_requirements,
+    ):
         present.add(REVIEW_BINDING)
 
     # record / delivery / preview
