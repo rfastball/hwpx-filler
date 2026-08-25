@@ -44,6 +44,7 @@ from live101.surface import (  # noqa: E402
     UnexpectedNativeAlert,
 )
 
+from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS  # noqa: E402
 from hwpxfiller.webapp import boot_budget  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +76,12 @@ _LIVE_BUDGET_S = 600.0
 _OUTER_TIMEOUT_S = _LIVE_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 _RESTART_BUDGET_S = 120.0
 _RESTART_OUTER_TIMEOUT_S = _RESTART_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
+#: 온보딩 여정(#895)의 예산 — 위와 **같은 형상**이다(안쪽 하드 스톱이 먼저 물게 파생).
+#:
+#: 실측(2026-08-25, 개발 기기): 완주 77.5초. 601초는 「명백히 멈춘 것」만 잡는 천장이고
+#: 느린 러너를 탈락시키지 않는다 — 느림으로 난 빨강은 정보가 0 이기 때문이다(위 주석 승계).
+_ONBOARDING_BUDGET_S = 600.0
+_ONBOARDING_OUTER_TIMEOUT_S = _ONBOARDING_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S + 60.0
 
 
 # ───────────────────────────────── 실주행 ─────────────────────────────────
@@ -652,6 +659,154 @@ def test_a_healthy_run_reports_when_it_nears_the_live_budget(live_check_run) -> 
         warnings.warn(note, stacklevel=1)
 
 
+@pytest.fixture(scope="module")
+def live_onboarding_run(tmp_path_factory) -> dict:
+    """온보딩 여정(#895)을 **빈 홈**에서 모듈당 한 번 완주하고 그 보고서를 준다.
+
+    ## 이 픽스처는 콜드 부팅을 하나 늘린다 — 비용과 사유를 함께 적는다
+
+    저장소 규율은 「새 실런타임 단언은 이미 서 있는 창에 붙인다」다(CLAUDE.md). 여기서는
+    **불가능하다**: 앱 홈은 ``HWPXFILLER_HOME`` 으로 프로세스 부팅 시점에 고정되고
+    (``host/locations.py`` 단일 출처), 온보딩은 **빈 홈**을 전제하는 반면
+    :func:`live_check_run` 은 101 예제 자산이 시딩된 홈에서 돈다. 한 프로세스가 두 홈을 가질
+    수 없으므로 두 여정은 같은 창을 공유할 수 없다.
+
+    비용은 콜드 부팅 1회(실측 완주 77.5초 + 부팅)이고, 그 대가로 얻는 것은 이 저장소에 다른
+    방법이 없는 증거다 — 「누르기 전에는 홈에 아무것도 쓰지 않는다」(D1)는 **빈 홈에서만**
+    참·거짓을 가릴 수 있고, 설치 액션의 번들 자산 해석도 시딩된 홈에서는 검사되지 않는다.
+    그래서 예제 자산을 미리 깔지 않는다: 깔면 이 게이트가 재려는 것이 사라진다.
+
+    부팅 플레이크는 :func:`live_check_run` 과 **같은 형상**으로 흡수한다(#477 유한 재시도) —
+    구조화된 ``loaded`` 전 매달림만 fresh process 한 번을 더 받고, 두 시도의 증거는 나눈다.
+    """
+    evidence = _evidence_dir(tmp_path_factory) / "onboarding"
+    evidence.mkdir(parents=True, exist_ok=True)
+
+    attempts: "list[dict]" = []
+    for number in (1, 2):
+        attempt_dir = evidence / f"attempt-{number}"
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        report_path = attempt_dir / "onboarding-report.json"
+        temp_root = Path(tempfile.mkdtemp(prefix="hwpx-onboarding-"))
+        # **빈 홈**이다 — 시딩하지 않는다(위 docstring). 앱이 스스로 만드는 것만 남는다.
+        home = temp_root / "home"
+        home.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            str(CLI),
+            "check",
+            "--shared-home",
+            str(home),
+            "--phase",
+            "onboarding",
+            "--no-build",
+            "--budget-s",
+            str(_ONBOARDING_BUDGET_S),
+            "--report",
+            str(report_path),
+        ]
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                env=_child_env(),
+                capture_output=True,
+                **_CHILD_TEXT,
+                timeout=_ONBOARDING_OUTER_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as expired:
+            _keep_output(attempt_dir, expired.stdout, expired.stderr)
+            raise AssertionError(
+                f"온보딩 여정이 바깥 시한 {_ONBOARDING_OUTER_TIMEOUT_S:.0f}s 를 넘겼습니다 — "
+                f"드라이버의 하드 스톱"
+                f"({_ONBOARDING_BUDGET_S + driver.RUN_HARD_STOP_MARGIN_S:.0f}s)조차 착지하지 "
+                f"못했습니다. 남긴 증거: {attempt_dir}"
+            ) from expired
+
+        _keep_output(attempt_dir, proc.stdout, proc.stderr)
+        assert report_path.exists(), (
+            f"온보딩 보고서 미생성 — attempt={number}, rc={proc.returncode}, 증거={attempt_dir}\n"
+            f"stderr={_tail(proc.stderr, 2000)}\nstdout={_tail(proc.stdout, 2000)}"
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        attempts.append({"proc": proc, "report": report, "evidence": attempt_dir})
+        if number == 1 and _retryable_onboarding_boot_hang(proc, report):
+            warnings.warn(
+                f"webview_boot_flake: loaded 전 매달림, fresh process 1회 재시도;"
+                f" 증거={attempt_dir}",
+                RuntimeWarning,
+                stacklevel=1,
+            )
+            continue
+        break
+
+    selected = attempts[-1]
+    (evidence / "onboarding-report.json").write_text(
+        json.dumps(selected["report"], ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return {**selected, "attempts": attempts}
+
+
+def _retryable_onboarding_boot_hang(proc, report: object) -> bool:
+    """온보딩 갈래의 구조화된 ``loaded`` 전 매달림만 재시도 자격을 준다.
+
+    :func:`_retryable_boot_hang` 과 갈라 두는 이유는 ``phase`` 뿐이다 — 한 함수에 두 phase 를
+    받게 하면 「어느 여정의 매달림인가」가 인자로 흐려지고, 잘못된 phase 의 실패가 재시도
+    자격을 얻는 길이 생긴다.
+    """
+    if not isinstance(report, dict):
+        return False
+    verdict = report.get("verdict")
+    if not isinstance(verdict, dict):
+        return False
+    return (
+        proc.returncode == driver.ExitCode.ENVIRONMENT
+        and report.get("phase") == "onboarding"
+        and report.get("infrastructure_event") == "boot_hung"
+        and report.get("environment") is True
+        and report.get("observations") == {}
+        and verdict.get("ok") is False
+        and verdict.get("failures") == []
+    )
+
+
+@pytest.mark.live
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_the_onboarding_journey_completes_every_tier_on_an_empty_home(
+    live_onboarding_run,
+) -> None:
+    """온보딩 여정 실완주(#895) — 설치 전 불가침부터 제거 뒤 정직성 경보까지.
+
+    판정 자체는 :func:`live101.report.judge` 가 이미 했다(그 층의 음성 대조는 게이트 밖에
+    선다). 여기서 다시 보는 것은 **그 판정이 실제로 돌았는가**와 여정의 요체 몇 가지다 —
+    보고서가 초록인데 관측이 비어 있으면 그 초록은 아무 말도 안 하는 것이다.
+    """
+    proc = live_onboarding_run["proc"]
+    report = live_onboarding_run["report"]
+    assert proc.returncode == driver.ExitCode.OK, (
+        f"온보딩 여정 실패 — rc={proc.returncode}\n"
+        f"stderr={_tail(proc.stderr)}\nstdout={_tail(proc.stdout)}"
+    )
+    assert report["phase"] == "onboarding"
+    assert report["verdict"]["ok"] is True, report["verdict"]
+    assert "infrastructure_event" not in report
+
+    facts = report["observations"]["onboarding"]
+    # 전 단계 완주 — 링1 커리큘럼의 단계 수와 **같은 수**를 실화면에서 체크했다.
+    assert facts["achieved"] == [str(step.milestone) for step in TUTORIAL_STEPS]
+    assert facts["all_complete"] is True
+    assert all(facts["tiers"].values()), facts["tiers"]
+    # D1 — 누르기 전 홈에 예제가 없다(빈 홈이라야 가릴 수 있는 사실).
+    assert not [name for name in facts["home_before_install"] if "예제" in name]
+    # 제거 뒤 끊긴 작업을 숨기지 않는다.
+    assert int(facts["removal"]["missing_template_jobs"]) >= 1
+    assert facts["removal"]["templates_left"] == 0
+
+    note = _budget_health_note(float(report["elapsed_s"]), _ONBOARDING_BUDGET_S)
+    if note is not None:
+        warnings.warn(note, stacklevel=1)
+
+
 def _tree_manifest(root: Path) -> "dict[str, str]":
     """트리 전체의 ``상대경로 → sha256``.
 
@@ -823,6 +978,102 @@ def test_each_journey_fact_is_actually_judged(observation, fragment) -> None:
 
     assert verdict.ok is False
     assert any(fragment in failure for failure in verdict.failures), verdict.failures
+
+
+# ─────────────── 온보딩 판정의 음성 대조(게이트 밖 · #895) ───────────────
+#
+# 실주행 없이 도는 순수 검사다. 실주행만 두면 GUI 없는 러너에서 이 판정이 통째로 사라지고,
+# 그때 「관측이 비었는데 초록」을 아무도 묻지 않는다(파일 머리말의 층 분리 승계).
+
+
+def _healthy_onboarding_report(**observation_overrides) -> dict:
+    """전 단계를 완주한 보고서 — 실주행 산출(run 5)의 형상을 그대로 축약했다."""
+    facts = {
+        "home_before_install": ["settings.json"],
+        "moment_visible": "T0",
+        "install": {"templates": 5, "pinned": 2, "grouped": True},
+        "basic": {
+            "documents": 3,
+            "approval_rearmed": False,
+            "second_run": {"overwrite_confirmed": True},
+        },
+        "applied": {
+            "copied": "1 / 3",
+            "selected_after_swap": 0,
+            "blank_marker": "〘미입력·납품기한〙",
+            "empty_confirm_gate": True,
+        },
+        "deep": {"fresh_digests": 1},
+        "achieved": [str(step.milestone) for step in TUTORIAL_STEPS],
+        "all_complete": True,
+        "tiers": {"basic": True, "applied": True, "advanced": True, "deep": True},
+        "removal": {
+            "templates_left": 0,
+            "pinned_left": 0,
+            "files_left": [],
+            "missing_template_jobs": 5,
+        },
+    }
+    facts.update(observation_overrides)
+    return {"phase": "onboarding", "shots": [], "observations": {"onboarding": facts}}
+
+
+def test_a_healthy_onboarding_report_passes_so_its_negatives_mean_something() -> None:
+    """양성 대조 — 아래 음성들이 「언제나 실패」가 아님을 먼저 보인다."""
+    assert report_mod.judge(_healthy_onboarding_report(), mode="check").ok is True
+
+
+def test_an_empty_onboarding_observation_is_never_green() -> None:
+    """관측이 통째로 비면 초록이 아니다 — 대본이 한 걸음도 못 돈 실행의 침묵을 가른다."""
+    verdict = report_mod.judge(
+        {"phase": "onboarding", "shots": [], "observations": {}}, mode="check"
+    )
+
+    assert verdict.ok is False
+    assert any("아무것도 남기지" in failure for failure in verdict.failures), verdict.failures
+
+
+@pytest.mark.parametrize(
+    ("override", "fragment"),
+    [
+        ({"all_complete": False}, "전체 완주"),
+        ({"tiers": {"basic": True, "applied": True, "advanced": True, "deep": False}}, "졸업하지 못한"),
+        ({"achieved": ["T0"]}, "체크리스트 완주"),
+        ({"install": {"templates": 3, "pinned": 2, "grouped": True}}, "예제 템플릿"),
+        ({"install": {"templates": 5, "pinned": 0, "grouped": True}}, "고정된 예제 데이터"),
+        ({"moment_visible": ""}, "순간 카드"),
+        ({"basic": {"documents": 0, "approval_rearmed": False, "second_run": {"overwrite_confirmed": True}}}, "기본 티어 생성"),
+        ({"basic": {"documents": 3, "approval_rearmed": True, "second_run": {"overwrite_confirmed": True}}}, "작업당 1회"),
+        ({"basic": {"documents": 3, "approval_rearmed": False, "second_run": {"overwrite_confirmed": False}}}, "덮어쓰는데"),
+        # T13 — 빈 값이 빈칸으로 새지 않고 표식으로 남았는가.
+        ({"applied": {"copied": "1 / 3", "selected_after_swap": 0, "blank_marker": "", "empty_confirm_gate": True}}, "빈 값 표식"),
+        # T14 — 퍼지 임계가 되돌아가면 이 사실이 **먼저** 죽는다(#908).
+        ({"applied": {"copied": "1 / 3", "selected_after_swap": 0, "blank_marker": "x", "empty_confirm_gate": False}}, "비움 확정"),
+        ({"applied": {"copied": "", "selected_after_swap": 0, "blank_marker": "x", "empty_confirm_gate": True}}, "복사 카운터"),
+        ({"applied": {"copied": "1 / 3", "selected_after_swap": 2, "blank_marker": "x", "empty_confirm_gate": True}}, "선택이 0건"),
+        # T17 — 갈래를 바꿔 만든 문서가 앞선 산출과 **정말 다른가**(vacuous 금지).
+        ({"deep": {"fresh_digests": 0}}, "다른 문서를 내지"),
+        ({"removal": {"templates_left": 2, "pinned_left": 0, "files_left": [], "missing_template_jobs": 5}}, "제거 뒤 잔존"),
+        ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": ["계약목록.csv"], "missing_template_jobs": 5}}, "자산 파일이 남았"),
+        ({"removal": {"templates_left": 0, "pinned_left": 0, "files_left": [], "missing_template_jobs": 0}}, "끊긴 작업 경보"),
+    ],
+)
+def test_each_onboarding_fact_is_actually_judged(override, fragment) -> None:
+    """온보딩 사실 하나하나가 **실제로 판정에 걸리는가** — 관측만 하고 안 보면 계약이 아니다."""
+    verdict = report_mod.judge(_healthy_onboarding_report(**override), mode="check")
+
+    assert verdict.ok is False
+    assert any(fragment in failure for failure in verdict.failures), verdict.failures
+
+
+def test_the_onboarding_phase_never_reruns_the_capture_script() -> None:
+    """온보딩은 캡처 대본을 다시 돌리지 않는다 — 새 CAPTURE_POINTS 를 만들지 않았다는 계약."""
+    report = _healthy_onboarding_report()
+    report["shots"] = ["job-landing"]
+    verdict = report_mod.judge(report, mode="check")
+
+    assert verdict.ok is False
+    assert any("capture 대본" in failure for failure in verdict.failures), verdict.failures
 
 
 # ─────────────── 창 부팅 = 환경 축의 음성 대조(게이트 밖 · #460) ───────────────

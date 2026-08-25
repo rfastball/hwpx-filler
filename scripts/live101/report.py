@@ -16,7 +16,22 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .scenario import CAPTURE_POINTS, EXPECTED_HWPX
+from hwpxfiller.gui.tutorial_state import STEPS as TUTORIAL_STEPS
+
+from .scenario import (
+    CAPTURE_POINTS,
+    DATA_ASSETS,
+    EXPECTED_HWPX,
+    HWPX_ASSETS,
+    ONBOARDING_ROWS,
+    TXT_ASSETS,
+)
+
+#: 온보딩 설치가 세워야 하는 수 — 이름 목록의 정본은 ``external/example_pack`` 이다.
+EXPECTED_EXAMPLE_TEMPLATES = len(HWPX_ASSETS) + len(TXT_ASSETS)
+EXPECTED_EXAMPLE_DATA = len(DATA_ASSETS)
+#: 기본 티어가 만들어야 하는 문서 수(``계약목록.csv`` 3행).
+EXPECTED_ONBOARDING_HWPX = ONBOARDING_ROWS
 
 
 @dataclass(frozen=True)
@@ -107,6 +122,8 @@ def judge(report: dict, *, mode: str) -> Verdict:
         if failures:
             return Verdict(False, f"{len(failures)}건이 restart 계약과 어긋났습니다", tuple(failures))
         return Verdict(True)
+    if phase == "onboarding":
+        return _judge_onboarding(report)
     if phase not in ("legacy", "journey"):
         return Verdict(False, f"알 수 없거나 빠진 live phase: {phase!r}", ("phase 계약 위반",))
 
@@ -152,6 +169,94 @@ def judge(report: dict, *, mode: str) -> Verdict:
 
     if failures:
         return Verdict(False, f"{len(failures)}건이 계약과 다릅니다", tuple(failures))
+    return Verdict(True)
+
+
+def _judge_onboarding(report: dict) -> Verdict:
+    """온보딩 여정(#895)의 판정 — 대본이 돌려준 **수치**를 다시 센다.
+
+    대본이 이미 단언한 것을 여기서 또 보는 이유는 층이 다르기 때문이다: 대본의 단언은 실행
+    중에만 살아 있고, 이 함수는 **보고서만 보고** 판정하므로 앱 없이 음성 대조를 세울 수 있다
+    (모듈 머리말). 「관측이 통째로 비었는데 초록」은 그 대조가 없으면 잡히지 않는다.
+    """
+    failures: "list[str]" = []
+    facts = (report.get("observations") or {}).get("onboarding") or {}
+    if not facts:
+        return Verdict(False, "온보딩 관측이 비었습니다", ("온보딩 대본이 아무것도 남기지 않았습니다",))
+
+    expected_steps = [str(step.milestone) for step in TUTORIAL_STEPS]
+    if facts.get("achieved") != expected_steps:
+        failures.append(
+            f"체크리스트 완주가 아닙니다: {facts.get('achieved')} (기대 {expected_steps})"
+        )
+    if facts.get("all_complete") is not True:
+        failures.append("튜토리얼 스냅샷이 전체 완주를 말하지 않습니다")
+    tiers = facts.get("tiers") or {}
+    unfinished = sorted(tier for tier in ("basic", "applied", "advanced", "deep") if not tiers.get(tier))
+    if unfinished:
+        failures.append(f"졸업하지 못한 티어: {unfinished}")
+
+    install = facts.get("install") or {}
+    if install.get("templates") != EXPECTED_EXAMPLE_TEMPLATES:
+        failures.append(
+            f"설치된 예제 템플릿 {install.get('templates')!r}건"
+            f" (기대 {EXPECTED_EXAMPLE_TEMPLATES}건)"
+        )
+    if install.get("pinned") != EXPECTED_EXAMPLE_DATA:
+        failures.append(
+            f"고정된 예제 데이터 {install.get('pinned')!r}건 (기대 {EXPECTED_EXAMPLE_DATA}건)"
+        )
+    if install.get("grouped") is not True:
+        failures.append("설치한 템플릿이 예제 그룹으로 묶이지 않았습니다")
+    # D1: 누르기 전에는 홈에 아무것도 쓰지 않는다 — 대본이 census 를 실었는지까지 본다.
+    if not isinstance(facts.get("home_before_install"), list):
+        failures.append("설치 전 홈 census 가 보고서에 없습니다")
+    if not facts.get("moment_visible"):
+        failures.append("순간 카드가 가시 상태로 관측되지 않았습니다")
+
+    basic = facts.get("basic") or {}
+    if basic.get("documents") != EXPECTED_ONBOARDING_HWPX:
+        failures.append(
+            f"기본 티어 생성 {basic.get('documents')!r}건 (기대 {EXPECTED_ONBOARDING_HWPX}건)"
+        )
+    if basic.get("approval_rearmed") is not False:
+        failures.append("두 번째 바퀴에 규칙축 승인이 다시 섰습니다(작업당 1회 계약 위반)")
+    if not (basic.get("second_run") or {}).get("overwrite_confirmed"):
+        failures.append("같은 이름 파일을 덮어쓰는데 확인 왕복이 없었습니다")
+
+    applied = facts.get("applied") or {}
+    if not str(applied.get("copied") or "").startswith("1 /"):
+        failures.append(f"TXT 복사 카운터가 서지 않았습니다: {applied.get('copied')!r}")
+    if applied.get("selected_after_swap") != 0:
+        failures.append("데이터 교체 뒤 선택이 0건에서 재시작하지 않았습니다")
+    if not applied.get("blank_marker"):
+        failures.append("빈 값 표식이 확인 면에서 관측되지 않았습니다")
+    # T14 는 「단계가 체크됐다」로 재지 않는다(#908): 퍼지 제안 임계가 다시 낮아지면
+    # `계약보증금` 이 `계약금액` 에 자동 결속돼 게이트가 **서지 않은 채** 저장이 성립한다.
+    # 그 갈래가 조용히 초록이면 이 게이트는 잘못된 열이 결속되는 것을 못 본다.
+    if applied.get("empty_confirm_gate") is not True:
+        failures.append("저작측 결핍(비움 확정) 게이트가 서지 않았습니다")
+
+    deep = facts.get("deep") or {}
+    if not deep.get("fresh_digests"):
+        failures.append("갈래를 바꾼 생성이 앞선 산출과 다른 문서를 내지 않았습니다")
+
+    removal = facts.get("removal") or {}
+    if removal.get("templates_left") != 0 or removal.get("pinned_left") != 0:
+        failures.append(
+            f"제거 뒤 잔존 — 템플릿 {removal.get('templates_left')!r}건 ·"
+            f" 고정 {removal.get('pinned_left')!r}건"
+        )
+    if removal.get("files_left"):
+        failures.append(f"제거 뒤 예제 자산 파일이 남았습니다: {removal['files_left']}")
+    if int(removal.get("missing_template_jobs") or 0) < 1:
+        failures.append("제거 뒤 끊긴 작업 경보가 서지 않았습니다(정직성 표면 부재)")
+
+    if report.get("shots") != []:
+        failures.append("onboarding phase 가 legacy capture 대본을 다시 실행했습니다")
+
+    if failures:
+        return Verdict(False, f"{len(failures)}건이 온보딩 계약과 어긋났습니다", tuple(failures))
     return Verdict(True)
 
 
