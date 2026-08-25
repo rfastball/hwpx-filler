@@ -1761,62 +1761,6 @@ def _approve(
 
 #: 관리 경로 primary action → 그것을 푸는 **화면의 버튼**(§3.5 T16 「검토 확인들」).
 #: 미리보기(``REVIEW_PREVIEW``)는 서랍 왕복이라 아래 loop 가 따로 다룬다.
-def _exclude_invalid_records(ctx: "ScenarioContext", what: str) -> dict:
-    """``REVIEW_RECORD_DATA`` — 제품이 지목한 행을 **범위에서 빼고** 진행한다.
-
-    ## 무엇이 막는가 (실측 · #895 4차)
-
-    변환본 `공고서_연습` 의 `납품기한` 은 **날짜 종류**를 요구하는데 동봉 `계약목록.csv` 3행 중
-    둘이 자유 문안(`계약 후 90일 이내`)이라 ``RECORD_VALUE_TYPE_INVALID`` 로 막힌다(날짜인
-    `2026-12-31` 한 행만 통과). 즉 **동봉 데이터가 동봉 서식을 다 만족하지 못한다** — 튜토리얼
-    고급 티어를 밟는 사용자는 누구나 「먼저 데이터 문제를 확인하세요」를 만난다. 이 어긋남은
-    막다른 길이 아니라 자산↔서식 드리프트라, 대본은 제품이 준 길로 지나가되 그 사실을
-    관측에 실어 보고서가 말하게 한다(조용히 넘기면 이 게이트가 드리프트를 못 본다).
-
-    빼는 행은 대본이 정하지 않고 **제품이 지목한 것**(``record_validation.issues`` 의
-    ``model_index``)을 그대로 쓴다 — 고정 인덱스를 박으면 자산이 고쳐졌을 때 옳은 동작이
-    빨강이 되고, 무엇이 빠졌는지도 보고서가 말하지 못한다.
-    """
-    s = ctx.surface
-    issues = (_workbench(_snapshot(s)).get("record_validation") or {}).get("issues") or ()
-    drop = sorted({
-        int((item.get("recovery_target") or {}).get("model_index"))
-        for item in issues
-        if (item.get("recovery_target") or {}).get("model_index") is not None
-    })
-    _expect(drop, f"{what}: 데이터 확인을 요구하는데 지목된 행이 없습니다 — {issues!r}")
-    reasons = sorted({str(item.get("message") or "") for item in issues})
-    s.click_sel("#jobDataExpand", what=f"{what} 펼쳐서 행 고르기")
-    s.wait(
-        "!document.getElementById('dataSheet').classList.contains('hidden')",
-        f"{what} 범위 편집기",
-        timeout=30.0,
-        requires=["#dataSheet", "#jobTableBody"],
-    )
-    # 표시순서를 원본 오름차순으로 고정한다 — `data-i` 는 모델 인덱스라 순서와 무관하지만,
-    # 겨눌 행이 화면에 서 있어야 클릭이 성립한다(기본 「최신 행 먼저」에서도 전 행이 서지만
-    # 순서를 못박아 두면 실패 진단의 좌표가 흔들리지 않는다).
-    s.set_value("#jobOrderSel", "sourceAsc")
-    for index in drop:
-        row = f'#jobTableBody tr[data-i="{index}"] input[type="checkbox"]'
-        s.wait(
-            f"(function(){{const b=document.querySelector({json.dumps(row)});"
-            "return !!b && b.checked;})()",
-            f"{what} {index}행 선택 상태",
-            timeout=30.0,
-            requires=["#jobTableBody"],
-        )
-        s.click_sel(row, what=f"{what} {index}행 제외")
-    s.click_sel("#jobRangeApply", what=f"{what} 선택 적용")
-    s.wait(
-        "document.getElementById('dataSheet').classList.contains('hidden')",
-        f"{what} 범위 적용 착지",
-        timeout=30.0,
-        requires=["#dataSheet"],
-    )
-    return {"excluded": drop, "reasons": reasons}
-
-
 _MANAGED_REVIEW_CONTROLS: "dict[str, str]" = {
     "RESOLVE_EXECUTION": "#jobResolveExecution",
     "RESOLVE_RUNTIME_POLICY": "#jobResolveExecution",
@@ -1936,6 +1880,13 @@ def _managed_reviews(ctx: "ScenarioContext", what: str, *, limit: int = 8) -> "l
     ``NOT_REQUIRED`` 미리보기에서는 승인할 것이 아예 없다(``#jobManagedPreviewOpen`` 이 서지
     않는다) — 그 갈래를 승인으로 재면 없는 버튼을 기다리게 된다. 모르는 코드는 조용히 넘기지
     않고 관측을 통째로 실어 시끄럽게 죽는다.
+
+    ``REVIEW_RECORD_DATA`` 도 그 「모르는 코드」다(#915). 종전 자산은 ``납품기한`` 이라는
+    **이름**이 날짜 유형을 선언해 자유서식 값 2행이 이 단계에 걸렸고, 대본은 제품이 지목한
+    행을 범위에서 빼며 지나갔다 — 커리큘럼에 없는 게이트를 심화 티어 사용자 전원이 만난다는
+    사실이 그 우회 뒤에 있었다. 자산의 칸 이름을 ``납품조건``(text)으로 고쳐 게이트를
+    없앴으므로 우회도 함께 지웠다: 이 코드가 다시 서면 그것은 지나갈 길이 아니라 **자산↔서식
+    드리프트의 재발**이고, 여기서 시끄럽게 죽는 것이 맞다.
     """
     s = ctx.surface
     passed: "list[str]" = []
@@ -1963,12 +1914,6 @@ def _managed_reviews(ctx: "ScenarioContext", what: str, *, limit: int = 8) -> "l
             # 었는지를 보고서가 말할 수 있어야 한다(첫 확정만 기록: 뒤 바퀴는 같은 사실이다).
             resolved = _resolve_bindings(ctx, what)
             ctx.observations.setdefault("binding_confirm", resolved["verb"])
-            continue
-        if code == "REVIEW_RECORD_DATA":
-            # 자산↔서식 드리프트를 지나온 사실은 관측에 남긴다(위 helper 주석 참조).
-            ctx.observations.setdefault(
-                "record_data_drift", _exclude_invalid_records(ctx, what)
-            )
             continue
         selector = _MANAGED_REVIEW_CONTROLS.get(code)
         if selector is None:
@@ -2384,7 +2329,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     _require_step(s, "T12", "데이터 교체")
 
     # T13 빈 값 재승인 — 이번 실행의 빈 값 집합이 갈려 승인이 **다시 선다**(L4b).
-    marker = MISSING_MARKER.format(field="납품기한")
+    marker = MISSING_MARKER.format(field="납품조건")
     _select_all(ctx, ONBOARDING_JOBS["basic"])
     s.wait(
         "document.getElementById('jobGenBtn').disabled"
@@ -2463,6 +2408,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     managed = _managed_route(ctx)
     # 관리 경로는 승인 한 번이 아니라 **검토 확인들**이다(§3.5) — 무엇을 몇 걸음 요구하는지는
     # 제품이 정하므로 대본은 그 사슬을 따라간다. legacy 갈래면 종전대로 승인 한 번이다.
+    before_compiled = _results(ctx.home_census())
     advanced_reviews = (
         _managed_reviews(ctx, "변환본 생성")
         if managed
@@ -2471,6 +2417,17 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     compiled_run = _generate(ctx, "변환본 생성")
     _require_step(s, "T16", "변환본으로 생성")
     before_deep = _results(ctx.home_census())
+    # 심화 티어는 **동봉 3행 전부**로 선다(#915). 종전 자산은 `납품기한` 이라는 이름이
+    # 날짜 유형을 선언해 자유서식 값 2행이 「먼저 데이터 문제를 확인하세요」에 걸렸고,
+    # 대본은 제품이 지목한 행을 빼며 지나갔다 — 커리큘럼에 없는 게이트를 사용자 전원이
+    # 만난다는 사실이 그 우회 뒤에 있었다. 자산의 칸 이름을 `납품조건`(text)으로 고쳐
+    # 게이트를 없앴으므로, 이제 **몇 건이 나왔는지**가 그 수리의 증거다.
+    compiled_docs = len(before_deep) - len(before_compiled)
+    _expect(
+        compiled_docs == ONBOARDING_ROWS,
+        f"T16: 변환본 생성이 {compiled_docs}건입니다 (기대 {ONBOARDING_ROWS}건)"
+        " — 데이터 게이트가 행을 떨어뜨렸을 수 있습니다",
+    )
 
     # T17 구성 바꿔 생성 — 「절을 뺀다」가 곧 「생략」 갈래를 고르는 것이다(v1 EXACTLY_ONE).
     s.click_sel("#cs-opt-0-1", what="현장설명회 생략 갈래")
@@ -2541,6 +2498,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     facts["advanced"] = {
         "compile_confirm_body": compile_body,
         "compiled_run": compiled_run,
+        "compiled_documents": compiled_docs,
         "documents_before_change": len(before_deep),
         "reviews": advanced_reviews,
     }

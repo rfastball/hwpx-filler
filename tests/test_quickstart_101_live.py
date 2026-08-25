@@ -1000,9 +1000,10 @@ def _healthy_onboarding_report(**observation_overrides) -> dict:
         "applied": {
             "copied": "1 / 3",
             "selected_after_swap": 0,
-            "blank_marker": "〘미입력·납품기한〙",
+            "blank_marker": "〘미입력·납품조건〙",
             "empty_confirm_gate": True,
         },
+        "advanced": {"compiled_documents": 3},
         "deep": {"fresh_digests": 1},
         "achieved": [str(step.milestone) for step in TUTORIAL_STEPS],
         "all_complete": True,
@@ -1051,6 +1052,9 @@ def test_an_empty_onboarding_observation_is_never_green() -> None:
         ({"applied": {"copied": "1 / 3", "selected_after_swap": 0, "blank_marker": "x", "empty_confirm_gate": False}}, "비움 확정"),
         ({"applied": {"copied": "", "selected_after_swap": 0, "blank_marker": "x", "empty_confirm_gate": True}}, "복사 카운터"),
         ({"applied": {"copied": "1 / 3", "selected_after_swap": 2, "blank_marker": "x", "empty_confirm_gate": True}}, "선택이 0건"),
+        # T16 — 동봉 3행이 **전부** 문서가 됐는가(#915). 자산의 타입 접경이 되돌아가면
+        # 데이터 게이트가 행을 떨어뜨리는데, 단계 체크와 티어 졸업은 그대로 선다.
+        ({"advanced": {"compiled_documents": 1}}, "변환본 생성"),
         # T17 — 갈래를 바꿔 만든 문서가 앞선 산출과 **정말 다른가**(vacuous 금지).
         ({"deep": {"fresh_digests": 0}}, "다른 문서를 내지"),
         ({"removal": {"templates_left": 2, "pinned_left": 0, "files_left": [], "missing_template_jobs": 5}}, "제거 뒤 잔존"),

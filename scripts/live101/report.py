@@ -237,6 +237,16 @@ def _judge_onboarding(report: dict) -> Verdict:
     if applied.get("empty_confirm_gate") is not True:
         failures.append("저작측 결핍(비움 확정) 게이트가 서지 않았습니다")
 
+    # T16 — 심화 티어가 **동봉 3행 전부**로 서는가(#915). 자산의 칸 이름이 날짜 유형을
+    # 선언하면 자유서식 값 행이 「먼저 데이터 문제를 확인하세요」에 걸려 조용히 빠진다 —
+    # 그때도 단계는 체크되고 티어는 졸업하므로, 건수를 보지 않으면 이 회귀는 초록이다.
+    advanced = facts.get("advanced") or {}
+    if advanced.get("compiled_documents") != EXPECTED_ONBOARDING_HWPX:
+        failures.append(
+            f"고급 티어 변환본 생성 {advanced.get('compiled_documents')!r}건"
+            f" (기대 {EXPECTED_ONBOARDING_HWPX}건 — 데이터 게이트가 행을 떨어뜨렸습니다)"
+        )
+
     deep = facts.get("deep") or {}
     if not deep.get("fresh_digests"):
         failures.append("갈래를 바꾼 생성이 앞선 산출과 다른 문서를 내지 않았습니다")

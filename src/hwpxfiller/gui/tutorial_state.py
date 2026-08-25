@@ -232,10 +232,10 @@ STEPS: "tuple[TutorialStep, ...]" = (
         milestone=Milestone.APPROVE_WITH_BLANKS,
         tier=Tier.APPLIED,
         title="빈 값 포함 승인",
-        next_step="빈 값이 있는 행을 선택하고 지목된 '납품기한'을 확인한 뒤 다시 승인하세요.",
+        next_step="빈 값이 있는 행을 선택하고 지목된 '납품조건'을 확인한 뒤 다시 승인하세요.",
         moment_copy=(
             "이번 실행에 빈 값이 있어 승인이 다시 섰습니다. "
-            f"빈 값은 빈칸으로 새지 않고 {MISSING_MARKER.format(field='납품기한')} 표식으로 남습니다."
+            f"빈 값은 빈칸으로 새지 않고 {MISSING_MARKER.format(field='납품조건')} 표식으로 남습니다."
         ),
     ),
     TutorialStep(
