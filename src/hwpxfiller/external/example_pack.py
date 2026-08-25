@@ -244,12 +244,15 @@ def _require_inside(root: Path, path: Path, what: str) -> Path:
     그대로 ``trash``/``unlink`` 에 먹이면 제거가 **임의 파일 삭제 권한**이 된다
     (:meth:`~hwpxfiller.external.dataset_store.DatasetPoolRegistry.slot_path` 와 같은 규율).
     루트 자신도 거절한다 — 라이브러리 폴더째 옮기는 경로는 이 동사의 것이 아니다.
+
+    ``resolve()`` 를 ``try`` 로 감싸지 않는다: 비-strict 모드는 존재하지 않는 경로·긴 경로·
+    죽은 UNC·예약 이름·널 바이트까지 전부 삼키고 리터럴로 되돌려 주므로 ``OSError`` 갈래가
+    **구조적으로 서지 않는다**. 설 수 없는 갈래를 잡아 두면 「여기는 처리된다」는 거짓말이
+    코드에 남고 커버리지도 영영 그 줄을 못 밟는다. 경로 I/O 실패의 loud 재진술은 호출측
+    (``screen_template._do_remove_examples`` 의 ``OSError`` 포함 catch)이 진다.
     """
-    try:
-        resolved = path.resolve()
-        base = root.resolve()
-    except OSError as exc:  # 접근 불가 경로도 조용히 통과시키지 않는다
-        raise ValueError(f"{what} 경로를 확인할 수 없습니다: {path}") from exc
+    resolved = path.resolve()
+    base = root.resolve()
     if resolved == base or not resolved.is_relative_to(base):
         raise ValueError(f"설치 기재의 {what} 경로가 제자리를 벗어났습니다: {path}")
     return path

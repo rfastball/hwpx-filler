@@ -526,7 +526,9 @@ class TemplateController:
                 txt_root=Path(self.text_registry.directory),
                 data_dir=self._example_data_dir,
             )
-        except ValueError as exc:  # 경로 탈출·기재 손상 — 조용히 넘기지 않는다
+        except (OSError, ValueError) as exc:  # 경로 탈출·기재 손상·설정 읽기 실패
+            # ``OSError`` 도 여기다: 기재 판독은 설정 파일 I/O 라 디스크 쪽 실패가 실재하고,
+            # 그것이 dispatch 밖으로 새면 사용자는 사유 없는 실패를 본다(confirm-or-alarm).
             self._set_result(_danger(f"예제를 제거하지 못했습니다: {exc}"))
             return {"ok": False, "error": str(exc)}
         if plan is None:

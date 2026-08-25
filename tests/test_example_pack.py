@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -406,6 +407,179 @@ def test_a_manifest_path_outside_its_root_is_refused_loudly(tmp_path):
     assert outside.read_bytes() == b"not mine to delete"
     assert ctrl.snapshot()["result"]["level"] == "danger"
     assert settings.load_tutorial_manifest() is not None  # 지우지 못했으면 기재도 남는다
+
+
+def _handwritten_manifest(manifest: dict) -> None:
+    """설정 파일에 manifest 를 **손편집**으로 앉힌다 — 저장 API 검증을 우회한 실제 형상.
+
+    ``save_tutorial_manifest`` 는 네 칸을 전부 검증하지만 ``load_tutorial_manifest`` 는
+    ``templates`` 의 형상만 본다. 구버전·손편집·홈 이관이 남긴 나머지 칸의 불량은 **제거가
+    읽는 자리**에서 처음 드러나므로, 그 입구를 여기서 재현한다. 제거는 파일을 지우는
+    동사라 「반쯤 해석한 기재로 진행」이 이 저장소에서 가장 비싼 실패다.
+    """
+    path = home_dir() / "settings.json"
+    path.parent.mkdir(parents=True, exist_ok=True)  # 격리 홈은 첫 저장 전까지 없다
+    path.write_text(
+        json.dumps({"tutorial": {"manifest": manifest}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("manifest", "reason"),
+    [
+        pytest.param(
+            {"group": "예제", "data_files": [], "pool_keys": [],
+             "templates": [{"media": "pdf", "path": "예제.pdf", "key": "예제.pdf"}]},
+            "매체를 알 수 없습니다",
+            id="미지매체",
+        ),
+        pytest.param(
+            {"group": "예제", "templates": [], "pool_keys": [], "data_files": "계약목록.csv"},
+            "데이터 파일 목록이 올바르지 않습니다",
+            id="데이터목록이_리스트가_아님",
+        ),
+        pytest.param(
+            {"group": "예제", "templates": [], "pool_keys": [], "data_files": [7]},
+            "데이터 파일 목록이 올바르지 않습니다",
+            id="데이터목록에_비문자열",
+        ),
+        pytest.param(
+            {"group": "예제", "templates": [], "data_files": [], "pool_keys": [None]},
+            "풀 등록 키 목록이 올바르지 않습니다",
+            id="풀키에_비문자열",
+        ),
+        pytest.param(
+            {"group": "   ", "templates": [], "data_files": [], "pool_keys": []},
+            "그룹 이름이 비어 있습니다",
+            id="그룹이름_공백",
+        ),
+        pytest.param(
+            {"templates": [], "data_files": [], "pool_keys": []},
+            "그룹 이름이 비어 있습니다",
+            id="그룹칸_부재",
+        ),
+    ],
+)
+def test_a_malformed_manifest_field_refuses_before_touching_anything(tmp_path, manifest, reason):
+    """기재의 어느 칸이 망가져도 **1차부터** 사유와 함께 멈춘다 — 반쯤 해석해 지우지 않는다.
+
+    ``load_tutorial_manifest`` 가 ``templates`` 만 보므로 나머지 세 칸(데이터·풀키·그룹)의
+    불량은 여기가 유일한 관문이다. 확인을 묻지도 않고, 사용자 파일도 그대로 남는다.
+    """
+    ctrl, lib, txt_dir, _ = _controller(tmp_path)
+    mine = lib / "내서식.hwpx"
+    mine.write_bytes(b"not mine to delete")
+    _handwritten_manifest(manifest)
+
+    ask = ctrl.dispatch("remove_examples", {})
+    assert ask["ok"] is False and reason in ask["error"]
+    assert "needs_confirm" not in ask  # 확정할 것이 없다 — 무엇을 지울지 모르기 때문이다
+    done = ctrl.dispatch("remove_examples", {"confirm": True})
+    assert done["ok"] is False and reason in done["error"]
+
+    assert ctrl.snapshot()["result"]["level"] == "danger"
+    assert _installed_names(lib, txt_dir) == {mine.name}
+    assert _trashed_names(lib) == set()
+    assert settings.load_tutorial_manifest() is not None  # 지우지 못했으면 기재도 남는다
+
+
+def test_remove_called_without_an_install_refuses_loudly(tmp_path):
+    """제거 몸통은 컨트롤러 관문을 지나지 않은 호출도 막는다 — 공개 API 의 backstop.
+
+    ``_do_remove_examples`` 가 미설치를 먼저 걸러 내지만, :func:`example_pack.remove` 는
+    ``__all__`` 공개 표면이라 자기 전제를 스스로 진다(조용한 무동작 금지).
+    """
+    ctrl, lib, txt_dir, _ = _controller(tmp_path)
+    with pytest.raises(ValueError, match="설치된 예제가 없습니다"):
+        example_pack.remove(
+            file_store=ctrl._files,
+            hwpx_groups=ctrl.hwpx_groups,
+            txt_groups=ctrl.txt_groups,
+            hwpx_root=lib,
+            txt_root=txt_dir,
+            pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
+            data_dir=default_example_data_dir(),
+        )
+
+
+def test_entries_already_gone_are_restated_not_failed(tmp_path):
+    """사용자가 이미 치운 기재는 **실패가 아니라 재진술**이다 — 남은 것은 끝까지 걷는다.
+
+    제거가 「하나라도 없으면 전부 거절」이면, 예제 하나를 손으로 지운 사용자는 나머지를
+    영영 못 걷는다(그리고 manifest 가 남아 진입점은 계속 「설치됨」이라 말한다).
+    """
+    ctrl, lib, txt_dir, _ = _controller(tmp_path)
+    ctrl.dispatch("install_examples", {"confirm": True})
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    manifest = settings.load_tutorial_manifest()
+    # 사용자가 손으로 치운 셋: 템플릿 1·데이터 1·풀 고정 1(서로 다른 세 갈래).
+    gone_template = lib / example_pack.HWPX_ASSETS[0]
+    gone_template.unlink()
+    gone_data = Path(manifest["data_files"][0])
+    gone_data.unlink()
+    pool.delete(manifest["pool_keys"][1])
+
+    done = ctrl.dispatch("remove_examples", {"confirm": True})
+    assert done["ok"] is True
+    # 남은 것은 전부 걷혔다: 템플릿 4(=5-1)·데이터 1(=2-1).
+    assert done["removed"] == len(ALL_ASSETS) - 2
+    assert _installed_names(lib, txt_dir) == set()
+    assert _trashed_names(lib) == set(example_pack.HWPX_ASSETS[1:])
+    assert list(default_example_data_dir().glob("*")) == []
+    assert pool.list_items() == []
+    assert settings.load_tutorial_manifest() is None
+
+    text = ctrl.snapshot()["result"]["text"]
+    assert "이미 없던 항목" in text
+    assert gone_template.name in text and gone_data.name in text
+
+
+def test_a_filesystem_failure_mid_removal_is_restated_and_keeps_the_manifest(tmp_path, monkeypatch):
+    """이동·삭제가 OS 에서 튕기면(다른 프로그램이 연 파일) **사유를 재진술**하고 기재를 남긴다.
+
+    ``_require_inside`` 가 ``resolve()`` 를 ``try`` 로 감싸지 않는 근거가 이것이다 — 경로 I/O
+    실패의 loud 재진술은 몸통이 아니라 **호출측**이 지고, 그 자리는 ``OSError`` 도 잡는다.
+    manifest 를 남기는 것이 핵심이다: 지우지 못한 것을 「지웠다」고 기록하면 재시도할 주소가
+    사라지고 진입점은 「미설치」라 거짓말한다.
+    """
+    ctrl, lib, txt_dir, _ = _controller(tmp_path)
+    ctrl.dispatch("install_examples", {"confirm": True})
+
+    def boom(**_kwargs):
+        raise OSError("다른 프로그램이 파일을 사용 중입니다")
+
+    monkeypatch.setattr(example_pack, "remove", boom)
+    result = ctrl.dispatch("remove_examples", {"confirm": True})
+
+    assert result["ok"] is False
+    assert "다른 프로그램이 파일을 사용 중입니다" in result["error"]
+    snap = ctrl.snapshot()
+    assert snap["result"]["level"] == "danger"
+    assert "예제를 제거하지 못했습니다" in snap["result"]["text"]
+    assert settings.load_tutorial_manifest() is not None
+    assert snap["examples"]["removable"] is True  # 다시 시도할 어포던스가 살아 있다
+    assert _installed_names(lib, txt_dir) == set(
+        example_pack.HWPX_ASSETS + example_pack.TXT_ASSETS
+    )
+
+
+def test_a_corrupted_pool_slot_is_left_alone_and_said_out_loud(tmp_path):
+    """판독 불가 슬롯은 **남의 것일 수 있다** — 지우지 않고 남기되 숨기지도 않는다.
+
+    손상 파일을 예제 것으로 단정해 지우면 사용자가 되살릴 근거까지 사라진다. 남기면 기존
+    풀 손상 경보(``alerts.pool_corrupted``)가 계속 그것을 드러낸다.
+    """
+    ctrl, _lib, _txt, _ = _controller(tmp_path)
+    ctrl.dispatch("install_examples", {"confirm": True})
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    broken = settings.load_tutorial_manifest()["pool_keys"][0]
+    pool.slot_path(broken).write_text("{ not json", encoding="utf-8")
+
+    ctrl.dispatch("remove_examples", {"confirm": True})
+    assert pool.slot_path(broken).exists()  # 판독 못 한 것을 지웠다고 말하지 않는다
+    assert broken in ctrl.snapshot()["result"]["text"]
+    assert len(pool.list_items(corrupted=[])) == 0  # 성한 예제 고정 1건은 풀렸다
 
 
 def test_a_relinked_pin_is_left_alone_and_said_out_loud(tmp_path):
