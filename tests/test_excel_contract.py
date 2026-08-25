@@ -121,8 +121,47 @@ def test_xlsx_scalar_conversion_is_deterministic(tmp_path: Path) -> None:
 def test_xlsx_formula_without_cached_value_fails_loudly(tmp_path: Path) -> None:
     path = _xlsx(tmp_path / "formula.xlsx", [["합계"], ["=1+2"]])
 
-    with pytest.raises(ValueError, match="수식 cache가 없습니다"):
+    with pytest.raises(ValueError, match="계산값이 저장돼 있지 않습니다") as caught:
         ExcelDataSource(str(path)).records()
+
+    message = str(caught.value)
+    assert "행 2 열 1" in message
+    # 조치 없는 통보는 사용자를 막다른 길에 세운다(COPY_STYLE_GUIDE §2 오류=①문제 ②조치).
+    assert "엑셀에서 이 파일을 열어 다시 저장하면" in message
+    assert "다시 불러오세요" in message
+    assert "cache" not in message
+
+
+def test_xlsx_missing_formula_values_are_reported_in_one_pass(tmp_path: Path) -> None:
+    # 첫 위반에서 끊으면 사용자는 한 셀씩 고쳐 다시 여는 왕복을 반복한다.
+    path = _xlsx(
+        tmp_path / "many.xlsx",
+        [["합계", "잔액"], ["=1+2", 10], [20, "=A3*2"], ["=SUM(A2:A3)", "=B2+B3"]],
+    )
+
+    with pytest.raises(ValueError) as caught:
+        ExcelDataSource(str(path)).records()
+
+    message = str(caught.value)
+    for coordinate in ("행 2 열 1", "행 3 열 2", "행 4 열 1", "행 4 열 2"):
+        assert coordinate in message
+    assert "외 " not in message  # 상한(5) 이내면 요약하지 않는다
+
+
+def test_xlsx_missing_formula_values_beyond_limit_are_summarized(tmp_path: Path) -> None:
+    path = _xlsx(
+        tmp_path / "flood.xlsx",
+        [["합계"], *[[f"=1+{n}"] for n in range(8)]],
+    )
+
+    with pytest.raises(ValueError) as caught:
+        ExcelDataSource(str(path)).records()
+
+    message = str(caught.value)
+    assert "행 2 열 1" in message
+    assert "행 6 열 1" in message  # 상한 5번째
+    assert "행 7 열 1" not in message  # 초과분은 나열하지 않는다
+    assert "외 3개" in message
 
 
 def test_csv_and_xlsx_same_logical_data_have_parity(tmp_path: Path) -> None:
