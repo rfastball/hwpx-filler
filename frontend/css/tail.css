@@ -28,6 +28,18 @@
   color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
 .undo-toast[hidden]{display:none}
+/* 튜토리얼 패널이 서 있는 동안 토스트는 **패널이 잡지 않은 띠 안에서** 가운데를 잡는다(#918-B).
+   세로로 비키게 하지 않는 이유는 둘 다 잃으면 안 되기 때문이다 — 토스트는 확정 취소 동선이고
+   패널은 지금 무엇을 할지의 안내다. 겹침을 z 로 풀 수도 없다: `--z-modal`(200)을 든 토스트는
+   `#reactOverlayHost`(z:90 — 쌓임 맥락) 안에 갇혀 있어 숫자와 반대로 패널(z:100) 아래 그려진다.
+   띠 계산 — 패널이 잡는 폭 = 340(.tut-panel) + 16(우 여백) + 8(간격) = 364px. 남는 구간은
+   [16, 100vw-364] 이므로 그 중심은 `50vw - 174px`, 폭 상한은 `100vw - 380px` 이다.
+   `.tut-root` 가 우측 앵커를 버리고 전폭 시트가 되는 820px 아래에는 남는 띠 자체가 없다 —
+   그래서 이 규칙은 그 분기점 위에서만 산다(아래 `max-width:820px` 규칙의 짝). */
+@media (min-width:821px){
+  #reactRoot:has(#tutorialPanel) .undo-toast{left:calc(50% - 174px);
+    max-width:min(560px,calc(100vw - 380px))}
+}
 
 /* ---- 내부 스크롤포트 인벤토리(H-07) ----
    캡+헤더 지속 표: .tblwrap(위저드 3벌), #wbMapPanel(작업대 좌 pane), .jobtbwrap.
@@ -113,12 +125,33 @@
    몰입 표면(editor·workbench)이 토바를 덮기 때문이고, 그래서 자리는 뷰포트 고정이다.
    z-index 는 모달 **아래**다 — 확인 왕복이 뜨면 그 위를 덮지 않는다(순간 카드는 그에 더해
    JS 가 억제까지 한다). */
-.tut-root{position:fixed;z-index:var(--z-popover);right:var(--sp-16);bottom:var(--sp-16);
+.tut-root{position:fixed;z-index:var(--z-popover);right:var(--sp-16);
+  /* 바닥 여백은 화면이 정한다 — 아래 확정 띠 회피(#918-B). 회피가 필요 없는 화면은 폴백. */
+  bottom:var(--tut-clear,var(--sp-16));
   display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-8);
   /* 컨테이너는 클릭을 통과시키고 실제 조작 상자만 되받는다 — 패널이 덮은 화면 구석이
      눌리지 않는 죽은 영역이 되지 않게(#overlayRoot 와 같은 규약). */
   pointer-events:none;max-width:min(360px,calc(100vw - 32px))}
 .tut-panel,.tut-resume{pointer-events:auto}
+
+/* ---- 확정 띠 회피(#918-B) — 패널 루트가 싣는 `data-screen` 을 **소비하는** 유일한 자리 ----
+   루트는 진작부터 셸이 관측한 화면 이름을 싣고 있었지만 그것을 읽는 규칙이 0곳이라, 패널은
+   화면이 무엇이든 같은 구석에 섰다. 문제는 제품의 확정 동사가 **전부 그 구석에 앵커된다**는
+   것이다: 몰입 표면의 `.wfoot`(`.spacer` 로 primary 가 우측 끝), 「문서 만들기」의
+   `.session-actionbar`(sticky bottom · flex-end). 그래서 튜토리얼이 「저장을 누르세요」라고
+   가리키는 그 버튼을 안내 자신이 덮었다(T15·T17).
+
+   회피는 **바닥 여백 하나**이고 값은 실렌더로 잰 띠에서 온다(뷰포트 800px 높이, sealed CSS —
+   `tests/test_web_tutorial_geometry.py`):
+     `.wfoot`(editor)     상단 y=728 → 바닥에서 72px (stage 24 + 상단 패딩 12 + 버튼 35 + 선)
+     `.wb-foot`(workbench) 상단 y=734 → 바닥에서 66px (같은 부류지만 상단 패딩이 6px 로 얕다)
+     `.session-actionbar` 상단 y=715 → 바닥에서 85px (위 + 액션바 상하 패딩 12·12)
+   몰입 둘은 깊은 쪽(72)에 맞추고, 각 값 위에 8px 을 얹어 띠와 패널이 맞닿지 않게 한다.
+   바닥 띠가 없는 화면(library·tpl)은
+   폴백을 그대로 쓴다 — 회피가 필요 없는 곳에서 세로 공간을 먼저 빼앗지 않는다.
+   수치가 틀리면 실렌더 게이트가 빨강이 된다: 규칙이 있다는 사실은 결과를 말해 주지 않는다. */
+.tut-root[data-screen="editor"],.tut-root[data-screen="workbench"]{--tut-clear:80px}
+.tut-root[data-screen="job"]{--tut-clear:93px}
 
 .tut-panel{width:340px;max-width:100%;display:flex;flex-direction:column;gap:var(--sp-8);
   padding:var(--sp-10) var(--sp-12);color:var(--a-ink);background:var(--a-card);

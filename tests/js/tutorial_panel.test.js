@@ -17,6 +17,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -26,6 +27,14 @@ import {
   momentToShow,
   nextStepOf,
 } from "../../frontend/src/tutorial/panel.ts";
+
+/* 회피 규칙의 소유자(#918-B). 표식이 실린다는 사실만으로는 소비를 말할 수 없어 여기서
+   **소비자 쪽 원문**을 함께 읽는다 — 기하 결과는 실렌더가 진다
+   (`tests/test_web_tutorial_geometry.py`). */
+const TAIL_CSS = readFileSync(
+  new URL("../../frontend/css/tail.css", import.meta.url),
+  "utf8",
+);
 
 /* ────────────────────────── 하니스 ────────────────────────── */
 
@@ -123,6 +132,46 @@ test("패널은 네 화면 전부에서 같은 형상으로 서고 화면 이름
       `${screen}: 셸 관측 화면 표식이 실리지 않았습니다`,
     );
   }
+});
+
+test("화면 표식은 **소비되는** 훅이다 — 확정 띠가 있는 화면이 CSS 회피 규칙을 갖는다", () => {
+  /* 표식의 존재만 재면 회피 훅이 배선 0 으로 남아도 초록이다 — #918-B 가 정확히 그 상태였다.
+     여기서 재는 것은 「셸이 싣는 값」과 「그 값을 읽는 선택자」의 **짝**이고, 그 짝이 만드는
+     기하(교집합 0)는 실렌더 게이트가 진다. 두 층 중 하나만으로는 결론이 나지 않는다. */
+  const banded = ["editor", "workbench", "job"];
+  for (const screen of banded) {
+    const { markup } = render(snapshot(), { screen });
+    assert.match(markup, new RegExp(`data-screen="${screen}"`), `${screen}: 표식 부재`);
+    assert.ok(
+      TAIL_CSS.includes(`.tut-root[data-screen="${screen}"]`),
+      `${screen}: 확정 띠(.wfoot/.session-actionbar)를 가진 화면인데 회피 규칙이 없습니다 — `
+        + "표식만 실려 있고 소비자가 0곳이면 패널이 그 화면의 확정 버튼을 덮습니다(#918-B).",
+    );
+  }
+  // 회피의 매체는 바닥 여백 하나다 — 폴백을 잃으면 띠 없는 화면이 자리를 못 잡는다.
+  assert.match(TAIL_CSS, /bottom:var\(--tut-clear,var\(--sp-16\)\)/,
+    "패널 루트가 --tut-clear 를 읽지 않습니다 — 화면별 회피가 걸릴 곳이 없습니다");
+  assert.match(TAIL_CSS, /--tut-clear:\d+px/,
+    "회피 값이 선언된 곳이 없습니다");
+});
+
+test("되돌리기 토스트는 패널이 서 있는 동안 남는 띠로 비킨다(#918-B)", () => {
+  /* 토스트를 잃는 것도 패널을 잃는 것도 답이 아니다 — 하나는 확정 취소 동선, 하나는 지금
+     무엇을 할지의 안내다. 그래서 계약은 「감춘다」가 아니라 「자리를 나눈다」이고, 소비
+     조건은 패널이 실제로 서 있을 때(`#tutorialPanel`)뿐이다. */
+  assert.match(
+    TAIL_CSS,
+    /#reactRoot:has\(#tutorialPanel\)\s+\.undo-toast\{/,
+    "패널이 서 있는 동안의 토스트 자리 규칙이 없습니다",
+  );
+  assert.ok(
+    !/#reactRoot:has\(#tutorialPanel\)\s+\.undo-toast\{[^}]*display:none/.test(TAIL_CSS),
+    "토스트를 감춰서 겹침을 푸는 규칙이 있습니다 — 확정 취소 동선은 가리지 않습니다",
+  );
+  // 소비 조건은 닫힘 상태(`.is-dismissed` — 패널 대신 재개 버튼)에서 성립하지 않아야 한다.
+  const { markup } = render(snapshot({ dismissed: true }));
+  assert.ok(!markup.includes('id="tutorialPanel"'),
+    "닫힘 상태에서도 패널 id 가 남아 토스트가 계속 비켜섭니다");
 });
 
 test("머리 줄 — 제목·진행 수치·접기·닫기가 각자 안정 id 로 선다", () => {
