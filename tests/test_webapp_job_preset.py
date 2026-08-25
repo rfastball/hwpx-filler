@@ -275,15 +275,6 @@ def test_unwired_preset_commands_reject_loudly(tmp_path: Path) -> None:
 # 읽을 수 없는 항목은 계속 시끄럽게 남는가다. 호환 판정 자체는 application 층 테스트가 잰다.
 
 
-def _clear(ctrl, token: str, slot_id: str, request_id: str) -> str:
-    res = ctrl.dispatch("clear_slot_selection", {
-        "configuration_token": token, "slot_id": slot_id, "request_id": request_id,
-    })
-    fresh = res["current_view"]["new_configuration_token"]
-    assert fresh
-    return str(fresh)
-
-
 def _seat_second_work(ctrl, reg, tmp_path: Path, name: str) -> None:
     """구조가 **다른** 두 번째 작업(후속 구조 템플릿)을 세우고 그리로 옮긴다."""
     from hwpxfiller.domain.job import Job
@@ -299,15 +290,18 @@ def test_zone_lists_only_presets_the_current_structure_can_fully_apply(
     tmp_path: Path,
 ) -> None:
     """A 구조에서 저장한 두 프리셋이 A 에는 다 실리고, 구조가 다른 B 에는 맞는 것만 남는다."""
-    ctrl, token, _tpl = _seated(tmp_path)  # _S_KEEP=_O_KEEP · _S_GONE=_O_ONLY
-    ctrl.dispatch("save_selection_preset", {
-        "configuration_token": token, "name": "두 칸",
-    })
-    # _S_GONE 을 비워 **후속 구조에서도 서는** 프리셋을 하나 더 만든다(양성 대조).
-    token = _clear(ctrl, token, _S_GONE, "r-clear")
+    ctrl, _reg, _tpl = _slot_bearing_controller(tmp_path)
+    token = _token(ctrl)
+    # _S_KEEP 만 고른 상태에서 먼저 보관한다 — **후속 구조에서도 서는** 양성 대조.
+    token = _select(ctrl, token, _S_KEEP, _O_KEEP, "r1")
     ctrl.dispatch("save_selection_preset", {
         "configuration_token": token, "name": "한 칸",
     })
+    token = _select(ctrl, token, _S_GONE, _O_ONLY, "r2")
+    ctrl.dispatch("save_selection_preset", {
+        "configuration_token": token, "name": "두 칸",
+    })
+    # 목록은 이름순이라 저장 순서와 무관하다.
     assert [item["name"] for item in _presets_zone(ctrl)["items"]] == ["두 칸", "한 칸"]
 
     _seat_second_work(ctrl, reg=ctrl.registry, tmp_path=tmp_path, name="다른 공고서")

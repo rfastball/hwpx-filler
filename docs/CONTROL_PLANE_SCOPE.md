@@ -97,6 +97,15 @@ census 가 지킨다 — 그 목록과 음성 대조가 같은 상수를 소비�
 - **갱신(S9-03 · #829):** Selection Preset 동사 둘(`save_selection_preset`·
   `apply_selection_preset`)이 같은 route 의 dispatch 소비자로 합류했다 — token 발급·소비
   구조는 불변이고, 직접 브리지는 여전히 이 표면을 쓰지 않는다(census 6 command).
+- **갱신(#903):** `clear_slot_selection` 이 제어면에서 내려갔다 — 그 유일한 트리거는
+  detached 정리 버튼(`cs-detached-clear`)이었고, `detached_selections` 는 SG-01(#733)의
+  compatibility gate 이후 제품 경로에서 **구조적으로 비어 있다**(승계 선언집합에는 target 에
+  실재하는 Option 만 실리므로 「target 에 없음」과 「선언에 있음」이 동시에 성립할 수 없다).
+  v1 정책이 EXACTLY_ONE 인 한 「선택 비우기」는 완성 상태를 blocked 로 되돌릴 뿐이라 대체
+  트리거도 두지 않는다. **census 5 command**. S4 command engine 의
+  clear(`application/slot_command.decide_clear` + `external/slot_command_runner.clear_slot_selection`)
+  는 그대로다 — 제거된 것은 제품 제어면이지 명령 대수가 아니고, 정책이 MANY 로 상향되면
+  그 절반이 필요하다. 상향은 §4 경로를 탄다.
 
 ### 1.6 Workbench / Product observation 소비자
 

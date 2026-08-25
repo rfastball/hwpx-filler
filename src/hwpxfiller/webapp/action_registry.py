@@ -183,11 +183,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # S4 Working Slot Configuration Product command(SX-02 #725) — work 는 세션의 현재 작업이라
         # payload 에 없다(template_check 선례). configuration_token 은 직전 응답이 되돌려준 opaque
         # HMAC token(프런트가 계산하지 않는다), request_id 는 프런트 발급 재전송 단위. open 은
-        # 무페이로드 조회, refresh 는 optional token(무이면 최초 조회), select/clear 는 mutation.
+        # 무페이로드 조회, refresh 는 optional token(무이면 최초 조회), select 는 mutation.
+        # `clear_slot_selection` 은 #903 에서 제거됐다: 유일한 트리거가 detached 정리 버튼이었고,
+        # detached 는 SG-01(#733) 이후 제품 경로에서 구조적으로 생기지 않는다. v1 제어면은
+        # EXACTLY_ONE 이라 「선택 비우기」는 완성 상태를 blocked 로 되돌릴 뿐 사용자 목적이 없다.
         "open_slot_configuration": _schema(),
         "refresh_slot_configuration": _schema(optional="configuration_token"),
         "select_slot_option": _schema("configuration_token slot_id option_id request_id"),
-        "clear_slot_selection": _schema("configuration_token slot_id request_id"),
         # Selection Preset(S9-03 #829) — 선택 묶음의 Work 밖 보관·적용. `request_id` 가 없는
         # 이유: 저장은 이름 유일성 + 확인 왕복(`confirmed_overwrite_key` = 사용자가 본 그
         # 항목의 키)이, 적용은 token version CAS 가 재전송을 닫는다(S9-02 는 원장 대신 그

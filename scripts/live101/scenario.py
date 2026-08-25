@@ -954,10 +954,11 @@ def run_sx(ctx: ScenarioContext) -> dict:
     # 셋이 **화면에서** 서로 다른 것으로 서야 한다(#728 H4). 남은 둘은 각자의 Slot 자리에서
     # 서로 다른 fate 로 말하고, 사라진 항목은 별도 정보 블록으로 갈린다.
     #
-    # `.cs-detached` 를 기다리지 않는다: 그 클래스는 `detached_selections` 로만 뜨는데 그 필드는
-    # SG-01(#733) 이후 구조적으로 영영 비어 있다 — declared 에 실리려면 AUTO_KEEP 이어야 하고,
-    # AUTO_KEEP 이려면 그 Option 이 target 에 **있어야** 하므로 「없다」와 동시에 성립할 수 없다.
-    # 이전 선택의 운명은 #777 이 세운 `retained_selections` 가 나른다.
+    # `.cs-detached` 를 기다리지 않는다: 그 블록은 #903 에서 제거됐다. 근거는 그것이 소비하던
+    # `detached_selections` 가 SG-01(#733) 이후 제품 경로에서 구조적으로 영영 비기 때문이다 —
+    # declared 에 실리려면 AUTO_KEEP 이어야 하고, AUTO_KEEP 이려면 그 Option 이 target 에
+    # **있어야** 하므로 「없다」와 동시에 성립할 수 없다. 이전 선택의 운명은 #777 이 세운
+    # `retained_selections` 가 나른다.
     s.wait(
         "!!document.querySelector('.cs-status-stale')"
         " && document.querySelectorAll('#jobContentSelectionZone .cs-slot').length === 2"
