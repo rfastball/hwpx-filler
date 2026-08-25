@@ -231,6 +231,12 @@ source_write_set = ["src/hwpxfiller/gui/template_manager_state.py"]
 oracle_nodeid = "tests/test_compile_badge.py::test_template_manager_rows_derive_from_single_source"
 
 [[unit]]
+module = "hwpxfiller.gui.tutorial_state"
+target = "APPLICATION"
+source_write_set = ["src/hwpxfiller/gui/tutorial_state.py"]
+oracle_nodeid = "tests/test_tutorial_state.py::test_every_milestone_transitions_exactly_once"
+
+[[unit]]
 module = "hwpxfiller.gui.txt_card"
 target = "APPLICATION"
 source_write_set = ["src/hwpxfiller/gui/txt_card.py"]

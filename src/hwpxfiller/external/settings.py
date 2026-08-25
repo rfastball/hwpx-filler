@@ -55,6 +55,8 @@ __all__ = (
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
+    "load_tutorial_progress",
+    "save_tutorial_progress",
     "load_job_collapsed_groups",
     "recollapse_job_group",
     "save_job_collapsed_groups",
@@ -435,6 +437,52 @@ def save_last_data_source(
             "pool_key": pool_key,
         },
     )
+
+
+# 온보딩 튜토리얼 진행(#893 · 설계 정본 ONBOARDING_TUTORIAL.md §4.4) — 중첩 키 ``tutorial``
+# 아래 ``achieved``(달성 단계 식별자)·``dismissed``(명시 종료) 두 칸. 중첩으로 두는 이유는
+# 설치 manifest 참조가 같은 top_key 아래 뒤에 붙기 때문이다(슬라이스 B 소유) — 진행 저장이
+# 그 칸을 지우지 않게 판독-보존-쓰기로 다룬다. 단계 식별자 자체는 여기서 검증하지 않는다:
+# 열거 정본은 링1(``gui/tutorial_state.py``)이고, 옛 버전이 남긴 죽은 단계 키는 그 층이
+# 복원할 때 걸러낸다(죽은 키 무시 전례). localStorage 금지(#74)는 여기서도 같다.
+def load_tutorial_progress() -> "dict":
+    """튜토리얼 진행 — ``{"achieved": [단계 식별자], "dismissed": bool}``.
+
+    미저장·비유효는 ``{"achieved": [], "dismissed": False}``(시작 전과 같은 상태). 부분
+    손상(리스트 안 비문자열)은 그 항목만 걸러낸다 — 전체 리셋으로 승격 금지(접힌 그룹 전례).
+    """
+    raw = _read().get("tutorial")
+    if not isinstance(raw, dict):
+        return {"achieved": [], "dismissed": False}
+    achieved = raw.get("achieved")
+    steps = [s for s in achieved if isinstance(s, str)] if isinstance(achieved, list) else []
+    return {"achieved": steps, "dismissed": raw.get("dismissed") is True}
+
+
+def save_tutorial_progress(*, achieved: "list[str]", dismissed: bool) -> None:
+    """진행·종료 상태를 **한 번의 원자 변이**로 저장 — 같은 ``tutorial`` 아래 다른 칸 보존.
+
+    둘을 따로 쓰면 앞은 성공하고 뒤가 실패해 반쪽 상태(달성은 늘었는데 닫힘은 옛 값)가
+    디스크에 남는다(:func:`save_template_group_state` 와 같은 이유). 비유효 인자(비리스트·
+    비문자열 항목·비bool)는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+
+    달성 목록은 중복만 걷고 **순서는 준 대로** 둔다 — 정본 순서는 링1 이 안다.
+    """
+    if not isinstance(achieved, list) or any(not isinstance(s, str) for s in achieved):
+        raise ValueError("튜토리얼 달성 단계는 문자열 리스트여야 합니다")
+    if not isinstance(dismissed, bool):
+        raise ValueError(f"튜토리얼 종료 상태는 bool 이어야 합니다: {dismissed!r}")
+    steps = list(dict.fromkeys(achieved))
+
+    def mutate(data: dict) -> None:
+        bucket = data.get("tutorial")
+        if not isinstance(bucket, dict):
+            bucket = {}
+        bucket["achieved"] = steps
+        bucket["dismissed"] = dismissed
+        data["tutorial"] = bucket
+
+    _mutate(mutate)
 
 
 def load_job_collapsed_groups() -> "list[str]":
