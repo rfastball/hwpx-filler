@@ -43,6 +43,9 @@ PUBLIC_API = (
     "VALID_DATA_SOURCES",
     "load_last_data_source",
     "save_last_data_source",
+    # 온보딩 튜토리얼 진행(#893): 달성 단계 + 명시 종료. 설치 manifest 는 슬라이스 B 소유.
+    "load_tutorial_progress",
+    "save_tutorial_progress",
     "load_job_collapsed_groups",
     "recollapse_job_group",
     "save_job_collapsed_groups",
