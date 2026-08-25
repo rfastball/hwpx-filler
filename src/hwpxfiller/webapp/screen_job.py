@@ -88,6 +88,10 @@ from ..external.delivery_coordinator import (
 from ..gui.artifact_view_state import observed_artifact_snapshot
 from ..external.ledger_export import write_managed_delivery_ledger
 from ..external.output_files import ensure_output_directory
+from ..external.seal_execution_capture_runner import (
+    CONTEXT_ERROR_TYPES,
+    context_error_code,
+)
 from .managed_generation import (
     ManagedReadBackFailed,
     ManagedRunCancelled,
@@ -4090,13 +4094,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         미조립·미선택·템플릿 부재면 명시적 unsupported. 그 밖에는 :meth:`workbench_observation` 을
         조립해 JSON-safe dict 로 성형한다 — 판정·문안·7상태는 Product/status 함수가 이미 낸 값이라
         여기서 재판정하지 않는다(프런트도 재판정 0, 읽기만).
+
+        **무결성 실패는 「아직 준비 안 됨」으로 접지 않는다**(#775). 위 pre-guard 가 미조립·미선택·
+        템플릿 부재를 이미 걸러내므로, 여기까지 온 예외는 준비 부족이 아니라 context/무결성
+        실패다 — :data:`CONTEXT_ERROR_TYPES` 집합을 잡아 화면 계약에 이미 있는 ``context_error``
+        상태로 낸다(새 상태·새 문구 0). 그 집합은 ``ValueError`` 자손인 것(ExecutionStructureError
+        등)과 아닌 것(FieldBindingInputIntegrityError 등)이 섞여 있어, 예전의 ``except ValueError``
+        는 앞의 절반을 blank 로 접고 뒤의 절반으로는 스냅샷 조립을 통째로 죽였다. 집합 **밖**의
+        예외는 그대로 전파한다 — 모르는 실패를 조용한 화면 값으로 바꾸지 않는다.
         """
         if self._workbench_observation is None or not self.job_name or tmissing:
             return self._workbench_observation_blank()
         try:
             observation = self.workbench_observation()
-        except ValueError:
-            return self._workbench_observation_blank()
+        except CONTEXT_ERROR_TYPES as exc:
+            observation = DocumentCreationWorkbenchContextError(
+                context_error_code(exc), str(exc) or "현재 실행 맥락을 복원하지 못했습니다"
+            )
         return {
             # 저장 폴더 도출은 observation 축과 무관하게 늘 실린다(U3-06 #879) — context error
             # 로 관찰이 무너져도 "어디에 저장되는가"는 답할 수 있는 사실이다.
