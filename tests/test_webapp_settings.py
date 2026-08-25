@@ -352,6 +352,87 @@ def test_template_groups_corrupt_value_falls_back(home):
     assert settings.load_template_group_map("hwpx") == {"a.hwpx": "입찰"}
 
 
+# ------------------------------ 마지막 사용 데이터 마운트 성분(U3-07 · #880)
+def _stored_key(home: Path, key: str):
+    """설정 파일에 **실제로 적힌** 값 — 거절이 아무것도 남기지 않았음을 판독기 폴백과
+    구별해 묻는다(``load_*`` 는 손상 저장분도 ``None`` 으로 접어 둘을 못 가른다)."""
+    path = home / "settings.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8")).get(key)
+
+
+def test_last_data_source_defaults_to_none_and_roundtrips(home):
+    """미저장은 ``None``(기존 ``settings.json`` = 빈 부팅 그대로) · 성분은 한 벌로 오간다."""
+    assert settings.load_last_data_source() is None
+    settings.save_last_data_source(
+        source="file", path=r"C:\d\발주.xlsx", sheet="7월", header_row=2
+    )
+    assert settings.load_last_data_source() == {
+        "source": "file", "path": r"C:\d\발주.xlsx", "sheet": "7월",
+        "header_row": 2, "pool_key": "",
+    }
+    settings.save_last_data_source(source="pool", pool_key="slot-7")
+    assert settings.load_last_data_source() == {
+        "source": "pool", "path": "", "sheet": "", "header_row": 0, "pool_key": "slot-7",
+    }
+
+
+def test_last_data_source_preserves_other_keys(home):
+    settings.save_theme("dark")
+    settings.save_last_data_source(source="pool", pool_key="slot-7")
+    assert settings.load_theme() == "dark"
+    assert settings.load_last_data_source()["pool_key"] == "slot-7"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "손상",                                                    # 비dict
+        {"source": "registry", "path": "p", "sheet": "", "header_row": 0, "pool_key": ""},
+        {"source": "file", "path": 3, "sheet": "", "header_row": 0, "pool_key": ""},
+        {"source": "file", "path": "p", "sheet": None, "header_row": 0, "pool_key": ""},
+        {"source": "file", "path": "p", "sheet": "", "header_row": 0, "pool_key": 7},
+        {"source": "file", "path": "p", "sheet": "", "header_row": "1", "pool_key": ""},
+        {"source": "file", "path": "p", "sheet": "", "header_row": True, "pool_key": ""},
+        {"source": "file", "path": "p", "sheet": "", "header_row": -1, "pool_key": ""},
+        {"source": "file", "path": "", "sheet": "", "header_row": 0, "pool_key": "slot-7"},
+        {"source": "pool", "path": "p", "sheet": "", "header_row": 0, "pool_key": ""},
+    ],
+)
+def test_last_data_source_corrupt_variants_fall_back_to_none(home, stored):
+    """손상·형 불일치·반쪽 저장분은 **미저장과 같이** 다룬다.
+
+    빈 부팅으로 접는 것이 유일한 안전한 답이다: 반쪽 descriptor 로 자동 마운트를 시도하면
+    무엇을 열려다 실패했는지도 말할 수 없다(사유 없는 조용한 실패). 판독은 부팅을 죽이지
+    않고(폴백) 그 상태를 만드는 **저장** 쪽이 loud 다(아래).
+    """
+    (home / "settings.json").write_text(
+        json.dumps({"last_data_source": stored}), encoding="utf-8"
+    )
+    assert settings.load_last_data_source() is None
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"source": "registry", "path": "p"},                       # 미지 출처
+        {"source": "file", "path": 3},                             # 비문자열 경로
+        {"source": "file", "path": "p", "sheet": None},            # 비문자열 시트
+        {"source": "pool", "pool_key": "k", "path": ("p",)},       # 비문자열 성분
+        {"source": "file", "path": "p", "header_row": "1"},        # 비정수 헤더 행
+        {"source": "file", "path": "p", "header_row": True},       # bool 은 정수가 아니다
+        {"source": "file", "path": "p", "header_row": -1},         # 음수 헤더 행
+        {"source": "file", "path": "   "},                         # 공백뿐인 경로
+        {"source": "pool", "pool_key": "  "},                      # 공백뿐인 슬롯 키
+    ],
+)
+def test_invalid_last_data_source_is_loud(home, kwargs):
+    with pytest.raises(ValueError):
+        settings.save_last_data_source(**kwargs)  # type: ignore[arg-type]
+    assert _stored_key(home, "last_data_source") is None  # 거절은 아무것도 안 남긴다
+
+
 def test_proportional_font_is_single_source(home):
     """비례폭 판정은 설정 모듈 소유 — 표면·컨트롤러가 글꼴 이름으로 재판별하지 않는다(결정 17)."""
     assert settings.is_proportional_font("malgun") is True

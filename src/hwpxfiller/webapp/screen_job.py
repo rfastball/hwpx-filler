@@ -273,8 +273,10 @@ _ADMISSION_REJECT_TEXT = {
 }
 from .job_list import drift_note
 from ..external.settings import (
+    load_last_data_source,
     load_last_output_directory,
     recollapse_job_group,
+    save_last_data_source,
     save_last_output_directory,
 )
 from .data_zone import (
@@ -286,9 +288,19 @@ from .screens import (
     NO_ROWS_TEXT,
     PoolTargetingMixin,
     PushSink,
+    reference_missing,
     relink_job_template,
     source_label,
 )
+
+#: 부팅 자동 마운트 실패 재진술(U3-07 · #880) — 기억한 데이터를 다시 세우지 못했을 때 첫
+#: 화면이 조용한 빈 상태로 서지 않게 하는 문안. 사유는 기존 로드 관문(파일 부재·나라 동결·
+#: 0행·죽은 참조)이 낸 문장을 **그대로** 이어 붙인다: 여기서 다시 조립하면 같은 실패가 두
+#: 문안을 갖는다. 두 상수뿐이라 공용 모듈로 올리지 않는다(소비자 1 = 이 화면).
+_REMEMBERED_DATA_MISSING = (
+    "지난번에 사용한 데이터 파일을 찾을 수 없습니다: {path}. 데이터를 다시 고르세요."
+)
+_REMEMBERED_DATA_FAILED = "지난번에 사용한 데이터를 다시 불러오지 못했습니다. {reason}"
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
@@ -544,6 +556,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 이 값은 그 소거 뒤에도 살아 다음 도출에서 다시 후보가 된다. 부팅 1회 판독 —
         # 앱은 홈당 단일 인스턴스라 이 값을 바꾸는 것은 아래 `set_output_folder` 뿐이다.
         self._remembered_output_directory = load_last_output_directory()
+        # 마지막으로 **성사된** 데이터 마운트 성분(U3-07 #880) — 부팅 자동 마운트의 재료.
+        # 저장 폴더 기억과 같은 설정 층이고 같은 이유로 부팅 1회 판독이다(앱은 홈당 단일
+        # 인스턴스라 이 값을 바꾸는 것은 아래 `_remember_data_source` 뿐).
+        self._remembered_data_source = load_last_data_source()
+        # 자동 마운트는 **부팅 1회**다(`initial` 재호출로 사용자가 지금 고른 데이터를
+        # 되돌리지 않는다). 재시도의 단위는 프로세스이지 화면 재진입이 아니다.
+        self._boot_data_restored = False
+        # 자동 마운트 중에는 푸시를 접는다 — 결과는 첫 스냅샷 **자체**로 전달되고, 그
+        # 전에 미는 스냅샷은 아직 화면을 세우지 않은 프런트에 같은 상태를 한 번 더 던진다.
+        self._boot_restore_in_progress = False
         self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
         self._current_preview_preparation: _CurrentPreviewPreparation | None = None
         self._approved_preview_token: str | None = None
@@ -731,6 +753,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
+        if self._boot_restore_in_progress:
+            return  # 부팅 자동 마운트(U3-07 #880)의 결과는 첫 스냅샷이 나른다.
         self._push_sink(self.name, self.snapshot())
 
     # ------------------------------------------------------------- 스냅샷
@@ -2031,7 +2055,87 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return base
 
     def initial(self) -> dict:
+        """화면 부팅 스냅샷 — 기억한 데이터를 **먼저** 마운트한다(U3-07 · #880).
+
+        마운트를 여기서 하는 이유는 자리 하나뿐이기 때문이다: 첫 렌더에 이미 데이터가 서
+        있어야 「매 세션 데이터를 다시 고른다」가 사라진다. 컨트롤러 생성 시점에 하면 창이
+        뜨기 전 디스크 읽기가 부팅을 막고, 첫 dispatch 로 미루면 첫 화면이 빈 채로 한 번
+        그려진다.
+        """
+        self._restore_remembered_data()
         return self.snapshot()
+
+    # ------------------------------- 마지막 사용 데이터 기억·복원(U3-07 · #880)
+    def _remember_data_source(self) -> None:
+        """성사된 마운트의 성분을 설정에 남긴다 — 다음 부팅 자동 마운트의 재료.
+
+        **두 마운트 경로가 같은 한 자리를 부른다**(파일 피커 → :meth:`load_data_path`,
+        풀 겨눔 → :meth:`_after_pool_load`). 성분은 세션이 그 마운트 시점에 포획해 둔
+        것을 그대로 읽는다(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin.
+        new_work_handoff` 와 같은 재료) — 여기서 슬롯이나 파일을 다시 읽어 조립하면 지금
+        화면에 없는 데이터를 기억하게 된다.
+
+        기억은 **설정 층 소유**다: 풀 스키마(``DatasetReference``)는 건드리지 않는다.
+        """
+        descriptor = {
+            "source": self.data_source,
+            "path": self.data_path,
+            "sheet": self.data_sheet,
+            "header_row": self.data_header_row,
+            "pool_key": self.data_pool_key,
+        }
+        self._remembered_data_source = descriptor
+        save_last_data_source(**descriptor)
+
+    def _restore_remembered_data(self) -> None:
+        """부팅 1회 — 기억한 성분으로 데이터를 마운트하고, 실패는 사유를 싣는다.
+
+        **성공은 손으로 마운트한 것과 같은 세션 상태**다(선택 0건·표시순서 기본·필터 재생성)
+        — 같은 진입점(:meth:`load_data_path` / ``_do_load_pool``)을 타기 때문이다. 자동
+        마운트는 사용자가 하던 「파일 다시 고르기」를 대신할 뿐이라 작업 선택·실행 상태는
+        건드리지 않는다(부팅 시점의 그 둘은 어차피 비어 있다).
+
+        **실패에서 기억을 지우지 않는다**: 외장 드라이브·네트워크 경로의 부재는 일시적일 수
+        있고, 지운 기억은 그 드라이브가 돌아와도 되살아나지 않는다. 매 부팅 다시 시도하되
+        사유는 그때마다 문안으로 말한다(조용한 빈 상태 금지).
+        """
+        if self._boot_data_restored:
+            return
+        self._boot_data_restored = True
+        descriptor = self._remembered_data_source
+        if not descriptor or self.data_source:
+            return  # 기억 없음(기존 settings.json) 또는 이미 마운트됨 = 기존 부팅 그대로
+        self._boot_restore_in_progress = True
+        try:
+            refusal = self._mount_remembered_data(descriptor)
+        finally:
+            self._boot_restore_in_progress = False
+        if refusal:
+            self.data_notice_text = refusal
+            self.data_notice_level = "warn"
+
+    def _mount_remembered_data(self, descriptor: dict) -> str:
+        """기억한 성분으로 마운트 — 성사면 ``""``, 실패면 **사유 문구**(상태는 빈 채).
+
+        사유는 기존 로드 관문이 이미 낸 문장을 이어 붙인다(새 채널·새 문안 발명 금지):
+        풀 경로는 :func:`~hwpxfiller.webapp.screens.load_pool_into` 의 거절(나라 동결·삭제된
+        항목·죽은 참조·0행)이, 파일 경로는 소스 해석 예외와 :data:`NO_ROWS_TEXT` 가 낸다.
+        파일 부재만 마운트를 시도하기 전에 가른다 — 판정은 풀 목록의 「끊김」 배지와
+        **같은 술어**(:func:`~hwpxfiller.webapp.screens.reference_missing`)다.
+        """
+        if descriptor["source"] == "pool":
+            result = self._do_load_pool({"key": descriptor["pool_key"]})
+            if result.get("ok"):
+                return ""
+            return _REMEMBERED_DATA_FAILED.format(reason=result.get("error", ""))
+        path = descriptor["path"]
+        if reference_missing(path):
+            return _REMEMBERED_DATA_MISSING.format(path=path)
+        try:
+            self.load_data_path(path, sheet=descriptor["sheet"] or None)
+        except Exception as exc:  # noqa: BLE001 — 읽기 실패는 사유 불문 loud 재진술
+            return _REMEMBERED_DATA_FAILED.format(reason=exc)
+        return ""
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
@@ -2063,7 +2167,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
-        self._push()
+        try:
+            self._remember_data_source()  # 다음 부팅 자동 마운트의 재료(U3-07 #880)
+        finally:
+            self._push()
 
     def _commit_data_transition(self, source, records: list) -> None:
         """성공적으로 읽은 새 데이터와 그에 따른 active Work를 함께 세션에 반영한다."""
@@ -3030,6 +3137,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
         self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
+        # 파일 마운트와 **같은 한 자리**를 부른다(U3-07 #880) — 성분은 믹스인이 이 호출
+        # 직전에 한 벌로 포획해 뒀다(경로·시트·헤더 행·슬롯 키).
+        self._remember_data_source()
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:
