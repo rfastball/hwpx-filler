@@ -2484,16 +2484,13 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     # 구성 변경은 규칙 변경이라 확인이 **다시 선다**(L4a 의 두 번째 대면) — 관리 경로에서는
     # 그것이 실행 검토의 재확정으로 나타난다(구성이 갈리면 Plan 이 stale 이 된다).
     #
-    # 그 재무장을 **기다린 뒤** 사슬을 걷는다. 클릭 직후를 재면 아직 도착하지 않은 재계산을
-    # 「아무것도 안 섰다」로 읽어, 늦은 push 와 계약 위반이 같은 빨강이 된다 — 둘은 고칠 자리가
-    # 전혀 다르다. 시한을 넘기면 그때는 진짜로 안 선 것이므로 관측을 실어 시끄럽게 죽는다.
     # 재무장을 **기다린 뒤** 사슬을 걷는다. 클릭 직후를 재면 아직 도착하지 않은 재계산을
     # 「아무것도 안 섰다」로 읽어, 늦은 push 와 계약 위반이 같은 빨강이 된다.
     #
     # ## 실측이 뒤집은 기대 (#895 4차)
     #
-    # 관리 갈래에서는 **아무 확인도 다시 서지 않는다**: 60초를 기다려도 `primary_action` 은
-    # `CREATE_DOCUMENTS`, `blockers` 는 빈 배열, 만들기는 열린 채다(`preview_requirement` 가
+    # 관리 갈래에서는 **아무 확인도 다시 서지 않는다**: 60초를 기다려 봐도 `primary_action` 은
+    # `CREATE_DOCUMENTS`, `blockers` 는 빈 배열, 만들기는 열린 채였다(`preview_requirement` 가
     # 처음부터 `NOT_REQUIRED` 다 — 이 작업에는 애초에 승인이 요구된 적이 없다). 그런데 §3.6 의
     # T17 순간 카드는 "갈래를 바꾸자 … 승인이 다시 섰습니다" 라고 말한다.
     #
@@ -2501,6 +2498,12 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
     # 「안 선다」를 단언하면 지금 동작을 정본으로 못박아 정반대 판정을 막는다 — 어느 쪽도 이
     # 대본이 내릴 판정이 아니다(문서와 제품 중 무엇을 고칠지는 §3.6 재판정 소관). 관측된
     # 사실만 실어 보고서가 말하게 하고, T17 의 **단단한 증거는 산출물 차이**가 진다(아래).
+    #
+    # 그래서 프로브는 **짧다**. 단언하지 않는 관측에 60초를 태우면 관리 갈래를 지나는 모든
+    # 실행이 매번 그만큼을 버린다 — 게이트 예산은 매달림을 유한 시간에 빨강으로 만들라고
+    # 있는 것이지 확정된 관측을 다시 확인하라고 있는 것이 아니다. 여기서 흡수해야 할 것은
+    # **늦은 push** 하나뿐이고 그건 초 단위다(재무장이 실제로 서는 갈래로 제품이 바뀌면
+    # 그때는 이 짧은 대기가 그대로 참을 낸다).
     reconfirmed = False
     if managed:
         try:
@@ -2508,7 +2511,7 @@ def run_onboarding(ctx: ScenarioContext) -> dict:
                 "(function(){const b=document.getElementById('jobManagedCreate');"
                 "return !!b && b.disabled;})()",
                 "T17 구성 변경 뒤 확인 재무장",
-                timeout=60.0,
+                timeout=8.0,
                 requires=["#jobManagedCreate"],
             )
             reconfirmed = True
