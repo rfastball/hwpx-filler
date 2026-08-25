@@ -1184,3 +1184,80 @@ test("#891 설치는 확인 왕복이고 확정 전에는 실행 호출이 없�
     "확정 뒤에야 실행이 나간다",
   );
 });
+
+test("#892 제거 어포던스는 설치된 상태에서만 서고 라벨은 스냅샷이 낸다", async () => {
+  const installed = harness({
+    initial: async () => exampleSnap({
+      installed: true, label: "예제 다시 설치…", hint: "",
+      removable: true, remove_label: "예제 걷어내기…", remove_hint: "설치한 예제만 걷습니다.",
+    }),
+  });
+  await installed.controller.init();
+  const withRemove = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: installed.controller }),
+  );
+  assert.ok(withRemove.includes('data-act="remove-examples"'), "제거 트리거가 없다");
+  assert.ok(withRemove.includes("예제 걷어내기…"), "라벨은 스냅샷 값 그대로 실린다");
+  assert.ok(withRemove.includes("설치한 예제만 걷습니다."), "힌트도 스냅샷 소유다");
+
+  const bare = harness({
+    initial: async () => exampleSnap({
+      installed: false, label: "예제로 시작하기…", hint: "", removable: false,
+      remove_label: "예제 걷어내기…", remove_hint: "",
+    }),
+  });
+  await bare.controller.init();
+  const noRemove = renderToStaticMarkup(
+    createElement(EditorScreen, { controller: bare.controller }),
+  );
+  assert.equal(noRemove.includes('data-act="remove-examples"'), false,
+    "걷을 것이 없는 자리에 파괴 동사를 세우지 않는다");
+});
+
+test("#892 제거는 확인 왕복이고 확정 전에는 실행 호출이 없다", async () => {
+  const removeSnap = () => exampleSnap({
+    installed: true, label: "예제 다시 설치…", hint: "",
+    removable: true, remove_label: "예제 걷어내기…", remove_hint: "",
+  });
+  const asked = [];
+  const no = harness({
+    initial: async () => removeSnap(),
+    call: async (screen, action, payload) => {
+      if (screen === "tpl" && action === "remove_examples") {
+        asked.push(payload);
+        return payload.confirm
+          ? { ok: true }
+          : { needs_confirm: true, confirm_text: "템플릿 5건 — 라이브러리에서 걷습니다" };
+      }
+      return {};
+    },
+    confirm: () => false,
+  });
+  await no.controller.init();
+
+  await no.controller.removeExamples();
+  assert.deepEqual(asked, [{}], "취소하면 실행 호출이 없다");
+  const spec = no.trace.find((row) => row[0] === "modal.confirm")[1];
+  assert.ok(spec.body.includes("템플릿 5건 — 라이브러리에서 걷습니다"),
+    "확인 본문은 Python 재진술을 싣는다");
+  assert.equal(spec.danger, true, "벌크 되돌리기가 없으므로 파괴 확정이다");
+
+  const yes = harness({
+    initial: async () => removeSnap(),
+    call: async (screen, action, payload) => (
+      screen === "tpl" && action === "remove_examples" && !payload.confirm
+        ? { needs_confirm: true, confirm_text: "5건" }
+        : { ok: true }
+    ),
+    confirm: () => true,
+  });
+  await yes.controller.init();
+  await yes.controller.removeExamples();
+  assert.deepEqual(
+    yes.trace
+      .filter((row) => row[0] === "dispatch" && row[2] === "remove_examples")
+      .map((row) => row[3]),
+    [{}, { confirm: true }],
+    "확정 뒤에야 실행이 나간다",
+  );
+});

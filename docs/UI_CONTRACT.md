@@ -475,6 +475,14 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   지정·데이터 고정·설치 manifest)은 `external/example_pack.install` 이 지고 tpl 컨트롤러는
   조립·문구만 맡는다. 재설치는 되돌리기다(D4): 지난 manifest 기재분만 덮어쓰고, 기재에 없는
   동명 파일은 접미로 비켜 가며 그 사실이 결과 줄에 실린다.
+- **동봉 예제 일괄 제거**(#892 · 같은 문서 §1 D4): 같은 공용 버튼 줄의
+  `data-act="remove-examples"` 로, **설치돼 있을 때만** 선다(판정·라벨은 스냅샷
+  `library.examples` 의 `removable`·`remove_label`·`remove_hint`). 액션은
+  `remove_examples`(`confirm` 하나)이고 1차는 무엇이 몇 건 사라지는지(템플릿·데이터·고정·
+  그룹)와 **되돌리기는 재설치**임을 재진술만 한다. 제거 몸통(경로 화이트리스트 검증 →
+  템플릿 건별 `.trash` 이동 → 데이터 고정 해제·제거 → 그룹 해산 → manifest 소거)은
+  `external/example_pack.remove` 가 지고, **manifest 기재분 밖은 건드리지 않는다**.
+  벌크 undo 슬롯은 없다(`undo_delete` 는 여전히 최근 1건 전용).
 - **TXT 저작 린트메모장**(S10-05 #862 · #299 회수): `#txtEditModal` 의 본문 입력은 textarea 가
   아니라 CodeMirror 6 메모장(`#txtLintpad`, 컨텐츠 DOM 은 종전 id `#txtEditContent`)이다.
   **판정은 하나도 프런트에 없다** — 타이핑 180ms 디바운스 뒤 `tpl/txt_lint`(`content` 하나,

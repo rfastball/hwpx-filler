@@ -224,6 +224,7 @@ export const SCREEN_ACTIONS = {
   tpl: {
     refresh: { required: [], optional: [] },
     install_examples: { required: [], optional: ["confirm"] },
+    remove_examples: { required: [], optional: ["confirm"] },
     compile: { required: ["path"], optional: ["confirm"] },
     review: { required: ["path"], optional: [] },
     slot_rename: { required: ["path", "slot_id"], optional: ["label"] },

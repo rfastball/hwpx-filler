@@ -507,6 +507,71 @@ class TemplateController:
         self._set_result(_ok(line))
         return {"ok": True, "installed": len(done["templates"]) + len(done["data_files"])}
 
+    def _do_remove_examples(self, p: dict) -> dict:
+        """설치한 예제 일괄 제거(#892 · §1 D4) — **1차는 재진술, 2차(`confirm`)가 실행**이다.
+
+        걷는 것은 **설치 manifest 기재분뿐**이다: 그룹은 실체가 아니라 소속이라 「그룹 삭제
+        한 번으로 통째 제거」가 성립하지 않고, 기재 밖 파일(사용자가 예제를 고쳐 다른 이름으로
+        저장한 것)은 남아야 한다. 몸통·경로 화이트리스트 검증은
+        :func:`~hwpxfiller.external.example_pack.remove` 가 지고 여기는 조립과 문구만 맡는다.
+
+        **벌크 undo 슬롯을 만들지 않는다**: ``_deleted_template_slot`` 은 최근 1건 전용이고
+        확장하면 「되돌리기가 되는 것과 안 되는 것」이 갈린다. 되돌리기는 재설치이고, 그
+        사실은 확인 문안이 말한다. 그래서 이 자리는 삭제(``_do_delete``)와 달리 결과 줄을
+        비우지 않는다 — 되돌리기 어포던스를 든 토스트가 없으므로 결과 줄이 유일한 증거다.
+        """
+        try:
+            plan = example_pack.removal_plan(
+                hwpx_root=self._hwpx_root(),
+                txt_root=Path(self.text_registry.directory),
+                data_dir=self._example_data_dir,
+            )
+        except ValueError as exc:  # 경로 탈출·기재 손상 — 조용히 넘기지 않는다
+            self._set_result(_danger(f"예제를 제거하지 못했습니다: {exc}"))
+            return {"ok": False, "error": str(exc)}
+        if plan is None:
+            self._set_result(_danger("설치된 예제가 없습니다."))
+            return {"ok": False, "error": "설치된 예제가 없습니다."}
+        if not p.get("confirm"):
+            return {
+                "needs_confirm": True,
+                "confirm_text": example_pack.remove_confirm_text(plan),
+            }
+        try:
+            done = example_pack.remove(
+                file_store=self._files,
+                hwpx_groups=self.hwpx_groups,
+                txt_groups=self.txt_groups,
+                hwpx_root=self._hwpx_root(),
+                txt_root=Path(self.text_registry.directory),
+                pool_registry=self._pool_registry,
+                data_dir=self._example_data_dir,
+            )
+        except (OSError, ValueError) as exc:
+            self._set_result(_danger(f"예제를 제거하지 못했습니다: {exc}"))
+            return {"ok": False, "error": str(exc)}
+        self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
+        # 세션이 든 템플릿이 사라졌다 — 편집기가 스스로 시끄러워진다(#320). ``_do_delete`` 와
+        # 같은 계약으로 **건별** 발신한다: 벌크 통지를 새로 짓지 않는다.
+        for entry in done["trashed"]:
+            self._notify_mutation("deleted", entry["path"])
+        line = (
+            f"예제 템플릿 {len(done['trashed'])}건과 데이터 {done['data_removed']}건을 걷고 "
+            f"고정 {done['unpinned']}건을 해제했습니다. 되돌리려면 다시 설치하세요."
+        )
+        if done["missing"]:
+            line += " 이미 없던 항목: " + ", ".join(done["missing"]) + "."
+        if done["kept_pins"]:
+            # 다른 데이터로 다시 연결된 슬롯은 남의 것이다 — 조용히 지우지도, 숨기지도 않는다.
+            line += " 다른 데이터로 다시 연결된 고정은 남겼습니다: " + ", ".join(
+                done["kept_pins"]
+            ) + "."
+        self._set_result(_ok(line))
+        return {
+            "ok": True,
+            "removed": len(done["trashed"]) + done["data_removed"],
+        }
+
     # ---- HWPX 상태 게이트 액션
     def _do_compile(self, p: dict) -> dict:
         """「누름틀·구간 변환」 2단계 — 미리보기(dry-run) → 확인 라운드트립 → 적용·저장.

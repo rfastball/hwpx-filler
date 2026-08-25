@@ -561,6 +561,23 @@ def save_tutorial_manifest(
     _mutate(mutate)
 
 
+def clear_tutorial_manifest() -> None:
+    """설치 manifest 칸만 지운다(제거 · 슬라이스 C #892) — **진행 칸은 남긴다**.
+
+    제거해도 학습 진행(``achieved``·``dismissed``)은 남는 것이 D4 의 계약이다: 되돌리기가
+    재설치이므로, 다시 설치한 사용자는 **이어서** 배운다(진행 초기화는 다른 동사다).
+    미설치·부재 키에 대해서도 조용히 성공한다 — 지우는 동사의 멱등은 거짓말이 아니다.
+    """
+
+    def mutate(data: dict) -> None:
+        bucket = data.get("tutorial")
+        if isinstance(bucket, dict):
+            bucket.pop("manifest", None)
+            data["tutorial"] = bucket
+
+    _mutate(mutate)
+
+
 def load_job_collapsed_groups() -> "list[str]":
     """「작업」 좌 목록의 접힌 그룹 이름들(``""``=「그룹 없음」 구획) — 마지막 상태 영속.
 
