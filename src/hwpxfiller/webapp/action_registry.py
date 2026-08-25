@@ -272,6 +272,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 소유하는 이유는 설치가 템플릿 라이브러리 + 그룹 지정이기 때문이고, 라이브러리 빈
         # 상태 버튼은 교차 화면 dispatch 로 부른다(library→job 전례).
         "install_examples": _schema(optional="confirm"),
+        # 설치한 예제 일괄 제거(#892 · 같은 문서 §1 D4) — 설치와 대칭인 확인 왕복. 1차는
+        # 무엇이 몇 건 사라지는지 재진술만 하고, `confirm` 2차가 **manifest 기재분만** 걷는다.
+        # 벌크 undo 슬롯은 없다(되돌리기 = 재설치) — 그 사실도 1차 문안이 말한다.
+        "remove_examples": _schema(optional="confirm"),
         "compile": _schema("path", "confirm"),
         "review": _schema("path"),
         # 컴파일된 Slot 관리(S8-03 #834). 개명은 구조 무변형이라 무확인이고, 표기로 풀기·

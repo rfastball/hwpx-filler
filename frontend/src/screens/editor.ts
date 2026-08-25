@@ -512,6 +512,21 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
+  /** 설치한 예제 일괄 제거(#892) — 설치와 대칭인 확인 왕복.
+   *
+   *  **무엇이 몇 건 사라지는지도, 「되돌리기는 재설치」도 Python 재진술 그대로**다. 여기서
+   *  수치를 세지 않는다. 벌크 되돌리기가 없으므로 파괴 확정(`danger`)으로 묻는다. */
+  async function removeExamples(trigger?: HTMLElement): Promise<void> {
+    const result = await dispatch("tpl", "remove_examples", {});
+    if (result.needs_confirm && await deps.modal.confirm({
+      title: "예제 제거 확인",
+      body: `${result.confirm_text}\n\n걷어낼까요?`,
+      confirmLabel: "걷어내기", cancelLabel: "취소", danger: true, returnFocus: trigger,
+    })) {
+      await dispatch("tpl", "remove_examples", { confirm: true });
+    }
+  }
+
   /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ---- */
 
   /** 항목 이름 바꾸기 — 파괴가 아니라 프롬프트 하나다(확인 왕복 없음). */
@@ -1186,6 +1201,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
     installExamples,
+    removeExamples,
     useLibraryTemplate, importTemplate, importFolder, pickData, skipData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
@@ -1465,6 +1481,13 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         onClick: (event: Obj) => controller.guarded(
           () => controller.installExamples(event.currentTarget)),
       }, String(examples.label || "")) : null,
+      /* 제거 어포던스(#892)는 **설치돼 있을 때만** 선다 — 판정도 라벨도 스냅샷 소유다. */
+      examples && examples.removable ? h("button", {
+        className: "btn sm", "data-act": "remove-examples", "data-busy-lock": true,
+        title: String(examples.remove_hint || ""),
+        onClick: (event: Obj) => controller.guarded(
+          () => controller.removeExamples(event.currentTarget)),
+      }, String(examples.remove_label || "")) : null,
       h("span", { className: "spacer" }),
       h("button", {
         className: "btn sm", "data-act": "lib-refresh", title: "라이브러리 폴더를 다시 읽습니다",
