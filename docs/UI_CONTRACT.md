@@ -642,6 +642,13 @@ store, Python 컨트롤러 `name`, `WebFrontend.controllers`, action registry를
   corrupt[{file_name,error}], corrupt_code}`). 지원 조건은 `slot_configuration` 존과 동형이고,
   `provenance` 는 내부 정보라 존에 싣지 않는다. **손상 항목은 목록에서 지우지 않는다** —
   비활성 + 사유 병기로 같은 목록에 선다(숨기면 사용자가 묻지도 못한다).
+- **`items` 는 현재 템플릿 구조에 「전부 적용 가능」한 것만 싣는다**(U3 §2 · #875). 판정은
+  적용 경로가 쓰는 `preset_command.fit_preset_selections` 의 `fully_applicable` 하나이고
+  (선언한 slot·option 이 전부 RESOLVED — 부분 겹침은 비호환), 링2 는 어느 Work 를 대고 물을지만
+  정한다. 구조를 세울 수 없으면(템플릿 확인 전·context error) 호환을 주장할 수 있는 항목이 0 이다
+  — 무필터 전량 노출로 돌아가지 않는다. 걸러진 항목의 저장 파일은 그대로이고(삭제 아님),
+  `corrupt` 는 호환 판정의 대상이 아니라 표시 대상이라 언제나 함께 실린다. 목록이 좁혀져도
+  적용 경로의 부분 적용·깨짐 보고·거절 코드는 방어층으로 그대로 선다.
 - **확인 왕복은 웹이 구현한다**: 이름 입력은 `Modal.prompt`, 이름 충돌(`NEEDS_CONFIRM` ·
   `PRESET_NAME_CONFLICT`)은 `Modal.confirm`(danger). 확정은 backend 가 낸 **그 항목의 key**
   (`existing_key`)를 되돌려 보낸다 — 이름만 다시 보내면 그 사이 그 이름을 차지한 남의 항목을

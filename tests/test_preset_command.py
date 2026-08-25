@@ -39,6 +39,7 @@ from hwpxfiller.application.preset_command import (
     PresetSaveResult,
     decide_apply_preset,
     delete_selection_preset,
+    fit_preset_selections,
     list_selection_presets,
     plan_preset_save,
 )
@@ -188,6 +189,62 @@ def test_cardinality_and_no_options_are_broken_not_applied() -> None:
         ("s3", NO_AVAILABLE_OPTIONS),
     ]
     assert decision.outcome_code == NO_CHANGE
+
+
+# ── pure: 구조 호환 판정(#875) ─────────────────────────────────────────────────
+# 목록 필터와 적용은 **같은 해석**을 쓴다. 아래 대조는 `fully_applicable` 이 무엇을 뜻하는지와,
+# 적용 경로의 수치가 그 같은 값에서 나오는지를 함께 잰다(두 곳 판정 금지).
+
+
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        _sel(("s1", ("o1",))),  # 구조 일부만 언급 — 언급한 것은 전부 RESOLVED
+        _sel(("s1", ("o1",)), ("s2", ("x2",))),  # 고를 수 있는 것 전부
+    ],
+)
+def test_fit_is_fully_applicable_when_every_declared_entry_resolves(proposal) -> None:
+    """양성: 언급한 slot·option 이 전부 현재 구조에서 RESOLVED 면 호환이다.
+
+    구조에는 있으나 Preset 이 언급하지 않은 Slot(s2·s3)은 판정 대상이 아니다 — 적용도 소거도
+    하지 않으므로 「전부 적용 가능」을 깨지 않는다.
+    """
+    fit = fit_preset_selections(_pure_ctx(), proposal)
+    assert fit.fully_applicable is True
+    assert fit.broken == ()
+    assert len(fit.applied) == fit.declared_slot_count == len(proposal.selections)
+
+
+@pytest.mark.parametrize(
+    ("proposal", "broken_slot"),
+    [
+        (_sel(("s9", ("z",))), "s9"),  # 모르는 slot
+        (_sel(("s1", ("사라진옵션",))), "s1"),  # 모르는 option
+    ],
+)
+def test_fit_is_not_applicable_for_unknown_slot_or_option(proposal, broken_slot) -> None:
+    """음성: 현재 구조가 모르는 slot·option 이 하나라도 있으면 호환이 아니다."""
+    fit = fit_preset_selections(_pure_ctx(), proposal)
+    assert fit.fully_applicable is False
+    assert [b.slot_id for b in fit.broken] == [broken_slot]
+
+
+def test_partial_overlap_is_not_compatible_even_though_something_applies() -> None:
+    """경계: 일부만 서면 호환이 아니다 — 목록의 줄은 「고르면 그대로 서는 것」을 뜻해야 한다."""
+    proposal = _sel(("s1", ("o1",)), ("s9", ("z",)))
+    fit = fit_preset_selections(_pure_ctx(), proposal)
+    assert len(fit.applied) == 1 and len(fit.broken) == 1  # 실제로 무언가는 선다
+    assert fit.fully_applicable is False
+
+
+def test_apply_numbers_come_from_the_same_fit_the_list_filter_uses() -> None:
+    """단일 출처: 적용 수치가 목록 필터가 묻는 그 값에서 나온다(구조를 두 번 훑지 않는다)."""
+    proposal = _sel(("s1", ("o1",)), ("s2", ("사라진옵션",)), ("s9", ("z",)))
+    fit = fit_preset_selections(_pure_ctx(), proposal)
+    decision = decide_apply_preset(_pure_ctx(), _config(), proposal, NOW)
+    assert decision.applied_slot_ids == tuple(e.slot_id for e in fit.applied)
+    assert decision.broken == fit.broken
+    assert fit.fully_applicable is False  # 그래서 이 Preset 은 목록에도 안 실린다
 
 
 # ── pure: 저장 판정 ────────────────────────────────────────────────────────────
@@ -496,11 +553,45 @@ def test_listing_surfaces_corruption_beside_healthy_items(tmp_path: Path) -> Non
     reg.add(_preset("나중"))
     reg.add(_preset("가장먼저", _sel(("s2", ("x1",)))))
     reg.slot_path("c" * 16).write_text(json.dumps({"schema_version": "x"}), encoding="utf-8")
-    listing = list_selection_presets(reg)
+    listing = list_selection_presets(reg, _pure_ctx())
     assert [item.name for item in listing.items] == ["가장먼저", "나중"]
     assert listing.corrupt_count == 1 and listing.corrupt_code == PRESET_ENTRY_CORRUPT
     assert listing.corrupt[0].error
     assert listing.items[0].created_at == NOW and listing.items[0].provenance == {}
+
+
+def test_listing_drops_items_the_current_structure_cannot_fully_apply(
+    tmp_path: Path,
+) -> None:
+    """#875: 현재 구조에 전부 적용 가능한 것만 실린다 — 부분 겹침도 빠진다.
+
+    저장 파일은 그대로다(삭제가 아니라 목록의 좁힘) — 구조가 맞는 작업에서 다시 뜬다.
+    """
+    reg = _registry(tmp_path)
+    reg.add(_preset("여기맞음", _sel(("s1", ("o1",)))))
+    reg.add(_preset("모르는슬롯", _sel(("s1", ("o1",)), ("s9", ("z",)))))
+    reg.add(_preset("모르는옵션", _sel(("s2", ("사라진옵션",)))))
+
+    listing = list_selection_presets(reg, _pure_ctx())
+    assert [item.name for item in listing.items] == ["여기맞음"]
+    # 걸러진 것은 파일로 남아 있다 — 다른 구조에서 다시 서야 한다.
+    assert len(list(reg.directory.glob("*.preset.json"))) == 3
+
+
+def test_listing_without_a_structure_claims_no_compatible_item_but_keeps_corruption(
+    tmp_path: Path,
+) -> None:
+    """대조할 구조가 없으면 호환을 **주장할 수 있는** 항목이 0 이다(전량 노출 복귀 금지).
+
+    손상 항목은 호환 판정의 대상이 아니라 표시 대상이라 그대로 남는다.
+    """
+    reg = _registry(tmp_path)
+    reg.add(_preset("무엇이든", _sel(("s1", ("o1",)))))
+    reg.slot_path("c" * 16).write_text(json.dumps({"schema_version": "x"}), encoding="utf-8")
+
+    listing = list_selection_presets(reg, None)
+    assert listing.items == ()
+    assert listing.corrupt_count == 1 and listing.corrupt[0].error
 
 
 def test_delete_restates_the_destroyed_name(tmp_path: Path) -> None:
