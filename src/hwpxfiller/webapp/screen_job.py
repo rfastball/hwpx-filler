@@ -87,6 +87,7 @@ from ..external.delivery_coordinator import (
 )
 from ..gui.artifact_view_state import observed_artifact_snapshot
 from ..external.ledger_export import write_managed_delivery_ledger
+from ..external.output_files import ensure_output_directory
 from .managed_generation import (
     ManagedReadBackFailed,
     ManagedRunCancelled,
@@ -100,7 +101,12 @@ from ..domain.job import (
     work_mode,
 )
 from ..domain.mapping import SOURCE_CARRIER_TYPES
-from ..domain.template_status import OUTPUT_SUBDIR_NAME
+from ..domain.output_folder_default import (
+    SOURCE_EXPLICIT as OUTPUT_FOLDER_SOURCE_EXPLICIT,
+    OutputFolderResolution,
+    default_output_directory,
+    resolve_output_folder,
+)
 from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
@@ -266,7 +272,11 @@ _ADMISSION_REJECT_TEXT = {
     STRUCTURE_NOTATION_UNCOMPILED: STRUCTURE_NOTATION_BLOCK_MESSAGE,
 }
 from .job_list import drift_note
-from ..external.settings import recollapse_job_group
+from ..external.settings import (
+    load_last_output_directory,
+    recollapse_job_group,
+    save_last_output_directory,
+)
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
     EMPTY_TABLE as _EMPTY_TABLE,
@@ -525,6 +535,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._session_orchestration = AutomaticSealOrchestration()
         self._current_record_preparation: _CurrentRecordPreparation | None = None
         self._run_delivery_intent: RunDeliveryIntent | None = None
+        # 세션 충돌 처리 선언(U3-06 #879) — 저장 폴더 **명시 지정과 독립**이다. 폴더를 안 고른
+        # 사용자도 충돌 처리는 고를 수 있어야 하는데, 그 선택이 intent 를 물질화하면 도출된
+        # 기본값이 '직접 지정'으로 승격돼 화면이 출처를 잘못 말한다. 명시 지정과 함께 소거된다.
+        self._run_delivery_collision = ADD_SUFFIX
+        # 마지막 **명시 지정** 저장 폴더(U3-06 #879) — 설정 층 소유의 기본값 재료다.
+        # session-scoped `_run_delivery_intent` 의 수명 규약(작업 전환·해제에서 소거)은 그대로고,
+        # 이 값은 그 소거 뒤에도 살아 다음 도출에서 다시 후보가 된다. 부팅 1회 판독 —
+        # 앱은 홈당 단일 인스턴스라 이 값을 바꾸는 것은 아래 `set_output_folder` 뿐이다.
+        self._remembered_output_directory = load_last_output_directory()
         self._current_delivery_preparation: _CurrentDeliveryPreparation | None = None
         self._current_preview_preparation: _CurrentPreviewPreparation | None = None
         self._approved_preview_token: str | None = None
@@ -2147,21 +2166,84 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             and self._same_work_snapshot(seated, restored)
         )
 
-    def set_output_folder(self, path: str) -> None:
-        """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06)."""
-        if self.vm is not None and self.vm.job.authority_id:
-            collision = (
-                self._run_delivery_intent.collision_policy
+    # ── 저장 폴더 도출(U3-06 · #879) ────────────────────────────────────────────
+    def _output_folder_resolution(self) -> OutputFolderResolution:
+        """실제로 쓸 저장 폴더 + 출처 + 사유 — ① 세션 명시 지정 ② 기억한 지정 ③ 템플릿 옆 Results.
+
+        판정은 링0 순수 함수(:func:`resolve_output_folder`)가 지고 이 메서드는 **관찰만** 한다:
+        기억한 폴더가 지금도 있는지는 파일 시스템이 답한다. 도출 결과는 스냅샷에 실려 저장 폴더
+        구획·생성 예정 문서 계획에 그대로 표시된다 — 조용한 추측이 아니라 표시된 기본값이다.
+        """
+        remembered = self._remembered_output_directory
+        return resolve_output_folder(
+            explicit_directory=(
+                self._run_delivery_intent.output_directory
                 if self._run_delivery_intent is not None
-                else ADD_SUFFIX
+                else ""
+            ),
+            remembered_directory=remembered,
+            remembered_exists=bool(remembered) and Path(remembered).is_dir(),
+            template_path=(
+                self.vm.job.template_path if self.vm is not None else ""
+            ),
+        )
+
+    def _effective_delivery(self) -> "tuple[RunDeliveryIntent | None, OutputFolderResolution]":
+        """delivery 해결에 실제로 쓰이는 intent + 그 폴더의 출처(한 번의 도출로 둘 다).
+
+        도출조차 불가능한 경우(템플릿 경로 부재)만 intent 가 ``None`` 이고, 그때만 저장 폴더
+        지정이 생성의 전제조건으로 남는다. 충돌 처리는 세션 선언을 그대로 싣는다 — 여기서
+        durable state 를 만들지 않는다(intent 수명 규약 불변).
+        """
+        resolution = self._output_folder_resolution()
+        if not resolution.resolved:
+            return None, resolution
+        return (
+            RunDeliveryIntent(resolution.directory, self._run_delivery_collision),
+            resolution,
+        )
+
+    def _effective_run_delivery_intent(self) -> "RunDeliveryIntent | None":
+        """실제로 쓰이는 intent만 — 출처가 필요한 호출부는 :meth:`_effective_delivery` 를 쓴다."""
+        return self._effective_delivery()[0]
+
+    def _output_folder_dict(self) -> dict:
+        """스냅샷의 ``output_folder`` 존 — 표면은 읽기만 하고 재판정·재조립하지 않는다."""
+        resolution = self._output_folder_resolution()
+        return {
+            "directory": resolution.directory,
+            "source": resolution.source,
+            "source_label": resolution.source_label,
+            "notice": resolution.notice,
+        }
+
+    def set_output_folder(self, path: str) -> None:
+        """네이티브 폴더 피커가 고른 저장 폴더를 반영(게이트 전제조건, UD-06).
+
+        **명시 지정은 기억된다**(U3-06 #879): 다음 세션의 도출 후보로 설정에 남긴다. 영속 실패는
+        삼키지 않고 위층(브리지)이 ``ERROR:`` 로 되돌린다 — 다만 이번 세션의 선택은 이미 유효하고
+        화면도 그것을 그려야 하므로, 적용·push 를 끝낸 뒤에 던진다.
+        """
+        if self.vm is not None and self.vm.job.authority_id:
+            self._run_delivery_intent = RunDeliveryIntent(
+                path, self._run_delivery_collision
             )
-            self._run_delivery_intent = RunDeliveryIntent(path, collision)
             self._current_delivery_preparation = None
             self._invalidate_current_preview()
+        else:
+            self.out_dir = path
+        try:
+            self._remember_output_folder(path)
+        finally:
             self._push()
-            return
-        self.out_dir = path
-        self._push()
+
+    def _remember_output_folder(self, path: str) -> None:
+        """마지막 명시 지정을 설정에 남긴다 — 다음 세션 도출의 후보 ②.
+
+        자동으로 잡힌 기본값은 지나가지 않는다(이 메서드의 호출자는 폴더 피커 경로 하나다).
+        """
+        self._remembered_output_directory = path
+        save_last_output_directory(path)
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
@@ -2184,18 +2266,28 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return result
 
     def _do_set_delivery_collision(self, p: dict) -> dict:
-        if self._run_delivery_intent is None:
+        # 저장 폴더는 도출된 기본값으로도 선다(U3-06 #879) — 충돌 처리를 고르려고 폴더를 먼저
+        # 지정하게 만들지 않는다. 도출조차 불가능할 때만 loud 거절이다.
+        effective = self._effective_run_delivery_intent()
+        if effective is None:
             raise ValueError("먼저 저장 폴더를 선택하세요.")
-        self._run_delivery_intent = RunDeliveryIntent(
-            self._run_delivery_intent.output_directory,
-            str(p["collision_policy"]),
-        )
+        # 미지원 policy 거절은 RunDeliveryIntent 가 진다(여기서 어휘를 다시 세지 않는다).
+        policy = RunDeliveryIntent(
+            effective.output_directory, str(p["collision_policy"])
+        ).collision_policy
+        # 선언은 세션 축에 남는다. 명시 지정이 이미 있으면 그 intent 도 같은 값으로 맞춘다
+        # (두 자리가 같은 정책을 달리 말하지 않게).
+        self._run_delivery_collision = policy
+        if self._run_delivery_intent is not None:
+            self._run_delivery_intent = RunDeliveryIntent(
+                self._run_delivery_intent.output_directory, policy
+            )
         self._current_delivery_preparation = None
         self._invalidate_current_preview()
         return {"ok": True}
 
     def _do_refresh_delivery(self, p: dict) -> dict:
-        if self._run_delivery_intent is None:
+        if self._effective_run_delivery_intent() is None:
             raise ValueError("먼저 저장 폴더를 선택하세요.")
         self._current_delivery_preparation = None
         self._invalidate_current_preview()
@@ -2441,10 +2533,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 명시 규칙으로 환원).
             if self.filter is not None and not self.filter.is_active():
                 self._init_filter()
-        self.out_dir = (
-            str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
-            if job.template_path else ""
-        )
+        # 기본 저장 폴더는 두 축이 **같은 함수**를 본다(U3-06 #879) — 관리 축의 도출
+        # 우선순위 ③도 이 값이라, 여기서 경로를 다시 조립하면 한쪽만 늙는다.
+        self.out_dir = default_output_directory(job.template_path)
         if job.media == "hwpx" and job.authority_id:
             self._maybe_auto_check(effective_basis_changed=True)
 
@@ -2454,6 +2545,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.vm = None
         self._seated_template_application_id = None
         self._run_delivery_intent = None
+        # 명시 지정과 함께 선다·죽는다(U3-06 #879). 기억은 설정에 남아 다음 도출에서 다시 산다.
+        self._run_delivery_collision = ADD_SUFFIX
         self.job_is_txt = False
         self.job_unsupported = False
         self.job_name = ""
@@ -3115,6 +3208,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "error": "필요한 준비를 먼저 완료해 주세요",
                 "level": "warn",
             }
+        # 도출한 기본 폴더는 이 순간까지 없을 수 있다(U3-06 #879) — 문서를 만들기로 한 지금
+        # 만든다(구식 축의 `ensure_output_directory` 와 같은 함수·같은 시점). 못 만들면 조용한
+        # 실패로 흘리지 않고 사유를 돌려준다.
+        try:
+            ensure_output_directory(prep.result.output_directory)
+        except OSError:
+            return {
+                "ok": False,
+                "error": "저장 폴더를 만들 수 없습니다. 다른 폴더를 선택하세요.",
+                "level": "warn",
+            }
         context = (
             self._seal_execution.managed_run_context(self.job_name)
             if self._seal_execution is not None
@@ -3738,7 +3842,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             observation = self.workbench_observation()
         except ValueError:
             return self._workbench_observation_blank()
-        return {"supported": True, **self._serialize_observation(observation)}
+        return {
+            # 저장 폴더 도출은 observation 축과 무관하게 늘 실린다(U3-06 #879) — context error
+            # 로 관찰이 무너져도 "어디에 저장되는가"는 답할 수 있는 사실이다.
+            "output_folder": self._output_folder_dict(),
+            "supported": True,
+            **self._serialize_observation(observation),
+        }
 
     def _serialize_observation(self, observation) -> dict:
         """`DocumentCreationWorkbenchObservation | ...ContextError` → JSON-safe dict(재판정 0).
@@ -4541,11 +4651,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     @staticmethod
     def _observe_path_occupancy(
-        intent: RunDeliveryIntent, observed_at: str
+        intent: RunDeliveryIntent,
+        observed_at: str,
+        *,
+        allow_missing: bool = False,
     ) -> PathOccupancyObservation:
+        """저장 폴더의 현재 점유 관찰. 폴더를 만들지 않는다(관찰은 관찰이다).
+
+        ``allow_missing`` 은 **도출한 기본값**에만 선다(U3-06 #879): 아직 없는 폴더는 점유가
+        비어 있다는 사실이고, 그 폴더는 생성이 만든다. 그 밖의 판독 실패(권한·잠김)와 사용자가
+        직접 고른 폴더의 부재는 이 완화를 받지 않는다.
+        """
         root = Path(intent.output_directory)
         if not root.is_absolute():
             raise ValueError("저장 폴더는 전체 경로여야 합니다.")
+        if allow_missing and not root.exists():
+            return PathOccupancyObservation(intent.output_directory, (), observed_at)
         try:
             entries = tuple(
                 sorted(
@@ -4679,7 +4800,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self,
         record_validation: RecordValidationSummary,
     ) -> tuple[DeliveryPreviewSummary, WorkbenchContextIntegrity | None]:
-        intent = self._run_delivery_intent
+        # 저장 폴더 미지정은 더 이상 차단 사유가 아니다(U3-06 #879) — 도출한 기본값으로 선다.
+        # 도출 재료조차 없을 때(템플릿 경로 부재)만 지정이 전제조건으로 남는다.
+        intent, folder_resolution = self._effective_delivery()
         if intent is None:
             return self._unresolved_delivery(
                 "OUTPUT_DIRECTORY_REQUIRED", "저장 폴더를 선택하세요."
@@ -4752,7 +4875,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         else:
             assert isinstance(basis, GenerationDeliveryBindingBasis)
             try:
-                occupancy = self._observe_path_occupancy(intent, captured_clock)
+                occupancy = self._observe_path_occupancy(
+                    intent,
+                    captured_clock,
+                    # 도출한 기본값은 **아직 없을 수 있다**(템플릿 옆 Results 첫 실행) —
+                    # 없는 폴더에 걸릴 이름은 없으므로 빈 점유로 관찰하고, 실제 폴더는
+                    # 생성이 만든다. 사용자가 직접 고른 폴더가 사라진 것은 다른 사실이라
+                    # 그대로 시끄럽게 남긴다(조용한 재생성 금지).
+                    allow_missing=(
+                        folder_resolution.source != OUTPUT_FOLDER_SOURCE_EXPLICIT
+                    ),
+                )
             except ValueError as exc:
                 result = DeliveryPlanContextError(
                     "PATH_OCCUPANCY_OBSERVATION_FAILED", str(exc)
@@ -4864,7 +4997,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ),
             # S6-05(#812): 세션의 managed 실행 증거 — 부차 축(Primary Action 불결정).
             historical_outcome=self._last_managed_outcome,
-            run_delivery_intent=self._run_delivery_intent,
+            # 표면이 보는 것은 **실제로 쓰일** 폴더다(U3-06 #879) — 명시 지정이 없을 때
+            # 빈칸을 그리면 "아직 안 정했다"로 읽혀 도출된 기본값이 조용한 추측이 된다.
+            run_delivery_intent=self._effective_run_delivery_intent(),
             context_integrity=context_integrity,
         )
 

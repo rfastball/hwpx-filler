@@ -36,6 +36,9 @@ PUBLIC_API = (
     "save_draft_target_font",
     "load_boot_completed",
     "save_boot_completed",
+    # U3-06(#879): 마지막 명시 지정 저장 폴더 — 관리 축 기본값 도출의 후보 ②.
+    "load_last_output_directory",
+    "save_last_output_directory",
     "load_job_collapsed_groups",
     "recollapse_job_group",
     "save_job_collapsed_groups",

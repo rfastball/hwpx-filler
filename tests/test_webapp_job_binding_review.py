@@ -29,6 +29,11 @@ from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+from hwpxfiller.external.settings import (
+    load_last_output_directory,
+    save_last_output_directory,
+)
+from hwpxfiller.domain.template_status import OUTPUT_SUBDIR_NAME
 from hwpxfiller.host.locations import default_template_authority_dir
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp import screen_job as screen_job_module
@@ -87,6 +92,7 @@ def _controller(
     with_binding: bool,
     wire_seal: bool = True,
     seed: bool = True,
+    template_path: str = "managed.hwpx",
 ):
     """실 SlotConfigurationProduct + SealExecutionPlanService 를 **같은 authority root** 로 배선.
 
@@ -99,7 +105,9 @@ def _controller(
     if seed:
         _seed_v2_work(root, with_binding=with_binding)
     reg = JobRegistry(tmp_path / "jobs")
-    reg.save(Job(name=WORK_REF, template_path="managed.hwpx"))
+    # 기본 template_path 는 상대 경로다 — 저장 폴더 기본값이 서지 **않는** 형상(U3-06 #879).
+    # 기본값 도출을 재는 테스트만 전체 경로를 건넨다.
+    reg.save(Job(name=WORK_REF, template_path=template_path))
     reg.assign_authority_id(WORK_REF, WORK)
     kwargs = dict(
         clock=_clock(),
@@ -375,8 +383,10 @@ def test_current_preparation_is_reused_until_existing_basis_moves(
     assert ctrl._current_record_preparation is not first
 
 
-def _delivery_controller(tmp_path: Path) -> tuple[JobController, Path]:
-    ctrl = _controller(tmp_path, with_binding=True)
+def _delivery_controller(
+    tmp_path: Path, *, template_path: str = "managed.hwpx"
+) -> tuple[JobController, Path]:
+    ctrl = _controller(tmp_path, with_binding=True, template_path=template_path)
     ctrl.dispatch("select_job", {"name": WORK_REF})
     _wire_source_plan(ctrl)
     rows = [{"name": "A"}, {"name": "B"}]
@@ -430,6 +440,218 @@ def test_managed_delivery_projects_session_intent_and_exact_backend_paths(
     # create 는 열린다. 실제 클릭은 S6-05 가드 철거 전까지 시끄럽게 거절된다(#806 R1 계약 —
     # 조용한 진행 경로는 없다). 이 간극은 S6-05 가 닫고, HWPX 릴리스는 #807 완주 전 없다.
     assert zone["create_action"]["enabled"] is True
+
+
+# ── U3-06(#879) 저장 폴더 도출 — ① 명시 지정 ② 기억한 지정 ③ 템플릿 옆 Results ──────────
+def _sited_delivery_controller(tmp_path: Path) -> "tuple[JobController, Path]":
+    """템플릿이 실제 자리를 가진 관리 작업 — 기본값(템플릿 옆 ``Results``)이 서는 형상.
+
+    반환하는 폴더는 **아직 없다**: 도출·관찰이 폴더를 만들지 않는다는 것도 계약이다.
+    """
+    template = tmp_path / "서고" / "managed.hwpx"
+    template.parent.mkdir(parents=True, exist_ok=True)
+    ctrl, _picked = _delivery_controller(tmp_path, template_path=str(template))
+    return ctrl, template.parent / OUTPUT_SUBDIR_NAME
+
+
+def test_unset_output_folder_defaults_beside_the_template_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """미지정이 곧 차단이던 축이 기본값으로 선다 — 그 폴더는 화면에 **표시된다**."""
+    ctrl, results = _sited_delivery_controller(tmp_path)
+
+    zone = _zone(ctrl)
+
+    assert ctrl._run_delivery_intent is None  # 세션 명시 지정은 여전히 없다
+    assert zone["output_folder"] == {
+        "directory": str(results),
+        "source": "template_default",
+        "source_label": "기본값",
+        "notice": "",
+    }
+    assert zone["run_delivery_intent"] == {
+        "output_directory": str(results),
+        "collision_policy": "ADD_SUFFIX",
+    }
+    assert zone["delivery"]["resolvable"] is True
+    assert zone["delivery"]["blockers"] == []
+    assert [item["relative_path"] for item in zone["delivery"]["planned_documents"]] == [
+        "공고서-20260818-001.hwpx",
+        "공고서-20260818-002.hwpx",
+    ]
+    assert not results.exists()  # 관찰은 폴더를 만들지 않는다
+
+
+def test_collision_policy_is_selectable_on_the_derived_default(tmp_path: Path) -> None:
+    """폴더를 먼저 고르라고 되묻지 않는다. 그렇다고 기본값이 '직접 지정'으로 승격되지도 않는다."""
+    ctrl, results = _sited_delivery_controller(tmp_path)
+
+    assert ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"}) == {
+        "ok": True
+    }
+
+    zone = _zone(ctrl)
+    assert zone["run_delivery_intent"] == {
+        "output_directory": str(results),
+        "collision_policy": "FAIL",
+    }
+    assert zone["output_folder"]["source"] == "template_default"
+    assert ctrl._run_delivery_intent is None
+
+
+def test_explicit_pick_wins_and_is_remembered_for_the_next_session(
+    tmp_path: Path,
+) -> None:
+    ctrl, results = _sited_delivery_controller(tmp_path)
+    picked = tmp_path / "직접-고른-폴더"
+    picked.mkdir()
+
+    ctrl.set_output_folder(str(picked))
+
+    zone = _zone(ctrl)
+    assert zone["output_folder"] == {
+        "directory": str(picked),
+        "source": "explicit",
+        "source_label": "직접 지정",
+        "notice": "",
+    }
+    assert zone["run_delivery_intent"]["output_directory"] == str(picked)
+    assert str(results) not in str(zone["run_delivery_intent"])
+    # 기억은 설정 층 소유다 — 다음 세션의 도출 재료.
+    assert load_last_output_directory() == str(picked)
+
+
+def test_remembered_folder_is_restored_as_the_default_on_a_new_controller(
+    tmp_path: Path,
+) -> None:
+    """재시작(새 컨트롤러) — 세션 명시 지정은 없지만 기억한 폴더가 기본값으로 산다."""
+    remembered = tmp_path / "지난번-폴더"
+    remembered.mkdir()
+    save_last_output_directory(str(remembered))
+
+    ctrl, _results = _sited_delivery_controller(tmp_path)
+
+    zone = _zone(ctrl)
+    assert zone["output_folder"] == {
+        "directory": str(remembered),
+        "source": "remembered",
+        "source_label": "기억한 폴더",
+        "notice": "",
+    }
+    assert zone["run_delivery_intent"]["output_directory"] == str(remembered)
+    assert zone["delivery"]["resolvable"] is True
+
+
+def test_vanished_remembered_folder_falls_back_loudly_not_silently(
+    tmp_path: Path,
+) -> None:
+    save_last_output_directory(str(tmp_path / "사라진-폴더"))
+
+    ctrl, results = _sited_delivery_controller(tmp_path)
+
+    zone = _zone(ctrl)
+    assert zone["output_folder"]["directory"] == str(results)
+    assert zone["output_folder"]["source"] == "template_default"
+    assert zone["output_folder"]["notice"] == (
+        "지난번에 지정한 저장 폴더를 찾을 수 없습니다. 기본 폴더로 되돌렸습니다."
+    )
+    assert zone["delivery"]["resolvable"] is True
+
+
+def test_underivable_default_keeps_the_output_directory_requirement(
+    tmp_path: Path,
+) -> None:
+    """도출 재료가 없으면(전체 경로 아닌 템플릿) 저장 폴더 지정이 전제조건으로 남는다."""
+    ctrl, _out = _delivery_controller(tmp_path)  # template_path 는 상대 경로
+
+    zone = _zone(ctrl)
+    assert zone["output_folder"] == {
+        "directory": "",
+        "source": "",
+        "source_label": "",
+        "notice": "",
+    }
+    assert zone["run_delivery_intent"] is None
+    assert zone["delivery"] == {
+        "resolvable": False,
+        "planned_documents": [],
+        "blockers": [
+            {
+                "code": "OUTPUT_DIRECTORY_REQUIRED",
+                "message": "저장 폴더를 선택하세요.",
+                "item_ordinal": None,
+                "field_id": None,
+                "conflicting_relative_path": None,
+            }
+        ],
+    }
+
+
+def test_releasing_the_work_drops_the_explicit_pick_but_not_the_memory(
+    tmp_path: Path,
+) -> None:
+    """명시 지정 소거 규약은 그대로. 기억은 설정에 남아 다음 도출에서 다시 후보가 된다."""
+    ctrl, _results = _sited_delivery_controller(tmp_path)
+    picked = tmp_path / "고른-폴더"
+    picked.mkdir()
+    ctrl.set_output_folder(str(picked))
+    ctrl.dispatch("set_delivery_collision", {"collision_policy": "FAIL"})
+
+    ctrl.dispatch("select_job", {"name": ""})
+
+    assert ctrl._run_delivery_intent is None
+    assert ctrl._run_delivery_collision == "ADD_SUFFIX"
+    assert load_last_output_directory() == str(picked)
+
+
+def test_managed_generation_creates_the_derived_default_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """관찰은 안 만들고 **생성이** 만든다 — 구식 축의 `ensure_output_directory` 와 같은 시점."""
+    import hwpxfiller.webapp.screen_job as sj
+    from hwpxfiller.external.delivery_coordinator import (
+        DeliveredDocument,
+        DeliveryCompleted,
+    )
+
+    template = tmp_path / "서고" / "managed.hwpx"
+    template.parent.mkdir(parents=True, exist_ok=True)
+    results = template.parent / OUTPUT_SUBDIR_NAME
+    ctrl = _controller(tmp_path, with_binding=True, template_path=str(template))
+    ctrl.dispatch("select_job", {"name": WORK_REF})
+    ctrl.dispatch("resolve_execution", {})
+    rows = [{"이름": "A"}]
+    _mount_rows(ctrl, rows)
+
+    class Source:
+        def records(self) -> list[dict]:
+            return rows
+
+    ctrl.datasource = Source()
+    assert ctrl.vm is not None
+    ctrl.vm.set_acquired(ctrl.datasource, rows)
+
+    captured: dict = {}
+
+    def fake_run(**kw):
+        captured.update(kw)
+        assert results.is_dir(), "생성이 저장 폴더를 만들지 않고 진입했다"
+        return DeliveryCompleted(
+            output_directory=str(results),
+            delivered=(
+                DeliveredDocument(0, "rec-0", "a.hwpx", str(results / "a.hwpx"),
+                                  "WRITE_NEW", "sha256:" + "0" * 64, ()),
+            ),
+        )
+
+    monkeypatch.setattr(sj, "run_managed_generation", fake_run)
+    assert not results.exists()
+
+    result = ctrl.generate(run_token="tk-default")
+
+    assert result["ok"] is True, result.get("error")
+    assert captured["resolved_delivery"].output_directory == str(results)
+    assert results.is_dir()
 
 
 def test_optional_preview_token_is_stable_across_passive_render_and_drawer(

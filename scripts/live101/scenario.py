@@ -1306,13 +1306,19 @@ def run_sx(ctx: ScenarioContext) -> dict:
 
 
 def run_restart(ctx: ScenarioContext) -> dict:
-    """Second actual process: durable intent recomputes; session-only values stay absent."""
+    """Second actual process: durable intent recomputes; session-only values stay absent.
+
+    U3-06(#879) 이후 「저장 폴더」는 그 사이에 선다 — 설정에 기억된 마지막 명시 지정이 **기본값**
+    으로 되살지만, 그것은 session intent 의 부활이 아니다(충돌 처리 선언은 기본값으로 돌아온다).
+    """
     s = ctx.surface
     before_files = ctx.output_manifest()
     initial = _snapshot(s)
     _expect(initial.get("has_data") is False and initial.get("has_job") is False, "H7: restart가 DataTarget/active Work를 복원했습니다")
     initial_wb = initial.get("workbench_observation") or {}
-    _expect(initial_wb.get("run_delivery_intent") is None, "H7: restart가 delivery intent를 복원했습니다")
+    # 작업을 고르기 전에는 저장 폴더를 도출할 재료(템플릿)조차 없다 — 기억이 있어도 여기서는
+    # 아무것도 서지 않는다(U3-06 #879: 기억은 도출의 재료이지 그 자체로 세워지는 값이 아니다).
+    _expect(initial_wb.get("run_delivery_intent") is None, "H7: 작업 선택 전에 delivery intent가 섰습니다")
     _mount_data(ctx, ctx.stage_data("clean"))
     s.wait("document.getElementById('jobActionName').textContent.trim() === ''", "restart data reload 뒤 active Work 0", requires=["#jobActionName"])
     _select_work(s, "발주요청서")
@@ -1335,13 +1341,32 @@ def run_restart(ctx: ScenarioContext) -> dict:
         binding["active_field"] and not binding["pending_action"],
         "H7: durable Binding이 restart 뒤 복원되지 않았습니다",
     )
-    _expect(wb.get("run_delivery_intent") is None and wb.get("semantic_preview") is None, "H7: session delivery/preview가 거짓 복원됐습니다")
+    # U3-06(#879): 저장 폴더는 restart 뒤에도 선다 — 다만 **기억한 기본값**으로다. session 선언이
+    # 부활하는 것이 아니라는 사실을 세 값이 함께 말한다: 경로는 지난번 명시 지정 그대로이고
+    # 출처는 「기억한 폴더」인데, 지난 세션이 명시로 골랐던 파괴적 충돌 처리
+    # (OVERWRITE_EXPLICIT)는 비파괴 기본값으로 돌아와 있다.
+    intent = wb.get("run_delivery_intent") or {}
+    delivery_default = {
+        "directory": intent.get("output_directory"),
+        "source": (wb.get("output_folder") or {}).get("source"),
+        "collision_policy": intent.get("collision_policy"),
+    }
+    _expect(
+        delivery_default == {
+            "directory": ctx.output_dir,
+            "source": "remembered",
+            "collision_policy": "ADD_SUFFIX",
+        },
+        f"H7: 저장 폴더 기억이 계약대로 복원되지 않았습니다 — {delivery_default!r}",
+    )
+    _expect(wb.get("semantic_preview") is None, "H7: session preview가 거짓 복원됐습니다")
     after_files = ctx.output_manifest()
     _expect(after_files == before_files, "H7: restart observation이 filesystem을 변경했습니다")
     return {
         "sx05_restart": {
             "durable": {"job": current.get("job_name"), "selections": selected, "binding": binding},
-            "session_absent": {"data_before_reload": True, "active_work_before_reselect": True, "delivery": True, "preview": True},
+            "delivery_default": delivery_default,
+            "session_absent": {"data_before_reload": True, "active_work_before_reselect": True, "delivery_collision": True, "preview": True},
             "filesystem_before": before_files,
             "filesystem_after": after_files,
         }

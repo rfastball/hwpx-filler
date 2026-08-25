@@ -939,19 +939,35 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
   const planned = (delivery.planned_documents || []) as Obj[];
   const deliveryBlockers = (delivery.blockers || []) as Obj[];
   const collisionPolicy = String(intent?.collision_policy || '');
+  // 저장 폴더는 backend 가 도출한다(U3-06 #879) — 명시 지정이 없어도 실제로 쓰일 경로와
+  // 그 출처가 실려 온다. 표면은 그 값을 그리기만 하고 경로·라벨을 여기서 다시 만들지 않는다.
+  const outputFolder = (wb.output_folder || {}) as Obj;
+  const outputFolderPath = String(
+    outputFolder.directory || intent?.output_directory || '',
+  );
+  const outputFolderSource = String(outputFolder.source_label || '');
+  const outputFolderNotice = String(outputFolder.notice || '');
   const deliverySection = createElement(Fragment, null,
     h('div', { className: 'zone-cap' }, '저장 폴더'),
     h('div', { className: 'run-row' },
       h('input', {
         className: 'field ro', id: 'jobManagedOutDir', type: 'text', readOnly: true,
-        value: String(intent?.output_directory || ''),
+        value: outputFolderPath,
         placeholder: '이 폴더에 문서를 저장합니다',
       }),
       h('button', {
         className: 'btn sm', id: 'jobManagedPickFolder', type: 'button',
         disabled: running || !s?.has_job,
         onClick: () => { void props.controller.pickOutputFolder(); },
-      }, '찾아보기…')),
+      }, '찾아보기…'),
+      outputFolderSource
+        ? h('span', { className: 'muted capnote', id: 'jobManagedOutDirSource' },
+          outputFolderSource)
+        : null),
+    outputFolderNotice
+      ? h('p', { className: 'warn capnote', id: 'jobManagedOutDirNotice' },
+        outputFolderNotice)
+      : null,
     h('div', { className: 'zone-cap' }, '충돌 처리'),
     h('select', {
       className: 'field', id: 'jobDeliveryCollision', value: collisionPolicy,
@@ -968,6 +984,11 @@ export function JobWorkbenchStatus(props: { controller: JobRunController }): Rea
     ...DELIVERY_POLICIES.map(([value, label]) =>
       h('option', { key: value, value }, label))),
     h('div', { className: 'zone-cap' }, '생성 예정 문서'),
+    // 계획은 이름만 말하면 절반이다 — 어디에 떨어지는지를 같은 자리에서 진술한다(#879).
+    outputFolderPath
+      ? h('p', { className: 'muted capnote', id: 'jobPlannedOutDir' },
+        `저장 폴더: ${outputFolderPath}`)
+      : null,
     planned.length
       ? h('ul', { className: 'plain-list', id: 'jobPlannedDocuments' },
           ...planned.map((item) => h('li', {
