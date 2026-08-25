@@ -497,6 +497,21 @@ export function createEditorController(deps: EditorControllerDeps) {
     }
   }
 
+  /** 동봉 예제 세트 설치(#891) — 확인 왕복. 재진술 문안·수치는 Python 이 낸다.
+   *
+   *  누르기 전에는 홈에 아무것도 쓰이지 않는다(1차는 읽기 전용 재진술). 확정 뒤의 결과·
+   *  실패 사유는 tpl 결과 줄이 재진술하므로 여기서 다시 말하지 않는다. */
+  async function installExamples(trigger?: HTMLElement): Promise<void> {
+    const result = await dispatch("tpl", "install_examples", {});
+    if (result.needs_confirm && await deps.modal.confirm({
+      title: "예제 설치 확인",
+      body: `${result.confirm_text}\n\n설치할까요?`,
+      confirmLabel: "설치", cancelLabel: "취소", returnFocus: trigger,
+    })) {
+      await dispatch("tpl", "install_examples", { confirm: true });
+    }
+  }
+
   /* ---- 컴파일된 구간 항목(Slot) 관리 동사 3종(S8-03) ---- */
 
   /** 항목 이름 바꾸기 — 파괴가 아니라 프롬프트 하나다(확인 왕복 없음). */
@@ -1170,6 +1185,7 @@ export function createEditorController(deps: EditorControllerDeps) {
     typeTxtEdit, saveTxtEditAsNew,
     /** 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다. */
     refreshLibrary: (): Promise<Obj> => dispatch("tpl", "refresh", {}),
+    installExamples,
     useLibraryTemplate, importTemplate, importFolder, pickData, skipData,
     useNone, resuggestAll, confirmAll, discardPatch, cancelNewDraft,
     gotoSection, neighbour, doSave, returnScreen, flushPendingEdits, sendEdit,
@@ -1426,6 +1442,7 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
   const txt = library.txt || {};
   const result = library.result || {};
   const slots = library.slots || null;
+  const examples = (library.examples || null) as Obj | null;
   return createElement(Fragment, null,
     /* 가져오기는 hwpx·txt 겸용(확장자가 매체 라우팅)이라 밴드 밖 공용 줄에 둔다. */
     h("div", { className: "row", style: { marginBottom: "var(--sp-4)" } },
@@ -1441,6 +1458,13 @@ function LibraryPicker(props: { snapshot: Obj; controller: EditorController }): 
         className: "btn sm", "data-act": "lib-new-txt",
         onClick: (event: Obj) => controller.openTxtEdit("new", "", "", "", event.currentTarget),
       }, "새 TXT 템플릿…"),
+      /* 동봉 예제 상시 진입점(#891) — 라벨·설치 여부는 스냅샷이 낸다(여기서 발명 금지). */
+      examples ? h("button", {
+        className: "btn sm", "data-act": "install-examples", "data-busy-lock": true,
+        title: String(examples.hint || ""),
+        onClick: (event: Obj) => controller.guarded(
+          () => controller.installExamples(event.currentTarget)),
+      }, String(examples.label || "")) : null,
       h("span", { className: "spacer" }),
       h("button", {
         className: "btn sm", "data-act": "lib-refresh", title: "라이브러리 폴더를 다시 읽습니다",

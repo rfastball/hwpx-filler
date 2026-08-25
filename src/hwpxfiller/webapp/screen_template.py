@@ -32,7 +32,8 @@ import threading
 from pathlib import Path
 
 from ..domain.text_structure import scan_text_structure, scan_text_token_spans
-from ..host.locations import default_templates_dir
+from ..host.locations import default_example_data_dir, default_templates_dir
+from ..external import example_pack
 from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
@@ -60,13 +61,23 @@ class TemplateController:
         push: PushSink,
         *,
         file_store: TemplateFileStore,
+        pool_registry,
         library_dir=None,
         hwpx_groups: "TemplateGroupModel | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
+        example_data_dir=None,
     ) -> None:
         self._push_sink = push
         self.text_registry = text_registry
         self._files = file_store
+        # 예제 세트 설치(#891)의 데이터 고정 대상 — **필수 주입**이다(LibraryController 의
+        # pool_registry 전례): 이 화면이 자기 것을 세우면 풀 상태의 제2 정본이 된다.
+        # 설치 몸통은 ``external/example_pack`` 이 지고 여기는 확인 왕복과 재진술만 한다.
+        self._pool_registry = pool_registry
+        self._example_data_dir = (
+            Path(example_data_dir) if example_data_dir is not None
+            else default_example_data_dir()
+        )
         # 라이브러리 폴더 미지정이면 표준 라이브러리(~/.hwpxfiller/templates)를 겨눈다(고정 루트).
         self.vm = TemplateManagerViewModel(
             library_dir if library_dir is not None else default_templates_dir(),
@@ -209,6 +220,10 @@ class TemplateController:
             "txt": txt,
             "result": {"text": self.result_text, "level": self.result_level},
             "slots": self.slot_snapshot(),
+            # 동봉 예제 진입점(#891 · §4.1) — 라벨·설치 여부는 **Python 이 낸다**. 링2 가
+            # 「이미 설치됨」을 다시 판정하면 같은 사실을 두 곳이 말하게 된다. 판정 몸통은
+            # ``example_pack.entry_point_state`` 하나이고 라이브러리 빈 상태도 그것을 읽는다.
+            "examples": example_pack.entry_point_state(),
         }
 
     def slot_snapshot(self) -> "dict | None":
@@ -438,6 +453,59 @@ class TemplateController:
         self.result_text = ""
         self.result_level = "muted"
         self.vm.refresh()
+
+    # ---- 동봉 예제 설치(#891 · ONBOARDING_TUTORIAL.md §4.1~4.2)
+    def _hwpx_root(self) -> Path:
+        root = self.vm.library_dir
+        if root is None:  # 고정 루트라 실제로는 오지 않는다 — 오면 조용히 추측하지 않는다.
+            raise ValueError("HWPX 라이브러리 루트가 정해져 있지 않습니다.")
+        return Path(root)
+
+    def _do_install_examples(self, p: dict) -> dict:
+        """동봉 예제 세트 설치 — **1차는 재진술, 2차(`confirm`)가 실행**이다.
+
+        D1(빈 상태 제안 + 명시 버튼)의 백엔드 착지다: 최초 부팅 자동 설치가 사용자 홈 무단
+        쓰기라 기각됐으므로, 확정을 지나지 않은 호출은 **홈에 아무것도 쓰지 않고** 무엇을
+        몇 건 어디에 쓰는지만 돌려준다(문안·수치는 Python, 확인 UI 는 웹 ``Modal.confirm``).
+
+        재설치는 되돌리기다(§1 D4 — 벌크 undo 슬롯을 새로 만들지 않는다): 지난 manifest
+        기재분을 덮어쓰고 manifest 를 새로 쓴다. 남의 동명 파일은 접미로 비켜 가고 그 사실은
+        결과 줄이 재진술한다. 설치 몸통(복사·그룹 지정·데이터 고정·manifest)은
+        :func:`~hwpxfiller.external.example_pack.install` 이 지고 여기는 조립과 문구만 맡는다.
+        """
+        hwpx_root = self._hwpx_root()
+        txt_root = Path(self.text_registry.directory)
+        if not p.get("confirm"):
+            return {
+                "needs_confirm": True,
+                "confirm_text": example_pack.confirm_text(
+                    hwpx_root=hwpx_root, txt_root=txt_root, data_dir=self._example_data_dir
+                ),
+            }
+        try:
+            done = example_pack.install(
+                file_store=self._files,
+                hwpx_groups=self.hwpx_groups,
+                txt_groups=self.txt_groups,
+                hwpx_root=hwpx_root,
+                txt_root=txt_root,
+                pool_registry=self._pool_registry,
+                group_key=rel_key,
+                data_dir=self._example_data_dir,
+            )
+        except (OSError, ValueError) as exc:  # 자산 부재·복사 실패 — 사유를 그대로 재진술
+            self._set_result(_danger(f"예제를 설치하지 못했습니다: {exc}"))
+            return {"ok": False, "error": str(exc)}
+        self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
+        line = (
+            f"예제 템플릿 {len(done['templates'])}건을 '{example_pack.EXAMPLE_GROUP}' 그룹에 넣고 "
+            f"데이터 {len(done['pool_keys'])}건을 고정했습니다."
+        )
+        if done["renamed"]:
+            # 조용히 덮지 않았다는 사실은 결과가 말한다 — 같은 이름의 남의 파일이 있었다.
+            line += " 같은 이름의 파일이 있어 " + ", ".join(done["renamed"]) + " 로 넣었습니다."
+        self._set_result(_ok(line))
+        return {"ok": True, "installed": len(done["templates"]) + len(done["data_files"])}
 
     # ---- HWPX 상태 게이트 액션
     def _do_compile(self, p: dict) -> dict:
@@ -778,3 +846,10 @@ def _ok(text: str):
     from ..gui.template_manager_state import ResultLine
 
     return ResultLine(text, "ok")
+
+
+def _danger(text: str):
+    """거절 결과 라인(danger 레벨) — :func:`_ok` 동형. 실패를 muted 로 접지 않는다."""
+    from ..gui.template_manager_state import ResultLine
+
+    return ResultLine(text, "danger")

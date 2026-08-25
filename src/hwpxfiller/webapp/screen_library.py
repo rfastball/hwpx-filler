@@ -44,6 +44,7 @@ from ..application.jobs import (
     soft_delete_job,
 )
 from ..domain.engine import HwpxEngine
+from ..external import example_pack
 from ..external.dataset_store import DatasetPoolRegistry
 from ..external.job_store import JobRegistry
 from ..external.text_registry import TextTemplateRegistry
@@ -267,6 +268,11 @@ class LibraryController:
                 "pool_corrupted": kpi.pool_corrupted,
             },
             "is_empty": self.vm.is_empty(),
+            # 저장된 작업이 없는 갈래의 두 번째 출구(#891 · §4.1) — 「예제로 시작하기」의
+            # 라벨·설치 여부는 tpl 스냅샷과 **같은 단일 출처**를 읽는다(프런트 발명 금지).
+            # 실행 자체는 tpl 채널의 `install_examples` 를 교차 화면 dispatch 로 부른다:
+            # 설치는 템플릿 라이브러리의 사건이지 작업 레지스트리의 사건이 아니다.
+            "examples": example_pack.entry_point_state(),
             # 라이브러리 browser(§19.6) — 보기 4종 × 작업 방식 × 검색 × 태그 facet.
             "view": self.vm.library_view,
             "mode": self.vm.library_mode,

@@ -1940,6 +1940,7 @@ def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
         file_store=TemplateFileStore(
             lib, txt_reg, clock=lambda: 2_000_000_000.0, new_id=lambda: "fixed-id"
         ), library_dir=lib,
+        pool_registry=DatasetPoolRegistry(tmp_path / "datasets"),
     )
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,

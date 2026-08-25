@@ -31,12 +31,25 @@ version_res = str(version_path) if version_path.exists() else None
 icon_path = SPEC_DIR / "hwpx-filler.ico"
 icon_res = str(icon_path) if icon_path.exists() else None
 
+# 온보딩 동봉 예제 자산(#891 · ONBOARDING_TUTORIAL.md §4.5) — 설치본·포터블 사용자가 저장소
+# 없이 앱 안에서 예제 세트를 설치할 수 있어야 한다(exe 사용자에게 quickstart-101 은 닿지
+# 않는다). **자산 폴더 셋만** 싣는다: 생성 스크립트(make_assets.py)·테스트·__pycache__ 는
+# 런타임이 쓰지 않으므로 폴더를 통째로 넣지 않고 여기서 명시적으로 자른다.
+# 도착 경로는 `_MEIPASS/examples/onboarding/<폴더>` 이고 해석은
+# `hwpxfiller.external.example_pack.asset_root()` 의 sys._MEIPASS 분기가 맡는다.
+ONBOARDING_SRC = REPO / "examples" / "onboarding"
+onboarding_datas = [
+    (str(ONBOARDING_SRC / name), f"examples/onboarding/{name}")
+    for name in ("templates", "text_templates", "data")
+]
+
 a = Analysis(
     [str(SPEC_DIR / "hwpx_filler_web_entry.py")],
     pathex=[SRC],
     binaries=[],
     datas=[
         (str(REPO / "build" / "web"), "web"),  # sealed Vite output only
+        *onboarding_datas,  # 온보딩 예제 자산 3폴더(#891)
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[

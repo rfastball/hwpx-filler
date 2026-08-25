@@ -50,6 +50,7 @@ from ..domain.job import (
 )
 from ..domain.mapping import TYPES, MappingProfile
 from ..domain.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
+from ..external import example_pack
 from ..external.text_registry import TextTemplateRegistry
 from ..domain.text_render import SEG_MISSING, render_segments, template_fields
 from ..data.factory import source_for_path
@@ -656,6 +657,10 @@ class EditorController:
             },
             # 검토가 낸 Slot 목록(S8-03) — 없으면 ``None`` 이고 표면은 구획째 서지 않는다.
             "slots": self._library_slots() if self._library_slots is not None else None,
+            # 동봉 예제 상시 진입점(#891 · §4.1) — 밴드의 ``emptyText`` 는 문자열 prop 이라
+            # 버튼을 품지 못하므로 밴드 **밖** 공용 버튼 줄이 그 자리다. 라벨·설치 여부는
+            # tpl·라이브러리 스냅샷과 같은 단일 출처를 읽는다(세 표면이 한 판정을 본다).
+            "examples": example_pack.entry_point_state(),
         }
 
     def _txt_library_rows(self) -> "list[dict]":
