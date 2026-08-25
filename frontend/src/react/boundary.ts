@@ -20,6 +20,8 @@ import { ShellHost } from "../shell/host.ts";
 import type { ShellHostPorts } from "../shell/host.ts";
 import { ProductScreens } from "../screens/product_screens.ts";
 import type { ProductScreensPorts } from "../screens/product_screens.ts";
+import { TutorialPanel } from "../tutorial/panel.ts";
+import type { TutorialPorts } from "../tutorial/panel.ts";
 
 type BoundaryProps = {
   alarm: (message: string) => void;
@@ -92,7 +94,9 @@ function StoreSignal(props: {
 }
 
 /** 제품 React 트리의 요소 factory — root 상태기계의 `createAppElement` 실물이다.
- *  자식 다섯: 마운트 신호 · store 신호 · overlay host · shell host · 화면 portal host. */
+ *  자식 여섯: 마운트 신호 · store 신호 · overlay host · shell host · 화면 portal host ·
+ *  튜토리얼 셸 표면. 튜토리얼이 화면 portal 이 아니라 **형제**인 이유는 몰입 표면(editor·
+ *  workbench)에서도 살아 있어야 하기 때문이다 — stage 안에 두면 화면 전환이 걷어 간다. */
 export function createAppElement(hooks: {
   onCommit: () => void;
   alarm: (message: string) => void;
@@ -101,6 +105,7 @@ export function createAppElement(hooks: {
   overlay: OverlayHostPorts;
   shell: ShellHostPorts;
   screens: ProductScreensPorts;
+  tutorial: TutorialPorts;
 }): ReactNode {
   return createElement(
     ReactErrorBoundary,
@@ -113,5 +118,6 @@ export function createAppElement(hooks: {
     createElement(OverlayHost, hooks.overlay),
     createElement(ShellHost, hooks.shell),
     createElement(ProductScreens, hooks.screens),
+    createElement(TutorialPanel, hooks.tutorial),
   );
 }

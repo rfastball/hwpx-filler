@@ -41,10 +41,11 @@ from ..gui.filter_state import sniff_column_kinds
 from ..gui.mapping_state import MappingModel
 from ..gui.selection_state import SelectionModel
 from ..gui.txt_card import card_text, gate_empty_fields, render_card
+from ..gui.tutorial_state import Milestone
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.work_mode import WORK_MODE_TEXT, work_mode_label
 from .mapping_verbs import MappingVerbsMixin
-from .screens import PushSink
+from .screens import PushSink, TutorialSink, unwired_tutorial
 from ..external.settings import is_proportional_font, load_draft_target_font, save_draft_target_font
 
 #: 표시형 프리셋·유형 선택지 — 「기안」·편집기와 **같은 표**(format_engine)에서 뽑는다.
@@ -134,10 +135,13 @@ class WorkbenchController(MappingVerbsMixin):
         txt_materialization: (
             "Callable[[str, dict, str], tuple[str | None, str]] | None"
         ) = None,
+        tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
+        # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이 하나: 복사 성사(T11).
+        self._tutorial = tutorial
         # slot-bearing TXT 의 **물질화 포트**(S10-04 #861). 앱 조립이 봉인→VDR→start gate 를
         # 거쳐 검증된 bytes 를 내는 서비스에 결선한다. 이 컨트롤러는 그 안을 모른다 — 받는
         # 것은 「검증된 텍스트」 아니면 「사유」뿐이고, 사유는 그대로 복사 차단으로 재진술된다.
@@ -950,6 +954,9 @@ class WorkbenchController(MappingVerbsMixin):
             "stamp_error": stamp_error,
         }
         self._copied_total += 1
+        # T11 검토·복사(#894) — 카운터가 실제로 오른 자리다(작업대 복사 카운터 ≥1). 클립보드
+        # 쓰기가 성공한 뒤에만 여기 오므로 「복사가 곧 완료 표시」와 같은 사건에 결속된다.
+        self._tutorial(Milestone.COPY_DRAFT)
         # 지금 규칙으로 복사했다 — 그 지문을 못박는다. 다시 복사하면 덮어써 재확인이 해소되고,
         # 규칙이 갈리면 같은 값에서 파생이 「다시 확인 필요」로 넘어간다(별도 무효화 코드 없음).
         self._copied_rules[cur] = self._rules_signature()

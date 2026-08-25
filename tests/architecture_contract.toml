@@ -46,6 +46,9 @@ allowed_source_roots = [
   "frontend/src/react",
   "frontend/src/screens",
   "frontend/src/shell/host.ts",
+  # 셸 레벨 튜토리얼 표면(#894) — 화면 stage 밖에 서야 몰입 표면에서도 살아남는다.
+  # 파일 하나로 좁힌다(디렉터리로 넓히지 않는다 — codemirror 주석의 그 이유 그대로).
+  "frontend/src/tutorial/panel.ts",
 ]
 mount_owner = "frontend/src/react/root.ts|boot"
 update_owner = "frontend/src/react/boundary.ts|StoreSignal"

@@ -80,9 +80,17 @@ from ..gui.mapping_state import (
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..external.hwpx_package_io import read_hwpx_package
 from ..gui.template_manager_state import TemplateManagerViewModel
+from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
-from .screens import MUTATION_KINDS, NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink
+from .screens import (
+    MUTATION_KINDS,
+    NO_ROWS_TEXT,
+    TXT_RAW_BLOCK,
+    PushSink,
+    TutorialSink,
+    unwired_tutorial,
+)
 from .template_groups import TemplateGroupModel, norm_library_path, rel_key
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
@@ -155,10 +163,15 @@ class EditorController:
         library_result: "Callable[[], dict] | None" = None,
         library_slots: "Callable[[], dict | None] | None" = None,
         after_mapping_saved: "Callable[[str], object] | None" = None,
+        tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
+        # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이 넷: 템플릿 적용(T1)·매핑
+        # 전확정(T2)·작업 저장(T3 HWPX / T10 TXT)·비움 확정(T14). 전부 **이미 성립한** 전이
+        # 지점에서만 부르고, 어느 것도 여기서 다시 판정하지 않는다.
+        self._tutorial = tutorial
         # (pool_registry 주입은 #347 에서 제거 — 자동등록·기본 데이터 연결 재진술이 죽어
         #  이 화면은 풀을 읽지도 쓰지도 않는다. 소비자 0 인 seam 은 남기지 않는다.)
         # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
@@ -909,6 +922,9 @@ class EditorController:
         path = str(p["path"])
         self.assert_library_path(path)
         self.new_job_session(path)
+        # T1 템플릿 고르기(#894) — 세션에 템플릿이 실제로 앉은 뒤다. 자산 정체성(예제인가)은
+        # 따지지 않는다: 루프를 돈 것이 판정이지 예제 강제가 아니다(§3.1-4 비강제).
+        self._tutorial(Milestone.PICK_TEMPLATE)
 
     def _do_toggle_library_group(self, p: dict) -> None:
         """1단계 피커 그룹 접힘 토글 — **관리 화면과 같은 모델**을 토글해 한 조직을 공유한다
@@ -1411,9 +1427,20 @@ class EditorController:
             raise ValueError(f"알 수 없는 editor 액션: {action!r}")
         if action not in self._NONMUTATING_ACTIONS:
             self._session_clean = False  # 변이 = 더는 저장본과 동일하지 않다
+        was_complete = self._mapping_complete()
         result = handler(payload)
+        # T2 매핑 전확정(#894) — **상승 모서리**로 통지한다. 확정은 한 액션이 아니라 여러 갈래
+        # (`confirm_all`·`confirm_blanks`·행별 `set_confirmed`·`restore_confirmed`)로 도달하므로
+        # 액션마다 훅을 달면 그 목록이 곧 두 번째 판정자가 된다. 판정 자체는 링1
+        # ``MappingModel.is_complete()`` 하나이고 여기는 그 값의 false→true 만 읽는다.
+        if not was_complete and self._mapping_complete():
+            self._tutorial(Milestone.CONFIRM_MAPPING)
         self._push()
         return result
+
+    def _mapping_complete(self) -> bool:
+        """지금 매핑이 전확정인가 — 링1 판정의 단순 조회(모델 부재는 False)."""
+        return self.model is not None and self.model.is_complete()
 
     # ---- 세션 수명주기(F10)
     def _do_new_session(self, p: dict) -> None:
@@ -1845,7 +1872,12 @@ class EditorController:
 
     def _do_confirm_blanks(self, p: dict) -> None:
         """재진술·확인된 미매칭 행을 의도적 비움으로 확정."""
-        self.model.confirm_fields(list(p.get("fields", [])))
+        confirmed = self.model.confirm_fields(list(p.get("fields", [])))
+        # T14 비움 확정(#894) — **실제로 확정된 행이 있을 때만**이다: 빈 목록·이미 확정된
+        # 이름으로 온 무변이 호출에서 체크가 서면 지나지 않은 게이트를 지났다고 말하게 된다.
+        # 수치 판정은 링1 ``confirm_fields`` 의 반환(새로 확정된 개수)이 이미 냈다.
+        if confirmed:
+            self._tutorial(Milestone.CONFIRM_EMPTY_FIELD)
 
     def _do_unconfirm_all(self, p: dict) -> dict:
         self._unconfirm_undo = [i for i, row in enumerate(self.model.rows) if row.confirmed]
@@ -2057,6 +2089,14 @@ class EditorController:
         saved_job = (
             self.registry.load(str(result["saved_name"])) if result.get("ok") else None
         )
+        # T3/T10 작업 저장(#894) — 레지스트리 쓰기가 성립한 **직후**다. 뒤따르는 Field Binding
+        # 검토가 실패해도 저장 자체는 이미 커밋됐으므로(`legacy_saved`) 그 갈래에서도 체크가
+        # 선다: 하지 않은 일을 했다고 말하지 않는 것과 대칭으로, 한 일을 안 했다고도 하지
+        # 않는다. HWPX/TXT 갈림은 링0 파생 사실(``Job.media``)이라 여기서 재판정하지 않는다.
+        if saved_job is not None:
+            self._tutorial(
+                Milestone.SAVE_TXT_JOB if saved_job.media == "txt" else Milestone.SAVE_JOB
+            )
         if (
             not result.get("ok")
             or self._after_mapping_saved is None

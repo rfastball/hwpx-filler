@@ -147,7 +147,7 @@ test("createRoot 실패는 경보 후 false 다 — 조용한 폴백도, 예외 
   assert.equal(alarms.length, 2);
 });
 
-test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소 계약대로 실려 있다", () => {
+test("실물 요소 배선 — 경계가 최외곽이고 여섯 자식이 요소 계약대로 실려 있다", () => {
   const onCommit = () => {};
   const alarm = () => {};
   const store = { channels: [], subscriber: () => () => () => {}, revision: () => 0 };
@@ -161,9 +161,18 @@ test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소
       hostReady: () => false, initSequence: [] },
   };
   const screens = { doc: {}, portals: [] };
+  /* #894 — 셸 레벨 튜토리얼 표면. 화면 portal 이 아니라 형제라서 몰입 표면에서도 산다. */
+  const tutorial = {
+    model: { getSnapshot: () => null, subscribe: () => () => {} },
+    loadInitial: () => Promise.resolve(null),
+    dispatch: () => Promise.resolve(null),
+    nav: { subscribe: () => () => {}, currentScreen: () => null },
+    overlay: { subscribe: () => () => {}, isBusy: () => false },
+    alarm: () => {},
+  };
 
   const element = createAppElement({
-    onCommit, alarm, store, reflectStoreRevision, overlay, shell, screens,
+    onCommit, alarm, store, reflectStoreRevision, overlay, shell, screens, tutorial,
   });
 
   assert.equal(element.type, ReactErrorBoundary,
@@ -171,13 +180,13 @@ test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소
   assert.equal(element.props.alarm, alarm);
   assert.equal(element.props.onCommit, onCommit,
     "커밋 신호가 최외곽 props 에 없습니다 — 렌더 실물 없는 기록자가 커밋 경로에 닿지 못합니다.");
-  /* 마운트·store·overlay·shell·screen portal host가
+  /* 마운트·store·overlay·shell·screen portal host·튜토리얼 셸 표면이
      각각 독립 자식이다. */
   const children = element.props.children;
   assert.equal(Array.isArray(children), true, "신호 자식이 배열이 아닙니다 — 형제 자식이 사라졌습니다.");
-  assert.equal(children.length, 5,
-    "자식이 정확히 다섯(MountSignal·StoreSignal·OverlayHost·ShellHost·ScreenMigrationHost)이어야 합니다.");
-  const [mountSignal, storeSignal, overlayHost, shellHost, screenHost] = children;
+  assert.equal(children.length, 6,
+    "자식이 정확히 여섯(MountSignal·StoreSignal·OverlayHost·ShellHost·ScreenMigrationHost·TutorialPanel)이어야 합니다.");
+  const [mountSignal, storeSignal, overlayHost, shellHost, screenHost, tutorialPanel] = children;
   assert.equal(typeof mountSignal.type, "function", "마운트 신호 자식이 없습니다.");
   assert.equal(mountSignal.props.onCommit, onCommit);
   assert.equal(typeof storeSignal.type, "function", "store 신호 자식이 없습니다.");
@@ -200,6 +209,13 @@ test("실물 요소 배선 — 경계가 최외곽이고 다섯 자식이 요소
   assert.equal(typeof screenHost.type, "function", "screen portal host 자식이 없습니다.");
   assert.equal(screenHost.props.doc, screens.doc);
   assert.equal(screenHost.props.portals, screens.portals);
+  assert.equal(typeof tutorialPanel.type, "function", "튜토리얼 셸 표면 자식이 없습니다.");
+  assert.equal(tutorialPanel.props.model, tutorial.model,
+    "TutorialPanel 이 주입된 채널 model 과 다른 객체를 받았습니다.");
+  assert.equal(tutorialPanel.props.overlay, tutorial.overlay,
+    "TutorialPanel 의 억제 관측면이 주입분과 다릅니다 — 순간 카드가 모달 위로 샙니다.");
+  assert.equal(tutorialPanel.props.nav, tutorial.nav,
+    "TutorialPanel 의 셸 관측면이 주입분과 다릅니다.");
 });
 
 test("제품 배선은 컨테이너 부재를 침묵으로 접지 않는다", async () => {

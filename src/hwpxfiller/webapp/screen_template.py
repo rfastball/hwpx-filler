@@ -38,7 +38,15 @@ from ..external.template_files import TemplateFileStore, TextEditDrift
 from ..external.text_registry import TextTemplateRegistry
 from ..external.template_inspection import HWPX_TEMPLATE_OPS, inspect_hwpx_template
 from ..gui.template_manager_state import SlotView, TemplateManagerViewModel
-from .screens import MUTATION_KINDS, MutationSink, PushSink
+from ..gui.tutorial_state import Milestone
+from .screens import (
+    MUTATION_KINDS,
+    CompileSink,
+    MutationSink,
+    PushSink,
+    TutorialSink,
+    unwired_tutorial,
+)
 from .template_groups import (
     TemplateGroupModel,
     norm_library_path,
@@ -66,8 +74,13 @@ class TemplateController:
         hwpx_groups: "TemplateGroupModel | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
         example_data_dir=None,
+        tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
         self._push_sink = push
+        # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이 둘: 예제 설치 성립(T0 =
+        # 명시 시작)과 누름틀 변환 성립(T15). 판정을 다시 하지 않고 **이미 성립한 사실**만
+        # 넘긴다(통지 지점은 아래 두 곳 뿐).
+        self._tutorial = tutorial
         self.text_registry = text_registry
         self._files = file_store
         # 예제 세트 설치(#891)의 데이터 고정 대상 — **필수 주입**이다(LibraryController 의
@@ -117,6 +130,10 @@ class TemplateController:
         # ``(kind, path)`` 이고 kind 는 :data:`MUTATION_KINDS` 셋 중 하나다. 배선은 앱
         # 조립부 한 줄(app.py)이고 이 컨트롤러는 상대의 형체를 모른다(handoff callable).
         self.mutation_sinks: "list[MutationSink]" = []
+        # 누름틀 변환 **성립** 통지 sink(#894) — `mutation_sinks` 와 나눠 두는 이유는 동사가
+        # 다르기 때문이다(:data:`CompileSink` 주석). 「문서 만들기」가 이것을 받아, 생성된
+        # 문서의 템플릿이 이 세션에서 변환된 것인지(T16)를 자기 사실로 안다.
+        self.compile_sinks: "list[CompileSink]" = []
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -505,6 +522,9 @@ class TemplateController:
             # 조용히 덮지 않았다는 사실은 결과가 말한다 — 같은 이름의 남의 파일이 있었다.
             line += " 같은 이름의 파일이 있어 " + ", ".join(done["renamed"]) + " 로 넣었습니다."
         self._set_result(_ok(line))
+        # T0 예제 설치(#894) — **명시 시작**이다(§1 D3): 이 통지 전까지 튜토리얼 표면은 서지
+        # 않는다. 1차(재진술)는 홈에 아무것도 쓰지 않으므로 여기까지 온 것만이 설치 성립이다.
+        self._tutorial(Milestone.INSTALL_EXAMPLES)
         return {"ok": True, "installed": len(done["templates"]) + len(done["data_files"])}
 
     def _do_remove_examples(self, p: dict) -> dict:
@@ -596,6 +616,12 @@ class TemplateController:
             # 세션이 낡은 스키마로 남는다. 판정 축은 링1 의 ``mutated`` 하나다.
             if result.mutated:
                 self._notify_mutation("mutated", path)
+                # T15 누름틀 변환(#894) — 통지 축은 위와 **같은 ``mutated``** 하나다: 무변이
+                # 거절에서 체크가 서면 하지 않은 일을 했다고 말하는 것이고, 필드만 저장되고
+                # 구간이 실패한 갈래는 실제로 파일이 바뀌었으므로 체크가 선다.
+                self._tutorial(Milestone.COMPILE_TEMPLATE)
+                for sink in self.compile_sinks:
+                    sink(str(path))
             return {
                 "ok": True, "applied": True,
                 "refused": result.refused, "mutated": result.mutated,

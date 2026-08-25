@@ -90,6 +90,7 @@ from .txt_materialization import (
 from .workbench_observation_product import WorkbenchObservationProduct
 from .screen_pool import PoolController
 from .screen_template import TemplateController
+from .screen_tutorial import TutorialController
 from .screen_workbench import TargetFontSetting, WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
@@ -341,6 +342,15 @@ class WebFrontend:
         # 진행 중인 런의 **단일 사실**(9R P1) — 규칙을 쓰는 표면이 여럿이라(「문서 만들기」·
         # 라이브러리 재연결·편집기 진입) 자물쇠가 한 화면 소유이면 나머지가 조용히 빠진다.
         generation_lock = threading.Lock()
+        # 온보딩 튜토리얼 체크리스트(#894) — **다른 컨트롤러보다 먼저** 세운다: 통지 지점을
+        # 가진 넷이 이 컨트롤러의 `notify` 를 생성자 주입으로 받기 때문이다. VM 하나·영속
+        # 하나를 이것만 소유하고, 나머지는 콜러블 한 개만 든다(푸시 sink 주입과 같은 규율).
+        tutorial_ctrl = TutorialController(
+            self._push,
+            load_progress=settings.load_tutorial_progress,
+            save_progress=settings.save_tutorial_progress,
+        )
+        tutorial = tutorial_ctrl.notify
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
@@ -371,12 +381,14 @@ class WebFrontend:
                           seal_execution=seal_execution,
                           # 작업대 Observation 합성(SX-01 #724 소비 어댑터) — 세션 사실을
                           # WorkbenchCompositionInput 으로 shape 만 한다(stateless).
-                          workbench_observation=WorkbenchObservationProduct()),
+                          workbench_observation=WorkbenchObservationProduct(),
+                          tutorial=tutorial),
             # 템플릿 관리(#13) — TXT 레지스트리는 편집기·「문서 만들기」와 공유(변경이 반영).
             TemplateController(
                 registry, self._push, file_store=template_files, txt_groups=txt_groups,
                 # 예제 세트 설치(#891)의 데이터 고정 대상 — 풀 화면과 **같은 인스턴스**다.
                 pool_registry=pool_registry,
+                tutorial=tutorial,
             ),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
@@ -395,7 +407,12 @@ class WebFrontend:
                                 ),
                                 txt_materialization=_txt_materialization_port(
                                     job_registry, seal_execution
-                                )),
+                                ),
+                                tutorial=tutorial),
+            # 튜토리얼 체크리스트(#894) — 화면이 아니라 채널이다(표면은 셸 레벨 React 패널).
+            # 목록 **끝**에 둔다: 앞 순서는 닫기 가드 질의 순서라 기존 화면 사이에 끼우면
+            # 그 순서가 이유 없이 갈린다.
+            tutorial_ctrl,
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규
@@ -425,6 +442,7 @@ class WebFrontend:
                 # 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지).
                 library_slots=tpl_ctrl.slot_snapshot,
                 after_mapping_saved=job_ctrl.on_editor_mapping_saved,
+                tutorial=tutorial,
             ),
         )
         self.controllers = {c.name: c for c in controllers}
@@ -445,6 +463,14 @@ class WebFrontend:
         # 표면이 아니고, 원인 동사(tpl 변이)의 완료와 같은 줄에서 파이썬이 스스로 부른다.
         self.controllers["tpl"].mutation_sinks.append(
             self.controllers["editor"].reconcile_template_mutation
+        )
+        # 누름틀 변환 성립 → 「문서 만들기」 세션 기억(#894). 위 변이 sink 와 **갈라** 붙이는
+        # 이유는 동사가 다르기 때문이다: 변이는 「파일이 바뀌었다」 전부(개명·삭제·복원·TXT
+        # 저장 포함)이고 여기 필요한 것은 「누름틀로 변환됐다」 하나다. 같은 sink 를 쓰면
+        # slot 개명 한 번이 T16「변환본으로 생성」을 거짓으로 켠다. 이것도 디스패치 액션이
+        # 아니라 컨트롤러 간 seam 이라 action registry 밖이다.
+        self.controllers["tpl"].compile_sinks.append(
+            self.controllers["job"].note_template_compiled
         )
 
     def _controller(self, screen: str):
