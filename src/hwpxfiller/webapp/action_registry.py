@@ -298,6 +298,19 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 읽기 전용이라 확인 왕복이 없고, 새 TXT 창에는 경로가 아직 없으므로 키도 없다.
         "txt_lint": _schema("content"),
     },
+    # 온보딩 튜토리얼 체크리스트(#894 · ONBOARDING_TUTORIAL.md §4.3) — **화면이 아니라 채널**
+    # 이다: DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이다. 그래도 화면 키를 갖는 이유는
+    # 스냅샷 채널과 디스패치 어휘가 이 표에서만 유도되기 때문이고(`SCREEN_ACTIONS` 손 목록
+    # 금지), 같은 형태의 선례가 화면 사망 후 채널만 남은 `pool` 이다.
+    # 마일스톤 **통지**는 여기 없다 — 그것은 웹이 부르는 표면이 아니라 컨트롤러 간 seam 이다
+    # (tpl→편집기 재정산 선례). 웹이 소유하는 것은 종료·재개와 순간 카드 소비 되알림뿐이다.
+    "tutorial": {
+        "dismiss": _schema(),
+        "resume": _schema(),
+        # 동시 1장·억제·자동 소멸은 표면 몫이라 링1 은 미소비 목록만 낸다. 표면이 띄운 한
+        # 장을 되알리지 않으면 같은 카드가 다음 스냅샷에서 다시 뜬다 — 그래서 소비가 액션이다.
+        "consume_moment": _schema("milestone"),
+    },
 }
 
 ACTION_REGISTRY: Mapping[str, Mapping[str, PayloadSchema]] = MappingProxyType(

@@ -104,6 +104,7 @@ import { createEditorEntry } from "./screens/editor_entry.ts";
 import { createWorkbenchController } from "./screens/workbench.ts";
 import { createGroupMoveDialog } from "./screens/group_move_dialog.ts";
 import { createSheetPickerController } from "./screens/sheet_picker.ts";
+import { overlayEngine } from "./overlay/instance.ts";
 import { bootSelftest } from "./selftest/boot.js";
 
 /** 제품 하나를 조립해 세운다 — 제품 entry 가 **정확히 한 번** 부른다.
@@ -450,6 +451,29 @@ export function bootProduct() {
     shell: appShell.shellHost,
     /* R4-04 — static stage 하나에 제품 화면 넷을 한 portal로, overlay는 같은 subtree의
        기존 target으로 보낸다. ProductScreens가 target 중복·static child를 fail-closed한다. */
+    /* #894 — 셸 레벨 튜토리얼 표면(체크리스트 + 순간 카드). 화면 portal 이 아니라 트리의
+       형제라 몰입 표면에서도 살아 있고, 자기 채널(`tutorial`)의 스냅샷만 그린다. 억제 축은
+       overlay 엔진의 다이얼로그 미결 여부 하나다 — `needs_confirm` 플래그는 화면 컨트롤러
+       마다 흩어져 있어 중앙 관측점이 되지 못한다. */
+    tutorial: {
+      model: runtime.model("tutorial"),
+      /* 호스트 주입을 **기다린 뒤** 당긴다. 패널의 당김은 화면 init 시퀀스가 아니라 자기
+         마운트 effect 에서 나는데, 그 시점은 `pywebviewready` 보다 이를 수 있다 — 그냥
+         부르면 `host-absent` 로 죽고, 그 실패는 마운트당 1회라 재시도가 없어 되돌아온
+         사용자의 저장된 진행이 첫 마일스톤 전까지 화면에 서지 않는다. `whenReady` 는
+         선판정 + once 이벤트라 놓치는 창이 없다(adapter 머리말). */
+      loadInitial: () => client.whenReady().then(() => runtime.loadInitial("tutorial")),
+      dispatch: (action, payload) => client.dispatch("tutorial", action, payload),
+      nav: {
+        subscribe: (listener) => shellNav.subscribe(listener),
+        currentScreen: () => shellNav.currentScreen(),
+      },
+      overlay: {
+        subscribe: (listener) => overlayEngine.subscribe(listener),
+        isBusy: () => overlayEngine.isDialogPending(),
+      },
+      alarm: (message) => { console.error("[hwpx] 튜토리얼", message); },
+    },
     screens: {
       doc: document,
       visibility,

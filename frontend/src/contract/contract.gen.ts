@@ -241,6 +241,11 @@ export const SCREEN_ACTIONS = {
     txt_content: { required: ["path"], optional: [] },
     txt_lint: { required: ["content"], optional: [] },
   },
+  tutorial: {
+    dismiss: { required: [], optional: [] },
+    resume: { required: [], optional: [] },
+    consume_moment: { required: ["milestone"], optional: [] },
+  },
 } as const;
 
 export type ScreenName = keyof typeof SCREEN_ACTIONS;

@@ -363,6 +363,18 @@ source_write_set = ["src/hwpxfiller/webapp/screen_template.py"]
 oracle_nodeid = "tests/test_dispatch_wiring.py"
 
 [[unit]]
+module = "hwpxfiller.webapp.screen_tutorial"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/screen_tutorial.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py"
+
+[[unit]]
+module = "hwpxfiller.webapp.tutorial_loop"
+target = "FRONTEND_ADAPTER"
+source_write_set = ["src/hwpxfiller/webapp/tutorial_loop.py"]
+oracle_nodeid = "tests/test_webapp_tutorial.py"
+
+[[unit]]
 module = "hwpxfiller.webapp.screen_workbench"
 target = "FRONTEND_ADAPTER"
 source_write_set = ["src/hwpxfiller/webapp/screen_workbench.py"]

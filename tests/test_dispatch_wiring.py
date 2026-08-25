@@ -13,6 +13,7 @@ from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
+from hwpxfiller.webapp.screen_tutorial import TutorialController
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
 
 
@@ -23,6 +24,9 @@ CONTROLLERS = {
     "pool": PoolController,
     "tpl": TemplateController,
     "workbench": WorkbenchController,
+    # 화면이 아니라 채널이다(#894) — DOM 루트도 탭도 없고 표면은 셸 레벨 React 패널이지만,
+    # 스냅샷 채널과 디스패치 어휘는 이 registry 에서만 나온다(`pool` 과 같은 형상).
+    "tutorial": TutorialController,
 }
 
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신

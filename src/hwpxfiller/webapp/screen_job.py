@@ -133,6 +133,7 @@ from ..gui.run_state import (
     template_missing,
 )
 from ..gui.selection_state import SelectionModel
+from ..gui.tutorial_state import Milestone
 from ..gui.work_mode import (
     WORK_MODE_TEXT,
     last_use_label,
@@ -288,10 +289,13 @@ from .screens import (
     NO_ROWS_TEXT,
     PoolTargetingMixin,
     PushSink,
+    TutorialSink,
     reference_missing,
     relink_job_template,
     source_label,
+    unwired_tutorial,
 )
+from .tutorial_loop import GenerationLoopLedger
 
 #: 부팅 자동 마운트 실패 재진술(U3-07 · #880) — 기억한 데이터를 다시 세우지 못했을 때 첫
 #: 화면이 조용한 빈 상태로 서지 않게 하는 문안. 사유는 기존 로드 관문(파일 부재·나라 동결·
@@ -517,11 +521,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         slot_configuration=None,
         workbench_observation=None,
         seal_execution=None,
+        tutorial: TutorialSink = unwired_tutorial,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self._clock = clock
         self._engine = engine
+        # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이가 가장 많다: 마운트(T4/T12)·
+        # 작업+행 선택(T5)·승인(T6/T13)·생성 완주(T7/T8/T9/T16/T17/T18). 전부 이미 성립한
+        # 전이 지점이고, 어느 것도 여기서 다시 판정하지 않는다.
+        self._tutorial = tutorial
+        # 루프 감지의 세션 이력(#894) — 앱이 들고 있지 않은 사실 넷(같은 작업 반복·같은 마운트
+        # 위 작업 전환·구간 구성 변화·이 세션의 누름틀 변환)을 세는 기억이다. 판정이 아니라
+        # 기억이라 튜토리얼 모듈이 소유하고 이 컨트롤러는 한 칸으로 든다(모듈 독스트링 참조).
+        self._tutorial_loop = GenerationLoopLedger()
+        # 마지막 승인이 빈 값을 포함했는가(§3.4 T13) — 승인과 생성 완주가 **다른 사건**이라
+        # 그 사이를 잇는 한 칸이다. 판정은 링1 ``blank_record_positions`` 가 이미 냈다.
+        self._tutorial_blank_approval = False
+        # 이 **세션에서** 마지막으로 성립한 마운트(§3.4 T12 교체 판정의 왼쪽 항).
+        # `_remembered_data_source` 를 쓰지 않는 이유는 그 칸이 부팅 때 지난 세션 값으로 이미
+        # 차 있어 첫 마운트가 교체로 읽히기 때문이다(:meth:`_remember_data_source` 주석).
+        self._tutorial_last_mount: "dict | None" = None
         # 템플릿 변경 확인·적용 코디네이터(S3-09 #659) — 조립은 webapp.app 이 한다.
         # opaque token·bootstrap·S3 스토어 소유는 전부 저쪽이고 이 컨트롤러는 세션의
         # 현재 작업 이름을 붙여 관통만 한다(판정을 링2 에서 재조립하지 않는다).
@@ -1070,6 +1090,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if not isinstance(current.requirement, PreviewRequired):
                 raise ValueError("현재 생성 내용은 별도 승인이 필요하지 않습니다.")
             self._approved_preview_token = token
+            self._note_tutorial_approval()
             return
         if not self.preview_open:
             raise ValueError("미리보기를 연 뒤에 확인할 수 있습니다.")
@@ -1077,6 +1098,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if unmet is None:
             raise ValueError("지금 확인이 필요한 변경이 없습니다.")
         self.review.approve(req, self._review_scope_key())
+        self._note_tutorial_approval()
+
+    def _note_tutorial_approval(self) -> None:
+        """승인 성립 통지 + 빈 값 동반 여부 기억(#894) — managed·legacy 두 갈래 공용.
+
+        T6 은 승인 그 자체이고, T13(§3.4 빈 값 재승인)은 「빈 값 포함 승인 **+** 생성 완료」라
+        두 사건에 걸친다. 그래서 여기서는 이번 승인이 빈 값을 안고 섰는지만 기억하고, 체크는
+        생성이 완주한 자리에서 선다 — 승인만 하고 만들지 않은 사용자를 만들었다고 하지 않는다.
+
+        빈 값 판정은 링1(``blank_record_positions``)이 이미 냈다. 그 조회가 설 수 없는 상태
+        (VM 부재·TXT)는 「빈 값 없음」이 아니라 **모른다**라서 기억을 세우지 않는다.
+        """
+        self._tutorial(Milestone.APPROVE_VALUES)
+        try:
+            self._tutorial_blank_approval = bool(self._preview_blank_positions())
+        except Exception:  # noqa: BLE001 — 승인은 이미 성립했다. 부기 실패로 되돌리지 않는다.
+            self._tutorial_blank_approval = False
 
     def _do_range_draft_open(self, p: dict) -> dict:
         """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
@@ -2086,6 +2124,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
         self._remembered_data_source = descriptor
         save_last_data_source(**descriptor)
+        # T4/T12 데이터 마운트(#894) — 판정 축은 **마운트 성립 사실**이다(§3.2 부기): 「사용자가
+        # 골랐는가」로 세우면 U3-07 의 부팅 자동 마운트가 달성으로 안 쳐져, 두 번째 세션부터
+        # 체크리스트가 실제 진행보다 뒤처진다. 세 마운트 경로(파일 피커·풀 겨눔·부팅 복원)가
+        # 전부 이 한 자리로 모이므로 통지도 여기 하나다.
+        self._tutorial(Milestone.MOUNT_DATA)
+        # T12 는 **이 세션 안에서의 교체**다. 비교 대상을 위의 `_remembered_data_source` 로
+        # 두면 안 된다 — 그 칸은 부팅 때 지난 세션 값으로 이미 차 있어서(`load_last_data_source`),
+        # 첫 마운트가 곧 교체로 읽힌다. 그래서 세션 전용 칸을 따로 든다: 같은 데이터를 다시
+        # 세운 것(부팅 복원)은 교체가 아니고, 교체는 두 번째 마운트부터다.
+        if self._tutorial_last_mount is not None and self._tutorial_last_mount != descriptor:
+            self._tutorial(Milestone.REPLACE_DATA)
+        self._tutorial_last_mount = descriptor
 
     def _restore_remembered_data(self) -> None:
         """부팅 1회 — 기억한 성분으로 데이터를 마운트하고, 실패는 사유를 싣는다.
@@ -2368,6 +2418,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 그대로). 동일 스냅샷 전량 재계산+재렌더가 모달 여는 중에 겹치는 낭비 제거.
         is_query = getattr(handler, "is_query", False)
         blocked = isinstance(result, dict) and result.get("needs_confirm")
+        # T5 작업·행 선택(#894) — 두 사실(현재 작업 성립 · 선택 ≥1)이 **서로 다른 액션 무리**
+        # 에서 세워지므로(작업 카드 선택 vs 존 변이 13종), 액션마다 훅을 달면 그 목록이 곧
+        # 두 번째 판정자가 된다. 스냅샷이 이미 같은 두 값을 읽어 `has_job`·`selected_count`
+        # 로 싣고 있으므로, 여기서는 그 둘을 그대로 조회해 동시 성립만 본다.
+        if not is_query and bool(self.job_name) and self.selection.selected_count() >= 1:
+            self._tutorial(Milestone.SELECT_ROWS)
         if not is_query and not blocked:
             self._push()
         return result
@@ -3269,10 +3325,85 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
             # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
             self._names_pin = None
+            self._note_tutorial_generation(result)
             self._push()
         elif visible_identity_changed:
             self._push()
         return result
+
+    # ------------------------------------------- 튜토리얼 루프 감지(#894)
+    def note_template_compiled(self, path: str) -> None:
+        """tpl 채널의 **누름틀 변환 성립** 통지를 받는다(T16 의 재료).
+
+        디스패치 액션이 아니라 컨트롤러 간 seam 이다(tpl→편집기 재정산 선례): 웹이 부르는
+        표면이 아니고, 조립 한 줄은 :class:`~hwpxfiller.webapp.app.WebFrontend` 가 소유한다.
+        변이 통지(``mutation_sinks``)와 갈라 받는 이유는 :data:`~hwpxfiller.webapp.screens.
+        CompileSink` 주석에 있다 — slot 개명 한 번이 「변환본으로 생성」을 켜지 않게.
+        """
+        self._tutorial_loop.note_compiled(path)
+
+    def _tutorial_slot_shape(self) -> "dict[str, frozenset[str]] | None":
+        """이번 작업의 「항목 → 고른 선택」 — 없으면 ``None``(구간 없는 템플릿·조회 불가).
+
+        :meth:`_is_managed_hwpx_work` 와 **같은 가드·같은 read-only projection** 을 쓴다
+        (#744): durable id 미발급 Work 를 Product 에 넘기면 read 중 권위 id 가 lazy 발급돼
+        조회만으로 durable 표식이 생긴다. 실패는 「구성 없음」이 아니라 「모른다」라서
+        ``None`` 이고, 그 경우 T17·T18 은 서지 않는다(추측으로 체크하지 않는다).
+        """
+        if self._slot_configuration is None or not self.job_name:
+            return None
+        job = getattr(self.vm, "job", None)
+        if job is None or job.media != "hwpx" or not job.authority_id:
+            return None
+        try:
+            response = self._slot_configuration.current_slot_configuration_view(self.job_name)
+        except SlotConfigurationProductError:
+            return None
+        projection = response.current_view.projection
+        if projection is None:
+            return None
+        return {slot.slot_id: frozenset(slot.effective_option_ids) for slot in projection.slots}
+
+    def _note_tutorial_generation(self, result: dict) -> None:
+        """생성 완주의 마일스톤 통지(#894) — 성공 문서가 **1건 이상**일 때만.
+
+        ``ok`` 는 취소·부분 실패도 참이라(문서 0건인 완주가 있다) 판정 축은 ``succeeded`` 다:
+        §3.3 T7 의 달성 판정이 「생성 완료 사건(성공 ≥1)」이라고 그렇게 못박혀 있다.
+
+        여기서 새로 판정하는 것은 없다. 어느 T 인지는 세션 이력
+        (:class:`~hwpxfiller.webapp.screen_tutorial.GenerationLoopLedger`)이 낸 **사실 넷**과
+        승인 시점에 기억해 둔 빈 값 동반 여부로 갈린다.
+        """
+        if int(result.get("succeeded", 0) or 0) < 1:
+            return
+        job = self._last_run_job or self.job_name
+        if not job:
+            return
+        self._tutorial(Milestone.GENERATE)
+        if self._tutorial_blank_approval:
+            # T13 — 빈 값 포함 승인이 **실제로 문서가 되어** 나온 자리(§3.4). 한 번 성립하면
+            # 그 승인은 소비된 것이라 표식을 내린다: 다음 실행이 빈 값 없이 서도 승인이 다시
+            # 서지 않는 규칙 때문에, 남겨 두면 관계없는 실행이 계속 이 단계를 켠다.
+            self._tutorial(Milestone.APPROVE_WITH_BLANKS)
+            self._tutorial_blank_approval = False
+        if self._tutorial_loop.was_compiled(self._current_template_path()):
+            self._tutorial(Milestone.GENERATE_FROM_COMPILED)
+        facts = self._tutorial_loop.note_generated(
+            job, mount_key=self._data_key, slot_shape=self._tutorial_slot_shape(),
+        )
+        if facts.repeat_job:
+            self._tutorial(Milestone.SECOND_LAP)
+        if facts.other_job_same_mount:
+            self._tutorial(Milestone.SWITCH_JOB)
+        if facts.items_changed:
+            self._tutorial(Milestone.TOGGLE_SECTION)
+        if facts.options_changed:
+            self._tutorial(Milestone.SWITCH_OPTION)
+
+    def _current_template_path(self) -> str:
+        """이번 실행이 쓴 템플릿 경로 — 세션 VM 이 든 값(없으면 빈 문자열)."""
+        job = getattr(self.vm, "job", None)
+        return str(getattr(job, "template_path", "") or "")
 
     def _generate_managed_locked(self, run, run_vm) -> dict:
         """managed HWPX 실행(S6-05 · #812) — legacy generator 를 부르지 않는다(S6-9).

@@ -34,6 +34,31 @@ PushSink = Callable[[str, dict], None]
 # 세션 재정산)이 **같은 어휘**를 써야 해서 여기 공용에 둔다(#320).
 MutationSink = Callable[[str, str], None]
 
+# 누름틀 변환 성립 통지 sink: 변환된 템플릿 경로 → None(#894). `MutationSink` 와 나눠 두는
+# 이유는 **동사가 다르기** 때문이다: 변이 통지는 「파일이 바뀌었다」(개명·되돌리기·삭제·저장
+# 포함)라 편집 세션 재정산이 그 전부를 받아야 하지만, 튜토리얼 T15·T16 이 묻는 것은 「이
+# 템플릿이 누름틀로 **변환**됐다」 하나다. 한 sink 로 합치면 slot 개명 한 번이 변환으로
+# 기록돼 「변환본으로 생성」이 거짓으로 체크된다.
+CompileSink = Callable[[str], None]
+
+# 튜토리얼 마일스톤 통지 sink(#894): 단계 식별자 → 새로 기록됐는가. 통지하는 쪽(전이를 막
+# 성립시킨 화면 컨트롤러)과 받는 쪽(:class:`~hwpxfiller.webapp.screen_tutorial.
+# TutorialController`)이 같은 어휘를 써야 해서 `MutationSink` 와 같은 자리에 둔다. 단계
+# 열거의 정본은 링1(``gui/tutorial_state.Milestone``)이고 여기는 **운반 형**만 정한다.
+TutorialSink = Callable[[object], bool]
+
+
+def unwired_tutorial(milestone: object) -> bool:
+    """미배선 기본값 — 통지를 버린다.
+
+    이름이 ``_noop`` 이 아닌 이유는 이 기본값이 **정상 상태가 아니기** 때문이다: 제품 조립
+    (:class:`~hwpxfiller.webapp.app.WebFrontend`)은 통지 지점을 가진 컨트롤러 전부에 실물
+    sink 를 주입하고 그 완전성은 헤드리스 계약 테스트가 센다. 기본값이 있는 이유는 통지를
+    쓰지 않는 기존 헤드리스 테스트 수십 개가 컨트롤러를 그대로 세울 수 있어야 해서지,
+    조용한 미배선을 허용하려는 것이 아니다.
+    """
+    return False
+
 #: 그 kind 의 전수 — 파일이 제자리에서 **바뀜**(누름틀 변환·TXT 내용 저장) · **사라짐**
 #: (휴지통 이동) · **돌아옴**(복원) 셋뿐이다. 새 durable 변이 동사를 더하면 여기 이름을 먼저
 #: 정하고 그 성공 직후에 통지한다 — 이름 없는 kind 는 양쪽 다 시끄럽게 거절한다.
