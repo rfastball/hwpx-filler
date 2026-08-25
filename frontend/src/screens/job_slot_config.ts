@@ -1,7 +1,7 @@
 /* S4 Working Slot Configuration 패널 서비스(SX-02 #725) — 「문서 만들기」 content 선택 표면.
  *
  * 신설 격리 파일이다(SX-03/04·job_run.ts 라인 충돌 회피). DOM 배선·셸 통합은 이 파일이 지지
- * 않는다 — 순수 상태 reducer + 4개 dispatch 왕복만 소유하고, 렌더·마운트는 소비 슬라이스가 잇는다.
+ * 않는다 — 순수 상태 reducer + slot dispatch 왕복만 소유하고, 렌더·마운트는 소비 슬라이스가 잇는다.
  *
  * 계약(#725 §2·§3):
  *   - **local optimistic authority 0**: 사용자가 Option 을 누르면 로컬에서 선택을 미리 켜지 않는다.
@@ -13,7 +13,7 @@
  *   - **configuration_token 왕복**: 매 응답의 new_configuration_token 을 보관해 다음 mutation 에
  *     되돌려준다(프런트가 token 을 짓지 않는다 — opaque).
  *   - **Active Field 계산 0 / 내부어 노출 0**: Slot/Plan 판정을 재구현하지 않고 backend projection
- *     필드(slots·detached_selections·blocking_items·configuration_status)를 shape 만 한다.
+ *     필드(slots·retained_selections·blocking_items·configuration_status)를 shape 만 한다.
  */
 
 import type { BridgeClient } from "../runtime/client.ts";
@@ -40,6 +40,9 @@ export type ProjectedSlot = {
   shared_field_ids: string[];
 };
 
+/** Preset 적용이 「깨짐」으로 되돌리는 항목의 형(#829). current view 는 이 형을 소비하지 않는다 —
+ *  제품 경로의 `detached_selections` 는 SG-01(#733) 이후 구조적으로 비어 있고, 그것을 그리던
+ *  표면·정리 액션은 #903 에서 제거됐다. */
 export type ProjectedDetachedSelection = {
   slot_id: string;
   selected_option_ids: string[];
@@ -60,7 +63,6 @@ export type SlotProjection = {
   configuration_status: string;
   configuration_present: boolean;
   slots: ProjectedSlot[];
-  detached_selections: ProjectedDetachedSelection[];
   blocking_items: { slot_id: string; kind: string; option_id: string | null }[];
   informational_changes: { slot_id: string; kind: string; option_id: string | null }[];
   retained_selections?: ProjectedRetainedSelection[];
@@ -213,12 +215,6 @@ export function hasBrokenSelections(state: SlotConfigState): boolean {
   return currentProjection(state)?.configuration_status === "HAS_BROKEN_SELECTIONS";
 }
 
-/** 사라졌지만 의도로 보존됨(detached informational) — **현재 포함 내용처럼 표시하지 않는다**(#725 §3).
- *  호출자는 이 목록을 별도 informational 영역에 그린다(현재 선택 목록과 섞지 않는다). */
-export function detachedSelections(state: SlotConfigState): ProjectedDetachedSelection[] {
-  return currentProjection(state)?.detached_selections ?? [];
-}
-
 /* ── request_id 발급(프런트 소유 재전송 단위) ─────────────────────────────────────────────── */
 function makeRequestId(): string {
   return `slot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -228,7 +224,6 @@ export type SlotConfigService = {
   open(): Promise<SlotConfigState>;
   refresh(): Promise<SlotConfigState>;
   selectOption(slotId: string, optionId: string): Promise<SlotConfigState>;
-  clearSelection(slotId: string): Promise<SlotConfigState>;
   /** 현재 선택을 이름 붙여 보관한다. 이름 충돌은 상태(`presetNotice.save_conflict`)로 돌아오고
    *  모달 확인은 렌더 층 소관이다 — 확정은 그 항목의 key 를 다시 실어 보낸다(조용한 덮기 0). */
   savePreset(name: string, confirmedOverwriteKey?: string): Promise<SlotConfigState>;
@@ -349,19 +344,6 @@ export function createSlotConfigService(deps: SlotConfigDeps): SlotConfigService
             configuration_token: token,
             slot_id: slotId,
             option_id: optionId,
-            request_id: makeRequestId(),
-          }),
-        { pending: true },
-      );
-    },
-    clearSelection(slotId) {
-      const token = requireToken();
-      return apply(
-        "clear_slot_selection",
-        () =>
-          deps.client.dispatch("job", "clear_slot_selection", {
-            configuration_token: token,
-            slot_id: slotId,
             request_id: makeRequestId(),
           }),
         { pending: true },

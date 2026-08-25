@@ -34,7 +34,7 @@ function slot(id, text, status, options, sharedFields = []) {
 }
 function view(status, slots, extra = {}) {
   const {
-    token = "tok-1", detached = [], blocking = [], viewStatus = "CURRENT", contextError = null,
+    token = "tok-1", blocking = [], viewStatus = "CURRENT", contextError = null,
     contextErrorMessage = null, retained = [],
   } = extra;
   return {
@@ -45,7 +45,7 @@ function view(status, slots, extra = {}) {
     new_configuration_token: token,
     projection: viewStatus === "CONTEXT_ERROR" ? null : {
       view_status: viewStatus, configuration_status: status, configuration_present: true,
-      slots, detached_selections: detached, blocking_items: blocking, informational_changes: [],
+      slots, blocking_items: blocking, informational_changes: [],
       retained_selections: retained,
     },
   };
@@ -229,7 +229,6 @@ function fakeController(state, handlers = {}) {
     subscribe: () => () => {},
     getSnapshot: () => state,
     selectOption: handlers.selectOption ?? (async () => state),
-    clearSelection: handlers.clearSelection ?? (async () => state),
     refresh: handlers.refresh ?? (async () => state),
   };
 }
@@ -275,12 +274,12 @@ test("broken 선택은 '다시 선택' 행동 대상으로 그린다", () => {
   assert.match(html, /다시 선택/);
 });
 
-test("detached 는 현재 포함 내용과 분리된 informational 로만 그린다(내부 key 비노출)", () => {
-  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
+test("사라진 이전 선택은 현재 포함 내용과 분리된 informational 로만 그린다(내부 key 비노출)", () => {
+  const withGone = view("SLOT_SELECTIONS_COMPLETE",
     [slot("s1", "표지 유형", "RESOLVED", [opt("o1", "기본 표지", true)])],
-    { detached: [{ slot_id: "removed-slot", selected_option_ids: ["ghost-opt"], clearable: true, status: "SLOT_REMOVED" }] });
-  const html = render(stateOf(withDetached));
-  assert.match(html, /현재 문서에는 적용되지 않습니다/); // 정직한 일반 문안
+    { retained: [{ slot_id: "removed-slot", slot_display_text: null, option_ids: ["ghost-opt"], fate: "SLOT_REMOVED" }] });
+  const html = render(stateOf(withGone));
+  assert.match(html, /현재 문서에는 반영되지 않습니다/); // 정직한 일반 문안
   assert.ok(!html.includes("removed-slot")); // raw slot_id 비노출
   assert.ok(!html.includes("ghost-opt")); // raw option_id 비노출
 });
@@ -344,25 +343,19 @@ test("P2#2 UNSUPPORTED_SELECTION_POLICY: 현재 방식 선택 불가 + radio dis
   assert.match(html, /disabled/);
 });
 
-test("P2#3 clearable detached 는 단일 명시 제거 액션을 준다(내부 key 비노출)", () => {
-  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
-    [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
-    { detached: [{ slot_id: "gone-slot", selected_option_ids: ["gone-opt"], clearable: true, status: "SLOT_REMOVED" }] });
-  const html = render(stateOf(withDetached));
-  assert.match(html, /이전 선택 모두 제거/);
-  assert.ok(!html.includes("gone-slot"));
-  assert.ok(!html.includes("gone-opt"));
-});
-
-test("P2#3 detached 여러 개여도 모호한 항목별 버튼이 아니라 clear-all 하나만 그린다", () => {
-  const withDetached = view("SLOT_SELECTIONS_COMPLETE",
-    [slot("s1", "표지", "RESOLVED", [opt("o1", "기본", true)])],
-    { detached: [
-      { slot_id: "a", selected_option_ids: ["x"], clearable: true, status: "SLOT_REMOVED" },
-      { slot_id: "b", selected_option_ids: ["y"], clearable: true, status: "SLOT_REMOVED" }] });
-  const html = render(stateOf(withDetached));
-  const buttons = (html.match(/cs-detached-clear/g) ?? []).length;
-  assert.equal(buttons, 1); // 항목 수와 무관하게 명시 액션 하나
+test("#903 detached 정리 표면은 없다 — 사라진 이전 선택은 정보로만 선다", () => {
+  // detached 는 SG-01(#733) 이후 제품 경로에서 만들어지지 않는다(승계는 AUTO_KEEP 만 싣고,
+  // AUTO_KEEP 은 그 Option 이 target 에 있어야 성립한다). 렌더될 수 없던 정리 버튼은 #903 에서
+  // 걷혔고, 사라진 항목의 사연은 #777 의 `retained_selections` 가 정보로 재진술한다.
+  const successor = view("NEEDS_SELECTION",
+    [slot("s1", "표지", "MISSING_REQUIRED_SELECTION", [opt("o1", "기본")])],
+    { retained: [
+      { slot_id: "gone-slot", slot_display_text: null, option_ids: ["gone-opt"], fate: "SLOT_REMOVED" }] });
+  const html = render(stateOf(successor));
+  assert.ok(!html.includes("cs-detached"));
+  assert.ok(!html.includes("이전 선택 모두 제거"));
+  assert.match(html, /cs-retained-gone/); // 정보는 남는다(숨기지 않는다)
+  assert.ok(!html.includes("gone-slot")); // 내부 key 비노출은 그대로
 });
 
 test("#777 이전 선택의 운명 셋을 서로 다르게 그린다(재판정 0·내부 key 비노출)", () => {

@@ -10,7 +10,7 @@
  *     초기 자료는 Python snapshot 의 `slot_configuration` **read-only** current view 에서 hydrate 한다
  *     (#744 write-on-read 를 UI effect 로 되살리지 않는다). 사용자 select 만 durable S4 command 다.
  *   - **local optimistic authority 0 / 재판정 0**: 선택은 backend fresh view 로 통째 교체(service 소유).
- *     컴포넌트는 projection 필드(slots·options·configuration_status·detached·blocking_items)를
+ *     컴포넌트는 projection 필드(slots·options·configuration_status·retained·blocking_items)를
  *     읽어 그리기만 한다 — Active Field·currentness·validity 를 계산하지 않는다(SX-03 소유).
  *   - **내부어 미노출**: display_text 만 그린다(slot_id/option_id 는 command 용 내부 key).
  */
@@ -77,7 +77,6 @@ export type JobContentSelectionController = {
   subscribe(listener: () => void): () => void;
   getSnapshot(): SlotConfigState;
   selectOption(slotId: string, optionId: string): Promise<SlotConfigState>;
-  clearSelection(slotId: string): Promise<SlotConfigState>;
   refresh(): Promise<SlotConfigState>;
   /** 「현재 선택을 프리셋으로 저장」 — 이름 입력·덮어쓰기 확인 UI 는 이 컨트롤러가 소유하고
    *  (문안·확인 UI 는 웹), 충돌 판정·확정 근거(key)는 backend 가 낸 값을 그대로 되돌려준다. */
@@ -182,7 +181,6 @@ export function createJobContentSelectionController(deps: {
     subscribe: deps.service.subscribe,
     getSnapshot: deps.service.state,
     selectOption: (slotId, optionId) => deps.service.selectOption(slotId, optionId),
-    clearSelection: (slotId) => deps.service.clearSelection(slotId),
     savePreset,
     applyPreset: (presetKey) => deps.service.applyPreset(presetKey),
     refresh: async () => {
@@ -513,8 +511,6 @@ export function JobContentSelection(props: {
     retained.filter((r) => r.fate !== "SLOT_REMOVED").map((r) => [r.slot_id, r]),
   );
   const retainedGone = retained.filter((r) => r.fate === "SLOT_REMOVED");
-  const detached = projection.detached_selections;
-  const clearableDetached = detached.filter((d) => d.clearable);
 
   return h(
     "section",
@@ -552,41 +548,11 @@ export function JobContentSelection(props: {
           ),
         )
       : null,
-    // detached = 사라졌지만 의도로 보존된 이전 선택 — 현재 포함 내용처럼 표시하지 않고, 사용자
-    // label 이 없는 내부 key 를 노출하지 않으며, 정직한 일반 문안으로 informational 분리한다(#725 §3).
-    // detached 는 label 이 없어 개별 구분이 안 된다 — 항목별 버튼은 어느 선택을 지우는지 모호하다
-    // (#725 리뷰). 그래서 clearable 전체를 지우는 **단일 명시 액션** 하나만 둔다. 두지 않으면 그
-    // slot 재등장 시 backend 가 옛 선택을 자동 복원해 사용자 모르게 반영된다(조용히 틀리지 않는다).
-    detached.length > 0
-      ? h(
-          "aside",
-          { className: "cs-detached", "aria-label": "현재 문서와 분리된 이전 선택" },
-          h(
-            "p",
-            { className: "cs-detached-note" },
-            "이전 템플릿에서 유지된 선택이 있으나 현재 문서에는 적용되지 않습니다.",
-          ),
-          clearableDetached.length > 0
-            ? h(
-                "button",
-                {
-                  type: "button",
-                  className: "cs-detached-clear",
-                  disabled: pending,
-                  // clearable 을 순차로 지운다 — 각 command 뒤 token 이 갱신되므로 await 로 직렬화한다
-                  // (동기 다발 발사는 2번째부터 옛 token 을 써 거절된다). slot_id 는 command 용 내부
-                  // key 로만 쓰고 화면 텍스트로 노출하지 않는다.
-                  onClick: async () => {
-                    for (const d of clearableDetached) {
-                      await controller.clearSelection(d.slot_id);
-                    }
-                  },
-                },
-                "이전 선택 모두 제거",
-              )
-            : null,
-        )
-      : null,
+    // 「이전 선택 모두 제거」(detached 정리 액션)는 #903 에서 제거됐다. 그것이 막던 사고 —
+    // 사라진 Slot 이 다시 등장하면 backend 가 옛 선택을 같은 ID 라는 이유로 자동 복원하는 것 —
+    // 은 SG-01(#733)이 compatibility gate 로 닫았고, 그 뒤로 승계 선언집합에는 target 에 있는
+    // Option 만(AUTO_KEEP) 실린다. 그래서 detached 는 제품 경로에서 만들어지지 않고, 이전 선택의
+    // 운명은 위 `cs-retained-gone` 이 정보로 재진술한다.
     // 보관된 선택(S9-03 #829) — slot 목록 아래에 선다. 목록·손상은 snapshot 존이 낸 사실이고
     // 적용 결과의 수치는 command 응답 값 그대로다(웹 재계산 0).
     state.presets.supported

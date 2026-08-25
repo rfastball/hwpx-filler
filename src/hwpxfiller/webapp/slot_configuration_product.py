@@ -80,7 +80,6 @@ from ..external.qualification_store import QualificationObjectStore
 from ..external.slot_command_runner import (
     SlotCommandResult,
     apply_selection_preset as run_apply_selection_preset,
-    clear_slot_selection,
     ensure_current_slot_configuration,
     save_selection_preset as run_save_selection_preset,
     select_slot_option,
@@ -321,18 +320,10 @@ class SlotConfigurationProduct:
             )
         ))
 
-    def clear_slot_selection(
-        self, work_ref: str, configuration_token: str, slot_id: str, request_id: str
-    ) -> SlotConfigurationCommandResponse:
-        work_id, ws = self._route(work_ref)
-        claims = self._verify_token(configuration_token, ws, work_id)
-        return self._run(work_id, ws, token_app=claims.template_application_id, mutating=True, call=lambda: (
-            clear_slot_selection(
-                self._configs, self._works, self._quals, self._candidates,
-                context=self._command_context(ws, work_id, claims),
-                request_id=request_id, slot_id=slot_id, now=self._now(),
-            )
-        ))
+    # 선택 해제 Product 동사는 #903 에서 제거됐다. 그것을 부르던 유일한 표면은 detached 정리
+    # 버튼이었고 detached 는 SG-01(#733) 이후 제품 경로에서 생기지 않는다 — command engine 의
+    # clear(`slot_command.decide_clear`·`slot_command_runner.clear_slot_selection`)는 S4 명령
+    # 대수의 절반으로 남고, 여기 제품 표면만 사라진다.
 
     # ── Selection Preset(S9-03 · #829) — 저장·나열·적용 ──────────────────────────────
     def save_selection_preset(

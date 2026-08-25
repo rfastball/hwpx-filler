@@ -4383,23 +4383,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         finally:
             self._generation_lock.release()
 
-    def _do_clear_slot_selection(self, p: dict) -> dict:
-        """Slot 선택 해제 = durable S4 command. command outcome + fresh view(선택과 동일 규율).
-
-        automatic checking 진입은 `_do_select_slot_option` 과 같은 규율이다(`_maybe_auto_check`).
-        생성과의 상호배제도 같은 규율이다(#725 리뷰) — generation lock 아래 원자로 수행한다.
-        """
-        self._require_slot_configuration()
-        response = self._slot_command_serialized_with_generation(
-            "선택을 해제하세요",
-            lambda: self._slot_configuration.clear_slot_selection(
-                self.job_name,
-                str(p["configuration_token"]),
-                str(p["slot_id"]),
-                str(p["request_id"]),
-            ),
-        )
-        return self._slot_response_dict(response)
+    # `_do_clear_slot_selection` 은 #903 에서 제거됐다 — 유일한 트리거였던 detached 정리 버튼이
+    # SG-01(#733) 이후 렌더될 수 없었고, EXACTLY_ONE 제어면에 「선택 비우기」 사용자 목적이 없다.
+    # S4 command engine 의 clear(`slot_command.decide_clear`)는 그대로 서 있다(제품 표면만 제거).
 
     # ----------------------------------- Selection Preset 표면(S9-03 · #829)
     # 두 동사도 **dispatch 경로**다(직접 브리지 신설 0). 수치(적용 n·깨짐 m)는 S9-02

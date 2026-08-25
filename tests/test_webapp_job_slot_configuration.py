@@ -25,6 +25,7 @@ from hwpxfiller.external.hwpx_engine import make_hwpx_engine
 from hwpxfiller.external.hwpx_package_io import write_hwpx_package
 from hwpxfiller.external.job_store import JobRegistry
 from hwpxfiller.external.output_files import ensure_output_directory, existing_output_paths
+from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.slot_configuration_product import (
     SlotConfigurationProduct,
@@ -118,7 +119,7 @@ def test_open_reaches_product_via_dispatch_and_yields_view_and_token(tmp_path: P
     } <= set(proj)
 
 
-def test_select_and_clear_reach_product_with_outcome_and_fresh_token(tmp_path: Path) -> None:
+def test_select_reaches_product_with_outcome_and_fresh_token(tmp_path: Path) -> None:
     ctrl, _ = _controller(tmp_path)
     token = ctrl.dispatch("open_slot_configuration", {})["current_view"]["new_configuration_token"]
     sel = ctrl.dispatch("select_slot_option", {
@@ -128,11 +129,26 @@ def test_select_and_clear_reach_product_with_outcome_and_fresh_token(tmp_path: P
     # command outcome + fresh view + 새 token 이 함께 온다(local optimistic authority 0).
     assert sel["mutation_outcome"] is not None
     assert sel["current_view"]["new_configuration_token"]
-    fresh_token = sel["current_view"]["new_configuration_token"]
-    clr = ctrl.dispatch("clear_slot_selection", {
-        "configuration_token": fresh_token, "slot_id": "no-such", "request_id": "r2",
-    })
-    assert clr["mutation_outcome"] is not None
+
+
+def test_clear_slot_selection_is_not_a_registered_action(tmp_path: Path) -> None:
+    """#903: 선택 해제 제품 동사는 없다 — 미등록 액션으로 시끄럽게 거절된다.
+
+    유일한 트리거였던 detached 정리 버튼은 SG-01(#733) 이후 렌더될 수 없었고(승계 선언집합은
+    AUTO_KEEP 만 싣는데 AUTO_KEEP 은 그 Option 이 target 에 있어야 성립한다), EXACTLY_ONE
+    제어면에서 「선택 비우기」는 완성 상태를 blocked 로 되돌릴 뿐이라 대체 트리거도 없다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    token = ctrl.dispatch("open_slot_configuration", {})["current_view"]["new_configuration_token"]
+    # 컨트롤러(핸들러 부재)와 dispatch 계약(액션 미등록) 양쪽에서 사라졌다.
+    with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):
+        ctrl.dispatch("clear_slot_selection", {
+            "configuration_token": token, "slot_id": "no-such", "request_id": "r2",
+        })
+    with pytest.raises(ValueError, match="등록되지 않은"):
+        validate_dispatch("job", "clear_slot_selection", {
+            "configuration_token": token, "slot_id": "no-such", "request_id": "r2",
+        })
 
 
 def test_refresh_with_token_reaches_product(tmp_path: Path) -> None:
@@ -236,7 +252,6 @@ def test_unwired_slot_configuration_rejects_loudly(tmp_path: Path) -> None:
         ("refresh_slot_configuration", {}),
         ("select_slot_option", {
             "configuration_token": "t", "slot_id": "s", "option_id": "o", "request_id": "r"}),
-        ("clear_slot_selection", {"configuration_token": "t", "slot_id": "s", "request_id": "r"}),
     ):
         with pytest.raises(ValueError):
             ctrl.dispatch(action, payload)
@@ -252,7 +267,7 @@ def test_command_without_selected_job_rejects_loudly(tmp_path: Path) -> None:
 
 
 def test_slot_mutation_rejected_while_generating(tmp_path: Path) -> None:
-    # #725 리뷰 P1: 생성 중 durable 구성 변경(select/clear)은 다른 실행-입력 변경과 같이 시끄럽게
+    # #725 리뷰 P1: 생성 중 durable 구성 변경은 다른 실행-입력 변경과 같이 시끄럽게
     # 거절한다 — 실행 중 배치가 고정한 immutable 입력과 화면 구성이 어긋나지 않게. 조용한 통과 0.
     ctrl, _ = _controller(tmp_path)
     token = ctrl.dispatch("open_slot_configuration", {})["current_view"]["new_configuration_token"]
@@ -263,10 +278,6 @@ def test_slot_mutation_rejected_while_generating(tmp_path: Path) -> None:
             ctrl.dispatch("select_slot_option", {
                 "configuration_token": token, "slot_id": "no-such", "option_id": "opt",
                 "request_id": "r1",
-            })
-        with pytest.raises(ValueError, match="문서 생성이 진행 중"):
-            ctrl.dispatch("clear_slot_selection", {
-                "configuration_token": token, "slot_id": "no-such", "request_id": "r2",
             })
     finally:
         ctrl._generation_lock.release()
@@ -534,7 +545,11 @@ def test_txt_work_opens_the_content_selection_zone_with_authored_labels(
 def test_txt_selection_round_trip_is_durable_without_extra_machinery(
     tmp_path: Path,
 ) -> None:
-    """선택·해제가 hwpx 와 **같은 dispatch 동사**로 성사되고 스냅샷에 남는다(추가 기계 0)."""
+    """선택·재선택이 hwpx 와 **같은 dispatch 동사**로 성사되고 스냅샷에 남는다(추가 기계 0).
+
+    EXACTLY_ONE 이라 결정을 무르는 길은 「비우기」가 아니라 **다시 고르기**다(#903 —
+    비우기 제품 동사는 없다).
+    """
     ctrl, _reg, _tpl = _txt_slot_bearing_controller(tmp_path)
     token = ctrl.dispatch("open_slot_configuration", {})["current_view"][
         "new_configuration_token"
@@ -553,11 +568,14 @@ def test_txt_selection_round_trip_is_durable_without_extra_machinery(
     assert zone["current_view"]["projection"]["slots"][0]["effective_option_ids"] == ("견적서",)
 
     fresh = picked["current_view"]["new_configuration_token"]
-    cleared = ctrl.dispatch("clear_slot_selection", {
-        "configuration_token": fresh, "slot_id": "첨부", "request_id": "r2",
+    reselected = ctrl.dispatch("select_slot_option", {
+        "configuration_token": fresh, "slot_id": "첨부",
+        "option_id": "계약서", "request_id": "r2",
     })
-    assert cleared["mutation_outcome"]["changed"] is True
-    assert cleared["current_view"]["projection"]["slots"][0]["effective_option_ids"] == ()
+    assert reselected["mutation_outcome"]["changed"] is True
+    assert reselected["current_view"]["projection"]["slots"][0]["effective_option_ids"] == (
+        "계약서",
+    )
 
 
 def test_slotless_txt_work_supports_the_zone_with_nothing_to_choose(tmp_path: Path) -> None:
