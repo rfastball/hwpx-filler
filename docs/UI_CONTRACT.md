@@ -1018,7 +1018,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 없다). 같은 형상의 선례가 화면 사망 후 채널만 남은 `pool` 이다. 새 통신 경로는 만들지 않았다 —
 푸시는 기존 `window.__hwpx` 의 `snapshot` 사건에 얹힌 채널 하나다.
 
-- **판정·문안은 전부 링1**(`gui/tutorial_state.py`): 단계 T0~T18·티어 4·달성·다음 걸음·졸업·
+- **판정·문안은 전부 링1**(`gui/tutorial_state.py`): 단계 T0~T17·티어 4·달성·다음 걸음·졸업·
   제안·순간 카드 문안. 링2(`webapp/screen_tutorial.py`)는 VM 하나를 **세션 소유**하고 영속
   왕복(`external/settings.load_/save_tutorial_progress`)과 스냅샷 전달만 진다. 프런트
   (`frontend/src/tutorial/panel.ts`)는 그 스냅샷을 그리기만 하고 문안을 조립하지 않는다.
@@ -1037,16 +1037,18 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 | T4/T12 마운트·교체 | `screen_job._remember_data_source` — 세 마운트 경로가 모이는 한 자리. T12 는 **이 세션 안에서의** 2번째 마운트 |
 | T5 작업·행 선택 | `screen_job.dispatch` 꼬리 — `job_name` ∧ `selection.selected_count() ≥ 1` |
 | T6 승인 | `screen_job._do_preview_approve` — managed·legacy 두 갈래 공용 |
-| T7·T8·T9·T13·T16·T17·T18 | `screen_job._note_tutorial_generation` — 생성 완주(`succeeded ≥ 1`) 한 자리 |
+| T7·T8·T9·T13·T16·T17 | `screen_job._note_tutorial_generation` — 생성 완주(`succeeded ≥ 1`) 한 자리 |
 | T11 복사 | `screen_workbench.note_copied` — 복사 카운터가 실제로 오른 자리 |
 | T15 누름틀 변환 | `screen_template._do_compile` — 링1 `result.mutated` (무변이 거절은 통지 없음) |
 
 - **앱이 안 들고 있는 이력은 세션이 센다**: 「같은 작업 2번째 생성」(T8)·「같은 마운트 위 작업
-  전환」(T9)·「구간 구성 변화」(T17/T18)는 어디에도 기록이 없다(`Job` 은 `last_run_at` 한 칸,
+  전환」(T9)·「갈래 구성 변화」(T17)는 어디에도 기록이 없다(`Job` 은 `last_run_at` 한 칸,
   managed 배달 원장은 출력 폴더의 쓰기 전용 사이드카). 그래서 `GenerationLoopLedger` 가 세션
   수명으로 **세기만** 하고, 어느 T 인지는 호출자가 정한다(커리큘럼 재판정 금지). 구간 축은 S4
   read-only projection(`{항목 id: 고른 선택 id}`)의 두 실행 사이 diff이고, 조회가 서지 않는
-  상태는 「구성 없음」이 아니라 **모른다**라서 T17·T18 이 서지 않는다.
+  상태는 「구성 없음」이 아니라 **모른다**라서 T17 이 서지 않는다. 축이 갈래 하나인 이유는
+  v1 제어면이 EXACTLY_ONE 이라 「구간을 뺀다」가 곧 「생략」 갈래를 고르는 것이기 때문이다
+  (#284 재판정 — 두 단계로 가르면 제품에 없는 구분을 가르친다).
 - **T16 전용 seam**: tpl 의 `compile_sinks` 는 `mutation_sinks` 와 **갈라** 둔다 — 변이 통지는
   「파일이 바뀌었다」 전부(개명·삭제·복원·TXT 저장)라 한 sink 로 합치면 slot 개명 한 번이
   「변환본으로 생성」을 거짓으로 켠다.

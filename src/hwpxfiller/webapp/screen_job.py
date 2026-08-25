@@ -528,11 +528,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._clock = clock
         self._engine = engine
         # 튜토리얼 마일스톤 통지(#894) — 이 채널이 소유하는 전이가 가장 많다: 마운트(T4/T12)·
-        # 작업+행 선택(T5)·승인(T6/T13)·생성 완주(T7/T8/T9/T16/T17/T18). 전부 이미 성립한
+        # 작업+행 선택(T5)·승인(T6/T13)·생성 완주(T7/T8/T9/T16/T17). 전부 이미 성립한
         # 전이 지점이고, 어느 것도 여기서 다시 판정하지 않는다.
         self._tutorial = tutorial
         # 루프 감지의 세션 이력(#894) — 앱이 들고 있지 않은 사실 넷(같은 작업 반복·같은 마운트
-        # 위 작업 전환·구간 구성 변화·이 세션의 누름틀 변환)을 세는 기억이다. 판정이 아니라
+        # 위 작업 전환·갈래 구성 변화·이 세션의 누름틀 변환)을 세는 기억이다. 판정이 아니라
         # 기억이라 튜토리얼 모듈이 소유하고 이 컨트롤러는 한 칸으로 든다(모듈 독스트링 참조).
         self._tutorial_loop = GenerationLoopLedger()
         # 마지막 승인이 빈 값을 포함했는가(§3.4 T13) — 승인과 생성 완주가 **다른 사건**이라
@@ -3348,7 +3348,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         :meth:`_is_managed_hwpx_work` 와 **같은 가드·같은 read-only projection** 을 쓴다
         (#744): durable id 미발급 Work 를 Product 에 넘기면 read 중 권위 id 가 lazy 발급돼
         조회만으로 durable 표식이 생긴다. 실패는 「구성 없음」이 아니라 「모른다」라서
-        ``None`` 이고, 그 경우 T17·T18 은 서지 않는다(추측으로 체크하지 않는다).
+        ``None`` 이고, 그 경우 T17 은 서지 않는다(추측으로 체크하지 않는다).
         """
         if self._slot_configuration is None or not self.job_name:
             return None
@@ -3371,7 +3371,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         §3.3 T7 의 달성 판정이 「생성 완료 사건(성공 ≥1)」이라고 그렇게 못박혀 있다.
 
         여기서 새로 판정하는 것은 없다. 어느 T 인지는 세션 이력
-        (:class:`~hwpxfiller.webapp.screen_tutorial.GenerationLoopLedger`)이 낸 **사실 넷**과
+        (:class:`~hwpxfiller.webapp.screen_tutorial.GenerationLoopLedger`)이 낸 **사실 셋**과
         승인 시점에 기억해 둔 빈 값 동반 여부로 갈린다.
         """
         if int(result.get("succeeded", 0) or 0) < 1:
@@ -3395,10 +3395,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._tutorial(Milestone.SECOND_LAP)
         if facts.other_job_same_mount:
             self._tutorial(Milestone.SWITCH_JOB)
-        if facts.items_changed:
-            self._tutorial(Milestone.TOGGLE_SECTION)
         if facts.options_changed:
-            self._tutorial(Milestone.SWITCH_OPTION)
+            self._tutorial(Milestone.CHANGE_COMPOSITION)
 
     def _current_template_path(self) -> str:
         """이번 실행이 쓴 템플릿 경로 — 세션 VM 이 든 값(없으면 빈 문자열)."""
