@@ -898,7 +898,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
-        if self.vm is not None and self.vm.job.authority_id:
+        if self._seat_is_managed_hwpx():
             self.workbench_observation()
             if self._current_preview_preparation is None:
                 raise ValueError(
@@ -1073,7 +1073,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         경로로 세우면 그 승인은 무엇에 근거했는지 말할 수 없다(F-06 이 지목한 바로 그
         결함을 우리 손으로 재현하는 꼴). 요구가 없으면 거절한다 — 조용히 세우지 않는다.
         """
-        if self.vm is not None and self.vm.job.authority_id:
+        if self._seat_is_managed_hwpx():
             token = p.get("preview_token")
             if not isinstance(token, str) or not token:
                 raise ValueError("현재 생성 내용 확인 토큰이 필요합니다.")
@@ -2380,8 +2380,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         **명시 지정은 기억된다**(U3-06 #879): 다음 세션의 도출 후보로 설정에 남긴다. 영속 실패는
         삼키지 않고 위층(브리지)이 ``ERROR:`` 로 되돌린다 — 다만 이번 세션의 선택은 이미 유효하고
         화면도 그것을 그려야 하므로, 적용·push 를 끝낸 뒤에 던진다.
+
+        갈래는 **표면이 그것을 어디서 읽는가**와 같은 축이다(#905): managed 면은 delivery
+        intent(→ ``output_folder`` 존)를, legacy 면은 ``out_dir`` 를 읽는다. 축이 `bool(authority_id)`
+        에 남아 있던 동안 발급된 slotless 작업의 지정은 intent 로 들어가 legacy 생성이 보는
+        ``out_dir`` 를 그대로 두었다 — 사용자가 고른 폴더가 조용히 무시되던 자리다.
         """
-        if self.vm is not None and self.vm.job.authority_id:
+        if self._seat_is_managed_hwpx():
             self._run_delivery_intent = RunDeliveryIntent(
                 path, self._run_delivery_collision
             )
@@ -4018,6 +4023,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return False
         projection = response.current_view.projection
         return projection is not None and bool(projection.slots)
+
+    def _seat_is_managed_hwpx(self) -> bool:
+        """착석한 실행뷰가 managed 갈래인가 — 명령 좌표들의 단일 술어(#905).
+
+        :meth:`_is_managed_hwpx_work` 를 그대로 부른다. 별도 메서드인 이유는 판정이 아니라
+        **가드의 결속**이다: 명령 좌표(미리보기 열기·승인·저장 폴더 지정)는 스냅샷·실행 분기와
+        달리 `job` 을 손에 들고 있지 않아 `self.vm is not None and …` 을 각자 앞세워야 했고,
+        그 두 줄이 세 자리에 복제되면 다음에 축이 바뀔 때 또 일부만 따라온다(S6-05 가 정확히
+        그렇게 세 좌표를 남겼다). 실행뷰가 없으면(TXT·미선택) managed 갈래도 없다.
+        """
+        return self.vm is not None and self._is_managed_hwpx_work(self.vm.job)
 
     def _slot_configuration_zone(self, tmissing: bool) -> dict:
         """스냅샷의 ``slot_configuration`` 존 — fresh current view 를 조회해 실어 보낸다.
