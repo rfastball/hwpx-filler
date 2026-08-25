@@ -1,0 +1,4 @@
+# 이 폴더의 자산은 make_assets.py 가 낳고 전부 커밋된다(templates/·text_templates/·data/).
+# 여기서 실습 삼아 문서를 만들면 아래가 생기는데 그것만 커밋 대상이 아니다.
+out/
+Results/
